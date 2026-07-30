@@ -23,6 +23,7 @@ from app.services.tuning_identification.excitation import (
     check_excitation,
     excitation_score,
 )
+from app.services.tuning_identification.iv import identify_clivc4
 from app.services.tuning_identification.nonparametric import (
     correlation_analysis,
     welch_spectral_analysis,
@@ -132,6 +133,9 @@ def identify_from_history(
             theta_source=theta_source,
         )
 
+    # P2-009：闭环 SP 激励检测 — 不再拒绝，而是启用 CLIVC（可证明闭环一致 IV）
+    sp_raw: np.ndarray | None = None
+    has_sp_excitation = False
     if sp is not None:
         sp_raw = np.array(sp, dtype=float)
         if len(sp_raw) != len(u_raw):
@@ -149,15 +153,9 @@ def identify_from_history(
         sp_range = float(np.ptp(sp_raw))
         change_threshold = max(1e-9, 0.01 * sp_range)
         significant_sp_changes = int(np.sum(np.abs(np.diff(sp_raw)) > change_threshold))
-        if significant_sp_changes > 0:
-            return IdentificationResult(
-                success=False,
-                reason=(
-                    "CLOSED_LOOP_METHOD_UNVERIFIED: 检测到动态 SP 闭环激励；"
-                    "现有实验性 IV 不作为发布依据，请使用合格闭环方法或受控阶跃实验"
-                ),
-                theta_source=theta_source,
-            )
+        # P2-009：SP 有显著变化时启用 CLIVC（外生 SP 作工具变量，闭环一致）
+        # 旧 Phase 0 门禁（直接拒绝）已由可证明 CLIVC 方法替代
+        has_sp_excitation = significant_sp_changes > 0
 
     # P0-2：入口去均值（偏置消除）。
     # ARX/ARMAX/IV 回归均无截距项，工业数据（如 PV≈450/OP≈60）若不去均值，
@@ -167,6 +165,11 @@ def identify_from_history(
     y_mean = float(np.mean(y_raw))
     u = u_raw - u_mean
     y = y_raw - y_mean
+    # P2-009：SP 去均值（CLIVC 工具变量需偏差变量）
+    sp_demeaned: np.ndarray | None = None
+    if sp_raw is not None:
+        sp_mean = float(np.mean(sp_raw))
+        sp_demeaned = sp_raw - sp_mean
     # Phase 0：缺省 theta 仅作为显式标注的 2Ts 启发值；不能冒充已估计参数。
     # 使用 is not None 保留调用方明确给出的 theta=0。
     theta_seconds = theta_estimate if theta_estimate is not None else 2 * ts
@@ -199,6 +202,8 @@ def identify_from_history(
         n_test = 0
     u_train, y_train = u[:n_train], y[:n_train]
     u_val, y_val = u[n_train : n_train + n_val], y[n_train : n_train + n_val]
+    # P2-009：SP 训练集分割（CLIVC 工具变量；验证集自由仿真只需 u_val/y_val）
+    sp_train = sp_demeaned[:n_train] if sp_demeaned is not None else None
 
     # P2-016：数据快照哈希（输入 OP/PV + ts + 算法版本，可追溯辨识输入）
     data_hash = _compute_data_hash(u_raw, y_raw, ts)
@@ -237,13 +242,16 @@ def identify_from_history(
         logger.debug("Welch 谱分析失败，跳过相干辅助门禁", exc_info=True)
 
     # ── 层 3：参数化辨识（生产候选）──
-    # IV 实现保留为实验代码，但其工具变量外生性和收敛性尚未完成工业验证，
-    # Phase 0 不允许进入生产候选集或影响最终排名。
+    # P2-009：CLIVC（可证明闭环一致 IV）在有 SP 激励时进入生产候选集，
+    # 取代旧 Phase 0 对闭环 SP 的直接拒绝。ARX/ARMAX 在闭环下有偏但仍作基线对照。
     identification_runs: list[tuple[IdentifyMethod, object]] = []
     # 总是跑 ARX（初值 + 基线）
     identification_runs.append((IdentifyMethod.HISTORICAL_ARX, "arx"))
     # 总是跑 ARMAX（扰动建模）
     identification_runs.append((IdentifyMethod.HISTORICAL_ARMAX, "armax"))
+    # P2-009：SP 有激励时跑 CLIVC（闭环一致 IV，外生 SP 作工具变量）
+    if has_sp_excitation and sp_demeaned is not None:
+        identification_runs.append((IdentifyMethod.HISTORICAL_IV, "clivc"))
 
     # ── 层 4-5：阶次选择 + 离散→连续 ──
     for model_type in candidates:
@@ -287,7 +295,8 @@ def identify_from_history(
             delay_search_trace[:5],
         )
 
-        best_candidate: CandidateModel | None = None
+        # P2-009：保留所有成功候选（透明化算法对比，CLIVC/ARX/ARMAX 并列可审计）
+        model_candidates: list[CandidateModel] = []
         for method, algo_key in identification_runs:
             try:
                 if algo_key == "arx":
@@ -295,6 +304,12 @@ def identify_from_history(
                     method_used = method
                 elif algo_key == "armax":
                     res = identify_armax(u_train, y_train, d_model, na=na, nb=nb, nc=1)
+                    method_used = method
+                elif algo_key == "clivc":
+                    # P2-009：CLIVC 需要外生 SP 作工具变量
+                    if sp_train is None:
+                        continue
+                    res = identify_clivc4(u_train, y_train, sp_train, d_model, na=na, nb=nb)
                     method_used = method
                 else:
                     continue
@@ -444,12 +459,11 @@ def identify_from_history(
                 bic=round(bic_val, 2),
                 evidence=evidence,
             )
-            # 选最优候选（可信度优先，其次拟合度）
-            if best_candidate is None or _candidate_better(candidate, best_candidate):
-                best_candidate = candidate
+            # P2-009：保留所有成功候选（透明化，CLIVC 与 ARX 并列可审计）
+            model_candidates.append(candidate)
 
-        if best_candidate is not None:
-            results.append(best_candidate)
+        # P2-009：所有方法候选进入 results，_select_with_occam 负责择优
+        results.extend(model_candidates)
 
     if not results:
         return IdentificationResult(

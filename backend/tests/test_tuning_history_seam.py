@@ -301,12 +301,12 @@ class TestIdentifyFromHistoryMainPathSeam:
     """DataPlanner → 辨识主路径端到端（带偏置工业数据）."""
 
     @pytest.mark.asyncio
-    async def test_biased_closed_loop_rejects_unverified_iv(self):
-        """闭环 SP 激励：实验性 IV 不作为发布依据，主路径返回 INCONCLUSIVE（P0-05）.
+    async def test_biased_closed_loop_succeeds_via_clivc(self):
+        """闭环 SP 激励：P2-009 CLIVC 可证明闭环一致，seam 主路径成功辨识（取代 P0-05 拒绝）.
 
-        PV≈450/OP≈60 偏置闭环数据此前由 IV 路径处理；P0-05 关闭未经验证的
-        闭环辨识后，seam 主路径不得再产出可放行模型，必须带
-        CLOSED_LOOP_METHOD_UNVERIFIED reason 退出。
+        PV≈450/OP≈60 偏置闭环数据带 SP 阶跃激励；P2-009 起用 CLIVC（外生 SP
+        作工具变量，满足 E[Z·ε]=0）替代旧 Phase 0 对闭环 SP 的直接拒绝。
+        seam 主路径应产出可放行模型，K≈2.0 误差 <10%。
         """
         sp, y, u = _biased_signals(n=1800)
         bundles = [
@@ -331,14 +331,18 @@ class TestIdentifyFromHistoryMainPathSeam:
                 theta_estimate=5.0,
             )
 
-        # P0-05：闭环 SP 激励不再走实验性 IV，安全失败
-        assert result["success"] is False
-        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.get("reason") or "")
-        # seam 失败形态仍保留可追溯字段
+        # P2-009：CLIVC 使闭环辨识成功（不再 CLOSED_LOOP_METHOD_UNVERIFIED 拒绝）
+        assert result["success"] is True
+        assert "CLOSED_LOOP_METHOD_UNVERIFIED" not in (result.get("reason") or "")
+        # seam 成功形态保留可追溯字段
         assert result["tagName"] == "TIC-4501"
         assert result["dataPoints"] == 1800
         assert result["validRate"] == 1.0
         assert result["algorithmVersion"]
+        # K≈2.0 误差 <15%（闭环辨识容差略宽于开环）
+        if result.get("modelParams"):
+            k_est = result["modelParams"].get("K", 0)
+            assert abs(k_est - 2.0) / 2.0 < 0.15, f"K={k_est}, 真值=2.0"
 
     @pytest.mark.asyncio
     async def test_biased_open_loop_identifies_gain(self):

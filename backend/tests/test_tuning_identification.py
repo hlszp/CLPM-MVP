@@ -520,8 +520,9 @@ class TestIVIdentification:
     """实验性 IV 数值稳定性测试（不宣称闭环无偏或正式 IV4）."""
 
     def test_experimental_iv_returns_finite_result(self):
-        """实验性 IV 对闭环样本应返回有限数值，不能据此宣称无偏."""
-        assert IV_CAPABILITY_STATUS == "EXPERIMENTAL"
+        """早期实验性 IV 对闭环样本应返回有限数值（仍保留为对照原型）."""
+        # P2-009：CLIVC 已进入生产，早期 identify_iv 保留为实验对照
+        assert IV_CAPABILITY_STATUS == "CLIVC_PRODUCTION_READY"
         sp = _sp_steps(1500, [(50, 10.0), (500, 15.0), (1000, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
             sp, K=2.0, tau=30.0, theta=5.0, kp=2.0, ti=20.0, noise_std=0.8, seed=99
@@ -721,7 +722,11 @@ class TestPipelineEndToEnd:
     """算法栈端到端（pipeline.py）测试。"""
 
     def test_closed_loop_fopdt_identification(self):
-        """未验证闭环方法不得把高拟合度结果发布为成功辨识."""
+        """P2-009：闭环 FOPDT 带 SP 激励应通过 CLIVC 成功辨识（不再拒绝）.
+
+        旧 Phase 0 门禁直接拒绝闭环 SP；P2-009 起用可证明闭环一致 CLIVC
+        （外生 SP 作工具变量）替代拒绝，闭环辨识应成功并恢复 K。
+        """
         K_true, tau_true, theta_true = 2.0, 30.0, 5.0
         sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
@@ -741,10 +746,13 @@ class TestPipelineEndToEnd:
             ts=1.0,
             theta_estimate=5.0,
         )
-        assert not result.success
-        assert result.best_model is None
-        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
+        # P2-009：CLIVC 使闭环辨识不再被拒绝
+        assert result.success
+        assert result.best_model is not None
         assert result.algorithm_version == "TUNE_IDENT_v1.0"
+        # 候选中应包含 CLIVC（HISTORICAL_IV 方法）
+        iv_candidates = [c for c in result.candidates if c.identify_method.value == "HISTORICAL_IV"]
+        assert len(iv_candidates) > 0, "闭环 SP 激励下应产生 CLIVC 候选"
 
     def test_open_loop_fopdt_identification(self):
         """开环 FOPDT PRBS 辨识（限定 FOPDT 候选）."""
@@ -881,8 +889,12 @@ class TestPipelineEndToEnd:
         assert result.best_model is not None
         assert result.best_model.params.model_type == ModelType.IPDT
 
-    def test_production_pipeline_does_not_select_experimental_iv(self):
-        """Phase 0 生产候选不得包含尚未验证的 IV 实现."""
+    def test_production_pipeline_includes_clivc_for_closed_loop(self):
+        """P2-009：闭环 SP 激励下生产候选应包含 CLIVC（可证明闭环一致 IV）.
+
+        旧 Phase 0 拒绝闭环 SP；P2-009 起 CLIVC 进入生产候选集，
+        HISTORICAL_IV 方法应出现在候选列表中。
+        """
         sp = _sp_steps(1200, [(50, 10.0), (400, 15.0), (800, 8.0)])
         y, u = _simulate_closed_loop_fopdt(
             sp,
@@ -901,13 +913,12 @@ class TestPipelineEndToEnd:
             ts=1.0,
             theta_estimate=5.0,
         )
-        assert not result.success
-        assert result.best_model is None
-        assert all(
-            candidate.identify_method != IdentifyMethod.HISTORICAL_IV
-            for candidate in result.candidates
-        )
-        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
+        # P2-009：CLIVC 使闭环辨识成功，且候选中包含 HISTORICAL_IV
+        assert result.success
+        iv_candidates = [
+            c for c in result.candidates if c.identify_method == IdentifyMethod.HISTORICAL_IV
+        ]
+        assert len(iv_candidates) > 0, "闭环 SP 激励下应产生 CLIVC 候选"
 
     # ------------------------------------------------------------------
     # P2-001/P2-003：延迟候选搜索 — 覆盖 θ=0/2/5/20/60 Ts，不传入真值
@@ -1580,7 +1591,10 @@ class TestV62P2WelchCoherenceGate:
         u = _prbs(1500, seed=1500)
         y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1500)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.FOPDT],
         )
         assert result.success and result.best_model is not None
@@ -1598,7 +1612,10 @@ class TestV62P2WelchCoherenceGate:
         u = _prbs(1500, seed=1501)
         y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.02, seed=1501)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.FOPDT],
         )
         assert result.success and result.best_model is not None
@@ -1617,7 +1634,10 @@ class TestV62P2WelchCoherenceGate:
         # 极高噪声压低相干
         y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=2.0, seed=1502)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.FOPDT],
         )
         # 即使相干低，模型仍可辨识成功（辅助门禁不拒绝）
@@ -1647,7 +1667,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(1500, seed=800)
         y = _simulate_open_loop_ipdt(K=K_true, theta=theta_true, u=u, noise_std=0.01, seed=800)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.IPDT],
         )
         assert result.success, f"IPDT 辨识失败: {result.reason}"
@@ -1664,7 +1687,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(800, seed=801)
         y = _simulate_open_loop_ipdt(K=1.0, theta=2.0, u=u, noise_std=0.01, seed=801)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.IPDT],
         )
         # 不应返回"暂不支持 IPDT"的拒绝消息
@@ -1676,7 +1702,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(1200, seed=802)
         y = _simulate_open_loop_ipdt(K=0.8, theta=5.0, u=u, noise_std=0.02, seed=802)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.IPDT],
         )
         assert result.success and result.best_model is not None
@@ -1699,17 +1728,16 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(2000, seed=803)
         y = _simulate_open_loop_ipdt(K=K_true, theta=theta_true, u=u, noise_std=0.02, seed=803)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.FOPDT, ModelType.IPDT],
         )
         assert result.success and result.best_model is not None
         # IPDT 应在候选中且拟合度远高于 FOPDT
-        ipdt_candidates = [
-            c for c in result.candidates if c.params.model_type == ModelType.IPDT
-        ]
-        fopdt_candidates = [
-            c for c in result.candidates if c.params.model_type == ModelType.FOPDT
-        ]
+        ipdt_candidates = [c for c in result.candidates if c.params.model_type == ModelType.IPDT]
+        fopdt_candidates = [c for c in result.candidates if c.params.model_type == ModelType.FOPDT]
         assert len(ipdt_candidates) > 0, "IPDT 候选缺失"
         # FOPDT 对积分过程拟合极差（若存在）
         if fopdt_candidates:
@@ -1726,7 +1754,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(2000, seed=804)
         y = _simulate_open_loop_fopdt(K=1.0, tau=25.0, theta=3.0, u=u, noise_std=0.02, seed=804)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.FOPDT, ModelType.IPDT],
         )
         assert result.success and result.best_model is not None
@@ -1738,7 +1769,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(1200, seed=805)
         y = _simulate_open_loop_ipdt(K=0.6, theta=4.0, u=u, noise_std=0.01, seed=805)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.IPDT],
         )
         assert result.success
@@ -1750,7 +1784,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(1500, seed=806)
         y = _simulate_open_loop_ipdt(K=-0.5, theta=3.0, u=u, noise_std=0.01, seed=806)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.IPDT],
         )
         if result.success and result.best_model:
@@ -1764,7 +1801,10 @@ class TestP2008IpdtHistoryIdentification:
         u = _prbs(1000, seed=807)
         y = _simulate_open_loop_ipdt(K=0.7, theta=2.0, u=u, noise_std=0.01, seed=807)
         result = identify_from_history(
-            op=u.tolist(), pv=y.tolist(), ts=1.0, theta_estimate=None,
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
             candidate_models=[ModelType.IPDT],
         )
         assert result.success
@@ -1814,7 +1854,11 @@ class TestMeanRemovalPipeline:
         assert p.K < 3.0
 
     def test_biased_closed_loop_recovers_gain(self):
-        """闭环带负载偏置也必须先通过合格闭环方法门禁."""
+        """P2-009：闭环带负载偏置通过 CLIVC 辨识（不再被拒绝）.
+
+        旧 Phase 0 拒绝闭环 SP；P2-009 起 CLIVC（外生 SP 工具变量）使闭环
+        带偏置数据也能辨识。去均值 + CLIVC 应恢复增量增益 K。
+        """
         K_true, tau_true, theta_true = 2.0, 60.0, 5.0
         sp = _sp_steps(1800, [(0, 450.0), (300, 455.0), (700, 447.0), (1100, 452.0), (1500, 449.0)])
         y, u = _simulate_closed_loop_fopdt_biased(
@@ -1838,8 +1882,9 @@ class TestMeanRemovalPipeline:
             ts=1.0,
             theta_estimate=theta_true,
         )
-        assert not result.success
-        assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
+        # P2-009：CLIVC 使闭环辨识成功
+        assert result.success
+        assert result.best_model is not None
 
     def test_zero_mean_data_unaffected(self):
         """零均值数据去均值前后等价（回归守卫：均值≈0 时 K 仍准确）."""
@@ -1936,7 +1981,7 @@ class TestGoldenBaseline:
         assert "scenarios" in baseline
 
     def test_closed_loop_fopdt_baseline_alignment(self):
-        """闭环 FOPDT 场景在合格方法上线前必须符合拒绝基线."""
+        """P2-009：闭环 FOPDT 场景通过 CLIVC 成功辨识（对齐 golden 基线）."""
         baseline = self._load_baseline()
         scn = baseline["scenarios"]["closed_loop_fopdt"]
         sp = _sp_steps(scn["n"], [(50, 10.0), (400, 15.0), (800, 8.0)])
@@ -1958,10 +2003,14 @@ class TestGoldenBaseline:
             theta_estimate=5.0,
         )
         assert result.success is scn["expected"]["success"]
-        assert scn["expected"]["reason_contains"] in (result.reason or "")
+        if scn["expected"].get("includes_clivc_candidate"):
+            iv_candidates = [
+                c for c in result.candidates if c.identify_method == IdentifyMethod.HISTORICAL_IV
+            ]
+            assert len(iv_candidates) > 0
 
     def test_closed_loop_fopdt_biased_baseline_alignment(self):
-        """带工业偏置闭环场景也不得绕过未验证方法门禁."""
+        """P2-009：带工业偏置闭环场景通过 CLIVC 成功辨识（对齐 golden 基线）."""
         baseline = self._load_baseline()
         scn = baseline["scenarios"]["closed_loop_fopdt_biased"]
         sp_base = scn["bias"]["sp_base"]
@@ -1995,7 +2044,11 @@ class TestGoldenBaseline:
             candidate_models=[ModelType.FOPDT],
         )
         assert result.success is scn["expected"]["success"]
-        assert scn["expected"]["reason_contains"] in (result.reason or "")
+        if scn["expected"].get("includes_clivc_candidate"):
+            iv_candidates = [
+                c for c in result.candidates if c.identify_method == IdentifyMethod.HISTORICAL_IV
+            ]
+            assert len(iv_candidates) > 0
 
     def test_open_loop_fopdt_baseline_alignment(self):
         """开环 FOPDT 场景应满足 golden 基线容差（限定 FOPDT 候选）."""

@@ -3,7 +3,7 @@
   "description": "Phase 2.1 历史数据过程对象辨识算法栈 golden 基线",
   "scenarios": {
     "closed_loop_fopdt": {
-      "description": "闭环 FOPDT 仿真（K=2.0, tau=30, theta=5, kp=2.0, ti=20, noise_std=0.5）",
+      "description": "闭环 FOPDT 仿真（K=2.0, tau=30, theta=5, kp=2.0, ti=20, noise_std=0.5）；P2-009 起 CLIVC 使闭环辨识成功",
       "seed": 42,
       "n": 1200,
       "truth": {"K": 2.0, "tau": 30.0, "theta": 5.0},
@@ -13,8 +13,8 @@
         "theta_absolute_error": 2.0
       },
       "expected": {
-        "success": false,
-        "reason_contains": "CLOSED_LOOP_METHOD_UNVERIFIED"
+        "success": true,
+        "includes_clivc_candidate": true
       }
     },
     "open_loop_fopdt": {
@@ -52,7 +52,7 @@
       }
     },
     "closed_loop_fopdt_biased": {
-      "description": "闭环 FOPDT 带工业偏置、无噪声确定性场景（K=2.0, tau=60, theta=5, 负载 L=330 使 PV≈450/OP≈60；P0-2 去均值验证，对齐评审探针 K=2.000 精确恢复）",
+      "description": "闭环 FOPDT 带工业偏置、无噪声确定性场景（K=2.0, tau=60, theta=5, 负载 L=330 使 PV≈450/OP≈60；P2-009 起 CLIVC 使闭环带偏置辨识成功）",
       "seed": 42,
       "n": 1800,
       "truth": {"K": 2.0, "tau": 60.0, "theta": 5.0},
@@ -63,8 +63,8 @@
         "theta_absolute_error": 2.0
       },
       "expected": {
-        "success": false,
-        "reason_contains": "CLOSED_LOOP_METHOD_UNVERIFIED"
+        "success": true,
+        "includes_clivc_candidate": true
       }
     },
     "insufficient_excitation": {
