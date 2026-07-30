@@ -1293,6 +1293,162 @@ class TestV62P2PhysicalFeasibility:
 
 
 # ---------------------------------------------------------------------------
+# P2-013~016 证据输出（train/val/test 序列 + 数据快照 + reason code）
+# ---------------------------------------------------------------------------
+
+
+class TestV62P2EvidenceOutput:
+    """P2-013~016：留出证据、数据快照、算法版本与 reason code."""
+
+    def test_p2_013_evidence_split_and_sequences(self):
+        """证据含 train/val/test 分区大小与验证集观测/预测/残差序列."""
+        u = _prbs(1500, seed=1300)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1300)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        # 分区大小（1500 点 → 900/300/300）
+        assert ev.n_train + ev.n_val + ev.n_test == 1500
+        assert ev.n_train == 900
+        assert ev.n_val == 300
+        assert ev.n_test == 300
+        # 验证集序列长度匹配
+        assert len(ev.y_val_observed) == ev.n_val
+        assert len(ev.y_val_predicted) == ev.n_val
+        assert len(ev.residuals_val) == ev.n_val
+
+    def test_p2_014_evidence_nrmse_and_metrics(self):
+        """证据含 NRMSE、R²_val、R²_train、残差检验摘要."""
+        u = _prbs(1500, seed=1301)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1301)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        assert 0.0 <= ev.nrmse_val <= 1.0  # 好模型 NRMSE 应较小
+        assert ev.r2_val > 0.8
+        assert ev.r2_train > 0.8
+        assert ev.residual_test_note  # 非空
+
+    def test_p2_016_evidence_data_hash_and_algorithm_version(self):
+        """证据含数据快照哈希与算法版本，可追溯."""
+        u = _prbs(1500, seed=1302)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1302)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        assert len(ev.data_hash) == 16  # SHA256 前 16 位
+        assert ev.algorithm_version  # 非空
+        assert ev.theta_source == "SEARCHED"
+        # 相同输入应产生相同哈希
+        result2 = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result2.best_model is not None
+        assert result2.best_model.evidence is not None
+        assert result2.best_model.evidence.data_hash == ev.data_hash
+
+    def test_p2_016_evidence_delay_search_trace(self):
+        """证据含延迟搜索轨迹（d, bic）供审计."""
+        u = _prbs(1500, seed=1303)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1303)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        assert len(ev.delay_search_trace) > 0
+        # 每项是 (d, bic) 元组
+        for item in ev.delay_search_trace:
+            assert isinstance(item[0], int)
+            assert isinstance(item[1], float)
+
+    def test_p2_016_evidence_reason_codes(self):
+        """证据含 reason_codes 列表（HEURISTIC_2TS / NEGATIVE_GAIN 等）."""
+        # 未给 theta → HEURISTIC_2TS 标记（但搜索后变 SEARCHED，reason_codes 不含）
+        # 给 theta → EXPLICIT，无 HEURISTIC_2TS 标记
+        u = _prbs(1500, seed=1304)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1304)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        ev = result.best_model.evidence
+        assert ev is not None
+        # 搜索成功 → theta_source=SEARCHED，无 HEURISTIC_2TS 标记
+        assert "HEURISTIC_2TS" not in ev.reason_codes
+        # 负增益场景应含 NEGATIVE_GAIN
+        u2 = _prbs(1500, seed=1305)
+        y2 = _simulate_open_loop_fopdt(K=-1.0, tau=20.0, theta=3.0, u=u2, noise_std=0.02, seed=1305)
+        result2 = identify_from_history(
+            op=u2.tolist(),
+            pv=y2.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        if result2.success and result2.best_model and result2.best_model.evidence:
+            assert "NEGATIVE_GAIN" in result2.best_model.evidence.reason_codes
+
+    def test_p2_013_evidence_in_to_dict(self):
+        """to_dict 应含 evidence 摘要（不含原始序列，避免响应膨胀）."""
+        u = _prbs(1500, seed=1306)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1306)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        d = result.to_dict()
+        assert d["evidence"] is not None
+        assert "split" in d["evidence"]
+        assert "dataHash" in d["evidence"]
+        assert "reasonCodes" in d["evidence"]
+        assert "delaySearchTrace" in d["evidence"]
+        # 摘要不含原始序列
+        assert "y_val_observed" not in d["evidence"]
+        assert "residuals_val" not in d["evidence"]
+        # 可 JSON 序列化
+        json.dumps(d, default=str)
+
+
+# ---------------------------------------------------------------------------
 # P0-2 去均值（偏置消除）测试
 # ---------------------------------------------------------------------------
 

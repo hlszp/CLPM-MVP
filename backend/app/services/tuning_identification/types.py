@@ -99,6 +99,51 @@ class SegmentInfo:
 
 
 @dataclass
+class ModelEvidence:
+    """辨识证据（P2-013~016）：留出集分割、自由仿真、残差检验、数据快照.
+
+    无证据的模型不得进入整定（Phase 2 门禁）。
+    to_dict 只输出摘要；原始序列保留在对象上供详细审计。
+    """
+
+    # P2-013：数据分区大小（时间顺序 60/20/20，短数据退化 70/30 时 n_test=0）
+    n_train: int = 0
+    n_val: int = 0
+    n_test: int = 0
+    # P2-013/014：验证集自由仿真指标
+    r2_val: float = 0.0
+    r2_train: float = 0.0
+    nrmse_val: float = 0.0  # 归一化 RMSE = RMSE / range(y_val)
+    # P2-014：残差检验摘要
+    residual_test_note: str = ""
+    # P2-016：元数据与可追溯性
+    algorithm_version: str = ""
+    data_hash: str = ""  # 输入 OP/PV 的 SHA256 摘要
+    theta_source: str = ""
+    delay_search_trace: list[tuple[int, float]] = field(default_factory=list)
+    reason_codes: list[str] = field(default_factory=list)
+    # P2-013：验证集序列（详细审计用，不进 to_dict 默认输出避免响应膨胀）
+    y_val_observed: list[float] | None = None
+    y_val_predicted: list[float] | None = None
+    residuals_val: list[float] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """转 dict（摘要，不含原始序列）."""
+        return {
+            "split": {"train": self.n_train, "val": self.n_val, "test": self.n_test},
+            "r2Val": round(self.r2_val, 4),
+            "r2Train": round(self.r2_train, 4),
+            "nrmseVal": round(self.nrmse_val, 4),
+            "residualTest": self.residual_test_note,
+            "algorithmVersion": self.algorithm_version,
+            "dataHash": self.data_hash,
+            "thetaSource": self.theta_source,
+            "delaySearchTrace": [{"d": d, "bic": b} for d, b in self.delay_search_trace],
+            "reasonCodes": list(self.reason_codes),
+        }
+
+
+@dataclass
 class CandidateModel:
     """候选模型（多阶次并行辨识结果之一）."""
 
@@ -112,6 +157,8 @@ class CandidateModel:
     # P2-006：信息准则（训练集残差方差计算），用于 Occam 削减与证据输出
     aic: float | None = None
     bic: float | None = None
+    # P2-013~016：辨识证据（留出集分割、自由仿真、残差检验、数据快照）
+    evidence: ModelEvidence | None = None
 
 
 @dataclass
@@ -148,6 +195,7 @@ class IdentificationResult:
             "residualTestPassed": self.best_model.residual_test_passed,
             "aic": round(self.best_model.aic, 2) if self.best_model.aic is not None else None,
             "bic": round(self.best_model.bic, 2) if self.best_model.bic is not None else None,
+            "evidence": self.best_model.evidence.to_dict() if self.best_model.evidence else None,
             "candidateModels": [
                 {
                     "modelType": c.params.model_type.value,

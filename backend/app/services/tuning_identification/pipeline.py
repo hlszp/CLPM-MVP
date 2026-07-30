@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 
@@ -36,6 +37,7 @@ from app.services.tuning_identification.types import (
     ConfidenceLevel,
     IdentificationResult,
     IdentifyMethod,
+    ModelEvidence,
     ModelType,
     ThetaSource,
 )
@@ -189,12 +191,17 @@ def identify_from_history(
     n_total = len(y)
     n_train = int(n_total * 0.6)
     n_val = int(n_total * 0.2)
+    n_test = n_total - n_train - n_val
     if n_train < 50 or n_val < 20:
         # 短数据退化为 70/30 train/val
         n_train = int(n_total * 0.7)
         n_val = n_total - n_train
+        n_test = 0
     u_train, y_train = u[:n_train], y[:n_train]
     u_val, y_val = u[n_train : n_train + n_val], y[n_train : n_train + n_val]
+
+    # P2-016：数据快照哈希（输入 OP/PV + ts + 算法版本，可追溯辨识输入）
+    data_hash = _compute_data_hash(u_raw, y_raw, ts)
 
     results: list[CandidateModel] = []
 
@@ -281,7 +288,18 @@ def identify_from_history(
 
             # P2-002：验证集自由仿真 R²（留出集泛化能力，替代训练集方程误差 R²）
             r2_train = max(0.0, min(1.0, res.r_squared))
-            _, r2_val = _free_run_simulation(u_val, y_val, res.a_coeffs, res.b_coeffs, d_model)
+            y_val_pred, r2_val = _free_run_simulation(
+                u_val, y_val, res.a_coeffs, res.b_coeffs, d_model
+            )
+            # P2-013：验证集残差序列（详细审计用）
+            residuals_val_arr = y_val - y_val_pred
+            # P2-014：NRMSE = RMSE / range(y_val)
+            y_val_range = float(np.ptp(y_val))
+            if len(residuals_val_arr):
+                rmse_val = float(np.sqrt(np.mean(residuals_val_arr**2)))
+            else:
+                rmse_val = 0.0
+            nrmse_val = rmse_val / y_val_range if y_val_range > 1e-12 else 0.0
 
             # 残差检验（P1-4：三轨制，在训练集方程误差上做）
             # 旧实现对一切算法用方程误差 e = A·y − B·u 做 Ljung-Box 白性检验；
@@ -335,6 +353,30 @@ def identify_from_history(
             aic_val = compute_aic(res.n_samples, res.residual_var, n_params)
             bic_val = compute_bic(res.n_samples, res.residual_var, n_params)
 
+            # P2-013~016：构建辨识证据
+            reason_codes: list[str] = []
+            if not feasibility.passed:
+                reason_codes.append(feasibility.reason_code)
+            if theta_source == ThetaSource.HEURISTIC_2TS:
+                reason_codes.append("HEURISTIC_2TS")
+            evidence = ModelEvidence(
+                n_train=n_train,
+                n_val=n_val,
+                n_test=n_test,
+                r2_val=round(r2_val, 4),
+                r2_train=round(r2_train, 4),
+                nrmse_val=round(nrmse_val, 4),
+                residual_test_note=test_note,
+                algorithm_version=ALGORITHM_VERSION,
+                data_hash=data_hash,
+                theta_source=theta_source.value,
+                delay_search_trace=delay_search_trace,
+                reason_codes=reason_codes,
+                y_val_observed=[round(float(v), 6) for v in y_val],
+                y_val_predicted=[round(float(v), 6) for v in y_val_pred],
+                residuals_val=[round(float(v), 6) for v in residuals_val_arr],
+            )
+
             candidate = CandidateModel(
                 params=params,
                 fitting_score=round(r2_val * 100, 2),
@@ -349,6 +391,7 @@ def identify_from_history(
                 ),
                 aic=round(aic_val, 2),
                 bic=round(bic_val, 2),
+                evidence=evidence,
             )
             # 选最优候选（可信度优先，其次拟合度）
             if best_candidate is None or _candidate_better(candidate, best_candidate):
@@ -387,6 +430,15 @@ def identify_from_history(
         reason=f"辨识成功（{offset_note}）",
         theta_source=theta_source,
     )
+
+
+def _compute_data_hash(u: np.ndarray, y: np.ndarray, ts: float) -> str:
+    """P2-016：计算输入数据快照哈希（SHA256，前 16 位用于可追溯标识）.
+
+    对 OP/PV 原始值 + 采样周期取哈希，确保辨识结果可追溯到具体输入数据。
+    """
+    buf = u.tobytes() + y.tobytes() + repr(float(ts)).encode()
+    return hashlib.sha256(buf).hexdigest()[:16]
 
 
 def _search_delay(
