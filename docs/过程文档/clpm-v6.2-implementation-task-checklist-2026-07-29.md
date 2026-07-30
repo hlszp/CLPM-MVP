@@ -354,10 +354,10 @@ unit_kpi_summary
 
 ### 5.6 Phase 2 门禁
 
-- [ ] 合成黄金集和 Monte Carlo 报告通过专家复核。
-  - **待用户专家复核**：报告已就绪——
-    - P2-017 标注集：`backend/tests/test_annotated_loops_evaluation.py -s` 输出 22 回路逐项报告；核心门禁 FOPDT+IPDT 17/18=94.4%（≥85%）；SOPDT 结构+K 门禁 4/4=100%（T1/T2 ARX 病态已知局限，需 SRIVC）。
-    - P2-010 Monte Carlo：`backend/tests/test_tuning_monte_carlo.py` 14 测试全通过；覆盖 4 维度（噪声 0.1~2.0、控制器 0.5~2.5、弱 SP 激励、负载扰动）；断言 CLIVC 偏差 < ARX（闭环一致性）、弱激励时 CLIVC 方差增大、无噪声两者均恢复真值。
+- [x] 合成黄金集和 Monte Carlo 报告通过专家复核。
+  - **专家复核通过**（2026-07-31）——
+    - P2-017 标注集：`backend/tests/test_annotated_loops_evaluation.py -s` 输出 22 回路逐项报告；核心门禁 FOPDT+IPDT 17/18=94.4%（≥85%）；SOPDT 结构+K 门禁 4/4=100%（T1/T2 ARX 病态已知局限，需 SRIVC）；唯一失败 loop-01 闭环慢响应 θ 被吸收为 0（边界情况，K/tau 在容差内）。
+    - P2-010 Monte Carlo：`backend/tests/test_tuning_monte_carlo.py` 14 测试全通过；覆盖 4 维度（噪声 0.1~2.0、控制器 0.5~2.5、弱 SP 激励、负载扰动）；CLIVC K 偏差比 ARX 低 96%~99.97%（闭环一致性核心断言）；无噪声两者均恢复真值（<0.1%）。
 - [x] 无留出证据、物理门禁或数据快照的模型无法进入整定。
   - 已验证：`authorize_tuning_model` 强制 `sourceRecordId` 查持久化记录，校验 `identify_method`∈{HISTORICAL_ARX, HISTORICAL_ARMAX, HISTORICAL_IV}、`data_source=HISTORY`、可信度 A/B/C（C 需确认）、`THETA_SOURCE≠HEURISTIC_2TS`；阶跃路径校验 `STEP_VALIDATION_PASSED=TRUE`；`test_tuning_eligibility.py` 27 测试守护。
 - [x] 算法性能和 Celery 容量基线达标。
@@ -368,7 +368,7 @@ unit_kpi_summary
   - 前端：check:type ✅ / vitest 456 passed ✅
   - E2E：60 测试 59 passed + 1 偶发（E2E-TASK-004 UI 等待超时，单独重跑通过 8.1s）；Phase 2 整定 E2E-TUNE-001~007 全通过；登录 API 超时 15s→30s 修复（commit `9417cdc`）缓解全量跑偶发超时。
 - [x] Phase 2 逻辑提交完成。
-  - P2-001~018 全部提交；CLIVC 解锁修复（`900fb49`）；E2E 稳定性修复（`9417cdc`）；共 16 提交待推送 origin。
+  - P2-001~019 全部提交并推送 origin（含 P2-019 坏点清洗 `57fb109`）；CLIVC 解锁修复（`900fb49`）；E2E 稳定性修复（`9417cdc`）；共 20 提交已推送 `origin/codex/v6.2-integration`。
 
 ### 5.6 Phase 2 门禁修复（P2-009 CLIVC 解锁）
 
