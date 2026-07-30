@@ -171,7 +171,9 @@ export async function loginViaApi(
       const resp = await request.post(`${API_BASE_URL}/auth/login`, {
         data: { username, password, rememberMe: false },
         headers: { 'Content-Type': 'application/json' },
-        timeout: 15_000,
+        // 30s 与 loginViaUI 一致：E2E 全量跑时后端因 SignalR 订阅/Celery 任务
+        // 偶发慢响应（P2-018 已记录），15s 在全量压力下不够。
+        timeout: 30_000,
       });
 
       if (resp.status() === 429) {
