@@ -89,9 +89,30 @@ async def test_low_or_missing_confidence_is_blocked(confidence):
 
 
 @pytest.mark.asyncio
-async def test_experimental_iv_is_blocked_even_at_a_confidence():
-    with pytest.raises(BizError, match="IV"):
-        await _authorize(_record(identify_method="HISTORICAL_IV"))
+@pytest.mark.parametrize("confidence", ["A", "B"])
+async def test_clivc_is_released_when_confidence_ok(confidence):
+    """P2-009：CLIVC（HISTORICAL_IV）已升级为生产方法，A/B 可信度下可放行.
+
+    早期 IV 实验性原型 pipeline 不再调用，HISTORICAL_IV 现仅代表 CLIVC，
+    按正常可信度门禁放行（契约 v2.3 §6.1）。
+    """
+    context = await _authorize(
+        _record(identify_method="HISTORICAL_IV", confidence_level=confidence)
+    )
+    assert context.identify_method == "HISTORICAL_IV"
+
+
+@pytest.mark.asyncio
+async def test_clivc_c_requires_explicit_confirmation():
+    """CLIVC 在 C 级可信度下仍需显式风险确认（可信度门禁不因方法放宽）."""
+    with pytest.raises(BizError, match="C"):
+        await _authorize(_record(identify_method="HISTORICAL_IV", confidence_level="C"))
+
+    context = await _authorize(
+        _record(identify_method="HISTORICAL_IV", confidence_level="C"),
+        risk_confirmed=True,
+    )
+    assert context.risk_confirmed is True
 
 
 @pytest.mark.asyncio

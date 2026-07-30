@@ -341,10 +341,22 @@ unit_kpi_summary
 ### 5.5 Phase 2 门禁
 
 - [ ] 合成黄金集和 Monte Carlo 报告通过专家复核。
-- [ ] 无留出证据、物理门禁或数据快照的模型无法进入整定。
+- [x] 无留出证据、物理门禁或数据快照的模型无法进入整定。
+  - 已验证：`authorize_tuning_model` 强制 `sourceRecordId` 查持久化记录，校验 `identify_method`∈{HISTORICAL_ARX, HISTORICAL_ARMAX, HISTORICAL_IV}、`data_source=HISTORY`、可信度 A/B/C（C 需确认）、`THETA_SOURCE≠HEURISTIC_2TS`；阶跃路径校验 `STEP_VALIDATION_PASSED=TRUE`；`test_tuning_eligibility.py` 27 测试守护。
 - [ ] 算法性能和 Celery 容量基线达标。
 - [ ] 后端、前端和 E2E 全量门禁通过。
 - [ ] Phase 2 逻辑提交完成。
+
+### 5.6 Phase 2 门禁修复（P2-009 CLIVC 解锁）
+
+> **堵塞性问题**：Phase 2 门禁验收发现 P0-021 的"闭环 IV 降级为 EXPERIMENTAL"门禁（`tuning.py` 拒绝 `HISTORICAL_IV`）仍在生效，导致 P2-009 实现的可证明闭环一致 CLIVC 候选无法进入整定推荐链——与 Phase 2 闭环辨识核心交付冲突。
+
+- [x] 移除 `tuning.py` 的 `HISTORICAL_IV` 实验性拒绝块（`ERR_TUNING_EXPERIMENTAL_METHOD`）。
+- [x] `HISTORICAL_IV` 加入历史辨识允许方法集合（`{HISTORICAL_ARX, HISTORICAL_ARMAX, HISTORICAL_IV}`）。
+- [x] `test_tuning_eligibility.py`：`test_experimental_iv_is_blocked` → `test_clivc_is_released_when_confidence_ok`（A/B 放行）+ `test_clivc_c_requires_explicit_confirmation`（C 需确认）。
+- [x] 契约 v2.3 §6.1 与 §10 同步：CLIVC 生产可用，按可信度门禁放行。
+- [x] phase0 契约基线文档同步。
+- [x] 回归测试：`test_tuning_eligibility.py` 27 passed + tuning 全套 305 passed。
 
 ## 6. Phase 3：模型生命周期与整改闭环
 
@@ -449,3 +461,4 @@ pnpm exec playwright test
 | 2026-07-31 | Phase 2 | P2-013/014/016 辨识证据 | `ModelEvidence`：留出集分割/自由仿真 R²/NRMSE/残差检验/算法版本/数据哈希/延迟搜索轨迹/reason codes；提交 `63a90c64` |
 | 2026-07-31 | Phase 2 | P2-015 参数不确定度 | `_compute_parameter_uncertainty`：ARX/CLIVC 解析协方差 + 200 次 MC 传播 K/tau/theta 95% CI；`ParameterUncertainty` + 单测；提交 `2049039d` |
 | 2026-07-31 | Phase 2 | P2-017 匿名人工标注集 | `annotated_loops_dataset.json`（22 回路）+ `test_annotated_loops_evaluation.py` 自动评估；核心门禁 FOPDT+IPDT 17/18=94.4%；SOPDT 结构+K 门禁（T1/T2 ARX 病态已知局限，需 SRIVC）；提交 `b787c45` |
+| 2026-07-31 | Phase 2 | 门禁修复：CLIVC 解锁 | P0-021 的 `HISTORICAL_IV` 实验性拒绝与 P2-009 CLIVC 生产方法冲突；移除拒绝块 + 加入允许方法集 + 测试改为放行断言 + 契约 v2.3 §6.1/§10 + phase0 基线同步；eligibility 27 passed + tuning 305 passed |

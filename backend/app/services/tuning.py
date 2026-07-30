@@ -224,12 +224,11 @@ async def authorize_tuning_model(
         )
 
     identify_method = str(record.identify_method or "")
-    if identify_method == "HISTORICAL_IV":
-        raise BizError(
-            code="ERR_TUNING_EXPERIMENTAL_METHOD",
-            message="HISTORICAL_IV 仍属实验性方法，不得进入生产推荐链",
-            status_code=422,
-        )
+    # P2-009：CLIVC（可证明闭环一致 IV）已升级为生产方法
+    # （IV_CAPABILITY_STATUS="CLIVC_PRODUCTION_READY"），复用 HISTORICAL_IV 枚举。
+    # 早期 identify_iv/identify_iv4 实验性原型 pipeline 不再调用，故 HISTORICAL_IV
+    # 现仅代表 CLIVC，按正常可信度门禁（A/B 放行、C 需确认、D/E/INCONCLUSIVE 拒绝）放行。
+    # 详见契约 v2.3 §6.1。
 
     if model_source == "STEP_EXPERIMENT":
         if not (
@@ -249,7 +248,7 @@ async def authorize_tuning_model(
                 message="阶跃辨识记录必须声明 STEP_EXPERIMENT 来源",
                 status_code=400,
             )
-        if identify_method not in {"HISTORICAL_ARX", "HISTORICAL_ARMAX"}:
+        if identify_method not in {"HISTORICAL_ARX", "HISTORICAL_ARMAX", "HISTORICAL_IV"}:
             raise BizError(
                 code="ERR_TUNING_SOURCE_UNVERIFIED",
                 message="历史辨识记录缺少可放行的服务端算法凭据",

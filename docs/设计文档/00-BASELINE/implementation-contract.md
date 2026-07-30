@@ -188,11 +188,11 @@ P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/�
 | 版本化记录 C | 允许 | 仅显式人工风险确认后允许 |
 | D/E/INCONCLUSIVE/空 | 允许解释原因 | 禁止 |
 | `HEURISTIC_2TS` | 允许，明确标为 2Ts 启发值 | 禁止 |
-| 实验性 IV（`EXPERIMENTAL`） | 只供对比研究 | 禁止发布和推荐 |
+| CLIVC（可证明闭环一致 IV） | 允许 | 受可信度门禁约束（A/B 放行、C 需确认、D/E/INCONCLUSIVE 拒绝） |
 | 受控阶跃实验 | 允许 | 仅服务端阶跃门禁通过后允许 |
 | 人工模型 | 明确标为人工输入 | 仅显式风险确认后允许 |
 
-闭环 IV 当前不满足一致性前提（工具变量与回归量相关且与误差独立），标记为 `EXPERIMENTAL`，不作为版本化 CURRENT 或自动推荐依据；合格闭环 IV/OE/PEM 属 Phase 2。
+P2-009 已实现 CLIVC（`identify_clivc`/`identify_clivc4`，外生 SP 作工具变量，满足 `E[Z·ε]=0` 闭环一致性），`IV_CAPABILITY_STATUS="CLIVC_PRODUCTION_READY"`，复用 `HISTORICAL_IV` 枚举进入生产候选集，按正常可信度门禁放行。早期 `identify_iv`/`identify_iv4` 实验性原型保留为对照，pipeline 不调用。Phase 0 的"闭环 IV 降级为 EXPERIMENTAL"门禁已随 P2-009 解除。
 
 ### 6.2 安全边界静态门禁 [v2.3 Phase 0 新增]
 
@@ -401,7 +401,7 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 |---|---|---|---|
 | 整定状态机 | `DRAFT/RUNNING/COMPLETED/ROLLED_BACK` | 固化 `DRAFT→RUNNING→IDENTIFIED→SIMULATED→COMPLETED` + `INCONCLUSIVE`/`ROLLED_BACK`；旧值只读兼容 | 契约基线 §2、`schemas/tuning.py` |
 | 模型来源门禁 | 未声明 | `ModelSource`/`ThetaSource`/`DataSource` + A–E 放行规则，服务端 `authorize_tuning_model` 复核 | §6.1、`services/tuning.py` |
-| 闭环 IV | 宣称闭环无偏 | 降级为 `EXPERIMENTAL`，不作为发布/推荐依据 | `tuning_identification/iv.py` |
+| 闭环 IV | Phase 0 降级为 `EXPERIMENTAL` | P2-009 升级为 CLIVC 生产方法（`CLIVC_PRODUCTION_READY`），按可信度门禁放行 | `tuning_identification/iv.py`、`services/tuning.py` |
 | ORM 表清单 | 31 张 | 37 张（补 6 张） | §10、`backend/app/models/` |
 | 生产 bootstrap | DDL 21 张，stamp head 跳过缺表 | DDL 收敛至 37 张，专用临时 PG 实测 | `db/postgresql/01_schema.sql`、ADR |
 | 安全边界 | 未声明静态门禁 | 无 DCS 参数下写端点，静态扫描守护 | §6.2、`test_security_p2.py` |
