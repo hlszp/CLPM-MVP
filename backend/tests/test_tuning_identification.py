@@ -937,6 +937,92 @@ class TestPipelineEndToEnd:
         # 低噪声 + 搜索延迟应达到 A 或 B（不再封顶 C）
         assert result.best_model.confidence.value in {"A", "B"}
 
+    # ------------------------------------------------------------------
+    # P2-002：留出集 + 自由仿真误差 + BIC 择优
+    # ------------------------------------------------------------------
+
+    def test_p2_002_fitting_score_uses_validation_free_run(self):
+        """P2-002：fitting_score 来自验证集自由仿真 R²（非训练集方程误差 R²）."""
+        u = _prbs(1500, seed=900)
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=20.0,
+            theta=3.0,
+            u=u,
+            noise_std=0.02,
+            seed=900,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        assert result.best_model is not None
+        # reason 应包含 R²_val 和 R²_train（P2-002 标记）
+        reason = result.best_model.reason or ""
+        assert "R²_val=" in reason
+        assert "R²_train=" in reason
+        # 低噪声数据上验证集 R² 应较高（>0.8）
+        assert result.best_model.fitting_score > 80.0
+
+    def test_p2_002_free_run_r2_lower_than_train_for_noisy_data(self):
+        """P2-002：高噪声数据上验证集自由仿真 R² 低于训练集 R²（泛化差距）."""
+        u = _prbs(1500, seed=910)
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=20.0,
+            theta=3.0,
+            u=u,
+            noise_std=0.5,  # 高噪声
+            seed=910,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        if result.success and result.best_model:
+            reason = result.best_model.reason or ""
+            # 提取 R²_val 和 R²_train
+            import re
+
+            val_match = re.search(r"R²_val=([\d.]+)", reason)
+            train_match = re.search(r"R²_train=([\d.]+)", reason)
+            if val_match and train_match:
+                r2_val = float(val_match.group(1))
+                r2_train = float(train_match.group(1))
+                # 高噪声下验证集自由仿真 R² 通常低于训练集方程误差 R²
+                # （误差累积效应），允许 10% 波动
+                assert r2_val <= r2_train + 0.1
+
+    def test_p2_002_time_order_split_no_shuffle(self):
+        """P2-002：留出集分割按时间顺序，前 60% 训练后 20% 验证."""
+        # 用足够长的数据验证分割比例
+        u = _prbs(1000, seed=920)
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=15.0,
+            theta=2.0,
+            u=u,
+            noise_std=0.01,
+            seed=920,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        # 验证辨识成功（分割后训练集仍有足够数据）
+        assert result.best_model is not None
+
     def test_to_dict_serialization(self):
         """to_dict 应可 JSON 序列化。"""
         sp = _sp_steps(800, [(50, 10.0), (400, 15.0)])

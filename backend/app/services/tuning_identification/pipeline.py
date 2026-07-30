@@ -175,6 +175,18 @@ def identify_from_history(
     # 激励检测用 d_explicit（粗略估计，搜索在参数化阶段做）
     d = d_explicit
 
+    # P2-002：时间顺序留出集分割（不随机打乱，保留时序自相关）
+    # 60% train / 20% val / 20% test；数据不足时退化为 70/30 train/val（无 test）
+    n_total = len(y)
+    n_train = int(n_total * 0.6)
+    n_val = int(n_total * 0.2)
+    if n_train < 50 or n_val < 20:
+        # 短数据退化为 70/30 train/val
+        n_train = int(n_total * 0.7)
+        n_val = n_total - n_train
+    u_train, y_train = u[:n_train], y[:n_train]
+    u_val, y_val = u[n_train : n_train + n_val], y[n_train : n_train + n_val]
+
     results: list[CandidateModel] = []
 
     # ── 层 1：激励检测 ──
@@ -212,7 +224,10 @@ def identify_from_history(
         nb = 1
 
         # P2-001：延迟候选搜索 — 对 d=0..d_max 跑 ARX，用 BIC 选最优 d
-        best_d, delay_search_trace = _search_delay(u, y, na=na, nb=nb, d_max=d_search_max)
+        # P2-002：搜索用训练集（不泄漏留出集信息）
+        best_d, delay_search_trace = _search_delay(
+            u_train, y_train, na=na, nb=nb, d_max=d_search_max
+        )
         d_model = best_d
         logger.debug(
             "P2-001 %s 延迟搜索: d_max=%d → best_d=%d, trace=%s",
@@ -226,10 +241,10 @@ def identify_from_history(
         for method, algo_key in identification_runs:
             try:
                 if algo_key == "arx":
-                    res = identify_arx(u, y, d_model, na=na, nb=nb)
+                    res = identify_arx(u_train, y_train, d_model, na=na, nb=nb)
                     method_used = method
                 elif algo_key == "armax":
-                    res = identify_armax(u, y, d_model, na=na, nb=nb, nc=1)
+                    res = identify_armax(u_train, y_train, d_model, na=na, nb=nb, nc=1)
                     method_used = method
                 else:
                     continue
@@ -251,7 +266,11 @@ def identify_from_history(
                 logger.debug("%s 离散→连续转换失败：%s", method, conv_err)
                 continue
 
-            # 残差检验（P1-4：三轨制）
+            # P2-002：验证集自由仿真 R²（留出集泛化能力，替代训练集方程误差 R²）
+            r2_train = max(0.0, min(1.0, res.r_squared))
+            _, r2_val = _free_run_simulation(u_val, y_val, res.a_coeffs, res.b_coeffs, d_model)
+
+            # 残差检验（P1-4：三轨制，在训练集方程误差上做）
             # 旧实现对一切算法用方程误差 e = A·y − B·u 做 Ljung-Box 白性检验；
             # 闭环下 e = A·ν（ARMAX 中 e = C·ε）天然有色，好模型也过不了，
             # 可信度永封顶 C，排名退化为 R² 使闭环有偏的 ARX 反而胜出。
@@ -262,46 +281,48 @@ def identify_from_history(
             #     ε = (A/C)·y − (B/C)·u = e/C（C 反滤波方程误差）。
             #   轨 3（ARX/IV，无噪声模型，C=1）：白性检验不适用（e 恒有色），
             #     改残差-输入独立性检验——模型充分 ⇔ 残差不再含输入动态。
-            r2 = max(0.0, min(1.0, res.r_squared))
-            max_lag_na = max(na, nb + d)
-            rows = len(y) - max_lag_na
+            max_lag_na = max(na, nb + d_model)
+            rows = len(y_train) - max_lag_na
             residuals = np.zeros(max(rows, 0))
             if rows > 0:
                 for i in range(rows):
                     idx = max_lag_na + i
-                    val = y[idx]
+                    val = y_train[idx]
                     for j in range(na):
-                        val += res.a_coeffs[j] * y[idx - 1 - j]
+                        val += res.a_coeffs[j] * y_train[idx - 1 - j]
                     for j in range(nb):
-                        val -= res.b_coeffs[j] * u[idx - d - j]
+                        val -= res.b_coeffs[j] * u_train[idx - d_model - j]
                     residuals[i] = val
             c_coeffs = getattr(res, "c_coeffs", None)
-            if r2 >= _R2_RESIDUAL_NEGLIGIBLE:
+            if r2_train >= _R2_RESIDUAL_NEGLIGIBLE:
                 residual_white = True
-                test_note = f"residual_negligible(R²={r2:.4f})"
+                test_note = f"residual_negligible(R²_train={r2_train:.4f})"
             elif rows > 0 and c_coeffs:
                 eps = _equation_error_to_prediction_error(residuals, c_coeffs)
                 _, lb_p = ljung_box_test(eps, max_lag=min(10, len(eps) // 3))
                 residual_white = lb_p > 0.05
                 test_note = f"LB_p={lb_p:.3f}"
             else:
-                exceed_ratio = _residual_input_exceed_ratio(residuals, u)
+                exceed_ratio = _residual_input_exceed_ratio(residuals, u_train)
                 residual_white = exceed_ratio <= _XCORR_EXCEED_TOLERANCE
                 test_note = f"xcorr_exceed={exceed_ratio:.3f}"
 
-            # 可信度评估
-            confidence = _assess_confidence(exc, r2, residual_white, exc_score)
+            # 可信度评估（P2-002：用验证集自由仿真 R²）
+            confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
 
             candidate = CandidateModel(
                 params=params,
-                fitting_score=round(r2 * 100, 2),
+                fitting_score=round(r2_val * 100, 2),
                 confidence=confidence,
                 identify_method=method_used,
                 residual_test_passed=residual_white,
                 excitation_score=exc_score,
-                reason=f"R²={r2:.3f}, {test_note}, iters={getattr(res, 'iterations', 1)}",
+                reason=(
+                    f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f},"
+                    f" {test_note}, iters={getattr(res, 'iterations', 1)}"
+                ),
             )
             # 选最优候选（可信度优先，其次拟合度）
             if best_candidate is None or _candidate_better(candidate, best_candidate):
@@ -382,6 +403,61 @@ def _search_delay(
             search_trace.append((d, float("inf")))
             continue
     return best_d, search_trace
+
+
+def _free_run_simulation(
+    u: np.ndarray,
+    y: np.ndarray,
+    a_coeffs: list[float],
+    b_coeffs: list[float],
+    d: int,
+) -> tuple[np.ndarray, float]:
+    """自由仿真（P2-002）— 用预测输出反馈计算留出集 R².
+
+    自由仿真：ŷ(t) = -Σ a_j·ŷ(t-1-j) + Σ b_j·u(t-d-j)
+    初始条件用真实 y 值（前 max_lag 个点），避免初始瞬态污染。
+
+    与训练集方程误差 R² 的区别：
+    - 方程误差用真实 y(t-1) 反馈，只检验回归拟合，偏乐观
+    - 自由仿真用预测 ŷ(t-1) 反馈，误差会累积，检验泛化能力
+
+    Args:
+        u: 留出集输入
+        y: 留出集输出
+        a_coeffs: ARX A 多项式系数 [a1, a2, ...]
+        b_coeffs: ARX B 多项式系数 [b1, b2, ...]
+        d: 延迟（采样数）
+
+    Returns:
+        (y_pred, r2_free) — r2_free 为自由仿真 R²（[0, 1]）
+    """
+    na = len(a_coeffs)
+    nb = len(b_coeffs)
+    n = len(y)
+    max_lag = max(na, nb + d)
+    if n < max_lag + 5:
+        return np.zeros(n), 0.0
+
+    y_pred = np.zeros(n)
+    # 初始条件：前 max_lag 个点用真实值
+    y_pred[:max_lag] = y[:max_lag]
+
+    for i in range(max_lag, n):
+        val = 0.0
+        for j in range(na):
+            val -= a_coeffs[j] * y_pred[i - 1 - j]
+        for j in range(nb):
+            idx_u = i - d - j
+            if idx_u >= 0:
+                val += b_coeffs[j] * u[idx_u]
+        y_pred[i] = val
+
+    residuals = y[max_lag:] - y_pred[max_lag:]
+    ss_res = float(np.sum(residuals**2))
+    y_val = y[max_lag:]
+    ss_tot = float(np.sum((y_val - np.mean(y_val)) ** 2))
+    r2_free = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
+    return y_pred, max(0.0, min(1.0, r2_free))
 
 
 def _residual_input_exceed_ratio(
