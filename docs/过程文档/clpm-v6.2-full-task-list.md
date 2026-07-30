@@ -146,14 +146,14 @@
 | P1-022 | 配置归属业务模块，高级参数仅管理员可见 | ✅ |
 | P1-023 | 覆盖 loading/empty/error/partial/success/权限状态 | ✅ |
 
-### 1.5 Phase 1 门禁 ⬜
+### 1.5 Phase 1 门禁 ✅
 
 | 编号 | 开发内容 | 状态 |
 |---|---|---|
 | — | 数据同轴与片段集成测试通过 | ✅ |
 | — | 后端全量门禁通过 | ✅ |
 | — | 前端 typecheck + vitest + E2E 通过 | ✅ |
-| — | phase1 → integration `--no-ff` 合并 | ⬜ |
+| — | phase1 → integration `--no-ff` 合并 | ✅ |
 
 ---
 
