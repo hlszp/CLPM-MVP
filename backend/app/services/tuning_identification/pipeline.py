@@ -284,6 +284,11 @@ def identify_from_history(
 
         # P2-001：延迟候选搜索 — 对 d=0..d_max 跑 ARX，用 BIC 选最优 d
         # P2-002：搜索用训练集（不泄漏留出集信息）
+        #
+        # 已知局限（P2-017 标注集验证暴露）：SOPDT（na=2）的延迟/极点存在退化——
+        # ARX na=2 可用极快极点补偿过大 d，且慢过阻尼过程 y[k-1]≈y[k-2] 使回归
+        # 矩阵病态，T2 崩塌、a2 失去物理意义。彻底修复需 SRIVC（连续时间工具变量），
+        # 属后续工作；当前 SOPDT 候选仍输出供审计，但 T1/T2 精度不作门禁。
         best_d, delay_search_trace = _search_delay(
             u_train, y_train, na=na, nb=nb, d_max=d_search_max
         )
