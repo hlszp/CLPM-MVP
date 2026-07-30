@@ -41,11 +41,13 @@ class ThetaSource(StrEnum):
     """纯滞后参数来源.
 
     EXPLICIT 表示调用方提供并可追溯；HEURISTIC_2TS 表示仅使用 2 个采样周期的
-    保守启发值，不能获得高于 C 的可信度。
+    保守启发值，不能获得高于 C 的可信度；SEARCHED 表示通过 BIC 候选搜索
+    （d=0..d_max）数据驱动确定，可信度不封顶。
     """
 
     EXPLICIT = "EXPLICIT"
     HEURISTIC_2TS = "HEURISTIC_2TS"
+    SEARCHED = "SEARCHED"
 
 
 @dataclass

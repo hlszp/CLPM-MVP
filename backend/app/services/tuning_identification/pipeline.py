@@ -159,7 +159,21 @@ def identify_from_history(
     # Phase 0：缺省 theta 仅作为显式标注的 2Ts 启发值；不能冒充已估计参数。
     # 使用 is not None 保留调用方明确给出的 theta=0。
     theta_seconds = theta_estimate if theta_estimate is not None else 2 * ts
-    d = max(0, round(theta_seconds / ts))
+    d_explicit = max(0, round(theta_seconds / ts))
+
+    # P2-001：延迟候选搜索范围
+    # 用户给 theta 时在 d_explicit ±3 邻域精搜；未给时全域搜索 0..d_max。
+    # d_max 上限 60 覆盖 P2-003 的 θ=60 Ts 场景，同时不超过数据长度 1/4。
+    n_u = len(u)
+    if theta_estimate is not None:
+        d_search_max = min(d_explicit + 3, max(0, n_u // 4))
+        theta_source = ThetaSource.EXPLICIT
+    else:
+        d_search_max = min(max(0, n_u // 4), 60)
+        theta_source = ThetaSource.SEARCHED
+
+    # 激励检测用 d_explicit（粗略估计，搜索在参数化阶段做）
+    d = d_explicit
 
     results: list[CandidateModel] = []
 
@@ -197,14 +211,25 @@ def identify_from_history(
         na = 1 if model_type == ModelType.FOPDT else 2
         nb = 1
 
+        # P2-001：延迟候选搜索 — 对 d=0..d_max 跑 ARX，用 BIC 选最优 d
+        best_d, delay_search_trace = _search_delay(u, y, na=na, nb=nb, d_max=d_search_max)
+        d_model = best_d
+        logger.debug(
+            "P2-001 %s 延迟搜索: d_max=%d → best_d=%d, trace=%s",
+            model_type,
+            d_search_max,
+            d_model,
+            delay_search_trace[:5],
+        )
+
         best_candidate: CandidateModel | None = None
         for method, algo_key in identification_runs:
             try:
                 if algo_key == "arx":
-                    res = identify_arx(u, y, d, na=na, nb=nb)
+                    res = identify_arx(u, y, d_model, na=na, nb=nb)
                     method_used = method
                 elif algo_key == "armax":
-                    res = identify_armax(u, y, d, na=na, nb=nb, nc=1)
+                    res = identify_armax(u, y, d_model, na=na, nb=nb, nc=1)
                     method_used = method
                 else:
                     continue
@@ -315,6 +340,48 @@ def identify_from_history(
         reason=f"辨识成功（{offset_note}）",
         theta_source=theta_source,
     )
+
+
+def _search_delay(
+    u: np.ndarray,
+    y: np.ndarray,
+    na: int,
+    nb: int,
+    d_max: int,
+) -> tuple[int, list[tuple[int, float]]]:
+    """延迟候选搜索（P2-001）— 对 d=0..d_max 跑 ARX，用 BIC 选最优 d.
+
+    BIC = n·ln(σ²) + k·ln(n)，其中 σ² 为残差方差，n 为样本数，k=na+nb。
+    BIC 越小越好：惩罚模型复杂度，避免过大的 d 过拟合。
+
+    Args:
+        u: 输入信号（已去均值）
+        y: 输出信号（已去均值）
+        na: A 多项式阶次
+        nb: B 多项式阶次
+        d_max: 最大延迟候选（采样数）
+
+    Returns:
+        (best_d, search_trace) — search_trace = [(d, bic), ...] 供证据输出
+    """
+    best_d = 0
+    best_bic = float("inf")
+    search_trace: list[tuple[int, float]] = []
+    for d in range(d_max + 1):
+        try:
+            res = identify_arx(u, y, d, na=na, nb=nb)
+            n = res.n_samples
+            k = na + nb
+            bic = n * math.log(max(res.residual_var, 1e-12)) + k * math.log(n)
+            bic_rounded = round(bic, 2)
+            search_trace.append((d, bic_rounded))
+            if bic < best_bic:
+                best_bic = bic
+                best_d = d
+        except Exception:
+            search_trace.append((d, float("inf")))
+            continue
+    return best_d, search_trace
 
 
 def _residual_input_exceed_ratio(

@@ -777,8 +777,8 @@ class TestPipelineEndToEnd:
         assert result.best_model.params.theta == 0.0
         assert result.theta_source.value == "EXPLICIT"
 
-    def test_missing_theta_is_marked_heuristic_and_capped_at_c(self):
-        """缺省 theta 仅是 2Ts 启发值，必须标记且可信度最高 C."""
+    def test_missing_theta_uses_delay_search(self):
+        """P2-001：缺省 theta 时通过 BIC 候选搜索确定延迟，标记为 SEARCHED，可信度不封顶."""
         u = _prbs(1000, seed=413)
         y = _simulate_open_loop_fopdt(
             K=1.2,
@@ -796,10 +796,12 @@ class TestPipelineEndToEnd:
             candidate_models=[ModelType.FOPDT],
         )
         assert result.success
-        assert result.theta_source.value == "HEURISTIC_2TS"
+        # P2-001：未给 theta 时通过 BIC 搜索确定延迟，标记为 SEARCHED（非 HEURISTIC_2TS）
+        assert result.theta_source.value == "SEARCHED"
         assert result.best_model is not None
-        assert result.best_model.confidence.value in {"C", "D", "E", "INCONCLUSIVE"}
-        assert result.to_dict()["thetaSource"] == "HEURISTIC_2TS"
+        # SEARCHED 不封顶可信度（BIC 搜索是数据驱动的可靠延迟估计）
+        assert result.best_model.confidence.value in {"A", "B", "C", "D", "E"}
+        assert result.to_dict()["thetaSource"] == "SEARCHED"
 
     def test_history_pipeline_rejects_ipdt_candidate(self):
         """历史 pipeline 不得把 IPDT 静默按 SOPDT 返回."""
@@ -849,6 +851,91 @@ class TestPipelineEndToEnd:
             for candidate in result.candidates
         )
         assert "CLOSED_LOOP_METHOD_UNVERIFIED" in (result.reason or "")
+
+    # ------------------------------------------------------------------
+    # P2-001/P2-003：延迟候选搜索 — 覆盖 θ=0/2/5/20/60 Ts，不传入真值
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("theta_true", [0, 2, 5, 20, 60])
+    def test_p2_001_delay_search_recovers_theta(self, theta_true: float):
+        """P2-001/P2-003：不传 theta_estimate，BIC 搜索应恢复接近真值的延迟.
+
+        覆盖 θ=0/2/5/20/60 Ts（P2-003 要求），测试不得传入真值。
+        搜索到的 d 对应 theta ≈ d·ts，允许 ±2 Ts 容差（BIC 分辨率限制）。
+        """
+        ts = 1.0
+        u = _prbs(1500, seed=500 + int(theta_true))
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=25.0,
+            theta=theta_true,
+            u=u,
+            noise_std=0.02,
+            seed=600 + int(theta_true),
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=ts,
+            theta_estimate=None,  # 不传入真值
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success, f"θ={theta_true} 辨识失败: {result.reason}"
+        assert result.theta_source.value == "SEARCHED"
+        assert result.best_model is not None
+        # 搜索到的 theta 应在真值 ±2 Ts 范围内
+        theta_estimated = result.best_model.params.theta
+        assert abs(theta_estimated - theta_true) <= 2.0 * ts, (
+            f"θ={theta_true}: 搜索到 theta={theta_estimated}，超出 ±2Ts 容差"
+        )
+
+    def test_p2_001_explicit_theta_searches_neighborhood(self):
+        """P2-001：传入 theta_estimate 时在 d_explicit±3 邻域精搜，标记 EXPLICIT."""
+        u = _prbs(1000, seed=700)
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=20.0,
+            theta=5.0,
+            u=u,
+            noise_std=0.02,
+            seed=700,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=5.0,  # 传入真值
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        assert result.theta_source.value == "EXPLICIT"
+        assert result.best_model is not None
+        # 精搜可能在邻域内微调，但应在真值附近
+        assert abs(result.best_model.params.theta - 5.0) <= 3.0
+
+    def test_p2_001_search_does_not_cap_confidence(self):
+        """P2-001：SEARCHED 延迟不再封顶 C（BIC 搜索是可靠延迟估计）."""
+        u = _prbs(2000, seed=800)
+        y = _simulate_open_loop_fopdt(
+            K=1.0,
+            tau=15.0,
+            theta=3.0,
+            u=u,
+            noise_std=0.005,  # 极低噪声，应达到 A/B 级
+            seed=800,
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success
+        assert result.theta_source.value == "SEARCHED"
+        assert result.best_model is not None
+        # 低噪声 + 搜索延迟应达到 A 或 B（不再封顶 C）
+        assert result.best_model.confidence.value in {"A", "B"}
 
     def test_to_dict_serialization(self):
         """to_dict 应可 JSON 序列化。"""
