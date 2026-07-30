@@ -84,6 +84,36 @@ def _simulate_open_loop_fopdt(
     return y
 
 
+def _simulate_open_loop_sopdt(
+    K: float,
+    T1: float,
+    T2: float,
+    theta: float,
+    u: np.ndarray,
+    ts: float = 1.0,
+    noise_std: float = 0.0,
+    seed: int = 42,
+) -> np.ndarray:
+    """开环 SOPDT 仿真：G(s) = K*exp(-theta*s)/((T1*s+1)(T2*s+1)).
+
+    级联两个一阶环节离散化：x1 = G1·u（增益 1），y = G2·x1（增益 K）。
+    用于 P2-006 Occam 削减测试——真 SOPDT 过程应让 SOPDT 候选显著更优。
+    """
+    rng = np.random.default_rng(seed)
+    n = len(u)
+    a1 = math.exp(-ts / T1)
+    a2 = math.exp(-ts / T2)
+    d = max(0, round(theta / ts))
+    x1 = np.zeros(n)
+    y = np.zeros(n)
+    for k in range(d, n):
+        x1[k] = a1 * x1[k - 1] + (1 - a1) * u[k - d]
+        y[k] = a2 * y[k - 1] + K * (1 - a2) * x1[k]
+    if noise_std > 0:
+        y += rng.normal(0, noise_std, n)
+    return y
+
+
 def _simulate_closed_loop_fopdt(
     sp: np.ndarray,
     K: float,
@@ -1056,6 +1086,114 @@ class TestPipelineEndToEnd:
         d = result.to_dict()
         assert d["success"] is False
         assert d["reason"] is not None
+
+
+# ---------------------------------------------------------------------------
+# P2-006 AIC/BIC/CV 接入主 pipeline + Occam 削减
+# ---------------------------------------------------------------------------
+
+
+class TestV62P2OrderSelectionPipeline:
+    """P2-006：AIC/BIC 信息准则接入主 pipeline 与 SOPDT 升级 Occam 门禁."""
+
+    def test_p2_006_aic_bic_present_in_candidate_and_dict(self):
+        """AIC/BIC 应写入 CandidateModel 与 to_dict 证据输出."""
+        u = _prbs(1500, seed=1100)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1100)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        # CandidateModel 字段
+        assert result.best_model.aic is not None
+        assert result.best_model.bic is not None
+        # to_dict 证据输出
+        d = result.to_dict()
+        assert d["aic"] is not None
+        assert d["bic"] is not None
+        for c in d["candidateModels"]:
+            assert c["aic"] is not None
+            assert c["bic"] is not None
+
+    def test_p2_006_aic_bic_in_reason(self):
+        """reason 字符串应包含 AIC/BIC 标记，便于审计追溯."""
+        u = _prbs(1500, seed=1101)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1101)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT],
+        )
+        assert result.success and result.best_model is not None
+        reason = result.best_model.reason or ""
+        assert "AIC=" in reason
+        assert "BIC=" in reason
+        # R² 标记仍保留（P2-002 不回归）
+        assert "R²_val=" in reason
+
+    def test_p2_006_occam_prefers_fopdt_for_true_fopdt_process(self):
+        """Occam 削减：真 FOPDT 过程下 SOPDT 未显著更优时应选 FOPDT.
+
+        真 FOPDT 过程用 SOPDT（多一个参数）拟合 R² 略升但 BIC 受惩罚，
+        且 R²_val 相对提升 < 5% → Occam 保留 FOPDT。
+        """
+        u = _prbs(1500, seed=1102)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1102)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT, ModelType.SOPDT],
+        )
+        assert result.success and result.best_model is not None
+        # 真 FOPDT 过程：SOPDT 不应凭微弱优势胜出
+        assert result.best_model.params.model_type == ModelType.FOPDT, (
+            f"Occam 削减失效：真 FOPDT 过程却选了 {result.best_model.params.model_type}"
+        )
+
+    def test_p2_006_occam_prefers_sopdt_when_significantly_better(self):
+        """Occam 削减：真 SOPDT 过程（T1/T2 差异大）SOPDT 应显著更优并胜出.
+
+        T1=3s/T2=30s 差异 10 倍，FOPDT 单时间常数无法拟合双时间常数动态，
+        R²_val 相对提升 > 5% 且 BIC 下降 → SOPDT 胜出。
+        """
+        u = _prbs(2000, seed=1103)
+        y = _simulate_open_loop_sopdt(
+            K=1.0, T1=3.0, T2=30.0, theta=2.0, u=u, noise_std=0.02, seed=1103
+        )
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.FOPDT, ModelType.SOPDT],
+        )
+        assert result.success and result.best_model is not None
+        # 真 SOPDT 过程显著差异 → SOPDT 应胜出
+        assert result.best_model.params.model_type == ModelType.SOPDT, (
+            f"Occam 削减过严：真 SOPDT 过程却选了 {result.best_model.params.model_type}"
+        )
+
+    def test_p2_006_occam_no_fopdt_candidate_keeps_sopdt(self):
+        """仅 SOPDT 候选时 Occam 不触发，直接返回 SOPDT."""
+        u = _prbs(1500, seed=1104)
+        y = _simulate_open_loop_fopdt(K=1.0, tau=20.0, theta=3.0, u=u, noise_std=0.05, seed=1104)
+        result = identify_from_history(
+            op=u.tolist(),
+            pv=y.tolist(),
+            ts=1.0,
+            theta_estimate=None,
+            candidate_models=[ModelType.SOPDT],
+        )
+        if result.success and result.best_model:
+            assert result.best_model.params.model_type == ModelType.SOPDT
 
 
 # ---------------------------------------------------------------------------

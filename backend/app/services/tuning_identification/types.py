@@ -103,12 +103,15 @@ class CandidateModel:
     """候选模型（多阶次并行辨识结果之一）."""
 
     params: ModelParams
-    fitting_score: float  # R² × 100
+    fitting_score: float  # R² × 100（P2-002 起为验证集自由仿真 R²）
     confidence: ConfidenceLevel
     identify_method: IdentifyMethod
     residual_test_passed: bool
     excitation_score: float
     reason: str | None = None
+    # P2-006：信息准则（训练集残差方差计算），用于 Occam 削减与证据输出
+    aic: float | None = None
+    bic: float | None = None
 
 
 @dataclass
@@ -143,12 +146,16 @@ class IdentificationResult:
             "identifyMethod": self.best_model.identify_method.value,
             "excitationScore": round(self.best_model.excitation_score, 2),
             "residualTestPassed": self.best_model.residual_test_passed,
+            "aic": round(self.best_model.aic, 2) if self.best_model.aic is not None else None,
+            "bic": round(self.best_model.bic, 2) if self.best_model.bic is not None else None,
             "candidateModels": [
                 {
                     "modelType": c.params.model_type.value,
                     "params": c.params.to_dict(),
                     "fittingScore": round(c.fitting_score, 2),
                     "confidence": c.confidence.value,
+                    "aic": round(c.aic, 2) if c.aic is not None else None,
+                    "bic": round(c.bic, 2) if c.bic is not None else None,
                 }
                 for c in self.candidates
             ],

@@ -24,6 +24,8 @@ from app.services.tuning_identification.excitation import (
 )
 from app.services.tuning_identification.nonparametric import correlation_analysis
 from app.services.tuning_identification.order_selection import (
+    compute_aic,
+    compute_bic,
     ljung_box_test,
 )
 from app.services.tuning_identification.types import (
@@ -50,6 +52,10 @@ _XCORR_MAX_LAG = 20
 _XCORR_EXCEED_TOLERANCE = 0.10
 # 残差可忽略阈值（P1-4 轨 1）：R² 高于此值时残差量级远低于信号，直接判通过
 _R2_RESIDUAL_NEGLIGIBLE = 0.999
+
+# P2-006 Occam 削减：SOPDT 升级门禁
+# SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 > 5% 且 BIC 下降（更复杂模型须显著更优）
+_OCCAM_R2_RELATIVE_GAIN = 0.05
 
 
 def identify_from_history(
@@ -312,6 +318,12 @@ def identify_from_history(
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 confidence = _cap_confidence(confidence, ConfidenceLevel.C)
 
+            # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
+            # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
+            n_params = na + nb + len(c_coeffs) if c_coeffs else na + nb
+            aic_val = compute_aic(res.n_samples, res.residual_var, n_params)
+            bic_val = compute_bic(res.n_samples, res.residual_var, n_params)
+
             candidate = CandidateModel(
                 params=params,
                 fitting_score=round(r2_val * 100, 2),
@@ -321,8 +333,11 @@ def identify_from_history(
                 excitation_score=exc_score,
                 reason=(
                     f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f},"
-                    f" {test_note}, iters={getattr(res, 'iterations', 1)}"
+                    f" {test_note}, AIC={aic_val:.1f}, BIC={bic_val:.1f},"
+                    f" iters={getattr(res, 'iterations', 1)}"
                 ),
+                aic=round(aic_val, 2),
+                bic=round(bic_val, 2),
             )
             # 选最优候选（可信度优先，其次拟合度）
             if best_candidate is None or _candidate_better(candidate, best_candidate):
@@ -338,8 +353,8 @@ def identify_from_history(
             theta_source=theta_source,
         )
 
-    # 选最优模型
-    best = max(results, key=_candidate_sort_key)
+    # P2-006：Occam 削减 — SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 > 5% 且 BIC 下降
+    best = _select_with_occam(results)
 
     # 整体可信度检查
     if best.confidence == ConfidenceLevel.INCONCLUSIVE:
@@ -547,6 +562,43 @@ def _assess_confidence(
 def _candidate_better(a: CandidateModel, b: CandidateModel) -> bool:
     """a 是否优于 b（可信度优先，其次拟合度）."""
     return _candidate_sort_key(a) > _candidate_sort_key(b)
+
+
+def _select_with_occam(results: list[CandidateModel]) -> CandidateModel:
+    """P2-006 Occam 削减：在 sort_key 选优基础上对 SOPDT 升级施加门禁.
+
+    规则（对齐 order_selection.py 文档）：SOPDT 优于 FOPDT 当且仅当
+    R²_val 相对提升 > 5% 且 BIC 下降。否则保留更简单的 FOPDT。
+
+    仅当 sort_key 选出的最优为 SOPDT 且存在 FOPDT 候选时触发；
+    其余情况（FOPDT 最优 / 无 FOPDT 候选 / BIC 缺失）直接返回 sort_key 最优。
+
+    Args:
+        results: 各 model_type 的最优候选列表
+
+    Returns:
+        Occam 削减后的最优候选
+    """
+    best = max(results, key=_candidate_sort_key)
+    if best.params.model_type != ModelType.SOPDT:
+        return best
+    fopdt_candidates = [c for c in results if c.params.model_type == ModelType.FOPDT]
+    if not fopdt_candidates:
+        return best
+    fopdt = max(fopdt_candidates, key=_candidate_sort_key)
+    # SOPDT 须显著更优：R²_val 相对提升 > 5% 且 BIC 下降
+    r2_gain = (best.fitting_score - fopdt.fitting_score) / max(fopdt.fitting_score, 1.0)
+    bic_lower = best.bic is not None and fopdt.bic is not None and best.bic < fopdt.bic
+    if r2_gain > _OCCAM_R2_RELATIVE_GAIN and bic_lower:
+        return best
+    # Occam：SOPDT 未显著优于 FOPDT，保留简单模型
+    logger.debug(
+        "P2-006 Occam 削减：SOPDT R²_gain=%.1f%% BIC=%s vs FOPDT BIC=%s → 选 FOPDT",
+        r2_gain * 100,
+        best.bic,
+        fopdt.bic,
+    )
+    return fopdt
 
 
 def _candidate_sort_key(c: CandidateModel) -> tuple:
