@@ -246,4 +246,30 @@ export const test = base.extend<AuthFixture>({
   },
 });
 
+// P2-018：测试失败时自动输出 PG 连接数快照，辅助区分代码回归 vs 环境问题
+test.afterEach(async ({ request }, testInfo) => {
+  if (testInfo.status === 'passed' || testInfo.status === testInfo.expectedStatus) {
+    return;
+  }
+  try {
+    const resp = await request.get(`${API_BASE_URL}/health/db-connections`, {
+      timeout: 3_000,
+    });
+    if (resp.ok()) {
+      const data = await resp.json();
+      const snapshot = {
+        testTitle: testInfo.title,
+        testStatus: testInfo.status,
+        timestamp: new Date().toISOString(),
+        ...data,
+      };
+      const snapshotPath = testInfo.outputPath('connection-snapshot.json');
+      const fs = await import('node:fs');
+      fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+    }
+  } catch {
+    // 静默失败：连接快照是辅助诊断信息，不干扰测试结果
+  }
+});
+
 export { expect } from '@playwright/test';
