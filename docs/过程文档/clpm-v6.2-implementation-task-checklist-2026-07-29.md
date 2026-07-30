@@ -338,7 +338,21 @@ unit_kpi_summary
   - metrics 端点：增加 `pg_active_connections` Gauge（`application_name` label），替代 NullPool 下恒 0 的 `db_pool_connections`。
   - 测试：端点单元测试（mock `pg_stat_activity`）+ 脚本冒烟测试。提交 `c0af4db5`。
 
-### 5.5 Phase 2 门禁
+### 5.5 坏点清洗（P2-019 补充修复）
+
+> **缺陷根因**：整定辨识路径 `_fetch_preprocessed_signals` 直接取 DataBlock signals（含 NaN），未复用 KPI 路径的 `apply_mask` 有效性过滤；`identify_from_history` 入口 `np.isfinite` 硬门禁导致任何坏点（传感器故障/通信中断/采样缺失）直接拒绝辨识。DataPlanner 预处理对坏点是"标记 validity 但 NaN 保持原样"（`preprocessing/pipeline.py:273`），KPI 走 `apply_mask` 取有效索引不受影响，整定路径漏了这一步。
+
+- [x] `V62-P2-019` 历史辨识入口坏点清洗（小缺口插值 + 大缺口取最长段）。
+  - `identify_from_history` 入口替换 `np.isfinite` 硬拒绝为清洗逻辑：
+    - 小缺口（连续 NaN < `max_interp_gap`，默认 5 点）线性插值填补，保留时序连续性；
+    - 大缺口（连续 NaN ≥ `max_interp_gap`）按缺口切分段，取最长连续有效段；
+    - SP 同步清洗（与 OP/PV 同步对齐）；
+    - 清洗后点数 < 50 → 拒绝（reason="清洗后有效数据不足"）；
+    - 记录清洗统计（插值点数/剔除点数/valid_rate）到 `ModelEvidence.cleaning_stats`。
+  - 测试：`tests/test_tuning_nan_cleaning.py` 14 测试（无坏点/小缺口插值/大缺口取段/混合缺口/SP 同步/全 NaN/端点 NaN/OP 单独 NaN/集成辨识/清洗后不足拒绝/SP NaN 清洗），全通过。
+  - 门禁：ruff ✅ / pytest 3624 passed ✅ / alembic 无漂移 ✅。
+
+### 5.6 Phase 2 门禁
 
 - [ ] 合成黄金集和 Monte Carlo 报告通过专家复核。
   - **待用户专家复核**：报告已就绪——

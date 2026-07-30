@@ -69,6 +69,141 @@ _R2_RESIDUAL_NEGLIGIBLE = 0.999
 _OCCAM_R2_RELATIVE_GAIN = 0.05
 # P2-005：Welch 相干辅助门禁阈值（低于此值提示弱线性/低信噪比，封顶可信度 C）
 _LOW_COHERENCE_THRESHOLD = 0.3
+# P2-019：坏点清洗参数
+_MAX_INTERP_GAP = 5  # 连续 NaN < 此值时线性插值；≥ 此值按大缺口取最长段
+
+
+def _find_contiguous_segments(valid: np.ndarray) -> list[tuple[int, int]]:
+    """在布尔数组中找连续 True 段的 [(start, end), ...]（闭区间）."""
+    idx = np.where(valid)[0]
+    if len(idx) == 0:
+        return []
+    segments: list[tuple[int, int]] = []
+    start = prev = int(idx[0])
+    for i in idx[1:]:
+        if i == prev + 1:
+            prev = i
+        else:
+            segments.append((start, prev))
+            start = prev = i
+    segments.append((start, prev))
+    return segments
+
+
+def _clean_nan_segments(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    max_interp_gap: int = _MAX_INTERP_GAP,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, dict | None]:
+    """P2-019 坏点清洗：小缺口线性插值，大缺口取最长连续有效段.
+
+    OP/PV 任一为 NaN/Inf 视为坏点（辨识需配对时序）；SP 同步处理。
+
+    策略：
+    1. 小缺口（连续坏点 < max_interp_gap 且两端有有效值）：线性插值填补；
+    2. 大缺口（连续坏点 ≥ max_interp_gap 或在端点）：按大缺口切分，取最长连续有效段；
+    3. 清洗后点数 < 1 时返回 None（由调用方再判 < 50）。
+
+    Args:
+        u, y: OP/PV 时序（已被 np.array 转换，可被原地修改）
+        sp: SP 时序（可选，同步处理）
+        max_interp_gap: 可插值的最大连续坏点数
+
+    Returns:
+        (u_clean, y_clean, sp_clean, stats)
+        stats: {original_points, interpolated_points, dropped_points,
+                valid_points, valid_rate, n_large_gaps}
+        若原始数据无坏点，stats 的 interpolated/dropped 均为 0。
+        sp_clean 为 None 当且仅当输入 sp 为 None。
+    """
+    n = len(u)
+    bad = ~np.isfinite(u) | ~np.isfinite(y)
+    n_bad = int(bad.sum())
+
+    # 无坏点：直接返回（sp 也原样返回）
+    if n_bad == 0:
+        stats = {
+            "original_points": n,
+            "interpolated_points": 0,
+            "dropped_points": 0,
+            "valid_points": n,
+            "valid_rate": 1.0,
+            "n_large_gaps": 0,
+        }
+        return u, y, sp, stats
+
+    # SP 的坏点也纳入（SP 有 NaN 时也需清洗，但 OP/PV 是主信号）
+    if sp is not None:
+        bad = bad | ~np.isfinite(sp)
+
+    # 找连续坏段（_find_contiguous_segments 对 bad 掩码找连续 True 段）
+    gap_segments = _find_contiguous_segments(bad)
+
+    interpolated = 0
+    large_gaps: list[tuple[int, int]] = []
+
+    for g_start, g_end in gap_segments:
+        gap_len = g_end - g_start + 1
+        # 小缺口且两端有有效值才插值（端点处的坏段无法插值）
+        if gap_len < max_interp_gap and g_start > 0 and g_end < n - 1:
+            left_u, right_u = float(u[g_start - 1]), float(u[g_end + 1])
+            left_y, right_y = float(y[g_start - 1]), float(y[g_end + 1])
+            for i in range(g_start, g_end + 1):
+                frac = (i - g_start + 1) / (gap_len + 1)
+                u[i] = left_u + frac * (right_u - left_u)
+                y[i] = left_y + frac * (right_y - left_y)
+            if sp is not None:
+                left_s = float(sp[g_start - 1])
+                right_s = float(sp[g_end + 1])
+                for i in range(g_start, g_end + 1):
+                    frac = (i - g_start + 1) / (gap_len + 1)
+                    sp[i] = left_s + frac * (right_s - left_s)
+            interpolated += gap_len
+        else:
+            large_gaps.append((g_start, g_end))
+
+    # 大缺口：取最长连续有效段
+    dropped = 0
+    if large_gaps:
+        valid = np.isfinite(u) & np.isfinite(y)
+        if sp is not None:
+            valid = valid & np.isfinite(sp)
+        segments = _find_contiguous_segments(valid)
+        if not segments:
+            # 全坏：返回空
+            stats = {
+                "original_points": n,
+                "interpolated_points": interpolated,
+                "dropped_points": n,
+                "valid_points": 0,
+                "valid_rate": 0.0,
+                "n_large_gaps": len(large_gaps),
+            }
+            return u[:0], y[:0], (sp[:0] if sp is not None else None), stats
+        best_start, best_end = max(segments, key=lambda s: s[1] - s[0])
+        u = u[best_start : best_end + 1]
+        y = y[best_start : best_end + 1]
+        if sp is not None:
+            sp = sp[best_start : best_end + 1]
+        dropped = n - len(u)
+
+    stats = {
+        "original_points": n,
+        "interpolated_points": interpolated,
+        "dropped_points": dropped,
+        "valid_points": len(u),
+        "valid_rate": len(u) / n if n > 0 else 0.0,
+        "n_large_gaps": len(large_gaps),
+    }
+    return u, y, sp, stats
+
+
+def _evidence_cleaning_stats(cleaning_stats: dict) -> dict | None:
+    """仅在有清洗时返回统计（无坏点时 None，避免证据冗余）."""
+    if cleaning_stats["interpolated_points"] > 0 or cleaning_stats["dropped_points"] > 0:
+        return cleaning_stats
+    return None
 
 
 def identify_from_history(
@@ -113,12 +248,6 @@ def identify_from_history(
             reason=f"数据不足（{len(u_raw)} 点，需 ≥ 50）",
             theta_source=theta_source,
         )
-    if not np.all(np.isfinite(u_raw)) or not np.all(np.isfinite(y_raw)):
-        return IdentificationResult(
-            success=False,
-            reason="OP/PV 包含 NaN 或无穷值",
-            theta_source=theta_source,
-        )
 
     candidates = candidate_models or [ModelType.FOPDT, ModelType.SOPDT]
     if not math.isfinite(ts) or ts <= 0:
@@ -145,12 +274,24 @@ def identify_from_history(
                 reason=f"SP 与 OP/PV 长度不匹配（{len(sp_raw)} vs {len(u_raw)}）",
                 theta_source=theta_source,
             )
-        if not np.all(np.isfinite(sp_raw)):
-            return IdentificationResult(
-                success=False,
-                reason="SP 包含 NaN 或无穷值",
-                theta_source=theta_source,
-            )
+
+    # P2-019：坏点清洗 — 小缺口线性插值，大缺口取最长连续有效段。
+    # 替代旧 np.isfinite 硬拒绝（任何坏点就放弃辨识）；工业数据传感器故障/通信
+    # 中断/采样缺失常见，硬拒绝导致辨识完全不可用。清洗后继续辨识，证据记录统计。
+    u_raw, y_raw, sp_raw, cleaning_stats = _clean_nan_segments(u_raw, y_raw, sp_raw)
+    if cleaning_stats["valid_points"] < 50:
+        return IdentificationResult(
+            success=False,
+            reason=(
+                f"清洗后有效数据不足（{cleaning_stats['valid_points']} 点，需 ≥ 50；"
+                f"原始 {cleaning_stats['original_points']} 点，"
+                f"插值 {cleaning_stats['interpolated_points']} 点，"
+                f"剔除 {cleaning_stats['dropped_points']} 点）"
+            ),
+            theta_source=theta_source,
+        )
+
+    if sp_raw is not None:
         sp_range = float(np.ptp(sp_raw))
         change_threshold = max(1e-9, 0.01 * sp_range)
         significant_sp_changes = int(np.sum(np.abs(np.diff(sp_raw)) > change_threshold))
@@ -274,6 +415,7 @@ def identify_from_history(
                 n_val=n_val,
                 n_test=n_test,
                 data_hash=data_hash,
+                cleaning_stats=cleaning_stats,
             )
             if ipdt_candidate is not None:
                 results.append(ipdt_candidate)
@@ -459,6 +601,7 @@ def identify_from_history(
                     model_type=model_type,
                     ts=ts,
                 ),
+                cleaning_stats=_evidence_cleaning_stats(cleaning_stats),
             )
 
             candidate = CandidateModel(
@@ -870,6 +1013,7 @@ def _identify_ipdt_candidate(
     n_val: int,
     n_test: int,
     data_hash: str,
+    cleaning_stats: dict,
 ) -> CandidateModel | None:
     """P2-008：IPDT 历史辨识 G(s) = K·exp(-theta·s)/s.
 
@@ -977,6 +1121,7 @@ def _identify_ipdt_candidate(
         y_val_observed=[round(float(v), 6) for v in y_val],
         y_val_predicted=[round(float(v), 6) for v in y_val_pred],
         residuals_val=[round(float(v), 6) for v in residuals_val_arr],
+        cleaning_stats=_evidence_cleaning_stats(cleaning_stats),
     )
 
     return CandidateModel(

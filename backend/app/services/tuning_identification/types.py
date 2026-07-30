@@ -156,6 +156,8 @@ class ModelEvidence:
     residuals_val: list[float] | None = None
     # P2-015：参数不确定度摘要（95% CI，仅 ARX/CLIVC 有解析协方差）
     parameter_uncertainty: ParameterUncertainty | None = None
+    # P2-019：坏点清洗统计（None 表示无清洗/原始数据无坏点）
+    cleaning_stats: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -178,6 +180,7 @@ class ModelEvidence:
                 if self.parameter_uncertainty is not None
                 else None
             ),
+            "cleaningStats": self.cleaning_stats,
         }
 
 
