@@ -264,7 +264,13 @@ unit_kpi_summary
   - `algorithm.vue`：动态算法参数区域同样用 `Collapse` + `canEditAdvancedParams` 门禁。
   - `workbench.vue`：复用 `useClpmRoles().canAccessTuning` 替代内联 `userStore.roles.some(...)`，移除 `useUserStore` 导入。
   - 测试 mock 同步补充 `useClpmRoles`（默认 ADMIN）+ `Collapse`/`CollapsePanel` stub；check:type 通过、vitest 434 passed。
-- [ ] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
+- [x] `V62-P1-023` 覆盖 loading、empty、error、partial、success 和权限状态。
+  - 新建 `components/clpm/state-overlay.vue`：统一状态覆盖组件（loading/empty/error/success 四态），partial 由页面 Alert 处理；props 含 `status`/`emptyDescription`/`errorMessage`/`errorDetail`/`loadingTip`/`retryText`/`retryable`，error 态带重试按钮 emit `retry`。
+  - `model.vue`：STEP_ONLY/异步提交/异步轮询 FAILED 三条 catch 路径设置 `errorState`，模板用 `ClpmStateOverlay` 渲染 error（带重试）+ empty（无结果时）；清理重复的旧文字空状态块。
+  - `algorithm.vue`：`tunePidApi` catch 设置 `errorState`（原已设但模板未渲染 → 补全），旧文字空状态替换为 `ClpmStateOverlay`。
+  - `simulation.vue`：双 PID/多 PID 对比两条 catch 路径设置 `errorState`，仿真图区用 `ClpmStateOverlay` 渲染 error（带重试）+ empty + success（透传 EchartsUI）；reset/toggle 清理 errorState。
+  - `workbench.vue`：`Promise.allSettled` 结果统计 `failedCount`，单项失败不阻断其余计数，失败时 `message.warning` 提示用户刷新。
+  - 新建 `__tests__/state-overlay.test.ts`（7 测试：loading/empty/error/retryable=false/success/retry emit/默认 props）；`tuning-model.test.ts` +5 测试（empty/error×3/retry）；`tuning-algorithm-source.test.ts` +4 测试（empty/error/retry/success）；新建 `tuning-simulation.test.ts`（6 测试：empty/error 双 PID/error 多 PID/retry/success/reset）；check:type 通过、vitest 456 passed（+22）。
 
 ### 4.5 Phase 1 门禁
 
@@ -399,3 +405,4 @@ pnpm exec playwright test
 | 2026-07-29 | Phase 1 | 排雷：`pnpm run format` 破坏测试标题 | `internal/lint-configs/oxlint-config` 启用 `vitest/prefer-lowercase-title:error`，`vsh lint --format` 会把 `describe`/`it` 标题首字母强制小写（`ADMIN`→`aDMIN`、`EXPERT`→`eXPERT`）。对策：不跑 blanket `pnpm run format`，改用 `check:type`+`vitest run` 作真实门禁；新文件按文件单独格式化。已还原被污染的 7 个测试文件 |
 | 2026-07-30 | Phase 1 | P1-021 统一 Loop 上下文头 | 新建 `ClpmLoopContextHeader`（editable/只读双模式）；store 加 `currentLoopTimeRange`+持久化；`flow.vue` 步骤0可编辑/1-2只读；`model.vue` 移除内联回路/时间窗选择器，改读 store；提交 `1f0e031`；check:type 通过、vitest 125 passed |
 | 2026-07-30 | Phase 1 | P1-022 高级参数权限控制 | 新建 `composables/use-clpm-roles.ts`（`canEditAdvancedParams`=ADMIN/EXPERT）；`model.vue` 候选阶次+θ 包裹 Collapse+权限门禁；`algorithm.vue` 动态算法参数同构；`workbench.vue` 复用 `canAccessTuning` 替代内联；测试 mock 补充 `useClpmRoles`+Collapse stub；check:type 通过、vitest 434 passed |
+| 2026-07-30 | Phase 1 | P1-023 状态覆盖统一 | 新建 `ClpmStateOverlay` 统一状态覆盖组件（loading/empty/error/success）；`model.vue` 三条 catch 路径 + error/empty 覆盖 + 清理重复空状态；`algorithm.vue` 补全 errorState 模板渲染 + 替换旧空状态；`simulation.vue` 双/多 PID catch + error/empty/success 覆盖；`workbench.vue` allSettled 失败计数 + warning 提示；22 新增测试（state-overlay 7 + model +5 + algorithm +4 + simulation 6）；check:type 通过、vitest 456 passed |
