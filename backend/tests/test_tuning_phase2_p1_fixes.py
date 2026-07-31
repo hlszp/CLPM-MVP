@@ -154,6 +154,9 @@ async def _run_do_identify(identify_strategy: str) -> tuple[dict, MagicMock, Mag
     db_record = MagicMock()
     mock_session_local, _ = _make_db_mock(db_record)
 
+    # V62-P3-005：辨识成功后创建 process_model_version CANDIDATE
+    mock_version = MagicMock(id="version-p3-005")
+
     with (
         patch("app.core.db.AsyncSessionLocal", mock_session_local),
         patch("app.services.tuning_progress.init_progress", new=AsyncMock()),
@@ -166,6 +169,10 @@ async def _run_do_identify(identify_strategy: str) -> tuple[dict, MagicMock, Mag
             "app.services.tuning.identify_model",
             new=AsyncMock(return_value=dict(_STEP_RESULT)),
         ) as mock_step,
+        patch(
+            "app.tasks.tuning.create_candidate_version",
+            new=AsyncMock(return_value=mock_version),
+        ),
     ):
         result = await _do_identify(
             task_id="task-p16",
@@ -197,7 +204,8 @@ class TestAutoStrategyFallback:
         assert db_record.status == "IDENTIFIED"
         assert db_record.data_source == "fallback_step"
         assert db_record.model_type == "FOPDT"
-        assert db_record.model_params == {"K": 1.5, "tau": 25.0, "theta": 3.0}
+        # V62-P3-005：model_params 不再写入 tuning_record，改为引用 process_model_version
+        assert db_record.process_model_version_id == "version-p3-005"
         assert db_record.identify_method == "STEP_TWO_POINT"
         assert "AUTO 兜底" in db_record.confidence_reason
 
@@ -344,6 +352,7 @@ class TestAutoStrategyFallback:
 
         db_record = MagicMock()
         mock_session_local, _ = _make_db_mock(db_record)
+        mock_version = MagicMock(id="version-biz-err")
 
         with (
             patch("app.core.db.AsyncSessionLocal", mock_session_local),
@@ -363,6 +372,10 @@ class TestAutoStrategyFallback:
                 "app.services.tuning.identify_model",
                 new=AsyncMock(return_value=dict(_STEP_RESULT)),
             ) as mock_step,
+            patch(
+                "app.tasks.tuning.create_candidate_version",
+                new=AsyncMock(return_value=mock_version),
+            ),
         ):
             result = await _do_identify(
                 task_id="task-p16-bizerr",
@@ -388,6 +401,7 @@ class TestAutoStrategyFallback:
 
         db_record = MagicMock()
         mock_session_local, _ = _make_db_mock(db_record)
+        mock_version = MagicMock(id="version-success")
 
         with (
             patch("app.core.db.AsyncSessionLocal", mock_session_local),
@@ -401,6 +415,10 @@ class TestAutoStrategyFallback:
                 "app.services.tuning.identify_model",
                 new=AsyncMock(return_value=dict(_STEP_RESULT)),
             ) as mock_step,
+            patch(
+                "app.tasks.tuning.create_candidate_version",
+                new=AsyncMock(return_value=mock_version),
+            ),
         ):
             result = await _do_identify(
                 task_id="task-p16-success",

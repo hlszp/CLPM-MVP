@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BizError
 from app.models.loop import LoopLedger
 from app.models.tuning import TuningRecord
+from app.services.process_model_migration import get_effective_model_params
 from app.services.tuning_algorithms import (
     TUNING_ALGORITHM_VERSION,
     TUNING_METHODS_INFO,
@@ -199,7 +200,8 @@ async def authorize_tuning_model(
         )
 
     persisted_model_type = str(record.model_type)
-    persisted_model_params = record.model_params
+    # V62-P3-005：读路径切换——优先从 process_model_version 读取 model_params
+    persisted_model_params = await get_effective_model_params(db, record)
     if (
         requested_model_type != persisted_model_type
         or not isinstance(persisted_model_params, dict)
@@ -1475,7 +1477,11 @@ async def get_tuning_task_detail(db: AsyncSession, task_id: str) -> dict[str, An
             message="整定任务不存在",
             status_code=404,
         )
-    return _record_to_dict(row[0], row[1], include_detail=True)
+    # V62-P3-005：详情页优先展示 process_model_version 的 model_params
+    effective_params = await get_effective_model_params(db, row[0])
+    return _record_to_dict(
+        row[0], row[1], include_detail=True, model_params_override=effective_params
+    )
 
 
 async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
@@ -1548,14 +1554,24 @@ def _record_to_dict(
     record: TuningRecord,
     tag_name: str | None = None,
     include_detail: bool = False,
+    *,
+    model_params_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """TuningRecord → dict（camelCase）。"""
+    """TuningRecord → dict（camelCase）。
+
+    Args:
+        model_params_override: P3-005 读路径切换——调用方预加载的有效 model_params
+            （优先来自 process_model_version）。为 None 时回退到 record.model_params。
+    """
+    effective_params = (
+        model_params_override if model_params_override is not None else record.model_params
+    )
     data: dict[str, Any] = {
         "id": str(record.id),
         "loopId": str(record.loop_id),
         "tagName": tag_name,
         "modelType": record.model_type,
-        "modelParams": record.model_params,
+        "modelParams": effective_params,
         "algorithm": record.algorithm,
         "recommendedPid": record.recommended_pid,
         "fittingScore": float(record.fitting_score) if record.fitting_score else None,
@@ -1571,6 +1587,10 @@ def _record_to_dict(
         "residualTestPassed": record.residual_test_passed,
         "taskId": record.task_id,
         "completedAt": record.completed_at.isoformat() if record.completed_at else None,
+        # V62-P3-005：模型版本引用（新记录非空，遗留记录为 NULL）
+        "processModelVersionId": (
+            str(record.process_model_version_id) if record.process_model_version_id else None
+        ),
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result

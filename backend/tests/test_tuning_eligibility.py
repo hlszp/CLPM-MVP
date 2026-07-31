@@ -35,6 +35,8 @@ def _record(
         model_params=model_params or dict(_MODEL_PARAMS),
         status="IDENTIFIED",
         task_id="server-task-a",
+        # V62-P3-005：遗留记录无版本引用，读路径回退到 model_params
+        process_model_version_id=None,
     )
 
 

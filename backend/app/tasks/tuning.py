@@ -29,7 +29,39 @@ from app.tasks.celery_app import celery_app
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.process_model_version import create_candidate_version
+
 logger = logging.getLogger(__name__)
+
+
+def _build_version_metrics(result: dict[str, Any]) -> dict[str, Any] | None:
+    """从辨识结果提取验证指标快照（process_model_version.metrics）."""
+    metrics: dict[str, Any] = {}
+    for key in (
+        "fittingScore",
+        "excitationScore",
+        "r2Train",
+        "r2Val",
+        "nrmseVal",
+        "aic",
+        "bic",
+    ):
+        val = result.get(key)
+        if val is not None:
+            metrics[key] = val
+    return metrics or None
+
+
+def _build_version_residual_test(result: dict[str, Any]) -> dict[str, Any] | None:
+    """从辨识结果提取残差检验快照（process_model_version.residual_test）."""
+    passed = result.get("residualTestPassed")
+    if passed is None:
+        return None
+    snapshot: dict[str, Any] = {"passed": bool(passed)}
+    detail = result.get("residualTestDetail")
+    if detail:
+        snapshot["detail"] = detail
+    return snapshot
 
 
 class AsyncTask(Task):
@@ -215,15 +247,41 @@ async def _do_identify(
                 params = result.get("params") or best.get("params") or {}
                 model_type = result.get("modelType") or best.get("modelType") or "FOPDT"
 
-                db_record.model_type = model_type
-                db_record.model_params = params
-                db_record.fitting_score = result.get("fittingScore")
-                db_record.identify_method = result.get("identifyMethod")
-                db_record.confidence_level = result.get("confidenceLevel")
-                db_record.confidence_reason = _with_theta_source_token(
+                # V62-P3-005：停止旧参数新写——model_params 写入 process_model_version
+                # tuning_record 仅保留 model_type（NOT NULL，查询便利）+ FK 引用；
+                # model_params 字段对新记录保持 NULL，仅遗留记录保留只读快照。
+                confidence_reason = _with_theta_source_token(
                     result.get("confidenceReason"),
                     result.get("thetaSource"),
                 )
+                version = await create_candidate_version(
+                    db,
+                    loop_id=loop_id,
+                    model_type=model_type,
+                    model_params=dict(params),
+                    identify_method=result.get("identifyMethod"),
+                    algorithm_version=result.get("algorithmVersion"),
+                    theta_source=result.get("thetaSource"),
+                    sampling_period=result.get("samplingPeriod"),
+                    data_window_start=_parse_iso_naive(start_time),
+                    data_window_end=_parse_iso_naive(end_time),
+                    data_hash=result.get("dataHash"),
+                    condition_summary=result.get("conditionSummary"),
+                    metrics=_build_version_metrics(result),
+                    residual_test=_build_version_residual_test(result),
+                    uncertainty=result.get("uncertainty"),
+                    physical_feasibility=result.get("physicalFeasibility"),
+                    confidence_level=result.get("confidenceLevel"),
+                    confidence_reason=confidence_reason,
+                    created_by=created_by,
+                )
+                db_record.model_type = model_type
+                # P3-005：不再写 db_record.model_params = params（停止旧参数新写）
+                db_record.process_model_version_id = str(version.id)
+                db_record.fitting_score = result.get("fittingScore")
+                db_record.identify_method = result.get("identifyMethod")
+                db_record.confidence_level = result.get("confidenceLevel")
+                db_record.confidence_reason = confidence_reason
                 db_record.excitation_score = result.get("excitationScore")
                 db_record.residual_test_passed = result.get("residualTestPassed")
                 if result.get("dataSource") == "fallback_step":

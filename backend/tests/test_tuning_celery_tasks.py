@@ -73,6 +73,10 @@ class TestDoIdentify:
             },
         }
 
+        # V62-P3-005：辨识成功后创建 process_model_version CANDIDATE
+        mock_version = MagicMock()
+        mock_version.id = "version-001"
+
         with (
             patch("app.core.db.AsyncSessionLocal", factory),
             patch(
@@ -81,6 +85,10 @@ class TestDoIdentify:
             ),
             patch("app.services.tuning_progress.init_progress", AsyncMock()),
             patch("app.services.tuning_progress.update_progress", AsyncMock()),
+            patch(
+                "app.tasks.tuning.create_candidate_version",
+                AsyncMock(return_value=mock_version),
+            ),
         ):
             result = await _do_identify(
                 task_id="task-success-001",
@@ -102,6 +110,8 @@ class TestDoIdentify:
         assert record.identify_method == "HISTORICAL_IV"
         assert "theta_source=HEURISTIC_2TS" in record.confidence_reason
         assert record.completed_at is not None
+        # V62-P3-005：model_params 不再写入 tuning_record，改为引用 process_model_version
+        assert record.process_model_version_id == "version-001"
         # commit 被调用（创建 + 更新）
         assert session.commit.await_count >= 2
 
