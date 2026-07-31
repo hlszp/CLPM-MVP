@@ -15,7 +15,8 @@
 --   v1.5 2026-06-24: plant_node 加 monitor_tag_id/monitor_trigger_value 字段（SVC-10 位号触发监控）
 --   v1.6 2026-07-28: sys_user 加 must_change_password 字段（S5-AUTH P1 首次登录强制改密，NOT NULL DEFAULT FALSE）
 --   v1.7 2026-07-29: 生产 bootstrap 收敛至 37 张 ORM 表，补齐迁移链新增的 16 张表
---   v1.8 2026-07-31: V62-P3-003 新增 process_model_version 表（38 张），tuning_record 加 process_model_version_id 外键
+--   v1.8 2026-07-31: V62-P3-003 新增 process_model_version 表（38 张），tuning_record 加 process_model_version_id 外键；
+--                    V62-P3-006 tuning_record.algorithm CHECK 新增 IDENTIFICATION_ONLY（纯辨识记录不再用 IMC 占位）
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -668,7 +669,7 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT fk_tuning_record_process_model_version FOREIGN KEY (process_model_version_id) REFERENCES process_model_version(id) ON DELETE SET NULL,
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
-    CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC')),
+    CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC', 'IDENTIFICATION_ONLY')),
     CONSTRAINT ck_tuning_record_status  CHECK (status IN ('DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED', 'COMPLETED', 'INCONCLUSIVE', 'ROLLED_BACK', 'PENDING', 'APPLIED', 'VERIFIED')),
     CONSTRAINT ck_tuning_record_identify_method CHECK (identify_method IS NULL OR identify_method IN ('HISTORICAL_ARX', 'HISTORICAL_ARMAX', 'HISTORICAL_IV', 'STEP_TWO_POINT', 'STEP_AREA', 'STEP_NLS')),
     CONSTRAINT ck_tuning_record_data_source CHECK (data_source IS NULL OR data_source IN ('HISTORY', 'STEP_EXPERIMENT', 'fallback_step'))
@@ -679,7 +680,7 @@ COMMENT ON COLUMN tuning_record.id IS '整定记录主键';
 COMMENT ON COLUMN tuning_record.loop_id IS '关联回路 ID';
 COMMENT ON COLUMN tuning_record.model_type IS '模型类型：FOPDT/SOPDT/IPDT';
 COMMENT ON COLUMN tuning_record.model_params IS '模型参数（如：{"K": 1.2, "T": 30.5, "tau": 5.0}）';
-COMMENT ON COLUMN tuning_record.algorithm IS '整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC';
+COMMENT ON COLUMN tuning_record.algorithm IS '整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC；IDENTIFICATION_ONLY 表示纯辨识记录（V62-P3-006，不再用 IMC 占位）';
 COMMENT ON COLUMN tuning_record.recommended_pid IS '推荐 PID 参数（如：{"P": 1.5, "I": 0.8, "D": 0.2}）';
 COMMENT ON COLUMN tuning_record.simulation_result IS '闭环仿真结果（含阶跃响应曲线、性能指标对比）';
 COMMENT ON COLUMN tuning_record.fitting_score IS '模型拟合度评分(0-100)';

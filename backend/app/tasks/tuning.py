@@ -192,7 +192,8 @@ async def _do_identify(
             loop_id=loop_id,
             model_type="FOPDT",  # 占位，辨识完成后更新
             model_params=None,
-            algorithm="IMC",  # 占位，整定时更新
+            # V62-P3-006：纯辨识记录不再用 IMC 占位，改为 IDENTIFICATION_ONLY
+            algorithm="IDENTIFICATION_ONLY",
             status="RUNNING",
             created_by=created_by,
             task_id=task_id,

@@ -83,7 +83,7 @@ class TuningRecord(Base):
             name="ck_tuning_record_model",
         ),
         CheckConstraint(
-            "algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC')",
+            "algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC', 'IDENTIFICATION_ONLY')",
             name="ck_tuning_record_algo",
         ),
         CheckConstraint(

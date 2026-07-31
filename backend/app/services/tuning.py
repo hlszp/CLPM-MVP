@@ -1119,8 +1119,8 @@ async def persist_step_identification_record(
         loop_id=loop_id,
         model_type=model_type,
         model_params=dict(result["params"]),
-        # 技术债：algorithm 当前为 NOT NULL；辨识记录尚无独立 task kind，暂用 IMC 占位。
-        algorithm="IMC",
+        # V62-P3-006：纯辨识记录不再用 IMC 占位，改为 IDENTIFICATION_ONLY
+        algorithm="IDENTIFICATION_ONLY",
         fitting_score=result.get("fittingScore"),
         status="IDENTIFIED",
         created_by=created_by,

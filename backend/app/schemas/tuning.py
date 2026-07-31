@@ -32,7 +32,15 @@ ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 HistoryModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
 # 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
-TuningAlgorithm = Literal["IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"]
+# V62-P3-006：新增 IDENTIFICATION_ONLY——纯辨识记录不再用 IMC 占位
+TuningAlgorithm = Literal[
+    "IMC",
+    "LAMBDA",
+    "ZN",
+    "COHEN_COON",
+    "SIMC",
+    "IDENTIFICATION_ONLY",
+]
 
 # 整定任务状态（Phase 2 新枚举 + 兼容旧枚举）
 TuningTaskStatus = Literal[
