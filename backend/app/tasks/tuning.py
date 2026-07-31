@@ -474,6 +474,7 @@ async def _do_tune_and_simulate(
 
             # 多算法整定
             candidates: list[dict[str, Any]] = []
+            primary_tune_result: dict[str, Any] | None = None
             for algo in algorithms:
                 tune_result = await tune_pid(
                     model_type=model_type,
@@ -484,6 +485,8 @@ async def _do_tune_and_simulate(
                     loop_id=loop_id,
                     source_context=source_context,
                 )
+                if primary_tune_result is None:
+                    primary_tune_result = tune_result
                 candidates.append(
                     {
                         "label": algo,
@@ -530,6 +533,12 @@ async def _do_tune_and_simulate(
                 db_record.algorithm = primary.get("algorithm", algorithms[0])
                 db_record.pid_candidates = candidates
                 db_record.candidate_results = sim_result.get("candidateResponses")
+                # V62-P3-007：持久化人工实施清单字段
+                db_record.current_pid = dict(current_pid) if current_pid else None
+                db_record.rollback_pid = dict(current_pid) if current_pid else None
+                # 从主算法 tune_pid 结果提取风险评估
+                if primary_tune_result and isinstance(primary_tune_result, dict):
+                    db_record.risk_assessment = primary_tune_result.get("risk")
                 db_record.status = "SIMULATED"
                 db_record.completed_at = _now_naive()
                 await db.commit()

@@ -1228,8 +1228,109 @@ async def tune_pid(
 
     if current_pid:
         result["currentPid"] = current_pid
+        # V62-P3-007：回退值 = 当前值（实施失败时恢复原参数）
+        result["rollbackPid"] = dict(current_pid)
+
+    # V62-P3-007：风险评估
+    result["risk"] = _assess_tuning_risk(
+        recommended_pid={"kp": pid.kp, "ti": pid.ti, "td": pid.td},
+        current_pid=current_pid,
+        model_params=model_params,
+        confidence_level=(source_context.confidence_level if source_context else None),
+    )
+
+    # V62-P3-007：单位转换说明（首版无转换，预留结构）
+    result["unitConversion"] = {
+        "timeUnit": "seconds",
+        "note": "PID 参数时间单位为秒；DCS 若用分钟，ti/td 需除以 60",
+    }
 
     return result
+
+
+def _assess_tuning_risk(
+    *,
+    recommended_pid: dict[str, Any],
+    current_pid: dict[str, Any] | None,
+    model_params: dict[str, Any],
+    confidence_level: str | None,
+) -> dict[str, Any]:
+    """V62-P3-007 评估整定风险等级与因素.
+
+    风险等级判定：
+    - HIGH：PID 参数变化 > 50%，或模型可信度 D/E，或纯滞后 θ/τ > 0.5
+    - MEDIUM：PID 参数变化 20%-50%，或模型可信度 C
+    - LOW：PID 参数变化 < 20%，且模型可信度 A/B
+    """
+    factors: list[str] = []
+    risk_score = 0
+
+    # 1. PID 参数变化幅度
+    if current_pid and isinstance(current_pid, dict):
+        max_delta = _compute_max_pid_delta(recommended_pid=recommended_pid, current_pid=current_pid)
+        if max_delta > 0.5:
+            factors.append(f"PID 参数变化幅度大（{max_delta:.0%}）")
+            risk_score += 3
+        elif max_delta > 0.2:
+            factors.append(f"PID 参数变化中等（{max_delta:.0%}）")
+            risk_score += 2
+        else:
+            factors.append(f"PID 参数变化小（{max_delta:.0%}）")
+            risk_score += 0
+
+    # 2. 模型可信度
+    conf = (confidence_level or "").upper()
+    if conf in {"D", "E", "INCONCLUSIVE"}:
+        factors.append(f"模型可信度低（{conf}）")
+        risk_score += 4
+    elif conf == "C":
+        factors.append("模型可信度一般（C）")
+        risk_score += 1
+
+    # 3. 纯滞后比 θ/τ
+    theta = float(model_params.get("theta") or 0)
+    tau = float(model_params.get("tau") or 0)
+    if tau > 0 and theta / tau > 0.5:
+        factors.append(f"大滞后系统（θ/τ={theta / tau:.2f}）")
+        risk_score += 2
+
+    # 4. 过程增益极端
+    k = float(model_params.get("K") or 0)
+    if abs(k) > 10 or (0 < abs(k) < 0.1):
+        factors.append(f"过程增益极端（K={k:.3f}）")
+        risk_score += 1
+
+    if risk_score >= 4:
+        risk_level = "HIGH"
+    elif risk_score >= 2:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "LOW"
+
+    description = f"风险等级：{risk_level}。建议在低负荷工况下逐步实施，密切监控闭环响应。"
+
+    return {
+        "riskLevel": risk_level,
+        "factors": factors,
+        "description": description,
+    }
+
+
+def _compute_max_pid_delta(
+    *, recommended_pid: dict[str, Any], current_pid: dict[str, Any]
+) -> float:
+    """计算推荐 PID 与当前 PID 的最大相对变化幅度."""
+    max_delta = 0.0
+    for key in ("kp", "ti", "td"):
+        rec_val = float(recommended_pid.get(key, 0) or 0)
+        cur_val = float(current_pid.get(key, 0) or 0)
+        if abs(cur_val) < 1e-12:
+            # 当前值为 0 时，用绝对值衡量
+            delta = 1.0 if abs(rec_val) > 1e-12 else 0.0
+        else:
+            delta = abs(rec_val - cur_val) / abs(cur_val)
+        max_delta = max(max_delta, delta)
+    return max_delta
 
 
 # ---------------------------------------------------------------------------
@@ -1591,6 +1692,10 @@ def _record_to_dict(
         "processModelVersionId": (
             str(record.process_model_version_id) if record.process_model_version_id else None
         ),
+        # V62-P3-007：人工实施清单
+        "currentPid": record.current_pid,
+        "riskAssessment": record.risk_assessment,
+        "rollbackPid": record.rollback_pid,
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result

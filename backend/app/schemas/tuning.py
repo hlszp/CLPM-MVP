@@ -238,8 +238,18 @@ class TuneRequest(CamelModel):
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
 
+class TuningRisk(CamelModel):
+    """V62-P3-007 整定风险评估。"""
+
+    riskLevel: str = Field(..., description="风险等级：LOW/MEDIUM/HIGH")
+    factors: list[str] = Field(
+        default_factory=list, description="风险因素列表（如 PID 变化幅度大、模型可信度低）"
+    )
+    description: str | None = Field(None, description="风险说明与注意事项")
+
+
 class TuneResult(CamelModel):
-    """PID 整定结果。"""
+    """PID 整定结果（V62-P3-007 含人工实施清单字段）。"""
 
     algorithm: TuningAlgorithm
     recommendedPid: PidParams
@@ -247,6 +257,12 @@ class TuneResult(CamelModel):
     algorithmParams: dict[str, Any] | None = None
     algorithmVersion: str
     notes: str | None = Field(None, description="整定说明")
+    # V62-P3-007：人工实施清单
+    risk: TuningRisk | None = Field(None, description="风险评估")
+    rollbackPid: PidParams | None = Field(None, description="回退 PID 值（实施失败时恢复）")
+    unitConversion: dict[str, Any] | None = Field(
+        None, description="单位转换说明（如时间单位秒↔分、量程转换）"
+    )
 
 
 # ---------------------------------------------------------------------------

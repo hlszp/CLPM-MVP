@@ -16,7 +16,9 @@
 --   v1.6 2026-07-28: sys_user 加 must_change_password 字段（S5-AUTH P1 首次登录强制改密，NOT NULL DEFAULT FALSE）
 --   v1.7 2026-07-29: 生产 bootstrap 收敛至 37 张 ORM 表，补齐迁移链新增的 16 张表
 --   v1.8 2026-07-31: V62-P3-003 新增 process_model_version 表（38 张），tuning_record 加 process_model_version_id 外键；
---                    V62-P3-006 tuning_record.algorithm CHECK 新增 IDENTIFICATION_ONLY（纯辨识记录不再用 IMC 占位）
+--                    V62-P3-006 tuning_record.algorithm CHECK 新增 IDENTIFICATION_ONLY（纯辨识记录不再用 IMC 占位）；
+--                    V62-P3-007 tuning_record 加 current_pid/risk_assessment/rollback_pid 人工实施清单字段；
+--                    V62-P3-008 action_tracker 加 assignee/planned_at 负责人与计划执行时间
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -577,6 +579,9 @@ CREATE TABLE IF NOT EXISTS action_tracker (
     effect_verified BOOLEAN,
     effect_verified_at TIMESTAMP,
     ab_compare_summary JSONB,
+    -- V62-P3-008：负责人与计划执行时间
+    assignee              VARCHAR(50),
+    planned_at            TIMESTAMP,
     CONSTRAINT fk_action_tracker_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')),
     CONSTRAINT ck_action_tracker_trigger_type CHECK (trigger_type IN ('auto', 'manual')),
@@ -666,6 +671,10 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     completed_at        TIMESTAMP,
     -- V62-P3-006：引用过程模型版本（可空，兼容旧 record；迁移 p3a1b2c3d4e5）
     process_model_version_id UUID,
+    -- V62-P3-007：人工实施清单字段（迁移 p3d4e5f6g7h8）
+    current_pid          JSON,
+    risk_assessment      JSON,
+    rollback_pid         JSON,
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT fk_tuning_record_process_model_version FOREIGN KEY (process_model_version_id) REFERENCES process_model_version(id) ON DELETE SET NULL,
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),

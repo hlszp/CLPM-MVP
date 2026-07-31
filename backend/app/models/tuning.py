@@ -77,6 +77,14 @@ class TuningRecord(Base):
         nullable=True,
     )
 
+    # V62-P3-007：人工实施清单字段
+    # 当前 PID 值快照（整定建议生成时的 DCS 当前值，用于对比与回退）
+    current_pid: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 风险评估（risk_level/factors/description，供人工实施参考）
+    risk_assessment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 回退 PID 值（实施失败时恢复；通常 = current_pid）
+    rollback_pid: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "model_type IN ('FOPDT', 'SOPDT', 'IPDT')",
