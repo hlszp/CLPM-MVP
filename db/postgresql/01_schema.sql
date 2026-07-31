@@ -676,7 +676,7 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     risk_assessment      JSON,
     rollback_pid         JSON,
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
-    CONSTRAINT fk_tuning_record_process_model_version FOREIGN KEY (process_model_version_id) REFERENCES process_model_version(id) ON DELETE SET NULL,
+    -- fk_tuning_record_process_model_version 延迟到 process_model_version 表创建后添加（见下方 DO 块）
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
     CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC', 'IDENTIFICATION_ONLY')),
     CONSTRAINT ck_tuning_record_status  CHECK (status IN ('DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED', 'COMPLETED', 'INCONCLUSIVE', 'ROLLED_BACK', 'PENDING', 'APPLIED', 'VERIFIED')),
@@ -1425,6 +1425,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_process_model_version_loop_version
     ON process_model_version (loop_id, version);
 CREATE INDEX IF NOT EXISTS idx_process_model_version_loop_status
     ON process_model_version (loop_id, status);
+
+-- 延迟外键：tuning_record → process_model_version（表定义顺序：tuning_record 在前）
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_tuning_record_process_model_version'
+          AND conrelid = 'tuning_record'::regclass
+    ) THEN
+        ALTER TABLE tuning_record
+            ADD CONSTRAINT fk_tuning_record_process_model_version
+            FOREIGN KEY (process_model_version_id) REFERENCES process_model_version(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
 
 -- =============================================================================
 -- 脚本结束

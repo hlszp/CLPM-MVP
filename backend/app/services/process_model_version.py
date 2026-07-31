@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -62,21 +62,21 @@ async def create_candidate_version(
 ) -> ProcessModelVersion:
     """从辨识结果创建 CANDIDATE 版本（P3-006 引用基础）.
 
-    version 号分配：``SELECT MAX(version) FOR UPDATE`` 串行化，+1。
+    version 号分配：锁定同回路所有版本行后取 MAX+1。
     新建版本默认 status=CANDIDATE，不自动发布为 CURRENT（需人工审批）。
 
     Returns:
         新建的 ProcessModelVersion（status=CANDIDATE）
     """
-    # 串行化 version 号分配：锁定同回路所有版本行的最大 version
-    # FOR UPDATE 防止并发创建跳号或重号
-    max_result = await db.execute(
-        select(func.max(ProcessModelVersion.version))
+    # 串行化 version 号分配：锁定同回路所有版本行，防止并发创建跳号或重号
+    # PostgreSQL 不允许 FOR UPDATE 与聚合函数同用，先锁行再在 Python 取 max
+    lock_result = await db.execute(
+        select(ProcessModelVersion.version)
         .where(ProcessModelVersion.loop_id == loop_id)
         .with_for_update()
     )
-    max_version = max_result.scalar() or 0
-    next_version = int(max_version) + 1
+    existing_versions = [int(v) for v in lock_result.scalars().all()]
+    next_version = (max(existing_versions) if existing_versions else 0) + 1
 
     version = ProcessModelVersion(
         id=str(uuid4()),
