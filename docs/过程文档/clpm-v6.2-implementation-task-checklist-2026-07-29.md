@@ -383,16 +383,16 @@ unit_kpi_summary
 
 ## 6. Phase 3：模型生命周期与整改闭环
 
-- [ ] `V62-P3-001` 执行模型实体 ADR 七项准入评审。
-- [ ] `V62-P3-002` 若不通过，继续使用单次 `tuning_record` 不可变证据快照。
-- [ ] `V62-P3-003` 若通过，只新增一个最小 `process_model_version` 聚合。
-- [ ] `V62-P3-004` 保证同一回路/工况只有一个 CURRENT 的并发一致性。
-- [ ] `V62-P3-005` 采用一次性回填→影子读比对→切换读取→停止旧参数新写。
-- [ ] `V62-P3-006` 整定记录引用模型版本，不再用 `algorithm=IMC` 表示纯辨识。
-- [ ] `V62-P3-007` 人工实施清单包含当前值、建议值、单位转换、风险和回退值。
-- [ ] `V62-P3-008` Tracker 记录负责人、MOC、执行时间和 A/B 效果验证。
-- [ ] `V62-P3-009` 全程无 DCS 下写 API、按钮或隐含状态。
-- [ ] `V62-P3-010` 完成迁移、回滚、并发和 fresh-install 演练。
+- [x] `V62-P3-001` 执行模型实体 ADR 七项准入评审。（2026-07-31 通过，引入 process_model_version 聚合）
+- [x] `V62-P3-002` 若不通过，继续使用单次 `tuning_record` 不可变证据快照。（ADR 通过，跳过此兜底路径）
+- [x] `V62-P3-003` 若通过，只新增一个最小 `process_model_version` 聚合。（commit 7a20ee48，28 字段 + 5 CHECK + 3 索引）
+- [x] `V62-P3-004` 保证同一回路/工况只有一个 CURRENT 的并发一致性。（commit d0b84d0，FOR UPDATE + 部分唯一索引双层防护，7 集成测试）
+- [x] `V62-P3-005` 采用一次性回填→影子读比对→切换读取→停止旧参数新写。（commit ecd87f7，迁移服务 + 数据迁移 p3b2c3d4e5f6）
+- [x] `V62-P3-006` 整定记录引用模型版本，不再用 `algorithm=IMC` 表示纯辨识。（commit b890400，IDENTIFICATION_ONLY + 迁移 p3c3d4e5f6g7）
+- [x] `V62-P3-007` 人工实施清单包含当前值、建议值、单位转换、风险和回退值。（commit 02be4d4，TuneResult risk/rollbackPid/unitConversion + 迁移 p3d4e5f6g7h8）
+- [x] `V62-P3-008` Tracker 记录负责人、MOC、执行时间和 A/B 效果验证。（commit dff2e66，assignee/planned_at + 迁移 p3e5f6g7h8i9）
+- [x] `V62-P3-009` 全程无 DCS 下写 API、按钮或隐含状态。（commit 2c7d544，5 个静态守卫测试）
+- [x] `V62-P3-010` 完成迁移、回滚、并发和 fresh-install 演练。（commit 1942e01，修复 FOR UPDATE 聚合 bug + DDL 延迟 FK；迁移/回滚/并发/fresh-install 全通过）
 
 ## 7. Phase 4：在线影子运行
 
