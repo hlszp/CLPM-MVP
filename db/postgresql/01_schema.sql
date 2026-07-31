@@ -15,6 +15,7 @@
 --   v1.5 2026-06-24: plant_node 加 monitor_tag_id/monitor_trigger_value 字段（SVC-10 位号触发监控）
 --   v1.6 2026-07-28: sys_user 加 must_change_password 字段（S5-AUTH P1 首次登录强制改密，NOT NULL DEFAULT FALSE）
 --   v1.7 2026-07-29: 生产 bootstrap 收敛至 37 张 ORM 表，补齐迁移链新增的 16 张表
+--   v1.8 2026-07-31: V62-P3-003 新增 process_model_version 表（38 张），tuning_record 加 process_model_version_id 外键
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -662,7 +663,10 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     -- Phase 2.2 异步任务关联（迁移 e5f6a7b8c9d0）
     task_id             VARCHAR(64),
     completed_at        TIMESTAMP,
+    -- V62-P3-006：引用过程模型版本（可空，兼容旧 record；迁移 p3a1b2c3d4e5）
+    process_model_version_id UUID,
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tuning_record_process_model_version FOREIGN KEY (process_model_version_id) REFERENCES process_model_version(id) ON DELETE SET NULL,
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
     CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC')),
     CONSTRAINT ck_tuning_record_status  CHECK (status IN ('DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED', 'COMPLETED', 'INCONCLUSIVE', 'ROLLED_BACK', 'PENDING', 'APPLIED', 'VERIFIED')),
@@ -1231,6 +1235,61 @@ CREATE TABLE IF NOT EXISTS loop_confidence_latest (
 );
 
 -- =============================================================================
+-- 35. process_model_version（过程模型版本聚合，V62-P3-003）
+-- 证据：ORM app/models/process_model_version.py；迁移 p3a1b2c3d4e5
+-- 不可变版本化辨识证据；CANDIDATE/CURRENT/RETIRED 生命周期
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS process_model_version (
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_id                 UUID            NOT NULL,
+    version                 INTEGER         NOT NULL,
+    status                  VARCHAR(12)     NOT NULL DEFAULT 'CANDIDATE',
+    data_window_start       TIMESTAMP,
+    data_window_end         TIMESTAMP,
+    data_hash               VARCHAR(64),
+    condition_summary       JSON,
+    algorithm_version       VARCHAR(50),
+    identify_method         VARCHAR(30),
+    model_type              VARCHAR(20)     NOT NULL,
+    model_params            JSON,
+    theta_source            VARCHAR(20),
+    sampling_period         FLOAT,
+    metrics                 JSON,
+    residual_test           JSON,
+    uncertainty             JSON,
+    physical_feasibility    JSON,
+    confidence_level        VARCHAR(12),
+    confidence_reason       VARCHAR(500),
+    published_by            VARCHAR(50),
+    published_at            TIMESTAMP,
+    supersedes_version_id   UUID,
+    retired_reason          VARCHAR(500),
+    retired_at              TIMESTAMP,
+    retired_by              VARCHAR(50),
+    created_by              VARCHAR(50),
+    created_at              TIMESTAMP       NOT NULL DEFAULT (now() AT TIME ZONE 'UTC'),
+    CONSTRAINT fk_process_model_version_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_process_model_version_supersedes FOREIGN KEY (supersedes_version_id) REFERENCES process_model_version(id) ON DELETE SET NULL,
+    CONSTRAINT ck_process_model_version_status CHECK (status IN ('CANDIDATE', 'CURRENT', 'RETIRED')),
+    CONSTRAINT ck_process_model_version_model_type CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
+    CONSTRAINT ck_process_model_version_theta_source CHECK (theta_source IS NULL OR theta_source IN ('EXPLICIT', 'SEARCHED', 'HEURISTIC_2TS')),
+    CONSTRAINT ck_process_model_version_identify_method CHECK (identify_method IS NULL OR identify_method IN ('HISTORICAL_ARX', 'HISTORICAL_ARMAX', 'HISTORICAL_IV', 'STEP_TWO_POINT', 'STEP_AREA', 'STEP_NLS')),
+    CONSTRAINT ck_process_model_version_confidence CHECK (confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E', 'INCONCLUSIVE'))
+);
+
+COMMENT ON TABLE  process_model_version IS '过程模型版本聚合（V62-P3-003，不可变版本化辨识证据）';
+COMMENT ON COLUMN process_model_version.loop_id IS '关联回路 ID（Loop 是模型所有者，不建 process_model 主表）';
+COMMENT ON COLUMN process_model_version.version IS '单回路内单调递增版本号';
+COMMENT ON COLUMN process_model_version.status IS '生命周期：CANDIDATE（候选）/ CURRENT（当前生效）/ RETIRED（退役）';
+COMMENT ON COLUMN process_model_version.data_hash IS '数据快照哈希（输入时序指纹，漂移比较与重复辨识识别）';
+COMMENT ON COLUMN process_model_version.condition_summary IS '工况摘要：MODE 占比/饱和/激励/采样率/有效样本率';
+COMMENT ON COLUMN process_model_version.model_params IS '模型参数（如 {"K":1.2,"tau":30.5,"theta":5.0}），不可变';
+COMMENT ON COLUMN process_model_version.theta_source IS '纯滞后来源：EXPLICIT/SEARCHED/HEURISTIC_2TS';
+COMMENT ON COLUMN process_model_version.metrics IS '验证指标：r2_train/r2_val/nrmse_val/aic/bic/fitting_score';
+COMMENT ON COLUMN process_model_version.supersedes_version_id IS '替代的上一版本（自引用，RETIRE 旧版本时回填）';
+COMMENT ON COLUMN process_model_version.published_by IS '发布人（仅人工窗口模型可审批为 CURRENT）';
+
+-- =============================================================================
 -- 索引（高频查询字段）
 -- =============================================================================
 
@@ -1346,6 +1405,16 @@ CREATE INDEX IF NOT EXISTS idx_loop_mode_mapping_loop_id ON loop_mode_mapping (l
 
 -- plant_node 索引（SVC-10 位号触发监控）
 CREATE INDEX IF NOT EXISTS idx_plant_node_monitor_tag_id ON plant_node (monitor_tag_id);
+
+-- process_model_version 索引（V62-P3-003 模型生命周期）
+-- P3-004 并发一致性：同一回路至多一个 CURRENT（部分唯一索引）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_process_model_version_current
+    ON process_model_version (loop_id) WHERE status = 'CURRENT';
+-- (loop_id, version) 唯一：版本号单回路单调不重复
+CREATE UNIQUE INDEX IF NOT EXISTS uk_process_model_version_loop_version
+    ON process_model_version (loop_id, version);
+CREATE INDEX IF NOT EXISTS idx_process_model_version_loop_status
+    ON process_model_version (loop_id, status);
 
 -- =============================================================================
 -- 脚本结束

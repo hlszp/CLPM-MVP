@@ -69,6 +69,14 @@ class TuningRecord(Base):
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # V62-P3-006：引用过程模型版本（可空，兼容旧 record 继续用自身 model_params）
+    # 由 P3-005 一次性回填后，新辨识记录应携带 version_id；旧记录保持 NULL。
+    process_model_version_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("process_model_version.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         CheckConstraint(
             "model_type IN ('FOPDT', 'SOPDT', 'IPDT')",

@@ -31,6 +31,7 @@ from app.models.node_kpi import (
     KpiNodeSnapshotMonthly,
 )
 from app.models.plant_node import PlantNode
+from app.models.process_model_version import ProcessModelVersion
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
 from app.models.sys_config import SysConfig
@@ -46,6 +47,7 @@ __all__ = [
     "AlgorithmParameter",
     "SysUser",
     "PlantNode",
+    "ProcessModelVersion",
     "LoopLedger",
     "LoopTagMapping",
     "LoopModeMapping",
