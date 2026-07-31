@@ -394,6 +394,48 @@ unit_kpi_summary
 - [x] `V62-P3-009` 全程无 DCS 下写 API、按钮或隐含状态。（commit 2c7d544，5 个静态守卫测试）
 - [x] `V62-P3-010` 完成迁移、回滚、并发和 fresh-install 演练。（commit 1942e01，修复 FOR UPDATE 聚合 bug + DDL 延迟 FK；迁移/回滚/并发/fresh-install 全通过）
 
+### 6.1 Phase 3 门禁
+
+- [x] ADR 七项准入评审通过，新增 `process_model_version` 聚合有明确独立生命周期与多消费者证据。
+  - **评审结论**（2026-07-31）：七项准入全部通过——独立生命周期（CANDIDATE/CURRENT/RETIRED 状态机）、业务所有者与权限边界（IC_ENGINEER/EXPERT 发布）、独立查询/审计/不可变性（28 字段 + 5 CHECK + 数据哈希）、至少两个独立消费者（整定推荐链 + Phase 4 影子运行 + Action Tracker 效果验证）、不能用现有实体表达（tuning_record 是单次结果快照，无法承载版本化生命周期）、真实生产场景和样本（本系统接入真实生产环境，Phase 4 需要连续漂移比较）、迁移/回滚/保留期/唯一真相源设计（一次性回填 + 影子读 + 双层并发防护）。
+- [x] 同一回路至多一个 CURRENT 的并发一致性验证通过。
+  - 双层防护：服务层 `SELECT ... FOR UPDATE` 串行化 + 数据库部分唯一索引 `uk_process_model_version_current` 最后防线；7 集成测试覆盖（正常发布/并发双 CURRENT 拒绝/自引用/跨回路独立/退役后再发布/版本号并发分配）。
+- [x] 迁移链 upgrade/downgrade 循环验证通过。
+  - 5 个迁移文件（p3a1b2c3d4e5 ~ p3e5f6g7h8i9）均通过 `alembic upgrade head` → `alembic downgrade base` → `alembic upgrade head` 循环；`alembic check` 退出码 0（无 schema 漂移）；ORM ↔ DDL ↔ 迁移三者收敛。
+- [x] fresh-install 演练通过（专用临时空 PostgreSQL）。
+  - `db/postgresql/01_schema.sql` v1.8 在空库 bootstrap 成功：38 张表（含 process_model_version）+ 延迟外键（tuning_record → process_model_version）+ seed 数据；`test_alembic_convergence.py -m integration` 通过；`alembic stamp head` 后状态一致。
+- [x] 安全红线静态守卫测试通过。
+  - `test_p3_009_no_dcs_write.py` 5 测试：无 DCS 参数写端点、无"自动实施"按钮/路由、整定结果只输出建议/证据/风险/回退、人工实施清单不含下写动作、Action Tracker 不触发 DCS 操作。
+- [x] 后端全量门禁通过。（ruff ✅ / pytest 3624 passed ✅ / `alembic check` 无漂移 ✅）
+- [x] 前端 typecheck 通过。（check:type ✅）
+- [x] Phase 3 逻辑提交完成。（P3-003~P3-010 共 8 提交 + 1 文档提交 `c2979b2`，已推送 `origin/codex/v6.2-integration`）
+
+### 6.2 Phase 3 风险评估与缓解措施
+
+| 风险 | 等级 | 缓解措施 | 残留风险 |
+|---|---|---|---|
+| 并发发布导致双 CURRENT | 高 | 服务层 FOR UPDATE 串行化 + 部分唯一索引双层防护；7 集成测试守护 | 极低（需绕过两层防护才会发生） |
+| 迁移回填遗漏历史模型参数 | 中 | 一次性回填迁移 p3b2c3d4e5f6 + 影子读比对服务；回填后 tuning_record.process_model_version_id 非空率验证 | 无（回填为幂等操作，可重跑） |
+| 旧 IMC 占位记录语义混淆 | 中 | 新增 IDENTIFICATION_ONLY 算法值 + 迁移 p3c3d4e5f6g7 回填遗留 IMC 占位记录；schema CHECK 约束守护 | 无（旧值已迁移，新值由约束保证） |
+| 生产 DDL 表定义顺序导致 FK 失败 | 中 | tuning_record → process_model_version FK 改为延迟添加（DO 块）；fresh-install 演练验证 | 无（空库 bootstrap 已验证） |
+| 人工实施清单字段缺失导致风险不可控 | 中 | TuneResult 新增 current_pid/risk_assessment/rollback_pid/unit_conversion；风险算法按偏差自动分级 | 低（需授权人员按清单实施） |
+| DCS 下写能力被误引入 | 高 | 5 个静态守卫测试 + 契约 v2.3 §6.2 安全边界；PR 审查清单 | 极低（静态测试阻止代码合入） |
+| Phase 4 影子运行依赖未就绪 | 低 | process_model_version 已为 Phase 4 预留 status=CANDIDATE + supersedes 链；shadow_identification 开关待 Phase 4 实现 | 无（向前兼容设计） |
+
+### 6.3 Phase 3 关键里程碑
+
+| 里程碑 | 达成日期 | 证据 |
+|---|---|---|
+| ADR 七项准入评审通过 | 2026-07-31 | 用户决策：接入真实生产环境 + 多消费者 + Phase 4 准备 |
+| process_model_version 聚合落库 | 2026-07-31 | commit `7a20ee48`；28 字段 + 5 CHECK + 3 索引 |
+| 并发一致性双层防护 | 2026-07-31 | commit `d0b84d05`；FOR UPDATE + 部分唯一索引 |
+| 模型版本迁移服务 | 2026-07-31 | commit `ecd87f74`；回填→影子读→切换读取→停止旧写 |
+| 整定记录引用模型版本 | 2026-07-31 | commit `b8904005`；IDENTIFICATION_ONLY + 迁移 |
+| 人工实施清单 | 2026-07-31 | commit `02be4d4b`；当前值/建议值/风险/回退值/单位转换 |
+| Tracker 闭环字段 | 2026-07-31 | commit `dff2e664`；assignee/planned_at + A/B 效果验证 |
+| 安全红线守卫 | 2026-07-31 | commit `2c7d544b`；5 静态守卫测试 |
+| 迁移/回滚/并发/fresh-install 演练 | 2026-07-31 | commit `1942e012`；全通过 |
+
 ## 7. Phase 4：在线影子运行
 
 - [ ] `V62-P4-001` 每日/每周滑窗候选扫描。
@@ -487,3 +529,14 @@ pnpm exec playwright test
 | 2026-07-31 | Phase 2 | 门禁修复：CLIVC 解锁 | P0-021 的 `HISTORICAL_IV` 实验性拒绝与 P2-009 CLIVC 生产方法冲突；移除拒绝块 + 加入允许方法集 + 测试改为放行断言 + 契约 v2.3 §6.1/§10 + phase0 基线同步；eligibility 27 passed + tuning 305 passed |
 | 2026-07-31 | Phase 2 | 门禁：后端+前端全量 | 后端 ruff/pytest 3610 passed/alembic 无漂移；前端 check:type/vitest 456 passed |
 | 2026-07-31 | Phase 2 | 门禁：E2E 全量 + 稳定性修复 | 60 测试 59 passed + 1 偶发（TASK-004 单独重跑通过）；登录 API 超时 15s→30s（commit `9417cdc`）；Phase 2 整定 E2E-TUNE-001~007 全通过 |
+| 2026-07-31 | Phase 3 | P3-001 ADR 七项准入评审通过 | 用户决策：接入真实生产环境 + 多消费者（整定推荐链/Phase 4 影子运行/Action Tracker 效果验证）+ Phase 4 准备；引入 process_model_version 聚合 |
+| 2026-07-31 | Phase 3 | P3-003 process_model_version 聚合落库 | commit `7a20ee48`；ORM 模型 28 字段 + 5 CHECK 约束 + 3 索引；迁移 p3a1b2c3d4e5；DDL 01_schema.sql v1.8 收敛至 38 表 |
+| 2026-07-31 | Phase 3 | P3-004 并发一致性双层防护 | commit `d0b84d05`；服务层 SELECT FOR UPDATE 串行化 + 数据库部分唯一索引 uk_process_model_version_current；7 集成测试；修复 PostgreSQL 不允许 FOR UPDATE 与聚合同用 |
+| 2026-07-31 | Phase 3 | P3-005 模型版本迁移服务 | commit `ecd87f74`；一次性回填 tuning_record.model_params → process_model_version + 影子读比对 + 读路径切换 + 停止旧参数新写；迁移 p3b2c3d4e5f6 |
+| 2026-07-31 | Phase 3 | P3-006 整定记录引用模型版本 | commit `b8904005`；algorithm 新增 IDENTIFICATION_ONLY（纯辨识记录不再用 IMC 占位）；tuning_record.process_model_version_id 外键；迁移 p3c3d4e5f6g7 |
+| 2026-07-31 | Phase 3 | P3-007 人工实施清单 | commit `02be4d4b`；TuneResult 新增 current_pid/risk_assessment/rollback_pid/unit_conversion；风险按偏差自动分级（HIGH/MEDIUM/LOW）；迁移 p3d4e5f6g7h8 |
+| 2026-07-31 | Phase 3 | P3-008 Tracker 闭环字段 | commit `dff2e664`；action_tracker 新增 assignee/planned_at；MOC + 执行时间 + A/B 效果验证字段；迁移 p3e5f6g7h8i9 |
+| 2026-07-31 | Phase 3 | P3-009 安全红线守卫 | commit `2c7d544b`；`test_p3_009_no_dcs_write.py` 5 静态守卫测试：无 DCS 写端点/无自动实施入口/只输出建议证据/清单不含下写/Tracker 不触发 DCS |
+| 2026-07-31 | Phase 3 | P3-010 迁移/回滚/并发/fresh-install 演练 | commit `1942e012`；修复 FOR UPDATE 聚合 bug + DDL 延迟 FK（tuning_record → process_model_version）；upgrade/downgrade 循环 + 并发测试 + 空库 bootstrap 全通过 |
+| 2026-07-31 | Phase 3 | 门禁：全量验收 | 后端 ruff ✅ / pytest 3624 passed ✅ / alembic check 无漂移 ✅；前端 check:type ✅；安全红线 5 守卫测试 ✅；迁移链 5 文件循环 ✅；fresh-install ✅ |
+| 2026-07-31 | Phase 3 | 文档同步 | commit `c2979b28`；清单 §6 标记 V62-P3-001~010 完成 + 门禁 + 风险评估 + 里程碑；full-task-list Phase 3 状态同步 |
