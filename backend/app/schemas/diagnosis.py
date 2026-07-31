@@ -261,6 +261,9 @@ class DiagnosisListItem(CamelModel):
         None, description="整改效果：True=改善 / False=恶化或无明显变化 / None=未验证"
     )
     effectVerifiedAt: str | None = Field(None, description="整改效果验证时间 ISO 8601")
+    # V62-P3-008：负责人与计划执行时间（tracker 闭环字段）
+    assignee: str | None = Field(None, description="实施责任人（与建单人 triggeredBy 区分）")
+    plannedAt: str | None = Field(None, description="计划执行时间 ISO 8601")
 
 
 class DiagnosisAggregates(CamelModel):

@@ -352,6 +352,10 @@ export namespace DiagnosisApi {
     mocNotApplicable?: boolean;
     /** D3: MOC 不适用时的依据说明（mocNotApplicable=true 时必填） */
     mocReason?: string;
+    /** V62-P3-008：实施责任人（与建单人 triggeredBy 区分） */
+    assignee?: string;
+    /** V62-P3-008：计划执行时间 ISO 8601 */
+    plannedAt?: string;
   }
 
   /** Tracker 记录项 */
@@ -386,6 +390,10 @@ export namespace DiagnosisApi {
     effectVerifiedAt?: string;
     /** D4: A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化） */
     abCompareSummary?: Record<string, unknown>;
+    /** V62-P3-008：实施责任人（与建单人 triggeredBy 区分） */
+    assignee?: string;
+    /** V62-P3-008：计划执行时间 ISO 8601 */
+    plannedAt?: string;
   }
 
   /** Tracker 列表查询参数 */
