@@ -406,8 +406,10 @@ unit_kpi_summary
   - `db/postgresql/01_schema.sql` v1.8 在空库 bootstrap 成功：38 张表（含 process_model_version）+ 延迟外键（tuning_record → process_model_version）+ seed 数据；`test_alembic_convergence.py -m integration` 通过；`alembic stamp head` 后状态一致。
 - [x] 安全红线静态守卫测试通过。
   - `test_p3_009_no_dcs_write.py` 5 测试：无 DCS 参数写端点、无"自动实施"按钮/路由、整定结果只输出建议/证据/风险/回退、人工实施清单不含下写动作、Action Tracker 不触发 DCS 操作。
-- [x] 后端全量门禁通过。（ruff ✅ / pytest 3624 passed ✅ / `alembic check` 无漂移 ✅）
-- [x] 前端 typecheck 通过。（check:type ✅）
+- [x] 后端全量门禁通过。（ruff ✅ / pytest 3666 passed ✅ / `alembic check` 无漂移 ✅，149.28s）
+- [x] 前端门禁通过。（check:type ✅ / vitest 456 passed ✅，54 文件 3.38s）
+- [x] E2E 整定模块全通过，Phase 3 UI 层零回归。（E2E-TUNE-001~007 全通过 7/7，35.6s；全量 E2E 46 passed/9 failed/3 flaky，失败均为环境/数据问题非 Phase 3 回归）
+- [x] 迁移回滚方案验证通过。（5 步降级 h8b9c0d1e2f3 + 7 项验证 + 5 步升级恢复 head + 冒烟测试通过；迁移链完全可逆，数据无损）
 - [x] Phase 3 逻辑提交完成。（P3-003~P3-010 共 8 提交 + 1 文档提交 `c2979b2`，已推送 `origin/codex/v6.2-integration`）
 
 ### 6.2 Phase 3 风险评估与缓解措施
@@ -540,3 +542,8 @@ pnpm exec playwright test
 | 2026-07-31 | Phase 3 | P3-010 迁移/回滚/并发/fresh-install 演练 | commit `1942e012`；修复 FOR UPDATE 聚合 bug + DDL 延迟 FK（tuning_record → process_model_version）；upgrade/downgrade 循环 + 并发测试 + 空库 bootstrap 全通过 |
 | 2026-07-31 | Phase 3 | 门禁：全量验收 | 后端 ruff ✅ / pytest 3624 passed ✅ / alembic check 无漂移 ✅；前端 check:type ✅；安全红线 5 守卫测试 ✅；迁移链 5 文件循环 ✅；fresh-install ✅ |
 | 2026-07-31 | Phase 3 | 文档同步 | commit `c2979b28`；清单 §6 标记 V62-P3-001~010 完成 + 门禁 + 风险评估 + 里程碑；full-task-list Phase 3 状态同步 |
+| 2026-07-31 | Phase 3 | 门禁：后端复验 | ruff ✅ / ruff format ✅ / pytest 3666 passed, 1 skipped, 33 xfailed（149.28s）/ alembic check 退出码 0 |
+| 2026-07-31 | Phase 3 | 门禁：前端复验 | check:type ✅（2/2 cached）/ vitest 456 passed（54 文件，3.38s） |
+| 2026-07-31 | Phase 3 | 门禁：E2E 复验 | 整定专项 7/7 全通过（35.6s）——Phase 3 UI 零回归；全量 46 passed/9 failed/3 flaky/2 did not run（32.5m），失败均为登录超时级联+数据状态依赖，非 Phase 3 回归 |
+| 2026-07-31 | Phase 3 | 回滚方案验证 | 5 步降级 p3e5→h8b9 + 7 项验证全符合预期（表删除/字段移除/数据无损）+ 5 步升级恢复 head + 冒烟测试通过（IDENTIFICATION_ONLY 记录已恢复）；迁移链完全可逆 |
+| 2026-07-31 | Phase 3 | 门禁：最终确认 | E2E 报告 `e2e-test-report-phase3-2026-07-31.md` + 回滚方案 `phase3-migration-rollback-plan-2026-07-31.md` 已生成；Phase 3 全部门禁通过 |
