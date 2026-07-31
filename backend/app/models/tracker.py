@@ -88,6 +88,14 @@ class ActionTracker(Base):
     # A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化），避免每次查看都重算
     ab_compare_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # ========== V62-P3-008 追加列 ==========
+    # 负责人（实施责任人）；与 triggered_by 区分：triggered_by 是建单人，
+    # assignee 是负责实施的工程师。auto 建单时 assignee 初始为 NULL，
+    # 由主管分派后回填。
+    assignee: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 计划执行时间（人工实施计划时间，与 updated_at 实际完成时间区分）
+    planned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')",

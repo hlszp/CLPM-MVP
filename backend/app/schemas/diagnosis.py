@@ -365,6 +365,9 @@ class TrackerStatusUpdate(CamelModel):
     mocRef: str | None = Field(None, max_length=255, description="MOC 变更管理关联编号")
     mocNotApplicable: bool | None = Field(None, description="MOC 是否不适用")
     mocReason: str | None = Field(None, max_length=500, description="MOC 不适用时的依据说明")
+    # V62-P3-008：负责人与计划执行时间
+    assignee: str | None = Field(None, max_length=50, description="实施责任人")
+    plannedAt: str | None = Field(None, description="计划执行时间 ISO 8601")
 
 
 class TrackerStatusData(CamelModel):
@@ -394,6 +397,9 @@ class TrackerStatusData(CamelModel):
     abCompareSummary: dict[str, Any] | None = Field(
         None, description="A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化）"
     )
+    # V62-P3-008：负责人与计划执行时间
+    assignee: str | None = Field(None, description="实施责任人（与建单人 triggeredBy 区分）")
+    plannedAt: str | None = Field(None, description="计划执行时间 ISO 8601")
 
 
 class TrackerVerificationConfig(CamelModel):

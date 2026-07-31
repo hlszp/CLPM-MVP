@@ -64,6 +64,8 @@ async def update_tracker_status(
     moc_ref: str | None = None,
     moc_not_applicable: bool | None = None,
     moc_reason: str | None = None,
+    assignee: str | None = None,
+    planned_at: datetime | None = None,
 ) -> dict:
     """更新 Action Tracker 状态。
 
@@ -175,6 +177,11 @@ async def update_tracker_status(
         tracker.moc_not_applicable = moc_not_applicable
     if moc_reason is not None:
         tracker.moc_reason = moc_reason
+    # V62-P3-008：负责人与计划执行时间
+    if assignee is not None:
+        tracker.assignee = assignee
+    if planned_at is not None:
+        tracker.planned_at = planned_at
     tracker.updated_by = operator
     tracker.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
@@ -248,6 +255,9 @@ async def update_tracker_status(
         if tracker.effect_verified_at
         else None,
         "abCompareSummary": tracker.ab_compare_summary,
+        # V62-P3-008：负责人与计划执行时间
+        "assignee": tracker.assignee,
+        "plannedAt": tracker.planned_at.isoformat() if tracker.planned_at else None,
     }
 
 
