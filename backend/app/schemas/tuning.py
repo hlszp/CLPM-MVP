@@ -293,6 +293,33 @@ class SimulateRequest(CamelModel):
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
 
+class CompareRequest(CamelModel):
+    """POST /tuning/compare 请求体（Phase 2 多 PID 对比，独立 schema V62-P0-030）.
+
+    与 ``SimulateRequest`` 的差异：
+    - ``recommendedPid`` 不再要求（``/compare`` 端点从不消费该字段）
+    - ``currentPid`` 可选（仅作为对比基线，缺失时仅返回候选响应）
+    - ``pidCandidates`` 必填且 ≥2 组（schema 层 ``min_length=2`` 强校验）
+    """
+
+    modelType: ModelType = Field("FOPDT", description="模型类型")
+    modelParams: ModelParams
+    currentPid: PidParams | None = Field(None, description="当前 PID 参数（对比基线，可选）")
+    pidCandidates: list[PidParamsWithLabel] = Field(
+        ..., min_length=2, description="多组候选 PID 参数（至少 2 组）"
+    )
+    simDuration: float = Field(600.0, description="仿真时长（秒）")
+    simStep: float = Field(1.0, description="仿真步长（秒）")
+    setpointStep: float = Field(1.0, description="设定值阶跃幅值")
+    loopId: str | None = Field(None, description="回路 ID（模型记录校验用）")
+    sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
+    modelSource: ModelSource | None = Field(
+        None,
+        description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
+    )
+    riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
+
+
 class SimulationMetrics(CamelModel):
     """仿真性能指标。"""
 

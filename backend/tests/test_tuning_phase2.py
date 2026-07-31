@@ -427,12 +427,11 @@ class TestPhase2API:
         assert len(data["candidateResponses"]) == 2
 
     def test_compare_endpoint_requires_min_two_candidates(self, client):
-        """/compare 端点要求至少 2 组候选 PID。"""
+        """/compare 端点要求至少 2 组候选 PID（V62-P0-030 schema 层 min_length=2 校验）。"""
         payload = {
             "modelType": "FOPDT",
             "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
             "currentPid": {"kp": 0.5, "ti": 20.0, "td": 0.0},
-            "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
             "pidCandidates": [
                 {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
             ],
@@ -440,15 +439,15 @@ class TestPhase2API:
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/compare", json=payload)
-        assert resp.status_code == 400
+        # Pydantic min_length=2 在 schema 解析阶段即拒绝，返回 422
+        assert resp.status_code == 422
 
     def test_compare_endpoint_success(self, client):
-        """/compare 端点多 PID 对比成功。"""
+        """/compare 端点多 PID 对比成功（V62-P0-030 独立 CompareRequest，无需 recommendedPid）。"""
         payload = {
             "modelType": "FOPDT",
             "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
             "currentPid": {"kp": 0.5, "ti": 20.0, "td": 0.0},
-            "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
             "pidCandidates": [
                 {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
                 {"label": "LAMBDA", "kp": 0.8, "ti": 12.0, "td": 0.0},
@@ -467,6 +466,46 @@ class TestPhase2API:
         data = resp.json()["data"]
         assert "candidateResponses" in data
         assert len(data["candidateResponses"]) == 3
+
+    def test_compare_endpoint_accepts_no_current_pid(self, client):
+        """/compare 端点 currentPid 可选（V62-P0-030 CompareRequest）。"""
+        payload = {
+            "modelType": "FOPDT",
+            "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+            "pidCandidates": [
+                {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
+                {"label": "LAMBDA", "kp": 0.8, "ti": 12.0, "td": 0.0},
+            ],
+            "simDuration": 50.0,
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
+        }
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post("/api/v1/tuning/compare", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert "candidateResponses" in data
+        assert len(data["candidateResponses"]) == 2
+
+    def test_compare_endpoint_ignores_recommended_pid(self, client):
+        """/compare 端点静默忽略 recommendedPid（V62-P0-030 向后兼容安全网）。"""
+        payload = {
+            "modelType": "FOPDT",
+            "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+            "currentPid": {"kp": 0.5, "ti": 20.0, "td": 0.0},
+            "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
+            "pidCandidates": [
+                {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
+                {"label": "LAMBDA", "kp": 0.8, "ti": 12.0, "td": 0.0},
+            ],
+            "simDuration": 50.0,
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
+        }
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post("/api/v1/tuning/compare", json=payload)
+        # CamelModel 未设 extra=forbid，recommendedPid 被静默忽略，不影响 200
+        assert resp.status_code == 200
 
     def test_simulate_backward_compatible_no_candidates(self, client):
         """/simulate 无 pid_candidates 时向后兼容。"""

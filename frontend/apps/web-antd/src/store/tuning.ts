@@ -361,8 +361,8 @@ export const useTuningStore = defineStore('tuning', () => {
     simulationResult.value = await simulateTuningApi(params);
   }
 
-  /** 多 PID 对比仿真（至少 2 组候选） */
-  async function runComparePids(params: TuningApi.SimulateRequest) {
+  /** 多 PID 对比仿真（至少 2 组候选，V62-P0-030 独立 CompareRequest） */
+  async function runComparePids(params: TuningApi.CompareRequest) {
     simulationResult.value = await comparePidsApi(params);
   }
 

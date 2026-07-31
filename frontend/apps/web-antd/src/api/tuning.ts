@@ -275,6 +275,31 @@ export namespace TuningApi {
     riskConfirmed?: boolean;
   }
 
+  /** 多 PID 对比仿真请求（V62-P0-030 独立 schema，不要求 recommendedPid） */
+  export interface CompareRequest {
+    modelType: ModelType;
+    modelParams: ModelParams;
+    /** 当前 PID（对比基线，可选） */
+    currentPid?: PidParams;
+    /** 多组候选 PID（至少 2 组） */
+    pidCandidates: PidParamsWithLabel[];
+    /** 仿真时长（秒） */
+    simDuration?: number;
+    /** 仿真步长（秒） */
+    simStep?: number;
+    /** 设定值阶跃幅值 */
+    setpointStep?: number;
+    disturbanceType?: DisturbanceType;
+    /** 回路 ID（模型记录一致性校验） */
+    loopId?: string;
+    /** 模型来源，与 TuneRequest 使用同一门禁口径 */
+    modelSource?: ModelSource;
+    /** IDENTIFICATION_RECORD / STEP_EXPERIMENT 来源必填 */
+    sourceRecordId?: string;
+    /** C 级或 MANUAL 来源仅在人工确认后传 true */
+    riskConfirmed?: boolean;
+  }
+
   /** 仿真性能指标 */
   export interface SimulationMetrics {
     /** 上升时间（秒） */
@@ -525,7 +550,7 @@ export function cancelTuningTaskApi(taskId: string) {
  *
  * 至少 2 组候选 PID，返回每组响应曲线与性能指标。
  */
-export function comparePidsApi(data: TuningApi.SimulateRequest) {
+export function comparePidsApi(data: TuningApi.CompareRequest) {
   return requestClient.post<TuningApi.SimulationResult>(
     '/tuning/compare',
     data,

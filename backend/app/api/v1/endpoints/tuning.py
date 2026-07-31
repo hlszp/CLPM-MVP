@@ -31,6 +31,7 @@ from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.tuning import (
+    CompareRequest,
     CreateTuningTaskRequest,
     IdentifyHistoryAsyncResponse,
     IdentifySegmentsRequest,
@@ -291,13 +292,14 @@ async def simulate_endpoint(
 
 @router.post("/compare", response_model=ApiResponse[SimulationResult])
 async def compare_pids_endpoint(
-    body: SimulateRequest,
+    body: CompareRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
-    与 /simulate 共享 SimulateRequest，区别在于 pidCandidates 为必传，
+    使用独立 ``CompareRequest``（V62-P0-030）：``pidCandidates`` 必填且 ≥2 组，
+    ``currentPid`` 可选，不接受 ``recommendedPid``（端点从不消费该字段）。
     返回 candidateResponses 含每组 PID 的响应曲线与指标。
     """
     if not body.pidCandidates or len(body.pidCandidates) < 2:

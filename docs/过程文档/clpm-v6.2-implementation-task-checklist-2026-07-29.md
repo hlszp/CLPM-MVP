@@ -152,15 +152,15 @@ uv run pytest -q tests/test_tuning_identification.py tests/test_tuning_history_s
 - [x] `V62-P0-027` 盘点数据库现存整定状态分布。
 - [x] `V62-P0-028` 固化唯一目标状态机与旧值只读兼容映射。
 - [x] `V62-P0-029` 统一 `DataSource` 大小写与 typed response；兼容旧值一版。
-- [ ] `V62-P0-030` 为 `/compare` 建独立请求 schema，不强制无关 PID 字段。（延后至 Phase 1：当前 `/compare` 复用 `SimulateRequest`，属 P1 范畴）
+- [x] `V62-P0-030` 为 `/compare` 建独立请求 schema，不强制无关 PID 字段。（新建 `CompareRequest`：移除 `recommendedPid` 必填、`currentPid` 可选、`pidCandidates` min_length=2；端点+前端类型+视图+store 同步；4 后端测试+6 前端测试通过）
 - [x] `V62-P0-031` 记录现行生产 bootstrap：`01_schema.sql` 建表后，首次部署直接 `alembic stamp head`。
 - [x] `V62-P0-032` 用 ORM/Alembic 自动核对表清单，确认 ORM 37 张、基础 DDL 21 张、缺 16 张的 RED 基线。
 - [x] `V62-P0-033` 同步 PRD、实现契约、FDS、ADS、DDS、IDS、UIUX。（实现契约升至 v2.3 并完整固化状态机/模型门禁/37 表/安全边界；PRD/FDS/ADS/DDS/IDS 各加 Phase 0 对齐说明指向契约 v2.3 为事实源；UIUX 无 Phase 0 漂移项）
-- [ ] `V62-P0-034` 增加 OpenAPI/路由/response contract 检查，防止文档再次漂移。
+- [x] `V62-P0-034` 增加 OpenAPI/路由/response contract 检查，防止文档再次漂移。（新建 `test_openapi_contract_drift.py` 9 测试：路径/方法/状态码/schema/字段/required/参数 漂移检查 + /compare 专项回归；区分 breaking 禁止 vs non-breaking 允许）
 - [x] `V62-P0-035` 将 `time_constant` 标为 `NOT_IMPLEMENTED`，决定补算或兼容废弃，不把 NULL 当无数据。（已在契约基线 §7 记录语义；Phase 1 指标语义清单后决定补算或废弃）
 - [x] `V62-P0-036` 生成当前可见菜单、隐藏路由、重定向和角色权限基线。（已固化于契约基线 §5）
-- [ ] `V62-P0-037` 为待合并旧路由建立直链、SPA、前进后退和硬刷新 E2E 基线。
-- [ ] `V62-P0-038` 保存结构化 OpenAPI 基线，后续检查 breaking changes。
+- [x] `V62-P0-037` 为待合并旧路由建立直链、SPA、前进后退和硬刷新 E2E 基线。（新建 `route-compat.spec.ts` 12 测试：4 旧路由 × 3 维度（直链 redirect/硬刷新不白屏/前进后退）；tuning 3 路由 + diagnosis 1 路由全通过）
+- [x] `V62-P0-038` 保存结构化 OpenAPI 基线，后续检查 breaking changes。（生成 `tests/golden/openapi_baseline.json`：178 paths/383 schemas，/compare 指向 CompareRequest；export_openapi.py docstring 补刷新基线用法）
 - [x] `V62-P0-039` 增加安全边界静态检查：不存在 DCS 参数写端点或“自动实施”入口。
 - [x] `V62-P0-040` 补齐基础 DDL 缺失的 16 张 ORM 表及其索引、约束、默认值和外键。
 - [x] `V62-P0-041` 增加静态收敛测试：基础 DDL 表集合必须等于 ORM 表集合。
@@ -192,25 +192,25 @@ unit_kpi_summary
 ### 3.8 Phase 0 门禁
 
 - [x] P0 定向测试全部通过。
-- [x] 后端全量 pytest 通过。（3456 passed, 1 skipped, 16 deselected, 33 xfailed）
+- [x] 后端全量 pytest 通过。（3677 passed, 1 skipped, 23 deselected, 33 xfailed）
 - [x] ruff check、ruff format check 通过。
 - [x] alembic check 退出码 0。
 - [x] 专用临时 PostgreSQL 的生产 bootstrap 与 `test_alembic_convergence.py -m integration` 通过，不能是 skipped/deselected。
 - [x] 前端 typecheck 通过。
-- [x] 前端 vitest 全量通过。（434 passed）
-- [ ] 关键 E2E：整定历史辨识、可信度门禁、未知风险显示、兼容路由通过。（待最终合并前跑）
-- [ ] 独立代码审查无 P0/P1 未决。
+- [x] 前端 vitest 全量通过。（456 passed）
+- [x] 关键 E2E：整定历史辨识、可信度门禁、未知风险显示、兼容路由通过。（route-compat 12/7 全通过；整定专项 7/7）
+- [x] 独立代码审查无 P0/P1 未决。（2026-07-31 复核 P0-030/034/037/038 全部交付物：schema/端点/前端类型/测试/E2E/baseline 一致性正确；安全门禁 modelSource/riskConfirmed 保留；向后兼容 recommendedPid 静默忽略有测试守护；仅 3 项 P2 非阻断观察：前端 CompareRequest.disturbanceType 冗余 optional 字段、contract drift 测试 class-scoped fixture 实例方法 pytest 弃用警告、/compare 端点 min_length=2 后冗余 <2 防御检查）
 - [x] Phase 0 逻辑提交完成。（5 提交合入 `codex/v6.2-integration`，合并 `e23d8819`，已推送 origin；pre-push lefthook 全量 pytest+ruff+typecheck 自动门禁通过）
 
 ### 3.9 Phase 0 待收口项
 
-以下为 Phase 0 尚未关闭的文档/契约项，不阻塞安全门禁，但需在最终合并前完成：
+以下为 Phase 0 原延后收口项，已全部补齐（2026-07-31）：
 
-- `V62-P0-033` 同步六份设计文档与 Phase 0 事实源（实现契约/PRD/FDS/ADS/DDS/IDS/UIUX）。
-- `V62-P0-034` 增加 OpenAPI/路由/response contract 结构化快照与 breaking-change 检查。
-- `V62-P0-037` 为待合并旧路由建立直链/SPA/前进后退/硬刷新 E2E 基线。
-- `V62-P0-038` 保存结构化 OpenAPI 基线。
-- `V62-P0-030` `/compare` 独立请求 schema（延后至 Phase 1，属 P1）。
+- [x] `V62-P0-033` 同步六份设计文档与 Phase 0 事实源（实现契约/PRD/FDS/ADS/DDS/IDS/UIUX）。
+- [x] `V62-P0-034` 增加 OpenAPI/路由/response contract 结构化快照与 breaking-change 检查。（`test_openapi_contract_drift.py` 9 测试）
+- [x] `V62-P0-037` 为待合并旧路由建立直链/SPA/前进后退/硬刷新 E2E 基线。（`route-compat.spec.ts` 12 测试）
+- [x] `V62-P0-038` 保存结构化 OpenAPI 基线。（`tests/golden/openapi_baseline.json` 178 paths/383 schemas）
+- [x] `V62-P0-030` `/compare` 独立请求 schema。（新建 `CompareRequest`，移除 `recommendedPid` 必填）
 
 ## 4. Phase 1：数据同轴与 IA 减负
 
@@ -547,3 +547,9 @@ pnpm exec playwright test
 | 2026-07-31 | Phase 3 | 门禁：E2E 复验 | 整定专项 7/7 全通过（35.6s）——Phase 3 UI 零回归；全量 46 passed/9 failed/3 flaky/2 did not run（32.5m），失败均为登录超时级联+数据状态依赖，非 Phase 3 回归 |
 | 2026-07-31 | Phase 3 | 回滚方案验证 | 5 步降级 p3e5→h8b9 + 7 项验证全符合预期（表删除/字段移除/数据无损）+ 5 步升级恢复 head + 冒烟测试通过（IDENTIFICATION_ONLY 记录已恢复）；迁移链完全可逆 |
 | 2026-07-31 | Phase 3 | 门禁：最终确认 | E2E 报告 `e2e-test-report-phase3-2026-07-31.md` + 回滚方案 `phase3-migration-rollback-plan-2026-07-31.md` 已生成；Phase 3 全部门禁通过 |
+| 2026-07-31 | Phase 0 | P0-030 /compare 独立 schema | 新建 `CompareRequest`（移除 recommendedPid 必填、currentPid 可选、pidCandidates min_length=2）；端点+前端类型+视图+store 同步；4 后端测试+6 前端测试全通过 |
+| 2026-07-31 | Phase 0 | P0-038 OpenAPI 基线 | 生成 `tests/golden/openapi_baseline.json`（178 paths/383 schemas，/compare 指向 CompareRequest）；export_openapi.py docstring 补刷新基线用法 |
+| 2026-07-31 | Phase 0 | P0-034 契约漂移检查 | 新建 `test_openapi_contract_drift.py` 9 测试（路径/方法/状态码/schema/字段/required/参数 漂移 + /compare 专项回归）；区分 breaking 禁止 vs non-breaking 允许；全通过 |
+| 2026-07-31 | Phase 0 | P0-037 旧路由 E2E 基线 | 新建 `route-compat.spec.ts` 12 测试（4 旧路由 × 3 维度：直链 redirect/硬刷新不白屏/前进后退）；tuning 3 + diagnosis 1 全通过（30.4s） |
+| 2026-07-31 | Phase 0 | 门禁：延后项补齐后复验 | ruff ✅ / pytest 3677 passed, 1 skipped, 33 xfailed（143.81s）/ alembic check 退出码 0 / check:type ✅ / vitest 456 passed ✅ / route-compat E2E 12/12 ✅；Phase 0 延后收口项全部关闭 |
+| 2026-07-31 | Phase 0 | 门禁：最终独立代码审查 | P0-030/034/037/038 交付物逐项复核：schema/端点/前端类型/测试/E2E/baseline 一致性正确，安全门禁保留，向后兼容有测试守护；无 P0/P1 未决，3 项 P2 非阻断观察已记录；Phase 0 §3.8 门禁全部 `[x]`，可发起合并 PR |

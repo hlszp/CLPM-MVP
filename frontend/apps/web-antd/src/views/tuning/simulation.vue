@@ -540,7 +540,6 @@ async function handleSimulate() {
         modelType: form.modelType,
         modelParams: params,
         currentPid: form.currentPid,
-        recommendedPid: form.recommendedPid,
         pidCandidates: pidCandidates.value,
         simDuration: form.simDuration,
         simStep: form.simStep,
