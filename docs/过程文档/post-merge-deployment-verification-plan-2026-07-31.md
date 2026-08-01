@@ -71,7 +71,7 @@
 |---|---|---|---|---|
 | P11 | 磁盘空间充足 | `df -h /data` | 剩余 > 10GB | ⬜ |
 | P12 | Docker 服务正常 | `docker info \| grep "Server Version"` | 正常返回版本号 | ⬜ |
-| P13 | PostgreSQL 连接数 | `curl -s http://localhost:7101/api/v1/health/db-connections \| jq .utilization` | < 30% | ⬜ |
+| P13 | PostgreSQL 连接数 | `curl -s http://localhost:7101/health/db-connections \| jq .utilization` | < 30% | ⬜ |
 | P14 | Redis 内存 | `docker exec clpm-redis redis-cli INFO memory \| grep used_memory_human` | < 50% maxmemory | ⬜ |
 | P15 | TDengine 连通性 | `docker exec clpm-tdengine taos -u root -p*** -s "SHOW DATABASES;"` | 返回 clpm_ts | ⬜ |
 | P16 | `.env.prod` 配置完整 | `grep -cE "^(POSTGRES_|REDIS_|TDENGINE_|JWT_)" .env.prod` | ≥ 8 个配置项 | ⬜ |
@@ -163,8 +163,8 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 
 docker exec clpm-postgres psql -U clpm -d clpm -c \
   "SELECT column_name FROM information_schema.columns WHERE table_name='tuning_record' \
-   AND column_name IN ('current_pid','risk_assessment','rollback_pid','unit_conversion');"
-# 预期：4 行返回
+   AND column_name IN ('current_pid','risk_assessment','rollback_pid');"
+# 预期：3 行返回
 
 docker exec clpm-postgres psql -U clpm -d clpm -c \
   "SELECT column_name FROM information_schema.columns WHERE table_name='action_tracker' \
@@ -180,7 +180,7 @@ docker run --rm --network clpm-prod --env-file .env.prod clpm-backend:v6.2 \
 **验证检查点**：
 - ✅ Alembic current = `p3e5f6g7h8i9`
 - ✅ `process_model_version` 表存在且有回填数据
-- ✅ `tuning_record` 4 个新字段存在
+- ✅ `tuning_record` 3 个新字段存在（current_pid, risk_assessment, rollback_pid）
 - ✅ `action_tracker` 2 个新字段存在
 - ✅ `alembic check` 退出码 0
 
@@ -214,7 +214,7 @@ echo "后端启动中..."
 
 # 2. 等待后端健康检查通过（最长 90 秒，v6.2 需预热 Celery 子进程）
 for i in $(seq 1 18); do
-    if curl -fsS http://localhost:7101/api/v1/health >/dev/null 2>&1; then
+    if curl -fsS http://localhost:7101/health >/dev/null 2>&1; then
         echo "[OK] 后端 Liveness 通过（第 ${i}*5 秒）"
         break
     fi
@@ -224,7 +224,7 @@ done
 
 # 3. 等待 Readiness 通过（DB/Redis/TDengine 全就绪）
 for i in $(seq 1 12); do
-    READY=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:7101/api/v1/health/ready)
+    READY=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:7101/health/ready)
     if [ "$READY" = "200" ]; then
         echo "[OK] 后端 Readiness 通过（第 ${i}*5 秒）"
         break
@@ -271,15 +271,15 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 
 | # | 验证项 | 命令 | 预期结果 | 结果 |
 |---|---|---|---|---|
-| V1 | 后端 Liveness | `curl -s http://localhost:7101/api/v1/health \| jq .status` | `ok` | ⬜ |
-| V2 | 后端 Readiness | `curl -s http://localhost:7101/api/v1/health/ready \| jq` | 所有 checks 为 ok，HTTP 200 | ⬜ |
-| V3 | PG 连接池 | `curl -s http://localhost:7101/api/v1/health/db-connections \| jq .utilization` | < 30% | ⬜ |
+| V1 | 后端 Liveness | `curl -s http://localhost:7101/health \| jq .status` | `ok` | ⬜ |
+| V2 | 后端 Readiness | `curl -s http://localhost:7101/health/ready \| jq` | 所有 checks 为 ok，HTTP 200 | ⬜ |
+| V3 | PG 连接池 | `curl -s http://localhost:7101/health/db-connections \| jq .utilization` | < 30% | ⬜ |
 | V4 | 前端可访问 | `curl -s -o /dev/null -w "%{http_code}" http://localhost:7141/` | 200 | ⬜ |
-| V5 | Celery Worker 活跃 | `docker exec clpm-backend celery -A app.celery_app inspect active 2>/dev/null \| grep -c "OK"` | ≥ 1 | ⬜ |
-| V6 | Celery Beat 调度 | `docker exec clpm-backend celery -A app.celery_app inspect scheduled 2>/dev/null \| grep -c "schedule"` | ≥ 1 | ⬜ |
+| V5 | Celery Worker 活跃 | `docker exec clpm-backend celery -A app.tasks.celery_app inspect active 2>/dev/null \| grep -c "OK"` | ≥ 1 | ⬜ |
+| V6 | Celery Beat 调度 | `docker exec clpm-backend celery -A app.tasks.celery_app inspect scheduled 2>/dev/null \| grep -c "schedule"` | ≥ 1 | ⬜ |
 | V7 | Redis 连通 | `docker exec clpm-redis redis-cli PING` | PONG | ⬜ |
 | V8 | TDengine 连通 | `docker exec clpm-tdengine taos -u root -p*** -s "SHOW DATABASES;" \| grep clpm_ts` | 含 clpm_ts | ⬜ |
-| V9 | SignalR Hub | `curl -s -o /dev/null -w "%{http_code}" http://localhost:7101/api/v1/realtime/hub -H "Connection: Upgrade"` | 426（要求升级）或 200 | ⬜ |
+| V9 | SignalR 实时订阅 | 检查后端启动日志 `grep "SignalR" /tmp/clpm-backend.log` | 含"已订阅 N 个 Tag"（后端作为客户端连接远端 AAS Hub） | ⬜ |
 
 ### 3.2 后端 API 层验证
 
@@ -295,11 +295,11 @@ echo "Token: ${TOKEN:0:20}..."
 |---|---|---|---|---|
 | A1 | 登录 | 上方登录命令 | 返回 accessToken | ⬜ |
 | A2 | 回路列表 | `curl -s http://localhost:7101/api/v1/loops -H "Authorization: Bearer $TOKEN" \| jq '.data \| length'` | > 0 | ⬜ |
-| A3 | 整定记录 | `curl -s http://localhost:7101/api/v1/tuning/records -H "Authorization: Bearer $TOKEN" \| jq '.data \| length'` | ≥ 0（无报错） | ⬜ |
-| A4 | 诊断 Tracker | `curl -s http://localhost:7101/api/v1/diagnosis/tracker -H "Authorization: Bearer $TOKEN" \| jq '.data \| length'` | ≥ 0（无报错） | ⬜ |
-| A5 | KPI 快照 | `curl -s http://localhost:7101/api/v1/kpi/snapshots -H "Authorization: Bearer $TOKEN" \| jq '.code'` | 0（成功） | ⬜ |
+| A3 | 整定任务 | `curl -s http://localhost:7101/api/v1/tuning/tasks -H "Authorization: Bearer $TOKEN" \| jq '.data.items \| length'` | ≥ 0（无报错） | ⬜ |
+| A4 | 诊断列表（含 Tracker 字段） | `curl -s http://localhost:7101/api/v1/diagnosis/list -H "Authorization: Bearer $TOKEN" \| jq '.data.items \| length'` | ≥ 0（含 assignee/plannedAt 字段） | ⬜ |
+| A5 | KPI 快照 | `curl -s "http://localhost:7101/api/v1/performance/loops/snapshots?loopId=<ID>&startDate=2026-07-01T00:00:00Z&endDate=2026-07-31T23:59:59Z" -H "Authorization: Bearer $TOKEN" \| jq '.code'` | 0（成功） | ⬜ |
 | A6 | 整定任务列表 | `curl -s http://localhost:7101/api/v1/tuning/tasks -H "Authorization: Bearer $TOKEN" \| jq '.code'` | 0 | ⬜ |
-| A7 | process_model_version 数据 | `curl -s http://localhost:7101/api/v1/tuning/records -H "Authorization: Bearer $TOKEN" \| jq '.data[0].modelVersionId // "null"'` | 有版本 ID 或 null（不报错） | ⬜ |
+| A7 | process_model_version 数据 | `curl -s http://localhost:7101/api/v1/tuning/tasks -H "Authorization: Bearer $TOKEN" \| jq '.data.items[0].processModelVersionId // "null"'` | 有版本 ID 或 null（不报错） | ⬜ |
 
 ### 3.3 前端页面层验证
 
@@ -384,7 +384,7 @@ echo "对比响应：$(echo $COMPARE_RESP | jq '.data.candidateResponses | lengt
 |---|---|---|---|---|---|
 | M1 | 后端 CPU 使用率 | `docker stats clpm-backend --no-stream --format "{{.CPUPerc}}"` | < 30% | > 80% 持续 5min | ⬜ |
 | M2 | 后端内存使用 | 同上 `{{.MemUsage}}` | < 1GB | > 2GB | ⬜ |
-| M3 | PostgreSQL 连接数 | `curl -s /api/v1/health/db-connections \| jq .total` | < 20 | > 50（max_connections 的 50%） | ⬜ |
+| M3 | PostgreSQL 连接数 | `curl -s /health/db-connections \| jq .total` | < 20 | > 50（max_connections 的 50%） | ⬜ |
 | M4 | PG 连接利用率 | 同上 `.utilization` | < 30% | > 60% | ⬜ |
 | M5 | Redis 内存 | `docker exec clpm-redis redis-cli INFO memory \| grep used_memory_peak` | < 100MB | > 500MB | ⬜ |
 | M6 | Redis 键数 | `docker exec clpm-redis redis-cli DBSIZE` | < 10000 | > 100000 | ⬜ |
@@ -396,10 +396,10 @@ echo "对比响应：$(echo $COMPARE_RESP | jq '.data.candidateResponses | lengt
 | # | 指标 | 采集方法 | 正常范围 | 告警阈值 | 确认 |
 |---|---|---|---|---|---|
 | M9 | API 响应时间（P95） | `curl -w "%{time_total}"` 抽样 | < 500ms | > 2s | ⬜ |
-| M10 | `/health/ready` 状态 | `curl -s /api/v1/health/ready \| jq .status` | ok | degraded | ⬜ |
+| M10 | `/health/ready` 状态 | `curl -s /health/ready \| jq .status` | ok | degraded | ⬜ |
 | M11 | API 错误率（5xx） | 后端日志 `grep "500\|502\|503" /var/log/clpm-backend.log` | < 0.1% | > 1% | ⬜ |
 | M12 | Celery 任务积压 | `docker exec clpm-redis redis-cli LLEN celery` | < 10 | > 100 | ⬜ |
-| M13 | Celery 任务失败率 | `docker exec clpm-backend celery -A app.celery_app inspect stats \| grep failures` | 0 | > 5% | ⬜ |
+| M13 | Celery 任务失败率 | `docker exec clpm-backend celery -A app.tasks.celery_app inspect stats \| grep failures` | 0 | > 5% | ⬜ |
 | M14 | SignalR 连接数 | 后端日志 `grep "SignalR" \| grep -c "connected"` | > 0（有客户端时） | 突降为 0 | ⬜ |
 | M15 | JWT 认证失败率 | 后端日志 `grep "401" \| wc -l` / 总请求数 | < 1% | > 10% | ⬜ |
 
@@ -489,8 +489,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 sleep 30
 
 # 6. 验证
-curl -fsS http://localhost:7101/api/v1/health
-curl -fsS http://localhost:7101/api/v1/health/ready
+curl -fsS http://localhost:7101/health
+curl -fsS http://localhost:7101/health/ready
 docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine ps
 ```
 
@@ -504,7 +504,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 | RB4 | action_tracker 无 Phase 3 字段 | 0 行返回 | ⬜ |
 | RB5 | 后端 `/health` | 200 ok | ⬜ |
 | RB6 | 前端页面可访问 | 200 | ⬜ |
-| RB7 | 整定模块可用 | `/tuning/records` 返回 200 | ⬜ |
+| RB7 | 整定模块可用 | `/tuning/tasks` 返回 200 | ⬜ |
 
 ### 5.4 回滚失败应急预案
 
@@ -574,9 +574,9 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 
 ```bash
 # === 健康检查 ===
-curl -s http://localhost:7101/api/v1/health | jq
-curl -s http://localhost:7101/api/v1/health/ready | jq
-curl -s http://localhost:7101/api/v1/health/db-connections | jq
+curl -s http://localhost:7101/health | jq
+curl -s http://localhost:7101/health/ready | jq
+curl -s http://localhost:7101/health/db-connections | jq
 
 # === Alembic ===
 docker exec clpm-backend alembic current
@@ -592,8 +592,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d backend frontend
 
 # === Celery ===
-docker exec clpm-backend celery -A app.celery_app inspect active
-docker exec clpm-backend celery -A app.celery_app inspect scheduled
+docker exec clpm-backend celery -A app.tasks.celery_app inspect active
+docker exec clpm-backend celery -A app.tasks.celery_app inspect scheduled
 docker exec clpm-backend ps aux | grep celery
 
 # === Redis ===
@@ -628,6 +628,6 @@ docker exec clpm-tdengine taos -u root -p*** -s "USE clpm_ts; SELECT COUNT(*) FR
 
 ---
 
-> **文档版本**：v1.0
+> **文档版本**：v1.1（2026-08-01 修正端点路径偏差：D1-D5 + Celery app 路径）
 > **生成依据**：`pre-merge-final-gate-checklist-2026-07-31.md` + `phase3-migration-rollback-plan-2026-07-31.md` + `ops-runbook.md` + `AGENTS.md` 部署规范
 > **有效期**：v6.2 生产部署专用
