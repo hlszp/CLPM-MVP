@@ -210,10 +210,15 @@ cp "${PROJECT_ROOT}/db/tdengine/01_supertable.sql"   "${DELIVERY_PATH}/db/tdengi
 mkdir -p "${DELIVERY_PATH}/images"
 cp "${IMAGES_TAR_PATH}" "${DELIVERY_PATH}/images/"
 
-# 7. README（部署说明）
+# 7. README（部署快速指南）+ DEPLOYMENT-GUIDE.md（完整操作手册）
 if [ -f "${SCRIPT_DIR}/README-deploy.md" ]; then
     cp "${SCRIPT_DIR}/README-deploy.md" "${DELIVERY_PATH}/README.md"
-else
+fi
+if [ -f "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" ]; then
+    cp "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" "${DELIVERY_PATH}/DEPLOYMENT-GUIDE.md"
+fi
+# 如果 README-deploy.md 不存在，生成基本 README
+if [ ! -f "${DELIVERY_PATH}/README.md" ]; then
     # 生成基本 README
     cat > "${DELIVERY_PATH}/README.md" <<README_EOF
 # CLPM 部署包（${BUILD_VERSION}）
@@ -307,6 +312,9 @@ if [ "$PUSH_DEPLOY_REPO" = true ]; then
 
     if [ -f "${SCRIPT_DIR}/README-deploy.md" ]; then
         cp "${SCRIPT_DIR}/README-deploy.md" "${DEPLOY_REPO_DIR}/README.md"
+    fi
+    if [ -f "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" ]; then
+        cp "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" "${DEPLOY_REPO_DIR}/DEPLOYMENT-GUIDE.md"
     fi
 
     # 提交并推送
