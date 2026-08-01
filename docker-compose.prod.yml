@@ -152,7 +152,9 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - tdengine_data:/var/lib/taos
-      - ./db/tdengine/01_supertable.sql:/root/init/01_supertable.sql:ro
+      # TDengine entrypoint 从 /docker-entrypoint-initdb.d/ 读取初始化 SQL
+      # （/root/init/ 不是 entrypoint 读取路径，挂载到那里初始化脚本不会执行）
+      - ./db/tdengine/01_supertable.sql:/docker-entrypoint-initdb.d/01_supertable.sql:ro
     healthcheck:
       test:
         [

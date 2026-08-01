@@ -49,7 +49,7 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - td_data:/var/lib/taos
-      - ../../db/tdengine/01_supertable.sql:/root/init/01_supertable.sql:ro
+      - ../../db/tdengine/01_supertable.sql:/docker-entrypoint-initdb.d/01_supertable.sql:ro
       - ./tdengine/taos.cfg:/etc/taos/taos.cfg:ro
     healthcheck:
       test: ["CMD", "taos", "-s", "SELECT SERVER_VERSION();"]

@@ -33,3 +33,60 @@ alembic_sync_head() {
         echo "  [OK] 数据库迁移完成（${current_rev} → head）"
     fi
 }
+
+# ============================================================
+# TDengine schema 校验（2026-08-01：兜底 init 脚本未执行场景）
+#
+# 背景：TDengine Docker 镜像 entrypoint 从 /docker-entrypoint-initdb.d/
+# 读取初始化 SQL。若挂载路径不对（曾经误挂到 /root/init/）或卷重置后
+# 容器未完全重建，init 脚本不会执行，导致 clpm_ts 数据库和 st_loop_data
+# 超级表缺失，后端写入报 [0x0200]: db is not specified。
+#
+# 本函数在部署时显式校验并补建，作为 entrypoint init 的兜底。
+#
+# 前置条件：调用方须定义 tdengine_exec()，与 backend_exec() 同模式：
+#   tdengine_exec() { compose_prod exec -T tdengine "$@"; }
+#   tdengine_exec() { ssh "$SSH_HOST" "docker exec clpm-tdengine $*"; }
+# 以及 backend_exec()（用于读取 TDENGINE_PASSWORD/TDENGINE_PORT 环境变量）。
+# ============================================================
+tdengine_ensure_schema() {
+    local td_pass td_port td_rest_port
+    td_pass=$(backend_exec printenv TDENGINE_PASSWORD 2>/dev/null | tr -d '\r\n' || true)
+    td_port=$(backend_exec printenv TDENGINE_PORT 2>/dev/null | tr -d '\r\n' || true)
+    td_rest_port=$((td_port + 11))  # REST API 端口 = 原生端口 + 11
+
+    if [ -z "$td_pass" ] || [ -z "$td_port" ]; then
+        echo "  [WARN] 无法读取 TDENGINE_PASSWORD/TDENGINE_PORT，跳过 TDengine schema 校验"
+        return 0
+    fi
+
+    echo "  检查 TDengine clpm_ts 数据库（REST :${td_rest_port}）..."
+
+    # 通过 REST API 检查数据库是否存在
+    local db_check
+    db_check=$(tdengine_exec curl -s -u "root:${td_pass}" \
+        "http://localhost:${td_rest_port}/rest/sql" -d 'SHOW DATABASES' 2>/dev/null || echo "")
+
+    if echo "$db_check" | grep -q '"clpm_ts"'; then
+        echo "  [OK] clpm_ts 数据库已存在"
+    else
+        echo "  [WARN] clpm_ts 数据库不存在，执行初始化 DDL..."
+        tdengine_exec curl -s -u "root:${td_pass}" \
+            "http://localhost:${td_rest_port}/rest/sql" \
+            -d "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'" >/dev/null 2>&1
+        tdengine_exec curl -s -u "root:${td_pass}" \
+            "http://localhost:${td_rest_port}/rest/sql/clpm_ts" \
+            -d "CREATE STABLE IF NOT EXISTS st_loop_data (ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT, pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT) TAGS (loop_id BINARY(36), unit_id BINARY(36))" >/dev/null 2>&1
+
+        # 复查超级表
+        local recheck
+        recheck=$(tdengine_exec curl -s -u "root:${td_pass}" \
+            "http://localhost:${td_rest_port}/rest/sql/clpm_ts" -d 'SHOW STABLES' 2>/dev/null || echo "")
+        if echo "$recheck" | grep -q '"st_loop_data"'; then
+            echo "  [OK] clpm_ts 数据库和 st_loop_data 超级表已创建"
+        else
+            echo "  [FAIL] TDengine schema 初始化失败"
+            return 1
+        fi
+    fi
+}

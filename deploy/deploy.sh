@@ -158,6 +158,11 @@ backend_exec() {
     compose_prod exec -T backend "$@"
 }
 
+# TDengine 容器命令执行器（lib-migrate.sh tdengine_ensure_schema 使用）
+tdengine_exec() {
+    compose_prod exec -T tdengine "$@"
+}
+
 SIGNALR_ENABLED=$(grep -E "^SIGNALR_ENABLED=" "$ENV_FILE" | cut -d'=' -f2- | tr '[:upper:]' '[:lower:]')
 if [ "$SIGNALR_ENABLED" = "true" ]; then
     check_required_no_placeholder "SIGNALR_HUB_URL"
@@ -231,6 +236,13 @@ echo ""
 #   - 任一步失败即中止部署（set -e），不允许新代码跑在旧 schema 上
 echo "4. 数据库版本同步（部署=迁移一体，失败即中止）..."
 alembic_sync_head
+echo ""
+
+# ------------------------------------------------------------
+# 7.5 TDengine schema 校验（兜底 init 脚本未执行场景）
+# ------------------------------------------------------------
+echo "4.5. TDengine schema 校验..."
+tdengine_ensure_schema
 echo ""
 
 # ------------------------------------------------------------
