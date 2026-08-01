@@ -82,7 +82,7 @@ worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspe
 | R4 | celery 健康检查 `-d celery@$(hostname)` 定向到服务器主机名而非容器名 → 恒无 pong；且 worker 预载 30-60s 单次探测误判 | 去定向改广播 ping + 6×10s 重试 |
 | R4 | 生产 PG 缺 6 张表（algorithm_parameter/diagnosis_rule 等）——历史某次 `alembic stamp head` 把版本打到 head 但未真正建表 | 从 dev 导出 DDL+种子数据补齐（32→38 表）；**教训：stamp 假设 schema==head，对老库慎用，lib-migrate 的 stamp 分支仅此一类场景** |
 | R5 | `COMPOSE_PROFILE` 按已废止的 DATA_SOURCE_TYPE 分支 → 生产从未启动 TDengine 容器 | 恒启用 `--profile tdengine`；同步修复 env_file 的 APP_VERSION=1.0.0 覆盖镜像 ENV 问题（部署时 sed 同步） |
-| R6 | 全新 TDengine 容器无 `clpm_ts` 库 | 手动 REST 建库+超级表（**后续部署脚本需补 TDengine 初始化步骤，当前无此逻辑**） |
+| R6 | 全新 TDengine 容器无 `clpm_ts` 库 | 手动 REST 建库+超级表（**已在 build-and-deploy.sh 补 tdengine_ensure_schema 兜底校验**，2026-08-01） |
 
 验证终态：7 容器全 healthy、APP_VERSION=v6.2.0-196-g41a7e144（/health 可见）、celery ping/scheduled/beat 全通、部署前自动备份（TDengine 带凭据）首次真实生效、迁移 g7a8b9c0d1e2→head 成功。
 
@@ -118,6 +118,19 @@ prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.pro
 
 SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次收到数据更新内存 `_last_data_at`，flush 时节流（30s）持久化到 Redis checkpoint（`realtime:gap:last_data_ts`，epoch 秒）；重连成功（含进程重启后首连，启动时从 checkpoint 恢复）检测缺口 ≥ `GAP_BACKFILL_MIN_GAP_SECONDS`（默认 60s）即创建独立 asyncio 补数任务（单实例守卫，不阻塞实时链路），复用 `import_history_data`（`conflict_strategy="skip"` 依赖 TDengine 同 ts 覆盖——**禁止 overwrite**（会先 DELETE 误删实时行），`trigger_backfill=True` 联动 KPI 回算）；单次窗口上限 `GAP_BACKFILL_MAX_HOURS`（默认 24h），超出截断并告警需手工导入；补数失败仅记日志、checkpoint 不推进，下次重连天然重试。实现在 `app/services/data_source/realtime_subscriber.py`（`_maybe_trigger_gap_backfill` / `_run_gap_backfill`）。
 
+### SignalR 订阅 invocationId 机制（2026-08-01 修复）
+
+**问题**：AAS SignalR Hub 仅流式推送 PV/OP 类型 tag 的变化值，不主动推送 SP/MODE/PID 等非变化频繁的 tag；导致 Redis 缓存中 SP/MODE 恒为空，前端实时数据页 SP/MODE 列空白。
+
+**根因**：SignalR `SubscribeAsync` 调用若不携带 `invocationId`，AAS Hub 不返回 Completion 响应（包含所有订阅 tag 的当前快照值），仅推送后续变化值。SP/MODE 变化频率极低，长时间不触发推送。
+
+**修复**（`app/services/data_source/realtime_subscriber.py`）：
+- 订阅消息携带 `invocationId`（如 `sub_1`），AAS Hub 返回 Completion 响应包含全部订阅 tag（189 个）的当前值（PV/SP/OP/MODE/PID_P/PID_I/PID_D）
+- 新增周期刷新任务：每 5 分钟自动重发订阅请求（`invocationId` 递增 `sub_2`/`sub_3`...），确保 SP/MODE 值不会因长时间无变化而过期
+- Completion 响应解析逻辑：`_handle_signalr_message` 中识别 `type=3`（Completion）消息，提取 result 数组中的 tagCode/value/quality/collectTime
+
+**验证**：后端日志 `已订阅 189 个 Tag (invocationId=sub_1)` + Redis 缓存 `realtime:*.SP` / `realtime:*.MODE` 键值非空 + `GET /api/v1/realtime` 接口返回 SP/MODE 值。
+
 ### macOS fork 时区陷阱
 
 celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）。
@@ -129,3 +142,33 @@ celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）
 ## 模型变更与迁移同批纪律（2026-07-21 教训）
 
 后端跑在 `--reload` 下，ORM 模型改动保存即生效；若 alembic 迁移晚于模型落地，窗口期内所有涉及该表的查询都会 `UndefinedColumnError` → 大面积 500（`loop_ledger.ideal_settling_time` 事件中 /loops、/tasks、/tasks/backfill、/diagnosis/* 全部弹"服务异常"）。纪律：模型改动与迁移文件同一批次提交，且先应用迁移再让代码进入运行环境。
+
+## TDengine 部署排障（2026-08-01 实弹修复）
+
+### 初始化脚本挂载路径
+
+TDengine 官方镜像 entrypoint 从 `/docker-entrypoint-initdb.d/` 读取初始化 SQL（与 PostgreSQL/MySQL 约定一致）。早期 `docker-compose.prod.yml` 误将脚本挂载到 `/root/init/`，导致卷重置后初始化 SQL 不执行、`clpm_ts` 库和 `st_loop_data` 超级表缺失。
+
+修复：挂载路径改为 `./db/tdengine/01_supertable.sql:/docker-entrypoint-initdb.d/01_supertable.sql:ro`；`deploy/lib-migrate.sh` 新增 `tdengine_ensure_schema()` 函数，部署时通过 REST API 兜底 `CREATE DATABASE IF NOT EXISTS` + `CREATE STABLE IF NOT EXISTS`，双重保险。
+
+### 容器 exit 255 崩溃循环（密码标记文件）
+
+**现象**：非首次部署（`tdengine_data` 卷已存在）后，TDengine 容器反复 `Restarting (255)`，日志含 taos 认证失败。
+
+**根因**：TDengine entrypoint 每次启动都用默认密码 `taosdata` 登录执行 `ALTER USER root PASSWD <new>`。但卷 `tdengine_data` 持久化后密码已改为 `.env.prod` 中的 `TAOS_ROOT_PASSWORD`，默认密码登录失败 → entrypoint `exit 255` → 容器崩溃循环。
+
+**修复**：
+- `docker-compose.prod.yml` 挂载标记文件 `./.td-password-changed:/.docker-entrypoint-root-password-changed`
+- `build-and-deploy.sh` 在非首次部署（`docker volume inspect clpm_tdengine_data` 成功）时自动 `touch .td-password-changed`
+- TDengine entrypoint 检测到 `/.docker-entrypoint-root-password-changed` 存在时跳过 `ALTER USER`，直接用已改密码启动
+- 首次部署（卷不存在）时不创建标记文件，entrypoint 正常执行改密
+
+**排障命令**：
+```bash
+# 检查标记文件是否存在
+ls -la /home/zhangping/clpm/.td-password-changed
+# 容器内检查
+docker exec clpm-tdengine ls -la /.docker-entrypoint-root-password-changed
+# 查看崩溃日志
+docker logs clpm-tdengine --tail 50
+```
