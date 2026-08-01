@@ -246,8 +246,9 @@ services:
       postgres:
         condition: service_healthy
     # 健康检查：通过 celery inspect ping 检测 worker 存活
+    # 注意：用 CMD-SHELL 让 $HOSTNAME 被 shell 展开（CMD 格式不经过 shell，$HOSTNAME 不会展开）
     healthcheck:
-      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME", "--timeout", "5"]
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d celery@$$HOSTNAME --timeout 5"]
       interval: 30s
       timeout: 10s
       retries: 3
