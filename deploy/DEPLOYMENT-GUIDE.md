@@ -164,8 +164,8 @@ ls -la
 │   │   └── 02_seed_data.sql
 │   └── tdengine/
 │       └── 01_supertable.sql
-├── images/                        ← 预构建 Docker 镜像
-│   └── clpm-images-*.tar.gz
+├── images/                        ← 预构建 Docker 镜像（自有 + 第三方）
+│   └── clpm-images-*.tar.gz       ← 含 backend/frontend/postgres/redis/tdengine
 └── README.md                      ← 部署说明
 ```
 

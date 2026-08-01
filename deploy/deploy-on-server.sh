@@ -113,8 +113,31 @@ load_images() {
     log_info "加载镜像: $tarball ($tar_size)"
     docker load < "$tarball"
     log_info "镜像加载完成"
-    # 显示已加载的 clpm 镜像
-    docker images | grep clpm | head -10
+
+    # 校验核心镜像是否齐全（客户离线环境无法 docker pull 补拉）
+    local required_images=(
+        "clpm-backend:latest"
+        "clpm-frontend:latest"
+        "postgres:16-alpine"
+        "redis:7-alpine"
+        "tdengine/tdengine:3.3.6.6"
+    )
+    local missing=""
+    for img in "${required_images[@]}"; do
+        if ! docker image inspect "$img" >/dev/null 2>&1; then
+            missing="${missing}  ${img}\n"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        log_error "以下核心镜像缺失（交付包不完整或镜像包损坏）："
+        echo -e "$missing"
+        log_error "请联系开发团队重新获取完整交付包"
+        exit 1
+    fi
+    log_info "核心镜像校验通过（backend + frontend + postgres + redis + tdengine）"
+
+    # 显示已加载的镜像
+    docker images | grep -E 'clpm|postgres|redis|tdengine' | head -15
 }
 
 # 30 秒健康检查重试（后端 + 前端）

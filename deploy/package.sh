@@ -17,9 +17,15 @@
 #   └── README.md              ← 部署说明
 #
 # 用法：
-#   ./deploy/package.sh                    # 构建并打包（含测试门禁）
-#   ./deploy/package.sh --skip-tests       # 跳过测试门禁（紧急交付）
-#   ./deploy/package.sh --push-deploy-repo # 同时同步部署脚本到 clpm-deploy 远端仓库
+#   ./deploy/package.sh                        # 构建并打包（含测试门禁 + 核心第三方镜像）
+#   ./deploy/package.sh --skip-tests           # 跳过测试门禁（紧急交付）
+#   ./deploy/package.sh --include-monitoring   # 额外打包监控镜像（Prometheus/Grafana）
+#   ./deploy/package.sh --push-deploy-repo     # 同时同步部署脚本到 clpm-deploy 远端仓库
+#
+# 交付包镜像内容：
+#   自有镜像：clpm-backend / clpm-frontend（各 3 个 tag）
+#   核心第三方：postgres:16-alpine / redis:7-alpine / tdengine:tdengine:3.3.6.6
+#   可选第三方：prom/prometheus / grafana/grafana / prom/node-exporter（--include-monitoring）
 # ============================================================
 set -euo pipefail
 
@@ -61,11 +67,13 @@ log_step()  { echo -e "\n${BLUE}========== $* ==========${NC}"; }
 # ------------------------------------------------------------
 SKIP_TESTS=false
 PUSH_DEPLOY_REPO=false
+INCLUDE_MONITORING=false
 
 for arg in "$@"; do
     case $arg in
-        --skip-tests)        SKIP_TESTS=true ;;
-        --push-deploy-repo)  PUSH_DEPLOY_REPO=true ;;
+        --skip-tests)         SKIP_TESTS=true ;;
+        --push-deploy-repo)   PUSH_DEPLOY_REPO=true ;;
+        --include-monitoring) INCLUDE_MONITORING=true ;;
         *) log_error "未知参数: $arg"; exit 1 ;;
     esac
 done
@@ -143,7 +151,43 @@ fi
 log_info "前端镜像构建完成"
 
 # ============================================================
-# Phase 2: 导出镜像 tarball
+# Phase 1.5: 拉取第三方镜像（客户离线环境无法 docker pull）
+# ============================================================
+log_step "Phase 1.5: 拉取第三方依赖镜像"
+
+# 核心依赖（必选）：PostgreSQL / Redis / TDengine
+THIRD_PARTY_CORE=(
+    "postgres:16-alpine"
+    "redis:7-alpine"
+    "tdengine/tdengine:3.3.6.6"
+)
+
+# 监控依赖（可选）：Prometheus / Grafana / Node Exporter
+THIRD_PARTY_MONITORING=(
+    "prom/prometheus:v2.53.4"
+    "grafana/grafana:11.1.0"
+    "prom/node-exporter:v1.8.2"
+)
+
+for img in "${THIRD_PARTY_CORE[@]}"; do
+    log_info "拉取核心镜像: $img"
+    docker pull --platform "$BUILD_PLATFORM" "$img"
+done
+
+if [ "$INCLUDE_MONITORING" = true ]; then
+    for img in "${THIRD_PARTY_MONITORING[@]}"; do
+        log_info "拉取监控镜像: $img"
+        docker pull --platform "$BUILD_PLATFORM" "$img"
+    done
+    ALL_THIRD_PARTY=("${THIRD_PARTY_CORE[@]}" "${THIRD_PARTY_MONITORING[@]}")
+else
+    ALL_THIRD_PARTY=("${THIRD_PARTY_CORE[@]}")
+fi
+
+log_info "第三方镜像拉取完成"
+
+# ============================================================
+# Phase 2: 导出镜像 tarball（含自有 + 第三方）
 # ============================================================
 log_step "Phase 2: 导出镜像 tarball"
 
@@ -151,14 +195,19 @@ IMAGES_TAR="clpm-images-${BUILD_VERSION}.tar.gz"
 mkdir -p "${RELEASES_DIR}/images"
 IMAGES_TAR_PATH="${RELEASES_DIR}/images/${IMAGES_TAR}"
 
+# 自有镜像（backend + frontend 各 3 个 tag）
+OWN_IMAGES=(
+    clpm-backend:latest clpm-backend:${GIT_COMMIT} clpm-backend:${BUILD_VERSION}
+    clpm-frontend:latest clpm-frontend:${GIT_COMMIT} clpm-frontend:${BUILD_VERSION}
+)
+
 log_info "导出镜像到: ${IMAGES_TAR_PATH}"
-docker save \
-    clpm-backend:latest clpm-backend:${GIT_COMMIT} clpm-backend:${BUILD_VERSION} \
-    clpm-frontend:latest clpm-frontend:${GIT_COMMIT} clpm-frontend:${BUILD_VERSION} \
-    | gzip > "${IMAGES_TAR_PATH}"
+log_info "自有镜像: ${OWN_IMAGES[*]}"
+log_info "第三方镜像: ${ALL_THIRD_PARTY[*]}"
+docker save "${OWN_IMAGES[@]}" "${ALL_THIRD_PARTY[@]}" | gzip > "${IMAGES_TAR_PATH}"
 
 IMAGES_TAR_SIZE=$(du -h "${IMAGES_TAR_PATH}" | cut -f1)
-log_info "镜像包大小: ${IMAGES_TAR_SIZE}"
+log_info "镜像包大小: ${IMAGES_TAR_SIZE}（含 $((${#OWN_IMAGES[@]} + ${#ALL_THIRD_PARTY[@]})) 个镜像）"
 
 # ============================================================
 # Phase 3: 组装交付包
