@@ -87,6 +87,11 @@ _GAP_BACKFILL_LOCK_KEY = "realtime:gap:backfill:lock"
 # 看门狗 recv 超时（秒）—— 周期性检查消息停滞，超时即断开重连
 _WATCHDOG_RECV_TIMEOUT = 30.0
 
+# SP/MODE 等低频信号刷新间隔（秒）—— AAS 仅在值变化时推送 updateRealValues，
+# SP/MODE/PID 变化频率低，需定期重新调用 SubscribeAsync 获取 Completion 响应中的
+# 当前值，刷新 Redis 缓存（TTL 3600s），避免低频信号过期后前端显示空白。
+_SIGNALR_REFRESH_INTERVAL = 300.0  # 5 分钟
+
 # loop_part → (loop_id, unit_id) 缓存 TTL（秒）：flush 热路径不每拍查库
 _LOOP_META_CACHE_TTL = 300.0
 # 缓存缺失 loop_part 时的最小刷新间隔（秒）：防止未配置映射的 loop_part
@@ -174,9 +179,11 @@ class RealtimeSubscriber:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self._flush_task: asyncio.Task | None = None
+        self._refresh_task: asyncio.Task | None = None
         self._ws: Any = None
         self._running = False
         self._subscribed_tags: set[str] = set()
+        self._invocation_counter: int = 0  # SignalR invocationId 计数器
         self._buffer: dict[
             str, dict[str, Any]
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
@@ -217,6 +224,7 @@ class RealtimeSubscriber:
         await self._load_checkpoint()
         self._task = asyncio.create_task(self._run())
         self._flush_task = asyncio.create_task(self._flush_loop())
+        self._refresh_task = asyncio.create_task(self._refresh_loop())
         logger.info(
             "实时数据订阅任务已启动 (hub=%s, writeback=%s)",
             settings.SIGNALR_HUB_URL,
@@ -240,6 +248,13 @@ class RealtimeSubscriber:
             except asyncio.CancelledError:
                 pass
             self._flush_task = None
+        if self._refresh_task is not None:
+            self._refresh_task.cancel()
+            try:
+                await self._refresh_task
+            except asyncio.CancelledError:
+                pass
+            self._refresh_task = None
         if self._backfill_task is not None:
             self._backfill_task.cancel()
             try:
@@ -335,27 +350,40 @@ class RealtimeSubscriber:
             return
 
         # 发送订阅请求（标准 SignalR JSON Hub Protocol: type=1 Invocation）
+        # 必须包含 invocationId，否则 AAS 将调用视为 fire-and-forget，不返回
+        # Completion (type=3) 响应——初始响应中包含所有订阅 Tag 的当前值
+        # （含 SP/MODE/PID 等低频信号），缺少 invocationId 会导致这些值永远缺失。
+        self._invocation_counter += 1
+        invocation_id = f"sub_{self._invocation_counter}"
         subscribe_msg = (
-            json.dumps({"type": 1, "target": "SubscribeAsync", "arguments": [tag_codes]}) + "\x1e"
+            json.dumps(
+                {
+                    "type": 1,
+                    "invocationId": invocation_id,
+                    "target": "SubscribeAsync",
+                    "arguments": [tag_codes],
+                }
+            )
+            + "\x1e"
         )
         await self._ws.send(subscribe_msg)
-        logger.info("已订阅 %d 个 Tag", len(tag_codes))
+        logger.info("已订阅 %d 个 Tag (invocationId=%s)", len(tag_codes), invocation_id)
         self._subscribed_tags = set(tag_codes)
 
         # 断点续传：连接成功（重连/进程重启后首连）即检测数据缺口并自动补数
         await self._maybe_trigger_gap_backfill()
 
-        # 接收初始响应（可能包含多条 \x1e 分隔的消息）
+        # 接收初始响应（Completion: type=3, result 包含 {code, data}）
+        # 一帧可能包含多条 \x1e 分隔的消息（Completion + 首批 push）
         raw = await self._ws.recv()
         for part in raw.split("\x1e"):
             if not part:
                 continue
-            initial = json.loads(part)
-            # 兼容两种格式：标准 SignalR 或自定义
-            data = initial.get("data") or initial.get("arguments", [None])[0]
-            if initial.get("code") == 200 and data:
-                for item in data:
-                    await self._cache_value(item)
+            try:
+                initial = json.loads(part)
+            except json.JSONDecodeError:
+                continue
+            await self._handle_signalr_message(initial)
 
         # 持续接收推送（一条 WebSocket 帧可能包含多条 \x1e 分隔的消息）
         # 数据停滞看门狗：以 _WATCHDOG_RECV_TIMEOUT 超时 recv 代替 async for，
@@ -385,16 +413,100 @@ class RealtimeSubscriber:
                     continue
                 try:
                     msg = json.loads(part)
-                    # 兼容标准 SignalR（target/arguments）和自定义（event/data）两种格式
-                    target = msg.get("target") or msg.get("event")
-                    if target == "updateRealValues":
-                        data = msg.get("data") or msg.get("arguments", [[]])[0]
-                        for item in data:
-                            await self._cache_value(item)
+                    await self._handle_signalr_message(msg)
                 except json.JSONDecodeError:
                     logger.warning("收到非 JSON 消息: %s", part[:100])
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("处理实时数据消息失败: %s", exc)
+
+    async def _handle_signalr_message(self, msg: dict) -> None:
+        """统一处理 SignalR JSON 协议消息.
+
+        支持的消息类型：
+        - type=3 Completion: SubscribeAsync 的返回值，result 包含 {code, data}，
+          data 为所有订阅 Tag 的当前值（含 SP/MODE/PID 等低频信号）
+        - type=1 Invocation (target=updateRealValues): 服务端推送的实时值变化
+        - type=6 Ping: 心跳，需回复 type=6 Pong
+        - 自定义格式 {code:200, data:[...]}: 兼容非标准 SignalR 响应
+        """
+        msg_type = msg.get("type")
+        target = msg.get("target") or msg.get("event")
+
+        # type=3 Completion — SubscribeAsync 的返回值（初始订阅 + 周期刷新）
+        if msg_type == 3:
+            result = msg.get("result") or {}
+            data = result.get("data") or []
+            if result.get("code") == 200 and data:
+                for item in data:
+                    await self._cache_value(item)
+                logger.debug(
+                    "Completion 响应: %d 个 Tag 当前值已缓存（含 SP/MODE/PID）",
+                    len(data),
+                )
+            return
+
+        # type=6 Ping — 回复 Pong
+        if msg_type == 6:
+            if self._ws is not None:
+                await self._ws.send(json.dumps({"type": 6}) + "\x1e")
+            return
+
+        # type=1 Invocation — updateRealValues 推送
+        if target == "updateRealValues":
+            data = msg.get("data") or msg.get("arguments", [[]])[0]
+            if isinstance(data, list):
+                for item in data:
+                    await self._cache_value(item)
+            return
+
+        # 兼容自定义格式（非标准 SignalR: 顶层 code=200）
+        if msg.get("code") == 200:
+            data = msg.get("data") or []
+            if isinstance(data, list):
+                for item in data:
+                    await self._cache_value(item)
+            return
+
+    async def _refresh_loop(self) -> None:
+        """周期刷新低频信号（SP/MODE/PID）当前值.
+
+        AAS 仅在值变化时推送 updateRealValues，SP/MODE/PID 等低频信号变化少，
+        需定期重新调用 SubscribeAsync 获取 Completion 响应中的当前值，
+        刷新 Redis 缓存（TTL 3600s），避免低频信号过期后前端显示空白。
+
+        刷新通过同一 WebSocket 连接发送 invocation，Completion 响应由
+        ``_connect_and_subscribe`` 的接收循环经 ``_handle_signalr_message`` 处理。
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(_SIGNALR_REFRESH_INTERVAL)
+                if not self._running or self._ws is None or not self._subscribed_tags:
+                    continue
+                # 重新发送 SubscribeAsync 获取所有订阅 Tag 的当前值
+                # AAS 会返回 Completion (type=3) 响应，由接收循环统一处理
+                self._invocation_counter += 1
+                invocation_id = f"refresh_{self._invocation_counter}"
+                refresh_msg = (
+                    json.dumps(
+                        {
+                            "type": 1,
+                            "invocationId": invocation_id,
+                            "target": "SubscribeAsync",
+                            "arguments": [list(self._subscribed_tags)],
+                        }
+                    )
+                    + "\x1e"
+                )
+                await self._ws.send(refresh_msg)
+                logger.debug(
+                    "已发送周期刷新订阅请求 (%d tags, invocationId=%s)",
+                    len(self._subscribed_tags),
+                    invocation_id,
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("周期刷新订阅请求失败（可忽略，下个周期重试）: %s", exc)
 
     async def _get_active_tags(self) -> list[str]:
         """查询数据库获取全部活跃 Tag 的 tag_name."""
