@@ -13,8 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# 备份目录
-BACKUP_DIR="${1:-/data/backups/clpm}"
+# 备份目录（默认使用用户主目录下，避免 /data/ 需 root 权限）
+BACKUP_DIR="${1:-${HOME}/backups/clpm}"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_SUBDIR="${BACKUP_DIR}/${TIMESTAMP}"
 
@@ -84,6 +84,8 @@ fi
 # 认证失败/库不可达/导出失败均为硬失败：备份是部署与容灾的前置保障，
 # 静默跳过会让运维误以为数据可回滚。
 if docker exec "$TD_CONTAINER" taos -u root -p"$TD_PASSWORD" -s "USE ${TD_DB}; SHOW TABLES;" >/dev/null 2>&1; then
+    # taosdump 不会自动创建输出目录，必须预创建（否则报 "is not exist!" 退出 255）
+    docker exec "$TD_CONTAINER" mkdir -p "$TD_CONTAINER_DUMP_DIR"
     docker exec "$TD_CONTAINER" taosdump -u root -p"$TD_PASSWORD" -D "$TD_DB" -o "$TD_CONTAINER_DUMP_DIR" >/dev/null
     docker cp "${TD_CONTAINER}:${TD_CONTAINER_DUMP_DIR}" "$TD_LOCAL_DUMP_DIR" >/dev/null
     tar -C "$BACKUP_SUBDIR" -czf "$TD_FILE" "$TD_DUMP_NAME"

@@ -26,6 +26,7 @@ e2e/debug_*.ts
 
 # Docker
 .env.prod
+.td-password-changed
 
 # codebuddy 分析输出（不入库）
 docs/codebuddyCheck/

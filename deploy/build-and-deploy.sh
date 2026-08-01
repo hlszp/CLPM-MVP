@@ -447,14 +447,15 @@ if [ "$DO_DEPLOY" = true ]; then
     scp "${DEPLOY_TAR}" "${SSH_HOST}:/tmp/clpm-images-latest.tar.gz"
     log_info "镜像包传输完成"
 
-    # --- 2.4 同步部署文件（docker-compose、nginx 配置、db schema） ---
+    # --- 2.4 同步部署文件（docker-compose、nginx 配置、db schema、deploy 脚本） ---
     log_step "同步部署配置文件"
     log_info "同步 docker-compose.prod.yml"
     scp docker-compose.prod.yml "${SSH_HOST}:${SERVER_DEPLOY_DIR}/"
 
-    log_info "同步 deploy/nginx.conf"
+    log_info "同步 deploy/ 脚本和配置"
     $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/deploy"
-    scp deploy/nginx.conf "${SSH_HOST}:${SERVER_DEPLOY_DIR}/deploy/"
+    scp deploy/nginx.conf deploy/backup.sh deploy/deploy.sh deploy/lib-migrate.sh deploy/rollback.sh \
+        "${SSH_HOST}:${SERVER_DEPLOY_DIR}/deploy/"
 
     log_info "同步监控配置（deploy/grafana、deploy/prometheus）"
     scp -r deploy/grafana deploy/prometheus "${SSH_HOST}:${SERVER_DEPLOY_DIR}/deploy/"
@@ -463,6 +464,11 @@ if [ "$DO_DEPLOY" = true ]; then
     $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/db/postgresql"
     scp db/postgresql/01_schema.sql db/postgresql/02_seed_data.sql \
         "${SSH_HOST}:${SERVER_DEPLOY_DIR}/db/postgresql/"
+
+    log_info "同步 db/tdengine/ 初始化 SQL"
+    $SSH_PREFIX "mkdir -p ${SERVER_DEPLOY_DIR}/db/tdengine"
+    scp db/tdengine/01_supertable.sql \
+        "${SSH_HOST}:${SERVER_DEPLOY_DIR}/db/tdengine/"
 
     log_info "部署配置文件同步完成"
 
@@ -509,6 +515,16 @@ if [ "$DO_DEPLOY" = true ]; then
         # 一律本地 TDengine；DATA_SOURCE_TYPE 已废止，不再按它分支，
         # 2026-07-28 R5 实弹发现旧条件导致生产无 TDengine）
         COMPOSE_PROFILE='--profile tdengine'
+
+        # TDengine 密码标记（2026-08-01 实弹修复）：卷 clpm_tdengine_data
+        # 已存在（非首次部署）时创建 .td-password-changed 标记文件，让
+        # entrypoint 跳过 ALTER USER，避免卷持久化密码已改后用默认密码
+        # taosdata 登录失败导致 exit 255 崩溃循环。首次部署卷不存在时不
+        # 创建，entrypoint 正常改密。
+        if docker volume inspect clpm_tdengine_data >/dev/null 2>&1; then
+            touch ${SERVER_DEPLOY_DIR}/.td-password-changed
+            echo '[TDengine] 既有卷检测到，创建密码标记文件跳过 ALTER USER'
+        fi
 
         echo '=== 1. 停止旧服务 ==='
         # 同步 APP_VERSION 到服务器 .env.prod（env_file 会覆盖镜像 ENV，
@@ -569,6 +585,32 @@ if [ "$DO_DEPLOY" = true ]; then
         log_error "排查：ssh ${SSH_HOST} 'docker exec -it clpm-backend alembic current'"
         log_error "      ssh ${SSH_HOST} 'docker logs clpm-backend --tail 50'"
         log_error "迁移修复后可执行 ./deploy/rollback.sh 回滚镜像，再重新部署"
+        exit 1
+    fi
+
+    # --- 2.66 TDengine schema 校验（兜底 init 脚本未执行场景） ---
+    log_step "TDengine schema 校验"
+
+    # lib-migrate.sh tdengine_ensure_schema 要求的 TDengine 容器命令执行器：
+    # 通过 SSH 在服务器 tdengine 容器内执行。用 printf %q 逐参数转义后再拼接，
+    # 确保 curl -d 'SHOW DATABASES' 这类含空格/特殊字符的参数穿越 SSH 远程
+    # shell 二次解析后仍保持完整（若像 backend_exec 那样直接用 $*，'SHOW
+    # DATABASES' 会被远程 shell 拆成两词，curl -d 只收 'SHOW'，SQL 语法错误）。
+    tdengine_exec() {
+        local quoted=()
+        local arg
+        for arg in "$@"; do
+            quoted+=("$(printf '%q' "$arg")")
+        done
+        $SSH_PREFIX "docker exec clpm-tdengine ${quoted[*]}"
+    }
+
+    if tdengine_ensure_schema; then
+        log_info "TDengine schema 校验完成 ✓"
+    else
+        log_error "TDengine schema 校验失败，中止部署"
+        log_error "排查：ssh ${SSH_HOST} 'docker exec clpm-tdengine taos -u root -p\$(grep TDENGINE_PASSWORD ${SERVER_DEPLOY_DIR}/.env.prod | cut -d= -f2)'"
+        log_error "      ssh ${SSH_HOST} 'docker logs clpm-tdengine --tail 50'"
         exit 1
     fi
 
