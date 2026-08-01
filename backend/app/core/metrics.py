@@ -68,7 +68,16 @@ http_request_duration_seconds = Histogram(
 
 db_pool_connections = Gauge(
     "db_pool_connections",
-    "数据库连接池使用数",
+    "数据库连接池使用数（NullPool 下恒 0，保留兼容；实际连接数见 pg_active_connections）",
+)
+
+# P2-018：PG 实际活跃连接数（按 application_name 分组）
+# NullPool 不池化，db_pool_connections 恒 0 无法反映真实连接压力；
+# 通过 pg_stat_activity 查询实际连接数，按 app 分标签暴露给 Prometheus。
+pg_active_connections = Gauge(
+    "pg_active_connections",
+    "PostgreSQL 活跃连接数（按 application_name 分组，源自 pg_stat_activity）",
+    ["application_name"],
 )
 
 celery_task_total = Counter(
@@ -148,5 +157,6 @@ __all__ = [
     "db_pool_connections",
     "http_request_duration_seconds",
     "http_requests_total",
+    "pg_active_connections",
     "setup_metrics",
 ]

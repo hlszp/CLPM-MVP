@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 from sqlalchemy import String, UniqueConstraint
@@ -56,6 +57,31 @@ _MIGRATION_PATH = (
     / "versions"
     / "d4e5f6a7b8c9_converge_schema_drift.py"
 )
+
+_BASE_DDL_PATH = Path(__file__).resolve().parents[2] / "db" / "postgresql" / "01_schema.sql"
+
+
+def _ddl_table_names() -> set[str]:
+    """Return the PostgreSQL tables created by the production bootstrap DDL."""
+    ddl = _BASE_DDL_PATH.read_text(encoding="utf-8")
+    return set(
+        re.findall(
+            r"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)",
+            ddl,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+    )
+
+
+def test_production_bootstrap_ddl_covers_all_orm_tables() -> None:
+    """Fresh production bootstrap must not stamp Alembic head over missing tables."""
+    orm_tables = set(Base.metadata.tables)
+    ddl_tables = _ddl_table_names()
+    assert ddl_tables == orm_tables, (
+        f"production DDL 与 ORM 表集合不一致；"
+        f"DDL 缺失={sorted(orm_tables - ddl_tables)}；"
+        f"DDL 多余={sorted(ddl_tables - orm_tables)}"
+    )
 
 
 def test_audit_log_target_id_is_string36() -> None:

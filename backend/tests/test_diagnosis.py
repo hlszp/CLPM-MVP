@@ -121,6 +121,9 @@ def _make_tracker(
     t.effect_verified = None
     t.effect_verified_at = None
     t.ab_compare_summary = None
+    # V62-P3-008：负责人与计划执行时间（默认未设置）
+    t.assignee = None
+    t.planned_at = None
     return t
 
 

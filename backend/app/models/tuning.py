@@ -69,13 +69,29 @@ class TuningRecord(Base):
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # V62-P3-006：引用过程模型版本（可空，兼容旧 record 继续用自身 model_params）
+    # 由 P3-005 一次性回填后，新辨识记录应携带 version_id；旧记录保持 NULL。
+    process_model_version_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("process_model_version.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # V62-P3-007：人工实施清单字段
+    # 当前 PID 值快照（整定建议生成时的 DCS 当前值，用于对比与回退）
+    current_pid: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 风险评估（risk_level/factors/description，供人工实施参考）
+    risk_assessment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 回退 PID 值（实施失败时恢复；通常 = current_pid）
+    rollback_pid: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "model_type IN ('FOPDT', 'SOPDT', 'IPDT')",
             name="ck_tuning_record_model",
         ),
         CheckConstraint(
-            "algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC')",
+            "algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC', 'IDENTIFICATION_ONLY')",
             name="ck_tuning_record_algo",
         ),
         CheckConstraint(

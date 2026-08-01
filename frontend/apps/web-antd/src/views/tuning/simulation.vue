@@ -47,6 +47,7 @@ import {
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
+  ClpmStateOverlay,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -62,6 +63,9 @@ const saving = ref(false);
 const compareMode = ref(false);
 const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
+
+/** P1-023：错误状态（仿真失败时持久展示，带重试） */
+const errorState = ref<{ detail: string; message: string } | null>(null);
 
 /** 模型类型选项 */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
@@ -474,6 +478,7 @@ function initFromQuery() {
 function handleToggleCompareMode(checked: boolean) {
   compareMode.value = checked;
   simulationResult.value = null;
+  errorState.value = null;
   renderChart();
 }
 
@@ -525,6 +530,7 @@ async function handleSimulate() {
       return;
     }
     loading.value = true;
+    errorState.value = null;
     const hide = message.loading(
       `正在进行 ${pidCandidates.value.length} 组 PID 对比仿真…`,
       0,
@@ -534,7 +540,6 @@ async function handleSimulate() {
         modelType: form.modelType,
         modelParams: params,
         currentPid: form.currentPid,
-        recommendedPid: form.recommendedPid,
         pidCandidates: pidCandidates.value,
         simDuration: form.simDuration,
         simStep: form.simStep,
@@ -544,8 +549,12 @@ async function handleSimulate() {
       renderChart();
       hide();
       message.success('多 PID 对比仿真完成');
-    } catch {
+    } catch (err) {
       hide();
+      errorState.value = {
+        message: '多 PID 对比仿真失败',
+        detail: err instanceof Error ? err.message : '请检查模型参数和候选 PID 后重试',
+      };
     } finally {
       loading.value = false;
     }
@@ -564,6 +573,7 @@ async function handleSimulate() {
   }
 
   loading.value = true;
+  errorState.value = null;
   const hide = message.loading(
     `正在进行 ${form.modelType} 闭环仿真（${form.simDuration}s 时长）…`,
     0,
@@ -591,8 +601,12 @@ async function handleSimulate() {
     renderChart();
     hide();
     message.success('仿真完成');
-  } catch {
+  } catch (err) {
     hide();
+    errorState.value = {
+      message: '闭环仿真失败',
+      detail: err instanceof Error ? err.message : '请检查模型参数和 PID 配置后重试',
+    };
   } finally {
     loading.value = false;
   }
@@ -609,6 +623,7 @@ function handleReset() {
   form.setpointStep = 1;
   form.disturbanceType = 'none';
   simulationResult.value = null;
+  errorState.value = null;
   renderChart();
   message.info('已重置参数');
 }
@@ -982,7 +997,22 @@ watch(isDark, () => {
               : '双 Y 轴：左 PV/SP，右 OP。蓝色为当前 PID，红色为推荐 PID。'
           "
         >
-          <Spin :spinning="loading">
+          <!-- P1-023：错误状态覆盖（仿真失败时持久展示，带重试） -->
+          <ClpmStateOverlay
+            v-if="errorState"
+            status="error"
+            :error-message="errorState.message"
+            :error-detail="errorState.detail"
+            @retry="handleSimulate"
+          />
+          <!-- P1-023：空状态覆盖（无结果且无错误时） -->
+          <ClpmStateOverlay
+            v-else-if="!simulationResult"
+            status="empty"
+            empty-description="请配置模型与 PID 参数后点击「运行仿真」"
+          />
+          <!-- success：正常展示仿真图 -->
+          <Spin v-else :spinning="loading">
             <EchartsUI ref="chartRef" height="500px" />
           </Spin>
         </ClpmDataCanvas>

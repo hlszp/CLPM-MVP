@@ -551,6 +551,9 @@ async def list_diagnosis(
             if tracker and tracker.effect_verified_at
             else None
         )
+        # V62-P3-008：负责人与计划执行时间（tracker 闭环字段）
+        assignee_val = tracker.assignee if tracker else None
+        planned_at_val = tracker.planned_at.isoformat() if tracker and tracker.planned_at else None
 
         items.append(
             {
@@ -576,6 +579,8 @@ async def list_diagnosis(
                 "mocReason": moc_reason_val,
                 "effectVerified": effect_verified_val,
                 "effectVerifiedAt": effect_verified_at_val,
+                "assignee": assignee_val,
+                "plannedAt": planned_at_val,
                 "diagnosedAt": diag_result.diagnosed_at.isoformat()
                 if diag_result.diagnosed_at
                 else None,

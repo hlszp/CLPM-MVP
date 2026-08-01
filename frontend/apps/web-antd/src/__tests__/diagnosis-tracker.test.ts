@@ -64,6 +64,8 @@ vi.mock('vue-router', () => ({
 vi.mock('ant-design-vue', () => ({
   Button: { template: '<button><slot /></button>' },
   Card: { template: '<div><slot /></div>' },
+  Checkbox: { template: '<input type="checkbox" />' },
+  DatePicker: { template: '<input />' },
   Drawer: { template: '<div><slot /></div>' },
   Dropdown: { template: '<div><slot /></div>' },
   Form: { template: '<form><slot /></form>' },

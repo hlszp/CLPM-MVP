@@ -31,7 +31,9 @@ from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.tuning import (
+    CompareRequest,
     CreateTuningTaskRequest,
+    IdentifyHistoryAsyncResponse,
     IdentifySegmentsRequest,
     IdentifySegmentsResult,
     ModelIdentifyHistoryRequest,
@@ -47,12 +49,14 @@ from app.schemas.tuning import (
     TuningTaskDetail,
 )
 from app.services.tuning import (
+    authorize_tuning_model,
     create_tuning_task,
     get_tuning_history_stats,
     get_tuning_methods,
     get_tuning_task_detail,
     identify_model,
     list_tuning_tasks,
+    persist_step_identification_record,
     preview_identify_segments,
     run_simulation,
     tune_pid,
@@ -98,12 +102,21 @@ async def identify_model_endpoint(
         model_type=body.modelType,
         method=body.method,
     )
+    record_id = await persist_step_identification_record(
+        db=db,
+        loop_id=body.loopId,
+        result=data,
+        created_by=user.username,
+        requested_method=body.method,
+    )
+    data = {**data, "recordId": record_id}
     return success(data=data)
 
 
 @router.post("/identify/history", response_model=ApiResponse[dict])
 async def identify_history_endpoint(
     body: ModelIdentifyHistoryRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
@@ -111,27 +124,37 @@ async def identify_history_endpoint(
     提交异步 Celery 任务，返回 taskId 供前端轮询进度。
     辨识策略 AUTO=优先历史,失败兜底阶跃（任务内自动降级并标注
     dataSource=fallback_step）/ HISTORY_ONLY / STEP_ONLY。
+
+    V62-P1-012: 响应使用 typed model 构造——
+    - STEP_ONLY → ``ModelIdentifyResult``（同步辨识结果）
+    - AUTO/HISTORY_ONLY → ``IdentifyHistoryAsyncResponse``（异步任务提交）
     """
     from app.tasks.tuning import identify_model_task
 
     # STEP_ONLY 策略走同步阶跃路径（向后兼容）
     if body.identifyStrategy == "STEP_ONLY":
-        # 委托同步 identify_model，但需要 db
-        from app.core.db import AsyncSessionLocal
-
-        async with AsyncSessionLocal() as db:
-            data = await identify_model(
-                db=db,
-                loop_id=body.loopId,
-                start_time=body.startTime,
-                end_time=body.endTime,
-                model_type="FOPDT",
-                method=None,
-            )
-        return success(data=data)
+        data = await identify_model(
+            db=db,
+            loop_id=body.loopId,
+            start_time=body.startTime,
+            end_time=body.endTime,
+            model_type="FOPDT",
+            method=None,
+        )
+        record_id = await persist_step_identification_record(
+            db=db,
+            loop_id=body.loopId,
+            result=data,
+            created_by=user.username,
+            requested_method=None,
+        )
+        # V62-P1-012: 使用 typed model 构造响应，确保 contract 一致
+        typed = ModelIdentifyResult.model_validate({**data, "recordId": record_id})
+        return success(data=typed.model_dump(by_alias=True, exclude_none=True))
 
     # AUTO / HISTORY_ONLY → 异步任务
     # AUTO 策略由任务侧在历史辨识失败/数据不足时自动降级阶跃实验路径（P1-6）
+    # V62-P1-013: 传递 created_by_id 桥接 TaskTracker
     task = identify_model_task.delay(
         loop_id=body.loopId,
         start_time=body.startTime,
@@ -140,8 +163,15 @@ async def identify_history_endpoint(
         theta_estimate=body.thetaEstimate,
         created_by=user.username,
         identify_strategy=body.identifyStrategy,
+        created_by_id=str(user.id),
     )
-    return success(data={"taskId": task.id, "status": "PENDING"})
+    # V62-P1-012: 使用 typed model 构造响应
+    typed = IdentifyHistoryAsyncResponse(
+        taskId=task.id,
+        status="PENDING",
+        identifyStrategy=body.identifyStrategy,
+    )
+    return success(data=typed.model_dump(by_alias=True, exclude_none=True))
 
 
 @router.post("/identify/segments", response_model=ApiResponse[IdentifySegmentsResult])
@@ -178,13 +208,23 @@ async def tune_pid_endpoint(
 
     基于模型参数，使用 IMC/Lambda/ZN/Cohen-Coon/SIMC 算法计算推荐 PID 参数。
     """
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
     data = await tune_pid(
-        model_type=body.modelType,
-        model_params=body.modelParams.model_dump(exclude_none=True),
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
         algorithm=body.algorithm,
         algorithm_params=body.algorithmParams,
         current_pid=body.currentPid.model_dump() if body.currentPid else None,
-        loop_id=body.loopId,
+        loop_id=source_context.loop_id,
+        source_context=source_context,
     )
     # 审计日志（S1-B7）
     log = SysAuditLog(
@@ -192,8 +232,13 @@ async def tune_pid_endpoint(
         operator=user.username,
         operation_type="TUNE_PID",
         target_type="Loop",
-        target_id=body.loopId,
-        after_value=f"algorithm={body.algorithm}, modelType={body.modelType}",
+        target_id=source_context.loop_id,
+        after_value=(
+            f"algorithm={body.algorithm}, modelType={source_context.model_type}, "
+            f"source={source_context.model_source}, "
+            f"record={source_context.source_record_id or '-'}, "
+            f"riskConfirmed={str(source_context.risk_confirmed).lower()}"
+        ),
         operated_at=datetime.now(UTC).replace(tzinfo=None),
     )
     db.add(log)
@@ -209,20 +254,31 @@ async def tune_pid_endpoint(
 @router.post("/simulate", response_model=ApiResponse[SimulationResult])
 async def simulate_endpoint(
     body: SimulateRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
     对比当前 PID 与推荐 PID 的阶跃响应（Phase 2 支持多 PID 候选对比）。
     """
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+
     # Phase 2：pid_candidates 转为 dict 列表透传
     pid_candidates_dicts: list[dict] | None = None
     if body.pidCandidates:
         pid_candidates_dicts = [c.model_dump() for c in body.pidCandidates]
 
     data = await run_simulation(
-        model_type=body.modelType,
-        model_params=body.modelParams.model_dump(exclude_none=True),
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
         current_pid=body.currentPid.model_dump(),
         recommended_pid=body.recommendedPid.model_dump(),
         sim_duration=body.simDuration,
@@ -236,12 +292,14 @@ async def simulate_endpoint(
 
 @router.post("/compare", response_model=ApiResponse[SimulationResult])
 async def compare_pids_endpoint(
-    body: SimulateRequest,
+    body: CompareRequest,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
-    与 /simulate 共享 SimulateRequest，区别在于 pidCandidates 为必传，
+    使用独立 ``CompareRequest``（V62-P0-030）：``pidCandidates`` 必填且 ≥2 组，
+    ``currentPid`` 可选，不接受 ``recommendedPid``（端点从不消费该字段）。
     返回 candidateResponses 含每组 PID 的响应曲线与指标。
     """
     if not body.pidCandidates or len(body.pidCandidates) < 2:
@@ -253,12 +311,22 @@ async def compare_pids_endpoint(
             status_code=400,
         )
 
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+
     from app.services.tuning import _simulate_multi_pid
 
     candidates_dicts = [c.model_dump() for c in body.pidCandidates]
     data = _simulate_multi_pid(
-        model_type=body.modelType,
-        model_params=body.modelParams.model_dump(exclude_none=True),
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
         current_pid=body.currentPid.model_dump() if body.currentPid else None,
         pid_candidates=candidates_dicts,
         sim_duration=body.simDuration,
@@ -337,14 +405,22 @@ async def cancel_task_endpoint(
     """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
     task_id 为 Celery 任务 ID。仅 PENDING/RUNNING 状态可取消。
+    V62-P1-013: 同步 tuning_progress 和 TaskTracker 状态为 CANCELLED。
     """
     from celery.result import AsyncResult
 
+    from app.services.tuning_progress import update_progress
     from app.tasks.celery_app import celery_app
 
     result = AsyncResult(task_id, app=celery_app)
     if result.state in ("PENDING", "RUNNING", "STARTED"):
         result.revoke(terminate=True, signal="SIGTERM")
+        # V62-P1-013: 同步 tuning_progress → TaskTracker
+        await update_progress(
+            task_id,
+            status="CANCELLED",
+            message="用户主动取消",
+        )
         return success(data={"taskId": task_id, "status": "CANCELLED"})
     # 已终态（SUCCESS/FAILED/REVOKED）不可取消
     return success(data={"taskId": task_id, "status": result.state})

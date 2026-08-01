@@ -120,3 +120,122 @@ async def test_readiness_redis_failure_returns_503(monkeypatch: pytest.MonkeyPat
     body = json.loads(bytes(resp.body))
     assert body["status"] == "degraded"
     assert body["checks"]["redis"].startswith("fail:")
+
+
+# ---------------------------------------------------------------------------
+# P2-018：PG 连接池监控端点 /health/db-connections
+# ---------------------------------------------------------------------------
+
+
+class _FakeRow:
+    """模拟 SQLAlchemy Row 对象（属性访问）。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.__dict__.update(kwargs)
+
+
+class _FakeDbResult:
+    """模拟 SQLAlchemy Result 对象。"""
+
+    def __init__(self, *, rows: list | None = None, scalar_val: Any = None) -> None:
+        self._rows = rows or []
+        self._scalar_val = scalar_val
+
+    def fetchall(self) -> list:
+        return self._rows
+
+    def scalar(self) -> Any:
+        return self._scalar_val
+
+
+class _FakeDbConn:
+    """模拟 db-connections 端点的连接，按 SQL 内容返回不同结果。"""
+
+    async def execute(self, sql_text: Any) -> _FakeDbResult:
+        sql = str(sql_text)
+        if "GROUP BY application_name" in sql:
+            return _FakeDbResult(
+                rows=[
+                    _FakeRow(app="clpm-api", cnt=10),
+                    _FakeRow(app="clpm-celery", cnt=5),
+                ]
+            )
+        if "SHOW max_connections" in sql:
+            return _FakeDbResult(scalar_val="100")
+        # total count
+        return _FakeDbResult(scalar_val=15)
+
+
+class _FakeDbConnCtx:
+    async def __aenter__(self) -> _FakeDbConn:
+        return _FakeDbConn()
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+
+class _FakeDbEngine:
+    """db-connections 端点用的 engine 替身。"""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+
+    def connect(self) -> _FakeDbConnCtx:
+        if self._fail:
+            raise RuntimeError("db down")
+        return _FakeDbConnCtx()
+
+
+@pytest.mark.asyncio
+async def test_db_connections_returns_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GET /health/db-connections 返回连接数明细和利用率。"""
+    from app.api.v1.endpoints import health as health_ep
+
+    monkeypatch.setattr(health_ep, "engine", _FakeDbEngine())
+    resp = await health_ep.health_db_connections()
+    assert resp.status_code == 200
+    body = json.loads(bytes(resp.body))
+    assert body["total"] == 15
+    assert body["max"] == 100
+    assert body["byApp"] == {"clpm-api": 10, "clpm-celery": 5}
+    assert body["utilization"] == 15.0
+
+
+@pytest.mark.asyncio
+async def test_db_connections_engine_failure_returns_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PG 连接失败时返回 503 + 错误信息。"""
+    from app.api.v1.endpoints import health as health_ep
+
+    monkeypatch.setattr(health_ep, "engine", _FakeDbEngine(fail=True))
+    resp = await health_ep.health_db_connections()
+    assert resp.status_code == 503
+    body = json.loads(bytes(resp.body))
+    assert "error" in body
+
+
+@pytest.mark.asyncio
+async def test_db_connections_updates_prometheus_gauge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """端点同步更新 pg_active_connections Prometheus Gauge。"""
+    from app.api.v1.endpoints import health as health_ep
+    from app.core.metrics import pg_active_connections
+
+    # 重置 gauge（清除测试标签值）
+    pg_active_connections.clear()
+
+    monkeypatch.setattr(health_ep, "engine", _FakeDbEngine())
+    await health_ep.health_db_connections()
+
+    # 验证 Gauge 已按 application_name 设置值
+    samples = {
+        s.labels["application_name"]: s.value
+        for s in pg_active_connections.collect()
+        for s in s.samples
+    }
+    assert samples.get("clpm-api") == 10
+    assert samples.get("clpm-celery") == 5
+
+    pg_active_connections.clear()

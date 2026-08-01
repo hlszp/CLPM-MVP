@@ -16,12 +16,17 @@
  *   - 标题: "CLPM 登录" / 副标题: "控制回路性能管理系统"
  */
 import { test, expect } from '../fixtures/auth.js';
-import { LOGIN_PATH, clearAccessToken } from '../fixtures/auth.js';
+import { LOGIN_PATH, clearAccessToken, clearTokenCache } from '../fixtures/auth.js';
 
 test.describe('登录流程 E2E', () => {
   test.beforeEach(async ({ page }) => {
     // 确保每个用例从干净状态开始
     await clearAccessToken(page);
+  });
+
+  // E2E-LOGIN-003 登出会使 admin token 失效，清除缓存避免后续 spec 复用
+  test.afterAll(() => {
+    clearTokenCache();
   });
 
   test('E2E-LOGIN-001: ADMIN 登录成功', async ({ page }) => {

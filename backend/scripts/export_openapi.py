@@ -5,7 +5,7 @@ response_model 声明，便于前端代码生成、API 网关配置与文档归�
 
 用法::
 
-    # 方式 1：直接运行脚本
+    # 方式 1：直接运行脚本（默认输出 backend/openapi.json）
     uv run python scripts/export_openapi.py
 
     # 方式 2：作为模块运行
@@ -13,6 +13,10 @@ response_model 声明，便于前端代码生成、API 网关配置与文档归�
 
     # 指定输出路径
     uv run python scripts/export_openapi.py --output /tmp/openapi.json
+
+    # 刷新契约基线（V62-P0-038）：API 变更后需同步刷新基线，
+    # 否则 tests/test_openapi_contract_drift.py 会判漂移失败。
+    uv run python scripts/export_openapi.py --output tests/golden/openapi_baseline.json
 """
 
 from __future__ import annotations

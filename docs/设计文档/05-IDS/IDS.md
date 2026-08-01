@@ -5,6 +5,12 @@
 **发布日期**: 2026-07-06
 **设计依据**: PRD (v3.1), FDS (v5.1), ADS (v4.0), DDS (v4.1), UIUX (v5.3), 实现契约 (v1.0), 关键算法设计说明 v2.0, GB/T 44693.2-2024
 
+> **Phase 0 对齐说明（2026-07-29，v6.2 Truth First）**：本文档以下条目以实现契约 v2.3、OpenAPI 与代码为事实源，遇冲突以契约 v2.3 为准：
+> - 整定接口同步/异步语义以 OpenAPI 为准：`/identify`（STEP_ONLY 同步、AUTO/HISTORY_ONLY 异步任务）、`/tune`（同步）、`/simulate`（同步）、`/compare`（同步）；另有 `/segments`、`/tasks/{id}/status`、`/tasks/{id}/cancel`、`/history` 等现行接口（DOC-05）；
+> - `/tune`、`/simulate`、`/compare`、`/calculate` 必须携带模型来源凭据（`modelSource` + `sourceRecordId`/`riskConfirmed`），服务端 `authorize_tuning_model` 复核（契约 v2.3 §6.1）；
+> - 整定状态机与旧值兼容见契约 v2.3 §6。
+> 完整事实漂移登记见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`。
+
 ---
 
 ## 0. 文档变更记录

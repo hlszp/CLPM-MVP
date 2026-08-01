@@ -74,6 +74,14 @@ def arx_to_sopdt(
         raise ValueError("1+a1+a2 接近零，K 计算发散")
     K = b1 / (1 + a1 + a2)
     theta = d * ts
+    # P2-012：复极点检测 —— 共轭复极点表示振荡（欠阻尼）系统，
+    # SOPDT 仅适用于过阻尼（两个实极点）系统，不得取模伪装为实极点。
+    disc = a1 * a1 - 4.0 * a2
+    if disc < 0:
+        raise ValueError(
+            f"复共轭极点（disc={disc:.4g} < 0，振荡/欠阻尼系统），"
+            "SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型"
+        )
     # 离散极点
     roots = _solve_quadratic(1.0, a1, a2)
     if roots is None:
@@ -100,7 +108,7 @@ def arx_to_sopdt(
 
 
 def _solve_quadratic(a: float, b: float, c: float) -> tuple[float, float] | None:
-    """求解二次方程 a*x^2 + b*x + c = 0."""
+    """求解二次方程 a*x^2 + b*x + c = 0（仅实根，复根由调用方提前检测）."""
     if abs(a) < 1e-12:
         if abs(b) < 1e-12:
             return None
@@ -108,11 +116,8 @@ def _solve_quadratic(a: float, b: float, c: float) -> tuple[float, float] | None
         return (x, x)
     disc = b * b - 4 * a * c
     if disc < 0:
-        # 共轭复极点（振荡系统），取模
-        real = -b / (2 * a)
-        imag = math.sqrt(-disc) / (2 * a)
-        modulus = math.sqrt(real * real + imag * imag)
-        return (modulus, modulus)
+        # 复根 —— 不应到达此处（arx_to_sopdt 已提前检测并 raise）
+        return None
     sqrt_disc = math.sqrt(disc)
     x1 = (-b + sqrt_disc) / (2 * a)
     x2 = (-b - sqrt_disc) / (2 * a)

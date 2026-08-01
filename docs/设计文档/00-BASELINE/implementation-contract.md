@@ -1,13 +1,14 @@
 # CLPM 重构后实现契约
 
-**文档状态**：active-baseline  
-**当前版本**：v2.2
-**发布日期**：2026-07-28
+**文档状态**：active-baseline
+**当前版本**：v2.3
+**发布日期**：2026-07-29
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
 **v2.1 修订摘要**：同步诊断中心 Batch 4-6 交付成果——A/B 对比已实现（含 `includeDiagnosis` 扩展）；登记 `GET /diagnosis/algorithms/meta`、`GET /diagnosis/statistics/export`、`GET /tracker/effectiveness`、`GET|PATCH /tracker/verification-config`；补全 Tracker 子路由清单；更新诊断中心路由决策（A/B 对比不再返回 501）；登记诊断任务自动归档机制与 D1-D6 功能扩展
 **v2.2 修订摘要**：同步 2026-07-28 全维度优化整改（Phase 0-5）——登记 `GET /performance/grade-distribution` 与 `/loops/snapshots?grade=`；权限码服务端落地（`require_perms`，loop/tuning/diagnosis 读端点收口）替代"待统一"标注；登记首次登录强制改密（`must_change_password`）；前端路由收紧（reports/aas-sync 仅 ADMIN、EXPERT→/diagnosis、SPONSOR→/metric）。整改全貌见 `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`
 **v2.2 增补（2026-07-29）**：登记 `/diagnosis/tasks?includeArchived=`；诊断任务时间戳默认值统一 UTC（迁移 `h8b9c0d1e2f3`）；refresh 轮换幂等窗口（`refresh_rotated`，120s）；整定 Phase 2.1 合并（`tuning_identification` 算法栈 + 异步辨识任务）
+**v2.3 修订摘要（2026-07-29，Phase 0 Truth First）**：可信辨识安全收口——固化整定目标状态机（`DRAFT→RUNNING→IDENTIFIED→SIMULATED→COMPLETED/INCONCLUSIVE/ROLLED_BACK`，旧值 `PENDING/APPLIED/VERIFIED` 只读兼容）；登记模型来源门禁契约（`ModelSource`、`ThetaSource`、`DataSource` 与 A–E 放行规则）；ORM 表清单校正为 37 张（补 `algorithm_parameter`/`dcs_pid_structure`/`diagnosis_config_change`/`diagnosis_rule`/`diagnosis_threshold_override`/`loop_confidence_latest`）；登记生产 bootstrap DDL 收敛至 37 表与安全边界静态门禁（无 DCS 参数下写端点）。详见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`
 
 ## 1. 定位
 
@@ -148,13 +149,57 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | KPI 快照 | `SUCCESS` / `PARTIAL` / `INCONCLUSIVE` | 成功、部分有效、数据不足 |
 | Loop | `READY` / `PARTIAL` / `INACTIVE` | 就绪（配置完整可参与 KPI 计算）、部分配置（缺必需 Tag，不参与计算）、已停用（软删除，is_active=False） |
 | PV Quality | `GOOD` / `BAD` / `UNCERTAIN` | 好值、坏值、不确定 |
-| Tuning | `DRAFT` / `RUNNING` / `COMPLETED` / `ROLLED_BACK` | 草稿、运行中、已完成、已回退 |
+| Tuning | `DRAFT` → `RUNNING` → `IDENTIFIED` → `SIMULATED` → `COMPLETED`；`RUNNING`/`IDENTIFIED`/`SIMULATED` → `INCONCLUSIVE`；`SIMULATED`/`COMPLETED` → `ROLLED_BACK` | 草稿、运行中、已辨识、已仿真、已完成、数据不足、已回退 |
 
 `ActionTracker.action_status` 与 `DiagnosisTag.status` 是两个独立状态机。`IMPLEMENTED` 只用于 Action Tracker；`RESOLVED` 仍是 Diagnosis Tag 的当前有效枚举，不得跨对象替换。
+
+**整定状态机 v2.3 固化（Phase 0）**：目标写入状态机为 `DRAFT → RUNNING → IDENTIFIED → SIMULATED → COMPLETED`，分支 `INCONCLUSIVE`（数据/激励/模型/安全门禁不足）与 `ROLLED_BACK`（人工撤回或按回退方案处理）。旧值 `PENDING`/`APPLIED`/`VERIFIED` 只读兼容一个版本，不再作为新写入值：`PENDING` 查询保留但新建改用 `DRAFT`；`APPLIED`/`VERIFIED` 保留原始审计语义，不折算为 `COMPLETED`，不推断为平台自动实施。详见契约基线 §2。
 
 **诊断任务自动归档**（v2.1，2026-07-27）：`DiagnosisTask` 状态更新为 `SUCCESS` 时自动设置 `is_archived=True`、`archived_at=now()`、`archived_by="system-auto"`，任务从"诊断任务"列表移入"诊断记录"页面。`FAILED`/`CANCELLED` 任务不自动归档，保留在任务列表供用户排查后手动归档。
 
 P1 #13 修正：历史文档中的 `ACTIVE`/`PAUSED`/`DECOMMISSIONED`（运行/暂停/退役）统一视为旧命名；当前代码与后续文档使用 `READY`/`PARTIAL`/`INACTIVE`（就绪/部分配置/已停用）。代码中的状态反映"配置完整性 + 删除状态"，而非"运行状态"：`READY` = 配置完整可参与 KPI 计算；`PARTIAL` = 缺必需 Tag，不参与计算；`INACTIVE` = 软删除（is_active=False）。
+
+### 6.1 模型来源与可信度门禁契约 [v2.3 Phase 0 新增]
+
+整定推荐链（`/tune`、`/simulate`、`/compare`、`/calculate`）必须通过服务端 `authorize_tuning_model` 复核模型来源与可信度，客户端传入的置信度/辨识方法/替代参数不得提升放行等级。
+
+**模型来源 `ModelSource`**（推荐链凭据）：
+
+| 值 | 语义 | 凭据要求 |
+|---|---|---|
+| `IDENTIFICATION_RECORD` | 历史辨识记录 | 必须携带服务端可验证的 `sourceRecordId` |
+| `STEP_EXPERIMENT` | 受控阶跃实验 | 服务端 `stepValidationPassed=true` 证据 |
+| `MANUAL` | 人工模型 | 必须显式 `riskConfirmed=true` |
+
+**纯滞后来源 `ThetaSource`**：
+
+| 值 | 语义 | 放行约束 |
+|---|---|---|
+| `EXPLICIT` | 调用方提供并可追溯 | 正常放行 |
+| `HEURISTIC_2TS` | 缺省 2 采样周期启发值 | 可信度封顶 C，不得直接进入整定 |
+
+**数据来源 `DataSource`**：canonical 值 `HISTORY`/`STEP_EXPERIMENT`/`FALLBACK_STEP`；旧值 `fallback_step` 兼容读取一版。`FALLBACK_STEP` 必须含 `stepValidationPassed=true` 服务端证据，禁止用 PV 变化冒充 MV 阶跃。
+
+**A–E 可信度放行规则**：
+
+| 来源/可信度 | 辨识结果展示 | PID 整定/推荐仿真 |
+|---|---|---|
+| 版本化记录 A/B | 允许 | 允许 |
+| 版本化记录 C | 允许 | 仅显式人工风险确认后允许 |
+| D/E/INCONCLUSIVE/空 | 允许解释原因 | 禁止 |
+| `HEURISTIC_2TS` | 允许，明确标为 2Ts 启发值 | 禁止 |
+| CLIVC（可证明闭环一致 IV） | 允许 | 受可信度门禁约束（A/B 放行、C 需确认、D/E/INCONCLUSIVE 拒绝） |
+| 受控阶跃实验 | 允许 | 仅服务端阶跃门禁通过后允许 |
+| 人工模型 | 明确标为人工输入 | 仅显式风险确认后允许 |
+
+P2-009 已实现 CLIVC（`identify_clivc`/`identify_clivc4`，外生 SP 作工具变量，满足 `E[Z·ε]=0` 闭环一致性），`IV_CAPABILITY_STATUS="CLIVC_PRODUCTION_READY"`，复用 `HISTORICAL_IV` 枚举进入生产候选集，按正常可信度门禁放行。早期 `identify_iv`/`identify_iv4` 实验性原型保留为对照，pipeline 不调用。Phase 0 的"闭环 IV 降级为 EXPERIMENTAL"门禁已随 P2-009 解除。
+
+### 6.2 安全边界静态门禁 [v2.3 Phase 0 新增]
+
+- 平台不得存在 DCS 运行时 PID 参数 `write`/`apply`/`deploy`/`implement` 端点（`test_security_p2.py::TestNoDcsParameterWriteSurface` 静态扫描守护）。
+- DCS vendor/model/PID structure API 只管理离线适配配置，不连接控制站下写。
+- `COMPLETED`/`APPLIED`/`已实施` 文案不能被解释为平台自动下写。
+- 所有模型与 PID 建议必须保留来源、算法版本、可信度、reason code 和人工确认审计。
 
 ## 7. KPI 契约
 
@@ -284,9 +329,9 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 - 旧路径可记录为历史兼容路径，但不作为主菜单验收项。
 - 新增页面必须先更新本契约，再更新路由、权限、测试与 UI/UX 页面清单。
 
-## 10. 代码实际 ORM 表清单（31 张）
+## 10. 代码实际 ORM 表清单（37 张）
 
-当前 `backend/app/models/` 共定义 31 张 ORM 表。以下清单以代码中的 `__tablename__` 为事实来源；DDS 后续修订应同步此口径。
+当前 `backend/app/models/` 共定义 37 张 ORM 表（v2.3 校正：v2.0 登记 31 张，本次补齐 6 张）。以下清单以代码中的 `__tablename__` 为事实来源；DDS 后续修订应同步此口径。生产 bootstrap DDL（`db/postgresql/01_schema.sql`）已收敛至全部 37 张，由 `test_schema_convergence.py` 与 `test_production_bootstrap.py` 守护。
 
 | # | 类名 | __tablename__ | 文件 | 用途 |
 |---|---|---|---|---|
@@ -321,8 +366,14 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 29 | `DcsModel` | `dcs_model` | `models/dcs_model.py` | DCS 型号配置 |
 | 30 | `ModeDefinition` | `mode_definition` | `models/mode_definition.py` | MODE 语义定义 |
 | 31 | `DcsModeMapping` | `dcs_mode_mapping` | `models/dcs_mode_mapping.py` | DCS MODE 映射矩阵 |
+| 32 | `AlgorithmParameter` | `algorithm_parameter` | `models/algorithm_parameter.py` | 算法参数配置 |
+| 33 | `DcsPidStructure` | `dcs_pid_structure` | `models/dcs_pid_structure.py` | DCS PID 结构 |
+| 34 | `DiagnosisConfigChange` | `diagnosis_config_change` | `models/diagnosis.py` | 诊断配置变更审计 |
+| 35 | `DiagnosisRule` | `diagnosis_rule` | `models/diagnosis.py` | 诊断规则 |
+| 36 | `DiagnosisThresholdOverride` | `diagnosis_threshold_override` | `models/diagnosis.py` | 诊断阈值覆盖 |
+| 37 | `LoopConfidenceLatest` | `loop_confidence_latest` | `models/loop_confidence.py` | 回路可信度最新值 |
 
-注：DDS v4.1 中声明的 `report_schedule` 实际由代码 `report_config` 承载；`sys_role` / `sys_user_role` 代码无对应模型，角色以枚举形式实现。
+注：DDS v4.1 中声明的 `report_schedule` 实际由代码 `report_config` 承载；`sys_role` / `sys_user_role` 代码无对应模型，角色以枚举形式实现。`time_constant` 为 KPI 快照表持久化列但无 MetricCalculator，状态 `NOT_IMPLEMENTED`，NULL 不得显示为 0 或解释为"无数据"（详见契约基线 §7）。
 
 ## 11. 变更记录
 
@@ -343,3 +394,15 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 诊断状态机 | RESOLVED 统一视为旧命名 | 区分 Diagnosis Tag 与 Action Tracker 两套枚举 | `models/diagnosis.py`、`models/tracker.py` |
 | A/B 对比 | 作为已存在能力列出 | 当前 API 返回 501，标记 P1 未实现 | `endpoints/diagnosis.py` |
 | L3 缓存 | 三层均视为已接入 | L3 仅保留实现与测试，未接入运行链路 | `services/data_planner.py` |
+
+### v2.3 变更项（2026-07-29，Phase 0 Truth First）
+
+| 变更项 | v2.2 口径 | v2.3 口径 | 依据 |
+|---|---|---|---|
+| 整定状态机 | `DRAFT/RUNNING/COMPLETED/ROLLED_BACK` | 固化 `DRAFT→RUNNING→IDENTIFIED→SIMULATED→COMPLETED` + `INCONCLUSIVE`/`ROLLED_BACK`；旧值只读兼容 | 契约基线 §2、`schemas/tuning.py` |
+| 模型来源门禁 | 未声明 | `ModelSource`/`ThetaSource`/`DataSource` + A–E 放行规则，服务端 `authorize_tuning_model` 复核 | §6.1、`services/tuning.py` |
+| 闭环 IV | Phase 0 降级为 `EXPERIMENTAL` | P2-009 升级为 CLIVC 生产方法（`CLIVC_PRODUCTION_READY`），按可信度门禁放行 | `tuning_identification/iv.py`、`services/tuning.py` |
+| ORM 表清单 | 31 张 | 37 张（补 6 张） | §10、`backend/app/models/` |
+| 生产 bootstrap | DDL 21 张，stamp head 跳过缺表 | DDL 收敛至 37 张，专用临时 PG 实测 | `db/postgresql/01_schema.sql`、ADR |
+| 安全边界 | 未声明静态门禁 | 无 DCS 参数下写端点，静态扫描守护 | §6.2、`test_security_p2.py` |
+| `time_constant` | 未声明 | KPI 列 `NOT_IMPLEMENTED`，NULL ≠ 0 ≠ 无数据 | 契约基线 §7 |

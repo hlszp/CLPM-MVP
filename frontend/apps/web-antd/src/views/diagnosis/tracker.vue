@@ -34,6 +34,7 @@ import { useUserStore } from '@vben/stores';
 import {
   Button,
   Checkbox,
+  DatePicker,
   Drawer,
   Form,
   FormItem,
@@ -205,6 +206,19 @@ const columns: TableColumnsType = [
     width: 110,
   },
   {
+    title: '负责人',
+    dataIndex: 'assignee',
+    key: 'assignee',
+    width: 100,
+    ellipsis: true,
+  },
+  {
+    title: '计划执行时间',
+    dataIndex: 'plannedAt',
+    key: 'plannedAt',
+    width: 170,
+  },
+  {
     title: '创建时间',
     dataIndex: 'createdAt',
     key: 'createdAt',
@@ -266,10 +280,21 @@ const statusForm = reactive({
   mocRef: '',
   mocNotApplicable: false,
   mocReason: '',
+  // V62-P3-008：负责人与计划执行时间（tracker 闭环字段）
+  assignee: '',
+  plannedAt: '',
 });
 
 /** D3: 当前是否需要展示 MOC 字段（仅 IMPLEMENTED 状态） */
 const showMocFields = computed(() => statusForm.status === 'IMPLEMENTED');
+
+/** V62-P3-008：计划执行时间 DatePicker 双向绑定（dayjs ↔ ISO 字符串） */
+const plannedAtDate = computed<dayjs.Dayjs | undefined>({
+  get: () => (statusForm.plannedAt ? dayjs(statusForm.plannedAt) : undefined),
+  set: (v) => {
+    statusForm.plannedAt = v ? v.toISOString() : '';
+  },
+});
 
 // A/B 对比抽屉
 const abCompareVisible = ref(false);
@@ -342,6 +367,9 @@ async function handleSubmitStatus() {
       status: statusForm.status,
       comment: statusForm.comment,
       changeRemark: statusForm.changeRemark,
+      // V62-P3-008：负责人与计划执行时间（可选，空值传 undefined 不覆盖）
+      assignee: statusForm.assignee.trim() || undefined,
+      plannedAt: statusForm.plannedAt || undefined,
       // D3: 仅 IMPLEMENTED 时传递 MOC 字段，其他状态不传避免覆盖已有值
       ...(statusForm.status === 'IMPLEMENTED'
         ? {
@@ -379,6 +407,9 @@ function handleOpenStatusModal(record: DiagnosisApi.TrackerItem) {
   statusForm.mocRef = record.mocRef || '';
   statusForm.mocNotApplicable = record.mocNotApplicable || false;
   statusForm.mocReason = record.mocReason || '';
+  // V62-P3-008：回填负责人与计划执行时间
+  statusForm.assignee = record.assignee || '';
+  statusForm.plannedAt = record.plannedAt || '';
   statusModalVisible.value = true;
 }
 
@@ -642,7 +673,7 @@ watch(
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: DiagnosisApi.TrackerItem) => record.loopId"
-        :scroll="{ x: 1400 }"
+        :scroll="{ x: 1700 }"
         size="middle"
         @change="handleTableChange"
       >
@@ -675,6 +706,9 @@ watch(
             >
               {{ statusName(record.actionStatus as DiagnosisApi.ActionStatus) }}
             </Tag>
+          </template>
+          <template v-else-if="column.key === 'plannedAt'">
+            {{ formatTime(record.plannedAt) }}
           </template>
           <template v-else-if="column.key === 'createdAt'">
             {{ formatTime(record.createdAt) }}
@@ -760,6 +794,26 @@ watch(
             v-model:value="statusForm.comment"
             placeholder="例如：已联系设备部拆阀检查"
             :rows="3"
+          />
+        </FormItem>
+
+        <!-- V62-P3-008：负责人与计划执行时间（tracker 闭环字段） -->
+        <FormItem label="负责人">
+          <Input
+            v-model:value="statusForm.assignee"
+            placeholder="实施责任人（可选，便于跟踪到人）"
+            :maxlength="50"
+            allow-clear
+          />
+        </FormItem>
+        <FormItem label="计划执行时间">
+          <DatePicker
+            v-model:value="plannedAtDate"
+            show-time
+            format="YYYY-MM-DD HH:mm"
+            placeholder="选择计划执行时间（可选）"
+            style="width: 100%"
+            allow-clear
           />
         </FormItem>
 

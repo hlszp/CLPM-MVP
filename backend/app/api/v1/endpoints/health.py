@@ -2,6 +2,7 @@
 
 - ``GET /health`` — Liveness probe（进程存活即返回 ok）
 - ``GET /health/ready`` — Readiness probe（检查 DB/Redis/TDengine 依赖连通性）
+- ``GET /health/db-connections`` — PG 连接池监控（P2-018，查询 pg_stat_activity）
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import engine
+from app.core.metrics import pg_active_connections
 from app.core.redis import redis_client
 
 logger = logging.getLogger(__name__)
@@ -72,3 +74,65 @@ async def health_ready() -> JSONResponse:
             "checks": checks,
         },
     )
+
+
+@router.get("/health/db-connections")
+async def health_db_connections() -> JSONResponse:
+    """PG 连接池监控（P2-018）— 查询 pg_stat_activity 按 application_name 分组。
+
+    返回当前数据库的活跃连接数、PG max_connections 配置、按 app 分组的连接明细，
+    以及连接利用率百分比。同步更新 Prometheus pg_active_connections Gauge。
+
+    用于排查 E2E 连续运行 / Celery 并发任务导致的连接池耗尽问题。
+    """
+    try:
+        async with engine.connect() as conn:
+            # 按 application_name 分组统计活跃连接
+            rows = (
+                await conn.execute(
+                    text("""
+                        SELECT COALESCE(application_name, 'unknown') AS app,
+                               count(*) AS cnt
+                        FROM pg_stat_activity
+                        WHERE datname = current_database()
+                        GROUP BY application_name
+                        ORDER BY count(*) DESC
+                    """)
+                )
+            ).fetchall()
+
+            # max_connections 配置（PG 返回字符串，需转 int）
+            max_val = int((await conn.execute(text("SHOW max_connections"))).scalar())
+
+            # 当前数据库总活跃连接
+            total_val = (
+                await conn.execute(
+                    text("""
+                        SELECT count(*) FROM pg_stat_activity
+                        WHERE datname = current_database()
+                    """)
+                )
+            ).scalar()
+
+        by_app = {row.app: row.cnt for row in rows}
+
+        # 同步 Prometheus Gauge（按 application_name 分标签）
+        for app_name, cnt in by_app.items():
+            pg_active_connections.labels(application_name=app_name).set(cnt)
+
+        utilization = round(total_val / max_val * 100, 1) if max_val else 0.0
+
+        return JSONResponse(
+            content={
+                "total": total_val,
+                "max": max_val,
+                "byApp": by_app,
+                "utilization": utilization,
+            }
+        )
+    except Exception as exc:
+        logger.warning("连接池监控查询失败: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"error": f"{exc.__class__.__name__}: {exc}"},
+        )

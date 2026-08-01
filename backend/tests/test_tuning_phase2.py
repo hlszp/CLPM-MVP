@@ -249,6 +249,151 @@ class TestTuningProgress:
 
 
 # ---------------------------------------------------------------------------
+# V62-P1-013/014: TaskTracker 桥接测试
+# ---------------------------------------------------------------------------
+
+
+class TestTuningProgressTaskTrackerBridge:
+    """tuning_progress → TaskTracker 桥接测试（V62-P1-013/014）."""
+
+    @pytest.mark.asyncio
+    async def test_init_progress_bridges_to_task_tracker(self):
+        """created_by_id 非空时，init_progress 在 TaskTracker 创建 TUNING 任务."""
+        from app.services.tuning_progress import init_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.redis_client"),
+            patch("app.services.task_tracker.create_task", new_callable=AsyncMock) as mock_create,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+            mock_create.return_value = "tracker-task-123"
+
+            await init_progress(
+                "celery-task-1",
+                task_type="identify",
+                loop_id="loop-1",
+                created_by="engineer1",
+                created_by_id="user-uuid-1",
+                ts_start="2026-07-28T00:00:00Z",
+                ts_end="2026-07-28T01:00:00Z",
+            )
+
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["created_by"] == "engineer1"
+            assert call_kwargs["created_by_id"] == "user-uuid-1"
+            assert call_kwargs["celery_task_id"] == "celery-task-1"
+            assert call_kwargs["loop_ids"] == ["loop-1"]
+            # 验证 tracker_task_id 写入 tuning_progress hash
+            hset_mapping = mock_redis.hset.call_args.kwargs.get("mapping", {})
+            assert hset_mapping.get("tracker_task_id") == "tracker-task-123"
+
+    @pytest.mark.asyncio
+    async def test_init_progress_without_user_id_skips_bridge(self):
+        """created_by_id 为空时（定时任务/旧调用方），跳过 TaskTracker 桥接."""
+        from app.services.tuning_progress import init_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.create_task", new_callable=AsyncMock) as mock_create,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+
+            await init_progress(
+                "celery-task-2",
+                task_type="identify",
+                loop_id="loop-1",
+                created_by="system",
+                created_by_id="",
+            )
+
+            mock_create.assert_not_called()
+            hset_mapping = mock_redis.hset.call_args.kwargs.get("mapping", {})
+            assert "tracker_task_id" not in hset_mapping
+
+    @pytest.mark.asyncio
+    async def test_terminal_status_syncs_to_task_tracker(self):
+        """update_progress 进入 SUCCESS 终态时同步 TaskTracker."""
+        from app.services.tuning_progress import update_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock) as mock_update,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+            mock_redis.hgetall = AsyncMock(
+                return_value={
+                    "tracker_task_id": "tracker-task-456",
+                    "stage": "discrete_to_continuous",
+                }
+            )
+
+            await update_progress(
+                "celery-task-3",
+                status="SUCCESS",
+                progress=100.0,
+                message="辨识完成",
+            )
+
+            mock_update.assert_called_once()
+            call_args = mock_update.call_args
+            assert call_args.args[0] == "tracker-task-456"
+            assert call_args.args[1].value == "SUCCESS"
+
+    @pytest.mark.asyncio
+    async def test_non_terminal_status_does_not_sync(self):
+        """RUNNING 状态不同步 TaskTracker（粗粒度状态只在终态同步）."""
+        from app.services.tuning_progress import update_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch("app.services.task_tracker.update_status", new_callable=AsyncMock) as mock_update,
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+
+            await update_progress(
+                "celery-task-4",
+                status="RUNNING",
+                stage="identify",
+            )
+
+            mock_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bridge_failure_does_not_block_progress(self):
+        """TaskTracker 桥接失败不阻断 tuning_progress 自身初始化."""
+        from app.services.tuning_progress import init_progress
+
+        with (
+            patch("app.services.tuning_progress.redis_client") as mock_redis,
+            patch(
+                "app.services.task_tracker.create_task",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Redis down"),
+            ),
+        ):
+            mock_redis.hset = AsyncMock(return_value=True)
+            mock_redis.expire = AsyncMock(return_value=True)
+
+            # 不应抛异常
+            await init_progress(
+                "celery-task-5",
+                task_type="identify",
+                loop_id="loop-1",
+                created_by="engineer1",
+                created_by_id="user-uuid-1",
+            )
+
+            # tuning_progress hash 仍被写入（无 tracker_task_id）
+            mock_redis.hset.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # API 端点测试
 # ---------------------------------------------------------------------------
 
@@ -271,6 +416,8 @@ class TestPhase2API:
             "simStep": 1.0,
             "setpointStep": 1.0,
             "disturbanceType": "step",
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/simulate", json=payload)
@@ -280,12 +427,11 @@ class TestPhase2API:
         assert len(data["candidateResponses"]) == 2
 
     def test_compare_endpoint_requires_min_two_candidates(self, client):
-        """/compare 端点要求至少 2 组候选 PID。"""
+        """/compare 端点要求至少 2 组候选 PID（V62-P0-030 schema 层 min_length=2 校验）。"""
         payload = {
             "modelType": "FOPDT",
             "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
             "currentPid": {"kp": 0.5, "ti": 20.0, "td": 0.0},
-            "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
             "pidCandidates": [
                 {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
             ],
@@ -293,15 +439,15 @@ class TestPhase2API:
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/compare", json=payload)
-        assert resp.status_code == 400
+        # Pydantic min_length=2 在 schema 解析阶段即拒绝，返回 422
+        assert resp.status_code == 422
 
     def test_compare_endpoint_success(self, client):
-        """/compare 端点多 PID 对比成功。"""
+        """/compare 端点多 PID 对比成功（V62-P0-030 独立 CompareRequest，无需 recommendedPid）。"""
         payload = {
             "modelType": "FOPDT",
             "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
             "currentPid": {"kp": 0.5, "ti": 20.0, "td": 0.0},
-            "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
             "pidCandidates": [
                 {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
                 {"label": "LAMBDA", "kp": 0.8, "ti": 12.0, "td": 0.0},
@@ -311,6 +457,8 @@ class TestPhase2API:
             "simStep": 1.0,
             "setpointStep": 1.0,
             "disturbanceType": "step",
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/compare", json=payload)
@@ -318,6 +466,46 @@ class TestPhase2API:
         data = resp.json()["data"]
         assert "candidateResponses" in data
         assert len(data["candidateResponses"]) == 3
+
+    def test_compare_endpoint_accepts_no_current_pid(self, client):
+        """/compare 端点 currentPid 可选（V62-P0-030 CompareRequest）。"""
+        payload = {
+            "modelType": "FOPDT",
+            "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+            "pidCandidates": [
+                {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
+                {"label": "LAMBDA", "kp": 0.8, "ti": 12.0, "td": 0.0},
+            ],
+            "simDuration": 50.0,
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
+        }
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post("/api/v1/tuning/compare", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert "candidateResponses" in data
+        assert len(data["candidateResponses"]) == 2
+
+    def test_compare_endpoint_ignores_recommended_pid(self, client):
+        """/compare 端点静默忽略 recommendedPid（V62-P0-030 向后兼容安全网）。"""
+        payload = {
+            "modelType": "FOPDT",
+            "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+            "currentPid": {"kp": 0.5, "ti": 20.0, "td": 0.0},
+            "recommendedPid": {"kp": 2.0, "ti": 15.0, "td": 2.0},
+            "pidCandidates": [
+                {"label": "IMC", "kp": 1.0, "ti": 10.0, "td": 0.5},
+                {"label": "LAMBDA", "kp": 0.8, "ti": 12.0, "td": 0.0},
+            ],
+            "simDuration": 50.0,
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
+        }
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post("/api/v1/tuning/compare", json=payload)
+        # CamelModel 未设 extra=forbid，recommendedPid 被静默忽略，不影响 200
+        assert resp.status_code == 200
 
     def test_simulate_backward_compatible_no_candidates(self, client):
         """/simulate 无 pid_candidates 时向后兼容。"""
@@ -330,6 +518,8 @@ class TestPhase2API:
             "simStep": 1.0,
             "setpointStep": 1.0,
             "disturbanceType": "step",
+            "modelSource": "MANUAL",
+            "riskConfirmed": True,
         }
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post("/api/v1/tuning/simulate", json=payload)
@@ -406,6 +596,75 @@ class TestPhase2API:
         assert resp.status_code == 200
         assert resp.json()["data"]["taskId"] == "celery-task-hist-001"
 
+    def test_identify_history_accepts_ipdt_candidate(self, client):
+        """P2-008：历史辨识接受 IPDT 候选（差分辨识链已接入）."""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-ipdt-001"
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                    "candidateModelTypes": ["IPDT"],
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["data"]["taskId"] == "celery-task-ipdt-001"
+        mock_celery_task.delay.assert_called_once()
+
+    def test_identify_history_preserves_explicit_zero_theta(self, client):
+        """显式 thetaEstimate=0 必须原样传给异步任务."""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-zero-theta"
+
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                    "candidateModelTypes": ["FOPDT"],
+                    "thetaEstimate": 0,
+                },
+            )
+
+        assert resp.status_code == 200
+        assert mock_celery_task.delay.call_args.kwargs["theta_estimate"] == 0
+
+    def test_identify_history_rejects_negative_theta(self, client):
+        """纯滞后预估值不能为负数."""
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    "loopId": "loop-1",
+                    "startTime": "2026-07-28T00:00:00Z",
+                    "endTime": "2026-07-28T01:00:00Z",
+                    "identifyStrategy": "HISTORY_ONLY",
+                    "thetaEstimate": -1,
+                },
+            )
+
+        assert resp.status_code == 422
+        mock_celery_task.delay.assert_not_called()
+
     def test_identify_history_step_only_sync_path(self, client):
         """/identify/history STEP_ONLY 策略走同步阶跃路径（不经 Celery）。"""
         sync_result = {
@@ -415,23 +674,21 @@ class TestPhase2API:
             "algorithmVersion": "v1.0",
             "dataPoints": 600,
             "fittedCurve": None,
+            "stepValidationPassed": True,
         }
 
         with (
             patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
-            # endpoint 函数内 `from app.core.db import AsyncSessionLocal` 懒导入，
-            # 故 patch 源模块而非 endpoint 模块
-            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
             patch(
                 "app.api.v1.endpoints.tuning.identify_model",
                 AsyncMock(return_value=sync_result),
             ),
+            patch(
+                "app.api.v1.endpoints.tuning.persist_step_identification_record",
+                AsyncMock(return_value="step-record-1"),
+            ) as mock_persist,
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
-            mock_session = MagicMock()
-            mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)
-
             resp = client.post(
                 "/api/v1/tuning/identify/history",
                 json={
@@ -445,6 +702,8 @@ class TestPhase2API:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["modelType"] == "FOPDT"
+        assert data["recordId"] == "step-record-1"
+        mock_persist.assert_awaited_once()
         # STEP_ONLY 不经 Celery
         mock_celery_task.delay.assert_not_called()
 

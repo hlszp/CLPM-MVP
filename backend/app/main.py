@@ -278,6 +278,8 @@ def _start_celery_worker() -> None:
                     "worker",
                     "-l",
                     "info",
+                    "--concurrency",
+                    "4",
                     "-Q",
                     "default,dead_letter",
                 ],

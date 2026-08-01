@@ -12,7 +12,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import math
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -23,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BizError
 from app.models.loop import LoopLedger
 from app.models.tuning import TuningRecord
+from app.services.process_model_migration import get_effective_model_params
 from app.services.tuning_algorithms import (
     TUNING_ALGORITHM_VERSION,
     TUNING_METHODS_INFO,
@@ -42,6 +45,255 @@ from app.services.tuning_identification.types import ModelType
 from app.services.waveform import get_waveform
 
 logger = logging.getLogger(__name__)
+
+_STEP_MIN_POINTS = 20
+
+
+@dataclass(frozen=True)
+class TuningModelAuthorization:
+    """服务端验证后的推荐链模型上下文。
+
+    该对象不从 HTTP 请求直接反序列化；调用方必须通过
+    :func:`authorize_tuning_model` 构造，避免裸模型参数绕过来源门禁。
+    """
+
+    model_type: str
+    model_params: dict[str, Any]
+    loop_id: str | None
+    model_source: str
+    source_record_id: str | None
+    risk_confirmed: bool
+    confidence_level: str | None = None
+    confidence_reason: str | None = None
+    identify_method: str | None = None
+    data_source: str | None = None
+
+
+def _model_params_match(
+    model_type: str,
+    requested: dict[str, Any],
+    persisted: dict[str, Any],
+) -> bool:
+    """按模型必需参数比较请求与持久化值，阻止替换辨识结果。"""
+    required = {
+        "FOPDT": ("K", "tau", "theta"),
+        "SOPDT": ("K", "T1", "T2", "theta"),
+        "IPDT": ("K", "theta"),
+    }.get(model_type, ())
+    if not required:
+        return False
+
+    for key in required:
+        left = requested.get(key)
+        right = persisted.get(key)
+        if isinstance(left, bool) or isinstance(right, bool):
+            return False
+        try:
+            left_number = float(left)
+            right_number = float(right)
+        except (TypeError, ValueError):
+            return False
+        if not (math.isfinite(left_number) and math.isfinite(right_number)):
+            return False
+        if not math.isclose(left_number, right_number, rel_tol=1e-9, abs_tol=1e-12):
+            return False
+    return True
+
+
+async def authorize_tuning_model(
+    *,
+    db: AsyncSession,
+    requested_model_type: str,
+    requested_model_params: dict[str, Any],
+    loop_id: str | None,
+    source_record_id: str | None,
+    model_source: str | None,
+    risk_confirmed: bool,
+    trusted_step_validation: bool = False,
+) -> TuningModelAuthorization:
+    """校验整定/仿真推荐链的模型来源与可信度。
+
+    ``trusted_step_validation`` 仅供同一服务进程内、已经执行真实单阶跃
+    校验的编排链使用；该字段不会暴露到 HTTP schema。
+    """
+    if model_source is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message="必须明确模型来源并提供可验证凭据；旧版裸模型请求已停止放行",
+            status_code=400,
+        )
+
+    if model_source == "MANUAL":
+        if source_record_id is not None:
+            raise BizError(
+                code="ERR_TUNING_SOURCE_INVALID",
+                message="人工模型不得绑定或伪装成辨识记录",
+                status_code=400,
+            )
+        if not risk_confirmed:
+            raise BizError(
+                code="ERR_TUNING_RISK_CONFIRMATION_REQUIRED",
+                message="人工模型必须显式确认模型与整定风险",
+                status_code=400,
+            )
+        return TuningModelAuthorization(
+            model_type=requested_model_type,
+            model_params=dict(requested_model_params),
+            loop_id=loop_id,
+            model_source="MANUAL",
+            source_record_id=None,
+            risk_confirmed=True,
+        )
+
+    if model_source not in {"IDENTIFICATION_RECORD", "STEP_EXPERIMENT"}:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_INVALID",
+            message=f"不支持的模型来源: {model_source}",
+            status_code=400,
+        )
+
+    if model_source == "STEP_EXPERIMENT" and trusted_step_validation:
+        return TuningModelAuthorization(
+            model_type=requested_model_type,
+            model_params=dict(requested_model_params),
+            loop_id=loop_id,
+            model_source="STEP_EXPERIMENT",
+            source_record_id=source_record_id,
+            risk_confirmed=risk_confirmed,
+        )
+
+    if source_record_id is None:
+        source_name = "阶跃实验" if model_source == "STEP_EXPERIMENT" else "历史辨识"
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message=f"{source_name}模型必须提供服务端可验证的 sourceRecordId",
+            status_code=400,
+        )
+
+    record = await db.get(TuningRecord, source_record_id)
+    if record is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_NOT_FOUND",
+            message="模型来源记录不存在",
+            status_code=404,
+        )
+
+    if not getattr(record, "task_id", None):
+        raise BizError(
+            code="ERR_TUNING_SOURCE_UNVERIFIED",
+            message="模型记录不是由服务端辨识链生成，不能作为推荐依据",
+            status_code=422,
+        )
+    if str(record.status or "") not in {"IDENTIFIED", "SIMULATED", "COMPLETED"}:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_UNVERIFIED",
+            message=f"模型记录状态 {record.status or '空'} 尚未完成辨识验证",
+            status_code=422,
+        )
+
+    persisted_loop_id = str(record.loop_id)
+    if loop_id is not None and str(loop_id) != persisted_loop_id:
+        raise BizError(
+            code="ERR_TUNING_LOOP_MISMATCH",
+            message="请求回路与模型来源记录的回路不一致",
+            status_code=409,
+        )
+
+    persisted_model_type = str(record.model_type)
+    # V62-P3-005：读路径切换——优先从 process_model_version 读取 model_params
+    persisted_model_params = await get_effective_model_params(db, record)
+    if (
+        requested_model_type != persisted_model_type
+        or not isinstance(persisted_model_params, dict)
+        or not _model_params_match(
+            persisted_model_type,
+            requested_model_params,
+            persisted_model_params,
+        )
+    ):
+        raise BizError(
+            code="ERR_TUNING_MODEL_MISMATCH",
+            message="请求模型参数与服务端辨识记录不一致",
+            status_code=409,
+        )
+
+    confidence_reason = str(record.confidence_reason or "")
+    if "THETA_SOURCE=HEURISTIC_2TS" in confidence_reason.upper():
+        raise BizError(
+            code="ERR_TUNING_THETA_HEURISTIC_BLOCKED",
+            message="纯滞后参数来自 2Ts 启发估计，不得进入推荐整定/仿真链",
+            status_code=422,
+        )
+
+    identify_method = str(record.identify_method or "")
+    # P2-009：CLIVC（可证明闭环一致 IV）已升级为生产方法
+    # （IV_CAPABILITY_STATUS="CLIVC_PRODUCTION_READY"），复用 HISTORICAL_IV 枚举。
+    # 早期 identify_iv/identify_iv4 实验性原型 pipeline 不再调用，故 HISTORICAL_IV
+    # 现仅代表 CLIVC，按正常可信度门禁（A/B 放行、C 需确认、D/E/INCONCLUSIVE 拒绝）放行。
+    # 详见契约 v2.3 §6.1。
+
+    if model_source == "STEP_EXPERIMENT":
+        if not (
+            identify_method.startswith("STEP_")
+            and str(record.data_source or "") in {"STEP_EXPERIMENT", "fallback_step"}
+            and "STEP_VALIDATION_PASSED=TRUE" in confidence_reason.upper()
+        ):
+            raise BizError(
+                code="ERR_TUNING_STEP_EVIDENCE_REQUIRED",
+                message="阶跃实验缺少服务端已验证的单阶跃证据",
+                status_code=422,
+            )
+    else:
+        if identify_method.startswith("STEP_"):
+            raise BizError(
+                code="ERR_TUNING_SOURCE_INVALID",
+                message="阶跃辨识记录必须声明 STEP_EXPERIMENT 来源",
+                status_code=400,
+            )
+        if identify_method not in {"HISTORICAL_ARX", "HISTORICAL_ARMAX", "HISTORICAL_IV"}:
+            raise BizError(
+                code="ERR_TUNING_SOURCE_UNVERIFIED",
+                message="历史辨识记录缺少可放行的服务端算法凭据",
+                status_code=422,
+            )
+        if str(record.data_source or "") != "HISTORY":
+            raise BizError(
+                code="ERR_TUNING_SOURCE_INVALID",
+                message="历史辨识记录的数据来源标记不一致",
+                status_code=400,
+            )
+        confidence_level = str(record.confidence_level or "").upper()
+        if confidence_level in {"A", "B"}:
+            pass
+        elif confidence_level == "C":
+            if not risk_confirmed:
+                raise BizError(
+                    code="ERR_TUNING_RISK_CONFIRMATION_REQUIRED",
+                    message="C 级辨识结果必须显式确认风险后方可进入推荐链",
+                    status_code=400,
+                )
+        else:
+            raise BizError(
+                code="ERR_TUNING_CONFIDENCE_BLOCKED",
+                message=(
+                    f"可信度 {confidence_level or '空'} 不满足推荐链要求；"
+                    "仅 A/B 或经确认的 C 级结果可用"
+                ),
+                status_code=422,
+            )
+
+    return TuningModelAuthorization(
+        model_type=persisted_model_type,
+        model_params=dict(persisted_model_params),
+        loop_id=persisted_loop_id,
+        model_source=model_source,
+        source_record_id=str(record.id),
+        risk_confirmed=risk_confirmed,
+        confidence_level=str(record.confidence_level) if record.confidence_level else None,
+        confidence_reason=str(record.confidence_reason) if record.confidence_reason else None,
+        identify_method=str(record.identify_method) if record.identify_method else None,
+        data_source=str(record.data_source) if record.data_source else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +339,7 @@ async def _fetch_preprocessed_signals(
         dict with keys: "pv", "op", "sp"（sp 可能为空 list）, "timestamps"（秒）,
         "valid_rate", "sampling_freq"（数值 Hz，已从 DataBlock 标签解析）
     """
-    from app.contracts.data_types import ControlType, TimeWindow
+    from app.contracts.data_types import ControlType, DataBlock, TimeWindow
 
     try:
         control_type = ControlType(control_type_str)
@@ -100,55 +352,83 @@ async def _fetch_preprocessed_signals(
 
     planner = await _build_data_planner(db)
 
-    # 请求 PVOP_HF（PV+OP, 1s）和 BASE（含 SP）
+    # 请求 PVOP_HF（PV+OP, 1s）、BASE（含 SP）和 MODE_HF（MODE，从 BASE 派生）。
+    # V62-P1-002: 增加 auto_mode_rate 触发 MODE_HF 派生；DataPlanner 复用 BASE 时
+    # 会把所有 HF 组的 tags 合并进 BASE 查询（见 data_planner._build_query_plan），
+    # 因此 BASE 查询会 SELECT mode 列，派生出的 MODE_HF block 才能携带 mode 信号。
     bundles = await planner.request_bundles(
         loop_id=loop_id,
-        metrics=["valve_linearity", "error_mean"],
+        metrics=["valve_linearity", "error_mean", "auto_mode_rate"],
         time_window=time_window,
         control_type=control_type,
     )
 
+    # V62-P1-001: 按 tag_group 索引收集 block，消除 bundle 迭代顺序依赖
+    pvop_block: DataBlock | None = None
+    base_block: DataBlock | None = None
+    mode_block: DataBlock | None = None
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group == "PVOP_HF" and pvop_block is None:
+            pvop_block = block
+        elif block.tag_group == "BASE" and base_block is None:
+            base_block = block
+        elif block.tag_group == "MODE_HF" and mode_block is None:
+            mode_block = block
+
     pv: list[float] = []
     op: list[float] = []
     sp: list[float] = []
+    mode: list[int] = []
     timestamps: list[float] = []
     valid_rate = 1.0
     sampling_freq = 1.0
+    resample_quality: dict[str, int] = {}
+    mode_resample_quality: dict[str, int] = {}
 
-    for bundle in bundles:
-        block = bundle.data_block
-        signals = block.signals
-        ts_list = list(block.timestamps)
+    if pvop_block is not None:
+        pvop_signals = pvop_block.signals
+        pv = list(pvop_signals.get("pv", []))
+        op = list(pvop_signals.get("op", []))
+        pvop_ts = list(pvop_block.timestamps)
+        # V62-P1-003/006: 相对秒用 _to_rel_seconds（无 naive .timestamp() 慢路径，
+        # 无数组索引退化）
+        if pvop_ts:
+            timestamps = _to_rel_seconds(pvop_ts, pvop_ts[0])
+        valid_rate = pvop_block.quality_summary.valid_rate if pvop_block.quality_summary else 1.0
+        sampling_freq = _parse_sampling_freq_hz(pvop_block.sampling_freq)
 
-        if block.tag_group == "PVOP_HF":
-            # PV+OP 高频（1s）作为主时间轴
-            pv = list(signals.get("pv", []))
-            op = list(signals.get("op", []))
-            # timestamps 是 datetime，转为相对秒
-            if ts_list:
-                t0 = ts_list[0]
-                timestamps = [
-                    (t - t0).total_seconds() if hasattr(t, "total_seconds") else float(i)
-                    for i, t in enumerate(ts_list)
-                ]
-            valid_rate = block.quality_summary.valid_rate if block.quality_summary else 1.0
-            sampling_freq = _parse_sampling_freq_hz(block.sampling_freq)
-        elif block.tag_group == "BASE":
-            # SP 在 BASE 中，需对齐到 PVOP 时间轴
-            sp_raw = list(signals.get("sp", []))
-            ts_sp = list(ts_list)
-            if sp_raw and timestamps:
-                sp = _resample_to_grid(sp_raw, ts_sp, ts_list_pvop=block.timestamps)
-            elif sp_raw:
-                sp = sp_raw  # 降级：不对齐
+    # V62-P1-001: SP 重采样到 PVOP 网格（修复：目标网格传 PVOP timestamps，
+    # 不再误传 BASE 自身 timestamps）
+    if base_block is not None and pvop_block is not None and timestamps:
+        sp_raw = list(base_block.signals.get("sp", []))
+        ts_sp = list(base_block.timestamps)
+        if sp_raw:
+            sp, resample_quality = _resample_to_grid(
+                sp_raw, ts_sp, dst_timestamps=pvop_block.timestamps
+            )
+
+    # V62-P1-002: MODE 零阶保持重采样到 PVOP 网格。
+    # MODE 是离散状态量（AUTO/MANUAL/CASCADE），禁止线性插值（会产出 1.5 等无意义
+    # 中间值）；用零阶保持：每个 PVOP 时间点取 MODE_HF 中不超过该时间的最近值。
+    if mode_block is not None and pvop_block is not None and timestamps:
+        mode_raw = list(mode_block.signals.get("mode", []))
+        ts_mode = list(mode_block.timestamps)
+        if mode_raw:
+            mode, mode_resample_quality = _resample_mode_to_grid(
+                mode_raw, ts_mode, dst_timestamps=pvop_block.timestamps
+            )
 
     return {
         "pv": pv,
         "op": op,
         "sp": sp,
+        "mode": mode,
         "timestamps": timestamps,
         "valid_rate": valid_rate,
         "sampling_freq": sampling_freq,
+        "resample_quality": resample_quality,
+        "mode_resample_quality": mode_resample_quality,
     }
 
 
@@ -180,36 +460,166 @@ def _parse_sampling_freq_hz(label: object) -> float:
     return 1.0 / interval_s
 
 
+def _to_rel_seconds(ts_list: list, t0: object) -> list[float]:
+    """时间戳列表 → 相对 t0 的秒数（V62-P1-006）.
+
+    纯 ``timedelta`` 算术，不调 naive ``.timestamp()``（macOS fork 时区慢路径，
+    项目红线）；naive datetime 视为 UTC（项目惯例），aware 与 naive 混用时
+    统一补 UTC。非 datetime（int/float epoch）直接转 float，不退化为数组索引。
+    """
+    _utc = UTC
+
+    def _aware(t: datetime) -> datetime:
+        return t if t.tzinfo is not None else t.replace(tzinfo=_utc)
+
+    t0_aware = _aware(t0) if isinstance(t0, datetime) else t0
+    out: list[float] = []
+    for t in ts_list:
+        if isinstance(t, datetime):
+            out.append((_aware(t) - t0_aware).total_seconds())
+        else:
+            out.append(float(t))
+    return out
+
+
 def _resample_to_grid(
     values: list[float],
     src_timestamps: list,
-    ts_list_pvop: list,
-) -> list[float]:
-    """将 SP 从 BASE 采样率线性插值到 PVOP_HF（1s）时间轴.
+    dst_timestamps: list,
+) -> tuple[list[float], dict[str, int]]:
+    """将 values 从 src_timestamps 线性插值到 dst_timestamps 目标网格.
+
+    V62-P1-001/003/004/006:
+    - 目标网格为 ``dst_timestamps``（PVOP 时间戳），不再误传 src 自身时间戳；
+    - datetime → 相对秒用 ``_to_rel_seconds``（无 naive ``.timestamp()``，无数组索引退化）；
+    - src 乱序时先排序（``np.interp`` 要求单调递增，覆盖 V62-P1-005 乱序场景）；
+    - 返回插值/外推/缺口/有效样本质量指标（V62-P1-004）。
 
     Args:
-        values: SP 原始值
-        src_timestamps: SP 原始时间戳（datetime）
-        ts_list_pvop: PVOP_HF 时间戳（datetime），目标网格
-    """
-    if not values or not src_timestamps or not ts_list_pvop:
-        return []
+        values: src 信号值
+        src_timestamps: src 时间戳（datetime 或数值）
+        dst_timestamps: 目标网格时间戳（通常 PVOP_HF）
 
-    # 转为 epoch 秒
-    src_sec = np.array(
-        [
-            t.timestamp() if hasattr(t, "timestamp") else float(i)
-            for i, t in enumerate(src_timestamps)
-        ]
-    )
-    dst_sec = np.array(
-        [t.timestamp() if hasattr(t, "timestamp") else float(i) for i, t in enumerate(ts_list_pvop)]
-    )
+    Returns:
+        (重采样值列表, 质量指标 dict)。质量指标：
+        ``interpolated_count``（src 范围内）、``extrapolated_count``（src 范围外，
+        ``np.interp`` 用边界值）、``gap_count``（src 中 NaN/inf 缺失）、
+        ``effective_samples``（src 有效样本数）。
+    """
+    if not values or not src_timestamps or not dst_timestamps:
+        return [], {
+            "interpolated_count": 0,
+            "extrapolated_count": 0,
+            "gap_count": 0,
+            "effective_samples": 0,
+        }
+
+    t0 = dst_timestamps[0]
+    src_sec = np.array(_to_rel_seconds(src_timestamps, t0), dtype=float)
+    dst_sec = np.array(_to_rel_seconds(dst_timestamps, t0), dtype=float)
     values_arr = np.array(values, dtype=float)
 
-    # 用 numpy 线性插值（外推用边界值）
-    result = np.interp(dst_sec, src_sec, values_arr, left=values_arr[0], right=values_arr[-1])
-    return result.tolist()
+    # 缺口：src 中 NaN/inf 视为缺失
+    finite_mask = np.isfinite(values_arr)
+    gap_count = int((~finite_mask).sum())
+
+    # src 需单调递增供 np.interp；处理乱序（V62-P1-005）
+    sort_idx = np.argsort(src_sec)
+    src_sec_sorted = src_sec[sort_idx]
+    values_sorted = values_arr[sort_idx]
+
+    src_lo = float(src_sec_sorted[0])
+    src_hi = float(src_sec_sorted[-1])
+    in_range = (dst_sec >= src_lo) & (dst_sec <= src_hi)
+    interpolated_count = int(in_range.sum())
+    extrapolated_count = int((~in_range).sum())
+
+    result = np.interp(
+        dst_sec,
+        src_sec_sorted,
+        values_sorted,
+        left=float(values_sorted[0]),
+        right=float(values_sorted[-1]),
+    )
+    return result.tolist(), {
+        "interpolated_count": interpolated_count,
+        "extrapolated_count": extrapolated_count,
+        "gap_count": gap_count,
+        "effective_samples": int(finite_mask.sum()),
+    }
+
+
+def _resample_mode_to_grid(
+    values: list[float],
+    src_timestamps: list,
+    dst_timestamps: list,
+) -> tuple[list[int], dict[str, int]]:
+    """将离散 MODE 信号零阶保持重采样到 dst 网格（V62-P1-002）.
+
+    MODE 是离散状态量（AUTO/MANUAL/CASCADE 等），禁止线性插值——线性插值
+    会产出 1.5、2.3 等无意义中间状态码。采用零阶保持（前向填充）：每个 dst
+    时间点取 src 中不超过该时间的最近有效值，符合 DCS 模式保持语义。
+
+    - dst 早于 src 首点：取 src[0]（前向外推，记 extrapolated_count）
+    - dst 晚于 src 末点：取 src[-1]（后向外推，记 extrapolated_count）
+    - src 中 NaN/inf 视为缺失，跳过（记 gap_count）
+    - 时间戳 → 相对秒用 ``_to_rel_seconds``（无 naive ``.timestamp()``，V62-P1-006）
+
+    Args:
+        values: src MODE 值（int/float，离散状态码）
+        src_timestamps: src 时间戳
+        dst_timestamps: 目标网格时间戳（通常 PVOP_HF）
+
+    Returns:
+        (重采样 MODE int 列表, 质量指标 dict)。质量指标字段与
+        ``_resample_to_grid`` 对齐：``interpolated_count``（src 范围内）、
+        ``extrapolated_count``（src 范围外）、``gap_count``（src 缺失）、
+        ``effective_samples``（src 有效样本数）。
+    """
+    if not values or not src_timestamps or not dst_timestamps:
+        return [], {
+            "interpolated_count": 0,
+            "extrapolated_count": 0,
+            "gap_count": 0,
+            "effective_samples": 0,
+        }
+
+    t0 = dst_timestamps[0]
+    src_sec = np.array(_to_rel_seconds(src_timestamps, t0), dtype=float)
+    dst_sec = np.array(_to_rel_seconds(dst_timestamps, t0), dtype=float)
+    values_arr = np.array(values, dtype=float)
+
+    finite_mask = np.isfinite(values_arr)
+    gap_count = int((~finite_mask).sum())
+    effective_samples = int(finite_mask.sum())
+
+    if effective_samples == 0:
+        # 全部缺失：填 0 并标记为全外推（无有效源可保持）
+        return [0] * len(dst_timestamps), {
+            "interpolated_count": 0,
+            "extrapolated_count": len(dst_timestamps),
+            "gap_count": gap_count,
+            "effective_samples": 0,
+        }
+
+    # 仅用有效样本做零阶保持（缺失点不参与）
+    valid_src = src_sec[finite_mask]
+    valid_vals = values_arr[finite_mask]
+    # searchsorted(side="right") - 1：对每个 dst_sec 找 <= 它的最大 src 索引
+    idx = np.searchsorted(valid_src, dst_sec, side="right") - 1
+    before_mask = idx < 0  # dst 早于 src 首点 → 前向外推
+    idx = np.clip(idx, 0, len(valid_vals) - 1)
+    result = valid_vals[idx]
+    after_mask = dst_sec > valid_src[-1]  # dst 晚于 src 末点 → 后向外推
+    extrapolated_count = int(before_mask.sum() + after_mask.sum())
+    interpolated_count = len(dst_timestamps) - extrapolated_count
+
+    return [int(v) for v in result], {
+        "interpolated_count": interpolated_count,
+        "extrapolated_count": extrapolated_count,
+        "gap_count": gap_count,
+        "effective_samples": effective_samples,
+    }
 
 
 async def identify_model_from_history(
@@ -260,11 +670,12 @@ async def identify_model_from_history(
     # 候选模型类型
     candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT"])]
 
-    # 调用算法栈
+    # 调用算法栈（V62-P1-002: 传入同轴后的 MODE，供后续片段切分使用）
     result = identify_from_history(
         op=op,
         pv=pv,
         sp=sp if sp else None,
+        mode=signals.get("mode") or None,
         ts=ts,
         theta_estimate=theta_estimate,
         candidate_models=candidates,
@@ -337,6 +748,10 @@ async def preview_identify_segments(
 ) -> dict[str, Any]:
     """预览数据窗口内的可辨识片段（只做激励检测，不执行辨识）.
 
+    V62-P1-008: 基于 segment_signals 真实切分片段（按 MODE/缺口/饱和/太短），
+    对可辨识片段（exclusion_reason is None）跑激励检测，被排除片段标注原因。
+    不再把整窗硬编码成单个 AUTO 片段。
+
     Returns:
         dict with loopId/totalSegments/segments/sufficientCount
     """
@@ -347,6 +762,7 @@ async def preview_identify_segments(
 
     pv = signals["pv"]
     op = signals["op"]
+    mode = signals.get("mode") or None
 
     if len(pv) < 10 or len(op) < 10:
         return {
@@ -362,30 +778,58 @@ async def preview_identify_segments(
         check_excitation,
         excitation_score,
     )
+    from app.services.tuning_identification.segmentation import segment_signals
 
-    # Phase 2 初版：将整个数据窗口作为单个片段评估
-    # 后续可按 MODE 变化点切分为多片段
-    u = np.array(op, dtype=float)
-    y = np.array(pv, dtype=float)
-    d = 1  # 默认滞后 1 步
-    exc_result = check_excitation(u, y, d)
+    # V62-P1-007/008: 真实事件切片（MODE/缺口/饱和/太短）
+    specs = segment_signals(pv, op, mode)
 
-    score = excitation_score(exc_result.condition_number, exc_result.significant_changes)
-
-    segment = {
-        "startIdx": 0,
-        "endIdx": len(pv) - 1,
-        "mode": "AUTO",
-        "excitationScore": score,
-        "conditionNumber": exc_result.condition_number,
-        "isSufficient": exc_result.is_sufficient,
-    }
+    segments: list[dict[str, Any]] = []
+    sufficient_count = 0
+    for spec in specs:
+        # endIdx 保持 inclusive 语义（兼容前端），SegmentSpec.end_idx 是 exclusive
+        end_idx_inclusive = spec.end_idx - 1
+        base = {
+            "startIdx": spec.start_idx,
+            "endIdx": end_idx_inclusive,
+            "mode": spec.mode_label,
+            "exclusionReason": spec.exclusion_reason,
+            "validSampleRatio": spec.valid_sample_ratio,
+            "pointCount": spec.point_count,
+        }
+        if spec.exclusion_reason is not None or spec.point_count < 10:
+            # 被排除片段：不跑激励检测
+            base.update(
+                {
+                    "excitationScore": None,
+                    "conditionNumber": None,
+                    "isSufficient": False,
+                }
+            )
+        else:
+            # 可辨识片段：跑激励检测
+            seg_pv = pv[spec.start_idx : spec.end_idx]
+            seg_op = op[spec.start_idx : spec.end_idx]
+            u = np.array(seg_op, dtype=float)
+            y = np.array(seg_pv, dtype=float)
+            d = 1  # 预览用默认滞后，正式辨识由 pipeline 延迟搜索确定
+            exc = check_excitation(u, y, d)
+            score = excitation_score(exc.condition_number, exc.significant_changes)
+            if exc.is_sufficient:
+                sufficient_count += 1
+            base.update(
+                {
+                    "excitationScore": score,
+                    "conditionNumber": exc.condition_number,
+                    "isSufficient": exc.is_sufficient,
+                }
+            )
+        segments.append(base)
 
     return {
         "loopId": loop_id,
-        "totalSegments": 1,
-        "segments": [segment],
-        "sufficientCount": 1 if exc_result.is_sufficient else 0,
+        "totalSegments": len(segments),
+        "segments": segments,
+        "sufficientCount": sufficient_count,
     }
 
 
@@ -416,40 +860,55 @@ async def identify_model(
     )
 
     pv_values_raw = waveform.get("pv", [])
+    op_values_raw = waveform.get("op", [])
     timestamps_raw = waveform.get("timestamps", [])
 
-    # 过滤 None 值（Bad 质量码）
+    # 按同一索引过滤 PV/OP/时间，避免分别过滤后信号错位。
     pv_values: list[float] = []
+    op_values: list[float] = []
     timestamps: list[float] = []  # 绝对 Unix 时间戳（秒），用于响应绘图
-    for i, pv in enumerate(pv_values_raw):
-        if pv is not None and i < len(timestamps_raw):
-            pv_values.append(float(pv))
-            # timestamps 是毫秒，转为秒
-            ts_sec = timestamps_raw[i] / 1000.0
-            timestamps.append(ts_sec)
+    point_count = min(len(pv_values_raw), len(op_values_raw), len(timestamps_raw))
+    for i in range(point_count):
+        try:
+            pv = float(pv_values_raw[i])
+            op = float(op_values_raw[i])
+            ts_sec = float(timestamps_raw[i]) / 1000.0
+        except (TypeError, ValueError):
+            continue
+        if not (np.isfinite(pv) and np.isfinite(op) and np.isfinite(ts_sec)):
+            continue
+        pv_values.append(pv)
+        op_values.append(op)
+        timestamps.append(ts_sec)
 
-    if len(pv_values) < 10:
+    if len(pv_values) < _STEP_MIN_POINTS:
         raise BizError(
             code="ERR_TUNING_DATA_INSUFFICIENT",
-            message=f"波形数据不足（{len(pv_values)} 点），至少需要 10 个有效数据点",
+            message=(
+                f"有效 PV/OP 对齐数据不足（{len(pv_values)} 点），"
+                f"至少需要 {_STEP_MIN_POINTS} 个有效数据点"
+            ),
             status_code=400,
         )
 
-    # 辨识算法需要相对时间（从 0 开始），不能用绝对 Unix 时间戳
-    # 否则两点法 theta = t2 - tau ≈ 1.78e9 秒，仿真曲线全为 pv_initial
+    step_validation = _detect_valid_step(op_values, pv_values)
+    if not step_validation["valid"]:
+        raise BizError(
+            code="ERR_TUNING_STEP_INVALID",
+            message=step_validation["reason"],
+            status_code=400,
+        )
+
+    # 以 MV 阶跃时刻为时间零点；阶跃前稳定基线保留为负时间，
+    # 既供算法估算初值，又避免把窗口前置基线时长误算进 theta。
     if timestamps:
-        t0 = timestamps[0]
+        t0 = timestamps[step_validation["step_index"]]
         timestamps_rel = [t - t0 for t in timestamps]
     else:
         timestamps_rel = []
 
-    # 估算 MV 阶跃幅值（从 OP 数据）
-    op_values_raw = waveform.get("op", [])
-    mv_step = _estimate_mv_step(op_values_raw)
-    if mv_step == 0:
-        # 如果无法从 OP 估算，使用 PV 变化范围作为默认
-        mv_step = max(pv_values[-1] - pv_values[0], 1.0)
-        logger.info("无法从 OP 估算 MV 阶跃，使用默认值: %s", mv_step)
+    # 只使用验证通过的真实 MV 单阶跃；禁止以 PV 变化冒充 MV 输入。
+    mv_step = step_validation["mv_step"]
 
     # 调用辨识算法（传入相对时间戳，算法内部期望从 0 开始）
     if model_type == "FOPDT":
@@ -482,16 +941,198 @@ async def identify_model(
             "fitted": result["fitted_pv"],
         }
 
-    return {
+    response = {
         "modelType": model_type,
         "params": params,
         "fittingScore": result["fitting_score"],
+        "stepValidationPassed": True,
+        "stepIndex": step_validation["step_index"],
         "algorithmVersion": TUNING_ALGORITHM_VERSION,
         "dataPoints": len(pv_values),
         "fittedCurve": fitted_curve,
         "tagName": loop.tag_name,
         "mvStep": mv_step,
     }
+    validation_error = validate_step_identification_result(response)
+    if validation_error:
+        raise BizError(
+            code="ERR_TUNING_IDENTIFICATION_FAILED",
+            message=validation_error,
+            status_code=400,
+        )
+    return response
+
+
+def _detect_valid_step(
+    op_values: list[float | None],
+    pv_values: list[float | None],
+) -> dict[str, Any]:
+    """验证窗口是否包含稳定基线、唯一 MV 阶跃、保持段和显著 PV 响应。"""
+
+    aligned: list[tuple[float, float]] = []
+    for op_raw, pv_raw in zip(op_values, pv_values, strict=False):
+        try:
+            op = float(op_raw)
+            pv = float(pv_raw)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(op) and np.isfinite(pv):
+            aligned.append((op, pv))
+
+    if len(aligned) < _STEP_MIN_POINTS:
+        return {
+            "valid": False,
+            "reason": f"有效 MV/PV 对齐数据不足，至少需要 {_STEP_MIN_POINTS} 点",
+        }
+
+    op = np.asarray([pair[0] for pair in aligned], dtype=float)
+    pv = np.asarray([pair[1] for pair in aligned], dtype=float)
+    op_diff = np.abs(np.diff(op))
+    primary_diff_index = int(np.argmax(op_diff))
+    step_index = primary_diff_index + 1
+    primary_jump = float(op_diff[primary_diff_index])
+
+    margin = max(5, len(op) // 10)
+    if step_index < margin or len(op) - step_index < margin:
+        return {"valid": False, "reason": "MV 阶跃位置过近窗口边界，缺少稳定基线或保持段"}
+    if primary_jump <= np.finfo(float).eps:
+        return {"valid": False, "reason": "未检测到真实 MV 阶跃"}
+
+    pre_op = op[:step_index]
+    post_op = op[step_index:]
+    pre_level = float(np.median(pre_op))
+    post_level = float(np.median(post_op))
+    mv_step = post_level - pre_level
+    abs_step = abs(mv_step)
+    op_scale = max(abs(pre_level), abs(post_level), 1.0)
+    if abs_step <= max(op_scale * 1e-6, np.finfo(float).eps):
+        return {"valid": False, "reason": "MV 阶跃幅值不可辨识"}
+
+    # 瞬时跳变必须解释前后平台差，排除缓慢漂移。
+    if primary_jump < 0.8 * abs_step:
+        return {"valid": False, "reason": "MV 仅缓慢漂移，不构成单阶跃"}
+
+    other_jumps = np.delete(op_diff, primary_diff_index)
+    second_jump = float(np.max(other_jumps)) if other_jumps.size else 0.0
+    if second_jump >= 0.2 * primary_jump:
+        return {"valid": False, "reason": "检测到多个显著 MV 变化，不是单阶跃窗口"}
+
+    plateau_tolerance = max(0.1 * abs_step, op_scale * 1e-6)
+    pre_spread = float(np.percentile(pre_op, 95) - np.percentile(pre_op, 5))
+    post_spread = float(np.percentile(post_op, 95) - np.percentile(post_op, 5))
+    if pre_spread > plateau_tolerance or post_spread > plateau_tolerance:
+        return {"valid": False, "reason": "MV 阶跃前基线或阶跃后保持段不稳定"}
+
+    pre_pv = pv[:step_index]
+    post_pv = pv[step_index:]
+    pre_pv_level = float(np.median(pre_pv))
+    tail_count = max(5, min(len(post_pv) // 4, 20))
+    post_pv_level = float(np.median(post_pv[-tail_count:]))
+    pv_response = abs(post_pv_level - pre_pv_level)
+    pv_scale = max(abs(pre_pv_level), abs(post_pv_level), 1.0)
+    pv_floor = pv_scale * 1e-4
+    pre_pv_spread = float(np.percentile(pre_pv, 95) - np.percentile(pre_pv, 5))
+    if pv_response <= max(5.0 * pre_pv_spread, pv_floor):
+        return {"valid": False, "reason": "MV 阶跃后未检测到显著 PV 响应"}
+    if pre_pv_spread > max(0.1 * pv_response, pv_floor):
+        return {"valid": False, "reason": "PV 基线不稳定，无法归因于单次 MV 阶跃"}
+
+    return {
+        "valid": True,
+        "reason": None,
+        "mv_step": mv_step,
+        "step_index": step_index,
+    }
+
+
+def validate_step_identification_result(result: dict[str, Any]) -> str | None:
+    """返回阶跃辨识结果的拒绝原因；验证通过返回 ``None``。"""
+    if result.get("stepValidationPassed") is not True:
+        return "缺少真实单阶跃验证凭据"
+
+    model_type = result.get("modelType")
+    params = result.get("params")
+    if not isinstance(params, dict):
+        return "阶跃辨识参数无效：params 不是对象"
+
+    required = {
+        "FOPDT": ("K", "tau", "theta"),
+        "SOPDT": ("K", "T1", "T2", "theta"),
+        "IPDT": ("K", "theta"),
+    }.get(model_type)
+    if required is None:
+        return f"阶跃辨识参数无效：不支持模型 {model_type}"
+
+    numbers: dict[str, float] = {}
+    for name in required:
+        value = params.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return f"阶跃辨识参数无效：{name} 为空或非数值"
+        number = float(value)
+        if not np.isfinite(number):
+            return f"阶跃辨识参数无效：{name} 不是有限值"
+        numbers[name] = number
+
+    if numbers["K"] == 0:
+        return "阶跃辨识参数无效：K 必须非零"
+    for time_constant in ("tau", "T1", "T2"):
+        if time_constant in numbers and numbers[time_constant] <= 0:
+            return f"阶跃辨识参数无效：{time_constant} 必须大于 0"
+    if numbers["theta"] < 0:
+        return "阶跃辨识参数无效：theta 不得小于 0"
+
+    fitting_score = result.get("fittingScore")
+    if isinstance(fitting_score, bool) or not isinstance(fitting_score, (int, float)):
+        return "阶跃辨识参数无效：拟合分数为空或非数值"
+    if not np.isfinite(float(fitting_score)) or float(fitting_score) <= 0:
+        return "阶跃辨识参数无效：拟合分数必须为正有限值"
+    return None
+
+
+async def persist_step_identification_record(
+    *,
+    db: AsyncSession,
+    loop_id: str,
+    result: dict[str, Any],
+    created_by: str,
+    requested_method: str | None = None,
+) -> str:
+    """持久化服务端已验证的同步阶跃辨识证据，并返回记录 ID。"""
+    validation_error = validate_step_identification_result(result)
+    if validation_error:
+        raise BizError(
+            code="ERR_TUNING_IDENTIFICATION_FAILED",
+            message=validation_error,
+            status_code=400,
+        )
+
+    model_type = str(result["modelType"])
+    method = str(requested_method or "").upper()
+    if model_type == "FOPDT":
+        identify_method = "STEP_AREA" if method == "AREA" else "STEP_TWO_POINT"
+    else:
+        identify_method = "STEP_NLS"
+
+    record_id = str(uuid4())
+    record = TuningRecord(
+        id=record_id,
+        loop_id=loop_id,
+        model_type=model_type,
+        model_params=dict(result["params"]),
+        # V62-P3-006：纯辨识记录不再用 IMC 占位，改为 IDENTIFICATION_ONLY
+        algorithm="IDENTIFICATION_ONLY",
+        fitting_score=result.get("fittingScore"),
+        status="IDENTIFIED",
+        created_by=created_by,
+        identify_method=identify_method,
+        data_source="STEP_EXPERIMENT",
+        confidence_reason="step_validation_passed=true",
+        task_id=f"step-sync:{uuid4()}",
+        completed_at=datetime.now(),
+    )
+    db.add(record)
+    await db.commit()
+    return record_id
 
 
 def _estimate_mv_step(op_values: list[float | None]) -> float:
@@ -522,12 +1163,23 @@ async def tune_pid(
     algorithm_params: dict[str, Any] | None = None,
     current_pid: dict[str, Any] | None = None,
     loop_id: str | None = None,
+    source_context: TuningModelAuthorization | None = None,
 ) -> dict[str, Any]:
     """PID 整定。
 
     Raises:
         BizError: ERR_INVALID_ALGORITHM / ERR_MODEL_PARAMS_MISSING
     """
+    if source_context is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message="PID 整定必须使用服务端已验证的模型来源上下文",
+            status_code=400,
+        )
+
+    # 防御性地只使用门禁解析后的模型参数，忽略调用方重复传入的裸参数。
+    model_params = source_context.model_params
+
     K = float(model_params.get("K") or 0)
     tau = float(model_params.get("tau") or 0)
     theta = float(model_params.get("theta") or 0)
@@ -576,8 +1228,109 @@ async def tune_pid(
 
     if current_pid:
         result["currentPid"] = current_pid
+        # V62-P3-007：回退值 = 当前值（实施失败时恢复原参数）
+        result["rollbackPid"] = dict(current_pid)
+
+    # V62-P3-007：风险评估
+    result["risk"] = _assess_tuning_risk(
+        recommended_pid={"kp": pid.kp, "ti": pid.ti, "td": pid.td},
+        current_pid=current_pid,
+        model_params=model_params,
+        confidence_level=(source_context.confidence_level if source_context else None),
+    )
+
+    # V62-P3-007：单位转换说明（首版无转换，预留结构）
+    result["unitConversion"] = {
+        "timeUnit": "seconds",
+        "note": "PID 参数时间单位为秒；DCS 若用分钟，ti/td 需除以 60",
+    }
 
     return result
+
+
+def _assess_tuning_risk(
+    *,
+    recommended_pid: dict[str, Any],
+    current_pid: dict[str, Any] | None,
+    model_params: dict[str, Any],
+    confidence_level: str | None,
+) -> dict[str, Any]:
+    """V62-P3-007 评估整定风险等级与因素.
+
+    风险等级判定：
+    - HIGH：PID 参数变化 > 50%，或模型可信度 D/E，或纯滞后 θ/τ > 0.5
+    - MEDIUM：PID 参数变化 20%-50%，或模型可信度 C
+    - LOW：PID 参数变化 < 20%，且模型可信度 A/B
+    """
+    factors: list[str] = []
+    risk_score = 0
+
+    # 1. PID 参数变化幅度
+    if current_pid and isinstance(current_pid, dict):
+        max_delta = _compute_max_pid_delta(recommended_pid=recommended_pid, current_pid=current_pid)
+        if max_delta > 0.5:
+            factors.append(f"PID 参数变化幅度大（{max_delta:.0%}）")
+            risk_score += 3
+        elif max_delta > 0.2:
+            factors.append(f"PID 参数变化中等（{max_delta:.0%}）")
+            risk_score += 2
+        else:
+            factors.append(f"PID 参数变化小（{max_delta:.0%}）")
+            risk_score += 0
+
+    # 2. 模型可信度
+    conf = (confidence_level or "").upper()
+    if conf in {"D", "E", "INCONCLUSIVE"}:
+        factors.append(f"模型可信度低（{conf}）")
+        risk_score += 4
+    elif conf == "C":
+        factors.append("模型可信度一般（C）")
+        risk_score += 1
+
+    # 3. 纯滞后比 θ/τ
+    theta = float(model_params.get("theta") or 0)
+    tau = float(model_params.get("tau") or 0)
+    if tau > 0 and theta / tau > 0.5:
+        factors.append(f"大滞后系统（θ/τ={theta / tau:.2f}）")
+        risk_score += 2
+
+    # 4. 过程增益极端
+    k = float(model_params.get("K") or 0)
+    if abs(k) > 10 or (0 < abs(k) < 0.1):
+        factors.append(f"过程增益极端（K={k:.3f}）")
+        risk_score += 1
+
+    if risk_score >= 4:
+        risk_level = "HIGH"
+    elif risk_score >= 2:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "LOW"
+
+    description = f"风险等级：{risk_level}。建议在低负荷工况下逐步实施，密切监控闭环响应。"
+
+    return {
+        "riskLevel": risk_level,
+        "factors": factors,
+        "description": description,
+    }
+
+
+def _compute_max_pid_delta(
+    *, recommended_pid: dict[str, Any], current_pid: dict[str, Any]
+) -> float:
+    """计算推荐 PID 与当前 PID 的最大相对变化幅度."""
+    max_delta = 0.0
+    for key in ("kp", "ti", "td"):
+        rec_val = float(recommended_pid.get(key, 0) or 0)
+        cur_val = float(current_pid.get(key, 0) or 0)
+        if abs(cur_val) < 1e-12:
+            # 当前值为 0 时，用绝对值衡量
+            delta = 1.0 if abs(rec_val) > 1e-12 else 0.0
+        else:
+            delta = abs(rec_val - cur_val) / abs(cur_val)
+        max_delta = max(max_delta, delta)
+    return max_delta
 
 
 # ---------------------------------------------------------------------------
@@ -825,7 +1578,11 @@ async def get_tuning_task_detail(db: AsyncSession, task_id: str) -> dict[str, An
             message="整定任务不存在",
             status_code=404,
         )
-    return _record_to_dict(row[0], row[1], include_detail=True)
+    # V62-P3-005：详情页优先展示 process_model_version 的 model_params
+    effective_params = await get_effective_model_params(db, row[0])
+    return _record_to_dict(
+        row[0], row[1], include_detail=True, model_params_override=effective_params
+    )
 
 
 async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
@@ -898,14 +1655,24 @@ def _record_to_dict(
     record: TuningRecord,
     tag_name: str | None = None,
     include_detail: bool = False,
+    *,
+    model_params_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """TuningRecord → dict（camelCase）。"""
+    """TuningRecord → dict（camelCase）。
+
+    Args:
+        model_params_override: P3-005 读路径切换——调用方预加载的有效 model_params
+            （优先来自 process_model_version）。为 None 时回退到 record.model_params。
+    """
+    effective_params = (
+        model_params_override if model_params_override is not None else record.model_params
+    )
     data: dict[str, Any] = {
         "id": str(record.id),
         "loopId": str(record.loop_id),
         "tagName": tag_name,
         "modelType": record.model_type,
-        "modelParams": record.model_params,
+        "modelParams": effective_params,
         "algorithm": record.algorithm,
         "recommendedPid": record.recommended_pid,
         "fittingScore": float(record.fitting_score) if record.fitting_score else None,
@@ -921,6 +1688,14 @@ def _record_to_dict(
         "residualTestPassed": record.residual_test_passed,
         "taskId": record.task_id,
         "completedAt": record.completed_at.isoformat() if record.completed_at else None,
+        # V62-P3-005：模型版本引用（新记录非空，遗留记录为 NULL）
+        "processModelVersionId": (
+            str(record.process_model_version_id) if record.process_model_version_id else None
+        ),
+        # V62-P3-007：人工实施清单
+        "currentPid": record.current_pid,
+        "riskAssessment": record.risk_assessment,
+        "rollbackPid": record.rollback_pid,
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result
@@ -932,6 +1707,8 @@ def _record_to_dict(
 __all__ = [
     "identify_model",
     "identify_model_from_history",
+    "persist_step_identification_record",
+    "authorize_tuning_model",
     "preview_identify_segments",
     "tune_pid",
     "run_simulation",

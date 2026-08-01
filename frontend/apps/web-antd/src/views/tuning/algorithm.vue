@@ -18,6 +18,9 @@ import { Page } from '@vben/common-ui';
 import {
   Alert,
   Button,
+  Checkbox,
+  Collapse,
+  CollapsePanel,
   Descriptions,
   DescriptionsItem,
   Form,
@@ -35,17 +38,68 @@ import {
   getTuningMethodsApi,
   tunePidApi,
 } from '#/api/tuning';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStateOverlay,
+} from '#/components/clpm';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 
 defineOptions({ name: 'TuningAlgorithm' });
 
 const route = useRoute();
 const router = useRouter();
+const { canEditAdvancedParams } = useClpmRoles();
 
 const loading = ref(false);
 const saving = ref(false);
+
+/** P1-023：错误状态（整定失败时持久展示，带重试） */
+const errorState = ref<{ detail: string; message: string } | null>(null);
 const methods = ref<TuningApi.MethodInfo[]>([]);
 const tuneResult = ref<null | TuningApi.TuneResult>(null);
+
+/**
+ * 模型来源门禁（P0-04）
+ * 服务端 /tune、/simulate、/compare 已强制要求 modelSource + 可验证凭据；
+ * 页面控制入口呈现，服务端仍按 sourceRecordId 复核记录。
+ */
+const modelSource = ref<TuningApi.ModelSource | undefined>(undefined);
+const sourceRecordId = ref('');
+const riskConfirmed = ref(false);
+
+const sourceOptions: { label: string; value: TuningApi.ModelSource }[] = [
+  { label: '历史辨识记录', value: 'IDENTIFICATION_RECORD' },
+  { label: '阶跃实验', value: 'STEP_EXPERIMENT' },
+  { label: '人工模型（需确认风险）', value: 'MANUAL' },
+];
+
+const modelUsageGate = computed<{ blocked: boolean; reason: string | null }>(() => {
+  if (!modelSource.value) {
+    return {
+      blocked: true,
+      reason: '必须明确模型来源并提供可验证凭据；旧版裸模型请求已停止放行。',
+    };
+  }
+  if (modelSource.value === 'MANUAL') {
+    if (!riskConfirmed.value) {
+      return {
+        blocked: true,
+        reason: '人工模型必须显式确认模型与整定风险后方可执行。',
+      };
+    }
+    return { blocked: false, reason: null };
+  }
+  if (!sourceRecordId.value) {
+    return {
+      blocked: true,
+      reason: '该来源必须提供服务端可验证的 sourceRecordId。',
+    };
+  }
+  return { blocked: false, reason: null };
+});
+
+const canTune = computed(() => !modelUsageGate.value.blocked);
 
 /** 模型类型选项 */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
@@ -177,6 +231,11 @@ function handleAlgorithmChange(value: any) {
 
 /** 执行 PID 整定 */
 async function handleTune() {
+  // 模型来源门禁（P0-04）：服务端不再放行裸模型请求
+  if (modelUsageGate.value.blocked) {
+    message.warning(modelUsageGate.value.reason || '必须明确模型来源');
+    return;
+  }
   // 校验模型参数
   if (form.K === undefined || form.K === null) {
     message.warning('请输入过程增益 K');
@@ -205,6 +264,7 @@ async function handleTune() {
   }
 
   loading.value = true;
+  errorState.value = null;
   const hide = message.loading(
     `正在使用 ${form.algorithm} 算法进行 PID 整定…`,
     0,
@@ -217,13 +277,22 @@ async function handleTune() {
       algorithmParams: { ...form.algorithmParams },
       currentPid: buildCurrentPid(),
       loopId: form.loopId || undefined,
+      modelSource: modelSource.value,
+      riskConfirmed: riskConfirmed.value,
+      // 人工模型不得绑定 sourceRecordId；记录型来源必须携带可验证凭据
+      ...(modelSource.value && modelSource.value !== 'MANUAL' && sourceRecordId.value
+        ? { sourceRecordId: sourceRecordId.value }
+        : {}),
     });
     tuneResult.value = result;
     hide();
     message.success('PID 整定完成');
-  } catch {
+  } catch (err) {
     hide();
-    // 错误已由拦截器处理
+    errorState.value = {
+      message: 'PID 整定失败',
+      detail: err instanceof Error ? err.message : '请检查模型参数和算法配置后重试',
+    };
   } finally {
     loading.value = false;
   }
@@ -232,8 +301,13 @@ async function handleTune() {
 /** 跳转闭环仿真页 */
 function handleGoSimulation() {
   if (!tuneResult.value) return;
+  if (modelUsageGate.value.blocked) {
+    message.warning(modelUsageGate.value.reason || '必须明确模型来源');
+    return;
+  }
+  // P1-019：跳转改为 flow 子路由（query 兜底保留，渐进迁移）
   router.push({
-    path: '/tuning/simulation',
+    path: '/tuning/flow/simulation',
     query: {
       modelType: form.modelType,
       modelParams: JSON.stringify(buildModelParams()),
@@ -241,6 +315,14 @@ function handleGoSimulation() {
         ? JSON.stringify(tuneResult.value.currentPid)
         : JSON.stringify(buildCurrentPid() || {}),
       recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
+      // 模型来源契约贯穿到仿真页（P0-04）
+      ...(modelSource.value ? { modelSource: modelSource.value } : {}),
+      ...(modelSource.value && modelSource.value !== 'MANUAL' && sourceRecordId.value
+        ? { sourceRecordId: sourceRecordId.value }
+        : {}),
+      ...(modelSource.value
+        ? { riskConfirmed: riskConfirmed.value ? 'true' : 'false' }
+        : {}),
     },
   });
 }
@@ -315,6 +397,16 @@ function initFromQuery() {
   if (q.loopId) {
     form.loopId = q.loopId as string;
   }
+  // 模型来源门禁（P0-04）：从 model 页/仿真页跳转时携带可验证凭据
+  if (q.modelSource) {
+    modelSource.value = q.modelSource as TuningApi.ModelSource;
+  }
+  if (q.sourceRecordId) {
+    sourceRecordId.value = q.sourceRecordId as string;
+  }
+  if (q.riskConfirmed === 'true') {
+    riskConfirmed.value = true;
+  }
 }
 
 /** 模型类型变更时清空不相关的模型参数 */
@@ -348,6 +440,30 @@ onMounted(() => {
     />
     <Spin :spinning="loading">
       <ClpmDataCanvas class="mb-4 mt-4" title="模型参数">
+        <Alert
+          v-if="modelUsageGate.blocked"
+          type="warning"
+          show-icon
+          banner
+          :closable="false"
+          :message="modelUsageGate.reason || '必须明确模型来源'"
+          style="margin-bottom: 12px"
+        />
+        <Form layout="inline">
+          <FormItem label="模型来源">
+            <Select
+              v-model:value="modelSource"
+              style="width: 240px"
+              :options="sourceOptions"
+              placeholder="必须明确模型来源"
+            />
+          </FormItem>
+          <FormItem v-if="modelSource === 'MANUAL'">
+            <Checkbox v-model:checked="riskConfirmed">
+              已确认人工模型与整定风险
+            </Checkbox>
+          </FormItem>
+        </Form>
         <Form layout="inline">
           <FormItem label="模型类型">
             <Select
@@ -470,39 +586,44 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 动态算法参数 -->
-        <Form
-          v-if="currentMethod && currentMethod.params.length > 0"
-          class="mt-3"
-          layout="inline"
+        <!-- P1-022：动态算法参数为高级参数，仅 ADMIN/EXPERT 可见 -->
+        <Collapse
+          v-if="canEditAdvancedParams && currentMethod && currentMethod.params.length > 0"
+          :bordered="false"
+          class="mt-3 advanced-params-collapse"
         >
-          <FormItem
-            v-for="param in currentMethod.params"
-            :key="param.name"
-            :label="param.label"
-          >
-            <Select
-              v-if="param.options && param.options.length > 0"
-              v-model:value="form.algorithmParams[param.name]"
-              style="width: 140px"
-              :options="param.options.map((o) => ({ label: o, value: o }))"
-            />
-            <InputNumber
-              v-else
-              v-model:value="form.algorithmParams[param.name]"
-              :min="param.min"
-              :max="param.max"
-              :step="0.01"
-              :placeholder="param.label"
-              style="width: 140px"
-            />
-          </FormItem>
-        </Form>
+          <CollapsePanel key="algo-advanced" header="高级参数">
+            <Form layout="inline">
+              <FormItem
+                v-for="param in currentMethod.params"
+                :key="param.name"
+                :label="param.label"
+              >
+                <Select
+                  v-if="param.options && param.options.length > 0"
+                  v-model:value="form.algorithmParams[param.name]"
+                  style="width: 140px"
+                  :options="param.options.map((o) => ({ label: o, value: o }))"
+                />
+                <InputNumber
+                  v-else
+                  v-model:value="form.algorithmParams[param.name]"
+                  :min="param.min"
+                  :max="param.max"
+                  :step="0.01"
+                  :placeholder="param.label"
+                  style="width: 140px"
+                />
+              </FormItem>
+            </Form>
+          </CollapsePanel>
+        </Collapse>
 
         <div class="mt-4">
           <Button
             type="primary"
             size="large"
+            :disabled="!canTune"
             :loading="loading"
             @click="handleTune"
           >
@@ -511,8 +632,18 @@ onMounted(() => {
         </div>
       </ClpmDataCanvas>
 
+      <!-- P1-023：错误状态覆盖（整定失败时持久展示，带重试） -->
+      <ClpmDataCanvas v-if="errorState" title="整定结果" class="mb-4">
+        <ClpmStateOverlay
+          status="error"
+          :error-message="errorState.message"
+          :error-detail="errorState.detail"
+          @retry="handleTune"
+        />
+      </ClpmDataCanvas>
+
       <!-- 底部结果区 -->
-      <ClpmDataCanvas v-if="tuneResult" title="整定结果">
+      <ClpmDataCanvas v-else-if="tuneResult" title="整定结果">
         <Descriptions :column="{ xs: 1, sm: 2, md: 3 }" bordered size="small">
           <DescriptionsItem label="算法">
             {{ algorithmNameMap[tuneResult.algorithm] || tuneResult.algorithm }}
@@ -552,7 +683,12 @@ onMounted(() => {
 
         <!-- 操作按钮 -->
         <div class="mt-4 flex gap-2">
-          <Button type="primary" size="large" @click="handleGoSimulation">
+          <Button
+            type="primary"
+            size="large"
+            :disabled="!canTune"
+            @click="handleGoSimulation"
+          >
             进行闭环仿真 →
           </Button>
           <Button size="large" :loading="saving" @click="handleSaveTask">
@@ -561,11 +697,12 @@ onMounted(() => {
         </div>
       </ClpmDataCanvas>
 
-      <!-- 空状态 -->
+      <!-- P1-023：空状态覆盖 -->
       <ClpmDataCanvas v-else title="整定结果">
-        <div class="flex h-40 items-center justify-center text-gray-400">
-          请输入模型参数并选择算法，点击「执行整定」计算推荐 PID 参数
-        </div>
+        <ClpmStateOverlay
+          status="empty"
+          empty-description="请输入模型参数并选择算法，点击「执行整定」计算推荐 PID 参数"
+        />
       </ClpmDataCanvas>
     </Spin>
   </Page>

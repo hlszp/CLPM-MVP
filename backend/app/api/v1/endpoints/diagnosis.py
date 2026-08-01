@@ -930,6 +930,12 @@ async def update_tracker_status_endpoint(
         moc_ref=body.mocRef,
         moc_not_applicable=body.mocNotApplicable,
         moc_reason=body.mocReason,
+        assignee=body.assignee,
+        planned_at=(
+            datetime.fromisoformat(body.plannedAt.replace("Z", "+00:00")).replace(tzinfo=None)
+            if body.plannedAt
+            else None
+        ),
     )
     return success(data=data, message="状态更新成功")
 
