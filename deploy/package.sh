@@ -170,14 +170,16 @@ THIRD_PARTY_MONITORING=(
 )
 
 for img in "${THIRD_PARTY_CORE[@]}"; do
-    log_info "拉取核心镜像: $img"
-    docker pull --platform "$BUILD_PLATFORM" "$img"
+    log_info "构建单平台镜像: $img"
+    # 用 buildx build FROM 替代 docker pull，避免 Docker Desktop 在 Apple Silicon
+    # 上保留多架构 manifest list 导致 docker save 报 "content digest not found" 错误
+    echo "FROM $img" | docker buildx build --platform "$BUILD_PLATFORM" --load -t "$img" - 2>/dev/null
 done
 
 if [ "$INCLUDE_MONITORING" = true ]; then
     for img in "${THIRD_PARTY_MONITORING[@]}"; do
-        log_info "拉取监控镜像: $img"
-        docker pull --platform "$BUILD_PLATFORM" "$img"
+        log_info "构建单平台镜像: $img"
+        echo "FROM $img" | docker buildx build --platform "$BUILD_PLATFORM" --load -t "$img" - 2>/dev/null
     done
     ALL_THIRD_PARTY=("${THIRD_PARTY_CORE[@]}" "${THIRD_PARTY_MONITORING[@]}")
 else
