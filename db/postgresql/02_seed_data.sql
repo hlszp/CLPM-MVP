@@ -1,20 +1,23 @@
 -- =============================================================================
 -- 数据库名: clpm
--- 脚本版本: v1.3
+-- 脚本版本: v1.4
 -- 创建日期: 2026-06-21
 -- 对应 DDS 版本: DDS v3.0 (产品化架构重构版)
 -- 设计依据: PRD v3.0, FDS v3.0, ADS v3.0, 关键算法设计说明 v1.0
 -- 说明: 本脚本为 PostgreSQL 关系型业务域种子数据，包含：
 --       1. 管理员账户（5 个角色用户）
---       2. AAS Tag 注册记录（239 条，189 条已关联回路）
+--       2. AAS Tag 注册记录（189 条，全部已关联回路）
 --       3. 工厂节点（2 工厂 + 2 装置 + 3 单元，共 7 节点）
---       4. 性能指标配置（8 项核心 KPI，权重总和 100%）
+--       4. 性能指标配置（11 项 KPI 指标，含 r2b3c4d5e6f7 补齐的 3 项）
 --       5. 诊断指标配置（8 类诊断标签）
 --       6. 引擎规则配置（3 项引擎参数）
---       7. 回路台账（28 条回路）
+--       7. 回路台账（27 条回路，已清理测试回路）
 --       8. 回路-Tag 关联（189 条映射记录）
---       9. 系统配置（AAS 连接默认值）
--- 数据来源: 开发环境生产配置（2026-08-01 同步至种子文件）
+--       9. 系统配置（AAS 连接默认值 + 实时回写开关）
+--      10. 指标数据需求契约（26 条，DataPlanner 依赖此表查询数据）
+--      11. 诊断专家规则（6 条 R01-R06，规则引擎化）
+--      12. DCS 配置（5 品牌 + 5 型号 + 5 标准 MODE + 30 MODE 映射）
+-- 数据来源: 开发环境生产配置（2026-08-03 同步至种子文件）
 -- 前置条件: 已执行 01_schema.sql 完成表结构创建
 -- 变更记录:
 --   v1.0 2026-06-21: 初始版本（基础种子数据）
@@ -23,6 +26,13 @@
 --   v1.3 2026-08-01: 种子数据对齐开发环境（2工厂/2装置/3单元 + 28回路 + 239Tag）；
 --                    移除 KPI 快照与整定记录示例（运行时数据，非种子配置）；
 --                    tag_registry 清理 current_value/quality 为 NULL（初始状态）
+--   v1.4 2026-08-03: 整合 alembic 迁移脚本中散落的种子数据至部署包（修复 stamp head 跳过问题）；
+--                    新增 clpm_metric_data_requirement（26 条指标契约，修复 E 不足根因）；
+--                    新增 diagnosis_rule（6 条专家规则 R01-R06）；
+--                    新增 DCS 配置（dcs_vendor/dcs_model/mode_definition/dcs_mode_mapping）；
+--                    修正 metric_config：FAST_RESPONSE_RATE→FAST_RATE + 补齐 3 项缺失指标；
+--                    精简回路测点：28→27 回路、239→189 测点（仅保留 7 位号全配置回路）；
+--                    新增 sys_config 实时回写开关；所有 INSERT 添加 ON CONFLICT 确保幂等
 -- =============================================================================
 
 -- =============================================================================
@@ -45,11 +55,12 @@ INSERT INTO sys_user (id, username, password_hash, display_name, email, role, is
 ('00000000-0000-0000-0000-000000000005', 'expert',      '$2b$12$ai8B75As3GLsuFBHayAq2ufsMMmzezF.E9tg.058I/a30V7nTuiTG', '外部专家',       'expert@clpm.local',      'EXPERT',      TRUE, TRUE, NOW(), NOW());
 
 -- =============================================================================
--- 2. AAS Tag 注册记录 (tag_registry) — 239 条
+-- 2. AAS Tag 注册记录 (tag_registry) — 189 条（全部已关联回路）
 -- =============================================================================
 -- 数据来源：开发环境生产配置（2026-08-01 导出）
 -- 清理规则：current_value/quality 置 NULL（初始状态，待 SignalR 推送实时值）；
 --           last_sync_at 置 NOW()（标记入库时间）；is_linked 保留开发环境关联状态
+-- v1.4 精简：移除 50 条未关联回路的测试测点（HDC/HDS/SZB 前缀），仅保留 27 回路 × 7 位号 = 189 条
 -- 依赖关系：tag_registry 无外键依赖，优先于 plant_node/loop_ledger 插入
 --           （plant_node.monitor_tag_id / loop_ledger.modeattr_tag_id 引用本表）
 -- =============================================================================
@@ -243,56 +254,6 @@ INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value
 INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('2345ec41-7c6f-4649-9686-7ed86654f080', '90PIC51212A_PIDA.PID_P', '辛醇罐TK521A顶部压力 PID_P', 'PID_P', NULL, NULL, NOW(), true, 0, 100, '', 'PRESSURE', 'd_loop_90pic51212a_pida');
 INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('099704d3-8318-4820-ae11-be9b64b4cf4a', '90PIC51212A_PIDA.PV', '辛醇罐TK521A顶部压力 PV', 'PV', NULL, NULL, NOW(), true, 0, 5, 'MPa', 'PRESSURE', 'd_loop_90pic51212a_pida');
 INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('aa2f4027-b066-4368-b5ff-58ff6799bfa1', '90PIC51212A_PIDA.SP', '辛醇罐TK521A顶部压力 SP', 'SP', NULL, NULL, NOW(), true, 0, 5, 'MPa', 'PRESSURE', 'd_loop_90pic51212a_pida');
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('5062cdaa-6127-41b6-b36b-4d15a41d2121', 'HDC-FR-FIC-401.MODE', 'E-401 分馏塔进料流量 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('f52173a1-6b4f-4300-9b5c-686d99fc2dc1', 'HDC-FR-FIC-401.OP', 'E-401 分馏塔进料流量 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('e2682c5d-24ba-4a2b-adba-ee9941d93e6e', 'HDC-FR-FIC-401.PID_D', 'E-401 分馏塔进料流量 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('318f5c2e-aaec-4c9a-9852-7029ddda74fd', 'HDC-FR-FIC-401.PID_I', 'E-401 分馏塔进料流量 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('3abfd7f9-4263-4145-91de-5daa28495244', 'HDC-FR-FIC-401.PID_P', 'E-401 分馏塔进料流量 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('42d15872-2d9f-40a0-89da-36f094710cec', 'HDC-FR-FIC-401.PV', 'E-401 分馏塔进料流量 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('cc6057ac-a901-4936-b0cf-efae711284c3', 'HDC-FR-FIC-401.SP', 'E-401 分馏塔进料流量 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('76ede77a-f61f-416e-8ae8-17aac809bd4b', 'HDC-RX-LIC-302.MODE', 'R-301 反应器液位 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('bbb4898e-689f-4019-bb00-a08acd6de63f', 'HDC-RX-LIC-302.OP', 'R-301 反应器液位 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('3f22558d-584f-4d81-8490-80d69cdedfba', 'HDC-RX-LIC-302.PID_D', 'R-301 反应器液位 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('75747e66-57e0-4d32-86d9-794285e9ad4c', 'HDC-RX-LIC-302.PID_I', 'R-301 反应器液位 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('dc4454e4-1e7c-4f25-8683-14682e38306d', 'HDC-RX-LIC-302.PID_P', 'R-301 反应器液位 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('7affc248-33fd-47cf-af55-b9c8a98ef28c', 'HDC-RX-LIC-302.PV', 'R-301 反应器液位 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('78d9d903-871e-4ec1-b254-3742994d06f4', 'HDC-RX-LIC-302.SP', 'R-301 反应器液位 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('88390faf-ee47-44e8-a03d-6576474a8648', 'HDC-RX-TIC-301.MODE', 'R-301 反应器入口温度 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('3f2667f0-b9b6-48db-8073-383cc9b814ac', 'HDC-RX-TIC-301.OP', 'R-301 反应器入口温度 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('5a5cc2ad-aa9a-4696-b3af-b798326e6bb6', 'HDC-RX-TIC-301.PID_D', 'R-301 反应器入口温度 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('ac8bbcee-9933-4ffe-9069-02df6ada2112', 'HDC-RX-TIC-301.PID_I', 'R-301 反应器入口温度 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('411a1261-bc45-4405-9aac-7e3b16fa5c3a', 'HDC-RX-TIC-301.PID_P', 'R-301 反应器入口温度 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('e89f5350-72a7-42f4-b7ac-0dafa692e816', 'HDC-RX-TIC-301.PV', 'R-301 反应器入口温度 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('0276250b-781f-4593-b0d8-db51e0050539', 'HDC-RX-TIC-301.SP', 'R-301 反应器入口温度 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('679af61b-371e-40e4-8d24-9c5222a30cf5', 'HDS-FR-FIC-201.MODE', 'E-201 分馏塔进料流量 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('8c21a4f0-c83a-4020-a362-275aa6007aa8', 'HDS-FR-FIC-201.OP', 'E-201 分馏塔进料流量 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('f846eabb-3ef2-48b2-b8fa-5695e84f6a8b', 'HDS-FR-FIC-201.PID_D', 'E-201 分馏塔进料流量 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('2135f73a-d96a-4944-a58a-6f5fd3f0cb5c', 'HDS-FR-FIC-201.PID_I', 'E-201 分馏塔进料流量 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('bb776c60-29e6-462f-87b1-dd5105eb2047', 'HDS-FR-FIC-201.PID_P', 'E-201 分馏塔进料流量 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('22861f1c-7a72-4e06-9cb2-7835a966fd9c', 'HDS-FR-FIC-201.PV', 'E-201 分馏塔进料流量 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('ba6f694e-52dc-4462-abdf-c61bdebe24b6', 'HDS-FR-FIC-201.SP', 'E-201 分馏塔进料流量 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('23c2fc05-9593-424f-af0f-788135d6a512', 'HDS-RX-LIC-102.MODE', 'R-101 反应器液位 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('bab7a0b1-1566-4cf1-94aa-dacf2da0c2c1', 'HDS-RX-LIC-102.OP', 'R-101 反应器液位 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('0af7d32e-5e27-431e-8134-64bff0ab3a30', 'HDS-RX-LIC-102.PID_D', 'R-101 反应器液位 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('124ca480-7b1e-487c-b11a-0876f97f6f19', 'HDS-RX-LIC-102.PID_I', 'R-101 反应器液位 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('35bef409-b954-4781-85ba-b48420ea2ca6', 'HDS-RX-LIC-102.PID_P', 'R-101 反应器液位 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('d419d86f-0d9f-4d17-870a-f6cee73139ed', 'HDS-RX-LIC-102.PV', 'R-101 反应器液位 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('f2dc72b3-1ac6-44f0-aeb1-5304e38600d5', 'HDS-RX-LIC-102.SP', 'R-101 反应器液位 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('28735060-9525-4b15-9182-def2ff1c59af', 'HDS-RX-TIC-101.MODE', 'R-101 反应器入口温度 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('92b21912-d799-44b8-bafc-fed8e468addb', 'HDS-RX-TIC-101.OP', 'R-101 反应器入口温度 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('5ae386ae-561f-4689-98cd-c03cd423c62e', 'HDS-RX-TIC-101.PID_D', 'R-101 反应器入口温度 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('e491e4d0-f6e2-4132-a5c3-eaba0ababbcd', 'HDS-RX-TIC-101.PID_I', 'R-101 反应器入口温度 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('46309219-826b-4627-8a0b-9f408b17964b', 'HDS-RX-TIC-101.PID_P', 'R-101 反应器入口温度 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('d20232a0-9099-4be1-8902-49b670cb1e06', 'HDS-RX-TIC-101.PV', 'R-101 反应器入口温度 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('9f86b51f-36ea-47d5-a116-ac039d7086a2', 'HDS-RX-TIC-101.SP', 'R-101 反应器入口温度 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('644e9ccd-52c9-4a85-b6af-05cbaeaf9eff', 'SZB-AD-PIC-501.MODE', 'SZB-AD 吸附系统压力 MODE', 'MODE', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('9205acd3-a96d-4389-97a7-665fd0ab650c', 'SZB-AD-PIC-501.OP', 'SZB-AD 吸附系统压力 OP', 'OP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('1155a01b-4d5b-48a1-9550-a91612ae5b7c', 'SZB-AD-PIC-501.PID_D', 'SZB-AD 吸附系统压力 PID_D', 'PID_D', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('867bb6f6-44f9-424c-abe4-e34d2fad1216', 'SZB-AD-PIC-501.PID_I', 'SZB-AD 吸附系统压力 PID_I', 'PID_I', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('9620b1b6-6ca1-48fa-b823-1abdd527302e', 'SZB-AD-PIC-501.PID_P', 'SZB-AD 吸附系统压力 PID_P', 'PID_P', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('8963633e-2406-450c-86cb-bd2ed48c6837', 'SZB-AD-PIC-501.PV', 'SZB-AD 吸附系统压力 PV', 'PV', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('e4d827ec-3e90-43c0-a516-005796a01ef5', 'SZB-AD-PIC-501.SP', 'SZB-AD 吸附系统压力 SP', 'SP', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
-INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value, quality, last_sync_at, is_linked, range_min, range_max, unit, measure_type, tdengine_tag_id) VALUES ('cdc36b4e-8dc1-4706-9c72-daa75709b73f', 'T-MOCK-OTHER-001', 'Mock 其他类型 Tag', 'OTHER', NULL, NULL, NOW(), false, NULL, NULL, NULL, NULL, NULL);
 
 -- =============================================================================
 -- 3. 工厂节点 (plant_node) — 7 节点
@@ -336,8 +297,13 @@ INSERT INTO metric_config (id, metric_code, metric_name, formula, weight, thresh
 ('00000000-0000-0000-0000-000000000404', 'ACCURACY_RATE',      '准确率',     'max(0, (1 - mean_abs_error / e_max)) * 100',                        30.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'STABLE', TRUE, 'admin', NOW(), 1),
 ('00000000-0000-0000-0000-000000000405', 'OSCILLATION_RATE',   '振荡率',     'min(S_A, S_B) * 100',                                                0.00,  '{"min": 0, "max": 5, "alert": "warning"}'::jsonb,     'SLOW',   TRUE, 'admin', NOW(), 1),
 ('00000000-0000-0000-0000-000000000406', 'SATURATION_RATE',    '饱和率',     'saturated_duration / total_duration * 100',                          0.00,  '{"min": 0, "max": 5, "alert": "warning"}'::jsonb,     'STABLE', TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000407', 'FAST_RESPONSE_RATE', '快速率',     'min(ideal_settling / actual_settling, 1.0) * 100',                   20.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'FAST',   TRUE, 'admin', NOW(), 1),
-('00000000-0000-0000-0000-000000000408', 'EFFECTIVE_AUTO_RATE','有效自控率', 'count(auto AND op NOT saturated AND pv_quality=Good) / count(*) * 100', 20.00, '{"min": 90, "max": 100, "alert": "warning"}'::jsonb, 'STABLE', TRUE, 'admin', NOW(), 1);
+('00000000-0000-0000-0000-000000000407', 'FAST_RATE',          '快速率',     'min(ideal_settling / actual_settling, 1.0) * 100',                   20.00, '{"min": 80, "max": 100, "alert": "warning"}'::jsonb,  'FAST',   TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-000000000408', 'EFFECTIVE_AUTO_RATE','有效自控率', 'count(auto AND op NOT saturated AND pv_quality=Good) / count(*) * 100', 20.00, '{"min": 90, "max": 100, "alert": "warning"}'::jsonb, 'STABLE', TRUE, 'admin', NOW(), 1),
+-- r2b3c4d5e6f7 补齐 3 个缺失指标（对齐 DDS v4.1 列名）
+('00000000-0000-0000-0000-000000000409', 'STICTION_INDEX',     '粘滞指数',   'cross_correlation_based_stiction_detection',                          0.00, '{"min": 0, "max": 0.5, "alert": "warning"}'::jsonb,   'STABLE', TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-00000000040a', 'SETTLING_TIME',      '稳态时间',   'arma_green_function_settling_time',                                   0.00, '{"min": 0, "max": 60, "alert": "warning"}'::jsonb,    'FAST',   TRUE, 'admin', NOW(), 1),
+('00000000-0000-0000-0000-00000000040b', 'OUTPUT_TRIP_INDEX',  '输出行程指数','std(op_diff) / range',                                               0.00, '{"min": 0, "max": 0.5, "alert": "warning"}'::jsonb,   'STABLE', TRUE, 'admin', NOW(), 1)
+ON CONFLICT (metric_code) DO NOTHING;
 
 -- =============================================================================
 -- 5. 诊断指标配置 (diagnosis_config)
@@ -376,7 +342,7 @@ INSERT INTO engine_rule (id, rule_code, rule_name, rule_type, params, is_enabled
 ('00000000-0000-0000-0000-000000000603', 'SCHEDULE_CONCURRENCY','调度并发数',   'SCHEDULE',   '{"concurrency": 16}'::json,                             TRUE, 'admin', NOW());
 
 -- =============================================================================
--- 7. 回路台账 (loop_ledger) — 28 条
+-- 7. 回路台账 (loop_ledger) — 27 条
 -- =============================================================================
 -- 数据来源：开发环境生产配置（2026-08-01 导出）
 -- 清理规则：last_aas_sync_at 置 NULL（初始状态，待首次 AAS 同步）
@@ -410,7 +376,6 @@ INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_ac
 INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_active, last_aas_sync_at, status, loop_type, control_type, created_at, updated_at, created_by, score_weights, remark, importance_level, include_in_evaluation, modeattr_tag_id, data_retention_days, op_output_lower_limit, op_output_upper_limit) VALUES ('5d218e6c-832b-4cb4-97df-d922cae5c520', '80TIC10506_PIDA', '1#羰基合成反应器R101混合液温度', '07f43143-4f47-4f31-869c-bcdae8ecd865', 1.00, true, NULL, 'READY', 'TEMPERATURE', 'STABLE', NOW(), NOW(), 'import_script', NULL, NULL, 3, true, NULL, NULL, NULL, NULL);
 INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_active, last_aas_sync_at, status, loop_type, control_type, created_at, updated_at, created_by, score_weights, remark, importance_level, include_in_evaluation, modeattr_tag_id, data_retention_days, op_output_lower_limit, op_output_upper_limit) VALUES ('bde5d6dc-a0bd-4d29-b99d-81a06e5b1a1d', '80TIC40108_PIDA', '自低压蒸汽减温减压器X401至低低压蒸汽母管蒸汽温度', '07f43143-4f47-4f31-869c-bcdae8ecd865', 1.00, true, NULL, 'READY', 'TEMPERATURE', 'STABLE', NOW(), NOW(), 'import_script', NULL, '', 3, true, NULL, NULL, NULL, NULL);
 INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_active, last_aas_sync_at, status, loop_type, control_type, created_at, updated_at, created_by, score_weights, remark, importance_level, include_in_evaluation, modeattr_tag_id, data_retention_days, op_output_lower_limit, op_output_upper_limit) VALUES ('0b68bb0b-af84-4e52-96ed-96f5e7d3eda8', '90PIC51212A_PIDA', '辛醇罐TK521A顶部压力', '07f43143-4f47-4f31-869c-bcdae8ecd865', 1.00, true, NULL, 'READY', 'PRESSURE', 'FAST', NOW(), NOW(), 'import_script', NULL, '', 3, true, NULL, NULL, NULL, NULL);
-INSERT INTO loop_ledger (id, tag_name, description, unit_id, score_weight, is_active, last_aas_sync_at, status, loop_type, control_type, created_at, updated_at, created_by, score_weights, remark, importance_level, include_in_evaluation, modeattr_tag_id, data_retention_days, op_output_lower_limit, op_output_upper_limit) VALUES ('358dba8b-2a27-4a60-9be7-e7922fe2027f', 'TEST-PMV2-358dba8b', NULL, NULL, 1.00, true, NULL, 'READY', 'OTHER', NULL, NOW(), NOW(), NULL, NULL, NULL, 2, true, NULL, NULL, NULL, NULL);
 
 -- =============================================================================
 -- 8. 回路-Tag 关联 (loop_tag_mapping) — 189 条
@@ -613,15 +578,195 @@ INSERT INTO loop_tag_mapping (id, loop_id, tag_id, tag_role, is_required, create
 -- =============================================================================
 -- 9. 系统配置 (sys_config) [S2-LOOP-003 新增]
 -- =============================================================================
--- AAS 连接配置默认值（运行时可由管理员通过 API 修改）
+-- AAS 连接配置默认值 + 实时数据回写开关（运行时可由管理员通过 UI 链路配置页面修改）
 -- =============================================================================
 
 INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
 ('aas.endpoint', 'opc.tcp://localhost:4840', 'AAS OPC UA 端点', 'system', NOW()),
 ('aas.sync_interval_seconds', '300', 'AAS 同步周期（秒）', 'system', NOW()),
 ('aas.sync_enabled', 'true', 'AAS 同步启停状态', 'system', NOW()),
-('aas.security_mode', 'None', 'AAS 安全模式：None/Sign/SignAndEncrypt', 'system', NOW())
+('aas.security_mode', 'None', 'AAS 安全模式：None/Sign/SignAndEncrypt', 'system', NOW()),
+('datasource.realtime_writeback_enabled', 'true', '实时数据写回 TDengine 开关（链路配置页面运行时切换）', 'system', NOW()),
+('datasource.signalr_enabled', 'false', 'SignalR 实时订阅开关（部署后在 UI 链路配置页面开启）', 'system', NOW())
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================================
+-- 10. 指标数据需求契约 (clpm_metric_data_requirement) — 26 条
+-- =============================================================================
+-- DataPlanner 依赖此表决定每个指标从 TDengine 读取哪些位号、采样策略、质量策略等。
+-- 此表为空时 DataPlanner 无法生成 MetricDataBundle，所有指标判为 E 级可信度（INCONCLUSIVE）。
+-- 数据来源：合成 k2f3a4b5c6d7(12条) + x4c5d6e7f8a9(删5旧增5新+修effective_auto_rate) + c588a06c1c05(14条Phase1)
+-- 命名规范：metric_code 使用小写 calculator code（与 CALCULATOR_REGISTRY 对齐），
+--           与 metric_config 的大写 DB 列名通过 _DB_TO_CALCULATOR_METRIC_CODE 双向映射
+-- =============================================================================
+
+INSERT INTO clpm_metric_data_requirement
+    (metric_code, metric_name, tag_group, tags, sampling_strategy,
+     quality_policy, mask_expression, aggregation_policy, depends_on) VALUES
+-- ===== 基础 12 条（k2f3a4b5c6d7 + x4c5d6e7f8a9 修正后最终态）=====
+('accuracy_rate', '准确率', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+('fast_rate', '快速率', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',
+ 'LAST', '["settling_time","ideal_settling_time"]'),
+('stability_rate', '稳定率', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',
+ 'LAST', '["oscillation_rate"]'),
+('effective_auto_rate', '有效自控率', 'MODE_HF', '["mode","op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'mode_valid && op_valid', 'LAST', NULL),
+('good_value_rate', '好值率', 'QUALITY_HF', '["pv_quality"]',
+ 'FIXED_1S', 'KEEP_ALL', NULL, NULL, NULL),
+('oscillation_rate', '振荡率', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+('saturation_rate', '饱和率', 'OP_HF', '["op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid', 'LAST', NULL),
+('stiction_index', '粘滞指数', 'PVOP_HF', '["pv","op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && op_valid', 'LAST', NULL),
+('output_trip_index', '输出行程指数', 'OP_HF', '["op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid && consecutive_valid', 'LAST', NULL),
+('auto_mode_rate', '自控率', 'MODE_HF', '["mode"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'mode_valid', 'LAST', NULL),
+('settling_time', '稳态时间', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+('ideal_settling_time', '理想稳态时间', 'CONFIG', '[]',
+ 'NONE', 'NONE', NULL, NULL, NULL),
+-- ===== Phase 1 新增 14 条（c588a06c1c05）=====
+('instrument_fault_rate', '仪表故障率', 'BASE', '["pv"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid', 'LAST', NULL),
+('pv_mean', 'PV均值', 'BASE', '["pv"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid', 'LAST', NULL),
+('pv_std', 'PV标准差', 'BASE', '["pv"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid', 'LAST', NULL),
+('sp_mean', '设定值均值', 'BASE', '["sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'sp_valid', 'LAST', NULL),
+('sp_std', '设定值标准差', 'BASE', '["sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'sp_valid', 'LAST', NULL),
+('op_mean', '输出均值', 'OP_HF', '["op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid', 'LAST', NULL),
+('op_std', '输出标准差', 'OP_HF', '["op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid', 'LAST', NULL),
+('error_mean', '偏差均值', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+('error_std', '偏差标准差', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+('valve_linearity', '阀门线性度', 'PVOP_HF', '["pv","op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && op_valid', 'LAST', NULL),
+('valve_nonlinearity', '阀门非线性度', 'PVOP_HF', '["pv","op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && op_valid', 'LAST', NULL),
+('valve_operating_range', '阀门运行区间', 'OP_HF', '["op"]',
+ 'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'op_valid', 'LAST', NULL),
+('setpoint_crossing_count', '设定值穿越次数', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST', NULL),
+('oscillation_amplitude', '振荡幅值', 'BASE', '["pv","sp"]',
+ 'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid', 'LAST',
+ '["oscillation_rate"]')
+ON CONFLICT (metric_code) DO NOTHING;
+
+-- =============================================================================
+-- 11. 诊断专家规则 (diagnosis_rule) — 6 条 R01-R06
+-- =============================================================================
+-- C2 规则引擎化：将硬编码的 R01-R06 专家规则迁入数据库表，
+-- 运行时用 simpleeval 安全沙箱求值条件表达式（FDS §5.4.6）。
+-- 按 priority 升序执行；数据来源：c3d4e5f6g7h8 迁移脚本
+-- =============================================================================
+
+INSERT INTO diagnosis_rule (id, rule_code, rule_name, priority, condition_expr, action_type, action_params, is_enabled, version) VALUES
+('00000000-0000-0000-0000-000000000704', 'R04', '质量异常严重时仅保留质量标签', 5,
+ 'has("QUALITY_ABNORMAL") and feature("bad_quality_rate") > 0.5',
+ 'FILTER_ONLY', '{"keep": "QUALITY_ABNORMAL"}'::jsonb, true, 1),
+('00000000-0000-0000-0000-000000000701', 'R01', '粘滞根因优先于振荡', 10,
+ 'has("OSCILLATION") and has("VALVE_STICTION") and confidence("VALVE_STICTION") > 0.5',
+ 'REMOVE_LABEL', '{"label": "OSCILLATION"}'::jsonb, true, 1),
+('00000000-0000-0000-0000-000000000702', 'R02', '过激整定根因优先于振荡', 20,
+ 'has("OSCILLATION") and has("OVERAGGRESSIVE") and not has("VALVE_STICTION")',
+ 'REMOVE_LABEL', '{"label": "OSCILLATION"}'::jsonb, true, 1),
+('00000000-0000-0000-0000-000000000703', 'R03', '过激与过保守互斥保留高置信度', 30,
+ 'has("OVERAGGRESSIVE") and has("OVERCONSERVATIVE")',
+ 'KEEP_HIGHEST', '{"labels": ["OVERAGGRESSIVE", "OVERCONSERVATIVE"]}'::jsonb, true, 1),
+('00000000-0000-0000-0000-000000000705', 'R05', '所有算法低置信度时添加人工复核', 40,
+ 'count() > 0 and max_confidence() < 0.5',
+ 'ADD_LABEL', '{"label": "MANUAL_REVIEW", "confidence": 0.5}'::jsonb, true, 1),
+('00000000-0000-0000-0000-000000000706', 'R06', '按标签优先级排序', 90,
+ 'True',
+ 'SORT_PRIORITY', '{"priority_map": {"QUALITY_ABNORMAL": 1, "VALVE_STICTION": 2, "OVERAGGRESSIVE": 3, "OVERCONSERVATIVE": 4, "OUTPUT_SATURATION": 5, "OSCILLATION": 6, "EXTERNAL_DISTURBANCE": 7, "MANUAL_REVIEW": 99}}'::jsonb, true, 1)
+ON CONFLICT (rule_code) DO NOTHING;
+
+-- =============================================================================
+-- 12. DCS 配置（dcs_vendor / dcs_model / mode_definition / dcs_mode_mapping）
+-- =============================================================================
+-- 配置驱动的 MODE 映射（v6p1dcs001）：
+--   dcs_vendor: 5 家主流 DCS 厂商（和利时/中控/霍尼韦尔/横河/艾默生）
+--   dcs_model: 每品牌 1 个主流型号（MACS/ECS-700/Experion/CENTUM/DeltaV）
+--   mode_definition: 5 行标准 MODE 定义（0-4，替代硬编码 AUTO_MODES）
+--   dcs_mode_mapping: 30 行映射矩阵（5 本系统默认 + 5 型号 × 5 MODE）
+-- 固定 UUID 确保 FK 关联可重建；数据来源：v6p1dcs001 迁移脚本
+-- =============================================================================
+
+-- 12a. dcs_vendor（5 条）
+INSERT INTO dcs_vendor (id, code, name, name_en, description, sort_order, is_active) VALUES
+('00000000-0000-0000-0000-000000000d01', 'hollysys',  '和利时',   'HollySys',  '北京和利时系统工程股份有限公司', 1, true),
+('00000000-0000-0000-0000-000000000d02', 'supcon',    '中控',     'SUPCON',    '浙江中控技术股份有限公司',       2, true),
+('00000000-0000-0000-0000-000000000d03', 'honeywell', '霍尼韦尔', 'Honeywell', '霍尼韦尔国际公司',               3, true),
+('00000000-0000-0000-0000-000000000d04', 'yokogawa',  '横河',     'Yokogawa',  '横河电机株式会社',               4, true),
+('00000000-0000-0000-0000-000000000d05', 'emerson',   '艾默生',   'Emerson',   '艾默生电气公司',                 5, true)
+ON CONFLICT (code) DO NOTHING;
+
+-- 12b. dcs_model（5 条，vendor_id 引用 dcs_vendor 固定 UUID）
+INSERT INTO dcs_model (id, vendor_id, code, name, description, sort_order, is_active) VALUES
+('00000000-0000-0000-0000-000000000d11', '00000000-0000-0000-0000-000000000d01', 'hollysys-macs',      'MACS 系统',    '和利时 MACS V 集散控制系统',      1, true),
+('00000000-0000-0000-0000-000000000d12', '00000000-0000-0000-0000-000000000d02', 'supcon-ecs700',      'ECS-700',      '中控 ECS-700 集散控制系统',       2, true),
+('00000000-0000-0000-0000-000000000d13', '00000000-0000-0000-0000-000000000d03', 'honeywell-experion', 'Experion PKS', '霍尼韦尔 Experion 过程知识系统',  3, true),
+('00000000-0000-0000-0000-000000000d14', '00000000-0000-0000-0000-000000000d04', 'yokogawa-centum',    'CENTUM CS3000','横河 CENTUM CS3000 集散控制系统', 4, true),
+('00000000-0000-0000-0000-000000000d15', '00000000-0000-0000-0000-000000000d05', 'emerson-deltav',     'DeltaV',       '艾默生 DeltaV 集散控制系统',      5, true)
+ON CONFLICT (code) DO NOTHING;
+
+-- 12c. mode_definition（5 行标准 MODE 定义）
+INSERT INTO mode_definition (id, standard_mode, label_zh, label_en, is_auto, color, sort_order, description) VALUES
+('00000000-0000-0000-0000-000000000d21', 0, '手动', 'MANUAL', false, '#d4380d', 0, '操作员直接操作 OP'),
+('00000000-0000-0000-0000-000000000d22', 1, '自动', 'AUTO',   true,  '#52c41a', 1, '单回路 PID 自动控制'),
+('00000000-0000-0000-0000-000000000d23', 2, '串级', 'CAS',    true,  '#1890ff', 2, '主-副回路串级控制'),
+('00000000-0000-0000-0000-000000000d24', 3, '远程', 'REMOTE', true,  '#722ed1', 3, 'SCADA/上位机远程设定'),
+('00000000-0000-0000-0000-000000000d25', 4, '先控', 'APC',    true,  '#13c2c2', 4, '先进过程控制（MPC 等）')
+ON CONFLICT (standard_mode) DO NOTHING;
+
+-- 12d. dcs_mode_mapping（30 条：5 本系统默认 + 25 型号映射）
+-- 本系统默认映射（dcs_model_id=NULL，1:1 映射）
+INSERT INTO dcs_mode_mapping (dcs_model_id, standard_mode, raw_mode_value, description) VALUES
+(NULL, 0, 0, '本系统默认映射（1:1）'),
+(NULL, 1, 1, '本系统默认映射（1:1）'),
+(NULL, 2, 2, '本系统默认映射（1:1）'),
+(NULL, 3, 3, '本系统默认映射（1:1）'),
+(NULL, 4, 4, '本系统默认映射（1:1）')
+ON CONFLICT DO NOTHING;
+
+-- 各型号默认映射（1:1，可后续按实际 DCS 调整）
+INSERT INTO dcs_mode_mapping (dcs_model_id, standard_mode, raw_mode_value, description) VALUES
+('00000000-0000-0000-0000-000000000d11', 0, 0, 'hollysys-macs 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d11', 1, 1, 'hollysys-macs 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d11', 2, 2, 'hollysys-macs 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d11', 3, 3, 'hollysys-macs 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d11', 4, 4, 'hollysys-macs 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d12', 0, 0, 'supcon-ecs700 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d12', 1, 1, 'supcon-ecs700 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d12', 2, 2, 'supcon-ecs700 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d12', 3, 3, 'supcon-ecs700 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d12', 4, 4, 'supcon-ecs700 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d13', 0, 0, 'honeywell-experion 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d13', 1, 1, 'honeywell-experion 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d13', 2, 2, 'honeywell-experion 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d13', 3, 3, 'honeywell-experion 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d13', 4, 4, 'honeywell-experion 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d14', 0, 0, 'yokogawa-centum 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d14', 1, 1, 'yokogawa-centum 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d14', 2, 2, 'yokogawa-centum 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d14', 3, 3, 'yokogawa-centum 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d14', 4, 4, 'yokogawa-centum 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d15', 0, 0, 'emerson-deltav 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d15', 1, 1, 'emerson-deltav 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d15', 2, 2, 'emerson-deltav 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d15', 3, 3, 'emerson-deltav 默认映射（1:1，可按实际 DCS 调整）'),
+('00000000-0000-0000-0000-000000000d15', 4, 4, 'emerson-deltav 默认映射（1:1，可按实际 DCS 调整）')
+ON CONFLICT DO NOTHING;
 
 -- =============================================================================
 -- 脚本结束

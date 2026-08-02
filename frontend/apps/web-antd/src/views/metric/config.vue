@@ -22,6 +22,9 @@ const ConfidenceTab = defineAsyncComponent(
 const OutlierParamsTab = defineAsyncComponent(
   () => import('./outlier-params.vue'),
 );
+const AlgorithmParamsTab = defineAsyncComponent(
+  () => import('./algorithm-params.vue'),
+);
 </script>
 
 <template>
@@ -39,8 +42,11 @@ const OutlierParamsTab = defineAsyncComponent(
       <TabPane key="confidence" tab="数据可信度">
         <ConfidenceTab />
       </TabPane>
-      <TabPane key="outlier" tab="参数配置">
+      <TabPane key="outlier" tab="异常值检测参数">
         <OutlierParamsTab />
+      </TabPane>
+      <TabPane key="algorithm" tab="KPI 算法参数">
+        <AlgorithmParamsTab />
       </TabPane>
     </Tabs>
   </Page>

@@ -63,12 +63,14 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'SystemAlgorithmParams',
+        // 已迁移至性能评估-指标配置（KPI 算法参数 Tab）
+        // 保留重定向以兼容旧 URL 和书签
+        name: 'SystemAlgorithmParamsDeprecated',
         path: '/system/algorithm-params',
-        component: () => import('#/views/system/algorithm-params/index.vue'),
+        redirect: '/metric/config',
         meta: {
           authority: ['ADMIN'],
-          icon: 'lucide:sliders-horizontal',
+          hideInMenu: true,
           title: '算法参数配置',
         },
       },

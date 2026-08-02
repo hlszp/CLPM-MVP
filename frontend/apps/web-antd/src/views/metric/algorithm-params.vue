@@ -1,20 +1,23 @@
 <script lang="ts" setup>
 /**
- * A6 算法参数配置
+ * KPI 算法参数配置（迁移自 system/algorithm-params）
  *
  * P0-B 可配置基础设施：3 指标 × 4 控制类型的算法参数覆盖管理。
  * - 列表区：按指标分组（振荡率 / 快速率 / 准确率），每个指标一张表，
  *   行=4 控制类型，列=该指标的算法参数键，并标记是否已被覆盖。
  * - 编辑区：Drawer 内按控制类型分组，可编辑数值参数、恢复默认、保存。
  * - 后端端点 /configs/algorithm-params，部分覆盖合并，未覆盖回落算法默认。
+ *
+ * 迁移说明（2026-08-03）：
+ *   原位于系统管理模块（system/algorithm-params/index.vue），因业务内聚性
+ *   （影响 3 核心 KPI 评分计算）迁移至性能评估-指标配置模块，作为第 6 个 Tab。
+ *   原路由 /system/algorithm-params 已重定向到 /metric/config。
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { ControlType, MetricApi } from '#/api/metric';
 
 import { computed, onMounted, reactive, ref } from 'vue';
-
-import { Page } from '@vben/common-ui';
 
 import {
   Button,
@@ -30,15 +33,11 @@ import {
   getAlgorithmParamsApi,
   saveMetricAlgorithmParamsApi,
 } from '#/api/metric';
-import {
-  ClpmDataCanvas,
-  ClpmPageToolbar,
-  ClpmToolbarButton,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { formatTime } from '#/utils/format';
 
-defineOptions({ name: 'SystemAlgorithmParams' });
+defineOptions({ name: 'MetricAlgorithmParams' });
 
 const { themeColors } = useClpmTheme();
 
@@ -475,29 +474,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
-    <ClpmPageToolbar
-      title="算法参数配置"
-      subtitle="管理 3 个核心指标的算法参数覆盖（按 4 类控制类型）。未覆盖参数回落算法默认值；保存后立即生效。"
-    >
-      <template #actions>
-        <ClpmToolbarButton
-          icon="ant-design:reload-outlined"
-          :loading="loading"
-          label="刷新"
-          @click="loadData"
-        />
-      </template>
-    </ClpmPageToolbar>
+  <div class="metric-algorithm-params">
+    <div class="mb-3 flex items-center justify-between">
+      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
+        <span v-if="updatedAt">
+          最近更新：{{ updatedBy ?? '-' }} @ {{ formatTime(updatedAt) }}
+        </span>
+        <span v-else>暂无更新记录</span>
+      </p>
+      <ClpmToolbarButton
+        icon="ant-design:reload-outlined"
+        :loading="loading"
+        label="刷新"
+        @click="loadData"
+      />
+    </div>
 
-    <p class="mt-3 text-sm" :style="{ color: themeColors.NEUTRAL }">
-      <span v-if="updatedAt">
-        最近更新：{{ updatedBy ?? '-' }} @ {{ formatTime(updatedAt) }}
-      </span>
-      <span v-else>暂无更新记录</span>
-    </p>
-
-    <div class="mt-4 space-y-4">
+    <div class="space-y-4">
       <ClpmDataCanvas
         v-for="group in metrics"
         :key="group.metricCode"
@@ -727,5 +720,5 @@ onMounted(() => {
         </div>
       </template>
     </Drawer>
-  </Page>
+  </div>
 </template>
