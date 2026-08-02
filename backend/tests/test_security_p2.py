@@ -127,6 +127,33 @@ class TestValidationErrorSanitization:
         # 应包含"缺少必填字段"类提示
         assert any("缺少" in item or "格式" in item for item in data)
 
+    def test_model_validator_error_transparent_message(self, non_debug_mode) -> None:
+        """model_validator 业务校验错误透传具体提示，而非笼统的"字段格式不正确"。
+
+        场景：ImportRequest overwrite 策略要求 tsEnd ≤ now-5min，
+        校验失败时 _sanitize_validation_error 应返回原始业务提示。
+        """
+        from app.core.exceptions import _sanitize_validation_error
+        from app.schemas.loop_data import ImportRequest
+
+        try:
+            ImportRequest(
+                loopIds=["test"],
+                tsStart="2026-07-01T00:00:00Z",
+                tsEnd="2099-12-31T00:00:00Z",  # 远未来，必然超过 now-5min
+                interval=1,
+                conflictStrategy="overwrite",
+                triggerBackfill=False,
+            )
+            raise AssertionError("应抛出 ValidationError")
+        except Exception as exc:
+            errors = exc.errors()
+            assert len(errors) == 1
+            sanitized = _sanitize_validation_error(errors[0])
+            # 应透传具体业务提示，而非通用的"字段格式不正确"
+            assert sanitized != "字段格式不正确"
+            assert "overwrite" in sanitized or "skip" in sanitized
+
 
 # ===========================================================================
 # S4-C2: Refresh Token 设备绑定

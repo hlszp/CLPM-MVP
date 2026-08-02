@@ -236,6 +236,8 @@ cp "${SCRIPT_DIR}/backup.sh"        "${DELIVERY_PATH}/deploy/"
 cp "${SCRIPT_DIR}/rollback.sh"      "${DELIVERY_PATH}/deploy/"
 cp "${SCRIPT_DIR}/lib-migrate.sh"   "${DELIVERY_PATH}/deploy/"
 cp "${SCRIPT_DIR}/nginx.conf"       "${DELIVERY_PATH}/deploy/"
+cp "${SCRIPT_DIR}/simulate-offline-deploy.sh" "${DELIVERY_PATH}/deploy/"
+chmod +x "${DELIVERY_PATH}/deploy/simulate-offline-deploy.sh"
 
 # 监控配置（可选）
 if [ -d "${SCRIPT_DIR}/prometheus" ]; then
@@ -343,6 +345,7 @@ if [ "$PUSH_DEPLOY_REPO" = true ]; then
     cp "${SCRIPT_DIR}/backup.sh"           "${DEPLOY_REPO_DIR}/backup.sh"
     cp "${SCRIPT_DIR}/rollback.sh"         "${DEPLOY_REPO_DIR}/rollback.sh"
     cp "${SCRIPT_DIR}/lib-migrate.sh"      "${DEPLOY_REPO_DIR}/lib-migrate.sh"
+    cp "${SCRIPT_DIR}/simulate-offline-deploy.sh" "${DEPLOY_REPO_DIR}/simulate-offline-deploy.sh"
     cp "${SCRIPT_DIR}/nginx.conf"          "${DEPLOY_REPO_DIR}/nginx.conf"
     cp "${PROJECT_ROOT}/docker-compose.prod.yml" "${DEPLOY_REPO_DIR}/"
     cp "${PROJECT_ROOT}/.env.prod.example"       "${DEPLOY_REPO_DIR}/"

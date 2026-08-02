@@ -9,11 +9,33 @@
 set -euo pipefail
 
 # ── 配置 ──────────────────────────────────────────────────────
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 自动检测运行环境：开发机（项目根目录）或客户服务器（交付包目录）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 判断是否在交付包中（交付包有 images/ 目录但无 releases/）
+if [ -f "$SCRIPT_DIR/../docker-compose.prod.yml" ] && [ -d "$SCRIPT_DIR/../releases/images" ]; then
+    # 开发机：从项目根目录运行
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    TARBALL_DIR="$PROJECT_ROOT/releases/images"
+    COMPOSE_SRC="$PROJECT_ROOT/docker-compose.prod.yml"
+    DB_DIR="$PROJECT_ROOT/db"
+    NGINX_CONF="$PROJECT_ROOT/deploy/nginx.conf"
+elif [ -f "$SCRIPT_DIR/../docker-compose.prod.yml" ] && [ -d "$SCRIPT_DIR/../images" ]; then
+    # 客户服务器：从交付包目录运行
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    TARBALL_DIR="$PROJECT_ROOT/images"
+    COMPOSE_SRC="$PROJECT_ROOT/docker-compose.prod.yml"
+    DB_DIR="$PROJECT_ROOT/db"
+    NGINX_CONF="$SCRIPT_DIR/nginx.conf"
+else
+    echo "[ERROR] 无法定位 docker-compose.prod.yml 和镜像目录"
+    echo "  请从 CLPM 项目根目录或交付包目录运行"
+    exit 1
+fi
 cd "$PROJECT_ROOT"
 
-# 模拟目录（独立隔离环境，不影响开发环境）
-SIM_DIR="/tmp/clpm-offline-sim"
+# 模拟目录（独立隔离环境，不影响开发/生产环境）
+SIM_DIR="${SIM_DIR:-/tmp/clpm-offline-sim}"
 SIM_CONTAINER_PREFIX="clpm-sim"
 SIM_NETWORK="clpm-sim-net"
 
@@ -44,7 +66,7 @@ ALL_SIM_CONTAINERS=("$BACKEND_C" "$FRONTEND_C" "$POSTGRES_C" "$TDENGINE_C" "$RED
 # 将原 docker-compose.prod.yml 中的 container_name 和 network 替换为模拟专用名称
 # 同时将 Redis/PG/TDengine 的 host 引用替换为模拟容器名
 generate_sim_compose() {
-    local src="$PROJECT_ROOT/docker-compose.prod.yml"
+    local src="$COMPOSE_SRC"
     local dst="$SIM_DIR/docker-compose.sim.yml"
 
     sed \
@@ -166,15 +188,23 @@ EOF
 copy_files() {
     log_step "Step 2: 拷贝部署文件到模拟目录"
 
-    # 部署脚本
+    # 部署脚本（使用环境检测后的 NGINX_CONF 变量，兼容开发机和客户服务器）
     mkdir -p "$SIM_DIR/deploy"
-    cp "$PROJECT_ROOT/deploy/nginx.conf" "$SIM_DIR/deploy/"
+    if [ ! -f "$NGINX_CONF" ]; then
+        log_error "nginx.conf 未找到: $NGINX_CONF"
+        exit 1
+    fi
+    cp "$NGINX_CONF" "$SIM_DIR/deploy/"
 
-    # 数据库初始化 SQL
+    # 数据库初始化 SQL（使用环境检测后的 DB_DIR 变量）
     mkdir -p "$SIM_DIR/db/postgresql" "$SIM_DIR/db/tdengine"
-    cp "$PROJECT_ROOT/db/postgresql/01_schema.sql" "$SIM_DIR/db/postgresql/"
-    cp "$PROJECT_ROOT/db/postgresql/02_seed_data.sql" "$SIM_DIR/db/postgresql/"
-    cp "$PROJECT_ROOT/db/tdengine/01_supertable.sql" "$SIM_DIR/db/tdengine/"
+    if [ ! -d "$DB_DIR/postgresql" ] || [ ! -d "$DB_DIR/tdengine" ]; then
+        log_error "数据库 SQL 目录未找到: $DB_DIR"
+        exit 1
+    fi
+    cp "$DB_DIR/postgresql/01_schema.sql" "$SIM_DIR/db/postgresql/"
+    cp "$DB_DIR/postgresql/02_seed_data.sql" "$SIM_DIR/db/postgresql/"
+    cp "$DB_DIR/tdengine/01_supertable.sql" "$SIM_DIR/db/tdengine/"
 
     # .td-password-changed 标记文件
     touch "$SIM_DIR/.td-password-changed"
@@ -186,10 +216,21 @@ copy_files() {
 load_images() {
     log_step "Step 3: 查找并加载镜像 tarball"
 
-    TARBALL=$(ls -t "$PROJECT_ROOT/releases/images/clpm-images-"*.tar.gz 2>/dev/null | grep -v latest | head -1)
+    # 使用环境检测后的 TARBALL_DIR（开发机: releases/images，客户服务器: images）
+    # 兼容性回退：依次在 TARBALL_DIR、PROJECT_ROOT/images、PROJECT_ROOT/releases/images 中查找
+    TARBALL=""
+    for search_dir in "$TARBALL_DIR" "$PROJECT_ROOT/images" "$PROJECT_ROOT/releases/images"; do
+        if [ -d "$search_dir" ]; then
+            TARBALL=$(ls -t "$search_dir"/clpm-images-*.tar.gz 2>/dev/null | grep -v latest | head -1)
+            if [ -n "$TARBALL" ]; then
+                log_info "在 $search_dir 中找到镜像包"
+                break
+            fi
+        fi
+    done
 
     if [ -z "$TARBALL" ]; then
-        log_error "未找到镜像 tarball"
+        log_error "未找到镜像 tarball（已搜索: $TARBALL_DIR、$PROJECT_ROOT/images、$PROJECT_ROOT/releases/images）"
         log_error "请先运行: ./deploy/package.sh"
         exit 1
     fi

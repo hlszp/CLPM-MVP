@@ -59,12 +59,21 @@ def _sanitize_validation_error(err: dict[str, Any]) -> str:
 
     不暴露 loc（字段路径）、type（内部错误类型）、ctx（上下文）等内部细节，
     仅根据错误类别返回用户友好的通用提示。
+
+    例外：``model_validator`` 抛出的 ``value_error`` 包含面向用户的业务提示
+    （如"tsEnd 不得晚于当前时间前 5 分钟"），直接透传 msg 内容——这些消息由
+    开发者编写，不含敏感技术细节，脱敏反而损害用户体验。
     """
     err_type = str(err.get("type", ""))
     if "missing" in err_type:
         return "缺少必填字段"
     if err_type.startswith("value_error"):
-        return "字段格式不正确"
+        # model_validator 业务校验：透传面向用户的具体提示
+        msg = str(err.get("msg", ""))
+        # Pydantic v2 格式："Value error, <原始消息>"
+        if msg.startswith("Value error, "):
+            return msg[len("Value error, ") :]
+        return msg or "字段格式不正确"
     if err_type.startswith("type_error"):
         return "字段类型不正确"
     if "enum" in err_type or "literal_error" in err_type:
@@ -106,9 +115,13 @@ def register_exception_handlers(app: FastAPI) -> None:
             )
         else:
             sanitized = _sanitize_validation_errors(exc.errors())
+            # 当存在面向用户的具体提示时（如 model_validator 业务校验），
+            # 用第一条作为 message，让前端全局拦截器直接展示具体原因
+            # 而非笼统的"输入校验失败"
+            msg = sanitized[0] if sanitized and sanitized[0] != "字段格式不正确" else "输入校验失败"
             response = JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                content=jsonable_encoder(_error_body("ERR_VALIDATION", "输入校验失败", sanitized)),
+                content=jsonable_encoder(_error_body("ERR_VALIDATION", msg, sanitized)),
             )
         _add_cors_headers(response, request)
         return response
