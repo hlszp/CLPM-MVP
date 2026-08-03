@@ -980,6 +980,7 @@ async function handleDangerConfirm() {
     await loadList();
   } catch (error) {
     console.error('操作失败:', error);
+    message.error('回路删除失败，请重试或联系管理员');
   } finally {
     dangerLoading.value = false;
   }

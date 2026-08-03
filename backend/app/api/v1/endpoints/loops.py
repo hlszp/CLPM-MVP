@@ -427,9 +427,11 @@ async def delete_loop_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """删除回路（仅 ADMIN）。
+    """删除回路（仅 ADMIN，硬删除）。
 
-    级联解绑：软删回路前先删除 LoopTagMapping 关联记录，有关联 Tag 的回路可删除。
+    级联解绑：删除 LoopTagMapping 关联记录后硬删回路本体，
+    ON DELETE CASCADE 自动清理 kpi_snapshot/action_tracker/diagnosis_result 等关联数据。
+    批量删除保持软删除（可恢复），单删为硬删除（不可恢复，与前端弹窗承诺一致）。
     """
     data = await delete_loop(db=db, loop_id=loop_id, operator=user.username)
     return success(data=data, message="删除成功")

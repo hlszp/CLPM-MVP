@@ -213,7 +213,7 @@ class TestLoopDelete:
     """DELETE /api/v1/loops/{id} tests."""
 
     def test_delete_loop_with_tags_cascades_unbind(self, client, mock_db, fake_redis) -> None:
-        """WS-C 6-4：有关联 Tag 的回路可删除——级联删除映射后软删回路。"""
+        """WS-C 6-4：有关联 Tag 的回路可删除——级联删除映射后硬删回路。"""
         loop = MagicMock()
         loop.id = LOOP_001.id
         loop.tag_name = LOOP_001.tag_name
@@ -235,6 +235,7 @@ class TestLoopDelete:
             _make_scalar_one_or_none_mock(tag),  # 5. select(TagRegistry) 取 tag
         ]
         mock_db.execute = AsyncMock(side_effect=results)
+        mock_db.delete = AsyncMock()
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.delete(
                 f"/api/v1/loops/{LOOP_001.id}",
@@ -244,9 +245,8 @@ class TestLoopDelete:
         body = resp.json()
         assert body["code"] == "0"
         assert body["data"]["deleted"] is True
-        # 回路软删 + 无其他引用的 Tag is_linked 清除
-        assert loop.is_active is False
-        assert loop.status == "INACTIVE"
+        # 回路硬删除 + 无其他引用的 Tag is_linked 清除
+        mock_db.delete.assert_called_once_with(loop)
         assert tag.is_linked is False
 
     def test_delete_loop_keeps_is_linked_when_other_loop_refs(
@@ -273,6 +273,7 @@ class TestLoopDelete:
             _make_scalar_mock(1),  # 4. count(其他回路引用) = 1 → 跳过 is_linked 清除
         ]
         mock_db.execute = AsyncMock(side_effect=results)
+        mock_db.delete = AsyncMock()
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.delete(
                 f"/api/v1/loops/{LOOP_001.id}",
@@ -280,11 +281,11 @@ class TestLoopDelete:
             )
         assert resp.status_code == 200
         assert resp.json()["data"]["deleted"] is True
-        assert loop.is_active is False
+        mock_db.delete.assert_called_once_with(loop)
         assert tag.is_linked is True
 
     def test_delete_loop_without_tags_succeeds(self, client, mock_db, fake_redis) -> None:
-        """无关联 Tag 的回路正常软删（不执行映射删除）。"""
+        """无关联 Tag 的回路正常硬删（不执行映射删除）。"""
         loop = MagicMock()
         loop.id = LOOP_001.id
         loop.tag_name = LOOP_001.tag_name
@@ -296,6 +297,7 @@ class TestLoopDelete:
             _make_scalars_mock([]),  # 2. select(LoopTagMapping) → 无关联
         ]
         mock_db.execute = AsyncMock(side_effect=results)
+        mock_db.delete = AsyncMock()
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.delete(
                 f"/api/v1/loops/{LOOP_001.id}",
@@ -303,8 +305,7 @@ class TestLoopDelete:
             )
         assert resp.status_code == 200
         assert resp.json()["data"]["deleted"] is True
-        assert loop.is_active is False
-        assert loop.status == "INACTIVE"
+        mock_db.delete.assert_called_once_with(loop)
 
     def test_delete_loop_ic_engineer_forbidden(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 不能删除回路（403，仅 ADMIN）。"""

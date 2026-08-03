@@ -1490,12 +1490,14 @@ async def delete_loop(
     loop_id: str,
     operator: str,
 ) -> dict:
-    """软删除回路（P1 #9: 统一为软删，与批删行为对齐）。
+    """硬删除回路（与前端"不可恢复"承诺对齐；批量删除保持软删）。
 
-    级联解绑（WS-C 6-4）：软删回路前先删除 LoopTagMapping 关联记录
-    （通常 7 条：PV/SP/OP/MODE/PID_P/PID_I/PID_D），使有关联 Tag 的回路可删除。
+    级联解绑（WS-C 6-4）：删除回路前先删除 LoopTagMapping 关联记录
+    （通常 7 条：PV/SP/OP/MODE/PID_P/PID_I/PID_D）。
     解除关联后不再被任何回路引用的 Tag，其 is_linked 一并清除（is_linked 由映射派生）。
-    回路本体保持软删语义：置 is_active=False, status=INACTIVE（保留记录可追溯）。
+    回路本体硬删除：db.delete(loop)，ON DELETE CASCADE 自动级联清理
+    kpi_snapshot/action_tracker/diagnosis_result/tuning_record/loop_mode_mapping/
+    kpi_custom/diagnosis_tag/diagnosis_task/loop_confidence_latest/process_model_version。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND
@@ -1536,13 +1538,12 @@ async def delete_loop(
             if tag:
                 tag.is_linked = False
 
-    # 软删除（P1 #9: 与 batch_delete_loops 行为对齐）
-    loop.is_active = False
-    loop.status = "INACTIVE"
-    loop.updated_by = operator
+    # 硬删除（与前端"不可恢复"承诺对齐；批量删除保持软删可恢复）
+    # ON DELETE CASCADE 自动级联清理所有关联表数据
+    await db.delete(loop)
 
     after_json = json.dumps(
-        {"tagName": loop.tag_name, "is_active": False, "status": "INACTIVE"},
+        {"tagName": loop.tag_name, "deleted": True},
         ensure_ascii=False,
     )
 
