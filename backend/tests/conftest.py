@@ -286,6 +286,10 @@ class _FakePipeline:
         self._ops.append(("delete", key, {}))
         return self
 
+    def lpush(self, key: str, *values: str) -> _FakePipeline:
+        self._ops.append(("lpush", key, {"values": values}))
+        return self
+
     async def execute(self) -> list[Any]:
         results: list[Any] = []
         for op, key, kwargs in self._ops:
@@ -313,6 +317,11 @@ class _FakePipeline:
                     del self._redis._strings[key]
                     deleted += 1
                 results.append(deleted)
+            elif op == "lpush":
+                lst = self._redis._lists.setdefault(key, [])
+                for v in kwargs["values"]:
+                    lst.insert(0, v)
+                results.append(len(lst))
         self._ops.clear()
         return results
 
