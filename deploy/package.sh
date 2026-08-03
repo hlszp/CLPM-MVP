@@ -339,34 +339,29 @@ if [ "$PUSH_DEPLOY_REPO" = true ]; then
         git clone "${DEPLOY_REPO_URL}" "${DEPLOY_REPO_DIR}"
     fi
 
-    # 同步文件
-    log_info "同步部署脚本..."
-    cp "${SCRIPT_DIR}/deploy-on-server.sh" "${DEPLOY_REPO_DIR}/deploy.sh"
-    cp "${SCRIPT_DIR}/backup.sh"           "${DEPLOY_REPO_DIR}/backup.sh"
-    cp "${SCRIPT_DIR}/rollback.sh"         "${DEPLOY_REPO_DIR}/rollback.sh"
-    cp "${SCRIPT_DIR}/lib-migrate.sh"      "${DEPLOY_REPO_DIR}/lib-migrate.sh"
-    cp "${SCRIPT_DIR}/simulate-offline-deploy.sh" "${DEPLOY_REPO_DIR}/simulate-offline-deploy.sh"
-    cp "${SCRIPT_DIR}/nginx.conf"          "${DEPLOY_REPO_DIR}/nginx.conf"
-    cp "${PROJECT_ROOT}/docker-compose.prod.yml" "${DEPLOY_REPO_DIR}/"
-    cp "${PROJECT_ROOT}/.env.prod.example"       "${DEPLOY_REPO_DIR}/"
+    # 同步文件（注意：deploy.sh / docker-compose.prod.yml / .env.prod.example / README.md
+    # 由 clpm-deploy 仓库独立维护——registry 拉取模式定制版，不同步覆盖）
+    log_info "同步部署脚本（工具脚本 + SQL + 文档）..."
+    mkdir -p "${DEPLOY_REPO_DIR}/deploy" "${DEPLOY_REPO_DIR}/db/postgresql" "${DEPLOY_REPO_DIR}/db/tdengine"
 
-    mkdir -p "${DEPLOY_REPO_DIR}/db/postgresql" "${DEPLOY_REPO_DIR}/db/tdengine"
+    cp "${SCRIPT_DIR}/backup.sh"                     "${DEPLOY_REPO_DIR}/deploy/backup.sh"
+    cp "${SCRIPT_DIR}/rollback.sh"                   "${DEPLOY_REPO_DIR}/deploy/rollback.sh"
+    cp "${SCRIPT_DIR}/lib-migrate.sh"                "${DEPLOY_REPO_DIR}/deploy/lib-migrate.sh"
+    cp "${SCRIPT_DIR}/simulate-offline-deploy.sh"    "${DEPLOY_REPO_DIR}/deploy/simulate-offline-deploy.sh"
+    cp "${SCRIPT_DIR}/nginx.conf"                    "${DEPLOY_REPO_DIR}/deploy/nginx.conf"
+
     cp "${PROJECT_ROOT}/db/postgresql/01_schema.sql"    "${DEPLOY_REPO_DIR}/db/postgresql/"
     cp "${PROJECT_ROOT}/db/postgresql/02_seed_data.sql" "${DEPLOY_REPO_DIR}/db/postgresql/"
     cp "${PROJECT_ROOT}/db/tdengine/01_supertable.sql"  "${DEPLOY_REPO_DIR}/db/tdengine/"
 
     if [ -d "${SCRIPT_DIR}/prometheus" ]; then
-        mkdir -p "${DEPLOY_REPO_DIR}/monitoring"
-        cp -r "${SCRIPT_DIR}/prometheus" "${DEPLOY_REPO_DIR}/monitoring/"
+        cp -r "${SCRIPT_DIR}/prometheus" "${DEPLOY_REPO_DIR}/deploy/prometheus"
     fi
     if [ -d "${SCRIPT_DIR}/grafana" ]; then
-        mkdir -p "${DEPLOY_REPO_DIR}/monitoring"
-        cp -r "${SCRIPT_DIR}/grafana" "${DEPLOY_REPO_DIR}/monitoring/"
+        cp -r "${SCRIPT_DIR}/grafana" "${DEPLOY_REPO_DIR}/deploy/grafana"
     fi
 
-    if [ -f "${SCRIPT_DIR}/README-deploy.md" ]; then
-        cp "${SCRIPT_DIR}/README-deploy.md" "${DEPLOY_REPO_DIR}/README.md"
-    fi
+    # README.md 由 clpm-deploy 独立维护（registry 拉取模式专用文档）
     if [ -f "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" ]; then
         cp "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" "${DEPLOY_REPO_DIR}/DEPLOYMENT-GUIDE.md"
     fi
