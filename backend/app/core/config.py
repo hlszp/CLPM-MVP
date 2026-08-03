@@ -96,7 +96,7 @@ class Settings(BaseSettings):
 
     # ---- 实时数据 SignalR/WebSocket ----
     SIGNALR_HUB_URL: str = ""  # 如 ws://localhost:7106/signalr/realValueForClpmHub
-    SIGNALR_ENABLED: bool = False  # 是否启用实时数据订阅
+    SIGNALR_ENABLED: bool = True  # 是否启用实时数据订阅（sys_config 预载可覆盖）
     SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连基础间隔（秒，指数退避起点）
     SIGNALR_RECONNECT_MAX_INTERVAL: int = 30  # 断线重连最大间隔（秒，指数退避上限）
     # WS 客户端参数（放宽默认值，适配过载边缘服务器）
