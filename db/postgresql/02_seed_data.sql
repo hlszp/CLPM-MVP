@@ -623,8 +623,15 @@ INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
 ('aas.sync_interval_seconds', '300', 'AAS 同步周期（秒）', 'system', NOW()),
 ('aas.sync_enabled', 'true', 'AAS 同步启停状态', 'system', NOW()),
 ('aas.security_mode', 'None', 'AAS 安全模式：None/Sign/SignAndEncrypt', 'system', NOW()),
-('datasource.realtime_writeback_enabled', 'true', '实时数据写回 TDengine 开关（链路配置页面运行时切换）', 'system', NOW()),
-('datasource.signalr_enabled', 'false', 'SignalR 实时订阅开关（部署后在 UI 链路配置页面开启）', 'system', NOW())
+('datasource.type', 'remote_api', '历史数据源类型 tdengine/remote_api', 'system', NOW()),
+('datasource.network_mode', 'lan', '网络模式 lan（局域网直连）/wan（公网走 Tailscale）', 'system', NOW()),
+('datasource.history_api_url', 'http://192.168.100.2:81/api/services/v1/HistoryData/Get', '外部历史数据 API 地址', 'system', NOW()),
+('datasource.history_api_token', '', '外部历史数据 API 鉴权 Token', 'system', NOW()),
+('datasource.history_api_timeout', '30', '外部历史数据 API 超时（秒）', 'system', NOW()),
+('datasource.signalr_hub_url', 'ws://192.168.100.2:81/signalr/realValueForClpmHub', '实时数据 SignalR Hub URL', 'system', NOW()),
+('datasource.signalr_enabled', 'true', 'SignalR 实时订阅开关（后端重启生效）', 'system', NOW()),
+('datasource.signalr_reconnect_interval', '5', 'SignalR 断线重连间隔（秒）', 'system', NOW()),
+('datasource.realtime_writeback_enabled', 'true', '实时数据写回 TDengine 开关（链路配置页面运行时切换）', 'system', NOW())
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
