@@ -7,7 +7,7 @@ run without external dependencies (no PostgreSQL/Redis required).
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -69,11 +69,18 @@ TEST_USERS: dict[str, MagicMock] = {
 
 
 class FakeRedis:
-    """Minimal in-memory async Redis mock for auth tests."""
+    """In-memory async Redis mock.
+
+    覆盖项目用到的全部 Redis 操作：strings / sets / hashes / sorted sets /
+    lists / pub-sub / eval（Lua CAS 脚本以 Python 等价物模拟）。
+    """
 
     def __init__(self) -> None:
         self._strings: dict[str, str] = {}
         self._sets: dict[str, set[str]] = {}
+        self._hashes: dict[str, dict[str, str]] = {}
+        self._zsets: dict[str, dict[str, float]] = {}
+        self._lists: dict[str, list[str]] = {}
         self._ttls: dict[str, float] = {}
         # _client attr: close_redis() accesses redis_client._client on shutdown
         self._client = None
@@ -134,6 +141,9 @@ class FakeRedis:
     def reset(self) -> None:
         self._strings.clear()
         self._sets.clear()
+        self._hashes.clear()
+        self._zsets.clear()
+        self._lists.clear()
         self._ttls.clear()
 
     def pipeline(self):
@@ -154,6 +164,93 @@ class FakeRedis:
 
         return [k for k in self._strings.keys() if fnmatch.fnmatch(k, pattern)]
 
+    # -- hash operations --------------------------------------------------
+
+    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> int:
+        """Set hash fields (supports mapping= and key/value kwargs)."""
+        h = self._hashes.setdefault(key, {})
+        fields = {**(mapping or {}), **kwargs}
+        for field, value in fields.items():
+            h[field] = value if isinstance(value, str) else str(value)
+        return len(fields)
+
+    async def hget(self, key: str, field: str) -> str | None:
+        return self._hashes.get(key, {}).get(field)
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self._hashes.get(key, {}))
+
+    async def hdel(self, key: str, *fields: str) -> int:
+        h = self._hashes.get(key, {})
+        deleted = sum(1 for f in fields if h.pop(f, None) is not None)
+        return deleted
+
+    async def hincrby(self, key: str, field: str, amount: int = 1) -> int:
+        h = self._hashes.setdefault(key, {})
+        val = int(h.get(field, "0")) + amount
+        h[field] = str(val)
+        return val
+
+    # -- sorted set operations -------------------------------------------
+
+    async def zadd(self, key: str, mapping: dict[str, float]) -> int:
+        z = self._zsets.setdefault(key, {})
+        added = 0
+        for member, score in mapping.items():
+            if member not in z:
+                added += 1
+            z[member] = float(score)
+        return added
+
+    async def zrange(self, key: str, start: int, stop: int) -> list[str]:
+        z = self._zsets.get(key, {})
+        members = sorted(z, key=lambda m: z[m])
+        # Redis stop 是包含的，支持负索引
+        if stop < 0:
+            stop = len(members) + stop
+        return members[start : stop + 1]
+
+    async def zrem(self, key: str, *members: str) -> int:
+        z = self._zsets.get(key, {})
+        return sum(1 for m in members if z.pop(m, None) is not None)
+
+    async def zcard(self, key: str) -> int:
+        return len(self._zsets.get(key, {}))
+
+    # -- list operations --------------------------------------------------
+
+    async def lpush(self, key: str, *values: str) -> int:
+        lst = self._lists.setdefault(key, [])
+        for v in values:
+            lst.insert(0, v if isinstance(v, str) else str(v))
+        return len(lst)
+
+    async def lrange(self, key: str, start: int, stop: int) -> list[str]:
+        lst = self._lists.get(key, [])
+        if stop < 0:
+            stop = len(lst) + stop
+        return lst[start : stop + 1]
+
+    async def ltrim(self, key: str, start: int, stop: int) -> None:
+        lst = self._lists.get(key, [])
+        if stop < 0:
+            stop = len(lst) + stop
+        self._lists[key] = lst[start : stop + 1]
+
+    # -- pub/sub & eval ---------------------------------------------------
+
+    async def publish(self, channel: str, message: str) -> int:
+        """Pub/sub no-op（测试环境不验证订阅端）."""
+        return 0
+
+    async def eval(self, script: str, numkeys: int, *args: Any) -> list[str]:
+        """Lua eval 模拟：CAS 脚本（task_tracker / data_import）返回 UPDATED 成功。
+
+        生产环境用 Lua 保证原子性；测试环境无需原子保证，统一返回成功让流程继续。
+        需要验证 BLOCKED/MISSING 分支的测试应在函数级 mock _update_task_cas 等。
+        """
+        return ["UPDATED", ""]
+
     async def info(self, section: str | None = None) -> dict[str, Any]:
         """Redis INFO command mock (CacheStats compatibility)."""
         return {
@@ -173,6 +270,18 @@ class _FakePipeline:
         self._ops.append(("set", key, {"value": value, "ex": ex}))
         return self
 
+    def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> _FakePipeline:
+        self._ops.append(("hset", key, {**(mapping or {}), **kwargs}))
+        return self
+
+    def expire(self, key: str, ttl: int) -> _FakePipeline:
+        self._ops.append(("expire", key, {"ttl": ttl}))
+        return self
+
+    def zadd(self, key: str, mapping: dict[str, float]) -> _FakePipeline:
+        self._ops.append(("zadd", key, {"mapping": mapping}))
+        return self
+
     def delete(self, key: str) -> _FakePipeline:
         self._ops.append(("delete", key, {}))
         return self
@@ -184,6 +293,19 @@ class _FakePipeline:
                 self._redis._strings[key] = kwargs["value"]
                 if kwargs.get("ex"):
                     self._redis._ttls[key] = float(kwargs["ex"])
+                results.append(True)
+            elif op == "hset":
+                h = self._redis._hashes.setdefault(key, {})
+                for field, value in kwargs.items():
+                    h[field] = value if isinstance(value, str) else str(value)
+                results.append(True)
+            elif op == "expire":
+                self._redis._ttls[key] = float(kwargs["ttl"])
+                results.append(True)
+            elif op == "zadd":
+                z = self._redis._zsets.setdefault(key, {})
+                for member, score in kwargs["mapping"].items():
+                    z[member] = float(score)
                 results.append(True)
             elif op == "delete":
                 deleted = 0
@@ -199,6 +321,34 @@ class _FakePipeline:
 
     async def __aexit__(self, *args: Any) -> None:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Modules that do **module-level** `from app.core.redis import redis_client` —
+# each must be patched individually because `from ... import` binds the name in
+# the module's own namespace at import time; patching app.core.redis.redis_client
+# alone does NOT affect them. 函数内懒导入的模块（loop_data / tags / tuning /
+# kpi_calc）无需在此列出——它们在调用时从 app.core.redis 查找，已被
+# patch("app.core.redis.redis_client", ...) 覆盖。
+# 维护：grep -rn "^from app.core.redis import redis_client" app/ --include="*.py"
+# ---------------------------------------------------------------------------
+_REDIS_CLIENT_MODULES: list[str] = [
+    "app.api.v1.endpoints.dataplanner",
+    "app.api.v1.endpoints.health",
+    "app.api.v1.endpoints.tasks",
+    "app.api.v1.endpoints.ws_realtime",
+    "app.middleware.idempotency",
+    "app.middleware.rate_limit",
+    "app.services.auth",
+    "app.services.dashboard",
+    "app.services.data_import",
+    "app.services.data_source.realtime_subscriber",
+    "app.services.diagnosis_rule",
+    "app.services.loop",
+    "app.services.performance",
+    "app.services.task_tracker",
+    "app.services.tuning_progress",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +426,7 @@ def mock_dashboard_session_local() -> AsyncMock:
 def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
     """Provide a TestClient with DB and Redis mocked out.
 
-    The mock Redis is installed at module level so all auth service functions
+    The mock Redis is installed at module level so all service/endpoint functions
     pick it up. The mock DB is injected via FastAPI dependency override.
     AsyncSessionLocal is patched so dashboard parallel queries use a mock session.
     """
@@ -288,16 +438,14 @@ def client(fake_redis: FakeRedis, mock_db: AsyncMock) -> TestClient:
     mock_parallel_session = AsyncMock()
     mock_parallel_session.execute = AsyncMock(return_value=universal_result)
 
-    # Patch the redis_client used by the auth/dashboard/loop services and rate limit middleware.
-    with (
-        patch("app.core.redis.redis_client", fake_redis),
-        patch("app.services.auth.redis_client", fake_redis),
-        patch("app.services.dashboard.redis_client", fake_redis),
-        patch("app.services.loop.redis_client", fake_redis),
-        patch("app.middleware.rate_limit.redis_client", fake_redis),
-        patch("app.middleware.idempotency.redis_client", fake_redis),
-        patch("app.services.dashboard.AsyncSessionLocal") as mock_session_local,
-    ):
+    # Patch redis_client 在 app.core.redis 及所有 `from app.core.redis import redis_client`
+    # 的模块。`from ... import` 在导入时绑定名字到各自模块命名空间，必须逐个 patch。
+    with ExitStack() as stack:
+        stack.enter_context(patch("app.core.redis.redis_client", fake_redis))
+        for mod in _REDIS_CLIENT_MODULES:
+            stack.enter_context(patch(f"{mod}.redis_client", fake_redis))
+        mock_session_local = stack.enter_context(patch("app.services.dashboard.AsyncSessionLocal"))
+
         # 配置 AsyncSessionLocal mock：每次 async with 返回 mock_parallel_session
         mock_session_local.return_value.__aenter__ = AsyncMock(return_value=mock_parallel_session)
         mock_session_local.return_value.__aexit__ = AsyncMock(return_value=None)

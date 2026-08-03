@@ -304,6 +304,13 @@ class TestImportHistoryData:
                 "app.services.data_import._update_task",
                 new=AsyncMock(),
             ),
+            # _update_task_cas 直连 Redis（eval Lua CAS 脚本），
+            # 单测无 Redis 时需 mock：返回 UPDATED 让流程继续，
+            # 随后 _is_task_cancelled=True 使各回路提前终止。
+            patch(
+                "app.services.data_import._update_task_cas",
+                new=AsyncMock(return_value=("UPDATED", "PENDING")),
+            ),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
         ):
             result = await import_history_data(
