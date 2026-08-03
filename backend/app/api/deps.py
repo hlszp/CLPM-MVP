@@ -34,10 +34,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 # 强制改密豁免路径（S5-AUTH P1）：must_change_password=True 时仅放行
 # 改密与登出写端点（登出放行避免用户无法重新登录）；读端点（GET/HEAD/OPTIONS）
 # 一律放行，前端可正常加载改密页所需数据，避免死锁
+# 链路配置豁免（2026-08-03）：部署后需立即配置数据源连接，不应被强制改密拦截
 _FORCE_PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
     {
         "/api/v1/auth/password",
         "/api/v1/auth/logout",
+        "/api/v1/datasource/config",
+        "/api/v1/datasource/test-history-api",
+        "/api/v1/datasource/test-signalr",
     }
 )
 _READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
