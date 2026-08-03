@@ -204,3 +204,91 @@ lefthook pre-push 钩子串行执行三道门禁（ruff → pytest → check:typ
 - **验证命令**：`grep -rn "^from app.core.redis import redis_client" app/ --include="*.py"` 检查模块级导入。
 - **FakeRedis 新增方法**：若代码新增 Redis 操作（如 `hincrby`/`zincrby`/`srem`），需同步在 FakeRedis 中实现，否则 API 测试 AttributeError。
 - **eval（Lua 脚本）**：FakeRedis 统一返回 `["UPDATED", ""]` 模拟成功；需验证 BLOCKED/MISSING 分支的测试应在函数级 mock `_update_task_cas` 等，不依赖 FakeRedis 的 eval。
+
+## Nginx 502 排障（后端容器重启后 IP 变化，2026-08-04 修复）
+
+**现象**：后端容器（clpm-backend）重启后，Nginx 返回 502 Bad Gateway，需手动 `nginx -s reload` 才恢复。
+
+**根因**：Nginx 默认在启动时解析 upstream 域名并缓存 IP，之后不再重新解析。Docker/Podman 容器重启后内部 IP 可能变化，Nginx 仍指向旧 IP → 502。
+
+**修复**（`deploy/nginx.conf`）：在 `server` 块外添加 `resolver` 指令，upstream 地址用变量 `$backend` 引用，强制 Nginx 每次请求重新解析 DNS：
+
+```nginx
+# Docker 环境
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Podman 环境（server2）— 见下文 server2 章节
+# resolver 10.89.0.1 valid=10s ipv6=off;
+
+server {
+    location /api/ {
+        set $backend "clpm-backend:7101";
+        proxy_pass http://$backend;
+    }
+}
+```
+
+`valid=10s` 控制 DNS 缓存有效期。变量引用是关键——直接写 `proxy_pass http://clpm-backend:7101;` 会在启动时解析并缓存，变量形式则触发运行时解析。
+
+## server2 (Podman) 部署运维（2026-08-04）
+
+server2（192.168.110.3）是 Rocky Linux 8.5 + Podman 4.9.4 + podman-compose 1.3.0 环境，与 zpdev（Docker）存在关键差异。
+
+### 环境差异
+
+| 项目 | zpdev | server2 |
+|---|---|---|
+| 容器运行时 | Docker | Podman 4.9.4 + podman-compose 1.3.0 |
+| 部署包路径 | /home/zhangping/clpm-deploy | /home/prod/clpm-deploy |
+| DNS resolver | 127.0.0.11（Docker 内置） | 10.89.0.1（Podman aardvark-dns 网关） |
+| 镜像拉取 | docker pull | podman pull（需先 podman login） |
+| 容器管理 | docker compose | podman-compose |
+
+### Nginx resolver 适配
+
+Podman 不支持 Docker 的 `127.0.0.11` DNS（返回 Connection refused）。部署到 Podman 环境时需修改 `deploy/nginx.conf`：
+
+```nginx
+# Docker 环境
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Podman 环境（server2）
+resolver 10.89.0.1 valid=10s ipv6=off;
+```
+
+`10.89.0.1` 是 Podman 默认桥接网络的网关/aardvark-dns 地址，可通过容器内 `cat /etc/resolv.conf` 确认。修改后需 `podman restart clpm-frontend`（reload 不够，需完全重启容器重新挂载配置文件）。
+
+### 跨环境镜像传输（zpdev→server2 局域网直传）
+
+当 zpdev→gitea 网络不通（registry push 超时）时，可通过局域网直接传输镜像：
+
+```bash
+# 1. 在 zpdev 上生成 SSH key 并添加到 server2
+ssh zpdev 'ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519'
+PUBKEY=$(ssh zpdev 'cat ~/.ssh/id_ed25519.pub')
+sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 "echo '${PUBKEY}' >> ~/.ssh/authorized_keys"
+
+# 2. 通过管道直传镜像（zpdev→server2 局域网，~0.87ms 延迟）
+ssh zpdev 'docker save gitea.zlinfot.xyz:2087/zp/clpm-backend:latest | ssh -o StrictHostKeyChecking=no root@192.168.110.3 "podman load"'
+
+# 3. 重启容器
+sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 'cd /home/prod/clpm-deploy && podman-compose -f docker-compose.prod.yml down && podman-compose -f docker-compose.prod.yml up -d'
+```
+
+### Registry 镜像同步检查
+
+zpdev 本地构建的镜像（RepoDigests 为空）可能未推送到 gitea registry。部署前需验证 registry 上的 `:latest` 是否为最新：
+
+```bash
+# 检查 zpdev 本地镜像 ID
+ssh zpdev 'docker inspect gitea.zlinfot.xyz:2087/zp/clpm-backend:latest --format "{{.Id}}" | cut -c8-19'
+
+# 检查 server2 拉取到的镜像 ID（对比是否一致）
+sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 'podman inspect gitea.zlinfot.xyz:2087/zp/clpm-backend:latest --format "{{.Id}}" | cut -c8-19'
+
+# 如果不一致，说明 registry 上是旧镜像，需从 zpdev 推送或局域网直传
+```
+
+### celery-worker unhealthy（探活误报）
+
+server2 上 `clpm-celery-worker` 容器经常显示 `unhealthy` 状态，但实际正常消费任务。根因是 `celery inspect ping` 探活超时（Podman 环境下更明显）。诊断方式：查看 worker 日志确认任务正在执行 `podman logs --tail 5 clpm-celery-worker`。
