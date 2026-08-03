@@ -59,7 +59,7 @@
 │          └─ 超时失败 → 自动回滚到旧镜像 + 生成排查清单        │
 │                         │                                    │
 │  Step 8  数据库迁移（Alembic）                               │
-│          ├─ 首次部署: alembic stamp head                     │
+│          ├─ 首次部署: alembic stamp head + 加载种子数据       │
 │          └─ 升级部署: alembic upgrade head                   │
 │                         │                                    │
 │  Step 9  TDengine schema 校验                                │

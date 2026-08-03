@@ -16,7 +16,7 @@
 
 PRD v6.1 是产品需求的事实来源；实现契约 v2.3 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-07-29 修订 — 同步 v6.2 Phase 0 Truth First）
+## 当前基线（2026-08-03 修订 — 种子数据 v1.4 + 算法参数迁移 + lefthook 修复）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
@@ -32,7 +32,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.3 是重构后 IA/路�
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
-| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0；**六阶段全部完成**（2026-07-28）。后续（07-29）：3 诊断标签误报修复、整定 Phase 2.1 合并+评审返工、生产部署实弹验证（R1-R6，ops-runbook）、诊断中心问题串修复（版本号竞态/散点回退/fusedConfidence 落库/任务时区迁移 `h8b9c0d1e2f3`/任务页已归档开关/刷新轮换幂等窗口/详情页 SPA 导航白屏）；白屏根因与修复见 ops-runbook §【已结】 |
+| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0；**六阶段全部完成**（2026-07-28）。后续（07-29）：3 诊断标签误报修复、整定 Phase 2.1 合并+评审返工、生产部署实弹验证（R1-R6，ops-runbook）、诊断中心问题串修复（版本号竞态/散点回退/fusedConfidence 落库/任务时区迁移 `h8b9c0d1e2f3`/任务页已归档开关/刷新轮换幂等窗口/详情页 SPA 导航白屏）；白屏根因与修复见 ops-runbook §【已结】。后续（08-03）：种子数据 v1.4 整合（指标契约/诊断规则/DCS/回路精简，`02_seed_data.sql` 自动加载）、算法参数配置从系统管理迁移至性能评估-指标配置（KPI 算法参数 Tab）、lefthook pre-push 门禁修复（FakeRedis 增强 + conftest 全模块 patch，详见 ops-runbook §lefthook pre-push 门禁修复） |
 | **v6.2 可信辨识改造** | `docs/过程文档/clpm-v6.2-product-and-identification-optimization-plan-2026-07-29.md` | **Phase 0 Truth First 已完成**（分支 `codex/v6.2-phase0-truth-first`，2026-07-29）：P0-01~06 安全门禁（盲 fallback/固定 θ/IPDT 错配/低可信放行/闭环 IV 降级/伪 0 风险）+ P0-07/08/10 生产 bootstrap DDL 收敛至 37 表 + P0-039 DCS 下写安全静态门禁；契约基线见 `clpm-v6.2-phase0-contract-baseline-2026-07-29.md`，任务清单见 `clpm-v6.2-implementation-task-checklist-2026-07-29.md`。后端 3456 passed、前端 vitest 434 passed、ruff/alembic/typecheck 全绿。待收口：V62-P0-033 设计文档逐项同步（契约已升 v2.3）、V62-P0-034/037/038 OpenAPI/E2E 基线、Phase 1 数据同轴与 IA 减负 |
 | **回路整定 Phase 2 技术方案** | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **已执行**（分支 `feat/tuning-phase2`，2026-07-28）：历史数据过程对象辨识（ARX/ARMAX/IV 算法栈）+ 异步任务化 + 多 PID 对比仿真；pytest 2840 全绿、`alembic check` 退出码 0 |
 

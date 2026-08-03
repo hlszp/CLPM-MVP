@@ -172,3 +172,35 @@ docker exec clpm-tdengine ls -la /.docker-entrypoint-root-password-changed
 # 查看崩溃日志
 docker logs clpm-tdengine --tail 50
 ```
+
+## lefthook pre-push 门禁修复（2026-08-03）
+
+### 现象
+
+`git push origin main` 失败，lefthook pre-push 钩子返回非零退出码，git 中止推送。需 `LEFTHOOK=0 git push` 才能绕过。
+
+### 根因
+
+lefthook pre-push 钩子串行执行三道门禁（ruff → pytest → check:type），其中 `pytest -x` 因 Redis 连接失败而退出码非 0：
+
+1. **conftest `client` fixture 覆盖不全**：仅 patch 了 6 个模块的 `redis_client`（auth/dashboard/loop/rate_limit/idempotency + app.core.redis），遗漏 `tuning_progress`/`performance`/`task_tracker`/`diagnosis_rule`/`dataplanner`/`tags`/`tasks`/`health`/`ws_realtime`/`data_import`/`realtime_subscriber` 等新模块。这些模块做 `from app.core.redis import redis_client` 在模块级绑定了真实 proxy，patch `app.core.redis.redis_client` 不影响已绑定的引用。
+
+2. **FakeRedis 方法缺失**：只有 string/set 操作，缺少 `hset`/`hgetall`/`zadd`/`eval`/`lpush`/`lrange` 等方法。即使 patch 到新模块，调用 hash/sorted-set 操作仍 AttributeError。
+
+3. **`test_import_with_task_id_cancelled` 漏 mock**：`_update_task_cas` 在 `import_history_data` 入口处被调用（直连 Redis `eval` Lua CAS 脚本），测试只 mock 了 `_is_task_cancelled` 和 `_update_task`，漏了 `_update_task_cas`。
+
+### 修复
+
+| 改动 | 文件 | 说明 |
+|---|---|---|
+| FakeRedis 补齐方法 | `backend/tests/conftest.py` | hash（hset/hget/hgetall/hdel/hincrby）、sorted set（zadd/zrange/zrem/zcard）、list（lpush/lrange/ltrim）、publish（no-op）、eval（返回 `["UPDATED", ""]` 模拟 CAS 成功） |
+| _FakePipeline 增强 | 同上 | 新增 hset/expire/zadd 批量操作支持 |
+| client fixture 全模块 patch | 同上 | 用 `ExitStack` 批量 patch 全部 15 个模块级 `redis_client` 导入；函数内懒导入的模块（loop_data/tags/tuning/kpi_calc）由 `app.core.redis.redis_client` patch 覆盖 |
+| 测试补 mock | `backend/tests/test_services/test_data_import.py` | `test_import_with_task_id_cancelled` 补 `_update_task_cas` mock |
+
+### 维护要点
+
+- **新增模块导入 `redis_client` 时**：若为模块级 `from app.core.redis import redis_client`，必须同步加入 `conftest._REDIS_CLIENT_MODULES` 列表；若为函数内懒导入则无需（已由 `app.core.redis.redis_client` patch 覆盖）。
+- **验证命令**：`grep -rn "^from app.core.redis import redis_client" app/ --include="*.py"` 检查模块级导入。
+- **FakeRedis 新增方法**：若代码新增 Redis 操作（如 `hincrby`/`zincrby`/`srem`），需同步在 FakeRedis 中实现，否则 API 测试 AttributeError。
+- **eval（Lua 脚本）**：FakeRedis 统一返回 `["UPDATED", ""]` 模拟成功；需验证 BLOCKED/MISSING 分支的测试应在函数级 mock `_update_task_cas` 等，不依赖 FakeRedis 的 eval。
