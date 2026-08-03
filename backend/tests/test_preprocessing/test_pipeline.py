@@ -45,6 +45,8 @@ def _make_config(
     range_min: float = 0.0,
     range_max: float = 100.0,
     loop_id: str = "L001",
+    op_range_min: float = 0.0,
+    op_range_max: float = 100.0,
 ) -> LoopPreprocessConfig:
     """构造预处理配置。"""
     return LoopPreprocessConfig(
@@ -52,6 +54,8 @@ def _make_config(
         control_type=control_type,
         range_min=range_min,
         range_max=range_max,
+        op_range_min=op_range_min,
+        op_range_max=op_range_max,
     )
 
 
@@ -296,7 +300,7 @@ class TestNormalization:
     """PV/SP/OP 量程归一化测试。"""
 
     def test_pv_normalized_to_percentage(self):
-        """PV/SP/OP 归一化为 0~100 百分比。"""
+        """PV/SP 用 PV 量程、OP 用 OP 量程归一化为 0~100 百分比。"""
         config = _make_config(ControlType.FLOW, range_min=0.0, range_max=200.0)
         pipeline = PreprocessingPipeline(config)
         n = 7
@@ -305,16 +309,18 @@ class TestNormalization:
             signals={
                 "pv": [100.0, 100.4, 100.8, 101.2, 101.6, 102.0, 102.4],
                 "sp": [100.0, 100.4, 100.8, 101.2, 101.6, 102.0, 102.4],
-                "op": [100.0, 100.4, 100.8, 101.2, 101.6, 102.0, 102.4],
+                "op": [50.0, 50.2, 50.4, 50.6, 50.8, 51.0, 51.2],
             },
         )
         block = pipeline.process(raw, TagGroup.BASE)
 
-        # 归一化后：100→50, 100.4→50.2, ...
+        # PV/SP 用 PV 量程（0-200）归一化：100→50, 100.4→50.2
         assert math.isclose(block.signals["pv"][0], 50.0, abs_tol=1e-6)
         assert math.isclose(block.signals["pv"][1], 50.2, abs_tol=1e-6)
         assert math.isclose(block.signals["sp"][0], 50.0, abs_tol=1e-6)
+        # OP 用 OP 量程（0-100）归一化：50→50, 50.2→50.2（恒等变换）
         assert math.isclose(block.signals["op"][0], 50.0, abs_tol=1e-6)
+        assert math.isclose(block.signals["op"][1], 50.2, abs_tol=1e-6)
 
     def test_nan_preserved_in_normalization(self):
         """NaN 值在归一化后保持原样。"""
@@ -344,6 +350,97 @@ class TestNormalization:
         # 归一化后值不变
         for i in range(7):
             assert math.isclose(block.signals["pv"][i], 50.0 + i * 0.1, abs_tol=1e-6)
+
+    def test_op_uses_own_range_not_pv_range(self):
+        """OP 用 OP 自身量程归一化，不受 PV 量程影响（90PIC 场景）。
+
+        PV 量程 0-5 MPa，OP 量程 0-100%：
+        OP=49 归一化后应为 49（用 OP 量程），而非 980（用 PV 量程）。
+        """
+        config = _make_config(
+            ControlType.PRESSURE,
+            range_min=0.0,
+            range_max=5.0,
+            op_range_min=0.0,
+            op_range_max=100.0,
+        )
+        pipeline = PreprocessingPipeline(config)
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(5),
+            signals={
+                "pv": [2.5, 2.5, 2.5, 2.5, 2.5],
+                "sp": [2.5, 2.5, 2.5, 2.5, 2.5],
+                "op": [49.0, 49.0, 49.0, 49.0, 49.0],
+            },
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+        # PV/SP 用 PV 量程归一化：2.5/5*100=50
+        assert math.isclose(block.signals["pv"][0], 50.0, abs_tol=1e-6)
+        assert math.isclose(block.signals["sp"][0], 50.0, abs_tol=1e-6)
+        # OP 用 OP 量程归一化：49/100*100=49（不是 980）
+        assert math.isclose(block.signals["op"][0], 49.0, abs_tol=1e-6)
+
+    def test_op_not_out_of_range_when_pv_range_is_small(self):
+        """PV 量程小时 OP 不应被误标 OUT_OF_RANGE（90PIC51212A 场景复现）。"""
+        config = _make_config(
+            ControlType.PRESSURE,
+            range_min=0.0,
+            range_max=5.0,
+            op_range_min=0.0,
+            op_range_max=100.0,
+        )
+        pipeline = PreprocessingPipeline(config)
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(7),
+            signals={
+                "pv": [2.5 + i * 0.01 for i in range(7)],
+                "sp": [2.5 + i * 0.01 for i in range(7)],
+                "op": [49.0 + i * 0.1 for i in range(7)],
+            },
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+        # OP 全部有效，不应有 OUT_OF_RANGE
+        assert all(block.validity["op_valid"])
+        for reasons in block.outlier_reasons["op"]:
+            assert OutlierReason.OUT_OF_RANGE.value not in reasons
+
+    def test_op_out_of_range_uses_op_range(self):
+        """OP 超 OP 自身量程仍被标记 OUT_OF_RANGE（回归保护）。"""
+        config = _make_config(
+            ControlType.PRESSURE,
+            range_min=0.0,
+            range_max=5.0,
+            op_range_min=0.0,
+            op_range_max=100.0,
+        )
+        pipeline = PreprocessingPipeline(config)
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(5),
+            signals={"op": [50.0, 50.0, 120.0, 50.0, 50.0]},
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+        # OP=120 归一化后 120 > 100 → OUT_OF_RANGE
+        assert OutlierReason.OUT_OF_RANGE.value in block.outlier_reasons["op"][2]
+        assert block.validity["op_valid"][2] is False
+
+    def test_op_normalized_with_non_standard_range(self):
+        """OP 非标准量程（0-50）正确归一化：OP=25 → 50。"""
+        config = _make_config(
+            ControlType.PRESSURE,
+            range_min=0.0,
+            range_max=5.0,
+            op_range_min=0.0,
+            op_range_max=50.0,
+        )
+        pipeline = PreprocessingPipeline(config)
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(3),
+            signals={"op": [25.0, 30.0, 40.0]},
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+        assert math.isclose(block.signals["op"][0], 50.0, abs_tol=1e-6)
+        assert math.isclose(block.signals["op"][1], 60.0, abs_tol=1e-6)
+        assert math.isclose(block.signals["op"][2], 80.0, abs_tol=1e-6)
 
 
 # ---------------------------------------------------------------------------

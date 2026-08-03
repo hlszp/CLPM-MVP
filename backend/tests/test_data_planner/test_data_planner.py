@@ -54,6 +54,8 @@ def _make_config_loader(
     range_min: float = 0.0,
     range_max: float = 100.0,
     config_version: str = "cfg_1000",
+    op_range_min: float = 0.0,
+    op_range_max: float = 100.0,
 ):
     """构造 mock config_loader."""
 
@@ -64,6 +66,8 @@ def _make_config_loader(
             range_min=range_min,
             range_max=range_max,
             config_version=config_version,
+            op_range_min=op_range_min,
+            op_range_max=op_range_max,
         )
 
     return loader

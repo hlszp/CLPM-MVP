@@ -248,39 +248,53 @@ class PreprocessingPipeline:
     # -------------------------------------------------------------------
 
     def _step3_normalize(self, signals: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        """步骤③：PV/SP/OP 按量程归一化为百分比（0~100）.
+        """步骤③：PV/SP/OP 按各自量程归一化为百分比（0~100）.
 
         归一化公式：normalized = (value - range_min) / (range_max - range_min) × 100
+        - PV/SP 用 PV tag 量程（``config.range_min/range_max``）
+        - OP 用 OP tag 量程（``config.op_range_min/op_range_max``），因为 OP 是百分比
+          输出（0-100%），物理量程与 PV 不同，共用 PV 量程会导致归一化越界
         MODE 和 PV_QUALITY 不归一化（离散值/质量码）。
 
         设计依据：算法说明 §3.4.2 步骤③
         """
-        range_span = self.config.range_max - self.config.range_min
-        if abs(range_span) < 1e-9:
+        pv_span = self.config.range_max - self.config.range_min
+        op_span = self.config.op_range_max - self.config.op_range_min
+        if abs(pv_span) < 1e-9:
             logger.warning(
-                "Range span is zero (min=%s, max=%s), skip normalization",
+                "PV range span is zero (min=%s, max=%s), skip PV/SP normalization",
                 self.config.range_min,
                 self.config.range_max,
             )
-            return signals
+        if abs(op_span) < 1e-9:
+            logger.warning(
+                "OP range span is zero (min=%s, max=%s), skip OP normalization",
+                self.config.op_range_min,
+                self.config.op_range_max,
+            )
 
         normalized: dict[str, list[Any]] = {}
         for tag_name, values in signals.items():
-            if tag_name in _NORMALIZABLE_SIGNALS:
-                norm_vals: list[Any] = []
-                for v in values:
-                    if is_nan_or_inf(v):
-                        norm_vals.append(v)  # NaN 保持原样
-                    else:
-                        try:
-                            norm_vals.append(
-                                (float(v) - self.config.range_min) / range_span * 100.0
-                            )
-                        except (ValueError, TypeError):
-                            norm_vals.append(v)
-                normalized[tag_name] = norm_vals
+            if tag_name == "op":
+                r_min, r_span = self.config.op_range_min, op_span
+            elif tag_name in ("pv", "sp"):
+                r_min, r_span = self.config.range_min, pv_span
             else:
                 normalized[tag_name] = list(values)
+                continue
+            if abs(r_span) < 1e-9:
+                normalized[tag_name] = list(values)
+                continue
+            norm_vals: list[Any] = []
+            for v in values:
+                if is_nan_or_inf(v):
+                    norm_vals.append(v)  # NaN 保持原样
+                else:
+                    try:
+                        norm_vals.append((float(v) - r_min) / r_span * 100.0)
+                    except (ValueError, TypeError):
+                        norm_vals.append(v)
+            normalized[tag_name] = norm_vals
         return normalized
 
     # -------------------------------------------------------------------

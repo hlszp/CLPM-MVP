@@ -926,6 +926,8 @@ class DataPlanner:
                 range_min=0.0,
                 range_max=100.0,
                 config_version="v1",
+                op_range_min=0.0,
+                op_range_max=100.0,
             )
 
         from sqlalchemy import select
@@ -956,11 +958,27 @@ class DataPlanner:
                 if pv_tag.range_max is not None:
                     range_max = float(pv_tag.range_max)
 
-        # config_version 基于 loop.updated_at（配置变更时自动递增）
+        # 查询 OP tag 的量程（OP 归一化用，OP 是百分比输出与 PV 物理量程不同）
+        op_range_min = 0.0
+        op_range_max = 100.0
+        op_mapping = mappings.get("OP")
+        if op_mapping:
+            op_tag_result = await self._db.execute(
+                select(TagRegistry).where(TagRegistry.id == str(op_mapping.tag_id))
+            )
+            op_tag = op_tag_result.scalar_one_or_none()
+            if op_tag:
+                if op_tag.range_min is not None:
+                    op_range_min = float(op_tag.range_min)
+                if op_tag.range_max is not None:
+                    op_range_max = float(op_tag.range_max)
+
+        # config_version 基于 loop.updated_at + OP 量程（配置变更或 OP 量程变更时自动递增）
+        op_suffix = f"opr{op_range_min}_{op_range_max}"
         if loop and loop.updated_at:
-            config_version = f"cfg_{int(loop.updated_at.timestamp())}"
+            config_version = f"cfg_{int(loop.updated_at.timestamp())}_{op_suffix}"
         else:
-            config_version = "v1"
+            config_version = f"v1_{op_suffix}"
 
         # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC）来自 loop_ledger.control_type，
         # 供指标计算器读取算法参数；None 时计算器回落 STABLE 默认值
@@ -973,6 +991,8 @@ class DataPlanner:
             range_max=range_max,
             config_version=config_version,
             response_category=response_category,
+            op_range_min=op_range_min,
+            op_range_max=op_range_max,
         )
 
 

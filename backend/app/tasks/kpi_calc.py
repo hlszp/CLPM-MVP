@@ -1780,6 +1780,24 @@ async def _batch_load_loop_configs(db, loop_ids: list[str]) -> dict[str, dict]:
                 if cfg["op_upper"] is None and op_max is not None:
                     cfg["op_upper"] = op_max
 
+    # 5b. 合并 OP tag 量程到 configs（OP 归一化用）+ config_version 纳入 OP 量程
+    # OP 是百分比输出（0-100%），物理量程与 PV 不同，需用 OP 自身量程归一化；
+    # config_version 拼接 OP 量程确保部署修复后 L1/L2 缓存自动失效
+    for loop_id, tags in loop_tags.items():
+        if loop_id not in configs:
+            continue
+        cfg = configs[loop_id]
+        op_tag_id = tags.get("OP")
+        if op_tag_id and op_tag_id in op_tag_ranges:
+            op_min, op_max = op_tag_ranges[op_tag_id]
+            cfg["op_range_min"] = op_min if op_min is not None else 0.0
+            cfg["op_range_max"] = op_max if op_max is not None else 100.0
+        else:
+            cfg["op_range_min"] = 0.0
+            cfg["op_range_max"] = 100.0
+        base_ver = cfg["config_version"]
+        cfg["config_version"] = f"{base_ver}_opr{cfg['op_range_min']}_{cfg['op_range_max']}"
+
     logger.info(
         "批量预加载回路配置: %d 回路, %d PV tags, %d OP tags",
         len(configs),
@@ -1805,6 +1823,8 @@ def _make_config_loader(loop_cfg: dict | None):
                 range_min=0.0,
                 range_max=100.0,
                 config_version="v1",
+                op_range_min=0.0,
+                op_range_max=100.0,
             )
         return LoopPreprocessConfig(
             loop_id=loop_id,
@@ -1814,6 +1834,9 @@ def _make_config_loader(loop_cfg: dict | None):
             config_version=loop_cfg.get("config_version", "v1"),
             # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC）来自 loop_ledger.control_type
             response_category=loop_cfg.get("control_type"),
+            # OP tag 量程（OP 归一化用，默认 0-100 百分比输出）
+            op_range_min=loop_cfg.get("op_range_min", 0.0),
+            op_range_max=loop_cfg.get("op_range_max", 100.0),
         )
 
     return _loader

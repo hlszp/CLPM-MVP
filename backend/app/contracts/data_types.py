@@ -136,11 +136,13 @@ class LoopPreprocessConfig:
     Attributes:
         loop_id: 回路 ID
         control_type: 控制类型（FC/PC/TC/LC/CC，决定采样频率与异常值阈值表）
-        range_min: 量程下限（归一化 + 超量程检测用）
-        range_max: 量程上限
+        range_min: PV tag 量程下限（PV/SP 归一化 + 超量程检测用）
+        range_max: PV tag 量程上限
         config_version: 配置版本号（缓存失效依据）
         response_category: 响应类别（STABLE/SLOW/FAST/LOGIC，来自 loop_ledger.control_type，
             用于算法参数配置查询；None 时计算器回落 STABLE 默认值）
+        op_range_min: OP tag 量程下限（OP 归一化用，默认 0.0 百分比输出）
+        op_range_max: OP tag 量程上限（OP 归一化用，默认 100.0 百分比输出）
     """
 
     loop_id: str
@@ -149,6 +151,8 @@ class LoopPreprocessConfig:
     range_max: float
     config_version: str = "v1"
     response_category: str | None = None
+    op_range_min: float = 0.0
+    op_range_max: float = 100.0
 
 
 # ---------------------------------------------------------------------------
