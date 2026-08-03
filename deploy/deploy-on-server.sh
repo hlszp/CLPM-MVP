@@ -535,6 +535,7 @@ compose_prod() {
 }
 backend_exec() { compose_prod exec -T backend "$@"; }
 tdengine_exec() { compose_prod exec -T tdengine "$@"; }
+postgres_exec() { compose_prod exec -T postgres "$@"; }
 
 # ------------------------------------------------------------
 # Step 2: 记录部署前镜像 ID（回滚锚点）

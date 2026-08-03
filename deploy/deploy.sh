@@ -163,6 +163,11 @@ tdengine_exec() {
     compose_prod exec -T tdengine "$@"
 }
 
+# PostgreSQL 容器命令执行器（lib-migrate.sh load_seed_data 使用）
+postgres_exec() {
+    compose_prod exec -T postgres "$@"
+}
+
 SIGNALR_ENABLED=$(grep -E "^SIGNALR_ENABLED=" "$ENV_FILE" | cut -d'=' -f2- | tr '[:upper:]' '[:lower:]')
 if [ "$SIGNALR_ENABLED" = "true" ]; then
     check_required_no_placeholder "SIGNALR_HUB_URL"
@@ -228,11 +233,13 @@ echo ""
 # 7. 数据库版本同步
 # ------------------------------------------------------------
 # PostgreSQL 容器首次启动时已通过 docker-entrypoint-initdb.d 自动执行
-# 01_schema.sql（建表）和 02_seed_data.sql（种子数据），无需手工 DDL。
+# 01_schema.sql（建表）。02_seed_data.sql（种子数据）由 entrypoint 首次执行后，
+# 后续部署由 alembic_sync_head → load_seed_data 显式重载（v1.5 幂等，ON CONFLICT）。
 #
 # Alembic 版本同步策略（公共函数 alembic_sync_head，deploy/lib-migrate.sh）：
 #   - 首次部署（alembic_version 表不存在）：stamp head 标记当前版本
 #   - 后续升级（alembic_version 表已存在）：upgrade head 执行增量迁移
+#   - 两种场景均加载种子数据（load_seed_data，修复升级部署种子数据缺失）
 #   - 任一步失败即中止部署（set -e），不允许新代码跑在旧 schema 上
 echo "4. 数据库版本同步（部署=迁移一体，失败即中止）..."
 alembic_sync_head

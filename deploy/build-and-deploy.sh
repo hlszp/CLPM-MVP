@@ -578,6 +578,12 @@ if [ "$DO_DEPLOY" = true ]; then
         $SSH_PREFIX "docker exec -i clpm-backend $*"
     }
 
+    # PostgreSQL 容器命令执行器（lib-migrate.sh load_seed_data 使用）：
+    # psql 参数不含空格，与 backend_exec 同模式直接用 $* 即可。
+    postgres_exec() {
+        $SSH_PREFIX "docker exec -i clpm-postgres $*"
+    }
+
     if alembic_sync_head; then
         log_info "数据库版本同步完成 ✓"
     else

@@ -60,7 +60,7 @@
 │                         │                                    │
 │  Step 8  数据库迁移（Alembic）                               │
 │          ├─ 首次部署: alembic stamp head + 加载种子数据       │
-│          └─ 升级部署: alembic upgrade head                   │
+│          └─ 升级部署: alembic upgrade head + 加载种子数据     │
 │                         │                                    │
 │  Step 9  TDengine schema 校验                                │
 │          └─ 确认 clpm_ts 数据库和 st_loop_data 超级表存在    │
