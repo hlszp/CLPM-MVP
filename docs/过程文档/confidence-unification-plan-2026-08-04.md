@@ -1,6 +1,6 @@
 # CLPM 可信度计算统一与简化改进方案（草案 v1.0）
 
-> 日期：2026-08-04 ｜ 基线：实现契约 v2.3 / PRD v6.1 / UI-UX v6.1 ｜ 状态：**草案，待评审**
+> 日期：2026-08-04 ｜ 基线：实现契约 v2.3 / PRD v6.1 / UI-UX v6.1 ｜ 状态：**已实施完成（Phase 1/2/3 全部验收通过，2026-08-04）**
 > 范围：数据预处理管道、可信度评估器、KPI 计算、诊断引擎、回路整定、可信度落库与前端展示
 > 性质：**做减法的架构收敛**——统一 valid_rate 口径、可信度回归回路级单一值、消除三链路预处理分叉
 
@@ -518,6 +518,8 @@ const confidenceLevel = computed(() => {
 | P3-4 | 前端 tuning API 类型对齐（ConfidenceLevel → AlgorithmConfidenceLevel） | check:type 通过 | ✅ |
 
 **门禁**：`pytest -q` 3722 passed + ruff check+format 全绿 + `alembic check` 退出码 0 + `check:type` 2/2 通过 + 22 个多 worker 阈值同步测试全绿。✅
+
+**收口验证（2026-08-04）**：新增端到端验证脚本 `backend/scripts/verify_confidence_phase23.py`（父进程编排 + 子进程订阅真实 Redis），7/7 断言全绿——跨进程阈值同步、旧版本号去重、濒临 INCONCLUSIVE 告警区间均生效。同时在阈值同步/告警核心分支增加带 `pid` 的详细 logger（`[confidence-sync pid=X]`），便于排查多进程间 Redis pub/sub 消息传递问题；并在实时后端（uvicorn + 4 个 Celery pool worker）重启后确认全部 5 个订阅者接收并处理广播（`已应用 → 旧版本跳过 → 恢复`）。提交：`cf3e8207`。
 
 ---
 
