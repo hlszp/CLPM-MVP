@@ -238,11 +238,7 @@ export const useTuningStore = defineStore('tuning', () => {
   }
 
   /** 设置模型来源（Phase 0 门禁字段） */
-  function setModelSource(
-    source: string,
-    recordId = '',
-    confirmed = false,
-  ) {
+  function setModelSource(source: string, recordId = '', confirmed = false) {
     modelSource.value = source;
     sourceRecordId.value = recordId;
     riskConfirmed.value = confirmed;
@@ -303,7 +299,10 @@ export const useTuningStore = defineStore('tuning', () => {
    * 轮询任务进度（启动定时器，每 2s 查一次）
    * 任务终态（SUCCESS/FAILED）自动停止轮询
    */
-  function startPolling(taskId: string, onDone?: (progress: TuningApi.TaskProgress) => void) {
+  function startPolling(
+    taskId: string,
+    onDone?: (progress: TuningApi.TaskProgress) => void,
+  ) {
     stopPolling();
     pollTimer = setInterval(async () => {
       try {
@@ -312,7 +311,8 @@ export const useTuningStore = defineStore('tuning', () => {
         if (progress.status === 'SUCCESS') {
           // 任务成功，提取辨识结果
           if (progress.result) {
-            identifyResult.value = progress.result as unknown as TuningApi.IdentifyHistoryResult;
+            identifyResult.value =
+              progress.result as unknown as TuningApi.IdentifyHistoryResult;
           }
           stopPolling();
           onDone?.(progress);

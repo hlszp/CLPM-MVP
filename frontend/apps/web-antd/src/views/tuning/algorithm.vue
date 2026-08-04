@@ -74,30 +74,32 @@ const sourceOptions: { label: string; value: TuningApi.ModelSource }[] = [
   { label: '人工模型（需确认风险）', value: 'MANUAL' },
 ];
 
-const modelUsageGate = computed<{ blocked: boolean; reason: string | null }>(() => {
-  if (!modelSource.value) {
-    return {
-      blocked: true,
-      reason: '必须明确模型来源并提供可验证凭据；旧版裸模型请求已停止放行。',
-    };
-  }
-  if (modelSource.value === 'MANUAL') {
-    if (!riskConfirmed.value) {
+const modelUsageGate = computed<{ blocked: boolean; reason: string | null }>(
+  () => {
+    if (!modelSource.value) {
       return {
         blocked: true,
-        reason: '人工模型必须显式确认模型与整定风险后方可执行。',
+        reason: '必须明确模型来源并提供可验证凭据；旧版裸模型请求已停止放行。',
+      };
+    }
+    if (modelSource.value === 'MANUAL') {
+      if (!riskConfirmed.value) {
+        return {
+          blocked: true,
+          reason: '人工模型必须显式确认模型与整定风险后方可执行。',
+        };
+      }
+      return { blocked: false, reason: null };
+    }
+    if (!sourceRecordId.value) {
+      return {
+        blocked: true,
+        reason: '该来源必须提供服务端可验证的 sourceRecordId。',
       };
     }
     return { blocked: false, reason: null };
-  }
-  if (!sourceRecordId.value) {
-    return {
-      blocked: true,
-      reason: '该来源必须提供服务端可验证的 sourceRecordId。',
-    };
-  }
-  return { blocked: false, reason: null };
-});
+  },
+);
 
 const canTune = computed(() => !modelUsageGate.value.blocked);
 
@@ -280,7 +282,9 @@ async function handleTune() {
       modelSource: modelSource.value,
       riskConfirmed: riskConfirmed.value,
       // 人工模型不得绑定 sourceRecordId；记录型来源必须携带可验证凭据
-      ...(modelSource.value && modelSource.value !== 'MANUAL' && sourceRecordId.value
+      ...(modelSource.value &&
+      modelSource.value !== 'MANUAL' &&
+      sourceRecordId.value
         ? { sourceRecordId: sourceRecordId.value }
         : {}),
     });
@@ -291,7 +295,8 @@ async function handleTune() {
     hide();
     errorState.value = {
       message: 'PID 整定失败',
-      detail: err instanceof Error ? err.message : '请检查模型参数和算法配置后重试',
+      detail:
+        err instanceof Error ? err.message : '请检查模型参数和算法配置后重试',
     };
   } finally {
     loading.value = false;
@@ -317,7 +322,9 @@ function handleGoSimulation() {
       recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
       // 模型来源契约贯穿到仿真页（P0-04）
       ...(modelSource.value ? { modelSource: modelSource.value } : {}),
-      ...(modelSource.value && modelSource.value !== 'MANUAL' && sourceRecordId.value
+      ...(modelSource.value &&
+      modelSource.value !== 'MANUAL' &&
+      sourceRecordId.value
         ? { sourceRecordId: sourceRecordId.value }
         : {}),
       ...(modelSource.value
@@ -588,7 +595,11 @@ onMounted(() => {
 
         <!-- P1-022：动态算法参数为高级参数，仅 ADMIN/EXPERT 可见 -->
         <Collapse
-          v-if="canEditAdvancedParams && currentMethod && currentMethod.params.length > 0"
+          v-if="
+            canEditAdvancedParams &&
+            currentMethod &&
+            currentMethod.params.length > 0
+          "
           :bordered="false"
           class="mt-3 advanced-params-collapse"
         >

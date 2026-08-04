@@ -73,7 +73,15 @@ vi.mock('#/components/clpm', () => ({
   },
   // P1-023：状态覆盖组件 mock，透传 props 以便断言
   ClpmStateOverlay: {
-    props: ['status', 'emptyDescription', 'errorMessage', 'errorDetail', 'loadingTip', 'retryText', 'retryable'],
+    props: [
+      'status',
+      'emptyDescription',
+      'errorMessage',
+      'errorDetail',
+      'loadingTip',
+      'retryText',
+      'retryable',
+    ],
     emits: ['retry'],
     template: `<div class="state-overlay-stub" :data-status="status">
       <span v-if="status === 'empty'" class="overlay-empty">{{ emptyDescription }}</span>
@@ -141,7 +149,8 @@ vi.mock('ant-design-vue', () => ({
   },
   CollapsePanel: {
     props: ['header', 'key'],
-    template: '<div class="collapse-panel-stub"><div>{{ header }}</div><slot /></div>',
+    template:
+      '<div class="collapse-panel-stub"><div>{{ header }}</div><slot /></div>',
   },
   DatePicker: {
     RangePicker: { template: '<div />' },
@@ -223,7 +232,7 @@ function findButtonByText(
   return wrapper.findAll('button').find((node) => node.text().includes(text));
 }
 
-describe('TuningModel Phase 0 历史辨识边界', () => {
+describe('tuningModel Phase 0 历史辨识边界', () => {
   beforeEach(() => {
     getLoopListApiMock.mockReset();
     identifyModelApiMock.mockReset();
@@ -475,7 +484,7 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
     expect(wrapper.text()).toContain('记录 ID');
   });
 
-  it('API 类型声明历史候选与 theta 来源', () => {
+  it('aPI 类型声明历史候选与 theta 来源', () => {
     expectTypeOf<
       TuningApi.IdentifyHistoryRequest['candidateModelTypes']
     >().toEqualTypeOf<Array<'FOPDT' | 'SOPDT' | 'IPDT'> | undefined>();
@@ -490,7 +499,7 @@ describe('TuningModel Phase 0 历史辨识边界', () => {
   });
 });
 
-describe('TuningModel 状态覆盖（V62-P1-023）', () => {
+describe('tuningModel 状态覆盖（V62-P1-023）', () => {
   beforeEach(() => {
     getLoopListApiMock.mockReset();
     identifyModelApiMock.mockReset();
@@ -625,4 +634,3 @@ describe('TuningModel 状态覆盖（V62-P1-023）', () => {
     expect(wrapper.find('.overlay-error').exists()).toBe(false);
   });
 });
-

@@ -370,7 +370,8 @@ async function handleIdentify() {
       hide();
       errorState.value = {
         message: '阶跃实验辨识失败',
-        detail: err instanceof Error ? err.message : '请检查回路数据和时间窗后重试',
+        detail:
+          err instanceof Error ? err.message : '请检查回路数据和时间窗后重试',
       };
     } finally {
       loading.value = false;
@@ -746,7 +747,9 @@ watch(
 
       <!-- P1-023：空状态覆盖（无结果/无进度/无错误/无片段时） -->
       <ClpmDataCanvas
-        v-else-if="!currentResult && !isInconclusive && !taskProgress && !segments"
+        v-else-if="
+          !currentResult && !isInconclusive && !taskProgress && !segments
+        "
         title="辨识结果"
         class="mb-4"
       >

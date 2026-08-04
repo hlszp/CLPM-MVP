@@ -42,7 +42,11 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { comparePidsApi, createTuningTaskApi, simulateTuningApi } from '#/api/tuning';
+import {
+  comparePidsApi,
+  createTuningTaskApi,
+  simulateTuningApi,
+} from '#/api/tuning';
 import {
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
@@ -162,9 +166,12 @@ const { renderEcharts } = useEcharts(chartRef);
 const metricColumns = computed(() => {
   if (compareMode.value) {
     // 多 PID 对比模式：动态生成列
-    const cols: { title: string; dataIndex: string; key: string; width?: number }[] = [
-      { title: '性能指标', dataIndex: 'name', key: 'name', width: 120 },
-    ];
+    const cols: {
+      title: string;
+      dataIndex: string;
+      key: string;
+      width?: number;
+    }[] = [{ title: '性能指标', dataIndex: 'name', key: 'name', width: 120 }];
     pidCandidates.value.forEach((c, idx) => {
       cols.push({
         title: c.label,
@@ -553,7 +560,10 @@ async function handleSimulate() {
       hide();
       errorState.value = {
         message: '多 PID 对比仿真失败',
-        detail: err instanceof Error ? err.message : '请检查模型参数和候选 PID 后重试',
+        detail:
+          err instanceof Error
+            ? err.message
+            : '请检查模型参数和候选 PID 后重试',
       };
     } finally {
       loading.value = false;
@@ -605,7 +615,8 @@ async function handleSimulate() {
     hide();
     errorState.value = {
       message: '闭环仿真失败',
-      detail: err instanceof Error ? err.message : '请检查模型参数和 PID 配置后重试',
+      detail:
+        err instanceof Error ? err.message : '请检查模型参数和 PID 配置后重试',
     };
   } finally {
     loading.value = false;
@@ -945,11 +956,12 @@ watch(isDark, () => {
     <ClpmDataCanvas class="mt-4" title="仿真模式">
       <div class="flex items-center gap-4">
         <span class="text-sm text-gray-600">双 PID 对比</span>
-        <a-switch v-model:checked="compareMode" @change="handleToggleCompareMode" />
+        <a-switch
+          v-model:checked="compareMode"
+          @change="handleToggleCompareMode"
+        />
         <span class="text-sm text-gray-600">多 PID 对比（Phase 2）</span>
-        <span
-          class="ml-4 rounded bg-blue-50 px-2 py-1 text-xs text-blue-600"
-        >
+        <span class="ml-4 rounded bg-blue-50 px-2 py-1 text-xs text-blue-600">
           {{
             compareMode
               ? `当前：多 PID 对比（${pidCandidates.length} 组候选）`
@@ -975,7 +987,11 @@ watch(isDark, () => {
         />
 
         <!-- 风险提示区（仅双 PID 模式） -->
-        <Card v-if="simulationResult && !compareMode" size="small" title="风险提示">
+        <Card
+          v-if="simulationResult && !compareMode"
+          size="small"
+          title="风险提示"
+        >
           <Descriptions :column="{ xs: 1, sm: 3 }" size="small">
             <DescriptionsItem label="风险等级">
               <Tag v-if="riskLevel" :color="riskLevelColorMap[riskLevel]">
@@ -1174,7 +1190,9 @@ watch(isDark, () => {
               </div>
 
               <!-- 新增候选 -->
-              <div class="mt-3 rounded border border-dashed border-gray-300 p-3">
+              <div
+                class="mt-3 rounded border border-dashed border-gray-300 p-3"
+              >
                 <div class="mb-2 text-xs text-gray-500">添加新候选 PID</div>
                 <FormItem label="标签" class="mb-2">
                   <a-input

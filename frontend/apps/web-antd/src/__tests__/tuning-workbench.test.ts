@@ -66,7 +66,7 @@ vi.mock('#/components/clpm', () => ({
   ClpmToolbarButton: { template: '<button />' },
 }));
 
-describe('TuningWorkbench', () => {
+describe('tuningWorkbench', () => {
   beforeEach(() => {
     getTuningHistoryApiMock.mockReset();
     getTuningHistoryApiMock.mockResolvedValue({

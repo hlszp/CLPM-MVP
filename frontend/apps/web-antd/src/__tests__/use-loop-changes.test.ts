@@ -128,7 +128,7 @@ describe('buildUpdateDiff', () => {
     });
   });
 
-  it('OP 限位：原默认 → 自定义时生成条目；勾选使用默认时按「默认」对比', () => {
+  it('oP 限位：原默认 → 自定义时生成条目；勾选使用默认时按「默认」对比', () => {
     const orig = makeLoop({
       opOutputLowerLimit: null,
       opOutputUpperLimit: null,

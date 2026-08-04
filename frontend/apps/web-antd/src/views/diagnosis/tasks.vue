@@ -718,7 +718,10 @@ onBeforeUnmount(() => {
           :options="timeWindowOptions"
           @change="handleSearch"
         />
-        <Checkbox v-model:checked="query.includeArchived" @change="handleSearch">
+        <Checkbox
+          v-model:checked="query.includeArchived"
+          @change="handleSearch"
+        >
           显示已归档
         </Checkbox>
         <Button type="primary" :loading="loading" @click="handleSearch">
@@ -802,7 +805,9 @@ onBeforeUnmount(() => {
             </Tooltip>
           </template>
           <template v-else-if="column.key === 'status'">
-            <div class="flex items-center justify-center gap-1 whitespace-nowrap">
+            <div
+              class="flex items-center justify-center gap-1 whitespace-nowrap"
+            >
               <Tag
                 :color="
                   statusConfig[record.status as DiagnosisApi.TaskStatus]
@@ -815,7 +820,11 @@ onBeforeUnmount(() => {
                 }}
               </Tag>
               <!-- 已归档标识（开启"显示已归档"后区分历史任务） -->
-              <Tag v-if="record.isArchived" color="default" style="font-size: 11px">
+              <Tag
+                v-if="record.isArchived"
+                color="default"
+                style="font-size: 11px"
+              >
                 已归档
               </Tag>
               <!-- RUNNING 状态显示进度条 -->

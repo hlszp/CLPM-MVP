@@ -51,18 +51,18 @@ vi.mock('#/api', () => ({
 
 const { resolveHomePath, ROLE_DEFAULT_HOME } = await import('#/store/auth');
 
-describe('ROLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
-  it('EXPERT 默认首页为 /diagnosis', () => {
+describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
+  it('eXPERT 默认首页为 /diagnosis', () => {
     expect(ROLE_DEFAULT_HOME.EXPERT).toBe('/diagnosis');
     expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/diagnosis');
   });
 
-  it('SPONSOR 默认首页为 /metric', () => {
+  it('sPONSOR 默认首页为 /metric', () => {
     expect(ROLE_DEFAULT_HOME.SPONSOR).toBe('/metric');
     expect(resolveHomePath('SPONSOR', '/dashboard')).toBe('/metric');
   });
 
-  it('ADMIN / IC_ENGINEER / PE_ENGINEER 默认首页为 /dashboard', () => {
+  it('aDMIN / IC_ENGINEER / PE_ENGINEER 默认首页为 /dashboard', () => {
     for (const role of ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']) {
       expect(resolveHomePath(role, '/dashboard')).toBe('/dashboard');
     }

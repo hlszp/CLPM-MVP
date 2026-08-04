@@ -199,7 +199,7 @@ describe('loopAas（数据接入页）', () => {
     expect(getModelsApiMock).toHaveBeenCalledTimes(1);
   });
 
-  it('ADMIN 角色可见写操作按钮（保存配置 / 新增品牌）', async () => {
+  it('aDMIN 角色可见写操作按钮（保存配置 / 新增品牌）', async () => {
     const wrapper = mountAas();
     await flushPromises();
 

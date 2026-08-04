@@ -138,11 +138,11 @@ async function loadCounts() {
     }
     const results = await Promise.allSettled(tasks);
     // P1-023：统计失败项，单项失败不阻断其余计数展示
-    failedCount.value = results.filter(
-      (r) => r.status === 'rejected',
-    ).length;
+    failedCount.value = results.filter((r) => r.status === 'rejected').length;
     if (failedCount.value > 0) {
-      message.warning(`部分待办计数加载失败（${failedCount.value} 项），可点击刷新重试`);
+      message.warning(
+        `部分待办计数加载失败（${failedCount.value} 项），可点击刷新重试`,
+      );
     }
   } finally {
     loading.value = false;
@@ -198,7 +198,8 @@ onMounted(() => {
     <ClpmDataCanvas class="mt-4" title="装置性能">
       <div class="flex items-center justify-between gap-4">
         <div class="text-sm" style="color: hsl(var(--muted-foreground))">
-          全厂装置性能总览、回路排行、等级分布与实时自控率已归属「性能评估 · 装置性能」。
+          全厂装置性能总览、回路排行、等级分布与实时自控率已归属「性能评估 ·
+          装置性能」。
         </div>
         <Button type="primary" @click="goPidDashboard">进入装置性能</Button>
       </div>

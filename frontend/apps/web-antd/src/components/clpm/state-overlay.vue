@@ -86,10 +86,7 @@ function handleRetry() {
         class="text-3xl"
         style="color: hsl(var(--destructive))"
       />
-      <div
-        class="text-sm font-medium"
-        style="color: hsl(var(--foreground))"
-      >
+      <div class="text-sm font-medium" style="color: hsl(var(--foreground))">
         {{ errorMessage }}
       </div>
       <div
@@ -99,12 +96,7 @@ function handleRetry() {
       >
         {{ errorDetail }}
       </div>
-      <Button
-        v-if="retryable"
-        size="small"
-        class="mt-1"
-        @click="handleRetry"
-      >
+      <Button v-if="retryable" size="small" class="mt-1" @click="handleRetry">
         {{ retryText }}
       </Button>
     </div>

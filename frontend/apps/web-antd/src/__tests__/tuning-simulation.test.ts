@@ -193,9 +193,19 @@ function mountSim() {
 
 function makeSimulationResult() {
   return {
-    currentMetrics: { riseTime: 10, overshoot: 5, settlingTime: 30, itae: 1000 },
+    currentMetrics: {
+      riseTime: 10,
+      overshoot: 5,
+      settlingTime: 30,
+      itae: 1000,
+    },
     currentResponse: { op: [1, 1], pv: [0, 1] },
-    improvement: { riseTime: 0.1, overshoot: 0.2, settlingTime: 0.15, itae: 0.05 },
+    improvement: {
+      riseTime: 0.1,
+      overshoot: 0.2,
+      settlingTime: 0.15,
+      itae: 0.05,
+    },
     recommendedMetrics: {
       riseTime: 8,
       overshoot: 3,
@@ -207,7 +217,7 @@ function makeSimulationResult() {
   };
 }
 
-describe('TuningSimulation 状态覆盖（V62-P1-023）', () => {
+describe('tuningSimulation 状态覆盖（V62-P1-023）', () => {
   beforeEach(() => {
     setQuery({
       modelParams: JSON.stringify({ K: 1, tau: 10, theta: 2 }),
@@ -225,7 +235,9 @@ describe('TuningSimulation 状态覆盖（V62-P1-023）', () => {
 
     const emptyOverlay = wrapper.find('.overlay-empty');
     expect(emptyOverlay.exists()).toBe(true);
-    expect(emptyOverlay.text()).toContain('请配置模型与 PID 参数后点击「运行仿真」');
+    expect(emptyOverlay.text()).toContain(
+      '请配置模型与 PID 参数后点击「运行仿真」',
+    );
   });
 
   it('error：双 PID 仿真失败时显示错误覆盖和详情', async () => {

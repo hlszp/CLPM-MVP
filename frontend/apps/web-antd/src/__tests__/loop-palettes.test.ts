@@ -43,7 +43,7 @@ describe('loop 色板常量', () => {
     }
   });
 
-  it('MODE 0-4 色板与短标签完整', () => {
+  it('mODE 0-4 色板与短标签完整', () => {
     expect(Object.keys(MODE_COLOR_MAP)).toEqual(['0', '1', '2', '3', '4']);
     expect(Object.keys(MODE_LABEL_MAP)).toEqual(['0', '1', '2', '3', '4']);
     expect(MODE_LABEL_MAP['0']).toBe('MAN');
@@ -52,7 +52,7 @@ describe('loop 色板常量', () => {
 });
 
 describe('useLoopPalettes.modeLabelColor', () => {
-  it('Auto/Manual/Cascade 映射 ZL 语义色', () => {
+  it('auto/Manual/Cascade 映射 ZL 语义色', () => {
     const { modeLabelColor } = useLoopPalettes();
     expect(modeLabelColor('Auto')).toBe('#10b981');
     expect(modeLabelColor('Manual')).toBe('#f59e0b');

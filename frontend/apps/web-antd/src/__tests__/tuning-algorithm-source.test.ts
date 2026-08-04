@@ -17,10 +17,8 @@ vi.mock('vue-router', () => ({
 }));
 
 vi.mock('#/api/tuning', () => ({
-  createTuningTaskApi: (...args: unknown[]) =>
-    createTuningTaskApiMock(...args),
-  getTuningMethodsApi: (...args: unknown[]) =>
-    getTuningMethodsApiMock(...args),
+  createTuningTaskApi: (...args: unknown[]) => createTuningTaskApiMock(...args),
+  getTuningMethodsApi: (...args: unknown[]) => getTuningMethodsApiMock(...args),
   tunePidApi: (...args: unknown[]) => tunePidApiMock(...args),
 }));
 
@@ -81,7 +79,8 @@ vi.mock('ant-design-vue', () => ({
   },
   CollapsePanel: {
     props: ['header', 'key'],
-    template: '<div class="collapse-panel-stub"><div>{{ header }}</div><slot /></div>',
+    template:
+      '<div class="collapse-panel-stub"><div>{{ header }}</div><slot /></div>',
   },
   Descriptions: { template: '<dl><slot /></dl>' },
   DescriptionsItem: {
@@ -139,7 +138,7 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((node) => node.text().includes(text));
 }
 
-describe('TuningAlgorithm 模型来源门禁', () => {
+describe('tuningAlgorithm 模型来源门禁', () => {
   beforeEach(() => {
     setQuery({
       loopId: 'loop-1',
@@ -245,7 +244,7 @@ describe('TuningAlgorithm 模型来源门禁', () => {
   });
 });
 
-describe('TuningAlgorithm 状态覆盖（V62-P1-023）', () => {
+describe('tuningAlgorithm 状态覆盖（V62-P1-023）', () => {
   beforeEach(() => {
     setQuery({
       loopId: 'loop-1',
@@ -332,4 +331,3 @@ describe('TuningAlgorithm 状态覆盖（V62-P1-023）', () => {
     expect(wrapper.text()).toContain('推荐比例增益');
   });
 });
-

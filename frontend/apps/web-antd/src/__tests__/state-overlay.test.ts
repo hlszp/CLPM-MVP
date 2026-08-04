@@ -47,7 +47,7 @@ function mountOverlay(props: {
   });
 }
 
-describe('ClpmStateOverlay 组件状态覆盖（V62-P1-023）', () => {
+describe('clpmStateOverlay 组件状态覆盖（V62-P1-023）', () => {
   it('loading 状态渲染 Spin 和提示文字', () => {
     const wrapper = mountOverlay({
       status: 'loading',
