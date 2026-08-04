@@ -941,3 +941,24 @@ class TestRequirementCodeAliases:
 
         with patch.dict("app.services.data_planner._REQUIREMENTS_CACHE", {}, clear=True):
             assert _filter_requirements(["steady_rate"]) == {}
+
+    def test_derive_from_base_preserves_loop_confidence(self) -> None:
+        """回归测试：_derive_from_base 必须继承 BASE 的 loop_confidence_level/loop_valid_rate.
+
+        根因：派生 DataBlock 未拷贝回路级可信度字段，使用 DataBlock 默认值 "E"/0.0，
+        导致 MODE_HF/OP_HF/PVOP_HF tagGroup 的指标（如 effective_auto_rate）全部 E 级，
+        综合评分因 R=E 而 INCONCLUSIVE（2026-08-05 全回路 E 不足事故）。
+        """
+        base = build_data_block(
+            loop_id="L001",
+            tag_group=TagGroup.BASE,
+            n=100,
+            valid_rate=0.95,
+            loop_confidence_level="A",
+            loop_valid_rate=0.95,
+        )
+        derived = DataPlanner._derive_from_base(
+            None, base, TagGroup.MODE_HF, ["mode", "op"], "L001"
+        )
+        assert derived.loop_confidence_level == "A"
+        assert derived.loop_valid_rate == pytest.approx(0.95)

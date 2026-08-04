@@ -721,6 +721,10 @@ class DataPlanner:
             point_count=base_block.point_count,
             # P0-B: 派生 DataBlock 继承 BASE 的响应类别
             control_type=base_block.control_type,
+            # P2-1: 派生 DataBlock 必须继承回路级可信度，否则使用默认 "E"
+            # 导致 effective_auto_rate 等子 tagGroup 指标全部 E → 综合评分 INCONCLUSIVE
+            loop_confidence_level=base_block.loop_confidence_level,
+            loop_valid_rate=base_block.loop_valid_rate,
         )
 
     # ------------------------------------------------------------------

@@ -4,7 +4,7 @@
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 筛选区：装置 TreeSelect + 回路 Select + 时间 RangePicker + 状态 + 可信度
- * - 表格：回路名 / 时间窗 / 综合评分 / 8 大 KPI + 粘滞指数 / 稳态时间 / 输出行程指数
+ * - 表格：回路名 / 时间窗 / 综合评分 / 8 大 KPI + 粘滞指数 / 稳态时间 / 行程指数
  *   / 可信度徽章 / 状态 / 操作（详情按钮）
  * - 详情抽屉：点击"详情"按钮从右侧滑出，展示完整 24 字段（含数据血缘）
  *
@@ -110,7 +110,7 @@ function closeDetail() {
 
 // ============ 表格列定义 ============
 // 列顺序：回路 → 时间窗 → 综合评分 → 8 大 KPI（好值率/自控率/有效自控率/
-// 稳定率/准确率/快速率/振荡率/饱和率）→ 粘滞指数 / 稳态时间 / 输出行程指数
+// 稳定率/准确率/快速率/振荡率/饱和率）→ 粘滞指数 / 稳态时间 / 行程指数
 // → 可信度 → 状态 → 操作
 // 8 大 KPI 顺序对齐 GB/T 44693.2-2024
 const columns = computed<TableColumnsType>(() => [
@@ -118,20 +118,21 @@ const columns = computed<TableColumnsType>(() => [
     title: '回路',
     key: 'loopTagName',
     dataIndex: 'loopTagName',
-    width: 180,
+    width: 130,
     fixed: 'left',
     ellipsis: true,
   },
   {
     title: '时间窗',
     key: 'tsRange',
-    width: 110,
+    width: 100,
+    ellipsis: true,
   },
   {
     title: '综合评分',
     key: 'score',
     dataIndex: 'score',
-    width: 90,
+    width: 80,
     sorter: true,
     // 受控排序：columns 为 computed（每次渲染新数组），非受控状态下 AntD
     // 会在数据刷新后丢失内部排序态，导致第二次点击方向错乱
@@ -144,67 +145,78 @@ const columns = computed<TableColumnsType>(() => [
     title: '好值率',
     key: 'goodValueRate',
     dataIndex: 'goodValueRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '自控率',
     key: 'autoModeRate',
     dataIndex: 'autoModeRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '有效自控率',
     key: 'effectiveAutoRate',
     dataIndex: 'effectiveAutoRate',
-    width: 100,
+    width: 95,
+    ellipsis: true,
   },
   {
     title: '稳定率',
     key: 'steadyRate',
     dataIndex: 'steadyRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '准确率',
     key: 'accuracyRate',
     dataIndex: 'accuracyRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '快速率',
     key: 'fastRate',
     dataIndex: 'fastRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '振荡率',
     key: 'oscillationRate',
     dataIndex: 'oscillationRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '饱和率',
     key: 'saturationRate',
     dataIndex: 'saturationRate',
-    width: 80,
+    width: 75,
+    ellipsis: true,
   },
   {
     title: '粘滞指数',
     key: 'stictionIndex',
     dataIndex: 'stictionIndex',
-    width: 90,
+    width: 80,
+    ellipsis: true,
   },
   {
     title: '稳态时间',
     key: 'settlingTime',
     dataIndex: 'settlingTime',
-    width: 90,
+    width: 80,
+    ellipsis: true,
   },
   {
-    title: '输出行程指数',
+    title: '行程指数',
     key: 'outputTravelIndex',
     dataIndex: 'outputTravelIndex',
-    width: 110,
+    width: 80,
+    ellipsis: true,
   },
   {
     title: '可信度',
@@ -216,12 +228,12 @@ const columns = computed<TableColumnsType>(() => [
     title: '状态',
     key: 'status',
     dataIndex: 'status',
-    width: 100,
+    width: 85,
   },
   {
     title: '操作',
     key: 'action',
-    width: 80,
+    width: 70,
     fixed: 'right' as const,
   },
 ]);
@@ -487,7 +499,7 @@ onMounted(() => {
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :scroll="{ x: 1800 }"
+        :scroll="{ x: 1405 }"
         :row-key="
           (record: KpiSnapshotItem) => `${record.loopId}_${record.tsStart}`
         "
@@ -542,7 +554,7 @@ onMounted(() => {
               {{ formatNumber(record[column.dataIndex as string], '%') }}
             </span>
           </template>
-          <!-- 粘滞指数 / 稳态时间 / 输出行程指数 -->
+          <!-- 粘滞指数 / 稳态时间 / 行程指数 -->
           <template
             v-else-if="
               (

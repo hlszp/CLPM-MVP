@@ -155,6 +155,45 @@ class PreprocessingPipeline:
         loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
         loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
 
+        # 诊断日志：loop_confidence 为 E 时打印 validity 详情（定位全回路 E 不足根因）
+        if loop_confidence_level == "E":
+            core_tag_stats: dict[str, str] = {}
+            for tag in ("pv", "sp", "op", "mode"):
+                key = f"{tag}_valid"
+                arr = validity.get(key)
+                if arr is None:
+                    core_tag_stats[tag] = "MISSING"
+                else:
+                    tcount = sum(1 for x in arr if x)
+                    core_tag_stats[tag] = f"{tcount}/{len(arr)}"
+
+            # 对 valid_count=0 的核心 tag，统计异常原因分布
+            reason_stats: dict[str, dict[str, int]] = {}
+            for tag in ("pv", "sp", "op", "mode"):
+                arr = validity.get(f"{tag}_valid")
+                if arr is not None and sum(1 for x in arr if x) == 0:
+                    reasons = outlier_reasons.get(tag, [])
+                    counter: dict[str, int] = {}
+                    for r_list in reasons:
+                        for r in r_list:
+                            counter[r] = counter.get(r, 0) + 1
+                    reason_stats[tag] = counter
+
+            logger.warning(
+                "[Pipeline] loop_confidence=E: loop=%s, tagGroup=%s, points=%d, "
+                "loop_valid_rate=%.4f, core_tag_valid={%s}, "
+                "validity_keys=%s, signals_keys=%s, "
+                "zero_valid_reasons=%s",
+                loop_id,
+                tag_group.value,
+                n,
+                loop_valid_rate,
+                ", ".join(f"{k}={v}" for k, v in core_tag_stats.items()),
+                list(validity.keys()),
+                list(signals.keys()),
+                reason_stats,
+            )
+
         # 组装 DataBlock
         data_block = DataBlock(
             data_block_id=data_block_id,
