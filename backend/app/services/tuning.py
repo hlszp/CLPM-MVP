@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BizError
 from app.models.loop import LoopLedger
 from app.models.tuning import TuningRecord
+from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.process_model_migration import get_effective_model_params
 from app.services.tuning_algorithms import (
     TUNING_ALGORITHM_VERSION,
@@ -395,7 +396,11 @@ async def _fetch_preprocessed_signals(
         # 无数组索引退化）
         if pvop_ts:
             timestamps = _to_rel_seconds(pvop_ts, pvop_ts[0])
-        valid_rate = pvop_block.quality_summary.valid_rate if pvop_block.quality_summary else 1.0
+        # 可信度统一 Phase 1：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
+        # 与诊断/KPI 链路口径一致；替代 PVOP 块级全 tag 交集（含 pid 等非评估信号）
+        valid_rate = DataQualityAssessor.compute_loop_valid_rate(
+            pvop_block.validity, pvop_block.point_count
+        )
         sampling_freq = _parse_sampling_freq_hz(pvop_block.sampling_freq)
 
     # V62-P1-001: SP 重采样到 PVOP 网格（修复：目标网格传 PVOP timestamps，

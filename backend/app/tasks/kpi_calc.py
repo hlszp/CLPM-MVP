@@ -49,6 +49,7 @@ from app.models.metric import (
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.metric_calculator import get_calculator
+from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -1182,7 +1183,13 @@ async def _calculate_loop_kpi(
     valve_op_min, valve_op_max = _extract_valve_op_range(metric_results)
 
     # 提取数据血缘信息
-    lineage_info = _extract_lineage_info(metric_results, composite_result)
+    # 可信度统一 Phase 1（P1-5）：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
+    # 与 confidence_level 同口径，消除 §2.2 字段错配。
+    # 优先从 BASE 块（含 pv/sp/mode）计算回路级 valid_rate；缺失时回退到指标级 lineage。
+    loop_valid_rate = _compute_loop_valid_rate_from_bundles(bundles)
+    lineage_info = _extract_lineage_info(
+        metric_results, composite_result, loop_valid_rate=loop_valid_rate
+    )
 
     # 判定状态：必需指标缺失 → PARTIAL
     status = "SUCCESS"
@@ -1566,11 +1573,42 @@ def _extract_valve_op_range(
     )
 
 
+def _compute_loop_valid_rate_from_bundles(
+    bundles: list[MetricDataBundle],
+) -> float | None:
+    """从 MetricDataBundle 列表计算回路级 valid_rate（可信度统一 Phase 1 P1-5）.
+
+    遍历 bundles 寻找 BASE 块（含 pv/sp/mode，3/4 核心 tag），用共享内核
+    ``DataQualityAssessor.compute_loop_valid_rate`` 计算回路级 valid_rate。
+    缺失的 tag 自动跳过（不影响交集），避免 tagGroup 切分导致的语义退化。
+
+    Args:
+        bundles: DataPlanner 返回的 MetricDataBundle 列表
+
+    Returns:
+        回路级 valid_rate ∈ [0.0, 1.0]；无可用块时返回 None（回退到指标级 lineage）
+    """
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group == TagGroup.BASE.value:
+            return DataQualityAssessor.compute_loop_valid_rate(block.validity, block.point_count)
+    return None
+
+
 def _extract_lineage_info(
     metric_results: dict[str, MetricResult],
     composite: MetricResult,
+    loop_valid_rate: float | None = None,
 ) -> dict:
     """提取数据血缘信息（优先 accuracy_rate lineage，其次 composite lineage）。
+
+    Args:
+        metric_results: 指标结果字典
+        composite: 综合评分结果（confidence_level 取自此）
+        loop_valid_rate: 回路级 valid_rate（核心 tag 交集 / point_count）。
+            可信度统一 Phase 1（P1-5）：提供时覆盖 lineage 中的单指标 valid_rate，
+            使 ``kpi_snapshot_hourly.valid_rate`` 与 ``confidence_level`` 同为回路级口径，
+            消除 §2.2 字段错配。None 时回退到 lineage.valid_rate（向后兼容）。
 
     Returns:
         dict 含: algorithm_version, sampling_freq, quality_policy,
@@ -1584,12 +1622,15 @@ def _extract_lineage_info(
         else (composite.lineage if composite and composite.lineage else None)
     )
 
+    # 回路级 valid_rate 优先（P1-5：修复字段口径错配）
+    if loop_valid_rate is not None:
+        valid_rate = Decimal(str(loop_valid_rate)).quantize(Decimal("0.0001"))
+    elif lineage is not None and lineage.valid_rate is not None:
+        valid_rate = Decimal(str(lineage.valid_rate)).quantize(Decimal("0.0001"))
+    else:
+        valid_rate = None
+
     if lineage is not None:
-        valid_rate = (
-            Decimal(str(lineage.valid_rate)).quantize(Decimal("0.0001"))
-            if lineage.valid_rate is not None
-            else None
-        )
         data_lineage_dict = {
             "sampling_freq": lineage.sampling_freq,
             "aggregation_policy": lineage.aggregation_policy,
@@ -1601,7 +1642,6 @@ def _extract_lineage_info(
             "algorithm_version": lineage.algorithm_version,
         }
     else:
-        valid_rate = None
         data_lineage_dict = {}
 
     confidence_level = (

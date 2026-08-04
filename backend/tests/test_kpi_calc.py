@@ -45,6 +45,7 @@ from app.tasks.kpi_calc import (
     _calculate_loop_kpi,
     _check_import_idempotency,
     _compute_kpis_three_layer,
+    _compute_loop_valid_rate_from_bundles,
     _do_calculate,
     _do_calculate_single_loop,
     _extract_kpi_values,
@@ -2086,6 +2087,148 @@ class TestExtractLineageInfo:
         assert isinstance(info["data_lineage"], dict)
         assert info["data_lineage"]["sampling_freq"] == "1s"
         assert info["data_lineage"]["quality_policy"] == "KEEP_ALL_WITH_VALIDITY"
+
+    # ------------------------------------------------------------------
+    # 可信度统一 Phase 1（P1-5）：loop_valid_rate 覆盖指标级 valid_rate
+    # ------------------------------------------------------------------
+
+    def test_loop_valid_rate_overrides_lineage(self) -> None:
+        """loop_valid_rate 提供时覆盖 lineage 中的单指标 valid_rate（P1-5）."""
+        lineage = _make_data_lineage(valid_rate=0.88)  # 指标级
+        metric_results = {
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "B", lineage),
+        }
+        composite = _make_metric_result("composite_score", 80.0, "B")
+
+        # 回路级 valid_rate=0.72 应覆盖指标级 0.88
+        info = _extract_lineage_info(metric_results, composite, loop_valid_rate=0.72)
+
+        assert info["valid_rate"] == Decimal("0.7200")
+        # data_lineage 审计字段仍保留指标级 valid_rate
+        assert info["data_lineage"]["valid_rate"] == 0.88
+
+    def test_loop_valid_rate_none_falls_back_to_lineage(self) -> None:
+        """loop_valid_rate=None 时回退到 lineage.valid_rate（向后兼容）."""
+        lineage = _make_data_lineage(valid_rate=0.95)
+        metric_results = {
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "A", lineage),
+        }
+        composite = _make_metric_result("composite_score", 80.0, "A")
+
+        info = _extract_lineage_info(metric_results, composite, loop_valid_rate=None)
+
+        assert info["valid_rate"] == Decimal("0.9500")
+
+    def test_loop_valid_rate_quantized_to_4_decimals(self) -> None:
+        """loop_valid_rate 量化到 4 位小数."""
+        lineage = _make_data_lineage(valid_rate=1.0)
+        metric_results = {
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "A", lineage),
+        }
+        composite = _make_metric_result("composite_score", 80.0, "A")
+
+        info = _extract_lineage_info(metric_results, composite, loop_valid_rate=0.856789)
+
+        assert info["valid_rate"] == Decimal("0.8568")
+
+    def test_loop_valid_rate_consistent_with_confidence_level(self) -> None:
+        """valid_rate（回路级）与 confidence_level（回路级）同口径，无错配."""
+        from app.services.confidence_evaluator import ConfidenceEvaluator
+
+        loop_vr = 0.72  # 回路级 → C 级
+        expected_conf = ConfidenceEvaluator.evaluate(loop_vr).value
+        lineage = _make_data_lineage(valid_rate=0.88)  # 指标级（不同）
+        metric_results = {
+            "accuracy_rate": _make_metric_result("accuracy_rate", 90.0, "C", lineage),
+        }
+        composite = _make_metric_result("composite_score", 80.0, expected_conf)
+
+        info = _extract_lineage_info(metric_results, composite, loop_valid_rate=loop_vr)
+
+        # valid_rate 经 evaluate 应得 confidence_level，消除 §2.2 错配
+        evaluated = ConfidenceEvaluator.evaluate(float(info["valid_rate"])).value
+        assert evaluated == info["confidence_level"]
+
+
+# ===========================================================================
+# 9b. _compute_loop_valid_rate_from_bundles 测试（P1-5）
+# ===========================================================================
+
+
+class TestComputeLoopValidRateFromBundles:
+    """测试 _compute_loop_valid_rate_from_bundles() 回路级 valid_rate 提取。"""
+
+    def test_returns_loop_valid_rate_from_base_block(self) -> None:
+        """从 BASE 块计算回路级 valid_rate（核心 tag 交集）."""
+        ts = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
+        block = DataBlock(
+            data_block_id="db_loop1_BASE_5s",
+            loop_id="loop-1",
+            tag_group=TagGroup.BASE.value,
+            sampling_freq="5s",
+            timestamps=[ts, ts, ts, ts],
+            signals={"pv": [50, 50, 60, 50], "sp": [50, 50, 50, 50], "mode": [1, 1, 1, 1]},
+            validity={
+                "pv_valid": [True, True, False, True],
+                "sp_valid": [True, True, True, False],
+                "mode_valid": [True, True, True, True],
+            },
+            quality_summary=QualitySummary(total_count=4, valid_count=2, valid_rate=0.5),
+            point_count=4,
+        )
+        bundle = MetricDataBundle(
+            metric_code="accuracy_rate",
+            data_block=block,
+            mask_expression="pv_valid && sp_valid",
+            masked_indices=[0, 1],
+            lineage=_make_data_lineage(tag_group=TagGroup.BASE.value),
+        )
+
+        vr = _compute_loop_valid_rate_from_bundles([bundle])
+
+        # 核心 tag 交集：pv∧sp∧mode = [T,T,F,F] → 2/4 = 0.5
+        assert vr == 0.5
+
+    def test_returns_none_when_no_base_block(self) -> None:
+        """无 BASE 块时返回 None（回退到指标级 lineage）."""
+        bundle = _make_bundle("accuracy_rate", tag_group=TagGroup.PVOP_HF.value)
+        vr = _compute_loop_valid_rate_from_bundles([bundle])
+        assert vr is None
+
+    def test_returns_none_for_empty_bundles(self) -> None:
+        """空 bundles 列表返回 None."""
+        assert _compute_loop_valid_rate_from_bundles([]) is None
+
+    def test_skips_missing_core_tags(self) -> None:
+        """缺失的核心 tag 跳过（不参与交集），仅算存在的 tag."""
+        ts = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
+        block = DataBlock(
+            data_block_id="db_loop1_BASE_5s",
+            loop_id="loop-1",
+            tag_group=TagGroup.BASE.value,
+            sampling_freq="5s",
+            timestamps=[ts, ts],
+            signals={"pv": [50, 50], "sp": [50, 50]},
+            validity={
+                "pv_valid": [True, False],
+                "sp_valid": [True, True],
+                # mode_valid 缺失 → 跳过
+            },
+            quality_summary=QualitySummary(total_count=2, valid_count=1, valid_rate=0.5),
+            point_count=2,
+        )
+        bundle = MetricDataBundle(
+            metric_code="accuracy_rate",
+            data_block=block,
+            mask_expression="pv_valid && sp_valid",
+            masked_indices=[0],
+            lineage=_make_data_lineage(tag_group=TagGroup.BASE.value),
+        )
+
+        vr = _compute_loop_valid_rate_from_bundles([bundle])
+
+        # 仅 pv∧sp = [T,F] → 1/2 = 0.5
+        assert vr == 0.5
 
 
 # ===========================================================================

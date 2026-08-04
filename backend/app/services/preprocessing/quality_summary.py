@@ -2,9 +2,11 @@
 
 计算数据块的质量摘要，包括有效数据率、无效率、缺失率等。
 
-v6.1 变更：质量摘要仅用于**审计展示与数据血缘**，不参与可信度判定。
-可信度判定由指标级 valid_rate（基于 mask_expression）负责，
-即 ``MetricCalculatorBase._get_valid_rate()``。
+v6.2 变更（可信度统一 Phase 1）：质量摘要的 ``valid_rate``（全 tag 交集）
+仅用于**审计展示与数据血缘**，不参与可信度判定。可信度判定改由
+**回路级 valid_rate**（核心 tag pv/sp/op/mode 交集 / point_count）负责，
+由 :meth:`DataQualityAssessor.compute_loop_valid_rate` 统一计算，
+KPI/诊断/整定三链路共享同一口径。详见可信度统一改进方案 §4.3。
 
 设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2
 """
@@ -35,10 +37,10 @@ def compute_quality_summary(
         此处的 valid_rate 是**所有 tag 有效性的交集**，仅用于审计展示
         和数据血缘（DataLineage）。**不参与可信度判定**。
 
-        可信度判定由指标级 valid_rate 负责，基于每个指标的
-        mask_expression（如 ``pv_valid && sp_valid``），仅筛选该指标
-        关心的 tag，不取全量交集。详见
-        :meth:`MetricCalculatorBase._get_valid_rate`。
+        可信度判定由**回路级 valid_rate** 负责（可信度统一 Phase 1）：
+        由 :meth:`DataQualityAssessor.compute_loop_valid_rate` 计算核心 tag
+        （pv/sp/op/mode）交集 / point_count，KPI/诊断/整定三链路共享。
+        详见可信度统一改进方案 §4.3。
 
     Args:
         validity: 有效性标记字典，key 为 ``{tag}_valid``
@@ -58,9 +60,9 @@ def compute_quality_summary(
 
     # 取所有信号 valid 的交集作为"该时间戳是否有效"（审计用）
     # 注意：此交集仅用于审计展示和数据血缘，不参与可信度判定。
-    # 可信度判定使用指标级 mask_expression（如 pv_valid && sp_valid），
-    # 只筛选该指标需要的 tag，避免无关 tag（如 PID_P/PID_I/PID_D）
-    # 拉低有效数据率。
+    # 可信度判定使用回路级 valid_rate（核心 tag pv/sp/op/mode 交集 / point_count），
+    # 由 DataQualityAssessor.compute_loop_valid_rate 统一计算，
+    # 避免无关 tag（如 PID_P/PID_I/PID_D）拉低有效数据率。
     all_valid = [True] * total
     for tag_validity in validity.values():
         for i, v in enumerate(tag_validity):

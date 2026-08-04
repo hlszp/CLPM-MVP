@@ -29,7 +29,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from app.constants.mode import AUTO_MODES, MODE_LABELS_EN
-from app.contracts.data_types import ControlType, QualityStatus, RawTimeSeries
+from app.contracts.data_types import ControlType, LoopPreprocessConfig, QualityStatus, RawTimeSeries
 from app.models.diagnosis import (
     DiagnosisConfig,
     DiagnosisResult,
@@ -53,10 +53,8 @@ from app.services.metric_calculator.oscillation import (
     OscillationRateCalculator,
 )
 from app.services.metric_calculator.stiction import MIN_HALF_PERIOD_SAMPLES
-from app.services.preprocessing.outlier_detection import OutlierDetector
+from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.preprocessing.quality_code import map_quality_code
-from app.services.preprocessing.quality_summary import compute_quality_summary
-from app.services.preprocessing.thresholds import get_threshold as get_outlier_threshold
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -1091,9 +1089,9 @@ async def _diagnose_loop(
         logger.info("回路 %s 对齐后数据点不足", loop.tag_name)
         return None
 
-    # B4 轻量数据质量预处理：复用 OutlierDetector 剔除 SPIKE/JUMP/OUT_OF_RANGE/NAN
-    # 异常点（pv/sp/op/ts 同步剔除保持对齐；TS_ANOMALY/HF_NOISE 仅标记不剔除），
-    # 并由 compute_quality_summary 得出 valid_rate（供 B5 可信度分级）。不改量纲/归一化。
+    # B4 数据质量预处理（可信度统一 Phase 1）：复用共享 DataQualityAssessor 内核
+    # 在原始工程值上统一评估 pv/sp/op/mode 有效性，产出回路级 valid_rate
+    # （核心 tag 交集 / point_count，与 KPI/整定口径一致），并据此剔除异常点。
     aligned, valid_rate = _apply_outlier_preprocessing(
         aligned,
         aligned_src_indices,
@@ -3986,13 +3984,14 @@ def _apply_outlier_preprocessing(
     mappings: dict[str, LoopTagMapping],
     tags_map: dict[str, TagRegistry],
 ) -> tuple[list[dict[str, Any]], float]:
-    """B4 轻量数据质量预处理：异常点剔除 + 质量摘要。
+    """B4 数据质量预处理：异常点剔除 + 回路级 valid_rate（可信度统一 Phase 1）。
 
-    复用预处理 Pipeline 的 OutlierDetector 对 PV（及 OP）执行异常值检测，
-    按 should_invalidate 规则剔除 SPIKE/JUMP/OUT_OF_RANGE/NAN 点
-    （pv/sp/op/ts 同步剔除保持对齐；TS_ANOMALY/HF_NOISE 仅标记不剔除；
-    冻结检测跳过——传感器卡死由 _detect_sensor_faults 作为诊断标签输出，
-    稳态恒值是正常工况，不作为数据质量异常剔除）。
+    复用共享数据质量评估内核（DataQualityAssessor）在原始工程值上统一评估
+    pv/sp/op/mode 的有效性，产出回路级 valid_rate（核心 tag 交集 / point_count），
+    与 KPI/整定链路口径一致。诊断的异常点剔除复用内核 validity：
+    pv 异常（含质量码 Bad/超量程/跳变/尖峰/NaN）或 op 异常（OP 非 None 时）删点；
+    OP 缺失不删（保持诊断语义）；TS_ANOMALY/HF_NOISE/FROZEN 仅标记不剔除。
+
     全程在原始工程值上进行，不改量纲/归一化。剔除比例 >50% 时记日志并继续诊断。
 
     Args:
@@ -4004,54 +4003,46 @@ def _apply_outlier_preprocessing(
         tags_map: Tag 注册表（取 PV 量程）
 
     Returns:
-        (剔除异常点后的 aligned, valid_rate 有效数据率 0~1)
+        (剔除异常点后的 aligned, loop_valid_rate 回路级有效数据率 0~1)
     """
     n_raw = len(raw_series.timestamps)
     try:
         loop_type = loop.loop_type if isinstance(loop.loop_type, str) else ""
         control_type = _LOOP_TYPE_TO_CONTROL_TYPE.get(loop_type.upper(), ControlType.FLOW)
-        detector = OutlierDetector(get_outlier_threshold(control_type))
         range_min, range_max = _resolve_pv_range(mappings, tags_map)
 
-        ts_list = [d["ts"] for d in aligned]
-        pv_list = [d["pv"] for d in aligned]
-        pv_reasons = detector.detect_all(
-            tag_name="pv",
-            values=pv_list,
-            timestamps=ts_list,
+        # 共享数据质量评估内核（可信度统一 Phase 1）：在原始工程值上统一评估
+        # pv/sp/op/mode 有效性，产出回路级 valid_rate（核心 tag 交集 / point_count），
+        # 与 KPI/整定链路口径一致。删点复用内核 validity。
+        config = LoopPreprocessConfig(
+            loop_id=loop.tag_name,
+            control_type=control_type,
             range_min=range_min,
             range_max=range_max,
-            quality_codes=None,
-            is_normalized=False,
-            skip_frozen=True,
         )
-        invalid_idx = {
-            i for i, reasons in pv_reasons.items() if OutlierDetector.should_invalidate(reasons)
-        }
+        assessor = DataQualityAssessor(config)
+        assessment = assessor.assess(raw_series)
 
-        # OP 同步检测（接口支持多信号）：OP 缺失（None）点会被 detect_nan 标记，
-        # 缺失不等于数据质量异常，剔除时跳过
-        op_list = [d.get("op") for d in aligned]
-        if any(v is not None for v in op_list):
-            op_reasons = detector.detect_all(
-                tag_name="op",
-                values=op_list,
-                timestamps=ts_list,
-                range_min=range_min,
-                range_max=range_max,
-                quality_codes=None,
-                is_normalized=False,
-                skip_frozen=True,
-            )
-            for i, reasons in op_reasons.items():
-                if op_list[i] is None:
-                    continue
-                if OutlierDetector.should_invalidate(reasons):
-                    invalid_idx.add(i)
+        # 删点：基于内核 validity（raw 级），映射到 aligned 级
+        # aligned 是质量码过滤后的 Good 子集，src_indices 映射回 raw
+        pv_valid_raw = assessment.validity.get("pv_valid", [True] * n_raw)
+        op_valid_raw = assessment.validity.get("op_valid", [True] * n_raw)
+        op_values_raw = raw_series.signals.get("op")
+
+        invalid_idx: set[int] = set()
+        for aligned_i, src_i in enumerate(src_indices):
+            if src_i >= n_raw:
+                continue
+            # pv 异常（含质量码 Bad/超量程/跳变/尖峰/NaN）→ 删
+            if not pv_valid_raw[src_i]:
+                invalid_idx.add(aligned_i)
+            # op 异常（且 op 非 None）→ 删；OP 缺失不删（保持诊断语义）
+            elif op_values_raw and op_values_raw[src_i] is not None and not op_valid_raw[src_i]:
+                invalid_idx.add(aligned_i)
 
         removed = len(invalid_idx)
         if removed:
-            ratio = removed / len(aligned)
+            ratio = removed / len(aligned) if aligned else 0.0
             if ratio > 0.5:
                 logger.warning(
                     "回路 %s 异常点剔除比例过高（%d/%d，%.1f%%），记日志并继续诊断",
@@ -4069,21 +4060,8 @@ def _apply_outlier_preprocessing(
                     ratio * 100,
                 )
 
-        # raw 级有效性：质量码 Bad/PV 缺失（对齐段已剔除）+ 本次异常点剔除
-        kept_src = set(src_indices)
-        pv_valid = [i in kept_src for i in range(n_raw)]
-        for i in invalid_idx:
-            pv_valid[src_indices[i]] = False
-
-        summary = compute_quality_summary(
-            validity={"pv_valid": pv_valid},
-            timestamps=list(raw_series.timestamps),
-            point_count=n_raw,
-            quality_codes=None,
-            expected_interval_s=_compute_sample_interval(aligned),
-        )
         filtered = [d for i, d in enumerate(aligned) if i not in invalid_idx]
-        return filtered, summary.valid_rate
+        return filtered, assessment.loop_valid_rate
     except Exception as exc:  # noqa: BLE001
         # 预处理失败不中断诊断：按未剔除数据继续，valid_rate 按对齐存活率兜底
         logger.warning("回路 %s B4 异常点预处理失败，按未剔除继续: %s", loop.tag_name, exc)
