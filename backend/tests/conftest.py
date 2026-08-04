@@ -290,6 +290,10 @@ class _FakePipeline:
         self._ops.append(("lpush", key, {"values": values}))
         return self
 
+    def ltrim(self, key: str, start: int, stop: int) -> _FakePipeline:
+        self._ops.append(("ltrim", key, {"start": start, "stop": stop}))
+        return self
+
     async def execute(self) -> list[Any]:
         results: list[Any] = []
         for op, key, kwargs in self._ops:
@@ -322,6 +326,16 @@ class _FakePipeline:
                 for v in kwargs["values"]:
                     lst.insert(0, v)
                 results.append(len(lst))
+            elif op == "ltrim":
+                lst = self._redis._lists.setdefault(key, [])
+                start = kwargs["start"]
+                stop = kwargs["stop"]
+                if stop < 0:
+                    stop = len(lst) + stop + 1
+                else:
+                    stop += 1
+                self._redis._lists[key] = lst[start:stop]
+                results.append(True)
         self._ops.clear()
         return results
 
