@@ -25,6 +25,8 @@ from app.contracts.data_types import (
     RawTimeSeries,
     TagGroup,
 )
+from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import (
     is_nan_or_inf,
@@ -146,6 +148,13 @@ class PreprocessingPipeline:
             expected_interval_s=float(self.threshold.base_sampling_freq),
         )
 
+        # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
+        # loop_valid_rate = 核心 tag（pv/sp/op/mode）交集 / point_count，
+        # 由共享内核 compute_loop_valid_rate 统一计算（缺失 tag 跳过）。
+        # loop_confidence_level 一次算出，所有指标经 _make_result 直接读取。
+        loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
+        loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
+
         # 组装 DataBlock
         data_block = DataBlock(
             data_block_id=data_block_id,
@@ -163,12 +172,18 @@ class PreprocessingPipeline:
             point_count=n,
             # P0-B: 注入响应类别（STABLE/SLOW/FAST/LOGIC），供指标计算器读取算法参数
             control_type=self.config.response_category,
+            # P2-1: 回路级可信度（所有指标共享）
+            loop_confidence_level=loop_confidence_level,
+            loop_valid_rate=loop_valid_rate,
         )
 
         logger.debug(
-            "Pipeline.process done: %s, valid_rate=%.4f, segments=%d",
+            "Pipeline.process done: %s, block_valid_rate=%.4f, "
+            "loop_valid_rate=%.4f, loop_confidence=%s, segments=%d",
             data_block_id,
             quality_summary.valid_rate,
+            loop_valid_rate,
+            loop_confidence_level,
             len(consecutive_segments),
         )
         return data_block

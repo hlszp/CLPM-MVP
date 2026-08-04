@@ -491,33 +491,33 @@ const confidenceLevel = computed(() => {
 
 **门禁**：`pytest -q` 全绿（3700 passed）+ `ruff check` 全绿 + `alembic check` 退出码 0 + 结构性断言（`test_confidence_unification_structural.py` 10 项全绿，验证三链路均通过 `DataQualityAssessor` 计算 valid_rate）。
 
-### Phase 2：可信度定义收敛（回路级单一值）
+### Phase 2：可信度定义收敛（回路级单一值）✅ 已完成
 
 **目标**：可信度回归回路级，指标级 mask 降级为可计算性。
 
-| 步骤 | 内容 | 验证 |
-|---|---|---|
-| P2-1 | DataBlock 新增 `loop_confidence_level` / `loop_valid_rate` 字段 | 数据结构测试 |
-| P2-2 | `_make_result` 用回路级可信度；`_make_inconclusive` 阈值化（vr<0.20，D5） | 指标可信度=回路级 |
-| P2-3 | `compute_composite_score` 可信度简化（直接用回路级） | 综合评分测试 |
-| P2-4 | D2：`_extract_metrics_detail` 去掉 confidence，仅保留 value；质量校验 | metrics 结构测试 |
-| P2-5 | D3：契约 mask_expression → required_tags 声明；assessor 内部按 required_tags 求交集 | 契约解析测试 |
-| P2-6 | 前端 loop/detail.vue 修复（用后端 confidenceLevel）；loop-performance.vue 去子指标可信度列 | check:type + E2E |
+| 步骤 | 内容 | 验证 | 状态 |
+|---|---|---|---|
+| P2-1 | DataBlock 新增 `loop_confidence_level` / `loop_valid_rate` 字段 | 数据结构测试 | ✅ |
+| P2-2 | `_make_result` 用回路级可信度；`_make_inconclusive` 阈值化（vr<0.20，D5） | 指标可信度=回路级 | ✅ |
+| P2-3 | `compute_composite_score` 可信度简化（直接用回路级） | 综合评分测试 | ✅ |
+| P2-4 | D2：`_extract_metrics_detail` 去掉 confidence，仅保留 value；质量校验 | metrics 结构测试 | ✅ |
+| P2-5 | D3：契约 mask_expression → required_tags 声明；assessor 内部按 required_tags 求交集 | 契约解析测试 | ✅ |
+| P2-6 | 前端 loop/detail.vue 修复（用后端 confidence_level）；loop-performance.vue 去子指标可信度列；monitor.py `_aggregate_kpi_snapshots` 补 confidence_level | check:type + E2E | ✅ |
 
-**门禁**：`pytest -q` + `check:type` + E2E 可信度展示一致 + 综合评分可信度=回路级。
+**门禁**：`pytest -q` 3700 passed + `check:type` 2/2 通过 + ruff 全绿 + 结构性断言 10 项全绿。✅
 
-### Phase 3：枚举统一 + 阈值同步
+### Phase 3：枚举统一 + 阈值同步 ✅ 已完成
 
 **目标**：一套 ConfidenceLevel，阈值多进程同步。
 
-| 步骤 | 内容 | 验证 |
-|---|---|---|
-| P3-1 | 辨识专用 ConfidenceLevel 改名 AlgorithmConfidenceLevel（对外 API 字段名不变） | 序列化测试 |
-| P3-2 | D4：阈值配置 Redis pub/sub（主题 `confidence:thresholds:updated`，消息含 version 去重，worker 订阅 + 启动全量加载兜底） | 多进程同步测试 |
-| P3-3 | D5 监控：valid_rate ∈ [0.20,0.30) 告警 | 告警链路测试 |
-| P3-4 | 前端 tuning API 类型对齐 | check:type |
+| 步骤 | 内容 | 验证 | 状态 |
+|---|---|---|---|
+| P3-1 | 辨识专用 ConfidenceLevel 改名 AlgorithmConfidenceLevel（对外 API 字段名不变，保留兼容别名） | 序列化测试 107 passed | ✅ |
+| P3-2 | D4：阈值配置 Redis pub/sub（主题 `confidence:thresholds:updated`，消息含 version 去重，worker 订阅 + 启动全量加载兜底） | 多进程同步测试 22 passed | ✅ |
+| P3-3 | D5 监控：valid_rate ∈ [D, D+0.10) 告警（告警区间跟随 D 阈值配置） | 告警链路测试 4 passed | ✅ |
+| P3-4 | 前端 tuning API 类型对齐（ConfidenceLevel → AlgorithmConfidenceLevel） | check:type 通过 | ✅ |
 
-**门禁**：`pytest -q` + 多 worker 阈值同步生效 + 辨识命名清晰。
+**门禁**：`pytest -q` 3722 passed + ruff check+format 全绿 + `alembic check` 退出码 0 + `check:type` 2/2 通过 + 22 个多 worker 阈值同步测试全绿。✅
 
 ---
 

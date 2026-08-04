@@ -158,9 +158,11 @@ class TestB6MissingCoreMetric:
         """附录 B.6：weight=0 的核心指标缺失不熔断（LOGIC 模板 a=0，准确率缺失）.
 
         base = (60×0.4 + 90×0.6)/1.0 = 78.0 → P = 78.0 × 0.75 = 58.50
+        v6.2 P2-3：综合评分需读取 accuracy_rate.confidence_level，故以 INCONCLUSIVE
+        形式保留在字典中（weight=0 不触发核心指标熔断，仍可计算评分）。
         """
         inputs = _inputs()
-        del inputs["accuracy_rate"]
+        inputs["accuracy_rate"] = make_metric_result("accuracy_rate", None, "E")
         result = ConfidenceEvaluator.compute_composite_score(inputs, weights=WEIGHTS_LOGIC)
 
         assert result.value == pytest.approx(58.5, abs=1e-9)

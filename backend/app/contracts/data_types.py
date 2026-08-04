@@ -226,6 +226,11 @@ class DataBlock:
     # P0-B: 控制类型（STABLE/SLOW/FAST/LOGIC），由 DataPlanner 从
     # LoopPreprocessConfig.control_type 注入，供计算器读取算法参数配置
     control_type: str | None = None
+    # 可信度统一 Phase 2（P2-1）：回路级可信度，由 Pipeline 调用
+    # ConfidenceEvaluator.evaluate(loop_valid_rate) 一次算出，所有指标读取。
+    # 消除"每个指标各打一档 A/B/C/D/E"的细粒度浪费，回归回路级单一可信度。
+    loop_confidence_level: str = "E"
+    loop_valid_rate: float = 0.0
 
     def __post_init__(self) -> None:
         if not self.point_count and self.timestamps:

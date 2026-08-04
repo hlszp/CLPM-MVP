@@ -26,8 +26,18 @@ class IdentifyMethod(StrEnum):
     STEP_NLS = "STEP_NLS"
 
 
-class ConfidenceLevel(StrEnum):
-    """可信度等级（对齐 ConfidenceEvaluator A/B/C/D/E）."""
+class AlgorithmConfidenceLevel(StrEnum):
+    """算法可信度等级（辨识专用，对齐 ConfidenceEvaluator A/B/C/D/E + INCONCLUSIVE）.
+
+    可信度统一 Phase 3（P3-1）：原 ``ConfidenceLevel`` 改名为
+    ``AlgorithmConfidenceLevel``，与平台级数据可信度
+    ``app.contracts.data_types.ConfidenceLevel``（A/B/C/D/E，无 INCONCLUSIVE）区分。
+
+    判定维度：算法拟合度（R²）+ 残差 + 激励，与数据可信度（valid_rate）独立。
+    最终整定可信度 = ``min(data_confidence, algorithm_confidence)``，逻辑不变。
+
+    对外 API 字段名不变：仍为 ``confidenceLevel``（见 ``to_dict`` 序列化）。
+    """
 
     A = "A"
     B = "B"
@@ -35,6 +45,12 @@ class ConfidenceLevel(StrEnum):
     D = "D"
     E = "E"
     INCONCLUSIVE = "INCONCLUSIVE"
+
+
+# .. deprecated:: v6.2 可信度统一 Phase 3（P3-1）
+#     改用 ``AlgorithmConfidenceLevel``。此别名仅做向后兼容过渡，
+#     新代码应使用 ``AlgorithmConfidenceLevel``。
+ConfidenceLevel = AlgorithmConfidenceLevel
 
 
 class ThetaSource(StrEnum):
@@ -111,7 +127,7 @@ class ExcitationCheckResult:
     significant_changes: int
     condition_number: float
     verdict: str
-    confidence: ConfidenceLevel = ConfidenceLevel.INCONCLUSIVE
+    confidence: AlgorithmConfidenceLevel = AlgorithmConfidenceLevel.INCONCLUSIVE
 
 
 @dataclass
@@ -190,7 +206,7 @@ class CandidateModel:
 
     params: ModelParams
     fitting_score: float  # R² × 100（P2-002 起为验证集自由仿真 R²）
-    confidence: ConfidenceLevel
+    confidence: AlgorithmConfidenceLevel
     identify_method: IdentifyMethod
     residual_test_passed: bool
     excitation_score: float

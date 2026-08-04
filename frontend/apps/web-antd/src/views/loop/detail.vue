@@ -202,14 +202,25 @@ const isInconclusive = computed(
   () => monitorDetail.value?.kpiSummary.status === 'INCONCLUSIVE',
 );
 
-/** 可信度等级（基于 good_value_rate 推导，对齐 ConfidenceEvaluator A/B/C/D/E） */
+/**
+ * 可信度等级（可信度统一 Phase 2：直接用后端 confidence_level，不再前端推导）
+ * 前端推导基于 good_value_rate（质量码维度），与后端 valid_rate（异常值剔除维度）口径不同，
+ * 导致 detail 页徽章与性能评估页不一致。统一为后端回路级可信度。
+ *
+ * 字段名注意：kpiSummary 内部沿用 snake_case（与 good_value_rate 等一致），
+ * 由后端 _aggregate_kpi_snapshots 返回（单条直接取、多条取最差等级）。
+ */
 const confidenceLevel = computed<'—' | 'A' | 'B' | 'C' | 'D' | 'E'>(() => {
-  const rate = monitorDetail.value?.kpiSummary.good_value_rate ?? 0;
-  if (rate >= 95) return 'A';
-  if (rate >= 80) return 'B';
-  if (rate >= 60) return 'C';
-  if (rate >= 20) return 'D';
-  if (rate > 0) return 'E';
+  const lv = monitorDetail.value?.kpiSummary.confidence_level;
+  if (
+    lv === 'A' ||
+    lv === 'B' ||
+    lv === 'C' ||
+    lv === 'D' ||
+    lv === 'E'
+  ) {
+    return lv;
+  }
   return '—';
 });
 

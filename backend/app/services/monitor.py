@@ -763,6 +763,8 @@ async def get_loop_monitor_detail(
             "status": "INCONCLUSIVE",
             "algorithm_version": ALGORITHM_VERSION,
             "calculatedAt": read_at,
+            # 可信度统一 Phase 2：回路级可信度（无快照时为 None）
+            "confidence_level": None,
         }
 
     return {
@@ -811,6 +813,8 @@ def _aggregate_kpi_snapshots(snaps: list[KpiSnapshotHourly], read_at: str) -> di
             "status": snap.status,
             "algorithm_version": snap.algorithm_version or ALGORITHM_VERSION,
             "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else read_at,
+            # 可信度统一 Phase 2：回路级可信度（单条快照直接取）
+            "confidence_level": snap.confidence_level,
         }
 
     # 多条快照：按 valid_rate 加权平均
@@ -848,6 +852,14 @@ def _aggregate_kpi_snapshots(snaps: list[KpiSnapshotHourly], read_at: str) -> di
 
     latest = snaps[0]  # snaps 已按 ts_start DESC 排序
 
+    # 可信度统一 Phase 2：回路级可信度取最差等级（A 最好，E 最差）
+    confidence_levels = [s.confidence_level for s in snaps if s.confidence_level]
+    worst_confidence = (
+        max(confidence_levels, key=lambda x: _CONFIDENCE_ORDER.get(x, 5))
+        if confidence_levels
+        else None
+    )
+
     return {
         "composite_score": _weighted("score"),
         "auto_mode_rate": _weighted("auto_mode_rate"),
@@ -861,6 +873,7 @@ def _aggregate_kpi_snapshots(snaps: list[KpiSnapshotHourly], read_at: str) -> di
         "status": agg_status,
         "algorithm_version": latest.algorithm_version or ALGORITHM_VERSION,
         "calculatedAt": latest.ts_end.isoformat() if latest.ts_end else read_at,
+        "confidence_level": worst_confidence,
     }
 
 

@@ -171,6 +171,17 @@ def _preload_datasource_config_sync() -> None:
                 await preload_algorithm_params(db)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("worker 子进程预载指标算法参数失败（将使用算法默认值）: %s", exc)
+            # 可信度统一 Phase 3（P3-2 / D4）：预载可信度阈值 + 启动 pub/sub 订阅
+            try:
+                from app.services.confidence_evaluator import (
+                    load_thresholds_from_db,
+                    start_threshold_subscriber,
+                )
+
+                await load_thresholds_from_db(db)
+                start_threshold_subscriber()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("worker 子进程预载可信度阈值失败（将使用算法默认值）: %s", exc)
 
     loop = asyncio.new_event_loop()
     try:

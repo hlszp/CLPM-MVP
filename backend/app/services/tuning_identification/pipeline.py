@@ -37,8 +37,8 @@ from app.services.tuning_identification.physical_feasibility import (
     check_physical_feasibility,
 )
 from app.services.tuning_identification.types import (
+    AlgorithmConfidenceLevel,
     CandidateModel,
-    ConfidenceLevel,
     IdentificationResult,
     IdentifyMethod,
     ModelEvidence,
@@ -543,18 +543,18 @@ def identify_from_history(
             # 可信度评估（P2-002：用验证集自由仿真 R²）
             confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
             if theta_source == ThetaSource.HEURISTIC_2TS:
-                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
             # P2-012：物理可行性未通过（负增益/NMP 零点）封顶 C，需人工复核
             if not feasibility.passed:
-                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
                 physical_flag = f", {feasibility.reason_code}({feasibility.details.split(',')[0]})"
             # P2-004：非参数一致性未通过封顶 C（符号/量级矛盾，参数化模型可疑）
             if not np_passed:
-                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
             # P2-005：Welch 相干辅助门禁（低相干 = 弱线性/低信噪比，仅辅助信号不拒绝）
             low_coherence = mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
             if low_coherence:
-                confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -637,7 +637,7 @@ def identify_from_history(
     best = _select_with_occam(results)
 
     # 整体可信度检查
-    if best.confidence == ConfidenceLevel.INCONCLUSIVE:
+    if best.confidence == AlgorithmConfidenceLevel.INCONCLUSIVE:
         return IdentificationResult(
             success=False,
             reason=f"辨识可信度不足：{best.reason}",
@@ -1083,14 +1083,14 @@ def _identify_ipdt_candidate(
     # 6. 可信度评估
     confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
     if theta_source == ThetaSource.HEURISTIC_2TS:
-        confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
     if not feasibility.passed:
-        confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
         physical_flag = f", {feasibility.reason_code}(K={K:.4g})"
     # P2-005：相干辅助门禁
     low_coherence = mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
     if low_coherence:
-        confidence = _cap_confidence(confidence, ConfidenceLevel.C)
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
 
     # 7. AIC/BIC（k=1 参数）
     aic_val = compute_aic(n_samples, res_var, 1)
@@ -1211,19 +1211,19 @@ def _assess_confidence(
     r2: float,
     residual_white: bool,
     exc_score: float,
-) -> ConfidenceLevel:
+) -> AlgorithmConfidenceLevel:
     """可信度综合评估."""
     if not exc.is_sufficient:
-        return ConfidenceLevel.INCONCLUSIVE
+        return AlgorithmConfidenceLevel.INCONCLUSIVE
     if r2 >= _R2_A and residual_white and exc_score >= 60:
-        return ConfidenceLevel.A
+        return AlgorithmConfidenceLevel.A
     if r2 >= _R2_B and residual_white:
-        return ConfidenceLevel.B
+        return AlgorithmConfidenceLevel.B
     if r2 >= _R2_C:
-        return ConfidenceLevel.C
+        return AlgorithmConfidenceLevel.C
     if r2 >= _R2_D:
-        return ConfidenceLevel.D
-    return ConfidenceLevel.E
+        return AlgorithmConfidenceLevel.D
+    return AlgorithmConfidenceLevel.E
 
 
 def _candidate_better(a: CandidateModel, b: CandidateModel) -> bool:
@@ -1271,28 +1271,28 @@ def _select_with_occam(results: list[CandidateModel]) -> CandidateModel:
 def _candidate_sort_key(c: CandidateModel) -> tuple:
     """排序键：可信度等级 > 拟合度 > 残差检验."""
     level_order = {
-        ConfidenceLevel.A: 5,
-        ConfidenceLevel.B: 4,
-        ConfidenceLevel.C: 3,
-        ConfidenceLevel.D: 2,
-        ConfidenceLevel.E: 1,
-        ConfidenceLevel.INCONCLUSIVE: 0,
+        AlgorithmConfidenceLevel.A: 5,
+        AlgorithmConfidenceLevel.B: 4,
+        AlgorithmConfidenceLevel.C: 3,
+        AlgorithmConfidenceLevel.D: 2,
+        AlgorithmConfidenceLevel.E: 1,
+        AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
     }
     return (level_order.get(c.confidence, 0), c.fitting_score, c.residual_test_passed)
 
 
 def _cap_confidence(
-    confidence: ConfidenceLevel,
-    maximum: ConfidenceLevel,
-) -> ConfidenceLevel:
+    confidence: AlgorithmConfidenceLevel,
+    maximum: AlgorithmConfidenceLevel,
+) -> AlgorithmConfidenceLevel:
     """将可信度限制在 maximum，不提升原有低可信度结果."""
     level_order = {
-        ConfidenceLevel.A: 5,
-        ConfidenceLevel.B: 4,
-        ConfidenceLevel.C: 3,
-        ConfidenceLevel.D: 2,
-        ConfidenceLevel.E: 1,
-        ConfidenceLevel.INCONCLUSIVE: 0,
+        AlgorithmConfidenceLevel.A: 5,
+        AlgorithmConfidenceLevel.B: 4,
+        AlgorithmConfidenceLevel.C: 3,
+        AlgorithmConfidenceLevel.D: 2,
+        AlgorithmConfidenceLevel.E: 1,
+        AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
     }
     if level_order[confidence] > level_order[maximum]:
         return maximum

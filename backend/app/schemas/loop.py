@@ -454,9 +454,16 @@ class LoopImportResult(CamelModel):
 
 
 class LoopConfidenceMetricDetail(CamelModel):
-    """单个子指标的计算值与可信度（loop_confidence_latest.metrics JSONB 元素）。"""
+    """单个子指标的计算值（loop_confidence_latest.metrics JSONB 元素）。
+
+    可信度统一 Phase 2（P2-4 / D2）：子指标可信度已统一为回路级，
+    ``metrics`` JSONB 仅保留 ``value`` 字段（去掉 ``confidence``）。
+    ``confidence`` 字段保留为 None 仅供向后兼容过渡，前端不再消费。
+    """
 
     value: float | None = None
+    # .. deprecated:: v6.2 可信度统一 Phase 2（P2-4 / D2）
+    #     子指标可信度统一为回路级，此字段不再写入（恒为 None），保留做兼容过渡。
     confidence: str | None = None
 
 
@@ -465,7 +472,7 @@ class LoopConfidenceLatestItem(CamelModel):
 
     回路最新一次可信度评估记录（loop_confidence_latest，每回路一条）。
     metrics 键为 DB 列名（snake_case），形如
-    ``{"accuracy_rate": {"value": 93.35, "confidence": "A"}, ...}``。
+    ``{"accuracy_rate": {"value": 93.35}, ...}``（可信度统一 Phase 2：仅 value）。
     """
 
     loop_id: str

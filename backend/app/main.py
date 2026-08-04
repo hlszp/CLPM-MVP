@@ -439,6 +439,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
 
+    # 可信度统一 Phase 3（P3-2 / D4）：预载可信度阈值 + 启动 pub/sub 订阅线程
+    # 预载失败回落算法默认值，不阻塞启动；订阅线程确保运行时阈值变更实时同步
+    from app.services.confidence_evaluator import (
+        load_thresholds_from_db,
+        start_threshold_subscriber,
+    )
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await load_thresholds_from_db(db)
+        start_threshold_subscriber()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预载可信度阈值失败（将使用算法默认值）: %s", exc)
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 

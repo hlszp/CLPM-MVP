@@ -237,11 +237,13 @@ class TestInstrumentFaultRate:
         assert result.value == 10.0  # 1/10
         assert result.details["freeze_count"] == 1
 
-    def test_confidence_reflects_valid_rate(self):
-        """故障点 pv_valid=False → 排除出 mask → valid_rate 降低 → 可信度降级。
+    def test_confidence_reflects_loop_confidence(self):
+        """可信度 = DataBlock.loop_confidence_level（回路级，P2-2）。
 
+        v6.2 可信度统一 Phase 2：指标可信度不再由 metric-level valid_rate 决定，
+        而是统一使用回路级 loop_confidence_level。
         instrument_fault_rate 用全量 point_count 算故障率（3/10=30%），
-        但可信度用 mask valid_rate（7/10=0.7 → C 级）。
+        可信度用 loop_confidence_level（不再用 mask valid_rate 打 A/B/C/D/E）。
         """
         n = 10
         validity = {"pv_valid": [False, False, False] + [True] * 7}
@@ -251,10 +253,11 @@ class TestInstrumentFaultRate:
             mask_expression="pv_valid",
             outlier_reasons={"pv": [[OR.FROZEN.value]] * 3 + [[]] * 7},
             metric_code="instrument_fault_rate",
+            loop_confidence_level="C",
         )
         result = InstrumentFaultRateCalculator().calculate(bundle)
         assert result.value == 30.0  # 3/10 全量点
-        assert result.confidence_level == "C"  # valid_rate=0.7
+        assert result.confidence_level == "C"  # 回路级可信度
 
 
 # ===========================================================================

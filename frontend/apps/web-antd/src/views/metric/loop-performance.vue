@@ -847,21 +847,20 @@ const confMetricColumns: TableColumnsType = [
     width: 120,
     align: 'right' as const,
   },
-  {
-    title: '可信度',
-    key: 'confidence',
-    dataIndex: 'confidence',
-    width: 110,
-  },
 ];
 
-/** 12 子指标表格行（按 3+1+8 顺序合并计算值与各自可信度） */
+/**
+ * 12 子指标表格行（按 3+1+8 顺序合并计算值）。
+ *
+ * 可信度统一 Phase 2（P2-6 / D2）：子指标可信度已统一为回路级，
+ * ``metrics`` JSONB 仅保留 ``value`` 字段（去掉 ``confidence``），
+ * 故此处不再合并 confidence。回路级可信度见上方 Descriptions。
+ */
 const confMetricRows = computed(() => {
   const metrics = confDetail.value?.metrics ?? {};
   return CONFIDENCE_METRIC_META.map((meta) => ({
     ...meta,
     value: metrics[meta.key]?.value ?? null,
-    confidence: metrics[meta.key]?.confidence ?? null,
   }));
 });
 
@@ -1983,8 +1982,8 @@ onMounted(async () => {
             </DescriptionsItem>
           </Descriptions>
 
-          <!-- 12 子指标明细 -->
-          <div class="mb-2 mt-4 text-sm font-medium">子指标可信度（3+1+8）</div>
+          <!-- 12 子指标明细（可信度统一 Phase 2：仅展示计算值，可信度统一为回路级） -->
+          <div class="mb-2 mt-4 text-sm font-medium">子指标数值（3+1+8）</div>
           <Table
             :columns="confMetricColumns"
             :data-source="confMetricRows"
@@ -1997,14 +1996,6 @@ onMounted(async () => {
                 <span class="font-mono text-xs">
                   {{ formatNumber(record.value, record.unit) }}
                 </span>
-              </template>
-              <template v-else-if="column.key === 'confidence'">
-                <Badge
-                  v-if="record.confidence"
-                  :color="CONFIDENCE_COLOR_MAP[record.confidence]"
-                  :text="CONFIDENCE_LABEL_MAP[record.confidence]"
-                />
-                <span v-else class="text-gray-400">—</span>
               </template>
             </template>
           </Table>

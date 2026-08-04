@@ -56,8 +56,16 @@ export namespace TuningApi {
   /** 数据来源（Phase 2） */
   export type DataSource = 'fallback_step' | 'HISTORY' | 'STEP_EXPERIMENT';
 
-  /** 可信度等级（Phase 2，对齐平台口径） */
-  export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E' | 'INCONCLUSIVE';
+  /**
+   * 算法可信度等级（辨识专用，Phase 2，对齐后端 AlgorithmConfidenceLevel）。
+   *
+   * 可信度统一 Phase 3（P3-1）：原 ``ConfidenceLevel`` 改名为
+   * ``AlgorithmConfidenceLevel``，与平台级数据可信度（A/B/C/D/E，无 INCONCLUSIVE）
+   * 区分。判定维度：算法拟合度（R²）+ 残差 + 激励。
+   *
+   * 对外 API 字段名不变：仍为 ``confidenceLevel`` / ``dataConfidenceLevel``。
+   */
+  export type AlgorithmConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E' | 'INCONCLUSIVE';
 
   /** 整定模型来源（服务端按来源执行可信度与审计门禁） */
   export type ModelSource =
@@ -126,7 +134,7 @@ export namespace TuningApi {
     modelType: ModelType;
     params: ModelParams;
     fittingScore: number;
-    confidence: ConfidenceLevel;
+    confidence: AlgorithmConfidenceLevel;
     identifyMethod?: null | HistoryIdentifyMethod;
     residualTestPassed?: null | boolean;
     excitationScore?: null | number;
@@ -160,8 +168,8 @@ export namespace TuningApi {
     modelType?: null | string;
     params?: null | ModelParams;
     fittingScore?: null | number;
-    confidenceLevel?: null | ConfidenceLevel;
-    dataConfidenceLevel?: null | ConfidenceLevel;
+    confidenceLevel?: null | AlgorithmConfidenceLevel;
+    dataConfidenceLevel?: null | AlgorithmConfidenceLevel;
     confidenceReason?: null | string;
     thetaSource?: null | ThetaSource;
     excitationScore?: null | number;
@@ -355,7 +363,7 @@ export namespace TuningApi {
     // Phase 2 元数据
     identifyMethod?: null | HistoryIdentifyMethod;
     dataSource?: null | DataSource;
-    confidenceLevel?: null | ConfidenceLevel;
+    confidenceLevel?: null | AlgorithmConfidenceLevel;
     confidenceReason?: null | string;
     excitationScore?: null | number;
     residualTestPassed?: null | boolean;
@@ -385,7 +393,7 @@ export namespace TuningApi {
     // Phase 2 元数据
     identifyMethod?: null | HistoryIdentifyMethod;
     dataSource?: null | DataSource;
-    confidenceLevel?: null | ConfidenceLevel;
+    confidenceLevel?: null | AlgorithmConfidenceLevel;
     confidenceReason?: null | string;
     excitationScore?: null | number;
     residualTestPassed?: null | boolean;

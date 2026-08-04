@@ -12,7 +12,7 @@ import math
 import numpy as np
 
 from app.services.tuning_identification.types import (
-    ConfidenceLevel,
+    AlgorithmConfidenceLevel,
     ExcitationCheckResult,
 )
 
@@ -68,7 +68,7 @@ def check_excitation(
             significant_changes=0,
             condition_number=float("inf"),
             verdict="数据点不足（<10）",
-            confidence=ConfidenceLevel.INCONCLUSIVE,
+            confidence=AlgorithmConfidenceLevel.INCONCLUSIVE,
         )
 
     # OP 变化范围
@@ -80,7 +80,7 @@ def check_excitation(
             significant_changes=0,
             condition_number=float("inf"),
             verdict="OP 无变化（恒定）",
-            confidence=ConfidenceLevel.INCONCLUSIVE,
+            confidence=AlgorithmConfidenceLevel.INCONCLUSIVE,
         )
     # V62-P1-009: OP 激励按量程归一化（消除 OP/PV 跨量纲比值）。
     # 有 op_span 时用 u_range/op_span（物理意义明确：OP 走过量程的比例）；
@@ -100,7 +100,7 @@ def check_excitation(
                 f"OP 变化范围过小（相对{range_basis} {op_rel_range:.4f} "
                 f"< {_OP_RANGE_REL_THRESHOLD}）"
             ),
-            confidence=ConfidenceLevel.INCONCLUSIVE,
+            confidence=AlgorithmConfidenceLevel.INCONCLUSIVE,
         )
 
     # V62-P1-010: OP 方向变化次数（带死区，过滤零值/微噪声）。
@@ -127,7 +127,7 @@ def check_excitation(
             significant_changes=significant_changes,
             condition_number=float("inf"),
             verdict="回归数据不足",
-            confidence=ConfidenceLevel.INCONCLUSIVE,
+            confidence=AlgorithmConfidenceLevel.INCONCLUSIVE,
         )
     Phi = np.zeros((rows, 2))
     for i in range(rows):
@@ -148,7 +148,7 @@ def check_excitation(
             significant_changes=significant_changes,
             condition_number=cond,
             verdict=verdict,
-            confidence=ConfidenceLevel.INCONCLUSIVE,
+            confidence=AlgorithmConfidenceLevel.INCONCLUSIVE,
         )
     if cond > _COND_NUMBER_LOW:
         verdict = f"PE 条件数过大（{cond:.2e} > {_COND_NUMBER_LOW:.0e}）"
@@ -157,7 +157,7 @@ def check_excitation(
             significant_changes=significant_changes,
             condition_number=cond,
             verdict=verdict,
-            confidence=ConfidenceLevel.INCONCLUSIVE,
+            confidence=AlgorithmConfidenceLevel.INCONCLUSIVE,
         )
     if cond > _COND_NUMBER_OK:
         verdict = f"PE 条件数偏大（{cond:.2e} > {_COND_NUMBER_OK:.0e}），结果标注低可信度"
@@ -166,7 +166,7 @@ def check_excitation(
             significant_changes=significant_changes,
             condition_number=cond,
             verdict=verdict,
-            confidence=ConfidenceLevel.C,
+            confidence=AlgorithmConfidenceLevel.C,
         )
     # 激励充分
     return ExcitationCheckResult(
@@ -174,7 +174,7 @@ def check_excitation(
         significant_changes=significant_changes,
         condition_number=cond,
         verdict="激励充分",
-        confidence=ConfidenceLevel.A,
+        confidence=AlgorithmConfidenceLevel.A,
     )
 
 

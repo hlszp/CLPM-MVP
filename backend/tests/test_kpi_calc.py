@@ -224,7 +224,11 @@ def _make_bundle(
     tag_group: str = TagGroup.BASE.value,
     sampling_freq: str = "1s",
 ) -> MetricDataBundle:
-    """构造测试用 MetricDataBundle（含最小化 DataBlock）。"""
+    """构造测试用 MetricDataBundle（含最小化 DataBlock）.
+
+    v6.2 可信度统一 Phase 2：DataBlock 设置 loop_confidence_level="A"，
+    所有指标经 _make_result 读取回路级可信度。
+    """
     ts = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
     data_block = DataBlock(
         data_block_id=f"db_{loop_id}_{metric_code}_{sampling_freq}",
@@ -236,6 +240,8 @@ def _make_bundle(
         validity={"pv_valid": [True]},
         quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         point_count=1,
+        loop_confidence_level="A",
+        loop_valid_rate=1.0,
     )
     return MetricDataBundle(
         metric_code=metric_code,
@@ -2628,9 +2634,12 @@ class TestBackfillWindowBatchCancellation:
 
 
 class TestExtractMetricsDetail:
-    """_extract_metrics_detail — 12 子指标值+可信度提取（metrics JSONB 产物）."""
+    """_extract_metrics_detail — 12 子指标值提取（metrics JSONB 产物）.
 
-    def test_extracts_values_and_confidence(self) -> None:
+    v6.2 可信度统一 Phase 2（P2-4 / D2）：去除 confidence，仅保留 value。
+    """
+
+    def test_extracts_values_only(self) -> None:
         from app.tasks.kpi_calc import _extract_metrics_detail
 
         metric_results = {
@@ -2645,10 +2654,11 @@ class TestExtractMetricsDetail:
         # composite_score 不进入子指标 JSONB
         assert "composite_score" not in detail
         # Calculator 代码 stability_rate → DB 列名 steady_rate
-        assert detail["steady_rate"] == {"value": 88.0, "confidence": "B"}
-        assert detail["accuracy_rate"] == {"value": 93.35, "confidence": "A"}
+        # P2-4: 仅保留 value，去掉 confidence（已统一为回路级）
+        assert detail["steady_rate"] == {"value": 88.0}
+        assert detail["accuracy_rate"] == {"value": 93.35}
         # None 值保留 None（INCONCLUSIVE 指标）
-        assert detail["fast_rate"] == {"value": None, "confidence": "E"}
+        assert detail["fast_rate"] == {"value": None}
 
     def test_empty_metric_results_returns_empty_dict(self) -> None:
         from app.tasks.kpi_calc import _extract_metrics_detail

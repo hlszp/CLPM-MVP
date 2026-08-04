@@ -453,6 +453,11 @@ export namespace LoopApi {
     status: KpiStatus;
     algorithm_version: string;
     calculatedAt: string;
+    /**
+     * 回路级可信度等级（A/B/C/D/E），由后端 _aggregate_kpi_snapshots 返回。
+     * 可信度统一 Phase 2：detail 页可信度徽章统一用此字段，不再前端推导。
+     */
+    confidence_level?: null | string;
   }
 
   /** 回路监控详情（IDS v3.2 §2.2.14） */

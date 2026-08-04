@@ -25,6 +25,8 @@ class TestAccuracyRate:
 
     def test_zero_error_returns_100(self, zero_error_bundle):
         """PV=SP 零偏差 → 准确率 100%。"""
+        # v6.2 P2-2：可信度等级 = DataBlock.loop_confidence_level（回路级）
+        zero_error_bundle.data_block.loop_confidence_level = ConfidenceLevel.A.value
         calc = AccuracyRateCalculator()
         result = calc.calculate(zero_error_bundle)
         assert result.value == 100.0
@@ -86,22 +88,30 @@ class TestAccuracyRate:
         assert result.value is not None
         assert result.details["e_max"] == 10.0
 
-    def test_confidence_level_based_on_valid_rate(self):
-        """valid_rate < 0.95 → 可信度降级。"""
+    def test_confidence_level_based_on_loop_confidence(self):
+        """可信度等级 = DataBlock.loop_confidence_level（回路级，P2-2）。
+
+        v6.2 可信度统一 Phase 2：指标可信度不再由 metric-level valid_rate 决定，
+        而是统一使用回路级 loop_confidence_level。
+        valid_rate 仅用于可计算性判定（< 0.20 → INCONCLUSIVE）。
+        """
         n = 100
         pv = [50.0] * n
         sp = [50.0] * n
-        # 50% 有效
+        # 50% 有效（>= 0.20 阈值，可计算）
         validity = {"pv_valid": [True] * 50 + [False] * 50, "sp_valid": [True] * n}
         bundle = make_bundle(
             {"pv": pv, "sp": sp},
             validity,
             mask_expression="pv_valid && sp_valid",
             metric_code="accuracy_rate",
+            loop_confidence_level=ConfidenceLevel.D.value,
         )
         calc = AccuracyRateCalculator()
         result = calc.calculate(bundle)
-        # valid_rate = 50/100 = 0.5 → D 级
+        # valid_rate = 50/100 = 0.5 >= 0.20 → 可计算，value 非 None
+        assert result.value is not None
+        # 可信度 = loop_confidence_level（D），不再由 metric-level vr 决定
         assert result.confidence_level == ConfidenceLevel.D.value
 
     def test_value_clamped_to_100(self):

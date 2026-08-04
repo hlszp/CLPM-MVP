@@ -350,13 +350,24 @@ async def save_confidence_thresholds(
         user.username,
     )
 
-    # 更新运行时阈值缓存（立即生效，无需重启）
-    from app.services.confidence_evaluator import ConfidenceEvaluator
+    # 更新运行时阈值缓存（当前进程立即生效）+ Redis pub/sub 广播（其他进程同步）
+    # 可信度统一 Phase 3（P3-2 / D4）：多进程阈值同步
+    from app.services.confidence_evaluator import (
+        ConfidenceEvaluator,
+        broadcast_thresholds,
+    )
 
     threshold_map: dict[str, float] = {}
     for item in new_thresholds.thresholds:
         threshold_map[item.name] = item.minRate
     ConfidenceEvaluator.set_thresholds(threshold_map)
+
+    # 广播给所有 Celery worker / uvicorn 进程的订阅线程
+    try:
+        await broadcast_thresholds(threshold_map, source=f"api:{user.username}")
+    except Exception as exc:  # noqa: BLE001
+        # 广播失败不阻塞响应（当前进程已更新，其他进程下次重启预载时会加载）
+        logger.warning("阈值更新广播失败（其他进程将在重启时预载）: %s", exc)
 
     return success(data=new_thresholds.model_dump(), message="可信度阈值已更新")
 

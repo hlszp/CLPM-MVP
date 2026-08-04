@@ -279,13 +279,19 @@ class TestComputeCompositeScore:
         assert score.value == 100.0
 
     def test_d_level_core_keeps_score_with_annotation(self):
-        """核心指标 D 级 → 保留评分，details 标注 low_confidence_inputs。"""
+        """核心指标 D 级 → 保留评分，details 标注 low_confidence_inputs。
+
+        v6.2 P2-3：综合评分可信度 = accuracy_rate.confidence_level，
+        故需将 accuracy_rate 设为 D 级以测试 D 级行为。
+        """
         results = _make_full_results(a=100.0, f=100.0, s=100.0, r=100.0)
+        results["accuracy_rate"] = _make_metric_result("accuracy_rate", 100.0, confidence="D")
         results["fast_rate"] = _make_metric_result("fast_rate", 80.0, confidence="D")
         score = ConfidenceEvaluator.compute_composite_score(results)
         assert score.value is not None
         assert score.confidence_level == "D"
-        assert score.details["low_confidence_inputs"] == ["fast_rate"]
+        assert "accuracy_rate" in score.details["low_confidence_inputs"]
+        assert "fast_rate" in score.details["low_confidence_inputs"]
 
     def test_no_low_confidence_annotation_when_all_high(self):
         """全部高可信度时 details 不含 low_confidence_inputs。"""
@@ -309,10 +315,15 @@ class TestComputeCompositeScore:
         assert score.value == 100.0
         assert score.value <= 100.0
 
-    def test_confidence_takes_minimum(self):
-        """可信度取核心指标 + R 中最低等级。"""
+    def test_confidence_from_accuracy_rate(self):
+        """综合评分可信度 = accuracy_rate 的可信度（P2-3：回路级单一可信度）。
+
+        v6.2 可信度统一 Phase 2：综合评分可信度不再取核心指标 + R 中最低等级，
+        而是直接读取 accuracy_rate.confidence_level（回路级单一可信度）。
+        即使其他指标仍为 A 级，综合可信度跟随 accuracy_rate。
+        """
         results = _make_full_results(confidence="A")
-        results["stability_rate"] = _make_metric_result("stability_rate", 50.0, confidence="D")
+        results["accuracy_rate"] = _make_metric_result("accuracy_rate", 90.0, confidence="D")
         score = ConfidenceEvaluator.compute_composite_score(results)
         assert score.confidence_level == "D"
 

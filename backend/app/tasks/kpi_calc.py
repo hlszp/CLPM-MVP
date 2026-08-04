@@ -1501,11 +1501,13 @@ def _compute_kpis_three_layer(
 def _extract_metrics_detail(
     metric_results: dict[str, MetricResult],
 ) -> dict[str, dict]:
-    """提取 12 子指标的计算值与各自可信度（loop_confidence_latest.metrics JSONB）。
+    """提取 12 子指标的计算值（loop_confidence_latest.metrics JSONB）。
 
-    键为 DB 列名（snake_case），形如::
+    v6.2 可信度统一 Phase 2（P2-4 / D2）：
+        去除子指标 confidence 字段（已统一为回路级），仅保留 value。
+        键为 DB 列名（snake_case），形如::
 
-        {"accuracy_rate": {"value": 93.35, "confidence": "A"}, ...}
+            {"accuracy_rate": {"value": 93.35}, ...}
 
     - 跳过 composite_score（综合评分单独存储于 score / confidence_level 列）
     - value 为 None 时保留 None（该指标 INCONCLUSIVE）
@@ -1518,7 +1520,6 @@ def _extract_metrics_detail(
         db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
         detail[db_code] = {
             "value": float(result.value) if result.value is not None else None,
-            "confidence": result.confidence_level,
         }
 
     return detail

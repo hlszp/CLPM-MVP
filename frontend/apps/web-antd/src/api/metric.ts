@@ -1257,10 +1257,15 @@ export function getGradeDistributionApi(params: GradeDistributionQueryParams) {
 // 回路最新可信度评估记录 — GET /loops/{loopId}/confidence-latest
 // ===========================================================================
 
-/** 单个子指标的计算值与可信度（metrics JSONB 元素） */
+/**
+ * 单个子指标的计算值（metrics JSONB 元素）。
+ *
+ * 可信度统一 Phase 2（P2-6 / D2）：子指标可信度已统一为回路级，
+ * ``metrics`` JSONB 仅保留 ``value`` 字段（去掉 ``confidence``），
+ * 回路级可信度见 ``LoopConfidenceLatestItem.confidenceLevel``。
+ */
 export interface LoopConfidenceMetricDetail {
   value: null | number;
-  confidence: ConfidenceLevel | null;
 }
 
 /** 回路最新一次可信度评估记录（loop_confidence_latest，每回路一条） */
@@ -1276,8 +1281,10 @@ export interface LoopConfidenceLatestItem {
   confidenceLevel: ConfidenceLevel | null;
   validRate: null | number;
   /**
-   * 12 子指标（3+1+8 体系）计算值与各自可信度，
-   * 键为 DB 列名（snake_case），如 accuracy_rate / steady_rate / settling_time
+   * 12 子指标（3+1+8 体系）计算值，
+   * 键为 DB 列名（snake_case），如 accuracy_rate / steady_rate / settling_time。
+   *
+   * 可信度统一 Phase 2：仅含 ``value``，不含子指标可信度（已统一为回路级）。
    */
   metrics: Record<string, LoopConfidenceMetricDetail>;
   algorithmVersion: null | string;

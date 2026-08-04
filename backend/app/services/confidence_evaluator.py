@@ -6,11 +6,20 @@
 3. 综合评分 v2 计算：P = (A·a + F·f + S·s)/(a+f+s) × R（算法说明 §4.10）。
 
 设计依据：算法说明 §3.7.1, §3.7.2, §4.10；GB/T 44693.2-2024 附录 B.6
+
+可信度统一 Phase 3（P3-2 / D4）：阈值多进程同步。
+- POST /configs/confidence-thresholds 保存后通过 Redis pub/sub 广播
+- 各 Celery worker / uvicorn 进程后台守护线程订阅，收到消息后调 set_thresholds()
+- worker_process_init / lifespan 启动时从 DB 全量加载兜底
+- 消息含版本号去重，避免旧消息覆盖新阈值
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import threading
+from datetime import UTC, datetime
 
 from app.contracts.data_types import (
     ConfidenceLevel,
@@ -18,6 +27,7 @@ from app.contracts.data_types import (
     MetricDataBundle,
     MetricResult,
 )
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +77,19 @@ DEFAULT_CONFIDENCE_THRESHOLDS: dict[str, float] = {
 #: 运行时可信度阈值缓存（通过 set_thresholds() 更新）
 _threshold_cache: dict[str, float] = dict(DEFAULT_CONFIDENCE_THRESHOLDS)
 
+#: 当前已应用的阈值版本号（用于 pub/sub 消息去重，仅单调递增）
+_threshold_version: int = 0
+
+#: Redis pub/sub 频道：阈值更新广播
+THRESHOLD_CHANNEL = "confidence:thresholds:updated"
+
+#: Redis key：阈值版本号计数器（INCR 生成递增版本号）
+THRESHOLD_VERSION_KEY = "confidence:thresholds:version"
+
+#: 订阅线程启动标记（进程级幂等，避免重复启动）
+_subscriber_started: bool = False
+_subscriber_lock = threading.Lock()
+
 
 class ConfidenceEvaluator:
     """指标可信度评估器.
@@ -80,32 +103,45 @@ class ConfidenceEvaluator:
     """
 
     @staticmethod
-    def set_thresholds(thresholds: dict[str, float] | None) -> None:
+    def set_thresholds(
+        thresholds: dict[str, float] | None,
+        version: int | None = None,
+    ) -> None:
         """更新运行时可信度阈值缓存.
 
-        由配置管理接口（confidence_config）在保存配置后调用。
+        由配置管理接口（confidence_config）在保存配置后调用，
+        或由 pub/sub 订阅线程收到广播后调用。
         传入 None 或空字典时重置为算法默认值。
 
         Args:
             thresholds: ``{"A": 0.95, "B": 0.80, "C": 0.60, "D": 0.20}``
+            version: 阈值版本号（pub/sub 去重用）。None 表示不更新版本号
+                （如启动预载）。仅当 version > 当前版本号时才更新版本号。
         """
-        global _threshold_cache
+        global _threshold_cache, _threshold_version
         if not thresholds:
             _threshold_cache = dict(DEFAULT_CONFIDENCE_THRESHOLDS)
             logger.info("可信度阈值已重置为算法默认: %s", _threshold_cache)
-            return
-        _threshold_cache = {
-            "A": float(thresholds.get("A", DEFAULT_CONFIDENCE_THRESHOLDS["A"])),
-            "B": float(thresholds.get("B", DEFAULT_CONFIDENCE_THRESHOLDS["B"])),
-            "C": float(thresholds.get("C", DEFAULT_CONFIDENCE_THRESHOLDS["C"])),
-            "D": float(thresholds.get("D", DEFAULT_CONFIDENCE_THRESHOLDS["D"])),
-        }
-        logger.info("可信度阈值已更新: %s", _threshold_cache)
+        else:
+            _threshold_cache = {
+                "A": float(thresholds.get("A", DEFAULT_CONFIDENCE_THRESHOLDS["A"])),
+                "B": float(thresholds.get("B", DEFAULT_CONFIDENCE_THRESHOLDS["B"])),
+                "C": float(thresholds.get("C", DEFAULT_CONFIDENCE_THRESHOLDS["C"])),
+                "D": float(thresholds.get("D", DEFAULT_CONFIDENCE_THRESHOLDS["D"])),
+            }
+            logger.info("可信度阈值已更新: %s", _threshold_cache)
+        if version is not None and version > _threshold_version:
+            _threshold_version = version
 
     @staticmethod
     def get_thresholds() -> dict[str, float]:
         """获取当前运行时可信度阈值（副本）."""
         return dict(_threshold_cache)
+
+    @staticmethod
+    def get_threshold_version() -> int:
+        """获取当前已应用的阈值版本号（pub/sub 去重用）."""
+        return _threshold_version
 
     @staticmethod
     def evaluate(valid_rate: float) -> ConfidenceLevel:
@@ -125,8 +161,22 @@ class ConfidenceEvaluator:
             - C: 0.60 <= valid_rate < 0.80
             - D: 0.20 <= valid_rate < 0.60
             - E: valid_rate < 0.20 → INCONCLUSIVE
+
+        可信度统一 Phase 3（P3-3 / D5）：valid_rate 落入 [D, D+0.10) 时
+        记 WARN 告警（濒临 INCONCLUSIVE，数据质量接近不可计算边界）。
         """
         t = _threshold_cache
+
+        # D5 监控：valid_rate 濒临 INCONCLUSIVE 时告警
+        d_threshold = t["D"]
+        if d_threshold <= valid_rate < d_threshold + 0.10:
+            logger.warning(
+                "valid_rate=%.4f 濒临 INCONCLUSIVE（D 阈值=%.2f），"
+                "数据质量接近不可计算边界，建议检查数据源完整性",
+                valid_rate,
+                d_threshold,
+            )
+
         if valid_rate >= t["A"]:
             return ConfidenceLevel.A
         if valid_rate >= t["B"]:
@@ -346,8 +396,10 @@ class ConfidenceEvaluator:
         score = max(0.0, min(100.0, score))
         score = round(score, 2)
 
-        # 可信度取核心指标中最低等级
-        confidence = _min_confidence(metric_results)
+        # 可信度统一 Phase 2（P2-3）：综合评分可信度 = 回路级可信度。
+        # 各指标可信度已统一为回路级（P2-2），不再需要 _min_confidence 取最低。
+        # accuracy_rate 必存在（前面已校验核心指标非 INCONCLUSIVE），直接读取。
+        confidence = metric_results["accuracy_rate"].confidence_level
 
         # D 级输入保留评分，但标注低可信度输入（评审决策口径）
         low_confidence_inputs = [
@@ -393,6 +445,11 @@ class ConfidenceEvaluator:
 def _min_confidence(metric_results: dict[str, MetricResult]) -> str:
     """取核心指标 + R 中最低的可信度等级（A 最高，E 最低）.
 
+    .. deprecated:: v6.2 可信度统一 Phase 2（P2-3）
+        各指标可信度已统一为回路级，综合评分直接读取
+        ``accuracy_rate.confidence_level``，不再需要取最低。
+        保留此函数仅供向后兼容引用，不再被 ``compute_composite_score`` 调用。
+
     仅在综合评分可计算（非 INCONCLUSIVE）的路径调用——
     评分 INCONCLUSIVE 时各提前返回路径已显式返回 E 级，
     保证评分语义与可信度一致（INCONCLUSIVE 评分不会出现 A/B 可信度）。
@@ -418,6 +475,179 @@ def _min_confidence(metric_results: dict[str, MetricResult]) -> str:
     return worst
 
 
+# ---------------------------------------------------------------------------
+# 可信度统一 Phase 3（P3-2 / D4）：阈值多进程同步 — Redis pub/sub
+# ---------------------------------------------------------------------------
+
+
+def _get_sync_redis():
+    """获取同步 Redis 客户端（用于后台订阅线程，不依赖 event loop）."""
+    import redis as sync_redis
+
+    return sync_redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=settings.REDIS_DB,
+        password=settings.REDIS_PASSWORD or None,
+        decode_responses=True,
+    )
+
+
+async def broadcast_thresholds(thresholds: dict[str, float], source: str = "api") -> int:
+    """通过 Redis pub/sub 广播阈值更新（POST 接口调用）.
+
+    流程：
+    1. INCR 版本号计数器 ``THRESHOLD_VERSION_KEY``
+    2. PUBLISH 消息到 ``THRESHOLD_CHANNEL``（含 version/thresholds/source）
+
+    Args:
+        thresholds: 阈值字典 ``{"A": 0.95, "B": 0.80, ...}``
+        source: 更新来源标记（如 "api" / "bootstrap"）
+
+    Returns:
+        新版本号
+    """
+    from app.core.redis import redis_client
+
+    version = await redis_client.incr(THRESHOLD_VERSION_KEY)
+    message = json.dumps(
+        {
+            "version": version,
+            "thresholds": thresholds,
+            "updated_at": datetime.now(UTC).isoformat(),
+            "source": source,
+        },
+        ensure_ascii=False,
+    )
+    await redis_client.publish(THRESHOLD_CHANNEL, message)
+    logger.info("阈值更新已广播: version=%s, source=%s", version, source)
+    return version
+
+
+def _handle_threshold_message(message_data: str) -> bool:
+    """处理一条阈值更新广播消息（供订阅线程和测试调用）.
+
+    解析消息 JSON，按版本号去重后调 ``set_thresholds()``。
+
+    Args:
+        message_data: Redis pub/sub message 的 data 字段（JSON 字符串）
+
+    Returns:
+        True 表示阈值已更新，False 表示因版本号过期或解析失败而跳过
+    """
+    global _threshold_version
+    try:
+        data = json.loads(message_data)
+        msg_version = int(data.get("version", 0))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        logger.exception("解析阈值更新广播消息失败，已跳过")
+        return False
+
+    if msg_version <= _threshold_version:
+        logger.debug(
+            "阈值更新广播版本号过期，已跳过: msg=%s, current=%s",
+            msg_version,
+            _threshold_version,
+        )
+        return False
+
+    thresholds = data.get("thresholds", {})
+    ConfidenceEvaluator.set_thresholds(thresholds, version=msg_version)
+    logger.info(
+        "收到阈值更新广播并已应用: version=%s, source=%s",
+        msg_version,
+        data.get("source", "unknown"),
+    )
+    return True
+
+
+def _threshold_subscriber_loop() -> None:
+    """后台守护线程：订阅阈值更新频道，收到消息后调 set_thresholds().
+
+    消息去重：仅当消息中的 version > 当前 _threshold_version 时才更新。
+    连接断开时自动重连（Redis pub/sub 的 listen() 在连接断开时会抛异常，
+    捕获后重试）。
+    """
+    while True:
+        try:
+            client = _get_sync_redis()
+            pubsub = client.pubsub()
+            pubsub.subscribe(THRESHOLD_CHANNEL)
+            logger.info("可信度阈值订阅线程已连接 Redis，监听频道: %s", THRESHOLD_CHANNEL)
+            for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                _handle_threshold_message(message["data"])
+        except Exception:  # noqa: BLE001
+            logger.exception("阈值订阅线程异常，5 秒后重连")
+            import time
+
+            time.sleep(5)
+
+
+def start_threshold_subscriber() -> None:
+    """启动阈值更新订阅后台守护线程（进程级幂等）.
+
+    在以下时机调用：
+    - uvicorn lifespan 启动（API 进程）
+    - Celery worker_process_init（每个 worker 子进程）
+
+    幂等：同一进程内重复调用不会启动多个线程。
+    """
+    global _subscriber_started
+    with _subscriber_lock:
+        if _subscriber_started:
+            return
+        thread = threading.Thread(
+            target=_threshold_subscriber_loop,
+            name="confidence-threshold-subscriber",
+            daemon=True,
+        )
+        thread.start()
+        _subscriber_started = True
+        logger.info("可信度阈值订阅线程已启动")
+
+
+async def load_thresholds_from_db(db) -> None:  # noqa: ANN001
+    """从 DB 加载当前可信度阈值到进程内缓存（启动预载兜底）.
+
+    在 worker_process_init / lifespan 启动时调用，确保新进程启动时
+    即使用未收到 pub/sub 广播也能读取到最新阈值。
+
+    直接查询 ``sys_config`` 表（避免从 confidence_config 反向导入导致循环依赖），
+    解析 ``confidence_thresholds.current`` JSON，提取各等级 minRate。
+
+    Args:
+        db: AsyncSession
+    """
+    from sqlalchemy import select
+
+    from app.models.sys_config import SysConfig
+
+    key = "confidence_thresholds.current"
+    result = await db.execute(select(SysConfig).where(SysConfig.key == key))
+    cfg = result.scalar_one_or_none()
+    if not cfg or not cfg.value:
+        # 未配置过，使用算法默认值（不写入数据库）
+        ConfidenceEvaluator.set_thresholds(None)
+        logger.info("可信度阈值预载：sys_config 无配置，使用算法默认值")
+        return
+    try:
+        data = json.loads(cfg.value)
+        # schema 结构：{"thresholds": [{"name": "A", "minRate": 0.95}, ...], ...}
+        items = data.get("thresholds", [])
+        threshold_map = {item["name"]: float(item["minRate"]) for item in items}
+        if not threshold_map:
+            ConfidenceEvaluator.set_thresholds(None)
+            logger.warning("可信度阈值预载：thresholds 为空，使用算法默认值")
+            return
+        ConfidenceEvaluator.set_thresholds(threshold_map)
+        logger.info("可信度阈值预载：已从 sys_config 加载: %s", threshold_map)
+    except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+        logger.warning("可信度阈值预载解析失败，回退算法默认: %s", exc)
+        ConfidenceEvaluator.set_thresholds(None)
+
+
 __all__ = [
     "ALGORITHM_VERSION",
     "ConfidenceEvaluator",
@@ -426,4 +656,10 @@ __all__ = [
     "DEFAULT_WEIGHTS",
     "DISCOUNT_METRIC_CODE",
     "QUALITY_POLICY",
+    "THRESHOLD_CHANNEL",
+    "THRESHOLD_VERSION_KEY",
+    "_handle_threshold_message",
+    "broadcast_thresholds",
+    "load_thresholds_from_db",
+    "start_threshold_subscriber",
 ]

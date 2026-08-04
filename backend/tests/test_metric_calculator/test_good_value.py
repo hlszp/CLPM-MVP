@@ -88,6 +88,8 @@ class TestGoodValueRate:
             {"pv": [50.0] * n},
             metric_code="good_value_rate",
             quality_summary=QualitySummary(total_count=n, valid_count=20, good_value_rate=0.2),
+            # v6.2 P2-2：可信度等级 = DataBlock.loop_confidence_level（回路级）
+            loop_confidence_level=ConfidenceLevel.A.value,
         )
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)

@@ -47,7 +47,7 @@ from app.services.tuning_identification.order_selection import (
     select_order,
 )
 from app.services.tuning_identification.types import (
-    ConfidenceLevel,
+    AlgorithmConfidenceLevel,
     IdentifyMethod,
     ModelType,
 )
@@ -319,7 +319,7 @@ class TestExcitationDetection:
         result = check_excitation(u, y, d=3)
         assert not result.is_sufficient
         assert "OP" in result.verdict or "无变化" in result.verdict
-        assert result.confidence == ConfidenceLevel.INCONCLUSIVE
+        assert result.confidence == AlgorithmConfidenceLevel.INCONCLUSIVE
 
     def test_insufficient_tiny_op_range(self):
         """OP 变化范围过小应判定为激励不足。"""
@@ -1956,7 +1956,10 @@ class TestResidualWhitenessPipeline:
         )
         assert result.success
         assert result.best_model.residual_test_passed
-        assert result.best_model.confidence in (ConfidenceLevel.A, ConfidenceLevel.B)
+        assert result.best_model.confidence in (
+            AlgorithmConfidenceLevel.A,
+            AlgorithmConfidenceLevel.B,
+        )
 
 
 # ---------------------------------------------------------------------------

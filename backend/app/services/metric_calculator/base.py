@@ -7,7 +7,14 @@
 - 构造 MetricResult（含可信度等级）
 - INCONCLUSIVE 兜底处理
 
-设计依据：算法说明 §3.6, §3.7.1, §3.7.2；数据流程图 §7.5
+v6.2 变更（可信度统一 Phase 2）：
+    - 指标可信度等级改用回路级（DataBlock.loop_confidence_level），
+      消除"每个指标各打一档"的细粒度浪费。
+    - 指标级 valid_rate 降级为可计算性判定（vr < 0.20 → INCONCLUSIVE），
+      不再产生 A/B/C/D/E 等级。
+
+设计依据：算法说明 §3.6, §3.7.1, §3.7.2；数据流程图 §7.5；
+         可信度统一改进方案 §5.2
 """
 
 from __future__ import annotations
@@ -26,6 +33,10 @@ from app.contracts.metric_calculator import MetricCalculator
 from app.services.confidence_evaluator import ALGORITHM_VERSION, ConfidenceEvaluator
 
 logger = logging.getLogger(__name__)
+
+#: 可信度统一 Phase 2（D5）：指标级 INCONCLUSIVE 阈值。
+#: 指标 mask 有效点占比 < 0.20 → value=None（INCONCLUSIVE），沿用 E 级阈值。
+_INCONCLUSIVE_THRESHOLD: float = 0.20
 
 
 class MetricCalculatorBase(MetricCalculator):
@@ -140,11 +151,17 @@ class MetricCalculatorBase(MetricCalculator):
     ) -> MetricResult:
         """构造正常 MetricResult（含可信度判定）.
 
+        v6.2 可信度统一 Phase 2（P2-2）：
+            - 可计算性：指标级 vr < 0.20 → INCONCLUSIVE（value=None）
+            - 可信度等级：统一用回路级 ``bundle.data_block.loop_confidence_level``，
+              不再用指标级 valid_rate 打 A/B/C/D/E
+            - 血缘 lineage 仍记录指标级 vr（审计追溯）
+
         Args:
             bundle: 指标数据包
             value: 指标值（已 round 到 precision 位小数）
             details: 指标详细信息
-            valid_rate: 有效数据率，None 时自动计算
+            valid_rate: 有效数据率，None 时自动计算（仅用于 INCONCLUSIVE 判定 + 血缘）
             precision: value 保留小数位数（默认 2；量级远小于 0.01 的指标
                 如 output_trip_index 应传更大精度避免被抹零）
 
@@ -152,21 +169,33 @@ class MetricCalculatorBase(MetricCalculator):
             MetricResult，含 metric_code/value/confidence_level/lineage/details
         """
         vr = valid_rate if valid_rate is not None else self._get_valid_rate(bundle)
-        confidence = ConfidenceEvaluator.evaluate(vr)
+
+        # 可计算性判定（D5）：指标 mask 有效点占比 < 0.20 → INCONCLUSIVE
+        if vr < _INCONCLUSIVE_THRESHOLD:
+            logger.warning(
+                "[%s] INCONCLUSIVE: valid_rate=%.4f < threshold=%.2f",
+                self.metric_code,
+                vr,
+                _INCONCLUSIVE_THRESHOLD,
+            )
+            return self._make_inconclusive(bundle, "data_insufficient")
+
+        # 可信度等级：回路级单一值（P2-2），所有指标共享
+        loop_confidence = bundle.data_block.loop_confidence_level
         lineage = self._build_lineage(bundle, vr)
 
         logger.debug(
-            "[%s] value=%.2f, valid_rate=%.4f, confidence=%s",
+            "[%s] value=%.2f, metric_vr=%.4f, loop_confidence=%s",
             self.metric_code,
             value,
             vr,
-            confidence.value,
+            loop_confidence,
         )
 
         return MetricResult(
             metric_code=self.metric_code,
             value=round(float(value), precision),
-            confidence_level=confidence.value,
+            confidence_level=loop_confidence,
             lineage=lineage,
             details=details or {},
         )
