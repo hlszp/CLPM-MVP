@@ -441,8 +441,9 @@ class TestOpSaturationScenario:
         默认 epsilon=2.0 时阈值 OP≥98，多数 OP=97 不计入（rate≈1%）；
         用 epsilon=5.0 时阈值 OP≥95，可正确识别饱和期（rate≈50%）。
 
-        expected saturation_rate_range=[25,50]，实际 52%（2 个饱和期占 auto 时长 52%），
-        因生成脚本估算 33% 但实际 7200s 内含 2 个完整饱和期 → 略高于上界，属合理偏差。
+        expected saturation_rate_range=[25,50]，国标 F.3 分母为评估时段总时长（AllTime，
+        含手动段），7200s 内 2 个完整饱和期 ≈ 3600s → Sa ≈ 3600/7200 ≈ 50%，
+        落在 [25, 60] 容差带内。
         """
         scenario = kpi_scenarios["op_saturation"]
         bundle = _scenario_to_bundle(

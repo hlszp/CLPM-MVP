@@ -328,29 +328,39 @@ class TestF3Saturation:
         assert res.details["saturation_type"] == "BOTH"
 
     def test_f3_kpi_manual_excluded(self):
-        """F.3：MANUAL 模式点既不计入分子也不计入分母.
+        """F.3：MANUAL 模式点不计入分子（AutoSaturateTime），但计入分母（AllTime）.
 
-        手算：50 点 AUTO@OP=99（饱和）+ 50 点 MANUAL@OP=0（剔除）
-        → total=50s，sat_high=50s → Sa=100.00%。
+        手算（国标 F.3：Sa = AutoSaturateTime / AllTime）：
+            50 点 AUTO@OP=99（饱和）→ AutoSaturateTime=50s
+            50 点 MANUAL@OP=0（剔除自控，但计入 AllTime）
+            → AllTime=100s → Sa = 50/100 × 100% = 50.00%。
         """
         op = [99.0] * 50 + [0.0] * 50
         mode = [1] * 50 + [0] * 50
         bundle = build_bundle({"op": op, "mode": mode}, metric_code="saturation_rate")
         res = SaturationRateCalculator().calculate(bundle)
 
-        assert res.value == 100.0
+        assert res.value == 50.0
+        assert res.details["sat_high_duration_s"] == 50.0
         assert res.details["auto_duration_s"] == 50.0
+        assert res.details["total_duration_s"] == 100.0
         assert res.details["saturation_type"] == "HIGH"
 
-    def test_f3_kpi_all_manual_inconclusive(self):
-        """F.3：全 MANUAL 时自控时长为 0 → INCONCLUSIVE(zero_auto_duration)."""
+    def test_f3_kpi_all_manual_zero(self):
+        """F.3：全 MANUAL 时 AutoSaturateTime=0、AllTime>0 → Sa=0.00%（非 INCONCLUSIVE).
+
+        国标 F.3：全程手动不存在"自控饱和"，Sa=0/AllTime=0%；
+        auto_duration_s=0 可用于区分"全手动"与"全自控无饱和"。
+        """
         bundle = build_bundle(
             {"op": [99.0] * 100, "mode": [0] * 100}, metric_code="saturation_rate"
         )
         res = SaturationRateCalculator().calculate(bundle)
 
-        assert res.value is None
-        assert res.details["reason"] == "zero_auto_duration"
+        assert res.value == 0.0
+        assert res.details["auto_duration_s"] == 0.0
+        assert res.details["total_duration_s"] == 100.0
+        assert res.details["saturation_type"] == "NONE"
 
     def test_f3_kpi_apc_counted_as_auto(self):
         """F.3：APC=4 计入自控（KPI 侧），全 APC 饱和 → Sa=100.00%."""

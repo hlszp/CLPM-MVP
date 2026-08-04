@@ -58,14 +58,21 @@ class TestSaturationRate:
         assert result.details["saturation_type"] == "BOTH"
 
     def test_manual_mode_not_counted(self):
-        """手动模式（mode=0）不计入饱和。"""
+        """手动模式（mode=0）不计入饱和分子；分母为总时长 → rate=0%.
+
+        国标 F.3：Sa = AutoSaturateTime / AllTime。全程手动时
+        AutoSaturateTime=0、AllTime>0 → Sa=0%（非 INCONCLUSIVE）。
+        """
         n = 100
         mode = [0] * n  # 全手动
-        op = [99.5] * n  # OP 饱和但不计入
+        op = [99.5] * n  # OP 饱和但非自控，不计入分子
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)
-        assert result.value is None  # 无自控时长 → INCONCLUSIVE
+        assert result.value == 0.0
+        assert result.details["saturation_type"] == "NONE"
+        assert result.details["auto_duration_s"] == 0.0
+        assert result.details["total_duration_s"] == 100.0
 
     def test_empty_data_inconclusive(self):
         """空数据 → INCONCLUSIVE。"""
@@ -90,17 +97,22 @@ class TestSaturationRate:
         assert result.details["epsilon"] == 10.0
 
     def test_unparseable_op_skipped(self):
-        """OP 解析失败跳过该点（不计入分子分母），不按 0.0 误计为低限饱和。"""
+        """OP 解析失败：计入分母总时长与自控时长，不计入饱和分子.
+
+        分母=100s（全部点），auto_duration=100s（自控点含 OP 坏值），
+        sat_high=50s（仅可解析的高限饱和点）→ rate=50%。
+        """
         n = 100
         mode = [1] * n
         op = [99.5] * 50 + ["bad"] * 50  # 后半段 OP 无法解析
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)
-        # 仅 50 个可解析点计入，全为高限饱和
-        assert result.value == 100.0
+        assert result.value == 50.0
         assert result.details["saturation_type"] == "HIGH"
-        assert result.details["auto_duration_s"] == 50.0
+        assert result.details["sat_high_duration_s"] == 50.0
+        assert result.details["auto_duration_s"] == 100.0
+        assert result.details["total_duration_s"] == 100.0
 
     def test_mismatched_lengths_no_index_error(self):
         """mode 信号长于时间戳时按最短数组截断，不抛 IndexError。"""
