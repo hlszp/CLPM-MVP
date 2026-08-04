@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from datetime import UTC, datetime
 
@@ -119,9 +120,14 @@ class ConfidenceEvaluator:
                 （如启动预载）。仅当 version > 当前版本号时才更新版本号。
         """
         global _threshold_cache, _threshold_version
+        old_version = _threshold_version
         if not thresholds:
             _threshold_cache = dict(DEFAULT_CONFIDENCE_THRESHOLDS)
-            logger.info("可信度阈值已重置为算法默认: %s", _threshold_cache)
+            logger.info(
+                "[confidence-sync pid=%s] 阈值已重置为算法默认: %s",
+                os.getpid(),
+                _threshold_cache,
+            )
         else:
             _threshold_cache = {
                 "A": float(thresholds.get("A", DEFAULT_CONFIDENCE_THRESHOLDS["A"])),
@@ -129,9 +135,21 @@ class ConfidenceEvaluator:
                 "C": float(thresholds.get("C", DEFAULT_CONFIDENCE_THRESHOLDS["C"])),
                 "D": float(thresholds.get("D", DEFAULT_CONFIDENCE_THRESHOLDS["D"])),
             }
-            logger.info("可信度阈值已更新: %s", _threshold_cache)
+            logger.info(
+                "[confidence-sync pid=%s] 阈值已更新: %s (version 入参=%s)",
+                os.getpid(),
+                _threshold_cache,
+                version,
+            )
         if version is not None and version > _threshold_version:
             _threshold_version = version
+        logger.info(
+            "[confidence-sync pid=%s] set_thresholds 完成: version %s→%s, 当前阈值=%s",
+            os.getpid(),
+            old_version,
+            _threshold_version,
+            _threshold_cache,
+        )
 
     @staticmethod
     def get_thresholds() -> dict[str, float]:
@@ -169,12 +187,27 @@ class ConfidenceEvaluator:
 
         # D5 监控：valid_rate 濒临 INCONCLUSIVE 时告警
         d_threshold = t["D"]
-        if d_threshold <= valid_rate < d_threshold + 0.10:
+        alert_upper = d_threshold + 0.10
+        if d_threshold <= valid_rate < alert_upper:
             logger.warning(
-                "valid_rate=%.4f 濒临 INCONCLUSIVE（D 阈值=%.2f），"
-                "数据质量接近不可计算边界，建议检查数据源完整性",
+                "[confidence-sync pid=%s] 濒临 INCONCLUSIVE 告警触发: "
+                "valid_rate=%.4f 落入告警区间 [%.4f, %.4f)（D 阈值=%.2f），"
+                "当前阈值=%s，数据质量接近不可计算边界，建议检查数据源完整性",
+                os.getpid(),
                 valid_rate,
                 d_threshold,
+                alert_upper,
+                d_threshold,
+                t,
+            )
+        else:
+            logger.debug(
+                "[confidence-sync pid=%s] evaluate: valid_rate=%.4f 未落入告警区间 "
+                "[%.4f, %.4f)，不告警",
+                os.getpid(),
+                valid_rate,
+                d_threshold,
+                alert_upper,
             )
 
         if valid_rate >= t["A"]:
@@ -519,8 +552,25 @@ async def broadcast_thresholds(thresholds: dict[str, float], source: str = "api"
         },
         ensure_ascii=False,
     )
-    await redis_client.publish(THRESHOLD_CHANNEL, message)
-    logger.info("阈值更新已广播: version=%s, source=%s", version, source)
+    logger.info(
+        "[confidence-sync pid=%s] 准备广播阈值更新: channel=%s, version=%s, "
+        "source=%s, thresholds=%s",
+        os.getpid(),
+        THRESHOLD_CHANNEL,
+        version,
+        source,
+        thresholds,
+    )
+    n_subscribers = await redis_client.publish(THRESHOLD_CHANNEL, message)
+    logger.info(
+        "[confidence-sync pid=%s] 阈值更新已广播: version=%s, source=%s, "
+        "投递订阅者数=%s, message=%s",
+        os.getpid(),
+        version,
+        source,
+        n_subscribers,
+        message,
+    )
     return version
 
 
@@ -536,16 +586,32 @@ def _handle_threshold_message(message_data: str) -> bool:
         True 表示阈值已更新，False 表示因版本号过期或解析失败而跳过
     """
     global _threshold_version
+    logger.info(
+        "[confidence-sync pid=%s] _handle_threshold_message 收到原始消息: %.300s",
+        os.getpid(),
+        message_data,
+    )
     try:
         data = json.loads(message_data)
         msg_version = int(data.get("version", 0))
     except (json.JSONDecodeError, ValueError, TypeError):
-        logger.exception("解析阈值更新广播消息失败，已跳过")
+        logger.exception(
+            "[confidence-sync pid=%s] 解析阈值更新广播消息失败，已跳过",
+            os.getpid(),
+        )
         return False
 
+    logger.info(
+        "[confidence-sync pid=%s] 消息版本号比对: msg_version=%s, current_version=%s, source=%s",
+        os.getpid(),
+        msg_version,
+        _threshold_version,
+        data.get("source", "unknown"),
+    )
     if msg_version <= _threshold_version:
-        logger.debug(
-            "阈值更新广播版本号过期，已跳过: msg=%s, current=%s",
+        logger.info(
+            "[confidence-sync pid=%s] 跳过旧版本消息: msg_version=%s <= current=%s（不更新阈值）",
+            os.getpid(),
             msg_version,
             _threshold_version,
         )
@@ -554,9 +620,11 @@ def _handle_threshold_message(message_data: str) -> bool:
     thresholds = data.get("thresholds", {})
     ConfidenceEvaluator.set_thresholds(thresholds, version=msg_version)
     logger.info(
-        "收到阈值更新广播并已应用: version=%s, source=%s",
+        "[confidence-sync pid=%s] 收到阈值更新广播并已应用: version=%s, source=%s, 新阈值=%s",
+        os.getpid(),
         msg_version,
         data.get("source", "unknown"),
+        thresholds,
     )
     return True
 
@@ -573,13 +641,32 @@ def _threshold_subscriber_loop() -> None:
             client = _get_sync_redis()
             pubsub = client.pubsub()
             pubsub.subscribe(THRESHOLD_CHANNEL)
-            logger.info("可信度阈值订阅线程已连接 Redis，监听频道: %s", THRESHOLD_CHANNEL)
+            logger.info(
+                "[confidence-sync pid=%s] 订阅线程已连接 Redis，监听频道: %s",
+                os.getpid(),
+                THRESHOLD_CHANNEL,
+            )
             for message in pubsub.listen():
                 if message["type"] != "message":
+                    logger.debug(
+                        "[confidence-sync pid=%s] 订阅线程收到非 message 类型: type=%s",
+                        os.getpid(),
+                        message.get("type"),
+                    )
                     continue
+                logger.info(
+                    "[confidence-sync pid=%s] 订阅线程收到 message: channel=%s, "
+                    "data_preview=%.200s",
+                    os.getpid(),
+                    message.get("channel"),
+                    str(message.get("data", ""))[:200],
+                )
                 _handle_threshold_message(message["data"])
         except Exception:  # noqa: BLE001
-            logger.exception("阈值订阅线程异常，5 秒后重连")
+            logger.exception(
+                "[confidence-sync pid=%s] 阈值订阅线程异常，5 秒后重连",
+                os.getpid(),
+            )
             import time
 
             time.sleep(5)
@@ -605,7 +692,11 @@ def start_threshold_subscriber() -> None:
         )
         thread.start()
         _subscriber_started = True
-        logger.info("可信度阈值订阅线程已启动")
+        logger.info(
+            "[confidence-sync pid=%s] 可信度阈值订阅守护线程已启动 (thread=%s)",
+            os.getpid(),
+            thread.name,
+        )
 
 
 async def load_thresholds_from_db(db) -> None:  # noqa: ANN001
@@ -630,7 +721,10 @@ async def load_thresholds_from_db(db) -> None:  # noqa: ANN001
     if not cfg or not cfg.value:
         # 未配置过，使用算法默认值（不写入数据库）
         ConfidenceEvaluator.set_thresholds(None)
-        logger.info("可信度阈值预载：sys_config 无配置，使用算法默认值")
+        logger.info(
+            "[confidence-sync pid=%s] 阈值预载：sys_config 无配置，使用算法默认值",
+            os.getpid(),
+        )
         return
     try:
         data = json.loads(cfg.value)
@@ -639,12 +733,23 @@ async def load_thresholds_from_db(db) -> None:  # noqa: ANN001
         threshold_map = {item["name"]: float(item["minRate"]) for item in items}
         if not threshold_map:
             ConfidenceEvaluator.set_thresholds(None)
-            logger.warning("可信度阈值预载：thresholds 为空，使用算法默认值")
+            logger.warning(
+                "[confidence-sync pid=%s] 阈值预载：thresholds 为空，使用算法默认值",
+                os.getpid(),
+            )
             return
         ConfidenceEvaluator.set_thresholds(threshold_map)
-        logger.info("可信度阈值预载：已从 sys_config 加载: %s", threshold_map)
+        logger.info(
+            "[confidence-sync pid=%s] 阈值预载：已从 sys_config 加载: %s",
+            os.getpid(),
+            threshold_map,
+        )
     except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
-        logger.warning("可信度阈值预载解析失败，回退算法默认: %s", exc)
+        logger.warning(
+            "[confidence-sync pid=%s] 阈值预载解析失败，回退算法默认: %s",
+            os.getpid(),
+            exc,
+        )
         ConfidenceEvaluator.set_thresholds(None)
 
 
