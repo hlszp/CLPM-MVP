@@ -309,14 +309,39 @@ def _data_block_to_dict(block: DataBlock) -> dict[str, Any]:
         "config_version": block.config_version,
         "preprocess_version": block.preprocess_version,
         "point_count": block.point_count,
+        # 可信度统一 Phase 2：回路级可信度字段必须纳入序列化（与 L1 一致）
+        "loop_confidence_level": block.loop_confidence_level,
+        "loop_valid_rate": block.loop_valid_rate,
     }
 
 
 def _data_block_from_dict(data: dict[str, Any]) -> DataBlock:
-    """dict → DataBlock（反序列化，与 L1 一致）."""
+    """dict → DataBlock（反序列化，与 L1 一致）.
+
+    旧缓存兼容：``loop_confidence_level`` / ``loop_valid_rate`` 缺失时
+    从 validity 重算，避免使用默认值 "E"/0.0。
+    """
     timestamps = [datetime.fromisoformat(ts) for ts in data["timestamps"]]
     quality_summary = QualitySummary(**_quality_summary_from_dict(data["quality_summary"]))
     consecutive_segments = [(int(s), int(e)) for s, e in data.get("consecutive_segments", [])]
+
+    # 回路级可信度：优先读缓存值，旧缓存缺失时从 validity 重算
+    loop_confidence_level = data.get("loop_confidence_level")
+    loop_valid_rate = data.get("loop_valid_rate")
+    if loop_confidence_level is None or loop_valid_rate is None:
+        from app.services.confidence_evaluator import ConfidenceEvaluator
+        from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
+
+        n = data.get("point_count", len(timestamps))
+        validity = data.get("validity", {})
+        loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
+        loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
+        logger.info(
+            "L2 cache 旧缓存兼容：重算回路级可信度: loop_valid_rate=%.4f, level=%s",
+            loop_valid_rate,
+            loop_confidence_level,
+        )
+
     return DataBlock(
         data_block_id=data["data_block_id"],
         loop_id=data["loop_id"],
@@ -331,6 +356,8 @@ def _data_block_from_dict(data: dict[str, Any]) -> DataBlock:
         config_version=data.get("config_version", "v1"),
         preprocess_version=data.get("preprocess_version", "pre_v1"),
         point_count=data.get("point_count", len(timestamps)),
+        loop_confidence_level=loop_confidence_level,
+        loop_valid_rate=loop_valid_rate,
     )
 
 

@@ -66,6 +66,71 @@ class TestZstdCompression:
         assert restored.consecutive_segments == original.consecutive_segments
         assert restored.config_version == original.config_version
         assert restored.preprocess_version == original.preprocess_version
+        # 可信度统一 Phase 2：回路级可信度字段必须经序列化往返后保持一致
+        assert restored.loop_confidence_level == original.loop_confidence_level
+        assert restored.loop_valid_rate == original.loop_valid_rate
+
+    @pytest.mark.asyncio
+    async def test_roundtrip_non_default_confidence(self, fake_redis: FakeCacheRedis) -> None:
+        """非默认可信度等级（如 B/C/D）应正确序列化/反序列化，不被回退为默认 E."""
+        cache = L1DataBlockCache(fake_redis)
+        original = build_data_block(
+            loop_id="L002",
+            tag_group=TagGroup.BASE,
+            n=100,
+            valid_rate=0.85,
+            loop_confidence_level="B",
+            loop_valid_rate=0.85,
+        )
+
+        await cache.set(original)
+        key = fake_redis.keys[0]
+        restored = await cache.get(key)
+
+        assert restored is not None
+        assert restored.loop_confidence_level == "B"
+        assert restored.loop_valid_rate == pytest.approx(0.85)
+
+    @pytest.mark.asyncio
+    async def test_old_cache_without_confidence_fields_recomputes(
+        self, fake_redis: FakeCacheRedis
+    ) -> None:
+        """旧缓存（缺少 loop_confidence_level/loop_valid_rate）应从 validity 重算，不使用默认 E.
+
+        回归守护：可信度统一 Phase 2 之前写入的 L1 缓存不含这两个字段，
+        反序列化时必须从 validity 重算 loop_valid_rate 并重评估可信度等级，
+        避免使用 DataBlock 默认值 "E"/0.0 导致全回路 E 不足。
+        """
+        from app.services.cache.l1_datablock import _data_block_to_dict
+
+        # 构造一个不含 loop_confidence_level/loop_valid_rate 的旧格式 dict
+        block = build_data_block(
+            n=100, valid_rate=0.95, loop_confidence_level="A", loop_valid_rate=0.95
+        )
+        old_dict = _data_block_to_dict(block)
+        # 模拟旧缓存：移除这两个字段
+        del old_dict["loop_confidence_level"]
+        del old_dict["loop_valid_rate"]
+
+        # 手动序列化旧格式 dict 并写入 FakeRedis
+        import base64
+        import json
+
+        import zstandard
+
+        raw_json = json.dumps(old_dict, default=str)
+        compressed = zstandard.ZstdCompressor(level=3).compress(raw_json.encode("utf-8"))
+        payload = base64.b64encode(compressed).decode("ascii")
+        fake_redis._store["pdb:old:cache"] = payload
+
+        # 读取应触发重算
+        cache = L1DataBlockCache(fake_redis)
+        restored = await cache.get("pdb:old:cache")
+
+        assert restored is not None
+        # validity 中 pv_valid 和 sp_valid 均为 95% True → loop_valid_rate ≈ 0.95 → A 级
+        assert restored.loop_confidence_level == "A"
+        assert restored.loop_valid_rate == pytest.approx(0.95, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_get_miss_returns_none(self, fake_redis: FakeCacheRedis) -> None:

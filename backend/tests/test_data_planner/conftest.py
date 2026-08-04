@@ -209,6 +209,8 @@ def build_data_block(
     sampling_freq: str = "1s",
     valid_rate: float = 1.0,
     config_version: str = "cfg_1000",
+    loop_confidence_level: str = "A",
+    loop_valid_rate: float | None = None,
 ) -> DataBlock:
     """构造已预处理的 DataBlock（用于缓存测试）."""
     base_time = datetime(2024, 1, 1, 10, 0, 0)
@@ -236,6 +238,10 @@ def build_data_block(
         good_value_rate=None,
     )
 
+    # loop_valid_rate 默认与 valid_rate 一致（仅核心 tag pv/sp 参与时）
+    if loop_valid_rate is None:
+        loop_valid_rate = valid_rate
+
     return DataBlock(
         data_block_id=f"db_{loop_id}_{tag_group.value}_{sampling_freq}",
         loop_id=loop_id,
@@ -250,6 +256,8 @@ def build_data_block(
         config_version=config_version,
         preprocess_version=PREPROCESS_VERSION,
         point_count=n,
+        loop_confidence_level=loop_confidence_level,
+        loop_valid_rate=loop_valid_rate,
     )
 
 
