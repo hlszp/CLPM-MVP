@@ -9,6 +9,9 @@
 | 排障与运维（网络模式切换、worker 挂死、回填性能、断点续传细节） | `docs/过程文档/ops-runbook.md` |
 | v6 交付历史追溯（Phase 0-6、各 PR 清单） | `docs/过程文档/v6-delivery-history.md` |
 | 引用旧文档前查是否已失效 | `docs/过程文档/stale-docs.md` |
+| **UX/IA审查与整改**（信息架构、交互设计、闭环流程评估） | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` |
+| 数据质量评估报告（完整性/准确性/一致性/时效性四维定量分析） | `docs/过程文档/data-quality-assessment-report-2026-08-05.md` |
+| KPI计算方法系统性审查（26指标公式+国标准合度+10项缺陷） | `docs/过程文档/kpi-calculation-review-2026-08-05.md` |
 
 ## 必读入口
 
@@ -16,7 +19,7 @@
 
 PRD v6.1 是产品需求的事实来源；实现契约 v2.3 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-08-03 修订 — 种子数据 v1.4 + 算法参数迁移 + lefthook 修复）
+## 当前基线（2026-08-05 修订 — UX/IA审查启动 + 数据健康指标 + 可信度继承修复）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
@@ -35,6 +38,9 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.3 是重构后 IA/路�
 | 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0；**六阶段全部完成**（2026-07-28）。后续（07-29）：3 诊断标签误报修复、整定 Phase 2.1 合并+评审返工、生产部署实弹验证（R1-R6，ops-runbook）、诊断中心问题串修复（版本号竞态/散点回退/fusedConfidence 落库/任务时区迁移 `h8b9c0d1e2f3`/任务页已归档开关/刷新轮换幂等窗口/详情页 SPA 导航白屏）；白屏根因与修复见 ops-runbook §【已结】。后续（08-03）：种子数据 v1.4 整合（指标契约/诊断规则/DCS/回路精简，`02_seed_data.sql` 自动加载）、算法参数配置从系统管理迁移至性能评估-指标配置（KPI 算法参数 Tab）、lefthook pre-push 门禁修复（FakeRedis 增强 + conftest 全模块 patch，详见 ops-runbook §lefthook pre-push 门禁修复） |
 | **v6.2 可信辨识改造** | `docs/过程文档/clpm-v6.2-product-and-identification-optimization-plan-2026-07-29.md` | **Phase 0 Truth First 已完成**（分支 `codex/v6.2-phase0-truth-first`，2026-07-29）：P0-01~06 安全门禁（盲 fallback/固定 θ/IPDT 错配/低可信放行/闭环 IV 降级/伪 0 风险）+ P0-07/08/10 生产 bootstrap DDL 收敛至 37 表 + P0-039 DCS 下写安全静态门禁；契约基线见 `clpm-v6.2-phase0-contract-baseline-2026-07-29.md`，任务清单见 `clpm-v6.2-implementation-task-checklist-2026-07-29.md`。后端 3456 passed、前端 vitest 434 passed、ruff/alembic/typecheck 全绿。待收口：V62-P0-033 设计文档逐项同步（契约已升 v2.3）、V62-P0-034/037/038 OpenAPI/E2E 基线、Phase 1 数据同轴与 IA 减负 |
 | **回路整定 Phase 2 技术方案** | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **已执行**（分支 `feat/tuning-phase2`，2026-07-28）：历史数据过程对象辨识（ARX/ARMAX/IV 算法栈）+ 异步任务化 + 多 PID 对比仿真；pytest 2840 全绿、`alembic check` 退出码 0 |
+| **UX/IA 专业评估报告** | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` | v1.0（2026-08-05）：以仪控工程师视角从认知负担/指导辅助/工作流程契合度/闭环管理4维度全面审查，识别P0-P3问题共21项，附分优先级整改路线图（P0:4项/P1:6项/P2:6项/P3:5项）；核心结论：技术闭环已通但用户操作闭环存在断点，重点补齐跨模块跳转、表格信息密度、流程向导、验证环节 |
+| 数据质量评估报告 | `docs/过程文档/data-quality-assessment-report-2026-08-05.md` | v1.0（2026-08-05）：27个种子回路33天数据四维定量分析，近7天valid_rate~97%达A级可信度，7/2-7/7全空行需清理，7/22-7/28过密写入需排查 |
+| KPI计算方法审查 | `docs/过程文档/kpi-calculation-review-2026-08-05.md` | v1.0（2026-08-05）：26指标+综合评分+节点聚合全公式审查，3核心+1折扣指标完全符合GB/T 44693.2-2024，识别OP量程、饱和度分母、可信度继承等10项关键缺陷 |
 
 ## v6.0 核心架构组件
 
@@ -149,6 +155,7 @@ cd frontend && pnpm run format
 
 | 方向 | 先读 | 关注点 |
 |---|---|---|
+| **IA/UX 信息架构整改（当前）** | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` | **P0紧急（1-2周）**：异常跟踪表格扩列（诊断标签/严重度/可信度/发现时间）、跨模块一键跳转、整定上下文传递、Action Tracker增加"验证中"状态+实施记录强制填写；**P1重要（3-4周）**：回路配置向导化（5步进度条）、引导式空状态、专业术语Tooltip、性能看板网格布局、数据链路状态常驻工作台、单回路处置时间线；**P2体验（5-8周）**：结构化诊断报告、A/B对比自动引导、Onboarding引导、表格列配置、全局刷新状态指示；遵循ZL工业设计规范（Calm UI/Poka-Yoke/Glanceability/数据墨水比），不破坏现有API/数据库结构（纯前端+小量后端接口增强） |
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 回路整定 Phase 2 后续 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **Phase 2.0-2.5 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：算法栈 + DataPlanner 接入 + 异步任务化 + 多 PID 对比 + 前端重构 + 全量门禁通过；待合并 main 后更新设计文档（PRD/FDS/ADS/IDS/契约 版本号升级）+ GB/T 44693.2 整定用例验证 |
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
