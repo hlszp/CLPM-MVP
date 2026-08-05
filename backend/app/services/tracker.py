@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
-from app.models.diagnosis import DiagnosisResult
+from app.models.diagnosis import DiagnosisResult, DiagnosisTag
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly
 from app.models.sys_config import SysConfig
@@ -782,9 +782,18 @@ async def get_loop_timeline(
         .limit(20)
     )
     diag_rows = (await db.execute(diag_stmt)).scalars().all()
+
+    # 查询该回路的诊断标签 severity（DiagnosisResult 本身无 severity 字段，
+    # severity 存储在 DiagnosisTag 上，按 tag_code ↔ diag_label 关联）
+    tag_stmt = select(DiagnosisTag.tag_code, DiagnosisTag.severity).where(
+        DiagnosisTag.loop_id == loop_id
+    )
+    tag_severity_map: dict[str, str] = dict((await db.execute(tag_stmt)).all())
+
     for diag in diag_rows:
         label_name = diag.diag_label or ""
         confidence_pct = round(float(diag.confidence) / 100.0, 2) if diag.confidence else None
+        severity = tag_severity_map.get(diag.diag_label or "")
         events.append(
             {
                 "eventId": f"diag_{diag.id}",
@@ -793,14 +802,13 @@ async def get_loop_timeline(
                 "actor": "system",
                 "title": f"系统发现异常：{label_name}",
                 "description": (
-                    f"严重度：{_severity_label(diag.severity)}，置信度：{confidence_pct or 'N/A'}"
+                    f"严重度：{_severity_label(severity)}，置信度：{confidence_pct or 'N/A'}"
                 ),
                 "meta": {
                     "label": diag.diag_label,
                     "labelName": label_name,
                     "confidence": confidence_pct,
-                    "severity": diag.severity,
-                    "compositeScore": diag.composite_score,
+                    "severity": severity,
                 },
             }
         )
