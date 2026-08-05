@@ -30,6 +30,7 @@ from app.core.db import AsyncSessionLocal
 from app.models.sys_config import SysConfig
 from app.models.tracker import ActionTracker
 from app.services.tracker import get_ab_compare
+from app.services.tuning_knowledge import generate_knowledge_entry
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -206,6 +207,13 @@ async def _verify_single_tracker(db: AsyncSession, tracker: ActionTracker) -> bo
         summary["deterioratedCount"],
         summary["unchangedCount"],
     )
+
+    # P3-01: 验证完成后自动生成知识库条目（try/except 包裹，失败不影响验证结果）
+    try:
+        await generate_knowledge_entry(db, tracker)
+    except Exception:
+        logger.exception("tracker %s 知识库条目生成失败（不影响验证结果）", tracker.id)
+
     return True
 
 

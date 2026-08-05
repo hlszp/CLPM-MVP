@@ -229,10 +229,17 @@ class TestVerifySingleTracker:
             ],
         }
 
-        with patch(
-            "app.tasks.tracker_verification.get_ab_compare",
-            new_callable=AsyncMock,
-            return_value=ab_result,
+        with (
+            patch(
+                "app.tasks.tracker_verification.get_ab_compare",
+                new_callable=AsyncMock,
+                return_value=ab_result,
+            ),
+            patch(
+                "app.tasks.tracker_verification.generate_knowledge_entry",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             done = await _verify_single_tracker(db, tracker)
 
@@ -264,10 +271,17 @@ class TestVerifySingleTracker:
             ],
         }
 
-        with patch(
-            "app.tasks.tracker_verification.get_ab_compare",
-            new_callable=AsyncMock,
-            return_value=ab_result,
+        with (
+            patch(
+                "app.tasks.tracker_verification.get_ab_compare",
+                new_callable=AsyncMock,
+                return_value=ab_result,
+            ),
+            patch(
+                "app.tasks.tracker_verification.generate_knowledge_entry",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             done = await _verify_single_tracker(db, tracker)
 
@@ -331,9 +345,16 @@ class TestVerifySingleTracker:
                 "kpiComparison": [{"metricKey": "k1", "improved": True}],
             }
 
-        with patch(
-            "app.tasks.tracker_verification.get_ab_compare",
-            side_effect=_capture,
+        with (
+            patch(
+                "app.tasks.tracker_verification.get_ab_compare",
+                side_effect=_capture,
+            ),
+            patch(
+                "app.tasks.tracker_verification.generate_knowledge_entry",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             await _verify_single_tracker(db, tracker)
 
