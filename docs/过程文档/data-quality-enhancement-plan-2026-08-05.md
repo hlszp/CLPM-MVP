@@ -247,10 +247,135 @@ LoopLedger 已有 `data_retention_days` 字段（可按回路配置保留天数�
 
 ---
 
-## 4. 待决策事项
+## 4. 决策记录（2026-08-05）
 
-| # | 决策点 | 选项 | 建议 |
+| # | 决策点 | 决策 | 执行状态 |
 |---|---|---|---|
-| 1 | 实时落库机制 | A. 保持 gap backfill / B. 开启直写 / C. 两者结合 | A（现状满足评估需求） |
-| 2 | 列表数据健康体现 | A. 方案 A 列表增列 / B. 方案 B 独立 Tab / C. 全做 | 先 A 后 B |
-| 3 | 存储降采样 | A. 方案 1 CQ+TTL / B. 方案 2 差异化 TTL / C. 暂不实施 | A（1000 回路前必须实施） |
+| 1 | 实时落库机制 | C. 开启直写 + 保留 backfill（双保险） | ✅ 已实施（`REALTIME_WRITEBACK_ENABLED=True`） |
+| 2 | 列表数据健康体现 | C. A+B+C 全做（先 A 后 B 后 C） | 🔄 待实施 |
+| 3 | 存储降采样 | A. Stream 三级降采样 | ✅ 已实施（详见 §5） |
+
+---
+
+## 5. Stream 三级降采样实施记录（2026-08-05）
+
+### 5.1 实施方案
+
+TDengine 3.3.6 原生 Stream（流式计算）实现三级降采样：
+
+```
+秒级原始数据（signal_sim.st_loop_data）       KEEP 35d  → KPI 评估与辨识
+    ↓ stream_loop_1min（TRIGGER AT_ONCE, FILL_HISTORY 1）
+分钟级数据（signal_sim_agg.st_loop_data_1min）  KEEP 5y   → 趋势分析
+    ↓ stream_loop_1h（TRIGGER AT_ONCE, FILL_HISTORY 1）
+小时级数据（signal_sim_agg.st_loop_data_1h）    KEEP 5y   → 年度报表
+```
+
+### 5.2 数据库配置
+
+| 数据库 | KEEP | DURATION | 用途 |
+|---|---|---|---|
+| `signal_sim` | 35d | 10d | 秒级原始数据（30 天 KPI 窗口 + 5 天缓冲） |
+| `signal_sim_agg` | 1825d（5 年） | 100d | 分钟级 + 小时级聚合数据 |
+
+### 5.3 Stream 定义
+
+**分钟级 stream（`stream_loop_1min`）**：
+- 源表：`signal_sim.st_loop_data`
+- 目标表：`signal_sim_agg.st_loop_data_1min`（自动创建）
+- 窗口：`INTERVAL(1m)`
+- 分区：`PARTITION BY tbname`（每回路独立子表）
+- 子表命名：`SUBTABLE(CONCAT(tbname, '_1m'))`
+- 触发：`TRIGGER AT_ONCE`（数据写入即触发）
+- 历史回填：`FILL_HISTORY 1`（回填源表全部历史数据）
+
+**聚合字段**（15 列）：
+| 字段 | 计算 | 用途 |
+|---|---|---|
+| ts | `_wstart` | 窗口起始时间 |
+| pv_avg / pv_min / pv_max / pv_cnt | AVG/MIN/MAX/COUNT(pv) | PV 趋势与波动 |
+| sp_avg / sp_min / sp_max | AVG/MIN/MAX(sp) | SP 趋势 |
+| op_avg / op_min / op_max | AVG/MIN/MAX(op) | OP 趋势与行程 |
+| pid_p_avg / pid_i_avg / pid_d_avg | AVG(pid_p/i/d) | PID 参数均值 |
+| quality_total_cnt | COUNT(*) | 总点数（完整度分母） |
+
+> **注意**：`SUM(CASE WHEN mode IN (1,2,3,4)...)` 和 `SUM(CASE WHEN pv_quality=1...)` 因 TDengine Stream planner 限制（`Planner slot key not found`）暂不支持。饱和率与好值率仍从秒级原始数据计算（KPI 评估窗口 30 天内数据可用）。
+
+**小时级 stream（`stream_loop_1h`）**：
+- 源表：`signal_sim_agg.st_loop_data_1min`
+- 目标表：`signal_sim_agg.st_loop_data_1h`（自动创建）
+- 窗口：`INTERVAL(1h)`
+- 聚合：对分钟级 AVG 取 AVG、MIN 取 MIN、MAX 取 MAX、COUNT 取 SUM
+
+### 5.4 验证结果
+
+| 指标 | 秒级原始 | 分钟级聚合 | 小时级聚合 |
+|---|---|---|---|
+| 行数 | 15,461,153 | 249,993 | 4,185 |
+| 时间范围 | 7/30 00:00 ~ 8/05 10:18 | 同 | 同 |
+| 子表数 | 27 | 27 | 27 |
+| 存储压缩比 | 1× | ~62× | ~3700× |
+
+**精度验证**（2026-08-05 01:00 UTC，回路 d_loop_90pic51212a_pida）：
+
+| 指标 | 秒级原始（60 点） | 分钟级聚合 | 偏差 |
+|---|---|---|---|
+| AVG(pv) | 3.4997 | 3.4997 | 0% |
+| MIN(pv) | 3.467 | 3.467 | 0% |
+| MAX(pv) | 3.533 | 3.533 | 0% |
+| AVG(op) | 69.9362 | 69.9362 | 0% |
+| COUNT | 60 | 60 | 0% |
+
+### 5.5 存储预估（1000 回路 × 1 年）
+
+| 层级 | 行数 | 存储 |
+|---|---|---|
+| 秒级 35 天 | 1000×35×86400 = 3.0B 行 | ~112 GB |
+| 分钟级 5 年 | 1000×5×365×1440 = 2.6B 行 | ~98 GB |
+| 小时级 5 年 | 1000×5×365×24 = 44M 行 | ~1.6 GB |
+| **合计** | — | **~212 GB**（vs 秒级全留 1.19 TB，节省 82%） |
+
+### 5.6 部署脚本
+
+部署/检查命令（详见 `backend/scripts/tdengine_downsampling.py`）：
+
+```bash
+# 部署降采样（幂等）
+cd backend && uv run python scripts/tdengine_downsampling.py
+
+# 仅检查状态
+uv run python scripts/tdengine_downsampling.py --check-only
+
+# 自定义参数
+uv run python scripts/tdengine_downsampling.py --raw-keep 60 --agg-keep 3650
+```
+
+### 5.7 查询使用
+
+**按回路查分钟级趋势**：
+```sql
+-- 通过 tbname LIKE 匹配（stream 子表名 = 源子表名 + '_1m' + 后缀）
+SELECT ts, pv_avg, pv_min, pv_max, pv_cnt
+FROM signal_sim_agg.st_loop_data_1min
+WHERE tbname LIKE 'd_loop_<tagname>%'
+  AND ts >= '2026-01-01'
+  AND ts < '2026-02-01'
+ORDER BY ts;
+```
+
+**按回路查小时级报表**：
+```sql
+SELECT ts, pv_avg, pv_min, pv_max, op_avg
+FROM signal_sim_agg.st_loop_data_1h
+WHERE tbname LIKE 'd_loop_<tagname>%'
+  AND ts >= '2026-01-01'
+ORDER BY ts;
+```
+
+### 5.8 注意事项
+
+1. **KPI 评估仍用秒级数据**：KPI 计算（30 天窗口）直接查 `signal_sim.st_loop_data`，不使用聚合数据
+2. **30 天前数据不可回算**：秒级数据 35 天后自动过期，如需回算历史 KPI，需在 35 天内完成
+3. **Stream 子表名**：目标子表名含源子表名 + `_1m` + TDengine 自动后缀，查询用 `tbname LIKE 'd_loop_<tagname>%'` 匹配
+4. **FILL_HISTORY 回填**：创建 stream 后会自动回填全部历史数据（27 回路 × 6 天 ≈ 2 分钟完成）
+5. **Windows 不支持**：TDengine Stream 在 Windows 平台不可用，仅 Linux/Mac
