@@ -306,6 +306,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -330,6 +331,11 @@ class TestListLoopMonitor:
         assert item["kpiSummary"] is None
         assert item["isActive"] is True
         assert item["controlMode"] is None
+        # 数据健康度块存在（无快照时各字段为 None）
+        assert item["dataHealth"]["validRate"] is None
+        assert item["dataHealth"]["confidenceLevel"] is None
+        assert item["dataHealth"]["pvCompleteness"] is None
+        assert item["dataHealth"]["integrityStatus"] is None
 
     async def test_is_active_filter_applied(self) -> None:
         """WS-D 阶段5：list 与 stats 口径统一，仅返回 is_active=True 的回路。
@@ -346,6 +352,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         await list_loop_monitor(db)
@@ -373,12 +380,13 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db, plant_node_id="unit-001")
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert db.execute.await_count == 7
+        assert db.execute.await_count == 8
 
     async def test_with_keyword_filter(self) -> None:
         """带 keyword 过滤时正确返回空列表。"""
@@ -430,6 +438,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([pv_tag, sp_tag, op_tag, mode_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -454,13 +463,15 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
         item = result["items"][0]
         assert item["unitName"] is None
-        # count + loops + mappings + kpi_snapshot + mode_mapping = 5 次（跳过 plant node 查询）
-        assert db.execute.await_count == 5
+        # count + loops + mappings + kpi_snapshot + mode_mapping + integrity = 6 次
+        # （跳过 plant node 查询；无 tags 因 mappings 为空）
+        assert db.execute.await_count == 6
 
     async def test_no_score_weight(self) -> None:
         """无 KPI 快照时 score 为 None（score 来自 KpiSnapshotHourly，非 loop.score_weight）。"""
@@ -475,6 +486,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -497,6 +509,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([pv_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -526,6 +539,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([mode_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_rows_iterable_mock(mode_mapping_rows),  # mode mapping 查询（有配置）
+                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)

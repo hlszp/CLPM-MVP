@@ -1502,7 +1502,7 @@
           "loop"
         ],
         "summary": "Delete Loop Endpoint",
-        "description": "删除回路（仅 ADMIN）。\n\n级联解绑：软删回路前先删除 LoopTagMapping 关联记录，有关联 Tag 的回路可删除。",
+        "description": "删除回路（仅 ADMIN，硬删除）。\n\n级联解绑：删除 LoopTagMapping 关联记录后硬删回路本体，\nON DELETE CASCADE 自动清理 kpi_snapshot/action_tracker/diagnosis_result 等关联数据。\n批量删除保持软删除（可恢复），单删为硬删除（不可恢复，与前端弹窗承诺一致）。",
         "operationId": "delete_loop_endpoint_api_v1_loops__loop_id__delete",
         "security": [
           {
@@ -19227,6 +19227,30 @@
             ],
             "title": "Effectverifiedat",
             "description": "整改效果验证时间 ISO 8601"
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee",
+            "description": "实施责任人（与建单人 triggeredBy 区分）"
+          },
+          "plannedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plannedat",
+            "description": "计划执行时间 ISO 8601"
           }
         },
         "type": "object",
@@ -27739,6 +27763,68 @@
         "title": "TagBatchDeleteResult",
         "description": "批量删除测点响应。"
       },
+      "TagDataHealth": {
+        "properties": {
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality"
+          },
+          "lastSyncAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastsyncat"
+          },
+          "loopPvCompleteness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Looppvcompleteness"
+          },
+          "loopIntegrityStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopintegritystatus"
+          },
+          "lastIntegrityCheck": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastintegritycheck"
+          }
+        },
+        "type": "object",
+        "title": "TagDataHealth",
+        "description": "测点数据健康度（方案 C 轻量版）。\n\n实时质量码 + 同步新鲜度 + 所属回路 PV 完整度（来自每日巡检快照），\n不在列表页对每个 tag 实时查 TDengine（开销过大）。"
+      },
       "TagDeleteResult": {
         "properties": {
           "id": {
@@ -28164,6 +28250,16 @@
               }
             ],
             "title": "Unitname"
+          },
+          "dataHealth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TagDataHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

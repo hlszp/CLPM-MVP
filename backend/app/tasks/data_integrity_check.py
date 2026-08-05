@@ -47,7 +47,10 @@ def run_daily_integrity_check(self: AsyncTask) -> dict:
     logger.info("每日数据完整性巡检任务开始")
 
     async def _do_check() -> dict:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         from app.core.db import AsyncSessionLocal
+        from app.models.metric import LoopIntegritySnapshot
         from app.services.data_integrity import check_integrity
 
         # 时间窗口：昨日 00:00 ~ 今日 00:00（Asia/Shanghai）
@@ -57,6 +60,11 @@ def run_daily_integrity_check(self: AsyncTask) -> dict:
         yesterday_start = today_start - timedelta(days=1)
         ts_start = yesterday_start.strftime("%Y-%m-%d %H:%M:%S")
         ts_end = today_start.strftime("%Y-%m-%d %H:%M:%S")
+        # 巡检日期 / 时间窗口（naive datetime，对齐 LoopIntegritySnapshot 列定义；
+        # asyncpg 拒绝 tz-aware 入 naive DateTime 列，统一去 tzinfo）
+        check_date = yesterday_start.replace(tzinfo=None)
+        ts_start_naive = yesterday_start.replace(tzinfo=None)
+        ts_end_naive = today_start.replace(tzinfo=None)
 
         async with AsyncSessionLocal() as db:
             result = await check_integrity(
@@ -67,9 +75,103 @@ def run_daily_integrity_check(self: AsyncTask) -> dict:
                 expected_interval_s=1,
             )
 
+            # 持久化每回路每日巡检快照（UPSERT：每回路每天一条，覆盖更新）
+            # 供回路监控列表/测点配置页展示 PV 完整度，避免列表实时查 TDengine
+            loop_details_for_persist: list[dict] = result.get("loopDetails", [])
+            data_unavailable = result.get("dataSourceUnavailable", False)
+            failed_loop_ids: list[str] = result.get("failedLoopIds", [])
+            failed_set = set(failed_loop_ids)
+
+            snap_count = 0
+            for loop in loop_details_for_persist:
+                lid = loop.get("loopId", "")
+                if not lid or lid in failed_set:
+                    continue
+                col_details = loop.get("colDetails", {})
+                pv_comp = col_details.get("pv", {}).get("completeness")
+                op_comp = col_details.get("op", {}).get("completeness")
+                overall_comp = loop.get("completeness")
+                # 状态分级：OK(>=95%) / WARNING(>=20%) / CRITICAL(<20%)
+                if pv_comp is None:
+                    status = "DATA_UNAVAILABLE"
+                elif pv_comp >= 0.95:
+                    status = "OK"
+                elif pv_comp >= 0.20:
+                    status = "WARNING"
+                else:
+                    status = "CRITICAL"
+
+                values = {
+                    "loop_id": lid,
+                    "check_date": check_date,
+                    "ts_start": ts_start_naive,
+                    "ts_end": ts_end_naive,
+                    "overall_completeness": overall_comp,
+                    "pv_completeness": pv_comp,
+                    "op_completeness": op_comp,
+                    "col_details": col_details,
+                    "missing_columns": loop.get("missingColumns", []),
+                    "status": status,
+                }
+                stmt = (
+                    pg_insert(LoopIntegritySnapshot)
+                    .values(**values)
+                    .on_conflict_do_update(
+                        index_elements=["loop_id", "check_date"],
+                        set_={
+                            "ts_start": ts_start_naive,
+                            "ts_end": ts_end_naive,
+                            "overall_completeness": overall_comp,
+                            "pv_completeness": pv_comp,
+                            "op_completeness": op_comp,
+                            "col_details": col_details,
+                            "missing_columns": loop.get("missingColumns", []),
+                            "status": status,
+                        },
+                    )
+                )
+                await db.execute(stmt)
+                snap_count += 1
+
+            # TDengine 不可用的回路也写一条 DATA_UNAVAILABLE 快照（前端展示真实状态）
+            for lid in failed_loop_ids:
+                values = {
+                    "loop_id": lid,
+                    "check_date": check_date,
+                    "ts_start": ts_start_naive,
+                    "ts_end": ts_end_naive,
+                    "overall_completeness": None,
+                    "pv_completeness": None,
+                    "op_completeness": None,
+                    "col_details": None,
+                    "missing_columns": None,
+                    "status": "DATA_UNAVAILABLE",
+                }
+                stmt = (
+                    pg_insert(LoopIntegritySnapshot)
+                    .values(**values)
+                    .on_conflict_do_update(
+                        index_elements=["loop_id", "check_date"],
+                        set_={
+                            "ts_start": ts_start_naive,
+                            "ts_end": ts_end_naive,
+                            "overall_completeness": None,
+                            "pv_completeness": None,
+                            "op_completeness": None,
+                            "col_details": None,
+                            "missing_columns": None,
+                            "status": "DATA_UNAVAILABLE",
+                        },
+                    )
+                )
+                await db.execute(stmt)
+                snap_count += 1
+
+            await db.commit()
+            logger.info("完整性巡检快照已持久化 %d 条（UPSERT）", snap_count)
+
         overall = result.get("overallCompleteness", 0.0)
         loop_details = result.get("loopDetails", [])
-        data_unavailable = result.get("dataSourceUnavailable", False)
 
         if data_unavailable:
             logger.warning(

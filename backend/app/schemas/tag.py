@@ -22,6 +22,23 @@ class TagLoopInfo(CamelModel):
     loopDescription: str | None = None
 
 
+class TagDataHealth(CamelModel):
+    """测点数据健康度（方案 C 轻量版）。
+
+    实时质量码 + 同步新鲜度 + 所属回路 PV 完整度（来自每日巡检快照），
+    不在列表页对每个 tag 实时查 TDengine（开销过大）。
+    """
+
+    # 实时质量码（GOOD/BAD/UNCERTAIN，来自 Redis 缓存或 DB）
+    quality: str | None = None
+    # 同步新鲜度（最近一次落库时间，naive ISO 串）
+    lastSyncAt: str | None = None
+    # 所属回路 PV 完整度（来自每日 02:00 巡检快照，无关联回路则 None）
+    loopPvCompleteness: float | None = None
+    loopIntegrityStatus: str | None = None
+    lastIntegrityCheck: str | None = None
+
+
 class TagListItem(CamelModel):
     """测点列表项。"""
 
@@ -42,6 +59,8 @@ class TagListItem(CamelModel):
     # WS-C 7-8：所属单元名称（经关联回路 loop → loop.unit_id → plant_node.name 派生；
     # 一个 tag 可能被多个回路映射，取第一个映射回路的单元）
     unitName: str | None = None
+    # 数据健康度（方案 C）：实时质量码 + 新鲜度 + 所属回路 PV 完整度
+    dataHealth: TagDataHealth | None = None
 
 
 class TagListData(CamelModel):
@@ -253,6 +272,7 @@ __all__ = [
     "BatchWaveformResponse",
     "TagDeleteResult",
     "TagDetail",
+    "TagDataHealth",
     "TagImportError",
     "TagImportResult",
     "TagListData",

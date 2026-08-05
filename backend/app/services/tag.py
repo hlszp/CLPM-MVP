@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import openpyxl
@@ -150,6 +151,18 @@ def _build_tag_dict(
         # WS-C 7-8：所属单元名称从关联回路派生（_get_tags_loop_info_map 已带出；
         # 一个 tag 可能被多个回路映射，取第一个映射回路的单元）
         "unitName": (loop_info or {}).get("unitName"),
+        # 数据健康度（方案 C 轻量版）：实时质量码 + 同步新鲜度 + 所属回路 PV 完整度
+        # 不在列表页对每个 tag 实时查 TDengine（开销过大），改为复用回路级每日巡检快照
+        "dataHealth": {
+            # 实时质量码（GOOD/BAD/UNCERTAIN，来自 Redis 缓存或 DB）
+            "quality": quality,
+            # 同步新鲜度（最近一次落库时间，naive ISO 串）
+            "lastSyncAt": last_sync_at,
+            # 所属回路 PV 完整度（来自每日 02:00 巡检快照，无关联回路则 None）
+            "loopPvCompleteness": (loop_info or {}).get("pvCompleteness"),
+            "loopIntegrityStatus": (loop_info or {}).get("integrityStatus"),
+            "lastIntegrityCheck": (loop_info or {}).get("lastIntegrityCheck"),
+        },
     }
 
 
@@ -236,6 +249,32 @@ async def list_tags(
     # 批量查询回路信息
     tag_ids = [str(t.id) for t in tags]
     loop_map = await _get_tags_loop_info_map(db, tag_ids)
+
+    # 批量查询关联回路的最新数据完整性巡检快照（用于测点页展示回路级 PV 完整度）
+    # 一个 tag 关联一个回路，取该回路最新一条 check_date 的快照
+    linked_loop_ids = {info["loopId"] for info in loop_map.values() if info.get("loopId")}
+    integrity_map: dict[str, Any] = {}
+    if linked_loop_ids:
+        from app.models.metric import LoopIntegritySnapshot
+
+        i_stmt = (
+            select(LoopIntegritySnapshot)
+            .where(LoopIntegritySnapshot.loop_id.in_(list(linked_loop_ids)))
+            .distinct(LoopIntegritySnapshot.loop_id)
+            .order_by(LoopIntegritySnapshot.loop_id, LoopIntegritySnapshot.check_date.desc())
+        )
+        i_result = await db.execute(i_stmt)
+        for snap in i_result.scalars().all():
+            integrity_map[str(snap.loop_id)] = snap
+
+    # 将回路级完整度快照合并进 loop_info，供 _build_tag_dict 读取
+    for info in loop_map.values():
+        lid = info.get("loopId")
+        snap = integrity_map.get(lid) if lid else None
+        if snap:
+            info["pvCompleteness"] = snap.pv_completeness
+            info["integrityStatus"] = snap.status
+            info["lastIntegrityCheck"] = snap.check_date.isoformat() if snap.check_date else None
 
     # 批量从 Redis 读取实时值（优先于数据库 current_value）
     realtime_cache: dict[str, dict] = {}

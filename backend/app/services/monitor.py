@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.models.loop import LoopLedger, LoopTagMapping
-from app.models.metric import KpiSnapshotHourly
+from app.models.metric import KpiSnapshotHourly, LoopIntegritySnapshot
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ALGORITHM_VERSION
@@ -400,6 +400,20 @@ async def list_loop_monitor(
         await _load_mode_mappings(db, loop_ids) if loop_ids else {}
     )
 
+    # 批量查每个回路最新一次数据完整性巡检快照（DISTINCT ON 取每回路最新 check_date）
+    # 用于列表页展示 PV 完整度，避免列表实时查 TDengine（27 回路 × 7 列 COUNT 需 ~3s）
+    integrity_map: dict[str, LoopIntegritySnapshot] = {}
+    if loop_ids:
+        i_stmt = (
+            select(LoopIntegritySnapshot)
+            .where(LoopIntegritySnapshot.loop_id.in_(loop_ids))
+            .distinct(LoopIntegritySnapshot.loop_id)
+            .order_by(LoopIntegritySnapshot.loop_id, LoopIntegritySnapshot.check_date.desc())
+        )
+        i_result = await db.execute(i_stmt)
+        for snap in i_result.scalars().all():
+            integrity_map[str(snap.loop_id)] = snap
+
     # 批量从 Redis 读取实时值，优先于 PostgreSQL current_value
     redis_cache: dict[str, dict] = {}
     try:
@@ -418,6 +432,7 @@ async def list_loop_monitor(
     for loop in loops:
         loop_mappings = mappings_map.get(str(loop.id), {})
         snap = snapshot_map.get(str(loop.id))
+        integrity = integrity_map.get(str(loop.id))
         # 构建当前值快照
         current_values: dict[str, Any] = {
             "pv": None,
@@ -542,6 +557,24 @@ async def list_loop_monitor(
                 "confidenceLevel": confidence_level,
                 "effectiveAutoRate": _rate(snap.effective_auto_rate) if snap else None,
                 "kpiSummary": kpi_summary,
+                # 数据健康度（方案 A §5）：预处理 validRate + 可信度 + 完整度
+                # 三者均来自最新 KPI 快照/每日巡检快照，列表页不实时查 TDengine
+                "dataHealth": {
+                    # 预处理：好值率/有效率（来自预处理管道 + ConfidenceEvaluator）
+                    "validRate": _rate(snap.valid_rate) if snap else None,
+                    # 回路可信度：A/B/C/D/E 等级（来自 ConfidenceEvaluator）
+                    "confidenceLevel": confidence_level,
+                    # 数据完整性：PV 完整度（来自每日 02:00 巡检快照）
+                    "pvCompleteness": integrity.pv_completeness if integrity else None,
+                    "overallCompleteness": integrity.overall_completeness if integrity else None,
+                    "integrityStatus": integrity.status if integrity else None,
+                    "missingColumns": integrity.missing_columns if integrity else None,
+                    "lastIntegrityCheck": (
+                        integrity.check_date.isoformat()
+                        if integrity and integrity.check_date
+                        else None
+                    ),
+                },
                 "loopType": loop.loop_type,
                 "isActive": bool(loop.is_active),
                 "readAt": read_at,

@@ -264,3 +264,56 @@ class LoopConfidenceLatest(Base):
         Index("idx_loop_confidence_latest_loop_id", "loop_id", unique=True),
         {"comment": "回路最新一次可信度评估结果（每回路一条，随小时快照覆盖更新）"},
     )
+
+
+class LoopIntegritySnapshot(Base):
+    """回路数据完整性巡检快照（每回路每天一条，随每日巡检 UPSERT 覆盖）。
+
+    由每日 02:00 定时巡检任务写入，供回路监控列表/测点配置页快速展示
+    PV 完整度，无需实时查 TDengine（27 回路 × 7 列 COUNT 需 ~3s，列表页不可接受）。
+
+    设计依据：data-quality-enhancement-plan-2026-08-05.md §2.2 方案 A
+    """
+
+    __tablename__ = "loop_integrity_snapshot"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    loop_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("loop_ledger.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # 巡检日期（Asia/Shanghai 时区，naive date），用于 UPSERT 去重
+    check_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 巡检时间窗口（naive UTC）
+    ts_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ts_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 整体完整度 0.0~1.0
+    overall_completeness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # PV 列完整度 0.0~1.0（核心指标，<0.95 触发告警）
+    pv_completeness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # OP 列完整度 0.0~1.0
+    op_completeness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 列级明细 JSONB: {"pv": {"completeness": 0.97, "count": 86400, "expected": 86400}, ...}
+    col_details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # 缺失列列表 ["sp", "mode"]（空列表表示无缺失）
+    missing_columns: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # 巡检状态：OK / WARNING / CRITICAL / DATA_UNAVAILABLE
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OK', 'WARNING', 'CRITICAL', 'DATA_UNAVAILABLE')",
+            name="ck_loop_integrity_status",
+        ),
+        # 每回路每天仅一条快照（UPSERT 去重）
+        UniqueConstraint("loop_id", "check_date", name="uq_loop_integrity_loop_date"),
+        Index("idx_loop_integrity_check_date", "check_date"),
+        Index("idx_loop_integrity_loop_id", "loop_id"),
+        {"comment": "回路数据完整性每日巡检快照（每回路每天一条）"},
+    )

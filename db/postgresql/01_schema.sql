@@ -1245,7 +1245,30 @@ CREATE TABLE IF NOT EXISTS loop_confidence_latest (
 );
 
 -- =============================================================================
--- 35. process_model_version（过程模型版本聚合，V62-P3-003）
+-- 35. loop_integrity_snapshot（回路数据完整性每日巡检快照）
+-- 每回路每天一条，随每日 02:00 巡检任务 UPSERT 覆盖；供列表页展示 PV 完整度
+-- 证据：ORM app/models/metric.py；迁移 b7c8d9e0f1g2
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_integrity_snapshot (
+    id                      UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    loop_id                 UUID            NOT NULL,
+    check_date              TIMESTAMP       NOT NULL,
+    ts_start                TIMESTAMP       NOT NULL,
+    ts_end                  TIMESTAMP       NOT NULL,
+    overall_completeness     FLOAT,
+    pv_completeness         FLOAT,
+    op_completeness         FLOAT,
+    col_details             JSONB,
+    missing_columns         JSONB,
+    status                  VARCHAR(20)     NOT NULL,
+    created_at              TIMESTAMP       DEFAULT timezone('UTC', now()),
+    CONSTRAINT fk_loop_integrity_snapshot_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_loop_integrity_status CHECK (status IN ('OK', 'WARNING', 'CRITICAL', 'DATA_UNAVAILABLE')),
+    CONSTRAINT uq_loop_integrity_loop_date UNIQUE (loop_id, check_date)
+);
+
+-- =============================================================================
+-- 36. process_model_version（过程模型版本聚合，V62-P3-003）
 -- 证据：ORM app/models/process_model_version.py；迁移 p3a1b2c3d4e5
 -- 不可变版本化辨识证据；CANDIDATE/CURRENT/RETIRED 生命周期
 -- =============================================================================
@@ -1355,6 +1378,12 @@ CREATE INDEX IF NOT EXISTS idx_diag_config_change_target
 CREATE INDEX IF NOT EXISTS idx_diag_config_change_status ON diagnosis_config_change (status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_loop_confidence_latest_loop_id
     ON loop_confidence_latest (loop_id);
+
+-- loop_integrity_snapshot 索引（数据完整性每日巡检快照，2026-08-05）
+CREATE INDEX IF NOT EXISTS idx_loop_integrity_check_date
+    ON loop_integrity_snapshot (check_date);
+CREATE INDEX IF NOT EXISTS idx_loop_integrity_loop_id
+    ON loop_integrity_snapshot (loop_id);
 
 -- kpi_snapshot_hourly 索引
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_id  ON kpi_snapshot_hourly (loop_id);

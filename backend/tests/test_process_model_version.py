@@ -60,8 +60,12 @@ def test_process_model_version_table_registered() -> None:
 
 
 def test_orm_has_38_tables() -> None:
-    """P3-003 后 ORM 表集合应为 38 张（37 + process_model_version）。"""
-    assert len(Base.metadata.tables) == 38
+    """ORM 表集合数量守恒断言。
+
+    38（基线 37 + process_model_version）+ loop_integrity_snapshot（数据完整性巡检
+    快照，2026-08-05 数据质量增强）= 39。
+    """
+    assert len(Base.metadata.tables) == 39
 
 
 def test_partial_unique_index_current_exists() -> None:
