@@ -238,10 +238,11 @@ class TestF2StictionEllipse:
         assert 4.0 <= res.value <= 20.0
 
     def test_f2_stationary_loop_no_limit_cycle(self):
-        """F.2：非振荡平稳回路（PV≈恒定+微小噪声）→ INCONCLUSIVE(no_limit_cycle).
+        """F.2：非振荡平稳回路（PV≈恒定+微小噪声）→ value=0 (NONE, no_limit_cycle).
 
         粘滞椭圆只在极限环振荡时有物理意义（Kano/Choudhury 前提）；
-        平稳回路高频伪穿越平均半周期 < 8 采样点，门控应拒绝出值。
+        平稳回路高频伪穿越平均半周期 < 8 采样点，门控拦截。
+        平稳意味着无粘滞故障，返回 0（无粘滞）而非 INCONCLUSIVE。
         """
         n = 1200
         rng = _rng()
@@ -250,8 +251,8 @@ class TestF2StictionEllipse:
         bundle = build_bundle({"pv": pv.tolist(), "op": op.tolist()}, metric_code="stiction_index")
         res = StictionIndexCalculator().calculate(bundle)
 
-        assert res.value is None
-        assert res.confidence_level == "E"
+        assert res.value == 0.0
+        assert res.details["stiction_level"] == "NONE"
         assert res.details["reason"] == "no_limit_cycle"
 
 
