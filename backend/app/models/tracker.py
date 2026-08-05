@@ -111,6 +111,14 @@ class ActionTracker(Base):
     # 计划执行时间（人工实施计划时间，与 updated_at 实际完成时间区分）
     planned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # ========== P3-01 追加列 ==========
+    # 关联整定任务记录（用户实施时指定，可为空表示未走整定流程）
+    tuning_record_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tuning_record.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         CheckConstraint(
             "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED', "
@@ -156,4 +164,6 @@ class ActionTracker(Base):
             "action_status",
             "updated_at",
         ),
+        # P3-01: 整定任务关联索引
+        Index("idx_action_tracker_tuning_record", "tuning_record_id"),
     )

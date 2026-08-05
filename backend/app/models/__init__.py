@@ -39,6 +39,7 @@ from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
 from app.models.tuning import TuningRecord
+from app.models.tuning_knowledge import TuningKnowledgeEntry
 from app.models.unit_kpi_summary import UnitKpiSummary
 
 __all__ = [
@@ -69,6 +70,7 @@ __all__ = [
     "ActionTracker",
     "DiagnosisResult",
     "TuningRecord",
+    "TuningKnowledgeEntry",
     "ReportRecord",
     "ReportConfig",
     "SysAuditLog",
