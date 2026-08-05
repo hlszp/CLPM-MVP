@@ -387,6 +387,8 @@ class TrackerStatusUpdate(CamelModel):
     newPidD: float | None = Field(None, description="实施后新微分时间 D（秒）")
     # P1a 新增：重开原因（REOPENED 状态时必填）
     reopenReason: str | None = Field(None, max_length=500, description="重开原因（REOPENED 必填）")
+    # P3-01 新增：关联整定任务记录（VERIFYING 时可选，用于知识库生成）
+    tuningRecordId: str | None = Field(None, description="关联整定任务记录 ID")
 
 
 class TrackerStatusData(CamelModel):

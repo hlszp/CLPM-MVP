@@ -106,6 +106,7 @@ async def update_tracker_status(
     new_pid_i: float | None = None,
     new_pid_d: float | None = None,
     reopen_reason: str | None = None,
+    tuning_record_id: str | None = None,
 ) -> dict:
     """更新 Action Tracker 状态（P1a 闭环状态机扩展）。
 
@@ -295,6 +296,9 @@ async def update_tracker_status(
             tracker.new_pid_i = new_pid_i
         if new_pid_d is not None:
             tracker.new_pid_d = new_pid_d
+    # P3-01: 关联整定任务记录（用于知识库生成）
+    if tuning_record_id is not None:
+        tracker.tuning_record_id = tuning_record_id
     if status == "CLOSED":
         tracker.closed_at = datetime.now(UTC).replace(tzinfo=None)
     if reopen_reason is not None:

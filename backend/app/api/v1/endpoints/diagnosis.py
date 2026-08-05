@@ -952,6 +952,7 @@ async def update_tracker_status_endpoint(
         new_pid_i=body.newPidI,
         new_pid_d=body.newPidD,
         reopen_reason=body.reopenReason,
+        tuning_record_id=body.tuningRecordId,
     )
     return success(data=data, message="状态更新成功")
 
