@@ -26,7 +26,7 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Table, Tag } from 'ant-design-vue';
+import { Button, Space, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisAnalyticsApi, getDiagnosisListApi } from '#/api/diagnosis';
@@ -499,7 +499,7 @@ onMounted(() => {
             />
           </template>
           <template v-else-if="column.key === 'diagnosisLabel'">
-            <a-space :size="4">
+            <Space :size="4">
               <Tag :color="labelColor(record.diagnosisLabel as DiagnosisLabel)">
                 {{ record.labelName || labelName(record.diagnosisLabel) }}
               </Tag>
@@ -521,7 +521,7 @@ onMounted(() => {
                   )[record.diagnosisLabel]!.short
                 "
               />
-            </a-space>
+            </Space>
           </template>
           <template v-else-if="column.key === 'confidence'">
             <ClpmConfidenceBadge :confidence="record.confidence" />

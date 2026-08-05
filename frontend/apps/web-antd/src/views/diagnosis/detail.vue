@@ -1,19 +1,22 @@
 <script lang="ts" setup>
 /**
- * S4-DIAG 诊断详情页（C3 布局重构）
+ * S4-DIAG 诊断详情页（P1a Tab布局重构）
  *
- * 对齐 FDS §5.4 + IDS v3.2 §2.4 + PRD §4.4
- * - 主区 65/35 左右分栏：
- *   - 左侧 65%：趋势图（WaveformChart）+ PV-OP 散点图 + 证据链
- *   - 右侧 35%：问题定位路径 + 推荐动作 + 跟踪状态
+ * 对齐 FDS §5.4 + IDS v3.2 §2.4 + PRD §4.4 + P1a整改方案
  * - 顶部：回路基本信息 + 综合评分 + 最高标签置信度 + 风险等级 + 处理状态 + 时间窗切换
+ * - 主区：Tab布局
+ *   - Tab 1「诊断证据」：原趋势图（WaveformChart）+ PV-OP 散点图 + 证据链 + 推荐动作（保留原有65/35布局）
+ *   - Tab 2「处置时间线」：ClpmDispositionTimeline组件 + 状态操作按钮（认领/实施/验证通过/重开/忽略）
+ *   - Tab 3「整定对比」：预留（跳转回路整定模块，上下文传递）
+ *   - Tab 4「A/B验证」：预留（A/B对比数据展示）
  * - FE-14：诊断建议书 PDF 导出按钮
- * - 异常跟踪以 Drawer 形式打开（与 P1-2 约定接口）
+ * - P1a：闭环状态机PENDING→IN_PROGRESS→VERIFYING→CLOSED，VERIFYING可→REOPENED
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { SummaryAction, SummaryItem } from '#/components/clpm';
+import type { ImplementSubmitData } from '#/components/clpm/implement-record-modal.vue';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -22,18 +25,31 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, message, RadioGroup, Spin, Steps, Tag } from 'ant-design-vue';
+import {
+  Button,
+  message,
+  Modal,
+  RadioGroup,
+  Spin,
+  Steps,
+  Tabs,
+  Tag,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
   generateDiagnosisReportApi,
   getDiagnosisDetailApi,
+  getLoopTimelineApi,
   getRecommendationsApi,
   getTrackerListApi,
   getWaveformApi,
+  updateTrackerStatusApi,
 } from '#/api/diagnosis';
 import {
   ClpmDataCanvas,
+  ClpmDispositionTimeline,
+  ClpmImplementRecordModal,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
   ClpmToolbarButton,
@@ -53,12 +69,7 @@ const { isDark, themeColors } = useClpmTheme();
 
 const route = useRoute();
 const router = useRouter();
-/** P0-1: loopId 改为 ref，配合 watch 实现路由参数变化时重新加载 */
 const loopId = ref(route.params.loopId as string);
-/** P0-3: 请求版本号，防止 timeWindow 快速切换时旧请求覆盖新数据。
- * 注意：loadDetail 与 loadWaveform 必须使用独立计数器——共用计数器时
- * 并行请求会互相判对方"过期"，导致先自增的一方响应被恒丢弃、loading
- * 永不复位（2026-07-29 诊断详情页一直转圈+内容半透明+散点空白根因）。 */
 let detailVersion = 0;
 let waveformVersion = 0;
 
@@ -66,17 +77,21 @@ const loading = ref(false);
 const waveformLoading = ref(false);
 const recommendationsLoading = ref(false);
 const reportGenerating = ref(false);
+const timelineLoading = ref(false);
+const statusUpdating = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const waveform = ref<DiagnosisApi.WaveformResult | null>(null);
 const recommendations = ref<DiagnosisApi.RecommendationItem[]>([]);
-const trackerStatus = ref<DiagnosisApi.ActionStatus | null>(null);
+const trackerItem = ref<DiagnosisApi.TrackerItem | null>(null);
+const timeline = ref<DiagnosisApi.TimelineData | null>(null);
 const timeWindow = ref<DiagnosisApi.TimeWindow>('last_24_hours');
+const activeTab = ref('evidence');
+
+// 实施记录弹窗
+const implementModalVisible = ref(false);
 
 // ===== D2 多图联动：趋势图 ↔ 散点图 =====
-/** 当前选中时间点（由趋势图或散点图点击触发） */
 const selectedTime = ref<null | { index: number; timestamp: string }>(null);
-
-/** 传递给 WaveformChart 的选中时间戳 */
 const selectedTimestamp = computed(() => selectedTime.value?.timestamp ?? null);
 
 const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
@@ -85,9 +100,7 @@ const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
   { label: '近 30 天', value: 'last_30_days' },
 ];
 
-/** 8 类诊断标签颜色映射 */
 const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
-
 const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 // 散点图 ECharts
@@ -102,7 +115,7 @@ const pageTitle = computed(() => {
   return '诊断详情';
 });
 
-/** 风险等级：基于综合评分推导（< 60 HIGH，60-80 MEDIUM，>= 80 LOW） */
+/** 风险等级：基于综合评分推导 */
 const riskLevel = computed<{
   label: string;
   status: SummaryItem['status'];
@@ -113,7 +126,7 @@ const riskLevel = computed<{
   return { label: 'LOW', status: 'primary' };
 });
 
-/** B5：可信度等级角标（A/B 绿、C 黄、D/E 红，基于有效数据率五级分级） */
+/** B5：可信度等级角标 */
 const confidenceLevelTag = computed<{
   label: string;
   status: SummaryItem['status'];
@@ -138,7 +151,7 @@ const confidenceLevelTag = computed<{
   };
 });
 
-/** 处理状态文案与色彩 */
+/** P1a：处理状态文案与色彩（支持完整闭环状态机） */
 const trackerStatusTag = computed<{
   label: string;
   status: SummaryItem['status'];
@@ -146,25 +159,32 @@ const trackerStatusTag = computed<{
   const labelMap: Record<DiagnosisApi.ActionStatus, string> = {
     PENDING: '待处理',
     IN_PROGRESS: '处理中',
+    VERIFYING: '待验证',
     IMPLEMENTED: '已实施',
+    CLOSED: '已闭环',
+    REOPENED: '已重开',
     IGNORED: '已忽略',
   };
   const statusMap: Record<DiagnosisApi.ActionStatus, SummaryItem['status']> = {
     PENDING: 'warning',
     IN_PROGRESS: 'primary',
+    VERIFYING: 'warning',
     IMPLEMENTED: 'success',
+    CLOSED: 'success',
+    REOPENED: 'danger',
     IGNORED: 'neutral',
   };
-  if (!trackerStatus.value) {
+  if (!trackerItem.value) {
     return { label: '未跟踪', status: 'neutral' };
   }
+  const status = trackerItem.value.actionStatus;
   return {
-    label: labelMap[trackerStatus.value],
-    status: statusMap[trackerStatus.value],
+    label: labelMap[status] ?? status,
+    status: statusMap[status] ?? 'neutral',
   };
 });
 
-/** 跟踪状态颜色（响应式，对齐 ZL 工业色板） */
+/** 跟踪状态颜色 */
 const trackerStatusColor = computed(() => {
   const map: Record<string, string> = {
     danger: themeColors.value.DANGER,
@@ -199,9 +219,7 @@ const summaryItems = computed<SummaryItem[]>(() => {
     },
     {
       key: 'confidence',
-      // 后端 Phase 1 起 fusedConfidence 语义为"同标签多算法融合后的最高标签置信度"（不再跨标签融合）
       label: '最高标签置信度',
-      // 旧诊断记录（2026-07-29 前）未持久化该值，null 显示占位符而非 0.00
       value:
         detail.value.fusedConfidence == null
           ? '—'
@@ -238,14 +256,20 @@ const summaryItems = computed<SummaryItem[]>(() => {
   ];
 });
 
-/** 摘要条右侧操作（异常跟踪 + 可视化分析） */
+/** 摘要条右侧操作 */
 const summaryActions = computed<SummaryAction[]>(() => {
   return [
     {
       key: 'track',
-      label: '异常跟踪',
+      label: trackerItem.value ? '处置跟踪' : '加入跟踪',
       icon: 'ant-design:flag-outlined',
       type: 'primary',
+    },
+    {
+      key: 'tuning',
+      label: '回路整定',
+      icon: 'ant-design:sliders-outlined',
+      type: 'default',
     },
     {
       key: 'visualization',
@@ -256,33 +280,45 @@ const summaryActions = computed<SummaryAction[]>(() => {
   ];
 });
 
+/** P1a：根据当前状态计算可用操作按钮 */
+const availableActions = computed(() => {
+  const actions: {
+    key: string;
+    label: string;
+    variant?: string;
+    danger?: boolean;
+  }[] = [];
+  const status = trackerItem.value?.actionStatus;
+
+  if (!status || status === 'PENDING') {
+    actions.push({ key: 'claim', label: '认领处理', variant: 'primary' });
+  }
+  if (status === 'IN_PROGRESS' || status === 'REOPENED') {
+    actions.push({ key: 'implement', label: '标记已实施', variant: 'primary' });
+  }
+  if (status === 'VERIFYING' || status === 'IMPLEMENTED') {
+    actions.push({ key: 'verify_pass', label: '验证通过', variant: 'primary' });
+    actions.push({ key: 'verify_fail', label: '验证不通过', danger: true });
+  }
+  if (status && status !== 'CLOSED' && status !== 'IGNORED') {
+    actions.push({ key: 'ignore', label: '标记忽略' });
+  }
+
+  return actions;
+});
+
 /** FE-12 三段式：问题定位路径 Steps */
 const problemPathSteps = computed(() => {
   if (!detail.value || !detail.value.diagnosisLabels?.length) {
     return [
-      {
-        title: '数据采集',
-        description: '采集 PV/SP/OP 时序数据',
-      },
-      {
-        title: '特征提取',
-        description: 'FFT/散点拟合/质量码统计',
-      },
-      {
-        title: '暂无诊断结论',
-        description: '未检测到异常标签',
-      },
+      { title: '数据采集', description: '采集 PV/SP/OP 时序数据' },
+      { title: '特征提取', description: 'FFT/散点拟合/质量码统计' },
+      { title: '暂无诊断结论', description: '未检测到异常标签' },
     ];
   }
   const steps: { description: string; title: string }[] = [
-    {
-      title: '数据采集',
-      description: '采集 PV/SP/OP 时序数据',
-    },
-    {
-      title: '特征提取',
-      description: 'FFT/散点拟合/质量码统计',
-    },
+    { title: '数据采集', description: '采集 PV/SP/OP 时序数据' },
+    { title: '特征提取', description: 'FFT/散点拟合/质量码统计' },
   ];
   for (const item of detail.value.diagnosisLabels) {
     steps.push({
@@ -293,33 +329,28 @@ const problemPathSteps = computed(() => {
   return steps;
 });
 
-/** 当前 Step 索引（指向最后一个，即结论） */
 const currentStep = computed(() => {
   return Math.max(0, problemPathSteps.value.length - 1);
 });
 
-/** 时间窗映射为 [startTime, endTime]（dayjs） */
 function getTimeRange(tw: DiagnosisApi.TimeWindow): [dayjs.Dayjs, dayjs.Dayjs] {
   switch (tw) {
-    case 'last_7_days': {
+    case 'last_7_days':
       return [dayjs().subtract(7, 'day'), dayjs()];
-    }
-    case 'last_30_days': {
+    case 'last_30_days':
       return [dayjs().subtract(30, 'day'), dayjs()];
-    }
-    default: {
+    default:
       return [dayjs().subtract(24, 'hour'), dayjs()];
-    }
   }
 }
 
-/** 加载诊断详情（P0-3: 版本号保护，丢弃过期响应） */
+/** 加载诊断详情 */
 async function loadDetail() {
   const version = ++detailVersion;
   loading.value = true;
   try {
     const data = await getDiagnosisDetailApi(loopId.value, timeWindow.value);
-    if (version !== detailVersion) return; // 过期响应丢弃
+    if (version !== detailVersion) return;
     detail.value = data;
     renderScatterChart();
   } catch {
@@ -329,15 +360,12 @@ async function loadDetail() {
   }
 }
 
-/**
- * 加载全部数据（详情 + 波形 + 推荐 + 跟踪状态，四路并行）
- * 波形/推荐/跟踪仅依赖 loopId 与 timeWindow，无需等待 detail，可全并行以缩短首屏时间
- */
+/** 加载全部数据 */
 function loadAll() {
   loadDetail();
   loadWaveform();
   loadRecommendations();
-  loadTrackerStatus();
+  loadTrackerAndTimeline();
 }
 
 /** 加载时序波形数据 */
@@ -353,7 +381,7 @@ async function loadWaveform() {
       downsample: true,
       maxPoints: 2000,
     });
-    if (version !== waveformVersion) return; // 过期响应丢弃
+    if (version !== waveformVersion) return;
     waveform.value = data;
   } catch {
     // 错误已由拦截器处理
@@ -362,7 +390,7 @@ async function loadWaveform() {
   }
 }
 
-/** 加载解决方案推荐（FE-13） */
+/** 加载解决方案推荐 */
 async function loadRecommendations() {
   if (!loopId.value) return;
   recommendationsLoading.value = true;
@@ -376,18 +404,21 @@ async function loadRecommendations() {
   }
 }
 
-/** 加载异常跟踪状态（复用 /diagnosis/list 端点） */
-async function loadTrackerStatus() {
+/** P1a：加载Tracker详情和时间线 */
+async function loadTrackerAndTimeline() {
   if (!loopId.value) return;
+  timelineLoading.value = true;
   try {
-    const res = await getTrackerListApi({
-      loopId: loopId.value,
-      page: 1,
-      pageSize: 1,
-    });
-    trackerStatus.value = res.items[0]?.actionStatus ?? null;
+    const [trackerRes, timelineRes] = await Promise.all([
+      getTrackerListApi({ loopId: loopId.value, page: 1, pageSize: 1 }),
+      getLoopTimelineApi(loopId.value),
+    ]);
+    trackerItem.value = trackerRes.items[0] ?? null;
+    timeline.value = timelineRes;
   } catch {
     // 错误已由拦截器处理
+  } finally {
+    timelineLoading.value = false;
   }
 }
 
@@ -413,7 +444,6 @@ async function handleGenerateReport() {
   }
 }
 
-/** 刷新（重新加载全部数据） */
 function handleRefresh() {
   loadAll();
 }
@@ -421,9 +451,12 @@ function handleRefresh() {
 /** 摘要条操作点击 */
 function handleSummaryAction(key: string) {
   if (key === 'track') {
-    // F13：统一跳转异常跟踪独立页，替代原抽屉模式
+    activeTab.value = 'timeline';
+  }
+  if (key === 'tuning') {
+    // 跳转回路整定页面，传递上下文
     router.push({
-      path: '/diagnosis/tracker',
+      path: '/tuning',
       query: { loopId: loopId.value },
     });
   }
@@ -435,32 +468,24 @@ function handleSummaryAction(key: string) {
   }
 }
 
-/** F6：采纳推荐方案 → 跳转异常跟踪页并预填回路与标签 */
-function handleAdoptRecommendation(rec: DiagnosisApi.RecommendationItem) {
-  router.push({
-    path: '/diagnosis/tracker',
-    query: { loopId: loopId.value, label: rec.label },
-  });
+function handleAdoptRecommendation(_rec: DiagnosisApi.RecommendationItem) {
+  activeTab.value = 'timeline';
 }
 
-/** 渲染散点图（证据链中的 PV-OP 散点，支持 D2 联动高亮） */
+/** 渲染散点图 */
 function renderScatterChart() {
   const scatter = detail.value?.evidenceChain?.scatterPlot;
   if (!scatter || !scatter.x || scatter.x.length === 0) {
-    renderScatter({
-      title: { left: 'center', text: '暂无散点数据' },
-    });
+    renderScatter({ title: { left: 'center', text: '暂无散点数据' } });
     return;
   }
 
-  // D2 联动：计算 ±30s 窗口内的高亮索引集合
   const highlightedSet = new Set<number>();
   if (selectedTime.value && waveform.value) {
     const ts = waveform.value.timestamps;
-    // 散点与波形数据按索引对齐时才启用时间窗口高亮
     if (ts.length === scatter.x.length) {
       const selectedTs = Number(selectedTime.value.timestamp);
-      const WINDOW = 30_000; // 30 秒（ms）
+      const WINDOW = 30_000;
       for (const [i, t] of ts.entries()) {
         if (Math.abs(t - selectedTs) <= WINDOW) {
           highlightedSet.add(i);
@@ -472,7 +497,6 @@ function renderScatterChart() {
   const dangerColor = themeColors.value.DANGER;
   const infoColor = themeColors.value.INFO;
 
-  // 使用 per-point itemStyle 实现高亮（保留 dataIndex 与原始索引一致）
   const data = scatter.x.map((x, i) => {
     const isHi = highlightedSet.has(i);
     return {
@@ -487,20 +511,8 @@ function renderScatterChart() {
 
   renderScatter({
     backgroundColor: 'transparent',
-    grid: {
-      bottom: 60,
-      containLabel: true,
-      left: '2%',
-      right: '2%',
-      top: 40,
-    },
-    series: [
-      {
-        data,
-        name: 'PV-OP',
-        type: 'scatter',
-      },
-    ],
+    grid: { bottom: 60, containLabel: true, left: '2%', right: '2%', top: 40 },
+    series: [{ data, name: 'PV-OP', type: 'scatter' }],
     tooltip: {
       formatter: (params: any) => {
         return `X: ${Number(params.value[0]).toFixed(3)}<br/>Y: ${Number(
@@ -509,38 +521,25 @@ function renderScatterChart() {
       },
       trigger: 'item',
     },
-    xAxis: {
-      name: 'OP',
-      nameGap: 30,
-      nameLocation: 'middle',
-      type: 'value',
-    },
-    yAxis: {
-      name: 'PV',
-      nameGap: 40,
-      nameLocation: 'middle',
-      type: 'value',
-    },
+    xAxis: { name: 'OP', nameGap: 30, nameLocation: 'middle', type: 'value' },
+    yAxis: { name: 'PV', nameGap: 40, nameLocation: 'middle', type: 'value' },
   }).then(() => {
     bindScatterClick();
   });
 }
 
-/** 散点图点击事件 handler（D2 反向联动：散点 → 趋势图） */
 function scatterClickHandler(params: any) {
   if (params.componentType === 'series' && params.seriesType === 'scatter') {
     const idx = params.dataIndex;
     const scatter = detail.value?.evidenceChain?.scatterPlot;
     if (!scatter || !waveform.value) return;
     const ts = waveform.value.timestamps;
-    // 散点与波形数据按索引对齐时才触发反向联动
     if (ts.length === scatter.x.length && idx >= 0 && idx < ts.length) {
       selectedTime.value = { timestamp: String(ts[idx]), index: idx };
     }
   }
 }
 
-/** 绑定散点图点击事件（off+on 模式，兼容主题切换后实例重建） */
 function bindScatterClick() {
   const chart = getScatterInstance();
   if (!chart) return;
@@ -548,21 +547,14 @@ function bindScatterClick() {
   chart.on('click', scatterClickHandler);
 }
 
-/** D2 联动：趋势图选中时间点 → 高亮散点图 ±30s 窗口 */
 function onTrendTimeSelect(payload: { index: number; timestamp: string }) {
   selectedTime.value = payload;
 }
 
-/** D2 联动：清除选中 */
 function clearSelection() {
   selectedTime.value = null;
 }
 
-/**
- * 格式化选中时间戳（epoch ms 字符串）为可读字符串。
- * 渲染统一走 utils/format 的 formatTime（Asia/Shanghai 时区），
- * 保留非数值输入回退原文的既有行为。
- */
 function formatSelectedTime(ts: string): string {
   const n = Number(ts);
   if (Number.isNaN(n)) return ts;
@@ -575,7 +567,6 @@ function handleBack() {
   router.back();
 }
 
-/** 格式化证据对象 */
 function formatEvidence(evidence: Record<string, unknown>): string {
   if (!evidence || Object.keys(evidence).length === 0) return '—';
   return Object.entries(evidence)
@@ -588,39 +579,141 @@ function formatEvidence(evidence: Record<string, unknown>): string {
     .join('\n');
 }
 
-/** 特征值列表（computed：避免模板内 v-if 与 v-for 两次调用 featureEntries 重复计算） */
 const featureEntriesList = computed<{ key: string; value: number }[]>(() => {
   const features = detail.value?.featureValues;
   if (!features) return [];
   return Object.entries(features).map(([k, v]) => ({ key: k, value: v }));
 });
 
+// ===== P1a: 状态操作逻辑 =====
+
+/** 认领处理 */
+function handleClaim() {
+  Modal.confirm({
+    title: '认领处理',
+    content: '确定认领该异常并开始处理吗？',
+    okText: '确定',
+    cancelText: '取消',
+    onOk: async () => {
+      await updateStatus('IN_PROGRESS');
+    },
+  });
+}
+
+/** 标记已实施 - 打开实施记录弹窗 */
+function handleImplement() {
+  implementModalVisible.value = true;
+}
+
+/** 实施记录提交 */
+async function handleImplementSubmit(data: ImplementSubmitData) {
+  await updateStatus('VERIFYING', {
+    newPidP: data.newPidP,
+    newPidI: data.newPidI,
+    newPidD: data.newPidD,
+    implementedAt: data.implementedAt,
+    comment: data.comment,
+    mocRef: data.mocRef,
+    mocNotApplicable: data.mocNotApplicable,
+    mocReason: data.mocReason,
+  });
+  implementModalVisible.value = false;
+}
+
+/** 验证通过 */
+function handleVerifyPass() {
+  Modal.confirm({
+    title: '验证通过',
+    content: '确认整改效果验证通过，该异常将标记为已闭环？',
+    okText: '确认闭环',
+    cancelText: '取消',
+    onOk: async () => {
+      await updateStatus('CLOSED');
+    },
+  });
+}
+
+/** 验证不通过 - 重开 */
+function handleVerifyFail() {
+  Modal.confirm({
+    title: '验证不通过',
+    content: '整改效果未达预期，将重新打开该异常进行处理。是否继续？',
+    okText: '重开',
+    cancelText: '取消',
+    onOk: async () => {
+      // 重开需要填写原因，此处简化处理
+      await updateStatus('REOPENED', {
+        reopenReason: '自动验证不通过，请重新整定参数',
+      });
+    },
+  });
+}
+
+/** 标记忽略 */
+function handleIgnore() {
+  Modal.confirm({
+    title: '标记忽略',
+    content: '确定忽略该异常吗？忽略后将不再出现在待处理列表中。',
+    okText: '确定忽略',
+    okButtonProps: { danger: true },
+    cancelText: '取消',
+    onOk: async () => {
+      await updateStatus('IGNORED');
+    },
+  });
+}
+
+/** 统一状态更新 */
+async function updateStatus(
+  status: DiagnosisApi.ActionStatus,
+  extraData: Partial<DiagnosisApi.TrackerStatusUpdateParams> = {},
+) {
+  statusUpdating.value = true;
+  try {
+    await updateTrackerStatusApi(loopId.value, {
+      status,
+      ...extraData,
+    });
+    message.success('状态更新成功');
+    await loadTrackerAndTimeline();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    statusUpdating.value = false;
+  }
+}
+
+/** Tab切换时按需加载数据 */
+function handleTabChange(key: string | number) {
+  const tabKey = String(key);
+  activeTab.value = tabKey;
+  if (tabKey === 'timeline' && !timeline.value) {
+    loadTrackerAndTimeline();
+  }
+}
+
 watch(timeWindow, () => {
   loadAll();
 });
 
-// P0-1: 路由参数变化时更新 loopId 并重新加载（组件复用场景）
 watch(
   () => route.params.loopId,
   (newLoopId) => {
     if (newLoopId && newLoopId !== loopId.value) {
       loopId.value = newLoopId as string;
       selectedTime.value = null;
+      timeline.value = null;
+      trackerItem.value = null;
+      activeTab.value = 'evidence';
       loadAll();
     }
   },
 );
 
-// D2 联动：选中时间变化时重渲散点图（更新高亮 ±30s 窗口）
 watch(selectedTime, () => {
   nextTick(() => renderScatterChart());
 });
 
-// ===== 主题切换重渲散点图 =====
-// 注意：此 watch 非冗余，不能删除。useEcharts 内部虽在 isDark 切换时用 cacheOptions
-// 重渲，但 cacheOptions 中 bake 了旧 themeColors（DANGER/INFO），重渲后点位色值会停留在
-// 旧主题。此处需用新 themeColors 重建 options 才能正确呈现深/浅色点位。
-// 依据：use-clpm-theme.ts §关键约束（cacheOptions 不会自动重算色值）。
 watch(isDark, () => {
   nextTick(() => {
     renderScatterChart();
@@ -647,12 +740,6 @@ onMounted(() => {
       />
       <template #actions>
         <ClpmToolbarButton
-          icon="track"
-          label="加入跟踪"
-          variant="primary"
-          @click="handleSummaryAction('track')"
-        />
-        <ClpmToolbarButton
           icon="export"
           label="导出报告"
           :loading="reportGenerating"
@@ -673,192 +760,420 @@ onMounted(() => {
           @action="handleSummaryAction"
         />
 
-        <!-- 主区 65/35 左右分栏 -->
-        <div class="flex gap-4">
-          <!-- 左侧 65%：趋势图 + PV-OP 散点图 + 证据链 -->
-          <div class="w-2/3 min-w-0 space-y-4">
-            <ClpmDataCanvas
-              title="证据链"
-              description="时序波形与 PV-OP 散点图优先展示算法证据。"
-            >
-              <!-- D2 多图联动状态指示条 -->
-              <div v-if="selectedTime" class="clpm-linkage-bar">
-                <IconifyIcon icon="ant-design:link-outlined" />
-                <span>
-                  联动已激活：选中时间
-                  {{ formatSelectedTime(selectedTime.timestamp) }}
-                </span>
-                <Button type="link" size="small" @click="clearSelection">
-                  清除
-                </Button>
-              </div>
-
-              <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
-                <WaveformChart
-                  v-if="waveform"
-                  :trend="waveform"
-                  :enable-time-select="true"
-                  :selected-timestamp="selectedTimestamp"
-                  height="320px"
-                  @time-select="onTrendTimeSelect"
-                />
-                <div
-                  v-else
-                  class="py-12 text-center"
-                  :style="{ color: themeColors.NEUTRAL }"
+        <!-- P1a: Tab布局 -->
+        <Tabs
+          v-model:activeKey="activeTab"
+          type="card"
+          @change="handleTabChange"
+        >
+          <!-- Tab 1: 诊断证据（原布局） -->
+          <Tabs.TabPane key="evidence" tab="诊断证据">
+            <div class="flex gap-4">
+              <!-- 左侧 65%：趋势图 + PV-OP 散点图 + 证据链 -->
+              <div class="w-2/3 min-w-0 space-y-4">
+                <ClpmDataCanvas
+                  title="证据链"
+                  description="时序波形与 PV-OP 散点图优先展示算法证据。"
                 >
-                  暂无波形数据
-                </div>
-              </ClpmDataCanvas>
-
-              <ClpmDataCanvas title="PV-OP 散点图" class="mt-4">
-                <EchartsUI ref="scatterChartRef" height="320px" />
-              </ClpmDataCanvas>
-
-              <div v-if="detail" class="mt-4 space-y-3">
-                <div v-if="detail.evidenceChain?.reasoning">
-                  <div class="mb-2 font-medium">推理过程</div>
-                  <div
-                    class="rounded border p-3 text-sm"
-                    :style="{ background: 'hsl(var(--muted) / 42%)' }"
-                  >
-                    {{ detail.evidenceChain.reasoning }}
+                  <div v-if="selectedTime" class="clpm-linkage-bar">
+                    <IconifyIcon icon="ant-design:link-outlined" />
+                    <span>
+                      联动已激活：选中时间
+                      {{ formatSelectedTime(selectedTime.timestamp) }}
+                    </span>
+                    <Button type="link" size="small" @click="clearSelection">
+                      清除
+                    </Button>
                   </div>
-                </div>
-                <div
-                  v-else
-                  class="py-4 text-center"
-                  :style="{ color: themeColors.NEUTRAL }"
-                >
-                  暂无推理过程
-                </div>
+
+                  <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
+                    <WaveformChart
+                      v-if="waveform"
+                      :trend="waveform"
+                      :enable-time-select="true"
+                      :selected-timestamp="selectedTimestamp"
+                      height="320px"
+                      @time-select="onTrendTimeSelect"
+                    />
+                    <div
+                      v-else
+                      class="py-12 text-center"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      暂无波形数据
+                    </div>
+                  </ClpmDataCanvas>
+
+                  <ClpmDataCanvas title="PV-OP 散点图" class="mt-4">
+                    <EchartsUI ref="scatterChartRef" height="320px" />
+                  </ClpmDataCanvas>
+
+                  <div v-if="detail" class="mt-4 space-y-3">
+                    <div v-if="detail.evidenceChain?.reasoning">
+                      <div class="mb-2 font-medium">推理过程</div>
+                      <div
+                        class="rounded border p-3 text-sm"
+                        :style="{ background: 'hsl(var(--muted) / 42%)' }"
+                      >
+                        {{ detail.evidenceChain.reasoning }}
+                      </div>
+                    </div>
+                    <div
+                      v-else
+                      class="py-4 text-center"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      暂无推理过程
+                    </div>
+                  </div>
+
+                  <div class="mt-4">
+                    <div class="mb-2 font-medium">特征值</div>
+                    <div v-if="featureEntriesList.length > 0">
+                      <div
+                        class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4"
+                      >
+                        <div
+                          v-for="item in featureEntriesList"
+                          :key="item.key"
+                          class="rounded border p-3 text-center"
+                        >
+                          <div
+                            class="text-xs"
+                            :style="{ color: themeColors.NEUTRAL }"
+                          >
+                            {{ item.key }}
+                          </div>
+                          <div class="mt-1 text-lg font-medium">
+                            {{ Number(item.value).toFixed(4) }}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      v-else
+                      class="py-4 text-center"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      暂无特征值
+                    </div>
+                  </div>
+                </ClpmDataCanvas>
               </div>
 
-              <div class="mt-4">
-                <div class="mb-2 font-medium">特征值</div>
-                <div v-if="featureEntriesList.length > 0">
+              <!-- 右侧 35%：诊断结论 + 推荐动作 -->
+              <div class="w-1/3 min-w-0 space-y-4">
+                <ClpmDataCanvas
+                  title="问题定位路径"
+                  description="诊断标签、置信度和推理证据按定位路径组织。"
+                >
+                  <Steps
+                    :current="currentStep"
+                    :items="problemPathSteps"
+                    direction="vertical"
+                    size="small"
+                  />
                   <div
-                    class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4"
+                    v-if="detail && detail.diagnosisLabels.length > 0"
+                    class="mt-4 space-y-3"
                   >
                     <div
-                      v-for="item in featureEntriesList"
-                      :key="item.key"
-                      class="rounded border p-3 text-center"
+                      v-for="(item, idx) in detail.diagnosisLabels"
+                      :key="idx"
+                      class="rounded border p-3"
                     >
+                      <div class="mb-2 flex flex-wrap items-center gap-3">
+                        <Tag :color="labelColorMap[item.label]">
+                          {{ item.labelName || labelNameMap[item.label] }}
+                        </Tag>
+                        <span
+                          class="text-sm"
+                          :style="{ color: themeColors.NEUTRAL }"
+                        >
+                          置信度：
+                          <span
+                            class="font-medium clpm-num"
+                            :style="{ color: themeColors.INFO }"
+                          >
+                            {{ Number(item.confidence).toFixed(2) }}
+                          </span>
+                        </span>
+                        <span
+                          class="text-sm"
+                          :style="{ color: themeColors.NEUTRAL }"
+                        >
+                          算法：{{ item.algorithm }}
+                        </span>
+                      </div>
                       <div
                         class="text-xs"
                         :style="{ color: themeColors.NEUTRAL }"
                       >
-                        {{ item.key }}
+                        <span class="font-medium">证据：</span>
+                        <pre class="mt-1 whitespace-pre-wrap text-xs">{{
+                          formatEvidence(item.evidence)
+                        }}</pre>
                       </div>
-                      <div class="mt-1 text-lg font-medium">
-                        {{ Number(item.value).toFixed(4) }}
+                    </div>
+                  </div>
+                </ClpmDataCanvas>
+
+                <Recommendations
+                  :recommendations="recommendations"
+                  :loading="recommendationsLoading"
+                  adoptable
+                  @adopt="handleAdoptRecommendation"
+                />
+              </div>
+            </div>
+          </Tabs.TabPane>
+
+          <!-- Tab 2: 处置时间线（P1a新增） -->
+          <Tabs.TabPane key="timeline" tab="处置时间线">
+            <ClpmDataCanvas
+              title="异常处置时间线"
+              description="从异常发现、认领、诊断、整定、实施到验证的全链路记录"
+              :loading="timelineLoading"
+            >
+              <!-- 当前状态卡片 -->
+              <div v-if="trackerItem" class="mb-6">
+                <div
+                  class="flex items-center justify-between rounded-lg border p-4"
+                  :style="{
+                    borderColor: trackerStatusColor + '40',
+                    background: trackerStatusColor + '08',
+                  }"
+                >
+                  <div class="flex items-center gap-4">
+                    <div
+                      class="flex h-12 w-12 items-center justify-center rounded-full"
+                      :style="{
+                        background: trackerStatusColor + '20',
+                        color: trackerStatusColor,
+                      }"
+                    >
+                      <IconifyIcon
+                        :icon="
+                          trackerItem.actionStatus === 'CLOSED'
+                            ? 'ant-design:check-circle-filled'
+                            : trackerItem.actionStatus === 'VERIFYING' ||
+                                trackerItem.actionStatus === 'IMPLEMENTED'
+                              ? 'ant-design:clock-circle-filled'
+                              : trackerItem.actionStatus === 'IGNORED'
+                                ? 'ant-design:minus-circle-filled'
+                                : 'ant-design:exclamation-circle-filled'
+                        "
+                        :size="24"
+                      />
+                    </div>
+                    <div>
+                      <div
+                        class="text-sm"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        当前状态
+                      </div>
+                      <div
+                        class="text-xl font-semibold"
+                        :style="{ color: trackerStatusColor }"
+                      >
+                        {{ trackerStatusTag.label }}
+                      </div>
+                      <div
+                        v-if="trackerItem.updatedAt"
+                        class="mt-1 text-xs"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        最后更新：{{ formatTime(trackerItem.updatedAt) }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      v-for="action in availableActions"
+                      :key="action.key"
+                      :type="
+                        action.variant === 'primary' ? 'primary' : 'default'
+                      "
+                      :danger="action.danger"
+                      :loading="statusUpdating"
+                      size="small"
+                      @click="
+                        action.key === 'claim'
+                          ? handleClaim()
+                          : action.key === 'implement'
+                            ? handleImplement()
+                            : action.key === 'verify_pass'
+                              ? handleVerifyPass()
+                              : action.key === 'verify_fail'
+                                ? handleVerifyFail()
+                                : action.key === 'ignore'
+                                  ? handleIgnore()
+                                  : null
+                      "
+                    >
+                      {{ action.label }}
+                    </Button>
+                  </div>
+                </div>
+
+                <!-- PID参数展示（VERIFYING/IMPLEMENTED/CLOSED状态） -->
+                <div
+                  v-if="
+                    trackerItem.newPidP != null ||
+                    trackerItem.newPidI != null ||
+                    trackerItem.newPidD != null
+                  "
+                  class="mt-4"
+                >
+                  <div class="mb-2 text-sm font-medium">实施PID参数</div>
+                  <div class="grid grid-cols-3 gap-3">
+                    <div class="rounded border p-3 text-center">
+                      <div
+                        class="text-xs"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        比例增益 P
+                      </div>
+                      <div class="mt-1 text-lg font-medium clpm-num">
+                        {{ trackerItem.newPidP?.toFixed(3) ?? '—' }}
+                      </div>
+                    </div>
+                    <div class="rounded border p-3 text-center">
+                      <div
+                        class="text-xs"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        积分时间 I (s)
+                      </div>
+                      <div class="mt-1 text-lg font-medium clpm-num">
+                        {{ trackerItem.newPidI?.toFixed(1) ?? '—' }}
+                      </div>
+                    </div>
+                    <div class="rounded border p-3 text-center">
+                      <div
+                        class="text-xs"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        微分时间 D (s)
+                      </div>
+                      <div class="mt-1 text-lg font-medium clpm-num">
+                        {{ trackerItem.newPidD?.toFixed(1) ?? '—' }}
                       </div>
                     </div>
                   </div>
                 </div>
-                <div
-                  v-else
-                  class="py-4 text-center"
-                  :style="{ color: themeColors.NEUTRAL }"
-                >
-                  暂无特征值
-                </div>
               </div>
-            </ClpmDataCanvas>
-          </div>
 
-          <!-- 右侧 35%：诊断结论 + 推荐动作 + 跟踪状态 -->
-          <div class="w-1/3 min-w-0 space-y-4">
-            <ClpmDataCanvas
-              title="问题定位路径"
-              description="诊断标签、置信度和推理证据按定位路径组织。"
-            >
-              <Steps
-                :current="currentStep"
-                :items="problemPathSteps"
-                direction="vertical"
-                size="small"
-              />
+              <!-- 未跟踪提示 -->
               <div
-                v-if="detail && detail.diagnosisLabels.length > 0"
-                class="mt-4 space-y-3"
+                v-else
+                class="mb-6 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8"
+                :style="{ borderColor: themeColors.NEUTRAL + '40' }"
               >
-                <div
-                  v-for="(item, idx) in detail.diagnosisLabels"
-                  :key="idx"
-                  class="rounded border p-3"
-                >
-                  <div class="mb-2 flex flex-wrap items-center gap-3">
-                    <Tag :color="labelColorMap[item.label]">
-                      {{ item.labelName || labelNameMap[item.label] }}
-                    </Tag>
-                    <span
-                      class="text-sm"
-                      :style="{ color: themeColors.NEUTRAL }"
-                    >
-                      置信度：
-                      <span
-                        class="font-medium clpm-num"
-                        :style="{ color: themeColors.INFO }"
-                      >
-                        {{ Number(item.confidence).toFixed(2) }}
-                      </span>
-                    </span>
-                    <span
-                      class="text-sm"
-                      :style="{ color: themeColors.NEUTRAL }"
-                    >
-                      算法：{{ item.algorithm }}
-                    </span>
-                  </div>
-                  <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">
-                    <span class="font-medium">证据：</span>
-                    <pre class="mt-1 whitespace-pre-wrap text-xs">{{
-                      formatEvidence(item.evidence)
-                    }}</pre>
-                  </div>
-                </div>
-              </div>
-            </ClpmDataCanvas>
-
-            <Recommendations
-              :recommendations="recommendations"
-              :loading="recommendationsLoading"
-              adoptable
-              @adopt="handleAdoptRecommendation"
-            />
-
-            <ClpmDataCanvas
-              title="跟踪状态"
-              description="异常处置跟踪与状态记录。"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-xs" :style="{ color: themeColors.NEUTRAL }">
-                    当前状态
-                  </div>
-                  <div
-                    class="mt-1 text-lg font-medium clpm-num"
-                    :style="{ color: trackerStatusColor }"
-                  >
-                    {{ trackerStatusTag.label }}
-                  </div>
-                </div>
-                <ClpmToolbarButton
-                  icon="track"
-                  label="异常跟踪"
-                  variant="primary"
-                  @click="handleSummaryAction('track')"
+                <IconifyIcon
+                  icon="ant-design:flag-outlined"
+                  :size="48"
+                  :style="{ color: themeColors.NEUTRAL + '60' }"
                 />
+                <div class="mt-4 text-center">
+                  <div class="font-medium">该回路尚未加入异常跟踪</div>
+                  <div
+                    class="mt-1 text-sm"
+                    :style="{ color: themeColors.NEUTRAL }"
+                  >
+                    点击下方按钮加入跟踪，开始异常处置闭环流程
+                  </div>
+                </div>
+                <Button
+                  type="primary"
+                  class="mt-4"
+                  :loading="statusUpdating"
+                  @click="handleClaim"
+                >
+                  加入跟踪并认领
+                </Button>
+              </div>
+
+              <!-- 时间线组件 -->
+              <ClpmDispositionTimeline
+                v-if="timeline"
+                :events="timeline.events"
+                :current-status="timeline.currentStatus"
+                :pending-verification-at="timeline.pendingVerificationAt"
+                :loading="timelineLoading"
+              />
+            </ClpmDataCanvas>
+          </Tabs.TabPane>
+
+          <!-- Tab 3: 整定对比（预留） -->
+          <Tabs.TabPane key="tuning" tab="整定对比">
+            <ClpmDataCanvas
+              title="整定参数对比"
+              description="对比整定前后PID参数，一键跳转回路整定模块进行详细仿真"
+            >
+              <div class="flex flex-col items-center justify-center py-12">
+                <IconifyIcon
+                  icon="ant-design:sliders-outlined"
+                  :size="64"
+                  :style="{ color: themeColors.NEUTRAL + '40' }"
+                />
+                <div class="mt-4 text-center">
+                  <div class="font-medium">整定参数对比</div>
+                  <div
+                    class="mt-1 text-sm"
+                    :style="{ color: themeColors.NEUTRAL }"
+                  >
+                    请先前往回路整定模块完成参数辨识和仿真
+                  </div>
+                </div>
+                <Button
+                  type="primary"
+                  class="mt-4"
+                  @click="
+                    () => router.push({ path: '/tuning', query: { loopId } })
+                  "
+                >
+                  前往回路整定
+                </Button>
               </div>
             </ClpmDataCanvas>
-          </div>
-        </div>
+          </Tabs.TabPane>
+
+          <!-- Tab 4: A/B验证（预留） -->
+          <Tabs.TabPane key="ab-verify" tab="A/B验证">
+            <ClpmDataCanvas
+              title="A/B效果验证"
+              description="对比实施前后KPI指标变化，验证整改效果"
+            >
+              <div class="flex flex-col items-center justify-center py-12">
+                <IconifyIcon
+                  icon="ant-design:line-chart-outlined"
+                  :size="64"
+                  :style="{ color: themeColors.NEUTRAL + '40' }"
+                />
+                <div class="mt-4 text-center">
+                  <div class="font-medium">A/B对比验证</div>
+                  <div
+                    class="mt-1 text-sm"
+                    :style="{ color: themeColors.NEUTRAL }"
+                  >
+                    标记参数已实施后，等待24小时数据采集即可查看对比结果
+                  </div>
+                </div>
+              </div>
+            </ClpmDataCanvas>
+          </Tabs.TabPane>
+        </Tabs>
       </div>
     </Spin>
 
-    <!-- F13：Tracker 抽屉已移除，统一跳转 /diagnosis/tracker?loopId=xxx -->
+    <!-- P1a: 实施记录弹窗 -->
+    <ClpmImplementRecordModal
+      v-model:visible="implementModalVisible"
+      :loading="statusUpdating"
+      @submit="handleImplementSubmit"
+    />
   </Page>
 </template>
 

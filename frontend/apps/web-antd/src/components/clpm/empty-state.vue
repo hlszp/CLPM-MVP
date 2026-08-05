@@ -1,9 +1,5 @@
 <template>
-  <a-empty
-    :description="null"
-    :image-style="imageStyle"
-    class="clpm-empty-state"
-  >
+  <Empty :description="null" :image-style="imageStyle" class="clpm-empty-state">
     <div class="clpm-empty-state__content">
       <IconifyIcon
         :icon="sceneConfig.icon"
@@ -16,7 +12,7 @@
         v-if="actions && actions.length > 0"
         class="clpm-empty-state__actions"
       >
-        <a-button
+        <Button
           v-for="(action, idx) in actions"
           :key="idx"
           :type="action.primary ? 'primary' : 'default'"
@@ -30,15 +26,16 @@
             style="margin-right: 4px"
           />
           {{ action.label }}
-        </a-button>
+        </Button>
       </div>
     </div>
-  </a-empty>
+  </Empty>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { Button, Empty } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
 
 interface EmptyAction {

@@ -28,12 +28,15 @@ export type DiagnosisLabel =
 export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
 export namespace DiagnosisApi {
-  /** 处理状态枚举（IDS v3.2 §2.4） */
+  /** 处理状态枚举（P1a 扩展闭环状态机：PENDING → IN_PROGRESS → VERIFYING → CLOSED，VERIFYING可→REOPENED） */
   export type ActionStatus =
+    | 'CLOSED'
     | 'IGNORED'
     | 'IMPLEMENTED'
     | 'IN_PROGRESS'
-    | 'PENDING';
+    | 'PENDING'
+    | 'REOPENED'
+    | 'VERIFYING';
 
   /** 时间窗枚举 */
   export type TimeWindow = 'last_7_days' | 'last_24_hours' | 'last_30_days';
@@ -346,7 +349,7 @@ export namespace DiagnosisApi {
     comment?: string;
     /** 变更说明（审计字段，预留） */
     changeRemark?: string;
-    /** D3: MOC 变更管理关联编号（IMPLEMENTED 时必填，或勾选不适用） */
+    /** D3: MOC 变更管理关联编号（VERIFYING/IMPLEMENTED 时必填，或勾选不适用） */
     mocRef?: string;
     /** D3: MOC 是否不适用 */
     mocNotApplicable?: boolean;
@@ -356,6 +359,16 @@ export namespace DiagnosisApi {
     assignee?: string;
     /** V62-P3-008：计划执行时间 ISO 8601 */
     plannedAt?: string;
+    /** P1a: 实施后新比例增益 P（VERIFYING 状态时必填） */
+    newPidP?: number | null;
+    /** P1a: 实施后新积分时间 I（秒，VERIFYING 状态时必填） */
+    newPidI?: number | null;
+    /** P1a: 实施后新微分时间 D（秒，VERIFYING 状态时必填） */
+    newPidD?: number | null;
+    /** P1a: 实际实施时间 ISO 8601（默认当前时间） */
+    implementedAt?: string | null;
+    /** P1a: 重开原因（REOPENED 状态时必填） */
+    reopenReason?: string | null;
   }
 
   /** Tracker 记录项 */
@@ -378,7 +391,7 @@ export namespace DiagnosisApi {
     triggeredBy?: string;
     /** D1: 严重等级 */
     severity?: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
-    /** D3: MOC 变更管理关联编号（IMPLEMENTED 时存在） */
+    /** D3: MOC 变更管理关联编号（VERIFYING/IMPLEMENTED 时存在） */
     mocRef?: string;
     /** D3: MOC 是否不适用 */
     mocNotApplicable?: boolean;
@@ -394,6 +407,58 @@ export namespace DiagnosisApi {
     assignee?: string;
     /** V62-P3-008：计划执行时间 ISO 8601 */
     plannedAt?: string;
+    /** P1a: 实施后新比例增益 P */
+    newPidP?: number | null;
+    /** P1a: 实施后新积分时间 I（秒） */
+    newPidI?: number | null;
+    /** P1a: 实施后新微分时间 D（秒） */
+    newPidD?: number | null;
+    /** P1a: 实际实施时间 ISO 8601 */
+    implementedAt?: string | null;
+    /** P1a: 实施人 */
+    implementedBy?: string | null;
+    /** P1a: 闭环时间 ISO 8601（CLOSED 时存在） */
+    closedAt?: string | null;
+    /** P1a: 重开原因（REOPENED 时存在） */
+    reopenReason?: string | null;
+  }
+
+  // -----------------------------------------------------------------------
+  // P1a: 异常处置时间线
+  // -----------------------------------------------------------------------
+
+  /** 时间线事件类型（对齐后端 snake_case） */
+  export type TimelineEventType =
+    | 'diagnosis_detected' // 系统发现异常
+    | 'claimed' // 认领处理
+    | 'comment' // 添加备注/评论
+    | 'tuning_completed' // 整定完成
+    | 'implemented' // 现场实施（VERIFYING）
+    | 'verification_passed' // 验证通过（CLOSED）
+    | 'verification_failed' // 验证失败（REOPENED）
+    | 'ignored' // 忽略
+    | 'moc_recorded'; // 记录MOC变更
+
+  /** 时间线事件项 */
+  export interface TimelineEventItem {
+    eventId: string;
+    eventType: TimelineEventType;
+    timestamp: string;
+    actor?: string | null;
+    title: string;
+    description?: string | null;
+    meta: Record<string, unknown>;
+  }
+
+  /** 时间线响应数据 */
+  export interface TimelineData {
+    loopId: string;
+    tagName?: string | null;
+    /** 当前跟踪状态 */
+    currentStatus?: ActionStatus | null;
+    events: TimelineEventItem[];
+    /** 预计自动验证时间 ISO 8601（VERIFYING 状态时存在） */
+    pendingVerificationAt?: string | null;
   }
 
   /** Tracker 列表查询参数 */
@@ -1134,5 +1199,18 @@ export function getTrackerEffectivenessApi(params?: {
   return requestClient.get<DiagnosisApi.TrackerEffectivenessData>(
     '/tracker/effectiveness',
     { params },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// P1a: 异常处置时间线 API
+// ---------------------------------------------------------------------------
+
+/**
+ * P1a: 获取单回路异常处置时间线
+ */
+export function getLoopTimelineApi(loopId: string) {
+  return requestClient.get<DiagnosisApi.TimelineData>(
+    `/tracker/${loopId}/timeline`,
   );
 }
