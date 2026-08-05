@@ -55,6 +55,7 @@ import {
   updateLoopApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
+import { getWaveformApi } from '#/api/diagnosis';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import { ClpmInfoTip } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
@@ -188,6 +189,59 @@ function wizardPrev() {
   if (wizardCurrent.value > 0) {
     wizardCurrent.value -= 1;
     syncTabFromWizard();
+  }
+}
+
+// ===== P2-06：配置后数据连通性验证 =====
+const dataCheckLoading = ref(false);
+const dataCheckResult = ref<{
+  ok: boolean;
+  pointCount: number;
+  pvNonNull: number;
+  message: string;
+} | null>(null);
+
+/** 检查数据连通性：拉取最近 5 分钟 PV/SP/OP 实时值 */
+async function checkDataConnectivity() {
+  if (!editingLoop.value) return;
+  dataCheckLoading.value = true;
+  dataCheckResult.value = null;
+  try {
+    const endTime = new Date();
+    const startTime = new Date(endTime.getTime() - 5 * 60 * 1000);
+    const result = await getWaveformApi(editingLoop.value.loopId, {
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      downsample: false,
+    });
+    const pvNonNull = (result.pv ?? []).filter(
+      (v) => v !== null && v !== undefined,
+    ).length;
+    const pointCount = result.pointCount ?? (result.pv ?? []).length;
+    if (pointCount > 0 && pvNonNull > 0) {
+      dataCheckResult.value = {
+        ok: true,
+        pointCount,
+        pvNonNull,
+        message: `数据正常（${pointCount} 个采样点，PV 有效 ${pvNonNull} 个）`,
+      };
+    } else {
+      dataCheckResult.value = {
+        ok: false,
+        pointCount,
+        pvNonNull,
+        message: '未检测到 PV 数据，请检查 Tag 关联和数据源配置',
+      };
+    }
+  } catch {
+    dataCheckResult.value = {
+      ok: false,
+      pointCount: 0,
+      pvNonNull: 0,
+      message: '数据查询失败，请确认数据源已配置并连通',
+    };
+  } finally {
+    dataCheckLoading.value = false;
   }
 }
 
@@ -1060,6 +1114,64 @@ defineExpose({
               </div>
               <div class="mt-3 text-xs text-gray-500">
                 点击「完成创建」保存配置。如需修改，点击「上一步」返回对应步骤。
+              </div>
+            </div>
+
+            <!-- P2-06：数据连通性验证 -->
+            <div class="mt-3 rounded border border-gray-200 p-3">
+              <div class="mb-2 flex items-center justify-between">
+                <span class="text-sm font-medium">数据连通性验证</span>
+                <Button
+                  size="small"
+                  :loading="dataCheckLoading"
+                  :disabled="!wizardBasicSaved"
+                  @click="checkDataConnectivity"
+                >
+                  <template #icon>
+                    <IconifyIcon
+                      icon="lucide:radio"
+                      :size="14"
+                      class="mr-1"
+                    />
+                  </template>
+                  检查数据
+                </Button>
+              </div>
+              <div v-if="dataCheckResult" class="text-sm">
+                <div
+                  class="flex items-center gap-2"
+                  :style="{
+                    color: dataCheckResult.ok ? '#52c41a' : '#faad14',
+                  }"
+                >
+                  <IconifyIcon
+                    :icon="
+                      dataCheckResult.ok
+                        ? 'lucide:check-circle-2'
+                        : 'lucide:alert-triangle'
+                    "
+                    :size="16"
+                  />
+                  {{ dataCheckResult.message }}
+                </div>
+                <div
+                  v-if="dataCheckResult.ok"
+                  class="mt-1 text-xs text-gray-500"
+                >
+                  数据正常，可放心启用评估
+                </div>
+                <div
+                  v-else
+                  class="mt-1 text-xs text-gray-500"
+                >
+                  建议前往系统管理检查数据源配置，或等待实时数据写入后再试
+                </div>
+              </div>
+              <div
+                v-else-if="!dataCheckLoading"
+                class="text-xs text-gray-400"
+              >
+                点击「检查数据」验证 Tag 关联后是否有实时数据流入
               </div>
             </div>
           </div>
