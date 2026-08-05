@@ -27,6 +27,7 @@ import { getTuningHistoryApi } from '#/api/tuning';
 import {
   ClpmConfidenceBadge,
   ClpmDataCanvas,
+  ClpmEmptyState,
   ClpmKpiStrip,
   ClpmLoopLink,
   ClpmPageToolbar,
@@ -613,6 +614,20 @@ onMounted(() => {
           :scroll="{ x: 900 }"
           size="middle"
         >
+          <template #emptyText>
+            <ClpmEmptyState
+              title="暂无待整定回路"
+              description="诊断中心未发现建议整定的开放异常（振荡/参数过激/参数过保守/阀门粘滞）"
+              :actions="[
+                {
+                  label: '前往诊断中心',
+                  icon: 'lucide:stethoscope',
+                  primary: true,
+                  onClick: () => router.push('/diagnosis/tracker'),
+                },
+              ]"
+            />
+          </template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'tagName'">
               <ClpmLoopLink
@@ -672,6 +687,19 @@ onMounted(() => {
           :scroll="{ x: 950 }"
           size="middle"
         >
+          <template #emptyText>
+            <ClpmEmptyState
+              scene="task"
+              :actions="[
+                {
+                  label: '新建整定',
+                  icon: 'lucide:plus',
+                  primary: true,
+                  onClick: handleCreate,
+                },
+              ]"
+            />
+          </template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'tagName'">
               <span class="font-mono text-xs font-medium">

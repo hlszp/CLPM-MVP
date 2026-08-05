@@ -80,7 +80,8 @@ import {
   getLoopSnapshotsApi,
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import { ClpmDataCanvas, ClpmInfoTip, ClpmPageToolbar } from '#/components/clpm';
+import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
@@ -1397,6 +1398,48 @@ onMounted(async () => {
         size="small"
         @change="handleTableChange"
       >
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'score'">
+            综合评分
+            <ClpmInfoTip
+              :term="KPI_TERM_EXPLANATIONS.compositeScore?.term"
+              :tip="KPI_TERM_EXPLANATIONS.compositeScore?.short ?? ''"
+              :detail="KPI_TERM_EXPLANATIONS.compositeScore?.detail"
+            />
+          </template>
+          <template v-else-if="column.key === 'accuracyRate'">
+            准确率
+            <ClpmInfoTip
+              :term="KPI_TERM_EXPLANATIONS.accuracyScore?.term"
+              :tip="KPI_TERM_EXPLANATIONS.accuracyScore?.short ?? ''"
+              :detail="KPI_TERM_EXPLANATIONS.accuracyScore?.detail"
+            />
+          </template>
+          <template v-else-if="column.key === 'fastRate'">
+            快速率
+            <ClpmInfoTip
+              :term="KPI_TERM_EXPLANATIONS.responseScore?.term"
+              :tip="KPI_TERM_EXPLANATIONS.responseScore?.short ?? ''"
+              :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
+            />
+          </template>
+          <template v-else-if="column.key === 'steadyRate'">
+            平稳率
+            <ClpmInfoTip
+              :term="KPI_TERM_EXPLANATIONS.steadyScore?.term"
+              :tip="KPI_TERM_EXPLANATIONS.steadyScore?.short ?? ''"
+              :detail="KPI_TERM_EXPLANATIONS.steadyScore?.detail"
+            />
+          </template>
+          <template v-else-if="column.key === 'effectiveAutoRate'">
+            有效自控率
+            <ClpmInfoTip
+              :term="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.term"
+              :tip="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.short ?? ''"
+              :detail="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.detail"
+            />
+          </template>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'loopType'">
             <Tag
@@ -1657,7 +1700,15 @@ onMounted(async () => {
               bordered
               :label-style="{ width: '120px' }"
             >
-              <DescriptionsItem label="综合评分">
+              <DescriptionsItem>
+                <template #label>
+                  综合评分
+                  <ClpmInfoTip
+                    :term="KPI_TERM_EXPLANATIONS.compositeScore?.term"
+                    :tip="KPI_TERM_EXPLANATIONS.compositeScore?.short ?? ''"
+                    :detail="KPI_TERM_EXPLANATIONS.compositeScore?.detail"
+                  />
+                </template>
                 <span
                   class="font-semibold"
                   :style="{ color: scoreColor(drawerRecord.score) }"
@@ -1665,16 +1716,48 @@ onMounted(async () => {
                   {{ formatNumber(drawerRecord.score) }}
                 </span>
               </DescriptionsItem>
-              <DescriptionsItem label="准确率">
+              <DescriptionsItem>
+                <template #label>
+                  准确率
+                  <ClpmInfoTip
+                    :term="KPI_TERM_EXPLANATIONS.accuracyScore?.term"
+                    :tip="KPI_TERM_EXPLANATIONS.accuracyScore?.short ?? ''"
+                    :detail="KPI_TERM_EXPLANATIONS.accuracyScore?.detail"
+                  />
+                </template>
                 {{ formatNumber(drawerRecord.accuracyRate, '%') }}
               </DescriptionsItem>
-              <DescriptionsItem label="快速率">
+              <DescriptionsItem>
+                <template #label>
+                  快速率
+                  <ClpmInfoTip
+                    :term="KPI_TERM_EXPLANATIONS.responseScore?.term"
+                    :tip="KPI_TERM_EXPLANATIONS.responseScore?.short ?? ''"
+                    :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
+                  />
+                </template>
                 {{ formatNumber(drawerRecord.fastRate, '%') }}
               </DescriptionsItem>
-              <DescriptionsItem label="平稳率">
+              <DescriptionsItem>
+                <template #label>
+                  平稳率
+                  <ClpmInfoTip
+                    :term="KPI_TERM_EXPLANATIONS.steadyScore?.term"
+                    :tip="KPI_TERM_EXPLANATIONS.steadyScore?.short ?? ''"
+                    :detail="KPI_TERM_EXPLANATIONS.steadyScore?.detail"
+                  />
+                </template>
                 {{ formatNumber(drawerRecord.steadyRate, '%') }}
               </DescriptionsItem>
-              <DescriptionsItem label="有效自控率">
+              <DescriptionsItem>
+                <template #label>
+                  有效自控率
+                  <ClpmInfoTip
+                    :term="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.term"
+                    :tip="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.short ?? ''"
+                    :detail="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.detail"
+                  />
+                </template>
                 {{ formatNumber(drawerRecord.effectiveAutoRate, '%') }}
               </DescriptionsItem>
               <DescriptionsItem label="自控率">
