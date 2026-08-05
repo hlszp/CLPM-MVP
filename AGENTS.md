@@ -17,14 +17,14 @@
 
 先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.1。
 
-PRD v6.1 是产品需求的事实来源；实现契约 v2.3 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
+PRD v6.1 是产品需求的事实来源；实现契约 v2.4 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
 ## 当前基线（2026-08-05 修订 — UX/IA审查启动 + 数据健康指标 + 可信度继承修复）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
 | 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.1 |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.3**（Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.4**（IA 整改 P3-01：整定知识库不可变快照/38 表/知识库 API/ActionTracker 关联整定任务；v2.3 Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界） |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
 | 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
 | 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
@@ -140,7 +140,7 @@ cd frontend && pnpm run format
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**；sys_config 为配置真相源，.env 已移除业务 URL/Token。细节见 ops-runbook §网络模式切换 |
 | 远端仓库 | **gitea 为主远端**（remote 名 `origin`，`https://gitea.zlinfot.xyz:2087/zp/CLPM`）；GitHub 为镜像（remote 名 `github`，`hlszp/CLPM`），main 合并后 `git push github main` 同步 |
-| 文档权威性 | PRD v6.1 负责产品需求；实现契约 v2.3 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+| 文档权威性 | PRD v6.1 负责产品需求；实现契约 v2.4 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## Git 工作流
 
@@ -161,7 +161,7 @@ cd frontend && pnpm run format
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **全量 E2E 55/55 通过**（2026-07-28）：performance/confidence/metric-tasks 已对齐 772d99a0 重构后路由；后续按 UI/UX v6.1 新增页面逐步补 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
-| 新功能开发 | PRD v6.1 → 实现契约 v2.3 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
+| 新功能开发 | PRD v6.1 → 实现契约 v2.4 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
 | 网络模式切换后续改进 | ops-runbook §网络模式切换 | 仅余 ③ 公网模式 ping 延迟抖动优化（低优先级） |
 
 ## Stale docs 防护

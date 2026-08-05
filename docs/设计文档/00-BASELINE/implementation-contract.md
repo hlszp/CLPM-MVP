@@ -1,7 +1,7 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.3
+**当前版本**：v2.4
 **发布日期**：2026-07-29
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
@@ -9,6 +9,7 @@
 **v2.2 修订摘要**：同步 2026-07-28 全维度优化整改（Phase 0-5）——登记 `GET /performance/grade-distribution` 与 `/loops/snapshots?grade=`；权限码服务端落地（`require_perms`，loop/tuning/diagnosis 读端点收口）替代"待统一"标注；登记首次登录强制改密（`must_change_password`）；前端路由收紧（reports/aas-sync 仅 ADMIN、EXPERT→/diagnosis、SPONSOR→/metric）。整改全貌见 `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`
 **v2.2 增补（2026-07-29）**：登记 `/diagnosis/tasks?includeArchived=`；诊断任务时间戳默认值统一 UTC（迁移 `h8b9c0d1e2f3`）；refresh 轮换幂等窗口（`refresh_rotated`，120s）；整定 Phase 2.1 合并（`tuning_identification` 算法栈 + 异步辨识任务）
 **v2.3 修订摘要（2026-07-29，Phase 0 Truth First）**：可信辨识安全收口——固化整定目标状态机（`DRAFT→RUNNING→IDENTIFIED→SIMULATED→COMPLETED/INCONCLUSIVE/ROLLED_BACK`，旧值 `PENDING/APPLIED/VERIFIED` 只读兼容）；登记模型来源门禁契约（`ModelSource`、`ThetaSource`、`DataSource` 与 A–E 放行规则）；ORM 表清单校正为 37 张（补 `algorithm_parameter`/`dcs_pid_structure`/`diagnosis_config_change`/`diagnosis_rule`/`diagnosis_threshold_override`/`loop_confidence_latest`）；登记生产 bootstrap DDL 收敛至 37 表与安全边界静态门禁（无 DCS 参数下写端点）。详见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`
+**v2.4 修订摘要（2026-08-05，IA 整改 P3-01）**：整定知识库不可变快照——新增 `TuningKnowledgeEntry` 表（`tuning_knowledge_entry`，第 38 张 ORM 表）；登记 `generate_knowledge_entry` 验证钩子（hybrid 关联 `tuning_record_id` + 幂等 `on_conflict_do_update`）；登记 3 个知识库 API 端点（`GET /tuning/knowledge-base` 列表、`GET /tuning/knowledge-base/{id}` 详情、`GET /tuning/knowledge-base/similar` 相似案例）；`ActionTracker` 新增 `tuning_record_id` 外键（`ondelete=SET NULL`）；`TrackerStatusUpdate` schema 新增 `tuningRecordId` 字段（VERIFYING 时可选，用于知识库生成）。详见 `docs/过程文档/clpm-ia-rectification-task-checklist-2026-08-05.md` §P3-01
 
 ## 1. 定位
 
@@ -329,9 +330,9 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 - 旧路径可记录为历史兼容路径，但不作为主菜单验收项。
 - 新增页面必须先更新本契约，再更新路由、权限、测试与 UI/UX 页面清单。
 
-## 10. 代码实际 ORM 表清单（37 张）
+## 10. 代码实际 ORM 表清单（38 张）
 
-当前 `backend/app/models/` 共定义 37 张 ORM 表（v2.3 校正：v2.0 登记 31 张，本次补齐 6 张）。以下清单以代码中的 `__tablename__` 为事实来源；DDS 后续修订应同步此口径。生产 bootstrap DDL（`db/postgresql/01_schema.sql`）已收敛至全部 37 张，由 `test_schema_convergence.py` 与 `test_production_bootstrap.py` 守护。
+当前 `backend/app/models/` 共定义 38 张 ORM 表（v2.4 新增 `tuning_knowledge_entry`；v2.3 校正：v2.0 登记 31 张，补齐 6 张）。以下清单以代码中的 `__tablename__` 为事实来源；DDS 后续修订应同步此口径。生产 bootstrap DDL（`db/postgresql/01_schema.sql`）已收敛至全部 38 张，由 `test_schema_convergence.py` 与 `test_production_bootstrap.py` 守护。
 
 | # | 类名 | __tablename__ | 文件 | 用途 |
 |---|---|---|---|---|
@@ -372,6 +373,7 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 35 | `DiagnosisRule` | `diagnosis_rule` | `models/diagnosis.py` | 诊断规则 |
 | 36 | `DiagnosisThresholdOverride` | `diagnosis_threshold_override` | `models/diagnosis.py` | 诊断阈值覆盖 |
 | 37 | `LoopConfidenceLatest` | `loop_confidence_latest` | `models/loop_confidence.py` | 回路可信度最新值 |
+| 38 | `TuningKnowledgeEntry` | `tuning_knowledge_entry` | `models/tuning_knowledge.py` | 整定知识库不可变快照（P3-01） |
 
 注：DDS v4.1 中声明的 `report_schedule` 实际由代码 `report_config` 承载；`sys_role` / `sys_user_role` 代码无对应模型，角色以枚举形式实现。`time_constant` 为 KPI 快照表持久化列但无 MetricCalculator，状态 `NOT_IMPLEMENTED`，NULL 不得显示为 0 或解释为"无数据"（详见契约基线 §7）。
 
@@ -406,3 +408,14 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 生产 bootstrap | DDL 21 张，stamp head 跳过缺表 | DDL 收敛至 37 张，专用临时 PG 实测 | `db/postgresql/01_schema.sql`、ADR |
 | 安全边界 | 未声明静态门禁 | 无 DCS 参数下写端点，静态扫描守护 | §6.2、`test_security_p2.py` |
 | `time_constant` | 未声明 | KPI 列 `NOT_IMPLEMENTED`，NULL ≠ 0 ≠ 无数据 | 契约基线 §7 |
+
+### v2.4 变更项（2026-08-05，IA 整改 P3-01）
+
+| 变更项 | v2.3 口径 | v2.4 口径 | 依据 |
+|---|---|---|---|
+| ORM 表清单 | 37 张 | 38 张（新增 `tuning_knowledge_entry`） | §10、`models/tuning_knowledge.py` |
+| 知识库 API | 未声明 | `GET /tuning/knowledge-base`（列表+筛选+分页）、`GET /tuning/knowledge-base/{id}`（详情）、`GET /tuning/knowledge-base/similar`（相似案例 Top N） | `endpoints/tuning.py`、`services/tuning_knowledge.py` |
+| `ActionTracker` | 无整定关联 | 新增 `tuning_record_id` 外键（`ondelete=SET NULL`，`idx_action_tracker_tuning_record` 索引） | `models/tracker.py`、迁移 `f1a2b3c4d5e6` |
+| `TrackerStatusUpdate` | 无 `tuningRecordId` | 新增 `tuningRecordId` 字段（VERIFYING 时可选，用于知识库生成） | `schemas/diagnosis.py` |
+| 知识库生成钩子 | 未声明 | `generate_knowledge_entry`：验证任务 `_verify_single_tracker` 完成后调用，hybrid 关联（`tuning_record_id` 优先 + 时间窗口兜底），幂等 `on_conflict_do_update(tracker_id)` | `services/tuning_knowledge.py`、`tasks/tracker_verification.py` |
+| 整定路由 | 5 路由（workbench/model/algorithm/simulation/stats） | 新增第 6 路由 `/tuning/knowledge-base`（整定知识库，权限 `tuning:view`） | `router/routes/modules/tuning.ts` |

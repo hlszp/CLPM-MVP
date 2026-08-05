@@ -9,6 +9,8 @@
  * - E2E-TUNE-005: 效果统计（/tuning/stats → 统计卡片 + 图表 + 列表）
  * - E2E-TUNE-006: 模型辨识 Phase 2 异步辨识策略（/tuning/flow/model → AUTO 策略 → 进度条）
  * - E2E-TUNE-007: 闭环仿真 Phase 2 多 PID 对比模式（/tuning/flow/simulation → 对比模式 → 多曲线）
+ * - E2E-TUNE-008: 整定知识库页面（/tuning/knowledge-base → 筛选 + 表格 + 空状态）
+ * - E2E-TUNE-009: 待整定回路相似案例推荐（/tuning/workbench → 待整定回路 → 相似案例按钮）
  *
  * v6.2 P1-019：model/algorithm/simulation 三页合并为 /tuning/flow 嵌套 stepper
  *   旧 /tuning/{model,algorithm,simulation} 重定向到 /tuning/flow/{model,algorithm,simulation}
@@ -303,5 +305,66 @@ test.describe('回路整定 E2E', () => {
 
     // 核心验证点：多 PID 对比模式可切换
     expect(page.url()).toContain('/tuning/flow/simulation');
+  });
+
+  // P3-01：整定知识库页面
+  test('E2E-TUNE-008: 整定知识库页面', async ({ page }) => {
+    await page.goto('/tuning/knowledge-base');
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(2000);
+
+    // 验证页面标题与说明渲染
+    const pageText = await page.locator('body').innerText();
+    const hasTitle = /整定知识库|知识库/.test(pageText);
+    expect(hasTitle).toBeTruthy();
+
+    // 验证筛选区域存在（控制类型/问题类型/算法/效果 任一占位符）
+    const hasFilter = /控制类型|问题类型|算法|效果/.test(pageText);
+    expect(hasFilter).toBeTruthy();
+
+    // 验证表格或空状态二选一渲染
+    const table = page.locator('.ant-table').first();
+    const hasTable = await table.isVisible().catch(() => false);
+    const hasEmpty = /暂无知识库条目|暂无/.test(pageText);
+    expect(hasTable || hasEmpty).toBeTruthy();
+
+    // 核心验证点：知识库页面正常加载
+    expect(page.url()).toContain('/tuning/knowledge-base');
+  });
+
+  // P3-01：待整定回路相似案例推荐
+  test('E2E-TUNE-009: 待整定回路相似案例推荐', async ({ page }) => {
+    await page.goto('/tuning/workbench');
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(2000);
+
+    // 验证「待整定回路」区域渲染
+    const pageText = await page.locator('body').innerText();
+    const hasPendingSection = /待整定回路/.test(pageText);
+    expect(hasPendingSection).toBeTruthy();
+
+    // 若待整定回路表格有数据行，验证「相似案例」按钮存在并可点击
+    const rows = page.locator('.ant-table-tbody tr.ant-table-row');
+    const rowCount = await rows.count();
+    if (rowCount > 0) {
+      const similarBtn = page
+        .locator('.ant-table-tbody .ant-btn')
+        .filter({ hasText: /相似案例/ })
+        .first();
+      const hasBtn = await similarBtn.isVisible().catch(() => false);
+      expect(hasBtn).toBeTruthy();
+
+      // 点击「相似案例」按钮，验证相似案例推荐卡片出现
+      if (hasBtn) {
+        await similarBtn.click();
+        await page.waitForTimeout(1500);
+        const afterClickText = await page.locator('body').innerText();
+        const hasSimilarCard = /相似案例推荐/.test(afterClickText);
+        expect(hasSimilarCard).toBeTruthy();
+      }
+    }
+
+    // 核心验证点：待整定回路区域正常渲染（相似案例为按需加载）
+    expect(page.url()).toContain('/tuning/workbench');
   });
 });

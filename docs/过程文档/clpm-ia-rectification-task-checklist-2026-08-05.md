@@ -126,7 +126,7 @@
 
 | 编号 | 任务名称 | 描述 | 模块 | 负责人 | 预计完成 | 状态 | 依赖 | 验收标准 |
 |---|---|---|---|---|---|---|---|---|
-| P3-01 | 整定知识库与相似案例推荐 | 每次整定验证完成后自动记录「问题类型→模型类型→算法→参数变化→改善幅度」；新回路整定时推荐相似回路成功案例；增加"整定知识库"页面 | 整定 | 待分配 | Phase 3 | ⬜ | P2-01 | 知识库可按控制类型/问题类型查询 |
+| P3-01 | 整定知识库与相似案例推荐 | 每次整定验证完成后自动记录「问题类型→模型类型→算法→参数变化→改善幅度」；新回路整定时推荐相似回路成功案例；增加"整定知识库"页面 | 整定 | 待分配 | Phase 3 | ✅ | P2-01 | 已完成：tuning_knowledge_entry 表+迁移（f1a2b3c4d5e6）、generate_knowledge_entry 验证钩子（hybrid 关联+幂等）、3 端点 API（列表/详情/相似）、前端知识库页面+路由、工作台相似案例卡片（Top5）、实施弹窗关联整定任务（tuningRecordId）；E2E-TUNE-008/009 已补 |
 | P3-02 | 诊断阈值模板化与自适应 | 按装置/控制类型推荐阈值模板，支持一键套用；ic_engineer 可在授权范围内微调 | 诊断/性能 | 待分配 | Phase 3 | ⬜ | - | 阈值模板库，按装置类型推荐 |
 | P3-03 | 移动端/触控平板适配 | 按 UI/UX 规范实现 44px 触控模式，方便现场巡检使用 | 全局 | 待分配 | Phase 3 | ⬜ | P2 阶段 | 平板可操作，触控目标 ≥44px |
 | P3-04 | 自然语言诊断解读 | "这个振荡是什么意思？用大白话解释"——LLM 辅助解读诊断结果 | 诊断 | 待分配 | Phase 3 | ⬜ | P2-01 | 诊断结果有"大白话解释"入口 |
@@ -199,6 +199,7 @@ cd frontend && pnpm run format
 | 2026-08-05 | agent | P2-01 结构化诊断报告：ClpmStructuredDiagnosisReport 组件（原因排序概率条+折叠面板根因/建议/预估改善），8 标签 DIAGNOSIS_STRUCTURED_REPORT 常量，集成诊断详情页 |
 | 2026-08-05 | agent | P2-06 回路配置后数据连通性验证：向导第4步"检查数据"按钮，拉取最近5分钟 PV/SP/OP 验证连通性（`7f199c5`） |
 | 2026-08-05 | agent | **P2 阶段全量完成**：P2-04 表格列配置（4列表页：tracker/manage/records+已有monitor）；P2-05 全局实时状态指示（basic.vue header-right ClpmRealtimeStatus）；P2-02 A/B对比自动引导（实施后Modal提示+验证Tab Steps时间线）；P2-03 Onboarding Tour（5步引导+帮助入口+重播）；P2-07 批量操作tooltip（已实现disabled-reason） |
+| 2026-08-05 | agent | **P3-01 整定知识库全量完成**（8 单元）：单元1 修复验证任务状态机（VERIFYING 覆盖）；单元2 `tuning_knowledge_entry` 表+迁移 `f1a2b3c4d5e6`；单元3 `update_tracker_status` 接收 `tuning_record_id`；单元4 `generate_knowledge_entry` 验证钩子（hybrid 关联+幂等）+测试；单元5 知识库 3 端点 API+测试；单元6 前端知识库页面+路由+API client；单元7 工作台相似案例卡片+实施弹窗关联整定任务；单元8 E2E-TUNE-008/009 + 契约升 v2.4（38 表）+ AGENTS.md 同步 + 任务清单标记 ✅ |
 
 ---
 
