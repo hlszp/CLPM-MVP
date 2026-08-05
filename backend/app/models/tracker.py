@@ -88,6 +88,21 @@ class ActionTracker(Base):
     # A/B 对比结果快照（改善/恶化指标数 + 关键 KPI 变化），避免每次查看都重算
     ab_compare_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # ========== P1a 追加列（闭环状态机扩展）==========
+    # 实施详情字段（VERIFYING 状态前必填，Poka-Yoke 强制填写）
+    # 实施时间：用户提交"已实施"时记录，区别于 updated_at（状态变更时间）
+    implemented_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 实施人：现场实施PID变更的工程师用户名
+    implemented_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # 新PID参数（实施后写入的参数值）
+    new_pid_p: Mapped[float | None] = mapped_column(nullable=True)
+    new_pid_i: Mapped[float | None] = mapped_column(nullable=True)
+    new_pid_d: Mapped[float | None] = mapped_column(nullable=True)
+    # 闭环时间：CLOSED 时记录（验证通过闭环）
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 重开原因：REOPENED 时必填
+    reopen_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # ========== V62-P3-008 追加列 ==========
     # 负责人（实施责任人）；与 triggered_by 区分：triggered_by 是建单人，
     # assignee 是负责实施的工程师。auto 建单时 assignee 初始为 NULL，
@@ -98,7 +113,8 @@ class ActionTracker(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')",
+            "action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED', "
+            "'VERIFYING', 'CLOSED', 'REOPENED')",
             name="ck_action_tracker_status",
         ),
         CheckConstraint(
@@ -109,15 +125,16 @@ class ActionTracker(Base):
             "severity IS NULL OR severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')",
             name="ck_action_tracker_severity",
         ),
-        # D2: 同一回路同一标签在开放态（PENDING/IN_PROGRESS）下唯一，
-        # 闭环后允许新建（历史保留）。D1 自动建单依赖此约束防重复。
+        # D2: 同一回路同一标签在开放态（PENDING/IN_PROGRESS/VERIFYING）下唯一，
+        # 闭环后（IMPLEMENTED/CLOSED/REOPENED/IGNORED）允许新建（历史保留）。
+        # P1a 扩展：VERIFYING 为实施后等待验证状态，属开放态；CLOSED/REOPENED 为已闭环态。
         Index(
             "uk_action_tracker_open",
             "loop_id",
             "diagnosis_label",
             unique=True,
             postgresql_where=text(
-                "action_status IN ('PENDING', 'IN_PROGRESS') "
+                "action_status IN ('PENDING', 'IN_PROGRESS', 'VERIFYING') "
                 "AND loop_id IS NOT NULL AND diagnosis_label IS NOT NULL"
             ),
         ),
