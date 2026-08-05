@@ -69,8 +69,7 @@ import {
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
-import { SEVERITY_LABEL } from '#/constants/clpm-ui';
-import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
+import { DIAGNOSIS_TERM_EXPLANATIONS, SEVERITY_LABEL } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -296,7 +295,10 @@ const columnConfigs = ref<ColumnConfig[]>(
 
 const visibleColumns = computed<TableColumnsType>(() => {
   const configMap = new Map(
-    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+    columnConfigs.value.map((c, i) => [
+      c.key,
+      { visible: c.visible, order: i },
+    ]),
   );
   return columns
     .filter((c) => {

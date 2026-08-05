@@ -57,11 +57,7 @@ const steps: TourStep[] = [
     title: '性能评估',
     description:
       '性能评估模块自动计算 12 个 KPI 指标（准确率/快速率/平稳率等），按控制类型降采样确保计算准确性。',
-    highlights: [
-      '8 大 KPI 指标看板',
-      '历史趋势分析',
-      '可信度 A/B/C/D/E 等级',
-    ],
+    highlights: ['8 大 KPI 指标看板', '历史趋势分析', '可信度 A/B/C/D/E 等级'],
   },
   {
     icon: 'lucide:activity',
@@ -87,7 +83,15 @@ const steps: TourStep[] = [
   },
 ];
 
-const currentStep = computed(() => steps[current.value] ?? steps[0]!);
+const currentStep = computed(
+  () =>
+    steps[current.value] ?? {
+      icon: '',
+      title: '',
+      description: '',
+      highlights: [],
+    },
+);
 const isLastStep = computed(() => current.value === steps.length - 1);
 
 /** 打开 Tour（手动触发重播） */
@@ -200,30 +204,13 @@ defineExpose({ open, triggerIfFirstTime });
 
     <!-- 底部操作区 -->
     <div class="mt-4 flex items-center justify-between border-t pt-4">
-      <Button type="link" size="small" @click="handleSkip">
-        跳过引导
-      </Button>
+      <Button type="link" size="small" @click="handleSkip"> 跳过引导 </Button>
       <div class="flex gap-2">
-        <Button
-          v-if="current > 0"
-          @click="handlePrev"
-        >
-          上一步
-        </Button>
-        <Button
-          v-if="!isLastStep"
-          type="primary"
-          @click="handleNext"
-        >
+        <Button v-if="current > 0" @click="handlePrev"> 上一步 </Button>
+        <Button v-if="!isLastStep" type="primary" @click="handleNext">
           下一步
         </Button>
-        <Button
-          v-else
-          type="primary"
-          @click="handleFinish"
-        >
-          开始使用
-        </Button>
+        <Button v-else type="primary" @click="handleFinish"> 开始使用 </Button>
       </div>
     </div>
   </Modal>
