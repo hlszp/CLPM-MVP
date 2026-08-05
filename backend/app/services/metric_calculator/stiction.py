@@ -106,13 +106,21 @@ class StictionIndexCalculator(MetricCalculatorBase):
         op_vals = np.array([float(o) for _, o in pairs], dtype=float)
 
         # 振荡段门控：粘滞椭圆只在极限环下有物理意义（Kano/Choudhury 前提）
+        # 平稳回路（非极限环）返回 value=0 + level="NONE"（"无粘滞"），
+        # 而非 INCONCLUSIVE：平稳意味着无粘滞故障，是有意义的诊断结论。
+        # 数据不足（vr<0.20）仍由 _make_result 内部判定 INCONCLUSIVE。
         is_limit_cycle, gate_info = self._detect_limit_cycle(pv_vals)
         if not is_limit_cycle:
-            logger.debug("[粘滞系数] 非极限环振荡段，INCONCLUSIVE: %s", gate_info)
-            return self._make_inconclusive(
+            logger.debug("[粘滞系数] 非极限环振荡段（平稳回路），返回无粘滞: %s", gate_info)
+            return self._make_result(
                 bundle,
-                "no_limit_cycle",
-                {"stiction_level": "NONE", "sample_count": n, **gate_info},
+                0.0,
+                {
+                    "stiction_level": "NONE",
+                    "sample_count": n,
+                    "reason": "no_limit_cycle",
+                    **gate_info,
+                },
             )
 
         pv_range = self._read_range(bundle, "pv_range", DEFAULT_PV_RANGE)

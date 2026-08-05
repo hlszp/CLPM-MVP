@@ -1,7 +1,7 @@
 """粘滞系数计算器单元测试（算法说明 §4.8，Phase 6 G1 增强）.
 
 测试用例覆盖：
-- 极限环门控：平稳/噪声/恒定回路 → INCONCLUSIVE(no_limit_cycle)
+- 极限环门控：平稳/噪声/恒定回路 → value=0 (NONE, reason=no_limit_cycle)
 - θ 补偿：FOPDT 纯滞后（θ=30s）无粘滞 → 补偿后 St≈0 不误报 SEVERE
 - θ 补偿：粘滑（死区跳变）注入 S=20 + θ=30s → 补偿后 St≈8.2（手算）
 - 纯相位滞后椭圆（正交/倾斜正弦对）→ 补偿后塌陷为直线，St≈0
@@ -83,7 +83,7 @@ class TestStictionIndex:
         assert result.details["reason"] == "insufficient_data"
 
     def test_random_scatter(self):
-        """随机散点（白噪声）→ 无极限环（平均半周期≈2 < 8）→ no_limit_cycle。"""
+        """随机散点（白噪声）→ 无极限环（平均半周期≈2 < 8）→ value=0 (NONE)。"""
         random.seed(42)
         n = 200
         op = [random.uniform(0, 100) for _ in range(n)]
@@ -91,8 +91,9 @@ class TestStictionIndex:
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
-        assert result.value is None
+        assert result.value == 0.0
         assert result.details["reason"] == "no_limit_cycle"
+        assert result.details["stiction_level"] == "NONE"
 
     def test_phase_lag_ellipse_compensated_to_line(self):
         """倾斜椭圆（0.8cos+0.3sin）→ 纯相位滞后，θ 补偿后 St≈0。
@@ -122,22 +123,23 @@ class TestStictionIndex:
         assert result.details["fitting_score"] >= 0.95
 
     def test_constant_signal(self):
-        """恒定信号 → 无零交叉 → INCONCLUSIVE(no_limit_cycle)。"""
+        """恒定信号 → 无零交叉 → value=0 (NONE, no_limit_cycle)。"""
         n = 200
         op = [50.0] * n
         pv = [50.0] * n
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
-        assert result.value is None
+        assert result.value == 0.0
         assert result.details["reason"] == "no_limit_cycle"
+        assert result.details["stiction_level"] == "NONE"
         assert result.details["zero_crossings"] == 0
 
     def test_stationary_loop_no_limit_cycle(self):
-        """平稳回路（小幅测量噪声，无振荡）→ INCONCLUSIVE(no_limit_cycle)。
+        """平稳回路（小幅测量噪声，无振荡）→ value=0 (NONE, no_limit_cycle)。
 
-        平稳回路不强行出粘滞值：去均值白噪声每 ~2 点一次伪穿越，
-        平均半周期≈2 < 8 → 门控拦截。
+        平稳回路无粘滞故障：去均值白噪声每 ~2 点一次伪穿越，
+        平均半周期≈2 < 8 → 门控拦截，返回 0（无粘滞）而非 INCONCLUSIVE。
         """
         random.seed(7)
         n = 1200
@@ -146,8 +148,9 @@ class TestStictionIndex:
         bundle = make_bundle({"pv": pv, "op": op}, metric_code="stiction_index")
         calc = StictionIndexCalculator()
         result = calc.calculate(bundle)
-        assert result.value is None
+        assert result.value == 0.0
         assert result.details["reason"] == "no_limit_cycle"
+        assert result.details["stiction_level"] == "NONE"
 
     def test_fopdt_pure_lag_no_stiction(self):
         """FOPDT 纯滞后（θ=30s, τ=10s）无粘滞 → 补偿后 St≈0，不误报 SEVERE。
