@@ -16,6 +16,7 @@ export { default as ClpmLoopContextHeader } from './loop-context-header.vue';
 export { default as ClpmLoopLink } from './loop-link.vue';
 export { default as ClpmNumeric } from './numeric.vue';
 export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';
+export { default as ClpmOnboardingTour } from './onboarding-tour.vue';
 export type { SummaryAction, SummaryItem } from './object-summary-bar.vue';
 export { default as ClpmPageToolbar } from './page-toolbar.vue';
 export { default as ClpmRealtimeStatus } from './realtime-status.vue';

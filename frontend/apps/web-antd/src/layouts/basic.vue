@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 import { useWatermark } from '@vben/hooks';
 import {
   BasicLayout,
@@ -14,8 +15,9 @@ import {
 } from '@vben/layouts';
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
+import { Popover } from 'ant-design-vue';
 
-import { ClpmRealtimeStatus } from '#/components/clpm';
+import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import { realtimeWs } from '#/utils/realtime-ws';
@@ -60,6 +62,8 @@ onMounted(() => {
   wsMessageUnsubscribe = realtimeWs.onMessage(() => {
     wsLastRefresh.value = new Date().toISOString();
   });
+  // P2-03：首次登录自动触发 Onboarding Tour
+  tourRef.value?.triggerIfFirstTime();
 });
 
 onUnmounted(() => {
@@ -73,6 +77,9 @@ const showDot = computed(() =>
   notifications.value.some((item) => !item.isRead),
 );
 
+// P2-03：Onboarding Tour
+const tourRef = ref<InstanceType<typeof ClpmOnboardingTour>>();
+
 const menus = computed(() => [
   {
     handler: () => {
@@ -80,6 +87,13 @@ const menus = computed(() => [
     },
     icon: 'lucide:user',
     text: $t('page.auth.profile'),
+  },
+  {
+    handler: () => {
+      tourRef.value?.open();
+    },
+    icon: 'lucide:graduation-cap',
+    text: '引导教程重播',
   },
 ]);
 
@@ -206,6 +220,40 @@ watch(
         size="small"
       />
     </template>
+    <template #header-right-2>
+      <Popover trigger="click" placement="bottomRight">
+        <template #content>
+          <div class="w-40">
+            <div
+              class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              @click="tourRef?.open()"
+            >
+              <IconifyIcon icon="lucide:rocket" :size="14" />
+              快速入门
+            </div>
+            <div
+              class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              @click="tourRef?.open()"
+            >
+              <IconifyIcon icon="lucide:book-open" :size="14" />
+              术语表
+            </div>
+            <div
+              class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              @click="tourRef?.open()"
+            >
+              <IconifyIcon icon="lucide:help-circle" :size="14" />
+              FAQ
+            </div>
+          </div>
+        </template>
+        <div
+          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded text-base hover:bg-gray-100"
+        >
+          <IconifyIcon icon="lucide:circle-help" :size="18" />
+        </div>
+      </Popover>
+    </template>
     <template #extra>
       <AuthenticationLoginExpiredModal
         v-model:open="accessStore.loginExpired"
@@ -213,6 +261,8 @@ watch(
       >
         <LoginForm />
       </AuthenticationLoginExpiredModal>
+      <!-- P2-03：首次登录 Onboarding Tour -->
+      <ClpmOnboardingTour ref="tourRef" />
     </template>
     <template #lock-screen>
       <LockScreen :avatar @to-login="handleLogout" />
