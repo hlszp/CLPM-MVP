@@ -2,6 +2,7 @@
 
 - GET   /api/v1/datasource/config           — 获取数据源配置（ADMIN）
 - PUT   /api/v1/datasource/config           — 更新数据源配置（ADMIN）
+- GET   /api/v1/datasource/health           — 数据链路健康状态（登录用户）
 - POST  /api/v1/datasource/test-history-api — 测试历史数据 API 连通性（ADMIN）
 - POST  /api/v1/datasource/test-signalr     — 测试 SignalR Hub 连通性（ADMIN）
 
@@ -13,17 +14,19 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.datasource import (
     DataSourceConfigInfo,
     DataSourceConfigUpdate,
+    DataSourceHealthInfo,
     DataSourceTestResult,
 )
 from app.services.datasource_config import (
     get_datasource_config,
+    get_datasource_health,
     test_history_api_connection,
     test_signalr_hub_connection,
     update_datasource_config,
@@ -39,6 +42,19 @@ async def get_datasource_config_endpoint(
 ) -> dict:
     """获取数据源配置（仅 ADMIN）。"""
     data = await get_datasource_config(db)
+    return success(data=data)
+
+
+@router.get("/health", response_model=ApiResponse[DataSourceHealthInfo])
+async def get_datasource_health_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """数据链路健康状态（P1-05：登录用户可查看，工作台常驻卡片）。
+
+    返回链路连通性、订阅器运行状态、最近同步时间，不含敏感字段。
+    """
+    data = await get_datasource_health(db)
     return success(data=data)
 
 

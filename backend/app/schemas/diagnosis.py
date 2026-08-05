@@ -13,8 +13,17 @@ from app.schemas.base import CamelModel
 # 与业务代码保持一致（app/services/tracker.py VALID_STATUSES）
 # ---------------------------------------------------------------------------
 
-# 处理状态：PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED（FDS §5.4.4 "已实施"）
-ActionStatus = Literal["PENDING", "IN_PROGRESS", "IMPLEMENTED", "IGNORED"]
+# 处理状态：PENDING/IN_PROGRESS/VERIFYING/CLOSED/REOPENED/IMPLEMENTED/IGNORED
+# P1a 闭环状态机扩展：
+#   PENDING → IN_PROGRESS（认领/处理中）
+#   IN_PROGRESS → VERIFYING（标记已实施，等待A/B验证）
+#   VERIFYING → CLOSED（验证改善，自动/手动确认闭环）
+#   VERIFYING → REOPENED（验证无改善/恶化，重新打开）
+#   任意开放态 → IGNORED（忽略）
+#   兼容：IMPLEMENTED 状态保留为 VERIFYING 的别名（历史数据兼容，不再新建此状态）
+ActionStatus = Literal[
+    "PENDING", "IN_PROGRESS", "VERIFYING", "CLOSED", "REOPENED", "IMPLEMENTED", "IGNORED"
+]
 
 # ---------------------------------------------------------------------------
 # S4-DIAG-001: 诊断指标配置
@@ -363,7 +372,7 @@ class TrackerStatusUpdate(CamelModel):
     status: ActionStatus = Field(..., description="处理状态")
     evidenceUrl: str | None = Field(None, max_length=255)
     remark: str | None = None
-    # D3: MOC 关联（标记 IMPLEMENTED 时必填 moc_ref 或 moc_not_applicable+moc_reason）
+    # D3: MOC 关联（标记 VERIFYING/IMPLEMENTED 时必填 moc_ref 或 moc_not_applicable+moc_reason）
     comment: str | None = Field(None, max_length=500, description="处理意见/审查备注")
     mocRef: str | None = Field(None, max_length=255, description="MOC 变更管理关联编号")
     mocNotApplicable: bool | None = Field(None, description="MOC 是否不适用")
@@ -371,6 +380,13 @@ class TrackerStatusUpdate(CamelModel):
     # V62-P3-008：负责人与计划执行时间
     assignee: str | None = Field(None, max_length=50, description="实施责任人")
     plannedAt: str | None = Field(None, description="计划执行时间 ISO 8601")
+    # P1a 新增：实施PID参数（VERIFYING 状态时必填）
+    implementedAt: str | None = Field(None, description="实际实施时间 ISO 8601（默认当前时间）")
+    newPidP: float | None = Field(None, description="实施后新比例增益 P")
+    newPidI: float | None = Field(None, description="实施后新积分时间 I（秒）")
+    newPidD: float | None = Field(None, description="实施后新微分时间 D（秒）")
+    # P1a 新增：重开原因（REOPENED 状态时必填）
+    reopenReason: str | None = Field(None, max_length=500, description="重开原因（REOPENED 必填）")
 
 
 class TrackerStatusData(CamelModel):
@@ -403,6 +419,14 @@ class TrackerStatusData(CamelModel):
     # V62-P3-008：负责人与计划执行时间
     assignee: str | None = Field(None, description="实施责任人（与建单人 triggeredBy 区分）")
     plannedAt: str | None = Field(None, description="计划执行时间 ISO 8601")
+    # P1a 新增：实施详情（VERIFYING/CLOSED/REOPENED 状态返回）
+    implementedAt: str | None = Field(None, description="实际实施时间 ISO 8601")
+    implementedBy: str | None = Field(None, description="实施人")
+    newPidP: float | None = Field(None, description="实施后新比例增益 P")
+    newPidI: float | None = Field(None, description="实施后新积分时间 I（秒）")
+    newPidD: float | None = Field(None, description="实施后新微分时间 D（秒）")
+    closedAt: str | None = Field(None, description="闭环时间 ISO 8601（CLOSED 状态）")
+    reopenReason: str | None = Field(None, description="重开原因（REOPENED 状态）")
 
 
 class TrackerVerificationConfig(CamelModel):
@@ -572,6 +596,50 @@ class RecommendationData(CamelModel):
     loopId: str
     recommendations: list[RecommendationItem] = Field(default_factory=list)
     totalCount: int = 0
+
+
+# ---------------------------------------------------------------------------
+# P1a: 单回路处置时间线（GET /diagnosis/loops/{loopId}/timeline）
+# ---------------------------------------------------------------------------
+
+# 时间线事件类型
+TimelineEventType = Literal[
+    "diagnosis_detected",  # 系统发现异常
+    "claimed",  # 工程师认领
+    "comment",  # 添加备注/评论
+    "tuning_completed",  # 整定完成
+    "implemented",  # 现场实施（VERIFYING）
+    "verification_passed",  # 验证通过（CLOSED）
+    "verification_failed",  # 验证失败（REOPENED）
+    "ignored",  # 忽略
+    "moc_recorded",  # 记录MOC变更
+]
+
+
+class TimelineEventItem(CamelModel):
+    """单条时间线事件。"""
+
+    eventId: str = Field(..., description="事件唯一ID")
+    eventType: TimelineEventType = Field(..., description="事件类型")
+    timestamp: str = Field(..., description="事件时间 ISO 8601")
+    actor: str | None = Field(None, description="操作人（system 表示系统自动）")
+    title: str = Field(..., description="事件标题（一句话概括）")
+    description: str | None = Field(None, description="事件详细描述")
+    meta: dict[str, Any] = Field(
+        default_factory=dict, description="事件元数据（标签、置信度、参数、MOC号等）"
+    )
+
+
+class TimelineData(CamelModel):
+    """单回路处置时间线响应 data 块。"""
+
+    loopId: str
+    tagName: str | None = None
+    currentStatus: ActionStatus | None = None
+    events: list[TimelineEventItem] = Field(default_factory=list)
+    pendingVerificationAt: str | None = Field(
+        None, description="预计自动验证时间 ISO 8601（VERIFYING 状态时存在）"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -850,6 +918,9 @@ __all__ = [
     "RecommendationData",
     "RecommendationItem",
     "TagResolveRequest",
+    "TimelineData",
+    "TimelineEventItem",
+    "TimelineEventType",
     "TrackerStatusData",
     "TrackerStatusUpdate",
     "TrackerVerificationConfig",

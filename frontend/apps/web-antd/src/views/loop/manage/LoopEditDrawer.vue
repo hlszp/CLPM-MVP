@@ -38,6 +38,8 @@ import {
   RadioGroup,
   Select,
   Spin,
+  Step,
+  Steps,
   Switch,
   TabPane,
   Tabs,
@@ -54,8 +56,10 @@ import {
   updateLoopTagMappingApi,
 } from '#/api/loop';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
+import { ClpmInfoTip } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
 import StatusBadge from '#/components/loop/status-badge.vue';
+import { TAG_SLOT_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 
 import { LOOP_TYPE_MAP, SLOT_KEYS } from './use-loop-changes';
@@ -98,6 +102,94 @@ const drawerTitle = computed(() => {
 const activeTab = ref<'basic' | 'mode' | 'params' | 'tags'>('basic');
 const editingLoop = ref<LoopApi.LoopListItem | null>(null);
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
+
+// ===== P1-01：新建回路向导模式 =====
+/** 向导步骤定义（仅 create 模式显示） */
+const wizardSteps = [
+  { title: '基础信息', tab: 'basic' as const, description: '回路位号与评估配置' },
+  { title: 'Tag 关联', tab: 'tags' as const, description: '关联 7 个 OPC 测点' },
+  { title: '投用定义', tab: 'mode' as const, description: 'MODE 值映射' },
+  { title: '完成启用', tab: 'basic' as const, description: '确认并启用评估' },
+];
+const wizardCurrent = ref(0);
+/** 向导模式：是否已完成基础信息保存（控制 Tag 关联 Tab 可用性） */
+const wizardBasicSaved = ref(false);
+
+/** 向导步骤切换：同步 activeTab */
+function syncTabFromWizard() {
+  if (drawerMode.value !== 'create') return;
+  const step = wizardSteps[wizardCurrent.value];
+  if (step) activeTab.value = step.tab;
+}
+
+/** 向导：下一步（带校验 + 自动保存） */
+async function wizardNext() {
+  const step = wizardSteps[wizardCurrent.value];
+  if (!step) return;
+  if (step.tab === 'basic' && wizardCurrent.value === 0) {
+    // 步骤 1：校验并保存基础信息
+    try {
+      await handleSaveBasic();
+    } catch {
+      // 校验失败：不推进步骤，错误提示由 validate() 内部处理
+      return;
+    }
+    if (editingLoop.value) {
+      wizardBasicSaved.value = true;
+      // 保存成功后预加载 Tag 列表
+      loadAvailableTags();
+      loadLoopTags(editingLoop.value.loopId);
+      wizardCurrent.value = 1;
+      syncTabFromWizard();
+    }
+    return;
+  }
+  if (step.tab === 'tags') {
+    // 步骤 2：校验必填 Tag（不强制保存，允许跳过）
+    const missing: string[] = [];
+    for (const cfg of slotConfigs) {
+      if (cfg.required && !slotState[cfg.key]) missing.push(cfg.label);
+    }
+    if (missing.length > 0) {
+      message.warning(
+        `以下必填 Tag 未关联：${missing.join('、')}（关联后才能进入评估）`,
+      );
+      return;
+    }
+    // 自动保存 Tag 关联
+    if (editingLoop.value) {
+      try {
+        await doSaveTagMapping();
+      } catch {
+        // 保存失败：不推进步骤
+        return;
+      }
+    }
+    wizardCurrent.value = 2;
+    syncTabFromWizard();
+    return;
+  }
+  if (step.tab === 'mode') {
+    // 步骤 3：投用定义可跳过（有默认映射）
+    wizardCurrent.value = 3;
+    syncTabFromWizard();
+    return;
+  }
+  // 步骤 4：完成
+  if (wizardCurrent.value === 3) {
+    message.success('回路配置完成');
+    emit('saved');
+    drawerVisible.value = false;
+  }
+}
+
+/** 向导：上一步 */
+function wizardPrev() {
+  if (wizardCurrent.value > 0) {
+    wizardCurrent.value -= 1;
+    syncTabFromWizard();
+  }
+}
 
 const formRef = ref<FormInstance>();
 const formState = reactive({
@@ -487,6 +579,9 @@ function openCreate(defaultUnitId?: string) {
   editingLoop.value = null;
   loopDetail.value = null;
   tagData.value = null;
+  // P1-01：重置向导状态
+  wizardCurrent.value = 0;
+  wizardBasicSaved.value = false;
   formState.tagName = '';
   formState.description = '';
   formState.unitId = defaultUnitId;
@@ -875,9 +970,99 @@ defineExpose({
     :mask-closable="true"
   >
     <Spin :spinning="drawerLoading">
+      <!-- P1-01：新建回路向导进度条（仅 create 模式） -->
+      <Steps
+        v-if="drawerMode === 'create'"
+        :current="wizardCurrent"
+        size="small"
+        class="mb-4"
+      >
+        <Step
+          v-for="(step, idx) in wizardSteps"
+          :key="idx"
+          :title="step.title"
+          :description="step.description"
+        />
+      </Steps>
+
       <Tabs v-model:active-key="activeTab">
         <!-- 基础信息 -->
         <TabPane key="basic" tab="基础信息">
+          <!-- P1-01：向导第一步 → 前置检查提示（链路检查 + 同步测点） -->
+          <div
+            v-if="drawerMode === 'create' && wizardCurrent === 0"
+            class="mb-3 rounded border border-blue-100 bg-blue-50 p-3 text-xs text-gray-600"
+          >
+            <div class="mb-1 font-semibold text-blue-700">
+              📋 配置前检查
+            </div>
+            <div class="space-y-0.5">
+              <div>
+                ① 数据源已配置（系统管理 → 数据源配置），确保 AAS 历史 API 与
+                SignalR 实时订阅连通
+              </div>
+              <div>
+                ② OPC 测点已同步（数据管理 → AAS Tag 同步），否则 Tag 关联步骤无可选项
+              </div>
+            </div>
+          </div>
+          <!-- P1-01：向导最后一步 → 配置摘要 -->
+          <div
+            v-if="drawerMode === 'create' && wizardCurrent === 3"
+            class="mb-4"
+          >
+            <div
+              class="rounded border border-green-200 bg-green-50 p-4 text-sm"
+            >
+              <div class="mb-2 font-semibold text-green-800">
+                ✅ 配置摘要
+              </div>
+              <div class="space-y-1 text-gray-700">
+                <div>
+                  回路位号：<span class="font-mono font-medium">{{
+                    formState.tagName
+                  }}</span>
+                </div>
+                <div>
+                  回路描述：<span>{{ formState.description || '—' }}</span>
+                </div>
+                <div>
+                  控制类型：<span>{{
+                    controlTypeOptions.find(
+                      (o) => o.value === formState.controlType,
+                    )?.label ?? '—'
+                  }}</span>
+                </div>
+                <div>
+                  Tag 关联状态：
+                  <Tag
+                    v-if="wizardBasicSaved"
+                    :color="
+                      slotState.pv && slotState.sp && slotState.op && slotState.mode
+                        ? 'green'
+                        : 'orange'
+                    "
+                    class="m-0"
+                  >
+                    {{
+                      slotState.pv && slotState.sp && slotState.op && slotState.mode
+                        ? '必填已关联'
+                        : '部分关联'
+                    }}
+                  </Tag>
+                  <Tag v-else color="default" class="m-0">未关联</Tag>
+                </div>
+                <div>
+                  参与评估：<span>{{
+                    formState.includeInEvaluation ? '是' : '否'
+                  }}</span>
+                </div>
+              </div>
+              <div class="mt-3 text-xs text-gray-500">
+                点击「完成创建」保存配置。如需修改，点击「上一步」返回对应步骤。
+              </div>
+            </div>
+          </div>
           <Form
             ref="formRef"
             :model="formState"
@@ -1274,6 +1459,17 @@ defineExpose({
                     <span class="text-xs text-gray-400">{{
                       cfg.description
                     }}</span>
+                    <!-- P1-01：7 槽位专业术语 hover 说明 -->
+                    <ClpmInfoTip
+                      :term="
+                        TAG_SLOT_TERM_EXPLANATIONS[cfg.key]?.term ?? cfg.label
+                      "
+                      :tip="
+                        TAG_SLOT_TERM_EXPLANATIONS[cfg.key]?.short ??
+                        cfg.description
+                      "
+                      :detail="TAG_SLOT_TERM_EXPLANATIONS[cfg.key]?.detail"
+                    />
                   </div>
                   <!-- v6.1：view 模式隐藏清除按钮 -->
                   <Button
@@ -1354,8 +1550,26 @@ defineExpose({
         <Button @click="drawerVisible = false">{{
           isViewMode ? '关闭' : '取消'
         }}</Button>
+        <!-- P1-01：新建向导模式 → 上一步/下一步导航 -->
+        <template v-if="drawerMode === 'create'">
+          <Button
+            v-if="wizardCurrent > 0"
+            @click="wizardPrev"
+          >
+            上一步
+          </Button>
+          <Button
+            v-permission="['loop:edit']"
+            type="primary"
+            :loading="drawerSaving || tagSaving"
+            @click="wizardNext"
+          >
+            {{ wizardCurrent === wizardSteps.length - 1 ? '完成创建' : '下一步' }}
+          </Button>
+        </template>
+        <!-- 编辑模式：保留原保存按钮 -->
         <Button
-          v-if="!isViewMode"
+          v-else-if="!isViewMode"
           v-permission="['loop:edit']"
           type="primary"
           :loading="drawerSaving"

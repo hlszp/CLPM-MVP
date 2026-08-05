@@ -231,3 +231,52 @@ export const IMPORTANCE_EXPLANATIONS: Record<string, TermExplanation> = {
   IMPORTANT: { term: '重要', short: '影响装置平稳运行' },
   GENERAL: { term: '一般', short: '辅助回路，影响较小' },
 };
+
+/**
+ * Tag 7 槽位 → 解释（P1-01 回路配置向导化）
+ *
+ * 对齐 AAS 数据模型：回路由用户创建并关联 7 个 OPC tag。
+ * 必填槽位（PV/SP/OP/MODE）缺一则回路状态为 PARTIAL，无法进入评估；
+ * 可选槽位（PID_P/PID_I/PID_D）缺一仅影响 PID 参数只读展示，不影响评估。
+ */
+export const TAG_SLOT_TERM_EXPLANATIONS: Record<
+  string,
+  TermExplanation
+> = {
+  pv: {
+    term: 'PV 过程变量',
+    short: '过程变量测量值，回路控制的被控量',
+    detail: '如温度、压力、流量、液位等现场测量值；KPI 计算的核心输入',
+  },
+  sp: {
+    term: 'SP 设定值',
+    short: '回路控制目标值，操作员设定的工艺参数',
+    detail: 'PV 追踪的目标；准确率指标基于 PV 与 SP 的偏差计算',
+  },
+  op: {
+    term: 'OP 控制器输出',
+    short: 'PID 控制器输出值，驱动执行机构',
+    detail: '如阀门开度、电机转速等；饱和率/输出跳变率基于 OP 计算',
+  },
+  mode: {
+    term: 'MODE 控制模式',
+    short: '回路当前控制模式（自动/手动/串级等）',
+    detail: '自控率/有效自控率基于 MODE 判定；需关联 DCS 型号做值映射',
+  },
+  pid_p: {
+    term: 'PID_P 比例增益',
+    short: '比例参数，可选（仅只读展示）',
+    detail: '从关联 Tag 实时读取，平台不回写 DCS；缺省不影响 KPI 评估',
+  },
+  pid_i: {
+    term: 'PID_I 积分时间',
+    short: '积分参数，可选（仅只读展示）',
+    detail: '从关联 Tag 实时读取，平台不回写 DCS；缺省不影响 KPI 评估',
+  },
+  pid_d: {
+    term: 'PID_D 微分时间',
+    short: '微分参数，可选（仅只读展示）',
+    detail: '从关联 Tag 实时读取，平台不回写 DCS；缺省不影响 KPI 评估',
+  },
+};
+

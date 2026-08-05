@@ -1,19 +1,20 @@
 <template>
-  <a-tooltip :title="tooltip" placement="top">
-    <a-tag :color="tagColor" :style="tagStyle">
+  <Tooltip :title="tooltip" placement="top">
+    <Tag :color="tagColor" :style="tagStyle">
       <IconifyIcon
         :icon="iconName"
         :size="12"
         style="margin-right: 2px; vertical-align: -2px"
       />
       {{ label }}
-    </a-tag>
-  </a-tooltip>
+    </Tag>
+  </Tooltip>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { Tag, Tooltip } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
 
 import type { SeverityLevel } from '#/constants/clpm-ui';

@@ -1,14 +1,15 @@
 <template>
-  <a-tooltip :title="tooltipContent" placement="top">
+  <Tooltip :title="tooltipContent" placement="top">
     <span class="clpm-info-tip">
       <IconifyIcon :icon="icon" :size="size" />
     </span>
-  </a-tooltip>
+  </Tooltip>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { Tooltip } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
 
 interface Props {

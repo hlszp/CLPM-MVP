@@ -11,71 +11,72 @@
     <span v-else class="clpm-loop-link__tag--static">
       {{ tagName || loopId }}
     </span>
-    <a-dropdown v-if="showMenu" :trigger="['hover']" @click.stop>
+    <Dropdown v-if="showMenu" :trigger="['hover']" @click.stop>
       <span class="clpm-loop-link__menu-trigger">
         <IconifyIcon icon="lucide:chevron-down" :size="12" />
       </span>
       <template #overlay>
-        <a-menu @click="handleMenuClick">
-          <a-menu-item key="detail">
+        <Menu @click="handleMenuClick">
+          <Menu.Item key="detail">
             <IconifyIcon
               icon="lucide:eye"
               :size="14"
               style="margin-right: 6px"
             />
             回路详情
-          </a-menu-item>
-          <a-menu-divider />
-          <a-menu-item key="diagnosis">
+          </Menu.Item>
+          <Menu.Divider />
+          <Menu.Item key="diagnosis">
             <IconifyIcon
               icon="lucide:stethoscope"
               :size="14"
               style="margin-right: 6px"
             />
             诊断详情
-          </a-menu-item>
-          <a-menu-item key="tuning">
+          </Menu.Item>
+          <Menu.Item key="tuning">
             <IconifyIcon
               icon="lucide:sliders-horizontal"
               :size="14"
               style="margin-right: 6px"
             />
             回路整定
-          </a-menu-item>
-          <a-menu-item key="performance">
+          </Menu.Item>
+          <Menu.Item key="performance">
             <IconifyIcon
               icon="lucide:bar-chart-2"
               :size="14"
               style="margin-right: 6px"
             />
             性能评估
-          </a-menu-item>
-          <a-menu-divider />
-          <a-menu-item key="trend">
+          </Menu.Item>
+          <Menu.Divider />
+          <Menu.Item key="trend">
             <IconifyIcon
               icon="lucide:activity"
               :size="14"
               style="margin-right: 6px"
             />
             查看趋势
-          </a-menu-item>
-          <a-menu-item v-if="showTracker" key="tracker">
+          </Menu.Item>
+          <Menu.Item v-if="showTracker" key="tracker">
             <IconifyIcon
               icon="lucide:clipboard-check"
               :size="14"
               style="margin-right: 6px"
             />
             异常跟踪
-          </a-menu-item>
-        </a-menu>
+          </Menu.Item>
+        </Menu>
       </template>
-    </a-dropdown>
+    </Dropdown>
   </span>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { Dropdown, Menu } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
 
 import { useRouter } from 'vue-router';
@@ -116,7 +117,8 @@ const detailPath = computed(() => {
   return paths[props.defaultTarget];
 });
 
-const handleMenuClick = ({ key }: { key: string }) => {
+const handleMenuClick = ({ key }: { key: string | number }) => {
+  const keyStr = String(key);
   const routes: Record<string, string> = {
     detail: `/loop/detail/${props.loopId}`,
     diagnosis: `/diagnosis/detail/${props.loopId}`,
@@ -125,7 +127,7 @@ const handleMenuClick = ({ key }: { key: string }) => {
     trend: `/loop/monitor?loopId=${props.loopId}`,
     tracker: `/diagnosis/tracker?loopId=${props.loopId}`,
   };
-  const path = routes[key];
+  const path = routes[keyStr];
   if (path) {
     if (path.includes('?')) {
       const [base, query] = path.split('?');

@@ -22,6 +22,7 @@ import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -55,9 +56,15 @@ import { requestClient } from '#/api/request';
 import {
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
+  ClpmEmptyState,
+  ClpmInfoTip,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import {
+  CONTROL_TYPE_EXPLANATIONS,
+  IMPORTANCE_EXPLANATIONS,
+} from '#/constants/clpm-ui';
 import StatusBadge from '#/components/loop/status-badge.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { flattenNodes } from '#/utils/plant-node';
@@ -76,6 +83,8 @@ import {
 import type { ConfirmContextType, DiffEntry } from './manage/use-loop-changes';
 
 defineOptions({ name: 'LoopManage' });
+
+const router = useRouter();
 
 // ===== 编辑/查看抽屉（LoopEditDrawer）=====
 const drawerRef = ref<InstanceType<typeof LoopEditDrawer>>();
@@ -1297,6 +1306,42 @@ watch(
           "
           @change="handleTableChange"
         >
+          <template #headerCell="{ column }">
+            <template v-if="column.key === 'controlType'">
+              控制类型
+              <ClpmInfoTip
+                term="控制类型"
+                :tip="CONTROL_TYPE_EXPLANATIONS.FAST?.short ?? ''"
+                :detail="`${CONTROL_TYPE_EXPLANATIONS.FAST?.term ?? ''}/${CONTROL_TYPE_EXPLANATIONS.SLOW?.term ?? ''}/${CONTROL_TYPE_EXPLANATIONS.STABLE?.term ?? ''}/${CONTROL_TYPE_EXPLANATIONS.LOGIC?.term ?? ''}`"
+              />
+            </template>
+            <template v-else-if="column.key === 'importanceLevel'">
+              等级
+              <ClpmInfoTip
+                term="重要等级"
+                :tip="IMPORTANCE_EXPLANATIONS.CRITICAL?.short ?? ''"
+                :detail="`${IMPORTANCE_EXPLANATIONS.CRITICAL?.term ?? ''}/${IMPORTANCE_EXPLANATIONS.IMPORTANT?.term ?? ''}/${IMPORTANCE_EXPLANATIONS.GENERAL?.term ?? ''}`"
+              />
+            </template>
+          </template>
+          <template #emptyText>
+            <ClpmEmptyState
+              scene="loop"
+              :actions="[
+                {
+                  label: '新建回路',
+                  icon: 'lucide:plus',
+                  primary: true,
+                  onClick: handleAdd,
+                },
+                {
+                  label: '从 AAS 同步',
+                  icon: 'lucide:refresh-cw',
+                  onClick: () => router.push('/loop/aas'),
+                },
+              ]"
+            />
+          </template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'loopType'">
               <span

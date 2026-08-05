@@ -11,15 +11,18 @@
  * 数据原则：所有计数走真实接口（status 过滤 + total），无数据显 0；单项接口失败不阻断其余
  */
 import type { KpiStripItem } from '#/components/clpm';
+import type { DataSourceApi } from '#/api/datasource';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 
-import { Button, message } from 'ant-design-vue';
+import { Button, message, Tag, Tooltip } from 'ant-design-vue';
 
 import { getDiagnosisTasksApi, getTrackerListApi } from '#/api/diagnosis';
+import { getDatasourceHealthApi } from '#/api/datasource';
 import { getTaskListApi } from '#/api/task';
 import { getTuningTasksApi } from '#/api/tuning';
 import {
@@ -29,6 +32,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
+import { formatTime } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
 
@@ -45,6 +49,10 @@ const diagnosisPending = ref(0);
 const trackerActive = ref(0);
 const metricPending = ref(0);
 const tuningTotal = ref(0);
+
+/** P1-05：数据链路健康状态 */
+const linkHealth = ref<DataSourceApi.DataSourceHealth | null>(null);
+const linkHealthLoading = ref(false);
 
 const todoKpiItems = computed<KpiStripItem[]>(() => {
   const items: KpiStripItem[] = [
@@ -156,9 +164,45 @@ function goPidDashboard() {
   router.push('/metric/pid-dashboard');
 }
 
+/** P1-05：数据链路健康状态计算 */
+const signalrStatus = computed(() => {
+  const h = linkHealth.value;
+  if (!h) return { color: 'default', text: '未知', icon: 'lucide:circle-help' };
+  if (!h.signalrEnabled)
+    return { color: 'default', text: '未启用', icon: 'lucide:circle-slash' };
+  if (h.signalrSubscriberRunning)
+    return { color: 'success', text: '运行中', icon: 'lucide:radio' };
+  return { color: 'error', text: '已停机', icon: 'lucide:wifi-off' };
+});
+
+const networkModeText = computed(() => {
+  const mode = linkHealth.value?.networkMode;
+  if (mode === 'wan') return '公网（Tailscale）';
+  return '局域网直连';
+});
+
+/** 加载数据链路健康状态 */
+async function loadLinkHealth() {
+  linkHealthLoading.value = true;
+  try {
+    linkHealth.value = await getDatasourceHealthApi();
+  } catch {
+    linkHealth.value = null;
+  } finally {
+    linkHealthLoading.value = false;
+  }
+}
+
 onMounted(() => {
   loadCounts();
+  loadLinkHealth();
 });
+
+/** 刷新全部数据（工具栏刷新按钮） */
+function handleRefresh() {
+  loadCounts();
+  loadLinkHealth();
+}
 </script>
 
 <template>
@@ -175,7 +219,7 @@ onMounted(() => {
           icon="refresh"
           label="刷新"
           :loading="loading"
-          @click="loadCounts"
+          @click="handleRefresh"
         />
       </template>
     </ClpmPageToolbar>
@@ -187,6 +231,107 @@ onMounted(() => {
       :loading="loading"
       @item-click="handleTodoClick"
     />
+
+    <!-- P1-05：数据链路健康状态卡片（常驻工作台首屏） -->
+    <ClpmDataCanvas
+      class="mt-4"
+      title="数据链路健康状态"
+      description="实时订阅与历史数据源连通性一览，断连时红色告警"
+    >
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <!-- 实时订阅状态 -->
+        <div class="flex flex-col items-center gap-1 rounded border p-3">
+          <IconifyIcon
+            :icon="signalrStatus.icon"
+            :size="24"
+            :style="{
+              color:
+                signalrStatus.color === 'success'
+                  ? 'hsl(var(--status-ok))'
+                  : signalrStatus.color === 'error'
+                    ? 'hsl(var(--status-error))'
+                    : 'hsl(var(--muted-foreground))',
+            }"
+          />
+          <span class="text-xs" style="color: hsl(var(--muted-foreground))">
+            实时订阅
+          </span>
+          <Tag :color="signalrStatus.color" class="!m-0">
+            {{ signalrStatus.text }}
+          </Tag>
+        </div>
+
+        <!-- 网络模式 -->
+        <div class="flex flex-col items-center gap-1 rounded border p-3">
+          <IconifyIcon
+            :icon="
+              linkHealth?.networkMode === 'wan'
+                ? 'lucide:globe'
+                : 'lucide:network'
+            "
+            :size="24"
+            style="color: hsl(var(--status-info))"
+          />
+          <span class="text-xs" style="color: hsl(var(--muted-foreground))">
+            网络模式
+          </span>
+          <span class="text-sm font-medium">{{ networkModeText }}</span>
+        </div>
+
+        <!-- 最近同步时间 -->
+        <div class="flex flex-col items-center gap-1 rounded border p-3">
+          <IconifyIcon
+            icon="lucide:refresh-cw"
+            :size="24"
+            style="color: hsl(var(--status-info))"
+          />
+          <span class="text-xs" style="color: hsl(var(--muted-foreground))">
+            最近同步
+          </span>
+          <Tooltip
+            v-if="linkHealth?.lastSyncAt"
+            :title="formatTime(linkHealth.lastSyncAt)"
+          >
+            <span class="text-sm font-medium font-mono">
+              {{ formatTime(linkHealth.lastSyncAt).slice(5, 16) }}
+            </span>
+          </Tooltip>
+          <span
+            v-else
+            class="text-sm"
+            style="color: hsl(var(--muted-foreground))"
+          >
+            —
+          </span>
+        </div>
+
+        <!-- Tailscale 状态 -->
+        <div class="flex flex-col items-center gap-1 rounded border p-3">
+          <IconifyIcon
+            :icon="
+              linkHealth?.tailscaleAvailable
+                ? 'lucide:shield-check'
+                : 'lucide:shield-off'
+            "
+            :size="24"
+            :style="{
+              color: linkHealth?.tailscaleAvailable
+                ? 'hsl(var(--status-ok))'
+                : 'hsl(var(--muted-foreground))',
+            }"
+          />
+          <span class="text-xs" style="color: hsl(var(--muted-foreground))">
+            Tailscale
+          </span>
+          <Tag
+            :color="linkHealth?.tailscaleAvailable ? 'success' : 'default'"
+            class="!m-0"
+          >
+            {{ linkHealth?.tailscaleAvailable ? '可用' : '不可用' }}
+          </Tag>
+        </div>
+      </div>
+    </ClpmDataCanvas>
 
     <!-- 诊断与异常跟踪聚合 + 整改有效率（自包含，各自拉取数据） -->
     <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">

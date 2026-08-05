@@ -8,7 +8,9 @@
 - GET    /api/v1/diagnosis/{loopId}/recommendations      — 获取解决方案推荐（SVC-11）
 - POST   /api/v1/diagnosis/{loopId}/report               — 生成并下载 PDF 建议书（SVC-12）
 - GET    /api/v1/diagnosis/statistics/export             — 导出诊断统计 CSV（SVC-13）
-- PATCH  /api/v1/tracker/{loopId}/status                 — 更新处理状态（仅 IC_ENGINEER）
+- PATCH  /api/v1/tracker/{loopId}/status                 — 更新处理状态
+  （仅 IC_ENGINEER，P1a状态机扩展）
+- GET    /api/v1/tracker/{loopId}/timeline               — P1a: 获取单回路异常处置时间线
 - POST   /api/v1/tracker/{loopId}/export                 — 导出诊断建议书 PDF
 - GET    /api/v1/diagnosis/analytics                     — 诊断统计报表
 - POST   /api/v1/diagnosis/analytics/export              — 导出统计报表
@@ -74,6 +76,7 @@ from app.schemas.diagnosis import (
     TagResolveRequest,
     ThresholdOverrideItem,
     ThresholdOverrideUpsert,
+    TimelineData,
     TrackerEffectivenessData,
     TrackerStatusData,
     TrackerStatusUpdate,
@@ -117,6 +120,7 @@ from app.services.diagnosis_threshold import (
 from app.services.tracker import (
     export_tracker_pdf,
     get_ab_compare,
+    get_loop_timeline,
     get_tracker_effectiveness,
     get_verification_config,
     update_tracker_status,
@@ -914,11 +918,21 @@ async def update_tracker_status_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("IC_ENGINEER")),
 ) -> dict:
-    """更新处理状态（仅 IC_ENGINEER）。
+    """更新处理状态（仅 IC_ENGINEER，P1a 闭环状态机扩展）。
 
-    - status 枚举: PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED
-    - 标记 IMPLEMENTED 后自动生成 A/B 对比视图
+    - status 枚举: PENDING/IN_PROGRESS/VERIFYING/CLOSED/REOPENED/IGNORED
+    - 标记 VERIFYING（已实施）时强制填写 MOC + 新 PID 参数（Poka-Yoke）
+    - 标记 REOPENED 时强制填写重开原因
+    - 状态转换遵循状态机约束，非法转换返回 422
+    - IN_PROGRESS 未指定 assignee 时自动认领给当前操作人
     """
+
+    def _parse_dt(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
     data = await update_tracker_status(
         db=db,
         loop_id=str(loop_id),
@@ -931,13 +945,34 @@ async def update_tracker_status_endpoint(
         moc_not_applicable=body.mocNotApplicable,
         moc_reason=body.mocReason,
         assignee=body.assignee,
-        planned_at=(
-            datetime.fromisoformat(body.plannedAt.replace("Z", "+00:00")).replace(tzinfo=None)
-            if body.plannedAt
-            else None
-        ),
+        planned_at=_parse_dt(body.plannedAt),
+        # P1a 新增字段
+        implemented_at=_parse_dt(body.implementedAt),
+        new_pid_p=body.newPidP,
+        new_pid_i=body.newPidI,
+        new_pid_d=body.newPidD,
+        reopen_reason=body.reopenReason,
     )
     return success(data=data, message="状态更新成功")
+
+
+@tracker_router.get(
+    "/{loop_id}/timeline",
+    response_model=ApiResponse[TimelineData],
+    summary="P1a: 获取单回路异常处置时间线",
+)
+async def get_loop_timeline_endpoint(
+    loop_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("IC_ENGINEER", "ADMIN", "PE_ENGINEER")),
+) -> dict:
+    """获取单回路异常处置时间线（P1a）。
+
+    聚合诊断发现、状态变更、MOC记录等事件，按时间升序排列。
+    返回当前跟踪状态和预计自动验证时间（VERIFYING 状态时）。
+    """
+    data = await get_loop_timeline(db=db, loop_id=str(loop_id))
+    return success(data=data)
 
 
 @tracker_router.post("/{loop_id}/export")

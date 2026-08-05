@@ -124,6 +124,14 @@ def _make_tracker(
     # V62-P3-008：负责人与计划执行时间（默认未设置）
     t.assignee = None
     t.planned_at = None
+    # P1a: 闭环状态机扩展字段（默认未设置）
+    t.implemented_at = None
+    t.implemented_by = None
+    t.new_pid_p = None
+    t.new_pid_i = None
+    t.new_pid_d = None
+    t.closed_at = None
+    t.reopen_reason = None
     return t
 
 
@@ -949,7 +957,17 @@ class TestTrackerStatusUpdate:
     def test_implemented_without_moc_returns_422(self, client, mock_db, fake_redis) -> None:
         """D3：标记 IMPLEMENTED 但未提供 MOC 关联时应返回 422。"""
         loop = _make_loop()
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            # 第二次查询（tracker）返回 None，第三次查询（diagnosis）也返回 None
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.patch(
                 f"/api/v1/tracker/{loop.id}/status",
@@ -964,7 +982,17 @@ class TestTrackerStatusUpdate:
     ) -> None:
         """D3：标记 IMPLEMENTED 且勾选 MOC 不适用但未填写依据时应返回 422。"""
         loop = _make_loop()
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalar_one_or_none_mock(loop)
+            # 第二次查询（tracker）返回 None，第三次查询（diagnosis）也返回 None
+            return _make_scalar_one_or_none_mock(None)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.patch(
                 f"/api/v1/tracker/{loop.id}/status",

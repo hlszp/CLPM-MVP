@@ -9,11 +9,12 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type { DiagnosisApi } from '#/api/diagnosis';
 import type { TuningApi } from '#/api/tuning';
 import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -21,13 +22,18 @@ import { IconifyIcon } from '@vben/icons';
 import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getTuningHistoryApi } from '#/api/tuning';
 import {
+  ClpmConfidenceBadge,
   ClpmDataCanvas,
+  ClpmEmptyState,
   ClpmKpiStrip,
+  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { formatTime } from '#/utils/format';
 
@@ -35,7 +41,26 @@ defineOptions({ name: 'TuningWorkbench' });
 
 const { themeColors } = useClpmTheme();
 
+const route = useRoute();
 const router = useRouter();
+
+/** P0-03：接收诊断→整定上下文参数 */
+const diagnosisContext = computed(() => {
+  const from = route.query.from as string;
+  const loopId = route.query.loopId as string;
+  const diagnosisLabel = route.query.diagnosisLabel as string;
+  const confidenceLevel = route.query.confidenceLevel as string;
+  const returnTo = route.query.returnTo as string | undefined;
+  if (from !== 'diagnosis' || !loopId) return null;
+  return { loopId, diagnosisLabel, confidenceLevel, returnTo };
+});
+
+/** P0-03：诊断标签显示名 */
+const diagnosisLabelDisplay = computed(() => {
+  if (!diagnosisContext.value?.diagnosisLabel) return '';
+  const label = diagnosisContext.value.diagnosisLabel;
+  return DIAGNOSIS_TERM_EXPLANATIONS[label]?.term ?? label;
+});
 
 const loading = ref(false);
 const historyStats = ref<null | TuningApi.HistoryStats>(null);
@@ -313,6 +338,129 @@ function handleCreate() {
   router.push('/tuning/flow');
 }
 
+/** P0-03：基于诊断上下文发起整定，跳转 flow 并传递回路 */
+function handleStartFromDiagnosis() {
+  const ctx = diagnosisContext.value;
+  if (!ctx) return;
+  router.push({
+    path: '/tuning/flow',
+    query: {
+      loopId: ctx.loopId,
+      from: 'diagnosis',
+      // P1-07：透传返回路径，flow 页可一键返回诊断详情
+      ...(ctx.returnTo ? { returnTo: ctx.returnTo } : {}),
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// P0-05：待整定回路列表（聚合诊断中心"建议整定"标签的开放异常）
+// ---------------------------------------------------------------------------
+
+/** 建议整定的诊断标签（参数类问题可通过整定改善） */
+const TUNABLE_LABELS = [
+  'OSCILLATION',
+  'OVERAGGRESSIVE',
+  'OVERCONSERVATIVE',
+  'VALVE_STICTION',
+] as const;
+
+const pendingLoopsLoading = ref(false);
+const pendingLoapsRaw = ref<DiagnosisApi.DiagnosisListItem[]>([]);
+
+/** 待整定回路 = 开放状态 + 建议整定标签 */
+const pendingLoops = computed(() =>
+  pendingLoapsRaw.value.filter((item) =>
+    (TUNABLE_LABELS as readonly string[]).includes(item.diagnosisLabel),
+  ),
+);
+
+const pendingLoopColumns: TableColumnsType = [
+  {
+    title: '回路位号',
+    dataIndex: 'tagName',
+    key: 'tagName',
+    width: 160,
+    ellipsis: true,
+  },
+  {
+    title: '装置',
+    dataIndex: 'unitName',
+    key: 'unitName',
+    width: 140,
+    ellipsis: true,
+  },
+  { title: '诊断标签', dataIndex: 'labelName', key: 'labelName', width: 110 },
+  {
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 70,
+    align: 'center',
+  },
+  {
+    title: '综合评分',
+    dataIndex: 'compositeScore',
+    key: 'compositeScore',
+    width: 90,
+    align: 'right',
+  },
+  {
+    title: '发现时间',
+    dataIndex: 'diagnosedAt',
+    key: 'diagnosedAt',
+    width: 160,
+  },
+  { title: '操作', key: 'action', width: 120, fixed: 'right' },
+];
+
+/** 加载待整定回路（查询开放状态异常，前端过滤建议整定标签） */
+async function loadPendingLoops() {
+  pendingLoopsLoading.value = true;
+  try {
+    const [pending, inProgress, reopened] = await Promise.all([
+      getDiagnosisListApi({
+        actionStatus: 'PENDING',
+        page: 1,
+        pageSize: 100,
+      }),
+      getDiagnosisListApi({
+        actionStatus: 'IN_PROGRESS',
+        page: 1,
+        pageSize: 100,
+      }),
+      getDiagnosisListApi({
+        actionStatus: 'REOPENED',
+        page: 1,
+        pageSize: 100,
+      }),
+    ]);
+    pendingLoapsRaw.value = [
+      ...(pending.items ?? []),
+      ...(inProgress.items ?? []),
+      ...(reopened.items ?? []),
+    ];
+  } catch {
+    pendingLoapsRaw.value = [];
+  } finally {
+    pendingLoopsLoading.value = false;
+  }
+}
+
+/** P0-05：从待整定列表发起整定 */
+function handleStartTuning(record: DiagnosisApi.DiagnosisListItem) {
+  router.push({
+    path: '/tuning/flow',
+    query: {
+      loopId: record.loopId,
+      diagnosisLabel: record.diagnosisLabel,
+      from: 'diagnosis',
+      // P1-07：携带返回路径（诊断详情页），flow 页可一键返回
+      returnTo: `/diagnosis/detail?loopId=${record.loopId}`,
+    },
+  });
+}
+
 /** 拟合度格式化 */
 function formatFittingScore(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
@@ -329,6 +477,7 @@ function fittingScoreColor(val: null | number | undefined): string {
 
 onMounted(() => {
   loadHistory();
+  loadPendingLoops();
 });
 </script>
 
@@ -372,6 +521,57 @@ onMounted(() => {
         description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
       />
 
+      <!-- P0-03：来自诊断中心的上下文提示卡片 -->
+      <Alert
+        v-if="diagnosisContext"
+        class="mt-3"
+        type="info"
+        show-icon
+        banner
+        :closable="true"
+        message="来自诊断中心的整定请求"
+      >
+        <template #description>
+          <div class="flex flex-wrap items-center gap-3">
+            <span>
+              回路：
+              <span class="font-mono font-medium">{{
+                diagnosisContext.loopId
+              }}</span>
+            </span>
+            <span v-if="diagnosisLabelDisplay">
+              诊断标签：
+              <Tag color="orange">{{ diagnosisLabelDisplay }}</Tag>
+            </span>
+            <span
+              v-if="diagnosisContext.confidenceLevel"
+              class="flex items-center gap-1"
+            >
+              可信度：
+              <ClpmConfidenceBadge
+                :level="diagnosisContext.confidenceLevel as any"
+              />
+            </span>
+            <Button
+              v-if="diagnosisContext.returnTo"
+              size="small"
+              class="ml-auto"
+              @click="router.push(diagnosisContext.returnTo)"
+            >
+              ← 返回诊断
+            </Button>
+            <Button
+              type="primary"
+              size="small"
+              :class="diagnosisContext.returnTo ? '' : 'ml-auto'"
+              @click="handleStartFromDiagnosis"
+            >
+              基于此诊断发起整定
+            </Button>
+          </div>
+        </template>
+      </Alert>
+
       <div class="mb-4 mt-4">
         <ClpmKpiStrip :items="kpiStripItems" />
       </div>
@@ -412,6 +612,83 @@ onMounted(() => {
         </div>
       </ClpmDataCanvas>
 
+      <!-- P0-05：待整定回路列表（聚合诊断中心建议整定的开放异常） -->
+      <ClpmDataCanvas
+        title="待整定回路"
+        description="来自诊断中心的建议整定回路（振荡/参数过激/参数过保守/阀门粘滞）"
+        class="mb-4"
+      >
+        <Table
+          :columns="pendingLoopColumns"
+          :data-source="pendingLoops"
+          :loading="pendingLoopsLoading"
+          :pagination="false"
+          :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
+          :scroll="{ x: 900 }"
+          size="middle"
+        >
+          <template #emptyText>
+            <ClpmEmptyState
+              title="暂无待整定回路"
+              description="诊断中心未发现建议整定的开放异常（振荡/参数过激/参数过保守/阀门粘滞）"
+              :actions="[
+                {
+                  label: '前往诊断中心',
+                  icon: 'lucide:stethoscope',
+                  primary: true,
+                  onClick: () => router.push('/diagnosis/tracker'),
+                },
+              ]"
+            />
+          </template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'tagName'">
+              <ClpmLoopLink
+                :loop-id="record.loopId"
+                :tag-name="record.tagName"
+                :show-menu="false"
+                default-target="detail"
+              />
+            </template>
+            <template v-else-if="column.key === 'labelName'">
+              <Tag color="orange">
+                {{
+                  DIAGNOSIS_TERM_EXPLANATIONS[record.diagnosisLabel]?.term ??
+                  record.labelName
+                }}
+              </Tag>
+            </template>
+            <template v-else-if="column.key === 'confidenceLevel'">
+              <ClpmConfidenceBadge
+                :confidence="record.fusedConfidence"
+                :valid-rate="null"
+              />
+            </template>
+            <template v-else-if="column.key === 'compositeScore'">
+              <span class="font-mono">{{
+                Number(record.compositeScore).toFixed(1)
+              }}</span>
+            </template>
+            <template v-else-if="column.key === 'diagnosedAt'">
+              <span class="font-mono text-xs">{{
+                formatTime(record.diagnosedAt)
+              }}</span>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <Button
+                type="primary"
+                size="small"
+                @click="
+                  handleStartTuning(record as DiagnosisApi.DiagnosisListItem)
+                "
+              >
+                发起整定
+              </Button>
+            </template>
+          </template>
+        </Table>
+      </ClpmDataCanvas>
+
       <!-- 最近整定任务表格 -->
       <ClpmDataCanvas title="最近整定任务">
         <Table
@@ -423,6 +700,19 @@ onMounted(() => {
           :scroll="{ x: 950 }"
           size="middle"
         >
+          <template #emptyText>
+            <ClpmEmptyState
+              scene="task"
+              :actions="[
+                {
+                  label: '新建整定',
+                  icon: 'lucide:plus',
+                  primary: true,
+                  onClick: handleCreate,
+                },
+              ]"
+            />
+          </template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'tagName'">
               <span class="font-mono text-xs font-medium">

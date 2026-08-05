@@ -369,6 +369,35 @@ async def preload_datasource_config(db: AsyncSession) -> None:
             setattr(settings, attr, value)
 
 
+async def get_datasource_health(db: AsyncSession) -> dict[str, Any]:
+    """获取数据链路健康状态（P1-05：工作台常驻卡片，IC_ENGINEER+ 可查看）。
+
+    与 ``get_datasource_config`` 的区别：
+    - 不返回敏感字段（historyApiToken）
+    - 增加最近同步时间（AAS Tag 最大 last_sync_at）
+    - 供工作台首屏展示链路连通性，非配置管理用途
+    """
+    config = await get_datasource_config(db, mask_token=True)
+    # 查询 AAS Tag 最近同步时间
+    from app.models.tag import Tag
+
+    result = await db.execute(select(Tag.last_sync_at).order_by(Tag.last_sync_at.desc()).limit(1))
+    last_sync_row = result.scalar_one_or_none()
+    last_sync_at = (
+        last_sync_row.isoformat() if last_sync_row and hasattr(last_sync_row, "isoformat") else None
+    )
+
+    return {
+        "networkMode": config["networkMode"],
+        "signalrEnabled": config["signalrEnabled"],
+        "signalrSubscriberRunning": config["signalrSubscriberRunning"],
+        "signalrHubUrl": config["signalrHubUrl"],
+        "historyApiUrl": config["historyApiUrl"],
+        "tailscaleAvailable": config["tailscaleAvailable"],
+        "lastSyncAt": last_sync_at,
+    }
+
+
 async def test_history_api_connection(
     url: str | None,
     token: str | None,

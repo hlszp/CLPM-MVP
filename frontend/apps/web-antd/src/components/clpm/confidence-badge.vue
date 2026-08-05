@@ -1,16 +1,17 @@
 <template>
-  <a-tooltip :title="tooltipContent" placement="top">
-    <a-badge
+  <Tooltip :title="tooltipContent" placement="top">
+    <Badge
       :count="levelText"
       :number-style="badgeStyle"
       :style="{ cursor: 'help' }"
     />
-  </a-tooltip>
+  </Tooltip>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { Badge, Tooltip } from 'ant-design-vue';
 import type { ConfidenceLevel } from '#/api/metric';
 
 import {
