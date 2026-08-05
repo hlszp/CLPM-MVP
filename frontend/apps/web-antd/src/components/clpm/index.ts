@@ -25,6 +25,7 @@ export { default as ClpmSeverityBadge } from './severity-badge.vue';
 export { default as ClpmStateOverlay } from './state-overlay.vue';
 export { default as ClpmStatusPanel } from './status-panel.vue';
 export { default as ClpmStructuredDiagnosisReport } from './structured-diagnosis-report.vue';
+export { default as ClpmThresholdTuneModal } from './threshold-tune-modal.vue';
 
 export { default as ClpmTagAssociationBadge } from './tag-association-badge.vue';
 export { default as ClpmToolbarButton } from './toolbar-button.vue';

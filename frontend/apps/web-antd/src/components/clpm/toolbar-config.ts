@@ -32,6 +32,7 @@ export type ToolbarAction =
   | 'run'
   | 'save'
   | 'search'
+  | 'setting'
   | 'stop'
   | 'track'
   | 'tuning';
@@ -62,6 +63,7 @@ export const TOOLBAR_ICON_MAP: Record<ToolbarAction, string> = {
   stop: 'ant-design:pause-circle-outlined',
   track: 'ant-design:flag-outlined',
   tuning: 'ant-design:tool-outlined',
+  setting: 'ant-design:setting-outlined',
 };
 
 /**
@@ -109,6 +111,7 @@ export const TOOLBAR_DEFAULT_VARIANT: Record<ToolbarAction, ToolbarVariant> = {
   stop: 'danger',
   track: 'primary',
   tuning: 'default',
+  setting: 'default',
 };
 
 /**

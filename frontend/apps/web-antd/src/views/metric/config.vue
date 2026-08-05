@@ -25,6 +25,9 @@ const OutlierParamsTab = defineAsyncComponent(
 const AlgorithmParamsTab = defineAsyncComponent(
   () => import('./algorithm-params.vue'),
 );
+const ThresholdTemplateTab = defineAsyncComponent(
+  () => import('./threshold-template.vue'),
+);
 </script>
 
 <template>
@@ -47,6 +50,9 @@ const AlgorithmParamsTab = defineAsyncComponent(
       </TabPane>
       <TabPane key="algorithm" tab="KPI 算法参数">
         <AlgorithmParamsTab />
+      </TabPane>
+      <TabPane key="threshold-template" tab="诊断阈值模板">
+        <ThresholdTemplateTab />
       </TabPane>
     </Tabs>
   </Page>

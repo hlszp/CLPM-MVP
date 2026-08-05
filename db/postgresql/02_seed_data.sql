@@ -849,5 +849,38 @@ INSERT INTO dcs_mode_mapping (dcs_model_id, standard_mode, raw_mode_value, descr
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================
+-- 诊断阈值模板（P3-02：按回路类型差异化预置，6 种 loop_type × 19 条模板）
+-- 幂等：ON CONFLICT DO NOTHING，不覆盖用户已有覆盖
+-- OTHER 类型不预置（无覆盖时自动回退全局默认）
+-- =============================================================================
+INSERT INTO diagnosis_threshold_override (id, diag_code, scope_type, scope_id, threshold, version, updated_by, updated_at) VALUES
+-- FLOW（流量）：响应快、噪声大 → 振荡阈值严、饱和阈值宽、过激阈值严
+('11111111-0000-0000-0000-flow0001', 'OSCILLATION',        'loop_type', 'FLOW',         '{"similarity_threshold": 0.35, "min_zero_crossings": 5, "fft_min_zero_crossings": 6}'::jsonb, 1, 'system', NOW()),
+('11111111-0000-0000-0000-flow0002', 'OUTPUT_SATURATION',  'loop_type', 'FLOW',         '{"saturation_epsilon": 3.0}'::jsonb, 1, 'system', NOW()),
+('11111111-0000-0000-0000-flow0003', 'OVERAGGRESSIVE',     'loop_type', 'FLOW',         '{"step_overshoot_threshold": 0.20}'::jsonb, 1, 'system', NOW()),
+('11111111-0000-0000-0000-flow0004', 'OVERCONSERVATIVE',   'loop_type', 'FLOW',         '{"slow_expected_tau_seconds": 10.0, "slow_response_ratio_threshold": 1.5}'::jsonb, 1, 'system', NOW()),
+-- TEMPERATURE（温度）：响应慢、惯性大 → 振荡阈值宽、过激阈值宽
+('22222222-0000-0000-0000-temp0001', 'OSCILLATION',        'loop_type', 'TEMPERATURE',  '{"similarity_threshold": 0.45, "min_zero_crossings": 3, "fft_min_cycles": 1.5}'::jsonb, 1, 'system', NOW()),
+('22222222-0000-0000-0000-temp0002', 'OVERAGGRESSIVE',     'loop_type', 'TEMPERATURE',  '{"step_overshoot_threshold": 0.30}'::jsonb, 1, 'system', NOW()),
+('22222222-0000-0000-0000-temp0003', 'OVERCONSERVATIVE',   'loop_type', 'TEMPERATURE',  '{"slow_expected_tau_seconds": 600.0, "slow_response_ratio_threshold": 2.5}'::jsonb, 1, 'system', NOW()),
+-- PRESSURE（压力）：响应较快 → 振荡阈值稍严
+('33333333-0000-0000-0000-pres0001', 'OSCILLATION',        'loop_type', 'PRESSURE',     '{"similarity_threshold": 0.40, "min_zero_crossings": 4}'::jsonb, 1, 'system', NOW()),
+('33333333-0000-0000-0000-pres0002', 'OVERCONSERVATIVE',   'loop_type', 'PRESSURE',     '{"slow_expected_tau_seconds": 30.0, "slow_response_ratio_threshold": 2.0}'::jsonb, 1, 'system', NOW()),
+-- LEVEL（液位）：积分特性 → 振荡阈值严、饱和阈值严
+('44444444-0000-0000-0000-lvl00001', 'OSCILLATION',        'loop_type', 'LEVEL',        '{"similarity_threshold": 0.35, "min_zero_crossings": 5}'::jsonb, 1, 'system', NOW()),
+('44444444-0000-0000-0000-lvl00002', 'OUTPUT_SATURATION',  'loop_type', 'LEVEL',        '{"saturation_epsilon": 1.5}'::jsonb, 1, 'system', NOW()),
+('44444444-0000-0000-0000-lvl00003', 'OVERCONSERVATIVE',   'loop_type', 'LEVEL',        '{"slow_expected_tau_seconds": 120.0, "slow_response_ratio_threshold": 2.0}'::jsonb, 1, 'system', NOW()),
+-- ANALYSIS（分析）：响应最慢 → 振荡阈值最宽、过激阈值最宽
+('55555555-0000-0000-0000-anal0001', 'OSCILLATION',        'loop_type', 'ANALYSIS',     '{"similarity_threshold": 0.50, "min_zero_crossings": 3, "fft_min_cycles": 1.0}'::jsonb, 1, 'system', NOW()),
+('55555555-0000-0000-0000-anal0002', 'OVERAGGRESSIVE',     'loop_type', 'ANALYSIS',     '{"step_overshoot_threshold": 0.35}'::jsonb, 1, 'system', NOW()),
+('55555555-0000-0000-0000-anal0003', 'OVERCONSERVATIVE',   'loop_type', 'ANALYSIS',     '{"slow_expected_tau_seconds": 900.0, "slow_response_ratio_threshold": 3.0}'::jsonb, 1, 'system', NOW()),
+-- SPEED（转速）：响应快、精度高 → 振荡阈值严、质量阈值严、过激阈值严
+('66666666-0000-0000-0000-spd00001', 'OSCILLATION',        'loop_type', 'SPEED',        '{"similarity_threshold": 0.35, "min_zero_crossings": 5, "fft_min_zero_crossings": 6}'::jsonb, 1, 'system', NOW()),
+('66666666-0000-0000-0000-spd00002', 'QUALITY_ABNORMAL',   'loop_type', 'SPEED',        '{"q002_bad_rate": 0.05}'::jsonb, 1, 'system', NOW()),
+('66666666-0000-0000-0000-spd00003', 'OVERAGGRESSIVE',     'loop_type', 'SPEED',        '{"step_overshoot_threshold": 0.20}'::jsonb, 1, 'system', NOW()),
+('66666666-0000-0000-0000-spd00004', 'OVERCONSERVATIVE',   'loop_type', 'SPEED',        '{"slow_expected_tau_seconds": 5.0, "slow_response_ratio_threshold": 1.5}'::jsonb, 1, 'system', NOW())
+ON CONFLICT (diag_code, scope_type, scope_id) DO NOTHING;
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

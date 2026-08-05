@@ -74,8 +74,10 @@ from app.schemas.diagnosis import (
     DiagnosisTriggerRequest,
     RecommendationData,
     TagResolveRequest,
+    ThresholdApplyRequest,
     ThresholdOverrideItem,
     ThresholdOverrideUpsert,
+    ThresholdRecommendationResult,
     TimelineData,
     TrackerEffectivenessData,
     TrackerStatusData,
@@ -110,8 +112,10 @@ from app.services.diagnosis_report import (
 )
 from app.services.diagnosis_rule import list_rules, update_rule
 from app.services.diagnosis_threshold import (
+    apply_template_to_loop,
     delete_override,
     list_templates,
+    recommend_for_loop,
     upsert_override,
 )
 from app.services.diagnosis_threshold import (
@@ -251,9 +255,9 @@ async def list_threshold_templates_endpoint(
 async def upsert_threshold_override_endpoint(
     body: ThresholdOverrideUpsert,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
 ) -> dict:
-    """创建或更新阈值覆盖（仅 ADMIN）。"""
+    """创建或更新阈值覆盖（ADMIN 全 scope；ic_engineer 仅 loop scope，P3-02）。"""
     data = await upsert_override(
         db=db,
         operator=user.username,
@@ -261,6 +265,7 @@ async def upsert_threshold_override_endpoint(
         scope_type=body.scopeType,
         scope_id=body.scopeId,
         threshold=body.threshold,
+        operator_role=user.role,
     )
     return success(data=data, message="阈值覆盖已保存")
 
@@ -269,11 +274,65 @@ async def upsert_threshold_override_endpoint(
 async def delete_threshold_override_endpoint(
     override_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
 ) -> dict:
-    """删除阈值覆盖（仅 ADMIN）。"""
-    await delete_override(db, override_id, user.username)
+    """删除阈值覆盖（ADMIN 全 scope；ic_engineer 仅 loop scope，P3-02）。"""
+    await delete_override(db, override_id, user.username, operator_role=user.role)
     return success(data=None, message="阈值覆盖已删除")
+
+
+# ---------------------------------------------------------------------------
+# P3-02: 诊断阈值模板化与自适应
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/threshold-recommendations",
+    response_model=ApiResponse[ThresholdRecommendationResult],
+)
+async def get_threshold_recommendations_endpoint(
+    loopId: str = Query(..., description="回路 ID"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
+) -> dict:
+    """按回路推荐阈值模板（P3-02 自适应推荐）。
+
+    根据回路的 loop_type 和 plant，返回所有 diag_code 的合并阈值视图：
+    - 全局默认 → loop_type 模板 → 装置级覆盖 → 回路级覆盖 → 生效阈值
+    - 含 scopeChain 展示各级覆盖来源（前端"为什么是这个阈值"）
+
+    - 权限：所有登录用户可查看（diagnosis:view）
+    """
+    data = await recommend_for_loop(db, loop_id=loopId)
+    return success(data=data)
+
+
+@router.post(
+    "/threshold-templates/apply",
+    response_model=ApiResponse[ThresholdOverrideItem],
+)
+async def apply_threshold_template_endpoint(
+    body: ThresholdApplyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """一键套用模板到回路/装置（P3-02）。
+
+    将该回路 loop_type 匹配的模板阈值复制为目标 scope 的覆盖：
+    - targetScope="loop": ADMIN/IC_ENGINEER 可用（回路级微调起点）
+    - targetScope="plant": 仅 ADMIN 可用（装置级覆盖）
+
+    若目标 scope 已有覆盖则更新（upsert 语义）。
+    """
+    data = await apply_template_to_loop(
+        db=db,
+        operator=user.username,
+        loop_id=body.loopId,
+        diag_code=body.diagCode,
+        target_scope=body.targetScope,
+        operator_role=user.role,
+    )
+    return success(data=data, message="模板已套用到目标范围")
 
 
 # ---------------------------------------------------------------------------

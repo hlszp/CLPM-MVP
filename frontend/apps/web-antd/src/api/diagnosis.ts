@@ -820,6 +820,75 @@ export namespace DiagnosisApi {
     results: DiagnosisResultItem[];
     errorMessage: null | string;
   }
+
+  // -----------------------------------------------------------------------
+  // P3-02: 诊断阈值模板化与自适应
+  // -----------------------------------------------------------------------
+
+  /** 阈值覆盖 scope 类型（loop_type 模板 / plant 装置级 / loop 回路级） */
+  export type ThresholdScopeType = 'loop' | 'loop_type' | 'plant';
+
+  /** 阈值覆盖项（响应） */
+  export interface ThresholdOverrideItem {
+    overrideId: string;
+    diagCode: string;
+    scopeType: ThresholdScopeType;
+    scopeId: string;
+    threshold: Record<string, number>;
+    version: number;
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 创建/更新阈值覆盖请求体 */
+  export interface ThresholdOverrideUpsertParams {
+    diagCode: string;
+    scopeType: ThresholdScopeType;
+    scopeId: string;
+    threshold: Record<string, number>;
+  }
+
+  /** 一键套用模板请求体（P3-02） */
+  export interface ThresholdApplyParams {
+    loopId: string;
+    diagCode: string;
+    /** loop=回路级（ic_engineer 可用）/ plant=装置级（仅 ADMIN） */
+    targetScope: 'loop' | 'plant';
+  }
+
+  /** 单级阈值来源（推荐响应 scopeChain，展示"为什么是这个阈值"） */
+  export interface ThresholdScopeSource {
+    /** None 表示全局默认 */
+    scopeType?: null | ThresholdScopeType;
+    scopeId?: null | string;
+    threshold: Record<string, number>;
+    /** 是否实际生效（最高优先级那一层） */
+    isApplied: boolean;
+    /** global_default/loop_type_template/plant_override/loop_override */
+    source: string;
+  }
+
+  /** 单个 diag_code 的阈值推荐（P3-02） */
+  export interface ThresholdRecommendationItem {
+    diagCode: string;
+    diagName?: null | string;
+    globalDefault: Record<string, number>;
+    loopTypeTemplate?: null | Record<string, number>;
+    plantOverride?: null | Record<string, number>;
+    loopOverride?: null | Record<string, number>;
+    effectiveThreshold: Record<string, number>;
+    scopeChain: ThresholdScopeSource[];
+  }
+
+  /** 按回路推荐阈值模板响应（P3-02） */
+  export interface ThresholdRecommendationResult {
+    loopId: string;
+    tagName?: null | string;
+    loopType?: null | string;
+    plantId?: null | string;
+    plantName?: null | string;
+    recommendations: ThresholdRecommendationItem[];
+  }
 }
 
 /**
@@ -1214,5 +1283,88 @@ export function getTrackerEffectivenessApi(params?: {
 export function getLoopTimelineApi(loopId: string) {
   return requestClient.get<DiagnosisApi.TimelineData>(
     `/tracker/${loopId}/timeline`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// P3-02: 诊断阈值模板化与自适应 API
+// ---------------------------------------------------------------------------
+
+/**
+ * P3-02: 获取阈值覆盖列表（可按 scope 筛选）
+ *
+ * 权限：diagnosis:view（所有登录用户可查看）
+ */
+export function getThresholdOverridesApi(params?: {
+  scopeType?: DiagnosisApi.ThresholdScopeType;
+  scopeId?: string;
+}) {
+  return requestClient.get<DiagnosisApi.ThresholdOverrideItem[]>(
+    '/diagnosis/threshold-overrides',
+    { params },
+  );
+}
+
+/**
+ * P3-02: 获取控制类型模板列表（loop_type scope 的预置阈值模板）
+ */
+export function getThresholdTemplatesApi() {
+  return requestClient.get<DiagnosisApi.ThresholdOverrideItem[]>(
+    '/diagnosis/threshold-templates',
+  );
+}
+
+/**
+ * P3-02: 创建/更新阈值覆盖
+ *
+ * - ADMIN：全 scope 可操作
+ * - ic_engineer：仅 loop scope（回路级微调），服务层校验
+ */
+export function upsertThresholdOverrideApi(
+  data: DiagnosisApi.ThresholdOverrideUpsertParams,
+) {
+  return requestClient.post<DiagnosisApi.ThresholdOverrideItem>(
+    '/diagnosis/threshold-overrides',
+    data,
+  );
+}
+
+/**
+ * P3-02: 删除阈值覆盖
+ *
+ * - ADMIN：全 scope 可删除
+ * - ic_engineer：仅 loop scope 可删除
+ */
+export function deleteThresholdOverrideApi(overrideId: string) {
+  return requestClient.delete(`/diagnosis/threshold-overrides/${overrideId}`);
+}
+
+/**
+ * P3-02: 按回路推荐阈值模板（自适应推荐核心）
+ *
+ * 返回该回路所有 diag_code 的合并阈值视图：
+ * 全局默认 → loop_type 模板 → 装置级覆盖 → 回路级覆盖 → 生效阈值
+ * 含 scopeChain 展示各级覆盖来源（"为什么是这个阈值"）。
+ */
+export function getThresholdRecommendationsApi(loopId: string) {
+  return requestClient.get<DiagnosisApi.ThresholdRecommendationResult>(
+    '/diagnosis/threshold-recommendations',
+    { params: { loopId } },
+  );
+}
+
+/**
+ * P3-02: 一键套用模板到回路/装置
+ *
+ * 将该回路 loop_type 匹配的模板阈值复制为目标 scope 的覆盖：
+ * - targetScope="loop"：ADMIN/IC_ENGINEER 可用（回路级微调起点）
+ * - targetScope="plant"：仅 ADMIN 可用（装置级覆盖）
+ */
+export function applyThresholdTemplateApi(
+  data: DiagnosisApi.ThresholdApplyParams,
+) {
+  return requestClient.post<DiagnosisApi.ThresholdOverrideItem>(
+    '/diagnosis/threshold-templates/apply',
+    data,
   );
 }

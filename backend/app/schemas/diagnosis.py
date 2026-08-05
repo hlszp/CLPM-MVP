@@ -124,6 +124,56 @@ class ThresholdOverrideUpsert(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# P3-02: 诊断阈值模板化与自适应
+# ---------------------------------------------------------------------------
+
+
+class ThresholdApplyRequest(CamelModel):
+    """POST /diagnosis/threshold-templates/apply 请求体（P3-02 一键套用）。"""
+
+    loopId: str = Field(..., description="目标回路 ID")
+    diagCode: str = Field(..., max_length=50, description="诊断算法代码")
+    targetScope: Literal["loop", "plant"] = Field(
+        "loop",
+        description="套用目标 scope：loop（回路级，ic_engineer 可用） / plant（装置级，仅 ADMIN）",
+    )
+
+
+class ThresholdScopeSource(CamelModel):
+    """单级阈值来源（用于推荐响应的 scopeChain，展示"为什么是这个阈值"）。"""
+
+    scopeType: ThresholdScopeType | None = None  # None 表示全局默认
+    scopeId: str | None = None
+    threshold: dict[str, Any] = Field(default_factory=dict)
+    isApplied: bool = False  # 是否实际生效（最高优先级那一层）
+    source: str = ""  # global_default/loop_type_template/plant_override/loop_override
+
+
+class ThresholdRecommendationItem(CamelModel):
+    """单个 diag_code 的阈值推荐（P3-02 自适应推荐）。"""
+
+    diagCode: str
+    diagName: str | None = None
+    globalDefault: dict[str, Any] = Field(default_factory=dict)
+    loopTypeTemplate: dict[str, Any] | None = None
+    plantOverride: dict[str, Any] | None = None
+    loopOverride: dict[str, Any] | None = None
+    effectiveThreshold: dict[str, Any] = Field(default_factory=dict)
+    scopeChain: list[ThresholdScopeSource] = Field(default_factory=list)
+
+
+class ThresholdRecommendationResult(CamelModel):
+    """按回路推荐阈值模板响应 data 块（P3-02）。"""
+
+    loopId: str
+    tagName: str | None = None
+    loopType: str | None = None
+    plantId: str | None = None
+    plantName: str | None = None
+    recommendations: list[ThresholdRecommendationItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # C4: 配置版本与回滚
 # ---------------------------------------------------------------------------
 
@@ -920,6 +970,10 @@ __all__ = [
     "RecommendationData",
     "RecommendationItem",
     "TagResolveRequest",
+    "ThresholdApplyRequest",
+    "ThresholdRecommendationItem",
+    "ThresholdRecommendationResult",
+    "ThresholdScopeSource",
     "TimelineData",
     "TimelineEventItem",
     "TimelineEventType",

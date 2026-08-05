@@ -52,6 +52,7 @@ import {
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
   ClpmStructuredDiagnosisReport,
+  ClpmThresholdTuneModal,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
@@ -86,6 +87,9 @@ const activeTab = ref('evidence');
 
 // 实施记录弹窗
 const implementModalVisible = ref(false);
+
+// P3-02: 阈值微调弹窗
+const thresholdTuneVisible = ref(false);
 
 // ===== D2 多图联动：趋势图 ↔ 散点图 =====
 const selectedTime = ref<null | { index: number; timestamp: string }>(null);
@@ -813,6 +817,11 @@ onMounted(() => {
           :loading="reportGenerating"
           @click="handleGenerateReport"
         />
+        <ClpmToolbarButton
+          icon="setting"
+          label="阈值微调"
+          @click="thresholdTuneVisible = true"
+        />
         <ClpmToolbarButton icon="refresh" label="刷新" @click="handleRefresh" />
         <ClpmToolbarButton icon="back" label="返回" @click="handleBack" />
       </template>
@@ -1271,6 +1280,13 @@ onMounted(() => {
       :loading="statusUpdating"
       :loop-id="loopId"
       @submit="handleImplementSubmit"
+    />
+
+    <!-- P3-02: 阈值微调弹窗 -->
+    <ClpmThresholdTuneModal
+      v-model:visible="thresholdTuneVisible"
+      :loop-id="loopId"
+      :tag-name="detail?.tagName"
     />
   </Page>
 </template>

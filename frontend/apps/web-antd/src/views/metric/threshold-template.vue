@@ -1,0 +1,711 @@
+<script lang="ts" setup>
+/**
+ * 诊断阈值模板化与自适应（P3-02）
+ *
+ * 对齐 UI/UX v6.1 + 实现契约 v2.4 §诊断阈值
+ * 两个子区：
+ *  A. 阈值模板库管理 — 按 loop_type 查看/编辑预置模板（ADMIN 可编辑，其他只读）
+ *  B. 回路推荐套用 — 选择回路查看四级合并视图，一键套用模板或微调回路级阈值
+ *
+ * 权限边界（Poka-Yoke）：
+ *  - ADMIN：可编辑模板库（loop_type scope）+ 装置级覆盖（plant scope）+ 回路级（loop scope）
+ *  - IC_ENGINEER：仅可微调回路级（loop scope），模板库只读
+ *  - 其他角色：全部只读
+ */
+import type { TableColumnsType } from 'ant-design-vue';
+
+import { computed, h, onMounted, reactive, ref } from 'vue';
+
+import { Page } from '@vben/common-ui';
+
+import {
+  Button,
+  Card,
+  Empty,
+  InputNumber,
+  message,
+  Modal,
+  Select,
+  SelectOption,
+  Table,
+  Tag,
+  Tooltip,
+} from 'ant-design-vue';
+
+import {
+  applyThresholdTemplateApi,
+  deleteThresholdOverrideApi,
+  getAlgorithmMetaApi,
+  getThresholdOverridesApi,
+  getThresholdRecommendationsApi,
+  getThresholdTemplatesApi,
+  upsertThresholdOverrideApi,
+} from '#/api/diagnosis';
+import type { DiagnosisApi } from '#/api/diagnosis';
+import { getLoopListApi } from '#/api/loop';
+import type { LoopApi } from '#/api/loop';
+import {
+  ClpmEmptyState,
+  ClpmInfoTip,
+  ClpmToolbarButton,
+} from '#/components/clpm';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
+defineOptions({ name: 'MetricThresholdTemplate' });
+
+const { isAdmin } = useClpmRoles();
+const { themeColors } = useClpmTheme();
+
+// ---------------------------------------------------------------------------
+// 常量
+// ---------------------------------------------------------------------------
+
+const LOOP_TYPES = [
+  { value: 'FLOW', label: '流量 (FLOW)' },
+  { value: 'TEMPERATURE', label: '温度 (TEMPERATURE)' },
+  { value: 'PRESSURE', label: '压力 (PRESSURE)' },
+  { value: 'LEVEL', label: '液位 (LEVEL)' },
+  { value: 'ANALYSIS', label: '分析 (ANALYSIS)' },
+  { value: 'SPEED', label: '转速 (SPEED)' },
+  { value: 'OTHER', label: '其他 (OTHER)' },
+];
+
+const SCOPE_COLOR: Record<string, string> = {
+  loop_type: 'blue',
+  plant: 'orange',
+  loop: 'green',
+};
+
+// ---------------------------------------------------------------------------
+// 算法元数据（diag_code → 中文名 + 阈值键名）
+// ---------------------------------------------------------------------------
+
+const metaMap = reactive<
+  Map<string, { labelName: string; thresholdKeys: string[] }>
+>(new Map());
+
+async function loadAlgorithmMeta() {
+  const res = await getAlgorithmMetaApi();
+  for (const item of res.items) {
+    metaMap.set(item.label, {
+      labelName: item.labelName,
+      thresholdKeys: item.thresholdKeys ?? [],
+    });
+  }
+}
+
+function diagName(diagCode: string): string {
+  return metaMap.get(diagCode)?.labelName ?? diagCode;
+}
+
+// ===========================================================================
+// 子区 A：阈值模板库管理
+// ===========================================================================
+
+const selectedLoopType = ref<string>('FLOW');
+const templates = ref<DiagnosisApi.ThresholdOverrideItem[]>([]);
+const loadingTemplates = ref(false);
+
+/** 当前 loop_type 的模板（按 diag_code 排序） */
+const filteredTemplates = computed(() =>
+  templates.value
+    .filter((t) => t.scopeId === selectedLoopType.value)
+    .sort((a, b) => a.diagCode.localeCompare(b.diagCode)),
+);
+
+async function loadTemplates() {
+  loadingTemplates.value = true;
+  try {
+    templates.value = await getThresholdTemplatesApi();
+  } finally {
+    loadingTemplates.value = false;
+  }
+}
+
+/** 阈值键值对渲染为紧凑标签文本 */
+function thresholdText(threshold: Record<string, number>): string {
+  return Object.entries(threshold)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('， ');
+}
+
+// ----- 模板编辑 Modal -----
+const editModalVisible = ref(false);
+const editModalTitle = ref('');
+const editForm = reactive<{
+  diagCode: string;
+  scopeType: string;
+  scopeId: string;
+  threshold: Record<string, number>;
+}>({ diagCode: '', scopeType: 'loop_type', scopeId: '', threshold: {} });
+
+/** 编辑模板阈值键名列表（来自算法元数据，兜底用已有 threshold 键） */
+const editKeys = computed(() => {
+  const fromMeta = metaMap.get(editForm.diagCode)?.thresholdKeys ?? [];
+  const fromExisting = Object.keys(editForm.threshold);
+  return [...new Set([...fromMeta, ...fromExisting])];
+});
+
+function openEditModal(item: DiagnosisApi.ThresholdOverrideItem) {
+  editForm.diagCode = item.diagCode;
+  editForm.scopeType = item.scopeType;
+  editForm.scopeId = item.scopeId;
+  editForm.threshold = { ...item.threshold };
+  editModalTitle.value = `编辑模板：${diagName(item.diagCode)}（${item.scopeId}）`;
+  editModalVisible.value = true;
+}
+
+async function saveTemplate() {
+  try {
+    await upsertThresholdOverrideApi({
+      diagCode: editForm.diagCode,
+      scopeType: editForm.scopeType as DiagnosisApi.ThresholdScopeType,
+      scopeId: editForm.scopeId,
+      threshold: { ...editForm.threshold },
+    });
+    message.success('模板阈值已保存');
+    editModalVisible.value = false;
+    await loadTemplates();
+  } catch (e) {
+    message.error((e as Error).message ?? '保存失败');
+  }
+}
+
+// ===========================================================================
+// 子区 B：回路推荐套用
+// ===========================================================================
+
+const loopKeyword = ref('');
+const loopOptions = ref<LoopApi.LoopListItem[]>([]);
+const selectedLoopId = ref<string | undefined>(undefined);
+const searchingLoops = ref(false);
+
+const recommendation = ref<DiagnosisApi.ThresholdRecommendationResult | null>(
+  null,
+);
+const loadingRecommendation = ref(false);
+
+const selectedLoop = computed(() =>
+  loopOptions.value.find((l) => l.loopId === selectedLoopId.value),
+);
+
+async function searchLoops() {
+  searchingLoops.value = true;
+  try {
+    const res = await getLoopListApi({
+      keyword: loopKeyword.value || undefined,
+      page: 1,
+      pageSize: 50,
+    });
+    loopOptions.value = res.items ?? [];
+  } finally {
+    searchingLoops.value = false;
+  }
+}
+
+async function loadRecommendation() {
+  if (!selectedLoopId.value) {
+    recommendation.value = null;
+    return;
+  }
+  loadingRecommendation.value = true;
+  try {
+    recommendation.value = await getThresholdRecommendationsApi(
+      selectedLoopId.value,
+    );
+  } catch (e) {
+    message.error((e as Error).message ?? '加载推荐失败');
+    recommendation.value = null;
+  } finally {
+    loadingRecommendation.value = false;
+  }
+}
+
+function onLoopChange() {
+  loadRecommendation();
+}
+
+/** 套用模板到回路级（ic_engineer 可用） */
+async function applyTemplate(diagCode: string) {
+  if (!selectedLoopId.value) return;
+  Modal.confirm({
+    title: '套用模板到回路级？',
+    content: `将把 ${selectedLoop.value?.tagName} 所属回路类型（${recommendation.value?.loopType}）的 ${diagName(diagCode)} 模板阈值复制为回路级覆盖。若已有回路级覆盖将被更新。`,
+    okText: '确认套用',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await applyThresholdTemplateApi({
+          loopId: selectedLoopId.value ?? '',
+          diagCode,
+          targetScope: 'loop',
+        });
+        message.success('模板已套用到回路级');
+        await loadRecommendation();
+      } catch (e) {
+        message.error((e as Error).message ?? '套用失败');
+      }
+    },
+  });
+}
+
+/** 删除回路级覆盖（恢复模板/默认） */
+async function resetLoopOverride(diagCode: string) {
+  if (!selectedLoopId.value) return;
+  Modal.confirm({
+    title: '重置回路级阈值？',
+    content: `将删除 ${diagName(diagCode)} 的回路级覆盖，恢复为模板/全局默认值。`,
+    okText: '确认重置',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const overrides = await getThresholdOverridesApi({
+          scopeType: 'loop',
+          scopeId: selectedLoopId.value ?? '',
+        });
+        const target = overrides.find(
+          (o: DiagnosisApi.ThresholdOverrideItem) => o.diagCode === diagCode,
+        );
+        if (!target) {
+          message.warning('该诊断项无回路级覆盖，无需重置');
+          return;
+        }
+        await deleteThresholdOverrideApi(target.overrideId);
+        message.success('回路级覆盖已删除');
+        await loadRecommendation();
+      } catch (e) {
+        message.error((e as Error).message ?? '重置失败');
+      }
+    },
+  });
+}
+
+// ----- 回路级微调 Modal -----
+const tuneModalVisible = ref(false);
+const tuneModalTitle = ref('');
+const tuneForm = reactive<{
+  diagCode: string;
+  loopId: string;
+  scopeId: string;
+  threshold: Record<string, number>;
+  hasExisting: boolean;
+}>({
+  diagCode: '',
+  loopId: '',
+  scopeId: '',
+  threshold: {},
+  hasExisting: false,
+});
+
+const tuneKeys = computed(() => {
+  const fromMeta = metaMap.get(tuneForm.diagCode)?.thresholdKeys ?? [];
+  const fromExisting = Object.keys(tuneForm.threshold);
+  return [...new Set([...fromMeta, ...fromExisting])];
+});
+
+function openTuneModal(diagCode: string) {
+  if (!selectedLoopId.value) return;
+  const rec = recommendation.value?.recommendations.find(
+    (r) => r.diagCode === diagCode,
+  );
+  tuneForm.diagCode = diagCode;
+  tuneForm.loopId = selectedLoopId.value;
+  tuneForm.scopeId = selectedLoopId.value;
+  // 微调起点：已有 loop 覆盖则编辑之，否则以生效阈值（模板/默认）为起点
+  tuneForm.hasExisting = !!rec?.loopOverride;
+  tuneForm.threshold = {
+    ...(rec?.loopOverride ?? rec?.effectiveThreshold),
+  };
+  tuneModalTitle.value = `微调回路级阈值：${diagName(diagCode)}（${
+    selectedLoop.value?.tagName
+  }）`;
+  tuneModalVisible.value = true;
+}
+
+async function saveTune() {
+  try {
+    await upsertThresholdOverrideApi({
+      diagCode: tuneForm.diagCode,
+      scopeType: 'loop',
+      scopeId: tuneForm.scopeId,
+      threshold: { ...tuneForm.threshold },
+    });
+    message.success('回路级阈值已保存');
+    tuneModalVisible.value = false;
+    await loadRecommendation();
+  } catch (e) {
+    message.error((e as Error).message ?? '保存失败');
+  }
+}
+
+async function deleteTune() {
+  Modal.confirm({
+    title: '删除回路级覆盖？',
+    content: '将恢复为模板/全局默认阈值。',
+    okText: '确认删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      // 通过推荐接口的 scopeChain 获取 loop_override 来源，再用覆盖列表查 ID
+      try {
+        const overrides = await getThresholdOverridesApi({
+          scopeType: 'loop',
+          scopeId: tuneForm.scopeId,
+        });
+        const target = overrides.find(
+          (o: DiagnosisApi.ThresholdOverrideItem) =>
+            o.diagCode === tuneForm.diagCode,
+        );
+        if (!target) {
+          message.warning('未找到回路级覆盖');
+          return;
+        }
+        await deleteThresholdOverrideApi(target.overrideId);
+        message.success('回路级覆盖已删除');
+        tuneModalVisible.value = false;
+        await loadRecommendation();
+      } catch (e) {
+        message.error((e as Error).message ?? '删除失败');
+      }
+    },
+  });
+}
+
+// ===========================================================================
+// 推荐表格列定义
+// ===========================================================================
+
+const recommendColumns = computed<TableColumnsType>(() => [
+  {
+    title: '诊断项',
+    dataIndex: 'diagCode',
+    key: 'diagCode',
+    width: 160,
+    customRender: ({ record }) => diagName(record.diagCode),
+  },
+  {
+    title: '全局默认',
+    key: 'globalDefault',
+    width: 180,
+    customRender: ({ record }) => thresholdText(record.globalDefault) || '—',
+  },
+  {
+    title: '类型模板',
+    key: 'loopTypeTemplate',
+    width: 180,
+    customRender: ({ record }) =>
+      record.loopTypeTemplate ? thresholdText(record.loopTypeTemplate) : '—',
+  },
+  {
+    title: '装置覆盖',
+    key: 'plantOverride',
+    width: 160,
+    customRender: ({ record }) =>
+      record.plantOverride ? thresholdText(record.plantOverride) : '—',
+  },
+  {
+    title: '回路覆盖',
+    key: 'loopOverride',
+    width: 160,
+    customRender: ({ record }) =>
+      record.loopOverride ? thresholdText(record.loopOverride) : '—',
+  },
+  {
+    title: '生效阈值',
+    key: 'effectiveThreshold',
+    width: 200,
+    customRender: ({ record }) =>
+      h(
+        Tooltip,
+        {
+          title: record.scopeChain
+            .map(
+              (s: DiagnosisApi.ThresholdScopeSource) =>
+                `${s.source}${s.isApplied ? ' ✓' : ''}`,
+            )
+            .join(' → '),
+        },
+        () =>
+          h(
+            Tag,
+            { color: themeColors.value.INFO },
+            () => thresholdText(record.effectiveThreshold) || '—',
+          ),
+      ),
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 200,
+    fixed: 'right',
+  },
+]);
+
+const templateColumns = computed<TableColumnsType>(() => [
+  {
+    title: '诊断项',
+    dataIndex: 'diagCode',
+    key: 'diagCode',
+    width: 160,
+    customRender: ({ record }) => diagName(record.diagCode),
+  },
+  {
+    title: '阈值',
+    dataIndex: 'threshold',
+    key: 'threshold',
+    customRender: ({ record }) => thresholdText(record.threshold),
+  },
+  {
+    title: '更新人',
+    dataIndex: 'updatedBy',
+    key: 'updatedBy',
+    width: 100,
+  },
+  {
+    title: '更新时间',
+    dataIndex: 'updatedAt',
+    key: 'updatedAt',
+    width: 170,
+    customRender: ({ value }) => value ?? '—',
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    fixed: 'right',
+  },
+]);
+
+// ===========================================================================
+// 生命周期
+// ===========================================================================
+
+onMounted(async () => {
+  await loadAlgorithmMeta();
+  await loadTemplates();
+  await searchLoops();
+});
+</script>
+
+<template>
+  <Page>
+    <div class="flex flex-col gap-4">
+      <!-- 子区 A：阈值模板库管理 -->
+      <Card title="阈值模板库管理" size="small">
+        <template #extra>
+          <ClpmInfoTip
+            tip="按回路类型预置的差异化阈值模板。ADMIN 可编辑，其他角色只读。模板生效优先级：全局默认 < 类型模板 < 装置覆盖 < 回路覆盖。"
+          />
+        </template>
+        <div class="mb-3 flex items-center gap-3">
+          <span class="text-sm text-muted-foreground">回路类型：</span>
+          <Select
+            v-model:value="selectedLoopType"
+            style="width: 220px"
+            @change="loadTemplates"
+          >
+            <SelectOption
+              v-for="lt in LOOP_TYPES"
+              :key="lt.value"
+              :value="lt.value"
+            >
+              {{ lt.label }}
+            </SelectOption>
+          </Select>
+          <Tag :color="SCOPE_COLOR.loop_type">回路类型模板</Tag>
+          <span class="text-xs text-muted-foreground">
+            共 {{ filteredTemplates.length }} 条模板
+          </span>
+        </div>
+
+        <Table
+          :columns="templateColumns"
+          :data-source="filteredTemplates"
+          :loading="loadingTemplates"
+          :pagination="false"
+          row-key="overrideId"
+          size="small"
+          :scroll="{ x: 700 }"
+        >
+          <template #emptyText>
+            <ClpmEmptyState
+              description="该回路类型暂无预置模板，将使用全局默认阈值"
+            />
+          </template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'action'">
+              <ClpmToolbarButton
+                v-if="isAdmin"
+                type="link"
+                size="small"
+                @click="
+                  openEditModal(record as DiagnosisApi.ThresholdOverrideItem)
+                "
+              >
+                编辑
+              </ClpmToolbarButton>
+              <span v-else class="text-xs text-muted-foreground">只读</span>
+            </template>
+          </template>
+        </Table>
+      </Card>
+
+      <!-- 子区 B：回路推荐套用 -->
+      <Card title="回路推荐套用" size="small">
+        <template #extra>
+          <ClpmInfoTip
+            tip="选择回路查看其四级阈值合并视图。可一键套用类型模板为回路级覆盖，或微调回路级阈值。ic_engineer 仅可操作回路级。"
+          />
+        </template>
+        <div class="mb-3 flex items-center gap-3">
+          <span class="text-sm text-muted-foreground">选择回路：</span>
+          <Select
+            v-model:value="selectedLoopId"
+            show-search
+            :filter-option="
+              (input: string, option: any) => option?.label?.includes(input)
+            "
+            placeholder="搜索位号选择回路"
+            style="width: 320px"
+            :loading="searchingLoops"
+            :options="
+              loopOptions.map((l) => ({
+                value: l.loopId,
+                label: l.tagName,
+              }))
+            "
+            @change="onLoopChange"
+          />
+          <Button size="small" @click="searchLoops">刷新列表</Button>
+        </div>
+
+        <!-- 回路基本信息 -->
+        <div
+          v-if="recommendation"
+          class="mb-3 flex flex-wrap items-center gap-2 text-sm"
+        >
+          <Tag color="blue">{{ recommendation.tagName }}</Tag>
+          <Tag>{{ recommendation.loopType }}</Tag>
+          <Tag v-if="recommendation.plantName" color="cyan">
+            {{ recommendation.plantName }}
+          </Tag>
+          <span class="text-muted-foreground">
+            生效阈值 = 全局默认 → 类型模板 → 装置覆盖 → 回路覆盖（后者覆盖前者）
+          </span>
+        </div>
+
+        <Table
+          v-if="recommendation"
+          :columns="recommendColumns"
+          :data-source="recommendation.recommendations"
+          :loading="loadingRecommendation"
+          :pagination="false"
+          row-key="diagCode"
+          size="small"
+          :scroll="{ x: 1100 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'action'">
+              <div class="flex gap-1">
+                <ClpmToolbarButton
+                  type="link"
+                  size="small"
+                  :disabled="!record.loopTypeTemplate"
+                  @click="applyTemplate(record.diagCode)"
+                >
+                  套用模板
+                </ClpmToolbarButton>
+                <ClpmToolbarButton
+                  type="link"
+                  size="small"
+                  @click="openTuneModal(record.diagCode)"
+                >
+                  {{ record.loopOverride ? '编辑微调' : '微调' }}
+                </ClpmToolbarButton>
+                <ClpmToolbarButton
+                  v-if="record.loopOverride"
+                  type="link"
+                  size="small"
+                  danger
+                  @click="resetLoopOverride(record.diagCode)"
+                >
+                  重置
+                </ClpmToolbarButton>
+              </div>
+            </template>
+          </template>
+        </Table>
+        <Empty
+          v-else-if="!selectedLoopId"
+          description="请选择回路查看阈值推荐"
+        />
+      </Card>
+    </div>
+
+    <!-- 模板编辑 Modal -->
+    <Modal
+      v-model:open="editModalVisible"
+      :title="editModalTitle"
+      :ok-text="isAdmin ? '保存' : '关闭'"
+      cancel-text="取消"
+      width="520px"
+      @ok="isAdmin ? saveTemplate() : (editModalVisible = false)"
+    >
+      <div class="flex flex-col gap-3 py-2">
+        <div v-for="key in editKeys" :key="key" class="flex items-center gap-3">
+          <span class="w-56 text-sm">{{ key }}</span>
+          <InputNumber
+            v-model:value="editForm.threshold[key]"
+            style="width: 200px"
+            :step="0.01"
+            class="flex-1"
+          />
+        </div>
+        <div v-if="editKeys.length === 0" class="text-muted-foreground">
+          该诊断项无阈值键
+        </div>
+      </div>
+    </Modal>
+
+    <!-- 回路级微调 Modal -->
+    <Modal
+      v-model:open="tuneModalVisible"
+      :title="tuneModalTitle"
+      ok-text="保存"
+      cancel-text="取消"
+      width="560px"
+      @ok="saveTune"
+    >
+      <div class="mb-3 flex items-center gap-2">
+        <ClpmInfoTip
+          v-if="!tuneForm.hasExisting"
+          tip="当前无回路级覆盖，以生效阈值（模板/默认）为起点微调。保存后将创建回路级覆盖。"
+        />
+        <Tag v-else color="green">编辑已有回路级覆盖</Tag>
+      </div>
+      <div class="flex flex-col gap-3 py-2">
+        <div v-for="key in tuneKeys" :key="key" class="flex items-center gap-3">
+          <span class="w-56 text-sm">{{ key }}</span>
+          <InputNumber
+            v-model:value="tuneForm.threshold[key]"
+            style="width: 200px"
+            :step="0.01"
+            class="flex-1"
+          />
+        </div>
+        <div v-if="tuneKeys.length === 0" class="text-muted-foreground">
+          该诊断项无阈值键
+        </div>
+      </div>
+      <template #footer>
+        <Button @click="tuneModalVisible = false">取消</Button>
+        <Button v-if="tuneForm.hasExisting" danger @click="deleteTune">
+          删除覆盖
+        </Button>
+        <Button type="primary" @click="saveTune">保存</Button>
+      </template>
+    </Modal>
+  </Page>
+</template>
