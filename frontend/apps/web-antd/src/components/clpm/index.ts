@@ -19,6 +19,7 @@ export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';
 export { default as ClpmOnboardingTour } from './onboarding-tour.vue';
 export type { SummaryAction, SummaryItem } from './object-summary-bar.vue';
 export { default as ClpmPageToolbar } from './page-toolbar.vue';
+export { default as ClpmPredictionCard } from './prediction-card.vue';
 export { default as ClpmRealtimeStatus } from './realtime-status.vue';
 export { default as ClpmSeverityBadge } from './severity-badge.vue';
 export { default as ClpmStateOverlay } from './state-overlay.vue';

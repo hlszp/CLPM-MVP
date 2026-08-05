@@ -29,6 +29,7 @@ import {
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmPageToolbar,
+  ClpmPredictionCard,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
@@ -231,6 +232,9 @@ function handleRefresh() {
       :loading="loading"
       @item-click="handleTodoClick"
     />
+
+    <!-- P3-05：异常预测与提前预警（紧跟待办，形成"需关注回路"区域） -->
+    <ClpmPredictionCard class="mt-4" :top-n="10" />
 
     <!-- P1-05：数据链路健康状态卡片（常驻工作台首屏） -->
     <ClpmDataCanvas

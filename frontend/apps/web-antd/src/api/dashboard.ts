@@ -188,6 +188,84 @@ export namespace DashboardApi {
     evaluatedLoops: number[];
     totalLoops: number;
   }
+
+  // -------------------------------------------------------------------------
+  // P3-05：异常预测与提前预警
+  // -------------------------------------------------------------------------
+
+  /** 风险等级 */
+  export type RiskLevel = 'HIGH' | 'LOW' | 'MEDIUM';
+
+  /** 趋势分析覆盖的指标键（对齐后端 _prediction_to_dict） */
+  export type PredictionMetricKey =
+    | 'oscillation_rate'
+    | 'saturation_rate'
+    | 'score'
+    | 'steady_rate';
+
+  /** 单个指标的趋势分析结果 */
+  export interface MetricTrend {
+    /** 当前值 */
+    currentValue: null | number;
+    /** 每小时变化量（斜率） */
+    slope: null | number;
+    /** 未来 24h 预测值 */
+    projectedValue: null | number;
+    /** 是否为风险方向（score/steady 下降，oscillation/saturation 上升） */
+    isRisky: boolean;
+  }
+
+  /** 单回路预测结果 */
+  export interface LoopPrediction {
+    /** 回路 ID */
+    loopId: string;
+    /** 回路位号 */
+    tagName: string;
+    /** 回路描述 */
+    description: null | string;
+    /** 装置名称 */
+    plantName: null | string;
+    /** 综合风险分（0-100） */
+    riskScore: number;
+    /** 风险等级 */
+    riskLevel: RiskLevel;
+    /** 主要风险因素描述列表 */
+    riskFactors: string[];
+    /** 各指标趋势分析 */
+    trends: Partial<Record<PredictionMetricKey, MetricTrend>>;
+    /** 最近诊断标签 */
+    recentDiagnosisLabels: string[];
+    /** 参与分析的数据点数 */
+    dataPoints: number;
+  }
+
+  /** 异常预测查询参数 */
+  export interface PredictionQueryParams {
+    /** 按装置筛选；为空分析全厂 */
+    plantId?: string;
+    /** 返回的高风险回路数（1-50） */
+    topN?: number;
+  }
+
+  /** 异常预测响应（P3-05） */
+  export interface PredictionResult {
+    /** 高风险回路列表（按风险分降序，仅含 MEDIUM+HIGH） */
+    predictions: LoopPrediction[];
+    /** 实际参与趋势分析的回路数 */
+    totalLoopsAnalyzed: number;
+    /** 符合预测条件的活跃回路总数 */
+    totalLoopsEligible: number;
+    /** HIGH 风险回路数 */
+    highRiskCount: number;
+    /** MEDIUM 风险回路数 */
+    mediumRiskCount: number;
+    /** 预测生成时间（ISO 字符串） */
+    generatedAt: string;
+    /** 预测时间跨度（小时） */
+    forecastHorizonHours: number;
+    /** 是否命中 Redis 缓存 */
+    cached?: boolean;
+  }
 }
 
 /**
@@ -241,5 +319,19 @@ export function getBoardTrendApi(params?: {
     {
       params,
     },
+  );
+}
+
+/**
+ * 获取异常预测与提前预警 — P3-05
+ *
+ * 基于最近 7 天 KPI 快照趋势（线性回归），预测未来 24 小时可能出问题的回路。
+ * 返回高风险回路列表（按风险分降序），仅含 MEDIUM+HIGH 等级。
+ * 后端 Redis 缓存 10 分钟。
+ */
+export function getPredictionsApi(params?: DashboardApi.PredictionQueryParams) {
+  return requestClient.get<DashboardApi.PredictionResult>(
+    '/dashboard/predictions',
+    { params },
   );
 }
