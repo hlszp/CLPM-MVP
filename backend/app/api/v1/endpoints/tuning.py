@@ -48,6 +48,11 @@ from app.schemas.tuning import (
     TuningMethodInfo,
     TuningTaskDetail,
 )
+from app.schemas.tuning_knowledge import (
+    TuningKnowledgeEntryItem,
+    TuningKnowledgeListData,
+    TuningKnowledgeSimilarData,
+)
 from app.services.tuning import (
     authorize_tuning_model,
     create_tuning_task,
@@ -60,6 +65,11 @@ from app.services.tuning import (
     preview_identify_segments,
     run_simulation,
     tune_pid,
+)
+from app.services.tuning_knowledge import (
+    get_knowledge_entry,
+    list_knowledge_entries,
+    recommend_similar,
 )
 
 router = APIRouter(prefix="/tuning", tags=["tuning"])
@@ -483,3 +493,117 @@ async def get_history_endpoint(
     """整定历史统计。"""
     data = await get_tuning_history_stats(db=db)
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# P3-01: 整定知识库 API
+# ---------------------------------------------------------------------------
+
+
+def _entry_to_item(entry) -> TuningKnowledgeEntryItem:
+    """将 TuningKnowledgeEntry ORM 模型转换为 schema（datetime → ISO 字符串）。"""
+
+    def _iso(dt) -> str | None:
+        return dt.isoformat() if dt else None
+
+    return TuningKnowledgeEntryItem(
+        id=str(entry.id),
+        trackerId=str(entry.tracker_id),
+        tuningRecordId=str(entry.tuning_record_id) if entry.tuning_record_id else None,
+        loopId=str(entry.loop_id),
+        loopType=entry.loop_type,
+        controlType=entry.control_type,
+        tagName=entry.tag_name,
+        diagnosisLabel=entry.diagnosis_label,
+        severity=entry.severity,
+        modelType=entry.model_type,
+        algorithm=entry.algorithm,
+        identifyMethod=entry.identify_method,
+        confidenceLevel=entry.confidence_level,
+        pidBefore=entry.pid_before,
+        pidAfter=entry.pid_after,
+        kpiSummary=entry.kpi_summary,
+        effectVerified=entry.effect_verified,
+        improvedCount=entry.improved_count,
+        deterioratedCount=entry.deteriorated_count,
+        matchSource=entry.match_source,
+        implementedAt=_iso(entry.implemented_at),
+        verifiedAt=_iso(entry.verified_at),
+        createdAt=_iso(entry.created_at),
+    )
+
+
+@router.get("/knowledge-base", response_model=ApiResponse[TuningKnowledgeListData])
+async def list_knowledge_base_endpoint(
+    loopType: str | None = Query(None, description="控制类型筛选"),
+    diagnosisLabel: str | None = Query(None, description="问题类型筛选"),
+    algorithm: str | None = Query(None, description="算法筛选"),
+    effectVerified: bool | None = Query(None, description="效果筛选：True=改善/False=恶化"),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """知识库列表（支持筛选+分页，权限 tuning:view）。"""
+    result = await list_knowledge_entries(
+        db,
+        loop_type=loopType,
+        diagnosis_label=diagnosisLabel,
+        algorithm=algorithm,
+        effect_verified=effectVerified,
+        page=page,
+        page_size=pageSize,
+    )
+    data = TuningKnowledgeListData(
+        items=[_entry_to_item(e) for e in result["items"]],
+        total=result["total"],
+        page=result["page"],
+        pageSize=result["pageSize"],
+    )
+    return success(data=data)
+
+
+@router.get("/knowledge-base/similar", response_model=ApiResponse[TuningKnowledgeSimilarData])
+async def recommend_similar_endpoint(
+    loopId: str | None = Query(None, description="当前回路 ID（排除自身）"),
+    loopType: str | None = Query(None, description="控制类型（loopId 为空时用此匹配）"),
+    diagnosisLabel: str | None = Query(None, description="问题类型（loopId 为空时用此匹配）"),
+    limit: int = Query(5, ge=1, le=20, description="返回条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """相似案例推荐（优先 label 相同 > loop_type 相同，改善案例优先）。"""
+    items = await recommend_similar(
+        db,
+        loop_id=loopId,
+        loop_type=loopType,
+        diagnosis_label=diagnosisLabel,
+        limit=limit,
+    )
+    data = TuningKnowledgeSimilarData(
+        items=[_entry_to_item(e) for e in items],
+        total=len(items),
+    )
+    return success(data=data)
+
+
+@router.get(
+    "/knowledge-base/{entry_id}",
+    response_model=ApiResponse[TuningKnowledgeEntryItem],
+)
+async def get_knowledge_base_entry_endpoint(
+    entry_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """知识库条目详情。"""
+    entry = await get_knowledge_entry(db, entry_id)
+    if entry is None:
+        from app.core.exceptions import BizError
+
+        raise BizError(
+            code="ERR_NOT_FOUND",
+            message="知识库条目不存在",
+            status_code=404,
+        )
+    return success(data=_entry_to_item(entry))
