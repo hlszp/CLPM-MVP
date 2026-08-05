@@ -77,6 +77,24 @@ export namespace DataSourceApi {
     latencyMs: null | number;
     message: string;
   }
+
+  /** 数据链路健康状态（P1-05：工作台常驻卡片，登录用户可查看） */
+  export interface DataSourceHealth {
+    /** 网络模式：lan 局域网直连 / wan 公网走 Tailscale */
+    networkMode: NetworkMode;
+    /** 是否启用实时数据订阅（配置态） */
+    signalrEnabled: boolean;
+    /** 实时订阅器真实运行状态（运行态） */
+    signalrSubscriberRunning: boolean;
+    /** 实时数据 SignalR Hub URL */
+    signalrHubUrl: null | string;
+    /** 外部历史数据 API 地址 */
+    historyApiUrl: null | string;
+    /** tailscale 客户端是否可用 */
+    tailscaleAvailable: boolean;
+    /** AAS Tag 最近同步时间 ISO 8601 */
+    lastSyncAt: null | string;
+  }
 }
 
 /** 获取数据源配置 */
@@ -107,5 +125,12 @@ export function testHistoryApiApi() {
 export function testSignalrApi() {
   return requestClient.post<DataSourceApi.TestResult>(
     '/datasource/test-signalr',
+  );
+}
+
+/** 获取数据链路健康状态（P1-05：登录用户可查看） */
+export function getDatasourceHealthApi() {
+  return requestClient.get<DataSourceApi.DataSourceHealth>(
+    '/datasource/health',
   );
 }

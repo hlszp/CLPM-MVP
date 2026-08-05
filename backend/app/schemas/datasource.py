@@ -90,8 +90,30 @@ class DataSourceTestResult(CamelModel):
     message: str
 
 
+class DataSourceHealthInfo(CamelModel):
+    """数据链路健康状态（P1-05：工作台常驻卡片，IC_ENGINEER+ 可查看）。
+
+    不含敏感字段（historyApiToken），仅供工作台首屏展示链路连通性。
+    """
+
+    networkMode: Literal["lan", "wan"] = Field(
+        "lan", description="网络模式：lan 局域网直连 / wan 公网走 Tailscale"
+    )
+    signalrEnabled: bool = Field(False, description="是否启用实时数据订阅（配置态）")
+    signalrSubscriberRunning: bool = Field(
+        False, description="实时订阅器真实运行状态（运行态，需重启后端生效变更）"
+    )
+    signalrHubUrl: str | None = Field(None, description="实时数据 SignalR Hub URL")
+    historyApiUrl: str | None = Field(None, description="外部历史数据 API 地址")
+    tailscaleAvailable: bool = Field(
+        False, description="tailscale 客户端是否可用（容器内为 False）"
+    )
+    lastSyncAt: str | None = Field(None, description="AAS Tag 最近同步时间 ISO 8601")
+
+
 __all__ = [
     "DataSourceConfigInfo",
     "DataSourceConfigUpdate",
+    "DataSourceHealthInfo",
     "DataSourceTestResult",
 ]
