@@ -570,3 +570,96 @@ export function comparePidsApi(data: TuningApi.CompareRequest) {
     data,
   );
 }
+
+// ---------------------------------------------------------------------------
+// P3-01: 整定知识库 API
+// ---------------------------------------------------------------------------
+
+export namespace KnowledgeBaseApi {
+  /** 知识库条目 */
+  export interface KnowledgeEntry {
+    id: string;
+    trackerId: string;
+    tuningRecordId: string | null;
+    loopId: string;
+    loopType: string | null;
+    controlType: string | null;
+    tagName: string;
+    diagnosisLabel: string | null;
+    severity: string | null;
+    modelType: string | null;
+    algorithm: string | null;
+    identifyMethod: string | null;
+    confidenceLevel: string | null;
+    pidBefore: Record<string, number> | null;
+    pidAfter: Record<string, number> | null;
+    kpiSummary: Record<string, unknown> | null;
+    effectVerified: boolean | null;
+    improvedCount: number | null;
+    deterioratedCount: number | null;
+    matchSource: string;
+    implementedAt: string | null;
+    verifiedAt: string | null;
+    createdAt: string | null;
+  }
+
+  /** 列表查询参数 */
+  export interface ListParams {
+    loopType?: string;
+    diagnosisLabel?: string;
+    algorithm?: string;
+    effectVerified?: boolean;
+    page?: number;
+    pageSize?: number;
+  }
+
+  /** 列表响应 */
+  export interface ListData {
+    items: KnowledgeEntry[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }
+
+  /** 相似案例查询参数 */
+  export interface SimilarParams {
+    loopId?: string;
+    loopType?: string;
+    diagnosisLabel?: string;
+    limit?: number;
+  }
+
+  /** 相似案例响应 */
+  export interface SimilarData {
+    items: KnowledgeEntry[];
+    total: number;
+  }
+}
+
+/**
+ * 知识库列表 — P3-01
+ */
+export function getKnowledgeBaseApi(params: KnowledgeBaseApi.ListParams) {
+  return requestClient.get<KnowledgeBaseApi.ListData>('/tuning/knowledge-base', {
+    params,
+  });
+}
+
+/**
+ * 知识库条目详情 — P3-01
+ */
+export function getKnowledgeEntryApi(entryId: string) {
+  return requestClient.get<KnowledgeBaseApi.KnowledgeEntry>(
+    `/tuning/knowledge-base/${entryId}`,
+  );
+}
+
+/**
+ * 相似案例推荐 — P3-01
+ */
+export function getSimilarCasesApi(params: KnowledgeBaseApi.SimilarParams) {
+  return requestClient.get<KnowledgeBaseApi.SimilarData>(
+    '/tuning/knowledge-base/similar',
+    { params },
+  );
+}

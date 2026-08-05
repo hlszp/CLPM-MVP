@@ -36,6 +36,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'TuningKnowledgeBase',
+        path: '/tuning/knowledge-base',
+        component: () => import('#/views/tuning/knowledge-base.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
+          icon: 'lucide:book-open',
+          title: '整定知识库',
+        },
+      },
+      {
         name: 'TuningFlow',
         path: '/tuning/flow',
         redirect: '/tuning/flow/model',
