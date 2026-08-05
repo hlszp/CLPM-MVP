@@ -691,4 +691,66 @@ async def get_board_aggregate_endpoint(
     return success(data=data)
 
 
+# ---------------------------------------------------------------------------
+# P3-05: 异常预测与提前预警
+# ---------------------------------------------------------------------------
+
+_PREDICTION_CACHE_KEY = "dashboard:predictions:{plant_id}"
+_PREDICTION_CACHE_TTL = 600  # 10 分钟
+
+
+@router.get("/predictions", response_model=ApiResponse[dict])
+async def get_predictions_endpoint(
+    plantId: str | None = Query(None, description="按装置筛选；为空分析全厂"),
+    topN: int = Query(10, ge=1, le=50, description="返回的高风险回路数"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """异常预测与提前预警（P3-05）.
+
+    基于最近 7 天 KPI 快照趋势（线性回归），预测未来 24 小时可能出问题的回路。
+    返回高风险回路列表（按风险分降序），含风险等级/风险因素/趋势数据。
+
+    - 权限：所有登录用户可访问
+    - 缓存：Redis 10 分钟（缓存 key 含 plant_id）
+    - 数据源：``kpi_snapshot_hourly`` 表（status=SUCCESS）
+
+    风险等级：
+    - HIGH（≥60分）：多个指标显著恶化，建议立即关注
+    - MEDIUM（≥30分）：部分指标有恶化趋势，建议密切观察
+    - LOW（<30分）：不返回（只返回 MEDIUM+HIGH）
+    """
+    import json
+
+    from app.core.redis import redis_client
+    from app.services.anomaly_prediction import predict_loop_risks
+
+    # 尝试读缓存
+    cache_key = _PREDICTION_CACHE_KEY.format(plant_id=plantId or "all")
+    try:
+        cached = await redis_client.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            data["cached"] = True
+            return success(data=data)
+    except Exception:  # noqa: BLE001
+        pass  # Redis 不可用时降级为直接计算
+
+    # 计算预测
+    data = await predict_loop_risks(db, plant_id=plantId, top_n=topN)
+    data["cached"] = False
+
+    # 写缓存（失败不报错）
+    try:
+        await redis_client.setex(
+            cache_key,
+            _PREDICTION_CACHE_TTL,
+            json.dumps(data, default=str),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return success(data=data)
+
+
 __all__ = ["router"]
