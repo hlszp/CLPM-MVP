@@ -309,6 +309,68 @@ class TestVerifySingleTracker:
         assert tracker.effect_verified is None
         db.commit.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_verify_uses_implemented_at_field(self) -> None:
+        """P3-01: 优先用 tracker.implemented_at 而非 updated_at 作为 A/B 对比 T。"""
+        tracker = MagicMock()
+        tracker.id = str(uuid4())
+        tracker.loop_id = str(uuid4())
+        tracker.implemented_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
+        tracker.updated_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+        tracker.effect_verified = None
+
+        db = MagicMock()
+        db.commit = AsyncMock()
+
+        captured: dict = {}
+
+        async def _capture(*args, **kwargs):
+            captured.update(kwargs)
+            return {
+                "dataInsufficient": False,
+                "kpiComparison": [{"metricKey": "k1", "improved": True}],
+            }
+
+        with patch(
+            "app.tasks.tracker_verification.get_ab_compare",
+            side_effect=_capture,
+        ):
+            await _verify_single_tracker(db, tracker)
+
+        # get_ab_compare 收到的 implemented_at 应来自 tracker.implemented_at
+        impl_iso = captured.get("implemented_at", "")
+        assert impl_iso.startswith(tracker.implemented_at.isoformat()[:19])
+        # 不应等于 updated_at 的时间
+        assert not impl_iso.startswith(tracker.updated_at.isoformat()[:19])
+
+
+class TestFetchPendingTrackers:
+    """P3-01: _fetch_pending_trackers 状态机修复测试。"""
+
+    @pytest.mark.asyncio
+    async def test_query_includes_verifying_status(self) -> None:
+        """查询条件应覆盖 VERIFYING 状态（P1a 闭环状态机修复）。"""
+        from app.tasks.tracker_verification import _fetch_pending_trackers
+
+        db = MagicMock()
+        verifying_tracker = MagicMock()
+        verifying_tracker.action_status = "VERIFYING"
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [verifying_tracker]
+        db.execute = AsyncMock(return_value=result_mock)
+
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
+        trackers = await _fetch_pending_trackers(db, cutoff)
+
+        # 返回 VERIFYING tracker
+        assert len(trackers) == 1
+        assert trackers[0].action_status == "VERIFYING"
+        # 编译后的 SQL 包含 VERIFYING 和 IMPLEMENTED
+        stmt = db.execute.call_args.args[0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "VERIFYING" in compiled
+        assert "IMPLEMENTED" in compiled
+
 
 class TestTaskEntry:
     """任务入口测试。"""

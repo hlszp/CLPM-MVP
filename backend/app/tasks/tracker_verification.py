@@ -1,7 +1,11 @@
 """Tracker 整改效果自动验证任务（整改计划 D4-2）。
 
-IMPLEMENTED 满 N 小时（默认 24H，可通过 sys_config ``tracker.verification_interval_hours``
+IMPLEMENTED/VERIFYING 满 N 小时（默认 24H，可通过 sys_config ``tracker.verification_interval_hours``
 人工调节）的 tracker，由本周期任务自动调用 A/B 对比，回写 ``effect_verified`` 系列字段。
+
+P3-01 修复：P1a 闭环状态机将实施后状态从 IMPLEMENTED 改为 VERIFYING，本任务查询
+条件同步覆盖 VERIFYING，否则 P1a 流程的 tracker 永远不会被自动验证。
+implemented_at 优先取 tracker.implemented_at（P1a 新增字段），回退 updated_at。
 
 判定逻辑：
 - ``dataInsufficient=True`` → 跳过（等下一周期重试，避免数据不足误判）
@@ -63,10 +67,10 @@ async def _get_verification_interval_hours(db: AsyncSession) -> int:
 
 
 async def _fetch_pending_trackers(db: AsyncSession, cutoff: datetime) -> list[ActionTracker]:
-    """查询待验证的 tracker：IMPLEMENTED 且未验证 且 updated_at <= cutoff。"""
+    """查询待验证的 tracker：IMPLEMENTED/VERIFYING 且未验证 且 updated_at <= cutoff。"""
     result = await db.execute(
         select(ActionTracker).where(
-            ActionTracker.action_status == "IMPLEMENTED",
+            ActionTracker.action_status.in_(["IMPLEMENTED", "VERIFYING"]),
             ActionTracker.effect_verified.is_(None),
             ActionTracker.updated_at <= cutoff,
         )
@@ -141,8 +145,9 @@ async def _verify_single_tracker(db: AsyncSession, tracker: ActionTracker) -> bo
         logger.warning("tracker %s 无 loop_id，跳过验证", tracker.id)
         return False
 
-    # 以 tracker.updated_at（IMPLEMENTED 时间）为 T，调用 A/B 对比
-    implemented_at = tracker.updated_at
+    # 以实施时间为 T，调用 A/B 对比
+    # P1a 后优先用 implemented_at 字段（专用实施时间），回退 updated_at
+    implemented_at = tracker.implemented_at or tracker.updated_at
     if implemented_at is None:
         logger.warning("tracker %s 无 updated_at，跳过验证", tracker.id)
         return False
