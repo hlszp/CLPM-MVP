@@ -239,10 +239,7 @@ export const IMPORTANCE_EXPLANATIONS: Record<string, TermExplanation> = {
  * 必填槽位（PV/SP/OP/MODE）缺一则回路状态为 PARTIAL，无法进入评估；
  * 可选槽位（PID_P/PID_I/PID_D）缺一仅影响 PID 参数只读展示，不影响评估。
  */
-export const TAG_SLOT_TERM_EXPLANATIONS: Record<
-  string,
-  TermExplanation
-> = {
+export const TAG_SLOT_TERM_EXPLANATIONS: Record<string, TermExplanation> = {
   pv: {
     term: 'PV 过程变量',
     short: '过程变量测量值，回路控制的被控量',
@@ -279,4 +276,3 @@ export const TAG_SLOT_TERM_EXPLANATIONS: Record<
     detail: '从关联 Tag 实时读取，平台不回写 DCS；缺省不影响 KPI 评估',
   },
 };
-

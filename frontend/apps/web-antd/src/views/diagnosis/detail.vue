@@ -57,9 +57,7 @@ import {
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import {
-  DIAGNOSIS_LABEL_NAME_MAP,
-} from '#/constants/diagnosis';
+import { DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisDetail' });
@@ -1214,8 +1212,8 @@ onMounted(() => {
                       系统正在采集数据，请耐心等待
                     </div>
                     <div class="mt-1 text-blue-600">
-                      数据采集完成后将自动生成 A/B
-                      对比报告，对比实施前后的 KPI 指标变化。
+                      数据采集完成后将自动生成 A/B 对比报告，对比实施前后的 KPI
+                      指标变化。
                     </div>
                   </div>
                 </div>

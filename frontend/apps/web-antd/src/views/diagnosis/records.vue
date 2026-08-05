@@ -188,7 +188,10 @@ const columnConfigs = ref<ColumnConfig[]>(
 
 const visibleColumns = computed<TableColumnsType>(() => {
   const configMap = new Map(
-    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+    columnConfigs.value.map((c, i) => [
+      c.key,
+      { visible: c.visible, order: i },
+    ]),
   );
   return columns
     .filter((c) => {

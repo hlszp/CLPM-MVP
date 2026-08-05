@@ -417,7 +417,9 @@ function buildDefaultColumnConfigs(): ColumnConfig[] {
 function restoreOrBuildConfigs(): ColumnConfig[] {
   const saved = columnPrefs.value.columns;
   if (saved && saved.length > 0) {
-    const currentKeys = new Set(dynamicColumns.value.map((c) => getColumnKey(c)));
+    const currentKeys = new Set(
+      dynamicColumns.value.map((c) => getColumnKey(c)),
+    );
     if (saved.every((c) => currentKeys.has(c.key))) {
       return saved;
     }
@@ -429,7 +431,10 @@ const columnConfigs = ref<ColumnConfig[]>(restoreOrBuildConfigs());
 
 const visibleColumns = computed<TableColumnsType>(() => {
   const configMap = new Map(
-    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+    columnConfigs.value.map((c, i) => [
+      c.key,
+      { visible: c.visible, order: i },
+    ]),
   );
   return dynamicColumns.value
     .filter((c) => {

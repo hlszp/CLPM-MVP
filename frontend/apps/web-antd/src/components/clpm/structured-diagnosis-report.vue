@@ -106,7 +106,9 @@ function progressColor(pct: number): string {
 
 /** 组合并排序的报告项列表 */
 const reportItems = computed<ReportItem[]>(() => {
-  const sorted = [...props.labels].sort((a, b) => b.confidence - a.confidence);
+  const sorted = [...props.labels].toSorted(
+    (a, b) => b.confidence - a.confidence,
+  );
   return sorted.map((item, idx) => {
     const report = DIAGNOSIS_STRUCTURED_REPORT[item.label];
     const urgency = report?.urgency ?? 'low';
@@ -186,11 +188,7 @@ function handleTuning(label: DiagnosisLabel) {
           </div>
           <div class="flex w-32 shrink-0 items-center gap-1">
             <Tag :color="item.urgencyColor" class="m-0">
-              <IconifyIcon
-                :icon="item.urgencyIcon"
-                :size="11"
-                class="mr-0.5"
-              />
+              <IconifyIcon :icon="item.urgencyIcon" :size="11" class="mr-0.5" />
               {{ item.urgencyLabel }}
             </Tag>
             <Tag :color="item.actionTypeColor" class="m-0">
@@ -263,8 +261,8 @@ function handleTuning(label: DiagnosisLabel) {
           <div
             class="rounded border p-2"
             style="
-              border-color: hsl(var(--border));
               background: hsl(var(--muted));
+              border-color: hsl(var(--border));
             "
           >
             <div

@@ -107,8 +107,16 @@ const loopDetail = ref<LoopApi.LoopDetail | null>(null);
 // ===== P1-01：新建回路向导模式 =====
 /** 向导步骤定义（仅 create 模式显示） */
 const wizardSteps = [
-  { title: '基础信息', tab: 'basic' as const, description: '回路位号与评估配置' },
-  { title: 'Tag 关联', tab: 'tags' as const, description: '关联 7 个 OPC 测点' },
+  {
+    title: '基础信息',
+    tab: 'basic' as const,
+    description: '回路位号与评估配置',
+  },
+  {
+    title: 'Tag 关联',
+    tab: 'tags' as const,
+    description: '关联 7 个 OPC 测点',
+  },
   { title: '投用定义', tab: 'mode' as const, description: 'MODE 值映射' },
   { title: '完成启用', tab: 'basic' as const, description: '确认并启用评估' },
 ];
@@ -1047,16 +1055,15 @@ defineExpose({
             v-if="drawerMode === 'create' && wizardCurrent === 0"
             class="mb-3 rounded border border-blue-100 bg-blue-50 p-3 text-xs text-gray-600"
           >
-            <div class="mb-1 font-semibold text-blue-700">
-              📋 配置前检查
-            </div>
+            <div class="mb-1 font-semibold text-blue-700">📋 配置前检查</div>
             <div class="space-y-0.5">
               <div>
                 ① 数据源已配置（系统管理 → 数据源配置），确保 AAS 历史 API 与
                 SignalR 实时订阅连通
               </div>
               <div>
-                ② OPC 测点已同步（数据管理 → AAS Tag 同步），否则 Tag 关联步骤无可选项
+                ② OPC 测点已同步（数据管理 → AAS Tag 同步），否则 Tag
+                关联步骤无可选项
               </div>
             </div>
           </div>
@@ -1068,9 +1075,7 @@ defineExpose({
             <div
               class="rounded border border-green-200 bg-green-50 p-4 text-sm"
             >
-              <div class="mb-2 font-semibold text-green-800">
-                ✅ 配置摘要
-              </div>
+              <div class="mb-2 font-semibold text-green-800">✅ 配置摘要</div>
               <div class="space-y-1 text-gray-700">
                 <div>
                   回路位号：<span class="font-mono font-medium">{{
@@ -1092,14 +1097,20 @@ defineExpose({
                   <Tag
                     v-if="wizardBasicSaved"
                     :color="
-                      slotState.pv && slotState.sp && slotState.op && slotState.mode
+                      slotState.pv &&
+                      slotState.sp &&
+                      slotState.op &&
+                      slotState.mode
                         ? 'green'
                         : 'orange'
                     "
                     class="m-0"
                   >
                     {{
-                      slotState.pv && slotState.sp && slotState.op && slotState.mode
+                      slotState.pv &&
+                      slotState.sp &&
+                      slotState.op &&
+                      slotState.mode
                         ? '必填已关联'
                         : '部分关联'
                     }}
@@ -1128,11 +1139,7 @@ defineExpose({
                   @click="checkDataConnectivity"
                 >
                   <template #icon>
-                    <IconifyIcon
-                      icon="lucide:radio"
-                      :size="14"
-                      class="mr-1"
-                    />
+                    <IconifyIcon icon="lucide:radio" :size="14" class="mr-1" />
                   </template>
                   检查数据
                 </Button>
@@ -1160,17 +1167,11 @@ defineExpose({
                 >
                   数据正常，可放心启用评估
                 </div>
-                <div
-                  v-else
-                  class="mt-1 text-xs text-gray-500"
-                >
+                <div v-else class="mt-1 text-xs text-gray-500">
                   建议前往系统管理检查数据源配置，或等待实时数据写入后再试
                 </div>
               </div>
-              <div
-                v-else-if="!dataCheckLoading"
-                class="text-xs text-gray-400"
-              >
+              <div v-else-if="!dataCheckLoading" class="text-xs text-gray-400">
                 点击「检查数据」验证 Tag 关联后是否有实时数据流入
               </div>
             </div>
@@ -1664,19 +1665,16 @@ defineExpose({
         }}</Button>
         <!-- P1-01：新建向导模式 → 上一步/下一步导航 -->
         <template v-if="drawerMode === 'create'">
-          <Button
-            v-if="wizardCurrent > 0"
-            @click="wizardPrev"
-          >
-            上一步
-          </Button>
+          <Button v-if="wizardCurrent > 0" @click="wizardPrev"> 上一步 </Button>
           <Button
             v-permission="['loop:edit']"
             type="primary"
             :loading="drawerSaving || tagSaving"
             @click="wizardNext"
           >
-            {{ wizardCurrent === wizardSteps.length - 1 ? '完成创建' : '下一步' }}
+            {{
+              wizardCurrent === wizardSteps.length - 1 ? '完成创建' : '下一步'
+            }}
           </Button>
         </template>
         <!-- 编辑模式：保留原保存按钮 -->

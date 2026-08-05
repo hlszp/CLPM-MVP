@@ -95,26 +95,22 @@ export interface StructuredDiagnosisReport {
 }
 
 /** 动作类型 → 中文标签 */
-export const DIAGNOSIS_ACTION_TYPE_LABEL: Record<
-  DiagnosisActionType,
-  string
-> = {
-  tuning: 'PID 整定',
-  maintenance: '仪表维护',
-  investigation: '工况排查',
-  review: '人工复核',
-};
+export const DIAGNOSIS_ACTION_TYPE_LABEL: Record<DiagnosisActionType, string> =
+  {
+    tuning: 'PID 整定',
+    maintenance: '仪表维护',
+    investigation: '工况排查',
+    review: '人工复核',
+  };
 
 /** 动作类型 → Tag 颜色 */
-export const DIAGNOSIS_ACTION_TYPE_COLOR: Record<
-  DiagnosisActionType,
-  string
-> = {
-  tuning: 'purple',
-  maintenance: 'orange',
-  investigation: 'cyan',
-  review: 'default',
-};
+export const DIAGNOSIS_ACTION_TYPE_COLOR: Record<DiagnosisActionType, string> =
+  {
+    tuning: 'purple',
+    maintenance: 'orange',
+    investigation: 'cyan',
+    review: 'default',
+  };
 
 /** 紧急程度 → 中文标签 */
 export const DIAGNOSIS_URGENCY_LABEL: Record<DiagnosisUrgency, string> = {
@@ -168,7 +164,8 @@ export const DIAGNOSIS_STRUCTURED_REPORT: Record<
     cause: 'PID 比例增益过小或积分时间过长，控制器响应迟缓无法及时消除偏差',
     suggestion:
       '增大比例增益（Kp ↑30-50%）或减小积分时间（Ti ↓30-50%），使用整定工作台仿真对比',
-    improvement: '参数调整后响应速度提升，综合评分预计提升 10-20 分，快速率显著改善',
+    improvement:
+      '参数调整后响应速度提升，综合评分预计提升 10-20 分，快速率显著改善',
     actionType: 'tuning',
     urgency: 'medium',
   },
@@ -204,4 +201,3 @@ export const DIAGNOSIS_STRUCTURED_REPORT: Record<
     urgency: 'low',
   },
 };
-
