@@ -640,9 +640,12 @@ export namespace KnowledgeBaseApi {
  * 知识库列表 — P3-01
  */
 export function getKnowledgeBaseApi(params: KnowledgeBaseApi.ListParams) {
-  return requestClient.get<KnowledgeBaseApi.ListData>('/tuning/knowledge-base', {
-    params,
-  });
+  return requestClient.get<KnowledgeBaseApi.ListData>(
+    '/tuning/knowledge-base',
+    {
+      params,
+    },
+  );
 }
 
 /**

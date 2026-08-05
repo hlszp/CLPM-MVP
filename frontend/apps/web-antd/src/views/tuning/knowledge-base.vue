@@ -41,9 +41,8 @@ import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningKnowledgeBase' });
 
-const { columnPrefs, updateColumns: persistColumns } = usePagePreference(
-  'tuning-knowledge-base',
-);
+const { preferences: columnPrefs, updateColumns: persistColumns } =
+  usePagePreference('tuning-knowledge-base');
 
 const loading = ref(false);
 const recordList = ref<KnowledgeBaseApi.KnowledgeEntry[]>([]);
@@ -112,13 +111,19 @@ const kpiItems = computed<KpiStripItem[]>(() => {
   );
   const avgImproved = items.length > 0 ? totalImproved / items.length : 0;
   return [
-    { label: '总条目', value: total.value, color: 'info' },
-    { label: '改善案例', value: improved, color: 'ok' },
-    { label: '恶化案例', value: deteriorated, color: 'error' },
+    { key: 'total', label: '总条目', value: total.value, status: 'neutral' },
+    { key: 'improved', label: '改善案例', value: improved, status: 'success' },
     {
+      key: 'deteriorated',
+      label: '恶化案例',
+      value: deteriorated,
+      status: 'danger',
+    },
+    {
+      key: 'avgImproved',
       label: '平均改善指标数',
       value: Number(avgImproved.toFixed(1)),
-      color: 'warning',
+      status: 'warning',
     },
   ];
 });
@@ -184,7 +189,9 @@ const allColumns: TableColumnsType = [
       const colorMap = DIAGNOSIS_LABEL_COLOR_MAP as Record<string, string>;
       const color = colorMap[text] || 'default';
       return h(Tag, { color }, () =>
-        getDiagnosisLabelName(text as Parameters<typeof getDiagnosisLabelName>[0]),
+        getDiagnosisLabelName(
+          text as Parameters<typeof getDiagnosisLabelName>[0],
+        ),
       );
     },
   },
@@ -350,9 +357,27 @@ const kpiComparisonList = computed(() => {
 
 /** 格式化数值 */
 function fmtNum(val: unknown): string {
-  if (val == null) return '-';
+  if (val === undefined || val === null) return '-';
   const n = Number(val);
   return Number.isNaN(n) ? '-' : n.toFixed(2);
+}
+
+/** 关联方式显示名（提取自模板，避免内联对象字面量） */
+function matchSourceLabel(src: string | null | undefined): string {
+  if (!src) return '-';
+  const map: Record<string, string> = {
+    exact: '精确匹配',
+    time_window: '时间窗口',
+    none: '无整定记录',
+  };
+  return map[src] ?? src;
+}
+
+/** 诊断标签颜色（提取自模板，避免内联类型断言） */
+function diagnosisLabelColor(label: string | null | undefined): string {
+  if (!label) return 'default';
+  const map = DIAGNOSIS_LABEL_COLOR_MAP as Record<string, string>;
+  return map[label] || 'default';
 }
 
 onMounted(loadData);
@@ -458,22 +483,21 @@ onMounted(loadData);
             <div>
               <span class="text-muted-foreground">控制类型：</span>
               {{
-                loopTypeOptions.find(
-                  (o) => o.value === currentEntry!.loopType,
-                )?.label ?? currentEntry.loopType ?? '-'
+                loopTypeOptions.find((o) => o.value === currentEntry!.loopType)
+                  ?.label ??
+                currentEntry.loopType ??
+                '-'
               }}
             </div>
             <div>
               <span class="text-muted-foreground">问题类型：</span>
               <Tag
                 v-if="currentEntry.diagnosisLabel"
-                :color="
-                  (DIAGNOSIS_LABEL_COLOR_MAP as Record<string, string>)[
-                    currentEntry.diagnosisLabel
-                  ] || 'default'
-                "
+                :color="diagnosisLabelColor(currentEntry.diagnosisLabel)"
               >
-                {{ getDiagnosisLabelName(currentEntry.diagnosisLabel as never) }}
+                {{
+                  getDiagnosisLabelName(currentEntry.diagnosisLabel as never)
+                }}
               </Tag>
               <span v-else>-</span>
             </div>
@@ -483,21 +507,11 @@ onMounted(loadData);
             </div>
             <div>
               <span class="text-muted-foreground">关联方式：</span>
-              {{
-                ({
-                  exact: '精确匹配',
-                  time_window: '时间窗口',
-                  none: '无整定记录',
-                } as Record<string, string>)[currentEntry.matchSource] ??
-                currentEntry.matchSource
-              }}
+              {{ matchSourceLabel(currentEntry.matchSource) }}
             </div>
             <div>
               <span class="text-muted-foreground">效果：</span>
-              <Tag
-                v-if="currentEntry.effectVerified === true"
-                color="green"
-              >
+              <Tag v-if="currentEntry.effectVerified === true" color="green">
                 改善
               </Tag>
               <Tag
