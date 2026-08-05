@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { NotificationItem } from '@vben/layouts';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
@@ -15,8 +15,10 @@ import {
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 
+import { ClpmRealtimeStatus } from '#/components/clpm';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
+import { realtimeWs } from '#/utils/realtime-ws';
 import LoginForm from '#/views/_core/authentication/login.vue';
 
 const notifications = ref<NotificationItem[]>([]);
@@ -27,6 +29,46 @@ const authStore = useAuthStore();
 const accessStore = useAccessStore();
 const { destroyWatermark, updateWatermark } = useWatermark();
 const { isDark } = usePreferences();
+
+// ===== P2-05：全局实时数据状态指示 =====
+const wsStatus = ref(realtimeWs.status);
+const wsLastRefresh = ref<string>('');
+
+let wsConnectionUnsubscribe: (() => void) | null = null;
+let wsMessageUnsubscribe: (() => void) | null = null;
+
+const realtimeStatus = computed<
+  'delayed' | 'failed' | 'offline' | 'online' | 'refreshing'
+>(() => {
+  switch (wsStatus.value) {
+    case 'online': {
+      return 'online';
+    }
+    case 'reconnecting': {
+      return 'delayed';
+    }
+    default: {
+      return 'offline';
+    }
+  }
+});
+
+onMounted(() => {
+  wsConnectionUnsubscribe = realtimeWs.onConnectionChange(() => {
+    wsStatus.value = realtimeWs.status;
+  });
+  wsMessageUnsubscribe = realtimeWs.onMessage(() => {
+    wsLastRefresh.value = new Date().toISOString();
+  });
+});
+
+onUnmounted(() => {
+  wsConnectionUnsubscribe?.();
+  wsMessageUnsubscribe?.();
+  // 全局布局卸载时断开 WebSocket（用户登出/关闭页面）
+  realtimeWs.disconnect();
+});
+
 const showDot = computed(() =>
   notifications.value.some((item) => !item.isRead),
 );
@@ -154,6 +196,14 @@ watch(
         @make-all="handleMakeAll"
         @on-click="handleClick"
         @view-all="viewAll"
+      />
+    </template>
+    <template #header-right-1>
+      <ClpmRealtimeStatus
+        :status="realtimeStatus"
+        :last-refresh="wsLastRefresh"
+        :show-latency="false"
+        size="small"
       />
     </template>
     <template #extra>

@@ -1073,8 +1073,7 @@ watch(
 
 onUnmounted(() => {
   stopAutoRefresh();
-  // 页面离开时断开 WebSocket（其他页面可能不需要实时数据）
-  realtimeWs.disconnect();
+  // P2-05：WebSocket 由全局布局管理（basic.vue onUnmounted 断开），页面只停止轮询
 });
 </script>
 

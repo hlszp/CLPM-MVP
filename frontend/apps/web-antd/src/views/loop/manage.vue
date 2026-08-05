@@ -20,6 +20,7 @@ import type {
 
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -54,6 +55,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import {
+  ClpmColumnSettings,
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmEmptyState,
@@ -67,6 +69,7 @@ import {
 } from '#/constants/clpm-ui';
 import StatusBadge from '#/components/loop/status-badge.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { flattenNodes } from '#/utils/plant-node';
 
 import LoopEditDrawer from './manage/LoopEditDrawer.vue';
@@ -384,6 +387,75 @@ const dynamicColumns = computed<TableColumnsType>(() => {
     },
     { title: '操作', key: 'action', width: 100, fixed: 'right' },
   ];
+});
+
+// ===== P2-04：表格列配置（显示/隐藏 + 排序，localStorage 持久化）=====
+const { preferences: columnPrefs, updateColumns: persistColumns } =
+  usePagePreference('loop-manage');
+
+function getColumnKey(col: TableColumnsType[number]): string {
+  const c = col as any;
+  if (c.key) return String(c.key);
+  if (c.dataIndex) {
+    return Array.isArray(c.dataIndex)
+      ? String(c.dataIndex[0])
+      : String(c.dataIndex);
+  }
+  return '';
+}
+
+function buildDefaultColumnConfigs(): ColumnConfig[] {
+  return dynamicColumns.value.map((c, i) => ({
+    key: getColumnKey(c),
+    label: String(c.title ?? ''),
+    visible: true,
+    order: i,
+  }));
+}
+
+/** 从偏好恢复列配置（仅当保存的列 key 与当前视图模式匹配时） */
+function restoreOrBuildConfigs(): ColumnConfig[] {
+  const saved = columnPrefs.value.columns;
+  if (saved && saved.length > 0) {
+    const currentKeys = new Set(dynamicColumns.value.map((c) => getColumnKey(c)));
+    if (saved.every((c) => currentKeys.has(c.key))) {
+      return saved;
+    }
+  }
+  return buildDefaultColumnConfigs();
+}
+
+const columnConfigs = ref<ColumnConfig[]>(restoreOrBuildConfigs());
+
+const visibleColumns = computed<TableColumnsType>(() => {
+  const configMap = new Map(
+    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+  );
+  return dynamicColumns.value
+    .filter((c) => {
+      const cfg = configMap.get(getColumnKey(c));
+      return cfg ? cfg.visible : true;
+    })
+    .toSorted((a, b) => {
+      const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
+      const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
+      return aOrder - bOrder;
+    });
+});
+
+function handleUpdateColumns(cols: ColumnConfig[]) {
+  columnConfigs.value = cols;
+  persistColumns(cols);
+}
+
+function handleResetColumns() {
+  columnConfigs.value = buildDefaultColumnConfigs();
+  persistColumns(columnConfigs.value);
+}
+
+// 视图模式切换时重置列配置（compact/tags 列集不同）
+watch(viewMode, () => {
+  columnConfigs.value = buildDefaultColumnConfigs();
 });
 
 /** 加载回路列表 */
@@ -1125,6 +1197,11 @@ watch(
             ]"
             size="small"
           />
+          <ClpmColumnSettings
+            :columns="columnConfigs"
+            @update:columns="handleUpdateColumns"
+            @reset="handleResetColumns"
+          />
         </div>
 
         <!-- 筛选区（ZL 工业风格工具栏：左搜索 + 右高级筛选 Popover） -->
@@ -1284,7 +1361,7 @@ watch(
 
         <Table
           class="loop-config-table"
-          :columns="dynamicColumns"
+          :columns="visibleColumns"
           :data-source="loopList"
           :loading="loading"
           :row-selection="rowSelection"

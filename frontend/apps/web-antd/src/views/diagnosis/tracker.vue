@@ -17,6 +17,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { DiagnosisApi, DiagnosisLabel } from '#/api/diagnosis';
 import type { KpiStripItem } from '#/components/clpm';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import {
   computed,
@@ -54,6 +55,7 @@ import {
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
 import {
+  ClpmColumnSettings,
   ClpmConfidenceBadge,
   ClpmDataCanvas,
   ClpmEmptyState,
@@ -66,6 +68,7 @@ import {
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
@@ -258,6 +261,64 @@ const columns: TableColumnsType = [
   },
   { title: '操作', key: 'action', width: 220, fixed: 'right' },
 ];
+
+// ===== P2-04：表格列配置（显示/隐藏 + 排序，localStorage 持久化）=====
+const { preferences: columnPrefs, updateColumns: persistColumns } =
+  usePagePreference('diagnosis-tracker');
+
+/** 获取列 key（兼容 dataIndex 和 key） */
+function getColumnKey(col: TableColumnsType[number]): string {
+  const c = col as any;
+  if (c.key) return String(c.key);
+  if (c.dataIndex) {
+    return Array.isArray(c.dataIndex)
+      ? String(c.dataIndex[0])
+      : String(c.dataIndex);
+  }
+  return '';
+}
+
+/** 默认列配置 */
+function buildDefaultColumnConfigs(): ColumnConfig[] {
+  return columns.map((c, i) => ({
+    key: getColumnKey(c),
+    label: String(c.title ?? ''),
+    visible: true,
+    order: i,
+  }));
+}
+
+const columnConfigs = ref<ColumnConfig[]>(
+  columnPrefs.value.columns && columnPrefs.value.columns.length > 0
+    ? columnPrefs.value.columns
+    : buildDefaultColumnConfigs(),
+);
+
+const visibleColumns = computed<TableColumnsType>(() => {
+  const configMap = new Map(
+    columnConfigs.value.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+  );
+  return columns
+    .filter((c) => {
+      const cfg = configMap.get(getColumnKey(c));
+      return cfg ? cfg.visible : true;
+    })
+    .toSorted((a, b) => {
+      const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
+      const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
+      return aOrder - bOrder;
+    });
+});
+
+function handleUpdateColumns(cols: ColumnConfig[]) {
+  columnConfigs.value = cols;
+  persistColumns(cols);
+}
+
+function handleResetColumns() {
+  columnConfigs.value = buildDefaultColumnConfigs();
+  persistColumns(columnConfigs.value);
+}
 
 /** KpiStrip 摘要指标：各状态计数（后端聚合口径，不受分页影响） */
 const kpiStripItems = computed<KpiStripItem[]>(() => {
@@ -673,6 +734,11 @@ watch(
           disabled
           disabled-reason="批量处理功能开发中，待后端接口支持"
         />
+        <ClpmColumnSettings
+          :columns="columnConfigs"
+          @update:columns="handleUpdateColumns"
+          @reset="handleResetColumns"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -697,7 +763,7 @@ watch(
 
     <ClpmDataCanvas class="mt-3" title="异常跟踪列表" :loading="loading">
       <Table
-        :columns="columns"
+        :columns="visibleColumns"
         :data-source="trackerList"
         :loading="loading"
         :pagination="{
