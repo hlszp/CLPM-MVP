@@ -834,10 +834,15 @@ async def get_diagnosis_analytics(
     end_dt = _parse_iso_datetime(end_time)
 
     # 查询时间窗内的诊断结果
+    # ActionTracker 通过 diagnosis_result_id 精确关联到具体诊断结果，
+    # 不能只按 loop_id 关联（会导致一回路 N 个 tracker × M 条诊断结果的笛卡尔积）
     diag_stmt = (
         select(DiagnosisResult, LoopLedger, ActionTracker)
         .join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True)
-        .outerjoin(ActionTracker, ActionTracker.loop_id == LoopLedger.id)
+        .outerjoin(
+            ActionTracker,
+            ActionTracker.diagnosis_result_id == DiagnosisResult.id,
+        )
         .where(DiagnosisResult.diagnosed_at >= start_dt)
         .where(DiagnosisResult.diagnosed_at <= end_dt)
     )
