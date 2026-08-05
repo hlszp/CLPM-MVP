@@ -268,8 +268,10 @@ class TestF3Saturation:
         """F.3：数值 MODE 序列（AUTO=1/CAS=2/REMOTE=3/APC=4）下饱和诊断可检出.
 
         Phase 1 P0-2 修复固化：TDengine 数值 MODE 曾被 `"AUTO" in str()` 误判，
-        饱和诊断永久失效。手算：80 点自控（OP=99.5 ≥ 98 全饱和）+ 20 点 MANUAL
-        （不计入）→ high_count=80，saturation_rate=1.0 > 0.2 → detected。
+        饱和诊断永久失效。M2 对齐 GB/T F.3：分母为总点数 AllTime（含手动）。
+        手算：80 点自控（OP=99.5 ≥ 98 全饱和）+ 20 点 MANUAL（不计入分子，计入分母）
+        → high_count=80，saturation_rate=80/100=0.8 > 0.2 → detected。
+        与 KPI 侧 test_f3_kpi_manual_excluded（50/100=50%）同口径。
         """
         op = np.full(100, 99.5)
         mode = np.array([1, 2, 3, 4] * 20 + [0] * 20)
@@ -278,7 +280,7 @@ class TestF3Saturation:
         assert result["detected"] is True
         assert result["high_count"] == 80
         assert result["low_count"] == 0
-        assert result["saturation_rate"] == pytest.approx(1.0)
+        assert result["saturation_rate"] == pytest.approx(0.8)
 
     @pytest.mark.parametrize(
         ("mode_val", "expected"),

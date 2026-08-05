@@ -353,4 +353,106 @@ def _determine_level(stiction: float) -> str:
     return "SEVERE"
 
 
-__all__ = ["StictionIndexCalculator"]
+def assess_stiction_features(
+    pv: np.ndarray,
+    op: np.ndarray,
+    *,
+    sample_interval: float = 1.0,
+    pv_range: float | None = None,
+    op_range: float | None = None,
+) -> dict[str, Any]:
+    """诊断侧复用入口：极限环门控 + θ 补偿 + 椭圆拟合（与 KPI 同口径）.
+
+    与 ``StictionIndexCalculator.calculate`` 共享同一算法内核（互相关 θ 补偿 +
+    极限环门控 + PCA 椭圆拟合 + R² 拟合度），供诊断引擎
+    ``_detect_valve_stiction`` 调用，避免诊断侧与 KPI 侧算法分叉
+    （大死迟后回路误判、平稳回路误检）。
+
+    Args:
+        pv: PV 数据数组（工程单位）
+        op: OP 数据数组（工程单位，需与 pv 等长或可截断到等长）
+        sample_interval: 采样间隔（秒），用于 θ 估计与换算
+        pv_range: PV 量程；缺省用数据 max-min
+        op_range: OP 量程；缺省用数据 max-min
+
+    Returns:
+        特征字典：
+            - is_limit_cycle: 是否处于极限环振荡段（False 时无粘滞物理意义）
+            - fitting_score: 椭圆拟合度 R²（0~1）
+            - stiction_index: 椭圆短长轴比 b/a（0~1，越大越粘滞）
+            - theta_hat_seconds: 估计纯滞后（秒）
+            - theta_compensated: 是否做了 θ 补偿
+            - corr_peak: 互相关峰值显著性
+            - reason: 非极限环时的原因码（no_limit_cycle / insufficient_data）
+            - 其余极限环门控信息（zero_crossings/mean_half_period/s_a/s_b）
+    """
+    n = min(len(pv), len(op))
+    info: dict[str, Any] = {
+        "is_limit_cycle": False,
+        "fitting_score": 0.0,
+        "stiction_index": 0.0,
+        "theta_hat_seconds": 0.0,
+        "theta_compensated": False,
+        "corr_peak": 0.0,
+        "reason": "insufficient_data",
+    }
+    if n < MIN_POINTS:
+        return info
+
+    pv_vals = np.asarray(pv[:n], dtype=float)
+    op_vals = np.asarray(op[:n], dtype=float)
+
+    # 极限环门控：粘滞椭圆只在极限环振荡时才有物理意义（Kano/Choudhury 前提）
+    is_limit_cycle, gate_info = StictionIndexCalculator._detect_limit_cycle(pv_vals)
+    info.update(gate_info)
+    if not is_limit_cycle:
+        info["reason"] = "no_limit_cycle"
+        return info
+
+    info.pop("reason", None)
+    info["is_limit_cycle"] = True
+
+    # 量程：缺省用数据自身极差
+    pv_r = (
+        pv_range if pv_range and pv_range > 0 else (float(np.max(pv_vals) - np.min(pv_vals)) or 1.0)
+    )
+    op_r = (
+        op_range if op_range and op_range > 0 else (float(np.max(op_vals) - np.min(op_vals)) or 1.0)
+    )
+
+    # 纯滞后 θ 估计（互相关）；不显著时回退 lag=0 不补偿
+    dt = sample_interval if sample_interval > 0 else 1.0
+    max_lag = min(int(MAX_LAG_SECONDS / dt), n // 4)
+    lag, corr_peak = StictionIndexCalculator._estimate_lag(pv_vals, op_vals, max_lag)
+    theta_hat_seconds = lag * dt
+    compensated = lag > 0
+
+    # θ 补偿：PV[t] 与 OP[t-θ̂] 配对（PV 跟随 OP 滞后 θ̂）
+    if compensated:
+        pv_fit = pv_vals[lag:]
+        op_fit = op_vals[: n - lag]
+    else:
+        pv_fit = pv_vals
+        op_fit = op_vals
+
+    # 归一化 + 椭圆拟合（fitting_score = R²）
+    pv_norm = (pv_fit - np.min(pv_fit)) / pv_r
+    op_norm = (op_fit - np.min(op_fit)) / op_r
+    a, b, fitting_score = StictionIndexCalculator._fit_ellipse(pv_norm, op_norm)
+
+    stiction_index = float(b / a) if a > 0 else 0.0
+    stiction_index = min(1.0, max(0.0, stiction_index))
+
+    info.update(
+        {
+            "fitting_score": float(fitting_score),
+            "stiction_index": stiction_index,
+            "theta_hat_seconds": round(theta_hat_seconds, 2),
+            "theta_compensated": compensated,
+            "corr_peak": round(float(corr_peak), 4),
+        }
+    )
+    return info
+
+
+__all__ = ["StictionIndexCalculator", "assess_stiction_features"]

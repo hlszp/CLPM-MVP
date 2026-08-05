@@ -967,14 +967,25 @@ class TestDetectValveStiction:
         assert result["detected"] is False
 
     def test_with_stiction_ellipse(self) -> None:
-        """PV-OP 呈椭圆轨迹应检测到粘滞。"""
-        # 构造椭圆轨迹：PV 滞后于 OP 形成椭圆
-        t = np.linspace(0, 2 * np.pi, 200)
-        op = 50.0 + 20.0 * np.cos(t)
-        pv = 50.0 + 20.0 * np.cos(t - np.pi / 2)  # 相位差 90 度形成椭圆
+        """极限环振荡段的 PV-OP 椭圆应通过门控并计算出拟合度（θ 补偿后）。
+
+        P1 统一后复用 KPI 侧 StictionIndexCalculator 内核：需先通过极限环门控
+        （≥4 零交叉），再做 θ 补偿。原测试仅 1 个周期（2 零交叉）不满足门控，
+        且 90° 纯相位差补偿后 R²→1、b/a→0（非粘滞）。改用 4 周期相位滞后椭圆，
+        验证门控通过 + θ 补偿后拟合度达标。
+        """
+        # 4 个完整周期（200 点 / 周期 50），满足极限环门控（≥4 零交叉）
+        n = 200
+        op = np.array([50.0 + 40.0 * np.cos(2 * np.pi * i / 50.0) for i in range(n)])
+        pv = np.array(
+            [
+                50.0 + 32.0 * np.cos(2 * np.pi * i / 50.0) + 12.0 * np.sin(2 * np.pi * i / 50.0)
+                for i in range(n)
+            ]
+        )
         result = _detect_valve_stiction(pv, op)
-        # 椭圆轨迹应检测到粘滞
-        assert result["fitting_score"] > 0.0
+        # 极限环门控通过 + θ 补偿后拟合度 R² ≥ MIN_FITTING_SCORE(0.5)
+        assert result["fitting_score"] > 0.5
 
     def test_constant_op_with_pv_variation(self) -> None:
         """OP 不动 PV 变化应检测到粘滞特征。"""
@@ -4113,13 +4124,17 @@ class TestAnalyzeSaturationNumericMode:
         assert result["saturation_rate"] == 0.0
 
     def test_mixed_numeric_modes(self) -> None:
-        """混合数值 mode：仅 AUTO/CAS/REMOTE/APC 点参与统计。"""
-        # 40 点饱和（AUTO=1 + APC=4 各 20），60 点手动正常
+        """混合数值 mode：仅 AUTO/CAS/REMOTE/APC 饱和点计入分子，分母为总点数（GB/T F.3）。
+
+        M2 对齐：分母从自控点数改为总点数（AllTime）。
+        40 点饱和（AUTO=1 + APC=4 各 20），60 点手动正常 →
+        saturation_rate = 40（自控饱和）/ 100（总点数）= 0.4 > 0.2 → 检出。
+        """
         op = np.array([99.5] * 40 + [50.0] * 60, dtype=float)
         mode = np.array([1] * 20 + [4] * 20 + [0] * 60, dtype=object)
         result = _analyze_saturation(op, mode_values=mode)
         assert result["detected"] is True
-        assert result["saturation_rate"] == 1.0
+        assert result["saturation_rate"] == 0.4
         assert result["high_count"] == 40
 
 

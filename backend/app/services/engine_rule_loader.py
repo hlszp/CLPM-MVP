@@ -14,7 +14,6 @@ PRD §5.4.2 / FDS §5.3.3：引擎规则模块负责配置计算周期、数据�
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Any
@@ -51,7 +50,6 @@ class EngineRuleLoader:
 
     def __init__(self, cache_ttl: float = _CACHE_TTL) -> None:
         self._cache: dict[str, tuple[float, dict[str, Any]]] = {}
-        self._lock = asyncio.Lock()
         self._cache_ttl = cache_ttl
 
     async def _load_all(self, db: AsyncSession) -> dict[str, EngineRule]:
@@ -83,24 +81,32 @@ class EngineRuleLoader:
 
         Returns:
             params 字典；规则不存在时返回空字典
+
+        Note:
+            原实现用 ``asyncio.Lock`` 防 cache stampede，但本单例跨 Celery 任务
+            持久化（``AsyncTask.run_async`` 每任务新建事件循环），Lock 首次竞争
+            即绑定到首个事件循环，后续任务在新循环内 ``async with`` 会抛
+            ``bound to a different event loop``（命中 AGENTS.md 红线）。
+            调用方（KPI/诊断）均在并发执行前的主 session 内单次预载，无并发
+            stampede 风险；最坏情况是同 loop 内多协程同时发现缓存过期各查一次
+            DB（缓存 TTL 60s，DB 查询廉价，幂等），故移除锁。
         """
-        async with self._lock:
-            now = time.monotonic()
-            cached = self._cache.get(rule_code)
-            if cached is not None and (now - cached[0]) < self._cache_ttl:
-                return cached[1]
+        now = time.monotonic()
+        cached = self._cache.get(rule_code)
+        if cached is not None and (now - cached[0]) < self._cache_ttl:
+            return cached[1]
 
-            # 查询数据库
-            result = await db.execute(select(EngineRule).where(EngineRule.rule_code == rule_code))
-            rule = result.scalar_one_or_none()
-            params: dict[str, Any] = {}
-            if rule is not None and rule.is_enabled is not False:
-                params = dict(rule.params or {})
-            else:
-                logger.warning("EngineRule %s 不存在或已禁用，使用默认值", rule_code)
+        # 查询数据库
+        result = await db.execute(select(EngineRule).where(EngineRule.rule_code == rule_code))
+        rule = result.scalar_one_or_none()
+        params: dict[str, Any] = {}
+        if rule is not None and rule.is_enabled is not False:
+            params = dict(rule.params or {})
+        else:
+            logger.warning("EngineRule %s 不存在或已禁用，使用默认值", rule_code)
 
-            self._cache[rule_code] = (now, params)
-            return params
+        self._cache[rule_code] = (now, params)
+        return params
 
     async def get_params(self, db: AsyncSession, rule_code: str) -> dict[str, Any]:
         """获取指定 rule_code 的 params（公开入口，带缓存）.

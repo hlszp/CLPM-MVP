@@ -381,14 +381,15 @@ async def _do_run_diagnosis() -> dict:
         _validate_threshold_config(diag_configs)
 
         # 3. 为每个回路创建 DiagnosisTask 记录（自动触发）
-        # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
-        # 避免 Beat 重复运行（或手动补跑）重复建任务
+        # 去重：同回路同时间窗已存在 PENDING/RUNNING/SUCCESS 任务时跳过创建与诊断，
+        # 避免 Beat 重复运行（或手动补跑）重复建任务；含 SUCCESS 是为避免体检轨与
+        # 事件轨同窗口对已完成回路重复诊断产生重复 diagnosis_result（FAILED 可重试）
         existing_result = await db.execute(
             select(DiagnosisTask.loop_id)
             .where(DiagnosisTask.loop_id.in_(loop_ids))
             .where(DiagnosisTask.time_range_start == ts_start_naive)
             .where(DiagnosisTask.time_range_end == ts_end_naive)
-            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING"]))
+            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING", "SUCCESS"]))
         )
         existing_loop_ids = {str(r) for r in existing_result.scalars().all()}
 
@@ -593,14 +594,15 @@ async def _do_run_checkup() -> dict:
         _validate_threshold_config(diag_configs)
 
         # 3. 为每个回路创建 DiagnosisTask 记录（triggered_by='checkup-scheduler'）
-        # 去重：同回路同时间窗已存在 PENDING/RUNNING 任务时跳过创建与诊断，
-        # 避免与事件轨/手动触发重复建任务
+        # 去重：同回路同时间窗已存在 PENDING/RUNNING/SUCCESS 任务时跳过创建与诊断，
+        # 避免与事件轨/手动触发同窗口重复建任务产生重复 diagnosis_result
+        # （事件轨 :10 已 SUCCESS 的低分回路，体检轨 :20 无需重跑；FAILED 可重试）
         existing_result = await db.execute(
             select(DiagnosisTask.loop_id)
             .where(DiagnosisTask.loop_id.in_(loop_ids))
             .where(DiagnosisTask.time_range_start == ts_start_naive)
             .where(DiagnosisTask.time_range_end == ts_end_naive)
-            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING"]))
+            .where(DiagnosisTask.status.in_(["PENDING", "RUNNING", "SUCCESS"]))
         )
         existing_loop_ids = {str(r) for r in existing_result.scalars().all()}
 
@@ -1169,7 +1171,7 @@ async def _diagnose_loop(
 
     # 2. PV-OP 散点拟合（阀门粘滞检测）
     if stiction_enabled:
-        stiction_result = _detect_valve_stiction(pv_values, op_values)
+        stiction_result = _detect_valve_stiction(pv_values, op_values, sample_interval)
     else:
         stiction_result = _empty_stiction_result()
 
@@ -1191,13 +1193,15 @@ async def _diagnose_loop(
         quality_result = _empty_quality_result()
         sensor_fault_result = _empty_sensor_fault_result()
 
-    # 4. OP 饱和率分析（P0-3：仅自控模式 + 绝对工程限位）
+    # 4. OP 饱和率分析（P0-3：仅自控模式分子 + 总时段分母，对齐 GB/T F.3）
     if saturation_enabled:
         has_mode = len(mode_values) > 0
         saturation_result = _analyze_saturation(
             sat_op_values if has_mode else op_values,
             mode_values if has_mode else None,
             threshold=_get_threshold(diag_configs, "OUTPUT_SATURATION", None, None),
+            # 分母 = 评估窗口全长（AllTime，含手动模式），与 KPI 侧 saturation.py 同口径
+            total_points=len(aligned),
         )
     else:
         saturation_result = _empty_saturation_result()
@@ -1964,10 +1968,22 @@ def _detect_oscillation_fft(
         return _empty_osc_result()
 
 
-def _detect_valve_stiction(pv_values: np.ndarray, op_values: np.ndarray) -> dict[str, Any]:
-    """PV-OP 散点拟合检测阀门粘滞。
+def _detect_valve_stiction(
+    pv_values: np.ndarray,
+    op_values: np.ndarray,
+    sample_interval: float = 1.0,
+) -> dict[str, Any]:
+    """PV-OP 散点拟合检测阀门粘滞（复用 KPI 侧 StictionIndexCalculator 内核）。
 
-    使用椭圆拟合：若 PV-OP 散点呈现椭圆轨迹，则存在粘滞。
+    P1 统一：旧实现是简化版（无纯滞后 θ 补偿、无极限环门控、fitting_score
+    用残差占比而非 R²），与 KPI 侧 ``StictionIndexCalculator``（对齐 GB/T
+    44693.2-2024 F.2，含互相关 θ 补偿 + 极限环门控 + R² 拟合度）口径分叉——
+    大死迟后回路因相位差被误判、平稳回路无门控误检。现复用
+    ``assess_stiction_features`` 共享同一算法内核，保证同一信号下诊断
+    VALVE_STICTION 标签与 KPI 粘滞指数结论一致（与振荡 P2 统一同口径）。
+
+    判定：极限环门控通过 + R² ≥ MIN_FITTING_SCORE(0.5) + 椭圆短长轴比 > 0.3
+    （0.3 对应 KPI 侧 SEVERE 等级 30%）。
 
     Returns:
         {detected, confidence, stiction_index, fitting_score}
@@ -1977,40 +1993,22 @@ def _detect_valve_stiction(pv_values: np.ndarray, op_values: np.ndarray) -> dict
         return _empty_stiction_result()
 
     try:
-        pv = pv_values[:min_len]
-        op = op_values[:min_len]
+        from app.services.metric_calculator.stiction import (
+            MIN_FITTING_SCORE,
+            assess_stiction_features,
+        )
 
-        # 标准化
-        pv_norm = (pv - np.mean(pv)) / (np.std(pv) + 1e-9)
-        op_norm = (op - np.mean(op)) / (np.std(op) + 1e-9)
+        feat = assess_stiction_features(
+            pv_values,
+            op_values,
+            sample_interval=sample_interval,
+        )
+        fitting_score = float(feat.get("fitting_score", 0.0))
+        stiction_index = float(feat.get("stiction_index", 0.0))
+        is_limit_cycle = bool(feat.get("is_limit_cycle", False))
 
-        # 椭圆拟合：使用 SVD 分解
-        points = np.column_stack([pv_norm, op_norm])
-        # 计算协方差矩阵
-        cov = np.cov(points.T)
-        eigenvalues, eigenvectors = np.linalg.eigh(cov)
-
-        # 椭圆性指标：长短轴比
-        if eigenvalues.min() <= 0:
-            return _empty_stiction_result()
-        # 拟合度：基于点到主轴的距离
-        principal_axis = eigenvectors[:, -1]
-        projected = points @ principal_axis
-        residuals = points - np.outer(projected, principal_axis)
-        residual_variance = float(np.mean(np.sum(residuals**2, axis=1)))
-        total_variance = float(np.mean(np.sum(points**2, axis=1)))
-        fitting_score = 1.0 - (residual_variance / (total_variance + 1e-9))
-        fitting_score = max(0.0, min(1.0, fitting_score))
-
-        # 粘滞指数：基于 OP 不动时 PV 仍在变化的比例
-        op_diff = np.abs(np.diff(op))
-        pv_diff = np.abs(np.diff(pv))
-        op_static = op_diff < (np.std(op_diff) + 1e-9) * 0.1
-        pv_moving = pv_diff > (np.std(pv_diff) + 1e-9) * 0.5
-        stiction_index = float(np.sum(op_static & pv_moving) / max(len(op_diff), 1))
-
-        # 粘滞判定：拟合度 > 0.7 且粘滞指数 > 0.3
-        detected = fitting_score > 0.7 and stiction_index > 0.3
+        # 判定：极限环 + R²≥0.5 + 短长轴比>0.3（对齐 KPI SEVERE 等级）
+        detected = is_limit_cycle and fitting_score >= MIN_FITTING_SCORE and stiction_index > 0.3
         confidence = min(1.0, (fitting_score + stiction_index) / 2) if detected else 0.0
 
         return {
@@ -2474,23 +2472,32 @@ def _analyze_saturation(
     op_values: np.ndarray,
     mode_values: np.ndarray | None = None,
     threshold: dict | None = None,
+    total_points: int | None = None,
 ) -> dict[str, Any]:
-    """OP 饱和率分析（FDS §5.4.6 — 仅自控模式 + 绝对工程限位）。
+    """OP 饱和率分析（FDS §5.4.6 — 仅自控模式分子 + 总时段分母，对齐 GB/T F.3）。
+
+    公式（对齐 GB/T 44693.2-2024 附录 F.3 / KPI 侧 saturation.py）：
+        Sa = AutoSaturateTime / AllTime
+    - 分子：仅自控模式（AUTO/CAS/REMOTE/APC）下 OP 触限的点数
+      （AutoSaturateTime，1Hz 等采样下以点数代时长）
+    - 分母：评估时段总点数（AllTime，含手动模式）—— M2 修复：
+      原实现分母为自控模式点数，全程手动回路 Sa 被高估，且与 KPI 侧
+      saturation_rate 口径不一致；现统一用总点数。
 
     修复要点：
-    1. 若提供 mode_values，仅保留 MODE 为 Auto/CAS/RCAS 的数据点
-       （大小写不敏感，包含 "AUTO" 或 "CAS"）
-    2. 使用绝对工程限位（默认 0-100%），不再做 min-max 相对归一化
-    3. saturation_epsilon 默认 2%（≥98% 或 ≤2% 为饱和），与 FDS §5.4.6 一致
+    1. 分子：若提供 mode_values，仅统计 MODE 为 Auto/CAS/REMOTE/APC 的饱和点
+    2. 分母：total_points（调用方传窗口全长 len(aligned)）；缺省回退 op_values 长度
+    3. 使用绝对工程限位（默认 0-100%），saturation_epsilon 默认 2%
     4. 饱和率 > 20% 判定为 detected
 
     Args:
-        op_values: OP 数据数组
-        mode_values: MODE 数据数组（可选），若提供则仅统计自控模式点
+        op_values: OP 数据数组（与 mode_values 等长，或无 mode 时全量）
+        mode_values: MODE 数据数组（可选），若提供则仅统计自控模式点为分子
         threshold: 阈值配置，支持键：
             - op_high_limit: 工程高限位（默认 100.0）
             - op_low_limit: 工程低限位（默认 0.0）
             - saturation_epsilon: 饱和容差（默认 2.0，即 ≥98 或 ≤2 为饱和）
+        total_points: 评估时段总点数（分母 AllTime）；缺省回退 len(op_values)
 
     Returns:
         {detected, confidence, saturation_rate, high_count, low_count}
@@ -2502,19 +2509,13 @@ def _analyze_saturation(
     op_low_limit = float(threshold.get("op_low_limit", 0.0))
     saturation_epsilon = float(threshold.get("saturation_epsilon", 2.0))
 
-    # 若提供 mode_values，仅保留自控模式数据点（AUTO/CAS/REMOTE/APC）
-    if mode_values is not None and len(mode_values) > 0:
-        min_len = min(len(op_values), len(mode_values))
-        auto_mask = np.array(
-            [_is_auto_mode(mode_values[i]) for i in range(min_len)],
-            dtype=bool,
-        )
-        op_arr = np.asarray(op_values[:min_len], dtype=float)[auto_mask]
+    # 分母：评估时段总点数（AllTime，含手动模式，对齐 GB/T F.3）
+    if total_points is not None and total_points > 0:
+        denom = int(total_points)
     else:
-        op_arr = np.asarray(op_values, dtype=float)
+        denom = len(op_values)
 
-    total = len(op_arr)
-    if total == 0:
+    if denom == 0:
         return {
             "detected": False,
             "confidence": 0.0,
@@ -2528,9 +2529,24 @@ def _analyze_saturation(
         high_threshold = op_high_limit - saturation_epsilon
         low_threshold = op_low_limit + saturation_epsilon
 
-        high_count = int(np.sum(op_arr >= high_threshold))
-        low_count = int(np.sum(op_arr <= low_threshold))
-        saturation_rate = (high_count + low_count) / total
+        # 分子：仅自控模式下的饱和点数（AutoSaturateTime）
+        if mode_values is not None and len(mode_values) > 0:
+            min_len = min(len(op_values), len(mode_values))
+            auto_mask = np.array(
+                [_is_auto_mode(mode_values[i]) for i in range(min_len)],
+                dtype=bool,
+            )
+            op_auto = np.asarray(op_values[:min_len], dtype=float)[auto_mask]
+            high_count = int(np.sum(op_auto >= high_threshold))
+            low_count = int(np.sum(op_auto <= low_threshold))
+        else:
+            # 无 mode：全部点视为自控（回退，分母仍为 denom）
+            op_arr = np.asarray(op_values, dtype=float)
+            high_count = int(np.sum(op_arr >= high_threshold))
+            low_count = int(np.sum(op_arr <= low_threshold))
+
+        # 饱和率 = 自控饱和点数 / 总点数（对齐 GB/T F.3）
+        saturation_rate = (high_count + low_count) / denom
 
         # 饱和判定：饱和率 > 20%
         detected = saturation_rate > 0.2
@@ -2821,7 +2837,11 @@ def _detect_kano_stiction(
     try:
         pv_arr = pv[:min_len].astype(float)
         op_arr = op[:min_len].astype(float)
-        mv[:min_len].astype(float) if mv is not None else op_arr
+        # 操纵变量优先用 mv（级联回路下 mv 可能不同于 OP），默认与 OP 一致
+        # （M3：原为死表达式 `mv[:min_len].astype(float) if mv is not None else op_arr`
+        # 计算后未赋值，mv 参数实际无效；现赋值使其生效）
+        if mv is not None:
+            op_arr = mv[:min_len].astype(float)
 
         # PV 和 OP 的标准差比值
         pv_std = float(np.std(pv_arr))
@@ -2951,67 +2971,75 @@ def _analyze_step_response(
         if len(step_indices) == 0:
             return _empty_step_response_result()
 
-        # 分析第一个阶跃（最显著的）
-        step_idx = int(step_indices[0])
-        step_size = float(sp_arr[step_idx + 1] - sp_arr[step_idx])
-        if abs(step_size) < 1e-9:
+        # M4：遍历所有阶跃，取最严重（满足指标数最多）的作为结果。
+        # 原实现只分析 step_indices[0]，若首阶跃小/噪声大而后续阶跃过激会漏判。
+        best: dict[str, Any] | None = None
+        best_satisfied = -1
+        for s_i in range(len(step_indices)):
+            step_idx = int(step_indices[s_i])
+            step_size = float(sp_arr[step_idx + 1] - sp_arr[step_idx])
+            if abs(step_size) < 1e-9:
+                continue
+            new_sp = float(sp_arr[step_idx + 1])
+
+            # 响应窗口：阶跃后到下一个阶跃（或数据末尾）
+            next_step = int(step_indices[s_i + 1]) + 1 if s_i + 1 < len(step_indices) else min_len
+            response_end = min(next_step, min_len)
+            pv_response = pv_arr[step_idx + 1 : response_end]
+            if len(pv_response) < 4:
+                continue
+
+            # 指标1：过冲
+            if step_size > 0:
+                pv_peak = float(np.max(pv_response))
+                overshoot = max(0.0, (pv_peak - new_sp) / step_size)
+            else:
+                pv_trough = float(np.min(pv_response))
+                overshoot = max(0.0, (new_sp - pv_trough) / abs(step_size))
+
+            # 指标2：衰减比（A2/A1，同方向连续峰）
+            decay_ratio = _compute_decay_ratio(pv_response, new_sp, step_size)
+
+            # 指标3：稳态误差（最后 20% 数据的均值与 SP 的偏差）
+            tail_len = max(1, len(pv_response) // 5)
+            pv_tail = pv_response[-tail_len:]
+            steady_state_error = abs(float(np.mean(pv_tail)) - new_sp) / sp_range
+
+            # 判定规则（ADS §5.3.2: 满足 2 项及以上，阈值均可配置）
+            flags = [
+                overshoot > overshoot_threshold,
+                decay_ratio > decay_ratio_threshold,
+                steady_state_error > sse_threshold,
+            ]
+            satisfied = sum(flags)
+
+            # 保留满足指标数最多的阶跃结果（最严重的过激响应）
+            if satisfied > best_satisfied:
+                best_satisfied = satisfied
+                detected = bool(satisfied >= 2)
+                confidence = min(0.95, satisfied / 3.0) if detected else 0.0
+                response_ts = (
+                    ts[step_idx + 1 : response_end]
+                    if ts is not None
+                    else np.arange(len(pv_response))
+                )
+                sp_response = sp_arr[step_idx + 1 : response_end]
+                best = {
+                    "detected": detected,
+                    "confidence": confidence,
+                    "overshoot": overshoot,
+                    "decay_ratio": decay_ratio,
+                    "steady_state_error": steady_state_error,
+                    "step_count": len(step_indices),
+                    "timestamps": response_ts.tolist(),
+                    "pv_response": pv_response.tolist(),
+                    "sp_values": sp_response.tolist(),
+                    "step_indices": step_indices.tolist(),
+                }
+
+        if best is None:
             return _empty_step_response_result()
-
-        new_sp = float(sp_arr[step_idx + 1])
-        float(sp_arr[step_idx])
-
-        # 响应窗口：阶跃后的数据
-        response_end = min(step_idx + 1 + min_len // 2, min_len)
-        pv_response = pv_arr[step_idx + 1 : response_end]
-        if len(pv_response) < 4:
-            return _empty_step_response_result()
-
-        # 指标1：过冲
-        if step_size > 0:
-            pv_peak = float(np.max(pv_response))
-            overshoot = max(0.0, (pv_peak - new_sp) / step_size)
-        else:
-            pv_trough = float(np.min(pv_response))
-            overshoot = max(0.0, (new_sp - pv_trough) / abs(step_size))
-
-        # 指标2：衰减比（A2/A1，同方向连续峰）
-        decay_ratio = _compute_decay_ratio(pv_response, new_sp, step_size)
-
-        # 指标3：稳态误差（最后 20% 数据的均值与 SP 的偏差）
-        tail_len = max(1, len(pv_response) // 5)
-        pv_tail = pv_response[-tail_len:]
-        steady_state_error = abs(float(np.mean(pv_tail)) - new_sp) / sp_range
-
-        # 判定规则（ADS §5.3.2: 满足 2 项及以上，阈值均可配置）
-        flags = [
-            overshoot > overshoot_threshold,
-            decay_ratio > decay_ratio_threshold,
-            steady_state_error > sse_threshold,
-        ]
-        satisfied = sum(flags)
-
-        # 过激判定：满足 2 项及以上
-        detected = bool(satisfied >= 2)
-        # 限制最大置信度为 95%，避免全部满足时直接到 100%
-        confidence = min(0.95, satisfied / 3.0) if detected else 0.0
-
-        response_ts = (
-            ts[step_idx + 1 : response_end] if ts is not None else np.arange(len(pv_response))
-        )
-        sp_response = sp_arr[step_idx + 1 : response_end]
-
-        return {
-            "detected": detected,
-            "confidence": confidence,
-            "overshoot": overshoot,
-            "decay_ratio": decay_ratio,
-            "steady_state_error": steady_state_error,
-            "step_count": len(step_indices),
-            "timestamps": response_ts.tolist(),
-            "pv_response": pv_response.tolist(),
-            "sp_values": sp_response.tolist(),
-            "step_indices": step_indices.tolist(),
-        }
+        return best
     except Exception as exc:  # noqa: BLE001
         logger.warning("阶跃响应分析失败: %s", exc)
         return _empty_step_response_result()
