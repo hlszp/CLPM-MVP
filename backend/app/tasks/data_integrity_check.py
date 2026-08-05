@@ -106,9 +106,7 @@ def run_daily_integrity_check(self: AsyncTask) -> dict:
 
             lines = [f"巡检窗口 {ts_start} ~ {ts_end}（Asia/Shanghai）"]
             lines.append(f"整体 PV 完整度: {overall * 100:.2f}%")
-            lines.append(
-                f"PV 完整度 < 95% 的回路 {len(low_completeness_loops)} 个:"
-            )
+            lines.append(f"PV 完整度 < 95% 的回路 {len(low_completeness_loops)} 个:")
             for loop in low_completeness_loops[:_MAX_LISTED_LOOPS]:
                 lines.append(
                     f"  - {loop['tagName'] or loop['loopId']}: PV {loop['pvCompleteness']}%"
