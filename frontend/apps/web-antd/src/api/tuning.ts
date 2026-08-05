@@ -65,7 +65,13 @@ export namespace TuningApi {
    *
    * 对外 API 字段名不变：仍为 ``confidenceLevel`` / ``dataConfidenceLevel``。
    */
-  export type AlgorithmConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E' | 'INCONCLUSIVE';
+  export type AlgorithmConfidenceLevel =
+    | 'A'
+    | 'B'
+    | 'C'
+    | 'D'
+    | 'E'
+    | 'INCONCLUSIVE';
 
   /** 整定模型来源（服务端按来源执行可信度与审计门禁） */
   export type ModelSource =

@@ -45,22 +45,39 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), { compact: false });
 
 // 可信度配色：A 优 / B 良 / C 注意 / D 警告 / E 差
-const CONF_META: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  A: { color: 'var(--success)', bg: 'hsl(var(--success) / 12%)', label: 'A 优' },
-  B: { color: 'var(--primary)', bg: 'hsl(var(--primary) / 12%)', label: 'B 良' },
-  C: { color: 'var(--warning)', bg: 'hsl(var(--warning) / 14%)', label: 'C 注意' },
-  D: { color: '#ea580c', bg: 'rgba(234, 88, 12, 0.12)', label: 'D 警告' },
-  E: { color: 'var(--destructive)', bg: 'hsl(var(--destructive) / 12%)', label: 'E 差' },
-};
+const CONF_META: Record<string, { color: string; bg: string; label: string }> =
+  {
+    A: {
+      color: 'var(--success)',
+      bg: 'hsl(var(--success) / 12%)',
+      label: 'A 优',
+    },
+    B: {
+      color: 'var(--primary)',
+      bg: 'hsl(var(--primary) / 12%)',
+      label: 'B 良',
+    },
+    C: {
+      color: 'var(--warning)',
+      bg: 'hsl(var(--warning) / 14%)',
+      label: 'C 注意',
+    },
+    D: { color: '#ea580c', bg: 'rgba(234, 88, 12, 0.12)', label: 'D 警告' },
+    E: {
+      color: 'var(--destructive)',
+      bg: 'hsl(var(--destructive) / 12%)',
+      label: 'E 差',
+    },
+  };
 
 function rateTier(rate: number | null | undefined) {
   if (rate === null || rate === undefined) return null;
-  if (rate >= 0.95) return { color: 'var(--success)', bg: 'hsl(var(--success) / 12%)' };
-  if (rate >= 0.8) return { color: 'var(--primary)', bg: 'hsl(var(--primary) / 12%)' };
-  if (rate >= 0.6) return { color: 'var(--warning)', bg: 'hsl(var(--warning) / 14%)' };
+  if (rate >= 0.95)
+    return { color: 'var(--success)', bg: 'hsl(var(--success) / 12%)' };
+  if (rate >= 0.8)
+    return { color: 'var(--primary)', bg: 'hsl(var(--primary) / 12%)' };
+  if (rate >= 0.6)
+    return { color: 'var(--warning)', bg: 'hsl(var(--warning) / 14%)' };
   if (rate >= 0.2) return { color: '#ea580c', bg: 'rgba(234, 88, 12, 0.12)' };
   return { color: 'var(--destructive)', bg: 'hsl(var(--destructive) / 12%)' };
 }
@@ -82,10 +99,12 @@ function integrityTier(status?: null | string, completeness?: null | number) {
     return { color: 'var(--success)', bg: 'hsl(var(--success) / 12%)' };
   }
   // 无状态时按完整度值回退判定
-  return rateTier(completeness) ?? {
-    color: 'var(--muted-foreground)',
-    bg: 'hsl(var(--muted) / 12%)',
-  };
+  return (
+    rateTier(completeness) ?? {
+      color: 'var(--muted-foreground)',
+      bg: 'hsl(var(--muted) / 12%)',
+    }
+  );
 }
 
 const confMeta = computed(() => {
@@ -144,7 +163,9 @@ const tooltipText = computed(() => {
         :style="{ color: pvTier.color, background: pvTier.bg }"
         >PV {{ pvText }}</span
       >
-      <span v-if="!confMeta && !validRateText && !pvText" class="clpm-dhb__empty"
+      <span
+        v-if="!confMeta && !validRateText && !pvText"
+        class="clpm-dhb__empty"
         >—</span
       >
     </div>

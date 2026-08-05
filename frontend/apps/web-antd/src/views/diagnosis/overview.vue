@@ -31,13 +31,18 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisAnalyticsApi, getDiagnosisListApi } from '#/api/diagnosis';
 import {
+  ClpmConfidenceBadge,
   ClpmDataCanvas,
+  ClpmEmptyState,
+  ClpmInfoTip,
   ClpmKpiCard,
+  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
+import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -123,32 +128,32 @@ const kpiCards = ref([
 
 /** Top 5 异常回路表格列定义 */
 const topColumns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
+  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 180 },
   {
     title: '装置',
     dataIndex: 'unitName',
     key: 'unitName',
-    width: 160,
+    width: 140,
     ellipsis: true,
   },
   {
     title: '诊断标签',
     dataIndex: 'diagnosisLabel',
     key: 'diagnosisLabel',
-    width: 120,
+    width: 140,
   },
   {
-    title: '置信度',
+    title: '可信度',
     dataIndex: 'confidence',
     key: 'confidence',
-    width: 120,
-    align: 'right',
+    width: 80,
+    align: 'center',
   },
   {
     title: '诊断时间',
     dataIndex: 'diagnosedAt',
     key: 'diagnosedAt',
-    width: 170,
+    width: 150,
   },
   {
     title: '处理状态',
@@ -156,7 +161,7 @@ const topColumns: TableColumnsType = [
     key: 'actionStatus',
     width: 100,
   },
-  { title: '操作', key: 'action', width: 120, fixed: 'right' },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' },
 ];
 
 /** 加载总览数据 */
@@ -378,13 +383,6 @@ function statusName(status: DiagnosisApi.ActionStatus): string {
   return statusOptions.find((o) => o.value === status)?.label || status;
 }
 
-/** 置信度颜色 */
-function confidenceColor(val: number): string {
-  if (val >= 0.8) return themeColors.value.SUCCESS;
-  if (val >= 0.5) return themeColors.value.WARNING;
-  return themeColors.value.DANGER;
-}
-
 // 深色模式切换时重新渲染所有图表
 watch(isDark, () => {
   nextTick(() => {
@@ -479,22 +477,54 @@ onMounted(() => {
         :data-source="topAbnormalLoops"
         :pagination="false"
         :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
-        :scroll="{ x: 940 }"
+        :scroll="{ x: 930 }"
         size="middle"
       >
+        <template #emptyText>
+          <ClpmEmptyState
+            :title="loading ? '加载中...' : '暂无异常回路'"
+            :description="
+              !loading ? '当前没有检测到异常回路，系统运行状态良好' : ''
+            "
+            icon="lucide:check-circle-2"
+          />
+        </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'diagnosisLabel'">
-            <Tag :color="labelColor(record.diagnosisLabel as DiagnosisLabel)">
-              {{ record.labelName || labelName(record.diagnosisLabel) }}
-            </Tag>
+          <template v-if="column.key === 'tagName'">
+            <ClpmLoopLink
+              :loop-id="record.loopId"
+              :tag-name="record.tagName"
+              :unit-name="record.unitName"
+              default-target="diagnosis"
+            />
+          </template>
+          <template v-else-if="column.key === 'diagnosisLabel'">
+            <a-space :size="4">
+              <Tag :color="labelColor(record.diagnosisLabel as DiagnosisLabel)">
+                {{ record.labelName || labelName(record.diagnosisLabel) }}
+              </Tag>
+              <ClpmInfoTip
+                v-if="
+                  (
+                    DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                      string,
+                      { term: string; short: string; detail?: string }
+                    >
+                  )[record.diagnosisLabel]
+                "
+                :tip="
+                  (
+                    DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                      string,
+                      { term: string; short: string; detail?: string }
+                    >
+                  )[record.diagnosisLabel]!.short
+                "
+              />
+            </a-space>
           </template>
           <template v-else-if="column.key === 'confidence'">
-            <span
-              class="clpm-num font-medium"
-              :style="{ color: confidenceColor(record.confidence) }"
-            >
-              {{ (record.confidence * 100).toFixed(1) }}%
-            </span>
+            <ClpmConfidenceBadge :confidence="record.confidence" />
           </template>
           <template v-else-if="column.key === 'diagnosedAt'">
             <span class="clpm-num">{{ formatTime(record.diagnosedAt) }}</span>
@@ -518,14 +548,14 @@ onMounted(() => {
               size="small"
               @click="handleViewDetail(record.loopId)"
             >
-              查看详情
+              详情
             </Button>
             <Button
               type="link"
               size="small"
               @click="handleQuickDiagnose(record.loopId)"
             >
-              一键诊断
+              诊断
             </Button>
           </template>
         </template>

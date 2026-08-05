@@ -47,7 +47,11 @@ import {
 } from '#/api/diagnosis';
 import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmDataCanvas } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmEmptyState,
+  ClpmLoopLink,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { DIAGNOSIS_LABEL_OPTIONS } from '#/constants/diagnosis';
 import { runWithConcurrency } from '#/utils/concurrency';
@@ -138,7 +142,7 @@ function canDelete(status: DiagnosisApi.TaskStatus): boolean {
 }
 
 const columns: TableColumnsType = [
-  { title: '回路名称', dataIndex: 'tagName', key: 'tagName', width: 140 },
+  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 180 },
   {
     title: '装置/单元',
     dataIndex: 'unitName',
@@ -157,17 +161,17 @@ const columns: TableColumnsType = [
     title: '任务状态',
     dataIndex: 'status',
     key: 'status',
-    width: 140,
+    width: 160,
     align: 'center',
   },
   {
     title: '触发方式',
     dataIndex: 'triggerType',
     key: 'triggerType',
-    width: 120,
+    width: 100,
     align: 'center',
   },
-  { title: '操作', key: 'action', width: 260, fixed: 'right' },
+  { title: '操作', key: 'action', width: 280, fixed: 'right' },
 ];
 
 // ============ 触发诊断 Modal ============
@@ -781,12 +785,23 @@ onBeforeUnmount(() => {
         }"
         :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
         :row-selection="rowSelection"
-        :scroll="{ x: 1320 }"
+        :scroll="{ x: 1030 }"
         size="middle"
         @change="handleTableChange"
       >
+        <template #emptyText>
+          <ClpmEmptyState scene="task" icon="lucide:clipboard-list" />
+        </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'compositeScore'">
+          <template v-if="column.key === 'tagName'">
+            <ClpmLoopLink
+              :loop-id="record.loopId"
+              :tag-name="record.tagName"
+              :unit-name="record.unitName"
+              default-target="diagnosis"
+            />
+          </template>
+          <template v-else-if="column.key === 'compositeScore'">
             <Tooltip>
               <template #title>
                 <div class="text-xs leading-relaxed">

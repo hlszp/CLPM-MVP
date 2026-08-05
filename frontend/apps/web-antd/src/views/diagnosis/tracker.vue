@@ -54,13 +54,20 @@ import {
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
 import {
+  ClpmConfidenceBadge,
   ClpmDataCanvas,
+  ClpmEmptyState,
+  ClpmInfoTip,
   ClpmKpiStrip,
+  ClpmLoopLink,
   ClpmPageToolbar,
+  ClpmSeverityBadge,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
+import { SEVERITY_LABEL } from '#/constants/clpm-ui';
+import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -140,6 +147,7 @@ const aggregates = ref<DiagnosisApi.DiagnosisAggregates | null>(null);
 const query = reactive({
   diagnosisLabel: undefined as DiagnosisLabel | undefined,
   actionStatus: undefined as DiagnosisApi.ActionStatus | undefined,
+  severity: undefined as 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | undefined,
   loopId: props.loopId || undefined,
   timeWindow: 'last_7_days' as DiagnosisApi.TimeWindow,
   page: 1,
@@ -151,6 +159,17 @@ const labelOptions = DIAGNOSIS_LABEL_OPTIONS;
 
 /** 标签颜色映射 */
 const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
+
+/** 严重度筛选选项 */
+const severityOptions: {
+  label: string;
+  value: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
+}[] = [
+  { label: SEVERITY_LABEL.CRITICAL, value: 'CRITICAL' },
+  { label: SEVERITY_LABEL.ERROR, value: 'ERROR' },
+  { label: SEVERITY_LABEL.WARN, value: 'WARN' },
+  { label: SEVERITY_LABEL.INFO, value: 'INFO' },
+];
 
 /** 处理状态选项 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
@@ -171,12 +190,19 @@ const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
 ];
 
 const columns: TableColumnsType = [
-  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 150 },
+  {
+    title: '严重度',
+    dataIndex: 'severity',
+    key: 'severity',
+    width: 80,
+    align: 'center',
+  },
+  { title: '回路位号', dataIndex: 'tagName', key: 'tagName', width: 180 },
   {
     title: '装置',
     dataIndex: 'unitName',
     key: 'unitName',
-    width: 180,
+    width: 160,
     ellipsis: true,
   },
   {
@@ -189,48 +215,48 @@ const columns: TableColumnsType = [
     title: '综合评分',
     dataIndex: 'compositeScore',
     key: 'compositeScore',
-    width: 100,
+    width: 90,
     align: 'right',
   },
   {
-    title: '置信度',
+    title: '可信度',
     dataIndex: 'confidence',
     key: 'confidence',
-    width: 100,
-    align: 'right',
+    width: 80,
+    align: 'center',
   },
   {
     title: '处理状态',
     dataIndex: 'actionStatus',
     key: 'actionStatus',
-    width: 110,
+    width: 100,
   },
   {
     title: '负责人',
     dataIndex: 'assignee',
     key: 'assignee',
-    width: 100,
+    width: 90,
     ellipsis: true,
   },
   {
-    title: '计划执行时间',
+    title: '计划执行',
     dataIndex: 'plannedAt',
     key: 'plannedAt',
-    width: 170,
+    width: 150,
   },
   {
     title: '创建时间',
     dataIndex: 'createdAt',
     key: 'createdAt',
-    width: 170,
+    width: 150,
   },
   {
     title: '更新时间',
     dataIndex: 'updatedAt',
     key: 'updatedAt',
-    width: 170,
+    width: 150,
   },
-  { title: '操作', key: 'action', width: 260, fixed: 'right' },
+  { title: '操作', key: 'action', width: 220, fixed: 'right' },
 ];
 
 /** KpiStrip 摘要指标：各状态计数（后端聚合口径，不受分页影响） */
@@ -314,6 +340,7 @@ async function loadList() {
     const data = await getTrackerListApi({
       diagnosisLabel: query.diagnosisLabel,
       actionStatus: query.actionStatus,
+      // severity: query.severity, // TODO: 后端支持后启用
       loopId: query.loopId,
       timeWindow: query.timeWindow,
       page: query.page,
@@ -597,6 +624,14 @@ watch(
       "
     >
       <Select
+        v-model:value="query.severity"
+        placeholder="严重度"
+        style="width: 120px"
+        allow-clear
+        :options="severityOptions"
+        @change="handleSearch"
+      />
+      <Select
         v-model:value="query.diagnosisLabel"
         placeholder="诊断标签"
         style="width: 160px"
@@ -673,30 +708,90 @@ watch(
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: DiagnosisApi.TrackerItem) => record.loopId"
-        :scroll="{ x: 1700 }"
+        :scroll="{ x: 1600 }"
         size="middle"
         @change="handleTableChange"
       >
+        <template #emptyText>
+          <ClpmEmptyState
+            scene="tracker"
+            title="暂无待处理异常"
+            description="当前筛选条件下没有需要跟踪处理的诊断异常"
+          />
+        </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'diagnosisLabel'">
-            <Tag
-              :color="labelColorMap[record.diagnosisLabel as DiagnosisLabel]"
-            >
-              {{ record.labelName || labelName(record.diagnosisLabel) }}
-            </Tag>
+          <template v-if="column.key === 'severity'">
+            <ClpmSeverityBadge :severity="record.severity" size="small" />
+          </template>
+          <template v-else-if="column.key === 'tagName'">
+            <ClpmLoopLink
+              :loop-id="record.loopId"
+              :tag-name="record.tagName"
+              :unit-name="record.unitName"
+              :show-tracker="true"
+              default-target="diagnosis"
+            />
+          </template>
+          <template v-else-if="column.key === 'diagnosisLabel'">
+            <a-space :size="4">
+              <Tag
+                :color="labelColorMap[record.diagnosisLabel as DiagnosisLabel]"
+              >
+                {{ record.labelName || labelName(record.diagnosisLabel) }}
+              </Tag>
+              <ClpmInfoTip
+                v-if="
+                  (
+                    DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                      string,
+                      { term: string; short: string; detail?: string }
+                    >
+                  )[record.diagnosisLabel]
+                "
+                :term="
+                  (
+                    DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                      string,
+                      { term: string; short: string; detail?: string }
+                    >
+                  )[record.diagnosisLabel]!.term
+                "
+                :tip="
+                  (
+                    DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                      string,
+                      { term: string; short: string; detail?: string }
+                    >
+                  )[record.diagnosisLabel]!.short
+                "
+                :detail="
+                  (
+                    DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                      string,
+                      { term: string; short: string; detail?: string }
+                    >
+                  )[record.diagnosisLabel]!.detail
+                "
+              />
+            </a-space>
           </template>
           <template v-else-if="column.key === 'compositeScore'">
             <span
               class="clpm-num font-medium"
               :style="{ color: themeColors.INFO }"
             >
-              {{ Number(record.compositeScore).toFixed(2) }}
+              {{
+                record.compositeScore != null
+                  ? Number(record.compositeScore).toFixed(0)
+                  : '—'
+              }}
             </span>
           </template>
           <template v-else-if="column.key === 'confidence'">
-            <span class="clpm-num">{{
-              Number(record.confidence).toFixed(2)
-            }}</span>
+            <ClpmConfidenceBadge
+              :confidence="record.confidence"
+              :level="null"
+            />
           </template>
           <template v-else-if="column.key === 'actionStatus'">
             <Tag
@@ -717,48 +812,44 @@ watch(
             {{ formatTime(record.updatedAt) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <div class="flex flex-col gap-1">
-              <div class="flex gap-1">
-                <Button
-                  type="link"
-                  size="small"
-                  @click="handleViewDetail(record.loopId)"
-                >
-                  详情
-                </Button>
-                <Button
-                  v-if="canEditStatus"
-                  type="link"
-                  size="small"
-                  @click="
-                    handleOpenStatusModal(record as DiagnosisApi.TrackerItem)
-                  "
-                >
-                  更新状态
-                </Button>
-                <Button
-                  v-if="canViewAbCompare"
-                  type="link"
-                  size="small"
-                  @click="
-                    handleOpenAbCompare(record as DiagnosisApi.TrackerItem)
-                  "
-                >
-                  A/B 对比
-                </Button>
-                <Button
-                  v-if="canExportPdf"
-                  type="link"
-                  size="small"
-                  :loading="exportingLoopId === record.loopId"
-                  :disabled="
-                    exportingLoopId !== '' && exportingLoopId !== record.loopId
-                  "
-                  @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
-                >
-                  导出 PDF
-                </Button>
-              </div>
+            <div class="clpm-row-actions">
+              <Button
+                type="link"
+                size="small"
+                @click="handleViewDetail(record.loopId)"
+              >
+                详情
+              </Button>
+              <Button
+                v-if="canEditStatus"
+                type="link"
+                size="small"
+                @click="
+                  handleOpenStatusModal(record as DiagnosisApi.TrackerItem)
+                "
+              >
+                更新状态
+              </Button>
+              <Button
+                v-if="canViewAbCompare"
+                type="link"
+                size="small"
+                @click="handleOpenAbCompare(record as DiagnosisApi.TrackerItem)"
+              >
+                A/B对比
+              </Button>
+              <Button
+                v-if="canExportPdf"
+                type="link"
+                size="small"
+                :loading="exportingLoopId === record.loopId"
+                :disabled="
+                  exportingLoopId !== '' && exportingLoopId !== record.loopId
+                "
+                @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+              >
+                导出PDF
+              </Button>
             </div>
           </template>
         </template>

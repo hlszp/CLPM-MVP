@@ -212,13 +212,7 @@ const isInconclusive = computed(
  */
 const confidenceLevel = computed<'—' | 'A' | 'B' | 'C' | 'D' | 'E'>(() => {
   const lv = monitorDetail.value?.kpiSummary.confidence_level;
-  if (
-    lv === 'A' ||
-    lv === 'B' ||
-    lv === 'C' ||
-    lv === 'D' ||
-    lv === 'E'
-  ) {
+  if (lv === 'A' || lv === 'B' || lv === 'C' || lv === 'D' || lv === 'E') {
     return lv;
   }
   return '—';

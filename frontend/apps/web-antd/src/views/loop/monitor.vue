@@ -67,6 +67,8 @@ import {
   ClpmColumnSettings,
   ClpmDataCanvas,
   ClpmDataHealthBadges,
+  ClpmInfoTip,
+  ClpmLoopLink,
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmToolbarButton,
@@ -83,6 +85,7 @@ import {
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
 import { usePolling } from '#/composables/use-polling';
+import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   getDiagnosisLabelName,
@@ -243,7 +246,9 @@ const errorMessage = ref<null | string>(null);
  * 建立该 map。表格"诊断标签"列据此渲染彩色 Tag，点击跳转诊断详情页。
  * 失败时降级为空 map，诊断列显示"—"，不阻塞主列表。
  */
-const diagLabelMap = ref<Record<string, { color: string; label: string }>>({});
+const diagLabelMap = ref<
+  Record<string, { color: string; label: string; labelCode: string }>
+>({});
 
 /** 按回路类型统计数量（后端 API 获取，支持递归子节点） */
 const loopTypeStats = ref<Record<string, number>>({
@@ -395,11 +400,11 @@ const plantNodeOptions = computed(() => {
 
 const columns: TableColumnsType = [
   {
-    title: '回路编号',
+    title: '回路位号',
     dataIndex: 'tagName',
     key: 'tagName',
-    width: 160,
-    align: 'center',
+    width: 180,
+    align: 'left',
   },
   {
     title: '名称',
@@ -473,7 +478,7 @@ const columns: TableColumnsType = [
     customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   // D6 入口整合：诊断标签列——展示最新诊断标签，点击跳转诊断详情页
-  { title: '诊断标签', key: 'diagLabel', width: 110, align: 'center' },
+  { title: '诊断标签', key: 'diagLabel', width: 140, align: 'center' },
   // 数据健康度（方案 A §5）：可信度 + 预处理有效率 + PV 完整度
   { title: '数据健康度', key: 'dataHealth', width: 150, align: 'center' },
   { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
@@ -771,7 +776,10 @@ async function loadDiagLabels(loopIds: string[]) {
       page: 1,
       pageSize: 100,
     });
-    const map: Record<string, { color: string; label: string }> = {};
+    const map: Record<
+      string,
+      { color: string; label: string; labelCode: string }
+    > = {};
     for (const item of data.items ?? []) {
       const labelName =
         item.labelName ||
@@ -779,7 +787,11 @@ async function loadDiagLabels(loopIds: string[]) {
       const color =
         DIAGNOSIS_LABEL_COLOR_MAP[item.diagnosisLabel as DiagnosisLabel] ??
         'default';
-      map[item.loopId] = { color, label: labelName };
+      map[item.loopId] = {
+        color,
+        label: labelName,
+        labelCode: item.diagnosisLabel,
+      };
     }
     diagLabelMap.value = map;
   } catch {
@@ -1369,8 +1381,17 @@ onUnmounted(() => {
           @change="handleTableChange"
         >
           <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'tagName'">
+              <ClpmLoopLink
+                :loop-id="(record as LoopApi.MonitorListItem).loopId"
+                :tag-name="(record as LoopApi.MonitorListItem).tagName"
+                :unit-name="(record as LoopApi.MonitorListItem).unitName"
+                :description="(record as LoopApi.MonitorListItem).description"
+                default-target="detail"
+              />
+            </template>
             <!-- v6.1 新增：测量量程 -->
-            <template v-if="column.key === 'pvRange'">
+            <template v-else-if="column.key === 'pvRange'">
               <span
                 v-if="
                   (record as LoopApi.MonitorListItem).pvRange?.min != null ||
@@ -1512,22 +1533,52 @@ onUnmounted(() => {
             </template>
             <!-- D6 入口整合：诊断标签列——展示最新诊断标签彩色 Tag，点击跳转诊断详情 -->
             <template v-else-if="column.key === 'diagLabel'">
-              <Tag
+              <span
                 v-if="diagLabelMap[(record as LoopApi.MonitorListItem).loopId]"
-                :color="
-                  diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
-                    .color
-                "
-                class="m-0 cursor-pointer hover:opacity-80"
-                @click="
-                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
-                "
+                class="inline-flex items-center gap-1"
               >
-                {{
-                  diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
-                    .label
-                }}
-              </Tag>
+                <Tag
+                  :color="
+                    diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
+                      .color
+                  "
+                  class="m-0 cursor-pointer hover:opacity-80"
+                  @click="
+                    goDiagnosisDetail(
+                      (record as LoopApi.MonitorListItem).loopId,
+                    )
+                  "
+                >
+                  {{
+                    diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
+                      .label
+                  }}
+                </Tag>
+                <ClpmInfoTip
+                  v-if="
+                    (
+                      DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                        string,
+                        { term: string; short: string; detail?: string }
+                      >
+                    )[
+                      diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
+                        .labelCode
+                    ]
+                  "
+                  :tip="
+                    (
+                      DIAGNOSIS_TERM_EXPLANATIONS as Record<
+                        string,
+                        { term: string; short: string; detail?: string }
+                      >
+                    )[
+                      diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
+                        .labelCode
+                    ]!.short
+                  "
+                />
+              </span>
               <span
                 v-else
                 class="text-gray-400 cursor-pointer hover:text-blue-500"
