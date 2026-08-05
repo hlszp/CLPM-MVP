@@ -448,16 +448,28 @@ function handleRefresh() {
   loadAll();
 }
 
+/** P0-03：构建诊断→整定上下文 query 参数 */
+function buildTuningContextQuery() {
+  const labels = detail.value?.diagnosisLabels ?? [];
+  const primaryLabel = labels[0]?.label ?? '';
+  return {
+    loopId: loopId.value,
+    diagnosisLabel: primaryLabel,
+    confidenceLevel: detail.value?.confidenceLevel ?? '',
+    from: 'diagnosis',
+  };
+}
+
 /** 摘要条操作点击 */
 function handleSummaryAction(key: string) {
   if (key === 'track') {
     activeTab.value = 'timeline';
   }
   if (key === 'tuning') {
-    // 跳转回路整定页面，传递上下文
+    // P0-03：跳转回路整定工作台，传递诊断上下文（标签/可信度）
     router.push({
-      path: '/tuning',
-      query: { loopId: loopId.value },
+      path: '/tuning/workbench',
+      query: buildTuningContextQuery(),
     });
   }
   if (key === 'visualization') {
@@ -1131,7 +1143,11 @@ onMounted(() => {
                   type="primary"
                   class="mt-4"
                   @click="
-                    () => router.push({ path: '/tuning', query: { loopId } })
+                    () =>
+                      router.push({
+                        path: '/tuning/workbench',
+                        query: buildTuningContextQuery(),
+                      })
                   "
                 >
                   前往回路整定

@@ -73,11 +73,18 @@ watch(currentStep, (step) => {
 
 onMounted(async () => {
   const taskId = route.query.taskId as string | undefined;
+  const queryLoopId = route.query.loopId as string | undefined;
   if (taskId) {
     // 从 workbench「继续未完成任务」进入 → 后端 taskId 回显
     const ok = await store.restoreFromTask(taskId);
     if (!ok) {
       message.warning('任务回显失败，请重新选择任务或新建整定流程');
+    }
+  } else if (queryLoopId) {
+    // P0-03：从诊断中心「基于此诊断发起整定」进入 → 预选回路
+    store.restoreFromSession();
+    if (store.currentLoopId !== queryLoopId) {
+      store.setCurrentLoop(queryLoopId);
     }
   } else {
     // 同标签页刷新 → sessionStorage 恢复
