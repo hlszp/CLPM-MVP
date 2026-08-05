@@ -457,6 +457,8 @@ function buildTuningContextQuery() {
     diagnosisLabel: primaryLabel,
     confidenceLevel: detail.value?.confidenceLevel ?? '',
     from: 'diagnosis',
+    // P1-07：携带返回路径，整定页可一键返回诊断详情
+    returnTo: `/diagnosis/detail?loopId=${loopId.value}`,
   };
 }
 

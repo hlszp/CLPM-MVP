@@ -41,6 +41,15 @@ const currentStep = computed<number>(() => {
   return 0;
 });
 
+/** P1-07：返回路径与文案——来自诊断时返回诊断详情，否则返回整定工作台 */
+const backTo = computed(() => {
+  const returnTo = route.query.returnTo as string | undefined;
+  return returnTo || '/tuning/workbench';
+});
+const backLabel = computed(() => {
+  return route.query.returnTo ? '返回诊断' : '返回整定工作台';
+});
+
 /** 步骤门禁：未辨识完成不能进整定算法 */
 const canAccessAlgorithm = computed(
   () => !!store.identifyResult || currentStep.value >= 1,
@@ -122,8 +131,8 @@ onMounted(async () => {
       <ClpmLoopContextHeader
         :editable="currentStep === 0"
         :show-time-window="currentStep === 0"
-        back-to="/tuning/workbench"
-        back-label="返回整定工作台"
+        :back-to="backTo"
+        :back-label="backLabel"
       />
     </div>
 

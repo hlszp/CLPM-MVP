@@ -50,8 +50,9 @@ const diagnosisContext = computed(() => {
   const loopId = route.query.loopId as string;
   const diagnosisLabel = route.query.diagnosisLabel as string;
   const confidenceLevel = route.query.confidenceLevel as string;
+  const returnTo = route.query.returnTo as string | undefined;
   if (from !== 'diagnosis' || !loopId) return null;
-  return { loopId, diagnosisLabel, confidenceLevel };
+  return { loopId, diagnosisLabel, confidenceLevel, returnTo };
 });
 
 /** P0-03：诊断标签显示名 */
@@ -346,6 +347,8 @@ function handleStartFromDiagnosis() {
     query: {
       loopId: ctx.loopId,
       from: 'diagnosis',
+      // P1-07：透传返回路径，flow 页可一键返回诊断详情
+      ...(ctx.returnTo ? { returnTo: ctx.returnTo } : {}),
     },
   });
 }
@@ -452,6 +455,8 @@ function handleStartTuning(record: DiagnosisApi.DiagnosisListItem) {
       loopId: record.loopId,
       diagnosisLabel: record.diagnosisLabel,
       from: 'diagnosis',
+      // P1-07：携带返回路径（诊断详情页），flow 页可一键返回
+      returnTo: `/diagnosis/detail?loopId=${record.loopId}`,
     },
   });
 }
@@ -548,9 +553,17 @@ onMounted(() => {
               />
             </span>
             <Button
-              type="primary"
+              v-if="diagnosisContext.returnTo"
               size="small"
               class="ml-auto"
+              @click="router.push(diagnosisContext.returnTo)"
+            >
+              ← 返回诊断
+            </Button>
+            <Button
+              type="primary"
+              size="small"
+              :class="diagnosisContext.returnTo ? '' : 'ml-auto'"
               @click="handleStartFromDiagnosis"
             >
               基于此诊断发起整定
