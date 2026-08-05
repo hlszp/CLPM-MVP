@@ -33,7 +33,6 @@ import {
   Spin,
   Steps,
   Tabs,
-  Tag,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -52,13 +51,13 @@ import {
   ClpmImplementRecordModal,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
+  ClpmStructuredDiagnosisReport,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
 } from '#/constants/diagnosis';
 import { formatTime } from '#/utils/format';
@@ -100,7 +99,6 @@ const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
   { label: '近 30 天', value: 'last_30_days' },
 ];
 
-const labelColorMap = DIAGNOSIS_LABEL_COLOR_MAP;
 const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
 
 // 散点图 ECharts
@@ -482,6 +480,23 @@ function handleSummaryAction(key: string) {
   }
 }
 
+/**
+ * P2-01：结构化诊断报告「前往整定」点击
+ * 以指定标签为主因跳转整定工作台
+ */
+function handleStructuredReportTuning(label: string) {
+  router.push({
+    path: '/tuning/workbench',
+    query: {
+      loopId: loopId.value,
+      diagnosisLabel: label,
+      confidenceLevel: detail.value?.confidenceLevel ?? '',
+      from: 'diagnosis',
+      returnTo: `/diagnosis/detail?loopId=${loopId.value}`,
+    },
+  });
+}
+
 function handleAdoptRecommendation(_rec: DiagnosisApi.RecommendationItem) {
   activeTab.value = 'timeline';
 }
@@ -579,18 +594,6 @@ function formatSelectedTime(ts: string): string {
 
 function handleBack() {
   router.back();
-}
-
-function formatEvidence(evidence: Record<string, unknown>): string {
-  if (!evidence || Object.keys(evidence).length === 0) return '—';
-  return Object.entries(evidence)
-    .map(([k, v]) => {
-      if (typeof v === 'string' && v.length > 100) {
-        return `${k}: ${v.slice(0, 100)}...`;
-      }
-      return `${k}: ${v}`;
-    })
-    .join('\n');
 }
 
 const featureEntriesList = computed<{ key: string; value: number }[]>(() => {
@@ -887,48 +890,22 @@ onMounted(() => {
                     direction="vertical"
                     size="small"
                   />
-                  <div
+                  <!-- P2-01：结构化诊断报告（原因排序+根因+建议+预估改善） -->
+                  <ClpmStructuredDiagnosisReport
                     v-if="detail && detail.diagnosisLabels.length > 0"
-                    class="mt-4 space-y-3"
+                    :labels="detail.diagnosisLabels"
+                    :fused-confidence="detail.fusedConfidence"
+                    :confidence-level="detail.confidenceLevel"
+                    :show-tuning-action="true"
+                    class="mt-4"
+                    @tuning="handleStructuredReportTuning"
+                  />
+                  <div
+                    v-else
+                    class="mt-4 text-sm"
+                    :style="{ color: themeColors.NEUTRAL }"
                   >
-                    <div
-                      v-for="(item, idx) in detail.diagnosisLabels"
-                      :key="idx"
-                      class="rounded border p-3"
-                    >
-                      <div class="mb-2 flex flex-wrap items-center gap-3">
-                        <Tag :color="labelColorMap[item.label]">
-                          {{ item.labelName || labelNameMap[item.label] }}
-                        </Tag>
-                        <span
-                          class="text-sm"
-                          :style="{ color: themeColors.NEUTRAL }"
-                        >
-                          置信度：
-                          <span
-                            class="font-medium clpm-num"
-                            :style="{ color: themeColors.INFO }"
-                          >
-                            {{ Number(item.confidence).toFixed(2) }}
-                          </span>
-                        </span>
-                        <span
-                          class="text-sm"
-                          :style="{ color: themeColors.NEUTRAL }"
-                        >
-                          算法：{{ item.algorithm }}
-                        </span>
-                      </div>
-                      <div
-                        class="text-xs"
-                        :style="{ color: themeColors.NEUTRAL }"
-                      >
-                        <span class="font-medium">证据：</span>
-                        <pre class="mt-1 whitespace-pre-wrap text-xs">{{
-                          formatEvidence(item.evidence)
-                        }}</pre>
-                      </div>
-                    </div>
+                    暂无诊断标签
                   </div>
                 </ClpmDataCanvas>
 
