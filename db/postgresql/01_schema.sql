@@ -710,6 +710,52 @@ COMMENT ON COLUMN tuning_record.task_id IS '关联 Celery 异步任务 ID';
 COMMENT ON COLUMN tuning_record.completed_at IS '任务完成时间';
 
 -- =============================================================================
+-- 12.1 tuning_knowledge_entry (整定知识库条目 — P3-01)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS tuning_knowledge_entry (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tracker_id          UUID            NOT NULL,
+    tuning_record_id    UUID,
+    loop_id             UUID            NOT NULL,
+    loop_type           VARCHAR(20),
+    control_type        VARCHAR(20),
+    tag_name            VARCHAR(100)    NOT NULL,
+    diagnosis_label     VARCHAR(100),
+    severity            VARCHAR(20),
+    model_type          VARCHAR(20),
+    algorithm           VARCHAR(50),
+    identify_method     VARCHAR(30),
+    confidence_level    VARCHAR(12),
+    pid_before          JSON,
+    pid_after           JSON,
+    kpi_summary         JSONB,
+    effect_verified     BOOLEAN,
+    improved_count      SMALLINT,
+    deteriorated_count  SMALLINT,
+    match_source        VARCHAR(20)     NOT NULL DEFAULT 'none',
+    implemented_at      TIMESTAMP,
+    verified_at         TIMESTAMP,
+    created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_tke_tracker_id        FOREIGN KEY (tracker_id) REFERENCES action_tracker(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tke_tuning_record_id  FOREIGN KEY (tuning_record_id) REFERENCES tuning_record(id) ON DELETE SET NULL,
+    CONSTRAINT fk_tke_loop_id           FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT ck_tke_match_source      CHECK (match_source IN ('exact', 'time_window', 'none'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tke_loop_type_label ON tuning_knowledge_entry (loop_type, diagnosis_label);
+CREATE INDEX IF NOT EXISTS idx_tke_label           ON tuning_knowledge_entry (diagnosis_label);
+CREATE INDEX IF NOT EXISTS idx_tke_loop_id         ON tuning_knowledge_entry (loop_id);
+CREATE INDEX IF NOT EXISTS idx_tke_effect          ON tuning_knowledge_entry (effect_verified);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tke_tracker  ON tuning_knowledge_entry (tracker_id);
+
+COMMENT ON TABLE  tuning_knowledge_entry IS '整定知识库条目（P3-01）：验证通过/恶化的整定案例不可变快照，支持相似案例推荐';
+COMMENT ON COLUMN tuning_knowledge_entry.tracker_id IS '来源 ActionTracker（唯一，防重复生成）';
+COMMENT ON COLUMN tuning_knowledge_entry.tuning_record_id IS '关联整定记录（可空，用户未走整定流程时为 NULL）';
+COMMENT ON COLUMN tuning_knowledge_entry.match_source IS '关联匹配方式：exact=外键指定 / time_window=时间窗口兜底 / none=无整定记录';
+COMMENT ON COLUMN tuning_knowledge_entry.kpi_summary IS '改善幅度（复用 tracker.ab_compare_summary 结构）';
+COMMENT ON COLUMN tuning_knowledge_entry.effect_verified IS '验证结果：true=改善 / false=恶化 / NULL=未验证';
+
+-- =============================================================================
 -- 13. report_record (自动报表记录)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS report_record (
