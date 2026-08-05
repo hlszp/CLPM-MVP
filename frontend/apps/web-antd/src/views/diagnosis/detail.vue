@@ -676,6 +676,7 @@ async function handleImplementSubmit(data: ImplementSubmitData) {
     mocRef: data.mocRef,
     mocNotApplicable: data.mocNotApplicable,
     mocReason: data.mocReason,
+    tuningRecordId: data.tuningRecordId ?? null,
   });
   implementModalVisible.value = false;
   // P2-02：实施后明确提示验证周期
@@ -1268,6 +1269,7 @@ onMounted(() => {
     <ClpmImplementRecordModal
       v-model:visible="implementModalVisible"
       :loading="statusUpdating"
+      :loop-id="loopId"
       @submit="handleImplementSubmit"
     />
   </Page>

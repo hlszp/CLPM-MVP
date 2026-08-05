@@ -10,7 +10,7 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
-import type { TuningApi } from '#/api/tuning';
+import type { KnowledgeBaseApi, TuningApi } from '#/api/tuning';
 import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, onMounted, ref } from 'vue';
@@ -23,7 +23,7 @@ import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
-import { getTuningHistoryApi } from '#/api/tuning';
+import { getSimilarCasesApi, getTuningHistoryApi } from '#/api/tuning';
 import {
   ClpmConfidenceBadge,
   ClpmDataCanvas,
@@ -461,6 +461,68 @@ function handleStartTuning(record: DiagnosisApi.DiagnosisListItem) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// P3-01：相似案例推荐（待整定回路选中后展示 Top 5 历史成功案例）
+// ---------------------------------------------------------------------------
+
+const similarCases = ref<KnowledgeBaseApi.KnowledgeEntry[]>([]);
+const similarLoading = ref(false);
+const similarLoopId = ref<string | null>(null);
+const similarLoopTag = ref<string>('');
+
+/** 算法显示名（知识库卡片复用） */
+function algorithmDisplay(algo: string | null): string {
+  if (!algo) return '-';
+  const map: Record<string, string> = {
+    IMC: 'IMC',
+    LAMBDA: 'Lambda',
+    ZN: 'Z-N',
+    COHEN_COON: 'Cohen-Coon',
+    SIMC: 'SIMC',
+  };
+  return map[algo] ?? algo;
+}
+
+/** PID 变化摘要 */
+function pidChangeText(
+  before: Record<string, number> | null,
+  after: Record<string, number> | null,
+): string {
+  if (!before || !after) return '-';
+  const fmt = (v: unknown) =>
+    v === undefined || v === null || Number.isNaN(Number(v))
+      ? '-'
+      : Number(v).toFixed(2);
+  const bp = fmt(before.kp ?? before.K);
+  const ap = fmt(after.kp ?? after.K);
+  const bi = fmt(before.ti ?? before.Ti);
+  const ai = fmt(after.ti ?? after.Ti);
+  return `P ${bp}→${ap}  I ${bi}→${ai}`;
+}
+
+/** 加载相似案例 */
+async function loadSimilarCases(record: DiagnosisApi.DiagnosisListItem) {
+  similarLoopId.value = record.loopId;
+  similarLoopTag.value = record.tagName;
+  similarLoading.value = true;
+  try {
+    const resp = await getSimilarCasesApi({
+      loopId: record.loopId,
+      limit: 5,
+    });
+    similarCases.value = resp?.items ?? [];
+  } catch {
+    similarCases.value = [];
+  } finally {
+    similarLoading.value = false;
+  }
+}
+
+/** 跳转知识库详情 */
+function handleViewKnowledgeBase() {
+  router.push('/tuning/knowledge-base');
+}
+
 /** 拟合度格式化 */
 function formatFittingScore(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
@@ -675,18 +737,113 @@ onMounted(() => {
               }}</span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <Button
-                type="primary"
-                size="small"
-                @click="
-                  handleStartTuning(record as DiagnosisApi.DiagnosisListItem)
-                "
-              >
-                发起整定
-              </Button>
+              <div class="flex flex-wrap gap-1">
+                <Button
+                  type="primary"
+                  size="small"
+                  @click="
+                    handleStartTuning(record as DiagnosisApi.DiagnosisListItem)
+                  "
+                >
+                  发起整定
+                </Button>
+                <Button
+                  size="small"
+                  @click="
+                    loadSimilarCases(record as DiagnosisApi.DiagnosisListItem)
+                  "
+                >
+                  相似案例
+                </Button>
+              </div>
             </template>
           </template>
         </Table>
+      </ClpmDataCanvas>
+
+      <!-- P3-01：相似案例推荐（选中待整定回路后展示 Top 5） -->
+      <ClpmDataCanvas
+        v-if="similarLoopId"
+        title="相似案例推荐"
+        :description="`基于回路 ${similarLoopTag} 的控制类型/问题类型，从知识库匹配的历史成功整定案例（Top 5）`"
+        class="mb-4"
+      >
+        <template #extra>
+          <Button type="link" size="small" @click="handleViewKnowledgeBase">
+            查看全部知识库 →
+          </Button>
+        </template>
+        <Spin :spinning="similarLoading">
+          <ClpmEmptyState
+            v-if="!similarLoading && similarCases.length === 0"
+            title="暂无相似案例"
+            description="知识库中尚无匹配的历史整定案例。完成并验证整定后将自动沉淀为新条目。"
+            :actions="[
+              {
+                label: '浏览知识库',
+                icon: 'lucide:book-open',
+                primary: true,
+                onClick: handleViewKnowledgeBase,
+              },
+            ]"
+          />
+          <div v-else class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <Card
+              v-for="item in similarCases"
+              :key="item.id"
+              size="small"
+              :body-style="{ padding: '12px 14px' }"
+              class="cursor-pointer transition-shadow hover:shadow-md"
+              @click="handleViewKnowledgeBase"
+            >
+              <div class="mb-2 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-sm font-medium">
+                    {{ item.tagName }}
+                  </span>
+                  <Tag v-if="item.diagnosisLabel" color="orange">
+                    {{
+                      DIAGNOSIS_TERM_EXPLANATIONS[item.diagnosisLabel]?.term ??
+                      item.diagnosisLabel
+                    }}
+                  </Tag>
+                </div>
+                <Tag :color="item.effectVerified === false ? 'red' : 'green'">
+                  {{
+                    item.effectVerified === false
+                      ? '恶化'
+                      : item.effectVerified === true
+                        ? '改善'
+                        : '未验证'
+                  }}
+                </Tag>
+              </div>
+              <div class="mb-1 flex items-center gap-3 text-xs text-gray-500">
+                <span>{{ algorithmDisplay(item.algorithm) }}</span>
+                <span v-if="item.modelType">· {{ item.modelType }}</span>
+                <ClpmConfidenceBadge
+                  v-if="item.confidenceLevel"
+                  :level="item.confidenceLevel as any"
+                />
+              </div>
+              <div class="mb-1 text-xs text-gray-600">
+                <span class="text-gray-400">PID 变化：</span>
+                {{ pidChangeText(item.pidBefore, item.pidAfter) }}
+              </div>
+              <div class="text-xs text-gray-500">
+                <span v-if="item.improvedCount" class="text-green-600">
+                  改善 {{ item.improvedCount }} 项
+                </span>
+                <span v-if="item.deterioratedCount" class="ml-2 text-red-600">
+                  恶化 {{ item.deterioratedCount }} 项
+                </span>
+                <span v-if="item.implementedAt" class="ml-2">
+                  · {{ formatTime(item.implementedAt) }}
+                </span>
+              </div>
+            </Card>
+          </div>
+        </Spin>
       </ClpmDataCanvas>
 
       <!-- 最近整定任务表格 -->

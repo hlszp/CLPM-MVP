@@ -63,6 +63,26 @@
         </Col>
       </Row>
 
+      <!-- P3-01：关联整定任务（可选，用于知识库生成） -->
+      <FormItem name="tuningRecordId">
+        <template #label>
+          <span>关联整定任务</span>
+          <ClpmInfoTip
+            tip="关联后，验证通过的本案例将自动沉淀为整定知识库条目，供后续相似案例推荐复用。可不关联。"
+          />
+        </template>
+        <Select
+          v-model:value="formData.tuningRecordId"
+          :options="tuningRecordOptions"
+          :loading="tuningRecordLoading"
+          allow-clear
+          show-search
+          option-filter-prop="label"
+          placeholder="选择本回路已完成的整定任务（可选）"
+          style="width: 100%"
+        />
+      </FormItem>
+
       <!-- 实施时间 -->
       <FormItem label="实施时间" name="implementedAt">
         <DatePicker
@@ -146,9 +166,11 @@ import {
   InputNumber,
   Modal,
   Row,
+  Select,
   Textarea,
 } from 'ant-design-vue';
 
+import { getTuningTasksApi } from '#/api/tuning';
 import { ClpmInfoTip } from '#/components/clpm';
 
 interface Emits {
@@ -166,6 +188,8 @@ export interface ImplementSubmitData {
   mocNotApplicable: boolean;
   mocReason?: string;
   comment?: string;
+  /** P3-01：关联整定任务记录（用于知识库生成） */
+  tuningRecordId?: string | null;
 }
 
 interface Props {
@@ -173,11 +197,14 @@ interface Props {
   /** 建议初始参数（从整定结果带入） */
   initialP?: { p?: number; i?: number; d?: number } | null;
   loading?: boolean;
+  /** P3-01：当前回路 ID（用于拉取可关联的整定任务） */
+  loopId?: string | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   initialP: null,
   loading: false,
+  loopId: null,
 });
 
 const emit = defineEmits<Emits>();
@@ -202,6 +229,7 @@ interface FormState {
   mocNotApplicable: boolean;
   mocReason: string | undefined;
   comment: string | undefined;
+  tuningRecordId: string | undefined;
 }
 
 const formData = reactive<FormState>({
@@ -213,7 +241,50 @@ const formData = reactive<FormState>({
   mocNotApplicable: false,
   mocReason: undefined,
   comment: undefined,
+  tuningRecordId: undefined,
 });
+
+// P3-01：可关联的整定任务（已辨识/已仿真/已完成/已验证）
+interface TuningRecordOption {
+  label: string;
+  value: string;
+}
+const tuningRecordOptions = ref<TuningRecordOption[]>([]);
+const tuningRecordLoading = ref(false);
+
+const TUNABLE_TASK_STATUS = [
+  'IDENTIFIED',
+  'SIMULATED',
+  'COMPLETED',
+  'APPLIED',
+  'VERIFIED',
+];
+
+/** P3-01：拉取当前回路可关联的整定任务 */
+async function loadTuningRecords() {
+  if (!props.loopId) {
+    tuningRecordOptions.value = [];
+    return;
+  }
+  tuningRecordLoading.value = true;
+  try {
+    const resp = await getTuningTasksApi({
+      loopId: props.loopId,
+      pageSize: 50,
+    });
+    const items = (resp?.items ?? []).filter((t) =>
+      TUNABLE_TASK_STATUS.includes(t.status),
+    );
+    tuningRecordOptions.value = items.map((t) => ({
+      value: t.id,
+      label: `${t.tagName ?? props.loopId} · ${t.algorithm} · ${t.modelType}（${t.status}）`,
+    }));
+  } catch {
+    tuningRecordOptions.value = [];
+  } finally {
+    tuningRecordLoading.value = false;
+  }
+}
 
 // 打开时带入初始参数
 watch(
@@ -228,6 +299,8 @@ watch(
       formData.mocNotApplicable = false;
       formData.mocReason = undefined;
       formData.comment = undefined;
+      formData.tuningRecordId = undefined;
+      loadTuningRecords();
     }
   },
   { immediate: true },
@@ -267,19 +340,22 @@ async function handleSubmit() {
     return;
   }
 
-  // Td 默认 0（无微分）
+  // Td 默认 0（无微分）；validate 已保证 P/I 必填，此处用 ?? 0 兜底以满足类型
+  const pidP = formData.newPidP ?? 0;
+  const pidI = formData.newPidI ?? 0;
   const pidD = formData.newPidD ?? 0;
 
   emit('submit', {
     status: 'VERIFYING',
-    newPidP: formData.newPidP!,
-    newPidI: formData.newPidI!,
+    newPidP: pidP,
+    newPidI: pidI,
     newPidD: pidD === 0 ? null : pidD,
     implementedAt: formData.implementedAt || undefined,
     mocRef: formData.mocRef || undefined,
     mocNotApplicable: formData.mocNotApplicable,
     mocReason: formData.mocReason || undefined,
     comment: formData.comment || undefined,
+    tuningRecordId: formData.tuningRecordId || null,
   });
 }
 

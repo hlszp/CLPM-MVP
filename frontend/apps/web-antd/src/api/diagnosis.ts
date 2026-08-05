@@ -369,6 +369,8 @@ export namespace DiagnosisApi {
     implementedAt?: string | null;
     /** P1a: 重开原因（REOPENED 状态时必填） */
     reopenReason?: string | null;
+    /** P3-01：关联整定任务记录 ID（VERIFYING 时可选，用于知识库生成） */
+    tuningRecordId?: string | null;
   }
 
   /** Tracker 记录项 */
