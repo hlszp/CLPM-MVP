@@ -168,8 +168,10 @@ function goPidDashboard() {
 const signalrStatus = computed(() => {
   const h = linkHealth.value;
   if (!h) return { color: 'default', text: '未知', icon: 'lucide:circle-help' };
-  if (!h.signalrEnabled) return { color: 'default', text: '未启用', icon: 'lucide:circle-slash' };
-  if (h.signalrSubscriberRunning) return { color: 'success', text: '运行中', icon: 'lucide:radio' };
+  if (!h.signalrEnabled)
+    return { color: 'default', text: '未启用', icon: 'lucide:circle-slash' };
+  if (h.signalrSubscriberRunning)
+    return { color: 'success', text: '运行中', icon: 'lucide:radio' };
   return { color: 'error', text: '已停机', icon: 'lucide:wifi-off' };
 });
 
@@ -254,10 +256,7 @@ function handleRefresh() {
           <span class="text-xs" style="color: hsl(var(--muted-foreground))">
             实时订阅
           </span>
-          <Tag
-            :color="signalrStatus.color"
-            class="!m-0"
-          >
+          <Tag :color="signalrStatus.color" class="!m-0">
             {{ signalrStatus.text }}
           </Tag>
         </div>
@@ -265,7 +264,11 @@ function handleRefresh() {
         <!-- 网络模式 -->
         <div class="flex flex-col items-center gap-1 rounded border p-3">
           <IconifyIcon
-            :icon="linkHealth?.networkMode === 'wan' ? 'lucide:globe' : 'lucide:network'"
+            :icon="
+              linkHealth?.networkMode === 'wan'
+                ? 'lucide:globe'
+                : 'lucide:network'
+            "
             :size="24"
             style="color: hsl(var(--status-info))"
           />
@@ -293,7 +296,11 @@ function handleRefresh() {
               {{ formatTime(linkHealth.lastSyncAt).slice(5, 16) }}
             </span>
           </Tooltip>
-          <span v-else class="text-sm" style="color: hsl(var(--muted-foreground))">
+          <span
+            v-else
+            class="text-sm"
+            style="color: hsl(var(--muted-foreground))"
+          >
             —
           </span>
         </div>
@@ -301,7 +308,11 @@ function handleRefresh() {
         <!-- Tailscale 状态 -->
         <div class="flex flex-col items-center gap-1 rounded border p-3">
           <IconifyIcon
-            :icon="linkHealth?.tailscaleAvailable ? 'lucide:shield-check' : 'lucide:shield-off'"
+            :icon="
+              linkHealth?.tailscaleAvailable
+                ? 'lucide:shield-check'
+                : 'lucide:shield-off'
+            "
             :size="24"
             :style="{
               color: linkHealth?.tailscaleAvailable

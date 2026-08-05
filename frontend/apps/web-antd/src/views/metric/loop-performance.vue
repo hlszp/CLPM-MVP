@@ -80,7 +80,11 @@ import {
   getLoopSnapshotsApi,
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmDataCanvas, ClpmInfoTip, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmInfoTip,
+  ClpmPageToolbar,
+} from '#/components/clpm';
 import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
@@ -322,28 +326,28 @@ const columns = computed<TableColumnsType>(() => [
     title: '回路名称',
     key: 'description',
     dataIndex: 'description',
-    width: 160,
+    width: 120,
     ellipsis: true,
   },
   {
     title: '回路类型',
     key: 'loopType',
-    width: 90,
+    width: 80,
   },
   {
     title: '控制类型',
     key: 'controlType',
-    width: 90,
+    width: 80,
   },
   {
     title: '控制方式',
     key: 'controlMode',
-    width: 90,
+    width: 80,
   },
   {
     title: '评估等级',
     key: 'grade',
-    width: 90,
+    width: 80,
   },
   {
     title: '综合评分',
@@ -356,40 +360,18 @@ const columns = computed<TableColumnsType>(() => [
       return query.sortOrder === 'asc' ? 'ascend' : 'descend';
     })(),
   },
-  {
-    title: '准确率',
-    key: 'accuracyRate',
-    dataIndex: 'accuracyRate',
-    width: 80,
-  },
-  {
-    title: '快速率',
-    key: 'fastRate',
-    dataIndex: 'fastRate',
-    width: 80,
-  },
-  {
-    title: '平稳率',
-    key: 'steadyRate',
-    dataIndex: 'steadyRate',
-    width: 80,
-  },
-  {
-    title: '有效自控率',
-    key: 'effectiveAutoRate',
-    dataIndex: 'effectiveAutoRate',
-    width: 100,
-  },
+  // P1-04：准确率/快速率/平稳率/有效自控率 4 个 KPI 列从表格移除，
+  // 避免横向滚动；完整 8 大 KPI 在详情抽屉展示（含 Tooltip 解释）
   {
     title: '可信度',
     key: 'confidenceLevel',
     dataIndex: 'confidenceLevel',
-    width: 90,
+    width: 80,
   },
   {
     title: '时间窗口',
     key: 'tsRange',
-    width: 170,
+    width: 140,
   },
   {
     title: '评估时间',
@@ -401,12 +383,12 @@ const columns = computed<TableColumnsType>(() => [
     title: '评估状态',
     key: 'status',
     dataIndex: 'status',
-    width: 90,
+    width: 80,
   },
   {
     title: '操作',
     key: 'action',
-    width: 200,
+    width: 140,
     fixed: 'right' as const,
   },
 ]);
@@ -1394,7 +1376,7 @@ onMounted(async () => {
         :row-key="
           (record: LoopPerformanceRow) => `${record.loopId}-${record.tsStart}`
         "
-        :scroll="{ x: 1850 }"
+        :scroll="{ x: 1250 }"
         size="small"
         @change="handleTableChange"
       >
@@ -1407,38 +1389,8 @@ onMounted(async () => {
               :detail="KPI_TERM_EXPLANATIONS.compositeScore?.detail"
             />
           </template>
-          <template v-else-if="column.key === 'accuracyRate'">
-            准确率
-            <ClpmInfoTip
-              :term="KPI_TERM_EXPLANATIONS.accuracyScore?.term"
-              :tip="KPI_TERM_EXPLANATIONS.accuracyScore?.short ?? ''"
-              :detail="KPI_TERM_EXPLANATIONS.accuracyScore?.detail"
-            />
-          </template>
-          <template v-else-if="column.key === 'fastRate'">
-            快速率
-            <ClpmInfoTip
-              :term="KPI_TERM_EXPLANATIONS.responseScore?.term"
-              :tip="KPI_TERM_EXPLANATIONS.responseScore?.short ?? ''"
-              :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
-            />
-          </template>
-          <template v-else-if="column.key === 'steadyRate'">
-            平稳率
-            <ClpmInfoTip
-              :term="KPI_TERM_EXPLANATIONS.steadyScore?.term"
-              :tip="KPI_TERM_EXPLANATIONS.steadyScore?.short ?? ''"
-              :detail="KPI_TERM_EXPLANATIONS.steadyScore?.detail"
-            />
-          </template>
-          <template v-else-if="column.key === 'effectiveAutoRate'">
-            有效自控率
-            <ClpmInfoTip
-              :term="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.term"
-              :tip="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.short ?? ''"
-              :detail="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.detail"
-            />
-          </template>
+          <!-- P1-04：准确率/快速率/平稳率/有效自控率列头 Tooltip 已随列移除，
+               完整 8 大 KPI 解释集中在详情抽屉「8 大性能评估 KPI 指标」区 -->
         </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'loopType'">
@@ -1502,30 +1454,6 @@ onMounted(async () => {
               }"
             >
               {{ formatNumber((record as LoopPerformanceRow).score) }}
-            </span>
-          </template>
-          <template
-            v-else-if="
-              (
-                [
-                  'accuracyRate',
-                  'fastRate',
-                  'steadyRate',
-                  'effectiveAutoRate',
-                ] as string[]
-              ).includes(column.key as string)
-            "
-          >
-            <span class="font-mono text-xs">
-              {{
-                formatNumber(
-                  getMetricValue(
-                    record as LoopPerformanceRow,
-                    column.dataIndex as string,
-                  ),
-                  '%',
-                )
-              }}
             </span>
           </template>
           <template v-else-if="column.key === 'confidenceLevel'">
