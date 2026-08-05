@@ -5,9 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TuningWorkbench from '../views/tuning/workbench.vue';
 
 const getTuningHistoryApiMock = vi.fn();
+const getDiagnosisListApiMock = vi.fn();
 
 vi.mock('#/api/tuning', () => ({
   getTuningHistoryApi: () => getTuningHistoryApiMock(),
+}));
+
+vi.mock('#/api/diagnosis', () => ({
+  getDiagnosisListApi: (...args: unknown[]) => getDiagnosisListApiMock(...args),
 }));
 
 vi.mock('#/composables/use-clpm-theme', () => ({
@@ -22,7 +27,12 @@ vi.mock('#/composables/use-clpm-theme', () => ({
   }),
 }));
 
+vi.mock('#/utils/format', () => ({
+  formatTime: (val: unknown) => String(val),
+}));
+
 vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
   useRouter: () => ({
     push: vi.fn(),
   }),
@@ -46,6 +56,7 @@ vi.mock('ant-design-vue', () => ({
 }));
 
 vi.mock('#/components/clpm', () => ({
+  ClpmConfidenceBadge: { template: '<span />' },
   ClpmDataCanvas: { template: '<div><slot /></div>' },
   ClpmKpiStrip: {
     props: ['items'],
@@ -62,6 +73,7 @@ vi.mock('#/components/clpm', () => ({
       </div>
     `,
   },
+  ClpmLoopLink: { template: '<span />' },
   ClpmPageToolbar: { template: '<div><slot /></div>' },
   ClpmToolbarButton: { template: '<button />' },
 }));
@@ -76,6 +88,8 @@ describe('tuningWorkbench', () => {
       recentTasks: [],
       totalTasks: 0,
     });
+    getDiagnosisListApiMock.mockReset();
+    getDiagnosisListApiMock.mockResolvedValue({ items: [], total: 0 });
   });
 
   it('将尚未计算的风险统计显示为未知而不是伪 0', async () => {
