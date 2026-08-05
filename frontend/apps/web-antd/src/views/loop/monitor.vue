@@ -66,6 +66,7 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmColumnSettings,
   ClpmDataCanvas,
+  ClpmDataHealthBadges,
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmToolbarButton,
@@ -473,6 +474,8 @@ const columns: TableColumnsType = [
   },
   // D6 入口整合：诊断标签列——展示最新诊断标签，点击跳转诊断详情页
   { title: '诊断标签', key: 'diagLabel', width: 110, align: 'center' },
+  // 数据健康度（方案 A §5）：可信度 + 预处理有效率 + PV 完整度
+  { title: '数据健康度', key: 'dataHealth', width: 150, align: 'center' },
   { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
 ];
 
@@ -1535,6 +1538,12 @@ onUnmounted(() => {
               >
                 —
               </span>
+            </template>
+            <!-- 数据健康度（方案 A §5）：可信度 + 预处理有效率 + PV 完整度三指标徽标 -->
+            <template v-else-if="column.key === 'dataHealth'">
+              <ClpmDataHealthBadges
+                :health="(record as LoopApi.MonitorListItem).dataHealth"
+              />
             </template>
             <template v-else-if="column.key === 'action'">
               <div class="flex items-center gap-1">

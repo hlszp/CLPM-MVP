@@ -406,6 +406,29 @@ export namespace LoopApi {
     kpiSummary?: KpiSummary;
     isActive: boolean;
     readAt: string;
+    /**
+     * 数据健康度（方案 A §5）：预处理 validRate + 可信度 + 完整度
+     * 来自最新 KPI 快照 / 每日巡检快照，列表页不实时查 TDengine
+     */
+    dataHealth?: LoopDataHealth;
+  }
+
+  /** 回路数据健康度（预处理有效率 + 可信度 + 完整度） */
+  export interface LoopDataHealth {
+    /** 预处理：好值率/有效率（0~1，来自预处理管道 + ConfidenceEvaluator） */
+    validRate?: null | number;
+    /** 回路可信度：A/B/C/D/E 等级 */
+    confidenceLevel?: null | ConfidenceLevel;
+    /** 数据完整性：PV 列完整度（0~1，来自每日 02:00 巡检快照） */
+    pvCompleteness?: null | number;
+    /** 整体完整度（0~1） */
+    overallCompleteness?: null | number;
+    /** 完整性状态：OK/WARNING/CRITICAL/DATA_UNAVAILABLE */
+    integrityStatus?: null | string;
+    /** 缺失列列表 */
+    missingColumns?: null | string[];
+    /** 最近巡检日期（ISO 串） */
+    lastIntegrityCheck?: null | string;
   }
 
   /** 回路监控列表查询参数（IDS v3.2 §2.2.15） */

@@ -1,6 +1,7 @@
 export { default as ClpmColumnSettings } from './column-settings.vue';
 export { default as ClpmDangerConfirmModal } from './danger-confirm-modal.vue';
 export { default as ClpmDataCanvas } from './data-canvas.vue';
+export { default as ClpmDataHealthBadges } from './data-health-badges.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export type { KpiStripItem } from './kpi-strip.vue';
