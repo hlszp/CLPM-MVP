@@ -331,6 +331,51 @@ const currentStep = computed(() => {
   return Math.max(0, problemPathSteps.value.length - 1);
 });
 
+/** P2-02：A/B 验证计划 */
+const abVerifyPlan = computed(() => {
+  if (!timeline.value) return null;
+  const status = timeline.value.currentStatus;
+  const implementedEvent = timeline.value.events.find(
+    (e) => e.eventType === 'implemented',
+  );
+  return {
+    status,
+    implementedAt: implementedEvent?.timestamp ?? null,
+    pendingVerificationAt: timeline.value.pendingVerificationAt ?? null,
+    isVerifying: status === 'VERIFYING',
+    isClosed: status === 'CLOSED',
+    isPending:
+      status === 'PENDING' ||
+      status === 'IN_PROGRESS' ||
+      status === 'REOPENED' ||
+      status === 'IGNORED',
+  };
+});
+
+/** A/B 验证 Steps 项 */
+const abVerifySteps = computed(() => {
+  if (!abVerifyPlan.value) return [];
+  const plan = abVerifyPlan.value;
+  return [
+    {
+      title: '参数已实施',
+      description: plan.implementedAt
+        ? `实施时间：${formatTime(plan.implementedAt)}`
+        : '已记录实施参数',
+    },
+    {
+      title: '数据采集期',
+      description: '系统正在采集实施后的运行数据（24 小时）',
+    },
+    {
+      title: '自动验证',
+      description: plan.pendingVerificationAt
+        ? `预计验证：${formatTime(plan.pendingVerificationAt)}`
+        : '采集完成后自动生成对比报告',
+    },
+  ];
+});
+
 function getTimeRange(tw: DiagnosisApi.TimeWindow): [dayjs.Dayjs, dayjs.Dayjs] {
   switch (tw) {
     case 'last_7_days':
@@ -635,6 +680,13 @@ async function handleImplementSubmit(data: ImplementSubmitData) {
     mocReason: data.mocReason,
   });
   implementModalVisible.value = false;
+  // P2-02：实施后明确提示验证周期
+  Modal.info({
+    title: '已标记为验证中',
+    content:
+      '系统将在 24 小时数据采集后自动生成 A/B 对比报告。请稍后在「A/B 验证」Tab 查看对比结果，或等待系统自动验证通知。',
+    okText: '知道了',
+  });
 }
 
 /** 验证通过 */
@@ -1135,28 +1187,79 @@ onMounted(() => {
             </ClpmDataCanvas>
           </Tabs.TabPane>
 
-          <!-- Tab 4: A/B验证（预留） -->
+          <!-- Tab 4: A/B验证（P2-02：验证计划可视化） -->
           <Tabs.TabPane key="ab-verify" tab="A/B验证">
             <ClpmDataCanvas
               title="A/B效果验证"
               description="对比实施前后KPI指标变化，验证整改效果"
             >
-              <div class="flex flex-col items-center justify-center py-12">
-                <IconifyIcon
-                  icon="ant-design:line-chart-outlined"
-                  :size="64"
-                  :style="{ color: themeColors.NEUTRAL + '40' }"
+              <!-- 验证中：显示验证计划时间线 -->
+              <template v-if="abVerifyPlan?.isVerifying">
+                <Steps
+                  :current="1"
+                  :items="abVerifySteps"
+                  direction="vertical"
+                  size="small"
                 />
-                <div class="mt-4 text-center">
-                  <div class="font-medium">A/B对比验证</div>
-                  <div
-                    class="mt-1 text-sm"
-                    :style="{ color: themeColors.NEUTRAL }"
-                  >
-                    标记参数已实施后，等待24小时数据采集即可查看对比结果
+                <div
+                  class="mt-4 flex items-start gap-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm"
+                >
+                  <IconifyIcon
+                    icon="lucide:info"
+                    :size="16"
+                    class="mt-0.5 shrink-0 text-blue-500"
+                  />
+                  <div>
+                    <div class="font-medium text-blue-700">
+                      系统正在采集数据，请耐心等待
+                    </div>
+                    <div class="mt-1 text-blue-600">
+                      数据采集完成后将自动生成 A/B
+                      对比报告，对比实施前后的 KPI 指标变化。
+                    </div>
                   </div>
                 </div>
-              </div>
+              </template>
+
+              <!-- 已闭环：显示验证通过 -->
+              <template v-else-if="abVerifyPlan?.isClosed">
+                <div class="flex flex-col items-center justify-center py-12">
+                  <IconifyIcon
+                    icon="ant-design:check-circle-outlined"
+                    :size="64"
+                    :style="{ color: themeColors.SUCCESS + '60' }"
+                  />
+                  <div class="mt-4 text-center">
+                    <div class="font-medium">验证已通过</div>
+                    <div
+                      class="mt-1 text-sm"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      该异常已闭环，A/B 对比结果已记录
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 待实施：显示空状态提示 -->
+              <template v-else>
+                <div class="flex flex-col items-center justify-center py-12">
+                  <IconifyIcon
+                    icon="ant-design:line-chart-outlined"
+                    :size="64"
+                    :style="{ color: themeColors.NEUTRAL + '40' }"
+                  />
+                  <div class="mt-4 text-center">
+                    <div class="font-medium">A/B对比验证</div>
+                    <div
+                      class="mt-1 text-sm"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      标记参数已实施后，等待24小时数据采集即可查看对比结果
+                    </div>
+                  </div>
+                </div>
+              </template>
             </ClpmDataCanvas>
           </Tabs.TabPane>
         </Tabs>
