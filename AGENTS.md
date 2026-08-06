@@ -149,6 +149,7 @@ cd frontend && pnpm run format
 - **远端**：`origin` = gitea（主），`github` = GitHub（镜像）；main 跟踪 `origin/main`
 - **提交**：Conventional Commits `<type>(<scope>): <subject>`，subject ≤50 字符祈使句，body 解释"为什么"，按逻辑单元拆分，单 commit ≤500 行
 - **日常开发**：可直接在 main 上小步提交并 `git push origin main`；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
+- **IA 重构分支策略**（2026-08-06 起，进行中）：本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建，已推 origin+github）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送；仅当 A/B/C/D 全部测试验证通过且人工确认后，IA 才合并到 main。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。期间日常修复仍可走 main，IA 定期 rebase main 保持同步
 - **PR**：无需在 gitea 网页端手工发起——对话中显式提出 PR 要求时，agent 直接通过 gitea API 创建并合并（token 在 origin remote URL 中），合并后同步镜像 `git push github main`
 - **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支
 - **CI 现状**：gitea 侧无 CI，以提交前本地检查（ruff + pytest + check:type）为门禁；GitHub Actions 仅在镜像侧运行（当前账户欠费停用，2026-07-21）
