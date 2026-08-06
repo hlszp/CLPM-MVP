@@ -34,6 +34,11 @@ class DataSourceConfigInfo(CamelModel):
     realtimeWritebackEnabled: bool = Field(
         False, description="是否将实时数据写回本地 TDengine 宽表（仅 tdengine 模式生效）"
     )
+    # 实时数据断点续传（运行时经 sys_config 调整，即时生效无需重启）
+    gapBackfillEnabled: bool = Field(
+        False, description="实时数据断点续传总开关（SignalR 重连后自动补齐缺口）"
+    )
+    gapBackfillMinGapSeconds: int = Field(600, description="断点续传缺口阈值（秒，小于该缺口不补）")
 
     # 运行态标记（启动时初始化的实际状态，UI 用于提示"需重启生效"）
     historyProviderActive: str = Field(
@@ -79,6 +84,13 @@ class DataSourceConfigUpdate(CamelModel):
     signalrReconnectInterval: int | None = Field(None, description="SignalR 断线重连间隔（秒）")
     realtimeWritebackEnabled: bool | None = Field(
         None, description="是否将实时数据写回本地 TDengine 宽表"
+    )
+    gapBackfillEnabled: bool | None = Field(None, description="实时数据断点续传总开关")
+    gapBackfillMinGapSeconds: int | None = Field(
+        None,
+        description="断点续传缺口阈值（秒，下限 60，上限 86400=24h）",
+        ge=60,
+        le=86400,
     )
 
 

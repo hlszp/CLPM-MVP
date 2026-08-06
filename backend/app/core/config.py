@@ -110,8 +110,8 @@ class Settings(BaseSettings):
 
     # ---- 断点续传（实时数据缺口自动补全）----
     # SignalR 断线/进程重启导致的数据缺口，重连成功后自动调用远端历史数据接口补全
-    GAP_BACKFILL_ENABLED: bool = True
-    GAP_BACKFILL_MIN_GAP_SECONDS: int = 60  # 小于该缺口不补（正常重连抖动）
+    GAP_BACKFILL_ENABLED: bool = False  # 默认关闭，运行时经 sys_config（UI 链路配置页）调整
+    GAP_BACKFILL_MIN_GAP_SECONDS: int = 600  # 默认 10 分钟；运行时经 sys_config 调整
     GAP_BACKFILL_MAX_HOURS: int = 24  # 单次补数最大窗口（超出部分截断并告警，需手工导入）
     GAP_BACKFILL_RETRY_BASE_SECONDS: int = 300  # 补数失败重试起步退避（5 分钟，连接在线也生效）
     GAP_BACKFILL_RETRY_MAX_SECONDS: int = 1800  # 补数失败重试退避上限（30 分钟，指数翻倍封顶）

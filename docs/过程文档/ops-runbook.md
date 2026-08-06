@@ -116,7 +116,9 @@ prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.pro
 
 ### 实时数据断点续传（2026-07-20）
 
-SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次收到数据更新内存 `_last_data_at`，flush 时节流（30s）持久化到 Redis checkpoint（`realtime:gap:last_data_ts`，epoch 秒）；重连成功（含进程重启后首连，启动时从 checkpoint 恢复）检测缺口 ≥ `GAP_BACKFILL_MIN_GAP_SECONDS`（默认 60s）即创建独立 asyncio 补数任务（单实例守卫，不阻塞实时链路），复用 `import_history_data`（`conflict_strategy="skip"` 依赖 TDengine 同 ts 覆盖——**禁止 overwrite**（会先 DELETE 误删实时行），`trigger_backfill=True` 联动 KPI 回算）；单次窗口上限 `GAP_BACKFILL_MAX_HOURS`（默认 24h），超出截断并告警需手工导入；补数失败仅记日志、checkpoint 不推进，下次重连天然重试。实现在 `app/services/data_source/realtime_subscriber.py`（`_maybe_trigger_gap_backfill` / `_run_gap_backfill`）。
+SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次收到数据更新内存 `_last_data_at`，flush 时节流（30s）持久化到 Redis checkpoint（`realtime:gap:last_data_ts`，epoch 秒）；重连成功（含进程重启后首连，启动时从 checkpoint 恢复）检测缺口 ≥ `GAP_BACKFILL_MIN_GAP_SECONDS`（默认 600s=10 分钟）且总开关 `GAP_BACKFILL_ENABLED`（默认 **关闭**）打开时，即创建独立 asyncio 补数任务（单实例守卫，不阻塞实时链路），复用 `import_history_data`（`conflict_strategy="skip"` 依赖 TDengine 同 ts 覆盖——**禁止 overwrite**（会先 DELETE 误删实时行），`trigger_backfill=True` 联动 KPI 回算）；单次窗口上限 `GAP_BACKFILL_MAX_HOURS`（默认 24h），超出截断并告警需手工导入；补数失败仅记日志、checkpoint 不推进，下次重连天然重试。实现在 `app/services/data_source/realtime_subscriber.py`（`_maybe_trigger_gap_backfill` / `_run_gap_backfill`）。
+
+**运行时可调（2026-08-06）**：总开关与缺口阈值已纳入 `sys_config` 运行时配置（键 `datasource.gap_backfill_enabled` / `datasource.gap_backfill_min_gap_seconds`），经 UI 链路配置页（`/loop/aas` 数据源 Tab）修改，即时生效（订阅器每次触发都读 settings，无需重启）；前端阈值以分钟为单位（1-1440），后端存秒。`.env` 中的 `GAP_BACKFILL_*` 仅作启动兜底默认值，`preload_datasource_config` 启动时以 sys_config 覆盖之。默认关闭 + 10 分钟阈值的考量：避免短暂网络抖动（<10 分钟）触发远端拉取，减少远端 API 压力。
 
 ### SignalR 订阅 invocationId 机制（2026-08-01 修复）
 

@@ -99,6 +99,9 @@ const form = reactive({
   signalrHubUrl: '',
   signalrEnabled: false,
   signalrReconnectInterval: 5,
+  // 断点续传（阈值前端用分钟，后端存秒，提交时 ×60）
+  gapBackfillEnabled: false,
+  gapBackfillMinGapMinutes: 10,
 });
 
 // 默认局域网地址（公网切换由 Tailscale 子网路由透明转发，URL 不变）
@@ -198,6 +201,11 @@ async function loadConfig() {
     form.signalrHubUrl = data.signalrHubUrl ?? '';
     form.signalrEnabled = data.signalrEnabled;
     form.signalrReconnectInterval = data.signalrReconnectInterval;
+    form.gapBackfillEnabled = data.gapBackfillEnabled;
+    // 后端秒 → 前端分钟（Math.round 防御非 60 倍数脏数据）
+    form.gapBackfillMinGapMinutes = Math.round(
+      data.gapBackfillMinGapSeconds / 60,
+    );
     historyTestResult.value = null;
     signalrTestResult.value = null;
     tailscaleSwitchResult.value = null;
@@ -255,6 +263,8 @@ async function saveSignalrConfig() {
       signalrHubUrl: form.signalrHubUrl,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
+      gapBackfillEnabled: form.gapBackfillEnabled,
+      gapBackfillMinGapSeconds: form.gapBackfillMinGapMinutes * 60,
     });
     config.value = data;
     message.success('实时数据源配置已保存');
@@ -301,6 +311,8 @@ async function confirmTestSignalr() {
       signalrHubUrl: form.signalrHubUrl,
       signalrEnabled: form.signalrEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
+      gapBackfillEnabled: form.gapBackfillEnabled,
+      gapBackfillMinGapSeconds: form.gapBackfillMinGapMinutes * 60,
     });
     config.value = data;
     signalrTestResult.value = await testSignalrApi();
@@ -1135,6 +1147,31 @@ onMounted(loadConfig);
                     :max="60"
                     :min="1"
                   />
+                </FormItem>
+
+                <!-- 断点续传（依赖订阅器运行，仅在启用实时订阅时显示） -->
+                <FormItem label="断点续传">
+                  <div class="flex items-center gap-2">
+                    <Switch v-model:checked="form.gapBackfillEnabled" />
+                    <span class="text-gray-400 text-sm">
+                      SignalR 断线重连后自动补齐缺口数据
+                    </span>
+                  </div>
+                </FormItem>
+                <FormItem
+                  v-if="form.gapBackfillEnabled"
+                  label="缺口阈值（分钟）"
+                >
+                  <div class="flex items-center gap-2">
+                    <InputNumber
+                      v-model:value="form.gapBackfillMinGapMinutes"
+                      :max="1440"
+                      :min="1"
+                    />
+                    <span class="text-gray-400 text-sm">
+                      小于该缺口的断线视为正常抖动不补数（1-1440 分钟）
+                    </span>
+                  </div>
                 </FormItem>
               </template>
 

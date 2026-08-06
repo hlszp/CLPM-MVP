@@ -7,6 +7,7 @@
   可即时生效（下次请求读取 settings 时生效）。
 - dataSourceType 切换需重启后端（Provider 单例在首次调用时创建，见 factory.py）。
 - signalrEnabled 切换需重启后端（订阅器后台任务在 lifespan 启动时初始化）。
+- gapBackfillEnabled / gapBackfillMinGapSeconds 即时生效（订阅器每次触发都读 settings，无需重启）。
 
 安全约定（2026-07-21 链路配置整改）：
 - GET 响应与审计日志中的 historyApiToken 一律打码（保留前后各 4 位）；
@@ -51,6 +52,8 @@ DATASOURCE_CONFIG_KEYS = {
     "signalrEnabled": "datasource.signalr_enabled",
     "signalrReconnectInterval": "datasource.signalr_reconnect_interval",
     "realtimeWritebackEnabled": "datasource.realtime_writeback_enabled",
+    "gapBackfillEnabled": "datasource.gap_backfill_enabled",
+    "gapBackfillMinGapSeconds": "datasource.gap_backfill_min_gap_seconds",
 }
 
 # 字段 → settings 属性名 映射（用于同步内存）
@@ -64,6 +67,8 @@ _SETTINGS_ATTR_MAP = {
     "signalrEnabled": "SIGNALR_ENABLED",
     "signalrReconnectInterval": "SIGNALR_RECONNECT_INTERVAL",
     "realtimeWritebackEnabled": "REALTIME_WRITEBACK_ENABLED",
+    "gapBackfillEnabled": "GAP_BACKFILL_ENABLED",
+    "gapBackfillMinGapSeconds": "GAP_BACKFILL_MIN_GAP_SECONDS",
 }
 
 # 字段 → 类型转换（sys_config 存字符串，需转回原类型）
@@ -72,6 +77,8 @@ _TYPE_CASTERS: dict[str, type] = {
     "signalrEnabled": lambda v: v.lower() == "true",
     "signalrReconnectInterval": int,
     "realtimeWritebackEnabled": lambda v: v.lower() == "true",
+    "gapBackfillEnabled": lambda v: v.lower() == "true",
+    "gapBackfillMinGapSeconds": int,
 }
 
 _KEY_DESCRIPTIONS = {
@@ -84,6 +91,8 @@ _KEY_DESCRIPTIONS = {
     "signalrEnabled": "实时数据订阅启停",
     "signalrReconnectInterval": "SignalR 断线重连间隔（秒）",
     "realtimeWritebackEnabled": "实时数据写回本地 TDengine 宽表（仅 tdengine 模式）",
+    "gapBackfillEnabled": "实时数据断点续传总开关",
+    "gapBackfillMinGapSeconds": "断点续传缺口阈值（秒，小于该缺口不补）",
 }
 
 # 支持的网络模式
@@ -234,6 +243,10 @@ async def get_datasource_config(db: AsyncSession, *, mask_token: bool = True) ->
         ),
         "realtimeWritebackEnabled": _cast_value(
             "realtimeWritebackEnabled", values["realtimeWritebackEnabled"]
+        ),
+        "gapBackfillEnabled": _cast_value("gapBackfillEnabled", values["gapBackfillEnabled"]),
+        "gapBackfillMinGapSeconds": _cast_value(
+            "gapBackfillMinGapSeconds", values["gapBackfillMinGapSeconds"]
         ),
         # 运行态：计算类历史数据查询一律本地 TDengine（2026-07-20 架构决策）
         "historyProviderActive": "tdengine",

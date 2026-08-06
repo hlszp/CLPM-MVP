@@ -113,6 +113,7 @@ cd frontend && pnpm run format
 - **热路径禁止对 naive datetime 逐点调 `.timestamp()`**（macOS fork 时区慢路径陷阱，背景见 ops-runbook）
 - **禁止模块级 asyncio.Lock / Semaphore / Event**：首次竞争即绑定当前事件循环，Celery 每任务新循环后全部抛 "bound to a different event loop"（2026-07-28 全回路 INCONCLUSIVE 事故根因，ops-runbook 已记录；回归测试结构性断言守护）
 - **断点续传禁止 overwrite**：gap backfill 复用 `import_history_data` 时必须 `conflict_strategy="skip"`（overwrite 会先 DELETE 误删实时行）；手工导入 overwrite 强制 `tsEnd ≤ now-5min`
+- **断点续传配置运行时可调**（2026-08-06）：总开关 `gapBackfillEnabled`（默认**关闭**）与缺口阈值 `gapBackfillMinGapSeconds`（默认 600s=10 分钟）已纳入 `sys_config`，经 UI 链路配置页修改即时生效（订阅器每次触发读 settings，无需重启）；`.env` 中 `GAP_BACKFILL_*` 仅作启动兜底默认值
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **前端端口是 5666**，后端 API 为 7101
 

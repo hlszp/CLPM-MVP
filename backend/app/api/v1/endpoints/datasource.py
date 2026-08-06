@@ -68,6 +68,7 @@ async def update_datasource_config_endpoint(
 
     即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
     / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
+    / gapBackfillEnabled / gapBackfillMinGapSeconds
     重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
 
     注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。
@@ -85,6 +86,8 @@ async def update_datasource_config_endpoint(
         signalrEnabled=body.signalrEnabled,
         signalrReconnectInterval=body.signalrReconnectInterval,
         realtimeWritebackEnabled=body.realtimeWritebackEnabled,
+        gapBackfillEnabled=body.gapBackfillEnabled,
+        gapBackfillMinGapSeconds=body.gapBackfillMinGapSeconds,
     )
 
     # 根据 tailscale 切换结果构造响应消息

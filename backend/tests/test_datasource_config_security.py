@@ -46,6 +46,8 @@ def _set_mock_settings(mock_settings) -> None:
     mock_settings.SIGNALR_ENABLED = False
     mock_settings.SIGNALR_RECONNECT_INTERVAL = 5
     mock_settings.REALTIME_WRITEBACK_ENABLED = False
+    mock_settings.GAP_BACKFILL_ENABLED = False
+    mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
 
 
 class TestMaskToken:
@@ -403,3 +405,206 @@ class TestTailscaleRollback:
             assert mock_set.call_count == 1
             assert data["tailscaleSwitch"]["status"] == "success"
             assert "rolledBack" not in data["tailscaleSwitch"]
+
+
+class TestGapBackfillConfig:
+    """断点续传 backfill 配置纳入 sys_config 运行时可调（2026-08-06）.
+
+    覆盖：GET 读 sys_config / 缺失回退默认 / UPDATE 写入同步 / 不传不变 /
+    bool 存 lowercase / 审计含新字段 / preload 同步 / 脏数据容错。
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_returns_sys_config_values(self) -> None:
+        """sys_config 中存的 gap backfill 配置优先返回。"""
+        db = AsyncMock()
+        stored = {
+            "datasource.gap_backfill_enabled": "true",
+            "datasource.gap_backfill_min_gap_seconds": "900",
+        }
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows(stored),
+            ),
+        ):
+            _set_mock_settings(mock_settings)
+            data = await get_datasource_config(db)
+            assert data["gapBackfillEnabled"] is True
+            assert data["gapBackfillMinGapSeconds"] == 900
+
+    @pytest.mark.asyncio
+    async def test_get_falls_back_to_settings_defaults(self) -> None:
+        """sys_config 缺失时回退 settings 默认（False / 600）。"""
+        db = AsyncMock()
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows({}),
+            ),
+        ):
+            _set_mock_settings(mock_settings)
+            data = await get_datasource_config(db)
+            assert data["gapBackfillEnabled"] is False
+            assert data["gapBackfillMinGapSeconds"] == 600
+
+    @pytest.mark.asyncio
+    async def test_update_writes_and_syncs_settings(self) -> None:
+        """UPDATE 写入 sys_config 并同步 settings 内存。"""
+        db = AsyncMock()
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows({}),
+            ),
+            patch("app.services.datasource_config._set_config_values", new=AsyncMock()) as mock_set,
+            patch("app.services.datasource_config._write_audit", new=AsyncMock()),
+        ):
+            _set_mock_settings(mock_settings)
+            await update_datasource_config(
+                db, "admin", gapBackfillEnabled=True, gapBackfillMinGapSeconds=120
+            )
+            items = mock_set.call_args.args[1]
+            assert items["datasource.gap_backfill_enabled"][0] == "true"
+            assert items["datasource.gap_backfill_min_gap_seconds"][0] == "120"
+            assert mock_settings.GAP_BACKFILL_ENABLED is True
+            assert mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS == 120
+
+    @pytest.mark.asyncio
+    async def test_update_not_provided_unchanged(self) -> None:
+        """只传 gapBackfillEnabled 不传阈值时，阈值不写入 sys_config（不传=不变）。"""
+        db = AsyncMock()
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows({}),
+            ),
+            patch("app.services.datasource_config._set_config_values", new=AsyncMock()) as mock_set,
+            patch("app.services.datasource_config._write_audit", new=AsyncMock()),
+        ):
+            _set_mock_settings(mock_settings)
+            await update_datasource_config(db, "admin", gapBackfillEnabled=True)
+            items = mock_set.call_args.args[1]
+            assert "datasource.gap_backfill_min_gap_seconds" not in items
+            assert items["datasource.gap_backfill_enabled"][0] == "true"
+
+    @pytest.mark.asyncio
+    async def test_update_bool_false_stored_as_lowercase(self) -> None:
+        """bool False 存为 lowercase 字符串 'false'。"""
+        db = AsyncMock()
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows({}),
+            ),
+            patch("app.services.datasource_config._set_config_values", new=AsyncMock()) as mock_set,
+            patch("app.services.datasource_config._write_audit", new=AsyncMock()),
+        ):
+            _set_mock_settings(mock_settings)
+            await update_datasource_config(db, "admin", gapBackfillEnabled=False)
+            items = mock_set.call_args.args[1]
+            assert items["datasource.gap_backfill_enabled"][0] == "false"
+
+    @pytest.mark.asyncio
+    async def test_audit_after_contains_gap_fields(self) -> None:
+        """DATASOURCE_CONFIG_UPDATE 审计 after_value JSON 含 gapBackfill 字段。"""
+        db = AsyncMock()
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows({}),
+            ),
+            patch("app.services.datasource_config._set_config_values", new=AsyncMock()),
+            patch("app.services.datasource_config._write_audit", new=AsyncMock()) as mock_audit,
+        ):
+            _set_mock_settings(mock_settings)
+            await update_datasource_config(
+                db, "admin", gapBackfillEnabled=True, gapBackfillMinGapSeconds=300
+            )
+            update_calls = [
+                c
+                for c in mock_audit.call_args_list
+                if c.kwargs["operation_type"] == "DATASOURCE_CONFIG_UPDATE"
+            ]
+            assert len(update_calls) == 1
+            after = json.loads(update_calls[0].kwargs["after_value"])
+            assert after["gapBackfillEnabled"] is True
+            assert after["gapBackfillMinGapSeconds"] == 300
+
+    @pytest.mark.asyncio
+    async def test_preload_syncs_gap_fields_to_settings(self) -> None:
+        """preload_datasource_config 将 sys_config 的 gap 配置同步到 settings 内存。"""
+        from app.services.datasource_config import preload_datasource_config
+
+        db = AsyncMock()
+        stored = {
+            "datasource.gap_backfill_enabled": "true",
+            "datasource.gap_backfill_min_gap_seconds": "180",
+        }
+        with (
+            patch("app.services.datasource_config.settings") as mock_settings,
+            patch("app.services.datasource_config._is_tailscale_available", return_value=False),
+            patch(
+                "app.services.datasource_config._get_config_rows",
+                new=_mock_get_config_rows(stored),
+            ),
+        ):
+            _set_mock_settings(mock_settings)
+            await preload_datasource_config(db)
+            assert mock_settings.GAP_BACKFILL_ENABLED is True
+            assert mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS == 180
+
+    def test_dirty_min_gap_falls_back_to_raw(self, caplog) -> None:
+        """gapBackfillMinGapSeconds 脏数据回退原字符串，不抛异常。"""
+        with caplog.at_level(logging.WARNING, logger="app.services.datasource_config"):
+            assert _cast_value("gapBackfillMinGapSeconds", "abc") == "abc"
+        assert "脏数据" in caplog.text
+
+    def test_gap_values_valid_cast(self) -> None:
+        """合法值正常转换。"""
+        assert _cast_value("gapBackfillEnabled", "true") is True
+        assert _cast_value("gapBackfillEnabled", "false") is False
+        assert _cast_value("gapBackfillMinGapSeconds", "600") == 600
+
+
+class TestGapBackfillSchemaValidation:
+    """gapBackfillMinGapSeconds schema 层范围校验（ge=60, le=86400）。"""
+
+    def test_below_min_rejected(self) -> None:
+        """阈值 < 60s 被 Pydantic 拒绝（422 前置校验）。"""
+        from pydantic import ValidationError
+
+        from app.schemas.datasource import DataSourceConfigUpdate
+
+        with pytest.raises(ValidationError):
+            DataSourceConfigUpdate(gapBackfillMinGapSeconds=30)
+
+    def test_above_max_rejected(self) -> None:
+        """阈值 > 86400s（24h）被拒绝，与 GAP_BACKFILL_MAX_HOURS 对齐。"""
+        from pydantic import ValidationError
+
+        from app.schemas.datasource import DataSourceConfigUpdate
+
+        with pytest.raises(ValidationError):
+            DataSourceConfigUpdate(gapBackfillMinGapSeconds=100000)
+
+    def test_valid_boundary_accepted(self) -> None:
+        """边界值 60 / 86400 合法。"""
+        from app.schemas.datasource import DataSourceConfigUpdate
+
+        assert DataSourceConfigUpdate(gapBackfillMinGapSeconds=60).gapBackfillMinGapSeconds == 60
+        assert (
+            DataSourceConfigUpdate(gapBackfillMinGapSeconds=86400).gapBackfillMinGapSeconds == 86400
+        )

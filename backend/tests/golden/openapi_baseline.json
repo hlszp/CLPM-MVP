@@ -3051,7 +3051,7 @@
           "datasource"
         ],
         "summary": "Update Datasource Config Endpoint",
-        "description": "更新数据源配置（仅 ADMIN）。\n\n即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken\n/ historyApiTimeout / signalrHubUrl / signalrReconnectInterval\n重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）\n\n注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。",
+        "description": "更新数据源配置（仅 ADMIN）。\n\n即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken\n/ historyApiTimeout / signalrHubUrl / signalrReconnectInterval\n/ gapBackfillEnabled / gapBackfillMinGapSeconds\n重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）\n\n注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。",
         "operationId": "update_datasource_config_endpoint_api_v1_datasource_config_put",
         "requestBody": {
           "content": {
@@ -3080,6 +3080,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/datasource/health": {
+      "get": {
+        "tags": [
+          "datasource"
+        ],
+        "summary": "Get Datasource Health Endpoint",
+        "description": "数据链路健康状态（P1-05：登录用户可查看，工作台常驻卡片）。\n\n返回链路连通性、订阅器运行状态、最近同步时间，不含敏感字段。",
+        "operationId": "get_datasource_health_endpoint_api_v1_datasource_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DataSourceHealthInfo_"
                 }
               }
             }
@@ -4828,6 +4855,77 @@
         }
       }
     },
+    "/api/v1/dashboard/predictions": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Predictions Endpoint",
+        "description": "异常预测与提前预警（P3-05）.\n\n基于最近 7 天 KPI 快照趋势（线性回归），预测未来 24 小时可能出问题的回路。\n返回高风险回路列表（按风险分降序），含风险等级/风险因素/趋势数据。\n\n- 权限：所有登录用户可访问\n- 缓存：Redis 10 分钟（缓存 key 含 plant_id）\n- 数据源：``kpi_snapshot_hourly`` 表（status=SUCCESS）\n\n风险等级：\n- HIGH（≥60分）：多个指标显著恶化，建议立即关注\n- MEDIUM（≥30分）：部分指标有恶化趋势，建议密切观察\n- LOW（<30分）：不返回（只返回 MEDIUM+HIGH）",
+        "operationId": "get_predictions_endpoint_api_v1_dashboard_predictions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按装置筛选；为空分析全厂",
+              "title": "Plantid"
+            },
+            "description": "按装置筛选；为空分析全厂"
+          },
+          {
+            "name": "topN",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "返回的高风险回路数",
+              "default": 10,
+              "title": "Topn"
+            },
+            "description": "返回的高风险回路数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/diagnosis/tags": {
       "get": {
         "tags": [
@@ -5476,7 +5574,7 @@
           "diagnosis"
         ],
         "summary": "Upsert Threshold Override Endpoint",
-        "description": "创建或更新阈值覆盖（仅 ADMIN）。",
+        "description": "创建或更新阈值覆盖（ADMIN 全 scope；ic_engineer 仅 loop scope，P3-02）。",
         "operationId": "upsert_threshold_override_endpoint_api_v1_diagnosis_threshold_overrides_post",
         "security": [
           {
@@ -5550,7 +5648,7 @@
           "diagnosis"
         ],
         "summary": "Delete Threshold Override Endpoint",
-        "description": "删除阈值覆盖（仅 ADMIN）。",
+        "description": "删除阈值覆盖（ADMIN 全 scope；ic_engineer 仅 loop scope，P3-02）。",
         "operationId": "delete_threshold_override_endpoint_api_v1_diagnosis_threshold_overrides__override_id__delete",
         "security": [
           {
@@ -5592,6 +5690,103 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/diagnosis/threshold-recommendations": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Get Threshold Recommendations Endpoint",
+        "description": "按回路推荐阈值模板（P3-02 自适应推荐）。\n\n根据回路的 loop_type 和 plant，返回所有 diag_code 的合并阈值视图：\n- 全局默认 → loop_type 模板 → 装置级覆盖 → 回路级覆盖 → 生效阈值\n- 含 scopeChain 展示各级覆盖来源（前端\"为什么是这个阈值\"）\n\n- 权限：所有登录用户可查看（diagnosis:view）",
+        "operationId": "get_threshold_recommendations_endpoint_api_v1_diagnosis_threshold_recommendations_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "回路 ID",
+              "title": "Loopid"
+            },
+            "description": "回路 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ThresholdRecommendationResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnosis/threshold-templates/apply": {
+      "post": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Apply Threshold Template Endpoint",
+        "description": "一键套用模板到回路/装置（P3-02）。\n\n将该回路 loop_type 匹配的模板阈值复制为目标 scope 的覆盖：\n- targetScope=\"loop\": ADMIN/IC_ENGINEER 可用（回路级微调起点）\n- targetScope=\"plant\": 仅 ADMIN 可用（装置级覆盖）\n\n若目标 scope 已有覆盖则更新（upsert 语义）。",
+        "operationId": "apply_threshold_template_endpoint_api_v1_diagnosis_threshold_templates_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThresholdApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ThresholdOverrideItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/v1/diagnosis/metrics/{diag_id}/versions": {
@@ -7221,6 +7416,65 @@
         }
       }
     },
+    "/api/v1/diagnosis/{loop_id}/interpret": {
+      "post": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Interpret Diagnosis Endpoint",
+        "description": "生成自然语言诊断解读（P3-04）。\n\n将结构化诊断结果（标签/特征值/可信度/证据链）翻译为工程师可读的大白话解读，\n辅助非算法背景用户理解\"这个振荡是什么意思、严不严重、该怎么处理\"。\n\n生成模式（mode）：\n- **auto**（默认）：优先 LLM，不可用或失败时自动 fallback 到规则模板\n- **template**：仅规则模板（离线可用，基于结构化报告常量拼装）\n- **llm**：仅 LLM，不可用时抛 503 错误（供前端\"重新生成\"强制走 LLM）\n\nLLM 配置从 sys_config 读取（endpoint/apiKey/model/timeout/enabled），\n遵循 OpenAI 兼容接口协议；规则模板与前端 DIAGNOSIS_STRUCTURED_REPORT 对齐。\n\n权限：与诊断详情一致（ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT）。",
+        "operationId": "interpret_diagnosis_endpoint_api_v1_diagnosis__loop_id__interpret_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterpretRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_InterpretResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/diagnosis/{loop_id}/recommendations": {
       "get": {
         "tags": [
@@ -7519,7 +7773,7 @@
           "tracker"
         ],
         "summary": "Update Tracker Status Endpoint",
-        "description": "更新处理状态（仅 IC_ENGINEER）。\n\n- status 枚举: PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED\n- 标记 IMPLEMENTED 后自动生成 A/B 对比视图",
+        "description": "更新处理状态（仅 IC_ENGINEER，P1a 闭环状态机扩展）。\n\n- status 枚举: PENDING/IN_PROGRESS/VERIFYING/CLOSED/REOPENED/IGNORED\n- 标记 VERIFYING（已实施）时强制填写 MOC + 新 PID 参数（Poka-Yoke）\n- 标记 REOPENED 时强制填写重开原因\n- 状态转换遵循状态机约束，非法转换返回 422\n- IN_PROGRESS 未指定 assignee 时自动认领给当前操作人",
         "operationId": "update_tracker_status_endpoint_api_v1_tracker__loop_id__status_patch",
         "security": [
           {
@@ -7555,6 +7809,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_TrackerStatusData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tracker/{loop_id}/timeline": {
+      "get": {
+        "tags": [
+          "tracker"
+        ],
+        "summary": "P1a: 获取单回路异常处置时间线",
+        "description": "获取单回路异常处置时间线（P1a）。\n\n聚合诊断发现、状态变更、MOC记录等事件，按时间升序排列。\n返回当前跟踪状态和预计自动验证时间（VERIFYING 状态时）。",
+        "operationId": "get_loop_timeline_endpoint_api_v1_tracker__loop_id__timeline_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimelineData_"
                 }
               }
             }
@@ -8578,6 +8881,190 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/configs/llm": {
+      "get": {
+        "tags": [
+          "llm-config"
+        ],
+        "summary": "Get Llm Config",
+        "description": "获取当前 LLM 配置（API Key 脱敏返回）。\n\n权限：ADMIN/IC_ENGINEER/PE_ENGINEER 可查看（与可信度阈值配置一致）。\n返回的 apiKey 为脱敏值（sk-***xxxx），apiKeyConfigured 标识是否已配置。",
+        "operationId": "get_llm_config_api_v1_configs_llm_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConfigSchema_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "llm-config"
+        ],
+        "summary": "Save Llm Config",
+        "description": "更新 LLM 配置（仅 ADMIN）。\n\n- apiKey 为 None/空字符串时**保留原值**（前端未改 key 场景）\n- apiKey 非空时更新为新值\n- endpoint/model 允许为空（enabled=true 时前端应校验非空，后端 is_llm_available 兜底）\n\n校验：enabled=true 时 endpoint/model/apiKey 至少有一份已配置记录，\n否则 is_llm_available 会返回 False（auto 模式自动 fallback 模板，不阻断）。",
+        "operationId": "save_llm_config_api_v1_configs_llm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmConfigSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmConfigSchema_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/configs/llm/test": {
+      "post": {
+        "tags": [
+          "llm-config"
+        ],
+        "summary": "Test Llm Connection",
+        "description": "连接测试：向已配置的 LLM 服务发一条 ping 请求。\n\n用当前 sys_config 中的配置发起 ``{endpoint}/v1/chat/completions`` 请求，\n发送一条最小消息（\"ping\"），返回成功/失败 + 延迟。\n\n仅 ADMIN 可用（避免 IC_ENGINEER 频繁测试消耗 token）。",
+        "operationId": "test_llm_connection_api_v1_configs_llm_test_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LlmTestResult_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai-insight/scenes": {
+      "get": {
+        "tags": [
+          "AI 洞察"
+        ],
+        "summary": "List Scenes Endpoint",
+        "description": "列出可用的 AI 洞察场景（供前端动态渲染按钮/卡片）。",
+        "operationId": "list_scenes_endpoint_api_v1_ai_insight_scenes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_SceneInfo__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai-insight/{scene}": {
+      "post": {
+        "tags": [
+          "AI 洞察"
+        ],
+        "summary": "Generate Insight Endpoint",
+        "description": "生成 AI 洞察（4 场景统一入口）。\n\n按 scene 调度对应策略，从业务服务自取上下文组装 prompt，调用 LLM 生成洞察。\nLLM 未启用或失败时自动 fallback 规则模板。\n\n生成模式（mode）：\n- **auto**（默认）：优先 LLM，不可用或失败时自动 fallback 到规则模板\n- **template**：仅规则模板（离线可用）\n- **llm**：仅 LLM，不可用时抛 503（供前端强制走 LLM）\n\n场景必填参数：\n- diagnosis / performance：loopId\n- tuning：taskId\n- workbench：无必填参数",
+        "operationId": "generate_insight_endpoint_api_v1_ai_insight__scene__post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "scene",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InsightRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_InsightResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/configs/outlier-params": {
@@ -10883,6 +11370,299 @@
         ]
       }
     },
+    "/api/v1/tuning/knowledge-base": {
+      "get": {
+        "tags": [
+          "tuning"
+        ],
+        "summary": "List Knowledge Base Endpoint",
+        "description": "知识库列表（支持筛选+分页，权限 tuning:view）。",
+        "operationId": "list_knowledge_base_endpoint_api_v1_tuning_knowledge_base_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "控制类型筛选",
+              "title": "Looptype"
+            },
+            "description": "控制类型筛选"
+          },
+          {
+            "name": "diagnosisLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "问题类型筛选",
+              "title": "Diagnosislabel"
+            },
+            "description": "问题类型筛选"
+          },
+          {
+            "name": "algorithm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "算法筛选",
+              "title": "Algorithm"
+            },
+            "description": "算法筛选"
+          },
+          {
+            "name": "effectVerified",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "效果筛选：True=改善/False=恶化",
+              "title": "Effectverified"
+            },
+            "description": "效果筛选：True=改善/False=恶化"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "页码",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "页码"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "每页条数",
+              "default": 20,
+              "title": "Pagesize"
+            },
+            "description": "每页条数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TuningKnowledgeListData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tuning/knowledge-base/similar": {
+      "get": {
+        "tags": [
+          "tuning"
+        ],
+        "summary": "Recommend Similar Endpoint",
+        "description": "相似案例推荐（优先 label 相同 > loop_type 相同，改善案例优先）。",
+        "operationId": "recommend_similar_endpoint_api_v1_tuning_knowledge_base_similar_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "当前回路 ID（排除自身）",
+              "title": "Loopid"
+            },
+            "description": "当前回路 ID（排除自身）"
+          },
+          {
+            "name": "loopType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "控制类型（loopId 为空时用此匹配）",
+              "title": "Looptype"
+            },
+            "description": "控制类型（loopId 为空时用此匹配）"
+          },
+          {
+            "name": "diagnosisLabel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "问题类型（loopId 为空时用此匹配）",
+              "title": "Diagnosislabel"
+            },
+            "description": "问题类型（loopId 为空时用此匹配）"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "description": "返回条数",
+              "default": 5,
+              "title": "Limit"
+            },
+            "description": "返回条数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TuningKnowledgeSimilarData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tuning/knowledge-base/{entry_id}": {
+      "get": {
+        "tags": [
+          "tuning"
+        ],
+        "summary": "Get Knowledge Base Entry Endpoint",
+        "description": "知识库条目详情。",
+        "operationId": "get_knowledge_base_entry_endpoint_api_v1_tuning_knowledge_base__entry_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TuningKnowledgeEntryItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/loops/{loop_id}/mode-mapping": {
       "get": {
         "tags": [
@@ -12787,6 +13567,9 @@
                 "enum": [
                   "PENDING",
                   "IN_PROGRESS",
+                  "VERIFYING",
+                  "CLOSED",
+                  "REOPENED",
                   "IMPLEMENTED",
                   "IGNORED"
                 ]
@@ -13232,6 +14015,32 @@
         },
         "type": "object",
         "title": "ApiResponse[DataSourceConfigInfo]"
+      },
+      "ApiResponse_DataSourceHealthInfo_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataSourceHealthInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[DataSourceHealthInfo]"
       },
       "ApiResponse_DataSourceTestResult_": {
         "properties": {
@@ -13883,6 +14692,58 @@
         "type": "object",
         "title": "ApiResponse[ImportTaskResponse]"
       },
+      "ApiResponse_InsightResult_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InsightResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[InsightResult]"
+      },
+      "ApiResponse_InterpretResult_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterpretResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[InterpretResult]"
+      },
       "ApiResponse_KpiMetricResult_": {
         "properties": {
           "code": {
@@ -13934,6 +14795,58 @@
         },
         "type": "object",
         "title": "ApiResponse[KpiSnapshotListData]"
+      },
+      "ApiResponse_LlmConfigSchema_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmConfigSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[LlmConfigSchema]"
+      },
+      "ApiResponse_LlmTestResult_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmTestResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[LlmTestResult]"
       },
       "ApiResponse_LoginData_": {
         "properties": {
@@ -14975,6 +15888,58 @@
         "type": "object",
         "title": "ApiResponse[ThresholdOverrideItem]"
       },
+      "ApiResponse_ThresholdRecommendationResult_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThresholdRecommendationResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ThresholdRecommendationResult]"
+      },
+      "ApiResponse_TimelineData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[TimelineData]"
+      },
       "ApiResponse_TrackerEffectivenessData_": {
         "properties": {
           "code": {
@@ -15130,6 +16095,84 @@
         },
         "type": "object",
         "title": "ApiResponse[TuningHistoryStats]"
+      },
+      "ApiResponse_TuningKnowledgeEntryItem_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TuningKnowledgeEntryItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[TuningKnowledgeEntryItem]"
+      },
+      "ApiResponse_TuningKnowledgeListData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TuningKnowledgeListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[TuningKnowledgeListData]"
+      },
+      "ApiResponse_TuningKnowledgeSimilarData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TuningKnowledgeSimilarData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[TuningKnowledgeSimilarData]"
       },
       "ApiResponse_TuningTaskDetail_": {
         "properties": {
@@ -15964,6 +17007,36 @@
         },
         "type": "object",
         "title": "ApiResponse[list[ReportConfigItem]]"
+      },
+      "ApiResponse_list_SceneInfo__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SceneInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[SceneInfo]]"
       },
       "ApiResponse_list_ThresholdOverrideItem__": {
         "properties": {
@@ -17452,6 +18525,18 @@
             "description": "是否将实时数据写回本地 TDengine 宽表（仅 tdengine 模式生效）",
             "default": false
           },
+          "gapBackfillEnabled": {
+            "type": "boolean",
+            "title": "Gapbackfillenabled",
+            "description": "实时数据断点续传总开关（SignalR 重连后自动补齐缺口）",
+            "default": false
+          },
+          "gapBackfillMinGapSeconds": {
+            "type": "integer",
+            "title": "Gapbackfillmingapseconds",
+            "description": "断点续传缺口阈值（秒，小于该缺口不补）",
+            "default": 600
+          },
           "historyProviderActive": {
             "type": "string",
             "title": "Historyprovideractive",
@@ -17605,11 +18690,108 @@
             ],
             "title": "Realtimewritebackenabled",
             "description": "是否将实时数据写回本地 TDengine 宽表"
+          },
+          "gapBackfillEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gapbackfillenabled",
+            "description": "实时数据断点续传总开关"
+          },
+          "gapBackfillMinGapSeconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 86400.0,
+                "minimum": 60.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gapbackfillmingapseconds",
+            "description": "断点续传缺口阈值（秒，下限 60，上限 86400=24h）"
           }
         },
         "type": "object",
         "title": "DataSourceConfigUpdate",
         "description": "PUT /api/v1/datasource/config 请求体。\n\n更新语义：字段不传（None）＝保持不变；字符串字段传空串 \"\" ＝显式清空。"
+      },
+      "DataSourceHealthInfo": {
+        "properties": {
+          "networkMode": {
+            "type": "string",
+            "enum": [
+              "lan",
+              "wan"
+            ],
+            "title": "Networkmode",
+            "description": "网络模式：lan 局域网直连 / wan 公网走 Tailscale",
+            "default": "lan"
+          },
+          "signalrEnabled": {
+            "type": "boolean",
+            "title": "Signalrenabled",
+            "description": "是否启用实时数据订阅（配置态）",
+            "default": false
+          },
+          "signalrSubscriberRunning": {
+            "type": "boolean",
+            "title": "Signalrsubscriberrunning",
+            "description": "实时订阅器真实运行状态（运行态，需重启后端生效变更）",
+            "default": false
+          },
+          "signalrHubUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signalrhuburl",
+            "description": "实时数据 SignalR Hub URL"
+          },
+          "historyApiUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historyapiurl",
+            "description": "外部历史数据 API 地址"
+          },
+          "tailscaleAvailable": {
+            "type": "boolean",
+            "title": "Tailscaleavailable",
+            "description": "tailscale 客户端是否可用（容器内为 False）",
+            "default": false
+          },
+          "lastSyncAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastsyncat",
+            "description": "AAS Tag 最近同步时间 ISO 8601"
+          }
+        },
+        "type": "object",
+        "title": "DataSourceHealthInfo",
+        "description": "数据链路健康状态（P1-05：工作台常驻卡片，IC_ENGINEER+ 可查看）。\n\n不含敏感字段（historyApiToken），仅供工作台首屏展示链路连通性。"
       },
       "DataSourceTestResult": {
         "properties": {
@@ -19063,6 +20245,9 @@
             "enum": [
               "PENDING",
               "IN_PROGRESS",
+              "VERIFYING",
+              "CLOSED",
+              "REOPENED",
               "IMPLEMENTED",
               "IGNORED"
             ],
@@ -21475,6 +22660,97 @@
         "title": "ImportTaskResponse",
         "description": "导入任务响应.\n\nAttributes:\n    taskId: 任务 ID\n    status: 任务状态\n    progress: 进度 0~1\n    loopCount: 总回路数\n    importedCount: 已导入回路数\n    errorCount: 失败回路数\n    tsStart: 导入时间范围起始\n    tsEnd: 导入时间范围结束\n    createdAt: 创建时间\n    startedAt: 开始执行时间\n    finishedAt: 完成时间\n    errorMessage: 失败原因\n    createdBy: 创建人\n    conflictStrategy: 冲突策略\n    triggerBackfill: 是否触发回算"
       },
+      "InsightRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "template",
+              "llm"
+            ],
+            "title": "Mode",
+            "description": "生成模式：auto（优先LLM，fallback模板）/ template（仅模板）/ llm（仅LLM）",
+            "default": "auto"
+          },
+          "loopId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopid",
+            "description": "回路 ID（diagnosis/performance 场景必填）"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid",
+            "description": "整定任务 ID（tuning 场景必填）"
+          }
+        },
+        "type": "object",
+        "title": "InsightRequest",
+        "description": "POST /ai-insight/{scene} 请求体。"
+      },
+      "InsightResult": {
+        "properties": {
+          "insight": {
+            "type": "string",
+            "title": "Insight",
+            "description": "洞察文本（结构化纯文本）"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "template",
+              "llm"
+            ],
+            "title": "Source",
+            "description": "实际来源：template/llm"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LLM 模型名（source=llm 时有值）"
+          },
+          "scene": {
+            "type": "string",
+            "title": "Scene",
+            "description": "场景标识"
+          },
+          "generatedAt": {
+            "type": "string",
+            "title": "Generatedat",
+            "description": "生成时间 ISO 8601"
+          }
+        },
+        "type": "object",
+        "required": [
+          "insight",
+          "source",
+          "scene",
+          "generatedAt"
+        ],
+        "title": "InsightResult",
+        "description": "AI 洞察响应。"
+      },
       "IntegrityCheckRequest": {
         "properties": {
           "loopIds": {
@@ -21518,6 +22794,67 @@
         ],
         "title": "IntegrityCheckRequest",
         "description": "数据完整性检查请求.\n\nAttributes:\n    loopIds: 目标回路 ID 列表（不传则查全部 READY 回路）\n    tsStart: 检查时间范围起始（ISO 8601）\n    tsEnd: 检查时间范围结束（ISO 8601）\n    expectedInterval: 预期采样间隔（秒），默认 1"
+      },
+      "InterpretRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "template",
+              "llm"
+            ],
+            "title": "Mode",
+            "description": "生成模式：auto（优先LLM，fallback模板）/ template（仅模板）/ llm（仅LLM）",
+            "default": "auto"
+          }
+        },
+        "type": "object",
+        "title": "InterpretRequest",
+        "description": "POST /diagnosis/{loopId}/interpret 请求体（P3-04）。"
+      },
+      "InterpretResult": {
+        "properties": {
+          "interpretation": {
+            "type": "string",
+            "title": "Interpretation",
+            "description": "结构化纯文本解读"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "template",
+              "llm"
+            ],
+            "title": "Source",
+            "description": "实际来源：template/llm"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LLM 模型名（source=llm 时有值）"
+          },
+          "generatedAt": {
+            "type": "string",
+            "title": "Generatedat",
+            "description": "生成时间 ISO 8601"
+          }
+        },
+        "type": "object",
+        "required": [
+          "interpretation",
+          "source",
+          "generatedAt"
+        ],
+        "title": "InterpretResult",
+        "description": "自然语言诊断解读响应（P3-04）。"
       },
       "KpiCalculateRequest": {
         "properties": {
@@ -22143,6 +23480,212 @@
         ],
         "title": "LabelDistributionItem",
         "description": "标签分布项。"
+      },
+      "LlmConfigSaveRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "是否启用 LLM"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint",
+            "description": "BaseURL"
+          },
+          "apiKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apikey",
+            "description": "API Key（空=保留原值）"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "模型名"
+          },
+          "timeout": {
+            "type": "integer",
+            "maximum": 300.0,
+            "minimum": 5.0,
+            "title": "Timeout",
+            "description": "超时秒数",
+            "default": 30
+          },
+          "maxTokens": {
+            "type": "integer",
+            "maximum": 32768.0,
+            "minimum": 256.0,
+            "title": "Maxtokens",
+            "description": "最大输出 token 数",
+            "default": 4096
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "LlmConfigSaveRequest",
+        "description": "LLM 配置保存请求（POST /configs/llm）。\n\napiKey 为空字符串时保留原值（不修改），非空时更新。"
+      },
+      "LlmConfigSchema": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "是否启用 LLM 解读",
+            "default": false
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint",
+            "description": "BaseURL（API 根地址，不含 /v1）"
+          },
+          "apiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apikey",
+            "description": "API Key（脱敏，形如 sk-***xxxx）"
+          },
+          "apiKeyConfigured": {
+            "type": "boolean",
+            "title": "Apikeyconfigured",
+            "description": "API Key 是否已配置（前端据此区分空值与未配置）",
+            "default": false
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "模型名"
+          },
+          "timeout": {
+            "type": "integer",
+            "title": "Timeout",
+            "description": "超时秒数",
+            "default": 30
+          },
+          "maxTokens": {
+            "type": "integer",
+            "title": "Maxtokens",
+            "description": "最大输出 token 数（推理模型建议 ≥4096）",
+            "default": 4096
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat",
+            "description": "最近更新时间 ISO 8601"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedby",
+            "description": "最近更新人"
+          }
+        },
+        "type": "object",
+        "title": "LlmConfigSchema",
+        "description": "LLM 配置响应（GET /configs/llm）。\n\nAPI Key 脱敏返回（仅尾 4 位），明文不出口。"
+      },
+      "LlmTestResult": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "是否连接成功"
+          },
+          "latencyMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latencyms",
+            "description": "往返延迟毫秒（成功时）"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "实际使用的模型名"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "结果说明（成功/失败原因）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "LlmTestResult",
+        "description": "LLM 连接测试结果（POST /configs/llm/test）."
       },
       "LoginData": {
         "properties": {
@@ -27298,6 +28841,30 @@
         "title": "ResetPasswordRequest",
         "description": "PUT /api/v1/users/{id}/reset-password request body."
       },
+      "SceneInfo": {
+        "properties": {
+          "sceneId": {
+            "type": "string",
+            "title": "Sceneid"
+          },
+          "sceneName": {
+            "type": "string",
+            "title": "Scenename"
+          },
+          "requiredParams": {
+            "type": "string",
+            "title": "Requiredparams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sceneId",
+          "sceneName",
+          "requiredParams"
+        ],
+        "title": "SceneInfo",
+        "description": "场景元信息。"
+      },
       "ScoreWeights": {
         "properties": {
           "autoModeRate": {
@@ -28764,6 +30331,38 @@
         "title": "TaskType",
         "description": "任务类型.\n\nAttributes:\n    STANDARD: 标准评估任务（每小时定时，全量回路覆盖）\n    CUSTOM: 自定义评估任务（用户按需触发，选定回路/指标/时间范围）\n    BACKFILL: 历史重算任务（按时间窗批量重算，覆盖标准快照）\n    TUNING: 回路整定任务（辨识/整定/仿真异步任务，V62-P1-013 接入 TaskTracker）"
       },
+      "ThresholdApplyRequest": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid",
+            "description": "目标回路 ID"
+          },
+          "diagCode": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Diagcode",
+            "description": "诊断算法代码"
+          },
+          "targetScope": {
+            "type": "string",
+            "enum": [
+              "loop",
+              "plant"
+            ],
+            "title": "Targetscope",
+            "description": "套用目标 scope：loop（回路级，ic_engineer 可用） / plant（装置级，仅 ADMIN）",
+            "default": "loop"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId",
+          "diagCode"
+        ],
+        "title": "ThresholdApplyRequest",
+        "description": "POST /diagnosis/threshold-templates/apply 请求体（P3-02 一键套用）。"
+      },
       "ThresholdOverrideItem": {
         "properties": {
           "overrideId": {
@@ -28867,6 +30466,336 @@
         "title": "ThresholdOverrideUpsert",
         "description": "POST /diagnosis/threshold-overrides 请求体。"
       },
+      "ThresholdRecommendationItem": {
+        "properties": {
+          "diagCode": {
+            "type": "string",
+            "title": "Diagcode"
+          },
+          "diagName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagname"
+          },
+          "globalDefault": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Globaldefault"
+          },
+          "loopTypeTemplate": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Looptypetemplate"
+          },
+          "plantOverride": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plantoverride"
+          },
+          "loopOverride": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopoverride"
+          },
+          "effectiveThreshold": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Effectivethreshold"
+          },
+          "scopeChain": {
+            "items": {
+              "$ref": "#/components/schemas/ThresholdScopeSource"
+            },
+            "type": "array",
+            "title": "Scopechain"
+          }
+        },
+        "type": "object",
+        "required": [
+          "diagCode"
+        ],
+        "title": "ThresholdRecommendationItem",
+        "description": "单个 diag_code 的阈值推荐（P3-02 自适应推荐）。"
+      },
+      "ThresholdRecommendationResult": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid"
+          },
+          "tagName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagname"
+          },
+          "loopType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Looptype"
+          },
+          "plantId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plantid"
+          },
+          "plantName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plantname"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/ThresholdRecommendationItem"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId"
+        ],
+        "title": "ThresholdRecommendationResult",
+        "description": "按回路推荐阈值模板响应 data 块（P3-02）。"
+      },
+      "ThresholdScopeSource": {
+        "properties": {
+          "scopeType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "loop_type",
+                  "plant",
+                  "loop"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopetype"
+          },
+          "scopeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopeid"
+          },
+          "threshold": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Threshold"
+          },
+          "isApplied": {
+            "type": "boolean",
+            "title": "Isapplied",
+            "default": false
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ThresholdScopeSource",
+        "description": "单级阈值来源（用于推荐响应的 scopeChain，展示\"为什么是这个阈值\"）。"
+      },
+      "TimelineData": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid"
+          },
+          "tagName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagname"
+          },
+          "currentStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "PENDING",
+                  "IN_PROGRESS",
+                  "VERIFYING",
+                  "CLOSED",
+                  "REOPENED",
+                  "IMPLEMENTED",
+                  "IGNORED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentstatus"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEventItem"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "pendingVerificationAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pendingverificationat",
+            "description": "预计自动验证时间 ISO 8601（VERIFYING 状态时存在）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId"
+        ],
+        "title": "TimelineData",
+        "description": "单回路处置时间线响应 data 块。"
+      },
+      "TimelineEventItem": {
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "title": "Eventid",
+            "description": "事件唯一ID"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "diagnosis_detected",
+              "claimed",
+              "comment",
+              "tuning_completed",
+              "implemented",
+              "verification_passed",
+              "verification_failed",
+              "ignored",
+              "moc_recorded"
+            ],
+            "title": "Eventtype",
+            "description": "事件类型"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "事件时间 ISO 8601"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor",
+            "description": "操作人（system 表示系统自动）"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "事件标题（一句话概括）"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "事件详细描述"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta",
+            "description": "事件元数据（标签、置信度、参数、MOC号等）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "eventId",
+          "eventType",
+          "timestamp",
+          "title"
+        ],
+        "title": "TimelineEventItem",
+        "description": "单条时间线事件。"
+      },
       "TrackerEffectivenessData": {
         "properties": {
           "totalImplemented": {
@@ -28949,6 +30878,9 @@
             "enum": [
               "PENDING",
               "IN_PROGRESS",
+              "VERIFYING",
+              "CLOSED",
+              "REOPENED",
               "IMPLEMENTED",
               "IGNORED"
             ],
@@ -29150,6 +31082,90 @@
             ],
             "title": "Plannedat",
             "description": "计划执行时间 ISO 8601"
+          },
+          "implementedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementedat",
+            "description": "实际实施时间 ISO 8601"
+          },
+          "implementedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementedby",
+            "description": "实施人"
+          },
+          "newPidP": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpidp",
+            "description": "实施后新比例增益 P"
+          },
+          "newPidI": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpidi",
+            "description": "实施后新积分时间 I（秒）"
+          },
+          "newPidD": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpidd",
+            "description": "实施后新微分时间 D（秒）"
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closedat",
+            "description": "闭环时间 ISO 8601（CLOSED 状态）"
+          },
+          "reopenReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopenreason",
+            "description": "重开原因（REOPENED 状态）"
           }
         },
         "type": "object",
@@ -29167,6 +31183,9 @@
             "enum": [
               "PENDING",
               "IN_PROGRESS",
+              "VERIFYING",
+              "CLOSED",
+              "REOPENED",
               "IMPLEMENTED",
               "IGNORED"
             ],
@@ -29271,6 +31290,79 @@
             ],
             "title": "Plannedat",
             "description": "计划执行时间 ISO 8601"
+          },
+          "implementedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementedat",
+            "description": "实际实施时间 ISO 8601（默认当前时间）"
+          },
+          "newPidP": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpidp",
+            "description": "实施后新比例增益 P"
+          },
+          "newPidI": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpidi",
+            "description": "实施后新积分时间 I（秒）"
+          },
+          "newPidD": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newpidd",
+            "description": "实施后新微分时间 D（秒）"
+          },
+          "reopenReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopenreason",
+            "description": "重开原因（REOPENED 必填）"
+          },
+          "tuningRecordId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tuningrecordid",
+            "description": "关联整定任务记录 ID"
           }
         },
         "type": "object",
@@ -29688,6 +31780,289 @@
         ],
         "title": "TuningHistoryStats",
         "description": "整定历史统计。"
+      },
+      "TuningKnowledgeEntryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "trackerId": {
+            "type": "string",
+            "title": "Trackerid"
+          },
+          "tuningRecordId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tuningrecordid"
+          },
+          "loopId": {
+            "type": "string",
+            "title": "Loopid"
+          },
+          "loopType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Looptype"
+          },
+          "controlType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controltype"
+          },
+          "tagName": {
+            "type": "string",
+            "title": "Tagname"
+          },
+          "diagnosisLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnosislabel"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "modelType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modeltype"
+          },
+          "algorithm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algorithm"
+          },
+          "identifyMethod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifymethod"
+          },
+          "confidenceLevel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidencelevel"
+          },
+          "pidBefore": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pidbefore"
+          },
+          "pidAfter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pidafter"
+          },
+          "kpiSummary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpisummary"
+          },
+          "effectVerified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effectverified"
+          },
+          "improvedCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvedcount"
+          },
+          "deterioratedCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deterioratedcount"
+          },
+          "matchSource": {
+            "type": "string",
+            "title": "Matchsource",
+            "default": "none"
+          },
+          "implementedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementedat"
+          },
+          "verifiedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verifiedat"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "trackerId",
+          "loopId",
+          "tagName"
+        ],
+        "title": "TuningKnowledgeEntryItem",
+        "description": "知识库条目（列表项 / 详情）。"
+      },
+      "TuningKnowledgeListData": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TuningKnowledgeEntryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "title": "Pagesize",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "TuningKnowledgeListData",
+        "description": "知识库列表响应 data 块。"
+      },
+      "TuningKnowledgeSimilarData": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TuningKnowledgeEntryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "TuningKnowledgeSimilarData",
+        "description": "相似案例推荐响应 data 块。"
       },
       "TuningMethodInfo": {
         "properties": {
@@ -31384,6 +33759,9 @@
                 "enum": [
                   "PENDING",
                   "IN_PROGRESS",
+                  "VERIFYING",
+                  "CLOSED",
+                  "REOPENED",
                   "IMPLEMENTED",
                   "IGNORED"
                 ]
