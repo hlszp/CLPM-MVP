@@ -15,15 +15,15 @@
 
 ## 必读入口
 
-先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.1。
+先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.2。
 
-PRD v6.1 是产品需求的事实来源；实现契约 v2.4 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
+PRD v6.2 是产品需求的事实来源；实现契约 v2.4 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
 ## 当前基线（2026-08-06 修订 — IA 重构 Phase A-D 全部完成 + 智能预警规则引擎方案）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
-| 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.1 |
+| 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.2（新增 §4.4.6 智能预警规则引擎 + §5.7 预警规则类型与 DSL 约束 + §7.1 预警求值性能要求） |
 | 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.5**（IA 整改 P3-04：AI 洞察全局赋能/LLM 配置 API/`POST /ai-insight/{scene}` 4 场景统一入口/`ClpmAiInsight` 通用组件/推理模型空输出修复；v2.4 P3-01：整定知识库不可变快照/38 表；v2.3 Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界）。**IA 重构 Phase A-D 全部合入 IA 分支**（后端零改动）：A 菜单重组/AI 右抽屉/跨模块上下文 + B 回路工作台 6 Tab + C 诊断三区重构 + D 整定单页整合（4 锚点），契约 IA/路由章节待 IA 合并 main 后统一升 v2.6 |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
 | 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
@@ -143,7 +143,7 @@ cd frontend && pnpm run format
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**；sys_config 为配置真相源，.env 已移除业务 URL/Token。细节见 ops-runbook §网络模式切换 |
 | 远端仓库 | **gitea 为主远端**（remote 名 `origin`，`https://gitea.zlinfot.xyz:2087/zp/CLPM`）；GitHub 为镜像（remote 名 `github`，`hlszp/CLPM`），main 合并后 `git push github main` 同步 |
-| 文档权威性 | PRD v6.1 负责产品需求；实现契约 v2.4 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.4 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## Git 工作流
 
@@ -165,7 +165,7 @@ cd frontend && pnpm run format
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **E2E 79 用例**（2026-08-06）：71 passed / 3 既有失败（D3-MOC/F4-F5/TUNE-009，非 Phase A 引入，均为 07-28 后新增测试）/ 2 flaky / 3 skipped；IA 重构 Phase A 路由已全量同步 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
-| 新功能开发 | PRD v6.1 → 实现契约 v2.4 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
+| 新功能开发 | PRD v6.2 → 实现契约 v2.4 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
 | 网络模式切换后续改进 | ops-runbook §网络模式切换 | 仅余 ③ 公网模式 ping 延迟抖动优化（低优先级） |
 
 ## Stale docs 防护
