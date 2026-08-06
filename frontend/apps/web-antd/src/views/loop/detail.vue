@@ -696,7 +696,7 @@ onMounted(() => {
             >
               <Descriptions
                 v-if="loopDetail"
-                :column="{ xs: 1, sm: 2, md: 4 }"
+                :column="{ xs: 2, sm: 2, md: 4 }"
                 size="small"
                 bordered
               >
@@ -787,7 +787,7 @@ onMounted(() => {
                   </Button>
                 </template>
                 <Descriptions
-                  :column="{ xs: 1, sm: 2, md: 3 }"
+                  :column="{ xs: 2, sm: 2, md: 3 }"
                   bordered
                   size="small"
                 >

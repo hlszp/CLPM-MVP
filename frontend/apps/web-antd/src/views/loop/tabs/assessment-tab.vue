@@ -308,7 +308,7 @@ watch(
       <Spin :spinning="assessmentLoading">
         <Descriptions
           v-if="assessmentDetail"
-          :column="{ xs: 1, sm: 2, md: 4 }"
+          :column="{ xs: 2, sm: 2, md: 4 }"
           size="small"
           bordered
         >

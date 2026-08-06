@@ -1739,7 +1739,7 @@ onMounted(async () => {
               <DescriptionsItem label="理想稳定时间">
                 {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
               </DescriptionsItem>
-              <DescriptionsItem label="稳定时间">
+              <DescriptionsItem label="稳定时间" :span="2">
                 {{ formatNumber(drawerRecord.settlingTime, 's') }}
               </DescriptionsItem>
             </Descriptions>

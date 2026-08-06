@@ -684,7 +684,7 @@ watch(
 
       <!-- 底部结果区 -->
       <ClpmDataCanvas v-else-if="tuneResult" title="整定结果">
-        <Descriptions :column="{ xs: 1, sm: 2, md: 3 }" bordered size="small">
+        <Descriptions :column="{ xs: 2, sm: 2, md: 3 }" bordered size="small">
           <DescriptionsItem label="算法">
             {{ algorithmNameMap[tuneResult.algorithm] || tuneResult.algorithm }}
           </DescriptionsItem>
@@ -701,7 +701,10 @@ watch(
               {{ Number(tuneResult.recommendedPid.ti).toFixed(4) }}
             </span>
           </DescriptionsItem>
-          <DescriptionsItem label="推荐微分时间 Td (秒)">
+          <DescriptionsItem
+            label="推荐微分时间 Td (秒)"
+            :span="tuneResult.currentPid ? 1 : 2"
+          >
             <span class="font-mono font-bold text-blue-600">
               {{ Number(tuneResult.recommendedPid.td).toFixed(4) }}
             </span>
@@ -716,7 +719,7 @@ watch(
               {{ Number(tuneResult.currentPid.td).toFixed(4) }}
             </span>
           </DescriptionsItem>
-          <DescriptionsItem v-if="tuneResult.notes" label="备注" :span="3">
+          <DescriptionsItem v-if="tuneResult.notes" label="备注" :span="2">
             {{ tuneResult.notes }}
           </DescriptionsItem>
         </Descriptions>
