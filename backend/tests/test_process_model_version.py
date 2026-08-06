@@ -64,9 +64,11 @@ def test_orm_has_38_tables() -> None:
 
     38（基线 37 + process_model_version）+ loop_integrity_snapshot（数据完整性巡检
     快照，2026-08-05 数据质量增强）= 39 + tuning_knowledge_entry（P3-01 整定
-    知识库，2026-08-05）= 40。
+    知识库，2026-08-05）= 40 + 智能预警规则引擎 5 表（alert_rule /
+    alert_rule_subscription / alert_event / alert_rule_audit_log /
+    alert_suppression，2026-08-07）= 45。
     """
-    assert len(Base.metadata.tables) == 40
+    assert len(Base.metadata.tables) == 45
 
 
 def test_partial_unique_index_current_exists() -> None:

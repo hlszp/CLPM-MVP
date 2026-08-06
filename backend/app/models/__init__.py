@@ -6,6 +6,13 @@ Imports all model modules so that ``Base.metadata`` is fully populated when
 
 from __future__ import annotations
 
+from app.models.alert import (
+    AlertEvent,
+    AlertRule,
+    AlertRuleAuditLog,
+    AlertRuleSubscription,
+    AlertSuppression,
+)
 from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
@@ -81,4 +88,10 @@ __all__ = [
     "ModeDefinition",
     "DcsModeMapping",
     "DcsPidStructure",
+    # 智能预警规则引擎（v2.6 新增）
+    "AlertRule",
+    "AlertRuleSubscription",
+    "AlertEvent",
+    "AlertRuleAuditLog",
+    "AlertSuppression",
 ]
