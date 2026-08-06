@@ -76,7 +76,10 @@ class TestGenerateInterpretation:
         """mode=template 直接返回规则模板，source=template。"""
         db = AsyncMock()
         detail = _make_detail()
-        with patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)):
+        with patch(
+            "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+            new=AsyncMock(return_value=detail),
+        ):
             data = await interp.generate_interpretation(db, loop_id="loop-001", mode="template")
 
         assert data["source"] == "template"
@@ -91,7 +94,10 @@ class TestGenerateInterpretation:
         db = AsyncMock()
         detail = _make_detail()
         with (
-            patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)),
+            patch(
+                "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+                new=AsyncMock(return_value=detail),
+            ),
             patch(
                 "app.services.llm_provider.is_llm_available",
                 new=AsyncMock(return_value=False),
@@ -108,7 +114,10 @@ class TestGenerateInterpretation:
         db = AsyncMock()
         detail = _make_detail()
         with (
-            patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)),
+            patch(
+                "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+                new=AsyncMock(return_value=detail),
+            ),
             patch(
                 "app.services.llm_provider.is_llm_available",
                 new=AsyncMock(return_value=True),
@@ -130,7 +139,10 @@ class TestGenerateInterpretation:
         db = AsyncMock()
         detail = _make_detail()
         with (
-            patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)),
+            patch(
+                "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+                new=AsyncMock(return_value=detail),
+            ),
             patch(
                 "app.services.llm_provider.is_llm_available",
                 new=AsyncMock(return_value=False),
@@ -148,7 +160,10 @@ class TestGenerateInterpretation:
         db = AsyncMock()
         detail = _make_detail()
         with (
-            patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)),
+            patch(
+                "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+                new=AsyncMock(return_value=detail),
+            ),
             patch(
                 "app.services.llm_provider.is_llm_available",
                 new=AsyncMock(return_value=True),
@@ -169,7 +184,10 @@ class TestGenerateInterpretation:
         db = AsyncMock()
         detail = _make_detail()
         with (
-            patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)),
+            patch(
+                "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+                new=AsyncMock(return_value=detail),
+            ),
             patch(
                 "app.services.llm_provider.is_llm_available",
                 new=AsyncMock(return_value=True),
@@ -196,7 +214,10 @@ class TestGenerateInterpretation:
             status_code=504,
         )
         with (
-            patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)),
+            patch(
+                "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+                new=AsyncMock(return_value=detail),
+            ),
             patch(
                 "app.services.llm_provider.is_llm_available",
                 new=AsyncMock(return_value=True),
@@ -215,7 +236,10 @@ class TestGenerateInterpretation:
         """无效 mode 抛 ERR_INVALID_MODE（422）。"""
         db = AsyncMock()
         detail = _make_detail()
-        with patch.object(interp, "get_diagnosis_detail", new=AsyncMock(return_value=detail)):
+        with patch(
+            "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
+            new=AsyncMock(return_value=detail),
+        ):
             with pytest.raises(BizError) as exc_info:
                 await interp.generate_interpretation(db, loop_id="loop-001", mode="invalid")
 
@@ -390,6 +414,7 @@ class TestCallLlm:
             "apiKey": "sk-xxx",
             "model": "gpt-4o",
             "timeout": 30.0,
+            "maxTokens": 4096,
         }
         mock_response = MagicMock()
         mock_response.json.return_value = {"choices": [{"message": {"content": "LLM 解读内容"}}]}
@@ -419,6 +444,7 @@ class TestCallLlm:
             "apiKey": "sk-xxx",
             "model": "gpt-4o",
             "timeout": 5.0,
+            "maxTokens": 4096,
         }
 
         with (
@@ -446,6 +472,7 @@ class TestCallLlm:
             "apiKey": "sk-xxx",
             "model": "gpt-4o",
             "timeout": 30.0,
+            "maxTokens": 4096,
         }
         err_response = MagicMock()
         err_response.status_code = 401
@@ -478,6 +505,7 @@ class TestCallLlm:
             "apiKey": "sk-xxx",
             "model": "gpt-4o",
             "timeout": 30.0,
+            "maxTokens": 4096,
         }
         mock_response = MagicMock()
         mock_response.json.return_value = {"choices": []}
@@ -503,7 +531,7 @@ class TestCallLlm:
 class TestLoadLlmConfig:
     """测试 _load_llm_config 配置加载与校验。
 
-    _load_llm_config 按顺序查询 5 个 key：enabled/endpoint/api_key/model/timeout，
+    _load_llm_config 按顺序查询 6 个 key：enabled/endpoint/api_key/model/timeout/max_tokens，
     用有序列表 side_effect 依次返回。
     """
 
@@ -521,7 +549,7 @@ class TestLoadLlmConfig:
     async def test_missing_endpoint_raises(self) -> None:
         """enabled=true 但 endpoint 缺失时抛 BizError。"""
         db = AsyncMock()
-        # _load_llm_config 依次查询 5 个 key 后才校验，无短路
+        # _load_llm_config 依次查询 6 个 key 后才校验，无短路
         db.execute = AsyncMock(
             side_effect=[
                 _config_result("true"),
@@ -529,6 +557,7 @@ class TestLoadLlmConfig:
                 _config_result("sk-xxx"),
                 _config_result("gpt-4o"),
                 _config_result("30"),
+                _config_result("4096"),
             ]
         )
 
@@ -547,6 +576,7 @@ class TestLoadLlmConfig:
                 _config_result("sk-xxx"),
                 _config_result("gpt-4o"),
                 _config_result("45"),
+                _config_result("4096"),
             ]
         )
 
@@ -554,6 +584,7 @@ class TestLoadLlmConfig:
         assert config["endpoint"] == "https://api.openai.com"
         assert config["model"] == "gpt-4o"
         assert config["timeout"] == 45.0
+        assert config["maxTokens"] == 4096
 
     @pytest.mark.asyncio
     async def test_timeout_defaults_to_30_when_missing(self) -> None:
@@ -566,8 +597,10 @@ class TestLoadLlmConfig:
                 _config_result("sk-xxx"),
                 _config_result("gpt-4o"),
                 _config_result(None),  # timeout 缺失
+                _config_result("4096"),
             ]
         )
 
         config = await llm_provider._load_llm_config(db)
         assert config["timeout"] == 30.0
+        assert config["maxTokens"] == 4096

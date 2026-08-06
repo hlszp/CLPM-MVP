@@ -18,9 +18,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BizError
-from app.services.diagnosis import get_diagnosis_detail
-
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -147,62 +144,17 @@ async def generate_interpretation(
     Raises:
         BizError: ERR_LLM_UNAVAILABLE — mode=llm 但 LLM 不可用
     """
-    # 获取诊断详情（复用已有服务，内部已处理回路不存在/无诊断结果错误）
-    detail = await get_diagnosis_detail(db=db, loop_id=loop_id)
+    # 委托给通用 AI 洞察服务（scene=diagnosis），统一编排与容错逻辑。
+    # 字段映射 insight→interpretation，保持旧端点响应结构向后兼容。
+    from app.services.ai_insight import generate_insight
 
-    # mode=template：直接规则模板
-    if mode == "template":
-        return _build_template_result(detail)
-
-    # mode=llm 或 mode=auto：尝试 LLM
-    if mode in ("llm", "auto"):
-        try:
-            from app.services.llm_provider import call_llm, is_llm_available
-
-            if not await is_llm_available(db):
-                if mode == "llm":
-                    raise BizError(
-                        code="ERR_LLM_UNAVAILABLE",
-                        message="LLM 未启用或配置缺失，请在系统配置中开启 LLM 服务",
-                        status_code=503,
-                    )
-                # mode=auto: fallback 到模板
-                logger.info("LLM 不可用，fallback 到规则模板（loop_id=%s）", loop_id)
-                return _build_template_result(detail)
-
-            # 构造 prompt 并调用 LLM
-            system_prompt = _build_system_prompt()
-            user_prompt = _build_user_prompt(detail)
-            llm_text, model_name = await call_llm(db, system_prompt, user_prompt)
-
-            return {
-                "interpretation": llm_text,
-                "source": "llm",
-                "model": model_name,
-                "generatedAt": datetime.now(UTC).replace(tzinfo=None).isoformat(),
-            }
-        except BizError:
-            if mode == "llm":
-                raise
-            # mode=auto: LLM 调用失败，fallback 到模板
-            logger.warning("LLM 调用失败，fallback 到规则模板（loop_id=%s）", loop_id)
-            return _build_template_result(detail)
-        except Exception:
-            logger.exception("LLM 调用异常，fallback 到规则模板（loop_id=%s）", loop_id)
-            if mode == "llm":
-                raise BizError(
-                    code="ERR_LLM_UNAVAILABLE",
-                    message="LLM 调用失败",
-                    status_code=503,
-                ) from None
-            return _build_template_result(detail)
-
-    # 无效 mode
-    raise BizError(
-        code="ERR_INVALID_MODE",
-        message=f"mode 必须为 auto/template/llm 之一，收到 {mode}",
-        status_code=422,
-    )
+    result = await generate_insight(db, "diagnosis", loop_id=loop_id, mode=mode)
+    return {
+        "interpretation": result["insight"],
+        "source": result["source"],
+        "model": result["model"],
+        "generatedAt": result["generatedAt"],
+    }
 
 
 def _build_template_result(detail: dict) -> dict:
