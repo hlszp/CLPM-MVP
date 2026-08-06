@@ -182,7 +182,7 @@ export namespace AlertApi {
   }
 }
 
-const BASE = '/api/v1/alert';
+const BASE = '/alert';
 
 // ---------------------------------------------------------------------------
 // 规则 CRUD
