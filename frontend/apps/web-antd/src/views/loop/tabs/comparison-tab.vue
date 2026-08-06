@@ -203,7 +203,7 @@ watch(
       empty-text="暂无可对比的整定实施记录"
       empty-reason="可能原因：该回路尚未实施整定参数，或实施后数据积累不足。"
       empty-action-text="去整定"
-      @empty-action="router.push({ path: '/tuning/flow', query: { loopId } })"
+      @empty-action="router.push({ path: '/tuning/detail', query: { loopId } })"
     >
       <Spin :spinning="loading">
         <Descriptions

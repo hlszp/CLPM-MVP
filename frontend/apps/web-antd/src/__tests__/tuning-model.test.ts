@@ -11,6 +11,7 @@ const getLoopListApiMock = vi.fn();
 const identifyModelApiMock = vi.fn();
 const previewSegmentsApiMock = vi.fn();
 const routerPushMock = vi.fn();
+const routeQuery = reactive<Record<string, string>>({});
 const submitIdentifyMock = vi.fn();
 
 const tuningStore = reactive({
@@ -46,8 +47,10 @@ vi.mock('#/store/tuning', () => ({
 }));
 
 vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({
     push: routerPushMock,
+    replace: vi.fn(),
   }),
 }));
 
@@ -330,7 +333,7 @@ describe('tuningModel Phase 0 历史辨识边界', () => {
       await tuningButton!.trigger('click');
 
       expect(routerPushMock).toHaveBeenCalledWith({
-        path: '/tuning/flow/algorithm',
+        path: '/tuning/detail',
         query: expect.objectContaining({
           modelSource: 'IDENTIFICATION_RECORD',
           sourceRecordId: 'record-001',
@@ -359,7 +362,7 @@ describe('tuningModel Phase 0 历史辨识边界', () => {
     await tuningButton!.trigger('click');
 
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/flow/algorithm',
+      path: '/tuning/detail',
       query: expect.objectContaining({
         modelSource: 'IDENTIFICATION_RECORD',
         riskConfirmed: 'true',
@@ -423,7 +426,7 @@ describe('tuningModel Phase 0 历史辨识边界', () => {
     expect(tuningButton).toBeDefined();
     await tuningButton!.trigger('click');
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/flow/algorithm',
+      path: '/tuning/detail',
       query: expect.objectContaining({
         modelSource: 'STEP_EXPERIMENT',
         sourceRecordId: 'step-record-001',

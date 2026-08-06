@@ -1,10 +1,11 @@
 /**
- * E2E 旧路由兼容性基线（V62-P0-037 + IA 重构 Phase A）
+ * E2E 旧路由兼容性基线（V62-P0-037 + IA 重构 Phase A + Phase D 单页整合）
  *
  * 覆盖旧路由 redirect：
- * - /tuning/model        → /tuning/flow/model
- * - /tuning/algorithm    → /tuning/flow/algorithm
- * - /tuning/simulation   → /tuning/flow/simulation
+ * - /tuning/model        → /tuning/detail（Phase D 单页整合）
+ * - /tuning/algorithm    → /tuning/detail
+ * - /tuning/simulation   → /tuning/detail
+ * - /tuning/flow/*       → /tuning/detail（Phase D 前的中间路由也归并）
  * - /diagnosis/records   → /diagnosis/tasks?tab=history
  * - IA Phase A 配置集中化迁移：
  *   /loop/aas-sync       → /config/link
@@ -21,14 +22,18 @@
  * 依据：UI/UX v6.1「稳定元素根」防白屏（vben v-show + Transition + KeepAlive）
  *       P1-020 旧路由 redirect + hideInMenu 兼容书签
  *       IA 重构 Phase A §3.3 配置集中化（config.ts legacy redirect 段）
+ *       IA 重构 Phase D §4.4.2 整定单页整合（tuning.ts legacy redirect 段）
  */
 import { test, expect } from '../fixtures/auth.js';
 
-/** 整定模块旧路由 → 新路由映射 */
+/** 整定模块旧路由 → 新路由映射（Phase D：统一重定向到 /tuning/detail 单页） */
 const TUNING_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
-  { legacy: '/tuning/model', target: /\/tuning\/flow\/model/ },
-  { legacy: '/tuning/algorithm', target: /\/tuning\/flow\/algorithm/ },
-  { legacy: '/tuning/simulation', target: /\/tuning\/flow\/simulation/ },
+  { legacy: '/tuning/model', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/algorithm', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/simulation', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/flow/model', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/flow/algorithm', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/flow/simulation', target: /\/tuning\/detail/ },
 ];
 
 /** 诊断模块旧路由 → 新路由映射（redirect 目标含 query string） */

@@ -58,6 +58,9 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'TuningSimulation' });
 
+// Phase D: embedded 模式下不渲染 <Page> 外壳，由父级 detail.vue 提供
+const props = defineProps<{ embedded?: boolean }>();
+
 const route = useRoute();
 const { isDark, themeColors, chartTextColor } = useClpmTheme();
 
@@ -909,6 +912,18 @@ onMounted(() => {
   });
 });
 
+// Phase D: embedded 模式下 route.query 变化时重新初始化（上步通过 router.replace 传递参数）
+watch(
+  () => route.query,
+  () => {
+    if (props.embedded) {
+      initFromQuery();
+      nextTick(() => renderChart());
+    }
+  },
+  { deep: true },
+);
+
 /** 深色模式切换时重绘 ECharts 图表 */
 watch(isDark, () => {
   nextTick(() => {
@@ -918,7 +933,7 @@ watch(isDark, () => {
 </script>
 
 <template>
-  <Page>
+  <component :is="embedded ? 'div' : Page">
     <ClpmPageToolbar
       title="闭环仿真"
       subtitle="对比当前 PID 与推荐 PID 的响应曲线和性能指标。"
@@ -1299,5 +1314,5 @@ watch(isDark, () => {
         <!-- AI 整定建议本轮下线（IA 重构 Phase A·§5.3），后端 tuning 策略保留供后续复用 -->
       </div>
     </div>
-  </Page>
+  </component>
 </template>

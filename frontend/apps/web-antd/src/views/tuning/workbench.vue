@@ -120,7 +120,7 @@ const navCards = [
     title: '整定流程',
     description: '模型辨识 → 整定算法 → 闭环仿真（可恢复步骤流）',
     icon: 'ant-design:apartment-outlined',
-    path: '/tuning/flow',
+    path: '/tuning/detail',
   },
   {
     key: 'stats',
@@ -323,7 +323,7 @@ function isResumable(status: TuningApi.TaskStatus): boolean {
 
 /** 继续未完成的整定任务（进入 flow stepper 并按 taskId 回显） */
 function handleContinueTask(record: TuningApi.TuningTaskItem) {
-  router.push({ path: '/tuning/flow', query: { taskId: record.id } });
+  router.push({ path: '/tuning/detail', query: { taskId: record.id } });
 }
 
 /** 工具栏：刷新 */
@@ -335,7 +335,7 @@ function handleRefresh() {
 
 /** 工具栏：新建整定，跳转模型辨识 */
 function handleCreate() {
-  router.push('/tuning/flow');
+  router.push('/tuning/detail');
 }
 
 /** P0-03：基于诊断上下文发起整定，跳转 flow 并传递回路 */
@@ -343,7 +343,7 @@ function handleStartFromDiagnosis() {
   const ctx = diagnosisContext.value;
   if (!ctx) return;
   router.push({
-    path: '/tuning/flow',
+    path: '/tuning/detail',
     query: {
       loopId: ctx.loopId,
       from: 'diagnosis',
@@ -450,7 +450,7 @@ async function loadPendingLoops() {
 /** P0-05：从待整定列表发起整定 */
 function handleStartTuning(record: DiagnosisApi.DiagnosisListItem) {
   router.push({
-    path: '/tuning/flow',
+    path: '/tuning/detail',
     query: {
       loopId: record.loopId,
       diagnosisLabel: record.diagnosisLabel,

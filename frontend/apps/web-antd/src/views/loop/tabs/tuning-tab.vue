@@ -106,7 +106,7 @@ async function loadData() {
 // ===== 跳转入口 =====
 function startTuning() {
   router.push({
-    path: '/tuning/flow',
+    path: '/tuning/detail',
     query: { loopId: props.loopId },
   });
 }
@@ -120,7 +120,7 @@ function goTuningWorkbench() {
 
 function viewDetail(record: TuningApi.TuningTaskItem) {
   router.push({
-    path: '/tuning/flow',
+    path: '/tuning/detail',
     query: { taskId: record.id },
   });
 }
