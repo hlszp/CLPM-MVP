@@ -174,6 +174,29 @@ class ThresholdRecommendationResult(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# P3-04: 自然语言诊断解读
+# ---------------------------------------------------------------------------
+
+
+class InterpretRequest(CamelModel):
+    """POST /diagnosis/{loopId}/interpret 请求体（P3-04）。"""
+
+    mode: Literal["auto", "template", "llm"] = Field(
+        "auto",
+        description="生成模式：auto（优先LLM，fallback模板）/ template（仅模板）/ llm（仅LLM）",
+    )
+
+
+class InterpretResult(CamelModel):
+    """自然语言诊断解读响应（P3-04）。"""
+
+    interpretation: str = Field(..., description="结构化纯文本解读")
+    source: Literal["template", "llm"] = Field(..., description="实际来源：template/llm")
+    model: str | None = Field(None, description="LLM 模型名（source=llm 时有值）")
+    generatedAt: str = Field(..., description="生成时间 ISO 8601")
+
+
+# ---------------------------------------------------------------------------
 # C4: 配置版本与回滚
 # ---------------------------------------------------------------------------
 

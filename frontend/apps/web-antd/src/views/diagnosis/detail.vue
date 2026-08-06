@@ -49,6 +49,7 @@ import {
   ClpmDataCanvas,
   ClpmDispositionTimeline,
   ClpmImplementRecordModal,
+  ClpmInterpretationPanel,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
   ClpmStructuredDiagnosisReport,
@@ -967,6 +968,13 @@ onMounted(() => {
                   >
                     暂无诊断标签
                   </div>
+
+                  <!-- P3-04：自然语言诊断解读（大白话解释，规则模板+LLM 混合） -->
+                  <ClpmInterpretationPanel
+                    v-if="detail && detail.diagnosisLabels.length > 0"
+                    :loop-id="loopId"
+                    class="mt-4"
+                  />
                 </ClpmDataCanvas>
 
                 <Recommendations

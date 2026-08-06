@@ -889,6 +889,34 @@ export namespace DiagnosisApi {
     plantName?: null | string;
     recommendations: ThresholdRecommendationItem[];
   }
+
+  // -----------------------------------------------------------------------
+  // P3-04: 自然语言诊断解读
+  // -----------------------------------------------------------------------
+
+  /** 解读生成模式
+   * - auto：优先 LLM，不可用/失败时 fallback 到规则模板（默认）
+   * - template：仅规则模板（离线可用）
+   * - llm：仅 LLM，不可用抛 503（供"重新生成"强制走 LLM）
+   */
+  export type InterpretMode = 'auto' | 'llm' | 'template';
+
+  /** 自然语言诊断解读请求体（P3-04） */
+  export interface InterpretParams {
+    mode?: InterpretMode;
+  }
+
+  /** 自然语言诊断解读响应（P3-04） */
+  export interface InterpretResult {
+    /** 结构化纯文本解读（含概述/主因分析/风险提示三段） */
+    interpretation: string;
+    /** 实际来源：template（规则模板）/ llm（LLM 生成） */
+    source: 'llm' | 'template';
+    /** LLM 模型名（source=llm 时有值） */
+    model?: null | string;
+    /** 生成时间 ISO 8601 */
+    generatedAt: string;
+  }
 }
 
 /**
@@ -1366,5 +1394,32 @@ export function applyThresholdTemplateApi(
   return requestClient.post<DiagnosisApi.ThresholdOverrideItem>(
     '/diagnosis/threshold-templates/apply',
     data,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// P3-04: 自然语言诊断解读 API
+// ---------------------------------------------------------------------------
+
+/**
+ * P3-04: 生成自然语言诊断解读
+ *
+ * 将结构化诊断结果翻译为工程师可读的大白话解读，辅助非算法背景用户理解
+ * "这个振荡是什么意思、严不严重、该怎么处理"。
+ *
+ * 生成模式（mode）：
+ * - auto（默认）：优先 LLM，不可用/失败时自动 fallback 到规则模板
+ * - template：仅规则模板（离线可用）
+ * - llm：仅 LLM，不可用抛 503（供"重新生成"强制走 LLM）
+ *
+ * 权限：ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT（与诊断详情一致）。
+ */
+export function interpretDiagnosisApi(
+  loopId: string,
+  data?: DiagnosisApi.InterpretParams,
+) {
+  return requestClient.post<DiagnosisApi.InterpretResult>(
+    `/diagnosis/${loopId}/interpret`,
+    data ?? {},
   );
 }

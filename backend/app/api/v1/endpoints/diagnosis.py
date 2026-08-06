@@ -72,6 +72,8 @@ from app.schemas.diagnosis import (
     DiagnosisThresholdVersionItem,
     DiagnosisTriggerData,
     DiagnosisTriggerRequest,
+    InterpretRequest,
+    InterpretResult,
     RecommendationData,
     TagResolveRequest,
     ThresholdApplyRequest,
@@ -102,6 +104,7 @@ from app.services.diagnosis import (
     trigger_diagnosis,
     update_diagnosis_config,
 )
+from app.services.diagnosis_interpretation import generate_interpretation
 from app.services.diagnosis_recommendation import (
     get_recommendations,
     get_recommendations_for_loop,
@@ -856,6 +859,38 @@ async def get_diagnosis_visualization_endpoint(
     """
     data = await get_diagnosis_visualization(db=db, loop_id=str(loop_id))
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# P3-04: 自然语言诊断解读（LLM + 规则模板混合）
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{loop_id}/interpret", response_model=ApiResponse[InterpretResult])
+async def interpret_diagnosis_endpoint(
+    loop_id: uuid.UUID,
+    body: InterpretRequest,
+    db: AsyncSession = Depends(get_db),
+    # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻诊断解读
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
+) -> dict:
+    """生成自然语言诊断解读（P3-04）。
+
+    将结构化诊断结果（标签/特征值/可信度/证据链）翻译为工程师可读的大白话解读，
+    辅助非算法背景用户理解"这个振荡是什么意思、严不严重、该怎么处理"。
+
+    生成模式（mode）：
+    - **auto**（默认）：优先 LLM，不可用或失败时自动 fallback 到规则模板
+    - **template**：仅规则模板（离线可用，基于结构化报告常量拼装）
+    - **llm**：仅 LLM，不可用时抛 503 错误（供前端"重新生成"强制走 LLM）
+
+    LLM 配置从 sys_config 读取（endpoint/apiKey/model/timeout/enabled），
+    遵循 OpenAI 兼容接口协议；规则模板与前端 DIAGNOSIS_STRUCTURED_REPORT 对齐。
+
+    权限：与诊断详情一致（ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT）。
+    """
+    data = await generate_interpretation(db=db, loop_id=str(loop_id), mode=body.mode)
+    return success(data=data, message="解读生成成功")
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ export type { TimelineEvent as ClpmTimelineEvent } from './disposition-timeline.
 export { default as ClpmEmptyState } from './empty-state.vue';
 export { default as ClpmImplementRecordModal } from './implement-record-modal.vue';
 export type { ImplementSubmitData as ClpmImplementSubmitData } from './implement-record-modal.vue';
+export { default as ClpmInterpretationPanel } from './interpretation-panel.vue';
 export { default as ClpmInfoTip } from './info-tip.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
