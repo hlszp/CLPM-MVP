@@ -20,9 +20,9 @@ const routes: RouteRecordRaw[] = [
       authority: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
       icon: 'lucide:settings-2',
       order: 5,
-      title: '回路整定',
+      title: '整定',
     },
-    name: 'Tuning',
+    name: 'Tune',
     path: '/tuning',
     children: [
       {

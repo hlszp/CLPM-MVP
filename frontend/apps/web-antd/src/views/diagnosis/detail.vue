@@ -46,7 +46,7 @@ import {
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
 import {
-  ClpmAiInsight,
+  ClpmAiDrawer,
   ClpmDataCanvas,
   ClpmDispositionTimeline,
   ClpmImplementRecordModal,
@@ -58,6 +58,7 @@ import {
 } from '#/components/clpm';
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
+import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
 import { formatTime } from '#/utils/format';
@@ -69,6 +70,14 @@ const { isDark, themeColors } = useClpmTheme();
 const route = useRoute();
 const router = useRouter();
 const loopId = ref(route.params.loopId as string);
+
+// AI 洞察两级门禁（diagnosis 场景需 loopId，本页恒有 loopId，门禁2 恒通过）
+const { init: initAiGate, gateStatus, gateTooltip } = useAiInsightGate();
+initAiGate();
+const aiDrawerOpen = ref(false);
+const aiGateStatus = computed(() => gateStatus(loopId.value, true));
+const aiGateTooltip = computed(() => gateTooltip(aiGateStatus.value));
+
 let detailVersion = 0;
 let waveformVersion = 0;
 
@@ -813,6 +822,15 @@ onMounted(() => {
       />
       <template #actions>
         <ClpmToolbarButton
+          icon="ai"
+          icon-only
+          label="AI 诊断洞察"
+          :disabled="aiGateStatus !== 'active'"
+          :disabled-reason="aiGateTooltip"
+          :tooltip="aiGateTooltip"
+          @click="aiDrawerOpen = true"
+        />
+        <ClpmToolbarButton
           icon="export"
           label="导出报告"
           :loading="reportGenerating"
@@ -1274,24 +1292,7 @@ onMounted(() => {
             </ClpmDataCanvas>
           </Tabs.TabPane>
 
-          <!-- Tab 5: AI 洞察（P3-04 自然语言诊断解读，独立 Tab 显著位置） -->
-          <Tabs.TabPane key="ai-insight" tab="AI 洞察">
-            <ClpmAiInsight
-              v-if="detail && detail.diagnosisLabels.length > 0"
-              scene="diagnosis"
-              variant="tab"
-              :loop-id="loopId"
-              :auto-load="false"
-              :hide-when-disabled="false"
-            />
-            <div
-              v-else
-              class="py-12 text-center"
-              :style="{ color: themeColors.NEUTRAL }"
-            >
-              暂无诊断标签，无法生成 AI 洞察
-            </div>
-          </Tabs.TabPane>
+          <!-- AI 洞察已迁移至工具栏 AI 图标触发的右抽屉（§5.2），原独立 Tab 移除 -->
         </Tabs>
       </div>
     </Spin>
@@ -1309,6 +1310,13 @@ onMounted(() => {
       v-model:visible="thresholdTuneVisible"
       :loop-id="loopId"
       :tag-name="detail?.tagName"
+    />
+
+    <!-- AI 诊断洞察右抽屉（工具栏 AI 图标触发，§5.2） -->
+    <ClpmAiDrawer
+      v-model:open="aiDrawerOpen"
+      scene="diagnosis"
+      :loop-id="loopId"
     />
   </Page>
 </template>
