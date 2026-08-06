@@ -9,7 +9,7 @@
 CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆盖"监控 → 评估 → 诊断 → 整定"全流程，提供：
 
 - **工作台门户**：12 项 KPI 指标看板（3+1+8 体系）+ 低效回路 Top10 + 趋势摘要 + 待办异常
-- **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控
+- **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控 / 回路工作台 6 Tab（v2.6 IA 重构）
 - **性能评估**：KPI 看板 / 低效排行 / 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 异常值检测参数 / KPI 算法参数 / 执行记录） / 可信度标识 / 工业桌面端驾驶舱样式
 - **诊断中心**：诊断配置（阈值/启停真实生效）/ 异常诊断（振荡/阀门粘滞/参数过激过保守/外扰/质量异常/输出饱和 + 传感器故障与 Harris 指数，D-S 证据融合）/ 事件+体检双轨自动诊断 / Action Tracker（KPI A/B 对比 + 同步 PDF 建议书）/ 统计
 - **回路整定**：FOPDT/SOPDT/IPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 五种整定算法 + 闭环仿真
@@ -307,9 +307,9 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计（v6.0） | `docs/设计文档/05-IDS/IDS.md` |
 | UI/UX 设计规范（v6.1） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
-| 重构后实现契约（v2.2） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
+| 重构后实现契约（v2.6） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
 | v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
-| 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.2 为准） |
+| 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.6 为准） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 
 ## 推荐阅读顺序
@@ -331,10 +331,10 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-07-29）：pytest 3409 passed / vitest 415 passed / E2E 59 passed / `alembic check` 退出码 0 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
-| 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |
+| 模块架构 | 7 模块（v2.6 IA 重构）：监控/回路/评估/诊断/整定/配置/系统；双轴导航（实体轴回路工作台 + 职能轴评估/诊断/整定），各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.2 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
+| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.6 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 
