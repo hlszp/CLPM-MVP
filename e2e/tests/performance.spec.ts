@@ -2,7 +2,7 @@
  * E2E 性能评估测试
  *
  * 覆盖用例：
- * - E2E-PERF-001: 指标配置（/metric/config → 修改权重 → 保存）
+ * - E2E-PERF-001: 指标配置（/config/metric → 修改权重 → 保存）
  * - E2E-PERF-002: 评估看板（/metric/pid-dashboard → 6 仪表盘卡片 + 趋势图）
  * - E2E-PERF-003: 评估看板 TOP5 回路表格
  * - E2E-PERF-004: 评估看板装置级 KPI 仪表盘 + 图表
@@ -30,7 +30,7 @@ test.describe('性能评估 E2E', () => {
   });
 
   test('E2E-PERF-001: 指标配置', async ({ page }) => {
-    await page.goto('/metric/config');
+    await page.goto('/config/metric');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -160,10 +160,10 @@ test.describe('性能评估 E2E', () => {
   });
 
   // E2E-PERF-005: 指标配置 5 Tab 结构 + 恢复国标默认值按钮
-  // 路由 /metric/config：5 个顶层 Tab（指标定义/权重配置/定级阈值/数据可信度/参数配置）
+  // 路由 /config/metric：5 个顶层 Tab（指标定义/权重配置/定级阈值/数据可信度/参数配置）
   // "权重配置"Tab 加载 weight-config.vue，含"恢复国标默认值"按钮
   test('E2E-PERF-005: 指标配置 Tab 结构 + 恢复国标默认值', async ({ page }) => {
-    await page.goto('/metric/config');
+    await page.goto('/config/metric');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -203,7 +203,7 @@ test.describe('性能评估 E2E', () => {
     }
 
     // 注意：不实际执行保存/回滚操作，避免污染数据
-    expect(page.url()).toContain('/metric/config');
+    expect(page.url()).toContain('/config/metric');
   });
 
   // E2E-PERF-006: 评估看板 TOP5 回路升降序切换

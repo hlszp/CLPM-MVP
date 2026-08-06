@@ -40,14 +40,14 @@ interface ModuleDef {
   label: string;
 }
 
-/** 6 大模块 */
+/** 6 大模块（label 对齐 IA 重构后顶级菜单标题） */
 const MODULES: ModuleDef[] = [
-  { key: 'dashboard', label: '工作台' },
-  { key: 'loop', label: '回路管理' },
-  { key: 'performance', label: '性能评估' },
-  { key: 'diagnosis', label: '诊断中心' },
-  { key: 'tuning', label: '回路整定' },
-  { key: 'system', label: '系统管理' },
+  { key: 'dashboard', label: '监控' },
+  { key: 'loop', label: '回路' },
+  { key: 'performance', label: '评估' },
+  { key: 'diagnosis', label: '诊断' },
+  { key: 'tuning', label: '整定' },
+  { key: 'system', label: '系统' },
 ];
 
 /** 权限级别标签映射 */
@@ -238,7 +238,7 @@ function getCellPermission(
               管理（含配置）→ 服务（系统级运维）。
             </li>
             <li>
-              系统管理员拥有全部模块权限（服务级）；外部专家仅可访问诊断中心与回路整定模块。
+              系统管理员拥有全部模块权限（服务级）；外部专家仅可访问诊断与整定模块。
             </li>
             <li>如需调整角色权限，请联系产品团队评估后通过版本升级实现。</li>
           </ul>

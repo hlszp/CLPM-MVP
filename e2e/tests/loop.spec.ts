@@ -2,8 +2,8 @@
  * E2E 回路管理测试
  *
  * 覆盖用例：
- * - E2E-LOOP-001: 创建回路（/loop/manage → 新建 → 填写 → 提交）
- * - E2E-LOOP-002: 测点清单（/tag/list → 查看测点列表）
+ * - E2E-LOOP-001: 创建回路（/config/loop → 新建 → 填写 → 提交）
+ * - E2E-LOOP-002: 测点清单（/config/tag → 查看测点列表）
  * - E2E-LOOP-003: 回路监控（/loop/monitor → 查看列表）
  * - E2E-LOOP-004: 回路详情（点击回路 → 详情页）
  *
@@ -15,9 +15,10 @@
  *   - monitor: 表格列表，点击行跳转 /loop/detail/:id
  *   - detail: 路由 /loop/detail/:id
  *
- * 路由变更（FE-04）：
- *   - /loop/ledger → 重定向到 /loop/manage
- *   - /loop/tag-mapping → 已废弃，测点清单迁移到 /tag/list
+ * 路由变更（IA 重构 Phase A）：
+ *   - /loop/manage → 迁移到 /config/loop（legacy redirect 保留）
+ *   - /tag/list → 迁移到 /config/tag（legacy redirect 保留）
+ *   - /loop/ledger → 重定向到 /config/loop
  */
 import { test, expect } from '../fixtures/auth.js';
 
@@ -28,7 +29,7 @@ test.describe('回路管理 E2E', () => {
   });
 
   test('E2E-LOOP-001: 创建回路', async ({ page }) => {
-    await page.goto('/loop/manage');
+    await page.goto('/config/loop');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -56,11 +57,11 @@ test.describe('回路管理 E2E', () => {
 
     // 核心验证点：新建回路 Drawer 正常弹出与关闭
     await expect(page.locator('.ant-drawer')).toBeHidden({ timeout: 10_000 }).catch(() => {});
-    expect(page.url()).toContain('/loop/manage');
+    expect(page.url()).toContain('/config/loop');
   });
 
   test('E2E-LOOP-002: 测点清单', async ({ page }) => {
-    await page.goto('/tag/list');
+    await page.goto('/config/tag');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -79,7 +80,7 @@ test.describe('回路管理 E2E', () => {
     }
 
     // 核心验证点：测点清单页面正常加载
-    expect(page.url()).toContain('/tag/list');
+    expect(page.url()).toContain('/config/tag');
   });
 
   test('E2E-LOOP-003: 回路监控', async ({ page }) => {
@@ -126,10 +127,10 @@ test.describe('回路管理 E2E', () => {
   });
 
   // E2E-LOOP-005: 回路台账三字段编辑（控制类型 + 重要等级 + 参评状态）
-  // 路由 /loop/manage：表格列标题为"参评"（Switch）+ "等级"（带颜色徽章）
+  // 路由 /config/loop：表格列标题为"参评"（Switch）+ "等级"（带颜色徽章）
   // + 筛选栏 placeholder="参评状态" 过滤选项；编辑抽屉中存在"评估配置"区
   test('E2E-LOOP-005: 回路台账三字段编辑', async ({ page }) => {
-    await page.goto('/loop/manage');
+    await page.goto('/config/loop');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -200,16 +201,16 @@ test.describe('回路管理 E2E', () => {
     }
 
     // 注意：不实际保存修改，只验证 UI 元素存在
-    expect(page.url()).toContain('/loop/manage');
+    expect(page.url()).toContain('/config/loop');
   });
 
   // E2E-LOOP-006: 链路配置页（原 AAS 同步状态页，v6.1 改造为链路配置）
-  // 路由 /loop/aas-sync → aas.vue：3 个 Tab（数据源 / DCS 系统 / DCS 型号映射）
+  // 路由 /config/link → aas.vue：3 个 Tab（数据源 / DCS 系统 / DCS 型号映射）
   //   - 数据源 Tab：网络模式切换 + 历史数据导入接口 + 实时数据源 + 保存配置/测试连接按钮
   //   - DCS 系统 Tab：DCS 品牌表格
   //   - DCS 型号映射 Tab：DCS 型号映射表格
   test('E2E-LOOP-006: 链路配置页', async ({ page }) => {
-    await page.goto('/loop/aas-sync');
+    await page.goto('/config/link');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -242,7 +243,7 @@ test.describe('回路管理 E2E', () => {
     expect(hasTest).toBeTruthy();
 
     // 注意：不实际保存或测试连接，只验证 UI 元素存在
-    expect(page.url()).toContain('/loop/aas-sync');
+    expect(page.url()).toContain('/config/link');
   });
 
   // E2E-LOOP-007: 回路监控诊断标签列跳转（D6 入口整合）

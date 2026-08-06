@@ -2,19 +2,22 @@
  * E2E 多角色权限验证测试
  *
  * 覆盖用例：
- * - E2E-ROLE-001: SPONSOR 菜单限制（仅可见工作台/性能评估/诊断中心）
+ * - E2E-ROLE-001: SPONSOR 菜单限制（仅可见监控/评估/诊断）
  * - E2E-ROLE-002: SPONSOR 直接访问受限页 → 跳转 403 或重定向
  * - E2E-ROLE-003: PE_ENGINEER 无整定菜单
  * - E2E-ROLE-004: EXPERT 有整定权限
  * - E2E-ROLE-005: IC_ENGINEER 全业务权限
  *
- * 角色权限对齐：
+ * 角色权限对齐（IA 重构 Phase A 后菜单结构）：
  *   frontend/apps/web-antd/src/router/routes/modules/*.ts
- *   - SPONSOR：仅 dashboard / metric(看板/排行/统计) / diagnosis(列表/波形/统计)
- *   - PE_ENGINEER：dashboard / loop(查看) / metric(查看) / diagnosis(查看+tracker) / 无 tuning
- *   - EXPERT：dashboard / metric(查看) / diagnosis(查看+tracker) / tuning(全部)
- *   - IC_ENGINEER：全部模块（含配置）
- *   - ADMIN：全部模块
+ *   顶级菜单：监控 / 回路 / 评估 / 诊断 / 整定 / 配置 / 系统
+ *   - SPONSOR：监控 / 评估 / 诊断
+ *   - PE_ENGINEER：监控 / 评估 / 诊断（无整定/配置/系统）
+ *   - EXPERT：诊断 / 整定（无监控/配置/系统）
+ *   - IC_ENGINEER：监控 / 评估 / 诊断 / 整定 / 系统（无配置）
+ *   - ADMIN：全部
+ *   注：Phase A "回路"菜单组仅含 hideInMenu 的详情页，侧边栏不显示，
+ *       Phase B 回路工作台上线后回归。
  */
 import { test, expect } from '../fixtures/auth.js';
 
@@ -55,17 +58,16 @@ test.describe('多角色权限验证 E2E', () => {
     await waitForMenu(page);
 
     const menuTexts = await getMenuTexts(page);
-    const menuText = menuTexts.join('|');
 
-    // SPONSOR 应可见：工作台、性能评估、诊断中心
-    expect(menuText).toContain('工作台');
-    expect(menuText).toContain('性能评估');
-    expect(menuText).toContain('诊断中心');
+    // SPONSOR 应可见：监控、评估、诊断（数组精确匹配，避免子串误判）
+    expect(menuTexts).toContain('监控');
+    expect(menuTexts).toContain('评估');
+    expect(menuTexts).toContain('诊断');
 
-    // SPONSOR 不应可见：回路管理、回路整定、系统管理
-    expect(menuText).not.toContain('回路管理');
-    expect(menuText).not.toContain('回路整定');
-    expect(menuText).not.toContain('系统管理');
+    // SPONSOR 不应可见：整定、配置、系统
+    expect(menuTexts).not.toContain('整定');
+    expect(menuTexts).not.toContain('配置');
+    expect(menuTexts).not.toContain('系统');
   });
 
   test('E2E-ROLE-002: SPONSOR 直接访问受限页 → 403/404 或重定向', async ({
@@ -74,8 +76,8 @@ test.describe('多角色权限验证 E2E', () => {
   }) => {
     await loginAs('SPONSOR');
 
-    // 手动访问 /loop/ledger（SPONSOR 无权限）
-    await page.goto('/loop/ledger');
+    // 手动访问 /config/loop（SPONSOR 无权限）
+    await page.goto('/config/loop');
 
     // 预期：跳转 403/404 页面 或 重定向到默认首页
     await page.waitForLoadState('networkidle');
@@ -107,14 +109,14 @@ test.describe('多角色权限验证 E2E', () => {
     await waitForMenu(page);
 
     const menuTexts = await getMenuTexts(page);
-    const menuText = menuTexts.join('|');
 
-    // PE_ENGINEER 应可见：工作台、回路管理（查看）、性能评估、诊断中心
-    expect(menuText).toContain('工作台');
-    expect(menuText).toContain('回路管理');
+    // PE_ENGINEER 应可见：监控、评估、诊断
+    expect(menuTexts).toContain('监控');
+    expect(menuTexts).toContain('评估');
+    expect(menuTexts).toContain('诊断');
 
-    // PE_ENGINEER 不应可见：回路整定
-    expect(menuText).not.toContain('回路整定');
+    // PE_ENGINEER 不应可见：整定
+    expect(menuTexts).not.toContain('整定');
   });
 
   test('E2E-ROLE-004: EXPERT 有整定权限', async ({ page, loginAs }) => {
@@ -124,10 +126,9 @@ test.describe('多角色权限验证 E2E', () => {
     await waitForMenu(page);
 
     const menuTexts = await getMenuTexts(page);
-    const menuText = menuTexts.join('|');
 
-    // EXPERT 应可见：回路整定
-    expect(menuText).toContain('回路整定');
+    // EXPERT 应可见：整定
+    expect(menuTexts).toContain('整定');
 
     // 验证可访问整定工作台
     await page.goto('/tuning/workbench');
@@ -144,14 +145,14 @@ test.describe('多角色权限验证 E2E', () => {
     await waitForMenu(page);
 
     const menuTexts = await getMenuTexts(page);
-    const menuText = menuTexts.join('|');
 
-    // IC_ENGINEER 应可见全部业务模块
-    expect(menuText).toContain('工作台');
-    expect(menuText).toContain('回路管理');
-    expect(menuText).toContain('性能评估');
-    expect(menuText).toContain('诊断中心');
-    expect(menuText).toContain('回路整定');
-    expect(menuText).toContain('系统管理');
+    // IC_ENGINEER 应可见：监控、评估、诊断、整定、系统（不含配置：ADMIN 专属）
+    expect(menuTexts).toContain('监控');
+    expect(menuTexts).toContain('评估');
+    expect(menuTexts).toContain('诊断');
+    expect(menuTexts).toContain('整定');
+    expect(menuTexts).toContain('系统');
+    // IC_ENGINEER 不应可见：配置
+    expect(menuTexts).not.toContain('配置');
   });
 });
