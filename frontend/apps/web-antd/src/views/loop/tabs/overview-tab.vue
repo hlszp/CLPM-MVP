@@ -18,7 +18,8 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type { KpiStripItem } from '#/components/clpm';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, inject, onMounted, ref, watch } from 'vue';
+import type { Ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {
@@ -32,7 +33,6 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisDetailApi } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorDetailApi } from '#/api/loop';
 import {
   ClpmDataCanvas,
@@ -58,10 +58,15 @@ const { themeColors } = useClpmTheme();
 // ===== 数据状态 =====
 const loading = ref(false);
 const monitorLoading = ref(false);
-const diagnosisLoading = ref(false);
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
 const monitorDetail = ref<LoopApi.MonitorDetail | null>(null);
-const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
+
+// 诊断数据由父级 workbench.vue 统一加载并 provide（概览 / 诊断 Tab 共用，避免重复请求）
+const diagnosisDetail = inject<Ref<DiagnosisApi.DiagnosisDetail | null>>(
+  'diagnosisDetail',
+  ref(null),
+);
+const diagnosisLoading = inject<Ref<boolean>>('diagnosisLoading', ref(false));
 
 const trendWindow = ref<LoopApi.TrendWindow>('last_4_hours');
 
@@ -299,19 +304,9 @@ async function loadMonitorDetail() {
   }
 }
 
-async function loadDiagnosis() {
-  diagnosisLoading.value = true;
-  try {
-    diagnosisDetail.value = await getDiagnosisDetailApi(props.loopId).catch(
-      () => null,
-    );
-  } finally {
-    diagnosisLoading.value = false;
-  }
-}
-
 async function loadAll() {
-  await Promise.all([loadDetail(), loadMonitorDetail(), loadDiagnosis()]);
+  // 诊断数据由父级 workbench.vue 统一加载（provide/inject 共享），此处仅加载回路详情与监控详情
+  await Promise.all([loadDetail(), loadMonitorDetail()]);
 }
 
 // ===== 跳转入口 =====

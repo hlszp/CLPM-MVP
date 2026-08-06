@@ -15,16 +15,24 @@
  *
  * 后端零改动：全部前端组合现有 API
  */
+import type { DiagnosisApi } from '#/api/diagnosis';
+import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 import type { LoopApi } from '#/api/loop';
 
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, provide, ref, watch } from 'vue';
 import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import { Button, Empty, Input, Spin, TabPane, Tabs } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
+import { getDiagnosisDetailApi } from '#/api/diagnosis';
+import {
+  getLoopConfidenceLatestApi,
+  getLoopSnapshotsApi,
+} from '#/api/metric';
 import { getLoopMonitorListApi } from '#/api/loop';
 import {
   ClpmAiDrawer,
@@ -74,6 +82,81 @@ const activeTab = ref('overview');
 
 // 已渲染过的 Tab 集合（切换后才渲染，避免 6 Tab 同时请求）
 const loadedTabs = ref<Set<string>>(new Set(['overview']));
+
+// ===== 诊断数据共享（概览 / 诊断 Tab 复用，避免重复 API 调用） =====
+// 通过 provide/inject 将诊断详情加载提升到父级：选中回路即加载一次，
+// 概览 Tab 的"诊断标签"摘要与诊断 Tab 的完整诊断共用同一份数据。
+const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
+const diagnosisLoading = ref(false);
+
+async function loadDiagnosis(loopId: string): Promise<void> {
+  diagnosisLoading.value = true;
+  try {
+    diagnosisDetail.value = await getDiagnosisDetailApi(loopId).catch(
+      () => null,
+    );
+  } finally {
+    diagnosisLoading.value = false;
+  }
+}
+
+provide('diagnosisDetail', diagnosisDetail);
+provide('diagnosisLoading', diagnosisLoading);
+provide('loadDiagnosis', loadDiagnosis);
+
+// ===== 评估数据共享（评估 Tab 用，提升到父级避免子组件重复请求） =====
+// 评估快照：getLoopConfidenceLatestApi → 最近一次评估记录（12 子指标 + 评分 + 可信度）
+// 评分趋势：getLoopSnapshotsApi → 近 7 天历史快照（综合评分 + 各 KPI 时间序列）
+const assessmentDetail = ref<LoopConfidenceLatestItem | null>(null);
+const assessmentLoading = ref(false);
+const scoreHistory = ref<KpiSnapshotItem[]>([]);
+
+/** 拉取近 7 天评分趋势快照（分页，pageSize 上限 100） */
+async function loadScoreHistory(loopId: string): Promise<KpiSnapshotItem[]> {
+  const endTime = dayjs();
+  const startTime = endTime.subtract(7, 'day');
+  const allItems: KpiSnapshotItem[] = [];
+  let page = 1;
+  const pageLimit = 100;
+  let total = 0;
+  do {
+    const res = await getLoopSnapshotsApi({
+      loopId,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      latestOnly: false,
+      page,
+      pageSize: pageLimit,
+    }).catch(() => ({ items: [], total: 0 }));
+    allItems.push(...(res.items || []));
+    total = res.total ?? 0;
+    page += 1;
+  } while ((page - 1) * pageLimit < total);
+  return allItems.toSorted((a, b) => {
+    const aTs = a.tsStart || '';
+    const bTs = b.tsStart || '';
+    return aTs.localeCompare(bTs);
+  });
+}
+
+async function loadAssessment(loopId: string): Promise<void> {
+  assessmentLoading.value = true;
+  try {
+    const [latest, snapshots] = await Promise.all([
+      getLoopConfidenceLatestApi(loopId).catch(() => null),
+      loadScoreHistory(loopId),
+    ]);
+    assessmentDetail.value = latest;
+    scoreHistory.value = snapshots;
+  } finally {
+    assessmentLoading.value = false;
+  }
+}
+
+provide('assessmentDetail', assessmentDetail);
+provide('assessmentLoading', assessmentLoading);
+provide('scoreHistory', scoreHistory);
+provide('loadAssessment', loadAssessment);
 
 // ===== AI 洞察两级门禁（Phase A 已建） =====
 // scene=performance 需要 loopId 上下文：未选回路时灰显（disabled-context）
@@ -195,6 +278,22 @@ watch(
       loadedTabs.value = new Set([activeTab.value]);
     }
   },
+);
+
+// 选中回路变化时加载诊断 + 评估数据（概览 / 诊断 / 评估 Tab 共用，避免子组件重复请求）
+watch(
+  selectedLoopId,
+  (newId) => {
+    if (newId) {
+      loadDiagnosis(newId);
+      loadAssessment(newId);
+    } else {
+      diagnosisDetail.value = null;
+      assessmentDetail.value = null;
+      scoreHistory.value = [];
+    }
+  },
+  { immediate: true },
 );
 </script>
 
