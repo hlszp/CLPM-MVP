@@ -19,7 +19,14 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 import type { LoopApi } from '#/api/loop';
 
-import { computed, defineAsyncComponent, onMounted, provide, ref, watch } from 'vue';
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue';
 import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -29,10 +36,7 @@ import { Button, Empty, Input, Spin, TabPane, Tabs } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
-import {
-  getLoopConfidenceLatestApi,
-  getLoopSnapshotsApi,
-} from '#/api/metric';
+import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
 import { getLoopMonitorListApi } from '#/api/loop';
 import {
   ClpmAiDrawer,

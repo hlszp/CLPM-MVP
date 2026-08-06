@@ -18,13 +18,17 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Button, Descriptions, DescriptionsItem, Empty, Spin, Tag } from 'ant-design-vue';
+import {
+  Button,
+  Descriptions,
+  DescriptionsItem,
+  Empty,
+  Spin,
+  Tag,
+} from 'ant-design-vue';
 
 import { getLoopTimelineApi } from '#/api/diagnosis';
-import {
-  ClpmDataCanvas,
-  ClpmDispositionTimeline,
-} from '#/components/clpm';
+import { ClpmDataCanvas, ClpmDispositionTimeline } from '#/components/clpm';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'LoopWorkbenchTimelineTab' });
@@ -164,20 +168,12 @@ watch(
         :pending-verification-at="timelineData!.pendingVerificationAt"
       >
         <template #verify-now>
-          <Button
-            type="link"
-            size="small"
-            @click="goDiagnosisDetail"
-          >
+          <Button type="link" size="small" @click="goDiagnosisDetail">
             立即验证（去诊断详情）
           </Button>
         </template>
       </ClpmDispositionTimeline>
-      <Empty
-        v-else-if="!loading"
-        description="暂无处置事件"
-        class="py-8"
-      />
+      <Empty v-else-if="!loading" description="暂无处置事件" class="py-8" />
     </ClpmDataCanvas>
   </div>
 </template>
