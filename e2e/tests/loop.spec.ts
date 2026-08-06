@@ -94,7 +94,7 @@ test.describe('回路管理 E2E', () => {
     const tableHeader = page.locator('.ant-table-thead').first();
     await expect(tableHeader).toBeVisible({ timeout: 10_000 });
     const headerText = await tableHeader.innerText();
-    expect(headerText).toContain('回路编号');
+    expect(headerText).toContain('回路位号');
   });
 
   test('E2E-LOOP-004: 回路详情', async ({ page }) => {

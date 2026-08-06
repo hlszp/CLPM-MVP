@@ -155,7 +155,7 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     // 点击"参数配置" Tab（key="outlier"）
     const outlierTab = page
       .locator('.ant-tabs-tab')
-      .filter({ hasText: '参数配置' })
+      .filter({ hasText: '异常值检测参数' })
       .first();
     await expect(outlierTab).toBeVisible({ timeout: 15_000 });
     await outlierTab.click();

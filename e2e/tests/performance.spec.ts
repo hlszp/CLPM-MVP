@@ -178,7 +178,7 @@ test.describe('性能评估 E2E', () => {
     expect(tabText).toContain('权重配置');
     expect(tabText).toContain('定级阈值');
     expect(tabText).toContain('数据可信度');
-    expect(tabText).toContain('参数配置');
+    expect(tabText).toContain('异常值检测参数');
 
     // 切换到"权重配置"Tab，验证"恢复国标默认值"按钮存在
     const weightTab = tabs.getByRole('tab', { name: /权重配置/ }).first();

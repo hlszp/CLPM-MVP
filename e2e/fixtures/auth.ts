@@ -234,6 +234,10 @@ export const test = base.extend<AuthFixture>({
   loginAs: async ({ page, request }, use) => {
     const loginAs = async (role: ClpmRole): Promise<void> => {
       const account = ACCOUNTS[role];
+      // P2-03：跳过首次登录 Onboarding Tour，避免引导 Modal 拦截 E2E 点击
+      await page.addInitScript(() => {
+        localStorage.setItem('clpm-onboarding-completed', 'true');
+      });
       // v6.2 P1-023：使用 mock 登录避免后端在连续 E2E 测试中变慢导致超时
       await loginViaUIWithMock(page, request, account.username, account.password);
     };
