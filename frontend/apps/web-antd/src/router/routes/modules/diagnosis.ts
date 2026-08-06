@@ -4,7 +4,8 @@ import type { RouteRecordRaw } from 'vue-router';
  * 诊断中心路由模块（v6.1 IA 调整：7 页面 → 5 页面 + 诊断任务）
  *
  * 对齐 UI/UX v6.1 §4.2 + PRD §4.4 + IDS v3.2 §2.4
- * - 诊断总览 / 诊断任务 / 诊断记录 / 诊断详情（隐藏） / 异常跟踪 / 诊断配置
+ * - 诊断总览 / 诊断任务 / 诊断记录 / 诊断详情（隐藏） / 异常跟踪
+ * - 诊断配置已迁入配置模块（/config/diagnosis），见 config.ts
  *
  * v6.1 IA 调整说明：
  * - 新增 DiagnosisOverview 作为诊断中心默认着陆页（替代原直接进入列表）
@@ -32,9 +33,9 @@ const routes: RouteRecordRaw[] = [
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:stethoscope',
       order: 4,
-      title: '诊断中心',
+      title: '诊断',
     },
-    name: 'Diagnosis',
+    name: 'Diagnose',
     path: '/diagnosis',
     redirect: '/diagnosis/overview',
     children: [
@@ -128,16 +129,7 @@ const routes: RouteRecordRaw[] = [
           title: '异常跟踪',
         },
       },
-      {
-        name: 'DiagnosisConfig',
-        path: '/diagnosis/config',
-        component: () => import('#/views/diagnosis/config.vue'),
-        meta: {
-          authority: ['ADMIN'],
-          icon: 'lucide:settings-2',
-          title: '诊断配置',
-        },
-      },
+      // 诊断配置已迁入配置模块（/config/diagnosis），legacy redirect 由 config.ts 接管
     ],
   },
 ];

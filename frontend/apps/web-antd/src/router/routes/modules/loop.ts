@@ -1,119 +1,41 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 回路管理路由模块
+ * 回路路由模块（IA 重构 Phase A·实体轴占位）
  *
- * 对齐 UI/UX v4.1 §4.2 + PRD §4.2
- * - 回路管理整合页（FE-01）：工厂树 + 回路表格 + 编辑抽屉
- * - 测点清单
- * - 回路监控 / 回路详情（隐藏）
+ * 对齐 IA 重构方案 §3.2/§4.1。
+ * Phase A：组 redirect 到 /loop/monitor（防空菜单），/loop/detail/:id 靠 loopId 跳转进入。
+ * Phase B：升级为 /loop/workbench 6 Tab 工作台（概览/评估/诊断/整定/效果对比/时间线）。
+ *
+ * 注：原 loop.ts 下的结构性配置子路由（aas-sync/tag/manage/factory/ledger/data）
+ *    已迁入 config.ts 为 /config/* 新路径 + legacy redirect。
  *
  * 角色权限（PRD §3）：
- * - ADMIN：全部
- * - IC_ENGINEER：全部
- * - PE_ENGINEER：查看
- * - SPONSOR / EXPERT：不可见
- *
- * FE-04：loop/factory 与 loop/ledger 已废弃，重定向到 /loop/manage
+ * - ADMIN / IC_ENGINEER / EXPERT：可编辑
+ * - PE_ENGINEER：只读
  */
 const routes: RouteRecordRaw[] = [
   {
-    meta: {
-      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-      icon: 'lucide:network',
-      order: 2,
-      title: '回路管理',
-    },
     name: 'Loop',
     path: '/loop',
+    redirect: '/loop/monitor',
+    meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
+      icon: 'lucide:network',
+      order: 2,
+      title: '回路',
+    },
     children: [
-      {
-        name: 'LoopAasSync',
-        path: '/loop/aas-sync',
-        component: () => import('#/views/loop/aas.vue'),
-        meta: {
-          // 实现契约 §5：后端 datasource.py/dcs.py 写端点仅 ADMIN，前端同步收紧
-          authority: ['ADMIN'],
-          icon: 'lucide:refresh-cw',
-          order: 1,
-          title: '链路配置',
-        },
-      },
-      {
-        name: 'TagList',
-        path: '/tag/list',
-        component: () => import('#/views/tag/list.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:list',
-          order: 2,
-          title: '测点配置',
-        },
-      },
-      {
-        name: 'LoopManage',
-        path: '/loop/manage',
-        component: () => import('#/views/loop/manage.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:network',
-          order: 3,
-          title: '回路配置',
-        },
-      },
-      // FE-04：废弃 loop/factory，重定向到 /loop/manage
-      {
-        name: 'LoopFactory',
-        path: '/loop/factory',
-        redirect: '/loop/manage',
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          hideInMenu: true,
-          title: '工厂模型',
-        },
-      },
-      // FE-04：废弃 loop/ledger，重定向到 /loop/manage
-      {
-        name: 'LoopLedger',
-        path: '/loop/ledger',
-        redirect: '/loop/manage',
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          hideInMenu: true,
-          title: '回路台账',
-        },
-      },
-      {
-        name: 'LoopMonitor',
-        path: '/loop/monitor',
-        component: () => import('#/views/loop/monitor.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:gauge',
-          order: 4,
-          title: '回路监控',
-        },
-      },
-      {
-        name: 'LoopData',
-        path: '/loop/data',
-        component: () => import('#/views/loop/data.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          icon: 'lucide:database',
-          order: 5,
-          title: '数据管理',
-        },
-      },
       {
         name: 'LoopDetail',
         path: '/loop/detail/:id',
         component: () => import('#/views/loop/detail.vue'),
         meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           hideInMenu: true,
           hideInTab: false,
-          activePath: '/loop/monitor',
+          // 详情页打开时高亮"回路"菜单（而非 /loop/monitor 所在的"监控"）
+          activePath: '/loop',
           title: '回路详情',
         },
       },

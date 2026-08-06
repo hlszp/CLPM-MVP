@@ -1,40 +1,43 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 性能评估路由模块
+ * 评估路由模块（IA 重构 Phase A·职能轴）
  *
- * 子菜单顺序：装置性能 / 回路性能 / 评估任务 / 指标配置 / KPI报表
+ * 子菜单：性能总览 / 回路性能 / 评估任务 / KPI报表
+ * 指标配置已迁入配置模块（/config/metric），见 config.ts
  *
- * 角色权限（PRD §3 + 实现契约 §5 + UI/UX §4.2）：
- * - ADMIN：全部（含配置）
+ * 角色权限（PRD §3 + 实现契约 §5）：
+ * - ADMIN：全部
  * - IC_ENGINEER：全部（含评估任务）
  * - PE_ENGINEER / SPONSOR：查看（看板/回路性能/报表）
- * - EXPERT：不可见（EXPERT 仅诊断中心 + 回路整定，默认首页 /diagnosis）
+ * - EXPERT：不可见
+ *
+ * leaf 路径保留 /metric/* 绝对路径（路径稳定策略，仅重命名高价值配置项）。
  */
 const routes: RouteRecordRaw[] = [
   {
+    name: 'Assess',
+    path: '/assess',
+    redirect: '/metric/pid-dashboard',
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:gauge',
       order: 3,
-      title: '性能评估',
+      title: '评估',
     },
-    name: 'Metric',
-    path: '/metric',
-    redirect: '/metric/pid-dashboard',
     children: [
       {
-        name: 'MetricPidDashboard',
+        name: 'AssessOverview',
         path: '/metric/pid-dashboard',
         component: () => import('#/views/metric/pid-dashboard.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
-          title: '装置性能',
+          title: '性能总览',
         },
       },
       {
-        name: 'MetricLoopPerformance',
+        name: 'AssessLoopPerformance',
         path: '/metric/loop-performance',
         component: () => import('#/views/metric/loop-performance.vue'),
         meta: {
@@ -44,7 +47,7 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'MetricTasks',
+        name: 'AssessTasks',
         path: '/metric/tasks',
         component: () => import('#/views/metric/tasks.vue'),
         meta: {
@@ -54,17 +57,7 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'MetricConfig',
-        path: '/metric/config',
-        component: () => import('#/views/metric/config.vue'),
-        meta: {
-          authority: ['ADMIN'],
-          icon: 'lucide:settings',
-          title: '指标配置',
-        },
-      },
-      {
-        name: 'MetricKpiReport',
+        name: 'AssessKpiReport',
         path: '/metric/kpi-report',
         component: () => import('#/views/metric/kpi-report.vue'),
         meta: {
@@ -74,6 +67,17 @@ const routes: RouteRecordRaw[] = [
         },
       },
     ],
+  },
+  // 旧 /metric 父路径兼容 redirect（保护书签/E2E，/metric/config 由 config.ts 接管）
+  {
+    name: 'MetricLegacy',
+    path: '/metric',
+    redirect: '/metric/pid-dashboard',
+    meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+      hideInMenu: true,
+      title: '性能评估',
+    },
   },
 ];
 
