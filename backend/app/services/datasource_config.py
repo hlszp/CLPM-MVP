@@ -392,9 +392,11 @@ async def get_datasource_health(db: AsyncSession) -> dict[str, Any]:
     """
     config = await get_datasource_config(db, mask_token=True)
     # 查询 AAS Tag 最近同步时间
-    from app.models.tag import Tag
+    from app.models.tag import TagRegistry
 
-    result = await db.execute(select(Tag.last_sync_at).order_by(Tag.last_sync_at.desc()).limit(1))
+    result = await db.execute(
+        select(TagRegistry.last_sync_at).order_by(TagRegistry.last_sync_at.desc()).limit(1)
+    )
     last_sync_row = result.scalar_one_or_none()
     last_sync_at = (
         last_sync_row.isoformat() if last_sync_row and hasattr(last_sync_row, "isoformat") else None
