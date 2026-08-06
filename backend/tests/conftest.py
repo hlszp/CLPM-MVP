@@ -381,6 +381,7 @@ _REDIS_CLIENT_MODULES: list[str] = [
     "app.api.v1.endpoints.health",
     "app.api.v1.endpoints.tasks",
     "app.api.v1.endpoints.ws_realtime",
+    "app.api.v1.endpoints.ws_alert",
     "app.middleware.idempotency",
     "app.middleware.rate_limit",
     "app.services.alert_rule_engine.cache",

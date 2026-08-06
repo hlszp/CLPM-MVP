@@ -238,3 +238,39 @@ class AlertBadgeCount(CamelModel):
     """用户未读预警事件计数。"""
 
     count: int
+
+
+# ---------------------------------------------------------------------------
+# Dry-Run 试运行
+# ---------------------------------------------------------------------------
+
+
+class AlertDryRunRequest(CamelModel):
+    """POST /alert/rules/dry-run 请求体。
+
+    可传入完整 DSL 试运行，也可指定已存在的 ruleId + loopId 对已有规则试运行。
+    dry-run 不创建事件、不设冷却期、不触发动作，仅返回求值结果。
+    """
+
+    loop_id: str = Field(..., description="目标回路 ID")
+    rule_id: str | None = Field(
+        None, description="已有规则 ID（提供时使用该规则 DSL，忽略 dsl 字段）"
+    )
+    dsl: dict[str, Any] | None = Field(None, description="试运行 DSL（ruleId 未提供时必填）")
+    confidence_level: str | None = Field(
+        None, description="模拟可信度等级 A/B/C/D/E（可选，用于测试 confidencePolicy）"
+    )
+
+
+class AlertDryRunResult(CamelModel):
+    """dry-run 求值结果。"""
+
+    triggered: bool
+    triggered_value: float | None = None
+    condition_snapshot: dict[str, Any] = {}
+    severity: str | None = None
+    confidence_level: str | None = None
+    dedup_key: str | None = None
+    current_values: dict[str, Any] = Field(
+        default_factory=dict, description="求值时读取到的回路当前值"
+    )

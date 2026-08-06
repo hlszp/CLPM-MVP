@@ -48,6 +48,7 @@ from app.models.sys_user import SysUser
 from app.schemas.alert import (
     AlertAuditLogListData,
     AlertBadgeCount,
+    AlertDryRunRequest,
     AlertEventAcknowledge,
     AlertEventFalsePositive,
     AlertEventItem,
@@ -154,6 +155,28 @@ async def toggle_rule_endpoint(
     data = await alert_service.toggle_rule(db, rule_id, enabled, user.username)
     await db.commit()
     return success(data=data, message="规则状态已更新")
+
+
+@router.post("/rules/dry-run", response_model=ApiResponse[dict])
+async def dry_run_rule_endpoint(
+    body: AlertDryRunRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """规则试运行：对指定回路求值，不创建事件、不设冷却期、不触发动作。
+
+    支持两种模式：
+    1. 传入 ruleId：使用已存在的规则 DSL 试运行
+    2. 传入 dsl：使用自定义 DSL 试运行（先校验合法性）
+    """
+    data = await alert_service.dry_run(
+        db,
+        loop_id=body.loop_id,
+        rule_id=body.rule_id,
+        dsl=body.dsl,
+        confidence_level=body.confidence_level,
+    )
+    return success(data=data, message="试运行完成")
 
 
 # ===========================================================================

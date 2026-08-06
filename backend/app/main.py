@@ -65,6 +65,7 @@ from app.api.v1.endpoints import (
     tuning,
     users,
     weight_config,
+    ws_alert,
     ws_realtime,
 )
 from app.api.v1.endpoints import (
@@ -592,6 +593,7 @@ def create_app() -> FastAPI:
     # 实时数据查询（从 Redis 缓存读取 SignalR 订阅数据）
     v1_router.include_router(realtime.router)
     v1_router.include_router(ws_realtime.router)
+    v1_router.include_router(ws_alert.router)  # 预警实时推送
     app.include_router(v1_router)
 
     return app

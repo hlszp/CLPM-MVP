@@ -672,3 +672,78 @@ async def get_badge_count(user_id: str) -> int:
 
 async def reset_badge(user_id: str) -> None:
     await _suppressor.reset_badge(user_id)
+
+
+# ---------------------------------------------------------------------------
+# Dry-Run 试运行
+# ---------------------------------------------------------------------------
+
+
+async def dry_run(
+    db: AsyncSession,
+    loop_id: str,
+    rule_id: str | None = None,
+    dsl: dict[str, Any] | None = None,
+    confidence_level: str | None = None,
+) -> dict[str, Any]:
+    """规则试运行：对指定回路求值，不创建事件、不设冷却期、不触发动作。
+
+    Args:
+        db: 数据库会话
+        loop_id: 目标回路 ID
+        rule_id: 已有规则 ID（提供时使用该规则 DSL，忽略 dsl）
+        dsl: 自定义 DSL（rule_id 未提供时必填）
+        confidence_level: 模拟可信度等级（A/B/C/D/E）
+
+    Returns:
+        求值结果字典（triggered/triggered_value/condition_snapshot/severity/
+        confidence_level/dedup_key/current_values）
+    """
+    from app.services.alert_rule_engine.dsl import validate_dsl
+    from app.services.alert_rule_engine.evaluator import evaluate_rule
+
+    # 构建 rule dict（evaluator 期望的格式）
+    if rule_id:
+        rule = await _get_rule_or_404(db, rule_id)
+        rule_dict = _rule_to_dict(rule)
+    else:
+        if not dsl:
+            raise BizError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_code="ALERT_DRY_RUN_NO_DSL",
+                message="ruleId 和 dsl 至少提供一个",
+            )
+        # 校验 DSL
+        validate_dsl(dsl)
+        rule_dict = {
+            "id": "dry-run",
+            "rule_code": "DRY_RUN",
+            "rule_name": "试运行",
+            "rule_type": dsl.get("ruleType", "THRESHOLD"),
+            "dsl": dsl,
+            "is_enabled": True,
+            "version": 1,
+        }
+
+    # 求值（不传 current_values，让 evaluator 从 Redis 取实时值）
+    result = await evaluate_rule(
+        db=db,
+        rule=rule_dict,
+        loop_id=loop_id,
+        confidence_level=confidence_level,
+    )
+
+    # 附带当前值快照（方便前端展示）
+    from app.services.alert_rule_engine.evaluator import _get_current_values
+
+    current_values = await _get_current_values(loop_id)
+
+    return {
+        "triggered": result.triggered,
+        "triggered_value": result.triggered_value,
+        "condition_snapshot": result.condition_snapshot,
+        "severity": result.severity,
+        "confidence_level": result.confidence_level or confidence_level,
+        "dedup_key": result.dedup_key,
+        "current_values": current_values,
+    }

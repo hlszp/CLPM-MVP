@@ -722,3 +722,139 @@ class TestAuditAndGlobal:
             )
         assert resp.status_code == 200
         assert resp.json()["data"]["count"] == 0
+
+
+# ===========================================================================
+# Dry-Run 试运行 POST /alert/rules/dry-run
+# ===========================================================================
+
+
+class TestDryRun:
+    """POST /alert/rules/dry-run 规则试运行。"""
+
+    def test_dry_run_with_custom_dsl_triggered(self, client, mock_db, fake_redis) -> None:
+        """传入自定义 DSL 试运行，规则命中时返回 triggered=True。"""
+        dry_run_result = {
+            "triggered": True,
+            "triggeredValue": 150.0,
+            "conditionSnapshot": {
+                "metric": "PV",
+                "operator": ">",
+                "threshold": 100,
+                "actualValue": 150.0,
+            },
+            "severity": "WARN",
+            "confidenceLevel": "B",
+            "dedupKey": "loop-1+DRY_RUN",
+            "currentValues": {"PV": 150.0, "OP": 55.0},
+        }
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.dry_run",
+                new_callable=AsyncMock,
+                return_value=dry_run_result,
+            ) as m,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.post(
+                "/api/v1/alert/rules/dry-run",
+                json={
+                    "loopId": "loop-001",
+                    "dsl": {
+                        "ruleType": "THRESHOLD",
+                        "scope": {"loopSelector": {"type": "ALL"}},
+                        "condition": {"metric": "PV", "operator": ">", "value": 100},
+                        "severity": "WARN",
+                        "actions": [{"type": "CREATE_EVENT"}],
+                    },
+                },
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["triggered"] is True
+        assert data["triggeredValue"] == 150.0
+        assert data["severity"] == "WARN"
+        assert data["currentValues"]["PV"] == 150.0
+        m.assert_awaited_once()
+
+    def test_dry_run_with_rule_id(self, client, mock_db, fake_redis) -> None:
+        """传入已有规则 ID 试运行。"""
+        dry_run_result = {
+            "triggered": False,
+            "triggeredValue": None,
+            "conditionSnapshot": {"metric": "PV", "reason": "no_data"},
+            "severity": "WARN",
+            "confidenceLevel": None,
+            "dedupKey": "loop-1+rule-001",
+            "currentValues": {},
+        }
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.dry_run",
+                new_callable=AsyncMock,
+                return_value=dry_run_result,
+            ) as m,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/alert/rules/dry-run",
+                json={"loopId": "loop-001", "ruleId": "rule-001"},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["triggered"] is False
+        m.assert_awaited_once()
+        # 验证 rule_id 被正确传递
+        call_kwargs = m.call_args.kwargs
+        assert call_kwargs["rule_id"] == "rule-001"
+        assert call_kwargs["dsl"] is None
+
+    def test_dry_run_rejects_sponsor(self, client, mock_db, fake_redis) -> None:
+        """SPONSOR 角色无 alert:manage 权限，不能试运行。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.post(
+                "/api/v1/alert/rules/dry-run",
+                json={"loopId": "loop-001", "ruleId": "rule-001"},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 403
+
+    def test_dry_run_with_confidence_level(self, client, mock_db, fake_redis) -> None:
+        """试运行可传入模拟可信度等级。"""
+        dry_run_result = {
+            "triggered": False,
+            "triggeredValue": None,
+            "conditionSnapshot": {"maxLevel": "B", "actualLevel": "D"},
+            "severity": "WARN",
+            "confidenceLevel": "D",
+            "dedupKey": "loop-1+DRY_RUN",
+            "currentValues": {},
+        }
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.dry_run",
+                new_callable=AsyncMock,
+                return_value=dry_run_result,
+            ) as m,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.post(
+                "/api/v1/alert/rules/dry-run",
+                json={
+                    "loopId": "loop-001",
+                    "dsl": {
+                        "ruleType": "CONFIDENCE",
+                        "scope": {"loopSelector": {"type": "ALL"}},
+                        "condition": {"maxLevel": "B"},
+                        "severity": "WARN",
+                        "actions": [{"type": "CREATE_EVENT"}],
+                    },
+                    "confidenceLevel": "D",
+                },
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["confidenceLevel"] == "D"
+        call_kwargs = m.call_args.kwargs
+        assert call_kwargs["confidence_level"] == "D"

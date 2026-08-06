@@ -375,3 +375,32 @@ export function getAlertBadgeApi() {
 export function resetAlertBadgeApi() {
   return requestClient.post<AlertApi.BadgeCount>(`${BASE}/badge/reset`);
 }
+
+// ---------------------------------------------------------------------------
+// Dry-Run 试运行
+// ---------------------------------------------------------------------------
+
+export namespace AlertApi {
+  /** dry-run 请求参数 */
+  export interface DryRunParams {
+    loopId: string;
+    ruleId?: string;
+    dsl?: Record<string, any>;
+    confidenceLevel?: 'A' | 'B' | 'C' | 'D' | 'E';
+  }
+
+  /** dry-run 结果 */
+  export interface DryRunResult {
+    triggered: boolean;
+    triggeredValue: number | null;
+    conditionSnapshot: Record<string, any>;
+    severity: string | null;
+    confidenceLevel: string | null;
+    dedupKey: string | null;
+    currentValues: Record<string, any>;
+  }
+}
+
+export function dryRunAlertRuleApi(data: AlertApi.DryRunParams) {
+  return requestClient.post<AlertApi.DryRunResult>(`${BASE}/rules/dry-run`, data);
+}
