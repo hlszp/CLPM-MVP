@@ -24,7 +24,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.4 是重构后 IA/路�
 | 类型 | 文件 | 版本 |
 |---|---|---|
 | 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.1 |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.5**（IA 整改 P3-04：AI 洞察全局赋能/LLM 配置 API/`POST /ai-insight/{scene}` 4 场景统一入口/`ClpmAiInsight` 通用组件/推理模型空输出修复；v2.4 P3-01：整定知识库不可变快照/38 表；v2.3 Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.5**（IA 整改 P3-04：AI 洞察全局赋能/LLM 配置 API/`POST /ai-insight/{scene}` 4 场景统一入口/`ClpmAiInsight` 通用组件/推理模型空输出修复；v2.4 P3-01：整定知识库不可变快照/38 表；v2.3 Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界）。**IA 重构 Phase A 已合入 IA 分支**：7 菜单重组/配置集中化/AI 右抽屉/跨模块上下文基建，后端零改动，契约 IA/路由章节待 Phase B 完成后统一升 v2.6 |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
 | 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
 | 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
@@ -149,7 +149,7 @@ cd frontend && pnpm run format
 - **远端**：`origin` = gitea（主），`github` = GitHub（镜像）；main 跟踪 `origin/main`
 - **提交**：Conventional Commits `<type>(<scope>): <subject>`，subject ≤50 字符祈使句，body 解释"为什么"，按逻辑单元拆分，单 commit ≤500 行
 - **日常开发**：可直接在 main 上小步提交并 `git push origin main`；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
-- **IA 重构分支策略**（2026-08-06 起，进行中）：本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建，已推 origin+github）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送；仅当 A/B/C/D 全部测试验证通过且人工确认后，IA 才合并到 main。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。期间日常修复仍可走 main，IA 定期 rebase main 保持同步
+- **IA 重构分支策略**（2026-08-06 起，进行中）：本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建，已推 origin+github）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送；仅当 A/B/C/D 全部测试验证通过且人工确认后，IA 才合并到 main。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。期间日常修复仍可走 main，IA 定期 rebase main 保持同步。**Phase A 已完成**（`IA-PhaseA` → IA `--no-ff` 合并，7 commits：路由重组 7 菜单 + 配置集中化 + AI 右抽屉 + 跨模块上下文基建 + E2E 同步；后端零改动；门禁全绿 ruff✅/pytest 3881✅/check:type✅/alembic✅；E2E 71 passed / 3 既有失败非 Phase A 引入 / 2 flaky）
 - **PR**：无需在 gitea 网页端手工发起——对话中显式提出 PR 要求时，agent 直接通过 gitea API 创建并合并（token 在 origin remote URL 中），合并后同步镜像 `git push github main`
 - **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支
 - **CI 现状**：gitea 侧无 CI，以提交前本地检查（ruff + pytest + check:type）为门禁；GitHub Actions 仅在镜像侧运行（当前账户欠费停用，2026-07-21）
@@ -158,11 +158,11 @@ cd frontend && pnpm run format
 
 | 方向 | 先读 | 关注点 |
 |---|---|---|
-| **IA/UX 信息架构整改（当前）** | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` | **P0紧急（1-2周）**：异常跟踪表格扩列（诊断标签/严重度/可信度/发现时间）、跨模块一键跳转、整定上下文传递、Action Tracker增加"验证中"状态+实施记录强制填写；**P1重要（3-4周）**：回路配置向导化（5步进度条）、引导式空状态、专业术语Tooltip、性能看板网格布局、数据链路状态常驻工作台、单回路处置时间线；**P2体验（5-8周）**：结构化诊断报告、A/B对比自动引导、Onboarding引导、表格列配置、全局刷新状态指示；遵循ZL工业设计规范（Calm UI/Poka-Yoke/Glanceability/数据墨水比），不破坏现有API/数据库结构（纯前端+小量后端接口增强） |
+| **IA/UX 信息架构整改（当前）** | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` + `docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md` | **IA 重构 Phase A 已完成**（7 菜单重组 + 配置集中化 + AI 右抽屉 + 跨模块上下文基建，合入 IA 分支）；**Phase B-D 待启动**：回路工作台 6 Tab / 诊断三区重构 / 整定单页整合；**P0紧急**：异常跟踪表格扩列、跨模块一键跳转、整定上下文传递、Action Tracker增加"验证中"状态；**P1重要**：回路配置向导化、引导式空状态、专业术语Tooltip、性能看板网格布局；遵循ZL工业设计规范（Calm UI/Poka-Yoke/Glanceability/数据墨水比），不破坏现有API/数据库结构 |
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 回路整定 Phase 2 后续 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **Phase 2.0-2.5 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：算法栈 + DataPlanner 接入 + 异步任务化 + 多 PID 对比 + 前端重构 + 全量门禁通过；待合并 main 后更新设计文档（PRD/FDS/ADS/IDS/契约 版本号升级）+ GB/T 44693.2 整定用例验证 |
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
-| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **全量 E2E 55/55 通过**（2026-07-28）：performance/confidence/metric-tasks 已对齐 772d99a0 重构后路由；后续按 UI/UX v6.1 新增页面逐步补 |
+| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **E2E 79 用例**（2026-08-06）：71 passed / 3 既有失败（D3-MOC/F4-F5/TUNE-009，非 Phase A 引入，均为 07-28 后新增测试）/ 2 flaky / 3 skipped；IA 重构 Phase A 路由已全量同步 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | 新功能开发 | PRD v6.1 → 实现契约 v2.4 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
 | 网络模式切换后续改进 | ops-runbook §网络模式切换 | 仅余 ③ 公网模式 ping 延迟抖动优化（低优先级） |
