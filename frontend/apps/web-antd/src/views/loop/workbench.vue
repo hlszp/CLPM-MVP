@@ -23,7 +23,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Empty, Input, Spin, TabPane, Tabs } from 'ant-design-vue';
+import { Button, Empty, Input, Spin, TabPane, Tabs } from 'ant-design-vue';
 
 import { getLoopMonitorListApi } from '#/api/loop';
 import {
@@ -62,6 +62,7 @@ const router = useRouter();
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);
 const loopListLoading = ref(false);
+const loopListError = ref('');
 const searchKeyword = ref('');
 
 // ===== 右侧工作台状态 =====
@@ -124,10 +125,12 @@ function tabComponent(key: string): Component {
 /** 加载回路列表 */
 async function loadLoopList(): Promise<void> {
   loopListLoading.value = true;
+  loopListError.value = '';
   try {
     const res = await getLoopMonitorListApi({
       page: 1,
-      pageSize: 200,
+      // 后端 pageSize 上限 100，超出触发 ERR_VALIDATION
+      pageSize: 100,
       keyword: searchKeyword.value || undefined,
     });
     loopList.value = res.items;
@@ -142,8 +145,10 @@ async function loadLoopList(): Promise<void> {
     } else if (matched === null) {
       selectedLoopId.value = null;
     }
-  } catch {
-    // 错误已由拦截器处理
+  } catch (error: any) {
+    // 拦截器已 toast；此处记录用于左侧列表内联错误占位（避免误显示"暂无回路"）
+    loopListError.value = error?.message ?? '加载回路列表失败';
+    loopList.value = [];
   } finally {
     loopListLoading.value = false;
   }
@@ -271,8 +276,15 @@ watch(
                 >
               </div>
             </div>
+            <div
+              v-if="!loopListLoading && loopListError"
+              class="flex flex-col items-center gap-2 py-8 text-center text-xs text-red-500"
+            >
+              <span>{{ loopListError }}</span>
+              <Button size="small" @click="loadLoopList">重试</Button>
+            </div>
             <Empty
-              v-if="!loopListLoading && loopList.length === 0"
+              v-else-if="!loopListLoading && loopList.length === 0"
               description="暂无回路"
               :image="Empty.PRESENTED_IMAGE_SIMPLE"
               class="py-8"
@@ -301,7 +313,7 @@ watch(
 
         <Tabs
           v-model:active-key="activeTab"
-          class="flex-1 overflow-hidden px-4"
+          class="loop-workbench-tabs flex-1 min-h-0 px-4"
           size="small"
           @change="handleTabChange"
         >
@@ -332,3 +344,16 @@ watch(
     />
   </Page>
 </template>
+
+<style scoped>
+/* 6 Tab 内容（概览等）较长，在固定高度工作台内启用 Tab 内容区垂直滚动 */
+.loop-workbench-tabs {
+  height: 100%;
+}
+
+.loop-workbench-tabs :deep(.ant-tabs-content-holder) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+</style>
