@@ -2,9 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 编制日期 | 2026-08-06 |
 | 文档状态 | 待评审（作为 PRD v6.2 与实现契约 v2.6 的输入文档） |
+| v1.1 修订 | 评审闭环：①TIME_WINDOW 降为通用字段（规则类型收敛为 4 类）；②CONFIDENCE 收敛为"数据质量低事件生成"，全局抑制归 confidencePolicy；③O1 实时预警目标标注 Phase 2 达成；④Phase 1 建表收敛为 5 张（template 移 Phase 2）；⑤补 metric 单位约定/完整状态机/alerting.py 迁移/缓存一致性/双人审批/dedupKey 语义/SEQUENCE 时序等 P1 缺口 |
 | 适用范围 | CLPM v6.1 新增"智能预警规则引擎"能力规划 |
 | 关联基线 | PRD v6.1、实现契约 v2.5、UX/IA 审计报告 2026-08-05、KPI 计算审查报告 2026-08-05、诊断整改方案 2026-07-19、ops-runbook |
 | 上游约束 | 数据架构"导入走远端、计算全本地"；不直写 DCS；安全边界与审计留痕；模块内聚自包含 |
@@ -45,8 +46,8 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 
 | 编号 | 目标 | 验证指标 |
 |---|---|---|
-| O1 | 实时预警 | SignalR 实时数据流触发规则求值，规则命中到事件落库 P95 < 2s |
-| O2 | 规则可配置 | 5 类规则（阈值/统计漂移/组合/可信度联动/时效窗口）DSL 化，UI 可视化编辑，0 代码新增 |
+| O1 | 实时预警 | SignalR 实时数据流触发规则求值，规则命中到事件落库 P95 < 2s（**Phase 2 达成**；Phase 1 仅周期轨，最快 1 分钟感知） |
+| O2 | 规则可配置 | 4 类规则（阈值/统计漂移/组合/可信度联动）DSL 化 + 时效窗口通用字段，UI 可视化编辑，0 代码新增 |
 | O3 | 可解释 | 每条预警事件携带触发条件快照、数据窗口、规则版本、可信度等级 |
 | O4 | 可审计 | 规则 CRUD 全留痕（`alert_rule_audit_log`），事件全生命周期可追溯 |
 | O5 | 可处置 | 预警事件可一键转 Action Tracker 工单（复用现有状态机），闭环率纳入统计 |
@@ -119,11 +120,12 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 
 | 类型 | code | 求值时机 | 数据源 | 典型场景 |
 |---|---|---|---|---|
-| 阈值规则 | `THRESHOLD` | 实时（SignalR 逐点） + 周期 | 实时缓存 / TDengine | PV 超量程、OP 饱和、MODE 切手动 |
+| 阈值规则 | `THRESHOLD` | 周期（Phase 1） + 实时（Phase 2 接入 SignalR） | 实时缓存 / TDengine | PV 超量程、OP 饱和、MODE 切手动 |
 | 统计漂移规则 | `DRIFT` | 周期（1-5 分钟） | TDengine 滑动窗口 | 均值/方差/分位数偏离基线 |
 | 组合条件规则 | `COMPOSITE` | 周期（1-5 分钟） | TDengine 窗口 + 实时缓存 | "PV 超限持续 N 分钟 且 OP 饱和" |
-| 可信度联动规则 | `CONFIDENCE` | 事件触发（可信度变更） | `ConfidenceEvaluator` 输出 | 数据 D/E 级时降级或抑制预警 |
-| 时效窗口规则 | `TIME_WINDOW` | 规则求值前置过滤 | `sys_config` 时段表 | 仅班次/开停车工况下生效 |
+| 可信度联动规则 | `CONFIDENCE` | 周期 + 可信度变更事件 | `ConfidenceEvaluator` 输出 | 数据 D/E 级时生成"数据质量低"预警事件（全局抑制行为由通用字段 `confidencePolicy` 承担，不在此规则类型内） |
+
+> **时效窗口（TIME_WINDOW）不是独立规则类型**，而是作用于上述 4 类规则的通用前置过滤字段（见 §3.7）。`rule_type` 枚举仅含上述 4 类。
 
 ### 3.2 DSL 通用结构
 
@@ -155,13 +157,13 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 
 | 字段 | 类型 | 必填 | 含义 |
 |---|---|---|---|
-| `ruleType` | enum | 是 | THRESHOLD/DRIFT/COMPOSITE/CONFIDENCE/TIME_WINDOW |
+| `ruleType` | enum | 是 | THRESHOLD/DRIFT/COMPOSITE/CONFIDENCE |
 | `scope.loopSelector` | object | 是 | 订阅范围；ALL 全回路，LOOP 单回路，PLANT 装置级，CONTROL_TYPE 控制类型 |
 | `condition` | object | 是 | 类型特定条件（见 §3.3-3.7） |
 | `durationSeconds` | int | 否 | 持续时长，0 表示瞬时触发；>0 时需持续满足才告警（去抖） |
 | `cooldownSeconds` | int | 否 | 冷却期，默认 1800s；同一 `dedupKey` 在冷却期内重复触发不告警（计数累加用于升级） |
 | `severity` | enum | 是 | INFO/WARN/ERROR/CRITICAL（对齐 PRD §5.6.1） |
-| `confidencePolicy` | object | 否 | 可信度联动策略；`minLevel` 为 A/B/C/D/E，低于此级别时 `action=SUPPRESS`（抑制）或 `DOWNGRADE`（降一级严重度） |
+| `confidencePolicy` | object | 否 | 可信度联动策略；`maxLevel` 为 A/B/C/D/E（最高允许级别，A 最优 E 最差），当前回路可信度**劣于** maxLevel 时 `action=SUPPRESS`（抑制）或 `DOWNGRADE`（降一级严重度） |
 | `timeWindow` | object | 否 | 时效窗口；`cron` 定义生效时段（如 `0 8-20 * * *` 仅白天 8-20 点生效），`enabled=false` 全天生效 |
 | `actions` | array | 是 | 动作列表，按顺序执行；CREATE_EVENT 默认必填 |
 | `priority` | int | 否 | 规则优先级，数值越小越先求值；同回路多规则命中时取最高优先级规则的严重度 |
@@ -193,7 +195,24 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 
 **支持的 metric**：`PV` / `SP` / `OP` / `MODE` / `PID_P` / `PID_I` / `PID_D`（对齐 PRD §1.3 7 tag）。
 **支持的 operator**：`>` / `>=` / `<` / `<=` / `==` / `!=` / `IN` / `NOT_IN`（IN/NOT_IN 用于 MODE 枚举）。
-**变化率规则**：`operator=RATE_OF_CHANGE`，`value` 为每秒变化率阈值（如 `0.5` 表示 0.5%/s）。
+**变化率规则**：`operator=RATE_OF_CHANGE`，`value` 为每秒变化率阈值。
+
+**metric 单位与量程约定（v1.1 补）**：`condition.value` 默认为**工程单位**（与 DCS 量程一致）。为支持规则跨回路复用（不同回路 PV 量程不同），`value` 支持相对量程百分比语法：
+
+| value 写法 | 含义 | 示例 |
+|---|---|---|
+| 数值 `380` | 工程单位（绝对值） | PV > 380（工程量） |
+| 字符串 `"95%"` | 相对量程百分比（基于回路 PV 量程上下限换算） | PV > "95%"（超量程上限 95%） |
+| `"highLimit"` / `"lowLimit"` | 引用回路量程上下限（loop_ledger 工程量程字段） | OP >= "highLimit"（OP 达量程上限=饱和） |
+
+| metric | 默认单位 | RATE_OF_CHANGE 单位 | 备注 |
+|---|---|---|---|
+| PV / SP | 工程量（℃/MPa/…） | 工程量/s 或 "%/s" | 相对百分比基于 PV 量程 |
+| OP | 0-100%（输出百分比） | "%/s" | OP 量程恒为 0-100，"95%" 即 95 |
+| MODE | 枚举（AUTO/CAS/MAN/…） | 不适用 | 仅支持 ==/!=/IN/NOT_IN |
+| PID_P / PID_I / PID_D | 工程量（无单位） | 不适用 | 整定参数，少用于预警 |
+
+> **量程来源**：相对百分比换算读取 `loop_ledger` 的工程量程上下限（与 KPI 计算审查报告"OP 量程"缺陷同源，需确认 loop_ledger 已登记量程字段；若缺失则该规则降级为工程单位并记审计告警）。
 
 ### 3.4 统计漂移规则（DRIFT）
 
@@ -262,18 +281,18 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 **`logic` 支持**：`AND` / `OR` / `NOT` / `SEQUENCE`（时序）。
 **`operands[].type` 支持**：`THRESHOLD` / `DRIFT` / `CONFIDENCE` / 嵌套 `COMPOSITE`（最多 3 层嵌套，防爆炸）。
 **`SEQUENCE` 语义**：`first` 触发后 `withinSeconds` 秒内 `then` 触发才告警。
+**`SEQUENCE` 实现约束（v1.1）**：时序判断需维护 `first` 触发状态机，周期轨（1-5 分钟）无法可靠捕获秒级时序。故 **Phase 1 COMPOSITE 仅支持 AND/OR/NOT，SEQUENCE 在 Phase 2 随实时轨一起交付**。Phase 2 实现时，`first` 触发状态存 Redis `alert:seq:<dedupKey>`（TTL=`withinSeconds`），`then` 求值时检查 `first` 状态是否在 TTL 内。
 
 ### 3.6 可信度联动规则（CONFIDENCE）
 
-**场景**：数据 D/E 级时降级或抑制其他规则。
+**场景**：数据可信度降至 D/E 级时生成"数据质量低"预警事件，提示工程师数据不可信。
 
 ```json
 {
   "ruleType": "CONFIDENCE",
   "scope": { "loopSelector": { "type": "ALL" } },
   "condition": {
-    "maxConfidenceLevel": "D",
-    "effect": "SUPPRESS"
+    "maxLevel": "D"
   },
   "durationSeconds": 300,
   "severity": "INFO",
@@ -284,9 +303,9 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 }
 ```
 
-**语义**：当回路可信度 ≤ D（即 D 或 E）持续 `durationSeconds` 秒时，生成"数据质量低"预警事件，并在该回路所有其他规则上应用 `effect=SUPPRESS`（抑制）或 `DOWNGRADE`（降级）。
+**语义**：当回路可信度**劣于** `maxLevel`（即等级字母序高于 maxLevel，如 maxLevel=D 时 D/E 级触发）持续 `durationSeconds` 秒时，生成"数据质量低"预警事件，告知工程师数据不可信需关注。
 
-**与其他规则的关系**：本规则不替代每条规则的 `confidencePolicy`（§3.2 通用字段），而是**全局抑制器**——任何规则求值前先检查回路当前可信度，若 ≤ `confidencePolicy.minLevel` 则按 `action` 处理。`CONFIDENCE` 规则本身负责把"数据质量低"事件显式告知用户。
+**职责边界（v1.1 收敛）**：CONFIDENCE 规则**只负责生成"数据质量低"事件**，不再承担全局抑制职责。对其他规则的抑制/降级行为统一由各规则自身的 `confidencePolicy` 通用字段（§3.2）自治——每条规则求值前独立检查当前回路可信度是否劣于自身 `confidencePolicy.maxLevel` 并按 `action` 处理。这样避免了"全局抑制器"与"每规则 confidencePolicy"语义重叠。
 
 ### 3.7 时效窗口规则（TIME_WINDOW）
 
@@ -317,7 +336,7 @@ CLPM v6.1 已具备完整的"事后体检"诊断能力：
 | 必填字段 | `ruleType` / `scope` / `condition` / `severity` / `actions` |
 | `metric` 枚举 | 必须为 PV/SP/OP/MODE/PID_P/PID_I/PID_D |
 | `operator` 枚举 | 必须为 §3.3 支持的运算符 |
-| `durationSeconds` | 0-86400（≤1 天） |
+| `durationSeconds` | 0-86400（≤1 天）；>0 时须 ≥ 2× 周期求值间隔（Phase 1 间隔 60s，故 ≥120s），避免两次求值恰在边界漏判；=0 表示瞬时触发不受此约束 |
 | `cooldownSeconds` | 0-86400 |
 | `windowSeconds`（DRIFT） | 300-86400 |
 | 嵌套深度（COMPOSITE） | ≤ 3 层 |
@@ -373,7 +392,7 @@ backend/app/
                                ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │ 2. 规则匹配：按 loop_id 从规则缓存取出订阅该回路的启用规则（按 priority 排序）│
-│    规则缓存：内存（进程级） → Redis（5min TTL） → DB                    │
+│    规则缓存：Redis 单层（30s TTL）→ DB；CRUD 后立即 DEL 失效（v1.1 改）  │
 └──────────────────────────────┬───────────────────────────────────────┘
                                ▼
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -410,6 +429,12 @@ backend/app/
 │    d. （Phase 4）EXTERNAL_NOTIFY：飞书/邮件                               │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+**缓存一致性（v1.1 补）**：uvicorn 与 Celery worker 是不同进程，进程内内存缓存 CRUD 后无法跨进程即时失效，危化企业关键阈值变更时效性要求高。故 Phase 1 采用 **Redis 单层缓存 + 30s 短 TTL**：
+- 读路径：`Redis GET` 命中 → 返回；未命中 → 查 DB → 回填 Redis（TTL 30s）。
+- 写路径：规则 CRUD 后立即 `Redis DEL` 对应键（`alert:rules:<loop_id>` / `alert:rule:<rule_id>`），下次读触发回填。
+- 时效保证：CRUD 后最迟 30s 全进程生效（TTL 自然过期）；DEL 命中后即时生效。
+- Phase 2 评估若 30s TTL 命中率不足，再引入进程内 LRU（接受 30s 不一致窗口）+ Redis pub/sub 失效广播；Phase 1 不做以降低复杂度。
 
 ### 4.4 数据存储
 
@@ -464,7 +489,7 @@ backend/app/
 | `id` | UUID | PK, default uuid4 | 规则 ID |
 | `rule_code` | String(50) | NOT NULL, UNIQUE | 规则代码（如 `R-THRESHOLD-PV-OVER-RANGE`） |
 | `rule_name` | String(100) | NOT NULL | 规则名称（中文显示） |
-| `rule_type` | String(20) | NOT NULL, CHECK IN (THRESHOLD/DRIFT/COMPOSITE/CONFIDENCE/TIME_WINDOW) | 规则类型 |
+| `rule_type` | String(20) | NOT NULL, CHECK IN (THRESHOLD/DRIFT/COMPOSITE/CONFIDENCE) | 规则类型 |
 | `template_id` | UUID | FK → alert_rule_template.id, NULL | 基于模板创建时引用 |
 | `dsl` | JSONB | NOT NULL | DSL 定义（§3.2 结构） |
 | `description` | Text | NULL | 规则说明 |
@@ -483,7 +508,7 @@ backend/app/
 
 **CheckConstraint**：
 ```sql
-rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE', 'TIME_WINDOW')
+rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE')
 ```
 
 ### 5.2 `alert_rule_subscription`（回路-规则订阅）
@@ -546,7 +571,25 @@ status IN ('ACTIVE', 'ACKNOWLEDGED', 'RESOLVED', 'SUPPRESSED', 'ARCHIVED')
 confidence_level IN ('A', 'B', 'C', 'D', 'E')
 ```
 
-**状态机**：`ACTIVE → ACKNOWLEDGED → RESOLVED → ARCHIVED`；分支 `SUPPRESSED`（手动抑制，到期自动回 ACTIVE）。
+**状态机（v1.1 补完整转移表）**：
+
+| from | to | 触发动作 | 权限 | 备注 |
+|---|---|---|---|---|
+| ACTIVE | ACKNOWLEDGED | 工程师确认 | `alert:event:handle` | 进入"处理中" |
+| ACTIVE | RESOLVED | 工程师直接处置（允许跳过确认） | `alert:event:handle` | 适用于即时处置场景 |
+| ACTIVE | SUPPRESSED | 手动抑制（指定时段+原因） | `alert:event:handle` | 到期自动回 ACTIVE |
+| ACKNOWLEDGED | RESOLVED | 处置完成（主路径） | `alert:event:handle` | |
+| ACKNOWLEDGED | SUPPRESSED | 已确认后仍需抑制 | `alert:event:handle` | 到期回 ACKNOWLEDGED |
+| RESOLVED | ARCHIVED | 超过保留期（90 天）自动归档 | 系统 | Celery 每日归档任务 |
+| 任意 | ARCHIVED | 管理员手动归档 | `alert:manage` | |
+
+**非状态变更动作（不改 status，仅写字段/副表）**：
+
+| 动作 | 字段/副表 | 权限 | 备注 |
+|---|---|---|---|
+| 标记误报 | `is_false_positive=true` + 审计 | `alert:event:false-positive` | 状态不变，可叠加在任意 status |
+| 转工单 | 生成 `action_tracker` 记录 + `event.tracker_id` | `alert:event:handle` | 事件状态不变，工单独立走 Action Tracker 状态机 |
+| 转诊断任务 | 调 `POST /diagnosis/trigger` | `alert:event:handle` | 事件状态不变，诊断任务独立流转 |
 
 ### 5.4 `alert_rule_audit_log`（规则变更审计）
 
