@@ -70,7 +70,12 @@ class TestLogin:
                 assert "tracker:*" in perms
                 assert "loop:view" in perms
             elif username == "sponsor":
-                assert perms == ["portal:view", "metric:view", "diagnosis:view"]
+                assert perms == [
+                    "portal:view",
+                    "metric:view",
+                    "diagnosis:view",
+                    "alert:view",
+                ]
             elif username == "expert":
                 assert "tracker:review" in perms
 
@@ -633,7 +638,12 @@ class TestRolePermissions:
         from app.services.auth import get_permissions
 
         perms = get_permissions("SPONSOR")
-        assert perms == ["portal:view", "metric:view", "diagnosis:view"]
+        assert perms == [
+            "portal:view",
+            "metric:view",
+            "diagnosis:view",
+            "alert:view",
+        ]
 
     def test_expert_permissions(self) -> None:
         from app.services.auth import get_permissions

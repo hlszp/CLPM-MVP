@@ -28,6 +28,8 @@ from app.api.v1.endpoints import (
     aas,
     # AI 洞察通用服务（4 场景统一入口：诊断/性能/整定/工作台）
     ai_insight,
+    # 智能预警规则引擎（PRD v6.2 §4.4.6）
+    alert,
     # P0-B: 指标算法参数配置
     algorithm_config,
     algorithms,
@@ -556,6 +558,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(dataplanner.router)
     # v4.0: 算法服务接口（IDS §2.7）
     v1_router.include_router(algorithms.router)
+    # 智能预警规则引擎（PRD v6.2 §4.4.6）
+    v1_router.include_router(alert.router)
     # v4.0: 批量配置接口（IDS §2.8/§2.9）
     v1_router.include_router(configs.router)
     # v5.3: 权重模板管理（FDS §5.2.2）+ 定级阈值管理（FDS §5.2.4）
