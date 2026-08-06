@@ -1945,7 +1945,6 @@ onMounted(async () => {
                 </Card>
               </Col>
             </Row>
-
           </Tabs.TabPane>
         </Tabs>
       </template>

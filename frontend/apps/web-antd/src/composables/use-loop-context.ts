@@ -65,10 +65,7 @@ export function useLoopContext() {
   }
 
   /** 构造带 loopId 的路径字符串（用于 router-link :to 字符串形式） */
-  function withLoop(
-    target: string,
-    lid: null | string = loopId.value,
-  ): string {
+  function withLoop(target: string, lid: null | string = loopId.value): string {
     if (!lid) return target;
     return `${target}?loopId=${lid}`;
   }

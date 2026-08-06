@@ -101,5 +101,12 @@ export function useAiInsightGate() {
     }
   }
 
-  return { gateStatus, gateTooltip, init, llmReady, refresh, state: sharedState };
+  return {
+    gateStatus,
+    gateTooltip,
+    init,
+    llmReady,
+    refresh,
+    state: sharedState,
+  };
 }

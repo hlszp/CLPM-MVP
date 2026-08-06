@@ -56,7 +56,9 @@ function handleClose(): void {
     :mask-closable="true"
     :open="open"
     placement="right"
-    :root-style="{ '--clpm-ai-drawer-transition': '300ms cubic-bezier(0.16,1,0.3,1)' }"
+    :root-style="{
+      '--clpm-ai-drawer-transition': '300ms cubic-bezier(0.16,1,0.3,1)',
+    }"
     :title="props.title || SCENE_TITLE[props.scene]"
     :width="480"
     @close="handleClose"
@@ -74,9 +76,7 @@ function handleClose(): void {
 
 <style scoped>
 :deep(.ant-drawer-content-wrapper) {
-  transition: transform var(
-    --clpm-ai-drawer-transition,
-    300ms cubic-bezier(0.16, 1, 0.3, 1)
-  );
+  transition: transform
+    var(--clpm-ai-drawer-transition, 300ms cubic-bezier(0.16, 1, 0.3, 1));
 }
 </style>
