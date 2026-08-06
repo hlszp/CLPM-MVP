@@ -80,8 +80,9 @@ test.describe('多角色权限验证 E2E', () => {
     await page.goto('/config/loop');
 
     // 预期：跳转 403/404 页面 或 重定向到默认首页
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    // 用 domcontentloaded 替代 networkidle：SignalR 心跳使 networkidle 永不触发
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(2000);
     const url = page.url();
     const bodyText = (await page.locator('body').innerText()).toLowerCase();
 
