@@ -1,16 +1,19 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 回路路由模块（IA 重构 Phase A·实体轴占位）
+ * 回路路由模块（IA 重构 Phase B·§4.1 实体轴）
  *
- * 对齐 IA 重构方案 §3.2/§4.1。
- * Phase A：组 redirect 到 /loop/monitor（防空菜单），/loop/detail/:id 靠 loopId 跳转进入。
- * Phase B：升级为 /loop/workbench 6 Tab 工作台（概览/评估/诊断/整定/效果对比/时间线）。
+ * 回路菜单主页 = 回路工作台（单回路 360° 一站式处置，6 Tab）。
+ * - /loop              → redirect /loop/workbench
+ * - /loop/workbench    → 工作台主页（菜单可见，支持 ?loopId= 预选）
+ * - /loop/detail/:id   → redirect /loop/workbench?loopId=:id（兼容旧书签/E2E/monitor 行点击）
  *
- * 注：原 loop.ts 下的结构性配置子路由（aas-sync/tag/manage/factory/ledger/data）
+ * 注：/loop/monitor（回路实时列表）仍暂留监控组（monitor.ts），
+ *    Phase B 工作台上线后作为实体轴主页，monitor 维持运行驾驶舱定位。
+ *    原结构性配置子路由（aas-sync/tag/manage/factory/ledger/data）
  *    已迁入 config.ts 为 /config/* 新路径 + legacy redirect。
  *
- * 角色权限（PRD §3）：
+ * 角色权限（PRD §3 / 实现契约 §5）：
  * - ADMIN / IC_ENGINEER / EXPERT：可编辑
  * - PE_ENGINEER：只读
  */
@@ -18,7 +21,7 @@ const routes: RouteRecordRaw[] = [
   {
     name: 'Loop',
     path: '/loop',
-    redirect: '/loop/monitor',
+    redirect: '/loop/workbench',
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
       icon: 'lucide:network',
@@ -27,15 +30,26 @@ const routes: RouteRecordRaw[] = [
     },
     children: [
       {
+        name: 'LoopWorkbench',
+        path: '/loop/workbench',
+        component: () => import('#/views/loop/workbench.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
+          icon: 'lucide:layout-panel-top',
+          title: '回路工作台',
+        },
+      },
+      {
         name: 'LoopDetail',
         path: '/loop/detail/:id',
-        component: () => import('#/views/loop/detail.vue'),
+        // 兼容旧书签 / monitor 行点击 / E2E：重定向到工作台并预选回路
+        redirect: (to) => ({
+          path: '/loop/workbench',
+          query: { loopId: String(to.params.id) },
+        }),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           hideInMenu: true,
-          hideInTab: false,
-          // 详情页打开时高亮"回路"菜单（而非 /loop/monitor 所在的"监控"）
-          activePath: '/loop',
           title: '回路详情',
         },
       },

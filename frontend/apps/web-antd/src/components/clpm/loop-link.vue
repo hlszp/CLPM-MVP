@@ -109,7 +109,7 @@ const router = useRouter();
 
 const detailPath = computed(() => {
   const paths = {
-    detail: `/loop/detail/${props.loopId}`,
+    detail: `/loop/workbench?loopId=${props.loopId}`,
     diagnosis: `/diagnosis/detail/${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
@@ -120,7 +120,7 @@ const detailPath = computed(() => {
 const handleMenuClick = ({ key }: { key: string | number }) => {
   const keyStr = String(key);
   const routes: Record<string, string> = {
-    detail: `/loop/detail/${props.loopId}`,
+    detail: `/loop/workbench?loopId=${props.loopId}`,
     diagnosis: `/diagnosis/detail/${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
