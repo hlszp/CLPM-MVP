@@ -47,6 +47,9 @@ import { useClpmRoles } from '#/composables/use-clpm-roles';
 
 defineOptions({ name: 'TuningAlgorithm' });
 
+// Phase D: embedded 模式下不渲染 <Page> 外壳，由父级 detail.vue 提供
+const props = defineProps<{ embedded?: boolean }>();
+
 const route = useRoute();
 const router = useRouter();
 const { canEditAdvancedParams } = useClpmRoles();
@@ -310,28 +313,35 @@ function handleGoSimulation() {
     message.warning(modelUsageGate.value.reason || '必须明确模型来源');
     return;
   }
-  // P1-019：跳转改为 flow 子路由（query 兜底保留，渐进迁移）
-  router.push({
-    path: '/tuning/flow/simulation',
-    query: {
-      modelType: form.modelType,
-      modelParams: JSON.stringify(buildModelParams()),
-      currentPid: tuneResult.value.currentPid
-        ? JSON.stringify(tuneResult.value.currentPid)
-        : JSON.stringify(buildCurrentPid() || {}),
-      recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
-      // 模型来源契约贯穿到仿真页（P0-04）
-      ...(modelSource.value ? { modelSource: modelSource.value } : {}),
-      ...(modelSource.value &&
-      modelSource.value !== 'MANUAL' &&
-      sourceRecordId.value
-        ? { sourceRecordId: sourceRecordId.value }
-        : {}),
-      ...(modelSource.value
-        ? { riskConfirmed: riskConfirmed.value ? 'true' : 'false' }
-        : {}),
-    },
-  });
+  // Phase D: embedded 模式下用 router.replace 更新 query，非 embedded 跳转
+  const simQuery = {
+    modelType: form.modelType,
+    modelParams: JSON.stringify(buildModelParams()),
+    currentPid: tuneResult.value.currentPid
+      ? JSON.stringify(tuneResult.value.currentPid)
+      : JSON.stringify(buildCurrentPid() || {}),
+    recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
+    // 模型来源契约贯穿到仿真页（P0-04）
+    ...(modelSource.value ? { modelSource: modelSource.value } : {}),
+    ...(modelSource.value &&
+    modelSource.value !== 'MANUAL' &&
+    sourceRecordId.value
+      ? { sourceRecordId: sourceRecordId.value }
+      : {}),
+    ...(modelSource.value
+      ? { riskConfirmed: riskConfirmed.value ? 'true' : 'false' }
+      : {}),
+  };
+  if (props.embedded) {
+    router.replace({
+      query: { ...route.query, ...simQuery, algorithm: form.algorithm },
+    });
+  } else {
+    router.push({
+      path: '/tuning/detail',
+      query: { ...simQuery, algorithm: form.algorithm },
+    });
+  }
 }
 
 /** 保存为整定任务 */
@@ -428,10 +438,19 @@ onMounted(() => {
   initFromQuery();
   loadMethods();
 });
+
+// Phase D: embedded 模式下 route.query 变化时重新初始化（上步通过 router.replace 传递参数）
+watch(
+  () => route.query,
+  () => {
+    if (props.embedded) initFromQuery();
+  },
+  { deep: true },
+);
 </script>
 
 <template>
-  <Page>
+  <component :is="embedded ? 'div' : Page">
     <ClpmPageToolbar
       title="整定算法"
       subtitle="基于辨识模型选择整定算法并生成推荐 PID 参数。"
@@ -716,5 +735,5 @@ onMounted(() => {
         />
       </ClpmDataCanvas>
     </Spin>
-  </Page>
+  </component>
 </template>

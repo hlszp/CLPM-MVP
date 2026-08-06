@@ -234,7 +234,7 @@ describe('tuningAlgorithm 模型来源门禁', () => {
 
     await findButton(wrapper, '进行闭环仿真')!.trigger('click');
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/flow/simulation',
+      path: '/tuning/detail',
       query: expect.objectContaining({
         modelSource: 'IDENTIFICATION_RECORD',
         riskConfirmed: 'true',
