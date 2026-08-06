@@ -178,14 +178,14 @@ test.describe('系统管理 E2E', () => {
     expect(pageText).toContain('Sponsor');
     expect(pageText).toContain('外部专家');
 
-    // 验证 6 大模块出现在矩阵中
-    // permissions.vue: MODULES = 工作台/回路管理/性能评估/诊断中心/回路整定/系统管理
-    expect(pageText).toContain('工作台');
-    expect(pageText).toContain('回路管理');
-    expect(pageText).toContain('性能评估');
-    expect(pageText).toContain('诊断中心');
-    expect(pageText).toContain('回路整定');
-    expect(pageText).toContain('系统管理');
+    // 验证 6 大模块出现在矩阵中（label 对齐 IA 重构后顶级菜单标题）
+    // permissions.vue: MODULES = 监控/回路/评估/诊断/整定/系统
+    expect(pageText).toContain('监控');
+    expect(pageText).toContain('回路');
+    expect(pageText).toContain('评估');
+    expect(pageText).toContain('诊断');
+    expect(pageText).toContain('整定');
+    expect(pageText).toContain('系统');
 
     // 验证权限级别标签存在（查看/协同/执行/管理/服务）
     expect(pageText).toMatch(/查看|协同|执行|管理|服务/);

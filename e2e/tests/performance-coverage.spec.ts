@@ -6,12 +6,12 @@
  *     · 页面加载、时间维度切换（日/周/月）、报表类型切换（综合/回路）
  *     · 工厂节点 Select、刷新/导出按钮存在
  *     · 评级分布 Tag + 表格/空状态容器存在
- * - E2E-PERF-008: 参数配置 Tab 开关生效（/metric/config → "参数配置" Tab）
+ * - E2E-PERF-008: 参数配置 Tab 开关生效（/config/metric → "参数配置" Tab）
  *     · 8 类异常值检测开关表（NaN/超量程/冻结/跳变/尖峰/时间戳/质量码/高频噪声）
  *     · 按控制类型的检测参数表（FC/PC/TC/LC/CC × 7 参数）
  *     · 开关 Switch 可见且可切换、保存按钮存在（ADMIN 可见）
  * - E2E-PERF-009: 理想稳态时间字段
- *     · /metric/config → "指标定义" Tab 表格含"理想稳态时间"指标行
+ *     · /config/metric → "指标定义" Tab 表格含"理想稳态时间"指标行
  *     · /metric/kpi-report → "回路报表" 表头含"理想稳定时间"列
  *
  * 页面源码依据：
@@ -147,7 +147,7 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
 
   // E2E-PERF-008: 参数配置 Tab 开关生效
   test('E2E-PERF-008: 参数配置 Tab 开关与参数表', async ({ page }) => {
-    await page.goto('/metric/config');
+    await page.goto('/config/metric');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -155,7 +155,7 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     // 点击"参数配置" Tab（key="outlier"）
     const outlierTab = page
       .locator('.ant-tabs-tab')
-      .filter({ hasText: '参数配置' })
+      .filter({ hasText: '异常值检测参数' })
       .first();
     await expect(outlierTab).toBeVisible({ timeout: 15_000 });
     await outlierTab.click();
@@ -280,13 +280,13 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
       await page.waitForTimeout(300);
     }
 
-    expect(page.url()).toContain('/metric/config');
+    expect(page.url()).toContain('/config/metric');
   });
 
   // E2E-PERF-009: 理想稳态时间字段（指标定义 Tab + KPI 报表回路报表列）
   test('E2E-PERF-009: 理想稳态时间字段', async ({ page }) => {
-    // ===== Part 1: /metric/config → "指标定义" Tab 验证"理想稳态时间"指标行 =====
-    await page.goto('/metric/config');
+    // ===== Part 1: /config/metric → "指标定义" Tab 验证"理想稳态时间"指标行 =====
+    await page.goto('/config/metric');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 

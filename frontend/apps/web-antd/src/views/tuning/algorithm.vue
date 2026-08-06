@@ -44,12 +44,17 @@ import {
   ClpmStateOverlay,
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
+import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningAlgorithm' });
+
+// Phase D: embedded 模式下不渲染 <Page> 外壳，由父级 detail.vue 提供
+const props = defineProps<{ embedded?: boolean }>();
 
 const route = useRoute();
 const router = useRouter();
 const { canEditAdvancedParams } = useClpmRoles();
+const store = useTuningStore();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -289,6 +294,12 @@ async function handleTune() {
         : {}),
     });
     tuneResult.value = result;
+    // Phase D：同步候选 PID 到 store，启用闭环仿真锚点门禁
+    store.clearPidCandidates();
+    if (result.currentPid) {
+      store.addPidCandidate('当前 PID', result.currentPid);
+    }
+    store.addPidCandidate('推荐 PID', result.recommendedPid);
     hide();
     message.success('PID 整定完成');
   } catch (err) {
@@ -310,28 +321,37 @@ function handleGoSimulation() {
     message.warning(modelUsageGate.value.reason || '必须明确模型来源');
     return;
   }
-  // P1-019：跳转改为 flow 子路由（query 兜底保留，渐进迁移）
-  router.push({
-    path: '/tuning/flow/simulation',
-    query: {
-      modelType: form.modelType,
-      modelParams: JSON.stringify(buildModelParams()),
-      currentPid: tuneResult.value.currentPid
-        ? JSON.stringify(tuneResult.value.currentPid)
-        : JSON.stringify(buildCurrentPid() || {}),
-      recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
-      // 模型来源契约贯穿到仿真页（P0-04）
-      ...(modelSource.value ? { modelSource: modelSource.value } : {}),
-      ...(modelSource.value &&
-      modelSource.value !== 'MANUAL' &&
-      sourceRecordId.value
-        ? { sourceRecordId: sourceRecordId.value }
-        : {}),
-      ...(modelSource.value
-        ? { riskConfirmed: riskConfirmed.value ? 'true' : 'false' }
-        : {}),
-    },
-  });
+  // Phase D: embedded 模式下用 router.replace 更新 query，非 embedded 跳转
+  const simQuery = {
+    modelType: form.modelType,
+    modelParams: JSON.stringify(buildModelParams()),
+    currentPid: tuneResult.value.currentPid
+      ? JSON.stringify(tuneResult.value.currentPid)
+      : JSON.stringify(buildCurrentPid() || {}),
+    recommendedPid: JSON.stringify(tuneResult.value.recommendedPid),
+    // 模型来源契约贯穿到仿真页（P0-04）
+    ...(modelSource.value ? { modelSource: modelSource.value } : {}),
+    ...(modelSource.value &&
+    modelSource.value !== 'MANUAL' &&
+    sourceRecordId.value
+      ? { sourceRecordId: sourceRecordId.value }
+      : {}),
+    ...(modelSource.value
+      ? { riskConfirmed: riskConfirmed.value ? 'true' : 'false' }
+      : {}),
+  };
+  if (props.embedded) {
+    router.replace({
+      query: { ...route.query, ...simQuery, algorithm: form.algorithm },
+    });
+    // Phase D：embedded 模式下切换到闭环仿真锚点
+    store.currentStep = 2;
+  } else {
+    router.push({
+      path: '/tuning/detail',
+      query: { ...simQuery, algorithm: form.algorithm },
+    });
+  }
 }
 
 /** 保存为整定任务 */
@@ -428,10 +448,19 @@ onMounted(() => {
   initFromQuery();
   loadMethods();
 });
+
+// Phase D: embedded 模式下 route.query 变化时重新初始化（上步通过 router.replace 传递参数）
+watch(
+  () => route.query,
+  () => {
+    if (props.embedded) initFromQuery();
+  },
+  { deep: true },
+);
 </script>
 
 <template>
-  <Page>
+  <component :is="embedded ? 'div' : Page">
     <ClpmPageToolbar
       title="整定算法"
       subtitle="基于辨识模型选择整定算法并生成推荐 PID 参数。"
@@ -716,5 +745,5 @@ onMounted(() => {
         />
       </ClpmDataCanvas>
     </Spin>
-  </Page>
+  </component>
 </template>

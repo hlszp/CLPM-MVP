@@ -1,27 +1,39 @@
 /**
- * E2E 旧路由兼容性基线（V62-P0-037）
+ * E2E 旧路由兼容性基线（V62-P0-037 + IA 重构 Phase A + Phase D 单页整合）
  *
- * 覆盖 4 个旧路由 redirect：
- * - /tuning/model        → /tuning/flow/model
- * - /tuning/algorithm    → /tuning/flow/algorithm
- * - /tuning/simulation   → /tuning/flow/simulation
+ * 覆盖旧路由 redirect：
+ * - /tuning/model        → /tuning/detail（Phase D 单页整合）
+ * - /tuning/algorithm    → /tuning/detail
+ * - /tuning/simulation   → /tuning/detail
+ * - /tuning/flow/*       → /tuning/detail（Phase D 前的中间路由也归并）
  * - /diagnosis/records   → /diagnosis/tasks?tab=history
+ * - IA Phase A 配置集中化迁移：
+ *   /loop/aas-sync       → /config/link
+ *   /metric/config       → /config/metric
+ *   /diagnosis/config    → /config/diagnosis
+ *   /system/pid-template → /config/link
+ *   /loop/data           → /config/datasource
  *
- * 验证维度（每路由 3 个用例，共 12 个）：
+ * 验证维度（tuning/diagnosis 每路由 3 个用例，config 每路由 1 个直链用例）：
  * - 直链访问旧路由 → URL 正确 redirect 到新路由，页面不白屏
  * - 硬刷新（page.reload）后 URL 保持，页面不白屏
  * - 前进后退导航正常（历史栈未断裂）
  *
  * 依据：UI/UX v6.1「稳定元素根」防白屏（vben v-show + Transition + KeepAlive）
  *       P1-020 旧路由 redirect + hideInMenu 兼容书签
+ *       IA 重构 Phase A §3.3 配置集中化（config.ts legacy redirect 段）
+ *       IA 重构 Phase D §4.4.2 整定单页整合（tuning.ts legacy redirect 段）
  */
 import { test, expect } from '../fixtures/auth.js';
 
-/** 整定模块旧路由 → 新路由映射 */
+/** 整定模块旧路由 → 新路由映射（Phase D：统一重定向到 /tuning/detail 单页） */
 const TUNING_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
-  { legacy: '/tuning/model', target: /\/tuning\/flow\/model/ },
-  { legacy: '/tuning/algorithm', target: /\/tuning\/flow\/algorithm/ },
-  { legacy: '/tuning/simulation', target: /\/tuning\/flow\/simulation/ },
+  { legacy: '/tuning/model', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/algorithm', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/simulation', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/flow/model', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/flow/algorithm', target: /\/tuning\/detail/ },
+  { legacy: '/tuning/flow/simulation', target: /\/tuning\/detail/ },
 ];
 
 /** 诊断模块旧路由 → 新路由映射（redirect 目标含 query string） */
@@ -113,6 +125,36 @@ test.describe('旧路由兼容 - 诊断中心（V62-P0-037）', () => {
       await page.goForward({ waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(target, { timeout: 15_000 });
       await expect(page.locator('body')).not.toBeEmpty();
+    });
+  }
+});
+
+/**
+ * IA 重构 Phase A 配置集中化迁移的 legacy redirect。
+ * 旧路径 → /config/* 新路径，对齐 config.ts legacy redirect 段。
+ */
+const CONFIG_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
+  { legacy: '/loop/aas-sync', target: /\/config\/link/ },
+  { legacy: '/metric/config', target: /\/config\/metric/ },
+  { legacy: '/diagnosis/config', target: /\/config\/diagnosis/ },
+  { legacy: '/system/pid-template', target: /\/config\/link/ },
+  { legacy: '/loop/data', target: /\/config\/datasource/ },
+];
+
+test.describe('旧路由兼容 - 配置集中化迁移（IA 重构 Phase A）', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    // 配置模块仅 ADMIN 可访问
+    await loginAs('ADMIN');
+  });
+
+  for (const { legacy, target } of CONFIG_LEGACY_ROUTES) {
+    test(`E2E-ROUTE-CONFIG: ${legacy} 直链 redirect 不白屏`, async ({ page }) => {
+      await page.goto(legacy, { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(target, { timeout: 15_000 });
+      // 防白屏：body 必须有非空可见内容
+      await expect(page.locator('body')).not.toBeEmpty();
+      const text = await page.locator('body').innerText();
+      expect(text.trim().length).toBeGreaterThan(0);
     });
   }
 });

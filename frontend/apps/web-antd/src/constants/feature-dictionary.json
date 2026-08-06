@@ -1,0 +1,167 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "CLPM 诊断特征字典 —— 为诊断详情证据区特征值表提供工程含义列。key 与后端 featureValues 字段对齐（snake_case）。",
+    "updatedAt": "2026-08-06"
+  },
+  "oscillation_index": {
+    "name": "振荡指数",
+    "meaning": "PV 时序周期性波动强度，反映回路是否存在持续振荡。",
+    "engineering": ">0.5 提示存在振荡，需结合主频判断振荡源。",
+    "threshold": ">0.5 异常",
+    "unit": "",
+    "labels": ["OSCILLATION"]
+  },
+  "dominant_frequency": {
+    "name": "主频",
+    "meaning": "FFT 频谱中能量最大的频率分量，定位振荡周期。",
+    "engineering": "与回路自然频率接近提示整定引起；与外部扰动频率接近提示外部激发。",
+    "threshold": "—",
+    "unit": "Hz",
+    "labels": ["OSCILLATION"]
+  },
+  "spectrum_energy": {
+    "name": "频谱能量",
+    "meaning": "振荡频段能量占总能量比例，量化振荡显著程度。",
+    "engineering": "比值越高振荡越主导，低频段能量高提示过程振荡。",
+    "threshold": ">0.3 显著",
+    "unit": "",
+    "labels": ["OSCILLATION"]
+  },
+  "stiction_index": {
+    "name": "粘滞指数",
+    "meaning": "阀门静摩擦估计值，量化调节阀卡涩程度。",
+    "engineering": ">0.4 提示阀门粘滞，OP 变化时卡涩不动累积后突然动作。",
+    "threshold": ">0.4 异常",
+    "unit": "",
+    "labels": ["VALVE_STICTION"]
+  },
+  "ngi": {
+    "name": "非线性指数 NGI",
+    "meaning": "Choudhury 非线性指数，判定 PV-OP 关系的非线性来源。",
+    "engineering": ">0.4 提示非线性显著，常指向阀门粘滞而非整定问题。",
+    "threshold": ">0.4 异常",
+    "unit": "",
+    "labels": ["VALVE_STICTION"]
+  },
+  "nli": {
+    "name": "非线性指数 NLI",
+    "meaning": "Choudhury 噪声非线性指数，区分非线性来自阀门还是噪声。",
+    "engineering": "NGI 高且 NLI 低，非线性源自阀门粘滞的可能性大。",
+    "threshold": "—",
+    "unit": "",
+    "labels": ["VALVE_STICTION"]
+  },
+  "choudhury_stiction_index": {
+    "name": "Choudhury 粘滞指数",
+    "meaning": "基于 PV-OP 椭圆拟合的粘滞量化，Choudhury 方法。",
+    "engineering": "与 stiction_index 交叉验证，多算法一致才下结论。",
+    "threshold": ">0.4 异常",
+    "unit": "",
+    "labels": ["VALVE_STICTION"]
+  },
+  "kano_stiction_ratio": {
+    "name": "Kano 粘滞比",
+    "meaning": "PV-OP 相关性与标准差之比，Kano 统计粘滞判定。",
+    "engineering": "比值偏离 1 提示 PV-OP 关系异常，辅助粘滞判定。",
+    "threshold": "—",
+    "unit": "",
+    "labels": ["VALVE_STICTION"]
+  },
+  "fitting_score": {
+    "name": "椭圆拟合度",
+    "meaning": "PV-OP 散点椭圆拟合的 R²，反映粘滞椭圆特征显著度。",
+    "engineering": "拟合度高且呈椭圆提示阀门粘滞特征明显。",
+    "threshold": ">0.6 显著",
+    "unit": "",
+    "labels": ["VALVE_STICTION"]
+  },
+  "overshoot": {
+    "name": "超调量",
+    "meaning": "阶跃响应峰值超出稳态的比例，反映整定激进程度。",
+    "engineering": "超调量大提示 PID 增益过大，需降低 P 或增大 D。",
+    "threshold": ">20% 偏大",
+    "unit": "%",
+    "labels": ["OVERAGGRESSIVE"]
+  },
+  "decay_ratio": {
+    "name": "衰减比",
+    "meaning": "阶跃响应相邻峰值之比，反映振荡衰减速度。",
+    "engineering": "衰减比接近 1 提示临界振荡，需降低增益；<0.25 衰减良好。",
+    "threshold": ">0.5 衰减不足",
+    "unit": "",
+    "labels": ["OVERAGGRESSIVE"]
+  },
+  "harris_index": {
+    "name": "Harris 指数",
+    "meaning": "最小方差基准，实际方差/理论最小方差，量化整定改善空间。",
+    "engineering": "显著 >1 提示整定可改善，接近 1 提示已达最小方差基准。",
+    "threshold": ">1.5 可改善",
+    "unit": "",
+    "labels": ["OVERAGGRESSIVE"]
+  },
+  "time_constant": {
+    "name": "时间常数",
+    "meaning": "辨识得到的回路实际时间常数，反映过程响应快慢。",
+    "engineering": "与期望时间常数比值偏离 1 提示模型失配或参数偏保守。",
+    "threshold": "比值 0.7-1.3 正常",
+    "unit": "s",
+    "labels": ["OVERCONSERVATIVE"]
+  },
+  "expected_time_constant": {
+    "name": "期望时间常数",
+    "meaning": "按控制类型设定的理想时间常数基准。",
+    "engineering": "作为 time_constant 的对比基准，比值 >1.3 提示响应过慢。",
+    "threshold": "—",
+    "unit": "s",
+    "labels": ["OVERCONSERVATIVE"]
+  },
+  "ratio": {
+    "name": "时间常数比",
+    "meaning": "实际时间常数/期望时间常数，量化响应迟缓程度。",
+    "engineering": ">1.3 提示参数偏保守、响应过慢，需重新整定提速。",
+    "threshold": ">1.3 异常",
+    "unit": "",
+    "labels": ["OVERCONSERVATIVE"]
+  },
+  "max_cusum": {
+    "name": "最大累积和",
+    "meaning": "CUSUM 累积和的最大幅值，反映均值漂移强度。",
+    "engineering": "幅值大提示外部扰动频繁进入回路，而非整定问题。",
+    "threshold": "—",
+    "unit": "",
+    "labels": ["EXTERNAL_DISTURBANCE"]
+  },
+  "shift_count": {
+    "name": "漂移次数",
+    "meaning": "CUSUM 检测到的均值漂移点数量。",
+    "engineering": "次数多提示外部扰动频繁，需排查扰动源而非整定。",
+    "threshold": ">3 频繁",
+    "unit": "次",
+    "labels": ["EXTERNAL_DISTURBANCE"]
+  },
+  "bad_quality_rate": {
+    "name": "坏质量率",
+    "meaning": "PV 质量码为 Bad/Uncertain 的点占比。",
+    "engineering": "坏质量率高提示数据源故障（传感器/通讯），需先修数据再诊断。",
+    "threshold": ">5% 异常",
+    "unit": "",
+    "labels": ["QUALITY_ABNORMAL"]
+  },
+  "saturation_rate": {
+    "name": "饱和率",
+    "meaning": "OP 在高/低限附近停留时长占比，对齐 NAMUR NE 43。",
+    "engineering": ">10% 提示调节阀长期满开/全关，存在物理限幅或参数不当。",
+    "threshold": ">10% 异常",
+    "unit": "",
+    "labels": ["OUTPUT_SATURATION"]
+  },
+  "settling_time": {
+    "name": "稳定时间",
+    "meaning": "阶跃响应进入 ±5% 误差带所需时间，反映回复稳态速度。",
+    "engineering": "大于理想稳定时间提示响应过慢，结合时间常数比判断。",
+    "threshold": ">理想值 异常",
+    "unit": "s",
+    "labels": ["OVERCONSERVATIVE", "OVERAGGRESSIVE"]
+  }
+}

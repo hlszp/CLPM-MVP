@@ -22,6 +22,17 @@ vi.mock('#/api/tuning', () => ({
   tunePidApi: (...args: unknown[]) => tunePidApiMock(...args),
 }));
 
+// Phase D：algorithm.vue 新增 store 调用（pidCandidates 同步 + currentStep 切换）
+const tuningStoreMock = {
+  clearPidCandidates: vi.fn(),
+  addPidCandidate: vi.fn(),
+  currentStep: 0,
+  simulationResult: null,
+};
+vi.mock('#/store/tuning', () => ({
+  useTuningStore: () => tuningStoreMock,
+}));
+
 vi.mock('@vben/common-ui', () => ({
   Page: { template: '<main><slot /></main>' },
 }));
@@ -149,6 +160,9 @@ describe('tuningAlgorithm 模型来源门禁', () => {
     getTuningMethodsApiMock.mockReset();
     tunePidApiMock.mockReset();
     createTuningTaskApiMock.mockReset();
+    tuningStoreMock.clearPidCandidates.mockReset();
+    tuningStoreMock.addPidCandidate.mockReset();
+    tuningStoreMock.currentStep = 0;
     getTuningMethodsApiMock.mockResolvedValue([
       {
         applicableModel: 'FOPDT',
@@ -234,7 +248,7 @@ describe('tuningAlgorithm 模型来源门禁', () => {
 
     await findButton(wrapper, '进行闭环仿真')!.trigger('click');
     expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/tuning/flow/simulation',
+      path: '/tuning/detail',
       query: expect.objectContaining({
         modelSource: 'IDENTIFICATION_RECORD',
         riskConfirmed: 'true',
@@ -258,6 +272,9 @@ describe('tuningAlgorithm 状态覆盖（V62-P1-023）', () => {
     getTuningMethodsApiMock.mockReset();
     tunePidApiMock.mockReset();
     createTuningTaskApiMock.mockReset();
+    tuningStoreMock.clearPidCandidates.mockReset();
+    tuningStoreMock.addPidCandidate.mockReset();
+    tuningStoreMock.currentStep = 0;
     getTuningMethodsApiMock.mockResolvedValue([
       {
         applicableModel: 'FOPDT',

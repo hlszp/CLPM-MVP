@@ -81,11 +81,13 @@ import {
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
-  ClpmAiInsight,
+  ClpmAiDrawer,
   ClpmDataCanvas,
   ClpmInfoTip,
   ClpmPageToolbar,
+  ClpmToolbarButton,
 } from '#/components/clpm';
+import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
@@ -715,6 +717,14 @@ function handleTableChange(
 const drawerVisible = ref(false);
 const drawerRecord = ref<LoopPerformanceRow | null>(null);
 
+// AI 洞察两级门禁（performance 场景需 loopId，门禁2 = 已选回路）
+const { init: initAiGate, gateStatus, gateTooltip } = useAiInsightGate();
+initAiGate();
+const aiDrawerOpen = ref(false);
+const aiLoopId = computed(() => drawerRecord.value?.loopId ?? null);
+const aiGateStatus = computed(() => gateStatus(aiLoopId.value, true));
+const aiGateTooltip = computed(() => gateTooltip(aiGateStatus.value));
+
 /** 抽屉内历史快照子表（最近 10 条） */
 const drawerHistory = ref<KpiSnapshotItem[]>([]);
 const drawerHistoryLoading = ref(false);
@@ -1186,6 +1196,15 @@ onMounted(async () => {
       :loading="loading"
     >
       <template #actions>
+        <ClpmToolbarButton
+          icon="ai"
+          icon-only
+          label="AI 性能分析"
+          :disabled="aiGateStatus !== 'active'"
+          :disabled-reason="aiGateTooltip"
+          :tooltip="aiGateTooltip"
+          @click="aiDrawerOpen = true"
+        />
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
           刷新
@@ -1926,14 +1945,6 @@ onMounted(async () => {
                 </Card>
               </Col>
             </Row>
-
-            <!-- AI 性能分析（LLM 启用后可用） -->
-            <ClpmAiInsight
-              class="mt-3"
-              scene="performance"
-              variant="card"
-              :loop-id="drawerRecord?.loopId"
-            />
           </Tabs.TabPane>
         </Tabs>
       </template>
@@ -2324,6 +2335,13 @@ onMounted(async () => {
         </div>
       </Spin>
     </Modal>
+
+    <!-- AI 性能分析右抽屉（工具栏 AI 图标触发，§5.2） -->
+    <ClpmAiDrawer
+      v-model:open="aiDrawerOpen"
+      scene="performance"
+      :loop-id="aiLoopId"
+    />
   </Page>
 </template>
 

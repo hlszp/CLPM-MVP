@@ -26,13 +26,14 @@ import { getDatasourceHealthApi } from '#/api/datasource';
 import { getTaskListApi } from '#/api/task';
 import { getTuningTasksApi } from '#/api/tuning';
 import {
-  ClpmAiInsight,
+  ClpmAiDrawer,
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmPageToolbar,
   ClpmPredictionCard,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { formatTime } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
@@ -42,6 +43,13 @@ defineOptions({ name: 'DashboardWorkbench' });
 
 const router = useRouter();
 const { canAccessTuning } = useClpmRoles();
+
+// AI 洞察两级门禁（workbench 场景无需 loopId，门禁2 恒通过）
+const { init: initAiGate, gateStatus, gateTooltip } = useAiInsightGate();
+initAiGate();
+const aiDrawerOpen = ref(false);
+const aiGateStatus = computed(() => gateStatus(null, false));
+const aiGateTooltip = computed(() => gateTooltip(aiGateStatus.value));
 
 const loading = ref(false);
 const lastRefresh = ref('');
@@ -218,6 +226,15 @@ function handleRefresh() {
     >
       <template #actions>
         <ClpmToolbarButton
+          icon="ai"
+          icon-only
+          label="AI 洞察"
+          :disabled="aiGateStatus !== 'active'"
+          :disabled-reason="aiGateTooltip"
+          :tooltip="aiGateTooltip"
+          @click="aiDrawerOpen = true"
+        />
+        <ClpmToolbarButton
           icon="refresh"
           label="刷新"
           :loading="loading"
@@ -233,9 +250,6 @@ function handleRefresh() {
       :loading="loading"
       @item-click="handleTodoClick"
     />
-
-    <!-- AI 运维洞察（LLM 启用后可用，全局健康概览与重点关注建议） -->
-    <ClpmAiInsight class="mt-4" scene="workbench" variant="card" />
 
     <!-- P3-05：异常预测与提前预警（紧跟待办，形成"需关注回路"区域） -->
     <ClpmPredictionCard class="mt-4" :top-n="10" />
@@ -357,5 +371,8 @@ function handleRefresh() {
         <Button type="primary" @click="goPidDashboard">进入装置性能</Button>
       </div>
     </ClpmDataCanvas>
+
+    <!-- AI 洞察右抽屉（工具栏 AI 图标触发，§5.2） -->
+    <ClpmAiDrawer v-model:open="aiDrawerOpen" scene="workbench" />
   </Page>
 </template>

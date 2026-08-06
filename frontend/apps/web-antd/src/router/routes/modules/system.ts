@@ -16,8 +16,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER'],
       icon: 'lucide:settings',
-      order: 6,
-      title: '系统管理',
+      order: 7,
+      title: '系统',
     },
     name: 'System',
     path: '/system',
@@ -74,27 +74,18 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        // 已迁移至性能评估-指标配置（KPI 算法参数 Tab）
+        // 已迁移至配置模块-指标配置（KPI 算法参数 Tab）
         // 保留重定向以兼容旧 URL 和书签
         name: 'SystemAlgorithmParamsDeprecated',
         path: '/system/algorithm-params',
-        redirect: '/metric/config',
+        redirect: '/config/metric',
         meta: {
           authority: ['ADMIN'],
           hideInMenu: true,
           title: '算法参数配置',
         },
       },
-      {
-        name: 'SystemPidTemplateDeprecated',
-        path: '/system/pid-template',
-        redirect: '/loop/aas-sync',
-        meta: {
-          authority: ['ADMIN'],
-          hideInMenu: true,
-          title: 'PID 结构模板',
-        },
-      },
+      // PID 结构模板 redirect 已由 config.ts 的 LegacySystemPidTemplate 接管（→ /config/link）
     ],
   },
 ];

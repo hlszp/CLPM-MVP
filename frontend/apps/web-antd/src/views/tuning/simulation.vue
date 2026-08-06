@@ -48,7 +48,6 @@ import {
   simulateTuningApi,
 } from '#/api/tuning';
 import {
-  ClpmAiInsight,
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
@@ -56,11 +55,16 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningSimulation' });
 
+// Phase D: embedded 模式下不渲染 <Page> 外壳，由父级 detail.vue 提供
+const props = defineProps<{ embedded?: boolean }>();
+
 const route = useRoute();
 const { isDark, themeColors, chartTextColor } = useClpmTheme();
+const store = useTuningStore();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -70,6 +74,10 @@ const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
 /** 已保存的整定任务 ID（保存后生成，AI 整定建议场景需要） */
 const savedTaskId = ref<string>('');
+/** P0-04：模型来源安全凭据（从 algorithm 透传，仿真请求必须携带，否则被安全门禁拦截） */
+const modelSource = ref<TuningApi.ModelSource | undefined>(undefined);
+const sourceRecordId = ref<string>('');
+const riskConfirmed = ref(false);
 
 /** P1-023：错误状态（仿真失败时持久展示，带重试） */
 const errorState = ref<{ detail: string; message: string } | null>(null);
@@ -482,6 +490,21 @@ function initFromQuery() {
   if (qRecommendedPid && typeof qRecommendedPid === 'object') {
     form.recommendedPid = { ...form.recommendedPid, ...qRecommendedPid };
   }
+  // P0-04：模型来源安全凭据（从 algorithm 透传，仿真请求必须携带）
+  const qModelSource = route.query.modelSource as
+    | TuningApi.ModelSource
+    | undefined;
+  if (qModelSource) {
+    modelSource.value = qModelSource;
+  }
+  const qSourceRecordId = route.query.sourceRecordId as string | undefined;
+  if (qSourceRecordId) {
+    sourceRecordId.value = qSourceRecordId;
+  }
+  const qRiskConfirmed = route.query.riskConfirmed as string | undefined;
+  if (qRiskConfirmed === 'true') {
+    riskConfirmed.value = true;
+  }
 }
 
 /** 切换对比模式 */
@@ -554,8 +577,15 @@ async function handleSimulate() {
         simDuration: form.simDuration,
         simStep: form.simStep,
         setpointStep: form.setpointStep,
+        // P0-04：模型来源安全凭据透传（否则被 authorize_tuning_model 拦截）
+        loopId: loopId.value || undefined,
+        modelSource: modelSource.value,
+        sourceRecordId: sourceRecordId.value || undefined,
+        riskConfirmed: riskConfirmed.value,
       });
       simulationResult.value = data;
+      // Phase D：同步仿真结果到 store，启用方案确认锚点门禁
+      store.simulationResult = data;
       renderChart();
       hide();
       message.success('多 PID 对比仿真完成');
@@ -609,8 +639,15 @@ async function handleSimulate() {
       simStep: form.simStep,
       setpointStep: form.setpointStep,
       disturbanceType: form.disturbanceType,
+      // P0-04：模型来源安全凭据透传（否则被 authorize_tuning_model 拦截）
+      loopId: loopId.value || undefined,
+      modelSource: modelSource.value,
+      sourceRecordId: sourceRecordId.value || undefined,
+      riskConfirmed: riskConfirmed.value,
     });
     simulationResult.value = data;
+    // Phase D：同步仿真结果到 store，启用方案确认锚点门禁
+    store.simulationResult = data;
     renderChart();
     hide();
     message.success('仿真完成');
@@ -910,6 +947,18 @@ onMounted(() => {
   });
 });
 
+// Phase D: embedded 模式下 route.query 变化时重新初始化（上步通过 router.replace 传递参数）
+watch(
+  () => route.query,
+  () => {
+    if (props.embedded) {
+      initFromQuery();
+      nextTick(() => renderChart());
+    }
+  },
+  { deep: true },
+);
+
 /** 深色模式切换时重绘 ECharts 图表 */
 watch(isDark, () => {
   nextTick(() => {
@@ -919,7 +968,7 @@ watch(isDark, () => {
 </script>
 
 <template>
-  <Page>
+  <component :is="embedded ? 'div' : Page">
     <ClpmPageToolbar
       title="闭环仿真"
       subtitle="对比当前 PID 与推荐 PID 的响应曲线和性能指标。"
@@ -1297,15 +1346,8 @@ watch(isDark, () => {
           </div>
         </ClpmDataCanvas>
 
-        <!-- AI 整定建议（保存任务后可用，LLM 启用后显示） -->
-        <ClpmAiInsight
-          v-if="savedTaskId"
-          scene="tuning"
-          variant="card"
-          :task-id="savedTaskId"
-          :loop-id="loopId"
-        />
+        <!-- AI 整定建议本轮下线（IA 重构 Phase A·§5.3），后端 tuning 策略保留供后续复用 -->
       </div>
     </div>
-  </Page>
+  </component>
 </template>

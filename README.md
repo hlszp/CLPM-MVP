@@ -301,7 +301,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 
 | 类型 | 文件 |
 |---|---|
-| 当前 PRD（v6.1） | `docs/设计文档/01-PRD/PRD.md` |
+| 当前 PRD（v6.2） | `docs/设计文档/01-PRD/PRD.md` |
 | 总体 FDS（v6.0） | `docs/设计文档/02-FDS/FDS.md` |
 | 交付架构设计（v6.0） | `docs/设计文档/03-ADS/ADS.md` |
 | 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
@@ -334,7 +334,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 模块架构 | 6 模块 + 1 门户：工作台/回路管理/性能评估/诊断中心/回路整定/系统管理（任务管理是性能评估子模块），各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v6.1 负责产品需求；实现契约 v2.2 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
+| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.2 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 

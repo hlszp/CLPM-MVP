@@ -20,7 +20,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { TuningApi } from '#/api/tuning';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -58,7 +58,11 @@ import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningModel' });
 
+// Phase D: embedded 模式下不渲染 <Page> 外壳，由父级 detail.vue 提供
+const props = defineProps<{ embedded?: boolean }>();
+
 const router = useRouter();
+const route = useRoute();
 const tuningStore = useTuningStore();
 const { isDark, themeColors } = useClpmTheme();
 const { canEditAdvancedParams } = useClpmRoles();
@@ -557,15 +561,28 @@ function handleUseForTuning() {
     provenance.riskConfirmed === 'true',
   );
   tuningStore.currentStep = 1;
-  router.push({
-    path: '/tuning/flow/algorithm',
-    query: {
-      modelType: result.modelType,
-      modelParams: JSON.stringify(result.params),
-      loopId: loopId.value,
-      ...provenance,
-    },
-  });
+  if (props.embedded) {
+    // Phase D: embedded 模式下不跳转路由，用 router.replace 更新 query 供下步读取
+    router.replace({
+      query: {
+        ...route.query,
+        modelType: result.modelType,
+        modelParams: JSON.stringify(result.params),
+        loopId: loopId.value,
+        ...provenance,
+      },
+    });
+  } else {
+    router.push({
+      path: '/tuning/detail',
+      query: {
+        modelType: result.modelType,
+        modelParams: JSON.stringify(result.params),
+        loopId: loopId.value,
+        ...provenance,
+      },
+    });
+  }
 }
 
 function buildProvenanceQuery(): null | Record<string, string> {
@@ -615,15 +632,27 @@ function handleGoSimulation() {
     provenance.riskConfirmed === 'true',
   );
   tuningStore.currentStep = 2;
-  router.push({
-    path: '/tuning/flow/simulation',
-    query: {
-      modelType: result.modelType,
-      modelParams: JSON.stringify(result.params),
-      loopId: loopId.value,
-      ...provenance,
-    },
-  });
+  if (props.embedded) {
+    router.replace({
+      query: {
+        ...route.query,
+        modelType: result.modelType,
+        modelParams: JSON.stringify(result.params),
+        loopId: loopId.value,
+        ...provenance,
+      },
+    });
+  } else {
+    router.push({
+      path: '/tuning/detail',
+      query: {
+        modelType: result.modelType,
+        modelParams: JSON.stringify(result.params),
+        loopId: loopId.value,
+        ...provenance,
+      },
+    });
+  }
 }
 
 /** 深色模式切换时重绘 ECharts 图表 */
@@ -652,7 +681,7 @@ watch(
 </script>
 
 <template>
-  <Page>
+  <component :is="embedded ? 'div' : Page">
     <ClpmPageToolbar
       title="模型辨识"
       subtitle="选择回路、时间窗和辨识策略，产出用于整定的过程对象模型。"
@@ -1084,5 +1113,5 @@ watch(
         </div>
       </ClpmDataCanvas>
     </Spin>
-  </Page>
+  </component>
 </template>

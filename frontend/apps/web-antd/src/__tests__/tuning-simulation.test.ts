@@ -20,6 +20,15 @@ vi.mock('#/api/tuning', () => ({
   simulateTuningApi: (...args: unknown[]) => simulateTuningApiMock(...args),
 }));
 
+// Phase D：simulation.vue 新增 store 调用（simulationResult 同步）
+const tuningStoreMock = {
+  simulationResult: null,
+  currentStep: 0,
+};
+vi.mock('#/store/tuning', () => ({
+  useTuningStore: () => tuningStoreMock,
+}));
+
 vi.mock('@vben/common-ui', () => ({
   Page: { template: '<main><slot /></main>' },
 }));
@@ -226,6 +235,7 @@ describe('tuningSimulation 状态覆盖（V62-P1-023）', () => {
     simulateTuningApiMock.mockReset();
     comparePidsApiMock.mockReset();
     createTuningTaskApiMock.mockReset();
+    tuningStoreMock.simulationResult = null;
     simulateTuningApiMock.mockResolvedValue(makeSimulationResult());
   });
 
