@@ -111,10 +111,14 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'DiagnosisVisualization',
         path: '/diagnosis/visualization',
-        component: () => import('#/views/diagnosis/visualization.vue'),
+        // Phase C: 可视化能力已并入诊断详情证据区，旧书签重定向到详情页
+        redirect: (to) => {
+          const loopId = to.query.loopId as string;
+          return loopId ? `/diagnosis/detail/${loopId}` : '/diagnosis/overview';
+        },
         meta: {
           authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
-          hideInMenu: true, // F12: 功能已迁移到 loop-analysis.vue，从菜单隐藏
+          hideInMenu: true,
           icon: 'lucide:bar-chart-2',
           title: '诊断可视化',
         },
