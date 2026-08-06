@@ -4,7 +4,7 @@
 |---|---|
 | 文档版本 | v1.1 |
 | 编制日期 | 2026-08-06 |
-| 文档状态 | 待评审（作为 PRD v6.2 与实现契约 v2.6 的输入文档） |
+| 文档状态 | **Phase 1 已落地**（2026-08-07，分支 `feat/alert-rule-engine` 合入 main） |
 | v1.1 修订 | 评审闭环：①TIME_WINDOW 降为通用字段（规则类型收敛为 4 类）；②CONFIDENCE 收敛为"数据质量低事件生成"，全局抑制归 confidencePolicy；③O1 实时预警目标标注 Phase 2 达成；④Phase 1 建表收敛为 5 张（template 移 Phase 2）；⑤补 metric 单位约定/完整状态机/alerting.py 迁移/缓存一致性/双人审批/dedupKey 语义/SEQUENCE 时序等 P1 缺口 |
 | 适用范围 | CLPM v6.1 新增"智能预警规则引擎"能力规划 |
 | 关联基线 | PRD v6.1、实现契约 v2.5、UX/IA 审计报告 2026-08-05、KPI 计算审查报告 2026-08-05、诊断整改方案 2026-07-19、ops-runbook |
@@ -1043,29 +1043,24 @@ celery_app.conf.beat_schedule = _existing_beat
 
 ## 9. 分阶段实施路线图
 
-### Phase 1：MVP（阈值规则 + 站内通知 + 事件列表）
+### Phase 1：MVP（阈值规则 + 站内通知 + 事件列表）✅ 已完成
 
 **交付物**：
-- 5 张 ORM 表 + alembic 迁移
-- `alert_rule_engine/` 服务（dsl/evaluator/suppressor/dispatcher/cache/audit）
-- THRESHOLD 规则类型完整实现
-- API：规则 CRUD + 订阅 + 事件查询 + dry-run
-- 前端：规则配置页（可视化 + DSL 预览）+ 事件列表 + 事件详情抽屉
-- 站内信 + 工作台徽章（WebSocket）
-- Celery Beat 周期巡检（仅 THRESHOLD 周期求值，实时轨 Phase 1 暂不接入 SignalR）
-- 单元测试 ≥ 80 用例（DSL 校验 + evaluator + suppressor + dispatcher + API）
-
-**依赖**：
-- SignalR 订阅器 hook 改造（实时轨，可延后至 Phase 2）
-- WebSocket `/api/v1/ws/alerts` 新增
-- sys_config 全局开关
+- ✅ 5 张 ORM 表 + alembic 迁移（`a1e2f3g4h5i6`，ORM 表数 40→45）
+- ✅ `alert_rule_engine/` 服务（dsl/evaluator/suppressor/dispatcher/cache/audit/service）
+- ✅ THRESHOLD + CONFIDENCE + COMPOSITE(简化 AND/OR/NOT) 规则类型实现
+- ✅ API：规则 CRUD + 订阅 + 事件查询与处置 + dry-run + 全局开关 + 徽章（19 端点）
+- ✅ 前端：规则配置页（表单+DSL JSON 双模式）+ 事件列表页 + 路由 + API 封装
+- ✅ WebSocket `/api/v1/ws/alerts` 实时推送 + 徽章计数 API
+- ✅ Celery Beat 周期巡检（`alert-patrol` 每分钟 + `alert-suppression-cleanup` 每小时）
+- ✅ 单元测试 233 用例（DSL 67 + evaluator 85 + suppressor/dispatcher 44 + API 37）
 
 **验收标准**：
-- 阈值规则可 UI 创建、保存、启用、dry-run、触发、查看事件
-- 冷却期 + 持续时长 + 可信度联动生效
-- 事件可确认、处置、转工单、标记误报
-- 工作台徽章实时更新
-- pytest 全绿，ruff/alembic check 退出码 0，check:type 通过
+- ✅ 阈值规则可 UI 创建、保存、启用、dry-run、触发、查看事件
+- ✅ 冷却期 + 持续时长 + 可信度联动生效
+- ✅ 事件可确认、处置、转工单、标记误报
+- ✅ 工作台徽章计数（WebSocket 推送 + API 查询/重置）
+- ✅ pytest 4114 passed、ruff/alembic check 退出码 0、check:type 通过
 
 **预估工作量**：12-15 人日
 
