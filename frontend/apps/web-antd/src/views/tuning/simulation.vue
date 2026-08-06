@@ -55,6 +55,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningSimulation' });
 
@@ -63,6 +64,7 @@ const props = defineProps<{ embedded?: boolean }>();
 
 const route = useRoute();
 const { isDark, themeColors, chartTextColor } = useClpmTheme();
+const store = useTuningStore();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -72,6 +74,10 @@ const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
 /** 已保存的整定任务 ID（保存后生成，AI 整定建议场景需要） */
 const savedTaskId = ref<string>('');
+/** P0-04：模型来源安全凭据（从 algorithm 透传，仿真请求必须携带，否则被安全门禁拦截） */
+const modelSource = ref<TuningApi.ModelSource | undefined>(undefined);
+const sourceRecordId = ref<string>('');
+const riskConfirmed = ref(false);
 
 /** P1-023：错误状态（仿真失败时持久展示，带重试） */
 const errorState = ref<{ detail: string; message: string } | null>(null);
@@ -484,6 +490,21 @@ function initFromQuery() {
   if (qRecommendedPid && typeof qRecommendedPid === 'object') {
     form.recommendedPid = { ...form.recommendedPid, ...qRecommendedPid };
   }
+  // P0-04：模型来源安全凭据（从 algorithm 透传，仿真请求必须携带）
+  const qModelSource = route.query.modelSource as
+    | TuningApi.ModelSource
+    | undefined;
+  if (qModelSource) {
+    modelSource.value = qModelSource;
+  }
+  const qSourceRecordId = route.query.sourceRecordId as string | undefined;
+  if (qSourceRecordId) {
+    sourceRecordId.value = qSourceRecordId;
+  }
+  const qRiskConfirmed = route.query.riskConfirmed as string | undefined;
+  if (qRiskConfirmed === 'true') {
+    riskConfirmed.value = true;
+  }
 }
 
 /** 切换对比模式 */
@@ -556,8 +577,15 @@ async function handleSimulate() {
         simDuration: form.simDuration,
         simStep: form.simStep,
         setpointStep: form.setpointStep,
+        // P0-04：模型来源安全凭据透传（否则被 authorize_tuning_model 拦截）
+        loopId: loopId.value || undefined,
+        modelSource: modelSource.value,
+        sourceRecordId: sourceRecordId.value || undefined,
+        riskConfirmed: riskConfirmed.value,
       });
       simulationResult.value = data;
+      // Phase D：同步仿真结果到 store，启用方案确认锚点门禁
+      store.simulationResult = data;
       renderChart();
       hide();
       message.success('多 PID 对比仿真完成');
@@ -611,8 +639,15 @@ async function handleSimulate() {
       simStep: form.simStep,
       setpointStep: form.setpointStep,
       disturbanceType: form.disturbanceType,
+      // P0-04：模型来源安全凭据透传（否则被 authorize_tuning_model 拦截）
+      loopId: loopId.value || undefined,
+      modelSource: modelSource.value,
+      sourceRecordId: sourceRecordId.value || undefined,
+      riskConfirmed: riskConfirmed.value,
     });
     simulationResult.value = data;
+    // Phase D：同步仿真结果到 store，启用方案确认锚点门禁
+    store.simulationResult = data;
     renderChart();
     hide();
     message.success('仿真完成');

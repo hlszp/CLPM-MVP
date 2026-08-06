@@ -44,6 +44,7 @@ import {
   ClpmStateOverlay,
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
+import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningAlgorithm' });
 
@@ -53,6 +54,7 @@ const props = defineProps<{ embedded?: boolean }>();
 const route = useRoute();
 const router = useRouter();
 const { canEditAdvancedParams } = useClpmRoles();
+const store = useTuningStore();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -292,6 +294,12 @@ async function handleTune() {
         : {}),
     });
     tuneResult.value = result;
+    // Phase D：同步候选 PID 到 store，启用闭环仿真锚点门禁
+    store.clearPidCandidates();
+    if (result.currentPid) {
+      store.addPidCandidate('当前 PID', result.currentPid);
+    }
+    store.addPidCandidate('推荐 PID', result.recommendedPid);
     hide();
     message.success('PID 整定完成');
   } catch (err) {
@@ -336,6 +344,8 @@ function handleGoSimulation() {
     router.replace({
       query: { ...route.query, ...simQuery, algorithm: form.algorithm },
     });
+    // Phase D：embedded 模式下切换到闭环仿真锚点
+    store.currentStep = 2;
   } else {
     router.push({
       path: '/tuning/detail',
