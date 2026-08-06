@@ -43,6 +43,8 @@ from app.api.v1.endpoints import (
     diagnosis_trigger_config,
     grading_config,
     health,
+    # P3-04: LLM 配置（自然语言诊断解读）
+    llm_config,
     # Phase 3: 回路数据管理（历史数据导入）
     loop_data,
     loop_level_weight,
@@ -559,6 +561,7 @@ def create_app() -> FastAPI:
     v1_router.include_router(grading_config.router)
     # v6.1: 数据可信度阈值管理
     v1_router.include_router(confidence_config.router)
+    v1_router.include_router(llm_config.router)  # P3-04: LLM 配置
 
     # v6.2: 8 类异常值检测参数与启停开关配置
     v1_router.include_router(outlier_config.router)

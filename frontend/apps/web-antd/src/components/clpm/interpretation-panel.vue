@@ -16,13 +16,14 @@
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
 
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
 import { Button, Dropdown, Empty, Spin, Tag, Tooltip } from 'ant-design-vue';
 
 import { interpretDiagnosisApi } from '#/api/diagnosis';
+import { getLlmConfigApi } from '#/api/llm';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'ClpmInterpretationPanel' });
@@ -46,6 +47,8 @@ const loading = ref(false);
 const error = ref(false);
 const errorMsg = ref('');
 const result = ref<DiagnosisApi.InterpretResult | null>(null);
+/** LLM 是否已启用（控制"仅 AI 解读"选项可见性） */
+const llmEnabled = ref(false);
 
 /** 是否已生成过（区分"未生成空状态"与"生成中/已生成"） */
 const hasResult = computed(() => result.value !== null);
@@ -85,21 +88,40 @@ async function generate(mode: DiagnosisApi.InterpretMode = 'auto') {
   }
 }
 
-/** 重新生成下拉菜单 */
-const regenMenuItems = [
-  { key: 'auto', label: '智能模式（优先 AI）' },
-  { key: 'template', label: '仅规则模板' },
-  { key: 'llm', label: '仅 AI 解读' },
-];
+/** 重新生成下拉菜单（LLM 未启用时隐藏"仅 AI 解读"） */
+const regenMenuItems = computed(() => {
+  const items = [
+    { key: 'auto', label: '智能模式（优先 AI）' },
+    { key: 'template', label: '仅规则模板' },
+  ];
+  if (llmEnabled.value) {
+    items.push({ key: 'llm', label: '仅 AI 解读' });
+  }
+  return items;
+});
 
 function handleMenuClick({ key }: { key: number | string }) {
   generate(String(key) as DiagnosisApi.InterpretMode);
 }
 
-/** 首次自动加载 */
-if (props.autoLoad) {
-  generate('auto');
+/** 查询 LLM 启用状态（控制"仅 AI 解读"选项可见性） */
+async function loadLlmStatus() {
+  try {
+    const config = await getLlmConfigApi();
+    llmEnabled.value = config.enabled;
+  } catch {
+    // 查询失败默认不启用，不影响模板解读
+    llmEnabled.value = false;
+  }
 }
+
+/** 首次自动加载 */
+onMounted(() => {
+  loadLlmStatus();
+  if (props.autoLoad) {
+    generate('auto');
+  }
+});
 </script>
 
 <template>

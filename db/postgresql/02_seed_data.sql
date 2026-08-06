@@ -631,7 +631,13 @@ INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
 ('datasource.signalr_hub_url', 'ws://192.168.100.2:81/signalr/realValueForClpmHub', '实时数据 SignalR Hub URL', 'system', NOW()),
 ('datasource.signalr_enabled', 'true', 'SignalR 实时订阅开关（后端重启生效）', 'system', NOW()),
 ('datasource.signalr_reconnect_interval', '5', 'SignalR 断线重连间隔（秒）', 'system', NOW()),
-('datasource.realtime_writeback_enabled', 'true', '实时数据写回 TDengine 开关（链路配置页面运行时切换）', 'system', NOW())
+('datasource.realtime_writeback_enabled', 'true', '实时数据写回 TDengine 开关（链路配置页面运行时切换）', 'system', NOW()),
+-- P3-04: LLM 配置（自然语言诊断解读），默认关闭，管理员在系统管理→LLM 配置页启用
+('llm.enabled', 'false', 'LLM 解读开关（系统管理→LLM 配置页修改）', 'system', NOW()),
+('llm.endpoint', '', 'LLM BaseURL（API 根地址，不含 /v1，如 https://api.openai.com）', 'system', NOW()),
+('llm.api_key', '', 'LLM API Key（GET 返回时脱敏）', 'system', NOW()),
+('llm.model', '', 'LLM 模型名（如 gpt-4o / deepseek-chat / qwen-plus）', 'system', NOW()),
+('llm.timeout', '30', 'LLM 请求超时秒数', 'system', NOW())
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================

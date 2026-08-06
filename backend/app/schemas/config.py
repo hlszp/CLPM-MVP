@@ -581,6 +581,51 @@ class DiagnosisTriggerSaveRequest(CamelModel):
     checkup_enabled: bool
 
 
+# ---------------------------------------------------------------------------
+# P3-04: LLM 配置（自然语言诊断解读）
+# ---------------------------------------------------------------------------
+
+
+class LlmConfigSchema(CamelModel):
+    """LLM 配置响应（GET /configs/llm）。
+
+    API Key 脱敏返回（仅尾 4 位），明文不出口。
+    """
+
+    enabled: bool = Field(False, description="是否启用 LLM 解读")
+    endpoint: str | None = Field(None, description="BaseURL（API 根地址，不含 /v1）")
+    apiKey: str | None = Field(None, description="API Key（脱敏，形如 sk-***xxxx）")
+    apiKeyConfigured: bool = Field(
+        False, description="API Key 是否已配置（前端据此区分空值与未配置）"
+    )
+    model: str | None = Field(None, description="模型名")
+    timeout: int = Field(30, description="超时秒数")
+    updatedAt: str | None = Field(None, description="最近更新时间 ISO 8601")
+    updatedBy: str | None = Field(None, description="最近更新人")
+
+
+class LlmConfigSaveRequest(CamelModel):
+    """LLM 配置保存请求（POST /configs/llm）。
+
+    apiKey 为空字符串时保留原值（不修改），非空时更新。
+    """
+
+    enabled: bool = Field(..., description="是否启用 LLM")
+    endpoint: str | None = Field(None, max_length=500, description="BaseURL")
+    apiKey: str | None = Field(None, max_length=500, description="API Key（空=保留原值）")
+    model: str | None = Field(None, max_length=100, description="模型名")
+    timeout: int = Field(30, ge=5, le=300, description="超时秒数")
+
+
+class LlmTestResult(CamelModel):
+    """LLM 连接测试结果（POST /configs/llm/test）."""
+
+    success: bool = Field(..., description="是否连接成功")
+    latencyMs: int | None = Field(None, description="往返延迟毫秒（成功时）")
+    model: str | None = Field(None, description="实际使用的模型名")
+    message: str = Field(..., description="结果说明（成功/失败原因）")
+
+
 __all__ = [
     "AlgorithmParamsControlItem",
     "AlgorithmParamsMetricGroup",
@@ -602,6 +647,9 @@ __all__ = [
     "GradingThresholdItem",
     "GradingThresholdSaveRequest",
     "GradingThresholdSchema",
+    "LlmConfigSaveRequest",
+    "LlmConfigSchema",
+    "LlmTestResult",
     "MetricCategory",
     "MetricConfigBatchResponse",
     "MetricConfigBatchUpdateRequest",
