@@ -62,6 +62,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "metric:*",
         "diagnosis:*",
         "tuning:*",
+        "alert:*",
         "portal:view",
     ],
     "PE_ENGINEER": [
@@ -73,6 +74,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "loop:export",
         "metric:view",
         "diagnosis:view",
+        "alert:view",
         "portal:view",
         "tracker:*",
     ],
@@ -80,11 +82,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "portal:view",
         "metric:view",
         "diagnosis:view",
+        "alert:view",
     ],
     "EXPERT": [
         "portal:view",
         "metric:view",
         "diagnosis:view",
+        "alert:view",
         "tracker:review",
         # 实现契约 §5：EXPERT 可查看整定相关页面（整定写端点本就对 EXPERT 开放）
         "tuning:view",

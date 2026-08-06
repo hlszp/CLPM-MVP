@@ -166,10 +166,31 @@ class FakeRedis:
 
     # -- hash operations --------------------------------------------------
 
-    async def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> int:
-        """Set hash fields (supports mapping= and key/value kwargs)."""
+    async def hset(
+        self,
+        key: str,
+        *args: Any,
+        mapping: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> int:
+        """Set hash fields.
+
+        支持三种形式（与 redis-py 一致）：
+        - ``hset(key, mapping={...})``
+        - ``hset(key, field=value, ...)``
+        - ``hset(key, field, value)``  位置参数三元素
+        """
         h = self._hashes.setdefault(key, {})
-        fields = {**(mapping or {}), **kwargs}
+        fields: dict[str, Any] = {**(mapping or {}), **kwargs}
+        # 位置参数形式：hset(key, field, value)
+        if len(args) == 2:
+            fields[args[0]] = args[1]
+        elif len(args) == 1 and isinstance(args[0], dict):
+            fields.update(args[0])
+        elif args:
+            raise TypeError(
+                f"hset() takes 2 or 3 positional arguments but {len(args) + 1} were given"
+            )
         for field, value in fields.items():
             h[field] = value if isinstance(value, str) else str(value)
         return len(fields)
@@ -362,6 +383,9 @@ _REDIS_CLIENT_MODULES: list[str] = [
     "app.api.v1.endpoints.ws_realtime",
     "app.middleware.idempotency",
     "app.middleware.rate_limit",
+    "app.services.alert_rule_engine.cache",
+    "app.services.alert_rule_engine.dispatcher",
+    "app.services.alert_rule_engine.suppressor",
     "app.services.auth",
     "app.services.dashboard",
     "app.services.data_import",

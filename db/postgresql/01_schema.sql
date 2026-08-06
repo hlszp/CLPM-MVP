@@ -1517,5 +1517,112 @@ END
 $$;
 
 -- =============================================================================
+-- 14. 智能预警规则引擎（2026-08-07，方案 §5 数据模型）
+-- =============================================================================
+
+-- 14.1 alert_rule（规则定义）
+CREATE TABLE IF NOT EXISTS alert_rule (
+    id              UUID PRIMARY KEY,
+    rule_code       VARCHAR(50)  NOT NULL UNIQUE,
+    rule_name       VARCHAR(100) NOT NULL,
+    rule_type       VARCHAR(20)  NOT NULL,
+    dsl             JSONB        NOT NULL,
+    description     TEXT,
+    priority        INTEGER      NOT NULL DEFAULT 100,
+    is_enabled      BOOLEAN      NOT NULL DEFAULT true,
+    version         INTEGER      NOT NULL DEFAULT 1,
+    created_by      VARCHAR(50)  NOT NULL,
+    created_at      TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_by      VARCHAR(50),
+    updated_at      TIMESTAMP,
+    CONSTRAINT ck_alert_rule_type CHECK (rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE'))
+);
+CREATE INDEX IF NOT EXISTS idx_alert_rule_type              ON alert_rule (rule_type);
+CREATE INDEX IF NOT EXISTS idx_alert_rule_enabled_priority  ON alert_rule (is_enabled, priority);
+
+-- 14.2 alert_rule_subscription（回路-规则订阅）
+CREATE TABLE IF NOT EXISTS alert_rule_subscription (
+    id          UUID PRIMARY KEY,
+    rule_id     UUID NOT NULL REFERENCES alert_rule(id) ON DELETE CASCADE,
+    loop_id     UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    scope_type  VARCHAR(20)  NOT NULL,
+    scope_value VARCHAR(100),
+    is_active   BOOLEAN      NOT NULL DEFAULT true,
+    created_by  VARCHAR(50)  NOT NULL,
+    created_at  TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT ck_alert_subscription_scope CHECK (scope_type IN ('ALL', 'LOOP', 'PLANT', 'CONTROL_TYPE'))
+);
+-- 同一规则同一回路仅保留一条活跃订阅（部分唯一索引）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_alert_subscription_rule_loop
+    ON alert_rule_subscription (rule_id, loop_id) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_alert_subscription_loop  ON alert_rule_subscription (loop_id);
+CREATE INDEX IF NOT EXISTS idx_alert_subscription_scope ON alert_rule_subscription (scope_type, scope_value);
+
+-- 14.3 alert_event（预警事件）
+CREATE TABLE IF NOT EXISTS alert_event (
+    id                          UUID PRIMARY KEY,
+    rule_id                     UUID REFERENCES alert_rule(id) ON DELETE SET NULL,
+    rule_code                   VARCHAR(50)  NOT NULL,
+    rule_version                INTEGER      NOT NULL,
+    loop_id                     UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    severity                    VARCHAR(20)  NOT NULL,
+    status                      VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    trigger_condition_snapshot  JSONB        NOT NULL,
+    data_window                 JSONB,
+    triggered_value             NUMERIC(10, 4),
+    confidence_level            VARCHAR(1),
+    rule_dsl_snapshot           JSONB        NOT NULL,
+    tracker_id                  UUID REFERENCES action_tracker(id) ON DELETE SET NULL,
+    is_false_positive           BOOLEAN,
+    trigger_count               INTEGER      NOT NULL DEFAULT 1,
+    triggered_at                TIMESTAMP    NOT NULL DEFAULT now(),
+    acknowledged_by             VARCHAR(50),
+    acknowledged_at             TIMESTAMP,
+    resolved_by                 VARCHAR(50),
+    resolved_at                 TIMESTAMP,
+    resolution_note             TEXT,
+    CONSTRAINT ck_alert_event_severity   CHECK (severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')),
+    CONSTRAINT ck_alert_event_status     CHECK (status IN ('ACTIVE', 'ACKNOWLEDGED', 'RESOLVED', 'SUPPRESSED', 'ARCHIVED')),
+    CONSTRAINT ck_alert_event_confidence CHECK (confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E'))
+);
+CREATE INDEX IF NOT EXISTS idx_alert_event_loop_time          ON alert_event (loop_id, triggered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_event_severity_status    ON alert_event (severity, status);
+CREATE INDEX IF NOT EXISTS idx_alert_event_rule               ON alert_event (rule_id, triggered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_event_status             ON alert_event (status);
+CREATE INDEX IF NOT EXISTS idx_alert_event_tracker            ON alert_event (tracker_id);
+
+-- 14.4 alert_rule_audit_log（规则变更审计）
+CREATE TABLE IF NOT EXISTS alert_rule_audit_log (
+    id              UUID PRIMARY KEY,
+    rule_id         UUID REFERENCES alert_rule(id) ON DELETE SET NULL,
+    rule_code       VARCHAR(50)  NOT NULL,
+    operation_type  VARCHAR(20)  NOT NULL,
+    before_value    TEXT,
+    after_value     TEXT,
+    operator        VARCHAR(50)  NOT NULL,
+    operated_at     TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT ck_alert_audit_operation CHECK (operation_type IN ('CREATE', 'UPDATE', 'ENABLE', 'DISABLE', 'DELETE'))
+);
+CREATE INDEX IF NOT EXISTS idx_alert_audit_rule     ON alert_rule_audit_log (rule_id, operated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_audit_operator ON alert_rule_audit_log (operator, operated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_audit_type     ON alert_rule_audit_log (operation_type, operated_at DESC);
+
+-- 14.5 alert_suppression（手动抑制记录）
+CREATE TABLE IF NOT EXISTS alert_suppression (
+    id            UUID PRIMARY KEY,
+    rule_id       UUID REFERENCES alert_rule(id) ON DELETE CASCADE,
+    loop_id       UUID REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    reason        VARCHAR(500) NOT NULL,
+    suppressed_by VARCHAR(50)  NOT NULL,
+    start_at      TIMESTAMP    NOT NULL,
+    end_at        TIMESTAMP    NOT NULL,
+    is_active     BOOLEAN      NOT NULL DEFAULT true,
+    created_at    TIMESTAMP    NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_alert_suppression_loop   ON alert_suppression (loop_id);
+CREATE INDEX IF NOT EXISTS idx_alert_suppression_expiry ON alert_suppression (end_at, is_active);
+CREATE INDEX IF NOT EXISTS idx_alert_suppression_rule   ON alert_suppression (rule_id, is_active);
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

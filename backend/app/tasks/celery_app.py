@@ -36,6 +36,7 @@ celery_app = Celery(
         "app.tasks.data_integrity_check",
         "app.tasks.tracker_verification",
         "app.tasks.tuning",
+        "app.tasks.alert_patrol",
     ],
 )
 
@@ -124,6 +125,7 @@ class AsyncTask(Task):
 # 导致 beat_schedule 中的定时调度计划（kpi-calc-hourly 等）不会被注册。
 # 必须放在 AsyncTask 类定义之后，避免循环导入。
 import app.tasks.aas_sync  # noqa: E402, F401
+import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
 import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
