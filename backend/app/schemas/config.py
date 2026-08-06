@@ -600,6 +600,7 @@ class LlmConfigSchema(CamelModel):
     )
     model: str | None = Field(None, description="模型名")
     timeout: int = Field(30, description="超时秒数")
+    maxTokens: int = Field(4096, description="最大输出 token 数（推理模型建议 ≥4096）")
     updatedAt: str | None = Field(None, description="最近更新时间 ISO 8601")
     updatedBy: str | None = Field(None, description="最近更新人")
 
@@ -615,6 +616,7 @@ class LlmConfigSaveRequest(CamelModel):
     apiKey: str | None = Field(None, max_length=500, description="API Key（空=保留原值）")
     model: str | None = Field(None, max_length=100, description="模型名")
     timeout: int = Field(30, ge=5, le=300, description="超时秒数")
+    maxTokens: int = Field(4096, ge=256, le=32768, description="最大输出 token 数")
 
 
 class LlmTestResult(CamelModel):

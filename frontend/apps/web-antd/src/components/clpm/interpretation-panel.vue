@@ -61,12 +61,12 @@ const SOURCE_TAG: Record<
   llm: {
     color: 'geekblue',
     icon: 'ant-design:robot-outlined',
-    label: 'AI 解读',
+    label: 'AI 洞察',
   },
   template: {
     color: 'default',
     icon: 'ant-design:file-text-outlined',
-    label: '规则模板',
+    label: '诊断小结',
   },
 };
 
@@ -88,14 +88,14 @@ async function generate(mode: DiagnosisApi.InterpretMode = 'auto') {
   }
 }
 
-/** 重新生成下拉菜单（LLM 未启用时隐藏"仅 AI 解读"） */
+/** 重新生成下拉菜单（LLM 未启用时隐藏"仅 AI 洞察"） */
 const regenMenuItems = computed(() => {
   const items = [
     { key: 'auto', label: '智能模式（优先 AI）' },
-    { key: 'template', label: '仅规则模板' },
+    { key: 'template', label: '仅诊断小结' },
   ];
   if (llmEnabled.value) {
-    items.push({ key: 'llm', label: '仅 AI 解读' });
+    items.push({ key: 'llm', label: '仅 AI 洞察' });
   }
   return items;
 });
@@ -130,7 +130,7 @@ onMounted(() => {
     <div class="clpm-interpretation-panel__header">
       <div class="flex items-center gap-1.5">
         <IconifyIcon icon="ant-design:bulb-outlined" :size="15" />
-        <span class="text-sm font-medium">大白话解读</span>
+        <span class="text-sm font-medium">AI 洞察</span>
         <Tooltip
           title="将诊断结果翻译为工程师可读的自然语言，含主因分析、处置建议与风险提示。AI 解读需在系统配置中开启 LLM 服务。"
         >

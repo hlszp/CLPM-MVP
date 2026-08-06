@@ -637,7 +637,8 @@ INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
 ('llm.endpoint', '', 'LLM BaseURL（API 根地址，不含 /v1，如 https://api.openai.com）', 'system', NOW()),
 ('llm.api_key', '', 'LLM API Key（GET 返回时脱敏）', 'system', NOW()),
 ('llm.model', '', 'LLM 模型名（如 gpt-4o / deepseek-chat / qwen-plus）', 'system', NOW()),
-('llm.timeout', '30', 'LLM 请求超时秒数', 'system', NOW())
+('llm.timeout', '30', 'LLM 请求超时秒数', 'system', NOW()),
+('llm.max_tokens', '4096', 'LLM 最大输出 token 数（推理模型建议 ≥4096）', 'system', NOW())
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================

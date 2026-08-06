@@ -9,6 +9,7 @@
   - llm.api_key: API key
   - llm.model: 模型名（如 gpt-4o）
   - llm.timeout: 超时秒数（如 "30"）
+  - llm.max_tokens: 最大输出 token 数（如 "4096"，默认 4096）
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ LLM_CONFIG_KEYS = {
     "apiKey": "llm.api_key",
     "model": "llm.model",
     "timeout": "llm.timeout",
+    "maxTokens": "llm.max_tokens",
 }
 
 
@@ -58,13 +60,14 @@ async def is_llm_available(db: AsyncSession) -> bool:
     return bool(endpoint and api_key and model)
 
 
-async def _load_llm_config(db: AsyncSession) -> dict[str, str | float]:
+async def _load_llm_config(db: AsyncSession) -> dict[str, str | float | int]:
     """加载 LLM 配置，缺失项抛错。"""
     enabled = await _get_config_value(db, LLM_CONFIG_KEYS["enabled"])
     endpoint = await _get_config_value(db, LLM_CONFIG_KEYS["endpoint"])
     api_key = await _get_config_value(db, LLM_CONFIG_KEYS["apiKey"])
     model = await _get_config_value(db, LLM_CONFIG_KEYS["model"])
     timeout_str = await _get_config_value(db, LLM_CONFIG_KEYS["timeout"])
+    max_tokens_str = await _get_config_value(db, LLM_CONFIG_KEYS["maxTokens"])
 
     if not enabled or enabled.lower() != "true":
         raise BizError(
@@ -80,12 +83,19 @@ async def _load_llm_config(db: AsyncSession) -> dict[str, str | float]:
         )
 
     timeout = float(timeout_str) if timeout_str else 30.0
+    # max_tokens 默认 4096（推理模型需要更大输出空间，旧值 800 不够用）
+    try:
+        max_tokens = int(max_tokens_str) if max_tokens_str else 4096
+    except (ValueError, TypeError):
+        max_tokens = 4096
+    max_tokens = max(256, min(max_tokens, 32768))
 
     return {
         "endpoint": endpoint,
         "apiKey": api_key,
         "model": model,
         "timeout": timeout,
+        "maxTokens": max_tokens,
     }
 
 
@@ -112,6 +122,7 @@ async def call_llm(
     api_key = str(config["apiKey"])
     model = str(config["model"])
     timeout = float(config["timeout"])
+    max_tokens = int(config["maxTokens"])
 
     # OpenAI 兼容接口
     url = f"{endpoint.rstrip('/')}/v1/chat/completions"
@@ -126,7 +137,7 @@ async def call_llm(
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.3,
-        "max_tokens": 800,
+        "max_tokens": max_tokens,
     }
 
     try:
@@ -143,13 +154,24 @@ async def call_llm(
                 status_code=502,
             )
 
-        text = choices[0].get("message", {}).get("content", "")
-        if not text:
-            raise BizError(
-                code="ERR_LLM_UNAVAILABLE",
-                message="LLM 返回空内容",
-                status_code=502,
-            )
+        message = choices[0].get("message", {})
+        text = message.get("content") or ""
+        # 兼容 reasoning 模型（deepseek-r1/qwen-qwq 等）：
+        # content 为空时 fallback 到 reasoning_content
+        if not text.strip():
+            reasoning = message.get("reasoning_content") or ""
+            if reasoning.strip():
+                logger.info(
+                    "LLM content 为空，使用 reasoning_content fallback（length=%s）",
+                    len(reasoning),
+                )
+                text = reasoning
+            else:
+                raise BizError(
+                    code="ERR_LLM_UNAVAILABLE",
+                    message="LLM 返回空内容（content 与 reasoning_content 均为空）",
+                    status_code=502,
+                )
 
         return text.strip(), model
 

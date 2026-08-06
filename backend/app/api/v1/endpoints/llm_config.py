@@ -3,12 +3,13 @@
 提供 LLM 服务配置的查询、更新与连接测试，让用户在系统管理中自助配置
 BaseURL / API Key / 模型 / 超时，而非代码写死。
 
-配置存储在 ``sys_config`` 表（5 个 key）：
-- ``llm.enabled``  — 是否启用（"true"/"false"）
-- ``llm.endpoint`` — BaseURL（API 根地址，不含 /v1，如 https://api.openai.com）
-- ``llm.api_key``  — API Key（明文存储，**GET 返回时脱敏**）
-- ``llm.model``    — 模型名（如 gpt-4o / deepseek-chat / qwen-plus）
-- ``llm.timeout``  — 超时秒数（如 "30"）
+配置存储在 ``sys_config`` 表（6 个 key）：
+- ``llm.enabled``     — 是否启用（"true"/"false"）
+- ``llm.endpoint``    — BaseURL（API 根地址，不含 /v1，如 https://api.openai.com）
+- ``llm.api_key``     — API Key（明文存储，**GET 返回时脱敏**）
+- ``llm.model``       — 模型名（如 gpt-4o / deepseek-chat / qwen-plus）
+- ``llm.timeout``     — 超时秒数（如 "30"）
+- ``llm.max_tokens``  — 最大输出 token 数（如 "4096"，默认 4096）
 
 遵循 OpenAI 兼容接口协议，任何兼容服务均可接入。
 
@@ -57,6 +58,7 @@ _KEYS = {
     "api_key": "llm.api_key",
     "model": "llm.model",
     "timeout": "llm.timeout",
+    "max_tokens": "llm.max_tokens",
 }
 
 _KEY_DESC = "LLM 配置（P3-04 自然语言诊断解读）"
@@ -145,13 +147,14 @@ async def _write_audit(
 
 
 async def _load_raw_config(db: AsyncSession) -> dict[str, str | None]:
-    """加载 5 个 key 的原始值（明文）。"""
+    """加载 6 个 key 的原始值（明文）。"""
     return {
         "enabled": await _get_config_value(db, _KEYS["enabled"]),
         "endpoint": await _get_config_value(db, _KEYS["endpoint"]),
         "api_key": await _get_config_value(db, _KEYS["api_key"]),
         "model": await _get_config_value(db, _KEYS["model"]),
         "timeout": await _get_config_value(db, _KEYS["timeout"]),
+        "max_tokens": await _get_config_value(db, _KEYS["max_tokens"]),
     }
 
 
@@ -165,6 +168,7 @@ def _build_schema(raw: dict[str, str | None], updated_by: str | None) -> LlmConf
         apiKeyConfigured=bool(api_key_raw),
         model=raw.get("model") or None,
         timeout=int(raw["timeout"]) if raw.get("timeout") else 30,
+        maxTokens=int(raw["max_tokens"]) if raw.get("max_tokens") else 4096,
         updatedAt=_now_iso(),
         updatedBy=updated_by,
     )
@@ -221,6 +225,7 @@ async def save_llm_config(
             "apiKeyConfigured": bool(raw_before["api_key"]),
             "model": raw_before["model"],
             "timeout": raw_before["timeout"],
+            "max_tokens": raw_before["max_tokens"],
         }
     )
 
@@ -262,6 +267,14 @@ async def save_llm_config(
         db,
         _KEYS["timeout"],
         str(body.timeout),
+        _KEY_DESC,
+        user.username,
+    )
+    # max_tokens
+    await _set_config_value(
+        db,
+        _KEYS["max_tokens"],
+        str(body.maxTokens),
         _KEY_DESC,
         user.username,
     )

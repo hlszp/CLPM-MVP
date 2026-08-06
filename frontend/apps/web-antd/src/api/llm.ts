@@ -4,7 +4,7 @@
  * 让管理员在系统管理中自助配置 LLM 服务的 BaseURL / API Key / 模型 / 超时，
  * 而非代码写死。遵循 OpenAI 兼容接口协议，任何兼容服务均可接入。
  *
- * 配置存储在 sys_config 表（5 个 key），GET 返回时 API Key 脱敏。
+ * 配置存储在 sys_config 表（6 个 key），GET 返回时 API Key 脱敏。
  */
 
 import { requestClient } from '#/api/request';
@@ -24,6 +24,8 @@ export namespace LlmApi {
     model?: null | string;
     /** 超时秒数 */
     timeout: number;
+    /** 最大输出 token 数（推理模型建议 ≥4096） */
+    maxTokens: number;
     /** 最近更新时间 ISO 8601 */
     updatedAt?: null | string;
     /** 最近更新人 */
@@ -38,6 +40,8 @@ export namespace LlmApi {
     apiKey?: null | string;
     model?: null | string;
     timeout: number;
+    /** 最大输出 token 数 */
+    maxTokens: number;
   }
 
   /** LLM 连接测试结果 */

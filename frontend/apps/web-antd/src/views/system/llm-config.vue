@@ -58,6 +58,7 @@ const form = reactive({
   apiKey: '',
   model: '',
   timeout: 30,
+  maxTokens: 4096,
 });
 
 /** 连接测试结果 */
@@ -89,6 +90,7 @@ async function loadConfig() {
     form.apiKey = ''; // 始终置空，保存时空=保留原值
     form.model = data.model ?? '';
     form.timeout = data.timeout;
+    form.maxTokens = data.maxTokens ?? 4096;
     apiKeyConfigured.value = data.apiKeyConfigured;
     lastUpdated.value = {
       by: data.updatedBy ?? null,
@@ -131,6 +133,7 @@ async function handleSave() {
       apiKey: form.apiKey || undefined, // 空=保留原值
       model: form.model.trim() || undefined,
       timeout: form.timeout,
+      maxTokens: form.maxTokens,
     });
     apiKeyConfigured.value = data.apiKeyConfigured;
     form.apiKey = ''; // 清空，保存后不再显示明文
@@ -301,6 +304,22 @@ onMounted(loadConfig);
             <template #extra>
               <span class="text-xs opacity-60">
                 建议保持默认 30 秒，网络较慢时可适当调大
+              </span>
+            </template>
+          </FormItem>
+
+          <!-- max_tokens -->
+          <FormItem label="最大输出 Token 数">
+            <InputNumber
+              v-model:value="form.maxTokens"
+              :min="256"
+              :max="32768"
+              :step="512"
+              style="width: 100%"
+            />
+            <template #extra>
+              <span class="text-xs opacity-60">
+                默认 4096。推理模型（如 deepseek-r1）建议 ≥4096，否则思考链可能耗尽 token 导致输出为空
               </span>
             </template>
           </FormItem>

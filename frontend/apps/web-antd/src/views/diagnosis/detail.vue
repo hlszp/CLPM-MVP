@@ -969,12 +969,7 @@ onMounted(() => {
                     暂无诊断标签
                   </div>
 
-                  <!-- P3-04：自然语言诊断解读（大白话解释，规则模板+LLM 混合） -->
-                  <ClpmInterpretationPanel
-                    v-if="detail && detail.diagnosisLabels.length > 0"
-                    :loop-id="loopId"
-                    class="mt-4"
-                  />
+                  <!-- P3-04：自然语言诊断解读已移至独立「AI 洞察」Tab -->
                 </ClpmDataCanvas>
 
                 <Recommendations
@@ -1277,6 +1272,22 @@ onMounted(() => {
                 </div>
               </template>
             </ClpmDataCanvas>
+          </Tabs.TabPane>
+
+          <!-- Tab 5: AI 洞察（P3-04 自然语言诊断解读，独立 Tab 显著位置） -->
+          <Tabs.TabPane key="ai-insight" tab="AI 洞察">
+            <ClpmInterpretationPanel
+              v-if="detail && detail.diagnosisLabels.length > 0"
+              :loop-id="loopId"
+              :auto-load="false"
+            />
+            <div
+              v-else
+              class="py-12 text-center"
+              :style="{ color: themeColors.NEUTRAL }"
+            >
+              暂无诊断标签，无法生成 AI 洞察
+            </div>
           </Tabs.TabPane>
         </Tabs>
       </div>
