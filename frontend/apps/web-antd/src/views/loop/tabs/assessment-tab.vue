@@ -52,10 +52,7 @@ const assessmentDetail = inject<Ref<LoopConfidenceLatestItem | null>>(
   ref(null),
 );
 const assessmentLoading = inject<Ref<boolean>>('assessmentLoading', ref(false));
-const scoreHistory = inject<Ref<KpiSnapshotItem[]>>(
-  'scoreHistory',
-  ref([]),
-);
+const scoreHistory = inject<Ref<KpiSnapshotItem[]>>('scoreHistory', ref([]));
 const loadAssessment = inject<(loopId: string) => Promise<void>>(
   'loadAssessment',
   async () => {},
@@ -346,8 +343,13 @@ watch(
             }}
           </DescriptionsItem>
           <DescriptionsItem label="评估状态">
-            <Tag :color="STATUS_COLOR_MAP[assessmentDetail.status] || 'default'">
-              {{ STATUS_LABEL_MAP[assessmentDetail.status] || assessmentDetail.status }}
+            <Tag
+              :color="STATUS_COLOR_MAP[assessmentDetail.status] || 'default'"
+            >
+              {{
+                STATUS_LABEL_MAP[assessmentDetail.status] ||
+                assessmentDetail.status
+              }}
             </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="评估时间">

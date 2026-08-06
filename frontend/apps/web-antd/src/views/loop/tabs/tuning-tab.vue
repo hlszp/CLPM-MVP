@@ -130,11 +130,35 @@ const columns = [
   { title: '算法', dataIndex: 'algorithm', key: 'algorithm', width: 120 },
   { title: '模型', dataIndex: 'modelType', key: 'modelType', width: 90 },
   { title: '推荐 PID', key: 'pid', width: 220 },
-  { title: '拟合度', dataIndex: 'fittingScore', key: 'fittingScore', width: 90, align: 'right' as const },
-  { title: '可信度', dataIndex: 'confidenceLevel', key: 'confidenceLevel', width: 90, align: 'center' as const },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 100, align: 'center' as const },
+  {
+    title: '拟合度',
+    dataIndex: 'fittingScore',
+    key: 'fittingScore',
+    width: 90,
+    align: 'right' as const,
+  },
+  {
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 90,
+    align: 'center' as const,
+  },
+  {
+    title: '状态',
+    dataIndex: 'status',
+    key: 'status',
+    width: 100,
+    align: 'center' as const,
+  },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 150 },
-  { title: '操作', key: 'action', width: 90, align: 'center' as const, fixed: 'right' as const },
+  {
+    title: '操作',
+    key: 'action',
+    width: 90,
+    align: 'center' as const,
+    fixed: 'right' as const,
+  },
 ];
 
 // ===== 生命周期 =====
@@ -186,16 +210,19 @@ watch(
             <div class="text-xs text-gray-400">平均拟合度</div>
             <div class="mt-1 text-lg font-semibold">
               {{
-                avgFitting === null
-                  ? '—'
-                  : `${(avgFitting * 100).toFixed(1)}%`
+                avgFitting === null ? '—' : `${(avgFitting * 100).toFixed(1)}%`
               }}
             </div>
           </div>
           <div class="rounded border p-3">
             <div class="text-xs text-gray-400">最近算法</div>
             <div class="mt-1 text-sm font-medium">
-              {{ latestTask ? (ALGORITHM_LABEL[latestTask.algorithm] || latestTask.algorithm) : '—' }}
+              {{
+                latestTask
+                  ? ALGORITHM_LABEL[latestTask.algorithm] ||
+                    latestTask.algorithm
+                  : '—'
+              }}
             </div>
           </div>
           <div class="rounded border p-3">
@@ -205,7 +232,10 @@ watch(
                 v-if="latestTask"
                 :color="TASK_STATUS_META[latestTask.status]?.color || 'default'"
               >
-                {{ TASK_STATUS_META[latestTask.status]?.label || latestTask.status }}
+                {{
+                  TASK_STATUS_META[latestTask.status]?.label ||
+                  latestTask.status
+                }}
               </Tag>
               <span v-else class="text-sm text-gray-400">—</span>
             </div>
@@ -239,10 +269,15 @@ watch(
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'algorithm'">
-            {{ ALGORITHM_LABEL[(record as TuningApi.TuningTaskItem).algorithm] || (record as TuningApi.TuningTaskItem).algorithm }}
+            {{
+              ALGORITHM_LABEL[(record as TuningApi.TuningTaskItem).algorithm] ||
+              (record as TuningApi.TuningTaskItem).algorithm
+            }}
           </template>
           <template v-else-if="column.key === 'pid'">
-            <span class="text-xs">{{ pidText((record as TuningApi.TuningTaskItem).recommendedPid) }}</span>
+            <span class="text-xs">{{
+              pidText((record as TuningApi.TuningTaskItem).recommendedPid)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'fittingScore'">
             {{
@@ -254,32 +289,46 @@ watch(
           <template v-else-if="column.key === 'confidenceLevel'">
             <Tag
               v-if="(record as TuningApi.TuningTaskItem).confidenceLevel"
-              :color="CONFIDENCE_COLOR[(record as TuningApi.TuningTaskItem).confidenceLevel as string] || 'default'"
+              :color="
+                CONFIDENCE_COLOR[
+                  (record as TuningApi.TuningTaskItem).confidenceLevel as string
+                ] || 'default'
+              "
             >
               {{ (record as TuningApi.TuningTaskItem).confidenceLevel }}
             </Tag>
             <span v-else class="text-xs text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <Tag :color="TASK_STATUS_META[(record as TuningApi.TuningTaskItem).status]?.color || 'default'">
-              {{ TASK_STATUS_META[(record as TuningApi.TuningTaskItem).status]?.label || (record as TuningApi.TuningTaskItem).status }}
+            <Tag
+              :color="
+                TASK_STATUS_META[(record as TuningApi.TuningTaskItem).status]
+                  ?.color || 'default'
+              "
+            >
+              {{
+                TASK_STATUS_META[(record as TuningApi.TuningTaskItem).status]
+                  ?.label || (record as TuningApi.TuningTaskItem).status
+              }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'createdAt'">
-            <span class="text-xs">{{ formatTime((record as TuningApi.TuningTaskItem).createdAt) }}</span>
+            <span class="text-xs">{{
+              formatTime((record as TuningApi.TuningTaskItem).createdAt)
+            }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <Button type="link" size="small" @click="viewDetail(record as TuningApi.TuningTaskItem)">
+            <Button
+              type="link"
+              size="small"
+              @click="viewDetail(record as TuningApi.TuningTaskItem)"
+            >
               查看
             </Button>
           </template>
         </template>
       </Table>
-      <Empty
-        v-else-if="!loading"
-        description="暂无整定记录"
-        class="py-8"
-      />
+      <Empty v-else-if="!loading" description="暂无整定记录" class="py-8" />
     </ClpmDataCanvas>
   </div>
 </template>

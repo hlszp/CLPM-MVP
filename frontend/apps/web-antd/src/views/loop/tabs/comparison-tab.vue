@@ -21,13 +21,24 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Button, Descriptions, DescriptionsItem, Empty, Spin, Table, Tag } from 'ant-design-vue';
+import {
+  Button,
+  Descriptions,
+  DescriptionsItem,
+  Empty,
+  Spin,
+  Table,
+  Tag,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getAbCompareApi, getTrackerListApi } from '#/api/diagnosis';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { DIAGNOSIS_LABEL_COLOR_MAP, DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'LoopWorkbenchComparisonTab' });
@@ -58,7 +69,9 @@ function changeColor(kpi: DiagnosisApi.AbCompareKpiItem): string {
 }
 
 /** 标签变化文本 */
-function labelChangeText(change: DiagnosisApi.LabelChangeItem['change']): string {
+function labelChangeText(
+  change: DiagnosisApi.LabelChangeItem['change'],
+): string {
   const map = {
     added: '新增',
     confidence_changed: '置信度变化',
@@ -67,7 +80,9 @@ function labelChangeText(change: DiagnosisApi.LabelChangeItem['change']): string
   return map[change] || change;
 }
 
-function labelChangeColor(change: DiagnosisApi.LabelChangeItem['change']): string {
+function labelChangeColor(
+  change: DiagnosisApi.LabelChangeItem['change'],
+): string {
   if (change === 'added') return 'red';
   if (change === 'removed') return 'green';
   return 'gold';
@@ -94,9 +109,7 @@ async function loadData() {
       page: 1,
       pageSize: 20,
     }).catch(() => ({ items: [] as DiagnosisApi.TrackerItem[] }));
-    const implemented = trackerRes.items.find(
-      (t) => t.implementedAt,
-    );
+    const implemented = trackerRes.items.find((t) => t.implementedAt);
     if (!implemented?.implementedAt) {
       hasImplementedTracker.value = false;
       return;
@@ -119,8 +132,20 @@ async function loadData() {
 // ===== 派生 =====
 const kpiColumns = [
   { title: '指标', dataIndex: 'metricName', key: 'metricName' },
-  { title: '处置前', dataIndex: 'before', key: 'before', width: 100, align: 'right' as const },
-  { title: '处置后', dataIndex: 'after', key: 'after', width: 100, align: 'right' as const },
+  {
+    title: '处置前',
+    dataIndex: 'before',
+    key: 'before',
+    width: 100,
+    align: 'right' as const,
+  },
+  {
+    title: '处置后',
+    dataIndex: 'after',
+    key: 'after',
+    width: 100,
+    align: 'right' as const,
+  },
   { title: '变化', key: 'change', width: 110, align: 'right' as const },
 ];
 
@@ -223,15 +248,29 @@ watch(
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'before'">
-            {{ (record as DiagnosisApi.AbCompareKpiItem).before === null ? '—' : Number((record as DiagnosisApi.AbCompareKpiItem).before).toFixed(2) }}
+            {{
+              (record as DiagnosisApi.AbCompareKpiItem).before === null
+                ? '—'
+                : Number(
+                    (record as DiagnosisApi.AbCompareKpiItem).before,
+                  ).toFixed(2)
+            }}
           </template>
           <template v-else-if="column.key === 'after'">
-            {{ (record as DiagnosisApi.AbCompareKpiItem).after === null ? '—' : Number((record as DiagnosisApi.AbCompareKpiItem).after).toFixed(2) }}
+            {{
+              (record as DiagnosisApi.AbCompareKpiItem).after === null
+                ? '—'
+                : Number(
+                    (record as DiagnosisApi.AbCompareKpiItem).after,
+                  ).toFixed(2)
+            }}
           </template>
           <template v-else-if="column.key === 'change'">
             <span
               class="font-medium"
-              :style="{ color: changeColor(record as DiagnosisApi.AbCompareKpiItem) }"
+              :style="{
+                color: changeColor(record as DiagnosisApi.AbCompareKpiItem),
+              }"
             >
               {{ changeText(record as DiagnosisApi.AbCompareKpiItem) }}
             </span>
@@ -262,12 +301,15 @@ watch(
               :color="DIAGNOSIS_LABEL_COLOR_MAP[item.label]"
             >
               {{ item.labelName || DIAGNOSIS_LABEL_NAME_MAP[item.label] }}
-              <span class="ml-1 text-gray-400">{{ (item.confidence * 100).toFixed(0) }}%</span>
+              <span class="ml-1 text-gray-400"
+                >{{ (item.confidence * 100).toFixed(0) }}%</span
+              >
             </Tag>
             <span
               v-if="!compareData.beforeDiagnosisLabels?.length"
               class="text-xs text-gray-400"
-            >无</span>
+              >无</span
+            >
           </div>
         </div>
         <!-- 处置后标签 -->
@@ -280,12 +322,15 @@ watch(
               :color="DIAGNOSIS_LABEL_COLOR_MAP[item.label]"
             >
               {{ item.labelName || DIAGNOSIS_LABEL_NAME_MAP[item.label] }}
-              <span class="ml-1 text-gray-400">{{ (item.confidence * 100).toFixed(0) }}%</span>
+              <span class="ml-1 text-gray-400"
+                >{{ (item.confidence * 100).toFixed(0) }}%</span
+              >
             </Tag>
             <span
               v-if="!compareData.afterDiagnosisLabels?.length"
               class="text-xs text-gray-400"
-            >无</span>
+              >无</span
+            >
           </div>
         </div>
         <!-- 变化明细 -->
@@ -298,7 +343,9 @@ watch(
               :color="labelChangeColor(item.change)"
             >
               {{ DIAGNOSIS_LABEL_NAME_MAP[item.label] || item.label }}
-              <span class="ml-1 text-gray-400">{{ labelChangeText(item.change) }}</span>
+              <span class="ml-1 text-gray-400">{{
+                labelChangeText(item.change)
+              }}</span>
             </Tag>
           </div>
         </div>

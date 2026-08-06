@@ -32,7 +32,9 @@ import {
   RadioGroup,
   Spin,
   Steps,
+  Table,
   Tabs,
+  Tag,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -60,7 +62,11 @@ import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { DIAGNOSIS_LABEL_NAME_MAP } from '#/constants/diagnosis';
+import {
+  DIAGNOSIS_LABEL_COLOR_MAP,
+  DIAGNOSIS_LABEL_NAME_MAP,
+} from '#/constants/diagnosis';
+import featureDictionary from '#/constants/feature-dictionary.json';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisDetail' });
@@ -112,6 +118,38 @@ const timeWindowOptions: { label: string; value: DiagnosisApi.TimeWindow }[] = [
 ];
 
 const labelNameMap = DIAGNOSIS_LABEL_NAME_MAP;
+
+// ===== Phase C §4.3：特征字典 + 问题定位路径 =====
+
+/** 特征字典条目（为证据区特征值表提供工程含义列） */
+interface FeatureDictEntry {
+  name: string;
+  meaning: string;
+  engineering: string;
+  threshold: string;
+  unit: string;
+  labels: string[];
+}
+const featureDict = featureDictionary as unknown as Record<
+  string,
+  FeatureDictEntry
+>;
+
+/** 诊断标签 → 现象描述（问题定位路径节点①：现象） */
+const LABEL_PHENOMENON_MAP: Record<string, string> = {
+  EXTERNAL_DISTURBANCE: 'PV 均值漂移波动',
+  OSCILLATION: 'PV 周期性振荡',
+  OUTPUT_SATURATION: 'OP 长期触限',
+  OVERAGGRESSIVE: '阶跃响应超调振荡',
+  OVERCONSERVATIVE: '响应迟缓跟不上 SP',
+  QUALITY_ABNORMAL: 'PV 质量码异常',
+  VALVE_STICTION: 'OP 变化 PV 响应迟缓',
+};
+
+/** 证据区-特征值表折叠状态（默认折叠，技术细节） */
+const evidenceCollapsed = ref(true);
+/** 证据区-波形/散点折叠状态（默认展开，保证 ECharts 首屏渲染） */
+const waveformCollapsed = ref(false);
 
 // 散点图 ECharts
 const scatterChartRef = ref<EchartsUIType>();
@@ -231,11 +269,11 @@ const summaryItems = computed<SummaryItem[]>(() => {
       key: 'confidence',
       label: '最高标签置信度',
       value:
-        detail.value.fusedConfidence == null
+        detail.value.fusedConfidence === null
           ? '—'
           : Number(detail.value.fusedConfidence).toFixed(2),
       status:
-        detail.value.fusedConfidence == null
+        detail.value.fusedConfidence === null
           ? undefined
           : getThresholdStatus(detail.value.fusedConfidence, 0.8, 0.5),
     },
@@ -281,22 +319,17 @@ const summaryActions = computed<SummaryAction[]>(() => {
       icon: 'ant-design:sliders-outlined',
       type: 'default',
     },
-    {
-      key: 'visualization',
-      label: '可视化分析',
-      icon: 'ant-design:bar-chart-outlined',
-      type: 'default',
-    },
+    // Phase C: 可视化分析能力已并入诊断证据区，移除独立入口
   ];
 });
 
 /** P1a：根据当前状态计算可用操作按钮 */
 const availableActions = computed(() => {
   const actions: {
+    danger?: boolean;
     key: string;
     label: string;
     variant?: string;
-    danger?: boolean;
   }[] = [];
   const status = trackerItem.value?.actionStatus;
 
@@ -307,8 +340,10 @@ const availableActions = computed(() => {
     actions.push({ key: 'implement', label: '标记已实施', variant: 'primary' });
   }
   if (status === 'VERIFYING' || status === 'IMPLEMENTED') {
-    actions.push({ key: 'verify_pass', label: '验证通过', variant: 'primary' });
-    actions.push({ key: 'verify_fail', label: '验证不通过', danger: true });
+    actions.push(
+      { key: 'verify_pass', label: '验证通过', variant: 'primary' },
+      { key: 'verify_fail', label: '验证不通过', danger: true },
+    );
   }
   if (status && status !== 'CLOSED' && status !== 'IGNORED') {
     actions.push({ key: 'ignore', label: '标记忽略' });
@@ -317,26 +352,41 @@ const availableActions = computed(() => {
   return actions;
 });
 
-/** FE-12 三段式：问题定位路径 Steps */
+/** Phase C §4.3.2：问题定位路径 —— 现象→特征→根因 横向流程（3 节点） */
 const problemPathSteps = computed(() => {
   if (!detail.value || !detail.value.diagnosisLabels?.length) {
     return [
-      { title: '数据采集', description: '采集 PV/SP/OP 时序数据' },
-      { title: '特征提取', description: 'FFT/散点拟合/质量码统计' },
-      { title: '暂无诊断结论', description: '未检测到异常标签' },
+      { description: '采集 PV/SP/OP 时序数据', title: '现象' },
+      { description: 'FFT/散点拟合/质量码统计', title: '特征' },
+      { description: '未检测到异常标签', title: '暂无结论' },
     ];
   }
-  const steps: { description: string; title: string }[] = [
-    { title: '数据采集', description: '采集 PV/SP/OP 时序数据' },
-    { title: '特征提取', description: 'FFT/散点拟合/质量码统计' },
-  ];
-  for (const item of detail.value.diagnosisLabels) {
-    steps.push({
-      title: item.labelName || labelNameMap[item.label] || item.label,
-      description: `置信度 ${(item.confidence * 100).toFixed(1)}%`,
-    });
+  const label = detail.value.diagnosisLabels[0];
+  if (!label) {
+    return [
+      { description: '采集 PV/SP/OP 时序数据', title: '现象' },
+      { description: 'FFT/散点拟合/质量码统计', title: '特征' },
+      { description: '未检测到异常标签', title: '暂无结论' },
+    ];
   }
-  return steps;
+  const phenomenon = LABEL_PHENOMENON_MAP[label.label] || '过程异常';
+  // 取该标签关联的关键特征值（top 2）作为特征节点描述
+  const relatedFeatures = Object.entries(detail.value.featureValues || {})
+    .filter(([k]) => featureDict[k]?.labels?.includes(label.label))
+    .slice(0, 2)
+    .map(([k, v]) => `${featureDict[k]?.name ?? k} ${Number(v).toFixed(2)}`)
+    .join(' / ');
+  return [
+    { description: phenomenon, title: '现象' },
+    {
+      description: relatedFeatures || '特征值提取',
+      title: '特征',
+    },
+    {
+      description: `${label.labelName || labelNameMap[label.label] || label.label}（置信度 ${(label.confidence * 100).toFixed(0)}%）`,
+      title: '根因',
+    },
+  ];
 });
 
 const currentStep = computed(() => {
@@ -390,12 +440,15 @@ const abVerifySteps = computed(() => {
 
 function getTimeRange(tw: DiagnosisApi.TimeWindow): [dayjs.Dayjs, dayjs.Dayjs] {
   switch (tw) {
-    case 'last_7_days':
+    case 'last_7_days': {
       return [dayjs().subtract(7, 'day'), dayjs()];
-    case 'last_30_days':
+    }
+    case 'last_30_days': {
       return [dayjs().subtract(30, 'day'), dayjs()];
-    default:
+    }
+    default: {
       return [dayjs().subtract(24, 'hour'), dayjs()];
+    }
   }
 }
 
@@ -529,12 +582,6 @@ function handleSummaryAction(key: string) {
       query: buildTuningContextQuery(),
     });
   }
-  if (key === 'visualization') {
-    router.push({
-      path: '/diagnosis/visualization',
-      query: { loopId: loopId.value },
-    });
-  }
 }
 
 /**
@@ -653,11 +700,99 @@ function handleBack() {
   router.back();
 }
 
-const featureEntriesList = computed<{ key: string; value: number }[]>(() => {
+// ===== Phase C §4.3.2：三区重构辅助计算 =====
+
+/** ① 结论区：诊断小结（模板生成，LLM 未启用时兜底始终可用） */
+const diagnosisSummary = computed(() => {
+  if (!detail.value) return '';
+  const labels = detail.value.diagnosisLabels ?? [];
+  if (labels.length === 0) return '未检测到异常标签，回路运行状态正常。';
+  const primary = labels[0];
+  if (!primary) return '未检测到异常标签，回路运行状态正常。';
+  const labelName =
+    primary.labelName || labelNameMap[primary.label] || primary.label;
+  const conf = `${(primary.confidence * 100).toFixed(0)}%`;
+  const keyFeatures = Object.entries(detail.value.featureValues || {})
+    .filter(([k]) => featureDict[k]?.labels?.includes(primary.label))
+    .slice(0, 2)
+    .map(([k, v]) => `${featureDict[k]?.name ?? k} ${Number(v).toFixed(2)}`);
+  const featStr = keyFeatures.length > 0 ? `（${keyFeatures.join('，')}）` : '';
+  return `检测到 ${labelName}，置信度 ${conf}${featStr}，建议结合下方证据链与推荐动作处置。`;
+});
+
+/** ③ 证据区：特征值表数据（带工程含义列，对齐特征字典） */
+const featureTableData = computed(() => {
   const features = detail.value?.featureValues;
   if (!features) return [];
-  return Object.entries(features).map(([k, v]) => ({ key: k, value: v }));
+  return Object.entries(features).map(([k, v], i) => {
+    const dict = featureDict[k];
+    return {
+      key: k,
+      index: i + 1,
+      name: dict?.name ?? k,
+      value: Number(v).toFixed(4),
+      unit: dict?.unit ?? '',
+      threshold: dict?.threshold ?? '—',
+      engineering: dict?.engineering ?? '—',
+    };
+  });
 });
+
+/** ③ 证据区：特征值表列定义 */
+const featureColumns = [
+  {
+    title: '#',
+    dataIndex: 'index',
+    key: 'index',
+    width: 50,
+    align: 'center' as const,
+  },
+  { title: '名称', dataIndex: 'name', key: 'name', width: 140 },
+  {
+    title: '值',
+    dataIndex: 'value',
+    key: 'value',
+    width: 100,
+    align: 'right' as const,
+  },
+  {
+    title: '单位',
+    dataIndex: 'unit',
+    key: 'unit',
+    width: 60,
+    align: 'center' as const,
+  },
+  { title: '阈值参考', dataIndex: 'threshold', key: 'threshold', width: 120 },
+  { title: '工程含义', dataIndex: 'engineering', key: 'engineering' },
+];
+
+/** ① 结论区：相对时间格式化（如"2小时前"） */
+function formatRelativeTime(t: null | string | undefined): string {
+  if (!t) return '';
+  try {
+    const target = dayjs(t);
+    const now = dayjs();
+    const diffMin = now.diff(target, 'minute');
+    if (diffMin < 1) return '刚刚';
+    if (diffMin < 60) return `${diffMin} 分钟前`;
+    const diffHour = now.diff(target, 'hour');
+    if (diffHour < 24) return `${diffHour} 小时前`;
+    return `${now.diff(target, 'day')} 天前`;
+  } catch {
+    return '';
+  }
+}
+
+/** ② 问题定位路径：节点点击展开对应证据区 */
+function handlePathStepClick(stepIndex: number) {
+  if (stepIndex === 1) {
+    // 特征节点 → 展开特征值表
+    evidenceCollapsed.value = false;
+  } else if (stepIndex === 2 || stepIndex === 0) {
+    // 根因/现象节点 → 展开波形证据
+    waveformCollapsed.value = false;
+  }
+}
 
 // ===== P1a: 状态操作逻辑 =====
 
@@ -766,7 +901,7 @@ async function updateStatus(
 }
 
 /** Tab切换时按需加载数据 */
-function handleTabChange(key: string | number) {
+function handleTabChange(key: number | string) {
   const tabKey = String(key);
   activeTab.value = tabKey;
   if (tabKey === 'timeline' && !timeline.value) {
@@ -858,94 +993,146 @@ onMounted(() => {
 
         <!-- P1a: Tab布局 -->
         <Tabs
-          v-model:activeKey="activeTab"
+          v-model:active-key="activeTab"
           type="card"
           @change="handleTabChange"
         >
-          <!-- Tab 1: 诊断证据（原布局） -->
+          <!-- Tab 1: 诊断证据（Phase C 三区重构：结论/路径/证据） -->
           <Tabs.TabPane key="evidence" tab="诊断证据">
-            <div class="flex gap-4">
-              <!-- 左侧 65%：趋势图 + PV-OP 散点图 + 证据链 -->
-              <div class="w-2/3 min-w-0 space-y-4">
-                <ClpmDataCanvas
-                  title="证据链"
-                  description="时序波形与 PV-OP 散点图优先展示算法证据。"
-                >
-                  <div v-if="selectedTime" class="clpm-linkage-bar">
-                    <IconifyIcon icon="ant-design:link-outlined" />
-                    <span>
-                      联动已激活：选中时间
-                      {{ formatSelectedTime(selectedTime.timestamp) }}
+            <div class="space-y-4">
+              <!-- ① 结论区（顶部，一眼可见） -->
+              <ClpmDataCanvas
+                title="诊断结论"
+                description="标签徽章 + 诊断小结，一眼掌握核心结论。"
+              >
+                <div v-if="detail" class="space-y-3">
+                  <!-- 标签徽章行 -->
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Tag
+                      v-for="label in detail.diagnosisLabels"
+                      :key="label.label"
+                      :color="
+                        DIAGNOSIS_LABEL_COLOR_MAP[label.label] || 'default'
+                      "
+                      class="!m-0"
+                    >
+                      {{
+                        label.labelName ||
+                        labelNameMap[label.label] ||
+                        label.label
+                      }}
+                      <span class="ml-1 opacity-70">
+                        {{ (label.confidence * 100).toFixed(0) }}%
+                      </span>
+                    </Tag>
+                    <span
+                      v-if="detail.diagnosisLabels.length === 0"
+                      class="text-sm"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      未检测到异常标签
                     </span>
-                    <Button type="link" size="small" @click="clearSelection">
-                      清除
-                    </Button>
-                  </div>
-
-                  <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
-                    <WaveformChart
-                      v-if="waveform"
-                      :trend="waveform"
-                      :enable-time-select="true"
-                      :selected-timestamp="selectedTimestamp"
-                      height="320px"
-                      @time-select="onTrendTimeSelect"
-                    />
-                    <div
-                      v-else
-                      class="py-12 text-center"
+                    <span
+                      class="ml-2 text-xs"
                       :style="{ color: themeColors.NEUTRAL }"
                     >
-                      暂无波形数据
-                    </div>
-                  </ClpmDataCanvas>
-
-                  <ClpmDataCanvas title="PV-OP 散点图" class="mt-4">
-                    <EchartsUI ref="scatterChartRef" height="320px" />
-                  </ClpmDataCanvas>
-
-                  <div v-if="detail" class="mt-4 space-y-3">
-                    <div v-if="detail.evidenceChain?.reasoning">
-                      <div class="mb-2 font-medium">推理过程</div>
-                      <div
-                        class="rounded border p-3 text-sm"
-                        :style="{ background: 'hsl(var(--muted) / 42%)' }"
-                      >
-                        {{ detail.evidenceChain.reasoning }}
-                      </div>
-                    </div>
-                    <div
-                      v-else
-                      class="py-4 text-center"
-                      :style="{ color: themeColors.NEUTRAL }"
-                    >
-                      暂无推理过程
-                    </div>
+                      发现于 {{ formatRelativeTime(detail.diagnosedAt) }}
+                    </span>
                   </div>
+                  <!-- 诊断小结(模板) -->
+                  <div
+                    class="rounded border p-3 text-sm"
+                    :style="{ background: 'hsl(var(--muted) / 42%)' }"
+                  >
+                    {{ diagnosisSummary }}
+                  </div>
+                  <!-- P2-01：结构化诊断报告（原因排序+根因+建议+预估改善） -->
+                  <ClpmStructuredDiagnosisReport
+                    v-if="detail.diagnosisLabels.length > 0"
+                    :labels="detail.diagnosisLabels"
+                    :fused-confidence="detail.fusedConfidence"
+                    :confidence-level="detail.confidenceLevel"
+                    :show-tuning-action="true"
+                    @tuning="handleStructuredReportTuning"
+                  />
+                </div>
+              </ClpmDataCanvas>
 
-                  <div class="mt-4">
-                    <div class="mb-2 font-medium">特征值</div>
-                    <div v-if="featureEntriesList.length > 0">
-                      <div
-                        class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4"
-                      >
+              <!-- ② 问题定位路径区（横向流程，节点可点展开证据） -->
+              <ClpmDataCanvas
+                title="问题定位路径"
+                description="现象 → 特征 → 根因，点击节点展开对应证据。"
+              >
+                <div class="problem-path">
+                  <template
+                    v-for="(step, index) in problemPathSteps"
+                    :key="index"
+                  >
+                    <div
+                      class="path-node"
+                      :class="{ 'path-node--active': index === currentStep }"
+                      @click="handlePathStepClick(index)"
+                    >
+                      <div class="path-node-index">{{ index + 1 }}</div>
+                      <div class="path-node-body">
+                        <div class="path-node-title">{{ step.title }}</div>
                         <div
-                          v-for="item in featureEntriesList"
-                          :key="item.key"
-                          class="rounded border p-3 text-center"
+                          class="path-node-desc"
+                          :style="{ color: themeColors.NEUTRAL }"
                         >
-                          <div
-                            class="text-xs"
-                            :style="{ color: themeColors.NEUTRAL }"
-                          >
-                            {{ item.key }}
-                          </div>
-                          <div class="mt-1 text-lg font-medium">
-                            {{ Number(item.value).toFixed(4) }}
-                          </div>
+                          {{ step.description }}
                         </div>
                       </div>
                     </div>
+                    <IconifyIcon
+                      v-if="index < problemPathSteps.length - 1"
+                      icon="ant-design:arrow-right-outlined"
+                      :size="20"
+                      class="path-arrow"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    />
+                  </template>
+                </div>
+              </ClpmDataCanvas>
+
+              <!-- ③ 证据区（可折叠，技术细节） -->
+              <ClpmDataCanvas
+                title="诊断证据"
+                description="特征值表、时序波形与 PV-OP 散点图，按需展开。"
+              >
+                <!-- 3a. 特征值表（带工程含义列，默认折叠） -->
+                <div class="evidence-section">
+                  <div
+                    class="evidence-header"
+                    @click="evidenceCollapsed = !evidenceCollapsed"
+                  >
+                    <IconifyIcon
+                      :icon="
+                        evidenceCollapsed
+                          ? 'ant-design:right-outlined'
+                          : 'ant-design:down-outlined'
+                      "
+                      :size="14"
+                    />
+                    <span class="font-medium">
+                      特征值表（{{ featureTableData.length }} 项）
+                    </span>
+                    <span
+                      class="ml-auto text-xs"
+                      :style="{ color: themeColors.NEUTRAL }"
+                    >
+                      名称 / 值 / 阈值 / 工程含义
+                    </span>
+                  </div>
+                  <div v-show="!evidenceCollapsed" class="mt-3">
+                    <Table
+                      v-if="featureTableData.length > 0"
+                      :columns="featureColumns"
+                      :data-source="featureTableData"
+                      :pagination="false"
+                      size="small"
+                      :scroll="{ y: 320 }"
+                    />
                     <div
                       v-else
                       class="py-4 text-center"
@@ -954,49 +1141,93 @@ onMounted(() => {
                       暂无特征值
                     </div>
                   </div>
-                </ClpmDataCanvas>
-              </div>
+                </div>
 
-              <!-- 右侧 35%：诊断结论 + 推荐动作 -->
-              <div class="w-1/3 min-w-0 space-y-4">
-                <ClpmDataCanvas
-                  title="问题定位路径"
-                  description="诊断标签、置信度和推理证据按定位路径组织。"
-                >
-                  <Steps
-                    :current="currentStep"
-                    :items="problemPathSteps"
-                    direction="vertical"
-                    size="small"
-                  />
-                  <!-- P2-01：结构化诊断报告（原因排序+根因+建议+预估改善） -->
-                  <ClpmStructuredDiagnosisReport
-                    v-if="detail && detail.diagnosisLabels.length > 0"
-                    :labels="detail.diagnosisLabels"
-                    :fused-confidence="detail.fusedConfidence"
-                    :confidence-level="detail.confidenceLevel"
-                    :show-tuning-action="true"
-                    class="mt-4"
-                    @tuning="handleStructuredReportTuning"
-                  />
+                <!-- 3b. 时序波形与散点图（默认展开，保证 ECharts 首屏渲染） -->
+                <div class="evidence-section mt-4">
                   <div
-                    v-else
-                    class="mt-4 text-sm"
-                    :style="{ color: themeColors.NEUTRAL }"
+                    class="evidence-header"
+                    @click="waveformCollapsed = !waveformCollapsed"
                   >
-                    暂无诊断标签
+                    <IconifyIcon
+                      :icon="
+                        waveformCollapsed
+                          ? 'ant-design:right-outlined'
+                          : 'ant-design:down-outlined'
+                      "
+                      :size="14"
+                    />
+                    <span class="font-medium">时序波形与 PV-OP 散点图</span>
+                    <Button
+                      v-if="selectedTime && !waveformCollapsed"
+                      type="link"
+                      size="small"
+                      class="ml-auto"
+                      @click.stop="clearSelection"
+                    >
+                      清除联动
+                    </Button>
                   </div>
+                  <div v-show="!waveformCollapsed" class="mt-3 space-y-4">
+                    <div v-if="selectedTime" class="clpm-linkage-bar">
+                      <IconifyIcon icon="ant-design:link-outlined" />
+                      <span>
+                        联动已激活：选中时间
+                        {{ formatSelectedTime(selectedTime.timestamp) }}
+                      </span>
+                    </div>
 
-                  <!-- P3-04：自然语言诊断解读已移至独立「AI 洞察」Tab -->
-                </ClpmDataCanvas>
+                    <ClpmDataCanvas title="时序波形" :loading="waveformLoading">
+                      <WaveformChart
+                        v-if="waveform"
+                        :trend="waveform"
+                        :enable-time-select="true"
+                        :selected-timestamp="selectedTimestamp"
+                        height="320px"
+                        @time-select="onTrendTimeSelect"
+                      />
+                      <div
+                        v-else
+                        class="py-12 text-center"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        暂无波形数据
+                      </div>
+                    </ClpmDataCanvas>
 
-                <Recommendations
-                  :recommendations="recommendations"
-                  :loading="recommendationsLoading"
-                  adoptable
-                  @adopt="handleAdoptRecommendation"
-                />
-              </div>
+                    <ClpmDataCanvas title="PV-OP 散点图" class="mt-4">
+                      <EchartsUI ref="scatterChartRef" height="320px" />
+                    </ClpmDataCanvas>
+
+                    <div v-if="detail" class="mt-4 space-y-3">
+                      <div v-if="detail.evidenceChain?.reasoning">
+                        <div class="mb-2 font-medium">推理过程</div>
+                        <div
+                          class="rounded border p-3 text-sm"
+                          :style="{ background: 'hsl(var(--muted) / 42%)' }"
+                        >
+                          {{ detail.evidenceChain.reasoning }}
+                        </div>
+                      </div>
+                      <div
+                        v-else
+                        class="py-4 text-center"
+                        :style="{ color: themeColors.NEUTRAL }"
+                      >
+                        暂无推理过程
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ClpmDataCanvas>
+
+              <!-- 推荐动作 -->
+              <Recommendations
+                :recommendations="recommendations"
+                :loading="recommendationsLoading"
+                adoptable
+                @adopt="handleAdoptRecommendation"
+              />
             </div>
           </Tabs.TabPane>
 
@@ -1012,15 +1243,15 @@ onMounted(() => {
                 <div
                   class="flex items-center justify-between rounded-lg border p-4"
                   :style="{
-                    borderColor: trackerStatusColor + '40',
-                    background: trackerStatusColor + '08',
+                    borderColor: `${trackerStatusColor}40`,
+                    background: `${trackerStatusColor}08`,
                   }"
                 >
                   <div class="flex items-center gap-4">
                     <div
                       class="flex h-12 w-12 items-center justify-center rounded-full"
                       :style="{
-                        background: trackerStatusColor + '20',
+                        background: `${trackerStatusColor}20`,
                         color: trackerStatusColor,
                       }"
                     >
@@ -1141,12 +1372,12 @@ onMounted(() => {
               <div
                 v-else
                 class="mb-6 flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8"
-                :style="{ borderColor: themeColors.NEUTRAL + '40' }"
+                :style="{ borderColor: `${themeColors.NEUTRAL}40` }"
               >
                 <IconifyIcon
                   icon="ant-design:flag-outlined"
                   :size="48"
-                  :style="{ color: themeColors.NEUTRAL + '60' }"
+                  :style="{ color: `${themeColors.NEUTRAL}60` }"
                 />
                 <div class="mt-4 text-center">
                   <div class="font-medium">该回路尚未加入异常跟踪</div>
@@ -1188,7 +1419,7 @@ onMounted(() => {
                 <IconifyIcon
                   icon="ant-design:sliders-outlined"
                   :size="64"
-                  :style="{ color: themeColors.NEUTRAL + '40' }"
+                  :style="{ color: `${themeColors.NEUTRAL}40` }"
                 />
                 <div class="mt-4 text-center">
                   <div class="font-medium">整定参数对比</div>
@@ -1256,7 +1487,7 @@ onMounted(() => {
                   <IconifyIcon
                     icon="ant-design:check-circle-outlined"
                     :size="64"
-                    :style="{ color: themeColors.SUCCESS + '60' }"
+                    :style="{ color: `${themeColors.SUCCESS}60` }"
                   />
                   <div class="mt-4 text-center">
                     <div class="font-medium">验证已通过</div>
@@ -1276,7 +1507,7 @@ onMounted(() => {
                   <IconifyIcon
                     icon="ant-design:line-chart-outlined"
                     :size="64"
-                    :style="{ color: themeColors.NEUTRAL + '40' }"
+                    :style="{ color: `${themeColors.NEUTRAL}40` }"
                   />
                   <div class="mt-4 text-center">
                     <div class="font-medium">A/B对比验证</div>
@@ -1333,5 +1564,97 @@ onMounted(() => {
   background: hsl(var(--primary) / 8%);
   border: 1px solid hsl(var(--primary) / 20%);
   border-radius: 4px;
+}
+
+/* ===== Phase C §4.3.2 ② 问题定位路径横向流程 ===== */
+.problem-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  padding: 8px 0;
+}
+
+.path-node {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: flex-start;
+  min-width: 180px;
+  padding: 12px 14px;
+  cursor: pointer;
+  background: hsl(var(--muted) / 30%);
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 6px;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.path-node:hover {
+  background: hsl(var(--primary) / 6%);
+  border-color: hsl(var(--primary) / 40%);
+}
+
+.path-node--active {
+  background: hsl(var(--primary) / 8%);
+  border-color: hsl(var(--primary));
+}
+
+.path-node-index {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+  border-radius: 50%;
+}
+
+.path-node-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.path-node-title {
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.path-node-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.path-arrow {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* ===== Phase C §4.3.2 ③ 证据区折叠 ===== */
+.evidence-section {
+  overflow: hidden;
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 6px;
+}
+
+.evidence-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: hsl(var(--muted) / 30%);
+  transition: background 0.2s;
+}
+
+.evidence-header:hover {
+  background: hsl(var(--muted) / 50%);
 }
 </style>

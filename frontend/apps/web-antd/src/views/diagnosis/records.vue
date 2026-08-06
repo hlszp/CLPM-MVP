@@ -25,6 +25,7 @@ import {
   Button,
   message,
   Modal,
+  Progress,
   Select,
   Table,
   TabPane,
@@ -47,8 +48,8 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import TagPanel from '#/components/diagnosis/tag-panel.vue';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -133,6 +134,20 @@ const columns: TableColumnsType = [
     dataIndex: 'labels',
     key: 'labels',
     width: 200,
+  },
+  {
+    title: '置信度',
+    dataIndex: 'confidence',
+    key: 'confidence',
+    width: 120,
+    align: 'center',
+  },
+  {
+    title: '严重度',
+    dataIndex: 'severity',
+    key: 'severity',
+    width: 90,
+    align: 'center',
   },
   {
     title: '触发方式',
@@ -468,6 +483,34 @@ function getRecordTags(record: DiagnosisApi.TaskItem): {
   }));
 }
 
+/** Phase C §4.3.1：获取记录最高置信度（0~1，取 labels 中最大值） */
+function getMaxConfidence(record: DiagnosisApi.TaskItem): null | number {
+  if (!record.labels || record.labels.length === 0) return null;
+  return Math.max(...record.labels.map((l) => l.confidence));
+}
+
+/** 置信度进度条状态颜色（高=success/中=warning/低=danger） */
+function getConfidenceStatus(
+  conf: null | number,
+): 'danger' | 'success' | 'warning' {
+  if (conf === null) return 'danger';
+  if (conf >= 0.8) return 'success';
+  if (conf >= 0.5) return 'warning';
+  return 'danger';
+}
+
+/** Phase C §4.3.1：严重度（基于综合评分推导：<60 高 / <80 中 / ≥80 低） */
+function getSeverityTag(record: DiagnosisApi.TaskItem): {
+  color: string;
+  label: string;
+} {
+  const score = record.compositeScore;
+  if (score === null) return { label: '—', color: 'default' };
+  if (score < 60) return { label: '高', color: 'red' };
+  if (score < 80) return { label: '中', color: 'orange' };
+  return { label: '低', color: 'green' };
+}
+
 function labelName(label: string): string {
   return getDiagnosisLabelName(label as DiagnosisLabel);
 }
@@ -569,7 +612,7 @@ onMounted(() => {
             }"
             :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
             :row-selection="rowSelection"
-            :scroll="{ x: 1320 }"
+            :scroll="{ x: 1530 }"
             size="middle"
             :custom-row="
               (record: DiagnosisApi.TaskItem) => ({
@@ -617,6 +660,51 @@ onMounted(() => {
                     —
                   </span>
                 </div>
+              </template>
+              <template v-else-if="column.key === 'confidence'">
+                <!-- Phase C §4.3.1：置信度进度条（Glanceability） -->
+                <Progress
+                  v-if="
+                    getMaxConfidence(record as DiagnosisApi.TaskItem) !== null
+                  "
+                  :percent="
+                    Math.round(
+                      getMaxConfidence(record as DiagnosisApi.TaskItem)! * 100,
+                    )
+                  "
+                  :stroke-color="
+                    themeColors[
+                      {
+                        danger: 'DANGER',
+                        success: 'SUCCESS',
+                        warning: 'WARNING',
+                      }[
+                        getConfidenceStatus(
+                          getMaxConfidence(record as DiagnosisApi.TaskItem),
+                        )
+                      ] as 'DANGER' | 'SUCCESS' | 'WARNING'
+                    ]
+                  "
+                  :show-info="true"
+                  size="small"
+                  :stroke-width="6"
+                />
+                <span
+                  v-else
+                  class="text-xs"
+                  :style="{ color: themeColors.NEUTRAL }"
+                >
+                  —
+                </span>
+              </template>
+              <template v-else-if="column.key === 'severity'">
+                <!-- Phase C §4.3.1：严重度标签 -->
+                <Tag
+                  :color="getSeverityTag(record as DiagnosisApi.TaskItem).color"
+                  class="!m-0"
+                >
+                  {{ getSeverityTag(record as DiagnosisApi.TaskItem).label }}
+                </Tag>
               </template>
               <template v-else-if="column.key === 'triggerType'">
                 {{ triggerTypeName(record.triggerType) }}
