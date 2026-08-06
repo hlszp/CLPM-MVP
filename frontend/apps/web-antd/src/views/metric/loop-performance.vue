@@ -81,6 +81,7 @@ import {
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
+  ClpmAiInsight,
   ClpmDataCanvas,
   ClpmInfoTip,
   ClpmPageToolbar,
@@ -1925,6 +1926,14 @@ onMounted(async () => {
                 </Card>
               </Col>
             </Row>
+
+            <!-- AI 性能分析（LLM 启用后可用） -->
+            <ClpmAiInsight
+              class="mt-3"
+              scene="performance"
+              variant="card"
+              :loop-id="drawerRecord?.loopId"
+            />
           </Tabs.TabPane>
         </Tabs>
       </template>

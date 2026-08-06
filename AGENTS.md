@@ -24,7 +24,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.4 是重构后 IA/路�
 | 类型 | 文件 | 版本 |
 |---|---|---|
 | 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.1 |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.4**（IA 整改 P3-01：整定知识库不可变快照/38 表/知识库 API/ActionTracker 关联整定任务；v2.3 Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.5**（IA 整改 P3-04：AI 洞察全局赋能/LLM 配置 API/`POST /ai-insight/{scene}` 4 场景统一入口/`ClpmAiInsight` 通用组件/推理模型空输出修复；v2.4 P3-01：整定知识库不可变快照/38 表；v2.3 Phase 0 Truth First：状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界） |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
 | 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
 | 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
@@ -53,6 +53,7 @@ PRD v6.1 是产品需求的事实来源；实现契约 v2.4 是重构后 IA/路�
 | MetricCalculator | `app/tasks/kpi_calc.py` | 12 个 KPI 指标计算器（3 核心 + 1 综合 + 8 辅助），通过 DataPlanner.request_bundles() 获取数据 |
 | 数据完整性检查 | `app/services/data_integrity.py` | 本地 TDengine 宽表完整性检查：按小时分桶对 7 列分别 `COUNT(col)` 统计列级缺失；缺失=无记录或列 NULL，质量码非 Good 但有值不算缺失；首尾不足整点桶按实际秒数算预期点数。API：`POST /loops/data-import/integrity-check` |
 | 过程对象辨识算法栈 | `app/services/tuning_identification/` (excitation/nonparametric/arx/armax/iv/order_selection/discrete_to_continuous/pipeline) | 回路整定 Phase 2：基于历史 OP/PV 时序辨识过程对象 G(s)=PV/OP；分层算法栈（激励检测→非参数粗估→ARX/ARMAX/IV 参数化辨识→阶次选择 AIC/BIC→离散→连续转换→可信度评估）；接入 DataPlanner 8 步预处理 + ConfidenceEvaluator A/B/C/D/E 等级 |
+| AI 洞察服务 | `app/services/ai_insight/` (context/base/service/scenes/diagnosis/performance/tuning/workbench) + `app/services/llm_provider.py` | P3-04 AI 洞察全局赋能：`SceneStrategy` 抽象基类 + 4 场景策略（诊断/性能/整定/工作台），`POST /ai-insight/{scene}` 统一入口，`mode=auto/llm/template`，LLM 失败自动 fallback 规则模板；`AiInsightContext.knowledgeContext` 为 RAG 扩展点（第一期恒 None）；LLM 配置 6 键存 sys_config（`llm.enabled/endpoint/api_key/model/timeout/max_tokens`），max_tokens 可配修复推理模型空输出；前端通用组件 `ClpmAiInsight`（LLM 未启用时按 hideWhenDisabled 隐藏或显示启用提示），4 场景嵌入 |
 
 ## 开发环境运行指南
 

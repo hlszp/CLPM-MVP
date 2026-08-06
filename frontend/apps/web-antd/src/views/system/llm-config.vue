@@ -319,7 +319,8 @@ onMounted(loadConfig);
             />
             <template #extra>
               <span class="text-xs opacity-60">
-                默认 4096。推理模型（如 deepseek-r1）建议 ≥4096，否则思考链可能耗尽 token 导致输出为空
+                默认 4096。推理模型（如 deepseek-r1）建议
+                ≥4096，否则思考链可能耗尽 token 导致输出为空
               </span>
             </template>
           </FormItem>

@@ -26,6 +26,7 @@ import { getDatasourceHealthApi } from '#/api/datasource';
 import { getTaskListApi } from '#/api/task';
 import { getTuningTasksApi } from '#/api/tuning';
 import {
+  ClpmAiInsight,
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmPageToolbar,
@@ -232,6 +233,9 @@ function handleRefresh() {
       :loading="loading"
       @item-click="handleTodoClick"
     />
+
+    <!-- AI 运维洞察（LLM 启用后可用，全局健康概览与重点关注建议） -->
+    <ClpmAiInsight class="mt-4" scene="workbench" variant="card" />
 
     <!-- P3-05：异常预测与提前预警（紧跟待办，形成"需关注回路"区域） -->
     <ClpmPredictionCard class="mt-4" :top-n="10" />

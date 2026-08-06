@@ -46,10 +46,10 @@ import {
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
 import {
+  ClpmAiInsight,
   ClpmDataCanvas,
   ClpmDispositionTimeline,
   ClpmImplementRecordModal,
-  ClpmInterpretationPanel,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
   ClpmStructuredDiagnosisReport,
@@ -1276,10 +1276,13 @@ onMounted(() => {
 
           <!-- Tab 5: AI 洞察（P3-04 自然语言诊断解读，独立 Tab 显著位置） -->
           <Tabs.TabPane key="ai-insight" tab="AI 洞察">
-            <ClpmInterpretationPanel
+            <ClpmAiInsight
               v-if="detail && detail.diagnosisLabels.length > 0"
+              scene="diagnosis"
+              variant="tab"
               :loop-id="loopId"
               :auto-load="false"
+              :hide-when-disabled="false"
             />
             <div
               v-else

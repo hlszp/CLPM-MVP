@@ -48,6 +48,7 @@ import {
   simulateTuningApi,
 } from '#/api/tuning';
 import {
+  ClpmAiInsight,
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
@@ -67,6 +68,8 @@ const saving = ref(false);
 const compareMode = ref(false);
 const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 const loopId = ref<string>((route.query.loopId as string) || '');
+/** 已保存的整定任务 ID（保存后生成，AI 整定建议场景需要） */
+const savedTaskId = ref<string>('');
 
 /** P1-023：错误状态（仿真失败时持久展示，带重试） */
 const errorState = ref<{ detail: string; message: string } | null>(null);
@@ -865,7 +868,7 @@ async function handleSave() {
       modelParams[f.key] = form.modelParams[f.key];
     }
 
-    await createTuningTaskApi({
+    const created = await createTuningTaskApi({
       loopId: loopId.value,
       modelType: form.modelType,
       modelParams,
@@ -890,6 +893,8 @@ async function handleSave() {
         ? { responses: simulationResult.value.candidateResponses }
         : undefined,
     });
+    // 捕获任务 ID，供 AI 整定建议场景使用
+    savedTaskId.value = created.id;
     message.success('仿真结果已保存');
   } catch {
     // 错误已由拦截器处理
@@ -1291,6 +1296,15 @@ watch(isDark, () => {
             </Button>
           </div>
         </ClpmDataCanvas>
+
+        <!-- AI 整定建议（保存任务后可用，LLM 启用后显示） -->
+        <ClpmAiInsight
+          v-if="savedTaskId"
+          scene="tuning"
+          variant="card"
+          :task-id="savedTaskId"
+          :loop-id="loopId"
+        />
       </div>
     </div>
   </Page>

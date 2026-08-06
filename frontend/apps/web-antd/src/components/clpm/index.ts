@@ -1,3 +1,4 @@
+export { default as ClpmAiInsight } from './ai-insight.vue';
 export { default as ClpmColumnSettings } from './column-settings.vue';
 export { default as ClpmConfidenceBadge } from './confidence-badge.vue';
 export { default as ClpmDangerConfirmModal } from './danger-confirm-modal.vue';

@@ -1,7 +1,7 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.4
+**当前版本**：v2.5
 **发布日期**：2026-07-29
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐  
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
@@ -10,6 +10,7 @@
 **v2.2 增补（2026-07-29）**：登记 `/diagnosis/tasks?includeArchived=`；诊断任务时间戳默认值统一 UTC（迁移 `h8b9c0d1e2f3`）；refresh 轮换幂等窗口（`refresh_rotated`，120s）；整定 Phase 2.1 合并（`tuning_identification` 算法栈 + 异步辨识任务）
 **v2.3 修订摘要（2026-07-29，Phase 0 Truth First）**：可信辨识安全收口——固化整定目标状态机（`DRAFT→RUNNING→IDENTIFIED→SIMULATED→COMPLETED/INCONCLUSIVE/ROLLED_BACK`，旧值 `PENDING/APPLIED/VERIFIED` 只读兼容）；登记模型来源门禁契约（`ModelSource`、`ThetaSource`、`DataSource` 与 A–E 放行规则）；ORM 表清单校正为 37 张（补 `algorithm_parameter`/`dcs_pid_structure`/`diagnosis_config_change`/`diagnosis_rule`/`diagnosis_threshold_override`/`loop_confidence_latest`）；登记生产 bootstrap DDL 收敛至 37 表与安全边界静态门禁（无 DCS 参数下写端点）。详见 `docs/过程文档/clpm-v6.2-phase0-contract-baseline-2026-07-29.md`
 **v2.4 修订摘要（2026-08-05，IA 整改 P3-01）**：整定知识库不可变快照——新增 `TuningKnowledgeEntry` 表（`tuning_knowledge_entry`，第 38 张 ORM 表）；登记 `generate_knowledge_entry` 验证钩子（hybrid 关联 `tuning_record_id` + 幂等 `on_conflict_do_update`）；登记 3 个知识库 API 端点（`GET /tuning/knowledge-base` 列表、`GET /tuning/knowledge-base/{id}` 详情、`GET /tuning/knowledge-base/similar` 相似案例）；`ActionTracker` 新增 `tuning_record_id` 外键（`ondelete=SET NULL`）；`TrackerStatusUpdate` schema 新增 `tuningRecordId` 字段（VERIFYING 时可选，用于知识库生成）。详见 `docs/过程文档/clpm-ia-rectification-task-checklist-2026-08-05.md` §P3-01
+**v2.5 修订摘要（2026-08-06，IA 整改 P3-04 AI 洞察全局赋能）**：登记 LLM 配置 API（`/api/v1/configs/llm`，6 个 sys_config 键：`llm.enabled/endpoint/api_key/model/timeout/max_tokens`，API Key 脱敏返回，仅 ADMIN 可改）与 AI 洞察通用服务 API（`POST /api/v1/ai-insight/{scene}`，4 场景 diagnosis/performance/tuning/workbench 统一入口，`mode=auto/llm/template`，LLM 失败自动 fallback 规则模板）；登记 `SceneStrategy` 抽象（`load_context/build_system_prompt/build_user_prompt/generate_template`）与 `AiInsightContext.knowledgeContext` RAG 扩展点（第一期恒 None）；旧 `POST /diagnosis/{loopId}/interpret` 内部代理到 `scene=diagnosis`，字段映射 `insight→interpretation` 向后兼容；前端通用组件 `ClpmAiInsight`（scene/loopId/taskId/variant/hideWhenDisabled props，LLM 未启用时按 `hideWhenDisabled` 决定隐藏或显示启用提示），4 场景嵌入（诊断详情第 5 Tab、性能详情综合评估 Tab、整定仿真右侧栏保存后、工作台 KpiStrip 后）。详见 `docs/过程文档/clpm-ia-rectification-task-checklist-2026-08-05.md` §P3-04
 
 ## 1. 定位
 
@@ -92,6 +93,8 @@ CLPM 当前采用 **6 模块 + 1 门户**，但页面组织已从旧版 25 页�
 | 数据源配置 | `/api/v1/datasource/*` | 历史数据源连接测试、状态与配置管理。 |
 | DCS 配置 | `/api/v1/dcs/*` | DCS 品牌、型号、MODE 定义与映射矩阵管理；不包含 DCS 参数下写。 |
 | 回路历史数据导入 | `/api/v1/loops/data-import/*` | 导入预览、任务提交、状态查询、取消与删除；含数据完整性检查（`POST /loops/data-import/integrity-check`，按小时分桶对 7 列分别 `COUNT(col)` 统计列级缺失，支持非整点时间范围按实际秒数算预期点数，2026-07-22 上线）。 |
+| LLM 配置 | `/api/v1/configs/llm` | LLM 服务自助配置（BaseURL/API Key/模型/超时/max_tokens），API Key 脱敏返回；`POST /configs/llm/test` 连接测试。仅 ADMIN 可改。 |
+| AI 洞察 | `/api/v1/ai-insight/{scene}` | 4 场景统一自然语言洞察生成（diagnosis/performance/tuning/workbench）；`mode=auto/llm/template`，LLM 失败自动 fallback 规则模板；旧 `POST /diagnosis/{loopId}/interpret` 内部代理到 `scene=diagnosis`，字段映射 `insight→interpretation` 向后兼容。 |
 
 ### 4.4 API 契约规则
 
@@ -419,3 +422,16 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | `TrackerStatusUpdate` | 无 `tuningRecordId` | 新增 `tuningRecordId` 字段（VERIFYING 时可选，用于知识库生成） | `schemas/diagnosis.py` |
 | 知识库生成钩子 | 未声明 | `generate_knowledge_entry`：验证任务 `_verify_single_tracker` 完成后调用，hybrid 关联（`tuning_record_id` 优先 + 时间窗口兜底），幂等 `on_conflict_do_update(tracker_id)` | `services/tuning_knowledge.py`、`tasks/tracker_verification.py` |
 | 整定路由 | 5 路由（workbench/model/algorithm/simulation/stats） | 新增第 6 路由 `/tuning/knowledge-base`（整定知识库，权限 `tuning:view`） | `router/routes/modules/tuning.ts` |
+
+### v2.5 变更项（2026-08-06，IA 整改 P3-04 AI 洞察全局赋能）
+
+| 变更项 | v2.4 口径 | v2.5 口径 | 依据 |
+|---|---|---|---|
+| LLM 配置 API | 未声明 | `GET /configs/llm`（脱敏返回）、`POST /configs/llm`（仅 ADMIN，apiKey 空=保留原值）、`POST /configs/llm/test`（连接测试）；6 个 sys_config 键 `llm.enabled/endpoint/api_key/model/timeout/max_tokens` | `endpoints/llm_config.py`、`schemas/config.py` |
+| AI 洞察 API | 未声明 | `POST /ai-insight/{scene}`（4 场景统一入口 diagnosis/performance/tuning/workbench，body `{loopId?, taskId?, mode}`，返回 `{insight, source, model, scene, generatedAt}`）；`GET /ai-insight/scenes` 场景元信息 | `endpoints/ai_insight.py`、`schemas/ai_insight.py` |
+| 诊断解读端点 | `POST /diagnosis/{loopId}/interpret` 独立实现 | 内部代理到 `generate_insight(scene="diagnosis")`，字段映射 `insight→interpretation` 向后兼容 | `services/diagnosis_interpretation.py`、`services/ai_insight/service.py` |
+| AI 洞察服务 | 未声明 | `SceneStrategy` 抽象基类（`load_context/build_system_prompt/build_user_prompt/generate_template`）+ 4 场景策略实现；`AiInsightContext.knowledgeContext` RAG 扩展点（第一期恒 None，未来从知识库注入） | `services/ai_insight/` |
+| LLM 调用层 | `max_tokens` 硬编码 800 | sys_config 可配（`llm.max_tokens` 默认 4096）；`content` 空时 fallback `reasoning_content`（兼容推理模型） | `services/llm_provider.py` |
+| 前端组件 | `ClpmInterpretationPanel`（仅诊断） | 新增通用 `ClpmAiInsight`（scene/loopId/taskId/variant/hideWhenDisabled props）；LLM 未启用时按 `hideWhenDisabled` 决定隐藏或显示启用提示；4 场景嵌入（诊断详情第 5 Tab、性能详情综合评估 Tab、整定仿真右侧栏保存后、工作台 KpiStrip 后） | `components/clpm/ai-insight.vue` |
+| 文案 | "AI 解读 / 规则模板" | "AI 洞察 / 诊断小结"（来源标签 + 重新生成菜单） | `components/clpm/ai-insight.vue` |
+
