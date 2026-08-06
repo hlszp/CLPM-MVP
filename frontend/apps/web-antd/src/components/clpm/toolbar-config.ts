@@ -25,6 +25,8 @@ export type ToolbarAction =
   | 'export'
   | 'filter'
   | 'fullscreen'
+  | 'help'
+  | 'ai'
   | 'import'
   | 'more'
   | 'pdf'
@@ -53,6 +55,8 @@ export const TOOLBAR_ICON_MAP: Record<ToolbarAction, string> = {
   export: 'ant-design:download-outlined',
   filter: 'ant-design:filter-outlined',
   fullscreen: 'ant-design:fullscreen-outlined',
+  help: 'ant-design:question-circle-outlined',
+  ai: 'ant-design:robot-outlined',
   import: 'ant-design:upload-outlined',
   more: 'ant-design:ellipsis-outlined',
   pdf: 'ant-design:file-pdf-outlined',
@@ -101,6 +105,8 @@ export const TOOLBAR_DEFAULT_VARIANT: Record<ToolbarAction, ToolbarVariant> = {
   export: 'export',
   filter: 'default',
   fullscreen: 'default',
+  help: 'default',
+  ai: 'default',
   import: 'default',
   more: 'link',
   pdf: 'export',
