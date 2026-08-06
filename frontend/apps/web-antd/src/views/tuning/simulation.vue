@@ -48,7 +48,6 @@ import {
   simulateTuningApi,
 } from '#/api/tuning';
 import {
-  ClpmAiInsight,
   ClpmDataCanvas,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
@@ -1297,14 +1296,7 @@ watch(isDark, () => {
           </div>
         </ClpmDataCanvas>
 
-        <!-- AI 整定建议（保存任务后可用，LLM 启用后显示） -->
-        <ClpmAiInsight
-          v-if="savedTaskId"
-          scene="tuning"
-          variant="card"
-          :task-id="savedTaskId"
-          :loop-id="loopId"
-        />
+        <!-- AI 整定建议本轮下线（IA 重构 Phase A·§5.3），后端 tuning 策略保留供后续复用 -->
       </div>
     </div>
   </Page>
