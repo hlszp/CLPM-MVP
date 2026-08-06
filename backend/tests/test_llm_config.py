@@ -182,6 +182,7 @@ class TestSaveLlmConfig:
             "api_key": "",
             "model": "",
             "timeout": "30",
+            "max_tokens": "4096",
         }
         raw_after = {
             "enabled": "true",
@@ -189,6 +190,7 @@ class TestSaveLlmConfig:
             "api_key": "sk-newkey123456",
             "model": "gpt-4o",
             "timeout": "45",
+            "max_tokens": "4096",
         }
 
         body = LlmConfigSaveRequest(
@@ -232,6 +234,7 @@ class TestSaveLlmConfig:
             "api_key": "sk-originalsecret",
             "model": "gpt-4o",
             "timeout": "30",
+            "max_tokens": "4096",
         }
         raw_after = dict(raw_before, model="gpt-4o-mini")
 
@@ -280,6 +283,7 @@ class TestSaveLlmConfig:
             "api_key": "sk-xxx",
             "model": "gpt-4o",
             "timeout": "30",
+            "max_tokens": "4096",
         }
         raw_after = dict(raw_before, enabled="false")
 
@@ -320,6 +324,7 @@ class TestSaveLlmConfig:
             "api_key": "",
             "model": "",
             "timeout": "30",
+            "max_tokens": "4096",
         }
 
         body = LlmConfigSaveRequest(
@@ -358,6 +363,7 @@ class TestSaveLlmConfig:
             "api_key": "",
             "model": "",
             "timeout": "30",
+            "max_tokens": "4096",
         }
         body = LlmConfigSaveRequest(
             enabled=True,
