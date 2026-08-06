@@ -19,6 +19,9 @@
  *   - /loop/manage → 迁移到 /config/loop（legacy redirect 保留）
  *   - /tag/list → 迁移到 /config/tag（legacy redirect 保留）
  *   - /loop/ledger → 重定向到 /config/loop
+ * 路由变更（IA 重构 Phase B）：
+ *   - /loop → redirect /loop/workbench（回路菜单主页改为工作台）
+ *   - /loop/detail/:id → redirect /loop/workbench?loopId=:id（升级为 6 Tab 工作台）
  */
 import { test, expect } from '../fixtures/auth.js';
 
@@ -111,18 +114,24 @@ test.describe('回路管理 E2E', () => {
 
     if (rowExists) {
       await firstRow.click();
-      // 验证跳转到详情页 /loop/detail/:id
-      await page.waitForURL(/\/loop\/detail\//, { timeout: 15_000 }).catch(() => {
+      // Phase B：/loop/detail/:id redirect 到 /loop/workbench?loopId=:id
+      // 等待工作台 URL 出现（redirect 在路由层同步完成）
+      await page.waitForURL(/\/loop\/workbench/, { timeout: 15_000 }).catch(() => {
         // 某些实现可能需要点击「查看详情」按钮
       });
-      expect(page.url()).toContain('/loop/detail/');
+      expect(page.url()).toContain('/loop/workbench');
+      expect(page.url()).toContain('loopId=');
     } else {
       // 列表为空时，直接构造详情页 URL 访问（使用种子数据回路 ID）
+      // Phase B：/loop/detail/:id 会 redirect 到 /loop/workbench?loopId=:id
       await page.goto('/loop/detail/00000000-0000-0000-0000-000000000201');
       await page.waitForLoadState('networkidle');
-      // 验证页面加载（不跳回登录页或 403）
+      await page.waitForURL(/\/loop\/workbench/, { timeout: 10_000 }).catch(() => {});
+      // 验证 redirect 落到工作台（不跳回登录页或 403）
       expect(page.url()).not.toContain('/auth/login');
       expect(page.url()).not.toContain('/403');
+      expect(page.url()).toContain('/loop/workbench');
+      expect(page.url()).toContain('loopId=00000000-0000-0000-0000-000000000201');
     }
   });
 
