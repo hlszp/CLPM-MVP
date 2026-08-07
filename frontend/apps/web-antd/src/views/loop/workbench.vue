@@ -1,18 +1,20 @@
 <script lang="ts" setup>
 /**
- * 回路工作台（单页四区重构 · 2026-08-07）
+ * 回路工作台（单页四区重构 v2 · 2026-08-07）
  *
  * 双轴导航 · 实体轴：单回路 360° 一站式处置
  * master-detail 布局：左侧回路列表 + 右侧单页四区
  *
- * 四区垂直布局（高度占比 16/28/28/28）：
- *   ① 顶部回路摘要（16%）：位号/名称/类型/控制方式/状态 + 趋势/历史按钮
- *   ② 评估行（28%）：8 大指标卡片 + 发起评估 + 72h 综合评分小时趋势
- *   ③ 诊断行（28%）：诊断标签 + 严重度 + 发起诊断
- *   ④ 整定行（28%）：最新辨识模型 + 推荐 PID + 拟合度 + 发起整定
+ * 四区垂直布局（高度占比 10/30/30/30）：
+ *   ① 回路概览（10%）：位号/名称/量程/控制方式/设定值/实时值/数据健康度
+ *   ② 性能评估（30%）：12 大指标卡片（50%）+ 评分趋势图（50%，8/12/24/48/72h 可切）
+ *   ③ 回路诊断（30%）：诊断标签+置信度卡片（50%）+ PV/OP·FFT 曲线（50%）
+ *   ④ 回路整定（30%）：当前 PID/模型/时间常数/超调量（50%）+ 推荐 PID（50%）
+ *      按钮：回路辨识 / 参数整定 / 模拟仿真
  *
  * 一页内一览概况并可直接发起任务、实时反写。详情走弹窗。
- * 点击左侧回路 → router.replace 更新 URL query，不新增页面/面包屑。
+ * 点击左侧回路 → router.replace 更新 URL query；路由 meta.fullPathKey=false
+ * 确保不新增 tab/面包屑，仅更新右侧子页面。
  *
  * 后端零改动：全部组合现有 API
  */
@@ -26,19 +28,23 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Empty, Input, Spin, Tag } from 'ant-design-vue';
+import { Button, Empty, Input, message, Spin, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
-import { getLoopMonitorListApi } from '#/api/loop';
+import { getLoopDetailApi, getLoopMonitorListApi } from '#/api/loop';
 import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
-import { getTuningTasksApi } from '#/api/tuning';
+import {
+  getTuningTaskDetailApi,
+  getTuningTasksApi,
+  simulateTuningApi,
+  tunePidApi,
+} from '#/api/tuning';
 import {
   ClpmAiDrawer,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
-import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
@@ -46,7 +52,11 @@ import { formatTime } from '#/utils/format';
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
 import KpiMetricCards from './components/kpi-metric-cards.vue';
+import ScoreTrendChart from './components/score-trend-chart.vue';
+import SimulateResultModal from './components/simulate-result-modal.vue';
+import TuneParamModal from './components/tune-param-modal.vue';
 import TuningTriggerModal from './components/tuning-trigger-modal.vue';
+import WorkbenchDiagnosisChart from './components/workbench-diagnosis-chart.vue';
 import WorkbenchSectionCard from './components/workbench-section-card.vue';
 import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner';
 
@@ -67,7 +77,25 @@ const selectedLoop = computed(() =>
   loopList.value.find((l) => l.loopId === selectedLoopId.value),
 );
 
-// ===== 诊断数据（provide 给诊断行 / 顶部摘要共用） =====
+// ===== 回路详情（提供当前 PID 等运行态参数） =====
+const loopDetail = ref<LoopApi.LoopDetail | null>(null);
+
+async function loadLoopDetail(loopId: string): Promise<void> {
+  try {
+    loopDetail.value = await getLoopDetailApi(loopId).catch(() => null);
+  } catch {
+    loopDetail.value = null;
+  }
+}
+
+// 当前 PID（P/I/D），来自回路运行态参数
+const currentPid = computed<null | TuningApi.PidParams>(() => {
+  const r = loopDetail.value?.runtimeParams;
+  if (!r) return null;
+  return { kp: r.pidP, td: r.pidD, ti: r.pidI };
+});
+
+// ===== 诊断数据（provide 给诊断行共用） =====
 const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const diagnosisLoading = ref(false);
 
@@ -86,7 +114,7 @@ provide('diagnosisDetail', diagnosisDetail);
 provide('diagnosisLoading', diagnosisLoading);
 provide('loadDiagnosis', loadDiagnosis);
 
-// ===== 评估数据（provide 给评估行 / KpiMetricCards 共用） =====
+// ===== 评估数据（provide 给评估行 / KpiMetricCards / ScoreTrendChart 共用） =====
 const assessmentDetail = ref<LoopConfidenceLatestItem | null>(null);
 const assessmentLoading = ref(false);
 const scoreHistory = ref<KpiSnapshotItem[]>([]);
@@ -139,6 +167,8 @@ provide('loadAssessment', loadAssessment);
 const tuningLatest = ref<null | TuningApi.TuningTaskItem>(null);
 const tuningLoading = ref(false);
 const tuningHistory = ref<TuningApi.TuningTaskItem[]>([]);
+/** 最新整定任务详情（含 simulationResult，用于超调量等指标） */
+const tuningDetail = ref<null | TuningApi.TuningTaskDetail>(null);
 
 async function loadTuning(loopId: string): Promise<void> {
   tuningLoading.value = true;
@@ -153,6 +183,10 @@ async function loadTuning(loopId: string): Promise<void> {
     );
     tuningHistory.value = items;
     tuningLatest.value = items[0] ?? null;
+    // 拉取最新任务详情以获取仿真指标（超调量等）
+    tuningDetail.value = items[0]?.id
+      ? await getTuningTaskDetailApi(items[0].id).catch(() => null)
+      : null;
   } finally {
     tuningLoading.value = false;
   }
@@ -162,7 +196,7 @@ provide('tuningLatest', tuningLatest);
 provide('tuningLoading', tuningLoading);
 provide('loadTuning', loadTuning);
 
-// ===== 三区任务运行器 =====
+// ===== 三区任务运行器（评估/诊断/辨识为异步任务） =====
 const {
   assessment: assessTask,
   diagnosis: diagTask,
@@ -197,6 +231,11 @@ const {
       );
       tuningHistory.value = items;
       tuningLatest.value = items[0] ?? null;
+      if (items[0]?.id) {
+        tuningDetail.value = await getTuningTaskDetailApi(items[0].id).catch(
+          () => null,
+        );
+      }
     },
   },
 );
@@ -205,25 +244,85 @@ const {
 const assessModalOpen = ref(false);
 const diagModalOpen = ref(false);
 const tuningModalOpen = ref(false);
+const tuneParamModalOpen = ref(false);
+const simulateModalOpen = ref(false);
+const simulateResult = ref<null | TuningApi.SimulationResult>(null);
 
-// ===== 派生：72h 综合评分小时趋势（取整点小时评分值） =====
-const score72h = computed(() => {
-  const now = dayjs();
-  const data = scoreHistory.value.filter((s) => {
-    const t = s.tsStart;
-    return t && now.diff(dayjs(t), 'hour') <= 72;
-  });
-  return data.map((s) => (s.score ?? 0) as number);
-});
+// ===== 参数整定（同步 tunePidApi） =====
+const tuneLoading = ref(false);
+async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
+  if (!selectedLoopId.value || !tuningLatest.value) {
+    message.warning('请先进行回路辨识生成过程模型');
+    return;
+  }
+  const latest = tuningLatest.value;
+  if (!latest.modelType || !latest.modelParams) {
+    message.warning('当前无可用过程模型');
+    return;
+  }
+  tuneLoading.value = true;
+  try {
+    const result = await tunePidApi({
+      algorithm: payload.algorithm,
+      currentPid: currentPid.value ?? undefined,
+      loopId: selectedLoopId.value,
+      modelParams: latest.modelParams,
+      modelSource: 'IDENTIFICATION_RECORD',
+      modelType: latest.modelType,
+      riskConfirmed: true,
+      sourceRecordId: latest.id,
+    });
+    // 反写推荐 PID 到整定行
+    tuningLatest.value = { ...latest, recommendedPid: result.recommendedPid };
+    message.success('参数整定完成，已更新推荐 PID');
+  } catch (error: any) {
+    message.error(error?.message ?? '参数整定失败');
+  } finally {
+    tuneLoading.value = false;
+  }
+}
 
-// ===== 派生：整定拟合度趋势 =====
-const fittingTrend = computed(() =>
-  tuningHistory.value
-    .map((t) => t.fittingScore)
-    .filter((v): v is number => v !== null && v !== undefined)
-    .map((v) => v * 100)
-    .toReversed(),
-);
+// ===== 模拟仿真（同步 simulateTuningApi） =====
+const simulateLoading = ref(false);
+async function handleSimulate() {
+  if (!selectedLoopId.value || !tuningLatest.value) {
+    message.warning('请先进行回路辨识生成过程模型');
+    return;
+  }
+  const latest = tuningLatest.value;
+  if (!latest.modelType || !latest.modelParams) {
+    message.warning('当前无可用过程模型');
+    return;
+  }
+  if (!latest.recommendedPid) {
+    message.warning('请先进行参数整定生成推荐 PID');
+    return;
+  }
+  if (!currentPid.value) {
+    message.warning('未获取到当前 PID 参数');
+    return;
+  }
+  simulateLoading.value = true;
+  try {
+    const result = await simulateTuningApi({
+      currentPid: currentPid.value,
+      loopId: selectedLoopId.value,
+      modelParams: latest.modelParams,
+      modelSource: 'IDENTIFICATION_RECORD',
+      modelType: latest.modelType,
+      recommendedPid: latest.recommendedPid,
+      riskConfirmed: true,
+      sourceRecordId: latest.id,
+    });
+    simulateResult.value = result;
+    simulateModalOpen.value = true;
+    message.success('模拟仿真完成');
+  } catch (error: any) {
+    message.error(error?.message ?? '模拟仿真失败');
+  } finally {
+    simulateLoading.value = false;
+  }
+}
 
 // ===== 派生：诊断标签列表 =====
 const diagnosisLabels = computed(
@@ -248,6 +347,88 @@ const DIAGNOSIS_LABEL_NAME_MAP: Record<string, string> = {
   LOOSE_CONTROL: '控制过松',
 };
 
+// ===== 派生：概览区字段 =====
+function rangeText(
+  range: null | undefined | { max: null | number; min: null | number },
+  unit?: null | string,
+): string {
+  if (!range) return '—';
+  const { min, max } = range;
+  if (min == null && max == null) return '—';
+  return `${min ?? '—'} ~ ${max ?? '—'}${unit ? ` ${unit}` : ''}`;
+}
+
+const overviewFields = computed(() => {
+  const l = selectedLoop.value;
+  if (!l) return [];
+  const cv = l.currentValues;
+  const dh = l.dataHealth;
+  const validRatePct =
+    dh?.validRate == null ? null : `${(dh.validRate * 100).toFixed(1)}%`;
+  return [
+    { label: '位号', value: l.tagName },
+    { label: '名称', value: l.description || '—' },
+    { label: '量程', value: rangeText(l.pvRange, l.pvUnit) },
+    { label: '控制方式', value: l.controlMode || '—' },
+    {
+      label: '设定值',
+      value: cv?.sp == null ? '—' : `${cv.sp}${l.pvUnit ? ` ${l.pvUnit}` : ''}`,
+    },
+    {
+      label: '实时值',
+      value: cv?.pv == null ? '—' : `${cv.pv}${l.pvUnit ? ` ${l.pvUnit}` : ''}`,
+    },
+    {
+      label: '数据健康度',
+      value:
+        validRatePct == null
+          ? (dh?.confidenceLevel ?? '—')
+          : `${validRatePct} · ${dh?.confidenceLevel ?? '—'}`,
+    },
+  ];
+});
+
+// ===== 派生：整定行字段 =====
+const ALGORITHM_LABEL: Record<string, string> = {
+  COHEN_COON: 'Cohen-Coon',
+  IMC: 'IMC',
+  LAMBDA: 'Lambda',
+  SIMC: 'SIMC',
+  ZN: 'Ziegler-Nichols',
+};
+
+function pidText(pid?: null | TuningApi.PidParams): string {
+  if (!pid) return '—';
+  return `P=${pid.kp}, Ti=${pid.ti}s, Td=${pid.td}s`;
+}
+
+const modelParamsText = computed(() => {
+  const p = tuningLatest.value?.modelParams;
+  if (!p) return '—';
+  const parts: string[] = [];
+  if (p.K != null) parts.push(`K=${Number(p.K).toFixed(3)}`);
+  if (p.tau != null) parts.push(`τ=${Number(p.tau).toFixed(1)}s`);
+  if (p.theta != null) parts.push(`θ=${Number(p.theta).toFixed(1)}s`);
+  return parts.join(' / ') || '—';
+});
+
+const overshoot = computed(() => {
+  const m = tuningDetail.value?.simulationResult?.recommendedMetrics;
+  return m?.overshoot ?? null;
+});
+
+/** 上升时间（秒） */
+const riseTime = computed(() => {
+  const m = tuningDetail.value?.simulationResult?.recommendedMetrics;
+  return m?.riseTime ?? null;
+});
+
+/** 稳定时间（秒） */
+const settlingTime = computed(() => {
+  const m = tuningDetail.value?.simulationResult?.recommendedMetrics;
+  return m?.settlingTime ?? null;
+});
+
 // ===== AI 洞察两级门禁 =====
 const { gateStatus, gateTooltip, init: initAiGate } = useAiInsightGate();
 initAiGate();
@@ -259,7 +440,7 @@ function handleHelp() {
   showPageHelp({
     title: '回路工作台 帮助',
     content:
-      '左侧选择回路，右侧单页展示评估/诊断/整定概况。可直接发起评估、诊断、整定任务，任务完成后自动反写。「AI 洞察」基于当前回路生成性能分析。',
+      '左侧选择回路，右侧单页展示概览/评估/诊断/整定概况。可直接发起评估、诊断、辨识、整定、仿真任务，任务完成后自动反写。「AI 洞察」基于当前回路生成性能分析。',
   });
 }
 
@@ -296,20 +477,6 @@ function goHistory() {
   }
 }
 
-// ===== 整定行辅助 =====
-const ALGORITHM_LABEL: Record<string, string> = {
-  COHEN_COON: 'Cohen-Coon',
-  IMC: 'IMC',
-  LAMBDA: 'Lambda',
-  SIMC: 'SIMC',
-  ZN: 'Ziegler-Nichols',
-};
-
-function pidText(pid?: null | TuningApi.PidParams): string {
-  if (!pid) return '—';
-  return `P=${pid.kp}, Ti=${pid.ti}s, Td=${pid.td}s`;
-}
-
 // ===== 数据加载 =====
 async function loadLoopList(): Promise<void> {
   loopListLoading.value = true;
@@ -342,8 +509,9 @@ async function loadLoopList(): Promise<void> {
 function selectLoop(loopId: null | string): void {
   selectedLoopId.value = loopId;
   if (loopId) {
-    // router.replace 不新增历史记录/面包屑
-    router.replace({ query: { ...route.query, loopId } });
+    // router.replace 不新增历史记录；配合 meta.fullPathKey=false 不新增 tab。
+    // 用 name 明确路由，仅保留 loopId query，避免残留参数。
+    router.replace({ name: 'LoopWorkbench', query: { loopId } });
   }
 }
 
@@ -371,7 +539,7 @@ watch(
   },
 );
 
-// 选中回路变化时加载三区数据
+// 选中回路变化时加载四区数据
 watch(
   selectedLoopId,
   (newId) => {
@@ -379,12 +547,15 @@ watch(
       loadDiagnosis(newId);
       loadAssessment(newId);
       loadTuning(newId);
+      loadLoopDetail(newId);
     } else {
       diagnosisDetail.value = null;
       assessmentDetail.value = null;
       scoreHistory.value = [];
       tuningLatest.value = null;
       tuningHistory.value = [];
+      tuningDetail.value = null;
+      loopDetail.value = null;
     }
   },
   { immediate: true },
@@ -403,7 +574,7 @@ watch(
       </template>
     </ClpmPageToolbar>
 
-    <div class="flex h-[calc(100vh-140px)] gap-3">
+    <div class="flex h-[calc(100vh-140px)] gap-2">
       <!-- ===== 左侧：回路列表 ===== -->
       <div
         class="flex w-60 shrink-0 flex-col overflow-hidden rounded-lg border bg-white"
@@ -472,45 +643,34 @@ watch(
         </Spin>
       </div>
 
-      <!-- ===== 右侧：单页四区垂直布局 ===== -->
+      <!-- ===== 右侧：单页四区垂直布局（10/30/30/30） ===== -->
       <div class="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
         <template v-if="selectedLoop">
-          <!-- ① 顶部区 16%：回路摘要 + 趋势/历史按钮 -->
-          <div class="wb-top">
-            <div class="wb-top__info">
-              <span class="wb-top__tag">{{ selectedLoop.tagName }}</span>
-              <span class="wb-top__desc">{{
-                selectedLoop.description || '—'
-              }}</span>
-              <span class="wb-top__meta"
-                >类型 {{ selectedLoop.loopType || '—' }}</span
+          <!-- ① 回路概览 10% -->
+          <WorkbenchSectionCard
+            class="wb-overview"
+            title="回路概览"
+            icon="🛰️"
+            :loading="false"
+            :empty="false"
+          >
+            <div class="wb-overview__grid">
+              <div
+                v-for="field in overviewFields"
+                :key="field.label"
+                class="wb-overview__field"
               >
-              <span class="wb-top__meta"
-                >控制 {{ selectedLoop.controlMode || '—' }}</span
-              >
-              <span class="wb-top__meta"
-                >装置 {{ selectedLoop.unitName || '—' }}</span
-              >
-              <Tag
-                v-if="selectedLoop.confidenceLevel"
-                :color="
-                  ['A', 'B'].includes(selectedLoop.confidenceLevel)
-                    ? 'green'
-                    : selectedLoop.confidenceLevel === 'C'
-                      ? 'gold'
-                      : 'red'
-                "
-              >
-                可信度 {{ selectedLoop.confidenceLevel }}
-              </Tag>
+                <span class="wb-overview__label">{{ field.label }}</span>
+                <span class="wb-overview__value">{{ field.value }}</span>
+              </div>
             </div>
-            <div class="wb-top__actions">
+            <template #actions>
               <Button size="small" @click="goTrend">趋势</Button>
               <Button size="small" @click="goHistory">历史</Button>
-            </div>
-          </div>
+            </template>
+          </WorkbenchSectionCard>
 
-          <!-- ② 评估行 28% -->
+          <!-- ② 性能评估 30%（50/50：12 卡片 + 评分趋势） -->
           <WorkbenchSectionCard
             class="wb-row"
             title="性能评估"
@@ -523,7 +683,14 @@ watch(
               assessTask.isRunning ? assessTask.progressStage : null
             "
           >
-            <KpiMetricCards />
+            <div class="wb-split">
+              <div class="wb-split__left">
+                <KpiMetricCards />
+              </div>
+              <div class="wb-split__right">
+                <ScoreTrendChart />
+              </div>
+            </div>
             <template #actions>
               <Button
                 type="primary"
@@ -535,21 +702,9 @@ watch(
                 {{ assessTask.isRunning ? '评估中…' : '发起评估' }}
               </Button>
             </template>
-            <template #chart>
-              <div class="wb-chart">
-                <div class="wb-chart__label">72h 评分趋势</div>
-                <ScoreSparkline
-                  v-if="score72h.length >= 2"
-                  :data="score72h"
-                  :width="200"
-                  :height="48"
-                />
-                <span v-else class="wb-chart__empty">数据不足</span>
-              </div>
-            </template>
           </WorkbenchSectionCard>
 
-          <!-- ③ 诊断行 28% -->
+          <!-- ③ 回路诊断 30%（50/50：标签+置信度 + PV/OP·FFT 曲线） -->
           <WorkbenchSectionCard
             class="wb-row"
             title="回路诊断"
@@ -560,50 +715,61 @@ watch(
             :progress="diagTask.isRunning ? (diagTask.progress ?? 0) : null"
             :progress-stage="diagTask.isRunning ? diagTask.progressStage : null"
           >
-            <div v-if="diagnosisDetail" class="wb-diag">
-              <div class="wb-diag__row">
-                <span class="wb-diag__item">
-                  综合评分：
-                  <span class="font-semibold text-blue-600">
-                    {{ Number(diagnosisDetail.compositeScore).toFixed(2) }}
-                  </span>
-                </span>
-                <span class="wb-diag__item">
-                  融合置信度：
-                  <span class="font-semibold">
-                    {{
-                      diagnosisDetail.fusedConfidence == null
-                        ? '—'
-                        : Number(diagnosisDetail.fusedConfidence).toFixed(2)
-                    }}
-                  </span>
-                </span>
-                <span class="wb-diag__item">
-                  诊断时间：{{ formatTime(diagnosisDetail.diagnosedAt) }}
-                </span>
+            <div class="wb-split">
+              <div class="wb-split__left">
+                <div v-if="diagnosisDetail" class="wb-diag">
+                  <div class="wb-diag__cards">
+                    <div class="wb-diag__card">
+                      <span class="wb-diag__card-label">综合评分</span>
+                      <span class="wb-diag__card-value">
+                        {{ Number(diagnosisDetail.compositeScore).toFixed(2) }}
+                      </span>
+                    </div>
+                    <div class="wb-diag__card">
+                      <span class="wb-diag__card-label">融合置信度</span>
+                      <span class="wb-diag__card-value">
+                        {{
+                          diagnosisDetail.fusedConfidence == null
+                            ? '—'
+                            : Number(diagnosisDetail.fusedConfidence).toFixed(2)
+                        }}
+                      </span>
+                    </div>
+                    <div class="wb-diag__card">
+                      <span class="wb-diag__card-label">诊断时间</span>
+                      <span class="wb-diag__card-value wb-diag__card-value--sm">
+                        {{ formatTime(diagnosisDetail.diagnosedAt) }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="wb-diag__labels">
+                    <Tag
+                      v-for="(item, idx) in diagnosisLabels"
+                      :key="idx"
+                      :color="
+                        DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'
+                      "
+                    >
+                      {{
+                        item.labelName ||
+                        DIAGNOSIS_LABEL_NAME_MAP[item.label] ||
+                        item.label
+                      }}
+                      <span class="ml-1 text-gray-400">
+                        {{ Number(item.confidence).toFixed(2) }}
+                      </span>
+                    </Tag>
+                    <span
+                      v-if="diagnosisLabels.length === 0"
+                      class="text-xs text-gray-400"
+                    >
+                      未检测到异常标签
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div class="wb-diag__labels">
-                <span class="wb-diag__item">诊断标签：</span>
-                <Tag
-                  v-for="(item, idx) in diagnosisLabels"
-                  :key="idx"
-                  :color="DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'"
-                >
-                  {{
-                    item.labelName ||
-                    DIAGNOSIS_LABEL_NAME_MAP[item.label] ||
-                    item.label
-                  }}
-                  <span class="ml-1 text-gray-400">
-                    {{ Number(item.confidence).toFixed(2) }}
-                  </span>
-                </Tag>
-                <span
-                  v-if="diagnosisLabels.length === 0"
-                  class="text-xs text-gray-400"
-                >
-                  未检测到异常标签
-                </span>
+              <div class="wb-split__right">
+                <WorkbenchDiagnosisChart :loop-id="selectedLoopId" />
               </div>
             </div>
             <template #actions>
@@ -619,7 +785,7 @@ watch(
             </template>
           </WorkbenchSectionCard>
 
-          <!-- ④ 整定行 28% -->
+          <!-- ④ 回路整定 30%（50/50：当前PID+模型+指标 + 推荐 PID） -->
           <WorkbenchSectionCard
             class="wb-row"
             title="回路整定"
@@ -630,77 +796,125 @@ watch(
             :progress="tuneTask.isRunning ? (tuneTask.progress ?? 0) : null"
             :progress-stage="tuneTask.isRunning ? tuneTask.progressStage : null"
           >
-            <div v-if="tuningLatest" class="wb-tune">
-              <div class="wb-tune__row">
-                <span class="wb-tune__item">
-                  算法：
-                  <span class="font-medium">
-                    {{
-                      ALGORITHM_LABEL[tuningLatest.algorithm] ||
-                      tuningLatest.algorithm
-                    }}
-                  </span>
-                </span>
-                <span class="wb-tune__item">
-                  模型：{{ tuningLatest.modelType || '—' }}
-                </span>
-                <span class="wb-tune__item">
-                  拟合度：
-                  <span class="font-semibold">
-                    {{
-                      tuningLatest.fittingScore == null
-                        ? '—'
-                        : `${(tuningLatest.fittingScore * 100).toFixed(1)}%`
-                    }}
-                  </span>
-                </span>
-                <span v-if="tuningLatest.confidenceLevel" class="wb-tune__item">
-                  可信度：
-                  <Tag
-                    :color="
-                      ['A', 'B'].includes(tuningLatest.confidenceLevel)
-                        ? 'green'
-                        : tuningLatest.confidenceLevel === 'C'
-                          ? 'gold'
-                          : 'red'
-                    "
-                  >
-                    {{ tuningLatest.confidenceLevel }}
-                  </Tag>
-                </span>
-                <span class="wb-tune__item">
-                  时间：{{ formatTime(tuningLatest.createdAt) }}
-                </span>
+            <div class="wb-split">
+              <div class="wb-split__left">
+                <div class="wb-tune">
+                  <div class="wb-tune__row">
+                    <span class="wb-tune__item">
+                      当前 PID：
+                      <span class="font-medium">{{ pidText(currentPid) }}</span>
+                    </span>
+                    <span class="wb-tune__item">
+                      模型：{{ tuningLatest?.modelType || '—' }}
+                    </span>
+                    <span class="wb-tune__item">
+                      时间常数/参数：{{ modelParamsText }}
+                    </span>
+                  </div>
+                  <div class="wb-tune__row">
+                    <span class="wb-tune__item">
+                      算法：
+                      <span class="font-medium">
+                        {{
+                          ALGORITHM_LABEL[tuningLatest?.algorithm || ''] ||
+                          tuningLatest?.algorithm ||
+                          '—'
+                        }}
+                      </span>
+                    </span>
+                    <span class="wb-tune__item">
+                      拟合度：
+                      <span class="font-semibold">
+                        {{
+                          tuningLatest?.fittingScore == null
+                            ? '—'
+                            : `${(tuningLatest.fittingScore * 100).toFixed(1)}%`
+                        }}
+                      </span>
+                    </span>
+                    <span class="wb-tune__item">
+                      超调量：
+                      <span class="font-semibold">
+                        {{
+                          overshoot == null ? '—' : `${overshoot.toFixed(2)}%`
+                        }}
+                      </span>
+                    </span>
+                    <span class="wb-tune__item">
+                      上升时间：
+                      <span class="font-semibold">
+                        {{ riseTime == null ? '—' : `${riseTime.toFixed(1)}s` }}
+                      </span>
+                    </span>
+                    <span class="wb-tune__item">
+                      稳定时间：
+                      <span class="font-semibold">
+                        {{
+                          settlingTime == null
+                            ? '—'
+                            : `${settlingTime.toFixed(1)}s`
+                        }}
+                      </span>
+                    </span>
+                    <span
+                      v-if="tuningLatest?.confidenceLevel"
+                      class="wb-tune__item"
+                    >
+                      可信度：
+                      <Tag
+                        :color="
+                          ['A', 'B'].includes(tuningLatest.confidenceLevel)
+                            ? 'green'
+                            : tuningLatest.confidenceLevel === 'C'
+                              ? 'gold'
+                              : 'red'
+                        "
+                      >
+                        {{ tuningLatest.confidenceLevel }}
+                      </Tag>
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div class="wb-tune__pid">
-                推荐 PID：
-                <span class="font-medium">{{
-                  pidText(tuningLatest.recommendedPid)
-                }}</span>
+              <div class="wb-split__right">
+                <div class="wb-tune__recommend">
+                  <div class="wb-tune__recommend-label">推荐 PID</div>
+                  <div class="wb-tune__recommend-value">
+                    {{ pidText(tuningLatest?.recommendedPid) }}
+                  </div>
+                  <div class="wb-tune__recommend-time">
+                    更新时间：{{
+                      tuningLatest ? formatTime(tuningLatest.createdAt) : '—'
+                    }}
+                  </div>
+                </div>
               </div>
             </div>
             <template #actions>
               <Button
-                type="primary"
                 size="small"
                 :loading="tuneTask.isRunning"
                 :disabled="tuneTask.isRunning"
                 @click="tuningModalOpen = true"
               >
-                {{ tuneTask.isRunning ? '辨识中…' : '发起整定' }}
+                {{ tuneTask.isRunning ? '辨识中…' : '回路辨识' }}
               </Button>
-            </template>
-            <template #chart>
-              <div class="wb-chart">
-                <div class="wb-chart__label">拟合度趋势</div>
-                <ScoreSparkline
-                  v-if="fittingTrend.length >= 2"
-                  :data="fittingTrend"
-                  :width="200"
-                  :height="48"
-                />
-                <span v-else class="wb-chart__empty">数据不足</span>
-              </div>
+              <Button
+                size="small"
+                :loading="tuneLoading"
+                :disabled="tuneLoading || !tuningLatest"
+                @click="tuneParamModalOpen = true"
+              >
+                参数整定
+              </Button>
+              <Button
+                size="small"
+                :loading="simulateLoading"
+                :disabled="simulateLoading || !tuningLatest"
+                @click="handleSimulate"
+              >
+                模拟仿真
+              </Button>
             </template>
           </WorkbenchSectionCard>
         </template>
@@ -732,11 +946,28 @@ watch(
       @trigger="triggerDiagnosis"
     />
 
-    <!-- ===== 发起整定弹窗 ===== -->
+    <!-- ===== 回路辨识弹窗 ===== -->
     <TuningTriggerModal
       v-model:open="tuningModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerTuning"
+    />
+
+    <!-- ===== 参数整定弹窗 ===== -->
+    <TuneParamModal
+      v-model:open="tuneParamModalOpen"
+      :loop-tag-name="selectedLoop?.tagName"
+      :model-type="tuningLatest?.modelType ?? null"
+      :model-params="tuningLatest?.modelParams ?? null"
+      :current-pid="currentPid"
+      @tune="handleTune"
+    />
+
+    <!-- ===== 模拟仿真结果弹窗 ===== -->
+    <SimulateResultModal
+      v-model:open="simulateModalOpen"
+      :loop-tag-name="selectedLoop?.tagName"
+      :result="simulateResult"
     />
 
     <!-- ===== AI 洞察右抽屉 ===== -->
@@ -749,49 +980,10 @@ watch(
 </template>
 
 <style scoped>
-/* 四区垂直布局：顶部 16% + 三行各 28%（gap 用 2*8px=16px 计入） */
-.wb-top {
-  display: flex;
-  flex: 0 0 16%;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: #fff;
-  border: 1px solid hsl(var(--border) / 60%);
-  border-radius: 6px;
-}
-
-.wb-top__info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  min-width: 0;
-  font-size: 13px;
-}
-
-.wb-top__tag {
-  font-size: 16px;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-}
-
-.wb-top__desc {
-  color: hsl(var(--foreground) / 60%);
-  white-space: nowrap;
-}
-
-.wb-top__meta {
-  font-size: 12px;
-  color: hsl(var(--foreground) / 50%);
-  white-space: nowrap;
-}
-
-.wb-top__actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 6px;
+/* 四区垂直布局：概览 10% + 三行各 30%（gap 用 3*8px=24px 计入，行共享剩余空间） */
+.wb-overview {
+  flex: 0 0 10%;
+  min-height: 0;
 }
 
 .wb-row {
@@ -799,25 +991,101 @@ watch(
   min-height: 0;
 }
 
-.wb-diag,
-.wb-tune {
+/* 概览区字段网格（紧凑单行） */
+.wb-overview__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  align-items: center;
+  height: 100%;
+  font-size: 13px;
+}
+
+.wb-overview__field {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.wb-overview__label {
+  font-size: 12px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+.wb-overview__value {
+  font-weight: 500;
+  color: hsl(var(--foreground) / 85%);
+}
+
+/* 通用 50/50 分栏 */
+.wb-split {
+  display: flex;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.wb-split__left {
+  display: flex;
+  flex: 1 1 50%;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wb-split__right {
+  display: flex;
+  flex: 1 1 50%;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px;
+  background: hsl(var(--muted) / 20%);
+  border: 1px solid hsl(var(--border) / 40%);
+  border-radius: 4px;
+}
+
+/* 诊断行 */
+.wb-diag {
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
 }
 
-.wb-diag__row,
-.wb-tune__row {
+.wb-diag__cards {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 6px;
 }
 
-.wb-diag__item,
-.wb-tune__item {
-  color: hsl(var(--foreground) / 70%);
-  white-space: nowrap;
+.wb-diag__card {
+  display: flex;
+  flex: 1 1 30%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  background: hsl(var(--muted) / 30%);
+  border: 1px solid hsl(var(--border) / 50%);
+  border-radius: 4px;
+}
+
+.wb-diag__card-label {
+  font-size: 11px;
+  color: hsl(var(--foreground) / 50%);
+}
+
+.wb-diag__card-value {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
+}
+
+.wb-diag__card-value--sm {
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .wb-diag__labels {
@@ -827,24 +1095,46 @@ watch(
   align-items: center;
 }
 
-.wb-tune__pid {
-  color: hsl(var(--foreground) / 70%);
-}
-
-.wb-chart {
+/* 整定行 */
+.wb-tune {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  align-items: center;
+  gap: 6px;
+  font-size: 13px;
 }
 
-.wb-chart__label {
+.wb-tune__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.wb-tune__item {
+  color: hsl(var(--foreground) / 70%);
+  white-space: nowrap;
+}
+
+.wb-tune__recommend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  height: 100%;
+}
+
+.wb-tune__recommend-label {
+  font-size: 12px;
+  color: hsl(var(--foreground) / 50%);
+}
+
+.wb-tune__recommend-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: hsl(var(--primary));
+}
+
+.wb-tune__recommend-time {
   font-size: 11px;
   color: hsl(var(--foreground) / 45%);
-}
-
-.wb-chart__empty {
-  font-size: 11px;
-  color: hsl(var(--foreground) / 35%);
 }
 </style>

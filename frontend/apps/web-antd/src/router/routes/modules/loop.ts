@@ -37,6 +37,9 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           icon: 'lucide:layout-panel-top',
           title: '回路工作台',
+          // 工作台左侧切换回路仅更新 URL query（?loopId=），不应新增 tab/面包屑。
+          // fullPathKey:false 使 tab key 退化为 route.path，query 变化复用同一 tab。
+          fullPathKey: false,
         },
       },
       {
