@@ -43,6 +43,7 @@ import {
   message,
   Modal,
   Select,
+  Space,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -804,7 +805,7 @@ watch(
             />
           </template>
           <template v-else-if="column.key === 'diagnosisLabel'">
-            <a-space :size="4">
+            <Space :size="4">
               <Tag
                 :color="labelColorMap[record.diagnosisLabel as DiagnosisLabel]"
               >
@@ -844,7 +845,7 @@ watch(
                   )[record.diagnosisLabel]!.detail
                 "
               />
-            </a-space>
+            </Space>
           </template>
           <template v-else-if="column.key === 'compositeScore'">
             <span

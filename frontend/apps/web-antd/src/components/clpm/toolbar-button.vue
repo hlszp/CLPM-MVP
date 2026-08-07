@@ -118,30 +118,40 @@ const activeClass = 'clpm-toolbar-btn--active';
 </script>
 
 <template>
-  <Tooltip v-if="needTooltip" :title="tooltipText">
-    <Button
-      class="clpm-toolbar-btn"
-      :class="[
-        resolvedVariant === 'export' ? exportClass : '',
-        isActive ? activeClass : '',
-      ]"
-      :danger="isDanger"
-      :disabled="isDisabled"
-      :loading="loading"
-      :size="size"
-      :type="buttonType"
-      @click="handleClick"
-    >
-      <IconifyIcon
-        v-if="iconName"
-        :icon="iconName"
-        class="clpm-toolbar-btn__icon"
-      />
-      <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{
-        label
-      }}</span>
-    </Button>
-  </Tooltip>
+  <!--
+    Tooltip 分支用 <span> 包裹作为单元素根节点。
+    原因：antd Tooltip 内部 <Trigger> 渲染为 Fragment 根，若 ClpmToolbarButton
+    的根直接是 <Tooltip>，则外部指令（如 v-permission）会沿组件链向下传递
+    直到 Trigger 的 Fragment 根，触发 Vue 警告
+    "Runtime directive used on component with non-element root node"。
+    用原生 <span> 作为根节点让指令落在元素上，避免警告并保证指令生效。
+  -->
+  <span v-if="needTooltip" class="clpm-toolbar-btn-host">
+    <Tooltip :title="tooltipText">
+      <Button
+        class="clpm-toolbar-btn"
+        :class="[
+          resolvedVariant === 'export' ? exportClass : '',
+          isActive ? activeClass : '',
+        ]"
+        :danger="isDanger"
+        :disabled="isDisabled"
+        :loading="loading"
+        :size="size"
+        :type="buttonType"
+        @click="handleClick"
+      >
+        <IconifyIcon
+          v-if="iconName"
+          :icon="iconName"
+          class="clpm-toolbar-btn__icon"
+        />
+        <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{
+          label
+        }}</span>
+      </Button>
+    </Tooltip>
+  </span>
   <Button
     v-else
     class="clpm-toolbar-btn"
@@ -168,6 +178,16 @@ const activeClass = 'clpm-toolbar-btn--active';
 </template>
 
 <style scoped>
+/*
+  Tooltip 分支的宿主 <span>：作为单元素根节点承接外部指令（v-permission 等）。
+  inline-flex 让 <span> 紧贴内部 Button 尺寸，保持工具栏原有布局
+  （此前 Button 直接作为 flex item，现由 host 承担该角色，视觉无差异）。
+*/
+.clpm-toolbar-btn-host {
+  display: inline-flex;
+  align-items: center;
+}
+
 .clpm-toolbar-btn {
   display: inline-flex;
   gap: 4px;
