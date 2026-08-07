@@ -889,5 +889,54 @@ INSERT INTO diagnosis_threshold_override (id, diag_code, scope_type, scope_id, t
 ON CONFLICT (diag_code, scope_type, scope_id) DO NOTHING;
 
 -- =============================================================================
+-- 15. 智能预警规则引擎种子规则（5 条示例 + 订阅关系）
+-- 结合 27 条回路种子数据，覆盖 4 种规则类型与 3 种订阅范围：
+--   ① THRESHOLD/ALL  控制器输出饱和（OP≥95%，10min）→ ERROR
+--   ② THRESHOLD/LOOP V-2010 凝液闪蒸罐液位高高限（41LIC20117 PV≥90%，5min）→ CRITICAL
+--   ③ CONFIDENCE/ALL 数据可信度降级（等级劣于 C）→ WARN
+--   ④ COMPOSITE/LOOP V-4002 回流罐液位高且调节阀饱和（41LIC40108 PV≥85% AND OP≥95%，5min）→ CRITICAL
+--   ⑤ DRIFT/ALL      过程变量均值漂移（30min 均值偏离历史基线 20%，10min）→ WARN
+--     （DRIFT 求值为 Phase 2 能力，Phase 1 仅录入展示）
+-- 说明：ALL 范围订阅取首个活跃回路作占位 loop_id（外键完整性），求值时按 scope_type=ALL 展开到全部活跃回路。
+-- 幂等：固定 UUID + ON CONFLICT (id) DO NOTHING。
+-- =============================================================================
+INSERT INTO alert_rule (id, rule_code, rule_name, rule_type, dsl, description, priority, is_enabled, version, created_by, created_at) VALUES
+-- ① 控制器输出饱和（全回路）
+('00000000-0000-0000-0000-0a1a00000001', 'OP_SATURATION', '控制器输出饱和报警', 'THRESHOLD',
+ '{"ruleType":"THRESHOLD","scope":{"loopSelector":{"type":"ALL"}},"condition":{"metric":"OP","operator":">=","value":95},"durationSeconds":600,"cooldownSeconds":1800,"severity":"ERROR","actions":[{"type":"CREATE_EVENT"}],"priority":100,"dedupKey":"${loop_id}+${rule_id}"}'::jsonb,
+ '控制器输出（OP）持续 ≥95% 达 10 分钟，提示调节阀接近全开，存在饱和失效风险。适用于全部回路。',
+ 100, true, 1, 'system', NOW()),
+-- ② V-2010 凝液闪蒸罐液位高高限（指定回路 41LIC20117）
+('00000000-0000-0000-0000-0a1a00000002', 'LIC20117_PV_HIGH', 'V-2010 凝液闪蒸罐液位高高限', 'THRESHOLD',
+ '{"ruleType":"THRESHOLD","scope":{"loopSelector":{"type":"LOOP","value":"8c3ba471-2b9e-4f94-a387-9e7c82b1f9f5"}},"condition":{"metric":"PV","operator":">=","value":90},"durationSeconds":300,"cooldownSeconds":1800,"severity":"CRITICAL","actions":[{"type":"CREATE_EVENT"}],"priority":50,"dedupKey":"${loop_id}+${rule_id}"}'::jsonb,
+ 'V-2010 LP 洁净凝液闪蒸罐液位（41LIC20117，量程 0-100%）持续 ≥90% 达 5 分钟，触发高高限紧急预警。',
+ 50, true, 1, 'system', NOW()),
+-- ③ 数据可信度降级（全回路）
+('00000000-0000-0000-0000-0a1a00000003', 'CONFIDENCE_DEGRADED', '数据可信度降级告警', 'CONFIDENCE',
+ '{"ruleType":"CONFIDENCE","scope":{"loopSelector":{"type":"ALL"}},"condition":{"maxLevel":"C"},"durationSeconds":0,"cooldownSeconds":3600,"severity":"WARN","actions":[{"type":"CREATE_EVENT"}],"priority":150,"dedupKey":"${loop_id}+${rule_id}"}'::jsonb,
+ '回路可信度等级劣于 C（即 D 或 E）时触发，提示数据质量不足、评估结果不确定，需排查数据采集链路。',
+ 150, true, 1, 'system', NOW()),
+-- ④ 液位高且调节阀饱和（组合条件，指定回路 41LIC40108）
+('00000000-0000-0000-0000-0a1a00000004', 'LEVEL_HIGH_OP_SAT', '液位高且调节阀饱和', 'COMPOSITE',
+ '{"ruleType":"COMPOSITE","scope":{"loopSelector":{"type":"LOOP","value":"c4073df9-5983-45a5-aaf3-171dcbe26361"}},"condition":{"logic":"AND","operands":[{"type":"THRESHOLD","metric":"PV","operator":">=","value":85},{"type":"THRESHOLD","metric":"OP","operator":">=","value":95}]},"durationSeconds":300,"cooldownSeconds":1800,"severity":"CRITICAL","actions":[{"type":"CREATE_EVENT"}],"priority":30,"dedupKey":"${loop_id}+${rule_id}"}'::jsonb,
+ 'V-4002 低压脱丙烷塔回流罐液位（41LIC40108，量程 0-100%）≥85% 且控制器输出 ≥95% 持续 5 分钟，提示调节已接近失效，存在失控风险。',
+ 30, true, 1, 'system', NOW()),
+-- ⑤ 过程变量均值漂移（全回路，DRIFT Phase 2 求值）
+('00000000-0000-0000-0000-0a1a00000005', 'PV_MEAN_DRIFT', '过程变量均值漂移', 'DRIFT',
+ '{"ruleType":"DRIFT","scope":{"loopSelector":{"type":"ALL"}},"condition":{"metric":"PV","statistic":"MEAN","windowSeconds":1800,"baseline":{"type":"HISTORICAL"},"deviationThreshold":20,"deviationType":"RELATIVE"},"durationSeconds":600,"cooldownSeconds":3600,"severity":"WARN","actions":[{"type":"CREATE_EVENT"}],"priority":200,"dedupKey":"${loop_id}+${rule_id}"}'::jsonb,
+ '过程变量（PV）30 分钟窗口均值偏离历史基线 ≥20% 持续 10 分钟，提示工况发生漂移。DRIFT 规则求值为 Phase 2 能力，Phase 1 仅录入展示。',
+ 200, true, 1, 'system', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- 订阅关系（ALL 范围以首个活跃回路 41FIC20021_PIDA 为占位 loop_id）
+INSERT INTO alert_rule_subscription (id, rule_id, loop_id, scope_type, scope_value, is_active, created_by, created_at) VALUES
+('00000000-0000-0000-0000-0a1b00000001', '00000000-0000-0000-0000-0a1a00000001', 'dcd77662-ddf5-4643-befe-18b4a58b0622', 'ALL', NULL, true, 'system', NOW()),
+('00000000-0000-0000-0000-0a1b00000002', '00000000-0000-0000-0000-0a1a00000002', '8c3ba471-2b9e-4f94-a387-9e7c82b1f9f5', 'LOOP', NULL, true, 'system', NOW()),
+('00000000-0000-0000-0000-0a1b00000003', '00000000-0000-0000-0000-0a1a00000003', 'dcd77662-ddf5-4643-befe-18b4a58b0622', 'ALL', NULL, true, 'system', NOW()),
+('00000000-0000-0000-0000-0a1b00000004', '00000000-0000-0000-0000-0a1a00000004', 'c4073df9-5983-45a5-aaf3-171dcbe26361', 'LOOP', NULL, true, 'system', NOW()),
+('00000000-0000-0000-0000-0a1b00000005', '00000000-0000-0000-0000-0a1a00000005', 'dcd77662-ddf5-4643-befe-18b4a58b0622', 'ALL', NULL, true, 'system', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================
