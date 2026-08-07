@@ -35,16 +35,18 @@ import {
   resolveEventApi,
 } from '#/api/alert';
 import { formatTime } from '#/utils/format';
+import { SEVERITY_LABEL } from '#/constants/clpm-ui';
 
 defineOptions({ name: 'AlertEvents' });
+
+// 严重度中文标签（对齐 clpm-ui.ts 统一映射，与诊断/跟踪模块共用）
+const severityLabel = SEVERITY_LABEL;
 
 const userStore = useUserStore();
 const canEdit = computed(() =>
   ['ADMIN', 'IC_ENGINEER'].includes(userStore.userInfo?.roles?.[0] ?? ''),
 );
-const canArchive = computed(
-  () => userStore.userInfo?.roles?.[0] === 'ADMIN',
-);
+const canArchive = computed(() => userStore.userInfo?.roles?.[0] === 'ADMIN');
 
 // 列表状态
 const loading = ref(false);
@@ -103,14 +105,24 @@ const columns: TableColumnsType = [
     ellipsis: true,
     customRender: ({ record }) => record.loopName || record.loopId.slice(0, 8),
   },
-  { title: '规则', dataIndex: 'ruleCode', key: 'ruleCode', width: 160, ellipsis: true },
+  {
+    title: '规则',
+    dataIndex: 'ruleCode',
+    key: 'ruleCode',
+    width: 160,
+    ellipsis: true,
+  },
   {
     title: '严重度',
     dataIndex: 'severity',
     key: 'severity',
     width: 90,
     customRender: ({ value }) =>
-      h(Tag, { color: severityColor[value as AlertApi.Severity] }, () => value),
+      h(
+        Tag,
+        { color: severityColor[value as AlertApi.Severity] },
+        () => severityLabel[value as AlertApi.Severity] ?? value,
+      ),
   },
   {
     title: '状态',
@@ -305,7 +317,7 @@ onMounted(() => {
           style="width: 120px"
           :options="
             (['CRITICAL', 'ERROR', 'WARN', 'INFO'] as AlertApi.Severity[]).map(
-              (v) => ({ value: v, label: v }),
+              (v) => ({ value: v, label: `${severityLabel[v]}（${v}）` }),
             )
           "
         />
@@ -400,12 +412,7 @@ onMounted(() => {
       placement="right"
       :width="640"
     >
-      <Descriptions
-        v-if="currentEvent"
-        :column="1"
-        bordered
-        size="small"
-      >
+      <Descriptions v-if="currentEvent" :column="1" bordered size="small">
         <DescriptionsItem label="事件ID">{{
           currentEvent.eventId
         }}</DescriptionsItem>
@@ -420,7 +427,7 @@ onMounted(() => {
         }}</DescriptionsItem>
         <DescriptionsItem label="严重度">
           <Tag :color="severityColor[currentEvent.severity]">{{
-            currentEvent.severity
+            severityLabel[currentEvent.severity] ?? currentEvent.severity
           }}</Tag>
         </DescriptionsItem>
         <DescriptionsItem label="状态">

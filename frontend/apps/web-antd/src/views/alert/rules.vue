@@ -34,8 +34,16 @@ import {
   updateAlertRuleApi,
 } from '#/api/alert';
 import { formatTime } from '#/utils/format';
+import { ALERT_METRIC_LABEL, ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
 
 defineOptions({ name: 'AlertRules' });
+
+// 规则类型中文标签（对齐 clpm-ui.ts 统一映射）
+const ruleTypeLabel = ALERT_RULE_TYPE_LABEL;
+// DSL 指标名中文提示文本（编辑器下方帮助说明）
+const metricHint = Object.entries(ALERT_METRIC_LABEL)
+  .map(([k, v]) => `${k}=${v}`)
+  .join('；');
 
 // 列表
 const loading = ref(false);
@@ -142,7 +150,11 @@ const columns: TableColumnsType = [
     key: 'ruleType',
     width: 110,
     customRender: ({ value }) =>
-      h(Tag, { color: ruleTypeColor[value as AlertApi.RuleType] }, () => value),
+      h(
+        Tag,
+        { color: ruleTypeColor[value as AlertApi.RuleType] },
+        () => ruleTypeLabel[value as AlertApi.RuleType] ?? value,
+      ),
   },
   { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
   {
@@ -177,9 +189,7 @@ async function loadRules() {
     const res = await getAlertRulesApi({
       ruleType: query.ruleType,
       isEnabled:
-        query.isEnabled === undefined
-          ? undefined
-          : query.isEnabled === 'true',
+        query.isEnabled === undefined ? undefined : query.isEnabled === 'true',
       limit: query.pageSize,
       offset: (query.page - 1) * query.pageSize,
     });
@@ -356,9 +366,14 @@ onMounted(() => {
           placeholder="全部"
           style="width: 140px"
           :options="
-            (['THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE'] as AlertApi.RuleType[]).map(
-              (v) => ({ value: v, label: v }),
-            )
+            (
+              [
+                'THRESHOLD',
+                'DRIFT',
+                'COMPOSITE',
+                'CONFIDENCE',
+              ] as AlertApi.RuleType[]
+            ).map((v) => ({ value: v, label: `${ruleTypeLabel[v]}（${v}）` }))
           "
         />
       </FormItem>
@@ -465,12 +480,17 @@ onMounted(() => {
               v-model:value="editForm.ruleType"
               :disabled="editMode === 'edit'"
               :options="
-                ([
-                  'THRESHOLD',
-                  'DRIFT',
-                  'COMPOSITE',
-                  'CONFIDENCE',
-                ] as AlertApi.RuleType[]).map((v) => ({ value: v, label: v }))
+                (
+                  [
+                    'THRESHOLD',
+                    'DRIFT',
+                    'COMPOSITE',
+                    'CONFIDENCE',
+                  ] as AlertApi.RuleType[]
+                ).map((v) => ({
+                  value: v,
+                  label: `${ruleTypeLabel[v]}（${v}）`,
+                }))
               "
               @change="handleRuleTypeChange"
             />
@@ -502,6 +522,13 @@ onMounted(() => {
             class="font-mono text-xs"
             placeholder="规则 DSL JSON"
           />
+          <div class="mt-1 text-xs text-gray-400 leading-5">
+            <div>指标名对照：{{ metricHint }}</div>
+            <div>
+              字段保留英文键名（ruleType/scope/condition/durationSeconds/cooldownSeconds/severity/actions
+              等），以对齐后端 DSL 校验；中文仅用于页面展示。
+            </div>
+          </div>
         </FormItem>
       </Form>
     </Modal>

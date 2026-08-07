@@ -127,7 +127,9 @@ class AlertWebSocket {
       MAX_RECONNECT_DELAY,
     );
     if (import.meta.env.DEV) {
-      console.warn(`[AlertWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`);
+      console.warn(
+        `[AlertWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`,
+      );
     }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

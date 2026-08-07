@@ -276,3 +276,109 @@ export const TAG_SLOT_TERM_EXPLANATIONS: Record<string, TermExplanation> = {
     detail: '从关联 Tag 实时读取，平台不回写 DCS；缺省不影响 KPI 评估',
   },
 };
+
+// ---------------------------------------------------------------------------
+// 智能预警规则引擎 — 枚举值中文映射
+// 说明：DSL 技术配置（JSON 编辑框）保留英文键名以对齐后端校验；
+//       列表 Tag、筛选下拉、详情展示等面向用户的文本统一显示中文。
+// ---------------------------------------------------------------------------
+
+/** 规则类型 → 中文 */
+export const ALERT_RULE_TYPE_LABEL: Record<
+  'COMPOSITE' | 'CONFIDENCE' | 'DRIFT' | 'THRESHOLD',
+  string
+> = {
+  THRESHOLD: '阈值',
+  DRIFT: '漂移',
+  COMPOSITE: '组合',
+  CONFIDENCE: '可信度',
+};
+
+/** 监控指标 → 中文（对齐 7 个 Tag 角色） */
+export const ALERT_METRIC_LABEL: Record<string, string> = {
+  PV: '过程变量 PV',
+  SP: '设定值 SP',
+  OP: '控制器输出 OP',
+  MODE: '控制模式 MODE',
+  PID_P: '比例增益 P',
+  PID_I: '积分时间 I',
+  PID_D: '微分时间 D',
+};
+
+/** 订阅范围类型 → 中文 */
+export const ALERT_SCOPE_TYPE_LABEL: Record<
+  'ALL' | 'CONTROL_TYPE' | 'LOOP' | 'PLANT',
+  string
+> = {
+  ALL: '全部回路',
+  LOOP: '指定回路',
+  PLANT: '按装置',
+  CONTROL_TYPE: '按控制类型',
+};
+
+/** 统计量 → 中文（DRIFT 规则 condition.statistic） */
+export const ALERT_STATISTIC_LABEL: Record<
+  'MAX' | 'MEAN' | 'MIN' | 'P95' | 'P99' | 'STDDEV',
+  string
+> = {
+  MEAN: '均值',
+  STDDEV: '标准差',
+  P95: '95 分位',
+  P99: '99 分位',
+  MIN: '最小值',
+  MAX: '最大值',
+};
+
+/** 偏差类型 → 中文（DRIFT 规则 condition.deviationType） */
+export const ALERT_DEVIATION_TYPE_LABEL: Record<
+  'ABSOLUTE' | 'RELATIVE' | 'SIGMA',
+  string
+> = {
+  ABSOLUTE: '绝对偏差',
+  RELATIVE: '相对偏差',
+  SIGMA: '标准差倍数',
+};
+
+/** 基线类型 → 中文（DRIFT 规则 condition.baseline.type） */
+export const ALERT_BASELINE_TYPE_LABEL: Record<
+  'HISTORICAL' | 'RULE_BASED' | 'STATIC',
+  string
+> = {
+  STATIC: '静态值',
+  HISTORICAL: '历史基线',
+  RULE_BASED: '规则推导',
+};
+
+/** 组合逻辑 → 中文（COMPOSITE 规则 condition.logic） */
+export const ALERT_LOGIC_LABEL: Record<
+  'AND' | 'NOT' | 'OR' | 'SEQUENCE',
+  string
+> = {
+  AND: '全部满足',
+  OR: '任一满足',
+  NOT: '取反',
+  SEQUENCE: '时序',
+};
+
+/** 动作类型 → 中文（DSL actions[].type） */
+export const ALERT_ACTION_TYPE_LABEL: Record<
+  'CREATE_EVENT' | 'CREATE_TRACKER' | 'NOTIFY',
+  string
+> = {
+  CREATE_EVENT: '生成事件',
+  CREATE_TRACKER: '创建工单',
+  NOTIFY: '通知',
+};
+
+/** 比较运算符 → 中文（THRESHOLD 规则 condition.operator） */
+export const ALERT_OPERATOR_LABEL: Record<string, string> = {
+  '>': '大于',
+  '>=': '大于等于',
+  '<': '小于',
+  '<=': '小于等于',
+  '==': '等于',
+  '!=': '不等于',
+  IN: '属于',
+  NOT_IN: '不属于',
+  RATE_OF_CHANGE: '变化率',
+};

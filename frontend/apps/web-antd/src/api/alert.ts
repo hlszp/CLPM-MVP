@@ -194,7 +194,9 @@ export function getAlertRulesApi(params?: {
   limit?: number;
   offset?: number;
 }) {
-  return requestClient.get<AlertApi.RuleListResult>(`${BASE}/rules`, { params });
+  return requestClient.get<AlertApi.RuleListResult>(`${BASE}/rules`, {
+    params,
+  });
 }
 
 export function createAlertRuleApi(data: AlertApi.RuleCreateParams) {
@@ -269,20 +271,14 @@ export function getAlertEventApi(eventId: string) {
   return requestClient.get<AlertApi.EventItem>(`${BASE}/events/${eventId}`);
 }
 
-export function acknowledgeEventApi(
-  eventId: string,
-  note?: string,
-) {
+export function acknowledgeEventApi(eventId: string, note?: string) {
   return requestClient.post<AlertApi.EventItem>(
     `${BASE}/events/${eventId}/acknowledge`,
     { note },
   );
 }
 
-export function resolveEventApi(
-  eventId: string,
-  resolutionNote: string,
-) {
+export function resolveEventApi(eventId: string, resolutionNote: string) {
   return requestClient.post<AlertApi.EventItem>(
     `${BASE}/events/${eventId}/resolve`,
     { resolutionNote },
@@ -316,10 +312,10 @@ export function getSuppressionsApi(params?: {
   limit?: number;
   offset?: number;
 }) {
-  return requestClient.get<{ total: number; items: AlertApi.SuppressionItem[] }>(
-    `${BASE}/suppressions`,
-    { params },
-  );
+  return requestClient.get<{
+    total: number;
+    items: AlertApi.SuppressionItem[];
+  }>(`${BASE}/suppressions`, { params });
 }
 
 export function createSuppressionApi(data: AlertApi.SuppressionCreateParams) {
@@ -402,5 +398,8 @@ export namespace AlertApi {
 }
 
 export function dryRunAlertRuleApi(data: AlertApi.DryRunParams) {
-  return requestClient.post<AlertApi.DryRunResult>(`${BASE}/rules/dry-run`, data);
+  return requestClient.post<AlertApi.DryRunResult>(
+    `${BASE}/rules/dry-run`,
+    data,
+  );
 }
