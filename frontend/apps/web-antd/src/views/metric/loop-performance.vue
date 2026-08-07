@@ -740,10 +740,7 @@ const selectedRowKeys = ref<string[]>([]);
 const rowSelection = computed(() => ({
   type: 'radio' as const,
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (
-    keys: (number | string)[],
-    selectedRows: LoopPerformanceRow[],
-  ) => {
+  onChange: (keys: (number | string)[], selectedRows: LoopPerformanceRow[]) => {
     selectedRowKeys.value = keys.map(String);
     selectedLoopId.value = selectedRows[0]?.loopId ?? undefined;
   },
@@ -1551,7 +1548,9 @@ onMounted(async () => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'action'">
-            <div class="flex items-center justify-center gap-1 whitespace-nowrap">
+            <div
+              class="flex items-center justify-center gap-1 whitespace-nowrap"
+            >
               <Button
                 type="link"
                 size="small"
@@ -2411,6 +2410,7 @@ onMounted(async () => {
 
 :deep(.ant-table-cell) {
   white-space: nowrap;
+
   /* 隐藏单元格竖线（列分隔线） */
   border-inline-end-width: 0 !important;
 }

@@ -80,7 +80,11 @@ export function saveLlmConfigApi(data: LlmApi.LlmConfigSaveParams) {
  * 超时设为 60s：后端会向 LLM 服务发 HTTP 请求，默认 10s 不够。
  */
 export function testLlmConnectionApi() {
-  return requestClient.post<LlmApi.LlmTestResult>(`${LLM_BASE}/test`, {}, {
-    timeout: 60_000,
-  });
+  return requestClient.post<LlmApi.LlmTestResult>(
+    `${LLM_BASE}/test`,
+    {},
+    {
+      timeout: 60_000,
+    },
+  );
 }
