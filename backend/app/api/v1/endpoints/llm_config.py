@@ -319,7 +319,7 @@ async def test_llm_connection(
 
     仅 ADMIN 可用（避免 IC_ENGINEER 频繁测试消耗 token）。
     """
-    from app.services.llm_provider import _load_llm_config
+    from app.services.llm_provider import _load_llm_config, build_chat_url
 
     try:
         config = await _load_llm_config(db)
@@ -333,7 +333,7 @@ async def test_llm_connection(
             ).model_dump()
         )
 
-    url = f"{config['endpoint']}/v1/chat/completions"
+    url = build_chat_url(str(config["endpoint"]))
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {config['apiKey']}",

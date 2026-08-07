@@ -510,3 +510,65 @@ class TestTestLlmConnection:
         assert data["success"] is False
         assert "配置不完整" in data["message"]
         assert data["latencyMs"] is None
+
+
+# ===========================================================================
+# build_chat_url — endpoint 归一化（避免 /v1 重复拼接）
+# ===========================================================================
+
+
+class TestBuildChatUrl:
+    """测试 endpoint 归一化与 chat URL 构造。"""
+
+    def test_plain_domain(self) -> None:
+        """纯域名 → 直接拼接 /v1/chat/completions。"""
+        from app.services.llm_provider import build_chat_url
+
+        assert (
+            build_chat_url("https://api.openai.com") == "https://api.openai.com/v1/chat/completions"
+        )
+
+    def test_trailing_slash(self) -> None:
+        """尾部斜杠 → 去除后拼接。"""
+        from app.services.llm_provider import build_chat_url
+
+        assert (
+            build_chat_url("https://api.openai.com/")
+            == "https://api.openai.com/v1/chat/completions"
+        )
+
+    def test_with_v1_suffix(self) -> None:
+        """endpoint 已含 /v1 → 去除后拼接，避免 /v1/v1。"""
+        from app.services.llm_provider import build_chat_url
+
+        assert (
+            build_chat_url("https://api.openai.com/v1")
+            == "https://api.openai.com/v1/chat/completions"
+        )
+
+    def test_with_v1_trailing_slash(self) -> None:
+        """endpoint 已含 /v1/ → 去除后拼接。"""
+        from app.services.llm_provider import build_chat_url
+
+        assert (
+            build_chat_url("https://api.openai.com/v1/")
+            == "https://api.openai.com/v1/chat/completions"
+        )
+
+    def test_with_whitespace(self) -> None:
+        """前后空白 → strip 后拼接。"""
+        from app.services.llm_provider import build_chat_url
+
+        assert (
+            build_chat_url("  https://api.deepseek.com/v1  ")
+            == "https://api.deepseek.com/v1/chat/completions"
+        )
+
+    def test_custom_path(self) -> None:
+        """自定义路径前缀 → 保留路径，去尾部 /v1。"""
+        from app.services.llm_provider import build_chat_url
+
+        assert (
+            build_chat_url("https://corp.internal/llm-proxy/v1")
+            == "https://corp.internal/llm-proxy/v1/chat/completions"
+        )

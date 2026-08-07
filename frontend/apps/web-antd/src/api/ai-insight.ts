@@ -55,6 +55,8 @@ const BASE = '/ai-insight';
  * 生成 AI 洞察（4 场景统一入口）
  *
  * 权限：ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT（SPONSOR 只读禁止）。
+ *
+ * 超时设为 120s：LLM 推理通常 15-60s，默认 10s 会导致 timeout。
  */
 export function generateAiInsightApi(
   scene: AiInsightApi.SceneId | string,
@@ -63,6 +65,7 @@ export function generateAiInsightApi(
   return requestClient.post<AiInsightApi.InsightResult>(
     `${BASE}/${scene}`,
     data ?? {},
+    { timeout: 120_000 },
   );
 }
 

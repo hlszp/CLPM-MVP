@@ -77,7 +77,10 @@ export function saveLlmConfigApi(data: LlmApi.LlmConfigSaveParams) {
  * 连接测试（仅 ADMIN）
  *
  * 向已配置的 LLM 服务发一条 ping 请求，返回成功/失败 + 延迟。
+ * 超时设为 60s：后端会向 LLM 服务发 HTTP 请求，默认 10s 不够。
  */
 export function testLlmConnectionApi() {
-  return requestClient.post<LlmApi.LlmTestResult>(`${LLM_BASE}/test`, {});
+  return requestClient.post<LlmApi.LlmTestResult>(`${LLM_BASE}/test`, {}, {
+    timeout: 60_000,
+  });
 }

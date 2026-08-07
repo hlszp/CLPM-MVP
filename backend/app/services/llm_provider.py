@@ -43,6 +43,34 @@ async def _get_config_value(db: AsyncSession, key: str) -> str | None:
     return cfg.value if cfg else None
 
 
+def _normalize_endpoint(endpoint: str) -> str:
+    """归一化 LLM endpoint URL，避免 ``/v1`` 重复拼接。
+
+    用户可能填入以下形式（均视为合法）：
+    - ``https://api.openai.com``
+    - ``https://api.openai.com/``
+    - ``https://api.openai.com/v1``
+    - ``https://api.openai.com/v1/``
+
+    统一输出不含尾部 ``/v1`` 和斜杠的根地址，由调用方拼接
+    ``/v1/chat/completions``。
+    """
+    url = endpoint.strip().rstrip("/")
+    # 去除尾部 /v1（用户按 LLM 厂商文档填入时常带 /v1）
+    if url.endswith("/v1"):
+        url = url[:-3]
+    return url
+
+
+def build_chat_url(endpoint: str) -> str:
+    """构造 OpenAI 兼容 chat completions URL。
+
+    自动处理 endpoint 尾部斜杠和多余的 ``/v1``，确保最终 URL 为
+    ``{base}/v1/chat/completions`` 而非 ``/v1/v1/chat/completions``。
+    """
+    return f"{_normalize_endpoint(endpoint)}/v1/chat/completions"
+
+
 async def is_llm_available(db: AsyncSession) -> bool:
     """检查 LLM 是否已启用且配置完整。
 
@@ -124,8 +152,8 @@ async def call_llm(
     timeout = float(config["timeout"])
     max_tokens = int(config["maxTokens"])
 
-    # OpenAI 兼容接口
-    url = f"{endpoint.rstrip('/')}/v1/chat/completions"
+    # OpenAI 兼容接口（归一化 endpoint，避免 /v1 重复拼接）
+    url = build_chat_url(endpoint)
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
