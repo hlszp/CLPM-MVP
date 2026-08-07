@@ -1,7 +1,7 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.6
+**当前版本**：v2.7
 **发布日期**：2026-08-07
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D）  
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
@@ -12,6 +12,7 @@
 **v2.4 修订摘要（2026-08-05，IA 整改 P3-01）**：整定知识库不可变快照——新增 `TuningKnowledgeEntry` 表（`tuning_knowledge_entry`，第 38 张 ORM 表）；登记 `generate_knowledge_entry` 验证钩子（hybrid 关联 `tuning_record_id` + 幂等 `on_conflict_do_update`）；登记 3 个知识库 API 端点（`GET /tuning/knowledge-base` 列表、`GET /tuning/knowledge-base/{id}` 详情、`GET /tuning/knowledge-base/similar` 相似案例）；`ActionTracker` 新增 `tuning_record_id` 外键（`ondelete=SET NULL`）；`TrackerStatusUpdate` schema 新增 `tuningRecordId` 字段（VERIFYING 时可选，用于知识库生成）。详见 `docs/过程文档/clpm-ia-rectification-task-checklist-2026-08-05.md` §P3-01
 **v2.5 修订摘要（2026-08-06，IA 整改 P3-04 AI 洞察全局赋能）**：登记 LLM 配置 API（`/api/v1/configs/llm`，6 个 sys_config 键：`llm.enabled/endpoint/api_key/model/timeout/max_tokens`，API Key 脱敏返回，仅 ADMIN 可改）与 AI 洞察通用服务 API（`POST /api/v1/ai-insight/{scene}`，4 场景 diagnosis/performance/tuning/workbench 统一入口，`mode=auto/llm/template`，LLM 失败自动 fallback 规则模板）；登记 `SceneStrategy` 抽象（`load_context/build_system_prompt/build_user_prompt/generate_template`）与 `AiInsightContext.knowledgeContext` RAG 扩展点（第一期恒 None）；旧 `POST /diagnosis/{loopId}/interpret` 内部代理到 `scene=diagnosis`，字段映射 `insight→interpretation` 向后兼容；前端通用组件 `ClpmAiInsight`（scene/loopId/taskId/variant/hideWhenDisabled props，LLM 未启用时按 `hideWhenDisabled` 决定隐藏或显示启用提示），4 场景嵌入（诊断详情第 5 Tab、性能详情综合评估 Tab、整定仿真右侧栏保存后、工作台 KpiStrip 后）。详见 `docs/过程文档/clpm-ia-rectification-task-checklist-2026-08-05.md` §P3-04
 **v2.6 修订摘要（2026-08-07，IA 重构 Phase A-D 全量合入）**：前端信息架构从"6 模块 + 1 门户"重构为"7 模块"（监控/回路/评估/诊断/整定/配置/系统），引入双轴导航（实体轴回路工作台 + 职能轴评估/诊断/整定）与工程/操作分离原则（结构性配置集中到 `/config/*`，操作性调参保留业务模块内联）。Phase A：7 菜单重组 + 配置集中化（9 项结构性配置迁入 `/config/*`）+ AI 右抽屉替换 4 处内嵌 + 跨模块上下文传递基建（`?loopId=`/`?taskId=`）+ 11 条旧路由 legacy redirect；Phase B：回路工作台 6 Tab（概览/评估/诊断/整定/效果对比/时间线），`/loop/detail/:id` 重定向到 `/loop/workbench?loopId=:id`；Phase C：诊断三区重构（结论先行 + 问题定位路径 + 证据折叠）+ 列表页新增 `/diagnosis/loop-analysis` + `/diagnosis/records` 合并入 `/diagnosis/tasks?tab=history` + `/diagnosis/visualization` 合并入详情证据区；Phase D：整定 3 页向导整合为 `/tuning/detail` 单页 + 4 锚点导航（①过程辨识 ②PID推荐 ③闭环仿真 ④方案确认）+ 7 条旧路由重定向 + 方案确认留痕（不下写 DCS）。全方案后端零改动，详见 `docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`
+**v2.7 修订摘要（2026-08-07，回路工作台单页四区重构 + 自动诊断 Beat 停用）**：回路工作台从 v2.6 的 6 Tab 设计重构为**单页四区垂直布局**——概览区(10%) + 性能评估行(30%) + 回路诊断行(30%) + 回路整定行(30%)，一页内聚合评估/诊断/整定概况并可直接发起任务、实时反写显示。路由约束：`/loop/workbench` 的 meta 必须设 `fullPathKey: false`，左侧切换回路用 `router.replace` 更新 `?loopId=` query，避免 vben tab key 基于 fullPath 导致 query 变化新建 tab/面包屑。性能评估行 12 KPI 卡片(6×2) + 评分趋势图(8h/12h/24h/48h/72h 切换)；诊断行支持 PV/OP 波形 ↔ FFT 频谱切换；整定行显示当前 PID/模型(K/τ/θ)/超调量/上升时间/稳定时间 + 推荐 PID + 三按钮(回路辨识/参数整定/模拟仿真)。前端约定：ECharts option 中所有 `type` 字段必须 `as const` 断言，否则 TS 推断为 string 致类型检查失败。后端变更：`diagnosis_engine.py` 中 `diagnosis-engine-hourly` 与 `diagnosis-engine-checkup-8h` 两个 Celery Beat 已注释停用（保留手动触发函数），仅保留小时级自动性能评估。详见 commit `5e216ba8`。
 
 ## 1. 定位
 
@@ -33,7 +34,7 @@ CLPM 当前采用 **7 模块**（v2.6 IA 重构 Phase A-D 全量合入）：监�
 | 模块 | 轴 | 当前设计意图 | 当前主要路由 |
 |---|---|---|---|
 | 监控 | — | 运行驾驶舱（系统概览/回路实时/待办/数据链路健康） | `/dashboard/workbench`、`/loop/monitor` |
-| 回路 | 实体轴 | 单回路 360° 一站式工作台（6 Tab：概览/评估/诊断/整定/效果对比/时间线） | `/loop/workbench`；`/loop/detail/:id` → redirect `/loop/workbench?loopId=:id` |
+| 回路 | 实体轴 | 单回路 360° 一站式工作台（单页四区：概览/评估/诊断/整定，v2.7 重构） | `/loop/workbench`；`/loop/detail/:id` → redirect `/loop/workbench?loopId=:id` |
 | 评估 | 职能轴 | 性能总览、回路性能趋势、评估任务、KPI 报表（跨回路批量） | `/metric/pid-dashboard`、`/metric/loop-performance`、`/metric/tasks`、`/metric/kpi-report` |
 | 诊断 | 职能轴 | 诊断总览、回路分析（列表）、诊断任务（Tabs 含历史记录）、异常跟踪、详情三区 | `/diagnosis/overview`、`/diagnosis/loop-analysis`、`/diagnosis/tasks`、`/diagnosis/tracker`、`/diagnosis/detail/:loopId` |
 | 整定 | 职能轴 | 整定工作台、整定任务详情（单页 4 锚点）、整定知识库、效果统计 | `/tuning/workbench`、`/tuning/detail`、`/tuning/knowledge-base`、`/tuning/stats` |
@@ -73,18 +74,25 @@ CLPM 当前采用 **7 模块**（v2.6 IA 重构 Phase A-D 全量合入）：监�
 
 **AI 右抽屉**：替换原 4 处内嵌 `ClpmAiInsight`，统一为工具栏 AI 图标 + 右侧 overlay 抽屉（480px，≤300ms 动画，遮罩可关）；两级门禁（LLM 配置 + 页面上下文）控制图标状态；整定场景本轮下线（图标灰显）。
 
-#### Phase B — 回路工作台 6 Tab
+#### Phase B — 回路工作台单页四区（v2.7 重构，原 6 Tab 已废弃）
 
 **新增路由**：
 
 | 路由 | 组件 | 权限 | 说明 |
 |---|---|---|---|
 | `/loop` | redirect `/loop/workbench` | ADMIN/IC/PE/EXPERT | 回路父路由 |
-| `/loop/workbench` | `views/loop/workbench.vue` | ADMIN/IC/PE(只读)/EXPERT | 回路工作台主页（6 Tab） |
+| `/loop/workbench` | `views/loop/workbench.vue` | ADMIN/IC/PE(只读)/EXPERT | 回路工作台主页（单页四区） |
 
-**6 Tab 定义**：概览（基本信息+7tag+评分+标签+可信度+3 动作按钮）/ 评估（最近快照+趋势小图+跳转）/ 诊断（标签+置信度+模板小结+跳转）/ 整定（历史列表+开始整定）/ 效果对比（两次整定并排对比 PID/响应/评分/标签）/ 时间线（全生命周期事件时间轴，前端组合四源）。
+**单页四区布局**（v2.7，commit `5e216ba8`，原 6 Tab 已废弃）：页面垂直分为四区，左侧回路列表选中后 `router.replace` 更新 `?loopId=` query，**仅更新右侧子页面、不新增 tab/面包屑**（路由 meta `fullPathKey: false`，vben tab key 退化为 route.path）。
 
-**硬性规则**：每 Tab 最多"摘要 + 1 主图 + 跳转入口"，禁止内嵌完整职能表格。
+| 区 | 高度占比 | 内容 |
+|---|---|---|
+| ① 回路概览 | 10% | 位号/名称/量程/控制方式/设定值/实时值/数据健康度 + 趋势/历史按钮 |
+| ② 性能评估行 | 30% | 回路等级 + 12 KPI 卡片(6×2) + 评分趋势图(8h/12h/24h/48h/72h Segmented 切换) + 发起评估按钮 |
+| ③ 回路诊断行 | 30% | 诊断标签+置信度卡片 + PV/OP 波形 ↔ FFT 频谱切换 + 发起诊断按钮 |
+| ④ 回路整定行 | 30% | 当前 PID/模型(K/τ/θ)/超调量/上升时间/稳定时间 + 推荐 PID + 三按钮(回路辨识/参数整定/模拟仿真) |
+
+**设计原则**：一个页面聚合评估/诊断/整定概况，可直接发起新任务并实时反写显示；详情通过弹窗展示。每区最多"摘要 + 1 主图 + 动作入口"。
 
 **重定向**：`/loop/detail/:id` → `/loop/workbench?loopId=:id`（兼容旧书签/monitor 行点击/E2E）。
 
@@ -549,13 +557,13 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 双轴导航 | 未声明 | 实体轴（回路工作台）+ 职能轴（评估/诊断/整定） | §3、IA 重构方案 §3.1 |
 | 工程/操作分离 | 未声明 | 结构性配置→`/config/*`；操作性调参→业务模块内联 | §3、IA 重构方案 §4.6 |
 | 监控模块 | 工作台门户（`/dashboard/workbench`） | 升级为运行驾驶舱，父路由 `/monitor`，含系统概览+回路实时 | §2、`router/routes/modules/monitor.ts` |
-| 回路模块 | 回路管理（配置+监控混合） | 实体轴工作台（`/loop/workbench` 6 Tab）+ 配置拆出到 `/config/loop` | §2、`router/routes/modules/loop.ts` |
+| 回路模块 | 回路管理（配置+监控混合） | 实体轴工作台（`/loop/workbench` 单页四区，v2.7）+ 配置拆出到 `/config/loop` | §2、`router/routes/modules/loop.ts` |
 | 评估模块 | 性能评估（`/metric/*`） | 改名评估，父路由 `/assess`，leaf 保留 `/metric/*` 绝对路径 | §3、`router/routes/modules/assess.ts` |
 | 诊断模块 | 7 页面（总览/任务/记录/可视化/详情/跟踪/配置） | 5 页面 + 任务 Tabs 合并（总览/回路分析/任务/跟踪/详情三区）；配置迁入 `/config/diagnosis` | §2.1 Phase C、`router/routes/modules/diagnosis.ts` |
 | 整定模块 | 5 路由（workbench/model/algorithm/simulation/stats） | 4 路由（workbench/detail/knowledge-base/stats）+ 7 条旧路由重定向；detail 单页 4 锚点 | §2.1 Phase D、`router/routes/modules/tuning.ts` |
 | 配置模块 | 未声明 | 新增模块，集中 9 项结构性配置（link/tag/loop/datasource/metric/diagnosis + factory/ledger/pid-template 隐藏重定向） | §2、`router/routes/modules/config.ts` |
 | 系统模块 | 4 子页（users/audit/permissions/reports） | 5 子页（新增 `llm-config`；`algorithm-params` 重定向到 `/config/metric`） | §2、`router/routes/modules/system.ts` |
-| 回路工作台 | 未声明 | 6 Tab（概览/评估/诊断/整定/效果对比/时间线），每 Tab 仅摘要+1 主图+跳转 | §2.1 Phase B、`views/loop/workbench.vue` |
+| 回路工作台 | 未声明 | v2.6 为 6 Tab（已废弃）；v2.7 重构为单页四区（概览10% + 评估30% + 诊断30% + 整定30%），`fullPathKey: false` 防止 query 变化新建 tab | §2.1 Phase B、`views/loop/workbench.vue` |
 | 诊断详情 | 5 层 Tab | 三区重构（结论先行 + 问题定位路径 + 证据折叠）+ 特征字典 20 项 | §2.1 Phase C、`views/diagnosis/detail.vue` |
 | 整定向导 | 3 页路由（model→algorithm→simulation） | 单页 `/tuning/detail` + 4 锚点导航（①过程辨识 ②PID推荐 ③闭环仿真 ④方案确认） | §2.1 Phase D、`views/tuning/detail.vue` |
 | 嵌入式组件 | 未声明 | `embedded` prop 条件渲染 `<Page>` 外壳 + `v-show` 保状态 + `router.replace` 同步 query | §2.1 Phase D、`views/tuning/{model,algorithm,simulation}.vue` |

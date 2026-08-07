@@ -8,8 +8,8 @@
 
 1. [`AGENTS.md`](AGENTS.md) — 项目约定的事实来源：当前基线、核心架构组件、开发环境运行指南、CI 本地检查、关键注意事项、核心决策（含 2026-07-20「导入走远端、计算全本地」数据架构决策）、Git 工作流、下阶段规则
 2. [`README.md`](README.md) — 项目简介、技术栈、快速开始、数据源与数据链路（§7）
-3. `docs/设计文档/00-BASELINE/implementation-contract.md` — 重构后 IA/路由/API/权限/状态机/KPI 事实来源（v2.2）
-4. `docs/设计文档/01-PRD/PRD.md` — 产品需求事实来源（v6.1）
+3. `docs/设计文档/00-BASELINE/implementation-contract.md` — 重构后 IA/路由/API/权限/状态机/KPI 事实来源（v2.7）
+4. `docs/设计文档/01-PRD/PRD.md` — 产品需求事实来源（v6.2）
 
 ## 拆分文档（AGENTS.md 2026-07-21 瘦身拆出，按需阅读）
 

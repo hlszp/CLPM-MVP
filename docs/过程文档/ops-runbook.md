@@ -137,9 +137,11 @@ SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次�
 
 celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）。
 
-## 诊断调度细节（2026-07-20，PR #86-#96）
+## 诊断调度细节（2026-07-20，PR #86-#96；2026-08-07 更新）
 
-事件轨 `diagnosis-engine-hourly`（crontab 整点 10 分，score<60 或 score NULL 即 INCONCLUSIVE 回路触发深诊）+ 体检轨 `diagnosis-engine-checkup-8h`（crontab 0/8/16 点 20 分，全部 READY 回路 1h 窗口体检，`triggered_by='checkup-scheduler'`；开关经 EngineRuleLoader `DIAG_CHECKUP` rule params 配置，默认开）；诊断阈值配置**已真实生效**（种子键名已对齐算法读取键，存量库经 v6p1diag002 迁移），`is_enabled=False` 真正禁用对应算法；按需诊断支持 labels 子集。
+**⚠️ 2026-08-07 起，自动诊断 Beat 已停用**（commit `5e216ba8`）：`diagnosis_engine.py` 中 `diagnosis-engine-hourly` 与 `diagnosis-engine-checkup-8h` 两个 Celery Beat 注册已注释（保留代码以便恢复），仅保留手动触发函数。系统现仅保留小时级自动性能评估，诊断与整定一律手动触发。恢复方法：取消 `backend/app/tasks/diagnosis_engine.py` 中 `_existing_beat["diagnosis-engine-hourly"]` 与 `_existing_beat["diagnosis-engine-checkup-8h"]` 两段注释并重启后端。
+
+历史口径（已停用，仅备查）：事件轨 `diagnosis-engine-hourly`（crontab 整点 10 分，score<60 或 score NULL 即 INCONCLUSIVE 回路触发深诊）+ 体检轨 `diagnosis-engine-checkup-8h`（crontab 0/8/16 点 20 分，全部 READY 回路 1h 窗口体检，`triggered_by='checkup-scheduler'`；开关经 EngineRuleLoader `DIAG_CHECKUP` rule params 配置，默认开）；诊断阈值配置**已真实生效**（种子键名已对齐算法读取键，存量库经 v6p1diag002 迁移），`is_enabled=False` 真正禁用对应算法；按需诊断支持 labels 子集。
 
 ## 模型变更与迁移同批纪律（2026-07-21 教训）
 
