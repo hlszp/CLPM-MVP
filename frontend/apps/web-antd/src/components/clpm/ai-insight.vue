@@ -75,31 +75,102 @@ const SCENE_META: Record<
 > = {
   diagnosis: {
     title: 'AI 洞察',
-    icon: 'ant-design:bulb-outlined',
+    icon: 'lucide:brain-circuit',
     tooltip:
       '将诊断结果翻译为工程师可读的自然语言，含主因分析、处置建议与风险提示。',
     description: '点击生成诊断解读',
   },
   performance: {
     title: 'AI 性能分析',
-    icon: 'ant-design:bar-chart-outlined',
+    icon: 'lucide:gauge-circle',
     tooltip: '基于回路 KPI 指标与可信度，分析性能等级、短板项与改善优先级。',
     description: '点击生成性能分析',
   },
   tuning: {
     title: 'AI 整定建议',
-    icon: 'ant-design:tool-outlined',
+    icon: 'lucide:sliders-horizontal',
     tooltip: '解读过程模型辨识结果与推荐 PID，给出仿真改善分析与实施风险提示。',
     description: '点击生成整定建议',
   },
   workbench: {
     title: 'AI 运维洞察',
-    icon: 'ant-design:dashboard-outlined',
+    icon: 'lucide:activity',
     tooltip:
       '从运维管理视角汇总全局健康度、Top 待办优先级与趋势预警，给出重点关注建议。',
     description: '点击生成运维洞察',
   },
 };
+
+/**
+ * #5: AI 洞察正文分段渲染（Google AI Overview 风格）
+ *
+ * LLM 输出按【段标题】分段，解析为结构化卡片：
+ * - 每段一个带语义色图标 + 标题的卡片
+ * - 段正文保留换行，列表项（•）渲染为带圆点的行
+ * - 无【】标题的纯文本作为"概述"段渲染
+ */
+
+/** 段标题 → 图标 + 语义色 */
+const SECTION_META: Record<string, { color: string; icon: string }> = {
+  等级判定: { icon: 'lucide:medal', color: 'hsl(217 91% 55%)' },
+  短板分析: { icon: 'lucide:alert-triangle', color: 'hsl(32 95% 48%)' },
+  改善建议: { icon: 'lucide:lightbulb', color: 'hsl(142 71% 45%)' },
+  优先级: { icon: 'lucide:arrow-up-wide-narrow', color: 'hsl(262 70% 58%)' },
+  主因分析: { icon: 'lucide:search', color: 'hsl(199 85% 47%)' },
+  处置建议: { icon: 'lucide:wrench', color: 'hsl(142 71% 45%)' },
+  风险提示: { icon: 'lucide:shield-alert', color: 'hsl(0 84% 60%)' },
+  模型质量: { icon: 'lucide:badge-check', color: 'hsl(217 91% 55%)' },
+  参数解读: { icon: 'lucide:sliders-horizontal', color: 'hsl(262 70% 58%)' },
+  仿真改善: { icon: 'lucide:trending-up', color: 'hsl(142 71% 45%)' },
+  实施风险: { icon: 'lucide:shield-alert', color: 'hsl(0 84% 60%)' },
+  健康概览: { icon: 'lucide:heart-pulse', color: 'hsl(0 84% 60%)' },
+  待办优先级: { icon: 'lucide:list-ordered', color: 'hsl(262 70% 58%)' },
+  趋势预警: { icon: 'lucide:trending-up', color: 'hsl(32 95% 48%)' },
+  概述: { icon: 'lucide:info', color: 'hsl(199 85% 47%)' },
+};
+
+interface InsightSection {
+  title: string;
+  icon: string;
+  color: string;
+  lines: string[];
+}
+
+/** 解析洞察正文为分段结构 */
+const sections = computed<InsightSection[]>(() => {
+  if (!result.value?.insight) return [];
+  const text = result.value.insight;
+  // 按 【...】 标题切分段落
+  const parts = text.split(/(?=【[^】]+】)/);
+  const parsed: InsightSection[] = [];
+  for (const part of parts) {
+    const match = part.match(/^【([^】]+)】\s*/);
+    if (match) {
+      const title = (match[1] ?? '').trim();
+      const body = part.slice(match[0].length).trim();
+      const meta = SECTION_META[title] ?? SECTION_META['概述']!;
+      parsed.push({
+        title,
+        icon: meta!.icon,
+        color: meta!.color,
+        lines: body ? body.split('\n').filter((l) => l.trim()) : [],
+      });
+    } else if (part.trim()) {
+      // 无标题的纯文本 → 概述段
+      const fallback = SECTION_META['概述']!;
+      parsed.push({
+        title: '概述',
+        icon: fallback.icon,
+        color: fallback.color,
+        lines: part
+          .trim()
+          .split('\n')
+          .filter((l) => l.trim()),
+      });
+    }
+  }
+  return parsed;
+});
 
 /** 来源标签配置 */
 const SOURCE_TAG: Record<
@@ -316,8 +387,50 @@ onMounted(() => {
             }}</span>
           </div>
 
-          <!-- 洞察正文（结构化纯文本，保留换行） -->
-          <div class="clpm-ai-insight__text" style="white-space: pre-wrap">
+          <!-- 洞察正文（#5: Google AI Overview 风格分段卡片） -->
+          <div v-if="sections.length > 0" class="clpm-ai-insight__sections">
+            <div
+              v-for="(sec, idx) in sections"
+              :key="idx"
+              class="clpm-ai-insight__section"
+              :style="{ '--section-color': sec.color }"
+            >
+              <div class="clpm-ai-insight__section-header">
+                <IconifyIcon
+                  :icon="sec.icon"
+                  :size="15"
+                  class="clpm-ai-insight__section-icon"
+                />
+                <span class="clpm-ai-insight__section-title">{{
+                  sec.title
+                }}</span>
+              </div>
+              <div class="clpm-ai-insight__section-body">
+                <div
+                  v-for="(line, li) in sec.lines"
+                  :key="li"
+                  class="clpm-ai-insight__line"
+                  :class="{
+                    'clpm-ai-insight__line--bullet': line
+                      .trim()
+                      .startsWith('•'),
+                  }"
+                >
+                  <span
+                    v-if="line.trim().startsWith('•')"
+                    class="clpm-ai-insight__bullet-dot"
+                  ></span>
+                  <span>{{ line.trim().replace(/^•\s*/, '') }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- 无分段时降级为纯文本 -->
+          <div
+            v-else
+            class="clpm-ai-insight__text"
+            style="white-space: pre-wrap"
+          >
             {{ result.insight }}
           </div>
         </div>
@@ -382,5 +495,64 @@ onMounted(() => {
   line-height: 1.7;
   color: hsl(var(--foreground));
   overflow-wrap: break-word;
+}
+
+/* #5: Google AI Overview 风格分段卡片 */
+.clpm-ai-insight__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clpm-ai-insight__section {
+  padding: 10px 12px;
+  background: hsl(var(--muted) / 30%);
+  border-left: 3px solid var(--section-color, hsl(var(--primary)));
+  border-radius: 6px;
+}
+
+.clpm-ai-insight__section-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.clpm-ai-insight__section-icon {
+  flex-shrink: 0;
+  color: var(--section-color, hsl(var(--primary)));
+}
+
+.clpm-ai-insight__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--section-color, hsl(var(--foreground)));
+}
+
+.clpm-ai-insight__section-body {
+  padding-left: 21px;
+}
+
+.clpm-ai-insight__line {
+  font-size: 13px;
+  line-height: 1.7;
+  color: hsl(var(--foreground));
+  overflow-wrap: break-word;
+}
+
+.clpm-ai-insight__line--bullet {
+  position: relative;
+  padding-left: 14px;
+}
+
+.clpm-ai-insight__bullet-dot {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  background: var(--section-color, hsl(var(--muted-foreground)));
+  border-radius: 50%;
 }
 </style>

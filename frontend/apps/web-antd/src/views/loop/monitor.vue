@@ -64,17 +64,18 @@ import {
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
-  ClpmColumnSettings,
   ClpmDataCanvas,
   ClpmDataHealthBadges,
   ClpmInfoTip,
   ClpmLoopLink,
+  ClpmModal,
   ClpmNumeric,
   ClpmPageToolbar,
-  ClpmToolbarButton,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   LOOP_TYPE_COLOR_MAP,
@@ -643,22 +644,16 @@ const trendWindow = ref<LoopApi.TrendWindow>(
     'last_4_hours',
 );
 const waveformChartRef = ref<InstanceType<typeof WaveformChart>>();
-const trendFullscreen = ref(false);
+// #3: ClpmModal 内置最大化/复位/拖动；这里仅追踪最大化态以调整图表高度
+const trendMaximized = ref(false);
 
-const trendModalWidth = computed(() =>
-  trendFullscreen.value ? '100vw' : '1100px',
-);
 const trendChartHeight = computed(() =>
-  trendFullscreen.value ? 'calc(100vh - 220px)' : '400px',
-);
-const trendBodyStyle = computed(() =>
-  trendFullscreen.value
-    ? { height: 'calc(100vh - 55px)', overflow: 'auto', padding: '16px' }
-    : { maxHeight: 'calc(100vh - 120px)', overflow: 'auto' },
+  trendMaximized.value ? 'calc(100vh - 220px)' : '400px',
 );
 
-function toggleTrendFullscreen() {
-  trendFullscreen.value = !trendFullscreen.value;
+/** #3: ClpmModal 最大化/还原时重置趋势图尺寸 */
+function handleTrendMaximizeChange(maximized: boolean) {
+  trendMaximized.value = maximized;
   nextTick(() => {
     setTimeout(() => waveformChartRef.value?.resize(), 100);
   });
@@ -697,6 +692,100 @@ const dataDelayText = computed(() => {
   if (diff < 60) return `${diff}m`;
   return `${Math.floor(diff / 60)}h`;
 });
+
+// ===== 统一工具栏支撑 =====
+// 筛选区折叠态（工具栏「筛选」工具切换）
+const filterVisible = ref(true);
+function toggleFilter() {
+  filterVisible.value = !filterVisible.value;
+}
+
+// 趋势时间窗循环切换（工具栏「时间窗」工具）
+const trendWindowIdx = ref(
+  Math.max(
+    0,
+    trendWindowOptions.findIndex((o) => o.value === trendWindow.value),
+  ),
+);
+const trendWindowLabel = computed(
+  () => trendWindowOptions[trendWindowIdx.value]?.label ?? '4h',
+);
+function cycleTrendWindow() {
+  const next = (trendWindowIdx.value + 1) % trendWindowOptions.length;
+  trendWindowIdx.value = next;
+  trendWindow.value = trendWindowOptions[next]!.value;
+}
+
+/** 导出当前监控列表为 CSV（客户端生成） */
+function exportMonitorCsv() {
+  if (monitorList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const header = [
+    '回路位号',
+    '名称',
+    '所属单元',
+    '类型',
+    'SP',
+    'PV',
+    'OP',
+    '控制方式',
+    '性能指数',
+  ];
+  const rows = monitorList.value.map((m) => [
+    m.tagName ?? '',
+    m.description ?? '',
+    m.unitName ?? '',
+    m.loopType ?? '',
+    m.currentValues?.sp != null ? m.currentValues.sp.toFixed(2) : '',
+    m.currentValues?.pv != null ? m.currentValues.pv.toFixed(2) : '',
+    m.currentValues?.op != null ? m.currentValues.op.toFixed(2) : '',
+    m.currentValues?.mode != null
+      ? (MODE_LABEL_MAP[String(m.currentValues.mode)] ??
+        String(m.currentValues.mode))
+      : '',
+    m.score != null ? Number(m.score).toFixed(2) : '',
+  ]);
+  const csv = [header, ...rows]
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `loop-monitor-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  message.success(`已导出 ${monitorList.value.length} 条回路`);
+}
+
+function handleHelp() {
+  showPageHelp({
+    title: '回路监控 帮助',
+    content:
+      '按装置/单元、类型、关键字筛选回路；统计卡片可点击快速筛选。列表展示实时 SP/PV/OP、控制方式、性能指数与诊断标签。工具栏「时间窗」切换趋势弹窗默认范围，「列设置」自定义显示列。WS 在线时实时推送，断连自动降级为轮询。',
+  });
+}
+
+// ===== 统一工具栏（refresh / time-window / filter / export / setting / help） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadList, loading: loading.value },
+  'time-window': {
+    onClick: cycleTrendWindow,
+    active: true,
+    tooltip: `趋势时间窗：${trendWindowLabel.value}（点击切换）`,
+    label: trendWindowLabel.value,
+  },
+  filter: { onClick: toggleFilter, active: filterVisible.value },
+  export: {
+    onClick: exportMonitorCsv,
+    permission: ['ADMIN', 'IC_ENGINEER'],
+    disabledReason: '仅工程师/管理员可导出',
+  },
+  setting: {},
+  help: { onClick: handleHelp },
+}));
 
 /** 选中回路：仅记录选中状态（用于表格行高亮 + StatusFooter 显示） */
 function handleSelectLoop(record: LoopApi.MonitorListItem) {
@@ -1080,7 +1169,27 @@ onUnmounted(() => {
 <template>
   <Page>
     <!-- 顶部工具栏：筛选条件 + 操作按钮 + 自动刷新 -->
-    <ClpmPageToolbar title="回路监控" subtitle="列表 + 摘要 + 趋势主画布">
+    <ClpmPageToolbar
+      title="回路监控"
+      subtitle="列表 + 摘要 + 趋势主画布"
+      :loading="loading"
+      :last-refresh="lastRefreshText"
+    >
+      <template #actions>
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="columnConfigs"
+          @update:columns="handleUpdateColumns"
+          @reset-columns="handleResetColumns"
+        />
+      </template>
+    </ClpmPageToolbar>
+
+    <!-- 筛选区（工具栏「筛选」工具可折叠） -->
+    <div
+      class="clpm-filter-bar"
+      :class="{ 'clpm-filter-bar--collapsed': !filterVisible }"
+    >
       <Select
         v-model:value="query.plantNodeId"
         placeholder="按装置/单元筛选"
@@ -1108,29 +1217,15 @@ onUnmounted(() => {
         style="width: 200px"
         @press-enter="handleSearch"
       />
-      <div class="flex items-center gap-2 text-sm text-gray-500">
+      <Button type="primary" @click="handleSearch">查询</Button>
+      <div class="!ml-auto flex items-center gap-2 text-sm text-gray-500">
         <span>自动刷新（{{ refreshInterval }}s）</span>
         <Switch :checked="autoRefresh" @change="handleToggleAutoRefresh" />
         <span v-if="autoRefresh" class="text-xs text-gray-400">
           {{ isFallbackPolling ? 'WS 断连，轮询刷新中' : 'WS 实时推送' }}
         </span>
       </div>
-      <template #actions>
-        <ClpmToolbarButton icon="search" label="查询" @click="handleSearch" />
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="loadList"
-        />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          disabled
-          disabled-reason="回路监控数据导出功能待后端接口支持"
-        />
-      </template>
-    </ClpmPageToolbar>
+    </div>
 
     <!-- v6.1 新增：统计卡片区域 -->
     <div class="mt-3">
@@ -1277,12 +1372,7 @@ onUnmounted(() => {
         @empty-action="router.push('/loop/data')"
       >
         <template #extra>
-          <ClpmColumnSettings
-            :columns="columnConfigs"
-            @update:columns="handleUpdateColumns"
-            @reset="handleResetColumns"
-          />
-          <!-- 筛选预设与重置偏好（折叠区） -->
+          <!-- 筛选预设与重置偏好（折叠区）；列设置已上移至页面工具栏 -->
           <Popover placement="bottomRight" trigger="click">
             <template #content>
               <div class="w-64">
@@ -1666,24 +1756,15 @@ onUnmounted(() => {
       <span>选中回路：{{ selectedLoop?.tagName ?? '—' }}</span>
     </div>
 
-    <!-- 趋势 Modal -->
-    <Modal
+    <!-- 趋势 Modal（#3: ClpmModal 深色标题栏 + 拖动 + 最大化/复位） -->
+    <ClpmModal
       v-model:open="trendModalVisible"
-      :width="trendModalWidth"
-      :body-style="trendBodyStyle"
+      :title="`趋势 - ${currentRecord?.tagName ?? ''}`"
+      width="1100px"
       :footer="null"
       destroy-on-close
-      :style="trendFullscreen ? { top: 0, paddingBottom: 0 } : {}"
-      @cancel="trendFullscreen = false"
+      @maximize-change="handleTrendMaximizeChange"
     >
-      <template #title>
-        <div class="flex items-center justify-between pr-8">
-          <span>趋势 - {{ currentRecord?.tagName ?? '' }}</span>
-          <Button type="text" size="small" @click="toggleTrendFullscreen">
-            {{ trendFullscreen ? '退出全屏' : '全屏' }}
-          </Button>
-        </div>
-      </template>
       <Spin :spinning="trendLoading">
         <div v-if="currentRecord" class="space-y-3">
           <!-- 时间范围 + 当前 MODE -->
@@ -1790,7 +1871,7 @@ onUnmounted(() => {
           <div v-else class="py-12 text-center text-gray-400">暂无趋势数据</div>
         </div>
       </Spin>
-    </Modal>
+    </ClpmModal>
 
     <!-- 性能 Modal -->
     <Modal

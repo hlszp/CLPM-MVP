@@ -26,8 +26,10 @@ import {
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmPageToolbar,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningStats' });
@@ -437,6 +439,27 @@ onMounted(() => {
   loadList();
 });
 
+/** 工具栏刷新：重载统计与任务列表 */
+function handleRefresh() {
+  loadHistory();
+  loadList();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '效果统计 帮助',
+    content:
+      '查看整定任务分布、拟合质量与历史效果。顶部统计卡片（总任务数/已应用数/平均拟合度/算法种类数），中部图表区（算法分布饼图 + 状态分布柱状图），底部任务列表（按算法/状态筛选）。平台只输出建议，参数由授权人员人工实施并留痕。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
+
 /** 深色模式切换时重绘 ECharts 图表 */
 watch(isDark, () => {
   nextTick(() => {
@@ -451,7 +474,12 @@ watch(isDark, () => {
     <ClpmPageToolbar
       title="效果统计"
       subtitle="查看整定任务分布、拟合质量与历史效果。"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <Alert
       type="warning"
       show-icon

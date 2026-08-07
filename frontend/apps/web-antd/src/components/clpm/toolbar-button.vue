@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { ButtonProps } from 'ant-design-vue';
 
+import type { CSSProperties } from 'vue';
 import type { ToolbarAction, ToolbarVariant } from './toolbar-config';
 
 import { computed } from 'vue';
@@ -9,7 +10,11 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Button, Tooltip } from 'ant-design-vue';
 
-import { TOOLBAR_DEFAULT_VARIANT, TOOLBAR_ICON_MAP } from './toolbar-config';
+import {
+  TOOLBAR_DEFAULT_VARIANT,
+  TOOLBAR_ICON_COLOR,
+  TOOLBAR_ICON_MAP,
+} from './toolbar-config';
 
 defineOptions({ name: 'ClpmToolbarButton' });
 
@@ -78,10 +83,13 @@ const resolvedVariant = computed<ToolbarVariant>(() => {
 /** Ant Design Button 的 type 属性 */
 const buttonType = computed(() => {
   if (resolvedVariant.value === 'danger') return 'default';
-  if (resolvedVariant.value === 'export') return 'default';
   if (resolvedVariant.value === 'primary') return 'primary';
   if (resolvedVariant.value === 'link') return 'link';
   if (resolvedVariant.value === 'dashed') return 'dashed';
+  // #6: 标准工具（有语义色）与 export 变体统一用 text 类型——无线框、仅图标色，
+  // 对齐 Google Material Design icon-button 风格
+  if (resolvedVariant.value === 'export') return 'text';
+  if (props.icon && props.icon in TOOLBAR_ICON_COLOR) return 'text';
   return 'default';
 });
 
@@ -93,6 +101,29 @@ const isActive = computed(() => props.active && !props.disabled);
 
 /** 实际禁用态：disabled 或 loading */
 const isDisabled = computed(() => props.disabled || props.loading);
+
+/**
+ * 图标语义色（UI/UX v6.1 统一工具栏）
+ * - 仅「标准工具」有语义色（TOOLBAR_ICON_COLOR）
+ * - 启用态 + 中性变体（default/dashed/link）：图标套语义色
+ * - 填充变体（primary/danger/export）：图标跟随前景色（白），不着色
+ * - 禁用态：统一降饱和灰（见 CSS .clpm-toolbar-btn__icon--disabled）
+ */
+const iconColor = computed(() => {
+  if (!props.icon) return '';
+  return TOOLBAR_ICON_COLOR[props.icon as ToolbarAction] ?? '';
+});
+
+const iconStyle = computed<CSSProperties>(() => {
+  if (isDisabled.value) return {}; // 禁用态由 CSS 强制灰
+  const v = resolvedVariant.value;
+  // 仅中性变体着色，填充变体保持前景色
+  if (v === 'default' || v === 'dashed' || v === 'link') {
+    const c = iconColor.value;
+    return c ? { color: c } : {};
+  }
+  return {};
+});
 
 /** Tooltip 文案 */
 const tooltipText = computed(() => {
@@ -148,6 +179,8 @@ const activeClass = 'clpm-toolbar-btn--active';
           v-if="iconName"
           :icon="iconName"
           class="clpm-toolbar-btn__icon"
+          :class="{ 'clpm-toolbar-btn__icon--disabled': isDisabled }"
+          :style="iconStyle"
         />
         <span v-if="!iconOnly && label" class="clpm-toolbar-btn__label">{{
           label
@@ -197,8 +230,25 @@ const activeClass = 'clpm-toolbar-btn--active';
   align-items: center;
 }
 
+/* #6: text 类型标准工具——无线框，hover/active 用圆角底色反馈 */
+.clpm-toolbar-btn.ant-btn-text {
+  padding: 4px 8px;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.clpm-toolbar-btn.ant-btn-text:not(:disabled):hover {
+  background: hsl(var(--muted) / 60%);
+}
+
 .clpm-toolbar-btn__icon {
-  font-size: 14px;
+  font-size: 16px;
+}
+
+/* 禁用态图标：统一降饱和灰（Poka-Yoke 灰而不藏，对齐 §5.1.2） */
+.clpm-toolbar-btn__icon--disabled {
+  color: hsl(var(--muted-foreground)) !important;
+  opacity: 0.4;
 }
 
 .clpm-toolbar-btn__label {
@@ -209,21 +259,14 @@ const activeClass = 'clpm-toolbar-btn--active';
 /* 导出变体：绿色调（对齐 THEME_COLORS.SUCCESS） */
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary) {
   color: hsl(var(--success) / 85%);
-  border-color: hsl(var(--success));
 }
 
 .clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary):hover {
   color: hsl(var(--success));
   background: hsl(var(--success) / 12%);
-  border-color: hsl(var(--success) / 75%);
 }
 
-.clpm-toolbar-btn--export:not(:disabled):not(.ant-btn-primary):active {
-  background: hsl(var(--success) / 18%);
-  border-color: hsl(var(--success) / 85%);
-}
-
-/* 激活态：主色填充（用于自动刷新开启、视图切换激活等） */
+/* 激活态：主色圆角底色（用于筛选展开、自动刷新开启、视图切换激活等） */
 .clpm-toolbar-btn--active:not(:disabled) {
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));

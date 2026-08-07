@@ -55,12 +55,12 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import {
-  ClpmColumnSettings,
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmEmptyState,
   ClpmInfoTip,
   ClpmPageToolbar,
+  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import {
@@ -70,6 +70,7 @@ import {
 import StatusBadge from '#/components/loop/status-badge.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { flattenNodes } from '#/utils/plant-node';
 
 import LoopEditDrawer from './manage/LoopEditDrawer.vue';
@@ -1053,6 +1054,22 @@ function clearAllFilters() {
   handleSearch();
 }
 
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '回路管理 帮助',
+    content:
+      '回路配置整合页：左侧工厂模型树按装置/单元筛选，右侧回路台账支持新建/编辑/查看、批量配置/分组/删除、导入导出与紧凑/Tag 详情视图切换。支持按回路类型、控制类型、重要等级、参评状态、监控状态、回路状态高级筛选，列设置可自定义显示列与顺序。',
+  });
+}
+
+// ===== 统一工具栏（标准 3 工具：刷新 / 列设置 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadList, loading: loading.value },
+  setting: {},
+  help: { onClick: handleHelp },
+}));
+
 /** 删除回路危险确认回调（ClpmDangerConfirmModal @confirm） */
 async function handleDangerConfirm() {
   if (!dangerTarget.value) return;
@@ -1098,7 +1115,16 @@ watch(
 
 <template>
   <Page>
-    <ClpmPageToolbar title="回路配置" />
+    <ClpmPageToolbar title="回路配置" :loading="loading">
+      <template #actions>
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="columnConfigs"
+          @update:columns="handleUpdateColumns"
+          @reset-columns="handleResetColumns"
+        />
+      </template>
+    </ClpmPageToolbar>
 
     <!-- 单页布局：左侧工厂树 + 右侧回路表格（方案 A） -->
     <div class="flex gap-3" style="height: calc(100vh - 220px)">
@@ -1182,12 +1208,6 @@ watch(
             :loading="exporting"
             @click="handleExport"
           />
-          <ClpmToolbarButton
-            icon="refresh"
-            label="刷新"
-            :loading="loading"
-            @click="loadList"
-          />
           <span class="text-xs text-gray-400">
             {{
               selectedPlantNode ? `当前节点：${selectedPlantNode.name}` : '全厂'
@@ -1201,11 +1221,6 @@ watch(
               { label: 'Tag 详情', value: 'tags' },
             ]"
             size="small"
-          />
-          <ClpmColumnSettings
-            :columns="columnConfigs"
-            @update:columns="handleUpdateColumns"
-            @reset="handleResetColumns"
           />
         </div>
 

@@ -19,9 +19,11 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
@@ -905,6 +907,34 @@ watch(isDark, () => {
   });
 });
 
+/** 工具栏刷新态（刷新时短暂保持供工具栏反馈） */
+const loading = ref(false);
+
+/** 工具栏刷新：重新加载看板全部数据 */
+function handleRefresh() {
+  loading.value = true;
+  loadAll();
+  // loadAll 为非阻塞（内部各子任务各自 await），加保护性复位
+  setTimeout(() => {
+    loading.value = false;
+  }, 600);
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '评估看板 帮助',
+    content:
+      '工厂级 KPI 评估看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率 6 仪表盘 + 性能指标趋势图 + 回路等级占比饼图 + 装置/单元性能明细表 + TOP5 回路（可切换升降序）。支持按工厂节点树筛选与时间窗口切换（近 8h / 24h / 168h / 近 1 月）。点击 TOP5 行右侧箭头可一键发起该回路诊断。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
+
 onMounted(() => {
   loadGradingThresholds();
   loadAll();
@@ -914,20 +944,22 @@ onMounted(() => {
 <template>
   <Page>
     <div class="clpm-pid-dashboard">
-      <div class="clpm-pid-dashboard__header">
-        <div class="clpm-pid-dashboard__header-left">
-          <h1 class="clpm-pid-dashboard__title">评估看板</h1>
-        </div>
-        <div class="clpm-pid-dashboard__header-right">
-          <Select
-            v-model:value="timeWindow"
-            style="width: 140px"
-            size="small"
-            :options="timeWindowOptions"
-            @change="handleTimeWindowChange"
-          />
-        </div>
-      </div>
+      <ClpmPageToolbar
+        title="评估看板"
+        subtitle="工厂级 KPI 仪表盘 · 趋势 · 等级分布 · TOP5"
+        :loading="loading"
+      >
+        <Select
+          v-model:value="timeWindow"
+          style="width: 140px"
+          size="small"
+          :options="timeWindowOptions"
+          @change="handleTimeWindowChange"
+        />
+        <template #actions>
+          <ClpmStandardActions :items="toolbarItems" />
+        </template>
+      </ClpmPageToolbar>
 
       <div class="clpm-pid-dashboard__body">
         <PlantNodeTree

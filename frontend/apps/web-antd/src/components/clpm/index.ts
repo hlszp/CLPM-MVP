@@ -1,5 +1,6 @@
 export { default as ClpmAiInsight } from './ai-insight.vue';
 export { default as ClpmAiDrawer } from './ai-drawer.vue';
+export { default as ClpmAlertDslEditor } from './alert-dsl-editor.vue';
 export { default as ClpmColumnSettings } from './column-settings.vue';
 export { default as ClpmConfidenceBadge } from './confidence-badge.vue';
 export { default as ClpmDangerConfirmModal } from './danger-confirm-modal.vue';
@@ -17,6 +18,7 @@ export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export type { KpiStripItem } from './kpi-strip.vue';
 export { default as ClpmLoopContextHeader } from './loop-context-header.vue';
 export { default as ClpmLoopLink } from './loop-link.vue';
+export { default as ClpmModal } from './clpm-modal.vue';
 export { default as ClpmNumeric } from './numeric.vue';
 export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';
 export { default as ClpmOnboardingTour } from './onboarding-tour.vue';
@@ -25,6 +27,7 @@ export { default as ClpmPageToolbar } from './page-toolbar.vue';
 export { default as ClpmPredictionCard } from './prediction-card.vue';
 export { default as ClpmRealtimeStatus } from './realtime-status.vue';
 export { default as ClpmSeverityBadge } from './severity-badge.vue';
+export { default as ClpmStandardActions } from './standard-actions.vue';
 export { default as ClpmStateOverlay } from './state-overlay.vue';
 export { default as ClpmStatusPanel } from './status-panel.vue';
 export { default as ClpmStructuredDiagnosisReport } from './structured-diagnosis-report.vue';
@@ -32,9 +35,11 @@ export { default as ClpmThresholdTuneModal } from './threshold-tune-modal.vue';
 
 export { default as ClpmTagAssociationBadge } from './tag-association-badge.vue';
 export { default as ClpmToolbarButton } from './toolbar-button.vue';
+export { default as ClpmToolbarDivider } from './toolbar-divider.vue';
 
 export {
   TOOLBAR_DEFAULT_VARIANT,
+  TOOLBAR_ICON_COLOR,
   TOOLBAR_ICON_MAP,
   TOOLBAR_STATE_COLOR,
   type ToolbarAction,

@@ -30,44 +30,76 @@ export type ToolbarAction =
   | 'import'
   | 'more'
   | 'pdf'
+  | 'print'
   | 'refresh'
   | 'run'
   | 'save'
   | 'search'
   | 'setting'
   | 'stop'
+  | 'time-window'
   | 'track'
   | 'tuning';
 
 /**
  * 工具栏按钮图标映射（Iconify 图标名）
  *
- * 统一使用 ant-design 图标集，与项目现有 confidence-badge.vue 用法一致
+ * 标准 9 工具统一使用 lucide 图标集（现代、简洁、线性描边风格，
+ * 对齐 Google Material Design 设计语言），体现工业软件专业性与细节质感。
+ * 上下文动作（create/delete/save 等）沿用 ant-design 图标集。
  */
 export const TOOLBAR_ICON_MAP: Record<ToolbarAction, string> = {
-  'auto-refresh': 'ant-design:sync-outlined',
-  back: 'ant-design:arrow-left-outlined',
-  cancel: 'ant-design:close-circle-outlined',
+  'auto-refresh': 'lucide:refresh-cw',
+  back: 'lucide:arrow-left',
+  cancel: 'lucide:x-circle',
   create: 'ant-design:plus-outlined',
   delete: 'ant-design:delete-outlined',
-  diagnosis: 'ant-design:medicine-box-outlined',
-  edit: 'ant-design:edit-outlined',
-  export: 'ant-design:download-outlined',
-  filter: 'ant-design:filter-outlined',
-  fullscreen: 'ant-design:fullscreen-outlined',
-  help: 'ant-design:question-circle-outlined',
-  ai: 'ant-design:robot-outlined',
-  import: 'ant-design:upload-outlined',
-  more: 'ant-design:ellipsis-outlined',
-  pdf: 'ant-design:file-pdf-outlined',
-  refresh: 'ant-design:reload-outlined',
-  run: 'ant-design:play-circle-outlined',
-  save: 'ant-design:save-outlined',
-  search: 'ant-design:search-outlined',
-  stop: 'ant-design:pause-circle-outlined',
-  track: 'ant-design:flag-outlined',
-  tuning: 'ant-design:tool-outlined',
-  setting: 'ant-design:setting-outlined',
+  diagnosis: 'lucide:stethoscope',
+  edit: 'lucide:pencil',
+  export: 'lucide:download',
+  filter: 'lucide:filter',
+  fullscreen: 'lucide:maximize',
+  help: 'lucide:circle-help',
+  ai: 'lucide:sparkles',
+  import: 'lucide:upload',
+  more: 'lucide:ellipsis',
+  pdf: 'lucide:file-text',
+  print: 'lucide:printer',
+  refresh: 'lucide:refresh-cw',
+  run: 'lucide:play',
+  save: 'lucide:save',
+  search: 'lucide:search',
+  setting: 'lucide:columns-3',
+  'time-window': 'lucide:clock',
+  stop: 'lucide:square',
+  track: 'lucide:flag',
+  tuning: 'lucide:wrench',
+};
+
+/**
+ * 工具栏按钮图标语义色映射（UI/UX v6.1 统一工具栏）
+ *
+ * 启用态：图标套用各自语义色（按钮外壳保持中性灰描边），体现工业软件
+ * 功能丰富性与专业辨识度；禁用态统一降饱和灰（见 toolbar-button.vue）。
+ * 仅对「标准 9 工具」着色，contextual 动作（create/delete/save 等）沿用
+ * 变体色，不在此映射中。
+ *
+ * 色值采用 mid-tone hsl，明暗主题下均清晰；主题语义 token（primary/
+ * success/warning）优先复用。
+ */
+export const TOOLBAR_ICON_COLOR: Partial<Record<ToolbarAction, string>> = {
+  // 数据组
+  refresh: 'hsl(217 91% 55%)', // 蓝
+  'time-window': 'hsl(189 90% 42%)', // 青
+  filter: 'hsl(32 95% 48%)', // 橙
+  import: 'hsl(173 70% 40%)', // 蓝绿
+  export: 'hsl(var(--success))', // 绿（复用主题）
+  setting: 'hsl(262 70% 58%)', // 紫（列设置）
+  print: 'hsl(243 60% 58%)', // 靛
+  // 智能组
+  ai: 'hsl(291 64% 56%)', // 品红（AI 专属）
+  // 帮助组
+  help: 'hsl(199 85% 47%)', // 天蓝
 };
 
 /**
@@ -110,14 +142,16 @@ export const TOOLBAR_DEFAULT_VARIANT: Record<ToolbarAction, ToolbarVariant> = {
   import: 'default',
   more: 'link',
   pdf: 'export',
+  print: 'default',
   refresh: 'default',
   run: 'primary',
   save: 'primary',
   search: 'primary',
+  setting: 'default',
+  'time-window': 'default',
   stop: 'danger',
   track: 'primary',
   tuning: 'default',
-  setting: 'default',
 };
 
 /**

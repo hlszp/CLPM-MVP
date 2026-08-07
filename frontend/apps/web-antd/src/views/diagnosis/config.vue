@@ -40,8 +40,10 @@ import {
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -311,6 +313,21 @@ function labelName(label: DiagnosisLabel): string {
 onMounted(() => {
   loadList();
 });
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '诊断指标配置 帮助',
+    content:
+      '管理诊断指标的算法类型、计算方法、阈值与参数（键值对形式），以及启用状态。切换启用状态和保存配置均需二次确认（危险操作）。仅管理员可编辑。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadList, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -318,13 +335,17 @@ onMounted(() => {
     <ClpmPageToolbar
       title="诊断指标配置"
       subtitle="管理诊断规则、阈值、算法参数和启用状态。"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
           管理诊断指标配置：诊断规则、算法参数、阈值、启用状态。
         </p>
-        <Button :loading="loading" @click="loadList">刷新</Button>
       </div>
 
       <Table

@@ -24,14 +24,15 @@ import { Drawer, Select, Table, Tag } from 'ant-design-vue';
 
 import { getKnowledgeBaseApi } from '#/api/tuning';
 import {
-  ClpmColumnSettings,
   ClpmConfidenceBadge,
   ClpmDataCanvas,
   ClpmEmptyState,
   ClpmKpiStrip,
   ClpmPageToolbar,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -381,6 +382,22 @@ function diagnosisLabelColor(label: string | null | undefined): string {
 }
 
 onMounted(loadData);
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '整定知识库 帮助',
+    content:
+      '验证通过的整定案例自动沉淀为知识库，支持按控制类型、问题类型、算法、效果筛选。点击行打开详情抽屉，查看 PID 参数变化与 KPI 改善明细。列设置可自定义表格列的显示/隐藏与排序。',
+  });
+}
+
+// ===== 统一工具栏（标准 3 工具：刷新 / 列设置 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadData, loading: loading.value },
+  setting: {},
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -388,6 +405,7 @@ onMounted(loadData);
     <ClpmPageToolbar
       title="整定知识库"
       description="验证通过的整定案例自动沉淀，支持按控制类型/问题类型查询相似案例"
+      :loading="loading"
     >
       <template #filters>
         <Select
@@ -423,11 +441,12 @@ onMounted(loadData);
           @change="handleSearch"
         />
       </template>
-      <template #extra>
-        <ClpmColumnSettings
-          :columns="columnConfigs"
+      <template #actions>
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="columnConfigs"
           @update:columns="handleUpdateColumns"
-          @reset="handleResetColumns"
+          @reset-columns="handleResetColumns"
         />
       </template>
     </ClpmPageToolbar>

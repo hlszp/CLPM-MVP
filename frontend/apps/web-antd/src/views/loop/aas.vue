@@ -70,7 +70,9 @@ import {
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmStandardActions,
 } from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 
 import PidStructureDrawer from './components/pid-structure-drawer.vue';
 
@@ -921,6 +923,21 @@ watch(activeTab, (tab: string) => {
   }
 });
 
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '数据接入 帮助',
+    content:
+      '数据接入页 3 个 Tab：数据源（历史 API / 实时 SignalR 配置 + 网络模式切换 + 断点续传）、DCS 系统（品牌/型号 CRUD + Excel 导入导出）、DCS 型号映射（标准 MODE 与各 DCS 型号实际 MODE 值的映射矩阵 + PID 结构编辑）。网络模式仅切链路、不影响数据源选择；计算任务恒读本地 TDengine。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadConfig, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
+
 onMounted(loadConfig);
 </script>
 
@@ -930,7 +947,12 @@ onMounted(loadConfig);
       title="数据接入"
       subtitle="数据源 · DCS 系统 · MODE 矩阵"
       compact
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
 
     <Tabs v-model:active-key="activeTab" class="mt-4">
       <!-- Tab 1: 数据源 -->

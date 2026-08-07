@@ -7,14 +7,15 @@
  */
 import type { Component } from 'vue';
 
-import { computed, markRaw, onMounted, shallowRef } from 'vue';
+import { computed, markRaw, onMounted, ref, shallowRef } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import { Step, Steps } from 'ant-design-vue';
 
-import { ClpmPageToolbar } from '#/components/clpm';
+import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 
 import StepAbCompare from './loop-analysis/step-ab-compare.vue';
 import StepDiagnosisResult from './loop-analysis/step-diagnosis-result.vue';
@@ -57,6 +58,35 @@ onMounted(() => {
     state.config.loopId = loopId;
   }
 });
+
+/** 工具栏刷新态 */
+const loading = ref(false);
+/** 强制重载当前步骤组件（刷新时自增） */
+const reloadKey = ref(0);
+
+/** 工具栏刷新：强制重载当前步骤 */
+function handleRefresh() {
+  loading.value = true;
+  reloadKey.value += 1;
+  setTimeout(() => {
+    loading.value = false;
+  }, 300);
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '回路分析 帮助',
+    content:
+      '手动评估-诊断-分析一体化工作流：① 选择回路与时间范围 → ② KPI 评估（12 项指标计算） → ③ 诊断分析（标签与可视化） → ④ A/B 对比（处置前后验证）。步骤导航仅允许回退到已完成步骤。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -64,7 +94,12 @@ onMounted(() => {
     <ClpmPageToolbar
       title="回路分析"
       subtitle="手动评估-诊断-分析一体化工作流：选回路 → KPI 评估 → 诊断分析 → A/B 对比"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <div class="mt-4">
       <Steps
         :current="state.current - 1"
@@ -80,7 +115,12 @@ onMounted(() => {
     </div>
 
     <keep-alive class="mt-4">
-      <component :is="currentStepComponent" :state="state" @next="handleNext" />
+      <component
+        :is="currentStepComponent"
+        :key="reloadKey"
+        :state="state"
+        @next="handleNext"
+      />
     </keep-alive>
   </Page>
 </template>

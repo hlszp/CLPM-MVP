@@ -37,8 +37,9 @@ import {
   getTaskNotificationsApi,
   markNotificationReadApi,
 } from '#/api/task';
-import { ClpmPageToolbar } from '#/components/clpm';
+import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import { usePolling } from '#/composables/use-polling';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TaskDetail' });
@@ -155,6 +156,27 @@ function handleBack() {
   router.push('/tasks');
 }
 
+/** 工具栏刷新：重载任务详情与通知 */
+function handleRefresh() {
+  loadDetail();
+  loadNotifications();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '评估任务详情 帮助',
+    content:
+      '查看评估任务的执行阶段（取数 → 预处理 → 指标计算 → 可信度判定）、进度、耗时、错误信息与通知。活跃任务（待执行/执行中）每 5 秒自动轮询刷新，进入终态后自动停止。可取消未完成的任务。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
+
 // ---- 轮询（活跃任务每 5s 刷新；进入终态后自动停止，usePolling 负责防堆积/隐藏暂停/失败熔断） ----
 const { start: startPolling, stop: stopPolling } = usePolling(
   async () => {
@@ -212,9 +234,11 @@ onUnmounted(() => {
     <ClpmPageToolbar
       title="评估任务详情"
       subtitle="执行阶段、错误信息、通知和结果摘要。"
+      :loading="loading"
     >
       <template #actions>
         <Button type="link" @click="handleBack">← 返回评估任务列表</Button>
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 

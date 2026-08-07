@@ -10,12 +10,19 @@
  */
 import type { ClpmRole } from '#/api/auth';
 
+import { ref } from 'vue';
+
 import { Page } from '@vben/common-ui';
 
 import { Card, Tag } from 'ant-design-vue';
 
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'SystemPermissions' });
 
@@ -161,6 +168,32 @@ function getCellPermission(
   if (val === undefined || val === null) return null;
   return val;
 }
+
+/** 工具栏刷新态（权限矩阵为系统预设静态数据，刷新仅提供视觉反馈） */
+const loading = ref(false);
+
+/** 工具栏刷新：权限矩阵为系统预设，刷新仅闪烁反馈 */
+function handleRefresh() {
+  loading.value = true;
+  setTimeout(() => {
+    loading.value = false;
+  }, 300);
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '权限矩阵 帮助',
+    content:
+      '权限矩阵页：查看 5 种角色（管理员 / 工艺专家 / 仪控工程师 / 性能工程师 / 赞助者）在 6 大模块（监控 / 回路 / 评估 / 诊断 / 整定 / 系统）中的系统预设权限级别。权限级别从低到高：查看 → 协同 → 执行 → 管理 → 服务。矩阵为系统预设，不可自定义修改；如需调整请联系产品团队评估。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -168,7 +201,12 @@ function getCellPermission(
     <ClpmPageToolbar
       title="权限矩阵"
       subtitle="查看 5 种角色在 6 大模块中的系统预设权限级别。"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="权限矩阵">
       <div class="mb-4">
         <p class="text-sm text-gray-500">

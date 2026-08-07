@@ -40,9 +40,10 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
-  ClpmToolbarButton,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -789,6 +790,22 @@ watch(selectedMonth, () => {
   if (timeDimension.value === 'month') loadData();
 });
 
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: 'KPI 报表 帮助',
+    content:
+      '按日/周/月维度查看综合报表（装置级聚合）与回路报表（回路级明细），支持按工厂模型层级筛选与 CSV 导出。综合报表展示参评回路数与数据不足回路数；回路报表聚合窗口内多次评估结果（均值）并展示可信度等级。切换时间维度/报表类型/工厂节点会自动重新加载。',
+  });
+}
+
+// ===== 统一工具栏（标准 3 工具：刷新 / 导出 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadData, loading: loading.value },
+  export: { onClick: handleExport, loading: exporting.value },
+  help: { onClick: handleHelp },
+}));
+
 onMounted(() => {
   loadPlantNodes();
   loadThresholds();
@@ -858,18 +875,7 @@ onMounted(() => {
         show-search
       />
       <template #actions>
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="loadData"
-        />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          :loading="exporting"
-          @click="handleExport"
-        />
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 

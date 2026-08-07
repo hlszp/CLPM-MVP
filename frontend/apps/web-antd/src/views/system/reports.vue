@@ -38,7 +38,12 @@ import {
   getReportTaskStatusApi,
   updateReportConfigApi,
 } from '#/api/system';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { formatTime } from '#/utils/format';
 
@@ -303,6 +308,26 @@ onMounted(() => {
 onUnmounted(() => {
   stopPolling();
 });
+
+/** 工具栏刷新：重新加载报表配置列表 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '自动报表管理 帮助',
+    content:
+      '自动报表管理页：配置班报 / 日报 / 周报 / 月报，支持手动触发生成并跟踪执行进度。可新增/编辑报表配置（名称、周期、收件人列表、启用状态），「立即生成」异步触发报表生成任务并轮询进度。仅 ADMIN 可访问。刷新按钮重新拉取报表配置列表。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -310,16 +335,18 @@ onUnmounted(() => {
     <ClpmPageToolbar
       title="自动报表管理"
       subtitle="配置日报/周报/月报，手动触发生成并跟踪执行进度。"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="报表配置列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
           管理班报/日报/周报/月报配置 · 支持手动触发生成与进度查询
         </p>
-        <div class="flex gap-2">
-          <Button :loading="loading" @click="loadList">刷新</Button>
-          <Button type="primary" @click="handleOpenAdd">新增报表</Button>
-        </div>
+        <Button type="primary" @click="handleOpenAdd">新增报表</Button>
       </div>
 
       <Table

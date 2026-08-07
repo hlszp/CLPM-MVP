@@ -34,6 +34,9 @@ import {
   resetAlertBadgeApi,
   resolveEventApi,
 } from '#/api/alert';
+import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
 
@@ -62,6 +65,12 @@ const query = reactive({
 
 // 徽章
 const badgeCount = ref(0);
+
+// 筛选区折叠态（工具栏「筛选」工具切换）
+const filterVisible = ref(true);
+
+// 最近刷新时间（工具栏状态反馈区）
+const lastRefresh = ref('');
 
 // 详情抽屉
 const detailVisible = ref(false);
@@ -160,6 +169,32 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 200, fixed: 'right' },
 ];
 
+// ===== 列设置（列配置：排除「操作」列，其始终可见不可隐藏） =====
+function buildDefaultColumnConfigs(): ColumnConfig[] {
+  return columns
+    .filter((c: any) => c.key !== 'action')
+    .map((c: any, i: number) => ({
+      key: String(c.key),
+      label: String(c.title ?? ''),
+      visible: true,
+      order: i,
+    }));
+}
+const columnConfigs = ref<ColumnConfig[]>(buildDefaultColumnConfigs());
+const visibleColumns = computed<TableColumnsType>(() =>
+  columns.filter((c: any) => {
+    if (c.key === 'action') return true;
+    const cfg = columnConfigs.value.find((cc) => cc.key === c.key);
+    return cfg ? cfg.visible : true;
+  }),
+);
+function handleUpdateColumns(cols: ColumnConfig[]) {
+  columnConfigs.value = cols;
+}
+function handleResetColumns() {
+  columnConfigs.value = buildDefaultColumnConfigs();
+}
+
 async function loadEvents() {
   loading.value = true;
   try {
@@ -173,6 +208,9 @@ async function loadEvents() {
     const res = await getAlertEventsApi(params);
     eventList.value = res.items;
     total.value = res.total;
+    lastRefresh.value = new Date().toLocaleTimeString('zh-CN', {
+      hour12: false,
+    });
   } catch {
     message.error('加载预警事件失败');
   } finally {
@@ -279,6 +317,68 @@ async function handleResetBadge() {
   }
 }
 
+/** 导出当前筛选结果为 CSV（客户端生成，无需后端接口） */
+function exportEventsCsv() {
+  if (eventList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const header = [
+    '回路',
+    '规则代码',
+    '严重度',
+    '状态',
+    '触发值',
+    '触发时间',
+    '重复次数',
+  ];
+  const rows = eventList.value.map((e) => [
+    e.loopName || e.loopId,
+    e.ruleCode,
+    severityLabel[e.severity] ?? e.severity,
+    statusLabel[e.status] ?? e.status,
+    e.triggeredValue != null ? Number(e.triggeredValue).toFixed(4) : '',
+    formatTime(e.triggeredAt),
+    String(e.triggerCount ?? ''),
+  ]);
+  const csv = [header, ...rows]
+    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `alert-events-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  message.success(`已导出 ${eventList.value.length} 条事件`);
+}
+
+function handleHelp() {
+  showPageHelp({
+    title: '预警事件 帮助',
+    content:
+      '预警事件由规则引擎实时求值产生。可按状态、严重度、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV。',
+  });
+}
+
+// ===== 统一工具栏（标准 5 工具：刷新/筛选/导出/列设置/帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadEvents, loading: loading.value },
+  filter: { onClick: () => toggleFilter(), active: filterVisible.value },
+  export: {
+    onClick: exportEventsCsv,
+    permission: ['ADMIN', 'IC_ENGINEER'],
+    disabledReason: '仅工程师/管理员可导出',
+  },
+  setting: {},
+  help: { onClick: handleHelp },
+}));
+
+function toggleFilter() {
+  filterVisible.value = !filterVisible.value;
+}
+
 onMounted(() => {
   loadEvents();
   loadBadge();
@@ -286,16 +386,30 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page :title="'预警事件'">
-    <template #extra>
-      <Badge :count="badgeCount" :offset="[-4, 4]">
-        <Button size="small" @click="handleResetBadge">已读</Button>
-      </Badge>
-    </template>
+  <Page>
+    <!-- 统一工具栏（吸顶 · 右对齐 · 彩色语义图标） -->
+    <ClpmPageToolbar
+      title="预警事件"
+      subtitle="规则引擎实时求值产生的事件流"
+      :loading="loading"
+      :last-refresh="lastRefresh"
+    >
+      <template #actions>
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="columnConfigs"
+          @update:columns="handleUpdateColumns"
+          @reset-columns="handleResetColumns"
+        />
+      </template>
+    </ClpmPageToolbar>
 
-    <!-- 筛选栏 -->
-    <Form layout="inline" class="mb-4">
-      <FormItem label="状态">
+    <!-- 筛选区（工具栏「筛选」工具可折叠） -->
+    <div
+      class="clpm-filter-bar"
+      :class="{ 'clpm-filter-bar--collapsed': !filterVisible }"
+    >
+      <FormItem label="状态" class="!mb-0">
         <Select
           v-model:value="query.status"
           allow-clear
@@ -309,12 +423,12 @@ onMounted(() => {
           "
         />
       </FormItem>
-      <FormItem label="严重度">
+      <FormItem label="严重度" class="!mb-0">
         <Select
           v-model:value="query.severity"
           allow-clear
           placeholder="全部"
-          style="width: 120px"
+          style="width: 140px"
           :options="
             (['CRITICAL', 'ERROR', 'WARN', 'INFO'] as AlertApi.Severity[]).map(
               (v) => ({ value: v, label: `${severityLabel[v]}（${v}）` }),
@@ -322,25 +436,27 @@ onMounted(() => {
           "
         />
       </FormItem>
-      <FormItem label="回路ID">
+      <FormItem label="回路ID" class="!mb-0">
         <Input
           v-model:value="query.loopId"
           allow-clear
           placeholder="回路 ID"
           style="width: 200px"
+          @press-enter="handleSearch"
         />
       </FormItem>
-      <FormItem>
-        <Space>
-          <Button type="primary" @click="handleSearch">查询</Button>
-          <Button @click="handleReset">重置</Button>
-        </Space>
-      </FormItem>
-    </Form>
+      <Space class="!ml-auto">
+        <Button type="primary" @click="handleSearch">查询</Button>
+        <Button @click="handleReset">重置</Button>
+      </Space>
+      <Badge :count="badgeCount" :offset="[-4, 4]">
+        <Button size="small" @click="handleResetBadge">标记已读</Button>
+      </Badge>
+    </div>
 
     <!-- 事件表格 -->
     <Table
-      :columns="columns"
+      :columns="visibleColumns"
       :data-source="eventList"
       :loading="loading"
       :pagination="{

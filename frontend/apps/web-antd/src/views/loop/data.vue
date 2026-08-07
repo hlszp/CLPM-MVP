@@ -50,7 +50,8 @@ import {
   triggerBackfillApi,
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmPageToolbar } from '#/components/clpm';
+import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 
@@ -696,6 +697,32 @@ function hasActiveTasks() {
   );
 }
 
+/** 工具栏刷新：重新加载回路列表与导入任务列表 */
+async function handleRefresh() {
+  taskLoading.value = true;
+  try {
+    await Promise.all([loadLoops(), loadTasks()]);
+  } finally {
+    taskLoading.value = false;
+  }
+  syncTaskPolling();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '数据管理 帮助',
+    content:
+      '历史数据导入页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页），右侧选择时间范围/采样间隔/冲突策略后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。支持数据完整性检查（按小时分桶列级缺失统计）与一键补齐缺口（skip 策略）。任务列表展示进度/状态，活跃任务自动轮询。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: taskLoading.value },
+  help: { onClick: handleHelp },
+}));
+
 // --- 生命周期 ---
 
 onMounted(async () => {
@@ -716,7 +743,12 @@ onMounted(async () => {
       title="数据管理"
       subtitle="从远端 API 导入历史数据到本地 TDengine，支持冲突处理与 KPI 回算"
       compact
-    />
+      :loading="taskLoading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
 
     <div class="mt-4 flex gap-4" style="height: calc(100vh - 200px)">
       <!-- 左侧：回路选择 -->
@@ -929,7 +961,6 @@ onMounted(async () => {
               >
                 批量删除 ({{ selectedTaskIds.length }})
               </Button>
-              <Button size="small" @click="loadTasks">刷新</Button>
             </div>
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto">

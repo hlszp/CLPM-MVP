@@ -167,6 +167,9 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 
 <style scoped>
 .clpm-page-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -226,15 +229,15 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
   gap: 8px;
   align-items: center;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
-/* 第 4 区：状态反馈 */
+/* 第 4 区：状态反馈（紧跟 actions 右侧，不竞争 margin-left:auto） */
 .clpm-page-toolbar__status {
   display: flex;
   flex: 0 0 auto;
   gap: 4px;
   align-items: center;
-  margin-left: auto;
   font-size: 12px;
   line-height: 16px;
   color: hsl(var(--muted-foreground));

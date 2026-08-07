@@ -54,6 +54,7 @@ import {
   ClpmImplementRecordModal,
   ClpmObjectSummaryBar,
   ClpmPageToolbar,
+  ClpmStandardActions,
   ClpmStructuredDiagnosisReport,
   ClpmThresholdTuneModal,
   ClpmToolbarButton,
@@ -62,6 +63,7 @@ import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,
@@ -556,6 +558,21 @@ function handleRefresh() {
   loadAll();
 }
 
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '诊断详情 帮助',
+    content:
+      '查看回路诊断证据（标签、特征值、波形、散点图）、处置时间线与 A/B 验证。支持时间窗切换、AI 诊断洞察、阈值微调、导出诊断建议书 PDF。处置状态机：待处理 → 处理中 → 待验证 → 已闭环/已重开。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
+
 /** P0-03：构建诊断→整定上下文 query 参数 */
 function buildTuningContextQuery() {
   const labels = detail.value?.diagnosisLabels ?? [];
@@ -975,8 +992,8 @@ onMounted(() => {
           label="阈值微调"
           @click="thresholdTuneVisible = true"
         />
-        <ClpmToolbarButton icon="refresh" label="刷新" @click="handleRefresh" />
         <ClpmToolbarButton icon="back" label="返回" @click="handleBack" />
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
     <Spin :spinning="loading">

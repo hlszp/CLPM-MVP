@@ -30,7 +30,12 @@ import {
 import dayjs from 'dayjs';
 
 import { getAuditLogListApi } from '#/api/system';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemAudit' });
@@ -181,6 +186,26 @@ function formatJsonValue(value: unknown): string {
 onMounted(() => {
   loadList();
 });
+
+/** 工具栏刷新：重新加载审计日志列表 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '审计日志 帮助',
+    content:
+      '审计日志页：按操作类型、时间范围和资源类型筛选查看系统关键变更记录（创建/更新/删除/登录/登出）。点击「查看详情」可在抽屉中查看变更前后值对比（JSON）。仅 ADMIN 可见，数据只读不可编辑。刷新按钮重新拉取当前筛选条件下的日志列表。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -188,7 +213,12 @@ onMounted(() => {
     <ClpmPageToolbar
       title="审计日志"
       subtitle="按操作类型、时间和资源查看关键变更记录。"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="审计日志列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">

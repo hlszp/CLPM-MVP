@@ -354,6 +354,24 @@ th.align-right {
   opacity: 1;
 }
 
+/* 页面筛选区（v6.1 §5.1 统一工具栏：工具栏下方的筛选控件容器）
+   统一灰底卡片样式，与工具栏吸顶条形成层次；可被工具栏「筛选」工具折叠 */
+.clpm-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: hsl(var(--muted) / 45%);
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) * 1px);
+}
+
+.clpm-filter-bar--collapsed {
+  display: none;
+}
+
 /* 表格行内进度条（v6.1 §14 G-02） */
 .clpm-row-progress {
   display: inline-flex;

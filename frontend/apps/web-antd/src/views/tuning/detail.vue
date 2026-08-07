@@ -22,8 +22,13 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Alert, message, Tag } from 'ant-design-vue';
 
-import { ClpmLoopContextHeader, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmLoopContextHeader,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningDetail' });
@@ -134,7 +139,7 @@ const currentPid = computed<TuningApi.PidParamsWithLabel | null>(() => {
 });
 
 // ===== 恢复策略 =====
-onMounted(async () => {
+async function restoreState() {
   const taskId = route.query.taskId as string | undefined;
   const queryLoopId = route.query.loopId as string | undefined;
   if (taskId) {
@@ -151,7 +156,37 @@ onMounted(async () => {
     store.restoreFromSession();
   }
   activeAnchor.value = store.currentStep ?? 0;
+}
+
+onMounted(() => {
+  restoreState();
 });
+
+/** 工具栏刷新态 */
+const loading = ref(false);
+
+/** 工具栏刷新：重新恢复整定流程状态 */
+function handleRefresh() {
+  loading.value = true;
+  restoreState().finally(() => {
+    loading.value = false;
+  });
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '整定任务详情 帮助',
+    content:
+      '单页整定工作流，4 锚点导航：① 过程辨识（辨识 G(s)） → ② PID 推荐（计算候选参数） → ③ 闭环仿真（对比响应性能） → ④ 方案确认（建议+风险+留痕）。锚点切换受门禁约束，须完成前序步骤。平台不直接修改 DCS 参数，只输出建议与证据。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 
 // 同步 store.currentStep → activeAnchor
 watch(
@@ -167,7 +202,7 @@ watch(
 <template>
   <Page>
     <!-- 顶部常驻信息栏 -->
-    <ClpmPageToolbar>
+    <ClpmPageToolbar :loading="loading">
       <template #left>
         <ClpmLoopContextHeader
           :editable="activeAnchor === 0"
@@ -217,6 +252,9 @@ watch(
             P={{ currentPid.kp }} I={{ currentPid.ti }} D={{ currentPid.td }}
           </span>
         </div>
+      </template>
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 

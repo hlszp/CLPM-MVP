@@ -42,7 +42,9 @@ import {
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmStandardActions,
 } from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemUsers' });
@@ -310,6 +312,26 @@ function roleColor(role: ClpmRole): string {
 onMounted(() => {
   loadList();
 });
+
+/** 工具栏刷新：重新加载用户列表 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '用户管理 帮助',
+    content:
+      '用户管理页：管理系统账号、角色、密码与启用状态。支持按用户名、角色、状态筛选；新增/编辑用户（弹窗表单）、重置密码、禁用用户（二次确认）。5 种角色：管理员 / 工艺专家 / 仪控工程师 / 性能工程师 / 赞助者。仅 ADMIN 可访问。刷新按钮重新拉取用户列表。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -317,7 +339,12 @@ onMounted(() => {
     <ClpmPageToolbar
       title="用户管理"
       subtitle="管理账号、角色、密码重置与启用状态。"
-    />
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="用户列表" :loading="loading">
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">

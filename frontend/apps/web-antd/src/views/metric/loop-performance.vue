@@ -45,7 +45,7 @@ import {
 } from 'vue';
 
 import { Page } from '@vben/common-ui';
-import { IconifyIcon, RotateCw } from '@vben/icons';
+import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
@@ -85,9 +85,10 @@ import {
   ClpmDataCanvas,
   ClpmInfoTip,
   ClpmPageToolbar,
-  ClpmToolbarButton,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
@@ -106,7 +107,6 @@ import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   LOOP_TYPE_LABEL_MAP,
-  LOOP_TYPE_TAG_COLOR_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
 import { useScoreColor } from '#/composables/use-score-color';
@@ -321,7 +321,7 @@ const columns = computed<TableColumnsType>(() => [
     title: '回路编号',
     key: 'loopTagName',
     dataIndex: 'loopTagName',
-    width: 160,
+    width: 144,
     fixed: 'left',
     ellipsis: true,
   },
@@ -329,28 +329,32 @@ const columns = computed<TableColumnsType>(() => [
     title: '回路名称',
     key: 'description',
     dataIndex: 'description',
-    width: 120,
+    width: 160,
     ellipsis: true,
   },
   {
     title: '回路类型',
     key: 'loopType',
-    width: 80,
+    width: 72,
+    align: 'center' as const,
   },
   {
     title: '控制类型',
     key: 'controlType',
     width: 80,
+    align: 'center' as const,
   },
   {
     title: '控制方式',
     key: 'controlMode',
-    width: 80,
+    width: 68,
+    align: 'center' as const,
   },
   {
     title: '评估等级',
     key: 'grade',
     width: 80,
+    align: 'center' as const,
   },
   {
     title: '综合评分',
@@ -358,6 +362,7 @@ const columns = computed<TableColumnsType>(() => [
     dataIndex: 'score',
     width: 90,
     sorter: true,
+    align: 'center' as const,
     sortOrder: (() => {
       if (query.sortBy !== 'score') return null;
       return query.sortOrder === 'asc' ? 'ascend' : 'descend';
@@ -369,30 +374,35 @@ const columns = computed<TableColumnsType>(() => [
     title: '可信度',
     key: 'confidenceLevel',
     dataIndex: 'confidenceLevel',
-    width: 80,
+    width: 68,
+    align: 'center' as const,
   },
   {
     title: '时间窗口',
     key: 'tsRange',
     width: 140,
+    align: 'center' as const,
   },
   {
     title: '评估时间',
     key: 'tsEnd',
     dataIndex: 'tsEnd',
-    width: 120,
+    width: 116,
+    align: 'center' as const,
   },
   {
     title: '评估状态',
     key: 'status',
     dataIndex: 'status',
-    width: 80,
+    width: 68,
+    align: 'center' as const,
   },
   {
     title: '操作',
     key: 'action',
-    width: 140,
+    width: 184,
     fixed: 'right' as const,
+    align: 'center' as const,
   },
 ]);
 
@@ -721,9 +731,50 @@ const drawerRecord = ref<LoopPerformanceRow | null>(null);
 const { init: initAiGate, gateStatus, gateTooltip } = useAiInsightGate();
 initAiGate();
 const aiDrawerOpen = ref(false);
-const aiLoopId = computed(() => drawerRecord.value?.loopId ?? null);
+
+/** #7: 页面级回路选择器——供 AI 洞察使用上下文，无需打开详情抽屉 */
+const selectedLoopId = ref<string | undefined>(undefined);
+/** 表格单选选中行 key（组合键 loopId-tsStart，供 row-selection 受控） */
+const selectedRowKeys = ref<string[]>([]);
+/** 表格行单选配置：radio 模式，选中回路后自动设为 AI 分析对象 */
+const rowSelection = computed(() => ({
+  type: 'radio' as const,
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (
+    keys: (number | string)[],
+    selectedRows: LoopPerformanceRow[],
+  ) => {
+    selectedRowKeys.value = keys.map(String);
+    selectedLoopId.value = selectedRows[0]?.loopId ?? undefined;
+  },
+}));
+/** AI 上下文 loopId：优先页面级选择器，回退详情抽屉选中回路 */
+const aiLoopId = computed(
+  () => selectedLoopId.value ?? drawerRecord.value?.loopId ?? null,
+);
 const aiGateStatus = computed(() => gateStatus(aiLoopId.value, true));
 const aiGateTooltip = computed(() => gateTooltip(aiGateStatus.value));
+
+/** 统一工具栏（#11: 全业务页部署统一工具栏） */
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadList, loading: loading.value },
+  ai: {
+    onClick: () => {
+      aiDrawerOpen.value = true;
+    },
+    disabled: aiGateStatus.value !== 'active',
+    disabledReason: aiGateTooltip.value,
+    tooltip: aiGateTooltip.value || 'AI 性能分析',
+  },
+  help: {
+    onClick: () =>
+      showPageHelp({
+        title: '回路性能',
+        content:
+          '按回路展示 KPI 评估结果。在筛选区选择回路后可使用 AI 性能分析，点击表格行查看详情。',
+      }),
+  },
+}));
 
 /** 抽屉内历史快照子表（最近 10 条） */
 const drawerHistory = ref<KpiSnapshotItem[]>([]);
@@ -801,10 +852,15 @@ function closeDetail() {
   drawerDiagData.value = null;
 }
 
-/** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互） */
+/** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互）。
+ *  点击行首 radio 时仅选中回路（由 rowSelection 处理），不打开详情。 */
 function rowClick(record: LoopPerformanceRow) {
   return {
-    onClick: () => openDetail(record),
+    onClick: (event: MouseEvent) => {
+      if ((event.target as HTMLElement).closest('.ant-table-selection-column'))
+        return;
+      openDetail(record);
+    },
     style: { cursor: 'pointer' },
   };
 }
@@ -1189,25 +1245,14 @@ onMounted(async () => {
 
 <template>
   <Page>
-    <!-- 顶部工具栏 -->
+    <!-- 顶部工具栏（统一工具栏） -->
     <ClpmPageToolbar
       title="回路性能"
       subtitle="按回路展示 KPI 评估结果，支持详情查看、历史趋势与诊断可视化。"
       :loading="loading"
     >
       <template #actions>
-        <ClpmToolbarButton
-          icon="ai"
-          label="AI 性能分析"
-          :disabled="aiGateStatus !== 'active'"
-          :disabled-reason="aiGateTooltip"
-          :tooltip="aiGateTooltip"
-          @click="aiDrawerOpen = true"
-        />
-        <Button @click="loadList">
-          <template #icon><RotateCw /></template>
-          刷新
-        </Button>
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 
@@ -1384,6 +1429,7 @@ onMounted(async () => {
         :data-source="rows"
         :loading="loading"
         :custom-row="rowClick"
+        :row-selection="rowSelection"
         :pagination="{
           current: query.page,
           pageSize: query.pageSize,
@@ -1413,21 +1459,13 @@ onMounted(async () => {
         </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'loopType'">
-            <Tag
-              v-if="(record as LoopPerformanceRow).loopType"
-              :color="
-                LOOP_TYPE_TAG_COLOR_MAP[
-                  (record as LoopPerformanceRow).loopType ?? 'OTHER'
-                ] ?? 'default'
-              "
-              class="m-0"
-            >
+            <span v-if="(record as LoopPerformanceRow).loopType">
               {{
                 LOOP_TYPE_LABEL_MAP[
                   (record as LoopPerformanceRow).loopType ?? 'OTHER'
                 ] ?? '其他'
               }}
-            </Tag>
+            </span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'controlType'">
@@ -1440,15 +1478,9 @@ onMounted(async () => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'controlMode'">
-            <Tag
-              v-if="(record as LoopPerformanceRow).controlMode"
-              :color="
-                modeLabelColor((record as LoopPerformanceRow).controlMode)
-              "
-              class="m-0"
-            >
+            <span v-if="(record as LoopPerformanceRow).controlMode">
               {{ (record as LoopPerformanceRow).controlMode }}
-            </Tag>
+            </span>
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'grade'">
@@ -1519,7 +1551,7 @@ onMounted(async () => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'action'">
-            <div class="flex items-center gap-1 whitespace-nowrap">
+            <div class="flex items-center justify-center gap-1 whitespace-nowrap">
               <Button
                 type="link"
                 size="small"
@@ -2379,10 +2411,21 @@ onMounted(async () => {
 
 :deep(.ant-table-cell) {
   white-space: nowrap;
+  /* 隐藏单元格竖线（列分隔线） */
+  border-inline-end-width: 0 !important;
+}
+
+:deep(.ant-table-cell::before) {
+  display: none !important;
 }
 
 :deep(.ant-table-cell-wrap-all) {
   white-space: normal;
+}
+
+/* 表头文字居中 */
+:deep(.ant-table-thead .ant-table-cell) {
+  text-align: center !important;
 }
 
 .confidence-cell-link {

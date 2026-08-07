@@ -41,9 +41,10 @@ import { getLoopMonitorListApi } from '#/api/loop';
 import {
   ClpmAiDrawer,
   ClpmPageToolbar,
-  ClpmToolbarButton,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'LoopWorkbench' });
 
@@ -115,10 +116,30 @@ const assessmentDetail = ref<LoopConfidenceLatestItem | null>(null);
 const assessmentLoading = ref(false);
 const scoreHistory = ref<KpiSnapshotItem[]>([]);
 
-/** 拉取近 7 天评分趋势快照（分页，pageSize 上限 100） */
+// ===== 评估时间窗（工具栏「时间窗」工具切换，联动评估历史范围） =====
+// 点击循环切换 1 天 / 7 天 / 30 天，自动重载评估趋势
+const assessWindowOptions = [
+  { days: 1, label: '近1天' },
+  { days: 7, label: '近7天' },
+  { days: 30, label: '近30天' },
+] as const;
+const assessWindowIdx = ref(1);
+const assessWindowDays = computed(
+  () => assessWindowOptions[assessWindowIdx.value]?.days ?? 7,
+);
+const assessWindowLabel = computed(
+  () => assessWindowOptions[assessWindowIdx.value]?.label ?? '近7天',
+);
+function cycleAssessWindow() {
+  assessWindowIdx.value =
+    (assessWindowIdx.value + 1) % assessWindowOptions.length;
+  if (selectedLoopId.value) loadAssessment(selectedLoopId.value);
+}
+
+/** 拉取评分趋势快照（分页，pageSize 上限 100；范围由工具栏时间窗控制） */
 async function loadScoreHistory(loopId: string): Promise<KpiSnapshotItem[]> {
   const endTime = dayjs();
-  const startTime = endTime.subtract(7, 'day');
+  const startTime = endTime.subtract(assessWindowDays.value, 'day');
   const allItems: KpiSnapshotItem[] = [];
   let page = 1;
   const pageLimit = 100;
@@ -169,6 +190,34 @@ initAiGate();
 const aiDrawerOpen = ref(false);
 const aiGateStatus = computed(() => gateStatus(selectedLoopId.value, true));
 const aiGateTooltip = computed(() => gateTooltip(aiGateStatus.value));
+
+function handleHelp() {
+  showPageHelp({
+    title: '回路工作台 帮助',
+    content:
+      '左侧选择回路，右侧 6 Tab 提供 360° 视图：概览 / 评估 / 诊断 / 整定 / 效果对比 / 处置时间线。工具栏「时间窗」切换评估趋势范围（1/7/30 天），「AI 洞察」基于当前回路上下文生成性能分析与建议。',
+  });
+}
+
+// ===== 统一工具栏（refresh / time-window / ai / help） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: loadLoopList, loading: loopListLoading.value },
+  'time-window': {
+    onClick: cycleAssessWindow,
+    active: true,
+    tooltip: `评估时间窗：${assessWindowLabel.value}（点击切换）`,
+    label: assessWindowLabel.value,
+  },
+  ai: {
+    onClick: () => {
+      aiDrawerOpen.value = true;
+    },
+    disabled: aiGateStatus.value !== 'active',
+    disabledReason: aiGateTooltip.value,
+    tooltip: aiGateTooltip.value || 'AI 洞察',
+  },
+  help: { onClick: handleHelp },
+}));
 
 /** 6 Tab 定义 */
 const tabPanes = [
@@ -309,20 +358,7 @@ watch(
       :loading="loopListLoading"
     >
       <template #actions>
-        <ClpmToolbarButton
-          icon="ai"
-          label="AI 洞察"
-          :disabled="aiGateStatus !== 'active'"
-          :disabled-reason="aiGateTooltip"
-          :tooltip="aiGateTooltip"
-          @click="aiDrawerOpen = true"
-        />
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loopListLoading"
-          @click="loadLoopList"
-        />
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 

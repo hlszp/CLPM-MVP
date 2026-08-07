@@ -31,10 +31,12 @@ import {
   ClpmKpiStrip,
   ClpmLoopLink,
   ClpmPageToolbar,
+  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningWorkbench' });
@@ -329,7 +331,28 @@ function handleContinueTask(record: TuningApi.TuningTaskItem) {
 /** 工具栏：刷新 */
 function handleRefresh() {
   loadHistory();
+  loadPendingLoops();
 }
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '整定工作台 帮助',
+    content:
+      '整定任务的统一入口：展示统计卡片（总任务数/已完成/平均拟合度/近 7 天任务数）、整定流程导航、待整定回路列表（聚合诊断中心建议整定的开放异常）、相似案例推荐与最近整定任务。可从诊断中心携带上下文进入发起整定，「新建整定」跳转模型辨识流程。',
+  });
+}
+
+// ===== 统一工具栏（标准 3 工具：刷新 / 导出 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  export: {
+    onClick: () => {},
+    disabled: true,
+    disabledReason: '导出功能开发中，待后端接口支持',
+  },
+  help: { onClick: handleHelp },
+}));
 
 // P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
@@ -545,44 +568,23 @@ onMounted(() => {
 
 <template>
   <Page>
+    <ClpmPageToolbar
+      title="整定工作台"
+      subtitle="模型辨识、算法、仿真与效果统计的统一入口"
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+        <ClpmToolbarButton
+          icon="create"
+          label="新建整定"
+          variant="primary"
+          @click="handleCreate"
+        />
+      </template>
+    </ClpmPageToolbar>
+
     <Spin :spinning="loading">
-      <ClpmPageToolbar
-        title="整定工作台"
-        subtitle="模型辨识、算法、仿真与效果统计的统一入口"
-      >
-        <template #actions>
-          <ClpmToolbarButton
-            icon="refresh"
-            label="刷新"
-            :loading="loading"
-            @click="handleRefresh"
-          />
-          <ClpmToolbarButton
-            icon="export"
-            label="导出"
-            disabled
-            disabled-reason="导出功能开发中，待后端接口支持"
-          />
-          <ClpmToolbarButton
-            icon="create"
-            label="新建整定"
-            variant="primary"
-            @click="handleCreate"
-          />
-        </template>
-      </ClpmPageToolbar>
-
-      <!-- 常驻风险提示横幅：不可关闭 -->
-      <Alert
-        class="mt-3"
-        type="warning"
-        show-icon
-        banner
-        :closable="false"
-        message="只读建议 · 人工实施 · 需留痕"
-        description="本平台不直接修改 DCS 的 P/I/D 参数，参数由授权人员人工实施并留痕。"
-      />
-
       <!-- P0-03：来自诊断中心的上下文提示卡片 -->
       <Alert
         v-if="diagnosisContext"

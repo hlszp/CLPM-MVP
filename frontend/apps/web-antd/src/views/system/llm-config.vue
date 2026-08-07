@@ -36,7 +36,12 @@ import {
   saveLlmConfigApi,
   testLlmConnectionApi,
 } from '#/api/llm';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemLlmConfig' });
@@ -60,6 +65,12 @@ const form = reactive({
   timeout: 30,
   maxTokens: 4096,
 });
+
+/** #10: 已加载的服务端配置快照——用于检测表单是否有未保存改动 */
+const loadedConfig = ref<{
+  endpoint?: null | string;
+  model?: null | string;
+}>({ endpoint: null, model: null });
 
 /** 连接测试结果 */
 const testResult = ref<LlmApi.LlmTestResult | null>(null);
@@ -92,6 +103,10 @@ async function loadConfig() {
     form.timeout = data.timeout;
     form.maxTokens = data.maxTokens ?? 4096;
     apiKeyConfigured.value = data.apiKeyConfigured;
+    loadedConfig.value = {
+      endpoint: data.endpoint,
+      model: data.model,
+    };
     lastUpdated.value = {
       by: data.updatedBy ?? null,
       at: data.updatedAt ?? null,
@@ -137,6 +152,10 @@ async function handleSave() {
     });
     apiKeyConfigured.value = data.apiKeyConfigured;
     form.apiKey = ''; // 清空，保存后不再显示明文
+    loadedConfig.value = {
+      endpoint: form.endpoint.trim() || null,
+      model: form.model.trim() || null,
+    };
     lastUpdated.value = {
       by: data.updatedBy ?? null,
       at: data.updatedAt ?? null,
@@ -152,17 +171,32 @@ async function handleSave() {
 /** 连接测试 */
 async function handleTest() {
   if (!form.enabled) {
-    message.warning('请先启用并保存 LLM 配置再测试');
+    message.warning('请先启用 LLM 配置并保存');
+    return;
+  }
+  // #10: 后端测试读取 sys_config 已保存配置，表单未保存时测试结果不准确。
+  // 检测表单是否有未保存改动（endpoint/model/apiKey 变更），提示先保存。
+  const endpointChanged =
+    form.endpoint.trim() !== (loadedConfig.value.endpoint ?? '');
+  const modelChanged = form.model.trim() !== (loadedConfig.value.model ?? '');
+  const apiKeyChanged = form.apiKey !== ''; // 空值=保留原值，非空=有新输入
+  if (endpointChanged || modelChanged || apiKeyChanged) {
+    message.warning('表单有未保存的改动，请先点击「保存配置」再测试连接');
+    return;
+  }
+  if (!apiKeyConfigured.value) {
+    message.warning('API Key 未配置，请填写并保存后再测试');
     return;
   }
   testing.value = true;
   testResult.value = null;
   try {
     testResult.value = await testLlmConnectionApi();
-  } catch {
+  } catch (err: any) {
+    const apiMsg = err?.response?.data?.message;
     testResult.value = {
       success: false,
-      message: '请求失败，请检查后端服务',
+      message: apiMsg || '请求失败，请检查后端服务是否运行',
     };
   } finally {
     testing.value = false;
@@ -182,14 +216,38 @@ function handleModelChange(value: unknown) {
 }
 
 onMounted(loadConfig);
+
+/** 工具栏刷新：重新加载 LLM 配置 */
+function handleRefresh() {
+  loadConfig();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: 'LLM 配置 帮助',
+    content:
+      'LLM 配置页：管理自然语言诊断解读服务（BaseURL / API Key / 模型 / 超时 / 最大 Token 数）。遵循 OpenAI 兼容接口协议，支持 OpenAI / DeepSeek / 通义千问 / Moonshot / 本地 Ollama 等服务。未启用或调用失败时自动回退规则模板，不阻断诊断功能。保存前可点击「测试连接」验证配置是否可用。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
   <Page :hide-footer="true">
-    <ClpmPageToolbar title="LLM 配置" sub-title="自然语言诊断解读服务配置">
-      <Button type="primary" :loading="saving" @click="handleSave">
-        保存配置
-      </Button>
+    <ClpmPageToolbar
+      title="LLM 配置"
+      sub-title="自然语言诊断解读服务配置"
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
     </ClpmPageToolbar>
 
     <ClpmDataCanvas :loading="loading">
@@ -338,6 +396,13 @@ onMounted(loadConfig);
                 </span>
               </span>
             </div>
+          </FormItem>
+
+          <!-- 保存按钮 -->
+          <FormItem>
+            <Button type="primary" :loading="saving" @click="handleSave">
+              保存配置
+            </Button>
           </FormItem>
         </Form>
 

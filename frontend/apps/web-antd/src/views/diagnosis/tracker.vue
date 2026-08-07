@@ -56,7 +56,6 @@ import {
   updateTrackerStatusApi,
 } from '#/api/diagnosis';
 import {
-  ClpmColumnSettings,
   ClpmConfidenceBadge,
   ClpmDataCanvas,
   ClpmEmptyState,
@@ -65,11 +64,13 @@ import {
   ClpmLoopLink,
   ClpmPageToolbar,
   ClpmSeverityBadge,
+  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import {
   DIAGNOSIS_TERM_EXPLANATIONS,
   SEVERITY_LABEL,
@@ -617,6 +618,26 @@ function handleRefresh() {
   loadList();
 }
 
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '异常跟踪 帮助',
+    content:
+      '跟踪诊断异常的处置闭环：待处理 → 处理中 → 已实施 / 已忽略。支持按严重度、诊断标签、处理状态、时间窗筛选；行级操作含详情、更新状态（含 MOC 变更管理关联）、A/B 对比、导出 PDF。CSV 统计导出按当前时间窗生成整体统计。',
+  });
+}
+
+// ===== 统一工具栏（标准 4 工具：刷新 / 导出 / 列设置 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  export: {
+    onClick: handleExportCsv,
+    loading: exportingCsv.value,
+  },
+  setting: {},
+  help: { onClick: handleHelp },
+}));
+
 // P2 #37 UX13: 批量处理功能开发中，按钮保持 disabled + tooltip；
 // 导出按钮已接通 SVC-13 CSV 统计导出（D5）
 
@@ -722,28 +743,17 @@ watch(
       />
       <template #actions>
         <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="handleRefresh"
-        />
-        <ClpmToolbarButton
-          icon="export"
-          label="导出"
-          :loading="exportingCsv"
-          @click="handleExportCsv"
-        />
-        <ClpmToolbarButton
           icon="ant-design:thunderbolt-outlined"
           label="批量处理"
           variant="primary"
           disabled
           disabled-reason="批量处理功能开发中，待后端接口支持"
         />
-        <ClpmColumnSettings
-          :columns="columnConfigs"
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="columnConfigs"
           @update:columns="handleUpdateColumns"
-          @reset="handleResetColumns"
+          @reset-columns="handleResetColumns"
         />
       </template>
     </ClpmPageToolbar>

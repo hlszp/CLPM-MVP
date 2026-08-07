@@ -56,8 +56,11 @@ import {
   ClpmDataCanvas,
   ClpmDataHealthBadges,
   ClpmNumeric,
+  ClpmPageToolbar,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
@@ -543,11 +546,41 @@ onUnmounted(() => {
     wsUnsubscribe = null;
   }
 });
+
+/** 工具栏刷新：重新加载测点列表 */
+function handleRefresh() {
+  loadList();
+}
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '测点清单 帮助',
+    content:
+      '测点清单页：管理从 AAS 同步的 OPC 测点（位号 / 名称 / 测点类型 / 量程 / 实时值 / 质量戳 / 参数类型 / 所属单元）。支持按装置/单元、测点类型、参数类型、关联状态、位号关键词筛选；单条编辑、批量删除（已关联回路的测点不允许删除）、Excel 批量导入导出。质量戳 GOOD 绿 / BAD 红 / UNCERTAIN 黄。刷新按钮重新拉取测点列表。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
-  <Page title="测点清单">
+  <Page>
+    <ClpmPageToolbar
+      title="测点清单"
+      subtitle="管理从 AAS 同步的 OPC 测点：位号、类型、量程、实时值与质量戳"
+      :loading="loading"
+    >
+      <template #actions>
+        <ClpmStandardActions :items="toolbarItems" />
+      </template>
+    </ClpmPageToolbar>
     <ClpmDataCanvas
+      class="mt-4"
       title="测点清单"
       :loading="loading"
       :error="loadError"

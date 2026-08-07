@@ -31,10 +31,11 @@ import {
   ClpmKpiStrip,
   ClpmPageToolbar,
   ClpmPredictionCard,
-  ClpmToolbarButton,
+  ClpmStandardActions,
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
@@ -213,6 +214,29 @@ function handleRefresh() {
   loadCounts();
   loadLinkHealth();
 }
+
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '工作台 帮助',
+    content:
+      '跨模块待办门户：聚合诊断待处理、异常跟踪待办、评估待执行与整定任务计数，点击卡片可跳转对应模块。同时展示数据链路健康状态（实时订阅/网络模式/最近同步/Tailscale）、异常预测与整改有效率，便于快速掌握全局运营状态。',
+  });
+}
+
+// ===== 统一工具栏（标准 3 工具：刷新 / AI 洞察 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRefresh, loading: loading.value },
+  ai: {
+    onClick: () => {
+      aiDrawerOpen.value = true;
+    },
+    disabled: aiGateStatus.value !== 'active',
+    disabledReason: aiGateTooltip.value,
+    tooltip: aiGateTooltip.value,
+  },
+  help: { onClick: handleHelp },
+}));
 </script>
 
 <template>
@@ -225,20 +249,7 @@ function handleRefresh() {
       status-type="info"
     >
       <template #actions>
-        <ClpmToolbarButton
-          icon="ai"
-          label="AI 洞察"
-          :disabled="aiGateStatus !== 'active'"
-          :disabled-reason="aiGateTooltip"
-          :tooltip="aiGateTooltip"
-          @click="aiDrawerOpen = true"
-        />
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="handleRefresh"
-        />
+        <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 

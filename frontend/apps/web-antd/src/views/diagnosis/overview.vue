@@ -38,10 +38,12 @@ import {
   ClpmKpiCard,
   ClpmLoopLink,
   ClpmPageToolbar,
+  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
+import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
@@ -370,6 +372,21 @@ function handleRetry() {
   loadOverview();
 }
 
+/** 工具栏帮助 */
+function handleHelp() {
+  showPageHelp({
+    title: '诊断总览 帮助',
+    content:
+      '诊断中心默认着陆页：展示异常回路数（今日）、待处理/已闭环任务数、平均闭环时长 4 项 KPI；标签分布饼图与近 30 天异常趋势（已解决数 + 平均闭环时长双 Y 轴）；底部 Top 5 异常回路表格按综合评分升序排列。点击「查看全部」进入诊断任务列表。',
+  });
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: handleRetry, loading: loading.value },
+  help: { onClick: handleHelp },
+}));
+
 /** 标签颜色 */
 function labelColor(label: DiagnosisLabel): string {
   return DIAGNOSIS_LABEL_COLOR_MAP[label];
@@ -401,14 +418,10 @@ onMounted(() => {
     <ClpmPageToolbar
       :title="$t('diagnosis.overview.title')"
       subtitle="诊断中心总览：异常回路概览、标签分布、近 30 天异常趋势与 Top 5 异常回路。"
+      :loading="loading"
     >
       <template #actions>
-        <ClpmToolbarButton
-          icon="refresh"
-          label="刷新"
-          :loading="loading"
-          @click="handleRetry"
-        />
+        <ClpmStandardActions :items="toolbarItems" />
         <ClpmToolbarButton
           icon="ant-design:unordered-list-outlined"
           label="查看全部"
