@@ -550,12 +550,7 @@ onMounted(() => {
       status-type="info"
     >
       <template #actions>
-        <ClpmToolbarButton
-          icon="back"
-          label="返回"
-          icon-only
-          @click="router.back()"
-        />
+        <ClpmToolbarButton icon="back" label="返回" @click="router.back()" />
         <ClpmToolbarButton
           icon="export"
           label="导出"

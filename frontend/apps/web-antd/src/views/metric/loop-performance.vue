@@ -1198,7 +1198,6 @@ onMounted(async () => {
       <template #actions>
         <ClpmToolbarButton
           icon="ai"
-          icon-only
           label="AI 性能分析"
           :disabled="aiGateStatus !== 'active'"
           :disabled-reason="aiGateTooltip"

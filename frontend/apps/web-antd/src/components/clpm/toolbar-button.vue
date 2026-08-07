@@ -21,7 +21,10 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   disabled: false,
   disabledReason: '',
-  iconOnly: false,
+  // P0：默认仅图标模式（对齐 ZL 工业设计规范"统一工具符 bar"约定，
+  // 所有页面的工具栏按钮默认只显示图标，hover 显示 label tooltip）。
+  // 需要展示"图标+文字"的少数场景显式传 :icon-only="false"。
+  iconOnly: true,
   tooltip: '',
   size: 'small',
 });
@@ -49,7 +52,7 @@ interface Props {
   disabled?: boolean;
   /** 禁用原因，用于 Tooltip 显示 */
   disabledReason?: string;
-  /** 仅图标模式，必须配合 label 或 tooltip 使用 */
+  /** 仅图标模式（默认 true），必须配合 label 或 tooltip 使用；需展示文字时传 :icon-only="false" */
   iconOnly?: boolean;
   /** 自定义 tooltip 文案，默认用 label 或 disabledReason */
   tooltip?: string;

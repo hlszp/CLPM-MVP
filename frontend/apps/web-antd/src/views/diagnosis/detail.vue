@@ -958,7 +958,6 @@ onMounted(() => {
       <template #actions>
         <ClpmToolbarButton
           icon="ai"
-          icon-only
           label="AI 诊断洞察"
           :disabled="aiGateStatus !== 'active'"
           :disabled-reason="aiGateTooltip"

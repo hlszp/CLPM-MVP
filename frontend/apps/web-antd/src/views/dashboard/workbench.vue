@@ -227,7 +227,6 @@ function handleRefresh() {
       <template #actions>
         <ClpmToolbarButton
           icon="ai"
-          icon-only
           label="AI 洞察"
           :disabled="aiGateStatus !== 'active'"
           :disabled-reason="aiGateTooltip"
