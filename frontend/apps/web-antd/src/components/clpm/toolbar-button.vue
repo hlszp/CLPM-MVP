@@ -2,6 +2,7 @@
 import type { ButtonProps } from 'ant-design-vue';
 
 import type { CSSProperties } from 'vue';
+
 import type { ToolbarAction, ToolbarVariant } from './toolbar-config';
 
 import { computed } from 'vue';

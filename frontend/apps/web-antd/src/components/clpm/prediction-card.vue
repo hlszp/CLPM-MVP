@@ -110,12 +110,12 @@ function goToDiagnosis(loopId: string) {
 function formatTrend(
   metric: string,
   trend?: DashboardApi.MetricTrend,
-): string | null {
+): null | string {
   if (!trend || !trend.isRisky) return null;
   const label = METRIC_LABEL[metric] ?? metric;
-  const cur = trend.currentValue !== null ? trend.currentValue.toFixed(1) : '—';
+  const cur = trend.currentValue === null ? '—' : trend.currentValue.toFixed(1);
   const proj =
-    trend.projectedValue !== null ? trend.projectedValue.toFixed(1) : '—';
+    trend.projectedValue === null ? '—' : trend.projectedValue.toFixed(1);
   return `${label} ${cur} → ${proj}`;
 }
 

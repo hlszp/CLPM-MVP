@@ -15,6 +15,7 @@
  * 命名规范：动词或动名词，小写连字符
  */
 export type ToolbarAction =
+  | 'ai'
   | 'auto-refresh'
   | 'back'
   | 'cancel'
@@ -26,7 +27,6 @@ export type ToolbarAction =
   | 'filter'
   | 'fullscreen'
   | 'help'
-  | 'ai'
   | 'import'
   | 'more'
   | 'pdf'

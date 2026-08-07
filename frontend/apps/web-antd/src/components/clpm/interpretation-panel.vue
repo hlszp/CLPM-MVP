@@ -28,13 +28,6 @@ import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'ClpmInterpretationPanel' });
 
-interface Props {
-  /** 回路 ID */
-  loopId: string;
-  /** 是否默认展开（首次进入自动生成），默认 false 由用户主动触发 */
-  autoLoad?: boolean;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   autoLoad: false,
 });
@@ -42,6 +35,13 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'generated', payload: DiagnosisApi.InterpretResult): void;
 }>();
+
+interface Props {
+  /** 回路 ID */
+  loopId: string;
+  /** 是否默认展开（首次进入自动生成），默认 false 由用户主动触发 */
+  autoLoad?: boolean;
+}
 
 const loading = ref(false);
 const error = ref(false);
@@ -79,9 +79,9 @@ async function generate(mode: DiagnosisApi.InterpretMode = 'auto') {
     const data = await interpretDiagnosisApi(props.loopId, { mode });
     result.value = data;
     emit('generated', data);
-  } catch (e: unknown) {
+  } catch (error_: unknown) {
     error.value = true;
-    errorMsg.value = e instanceof Error ? e.message : '解读生成失败';
+    errorMsg.value = error_ instanceof Error ? error_.message : '解读生成失败';
     result.value = null;
   } finally {
     loading.value = false;

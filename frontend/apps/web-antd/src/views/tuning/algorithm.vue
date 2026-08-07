@@ -60,7 +60,7 @@ const loading = ref(false);
 const saving = ref(false);
 
 /** P1-023：错误状态（整定失败时持久展示，带重试） */
-const errorState = ref<{ detail: string; message: string } | null>(null);
+const errorState = ref<null | { detail: string; message: string }>(null);
 const methods = ref<TuningApi.MethodInfo[]>([]);
 const tuneResult = ref<null | TuningApi.TuneResult>(null);
 
@@ -79,7 +79,7 @@ const sourceOptions: { label: string; value: TuningApi.ModelSource }[] = [
   { label: '人工模型（需确认风险）', value: 'MANUAL' },
 ];
 
-const modelUsageGate = computed<{ blocked: boolean; reason: string | null }>(
+const modelUsageGate = computed<{ blocked: boolean; reason: null | string }>(
   () => {
     if (!modelSource.value) {
       return {
@@ -302,12 +302,14 @@ async function handleTune() {
     store.addPidCandidate('推荐 PID', result.recommendedPid);
     hide();
     message.success('PID 整定完成');
-  } catch (err) {
+  } catch (error) {
     hide();
     errorState.value = {
       message: 'PID 整定失败',
       detail:
-        err instanceof Error ? err.message : '请检查模型参数和算法配置后重试',
+        error instanceof Error
+          ? error.message
+          : '请检查模型参数和算法配置后重试',
     };
   } finally {
     loading.value = false;

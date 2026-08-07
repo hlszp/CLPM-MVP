@@ -8,7 +8,6 @@
  * 对齐 IA 重构方案 §3.1（双轴互为入口，loopId 上下文）。
  */
 import { computed } from 'vue';
-
 import { useRoute, useRouter } from 'vue-router';
 
 export interface LoopContext {

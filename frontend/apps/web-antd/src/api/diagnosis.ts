@@ -360,17 +360,17 @@ export namespace DiagnosisApi {
     /** V62-P3-008：计划执行时间 ISO 8601 */
     plannedAt?: string;
     /** P1a: 实施后新比例增益 P（VERIFYING 状态时必填） */
-    newPidP?: number | null;
+    newPidP?: null | number;
     /** P1a: 实施后新积分时间 I（秒，VERIFYING 状态时必填） */
-    newPidI?: number | null;
+    newPidI?: null | number;
     /** P1a: 实施后新微分时间 D（秒，VERIFYING 状态时必填） */
-    newPidD?: number | null;
+    newPidD?: null | number;
     /** P1a: 实际实施时间 ISO 8601（默认当前时间） */
-    implementedAt?: string | null;
+    implementedAt?: null | string;
     /** P1a: 重开原因（REOPENED 状态时必填） */
-    reopenReason?: string | null;
+    reopenReason?: null | string;
     /** P3-01：关联整定任务记录 ID（VERIFYING 时可选，用于知识库生成） */
-    tuningRecordId?: string | null;
+    tuningRecordId?: null | string;
   }
 
   /** Tracker 记录项 */
@@ -410,19 +410,19 @@ export namespace DiagnosisApi {
     /** V62-P3-008：计划执行时间 ISO 8601 */
     plannedAt?: string;
     /** P1a: 实施后新比例增益 P */
-    newPidP?: number | null;
+    newPidP?: null | number;
     /** P1a: 实施后新积分时间 I（秒） */
-    newPidI?: number | null;
+    newPidI?: null | number;
     /** P1a: 实施后新微分时间 D（秒） */
-    newPidD?: number | null;
+    newPidD?: null | number;
     /** P1a: 实际实施时间 ISO 8601 */
-    implementedAt?: string | null;
+    implementedAt?: null | string;
     /** P1a: 实施人 */
-    implementedBy?: string | null;
+    implementedBy?: null | string;
     /** P1a: 闭环时间 ISO 8601（CLOSED 时存在） */
-    closedAt?: string | null;
+    closedAt?: null | string;
     /** P1a: 重开原因（REOPENED 时存在） */
-    reopenReason?: string | null;
+    reopenReason?: null | string;
   }
 
   // -----------------------------------------------------------------------
@@ -431,36 +431,36 @@ export namespace DiagnosisApi {
 
   /** 时间线事件类型（对齐后端 snake_case） */
   export type TimelineEventType =
-    | 'diagnosis_detected' // 系统发现异常
     | 'claimed' // 认领处理
     | 'comment' // 添加备注/评论
-    | 'tuning_completed' // 整定完成
-    | 'implemented' // 现场实施（VERIFYING）
-    | 'verification_passed' // 验证通过（CLOSED）
-    | 'verification_failed' // 验证失败（REOPENED）
+    | 'diagnosis_detected' // 系统发现异常
     | 'ignored' // 忽略
-    | 'moc_recorded'; // 记录MOC变更
+    | 'implemented' // 现场实施（VERIFYING）
+    | 'moc_recorded' // 记录MOC变更
+    | 'tuning_completed' // 整定完成
+    | 'verification_failed' // 验证失败（REOPENED）
+    | 'verification_passed'; // 验证通过（CLOSED）
 
   /** 时间线事件项 */
   export interface TimelineEventItem {
     eventId: string;
     eventType: TimelineEventType;
     timestamp: string;
-    actor?: string | null;
+    actor?: null | string;
     title: string;
-    description?: string | null;
+    description?: null | string;
     meta: Record<string, unknown>;
   }
 
   /** 时间线响应数据 */
   export interface TimelineData {
     loopId: string;
-    tagName?: string | null;
+    tagName?: null | string;
     /** 当前跟踪状态 */
     currentStatus?: ActionStatus | null;
     events: TimelineEventItem[];
     /** 预计自动验证时间 ISO 8601（VERIFYING 状态时存在） */
-    pendingVerificationAt?: string | null;
+    pendingVerificationAt?: null | string;
   }
 
   /** Tracker 列表查询参数 */
@@ -1324,8 +1324,8 @@ export function getLoopTimelineApi(loopId: string) {
  * 权限：diagnosis:view（所有登录用户可查看）
  */
 export function getThresholdOverridesApi(params?: {
-  scopeType?: DiagnosisApi.ThresholdScopeType;
   scopeId?: string;
+  scopeType?: DiagnosisApi.ThresholdScopeType;
 }) {
   return requestClient.get<DiagnosisApi.ThresholdOverrideItem[]>(
     '/diagnosis/threshold-overrides',

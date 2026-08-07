@@ -33,14 +33,14 @@ import {
 defineOptions({ name: 'ClpmStandardActions' });
 
 defineProps<{
-  /** usePageToolbar() 返回的渲染描述数组 */
-  items: ToolbarItem[];
   /** 列设置所需的列配置（仅当 items 含 setting 工具时需要） */
   columnConfigs?: ColumnConfig[];
+  /** usePageToolbar() 返回的渲染描述数组 */
+  items: ToolbarItem[];
 }>();
 
 const emit = defineEmits<{
-  'reset-columns': [];
+  resetColumns: [];
   'update:columns': [columns: ColumnConfig[]];
 }>();
 </script>
@@ -59,7 +59,7 @@ const emit = defineEmits<{
       "
       :columns="columnConfigs"
       @update:columns="emit('update:columns', $event)"
-      @reset="emit('reset-columns')"
+      @reset="emit('resetColumns')"
     >
       <template #trigger>
         <ClpmToolbarButton

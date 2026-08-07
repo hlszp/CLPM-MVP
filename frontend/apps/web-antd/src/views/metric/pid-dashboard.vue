@@ -23,7 +23,7 @@ import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';

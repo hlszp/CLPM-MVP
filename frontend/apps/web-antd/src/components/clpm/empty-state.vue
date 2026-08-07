@@ -1,42 +1,9 @@
-<template>
-  <Empty :description="null" :image-style="imageStyle" class="clpm-empty-state">
-    <div class="clpm-empty-state__content">
-      <IconifyIcon
-        :icon="sceneConfig.icon"
-        :size="iconSize"
-        style="margin-bottom: 12px; color: hsl(var(--foreground) / 25%)"
-      />
-      <div class="clpm-empty-state__title">{{ title }}</div>
-      <p v-if="description" class="clpm-empty-state__desc">{{ description }}</p>
-      <div
-        v-if="actions && actions.length > 0"
-        class="clpm-empty-state__actions"
-      >
-        <Button
-          v-for="(action, idx) in actions"
-          :key="idx"
-          :type="action.primary ? 'primary' : 'default'"
-          size="small"
-          @click="action.onClick?.()"
-        >
-          <IconifyIcon
-            v-if="action.icon"
-            :icon="action.icon"
-            :size="14"
-            style="margin-right: 4px"
-          />
-          {{ action.label }}
-        </Button>
-      </div>
-    </div>
-  </Empty>
-</template>
-
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { Button, Empty } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
+
+import { Button, Empty } from 'ant-design-vue';
 
 interface EmptyAction {
   label: string;
@@ -120,6 +87,40 @@ const imageStyle = computed(() => ({
   height: 'auto',
 }));
 </script>
+
+<template>
+  <Empty :description="null" :image-style="imageStyle" class="clpm-empty-state">
+    <div class="clpm-empty-state__content">
+      <IconifyIcon
+        :icon="sceneConfig.icon"
+        :size="iconSize"
+        style="margin-bottom: 12px; color: hsl(var(--foreground) / 25%)"
+      />
+      <div class="clpm-empty-state__title">{{ title }}</div>
+      <p v-if="description" class="clpm-empty-state__desc">{{ description }}</p>
+      <div
+        v-if="actions && actions.length > 0"
+        class="clpm-empty-state__actions"
+      >
+        <Button
+          v-for="(action, idx) in actions"
+          :key="idx"
+          :type="action.primary ? 'primary' : 'default'"
+          size="small"
+          @click="action.onClick?.()"
+        >
+          <IconifyIcon
+            v-if="action.icon"
+            :icon="action.icon"
+            :size="14"
+            style="margin-right: 4px"
+          />
+          {{ action.label }}
+        </Button>
+      </div>
+    </div>
+  </Empty>
+</template>
 
 <style scoped>
 .clpm-empty-state {

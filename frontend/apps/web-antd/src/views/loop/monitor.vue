@@ -75,7 +75,6 @@ import {
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   LOOP_TYPE_COLOR_MAP,
@@ -85,6 +84,7 @@ import {
   MODE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
@@ -738,17 +738,17 @@ function exportMonitorCsv() {
     m.description ?? '',
     m.unitName ?? '',
     m.loopType ?? '',
-    m.currentValues?.sp != null ? m.currentValues.sp.toFixed(2) : '',
-    m.currentValues?.pv != null ? m.currentValues.pv.toFixed(2) : '',
-    m.currentValues?.op != null ? m.currentValues.op.toFixed(2) : '',
-    m.currentValues?.mode != null
-      ? (MODE_LABEL_MAP[String(m.currentValues.mode)] ??
-        String(m.currentValues.mode))
-      : '',
-    m.score != null ? Number(m.score).toFixed(2) : '',
+    m.currentValues?.sp == null ? '' : m.currentValues.sp.toFixed(2),
+    m.currentValues?.pv == null ? '' : m.currentValues.pv.toFixed(2),
+    m.currentValues?.op == null ? '' : m.currentValues.op.toFixed(2),
+    m.currentValues?.mode == null
+      ? ''
+      : (MODE_LABEL_MAP[String(m.currentValues.mode)] ??
+        String(m.currentValues.mode)),
+    m.score == null ? '' : Number(m.score).toFixed(2),
   ]);
   const csv = [header, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(','))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

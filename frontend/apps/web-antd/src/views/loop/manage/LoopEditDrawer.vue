@@ -48,6 +48,7 @@ import {
 } from 'ant-design-vue';
 
 import { getModelsApi } from '#/api/dcs';
+import { getWaveformApi } from '#/api/diagnosis';
 import {
   createLoopApi,
   getLoopDetailApi,
@@ -55,7 +56,6 @@ import {
   updateLoopApi,
   updateLoopTagMappingApi,
 } from '#/api/loop';
-import { getWaveformApi } from '#/api/diagnosis';
 import { getTagListApi, matchTagsForLoopApi } from '#/api/tag';
 import { ClpmInfoTip } from '#/components/clpm';
 import ModeMappingEditor from '#/components/loop/mode-mapping-editor.vue';
@@ -67,11 +67,6 @@ import { LOOP_TYPE_MAP, SLOT_KEYS } from './use-loop-changes';
 
 defineOptions({ name: 'LoopEditDrawer' });
 
-interface Props {
-  /** 所属单元下拉选项（工厂节点路径标签），由父组件统一加载 */
-  plantNodeOptions: { label: string; value: string }[];
-}
-
 defineProps<Props>();
 
 const emit = defineEmits<{
@@ -80,6 +75,11 @@ const emit = defineEmits<{
   /** 保存成功，通知父组件刷新列表 */
   saved: [];
 }>();
+
+interface Props {
+  /** 所属单元下拉选项（工厂节点路径标签），由父组件统一加载 */
+  plantNodeOptions: { label: string; value: string }[];
+}
 
 // ===== 抽屉状态 =====
 const drawerVisible = ref(false);
@@ -202,12 +202,12 @@ function wizardPrev() {
 
 // ===== P2-06：配置后数据连通性验证 =====
 const dataCheckLoading = ref(false);
-const dataCheckResult = ref<{
+const dataCheckResult = ref<null | {
+  message: string;
   ok: boolean;
   pointCount: number;
   pvNonNull: number;
-  message: string;
-} | null>(null);
+}>(null);
 
 /** 检查数据连通性：拉取最近 5 分钟 PV/SP/OP 实时值 */
 async function checkDataConnectivity() {
@@ -226,21 +226,20 @@ async function checkDataConnectivity() {
       (v) => v !== null && v !== undefined,
     ).length;
     const pointCount = result.pointCount ?? (result.pv ?? []).length;
-    if (pointCount > 0 && pvNonNull > 0) {
-      dataCheckResult.value = {
-        ok: true,
-        pointCount,
-        pvNonNull,
-        message: `数据正常（${pointCount} 个采样点，PV 有效 ${pvNonNull} 个）`,
-      };
-    } else {
-      dataCheckResult.value = {
-        ok: false,
-        pointCount,
-        pvNonNull,
-        message: '未检测到 PV 数据，请检查 Tag 关联和数据源配置',
-      };
-    }
+    dataCheckResult.value =
+      pointCount > 0 && pvNonNull > 0
+        ? {
+            ok: true,
+            pointCount,
+            pvNonNull,
+            message: `数据正常（${pointCount} 个采样点，PV 有效 ${pvNonNull} 个）`,
+          }
+        : {
+            ok: false,
+            pointCount,
+            pvNonNull,
+            message: '未检测到 PV 数据，请检查 Tag 关联和数据源配置',
+          };
   } catch {
     dataCheckResult.value = {
       ok: false,

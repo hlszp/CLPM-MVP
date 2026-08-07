@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { DataSourceApi } from '#/api/datasource';
 /**
  * 工作台 — 跨模块待办门户（V62-P1-017）
  *
@@ -11,7 +12,6 @@
  * 数据原则：所有计数走真实接口（status 过滤 + total），无数据显 0；单项接口失败不阻断其余
  */
 import type { KpiStripItem } from '#/components/clpm';
-import type { DataSourceApi } from '#/api/datasource';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -21,8 +21,8 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Button, message, Tag, Tooltip } from 'ant-design-vue';
 
-import { getDiagnosisTasksApi, getTrackerListApi } from '#/api/diagnosis';
 import { getDatasourceHealthApi } from '#/api/datasource';
+import { getDiagnosisTasksApi, getTrackerListApi } from '#/api/diagnosis';
 import { getTaskListApi } from '#/api/task';
 import { getTuningTasksApi } from '#/api/tuning';
 import {
@@ -35,7 +35,7 @@ import {
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';

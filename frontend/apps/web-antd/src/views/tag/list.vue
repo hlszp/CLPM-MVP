@@ -60,7 +60,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';

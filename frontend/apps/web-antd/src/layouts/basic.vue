@@ -5,8 +5,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
-import { IconifyIcon } from '@vben/icons';
 import { useWatermark } from '@vben/hooks';
+import { IconifyIcon } from '@vben/icons';
 import {
   BasicLayout,
   LockScreen,
@@ -15,6 +15,7 @@ import {
 } from '@vben/layouts';
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
+
 import { Popover } from 'ant-design-vue';
 
 import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';

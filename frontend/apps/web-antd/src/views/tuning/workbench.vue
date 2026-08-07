@@ -34,9 +34,9 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
-import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningWorkbench' });
@@ -320,7 +320,7 @@ function handleViewDetail(record: TuningApi.TuningTaskItem) {
 
 /** P1-019：未终态任务可「继续」整定，带 taskId 进入 flow 触发后端回显 */
 function isResumable(status: TuningApi.TaskStatus): boolean {
-  return ['DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED'].includes(status);
+  return ['DRAFT', 'IDENTIFIED', 'RUNNING', 'SIMULATED'].includes(status);
 }
 
 /** 继续未完成的整定任务（进入 flow stepper 并按 taskId 回显） */
@@ -490,11 +490,11 @@ function handleStartTuning(record: DiagnosisApi.DiagnosisListItem) {
 
 const similarCases = ref<KnowledgeBaseApi.KnowledgeEntry[]>([]);
 const similarLoading = ref(false);
-const similarLoopId = ref<string | null>(null);
+const similarLoopId = ref<null | string>(null);
 const similarLoopTag = ref<string>('');
 
 /** 算法显示名（知识库卡片复用） */
-function algorithmDisplay(algo: string | null): string {
+function algorithmDisplay(algo: null | string): string {
   if (!algo) return '-';
   const map: Record<string, string> = {
     IMC: 'IMC',
@@ -508,8 +508,8 @@ function algorithmDisplay(algo: string | null): string {
 
 /** PID 变化摘要 */
 function pidChangeText(
-  before: Record<string, number> | null,
-  after: Record<string, number> | null,
+  before: null | Record<string, number>,
+  after: null | Record<string, number>,
 ): string {
   if (!before || !after) return '-';
   const fmt = (v: unknown) =>

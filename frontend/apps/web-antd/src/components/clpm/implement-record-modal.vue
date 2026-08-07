@@ -1,3 +1,216 @@
+<script setup lang="ts">
+import { computed, reactive, ref, watch } from 'vue';
+
+import {
+  Alert,
+  Checkbox,
+  Col,
+  DatePicker,
+  Divider,
+  Form,
+  FormItem,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Select,
+  Textarea,
+} from 'ant-design-vue';
+
+import { getTuningTasksApi } from '#/api/tuning';
+import { ClpmInfoTip } from '#/components/clpm';
+
+interface Emits {
+  (e: 'submit', data: ImplementSubmitData): void;
+  (e: 'cancel'): void;
+}
+
+export interface ImplementSubmitData {
+  status: 'VERIFYING';
+  newPidP: number;
+  newPidI: number;
+  newPidD: null | number;
+  implementedAt?: string;
+  mocRef?: string;
+  mocNotApplicable: boolean;
+  mocReason?: string;
+  comment?: string;
+  /** P3-01：关联整定任务记录（用于知识库生成） */
+  tuningRecordId?: null | string;
+}
+
+interface Props {
+  visible: boolean;
+  /** 建议初始参数（从整定结果带入） */
+  initialP?: null | { d?: number; i?: number; p?: number };
+  loading?: boolean;
+  /** P3-01：当前回路 ID（用于拉取可关联的整定任务） */
+  loopId?: null | string;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  initialP: null,
+  loading: false,
+  loopId: null,
+});
+
+const emit = defineEmits<Emits>();
+
+const visible = computed({
+  get: () => props.visible,
+  set: (v) => {
+    if (!v) emit('cancel');
+  },
+});
+
+const submitting = computed(() => props.loading);
+
+const formRef = ref();
+
+interface FormState {
+  newPidP: number | undefined;
+  newPidI: number | undefined;
+  newPidD: number | undefined;
+  implementedAt: any;
+  mocRef: string | undefined;
+  mocNotApplicable: boolean;
+  mocReason: string | undefined;
+  comment: string | undefined;
+  tuningRecordId: string | undefined;
+}
+
+const formData = reactive<FormState>({
+  newPidP: undefined,
+  newPidI: undefined,
+  newPidD: 0,
+  implementedAt: undefined,
+  mocRef: undefined,
+  mocNotApplicable: false,
+  mocReason: undefined,
+  comment: undefined,
+  tuningRecordId: undefined,
+});
+
+// P3-01：可关联的整定任务（已辨识/已仿真/已完成/已验证）
+interface TuningRecordOption {
+  label: string;
+  value: string;
+}
+const tuningRecordOptions = ref<TuningRecordOption[]>([]);
+const tuningRecordLoading = ref(false);
+
+const TUNABLE_TASK_STATUS = new Set([
+  'APPLIED',
+  'COMPLETED',
+  'IDENTIFIED',
+  'SIMULATED',
+  'VERIFIED',
+]);
+
+/** P3-01：拉取当前回路可关联的整定任务 */
+async function loadTuningRecords() {
+  if (!props.loopId) {
+    tuningRecordOptions.value = [];
+    return;
+  }
+  tuningRecordLoading.value = true;
+  try {
+    const resp = await getTuningTasksApi({
+      loopId: props.loopId,
+      pageSize: 50,
+    });
+    const items = (resp?.items ?? []).filter((t) =>
+      TUNABLE_TASK_STATUS.has(t.status),
+    );
+    tuningRecordOptions.value = items.map((t) => ({
+      value: t.id,
+      label: `${t.tagName ?? props.loopId} · ${t.algorithm} · ${t.modelType}（${t.status}）`,
+    }));
+  } catch {
+    tuningRecordOptions.value = [];
+  } finally {
+    tuningRecordLoading.value = false;
+  }
+}
+
+// 打开时带入初始参数
+watch(
+  () => props.visible,
+  (isVisible) => {
+    if (isVisible) {
+      formData.newPidP = props.initialP?.p ?? undefined;
+      formData.newPidI = props.initialP?.i ?? undefined;
+      formData.newPidD = props.initialP?.d ?? 0;
+      formData.implementedAt = undefined;
+      formData.mocRef = undefined;
+      formData.mocNotApplicable = false;
+      formData.mocReason = undefined;
+      formData.comment = undefined;
+      formData.tuningRecordId = undefined;
+      loadTuningRecords();
+    }
+  },
+  { immediate: true },
+);
+
+const rules = computed(() => ({
+  newPidP: [
+    { required: true, message: '请输入比例增益 P', trigger: 'blur' } as const,
+  ],
+  newPidI: [
+    { required: true, message: '请输入积分时间 Ti', trigger: 'blur' } as const,
+  ],
+  mocRef: formData.mocNotApplicable
+    ? []
+    : [
+        {
+          required: true,
+          message: '请输入MOC变更单号，或勾选不适用',
+          trigger: 'blur',
+        } as const,
+      ],
+  mocReason: formData.mocNotApplicable
+    ? [
+        {
+          required: true,
+          message: '请填写不适用依据说明',
+          trigger: 'blur',
+        } as const,
+      ]
+    : [],
+}));
+
+async function handleSubmit() {
+  try {
+    await formRef.value?.validate();
+  } catch {
+    return;
+  }
+
+  // Td 默认 0（无微分）；validate 已保证 P/I 必填，此处用 ?? 0 兜底以满足类型
+  const pidP = formData.newPidP ?? 0;
+  const pidI = formData.newPidI ?? 0;
+  const pidD = formData.newPidD ?? 0;
+
+  emit('submit', {
+    status: 'VERIFYING',
+    newPidP: pidP,
+    newPidI: pidI,
+    newPidD: pidD === 0 ? null : pidD,
+    implementedAt: formData.implementedAt || undefined,
+    mocRef: formData.mocRef || undefined,
+    mocNotApplicable: formData.mocNotApplicable,
+    mocReason: formData.mocReason || undefined,
+    comment: formData.comment || undefined,
+    tuningRecordId: formData.tuningRecordId || null,
+  });
+}
+
+function handleCancel() {
+  emit('cancel');
+}
+</script>
+
 <template>
   <Modal
     :open="visible"
@@ -91,7 +304,7 @@
           format="YYYY-MM-DD HH:mm"
           placeholder="默认当前时间"
           style="width: 100%"
-          :value-format="'YYYY-MM-DDTHH:mm:ss[Z]'"
+          value-format="YYYY-MM-DDTHH:mm:ss[Z]"
         />
       </FormItem>
 
@@ -150,216 +363,3 @@
     </Form>
   </Modal>
 </template>
-
-<script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
-
-import {
-  Alert,
-  Checkbox,
-  Col,
-  DatePicker,
-  Divider,
-  Form,
-  FormItem,
-  Input,
-  InputNumber,
-  Modal,
-  Row,
-  Select,
-  Textarea,
-} from 'ant-design-vue';
-
-import { getTuningTasksApi } from '#/api/tuning';
-import { ClpmInfoTip } from '#/components/clpm';
-
-interface Emits {
-  (e: 'submit', data: ImplementSubmitData): void;
-  (e: 'cancel'): void;
-}
-
-export interface ImplementSubmitData {
-  status: 'VERIFYING';
-  newPidP: number;
-  newPidI: number;
-  newPidD: number | null;
-  implementedAt?: string;
-  mocRef?: string;
-  mocNotApplicable: boolean;
-  mocReason?: string;
-  comment?: string;
-  /** P3-01：关联整定任务记录（用于知识库生成） */
-  tuningRecordId?: string | null;
-}
-
-interface Props {
-  visible: boolean;
-  /** 建议初始参数（从整定结果带入） */
-  initialP?: { p?: number; i?: number; d?: number } | null;
-  loading?: boolean;
-  /** P3-01：当前回路 ID（用于拉取可关联的整定任务） */
-  loopId?: string | null;
-}
-
-const props = withDefaults(defineProps<Props>(), {
-  initialP: null,
-  loading: false,
-  loopId: null,
-});
-
-const emit = defineEmits<Emits>();
-
-const visible = computed({
-  get: () => props.visible,
-  set: (v) => {
-    if (!v) emit('cancel');
-  },
-});
-
-const submitting = computed(() => props.loading);
-
-const formRef = ref();
-
-interface FormState {
-  newPidP: number | undefined;
-  newPidI: number | undefined;
-  newPidD: number | undefined;
-  implementedAt: any;
-  mocRef: string | undefined;
-  mocNotApplicable: boolean;
-  mocReason: string | undefined;
-  comment: string | undefined;
-  tuningRecordId: string | undefined;
-}
-
-const formData = reactive<FormState>({
-  newPidP: undefined,
-  newPidI: undefined,
-  newPidD: 0,
-  implementedAt: undefined,
-  mocRef: undefined,
-  mocNotApplicable: false,
-  mocReason: undefined,
-  comment: undefined,
-  tuningRecordId: undefined,
-});
-
-// P3-01：可关联的整定任务（已辨识/已仿真/已完成/已验证）
-interface TuningRecordOption {
-  label: string;
-  value: string;
-}
-const tuningRecordOptions = ref<TuningRecordOption[]>([]);
-const tuningRecordLoading = ref(false);
-
-const TUNABLE_TASK_STATUS = [
-  'IDENTIFIED',
-  'SIMULATED',
-  'COMPLETED',
-  'APPLIED',
-  'VERIFIED',
-];
-
-/** P3-01：拉取当前回路可关联的整定任务 */
-async function loadTuningRecords() {
-  if (!props.loopId) {
-    tuningRecordOptions.value = [];
-    return;
-  }
-  tuningRecordLoading.value = true;
-  try {
-    const resp = await getTuningTasksApi({
-      loopId: props.loopId,
-      pageSize: 50,
-    });
-    const items = (resp?.items ?? []).filter((t) =>
-      TUNABLE_TASK_STATUS.includes(t.status),
-    );
-    tuningRecordOptions.value = items.map((t) => ({
-      value: t.id,
-      label: `${t.tagName ?? props.loopId} · ${t.algorithm} · ${t.modelType}（${t.status}）`,
-    }));
-  } catch {
-    tuningRecordOptions.value = [];
-  } finally {
-    tuningRecordLoading.value = false;
-  }
-}
-
-// 打开时带入初始参数
-watch(
-  () => props.visible,
-  (isVisible) => {
-    if (isVisible) {
-      formData.newPidP = props.initialP?.p ?? undefined;
-      formData.newPidI = props.initialP?.i ?? undefined;
-      formData.newPidD = props.initialP?.d ?? 0;
-      formData.implementedAt = undefined;
-      formData.mocRef = undefined;
-      formData.mocNotApplicable = false;
-      formData.mocReason = undefined;
-      formData.comment = undefined;
-      formData.tuningRecordId = undefined;
-      loadTuningRecords();
-    }
-  },
-  { immediate: true },
-);
-
-const rules = computed(() => ({
-  newPidP: [
-    { required: true, message: '请输入比例增益 P', trigger: 'blur' } as const,
-  ],
-  newPidI: [
-    { required: true, message: '请输入积分时间 Ti', trigger: 'blur' } as const,
-  ],
-  mocRef: formData.mocNotApplicable
-    ? []
-    : [
-        {
-          required: true,
-          message: '请输入MOC变更单号，或勾选不适用',
-          trigger: 'blur',
-        } as const,
-      ],
-  mocReason: formData.mocNotApplicable
-    ? [
-        {
-          required: true,
-          message: '请填写不适用依据说明',
-          trigger: 'blur',
-        } as const,
-      ]
-    : [],
-}));
-
-async function handleSubmit() {
-  try {
-    await formRef.value?.validate();
-  } catch {
-    return;
-  }
-
-  // Td 默认 0（无微分）；validate 已保证 P/I 必填，此处用 ?? 0 兜底以满足类型
-  const pidP = formData.newPidP ?? 0;
-  const pidI = formData.newPidI ?? 0;
-  const pidD = formData.newPidD ?? 0;
-
-  emit('submit', {
-    status: 'VERIFYING',
-    newPidP: pidP,
-    newPidI: pidI,
-    newPidD: pidD === 0 ? null : pidD,
-    implementedAt: formData.implementedAt || undefined,
-    mocRef: formData.mocRef || undefined,
-    mocNotApplicable: formData.mocNotApplicable,
-    mocReason: formData.mocReason || undefined,
-    comment: formData.comment || undefined,
-    tuningRecordId: formData.tuningRecordId || null,
-  });
-}
-
-function handleCancel() {
-  emit('cancel');
-}
-</script>

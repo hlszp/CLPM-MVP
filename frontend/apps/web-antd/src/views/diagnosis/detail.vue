@@ -63,7 +63,7 @@ import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,

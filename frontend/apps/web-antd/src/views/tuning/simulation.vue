@@ -80,7 +80,7 @@ const sourceRecordId = ref<string>('');
 const riskConfirmed = ref(false);
 
 /** P1-023：错误状态（仿真失败时持久展示，带重试） */
-const errorState = ref<{ detail: string; message: string } | null>(null);
+const errorState = ref<null | { detail: string; message: string }>(null);
 
 /** 模型类型选项 */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
@@ -178,9 +178,9 @@ const metricColumns = computed(() => {
   if (compareMode.value) {
     // 多 PID 对比模式：动态生成列
     const cols: {
-      title: string;
       dataIndex: string;
       key: string;
+      title: string;
       width?: number;
     }[] = [{ title: '性能指标', dataIndex: 'name', key: 'name', width: 120 }];
     pidCandidates.value.forEach((c, idx) => {
@@ -218,7 +218,7 @@ const metricRows = computed(() => {
       { name: 'ITAE', key: 'itae' as const },
     ];
     return metricNames.map((m) => {
-      const row: Record<string, string | number> = { name: m.name };
+      const row: Record<string, number | string> = { name: m.name };
       candidates.forEach((c, idx) => {
         row[`candidate_${idx}`] = formatMetric(m.key, c.metrics?.[m.key]);
       });
@@ -589,13 +589,13 @@ async function handleSimulate() {
       renderChart();
       hide();
       message.success('多 PID 对比仿真完成');
-    } catch (err) {
+    } catch (error) {
       hide();
       errorState.value = {
         message: '多 PID 对比仿真失败',
         detail:
-          err instanceof Error
-            ? err.message
+          error instanceof Error
+            ? error.message
             : '请检查模型参数和候选 PID 后重试',
       };
     } finally {
@@ -651,12 +651,14 @@ async function handleSimulate() {
     renderChart();
     hide();
     message.success('仿真完成');
-  } catch (err) {
+  } catch (error) {
     hide();
     errorState.value = {
       message: '闭环仿真失败',
       detail:
-        err instanceof Error ? err.message : '请检查模型参数和 PID 配置后重试',
+        error instanceof Error
+          ? error.message
+          : '请检查模型参数和 PID 配置后重试',
     };
   } finally {
     loading.value = false;

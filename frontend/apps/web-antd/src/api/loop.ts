@@ -418,7 +418,7 @@ export namespace LoopApi {
     /** 预处理：好值率/有效率（0~1，来自预处理管道 + ConfidenceEvaluator） */
     validRate?: null | number;
     /** 回路可信度：A/B/C/D/E 等级 */
-    confidenceLevel?: null | ConfidenceLevel;
+    confidenceLevel?: ConfidenceLevel | null;
     /** 数据完整性：PV 列完整度（0~1，来自每日 02:00 巡检快照） */
     pvCompleteness?: null | number;
     /** 整体完整度（0~1） */

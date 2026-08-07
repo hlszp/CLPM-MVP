@@ -38,8 +38,8 @@ import {
   markNotificationReadApi,
 } from '#/api/task';
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TaskDetail' });

@@ -2,6 +2,7 @@
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { AlertApi } from '#/api/alert';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, h, onMounted, reactive, ref } from 'vue';
 
@@ -38,10 +39,9 @@ import {
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
-import type { ColumnConfig } from '#/composables/use-clpm-preferences';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
-import { formatTime } from '#/utils/format';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'AlertRules' });
 
@@ -275,7 +275,7 @@ function openCreateModal() {
   editForm.priority = 100;
   editForm.isEnabled = true;
   // #8: 深拷贝模板 DSL 对象，避免引用污染
-  editForm.dsl = JSON.parse(JSON.stringify(dslTemplates.THRESHOLD));
+  editForm.dsl = structuredClone(dslTemplates.THRESHOLD);
   editVisible.value = true;
 }
 
@@ -288,7 +288,7 @@ function openEditModal(record: AlertApi.RuleItem) {
   editForm.description = record.description || '';
   editForm.priority = record.priority;
   editForm.isEnabled = record.isEnabled;
-  editForm.dsl = record.dsl ? JSON.parse(JSON.stringify(record.dsl)) : {};
+  editForm.dsl = record.dsl ? structuredClone(record.dsl) : {};
   editVisible.value = true;
 }
 
@@ -296,7 +296,7 @@ function handleRuleTypeChange(value: any) {
   const type = value as AlertApi.RuleType;
   // 仅在创建模式下切换模板
   if (editMode.value === 'create') {
-    editForm.dsl = JSON.parse(JSON.stringify(dslTemplates[type]));
+    editForm.dsl = structuredClone(dslTemplates[type]);
   }
 }
 
@@ -336,8 +336,8 @@ async function handleSave() {
     }
     editVisible.value = false;
     await loadRules();
-  } catch (err: any) {
-    const msg = err?.response?.data?.message || '保存失败';
+  } catch (error: any) {
+    const msg = error?.response?.data?.message || '保存失败';
     message.error(msg);
   } finally {
     editLoading.value = false;
@@ -347,7 +347,7 @@ async function handleSave() {
 async function handleToggle(record: AlertApi.RuleItem) {
   try {
     await toggleAlertRuleApi(record.ruleId, !record.isEnabled);
-    message.success(!record.isEnabled ? '已启用' : '已停用');
+    message.success(record.isEnabled ? '已停用' : '已启用');
     await loadRules();
   } catch {
     message.error('操作失败');
@@ -400,7 +400,7 @@ function exportRulesCsv() {
     r.updatedAt ? formatTime(r.updatedAt) : '',
   ]);
   const csv = [header, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(','))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -565,7 +565,7 @@ onMounted(() => {
       v-model:open="editVisible"
       :title="editMode === 'create' ? '新建规则' : '编辑规则'"
       width="720px"
-      :ok-text="`保存`"
+      ok-text="保存"
       cancel-text="取消"
       :confirm-loading="editLoading"
       @ok="handleSave"

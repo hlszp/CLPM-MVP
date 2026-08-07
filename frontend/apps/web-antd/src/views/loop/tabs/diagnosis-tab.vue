@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { Ref } from 'vue';
+
 /**
  * 回路工作台 · 诊断 Tab（IA 重构 Phase B·§4.1.1）
  *
@@ -18,7 +20,6 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { SummaryItem } from '#/components/clpm';
 
 import { computed, inject, onMounted, ref, watch } from 'vue';
-import type { Ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {

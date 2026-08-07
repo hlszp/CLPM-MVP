@@ -2,6 +2,7 @@
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { AlertApi } from '#/api/alert';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, h, onMounted, reactive, ref } from 'vue';
 
@@ -28,17 +29,16 @@ import {
 import {
   acknowledgeEventApi,
   archiveEventApi,
-  getAlertEventsApi,
   getAlertBadgeApi,
+  getAlertEventsApi,
   markFalsePositiveApi,
   resetAlertBadgeApi,
   resolveEventApi,
 } from '#/api/alert';
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
-import type { ColumnConfig } from '#/composables/use-clpm-preferences';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
-import { formatTime } from '#/utils/format';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'AlertEvents' });
 
@@ -151,7 +151,7 @@ const columns: TableColumnsType = [
     key: 'triggeredValue',
     width: 100,
     customRender: ({ value }) =>
-      value != null ? Number(value).toFixed(3) : '-',
+      value == null ? '-' : Number(value).toFixed(3),
   },
   {
     title: '触发时间',
@@ -337,12 +337,12 @@ function exportEventsCsv() {
     e.ruleCode,
     severityLabel[e.severity] ?? e.severity,
     statusLabel[e.status] ?? e.status,
-    e.triggeredValue != null ? Number(e.triggeredValue).toFixed(4) : '',
+    e.triggeredValue == null ? '' : Number(e.triggeredValue).toFixed(4),
     formatTime(e.triggeredAt),
     String(e.triggerCount ?? ''),
   ]);
   const csv = [header, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(','))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -598,7 +598,7 @@ onMounted(() => {
     <Modal
       v-model:open="resolveVisible"
       title="处置预警事件"
-      :ok-text="`确认处置`"
+      ok-text="确认处置"
       cancel-text="取消"
       @ok="handleResolve"
     >

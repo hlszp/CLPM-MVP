@@ -171,7 +171,9 @@ vi.mock('ant-design-vue', () => ({
 }));
 
 function setQuery(query: Record<string, string>) {
-  for (const key of Object.keys(routeQuery)) delete routeQuery[key];
+  for (const key of Object.keys(routeQuery)) {
+    Reflect.deleteProperty(routeQuery, key);
+  }
   Object.assign(routeQuery, query);
 }
 

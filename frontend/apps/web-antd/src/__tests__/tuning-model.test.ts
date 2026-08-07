@@ -23,7 +23,7 @@ const tuningStore = reactive({
   // P1-021：回路/时间窗由 flow 统一上下文头写入 store，model.vue 从 store 读取
   currentLoopId: 'loop-1',
   currentLoopTagName: 'FIC-101',
-  currentLoopTimeRange: null as null | [string, string],
+  currentLoopTimeRange: null as [string, string] | null,
   startPolling: vi.fn(),
   submitIdentify: submitIdentifyMock,
   taskProgress: null as null | TuningApi.TaskProgress,
@@ -490,7 +490,7 @@ describe('tuningModel Phase 0 历史辨识边界', () => {
   it('aPI 类型声明历史候选与 theta 来源', () => {
     expectTypeOf<
       TuningApi.IdentifyHistoryRequest['candidateModelTypes']
-    >().toEqualTypeOf<Array<'FOPDT' | 'SOPDT' | 'IPDT'> | undefined>();
+    >().toEqualTypeOf<Array<'FOPDT' | 'IPDT' | 'SOPDT'> | undefined>();
     expectTypeOf<
       TuningApi.IdentifyHistoryResult['thetaSource']
     >().toEqualTypeOf<

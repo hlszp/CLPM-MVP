@@ -7,6 +7,11 @@ import { Tooltip } from 'ant-design-vue';
 
 defineOptions({ name: 'ClpmDataHealthBadges' });
 
+const props = withDefaults(defineProps<Props>(), {
+  health: () => ({}),
+  compact: false,
+});
+
 /**
  * 数据健康度徽标组（方案 A §5 / 方案 C 轻量版）
  *
@@ -25,7 +30,7 @@ interface DataHealthLike {
   /** 预处理：好值率/有效率（0~1） */
   validRate?: null | number;
   /** 回路可信度：A/B/C/D/E */
-  confidenceLevel?: null | LoopApi.ConfidenceLevel;
+  confidenceLevel?: LoopApi.ConfidenceLevel | null;
   /** PV 列完整度（0~1） */
   pvCompleteness?: null | number;
   /** 完整性状态：OK/WARNING/CRITICAL/DATA_UNAVAILABLE */
@@ -42,10 +47,8 @@ interface Props {
   compact?: boolean;
 }
 
-const props = withDefaults(defineProps<Props>(), { compact: false });
-
 // 可信度配色：A 优 / B 良 / C 注意 / D 警告 / E 差
-const CONF_META: Record<string, { color: string; bg: string; label: string }> =
+const CONF_META: Record<string, { bg: string; color: string; label: string }> =
   {
     A: {
       color: 'var(--success)',
@@ -70,7 +73,7 @@ const CONF_META: Record<string, { color: string; bg: string; label: string }> =
     },
   };
 
-function rateTier(rate: number | null | undefined) {
+function rateTier(rate: null | number | undefined) {
   if (rate === null || rate === undefined) return null;
   if (rate >= 0.95)
     return { color: 'var(--success)', bg: 'hsl(var(--success) / 12%)' };
@@ -82,7 +85,7 @@ function rateTier(rate: number | null | undefined) {
   return { color: 'var(--destructive)', bg: 'hsl(var(--destructive) / 12%)' };
 }
 
-function pct(rate: number | null | undefined) {
+function pct(rate: null | number | undefined) {
   if (rate === null || rate === undefined) return null;
   return `${(rate * 100).toFixed(1)}%`;
 }

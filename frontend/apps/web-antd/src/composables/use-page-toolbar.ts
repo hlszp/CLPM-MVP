@@ -146,7 +146,7 @@ function checkAccess(
  * @returns toolbarItems 渲染描述数组（按钮 + 分组分隔符，已按规范排序）
  */
 export function usePageToolbar(
-  tools: PageToolbarTools | (() => PageToolbarTools),
+  tools: (() => PageToolbarTools) | PageToolbarTools,
 ) {
   const accessStore = useAccessStore();
   const userStore = useUserStore();
@@ -158,7 +158,7 @@ export function usePageToolbar(
   const toolbarItems = computed<ToolbarItem[]>(() => {
     const cfg = resolved.value;
     const accessCodes = new Set(accessStore.accessCodes);
-    const roles = new Set(userStore.userInfo?.roles ?? []);
+    const roles = new Set(userStore.userInfo?.roles);
 
     const groups: ToolbarButtonItem[][] = [];
     for (const group of GROUP_ORDER) {
@@ -169,11 +169,11 @@ export function usePageToolbar(
         // 体现统一工具栏的一致性与功能丰富度。
         const permitted = checkAccess(accessCodes, roles, c?.permission);
         const disabled = !c || Boolean(c.disabled) || !permitted;
-        const disabledReason = !c
-          ? '本页无此功能'
-          : !permitted
-            ? c.disabledReason || '当前角色无此操作权限'
-            : c.disabledReason || '';
+        let disabledReason = '本页无此功能';
+        if (c) {
+          disabledReason =
+            c.disabledReason || (permitted ? '' : '当前角色无此操作权限');
+        }
         items.push({
           kind: 'button',
           action,
@@ -210,7 +210,7 @@ function noop() {
  * @param opts.title 帮助标题（一般为页面名）
  * @param opts.content 帮助正文（支持简单文本/HTML 片段）
  */
-export function showPageHelp(opts: { title: string; content: string }): void {
+export function showPageHelp(opts: { content: string; title: string }): void {
   Modal.info({
     title: opts.title,
     content: opts.content,

@@ -41,7 +41,7 @@ import {
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemLlmConfig' });
@@ -51,10 +51,10 @@ const saving = ref(false);
 const testing = ref(false);
 /** 是否已配置 API Key（GET 返回，决定保存时是否强制要求重填） */
 const apiKeyConfigured = ref(false);
-const lastUpdated = ref<{
-  by: null | string;
+const lastUpdated = ref<null | {
   at: null | string;
-} | null>(null);
+  by: null | string;
+}>(null);
 
 /** 表单数据 */
 const form = reactive({
@@ -192,8 +192,8 @@ async function handleTest() {
   testResult.value = null;
   try {
     testResult.value = await testLlmConnectionApi();
-  } catch (err: any) {
-    const apiMsg = err?.response?.data?.message;
+  } catch (error: any) {
+    const apiMsg = error?.response?.data?.message;
     testResult.value = {
       success: false,
       message: apiMsg || '请求失败，请检查后端服务是否运行',

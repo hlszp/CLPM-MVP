@@ -18,6 +18,8 @@ import type {
   UploadProps,
 } from 'ant-design-vue';
 
+import type { ConfirmContextType, DiffEntry } from './manage/use-loop-changes';
+
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 import type { ColumnConfig } from '#/composables/use-clpm-preferences';
@@ -63,14 +65,14 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import StatusBadge from '#/components/loop/status-badge.vue';
+import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
   CONTROL_TYPE_EXPLANATIONS,
   IMPORTANCE_EXPLANATIONS,
 } from '#/constants/clpm-ui';
-import StatusBadge from '#/components/loop/status-badge.vue';
-import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
-import { usePagePreference } from '#/composables/use-clpm-preferences';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
 import { flattenNodes } from '#/utils/plant-node';
 
 import LoopEditDrawer from './manage/LoopEditDrawer.vue';
@@ -84,7 +86,6 @@ import {
   LOOP_TYPE_MAP,
   SLOT_LABELS,
 } from './manage/use-loop-changes';
-import type { ConfirmContextType, DiffEntry } from './manage/use-loop-changes';
 
 defineOptions({ name: 'LoopManage' });
 

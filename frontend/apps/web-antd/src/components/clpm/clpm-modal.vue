@@ -36,7 +36,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
   (e: 'cancel'): void;
-  (e: 'maximize-change', maximized: boolean): void;
+  (e: 'maximizeChange', maximized: boolean): void;
 }>();
 interface Props {
   open?: boolean;
@@ -120,7 +120,7 @@ function handleDragEnd() {
 // ===== 最大化 / 复位 =====
 function toggleMaximize() {
   isMaximized.value = !isMaximized.value;
-  emit('maximize-change', isMaximized.value);
+  emit('maximizeChange', isMaximized.value);
 }
 
 /** 复位：清除拖动偏移 + 还原原始尺寸 */
@@ -128,7 +128,7 @@ function handleReset() {
   dragX.value = 0;
   dragY.value = 0;
   isMaximized.value = false;
-  emit('maximize-change', false);
+  emit('maximizeChange', false);
 }
 
 // ===== 关闭 =====
@@ -214,7 +214,7 @@ watch(
       </div>
     </template>
 
-    <slot />
+    <slot></slot>
   </Modal>
 </template>
 

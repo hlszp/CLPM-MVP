@@ -28,7 +28,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTuningStore } from '#/store/tuning';
 
 defineOptions({ name: 'TuningDetail' });
@@ -133,7 +133,7 @@ const identifyConfidence = computed(() => {
   };
 });
 
-const currentPid = computed<TuningApi.PidParamsWithLabel | null>(() => {
+const currentPid = computed<null | TuningApi.PidParamsWithLabel>(() => {
   if (store.pidCandidates.length === 0) return null;
   return store.pidCandidates[0] ?? null;
 });

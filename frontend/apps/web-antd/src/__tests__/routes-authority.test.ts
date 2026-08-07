@@ -67,9 +67,9 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
       // 评估任务本就只对 ADMIN/IC_ENGINEER 开放，无需校验 SPONSOR
       if (
         [
-          '/metric/pid-dashboard',
-          '/metric/loop-performance',
           '/metric/kpi-report',
+          '/metric/loop-performance',
+          '/metric/pid-dashboard',
         ].includes(child.path)
       ) {
         expect(auth).toContain('SPONSOR');

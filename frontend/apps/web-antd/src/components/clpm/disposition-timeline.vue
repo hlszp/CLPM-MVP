@@ -1,7 +1,143 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+
+import { IconifyIcon } from '@vben/icons';
+
+import { Tag, Timeline, TimelineItem } from 'ant-design-vue';
+
+import { ClpmEmptyState, ClpmSeverityBadge } from '#/components/clpm';
+
+export interface TimelineEvent {
+  eventId: string;
+  eventType:
+    | 'claimed'
+    | 'comment'
+    | 'diagnosis_detected'
+    | 'ignored'
+    | 'implemented'
+    | 'moc_recorded'
+    | 'tuning_completed'
+    | 'verification_failed'
+    | 'verification_passed';
+  timestamp: string;
+  actor?: null | string;
+  title: string;
+  description?: null | string;
+  meta: Record<string, any>;
+}
+
+interface Props {
+  /** 事件列表（按时间升序排列） */
+  events: TimelineEvent[];
+  /** 当前跟踪状态 */
+  currentStatus?: null | string;
+  /** 预计自动验证时间 */
+  pendingVerificationAt?: null | string;
+  /** 验证间隔（小时），默认24 */
+  verificationIntervalHours?: number;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  currentStatus: null,
+  pendingVerificationAt: null,
+  verificationIntervalHours: 24,
+});
+
+// 按时间升序
+const sortedEvents = computed(() => {
+  return [...props.events].toSorted((a, b) =>
+    a.timestamp.localeCompare(b.timestamp),
+  );
+});
+
+// 是否显示待验证节点（最后一个事件是implemented且当前状态为VERIFYING）
+const showPendingNode = computed(() => {
+  if (
+    props.currentStatus !== 'VERIFYING' &&
+    props.currentStatus !== 'IMPLEMENTED'
+  )
+    return false;
+  const last = sortedEvents.value[sortedEvents.value.length - 1];
+  return last && last.eventType === 'implemented';
+});
+
+// 事件类型 → 图标
+function getEventIcon(type: TimelineEvent['eventType']): string {
+  const map: Record<string, string> = {
+    diagnosis_detected: 'lucide:alert-triangle',
+    claimed: 'lucide:user-check',
+    comment: 'lucide:message-square',
+    tuning_completed: 'lucide:wrench',
+    implemented: 'lucide:check-circle-2',
+    verification_passed: 'lucide:check-circle',
+    verification_failed: 'lucide:rotate-ccw',
+    ignored: 'lucide:eye-off',
+    moc_recorded: 'lucide:file-check-2',
+  };
+  return map[type] || 'lucide:circle';
+}
+
+// 事件类型 → 颜色（ant timeline color 属性）
+function getEventColor(type: TimelineEvent['eventType']): string {
+  const map: Record<string, string> = {
+    diagnosis_detected: 'red',
+    claimed: 'blue',
+    comment: 'gray',
+    tuning_completed: 'gold',
+    implemented: 'orange',
+    verification_passed: 'green',
+    verification_failed: 'red',
+    ignored: 'gray',
+    moc_recorded: 'purple',
+  };
+  return map[type] || 'blue';
+}
+
+// 置信度颜色标签
+function confidenceColor(conf: number): string {
+  if (conf >= 0.95) return 'green';
+  if (conf >= 0.8) return 'blue';
+  if (conf >= 0.6) return 'gold';
+  if (conf >= 0.2) return 'orange';
+  return 'red';
+}
+
+function hasMeta(event: TimelineEvent): boolean {
+  const m = event.meta || {};
+  return !!(
+    m.labelName ||
+    m.confidence != null ||
+    m.severity ||
+    m.mocRef ||
+    (m.newPid && (m.newPid.p != null || m.newPid.i != null))
+  );
+}
+
+function formatTime(ts: string): string {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatRelative(ts: string): string {
+  if (!ts) return '';
+  const target = new Date(ts).getTime();
+  const now = Date.now();
+  const diff = target - now;
+  if (diff <= 0) return '即将';
+  const hours = Math.ceil(diff / 3_600_000);
+  if (hours < 24) return `${hours}小时后`;
+  const days = Math.ceil(hours / 24);
+  return `${days}天后`;
+}
+</script>
+
 <template>
   <div class="clpm-disposition-timeline">
     <!-- 空状态 -->
-    <ClpmEmptyState v-if="!events.length" scene="tracker" />
+    <ClpmEmptyState v-if="events.length === 0" scene="tracker" />
 
     <!-- 时间线 -->
     <Timeline v-else>
@@ -120,7 +256,7 @@
               />
               预计 {{ formatRelative(pendingVerificationAt) }} 自动验证
             </Tag>
-            <slot name="verify-now" :event="event" />
+            <slot name="verify-now" :event="event"></slot>
           </div>
         </div>
       </TimelineItem>
@@ -153,141 +289,6 @@
     </Timeline>
   </div>
 </template>
-
-<script setup lang="ts">
-import { computed } from 'vue';
-
-import { IconifyIcon } from '@vben/icons';
-import { Tag, Timeline, TimelineItem } from 'ant-design-vue';
-
-import { ClpmEmptyState, ClpmSeverityBadge } from '#/components/clpm';
-
-export interface TimelineEvent {
-  eventId: string;
-  eventType:
-    | 'diagnosis_detected'
-    | 'claimed'
-    | 'comment'
-    | 'tuning_completed'
-    | 'implemented'
-    | 'verification_passed'
-    | 'verification_failed'
-    | 'ignored'
-    | 'moc_recorded';
-  timestamp: string;
-  actor?: string | null;
-  title: string;
-  description?: string | null;
-  meta: Record<string, any>;
-}
-
-interface Props {
-  /** 事件列表（按时间升序排列） */
-  events: TimelineEvent[];
-  /** 当前跟踪状态 */
-  currentStatus?: string | null;
-  /** 预计自动验证时间 */
-  pendingVerificationAt?: string | null;
-  /** 验证间隔（小时），默认24 */
-  verificationIntervalHours?: number;
-}
-
-const props = withDefaults(defineProps<Props>(), {
-  currentStatus: null,
-  pendingVerificationAt: null,
-  verificationIntervalHours: 24,
-});
-
-// 按时间升序
-const sortedEvents = computed(() => {
-  return [...props.events].toSorted((a, b) =>
-    a.timestamp.localeCompare(b.timestamp),
-  );
-});
-
-// 是否显示待验证节点（最后一个事件是implemented且当前状态为VERIFYING）
-const showPendingNode = computed(() => {
-  if (
-    props.currentStatus !== 'VERIFYING' &&
-    props.currentStatus !== 'IMPLEMENTED'
-  )
-    return false;
-  const last = sortedEvents.value[sortedEvents.value.length - 1];
-  return last && last.eventType === 'implemented';
-});
-
-// 事件类型 → 图标
-function getEventIcon(type: TimelineEvent['eventType']): string {
-  const map: Record<string, string> = {
-    diagnosis_detected: 'lucide:alert-triangle',
-    claimed: 'lucide:user-check',
-    comment: 'lucide:message-square',
-    tuning_completed: 'lucide:wrench',
-    implemented: 'lucide:check-circle-2',
-    verification_passed: 'lucide:check-circle',
-    verification_failed: 'lucide:rotate-ccw',
-    ignored: 'lucide:eye-off',
-    moc_recorded: 'lucide:file-check-2',
-  };
-  return map[type] || 'lucide:circle';
-}
-
-// 事件类型 → 颜色（ant timeline color 属性）
-function getEventColor(type: TimelineEvent['eventType']): string {
-  const map: Record<string, string> = {
-    diagnosis_detected: 'red',
-    claimed: 'blue',
-    comment: 'gray',
-    tuning_completed: 'gold',
-    implemented: 'orange',
-    verification_passed: 'green',
-    verification_failed: 'red',
-    ignored: 'gray',
-    moc_recorded: 'purple',
-  };
-  return map[type] || 'blue';
-}
-
-// 置信度颜色标签
-function confidenceColor(conf: number): string {
-  if (conf >= 0.95) return 'green';
-  if (conf >= 0.8) return 'blue';
-  if (conf >= 0.6) return 'gold';
-  if (conf >= 0.2) return 'orange';
-  return 'red';
-}
-
-function hasMeta(event: TimelineEvent): boolean {
-  const m = event.meta || {};
-  return !!(
-    m.labelName ||
-    m.confidence != null ||
-    m.severity ||
-    m.mocRef ||
-    (m.newPid && (m.newPid.p != null || m.newPid.i != null))
-  );
-}
-
-function formatTime(ts: string): string {
-  if (!ts) return '';
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return ts;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function formatRelative(ts: string): string {
-  if (!ts) return '';
-  const target = new Date(ts).getTime();
-  const now = Date.now();
-  const diff = target - now;
-  if (diff <= 0) return '即将';
-  const hours = Math.ceil(diff / 3600000);
-  if (hours < 24) return `${hours}小时后`;
-  const days = Math.ceil(hours / 24);
-  return `${days}天后`;
-}
-</script>
 
 <style scoped>
 .clpm-disposition-timeline {

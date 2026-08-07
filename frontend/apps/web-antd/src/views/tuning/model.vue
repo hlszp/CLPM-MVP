@@ -72,7 +72,7 @@ const segmentLoading = ref(false);
 const riskConfirmed = ref(false);
 
 /** P1-023：错误状态（辨识失败时持久展示，带重试） */
-const errorState = ref<{ detail: string; message: string } | null>(null);
+const errorState = ref<null | { detail: string; message: string }>(null);
 
 /** 阶跃实验路径结果（STEP_ONLY 策略，同步返回） */
 const stepResult = ref<null | TuningApi.IdentifyResult>(null);
@@ -147,11 +147,11 @@ const isStepOnly = computed(() => filter.identifyStrategy === 'STEP_ONLY');
 /** 统一结果形状（step / history 两条路径归一化） */
 interface NormalizedResult {
   modelType: string;
-  params: TuningApi.ModelParams | Record<string, any> | null;
+  params: null | Record<string, any> | TuningApi.ModelParams;
   fittingScore: number;
   algorithmVersion: string;
   dataPoints: number;
-  fittedCurve?: { fitted: number[]; pv: number[]; timestamps: number[] } | null;
+  fittedCurve?: null | { fitted: number[]; pv: number[]; timestamps: number[] };
 }
 
 /** 当前结果（统一适配 stepResult / historyResult） */
@@ -370,12 +370,14 @@ async function handleIdentify() {
       nextTick(() => renderFittedCurve());
       hide();
       message.success('阶跃实验辨识完成');
-    } catch (err) {
+    } catch (error) {
       hide();
       errorState.value = {
         message: '阶跃实验辨识失败',
         detail:
-          err instanceof Error ? err.message : '请检查回路数据和时间窗后重试',
+          error instanceof Error
+            ? error.message
+            : '请检查回路数据和时间窗后重试',
       };
     } finally {
       loading.value = false;
@@ -393,9 +395,10 @@ async function handleIdentify() {
       startTime: start.toISOString(),
       endTime: end.toISOString(),
       identifyStrategy: filter.identifyStrategy,
-      candidateModelTypes: filter.candidateModelTypes.length
-        ? filter.candidateModelTypes
-        : undefined,
+      candidateModelTypes:
+        filter.candidateModelTypes.length > 0
+          ? filter.candidateModelTypes
+          : undefined,
       thetaEstimate: filter.thetaEstimate,
     });
     message.info(`异步辨识任务已提交（taskId: ${taskId.slice(0, 8)}…）`);
@@ -412,11 +415,11 @@ async function handleIdentify() {
         };
       }
     });
-  } catch (err) {
+  } catch (error) {
     loading.value = false;
     errorState.value = {
       message: '辨识任务提交失败',
-      detail: err instanceof Error ? err.message : '网络错误，请稍后重试',
+      detail: error instanceof Error ? error.message : '网络错误，请稍后重试',
     };
   }
 }

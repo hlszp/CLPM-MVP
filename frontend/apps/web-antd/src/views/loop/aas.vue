@@ -72,7 +72,7 @@ import {
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 import PidStructureDrawer from './components/pid-structure-drawer.vue';
 
@@ -587,11 +587,9 @@ async function confirmModelDelete() {
     await deleteModelApi(target.id);
     message.success('型号已删除');
     modelDeleteOpen.value = false;
-    if (target.fromMatrix) {
-      await Promise.all([loadMatrixWithPid(), loadModels()]);
-    } else {
-      await loadModels();
-    }
+    await (target.fromMatrix
+      ? Promise.all([loadMatrixWithPid(), loadModels()])
+      : loadModels());
   } catch {
     // 错误提示由请求拦截器统一处理
   } finally {

@@ -27,9 +27,9 @@ import { useUserStore } from '@vben/stores';
 /** CLPM 角色枚举 */
 export type ClpmRole =
   | 'ADMIN'
+  | 'EXPERT'
   | 'IC_ENGINEER'
   | 'PE_ENGINEER'
-  | 'EXPERT'
   | 'SPONSOR';
 
 /** 可访问整定模块的角色（实现契约 v2.3 §5） */

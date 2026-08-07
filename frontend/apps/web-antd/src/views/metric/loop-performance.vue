@@ -87,9 +87,6 @@ import {
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
-import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
-import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
@@ -104,12 +101,15 @@ import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.v
 import StatisticsBarChart from '#/components/diagnosis-visualization/statistics-bar-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
 import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   LOOP_TYPE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
+import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_NAME_MAP,

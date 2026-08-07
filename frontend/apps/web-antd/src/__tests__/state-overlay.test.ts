@@ -30,13 +30,13 @@ vi.mock('ant-design-vue', () => ({
 }));
 
 function mountOverlay(props: {
-  status: 'empty' | 'error' | 'loading' | 'success';
   emptyDescription?: string;
-  errorMessage?: string;
   errorDetail?: string;
+  errorMessage?: string;
   loadingTip?: string;
-  retryText?: string;
   retryable?: boolean;
+  retryText?: string;
+  status: 'empty' | 'error' | 'loading' | 'success';
 }) {
   return mount(ClpmStateOverlay, {
     props,

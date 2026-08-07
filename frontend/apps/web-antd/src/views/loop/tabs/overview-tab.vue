@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { Ref } from 'vue';
+
 /**
  * 回路工作台 · 概览 Tab（IA 重构 Phase B·§4.1.1）
  *
@@ -19,7 +21,6 @@ import type { LoopApi } from '#/api/loop';
 import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, inject, onMounted, ref, watch } from 'vue';
-import type { Ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {

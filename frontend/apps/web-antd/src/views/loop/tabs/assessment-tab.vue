@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { Ref } from 'vue';
+
 /**
  * 回路工作台 · 评估 Tab（IA 重构 Phase B·§4.1.1）
  *
@@ -19,7 +21,6 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
-import type { Ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';

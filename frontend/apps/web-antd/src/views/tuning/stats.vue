@@ -29,7 +29,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningStats' });
@@ -175,31 +175,31 @@ function statusName(status: TuningApi.TaskStatus): string {
 /** 状态颜色映射（Phase 2 对齐实现契约 v2.1 状态机） */
 function statusColor(status: TuningApi.TaskStatus): string {
   switch (status) {
-    // Phase 2 新枚举
-    case 'COMPLETED': {
-      return 'green';
-    }
-    case 'RUNNING': {
-      return 'processing';
-    }
-    case 'INCONCLUSIVE': {
-      return 'orange';
-    }
-    case 'ROLLED_BACK': {
-      return 'red';
-    }
-    case 'DRAFT': {
-      return 'default';
-    }
     // 兼容旧枚举
     case 'APPLIED': {
       return 'green';
     }
+    // Phase 2 新枚举
+    case 'COMPLETED': {
+      return 'green';
+    }
+    case 'DRAFT': {
+      return 'default';
+    }
     case 'IDENTIFIED': {
       return 'cyan';
     }
+    case 'INCONCLUSIVE': {
+      return 'orange';
+    }
     case 'PENDING': {
       return 'default';
+    }
+    case 'ROLLED_BACK': {
+      return 'red';
+    }
+    case 'RUNNING': {
+      return 'processing';
     }
     case 'SIMULATED': {
       return 'blue';

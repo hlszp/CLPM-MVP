@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import { IconifyIcon } from '@vben/icons';
+
 /**
  * UI 状态覆盖组件（V62-P1-023）
  *
@@ -15,28 +17,24 @@
  */
 import { Button, Empty, Spin } from 'ant-design-vue';
 
-import { IconifyIcon } from '@vben/icons';
-
 defineOptions({ name: 'ClpmStateOverlay' });
 
-type OverlayStatus = 'empty' | 'error' | 'loading' | 'success';
-
-const props = withDefaults(
+withDefaults(
   defineProps<{
-    /** 当前状态 */
-    status: OverlayStatus;
     /** 空状态描述文字 */
     emptyDescription?: string;
-    /** 错误标题 */
-    errorMessage?: string;
     /** 错误详情（次要文字） */
     errorDetail?: string;
+    /** 错误标题 */
+    errorMessage?: string;
     /** 加载提示文字 */
     loadingTip?: string;
-    /** 重试按钮文字 */
-    retryText?: string;
     /** 是否显示重试按钮（默认显示） */
     retryable?: boolean;
+    /** 重试按钮文字 */
+    retryText?: string;
+    /** 当前状态 */
+    status: OverlayStatus;
   }>(),
   {
     emptyDescription: '暂无数据',
@@ -50,6 +48,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{ retry: [] }>();
 
+type OverlayStatus = 'empty' | 'error' | 'loading' | 'success';
+
 function handleRetry() {
   emit('retry');
 }
@@ -58,7 +58,7 @@ function handleRetry() {
 <template>
   <!-- success：透传 slot 内容 -->
   <template v-if="status === 'success'">
-    <slot />
+    <slot></slot>
   </template>
 
   <!-- 非 success：覆盖内容区 -->

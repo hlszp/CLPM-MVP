@@ -55,7 +55,7 @@ const identifySummary = computed(() => {
   };
 });
 
-const recommendedPid = computed<TuningApi.PidParamsWithLabel | null>(() => {
+const recommendedPid = computed<null | TuningApi.PidParamsWithLabel>(() => {
   if (store.pidCandidates.length === 0) return null;
   return store.pidCandidates[0] ?? null;
 });
@@ -68,7 +68,7 @@ const simulationImprovement = computed(() => {
 
 // ===== 风险评估 =====
 
-const riskLevel = computed<{ label: string; color: string; desc: string }>(
+const riskLevel = computed<{ color: string; desc: string; label: string }>(
   () => {
     const level = identifySummary.value?.confidenceLevel;
     const improvement = simulationImprovement.value;
@@ -303,7 +303,7 @@ const confirmedAt = computed(() => {
         <Alert
           type="warning"
           show-icon
-          :message="`实施前请记录当前 DCS 中的 PID 参数，如整定后效果异常，可按原始参数回退。`"
+          message="实施前请记录当前 DCS 中的 PID 参数，如整定后效果异常，可按原始参数回退。"
         />
         <div class="mt-3 text-sm" :style="{ color: themeColors.NEUTRAL }">
           回退操作由授权人员在 DCS 端执行，本平台仅提供原始参数记录与建议。

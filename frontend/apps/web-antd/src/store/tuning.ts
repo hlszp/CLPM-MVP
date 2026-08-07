@@ -48,19 +48,19 @@ export const useTuningStore = defineStore('tuning', () => {
   const currentLoopTimeRange = ref<[string, string] | null>(null);
 
   /** 历史辨识结果（Phase 2 异步任务完成后写入） */
-  const identifyResult = ref<TuningApi.IdentifyHistoryResult | null>(null);
+  const identifyResult = ref<null | TuningApi.IdentifyHistoryResult>(null);
 
   /** 异步任务进度（轮询写入） */
-  const taskProgress = ref<TuningApi.TaskProgress | null>(null);
+  const taskProgress = ref<null | TuningApi.TaskProgress>(null);
 
   /** 候选 PID 列表（用于多 PID 对比仿真） */
   const pidCandidates = ref<TuningApi.PidParamsWithLabel[]>([]);
 
   /** 闭环仿真结果 */
-  const simulationResult = ref<TuningApi.SimulationResult | null>(null);
+  const simulationResult = ref<null | TuningApi.SimulationResult>(null);
 
   /** 可辨识片段预览结果 */
-  const segments = ref<TuningApi.IdentifySegmentsResult | null>(null);
+  const segments = ref<null | TuningApi.IdentifySegmentsResult>(null);
 
   // ---- v6.2 P1-019：流程门禁与步骤状态 ----
 

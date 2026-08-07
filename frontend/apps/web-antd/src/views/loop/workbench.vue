@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { Component } from 'vue';
+
 /**
  * 回路工作台（IA 重构 Phase B·§4.1）
  *
@@ -16,8 +18,8 @@
  * 后端零改动：全部前端组合现有 API
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
-import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 import type { LoopApi } from '#/api/loop';
+import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 
 import {
   computed,
@@ -27,7 +29,6 @@ import {
   ref,
   watch,
 } from 'vue';
-import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -36,15 +37,15 @@ import { Button, Empty, Input, Spin, TabPane, Tabs } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
-import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
 import { getLoopMonitorListApi } from '#/api/loop';
+import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
 import {
   ClpmAiDrawer,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'LoopWorkbench' });
 
@@ -143,7 +144,7 @@ async function loadScoreHistory(loopId: string): Promise<KpiSnapshotItem[]> {
   const allItems: KpiSnapshotItem[] = [];
   let page = 1;
   const pageLimit = 100;
-  let total = 0;
+  let total: number;
   do {
     const res = await getLoopSnapshotsApi({
       loopId,
@@ -232,23 +233,23 @@ const tabPanes = [
 /** Tab key → 组件映射（供 template <component :is> 使用） */
 function tabComponent(key: string): Component {
   switch (key) {
-    case 'overview': {
-      return OverviewTab;
-    }
     case 'assessment': {
       return AssessmentTab;
-    }
-    case 'diagnosis': {
-      return DiagnosisTab;
-    }
-    case 'tuning': {
-      return TuningTab;
     }
     case 'comparison': {
       return ComparisonTab;
     }
+    case 'diagnosis': {
+      return DiagnosisTab;
+    }
+    case 'overview': {
+      return OverviewTab;
+    }
     case 'timeline': {
       return TimelineTab;
+    }
+    case 'tuning': {
+      return TuningTab;
     }
     default: {
       return OverviewTab;

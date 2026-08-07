@@ -24,17 +24,30 @@
 import type { AiInsightApi } from '#/api/ai-insight';
 
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
 import { Button, Dropdown, Empty, Spin, Tag, Tooltip } from 'ant-design-vue';
-import { useRouter } from 'vue-router';
 
 import { generateAiInsightApi } from '#/api/ai-insight';
 import { getLlmConfigApi } from '#/api/llm';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'ClpmAiInsight' });
+
+const props = withDefaults(defineProps<Props>(), {
+  loopId: null,
+  taskId: null,
+  variant: 'card',
+  title: '',
+  autoLoad: false,
+  hideWhenDisabled: true,
+});
+
+const emit = defineEmits<{
+  (e: 'generated', payload: AiInsightApi.InsightResult): void;
+}>();
 
 interface Props {
   /** 场景标识：diagnosis / performance / tuning / workbench */
@@ -52,19 +65,6 @@ interface Props {
   /** LLM 未启用时是否整体隐藏：true=隐藏（默认），false=显示"需启用"提示 */
   hideWhenDisabled?: boolean;
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  loopId: null,
-  taskId: null,
-  variant: 'card',
-  title: '',
-  autoLoad: false,
-  hideWhenDisabled: true,
-});
-
-const emit = defineEmits<{
-  (e: 'generated', payload: AiInsightApi.InsightResult): void;
-}>();
 
 const router = useRouter();
 
@@ -232,9 +232,9 @@ async function generate(mode: AiInsightApi.InsightMode = 'auto') {
     });
     result.value = data;
     emit('generated', data);
-  } catch (e: unknown) {
+  } catch (error_: unknown) {
     error.value = true;
-    errorMsg.value = e instanceof Error ? e.message : '洞察生成失败';
+    errorMsg.value = error_ instanceof Error ? error_.message : '洞察生成失败';
     result.value = null;
   } finally {
     loading.value = false;

@@ -16,7 +16,7 @@ export const CONFIDENCE_LEVEL_THRESHOLDS: Record<ConfidenceLevel, number> = {
   B: 0.8, // ≥80% 良好
   C: 0.6, // ≥60% 一般
   D: 0.2, // ≥20% 较差
-  E: 0.0, // <20% 极差
+  E: 0, // <20% 极差
 };
 
 /** 可信度等级 → 中文释义 */

@@ -1,26 +1,14 @@
-<template>
-  <Tooltip :title="tooltip" placement="top">
-    <Tag :color="tagColor" :style="tagStyle">
-      <IconifyIcon
-        :icon="iconName"
-        :size="12"
-        style="margin-right: 2px; vertical-align: -2px"
-      />
-      {{ label }}
-    </Tag>
-  </Tooltip>
-</template>
-
 <script setup lang="ts">
-import { computed } from 'vue';
-
-import { Tag, Tooltip } from 'ant-design-vue';
-import { IconifyIcon } from '@vben/icons';
-
 import type { SeverityLevel } from '#/constants/clpm-ui';
 
-import { SEVERITY_ICON, SEVERITY_LABEL } from '#/constants/clpm-ui';
+import { computed } from 'vue';
+
+import { IconifyIcon } from '@vben/icons';
+
+import { Tag, Tooltip } from 'ant-design-vue';
+
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
+import { SEVERITY_ICON, SEVERITY_LABEL } from '#/constants/clpm-ui';
 
 interface Props {
   severity?: null | SeverityLevel | string;
@@ -78,3 +66,16 @@ const tooltip = computed(() => {
   return `${label.value} - ${desc[normalized.value]}`;
 });
 </script>
+
+<template>
+  <Tooltip :title="tooltip" placement="top">
+    <Tag :color="tagColor" :style="tagStyle">
+      <IconifyIcon
+        :icon="iconName"
+        :size="12"
+        style="margin-right: 2px; vertical-align: -2px"
+      />
+      {{ label }}
+    </Tag>
+  </Tooltip>
+</template>

@@ -51,7 +51,7 @@ import {
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 
@@ -65,7 +65,7 @@ const { RangePicker } = DatePicker;
  * 导入功能角色（与后端 loop_data.py `_IMPORT_ROLES` 对齐：
  * 导入/完整性检查/任务管理端点均 require_roles(ADMIN, IC_ENGINEER, PE_ENGINEER)）
  */
-const IMPORT_ROLES = ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'];
+const IMPORT_ROLES = new Set(['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']);
 
 const route = useRoute();
 const userStore = useUserStore();
@@ -77,7 +77,7 @@ const userStore = useUserStore();
  */
 const canManageImports = computed(() => {
   const roles = userStore.userInfo?.roles ?? [];
-  return roles.some((r) => IMPORT_ROLES.includes(r));
+  return roles.some((r) => IMPORT_ROLES.has(r));
 });
 
 // --- 工厂模型节点树 ---

@@ -32,7 +32,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -307,16 +307,17 @@ const pagination = computed<TablePaginationConfig>(() => ({
 async function loadData() {
   loading.value = true;
   try {
+    let effectVerified: boolean | undefined;
+    if (query.effectVerified === 'true') {
+      effectVerified = true;
+    } else if (query.effectVerified === 'false') {
+      effectVerified = false;
+    }
     const resp = await getKnowledgeBaseApi({
       loopType: query.loopType,
       diagnosisLabel: query.diagnosisLabel,
       algorithm: query.algorithm,
-      effectVerified:
-        query.effectVerified === 'true'
-          ? true
-          : query.effectVerified === 'false'
-            ? false
-            : undefined,
+      effectVerified,
       page: query.page,
       pageSize: query.pageSize,
     });
@@ -364,7 +365,7 @@ function fmtNum(val: unknown): string {
 }
 
 /** 关联方式显示名（提取自模板，避免内联对象字面量） */
-function matchSourceLabel(src: string | null | undefined): string {
+function matchSourceLabel(src: null | string | undefined): string {
   if (!src) return '-';
   const map: Record<string, string> = {
     exact: '精确匹配',
@@ -375,7 +376,7 @@ function matchSourceLabel(src: string | null | undefined): string {
 }
 
 /** 诊断标签颜色（提取自模板，避免内联类型断言） */
-function diagnosisLabelColor(label: string | null | undefined): string {
+function diagnosisLabelColor(label: null | string | undefined): string {
   if (!label) return 'default';
   const map = DIAGNOSIS_LABEL_COLOR_MAP as Record<string, string>;
   return map[label] || 'default';

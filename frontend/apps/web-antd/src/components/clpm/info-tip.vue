@@ -1,16 +1,9 @@
-<template>
-  <Tooltip :title="tooltipContent" placement="top">
-    <span class="clpm-info-tip">
-      <IconifyIcon :icon="icon" :size="size" />
-    </span>
-  </Tooltip>
-</template>
-
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { Tooltip } from 'ant-design-vue';
 import { IconifyIcon } from '@vben/icons';
+
+import { Tooltip } from 'ant-design-vue';
 
 interface Props {
   /** 术语名称 */
@@ -27,6 +20,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   term: '',
+  detail: '',
   icon: 'lucide:info',
   size: 14,
 });
@@ -39,6 +33,14 @@ const tooltipContent = computed(() => {
   return parts.join('：');
 });
 </script>
+
+<template>
+  <Tooltip :title="tooltipContent" placement="top">
+    <span class="clpm-info-tip">
+      <IconifyIcon :icon="icon" :size="size" />
+    </span>
+  </Tooltip>
+</template>
 
 <style scoped>
 .clpm-info-tip {

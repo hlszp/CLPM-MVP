@@ -15,7 +15,7 @@ import { Page } from '@vben/common-ui';
 import { Step, Steps } from 'ant-design-vue';
 
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 import StepAbCompare from './loop-analysis/step-ab-compare.vue';
 import StepDiagnosisResult from './loop-analysis/step-diagnosis-result.vue';

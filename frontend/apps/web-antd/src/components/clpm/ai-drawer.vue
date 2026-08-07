@@ -10,11 +10,19 @@
  */
 import type { AiInsightApi } from '#/api/ai-insight';
 
-import { ClpmAiInsight } from './index';
-
 import { Drawer } from 'ant-design-vue';
 
+import { ClpmAiInsight } from './index';
+
 defineOptions({ name: 'ClpmAiDrawer' });
+
+const props = withDefaults(defineProps<Props>(), {
+  loopId: null,
+  taskId: null,
+  title: '',
+});
+
+const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 
 interface Props {
   /** v-model:open */
@@ -28,14 +36,6 @@ interface Props {
   /** 抽屉标题，默认按 scene */
   title?: string;
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  loopId: null,
-  taskId: null,
-  title: '',
-});
-
-const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 
 const SCENE_TITLE: Record<AiInsightApi.SceneId, string> = {
   diagnosis: 'AI 诊断洞察',

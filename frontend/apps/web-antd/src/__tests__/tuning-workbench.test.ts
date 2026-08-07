@@ -28,7 +28,7 @@ vi.mock('#/composables/use-clpm-theme', () => ({
 }));
 
 vi.mock('#/utils/format', () => ({
-  formatTime: (val: unknown) => String(val),
+  formatTime: String,
 }));
 
 vi.mock('vue-router', () => ({

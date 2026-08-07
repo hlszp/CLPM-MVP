@@ -14,6 +14,9 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
+import type { DiagnosisApi } from '#/api/diagnosis';
+import type { LoopApi } from '#/api/loop';
+
 import { computed, h, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -41,9 +44,7 @@ import {
   getThresholdTemplatesApi,
   upsertThresholdOverrideApi,
 } from '#/api/diagnosis';
-import type { DiagnosisApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
-import type { LoopApi } from '#/api/loop';
 import {
   ClpmEmptyState,
   ClpmInfoTip,
@@ -111,7 +112,7 @@ const loadingTemplates = ref(false);
 const filteredTemplates = computed(() =>
   templates.value
     .filter((t) => t.scopeId === selectedLoopType.value)
-    .sort((a, b) => a.diagCode.localeCompare(b.diagCode)),
+    .toSorted((a, b) => a.diagCode.localeCompare(b.diagCode)),
 );
 
 async function loadTemplates() {
@@ -135,8 +136,8 @@ const editModalVisible = ref(false);
 const editModalTitle = ref('');
 const editForm = reactive<{
   diagCode: string;
-  scopeType: string;
   scopeId: string;
+  scopeType: string;
   threshold: Record<string, number>;
 }>({ diagCode: '', scopeType: 'loop_type', scopeId: '', threshold: {} });
 
@@ -167,8 +168,8 @@ async function saveTemplate() {
     message.success('模板阈值已保存');
     editModalVisible.value = false;
     await loadTemplates();
-  } catch (e) {
-    message.error((e as Error).message ?? '保存失败');
+  } catch (error) {
+    message.error((error as Error).message ?? '保存失败');
   }
 }
 
@@ -214,8 +215,8 @@ async function loadRecommendation() {
     recommendation.value = await getThresholdRecommendationsApi(
       selectedLoopId.value,
     );
-  } catch (e) {
-    message.error((e as Error).message ?? '加载推荐失败');
+  } catch (error) {
+    message.error((error as Error).message ?? '加载推荐失败');
     recommendation.value = null;
   } finally {
     loadingRecommendation.value = false;
@@ -243,8 +244,8 @@ async function applyTemplate(diagCode: string) {
         });
         message.success('模板已套用到回路级');
         await loadRecommendation();
-      } catch (e) {
-        message.error((e as Error).message ?? '套用失败');
+      } catch (error) {
+        message.error((error as Error).message ?? '套用失败');
       }
     },
   });
@@ -275,8 +276,8 @@ async function resetLoopOverride(diagCode: string) {
         await deleteThresholdOverrideApi(target.overrideId);
         message.success('回路级覆盖已删除');
         await loadRecommendation();
-      } catch (e) {
-        message.error((e as Error).message ?? '重置失败');
+      } catch (error) {
+        message.error((error as Error).message ?? '重置失败');
       }
     },
   });
@@ -287,10 +288,10 @@ const tuneModalVisible = ref(false);
 const tuneModalTitle = ref('');
 const tuneForm = reactive<{
   diagCode: string;
+  hasExisting: boolean;
   loopId: string;
   scopeId: string;
   threshold: Record<string, number>;
-  hasExisting: boolean;
 }>({
   diagCode: '',
   loopId: '',
@@ -335,8 +336,8 @@ async function saveTune() {
     message.success('回路级阈值已保存');
     tuneModalVisible.value = false;
     await loadRecommendation();
-  } catch (e) {
-    message.error((e as Error).message ?? '保存失败');
+  } catch (error) {
+    message.error((error as Error).message ?? '保存失败');
   }
 }
 
@@ -366,8 +367,8 @@ async function deleteTune() {
         message.success('回路级覆盖已删除');
         tuneModalVisible.value = false;
         await loadRecommendation();
-      } catch (e) {
-        message.error((e as Error).message ?? '删除失败');
+      } catch (error) {
+        message.error((error as Error).message ?? '删除失败');
       }
     },
   });

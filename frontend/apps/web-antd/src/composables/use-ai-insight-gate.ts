@@ -29,7 +29,7 @@ const sharedState = ref<LlmConfigState>({
   loaded: false,
 });
 
-let loadPromise: Promise<void> | null = null;
+let loadPromise: null | Promise<void> = null;
 
 async function loadLlmConfig(): Promise<void> {
   if (loadPromise) return loadPromise;
@@ -89,11 +89,11 @@ export function useAiInsightGate() {
   /** tooltip 文案（§5.2.1） */
   function gateTooltip(status: AiGateStatus): string {
     switch (status) {
-      case 'disabled-llm': {
-        return '请先在系统管理配置并启用 LLM';
-      }
       case 'disabled-context': {
         return '请先选择回路';
+      }
+      case 'disabled-llm': {
+        return '请先在系统管理配置并启用 LLM';
       }
       default: {
         return '生成 AI 洞察';

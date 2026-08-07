@@ -29,14 +29,14 @@ defineOptions({ name: 'LoopContextHeader' });
 
 const props = withDefaults(
   defineProps<{
+    /** 返回按钮文案 */
+    backLabel?: string;
+    /** 返回路由路径；空则调 router.back() */
+    backTo?: string;
     /** 是否可编辑（选择回路/时间窗）；false 时只读展示 */
     editable?: boolean;
     /** 是否展示时间窗（整定/仿真步骤可设 false） */
     showTimeWindow?: boolean;
-    /** 返回路由路径；空则调 router.back() */
-    backTo?: string;
-    /** 返回按钮文案 */
-    backLabel?: string;
   }>(),
   {
     editable: false,

@@ -8,17 +8,17 @@
  * { type: "alert", ruleCode, ruleName, loopId, severity, triggeredValue, triggeredAt, snapshot }
  */
 
-export type AlertSeverity = 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL';
+export type AlertSeverity = 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
 
 export type AlertWsMessage = {
-  type: 'alert';
+  loopId: string;
   ruleCode: string;
   ruleName: string;
-  loopId: string;
   severity: AlertSeverity;
-  triggeredValue: number | null;
-  triggeredAt: string;
   snapshot: Record<string, any>;
+  triggeredAt: string;
+  triggeredValue: null | number;
+  type: 'alert';
 };
 
 type MessageHandler = (msg: AlertWsMessage) => void;

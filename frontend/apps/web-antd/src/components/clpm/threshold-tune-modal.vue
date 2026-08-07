@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { DiagnosisApi } from '#/api/diagnosis';
+
 /**
  * 阈值微调弹窗（P3-02）
  *
@@ -34,16 +36,15 @@ import {
   getThresholdRecommendationsApi,
   upsertThresholdOverrideApi,
 } from '#/api/diagnosis';
-import type { DiagnosisApi } from '#/api/diagnosis';
 
 defineOptions({ name: 'ClpmThresholdTuneModal' });
 
 const props = withDefaults(
   defineProps<{
-    loopId: string;
     diagCode?: string;
-    tagName?: string;
+    loopId: string;
     loopType?: string;
+    tagName?: string;
     visible?: boolean;
   }>(),
   {
@@ -55,8 +56,8 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  'update:visible': [val: boolean];
   success: [];
+  'update:visible': [val: boolean];
 }>();
 
 const loading = ref(false);
@@ -104,8 +105,8 @@ async function loadRecommendation() {
       activeDiagCode.value = codes[0] ?? '';
     }
     syncTuneForm();
-  } catch (e) {
-    message.error((e as Error).message ?? '加载阈值推荐失败');
+  } catch (error) {
+    message.error((error as Error).message ?? '加载阈值推荐失败');
   } finally {
     loading.value = false;
   }
@@ -145,8 +146,8 @@ async function applyTemplate() {
         });
         message.success('模板已套用');
         await loadRecommendation();
-      } catch (e) {
-        message.error((e as Error).message ?? '套用失败');
+      } catch (error) {
+        message.error((error as Error).message ?? '套用失败');
       }
     },
   });
@@ -165,8 +166,8 @@ async function handleSave() {
     message.success('回路级阈值已保存');
     emit('success');
     await loadRecommendation();
-  } catch (e) {
-    message.error((e as Error).message ?? '保存失败');
+  } catch (error) {
+    message.error((error as Error).message ?? '保存失败');
   } finally {
     saving.value = false;
   }
@@ -198,8 +199,8 @@ async function handleDelete() {
         message.success('回路级覆盖已删除');
         emit('success');
         await loadRecommendation();
-      } catch (e) {
-        message.error((e as Error).message ?? '删除失败');
+      } catch (error) {
+        message.error((error as Error).message ?? '删除失败');
       }
     },
   });
@@ -210,7 +211,7 @@ function handleClose() {
 }
 
 /** 阈值键值对渲染为紧凑文本 */
-function thresholdText(threshold?: Record<string, number> | null): string {
+function thresholdText(threshold?: null | Record<string, number>): string {
   if (!threshold) return '—';
   return Object.entries(threshold)
     .map(([k, v]) => `${k}=${v}`)

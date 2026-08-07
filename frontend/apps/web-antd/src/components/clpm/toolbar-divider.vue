@@ -19,7 +19,7 @@ defineOptions({ name: 'ClpmToolbarDivider' });
 </script>
 
 <template>
-  <span class="clpm-toolbar-divider" aria-hidden="true" />
+  <span class="clpm-toolbar-divider" aria-hidden="true"></span>
 </template>
 
 <style scoped>

@@ -43,7 +43,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { usePageToolbar, showPageHelp } from '#/composables/use-page-toolbar';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 

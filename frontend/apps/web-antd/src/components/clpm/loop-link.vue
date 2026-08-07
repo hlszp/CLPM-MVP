@@ -1,3 +1,76 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useRouter } from 'vue-router';
+
+import { IconifyIcon } from '@vben/icons';
+
+import { Dropdown, Menu } from 'ant-design-vue';
+
+interface Props {
+  /** 回路ID */
+  loopId: string;
+  /** 位号名称（显示用），缺省显示 loopId */
+  tagName?: string;
+  /** 装置名称（显示在Tooltip中） */
+  unitName?: string;
+  /** 是否显示超链接（默认 true） */
+  showLink?: boolean;
+  /** 是否显示下拉快捷菜单（默认 true） */
+  showMenu?: boolean;
+  /** 是否显示"加入跟踪"菜单项（默认 false） */
+  showTracker?: boolean;
+  /** 默认跳转目标：detail | diagnosis | tuning | performance */
+  defaultTarget?: 'detail' | 'diagnosis' | 'performance' | 'tuning';
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  tagName: '',
+  unitName: '',
+  showLink: true,
+  showMenu: true,
+  showTracker: false,
+  defaultTarget: 'detail',
+});
+
+const router = useRouter();
+
+const detailPath = computed(() => {
+  const paths = {
+    detail: `/loop/workbench?loopId=${props.loopId}`,
+    diagnosis: `/diagnosis/detail/${props.loopId}`,
+    tuning: `/tuning/workbench?loopId=${props.loopId}`,
+    performance: `/metric/loop-performance?loopId=${props.loopId}`,
+  };
+  return paths[props.defaultTarget];
+});
+
+const handleMenuClick = ({ key }: { key: number | string }) => {
+  const keyStr = String(key);
+  const routes: Record<string, string> = {
+    detail: `/loop/workbench?loopId=${props.loopId}`,
+    diagnosis: `/diagnosis/detail/${props.loopId}`,
+    tuning: `/tuning/workbench?loopId=${props.loopId}`,
+    performance: `/metric/loop-performance?loopId=${props.loopId}`,
+    trend: `/loop/monitor?loopId=${props.loopId}`,
+    tracker: `/diagnosis/tracker?loopId=${props.loopId}`,
+  };
+  const path = routes[keyStr];
+  if (path) {
+    if (path.includes('?')) {
+      const [base, query] = path.split('?');
+      const params = new URLSearchParams(query);
+      const queryObj: Record<string, string> = {};
+      params.forEach((v, k) => {
+        queryObj[k] = v;
+      });
+      router.push({ path: base, query: queryObj });
+    } else {
+      router.push(path);
+    }
+  }
+};
+</script>
+
 <template>
   <span class="clpm-loop-link">
     <router-link
@@ -72,77 +145,6 @@
     </Dropdown>
   </span>
 </template>
-
-<script setup lang="ts">
-import { computed } from 'vue';
-
-import { Dropdown, Menu } from 'ant-design-vue';
-import { IconifyIcon } from '@vben/icons';
-
-import { useRouter } from 'vue-router';
-
-interface Props {
-  /** 回路ID */
-  loopId: string;
-  /** 位号名称（显示用），缺省显示 loopId */
-  tagName?: string;
-  /** 装置名称（显示在Tooltip中） */
-  unitName?: string;
-  /** 是否显示超链接（默认 true） */
-  showLink?: boolean;
-  /** 是否显示下拉快捷菜单（默认 true） */
-  showMenu?: boolean;
-  /** 是否显示"加入跟踪"菜单项（默认 false） */
-  showTracker?: boolean;
-  /** 默认跳转目标：detail | diagnosis | tuning | performance */
-  defaultTarget?: 'detail' | 'diagnosis' | 'performance' | 'tuning';
-}
-
-const props = withDefaults(defineProps<Props>(), {
-  showLink: true,
-  showMenu: true,
-  showTracker: false,
-  defaultTarget: 'detail',
-});
-
-const router = useRouter();
-
-const detailPath = computed(() => {
-  const paths = {
-    detail: `/loop/workbench?loopId=${props.loopId}`,
-    diagnosis: `/diagnosis/detail/${props.loopId}`,
-    tuning: `/tuning/workbench?loopId=${props.loopId}`,
-    performance: `/metric/loop-performance?loopId=${props.loopId}`,
-  };
-  return paths[props.defaultTarget];
-});
-
-const handleMenuClick = ({ key }: { key: string | number }) => {
-  const keyStr = String(key);
-  const routes: Record<string, string> = {
-    detail: `/loop/workbench?loopId=${props.loopId}`,
-    diagnosis: `/diagnosis/detail/${props.loopId}`,
-    tuning: `/tuning/workbench?loopId=${props.loopId}`,
-    performance: `/metric/loop-performance?loopId=${props.loopId}`,
-    trend: `/loop/monitor?loopId=${props.loopId}`,
-    tracker: `/diagnosis/tracker?loopId=${props.loopId}`,
-  };
-  const path = routes[keyStr];
-  if (path) {
-    if (path.includes('?')) {
-      const [base, query] = path.split('?');
-      const params = new URLSearchParams(query);
-      const queryObj: Record<string, string> = {};
-      params.forEach((v, k) => {
-        queryObj[k] = v;
-      });
-      router.push({ path: base, query: queryObj });
-    } else {
-      router.push(path);
-    }
-  }
-};
-</script>
 
 <style scoped>
 .clpm-loop-link {

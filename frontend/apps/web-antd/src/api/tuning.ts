@@ -141,8 +141,8 @@ export namespace TuningApi {
     params: ModelParams;
     fittingScore: number;
     confidence: AlgorithmConfidenceLevel;
-    identifyMethod?: null | HistoryIdentifyMethod;
-    residualTestPassed?: null | boolean;
+    identifyMethod?: HistoryIdentifyMethod | null;
+    residualTestPassed?: boolean | null;
     excitationScore?: null | number;
     reason?: null | string;
   }
@@ -172,17 +172,17 @@ export namespace TuningApi {
     success: boolean;
     recordId?: null | string;
     modelType?: null | string;
-    params?: null | ModelParams;
+    params?: ModelParams | null;
     fittingScore?: null | number;
-    confidenceLevel?: null | AlgorithmConfidenceLevel;
-    dataConfidenceLevel?: null | AlgorithmConfidenceLevel;
+    confidenceLevel?: AlgorithmConfidenceLevel | null;
+    dataConfidenceLevel?: AlgorithmConfidenceLevel | null;
     confidenceReason?: null | string;
     thetaSource?: null | ThetaSource;
     excitationScore?: null | number;
-    residualTestPassed?: null | boolean;
-    identifyMethod?: null | HistoryIdentifyMethod;
-    dataSource?: null | DataSource;
-    candidateModels?: null | CandidateModel[];
+    residualTestPassed?: boolean | null;
+    identifyMethod?: HistoryIdentifyMethod | null;
+    dataSource?: DataSource | null;
+    candidateModels?: CandidateModel[] | null;
     algorithmVersion?: null | string;
     dataPoints?: null | number;
     validRate?: null | number;
@@ -350,7 +350,7 @@ export namespace TuningApi {
     /** 改善幅度 */
     improvement: Record<string, null | number>;
     /** 多 PID 候选响应（Phase 2） */
-    candidateResponses?: null | CandidateResponse[];
+    candidateResponses?: CandidateResponse[] | null;
   }
 
   /** 整定任务列表项（Phase 2 扩展元数据） */
@@ -367,12 +367,12 @@ export namespace TuningApi {
     createdBy?: null | string;
     createdAt: string;
     // Phase 2 元数据
-    identifyMethod?: null | HistoryIdentifyMethod;
-    dataSource?: null | DataSource;
-    confidenceLevel?: null | AlgorithmConfidenceLevel;
+    identifyMethod?: HistoryIdentifyMethod | null;
+    dataSource?: DataSource | null;
+    confidenceLevel?: AlgorithmConfidenceLevel | null;
     confidenceReason?: null | string;
     excitationScore?: null | number;
-    residualTestPassed?: null | boolean;
+    residualTestPassed?: boolean | null;
     taskId?: null | string;
     completedAt?: null | string;
   }
@@ -397,12 +397,12 @@ export namespace TuningApi {
     simulationResult?: null | SimulationResult;
     status?: TaskStatus;
     // Phase 2 元数据
-    identifyMethod?: null | HistoryIdentifyMethod;
-    dataSource?: null | DataSource;
-    confidenceLevel?: null | AlgorithmConfidenceLevel;
+    identifyMethod?: HistoryIdentifyMethod | null;
+    dataSource?: DataSource | null;
+    confidenceLevel?: AlgorithmConfidenceLevel | null;
     confidenceReason?: null | string;
     excitationScore?: null | number;
-    residualTestPassed?: null | boolean;
+    residualTestPassed?: boolean | null;
     pidCandidates?: null | Record<string, any>;
     candidateResults?: null | Record<string, any>;
   }
@@ -580,27 +580,27 @@ export namespace KnowledgeBaseApi {
   export interface KnowledgeEntry {
     id: string;
     trackerId: string;
-    tuningRecordId: string | null;
+    tuningRecordId: null | string;
     loopId: string;
-    loopType: string | null;
-    controlType: string | null;
+    loopType: null | string;
+    controlType: null | string;
     tagName: string;
-    diagnosisLabel: string | null;
-    severity: string | null;
-    modelType: string | null;
-    algorithm: string | null;
-    identifyMethod: string | null;
-    confidenceLevel: string | null;
-    pidBefore: Record<string, number> | null;
-    pidAfter: Record<string, number> | null;
-    kpiSummary: Record<string, unknown> | null;
+    diagnosisLabel: null | string;
+    severity: null | string;
+    modelType: null | string;
+    algorithm: null | string;
+    identifyMethod: null | string;
+    confidenceLevel: null | string;
+    pidBefore: null | Record<string, number>;
+    pidAfter: null | Record<string, number>;
+    kpiSummary: null | Record<string, unknown>;
     effectVerified: boolean | null;
-    improvedCount: number | null;
-    deterioratedCount: number | null;
+    improvedCount: null | number;
+    deterioratedCount: null | number;
     matchSource: string;
-    implementedAt: string | null;
-    verifiedAt: string | null;
-    createdAt: string | null;
+    implementedAt: null | string;
+    verifiedAt: null | string;
+    createdAt: null | string;
   }
 
   /** 列表查询参数 */

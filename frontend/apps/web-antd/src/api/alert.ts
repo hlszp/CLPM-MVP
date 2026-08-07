@@ -18,8 +18,8 @@ export namespace AlertApi {
 
   /** 事件状态 */
   export type EventStatus =
-    | 'ACTIVE'
     | 'ACKNOWLEDGED'
+    | 'ACTIVE'
     | 'ARCHIVED'
     | 'RESOLVED'
     | 'SUPPRESSED';
@@ -189,10 +189,10 @@ const BASE = '/alert';
 // ---------------------------------------------------------------------------
 
 export function getAlertRulesApi(params?: {
-  ruleType?: AlertApi.RuleType;
   isEnabled?: boolean;
   limit?: number;
   offset?: number;
+  ruleType?: AlertApi.RuleType;
 }) {
   return requestClient.get<AlertApi.RuleListResult>(`${BASE}/rules`, {
     params,
@@ -306,15 +306,15 @@ export function archiveEventApi(eventId: string) {
 // ---------------------------------------------------------------------------
 
 export function getSuppressionsApi(params?: {
-  ruleId?: string;
-  loopId?: string;
   isActive?: boolean;
   limit?: number;
+  loopId?: string;
   offset?: number;
+  ruleId?: string;
 }) {
   return requestClient.get<{
-    total: number;
     items: AlertApi.SuppressionItem[];
+    total: number;
   }>(`${BASE}/suppressions`, { params });
 }
 
@@ -334,13 +334,13 @@ export function deleteSuppressionApi(suppressionId: string) {
 // ---------------------------------------------------------------------------
 
 export function getAlertAuditLogsApi(params?: {
-  ruleId?: string;
-  operator?: string;
-  operationType?: AlertApi.AuditOperationType;
   limit?: number;
   offset?: number;
+  operationType?: AlertApi.AuditOperationType;
+  operator?: string;
+  ruleId?: string;
 }) {
-  return requestClient.get<{ total: number; items: AlertApi.AuditLogItem[] }>(
+  return requestClient.get<{ items: AlertApi.AuditLogItem[]; total: number }>(
     `${BASE}/audit-logs`,
     { params },
   );
@@ -388,11 +388,11 @@ export namespace AlertApi {
   /** dry-run 结果 */
   export interface DryRunResult {
     triggered: boolean;
-    triggeredValue: number | null;
+    triggeredValue: null | number;
     conditionSnapshot: Record<string, any>;
-    severity: string | null;
-    confidenceLevel: string | null;
-    dedupKey: string | null;
+    severity: null | string;
+    confidenceLevel: null | string;
+    dedupKey: null | string;
     currentValues: Record<string, any>;
   }
 }
