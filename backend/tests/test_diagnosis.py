@@ -1510,22 +1510,21 @@ class TestDiagnosisEngine:
 class TestDiagnosisBeatSchedule:
     """Celery Beat 调度配置测试。"""
 
-    def test_beat_schedule_has_diagnosis_engine(self) -> None:
-        """Beat 调度应包含诊断引擎任务（crontab，对齐 KPI 整点后第 10 分钟）。"""
-        from celery.schedules import crontab
+    def test_diagnosis_beat_disabled(self) -> None:
+        """v6.2（2026-08-07）：自动诊断 Beat 已取消，诊断改为工作台/诊断中心手动发起。
 
+        保留 run_diagnosis_hourly / run_diagnosis_checkup / run_diagnosis_task
+        任务函数供手动触发；小时级 KPI 自动评估（kpi-calc-hourly）不受影响。
+        """
         import app.tasks.diagnosis_engine  # noqa: F401
         from app.tasks.celery_app import celery_app
 
         beat = celery_app.conf.beat_schedule
-        assert "diagnosis-engine-hourly" in beat
-        assert (
-            beat["diagnosis-engine-hourly"]["task"]
-            == "app.tasks.diagnosis_engine.run_diagnosis_hourly"
-        )
-        schedule = beat["diagnosis-engine-hourly"]["schedule"]
-        assert isinstance(schedule, crontab)
-        assert schedule.minute == {10}
+        # 自动诊断 Beat 已移除
+        assert "diagnosis-engine-hourly" not in beat
+        assert "diagnosis-engine-checkup-8h" not in beat
+        # KPI 小时级自动评估保留
+        assert "kpi-calc-hourly" in beat
 
 
 # ---------------------------------------------------------------------------

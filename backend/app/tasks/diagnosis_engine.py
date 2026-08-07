@@ -24,7 +24,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from celery.schedules import crontab
+from celery.schedules import crontab  # noqa: F401  # 自动诊断 Beat 已停用，保留以便恢复
 from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 
@@ -306,22 +306,22 @@ def run_loop_diagnosis(
 # ---------------------------------------------------------------------------
 # Beat 调度配置
 # ---------------------------------------------------------------------------
-
-
-_beat_entry = {
-    "task": "app.tasks.diagnosis_engine.run_diagnosis_hourly",
-    # 对齐 KPI 整点计算（crontab minute=0），在整点后第 10 分钟执行诊断，
-    # 避免裸 3600s 间隔与 KPI 计算相位错位导致漏诊
-    "schedule": crontab(minute=10),
-}
+# v6.2（2026-08-07）：取消自动诊断定时任务，诊断改为工作台/诊断中心手动发起。
+# 保留 run_diagnosis_hourly / run_diagnosis_checkup / run_diagnosis_task 任务函数
+# 供手动触发调用；小时级 KPI 自动评估（kpi-calc-hourly）不受影响。
+# 如需恢复自动诊断，取消下方两段注册注释即可。
 
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
-_existing_beat["diagnosis-engine-hourly"] = _beat_entry
-# 体检轨（B1）：每 8 小时对全部启用回路做健康检查，与事件轨 minute=10 错开
-_existing_beat["diagnosis-engine-checkup-8h"] = {
-    "task": "app.tasks.diagnosis_engine.run_diagnosis_checkup",
-    "schedule": crontab(minute=20, hour="*/8"),
-}
+# # 事件轨：每小时整点后第 10 分钟诊断（已取消自动调度）
+# _existing_beat["diagnosis-engine-hourly"] = {
+#     "task": "app.tasks.diagnosis_engine.run_diagnosis_hourly",
+#     "schedule": crontab(minute=10),
+# }
+# # 体检轨（B1）：每 8 小时对全部启用回路做健康检查（已取消自动调度）
+# _existing_beat["diagnosis-engine-checkup-8h"] = {
+#     "task": "app.tasks.diagnosis_engine.run_diagnosis_checkup",
+#     "schedule": crontab(minute=20, hour="*/8"),
+# }
 celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
 

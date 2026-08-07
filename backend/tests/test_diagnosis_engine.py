@@ -3010,15 +3010,12 @@ class TestDoRunCheckup:
         assert result["disabled"] is True
         mock_session.execute.assert_not_called()
 
-    def test_checkup_beat_entry_registered(self) -> None:
-        """Beat 注册 diagnosis-engine-checkup-8h 为 crontab(minute=20, hour='*/8')。"""
+    def test_checkup_beat_entry_disabled(self) -> None:
+        """v6.2（2026-08-07）：自动诊断 Beat 已取消，checkup 任务函数保留供手动触发。"""
         from app.tasks.diagnosis_engine import celery_app
 
-        entry = celery_app.conf.beat_schedule["diagnosis-engine-checkup-8h"]
-        assert entry["task"] == "app.tasks.diagnosis_engine.run_diagnosis_checkup"
-        schedule = entry["schedule"]
-        assert schedule.minute == {20}
-        assert schedule.hour == {0, 8, 16}  # hour="*/8" 展开为 {0, 8, 16}
+        beat = celery_app.conf.beat_schedule
+        assert "diagnosis-engine-checkup-8h" not in beat
 
 
 class TestLabelsSubsetGating:
