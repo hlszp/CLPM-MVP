@@ -582,8 +582,19 @@ CREATE TABLE IF NOT EXISTS action_tracker (
     -- V62-P3-008：负责人与计划执行时间
     assignee              VARCHAR(50),
     planned_at            TIMESTAMP,
+    -- P1a 闭环状态机扩展
+    implemented_at         TIMESTAMP,
+    implemented_by         VARCHAR(50),
+    new_pid_p              DOUBLE PRECISION,
+    new_pid_i              DOUBLE PRECISION,
+    new_pid_d              DOUBLE PRECISION,
+    closed_at              TIMESTAMP,
+    reopen_reason          VARCHAR(500),
+    -- P3-01 关联整定记录
+    tuning_record_id       UUID,
     CONSTRAINT fk_action_tracker_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
-    CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED')),
+    CONSTRAINT fk_action_tracker_tuning_record_id FOREIGN KEY (tuning_record_id) REFERENCES tuning_record(id) ON DELETE SET NULL,
+    CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED', 'VERIFYING', 'CLOSED', 'REOPENED')),
     CONSTRAINT ck_action_tracker_trigger_type CHECK (trigger_type IN ('auto', 'manual')),
     CONSTRAINT ck_action_tracker_severity CHECK (
         severity IS NULL OR severity IN ('INFO', 'WARN', 'ERROR', 'CRITICAL')

@@ -404,13 +404,14 @@ const columns: TableColumnsType = [
     title: '回路位号',
     dataIndex: 'tagName',
     key: 'tagName',
-    width: 180,
+    width: 150,
     align: 'left',
   },
   {
     title: '名称',
     dataIndex: 'description',
     key: 'description',
+    width: 180,
     ellipsis: true,
     align: 'left',
   },
@@ -422,8 +423,8 @@ const columns: TableColumnsType = [
     align: 'center',
   },
   // v6.1 新增：测量量程 / 单位
-  { title: '测量量程', key: 'pvRange', width: 130, align: 'center' },
-  { title: '单位', key: 'pvUnit', width: 70, align: 'center' },
+  { title: '测量量程', key: 'pvRange', width: 100, align: 'center' },
+  { title: '单位', key: 'pvUnit', width: 55, align: 'center' },
   {
     title: '类型',
     dataIndex: 'loopType',
@@ -434,7 +435,7 @@ const columns: TableColumnsType = [
   {
     title: '设定值 SP',
     key: 'sp',
-    width: 120,
+    width: 90,
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.sp;
@@ -445,7 +446,7 @@ const columns: TableColumnsType = [
   {
     title: '测量值 PV',
     key: 'pv',
-    width: 120,
+    width: 90,
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.pv;
@@ -456,7 +457,7 @@ const columns: TableColumnsType = [
   {
     title: '输出值 OP',
     key: 'op',
-    width: 120,
+    width: 90,
     align: 'right',
     customRender: ({ record }) => {
       const val = (record as LoopApi.MonitorListItem).currentValues?.op;
@@ -469,7 +470,7 @@ const columns: TableColumnsType = [
     title: '性能指数',
     dataIndex: 'score',
     key: 'score',
-    width: 100,
+    width: 85,
     align: 'right',
     customRender: ({ text }) => {
       return text !== null && text !== undefined
@@ -479,9 +480,9 @@ const columns: TableColumnsType = [
     customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   // D6 入口整合：诊断标签列——展示最新诊断标签，点击跳转诊断详情页
-  { title: '诊断标签', key: 'diagLabel', width: 140, align: 'center' },
+  { title: '诊断标签', key: 'diagLabel', width: 110, align: 'center' },
   // 数据健康度（方案 A §5）：可信度 + 预处理有效率 + PV 完整度
-  { title: '数据健康度', key: 'dataHealth', width: 150, align: 'center' },
+  { title: '数据健康度', key: 'dataHealth', width: 130, align: 'center' },
   { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
 ];
 
@@ -1453,7 +1454,7 @@ onUnmounted(() => {
             showTotal: (t: number) => `共 ${t} 条`,
           }"
           :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
-          :scroll="{ x: 1320 }"
+          :scroll="{ x: 1570 }"
           size="small"
           :row-class-name="
             (record) =>
@@ -1679,10 +1680,11 @@ onUnmounted(() => {
                 —
               </span>
             </template>
-            <!-- 数据健康度（方案 A §5）：可信度 + 预处理有效率 + PV 完整度三指标徽标 -->
+            <!-- 数据健康度（方案 A §5）：可信度 + 预处理有效率（PV 完整度已与 PV 数值列重复，隐藏） -->
             <template v-else-if="column.key === 'dataHealth'">
               <ClpmDataHealthBadges
                 :health="(record as LoopApi.MonitorListItem).dataHealth"
+                :show-pv-completeness="false"
               />
             </template>
             <template v-else-if="column.key === 'action'">

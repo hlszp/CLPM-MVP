@@ -10,6 +10,7 @@ defineOptions({ name: 'ClpmDataHealthBadges' });
 const props = withDefaults(defineProps<Props>(), {
   health: () => ({}),
   compact: false,
+  showPvCompleteness: true,
 });
 
 /**
@@ -45,6 +46,8 @@ interface Props {
   health?: DataHealthLike | null;
   /** 紧凑模式（测点页表格行高受限时用） */
   compact?: boolean;
+  /** 是否显示 PV 完整度徽标（默认 true；回路实时页设 false 避免与 PV 数值列重复） */
+  showPvCompleteness?: boolean;
 }
 
 // 可信度配色：A 优 / B 良 / C 注意 / D 警告 / E 差
@@ -124,6 +127,14 @@ const pvTier = computed(() =>
 );
 const pvText = computed(() => pct(props.health?.pvCompleteness));
 
+/** 是否有任何徽标可显示（PV 徽标受 showPvCompleteness 开关控制） */
+const hasAnyBadge = computed(() => {
+  if (confMeta.value) return true;
+  if (validRateText.value) return true;
+  if (props.showPvCompleteness && pvText.value) return true;
+  return false;
+});
+
 const missingColsText = computed(() => {
   const cols = props.health?.missingColumns;
   if (!cols || cols.length === 0) return null;
@@ -161,16 +172,12 @@ const tooltipText = computed(() => {
         >有效 {{ validRateText }}</span
       >
       <span
-        v-if="pvText"
+        v-if="showPvCompleteness && pvText"
         class="clpm-dhb__badge"
         :style="{ color: pvTier.color, background: pvTier.bg }"
         >PV {{ pvText }}</span
       >
-      <span
-        v-if="!confMeta && !validRateText && !pvText"
-        class="clpm-dhb__empty"
-        >—</span
-      >
+      <span v-if="!hasAnyBadge" class="clpm-dhb__empty">—</span>
     </div>
   </Tooltip>
   <div v-else class="clpm-dhb" :class="{ 'clpm-dhb--compact': compact }">
@@ -192,9 +199,7 @@ const tooltipText = computed(() => {
       :style="{ color: pvTier.color, background: pvTier.bg }"
       >PV {{ pvText }}</span
     >
-    <span v-if="!confMeta && !validRateText && !pvText" class="clpm-dhb__empty"
-      >—</span
-    >
+    <span v-if="!hasAnyBadge" class="clpm-dhb__empty">—</span>
   </div>
 </template>
 
