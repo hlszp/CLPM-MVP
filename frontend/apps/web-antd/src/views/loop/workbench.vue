@@ -48,6 +48,7 @@ import {
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
 
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
@@ -69,6 +70,23 @@ const router = useRouter();
 
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);
+
+/**
+ * 左栏虚拟滚动（D4）：行高约 57px（py-2 + 两行文本 + border），
+ * pageSize=100 时仅渲染可视窗口 + 5 行缓冲，长列表滚动不卡。
+ */
+const {
+  containerRef: loopListRef,
+  offsetY: loopListOffsetY,
+  onScroll: onLoopListScroll,
+  totalHeight: loopListTotalHeight,
+  visibleItems: visibleLoopItems,
+} = useVirtualList({ itemHeight: 57, items: loopList });
+
+/** 模板函数 ref：把容器元素写入组合式函数的 containerRef（函数 ref 对齐 VNodeRef 类型） */
+function setLoopListRef(el: unknown) {
+  loopListRef.value = (el as HTMLElement) || null;
+}
 const loopListLoading = ref(false);
 const loopListError = ref('');
 const searchKeyword = ref('');
@@ -642,45 +660,64 @@ watch(
           />
         </div>
         <Spin :spinning="loopListLoading" size="small">
-          <div class="max-h-[calc(100vh-210px)] overflow-y-auto">
+          <div
+            :ref="setLoopListRef"
+            class="max-h-[calc(100vh-210px)] overflow-y-auto"
+            @scroll="onLoopListScroll"
+          >
             <div
-              v-for="item in loopList"
-              :key="item.loopId"
-              class="cursor-pointer border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-blue-50"
-              :class="{
-                'border-l-[3px] border-l-blue-500 bg-blue-50':
-                  item.loopId === selectedLoopId,
+              :style="{
+                height: `${loopListTotalHeight}px`,
+                position: 'relative',
               }"
-              role="button"
-              tabindex="0"
-              :aria-current="item.loopId === selectedLoopId ? 'true' : undefined"
-              @click="selectLoop(item.loopId)"
-              @keydown.enter="selectLoop(item.loopId)"
-              @keydown.space.prevent="selectLoop(item.loopId)"
             >
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate text-sm font-medium">{{
-                  item.tagName
-                }}</span>
-                <span
-                  v-if="item.confidenceLevel"
-                  class="shrink-0 text-xs font-semibold"
+              <div :style="{ transform: `translateY(${loopListOffsetY}px)` }">
+                <div
+                  v-for="{ item } in visibleLoopItems"
+                  :key="item.loopId"
+                  class="cursor-pointer border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-blue-50"
                   :class="{
-                    'text-green-600': ['A', 'B'].includes(item.confidenceLevel),
-                    'text-orange-500': item.confidenceLevel === 'C',
-                    'text-red-500': ['D', 'E'].includes(item.confidenceLevel),
+                    'border-l-[3px] border-l-blue-500 bg-blue-50':
+                      item.loopId === selectedLoopId,
                   }"
+                  role="button"
+                  tabindex="0"
+                  :aria-current="
+                    item.loopId === selectedLoopId ? 'true' : undefined
+                  "
+                  @click="selectLoop(item.loopId)"
+                  @keydown.enter="selectLoop(item.loopId)"
+                  @keydown.space.prevent="selectLoop(item.loopId)"
                 >
-                  {{ item.confidenceLevel }}
-                </span>
-              </div>
-              <div class="mt-0.5 flex items-center justify-between gap-2">
-                <span class="truncate text-xs text-gray-400">{{
-                  item.description || '—'
-                }}</span>
-                <span class="shrink-0 text-xs text-gray-400"
-                  >评分 {{ item.score ?? '—' }}</span
-                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="truncate text-sm font-medium">{{
+                      item.tagName
+                    }}</span>
+                    <span
+                      v-if="item.confidenceLevel"
+                      class="shrink-0 text-xs font-semibold"
+                      :class="{
+                        'text-green-600': ['A', 'B'].includes(
+                          item.confidenceLevel,
+                        ),
+                        'text-orange-500': item.confidenceLevel === 'C',
+                        'text-red-500': ['D', 'E'].includes(
+                          item.confidenceLevel,
+                        ),
+                      }"
+                    >
+                      {{ item.confidenceLevel }}
+                    </span>
+                  </div>
+                  <div class="mt-0.5 flex items-center justify-between gap-2">
+                    <span class="truncate text-xs text-gray-400">{{
+                      item.description || '—'
+                    }}</span>
+                    <span class="shrink-0 text-xs text-gray-400"
+                      >评分 {{ item.score ?? '—' }}</span
+                    >
+                  </div>
+                </div>
               </div>
             </div>
             <div
