@@ -327,30 +327,34 @@ function handleResetColumns() {
   persistColumns(columnConfigs.value);
 }
 
-/** KpiStrip 摘要指标：各状态计数（后端聚合口径，不受分页影响） */
+/** KpiStrip 摘要指标：各状态计数（后端聚合口径，不受分页影响）
+ * 整改 A-03：零值中性——计数为 0 时不着色 */
 const kpiStripItems = computed<KpiStripItem[]>(() => {
   const counts = aggregates.value?.statusCounts ?? {};
+  const pending = counts.PENDING ?? 0;
+  const inProgress = counts.IN_PROGRESS ?? 0;
+  const implemented = counts.IMPLEMENTED ?? 0;
   return [
     {
       key: 'pending',
       label: '待处理',
-      value: counts.PENDING ?? 0,
+      value: pending,
       unit: '条',
-      status: 'warning',
+      status: pending > 0 ? 'warning' : 'neutral',
     },
     {
       key: 'in_progress',
       label: '处理中',
-      value: counts.IN_PROGRESS ?? 0,
+      value: inProgress,
       unit: '条',
-      status: 'primary',
+      status: inProgress > 0 ? 'primary' : 'neutral',
     },
     {
       key: 'implemented',
       label: '已实施',
-      value: counts.IMPLEMENTED ?? 0,
+      value: implemented,
       unit: '条',
-      status: 'success',
+      status: implemented > 0 ? 'success' : 'neutral',
     },
     {
       key: 'ignored',
