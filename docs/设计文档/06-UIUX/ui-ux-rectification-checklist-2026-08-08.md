@@ -97,9 +97,9 @@
 | C1-3 | Action Tracker"验证中"状态 + 到期进待办（后端状态机字段 + alembic 迁移） | ✅ 后端状态机 VERIFYING 经查已完整（无需迁移）；`916a5fc` aggregates+verifyOverdueCount（超 24h）；`355d66f` 前端全态展示+工作台"验证超期"卡+tracker?status=VERIFYING 直达 |
 | C1-4 | 空态引导全量收尾 | ✅ `68691a1`（6 文件 10 处图表空渲染清零：ClpmDataCanvas empty/emptyReason 接管 + StateOverlay 分支 + 原因文案） |
 | C2-4 | Bad Actor 治理台账视图（Top5↔Tracker 关联，评分+责任人+处置+验证一表） | ✅ `8cee6ef`（pid-dashboard TOP5 卡升级：治理状态列+效果验证列+未建单降级，纯前端复用 /diagnosis/list，无后端改动） |
-| E4 | 通知铃铛接 /ws/alerts 预警推送 | ⬜ |
-| E5 | 锁屏评估与开启 | ⬜ |
-| E6 | v-access 按钮级权限 | ⬜ |
+| E4 | 通知铃铛接 /ws/alerts 预警推送 | ✅ `e54862c`（alert-ws 客户端 + 铃铛初始拉取 ACTIVE 事件 + WS 实时推送 + 直达事件页；无权限静默空态） |
+| E5 | 锁屏评估与开启 | ✅ `e54862c`（preferences lockScreen=true，共用电脑/留场场景） |
+| E6 | v-access 按钮级权限 | ✅ 决策：不引入 v-access——项目自研 v-permission（通配+角色并集）已 63 处覆盖，能力更全 |
 | F5 | time_constant 计算器（复用 tuning_identification，L1 DISPLAY_ONLY） | ⬜ |
 | F6 | 算法参数配置页收尾（重置默认/category 分组/新指标元数据消费注册表） | ⬜ |
 | F8 | 批量配置评价周期 | ⬜ |
