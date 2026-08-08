@@ -53,6 +53,7 @@ import { formatTime } from '#/utils/format';
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
 import KpiMetricCards from './components/kpi-metric-cards.vue';
+import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import ScoreTrendChart from './components/score-trend-chart.vue';
 import SimulateResultModal from './components/simulate-result-modal.vue';
 import TuneParamModal from './components/tune-param-modal.vue';
@@ -518,22 +519,13 @@ const { toolbarItems } = usePageToolbar(() => ({
   help: { onClick: handleHelp },
 }));
 
-// ===== 顶部区按钮：趋势 / 历史 =====
+// ===== 顶部区按钮：趋势（页面内弹窗，复用 LoopTrendModal） =====
+// 整改 B1 调整（用户决策）：概览区只保留"趋势"，"历史"按钮下线；
+// 趋势不再跳转路由，改为页内弹窗（与回路实时趋势弹窗同组件）。
+const trendModalOpen = ref(false);
 function goTrend() {
   if (selectedLoopId.value) {
-    router.push({
-      path: '/loop/monitor',
-      query: { loopId: selectedLoopId.value },
-    });
-  }
-}
-
-function goHistory() {
-  if (selectedLoopId.value) {
-    router.push({
-      path: '/metric/loop-performance',
-      query: { loopId: selectedLoopId.value },
-    });
+    trendModalOpen.value = true;
   }
 }
 
@@ -726,7 +718,6 @@ watch(
             </div>
             <template #actions>
               <Button size="small" @click="goTrend">趋势</Button>
-              <Button size="small" @click="goHistory">历史</Button>
             </template>
           </WorkbenchSectionCard>
 
@@ -1043,6 +1034,13 @@ watch(
       v-model:open="simulateModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       :result="simulateResult"
+    />
+
+    <!-- ===== 趋势弹窗（整改 B1：页内弹窗，复用 LoopTrendModal） ===== -->
+    <LoopTrendModal
+      v-model:open="trendModalOpen"
+      :loop-id="selectedLoopId"
+      :tag-name="selectedLoop?.tagName"
     />
 
     <!-- ===== AI 洞察右抽屉 ===== -->
