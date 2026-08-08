@@ -40,25 +40,26 @@ export const CLPM_INDUSTRIAL_TOKENS = {
  *   本常量仅保留用于非响应式场景（如模块顶层常量定义）。
  */
 export const THEME_COLORS = {
-  /** 成功 / 优秀 / 已完成（Ant Design green-6） */
-  SUCCESS: '#52c41a',
-  /** 警告 / 待处理 / 需关注（Ant Design gold-6） */
-  WARNING: '#faad14',
-  /** 错误 / 差 / 失败 / 危险操作（Ant Design red-5） */
-  DANGER: '#ff4d4f',
-  /** 信息 / 进行中 / 品牌主色（工业蓝 #0D6EFD） */
+  /** 成功 / 优秀 / 已完成（约定表 --status-ok） */
+  SUCCESS: '#198754',
+  /** 警告 / 待处理 / 需关注（约定表 --status-warning，深琥珀文字态） */
+  WARNING: '#b45309',
+  /** 错误 / 差 / 失败 / 危险操作（约定表 --status-error） */
+  DANGER: '#dc3545',
+  /** 信息 / 进行中 / 品牌主色（工业蓝 --status-info） */
   INFO: '#0d6efd',
-  /** 中性 / 未知 / 未分类（Ant Design gray-5） */
-  NEUTRAL: '#8c8c8c',
+  /** 中性 / 未知 / 未分类 / 零值（约定表 --status-neutral） */
+  NEUTRAL: '#6c757d',
 } as const;
 
 /**
  * KPI 状态 → 色彩映射
  * 用于性能等级（优秀/良好/合格/差）及综合评估结果的色彩编码
+ * 整改 A-01：对齐 UI/UX §3.1.4 分级配色（优良青绿/良好深蓝/关注琥珀/低效红/数据不足灰）
  */
 export const KPI_COLOR_MAP = {
   EXCELLENT: THEME_COLORS.SUCCESS,
-  GOOD: '#73d13d',
+  GOOD: THEME_COLORS.INFO,
   PASS: THEME_COLORS.WARNING,
   FAIL: THEME_COLORS.DANGER,
   UNKNOWN: THEME_COLORS.NEUTRAL,

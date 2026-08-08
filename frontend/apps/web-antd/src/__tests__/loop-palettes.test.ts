@@ -54,15 +54,15 @@ describe('loop 色板常量', () => {
 describe('useLoopPalettes.modeLabelColor', () => {
   it('auto/Manual/Cascade 映射 ZL 语义色', () => {
     const { modeLabelColor } = useLoopPalettes();
-    expect(modeLabelColor('Auto')).toBe('#10b981');
-    expect(modeLabelColor('Manual')).toBe('#f59e0b');
-    expect(modeLabelColor('Cascade')).toBe('#3b82f6');
+    expect(modeLabelColor('Auto')).toBe('#198754');
+    expect(modeLabelColor('Manual')).toBe('#b45309');
+    expect(modeLabelColor('Cascade')).toBe('#0d6efd');
   });
 
   it('未知/空 modeLabel 回退 NEUTRAL 中性灰', () => {
     const { modeLabelColor } = useLoopPalettes();
-    expect(modeLabelColor('')).toBe('#64748b');
-    expect(modeLabelColor(null)).toBe('#64748b');
-    expect(modeLabelColor(undefined)).toBe('#64748b');
+    expect(modeLabelColor('')).toBe('#6c757d');
+    expect(modeLabelColor(null)).toBe('#6c757d');
+    expect(modeLabelColor(undefined)).toBe('#6c757d');
   });
 });

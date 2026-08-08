@@ -13,12 +13,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { useScoreColor } from '#/composables/use-score-color';
 
-// 固定浅色模式（NEUTRAL = slate-500 #64748b）
+// 固定浅色模式（NEUTRAL = slate-500 #6c757d）
 vi.mock('@vben/preferences', () => ({
   usePreferences: () => ({ isDark: ref(false) }),
 }));
 
-const NEUTRAL = '#64748b';
+const NEUTRAL = '#6c757d';
 
 describe('useScoreColor', () => {
   it('null/undefined/NaN 评分返回中性灰 NEUTRAL，level/label 为 null', () => {
@@ -124,8 +124,8 @@ describe('useScoreColor', () => {
       { level: 1, name: 'HIGH', minScore: 50, maxScore: 100 },
       { level: 5, name: 'LOW', minScore: 0, maxScore: 50 },
     ];
-    expect(useScoreColor(80, thresholds).color.value).toBe('#10b981'); // SUCCESS
-    expect(useScoreColor(20, thresholds).color.value).toBe('#f43f5e'); // DANGER
+    expect(useScoreColor(80, thresholds).color.value).toBe('#198754'); // SUCCESS
+    expect(useScoreColor(20, thresholds).color.value).toBe('#dc3545'); // DANGER
   });
 
   it('空阈值数组降级默认阈值', () => {
