@@ -91,6 +91,8 @@ test.describe('多角色权限验证 E2E', () => {
       url.includes('forbidden') ||
       bodyText.includes('403') ||
       bodyText.includes('无权') ||
+      bodyText.includes('没有权限') || // vben Fallback 403 文案（整改 C2-2）
+      bodyText.includes('访问被拒绝') ||
       bodyText.includes('禁止访问');
     const is404 =
       url.includes('/404') ||
