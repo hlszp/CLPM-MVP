@@ -53,7 +53,7 @@
 | # | 任务 | 状态 |
 |---|---|---|
 | A-01 | 色彩约定表文档发布 + token 单源化（THEME_COLORS/CLPM_INDUSTRIAL_TOKENS/useClpmTheme 并轨到 industrial-light.css 变量）（D2 签认后启动） | ✅ `b00109b`（约定表 v1.0 + 三处色板并轨 + 4 个旧色板测试更新；门禁绿） |
-| A-02 | 类别中性化：use-loop-palettes 七色退役、规则/指标类别 tag 灰阶化 | ⬜ |
+| A-02 | 类别中性化：use-loop-palettes 七色退役、规则/指标类别 tag 灰阶化 | ✅ `64dfa36`（8 文件；DOM 探针验证 chips #64748b + tag 全灰阶；状态色保留） |
 | A-03 | 零值/无数据中性化（统计卡 6 页） | ⬜ |
 | A-04 | 工具栏收敛 ≤5 图标 + 高频动作文字化 + aria-label（ClpmStandardActions，41 页） | ⬜ |
 | A-05 | ClpmKpiStrip/ClpmKpiCard 改造（零值中性、主值 Semibold、去彩色 icon 圆底） | ⬜ |
