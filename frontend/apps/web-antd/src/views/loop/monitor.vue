@@ -65,6 +65,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
+  ClpmBulletChart,
   ClpmDataHealthBadges,
   ClpmInfoTip,
   ClpmLoopLink,
@@ -97,7 +98,7 @@ import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'LoopMonitor' });
 
-const { isDark, themeColors } = useClpmTheme();
+const { themeColors } = useClpmTheme();
 const { modeLabelColor } = useLoopPalettes();
 
 const router = useRouter();
@@ -666,8 +667,6 @@ const perfLoading = ref(false);
 const perfDetail = ref<LoopApi.MonitorDetail | null>(null);
 const perfWindow = ref<LoopApi.TrendWindow>('last_24_hours');
 const loopDetailForWeights = ref<LoopApi.LoopDetail | null>(null);
-const gaugeChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderGaugeChart } = useEcharts(gaugeChartRef);
 
 // ===== 当前操作的回路 =====
 
@@ -962,7 +961,6 @@ async function loadPerfDetail() {
     perfDetail.value = detail;
     loopDetailForWeights.value = loopDetail;
     await nextTick();
-    renderGauge();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -970,42 +968,6 @@ async function loadPerfDetail() {
   }
 }
 
-/** 渲染仪表盘 */
-function renderGauge() {
-  const score = perfDetail.value?.kpiSummary.composite_score;
-  if (score === null || score === undefined) return;
-
-  renderGaugeChart({
-    series: [
-      {
-        axisLine: {
-          lineStyle: {
-            color: [
-              [0.6, themeColors.value.DANGER],
-              [0.8, themeColors.value.WARNING],
-              [1, themeColors.value.SUCCESS],
-            ],
-            width: 18,
-          },
-        },
-        axisTick: { show: false },
-        data: [{ name: '综合性能指数', value: score }],
-        detail: {
-          fontSize: 28,
-          formatter: '{value}',
-          offsetCenter: [0, '50%'],
-        },
-        max: 100,
-        min: 0,
-        pointer: { itemStyle: { color: 'auto' } },
-        progress: { show: true, width: 18 },
-        splitLine: { length: 18 },
-        title: { fontSize: 14, offsetCenter: [0, '80%'] },
-        type: 'gauge',
-      },
-    ],
-  });
-}
 
 function handlePerfWindowChange() {
   loadPerfDetail();
@@ -1086,13 +1048,6 @@ function handleToggleAutoRefresh(val: any) {
     stopAutoRefresh();
   }
 }
-
-// ===== 主题切换重渲图表 =====
-watch(isDark, () => {
-  nextTick(() => {
-    renderGauge();
-  });
-});
 
 // ===== 偏好持久化 =====
 
@@ -1931,18 +1886,13 @@ onUnmounted(() => {
             class="flex items-center gap-6 rounded border p-4"
             :class="{ 'opacity-60': isPerfInconclusive }"
           >
-            <div style="width: 240px; height: 240px">
-              <EchartsUI
-                v-if="perfDetail.kpiSummary.composite_score != null"
-                ref="gaugeChartRef"
-                height="240px"
+            <!-- 整改 A-06：gauge 退役，子弹图（值条+分档区间带） -->
+            <div style="width: 280px">
+              <ClpmBulletChart
+                label="综合性能指数"
+                :value="perfDetail.kpiSummary.composite_score ?? null"
+                unit="分"
               />
-              <div
-                v-else
-                class="flex h-full items-center justify-center text-gray-400"
-              >
-                暂无评分
-              </div>
             </div>
             <div class="flex-1">
               <div class="text-sm text-gray-500">

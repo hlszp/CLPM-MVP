@@ -19,7 +19,11 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import {
+  ClpmBulletChart,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
@@ -300,88 +304,13 @@ const top5TableData = computed(() => {
   });
 });
 
-const gauge1Ref = ref<EchartsUIType>();
-const gauge2Ref = ref<EchartsUIType>();
-const gauge3Ref = ref<EchartsUIType>();
-const gauge4Ref = ref<EchartsUIType>();
-const gauge5Ref = ref<EchartsUIType>();
-const gauge6Ref = ref<EchartsUIType>();
 const trendChartRef = ref<EchartsUIType>();
 const pieChartRef = ref<EchartsUIType>();
 const statusPieChartRef = ref<EchartsUIType>();
 
-const { renderEcharts: renderGauge1 } = useEcharts(gauge1Ref);
-const { renderEcharts: renderGauge2 } = useEcharts(gauge2Ref);
-const { renderEcharts: renderGauge3 } = useEcharts(gauge3Ref);
-const { renderEcharts: renderGauge4 } = useEcharts(gauge4Ref);
-const { renderEcharts: renderGauge5 } = useEcharts(gauge5Ref);
-const { renderEcharts: renderGauge6 } = useEcharts(gauge6Ref);
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 const { renderEcharts: renderPie } = useEcharts(pieChartRef);
 const { renderEcharts: renderStatusPie } = useEcharts(statusPieChartRef);
-
-function renderGaugeOption(
-  value: number,
-  color: string,
-  opts?: { inverted?: boolean; max?: number },
-) {
-  const max = opts?.max ?? 100;
-  // inverted=true 适用于"越低越好"的指标（如仪表故障率）：低值绿、高值红
-  const colorStops = opts?.inverted
-    ? [
-        [0.33, themeColors.value.SUCCESS],
-        [0.5, themeColors.value.WARNING],
-        [1, themeColors.value.DANGER],
-      ]
-    : [
-        [0.3, themeColors.value.DANGER],
-        [0.5, themeColors.value.WARNING],
-        [0.75, themeColors.value.INFO],
-        [1, themeColors.value.SUCCESS],
-      ];
-  return {
-    series: [
-      {
-        type: 'gauge' as const,
-        startAngle: 220,
-        endAngle: -40,
-        min: 0,
-        max,
-        splitNumber: 5,
-        radius: '108%',
-        center: ['50%', '55%'],
-        axisLine: {
-          lineStyle: {
-            width: 6,
-            color: colorStops,
-          },
-        },
-        pointer: {
-          length: '50%',
-          width: 3,
-          itemStyle: { color },
-        },
-        axisTick: {
-          distance: -11,
-          length: 5,
-          lineStyle: { color: chartColors.value.text, width: 1 },
-        },
-        splitLine: {
-          distance: -14,
-          length: 18,
-          lineStyle: { color: chartColors.value.text, width: 2 },
-        },
-        axisLabel: {
-          color: chartColors.value.text,
-          fontSize: 9,
-          distance: 14,
-        },
-        detail: { show: false },
-        data: [{ value, name: '' }],
-      },
-    ],
-  } as any;
-}
 
 function renderTrendChart() {
   const trend = boardTrend.value;
@@ -713,12 +642,6 @@ function renderPieChart() {
   });
 }
 
-/** 看板平均性能评分颜色（单一响应式源，随阈值配置与明暗主题联动） */
-const { color: avgScoreColor } = useScoreColor(
-  () => aggregateData.value?.avgScore,
-  gradingThresholds,
-);
-
 /**
  * 评分 → 颜色（表单元格等按值取色场景）。
  * 统一走 useScoreColor：动态 gradingThresholds 定档，null/NaN → ZL 中性灰
@@ -770,7 +693,6 @@ async function loadBoard() {
     boardAggregate.value = aggregate;
     boardTrend.value = trend;
     await nextTick();
-    updateGauges();
     renderTrendChart();
     renderPieChart();
     renderStatusPieChart();
@@ -787,7 +709,6 @@ async function loadAutoRateRt() {
     );
     autoRateRt.value = data;
     await nextTick();
-    updateGauges();
     renderStatusPieChart();
   } catch {
     // ignore
@@ -861,46 +782,10 @@ function loadAll() {
   loadGradeDistribution();
 }
 
-function updateGauges() {
-  renderGauge1(
-    renderGaugeOption(autoRateRt.value?.rate ?? 0, themeColors.value.INFO),
-  );
-  renderGauge2(
-    renderGaugeOption(aggregateData.value?.avgScore ?? 0, avgScoreColor.value),
-  );
-  renderGauge3(
-    renderGaugeOption(
-      aggregateData.value?.autoModeRate ?? 0,
-      themeColors.value.SUCCESS,
-    ),
-  );
-  renderGauge4(
-    renderGaugeOption(
-      aggregateData.value?.stabilityRate ?? 0,
-      themeColors.value.WARNING,
-    ),
-  );
-  renderGauge5(
-    renderGaugeOption(
-      aggregateData.value?.goodValueRate ?? 0,
-      themeColors.value.SUCCESS,
-    ),
-  );
-  // 仪表故障率（越低越好）：inverted 配色 + max=30 聚焦低值区间
-  renderGauge6(
-    renderGaugeOption(
-      aggregateData.value?.instrumentFaultRate ?? 0,
-      themeColors.value.DANGER,
-      { inverted: true, max: 30 },
-    ),
-  );
-}
-
 watch(top5Sort, () => loadRanking());
 
 watch(isDark, () => {
   nextTick(() => {
-    updateGauges();
     renderTrendChart();
     renderPieChart();
     renderStatusPieChart();
@@ -971,85 +856,55 @@ onMounted(() => {
         <div class="clpm-pid-dashboard__main">
           <div class="clpm-pid-dashboard__top-row">
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">实时自控率</div>
-              <EchartsUI ref="gauge1Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ autoRateRt?.rate ?? '--' }}%
-              </div>
-              <div
-                class="clpm-pid-dashboard__gauge-meta"
-                :class="{
-                  'clpm-pid-dashboard__gauge-meta--stale': rtStale,
-                }"
-              >
-                {{ rtReadAtText }}
-              </div>
+              <ClpmBulletChart
+                label="实时自控率"
+                :value="autoRateRt?.rate ?? null"
+                :meta="rtReadAtText"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">性能评分</div>
-              <EchartsUI ref="gauge2Ref" height="126px" />
-              <div
-                class="clpm-pid-dashboard__gauge-value"
-                :style="{ color: avgScoreColor }"
-              >
-                {{ aggregateData?.avgScore ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="性能评分"
+                :value="aggregateData?.avgScore ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">自控率</div>
-              <EchartsUI ref="gauge3Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ aggregateData?.autoModeRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="自控率"
+                :value="aggregateData?.autoModeRate ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">平稳率</div>
-              <EchartsUI ref="gauge4Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ aggregateData?.stabilityRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="平稳率"
+                :value="aggregateData?.stabilityRate ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">好值率</div>
-              <EchartsUI ref="gauge5Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ aggregateData?.goodValueRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="好值率"
+                :value="aggregateData?.goodValueRate ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">仪表故障率</div>
-              <EchartsUI ref="gauge6Ref" height="126px" />
-              <div
-                class="clpm-pid-dashboard__gauge-value"
-                :style="{
-                  color:
-                    (aggregateData?.instrumentFaultRate ?? 0) > 10
-                      ? themeColors.DANGER
-                      : themeColors.SUCCESS,
-                }"
-              >
-                {{ aggregateData?.instrumentFaultRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="仪表故障率"
+                :value="aggregateData?.instrumentFaultRate ?? null"
+                :max="30"
+                :fair="5"
+                :good="10"
+                invert
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
           </div>
 
