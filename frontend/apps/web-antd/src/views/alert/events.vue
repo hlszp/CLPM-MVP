@@ -20,6 +20,7 @@ import {
   Input,
   message,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -254,13 +255,20 @@ function showDetail(record: AlertApi.EventItem) {
   detailVisible.value = true;
 }
 
+/** 行内动作防重复提交：记录正在提交中的 eventId（确认/误报/撤销误报共用） */
+const actingEventId = ref('');
+
 async function handleAcknowledge(record: AlertApi.EventItem) {
+  if (actingEventId.value) return;
+  actingEventId.value = record.eventId;
   try {
     await acknowledgeEventApi(record.eventId);
     message.success('事件已确认');
     await loadEvents();
   } catch {
     message.error('确认失败');
+  } finally {
+    actingEventId.value = '';
   }
 }
 
@@ -270,11 +278,16 @@ function openResolveModal(record: AlertApi.EventItem) {
   resolveVisible.value = true;
 }
 
+/** 处置弹窗提交中状态（防重复提交） */
+const resolveLoading = ref(false);
+
 async function handleResolve() {
   if (!resolveNote.value.trim()) {
     message.warning('请填写处置说明');
     return;
   }
+  if (resolveLoading.value) return;
+  resolveLoading.value = true;
   try {
     await resolveEventApi(resolvingEventId.value, resolveNote.value);
     message.success('事件已处置');
@@ -282,16 +295,26 @@ async function handleResolve() {
     await loadEvents();
   } catch {
     message.error('处置失败');
+  } finally {
+    resolveLoading.value = false;
   }
 }
 
-async function handleMarkFalsePositive(record: AlertApi.EventItem) {
+/** 标记/撤销误报（isFalsePositive=false 即 undo） */
+async function handleMarkFalsePositive(
+  record: AlertApi.EventItem,
+  value = true,
+) {
+  if (actingEventId.value) return;
+  actingEventId.value = record.eventId;
   try {
-    await markFalsePositiveApi(record.eventId, true);
-    message.success('已标记为误报');
+    await markFalsePositiveApi(record.eventId, value);
+    message.success(value ? '已标记为误报' : '已撤销误报标记');
     await loadEvents();
   } catch {
-    message.error('标记失败');
+    message.error(value ? '标记失败' : '撤销失败');
+  } finally {
+    actingEventId.value = '';
   }
 }
 
@@ -497,6 +520,7 @@ onMounted(() => {
               v-if="canEdit && record.status === 'ACTIVE'"
               type="link"
               size="small"
+              :loading="actingEventId === (record as AlertApi.EventItem).eventId"
               @click="handleAcknowledge(record as AlertApi.EventItem)"
             >
               确认
@@ -512,13 +536,33 @@ onMounted(() => {
             >
               处置
             </Button>
-            <Button
+            <Popconfirm
               v-if="canEdit && !record.isFalsePositive"
+              title="确认将该事件标记为误报？"
+              ok-text="确认"
+              cancel-text="取消"
+              @confirm="handleMarkFalsePositive(record as AlertApi.EventItem)"
+            >
+              <Button
+                type="link"
+                size="small"
+                :loading="
+                  actingEventId === (record as AlertApi.EventItem).eventId
+                "
+              >
+                误报
+              </Button>
+            </Popconfirm>
+            <Button
+              v-if="canEdit && record.isFalsePositive"
               type="link"
               size="small"
-              @click="handleMarkFalsePositive(record as AlertApi.EventItem)"
+              :loading="actingEventId === (record as AlertApi.EventItem).eventId"
+              @click="
+                handleMarkFalsePositive(record as AlertApi.EventItem, false)
+              "
             >
-              误报
+              撤销误报
             </Button>
             <Button
               v-if="canArchive && record.status === 'RESOLVED'"
@@ -618,6 +662,7 @@ onMounted(() => {
       title="处置预警事件"
       ok-text="确认处置"
       cancel-text="取消"
+      :confirm-loading="resolveLoading"
       @ok="handleResolve"
     >
       <Form layout="vertical">
