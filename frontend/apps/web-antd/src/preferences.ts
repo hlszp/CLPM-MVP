@@ -141,7 +141,8 @@ export const overridesPreferences = defineOverridesPreferences({
     globalSearch: true,
     // 整改 E3（D4 签认）：业务文案未覆盖 i18n，隐藏语言切换消除半英文残态
     languageToggle: false,
-    lockScreen: false,
+    // 整改 E5：开启锁屏（共用电脑/留场值守场景，vben 原生锁屏 widget）
+    lockScreen: true,
     notification: true,
     refresh: true,
     sidebarToggle: true,
