@@ -117,6 +117,10 @@
 | P3-3 | DCS 在运参数对照视图 | Phase 3 预研评审 |
 | P3-4 | 中控室大屏深色专项 | 立项评审 |
 | P3-5 | ⌘K 位号直达扩展 | Phase 3 |
+| BL-1 | vitest 既有失败：tuning-workbench"风险统计显示为未知而不是伪 0"用例 | Phase 1 诊断修复（疑似整定工作台统计映射回归） |
+| BL-2 | bootstrap 01_schema.sql 缺索引 idx_action_tracker_tuning_record（dev DB 已补，引导 SQL 未回写） | 用户决策后回写 |
+| BL-3 | 工作台"异常预测"卡统计条显示 undefined（高危/中危/已分析计数映射缺失，有数据时必现） | Phase 1 A-12 系统概览样板页重做时修复 |
+| BL-4 | Sponsor 登录"无权限访问"toast、TOP5 最优排序（已在方案 C2-1/C2-3，Phase 1） | 已在计划内 |
 
 ---
 
