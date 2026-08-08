@@ -192,14 +192,21 @@ watch(
 <template>
   <BasicLayout @clear-preferences-and-logout="handleLogout">
     <template #user-dropdown>
-      <UserDropdown
-        :avatar
-        :menus
-        :text="userStore.userInfo?.realName"
-        :description="userStore.userInfo?.desc || ''"
-        @logout="handleLogout"
-        @clear-preferences-and-logout="handleLogout"
-      />
+      <!-- 整改 A-10：头像旁显示用户姓名（VbenAvatar 无图时回退显示姓名末两字，
+           "系统管理员"曾被误显示为"理员"，像截断 bug） -->
+      <div class="flex items-center gap-1">
+        <span class="max-w-32 truncate text-sm text-foreground">
+          {{ userStore.userInfo?.realName }}
+        </span>
+        <UserDropdown
+          :avatar
+          :menus
+          :text="userStore.userInfo?.realName"
+          :description="userStore.userInfo?.desc || ''"
+          @logout="handleLogout"
+          @clear-preferences-and-logout="handleLogout"
+        />
+      </div>
     </template>
     <template #notification>
       <Notification
