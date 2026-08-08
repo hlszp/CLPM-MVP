@@ -20,7 +20,7 @@
 | R2 | 决策签认 D1-D4（见下表） | ✅ | 2026-08-08 用户全部签认：D1=a 补确认窗、D2=a 按 A.3、D3=a 不完整引用、D4=a 隐藏 languageToggle |
 | R3 | 基线门禁全绿记录 | ✅ | 后端：ruff✅/format✅/alembic✅（修复后）/pytest 4120 passed✅（5m08s）；前端：check:type✅/vitest 455 passed + **1 既有失败**（tuning-workbench.test.ts"风险统计显示为未知而不是伪 0"，已记入 backlog）。**基线修复**：dev DB 无 alembic_version（bootstrap 重建丢失）→ `alembic stamp head` + 补缺失索引 `idx_action_tracker_tuning_record` 后 check 退出码 0；bootstrap 缺该索引已记 backlog 待用户决策 |
 | R4 | E2E 既有失败甄别 | ✅ | 终轮全量：73 passed / 15 failed / 6 未运行（15.7m）。失败归因：3 个文档基线失败（D3-MOC/F1/TUNE-009）+ 12 个 networkidle 超时类环境敏感失败（ops-runbook P2-018 后端累积负载 + SignalR 长连接，非本次引入——证据：失败集中于 waitForLoadState 超时、与改动文件无交集、同页新断言 SYS-DATA/ROUTE-WB 全过）。**本次新增 4 断言全部通过，无新增回归**。建议：重启后端后复跑一轮全量做最终确认（环境操作留用户） |
-| R5 | 视觉回归基线脚本 | 🔨 | 脚本 `e2e/scripts/capture-visual-baseline.mjs` 已建（21 页 + 登录页，loopId 动态解析，--out 支持对比采集）；基线采集中（:5667 含品牌改动的实例） |
+| R5 | 视觉回归基线脚本 | ✅ | 脚本 `e2e/scripts/capture-visual-baseline.mjs` + 21 页基线入库（`c1a3bef`）；**可复现性已验证**：`--out current` 重采 21/21 + 像素对比，静态页 0.00% 差异、B5 修复被准确捕捉（system-users 11.06% diff）；current/ 目录已 gitignore |
 | R6 | 开发环境确认 | ✅ | 2026-08-07 实测：前端 :5666 / 后端 :7101 / docker infra 均可用，admin/sponsor/ic_engineer 三账号可登录 |
 
 ## 0.1 决策签认结果（2026-08-08 用户签认 ✅）
@@ -52,7 +52,7 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| A-01 | 色彩约定表文档发布 + token 单源化（THEME_COLORS/CLPM_INDUSTRIAL_TOKENS/useClpmTheme 并轨到 industrial-light.css 变量）（D2 签认后启动） | ⬜ |
+| A-01 | 色彩约定表文档发布 + token 单源化（THEME_COLORS/CLPM_INDUSTRIAL_TOKENS/useClpmTheme 并轨到 industrial-light.css 变量）（D2 签认后启动） | ✅ `b00109b`（约定表 v1.0 + 三处色板并轨 + 4 个旧色板测试更新；门禁绿） |
 | A-02 | 类别中性化：use-loop-palettes 七色退役、规则/指标类别 tag 灰阶化 | ⬜ |
 | A-03 | 零值/无数据中性化（统计卡 6 页） | ⬜ |
 | A-04 | 工具栏收敛 ≤5 图标 + 高频动作文字化 + aria-label（ClpmStandardActions，41 页） | ⬜ |
