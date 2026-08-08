@@ -90,8 +90,10 @@ async function main() {
   });
 
   // 登录（UI 流程，前端自行持久化 token）
+  // 登录页：等待表单真正渲染（早期截图曾只抓到启动闪屏）
   await page.goto(`${WEB}/auth/login`, { waitUntil: 'domcontentloaded' });
   await page.getByPlaceholder('请输入用户名').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(OUT_DIR, 'auth-login.png') });
   await page.getByPlaceholder('请输入用户名').fill(USER);
   await page.getByPlaceholder('请输入密码').fill(PASS);
