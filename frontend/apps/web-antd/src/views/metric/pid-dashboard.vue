@@ -16,7 +16,7 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
+import { Button, Drawer, message, Select, Table, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -58,6 +58,9 @@ const timeWindowLabel = computed(
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
 
+/** 整改 A-13：工厂导航树抽屉化（默认收起，释放主区 15% 宽度） */
+const treeDrawerOpen = ref(false);
+
 function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
   if (node) {
     selectedPlantNodeId.value = node.id;
@@ -66,6 +69,7 @@ function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
     selectedPlantNodeId.value = undefined;
     selectedPlantNodeName.value = '全厂';
   }
+  treeDrawerOpen.value = false;
   loadAll();
 }
 
@@ -779,6 +783,12 @@ onMounted(() => {
         subtitle="工厂级 KPI 仪表盘 · 趋势 · 等级分布 · TOP5"
         :loading="loading"
       >
+        <Button size="small" @click="treeDrawerOpen = true">
+          <template #icon>
+            <IconifyIcon icon="lucide:git-fork" />
+          </template>
+          {{ selectedPlantNodeName }}
+        </Button>
         <Select
           v-model:value="timeWindow"
           style="width: 140px"
@@ -792,11 +802,6 @@ onMounted(() => {
       </ClpmPageToolbar>
 
       <div class="clpm-pid-dashboard__body">
-        <PlantNodeTree
-          card-title="工厂导航"
-          :width="200"
-          @select="onTreeSelect"
-        />
 
         <div class="clpm-pid-dashboard__main">
           <div class="clpm-pid-dashboard__top-row">
@@ -1078,6 +1083,16 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 整改 A-13：工厂导航抽屉 -->
+    <Drawer
+      v-model:open="treeDrawerOpen"
+      title="工厂导航"
+      placement="left"
+      :width="300"
+    >
+      <PlantNodeTree card-title="" :width="260" @select="onTreeSelect" />
+    </Drawer>
   </Page>
 </template>
 

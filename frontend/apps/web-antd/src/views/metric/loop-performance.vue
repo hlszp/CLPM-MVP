@@ -63,6 +63,7 @@ import {
   Input,
   message,
   Modal,
+  CheckboxGroup,
   RadioGroup,
   RangePicker,
   Row,
@@ -950,6 +951,40 @@ const historyLoading = ref(false);
 const historyRecord = ref<LoopPerformanceRow | null>(null);
 const historyWindow = ref<number>(24);
 const historySnapshots = ref<KpiSnapshotItem[]>([]);
+
+// ===== 整改 F3：历史趋势指标多选（≤5） =====
+/** 可选指标注册表（综合评分=柱状，其余折线；色值为图表系列色） */
+const HISTORY_METRIC_OPTIONS = [
+  { label: '综合评分', value: 'score', color: '#0d6efd', kind: 'bar' },
+  { label: '准确率', value: 'accuracyRate', color: '#198754', kind: 'line' },
+  { label: '快速率', value: 'fastRate', color: '#b45309', kind: 'line' },
+  { label: '平稳率', value: 'steadyRate', color: '#0d9488', kind: 'line' },
+  { label: '有效自控率', value: 'effectiveAutoRate', color: '#6d28d9', kind: 'line' },
+  { label: '好值率', value: 'goodValueRate', color: '#0369a1', kind: 'line' },
+  { label: '振荡率', value: 'oscillationRate', color: '#dc3545', kind: 'line' },
+  { label: '饱和率', value: 'saturationRate', color: '#c2410c', kind: 'line' },
+  { label: '仪表故障率', value: 'instrumentFaultRate', color: '#64748b', kind: 'line' },
+] as const;
+
+const HISTORY_METRIC_MAX = 5;
+
+const selectedHistoryMetrics = ref<string[]>([
+  'score',
+  'accuracyRate',
+  'fastRate',
+  'steadyRate',
+  'effectiveAutoRate',
+]);
+
+/** 多选变更：限制最多 5 项后重渲 */
+function handleHistoryMetricChange(values: (boolean | string | number)[]) {
+  if (values.length > HISTORY_METRIC_MAX) {
+    message.warning(`最多同时对比 ${HISTORY_METRIC_MAX} 个指标`);
+    return;
+  }
+  selectedHistoryMetrics.value = values.map(String);
+  renderHistoryTrend();
+}
 const historyChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderHistoryChart } = useEcharts(historyChartRef);
 
@@ -1012,13 +1047,11 @@ function renderHistoryTrend() {
     return t ? dayjs(t).format('MM-DD HH:mm') : '';
   });
 
-  const scores = data.map((s) => s.score ?? null);
-  const accuracy = data.map((s) => s.accuracyRate ?? null);
-  const fast = data.map((s) => s.fastRate ?? null);
-  const steady = data.map((s) => s.steadyRate ?? null);
-  const effectiveAuto = data.map((s) => s.effectiveAutoRate ?? null);
-
   const textColor = themeColors.value.NEUTRAL;
+
+  const selected = HISTORY_METRIC_OPTIONS.filter((o) =>
+    selectedHistoryMetrics.value.includes(o.value),
+  );
 
   renderHistoryChart({
     tooltip: {
@@ -1026,7 +1059,7 @@ function renderHistoryTrend() {
       axisPointer: { type: 'cross' },
     },
     legend: {
-      data: ['综合评分', '准确率', '快速率', '平稳率', '有效自控率'],
+      data: selected.map((o) => o.label),
       top: 0,
       textStyle: { color: textColor, fontSize: 12 },
     },
@@ -1047,55 +1080,23 @@ function renderHistoryTrend() {
         },
       },
     },
-    series: [
-      {
-        name: '综合评分',
-        type: 'bar',
-        data: scores,
-        itemStyle: { color: themeColors.value.INFO },
-        barWidth: '40%',
-      },
-      {
-        name: '准确率',
-        type: 'line',
-        data: accuracy,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.SUCCESS, width: 2 },
-        itemStyle: { color: themeColors.value.SUCCESS },
-      },
-      {
-        name: '快速率',
-        type: 'line',
-        data: fast,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.WARNING, width: 2 },
-        itemStyle: { color: themeColors.value.WARNING },
-      },
-      {
-        name: '平稳率',
-        type: 'line',
-        data: steady,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.ACCENT, width: 2 },
-        itemStyle: { color: themeColors.value.ACCENT },
-      },
-      {
-        name: '有效自控率',
-        type: 'line',
-        data: effectiveAuto,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.DANGER, width: 2 },
-        itemStyle: { color: themeColors.value.DANGER },
-      },
-    ],
+    series: selected.map((o) => ({
+      name: o.label,
+      type: o.kind,
+      data: data.map((snap) => {
+        const v = snap[o.value as keyof KpiSnapshotItem];
+        return typeof v === 'number' ? v : null;
+      }),
+      ...(o.kind === 'bar'
+        ? { barWidth: '40%', itemStyle: { color: o.color } }
+        : {
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 4,
+            lineStyle: { color: o.color, width: 2 },
+            itemStyle: { color: o.color },
+          }),
+    })),
   });
 }
 
@@ -2107,6 +2108,21 @@ onMounted(async () => {
               button-style="solid"
               size="small"
               @change="handleHistoryWindowChange"
+            />
+          </div>
+
+          <!-- 指标多选（整改 F3：≤5 个指标对比） -->
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-500">对比指标：</span>
+            <CheckboxGroup
+              :value="selectedHistoryMetrics"
+              :options="
+                HISTORY_METRIC_OPTIONS.map((o) => ({
+                  label: o.label,
+                  value: o.value,
+                }))
+              "
+              @change="handleHistoryMetricChange"
             />
           </div>
 
