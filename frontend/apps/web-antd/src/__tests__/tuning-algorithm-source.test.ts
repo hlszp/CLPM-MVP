@@ -112,6 +112,11 @@ vi.mock('ant-design-vue', () => ({
       '<input :disabled="disabled" :value="value ?? \'\'" @input="$emit(\'update:value\', Number($event.target.value))" />',
   },
   Modal: { confirm: vi.fn() },
+  Popconfirm: {
+    emits: ['confirm'],
+    props: ['cancelText', 'okText', 'title'],
+    template: '<div class="popconfirm-stub"><slot /></div>',
+  },
   Select: {
     emits: ['change', 'update:value'],
     props: ['disabled', 'options', 'value'],

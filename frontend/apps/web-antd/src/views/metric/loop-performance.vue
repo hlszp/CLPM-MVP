@@ -106,7 +106,7 @@ import SlowResponseCard from '#/components/diagnosis-visualization/slow-response
 import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
 import StatisticsBarChart from '#/components/diagnosis-visualization/statistics-bar-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
-import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import ConfidenceBadge from '#/components/clpm/confidence-badge.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {

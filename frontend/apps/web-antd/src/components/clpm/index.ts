@@ -1,6 +1,6 @@
 export { default as ClpmAiDrawer } from './ai-drawer.vue';
-export { default as ClpmBulletChart } from './bullet-chart.vue';
 export { default as ClpmAiInsight } from './ai-insight.vue';
+export { default as ClpmBulletChart } from './bullet-chart.vue';
 export { default as ClpmAlertDslEditor } from './alert-dsl-editor.vue';
 export { default as ClpmModal } from './clpm-modal.vue';
 export { default as ClpmColumnSettings } from './column-settings.vue';
@@ -14,7 +14,6 @@ export { default as ClpmEmptyState } from './empty-state.vue';
 export { default as ClpmImplementRecordModal } from './implement-record-modal.vue';
 export type { ImplementSubmitData as ClpmImplementSubmitData } from './implement-record-modal.vue';
 export { default as ClpmInfoTip } from './info-tip.vue';
-export { default as ClpmInterpretationPanel } from './interpretation-panel.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export type { KpiStripItem } from './kpi-strip.vue';
@@ -30,7 +29,6 @@ export { default as ClpmRealtimeStatus } from './realtime-status.vue';
 export { default as ClpmSeverityBadge } from './severity-badge.vue';
 export { default as ClpmStandardActions } from './standard-actions.vue';
 export { default as ClpmStateOverlay } from './state-overlay.vue';
-export { default as ClpmStatusPanel } from './status-panel.vue';
 export { default as ClpmStructuredDiagnosisReport } from './structured-diagnosis-report.vue';
 export { default as ClpmTagAssociationBadge } from './tag-association-badge.vue';
 

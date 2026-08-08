@@ -24,8 +24,8 @@ export const CONFIDENCE_LEVEL_LABEL: Record<ConfidenceLevel, string> = {
   A: '数据充分',
   B: '数据良好',
   C: '数据一般',
-  D: '数据不足',
-  E: '数据极差',
+  D: '数据较少',
+  E: '数据不足',
 };
 
 /** 可信度等级 → 详细说明（用于Tooltip） */
