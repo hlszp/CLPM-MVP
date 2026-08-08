@@ -75,6 +75,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
+import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
@@ -1619,6 +1620,10 @@ onUnmounted(() => {
                   mono
                   size="sm"
                   :weight="600"
+                />
+                <DayDeltaBadge
+                  :delta="(record as LoopApi.MonitorListItem).scoreDelta"
+                  :trend="(record as LoopApi.MonitorListItem).dayTrend"
                 />
               </span>
               <span v-else class="text-gray-400">—</span>

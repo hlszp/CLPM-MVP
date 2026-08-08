@@ -55,6 +55,7 @@ import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
 import KpiMetricCards from './components/kpi-metric-cards.vue';
 import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
+import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import ScoreTrendChart from './components/score-trend-chart.vue';
 import SimulateResultModal from './components/simulate-result-modal.vue';
 import TuneParamModal from './components/tune-param-modal.vue';
@@ -714,8 +715,12 @@ watch(
                       item.description || '—'
                     }}</span>
                     <span class="shrink-0 text-xs text-gray-400"
-                      >评分 {{ item.score ?? '—' }}</span
-                    >
+                      >评分 {{ item.score ?? '—' }}
+                      <DayDeltaBadge
+                        :delta="item.scoreDelta"
+                        :trend="item.dayTrend"
+                      />
+                    </span>
                   </div>
                 </div>
               </div>
