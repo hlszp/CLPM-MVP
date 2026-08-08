@@ -1221,6 +1221,7 @@ onUnmounted(() => {
             </div>
             <div
               v-for="(count, key) in loopTypeStats"
+              v-show="count > 0"
               :key="key"
               class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
               :style="{
@@ -1275,18 +1276,35 @@ onUnmounted(() => {
             <div
               class="flex items-center gap-2 px-3 py-1 rounded"
               :style="{
-                backgroundColor: `${MODE_COLOR_MAP['0']}15`,
-                borderLeft: `3px solid ${MODE_COLOR_MAP['0']}`,
+                backgroundColor:
+                  manualModeCount > 0
+                    ? `${MODE_COLOR_MAP['0']}15`
+                    : `${themeColors.NEUTRAL}08`,
+                borderLeft: `3px solid ${
+                  manualModeCount > 0
+                    ? MODE_COLOR_MAP['0']
+                    : themeColors.NEUTRAL
+                }`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                :style="{ backgroundColor: MODE_COLOR_MAP['0'] }"
+                :style="{
+                  backgroundColor:
+                    manualModeCount > 0
+                      ? MODE_COLOR_MAP['0']
+                      : themeColors.NEUTRAL,
+                }"
               ></span>
               <span class="text-sm text-gray-600">手动</span>
               <span
                 class="text-sm font-semibold"
-                :style="{ color: MODE_COLOR_MAP['0'] }"
+                :style="{
+                  color:
+                    manualModeCount > 0
+                      ? MODE_COLOR_MAP['0']
+                      : themeColors.NEUTRAL,
+                }"
                 >{{ manualModeCount }}</span
               >
             </div>
@@ -1628,23 +1646,26 @@ onUnmounted(() => {
               />
             </template>
             <template v-else-if="column.key === 'action'">
+              <!-- 整改 A-14：彩色 Tag 按钮墙 → 安静文字链接 -->
               <div class="flex items-center gap-1">
-                <Tag color="blue" class="cursor-pointer hover:opacity-80">
-                  <span @click="viewDetail(record as LoopApi.MonitorListItem)"
-                    >详情</span
-                  >
-                </Tag>
-                <Tag color="green" class="cursor-pointer hover:opacity-80">
-                  <span @click="openTrend(record as LoopApi.MonitorListItem)"
-                    >趋势</span
-                  >
-                </Tag>
-                <Tag color="orange" class="cursor-pointer hover:opacity-80">
-                  <span
-                    @click="openPerformance(record as LoopApi.MonitorListItem)"
-                    >性能</span
-                  >
-                </Tag>
+                <Button
+                  type="link"
+                  size="small"
+                  @click="viewDetail(record as LoopApi.MonitorListItem)"
+                  >详情</Button
+                >
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openTrend(record as LoopApi.MonitorListItem)"
+                  >趋势</Button
+                >
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openPerformance(record as LoopApi.MonitorListItem)"
+                  >性能</Button
+                >
               </div>
             </template>
           </template>
