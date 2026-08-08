@@ -8,6 +8,7 @@ import type {
   TimeWindow,
 } from '#/api';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -377,6 +378,20 @@ const top5Columns = [
     width: 65,
     align: 'right' as const,
   },
+  // C2-4 Bad Actor 治理台账：处置状态 + 责任人 + 效果验证
+  {
+    title: '治理状态',
+    dataIndex: 'governance',
+    key: 'governance',
+    width: 110,
+  },
+  {
+    title: '效果验证',
+    dataIndex: 'verified',
+    key: 'verified',
+    width: 70,
+    align: 'center' as const,
+  },
   {
     title: '',
     dataIndex: 'diagnosis',
@@ -673,10 +688,49 @@ async function loadRanking() {
       limit: 5,
     });
     rankingList.value = items.filter((it) => it.includeInEvaluation !== false);
+    await loadGovernanceStatus();
   } catch {
     // 错误 toast 由拦截器统一处理；保留旧数据
   }
 }
+
+/**
+ * C2-4 Bad Actor 治理台账：TOP5 回路关联 Action Tracker 处置状态。
+ * 逐回路取最新一条 tracker（created_at 倒序），5 次轻量并行请求；
+ * 失败时静默降级为"未建单"展示，不影响主排行。
+ */
+const governanceMap = ref<Record<string, DiagnosisApi.TrackerItem | null>>({});
+
+async function loadGovernanceStatus() {
+  const { getTrackerListApi } = await import('#/api/diagnosis');
+  const entries = await Promise.all(
+    top5List.value.map(async (item) => {
+      try {
+        const r = await getTrackerListApi({
+          loopId: item.loopId,
+          page: 1,
+          pageSize: 1,
+          sortBy: 'created_at',
+        });
+        return [item.loopId, r.items?.[0] ?? null] as const;
+      } catch {
+        return [item.loopId, null] as const;
+      }
+    }),
+  );
+  governanceMap.value = Object.fromEntries(entries);
+}
+
+/** 治理状态中文名（词表：tracker 闭环状态机全态） */
+const GOVERNANCE_STATUS_LABEL: Record<string, string> = {
+  CLOSED: '已闭环',
+  IGNORED: '已忽略',
+  IMPLEMENTED: '已实施',
+  IN_PROGRESS: '处理中',
+  PENDING: '待处理',
+  REOPENED: '重开',
+  VERIFYING: '验证中',
+};
 
 /** timeWindow → 滚动窗口毫秒数（口径同后端 TIME_WINDOWS：today=近 24h） */
 const TIME_WINDOW_DURATION_MS: Record<string, number> = {
@@ -982,7 +1036,7 @@ onMounted(() => {
 
             <div class="clpm-pid-dashboard__top5-card">
               <div class="clpm-pid-dashboard__card-header">
-                <span>TOP5回路</span>
+                <span>TOP5 治理台账</span>
                 <Tooltip
                   :title="
                     top5Sort === 'desc'
@@ -1022,6 +1076,51 @@ onMounted(() => {
                     <span :style="{ color: record.scoreColor }">{{
                       record.score
                     }}</span>
+                  </template>
+                  <!-- C2-4：治理状态（Action Tracker 处置状态 + 责任人） -->
+                  <template v-if="column.key === 'governance'">
+                    <template v-if="governanceMap[record.loopId]">
+                      <span class="text-xs">
+                        {{
+                          GOVERNANCE_STATUS_LABEL[
+                            governanceMap[record.loopId]!.actionStatus
+                          ] ?? governanceMap[record.loopId]!.actionStatus
+                        }}
+                      </span>
+                      <span
+                        v-if="
+                          governanceMap[record.loopId]!.assignee ??
+                          governanceMap[record.loopId]!.triggeredBy
+                        "
+                        class="ml-1 text-xs text-gray-400"
+                      >
+                        ·
+                        {{
+                          governanceMap[record.loopId]!.assignee ??
+                          governanceMap[record.loopId]!.triggeredBy
+                        }}
+                      </span>
+                    </template>
+                    <span v-else class="text-xs text-gray-400">未建单</span>
+                  </template>
+                  <!-- C2-4：效果验证（T+7d 自动回写口径） -->
+                  <template v-if="column.key === 'verified'">
+                    <template v-if="governanceMap[record.loopId]">
+                      <span
+                        v-if="governanceMap[record.loopId]!.effectVerified === true"
+                        class="text-xs text-emerald-600"
+                        >改善</span
+                      >
+                      <span
+                        v-else-if="
+                          governanceMap[record.loopId]!.effectVerified === false
+                        "
+                        class="text-xs text-rose-600"
+                        >未改善</span
+                      >
+                      <span v-else class="text-xs text-gray-400">未验证</span>
+                    </template>
+                    <span v-else class="text-xs text-gray-400">—</span>
                   </template>
                   <template v-if="column.key === 'diagnosis'">
                     <Button
