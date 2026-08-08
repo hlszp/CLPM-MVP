@@ -17,6 +17,10 @@ pre-push:
     - name: frontend type check
       run: cd frontend && pnpm run check:type
 
+    # 整改 D3：hex 硬编码白名单守护（棘轮只减不增，新增债务拦截）
+    - name: frontend hex whitelist
+      run: node scripts/check-hex-whitelist.mjs
+
 pre-commit:
   parallel: true
   jobs:
