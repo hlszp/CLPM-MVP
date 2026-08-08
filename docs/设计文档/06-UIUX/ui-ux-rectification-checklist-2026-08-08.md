@@ -89,7 +89,7 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| D1 | 可访问性：viewport 放开缩放、aria/键盘/heading、transition:all×4、reduced-motion | ⬜ |
+| D1 | 可访问性：viewport 放开缩放、aria/键盘/heading、transition:all×4、reduced-motion | ✅ `eac8afe`（viewport 解禁缩放；工具栏按钮 aria-label；页面标题 h1；17 处 div/span@click 键盘可达；纯图标按钮 aria-label；transition:all×3 具体化；reduced-motion 全局基线。门禁：check:type 0 error、vitest 455+1既有失败 BL-1） |
 | D2 | 交互一致性：确认双轨归并、预警事件防重复提交/误报确认、文案词表落地 | ⬜ |
 | D3 | 样式债：hex 白名单 lint（155→0）+ 死代码清除（9 页面+3 组件+重复 badge）+ **F7 MIN_GOOD_RATIO 清理** + 菜单 order 修正 | ⬜ |
 | D4 | 虚拟滚动（左栏/大表格） | ⬜ |
