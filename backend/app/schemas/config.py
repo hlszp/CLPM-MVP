@@ -480,11 +480,13 @@ class AlgorithmParamsMetricGroup(CamelModel):
         metricCode: 指标代码
         metricName: 指标中文名
         items: 4 个控制类型的参数项列表
+        paramMeta: 参数元数据注册表（整改 F6：min/max/unit/description/category 单源下发）
     """
 
     metricCode: str
     metricName: str
     items: list[AlgorithmParamsControlItem] = Field(default_factory=list)
+    paramMeta: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class AlgorithmParamsSchema(CamelModel):
@@ -518,9 +520,11 @@ class AlgorithmParamsSaveRequest(CamelModel):
 
     Attributes:
         items: 4 控制类型的参数覆盖项（可只传部分控制类型）
+        resetControlTypes: 需重置为算法默认的控制类型（整改 F6 重置默认；与 items 合并生效）
     """
 
     items: list[AlgorithmParamsSaveItem] = Field(default_factory=list)
+    resetControlTypes: list[ControlType] = Field(default_factory=list)
 
 
 class VersionHistoryItem(CamelModel):

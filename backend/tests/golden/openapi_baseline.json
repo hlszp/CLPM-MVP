@@ -15782,6 +15782,14 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "paramMeta": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Parammeta"
           }
         },
         "type": "object",
@@ -15790,7 +15798,7 @@
           "metricName"
         ],
         "title": "AlgorithmParamsMetricGroup",
-        "description": "单个指标的所有控制类型参数组.\n\nAttributes:\n    metricCode: 指标代码\n    metricName: 指标中文名\n    items: 4 个控制类型的参数项列表"
+        "description": "单个指标的所有控制类型参数组.\n\nAttributes:\n    metricCode: 指标代码\n    metricName: 指标中文名\n    items: 4 个控制类型的参数项列表\n    paramMeta: 参数元数据注册表（整改 F6：min/max/unit/description/category 单源下发）"
       },
       "AlgorithmParamsSaveItem": {
         "properties": {
@@ -15825,11 +15833,24 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "resetControlTypes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "STABLE",
+                "SLOW",
+                "FAST",
+                "LOGIC"
+              ]
+            },
+            "type": "array",
+            "title": "Resetcontroltypes"
           }
         },
         "type": "object",
         "title": "AlgorithmParamsSaveRequest",
-        "description": "算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.\n\nAttributes:\n    items: 4 控制类型的参数覆盖项（可只传部分控制类型）"
+        "description": "算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.\n\nAttributes:\n    items: 4 控制类型的参数覆盖项（可只传部分控制类型）\n    resetControlTypes: 需重置为算法默认的控制类型（整改 F6 重置默认；与 items 合并生效）"
       },
       "AlgorithmParamsSchema": {
         "properties": {

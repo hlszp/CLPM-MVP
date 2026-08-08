@@ -210,6 +210,46 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
+#: 参数分组映射（整改 F6：配置页 category 分组展示）
+#: 结构：metric_code → param_key → 中文分组名；未收录键归入"其他"
+PARAM_CATEGORY: dict[str, dict[str, str]] = {
+    "oscillation_rate": {
+        "similarity_threshold": "判定阈值",
+        "min_ratio": "判定阈值",
+        "max_ratio": "判定阈值",
+        "min_zero_crossings": "判定阈值",
+    },
+    "fast_rate": {
+        "ideal_settling_ratio": "稳定判定",
+        "settling_tolerance": "稳定判定",
+        "anti_disturbance_enabled": "扰动分析",
+        "disturbance_band_sigma": "扰动分析",
+        "recovery_persistence": "扰动分析",
+        "min_disturbance_duration": "扰动分析",
+        "sp_step_sigma": "扰动分析",
+    },
+    "accuracy_rate": {"e_max_percentile": "判定阈值"},
+    "settling_time": {"settling_threshold": "判定阈值"},
+    "effective_auto_rate": {"default_e_max_ratio": "判定阈值"},
+    "output_trip_index": {
+        "trip_inactive": "行程边界",
+        "trip_normal": "行程边界",
+        "trip_frequent": "行程边界",
+    },
+}
+
+
+def build_param_meta(metric_code: str) -> dict[str, dict[str, Any]]:
+    """构造指标参数元数据视图（整改 F6 前端单源消费）.
+
+    合并 PARAM_META（min/max/unit/description/type）与 PARAM_CATEGORY（分组），
+    未注册分组的键归入"其他"。
+    """
+    meta = PARAM_META.get(metric_code, {})
+    cats = PARAM_CATEGORY.get(metric_code, {})
+    return {key: {**entry, "category": cats.get(key, "其他")} for key, entry in meta.items()}
+
+
 def validate_metric_params(metric_code: str, params: dict[str, Any]) -> list[str]:
     """校验算法参数键与值域（整改 F1 服务端防呆）.
 

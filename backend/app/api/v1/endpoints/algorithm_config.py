@@ -84,6 +84,7 @@ async def get_all_algorithm_params(
                 metricCode=metric_code,
                 metricName=_METRIC_NAMES.get(metric_code, metric_code),
                 items=items,
+                paramMeta=algo_config_service.build_param_meta(metric_code),
             )
         )
 
@@ -136,6 +137,7 @@ async def get_metric_algorithm_params(
         metricCode=metric_code,
         metricName=_METRIC_NAMES.get(metric_code, metric_code),
         items=items,
+        paramMeta=algo_config_service.build_param_meta(metric_code),
     )
     return success(data=group.model_dump(by_alias=True))
 
@@ -165,6 +167,34 @@ async def save_metric_algorithm_params(
         )
 
     now = _now_naive()
+
+    # 整改 F6：重置默认——将指定控制类型的覆盖清空（params={}，合并视图回落算法默认）
+    for ct in body.resetControlTypes:
+        existing_result = await db.execute(
+            select(AlgorithmParameter).where(
+                AlgorithmParameter.metric_code == metric_code,
+                AlgorithmParameter.control_type == ct,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing:
+            existing.params = {}
+            existing.updated_by = user.username
+            existing.updated_at = now
+            existing.version += 1
+        else:
+            db.add(
+                AlgorithmParameter(
+                    metric_code=metric_code,
+                    control_type=ct,
+                    params={},
+                    description=f"{_METRIC_NAMES.get(metric_code, metric_code)} 算法参数",
+                    is_enabled=True,
+                    updated_by=user.username,
+                    updated_at=now,
+                    version=1,
+                )
+            )
 
     # 逐控制类型 UPSERT
     for item in body.items:
@@ -264,6 +294,7 @@ async def save_metric_algorithm_params(
         metricCode=metric_code,
         metricName=_METRIC_NAMES.get(metric_code, metric_code),
         items=items,
+        paramMeta=algo_config_service.build_param_meta(metric_code),
     )
     return success(
         data=group.model_dump(by_alias=True),
