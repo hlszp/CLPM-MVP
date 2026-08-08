@@ -108,38 +108,37 @@ const effectiveStatus = computed<KpiStatus>(() => {
   return props.status;
 });
 
-/** 装饰图标背景色：状态色对应 50 级浅色 */
+/** 是否异常态（仅 warning/error 着色；ok/info/neutral 一律中性——色彩约定表 §5） */
+const isAlertStatus = computed(() =>
+  ['error', 'warning'].includes(effectiveStatus.value),
+);
+
+/** 装饰图标背景色：仅异常态用状态色浅底，其余 slate 中性 */
 const iconBgVar = computed(() => {
-  const map: Record<KpiStatus, string> = {
-    ok: 'var(--color-emerald-50)',
-    warning: 'var(--color-amber-50)',
-    error: 'var(--color-rose-50)',
-    info: 'var(--color-blue-50)',
-    neutral: 'var(--color-slate-100)',
-  };
-  return map[effectiveStatus.value];
+  if (!isAlertStatus.value) return 'var(--color-slate-100)';
+  return effectiveStatus.value === 'warning'
+    ? 'var(--color-amber-50)'
+    : 'var(--color-rose-50)';
 });
 
-/** 装饰图标色：状态色对应 500 级 */
+/** 装饰图标色：仅异常态用状态色，其余 slate 中性 */
 const iconColorVar = computed(() => {
-  const map: Record<KpiStatus, string> = {
-    ok: 'var(--color-emerald-600)',
-    warning: 'var(--color-amber-600)',
-    error: 'var(--color-rose-600)',
-    info: 'var(--color-blue-600)',
-    neutral: 'var(--color-slate-500)',
-  };
-  return map[effectiveStatus.value];
+  if (!isAlertStatus.value) return 'var(--color-slate-500)';
+  return effectiveStatus.value === 'warning'
+    ? 'var(--color-amber-600)'
+    : 'var(--color-rose-600)';
 });
 
-/** 大数字色：状态色 500 级（neutral 时用主文本色） */
+/** 大数字色：仅异常态用状态色，其余主文本色 */
 const valueColorVar = computed(() => {
-  if (effectiveStatus.value === 'neutral') return 'hsl(var(--foreground))';
+  if (!isAlertStatus.value) return 'hsl(var(--foreground))';
   return iconColorVar.value;
 });
 
-/** 进度条填充色：状态色 500 级 */
-const progressFillVar = computed(() => iconColorVar.value);
+/** 进度条填充色：仅异常态用状态色，其余 accent 蓝 */
+const progressFillVar = computed(() =>
+  isAlertStatus.value ? iconColorVar.value : 'var(--industrial-accent)',
+);
 
 /** delta 方向：up/down/flat */
 function getDeltaDirection(
