@@ -1,14 +1,4 @@
-import {
-  defineOverridesPreferences,
-  definePreferencesExtension,
-} from '@vben/preferences';
-
-interface WebAntdPreferencesExtension {
-  defaultTableSize: number;
-  enableFormFullscreen: boolean;
-  reportTitle: string;
-  tenantMode: 'multi' | 'single';
-}
+import { defineOverridesPreferences } from '@vben/preferences';
 
 /**
  * CLPM Industrial Light 语义色（基于 vue-vben-admin 主题能力扩展）
@@ -147,7 +137,8 @@ export const overridesPreferences = defineOverridesPreferences({
   widget: {
     fullscreen: true,
     globalSearch: true,
-    languageToggle: true,
+    // 整改 E3（D4 签认）：业务文案未覆盖 i18n，隐藏语言切换消除半英文残态
+    languageToggle: false,
     lockScreen: false,
     notification: true,
     refresh: true,
@@ -156,51 +147,9 @@ export const overridesPreferences = defineOverridesPreferences({
   },
 });
 
-export const preferencesExtension =
-  definePreferencesExtension<WebAntdPreferencesExtension>({
-    tabLabel: 'preferences.antd.tabLabel',
-    title: 'preferences.antd.title',
-    fields: [
-      {
-        component: 'switch',
-        defaultValue: true,
-        key: 'enableFormFullscreen',
-        label: 'preferences.antd.fields.enableFormFullscreen.label',
-        tip: 'preferences.antd.fields.enableFormFullscreen.tip',
-      },
-      {
-        component: 'select',
-        defaultValue: 'single',
-        key: 'tenantMode',
-        label: 'preferences.antd.fields.tenantMode.label',
-        options: [
-          {
-            label: 'preferences.antd.fields.tenantMode.options.single.label',
-            value: 'single',
-          },
-          {
-            label: 'preferences.antd.fields.tenantMode.options.multi.label',
-            value: 'multi',
-          },
-        ],
-      },
-      {
-        component: 'number',
-        componentProps: {
-          max: 200,
-          min: 10,
-          step: 10,
-        },
-        defaultValue: 20,
-        key: 'defaultTableSize',
-        label: 'preferences.antd.fields.defaultTableSize.label',
-      },
-      {
-        component: 'input',
-        defaultValue: '',
-        key: 'reportTitle',
-        label: 'preferences.antd.fields.reportTitle.label',
-        placeholder: 'preferences.antd.fields.reportTitle.placeholder',
-      },
-    ],
-  });
+/**
+ * 整改 E1（2026-08-08）：preferencesExtension 已整体移除——
+ * 4 个自定义字段（defaultTableSize/tenantMode/reportTitle/
+ * enableFormFullscreen）全库零消费且 locale 键未定义（抽屉显示裸键），
+ * tenantMode 为模板残留（单租户工业产品无此概念）。
+ */

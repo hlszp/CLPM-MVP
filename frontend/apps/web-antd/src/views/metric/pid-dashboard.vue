@@ -99,7 +99,8 @@ const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 /** 各性能等级回路数分布（服务端 SQL 聚合，喂"回路等级占比"饼图） */
 const gradeDistribution = ref<GradeDistributionResult | null>(null);
 
-const top5Sort = ref<'asc' | 'desc'>('desc');
+// 整改 C2-3：默认评分升序（最差优先），管理者注意力直达 Bad Actor
+const top5Sort = ref<'asc' | 'desc'>('asc');
 
 const aggregateData = computed(() => boardAggregate.value?.aggregate);
 
