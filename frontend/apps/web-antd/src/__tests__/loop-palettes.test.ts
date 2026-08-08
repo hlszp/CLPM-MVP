@@ -13,7 +13,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   LOOP_TYPE_COLOR_MAP,
   LOOP_TYPE_LABEL_MAP,
-  LOOP_TYPE_TAG_COLOR_MAP,
   MODE_COLOR_MAP,
   MODE_LABEL_MAP,
   useLoopPalettes,
@@ -35,11 +34,10 @@ const LOOP_TYPE_KEYS = [
 ];
 
 describe('loop 色板常量', () => {
-  it('7 类回路类型的 label / 主色 / Tag 浅色一一对应且为合法 hex', () => {
+  it('7 类回路类型的 label / 主色一一对应且为合法 hex', () => {
     for (const key of LOOP_TYPE_KEYS) {
       expect(LOOP_TYPE_LABEL_MAP[key]).toBeTruthy();
       expect(LOOP_TYPE_COLOR_MAP[key]).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(LOOP_TYPE_TAG_COLOR_MAP[key]).toMatch(/^#[0-9a-f]{6}$/i);
     }
   });
 

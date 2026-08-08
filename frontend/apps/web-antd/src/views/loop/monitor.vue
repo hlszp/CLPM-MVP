@@ -79,7 +79,6 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
   LOOP_TYPE_COLOR_MAP,
   LOOP_TYPE_LABEL_MAP,
-  LOOP_TYPE_TAG_COLOR_MAP,
   MODE_COLOR_MAP,
   MODE_LABEL_MAP,
   useLoopPalettes,
@@ -1506,14 +1505,7 @@ onUnmounted(() => {
               <span v-else class="text-slate-300">—</span>
             </template>
             <template v-else-if="column.key === 'loopType'">
-              <Tag
-                :color="
-                  LOOP_TYPE_TAG_COLOR_MAP[
-                    (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                  ] ?? 'default'
-                "
-                class="m-0"
-              >
+              <Tag class="clpm-tag-neutral m-0">
                 {{
                   LOOP_TYPE_LABEL_MAP[
                     (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'

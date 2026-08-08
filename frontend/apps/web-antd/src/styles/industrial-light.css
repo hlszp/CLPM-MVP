@@ -108,6 +108,13 @@
 
 /* ============= 2. 等宽数字 ============= */
 
+/* 类别中性 tag（色彩约定表 §4：回路/规则/指标等中性分类统一灰阶） */
+.clpm-tag-neutral {
+  background: var(--tag-neutral-bg);
+  color: var(--tag-neutral-text);
+  border-color: var(--tag-neutral-border);
+}
+
 /* 数值、位号、KPI 使用等宽数字，增强专业感 */
 .clpm-numeric,
 .ant-table-cell-num,

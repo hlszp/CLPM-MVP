@@ -86,10 +86,11 @@ const editForm = reactive({
 const editLoading = ref(false);
 
 const ruleTypeColor: Record<AlertApi.RuleType, string> = {
-  THRESHOLD: 'blue',
-  DRIFT: 'cyan',
-  COMPOSITE: 'purple',
-  CONFIDENCE: 'orange',
+  // 整改 A-02 类别中性化：规则类型为中性分类，antd default 灰阶
+  THRESHOLD: 'default',
+  DRIFT: 'default',
+  COMPOSITE: 'default',
+  CONFIDENCE: 'default',
 };
 
 // DSL 模板

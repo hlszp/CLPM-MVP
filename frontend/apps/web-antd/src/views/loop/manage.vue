@@ -1581,7 +1581,7 @@ watch(
             <template v-else-if="column.key === 'complexGroup'">
               <Tag
                 v-if="record.complexLoopGroupId && record.complexRole"
-                :color="record.complexRole === 'MAIN' ? 'purple' : 'blue'"
+                :color="'default'"
                 class="m-0"
               >
                 {{ record.complexRole === 'MAIN' ? '主' : '副' }}
@@ -1768,7 +1768,7 @@ watch(
               <Tag
                 v-for="lp in groupCandidateLoops"
                 :key="lp.loopId"
-                :color="lp.loopId === groupMainLoopId ? 'purple' : 'blue'"
+                :color="'default'"
                 class="m-0"
               >
                 {{ lp.tagName }}
