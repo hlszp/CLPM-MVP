@@ -91,7 +91,7 @@
 |---|---|---|
 | D1 | 可访问性：viewport 放开缩放、aria/键盘/heading、transition:all×4、reduced-motion | ✅ `eac8afe`（viewport 解禁缩放；工具栏按钮 aria-label；页面标题 h1；17 处 div/span@click 键盘可达；纯图标按钮 aria-label；transition:all×3 具体化；reduced-motion 全局基线。门禁：check:type 0 error、vitest 455+1既有失败 BL-1） |
 | D2 | 交互一致性：确认双轨归并、预警事件防重复提交/误报确认、文案词表落地 | ✅ D2-a `cd3b2f8`+`1c09f73`（Modal.confirm 清零：8 处危险→ClpmDangerConfirmModal 按可逆性分级、9 处轻操作→Popconfirm，含 C 类定级：归档不可逆/保存整定任务可逆）；D2-b `ce3b1ae`（事件行内动作 actingEventId 守卫+loading、处置弹窗 confirm-loading、误报 Popconfirm+撤销误报）；D2-c `276577d`（词表 v1.0 入库+新增→新建统一+枚举去括号。门禁：check:type 0 error、vitest 455+1既有 BL-1）。弹窗浅色头/浮层≤2层经核查已在 Phase 1 收敛 |
-| D3 | 样式债：hex 白名单 lint（155→0）+ 死代码清除（9 页面+3 组件+重复 badge）+ **F7 MIN_GOOD_RATIO 清理** + 菜单 order 修正 | 🔨 `49beb1a` 死代码清除（loop/detail+tabs×6+visualization+2 零引用组件，ab-compare/ai-insight 复核为活代码保留）+ badge 合并（metric 版退役）+ E级术语对齐 + 菜单 order 5/6 修正；F7 经查已清零；**余：hex 白名单 lint** |
+| D3 | 样式债：hex 白名单 lint（155→0）+ 死代码清除（9 页面+3 组件+重复 badge）+ **F7 MIN_GOOD_RATIO 清理** + 菜单 order 修正 | ✅ `49beb1a` 死代码清除（loop/detail+tabs×6+visualization+2 零引用组件；ab-compare/ai-insight 复核为活代码保留）+ badge 合并（metric 版退役）+ E级术语对齐 + 菜单 order 5/6；F7 经查已清零；`0776b0a` hex 白名单守护（棘轮 180→只减不增 + pre-push 门禁；存量双轨色迁移入 BL-5 分批） |
 | D4 | 虚拟滚动（左栏/大表格） | ⬜ |
 | C1-1 | 增量巡检："较昨日"徽标列 + 默认"最需关注"排序（先确认快照 API 字段） | ⬜ |
 | C1-3 | Action Tracker"验证中"状态 + 到期进待办（后端状态机字段 + alembic 迁移） | ⬜ |
@@ -121,6 +121,7 @@
 | BL-2 | bootstrap 01_schema.sql 缺索引 idx_action_tracker_tuning_record（dev DB 已补，引导 SQL 未回写） | 用户决策后回写 |
 | BL-3 | 工作台"异常预测"卡统计条显示 undefined（高危/中危/已分析计数映射缺失，有数据时必现） | ✅ `6e81740`（后端汇总键 camelCase 根治 + 测试同步） |
 | BL-4 | Sponsor 登录"无权限访问"toast、TOP5 最优排序（已在方案 C2-1/C2-3，Phase 1） | 已在计划内 |
+| BL-5 | hex 存量 180 处/36 文件双轨语义色迁移（antd 系→工业 token；棘轮基线 scripts/hex-baseline.json 只减不增，改完一批跑 --update-baseline） | Phase 2 余量或 Phase 3 分批，优先 diagnosis-visualization 图表族（~60 处） |
 
 ---
 
