@@ -90,7 +90,7 @@
 | # | 任务 | 状态 |
 |---|---|---|
 | D1 | 可访问性：viewport 放开缩放、aria/键盘/heading、transition:all×4、reduced-motion | ✅ `eac8afe`（viewport 解禁缩放；工具栏按钮 aria-label；页面标题 h1；17 处 div/span@click 键盘可达；纯图标按钮 aria-label；transition:all×3 具体化；reduced-motion 全局基线。门禁：check:type 0 error、vitest 455+1既有失败 BL-1） |
-| D2 | 交互一致性：确认双轨归并、预警事件防重复提交/误报确认、文案词表落地 | ⬜ |
+| D2 | 交互一致性：确认双轨归并、预警事件防重复提交/误报确认、文案词表落地 | ✅ D2-a `cd3b2f8`+`1c09f73`（Modal.confirm 清零：8 处危险→ClpmDangerConfirmModal 按可逆性分级、9 处轻操作→Popconfirm，含 C 类定级：归档不可逆/保存整定任务可逆）；D2-b `ce3b1ae`（事件行内动作 actingEventId 守卫+loading、处置弹窗 confirm-loading、误报 Popconfirm+撤销误报）；D2-c `276577d`（词表 v1.0 入库+新增→新建统一+枚举去括号。门禁：check:type 0 error、vitest 455+1既有 BL-1）。弹窗浅色头/浮层≤2层经核查已在 Phase 1 收敛 |
 | D3 | 样式债：hex 白名单 lint（155→0）+ 死代码清除（9 页面+3 组件+重复 badge）+ **F7 MIN_GOOD_RATIO 清理** + 菜单 order 修正 | ⬜ |
 | D4 | 虚拟滚动（左栏/大表格） | ⬜ |
 | C1-1 | 增量巡检："较昨日"徽标列 + 默认"最需关注"排序（先确认快照 API 字段） | ⬜ |
