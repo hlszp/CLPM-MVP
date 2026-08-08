@@ -45,10 +45,10 @@ const auditList = ref<SystemApi.AuditLog[]>([]);
 const total = ref(0);
 
 const query = reactive({
-  operation_type: undefined as SystemApi.OperationType | undefined,
+  operationType: undefined as SystemApi.OperationType | undefined,
   date_range: undefined as [dayjs.Dayjs, dayjs.Dayjs] | undefined,
   page: 1,
-  page_size: 20,
+  pageSize: 20,
 });
 
 /** 操作类型选项 */
@@ -81,39 +81,39 @@ const resourceOptions: { label: string; value: SystemApi.ResourceType }[] = [
 const columns: TableColumnsType = [
   {
     title: '时间',
-    dataIndex: 'operated_at',
-    key: 'operated_at',
+    dataIndex: 'operatedAt',
+    key: 'operatedAt',
     width: 170,
   },
   {
     title: '用户',
-    dataIndex: 'username',
-    key: 'username',
+    dataIndex: 'operator',
+    key: 'operator',
     width: 130,
   },
   {
     title: '操作类型',
-    dataIndex: 'operation_type',
-    key: 'operation_type',
+    dataIndex: 'operationType',
+    key: 'operationType',
     width: 100,
   },
   {
     title: '资源类型',
-    dataIndex: 'resource_type',
-    key: 'resource_type',
+    dataIndex: 'targetType',
+    key: 'targetType',
     width: 110,
   },
   {
     title: '资源 ID',
-    dataIndex: 'resource_id',
-    key: 'resource_id',
+    dataIndex: 'targetId',
+    key: 'targetId',
     width: 160,
     ellipsis: true,
   },
   {
     title: 'IP 地址',
-    dataIndex: 'ip_address',
-    key: 'ip_address',
+    dataIndex: 'clientIp',
+    key: 'clientIp',
     width: 140,
   },
   { title: '操作', key: 'action', width: 90, fixed: 'right' },
@@ -129,13 +129,13 @@ async function loadList() {
   try {
     const params: SystemApi.AuditLogListQueryParams = {
       page: query.page,
-      page_size: query.page_size,
-      operation_type: query.operation_type,
+      pageSize: query.pageSize,
+      operationType: query.operationType,
     };
     if (query.date_range && query.date_range.length === 2) {
       const [start, end] = query.date_range;
-      params.start_time = start.format('YYYY-MM-DD HH:mm:ss');
-      params.end_time = end.format('YYYY-MM-DD HH:mm:ss');
+      params.startTime = start.format('YYYY-MM-DD HH:mm:ss');
+      params.endTime = end.format('YYYY-MM-DD HH:mm:ss');
     }
     const data = await getAuditLogListApi(params);
     auditList.value = data.items || [];
@@ -154,7 +154,7 @@ function handleSearch() {
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
-  query.page_size = pagination.pageSize || 20;
+  query.pageSize = pagination.pageSize || 20;
   loadList();
 }
 
@@ -168,8 +168,11 @@ function operationLabel(op: SystemApi.OperationType): string {
   return operationOptions.find((o) => o.value === op)?.label || op;
 }
 
-function resourceLabel(rt: SystemApi.ResourceType): string {
-  return resourceOptions.find((r) => r.value === rt)?.label || rt;
+function resourceLabel(rt?: null | string): string {
+  if (!rt) return '—';
+  // 后端 targetType 为首字母大写（如 "User"），统一转大写后映射
+  const upper = rt.toUpperCase();
+  return resourceOptions.find((r) => r.value === upper)?.label || rt;
 }
 
 /** 格式化 JSON 值用于展示 */
@@ -223,7 +226,7 @@ const { toolbarItems } = usePageToolbar(() => ({
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
-          v-model:value="query.operation_type"
+          v-model:value="query.operationType"
           placeholder="操作类型"
           style="width: 140px"
           allow-clear
@@ -249,50 +252,48 @@ const { toolbarItems } = usePageToolbar(() => ({
         :loading="loading"
         :pagination="{
           current: query.page,
-          pageSize: query.page_size,
+          pageSize: query.pageSize,
           total,
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
-        :row-key="(record: SystemApi.AuditLog) => record.id"
+        :row-key="(record: SystemApi.AuditLog) => record.logId"
         :scroll="{ x: 1100 }"
         size="middle"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'operated_at'">
+          <template v-if="column.key === 'operatedAt'">
             <span class="font-mono text-xs">
-              {{ formatTime(record.operated_at) }}
+              {{ formatTime(record.operatedAt) }}
             </span>
           </template>
-          <template v-else-if="column.key === 'operation_type'">
+          <template v-else-if="column.key === 'operationType'">
             <Tag
               :color="
                 operationColorMap[
-                  record.operation_type as SystemApi.OperationType
+                  record.operationType as SystemApi.OperationType
                 ]
               "
             >
               {{
-                operationLabel(record.operation_type as SystemApi.OperationType)
+                operationLabel(record.operationType as SystemApi.OperationType)
               }}
             </Tag>
           </template>
-          <template v-else-if="column.key === 'resource_type'">
+          <template v-else-if="column.key === 'targetType'">
             <Tag color="default">
-              {{
-                resourceLabel(record.resource_type as SystemApi.ResourceType)
-              }}
+              {{ resourceLabel(record.targetType) }}
             </Tag>
           </template>
-          <template v-else-if="column.key === 'resource_id'">
+          <template v-else-if="column.key === 'targetId'">
             <span class="font-mono text-xs">{{
-              record.resource_id || '—'
+              record.targetId || '—'
             }}</span>
           </template>
-          <template v-else-if="column.key === 'ip_address'">
+          <template v-else-if="column.key === 'clientIp'">
             <span class="font-mono text-xs">{{
-              record.ip_address || '—'
+              record.clientIp || '—'
             }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
@@ -318,35 +319,32 @@ const { toolbarItems } = usePageToolbar(() => ({
       <div v-if="selectedLog" class="space-y-4">
         <Descriptions title="基本信息" bordered :column="1" size="small">
           <DescriptionsItem label="日志 ID">
-            <span class="font-mono">{{ selectedLog.id }}</span>
+            <span class="font-mono">{{ selectedLog.logId }}</span>
           </DescriptionsItem>
           <DescriptionsItem label="操作时间">
             <span class="font-mono">{{
-              formatTime(selectedLog.operated_at)
+              formatTime(selectedLog.operatedAt)
             }}</span>
           </DescriptionsItem>
           <DescriptionsItem label="用户">
-            {{ selectedLog.username }}
-            <span class="ml-2 text-xs text-gray-400 font-mono">
-              ({{ selectedLog.user_id }})
-            </span>
+            {{ selectedLog.operator }}
           </DescriptionsItem>
           <DescriptionsItem label="IP 地址">
-            <span class="font-mono">{{ selectedLog.ip_address || '—' }}</span>
+            <span class="font-mono">{{ selectedLog.clientIp || '—' }}</span>
           </DescriptionsItem>
         </Descriptions>
 
         <Descriptions title="操作信息" bordered :column="1" size="small">
           <DescriptionsItem label="操作类型">
-            <Tag :color="operationColorMap[selectedLog.operation_type]">
-              {{ operationLabel(selectedLog.operation_type) }}
+            <Tag :color="operationColorMap[selectedLog.operationType]">
+              {{ operationLabel(selectedLog.operationType) }}
             </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="资源类型">
-            <Tag>{{ resourceLabel(selectedLog.resource_type) }}</Tag>
+            <Tag>{{ resourceLabel(selectedLog.targetType) }}</Tag>
           </DescriptionsItem>
           <DescriptionsItem label="资源 ID">
-            <span class="font-mono">{{ selectedLog.resource_id || '—' }}</span>
+            <span class="font-mono">{{ selectedLog.targetId || '—' }}</span>
           </DescriptionsItem>
         </Descriptions>
 
@@ -362,7 +360,7 @@ const { toolbarItems } = usePageToolbar(() => ({
               </div>
               <pre
                 class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all"
-                >{{ formatJsonValue(selectedLog.before_value) }}
+                >{{ formatJsonValue(selectedLog.beforeValue) }}
               </pre>
             </div>
             <div class="rounded border border-gray-200">
@@ -373,7 +371,7 @@ const { toolbarItems } = usePageToolbar(() => ({
               </div>
               <pre
                 class="max-h-80 overflow-auto p-3 text-xs font-mono whitespace-pre-wrap break-all"
-                >{{ formatJsonValue(selectedLog.after_value) }}
+                >{{ formatJsonValue(selectedLog.afterValue) }}
               </pre>
             </div>
           </div>

@@ -13,26 +13,26 @@ import type { ClpmRole } from '#/api/auth';
 import { requestClient } from '#/api/request';
 
 export namespace SystemApi {
-  /** 用户信息（对齐 S5-SYS-001 API 契约） */
+  /** 用户信息（对齐后端 UserItem，camelCase） */
   export interface User {
     id: string;
     username: string;
-    full_name: string;
+    displayName: string;
     role: ClpmRole;
-    email: string;
-    phone?: string;
-    is_active: boolean;
-    created_at: string;
-    last_login_at?: string;
+    email?: null | string;
+    isActive: boolean;
+    createdAt?: null | string;
+    lastLoginAt?: null | string;
+    updatedAt?: null | string;
   }
 
-  /** 用户分页查询参数 */
+  /** 用户分页查询参数（对齐后端 keyword/role/isActive/page/pageSize） */
   export interface UserListQueryParams {
     page?: number;
-    page_size?: number;
-    username?: string;
+    pageSize?: number;
+    keyword?: string;
     role?: ClpmRole;
-    is_active?: boolean;
+    isActive?: boolean;
   }
 
   /** 用户分页响应 */
@@ -40,31 +40,29 @@ export namespace SystemApi {
     items: User[];
     total: number;
     page: number;
-    page_size: number;
+    pageSize: number;
   }
 
-  /** 创建用户参数 */
+  /** 创建用户参数（对齐 UserCreateRequest；后端无 phone 字段） */
   export interface CreateUserParams {
     username: string;
     password: string;
-    full_name: string;
+    displayName: string;
     role: ClpmRole;
-    email: string;
-    phone?: string;
+    email?: string;
   }
 
   /** 更新用户参数 */
   export interface UpdateUserParams {
-    full_name?: string;
+    displayName?: string;
     role?: ClpmRole;
     email?: string;
-    phone?: string;
-    is_active?: boolean;
+    isActive?: boolean;
   }
 
   /** 重置密码参数 */
   export interface ResetPasswordParams {
-    new_password: string;
+    newPassword: string;
   }
 
   /** 操作类型枚举 */
@@ -83,28 +81,27 @@ export namespace SystemApi {
     | 'REPORT'
     | 'USER';
 
-  /** 审计日志（对齐 S5-SYS-002 API 契约） */
+  /** 审计日志（对齐后端 AuditLogItem，camelCase；targetType 为后端原始字符串如 "User"） */
   export interface AuditLog {
-    id: string;
-    user_id: string;
-    username: string;
-    operation_type: OperationType;
-    resource_type: ResourceType;
-    resource_id?: string;
-    before_value?: unknown;
-    after_value?: unknown;
-    ip_address?: string;
-    operated_at: string;
+    logId: string;
+    operator: string;
+    operationType: OperationType;
+    targetType?: null | string;
+    targetId?: null | string;
+    beforeValue?: unknown;
+    afterValue?: unknown;
+    clientIp?: null | string;
+    operatedAt?: null | string;
   }
 
-  /** 审计日志分页查询参数 */
+  /** 审计日志分页查询参数（对齐后端 operator/operationType/startTime/endTime） */
   export interface AuditLogListQueryParams {
     page?: number;
-    page_size?: number;
-    user_id?: string;
-    operation_type?: OperationType;
-    start_time?: string;
-    end_time?: string;
+    pageSize?: number;
+    operator?: string;
+    operationType?: OperationType;
+    startTime?: string;
+    endTime?: string;
   }
 
   /** 审计日志分页响应 */
