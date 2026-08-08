@@ -28,7 +28,6 @@ import {
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useConfigAccess } from '#/composables/use-config-access';
-import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
@@ -100,6 +99,94 @@ const diagnosisLoading = ref(false);
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 /** 各性能等级回路数分布（服务端 SQL 聚合，喂"回路等级占比"饼图） */
 const gradeDistribution = ref<GradeDistributionResult | null>(null);
+
+// ===== 整改 A-13：分布行列表数据（donut/饼图退役） =====
+
+/** 回路状态统计行（MODE 分布；手动>0 时红色强调） */
+const modeRows = computed(() => {
+  const rt = autoRateRt.value;
+  const total = rt?.totalCount ?? 0;
+  const counts = rt?.modeCounts ?? {};
+  const order: { key: string; label: string }[] = [
+    { key: '1', label: '自动' },
+    { key: '2', label: '串级' },
+    { key: '3', label: '远程' },
+    { key: '4', label: '先控' },
+    { key: '0', label: '手动' },
+  ];
+  return order
+    .map((o) => {
+      const count = counts[o.key] ?? 0;
+      return {
+        label: o.label,
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0,
+        color: o.key === '0' ? 'var(--status-error)' : 'var(--color-slate-400)',
+        emphasis: o.key === '0' && count > 0,
+      };
+    })
+    .filter((r) => r.count > 0 || total === 0);
+});
+
+/** 等级分布行（按定级阈值顺序 + 数据不足；等级语义色） */
+const gradeRows = computed(() => {
+  const dist = gradeDistribution.value;
+  if (!dist) return [];
+  const distMap = dist as unknown as Record<string, number>;
+  const total = dist.total ?? 0;
+  const rows = [...effectiveThresholds.value]
+    .toSorted((a, b) => a.level - b.level)
+    .map((t) => {
+      const count = distMap[t.name] ?? 0;
+      return {
+        label: ratingLabels.value[String(t.level)] ?? t.name,
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0,
+        color: gradeColor(t.level),
+      };
+    });
+  rows.push({
+    label: '数据不足',
+    count: dist.INCONCLUSIVE ?? 0,
+    pct:
+      total > 0 ? Math.round(((dist.INCONCLUSIVE ?? 0) / total) * 100) : 0,
+    color: 'var(--status-neutral)',
+  });
+  return rows;
+});
+
+// ===== 整改 F4：阀门运行区间异常（OP 行程越限 5%~95%） =====
+interface ValveAlertItem {
+  loopId: string;
+  tagName: string;
+  range: string;
+}
+const valveAlerts = ref<ValveAlertItem[]>([]);
+
+async function loadValveAlerts() {
+  try {
+    const { getLoopSnapshotsApi } = await import('#/api/metric');
+    const res = await getLoopSnapshotsApi({ page: 1, pageSize: 50 });
+    const items = res.items ?? [];
+    const alerts: ValveAlertItem[] = [];
+    for (const snap of items) {
+      const lo = snap.valveOpMin;
+      const hi = snap.valveOpMax;
+      if (lo === null || lo === undefined || hi === null || hi === undefined)
+        continue;
+      if (lo <= 5 || hi >= 95) {
+        alerts.push({
+          loopId: snap.loopId ?? '',
+          tagName: snap.loopTagName ?? snap.loopId ?? '—',
+          range: `OP ${lo.toFixed(1)}% ~ ${hi.toFixed(1)}%`,
+        });
+      }
+    }
+    valveAlerts.value = alerts;
+  } catch {
+    valveAlerts.value = [];
+  }
+}
 
 // 整改 C2-3：默认评分升序（最差优先），管理者注意力直达 Bad Actor
 const top5Sort = ref<'asc' | 'desc'>('asc');
@@ -309,12 +396,8 @@ const top5TableData = computed(() => {
 });
 
 const trendChartRef = ref<EchartsUIType>();
-const pieChartRef = ref<EchartsUIType>();
-const statusPieChartRef = ref<EchartsUIType>();
 
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
-const { renderEcharts: renderPie } = useEcharts(pieChartRef);
-const { renderEcharts: renderStatusPie } = useEcharts(statusPieChartRef);
 
 function renderTrendChart() {
   const trend = boardTrend.value;
@@ -505,146 +588,7 @@ function renderTrendChart() {
   });
 }
 
-function renderStatusPieChart() {
-  const rt = autoRateRt.value;
-  const total = rt?.totalCount ?? 0;
 
-  // 5 种标准 MODE 值的回路数与中文标签（对齐 app.constants.mode）
-  // 0=手动, 1=自动, 2=串级, 3=远程, 4=先控；配色统一走共享色板 use-loop-palettes
-  const MODE_LABELS: Record<string, string> = {
-    '0': '手动',
-    '1': '自动',
-    '2': '串级',
-    '3': '远程',
-    '4': '先控',
-  };
-
-  const modeCounts = rt?.modeCounts ?? {};
-  const allPieData = Object.keys(MODE_LABELS).map((modeKey) => {
-    return {
-      value: modeCounts[modeKey] ?? 0,
-      name: MODE_LABELS[modeKey] ?? modeKey,
-      itemStyle: {
-        color: MODE_COLOR_MAP[modeKey] ?? themeColors.value.NEUTRAL,
-      },
-    };
-  });
-
-  // 仅展示有数据的 MODE（全部为 0 时显示全部以便占位）
-  const pieData =
-    total === 0 ? allPieData : allPieData.filter((d) => (d.value ?? 0) > 0);
-  const legendNames = pieData.map((d) => d.name);
-
-  renderStatusPie({
-    tooltip: {
-      trigger: 'item',
-      position: 'right',
-      formatter: (params: any) => {
-        const percent =
-          total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
-        return `${params.name}: ${params.value} (${percent}%)`;
-      },
-    },
-    legend: {
-      bottom: 0,
-      textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: legendNames,
-    },
-    series: [
-      {
-        type: 'pie' as const,
-        radius: '70%',
-        center: ['50%', '45%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 4,
-          borderColor: chartColors.value.border,
-          borderWidth: 2,
-        },
-        label: { show: false },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 12,
-            fontWeight: 'bold',
-            color: chartColors.value.textStrong,
-          },
-        },
-        labelLine: { show: false },
-        data: pieData,
-      },
-    ],
-  });
-}
-
-function renderPieChart() {
-  const dist = gradeDistribution.value;
-  if (!dist) return;
-
-  const distMap = dist as unknown as Record<string, number>;
-  // 按等级顺序（1→5）生成饼图数据；INCONCLUSIVE（数据不足）以中性灰单列
-  const pieData = [
-    ...[...effectiveThresholds.value]
-      .toSorted((a, b) => a.level - b.level)
-      .map((t) => ({
-        value: distMap[t.name] ?? 0,
-        name: ratingLabels.value[String(t.level)] ?? t.name,
-        itemStyle: { color: gradeColor(t.level) },
-      })),
-    {
-      value: dist.INCONCLUSIVE ?? 0,
-      name: '数据不足',
-      itemStyle: { color: themeColors.value.NEUTRAL },
-    },
-  ];
-
-  const total = dist.total ?? 0;
-
-  renderPie({
-    tooltip: {
-      trigger: 'item',
-      formatter: (params: any) => {
-        const percent =
-          total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
-        return `${params.name}: ${params.value}个 (${percent}%)`;
-      },
-    },
-    legend: {
-      bottom: 0,
-      textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: pieData
-        .filter((d: { value: number }) => (d.value ?? 0) > 0 || total === 0)
-        .map((d: { name: string }) => d.name),
-    },
-    series: [
-      {
-        type: 'pie' as const,
-        radius: '70%',
-        center: ['50%', '45%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 4,
-          borderColor: chartColors.value.border,
-          borderWidth: 2,
-        },
-        label: { show: false },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 12,
-            fontWeight: 'bold',
-            color: chartColors.value.textStrong,
-          },
-        },
-        labelLine: { show: false },
-        data: pieData.filter(
-          (d: { itemStyle: { color: string }; name: string; value: number }) =>
-            (d.value ?? 0) > 0 || total === 0,
-        ),
-      },
-    ],
-  });
-}
 
 /**
  * 评分 → 颜色（表单元格等按值取色场景）。
@@ -698,8 +642,6 @@ async function loadBoard() {
     boardTrend.value = trend;
     await nextTick();
     renderTrendChart();
-    renderPieChart();
-    renderStatusPieChart();
   } catch (error) {
     console.error('[CLPM] 加载看板数据失败:', error);
   }
@@ -713,7 +655,6 @@ async function loadAutoRateRt() {
     );
     autoRateRt.value = data;
     await nextTick();
-    renderStatusPieChart();
   } catch {
     // ignore
   }
@@ -763,9 +704,8 @@ async function loadGradeDistribution() {
       endTime: end.toISOString(),
     });
     await nextTick();
-    renderPieChart();
   } catch {
-    // 错误 toast 由拦截器统一处理；饼图保留旧数据
+    // 错误 toast 由拦截器统一处理
   }
 }
 
@@ -786,6 +726,7 @@ function loadAll() {
   loadAutoRateRt();
   loadRanking();
   loadGradeDistribution();
+  loadValveAlerts();
 }
 
 watch(top5Sort, () => loadRanking());
@@ -793,8 +734,6 @@ watch(top5Sort, () => loadRanking());
 watch(isDark, () => {
   nextTick(() => {
     renderTrendChart();
-    renderPieChart();
-    renderStatusPieChart();
   });
 });
 
@@ -929,7 +868,36 @@ onMounted(() => {
                   {{ rtReadAtText }}
                 </span>
               </div>
-              <EchartsUI ref="statusPieChartRef" height="200px" />
+              <div class="clpm-pid-dashboard__mode-list">
+                <div
+                  v-for="row in modeRows"
+                  :key="row.label"
+                  class="clpm-pid-dashboard__dist-row"
+                >
+                  <span class="clpm-pid-dashboard__dist-label">{{
+                    row.label
+                  }}</span>
+                  <span class="clpm-pid-dashboard__dist-track">
+                    <i
+                      :style="{
+                        width: `${row.pct}%`,
+                        background: row.color,
+                      }"
+                    ></i>
+                  </span>
+                  <span
+                    class="clpm-pid-dashboard__dist-count"
+                    :style="row.emphasis ? { color: 'var(--status-error)' } : {}"
+                    >{{ row.count }}</span
+                  >
+                </div>
+                <div
+                  v-if="modeRows.length === 0"
+                  class="py-6 text-center text-xs text-gray-400"
+                >
+                  暂无实时数据
+                </div>
+              </div>
             </div>
 
             <div
@@ -947,7 +915,28 @@ onMounted(() => {
               <div class="clpm-pid-dashboard__card-header">
                 <span>回路等级占比</span>
               </div>
-              <EchartsUI ref="pieChartRef" height="240px" />
+              <div class="clpm-pid-dashboard__grade-list">
+                <div
+                  v-for="row in gradeRows"
+                  :key="row.label"
+                  class="clpm-pid-dashboard__dist-row"
+                >
+                  <span class="clpm-pid-dashboard__dist-label">{{
+                    row.label
+                  }}</span>
+                  <span class="clpm-pid-dashboard__dist-track">
+                    <i
+                      :style="{
+                        width: `${row.pct}%`,
+                        background: row.color,
+                      }"
+                    ></i>
+                  </span>
+                  <span class="clpm-pid-dashboard__dist-count">{{
+                    row.count
+                  }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1050,6 +1039,34 @@ onMounted(() => {
                 />
               </template>
               </Table>
+            </div>
+
+            <!-- 整改 F4：阀门运行区间异常卡 -->
+            <div class="clpm-pid-dashboard__valve-card">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>阀门运行区间异常</span>
+                <span class="clpm-pid-dashboard__card-meta">
+                  {{ valveAlerts.length }} 回路越限
+                </span>
+              </div>
+              <div
+                v-if="valveAlerts.length === 0"
+                class="py-4 text-center text-xs text-gray-400"
+              >
+                无越限回路（OP 行程超出 5%~95% 为越限）
+              </div>
+              <div
+                v-for="item in valveAlerts"
+                :key="item.loopId"
+                class="clpm-pid-dashboard__valve-row"
+              >
+                <span class="font-mono text-xs">{{ item.tagName }}</span>
+                <span
+                  class="text-xs"
+                  :style="{ color: 'var(--status-warning)' }"
+                  >{{ item.range }}</span
+                >
+              </div>
             </div>
           </div>
 
@@ -1231,7 +1248,7 @@ onMounted(() => {
 .clpm-pid-dashboard__table-card {
   display: flex;
   flex-direction: column;
-  width: 50%;
+  width: 40%;
   padding: 8px 12px;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
@@ -1253,7 +1270,7 @@ onMounted(() => {
 .clpm-pid-dashboard__top5-card {
   display: flex;
   flex-direction: column;
-  width: 50%;
+  width: 32%;
   padding: 8px 12px;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
@@ -1262,6 +1279,66 @@ onMounted(() => {
 
 .clpm-pid-dashboard__top5-card :deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
+}
+
+/* 整改 A-13：分布行列表（donut/饼图替代） */
+.clpm-pid-dashboard__dist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.clpm-pid-dashboard__dist-label {
+  width: 56px;
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-pid-dashboard__dist-track {
+  flex: 1;
+  height: 8px;
+  background: var(--color-slate-100);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.clpm-pid-dashboard__dist-track i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.clpm-pid-dashboard__dist-count {
+  width: 32px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 整改 F4：阀门运行区间异常卡 */
+.clpm-pid-dashboard__valve-card {
+  display: flex;
+  flex-direction: column;
+  width: 28%;
+  padding: 8px 12px;
+  background: hsl(var(--card) / 80%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.clpm-pid-dashboard__valve-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px dashed hsl(var(--border));
+}
+
+.clpm-pid-dashboard__valve-row:last-child {
+  border-bottom: none;
 }
 
 /* 评级标签底色为行内 style（等级色 + 10% 透明背景，色值随阈值配置），
