@@ -27,6 +27,7 @@ import {
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useConfigAccess } from '#/composables/use-config-access';
 import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
@@ -37,6 +38,7 @@ import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effec
 defineOptions({ name: 'PidDashboard' });
 
 const { isDark, themeColors, chartColors } = useClpmTheme();
+const { canReadConfig } = useConfigAccess();
 const router = useRouter();
 
 const timeWindowOptions = [
@@ -768,6 +770,8 @@ async function loadGradeDistribution() {
 }
 
 async function loadGradingThresholds() {
+  // 整改 C2-1：SPONSOR/EXPERT 无 /configs/* 读取权限，前置跳过避免 403 toast
+  if (!canReadConfig.value) return;
   try {
     const { getGradingThresholdsApi } = await import('#/api/metric');
     const data = await getGradingThresholdsApi();

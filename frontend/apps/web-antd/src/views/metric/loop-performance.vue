@@ -50,6 +50,8 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { useRoute } from 'vue-router';
 
+import { useConfigAccess } from '#/composables/use-config-access';
+
 import {
   Badge,
   Button,
@@ -259,6 +261,7 @@ const query = reactive({
 const loopMap = shallowRef<Map<string, LoopApi.LoopListItem>>(new Map());
 
 const route = useRoute();
+const { canReadConfig } = useConfigAccess();
 
 /** 工厂节点树（保留层级结构供 TreeSelect 使用） */
 const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
@@ -653,6 +656,8 @@ async function loadLoopMap() {
 
 /** 加载定级阈值 */
 async function loadGradingThresholds() {
+  // 整改 C2-1：SPONSOR/EXPERT 无 /configs/* 读取权限，前置跳过避免 403 toast
+  if (!canReadConfig.value) return;
   try {
     const result = await getGradingThresholdsApi();
     gradingThresholds.value = result.thresholds || [];
