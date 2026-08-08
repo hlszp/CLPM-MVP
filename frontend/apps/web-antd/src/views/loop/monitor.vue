@@ -32,7 +32,7 @@ import {
   ref,
   watch,
 } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -102,6 +102,7 @@ const { themeColors } = useClpmTheme();
 const { modeLabelColor } = useLoopPalettes();
 
 const router = useRouter();
+const route = useRoute();
 
 // ===== 用户偏好 =====
 const {
@@ -1099,12 +1100,39 @@ function handleResetPreferences() {
 
 // ===== 生命周期 =====
 
+// 整改 C1-2：筛选/分页状态入 URL（刷新/分享/回退不丢巡检上下文）
+function applyQueryFromUrl() {
+  const q = route.query;
+  if (typeof q.plantNodeId === 'string') query.plantNodeId = q.plantNodeId;
+  if (typeof q.loopType === 'string') query.loopType = q.loopType;
+  if (typeof q.keyword === 'string') query.keyword = q.keyword;
+  if (typeof q.page === 'string' && Number(q.page) > 1)
+    query.page = Number(q.page);
+}
+
+/** 将当前筛选/分页写入 URL query（保留 loopId 深链参数） */
+function syncQueryToUrl() {
+  const q: Record<string, string> = {};
+  if (route.query.loopId) q.loopId = String(route.query.loopId);
+  if (query.plantNodeId) q.plantNodeId = query.plantNodeId;
+  if (query.loopType) q.loopType = query.loopType;
+  if (query.keyword) q.keyword = query.keyword;
+  if (query.page > 1) q.page = String(query.page);
+  router.replace({ query: q });
+}
+
 onMounted(() => {
+  applyQueryFromUrl();
   loadPlantNodes();
   loadList();
   loadLoopTypeStats();
   startAutoRefresh();
 });
+
+watch(
+  () => [query.plantNodeId, query.loopType, query.keyword, query.page],
+  syncQueryToUrl,
+);
 
 watch(
   () => query.plantNodeId,

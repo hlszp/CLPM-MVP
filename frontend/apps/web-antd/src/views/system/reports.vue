@@ -42,6 +42,7 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmEmptyState,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
@@ -182,6 +183,16 @@ function handleOpenAdd() {
   editingReport.value = null;
   formState.name = '';
   formState.reportPeriod = 'DAILY';
+  formState.recipients_text = '';
+  formState.isEnabled = true;
+  modalVisible.value = true;
+}
+
+/** 整改 C2-5：从模板新建（空态引导：班报/日报/月报预置周期） */
+function handleCreateFromTemplate(period: string, name: string) {
+  editingReport.value = null;
+  formState.name = name;
+  formState.reportPeriod = period;
   formState.recipients_text = '';
   formState.isEnabled = true;
   modalVisible.value = true;
@@ -358,6 +369,27 @@ const { toolbarItems } = usePageToolbar(() => ({
         :scroll="{ x: 1400 }"
         size="middle"
       >
+        <template #emptyText>
+          <ClpmEmptyState
+            title="尚未配置自动报表"
+            description="从模板快速开始：班报（每班推送当班 KPI 摘要）、日报、月报（管理评审用）。"
+            :actions="[
+              {
+                label: '新建班报',
+                primary: true,
+                onClick: () => handleCreateFromTemplate('SHIFT', '班报'),
+              },
+              {
+                label: '新建日报',
+                onClick: () => handleCreateFromTemplate('DAILY', '日报'),
+              },
+              {
+                label: '新建月报',
+                onClick: () => handleCreateFromTemplate('MONTHLY', '月报'),
+              },
+            ]"
+          />
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'recipients'">
             <span class="text-xs font-mono">
