@@ -77,6 +77,7 @@ import {
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import {
   LOOP_TYPE_COLOR_MAP,
   LOOP_TYPE_LABEL_MAP,
@@ -267,6 +268,7 @@ const loopTypeStats = ref<Record<string, number>>({
 const controlModeStats = ref<Record<string, number>>({});
 
 /** 控制方式柱状图 */
+const { axisBase, getTooltipPreset } = useEchartsPreset();
 const modeChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderModeChart } = useEcharts(modeChartRef);
 
@@ -278,6 +280,7 @@ function updateModeChart() {
   const data = modeKeys.map((k) => stats[k] || 0);
   const colors = modeKeys.map((k) => MODE_COLOR_MAP[k]);
 
+  // 整改 A-15：轴/工具提示走 ECharts 工业 preset（统一字号/等宽/中性色/无阴影）
   renderModeChart({
     animation: false,
     grid: {
@@ -297,18 +300,16 @@ function updateModeChart() {
         type: 'bar',
       },
     ],
-    tooltip: {
-      axisPointer: { lineStyle: { width: 1 } },
-      trigger: 'axis',
-    },
+    tooltip: { ...getTooltipPreset(), trigger: 'axis' },
     xAxis: {
+      ...axisBase.value,
+      splitLine: undefined,
       data: labels,
       type: 'category',
-      axisLabel: { fontSize: 11 },
     },
     yAxis: {
+      ...axisBase.value,
       type: 'value',
-      axisLabel: { fontSize: 11 },
       splitLine: { show: false },
     },
   });

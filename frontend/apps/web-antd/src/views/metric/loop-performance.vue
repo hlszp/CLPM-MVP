@@ -51,6 +51,7 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { useRoute } from 'vue-router';
 
 import { useConfigAccess } from '#/composables/use-config-access';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
 import {
   Badge,
@@ -123,7 +124,7 @@ import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricLoopPerformance' });
 
-const { isDark, themeColors, chartColors } = useClpmTheme();
+const { isDark, themeColors } = useClpmTheme();
 const { modeLabelColor } = useLoopPalettes();
 
 // ===== 常量映射 =====
@@ -263,6 +264,7 @@ const loopMap = shallowRef<Map<string, LoopApi.LoopListItem>>(new Map());
 
 const route = useRoute();
 const { canReadConfig } = useConfigAccess();
+const { axisBase, getTooltipPreset } = useEchartsPreset();
 
 /** 工厂节点树（保留层级结构供 TreeSelect 使用） */
 const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
@@ -1054,10 +1056,7 @@ function renderHistoryTrend() {
   );
 
   renderHistoryChart({
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-    },
+    tooltip: { ...getTooltipPreset(), trigger: 'axis', axisPointer: { type: 'cross' } },
     legend: {
       data: selected.map((o) => o.label),
       top: 0,
@@ -1065,20 +1064,15 @@ function renderHistoryTrend() {
     },
     grid: { top: 40, right: 24, bottom: 40, left: 48, containLabel: true },
     xAxis: {
+      ...axisBase.value,
       type: 'category',
       data: xLabels,
-      axisLabel: { color: textColor, fontSize: 11, hideOverlap: true },
     },
     yAxis: {
+      ...axisBase.value,
       type: 'value',
       min: 0,
       max: 100,
-      axisLabel: { color: textColor, fontSize: 11 },
-      splitLine: {
-        lineStyle: {
-          color: chartColors.value.splitLine,
-        },
-      },
     },
     series: selected.map((o) => ({
       name: o.label,

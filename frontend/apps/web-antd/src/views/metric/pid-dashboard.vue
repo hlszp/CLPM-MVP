@@ -27,6 +27,7 @@ import {
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { useConfigAccess } from '#/composables/use-config-access';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
@@ -38,6 +39,7 @@ defineOptions({ name: 'PidDashboard' });
 
 const { isDark, themeColors, chartColors } = useClpmTheme();
 const { canReadConfig } = useConfigAccess();
+const { axisBase, getTooltipPreset } = useEchartsPreset();
 const router = useRouter();
 
 const timeWindowOptions = [
@@ -420,30 +422,24 @@ function renderTrendChart() {
 
   const showBar = timestamps.length <= 24;
 
+  // 整改 A-15：轴/工具提示走 ECharts 工业 preset；X 轴标签不再 45° 旋转（hideOverlap 自动抽稀）
   renderTrend({
     grid: { bottom: 40, left: '2%', right: '2%', top: 20, containLabel: true },
     xAxis: {
+      ...axisBase.value,
       type: 'category',
       data: timestamps,
-      axisLabel: {
-        color: chartColors.value.text,
-        fontSize: 10,
-        rotate: timestamps.length > 12 ? 45 : 0,
-      },
-      axisLine: { lineStyle: { color: chartColors.value.splitLine } },
       axisTick: { show: false },
     },
     yAxis: [
       {
+        ...axisBase.value,
         type: 'value',
         name: '回路数',
         nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
-        axisLabel: { color: chartColors.value.text, fontSize: 10 },
-        splitLine: {
-          lineStyle: { color: chartColors.value.splitLine, type: 'dashed' },
-        },
       },
       {
+        ...axisBase.value,
         type: 'value',
         name: '百分比(%)',
         nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
@@ -451,6 +447,7 @@ function renderTrendChart() {
           color: chartColors.value.text,
           fontSize: 10,
           formatter: '{value}%',
+          hideOverlap: true,
         },
         max: 100,
         splitLine: { show: false },
@@ -580,10 +577,7 @@ function renderTrendChart() {
         },
       },
     ],
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-    },
+    tooltip: { ...getTooltipPreset(), trigger: 'axis', axisPointer: { type: 'cross' } },
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
