@@ -455,7 +455,7 @@ const columns: TableColumnsType = [
     customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   {
-    title: '输出值 OP',
+    title: '输出值 OP(%)',
     key: 'op',
     width: 90,
     align: 'right',
@@ -1481,9 +1481,6 @@ onUnmounted(() => {
                   mono
                   size="sm"
                 />
-                <span class="text-xs text-gray-500">{{
-                  (record as LoopApi.MonitorListItem).currentValues?.unit
-                }}</span>
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1501,9 +1498,6 @@ onUnmounted(() => {
                   size="sm"
                   :weight="600"
                 />
-                <span class="text-xs text-gray-500">{{
-                  (record as LoopApi.MonitorListItem).currentValues?.unit
-                }}</span>
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1520,7 +1514,6 @@ onUnmounted(() => {
                   mono
                   size="sm"
                 />
-                <span class="text-xs text-gray-500">%</span>
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
