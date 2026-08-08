@@ -27,7 +27,7 @@ import {
   FormItem,
   InputNumber,
   message,
-  Modal,
+  Popconfirm,
   Select,
   Spin,
   Tag,
@@ -356,8 +356,8 @@ function handleGoSimulation() {
   }
 }
 
-/** 保存为整定任务 */
-function handleSaveTask() {
+/** 保存为整定任务（仅创建 SIMULATED 状态任务记录，不应用参数到回路，可逆轻操作走 Popconfirm 确认） */
+async function handleSaveTask() {
   if (!tuneResult.value) return;
   if (!form.loopId) {
     message.warning('缺少回路 ID，无法保存整定任务（请从模型辨识页跳转）');
@@ -366,31 +366,23 @@ function handleSaveTask() {
 
   const result = tuneResult.value;
 
-  Modal.confirm({
-    title: '确认保存整定任务',
-    content: `将使用算法「${algorithmNameMap[form.algorithm] || form.algorithm}」的推荐 PID 参数保存为整定任务，是否继续？`,
-    okText: '确认保存',
-    cancelText: '取消',
-    onOk: async () => {
-      saving.value = true;
-      try {
-        await createTuningTaskApi({
-          loopId: form.loopId,
-          modelType: form.modelType,
-          modelParams: buildModelParams(),
-          algorithm: form.algorithm,
-          recommendedPid: result.recommendedPid,
-          currentPid: buildCurrentPid(),
-          status: 'SIMULATED',
-        });
-        message.success('整定任务保存成功');
-      } catch {
-        // 错误已由拦截器处理
-      } finally {
-        saving.value = false;
-      }
-    },
-  });
+  saving.value = true;
+  try {
+    await createTuningTaskApi({
+      loopId: form.loopId,
+      modelType: form.modelType,
+      modelParams: buildModelParams(),
+      algorithm: form.algorithm,
+      recommendedPid: result.recommendedPid,
+      currentPid: buildCurrentPid(),
+      status: 'SIMULATED',
+    });
+    message.success('整定任务保存成功');
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    saving.value = false;
+  }
 }
 
 /** 从 URL query 初始化参数 */
@@ -736,9 +728,14 @@ watch(
           >
             进行闭环仿真 →
           </Button>
-          <Button size="large" :loading="saving" @click="handleSaveTask">
-            保存为整定任务
-          </Button>
+          <Popconfirm
+            :title="`将使用算法「${algorithmNameMap[form.algorithm] || form.algorithm}」的推荐 PID 参数保存为整定任务，是否继续？`"
+            ok-text="确认保存"
+            cancel-text="取消"
+            @confirm="handleSaveTask"
+          >
+            <Button size="large" :loading="saving">保存为整定任务</Button>
+          </Popconfirm>
         </div>
       </ClpmDataCanvas>
 

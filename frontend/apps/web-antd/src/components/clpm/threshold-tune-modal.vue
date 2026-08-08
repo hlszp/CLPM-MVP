@@ -23,6 +23,7 @@ import {
   InputNumber,
   message,
   Modal,
+  Popconfirm,
   Select,
   SelectOption,
   Tag,
@@ -129,28 +130,20 @@ function onDiagCodeChange() {
   syncTuneForm();
 }
 
-/** 套用类型模板为回路级覆盖 */
+/** 套用类型模板为回路级覆盖（可逆轻操作走 Popconfirm 确认） */
 async function applyTemplate() {
   if (!activeRec.value) return;
-  Modal.confirm({
-    title: '套用类型模板？',
-    content: `将把 ${props.loopType || ''} 类型的 ${activeRec.value.diagCode} 模板阈值复制为回路级覆盖。已有回路级覆盖将被更新。`,
-    okText: '确认套用',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await applyThresholdTemplateApi({
-          loopId: props.loopId,
-          diagCode: activeDiagCode.value,
-          targetScope: 'loop',
-        });
-        message.success('模板已套用');
-        await loadRecommendation();
-      } catch (error) {
-        message.error((error as Error).message ?? '套用失败');
-      }
-    },
-  });
+  try {
+    await applyThresholdTemplateApi({
+      loopId: props.loopId,
+      diagCode: activeDiagCode.value,
+      targetScope: 'loop',
+    });
+    message.success('模板已套用');
+    await loadRecommendation();
+  } catch (error) {
+    message.error((error as Error).message ?? '套用失败');
+  }
 }
 
 /** 保存回路级覆盖 */
@@ -173,37 +166,28 @@ async function handleSave() {
   }
 }
 
-/** 删除回路级覆盖 */
+/** 删除回路级覆盖（恢复模板/默认，可逆轻操作走 Popconfirm 确认） */
 async function handleDelete() {
-  Modal.confirm({
-    title: '删除回路级覆盖？',
-    content: '将恢复为模板/全局默认阈值。',
-    okText: '确认删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        const overrides = await getThresholdOverridesApi({
-          scopeType: 'loop',
-          scopeId: props.loopId,
-        });
-        const target = overrides.find(
-          (o: DiagnosisApi.ThresholdOverrideItem) =>
-            o.diagCode === activeDiagCode.value,
-        );
-        if (!target) {
-          message.warning('未找到回路级覆盖');
-          return;
-        }
-        await deleteThresholdOverrideApi(target.overrideId);
-        message.success('回路级覆盖已删除');
-        emit('success');
-        await loadRecommendation();
-      } catch (error) {
-        message.error((error as Error).message ?? '删除失败');
-      }
-    },
-  });
+  try {
+    const overrides = await getThresholdOverridesApi({
+      scopeType: 'loop',
+      scopeId: props.loopId,
+    });
+    const target = overrides.find(
+      (o: DiagnosisApi.ThresholdOverrideItem) =>
+        o.diagCode === activeDiagCode.value,
+    );
+    if (!target) {
+      message.warning('未找到回路级覆盖');
+      return;
+    }
+    await deleteThresholdOverrideApi(target.overrideId);
+    message.success('回路级覆盖已删除');
+    emit('success');
+    await loadRecommendation();
+  } catch (error) {
+    message.error((error as Error).message ?? '删除失败');
+  }
 }
 
 function handleClose() {
@@ -313,14 +297,16 @@ watch(
             <Tag v-if="hasExisting" color="green" size="small">已存在</Tag>
             <Tag v-else size="small">新建</Tag>
           </span>
-          <Button
-            v-if="hasTemplate"
-            size="small"
-            type="link"
-            @click="applyTemplate"
+          <Popconfirm
+            :title="`将把 ${props.loopType || ''} 类型的 ${activeDiagCode} 模板阈值复制为回路级覆盖。已有回路级覆盖将被更新。`"
+            ok-text="确认套用"
+            cancel-text="取消"
+            @confirm="applyTemplate"
           >
-            套用类型模板
-          </Button>
+            <Button v-if="hasTemplate" size="small" type="link">
+              套用类型模板
+            </Button>
+          </Popconfirm>
         </div>
         <div
           v-for="key in thresholdKeys"
@@ -343,9 +329,15 @@ watch(
       <!-- 操作按钮 -->
       <div class="flex justify-end gap-2 border-t border-border pt-3">
         <Button @click="handleClose">关闭</Button>
-        <Button v-if="hasExisting" danger @click="handleDelete">
-          删除覆盖
-        </Button>
+        <Popconfirm
+          title="删除回路级覆盖？将恢复为模板/全局默认阈值。"
+          ok-text="确认删除"
+          ok-type="danger"
+          cancel-text="取消"
+          @confirm="handleDelete"
+        >
+          <Button v-if="hasExisting" danger>删除覆盖</Button>
+        </Popconfirm>
         <Button type="primary" :loading="saving" @click="handleSave">
           保存
         </Button>
