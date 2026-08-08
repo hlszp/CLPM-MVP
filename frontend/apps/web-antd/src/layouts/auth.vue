@@ -14,7 +14,7 @@ const logoDark = computed(() => preferences.logo.sourceDark);
     :app-name="appName"
     :logo="logo"
     :logo-dark="logoDark"
-    page-description="控制回路性能管理系统"
+    page-description="控制回路性能评估与优化平台"
     page-title="CLPM"
   >
     <!-- 自定义工具栏 -->
