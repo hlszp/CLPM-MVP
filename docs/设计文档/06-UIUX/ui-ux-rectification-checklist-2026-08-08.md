@@ -40,7 +40,7 @@
 |---|---|---|---|---|
 | P0-1 | 首个 commit：本清单 + 审查报告 + 整改方案入库 | docs/ | 文档在分支可追踪 | ✅ `3edfacb` |
 | P0-2 | B1 死导航：修/下线"历史"按钮 + route-compat 路由可达断言 | loop/workbench.vue:471；e2e/route-compat.spec.ts | 点击不 404，E2E 绿 | 👀 `6fb0ab8`（vitest/check:type ✅；E2E 断言随重跑确认） |
-| P0-3 | B2 风险确认绕过（按 D1 结论实施） | loop/workbench.vue:272/314 | 快操作有确认（或有契约豁免条款） | ✅ `c9c97c6`（门禁绿；确认窗交互实弹验证留 P0-7 后补，需有辨识记录的回路） |
+| P0-3 | B2 风险确认绕过（按 D1 结论实施） | loop/workbench.vue:272/314 | 快操作有确认（或有契约豁免条款） | ✅ `c9c97c6`（门禁绿 + mock 实弹验证：整定/仿真确认窗均在调 API 前弹出） |
 | P0-4 | B3 波形轴：OP 移副轴 0-100%，PV/SP 主轴按量程自适应 | components/loop/waveform-chart.vue:530-552 | 4h 趋势 PV 波动可辨；截图复核 monitor/diagnosis 两处 | ✅ `c1eae6e`（截图验证通过，顺带修复"undefineds"提示） |
 | P0-5 | B4 品牌：VITE_APP_TITLE + 登录页/壳层去 vben + 产品全称统一 | .env.*、index.html、preferences.ts | 全站无 "Vben Admin"/幽灵占位符 | ✅ `d89b85b`（截图验证通过） |
 | P0-6 | B5 数据映射：audit.vue camelCase + users 状态 + system 模块列表排查 + E2E 数据断言 | system/audit.vue、users.vue、e2e/system.spec.ts | 显示与 API 一致；断言进 E2E | ✅ `5a42379`（E2E-SYS-DATA-001/002 通过 + 截图验证） |
@@ -132,3 +132,4 @@
 | 2026-08-08 | B2 确认窗：参数整定/模拟仿真接入 WARNING 级 ClpmDangerConfirmModal | `c9c97c6` | E2E-ROUTE-WB 选择器修正（antd 双汉字按钮空格）后 2/2 通过 |
 | 2026-08-08 | B5 数据映射：users/audit camelCase 对齐 + system.ts 类型修正 + E2E 数据断言 | `5a42379` | 用户页全员"启用"+真实姓名+最后登录；审计页全列真实数据；新增断言 2/2 通过 |
 | 2026-08-08 | P0-7 出口：三角色冒烟截图完成（admin/sponsor/ic_engineer）；E2E 全量重跑中 | — | B2 确认窗实弹验证待补（需先跑一次回路辨识） |
+| 2026-08-08 | B2 实弹验证完成：真实辨识被 Trust First 门禁拦截（E 级→模型不可用，正确行为）；改用 mock 整定记录验证——"参数整定计算确认"/"闭环仿真计算确认"均在调 API 前弹出 | — | 截图存证 /tmp/clpm-shots/p0-exit/b2-*.png；另发现种子数据 24h 窗辨识仅 E 级（现象记录，非本次范围） |
