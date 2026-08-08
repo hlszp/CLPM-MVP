@@ -93,9 +93,9 @@
 | D2 | 交互一致性：确认双轨归并、预警事件防重复提交/误报确认、文案词表落地 | ✅ D2-a `cd3b2f8`+`1c09f73`（Modal.confirm 清零：8 处危险→ClpmDangerConfirmModal 按可逆性分级、9 处轻操作→Popconfirm，含 C 类定级：归档不可逆/保存整定任务可逆）；D2-b `ce3b1ae`（事件行内动作 actingEventId 守卫+loading、处置弹窗 confirm-loading、误报 Popconfirm+撤销误报）；D2-c `276577d`（词表 v1.0 入库+新增→新建统一+枚举去括号。门禁：check:type 0 error、vitest 455+1既有 BL-1）。弹窗浅色头/浮层≤2层经核查已在 Phase 1 收敛 |
 | D3 | 样式债：hex 白名单 lint（155→0）+ 死代码清除（9 页面+3 组件+重复 badge）+ **F7 MIN_GOOD_RATIO 清理** + 菜单 order 修正 | ✅ `49beb1a` 死代码清除（loop/detail+tabs×6+visualization+2 零引用组件；ab-compare/ai-insight 复核为活代码保留）+ badge 合并（metric 版退役）+ E级术语对齐 + 菜单 order 5/6；F7 经查已清零；`0776b0a` hex 白名单守护（棘轮 180→只减不增 + pre-push 门禁；存量双轨色迁移入 BL-5 分批） |
 | D4 | 虚拟滚动（左栏/大表格） | ✅ 左栏 `0237e8c`（零依赖 useVirtualList + 工作台接入 + 单测 4 例）；大表格经评估：antd Table 分页已控量（页大小 ≤100），整表虚拟化收益低风险高，入 BL-6 |
-| C1-1 | 增量巡检："较昨日"徽标列 + 默认"最需关注"排序（先确认快照 API 字段） | ⬜ |
-| C1-3 | Action Tracker"验证中"状态 + 到期进待办（后端状态机字段 + alembic 迁移） | ⬜ |
-| C1-4 | 空态引导全量收尾 | ⬜ |
+| C1-1 | 增量巡检："较昨日"徽标列 + 默认"最需关注"排序（先确认快照 API 字段） | ✅ 后端 `8c4f396`（昨日基线快照 DISTINCT ON + scoreDelta/dayTrend + 评分升序默认排序，pytest 4124 全绿）；前端 `b96e96b`（DayDeltaBadge 组件 + monitor/工作台接入，单测 5 例） |
+| C1-3 | Action Tracker"验证中"状态 + 到期进待办（后端状态机字段 + alembic 迁移） | ✅ 后端状态机 VERIFYING 经查已完整（无需迁移）；`916a5fc` aggregates+verifyOverdueCount（超 24h）；`355d66f` 前端全态展示+工作台"验证超期"卡+tracker?status=VERIFYING 直达 |
+| C1-4 | 空态引导全量收尾 | ✅ `68691a1`（6 文件 10 处图表空渲染清零：ClpmDataCanvas empty/emptyReason 接管 + StateOverlay 分支 + 原因文案） |
 | C2-4 | Bad Actor 治理台账视图（Top5↔Tracker 关联，评分+责任人+处置+验证一表） | ⬜ |
 | E4 | 通知铃铛接 /ws/alerts 预警推送 | ⬜ |
 | E5 | 锁屏评估与开启 | ⬜ |
