@@ -226,14 +226,22 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
     key: 'completed',
     label: '已完成',
     value: completedCount.value,
-    status: 'success',
+    // 整改 A-03：零值中性（0 已完成不着色）
+    status: completedCount.value > 0 ? 'success' : 'neutral',
   },
   {
     key: 'fitting',
     label: '平均拟合度',
-    value: (avgFittingScore.value ?? 0).toFixed(2),
-    unit: '%',
-    status: getFittingStatus(avgFittingScore.value ?? 0),
+    // 整改 A-03：无数据时显示"—"且中性，不得显示伪 0.00% 红色
+    value:
+      avgFittingScore.value === null
+        ? '—'
+        : avgFittingScore.value.toFixed(2),
+    unit: avgFittingScore.value === null ? '' : '%',
+    status:
+      avgFittingScore.value === null
+        ? 'neutral'
+        : getFittingStatus(avgFittingScore.value),
   },
   {
     key: 'recent',
@@ -262,7 +270,7 @@ const pendingTuningCount = computed(() => {
 const uncalculatedRiskValue = '—';
 const uncalculatedRiskUnit = '未计算';
 
-/** 风险相关 KPI 指标 */
+/** 风险相关 KPI 指标（整改 A-03：去掉与上排重复的"已完成数"，零值中性） */
 const riskKpiItems = computed<KpiStripItem[]>(() => [
   {
     key: 'highRisk',
@@ -283,12 +291,6 @@ const riskKpiItems = computed<KpiStripItem[]>(() => [
     label: '待整定数',
     value: pendingTuningCount.value,
     status: 'neutral',
-  },
-  {
-    key: 'completed',
-    label: '已完成数',
-    value: completedCount.value,
-    status: 'success',
   },
 ]);
 

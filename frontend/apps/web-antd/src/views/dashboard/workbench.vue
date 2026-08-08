@@ -66,13 +66,14 @@ const linkHealth = ref<DataSourceApi.DataSourceHealth | null>(null);
 const linkHealthLoading = ref(false);
 
 const todoKpiItems = computed<KpiStripItem[]>(() => {
+  // 整改 A-03：零值中性——待办为 0 时不着色（零待办是好状态）
   const items: KpiStripItem[] = [
     {
       key: 'diagnosis',
       label: '诊断待处理',
       value: diagnosisPending.value,
       unit: '条',
-      status: 'warning',
+      status: diagnosisPending.value > 0 ? 'warning' : 'neutral',
       clickable: true,
     },
     {
@@ -80,7 +81,7 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       label: '异常跟踪待办',
       value: trackerActive.value,
       unit: '条',
-      status: 'danger',
+      status: trackerActive.value > 0 ? 'danger' : 'neutral',
       clickable: true,
     },
     {
@@ -88,7 +89,7 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       label: '评估待执行',
       value: metricPending.value,
       unit: '条',
-      status: 'primary',
+      status: metricPending.value > 0 ? 'primary' : 'neutral',
       clickable: true,
     },
   ];

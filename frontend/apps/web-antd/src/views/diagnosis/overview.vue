@@ -95,6 +95,7 @@ const kpiCards = ref([
     icon: 'ant-design:alert-outlined',
     infoTip: '近 24 小时内被诊断为异常的回路数量',
     contextText: '近 24 小时',
+    precision: 0,
   },
   {
     key: 'pending',
@@ -105,6 +106,7 @@ const kpiCards = ref([
     icon: 'ant-design:clock-circle-outlined',
     infoTip: '处理状态为"待处理"的诊断记录数',
     contextText: '需关注',
+    precision: 0,
   },
   {
     key: 'implemented',
@@ -115,6 +117,7 @@ const kpiCards = ref([
     icon: 'ant-design:check-circle-outlined',
     infoTip: '处理状态为"已实施"的诊断记录数',
     contextText: '近 30 天累计',
+    precision: 0,
   },
   {
     key: 'avg_close_hours',
@@ -125,6 +128,7 @@ const kpiCards = ref([
     icon: 'ant-design:field-time-outlined',
     infoTip: '近 30 天平均任务闭环时长（小时）',
     contextText: '近 30 天',
+    precision: 1,
   },
 ]);
 
@@ -445,6 +449,8 @@ onMounted(() => {
         :icon="card.icon"
         :info-tip="card.infoTip"
         :context-text="card.contextText"
+        :precision="card.precision"
+        neutral-when-zero
         :loading="loading"
       />
     </div>

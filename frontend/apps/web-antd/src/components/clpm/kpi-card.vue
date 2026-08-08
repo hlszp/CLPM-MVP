@@ -37,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   sparkline: undefined,
   loading: false,
   clickable: false,
+  neutralWhenZero: false,
 });
 
 const emit = defineEmits<{
@@ -80,6 +81,8 @@ interface Props {
   loading?: boolean;
   /** 是否可点击 */
   clickable?: boolean;
+  /** 整改 A-03：零值中性化——value 为 0 时强制 neutral（零异常是好消息，不着色） */
+  neutralWhenZero?: boolean;
 }
 
 /** 主值格式化：数字按 precision + 千位分隔符；字符串原样 */
@@ -93,6 +96,18 @@ const formattedValue = computed(() => {
   return decPart ? `${withSep}.${decPart}` : withSep;
 });
 
+/** 生效状态：neutralWhenZero 且数值为 0 时强制 neutral（色彩约定表 §5 零值不着色） */
+const effectiveStatus = computed<KpiStatus>(() => {
+  if (
+    props.neutralWhenZero &&
+    typeof props.value === 'number' &&
+    props.value === 0
+  ) {
+    return 'neutral';
+  }
+  return props.status;
+});
+
 /** 装饰图标背景色：状态色对应 50 级浅色 */
 const iconBgVar = computed(() => {
   const map: Record<KpiStatus, string> = {
@@ -102,7 +117,7 @@ const iconBgVar = computed(() => {
     info: 'var(--color-blue-50)',
     neutral: 'var(--color-slate-100)',
   };
-  return map[props.status];
+  return map[effectiveStatus.value];
 });
 
 /** 装饰图标色：状态色对应 500 级 */
@@ -114,12 +129,12 @@ const iconColorVar = computed(() => {
     info: 'var(--color-blue-600)',
     neutral: 'var(--color-slate-500)',
   };
-  return map[props.status];
+  return map[effectiveStatus.value];
 });
 
 /** 大数字色：状态色 500 级（neutral 时用主文本色） */
 const valueColorVar = computed(() => {
-  if (props.status === 'neutral') return 'hsl(var(--foreground))';
+  if (effectiveStatus.value === 'neutral') return 'hsl(var(--foreground))';
   return iconColorVar.value;
 });
 
