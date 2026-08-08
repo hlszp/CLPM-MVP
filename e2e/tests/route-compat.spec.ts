@@ -158,3 +158,41 @@ test.describe('旧路由兼容 - 配置集中化迁移（IA 重构 Phase A）', 
     });
   }
 });
+
+/**
+ * 工作台快捷导航可达性（UI/UX 整改 B1）
+ *
+ * 回归背景：回路工作台概览区"历史"按钮曾跳转不存在的 /loop/history（必 404）。
+ * 修复后跳 /metric/loop-performance?loopId=xxx 并由目标页消费 loopId 自动过滤。
+ */
+test.describe('工作台快捷导航可达性（整改 B1）', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs('ADMIN');
+  });
+
+  test('E2E-ROUTE-WB: "历史"按钮跳转回路性能页且不 404', async ({ page }) => {
+    await page.goto('/loop/workbench', { waitUntil: 'domcontentloaded' });
+    const historyBtn = page.getByRole('button', { exact: true, name: '历史' });
+    // 左侧回路列表加载并自动选中首个回路后按钮可用
+    await expect(historyBtn).toBeVisible({ timeout: 15_000 });
+    await historyBtn.click();
+    await expect(page).toHaveURL(/\/metric\/loop-performance\?loopId=/, {
+      timeout: 15_000,
+    });
+    await expect(page.locator('body')).not.toBeEmpty();
+    // 不得停留在 404 页
+    await expect(page.getByText('哎呀！未找到页面')).toHaveCount(0);
+  });
+
+  test('E2E-ROUTE-WB: "趋势"按钮跳转回路监控页且不 404', async ({ page }) => {
+    await page.goto('/loop/workbench', { waitUntil: 'domcontentloaded' });
+    const trendBtn = page.getByRole('button', { exact: true, name: '趋势' });
+    await expect(trendBtn).toBeVisible({ timeout: 15_000 });
+    await trendBtn.click();
+    await expect(page).toHaveURL(/\/loop\/monitor\?loopId=/, {
+      timeout: 15_000,
+    });
+    await expect(page.locator('body')).not.toBeEmpty();
+    await expect(page.getByText('哎呀！未找到页面')).toHaveCount(0);
+  });
+});

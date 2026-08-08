@@ -471,7 +471,7 @@ function goTrend() {
 function goHistory() {
   if (selectedLoopId.value) {
     router.push({
-      path: '/loop/history',
+      path: '/metric/loop-performance',
       query: { loopId: selectedLoopId.value },
     });
   }

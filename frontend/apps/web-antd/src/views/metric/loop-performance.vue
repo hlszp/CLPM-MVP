@@ -48,6 +48,8 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
+import { useRoute } from 'vue-router';
+
 import {
   Badge,
   Button,
@@ -255,6 +257,8 @@ const query = reactive({
 
 /** 回路元数据 Map（loopId → LoopListItem） */
 const loopMap = shallowRef<Map<string, LoopApi.LoopListItem>>(new Map());
+
+const route = useRoute();
 
 /** 工厂节点树（保留层级结构供 TreeSelect 使用） */
 const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
@@ -1235,6 +1239,12 @@ watch(isDark, () => {
 
 onMounted(async () => {
   await Promise.all([loadPlantNodes(), loadLoopMap(), loadGradingThresholds()]);
+  // 深链支持：?loopId=xxx → 自动按回路编号过滤（回路工作台"历史"按钮入口，整改 B1）
+  const loopIdQuery = route.query.loopId;
+  if (typeof loopIdQuery === 'string' && loopIdQuery) {
+    const tagName = loopMap.value.get(loopIdQuery)?.tagName;
+    if (tagName) query.loopTagName = tagName;
+  }
   loadList();
   loadStats();
 });
