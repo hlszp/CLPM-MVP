@@ -74,10 +74,10 @@
 | # | 任务 | 状态 |
 |---|---|---|
 | E1 | 偏好抽屉策展白名单 + preferences.antd.* locale 裸键修复 + tenantMode 残留删除 + 字段消费审计（D3/D4 相关） | ✅ `becfc9a`（extension 4 字段零消费整体移除，裸键问题根除；白名单策展随暗色校准一并走查） |
-| E2 | 暗色校准：明暗双板接入 preset + 语义色对比度重校 + color-scheme: dark | ⬜ |
+| E2 | 暗色校准：明暗双板接入 preset + 语义色对比度重校 + color-scheme: dark | 🔨 `557f869` 暗色持久化 bug 根治（overrides 写死 mode 所致）；余：对比度走查 |
 | E3 | i18n 残态收敛（按 D4 结论） | ✅ `becfc9a`（languageToggle 隐藏） |
-| F1 | 服务端参数注册表 + Pydantic 值域/键白名单校验（config.py:504） | ⬜ |
-| F2 | 4 项硬编码参数配置化（含 stiction.py:60 收敛）+ _DEFAULTS 扩 3 指标 | ⬜ |
+| F1 | 服务端参数注册表 + Pydantic 值域/键白名单校验（config.py:504） | ✅ `f87bb02`（PARAM_META 注册表 + 端点校验；三种拦截路径实弹 400） |
+| F2 | 4 项硬编码参数配置化（含 stiction.py:60 收敛）+ _DEFAULTS 扩 3 指标 | ✅ `f87bb02`（默认值行为不变；pytest 4120 全绿） |
 | C2-1 | Sponsor 首屏零报错（被拒请求前置裁剪/静默降级） | ✅ `2325718`（useConfigAccess 前置门禁；实测 sponsor 403 清零） |
 | C2-2 | 403 页语义化 | ✅ `98b65d5`（完整路由表判定 403/404；ic_engineer 实测） |
 | C2-3 | 性能总览 TOP5 默认最差优先（随 A-13） | ✅ `becfc9a`（默认评分升序） |
