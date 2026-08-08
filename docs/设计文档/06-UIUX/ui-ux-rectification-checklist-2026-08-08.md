@@ -96,7 +96,7 @@
 | C1-1 | 增量巡检："较昨日"徽标列 + 默认"最需关注"排序（先确认快照 API 字段） | ✅ 后端 `8c4f396`（昨日基线快照 DISTINCT ON + scoreDelta/dayTrend + 评分升序默认排序，pytest 4124 全绿）；前端 `b96e96b`（DayDeltaBadge 组件 + monitor/工作台接入，单测 5 例） |
 | C1-3 | Action Tracker"验证中"状态 + 到期进待办（后端状态机字段 + alembic 迁移） | ✅ 后端状态机 VERIFYING 经查已完整（无需迁移）；`916a5fc` aggregates+verifyOverdueCount（超 24h）；`355d66f` 前端全态展示+工作台"验证超期"卡+tracker?status=VERIFYING 直达 |
 | C1-4 | 空态引导全量收尾 | ✅ `68691a1`（6 文件 10 处图表空渲染清零：ClpmDataCanvas empty/emptyReason 接管 + StateOverlay 分支 + 原因文案） |
-| C2-4 | Bad Actor 治理台账视图（Top5↔Tracker 关联，评分+责任人+处置+验证一表） | ⬜ |
+| C2-4 | Bad Actor 治理台账视图（Top5↔Tracker 关联，评分+责任人+处置+验证一表） | ✅ `8cee6ef`（pid-dashboard TOP5 卡升级：治理状态列+效果验证列+未建单降级，纯前端复用 /diagnosis/list，无后端改动） |
 | E4 | 通知铃铛接 /ws/alerts 预警推送 | ⬜ |
 | E5 | 锁屏评估与开启 | ⬜ |
 | E6 | v-access 按钮级权限 | ⬜ |
