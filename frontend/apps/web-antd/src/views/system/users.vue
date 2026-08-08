@@ -371,7 +371,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           查询
         </Button>
         <div class="flex-1"></div>
-        <Button type="primary" @click="handleOpenAdd">新增用户</Button>
+        <Button type="primary" @click="handleOpenAdd">新建用户</Button>
       </div>
 
       <Table
@@ -438,9 +438,9 @@ const { toolbarItems } = usePageToolbar(() => ({
           <template #emptyText>
             <ClpmEmptyState
               title="无匹配用户"
-              description="可调整筛选条件，或点击「新增用户」创建账号。"
+              description="可调整筛选条件，或点击「新建用户」创建账号。"
               :actions="[
-                { label: '新增用户', primary: true, onClick: handleOpenAdd },
+                { label: '新建用户', primary: true, onClick: handleOpenAdd },
               ]"
             />
           </template>
@@ -450,7 +450,7 @@ const { toolbarItems } = usePageToolbar(() => ({
     <!-- 新增/编辑 Modal -->
     <Modal
       v-model:open="modalVisible"
-      :title="editingUser ? `编辑用户 - ${editingUser.displayName}` : '新增用户'"
+      :title="editingUser ? `编辑用户 - ${editingUser.displayName}` : '新建用户'"
       :confirm-loading="modalLoading"
       width="560px"
       @ok="handleSubmit"

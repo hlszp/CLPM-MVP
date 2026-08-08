@@ -357,7 +357,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         <p class="text-sm text-gray-500">
           管理班报/日报/周报/月报配置 · 支持手动触发生成与进度查询
         </p>
-        <Button type="primary" @click="handleOpenAdd">新增报表</Button>
+        <Button type="primary" @click="handleOpenAdd">新建报表</Button>
       </div>
 
       <Table
@@ -456,7 +456,7 @@ const { toolbarItems } = usePageToolbar(() => ({
     <!-- 新增/编辑 Modal -->
     <Modal
       v-model:open="modalVisible"
-      :title="editingReport ? `编辑报表 - ${editingReport.name}` : '新增报表'"
+      :title="editingReport ? `编辑报表 - ${editingReport.name}` : '新建报表'"
       :confirm-loading="modalLoading"
       width="600px"
       @ok="handleSubmit"
