@@ -56,7 +56,7 @@
 | A-02 | 类别中性化：use-loop-palettes 七色退役、规则/指标类别 tag 灰阶化 | ✅ `64dfa36`（8 文件；DOM 探针验证 chips #64748b + tag 全灰阶；状态色保留） |
 | A-03 | 零值/无数据中性化（统计卡 6 页） | ✅ `7e94079`（kpi-card 增 neutral-when-zero 机制；诊断总览/整定工作台/系统概览接入；顺带计数整数化 + 去重复卡 + 伪 0.00% 修复） |
 | A-04 | 工具栏收敛 ≤5 图标 + 高频动作文字化 + aria-label（ClpmStandardActions，41 页） | ⬜ |
-| A-05 | ClpmKpiStrip/ClpmKpiCard 改造（零值中性、主值 Semibold、去彩色 icon 圆底） | ⬜ |
+| A-05 | ClpmKpiStrip/ClpmKpiCard 改造（零值中性、主值 Semibold、去彩色 icon 圆底） | 🔨 零值中性已随 A-03 落地（neutral-when-zero 机制）；余：主值 Semibold、icon 圆底收敛 |
 | A-06 | 新组件 ClpmBulletChart + gauge 替换 | ⬜ |
 | A-07 | 表格基线（密度三档/冻结/右对齐等宽/默认排序/空态）封装 + 15 表格页迁移 | ⬜ |
 | A-08 | ClpmEmptyState 三要素 + 8+ 页面接入 + 装饰图表无数据不渲染 | ⬜ |
