@@ -35,7 +35,9 @@ import {
   resetAlertBadgeApi,
   resolveEventApi,
 } from '#/api/alert';
-import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import {
+  ClpmEmptyState, ClpmPageToolbar, ClpmStandardActions 
+} from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
@@ -518,6 +520,12 @@ onMounted(() => {
             </Button>
           </Space>
         </template>
+      </template>
+      <template #emptyText>
+        <ClpmEmptyState
+          title="暂无预警事件"
+          description="当前筛选条件（状态/严重度/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
+        />
       </template>
     </Table>
 

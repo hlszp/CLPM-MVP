@@ -42,6 +42,7 @@ import {
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
+import { ClpmEmptyState } from '#/components/clpm';
 
 defineOptions({ name: 'AlertRules' });
 
@@ -558,6 +559,15 @@ onMounted(() => {
             </Popconfirm>
           </Space>
         </template>
+      </template>
+      <template #emptyText>
+        <ClpmEmptyState
+          title="暂无预警规则"
+          description="点击右上角「新建规则」创建阈值/漂移/组合/可信度规则；新建前可用试运行（dry-run）验证触发效果。"
+          :actions="[
+            { label: '新建规则', primary: true, onClick: openCreateModal },
+          ]"
+        />
       </template>
     </Table>
 

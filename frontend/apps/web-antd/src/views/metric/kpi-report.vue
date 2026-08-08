@@ -884,6 +884,8 @@ onMounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="isEmpty"
+      empty-text="暂无报表数据"
+      empty-reason="当前维度与日期没有报表数据；可切换日/周/月维度或选择其他日期。"
       @retry="loadData"
     >
       <div

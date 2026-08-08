@@ -46,6 +46,7 @@ import {
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
+import { ClpmEmptyState } from '#/components/clpm';
 
 defineOptions({ name: 'SystemUsers' });
 
@@ -434,6 +435,15 @@ const { toolbarItems } = usePageToolbar(() => ({
             </div>
           </template>
         </template>
+          <template #emptyText>
+            <ClpmEmptyState
+              title="无匹配用户"
+              description="可调整筛选条件，或点击「新增用户」创建账号。"
+              :actions="[
+                { label: '新增用户', primary: true, onClick: handleOpenAdd },
+              ]"
+            />
+          </template>
       </Table>
     </ClpmDataCanvas>
 

@@ -20,6 +20,7 @@ import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
+  ClpmEmptyState,
   ClpmBulletChart,
   ClpmPageToolbar,
   ClpmStandardActions,
@@ -977,6 +978,12 @@ onMounted(() => {
                     <span>{{ record.smoothRate }}%</span>
                   </template>
                 </template>
+              <template #emptyText>
+                <ClpmEmptyState
+                  scene="data"
+                  description="当前装置节点与时间窗内无聚合明细；可切换时间窗或选择其他节点。"
+                />
+              </template>
               </Table>
             </div>
 
@@ -1031,6 +1038,12 @@ onMounted(() => {
                     </Button>
                   </template>
                 </template>
+              <template #emptyText>
+                <ClpmEmptyState
+                  scene="data"
+                  description="当前时间窗内暂无参评回路快照；可先发起性能评估。"
+                />
+              </template>
               </Table>
             </div>
           </div>

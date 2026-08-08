@@ -1429,6 +1429,8 @@ onMounted(async () => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && rows.length === 0"
+      empty-text="暂无 KPI 评估快照"
+      empty-reason="当前筛选条件下没有评估数据；可调整时间窗/筛选条件，或先在回路工作台发起评估。"
       @retry="loadList"
     >
       <Table
