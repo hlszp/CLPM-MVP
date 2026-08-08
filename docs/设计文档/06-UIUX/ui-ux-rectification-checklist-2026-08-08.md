@@ -18,9 +18,9 @@
 |---|---|---|---|
 | R1 | **工作区残留处置**（已完成） | ✅ | 2026-08-08 已提交 main：`4cc15f5` fix(build) 前端镜像构建兼容性、`1bba4ba` fix(db) 外键延迟初始化修复；`Dockerfile.frontend.bak` 鉴定为 HEAD 纯备份，按惯例不入库（保持未跟踪）；4 份整改文档随分支首个 commit 入库（P0-1） |
 | R2 | 决策签认 D1-D4（见下表） | ✅ | 2026-08-08 用户全部签认：D1=a 补确认窗、D2=a 按 A.3、D3=a 不完整引用、D4=a 隐藏 languageToggle |
-| R3 | 基线门禁全绿记录 | ⬜ | 开工前在 main 跑一次 ruff/pytest/check:type/vitest 并记录耗时与结果，作为回归对照 |
-| R4 | E2E 既有失败甄别 | ⬜ | 3 个既有失败（D3-MOC/F4-F5/TUNE-009）+ 2 flaky 记录存档，整改期间新增失败与之区分 |
-| R5 | 视觉回归基线脚本 | ⬜ | 21 页截图基线（Playwright），Phase 1 风格改动前必须就绪（方案 A.8） |
+| R3 | 基线门禁全绿记录 | ✅ | 后端：ruff✅/format✅/alembic✅（修复后）/pytest 4120 passed✅（5m08s）；前端：check:type✅/vitest 455 passed + **1 既有失败**（tuning-workbench.test.ts"风险统计显示为未知而不是伪 0"，已记入 backlog）。**基线修复**：dev DB 无 alembic_version（bootstrap 重建丢失）→ `alembic stamp head` + 补缺失索引 `idx_action_tracker_tuning_record` 后 check 退出码 0；bootstrap 缺该索引已记 backlog 待用户决策 |
+| R4 | E2E 既有失败甄别 | 🔨 | 首跑 72 passed/12 failed/6 未运行——因与 pytest 并发致环境抖动，结果不可信；已在安静环境重跑（含 B1 新断言），完成后记录最终基线 |
+| R5 | 视觉回归基线脚本 | 🔨 | 脚本 `e2e/scripts/capture-visual-baseline.mjs` 已建（21 页 + 登录页，loopId 动态解析，--out 支持对比采集）；基线采集中（:5667 含品牌改动的实例） |
 | R6 | 开发环境确认 | ✅ | 2026-08-07 实测：前端 :5666 / 后端 :7101 / docker infra 均可用，admin/sponsor/ic_engineer 三账号可登录 |
 
 ## 0.1 决策签认结果（2026-08-08 用户签认 ✅）
@@ -38,13 +38,13 @@
 
 | # | 任务 | 关键文件 | 验收标准 | 状态 |
 |---|---|---|---|---|
-| P0-1 | 首个 commit：本清单 + 审查报告 + 整改方案入库 | docs/ | 文档在分支可追踪 | ⬜ |
-| P0-2 | B1 死导航：修/下线"历史"按钮 + route-compat 路由可达断言 | loop/workbench.vue:471；e2e/route-compat.spec.ts | 点击不 404，E2E 绿 | ⬜ |
-| P0-3 | B2 风险确认绕过（按 D1 结论实施） | loop/workbench.vue:272/314 | 快操作有确认（或有契约豁免条款） | ⬜ |
-| P0-4 | B3 波形轴：OP 移副轴 0-100%，PV/SP 主轴按量程自适应 | components/loop/waveform-chart.vue:530-552 | 4h 趋势 PV 波动可辨；截图复核 monitor/diagnosis 两处 | ⬜ |
-| P0-5 | B4 品牌：VITE_APP_TITLE + 登录页/壳层去 vben + 产品全称统一 | .env.*、index.html、preferences.ts | 全站无 "Vben Admin"/幽灵占位符 | ⬜ |
-| P0-6 | B5 数据映射：audit.vue camelCase + users 状态 + system 模块列表排查 + E2E 数据断言 | system/audit.vue、users.vue、e2e/system.spec.ts | 显示与 API 一致；断言进 E2E | ⬜ |
-| P0-7 | Phase 0 出口：全量门禁 + E2E + 三角色冒烟截图复核 | — | 全绿；输出 Phase 0 验收记录到本文档进度日志 | ⬜ |
+| P0-1 | 首个 commit：本清单 + 审查报告 + 整改方案入库 | docs/ | 文档在分支可追踪 | ✅ `3edfacb` |
+| P0-2 | B1 死导航：修/下线"历史"按钮 + route-compat 路由可达断言 | loop/workbench.vue:471；e2e/route-compat.spec.ts | 点击不 404，E2E 绿 | 👀 `6fb0ab8`（vitest/check:type ✅；E2E 断言随重跑确认） |
+| P0-3 | B2 风险确认绕过（按 D1 结论实施） | loop/workbench.vue:272/314 | 快操作有确认（或有契约豁免条款） | ✅ `c9c97c6`（门禁绿；确认窗交互实弹验证留 P0-7 后补，需有辨识记录的回路） |
+| P0-4 | B3 波形轴：OP 移副轴 0-100%，PV/SP 主轴按量程自适应 | components/loop/waveform-chart.vue:530-552 | 4h 趋势 PV 波动可辨；截图复核 monitor/diagnosis 两处 | ✅ `c1eae6e`（截图验证通过，顺带修复"undefineds"提示） |
+| P0-5 | B4 品牌：VITE_APP_TITLE + 登录页/壳层去 vben + 产品全称统一 | .env.*、index.html、preferences.ts | 全站无 "Vben Admin"/幽灵占位符 | ✅ `d89b85b`（截图验证通过） |
+| P0-6 | B5 数据映射：audit.vue camelCase + users 状态 + system 模块列表排查 + E2E 数据断言 | system/audit.vue、users.vue、e2e/system.spec.ts | 显示与 API 一致；断言进 E2E | ✅ `5a42379`（E2E-SYS-DATA-001/002 通过 + 截图验证） |
+| P0-7 | Phase 0 出口：全量门禁 + E2E + 三角色冒烟截图复核 | — | 全绿；输出 Phase 0 验收记录到本文档进度日志 | 🔨 E2E 全量重跑中；三角色冒烟截图已完成 |
 
 ## 2. Phase 1 立风格（第 2-4 周）
 
@@ -122,7 +122,13 @@
 
 ## 5. 进度日志
 
-| 日期 | 事项 | commit | 备注 |
-|---|---|---|---|
-| 2026-08-08 | 工作清单建立，等待开工指令 | — | R1 残留处置 + D1-D4 签认待定 |
 | 2026-08-08 | R1 阻塞项提交 main（构建兼容性 + 外键初始化修复）；D1-D4 全部签认 | `4cc15f5`、`1bba4ba` | 仅提交未推送；schema 中 action_tracker CHECK 已含 VERIFYING 状态（利好 C1-3）；**待用户正式开工指令** |
+| 2026-08-08 | 正式开工：拉分支 feat/uiux-rectification-2026；P0-1 四文档入库 | `3edfacb` | 目标模式激活，预算 30 轮 |
+| 2026-08-08 | R3 基线：后端 ruff/format/alembic/pytest 全绿（4120 passed），前端 check:type/vitest（455+1 既有失败）；基线修复 dev DB alembic 版本跟踪 + 补索引 | — | vitest 既有失败 tuning-workbench"伪 0"用例记 backlog；bootstrap 缺索引记 backlog |
+| 2026-08-08 | B4 品牌统一完成（截图验证：登录页/工作台品牌区/浏览器标题） | `d89b85b` | 用户 :5666 实例需重启才能看到品牌改动（.env 变更）；我验证用 :5667 临时实例 |
+| 2026-08-08 | B1 死导航修复：历史按钮深链 /metric/loop-performance?loopId= + E2E 断言 | `6fb0ab8` | E2E 首跑受并发污染（72/12/6），安静环境重跑中 |
+| 2026-08-08 | R5 视觉基线 21/21 采集入库（e2e/visual-baseline/baseline + 采集脚本） | `c1a3bef` | 采集自含品牌改动的 :5667 实例 |
+| 2026-08-08 | B3 波形轴分离（OP 副轴 0-100%/PV-SP 自适应/MODE offset），PV 波动可辨 | `c1eae6e` | 顺带修复"undefineds"采样提示；monitor/诊断详情双场景截图验证 |
+| 2026-08-08 | B2 确认窗：参数整定/模拟仿真接入 WARNING 级 ClpmDangerConfirmModal | `c9c97c6` | E2E-ROUTE-WB 选择器修正（antd 双汉字按钮空格）后 2/2 通过 |
+| 2026-08-08 | B5 数据映射：users/audit camelCase 对齐 + system.ts 类型修正 + E2E 数据断言 | `5a42379` | 用户页全员"启用"+真实姓名+最后登录；审计页全列真实数据；新增断言 2/2 通过 |
+| 2026-08-08 | P0-7 出口：三角色冒烟截图完成（admin/sponsor/ic_engineer）；E2E 全量重跑中 | — | B2 确认窗实弹验证待补（需先跑一次回路辨识） |
