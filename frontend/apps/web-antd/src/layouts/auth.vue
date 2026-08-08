@@ -4,6 +4,8 @@ import { computed } from 'vue';
 import { AuthPageLayout } from '@vben/layouts';
 import { preferences } from '@vben/preferences';
 
+import industrialSlogan from '#/assets/industrial-slogan.svg';
+
 const appName = computed(() => preferences.app.name);
 const logo = computed(() => preferences.logo.source);
 const logoDark = computed(() => preferences.logo.sourceDark);
@@ -16,6 +18,7 @@ const logoDark = computed(() => preferences.logo.sourceDark);
     :logo-dark="logoDark"
     page-description="控制回路性能评估与优化平台"
     page-title="CLPM"
+    :slogan-image="industrialSlogan"
   >
     <!-- 自定义工具栏 -->
     <!-- <template #toolbar></template> -->

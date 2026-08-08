@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" fill="none">
+  <!-- CLPM 工业品牌视觉：装置线稿 + 控制回路 + 趋势卡（整改 A-11 登录页） -->
+  <!-- 背景点阵 -->
+  <g fill="#CBD5E1" opacity="0.5">
+    <circle cx="40" cy="40" r="1.5"/><circle cx="120" cy="30" r="1.5"/><circle cx="200" cy="40" r="1.5"/><circle cx="280" cy="30" r="1.5"/><circle cx="360" cy="40" r="1.5"/>
+    <circle cx="40" cy="120" r="1.5"/><circle cx="360" cy="120" r="1.5"/>
+    <circle cx="40" cy="200" r="1.5"/><circle cx="360" cy="200" r="1.5"/>
+    <circle cx="40" cy="270" r="1.5"/><circle cx="120" cy="280" r="1.5"/><circle cx="200" cy="270" r="1.5"/><circle cx="280" cy="280" r="1.5"/><circle cx="360" cy="270" r="1.5"/>
+  </g>
+
+  <!-- 立式容器（塔器） -->
+  <g stroke="#64748B" stroke-width="2.5" stroke-linecap="round">
+    <path d="M80 70 v140 a20 16 0 0 0 40 0 V70" />
+    <ellipse cx="100" cy="70" rx="20" ry="8"/>
+    <!-- 内件横线 -->
+    <line x1="82" y1="110" x2="118" y2="110" stroke-width="1.5" opacity="0.6"/>
+    <line x1="82" y1="140" x2="118" y2="140" stroke-width="1.5" opacity="0.6"/>
+    <line x1="82" y1="170" x2="118" y2="170" stroke-width="1.5" opacity="0.6"/>
+    <!-- 液位 -->
+    <line x1="82" y1="190" x2="118" y2="190" stroke="#0D6EFD" stroke-width="2"/>
+  </g>
+
+  <!-- 顶部气相管线 -->
+  <path d="M100 62 V40 H200" stroke="#64748B" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <!-- 底部液相管线 -->
+  <path d="M100 226 V250 H240" stroke="#64748B" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+
+  <!-- 控制阀（蝶形符号） -->
+  <g stroke="#334155" stroke-width="2.5" fill="#F8FAFC" stroke-linejoin="round">
+    <path d="M170 240 L190 250 L170 260 Z"/>
+    <path d="M190 250 L210 240 V260 Z" transform="translate(-20 0)"/>
+  </g>
+  <line x1="180" y1="250" x2="180" y2="228" stroke="#334155" stroke-width="2.5"/>
+  <line x1="172" y1="228" x2="188" y2="228" stroke="#334155" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- 液位变送器圆 LT -->
+  <circle cx="150" cy="150" r="16" fill="#FFFFFF" stroke="#334155" stroke-width="2.5"/>
+  <text x="150" y="155" font-family="monospace" font-size="12" fill="#334155" text-anchor="middle">LT</text>
+  <line x1="134" y1="150" x2="120" y2="150" stroke="#334155" stroke-width="2" stroke-dasharray="3 3"/>
+
+  <!-- 趋势卡 -->
+  <g>
+    <rect x="225" y="60" width="140" height="110" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <text x="237" y="82" font-family="monospace" font-size="11" fill="#64748B">PV / SP</text>
+    <!-- 网格线 -->
+    <line x1="237" y1="100" x2="353" y2="100" stroke="#E2E8F0" stroke-width="1"/>
+    <line x1="237" y1="120" x2="353" y2="120" stroke="#E2E8F0" stroke-width="1"/>
+    <line x1="237" y1="140" x2="353" y2="140" stroke="#E2E8F0" stroke-width="1"/>
+    <!-- SP 虚线 -->
+    <line x1="237" y1="112" x2="353" y2="112" stroke="#64748B" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <!-- PV 趋势（工业蓝） -->
+    <polyline points="237,128 252,124 267,127 282,118 297,121 312,113 327,116 342,112 353,113"
+      fill="none" stroke="#0D6EFD" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- 状态点：正常绿 / 预警琥珀 -->
+  <circle cx="345" cy="76" r="4" fill="#198754"/>
+  <circle cx="180" cy="218" r="4" fill="#B45309"/>
+
+  <!-- 底部基线 -->
+  <line x1="60" y1="250" x2="60" y2="250" stroke="#64748B" stroke-width="2"/>
+  <path d="M56 250 H150" stroke="#64748B" stroke-width="2.5" stroke-linecap="round"/>
+</svg>
