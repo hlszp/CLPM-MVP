@@ -42,6 +42,7 @@ import {
 } from '#/api/tuning';
 import {
   ClpmAiDrawer,
+  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
@@ -249,8 +250,31 @@ const simulateModalOpen = ref(false);
 const simulateResult = ref<null | TuningApi.SimulationResult>(null);
 
 // ===== 参数整定（同步 tunePidApi） =====
+// 整改 B2（D1 签认）：不再以 riskConfirmed:true 静默跳过风险确认——
+// 先经 ClpmDangerConfirmModal（WARNING 简化级）用户确认后再调 API。
 const tuneLoading = ref(false);
-async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
+const riskConfirmOpen = ref(false);
+const riskConfirmKind = ref<'simulate' | 'tune'>('tune');
+const pendingTunePayload = ref<{ algorithm: TuningApi.Algorithm } | null>(
+  null,
+);
+
+const riskConfirmContent = computed(() =>
+  riskConfirmKind.value === 'tune'
+    ? {
+        impactScope:
+          '将基于最新辨识模型计算推荐 PID 并反写至整定区。仅输出建议，不会修改 DCS 参数。',
+        title: '参数整定计算确认',
+      }
+    : {
+        impactScope:
+          '将基于推荐 PID 与当前 PID 做闭环响应对比仿真。仅输出对比结果，不会修改 DCS 参数。',
+        title: '闭环仿真计算确认',
+      },
+);
+
+/** 参数整定入口（TuneParamModal @tune）：前置检查 → 打开确认窗 */
+function requestTune(payload: { algorithm: TuningApi.Algorithm }) {
   if (!selectedLoopId.value || !tuningLatest.value) {
     message.warning('请先进行回路辨识生成过程模型');
     return;
@@ -260,6 +284,26 @@ async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
     message.warning('当前无可用过程模型');
     return;
   }
+  pendingTunePayload.value = payload;
+  riskConfirmKind.value = 'tune';
+  riskConfirmOpen.value = true;
+}
+
+/** 确认窗确认后执行 */
+async function handleRiskConfirm() {
+  riskConfirmOpen.value = false;
+  if (riskConfirmKind.value === 'tune' && pendingTunePayload.value) {
+    await handleTune(pendingTunePayload.value);
+  } else if (riskConfirmKind.value === 'simulate') {
+    await handleSimulate();
+  }
+}
+
+async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
+  if (!selectedLoopId.value || !tuningLatest.value) return;
+  const latest = tuningLatest.value;
+  // 前置检查已在 requestTune 完成，此处仅作类型收窄兜底
+  if (!latest.modelType || !latest.modelParams) return;
   tuneLoading.value = true;
   try {
     const result = await tunePidApi({
@@ -284,7 +328,9 @@ async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
 
 // ===== 模拟仿真（同步 simulateTuningApi） =====
 const simulateLoading = ref(false);
-async function handleSimulate() {
+
+/** 模拟仿真入口：前置检查 → 打开确认窗 */
+function requestSimulate() {
   if (!selectedLoopId.value || !tuningLatest.value) {
     message.warning('请先进行回路辨识生成过程模型');
     return;
@@ -302,6 +348,20 @@ async function handleSimulate() {
     message.warning('未获取到当前 PID 参数');
     return;
   }
+  riskConfirmKind.value = 'simulate';
+  riskConfirmOpen.value = true;
+}
+
+async function handleSimulate() {
+  if (!selectedLoopId.value || !tuningLatest.value) return;
+  const latest = tuningLatest.value;
+  if (
+    !latest.modelType ||
+    !latest.modelParams ||
+    !latest.recommendedPid ||
+    !currentPid.value
+  )
+    return;
   simulateLoading.value = true;
   try {
     const result = await simulateTuningApi({
@@ -911,7 +971,7 @@ watch(
                 size="small"
                 :loading="simulateLoading"
                 :disabled="simulateLoading || !tuningLatest"
-                @click="handleSimulate"
+                @click="requestSimulate"
               >
                 模拟仿真
               </Button>
@@ -960,7 +1020,22 @@ watch(
       :model-type="tuningLatest?.modelType ?? null"
       :model-params="tuningLatest?.modelParams ?? null"
       :current-pid="currentPid"
-      @tune="handleTune"
+      @tune="requestTune"
+    />
+
+    <!-- ===== 整定/仿真风险确认窗（整改 B2，WARNING 简化级） ===== -->
+    <ClpmDangerConfirmModal
+      v-model:open="riskConfirmOpen"
+      :title="riskConfirmContent.title"
+      action="计算"
+      :impact-scope="riskConfirmContent.impactScope"
+      rollback-tip="安全边界：只读建议 · 人工实施 · 需留痕；本平台不直接修改 DCS 的 P/I/D 参数。"
+      :require-confirm-code="false"
+      :require-reason="false"
+      :show-audit-note="false"
+      confirm-text="确认计算"
+      :loading="tuneLoading || simulateLoading"
+      @confirm="handleRiskConfirm"
     />
 
     <!-- ===== 模拟仿真结果弹窗 ===== -->

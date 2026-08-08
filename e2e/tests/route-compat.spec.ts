@@ -172,7 +172,8 @@ test.describe('工作台快捷导航可达性（整改 B1）', () => {
 
   test('E2E-ROUTE-WB: "历史"按钮跳转回路性能页且不 404', async ({ page }) => {
     await page.goto('/loop/workbench', { waitUntil: 'domcontentloaded' });
-    const historyBtn = page.getByRole('button', { exact: true, name: '历史' });
+    // antd 对两个汉字的按钮自动插入空格，可访问名为"历 史"，用正则兼容
+    const historyBtn = page.getByRole('button', { name: /历\s*史/ });
     // 左侧回路列表加载并自动选中首个回路后按钮可用
     await expect(historyBtn).toBeVisible({ timeout: 15_000 });
     await historyBtn.click();
@@ -186,7 +187,7 @@ test.describe('工作台快捷导航可达性（整改 B1）', () => {
 
   test('E2E-ROUTE-WB: "趋势"按钮跳转回路监控页且不 404', async ({ page }) => {
     await page.goto('/loop/workbench', { waitUntil: 'domcontentloaded' });
-    const trendBtn = page.getByRole('button', { exact: true, name: '趋势' });
+    const trendBtn = page.getByRole('button', { name: /趋\s*势/ });
     await expect(trendBtn).toBeVisible({ timeout: 15_000 });
     await trendBtn.click();
     await expect(page).toHaveURL(/\/loop\/monitor\?loopId=/, {
