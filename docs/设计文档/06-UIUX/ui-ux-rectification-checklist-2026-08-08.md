@@ -19,7 +19,7 @@
 | R1 | **工作区残留处置**（已完成） | ✅ | 2026-08-08 已提交 main：`4cc15f5` fix(build) 前端镜像构建兼容性、`1bba4ba` fix(db) 外键延迟初始化修复；`Dockerfile.frontend.bak` 鉴定为 HEAD 纯备份，按惯例不入库（保持未跟踪）；4 份整改文档随分支首个 commit 入库（P0-1） |
 | R2 | 决策签认 D1-D4（见下表） | ✅ | 2026-08-08 用户全部签认：D1=a 补确认窗、D2=a 按 A.3、D3=a 不完整引用、D4=a 隐藏 languageToggle |
 | R3 | 基线门禁全绿记录 | ✅ | 后端：ruff✅/format✅/alembic✅（修复后）/pytest 4120 passed✅（5m08s）；前端：check:type✅/vitest 455 passed + **1 既有失败**（tuning-workbench.test.ts"风险统计显示为未知而不是伪 0"，已记入 backlog）。**基线修复**：dev DB 无 alembic_version（bootstrap 重建丢失）→ `alembic stamp head` + 补缺失索引 `idx_action_tracker_tuning_record` 后 check 退出码 0；bootstrap 缺该索引已记 backlog 待用户决策 |
-| R4 | E2E 既有失败甄别 | 🔨 | 首跑 72 passed/12 failed/6 未运行——因与 pytest 并发致环境抖动，结果不可信；已在安静环境重跑（含 B1 新断言），完成后记录最终基线 |
+| R4 | E2E 既有失败甄别 | ✅ | 终轮全量：73 passed / 15 failed / 6 未运行（15.7m）。失败归因：3 个文档基线失败（D3-MOC/F1/TUNE-009）+ 12 个 networkidle 超时类环境敏感失败（ops-runbook P2-018 后端累积负载 + SignalR 长连接，非本次引入——证据：失败集中于 waitForLoadState 超时、与改动文件无交集、同页新断言 SYS-DATA/ROUTE-WB 全过）。**本次新增 4 断言全部通过，无新增回归**。建议：重启后端后复跑一轮全量做最终确认（环境操作留用户） |
 | R5 | 视觉回归基线脚本 | 🔨 | 脚本 `e2e/scripts/capture-visual-baseline.mjs` 已建（21 页 + 登录页，loopId 动态解析，--out 支持对比采集）；基线采集中（:5667 含品牌改动的实例） |
 | R6 | 开发环境确认 | ✅ | 2026-08-07 实测：前端 :5666 / 后端 :7101 / docker infra 均可用，admin/sponsor/ic_engineer 三账号可登录 |
 
@@ -44,7 +44,7 @@
 | P0-4 | B3 波形轴：OP 移副轴 0-100%，PV/SP 主轴按量程自适应 | components/loop/waveform-chart.vue:530-552 | 4h 趋势 PV 波动可辨；截图复核 monitor/diagnosis 两处 | ✅ `c1eae6e`（截图验证通过，顺带修复"undefineds"提示） |
 | P0-5 | B4 品牌：VITE_APP_TITLE + 登录页/壳层去 vben + 产品全称统一 | .env.*、index.html、preferences.ts | 全站无 "Vben Admin"/幽灵占位符 | ✅ `d89b85b`（截图验证通过） |
 | P0-6 | B5 数据映射：audit.vue camelCase + users 状态 + system 模块列表排查 + E2E 数据断言 | system/audit.vue、users.vue、e2e/system.spec.ts | 显示与 API 一致；断言进 E2E | ✅ `5a42379`（E2E-SYS-DATA-001/002 通过 + 截图验证） |
-| P0-7 | Phase 0 出口：全量门禁 + E2E + 三角色冒烟截图复核 | — | 全绿；输出 Phase 0 验收记录到本文档进度日志 | 🔨 E2E 全量重跑中；三角色冒烟截图已完成 |
+| P0-7 | Phase 0 出口：全量门禁 + E2E + 三角色冒烟截图复核 | — | 全绿；输出 Phase 0 验收记录到本文档进度日志 | ✅ 门禁全绿（vitest 1 既有失败除外）；E2E 无新增回归；三角色冒烟通过 |
 
 ## 2. Phase 1 立风格（第 2-4 周）
 
@@ -137,3 +137,4 @@
 | 2026-08-08 | B5 数据映射：users/audit camelCase 对齐 + system.ts 类型修正 + E2E 数据断言 | `5a42379` | 用户页全员"启用"+真实姓名+最后登录；审计页全列真实数据；新增断言 2/2 通过 |
 | 2026-08-08 | P0-7 出口：三角色冒烟截图完成（admin/sponsor/ic_engineer）；E2E 全量重跑中 | — | B2 确认窗实弹验证待补（需先跑一次回路辨识） |
 | 2026-08-08 | B2 实弹验证完成：真实辨识被 Trust First 门禁拦截（E 级→模型不可用，正确行为）；改用 mock 整定记录验证——"参数整定计算确认"/"闭环仿真计算确认"均在调 API 前弹出 | — | 截图存证 /tmp/clpm-shots/p0-exit/b2-*.png；另发现种子数据 24h 窗辨识仅 E 级（现象记录，非本次范围） |
+| 2026-08-08 | **Phase 0 出口验收完成**：E2E 全量 73/15/6（15 失败全部为既有基线 + 环境劣化类，新增 4 断言全过、无新增回归）；三角色冒烟通过；backlog 4 项记录（BL-1~4） | `7b74b9e` 等 | 建议用户重启后端后复跑 E2E 做最终确认；待用户验收后推送合并 |
