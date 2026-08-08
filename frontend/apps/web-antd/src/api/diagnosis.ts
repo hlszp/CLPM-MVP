@@ -117,6 +117,8 @@ export namespace DiagnosisApi {
     labelCounts: Record<string, number>;
     /** 近 7 天归档数（仅 records 接口返回） */
     recent7Days?: number;
+    /** C1-3：VERIFYING 超 24h 未闭环的超期条目数（验证闭环提醒） */
+    verifyOverdueCount?: number;
   }
 
   /** 诊断列表响应（含聚合统计） */

@@ -60,6 +60,8 @@ const lastRefresh = ref('');
 const failedCount = ref(0);
 const diagnosisPending = ref(0);
 const trackerActive = ref(0);
+/** C1-3：验证中超期条目数（VERIFYING > 24h 未闭环） */
+const verifyOverdue = ref(0);
 const metricPending = ref(0);
 const tuningTotal = ref(0);
 
@@ -84,6 +86,14 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       value: trackerActive.value,
       unit: '条',
       status: trackerActive.value > 0 ? 'danger' : 'neutral',
+      clickable: true,
+    },
+    {
+      key: 'verifyOverdue',
+      label: '验证超期',
+      value: verifyOverdue.value,
+      unit: '条',
+      status: verifyOverdue.value > 0 ? 'danger' : 'neutral',
       clickable: true,
     },
     {
@@ -115,6 +125,8 @@ function handleTodoClick(item: KpiStripItem) {
     metric: '/metric/tasks',
     tracker: '/diagnosis/tracker',
     tuning: '/tuning/workbench',
+    // C1-3：验证超期直达 tracker 验证中筛选
+    verifyOverdue: '/diagnosis/tracker?status=VERIFYING',
   };
   const path = map[item.key];
   if (path) router.push(path);
@@ -141,6 +153,8 @@ async function loadCounts() {
         });
         const sc = r.aggregates?.statusCounts ?? {};
         trackerActive.value = (sc.PENDING ?? 0) + (sc.IN_PROGRESS ?? 0);
+        // C1-3：验证中超期（VERIFYING > 24h 未闭环）进待办
+        verifyOverdue.value = r.aggregates?.verifyOverdueCount ?? 0;
       })(),
       (async () => {
         const r = await getTaskListApi({

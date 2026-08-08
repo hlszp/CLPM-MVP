@@ -178,10 +178,13 @@ const severityOptions: {
   { label: SEVERITY_LABEL.INFO, value: 'INFO' },
 ];
 
-/** 处理状态选项 */
+/** 处理状态选项（C1-3：补齐 P1a 闭环状态机全态） */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
+  { label: '验证中', value: 'VERIFYING' },
+  { label: '已闭环', value: 'CLOSED' },
+  { label: '重开', value: 'REOPENED' },
   { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
@@ -333,7 +336,8 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
   const counts = aggregates.value?.statusCounts ?? {};
   const pending = counts.PENDING ?? 0;
   const inProgress = counts.IN_PROGRESS ?? 0;
-  const implemented = counts.IMPLEMENTED ?? 0;
+  // C1-3：验证中卡 = VERIFYING + 存量 IMPLEMENTED（后端兼容映射口径）
+  const verifying = (counts.VERIFYING ?? 0) + (counts.IMPLEMENTED ?? 0);
   return [
     {
       key: 'pending',
@@ -350,11 +354,11 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
       status: inProgress > 0 ? 'primary' : 'neutral',
     },
     {
-      key: 'implemented',
-      label: '已实施',
-      value: implemented,
+      key: 'verifying',
+      label: '验证中',
+      value: verifying,
       unit: '条',
-      status: implemented > 0 ? 'success' : 'neutral',
+      status: verifying > 0 ? 'primary' : 'neutral',
     },
     {
       key: 'ignored',
@@ -675,6 +679,11 @@ onMounted(() => {
   // F13：独立页模式下从路由 query 读取 loopId 预选回路
   if (!props.drawerMode && route.query.loopId) {
     query.loopId = String(route.query.loopId);
+  }
+  // C1-3：从路由 query 读取 status 预选状态（工作台"验证超期"卡 ?status=VERIFYING 直达）
+  if (!props.drawerMode && route.query.status) {
+    const s = String(route.query.status) as DiagnosisApi.ActionStatus;
+    if (statusOptions.some((o) => o.value === s)) query.actionStatus = s;
   }
   loadList();
 });
