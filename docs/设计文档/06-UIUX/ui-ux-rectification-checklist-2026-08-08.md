@@ -39,7 +39,7 @@
 | # | 任务 | 关键文件 | 验收标准 | 状态 |
 |---|---|---|---|---|
 | P0-1 | 首个 commit：本清单 + 审查报告 + 整改方案入库 | docs/ | 文档在分支可追踪 | ✅ `3edfacb` |
-| P0-2 | B1 死导航：修/下线"历史"按钮 + route-compat 路由可达断言 | loop/workbench.vue:471；e2e/route-compat.spec.ts | 点击不 404，E2E 绿 | 👀 `6fb0ab8`（vitest/check:type ✅；E2E 断言随重跑确认） |
+| P0-2 | B1 死导航：~~修/下线"历史"按钮~~ → **用户决策调整（08-08）：历史按钮下线，趋势改页内弹窗（LoopTrendModal 共享组件）** + route-compat 断言 | loop/workbench.vue；components/loop/loop-trend-modal.vue；e2e/route-compat.spec.ts | 无 404；趋势页内弹窗不跳路由 | ✅ `6fb0ab8`（深链版）→ `589fe2e`（用户决策版，E2E 2/2 ✅ + 截图验证）。loop-performance 的 ?loopId= 深链能力保留为通用基建 |
 | P0-3 | B2 风险确认绕过（按 D1 结论实施） | loop/workbench.vue:272/314 | 快操作有确认（或有契约豁免条款） | ✅ `c9c97c6`（门禁绿 + mock 实弹验证：整定/仿真确认窗均在调 API 前弹出） |
 | P0-4 | B3 波形轴：OP 移副轴 0-100%，PV/SP 主轴按量程自适应 | components/loop/waveform-chart.vue:530-552 | 4h 趋势 PV 波动可辨；截图复核 monitor/diagnosis 两处 | ✅ `c1eae6e`（截图验证通过，顺带修复"undefineds"提示） |
 | P0-5 | B4 品牌：VITE_APP_TITLE + 登录页/壳层去 vben + 产品全称统一 | .env.*、index.html、preferences.ts | 全站无 "Vben Admin"/幽灵占位符 | ✅ `d89b85b`（截图验证通过） |
@@ -138,3 +138,4 @@
 | 2026-08-08 | P0-7 出口：三角色冒烟截图完成（admin/sponsor/ic_engineer）；E2E 全量重跑中 | — | B2 确认窗实弹验证待补（需先跑一次回路辨识） |
 | 2026-08-08 | B2 实弹验证完成：真实辨识被 Trust First 门禁拦截（E 级→模型不可用，正确行为）；改用 mock 整定记录验证——"参数整定计算确认"/"闭环仿真计算确认"均在调 API 前弹出 | — | 截图存证 /tmp/clpm-shots/p0-exit/b2-*.png；另发现种子数据 24h 窗辨识仅 E 级（现象记录，非本次范围） |
 | 2026-08-08 | **Phase 0 出口验收完成**：E2E 全量 73/15/6（15 失败全部为既有基线 + 环境劣化类，新增 4 断言全过、无新增回归）；三角色冒烟通过；backlog 4 项记录（BL-1~4） | `7b74b9e` 等 | 建议用户重启后端后复跑 E2E 做最终确认；待用户验收后推送合并 |
+| 2026-08-08 | B1 用户决策调整：历史按钮下线、趋势改页内弹窗；新共享组件 LoopTrendModal（自 monitor 趋势弹窗提炼） | `589fe2e` | E2E 断言改写 2/2 ✅；弹窗截图验证（PV/SP 主轴 + OP 副轴正常）；深链能力保留 |
