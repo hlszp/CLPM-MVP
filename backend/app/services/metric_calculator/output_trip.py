@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,14 @@ class OutputTripIndexCalculator(MetricCalculatorBase):
             total_trip += abs(_to_float(masked_op[i]) - _to_float(masked_op[i - 1]))
 
         trip_index = total_trip / (total_duration * op_range)
-        trip_level = _determine_level(trip_index)
+        # 整改 F2：行程分级阈值从配置链读取
+        params = get_algorithm_params("output_trip_index", bundle.data_block.control_type)
+        trip_level = _determine_level(
+            trip_index,
+            float(params.get("trip_inactive", TRIP_INACTIVE)),
+            float(params.get("trip_normal", TRIP_NORMAL)),
+            float(params.get("trip_frequent", TRIP_FREQUENT)),
+        )
 
         logger.debug(
             "[输出行程] total_trip=%.4f, duration=%.1f, op_range=%.1f, trip=%.6f, level=%s",
@@ -118,13 +126,18 @@ class OutputTripIndexCalculator(MetricCalculatorBase):
         return DEFAULT_OP_RANGE
 
 
-def _determine_level(trip: float) -> str:
+def _determine_level(
+    trip: float,
+    inactive: float = TRIP_INACTIVE,
+    normal: float = TRIP_NORMAL,
+    frequent: float = TRIP_FREQUENT,
+) -> str:
     """判定行程等级 INACTIVE/NORMAL/FREQUENT/EXCESSIVE."""
-    if trip < TRIP_INACTIVE:
+    if trip < inactive:
         return "INACTIVE"
-    if trip < TRIP_NORMAL:
+    if trip < normal:
         return "NORMAL"
-    if trip < TRIP_FREQUENT:
+    if trip < frequent:
         return "FREQUENT"
     return "EXCESSIVE"
 

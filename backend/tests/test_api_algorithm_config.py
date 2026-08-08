@@ -98,7 +98,7 @@ def _make_first_result(row=None) -> MagicMock:
 class TestGetAllAlgorithmParams:
     """GET /api/v1/configs/algorithm-params tests."""
 
-    def test_success_returns_3_metrics_4_control_types(
+    def test_success_returns_6_metrics_4_control_types(
         self, client, mock_db, fake_redis, reset_cache
     ) -> None:
         """返回 3 指标 × 4 控制类型，未覆盖时 overridden=False。"""
@@ -113,10 +113,17 @@ class TestGetAllAlgorithmParams:
         body = resp.json()
         assert body["code"] == "0"
         metrics = body["data"]["metrics"]
-        # 3 指标
-        assert len(metrics) == 3
+        # 6 指标（F2 新增 settling_time/effective_auto_rate/output_trip_index）
+        assert len(metrics) == 6
         codes = {m["metricCode"] for m in metrics}
-        assert codes == {"oscillation_rate", "fast_rate", "accuracy_rate"}
+        assert codes == {
+            "oscillation_rate",
+            "fast_rate",
+            "accuracy_rate",
+            "settling_time",
+            "effective_auto_rate",
+            "output_trip_index",
+        }
         # 每个指标 4 控制类型，未覆盖
         for m in metrics:
             assert len(m["items"]) == 4

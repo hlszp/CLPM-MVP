@@ -173,6 +173,15 @@ async def save_metric_algorithm_params(
         if not params:
             continue
 
+        # 整改 F1：服务端键白名单 + 值域校验（防越界值写入 JSONB 直供计算管线）
+        errors = algo_config_service.validate_metric_params(metric_code, params)
+        if errors:
+            raise BizError(
+                code="ERR_PARAM_INVALID",
+                message="；".join(errors),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         # 查询现有记录
         existing_result = await db.execute(
             select(AlgorithmParameter).where(

@@ -81,14 +81,16 @@ class OscillationRateCalculator(MetricCalculatorBase):
         similarity_threshold = float(params.get("similarity_threshold", SIMILARITY_THRESHOLD))
         min_ratio = float(params.get("min_ratio", _DEFAULT_MIN_RATIO))
         max_ratio = float(params.get("max_ratio", _DEFAULT_MAX_RATIO))
+        # 整改 F2：零交叉下限纳入配置链
+        min_zero_crossings = int(params.get("min_zero_crossings", MIN_ZERO_CROSSINGS))
 
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
 
         # 步骤 2：识别零交叉点
         zero_crossings = self._find_zero_crossings(errors)
-        if len(zero_crossings) < MIN_ZERO_CROSSINGS:
+        if len(zero_crossings) < min_zero_crossings:
             logger.debug(
-                "[振荡率] 零交叉点 %d < %d，返回 0", len(zero_crossings), MIN_ZERO_CROSSINGS
+                "[振荡率] 零交叉点 %d < %d，返回 0", len(zero_crossings), min_zero_crossings
             )
             return self._make_result(
                 bundle,

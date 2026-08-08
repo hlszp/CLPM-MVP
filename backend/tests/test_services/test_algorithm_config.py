@@ -70,7 +70,12 @@ def _make_param_row(metric_code: str, control_type: str, params: dict) -> MagicM
 
 def test_get_default_params_returns_known_defaults(reset_cache):
     defaults = ac.get_default_params("oscillation_rate", "STABLE")
-    assert defaults == {"similarity_threshold": 0.4, "min_ratio": 0.05, "max_ratio": 15.0}
+    assert defaults == {
+        "similarity_threshold": 0.4,
+        "min_ratio": 0.05,
+        "max_ratio": 15.0,
+        "min_zero_crossings": 4,
+    }
 
 
 def test_get_default_params_unknown_returns_empty(reset_cache):
@@ -91,7 +96,12 @@ def test_get_algorithm_params_unknown_control_type_falls_back_stable(reset_cache
     unknown_ct = ac.get_algorithm_params("oscillation_rate", "BOGUS")
     assert none_ct == stable
     assert unknown_ct == stable
-    assert stable == {"similarity_threshold": 0.4, "min_ratio": 0.05, "max_ratio": 15.0}
+    assert stable == {
+        "similarity_threshold": 0.4,
+        "min_ratio": 0.05,
+        "max_ratio": 15.0,
+        "min_zero_crossings": 4,
+    }
 
 
 def test_get_algorithm_params_returns_copy_not_reference(reset_cache):
@@ -114,9 +124,10 @@ def test_rebuild_merged_defaults_only(reset_cache):
         "similarity_threshold": 0.4,
         "min_ratio": 0.05,
         "max_ratio": 15.0,
+        "min_zero_crossings": 4,
     }
-    # 3 指标 × 4 控制类型 = 12 组合
-    assert len(merged) == 12
+    # 6 指标 × 4 控制类型 = 24 组合（F2 新增 settling_time/effective_auto_rate/output_trip_index）
+    assert len(merged) == 24
 
 
 def test_rebuild_merged_table_override(reset_cache):
@@ -196,7 +207,14 @@ def test_build_merged_view_marks_overridden(reset_cache):
 def test_build_merged_view_covers_all_metrics(reset_cache):
     ac.apply_runtime({})
     view = ac.build_merged_view()
-    assert set(view.keys()) == {"oscillation_rate", "fast_rate", "accuracy_rate"}
+    assert set(view.keys()) == {
+        "oscillation_rate",
+        "fast_rate",
+        "accuracy_rate",
+        "settling_time",
+        "effective_auto_rate",
+        "output_trip_index",
+    }
     for metric in view.values():
         assert set(metric.keys()) == {"STABLE", "SLOW", "FAST", "LOGIC"}
 
@@ -238,4 +256,5 @@ async def test_preload_algorithm_params_empty_db_uses_defaults(reset_cache):
         "similarity_threshold": 0.4,
         "min_ratio": 0.05,
         "max_ratio": 15.0,
+        "min_zero_crossings": 4,
     }

@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.auto_mode import AUTO_MODES
 from app.services.metric_calculator.base import MetricCalculatorBase
 
@@ -71,7 +72,10 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
             return self._make_inconclusive(bundle, "insufficient_data")
 
         op_low, op_high, epsilon = self._read_bounds(bundle)
-        e_max = self._read_e_max(bundle)
+        # 整改 F2：默认偏差带比例从配置链读取
+        params = get_algorithm_params("effective_auto_rate", bundle.data_block.control_type)
+        default_e_max_ratio = float(params.get("default_e_max_ratio", DEFAULT_E_MAX_RATIO))
+        e_max = self._read_e_max(bundle, default_e_max_ratio)
 
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
         # 循环上界取 mode/时间戳最小长度防 IndexError。注意 op/pv/sp 是可选信号
@@ -153,7 +157,7 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         return op_low, op_high, epsilon
 
     @staticmethod
-    def _read_e_max(bundle: MetricDataBundle) -> float:
+    def _read_e_max(bundle: MetricDataBundle, default_ratio: float) -> float:
         """读取偏差最大允许基准 |E|_max."""
         signals = bundle.data_block.signals
         for key in ("e_max", "accuracy_e_max", "error_max"):
@@ -163,7 +167,7 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
                     return float(val)
                 except (TypeError, ValueError):
                     continue
-        return NORMALIZED_RANGE * DEFAULT_E_MAX_RATIO
+        return NORMALIZED_RANGE * default_ratio
 
 
 def _to_int(val: Any) -> int:
