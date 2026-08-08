@@ -593,7 +593,7 @@ CREATE TABLE IF NOT EXISTS action_tracker (
     -- P3-01 关联整定记录
     tuning_record_id       UUID,
     CONSTRAINT fk_action_tracker_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
-    CONSTRAINT fk_action_tracker_tuning_record_id FOREIGN KEY (tuning_record_id) REFERENCES tuning_record(id) ON DELETE SET NULL,
+    -- fk_action_tracker_tuning_record_id 延迟到 tuning_record 表创建后添加（见下方 DO 块）
     CONSTRAINT ck_action_tracker_status  CHECK (action_status IN ('PENDING', 'IN_PROGRESS', 'IGNORED', 'IMPLEMENTED', 'VERIFYING', 'CLOSED', 'REOPENED')),
     CONSTRAINT ck_action_tracker_trigger_type CHECK (trigger_type IN ('auto', 'manual')),
     CONSTRAINT ck_action_tracker_severity CHECK (
@@ -719,6 +719,21 @@ COMMENT ON COLUMN tuning_record.pid_candidates IS '多组候选 PID 参数（多
 COMMENT ON COLUMN tuning_record.candidate_results IS '各候选 PID 仿真结果（多 PID 对比）';
 COMMENT ON COLUMN tuning_record.task_id IS '关联 Celery 异步任务 ID';
 COMMENT ON COLUMN tuning_record.completed_at IS '任务完成时间';
+
+-- 延迟外键：action_tracker → tuning_record（表定义顺序：action_tracker 在前）
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_action_tracker_tuning_record_id'
+          AND conrelid = 'action_tracker'::regclass
+    ) THEN
+        ALTER TABLE action_tracker
+            ADD CONSTRAINT fk_action_tracker_tuning_record_id
+            FOREIGN KEY (tuning_record_id) REFERENCES tuning_record(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
 
 -- =============================================================================
 -- 12.1 tuning_knowledge_entry (整定知识库条目 — P3-01)
