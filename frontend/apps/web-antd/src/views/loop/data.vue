@@ -28,7 +28,7 @@ import {
   DatePicker,
   Input,
   message,
-  Modal,
+  Popconfirm,
   Progress,
   Radio,
   RadioGroup,
@@ -50,7 +50,7 @@ import {
   triggerBackfillApi,
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import { ClpmDangerConfirmModal, ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { runWithConcurrency } from '#/utils/concurrency';
@@ -394,13 +394,19 @@ const taskColumns: TableColumnsType = [
       return h('div', { class: 'flex gap-1' }, [
         isActive
           ? h(
-              Button,
+              Popconfirm,
               {
-                size: 'small',
-                danger: true,
-                onClick: () => handleCancel(record.taskId),
+                title:
+                  '取消后该导入任务将停止，已拉取的数据可能不完整。确定取消吗？',
+                okText: '取消任务',
+                okType: 'danger',
+                cancelText: '保留',
+                onConfirm: () => handleCancel(record.taskId),
               },
-              () => '取消',
+              {
+                default: () =>
+                  h(Button, { size: 'small', danger: true }, () => '取消'),
+              },
             )
           : h(
               Button,
@@ -534,40 +540,44 @@ async function handleCheckIntegrity() {
   }
 }
 
-/** 基于完整性检查结果一键补齐（强制 skip 策略，AGENTS.md 红线） */
-function handleBackfillFromIntegrity(
+/** 基于完整性检查结果一键补齐（强制 skip 策略，AGENTS.md 红线）
+ * skip 策略仅补缺口、不覆盖已有数据，属可逆轻操作：
+ * 确认动作由 IntegrityReportDrawer 内 Popconfirm 承载，此处直接执行 */
+async function handleBackfillFromIntegrity(
   loopIds: string[],
   tsStart: string,
   tsEnd: string,
 ) {
-  Modal.confirm({
-    title: '确认补齐缺失数据',
-    content: `将对 ${loopIds.length} 个回路从远端导入缺失时段数据，采用 skip 策略（仅补缺口，不覆盖已有数据）。时间范围 ${dayjs(tsStart).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(tsEnd).format('YYYY-MM-DD HH:mm')}`,
-    okText: '开始补齐',
-    cancelText: '取消',
-    onOk: async () => {
-      importing.value = true;
-      try {
-        await startImportApi({
-          loopIds,
-          tsStart,
-          tsEnd,
-          interval: interval.value,
-          conflictStrategy: 'skip',
-          triggerBackfill: triggerBackfill.value,
-        });
-        message.success('补齐任务已启动');
-        integrityDrawerVisible.value = false;
-        await loadTasks();
-        syncTaskPolling();
-      } catch {
-        // 错误已由拦截器透传
-      } finally {
-        importing.value = false;
-      }
-    },
-  });
+  importing.value = true;
+  try {
+    await startImportApi({
+      loopIds,
+      tsStart,
+      tsEnd,
+      interval: interval.value,
+      conflictStrategy: 'skip',
+      triggerBackfill: triggerBackfill.value,
+    });
+    message.success('补齐任务已启动');
+    integrityDrawerVisible.value = false;
+    await loadTasks();
+    syncTaskPolling();
+  } catch {
+    // 错误已由拦截器透传
+  } finally {
+    importing.value = false;
+  }
 }
+
+/** 开始导入按钮的 Popconfirm 文案（导入为可取消的异步任务，属可逆轻操作） */
+const importConfirmTitle = computed(() => {
+  const [rangeStart, rangeEnd] = timeRange.value ?? [];
+  const rangeText =
+    rangeStart && rangeEnd
+      ? `，时间范围 ${dayjs(rangeStart).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(rangeEnd).format('YYYY-MM-DD HH:mm')}`
+      : '';
+  return `将导入 ${selectedLoopIds.value.length} 个回路的历史数据${rangeText}，冲突策略：${conflictStrategy.value === 'overwrite' ? '覆盖（将覆盖本地已有数据，可从远端重新导入）' : '跳过'}。确认导入？`;
+});
 
 async function handleStartImport() {
   if (selectedLoopIds.value.length === 0) {
@@ -584,55 +594,38 @@ async function handleStartImport() {
   const tsStart = rangeStart.toISOString();
   const tsEnd = rangeEnd.toISOString();
 
-  Modal.confirm({
-    title: '确认导入',
-    content: `将导入 ${selectedLoopIds.value.length} 个回路的历史数据，时间范围 ${dayjs(tsStart).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(tsEnd).format('YYYY-MM-DD HH:mm')}，冲突策略：${conflictStrategy.value === 'overwrite' ? '覆盖' : '跳过'}`,
-    okText: '开始导入',
-    cancelText: '取消',
-    onOk: async () => {
-      importing.value = true;
-      try {
-        await startImportApi({
-          loopIds: selectedLoopIds.value,
-          tsStart,
-          tsEnd,
-          interval: interval.value,
-          conflictStrategy: conflictStrategy.value,
-          triggerBackfill: triggerBackfill.value,
-        });
-        message.success('导入任务已启动');
-        await loadTasks();
-        syncTaskPolling();
-      } catch {
-        // Phase 10 UX 包：透传后端错误信息——全局拦截器已显示后端 message，
-        // 这里不再覆盖通用文案，避免双重 toast
-      } finally {
-        importing.value = false;
-      }
-    },
-  });
+  importing.value = true;
+  try {
+    await startImportApi({
+      loopIds: selectedLoopIds.value,
+      tsStart,
+      tsEnd,
+      interval: interval.value,
+      conflictStrategy: conflictStrategy.value,
+      triggerBackfill: triggerBackfill.value,
+    });
+    message.success('导入任务已启动');
+    await loadTasks();
+    syncTaskPolling();
+  } catch {
+    // Phase 10 UX 包：透传后端错误信息——全局拦截器已显示后端 message，
+    // 这里不再覆盖通用文案，避免双重 toast
+  } finally {
+    importing.value = false;
+  }
 }
 
-/** Phase 10 UX 包：取消活跃导入任务加二次确认
+/** Phase 10 UX 包：取消活跃导入任务加二次确认（Popconfirm 内联确认）
  * 取消活跃任务可能导致已拉取部分数据被丢弃，需用户显式确认 */
-function handleCancel(taskId: string) {
-  Modal.confirm({
-    title: '确认取消任务',
-    content: '取消后该导入任务将停止，已拉取的数据可能不完整。确定取消吗？',
-    okText: '取消任务',
-    okType: 'danger',
-    cancelText: '保留',
-    onOk: async () => {
-      try {
-        await cancelImportApi(taskId);
-        message.success('已取消导入任务');
-        await loadTasks();
-        syncTaskPolling();
-      } catch {
-        // 错误已由拦截器透传
-      }
-    },
-  });
+async function handleCancel(taskId: string) {
+  try {
+    await cancelImportApi(taskId);
+    message.success('已取消导入任务');
+    await loadTasks();
+    syncTaskPolling();
+  } catch {
+    // 错误已由拦截器透传
+  }
 }
 
 async function handleBackfill(taskId: string) {
@@ -644,51 +637,62 @@ async function handleBackfill(taskId: string) {
   }
 }
 
+/** 删除导入任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01），删除后不可恢复 */
+const deleteOpen = ref(false);
+const deleteTargetId = ref('');
+const deleteLoading = ref(false);
+
 function handleDelete(taskId: string) {
-  Modal.confirm({
-    title: '确认删除',
-    content: '删除后该导入任务记录将不可恢复，确定删除吗？',
-    okText: '删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await deleteImportApi(taskId);
-        message.success('已删除导入任务');
-        await loadTasks();
-        syncTaskPolling();
-      } catch {
-        // 错误已由拦截器透传
-      }
-    },
-  });
+  deleteTargetId.value = taskId;
+  deleteOpen.value = true;
 }
+
+async function handleDeleteConfirm() {
+  if (!deleteTargetId.value) return;
+  deleteLoading.value = true;
+  try {
+    await deleteImportApi(deleteTargetId.value);
+    message.success('已删除导入任务');
+    deleteOpen.value = false;
+    await loadTasks();
+    syncTaskPolling();
+  } catch {
+    // 错误已由拦截器透传
+  } finally {
+    deleteLoading.value = false;
+  }
+}
+
+/** 批量删除导入任务：危险确认弹窗（批量走软确认，免确认码） */
+const batchDeleteOpen = ref(false);
+const batchDeleteLoading = ref(false);
 
 function handleBatchDelete() {
   if (selectedTaskIds.value.length === 0) {
     message.warning('请选择要删除的任务');
     return;
   }
-  Modal.confirm({
-    title: '确认批量删除',
-    content: `将删除 ${selectedTaskIds.value.length} 个任务记录，删除后不可恢复。确定删除吗？`,
-    okText: '批量删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      // 批量删除走并发控制（allSettled 语义：单项失败不中断其余项）
-      const { fulfilled } = await runWithConcurrency(
-        selectedTaskIds.value,
-        (taskId) => deleteImportApi(taskId),
-      );
-      if (fulfilled > 0) {
-        message.success(`已删除 ${fulfilled} 个导入任务`);
-      }
-      selectedTaskIds.value = [];
-      await loadTasks();
-      syncTaskPolling();
-    },
-  });
+  batchDeleteOpen.value = true;
+}
+
+async function handleBatchDeleteConfirm() {
+  batchDeleteLoading.value = true;
+  try {
+    // 批量删除走并发控制（allSettled 语义：单项失败不中断其余项）
+    const { fulfilled } = await runWithConcurrency(
+      selectedTaskIds.value,
+      (taskId) => deleteImportApi(taskId),
+    );
+    if (fulfilled > 0) {
+      message.success(`已删除 ${fulfilled} 个导入任务`);
+    }
+    selectedTaskIds.value = [];
+    batchDeleteOpen.value = false;
+    await loadTasks();
+    syncTaskPolling();
+  } finally {
+    batchDeleteLoading.value = false;
+  }
 }
 
 function hasActiveTasks() {
@@ -934,16 +938,22 @@ onMounted(async () => {
             >
               检查完整性
             </Button>
-            <Button
-              v-permission="IMPORT_ROLES"
-              type="primary"
-              size="small"
-              :loading="importing"
-              :disabled="selectedLoopIds.length === 0"
-              @click="handleStartImport"
+            <Popconfirm
+              :title="importConfirmTitle"
+              ok-text="开始导入"
+              cancel-text="取消"
+              @confirm="handleStartImport"
             >
-              开始导入
-            </Button>
+              <Button
+                v-permission="IMPORT_ROLES"
+                type="primary"
+                size="small"
+                :loading="importing"
+                :disabled="selectedLoopIds.length === 0"
+              >
+                开始导入
+              </Button>
+            </Popconfirm>
           </div>
         </div>
 
@@ -1004,6 +1014,33 @@ onMounted(async () => {
       :ts-end="timeRange?.[1]?.toISOString() ?? ''"
       :expected-interval="interval"
       @backfill="handleBackfillFromIntegrity"
+    />
+
+    <!-- 删除导入任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteOpen"
+      title="删除导入任务"
+      action="删除"
+      :target="deleteTargetId.slice(0, 8)"
+      impact-scope="删除后该导入任务记录将不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入任务 ID 前 8 位以确认"
+      :loading="deleteLoading"
+      @confirm="handleDeleteConfirm"
+    />
+
+    <!-- 批量删除导入任务：危险确认弹窗（批量软确认，免确认码） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDeleteOpen"
+      title="批量删除导入任务"
+      action="删除"
+      :target="`选中的 ${selectedTaskIds.length} 个任务`"
+      impact-scope="删除后这些导入任务记录将不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :require-confirm-code="false"
+      :loading="batchDeleteLoading"
+      @confirm="handleBatchDeleteConfirm"
     />
   </Page>
 </template>

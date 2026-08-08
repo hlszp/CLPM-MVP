@@ -36,6 +36,7 @@ import {
   resolveEventApi,
 } from '#/api/alert';
 import {
+  ClpmDangerConfirmModal,
   ClpmEmptyState, ClpmPageToolbar, ClpmStandardActions 
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
@@ -294,20 +295,29 @@ async function handleMarkFalsePositive(record: AlertApi.EventItem) {
   }
 }
 
-async function handleArchive(record: AlertApi.EventItem) {
-  Modal.confirm({
-    title: '确认归档',
-    content: '归档后事件将不可再操作，确认归档？',
-    onOk: async () => {
-      try {
-        await archiveEventApi(record.eventId);
-        message.success('事件已归档');
-        await loadEvents();
-      } catch {
-        message.error('归档失败');
-      }
-    },
-  });
+/** 归档事件：危险确认弹窗（归档后不可再操作、无恢复入口，按不可逆处理） */
+const archiveOpen = ref(false);
+const archiveTarget = ref<AlertApi.EventItem | null>(null);
+const archiveLoading = ref(false);
+
+function handleArchive(record: AlertApi.EventItem) {
+  archiveTarget.value = record;
+  archiveOpen.value = true;
+}
+
+async function handleArchiveConfirm() {
+  if (!archiveTarget.value) return;
+  archiveLoading.value = true;
+  try {
+    await archiveEventApi(archiveTarget.value.eventId);
+    message.success('事件已归档');
+    archiveOpen.value = false;
+    await loadEvents();
+  } catch {
+    message.error('归档失败');
+  } finally {
+    archiveLoading.value = false;
+  }
 }
 
 async function handleResetBadge() {
@@ -622,5 +632,19 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- 归档事件：危险确认弹窗（归档后不可再操作，按不可逆处理） -->
+    <ClpmDangerConfirmModal
+      v-model:open="archiveOpen"
+      title="归档预警事件"
+      action="归档"
+      :target="archiveTarget?.ruleCode ?? ''"
+      impact-scope="归档后事件将从事件列表移除且不可再操作"
+      rollback-tip="此操作不可逆，归档后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入规则代码以确认"
+      :loading="archiveLoading"
+      @confirm="handleArchiveConfirm"
+    />
   </Page>
 </template>

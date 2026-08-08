@@ -36,6 +36,7 @@ import {
 } from '#/api/alert';
 import {
   ClpmAlertDslEditor,
+  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
@@ -356,13 +357,28 @@ async function handleToggle(record: AlertApi.RuleItem) {
   }
 }
 
-async function handleDelete(record: AlertApi.RuleItem) {
+/** 删除规则：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01），删除后不可恢复 */
+const deleteOpen = ref(false);
+const deleteTarget = ref<AlertApi.RuleItem | null>(null);
+const deleteLoading = ref(false);
+
+function handleDelete(record: AlertApi.RuleItem) {
+  deleteTarget.value = record;
+  deleteOpen.value = true;
+}
+
+async function handleDeleteConfirm() {
+  if (!deleteTarget.value) return;
+  deleteLoading.value = true;
   try {
-    await deleteAlertRuleApi(record.ruleId);
+    await deleteAlertRuleApi(deleteTarget.value.ruleId);
     message.success('规则已删除');
+    deleteOpen.value = false;
     await loadRules();
   } catch {
     message.error('删除失败');
+  } finally {
+    deleteLoading.value = false;
   }
 }
 
@@ -550,13 +566,14 @@ onMounted(() => {
                 {{ record.isEnabled ? '停用' : '启用' }}
               </Button>
             </Popconfirm>
-            <Popconfirm
-              title="确认删除此规则？删除后不可恢复"
-              ok-type="danger"
-              @confirm="handleDelete(record as AlertApi.RuleItem)"
+            <Button
+              type="link"
+              size="small"
+              danger
+              @click="handleDelete(record as AlertApi.RuleItem)"
             >
-              <Button type="link" size="small" danger>删除</Button>
-            </Popconfirm>
+              删除
+            </Button>
           </Space>
         </template>
       </template>
@@ -648,5 +665,19 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- 删除规则：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteOpen"
+      title="删除预警规则"
+      action="删除"
+      :target="deleteTarget?.ruleName ?? ''"
+      impact-scope="删除后不可恢复，该规则将不再参与巡检"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入规则名称以确认"
+      :loading="deleteLoading"
+      @confirm="handleDeleteConfirm"
+    />
   </Page>
 </template>

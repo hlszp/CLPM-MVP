@@ -24,7 +24,6 @@ import { IconifyIcon } from '@vben/icons';
 import {
   Button,
   message,
-  Modal,
   Progress,
   Select,
   Table,
@@ -42,6 +41,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmColumnSettings,
+  ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmKpiStrip,
   ClpmPageToolbar,
@@ -348,58 +348,67 @@ async function handleExportCsv() {
   }
 }
 
-/** 行级删除 */
+/** 行级删除：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） */
+const deleteOpen = ref(false);
+const deleteTarget = ref<DiagnosisApi.TaskItem | null>(null);
+const deleteLoading = ref(false);
+
 function handleDelete(record: DiagnosisApi.TaskItem) {
-  Modal.confirm({
-    title: '确认删除',
-    content: `确认删除回路 ${record.tagName} 的诊断记录？`,
-    okType: 'danger',
-    onOk: async () => {
-      await deleteDiagnosisTaskApi(record.taskId);
-      message.success('记录已删除');
-      selectedRowKeys.value = selectedRowKeys.value.filter(
-        (k) => k !== record.taskId,
-      );
-      await loadList();
-    },
-  });
+  deleteTarget.value = record;
+  deleteOpen.value = true;
 }
 
-/** 批量删除 */
-async function handleBatchDelete() {
+async function handleDeleteConfirm() {
+  if (!deleteTarget.value) return;
+  const record = deleteTarget.value;
+  deleteLoading.value = true;
+  try {
+    await deleteDiagnosisTaskApi(record.taskId);
+    message.success('记录已删除');
+    selectedRowKeys.value = selectedRowKeys.value.filter(
+      (k) => k !== record.taskId,
+    );
+    deleteOpen.value = false;
+    await loadList();
+  } finally {
+    deleteLoading.value = false;
+  }
+}
+
+/** 批量删除：危险确认弹窗（批量软确认，免确认码） */
+const batchDeleteOpen = ref(false);
+
+function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的记录');
     return;
   }
-  const count = selectedRowKeys.value.length;
-  Modal.confirm({
-    title: '确认批量删除',
-    content: `确认删除 ${count} 条诊断记录？`,
-    okType: 'danger',
-    onOk: async () => {
-      batchDeleteLoading.value = true;
-      try {
-        // allSettled 语义 + 并发限制：单项失败不中断其余删除，避免打满后端连接
-        const { fulfilled, rejected } = await runWithConcurrency(
-          selectedRowKeys.value,
-          (id) => deleteDiagnosisTaskApi(id),
-        );
-        if (rejected === 0) {
-          message.success(`已删除 ${fulfilled} 条记录`);
-        } else {
-          message.warning(
-            `已删除 ${fulfilled} 条记录，${rejected} 条失败（错误已记录）`,
-          );
-        }
-        selectedRowKeys.value = [];
-        await loadList();
-      } catch {
-        // 错误已由拦截器处理
-      } finally {
-        batchDeleteLoading.value = false;
-      }
-    },
-  });
+  batchDeleteOpen.value = true;
+}
+
+async function handleBatchDeleteConfirm() {
+  batchDeleteLoading.value = true;
+  try {
+    // allSettled 语义 + 并发限制：单项失败不中断其余删除，避免打满后端连接
+    const { fulfilled, rejected } = await runWithConcurrency(
+      selectedRowKeys.value,
+      (id) => deleteDiagnosisTaskApi(id),
+    );
+    if (rejected === 0) {
+      message.success(`已删除 ${fulfilled} 条记录`);
+    } else {
+      message.warning(
+        `已删除 ${fulfilled} 条记录，${rejected} 条失败（错误已记录）`,
+      );
+    }
+    selectedRowKeys.value = [];
+    batchDeleteOpen.value = false;
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchDeleteLoading.value = false;
+  }
 }
 
 /** KpiStrip 摘要指标：已归档总数 / 近 7 天归档 / 振荡类 / 阀门粘滞类（后端聚合口径） */
@@ -770,5 +779,32 @@ onMounted(() => {
       </TabPane>
     </Tabs>
     <!-- F13：Tracker 抽屉已移除，统一跳转 /diagnosis/tracker?loopId=xxx -->
+
+    <!-- 删除诊断记录：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteOpen"
+      title="删除诊断记录"
+      action="删除"
+      :target="deleteTarget?.tagName ?? ''"
+      impact-scope="删除后该回路的诊断记录将不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入回路 tag 以确认"
+      :loading="deleteLoading"
+      @confirm="handleDeleteConfirm"
+    />
+
+    <!-- 批量删除诊断记录：危险确认弹窗（批量软确认，免确认码） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDeleteOpen"
+      title="批量删除诊断记录"
+      action="删除"
+      :target="`选中的 ${selectedRowKeys.length} 条记录`"
+      impact-scope="删除后这些诊断记录将不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :require-confirm-code="false"
+      :loading="batchDeleteLoading"
+      @confirm="handleBatchDeleteConfirm"
+    />
   </Page>
 </template>
