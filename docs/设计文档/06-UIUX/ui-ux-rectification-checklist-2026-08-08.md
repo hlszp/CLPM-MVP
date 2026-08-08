@@ -66,7 +66,7 @@
 | A-12 | 样板页②：系统概览（待办非零优先/预测卡收敛/时间戳定宽/页名统一） | ✅ `6e81740`（页名统一+非零优先+两处时间戳修复+BL-3 预测卡 undefined 后端根治，pytest 4120 绿；预测卡空态高度收敛未做，余量小） |
 | A-13 | 样板页③：性能总览 L1 重做（bullet 四核心 + 异常列表 + 工厂树抽屉化；**含 F3 趋势多选 + F4 阀门告警卡**） | ✅ `6a6bdd3`+`989791c`（bullet 行/donut 饼图退役/等级分布行/阀卡/工厂树抽屉/F3 多选；截图验证） |
 | A-14 | 样板页④：回路监控（chip 中性化/单位进表头/行操作收敛/筛选入 URL 联动 C1-2） | 🔨 首批 `b633247` + 收敛 `见最新`（chip 非零显示/行内链接化/单位出格）+ `a21af82` 筛选入 URL；A-14 完成 |
-| A-15 | ECharts preset 强制化 + 手写 option 页面迁移（monitor/pid-dashboard/overview） | ⬜ |
+| A-15 | ECharts preset 强制化 + 手写 option 页面迁移（monitor/pid-dashboard/overview） | ✅ `0c74a3e`（monitor MODE 柱状/总览趋势/历史趋势迁移 preset；45° 轴标签改 hideOverlap；overview 图表族本就走 preset） |
 | A-16 | 视觉回归基线建立（21 页）+ 28 条清单首轮走查（含暗色） | ⬜ |
 
 ### 2.2 专项 E/C/F 并入项
@@ -74,7 +74,7 @@
 | # | 任务 | 状态 |
 |---|---|---|
 | E1 | 偏好抽屉策展白名单 + preferences.antd.* locale 裸键修复 + tenantMode 残留删除 + 字段消费审计（D3/D4 相关） | ✅ `becfc9a`（extension 4 字段零消费整体移除，裸键问题根除；白名单策展随暗色校准一并走查） |
-| E2 | 暗色校准：明暗双板接入 preset + 语义色对比度重校 + color-scheme: dark | 🔨 `557f869` 暗色持久化 bug 根治（overrides 写死 mode 所致）；余：对比度走查 |
+| E2 | 暗色校准：明暗双板接入 preset + 语义色对比度重校 + color-scheme: dark | 🔨 `136cdab` 主题持久化根治（init 前预读缓存）；暗色渲染实测可用（截图）；余：对比度逐页走查（A-16 合并） |
 | E3 | i18n 残态收敛（按 D4 结论） | ✅ `becfc9a`（languageToggle 隐藏） |
 | F1 | 服务端参数注册表 + Pydantic 值域/键白名单校验（config.py:504） | ✅ `f87bb02`（PARAM_META 注册表 + 端点校验；三种拦截路径实弹 400） |
 | F2 | 4 项硬编码参数配置化（含 stiction.py:60 收敛）+ _DEFAULTS 扩 3 指标 | ✅ `f87bb02`（默认值行为不变；pytest 4120 全绿） |
