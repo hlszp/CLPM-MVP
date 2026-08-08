@@ -25,7 +25,7 @@ WORKDIR /app
 COPY frontend/ ./
 
 # 安装依赖（严格按 lockfile，使用淘宝镜像加速）
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+RUN \
     pnpm config set registry https://registry.npmmirror.com \
     && pnpm install --frozen-lockfile
 
@@ -48,7 +48,7 @@ ENV APP_VERSION=${APP_VERSION}
 ENV TZ=Asia/Shanghai
 
 # 安装 curl 用于 healthcheck
-RUN apk add --no-cache curl
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories && apk add --no-cache curl
 
 # 清理默认配置
 RUN rm -rf /etc/nginx/conf.d/default.conf
