@@ -127,9 +127,10 @@ export const overridesPreferences = defineOverridesPreferences({
     colorPrimary: 'hsl(211 98% 52%)',
     // 圆角：克制（对齐 UI/UX §3.5 --radius-sm 4px）
     radius: '0.25',
-    // 整改 E2：不要在 overrides 里写死 mode——initPreferences 合并时
-    // overrides 优先于用户缓存，写死 light 会导致暗色选择刷新后丢失。
-    // 默认浅色由 defaultPreferences 承担；用户切换暗色可持久化。
+    // 默认浅色模式（仅决定新用户首启主题；用户切换后由 main.ts 的
+    // 缓存回读补丁恢复——vben initPreferences 合并时 overrides 优先于
+    // 用户缓存，单靠这里无法兼顾"默认浅色"与"选择持久化"，整改 E2）
+    mode: 'light',
     // 默认保留浅色头部，避免与既有 vben 顶栏功能冲突
     semiDarkHeader: false,
     // 半深色侧栏增强工业桌面端质感，同时仍允许用户在设置中切换
