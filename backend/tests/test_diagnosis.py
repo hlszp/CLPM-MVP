@@ -329,12 +329,12 @@ class TestDiagnosisList:
         self, client, mock_db, fake_redis
     ) -> None:
         """翻页不影响聚合计数（A4：聚合基于全部筛选结果而非当前页）。"""
-        # 每个请求固定 3 步查询：count → 聚合（标签×状态） → 主查询（返回空页）
+        # 每个请求固定 4 步查询：count → 聚合（标签×状态） → 主查询（空页） → 超期计数（C1-3）
         call_count = [0]
 
         async def execute_side_effect(stmt, *args, **kwargs):
             call_count[0] += 1
-            pos = (call_count[0] - 1) % 3
+            pos = (call_count[0] - 1) % 4
             if pos == 0:
                 m = MagicMock()
                 m.scalar.return_value = 25
@@ -346,7 +346,11 @@ class TestDiagnosisList:
                         ("OSCILLATION", "IMPLEMENTED", 10),
                     ]
                 )
-            return _make_rows_mock([])
+            if pos == 2:
+                return _make_rows_mock([])
+            m = MagicMock()
+            m.scalar.return_value = 0
+            return m
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
         with mock_current_user(TEST_USERS["admin"]):
@@ -366,6 +370,7 @@ class TestDiagnosisList:
         assert resp_p2.json()["data"]["items"] == []
         assert agg_p1 == agg_p2
         assert agg_p1["total"] == 25
+        assert agg_p1["verifyOverdueCount"] == 0
         assert agg_p1["statusCounts"] == {"PENDING": 15, "IMPLEMENTED": 10}
         assert agg_p1["labelCounts"] == {"VALVE_STICTION": 15, "OSCILLATION": 10}
 
