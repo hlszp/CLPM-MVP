@@ -497,6 +497,7 @@ function render() {
       name: 'OP',
       showSymbol: false,
       type: 'line',
+      yAxisIndex: 1,
     },
   ];
 
@@ -522,17 +523,29 @@ function render() {
       showSymbol: false,
       step: 'end',
       type: 'line',
-      yAxisIndex: 1,
+      yAxisIndex: 2,
     });
   }
 
-  // Y 轴配置：showMode 时双轴（数值 + MODE），否则单轴
+  // Y 轴配置（整改 B3）：PV/SP 主轴按数据自适应（scale:true，不再被 OP 0-100% 压扁），
+  // OP 固定副轴 0-100%（UI/UX §7.3），showMode 时 MODE 第三轴右置 offset。
   const yAxis: any[] = [
     {
       axisLabel: { color: chartTextColor.value, formatter: '{value}' },
-      name: '数值',
+      name: 'PV/SP',
       nameTextStyle: { color: chartTextColor.value },
+      scale: true,
       splitLine: { lineStyle: { color: chartSplitLineColor.value } },
+      type: 'value',
+    },
+    {
+      axisLabel: { color: chartTextColor.value, formatter: '{value}' },
+      max: 100,
+      min: 0,
+      name: 'OP %',
+      nameTextStyle: { color: chartTextColor.value },
+      position: 'right',
+      splitLine: { show: false },
       type: 'value',
     },
   ];
@@ -551,6 +564,8 @@ function render() {
       min: -0.5,
       name: 'MODE',
       nameTextStyle: { color: chartTextColor.value },
+      offset: 48,
+      position: 'right',
       splitLine: { show: false },
       type: 'value',
     });
@@ -559,11 +574,12 @@ function render() {
   // 采样间隔提示（sampleInterval > 1 或触发降采样时显示）
   const sampleInterval = props.trend.sampleInterval;
   const downsampled = props.trend.downsampled;
-  const showSamplingHint =
-    (sampleInterval && sampleInterval > 1) || downsampled;
-  const samplingHint = showSamplingHint
-    ? `采样间隔: ${sampleInterval}s${downsampled ? ' (已降采样)' : ''}`
-    : '';
+  const hintParts: string[] = [];
+  if (sampleInterval && sampleInterval > 1)
+    hintParts.push(`采样间隔: ${sampleInterval}s`);
+  if (downsampled) hintParts.push('已降采样');
+  const samplingHint = hintParts.join('，');
+  const showSamplingHint = samplingHint.length > 0;
 
   renderEcharts({
     backgroundColor: 'transparent',
@@ -624,7 +640,7 @@ function render() {
       bottom: 50,
       containLabel: true,
       left: '3%',
-      right: showMode ? 60 : '3%',
+      right: showMode ? 110 : 60,
       top: 60,
     },
     legend: {
