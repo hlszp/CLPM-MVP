@@ -290,7 +290,12 @@ defineExpose({ refresh: load });
             >
               {{ effectiveRatePct }}%
             </div>
-            <div v-else class="effectiveness-card__ring-empty">暂无数据</div>
+            <div v-else class="effectiveness-card__ring-empty">
+              暂无数据
+              <span class="effectiveness-card__ring-reason"
+                >暂无已验证的整改记录</span
+              >
+            </div>
             <div class="effectiveness-card__ring-label">整改有效率</div>
           </div>
         </div>
@@ -445,9 +450,20 @@ defineExpose({ refresh: load });
 }
 
 .effectiveness-card__ring-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
   font-size: 12px;
   font-weight: 500;
   color: hsl(var(--muted-foreground));
+}
+
+.effectiveness-card__ring-reason {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: hsl(var(--muted-foreground) / 75%);
 }
 
 .effectiveness-card__ring-label {

@@ -76,6 +76,10 @@ const trendChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderPie } = useEcharts(pieChartRef);
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 
+/** 图表空态：无数据时不渲染空框架，由 ClpmDataCanvas 空态接管 */
+const pieEmpty = ref(false);
+const trendEmpty = ref(false);
+
 /** 处理状态选项（用于状态名展示） */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
@@ -237,11 +241,10 @@ async function loadOverview() {
 function renderPieChart() {
   const dist = analyticsData.value?.labelDistribution || [];
   if (dist.length === 0) {
-    renderPie({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    pieEmpty.value = true;
     return;
   }
+  pieEmpty.value = false;
 
   renderPie({
     legend: { bottom: 0, orient: 'horizontal' },
@@ -273,11 +276,10 @@ function renderPieChart() {
 function renderTrendChart() {
   const trend = analyticsData.value?.efficiencyTrend;
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) {
-    renderTrend({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    trendEmpty.value = true;
     return;
   }
+  trendEmpty.value = false;
 
   renderTrend({
     backgroundColor: 'transparent',
@@ -462,6 +464,8 @@ onMounted(() => {
         description="近 30 天 8 类诊断标签占比"
         :loading="loading"
         :error="hasError"
+        :empty="pieEmpty"
+        empty-reason="近 30 天无诊断标签记录"
         loading-variant="opacity"
         @retry="handleRetry"
       >
@@ -473,6 +477,8 @@ onMounted(() => {
         description="已解决数与平均闭环时长双 Y 轴趋势"
         :loading="loading"
         :error="hasError"
+        :empty="trendEmpty"
+        empty-reason="近 30 天无闭环处理记录"
         loading-variant="opacity"
         @retry="handleRetry"
       >

@@ -162,6 +162,10 @@ const barChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderPie } = useEcharts(pieChartRef);
 const { renderEcharts: renderBar } = useEcharts(barChartRef);
 
+/** 图表空态：无数据时不渲染空框架，由 ClpmDataCanvas 空态接管 */
+const pieEmpty = ref(false);
+const barEmpty = ref(false);
+
 /** 算法显示名映射 */
 function algorithmName(code: TuningApi.Algorithm): string {
   return algorithmOptions.find((o) => o.value === code)?.label || code;
@@ -331,11 +335,10 @@ function renderPieChart() {
   const byAlgorithm = historyStats.value?.byAlgorithm || {};
   const entries = Object.entries(byAlgorithm);
   if (entries.length === 0) {
-    renderPie({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    pieEmpty.value = true;
     return;
   }
+  pieEmpty.value = false;
 
   const colorMap = algoColors.value;
 
@@ -385,11 +388,10 @@ function renderBarChart() {
   const colorMap = statusChartColors.value;
 
   if (statusOrder.length === 0) {
-    renderBar({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    barEmpty.value = true;
     return;
   }
+  barEmpty.value = false;
 
   renderBar({
     backgroundColor: 'transparent',
@@ -495,10 +497,20 @@ watch(isDark, () => {
 
     <!-- 中部图表区 -->
     <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <ClpmDataCanvas title="算法分布" :loading="historyLoading">
+      <ClpmDataCanvas
+        title="算法分布"
+        :loading="historyLoading"
+        :empty="pieEmpty"
+        empty-reason="暂无整定任务记录，无法生成算法分布"
+      >
         <EchartsUI ref="pieChartRef" height="320px" />
       </ClpmDataCanvas>
-      <ClpmDataCanvas title="状态分布" :loading="historyLoading">
+      <ClpmDataCanvas
+        title="状态分布"
+        :loading="historyLoading"
+        :empty="barEmpty"
+        empty-reason="暂无整定任务记录，无法生成状态分布"
+      >
         <EchartsUI ref="barChartRef" height="320px" />
       </ClpmDataCanvas>
     </div>

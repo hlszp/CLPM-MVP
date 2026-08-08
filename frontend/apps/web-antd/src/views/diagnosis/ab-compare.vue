@@ -115,6 +115,10 @@ const kpiChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
 const { renderEcharts: renderKpi } = useEcharts(kpiChartRef);
 
+/** 图表空态：无数据时不渲染空框架，由 ClpmDataCanvas 空态接管 */
+const trendEmpty = ref(false);
+const kpiEmpty = ref(false);
+
 const pageTitle = computed(() => {
   if (compareData.value?.tagName) {
     return `A/B 对比 - ${compareData.value.tagName}`;
@@ -223,11 +227,10 @@ async function loadTrend() {
 function renderTrendChart() {
   const trend = trendData.value;
   if (!trend) {
-    renderTrend({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    trendEmpty.value = true;
     return;
   }
+  trendEmpty.value = false;
 
   const { before, after } = trend;
   renderTrend({
@@ -299,11 +302,10 @@ function renderTrendChart() {
 function renderKpiChart() {
   const data = compareData.value;
   if (!data || !data.kpiComparison || data.kpiComparison.length === 0) {
-    renderKpi({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    kpiEmpty.value = true;
     return;
   }
+  kpiEmpty.value = false;
 
   const kpis = data.kpiComparison;
   renderKpi({
@@ -506,12 +508,21 @@ onMounted(() => {
       </ClpmDataCanvas>
 
       <!-- PV 趋势叠加图 -->
-      <ClpmDataCanvas title="PV 趋势对比" class="mb-4">
+      <ClpmDataCanvas
+        title="PV 趋势对比"
+        class="mb-4"
+        :empty="trendEmpty"
+        empty-reason="所选时间窗内未采集到 PV 波形数据，可调整时间范围后重新查询"
+      >
         <EchartsUI ref="trendChartRef" height="360px" />
       </ClpmDataCanvas>
 
       <!-- KPI 柱状对比图 -->
-      <ClpmDataCanvas title="KPI 对比">
+      <ClpmDataCanvas
+        title="KPI 对比"
+        :empty="kpiEmpty"
+        empty-reason="当前回路在所选时间窗内无 KPI 统计数据"
+      >
         <EchartsUI ref="kpiChartRef" height="360px" />
       </ClpmDataCanvas>
     </Spin>
@@ -612,14 +623,23 @@ onMounted(() => {
     </ClpmDataCanvas>
 
     <!-- PV 趋势叠加图 -->
-    <ClpmDataCanvas title="PV 趋势对比" class="mb-4">
+    <ClpmDataCanvas
+      title="PV 趋势对比"
+      class="mb-4"
+      :empty="trendEmpty"
+      empty-reason="所选时间窗内未采集到 PV 波形数据，可调整时间范围后重新查询"
+    >
       <Spin :spinning="loading">
         <EchartsUI ref="trendChartRef" height="360px" />
       </Spin>
     </ClpmDataCanvas>
 
     <!-- KPI 柱状对比图 -->
-    <ClpmDataCanvas title="KPI 对比">
+    <ClpmDataCanvas
+      title="KPI 对比"
+      :empty="kpiEmpty"
+      empty-reason="当前回路在所选时间窗内无 KPI 统计数据"
+    >
       <Spin :spinning="loading">
         <EchartsUI ref="kpiChartRef" height="360px" />
       </Spin>

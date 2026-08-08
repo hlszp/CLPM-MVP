@@ -82,6 +82,9 @@ const riskConfirmed = ref(false);
 /** P1-023：错误状态（仿真失败时持久展示，带重试） */
 const errorState = ref<null | { detail: string; message: string }>(null);
 
+/** 图表空态：仿真结果无响应曲线数据时不渲染空框架 */
+const chartEmpty = ref(false);
+
 /** 模型类型选项 */
 const modelTypeOptions: { label: string; value: TuningApi.ModelType }[] = [
   { label: 'FOPDT 一阶加纯滞后', value: 'FOPDT' },
@@ -685,11 +688,10 @@ function handleReset() {
 function renderChart() {
   const data = simulationResult.value;
   if (!data || !data.timestamps || data.timestamps.length === 0) {
-    renderEcharts({
-      title: { left: 'center', text: '暂无数据' },
-    });
+    chartEmpty.value = true;
     return;
   }
+  chartEmpty.value = false;
 
   const { timestamps } = data;
   const enableDataZoom = timestamps.length > 500;
@@ -1082,6 +1084,12 @@ watch(isDark, () => {
             v-else-if="!simulationResult"
             status="empty"
             empty-description="请配置模型与 PID 参数后点击「运行仿真」"
+          />
+          <!-- 空状态覆盖（仿真结果无响应曲线数据时，不渲染空图框） -->
+          <ClpmStateOverlay
+            v-else-if="chartEmpty"
+            status="empty"
+            empty-description="仿真结果未返回响应曲线数据，请调整模型参数后重新仿真"
           />
           <!-- success：正常展示仿真图 -->
           <Spin v-else :spinning="loading">
