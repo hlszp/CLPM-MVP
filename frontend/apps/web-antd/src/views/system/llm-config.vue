@@ -338,7 +338,17 @@ const { toolbarItems } = usePageToolbar(() => ({
                 <Tooltip title="切回预设列表">
                   <span
                     class="cursor-pointer"
+                    role="button"
+                    tabindex="0"
                     @click="
+                      isCustomModel = false;
+                      modelSelectValue = undefined;
+                    "
+                    @keydown.enter="
+                      isCustomModel = false;
+                      modelSelectValue = undefined;
+                    "
+                    @keydown.space.prevent="
                       isCustomModel = false;
                       modelSelectValue = undefined;
                     "

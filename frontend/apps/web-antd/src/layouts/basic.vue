@@ -234,21 +234,33 @@ watch(
           <div class="w-40">
             <div
               class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              role="button"
+              tabindex="0"
               @click="tourRef?.open()"
+              @keydown.enter="tourRef?.open()"
+              @keydown.space.prevent="tourRef?.open()"
             >
               <IconifyIcon icon="lucide:rocket" :size="14" />
               快速入门
             </div>
             <div
               class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              role="button"
+              tabindex="0"
               @click="tourRef?.open()"
+              @keydown.enter="tourRef?.open()"
+              @keydown.space.prevent="tourRef?.open()"
             >
               <IconifyIcon icon="lucide:book-open" :size="14" />
               术语表
             </div>
             <div
               class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              role="button"
+              tabindex="0"
               @click="tourRef?.open()"
+              @keydown.enter="tourRef?.open()"
+              @keydown.space.prevent="tourRef?.open()"
             >
               <IconifyIcon icon="lucide:help-circle" :size="14" />
               FAQ

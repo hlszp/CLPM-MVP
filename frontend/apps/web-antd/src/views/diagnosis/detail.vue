@@ -1087,7 +1087,12 @@ onMounted(() => {
                     <div
                       class="path-node"
                       :class="{ 'path-node--active': index === currentStep }"
+                      role="button"
+                      tabindex="0"
+                      :aria-current="index === currentStep ? 'step' : undefined"
                       @click="handlePathStepClick(index)"
+                      @keydown.enter="handlePathStepClick(index)"
+                      @keydown.space.prevent="handlePathStepClick(index)"
                     >
                       <div class="path-node-index">{{ index + 1 }}</div>
                       <div class="path-node-body">
@@ -1120,7 +1125,14 @@ onMounted(() => {
                 <div class="evidence-section">
                   <div
                     class="evidence-header"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!evidenceCollapsed"
                     @click="evidenceCollapsed = !evidenceCollapsed"
+                    @keydown.enter="evidenceCollapsed = !evidenceCollapsed"
+                    @keydown.space.prevent="
+                      evidenceCollapsed = !evidenceCollapsed
+                    "
                   >
                     <IconifyIcon
                       :icon="
@@ -1163,7 +1175,14 @@ onMounted(() => {
                 <div class="evidence-section mt-4">
                   <div
                     class="evidence-header"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!waveformCollapsed"
                     @click="waveformCollapsed = !waveformCollapsed"
+                    @keydown.enter="waveformCollapsed = !waveformCollapsed"
+                    @keydown.space.prevent="
+                      waveformCollapsed = !waveformCollapsed
+                    "
                   >
                     <IconifyIcon
                       :icon="

@@ -137,6 +137,9 @@ const tooltipText = computed(() => {
 /** 是否需要 Tooltip */
 const needTooltip = computed(() => Boolean(tooltipText.value));
 
+/** 无障碍名：仅图标按钮对读屏不可见，必须提供 aria-label */
+const ariaLabel = computed(() => tooltipText.value || props.label || undefined);
+
 /** 点击事件透传 */
 function handleClick(event: MouseEvent) {
   if (isDisabled.value) return;
@@ -169,6 +172,7 @@ const activeClass = 'clpm-toolbar-btn--active';
           resolvedVariant === 'export' ? exportClass : '',
           isActive ? activeClass : '',
         ]"
+        :aria-label="ariaLabel"
         :danger="isDanger"
         :disabled="isDisabled"
         :loading="loading"
@@ -196,6 +200,7 @@ const activeClass = 'clpm-toolbar-btn--active';
       resolvedVariant === 'export' ? exportClass : '',
       isActive ? activeClass : '',
     ]"
+    :aria-label="ariaLabel"
     :danger="isDanger"
     :disabled="isDisabled"
     :loading="loading"

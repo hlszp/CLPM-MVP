@@ -806,3 +806,16 @@ th.align-right {
 .dark .text-black\/70 {
   color: rgb(156 163 175 / 70%);
 }
+
+/* ---------- 11. 可访问性：减弱动效（prefers-reduced-motion，D1） ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

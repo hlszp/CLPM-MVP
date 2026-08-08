@@ -651,7 +651,12 @@ watch(
                 'border-l-[3px] border-l-blue-500 bg-blue-50':
                   item.loopId === selectedLoopId,
               }"
+              role="button"
+              tabindex="0"
+              :aria-current="item.loopId === selectedLoopId ? 'true' : undefined"
               @click="selectLoop(item.loopId)"
+              @keydown.enter="selectLoop(item.loopId)"
+              @keydown.space.prevent="selectLoop(item.loopId)"
             >
               <div class="flex items-center justify-between gap-2">
                 <span class="truncate text-sm font-medium">{{

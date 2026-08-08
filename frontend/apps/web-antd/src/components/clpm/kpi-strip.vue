@@ -143,7 +143,11 @@ function getSparklineColor(status?: string): string {
           'is-clickable': isClickable(item),
           [`is-${item.status || 'neutral'}`]: true,
         }"
+        :role="isClickable(item) ? 'button' : undefined"
+        :tabindex="isClickable(item) ? 0 : undefined"
         @click="handleClick(item)"
+        @keydown.enter="handleClick(item)"
+        @keydown.space.prevent="handleClick(item)"
       >
         <div class="clpm-kpi-strip__label">{{ item.label }}</div>
         <div class="clpm-kpi-strip__main">

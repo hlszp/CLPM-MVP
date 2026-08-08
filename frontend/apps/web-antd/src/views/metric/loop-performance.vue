@@ -1332,6 +1332,9 @@ onMounted(async () => {
             >
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selectedGrade === null"
               :style="{
                 backgroundColor:
                   selectedGrade === null
@@ -1344,6 +1347,8 @@ onMounted(async () => {
                     : 'none',
               }"
               @click="handleGradeCardClick(null)"
+              @keydown.enter="handleGradeCardClick(null)"
+              @keydown.space.prevent="handleGradeCardClick(null)"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1358,6 +1363,9 @@ onMounted(async () => {
               v-for="grade in [1, 2, 3, 4, 5]"
               :key="grade"
               class="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selectedGrade === grade"
               :style="{
                 backgroundColor:
                   selectedGrade === grade
@@ -1370,6 +1378,8 @@ onMounted(async () => {
                     : 'none',
               }"
               @click="handleGradeCardClick(grade)"
+              @keydown.enter="handleGradeCardClick(grade)"
+              @keydown.space.prevent="handleGradeCardClick(grade)"
             >
               <span
                 class="w-2 h-2 rounded-full"

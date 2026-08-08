@@ -1042,7 +1042,9 @@ const { toolbarItems } = usePageToolbar(() => ({
   visibility: hidden;
   gap: 1px;
   opacity: 0;
-  transition: all 0.2s ease;
+  transition:
+    visibility 0.2s ease,
+    opacity 0.2s ease;
 }
 
 :deep(.ant-table-row):hover .tag-row-actions {

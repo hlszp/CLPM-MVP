@@ -1486,7 +1486,12 @@ onMounted(loadConfig);
                         ? 'text-blue-600 hover:text-blue-800'
                         : 'text-gray-300 hover:text-gray-500'
                     "
+                    role="button"
+                    tabindex="0"
+                    aria-label="编辑 MODE 值"
                     @click="openCellEdit(record, column)"
+                    @keydown.enter="openCellEdit(record, column)"
+                    @keydown.space.prevent="openCellEdit(record, column)"
                   >
                     {{ record[String(column.dataIndex ?? '')] ?? '—' }}
                   </span>

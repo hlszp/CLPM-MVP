@@ -1230,6 +1230,11 @@ onUnmounted(() => {
                     : 'none',
               }"
               @click="handleTypeCardClick('ALL')"
+              role="button"
+              tabindex="0"
+              :aria-pressed="query.loopType === ''"
+              @keydown.enter="handleTypeCardClick('ALL')"
+              @keydown.space.prevent="handleTypeCardClick('ALL')"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1265,6 +1270,11 @@ onUnmounted(() => {
                     : 'none',
               }"
               @click="handleTypeCardClick(key)"
+              role="button"
+              tabindex="0"
+              :aria-pressed="query.loopType === key"
+              @keydown.enter="handleTypeCardClick(key)"
+              @keydown.space.prevent="handleTypeCardClick(key)"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1402,7 +1412,12 @@ onUnmounted(() => {
                     {{ preset.name }}
                     <span
                       class="ml-1 text-gray-400 hover:text-red-500"
+                      role="button"
+                      tabindex="0"
+                      :aria-label="`删除预设 ${preset.name}`"
                       @click.stop="handleDeletePreset(preset.id)"
+                      @keydown.enter.stop="handleDeletePreset(preset.id)"
+                      @keydown.space.stop.prevent="handleDeletePreset(preset.id)"
                     >
                       ×
                     </span>
@@ -1660,7 +1675,16 @@ onUnmounted(() => {
                 v-else
                 class="text-gray-400 cursor-pointer hover:text-blue-500"
                 title="暂无诊断记录，点击进入诊断详情触发新诊断"
+                role="button"
+                tabindex="0"
+                aria-label="进入诊断详情"
                 @click="
+                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
+                "
+                @keydown.enter="
+                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
+                "
+                @keydown.space.prevent="
                   goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
                 "
               >
@@ -2125,7 +2149,9 @@ onUnmounted(() => {
   visibility: hidden;
   gap: 1px;
   opacity: 0;
-  transition: all 0.2s ease;
+  transition:
+    visibility 0.2s ease,
+    opacity 0.2s ease;
 }
 
 :deep(.ant-table-row):hover .loop-row-actions {

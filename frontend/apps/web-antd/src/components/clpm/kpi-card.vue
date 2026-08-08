@@ -41,7 +41,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  click: [event: MouseEvent];
+  click: [event: KeyboardEvent | MouseEvent];
 }>();
 
 type KpiStatus = 'error' | 'info' | 'neutral' | 'ok' | 'warning';
@@ -220,6 +220,12 @@ function handleClick(event: MouseEvent) {
   if (!props.clickable) return;
   emit('click', event);
 }
+
+/** 键盘触发（Enter/Space）：与点击行为一致，仅 clickable 时生效 */
+function handleKeydown(event: KeyboardEvent) {
+  if (!props.clickable) return;
+  emit('click', event);
+}
 </script>
 
 <template>
@@ -230,7 +236,11 @@ function handleClick(event: MouseEvent) {
       clickable ? 'is-clickable' : '',
       loading ? 'is-loading' : '',
     ]"
+    :role="clickable ? 'button' : undefined"
+    :tabindex="clickable ? 0 : undefined"
     @click="handleClick"
+    @keydown.enter="handleKeydown"
+    @keydown.space.prevent="handleKeydown"
   >
     <!-- 顶部：标题 + 装饰图标 -->
     <div class="clpm-kpi-card__header">

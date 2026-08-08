@@ -994,6 +994,11 @@ onMounted(() => {
                     type="text"
                     size="small"
                     class="clpm-pid-dashboard__sort-btn"
+                    :aria-label="
+                      top5Sort === 'desc'
+                        ? '当前按评分最低排序，切换为最高'
+                        : '当前按评分最高排序，切换为最低'
+                    "
                     @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'"
                   >
                     <IconifyIcon
@@ -1023,6 +1028,7 @@ onMounted(() => {
                       type="text"
                       size="small"
                       :loading="diagnosisLoading"
+                      aria-label="进入诊断"
                       @click="handleDiagnosis(record.loopId)"
                     >
                       <template #icon>
