@@ -36,7 +36,9 @@ import {
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
-import { formatTime } from '#/utils/format';
+import dayjs from 'dayjs';
+
+import { formatTime, normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
 
@@ -103,7 +105,8 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       clickable: true,
     });
   }
-  return items;
+  // 整改 A-12：非零待办优先展示（稳定排序）
+  return items.sort((a, b) => Number(Number(b.value) > 0) - Number(Number(a.value) > 0));
 });
 
 function handleTodoClick(item: KpiStripItem) {
@@ -243,7 +246,7 @@ const { toolbarItems } = usePageToolbar(() => ({
 <template>
   <Page>
     <ClpmPageToolbar
-      title="工作台"
+      title="系统概览"
       subtitle="跨模块待办门户"
       :loading="loading"
       :last-refresh="lastRefresh"
@@ -326,7 +329,11 @@ const { toolbarItems } = usePageToolbar(() => ({
             :title="formatTime(linkHealth.lastSyncAt)"
           >
             <span class="text-sm font-medium font-mono">
-              {{ formatTime(linkHealth.lastSyncAt).slice(5, 16) }}
+              {{
+                dayjs(normalizeUtcTimestamp(linkHealth.lastSyncAt)).format(
+                  'MM-DD HH:mm:ss',
+                )
+              }}
             </span>
           </Tooltip>
           <span

@@ -16,10 +16,11 @@ import { useRouter } from 'vue-router';
 import { IconifyIcon } from '@vben/icons';
 
 import { Empty, Tag, Tooltip } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import { getPredictionsApi } from '#/api/dashboard';
 import { ClpmDataCanvas } from '#/components/clpm';
-import { formatTime } from '#/utils/format';
+import { formatTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'ClpmPredictionCard' });
 
@@ -73,6 +74,13 @@ const METRIC_LABEL: Record<string, string> = {
   saturation_rate: '饱和率',
   steady_rate: '平稳率',
 };
+
+/** 预测生成时间短格式（MM-DD HH:mm:ss，不再用 slice 截断 locale 字符串） */
+function shortTime(t: null | string | undefined): string {
+  if (!t) return '—';
+  const d = dayjs(normalizeUtcTimestamp(t));
+  return d.isValid() ? d.format('MM-DD HH:mm:ss') : '—';
+}
 
 const isEmpty = computed(
   () => !error.value && (result.value?.predictions.length ?? 0) === 0,
@@ -166,7 +174,7 @@ defineExpose({ refresh: load });
       <span class="clpm-prediction-card__summary-text">{{ summaryText }}</span>
       <Tooltip :title="`预测生成于 ${formatTime(result.generatedAt)}`">
         <span class="clpm-prediction-card__time">
-          {{ formatTime(result.generatedAt).slice(5, 16) }}
+          {{ shortTime(result.generatedAt) }}
         </span>
       </Tooltip>
     </div>
