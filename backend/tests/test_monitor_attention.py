@@ -233,7 +233,7 @@ class TestBuildActions:
         assert "OPEN_WORKBENCH" in action_types
         ack = next(a for a in actions if a["type"] == "ACKNOWLEDGE")
         assert ack["enabled"] is False
-        assert ack["disabled_reason"] is not None
+        assert ack["disabledReason"] is not None
 
     def test_EXPERT无写动作但可进工作台(self):
         _, actions = _build_actions(

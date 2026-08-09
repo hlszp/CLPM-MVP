@@ -17,11 +17,13 @@ function monitorHome() {
  *
  * 角色权限（实现契约 §5）：
  * - 系统概览：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR
+ * - 关注队列：全部角色（Sponsor 只读，无 OPEN_WORKBENCH）
  * - 回路工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / EXPERT
  * - 预警事件：全部角色
  *
  * 注：高密度回路实时表仍保留为隐藏视图，服务于批量巡检/导出与旧书签；
- *     用户主入口统一为回路工作台。
+ *     用户主入口统一为回路工作台。关注队列聚合五类当前行动项，
+ *     预警记录（/monitor/alerts）承载历史/审计/导出，二者互补不替代。
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -66,6 +68,22 @@ const routes: RouteRecordRaw[] = [
           fullPathKey: false,
           icon: 'lucide:layout-panel-top',
           title: '回路工作台',
+        },
+      },
+      {
+        name: 'MonitorAttention',
+        path: '/monitor/attention',
+        component: () => import('#/views/monitor/attention.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+            'EXPERT',
+          ],
+          icon: 'lucide:list-checks',
+          title: '关注队列',
         },
       },
       {

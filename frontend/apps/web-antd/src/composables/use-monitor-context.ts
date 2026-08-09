@@ -185,9 +185,12 @@ export function useMonitorContext() {
     for (const key of CONTEXT_KEYS) {
       const patchVal = patchRecord[key];
       // patch 中明确指定的值优先（包括 null 表示清除）
-      const effectiveVal =
-        key in patch ? patchVal : currentRecord[key];
-      if (effectiveVal !== null && effectiveVal !== '' && effectiveVal !== false) {
+      const effectiveVal = key in patch ? patchVal : currentRecord[key];
+      if (
+        effectiveVal !== null &&
+        effectiveVal !== '' &&
+        effectiveVal !== false
+      ) {
         nextQuery[key] = String(effectiveVal);
       }
     }

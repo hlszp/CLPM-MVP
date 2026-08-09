@@ -115,7 +115,7 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
     });
   }
   // 整改 A-12：非零待办优先展示（稳定排序）
-  return items.sort(
+  return items.toSorted(
     (a, b) => Number(Number(b.value) > 0) - Number(Number(a.value) > 0),
   );
 });

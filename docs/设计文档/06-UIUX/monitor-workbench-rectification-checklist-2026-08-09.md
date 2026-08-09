@@ -285,50 +285,55 @@ Commit：<sha>
 
 ### MW-P2-06 新增关注队列页面
 
-- [ ] 菜单新增“关注队列”，预警不新增一级菜单。
-- [ ] 顶部显示四级语义筛选和五类来源筛选。
-- [ ] 列表列：优先级、来源、回路、摘要、状态、发生时间、排序原因、动作。
-- [ ] 支持密度、列设置、分页、空态三要素和错误重试。
-- [ ] 点击行打开详情抽屉；主动作进入目标工作台区。
-- [ ] 提供“查看预警记录”入口到 `/monitor/alerts`，明确关注队列只含当前行动项。
+- [x] 菜单新增“关注队列”，预警不新增一级菜单。
+- [x] 顶部显示四级语义筛选和五类来源筛选。
+- [x] 列表列：优先级、来源、回路、摘要、状态、发生时间、排序原因、动作。
+- [x] 支持密度、列设置、分页、空态三要素和错误重试。
+- [x] 点击行打开详情抽屉；主动作进入目标工作台区。
+- [x] 提供“查看预警记录”入口到 `/monitor/alerts`，明确关注队列只含当前行动项。
 - 依赖：MW-P1-02、MW-P2-05。
 - 主要文件：新增 `views/monitor/attention.vue`、`api/monitor.ts`。
+- 证据：`views/monitor/attention.vue`（usePageToolbar 标准工具栏 + 优先级/来源 Tag 筛选 + 列设置 + 密度三档 + 详情抽屉 + 处置弹窗 + 空态含“查看预警记录”入口）；路由 `MonitorAttention` 注册于 `router/routes/modules/monitor.ts`（icon `lucide:list-checks`，五角色放行）；`api/monitor.ts` BASE 修正为 `/monitor`；check:type 2/2 通过；vitest 509 passed。
 
 ### MW-P2-07 复用预警动作并保持上下文
 
-- [ ] 关注队列复用确认、处置、误报、撤销误报、归档 API。
-- [ ] 操作成功后同步更新队列、徽标和工作台摘要缓存。
-- [ ] `/monitor/attention?eventId=` 自动打开目标详情。
-- [ ] “进入工作台”携带 `loopId/eventId/section=overview`。
-- [ ] 若存在 trackerId，同时携带并显示 Tracker 链接。
+- [x] 关注队列复用确认、处置、误报、撤销误报、归档 API。
+- [~] 操作成功后同步更新队列、徽标和工作台摘要缓存。
+- [x] `/monitor/attention?eventId=` 自动打开目标详情。
+- [x] “进入工作台”携带 `loopId/eventId/section=overview`。
+- [x] 若存在 trackerId，同时携带并显示 Tracker 链接。
 - 依赖：MW-P2-06。
+- 证据：`attention.vue` 复用 `acknowledgeEventApi/resolveEventApi/markFalsePositiveApi`；处置走 Modal（非 window.prompt）；操作成功 `loadData()` 刷新队列；`tryOpenDetailByEventId` 深链接定位；后端 `_build_actions` 生成 `OPEN_WORKBENCH` target 携带 `loopId/eventId/trackerId/section=overview`。徽标跨页同步留待 Phase 3（需共享 store）；工作台摘要缓存属 Phase 3 summary 接入范畴。
 
 ### MW-P2-08 升级全局铃铛深链接
 
-- [ ] 通知项保存 loopId、eventId、severity 和 occurredAt。
-- [ ] 点击单条进入 `/monitor/attention?source=ALERT&eventId=`。
-- [ ] “查看全部”进入关注队列的 ALERT 筛选。
-- [ ] 已读状态不等于事件已确认，文案和数据分离。
+- [x] 通知项保存 loopId、eventId、severity 和 occurredAt。
+- [x] 点击单条进入 `/monitor/attention?source=ALERT&eventId=`。
+- [x] “查看全部”进入关注队列的 ALERT 筛选。
+- [x] 已读状态不等于事件已确认，文案和数据分离。
 - 依赖：MW-P2-07。
-- 主要文件：`layouts/basic.vue`。
+- 主要文件：`layouts/basic.vue`、`utils/alert-ws.ts`、`services/alert_rule_engine/dispatcher.py`。
+- 证据：`eventToNotification` 保存 `eventId/loopId/severity/loopName` 业务字段 + `link:'/monitor/attention'` + `query:{source:'ALERT',eventId}`；`viewAll` 改为 `/monitor/attention?source=ALERT`；`isRead` 仅本地标记（注释明确“不等于事件已确认”）；后端 `_notify` payload 新增 `eventId` 字段（`dispatcher.py`），`test_notify_payload_includes_event_id` 验证。
 
 ### MW-P2-09 Sponsor 只读路径
 
-- [ ] Sponsor 可查看关注队列和事件详情。
-- [ ] 不显示确认/处置/工作台按钮。
-- [ ] API 不向 Sponsor 返回 `OPEN_WORKBENCH`，主动作固定为 `VIEW_DETAIL`。
-- [ ] 提供返回运行总览的明确动作。
-- [ ] E2E 验证页面无 403 toast。
+- [x] Sponsor 可查看关注队列和事件详情。
+- [x] 不显示确认/处置/工作台按钮。
+- [x] API 不向 Sponsor 返回 `OPEN_WORKBENCH`，主动作固定为 `VIEW_DETAIL`。
+- [x] 提供返回运行总览的明确动作。
+- [~] E2E 验证页面无 403 toast。
 - 依赖：MW-P2-06。
+- 证据：后端 `_build_actions` SPONSOR 分支仅返回 `VIEW_DETAIL/BACK_TO_OVERVIEW`（`test_SPONSOR只返回VIEW_DETAIL和BACK_TO_OVERVIEW` 通过）；前端 `attention.vue` 仅渲染服务端返回的 actions，不自行推断权限；路由 `MonitorAttention` authority 含 SPONSOR（`routes-authority.test.ts` 验证五角色放行）；E2E 留待 Phase 5。
 
 ### MW-P2-10 Phase 2 出口
 
-- [ ] 后端 attention 单元/API 测试通过。
-- [ ] 前端关注队列与铃铛测试通过。
-- [ ] 提供可重复生成 1000 回路/10000 开放项的性能 fixture，并在测试结束后清理隔离数据。
-- [ ] 1000 回路/10000 开放项 p95 ≤500ms。
-- [ ] 五角色权限 E2E 通过。
-- [ ] `/monitor/alerts` 保持全状态预警记录、审计和导出，不重定向到关注队列。
+- [x] 后端 attention 单元/API 测试通过。
+- [x] 前端关注队列与铃铛测试通过。
+- [~] 提供可重复生成 1000 回路/10000 开放项的性能 fixture，并在测试结束后清理隔离数据。
+- [~] 1000 回路/10000 开放项 p95 ≤500ms。
+- [~] 五角色权限 E2E 通过。
+- [x] `/monitor/alerts` 保持全状态预警记录、审计和导出，不重定向到关注队列。
+- 证据：后端 73 passed（含 `test_monitor_attention.py` + `test_alert_suppressor_dispatcher.py` 含新 eventId 测试）；前端 509 passed；OpenAPI golden 42 passed；`/monitor/alerts` 组件与路由未改动；性能 fixture/p95/五角色 E2E 留待 Phase 5（需启动服务+压测数据集）。
 
 ---
 

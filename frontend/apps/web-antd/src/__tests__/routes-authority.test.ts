@@ -68,6 +68,25 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
     expect(workbench?.meta?.fullPathKey).toBe(false);
   });
 
+  it('关注队列（/monitor/attention）全部角色可访问（Sponsor 只读）', () => {
+    const attention = findRoute(
+      monitorRoutes,
+      (r) => r.path === '/monitor/attention',
+    );
+    expect(attention).toBeDefined();
+    const auth = authorityOf(attention!);
+    // 五角色全部放行——Sponsor 可查看关注队列（只读，无 OPEN_WORKBENCH）
+    for (const role of [
+      'ADMIN',
+      'IC_ENGINEER',
+      'PE_ENGINEER',
+      'SPONSOR',
+      'EXPERT',
+    ]) {
+      expect(auth).toContain(role);
+    }
+  });
+
   it('预警结果在监控、预警规则在配置；旧预警路由只做兼容跳转', () => {
     const events = findRoute(
       monitorRoutes,

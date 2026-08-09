@@ -75,7 +75,7 @@ async def dispatch(
                 if created_event_id and tracker_id:
                     await _link_event_to_tracker(db, created_event_id, tracker_id)
             elif act_type == "NOTIFY":
-                await _notify(rule, loop_id, result, final_severity)
+                await _notify(rule, loop_id, result, final_severity, created_event_id)
                 outcomes["NOTIFY"] = "published"
         except Exception:  # noqa: BLE001
             logger.warning(
@@ -211,11 +211,14 @@ async def _notify(
     loop_id: str,
     result: EvaluationResult,
     final_severity: str,
+    event_id: str | None = None,
 ) -> None:
     """发布通知到 Redis pub/sub（站内信 WebSocket 推送）+ 徽章计数。
 
     通知目标：所有 ADMIN/IC_ENGINEER 用户（Phase 1 简化，按角色广播）。
     Phase 2 可扩展为按回路订阅关系精准推送。
+
+    MW-P2-08：payload 携带 eventId，供前端铃铛深链接精确打开关注队列目标项。
     """
     payload = {
         "type": "alert",
@@ -227,6 +230,8 @@ async def _notify(
         "triggeredAt": datetime.now(UTC).isoformat(),
         "snapshot": result.condition_snapshot,
     }
+    if event_id:
+        payload["eventId"] = event_id
     try:
         await redis_client.publish(NOTIFY_CHANNEL, json.dumps(payload, ensure_ascii=False))
     except Exception:  # noqa: BLE001

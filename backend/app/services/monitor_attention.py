@@ -274,7 +274,7 @@ def _build_actions(
                 "type": "ACKNOWLEDGE",
                 "label": "确认",
                 "enabled": can_write,
-                "disabled_reason": None if can_write else "当前角色无确认权限",
+                "disabledReason": None if can_write else "当前角色无确认权限",
             }
         )
         actions.append(
@@ -282,7 +282,7 @@ def _build_actions(
                 "type": "RESOLVE",
                 "label": "处置",
                 "enabled": can_write,
-                "disabled_reason": None if can_write else "当前角色无处置权限",
+                "disabledReason": None if can_write else "当前角色无处置权限",
             }
         )
         actions.append(
@@ -290,7 +290,7 @@ def _build_actions(
                 "type": "MARK_FALSE_POSITIVE",
                 "label": "标记误报",
                 "enabled": can_write,
-                "disabled_reason": None if can_write else "当前角色无误报标记权限",
+                "disabledReason": None if can_write else "当前角色无误报标记权限",
             }
         )
         actions.append(

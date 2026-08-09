@@ -627,6 +627,52 @@ class TestDispatchNotify:
         # NOTIFY 仍标记为 published（异常被捕获，不阻塞）
         assert outcomes.get("NOTIFY") in ("published", "failed", None)
 
+    @pytest.mark.asyncio
+    async def test_notify_payload_includes_event_id(self, fake_redis) -> None:
+        """MW-P2-08：CREATE_EVENT + NOTIFY 时，通知 payload 携带 eventId。"""
+        import json
+
+        db = AsyncMock()
+        rule = _make_rule_dict(actions=[{"type": "CREATE_EVENT"}, {"type": "NOTIFY"}])
+        result = _make_evaluation_result()
+
+        published: list[str] = []
+        original_publish = fake_redis.publish
+
+        async def capture_publish(channel: str, message: str) -> int:
+            published.append(message)
+            return await original_publish(channel, message)
+
+        user_result = MagicMock()
+        user_result.__iter__ = MagicMock(return_value=iter([("u1",)]))
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=user_result)
+
+        with (
+            patch.object(dispatcher, "redis_client", fake_redis),
+            patch.object(dispatcher, "_suppressor") as m_supp,
+            patch("app.core.db.AsyncSessionLocal") as m_session,
+        ):
+            m_supp.get_trigger_count = AsyncMock(return_value=1)
+            m_supp.set_cooldown = AsyncMock()
+            m_supp.clear_duration = AsyncMock()
+            m_supp.increment_badge = AsyncMock()
+            m_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            m_session.return_value.__aexit__ = AsyncMock(return_value=None)
+            fake_redis.publish = capture_publish
+
+            outcomes = await dispatch(db, rule, "loop-1", result)
+
+        assert outcomes["NOTIFY"] == "published"
+        # 至少有一条通知发布到 NOTIFY_CHANNEL
+        assert len(published) >= 1
+        payload = json.loads(published[0])
+        # eventId 来自 CREATE_EVENT，应为非空 UUID 字符串
+        assert "eventId" in payload
+        assert payload["eventId"]
+        assert payload["loopId"] == "loop-1"
+        assert payload["type"] == "alert"
+
 
 class TestDispatchErrorHandling:
     """dispatch 异常处理。"""
