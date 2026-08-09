@@ -35,48 +35,52 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricConfidenceThreshold' });
 
-const { themeColors } = useClpmTheme();
+const { themeColors, confidenceColors } = useClpmTheme();
 
 const loading = ref(false);
 const saving = ref(false);
 const list = ref<MetricApi.ConfidenceThresholdItem[]>([]);
 
-/** 5 级可信度元数据（名称、颜色、中文等级、描述） */
+/** 5 级可信度元数据（名称、中文等级、描述；颜色走 levelColor 单源） */
 const LEVEL_META: Record<
   number,
-  { cnLabel: string; color: string; description: string; name: string }
+  { cnLabel: string; description: string; name: string }
 > = {
   1: {
     name: 'A',
     cnLabel: 'A级',
-    color: '#52c41a',
     description: '数据充分',
   },
   2: {
     name: 'B',
     cnLabel: 'B级',
-    color: '#1890ff',
     description: '数据较充分',
   },
   3: {
     name: 'C',
     cnLabel: 'C级',
-    color: '#faad14',
     description: '数据一般',
   },
   4: {
     name: 'D',
     cnLabel: 'D级',
-    color: '#fa8c16',
     description: '数据不足',
   },
   5: {
     name: 'E',
     cnLabel: 'E级',
-    color: '#f5222d',
     description: '可信度不足（INCONCLUSIVE）',
   },
 };
+
+/**
+ * 等级默认展示色：单源 confidenceColors（A-E），随明暗主题响应。
+ * 颜色固定不可编辑，保存时同样以此落库。
+ */
+function levelColor(level: number): string {
+  const key = (LEVEL_META[level]?.name ?? 'E') as keyof typeof confidenceColors.value;
+  return confidenceColors.value[key] ?? themeColors.value.NEUTRAL;
+}
 
 /** 编辑态：以 level 为 key 存储编辑中的 minRate 值 */
 const editState = reactive<Record<number, { minRate: number }>>({});
@@ -135,7 +139,7 @@ async function loadList() {
           name: LEVEL_META[lv]?.name ?? `L${lv}`,
           minRate: defaults[lv] ?? 0,
           description: LEVEL_META[lv]?.description,
-          color: LEVEL_META[lv]?.color,
+          color: levelColor(lv),
         };
         list.value.push(placeholder);
         editState[lv] = {
@@ -203,7 +207,7 @@ async function confirmSave() {
       name: item.name,
       minRate: editState[item.level]?.minRate ?? item.minRate,
       description: LEVEL_META[item.level]?.description ?? item.description,
-      color: LEVEL_META[item.level]?.color ?? item.color,
+      color: levelColor(item.level),
     }));
     await saveConfidenceThresholdsApi({ thresholds });
     message.success('可信度阈值保存成功');
@@ -264,7 +268,7 @@ onMounted(() => {
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'level'">
-          <Tag :color="LEVEL_META[record.level]?.color ?? 'default'">
+          <Tag :color="levelColor(record.level)">
             {{ LEVEL_META[record.level]?.cnLabel ?? `L${record.level}` }}
             ({{ record.name }})
           </Tag>
@@ -301,14 +305,14 @@ onMounted(() => {
             <span
               class="inline-block h-4 w-6 rounded"
               :style="{
-                background: LEVEL_META[record.level]?.color ?? record.color,
+                background: levelColor(record.level),
               }"
             ></span>
             <span
               class="font-mono text-xs"
               :style="{ color: themeColors.NEUTRAL }"
             >
-              {{ LEVEL_META[record.level]?.color ?? record.color }}
+              {{ levelColor(record.level) }}
             </span>
           </div>
         </template>
@@ -406,10 +410,10 @@ onMounted(() => {
 
 <style scoped>
 :deep(.row-violated) {
-  background-color: #fff1f0;
+  background-color: hsl(var(--status-error) / 8%);
 }
 
 :deep(.row-violated:hover > td) {
-  background-color: #ffe7e5 !important;
+  background-color: hsl(var(--status-error) / 12%) !important;
 }
 </style>

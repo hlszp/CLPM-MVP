@@ -1878,25 +1878,25 @@ watch(
 <style>
 /* v5.3：不参评回路行底色淡灰 */
 .row-not-evaluated > td {
-  background-color: #fafafa !important;
+  background-color: hsl(var(--muted) / 50%) !important;
 }
 
 .row-not-evaluated:hover > td {
-  background-color: #f0f0f0 !important;
+  background-color: hsl(var(--muted)) !important;
 }
 
 /* 选中行保留淡蓝背景，不显示任何纵向分隔线 */
 .loop-config-table .ant-table-tbody > tr.ant-table-row-selected > td {
-  background-color: #eff6ff !important; /* blue-50 */
+  background-color: hsl(var(--status-info) / 8%) !important;
   border-inline-end: none !important;
-  border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
+  border-bottom-color: hsl(var(--status-info) / 8%) !important; /* 与背景同色，弱化横向分割线 */
   box-shadow: none !important;
 }
 
 .loop-config-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
-  background-color: #dbeafe !important; /* blue-100 */
+  background-color: hsl(var(--status-info) / 14%) !important;
   border-inline-end: none !important;
-  border-bottom-color: #dbeafe !important;
+  border-bottom-color: hsl(var(--status-info) / 14%) !important;
   box-shadow: none !important;
 }
 
@@ -1946,14 +1946,13 @@ watch(
 .ant-table-small .ant-table-thead > tr > th {
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
+  color: hsl(var(--muted-foreground));
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background-color: #f8fafc;
+  background-color: hsl(var(--muted) / 60%);
 }
 
 .dark .ant-table-small .ant-table-thead > tr > th {
-  color: hsl(var(--muted-foreground));
   background-color: hsl(var(--card));
 }
 

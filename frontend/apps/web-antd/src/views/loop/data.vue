@@ -51,6 +51,7 @@ import {
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDangerConfirmModal, ClpmPageToolbar, ClpmStandardActions, ClpmToolbarButton } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
@@ -70,6 +71,7 @@ const IMPORT_ROLES = new Set(['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']);
 
 const route = useRoute();
 const userStore = useUserStore();
+const { themeColors } = useClpmTheme();
 
 /**
  * 当前用户是否具备导入管理权限。
@@ -339,7 +341,10 @@ const taskColumns: TableColumnsType = [
         h(Progress, {
           percent: pct,
           size: 'small',
-          strokeColor: record.status === 'FAILED' ? '#ff4d4f' : '#1890ff',
+          strokeColor:
+            record.status === 'FAILED'
+              ? themeColors.value.DANGER
+              : themeColors.value.INFO,
           showInfo: false,
         }),
       ]);
@@ -774,7 +779,7 @@ onMounted(async () => {
           <!-- 面板头部 -->
           <div
             class="shrink-0 border-b px-3 py-2.5"
-            style="background: #fafafa"
+            style="background: hsl(var(--muted) / 42%)"
           >
             <div class="flex items-center justify-between">
               <span class="text-sm font-semibold text-gray-800">回路选择</span>
@@ -820,7 +825,7 @@ onMounted(async () => {
           <!-- 操作条 -->
           <div
             class="shrink-0 flex items-center justify-between border-t px-3 py-1.5"
-            style="background: #fafafa"
+            style="background: hsl(var(--muted) / 42%)"
           >
             <Checkbox
               :checked="allSelected"

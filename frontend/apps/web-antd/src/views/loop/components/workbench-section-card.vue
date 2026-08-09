@@ -57,7 +57,11 @@ withDefaults(
       :percent="Math.round((progress ?? 0) * 100)"
       size="small"
       :show-info="false"
-      :stroke-color="progress !== null && progress < 1 ? '#1677ff' : '#52c41a'"
+      :stroke-color="
+        progress !== null && progress < 1
+          ? 'var(--status-info)'
+          : 'var(--status-ok)'
+      "
       class="mb-1"
     />
 
@@ -85,7 +89,7 @@ withDefaults(
   height: 100%;
   min-height: 0;
   padding: 6px 10px;
-  background: #fff;
+  background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 6px;
 }

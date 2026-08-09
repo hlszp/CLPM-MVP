@@ -97,13 +97,22 @@ const DETECTOR_KEYS = [
 
 type DetectorKey = (typeof DETECTOR_KEYS)[number];
 
-/** 控制类型元数据（FC/PC/TC/LC/CC） */
-const CONTROL_TYPE_META: Record<string, { cnLabel: string; color: string }> = {
-  FC: { cnLabel: '流量', color: '#1890ff' },
-  PC: { cnLabel: '压力', color: '#722ed1' },
-  TC: { cnLabel: '温度', color: '#fa8c16' },
-  LC: { cnLabel: '液位', color: '#13c2c2' },
-  CC: { cnLabel: '成分', color: '#eb2f96' },
+/**
+ * 类别标签统一中性样式（色彩约定 D2：类别色板退役 → slate 中性，
+ * 控制类型是类别区分而非状态语义，随明暗主题响应）
+ */
+const CATEGORY_TAG_STYLE = {
+  color: 'hsl(var(--muted-foreground))',
+  backgroundColor: 'hsl(var(--muted) / 60%)',
+} as const;
+
+/** 控制类型元数据（FC/PC/TC/LC/CC；类别色已退役，走 CATEGORY_TAG_STYLE） */
+const CONTROL_TYPE_META: Record<string, { cnLabel: string }> = {
+  FC: { cnLabel: '流量' },
+  PC: { cnLabel: '压力' },
+  TC: { cnLabel: '温度' },
+  LC: { cnLabel: '液位' },
+  CC: { cnLabel: '成分' },
 };
 
 const CONTROL_TYPES = ['FC', 'PC', 'TC', 'LC', 'CC'] as const;
@@ -534,7 +543,7 @@ onMounted(() => {
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'controlType'">
-          <Tag :color="CONTROL_TYPE_META[record.controlType]?.color">
+          <Tag :style="CATEGORY_TAG_STYLE" class="border-0">
             {{ CONTROL_TYPE_META[record.controlType]?.cnLabel }}
             ({{ record.controlType }})
           </Tag>

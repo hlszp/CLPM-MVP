@@ -962,18 +962,38 @@ const historyWindow = ref<number>(24);
 const historySnapshots = ref<KpiSnapshotItem[]>([]);
 
 // ===== 整改 F3：历史趋势指标多选（≤5） =====
-/** 可选指标注册表（综合评分=柱状，其余折线；色值为图表系列色） */
+/** 可选指标注册表（综合评分=柱状，其余折线；系列色见 historyMetricColor） */
 const HISTORY_METRIC_OPTIONS = [
-  { label: '综合评分', value: 'score', color: '#0d6efd', kind: 'bar' },
-  { label: '准确率', value: 'accuracyRate', color: '#198754', kind: 'line' },
-  { label: '快速率', value: 'fastRate', color: '#b45309', kind: 'line' },
-  { label: '平稳率', value: 'steadyRate', color: '#0d9488', kind: 'line' },
-  { label: '有效自控率', value: 'effectiveAutoRate', color: '#6d28d9', kind: 'line' },
-  { label: '好值率', value: 'goodValueRate', color: '#0369a1', kind: 'line' },
-  { label: '振荡率', value: 'oscillationRate', color: '#dc3545', kind: 'line' },
-  { label: '饱和率', value: 'saturationRate', color: '#c2410c', kind: 'line' },
-  { label: '仪表故障率', value: 'instrumentFaultRate', color: '#64748b', kind: 'line' },
+  { label: '综合评分', value: 'score', kind: 'bar' },
+  { label: '准确率', value: 'accuracyRate', kind: 'line' },
+  { label: '快速率', value: 'fastRate', kind: 'line' },
+  { label: '平稳率', value: 'steadyRate', kind: 'line' },
+  { label: '有效自控率', value: 'effectiveAutoRate', kind: 'line' },
+  { label: '好值率', value: 'goodValueRate', kind: 'line' },
+  { label: '振荡率', value: 'oscillationRate', kind: 'line' },
+  { label: '饱和率', value: 'saturationRate', kind: 'line' },
+  { label: '仪表故障率', value: 'instrumentFaultRate', kind: 'line' },
 ] as const;
+
+/**
+ * 历史趋势系列色：就近映射 themeColors 语义色（随明暗主题响应）。
+ * 默认 5 项（评分/准确/快速/平稳/自控）保持互异；非默认项允许撞色，
+ * 取舍同批次 A 图表族（区分色就近语义化，不再维护私有色板）。
+ */
+function historyMetricColor(metric: string): string {
+  const map: Record<string, string> = {
+    score: themeColors.value.INFO,
+    accuracyRate: themeColors.value.SUCCESS,
+    fastRate: themeColors.value.WARNING,
+    steadyRate: themeColors.value.NEUTRAL,
+    effectiveAutoRate: themeColors.value.DANGER,
+    goodValueRate: themeColors.value.INFO,
+    oscillationRate: themeColors.value.DANGER,
+    saturationRate: themeColors.value.WARNING,
+    instrumentFaultRate: themeColors.value.NEUTRAL,
+  };
+  return map[metric] ?? themeColors.value.NEUTRAL;
+}
 
 const HISTORY_METRIC_MAX = 5;
 
@@ -1089,13 +1109,13 @@ function renderHistoryTrend() {
         return typeof v === 'number' ? v : null;
       }),
       ...(o.kind === 'bar'
-        ? { barWidth: '40%', itemStyle: { color: o.color } }
+        ? { barWidth: '40%', itemStyle: { color: historyMetricColor(o.value) } }
         : {
             smooth: true,
             symbol: 'circle',
             symbolSize: 4,
-            lineStyle: { color: o.color, width: 2 },
-            itemStyle: { color: o.color },
+            lineStyle: { color: historyMetricColor(o.value), width: 2 },
+            itemStyle: { color: historyMetricColor(o.value) },
           }),
     })),
   });

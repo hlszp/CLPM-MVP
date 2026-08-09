@@ -1147,7 +1147,9 @@ defineExpose({
                 <div
                   class="flex items-center gap-2"
                   :style="{
-                    color: dataCheckResult.ok ? '#52c41a' : '#faad14',
+                    color: dataCheckResult.ok
+                      ? 'var(--status-ok)'
+                      : 'var(--status-warning)',
                   }"
                 >
                   <IconifyIcon

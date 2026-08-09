@@ -878,7 +878,7 @@ onBeforeUnmount(() => {
                 :show-info="false"
                 size="small"
                 status="active"
-                stroke-color="#1677ff"
+                stroke-color="var(--status-info)"
                 style="width: 60px"
               />
             </div>
@@ -902,7 +902,7 @@ onBeforeUnmount(() => {
                       record.status === 'FAILED' && record.errorMessage
                     "
                   >
-                    <div style="color: #ff7875">
+                    <div style="color: var(--status-error)">
                       错误：{{ record.errorMessage }}
                     </div>
                   </template>

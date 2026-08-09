@@ -45,14 +45,22 @@ const { themeColors } = useClpmTheme();
 // 元数据
 // ---------------------------------------------------------------------------
 
-/** 控制类型元数据（STABLE/SLOW/FAST/LOGIC） */
-const CONTROL_TYPE_META: Record<ControlType, { color: string; label: string }> =
-  {
-    STABLE: { label: '稳定型', color: '#10b981' },
-    SLOW: { label: '慢速型', color: '#3b82f6' },
-    FAST: { label: '快速型', color: '#f59e0b' },
-    LOGIC: { label: '逻辑型', color: '#722ed1' },
-  };
+/**
+ * 类别标签统一中性样式（色彩约定 D2：类别色板退役 → slate 中性，
+ * 控制类型是类别区分而非状态语义，随明暗主题响应）
+ */
+const CATEGORY_TAG_STYLE = {
+  color: 'hsl(var(--muted-foreground))',
+  backgroundColor: 'hsl(var(--muted) / 60%)',
+} as const;
+
+/** 控制类型元数据（STABLE/SLOW/FAST/LOGIC；类别色已退役，走 CATEGORY_TAG_STYLE） */
+const CONTROL_TYPE_META: Record<ControlType, { label: string }> = {
+  STABLE: { label: '稳定型' },
+  SLOW: { label: '慢速型' },
+  FAST: { label: '快速型' },
+  LOGIC: { label: '逻辑型' },
+};
 
 /** 控制类型展示顺序（对齐后端 4 控制类型） */
 const CONTROL_TYPES: ControlType[] = ['STABLE', 'SLOW', 'FAST', 'LOGIC'];
@@ -604,13 +612,7 @@ onMounted(() => {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'controlType'">
-              <Tag
-                :color="
-                  CONTROL_TYPE_META[
-                    (record as MetricApi.AlgorithmParamsControlItem).controlType
-                  ]?.color
-                "
-              >
+              <Tag :style="CATEGORY_TAG_STYLE" class="border-0">
                 {{
                   CONTROL_TYPE_META[
                     (record as MetricApi.AlgorithmParamsControlItem).controlType
@@ -697,7 +699,7 @@ onMounted(() => {
         >
           <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <Tag :color="CONTROL_TYPE_META[ct]?.color">
+              <Tag :style="CATEGORY_TAG_STYLE" class="border-0">
                 {{ CONTROL_TYPE_META[ct]?.label }} ({{ ct }})
               </Tag>
             </div>

@@ -133,12 +133,14 @@ const newCandidate = reactive({
   td: 0.5,
 });
 
-/** 多 PID 对比色板（最多 5 组） */
-const candidateColors = computed(() =>
-  isDark.value
-    ? ['#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#a78bfa']
-    : ['#1890ff', '#52c41a', '#fa8c16', '#f5222d', '#722ed1'],
-);
+/** 多 PID 对比色板（最多 5 组，语义色随明暗主题响应） */
+const candidateColors = computed(() => [
+  themeColors.value.INFO,
+  themeColors.value.SUCCESS,
+  themeColors.value.WARNING,
+  themeColors.value.DANGER,
+  themeColors.value.NEUTRAL,
+]);
 
 /** 根据模型类型返回需要显示的模型参数字段 */
 const modelParamFields = computed<

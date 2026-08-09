@@ -38,9 +38,12 @@ import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'MetricHistorySnapshots' });
+
+const { themeColors } = useClpmTheme();
 
 // ============ 列表状态 ============
 const loading = ref(false);
@@ -784,14 +787,14 @@ onMounted(() => {
                 :style="{
                   color:
                     item.confidenceLevel === 'E'
-                      ? '#9CA3AF'
+                      ? themeColors.NEUTRAL
                       : item.score !== null && item.score !== undefined
                         ? item.score >= 80
-                          ? '#10B981'
+                          ? themeColors.SUCCESS
                           : item.score >= 60
-                            ? '#F59E0B'
-                            : '#F43F5E'
-                        : '#9CA3AF',
+                            ? themeColors.WARNING
+                            : themeColors.DANGER
+                        : themeColors.NEUTRAL,
                 }"
               >
                 {{ formatScore(item.score, item.confidenceLevel) }}
