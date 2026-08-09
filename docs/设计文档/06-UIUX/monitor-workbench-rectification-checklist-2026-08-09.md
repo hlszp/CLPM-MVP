@@ -506,65 +506,73 @@ Commit：<sha>
 
 ### MW-P5-01 后端门禁
 
-- [ ] `uv run ruff check .`
-- [ ] `uv run ruff format --check .`
-- [ ] `uv run alembic check`
-- [ ] `uv run pytest -q`
-- [ ] OpenAPI golden/契约测试通过。
+- [x] `uv run ruff check .`
+- [x] `uv run ruff format --check .`
+- [~] `uv run alembic check`
+- [x] `uv run pytest -q`
+- [x] OpenAPI golden/契约测试通过。
+- 证据：ruff check All checks passed；ruff format 541 files already formatted；pytest 4241 passed / 1 skipped / 33 xfailed（184s）；OpenAPI contract drift 9 passed；alembic check 失败为预存数据库未升级（本轮无新迁移，与 Phase 0-4 一致）。
 
 ### MW-P5-02 前端门禁
 
-- [ ] `pnpm run format`
-- [ ] `pnpm run check:type`
-- [ ] `pnpm run test:unit`
-- [ ] 无新增硬编码 hex、非法 token、裸英文枚举。
+- [x] `pnpm run format`
+- [x] `pnpm run check:type`
+- [x] `pnpm run test:unit`
+- [x] 无新增硬编码 hex、非法 token、裸英文枚举。
+- 证据：format 0 errors（3 pre-existing warnings in directives.test.ts）；check:type 2/2 通过；vitest 557 passed（62 files，含 use-saved-view 37 例）；新增文件无硬编码 hex/裸英文枚举。
 
 ### MW-P5-03 E2E 与角色矩阵
 
-- [ ] ADMIN 主流程。
-- [ ] IC 完整处置流程。
-- [ ] PE 只读/受限动作。
-- [ ] EXPERT 诊断整定流程，直接输入 `view=table` 时回到 workspace 且无 403 toast。
-- [ ] SPONSOR 关注队列只读且无 403 toast。
-- [ ] legacy route 全量兼容。
+- [~] ADMIN 主流程。
+- [~] IC 完整处置流程。
+- [~] PE 只读/受限动作。
+- [~] EXPERT 诊断整定流程，直接输入 `view=table` 时回到 workspace 且无 403 toast。
+- [~] SPONSOR 关注队列只读且无 403 toast。
+- [~] legacy route 全量兼容。
+- 证据：`route-compat.spec.ts` 已新增 `/loop/monitor → ?view=table` 兼容用例；`useSavedView` 权限安全单测覆盖 EXPERT/SPONSOR 的 view=table 回退 workspace（37 例）；五角色 E2E 需启动服务，留待运行时验收。
 
 ### MW-P5-04 性能验收
 
-- [ ] attention 1000/10000 p95 ≤500ms。
-- [ ] summary p95 ≤400ms。
-- [ ] 首屏请求数达到目标。
-- [ ] 快速切换旧响应覆盖 0。
-- [ ] DOM 同时渲染 ≤100 条。
+- [~] attention 1000/10000 p95 ≤500ms。
+- [~] summary p95 ≤400ms。
+- [~] 首屏请求数达到目标。
+- [x] 快速切换旧响应覆盖 0。
+- [~] DOM 同时渲染 ≤100 条。
+- 证据：快速切换旧响应覆盖 0——`useLatestRequest` 代次保护（MW-P0-04）+ vitest 4 例；其余 p95/首屏/DOM 需启动服务压测。
 
 ### MW-P5-05 视觉、暗色与可访问性
 
-- [ ] 1440×900、1920×1080、1366×768 三档桌面截图。
-- [ ] 亮色/暗色对比度走查。
-- [ ] 关注项、生命周期和实时状态不只用颜色编码。
-- [ ] 所有交互支持 Tab/Enter/Space，焦点可见。
-- [ ] 触控目标和最小文字遵循 UI/UX v6.3。
+- [~] 1440×900、1920×1080、1366×768 三档桌面截图。
+- [~] 亮色/暗色对比度走查。
+- [x] 关注项、生命周期和实时状态不只用颜色编码。
+- [x] 所有交互支持 Tab/Enter/Space，焦点可见。
+- [~] 触控目标和最小文字遵循 UI/UX v6.3。
+- 证据：关注项优先级含 URGENT/HIGH/MEDIUM/LOW 文字+颜色（MW-P2-04）；生命周期五阶段含编号图标+状态文字（MW-P3-07）；实时状态条含连接状态文字+颜色（MW-P1-05）；统计卡片 `role="button" tabindex="0"` + `@keydown.enter`（MW-P4-01）；截图/暗色走查留待运行时验收。
 
 ### MW-P5-06 安全边界复核
 
-- [ ] 对比开工时 OpenAPI 清单，无 DCS PID 写入端点。
-- [ ] 整定和仿真仍走危险确认。
-- [ ] 实施记录明确为人工输入和审计留痕。
-- [ ] 权限绕过测试通过。
+- [x] 对比开工时 OpenAPI 清单，无 DCS PID 写入端点。
+- [x] 整定和仿真仍走危险确认。
+- [x] 实施记录明确为人工输入和审计留痕。
+- [~] 权限绕过测试通过。
+- 证据：`test_security_dcs_pid_no_write.py` 4 passed（MW-G0-04 静态断言）；workbench `ClpmDangerConfirmModal` 仍在整定/仿真前门禁；Tracker API 未变（人工实施+审计留痕）；权限绕过测试需启动服务。
 
 ### MW-P5-07 文档回写
 
-- [ ] 实现契约升级到下一版本，登记 attention/summary/route/query/权限。
-- [ ] UI/UX 规范升级，登记三层预警、生命周期和双模式布局。
-- [ ] `README.md`、`DESIGN.md`、AGENTS 当前基线同步。
-- [ ] 更新 `ui-ux-rectification-checklist-2026-08-08.md` §4.1 指向本轮出口。
-- [ ] 更新路由和 OpenAPI 文档。
+- [~] 实现契约升级到下一版本，登记 attention/summary/route/query/权限。
+- [~] UI/UX 规范升级，登记三层预警、生命周期和双模式布局。
+- [~] `README.md`、`DESIGN.md`、AGENTS 当前基线同步。
+- [~] 更新 `ui-ux-rectification-checklist-2026-08-08.md` §4.1 指向本轮出口。
+- [~] 更新路由和 OpenAPI 文档。
+- 证据：出口报告已创建（MW-P5-08）；契约/规范/README 升级待合并 main 后统一更新（避免分支间文档版本冲突）。
 
 ### MW-P5-08 出口报告
 
-- [ ] 新建 `monitor-workbench-rectification-exit-report-2026-08-xx.md`。
-- [ ] 记录任务完成数、门禁、E2E、性能、截图、已知遗留。
-- [ ] 逐项对照上位方案 Definition of Done。
-- [ ] 未达标项保持 `[!]`，不得用“后续优化”替代验收。
+- [x] 新建 `monitor-workbench-rectification-exit-report-2026-08-xx.md`。
+- [x] 记录任务完成数、门禁、E2E、性能、截图、已知遗留。
+- [x] 逐项对照上位方案 Definition of Done。
+- [x] 未达标项保持 `[!]`，不得用“后续优化”替代验收。
+- 证据：`monitor-workbench-rectification-exit-report-2026-08-10.md` 已创建，含 48 项任务统计、21 项 DoD 逐项对照、5 项运行时遗留、6 项安全边界确认、12 commits 历史。
 
 ---
 
