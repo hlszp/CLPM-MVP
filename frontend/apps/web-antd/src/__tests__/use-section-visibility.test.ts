@@ -86,7 +86,12 @@ describe('useSectionVisibility', () => {
 
     // 模拟进入视口
     mockObserver!.callback(
-      [{ isIntersecting: true, target: el } as unknown as IntersectionObserverEntry],
+      [
+        {
+          isIntersecting: true,
+          target: el,
+        } as unknown as IntersectionObserverEntry,
+      ],
       mockObserver as unknown as IntersectionObserver,
     );
     expect(api.isVisible.value).toBe(true);
@@ -94,7 +99,12 @@ describe('useSectionVisibility', () => {
 
     // 模拟滚出视口——onceVisible 保持 true
     mockObserver!.callback(
-      [{ isIntersecting: false, target: el } as unknown as IntersectionObserverEntry],
+      [
+        {
+          isIntersecting: false,
+          target: el,
+        } as unknown as IntersectionObserverEntry,
+      ],
       mockObserver as unknown as IntersectionObserver,
     );
     expect(api.isVisible.value).toBe(false);
@@ -108,7 +118,12 @@ describe('useSectionVisibility', () => {
     const el = document.createElement('div');
     api.register(el);
     mockObserver!.callback(
-      [{ isIntersecting: true, target: el } as unknown as IntersectionObserverEntry],
+      [
+        {
+          isIntersecting: true,
+          target: el,
+        } as unknown as IntersectionObserverEntry,
+      ],
       mockObserver as unknown as IntersectionObserver,
     );
     expect(api.shouldLoad('loop-1')).toBe(true);
@@ -120,7 +135,12 @@ describe('useSectionVisibility', () => {
     const el = document.createElement('div');
     api.register(el);
     mockObserver!.callback(
-      [{ isIntersecting: true, target: el } as unknown as IntersectionObserverEntry],
+      [
+        {
+          isIntersecting: true,
+          target: el,
+        } as unknown as IntersectionObserverEntry,
+      ],
       mockObserver as unknown as IntersectionObserver,
     );
     expect(api.shouldLoad(null)).toBe(false);
@@ -133,7 +153,12 @@ describe('useSectionVisibility', () => {
     const el = document.createElement('div');
     api.register(el);
     mockObserver!.callback(
-      [{ isIntersecting: true, target: el } as unknown as IntersectionObserverEntry],
+      [
+        {
+          isIntersecting: true,
+          target: el,
+        } as unknown as IntersectionObserverEntry,
+      ],
       mockObserver as unknown as IntersectionObserver,
     );
     expect(api.onceVisible.value).toBe(true);

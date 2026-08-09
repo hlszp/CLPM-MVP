@@ -53,10 +53,7 @@ export interface UseSectionVisibilityReturn {
 export function useSectionVisibility(
   options: SectionVisibilityOptions = {},
 ): UseSectionVisibilityReturn {
-  const {
-    rootMargin = '200px',
-    threshold = 0,
-  } = options;
+  const { rootMargin = '200px', threshold = 0 } = options;
 
   const isVisible = ref(false);
   const onceVisible = ref(false);
@@ -65,9 +62,7 @@ export function useSectionVisibility(
   let targetEl: Element | null = null;
 
   function isSupported(): boolean {
-    return (
-      typeof window !== 'undefined' && 'IntersectionObserver' in window
-    );
+    return typeof window !== 'undefined' && 'IntersectionObserver' in window;
   }
 
   function ensureObserver(): void {

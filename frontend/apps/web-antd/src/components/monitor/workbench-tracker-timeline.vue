@@ -1,16 +1,12 @@
-/**
- * 工作台 Tracker/实施/验证时间线（MW-P3-08 + MW-P3-09）
- *
- * 显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。
- * VERIFYING 超期显示超期时长和"立即验证"。
- * CLOSED 显示改善/无变化/恶化结论；REOPENED 显示原因。
- * 实施前后对比（MW-P3-09）：评分、核心 KPI、PID 和验证时间窗，
- * 无基线/窗口不足/可信度不足时显示 INCONCLUSIVE，不显示伪 0。
- * 所有编辑动作复用 Tracker API 和权限，不另建状态机。
- * 平台安全边界文案始终可见：只读建议、人工实施、需留痕。
- *
- * 对齐整改方案 §7.1 闭环时间线。
- */
+/** * 工作台 Tracker/实施/验证时间线（MW-P3-08 + MW-P3-09） * *
+显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。 *
+VERIFYING 超期显示超期时长和"立即验证"。 * CLOSED
+显示改善/无变化/恶化结论；REOPENED 显示原因。 *
+实施前后对比（MW-P3-09）：评分、核心 KPI、PID 和验证时间窗， *
+无基线/窗口不足/可信度不足时显示 INCONCLUSIVE，不显示伪 0。 * 所有编辑动作复用
+Tracker API 和权限，不另建状态机。 *
+平台安全边界文案始终可见：只读建议、人工实施、需留痕。 * * 对齐整改方案 §7.1
+闭环时间线。 */
 <script lang="ts" setup>
 import type { MonitorApi } from '#/api/monitor';
 
@@ -64,10 +60,12 @@ const EFFECT_STATUS_META: Record<string, { color: string; label: string }> = {
 
 const statusMeta = computed(() => {
   if (!props.tracker) return null;
-  return STATUS_META[props.tracker.actionStatus] ?? {
-    color: 'default',
-    label: props.tracker.actionStatus,
-  };
+  return (
+    STATUS_META[props.tracker.actionStatus] ?? {
+      color: 'default',
+      label: props.tracker.actionStatus,
+    }
+  );
 });
 
 const isVerifying = computed(() => props.tracker?.actionStatus === 'VERIFYING');
@@ -311,10 +309,7 @@ function handleVerify() {
         </div>
 
         <!-- 时间窗 -->
-        <div
-          v-if="effectCompare.timeWindow"
-          class="effect-compare__window"
-        >
+        <div v-if="effectCompare.timeWindow" class="effect-compare__window">
           <span class="effect-compare__window-label">对比窗口</span>
           <span class="effect-compare__window-value">
             实施前 {{ formatTime(effectCompare.timeWindow.beforeStart) }} ~
@@ -364,7 +359,9 @@ function handleVerify() {
           >
             <span class="effect-compare__kpi-name">{{ kpi.metricName }}</span>
             <span class="effect-compare__kpi-values">
-              <span>{{ kpi.before == null ? '—' : kpi.before.toFixed(2) }}</span>
+              <span>{{
+                kpi.before == null ? '—' : kpi.before.toFixed(2)
+              }}</span>
               <span class="effect-compare__val-arrow">→</span>
               <span>{{ kpi.after == null ? '—' : kpi.after.toFixed(2) }}</span>
               <span

@@ -449,36 +449,39 @@ Commit：<sha>
 
 ### MW-P4-01 抽取 `LoopFleetView`
 
-- [ ] 将旧 `monitor.vue` 的列表、筛选、统计、列设置、密度、导出抽为可嵌入组件。
-- [ ] 页面壳、路由和全局工具栏不进入组件。
-- [ ] 实时逻辑改用 `useLoopRealtime`。
-- [ ] 保留现有表格列、趋势弹窗和错误/空态。
+- [x] 将旧 `monitor.vue` 的列表、筛选、统计、列设置、密度、导出抽为可嵌入组件。
+- [x] 页面壳、路由和全局工具栏不进入组件。
+- [x] 实时逻辑改用 `useLoopRealtime`。
+- [x] 保留现有表格列、趋势弹窗和错误/空态。
 - 依赖：MW-P1-04、MW-P1-02。
+- 证据：`components/monitor/loop-fleet-view.vue`（746 行）从 monitor.vue 抽取列表/筛选/统计/列设置/密度/导出；`useLoopRealtime` 接入实时状态；接收 `initialPlantNodeId/initialLoopType/initialKeyword` props + `loopClick` emit；页面壳/路由/全局工具栏由父页面 workbench.vue 提供。
 
 ### MW-P4-02 工作台增加 workspace/table 模式
 
-- [ ] `/monitor/loop-workbench?view=workspace|table` URL 可还原。
-- [ ] Segmented/切换按钮名称为“单回路工作台 / 批量表格”。
-- [ ] table 点击回路切换到 workspace 并携带 loopId。
-- [ ] workspace 返回 table 时保持滚动、分页和筛选。
-- [ ] table 模式仅 ADMIN/IC/PE 可用；EXPERT 强制规范化到 workspace，SPONSOR 不开放工作台路由。
+- [x] `/monitor/loop-workbench?view=workspace|table` URL 可还原。
+- [x] Segmented/切换按钮名称为"单回路工作台 / 批量表格"。
+- [x] table 点击回路切换到 workspace 并携带 loopId。
+- [~] workspace 返回 table 时保持滚动、分页和筛选。
+- [~] table 模式仅 ADMIN/IC/PE 可用；EXPERT 强制规范化到 workspace，SPONSOR 不开放工作台路由。
 - 依赖：MW-P4-01、MW-P1-01。
+- 证据：workbench.vue `isTableView` + Segmented `viewModeOptions` + `handleViewChange` + `handleFleetLoopClick`；`monitorCtx.view` 从 URL `?view=` 读取；EXPERT 角色规范化留待 Phase 5 E2E。
 
 ### MW-P4-03 统一筛选与保存视图
 
-- [ ] 两种模式共享装置、类型、关键词、只看关注项。
-- [ ] 保存视图包含模式、筛选和时间窗，不包含 eventId/trackerId。
-- [ ] 应用保存视图时无权限字段被安全忽略。
+- [~] 两种模式共享装置、类型、关键词、只看关注项。
+- [~] 保存视图包含模式、筛选和时间窗，不包含 eventId/trackerId。
+- [~] 应用保存视图时无权限字段被安全忽略。
 - 依赖：MW-P4-02。
 
 ### MW-P4-04 切换规范路由
 
-- [ ] `/loop/monitor` redirect 到 `?view=table`。
-- [ ] `/monitor/alerts` 保留组件并改称“预警记录”；`/alert/events` 继续重定向到该路径。
-- [ ] 关注队列与预警记录双向保留来源、loopId 和状态筛选上下文。
-- [ ] 路由注释、权限测试、E2E 兼容矩阵同步。
-- [ ] 旧组件保留至少一个发布周期，不在本轮删除。
+- [x] `/loop/monitor` redirect 到 `?view=table`。
+- [~] `/monitor/alerts` 保留组件并改称"预警记录"；`/alert/events` 继续重定向到该路径。
+- [~] 关注队列与预警记录双向保留来源、loopId 和状态筛选上下文。
+- [~] 路由注释、权限测试、E2E 兼容矩阵同步。
+- [x] 旧组件保留至少一个发布周期，不在本轮删除。
 - 依赖：MW-P2-10、MW-P4-02。
+- 证据：`monitor.ts` `/loop/monitor` redirect 到 `/monitor/loop-workbench?view=table`；`/loop/monitor/legacy` 保留旧组件；`/monitor/alerts` 已有路由（预警事件→预警记录改称留待 Phase 5）；commit `81e817d`。
 
 ### MW-P4-05 验证批量能力无回退
 

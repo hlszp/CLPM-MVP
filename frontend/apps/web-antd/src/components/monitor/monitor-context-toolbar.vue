@@ -4,16 +4,14 @@ API 就绪前不渲染（attentionOnlyHidden prop 控制） * - 搜索 300ms
 防抖；下拉变化立即更新 URL；回车立即查询 * - 保存视图复用
 use-clpm-preferences.ts * * 对齐整改方案 §9.1/§9.4。 */
 <script lang="ts" setup>
-import type { MonitorContext } from '#/composables/use-monitor-context';
-
 import { onMounted, ref, watch } from 'vue';
 
 import { Input, Select } from 'ant-design-vue';
 
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { LOOP_TYPE_LABEL_MAP } from '#/composables/use-loop-palettes';
 import { useMonitorContext } from '#/composables/use-monitor-context';
+import { useSavedView } from '#/composables/use-saved-view';
 import { flattenNodes } from '#/utils/plant-node';
 
 defineOptions({ name: 'MonitorContextToolbar' });
@@ -37,7 +35,9 @@ const emit = defineEmits<{
 }>();
 
 const monitorCtx = useMonitorContext();
-const { preferences, saveFilterPreset } = usePagePreference(props.pageKey);
+const { savedFilters, saveCurrentView, applyView } = useSavedView(
+  props.pageKey,
+);
 
 // ===== 装置/单元选项 =====
 const plantNodeOptions = ref<{ label: string; value: string }[]>([
@@ -102,34 +102,22 @@ function handleAttentionOnlyChange(checked: boolean) {
   emit('filterChange');
 }
 
-// ===== 保存视图 =====
+// ===== 保存视图（MW-P4-03）=====
+// 保存视图包含模式、筛选和时间窗，不包含 eventId/trackerId/section（深链接上下文）
 function handleSaveView() {
-  const name = `预设 ${(preferences.value.savedFilters?.length ?? 0) + 1}`;
-  const filters: Record<string, any> = {
-    keyword: monitorCtx.keyword.value,
-    loopType: monitorCtx.loopType.value,
-    plantNodeId: monitorCtx.plantNodeId.value,
-    view: monitorCtx.view.value,
-    timeWindow: monitorCtx.timeWindow.value,
-  };
-  saveFilterPreset(name, filters);
+  const name = `预设 ${savedFilters.value.length + 1}`;
+  saveCurrentView(name);
 }
 
+/**
+ * 应用保存视图（MW-P4-03）。
+ * 无权限字段被安全忽略：EXPERT/SPONSOR 不能使用 table 模式，
+ * 应用 view=table 时回退到 workspace。
+ */
 function handleApplyPreset(value: any) {
   const presetId = typeof value === 'string' ? value : String(value ?? '');
-  const preset = (preferences.value.savedFilters ?? []).find(
-    (p) => p.id === presetId,
-  );
-  if (!preset) return;
-  const patch: Partial<MonitorContext> = {};
-  const f = preset.filters;
-  if (f.keyword !== undefined) patch.keyword = f.keyword;
-  if (f.loopType !== undefined) patch.loopType = f.loopType || null;
-  if (f.plantNodeId !== undefined) patch.plantNodeId = f.plantNodeId || null;
-  if (f.view !== undefined) patch.view = f.view;
-  if (f.timeWindow !== undefined) patch.timeWindow = f.timeWindow;
-  monitorCtx.update(patch);
-  emit('filterChange');
+  const ok = applyView(presetId);
+  if (ok) emit('filterChange');
 }
 
 // ===== 同步 URL → 本地 keyword =====
@@ -205,7 +193,7 @@ onMounted(() => {
       class="w-32"
       placeholder="保存视图"
       :options="
-        (preferences.savedFilters ?? []).map((p) => ({
+        savedFilters.map((p) => ({
           label: p.name,
           value: p.id,
         }))
@@ -220,9 +208,9 @@ onMounted(() => {
           >
             + 保存当前筛选…
           </button>
-          <hr v-if="(preferences.savedFilters?.length ?? 0) > 0" class="my-1" />
+          <hr v-if="savedFilters.length > 0" class="my-1" />
           <div
-            v-for="preset in preferences.savedFilters ?? []"
+            v-for="preset in savedFilters"
             :key="preset.id"
             class="cursor-pointer rounded px-2 py-1 text-xs hover:bg-gray-100"
             @click="handleApplyPreset(preset.id)"
