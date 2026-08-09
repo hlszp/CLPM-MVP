@@ -55,7 +55,7 @@ describe('useLatestRequest', () => {
   it('run：任务正常完成', async () => {
     const { api } = setup();
     api.bump('loop-A');
-    const result = ref<string | null>(null);
+    const result = ref<null | string>(null);
     await api.run(async () => {
       result.value = 'done';
     });
@@ -64,7 +64,7 @@ describe('useLatestRequest', () => {
 
   it('快速切换场景：A 慢 / B 快，最终只写入 B（旧响应丢弃）', async () => {
     const { api } = setup();
-    const state = ref<string | null>(null);
+    const state = ref<null | string>(null);
 
     // 选择 loop-A，发起慢请求
     api.bump('loop-A');
@@ -111,7 +111,7 @@ describe('useLatestRequest', () => {
 
   it('连续 20 次切换：最后一次的响应才写入', async () => {
     const { api } = setup();
-    const state = ref<string | null>(null);
+    const state = ref<null | string>(null);
     const promises: Promise<void>[] = [];
 
     for (let i = 0; i < 20; i++) {

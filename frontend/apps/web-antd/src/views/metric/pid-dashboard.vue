@@ -7,8 +7,8 @@ import type {
   MetricApi,
   TimeWindow,
 } from '#/api';
-import type { PlantNodeApi } from '#/api/plant-node';
 import type { DiagnosisApi } from '#/api/diagnosis';
+import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -17,19 +17,26 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Drawer, message, Select, Table, Tooltip } from 'ant-design-vue';
+import {
+  Button,
+  Drawer,
+  message,
+  Select,
+  Table,
+  Tooltip,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
-  ClpmEmptyState,
   ClpmBulletChart,
+  ClpmEmptyState,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { useConfigAccess } from '#/composables/use-config-access';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
@@ -155,8 +162,7 @@ const gradeRows = computed(() => {
   rows.push({
     label: '数据不足',
     count: dist.INCONCLUSIVE ?? 0,
-    pct:
-      total > 0 ? Math.round(((dist.INCONCLUSIVE ?? 0) / total) * 100) : 0,
+    pct: total > 0 ? Math.round(((dist.INCONCLUSIVE ?? 0) / total) * 100) : 0,
     color: 'var(--status-neutral)',
   });
   return rows;
@@ -592,7 +598,11 @@ function renderTrendChart() {
         },
       },
     ],
-    tooltip: { ...getTooltipPreset(), trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: {
+      ...getTooltipPreset(),
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+    },
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
@@ -600,8 +610,6 @@ function renderTrendChart() {
     },
   });
 }
-
-
 
 /**
  * 评分 → 颜色（表单元格等按值取色场景）。
@@ -850,7 +858,6 @@ onMounted(() => {
       </ClpmPageToolbar>
 
       <div class="clpm-pid-dashboard__body">
-
         <div class="clpm-pid-dashboard__main">
           <div class="clpm-pid-dashboard__top-row">
             <div class="clpm-pid-dashboard__gauge-card">
@@ -940,7 +947,9 @@ onMounted(() => {
                   </span>
                   <span
                     class="clpm-pid-dashboard__dist-count"
-                    :style="row.emphasis ? { color: 'var(--status-error)' } : {}"
+                    :style="
+                      row.emphasis ? { color: 'var(--status-error)' } : {}
+                    "
                     >{{ row.count }}</span
                   >
                 </div>
@@ -1025,12 +1034,12 @@ onMounted(() => {
                     <span>{{ record.smoothRate }}%</span>
                   </template>
                 </template>
-              <template #emptyText>
-                <ClpmEmptyState
-                  scene="data"
-                  description="当前装置节点与时间窗内无聚合明细；可切换时间窗或选择其他节点。"
-                />
-              </template>
+                <template #emptyText>
+                  <ClpmEmptyState
+                    scene="data"
+                    description="当前装置节点与时间窗内无聚合明细；可切换时间窗或选择其他节点。"
+                  />
+                </template>
               </Table>
             </div>
 
@@ -1107,7 +1116,9 @@ onMounted(() => {
                   <template v-if="column.key === 'verified'">
                     <template v-if="governanceMap[record.loopId]">
                       <span
-                        v-if="governanceMap[record.loopId]!.effectVerified === true"
+                        v-if="
+                          governanceMap[record.loopId]!.effectVerified === true
+                        "
                         class="text-xs text-emerald-600"
                         >改善</span
                       >
@@ -1136,12 +1147,12 @@ onMounted(() => {
                     </Button>
                   </template>
                 </template>
-              <template #emptyText>
-                <ClpmEmptyState
-                  scene="data"
-                  description="当前时间窗内暂无参评回路快照；可先发起性能评估。"
-                />
-              </template>
+                <template #emptyText>
+                  <ClpmEmptyState
+                    scene="data"
+                    description="当前时间窗内暂无参评回路快照；可先发起性能评估。"
+                  />
+                </template>
               </Table>
             </div>
 
@@ -1398,24 +1409,24 @@ onMounted(() => {
 /* 整改 A-13：分布行列表（donut/饼图替代） */
 .clpm-pid-dashboard__dist-row {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 3px 0;
   font-size: 12px;
 }
 
 .clpm-pid-dashboard__dist-label {
-  width: 56px;
   flex-shrink: 0;
+  width: 56px;
   color: hsl(var(--muted-foreground));
 }
 
 .clpm-pid-dashboard__dist-track {
   flex: 1;
   height: 8px;
+  overflow: hidden;
   background: var(--color-slate-100);
   border-radius: 2px;
-  overflow: hidden;
 }
 
 .clpm-pid-dashboard__dist-track i {
@@ -1425,8 +1436,8 @@ onMounted(() => {
 }
 
 .clpm-pid-dashboard__dist-count {
-  width: 32px;
   flex-shrink: 0;
+  width: 32px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;

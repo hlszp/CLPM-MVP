@@ -355,7 +355,9 @@ const backfillConfirmTitle = computed(() => {
           cancel-text="取消"
           @confirm="handleBackfill"
         >
-          <Tooltip title="补齐采用 skip 策略，保留已有数据，仅从远端拉取缺失时段">
+          <Tooltip
+            title="补齐采用 skip 策略，保留已有数据，仅从远端拉取缺失时段"
+          >
             <Button type="primary" :disabled="!hasSelected">
               一键补齐缺失数据
             </Button>

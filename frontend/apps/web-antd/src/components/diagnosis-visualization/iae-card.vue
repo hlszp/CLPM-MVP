@@ -104,10 +104,7 @@ onMounted(() => {
   <div class="iae-card">
     <div class="card-header">
       <div class="card-title">IAE 零交叉分析</div>
-      <div
-        class="status-badge"
-        :style="{ backgroundColor: statusColor }"
-      >
+      <div class="status-badge" :style="{ backgroundColor: statusColor }">
         {{ isOscillating ? '存在振荡' : '正常' }}
       </div>
     </div>
@@ -164,7 +161,7 @@ onMounted(() => {
   padding: 2px 10px;
   font-size: 11px;
   font-weight: 500;
-  color: hsl(0 0% 100%);
+  color: hsl(0deg 0% 100%);
   border-radius: 4px;
 }
 

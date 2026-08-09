@@ -66,9 +66,8 @@ defineOptions({ name: 'DiagnosisTasks' });
 const { themeColors } = useClpmTheme();
 
 // ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
-const { tableSize, densityLabel, cycleDensity } = useTableDensity(
-  'diagnosis-tasks',
-);
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('diagnosis-tasks');
 
 const loading = ref(false);
 const taskList = ref<DiagnosisApi.TaskItem[]>([]);

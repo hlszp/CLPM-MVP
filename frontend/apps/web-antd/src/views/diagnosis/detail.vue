@@ -837,14 +837,28 @@ const actionConfirmMap: Record<
 
 /** Popconfirm 确认后按操作类型分发 */
 function handleActionConfirm(key: string) {
-  if (key === 'claim') {
-    handleClaim();
-  } else if (key === 'verify_pass') {
-    handleVerifyPass();
-  } else if (key === 'verify_fail') {
-    handleVerifyFail();
-  } else if (key === 'ignore') {
-    handleIgnore();
+  switch (key) {
+    case 'claim': {
+      handleClaim();
+
+      break;
+    }
+    case 'ignore': {
+      handleIgnore();
+
+      break;
+    }
+    case 'verify_fail': {
+      handleVerifyFail();
+
+      break;
+    }
+    case 'verify_pass': {
+      handleVerifyPass();
+
+      break;
+    }
+    // No default
   }
 }
 
@@ -1347,9 +1361,7 @@ onMounted(() => {
                       >
                         <Button
                           :type="
-                            action.variant === 'primary'
-                              ? 'primary'
-                              : 'default'
+                            action.variant === 'primary' ? 'primary' : 'default'
                           "
                           :danger="action.danger"
                           :loading="statusUpdating"

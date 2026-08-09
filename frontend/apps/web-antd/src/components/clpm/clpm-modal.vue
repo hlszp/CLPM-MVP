@@ -282,7 +282,7 @@ watch(
 }
 
 .clpm-modal-header__btn--close:hover {
-  color: hsl(0 0% 100%);
+  color: hsl(0deg 0% 100%);
   background: hsl(0deg 84% 60%);
 }
 </style>

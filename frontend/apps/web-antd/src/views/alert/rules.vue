@@ -41,11 +41,11 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { ClpmEmptyState } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import { ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
-import { ClpmEmptyState } from '#/components/clpm';
 
 defineOptions({ name: 'AlertRules' });
 

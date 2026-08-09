@@ -235,9 +235,7 @@ const kpiStripItems = computed<KpiStripItem[]>(() => [
     label: '平均拟合度',
     // 整改 A-03：无数据时显示"—"且中性，不得显示伪 0.00% 红色
     value:
-      avgFittingScore.value === null
-        ? '—'
-        : avgFittingScore.value.toFixed(2),
+      avgFittingScore.value === null ? '—' : avgFittingScore.value.toFixed(2),
     unit: avgFittingScore.value === null ? '' : '%',
     status:
       avgFittingScore.value === null
@@ -358,9 +356,8 @@ const { toolbarItems } = usePageToolbar(() => ({
 }));
 
 // ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
-const { tableSize, densityLabel, cycleDensity } = useTableDensity(
-  'tuning-workbench',
-);
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('tuning-workbench');
 
 // P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 

@@ -275,9 +275,8 @@ const { preferences: columnPrefs, updateColumns: persistColumns } =
   usePagePreference('diagnosis-tracker');
 
 // ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
-const { tableSize, densityLabel, cycleDensity } = useTableDensity(
-  'diagnosis-tracker',
-);
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('diagnosis-tracker');
 
 /** 获取列 key（兼容 dataIndex 和 key） */
 function getColumnKey(col: TableColumnsType[number]): string {

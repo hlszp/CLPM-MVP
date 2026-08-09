@@ -39,7 +39,7 @@ const accessRoutes = [...dynamicRoutes, ...staticRoutes];
 const dynamicRoutePathPatterns = traverseTreeValues(
   dynamicRoutes,
   (route) => route.path,
-).filter((p): p is string => Boolean(p));
+).filter(Boolean);
 
 /**
  * 判断路径是否存在于完整路由表（不论当前角色是否可访问）。

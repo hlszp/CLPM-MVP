@@ -43,20 +43,17 @@ import {
   shallowRef,
   watch,
 } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { useRoute } from 'vue-router';
-
-import { useConfigAccess } from '#/composables/use-config-access';
-import { useEchartsPreset } from '#/composables/use-echarts-preset';
-
 import {
   Badge,
   Button,
   Card,
+  CheckboxGroup,
   Col,
   Descriptions,
   DescriptionsItem,
@@ -64,7 +61,6 @@ import {
   Input,
   message,
   Modal,
-  CheckboxGroup,
   RadioGroup,
   RangePicker,
   Row,
@@ -94,6 +90,7 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import ConfidenceBadge from '#/components/clpm/confidence-badge.vue';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
 import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
@@ -107,9 +104,10 @@ import SlowResponseCard from '#/components/diagnosis-visualization/slow-response
 import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
 import StatisticsBarChart from '#/components/diagnosis-visualization/statistics-bar-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
-import ConfidenceBadge from '#/components/clpm/confidence-badge.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useConfigAccess } from '#/composables/use-config-access';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import {
   LOOP_TYPE_LABEL_MAP,
   useLoopPalettes,
@@ -1006,7 +1004,7 @@ const selectedHistoryMetrics = ref<string[]>([
 ]);
 
 /** 多选变更：限制最多 5 项后重渲 */
-function handleHistoryMetricChange(values: (boolean | string | number)[]) {
+function handleHistoryMetricChange(values: (boolean | number | string)[]) {
   if (values.length > HISTORY_METRIC_MAX) {
     message.warning(`最多同时对比 ${HISTORY_METRIC_MAX} 个指标`);
     return;
@@ -1083,7 +1081,11 @@ function renderHistoryTrend() {
   );
 
   renderHistoryChart({
-    tooltip: { ...getTooltipPreset(), trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: {
+      ...getTooltipPreset(),
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+    },
     legend: {
       data: selected.map((o) => o.label),
       top: 0,

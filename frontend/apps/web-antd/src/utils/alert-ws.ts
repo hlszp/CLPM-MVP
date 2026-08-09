@@ -76,9 +76,9 @@ class AlertWebSocket {
       return;
     }
 
-    this.ws.onopen = () => {
+    this.ws.addEventListener('open', () => {
       this.reconnectAttempts = 0;
-    };
+    });
 
     this.ws.onmessage = (event) => {
       try {
@@ -94,9 +94,9 @@ class AlertWebSocket {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.addEventListener('close', () => {
       if (!this.isManualClose) this._scheduleReconnect();
-    };
+    });
 
     this.ws.onerror = () => {
       this.ws?.close();

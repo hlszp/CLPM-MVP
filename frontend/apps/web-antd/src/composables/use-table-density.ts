@@ -46,8 +46,7 @@ export function useTableDensity(pageKey: string) {
 
   const density = computed<TableDensity>({
     get: () =>
-      (preferences.value.tableDensity as TableDensity | undefined) ??
-      'compact',
+      (preferences.value.tableDensity as TableDensity | undefined) ?? 'compact',
     set: (v) => {
       preferences.value = { ...preferences.value, tableDensity: v };
     },

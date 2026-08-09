@@ -39,7 +39,10 @@ import {
 } from '#/api/alert';
 import {
   ClpmDangerConfirmModal,
-  ClpmEmptyState, ClpmPageToolbar, ClpmStandardActions, ClpmToolbarButton 
+  ClpmEmptyState,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
@@ -566,7 +569,9 @@ onMounted(() => {
               v-if="canEdit && record.status === 'ACTIVE'"
               type="link"
               size="small"
-              :loading="actingEventId === (record as AlertApi.EventItem).eventId"
+              :loading="
+                actingEventId === (record as AlertApi.EventItem).eventId
+              "
               @click="handleAcknowledge(record as AlertApi.EventItem)"
             >
               确认
@@ -603,7 +608,9 @@ onMounted(() => {
               v-if="canEdit && record.isFalsePositive"
               type="link"
               size="small"
-              :loading="actingEventId === (record as AlertApi.EventItem).eventId"
+              :loading="
+                actingEventId === (record as AlertApi.EventItem).eventId
+              "
               @click="
                 handleMarkFalsePositive(record as AlertApi.EventItem, false)
               "

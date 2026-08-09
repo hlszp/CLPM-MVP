@@ -92,10 +92,7 @@ onMounted(() => {
   <div class="kano-card">
     <div class="card-header">
       <div class="card-title">Kano 统计分析</div>
-      <div
-        class="status-badge"
-        :style="{ backgroundColor: statusColor }"
-      >
+      <div class="status-badge" :style="{ backgroundColor: statusColor }">
         {{ isBias ? '存在偏差' : '正常' }}
       </div>
     </div>
@@ -152,7 +149,7 @@ onMounted(() => {
   padding: 2px 10px;
   font-size: 11px;
   font-weight: 500;
-  color: hsl(0 0% 100%);
+  color: hsl(0deg 0% 100%);
   border-radius: 4px;
 }
 

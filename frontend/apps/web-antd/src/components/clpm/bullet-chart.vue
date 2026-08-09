@@ -152,9 +152,9 @@ const valueText = computed(() => {
 
 .clpm-bullet__head {
   display: flex;
+  gap: 8px;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
 }
 
 .clpm-bullet__label {
@@ -180,8 +180,8 @@ const valueText = computed(() => {
 .clpm-bullet__track {
   position: relative;
   height: 14px;
-  border-radius: 2px;
   overflow: hidden;
+  border-radius: 2px;
 }
 
 .clpm-bullet__zones {

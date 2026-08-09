@@ -78,7 +78,8 @@ const LEVEL_META: Record<
  * 颜色固定不可编辑，保存时同样以此落库。
  */
 function levelColor(level: number): string {
-  const key = (LEVEL_META[level]?.name ?? 'E') as keyof typeof confidenceColors.value;
+  const key = (LEVEL_META[level]?.name ??
+    'E') as keyof typeof confidenceColors.value;
   return confidenceColors.value[key] ?? themeColors.value.NEUTRAL;
 }
 

@@ -28,7 +28,7 @@ import { onBeforeUnmount } from 'vue';
 
 export interface LatestRequestGuard<TId> {
   /** 递增代次并记录当前目标 ID，使所有在途响应失效 */
-  bump: (id: TId | null) => void;
+  bump: (id: null | TId) => void;
   /** 校验指定 id 是否仍为最新目标且代次未变（epoch + targetId 双重校验） */
   guard: (targetId: TId, capturedEpoch: number) => boolean;
   /** 执行受保护的异步任务；自动管理 AbortController */
@@ -41,10 +41,10 @@ export interface LatestRequestGuard<TId> {
 
 export function useLatestRequest<TId>(): LatestRequestGuard<TId> {
   const epoch = ref(0);
-  const currentId = ref<TId | null>(null);
+  const currentId = ref<null | TId>(null);
   let controller: AbortController | null = null;
 
-  function bump(id: TId | null) {
+  function bump(id: null | TId) {
     epoch.value += 1;
     currentId.value = id;
     // 递近代次时取消在途请求，避免旧响应覆盖
@@ -53,9 +53,7 @@ export function useLatestRequest<TId>(): LatestRequestGuard<TId> {
   }
 
   function guard(targetId: TId, capturedEpoch: number): boolean {
-    return (
-      capturedEpoch === epoch.value && currentId.value === targetId
-    );
+    return capturedEpoch === epoch.value && currentId.value === targetId;
   }
 
   async function run(

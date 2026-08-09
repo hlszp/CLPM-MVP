@@ -10,14 +10,12 @@ import { computed } from 'vue';
 
 import { useUserStore } from '@vben/stores';
 
-const CONFIG_READ_ROLES = ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'];
+const CONFIG_READ_ROLES = new Set(['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']);
 
 export function useConfigAccess() {
   const userStore = useUserStore();
   const canReadConfig = computed(() =>
-    (userStore.userInfo?.roles ?? []).some((r) =>
-      CONFIG_READ_ROLES.includes(r),
-    ),
+    (userStore.userInfo?.roles ?? []).some((r) => CONFIG_READ_ROLES.has(r)),
   );
   return { canReadConfig };
 }

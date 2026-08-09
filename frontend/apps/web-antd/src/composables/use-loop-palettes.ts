@@ -49,7 +49,7 @@ export const MODE_COLOR_MAP: Record<string, string> = {
   '2': '#0d6efd', // 串级
   '3': '#0d6efd', // 远程
   '4': '#0d6efd', // 先控
-}
+};
 
 /** MODE 数值 → 英文短标签（柱状图类别轴） */
 export const MODE_LABEL_MAP: Record<string, string> = {
