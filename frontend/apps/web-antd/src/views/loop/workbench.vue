@@ -23,8 +23,8 @@ import type { LoopApi } from '#/api/loop';
 import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, onMounted, provide, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -48,8 +48,12 @@ import {
 } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
+import LoopLiveStatusBar from '#/components/monitor/loop-live-status-bar.vue';
+import MonitorContextToolbar from '#/components/monitor/monitor-context-toolbar.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
+import { useLoopRealtime } from '#/composables/use-loop-realtime';
+import { useMonitorContext } from '#/composables/use-monitor-context';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
@@ -68,11 +72,28 @@ import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner'
 defineOptions({ name: 'MonitorLoopWorkbench' });
 
 const route = useRoute();
-const router = useRouter();
+// router 由 monitorCtx.update 内部调用 router.replace，此页面不再直接使用
 
 // ===== 请求代次保护（MW-P0-04）=====
 // 每次切换回路递增 epoch；异步响应写入前校验 epoch+loopId，丢弃旧响应。
 const requestGuard = useLatestRequest<string>();
+
+// ===== 共享监控上下文（MW-P1-01）=====
+// URL 是真相源：view/loopId/plantNodeId/loopType/keyword/timeWindow 等
+const monitorCtx = useMonitorContext();
+
+// ===== 实时数据（MW-P1-04/05/06）=====
+// 复用全局 realtimeWs 单例；WS 断连时 30 秒轮询降级
+const {
+  applyMessage: applyRealtimeMessage,
+  connectionStatus: wsConnectionStatus,
+  lastMessageAt: wsLastMessageAt,
+  onMessage: onRealtimeMessage,
+  start: startRealtime,
+  startFallback: startRealtimeFallback,
+  stop: stopRealtime,
+  stopFallback: stopRealtimeFallback,
+} = useLoopRealtime();
 
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);
@@ -292,9 +313,7 @@ const simulateResult = ref<null | TuningApi.SimulationResult>(null);
 const tuneLoading = ref(false);
 const riskConfirmOpen = ref(false);
 const riskConfirmKind = ref<'simulate' | 'tune'>('tune');
-const pendingTunePayload = ref<null | { algorithm: TuningApi.Algorithm }>(
-  null,
-);
+const pendingTunePayload = ref<null | { algorithm: TuningApi.Algorithm }>(null);
 
 const riskConfirmContent = computed(() =>
   riskConfirmKind.value === 'tune'
@@ -485,7 +504,10 @@ const overviewFields = computed(() => {
   ];
 });
 
-function currentValueText(value: null | number | undefined, unit?: null | string) {
+function currentValueText(
+  value: null | number | undefined,
+  unit?: null | string,
+) {
   if (value == null) return '—';
   return `${value}${unit ? ` ${unit}` : ''}`;
 }
@@ -556,7 +578,10 @@ function handleHelp() {
 
 // ===== 工具栏 =====
 const { toolbarItems } = usePageToolbar(() => ({
-  refresh: { onClick: loadLoopList, loading: loopListLoading.value },
+  refresh: {
+    onClick: () => void loadLoopList(true),
+    loading: loopListLoading.value,
+  },
   ai: {
     onClick: () => {
       aiDrawerOpen.value = true;
@@ -580,68 +605,110 @@ function goTrend() {
 
 // ===== 数据加载 =====
 /**
- * 加载回路列表并解析深链接（MW-P0-03）。
+ * 加载回路列表并解析深链接（MW-P0-03 / MW-P1-03 服务端分页）。
  *
- * 深链接策略：
+ * 分页策略（MW-P1-03）：
+ * - 默认 pageSize=50，接近底部时加载下一页（无限加载）；
+ * - 搜索/筛选变化时清空旧页并回到第 1 页；
+ * - 去重键固定为 loopId，重复响应不产生重复条目。
+ *
+ * 深链接策略（MW-P0-03）：
  * - URL 有 loopId 时先精确查询（不依赖分页是否包含目标）；
  * - 目标存在但不在当前筛选结果中：注入到上下文区，提示"不在当前筛选结果中"；
  * - 目标不存在/已停用/无权限：显示"回路不存在或已停用"，保留 URL，不选择第一条；
  * - 无 loopId 时：选择列表第一条（原有行为）。
  */
-async function loadLoopList(): Promise<void> {
+const LIST_PAGE_SIZE = 50;
+let currentPage = 1;
+let hasMorePages = true;
+
+async function loadLoopList(reset = true): Promise<void> {
+  if (reset) {
+    currentPage = 1;
+    hasMorePages = true;
+    loopList.value = [];
+  }
+  if (!hasMorePages) return;
+
   loopListLoading.value = true;
   loopListError.value = '';
-  loopNotFound.value = false;
+  if (reset) loopNotFound.value = false;
   const queryLoopId = route.query.loopId as string | undefined;
   try {
     const res = await getLoopMonitorListApi({
-      page: 1,
-      pageSize: 100,
+      page: currentPage,
+      pageSize: LIST_PAGE_SIZE,
       keyword: searchKeyword.value || undefined,
+      plantNodeId: monitorCtx.plantNodeId.value || undefined,
+      loopType: (monitorCtx.loopType.value as LoopApi.LoopType) || undefined,
     });
-    loopList.value = res.items;
+    // MW-P1-03：去重键 loopId，避免分页重复
+    const existing = new Set(loopList.value.map((l) => l.loopId));
+    const newItems = res.items.filter((l) => !existing.has(l.loopId));
+    loopList.value = reset ? res.items : [...loopList.value, ...newItems];
+    hasMorePages = loopList.value.length < (res.total ?? 0);
 
-    if (queryLoopId) {
-      // 深链接：精确查询目标回路是否存在（不回退其他回路）
-      const inList = loopList.value.some((l) => l.loopId === queryLoopId);
-      if (inList) {
-        injectedLoop.value = null;
-        if (queryLoopId !== selectedLoopId.value) {
-          selectLoop(queryLoopId);
-        }
-      } else {
-        // 不在当前筛选结果中：单独精确查询，注入上下文区
-        const precise = await getLoopMonitorListApi({
-          loopId: queryLoopId,
-          page: 1,
-          pageSize: 1,
-        }).catch(() => ({ items: [], total: 0 }));
-        if (precise.items.length > 0) {
-          injectedLoop.value = precise.items[0]!;
+    if (reset) {
+      if (queryLoopId) {
+        // 深链接：精确查询目标回路是否存在（不回退其他回路）
+        const inList = loopList.value.some((l) => l.loopId === queryLoopId);
+        if (inList) {
+          injectedLoop.value = null;
           if (queryLoopId !== selectedLoopId.value) {
             selectLoop(queryLoopId);
           }
         } else {
-          // 目标不存在/已停用/无权限：不回退，不选择第一条
-          loopNotFound.value = true;
-          selectedLoopId.value = null;
-          injectedLoop.value = null;
+          // 不在当前筛选结果中：单独精确查询，注入上下文区
+          const precise = await getLoopMonitorListApi({
+            loopId: queryLoopId,
+            page: 1,
+            pageSize: 1,
+          }).catch(() => ({ items: [], total: 0 }));
+          if (precise.items.length > 0) {
+            injectedLoop.value = precise.items[0]!;
+            if (queryLoopId !== selectedLoopId.value) {
+              selectLoop(queryLoopId);
+            }
+          } else {
+            // 目标不存在/已停用/无权限：不回退，不选择第一条
+            loopNotFound.value = true;
+            selectedLoopId.value = null;
+            injectedLoop.value = null;
+          }
         }
-      }
-    } else if (selectedLoopId.value === null) {
-      // 无深链接且未选中：选择第一条
-      const first = loopList.value[0]?.loopId ?? null;
-      if (first) {
-        selectLoop(first);
-      } else {
-        selectedLoopId.value = null;
+      } else if (selectedLoopId.value === null) {
+        // 无深链接且未选中：选择第一条
+        const first = loopList.value[0]?.loopId ?? null;
+        if (first) {
+          selectLoop(first);
+        } else {
+          selectedLoopId.value = null;
+        }
       }
     }
   } catch (error: any) {
     loopListError.value = error?.message ?? '加载回路列表失败';
-    loopList.value = [];
+    if (reset) loopList.value = [];
   } finally {
     loopListLoading.value = false;
+  }
+}
+
+/** MW-P1-03：无限加载下一页 */
+async function loadNextPage(): Promise<void> {
+  if (loopListLoading.value || !hasMorePages) return;
+  currentPage += 1;
+  await loadLoopList(false);
+}
+
+/** MW-P1-03：滚动接近底部时加载下一页 */
+function handleLoopListScroll(event: Event): void {
+  onLoopListScroll(event);
+  const target = event.target as HTMLElement;
+  const { scrollTop, scrollHeight, clientHeight } = target;
+  // 距底部 200px 时预加载下一页
+  if (scrollHeight - scrollTop - clientHeight < 200) {
+    loadNextPage();
   }
 }
 
@@ -651,9 +718,8 @@ function selectLoop(loopId: null | string): void {
   loopNotFound.value = false;
   selectedLoopId.value = loopId;
   if (loopId) {
-    // router.replace 不新增历史记录；配合 meta.fullPathKey=false 不新增 tab。
-    // 用 name 明确路由，仅保留 loopId query，避免残留参数。
-    router.replace({ name: 'MonitorLoopWorkbench', query: { loopId } });
+    // MW-P1-01：通过 monitorCtx 更新 URL（router.replace，保留其他筛选上下文）
+    monitorCtx.update({ loopId });
   }
 }
 
@@ -668,6 +734,39 @@ function handleSearchInput(): void {
 // 确认目标存在后再 selectLoop，避免对不存在回路发起无用请求。
 onMounted(() => {
   loadLoopList();
+  // MW-P1-04/05：启动 WS 连接并注册消息回调
+  startRealtime();
+  onRealtimeMessage((msg) => {
+    // 只更新当前选中回路的实时值（WS 消息按 tagName 匹配）
+    if (selectedLoop.value) {
+      applyRealtimeMessage(msg, [selectedLoop.value as any]);
+    }
+  });
+
+  // MW-P1-06：WS 断连时启动 30 秒轮询降级
+  // 监听连接状态变化，断连→启动轮询，重连→停止轮询并刷新
+  const checkConnection = () => {
+    if (wsConnectionStatus.value === 'online') {
+      stopRealtimeFallback();
+      // 重连成功后主动刷新一次当前回路列表
+      loadLoopList();
+    } else {
+      // 离线或重连中：启动轮询降级
+      startRealtimeFallback(async () => {
+        await loadLoopList();
+      }, 30_000);
+    }
+  };
+  // 初始检查
+  checkConnection();
+  // 监听变化
+  const stopWatch = watch(wsConnectionStatus, checkConnection);
+
+  // 注册清理
+  onUnmounted(() => {
+    stopWatch();
+    stopRealtime();
+  });
 });
 
 // 浏览器前进/后退触发 loopId 变化时，走 selectLoop（含 epoch bump），
@@ -679,6 +778,15 @@ watch(
     if (next !== selectedLoopId.value) {
       selectLoop(next);
     }
+  },
+);
+
+// MW-P1-02：筛选条件变化时重新加载列表（回到第 1 页）
+watch(
+  [() => monitorCtx.plantNodeId.value, () => monitorCtx.loopType.value],
+  () => {
+    searchKeyword.value = monitorCtx.keyword.value;
+    loadLoopList(true);
   },
 );
 
@@ -713,12 +821,27 @@ watch(
       :loading="loopListLoading"
     >
       <template #actions>
+        <!-- MW-P1-02：共享监控工具栏（装置/类型/搜索/保存视图） -->
+        <MonitorContextToolbar
+          :attention-only-hidden="true"
+          page-key="monitor-workbench"
+          @filter-change="() => loadLoopList(true)"
+        />
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
 
-    <div class="flex h-[calc(100vh-140px)] gap-2">
-      <!-- ===== 左侧：回路列表 ===== -->
+    <!-- MW-P1-05：回路实时状态条（PV/SP/OP/MODE + WS 连接状态 + 采样时间） -->
+    <LoopLiveStatusBar
+      v-if="selectedLoop"
+      :loop="selectedLoop"
+      :connection-status="wsConnectionStatus"
+      :last-message-at="wsLastMessageAt"
+      class="mb-2"
+    />
+
+    <div class="flex h-[calc(100vh-180px)] gap-2">
+      <!-- ===== 左侧：回路列表（MW-P1-03 服务端分页 + 无限加载） ===== -->
       <div
         class="flex w-60 shrink-0 flex-col overflow-hidden rounded-lg border bg-white"
       >
@@ -729,14 +852,14 @@ watch(
             allow-clear
             size="small"
             @input="handleSearchInput"
-            @press-enter="loadLoopList"
+            @press-enter="() => loadLoopList(true)"
           />
         </div>
         <Spin :spinning="loopListLoading" size="small">
           <div
             :ref="setLoopListRef"
-            class="max-h-[calc(100vh-210px)] overflow-y-auto"
-            @scroll="onLoopListScroll"
+            class="max-h-[calc(100vh-250px)] overflow-y-auto"
+            @scroll="handleLoopListScroll"
           >
             <div
               :style="{
@@ -797,10 +920,27 @@ watch(
                   <div
                     class="mt-1 flex items-center gap-2 whitespace-nowrap text-[11px] text-gray-500"
                   >
-                    <span>PV {{ currentValueText(item.currentValues?.pv, item.pvUnit) }}</span>
-                    <span>SP {{ currentValueText(item.currentValues?.sp, item.pvUnit) }}</span>
-                    <span>OP {{ currentValueText(item.currentValues?.op, item.opUnit) }}</span>
-                    <span class="truncate">{{ item.currentValues?.modeLabel || '模式—' }}</span>
+                    <span
+                      >PV
+                      {{
+                        currentValueText(item.currentValues?.pv, item.pvUnit)
+                      }}</span
+                    >
+                    <span
+                      >SP
+                      {{
+                        currentValueText(item.currentValues?.sp, item.pvUnit)
+                      }}</span
+                    >
+                    <span
+                      >OP
+                      {{
+                        currentValueText(item.currentValues?.op, item.opUnit)
+                      }}</span
+                    >
+                    <span class="truncate">{{
+                      item.currentValues?.modeLabel || '模式—'
+                    }}</span>
                   </div>
                 </div>
               </div>
@@ -810,7 +950,9 @@ watch(
               class="flex flex-col items-center gap-2 py-8 text-center text-xs text-red-500"
             >
               <span>{{ loopListError }}</span>
-              <Button size="small" @click="loadLoopList">重试</Button>
+              <Button size="small" @click="() => loadLoopList(true)"
+                >重试</Button
+              >
             </div>
             <Empty
               v-else-if="!loopListLoading && loopList.length === 0"
@@ -1074,7 +1216,9 @@ watch(
                     >
                       可信度：
                       <Tag
-                        :color="confidenceTagColor(tuningLatest.confidenceLevel)"
+                        :color="
+                          confidenceTagColor(tuningLatest.confidenceLevel)
+                        "
                       >
                         {{ tuningLatest.confidenceLevel }}
                       </Tag>
@@ -1241,8 +1385,8 @@ watch(
   flex-wrap: wrap;
   gap: 6px 20px;
   align-items: center;
-  min-height: 36px;
   height: auto;
+  min-height: 36px;
   font-size: 13px;
 }
 

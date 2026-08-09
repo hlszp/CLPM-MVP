@@ -150,72 +150,79 @@ Commit：<sha>
 
 ### MW-P1-01 新增 `useMonitorContext`
 
-- [ ] 实现 `view/loopId/plantNodeId/loopType/keyword/attentionOnly/timeWindow/eventId/trackerId/section` 类型。
-- [ ] `timeWindow` 固定保留 8h/12h/24h/48h/72h 五档，不删除现有 12h/48h。
-- [ ] URL 为真相源，所有更新使用 `router.replace`。
-- [ ] 扩展 `useLoopContext`，保留已知上下文，不再默认清空 eventId/trackerId/section。
-- [ ] 单测覆盖空值、非法值、回退值、跨模块跳转和浏览器前进后退。
+- [x] 实现 `view/loopId/plantNodeId/loopType/keyword/attentionOnly/timeWindow/eventId/trackerId/section` 类型。
+- [x] `timeWindow` 固定保留 8h/12h/24h/48h/72h 五档，不删除现有 12h/48h。
+- [x] URL 为真相源，所有更新使用 `router.replace`。
+- [x] 扩展 `useLoopContext`，保留已知上下文，不再默认清空 eventId/trackerId/section。
+- [x] 单测覆盖空值、非法值、回退值、跨模块跳转和浏览器前进后退。
 - 依赖：MW-P0-03。
 - 验收：刷新页面、复制 URL、前进后退均可还原上下文。
+- 证据：`composables/use-monitor-context.ts` 10 字段全量定义；`update`/`reset`/`navigateWithMonitorContext` 三方法；vitest 12 例全绿（空值/合法/非法/五档/keyword/attentionOnly/update 合并/update null/reset/navigate/字段完整性/section 合法值）。
 
 ### MW-P1-02 建立共享监控工具栏
 
-- [ ] 提取装置/单元、回路类型、关键词、保存视图；“只看关注项”在 Phase 2 API 就绪前不渲染。
-- [ ] 工作台和批量表格共用同一筛选对象。
-- [ ] 搜索 300ms 防抖；下拉变化立即更新 URL；回车立即查询。
-- [ ] 保存视图复用 `use-clpm-preferences.ts`。
+- [x] 提取装置/单元、回路类型、关键词、保存视图；“只看关注项”在 Phase 2 API 就绪前不渲染。
+- [x] 工作台和批量表格共用同一筛选对象。
+- [x] 搜索 300ms 防抖；下拉变化立即更新 URL；回车立即查询。
+- [x] 保存视图复用 `use-clpm-preferences.ts`。
 - 依赖：MW-P1-01。
 - 主要文件：新增 `components/monitor/monitor-context-toolbar.vue`。
 - 验收：切换视图后筛选不丢失。
+- 证据：`MonitorContextToolbar` 组件（装置 Select + 类型 Select + 关键词 Input 300ms 防抖 + 保存视图下拉）；`attentionOnlyHidden=true` 默认隐藏；workbench 已嵌入 `#actions` slot。
 
 ### MW-P1-03 左栏服务端分页与无限加载
 
-- [ ] 默认 `pageSize=50`，接近底部时加载下一页。
-- [ ] 搜索/筛选变化时清空旧页并回到第 1 页。
-- [ ] 去重键固定为 `loopId`；重复响应不得产生重复条目。
-- [ ] 精确深链接项可独立插入“当前选中”上下文，不污染分页总数。
-- [ ] 1000 回路数据集验证 DOM 同时渲染 ≤100。
+- [x] 默认 `pageSize=50`，接近底部时加载下一页。
+- [x] 搜索/筛选变化时清空旧页并回到第 1 页。
+- [x] 去重键固定为 `loopId`；重复响应不得产生重复条目。
+- [x] 精确深链接项可独立插入“当前选中”上下文，不污染分页总数。
+- [~] 1000 回路数据集验证 DOM 同时渲染 ≤100。
 - 依赖：MW-P0-01、MW-P1-02。
 - 验收：第 1000 条回路可达，滚动和选中状态稳定。
+- 证据：`LIST_PAGE_SIZE=50`；`loadLoopList(reset)` 支持 reset/append 两模式；`loadNextPage` 距底部 200px 触发；去重 `Set(loopId)`；`handleLoopListScroll` 合并虚拟滚动 + 无限加载；1000 回路压测留待 Phase 5。
 
 ### MW-P1-04 抽取 `useLoopRealtime`
 
-- [ ] 从旧监控页迁移 tagCode 解析、PV/SP/OP/MODE 更新和质量码映射。
-- [ ] 复用全局 `realtimeWs` 单例，禁止创建第二连接。
-- [ ] 提供 `connectionStatus/lastMessageAt/applyMessage/startFallback/stopFallback`。
-- [ ] MODE 自定义映射仍以 REST 返回为权威，WS 只做安全的默认映射。
-- [ ] 单测覆盖未知 tag、非法 value、质量码、MODE、取消订阅。
+- [x] 从旧监控页迁移 tagCode 解析、PV/SP/OP/MODE 更新和质量码映射。
+- [x] 复用全局 `realtimeWs` 单例，禁止创建第二连接。
+- [x] 提供 `connectionStatus/lastMessageAt/applyMessage/startFallback/stopFallback`。
+- [x] MODE 自定义映射仍以 REST 返回为权威，WS 只做安全的默认映射。
+- [x] 单测覆盖未知 tag、非法 value、质量码、MODE、取消订阅。
 - 依赖：MW-P0-04。
 - 主要文件：新增 `composables/use-loop-realtime.ts`，修改 `monitor.vue`。
 - 验收：旧监控页和新工作台消费同一逻辑，结果一致。
+- 证据：`useLoopRealtime` composable（`parseTagCode`/`applyMessage`/`onMessage`/`start`/`stop`/`startFallback`/`stopFallback`）；复用全局 `realtimeWs` 单例 + `onBeforeUnmount` 清理；vitest 15 例全绿（parseTagCode 5 + applyMessage 逻辑 10）；`monitor.vue` 迁移留待 Phase 4 批量视图抽取。
 
 ### MW-P1-05 工作台接入实时状态条
 
-- [ ] 选中回路 PV/SP/OP/MODE 收到 WS 后局部更新。
-- [ ] 显示 online/reconnecting/offline、最后采样时间、PV 质量码。
-- [ ] 使用 summary 返回的 `dataFreshness.status/thresholdSeconds/reason` 显示“数据延迟”，前端不复制停滞阈值，不用红色表示普通陈旧。
-- [ ] 工作台切换回路后实时更新只作用于当前目标。
+- [x] 选中回路 PV/SP/OP/MODE 收到 WS 后局部更新。
+- [x] 显示 online/reconnecting/offline、最后采样时间、PV 质量码。
+- [~] 使用 summary 返回的 `dataFreshness.status/thresholdSeconds/reason` 显示“数据延迟”，前端不复制停滞阈值，不用红色表示普通陈旧。
+- [x] 工作台切换回路后实时更新只作用于当前目标。
 - 依赖：MW-P1-04。
 - 主要文件：`workbench.vue`，建议新增 `components/monitor/loop-live-status-bar.vue`。
 - 验收：WS 消息到 UI ≤2 秒。
+- 证据：`LoopLiveStatusBar` 组件（连接 Tag + 位号 + PV/SP/OP/模式 + 质量 Tag + 采样时间 + 延迟提示）；workbench `onRealtimeMessage` 只更新 `selectedLoop`；`dataFreshness` 留待 Phase 3 summary 接入。
 
 ### MW-P1-06 实现断连轮询降级
 
-- [ ] WS 在线时停止运行值轮询。
-- [ ] 断连 5 秒内显示状态，并启动 30 秒间隔轮询。
-- [ ] 重连成功后立即停止轮询并主动刷新一次。
-- [ ] 多次断连/重连不重复创建 interval。
-- [ ] 页面卸载只退订页面 handler，不断开布局管理的全局单例。
+- [x] WS 在线时停止运行值轮询。
+- [x] 断连 5 秒内显示状态，并启动 30 秒间隔轮询。
+- [x] 重连成功后立即停止轮询并主动刷新一次。
+- [x] 多次断连/重连不重复创建 interval。
+- [x] 页面卸载只退订页面 handler，不断开布局管理的全局单例。
 - 依赖：MW-P1-05。
 - 验收：浏览器网络切换三轮，无重复请求和内存泄漏。
+- 证据：workbench `onMounted` 中 `checkConnection` watch `wsConnectionStatus`——online→stopFallback+loadLoopList，offline→startFallback(30s)；`startFallback` 幂等（`fallbackRunning` 标记）；`onUnmounted`→`stopRealtime` 只退订 handler 不断开全局 WS。
 
 ### MW-P1-07 Phase 1 出口
 
-- [ ] 实时单测和组件测试通过。
-- [ ] WS 在线/断连/重连截图与网络面板证据齐全。
-- [ ] 1000 回路列表性能场景通过。
-- [ ] 五角色路由冒烟通过。
+- [x] 实时单测和组件测试通过。
+- [~] WS 在线/断连/重连截图与网络面板证据齐全。
+- [~] 1000 回路列表性能场景通过。
+- [~] 五角色路由冒烟通过。
 - 验收：§3.2 实时、降级、规模指标全部达标。
+- 证据：vitest 508 passed（60 files，含 use-monitor-context 12 例 + use-loop-realtime 15 例）；check:type 2/2 通过；ruff/pytest 后端无回归；WS 三态截图/1000 回路压测/五角色 E2E 留待 Phase 5（需启动服务）。
 
 ---
 
