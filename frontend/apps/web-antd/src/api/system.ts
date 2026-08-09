@@ -66,20 +66,14 @@ export namespace SystemApi {
   }
 
   /** 操作类型枚举 */
-  export type OperationType =
-    | 'CREATE'
-    | 'DELETE'
-    | 'LOGIN'
-    | 'LOGOUT'
-    | 'UPDATE';
+  /**
+   * 操作类型（后端 SysAuditLog.operation_type，开放式枚举 ~55 种并持续增长；
+   * 中文映射见 views/system/audit.vue operationOptions，未映射值原样回退）
+   */
+  export type OperationType = string;
 
-  /** 资源类型枚举 */
-  export type ResourceType =
-    | 'DIAGNOSIS'
-    | 'LOOP'
-    | 'METRIC'
-    | 'REPORT'
-    | 'USER';
+  /** 资源类型（后端 target_type，开放式：首字母大写如 "User" 或蛇形如 "sys_user"） */
+  export type ResourceType = string;
 
   /** 审计日志（对齐后端 AuditLogItem，camelCase；targetType 为后端原始字符串如 "User"） */
   export interface AuditLog {

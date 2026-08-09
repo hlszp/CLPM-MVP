@@ -51,13 +51,78 @@ const query = reactive({
   pageSize: 20,
 });
 
-/** 操作类型选项 */
+/** 操作类型选项（全量对齐后端 SysAuditLog.operation_type ~55 种，2026-08-09 补全） */
 const operationOptions: { label: string; value: SystemApi.OperationType }[] = [
+  // 基础
   { label: '创建', value: 'CREATE' },
   { label: '更新', value: 'UPDATE' },
   { label: '删除', value: 'DELETE' },
   { label: '登录', value: 'LOGIN' },
   { label: '登出', value: 'LOGOUT' },
+  { label: '登录失败', value: 'LOGIN_FAILED' },
+  { label: '启用', value: 'ENABLE' },
+  // 用户
+  { label: '新建用户', value: 'USER_CREATE' },
+  { label: '更新用户', value: 'USER_UPDATE' },
+  { label: '禁用用户', value: 'USER_DISABLE' },
+  { label: '重置密码', value: 'USER_RESET_PASSWORD' },
+  // 回路
+  { label: '新建回路', value: 'LOOP_CREATE' },
+  { label: '更新回路', value: 'LOOP_UPDATE' },
+  { label: '删除回路', value: 'LOOP_DELETE' },
+  { label: '批量配置回路', value: 'LOOP_BATCH_UPDATE' },
+  { label: '批量删除回路', value: 'LOOP_BATCH_DELETE' },
+  { label: '批量分组回路', value: 'LOOP_BATCH_GROUPING' },
+  { label: '回路导入更新', value: 'LOOP_IMPORT_UPDATE' },
+  { label: '回路 Tag 映射更新', value: 'LOOP_TAG_MAPPING_UPDATE' },
+  { label: '回路重要等级权重更新', value: 'LOOP_LEVEL_WEIGHT_UPDATE' },
+  { label: '回路类型权重更新', value: 'LOOP_TYPE_WEIGHT_UPDATE' },
+  // 装置节点
+  { label: '新建装置节点', value: 'PLANT_NODE_CREATE' },
+  { label: '更新装置节点', value: 'PLANT_NODE_UPDATE' },
+  { label: '删除装置节点', value: 'PLANT_NODE_DELETE' },
+  { label: '装置节点导入', value: 'PLANT_NODE_IMPORT' },
+  { label: '装置节点导入更新', value: 'PLANT_NODE_IMPORT_UPDATE' },
+  // 位号
+  { label: '更新位号', value: 'TAG_UPDATE' },
+  { label: '删除位号', value: 'TAG_DELETE' },
+  { label: '位号导入', value: 'TAG_IMPORT' },
+  // 指标与评估配置
+  { label: '指标配置更新', value: 'METRIC_CONFIG_UPDATE' },
+  { label: '指标配置批量更新', value: 'METRIC_CONFIG_BATCH_UPDATE' },
+  { label: '定级阈值更新', value: 'GRADING_THRESHOLD_UPDATE' },
+  { label: '可信度阈值更新', value: 'CONFIDENCE_THRESHOLD_UPDATE' },
+  { label: '权重模板保存', value: 'WEIGHT_TEMPLATE_SAVE' },
+  { label: '算法参数更新', value: 'ALGORITHM_PARAMS_UPDATE' },
+  { label: '异常值参数更新', value: 'OUTLIER_PARAMS_UPDATE' },
+  { label: 'AAS 配置更新', value: 'AAS_CONFIG_UPDATE' },
+  { label: 'MODE 映射替换', value: 'MODE_MAPPING_REPLACE' },
+  // 诊断
+  { label: '诊断配置更新', value: 'DIAG_CONFIG_UPDATE' },
+  { label: '诊断配置批量更新', value: 'DIAG_CONFIG_BATCH_UPDATE' },
+  { label: '诊断配置审批通过', value: 'DIAG_CONFIG_APPROVE' },
+  { label: '诊断配置驳回', value: 'DIAG_CONFIG_REJECT' },
+  { label: '诊断配置回滚', value: 'DIAG_CONFIG_ROLLBACK' },
+  { label: '诊断规则更新', value: 'DIAG_RULE_UPDATE' },
+  { label: '诊断标签处理', value: 'DIAG_TAG_RESOLVE' },
+  { label: '诊断任务归档', value: 'DIAG_TASK_ARCHIVE' },
+  { label: '诊断任务取消', value: 'DIAG_TASK_CANCEL' },
+  { label: '诊断任务删除', value: 'DIAG_TASK_DELETE' },
+  { label: '诊断阈值删除', value: 'DIAG_THRESHOLD_DELETE' },
+  { label: '异常跟踪状态更新', value: 'TRACKER_STATUS_UPDATE' },
+  // 预警
+  { label: '预警规则更新', value: 'ENGINE_RULE_UPDATE' },
+  // 整定
+  { label: '整定 PID 应用', value: 'TUNE_PID' },
+  { label: '新建整定任务', value: 'CREATE_TUNING_TASK' },
+  // 报表
+  { label: '新建报表配置', value: 'REPORT_CONFIG_CREATE' },
+  { label: '报表配置更新', value: 'REPORT_CONFIG_UPDATE' },
+  { label: '生成报表', value: 'REPORT_GENERATE' },
+  // 数据源与系统
+  { label: '数据源配置更新', value: 'DATASOURCE_CONFIG_UPDATE' },
+  { label: 'Tailscale 切换', value: 'TAILSCALE_SWITCH' },
+  { label: 'LLM 配置更新', value: 'LLM_CONFIG_UPDATE' },
 ];
 
 /** 操作类型颜色映射 */
@@ -70,12 +135,34 @@ const operationColorMap: Record<SystemApi.OperationType, string> = {
 };
 
 /** 资源类型选项 */
+/** 资源类型选项（全量对齐后端 target_type 蛇形枚举；resourceLabel 统一大写后匹配） */
 const resourceOptions: { label: string; value: SystemApi.ResourceType }[] = [
   { label: '用户', value: 'USER' },
+  { label: '用户', value: 'SYS_USER' },
   { label: '回路', value: 'LOOP' },
+  { label: '回路', value: 'LOOP_LEDGER' },
+  { label: '回路重要等级权重', value: 'LOOP_LEVEL_WEIGHT' },
+  { label: '回路类型权重', value: 'LOOP_TYPE_WEIGHT' },
+  { label: '回路 MODE 映射', value: 'LOOP_MODE_MAPPING' },
+  { label: '回路 Tag 映射', value: 'LOOP_TAG_MAPPING' },
   { label: '指标', value: 'METRIC' },
+  { label: '指标配置', value: 'METRIC_CONFIG' },
   { label: '诊断', value: 'DIAGNOSIS' },
+  { label: '诊断配置', value: 'DIAGNOSIS_CONFIG' },
+  { label: '诊断配置变更', value: 'DIAGNOSIS_CONFIG_CHANGE' },
+  { label: '诊断规则', value: 'DIAGNOSIS_RULE' },
+  { label: '诊断标签', value: 'DIAGNOSIS_TAG' },
+  { label: '诊断任务', value: 'DIAGNOSIS_TASK' },
+  { label: '诊断阈值覆盖', value: 'DIAGNOSIS_THRESHOLD_OVERRIDE' },
+  { label: '异常跟踪', value: 'ACTION_TRACKER' },
+  { label: '预警规则', value: 'ENGINE_RULE' },
+  { label: '算法参数', value: 'ALGORITHM_PARAMETER' },
+  { label: '装置节点', value: 'PLANT_NODE' },
+  { label: '位号', value: 'TAG_REGISTRY' },
+  { label: '系统配置', value: 'SYS_CONFIG' },
   { label: '报表', value: 'REPORT' },
+  { label: '报表配置', value: 'REPORT_CONFIG' },
+  { label: '报表记录', value: 'REPORT_RECORD' },
 ];
 
 const columns: TableColumnsType = [

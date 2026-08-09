@@ -105,13 +105,27 @@ test.describe('任务管理页面 E2E', () => {
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
-    // 表格可见（recompute.vue Table）
-    await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 15_000 });
+    // 表格或空态可见（BACKFILL 任务为 0 时 Phase 1 空态改造渲染 ClpmEmptyState，
+    // 数据依赖：容忍 .ant-empty / 空态容器替代表格）
+    const tableOrEmpty = page
+      .locator('.ant-table, .ant-empty, [class*="empty"]')
+      .first();
+    await expect(tableOrEmpty).toBeVisible({ timeout: 15_000 });
 
-    // 表头包含 任务标题 / 状态（recompute.vue columns：任务标题、评估状态）
-    const headerText = await page.locator('.ant-table-thead').first().innerText();
-    expect(headerText).toContain('任务标题');
-    expect(headerText).toContain('状态');
+    // 有表格数据时校验表头（recompute.vue columns：任务标题、评估状态）
+    const hasTable = await page
+      .locator('.ant-table-thead')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (hasTable) {
+      const headerText = await page
+        .locator('.ant-table-thead')
+        .first()
+        .innerText();
+      expect(headerText).toContain('任务标题');
+      expect(headerText).toContain('状态');
+    }
 
     // 工具栏按钮：新建任务(primary) / 刷新 / 查询
     await expect(page.getByRole('button', { name: /新建任务/ })).toBeVisible();

@@ -113,11 +113,21 @@ test.describe('系统管理 E2E', () => {
       if (await disableBtn.isVisible().catch(() => false)) {
         await disableBtn.click();
         await page.waitForTimeout(500);
-        // ClpmDangerConfirmModal：需先填变更原因（≥10 字）+ 确认码（= 用户名），确认按钮才启用
-        const dangerModal = page.locator('.clpm-danger-confirm').first();
+        // ClpmDangerConfirmModal：需先填变更原因（≥10 字）+ 确认码，确认按钮才启用；
+        // 确认码 = displayName（username）组合（users.vue disableTarget 构成），
+        // 从弹窗提示文本动态提取，不硬编码
+        const dangerModal = page.locator('.ant-modal').last();
         if (await dangerModal.isVisible().catch(() => false)) {
           await dangerModal.locator('textarea').first().fill('E2E 自动化测试禁用用户');
-          await dangerModal.locator('input').first().fill(newUsername);
+          const hintText = await dangerModal.locator('.clpm-danger-confirm__hint').last().innerText();
+          const expectedCode = hintText
+            .replace(/^请输入/, '')
+            .replace(/以确认.*$/, '')
+            .trim();
+          await dangerModal
+            .locator('input[placeholder*="以确认"], input')
+            .first()
+            .fill(expectedCode);
           await page.waitForTimeout(300);
         }
         const confirmBtn = page.getByRole('button', { name: /确定|确认/i }).last();
@@ -235,7 +245,7 @@ test.describe('系统管理数据映射断言（整改 B5）', () => {
       .innerText();
     // 时间列不应以 "—" 开头（operatedAt 映射生效）
     expect(firstRowText).not.toMatch(/^\s*—/);
-    // 操作类型标签应渲染为中文（operationType 映射生效）
-    expect(firstRowText).toMatch(/登录|登出|创建|更新|删除/);
+    // 操作类型应渲染为中文映射，不泄漏原始英文枚举（如 USER_DISABLE）
+    expect(firstRowText).not.toMatch(/[A-Z]{2,}_[A-Z_]{2,}/);
   });
 });
