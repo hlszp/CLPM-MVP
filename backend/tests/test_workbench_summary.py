@@ -19,6 +19,7 @@ import pytest
 
 from app.services.workbench_summary import (
     _build_data_freshness,
+    _build_effect_compare,
     _build_lifecycle,
     _build_next_action,
     _check_config_completeness,
@@ -703,3 +704,305 @@ class TestGetWorkbenchSummary:
         assert data["nextAction"]["actionType"] == "RUN_ASSESSMENT"
         assert data["nextAction"]["enabled"] is False
         assert data["nextAction"]["disabledReason"] is not None
+
+
+# ===========================================================================
+# MW-P3-09: 实施前后对比 EffectCompare 测试
+# ===========================================================================
+
+
+def _make_tracker_model(
+    *,
+    implemented_at: datetime | None = None,
+    new_pid_p: float | None = 1.5,
+    new_pid_i: float | None = 0.15,
+    new_pid_d: float | None = 0.0,
+    ab_compare_summary: dict | None = None,
+    effect_verified: bool | None = None,
+    effect_verified_at: datetime | None = None,
+) -> MagicMock:
+    """构造 ActionTracker mock。"""
+    tracker = MagicMock()
+    tracker.implemented_at = implemented_at
+    tracker.new_pid_p = new_pid_p
+    tracker.new_pid_i = new_pid_i
+    tracker.new_pid_d = new_pid_d
+    tracker.ab_compare_summary = ab_compare_summary
+    tracker.effect_verified = effect_verified
+    tracker.effect_verified_at = effect_verified_at
+    return tracker
+
+
+def _ab_summary(
+    *,
+    data_insufficient: bool = False,
+    improved_count: int = 3,
+    deteriorated_count: int = 1,
+    unchanged_count: int = 4,
+) -> dict:
+    """构造 ab_compare_summary。"""
+    return {
+        "improvedCount": improved_count,
+        "deterioratedCount": deteriorated_count,
+        "unchangedCount": unchanged_count,
+        "dataInsufficient": data_insufficient,
+        "kpiComparison": [
+            {
+                "metricKey": "score",
+                "metricName": "综合评分",
+                "before": 75.0,
+                "after": 82.0,
+                "change": 7.0,
+                "improved": True,
+            },
+            {
+                "metricKey": "steady_rate",
+                "metricName": "平稳率",
+                "before": 80.0,
+                "after": 90.0,
+                "change": 10.0,
+                "improved": True,
+            },
+            {
+                "metricKey": "oscillation_rate",
+                "metricName": "振荡率",
+                "before": 15.0,
+                "after": 5.0,
+                "change": -10.0,
+                "improved": True,
+            },
+            {
+                "metricKey": "saturation_rate",
+                "metricName": "饱和率",
+                "before": 5.0,
+                "after": 8.0,
+                "change": 3.0,
+                "improved": False,
+            },
+            {
+                "metricKey": "accuracy_rate",
+                "metricName": "控制精度",
+                "before": 70.0,
+                "after": 75.0,
+                "change": 5.0,
+                "improved": True,
+            },
+        ],
+    }
+
+
+class TestEffectCompare:
+    """实施前后对比构建器（MW-P3-09）。"""
+
+    def test_无Tracker返回None(self):
+        """无 Tracker 时不展示对比区。"""
+        result = _build_effect_compare(
+            tracker=None,
+            ab_compare_summary=None,
+            effect_verified=None,
+            effect_verified_at=None,
+            tuning_current_pid={"p": 1.0, "i": 0.1, "d": 0.0},
+        )
+        assert result is None
+
+    def test_无实施时间返回None(self):
+        """Tracker 无 implemented_at 时不展示对比区。"""
+        tracker = _make_tracker_model(implemented_at=None)
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=None,
+            effect_verified=None,
+            effect_verified_at=None,
+            tuning_current_pid=None,
+        )
+        assert result is None
+
+    def test_有实施无ab_summary为PENDING(self):
+        """有实施时间但无 ab_compare_summary → PENDING（未到验证周期）。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 5, 10, 0, 0),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=None,
+            effect_verified=None,
+            effect_verified_at=None,
+            tuning_current_pid={"p": 1.0, "i": 0.1, "d": 0.0},
+        )
+        assert result is not None
+        assert result["status"] == "PENDING"
+        assert result["conclusion"] is None
+        assert result["conclusionLabel"] == "待验证"
+        assert result["scoreChange"] is None
+        assert result["coreKpiChanges"] == []
+        assert result["pidBefore"] == {"p": 1.0, "i": 0.1, "d": 0.0}
+        assert result["pidAfter"] == {"p": 1.5, "i": 0.15, "d": 0.0}
+        assert result["timeWindow"] is not None
+        assert result["timeWindow"]["beforeStart"] != result["timeWindow"]["afterEnd"]
+
+    def test_数据不足为INCONCLUSIVE不显示伪0(self):
+        """有 ab_compare_summary 但 dataInsufficient=true → INCONCLUSIVE。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 5, 10, 0, 0),
+            ab_compare_summary=_ab_summary(data_insufficient=True),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=_ab_summary(data_insufficient=True),
+            effect_verified=None,
+            effect_verified_at=None,
+            tuning_current_pid=None,
+        )
+        assert result["status"] == "INCONCLUSIVE"
+        assert result["conclusion"] is None
+        assert result["conclusionLabel"] == "证据不足"
+        assert result["dataInsufficient"] is True
+        assert result["confidence"] == "INSUFFICIENT"
+        # 评分变化仍然返回（有 before/after），但不作为结论依据
+        assert result["scoreChange"] is not None
+        assert result["scoreChange"]["before"] == 75.0
+
+    def test_改善多于恶化为IMPROVED(self):
+        """改善指标数 > 恶化指标数 → IMPROVED。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 1, 10, 0, 0),
+            ab_compare_summary=_ab_summary(
+                improved_count=4, deteriorated_count=1, data_insufficient=False
+            ),
+            effect_verified=True,
+            effect_verified_at=datetime(2026, 8, 8, 10, 0, 0),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=tracker.ab_compare_summary,
+            effect_verified=tracker.effect_verified,
+            effect_verified_at=tracker.effect_verified_at,
+            tuning_current_pid={"p": 1.0, "i": 0.1, "d": 0.0},
+        )
+        assert result["status"] == "COMPLETED"
+        assert result["conclusion"] == "IMPROVED"
+        assert result["conclusionLabel"] == "改善"
+        assert result["confidence"] == "HIGH"
+
+    def test_恶化多于改善为DETERIORATED(self):
+        """恶化指标数 > 改善指标数 → DETERIORATED。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 1, 10, 0, 0),
+            ab_compare_summary=_ab_summary(
+                improved_count=1, deteriorated_count=3, data_insufficient=False
+            ),
+            effect_verified=False,
+            effect_verified_at=datetime(2026, 8, 8, 10, 0, 0),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=tracker.ab_compare_summary,
+            effect_verified=tracker.effect_verified,
+            effect_verified_at=tracker.effect_verified_at,
+            tuning_current_pid=None,
+        )
+        assert result["status"] == "COMPLETED"
+        assert result["conclusion"] == "DETERIORATED"
+        assert result["conclusionLabel"] == "恶化"
+
+    def test_改善等于恶化为NO_CHANGE(self):
+        """改善==恶化 → NO_CHANGE（无明显变化）。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 1, 10, 0, 0),
+            ab_compare_summary=_ab_summary(
+                improved_count=2, deteriorated_count=2, data_insufficient=False
+            ),
+            effect_verified=True,
+            effect_verified_at=datetime(2026, 8, 8, 10, 0, 0),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=tracker.ab_compare_summary,
+            effect_verified=tracker.effect_verified,
+            effect_verified_at=tracker.effect_verified_at,
+            tuning_current_pid=None,
+        )
+        assert result["status"] == "COMPLETED"
+        assert result["conclusion"] == "NO_CHANGE"
+        assert result["conclusionLabel"] == "无明显变化"
+
+    def test_评分变化从kpiComparison提取(self):
+        """综合评分从 kpiComparison[metricKey=score] 单独提取。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 1, 10, 0, 0),
+            ab_compare_summary=_ab_summary(data_insufficient=False),
+            effect_verified=True,
+            effect_verified_at=datetime(2026, 8, 8, 10, 0, 0),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=tracker.ab_compare_summary,
+            effect_verified=tracker.effect_verified,
+            effect_verified_at=tracker.effect_verified_at,
+            tuning_current_pid=None,
+        )
+        assert result["scoreChange"] is not None
+        assert result["scoreChange"]["before"] == 75.0
+        assert result["scoreChange"]["after"] == 82.0
+        assert result["scoreChange"]["change"] == 7.0
+        assert result["scoreChange"]["improved"] is True
+
+    def test_核心KPI排除评分最多4项(self):
+        """coreKpiChanges 排除综合评分，最多 4 项。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 1, 10, 0, 0),
+            ab_compare_summary=_ab_summary(data_insufficient=False),
+            effect_verified=True,
+            effect_verified_at=datetime(2026, 8, 8, 10, 0, 0),
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=tracker.ab_compare_summary,
+            effect_verified=tracker.effect_verified,
+            effect_verified_at=tracker.effect_verified_at,
+            tuning_current_pid=None,
+        )
+        assert len(result["coreKpiChanges"]) <= 4
+        # 不包含 score
+        assert all(k["metricKey"] != "score" for k in result["coreKpiChanges"])
+
+    def test_时间窗口为T减7天到T加7天(self):
+        """时间窗为 [T-7d, T) 与 (T, T+7d]。"""
+        impl_at = datetime(2026, 8, 5, 10, 0, 0)
+        tracker = _make_tracker_model(
+            implemented_at=impl_at,
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=None,
+            effect_verified=None,
+            effect_verified_at=None,
+            tuning_current_pid=None,
+        )
+        tw = result["timeWindow"]
+        # beforeStart = T - 7d
+        assert "2026-07-29" in tw["beforeStart"]
+        # beforeEnd = T
+        assert "2026-08-05" in tw["beforeEnd"]
+        # afterStart = T
+        assert "2026-08-05" in tw["afterStart"]
+        # afterEnd = T + 7d
+        assert "2026-08-12" in tw["afterEnd"]
+
+    def test_无new_pid时pidAfter为None(self):
+        """Tracker 无 new_pid 时 pidAfter 为 None。"""
+        tracker = _make_tracker_model(
+            implemented_at=datetime(2026, 8, 5, 10, 0, 0),
+            new_pid_p=None,
+            new_pid_i=None,
+            new_pid_d=None,
+        )
+        result = _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=None,
+            effect_verified=None,
+            effect_verified_at=None,
+            tuning_current_pid={"p": 1.0, "i": 0.1, "d": 0.0},
+        )
+        assert result["pidAfter"] is None
+        assert result["pidBefore"] == {"p": 1.0, "i": 0.1, "d": 0.0}

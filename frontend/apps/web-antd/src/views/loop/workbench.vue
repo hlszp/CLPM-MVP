@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { ComponentPublicInstance } from 'vue';
+
 /**
  * 回路工作台（单页四区重构 v2 · 2026-08-07）
  *
@@ -24,7 +26,7 @@ import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 import type { MonitorApi } from '#/api/monitor';
 import type { TuningApi } from '#/api/tuning';
 
-import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -61,6 +63,7 @@ import { useLatestRequest } from '#/composables/use-latest-request';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useSectionVisibility } from '#/composables/use-section-visibility';
 import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
 
@@ -83,6 +86,31 @@ const route = useRoute();
 // ===== 请求代次保护（MW-P0-04）=====
 // 每次切换回路递增 epoch；异步响应写入前校验 epoch+loopId，丢弃旧响应。
 const requestGuard = useLatestRequest<string>();
+
+// ===== 区级延迟加载（MW-P3-10）=====
+// 评估趋势/诊断波形/整定仿真在可见时加载，避免首屏并发 6 路 API。
+// summary + loopDetail 立即加载（轻量概览）；其余三区在进入视口时加载。
+const assessVisibility = useSectionVisibility();
+const diagVisibility = useSectionVisibility();
+const tuneVisibility = useSectionVisibility();
+const assessSectionRef = ref<ComponentPublicInstance | null>(null);
+const diagSectionRef = ref<ComponentPublicInstance | null>(null);
+const tuneSectionRef = ref<ComponentPublicInstance | null>(null);
+
+/** 将组件实例 ref 转为 DOM 元素并注册到可见性追踪器 */
+function registerSectionVisibility() {
+  nextTick(() => {
+    assessVisibility.register(
+      (assessSectionRef.value?.$el as Element | undefined) ?? null,
+    );
+    diagVisibility.register(
+      (diagSectionRef.value?.$el as Element | undefined) ?? null,
+    );
+    tuneVisibility.register(
+      (tuneSectionRef.value?.$el as Element | undefined) ?? null,
+    );
+  });
+}
 
 // ===== 共享监控上下文（MW-P1-01）=====
 // URL 是真相源：view/loopId/plantNodeId/loopType/keyword/timeWindow 等
@@ -334,6 +362,7 @@ const summaryDayTrend = computed<DayTrend | null>(
 );
 
 // ===== 三区任务运行器（评估/诊断/辨识为异步任务） =====
+// MW-P3-10：任务完成后同时刷新 summary（生命周期/nextAction/活跃关注/验证时间线）
 const {
   assessment: assessTask,
   diagnosis: diagTask,
@@ -351,11 +380,15 @@ const {
       ]);
       assessmentDetail.value = latest;
       scoreHistory.value = snapshots;
+      // 刷新 summary（生命周期/评分趋势/活跃关注）
+      void loadSummary(loopId);
     },
     onDiagnosisDone: async (loopId: string) => {
       diagnosisDetail.value = await getDiagnosisDetailApi(loopId).catch(
         () => null,
       );
+      // 刷新 summary（诊断阶段状态/nextAction）
+      void loadSummary(loopId);
     },
     onTuningDone: async (loopId: string) => {
       const res = await getTuningTasksApi({
@@ -373,6 +406,8 @@ const {
           () => null,
         );
       }
+      // 刷新 summary（整定阶段状态/nextAction/trackerTimeline 含 effectCompare）
+      void loadSummary(loopId);
     },
   },
 );
@@ -818,6 +853,8 @@ function handleSearchInput(): void {
 // 确认目标存在后再 selectLoop，避免对不存在回路发起无用请求。
 onMounted(() => {
   loadLoopList();
+  // MW-P3-10：注册区级可见性追踪（IntersectionObserver 延迟加载）
+  registerSectionVisibility();
   // MW-P1-04/05：启动 WS 连接并注册消息回调
   startRealtime();
   onRealtimeMessage((msg) => {
@@ -874,16 +911,23 @@ watch(
   },
 );
 
-// 选中回路变化时加载四区数据 + summary（MW-P3-05）
+// 选中回路变化时加载数据（MW-P3-05 + MW-P3-10 区级延迟加载）
+// summary + loopDetail 立即加载（轻量概览）；评估/诊断/整定在区可见时加载。
 watch(
   selectedLoopId,
   (newId) => {
     if (newId) {
-      loadDiagnosis(newId);
-      loadAssessment(newId);
-      loadTuning(newId);
+      // 立即加载轻量概览数据
       loadLoopDetail(newId);
       loadSummary(newId);
+      // 重置区级可见标记——新回路的各区需重新等待可见
+      assessVisibility.reset();
+      diagVisibility.reset();
+      tuneVisibility.reset();
+      // 若区已可见（首屏可视区），立即触发加载
+      if (assessVisibility.shouldLoad(newId)) loadAssessment(newId);
+      if (diagVisibility.shouldLoad(newId)) loadDiagnosis(newId);
+      if (tuneVisibility.shouldLoad(newId)) loadTuning(newId);
     } else {
       diagnosisDetail.value = null;
       assessmentDetail.value = null;
@@ -893,9 +937,38 @@ watch(
       tuningDetail.value = null;
       loopDetail.value = null;
       summary.value = null;
+      assessVisibility.reset();
+      diagVisibility.reset();
+      tuneVisibility.reset();
     }
   },
   { immediate: true },
+);
+
+// MW-P3-10：区级可见时触发加载（首次进入视口或切换回路后再次可见）
+watch(
+  () => assessVisibility.onceVisible.value,
+  (visible) => {
+    if (visible && selectedLoopId.value) {
+      loadAssessment(selectedLoopId.value);
+    }
+  },
+);
+watch(
+  () => diagVisibility.onceVisible.value,
+  (visible) => {
+    if (visible && selectedLoopId.value) {
+      loadDiagnosis(selectedLoopId.value);
+    }
+  },
+);
+watch(
+  () => tuneVisibility.onceVisible.value,
+  (visible) => {
+    if (visible && selectedLoopId.value) {
+      loadTuning(selectedLoopId.value);
+    }
+  },
 );
 </script>
 
@@ -1175,6 +1248,7 @@ watch(
 
           <!-- ② 性能评估 30%（50/50：12 卡片 + 评分趋势） -->
           <WorkbenchSectionCard
+            ref="assessSectionRef"
             class="wb-row wb-assess"
             title="性能评估"
             icon="lucide:chart-column"
@@ -1215,6 +1289,7 @@ watch(
 
           <!-- ③ 回路诊断 30%（50/50：标签+置信度 + PV/OP·FFT 曲线） -->
           <WorkbenchSectionCard
+            ref="diagSectionRef"
             class="wb-row wb-diag"
             title="回路诊断"
             icon="lucide:stethoscope"
@@ -1302,6 +1377,7 @@ watch(
 
           <!-- ④ 回路整定 30%（50/50：当前PID+模型+指标 + 推荐 PID） -->
           <WorkbenchSectionCard
+            ref="tuneSectionRef"
             class="wb-row wb-tune"
             title="回路整定"
             icon="lucide:settings-2"

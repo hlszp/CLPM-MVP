@@ -1,9 +1,16 @@
-/** * 工作台 Tracker/实施/验证时间线（MW-P3-08） * *
-显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。 *
-VERIFYING 超期显示超期时长和"立即验证"。 * CLOSED
-显示改善/无变化/恶化结论；REOPENED 显示原因。 * 所有编辑动作复用 Tracker API
-和权限，不另建状态机。 * 平台安全边界文案始终可见：只读建议、人工实施、需留痕。
-* * 对齐整改方案 §7.1 闭环时间线。 */
+/**
+ * 工作台 Tracker/实施/验证时间线（MW-P3-08 + MW-P3-09）
+ *
+ * 显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。
+ * VERIFYING 超期显示超期时长和"立即验证"。
+ * CLOSED 显示改善/无变化/恶化结论；REOPENED 显示原因。
+ * 实施前后对比（MW-P3-09）：评分、核心 KPI、PID 和验证时间窗，
+ * 无基线/窗口不足/可信度不足时显示 INCONCLUSIVE，不显示伪 0。
+ * 所有编辑动作复用 Tracker API 和权限，不另建状态机。
+ * 平台安全边界文案始终可见：只读建议、人工实施、需留痕。
+ *
+ * 对齐整改方案 §7.1 闭环时间线。
+ */
 <script lang="ts" setup>
 import type { MonitorApi } from '#/api/monitor';
 
@@ -36,30 +43,76 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   IGNORED: { color: 'default', label: '已忽略' },
 };
 
+const CONCLUSION_META: Record<
+  string,
+  { color: string; icon: string; label: string }
+> = {
+  IMPROVED: { color: 'success', icon: 'lucide:trending-up', label: '改善' },
+  NO_CHANGE: { color: 'default', icon: 'lucide:minus', label: '无明显变化' },
+  DETERIORATED: {
+    color: 'error',
+    icon: 'lucide:trending-down',
+    label: '恶化',
+  },
+};
+
+const EFFECT_STATUS_META: Record<string, { color: string; label: string }> = {
+  PENDING: { color: 'default', label: '待验证' },
+  INCONCLUSIVE: { color: 'warning', label: '证据不足' },
+  COMPLETED: { color: 'success', label: '已验证' },
+};
+
 const statusMeta = computed(() => {
   if (!props.tracker) return null;
+  return STATUS_META[props.tracker.actionStatus] ?? {
+    color: 'default',
+    label: props.tracker.actionStatus,
+  };
+});
+
+const isVerifying = computed(() => props.tracker?.actionStatus === 'VERIFYING');
+const isClosed = computed(() => props.tracker?.actionStatus === 'CLOSED');
+const isReopened = computed(() => props.tracker?.actionStatus === 'REOPENED');
+
+/** 实施前后对比（MW-P3-09） */
+const effectCompare = computed(() => props.tracker?.effectCompare ?? null);
+
+const effectStatusMeta = computed(() => {
+  if (!effectCompare.value) return null;
   return (
-    STATUS_META[props.tracker.actionStatus] ?? {
+    EFFECT_STATUS_META[effectCompare.value.status] ?? {
       color: 'default',
-      label: props.tracker.actionStatus,
+      label: effectCompare.value.status,
     }
   );
 });
 
-const isVerifying = computed(() => props.tracker?.actionStatus === 'VERIFYING');
+const conclusionMeta = computed(() => {
+  if (!effectCompare.value?.conclusion) return null;
+  return CONCLUSION_META[effectCompare.value.conclusion] ?? null;
+});
 
-const isClosed = computed(() => props.tracker?.actionStatus === 'CLOSED');
-
-const isReopened = computed(() => props.tracker?.actionStatus === 'REOPENED');
-
-const effectConclusion = computed(() => {
-  if (!props.tracker?.abCompareSummary) return null;
-  return props.tracker.abCompareSummary;
+/** 评分变化展示文本（不显示伪 0，无数据用 —） */
+const scoreChangeText = computed(() => {
+  const sc = effectCompare.value?.scoreChange;
+  if (!sc) return null;
+  const before = sc.before == null ? '—' : sc.before.toFixed(1);
+  const after = sc.after == null ? '—' : sc.after.toFixed(1);
+  const change =
+    sc.change == null
+      ? '—'
+      : `${sc.change > 0 ? '+' : ''}${sc.change.toFixed(1)}`;
+  return { before, after, change, improved: sc.improved };
 });
 
 function pidText(pid?: null | { d?: number; i?: number; p?: number }): string {
   if (!pid) return '—';
   return `P=${pid.p ?? '—'}, I=${pid.i ?? '—'}, D=${pid.d ?? '—'}`;
+}
+
+function kpiChangeText(change?: null | number): string {
+  if (change == null) return '—';
+  return `${change > 0 ? '+' : ''}${change.toFixed(2)}`;
 }
 
 function goToTrackerDetail(trackerId: string) {
@@ -193,16 +246,12 @@ function handleVerify() {
           <span class="tt-step__dot"></span>
           <div class="tt-step__content">
             <span class="tt-step__label">
-              {{ isClosed ? '效果验证' : isReopened ? '验证失败' : '效果验证' }}
+              {{ isReopened ? '验证失败' : '效果验证' }}
             </span>
             <span class="tt-step__time">{{
               formatTime(tracker.effectVerifiedAt || tracker.closedAt) ||
               (isVerifying ? '等待验证' : '—')
             }}</span>
-            <!-- CLOSED 结论 -->
-            <span v-if="isClosed && effectConclusion" class="tt-step__meta">
-              结论：{{ effectConclusion }}
-            </span>
             <!-- REOPENED 原因 -->
             <span
               v-if="isReopened && tracker.reopenReason"
@@ -215,6 +264,137 @@ function handleVerify() {
               计划验证：{{ formatTime(tracker.plannedAt) }}
             </span>
           </div>
+        </div>
+      </div>
+
+      <!-- ===== 实施前后对比（MW-P3-09）===== -->
+      <div
+        v-if="effectCompare"
+        class="effect-compare"
+        role="region"
+        aria-label="实施前后对比"
+      >
+        <div class="effect-compare__header">
+          <span class="effect-compare__title">实施前后对比</span>
+          <Tag
+            v-if="effectStatusMeta"
+            :color="effectStatusMeta.color"
+            class="!m-0 !text-[10px]"
+          >
+            {{ effectStatusMeta.label }}
+          </Tag>
+          <Tag
+            v-if="conclusionMeta"
+            :color="conclusionMeta.color"
+            class="!m-0 !text-[10px]"
+          >
+            {{ conclusionMeta.label }}
+          </Tag>
+          <span
+            v-if="effectCompare.confidence"
+            class="effect-compare__confidence"
+          >
+            可信度：{{ effectCompare.confidence }}
+          </span>
+        </div>
+
+        <!-- 原因说明（INCONCLUSIVE / PENDING） -->
+        <div
+          v-if="effectCompare.reason"
+          class="effect-compare__reason"
+          :class="{
+            'effect-compare__reason--warn':
+              effectCompare.status === 'INCONCLUSIVE',
+          }"
+        >
+          {{ effectCompare.reason }}
+        </div>
+
+        <!-- 时间窗 -->
+        <div
+          v-if="effectCompare.timeWindow"
+          class="effect-compare__window"
+        >
+          <span class="effect-compare__window-label">对比窗口</span>
+          <span class="effect-compare__window-value">
+            实施前 {{ formatTime(effectCompare.timeWindow.beforeStart) }} ~
+            {{ formatTime(effectCompare.timeWindow.beforeEnd) }}
+          </span>
+          <span class="effect-compare__window-sep">→</span>
+          <span class="effect-compare__window-value">
+            实施后 {{ formatTime(effectCompare.timeWindow.afterStart) }} ~
+            {{ formatTime(effectCompare.timeWindow.afterEnd) }}
+          </span>
+        </div>
+
+        <!-- 评分变化 -->
+        <div v-if="scoreChangeText" class="effect-compare__row">
+          <span class="effect-compare__row-label">综合评分</span>
+          <span class="effect-compare__row-values">
+            <span class="effect-compare__val-before">
+              {{ scoreChangeText.before }}
+            </span>
+            <span class="effect-compare__val-arrow">→</span>
+            <span class="effect-compare__val-after">
+              {{ scoreChangeText.after }}
+            </span>
+            <span
+              class="effect-compare__val-change"
+              :class="{
+                'effect-compare__val-change--up':
+                  scoreChangeText.improved === true,
+                'effect-compare__val-change--down':
+                  scoreChangeText.improved === false,
+              }"
+            >
+              ({{ scoreChangeText.change }})
+            </span>
+          </span>
+        </div>
+
+        <!-- 核心 KPI 变化 -->
+        <div
+          v-if="effectCompare.coreKpiChanges.length > 0"
+          class="effect-compare__kpi-list"
+        >
+          <div
+            v-for="kpi in effectCompare.coreKpiChanges"
+            :key="kpi.metricKey"
+            class="effect-compare__kpi-item"
+          >
+            <span class="effect-compare__kpi-name">{{ kpi.metricName }}</span>
+            <span class="effect-compare__kpi-values">
+              <span>{{ kpi.before == null ? '—' : kpi.before.toFixed(2) }}</span>
+              <span class="effect-compare__val-arrow">→</span>
+              <span>{{ kpi.after == null ? '—' : kpi.after.toFixed(2) }}</span>
+              <span
+                class="effect-compare__kpi-change"
+                :class="{
+                  'effect-compare__val-change--up': kpi.improved === true,
+                  'effect-compare__val-change--down': kpi.improved === false,
+                }"
+              >
+                ({{ kpiChangeText(kpi.change) }})
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <!-- PID 变化 -->
+        <div
+          v-if="effectCompare.pidBefore || effectCompare.pidAfter"
+          class="effect-compare__row"
+        >
+          <span class="effect-compare__row-label">PID 变化</span>
+          <span class="effect-compare__row-values">
+            <span class="effect-compare__val-before">
+              {{ pidText(effectCompare.pidBefore) }}
+            </span>
+            <span class="effect-compare__val-arrow">→</span>
+            <span class="effect-compare__val-after">
+              {{ pidText(effectCompare.pidAfter) }}
+            </span>
+          </span>
         </div>
       </div>
 
@@ -369,6 +549,143 @@ function handleVerify() {
 
 .tt-step__meta--error {
   color: hsl(var(--status-error) / 80%);
+}
+
+/* ===== 实施前后对比（MW-P3-09）===== */
+.effect-compare {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  margin-top: 4px;
+  background: hsl(var(--muted) / 20%);
+  border: 1px solid hsl(var(--border) / 40%);
+  border-radius: 4px;
+}
+
+.effect-compare__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.effect-compare__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 85%);
+}
+
+.effect-compare__confidence {
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+.effect-compare__reason {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 50%);
+}
+
+.effect-compare__reason--warn {
+  color: hsl(var(--status-warn) / 80%);
+}
+
+.effect-compare__window {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+.effect-compare__window-label {
+  font-weight: 500;
+}
+
+.effect-compare__window-value {
+  white-space: nowrap;
+}
+
+.effect-compare__window-sep {
+  color: hsl(var(--foreground) / 30%);
+}
+
+.effect-compare__row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 1px 0;
+  font-size: 11px;
+}
+
+.effect-compare__row-label {
+  flex-shrink: 0;
+  width: 60px;
+  color: hsl(var(--foreground) / 50%);
+}
+
+.effect-compare__row-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.effect-compare__val-before {
+  color: hsl(var(--foreground) / 60%);
+}
+
+.effect-compare__val-arrow {
+  color: hsl(var(--foreground) / 30%);
+}
+
+.effect-compare__val-after {
+  font-weight: 500;
+  color: hsl(var(--foreground) / 85%);
+}
+
+.effect-compare__val-change {
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+.effect-compare__val-change--up {
+  color: hsl(var(--status-ok) / 80%);
+}
+
+.effect-compare__val-change--down {
+  color: hsl(var(--status-error) / 80%);
+}
+
+.effect-compare__kpi-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 2px 0;
+}
+
+.effect-compare__kpi-item {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.effect-compare__kpi-name {
+  color: hsl(var(--foreground) / 50%);
+}
+
+.effect-compare__kpi-values {
+  display: flex;
+  gap: 3px;
+  align-items: baseline;
+}
+
+.effect-compare__kpi-change {
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
 }
 
 /* 安全边界文案 */

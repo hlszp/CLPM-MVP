@@ -256,6 +256,43 @@ export namespace MonitorApi {
     summary?: null | string;
   }
 
+  /** 实施前后对比单项 KPI（MW-P3-09） */
+  export interface EffectCompareKpiItem {
+    metricKey: string;
+    metricName: string;
+    before?: null | number;
+    after?: null | number;
+    change?: null | number;
+    improved?: boolean | null;
+  }
+
+  /** 实施前后对比（MW-P3-09） */
+  export interface EffectCompare {
+    status: 'COMPLETED' | 'INCONCLUSIVE' | 'PENDING';
+    conclusion?: 'DETERIORATED' | 'IMPROVED' | 'NO_CHANGE' | null;
+    conclusionLabel?: null | string;
+    implementedAt?: null | string;
+    verifiedAt?: null | string;
+    timeWindow?: null | {
+      afterEnd: string;
+      afterStart: string;
+      beforeEnd: string;
+      beforeStart: string;
+    };
+    scoreChange?: null | {
+      after?: null | number;
+      before?: null | number;
+      change?: null | number;
+      improved?: boolean | null;
+    };
+    coreKpiChanges: EffectCompareKpiItem[];
+    pidBefore?: null | { d?: number; i?: number; p?: number };
+    pidAfter?: null | { d?: number; i?: number; p?: number };
+    dataInsufficient: boolean;
+    confidence?: null | string;
+    reason?: null | string;
+  }
+
   /** Tracker 时间线 */
   export interface TrackerTimeline {
     trackerId: string;
@@ -276,6 +313,7 @@ export namespace MonitorApi {
     effectVerified?: boolean | null;
     effectVerifiedAt?: null | string;
     abCompareSummary?: null | string;
+    effectCompare?: EffectCompare | null;
     reopenReason?: null | string;
     isOverdue: boolean;
     overdueHours?: null | number;

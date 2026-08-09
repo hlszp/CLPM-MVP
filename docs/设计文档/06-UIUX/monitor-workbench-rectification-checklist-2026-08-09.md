@@ -341,96 +341,107 @@ Commit：<sha>
 
 ### MW-P3-01 定义工作台 summary 契约
 
-- [ ] 定义运行态、关注摘要、评估/诊断/整定摘要、Tracker、生命周期、nextAction。
-- [ ] 摘要禁止返回趋势数组、FFT 点、仿真曲线等大数据。
-- [ ] 所有摘要包含 `resultAt/timeWindow/confidence/status`。
-- [ ] 运行态包含服务端计算的 `dataFreshness.status/thresholdSeconds/reason`，复用实时链路停滞配置。
+- [x] 定义运行态、关注摘要、评估/诊断/整定摘要、Tracker、生命周期、nextAction。
+- [x] 摘要禁止返回趋势数组、FFT 点、仿真曲线等大数据。
+- [x] 所有摘要包含 `resultAt/timeWindow/confidence/status`。
+- [x] 运行态包含服务端计算的 `dataFreshness.status/thresholdSeconds/reason`，复用实时链路停滞配置。
 - 依赖：MW-P2-01。
+- 证据：`backend/app/schemas/workbench_summary.py` 定义 RuntimeState/DataFreshness/DataHealth/ScoreTrend/ActiveAttentionSummary/AssessmentSummary/DiagnosisSummary/TuningSummary/TrackerTimeline/EffectCompare/Lifecycle/NextAction/WorkbenchSummary；摘要仅含汇总值无大数据数组；`dataFreshness.status/thresholdSeconds/reason` 服务端计算。
 
 ### MW-P3-02 实现五阶段生命周期构建器
 
-- [ ] MONITOR 判定配置完整、运行值和数据健康度。
-- [ ] ASSESS 判定任务与最新快照。
-- [ ] DIAGNOSE 判定结果是否晚于当前评估。
-- [ ] TUNE 映射既有整定状态机。
-- [ ] VERIFY 映射 PENDING/IN_PROGRESS/VERIFYING/CLOSED/REOPENED。
-- [ ] 单测覆盖 NOT_STARTED/READY/RUNNING/COMPLETED/INCONCLUSIVE/BLOCKED/OVERDUE/NOT_REQUIRED。
+- [x] MONITOR 判定配置完整、运行值和数据健康度。
+- [x] ASSESS 判定任务与最新快照。
+- [x] DIAGNOSE 判定结果是否晚于当前评估。
+- [x] TUNE 映射既有整定状态机。
+- [x] VERIFY 映射 PENDING/IN_PROGRESS/VERIFYING/CLOSED/REOPENED。
+- [x] 单测覆盖 NOT_STARTED/READY/RUNNING/COMPLETED/INCONCLUSIVE/BLOCKED/OVERDUE/NOT_REQUIRED。
 - 依赖：MW-P3-01。
+- 证据：`_build_lifecycle()` 五阶段构建器 + `TestLifecycleBuilder` 单测（五阶段全部返回/NOT_STARTED/INCONCLUSIVE/BLOCKED/OVERDUE/NOT_REQUIRED/当前阶段判定）；64 passed。
 
 ### MW-P3-03 实现推荐下一步规则
 
-- [ ] 按方案 §7.3 顺序输出唯一主动作。
-- [ ] 返回动作原因和禁用原因。
-- [ ] 后置结果不得早于前置结果；时间同轴不满足时提示重新计算。
-- [ ] 新活跃严重预警晚于诊断时，提示重新评估/诊断。
-- [ ] 按角色过滤动作：PE 所有写动作 disabled；EXPERT 仅整定动作可写；Tracker 写入仅 ADMIN/IC。
-- [ ] 单测覆盖每种动作和无动作情况。
+- [x] 按方案 §7.3 顺序输出唯一主动作。
+- [x] 返回动作原因和禁用原因。
+- [x] 后置结果不得早于前置结果；时间同轴不满足时提示重新计算。
+- [x] 新活跃严重预警晚于诊断时，提示重新评估/诊断。
+- [x] 按角色过滤动作：PE 所有写动作 disabled；EXPERT 仅整定动作可写；Tracker 写入仅 ADMIN/IC。
+- [x] 单测覆盖每种动作和无动作情况。
 - 依赖：MW-P3-02、MW-P2-04。
+- 证据：`_build_next_action()` §7.3 八条优先级 + 角色过滤（SPONSOR/PE/EXPERT/ADMIN/IC）；`TestNextAction` 单测覆盖各动作类型+角色+禁用原因+无动作。
 
 ### MW-P3-04 新增 workbench summary API
 
-- [ ] 新增 `GET /monitor/loops/{loopId}/summary`。
-- [ ] 复用现有服务查询，不复制算法计算。
-- [ ] 单个来源失败时返回 `partial=true` 和 `unavailableSections`，不让整页 500。
-- [ ] 权限与当前工作台一致：ADMIN/IC/PE/EXPERT 可读，PE 返回同结构但所有写动作 disabled；Sponsor 固定返回 403，前端不得发起该请求。
-- [ ] p95 目标 ≤400ms，必要时并行查询独立来源。
+- [x] 新增 `GET /monitor/loops/{loopId}/summary`。
+- [x] 复用现有服务查询，不复制算法计算。
+- [x] 单个来源失败时返回 `partial=true` 和 `unavailableSections`，不让整页 500。
+- [x] 权限与当前工作台一致：ADMIN/IC/PE/EXPERT 可读，PE 返回同结构但所有写动作 disabled；Sponsor 固定返回 403，前端不得发起该请求。
+- [~] p95 目标 ≤400ms，必要时并行查询独立来源。
 - 依赖：MW-P3-02、MW-P3-03。
+- 证据：`monitor.py` GET `/loops/{loop_id}/summary` + `get_workbench_summary()` 部分失败 try/except 收集 `unavailable`；权限 `require_roles("ADMIN","IC_ENGINEER","PE_ENGINEER","EXPERT")`；p95 压测留待 Phase 5。
 
 ### MW-P3-05 工作台首屏改用 summary
 
-- [ ] 选中回路后首屏只请求 summary。
-- [ ] 顶部状态条展示实时值、数据健康度、评分趋势和时间上下文。
-- [ ] 部分来源失败使用区级错误状态，不使用全局红色 toast 表示空结果。
-- [ ] 手工刷新只刷新当前摘要和已展开区。
+- [x] 选中回路后首屏只请求 summary。
+- [x] 顶部状态条展示实时值、数据健康度、评分趋势和时间上下文。
+- [x] 部分来源失败使用区级错误状态，不使用全局红色 toast 表示空结果。
+- [x] 手工刷新只刷新当前摘要和已展开区。
 - 依赖：MW-P3-04、MW-P1-05。
+- 证据：`workbench.vue` `loadSummary()` 接入 `getWorkbenchSummaryApi`；`summary?.dataFreshness` 传入 `LoopLiveStatusBar`；`summary?.unavailableSections` 传入 `WorkbenchLifecycleBar`/`WorkbenchTrackerTimeline` 区级降级标记。
 
 ### MW-P3-06 加入当前回路活跃关注项
 
-- [ ] 顶部显示开放项总数和最高优先级。
-- [ ] 默认展示最多 3 条，超过时进入关注队列并按 loopId 筛选。
-- [ ] eventId/trackerId 深链接自动定位对应项。
-- [ ] 不出现规则编辑入口。
+- [x] 顶部显示开放项总数和最高优先级。
+- [x] 默认展示最多 3 条，超过时进入关注队列并按 loopId 筛选。
+- [x] eventId/trackerId 深链接自动定位对应项。
+- [x] 不出现规则编辑入口。
 - 依赖：MW-P3-05、MW-P2-07。
+- 证据：`WorkbenchActiveAttention` 组件（汇总条+最高优先级 Tag+明细列表≤3+查看全部链接）；`summary.activeAttention` 来自 `_build_active_attention()` 当前回路筛选。
 
 ### MW-P3-07 加入生命周期条和推荐下一步
 
-- [ ] 五阶段状态可扫描，当前/阻塞/超期状态有文字和图标，不只靠颜色。
-- [ ] 点击阶段滚动到对应区或展开验证时间线。
-- [ ] 页面只保留一个 primary 主动作，其余区动作降级为 secondary/link。
-- [ ] 主动作执行前沿用现有可信度与危险确认门禁。
+- [x] 五阶段状态可扫描，当前/阻塞/超期状态有文字和图标，不只靠颜色。
+- [x] 点击阶段滚动到对应区或展开验证时间线。
+- [x] 页面只保留一个 primary 主动作，其余区动作降级为 secondary/link。
+- [x] 主动作执行前沿用现有可信度与危险确认门禁。
 - 依赖：MW-P3-05。
+- 证据：`WorkbenchLifecycleBar`（五阶段横向条+编号图标+状态文字+Tooltip+stageClick 事件+当前阶段高亮+不可用降级）；`WorkbenchNextAction`（primary 主动作+原因+disabled 状态+角色过滤）；`handleLifecycleStageClick` 滚动到对应区。
 
 ### MW-P3-08 加入 Tracker/实施/验证时间线
 
-- [ ] 显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。
-- [ ] VERIFYING 超期显示超期时长和“立即验证”。
-- [ ] CLOSED 显示改善/无变化/恶化结论；REOPENED 显示原因。
-- [ ] 所有编辑动作复用 Tracker API 和权限，不另建状态机。
-- [ ] 平台安全边界文案始终可见：只读建议、人工实施、需留痕。
+- [x] 显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。
+- [x] VERIFYING 超期显示超期时长和“立即验证”。
+- [x] CLOSED 显示改善/无变化/恶化结论；REOPENED 显示原因。
+- [x] 所有编辑动作复用 Tracker API 和权限，不另建状态机。
+- [x] 平台安全边界文案始终可见：只读建议、人工实施、需留痕。
 - 依赖：MW-P3-05。
+- 证据：`WorkbenchTrackerTimeline` 组件（建单/实施/验证三节点+状态 Tag+超期标记+MOC+PID+安全边界文案+verify/viewDetail 事件）；`_build_tracker_timeline()` 优先开放态、无开放态返回最近闭环。
 
 ### MW-P3-09 加入实施前后对比
 
-- [ ] 对比实施前/后的评分、核心 KPI、PID 和验证时间窗。
-- [ ] 无基线、窗口不足、可信度不足时显示 INCONCLUSIVE，不显示伪 0。
-- [ ] 对比结论必须带时间窗和可信度。
-- [ ] 不重复实现 `/tracker/effectiveness` 计算逻辑。
+- [x] 对比实施前/后的评分、核心 KPI、PID 和验证时间窗。
+- [x] 无基线、窗口不足、可信度不足时显示 INCONCLUSIVE，不显示伪 0。
+- [x] 对比结论必须带时间窗和可信度。
+- [x] 不重复实现 `/tracker/effectiveness` 计算逻辑。
 - 依赖：MW-P3-08。
+- 证据：`_build_effect_compare()` 复用 `tracker.ab_compare_summary` 存储快照，三态判定 PENDING/INCONCLUSIVE/COMPLETED；`EffectCompare` schema 含 scoreChange/coreKpiChanges(≤4)/pidBefore/pidAfter/timeWindow/confidence/reason；`TestEffectCompare` 11 例（无Tracker/无实施/无ab_summary/数据不足/改善/恶化/无变化/评分提取/核心KPI排除评分/时间窗/PID None）；64 passed。前端 `WorkbenchTrackerTimeline` effect-compare 区展示结论标签+时间窗+评分变化+核心KPI+PID+INCONCLUSIVE 文案。
 
 ### MW-P3-10 区级延迟加载和任务反写
 
-- [ ] 评估趋势、诊断波形/FFT、整定仿真在可见/展开时加载。
-- [ ] 任务完成时失效当前摘要和对应区缓存，其他回路缓存不动。
-- [ ] 切换回路后后台任务进度仍可通过 TaskTracker 恢复。
-- [ ] 失败、取消、INCONCLUSIVE 均有原因和下一步。
+- [x] 评估趋势、诊断波形/FFT、整定仿真在可见/展开时加载。
+- [x] 任务完成时失效当前摘要和对应区缓存，其他回路缓存不动。
+- [x] 切换回路后后台任务进度仍可通过 TaskTracker 恢复。
+- [x] 失败、取消、INCONCLUSIVE 均有原因和下一步。
 - 依赖：MW-P0-05、MW-P3-05。
+- 证据：`useSectionVisibility` composable（IntersectionObserver + onceVisible 语义 + reset + SSR 安全）；workbench `assessVisibility/diagVisibility/tuneVisibility` 三区追踪，`selectedLoopId` watch 仅立即加载 summary+loopDetail，其余三区 `onceVisible` watch 触发；`onAssessDone/onDiagnosisDone/onTuningDone` 完成后 `void loadSummary(loopId)` 刷新摘要；`reset()` 切换回路清除标记；`useWorkbenchTaskRunner` TaskTracker 进度恢复；`WorkbenchSectionCard` loading/empty/progress 区级状态。vitest 520 passed（含 use-section-visibility 11 例）。
 
 ### MW-P3-11 Phase 3 出口
 
-- [ ] “评分恶化→评估→诊断→Tracker→整定→实施→验证”主流程 E2E 通过。
-- [ ] “数据不足→导入数据”分支通过。
-- [ ] “验证失败→REOPENED”分支通过。
-- [ ] 工作台首屏请求和 summary p95 指标通过。
+- [~] “评分恶化→评估→诊断→Tracker→整定→实施→验证”主流程 E2E 通过。
+- [~] “数据不足→导入数据”分支通过。
+- [~] “验证失败→REOPENED”分支通过。
+- [~] 工作台首屏请求和 summary p95 指标通过。
+- 证据：check:type 2/2 通过；vitest 520 passed（61 files）；后端 `test_workbench_summary.py` 64 passed；ruff check/format 通过；alembic check 失败为预存数据库未升级（本轮无新迁移）；E2E + p95 压测留待 Phase 5（需启动服务）。
 
 ---
 

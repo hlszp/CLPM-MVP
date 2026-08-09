@@ -442,11 +442,19 @@ async def _build_tuning_summary(db: AsyncSession, loop_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-async def _build_tracker_timeline(db: AsyncSession, loop_id: str) -> dict | None:
+async def _build_tracker_timeline(
+    db: AsyncSession,
+    loop_id: str,
+    *,
+    tuning_current_pid: dict | None = None,
+) -> dict | None:
     """最新开放 Tracker 及其实施/验证状态。
 
     优先返回开放态（PENDING/IN_PROGRESS/VERIFYING）的最新一条；
     无开放态则返回最近一次闭环（CLOSED/REOPENED）用于展示验证结论。
+
+    ``tuning_current_pid`` 为实施前 PID 基线（来自最新整定记录的 current_pid），
+    传入后用于 MW-P3-09 实施前后对比。
     """
     # 开放态优先
     open_result = await db.execute(
@@ -513,9 +521,189 @@ async def _build_tracker_timeline(db: AsyncSession, loop_id: str) -> dict | None
         "effectVerified": tracker.effect_verified,
         "effectVerifiedAt": _iso(tracker.effect_verified_at),
         "abCompareSummary": tracker.ab_compare_summary,
+        "effectCompare": _build_effect_compare(
+            tracker=tracker,
+            ab_compare_summary=tracker.ab_compare_summary,
+            effect_verified=tracker.effect_verified,
+            effect_verified_at=tracker.effect_verified_at,
+            tuning_current_pid=tuning_current_pid,
+        ),
         "reopenReason": tracker.reopen_reason,
         "isOverdue": is_overdue,
         "overdueHours": overdue_hours,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 实施前后对比（MW-P3-09，方案 §7.1 闭环时间线增强）
+# ---------------------------------------------------------------------------
+
+
+#: 实施前后对比中排除的核心 KPI（综合评分单独提取为 scoreChange）
+_SCORE_METRIC_KEY = "score"
+
+#: 核心 KPI 展示上限（排除综合评分后最多展示 4 项）
+_MAX_CORE_KPI_ITEMS = 4
+
+
+def _build_effect_compare(
+    *,
+    tracker: ActionTracker | None,
+    ab_compare_summary: dict | None,
+    effect_verified: bool | None,
+    effect_verified_at: datetime | None,
+    tuning_current_pid: dict | None,
+) -> dict | None:
+    """构建实施前后对比（MW-P3-09）。
+
+    复用 tracker.ab_compare_summary 存储快照，不重复实现
+    ``/tracker/effectiveness`` 计算逻辑。
+
+    状态判定：
+    - 无 Tracker 或无 implemented_at → None（不展示对比区）
+    - 有 Tracker 但无 ab_compare_summary → PENDING（未到验证周期）
+    - 有 ab_compare_summary 但 dataInsufficient=true → INCONCLUSIVE
+    - 有 ab_compare_summary 且 dataInsufficient=false → COMPLETED
+
+    无基线、窗口不足、可信度不足时返回 INCONCLUSIVE，不显示伪 0。
+    """
+    if tracker is None or not tracker.implemented_at:
+        return None
+
+    implemented_at = tracker.implemented_at
+    if implemented_at.tzinfo is None:
+        implemented_at = implemented_at.replace(tzinfo=UTC)
+
+    # 时间窗：[T-7d, T) 与 (T, T+7d]（与 get_ab_compare 口径一致）
+    before_start = (implemented_at - timedelta(days=7)).isoformat()
+    before_end = implemented_at.isoformat()
+    after_start = implemented_at.isoformat()
+    after_end = (implemented_at + timedelta(days=7)).isoformat()
+
+    pid_after: dict | None = None
+    if any(v is not None for v in (tracker.new_pid_p, tracker.new_pid_i, tracker.new_pid_d)):
+        pid_after = {
+            "p": tracker.new_pid_p,
+            "i": tracker.new_pid_i,
+            "d": tracker.new_pid_d,
+        }
+
+    # 无 ab_compare_summary → PENDING
+    if not ab_compare_summary:
+        return {
+            "status": "PENDING",
+            "conclusion": None,
+            "conclusionLabel": "待验证",
+            "implementedAt": implemented_at.isoformat(),
+            "verifiedAt": _iso(effect_verified_at),
+            "timeWindow": {
+                "beforeStart": before_start,
+                "beforeEnd": before_end,
+                "afterStart": after_start,
+                "afterEnd": after_end,
+            },
+            "scoreChange": None,
+            "coreKpiChanges": [],
+            "pidBefore": tuning_current_pid,
+            "pidAfter": pid_after,
+            "dataInsufficient": False,
+            "confidence": None,
+            "reason": "实施后未到验证周期（T+7d），暂无对比数据",
+        }
+
+    data_insufficient = bool(ab_compare_summary.get("dataInsufficient", False))
+    kpi_comparison: list[dict] = ab_compare_summary.get("kpiComparison", [])
+    improved_count = int(ab_compare_summary.get("improvedCount", 0))
+    deteriorated_count = int(ab_compare_summary.get("deterioratedCount", 0))
+
+    # 提取评分变化（metricKey == "score"）
+    score_item = next(
+        (k for k in kpi_comparison if k.get("metricKey") == _SCORE_METRIC_KEY),
+        None,
+    )
+    score_change: dict | None = None
+    if score_item:
+        score_change = {
+            "before": score_item.get("before"),
+            "after": score_item.get("after"),
+            "change": score_item.get("change"),
+            "improved": score_item.get("improved"),
+        }
+
+    # 提取核心 KPI 变化（排除综合评分，最多 4 项）
+    core_items: list[dict] = []
+    for kpi in kpi_comparison:
+        if kpi.get("metricKey") == _SCORE_METRIC_KEY:
+            continue
+        core_items.append(
+            {
+                "metricKey": kpi.get("metricKey"),
+                "metricName": kpi.get("metricName"),
+                "before": kpi.get("before"),
+                "after": kpi.get("after"),
+                "change": kpi.get("change"),
+                "improved": kpi.get("improved"),
+            }
+        )
+        if len(core_items) >= _MAX_CORE_KPI_ITEMS:
+            break
+
+    # INCONCLUSIVE：数据不足
+    if data_insufficient:
+        return {
+            "status": "INCONCLUSIVE",
+            "conclusion": None,
+            "conclusionLabel": "证据不足",
+            "implementedAt": implemented_at.isoformat(),
+            "verifiedAt": _iso(effect_verified_at),
+            "timeWindow": {
+                "beforeStart": before_start,
+                "beforeEnd": before_end,
+                "afterStart": after_start,
+                "afterEnd": after_end,
+            },
+            "scoreChange": score_change,
+            "coreKpiChanges": core_items,
+            "pidBefore": tuning_current_pid,
+            "pidAfter": pid_after,
+            "dataInsufficient": True,
+            "confidence": "INSUFFICIENT",
+            "reason": "实施后窗口数据不足 24 小时，无法判定效果",
+        }
+
+    # COMPLETED：判定结论
+    if improved_count > deteriorated_count:
+        conclusion = "IMPROVED"
+        conclusion_label = "改善"
+        confidence = "HIGH" if improved_count >= 3 else "MEDIUM"
+    elif deteriorated_count > improved_count:
+        conclusion = "DETERIORATED"
+        conclusion_label = "恶化"
+        confidence = "HIGH" if deteriorated_count >= 3 else "MEDIUM"
+    else:
+        conclusion = "NO_CHANGE"
+        conclusion_label = "无明显变化"
+        confidence = "MEDIUM"
+
+    return {
+        "status": "COMPLETED",
+        "conclusion": conclusion,
+        "conclusionLabel": conclusion_label,
+        "implementedAt": implemented_at.isoformat(),
+        "verifiedAt": _iso(effect_verified_at),
+        "timeWindow": {
+            "beforeStart": before_start,
+            "beforeEnd": before_end,
+            "afterStart": after_start,
+            "afterEnd": after_end,
+        },
+        "scoreChange": score_change,
+        "coreKpiChanges": core_items,
+        "pidBefore": tuning_current_pid,
+        "pidAfter": pid_after,
+        "dataInsufficient": False,
+        "confidence": confidence,
+        "reason": f"改善 {improved_count} 项 / 恶化 {deteriorated_count} 项",
     }
 
 
@@ -1055,9 +1243,13 @@ async def get_workbench_summary(
         tuning = None
         unavailable.append("tuning")
 
-    # --- Tracker 时间线 ---
+    # --- Tracker 时间线（MW-P3-09：传入整定 current_pid 作为实施前基线） ---
     try:
-        tracker = await _build_tracker_timeline(db, loop_id)
+        tracker = await _build_tracker_timeline(
+            db,
+            loop_id,
+            tuning_current_pid=tuning.get("currentPid") if tuning else None,
+        )
     except Exception:  # noqa: BLE001
         logger.warning("summary: Tracker 时间线构建失败", exc_info=True)
         tracker = None

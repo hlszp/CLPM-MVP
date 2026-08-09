@@ -188,6 +188,62 @@ class TuningSummary(CamelModel):
 # ---------------------------------------------------------------------------
 
 
+class EffectCompareKpiItem(CamelModel):
+    """实施前后对比单项 KPI（从 ab_compare_summary.kpiComparison 提取）。"""
+
+    metric_key: str
+    metric_name: str
+    before: float | None = None
+    after: float | None = None
+    change: float | None = None
+    improved: bool | None = Field(None, description="True=改善/False=恶化/None=无变化或数据不足")
+
+
+class EffectCompare(CamelModel):
+    """实施前后对比（MW-P3-09，方案 §7.1 闭环时间线增强）。
+
+    复用 tracker.ab_compare_summary 存储快照，不重复实现 ``/tracker/effectiveness``
+    计算逻辑。无基线、窗口不足、可信度不足时返回 ``INCONCLUSIVE``，不显示伪 0。
+
+    状态判定：
+    - ``PENDING``：Tracker 尚未实施或未到验证周期（无 ab_compare_summary）
+    - ``INCONCLUSIVE``：有 ab_compare_summary 但 dataInsufficient=true（窗口数据不足）
+    - ``COMPLETED``：已验证（effect_verified_at 有值），conclusion 由 improvedCount vs
+      deterioratedCount 判定
+    """
+
+    status: Literal["PENDING", "INCONCLUSIVE", "COMPLETED"] = Field(
+        "PENDING",
+        description="PENDING=未验证/INCONCLUSIVE=证据不足/COMPLETED=已验证",
+    )
+    conclusion: Literal["IMPROVED", "NO_CHANGE", "DETERIORATED"] | None = Field(
+        None, description="结论（仅 COMPLETED 时有值）"
+    )
+    conclusion_label: str | None = Field(
+        None, description="可读结论：改善/无明显变化/恶化/证据不足"
+    )
+    implemented_at: str | None = Field(None, description="实施时间 T（ISO8601）")
+    verified_at: str | None = Field(None, description="验证时间（ISO8601）")
+    time_window: dict | None = Field(
+        None,
+        description="对比时间窗 {beforeStart, beforeEnd, afterStart, afterEnd}",
+    )
+    score_change: dict | None = Field(
+        None, description="评分变化 {before, after, change, improved}"
+    )
+    core_kpi_changes: list[EffectCompareKpiItem] = Field(
+        default_factory=list,
+        description="核心 KPI 变化（最多 4 项，排除综合评分）",
+    )
+    pid_before: dict | None = Field(None, description="实施前 PID {p,i,d}")
+    pid_after: dict | None = Field(None, description="实施后 PID {p,i,d}")
+    data_insufficient: bool = Field(False, description="窗口数据不足（after 快照 < 24）")
+    confidence: str | None = Field(None, description="对比可信度标签：HIGH/MEDIUM/LOW/INSUFFICIENT")
+    reason: str | None = Field(
+        None, description="状态原因（如：未到验证周期 / 实施后数据不足 24 小时）"
+    )
+
+
 class TrackerTimeline(CamelModel):
     """最新开放 Tracker 及其实施/验证状态（方案 §7.1 闭环时间线）。"""
 
@@ -214,6 +270,7 @@ class TrackerTimeline(CamelModel):
     )
     effect_verified_at: str | None = None
     ab_compare_summary: dict | None = Field(None, description="A/B 对比结果快照")
+    effect_compare: EffectCompare | None = Field(None, description="结构化实施前后对比（MW-P3-09）")
     reopen_reason: str | None = None
     is_overdue: bool = Field(False, description="VERIFYING 是否超期")
     overdue_hours: float | None = Field(None, description="超期小时数（is_overdue=True 时有值）")
