@@ -122,10 +122,10 @@
 | BL-3 | 工作台"异常预测"卡统计条显示 undefined（高危/中危/已分析计数映射缺失，有数据时必现） | ✅ `6e81740`（后端汇总键 camelCase 根治 + 测试同步） |
 | BL-4 | Sponsor 登录"无权限访问"toast、TOP5 最优排序（已在方案 C2-1/C2-3，Phase 1） | 已在计划内 |
 | BL-5 | hex 存量 180 处/36 文件双轨语义色迁移（antd 系→工业 token；棘轮基线 scripts/hex-baseline.json 只减不增，改完一批跑 --update-baseline） | ✅ 三批次 `1147d99`/`0a44e3f`/`5e0def0`：180→1（仅剩 HTML 实体误计）；类别色板退役 slate、语义色双轨并轨、阈值展示色单源 |
-| BL-6 | antd Table 大表格虚拟化（评估结论：分页 ≤100 已控量；若未来单表 >500 行再启用，可复用 useVirtualList 或 antd virtual 属性） | 单表数据量超 500 行时 |
+| BL-6 | antd Table 大表格虚拟化（评估结论：分页 ≤100 已控量；若未来单表 >500 行再启用，可复用 useVirtualList 或 antd virtual 属性） | ✅ 评估关闭（2026-08-09 实测：全站服务端分页单表上限 pageSize=100，无 >500 行场景；useVirtualList 已备，触发条件不变） |
 | BL-7 | A-07 表格基线全量迁移：密度三档已封装 useTableDensity + manage.vue 样板（`60eff86`），其余 14 表格页逐页接入（density 按钮 + :size 绑定，~10 行/页）；首列/表头冻结按页评估随迁移处理 | ✅ `a9b9ab4`（14 页全量接入，tracker 抽屉模式不渲染按钮；次级表按规范未动） |
 | BL-8 | E2 暗色逐页对比度走查：token 级审计已过（语义色/可信度色/图表文本 on 暗底全部 ≥5.45，WCAG AA 4.5+），逐页截图走查未做 | 暗色正式对用户开放前 |
-| BL-9 | F8 批量配置评价周期：领域模型先落 evaluation_period 字段 + 调度器消费，再加批量入口 | 字段定义评审后 |
+| BL-9 | F8 批量配置评价周期：领域模型先落 evaluation_period 字段 + 调度器消费，再加批量入口 | 🔨 字段定义提案见下方「BL-9 设计提案」节，待用户评审后实施 |
 
 ---
 
@@ -156,3 +156,21 @@
 | 2026-08-08 | A-09 弹窗浅色头 + A-07 首批（监控表数值排版） | `3c89819`、`b633247` | 弹窗全站统一浅色 |
 | 2026-08-08 | E1 偏好抽屉清理 + E3 i18n 隐藏 + C2-3 TOP5 最差优先 | `becfc9a` | extension 零消费移除 |
 | 2026-08-08 | C2-1 Sponsor 403 前置门禁 + C2-2 403 语义化 | `2325718`、`98b65d5` | sponsor 403 清零实测 |
+
+---
+
+## 6. BL-9 设计提案：回路级评价周期（F8 前置，待用户评审）
+
+**背景**：F8 批量配置评价周期被转入 BL-9，原因是现行领域模型无"评价周期"载体——KPI 快照由 Celery Beat 全局小时级调度（`calculate_hourly_kpi`），loop_ledger 无周期字段。以下为最小可行字段定义提案：
+
+| 决策点 | 提案 | 备选（不推荐） |
+|---|---|---|
+| 字段 | `loop_ledger.evaluation_period_hours SMALLINT NULL`（NULL=跟随全局 1h） | 独立配置表（过度设计） |
+| 取值域 | {1, 2, 4, 8, 24}（CHECK 约束；1h 为全局默认） | 任意整数（调度对齐困难） |
+| 调度消费 | `calculate_hourly_kpi` 选回路时过滤：`evaluation_period_hours IS NULL OR (EXTRACT(HOUR FROM now()) % evaluation_period_hours) = 0`；自定义任务不受影响 | 每回路独立 beat（进程爆炸） |
+| 历史数据 | 不回算；变更仅影响后续窗口（审计日志记录变更） | 回算（成本高） |
+| 批量入口 | manage.vue 批量配置弹窗加"评价周期"项（复用 F8 原方案）；单回路编辑抽屉同步加项 | — |
+| API | LoopBatchConfigRequest.updates + LoopUpdate 各加 `evaluationPeriodHours`（值域 Pydantic 校验） | — |
+| 前端展示 | 台账列"评价周期"（NULL 显示"默认 1h"） | — |
+
+**工作量预估**：后端 1d（模型+迁移+调度过滤+API+测试），前端 0.5d（批量项+列+抽屉项），门禁 0.5d。**评审通过后实施**。
