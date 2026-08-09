@@ -20,7 +20,7 @@ const props = defineProps<{
   connectionStatus: ConnectionStatus;
   /** 服务端数据新鲜度状态（由 summary 返回，Phase 3 接入） */
   dataFreshness?: null | {
-    reason?: string;
+    reason?: null | string;
     status: 'DELAYED' | 'FRESH' | 'UNKNOWN';
     thresholdSeconds?: number;
   };

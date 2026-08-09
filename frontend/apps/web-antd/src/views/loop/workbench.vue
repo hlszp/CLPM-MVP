@@ -21,6 +21,7 @@
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
+import type { MonitorApi } from '#/api/monitor';
 import type { TuningApi } from '#/api/tuning';
 
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
@@ -34,6 +35,7 @@ import dayjs from 'dayjs';
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
 import { getLoopDetailApi, getLoopMonitorListApi } from '#/api/loop';
 import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
+import { getWorkbenchSummaryApi } from '#/api/monitor';
 import {
   getTuningTaskDetailApi,
   getTuningTasksApi,
@@ -50,6 +52,10 @@ import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import LoopLiveStatusBar from '#/components/monitor/loop-live-status-bar.vue';
 import MonitorContextToolbar from '#/components/monitor/monitor-context-toolbar.vue';
+import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
+import WorkbenchLifecycleBar from '#/components/monitor/workbench-lifecycle-bar.vue';
+import WorkbenchNextAction from '#/components/monitor/workbench-next-action.vue';
+import WorkbenchTrackerTimeline from '#/components/monitor/workbench-tracker-timeline.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
@@ -254,6 +260,78 @@ async function loadTuning(loopId: string): Promise<void> {
 provide('tuningLatest', tuningLatest);
 provide('tuningLoading', tuningLoading);
 provide('loadTuning', loadTuning);
+
+// ===== 工作台摘要 summary（MW-P3-05~08）=====
+// 首屏一次返回全部摘要（运行态/数据健康度/评分趋势/活跃关注/
+// 评估/诊断/整定摘要/Tracker 时间线/生命周期/nextAction）
+const summary = ref<MonitorApi.WorkbenchSummary | null>(null);
+const summaryLoading = ref(false);
+
+async function loadSummary(loopId: string): Promise<void> {
+  summaryLoading.value = true;
+  await requestGuard.run(async (signal, capturedEpoch) => {
+    const data = await getWorkbenchSummaryApi(loopId).catch(() => null);
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+      return;
+    }
+    summary.value = data;
+    summaryLoading.value = false;
+  });
+}
+
+/** 生命周期条点击：滚动到对应区 */
+function handleLifecycleStageClick(stage: MonitorApi.LifecycleStageName): void {
+  const map: Record<MonitorApi.LifecycleStageName, string> = {
+    MONITOR: '.wb-overview',
+    ASSESS: '.wb-assess',
+    DIAGNOSE: '.wb-diag',
+    TUNE: '.wb-tune',
+    VERIFY: '.wb-verify',
+  };
+  const selector = map[stage];
+  if (selector) {
+    const el = document.querySelector(selector);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/** nextAction 主动作点击：按 actionType 触发对应行为 */
+function handleNextAction(actionType: MonitorApi.NextActionType): void {
+  switch (actionType) {
+    case 'CONTINUE_MONITORING':
+    case 'CREATE_TRACKER':
+    case 'FIX_TAG_CONFIG':
+    case 'IMPORT_DATA':
+    case 'RECORD_IMPLEMENTATION':
+    case 'VERIFY_EFFECT': {
+      // 这些动作由对应区组件处理或跳转
+      break;
+    }
+    case 'RUN_ASSESSMENT': {
+      assessModalOpen.value = true;
+      break;
+    }
+    case 'RUN_DIAGNOSIS': {
+      diagModalOpen.value = true;
+      break;
+    }
+    case 'RUN_TUNING': {
+      tuningModalOpen.value = true;
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+/** summary 评分趋势的 dayTrend 类型收窄（供 DayDeltaBadge 使用） */
+type DayTrend = 'FLAT' | 'IMPROVED' | 'NEW' | 'WORSENED';
+
+const summaryDayTrend = computed<DayTrend | null>(
+  () =>
+    (summary.value?.scoreTrend.dayTrend as DayTrend | null | undefined) ?? null,
+);
 
 // ===== 三区任务运行器（评估/诊断/辨识为异步任务） =====
 const {
@@ -579,8 +657,14 @@ function handleHelp() {
 // ===== 工具栏 =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: {
-    onClick: () => void loadLoopList(true),
-    loading: loopListLoading.value,
+    onClick: () => {
+      void loadLoopList(true);
+      // MW-P3-05：手工刷新同时刷新当前摘要
+      if (selectedLoopId.value) {
+        void loadSummary(selectedLoopId.value);
+      }
+    },
+    loading: loopListLoading.value || summaryLoading.value,
   },
   ai: {
     onClick: () => {
@@ -790,7 +874,7 @@ watch(
   },
 );
 
-// 选中回路变化时加载四区数据
+// 选中回路变化时加载四区数据 + summary（MW-P3-05）
 watch(
   selectedLoopId,
   (newId) => {
@@ -799,6 +883,7 @@ watch(
       loadAssessment(newId);
       loadTuning(newId);
       loadLoopDetail(newId);
+      loadSummary(newId);
     } else {
       diagnosisDetail.value = null;
       assessmentDetail.value = null;
@@ -807,6 +892,7 @@ watch(
       tuningHistory.value = [];
       tuningDetail.value = null;
       loopDetail.value = null;
+      summary.value = null;
     }
   },
   { immediate: true },
@@ -837,8 +923,43 @@ watch(
       :loop="selectedLoop"
       :connection-status="wsConnectionStatus"
       :last-message-at="wsLastMessageAt"
+      :data-freshness="summary?.dataFreshness"
       class="mb-2"
     />
+
+    <!-- MW-P3-07：生命周期条 + 推荐下一步 + 活跃关注项（首屏 summary 接入） -->
+    <template v-if="summary">
+      <div class="mb-2 flex flex-col gap-2">
+        <WorkbenchLifecycleBar
+          :lifecycle="summary.lifecycle"
+          :unavailable-sections="summary.unavailableSections"
+          @stage-click="handleLifecycleStageClick"
+        />
+        <!-- emit: stageClick（Vue 模板 @stage-click 自动映射） -->
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <WorkbenchNextAction
+              :next-action="summary.nextAction"
+              @action="handleNextAction"
+            />
+          </div>
+          <div class="flex-1">
+            <WorkbenchActiveAttention
+              :active-attention="summary.activeAttention"
+              :loop-id="selectedLoopId ?? ''"
+            />
+          </div>
+        </div>
+      </div>
+    </template>
+    <!-- summary 加载中骨架 -->
+    <div
+      v-else-if="summaryLoading && selectedLoop"
+      class="mb-2 flex items-center gap-2 rounded border bg-white px-3 py-2 text-xs text-gray-400"
+    >
+      <Spin size="small" />
+      <span>正在加载工作台摘要…</span>
+    </div>
 
     <div class="flex h-[calc(100vh-180px)] gap-2">
       <!-- ===== 左侧：回路列表（MW-P1-03 服务端分页 + 无限加载） ===== -->
@@ -998,6 +1119,45 @@ watch(
             :loading="false"
             :empty="false"
           >
+            <!-- MW-P3-05：summary 评分趋势 + 数据健康度（首屏摘要接入） -->
+            <div v-if="summary" class="mb-1 flex items-center gap-3 text-xs">
+              <span
+                v-if="summary.scoreTrend.score != null"
+                class="text-gray-600"
+              >
+                评分
+                <span class="font-semibold">{{
+                  summary.scoreTrend.score.toFixed(1)
+                }}</span>
+                <DayDeltaBadge
+                  :delta="summary.scoreTrend.scoreDelta"
+                  :trend="summaryDayTrend"
+                />
+              </span>
+              <span
+                v-if="summary.dataHealth.confidenceLevel"
+                class="text-gray-600"
+              >
+                可信度
+                <Tag
+                  :color="
+                    confidenceTagColor(summary.dataHealth.confidenceLevel)
+                  "
+                  class="!m-0 !text-[10px]"
+                >
+                  {{ summary.dataHealth.confidenceLevel }}
+                </Tag>
+              </span>
+              <span
+                v-if="summary.dataHealth.validRate != null"
+                class="text-gray-600"
+              >
+                有效率 {{ (summary.dataHealth.validRate * 100).toFixed(1) }}%
+              </span>
+              <span v-if="summary.partial" class="text-amber-600">
+                部分数据不可用
+              </span>
+            </div>
             <div class="wb-overview__grid">
               <div
                 v-for="field in overviewFields"
@@ -1015,7 +1175,7 @@ watch(
 
           <!-- ② 性能评估 30%（50/50：12 卡片 + 评分趋势） -->
           <WorkbenchSectionCard
-            class="wb-row"
+            class="wb-row wb-assess"
             title="性能评估"
             icon="lucide:chart-column"
             :loading="assessmentLoading"
@@ -1055,7 +1215,7 @@ watch(
 
           <!-- ③ 回路诊断 30%（50/50：标签+置信度 + PV/OP·FFT 曲线） -->
           <WorkbenchSectionCard
-            class="wb-row"
+            class="wb-row wb-diag"
             title="回路诊断"
             icon="lucide:stethoscope"
             :loading="diagnosisLoading"
@@ -1142,7 +1302,7 @@ watch(
 
           <!-- ④ 回路整定 30%（50/50：当前PID+模型+指标 + 推荐 PID） -->
           <WorkbenchSectionCard
-            class="wb-row"
+            class="wb-row wb-tune"
             title="回路整定"
             icon="lucide:settings-2"
             :loading="tuningLoading"
@@ -1283,6 +1443,17 @@ watch(
               </div>
             </template>
           </WorkbenchSectionCard>
+
+          <!-- ⑤ 闭环验证时间线 30%（MW-P3-08） -->
+          <div class="wb-verify wb-row">
+            <WorkbenchTrackerTimeline
+              :tracker="summary?.trackerTimeline"
+              :unavailable="
+                summary?.unavailableSections?.includes('trackerTimeline') ??
+                false
+              "
+            />
+          </div>
         </template>
 
         <div
