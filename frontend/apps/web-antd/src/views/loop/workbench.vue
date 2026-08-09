@@ -31,7 +31,7 @@ import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Empty, Input, message, Spin, Tag } from 'ant-design-vue';
+import { Button, Empty, Input, message, Segmented, Spin, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
@@ -52,6 +52,7 @@ import {
 } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
+import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import LoopLiveStatusBar from '#/components/monitor/loop-live-status-bar.vue';
 import MonitorContextToolbar from '#/components/monitor/monitor-context-toolbar.vue';
 import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
@@ -115,6 +116,24 @@ function registerSectionVisibility() {
 // ===== 共享监控上下文（MW-P1-01）=====
 // URL 是真相源：view/loopId/plantNodeId/loopType/keyword/timeWindow 等
 const monitorCtx = useMonitorContext();
+
+// ===== MW-P4-02：workspace/table 模式切换 =====
+const isTableView = computed(() => monitorCtx.view.value === 'table');
+
+/** 视图模式切换（Segmented） */
+const viewModeOptions = [
+  { label: '单回路工作台', value: 'workspace' as const },
+  { label: '批量表格', value: 'table' as const },
+];
+
+function handleViewChange(val: number | string) {
+  monitorCtx.update({ view: val === 'table' ? 'table' : 'workspace' });
+}
+
+/** table 模式点击回路 → 切换到 workspace 并携带 loopId */
+function handleFleetLoopClick(loopId: string) {
+  monitorCtx.update({ view: 'workspace', loopId });
+}
 
 // ===== 实时数据（MW-P1-04/05/06）=====
 // 复用全局 realtimeWs 单例；WS 断连时 30 秒轮询降级
@@ -980,6 +999,13 @@ watch(
       :loading="loopListLoading"
     >
       <template #actions>
+        <!-- MW-P4-02：workspace/table 模式切换 -->
+        <Segmented
+          :value="monitorCtx.view.value"
+          :options="viewModeOptions"
+          size="small"
+          @change="handleViewChange"
+        />
         <!-- MW-P1-02：共享监控工具栏（装置/类型/搜索/保存视图） -->
         <MonitorContextToolbar
           :attention-only-hidden="true"
@@ -990,6 +1016,17 @@ watch(
       </template>
     </ClpmPageToolbar>
 
+    <!-- ===== MW-P4-02：批量表格模式 ===== -->
+    <LoopFleetView
+      v-if="isTableView"
+      :initial-plant-node-id="monitorCtx.plantNodeId.value"
+      :initial-loop-type="monitorCtx.loopType.value"
+      :initial-keyword="monitorCtx.keyword.value"
+      @loop-click="handleFleetLoopClick"
+    />
+
+    <!-- ===== MW-P4-02：工作台模式（workspace）===== -->
+    <template v-if="!isTableView">
     <!-- MW-P1-05：回路实时状态条（PV/SP/OP/MODE + WS 连接状态 + 采样时间） -->
     <LoopLiveStatusBar
       v-if="selectedLoop"
@@ -1544,6 +1581,8 @@ watch(
         </div>
       </div>
     </div>
+    </template>
+    <!-- ===== /MW-P4-02 工作台模式 ===== -->
 
     <!-- ===== 发起评估弹窗 ===== -->
     <AssessTriggerModal

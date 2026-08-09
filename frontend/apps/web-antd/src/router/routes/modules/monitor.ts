@@ -51,12 +51,27 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'MonitorLoopRealtime',
         path: '/loop/monitor',
-        component: () => import('#/views/loop/monitor.vue'),
+        // MW-P4-04：/loop/monitor 统一重定向到工作台 table 模式
+        redirect: (to) => ({
+          path: '/monitor/loop-workbench',
+          query: { ...to.query, view: 'table' },
+        }),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           icon: 'lucide:gauge',
           title: '回路实时表格',
+        },
+      },
+      {
+        // 旧组件保留至少一个发布周期（MW-P4-04）
+        name: 'MonitorLoopRealtimeLegacy',
+        path: '/loop/monitor/legacy',
+        component: () => import('#/views/loop/monitor.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          hideInMenu: true,
+          title: '回路实时表格（旧版）',
         },
       },
       {
