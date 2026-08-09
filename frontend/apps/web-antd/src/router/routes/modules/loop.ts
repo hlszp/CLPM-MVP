@@ -1,15 +1,14 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 回路路由模块（IA 重构 Phase B·§4.1 实体轴）
+ * 回路旧路由兼容模块（IA 收敛后不再作为一级菜单）
  *
- * 回路菜单主页 = 回路工作台（单回路 360° 一站式处置，6 Tab）。
- * - /loop              → redirect /loop/workbench
- * - /loop/workbench    → 工作台主页（菜单可见，支持 ?loopId= 预选）
- * - /loop/detail/:id   → redirect /loop/workbench?loopId=:id（兼容旧书签/E2E/monitor 行点击）
+ * - /loop              → redirect /monitor/loop-workbench
+ * - /loop/workbench    → redirect /monitor/loop-workbench
+ * - /loop/detail/:id   → redirect /monitor/loop-workbench?loopId=:id
  *
- * 注：/loop/monitor（回路实时列表）仍暂留监控组（monitor.ts），
- *    Phase B 工作台上线后作为实体轴主页，monitor 维持运行驾驶舱定位。
+ * 注：/loop/monitor 由 monitor.ts 保留为隐藏的高密度实时表；
+ *    监控模块的主入口是 /monitor/loop-workbench。
  *    原结构性配置子路由（aas-sync/tag/manage/factory/ledger/data）
  *    已迁入 config.ts 为 /config/* 新路径 + legacy redirect。
  *
@@ -19,27 +18,26 @@ import type { RouteRecordRaw } from 'vue-router';
  */
 const routes: RouteRecordRaw[] = [
   {
-    name: 'Loop',
+    name: 'LoopLegacy',
     path: '/loop',
-    redirect: '/loop/workbench',
+    redirect: (to) => ({ path: '/monitor/loop-workbench', query: to.query }),
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-      icon: 'lucide:network',
-      order: 2,
+      hideInMenu: true,
       title: '回路',
     },
     children: [
       {
-        name: 'LoopWorkbench',
+        name: 'LoopWorkbenchLegacy',
         path: '/loop/workbench',
-        component: () => import('#/views/loop/workbench.vue'),
+        redirect: (to) => ({
+          path: '/monitor/loop-workbench',
+          query: to.query,
+        }),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-          icon: 'lucide:layout-panel-top',
+          hideInMenu: true,
           title: '回路工作台',
-          // 工作台左侧切换回路仅更新 URL query（?loopId=），不应新增 tab/面包屑。
-          // fullPathKey:false 使 tab key 退化为 route.path，query 变化复用同一 tab。
-          fullPathKey: false,
         },
       },
       {
@@ -47,7 +45,7 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/detail/:id',
         // 兼容旧书签 / monitor 行点击 / E2E：重定向到工作台并预选回路
         redirect: (to) => ({
-          path: '/loop/workbench',
+          path: '/monitor/loop-workbench',
           query: { loopId: String(to.params.id) },
         }),
         meta: {

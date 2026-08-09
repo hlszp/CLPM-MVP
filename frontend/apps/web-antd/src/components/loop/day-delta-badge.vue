@@ -5,7 +5,7 @@
  * 巡检第一问"较昨日新增/恶化/好转了什么"的最小呈现单元：
  * - WORSENED：红 ▼|delta|（恶化，最需要关注）
  * - IMPROVED：绿 ▲delta（好转）
- * - FLAT：灰 ±（持平，|delta| < 2）
+ * - FLAT：不显示（持平不制造视觉噪音）
  * - NEW：蓝「新增」（昨日无基线快照）
  * - null（无当前评分）：不渲染（由调用方 v-if 控制亦可）
  *
@@ -32,7 +32,7 @@ interface Props {
 const text = computed(() => {
   switch (props.trend) {
     case 'FLAT': {
-      return '±0';
+      return '';
     }
     case 'IMPROVED': {
       return `▲${props.delta?.toFixed(1) ?? ''}`;
@@ -88,7 +88,7 @@ const tooltip = computed(() => {
 </script>
 
 <template>
-  <Tooltip v-if="trend" :title="tooltip">
+  <Tooltip v-if="trend && text" :title="tooltip">
     <span class="text-xs font-medium" :class="colorClass">{{ text }}</span>
   </Tooltip>
 </template>

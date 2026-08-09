@@ -63,3 +63,14 @@ D1 可访问性 / D2 交互一致性（双轨归并+防重复+词表）/ D3 样�
 ## 5. 遗留与 Backlog（不阻断出口）
 
 BL-1 vitest 既有失败 1 例；BL-2 引导 SQL 索引回写（待用户决策）；BL-5 hex 存量 180 处迁移；BL-6 大表格虚拟化（触发条件制）；BL-7 密度基线 14 页迁移；BL-8 暗色逐页对比度走查；BL-9 F8 评价周期字段先行；SYS-P2-06 预警优先级三级语义化（未排期，建议 Phase 3）。
+
+## 6. 出口后的 IA follow-up（2026-08-09）
+
+本报告记录的是 Phase 2 出口快照；出口后按用户场景继续收敛 IA，当前口径以实现契约 v2.9、UI/UX v6.3 和整改清单 §4.1 为准：
+
+- 一级菜单由 7 项收敛为 6 项，回路运行态归入监控下的 `/monitor/loop-workbench`。
+- 工作台左侧承担跨回路状态扫视，右侧四区承担同一回路的监控、评估、诊断、整定闭环；旧 `/loop/monitor` 仅作为隐藏高密度兼容视图保留。
+- 预警事件归入 `/monitor/alerts`，规则配置归入 `/config/alert-rules`；旧预警路径保留重定向，后端 API 不迁移。
+- 本 follow-up 已同步工作台的自适应概览、PV/SP/OP/模式摘要、空态说明、Lucide 图标、低可信度中性表达和持平趋势降噪。
+
+后续闭环整改已单独立项为 `monitor-workbench-rectification-plan-2026-08-09.md` 和 `monitor-workbench-rectification-checklist-2026-08-09.md`。本报告仍保持 Phase 2 出口快照，不提前宣称关注队列、实时工作台、生命周期和实施验证能力已经实现。

@@ -5,6 +5,7 @@ import type { AlertApi } from '#/api/alert';
 import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, h, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -51,10 +52,23 @@ defineOptions({ name: 'AlertEvents' });
 const severityLabel = SEVERITY_LABEL;
 
 const userStore = useUserStore();
+const router = useRouter();
 const canEdit = computed(() =>
   ['ADMIN', 'IC_ENGINEER'].includes(userStore.userInfo?.roles?.[0] ?? ''),
 );
 const canArchive = computed(() => userStore.userInfo?.roles?.[0] === 'ADMIN');
+const canOpenWorkbench = computed(() =>
+  ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'].includes(
+    userStore.userInfo?.roles?.[0] ?? '',
+  ),
+);
+
+function openLoopWorkbench(loopId: string) {
+  router.push({
+    name: 'MonitorLoopWorkbench',
+    query: { loopId },
+  });
+}
 
 // ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
 const { tableSize, densityLabel, cycleDensity } =
@@ -519,7 +533,27 @@ onMounted(() => {
       @change="handlePageChange"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'action'">
+        <template v-if="column.key === 'loop'">
+          <Button
+            v-if="canOpenWorkbench"
+            type="link"
+            size="small"
+            class="!px-0"
+            @click="openLoopWorkbench((record as AlertApi.EventItem).loopId)"
+          >
+            {{
+              (record as AlertApi.EventItem).loopName ||
+              (record as AlertApi.EventItem).loopId.slice(0, 8)
+            }}
+          </Button>
+          <span v-else>
+            {{
+              (record as AlertApi.EventItem).loopName ||
+              (record as AlertApi.EventItem).loopId.slice(0, 8)
+            }}
+          </span>
+        </template>
+        <template v-else-if="column.key === 'action'">
           <Space :size="4">
             <Button
               type="link"

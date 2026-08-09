@@ -5,8 +5,8 @@
  * 双轴导航 · 实体轴：单回路 360° 一站式处置
  * master-detail 布局：左侧回路列表 + 右侧单页四区
  *
- * 四区垂直布局（高度占比 10/30/30/30）：
- *   ① 回路概览（10%）：位号/名称/量程/控制方式/设定值/实时值/数据健康度
+ * 四区垂直布局（概览自适应 + 三行均分）：
+ *   ① 回路概览：位号/名称/量程/控制方式/设定值/实时值/数据健康度
  *   ② 性能评估（30%）：12 大指标卡片（50%）+ 评分趋势图（50%，8/12/24/48/72h 可切）
  *   ③ 回路诊断（30%）：诊断标签+置信度卡片（50%）+ PV/OP·FFT 曲线（50%）
  *   ④ 回路整定（30%）：当前 PID/模型/时间常数/超调量（50%）+ 推荐 PID（50%）
@@ -46,6 +46,8 @@ import {
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
+import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
+import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useVirtualList } from '#/composables/use-virtual-list';
@@ -54,8 +56,6 @@ import { formatTime } from '#/utils/format';
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
 import KpiMetricCards from './components/kpi-metric-cards.vue';
-import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
-import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import ScoreTrendChart from './components/score-trend-chart.vue';
 import SimulateResultModal from './components/simulate-result-modal.vue';
 import TuneParamModal from './components/tune-param-modal.vue';
@@ -64,7 +64,7 @@ import WorkbenchDiagnosisChart from './components/workbench-diagnosis-chart.vue'
 import WorkbenchSectionCard from './components/workbench-section-card.vue';
 import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner';
 
-defineOptions({ name: 'LoopWorkbench' });
+defineOptions({ name: 'MonitorLoopWorkbench' });
 
 const route = useRoute();
 const router = useRouter();
@@ -275,7 +275,7 @@ const simulateResult = ref<null | TuningApi.SimulationResult>(null);
 const tuneLoading = ref(false);
 const riskConfirmOpen = ref(false);
 const riskConfirmKind = ref<'simulate' | 'tune'>('tune');
-const pendingTunePayload = ref<{ algorithm: TuningApi.Algorithm } | null>(
+const pendingTunePayload = ref<null | { algorithm: TuningApi.Algorithm }>(
   null,
 );
 
@@ -468,6 +468,11 @@ const overviewFields = computed(() => {
   ];
 });
 
+function currentValueText(value: null | number | undefined, unit?: null | string) {
+  if (value == null) return '—';
+  return `${value}${unit ? ` ${unit}` : ''}`;
+}
+
 // ===== 派生：整定行字段 =====
 const ALGORITHM_LABEL: Record<string, string> = {
   COHEN_COON: 'Cohen-Coon',
@@ -475,7 +480,15 @@ const ALGORITHM_LABEL: Record<string, string> = {
   LAMBDA: 'Lambda',
   SIMC: 'SIMC',
   ZN: 'Ziegler-Nichols',
+  IDENTIFICATION_ONLY: '仅过程辨识',
 };
+
+function confidenceTagColor(level?: string): string {
+  if (level === 'A' || level === 'B') return 'green';
+  if (level === 'C') return 'blue';
+  if (level === 'D') return 'gold';
+  return 'default';
+}
 
 function pidText(pid?: null | TuningApi.PidParams): string {
   if (!pid) return '—';
@@ -582,7 +595,7 @@ function selectLoop(loopId: null | string): void {
   if (loopId) {
     // router.replace 不新增历史记录；配合 meta.fullPathKey=false 不新增 tab。
     // 用 name 明确路由，仅保留 loopId query，避免残留参数。
-    router.replace({ name: 'LoopWorkbench', query: { loopId } });
+    router.replace({ name: 'MonitorLoopWorkbench', query: { loopId } });
   }
 }
 
@@ -722,6 +735,14 @@ watch(
                       />
                     </span>
                   </div>
+                  <div
+                    class="mt-1 flex items-center gap-2 text-[11px] text-gray-500"
+                  >
+                    <span>PV {{ currentValueText(item.currentValues?.pv, item.pvUnit) }}</span>
+                    <span>SP {{ currentValueText(item.currentValues?.sp, item.pvUnit) }}</span>
+                    <span>OP {{ currentValueText(item.currentValues?.op, item.opUnit) }}</span>
+                    <span class="truncate">{{ item.currentValues?.modeLabel || '模式—' }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -742,14 +763,14 @@ watch(
         </Spin>
       </div>
 
-      <!-- ===== 右侧：单页四区垂直布局（10/30/30/30） ===== -->
+      <!-- ===== 右侧：单页四区垂直布局（概览自适应 + 三行均分） ===== -->
       <div class="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
         <template v-if="selectedLoop">
           <!-- ① 回路概览 10% -->
           <WorkbenchSectionCard
             class="wb-overview"
             title="回路概览"
-            icon="🛰️"
+            icon="lucide:activity"
             :loading="false"
             :empty="false"
           >
@@ -772,7 +793,7 @@ watch(
           <WorkbenchSectionCard
             class="wb-row"
             title="性能评估"
-            icon="📊"
+            icon="lucide:chart-column"
             :loading="assessmentLoading"
             :empty="!assessmentLoading && !assessmentDetail"
             empty-text="暂无评估数据"
@@ -800,13 +821,19 @@ watch(
                 {{ assessTask.isRunning ? '评估中…' : '发起评估' }}
               </Button>
             </template>
+            <template #empty>
+              <div>当前回路暂无有效评估快照</div>
+              <div class="mt-1 text-[11px] text-gray-400">
+                数据范围：近 72 小时；可调整时间窗或发起性能评估
+              </div>
+            </template>
           </WorkbenchSectionCard>
 
           <!-- ③ 回路诊断 30%（50/50：标签+置信度 + PV/OP·FFT 曲线） -->
           <WorkbenchSectionCard
             class="wb-row"
             title="回路诊断"
-            icon="🔍"
+            icon="lucide:stethoscope"
             :loading="diagnosisLoading"
             :empty="!diagnosisLoading && !diagnosisDetail"
             empty-text="暂无诊断数据"
@@ -881,13 +908,19 @@ watch(
                 {{ diagTask.isRunning ? '诊断中…' : '发起诊断' }}
               </Button>
             </template>
+            <template #empty>
+              <div>当前回路暂无诊断记录</div>
+              <div class="mt-1 text-[11px] text-gray-400">
+                需要先具备可用历史数据；可直接发起一次诊断
+              </div>
+            </template>
           </WorkbenchSectionCard>
 
           <!-- ④ 回路整定 30%（50/50：当前PID+模型+指标 + 推荐 PID） -->
           <WorkbenchSectionCard
             class="wb-row"
             title="回路整定"
-            icon="🔧"
+            icon="lucide:settings-2"
             :loading="tuningLoading"
             :empty="!tuningLoading && !tuningLatest"
             empty-text="暂无整定记录"
@@ -915,8 +948,7 @@ watch(
                       <span class="font-medium">
                         {{
                           ALGORITHM_LABEL[tuningLatest?.algorithm || ''] ||
-                          tuningLatest?.algorithm ||
-                          '—'
+                          (tuningLatest?.algorithm ? '未知辨识算法' : '—')
                         }}
                       </span>
                     </span>
@@ -960,13 +992,7 @@ watch(
                     >
                       可信度：
                       <Tag
-                        :color="
-                          ['A', 'B'].includes(tuningLatest.confidenceLevel)
-                            ? 'green'
-                            : tuningLatest.confidenceLevel === 'C'
-                              ? 'gold'
-                              : 'red'
-                        "
+                        :color="confidenceTagColor(tuningLatest.confidenceLevel)"
                       >
                         {{ tuningLatest.confidenceLevel }}
                       </Tag>
@@ -1001,6 +1027,11 @@ watch(
                 size="small"
                 :loading="tuneLoading"
                 :disabled="tuneLoading || !tuningLatest"
+                :title="
+                  tuningLatest
+                    ? '基于最新辨识结果生成参数建议'
+                    : '请先完成一次回路辨识'
+                "
                 @click="tuneParamModalOpen = true"
               >
                 参数整定
@@ -1009,10 +1040,21 @@ watch(
                 size="small"
                 :loading="simulateLoading"
                 :disabled="simulateLoading || !tuningLatest"
+                :title="
+                  tuningLatest
+                    ? '使用最新辨识结果执行只读仿真'
+                    : '请先完成一次回路辨识'
+                "
                 @click="requestSimulate"
               >
                 模拟仿真
               </Button>
+            </template>
+            <template #empty>
+              <div>当前回路暂无整定辨识记录</div>
+              <div class="mt-1 text-[11px] text-gray-400">
+                参数整定和模拟仿真依赖最新过程辨识结果
+              </div>
             </template>
           </WorkbenchSectionCard>
         </template>
@@ -1100,10 +1142,10 @@ watch(
 </template>
 
 <style scoped>
-/* 四区垂直布局：概览 10% + 三行各 30%（gap 用 3*8px=24px 计入，行共享剩余空间） */
+/* 四区垂直布局：概览自适应高度 + 三行共享剩余空间 */
 .wb-overview {
-  flex: 0 0 10%;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 62px;
 }
 
 .wb-row {
@@ -1117,7 +1159,8 @@ watch(
   flex-wrap: wrap;
   gap: 6px 20px;
   align-items: center;
-  height: 100%;
+  min-height: 36px;
+  height: auto;
   font-size: 13px;
 }
 

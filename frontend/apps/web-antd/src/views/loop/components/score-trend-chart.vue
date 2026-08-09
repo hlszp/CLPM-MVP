@@ -17,7 +17,7 @@ import { computed, inject, ref, type Ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Empty, Segmented } from 'ant-design-vue';
+import { Segmented } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -178,12 +178,12 @@ const hasData = computed(() => filtered.value.length > 0);
     <div v-if="hasData" class="score-trend__chart">
       <EchartsUI ref="chartRef" height="100%" />
     </div>
-    <Empty
-      v-else
-      description="该时段暂无评分数据"
-      :image="Empty.PRESENTED_IMAGE_SIMPLE"
-      class="score-trend__empty"
-    />
+    <div v-else class="score-trend__empty">
+      <div>该时段暂无评分数据</div>
+      <div class="mt-1 text-xs text-gray-400">
+        可切换时间窗，或先发起一次性能评估
+      </div>
+    </div>
   </div>
 </template>
 

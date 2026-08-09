@@ -32,7 +32,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:stethoscope',
-      order: 4,
+      order: 3,
       title: '诊断',
     },
     name: 'Diagnose',

@@ -50,7 +50,7 @@ function eventToNotification(item: {
     date: item.triggeredAt ?? '',
     id: item.eventId,
     isRead: false,
-    link: '/alert/events',
+    link: '/monitor/alerts',
     message: `回路 ${item.loopId} 触发值 ${item.triggeredValue ?? '—'}（${item.ruleCode}）`,
     title: item.ruleName || item.ruleCode,
   };
@@ -64,7 +64,9 @@ async function loadAlertNotifications() {
       limit: 10,
       status: 'ACTIVE',
     });
-    notifications.value = (r.items ?? []).map(eventToNotification);
+    notifications.value = (r.items ?? []).map((item) =>
+      eventToNotification(item),
+    );
   } catch {
     // 未接前置空态（E4 约束：不显示假徽标）
   }
@@ -194,7 +196,7 @@ function handleMakeAll() {
 }
 
 const viewAll = () => {
-  router.push('/alert/events');
+  router.push('/monitor/alerts');
 };
 
 const handleClick = (item: NotificationItem) => {
