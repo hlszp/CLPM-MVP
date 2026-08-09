@@ -26162,6 +26162,17 @@
               }
             ],
             "title": "Setpointcrossingcount"
+          },
+          "timeConstant": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeconstant"
           }
         },
         "type": "object",

@@ -2246,8 +2246,8 @@ class TestMetricCodeMapping:
     """测试 metric_code 双向映射常量。"""
 
     def test_db_to_calculator_mapping_complete(self) -> None:
-        """_DB_TO_CALCULATOR_METRIC_CODE 包含全部 26 对映射（12 原有 + 14 Phase 1）。"""
-        assert len(_DB_TO_CALCULATOR_METRIC_CODE) == 26
+        """映射表含全部 27 对（12 原有 + 14 Phase 1 + F5 time_constant）。"""
+        assert len(_DB_TO_CALCULATOR_METRIC_CODE) == 27
 
     def test_reverse_mapping_consistent(self) -> None:
         """反向映射与正向映射一致。"""
