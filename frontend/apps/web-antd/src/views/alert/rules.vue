@@ -39,8 +39,10 @@ import {
   ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 import { ClpmEmptyState } from '#/components/clpm';
@@ -49,6 +51,10 @@ defineOptions({ name: 'AlertRules' });
 
 // 规则类型中文标签（对齐 clpm-ui.ts 统一映射）
 const ruleTypeLabel = ALERT_RULE_TYPE_LABEL;
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('alert-rules');
 
 // 列表
 const loading = ref(false);
@@ -477,6 +483,13 @@ onMounted(() => {
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -543,7 +556,7 @@ onMounted(() => {
       }"
       :scroll="{ x: 1100 }"
       row-key="ruleId"
-      size="small"
+      :size="tableSize"
       @change="handlePageChange"
     >
       <template #bodyCell="{ column, record }">

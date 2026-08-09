@@ -71,6 +71,7 @@ import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import {
   DIAGNOSIS_TERM_EXPLANATIONS,
   SEVERITY_LABEL,
@@ -272,6 +273,11 @@ const columns: TableColumnsType = [
 // ===== P2-04：表格列配置（显示/隐藏 + 排序，localStorage 持久化）=====
 const { preferences: columnPrefs, updateColumns: persistColumns } =
   usePagePreference('diagnosis-tracker');
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'diagnosis-tracker',
+);
 
 /** 获取列 key（兼容 dataIndex 和 key） */
 function getColumnKey(col: TableColumnsType[number]): string {
@@ -768,6 +774,14 @@ watch(
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环）；仅独立页模式显示 -->
+        <ClpmToolbarButton
+          v-if="!drawerMode"
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -804,7 +818,7 @@ watch(
         }"
         :row-key="(record: DiagnosisApi.TrackerItem) => record.loopId"
         :scroll="{ x: 1600 }"
-        size="middle"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #emptyText>

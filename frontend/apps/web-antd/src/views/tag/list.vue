@@ -58,15 +58,20 @@ import {
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'TagList' });
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity('tag-list');
 
 // List state
 const loading = ref(false);
@@ -577,6 +582,13 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
     <ClpmDataCanvas
@@ -682,7 +694,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           (record: TagApi.TagItem) =>
             record.quality === 'BAD' ? 'tag-row--bad' : ''
         "
-        size="small"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">

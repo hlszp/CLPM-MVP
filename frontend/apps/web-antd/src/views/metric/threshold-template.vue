@@ -54,11 +54,17 @@ import {
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useTableDensity } from '#/composables/use-table-density';
 
 defineOptions({ name: 'MetricThresholdTemplate' });
 
 const { isAdmin } = useClpmRoles();
 const { themeColors } = useClpmTheme();
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'metric-threshold-template',
+);
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -506,6 +512,14 @@ onMounted(async () => {
           <span class="text-xs text-muted-foreground">
             共 {{ filteredTemplates.length }} 条模板
           </span>
+          <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+          <ClpmToolbarButton
+            class="ml-auto"
+            icon="ant-design:column-height-outlined"
+            :label="`密度：${densityLabel}`"
+            :tooltip="`密度：${densityLabel}（点击切换）`"
+            @click="cycleDensity"
+          />
         </div>
 
         <Table
@@ -514,7 +528,7 @@ onMounted(async () => {
           :loading="loadingTemplates"
           :pagination="false"
           row-key="overrideId"
-          size="small"
+          :size="tableSize"
           :scroll="{ x: 700 }"
         >
           <template #emptyText>
@@ -591,7 +605,7 @@ onMounted(async () => {
           :loading="loadingRecommendation"
           :pagination="false"
           row-key="diagCode"
-          size="small"
+          :size="tableSize"
           :scroll="{ x: 1100 }"
         >
           <template #bodyCell="{ column, record }">

@@ -92,6 +92,7 @@ import {
   ClpmInfoTip,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
@@ -115,6 +116,7 @@ import {
 } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
+import { useTableDensity } from '#/composables/use-table-density';
 import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -785,6 +787,11 @@ const { toolbarItems } = usePageToolbar(() => ({
   },
 }));
 
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'metric-loop-performance',
+);
+
 /** 抽屉内历史快照子表（最近 10 条） */
 const drawerHistory = ref<KpiSnapshotItem[]>([]);
 const drawerHistoryLoading = ref(false);
@@ -1260,6 +1267,13 @@ onMounted(async () => {
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -1461,7 +1475,7 @@ onMounted(async () => {
           (record: LoopPerformanceRow) => `${record.loopId}-${record.tsStart}`
         "
         :scroll="{ x: 1250 }"
-        size="small"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #headerCell="{ column }">

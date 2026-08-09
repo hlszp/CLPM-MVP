@@ -71,8 +71,10 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 
 import PidStructureDrawer from './components/pid-structure-drawer.vue';
 
@@ -936,6 +938,9 @@ const { toolbarItems } = usePageToolbar(() => ({
   help: { onClick: handleHelp },
 }));
 
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity('loop-aas');
+
 onMounted(loadConfig);
 </script>
 
@@ -949,6 +954,13 @@ onMounted(loadConfig);
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -1269,7 +1281,7 @@ onMounted(loadConfig);
             :loading="vendorsLoading"
             :pagination="false"
             row-key="id"
-            size="small"
+            :size="tableSize"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
@@ -1330,7 +1342,7 @@ onMounted(loadConfig);
             :loading="modelsLoading"
             :pagination="false"
             row-key="id"
-            size="small"
+            :size="tableSize"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">

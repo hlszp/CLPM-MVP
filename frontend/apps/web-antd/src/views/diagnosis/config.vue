@@ -41,9 +41,11 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
   DIAGNOSIS_LABEL_OPTIONS,
@@ -56,6 +58,11 @@ defineOptions({ name: 'DiagnosisConfig' });
 const { themeColors } = useClpmTheme();
 
 const router = useRouter();
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'diagnosis-config',
+);
 
 const loading = ref(false);
 const metricList = ref<DiagnosisApi.MetricItem[]>([]);
@@ -339,6 +346,13 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="诊断指标列表" :loading="loading">
@@ -355,7 +369,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         :pagination="false"
         :row-key="(record: DiagnosisApi.MetricItem) => record.diagId"
         :scroll="{ x: 1500 }"
-        size="middle"
+        :size="tableSize"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'label'">

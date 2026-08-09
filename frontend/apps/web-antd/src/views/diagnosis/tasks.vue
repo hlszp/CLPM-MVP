@@ -53,8 +53,10 @@ import {
   ClpmDataCanvas,
   ClpmEmptyState,
   ClpmLoopLink,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useTableDensity } from '#/composables/use-table-density';
 import { DIAGNOSIS_LABEL_OPTIONS } from '#/constants/diagnosis';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatTime } from '#/utils/format';
@@ -62,6 +64,11 @@ import { formatTime } from '#/utils/format';
 defineOptions({ name: 'DiagnosisTasks' });
 
 const { themeColors } = useClpmTheme();
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'diagnosis-tasks',
+);
 
 const loading = ref(false);
 const taskList = ref<DiagnosisApi.TaskItem[]>([]);
@@ -784,6 +791,14 @@ onBeforeUnmount(() => {
           /></template>
           批量删除
         </Button>
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          class="ml-auto"
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </div>
 
       <Table
@@ -800,7 +815,7 @@ onBeforeUnmount(() => {
         :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
         :row-selection="rowSelection"
         :scroll="{ x: 1030 }"
-        size="middle"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #emptyText>

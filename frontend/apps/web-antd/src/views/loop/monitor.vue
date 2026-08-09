@@ -73,6 +73,7 @@ import {
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
@@ -88,6 +89,7 @@ import {
 } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
+import { useTableDensity } from '#/composables/use-table-density';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -789,6 +791,10 @@ const { toolbarItems } = usePageToolbar(() => ({
   help: { onClick: handleHelp },
 }));
 
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('loop-monitor');
+
 /** 选中回路：仅记录选中状态（用于表格行高亮 + StatusFooter 显示） */
 function handleSelectLoop(record: LoopApi.MonitorListItem) {
   selectedLoop.value = record;
@@ -1167,6 +1173,13 @@ onUnmounted(() => {
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -1472,7 +1485,7 @@ onUnmounted(() => {
           }"
           :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
           :scroll="{ x: 1570 }"
-          size="small"
+          :size="tableSize"
           :row-class-name="
             (record) =>
               selectedLoop?.loopId === record.loopId

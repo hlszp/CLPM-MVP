@@ -34,11 +34,17 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemAudit' });
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('system-audit');
 
 const loading = ref(false);
 const auditList = ref<SystemApi.AuditLog[]>([]);
@@ -307,6 +313,13 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="审计日志列表" :loading="loading">
@@ -346,7 +359,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         }"
         :row-key="(record: SystemApi.AuditLog) => record.logId"
         :scroll="{ x: 1100 }"
-        size="middle"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">

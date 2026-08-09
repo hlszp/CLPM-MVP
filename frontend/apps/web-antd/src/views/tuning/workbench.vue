@@ -36,6 +36,7 @@ import {
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 
@@ -356,6 +357,11 @@ const { toolbarItems } = usePageToolbar(() => ({
   help: { onClick: handleHelp },
 }));
 
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'tuning-workbench',
+);
+
 // P2 #37 UX13: 导出功能开发中，按钮改为 disabled + tooltip
 
 /** 工具栏：新建整定，跳转模型辨识 */
@@ -577,6 +583,13 @@ onMounted(() => {
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
         <ClpmToolbarButton
           icon="create"
           label="新建整定"
@@ -691,7 +704,7 @@ onMounted(() => {
           :pagination="false"
           :row-key="(record: DiagnosisApi.DiagnosisListItem) => record.loopId"
           :scroll="{ x: 900 }"
-          size="middle"
+          :size="tableSize"
         >
           <template #emptyText>
             <ClpmEmptyState
@@ -859,7 +872,7 @@ onMounted(() => {
           :pagination="false"
           :row-key="(record: TuningApi.TuningTaskItem) => record.id"
           :scroll="{ x: 950 }"
-          size="middle"
+          :size="tableSize"
         >
           <template #emptyText>
             <ClpmEmptyState

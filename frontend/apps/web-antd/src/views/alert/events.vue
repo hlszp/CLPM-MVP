@@ -38,9 +38,10 @@ import {
 } from '#/api/alert';
 import {
   ClpmDangerConfirmModal,
-  ClpmEmptyState, ClpmPageToolbar, ClpmStandardActions 
+  ClpmEmptyState, ClpmPageToolbar, ClpmStandardActions, ClpmToolbarButton 
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 
@@ -54,6 +55,10 @@ const canEdit = computed(() =>
   ['ADMIN', 'IC_ENGINEER'].includes(userStore.userInfo?.roles?.[0] ?? ''),
 );
 const canArchive = computed(() => userStore.userInfo?.roles?.[0] === 'ADMIN');
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('alert-events');
 
 // 列表状态
 const loading = ref(false);
@@ -436,6 +441,13 @@ onMounted(() => {
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -503,7 +515,7 @@ onMounted(() => {
       }"
       :scroll="{ x: 1200 }"
       row-key="eventId"
-      size="small"
+      :size="tableSize"
       @change="handlePageChange"
     >
       <template #bodyCell="{ column, record }">
