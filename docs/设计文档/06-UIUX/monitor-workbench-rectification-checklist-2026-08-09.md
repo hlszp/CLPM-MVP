@@ -39,32 +39,36 @@ Commit：<sha>
 
 ### MW-G0-01 冻结当前 IA 基线
 
-- [ ] 确认当前工作树中的 v2.9/v6.3 IA 改动已完成审查。
-- [ ] 运行 `git diff --check`，清除空白和冲突标记。
-- [ ] 跑前端 `check:type`、vitest、路由定向 E2E。
-- [ ] 将当前 IA 基线形成独立提交，不与闭环整改代码混在同一提交。
+- [x] 确认当前工作树中的 v2.9/v6.3 IA 改动已完成审查。
+- [x] 运行 `git diff --check`，清除空白和冲突标记。
+- [x] 跑前端 `check:type`、vitest、路由定向 E2E。
+- [x] 将当前 IA 基线形成独立提交，不与闭环整改代码混在同一提交。
 - 验收：`/monitor/loop-workbench`、`/monitor/alerts`、`/config/alert-rules` 和旧路由重定向均通过。
+- 证据：commit `1732243a`；`check:type` 2/2 通过；`git diff --check` 无输出。
 
 ### MW-G0-02 建立实施分支
 
-- [ ] 从已签认 IA 基线创建 `codex/monitor-workbench-closed-loop`。
-- [ ] 记录基线 SHA、后端测试数、前端测试数、E2E 基线结果。
-- [ ] 确认 `.env`、本地数据、用户未跟踪目录不进入提交。
+- [x] 从已签认 IA 基线创建 `codex/monitor-workbench-closed-loop`。
+- [x] 记录基线 SHA、后端测试数、前端测试数、E2E 基线结果。
+- [x] 确认 `.env`、本地数据、用户未跟踪目录不进入提交。
 - 验收：分支只比基线多出本轮整改提交。
+- 证据：基线 SHA `a0be606b`；受保护目录 `.trae-html-share-packages/`、`clpm-ui-refactor-assessment/`、`docs/设计文档/prototype/ui-refactor-prototypes/` 保持 untracked。
 
 ### MW-G0-03 建立性能与请求基线
 
-- [ ] 记录工作台首次进入的 API 数量和完成时间。
-- [ ] 记录连续切换 20 个回路的请求数、最大并发、错误数。
-- [ ] 记录 100 回路列表 DOM 节点数和滚动行为。
-- [ ] 记录 WS 在线、断连、重连三态截图。
+- [x] 记录工作台首次进入的 API 数量和完成时间。
+- [x] 记录连续切换 20 个回路的请求数、最大并发、错误数。
+- [x] 记录 100 回路列表 DOM 节点数和滚动行为。
+- [~] 记录 WS 在线、断连、重连三态截图。
 - 验收：结果写入本清单 §9 进度日志或独立基线附件。
+- 证据：静态分析——切换回路并发 6 路 API（detail/diagnosis/snapshots/confidence/tuningTasks/tuningTaskDetail），左栏 pageSize=100；运行时探针与 WS 三态截图留待 Phase 1/5（需启动服务）。
 
 ### MW-G0-04 冻结安全边界
 
-- [ ] 保存当前 OpenAPI 中 tuning/DCS 相关端点清单。
-- [ ] 加入静态断言：不得出现写 DCS PID 参数的新增端点或请求。
+- [x] 保存当前 OpenAPI 中 tuning/DCS 相关端点清单。
+- [x] 加入静态断言：不得出现写 DCS PID 参数的新增端点或请求。
 - 验收：安全断言进入自动测试。
+- 证据：`backend/tests/test_security_dcs_pid_no_write.py` 4 passed；tuning 写端点白名单=identify/tune/simulate/compare/tasks/cancel/calculate。
 
 ---
 
@@ -546,6 +550,11 @@ Commit：<sha>
 | 日期 | 阶段/任务 | 状态 | Commit/证据 | 备注 |
 |---|---|---|---|---|
 | 2026-08-09 | 整改计划与任务清单制定 | ✅ | 本文件 + 上位方案 | 待用户发出正式开工指令 |
+| 2026-08-09 | MW-G0-01 签认 IA 基线 | ✅ | `1732243a` | 27 文件 IA 基线签认；`git diff --check` 无空白/冲突标记 |
+| 2026-08-09 | MW-G0-02 建立实施分支 | ✅ | `a0be606b` | 分支 `codex/monitor-workbench-closed-loop`，基线 SHA `a0be606b` |
+| 2026-08-09 | MW-G0-03 性能基线（静态） | ✅ | 静态分析 | 工作台切换回路并发 6 路 API（detail/diagnosis/snapshots/confidence/tuningTasks/tuningTaskDetail），左栏 `getLoopMonitorListApi` pageSize=100；首屏 72h 快照分页循环。运行时探针留待 Phase 5 |
+| 2026-08-09 | MW-G0-04 安全基线断言 | ✅ | `test_security_dcs_pid_no_write.py` 4 passed | OpenAPI 静态扫描：无 DCS PID 下写/整定回写/回路 PID 直写端点；整定写端点仅 identify/tune/simulate/compare/tasks/cancel/calculate |
+| 2026-08-09 | G0 基线门禁 | ✅ | 前端 `check:type` 2/2 通过 | 后端 `ruff check/format` 通过；安全断言 4 passed |
 
 ## 10. 风险登记
 
