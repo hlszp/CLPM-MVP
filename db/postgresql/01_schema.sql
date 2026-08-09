@@ -1491,6 +1491,8 @@ CREATE INDEX IF NOT EXISTS idx_action_tracker_severity_status ON action_tracker 
 CREATE INDEX IF NOT EXISTS idx_action_tracker_loop_created ON action_tracker (loop_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_action_tracker_effect_verified ON action_tracker (effect_verified);
 CREATE INDEX IF NOT EXISTS idx_action_tracker_status_updated ON action_tracker (action_status, updated_at);
+-- BL-2 回写：与 alembic f1a2b3c4d5e6 对齐（此前仅迁移创建，引导 SQL 缺失）
+CREATE INDEX IF NOT EXISTS idx_action_tracker_tuning_record ON action_tracker (tuning_record_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_action_tracker_open
     ON action_tracker (loop_id, diagnosis_label)
     WHERE action_status IN ('PENDING', 'IN_PROGRESS')
