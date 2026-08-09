@@ -522,6 +522,68 @@ class TestListLoopMonitor:
         assert result["pageSize"] == 10
         assert result["total"] == 15
 
+    async def test_loop_id_precise_query_hits(self) -> None:
+        """loop_id 精确查询命中：只返回目标回路，不回退其他回路。"""
+        loop = _make_loop(loop_id="d2141c39-1aef-48f5-a535-94f41fc5f01b")
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        result = await list_loop_monitor(db, loop_id="d2141c39-1aef-48f5-a535-94f41fc5f01b")
+        assert result["total"] == 1
+        assert len(result["items"]) == 1
+        assert result["items"][0]["loopId"] == "d2141c39-1aef-48f5-a535-94f41fc5f01b"
+
+    async def test_loop_id_precise_query_miss_returns_empty(self) -> None:
+        """loop_id 精确查询未命中（不存在/已停用）：返回空，不回退。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(0),
+                _make_scalars_mock([]),
+            ]
+        )
+        result = await list_loop_monitor(db, loop_id="d2141c39-1aef-48f5-a535-94f41fc5f01b")
+        assert result["total"] == 0
+        assert result["items"] == []
+
+    async def test_loop_id_invalid_uuid_returns_empty_without_db(self) -> None:
+        """loop_id 非法 UUID：直接返回空，不查询数据库（避免 DataError）。"""
+        db = AsyncMock()
+        result = await list_loop_monitor(db, loop_id="not-a-uuid")
+        assert result["total"] == 0
+        assert result["items"] == []
+        assert result["page"] == 1
+        assert result["pageSize"] == 20
+        # 不应执行任何 DB 查询
+        assert db.execute.await_count == 0
+
+    async def test_loop_id_combined_with_keyword_filter(self) -> None:
+        """loop_id 与 keyword 组合：两个条件同时生效。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(0),
+                _make_scalars_mock([]),
+            ]
+        )
+        result = await list_loop_monitor(
+            db,
+            loop_id="d2141c39-1aef-48f5-a535-94f41fc5f01b",
+            keyword="LIC",
+        )
+        assert result["total"] == 0
+        assert result["items"] == []
+
     async def test_with_tag_values(self) -> None:
         """回路有 Tag 关联（PV/SP/OP/MODE）时 current_values 正确填充。"""
         loop = _make_loop()

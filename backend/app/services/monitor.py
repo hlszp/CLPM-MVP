@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,16 @@ from app.services.confidence_evaluator import ALGORITHM_VERSION
 from app.services.data_source.realtime_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
+
+
+def _is_valid_uuid(value: str) -> bool:
+    """校验字符串是否为合法 UUID（避免 PG uuid 列与非法字符串比较抛 DataError）。"""
+    try:
+        UUID(value)
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
 
 # LTTB 降采样阈值（P3 #56：仅用于波形展示路径，KPI 计算路径不降采样）
 # 触发降采样阈值：超过 10000 点触发 LTTB 算法
@@ -313,10 +324,15 @@ async def list_loop_monitor(
     view: str = "list",
     keyword: str | None = None,
     loop_type: str | None = None,
+    loop_id: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。"""
+    """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。
+
+    ``loop_id`` 提供精确查询：当传入时按主键过滤，命中则只返回目标回路，
+    未命中（不存在/已停用/无权限）则返回空列表，不回退其他回路——供深链接解析。
+    """
     conditions = []
     # 与统计卡片口径统一：仅统计/展示 is_active=True 的回路（WS-D 阶段5）
     conditions.append(LoopLedger.is_active.is_(True))
@@ -335,6 +351,18 @@ async def list_loop_monitor(
                 LoopLedger.description.ilike(kw),
             )
         )
+    if loop_id:
+        # 深链接精确查询：按主键过滤，不回退。
+        # 无效 UUID 直接返回空（不抛 DataError），前端据此显示"回路不存在"。
+        if not _is_valid_uuid(loop_id):
+            return {
+                "view": view,
+                "items": [],
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+            }
+        conditions.append(LoopLedger.id == loop_id)
 
     count_stmt = select(func.count()).select_from(LoopLedger)
     for cond in conditions:

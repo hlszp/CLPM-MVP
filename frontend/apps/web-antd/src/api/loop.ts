@@ -441,6 +441,11 @@ export namespace LoopApi {
     view?: 'card' | 'list';
     loopType?: LoopType;
     keyword?: string;
+    /**
+     * 精确查询指定回路（MW-P0-02）：供深链接解析，命中只返回目标回路，
+     * 未命中返回空，不回退其他回路。
+     */
+    loopId?: string;
   }
 
   /** 回路监控列表响应（IDS v3.2 §2.2.15） */

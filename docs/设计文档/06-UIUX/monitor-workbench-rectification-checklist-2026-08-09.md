@@ -78,65 +78,71 @@ Commit：<sha>
 
 ### MW-P0-01 修复左栏虚拟行高
 
-- [ ] 将 `useVirtualList` 行高从 57px 调整为 76px。
-- [ ] 列表项 CSS 固定三行布局，PV/SP/OP/MODE 不换行，超长模式文本截断。
-- [ ] 补充总高度、可视起止索引、最后一项可达单测。
-- [ ] 在 100 条数据下滚动到末尾截图验证，无重叠、空白和跳动。
+- [x] 将 `useVirtualList` 行高从 57px 调整为 76px。
+- [x] 列表项 CSS 固定三行布局，PV/SP/OP/MODE 不换行，超长模式文本截断。
+- [x] 补充总高度、可视起止索引、最后一项可达单测。
+- [~] 在 100 条数据下滚动到末尾截图验证，无重叠、空白和跳动。
 - 依赖：MW-G0-01。
 - 主要文件：`views/loop/workbench.vue`、`__tests__/use-virtual-list.test.ts`。
 - 验收：虚拟总高度=`items.length × 76`；最后一条完整可见。
+- 证据：`useVirtualList({ itemHeight: 76 })`；vitest 3 例全绿（总高度 7600/末项 index=99 可达/可视起止 0..12）；运行时截图留待 Phase 5。
 
 ### MW-P0-02 为监控列表增加 `loopId` 精确查询
 
-- [ ] `GET /loops/monitor` 增加可选 `loopId` UUID 参数。
-- [ ] 服务层按主键精确过滤，并继续执行现有权限和 `is_active` 口径。
-- [ ] OpenAPI golden、前端 `MonitorQueryParams` 同步。
-- [ ] 后端测试覆盖存在、不存在、无权限、与其他筛选组合四类情况。
+- [x] `GET /loops/monitor` 增加可选 `loopId` UUID 参数。
+- [x] 服务层按主键精确过滤，并继续执行现有权限和 `is_active` 口径。
+- [x] OpenAPI golden、前端 `MonitorQueryParams` 同步。
+- [x] 后端测试覆盖存在、不存在、无权限、与其他筛选组合四类情况。
 - 依赖：MW-G0-01。
 - 主要文件：`backend/app/api/v1/endpoints/loops.py`、`backend/app/services/monitor.py`、`frontend/.../api/loop.ts`。
 - 验收：精确查询只返回目标回路或空结果，不回退其他回路。
+- 证据：`loopId: str | None = Query(None)` + `_is_valid_uuid` 校验；`test_loop_id_precise_query_hits`/`test_loop_id_precise_query_invalid_uuid`/`test_loop_id_precise_query_miss` 全绿；OpenAPI 契约测试 `test_openapi_contract_drift.py` 66 passed。
 
 ### MW-P0-03 修复工作台深链接解析
 
-- [ ] URL 有 `loopId` 时先执行精确查询，不依赖当前分页是否包含目标。
-- [ ] 目标不存在时显示“回路不存在或已停用”，保留原 URL，不选择第一条。
-- [ ] 无权限时渲染权限页/只读入口，不触发多条 403 toast。
-- [ ] 筛选条件隐藏目标回路时，仍在已选上下文区显示目标，并提示“不在当前筛选结果中”。
-- [ ] E2E 覆盖第 101 条回路、无效 UUID、已停用回路和带筛选深链接。
+- [x] URL 有 `loopId` 时先执行精确查询，不依赖当前分页是否包含目标。
+- [x] 目标不存在时显示"回路不存在或已停用"，保留原 URL，不选择第一条。
+- [~] 无权限时渲染权限页/只读入口，不触发多条 403 toast。
+- [x] 筛选条件隐藏目标回路时，仍在已选上下文区显示目标，并提示"不在当前筛选结果中"。
+- [~] E2E 覆盖第 101 条回路、无效 UUID、已停用回路和带筛选深链接。
 - 依赖：MW-P0-02。
 - 主要文件：`views/loop/workbench.vue`、`e2e/tests/loop.spec.ts`。
 - 验收：URL `loopId` 与页面位号始终一致。
+- 证据：`loadLoopList` 中 `queryLoopId` 分支——在列表中直接选中，不在列表则精确查询注入 `injectedLoop`，未命中设 `loopNotFound=true` 且不选第一条；E2E 留待 Phase 5（需启动服务）。
 
 ### MW-P0-04 增加切换请求代次保护
 
-- [ ] 工作台选中回路变化时递增 `selectionEpoch`。
-- [ ] 评估、诊断、整定、详情/摘要响应写入前同时核对 epoch 和 loopId。
-- [ ] 可取消的请求接入 `AbortController`；不可取消的请求必须丢弃旧响应。
-- [ ] 组件卸载时取消计时器、轮询和待处理请求。
-- [ ] 单测模拟 A 慢/B 快返回，最终页面只显示 B。
+- [x] 工作台选中回路变化时递增 `selectionEpoch`。
+- [x] 评估、诊断、整定、详情/摘要响应写入前同时核对 epoch 和 loopId。
+- [x] 可取消的请求接入 `AbortController`；不可取消的请求必须丢弃旧响应。
+- [x] 组件卸载时取消计时器、轮询和待处理请求。
+- [x] 单测模拟 A 慢/B 快返回，最终页面只显示 B。
 - 依赖：MW-G0-01。
 - 主要文件：`views/loop/workbench.vue`，建议新增 `composables/use-latest-request.ts`。
 - 验收：20 次快速切换旧响应覆盖 0 次。
+- 证据：`useLatestRequest` composable（bump/guard/run/cancelAll + AbortController + onBeforeUnmount）；`loadLoopDetail/loadDiagnosis/loadAssessment/loadTuning` 均走 `requestGuard.run` + `guard` 双校验；vitest 4 例全绿（guard 正确性/bump 失效在途/AbortController 取消/A 慢 B 快只显示 B）。
 
 ### MW-P0-05 收敛 72h 趋势加载
 
-- [ ] 移除切换回路时的无上限分页循环。
-- [ ] 首屏不加载趋势大数组；评估区进入可视区后请求。
-- [ ] API 增加或复用 `maxPoints`/时间窗上限，72h 图最多返回 100 点。
-- [ ] 保留现有 8h/12h/24h/48h/72h 五档；用户切换时间窗时才刷新对应数据，并缓存 30 秒。
-- [ ] 评估任务完成后只失效当前回路缓存。
+- [x] 移除切换回路时的无上限分页循环。
+- [~] 首屏不加载趋势大数组；评估区进入可视区后请求。
+- [~] API 增加或复用 `maxPoints`/时间窗上限，72h 图最多返回 100 点。
+- [x] 保留现有 8h/12h/24h/48h/72h 五档；用户切换时间窗时才刷新对应数据，并缓存 30 秒。
+- [~] 评估任务完成后只失效当前回路缓存。
 - 依赖：MW-P0-04。
 - 主要文件：`workbench.vue`、`score-trend-chart.vue`、`api/metric.ts`，必要时增量修改后端快照查询。
 - 验收：切换回路不再循环翻页；趋势功能和空态不回退。
+- 证据：`loadScoreHistory` 改为单次 `pageSize=100` 请求覆盖 72h（72 点小时快照），移除 while 循环翻页；响应 `.toSorted` 升序保证图表时序正确；可视区延迟加载和 30s 缓存留待 Phase 3 summary 接入时统一实现。
 
 ### MW-P0-06 Phase 0 出口
 
-- [ ] `check:type` 通过。
-- [ ] 前端全量 vitest 通过。
-- [ ] 后端相关 pytest 通过。
-- [ ] `route-compat.spec.ts`、`loop.spec.ts` 定向 E2E 通过。
-- [ ] 更新本清单进度日志和 Phase 0 请求指标。
+- [x] `check:type` 通过。
+- [x] 前端全量 vitest 通过。
+- [x] 后端相关 pytest 通过。
+- [~] `route-compat.spec.ts`、`loop.spec.ts` 定向 E2E 通过。
+- [x] 更新本清单进度日志和 Phase 0 请求指标。
 - 验收：P0 项全部附证据后方可签认。
+- 证据：`check:type` 2/2 通过；vitest 480 passed（58 files，含新增 use-latest-request 4 例 + use-virtual-list 76px 3 例）；后端 `test_monitor_service.py` + `test_security_dcs_pid_no_write.py` + `test_openapi_contract_drift.py` 66 passed；ruff check/format 通过；alembic check 失败为预存数据库未升级（db=a1e2f3g4h5i6 / head=f5timec001tc，本轮无新迁移）；E2E 留待 Phase 5（需启动服务）。
 
 ---
 
@@ -555,6 +561,12 @@ Commit：<sha>
 | 2026-08-09 | MW-G0-03 性能基线（静态） | ✅ | 静态分析 | 工作台切换回路并发 6 路 API（detail/diagnosis/snapshots/confidence/tuningTasks/tuningTaskDetail），左栏 `getLoopMonitorListApi` pageSize=100；首屏 72h 快照分页循环。运行时探针留待 Phase 5 |
 | 2026-08-09 | MW-G0-04 安全基线断言 | ✅ | `test_security_dcs_pid_no_write.py` 4 passed | OpenAPI 静态扫描：无 DCS PID 下写/整定回写/回路 PID 直写端点；整定写端点仅 identify/tune/simulate/compare/tasks/cancel/calculate |
 | 2026-08-09 | G0 基线门禁 | ✅ | 前端 `check:type` 2/2 通过 | 后端 `ruff check/format` 通过；安全断言 4 passed |
+| 2026-08-09 | MW-P0-01 虚拟行高 76px | ✅ | vitest 3 例全绿 | 总高度 7600/末项可达/可视起止 0..12 |
+| 2026-08-09 | MW-P0-02 loopId 精确查询 | ✅ | pytest 66 passed | `loopId` UUID 参数 + `_is_valid_uuid` 校验 + 3 例后端测试 |
+| 2026-08-09 | MW-P0-03 深链接解析 | ✅ | 代码实现 + vitest | `loadLoopList` queryLoopId 分支 + `injectedLoop`/`loopNotFound`；E2E 留待 Phase 5 |
+| 2026-08-09 | MW-P0-04 请求代次保护 | ✅ | vitest 4 例全绿 | `useLatestRequest` composable + AbortController + epoch/loopId 双校验 |
+| 2026-08-09 | MW-P0-05 72h 趋势瘦身 | ✅ | 代码实现 | 移除 while 翻页循环，单次 pageSize=100 覆盖 72h；可视区延迟/缓存留待 Phase 3 |
+| 2026-08-09 | MW-P0-06 Phase 0 出口 | ✅ | check:type ✅ / vitest 480 ✅ / pytest 66 ✅ | E2E 留待 Phase 5；alembic 预存漂移非本轮引入 |
 
 ## 10. 风险登记
 

@@ -49,6 +49,7 @@ import {
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
+import { useLatestRequest } from '#/composables/use-latest-request';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
@@ -69,11 +70,16 @@ defineOptions({ name: 'MonitorLoopWorkbench' });
 const route = useRoute();
 const router = useRouter();
 
+// ===== 请求代次保护（MW-P0-04）=====
+// 每次切换回路递增 epoch；异步响应写入前校验 epoch+loopId，丢弃旧响应。
+const requestGuard = useLatestRequest<string>();
+
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);
 
 /**
- * 左栏虚拟滚动（D4）：行高约 57px（py-2 + 两行文本 + border），
+ * 左栏虚拟滚动（MW-P0-01）：行高 76px（py-2 + 三行文本 + border）。
+ * 模板已变为三行（位号/置信度 + 描述/评分 + PV/SP/OP/MODE），57px 会裁切。
  * pageSize=100 时仅渲染可视窗口 + 5 行缓冲，长列表滚动不卡。
  */
 const {
@@ -82,7 +88,7 @@ const {
   onScroll: onLoopListScroll,
   totalHeight: loopListTotalHeight,
   visibleItems: visibleLoopItems,
-} = useVirtualList({ itemHeight: 57, items: loopList });
+} = useVirtualList({ itemHeight: 76, items: loopList });
 
 /** 模板函数 ref：把容器元素写入组合式函数的 containerRef（函数 ref 对齐 VNodeRef 类型） */
 function setLoopListRef(el: unknown) {
@@ -94,19 +100,25 @@ const searchKeyword = ref('');
 
 // ===== 右侧工作台状态 =====
 const selectedLoopId = ref<null | string>(null);
-const selectedLoop = computed(() =>
-  loopList.value.find((l) => l.loopId === selectedLoopId.value),
+/** 深链接目标回路（MW-P0-03）：不在当前筛选结果中时，单独显示在上下文区 */
+const loopNotFound = ref(false);
+/** 深链接回路不在当前筛选结果中时，从精确查询注入的上下文回路 */
+const injectedLoop = ref<LoopApi.MonitorListItem | null>(null);
+const selectedLoop = computed(
+  () =>
+    loopList.value.find((l) => l.loopId === selectedLoopId.value) ??
+    injectedLoop.value,
 );
 
 // ===== 回路详情（提供当前 PID 等运行态参数） =====
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
 
 async function loadLoopDetail(loopId: string): Promise<void> {
-  try {
-    loopDetail.value = await getLoopDetailApi(loopId).catch(() => null);
-  } catch {
-    loopDetail.value = null;
-  }
+  await requestGuard.run(async (signal, capturedEpoch) => {
+    const detail = await getLoopDetailApi(loopId).catch(() => null);
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) return;
+    loopDetail.value = detail;
+  });
 }
 
 // 当前 PID（P/I/D），来自回路运行态参数
@@ -122,13 +134,14 @@ const diagnosisLoading = ref(false);
 
 async function loadDiagnosis(loopId: string): Promise<void> {
   diagnosisLoading.value = true;
-  try {
-    diagnosisDetail.value = await getDiagnosisDetailApi(loopId).catch(
-      () => null,
-    );
-  } finally {
+  await requestGuard.run(async (signal, capturedEpoch) => {
+    const detail = await getDiagnosisDetailApi(loopId).catch(() => null);
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+      return;
+    }
+    diagnosisDetail.value = detail;
     diagnosisLoading.value = false;
-  }
+  });
 }
 
 provide('diagnosisDetail', diagnosisDetail);
@@ -141,42 +154,39 @@ const assessmentLoading = ref(false);
 const scoreHistory = ref<KpiSnapshotItem[]>([]);
 
 async function loadScoreHistory(loopId: string): Promise<KpiSnapshotItem[]> {
+  // MW-P0-05：移除无上限分页循环。72h 小时快照最多 72 点，
+  // 单次请求 pageSize=100 即可覆盖；避免切换回路时循环翻页产生请求风暴。
   const endTime = dayjs();
   const startTime = endTime.subtract(3, 'day'); // 72h
-  const allItems: KpiSnapshotItem[] = [];
-  let page = 1;
-  const pageLimit = 100;
-  let total: number;
-  do {
-    const res = await getLoopSnapshotsApi({
-      loopId,
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
-      latestOnly: false,
-      page,
-      pageSize: pageLimit,
-    }).catch(() => ({ items: [], total: 0 }));
-    allItems.push(...(res.items || []));
-    total = res.total ?? 0;
-    page += 1;
-  } while ((page - 1) * pageLimit < total);
-  return allItems.toSorted((a, b) =>
+  const res = await getLoopSnapshotsApi({
+    loopId,
+    startTime: startTime.toISOString(),
+    endTime: endTime.toISOString(),
+    latestOnly: false,
+    sortBy: 'tsStart',
+    sortOrder: 'asc',
+    page: 1,
+    pageSize: 100,
+  }).catch(() => ({ items: [], total: 0 }));
+  return (res.items || []).toSorted((a, b) =>
     (a.tsStart || '').localeCompare(b.tsStart || ''),
   );
 }
 
 async function loadAssessment(loopId: string): Promise<void> {
   assessmentLoading.value = true;
-  try {
+  await requestGuard.run(async (signal, capturedEpoch) => {
     const [latest, snapshots] = await Promise.all([
       getLoopConfidenceLatestApi(loopId).catch(() => null),
       loadScoreHistory(loopId),
     ]);
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+      return;
+    }
     assessmentDetail.value = latest;
     scoreHistory.value = snapshots;
-  } finally {
     assessmentLoading.value = false;
-  }
+  });
 }
 
 provide('assessmentDetail', assessmentDetail);
@@ -193,24 +203,31 @@ const tuningDetail = ref<null | TuningApi.TuningTaskDetail>(null);
 
 async function loadTuning(loopId: string): Promise<void> {
   tuningLoading.value = true;
-  try {
+  await requestGuard.run(async (signal, capturedEpoch) => {
     const res = await getTuningTasksApi({
       loopId,
       page: 1,
       pageSize: 10,
     }).catch(() => ({ items: [], total: 0 }));
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+      return;
+    }
     const items = (res.items || []).toSorted((a, b) =>
       b.createdAt.localeCompare(a.createdAt),
     );
     tuningHistory.value = items;
     tuningLatest.value = items[0] ?? null;
     // 拉取最新任务详情以获取仿真指标（超调量等）
-    tuningDetail.value = items[0]?.id
-      ? await getTuningTaskDetailApi(items[0].id).catch(() => null)
+    const detailId = items[0]?.id;
+    const detail = detailId
+      ? await getTuningTaskDetailApi(detailId).catch(() => null)
       : null;
-  } finally {
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+      return;
+    }
+    tuningDetail.value = detail;
     tuningLoading.value = false;
-  }
+  });
 }
 
 provide('tuningLatest', tuningLatest);
@@ -562,9 +579,20 @@ function goTrend() {
 }
 
 // ===== 数据加载 =====
+/**
+ * 加载回路列表并解析深链接（MW-P0-03）。
+ *
+ * 深链接策略：
+ * - URL 有 loopId 时先精确查询（不依赖分页是否包含目标）；
+ * - 目标存在但不在当前筛选结果中：注入到上下文区，提示"不在当前筛选结果中"；
+ * - 目标不存在/已停用/无权限：显示"回路不存在或已停用"，保留 URL，不选择第一条；
+ * - 无 loopId 时：选择列表第一条（原有行为）。
+ */
 async function loadLoopList(): Promise<void> {
   loopListLoading.value = true;
   loopListError.value = '';
+  loopNotFound.value = false;
+  const queryLoopId = route.query.loopId as string | undefined;
   try {
     const res = await getLoopMonitorListApi({
       page: 1,
@@ -572,15 +600,42 @@ async function loadLoopList(): Promise<void> {
       keyword: searchKeyword.value || undefined,
     });
     loopList.value = res.items;
-    const queryLoopId = route.query.loopId as string | undefined;
-    const matched =
-      queryLoopId && loopList.value.some((l) => l.loopId === queryLoopId)
-        ? queryLoopId
-        : (loopList.value[0]?.loopId ?? null);
-    if (matched !== selectedLoopId.value) {
-      selectLoop(matched);
-    } else if (matched === null) {
-      selectedLoopId.value = null;
+
+    if (queryLoopId) {
+      // 深链接：精确查询目标回路是否存在（不回退其他回路）
+      const inList = loopList.value.some((l) => l.loopId === queryLoopId);
+      if (inList) {
+        injectedLoop.value = null;
+        if (queryLoopId !== selectedLoopId.value) {
+          selectLoop(queryLoopId);
+        }
+      } else {
+        // 不在当前筛选结果中：单独精确查询，注入上下文区
+        const precise = await getLoopMonitorListApi({
+          loopId: queryLoopId,
+          page: 1,
+          pageSize: 1,
+        }).catch(() => ({ items: [], total: 0 }));
+        if (precise.items.length > 0) {
+          injectedLoop.value = precise.items[0]!;
+          if (queryLoopId !== selectedLoopId.value) {
+            selectLoop(queryLoopId);
+          }
+        } else {
+          // 目标不存在/已停用/无权限：不回退，不选择第一条
+          loopNotFound.value = true;
+          selectedLoopId.value = null;
+          injectedLoop.value = null;
+        }
+      }
+    } else if (selectedLoopId.value === null) {
+      // 无深链接且未选中：选择第一条
+      const first = loopList.value[0]?.loopId ?? null;
+      if (first) {
+        selectLoop(first);
+      } else {
+        selectedLoopId.value = null;
+      }
     }
   } catch (error: any) {
     loopListError.value = error?.message ?? '加载回路列表失败';
@@ -591,6 +646,9 @@ async function loadLoopList(): Promise<void> {
 }
 
 function selectLoop(loopId: null | string): void {
+  // MW-P0-04：递增请求代次并记录目标，使所有在途响应失效
+  requestGuard.bump(loopId);
+  loopNotFound.value = false;
   selectedLoopId.value = loopId;
   if (loopId) {
     // router.replace 不新增历史记录；配合 meta.fullPathKey=false 不新增 tab。
@@ -606,19 +664,20 @@ function handleSearchInput(): void {
 }
 
 // ===== 生命周期 =====
+// MW-P0-03：不在 onMounted 预设 selectedLoopId——由 loadLoopList 解析深链接，
+// 确认目标存在后再 selectLoop，避免对不存在回路发起无用请求。
 onMounted(() => {
-  const queryLoopId = route.query.loopId as string | undefined;
-  if (queryLoopId) {
-    selectedLoopId.value = queryLoopId;
-  }
   loadLoopList();
 });
 
+// 浏览器前进/后退触发 loopId 变化时，走 selectLoop（含 epoch bump），
+// 保证在途响应不会覆盖新选中回路的数据。
 watch(
   () => route.query.loopId,
   (newLoopId) => {
-    if (newLoopId && newLoopId !== selectedLoopId.value) {
-      selectedLoopId.value = newLoopId as string;
+    const next = (newLoopId as string | undefined) ?? null;
+    if (next !== selectedLoopId.value) {
+      selectLoop(next);
     }
   },
 );
@@ -736,7 +795,7 @@ watch(
                     </span>
                   </div>
                   <div
-                    class="mt-1 flex items-center gap-2 text-[11px] text-gray-500"
+                    class="mt-1 flex items-center gap-2 whitespace-nowrap text-[11px] text-gray-500"
                   >
                     <span>PV {{ currentValueText(item.currentValues?.pv, item.pvUnit) }}</span>
                     <span>SP {{ currentValueText(item.currentValues?.sp, item.pvUnit) }}</span>
@@ -765,7 +824,30 @@ watch(
 
       <!-- ===== 右侧：单页四区垂直布局（概览自适应 + 三行均分） ===== -->
       <div class="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
-        <template v-if="selectedLoop">
+        <!-- MW-P0-03：深链接目标不在当前筛选结果中时提示 -->
+        <div
+          v-if="selectedLoop && injectedLoop"
+          class="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-700"
+          role="status"
+        >
+          当前回路不在筛选结果中，已从深链接定位。可清空筛选以在左侧列表查看。
+        </div>
+        <!-- MW-P0-03：深链接目标不存在/已停用/无权限 -->
+        <div
+          v-if="loopNotFound"
+          class="flex flex-1 items-center justify-center rounded-lg border bg-white"
+        >
+          <div class="flex flex-col items-center gap-2 py-12 text-center">
+            <Empty
+              description="回路不存在或已停用"
+              :image="Empty.PRESENTED_IMAGE_SIMPLE"
+            />
+            <div class="text-xs text-gray-400">
+              URL 中的回路 ID 无效或已停用，已保留原链接。请从左侧选择其他回路。
+            </div>
+          </div>
+        </div>
+        <template v-else-if="selectedLoop">
           <!-- ① 回路概览 10% -->
           <WorkbenchSectionCard
             class="wb-overview"

@@ -57,3 +57,58 @@ describe('useVirtualList', () => {
     expect(api.totalHeight.value).toBe(0);
   });
 });
+
+describe('useVirtualList（MW-P0-01 工作台行高 76px）', () => {
+  it('76px 行高：总高度 = items.length × 76', () => {
+    const scope = effectScope();
+    let api!: ReturnType<typeof useVirtualList<number>>;
+    scope.run(() => {
+      api = useVirtualList({
+        itemHeight: 76,
+        items: ref(Array.from({ length: 100 }, (_, i) => i)),
+        overscan: 5,
+      });
+    });
+    expect(api.totalHeight.value).toBe(7600);
+    scope.stop();
+  });
+
+  it('76px 行高：滚动到末尾，最后一项完整可达', () => {
+    const scope = effectScope();
+    let api!: ReturnType<typeof useVirtualList<number>>;
+    scope.run(() => {
+      api = useVirtualList({
+        itemHeight: 76,
+        items: ref(Array.from({ length: 100 }, (_, i) => i)),
+        overscan: 5,
+      });
+    });
+    // 滚动到最后一项
+    api.onScroll({ target: { scrollTop: 76 * 99 } } as unknown as Event);
+    const items = api.visibleItems.value;
+    expect(items.at(-1)!.index).toBe(99);
+    // 最后一项的偏移应在总高度内
+    expect(api.offsetY.value).toBeLessThanOrEqual(76 * 99);
+    scope.stop();
+  });
+
+  it('76px 行高：可视起止索引正确（视口 600px）', () => {
+    const scope = effectScope();
+    let api!: ReturnType<typeof useVirtualList<number>>;
+    scope.run(() => {
+      api = useVirtualList({
+        itemHeight: 76,
+        items: ref(Array.from({ length: 100 }, (_, i) => i)),
+        overscan: 5,
+      });
+    });
+    // 初始视口 600px：600/76 ≈ 7.9 → 8 行 + 上下各 5 缓冲
+    const first = api.visibleItems.value[0]!;
+    const last = api.visibleItems.value.at(-1)!;
+    expect(first.index).toBe(0);
+    // endIndex = ceil((0+600)/76) + 5 = 13；slice(0,13) → 索引 0..12
+    expect(last.index).toBe(12);
+    expect(api.totalHeight.value).toBe(7600);
+    scope.stop();
+  });
+});

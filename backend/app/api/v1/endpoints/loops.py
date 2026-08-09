@@ -273,6 +273,10 @@ async def list_loop_monitor_endpoint(
     view: str = Query("list", description="视图模式：list/card"),
     keyword: str | None = Query(None, description="按回路位号/描述模糊查询"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
+    loopId: str | None = Query(
+        None,
+        description="精确查询指定回路（供深链接解析；不回退其他回路）",
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -285,6 +289,7 @@ async def list_loop_monitor_endpoint(
         view=view,
         keyword=keyword,
         loop_type=loopType,
+        loop_id=loopId,
         page=page,
         page_size=pageSize,
     )
