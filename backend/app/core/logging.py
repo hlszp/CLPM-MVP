@@ -118,6 +118,20 @@ def setup_logging() -> None:
     """Configure root logger with a stdout handler."""
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+    # DEBUG 下抑制高音量框架日志（2026-08-09 后端宕死排查：DEBUG 全量时
+    # sqlalchemy/httpx 每请求数十行，dev 日志 26 万行/天，压测下同步日志 I/O
+    # 会显著拖慢事件循环；业务日志不受影响，仍按 root 级别输出）
+    if settings.DEBUG:
+        for noisy in (
+            "sqlalchemy.engine",
+            "sqlalchemy.pool",
+            "httpx",
+            "httpcore",
+            "asyncpg",
+            "urllib3",
+            "websockets",
+        ):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
     # Remove any pre-existing handlers to avoid duplicate output on reload.
     for handler in list(root.handlers):
         root.removeHandler(handler)
