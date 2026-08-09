@@ -14,7 +14,8 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
-const { getTooltipPreset, getSeriesColor, axisBase } = useEchartsPreset();
+const { getTooltipPreset, getSeriesColor, chartColors, axisBase } =
+  useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -30,7 +31,7 @@ const options = computed(() => {
 
   const posColor = getSeriesColor('error');
   const negColor = getSeriesColor('warning');
-  const thresholdColor = '#9ca3af';
+  const thresholdColor = chartColors.value.markLine;
 
   const cusumPosData = props.data.cusumPos.map((val, i) => ({
     value: [i, val],
@@ -60,13 +61,13 @@ const options = computed(() => {
       ...axisBase.value,
       type: 'value',
       name: '时间 (采样点)',
-      nameTextStyle: { color: '#6b7280', fontSize: 11 },
+      nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
     },
     yAxis: {
       ...axisBase.value,
       type: 'value',
       name: '累积和',
-      nameTextStyle: { color: '#6b7280', fontSize: 11 },
+      nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
     },
     grid: {
       top: 40,

@@ -13,7 +13,7 @@ const props = defineProps<{
   data: DiagnosisApi.IaeAnalysisData;
 }>();
 
-const { getSeriesColor, themeColors } = useEchartsPreset();
+const { getSeriesColor, themeColors, chartColors } = useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -32,8 +32,16 @@ const oscillationPercent = computed(() =>
 
 const options = computed(() => {
   const bars = [
-    { name: 'OP零交叉', value: props.data.opZeroCrossCount, color: '#60a5fa' },
-    { name: 'PV零交叉', value: props.data.pvZeroCrossCount, color: '#f472b6' },
+    {
+      name: 'OP零交叉',
+      value: props.data.opZeroCrossCount,
+      color: themeColors.value.INFO,
+    },
+    {
+      name: 'PV零交叉',
+      value: props.data.pvZeroCrossCount,
+      color: themeColors.value.DANGER,
+    },
   ];
 
   const option: any = {
@@ -47,7 +55,7 @@ const options = computed(() => {
       axisLabel: {
         show: true,
         fontSize: 10,
-        color: '#6b7280',
+        color: chartColors.value.text,
       },
       axisLine: { show: false },
       axisTick: { show: false },
@@ -98,7 +106,7 @@ onMounted(() => {
       <div class="card-title">IAE 零交叉分析</div>
       <div
         class="status-badge"
-        :style="{ backgroundColor: statusColor, color: '#fff' }"
+        :style="{ backgroundColor: statusColor }"
       >
         {{ isOscillating ? '存在振荡' : '正常' }}
       </div>
@@ -149,13 +157,14 @@ onMounted(() => {
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: hsl(var(--foreground));
 }
 
 .status-badge {
   padding: 2px 10px;
   font-size: 11px;
   font-weight: 500;
+  color: hsl(0 0% 100%);
   border-radius: 4px;
 }
 
@@ -189,12 +198,12 @@ onMounted(() => {
 
 .metric-label {
   font-size: 11px;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
 }
 
 .metric-value {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: hsl(var(--foreground));
 }
 </style>

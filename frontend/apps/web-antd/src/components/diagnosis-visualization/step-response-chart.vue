@@ -14,7 +14,7 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 
-const { getTooltipPreset, getSeriesColor, themeColors, axisBase } =
+const { getTooltipPreset, getSeriesColor, themeColors, chartColors, axisBase } =
   useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
@@ -58,13 +58,13 @@ const options = computed(() => {
       ...axisBase.value,
       type: 'value',
       name: '时间 (采样点)',
-      nameTextStyle: { color: '#6b7280', fontSize: 11 },
+      nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
     },
     yAxis: {
       ...axisBase.value,
       type: 'value',
       name: 'PV 值',
-      nameTextStyle: { color: '#6b7280', fontSize: 11 },
+      nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
     },
     grid: {
       top: 40,
@@ -101,7 +101,7 @@ const options = computed(() => {
             symbolSize: 12,
             itemStyle: {
               color: overshootColor,
-              borderColor: '#fff',
+              borderColor: chartColors.value.border,
               borderWidth: 2,
             },
           },

@@ -204,12 +204,12 @@ const valveOptions = computed(() => {
     };
   }
 
-  // 颜色映射：线性度=绿，非线性度=橙，OP 行程=蓝，振荡振幅=紫
+  // 颜色映射：线性度=绿，非线性度=橙，OP 行程=蓝，振荡振幅=红（危险语义）
   const linearityColor = themeColors.value.SUCCESS;
   const nonlinearityColor = themeColors.value.WARNING;
   const opRangeColor = themeColors.value.INFO;
-  // themeColors 无紫色，对齐项目内 passRate 卡片用色 (#8b5cf6)
-  const amplitudeColor = '#8b5cf6';
+  // themeColors 无紫色，振荡为异常语义，用 DANGER 保持四色区分
+  const amplitudeColor = themeColors.value.DANGER;
 
   // yAxis category data[0] 在底部，按"振幅→行程→非线性→线性"自下而上排列
   const categoryData = [
@@ -361,17 +361,17 @@ onMounted(() => {
 .chart-tab {
   padding: 3px 10px;
   font-size: 12px;
-  color: var(--ant-color-text-secondary, #6b7280);
+  color: hsl(var(--muted-foreground));
   cursor: pointer;
   background: transparent;
-  border: 1px solid var(--ant-color-border, #e5e7eb);
+  border: 1px solid hsl(var(--border));
   border-radius: 4px;
   transition: none;
 
   &.active {
-    color: #fff;
-    background-color: var(--ant-color-primary, #3b82f6);
-    border-color: var(--ant-color-primary, #3b82f6);
+    color: hsl(0 0% 100%);
+    background-color: var(--status-info);
+    border-color: var(--status-info);
   }
 }
 

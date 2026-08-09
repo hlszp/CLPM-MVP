@@ -61,7 +61,7 @@ const goodRatePercent = computed(() =>
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: hsl(var(--foreground));
 }
 
 .card-body {
@@ -88,20 +88,20 @@ const goodRatePercent = computed(() =>
 
 .metric-label {
   font-size: 11px;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
 }
 
 .metric-value {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: hsl(var(--foreground));
 
   &.highlight-error {
-    color: #ef4444;
+    color: var(--status-error);
   }
 
   &.highlight-success {
-    color: #10b981;
+    color: var(--status-ok);
   }
 }
 </style>
