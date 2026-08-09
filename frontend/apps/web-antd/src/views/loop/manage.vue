@@ -68,6 +68,7 @@ import {
 import StatusBadge from '#/components/loop/status-badge.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { useTableDensity } from '#/composables/use-table-density';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
   CONTROL_TYPE_EXPLANATIONS,
@@ -394,6 +395,10 @@ const dynamicColumns = computed<TableColumnsType>(() => {
 // ===== P2-04：表格列配置（显示/隐藏 + 排序，localStorage 持久化）=====
 const { preferences: columnPrefs, updateColumns: persistColumns } =
   usePagePreference('loop-manage');
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('loop-manage');
 
 function getColumnKey(col: TableColumnsType[number]): string {
   const c = col as any;
@@ -1124,6 +1129,13 @@ watch(
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -1395,7 +1407,7 @@ watch(
           }"
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
           :scroll="{ x: 1300 }"
-          size="small"
+          :size="tableSize"
           :custom-row="
             (record: LoopApi.LoopListItem) => ({
               class:

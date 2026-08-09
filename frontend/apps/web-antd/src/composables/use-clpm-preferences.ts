@@ -50,6 +50,8 @@ export interface PagePreference {
   defaultPageSize?: number;
   /** 保存的筛选预设 */
   savedFilters?: FilterPreset[];
+  /** 表格密度三档（A-07：compact/default/relaxed，默认 compact） */
+  tableDensity?: string;
 }
 
 const STORAGE_KEY = 'clpm-preferences';

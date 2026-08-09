@@ -1171,6 +1171,8 @@ export interface KpiSnapshotItem {
   valveOpMin: null | number;
   valveOpMax: null | number;
   oscillationAmplitude: null | number;
+  /** F5：时间常数（秒，L1 DISPLAY_ONLY，激励不足窗口为 null） */
+  timeConstant?: null | number;
   setpointCrossingCount: null | number;
 }
 
