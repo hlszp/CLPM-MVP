@@ -104,7 +104,7 @@
 | F6 | 算法参数配置页收尾（重置默认/category 分组/新指标元数据消费注册表） | ✅ 后端 `721ec89`（PARAM_CATEGORY + paramMeta 下发 + resetControlTypes 清空语义，OpenAPI golden 同步，pytest 4125）；前端 `8d962ce`（注册表单源消费/新指标零改动接入/重置默认接线/Drawer 分组） |
 | F8 | 批量配置评价周期 | ⏸️ 转 BL-9：「评价周期」在现行领域模型无载体（loop_ledger 无该字段、评估为全局小时级调度），设计文档仅一句话无字段定义——先落字段+调度消费再做批量入口，否则是死字段 |
 | F11 | HiaMonitor 设计文档回写（正向偏离同步） | ✅ `cb44dd5`（§12 附录：可信度两层防御/FROZEN 复合判据/乐观锁/参数注册表单源） |
-| P2-出口 | Phase 2 出口：Nielsen 复评（目标 ≥28）+ 度量指标表全量复核 + 全门禁 + E2E | ⬜ |
+| P2-出口 | Phase 2 出口：Nielsen 复评（目标 ≥28）+ 度量指标表全量复核 + 全门禁 + E2E | ✅ 出口报告 p2-exit-report-2026-08-09.md：Nielsen 32/40（≥28）；度量 9 项达标 + hex 守护达标（存量 BL-5）；后端 ruff/format/alembic/pytest 4139 全绿；前端 check:type 0 error、vitest 467+1既有；E2E 终轮 75/14/5（14 失败=10 环境 networkidle+2 基线既有+2 链路数据依赖，0 整改回归；3 例断言错位已修复转绿） |
 
 ## 4. Backlog（暂不排期，触发条件驱动）
 
@@ -132,6 +132,7 @@
 ## 5. 进度日志
 
 | 2026-08-08 | R1 阻塞项提交 main（构建兼容性 + 外键初始化修复）；D1-D4 全部签认 | `4cc15f5`、`1bba4ba` | 仅提交未推送；schema 中 action_tracker CHECK 已含 VERIFYING 状态（利好 C1-3）；**待用户正式开工指令** |
+| 2026-08-09 | Phase 2 全量收口：D1-D4/C1/C2-4/E4-E6/F5-F11/A-07 全部完成；P2-出口验收通过（Nielsen 32/40、全门禁绿、E2E 75/14/5 无整改回归） | 见 §3 各行 hash + `8873b04`、`7696c39` | E2E 首轮因后端宕死作废（环境故障已处置：重启 uvicorn）；3 例断言错位修复；审计枚举泄漏顺带根治 |
 | 2026-08-08 | 正式开工：拉分支 feat/uiux-rectification-2026；P0-1 四文档入库 | `3edfacb` | 目标模式激活，预算 30 轮 |
 | 2026-08-08 | R3 基线：后端 ruff/format/alembic/pytest 全绿（4120 passed），前端 check:type/vitest（455+1 既有失败）；基线修复 dev DB alembic 版本跟踪 + 补索引 | — | vitest 既有失败 tuning-workbench"伪 0"用例记 backlog；bootstrap 缺索引记 backlog |
 | 2026-08-08 | B4 品牌统一完成（截图验证：登录页/工作台品牌区/浏览器标题） | `d89b85b` | 用户 :5666 实例需重启才能看到品牌改动（.env 变更）；我验证用 :5667 临时实例 |
