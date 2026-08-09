@@ -117,8 +117,8 @@
 | P3-3 | DCS 在运参数对照视图 | Phase 3 预研评审 |
 | P3-4 | 中控室大屏深色专项 | 立项评审 |
 | P3-5 | ⌘K 位号直达扩展 | Phase 3 |
-| BL-1 | vitest 既有失败：tuning-workbench"风险统计显示为未知而不是伪 0"用例 | Phase 1 诊断修复（疑似整定工作台统计映射回归） |
-| BL-2 | bootstrap 01_schema.sql 缺索引 idx_action_tracker_tuning_record（dev DB 已补，引导 SQL 未回写） | 用户决策后回写 |
+| BL-1 | vitest 既有失败：tuning-workbench"风险统计显示为未知而不是伪 0"用例 | ✅ `366753e`（根因：Phase 1 接入 usePageToolbar 依赖 pinia，用例未激活；旁路工具栏+setActivePinia，468/468 全绿） |
+| BL-2 | bootstrap 01_schema.sql 缺索引 idx_action_tracker_tuning_record（dev DB 已补，引导 SQL 未回写） | ✅ `9a9809e`（01_schema.sql 回写，对齐 alembic f1a2b3c4d5e6） |
 | BL-3 | 工作台"异常预测"卡统计条显示 undefined（高危/中危/已分析计数映射缺失，有数据时必现） | ✅ `6e81740`（后端汇总键 camelCase 根治 + 测试同步） |
 | BL-4 | Sponsor 登录"无权限访问"toast、TOP5 最优排序（已在方案 C2-1/C2-3，Phase 1） | 已在计划内 |
 | BL-5 | hex 存量 180 处/36 文件双轨语义色迁移（antd 系→工业 token；棘轮基线 scripts/hex-baseline.json 只减不增，改完一批跑 --update-baseline） | Phase 2 余量或 Phase 3 分批，优先 diagnosis-visualization 图表族（~60 处） |
