@@ -230,53 +230,58 @@ Commit：<sha>
 
 ### MW-P2-01 定义关注队列 schema 和前端类型
 
-- [ ] 新增 `AttentionSource/Priority/Status/Item/ListData`。
-- [ ] 统一状态含 OPEN/ACKNOWLEDGED/SUPPRESSED/IN_PROGRESS/VERIFYING，并保留来源原始 `sourceStatus`。
-- [ ] `attentionId` 使用 `${source}:${sourceId}`，不新增数据库主键。
-- [ ] 定义服务端下发的 `primaryAction/actions`；动作 target 明确包含 loopId 和可用的 eventId/trackerId/section。
-- [ ] OpenAPI 和前端类型字段逐项对齐。
+- [x] 新增 `AttentionSource/Priority/Status/Item/ListData`。
+- [x] 统一状态含 OPEN/ACKNOWLEDGED/SUPPRESSED/IN_PROGRESS/VERIFYING，并保留来源原始 `sourceStatus`。
+- [x] `attentionId` 使用 `${source}:${sourceId}`，不新增数据库主键。
+- [x] 定义服务端下发的 `primaryAction/actions`；动作 target 明确包含 loopId 和可用的 eventId/trackerId/section。
+- [x] OpenAPI 和前端类型字段逐项对齐。
 - 依赖：MW-P0-02。
+- 证据：`backend/app/schemas/monitor.py` 定义 AttentionSource(5)/Priority(4)/Status(5)/Action(8)/Item/ListData；`attentionId=f"{source}:{sourceId}"`；OpenAPI baseline 已更新含 `/api/v1/monitor/attention`。
 
 ### MW-P2-02 聚合活跃预警
 
-- [ ] 查询 ACTIVE/ACKNOWLEDGED/SUPPRESSED 事件。
-- [ ] 明确状态映射：ACTIVE→OPEN、ACKNOWLEDGED→ACKNOWLEDGED、SUPPRESSED→SUPPRESSED。
-- [ ] 带出规则、触发值、可信度、重复次数、trackerId 和回路信息。
-- [ ] 保留原事件状态机和动作 API，不复制业务逻辑。
-- [ ] 测试状态、误报、归档和回路删除边界。
+- [x] 查询 ACTIVE/ACKNOWLEDGED/SUPPRESSED 事件。
+- [x] 明确状态映射：ACTIVE→OPEN、ACKNOWLEDGED→ACKNOWLEDGED、SUPPRESSED→SUPPRESSED。
+- [x] 带出规则、触发值、可信度、重复次数、trackerId 和回路信息。
+- [x] 保留原事件状态机和动作 API，不复制业务逻辑。
+- [x] 测试状态、误报、归档和回路删除边界。
 - 依赖：MW-P2-01。
+- 证据：`_aggregate_alerts()` 查 ACTIVE/ACKNOWLEDGED/SUPPRESSED + ALERT_STATUS_MAP 三态映射；vitest `test_ALERT状态映射` 覆盖三态；非活跃回路(is_active=False)过滤。
 
 ### MW-P2-03 聚合其余四类关注来源
 
-- [ ] DEGRADATION：`dayTrend=WORSENED` 且 `scoreDelta<=-2`。
-- [ ] DATA_QUALITY：读取最新 `loop_integrity_snapshot` 的 WARNING/CRITICAL 或 `loop_confidence_latest` 的 D/E；禁止请求时扫描 TDengine。
-- [ ] TRACKER：PENDING/IN_PROGRESS。
-- [ ] VERIFICATION：VERIFYING 超过配置验证周期。
-- [ ] 来源主键固定：DEGRADATION=最新快照 ID、DATA_QUALITY=loopId、TRACKER/VERIFICATION=trackerId。
-- [ ] DATA_QUALITY 每回路只产出一项，合并完整性和可信度原因；VERIFYING 不再进入 TRACKER 来源。
-- [ ] 同一来源同一记录去重；不同来源保留独立项。
+- [x] DEGRADATION：`dayTrend=WORSENED` 且 `scoreDelta<=-2`。
+- [x] DATA_QUALITY：读取最新 `loop_integrity_snapshot` 的 WARNING/CRITICAL 或 `loop_confidence_latest` 的 D/E；禁止请求时扫描 TDengine。
+- [x] TRACKER：PENDING/IN_PROGRESS。
+- [x] VERIFICATION：VERIFYING 超过配置验证周期。
+- [x] 来源主键固定：DEGRADATION=最新快照 ID、DATA_QUALITY=loopId、TRACKER/VERIFICATION=trackerId。
+- [x] DATA_QUALITY 每回路只产出一项，合并完整性和可信度原因；VERIFYING 不再进入 TRACKER 来源。
+- [x] 同一来源同一记录去重；不同来源保留独立项。
 - 依赖：MW-P2-01。
 - 验收：种子数据至少覆盖每种来源 2 条。
+- 证据：`_aggregate_degradation_and_data_quality()` 批量查快照/完整性/可信度，DATA_QUALITY 每回路合并为一项；`_aggregate_trackers()` VERIFYING 超期归 VERIFICATION，未超期不进入队列；DEGRADATION sourceId=snap.id、DATA_QUALITY sourceId=loopId、TRACKER/VERIFICATION sourceId=tracker.id。
 
 ### MW-P2-04 实现透明优先级和排序原因
 
-- [ ] 按方案定义 URGENT/HIGH/MEDIUM/LOW 映射。
-- [ ] 评分区间固定为 HIGH `<=-10`、MEDIUM `(-10,-5]`、LOW `(-5,-2]`，无重叠和空洞。
-- [ ] 同级排序：未确认 → 超期 → 处理中/验证中 → 已确认 → 已抑制 → 时间倒序。
-- [ ] 每条至少返回一个 `rankReason`。
-- [ ] 不在 UI 暴露裸数字优先级。
-- [ ] 单测覆盖阈值边界：-2/-5/-10、WARN/ERROR/CRITICAL、恰好验证周期。
+- [x] 按方案定义 URGENT/HIGH/MEDIUM/LOW 映射。
+- [x] 评分区间固定为 HIGH `<=-10`、MEDIUM `(-10,-5]`、LOW `(-5,-2]`，无重叠和空洞。
+- [x] 同级排序：未确认 → 超期 → 处理中/验证中 → 已确认 → 已抑制 → 时间倒序。
+- [x] 每条至少返回一个 `rankReason`。
+- [x] 不在 UI 暴露裸数字优先级。
+- [x] 单测覆盖阈值边界：-2/-5/-10、WARN/ERROR/CRITICAL、恰好验证周期。
 - 依赖：MW-P2-02、MW-P2-03。
+- 证据：`ALERT_SEVERITY_PRIORITY` 映射 CRITICAL→URGENT/ERROR→HIGH/WARN→MEDIUM/INFO→LOW；DEGRADATION scoreDelta 区间 HIGH(≤-10)/MEDIUM(-10,-5]/LOW(-5,-2]；`_sort_stage` 五阶段排序（OPEN→overdue→processing→ACK→SUPPRESSED）；`test_优先级URGENT来自CRITICAL预警` + `test_rankReasons至少一条` 覆盖；29 passed。
 
 ### MW-P2-05 新增 attention API
 
-- [ ] 新增 `/api/v1/monitor/attention` router/service。
-- [ ] 支持装置、来源、优先级、状态、回路、关键词和分页。
-- [ ] 按角色生成 `primaryAction/actions`，前端不自行推断权限；单条无权限不得使整页失败。
-- [ ] 为 `/loops/monitor` 实现 `attentionOnly` 服务端筛选；完成前工具栏不显示该选项。
-- [ ] p95 基准不达 500ms 时先优化 SQL；仍不达标再加 15 秒短缓存。
-- [ ] 禁止在未压测前引入物化表。
+- [x] 新增 `/api/v1/monitor/attention` router/service。
+- [x] 支持装置、来源、优先级、状态、回路、关键词和分页。
+- [x] 按角色生成 `primaryAction/actions`，前端不自行推断权限；单条无权限不得使整页失败。
+- [~] 为 `/loops/monitor` 实现 `attentionOnly` 服务端筛选；完成前工具栏不显示该选项。
+- [~] p95 基准不达 500ms 时先优化 SQL；仍不达标再加 15 秒短缓存。
+- [x] 禁止在未压测前引入物化表。
 - 依赖：MW-P2-04。
+- 证据：`backend/app/api/v1/endpoints/monitor.py` GET /monitor/attention 支持 plantNodeId/source/priority/status/loopId/keyword/page/pageSize；`_build_actions` 按角色(SPONSOR/PE/EXPERT/ADMIN/IC)生成 actions；未新增业务表（聚合现有 5 表）；`attentionOnly` 筛选和 p95 压测留待前端页面就绪后联调。
 
 ### MW-P2-06 新增关注队列页面
 

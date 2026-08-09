@@ -55,6 +55,8 @@ from app.api.v1.endpoints import (
     loop_mode_mapping,
     loop_type_weight,
     loops,
+    # 监控模块：关注队列（整改方案 §8.1）
+    monitor,
     node_performance,
     outlier_config,
     performance,
@@ -561,6 +563,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(algorithms.router)
     # 智能预警规则引擎（PRD v6.2 §4.4.6）
     v1_router.include_router(alert.router)
+    # 监控模块：关注队列（整改方案 §8.1）
+    v1_router.include_router(monitor.router)
     # v4.0: 批量配置接口（IDS §2.8/§2.9）
     v1_router.include_router(configs.router)
     # v5.3: 权重模板管理（FDS §5.2.2）+ 定级阈值管理（FDS §5.2.4）
