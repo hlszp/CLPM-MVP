@@ -113,6 +113,13 @@ test.describe('系统管理 E2E', () => {
       if (await disableBtn.isVisible().catch(() => false)) {
         await disableBtn.click();
         await page.waitForTimeout(500);
+        // ClpmDangerConfirmModal：需先填变更原因（≥10 字）+ 确认码（= 用户名），确认按钮才启用
+        const dangerModal = page.locator('.clpm-danger-confirm').first();
+        if (await dangerModal.isVisible().catch(() => false)) {
+          await dangerModal.locator('textarea').first().fill('E2E 自动化测试禁用用户');
+          await dangerModal.locator('input').first().fill(newUsername);
+          await page.waitForTimeout(300);
+        }
         const confirmBtn = page.getByRole('button', { name: /确定|确认/i }).last();
         if (await confirmBtn.isVisible().catch(() => false)) {
           await confirmBtn.click();
