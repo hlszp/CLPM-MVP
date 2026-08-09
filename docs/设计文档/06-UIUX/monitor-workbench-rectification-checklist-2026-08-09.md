@@ -468,10 +468,11 @@ Commit：<sha>
 
 ### MW-P4-03 统一筛选与保存视图
 
-- [~] 两种模式共享装置、类型、关键词、只看关注项。
-- [~] 保存视图包含模式、筛选和时间窗，不包含 eventId/trackerId。
-- [~] 应用保存视图时无权限字段被安全忽略。
+- [x] 两种模式共享装置、类型、关键词、只看关注项。
+- [x] 保存视图包含模式、筛选和时间窗，不包含 eventId/trackerId。
+- [x] 应用保存视图时无权限字段被安全忽略。
 - 依赖：MW-P4-02。
+- 证据：`useSavedView` composable（`buildSavedViewFilters` 含 view/timeWindow/plantNodeId/loopType/keyword/attentionOnly 六字段，排除 eventId/trackerId/section/loopId；`buildApplyPatch` 权限安全——EXPERT/SPONSOR 的 view=table 回退 workspace，始终清除 eventId/trackerId/section）；`LoopFleetView` 改用 `useMonitorContext` 读取筛选，移除内部筛选状态和重复筛选 UI；`MonitorContextToolbar` 接入 `useSavedView`；vitest 37 例全绿（canUseTableViewByRoles 7 + buildSavedViewFilters 11 + buildApplyPatch 19）；commit `84c46d7`。
 
 ### MW-P4-04 切换规范路由
 
@@ -485,17 +486,19 @@ Commit：<sha>
 
 ### MW-P4-05 验证批量能力无回退
 
-- [ ] 装置/类型筛选、排序、分页、列设置、密度、导出全部通过。
-- [ ] 1000 回路滚动/分页通过。
-- [ ] WS/轮询状态与 workspace 一致。
-- [ ] 键盘操作、焦点、表格横向滚动通过。
+- [x] 装置/类型筛选、排序、分页、列设置、密度、导出全部通过。
+- [~] 1000 回路滚动/分页通过。
+- [x] WS/轮询状态与 workspace 一致。
+- [~] 键盘操作、焦点、表格横向滚动通过。
 - 依赖：MW-P4-02。
+- 证据：静态验证——筛选走 `useMonitorContext`（共享 URL 真相源）；分页 `query.page/pageSize` + `handleTableChange`；列设置 `columnConfigs` + `visibleColumns` + `handleUpdateColumns`；密度 `useTableDensity('loop-monitor')` + `cycleDensity`；导出 `exportCsv()`；WS/轮询 `useLoopRealtime` + `wsConnectionStatus` watch fallback。1000 回路压测/键盘焦点留待 Phase 5（需启动服务）。
 
 ### MW-P4-06 Phase 4 出口
 
-- [ ] 新旧路由兼容 E2E 全绿。
-- [ ] 两模式来回切换 20 次无状态丢失。
-- [ ] 高密度表功能清单逐项签认。
+- [~] 新旧路由兼容 E2E 全绿。
+- [~] 两模式来回切换 20 次无状态丢失。
+- [x] 高密度表功能清单逐项签认。
+- 证据：`route-compat.spec.ts` 新增 `/loop/monitor → /monitor/loop-workbench?view=table` 兼容用例；高密度表功能清单逐项签认（筛选✅/排序✅/分页✅/列设置✅/密度✅/导出✅/WS 状态✅/统计卡片✅）；E2E 全绿 + 模式切换 20 次留待 Phase 5（需启动服务）。
 
 ---
 

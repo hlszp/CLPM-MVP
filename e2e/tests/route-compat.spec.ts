@@ -53,6 +53,11 @@ const IA_V29_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
     legacy: '/loop/detail/00000000-0000-0000-0000-000000000201',
     target: /\/monitor\/loop-workbench\?loopId=/,
   },
+  // MW-P4-04：/loop/monitor redirect 到 ?view=table
+  {
+    legacy: '/loop/monitor',
+    target: /\/monitor\/loop-workbench\?view=table/,
+  },
   { legacy: '/alert/events', target: /\/monitor\/alerts/ },
   { legacy: '/alert/rules', target: /\/config\/alert-rules/ },
 ];
