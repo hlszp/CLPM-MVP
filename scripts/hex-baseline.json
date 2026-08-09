@@ -1,12 +1,5 @@
 {
-  "components/clpm/clpm-modal.vue": 1,
-  "components/clpm/confidence-badge.vue": 2,
-  "components/clpm/data-health-badges.vue": 2,
-  "components/clpm/structured-diagnosis-report.vue": 3,
-  "components/loop/quality-tag.vue": 3,
   "components/plant-node/plant-node-tree.vue": 4,
-  "composables/use-score-color.ts": 5,
-  "utils/format.ts": 6,
   "views/diagnosis/components/diagnosis-summary-card.vue": 7,
   "views/diagnosis/loop-analysis/reasoning-timeline.vue": 1,
   "views/diagnosis/tasks.vue": 2,

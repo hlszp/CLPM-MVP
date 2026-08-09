@@ -25,6 +25,7 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Collapse, CollapsePanel, Progress, Tag } from 'ant-design-vue';
 
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_ACTION_TYPE_COLOR,
@@ -97,11 +98,13 @@ const totalConfidence = computed(() =>
   props.labels.reduce((sum, item) => sum + item.confidence, 0),
 );
 
-/** 概率条颜色（按概率高低渐变） */
+const { themeColors } = useClpmTheme();
+
+/** 概率条颜色（按概率高低渐变，CLPM 语义色，随明暗主题响应） */
 function progressColor(pct: number): string {
-  if (pct >= 50) return '#ff4d4f'; // 主因 → 红
-  if (pct >= 25) return '#faad14'; // 次因 → 橙
-  return '#1890ff'; // 低概率 → 蓝
+  if (pct >= 50) return themeColors.value.DANGER; // 主因 → 危险红
+  if (pct >= 25) return themeColors.value.WARNING; // 次因 → 警告
+  return themeColors.value.INFO; // 低概率 → 信息蓝
 }
 
 /** 组合并排序的报告项列表 */

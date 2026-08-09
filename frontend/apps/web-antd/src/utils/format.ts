@@ -106,16 +106,3 @@ export function formatTime(t: null | string | undefined): string {
     return '—';
   }
 }
-
-/**
- * 根据置信度返回对应颜色（对齐 UI/UX v4.1 §3 配色规范）
- * - >= 0.8：绿色 #52c41a
- * - >= 0.5：橙色 #faad14
- * - < 0.5：红色 #ff4d4f
- * @param val 置信度数值 [0, 1]
- */
-export function confidenceColor(val: number): string {
-  if (val >= 0.8) return '#52c41a';
-  if (val >= 0.5) return '#faad14';
-  return '#ff4d4f';
-}

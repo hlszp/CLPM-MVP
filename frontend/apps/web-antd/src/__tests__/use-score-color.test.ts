@@ -25,17 +25,17 @@ describe('useScoreColor', () => {
     for (const score of [null, undefined, Number.NaN]) {
       const { color, label, level } = useScoreColor(score);
       expect(color.value).toBe(NEUTRAL);
-      expect(color.value).not.toBe('#f5222d');
+      expect(color.value).not.toBe('#dc3545'); // 严禁映射为 DANGER 红
       expect(level.value).toBeNull();
       expect(label.value).toBeNull();
     }
   });
 
-  it('未传阈值时降级 GB/T 默认阈值（95 → 优秀绿）', () => {
+  it('未传阈值时降级 GB/T 默认阈值（95 → 优秀 SUCCESS）', () => {
     const { color, label, level } = useScoreColor(95);
     expect(level.value).toBe('1');
     expect(label.value).toBe('优秀');
-    expect(color.value).toBe('#52c41a');
+    expect(color.value).toBe('#198754'); // SUCCESS（浅色板）
   });
 
   it('动态阈值优先：按配置的 minScore 与 color 命中档位', () => {
@@ -131,6 +131,6 @@ describe('useScoreColor', () => {
   it('空阈值数组降级默认阈值', () => {
     const { color, level } = useScoreColor(30, []);
     expect(level.value).toBe('5');
-    expect(color.value).toBe('#f5222d');
+    expect(color.value).toBe('#dc3545'); // DANGER（浅色板）
   });
 });

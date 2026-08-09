@@ -24,48 +24,18 @@ import { computed, toValue } from 'vue';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
-/** 默认定级阈值（GB/T 44693.2-2024 §6.3），配置未加载时降级使用 */
+/**
+ * 默认定级阈值（GB/T 44693.2-2024 §6.3），配置未加载时降级使用。
+ * 不携带 color：默认阈值的颜色由 color computed 按档位降级到
+ * useClpmTheme 语义色（优秀 SUCCESS / 良好 INFO / 合格 WARNING /
+ * 警告 DANGER / 不合格 DANGER），随明暗主题响应。
+ */
 const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  {
-    level: 1,
-    name: 'EXCELLENT',
-    label: '优秀',
-    minScore: 90,
-    maxScore: 100,
-    color: '#52c41a',
-  },
-  {
-    level: 2,
-    name: 'GOOD',
-    label: '良好',
-    minScore: 80,
-    maxScore: 90,
-    color: '#1890ff',
-  },
-  {
-    level: 3,
-    name: 'FAIR',
-    label: '合格',
-    minScore: 60,
-    maxScore: 80,
-    color: '#faad14',
-  },
-  {
-    level: 4,
-    name: 'WARNING',
-    label: '警告',
-    minScore: 40,
-    maxScore: 60,
-    color: '#fa8c16',
-  },
-  {
-    level: 5,
-    name: 'POOR',
-    label: '不合格',
-    minScore: 0,
-    maxScore: 40,
-    color: '#f5222d',
-  },
+  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100 },
+  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90 },
+  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80 },
+  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60 },
+  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40 },
 ];
 
 export interface UseScoreColorReturn {
