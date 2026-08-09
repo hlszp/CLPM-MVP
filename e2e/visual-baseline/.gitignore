@@ -1,2 +1,3 @@
-# baseline/ 为受版本控制的对比基准；current/ 为本地对比采集产物，不入库
+# 对比/走查截图不入库（仅 baseline/ 基线随 git 管理）
 current/
+dark/

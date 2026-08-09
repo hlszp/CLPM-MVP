@@ -30,6 +30,10 @@ const outArg = process.argv.find((a) => a.startsWith('--out=')) || (process.argv
 const OUT_NAME = (outArg && outArg.replace('--out=', '')) || 'baseline';
 const OUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'visual-baseline', OUT_NAME);
 
+/** BL-8：--dark 开启暗色模式采集（写用户主题偏好缓存，main.ts E2 补丁会读取应用） */
+const DARK = process.argv.includes('--dark');
+const THEME_CACHE_KEY = 'undefined-5.7.0-dev-preferences-theme';
+
 /** 21 个关键页面（对应审查报告附录 B；[LOOP] 运行时替换为真实 loopId） */
 const PAGES = [
   ['dashboard-workbench', '/dashboard/workbench'],
@@ -85,9 +89,15 @@ async function main() {
     timezoneId: 'Asia/Shanghai',
   });
   const page = await ctx.newPage();
-  await page.addInitScript(() => {
-    localStorage.setItem('clpm-onboarding-completed', 'true');
-  });
+  await page.addInitScript(
+    ({ DARK: dark, THEME_CACHE_KEY: themeKey }) => {
+      localStorage.setItem('clpm-onboarding-completed', 'true');
+      if (dark) {
+        localStorage.setItem(themeKey, JSON.stringify({ value: 'dark' }));
+      }
+    },
+    { DARK, THEME_CACHE_KEY },
+  );
 
   // 登录（UI 流程，前端自行持久化 token）
   // 登录页：等待表单真正渲染（早期截图曾只抓到启动闪屏）
