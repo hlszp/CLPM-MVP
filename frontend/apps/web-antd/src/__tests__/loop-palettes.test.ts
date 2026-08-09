@@ -13,7 +13,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   LOOP_TYPE_COLOR_MAP,
   LOOP_TYPE_LABEL_MAP,
-  LOOP_TYPE_TAG_COLOR_MAP,
   MODE_COLOR_MAP,
   MODE_LABEL_MAP,
   useLoopPalettes,
@@ -35,11 +34,10 @@ const LOOP_TYPE_KEYS = [
 ];
 
 describe('loop 色板常量', () => {
-  it('7 类回路类型的 label / 主色 / Tag 浅色一一对应且为合法 hex', () => {
+  it('7 类回路类型的 label / 主色一一对应且为合法 hex', () => {
     for (const key of LOOP_TYPE_KEYS) {
       expect(LOOP_TYPE_LABEL_MAP[key]).toBeTruthy();
       expect(LOOP_TYPE_COLOR_MAP[key]).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(LOOP_TYPE_TAG_COLOR_MAP[key]).toMatch(/^#[0-9a-f]{6}$/i);
     }
   });
 
@@ -54,15 +52,15 @@ describe('loop 色板常量', () => {
 describe('useLoopPalettes.modeLabelColor', () => {
   it('auto/Manual/Cascade 映射 ZL 语义色', () => {
     const { modeLabelColor } = useLoopPalettes();
-    expect(modeLabelColor('Auto')).toBe('#10b981');
-    expect(modeLabelColor('Manual')).toBe('#f59e0b');
-    expect(modeLabelColor('Cascade')).toBe('#3b82f6');
+    expect(modeLabelColor('Auto')).toBe('#198754');
+    expect(modeLabelColor('Manual')).toBe('#b45309');
+    expect(modeLabelColor('Cascade')).toBe('#0d6efd');
   });
 
   it('未知/空 modeLabel 回退 NEUTRAL 中性灰', () => {
     const { modeLabelColor } = useLoopPalettes();
-    expect(modeLabelColor('')).toBe('#64748b');
-    expect(modeLabelColor(null)).toBe('#64748b');
-    expect(modeLabelColor(undefined)).toBe('#64748b');
+    expect(modeLabelColor('')).toBe('#6c757d');
+    expect(modeLabelColor(null)).toBe('#6c757d');
+    expect(modeLabelColor(undefined)).toBe('#6c757d');
   });
 });

@@ -98,7 +98,7 @@ def _make_first_result(row=None) -> MagicMock:
 class TestGetAllAlgorithmParams:
     """GET /api/v1/configs/algorithm-params tests."""
 
-    def test_success_returns_3_metrics_4_control_types(
+    def test_success_returns_6_metrics_4_control_types(
         self, client, mock_db, fake_redis, reset_cache
     ) -> None:
         """返回 3 指标 × 4 控制类型，未覆盖时 overridden=False。"""
@@ -113,10 +113,22 @@ class TestGetAllAlgorithmParams:
         body = resp.json()
         assert body["code"] == "0"
         metrics = body["data"]["metrics"]
-        # 3 指标
-        assert len(metrics) == 3
+        # 6 指标（F2 新增 settling_time/effective_auto_rate/output_trip_index）
+        assert len(metrics) == 6
         codes = {m["metricCode"] for m in metrics}
-        assert codes == {"oscillation_rate", "fast_rate", "accuracy_rate"}
+        assert codes == {
+            "oscillation_rate",
+            "fast_rate",
+            "accuracy_rate",
+            "settling_time",
+            "effective_auto_rate",
+            "output_trip_index",
+        }
+        # F6：paramMeta 注册表随视图下发（min/max/description/category 单源）
+        osc = next(m for m in metrics if m["metricCode"] == "oscillation_rate")
+        assert "similarity_threshold" in osc["paramMeta"]
+        assert osc["paramMeta"]["similarity_threshold"]["min"] == 0.1
+        assert osc["paramMeta"]["similarity_threshold"]["category"] == "判定阈值"
         # 每个指标 4 控制类型，未覆盖
         for m in metrics:
             assert len(m["items"]) == 4
@@ -461,6 +473,46 @@ class TestSaveMetricAlgorithmParams:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 403
+
+    def test_reset_control_types_clears_overrides(
+        self, client, mock_db, fake_redis, reset_cache
+    ) -> None:
+        """F6：resetControlTypes 将指定控制类型覆盖清空（params={} → 回落默认）。"""
+        # PUT 调用序列：
+        # 1. reset 分支 existing 查询（命中已覆盖记录）
+        # 2. load_stored_config（返回清空后的记录）
+        # 3. load_metric_thresholds（空）
+        existing = _make_existing_param(
+            "oscillation_rate", "STABLE", {"similarity_threshold": 0.55}
+        )
+        cleared_row = _make_param_row("oscillation_rate", "STABLE", {})
+        existing_result = MagicMock()
+        existing_result.scalar_one_or_none.return_value = existing
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                existing_result,
+                _make_scalars_all_result([cleared_row]),
+                _make_all_result([]),
+            ]
+        )
+
+        body = {"items": [], "resetControlTypes": ["STABLE"]}
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put(
+                "/api/v1/configs/algorithm-params/oscillation_rate",
+                json=body,
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        # 覆盖被清空
+        assert existing.params == {}
+        data = resp.json()["data"]
+        stable = next(i for i in data["items"] if i["controlType"] == "STABLE")
+        assert stable["overridden"] is False
+        assert stable["params"] == stable["defaults"]
+        # paramMeta 同步下发
+        assert "similarity_threshold" in data["paramMeta"]
+        mock_db.commit.assert_awaited_once()
 
     def test_no_token_401(self, client) -> None:
         """未认证请求返回 401。"""

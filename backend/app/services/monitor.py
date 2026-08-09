@@ -342,7 +342,19 @@ async def list_loop_monitor(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    stmt = select(LoopLedger).order_by(LoopLedger.created_at.desc())
+    # C1-1 增量巡检：默认排序"最需关注"优先——最新快照评分升序（差回路在前），
+    # 无快照回路排最后，次级按创建时间倒序保持确定性
+    latest_snap_sq = (
+        select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+        .subquery("latest_snap")
+    )
+    stmt = (
+        select(LoopLedger)
+        .outerjoin(latest_snap_sq, latest_snap_sq.c.loop_id == LoopLedger.id)
+        .order_by(latest_snap_sq.c.score.asc().nulls_last(), LoopLedger.created_at.desc())
+    )
     for cond in conditions:
         stmt = stmt.where(cond)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
@@ -393,6 +405,21 @@ async def list_loop_monitor(
         s_result = await db.execute(s_stmt)
         for snap in s_result.scalars().all():
             snapshot_map[str(snap.loop_id)] = snap
+
+    # C1-1 增量巡检：批量查每个回路"昨日基线"快照（今日 0 点前最新一条），
+    # 用于计算"较昨日"评分增量（新增/恶化/好转徽标）
+    prev_snapshot_map: dict[str, KpiSnapshotHourly] = {}
+    if loop_ids:
+        p_stmt = (
+            select(KpiSnapshotHourly)
+            .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+            .where(KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()))
+            .distinct(KpiSnapshotHourly.loop_id)
+            .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+        )
+        p_result = await db.execute(p_stmt)
+        for snap in p_result.scalars().all():
+            prev_snapshot_map[str(snap.loop_id)] = snap
 
     # 批量查每个回路的 MODE 值映射配置（loop_mode_mapping 表）
     # 无配置的回路回退到默认映射（在 _mode_value_to_label 内处理）
@@ -511,6 +538,23 @@ async def list_loop_monitor(
             list_status = None
             confidence_level = None
 
+        # C1-1"较昨日"增量：当前评分 vs 昨日基线评分
+        # dayTrend：NEW（无基线）/ WORSENED（≤-2）/ IMPROVED（≥+2）/ FLAT；无当前评分则为 None
+        prev_snap = prev_snapshot_map.get(str(loop.id))
+        score_delta: float | None = None
+        day_trend: str | None = None
+        if list_score is not None:
+            if prev_snap is None or prev_snap.score is None:
+                day_trend = "NEW"
+            else:
+                score_delta = round(list_score - float(prev_snap.score), 1)
+                if score_delta <= -2:
+                    day_trend = "WORSENED"
+                elif score_delta >= 2:
+                    day_trend = "IMPROVED"
+                else:
+                    day_trend = "FLAT"
+
         # v6.1：补充 PV/OP 量程与工程单位（从关联 Tag 引用，不冗余存储）
         pv_range_info: dict[str, float | None] | None = None
         pv_unit_val: str | None = None
@@ -550,6 +594,9 @@ async def list_loop_monitor(
                 "currentValues": current_values,
                 "controlMode": control_mode,
                 "score": list_score,
+                # C1-1 增量巡检："较昨日"评分增量与趋势（新增/恶化/好转/持平）
+                "scoreDelta": score_delta,
+                "dayTrend": day_trend,
                 # WS-D 阶段5：status 拆为 loopStatus（回路配置态）+ kpiStatus（评估态）
                 # 避免前端 LoopStatus.PARTIAL 与 KpiStatus.PARTIAL 撞名无法区分
                 "loopStatus": loop.status,

@@ -28,6 +28,7 @@ import logging
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -97,11 +98,15 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         # 采样周期（秒）
         sample_interval = self._read_sample_interval(bundle)
 
+        # 整改 F2：衰减阈值从配置链读取（默认与常量一致）
+        params = get_algorithm_params("settling_time", bundle.data_block.control_type)
+        settling_threshold = float(params.get("settling_threshold", SETTLING_THRESHOLD))
+
         # ARMA 辨识 + Green 函数 → 实际稳态时间（含三语义状态）
         settling = compute_settling_time_detailed(
             signal=errors,
             sample_interval_sec=sample_interval,
-            threshold=SETTLING_THRESHOLD,
+            threshold=settling_threshold,
         )
 
         logger.debug(
@@ -113,7 +118,7 @@ class SettlingTimeCalculator(MetricCalculatorBase):
 
         base_details = {
             "sample_interval": sample_interval,
-            "threshold": SETTLING_THRESHOLD,
+            "threshold": settling_threshold,
             "sample_count": n,
         }
 

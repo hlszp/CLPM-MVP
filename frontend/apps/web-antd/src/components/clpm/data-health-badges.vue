@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<Props>(), {
  *
  * 工业设计口径（UI/UX v6.1 Calm UI / Poka-Yoke）：
  * - 三指标：可信度（A~E）+ 预处理有效率（validRate）+ PV 完整度（pvCompleteness）
- * - 色彩语义：绿=优 / 蓝=良 / 黄=注意 / 橙=警告 / 红=差 / 灰=无数据
+ * - 色彩语义：绿=优 / 蓝=良 / 黄=注意 / 红=差（警告并入红，不设独立橙档）/ 灰=无数据
  * - 不加动画，紧凑堆叠，最大化 data-ink ratio
  *
  * 兼容两种来源：
@@ -68,7 +68,11 @@ const CONF_META: Record<string, { bg: string; color: string; label: string }> =
       bg: 'hsl(var(--warning) / 14%)',
       label: 'C 注意',
     },
-    D: { color: '#ea580c', bg: 'rgba(234, 88, 12, 0.12)', label: 'D 警告' },
+    D: {
+      color: 'var(--destructive)',
+      bg: 'hsl(var(--destructive) / 12%)',
+      label: 'D 警告',
+    },
     E: {
       color: 'var(--destructive)',
       bg: 'hsl(var(--destructive) / 12%)',
@@ -84,7 +88,7 @@ function rateTier(rate: null | number | undefined) {
     return { color: 'var(--primary)', bg: 'hsl(var(--primary) / 12%)' };
   if (rate >= 0.6)
     return { color: 'var(--warning)', bg: 'hsl(var(--warning) / 14%)' };
-  if (rate >= 0.2) return { color: '#ea580c', bg: 'rgba(234, 88, 12, 0.12)' };
+  // < 0.6 → destructive（原橙色档并入 DANGER，与评分降级链同口径：不设独立橙色档）
   return { color: 'var(--destructive)', bg: 'hsl(var(--destructive) / 12%)' };
 }
 

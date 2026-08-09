@@ -43,11 +43,18 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
+import { ClpmEmptyState } from '#/components/clpm';
 
 defineOptions({ name: 'SystemUsers' });
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('system-users');
 
 const loading = ref(false);
 const userList = ref<SystemApi.User[]>([]);
@@ -56,9 +63,9 @@ const total = ref(0);
 const query = reactive({
   username: '' as string,
   role: undefined as ClpmRole | undefined,
-  is_active: undefined as string | undefined,
+  isActive: undefined as string | undefined,
   page: 1,
-  page_size: 20,
+  pageSize: 20,
 });
 
 /** 角色选项 */
@@ -82,8 +89,8 @@ const columns: TableColumnsType = [
   },
   {
     title: '姓名',
-    dataIndex: 'full_name',
-    key: 'full_name',
+    dataIndex: 'displayName',
+    key: 'displayName',
     width: 130,
   },
   {
@@ -101,21 +108,21 @@ const columns: TableColumnsType = [
   },
   {
     title: '状态',
-    dataIndex: 'is_active',
-    key: 'is_active',
+    dataIndex: 'isActive',
+    key: 'isActive',
     width: 90,
     align: 'center',
   },
   {
     title: '最后登录',
-    dataIndex: 'last_login_at',
-    key: 'last_login_at',
+    dataIndex: 'lastLoginAt',
+    key: 'lastLoginAt',
     width: 170,
   },
   {
     title: '创建时间',
-    dataIndex: 'created_at',
-    key: 'created_at',
+    dataIndex: 'createdAt',
+    key: 'createdAt',
     width: 170,
   },
   { title: '操作', key: 'action', width: 220, fixed: 'right' },
@@ -129,10 +136,9 @@ const formRef = ref();
 const formState = reactive({
   username: '',
   password: '',
-  full_name: '',
+  displayName: '',
   role: 'IC_ENGINEER' as ClpmRole,
   email: '',
-  phone: '',
 });
 
 // 重置密码 Modal
@@ -140,7 +146,7 @@ const resetModalVisible = ref(false);
 const resetModalLoading = ref(false);
 const resetTarget = ref<null | SystemApi.User>(null);
 const resetForm = reactive({
-  new_password: '',
+  newPassword: '',
 });
 
 /** 加载用户列表 */
@@ -148,17 +154,17 @@ async function loadList() {
   loading.value = true;
   try {
     let isActiveParam: boolean | undefined;
-    if (query.is_active === 'true') {
+    if (query.isActive === 'true') {
       isActiveParam = true;
-    } else if (query.is_active === 'false') {
+    } else if (query.isActive === 'false') {
       isActiveParam = false;
     }
     const data = await getUserListApi({
       page: query.page,
-      page_size: query.page_size,
-      username: query.username || undefined,
+      pageSize: query.pageSize,
+      keyword: query.username || undefined,
       role: query.role,
-      is_active: isActiveParam,
+      isActive: isActiveParam,
     });
     userList.value = data.items || [];
     total.value = data.total || 0;
@@ -176,7 +182,7 @@ function handleSearch() {
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
-  query.page_size = pagination.pageSize || 20;
+  query.pageSize = pagination.pageSize || 20;
   loadList();
 }
 
@@ -185,10 +191,9 @@ function handleOpenAdd() {
   editingUser.value = null;
   formState.username = '';
   formState.password = '';
-  formState.full_name = '';
+  formState.displayName = '';
   formState.role = 'IC_ENGINEER';
   formState.email = '';
-  formState.phone = '';
   modalVisible.value = true;
 }
 
@@ -197,10 +202,9 @@ function handleOpenEdit(record: SystemApi.User) {
   editingUser.value = record;
   formState.username = record.username;
   formState.password = '';
-  formState.full_name = record.full_name;
+  formState.displayName = record.displayName;
   formState.role = record.role;
-  formState.email = record.email;
-  formState.phone = record.phone || '';
+  formState.email = record.email ?? '';
   modalVisible.value = true;
 }
 
@@ -211,20 +215,18 @@ function handleSubmit() {
     try {
       if (editingUser.value) {
         await updateUserApi(editingUser.value.id, {
-          full_name: formState.full_name,
+          displayName: formState.displayName,
           role: formState.role,
-          email: formState.email,
-          phone: formState.phone || undefined,
+          email: formState.email || undefined,
         });
         message.success('用户信息更新成功');
       } else {
         await createUserApi({
           username: formState.username,
           password: formState.password,
-          full_name: formState.full_name,
+          displayName: formState.displayName,
           role: formState.role,
-          email: formState.email,
-          phone: formState.phone || undefined,
+          email: formState.email || undefined,
         });
         message.success('用户创建成功');
       }
@@ -247,7 +249,7 @@ const pendingDisable = ref<null | SystemApi.User>(null);
 
 function handleDisable(record: SystemApi.User) {
   pendingDisable.value = record;
-  disableTarget.value = `${record.full_name}（${record.username}）`;
+  disableTarget.value = `${record.displayName}（${record.username}）`;
   disableOpen.value = true;
 }
 
@@ -269,21 +271,21 @@ async function handleDisableConfirm() {
 /** 打开重置密码弹窗 */
 function handleOpenReset(record: SystemApi.User) {
   resetTarget.value = record;
-  resetForm.new_password = '';
+  resetForm.newPassword = '';
   resetModalVisible.value = true;
 }
 
 /** 提交重置密码 */
 async function handleSubmitReset() {
   if (!resetTarget.value) return;
-  if (!resetForm.new_password) {
+  if (!resetForm.newPassword) {
     message.warning('请输入新密码');
     return;
   }
   resetModalLoading.value = true;
   try {
     await resetUserPasswordApi(resetTarget.value.id, {
-      new_password: resetForm.new_password,
+      newPassword: resetForm.newPassword,
     });
     message.success('密码重置成功');
     resetModalVisible.value = false;
@@ -343,6 +345,13 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
     <ClpmDataCanvas class="mt-4" title="用户列表" :loading="loading">
@@ -364,7 +373,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           @change="handleSearch"
         />
         <Select
-          v-model:value="query.is_active"
+          v-model:value="query.isActive"
           placeholder="状态筛选"
           style="width: 120px"
           allow-clear
@@ -375,7 +384,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           查询
         </Button>
         <div class="flex-1"></div>
-        <Button type="primary" @click="handleOpenAdd">新增用户</Button>
+        <Button type="primary" @click="handleOpenAdd">新建用户</Button>
       </div>
 
       <Table
@@ -384,14 +393,14 @@ const { toolbarItems } = usePageToolbar(() => ({
         :loading="loading"
         :pagination="{
           current: query.page,
-          pageSize: query.page_size,
+          pageSize: query.pageSize,
           total,
           showSizeChanger: true,
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: SystemApi.User) => record.id"
         :scroll="{ x: 1300 }"
-        size="middle"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
@@ -400,16 +409,16 @@ const { toolbarItems } = usePageToolbar(() => ({
               {{ roleLabel(record.role as ClpmRole) }}
             </Tag>
           </template>
-          <template v-else-if="column.key === 'is_active'">
-            <Tag :color="record.is_active ? 'green' : 'default'">
-              {{ record.is_active ? '启用' : '禁用' }}
+          <template v-else-if="column.key === 'isActive'">
+            <Tag :color="record.isActive ? 'green' : 'default'">
+              {{ record.isActive ? '启用' : '禁用' }}
             </Tag>
           </template>
-          <template v-else-if="column.key === 'last_login_at'">
-            {{ formatTime(record.last_login_at) }}
+          <template v-else-if="column.key === 'lastLoginAt'">
+            {{ formatTime(record.lastLoginAt) }}
           </template>
-          <template v-else-if="column.key === 'created_at'">
-            {{ formatTime(record.created_at) }}
+          <template v-else-if="column.key === 'createdAt'">
+            {{ formatTime(record.createdAt) }}
           </template>
           <template v-else-if="column.key === 'action'">
             <div class="flex gap-1">
@@ -428,7 +437,7 @@ const { toolbarItems } = usePageToolbar(() => ({
                 重置密码
               </Button>
               <Button
-                v-if="record.is_active"
+                v-if="record.isActive"
                 type="link"
                 size="small"
                 danger
@@ -439,13 +448,22 @@ const { toolbarItems } = usePageToolbar(() => ({
             </div>
           </template>
         </template>
+          <template #emptyText>
+            <ClpmEmptyState
+              title="无匹配用户"
+              description="可调整筛选条件，或点击「新建用户」创建账号。"
+              :actions="[
+                { label: '新建用户', primary: true, onClick: handleOpenAdd },
+              ]"
+            />
+          </template>
       </Table>
     </ClpmDataCanvas>
 
     <!-- 新增/编辑 Modal -->
     <Modal
       v-model:open="modalVisible"
-      :title="editingUser ? `编辑用户 - ${editingUser.full_name}` : '新增用户'"
+      :title="editingUser ? `编辑用户 - ${editingUser.displayName}` : '新建用户'"
       :confirm-loading="modalLoading"
       width="560px"
       @ok="handleSubmit"
@@ -476,11 +494,11 @@ const { toolbarItems } = usePageToolbar(() => ({
         </FormItem>
 
         <FormItem
-          name="full_name"
+          name="displayName"
           label="姓名"
           :rules="[{ required: true, message: '请输入姓名' }]"
         >
-          <Input v-model:value="formState.full_name" placeholder="用户姓名" />
+          <Input v-model:value="formState.displayName" placeholder="用户姓名" />
         </FormItem>
 
         <FormItem
@@ -498,17 +516,13 @@ const { toolbarItems } = usePageToolbar(() => ({
         <FormItem name="email" label="邮箱">
           <Input v-model:value="formState.email" placeholder="user@plant.com" />
         </FormItem>
-
-        <FormItem name="phone" label="手机号">
-          <Input v-model:value="formState.phone" placeholder="手机号（选填）" />
-        </FormItem>
       </Form>
     </Modal>
 
     <!-- 重置密码 Modal -->
     <Modal
       v-model:open="resetModalVisible"
-      :title="`重置密码 - ${resetTarget?.full_name || ''}`"
+      :title="`重置密码 - ${resetTarget?.displayName || ''}`"
       :confirm-loading="resetModalLoading"
       width="440px"
       @ok="handleSubmitReset"
@@ -518,12 +532,12 @@ const { toolbarItems } = usePageToolbar(() => ({
           <span class="font-medium">{{ resetTarget?.username }}</span>
         </FormItem>
         <FormItem
-          name="new_password"
+          name="newPassword"
           label="新密码"
           :rules="[{ required: true, message: '请输入新密码' }]"
         >
           <Input.Password
-            v-model:value="resetForm.new_password"
+            v-model:value="resetForm.newPassword"
             placeholder="请输入新密码"
           />
         </FormItem>

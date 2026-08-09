@@ -68,6 +68,7 @@ import {
 import StatusBadge from '#/components/loop/status-badge.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { useTableDensity } from '#/composables/use-table-density';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
   CONTROL_TYPE_EXPLANATIONS,
@@ -394,6 +395,10 @@ const dynamicColumns = computed<TableColumnsType>(() => {
 // ===== P2-04：表格列配置（显示/隐藏 + 排序，localStorage 持久化）=====
 const { preferences: columnPrefs, updateColumns: persistColumns } =
   usePagePreference('loop-manage');
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('loop-manage');
 
 function getColumnKey(col: TableColumnsType[number]): string {
   const c = col as any;
@@ -1124,6 +1129,13 @@ watch(
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -1395,7 +1407,7 @@ watch(
           }"
           :row-key="(record: LoopApi.LoopListItem) => record.loopId"
           :scroll="{ x: 1300 }"
-          size="small"
+          :size="tableSize"
           :custom-row="
             (record: LoopApi.LoopListItem) => ({
               class:
@@ -1581,7 +1593,7 @@ watch(
             <template v-else-if="column.key === 'complexGroup'">
               <Tag
                 v-if="record.complexLoopGroupId && record.complexRole"
-                :color="record.complexRole === 'MAIN' ? 'purple' : 'blue'"
+                :color="'default'"
                 class="m-0"
               >
                 {{ record.complexRole === 'MAIN' ? '主' : '副' }}
@@ -1768,7 +1780,7 @@ watch(
               <Tag
                 v-for="lp in groupCandidateLoops"
                 :key="lp.loopId"
-                :color="lp.loopId === groupMainLoopId ? 'purple' : 'blue'"
+                :color="'default'"
                 class="m-0"
               >
                 {{ lp.tagName }}
@@ -1866,25 +1878,25 @@ watch(
 <style>
 /* v5.3：不参评回路行底色淡灰 */
 .row-not-evaluated > td {
-  background-color: #fafafa !important;
+  background-color: hsl(var(--muted) / 50%) !important;
 }
 
 .row-not-evaluated:hover > td {
-  background-color: #f0f0f0 !important;
+  background-color: hsl(var(--muted)) !important;
 }
 
 /* 选中行保留淡蓝背景，不显示任何纵向分隔线 */
 .loop-config-table .ant-table-tbody > tr.ant-table-row-selected > td {
-  background-color: #eff6ff !important; /* blue-50 */
+  background-color: hsl(var(--status-info) / 8%) !important;
   border-inline-end: none !important;
-  border-bottom-color: #eff6ff !important; /* 与背景同色，弱化横向分割线 */
+  border-bottom-color: hsl(var(--status-info) / 8%) !important; /* 与背景同色，弱化横向分割线 */
   box-shadow: none !important;
 }
 
 .loop-config-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
-  background-color: #dbeafe !important; /* blue-100 */
+  background-color: hsl(var(--status-info) / 14%) !important;
   border-inline-end: none !important;
-  border-bottom-color: #dbeafe !important;
+  border-bottom-color: hsl(var(--status-info) / 14%) !important;
   box-shadow: none !important;
 }
 
@@ -1934,14 +1946,13 @@ watch(
 .ant-table-small .ant-table-thead > tr > th {
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
+  color: hsl(var(--muted-foreground));
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background-color: #f8fafc;
+  background-color: hsl(var(--muted) / 60%);
 }
 
 .dark .ant-table-small .ant-table-thead > tr > th {
-  color: hsl(var(--muted-foreground));
   background-color: hsl(var(--card));
 }
 

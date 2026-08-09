@@ -20,6 +20,7 @@ import {
   Input,
   message,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -35,8 +36,12 @@ import {
   resetAlertBadgeApi,
   resolveEventApi,
 } from '#/api/alert';
-import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import {
+  ClpmDangerConfirmModal,
+  ClpmEmptyState, ClpmPageToolbar, ClpmStandardActions, ClpmToolbarButton 
+} from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 
@@ -50,6 +55,10 @@ const canEdit = computed(() =>
   ['ADMIN', 'IC_ENGINEER'].includes(userStore.userInfo?.roles?.[0] ?? ''),
 );
 const canArchive = computed(() => userStore.userInfo?.roles?.[0] === 'ADMIN');
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('alert-events');
 
 // 列表状态
 const loading = ref(false);
@@ -251,13 +260,20 @@ function showDetail(record: AlertApi.EventItem) {
   detailVisible.value = true;
 }
 
+/** 行内动作防重复提交：记录正在提交中的 eventId（确认/误报/撤销误报共用） */
+const actingEventId = ref('');
+
 async function handleAcknowledge(record: AlertApi.EventItem) {
+  if (actingEventId.value) return;
+  actingEventId.value = record.eventId;
   try {
     await acknowledgeEventApi(record.eventId);
     message.success('事件已确认');
     await loadEvents();
   } catch {
     message.error('确认失败');
+  } finally {
+    actingEventId.value = '';
   }
 }
 
@@ -267,11 +283,16 @@ function openResolveModal(record: AlertApi.EventItem) {
   resolveVisible.value = true;
 }
 
+/** 处置弹窗提交中状态（防重复提交） */
+const resolveLoading = ref(false);
+
 async function handleResolve() {
   if (!resolveNote.value.trim()) {
     message.warning('请填写处置说明');
     return;
   }
+  if (resolveLoading.value) return;
+  resolveLoading.value = true;
   try {
     await resolveEventApi(resolvingEventId.value, resolveNote.value);
     message.success('事件已处置');
@@ -279,33 +300,52 @@ async function handleResolve() {
     await loadEvents();
   } catch {
     message.error('处置失败');
+  } finally {
+    resolveLoading.value = false;
   }
 }
 
-async function handleMarkFalsePositive(record: AlertApi.EventItem) {
+/** 标记/撤销误报（isFalsePositive=false 即 undo） */
+async function handleMarkFalsePositive(
+  record: AlertApi.EventItem,
+  value = true,
+) {
+  if (actingEventId.value) return;
+  actingEventId.value = record.eventId;
   try {
-    await markFalsePositiveApi(record.eventId, true);
-    message.success('已标记为误报');
+    await markFalsePositiveApi(record.eventId, value);
+    message.success(value ? '已标记为误报' : '已撤销误报标记');
     await loadEvents();
   } catch {
-    message.error('标记失败');
+    message.error(value ? '标记失败' : '撤销失败');
+  } finally {
+    actingEventId.value = '';
   }
 }
 
-async function handleArchive(record: AlertApi.EventItem) {
-  Modal.confirm({
-    title: '确认归档',
-    content: '归档后事件将不可再操作，确认归档？',
-    onOk: async () => {
-      try {
-        await archiveEventApi(record.eventId);
-        message.success('事件已归档');
-        await loadEvents();
-      } catch {
-        message.error('归档失败');
-      }
-    },
-  });
+/** 归档事件：危险确认弹窗（归档后不可再操作、无恢复入口，按不可逆处理） */
+const archiveOpen = ref(false);
+const archiveTarget = ref<AlertApi.EventItem | null>(null);
+const archiveLoading = ref(false);
+
+function handleArchive(record: AlertApi.EventItem) {
+  archiveTarget.value = record;
+  archiveOpen.value = true;
+}
+
+async function handleArchiveConfirm() {
+  if (!archiveTarget.value) return;
+  archiveLoading.value = true;
+  try {
+    await archiveEventApi(archiveTarget.value.eventId);
+    message.success('事件已归档');
+    archiveOpen.value = false;
+    await loadEvents();
+  } catch {
+    message.error('归档失败');
+  } finally {
+    archiveLoading.value = false;
+  }
 }
 
 async function handleResetBadge() {
@@ -401,6 +441,13 @@ onMounted(() => {
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -468,7 +515,7 @@ onMounted(() => {
       }"
       :scroll="{ x: 1200 }"
       row-key="eventId"
-      size="small"
+      :size="tableSize"
       @change="handlePageChange"
     >
       <template #bodyCell="{ column, record }">
@@ -485,6 +532,7 @@ onMounted(() => {
               v-if="canEdit && record.status === 'ACTIVE'"
               type="link"
               size="small"
+              :loading="actingEventId === (record as AlertApi.EventItem).eventId"
               @click="handleAcknowledge(record as AlertApi.EventItem)"
             >
               确认
@@ -500,13 +548,33 @@ onMounted(() => {
             >
               处置
             </Button>
-            <Button
+            <Popconfirm
               v-if="canEdit && !record.isFalsePositive"
+              title="确认将该事件标记为误报？"
+              ok-text="确认"
+              cancel-text="取消"
+              @confirm="handleMarkFalsePositive(record as AlertApi.EventItem)"
+            >
+              <Button
+                type="link"
+                size="small"
+                :loading="
+                  actingEventId === (record as AlertApi.EventItem).eventId
+                "
+              >
+                误报
+              </Button>
+            </Popconfirm>
+            <Button
+              v-if="canEdit && record.isFalsePositive"
               type="link"
               size="small"
-              @click="handleMarkFalsePositive(record as AlertApi.EventItem)"
+              :loading="actingEventId === (record as AlertApi.EventItem).eventId"
+              @click="
+                handleMarkFalsePositive(record as AlertApi.EventItem, false)
+              "
             >
-              误报
+              撤销误报
             </Button>
             <Button
               v-if="canArchive && record.status === 'RESOLVED'"
@@ -518,6 +586,12 @@ onMounted(() => {
             </Button>
           </Space>
         </template>
+      </template>
+      <template #emptyText>
+        <ClpmEmptyState
+          title="暂无预警事件"
+          description="当前筛选条件（状态/严重度/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
+        />
       </template>
     </Table>
 
@@ -600,6 +674,7 @@ onMounted(() => {
       title="处置预警事件"
       ok-text="确认处置"
       cancel-text="取消"
+      :confirm-loading="resolveLoading"
       @ok="handleResolve"
     >
       <Form layout="vertical">
@@ -614,5 +689,19 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- 归档事件：危险确认弹窗（归档后不可再操作，按不可逆处理） -->
+    <ClpmDangerConfirmModal
+      v-model:open="archiveOpen"
+      title="归档预警事件"
+      action="归档"
+      :target="archiveTarget?.ruleCode ?? ''"
+      impact-scope="归档后事件将从事件列表移除且不可再操作"
+      rollback-tip="此操作不可逆，归档后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入规则代码以确认"
+      :loading="archiveLoading"
+      @confirm="handleArchiveConfirm"
+    />
   </Page>
 </template>

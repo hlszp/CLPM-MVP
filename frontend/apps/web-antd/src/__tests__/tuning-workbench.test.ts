@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 
+import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import TuningWorkbench from '../views/tuning/workbench.vue';
@@ -36,6 +37,13 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: vi.fn(),
   }),
+}));
+
+// Phase 1 起 workbench 接入统一工具栏（内部依赖 pinia store）；
+// 本测试聚焦风险统计卡渲染，工具栏以空 items 旁路
+vi.mock('#/composables/use-page-toolbar', () => ({
+  showPageHelp: vi.fn(),
+  usePageToolbar: () => ({ toolbarItems: { value: [] } }),
 }));
 
 vi.mock('@vben/common-ui', () => ({
@@ -80,6 +88,7 @@ vi.mock('#/components/clpm', () => ({
 
 describe('tuningWorkbench', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     getTuningHistoryApiMock.mockReset();
     getTuningHistoryApiMock.mockResolvedValue({
       avgFittingScore: null,

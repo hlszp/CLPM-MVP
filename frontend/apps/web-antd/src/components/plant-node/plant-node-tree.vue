@@ -92,21 +92,21 @@ const NODE_TYPE_CONFIG: Record<string, NodeTypeConfig> = {
     badgeClass:
       'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
     icon: 'ant-design:appstore-outlined',
-    iconColor: 'var(--color-amber-600, #d97706)',
+    iconColor: 'var(--color-amber-600)',
     label: '装置',
   },
   FACTORY: {
     badgeClass:
       'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
     icon: 'ant-design:home-outlined',
-    iconColor: 'var(--color-blue-600, #2563eb)',
+    iconColor: 'var(--color-blue-600)',
     label: '工厂',
   },
   UNIT: {
     badgeClass:
       'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
     icon: 'ant-design:database-outlined',
-    iconColor: 'var(--color-slate-600, #475569)',
+    iconColor: 'var(--color-slate-600)',
     label: '单元',
   },
 };
@@ -116,7 +116,7 @@ const DEFAULT_NODE_TYPE_CONFIG: NodeTypeConfig = {
   badgeClass:
     'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
   icon: 'ant-design:folder-outlined',
-  iconColor: 'var(--color-slate-500, #64748b)',
+  iconColor: 'var(--color-slate-500)',
   label: '节点',
 };
 

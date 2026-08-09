@@ -211,8 +211,8 @@ class TestPredictLoopRisks:
         result = await predict_loop_risks(db)
 
         assert result["predictions"] == []
-        assert result["total_loops_analyzed"] == 0
-        assert result["high_risk_count"] == 0
+        assert result["totalLoopsAnalyzed"] == 0
+        assert result["highRiskCount"] == 0
 
     @pytest.mark.asyncio
     async def test_response_structure(self):
@@ -266,12 +266,12 @@ class TestPredictLoopRisks:
         result = await predict_loop_risks(db)
 
         assert "predictions" in result
-        assert "total_loops_analyzed" in result
-        assert "high_risk_count" in result
-        assert "medium_risk_count" in result
-        assert "generated_at" in result
-        assert "forecast_horizon_hours" in result
-        assert result["forecast_horizon_hours"] == FORECAST_HORIZON_HOURS
+        assert "totalLoopsAnalyzed" in result
+        assert "highRiskCount" in result
+        assert "mediumRiskCount" in result
+        assert "generatedAt" in result
+        assert "forecastHorizonHours" in result
+        assert result["forecastHorizonHours"] == FORECAST_HORIZON_HOURS
 
         # 应检测到风险（score 下降 + oscillation 上升）
         if result["predictions"]:

@@ -88,6 +88,7 @@ function moveDown(index: number) {
             type="text"
             size="small"
             :disabled="idx === 0"
+            :aria-label="`上移列 ${col.label}`"
             @click="moveUp(idx)"
           >
             <IconifyIcon icon="ant-design:arrow-up-outlined" />
@@ -96,6 +97,7 @@ function moveDown(index: number) {
             type="text"
             size="small"
             :disabled="idx === columns.length - 1"
+            :aria-label="`下移列 ${col.label}`"
             @click="moveDown(idx)"
           >
             <IconifyIcon icon="ant-design:arrow-down-outlined" />

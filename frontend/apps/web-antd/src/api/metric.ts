@@ -739,11 +739,23 @@ export namespace MetricApi {
     overridden: boolean;
   }
 
+  /** 参数元数据项（整改 F6：注册表单源下发） */
+  export interface AlgorithmParamMeta {
+    min?: number;
+    max?: number;
+    unit?: string;
+    description?: string;
+    category?: string;
+    type?: 'bool';
+  }
+
   /** 指标参数组 */
   export interface AlgorithmParamsMetricGroup {
     metricCode: string;
     metricName: string;
     items: AlgorithmParamsControlItem[];
+    /** F6：参数元数据（min/max/unit/description/category），可能缺失时回落前端兜底 */
+    paramMeta?: Record<string, AlgorithmParamMeta>;
   }
 
   /** 全部算法参数合并视图 */
@@ -762,6 +774,8 @@ export namespace MetricApi {
   /** 保存请求 */
   export interface AlgorithmParamsSaveRequest {
     items: AlgorithmParamsSaveItem[];
+    /** F6：需重置为算法默认的控制类型 */
+    resetControlTypes?: ControlType[];
   }
 }
 
@@ -1157,6 +1171,8 @@ export interface KpiSnapshotItem {
   valveOpMin: null | number;
   valveOpMax: null | number;
   oscillationAmplitude: null | number;
+  /** F5：时间常数（秒，L1 DISPLAY_ONLY，激励不足窗口为 null） */
+  timeConstant?: null | number;
   setpointCrossingCount: null | number;
 }
 

@@ -50,7 +50,7 @@ const badgeStyle = computed(() => {
   if (!resolvedLevel.value) {
     return {
       backgroundColor: themeColors.value.NEUTRAL,
-      color: '#fff',
+      color: 'hsl(0 0% 100%)',
       fontSize: '12px',
       fontWeight: 600,
       minWidth: '22px',
@@ -70,7 +70,7 @@ const badgeStyle = computed(() => {
   const meta = getStatusMeta(statusMap[resolvedLevel.value]);
   return {
     backgroundColor: meta.color,
-    color: '#fff',
+    color: 'hsl(0 0% 100%)',
     fontSize: '12px',
     fontWeight: 600,
     minWidth: '22px',

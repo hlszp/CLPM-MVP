@@ -1,14 +1,4 @@
-import {
-  defineOverridesPreferences,
-  definePreferencesExtension,
-} from '@vben/preferences';
-
-interface WebAntdPreferencesExtension {
-  defaultTableSize: number;
-  enableFormFullscreen: boolean;
-  reportTitle: string;
-  tenantMode: 'multi' | 'single';
-}
+import { defineOverridesPreferences } from '@vben/preferences';
 
 /**
  * CLPM Industrial Light 语义色（基于 vue-vben-admin 主题能力扩展）
@@ -40,25 +30,26 @@ export const CLPM_INDUSTRIAL_TOKENS = {
  *   本常量仅保留用于非响应式场景（如模块顶层常量定义）。
  */
 export const THEME_COLORS = {
-  /** 成功 / 优秀 / 已完成（Ant Design green-6） */
-  SUCCESS: '#52c41a',
-  /** 警告 / 待处理 / 需关注（Ant Design gold-6） */
-  WARNING: '#faad14',
-  /** 错误 / 差 / 失败 / 危险操作（Ant Design red-5） */
-  DANGER: '#ff4d4f',
-  /** 信息 / 进行中 / 品牌主色（工业蓝 #0D6EFD） */
+  /** 成功 / 优秀 / 已完成（约定表 --status-ok） */
+  SUCCESS: '#198754',
+  /** 警告 / 待处理 / 需关注（约定表 --status-warning，深琥珀文字态） */
+  WARNING: '#b45309',
+  /** 错误 / 差 / 失败 / 危险操作（约定表 --status-error） */
+  DANGER: '#dc3545',
+  /** 信息 / 进行中 / 品牌主色（工业蓝 --status-info） */
   INFO: '#0d6efd',
-  /** 中性 / 未知 / 未分类（Ant Design gray-5） */
-  NEUTRAL: '#8c8c8c',
+  /** 中性 / 未知 / 未分类 / 零值（约定表 --status-neutral） */
+  NEUTRAL: '#6c757d',
 } as const;
 
 /**
  * KPI 状态 → 色彩映射
  * 用于性能等级（优秀/良好/合格/差）及综合评估结果的色彩编码
+ * 整改 A-01：对齐 UI/UX §3.1.4 分级配色（优良青绿/良好深蓝/关注琥珀/低效红/数据不足灰）
  */
 export const KPI_COLOR_MAP = {
   EXCELLENT: THEME_COLORS.SUCCESS,
-  GOOD: '#73d13d',
+  GOOD: THEME_COLORS.INFO,
   PASS: THEME_COLORS.WARNING,
   FAIL: THEME_COLORS.DANGER,
   UNKNOWN: THEME_COLORS.NEUTRAL,
@@ -136,7 +127,9 @@ export const overridesPreferences = defineOverridesPreferences({
     colorPrimary: 'hsl(211 98% 52%)',
     // 圆角：克制（对齐 UI/UX §3.5 --radius-sm 4px）
     radius: '0.25',
-    // 默认浅色模式，后续通过 vben themeToggle 支持中控深色
+    // 默认浅色模式（仅决定新用户首启主题；用户切换后由 main.ts 的
+    // 缓存回读补丁恢复——vben initPreferences 合并时 overrides 优先于
+    // 用户缓存，单靠这里无法兼顾"默认浅色"与"选择持久化"，整改 E2）
     mode: 'light',
     // 默认保留浅色头部，避免与既有 vben 顶栏功能冲突
     semiDarkHeader: false,
@@ -146,8 +139,10 @@ export const overridesPreferences = defineOverridesPreferences({
   widget: {
     fullscreen: true,
     globalSearch: true,
-    languageToggle: true,
-    lockScreen: false,
+    // 整改 E3（D4 签认）：业务文案未覆盖 i18n，隐藏语言切换消除半英文残态
+    languageToggle: false,
+    // 整改 E5：开启锁屏（共用电脑/留场值守场景，vben 原生锁屏 widget）
+    lockScreen: true,
     notification: true,
     refresh: true,
     sidebarToggle: true,
@@ -155,51 +150,9 @@ export const overridesPreferences = defineOverridesPreferences({
   },
 });
 
-export const preferencesExtension =
-  definePreferencesExtension<WebAntdPreferencesExtension>({
-    tabLabel: 'preferences.antd.tabLabel',
-    title: 'preferences.antd.title',
-    fields: [
-      {
-        component: 'switch',
-        defaultValue: true,
-        key: 'enableFormFullscreen',
-        label: 'preferences.antd.fields.enableFormFullscreen.label',
-        tip: 'preferences.antd.fields.enableFormFullscreen.tip',
-      },
-      {
-        component: 'select',
-        defaultValue: 'single',
-        key: 'tenantMode',
-        label: 'preferences.antd.fields.tenantMode.label',
-        options: [
-          {
-            label: 'preferences.antd.fields.tenantMode.options.single.label',
-            value: 'single',
-          },
-          {
-            label: 'preferences.antd.fields.tenantMode.options.multi.label',
-            value: 'multi',
-          },
-        ],
-      },
-      {
-        component: 'number',
-        componentProps: {
-          max: 200,
-          min: 10,
-          step: 10,
-        },
-        defaultValue: 20,
-        key: 'defaultTableSize',
-        label: 'preferences.antd.fields.defaultTableSize.label',
-      },
-      {
-        component: 'input',
-        defaultValue: '',
-        key: 'reportTitle',
-        label: 'preferences.antd.fields.reportTitle.label',
-        placeholder: 'preferences.antd.fields.reportTitle.placeholder',
-      },
-    ],
-  });
+/**
+ * 整改 E1（2026-08-08）：preferencesExtension 已整体移除——
+ * 4 个自定义字段（defaultTableSize/tenantMode/reportTitle/
+ * enableFormFullscreen）全库零消费且 locale 键未定义（抽屉显示裸键），
+ * tenantMode 为模板残留（单租户工业产品无此概念）。
+ */

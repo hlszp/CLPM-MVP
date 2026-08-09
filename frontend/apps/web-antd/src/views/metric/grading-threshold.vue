@@ -41,17 +41,30 @@ const loading = ref(false);
 const saving = ref(false);
 const list = ref<MetricApi.GradingThresholdItem[]>([]);
 
-/** 5 级定级元数据（名称、颜色、中文等级） */
-const LEVEL_META: Record<
-  number,
-  { cnLabel: string; color: string; name: string }
-> = {
-  1: { name: 'EXCELLENT', cnLabel: '一级', color: '#52c41a' },
-  2: { name: 'GOOD', cnLabel: '二级', color: '#1890ff' },
-  3: { name: 'FAIR', cnLabel: '三级', color: '#faad14' },
-  4: { name: 'WARNING', cnLabel: '四级', color: '#fa8c16' },
-  5: { name: 'POOR', cnLabel: '五级', color: '#f5222d' },
+/** 5 级定级元数据（名称、中文等级；颜色走 levelColor 单源） */
+const LEVEL_META: Record<number, { cnLabel: string; name: string }> = {
+  1: { name: 'EXCELLENT', cnLabel: '一级' },
+  2: { name: 'GOOD', cnLabel: '二级' },
+  3: { name: 'FAIR', cnLabel: '三级' },
+  4: { name: 'WARNING', cnLabel: '四级' },
+  5: { name: 'POOR', cnLabel: '五级' },
 };
+
+/**
+ * 等级默认展示色：与 use-score-color 的 fallbackByLevel 同口径
+ * （SUCCESS/INFO/WARNING/DANGER/DANGER，随明暗主题响应）。
+ * 颜色固定不可编辑，保存时同样以此落库。
+ */
+function levelColor(level: number): string {
+  const fallbackByLevel: Record<number, string> = {
+    1: themeColors.value.SUCCESS,
+    2: themeColors.value.INFO,
+    3: themeColors.value.WARNING,
+    4: themeColors.value.DANGER,
+    5: themeColors.value.DANGER,
+  };
+  return fallbackByLevel[level] ?? themeColors.value.NEUTRAL;
+}
 
 /** 编辑态：以 level 为 key 存储编辑中的值 */
 const editState = reactive<
@@ -134,7 +147,7 @@ async function loadList() {
           label: defaults[lv]?.label ?? `L${lv}`,
           minScore: defaults[lv]?.min ?? 0,
           maxScore: defaults[lv]?.max ?? 100,
-          color: LEVEL_META[lv]?.color,
+          color: levelColor(lv),
         };
         list.value.push(placeholder);
         editState[lv] = {
@@ -204,7 +217,7 @@ async function confirmSave() {
       label: editState[item.level]?.label ?? item.label ?? '',
       minScore: editState[item.level]?.minScore ?? item.minScore,
       maxScore: editState[item.level]?.maxScore ?? item.maxScore,
-      color: LEVEL_META[item.level]?.color ?? item.color,
+      color: levelColor(item.level),
     }));
     await saveGradingThresholdsApi({ thresholds });
     message.success('定级阈值保存成功（已生成新版本）');
@@ -265,7 +278,7 @@ onMounted(() => {
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'level'">
-          <Tag :color="LEVEL_META[record.level]?.color ?? 'default'">
+          <Tag :color="levelColor(record.level)">
             {{ LEVEL_META[record.level]?.cnLabel ?? `L${record.level}` }}
             ({{ record.name }})
           </Tag>
@@ -307,14 +320,14 @@ onMounted(() => {
             <span
               class="inline-block h-4 w-6 rounded"
               :style="{
-                background: LEVEL_META[record.level]?.color ?? record.color,
+                background: levelColor(record.level),
               }"
             ></span>
             <span
               class="font-mono text-xs"
               :style="{ color: themeColors.NEUTRAL }"
             >
-              {{ LEVEL_META[record.level]?.color ?? record.color }}
+              {{ levelColor(record.level) }}
             </span>
           </div>
         </template>
@@ -400,10 +413,10 @@ onMounted(() => {
 
 <style scoped>
 :deep(.row-violated) {
-  background-color: #fff1f0;
+  background-color: hsl(var(--status-error) / 8%);
 }
 
 :deep(.row-violated:hover > td) {
-  background-color: #ffe7e5 !important;
+  background-color: hsl(var(--status-error) / 12%) !important;
 }
 </style>

@@ -39,6 +39,7 @@ from app.services.metric_calculator.statistics import (
     SpStdCalculator,
 )
 from app.services.metric_calculator.stiction import StictionIndexCalculator
+from app.services.metric_calculator.time_constant import TimeConstantCalculator
 from app.services.metric_calculator.valve_diagnosis import (
     ValveLinearityCalculator,
     ValveNonlinearityCalculator,
@@ -74,6 +75,8 @@ CALCULATOR_REGISTRY: dict[str, type[MetricCalculator]] = {
     "valve_operating_range": ValveOperatingRangeCalculator,
     "setpoint_crossing_count": SetpointCrossingCountCalculator,
     "oscillation_amplitude": OscillationAmplitudeCalculator,
+    # F5：时间常数（L1 DISPLAY_ONLY，复用 tuning_identification 相关分析）
+    "time_constant": TimeConstantCalculator,
 }
 
 #: 核心质量指标代码（参与综合评分加权）
@@ -111,6 +114,7 @@ AUXILIARY_METRIC_CODES: tuple[str, ...] = (
     "valve_operating_range",
     "setpoint_crossing_count",
     "oscillation_amplitude",
+    "time_constant",
 )
 
 

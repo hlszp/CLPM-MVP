@@ -96,7 +96,7 @@ vi.mock('#/components/clpm', () => ({
   },
 }));
 
-vi.mock('#/components/metric/confidence-badge.vue', () => ({
+vi.mock('#/components/clpm/confidence-badge.vue', () => ({
   default: {
     props: ['level'],
     template: '<span>{{ level }}</span>',

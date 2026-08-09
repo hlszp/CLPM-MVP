@@ -36,10 +36,49 @@ logger = logging.getLogger(__name__)
 #: 注意：默认值与计算器内硬编码常量一致，确保未配置时行为不变（behavior-preserving）。
 _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
     "oscillation_rate": {
-        "STABLE": {"similarity_threshold": 0.4, "min_ratio": 0.05, "max_ratio": 15.0},
-        "SLOW": {"similarity_threshold": 0.4, "min_ratio": 0.05, "max_ratio": 15.0},
-        "FAST": {"similarity_threshold": 0.4, "min_ratio": 0.05, "max_ratio": 15.0},
-        "LOGIC": {"similarity_threshold": 0.4, "min_ratio": 0.05, "max_ratio": 15.0},
+        "STABLE": {
+            "similarity_threshold": 0.4,
+            "min_ratio": 0.05,
+            "max_ratio": 15.0,
+            "min_zero_crossings": 4,
+        },
+        "SLOW": {
+            "similarity_threshold": 0.4,
+            "min_ratio": 0.05,
+            "max_ratio": 15.0,
+            "min_zero_crossings": 4,
+        },
+        "FAST": {
+            "similarity_threshold": 0.4,
+            "min_ratio": 0.05,
+            "max_ratio": 15.0,
+            "min_zero_crossings": 4,
+        },
+        "LOGIC": {
+            "similarity_threshold": 0.4,
+            "min_ratio": 0.05,
+            "max_ratio": 15.0,
+            "min_zero_crossings": 4,
+        },
+    },
+    # 整改 F2（2026-08-08）：原硬编码参数配置化，默认值与计算器常量一致（行为不变）
+    "settling_time": {
+        "STABLE": {"settling_threshold": 0.05},
+        "SLOW": {"settling_threshold": 0.05},
+        "FAST": {"settling_threshold": 0.05},
+        "LOGIC": {"settling_threshold": 0.05},
+    },
+    "effective_auto_rate": {
+        "STABLE": {"default_e_max_ratio": 0.05},
+        "SLOW": {"default_e_max_ratio": 0.05},
+        "FAST": {"default_e_max_ratio": 0.05},
+        "LOGIC": {"default_e_max_ratio": 0.05},
+    },
+    "output_trip_index": {
+        "STABLE": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
+        "SLOW": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
+        "FAST": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
+        "LOGIC": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
     },
     "fast_rate": {
         # settling_tolerance=0.0 + ideal_settling_ratio=1.0
@@ -94,6 +133,150 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
 
 #: 支持的控制类型
 _CONTROL_TYPES = ("STABLE", "SLOW", "FAST", "LOGIC")
+
+
+#: 参数元数据注册表（整改 F1：服务端值域/键白名单校验 + F6 前端元数据单源）
+#: 结构：metric_code → param_key → {min, max, unit, description, type?}
+PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
+    "oscillation_rate": {
+        "similarity_threshold": {
+            "min": 0.1,
+            "max": 0.9,
+            "unit": "",
+            "description": "正/负半周期 IAE 相似度阈值",
+        },
+        "min_ratio": {"min": 0.01, "max": 0.5, "unit": "", "description": "振荡判定最小比例"},
+        "max_ratio": {"min": 1.0, "max": 50.0, "unit": "", "description": "振荡判定最大比例"},
+        "min_zero_crossings": {
+            "min": 2,
+            "max": 20,
+            "unit": "个",
+            "description": "振荡判定最少零交叉数",
+        },
+    },
+    "fast_rate": {
+        "ideal_settling_ratio": {
+            "min": 0.1,
+            "max": 5.0,
+            "unit": "",
+            "description": "理想稳态时间比例",
+        },
+        "settling_tolerance": {"min": 0.0, "max": 0.5, "unit": "", "description": "稳态容差"},
+        "anti_disturbance_enabled": {"type": "bool", "unit": "", "description": "抗扰性分析开关"},
+        "disturbance_band_sigma": {
+            "min": 0.5,
+            "max": 10.0,
+            "unit": "σ",
+            "description": "扰动带宽度",
+        },
+        "recovery_persistence": {"min": 1, "max": 50, "unit": "点", "description": "恢复持续点数"},
+        "min_disturbance_duration": {
+            "min": 1.0,
+            "max": 600.0,
+            "unit": "s",
+            "description": "最小扰动时长",
+        },
+        "sp_step_sigma": {"min": 0.5, "max": 10.0, "unit": "σ", "description": "SP 阶跃检测阈值"},
+    },
+    "accuracy_rate": {
+        "e_max_percentile": {
+            "min": 50,
+            "max": 100,
+            "unit": "%",
+            "description": "数据驱动 e_max 百分位截断",
+        },
+    },
+    "settling_time": {
+        "settling_threshold": {
+            "min": 0.01,
+            "max": 0.2,
+            "unit": "",
+            "description": "Green 函数衰减阈值",
+        },
+    },
+    "effective_auto_rate": {
+        "default_e_max_ratio": {
+            "min": 0.01,
+            "max": 0.5,
+            "unit": "",
+            "description": "默认偏差带比例（量程归一化）",
+        },
+    },
+    "output_trip_index": {
+        "trip_inactive": {"min": 0.001, "max": 0.1, "unit": "1/s", "description": "不活跃行程边界"},
+        "trip_normal": {"min": 0.01, "max": 1.0, "unit": "1/s", "description": "正常行程边界"},
+        "trip_frequent": {"min": 0.1, "max": 10.0, "unit": "1/s", "description": "频繁行程边界"},
+    },
+}
+
+
+#: 参数分组映射（整改 F6：配置页 category 分组展示）
+#: 结构：metric_code → param_key → 中文分组名；未收录键归入"其他"
+PARAM_CATEGORY: dict[str, dict[str, str]] = {
+    "oscillation_rate": {
+        "similarity_threshold": "判定阈值",
+        "min_ratio": "判定阈值",
+        "max_ratio": "判定阈值",
+        "min_zero_crossings": "判定阈值",
+    },
+    "fast_rate": {
+        "ideal_settling_ratio": "稳定判定",
+        "settling_tolerance": "稳定判定",
+        "anti_disturbance_enabled": "扰动分析",
+        "disturbance_band_sigma": "扰动分析",
+        "recovery_persistence": "扰动分析",
+        "min_disturbance_duration": "扰动分析",
+        "sp_step_sigma": "扰动分析",
+    },
+    "accuracy_rate": {"e_max_percentile": "判定阈值"},
+    "settling_time": {"settling_threshold": "判定阈值"},
+    "effective_auto_rate": {"default_e_max_ratio": "判定阈值"},
+    "output_trip_index": {
+        "trip_inactive": "行程边界",
+        "trip_normal": "行程边界",
+        "trip_frequent": "行程边界",
+    },
+}
+
+
+def build_param_meta(metric_code: str) -> dict[str, dict[str, Any]]:
+    """构造指标参数元数据视图（整改 F6 前端单源消费）.
+
+    合并 PARAM_META（min/max/unit/description/type）与 PARAM_CATEGORY（分组），
+    未注册分组的键归入"其他"。
+    """
+    meta = PARAM_META.get(metric_code, {})
+    cats = PARAM_CATEGORY.get(metric_code, {})
+    return {key: {**entry, "category": cats.get(key, "其他")} for key, entry in meta.items()}
+
+
+def validate_metric_params(metric_code: str, params: dict[str, Any]) -> list[str]:
+    """校验算法参数键与值域（整改 F1 服务端防呆）.
+
+    返回错误文案列表（空列表 = 通过）。未知键、非数值、越界均拦截，
+    防止越界值经 API/脚本写入 JSONB 直供计算管线。
+    """
+    meta = PARAM_META.get(metric_code)
+    if meta is None:
+        return [f"未知指标代码: {metric_code}"]
+    errors: list[str] = []
+    for key, value in params.items():
+        m = meta.get(key)
+        if m is None:
+            errors.append(f"未知参数键: {key}")
+            continue
+        if isinstance(value, bool):
+            if m.get("type") != "bool":
+                errors.append(f"参数 {key} 应为数值，收到布尔值")
+            continue
+        if not isinstance(value, (int, float)):
+            errors.append(f"参数 {key} 应为数值，收到 {type(value).__name__}")
+            continue
+        if "min" in m and value < m["min"]:
+            errors.append(f"参数 {key}={value} 低于下限 {m['min']}")
+        if "max" in m and value > m["max"]:
+            errors.append(f"参数 {key}={value} 超过上限 {m['max']}")
+    return errors
 
 
 def get_default_params(metric_code: str, control_type: str) -> dict[str, Any]:

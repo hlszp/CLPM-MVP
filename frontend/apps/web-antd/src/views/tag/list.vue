@@ -58,15 +58,20 @@ import {
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'TagList' });
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity('tag-list');
 
 // List state
 const loading = ref(false);
@@ -154,15 +159,24 @@ const plantNodeOptions = computed(() => {
   });
 });
 
-/** 测点类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
-const MEASURE_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  TEMPERATURE: { label: '温度', color: '#FCA5A5' },
-  PRESSURE: { label: '压力', color: '#93C5FD' },
-  LEVEL: { label: '液位', color: '#86EFAC' },
-  FLOW: { label: '流量', color: '#67E8F9' },
-  ANALYSIS: { label: '分析', color: '#D8B4FE' },
-  SPEED: { label: '速度', color: '#FDBA74' },
-  OTHER: { label: '其他', color: '#CBD5E1' },
+/**
+ * 类别标签统一中性样式（色彩约定 D2：类别色板退役 → slate 中性，
+ * 类别区分色非状态语义，禁止映射为彩色，随明暗主题响应）
+ */
+const CATEGORY_TAG_STYLE = {
+  color: 'hsl(var(--muted-foreground))',
+  backgroundColor: 'hsl(var(--muted) / 60%)',
+} as const;
+
+/** 测点类型映射（类别色已退役，展示统一走 CATEGORY_TAG_STYLE 中性样式） */
+const MEASURE_TYPE_MAP: Record<string, { label: string }> = {
+  TEMPERATURE: { label: '温度' },
+  PRESSURE: { label: '压力' },
+  LEVEL: { label: '液位' },
+  FLOW: { label: '流量' },
+  ANALYSIS: { label: '分析' },
+  SPEED: { label: '速度' },
+  OTHER: { label: '其他' },
 };
 
 const measureTypeOptions = [
@@ -173,16 +187,16 @@ const measureTypeOptions = [
   })),
 ];
 
-/** 参数类型映射（label + color）- 使用中性色调，避免混淆状态语义色 */
-const TAG_TYPE_MAP: Record<string, { color: string; label: string }> = {
-  PV: { label: 'PV', color: '#93C5FD' },
-  SP: { label: 'SP', color: '#86EFAC' },
-  OP: { label: 'OP', color: '#FDBA74' },
-  MODE: { label: 'MODE', color: '#D8B4FE' },
-  PID_P: { label: 'PID_P', color: '#67E8F9' },
-  PID_I: { label: 'PID_I', color: '#67E8F9' },
-  PID_D: { label: 'PID_D', color: '#67E8F9' },
-  OTHER: { label: '其他', color: '#CBD5E1' },
+/** 参数类型映射（类别色已退役，展示统一走 CATEGORY_TAG_STYLE 中性样式） */
+const TAG_TYPE_MAP: Record<string, { label: string }> = {
+  PV: { label: 'PV' },
+  SP: { label: 'SP' },
+  OP: { label: 'OP' },
+  MODE: { label: 'MODE' },
+  PID_P: { label: 'PID_P' },
+  PID_I: { label: 'PID_I' },
+  PID_D: { label: 'PID_D' },
+  OTHER: { label: '其他' },
 };
 
 const tagTypeOptions = [
@@ -577,6 +591,13 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
     <ClpmDataCanvas
@@ -682,7 +703,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           (record: TagApi.TagItem) =>
             record.quality === 'BAD' ? 'tag-row--bad' : ''
         "
-        size="small"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
@@ -698,8 +719,8 @@ const { toolbarItems } = usePageToolbar(() => ({
           <template v-else-if="column.key === 'measureType'">
             <Tag
               v-if="record.measureType"
-              :color="MEASURE_TYPE_MAP[record.measureType]?.color ?? 'default'"
-              class="m-0"
+              :style="CATEGORY_TAG_STYLE"
+              class="m-0 border-0"
             >
               {{ MEASURE_TYPE_MAP[record.measureType]?.label ?? '其他' }}
             </Tag>
@@ -767,10 +788,7 @@ const { toolbarItems } = usePageToolbar(() => ({
             <QualityTag :quality="record.quality" />
           </template>
           <template v-else-if="column.key === 'tagType'">
-            <Tag
-              :color="TAG_TYPE_MAP[record.tagType]?.color ?? 'default'"
-              class="m-0"
-            >
+            <Tag :style="CATEGORY_TAG_STYLE" class="m-0 border-0">
               {{ TAG_TYPE_MAP[record.tagType]?.label ?? record.tagType }}
             </Tag>
           </template>
@@ -935,10 +953,8 @@ const { toolbarItems } = usePageToolbar(() => ({
         <DescriptionsItem label="测点类型">
           <Tag
             v-if="detailData.measureType"
-            :color="
-              MEASURE_TYPE_MAP[detailData.measureType]?.color ?? 'default'
-            "
-            class="m-0"
+            :style="CATEGORY_TAG_STYLE"
+            class="m-0 border-0"
           >
             {{ MEASURE_TYPE_MAP[detailData.measureType]?.label ?? '其他' }}
           </Tag>
@@ -960,10 +976,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           <QualityTag :quality="detailData.quality" />
         </DescriptionsItem>
         <DescriptionsItem label="参数类型">
-          <Tag
-            :color="TAG_TYPE_MAP[detailData.tagType]?.color ?? 'default'"
-            class="m-0"
-          >
+          <Tag :style="CATEGORY_TAG_STYLE" class="m-0 border-0">
             {{ TAG_TYPE_MAP[detailData.tagType]?.label ?? detailData.tagType }}
           </Tag>
         </DescriptionsItem>
@@ -1042,7 +1055,9 @@ const { toolbarItems } = usePageToolbar(() => ({
   visibility: hidden;
   gap: 1px;
   opacity: 0;
-  transition: all 0.2s ease;
+  transition:
+    visibility 0.2s ease,
+    opacity 0.2s ease;
 }
 
 :deep(.ant-table-row):hover .tag-row-actions {

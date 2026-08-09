@@ -104,7 +104,7 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
       class="clpm-page-toolbar__context"
     >
       <div class="clpm-page-toolbar__title-row">
-        <div v-if="title" class="clpm-page-toolbar__title">{{ title }}</div>
+        <h1 v-if="title" class="clpm-page-toolbar__title">{{ title }}</h1>
         <div v-if="subtitle" class="clpm-page-toolbar__subtitle">
           {{ subtitle }}
         </div>
@@ -200,6 +200,7 @@ const isSpinning = computed(() => resolvedStatusType.value === 'loading');
 }
 
 .clpm-page-toolbar__title {
+  margin: 0;
   font-size: 15px;
   font-weight: 700;
   line-height: 20px;

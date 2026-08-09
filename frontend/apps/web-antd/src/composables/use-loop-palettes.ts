@@ -28,40 +28,28 @@ export const LOOP_TYPE_LABEL_MAP: Record<string, string> = {
 };
 
 /**
- * 回路类型分类主色（统计卡片边框/计数、ECharts 柱状图）
- * Tailwind 500 系列分类色，类别间色相区分优先
+ * 回路类型分类色（整改 A-02：类别中性化，统一 slate-500）
+ * 用于统计卡片标识 / ECharts 柱状图等单色相类别场景
  */
 export const LOOP_TYPE_COLOR_MAP: Record<string, string> = {
-  TEMPERATURE: '#ef4444',
-  PRESSURE: '#3b82f6',
-  LEVEL: '#10b981',
-  FLOW: '#06b6d4',
-  ANALYSIS: '#8b5cf6',
-  SPEED: '#f59e0b',
-  OTHER: '#6b7280',
+  TEMPERATURE: '#64748b',
+  PRESSURE: '#64748b',
+  LEVEL: '#64748b',
+  FLOW: '#64748b',
+  ANALYSIS: '#64748b',
+  SPEED: '#64748b',
+  OTHER: '#64748b',
 };
 
-/**
- * 回路类型 Tag 浅色（antd Tag 背景用 pastel 色，避免与状态语义色混淆）
- */
-export const LOOP_TYPE_TAG_COLOR_MAP: Record<string, string> = {
-  TEMPERATURE: '#FCA5A5',
-  PRESSURE: '#93C5FD',
-  LEVEL: '#86EFAC',
-  FLOW: '#67E8F9',
-  ANALYSIS: '#D8B4FE',
-  SPEED: '#FDBA74',
-  OTHER: '#CBD5E1',
-};
-
-/** MODE 数值 → 分类色（0=手动,1=自动,2=串级,3=远程,4=先控） */
+/** MODE 数值 → 状态语义色（0=手动,1=自动,2=串级,3=远程,4=先控）
+ * 整改 A-01 对齐色彩约定表：手动=警示红 / 自动=正常绿 / 串级·远程·先控=工业蓝 */
 export const MODE_COLOR_MAP: Record<string, string> = {
-  '0': '#ef4444', // 手动-红
-  '1': '#10b981', // 自动-绿
-  '2': '#3b82f6', // 串级-蓝
-  '3': '#f59e0b', // 远程-橙
-  '4': '#8b5cf6', // 先控-紫
-};
+  '0': '#dc3545', // 手动-需关注
+  '1': '#198754', // 自动-正常
+  '2': '#0d6efd', // 串级
+  '3': '#0d6efd', // 远程
+  '4': '#0d6efd', // 先控
+}
 
 /** MODE 数值 → 英文短标签（柱状图类别轴） */
 export const MODE_LABEL_MAP: Record<string, string> = {

@@ -287,11 +287,11 @@ async def predict_loop_risks(
     Returns:
         ``{
             "predictions": list[LoopPrediction dict],
-            "total_loops_analyzed": int,
-            "high_risk_count": int,
-            "medium_risk_count": int,
-            "generated_at": ISO string,
-            "forecast_horizon_hours": int,
+            "totalLoopsAnalyzed": int,
+            "highRiskCount": int,
+            "mediumRiskCount": int,
+            "generatedAt": ISO string,
+            "forecastHorizonHours": int,
         }``
     """
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -311,11 +311,12 @@ async def predict_loop_risks(
     if not loops:
         return {
             "predictions": [],
-            "total_loops_analyzed": 0,
-            "high_risk_count": 0,
-            "medium_risk_count": 0,
-            "generated_at": now.isoformat(),
-            "forecast_horizon_hours": FORECAST_HORIZON_HOURS,
+            "totalLoopsAnalyzed": 0,
+            "totalLoopsEligible": 0,
+            "highRiskCount": 0,
+            "mediumRiskCount": 0,
+            "generatedAt": now.isoformat(),
+            "forecastHorizonHours": FORECAST_HORIZON_HOURS,
         }
 
     loop_ids = [str(loop.id) for loop in loops]
@@ -376,12 +377,14 @@ async def predict_loop_risks(
 
     return {
         "predictions": [_prediction_to_dict(p) for p in predictions],
-        "total_loops_analyzed": len(snapshots_by_loop),
-        "total_loops_eligible": len(loops),
-        "high_risk_count": high_count,
-        "medium_risk_count": medium_count,
-        "generated_at": now.isoformat(),
-        "forecast_horizon_hours": FORECAST_HORIZON_HOURS,
+        # camelCase 对齐前端 PredictionResult 契约（整改 BL-3：
+        # 汇总键曾为 snake_case，前端 highRiskCount 等读取 undefined）
+        "totalLoopsAnalyzed": len(snapshots_by_loop),
+        "totalLoopsEligible": len(loops),
+        "highRiskCount": high_count,
+        "mediumRiskCount": medium_count,
+        "generatedAt": now.isoformat(),
+        "forecastHorizonHours": FORECAST_HORIZON_HOURS,
     }
 
 

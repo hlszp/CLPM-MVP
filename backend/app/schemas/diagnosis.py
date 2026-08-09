@@ -354,6 +354,8 @@ class DiagnosisAggregates(CamelModel):
     total: int = 0
     statusCounts: dict[str, int] = Field(default_factory=dict)
     labelCounts: dict[str, int] = Field(default_factory=dict)
+    # C1-3 验证闭环：VERIFYING 超 24h 未闭环的超期条目数（工作台待办提醒）
+    verifyOverdueCount: int = 0
 
 
 class DiagnosisListData(CamelModel):

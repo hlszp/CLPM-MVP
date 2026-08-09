@@ -8,14 +8,13 @@ import { computed } from 'vue';
  * ECharts 'dark' 主题），但 CLPM 业务代码中存在大量硬编码色值，在深色背景
  * 下会出现对比度不足、元素消失等问题。
  *
- * v6.1 §3.1.3 对齐 ZL 致联工业设计套件（参考 ZL-MES-UI-Design-Kit/
- * IndustrialDesignReference.html §1）：
- * - Emerald = 运行/成功/在线
- * - Amber   = 警告/待机/部分
- * - Rose    = 故障/严重/不可逆
- * - Blue    = 主操作/信息/待处理
- * - Slate   = 中性/无数据/未知
- * - Teal    = 工业强调色（侧边栏激活、KPI 装饰、品牌强调）
+ * v6.1 §3.1.3 对齐 CLPM 色彩约定表 v1（docs/设计文档/06-UIUX/color-convention.md，
+ * 整改 A-01 单源化 2026-08-08）：
+ * - #198754 = 正常/达标/在线
+ * - #B45309 = 警告/需关注（深琥珀文字态，浅底配 #FEF3C7）
+ * - #DC3545 = 危险/故障/需立即行动
+ * - #0D6EFD = 主操作/信息/工业蓝 accent
+ * - #6C757D = 中性/无数据/零值/INCONCLUSIVE
  *
  * 本 composable 统一提供响应式色值，使用方式：
  * ```ts
@@ -32,38 +31,39 @@ import { computed } from 'vue';
  */
 import { usePreferences } from '@vben/preferences';
 
-/** ZL 工业色板（浅色模式，对齐 Tailwind slate/emerald/amber/rose/blue） */
+/** CLPM 语义色板（浅色模式，色彩约定表 v1 / 整改 A-01 单源化，2026-08-08）
+ *
+ * 值对齐 industrial-light.css 的 --status-* 变量（唯一来源）：
+ * SUCCESS=#198754 / WARNING=#B45309 / DANGER=#DC3545 / INFO=ACCENT=#0D6EFD / NEUTRAL=#6C757D
+ */
 const LIGHT_COLORS = {
-  SUCCESS: '#10b981', // emerald-500（运行/成功/在线）
-  WARNING: '#f59e0b', // amber-500（警告/待机/部分）
-  DANGER: '#f43f5e', // rose-500（故障/严重/不可逆）
-  INFO: '#3b82f6', // blue-500（主操作/信息）
-  NEUTRAL: '#64748b', // slate-500（中性/无数据）
-  ACCENT: '#0d9488', // Teal 强调色（侧边栏激活/KPI 装饰/品牌强调）
+  SUCCESS: '#198754', // 运行/成功/在线
+  WARNING: '#b45309', // 警告/需关注（深琥珀，浅底下可读）
+  DANGER: '#dc3545', // 故障/严重/不可逆
+  INFO: '#0d6efd', // 主操作/信息
+  NEUTRAL: '#6c757d', // 中性/无数据/零值
+  ACCENT: '#0d6efd', // 工业蓝（与 INFO 同值：单蓝 accent 纪律）
 } as const;
 
-/** ZL 工业色板（深色模式，亮度提升对齐 Tailwind 400/500） */
+/** CLPM 语义色板（深色模式，亮度提升；E2 暗色校准时再全量复核对比度） */
 const DARK_COLORS = {
-  SUCCESS: '#34d399', // emerald-400
+  SUCCESS: '#4ade80', // green-400
   WARNING: '#fbbf24', // amber-400
   DANGER: '#fb7185', // rose-400
   INFO: '#60a5fa', // blue-400
-  NEUTRAL: '#94a3b8', // slate-400
-  ACCENT: '#2dd4bf', // teal-400
+  NEUTRAL: '#9ca3af', // gray-400
+  ACCENT: '#60a5fa', // blue-400
 } as const;
 
 /**
- * 可信度等级色板（浅色模式，对齐 confidence-badge.vue §7.15 A/B/C/D/E 五级）
- *
- * 设计文档 §7.15 颜色映射要求用 `--status-*` 语义变量响应主题切换。
- * v6.1 对齐 ZL 工业色板：A=emerald, B=teal, C=amber, D=orange, E=slate
+ * 可信度等级色板（浅色模式，UI/UX §3.1.6：A 青绿 / B 深蓝 / C 琥珀 / D 警示红 / E 冷灰）
  */
 const LIGHT_CONFIDENCE = {
-  A: '#10b981', // emerald-500（对齐 SUCCESS）
-  B: '#14b8a6', // teal-500（与 ACCENT #0d9488 同色相但更亮，区分 A/B）
-  C: '#f59e0b', // amber-500（对齐 WARNING）
-  D: '#f97316', // orange-500（介于 amber 与 rose 之间）
-  E: '#64748b', // slate-500（对齐 NEUTRAL）
+  A: '#198754',
+  B: '#0d6efd',
+  C: '#b45309',
+  D: '#dc3545',
+  E: '#6c757d',
 } as const;
 
 /** 可信度等级色板（深色模式，亮度提升对齐 ZL Tailwind 400） */

@@ -8,13 +8,15 @@
 
 CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆盖"监控 → 评估 → 诊断 → 整定"全流程，提供：
 
-- **工作台门户**：12 项 KPI 指标看板（3+1+8 体系）+ 低效回路 Top10 + 趋势摘要 + 待办异常
-- **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控 / 回路工作台单页四区（v2.7 IA 重构）
-- **性能评估**：KPI 看板 / 低效排行 / 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 异常值检测参数 / KPI 算法参数 / 执行记录） / 可信度标识 / 工业桌面端驾驶舱样式
-- **诊断中心**：诊断配置（阈值/启停真实生效）/ 异常诊断（振荡/阀门粘滞/参数过激过保守/外扰/质量异常/输出饱和 + 传感器故障与 Harris 指数，D-S 证据融合）/ 事件+体检双轨自动诊断 / Action Tracker（KPI A/B 对比 + 同步 PDF 建议书）/ 统计
-- **回路整定**：FOPDT/SOPDT/IPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 五种整定算法 + 闭环仿真
+- **工作台门户**：跨模块待办（诊断待处理/异常跟踪待办/验证超期/评估待执行/整定任务）+ 异常预测提前预警 + 数据链路健康
+- **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控（"较昨日"增量徽标 + 最需关注默认排序）/ 回路工作台单页四区（v2.7 IA 重构，页内趋势弹窗 + 虚拟滚动）
+- **性能评估**：KPI 看板 / TOP5 Bad Actor 治理台账（评分+责任人+处置+验证一表）/ 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 异常值检测参数 / KPI 算法参数——注册表 paramMeta 单源下发 + 重置默认） / 可信度标识 / 工业桌面端驾驶舱样式
+- **诊断中心**：诊断配置（阈值/启停真实生效）/ 异常诊断（振荡/阀门粘滞/参数过激过保守/外扰/质量异常/输出饱和 + 传感器故障与 Harris 指数，D-S 证据融合）/ 事件+体检双轨自动诊断 / Action Tracker（P1a 闭环状态机：PENDING→IN_PROGRESS→VERIFYING→CLOSED，超 24h 验证超期进待办；KPI A/B 对比 + 同步 PDF 建议书）/ 统计
+- **智能预警**：规则引擎（阈值/漂移/组合/可信度 DSL）+ 事件流（确认→处置→归档，误报标记/撤销）+ 顶栏通知铃铛 /ws/alerts 实时推送
+- **回路整定**：FOPDT/SOPDT/IPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 五种整定算法 + 闭环仿真 + time_constant 时间常数（L1 DISPLAY_ONLY）
 - **评估任务**：标准/自定义评估任务全生命周期（触发 → 进度跟踪 → 阶段时间线 → 通知），作为性能评估执行体系的一部分
-- **系统管理**：用户管理 / 审计日志 / 权限矩阵 / 自动报表
+- **系统管理**：用户管理 / 审计日志（操作/资源类型全量中文映射）/ 权限矩阵 / 自动报表
+- **体验基线**：表格密度三档（紧凑/标准/宽松按页持久化）/ 亮暗双主题（对比度 WCAG AA 达标）/ 可访问性（aria+键盘+reduced-motion）/ 锁屏 / 文案词表与色彩约定表单源
 
 平台遵循"只读 DCS、只输出建议"的安全边界，不直接写入 DCS。
 
@@ -32,7 +34,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（3409 passed，1 skipped，15 deselected，33 xfailed）+ vitest（415 passed）+ Playwright E2E（59 passed） |
+| 测试 | pytest（4139 passed，1 skipped，23 deselected，33 xfailed）+ vitest（466/466 全绿）+ Playwright E2E（94 例：75 passed 基线 + 13 环境类既有失败，见 06-UIUX 出口报告） |
 
 ## 快速开始（开发环境）
 
@@ -328,13 +330,14 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-07-29）：pytest 3409 passed / vitest 415 passed / E2E 59 passed / `alembic check` 退出码 0 |
+| 当前版本 | 产品文档基线 **v6.1**；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。全量测试基线（2026-08-09）：pytest 4139 passed / vitest 466 全绿 / E2E 75 passed（13 环境类既有失败归因见出口报告）/ `alembic check` 退出码 0 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 工作台门户、回路管理（AAS tag 同步/回路创建/tag 关联/监控）、性能评估（指标配置/引擎规则/看板/排行/统计）、诊断中心（指标配置/诊断/异常跟踪/统计）、系统管理；回路整定原型页面设计 |
 | 模块架构 | 7 模块（v2.7 IA 重构）：监控/回路/评估/诊断/整定/配置/系统；双轴导航（实体轴回路工作台 + 职能轴评估/诊断/整定），各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
-| 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED），诊断中心子模块 |
-| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.7 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互 |
+| 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → VERIFYING → CLOSED，P1a 闭环），诊断中心子模块 |
+| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.8 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表 v1.0 + 文案词表 v1.0） |
+| UI/UX 整改 | 2026-08-07~09 三轮（Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 清理），Nielsen 20/40→32/40；进度事实来源 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md`，出口报告 `p2-exit-report-2026-08-09.md` |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 

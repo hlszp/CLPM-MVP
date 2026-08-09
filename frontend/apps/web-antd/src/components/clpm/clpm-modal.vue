@@ -3,7 +3,7 @@
  * ClpmModal — 工业级增强弹窗（UI/UX v6.1 §9.8）
  *
  * 在 Ant Design Modal 基础上增强：
- * - 深色标题栏（slate-800 底 + 白色文字，工业软件专业感）
+ * - 浅色标题栏（slate-50 底 + 底部分隔线，整改 A-09 与全站弹窗统一）
  * - 可拖动（标题栏 mousedown 拖动整个弹窗）
  * - 可放大缩小（最大化/还原按钮，最大化铺满视口）
  * - 可复位（一键回到屏幕居中原始尺寸）
@@ -219,7 +219,7 @@ watch(
 </template>
 
 <style scoped>
-/* 深色标题栏 */
+/* 浅色标题栏（整改 A-09：与全站弹窗统一浅色，slate-50 底 + 底部分隔线） */
 .clpm-modal-header {
   display: flex;
   align-items: center;
@@ -227,10 +227,11 @@ watch(
   height: 40px;
   padding: 0 8px 0 16px;
   margin: -20px -24px 0;
-  color: #fff;
+  color: hsl(var(--foreground));
   cursor: grab;
   user-select: none;
-  background: hsl(222deg 47% 11%);
+  background: var(--color-slate-50);
+  border-bottom: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius, 0.5) * 1px) calc(var(--radius, 0.5) * 1px) 0
     0;
 }
@@ -265,21 +266,23 @@ watch(
   height: 32px;
   padding: 0;
   font-size: 14px;
-  color: rgb(255 255 255 / 70%);
+  color: hsl(var(--muted-foreground));
   cursor: pointer;
   background: transparent;
   border: none;
   border-radius: 4px;
-  transition: all 0.15s;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 }
 
 .clpm-modal-header__btn:hover {
-  color: #fff;
-  background: rgb(255 255 255 / 12%);
+  color: hsl(var(--foreground));
+  background: rgb(15 23 42 / 6%);
 }
 
 .clpm-modal-header__btn--close:hover {
-  color: #fff;
+  color: hsl(0 0% 100%);
   background: hsl(0deg 84% 60%);
 }
 </style>

@@ -234,14 +234,29 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
 });
 
 // ============ 等级元数据 ============
-/** 5 级性能定级颜色与中文标签（一级绿~五级红） */
-const LEVEL_META: Record<number, { color: string; label: string }> = {
-  1: { label: '一级', color: '#52c41a' }, // 绿
-  2: { label: '二级', color: '#1890ff' }, // 蓝
-  3: { label: '三级', color: '#faad14' }, // 黄
-  4: { label: '四级', color: '#fa8c16' }, // 橙
-  5: { label: '五级', color: '#f5222d' }, // 红
+/** 5 级性能定级中文标签（颜色走 levelColor 单源） */
+const LEVEL_META: Record<number, { label: string }> = {
+  1: { label: '一级' },
+  2: { label: '二级' },
+  3: { label: '三级' },
+  4: { label: '四级' },
+  5: { label: '五级' },
 };
+
+/**
+ * 等级默认展示色：与 use-score-color 的 fallbackByLevel 同口径
+ * （SUCCESS/INFO/WARNING/DANGER/DANGER，随明暗主题响应）
+ */
+function levelColor(level: number): string {
+  const fallbackByLevel: Record<number, string> = {
+    1: themeColors.value.SUCCESS,
+    2: themeColors.value.INFO,
+    3: themeColors.value.WARNING,
+    4: themeColors.value.DANGER,
+    5: themeColors.value.DANGER,
+  };
+  return fallbackByLevel[level] ?? themeColors.value.NEUTRAL;
+}
 
 /** 可信度等级颜色与标签 */
 const CONFIDENCE_META: Record<string, { color: string; label: string }> = {
@@ -266,7 +281,7 @@ function getRating(score: null | number | undefined): {
   for (const t of sorted) {
     if (score >= t.minScore && score < t.maxScore) {
       return {
-        color: LEVEL_META[t.level]?.color ?? 'default',
+        color: levelColor(t.level),
         label: LEVEL_META[t.level]?.label ?? `L${t.level}`,
         level: t.level,
       };
@@ -276,7 +291,7 @@ function getRating(score: null | number | undefined): {
   const top = sorted[0];
   if (top && score >= top.maxScore) {
     return {
-      color: LEVEL_META[top.level]?.color ?? 'default',
+      color: levelColor(top.level),
       label: LEVEL_META[top.level]?.label ?? `L${top.level}`,
       level: top.level,
     };
@@ -285,7 +300,7 @@ function getRating(score: null | number | undefined): {
   const bottom = sorted[sorted.length - 1];
   if (bottom && score < bottom.minScore) {
     return {
-      color: LEVEL_META[bottom.level]?.color ?? 'default',
+      color: levelColor(bottom.level),
       label: LEVEL_META[bottom.level]?.label ?? `L${bottom.level}`,
       level: bottom.level,
     };
@@ -621,7 +636,7 @@ async function loadThresholds() {
           name: names[lv - 1] ?? `L${lv}`,
           minScore: defaults[lv]?.min ?? 0,
           maxScore: defaults[lv]?.max ?? 100,
-          color: LEVEL_META[lv]?.color,
+          color: levelColor(lv),
         });
       }
     }
@@ -884,6 +899,8 @@ onMounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="isEmpty"
+      empty-text="暂无报表数据"
+      empty-reason="当前维度与日期没有报表数据；可切换日/周/月维度或选择其他日期。"
       @retry="loadData"
     >
       <div
@@ -894,7 +911,7 @@ onMounted(() => {
         <Tag
           v-for="lv in 5"
           :key="lv"
-          :color="LEVEL_META[lv]?.color"
+          :color="levelColor(lv)"
           class="mr-0"
         >
           {{ LEVEL_META[lv]?.label }} × {{ ratingDistribution[lv] ?? 0 }}

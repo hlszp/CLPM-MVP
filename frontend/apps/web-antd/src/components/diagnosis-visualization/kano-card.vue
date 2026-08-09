@@ -13,7 +13,7 @@ const props = defineProps<{
   data: DiagnosisApi.KanoData;
 }>();
 
-const { getSeriesColor, themeColors } = useEchartsPreset();
+const { getSeriesColor, themeColors, chartColors } = useEchartsPreset();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -27,9 +27,9 @@ const biasPercent = computed(() => (props.data.biasIndex * 100).toFixed(1));
 
 const options = computed(() => {
   const types = [
-    { name: 'P', value: props.data.countP, color: '#60a5fa' },
-    { name: 'N', value: props.data.countN, color: '#f472b6' },
-    { name: 'Z', value: props.data.countZ, color: '#94a3b8' },
+    { name: 'P', value: props.data.countP, color: themeColors.value.INFO },
+    { name: 'N', value: props.data.countN, color: themeColors.value.DANGER },
+    { name: 'Z', value: props.data.countZ, color: themeColors.value.NEUTRAL },
   ];
 
   const option: any = {
@@ -43,7 +43,7 @@ const options = computed(() => {
       axisLabel: {
         show: true,
         fontSize: 11,
-        color: '#6b7280',
+        color: chartColors.value.text,
       },
       axisLine: { show: false },
       axisTick: { show: false },
@@ -94,7 +94,7 @@ onMounted(() => {
       <div class="card-title">Kano 统计分析</div>
       <div
         class="status-badge"
-        :style="{ backgroundColor: statusColor, color: '#fff' }"
+        :style="{ backgroundColor: statusColor }"
       >
         {{ isBias ? '存在偏差' : '正常' }}
       </div>
@@ -145,13 +145,14 @@ onMounted(() => {
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: hsl(var(--foreground));
 }
 
 .status-badge {
   padding: 2px 10px;
   font-size: 11px;
   font-weight: 500;
+  color: hsl(0 0% 100%);
   border-radius: 4px;
 }
 
@@ -185,12 +186,12 @@ onMounted(() => {
 
 .metric-label {
   font-size: 11px;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
 }
 
 .metric-value {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: hsl(var(--foreground));
 }
 </style>

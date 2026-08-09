@@ -36,17 +36,25 @@ import {
 } from '#/api/alert';
 import {
   ClpmAlertDslEditor,
+  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import { ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
+import { ClpmEmptyState } from '#/components/clpm';
 
 defineOptions({ name: 'AlertRules' });
 
 // 规则类型中文标签（对齐 clpm-ui.ts 统一映射）
 const ruleTypeLabel = ALERT_RULE_TYPE_LABEL;
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('alert-rules');
 
 // 列表
 const loading = ref(false);
@@ -86,10 +94,11 @@ const editForm = reactive({
 const editLoading = ref(false);
 
 const ruleTypeColor: Record<AlertApi.RuleType, string> = {
-  THRESHOLD: 'blue',
-  DRIFT: 'cyan',
-  COMPOSITE: 'purple',
-  CONFIDENCE: 'orange',
+  // 整改 A-02 类别中性化：规则类型为中性分类，antd default 灰阶
+  THRESHOLD: 'default',
+  DRIFT: 'default',
+  COMPOSITE: 'default',
+  CONFIDENCE: 'default',
 };
 
 // DSL 模板
@@ -354,13 +363,28 @@ async function handleToggle(record: AlertApi.RuleItem) {
   }
 }
 
-async function handleDelete(record: AlertApi.RuleItem) {
+/** 删除规则：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01），删除后不可恢复 */
+const deleteOpen = ref(false);
+const deleteTarget = ref<AlertApi.RuleItem | null>(null);
+const deleteLoading = ref(false);
+
+function handleDelete(record: AlertApi.RuleItem) {
+  deleteTarget.value = record;
+  deleteOpen.value = true;
+}
+
+async function handleDeleteConfirm() {
+  if (!deleteTarget.value) return;
+  deleteLoading.value = true;
   try {
-    await deleteAlertRuleApi(record.ruleId);
+    await deleteAlertRuleApi(deleteTarget.value.ruleId);
     message.success('规则已删除');
+    deleteOpen.value = false;
     await loadRules();
   } catch {
     message.error('删除失败');
+  } finally {
+    deleteLoading.value = false;
   }
 }
 
@@ -416,7 +440,7 @@ function handleHelp() {
   showPageHelp({
     title: '预警规则 帮助',
     content:
-      '规则类型：阈值(THRESHOLD)、漂移(DRIFT)、组合(COMPOSITE)、可信度(CONFIDENCE)。DSL 以 JSON 描述触发条件、时效窗口、动作与抑制策略；字段键名保留英文以对齐后端校验。全局开关暂停后所有规则停止求值，但保留已产生的事件。',
+      '规则类型：阈值、漂移、组合、可信度。DSL 以 JSON 描述触发条件、时效窗口、动作与抑制策略；字段键名保留英文以对齐后端校验。全局开关暂停后所有规则停止求值，但保留已产生的事件。',
   });
 }
 
@@ -458,6 +482,13 @@ onMounted(() => {
           :column-configs="columnConfigs"
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
+        />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
         />
       </template>
     </ClpmPageToolbar>
@@ -525,7 +556,7 @@ onMounted(() => {
       }"
       :scroll="{ x: 1100 }"
       row-key="ruleId"
-      size="small"
+      :size="tableSize"
       @change="handlePageChange"
     >
       <template #bodyCell="{ column, record }">
@@ -548,15 +579,25 @@ onMounted(() => {
                 {{ record.isEnabled ? '停用' : '启用' }}
               </Button>
             </Popconfirm>
-            <Popconfirm
-              title="确认删除此规则？删除后不可恢复"
-              ok-type="danger"
-              @confirm="handleDelete(record as AlertApi.RuleItem)"
+            <Button
+              type="link"
+              size="small"
+              danger
+              @click="handleDelete(record as AlertApi.RuleItem)"
             >
-              <Button type="link" size="small" danger>删除</Button>
-            </Popconfirm>
+              删除
+            </Button>
           </Space>
         </template>
+      </template>
+      <template #emptyText>
+        <ClpmEmptyState
+          title="暂无预警规则"
+          description="点击右上角「新建规则」创建阈值/漂移/组合/可信度规则；新建前可用试运行（dry-run）验证触发效果。"
+          :actions="[
+            { label: '新建规则', primary: true, onClick: openCreateModal },
+          ]"
+        />
       </template>
     </Table>
 
@@ -637,5 +678,19 @@ onMounted(() => {
         </FormItem>
       </Form>
     </Modal>
+
+    <!-- 删除规则：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteOpen"
+      title="删除预警规则"
+      action="删除"
+      :target="deleteTarget?.ruleName ?? ''"
+      impact-scope="删除后不可恢复，该规则将不再参与巡检"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入规则名称以确认"
+      :loading="deleteLoading"
+      @confirm="handleDeleteConfirm"
+    />
   </Page>
 </template>

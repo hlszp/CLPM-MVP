@@ -96,6 +96,15 @@ const canAccessConfirm = computed(
   () => !!store.simulationResult || activeAnchor.value >= 3,
 );
 
+/** 锚点是否禁用（与门禁一致，供模板 tabindex/role 使用） */
+function isAnchorDisabled(anchor: number): boolean {
+  return (
+    (anchor === 1 && !canAccessPid.value) ||
+    (anchor === 2 && !canAccessSimulation.value) ||
+    (anchor === 3 && !canAccessConfirm.value)
+  );
+}
+
 /** 锚点切换（受门禁约束） */
 function handleAnchorChange(anchor: number) {
   if (anchor === 1 && !canAccessPid.value) {
@@ -267,12 +276,14 @@ watch(
           class="anchor-item"
           :class="{
             'anchor-item--active': activeAnchor === anchor.key,
-            'anchor-item--disabled':
-              (anchor.key === 1 && !canAccessPid) ||
-              (anchor.key === 2 && !canAccessSimulation) ||
-              (anchor.key === 3 && !canAccessConfirm),
+            'anchor-item--disabled': isAnchorDisabled(anchor.key),
           }"
+          :role="isAnchorDisabled(anchor.key) ? undefined : 'button'"
+          :tabindex="isAnchorDisabled(anchor.key) ? -1 : 0"
+          :aria-pressed="activeAnchor === anchor.key"
           @click="handleAnchorChange(anchor.key)"
+          @keydown.enter="handleAnchorChange(anchor.key)"
+          @keydown.space.prevent="handleAnchorChange(anchor.key)"
         >
           <div class="anchor-index">{{ anchor.key + 1 }}</div>
           <div class="anchor-body">
@@ -325,7 +336,9 @@ watch(
   background: hsl(var(--muted) / 30%);
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 6px;
-  transition: all 0.2s;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
 }
 
 .anchor-item:hover:not(.anchor-item--disabled) {

@@ -21,10 +21,56 @@ import { Popover } from 'ant-design-vue';
 import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
+import { alertWs } from '#/utils/alert-ws';
 import { realtimeWs } from '#/utils/realtime-ws';
 import LoginForm from '#/views/_core/authentication/login.vue';
 
 const notifications = ref<NotificationItem[]>([]);
+
+// ===== E4：通知铃铛接预警（/ws/alerts + 未确认事件拉取） =====
+/** 严重度 → 铃铛头像图标（emoji 避免新增图标依赖，与事件页口径一致） */
+const SEVERITY_AVATAR: Record<string, string> = {
+  CRITICAL: '🔴',
+  ERROR: '🟠',
+  INFO: '🔵',
+  WARN: '🟡',
+};
+
+function eventToNotification(item: {
+  eventId: string;
+  loopId: string;
+  ruleCode: string;
+  ruleName?: string;
+  severity?: string;
+  triggeredAt?: string;
+  triggeredValue?: number;
+}): NotificationItem {
+  return {
+    avatar: SEVERITY_AVATAR[item.severity ?? ''] ?? '🔵',
+    date: item.triggeredAt ?? '',
+    id: item.eventId,
+    isRead: false,
+    link: '/alert/events',
+    message: `回路 ${item.loopId} 触发值 ${item.triggeredValue ?? '—'}（${item.ruleCode}）`,
+    title: item.ruleName || item.ruleCode,
+  };
+}
+
+/** 初始加载：拉取未确认（ACTIVE）预警事件填充铃铛；无权限/失败静默为空态 */
+async function loadAlertNotifications() {
+  try {
+    const { getAlertEventsApi } = await import('#/api/alert');
+    const r = await getAlertEventsApi({
+      limit: 10,
+      status: 'ACTIVE',
+    });
+    notifications.value = (r.items ?? []).map(eventToNotification);
+  } catch {
+    // 未接前置空态（E4 约束：不显示假徽标）
+  }
+}
+
+let alertWsUnsubscribe: (() => void) | null = null;
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -63,6 +109,26 @@ onMounted(() => {
   wsMessageUnsubscribe = realtimeWs.onMessage(() => {
     wsLastRefresh.value = new Date().toISOString();
   });
+  // E4：预警铃铛——初始拉取 + WS 实时推送
+  loadAlertNotifications();
+  if (accessStore.accessToken) {
+    alertWs.connect(accessStore.accessToken);
+    alertWsUnsubscribe = alertWs.onMessage((msg) => {
+      if (msg.type !== 'alert') return;
+      notifications.value = [
+        eventToNotification({
+          eventId: `${msg.ruleCode}-${msg.triggeredAt ?? Date.now()}`,
+          loopId: msg.loopId ?? '',
+          ruleCode: msg.ruleCode ?? '',
+          ruleName: msg.ruleName,
+          severity: msg.severity,
+          triggeredAt: msg.triggeredAt,
+          triggeredValue: msg.triggeredValue,
+        }),
+        ...notifications.value,
+      ].slice(0, 20); // 列表上限 20 条，防内存膨胀
+    });
+  }
   // P2-03：首次登录自动触发 Onboarding Tour
   tourRef.value?.triggerIfFirstTime();
 });
@@ -70,6 +136,8 @@ onMounted(() => {
 onUnmounted(() => {
   wsConnectionUnsubscribe?.();
   wsMessageUnsubscribe?.();
+  alertWsUnsubscribe?.();
+  alertWs.disconnect();
   // 全局布局卸载时断开 WebSocket（用户登出/关闭页面）
   realtimeWs.disconnect();
 });
@@ -125,7 +193,9 @@ function handleMakeAll() {
   notifications.value.forEach((item) => (item.isRead = true));
 }
 
-const viewAll = () => {};
+const viewAll = () => {
+  router.push('/alert/events');
+};
 
 const handleClick = (item: NotificationItem) => {
   if (item.link) {
@@ -192,14 +262,21 @@ watch(
 <template>
   <BasicLayout @clear-preferences-and-logout="handleLogout">
     <template #user-dropdown>
-      <UserDropdown
-        :avatar
-        :menus
-        :text="userStore.userInfo?.realName"
-        :description="userStore.userInfo?.desc || ''"
-        @logout="handleLogout"
-        @clear-preferences-and-logout="handleLogout"
-      />
+      <!-- 整改 A-10：头像旁显示用户姓名（VbenAvatar 无图时回退显示姓名末两字，
+           "系统管理员"曾被误显示为"理员"，像截断 bug） -->
+      <div class="flex items-center gap-1">
+        <span class="max-w-32 truncate text-sm text-foreground">
+          {{ userStore.userInfo?.realName }}
+        </span>
+        <UserDropdown
+          :avatar
+          :menus
+          :text="userStore.userInfo?.realName"
+          :description="userStore.userInfo?.desc || ''"
+          @logout="handleLogout"
+          @clear-preferences-and-logout="handleLogout"
+        />
+      </div>
     </template>
     <template #notification>
       <Notification
@@ -227,21 +304,33 @@ watch(
           <div class="w-40">
             <div
               class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              role="button"
+              tabindex="0"
               @click="tourRef?.open()"
+              @keydown.enter="tourRef?.open()"
+              @keydown.space.prevent="tourRef?.open()"
             >
               <IconifyIcon icon="lucide:rocket" :size="14" />
               快速入门
             </div>
             <div
               class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              role="button"
+              tabindex="0"
               @click="tourRef?.open()"
+              @keydown.enter="tourRef?.open()"
+              @keydown.space.prevent="tourRef?.open()"
             >
               <IconifyIcon icon="lucide:book-open" :size="14" />
               术语表
             </div>
             <div
               class="flex cursor-pointer items-center gap-2 py-1.5 text-sm hover:text-blue-500"
+              role="button"
+              tabindex="0"
               @click="tourRef?.open()"
+              @keydown.enter="tourRef?.open()"
+              @keydown.space.prevent="tourRef?.open()"
             >
               <IconifyIcon icon="lucide:help-circle" :size="14" />
               FAQ

@@ -191,7 +191,7 @@ const items = computed(() => [
 .score-label {
   font-size: 14px;
   font-weight: 600;
-  color: var(--ant-color-text, #1f2937);
+  color: hsl(var(--foreground));
 }
 
 .score-value {
@@ -204,7 +204,7 @@ const items = computed(() => [
 .formula {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ant-color-text-tertiary, #9ca3af);
+  color: hsl(var(--muted-foreground));
 }
 
 .bars {
@@ -228,13 +228,13 @@ const items = computed(() => [
 .bar-label {
   font-size: 12px;
   font-weight: 500;
-  color: var(--ant-color-text, #374151);
+  color: hsl(var(--foreground));
 }
 
 .bar-weight {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ant-color-text-tertiary, #9ca3af);
+  color: hsl(var(--muted-foreground));
 }
 
 .bar-track {
@@ -273,12 +273,12 @@ const items = computed(() => [
 .bar-value {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ant-color-text-secondary, #6b7280);
+  color: hsl(var(--muted-foreground));
 }
 
 .bar-contrib {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ant-color-text-tertiary, #9ca3af);
+  color: hsl(var(--muted-foreground));
 }
 </style>

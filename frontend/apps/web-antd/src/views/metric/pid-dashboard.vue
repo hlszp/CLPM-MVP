@@ -8,6 +8,7 @@ import type {
   TimeWindow,
 } from '#/api';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -16,13 +17,19 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, message, Select, Table, Tooltip } from 'ant-design-vue';
+import { Button, Drawer, message, Select, Table, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
+import {
+  ClpmEmptyState,
+  ClpmBulletChart,
+  ClpmPageToolbar,
+  ClpmStandardActions,
+} from '#/components/clpm';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
-import { MODE_COLOR_MAP } from '#/composables/use-loop-palettes';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
+import { useConfigAccess } from '#/composables/use-config-access';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
@@ -32,6 +39,8 @@ import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effec
 defineOptions({ name: 'PidDashboard' });
 
 const { isDark, themeColors, chartColors } = useClpmTheme();
+const { canReadConfig } = useConfigAccess();
+const { axisBase, getTooltipPreset } = useEchartsPreset();
 const router = useRouter();
 
 const timeWindowOptions = [
@@ -52,6 +61,9 @@ const timeWindowLabel = computed(
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
 
+/** 整改 A-13：工厂导航树抽屉化（默认收起，释放主区 15% 宽度） */
+const treeDrawerOpen = ref(false);
+
 function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
   if (node) {
     selectedPlantNodeId.value = node.id;
@@ -60,6 +72,7 @@ function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
     selectedPlantNodeId.value = undefined;
     selectedPlantNodeName.value = '全厂';
   }
+  treeDrawerOpen.value = false;
   loadAll();
 }
 
@@ -94,7 +107,96 @@ const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 /** 各性能等级回路数分布（服务端 SQL 聚合，喂"回路等级占比"饼图） */
 const gradeDistribution = ref<GradeDistributionResult | null>(null);
 
-const top5Sort = ref<'asc' | 'desc'>('desc');
+// ===== 整改 A-13：分布行列表数据（donut/饼图退役） =====
+
+/** 回路状态统计行（MODE 分布；手动>0 时红色强调） */
+const modeRows = computed(() => {
+  const rt = autoRateRt.value;
+  const total = rt?.totalCount ?? 0;
+  const counts = rt?.modeCounts ?? {};
+  const order: { key: string; label: string }[] = [
+    { key: '1', label: '自动' },
+    { key: '2', label: '串级' },
+    { key: '3', label: '远程' },
+    { key: '4', label: '先控' },
+    { key: '0', label: '手动' },
+  ];
+  return order
+    .map((o) => {
+      const count = counts[o.key] ?? 0;
+      return {
+        label: o.label,
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0,
+        color: o.key === '0' ? 'var(--status-error)' : 'var(--color-slate-400)',
+        emphasis: o.key === '0' && count > 0,
+      };
+    })
+    .filter((r) => r.count > 0 || total === 0);
+});
+
+/** 等级分布行（按定级阈值顺序 + 数据不足；等级语义色） */
+const gradeRows = computed(() => {
+  const dist = gradeDistribution.value;
+  if (!dist) return [];
+  const distMap = dist as unknown as Record<string, number>;
+  const total = dist.total ?? 0;
+  const rows = [...effectiveThresholds.value]
+    .toSorted((a, b) => a.level - b.level)
+    .map((t) => {
+      const count = distMap[t.name] ?? 0;
+      return {
+        label: ratingLabels.value[String(t.level)] ?? t.name,
+        count,
+        pct: total > 0 ? Math.round((count / total) * 100) : 0,
+        color: gradeColor(t.level),
+      };
+    });
+  rows.push({
+    label: '数据不足',
+    count: dist.INCONCLUSIVE ?? 0,
+    pct:
+      total > 0 ? Math.round(((dist.INCONCLUSIVE ?? 0) / total) * 100) : 0,
+    color: 'var(--status-neutral)',
+  });
+  return rows;
+});
+
+// ===== 整改 F4：阀门运行区间异常（OP 行程越限 5%~95%） =====
+interface ValveAlertItem {
+  loopId: string;
+  tagName: string;
+  range: string;
+}
+const valveAlerts = ref<ValveAlertItem[]>([]);
+
+async function loadValveAlerts() {
+  try {
+    const { getLoopSnapshotsApi } = await import('#/api/metric');
+    const res = await getLoopSnapshotsApi({ page: 1, pageSize: 50 });
+    const items = res.items ?? [];
+    const alerts: ValveAlertItem[] = [];
+    for (const snap of items) {
+      const lo = snap.valveOpMin;
+      const hi = snap.valveOpMax;
+      if (lo === null || lo === undefined || hi === null || hi === undefined)
+        continue;
+      if (lo <= 5 || hi >= 95) {
+        alerts.push({
+          loopId: snap.loopId ?? '',
+          tagName: snap.loopTagName ?? snap.loopId ?? '—',
+          range: `OP ${lo.toFixed(1)}% ~ ${hi.toFixed(1)}%`,
+        });
+      }
+    }
+    valveAlerts.value = alerts;
+  } catch {
+    valveAlerts.value = [];
+  }
+}
+
+// 整改 C2-3：默认评分升序（最差优先），管理者注意力直达 Bad Actor
+const top5Sort = ref<'asc' | 'desc'>('asc');
 
 const aggregateData = computed(() => boardAggregate.value?.aggregate);
 
@@ -276,6 +378,20 @@ const top5Columns = [
     width: 65,
     align: 'right' as const,
   },
+  // C2-4 Bad Actor 治理台账：处置状态 + 责任人 + 效果验证
+  {
+    title: '治理状态',
+    dataIndex: 'governance',
+    key: 'governance',
+    width: 110,
+  },
+  {
+    title: '效果验证',
+    dataIndex: 'verified',
+    key: 'verified',
+    width: 70,
+    align: 'center' as const,
+  },
   {
     title: '',
     dataIndex: 'diagnosis',
@@ -300,88 +416,9 @@ const top5TableData = computed(() => {
   });
 });
 
-const gauge1Ref = ref<EchartsUIType>();
-const gauge2Ref = ref<EchartsUIType>();
-const gauge3Ref = ref<EchartsUIType>();
-const gauge4Ref = ref<EchartsUIType>();
-const gauge5Ref = ref<EchartsUIType>();
-const gauge6Ref = ref<EchartsUIType>();
 const trendChartRef = ref<EchartsUIType>();
-const pieChartRef = ref<EchartsUIType>();
-const statusPieChartRef = ref<EchartsUIType>();
 
-const { renderEcharts: renderGauge1 } = useEcharts(gauge1Ref);
-const { renderEcharts: renderGauge2 } = useEcharts(gauge2Ref);
-const { renderEcharts: renderGauge3 } = useEcharts(gauge3Ref);
-const { renderEcharts: renderGauge4 } = useEcharts(gauge4Ref);
-const { renderEcharts: renderGauge5 } = useEcharts(gauge5Ref);
-const { renderEcharts: renderGauge6 } = useEcharts(gauge6Ref);
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
-const { renderEcharts: renderPie } = useEcharts(pieChartRef);
-const { renderEcharts: renderStatusPie } = useEcharts(statusPieChartRef);
-
-function renderGaugeOption(
-  value: number,
-  color: string,
-  opts?: { inverted?: boolean; max?: number },
-) {
-  const max = opts?.max ?? 100;
-  // inverted=true 适用于"越低越好"的指标（如仪表故障率）：低值绿、高值红
-  const colorStops = opts?.inverted
-    ? [
-        [0.33, themeColors.value.SUCCESS],
-        [0.5, themeColors.value.WARNING],
-        [1, themeColors.value.DANGER],
-      ]
-    : [
-        [0.3, themeColors.value.DANGER],
-        [0.5, themeColors.value.WARNING],
-        [0.75, themeColors.value.INFO],
-        [1, themeColors.value.SUCCESS],
-      ];
-  return {
-    series: [
-      {
-        type: 'gauge' as const,
-        startAngle: 220,
-        endAngle: -40,
-        min: 0,
-        max,
-        splitNumber: 5,
-        radius: '108%',
-        center: ['50%', '55%'],
-        axisLine: {
-          lineStyle: {
-            width: 6,
-            color: colorStops,
-          },
-        },
-        pointer: {
-          length: '50%',
-          width: 3,
-          itemStyle: { color },
-        },
-        axisTick: {
-          distance: -11,
-          length: 5,
-          lineStyle: { color: chartColors.value.text, width: 1 },
-        },
-        splitLine: {
-          distance: -14,
-          length: 18,
-          lineStyle: { color: chartColors.value.text, width: 2 },
-        },
-        axisLabel: {
-          color: chartColors.value.text,
-          fontSize: 9,
-          distance: 14,
-        },
-        detail: { show: false },
-        data: [{ value, name: '' }],
-      },
-    ],
-  } as any;
-}
 
 function renderTrendChart() {
   const trend = boardTrend.value;
@@ -400,30 +437,24 @@ function renderTrendChart() {
 
   const showBar = timestamps.length <= 24;
 
+  // 整改 A-15：轴/工具提示走 ECharts 工业 preset；X 轴标签不再 45° 旋转（hideOverlap 自动抽稀）
   renderTrend({
     grid: { bottom: 40, left: '2%', right: '2%', top: 20, containLabel: true },
     xAxis: {
+      ...axisBase.value,
       type: 'category',
       data: timestamps,
-      axisLabel: {
-        color: chartColors.value.text,
-        fontSize: 10,
-        rotate: timestamps.length > 12 ? 45 : 0,
-      },
-      axisLine: { lineStyle: { color: chartColors.value.splitLine } },
       axisTick: { show: false },
     },
     yAxis: [
       {
+        ...axisBase.value,
         type: 'value',
         name: '回路数',
         nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
-        axisLabel: { color: chartColors.value.text, fontSize: 10 },
-        splitLine: {
-          lineStyle: { color: chartColors.value.splitLine, type: 'dashed' },
-        },
       },
       {
+        ...axisBase.value,
         type: 'value',
         name: '百分比(%)',
         nameTextStyle: { color: chartColors.value.text, fontSize: 11 },
@@ -431,6 +462,7 @@ function renderTrendChart() {
           color: chartColors.value.text,
           fontSize: 10,
           formatter: '{value}%',
+          hideOverlap: true,
         },
         max: 100,
         splitLine: { show: false },
@@ -560,10 +592,7 @@ function renderTrendChart() {
         },
       },
     ],
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-    },
+    tooltip: { ...getTooltipPreset(), trigger: 'axis', axisPointer: { type: 'cross' } },
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
@@ -572,152 +601,7 @@ function renderTrendChart() {
   });
 }
 
-function renderStatusPieChart() {
-  const rt = autoRateRt.value;
-  const total = rt?.totalCount ?? 0;
 
-  // 5 种标准 MODE 值的回路数与中文标签（对齐 app.constants.mode）
-  // 0=手动, 1=自动, 2=串级, 3=远程, 4=先控；配色统一走共享色板 use-loop-palettes
-  const MODE_LABELS: Record<string, string> = {
-    '0': '手动',
-    '1': '自动',
-    '2': '串级',
-    '3': '远程',
-    '4': '先控',
-  };
-
-  const modeCounts = rt?.modeCounts ?? {};
-  const allPieData = Object.keys(MODE_LABELS).map((modeKey) => {
-    return {
-      value: modeCounts[modeKey] ?? 0,
-      name: MODE_LABELS[modeKey] ?? modeKey,
-      itemStyle: {
-        color: MODE_COLOR_MAP[modeKey] ?? themeColors.value.NEUTRAL,
-      },
-    };
-  });
-
-  // 仅展示有数据的 MODE（全部为 0 时显示全部以便占位）
-  const pieData =
-    total === 0 ? allPieData : allPieData.filter((d) => (d.value ?? 0) > 0);
-  const legendNames = pieData.map((d) => d.name);
-
-  renderStatusPie({
-    tooltip: {
-      trigger: 'item',
-      position: 'right',
-      formatter: (params: any) => {
-        const percent =
-          total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
-        return `${params.name}: ${params.value} (${percent}%)`;
-      },
-    },
-    legend: {
-      bottom: 0,
-      textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: legendNames,
-    },
-    series: [
-      {
-        type: 'pie' as const,
-        radius: '70%',
-        center: ['50%', '45%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 4,
-          borderColor: chartColors.value.border,
-          borderWidth: 2,
-        },
-        label: { show: false },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 12,
-            fontWeight: 'bold',
-            color: chartColors.value.textStrong,
-          },
-        },
-        labelLine: { show: false },
-        data: pieData,
-      },
-    ],
-  });
-}
-
-function renderPieChart() {
-  const dist = gradeDistribution.value;
-  if (!dist) return;
-
-  const distMap = dist as unknown as Record<string, number>;
-  // 按等级顺序（1→5）生成饼图数据；INCONCLUSIVE（数据不足）以中性灰单列
-  const pieData = [
-    ...[...effectiveThresholds.value]
-      .toSorted((a, b) => a.level - b.level)
-      .map((t) => ({
-        value: distMap[t.name] ?? 0,
-        name: ratingLabels.value[String(t.level)] ?? t.name,
-        itemStyle: { color: gradeColor(t.level) },
-      })),
-    {
-      value: dist.INCONCLUSIVE ?? 0,
-      name: '数据不足',
-      itemStyle: { color: themeColors.value.NEUTRAL },
-    },
-  ];
-
-  const total = dist.total ?? 0;
-
-  renderPie({
-    tooltip: {
-      trigger: 'item',
-      formatter: (params: any) => {
-        const percent =
-          total > 0 ? ((params.value / total) * 100).toFixed(1) : 0;
-        return `${params.name}: ${params.value}个 (${percent}%)`;
-      },
-    },
-    legend: {
-      bottom: 0,
-      textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: pieData
-        .filter((d: { value: number }) => (d.value ?? 0) > 0 || total === 0)
-        .map((d: { name: string }) => d.name),
-    },
-    series: [
-      {
-        type: 'pie' as const,
-        radius: '70%',
-        center: ['50%', '45%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 4,
-          borderColor: chartColors.value.border,
-          borderWidth: 2,
-        },
-        label: { show: false },
-        emphasis: {
-          label: {
-            show: true,
-            fontSize: 12,
-            fontWeight: 'bold',
-            color: chartColors.value.textStrong,
-          },
-        },
-        labelLine: { show: false },
-        data: pieData.filter(
-          (d: { itemStyle: { color: string }; name: string; value: number }) =>
-            (d.value ?? 0) > 0 || total === 0,
-        ),
-      },
-    ],
-  });
-}
-
-/** 看板平均性能评分颜色（单一响应式源，随阈值配置与明暗主题联动） */
-const { color: avgScoreColor } = useScoreColor(
-  () => aggregateData.value?.avgScore,
-  gradingThresholds,
-);
 
 /**
  * 评分 → 颜色（表单元格等按值取色场景）。
@@ -770,10 +654,7 @@ async function loadBoard() {
     boardAggregate.value = aggregate;
     boardTrend.value = trend;
     await nextTick();
-    updateGauges();
     renderTrendChart();
-    renderPieChart();
-    renderStatusPieChart();
   } catch (error) {
     console.error('[CLPM] 加载看板数据失败:', error);
   }
@@ -787,8 +668,6 @@ async function loadAutoRateRt() {
     );
     autoRateRt.value = data;
     await nextTick();
-    updateGauges();
-    renderStatusPieChart();
   } catch {
     // ignore
   }
@@ -809,10 +688,49 @@ async function loadRanking() {
       limit: 5,
     });
     rankingList.value = items.filter((it) => it.includeInEvaluation !== false);
+    await loadGovernanceStatus();
   } catch {
     // 错误 toast 由拦截器统一处理；保留旧数据
   }
 }
+
+/**
+ * C2-4 Bad Actor 治理台账：TOP5 回路关联 Action Tracker 处置状态。
+ * 逐回路取最新一条 tracker（created_at 倒序），5 次轻量并行请求；
+ * 失败时静默降级为"未建单"展示，不影响主排行。
+ */
+const governanceMap = ref<Record<string, DiagnosisApi.TrackerItem | null>>({});
+
+async function loadGovernanceStatus() {
+  const { getTrackerListApi } = await import('#/api/diagnosis');
+  const entries = await Promise.all(
+    top5List.value.map(async (item) => {
+      try {
+        const r = await getTrackerListApi({
+          loopId: item.loopId,
+          page: 1,
+          pageSize: 1,
+          sortBy: 'created_at',
+        });
+        return [item.loopId, r.items?.[0] ?? null] as const;
+      } catch {
+        return [item.loopId, null] as const;
+      }
+    }),
+  );
+  governanceMap.value = Object.fromEntries(entries);
+}
+
+/** 治理状态中文名（词表：tracker 闭环状态机全态） */
+const GOVERNANCE_STATUS_LABEL: Record<string, string> = {
+  CLOSED: '已闭环',
+  IGNORED: '已忽略',
+  IMPLEMENTED: '已实施',
+  IN_PROGRESS: '处理中',
+  PENDING: '待处理',
+  REOPENED: '重开',
+  VERIFYING: '验证中',
+};
 
 /** timeWindow → 滚动窗口毫秒数（口径同后端 TIME_WINDOWS：today=近 24h） */
 const TIME_WINDOW_DURATION_MS: Record<string, number> = {
@@ -838,13 +756,14 @@ async function loadGradeDistribution() {
       endTime: end.toISOString(),
     });
     await nextTick();
-    renderPieChart();
   } catch {
-    // 错误 toast 由拦截器统一处理；饼图保留旧数据
+    // 错误 toast 由拦截器统一处理
   }
 }
 
 async function loadGradingThresholds() {
+  // 整改 C2-1：SPONSOR/EXPERT 无 /configs/* 读取权限，前置跳过避免 403 toast
+  if (!canReadConfig.value) return;
   try {
     const { getGradingThresholdsApi } = await import('#/api/metric');
     const data = await getGradingThresholdsApi();
@@ -859,51 +778,14 @@ function loadAll() {
   loadAutoRateRt();
   loadRanking();
   loadGradeDistribution();
-}
-
-function updateGauges() {
-  renderGauge1(
-    renderGaugeOption(autoRateRt.value?.rate ?? 0, themeColors.value.INFO),
-  );
-  renderGauge2(
-    renderGaugeOption(aggregateData.value?.avgScore ?? 0, avgScoreColor.value),
-  );
-  renderGauge3(
-    renderGaugeOption(
-      aggregateData.value?.autoModeRate ?? 0,
-      themeColors.value.SUCCESS,
-    ),
-  );
-  renderGauge4(
-    renderGaugeOption(
-      aggregateData.value?.stabilityRate ?? 0,
-      themeColors.value.WARNING,
-    ),
-  );
-  renderGauge5(
-    renderGaugeOption(
-      aggregateData.value?.goodValueRate ?? 0,
-      themeColors.value.SUCCESS,
-    ),
-  );
-  // 仪表故障率（越低越好）：inverted 配色 + max=30 聚焦低值区间
-  renderGauge6(
-    renderGaugeOption(
-      aggregateData.value?.instrumentFaultRate ?? 0,
-      themeColors.value.DANGER,
-      { inverted: true, max: 30 },
-    ),
-  );
+  loadValveAlerts();
 }
 
 watch(top5Sort, () => loadRanking());
 
 watch(isDark, () => {
   nextTick(() => {
-    updateGauges();
     renderTrendChart();
-    renderPieChart();
-    renderStatusPieChart();
   });
 });
 
@@ -949,6 +831,12 @@ onMounted(() => {
         subtitle="工厂级 KPI 仪表盘 · 趋势 · 等级分布 · TOP5"
         :loading="loading"
       >
+        <Button size="small" @click="treeDrawerOpen = true">
+          <template #icon>
+            <IconifyIcon icon="lucide:git-fork" />
+          </template>
+          {{ selectedPlantNodeName }}
+        </Button>
         <Select
           v-model:value="timeWindow"
           style="width: 140px"
@@ -962,94 +850,59 @@ onMounted(() => {
       </ClpmPageToolbar>
 
       <div class="clpm-pid-dashboard__body">
-        <PlantNodeTree
-          card-title="工厂导航"
-          :width="200"
-          @select="onTreeSelect"
-        />
 
         <div class="clpm-pid-dashboard__main">
           <div class="clpm-pid-dashboard__top-row">
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">实时自控率</div>
-              <EchartsUI ref="gauge1Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ autoRateRt?.rate ?? '--' }}%
-              </div>
-              <div
-                class="clpm-pid-dashboard__gauge-meta"
-                :class="{
-                  'clpm-pid-dashboard__gauge-meta--stale': rtStale,
-                }"
-              >
-                {{ rtReadAtText }}
-              </div>
+              <ClpmBulletChart
+                label="实时自控率"
+                :value="autoRateRt?.rate ?? null"
+                :meta="rtReadAtText"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">性能评分</div>
-              <EchartsUI ref="gauge2Ref" height="126px" />
-              <div
-                class="clpm-pid-dashboard__gauge-value"
-                :style="{ color: avgScoreColor }"
-              >
-                {{ aggregateData?.avgScore ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="性能评分"
+                :value="aggregateData?.avgScore ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">自控率</div>
-              <EchartsUI ref="gauge3Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ aggregateData?.autoModeRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="自控率"
+                :value="aggregateData?.autoModeRate ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">平稳率</div>
-              <EchartsUI ref="gauge4Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ aggregateData?.stabilityRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="平稳率"
+                :value="aggregateData?.stabilityRate ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">好值率</div>
-              <EchartsUI ref="gauge5Ref" height="126px" />
-              <div class="clpm-pid-dashboard__gauge-value">
-                {{ aggregateData?.goodValueRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="好值率"
+                :value="aggregateData?.goodValueRate ?? null"
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <div class="clpm-pid-dashboard__gauge-title">仪表故障率</div>
-              <EchartsUI ref="gauge6Ref" height="126px" />
-              <div
-                class="clpm-pid-dashboard__gauge-value"
-                :style="{
-                  color:
-                    (aggregateData?.instrumentFaultRate ?? 0) > 10
-                      ? themeColors.DANGER
-                      : themeColors.SUCCESS,
-                }"
-              >
-                {{ aggregateData?.instrumentFaultRate ?? '--' }}%
-              </div>
-              <div class="clpm-pid-dashboard__gauge-meta">
-                统计窗口：{{ timeWindowLabel }}
-              </div>
+              <ClpmBulletChart
+                label="仪表故障率"
+                :value="aggregateData?.instrumentFaultRate ?? null"
+                :max="30"
+                :fair="5"
+                :good="10"
+                invert
+                :meta="`统计窗口：${timeWindowLabel}`"
+              />
             </div>
           </div>
 
@@ -1068,7 +921,36 @@ onMounted(() => {
                   {{ rtReadAtText }}
                 </span>
               </div>
-              <EchartsUI ref="statusPieChartRef" height="200px" />
+              <div class="clpm-pid-dashboard__mode-list">
+                <div
+                  v-for="row in modeRows"
+                  :key="row.label"
+                  class="clpm-pid-dashboard__dist-row"
+                >
+                  <span class="clpm-pid-dashboard__dist-label">{{
+                    row.label
+                  }}</span>
+                  <span class="clpm-pid-dashboard__dist-track">
+                    <i
+                      :style="{
+                        width: `${row.pct}%`,
+                        background: row.color,
+                      }"
+                    ></i>
+                  </span>
+                  <span
+                    class="clpm-pid-dashboard__dist-count"
+                    :style="row.emphasis ? { color: 'var(--status-error)' } : {}"
+                    >{{ row.count }}</span
+                  >
+                </div>
+                <div
+                  v-if="modeRows.length === 0"
+                  class="py-6 text-center text-xs text-gray-400"
+                >
+                  暂无实时数据
+                </div>
+              </div>
             </div>
 
             <div
@@ -1086,7 +968,28 @@ onMounted(() => {
               <div class="clpm-pid-dashboard__card-header">
                 <span>回路等级占比</span>
               </div>
-              <EchartsUI ref="pieChartRef" height="240px" />
+              <div class="clpm-pid-dashboard__grade-list">
+                <div
+                  v-for="row in gradeRows"
+                  :key="row.label"
+                  class="clpm-pid-dashboard__dist-row"
+                >
+                  <span class="clpm-pid-dashboard__dist-label">{{
+                    row.label
+                  }}</span>
+                  <span class="clpm-pid-dashboard__dist-track">
+                    <i
+                      :style="{
+                        width: `${row.pct}%`,
+                        background: row.color,
+                      }"
+                    ></i>
+                  </span>
+                  <span class="clpm-pid-dashboard__dist-count">{{
+                    row.count
+                  }}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1122,12 +1025,18 @@ onMounted(() => {
                     <span>{{ record.smoothRate }}%</span>
                   </template>
                 </template>
+              <template #emptyText>
+                <ClpmEmptyState
+                  scene="data"
+                  description="当前装置节点与时间窗内无聚合明细；可切换时间窗或选择其他节点。"
+                />
+              </template>
               </Table>
             </div>
 
             <div class="clpm-pid-dashboard__top5-card">
               <div class="clpm-pid-dashboard__card-header">
-                <span>TOP5回路</span>
+                <span>TOP5 治理台账</span>
                 <Tooltip
                   :title="
                     top5Sort === 'desc'
@@ -1139,6 +1048,11 @@ onMounted(() => {
                     type="text"
                     size="small"
                     class="clpm-pid-dashboard__sort-btn"
+                    :aria-label="
+                      top5Sort === 'desc'
+                        ? '当前按评分最低排序，切换为最高'
+                        : '当前按评分最高排序，切换为最低'
+                    "
                     @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'"
                   >
                     <IconifyIcon
@@ -1163,11 +1077,57 @@ onMounted(() => {
                       record.score
                     }}</span>
                   </template>
+                  <!-- C2-4：治理状态（Action Tracker 处置状态 + 责任人） -->
+                  <template v-if="column.key === 'governance'">
+                    <template v-if="governanceMap[record.loopId]">
+                      <span class="text-xs">
+                        {{
+                          GOVERNANCE_STATUS_LABEL[
+                            governanceMap[record.loopId]!.actionStatus
+                          ] ?? governanceMap[record.loopId]!.actionStatus
+                        }}
+                      </span>
+                      <span
+                        v-if="
+                          governanceMap[record.loopId]!.assignee ??
+                          governanceMap[record.loopId]!.triggeredBy
+                        "
+                        class="ml-1 text-xs text-gray-400"
+                      >
+                        ·
+                        {{
+                          governanceMap[record.loopId]!.assignee ??
+                          governanceMap[record.loopId]!.triggeredBy
+                        }}
+                      </span>
+                    </template>
+                    <span v-else class="text-xs text-gray-400">未建单</span>
+                  </template>
+                  <!-- C2-4：效果验证（T+7d 自动回写口径） -->
+                  <template v-if="column.key === 'verified'">
+                    <template v-if="governanceMap[record.loopId]">
+                      <span
+                        v-if="governanceMap[record.loopId]!.effectVerified === true"
+                        class="text-xs text-emerald-600"
+                        >改善</span
+                      >
+                      <span
+                        v-else-if="
+                          governanceMap[record.loopId]!.effectVerified === false
+                        "
+                        class="text-xs text-rose-600"
+                        >未改善</span
+                      >
+                      <span v-else class="text-xs text-gray-400">未验证</span>
+                    </template>
+                    <span v-else class="text-xs text-gray-400">—</span>
+                  </template>
                   <template v-if="column.key === 'diagnosis'">
                     <Button
                       type="text"
                       size="small"
                       :loading="diagnosisLoading"
+                      aria-label="进入诊断"
                       @click="handleDiagnosis(record.loopId)"
                     >
                       <template #icon>
@@ -1176,7 +1136,41 @@ onMounted(() => {
                     </Button>
                   </template>
                 </template>
+              <template #emptyText>
+                <ClpmEmptyState
+                  scene="data"
+                  description="当前时间窗内暂无参评回路快照；可先发起性能评估。"
+                />
+              </template>
               </Table>
+            </div>
+
+            <!-- 整改 F4：阀门运行区间异常卡 -->
+            <div class="clpm-pid-dashboard__valve-card">
+              <div class="clpm-pid-dashboard__card-header">
+                <span>阀门运行区间异常</span>
+                <span class="clpm-pid-dashboard__card-meta">
+                  {{ valveAlerts.length }} 回路越限
+                </span>
+              </div>
+              <div
+                v-if="valveAlerts.length === 0"
+                class="py-4 text-center text-xs text-gray-400"
+              >
+                无越限回路（OP 行程超出 5%~95% 为越限）
+              </div>
+              <div
+                v-for="item in valveAlerts"
+                :key="item.loopId"
+                class="clpm-pid-dashboard__valve-row"
+              >
+                <span class="font-mono text-xs">{{ item.tagName }}</span>
+                <span
+                  class="text-xs"
+                  :style="{ color: 'var(--status-warning)' }"
+                  >{{ item.range }}</span
+                >
+              </div>
             </div>
           </div>
 
@@ -1188,6 +1182,16 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 整改 A-13：工厂导航抽屉 -->
+    <Drawer
+      v-model:open="treeDrawerOpen"
+      title="工厂导航"
+      placement="left"
+      :width="300"
+    >
+      <PlantNodeTree card-title="" :width="260" @select="onTreeSelect" />
+    </Drawer>
   </Page>
 </template>
 
@@ -1358,7 +1362,7 @@ onMounted(() => {
 .clpm-pid-dashboard__table-card {
   display: flex;
   flex-direction: column;
-  width: 50%;
+  width: 40%;
   padding: 8px 12px;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
@@ -1380,7 +1384,7 @@ onMounted(() => {
 .clpm-pid-dashboard__top5-card {
   display: flex;
   flex-direction: column;
-  width: 50%;
+  width: 32%;
   padding: 8px 12px;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
@@ -1389,6 +1393,66 @@ onMounted(() => {
 
 .clpm-pid-dashboard__top5-card :deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
+}
+
+/* 整改 A-13：分布行列表（donut/饼图替代） */
+.clpm-pid-dashboard__dist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.clpm-pid-dashboard__dist-label {
+  width: 56px;
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-pid-dashboard__dist-track {
+  flex: 1;
+  height: 8px;
+  background: var(--color-slate-100);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.clpm-pid-dashboard__dist-track i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.clpm-pid-dashboard__dist-count {
+  width: 32px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 整改 F4：阀门运行区间异常卡 */
+.clpm-pid-dashboard__valve-card {
+  display: flex;
+  flex-direction: column;
+  width: 28%;
+  padding: 8px 12px;
+  background: hsl(var(--card) / 80%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.clpm-pid-dashboard__valve-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px dashed hsl(var(--border));
+}
+
+.clpm-pid-dashboard__valve-row:last-child {
+  border-bottom: none;
 }
 
 /* 评级标签底色为行内 style（等级色 + 10% 透明背景，色值随阈值配置），

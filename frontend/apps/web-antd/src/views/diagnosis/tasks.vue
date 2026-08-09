@@ -29,6 +29,7 @@ import {
   Input,
   message,
   Modal,
+  Popconfirm,
   Progress,
   Select,
   Table,
@@ -48,11 +49,14 @@ import {
 import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
+  ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmEmptyState,
   ClpmLoopLink,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useTableDensity } from '#/composables/use-table-density';
 import { DIAGNOSIS_LABEL_OPTIONS } from '#/constants/diagnosis';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatTime } from '#/utils/format';
@@ -60,6 +64,11 @@ import { formatTime } from '#/utils/format';
 defineOptions({ name: 'DiagnosisTasks' });
 
 const { themeColors } = useClpmTheme();
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'diagnosis-tasks',
+);
 
 const loading = ref(false);
 const taskList = ref<DiagnosisApi.TaskItem[]>([]);
@@ -414,18 +423,11 @@ async function handleTriggerConfirm() {
   }
 }
 
-/** 取消：仅 PENDING/RUNNING 可取消 */
+/** 取消：仅 PENDING/RUNNING 可取消（可逆轻操作走 Popconfirm 确认） */
 async function handleCancel(record: DiagnosisApi.TaskItem) {
-  Modal.confirm({
-    title: '确认取消',
-    content: `确认取消回路 ${record.tagName} 的诊断任务？`,
-    okType: 'danger',
-    onOk: async () => {
-      await cancelDiagnosisTaskApi(record.taskId);
-      message.success('任务已取消');
-      await loadTasks();
-    },
-  });
+  await cancelDiagnosisTaskApi(record.taskId);
+  message.success('任务已取消');
+  await loadTasks();
 }
 
 /** 详情：跳转到诊断详情页 */
@@ -455,57 +457,78 @@ function diagLabelText(label: string): string {
 
 // ============ 批量操作 ============ 诊断 / 归档 / 删除（确认弹窗） ============
 const rowDiagnoseLoading = ref<string>('');
+/** 行级诊断（可逆轻操作走 Popconfirm 确认） */
 async function handleRowDiagnose(record: DiagnosisApi.TaskItem) {
-  Modal.confirm({
-    title: '确认诊断',
-    content: `确认对回路 ${record.tagName} 执行诊断？`,
-    onOk: async () => {
-      rowDiagnoseLoading.value = record.taskId;
-      try {
-        await runDiagnosisTaskApi(record.taskId);
-        message.success(`已执行回路 ${record.tagName} 的诊断`);
-        await loadTasks();
-        startPolling();
-      } catch {
-        // 错误已由拦截器处理
-      } finally {
-        rowDiagnoseLoading.value = '';
-      }
-    },
-  });
+  rowDiagnoseLoading.value = record.taskId;
+  try {
+    await runDiagnosisTaskApi(record.taskId);
+    message.success(`已执行回路 ${record.tagName} 的诊断`);
+    await loadTasks();
+    startPolling();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    rowDiagnoseLoading.value = '';
+  }
 }
 
-async function handleArchive(taskId: string) {
-  Modal.confirm({
-    title: '确认归档',
-    content: '归档后任务将从诊断任务列表移除，可在诊断记录中查看。',
-    onOk: async () => {
-      await archiveDiagnosisTaskApi(taskId);
-      message.success('任务已归档');
-      await loadTasks();
-    },
-  });
+/** 归档：软操作可恢复（可在诊断记录中查看），危险确认弹窗免确认码 */
+const archiveOpen = ref(false);
+const archiveTarget = ref<DiagnosisApi.TaskItem | null>(null);
+const archiveLoading = ref(false);
+
+function handleArchive(record: DiagnosisApi.TaskItem) {
+  archiveTarget.value = record;
+  archiveOpen.value = true;
 }
 
-async function handleDelete(record: DiagnosisApi.TaskItem) {
-  Modal.confirm({
-    title: '确认删除',
-    content: `确认删除回路 ${record.tagName} 的诊断任务？`,
-    okType: 'danger',
-    onOk: async () => {
-      await deleteDiagnosisTaskApi(record.taskId);
-      message.success('任务已删除');
-      selectedRowKeys.value = selectedRowKeys.value.filter(
-        (k) => k !== record.taskId,
-      );
-      await loadTasks();
-    },
-  });
+async function handleArchiveConfirm() {
+  if (!archiveTarget.value) return;
+  archiveLoading.value = true;
+  try {
+    await archiveDiagnosisTaskApi(archiveTarget.value.taskId);
+    message.success('任务已归档');
+    archiveOpen.value = false;
+    await loadTasks();
+  } finally {
+    archiveLoading.value = false;
+  }
 }
 
-/** 批量删除：跳过执行中（RUNNING）任务，须先取消 */
+/** 行级删除：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） */
+const deleteOpen = ref(false);
+const deleteTarget = ref<DiagnosisApi.TaskItem | null>(null);
+const deleteLoading = ref(false);
+
+function handleDelete(record: DiagnosisApi.TaskItem) {
+  deleteTarget.value = record;
+  deleteOpen.value = true;
+}
+
+async function handleDeleteConfirm() {
+  if (!deleteTarget.value) return;
+  const record = deleteTarget.value;
+  deleteLoading.value = true;
+  try {
+    await deleteDiagnosisTaskApi(record.taskId);
+    message.success('任务已删除');
+    selectedRowKeys.value = selectedRowKeys.value.filter(
+      (k) => k !== record.taskId,
+    );
+    deleteOpen.value = false;
+    await loadTasks();
+  } finally {
+    deleteLoading.value = false;
+  }
+}
+
+/** 批量删除：跳过执行中（RUNNING）任务，须先取消；危险确认弹窗免确认码 */
 const batchDeleteLoading = ref(false);
-async function handleBatchDelete() {
+const batchDeleteOpen = ref(false);
+const batchDeleteTargets = ref<DiagnosisApi.TaskItem[]>([]);
+const batchDeleteSkipped = ref(0);
+
+function handleBatchDelete() {
   const selectedAll = taskList.value.filter((t) =>
     selectedRowKeys.value.includes(t.taskId),
   );
@@ -521,36 +544,34 @@ async function handleBatchDelete() {
     );
     return;
   }
-  Modal.confirm({
-    title: '确认批量删除',
-    content: `确认删除 ${selected.length} 个诊断任务？${
-      skipped > 0 ? `（已跳过 ${skipped} 个执行中任务）` : ''
-    }`,
-    okType: 'danger',
-    onOk: async () => {
-      batchDeleteLoading.value = true;
-      try {
-        // allSettled 语义 + 并发限制：单项失败不中断其余删除
-        const { fulfilled, rejected } = await runWithConcurrency(
-          selected,
-          (t) => deleteDiagnosisTaskApi(t.taskId),
-        );
-        if (rejected === 0) {
-          message.success(`已删除 ${fulfilled} 个任务`);
-        } else {
-          message.warning(
-            `已删除 ${fulfilled} 个任务，${rejected} 个失败（错误已记录）`,
-          );
-        }
-        selectedRowKeys.value = [];
-        await loadTasks();
-      } catch {
-        // 错误已由拦截器处理
-      } finally {
-        batchDeleteLoading.value = false;
-      }
-    },
-  });
+  batchDeleteTargets.value = selected;
+  batchDeleteSkipped.value = skipped;
+  batchDeleteOpen.value = true;
+}
+
+async function handleBatchDeleteConfirm() {
+  batchDeleteLoading.value = true;
+  try {
+    // allSettled 语义 + 并发限制：单项失败不中断其余删除
+    const { fulfilled, rejected } = await runWithConcurrency(
+      batchDeleteTargets.value,
+      (t) => deleteDiagnosisTaskApi(t.taskId),
+    );
+    if (rejected === 0) {
+      message.success(`已删除 ${fulfilled} 个任务`);
+    } else {
+      message.warning(
+        `已删除 ${fulfilled} 个任务，${rejected} 个失败（错误已记录）`,
+      );
+    }
+    selectedRowKeys.value = [];
+    batchDeleteOpen.value = false;
+    await loadTasks();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchDeleteLoading.value = false;
+  }
 }
 
 /** 批量诊断：对选中的任务行执行诊断（不创建新任务） */
@@ -770,6 +791,14 @@ onBeforeUnmount(() => {
           /></template>
           批量删除
         </Button>
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          class="ml-auto"
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </div>
 
       <Table
@@ -786,7 +815,7 @@ onBeforeUnmount(() => {
         :row-key="(record: DiagnosisApi.TaskItem) => record.taskId"
         :row-selection="rowSelection"
         :scroll="{ x: 1030 }"
-        size="middle"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #emptyText>
@@ -849,7 +878,7 @@ onBeforeUnmount(() => {
                 :show-info="false"
                 size="small"
                 status="active"
-                stroke-color="#1677ff"
+                stroke-color="var(--status-info)"
                 style="width: 60px"
               />
             </div>
@@ -873,7 +902,7 @@ onBeforeUnmount(() => {
                       record.status === 'FAILED' && record.errorMessage
                     "
                   >
-                    <div style="color: #ff7875">
+                    <div style="color: var(--status-error)">
                       错误：{{ record.errorMessage }}
                     </div>
                   </template>
@@ -887,24 +916,35 @@ onBeforeUnmount(() => {
           <template v-else-if="column.key === 'action'">
             <!-- 诊断 → 取消 → 详情 → 归档 → 删除，基于状态机控制可用性 -->
             <!-- 行级"诊断"对齐后端 POST /tasks/{id}/run require_roles("ADMIN","IC_ENGINEER","PE_ENGINEER") -->
-            <Button
-              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
-              type="link"
-              size="small"
-              :disabled="!canDiagnose(record.status as DiagnosisApi.TaskStatus)"
-              :loading="rowDiagnoseLoading === record.taskId"
-              @click="handleRowDiagnose(record as DiagnosisApi.TaskItem)"
+            <Popconfirm
+              :title="`确认对回路 ${record.tagName} 执行诊断？`"
+              @confirm="handleRowDiagnose(record as DiagnosisApi.TaskItem)"
             >
-              诊断
-            </Button>
-            <Button
-              type="link"
-              size="small"
-              :disabled="!canCancel(record.status as DiagnosisApi.TaskStatus)"
-              @click="handleCancel(record as DiagnosisApi.TaskItem)"
+              <Button
+                v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
+                type="link"
+                size="small"
+                :disabled="
+                  !canDiagnose(record.status as DiagnosisApi.TaskStatus)
+                "
+                :loading="rowDiagnoseLoading === record.taskId"
+              >
+                诊断
+              </Button>
+            </Popconfirm>
+            <Popconfirm
+              :title="`确认取消回路 ${record.tagName} 的诊断任务？`"
+              ok-type="danger"
+              @confirm="handleCancel(record as DiagnosisApi.TaskItem)"
             >
-              取消
-            </Button>
+              <Button
+                type="link"
+                size="small"
+                :disabled="!canCancel(record.status as DiagnosisApi.TaskStatus)"
+              >
+                取消
+              </Button>
+            </Popconfirm>
             <Button
               v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
               type="link"
@@ -920,7 +960,7 @@ onBeforeUnmount(() => {
               type="link"
               size="small"
               :disabled="!canArchive(record.status as DiagnosisApi.TaskStatus)"
-              @click="handleArchive(record.taskId)"
+              @click="handleArchive(record as DiagnosisApi.TaskItem)"
             >
               归档
             </Button>
@@ -1050,5 +1090,45 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </Modal>
+
+    <!-- 归档诊断任务：危险确认弹窗（软操作可恢复，免确认码） -->
+    <ClpmDangerConfirmModal
+      v-model:open="archiveOpen"
+      title="归档诊断任务"
+      action="归档"
+      :target="archiveTarget?.tagName ?? ''"
+      impact-scope="归档后任务将从诊断任务列表移除，可在诊断记录中查看"
+      rollback-tip="此操作为软归档，记录仍可在诊断记录页查看"
+      :require-confirm-code="false"
+      :loading="archiveLoading"
+      @confirm="handleArchiveConfirm"
+    />
+
+    <!-- 删除诊断任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteOpen"
+      title="删除诊断任务"
+      action="删除"
+      :target="deleteTarget?.tagName ?? ''"
+      impact-scope="删除后该回路的诊断任务将不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      confirm-code-placeholder="请输入回路 tag 以确认"
+      :loading="deleteLoading"
+      @confirm="handleDeleteConfirm"
+    />
+
+    <!-- 批量删除诊断任务：危险确认弹窗（批量软确认，免确认码） -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDeleteOpen"
+      title="批量删除诊断任务"
+      action="删除"
+      :target="`选中的 ${batchDeleteTargets.length} 个任务`"
+      :impact-scope="`删除后这些诊断任务将不可恢复${batchDeleteSkipped > 0 ? `（已跳过 ${batchDeleteSkipped} 个执行中任务）` : ''}`"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      :require-confirm-code="false"
+      :loading="batchDeleteLoading"
+      @confirm="handleBatchDeleteConfirm"
+    />
   </Page>
 </template>

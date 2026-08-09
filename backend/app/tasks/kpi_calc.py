@@ -58,9 +58,6 @@ logger = logging.getLogger(__name__)
 ALGORITHM_VERSION = "KPI_CALC_v2.0"
 ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 
-# 数据不足阈值：Good 数据占比 < 20% 视为 INCONCLUSIVE
-MIN_GOOD_RATIO = 0.20
-
 # 单个 KPI 任务的数据库并发预算。Celery 可同时运行多个任务，且 FastAPI
 # 也需要连接余量，因此不能把 PostgreSQL 的连接上限全部交给单次批处理。
 CONCURRENCY = 5
@@ -102,6 +99,8 @@ _DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
     "valve_operating_range": "valve_operating_range",  # 虚拟条目（见上方注释）
     "setpoint_crossing_count": "setpoint_crossing_count",
     "oscillation_amplitude": "oscillation_amplitude",
+    # F5：时间常数（L1 DISPLAY_ONLY，复用 tuning_identification 相关分析）
+    "time_constant": "time_constant",
 }
 
 # Calculator 代码 → DB 列名（反向映射）
@@ -1236,6 +1235,7 @@ async def _calculate_loop_kpi(
         valve_op_max=valve_op_max,
         setpoint_crossing_count=kpi_values.get("setpoint_crossing_count"),
         oscillation_amplitude=kpi_values.get("oscillation_amplitude"),
+        time_constant=kpi_values.get("time_constant"),
         **lineage_info,
     )
 
@@ -1442,6 +1442,8 @@ def _compute_kpis_three_layer(
         "valve_operating_range",
         "setpoint_crossing_count",
         "oscillation_amplitude",
+        # F5：时间常数（DISPLAY_ONLY，激励不足时 INCONCLUSIVE 保持 NULL）
+        "time_constant",
     ]
 
     for db_code in layer1_db_codes:
@@ -2053,6 +2055,7 @@ async def _save_snapshot(
     valve_op_max: Decimal | None = None,
     setpoint_crossing_count: Decimal | None = None,
     oscillation_amplitude: Decimal | None = None,
+    time_constant: Decimal | None = None,
 ) -> dict:
     """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
 
@@ -2060,7 +2063,8 @@ async def _save_snapshot(
     不再通过 select-then-add 模式，减少一次查询并避免并发竞争。
     7 个数据血缘字段（ideal_settling_time/algorithm_version/sampling_freq/
     quality_policy/valid_rate/confidence_level/data_lineage）随 UPSERT 写入。
-    Phase 1 新增 15 个指标列随 UPSERT 写入（time_constant 无计算器，保持 NULL）。
+    Phase 1 新增 15 个指标列随 UPSERT 写入；F5 起 time_constant 由计算器写入
+    （激励不足窗口保持 NULL）。
     实际写入行的 id 通过 ``RETURNING id`` 随 UPSERT 一并取回（新增与
     UPDATE 分支均返回），不再单独 SELECT 回查。
     """
@@ -2107,6 +2111,7 @@ async def _save_snapshot(
         "valve_op_max": valve_op_max,
         "setpoint_crossing_count": setpoint_crossing_count,
         "oscillation_amplitude": oscillation_amplitude,
+        "time_constant": time_constant,
     }
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
@@ -2227,6 +2232,7 @@ async def _save_custom_snapshot(
     valve_op_max: Decimal | None = None,
     setpoint_crossing_count: Decimal | None = None,
     oscillation_amplitude: Decimal | None = None,
+    time_constant: Decimal | None = None,
 ) -> dict:
     """幂等写入自定义任务快照（select-then-add 模式）.
 
@@ -2279,6 +2285,7 @@ async def _save_custom_snapshot(
         existing.valve_op_max = valve_op_max
         existing.setpoint_crossing_count = setpoint_crossing_count
         existing.oscillation_amplitude = oscillation_amplitude
+        existing.time_constant = time_constant
         snapshot_id = str(existing.id)
     else:
         snapshot_id = str(uuid4())
@@ -2324,6 +2331,7 @@ async def _save_custom_snapshot(
             valve_op_max=valve_op_max,
             setpoint_crossing_count=setpoint_crossing_count,
             oscillation_amplitude=oscillation_amplitude,
+            time_constant=time_constant,
         )
         db.add(snapshot)
 

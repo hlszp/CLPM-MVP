@@ -36,7 +36,9 @@ import {
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
-import { formatTime } from '#/utils/format';
+import dayjs from 'dayjs';
+
+import { formatTime, normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
 
@@ -58,6 +60,8 @@ const lastRefresh = ref('');
 const failedCount = ref(0);
 const diagnosisPending = ref(0);
 const trackerActive = ref(0);
+/** C1-3：验证中超期条目数（VERIFYING > 24h 未闭环） */
+const verifyOverdue = ref(0);
 const metricPending = ref(0);
 const tuningTotal = ref(0);
 
@@ -66,13 +70,14 @@ const linkHealth = ref<DataSourceApi.DataSourceHealth | null>(null);
 const linkHealthLoading = ref(false);
 
 const todoKpiItems = computed<KpiStripItem[]>(() => {
+  // 整改 A-03：零值中性——待办为 0 时不着色（零待办是好状态）
   const items: KpiStripItem[] = [
     {
       key: 'diagnosis',
       label: '诊断待处理',
       value: diagnosisPending.value,
       unit: '条',
-      status: 'warning',
+      status: diagnosisPending.value > 0 ? 'warning' : 'neutral',
       clickable: true,
     },
     {
@@ -80,7 +85,15 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       label: '异常跟踪待办',
       value: trackerActive.value,
       unit: '条',
-      status: 'danger',
+      status: trackerActive.value > 0 ? 'danger' : 'neutral',
+      clickable: true,
+    },
+    {
+      key: 'verifyOverdue',
+      label: '验证超期',
+      value: verifyOverdue.value,
+      unit: '条',
+      status: verifyOverdue.value > 0 ? 'danger' : 'neutral',
       clickable: true,
     },
     {
@@ -88,7 +101,7 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       label: '评估待执行',
       value: metricPending.value,
       unit: '条',
-      status: 'primary',
+      status: metricPending.value > 0 ? 'primary' : 'neutral',
       clickable: true,
     },
   ];
@@ -102,7 +115,8 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
       clickable: true,
     });
   }
-  return items;
+  // 整改 A-12：非零待办优先展示（稳定排序）
+  return items.sort((a, b) => Number(Number(b.value) > 0) - Number(Number(a.value) > 0));
 });
 
 function handleTodoClick(item: KpiStripItem) {
@@ -111,6 +125,8 @@ function handleTodoClick(item: KpiStripItem) {
     metric: '/metric/tasks',
     tracker: '/diagnosis/tracker',
     tuning: '/tuning/workbench',
+    // C1-3：验证超期直达 tracker 验证中筛选
+    verifyOverdue: '/diagnosis/tracker?status=VERIFYING',
   };
   const path = map[item.key];
   if (path) router.push(path);
@@ -137,6 +153,8 @@ async function loadCounts() {
         });
         const sc = r.aggregates?.statusCounts ?? {};
         trackerActive.value = (sc.PENDING ?? 0) + (sc.IN_PROGRESS ?? 0);
+        // C1-3：验证中超期（VERIFYING > 24h 未闭环）进待办
+        verifyOverdue.value = r.aggregates?.verifyOverdueCount ?? 0;
       })(),
       (async () => {
         const r = await getTaskListApi({
@@ -242,7 +260,7 @@ const { toolbarItems } = usePageToolbar(() => ({
 <template>
   <Page>
     <ClpmPageToolbar
-      title="工作台"
+      title="系统概览"
       subtitle="跨模块待办门户"
       :loading="loading"
       :last-refresh="lastRefresh"
@@ -325,7 +343,11 @@ const { toolbarItems } = usePageToolbar(() => ({
             :title="formatTime(linkHealth.lastSyncAt)"
           >
             <span class="text-sm font-medium font-mono">
-              {{ formatTime(linkHealth.lastSyncAt).slice(5, 16) }}
+              {{
+                dayjs(normalizeUtcTimestamp(linkHealth.lastSyncAt)).format(
+                  'MM-DD HH:mm:ss',
+                )
+              }}
             </span>
           </Tooltip>
           <span

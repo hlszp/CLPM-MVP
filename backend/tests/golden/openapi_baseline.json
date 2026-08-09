@@ -8421,6 +8421,1491 @@
         }
       }
     },
+    "/api/v1/alert/rules": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "List Rules Endpoint",
+        "description": "获取预警规则列表（所有角色可查看）。",
+        "operationId": "list_rules_endpoint_api_v1_alert_rules_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ruleType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "规则类型筛选",
+              "title": "Ruletype"
+            },
+            "description": "规则类型筛选"
+          },
+          {
+            "name": "isEnabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "启用状态筛选",
+              "title": "Isenabled"
+            },
+            "description": "启用状态筛选"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertRuleListData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Create Rule Endpoint",
+        "description": "创建预警规则（仅 ADMIN）。",
+        "operationId": "create_rule_endpoint_api_v1_alert_rules_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertRuleItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/rules/{rule_id}": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Get Rule Endpoint",
+        "description": "获取规则详情。",
+        "operationId": "get_rule_endpoint_api_v1_alert_rules__rule_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertRuleItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Update Rule Endpoint",
+        "description": "更新预警规则（仅 ADMIN）。",
+        "operationId": "update_rule_endpoint_api_v1_alert_rules__rule_id__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertRuleItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Delete Rule Endpoint",
+        "description": "删除预警规则（仅 ADMIN）。",
+        "operationId": "delete_rule_endpoint_api_v1_alert_rules__rule_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Rule Endpoint Api V1 Alert Rules  Rule Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/rules/{rule_id}/toggle": {
+      "put": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Toggle Rule Endpoint",
+        "description": "启停规则（仅 ADMIN）。",
+        "operationId": "toggle_rule_endpoint_api_v1_alert_rules__rule_id__toggle_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          },
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "description": "true=启用，false=停用",
+              "title": "Enabled"
+            },
+            "description": "true=启用，false=停用"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertRuleItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/rules/dry-run": {
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Dry Run Rule Endpoint",
+        "description": "规则试运行：对指定回路求值，不创建事件、不设冷却期、不触发动作。\n\n支持两种模式：\n1. 传入 ruleId：使用已存在的规则 DSL 试运行\n2. 传入 dsl：使用自定义 DSL 试运行（先校验合法性）",
+        "operationId": "dry_run_rule_endpoint_api_v1_alert_rules_dry_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertDryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert/rules/{rule_id}/subscriptions": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "List Rule Subscriptions Endpoint",
+        "description": "获取规则的订阅列表。",
+        "operationId": "list_rule_subscriptions_endpoint_api_v1_alert_rules__rule_id__subscriptions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_AlertSubscriptionItem__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Create Subscription Endpoint",
+        "description": "创建订阅关系（ADMIN/IC_ENGINEER）。",
+        "operationId": "create_subscription_endpoint_api_v1_alert_rules__rule_id__subscriptions_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertSubscriptionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertSubscriptionItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/subscriptions": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "List Subscriptions Endpoint",
+        "description": "获取订阅列表（可按回路筛选）。",
+        "operationId": "list_subscriptions_endpoint_api_v1_alert_subscriptions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按回路筛选",
+              "title": "Loopid"
+            },
+            "description": "按回路筛选"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_AlertSubscriptionItem__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/subscriptions/{subscription_id}": {
+      "delete": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Delete Subscription Endpoint",
+        "description": "删除订阅关系（ADMIN/IC_ENGINEER）。",
+        "operationId": "delete_subscription_endpoint_api_v1_alert_subscriptions__subscription_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subscription Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Subscription Endpoint Api V1 Alert Subscriptions  Subscription Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/events": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "List Events Endpoint",
+        "description": "获取预警事件列表（分页+筛选）。",
+        "operationId": "list_events_endpoint_api_v1_alert_events_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Loopid"
+            }
+          },
+          {
+            "name": "ruleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ruleid"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "事件状态",
+              "title": "Status"
+            },
+            "description": "事件状态"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starttime"
+            }
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Endtime"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertEventListData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/events/{event_id}": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Get Event Endpoint",
+        "description": "获取事件详情。",
+        "operationId": "get_event_endpoint_api_v1_alert_events__event_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertEventItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/events/{event_id}/acknowledge": {
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Acknowledge Event Endpoint",
+        "description": "确认预警事件（ADMIN/IC_ENGINEER）。",
+        "operationId": "acknowledge_event_endpoint_api_v1_alert_events__event_id__acknowledge_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertEventAcknowledge"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertEventItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/events/{event_id}/resolve": {
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Resolve Event Endpoint",
+        "description": "处置预警事件（ADMIN/IC_ENGINEER）。",
+        "operationId": "resolve_event_endpoint_api_v1_alert_events__event_id__resolve_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertEventResolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertEventItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/events/{event_id}/false-positive": {
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Mark False Positive Endpoint",
+        "description": "标记事件为误报（ADMIN/IC_ENGINEER）。",
+        "operationId": "mark_false_positive_endpoint_api_v1_alert_events__event_id__false_positive_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertEventFalsePositive"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertEventItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/events/{event_id}/archive": {
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Archive Event Endpoint",
+        "description": "归档事件（仅 ADMIN）。",
+        "operationId": "archive_event_endpoint_api_v1_alert_events__event_id__archive_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Event Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertEventItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/suppressions": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "List Suppressions Endpoint",
+        "description": "获取手动抑制记录列表。",
+        "operationId": "list_suppressions_endpoint_api_v1_alert_suppressions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ruleid"
+            }
+          },
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Loopid"
+            }
+          },
+          {
+            "name": "isActive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Isactive"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertSuppressionListData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Create Suppression Endpoint",
+        "description": "创建手动抑制（ADMIN/IC_ENGINEER）。",
+        "operationId": "create_suppression_endpoint_api_v1_alert_suppressions_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertSuppressionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertSuppressionItem_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/suppressions/{suppression_id}": {
+      "delete": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Delete Suppression Endpoint",
+        "description": "删除手动抑制（ADMIN/IC_ENGINEER）。",
+        "operationId": "delete_suppression_endpoint_api_v1_alert_suppressions__suppression_id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "suppression_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Suppression Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Suppression Endpoint Api V1 Alert Suppressions  Suppression Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/audit-logs": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "List Audit Logs Endpoint",
+        "description": "获取规则变更审计日志。",
+        "operationId": "list_audit_logs_endpoint_api_v1_alert_audit_logs_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ruleid"
+            }
+          },
+          {
+            "name": "operator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operator"
+            }
+          },
+          {
+            "name": "operationType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operationtype"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertAuditLogListData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert/global-switch": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Get Global Switch Endpoint",
+        "description": "读取预警引擎全局开关。",
+        "operationId": "get_global_switch_endpoint_api_v1_alert_global_switch_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertGlobalSwitch_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Set Global Switch Endpoint",
+        "description": "更新预警引擎全局开关（仅 ADMIN）。",
+        "operationId": "set_global_switch_endpoint_api_v1_alert_global_switch_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertGlobalSwitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertGlobalSwitch_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert/badge": {
+      "get": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Get Badge Endpoint",
+        "description": "获取当前用户未读预警事件计数。",
+        "operationId": "get_badge_endpoint_api_v1_alert_badge_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertBadgeCount_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/alert/badge/reset": {
+      "post": {
+        "tags": [
+          "alert"
+        ],
+        "summary": "Reset Badge Endpoint",
+        "description": "重置当前用户未读预警事件计数（查看事件列表后调用）。",
+        "operationId": "reset_badge_endpoint_api_v1_alert_badge_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AlertBadgeCount_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/configs/metrics": {
       "get": {
         "tags": [
@@ -13287,6 +14772,965 @@
         "title": "AasTagListData",
         "description": "AAS Tag 列表响应 data 块。"
       },
+      "AlertAuditLogItem": {
+        "properties": {
+          "logId": {
+            "type": "string",
+            "title": "Logid"
+          },
+          "ruleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid"
+          },
+          "ruleCode": {
+            "type": "string",
+            "title": "Rulecode"
+          },
+          "operationType": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "UPDATE",
+              "ENABLE",
+              "DISABLE",
+              "DELETE"
+            ],
+            "title": "Operationtype"
+          },
+          "beforeValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforevalue"
+          },
+          "afterValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aftervalue"
+          },
+          "operator": {
+            "type": "string",
+            "title": "Operator"
+          },
+          "operatedAt": {
+            "type": "string",
+            "title": "Operatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "logId",
+          "ruleCode",
+          "operationType",
+          "operator",
+          "operatedAt"
+        ],
+        "title": "AlertAuditLogItem",
+        "description": "规则变更审计日志响应项。"
+      },
+      "AlertAuditLogListData": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AlertAuditLogItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "AlertAuditLogListData",
+        "description": "审计日志分页列表响应。"
+      },
+      "AlertBadgeCount": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "AlertBadgeCount",
+        "description": "用户未读预警事件计数。"
+      },
+      "AlertDryRunRequest": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid",
+            "description": "目标回路 ID"
+          },
+          "ruleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid",
+            "description": "已有规则 ID（提供时使用该规则 DSL，忽略 dsl 字段）"
+          },
+          "dsl": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dsl",
+            "description": "试运行 DSL（ruleId 未提供时必填）"
+          },
+          "confidenceLevel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidencelevel",
+            "description": "模拟可信度等级 A/B/C/D/E（可选，用于测试 confidencePolicy）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId"
+        ],
+        "title": "AlertDryRunRequest",
+        "description": "POST /alert/rules/dry-run 请求体。\n\n可传入完整 DSL 试运行，也可指定已存在的 ruleId + loopId 对已有规则试运行。\ndry-run 不创建事件、不设冷却期、不触发动作，仅返回求值结果。"
+      },
+      "AlertEventAcknowledge": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "AlertEventAcknowledge",
+        "description": "POST /alert/events/{eventId}/acknowledge 请求体。"
+      },
+      "AlertEventFalsePositive": {
+        "properties": {
+          "isFalsePositive": {
+            "type": "boolean",
+            "title": "Isfalsepositive",
+            "description": "true=标记误报，false=取消"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isFalsePositive"
+        ],
+        "title": "AlertEventFalsePositive",
+        "description": "POST /alert/events/{eventId}/false-positive 请求体。"
+      },
+      "AlertEventItem": {
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "title": "Eventid"
+          },
+          "ruleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid"
+          },
+          "ruleCode": {
+            "type": "string",
+            "title": "Rulecode"
+          },
+          "ruleVersion": {
+            "type": "integer",
+            "title": "Ruleversion"
+          },
+          "loopId": {
+            "type": "string",
+            "title": "Loopid"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "INFO",
+              "WARN",
+              "ERROR",
+              "CRITICAL"
+            ],
+            "title": "Severity"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "ACKNOWLEDGED",
+              "RESOLVED",
+              "SUPPRESSED",
+              "ARCHIVED"
+            ],
+            "title": "Status"
+          },
+          "triggerConditionSnapshot": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Triggerconditionsnapshot"
+          },
+          "dataWindow": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datawindow"
+          },
+          "triggeredValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggeredvalue"
+          },
+          "confidenceLevel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidencelevel"
+          },
+          "ruleDslSnapshot": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ruledslsnapshot"
+          },
+          "trackerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trackerid"
+          },
+          "isFalsePositive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isfalsepositive"
+          },
+          "triggerCount": {
+            "type": "integer",
+            "title": "Triggercount"
+          },
+          "triggeredAt": {
+            "type": "string",
+            "title": "Triggeredat"
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedby"
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgedat"
+          },
+          "resolvedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedby"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "resolutionNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolutionnote"
+          },
+          "loopName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "eventId",
+          "ruleCode",
+          "ruleVersion",
+          "loopId",
+          "severity",
+          "status",
+          "triggerConditionSnapshot",
+          "ruleDslSnapshot",
+          "triggerCount",
+          "triggeredAt"
+        ],
+        "title": "AlertEventItem",
+        "description": "预警事件响应项。"
+      },
+      "AlertEventListData": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AlertEventItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "AlertEventListData",
+        "description": "事件分页列表响应。"
+      },
+      "AlertEventResolve": {
+        "properties": {
+          "resolutionNote": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Resolutionnote",
+            "description": "处置说明"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resolutionNote"
+        ],
+        "title": "AlertEventResolve",
+        "description": "POST /alert/events/{eventId}/resolve 请求体。"
+      },
+      "AlertGlobalSwitch": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "全局开关：false=暂停所有预警",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AlertGlobalSwitch",
+        "description": "预警引擎全局开关（sys_config）。"
+      },
+      "AlertRuleCreate": {
+        "properties": {
+          "ruleCode": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Rulecode",
+            "description": "规则代码（唯一）"
+          },
+          "ruleName": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Rulename",
+            "description": "规则名称"
+          },
+          "ruleType": {
+            "type": "string",
+            "enum": [
+              "THRESHOLD",
+              "DRIFT",
+              "COMPOSITE",
+              "CONFIDENCE"
+            ],
+            "title": "Ruletype"
+          },
+          "dsl": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dsl",
+            "description": "规则 DSL（结构见方案 §3）"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Priority",
+            "description": "优先级（越小越高）",
+            "default": 100
+          },
+          "isEnabled": {
+            "type": "boolean",
+            "title": "Isenabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "ruleCode",
+          "ruleName",
+          "ruleType",
+          "dsl"
+        ],
+        "title": "AlertRuleCreate",
+        "description": "POST /alert/rules 请求体。"
+      },
+      "AlertRuleItem": {
+        "properties": {
+          "ruleId": {
+            "type": "string",
+            "title": "Ruleid"
+          },
+          "ruleCode": {
+            "type": "string",
+            "title": "Rulecode"
+          },
+          "ruleName": {
+            "type": "string",
+            "title": "Rulename"
+          },
+          "ruleType": {
+            "type": "string",
+            "enum": [
+              "THRESHOLD",
+              "DRIFT",
+              "COMPOSITE",
+              "CONFIDENCE"
+            ],
+            "title": "Ruletype"
+          },
+          "dsl": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dsl"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "isEnabled": {
+            "type": "boolean",
+            "title": "Isenabled"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "createdBy": {
+            "type": "string",
+            "title": "Createdby"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedby"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ruleId",
+          "ruleCode",
+          "ruleName",
+          "ruleType",
+          "dsl",
+          "priority",
+          "isEnabled",
+          "version",
+          "createdBy"
+        ],
+        "title": "AlertRuleItem",
+        "description": "规则定义响应项。"
+      },
+      "AlertRuleListData": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "AlertRuleListData",
+        "description": "规则分页列表响应。"
+      },
+      "AlertRuleUpdate": {
+        "properties": {
+          "ruleName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rulename"
+          },
+          "dsl": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dsl"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "isEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isenabled"
+          }
+        },
+        "type": "object",
+        "title": "AlertRuleUpdate",
+        "description": "PUT /alert/rules/{ruleId} 请求体。"
+      },
+      "AlertSubscriptionCreate": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid",
+            "description": "回路 ID"
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "LOOP",
+              "PLANT",
+              "CONTROL_TYPE"
+            ],
+            "title": "Scopetype",
+            "description": "订阅范围类型"
+          },
+          "scopeValue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopevalue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId",
+          "scopeType"
+        ],
+        "title": "AlertSubscriptionCreate",
+        "description": "POST /alert/rules/{ruleId}/subscriptions 请求体。"
+      },
+      "AlertSubscriptionItem": {
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "title": "Subscriptionid"
+          },
+          "ruleId": {
+            "type": "string",
+            "title": "Ruleid"
+          },
+          "loopId": {
+            "type": "string",
+            "title": "Loopid"
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "LOOP",
+              "PLANT",
+              "CONTROL_TYPE"
+            ],
+            "title": "Scopetype"
+          },
+          "scopeValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopevalue"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          },
+          "createdBy": {
+            "type": "string",
+            "title": "Createdby"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subscriptionId",
+          "ruleId",
+          "loopId",
+          "scopeType",
+          "isActive",
+          "createdBy"
+        ],
+        "title": "AlertSubscriptionItem",
+        "description": "订阅关系响应项。"
+      },
+      "AlertSuppressionCreate": {
+        "properties": {
+          "ruleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid",
+            "description": "规则 ID（None=全规则）"
+          },
+          "loopId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopid",
+            "description": "回路 ID（None=全回路）"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "maximum": 43200.0,
+            "minimum": 1.0,
+            "title": "Durationminutes",
+            "description": "抑制时长（分钟）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "durationMinutes"
+        ],
+        "title": "AlertSuppressionCreate",
+        "description": "POST /alert/suppressions 请求体。"
+      },
+      "AlertSuppressionItem": {
+        "properties": {
+          "suppressionId": {
+            "type": "string",
+            "title": "Suppressionid"
+          },
+          "ruleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid"
+          },
+          "loopId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopid"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "suppressedBy": {
+            "type": "string",
+            "title": "Suppressedby"
+          },
+          "startAt": {
+            "type": "string",
+            "title": "Startat"
+          },
+          "endAt": {
+            "type": "string",
+            "title": "Endat"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suppressionId",
+          "reason",
+          "suppressedBy",
+          "startAt",
+          "endAt",
+          "isActive"
+        ],
+        "title": "AlertSuppressionItem",
+        "description": "手动抑制记录响应项。"
+      },
+      "AlertSuppressionListData": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AlertSuppressionItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "AlertSuppressionListData",
+        "description": "抑制记录分页列表响应。"
+      },
       "AlgorithmParamsControlItem": {
         "properties": {
           "controlType": {
@@ -13338,6 +15782,14 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "paramMeta": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Parammeta"
           }
         },
         "type": "object",
@@ -13346,7 +15798,7 @@
           "metricName"
         ],
         "title": "AlgorithmParamsMetricGroup",
-        "description": "单个指标的所有控制类型参数组.\n\nAttributes:\n    metricCode: 指标代码\n    metricName: 指标中文名\n    items: 4 个控制类型的参数项列表"
+        "description": "单个指标的所有控制类型参数组.\n\nAttributes:\n    metricCode: 指标代码\n    metricName: 指标中文名\n    items: 4 个控制类型的参数项列表\n    paramMeta: 参数元数据注册表（整改 F6：min/max/unit/description/category 单源下发）"
       },
       "AlgorithmParamsSaveItem": {
         "properties": {
@@ -13381,11 +15833,24 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "resetControlTypes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "STABLE",
+                "SLOW",
+                "FAST",
+                "LOGIC"
+              ]
+            },
+            "type": "array",
+            "title": "Resetcontroltypes"
           }
         },
         "type": "object",
         "title": "AlgorithmParamsSaveRequest",
-        "description": "算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.\n\nAttributes:\n    items: 4 控制类型的参数覆盖项（可只传部分控制类型）"
+        "description": "算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.\n\nAttributes:\n    items: 4 控制类型的参数覆盖项（可只传部分控制类型）\n    resetControlTypes: 需重置为算法默认的控制类型（整改 F6 重置默认；与 items 合并生效）"
       },
       "AlgorithmParamsSchema": {
         "properties": {
@@ -13703,6 +16168,266 @@
         },
         "type": "object",
         "title": "ApiResponse[AasTagListData]"
+      },
+      "ApiResponse_AlertAuditLogListData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertAuditLogListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertAuditLogListData]"
+      },
+      "ApiResponse_AlertBadgeCount_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertBadgeCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertBadgeCount]"
+      },
+      "ApiResponse_AlertEventItem_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertEventItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertEventItem]"
+      },
+      "ApiResponse_AlertEventListData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertEventListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertEventListData]"
+      },
+      "ApiResponse_AlertGlobalSwitch_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertGlobalSwitch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertGlobalSwitch]"
+      },
+      "ApiResponse_AlertRuleItem_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertRuleItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertRuleItem]"
+      },
+      "ApiResponse_AlertRuleListData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertRuleListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertRuleListData]"
+      },
+      "ApiResponse_AlertSubscriptionItem_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertSubscriptionItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertSubscriptionItem]"
+      },
+      "ApiResponse_AlertSuppressionItem_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertSuppressionItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertSuppressionItem]"
+      },
+      "ApiResponse_AlertSuppressionListData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AlertSuppressionListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[AlertSuppressionListData]"
       },
       "ApiResponse_AlgorithmParamsMetricGroup_": {
         "properties": {
@@ -16437,6 +19162,36 @@
         },
         "type": "object",
         "title": "ApiResponse[list]"
+      },
+      "ApiResponse_list_AlertSubscriptionItem__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AlertSubscriptionItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[AlertSubscriptionItem]]"
       },
       "ApiResponse_list_ComplexGroupItem__": {
         "properties": {
@@ -19631,6 +22386,11 @@
             },
             "type": "object",
             "title": "Labelcounts"
+          },
+          "verifyOverdueCount": {
+            "type": "integer",
+            "title": "Verifyoverduecount",
+            "default": 0
           }
         },
         "type": "object",
@@ -20470,6 +23230,11 @@
             },
             "type": "object",
             "title": "Labelcounts"
+          },
+          "verifyOverdueCount": {
+            "type": "integer",
+            "title": "Verifyoverduecount",
+            "default": 0
           },
           "recent7Days": {
             "type": "integer",
@@ -23397,6 +26162,17 @@
               }
             ],
             "title": "Setpointcrossingcount"
+          },
+          "timeConstant": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeconstant"
           }
         },
         "type": "object",

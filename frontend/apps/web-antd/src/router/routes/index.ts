@@ -34,4 +34,22 @@ const coreRouteNames = traverseTreeValues(coreRoutes, (route) => route.name);
 
 /** 有权限校验的路由列表，包含动态路由和静态路由 */
 const accessRoutes = [...dynamicRoutes, ...staticRoutes];
+
+/** 全部动态路由 path 模式（含 :param 参数段）——用于 404/403 语义区分（整改 C2-2） */
+const dynamicRoutePathPatterns = traverseTreeValues(
+  dynamicRoutes,
+  (route) => route.path,
+).filter((p): p is string => Boolean(p));
+
+/**
+ * 判断路径是否存在于完整路由表（不论当前角色是否可访问）。
+ * 存在但被权限过滤 → 应渲染 403；不存在 → 404。
+ */
+export function isKnownRoutePath(path: string): boolean {
+  return dynamicRoutePathPatterns.some((pattern) => {
+    const regex = new RegExp(`^${pattern.replaceAll(/:[^/]+/g, '[^/]+')}$`);
+    return regex.test(path);
+  });
+}
+
 export { accessRoutes, coreRouteNames, routes };

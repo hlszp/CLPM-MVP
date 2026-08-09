@@ -35,6 +35,7 @@ from typing import Any
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 
@@ -109,7 +110,12 @@ class StictionIndexCalculator(MetricCalculatorBase):
         # 平稳回路（非极限环）返回 value=0 + level="NONE"（"无粘滞"），
         # 而非 INCONCLUSIVE：平稳意味着无粘滞故障，是有意义的诊断结论。
         # 数据不足（vr<0.20）仍由 _make_result 内部判定 INCONCLUSIVE。
-        is_limit_cycle, gate_info = self._detect_limit_cycle(pv_vals)
+        # 整改 F2：极限环门控的零交叉下限复用 oscillation_rate 配置链
+        _params = get_algorithm_params("oscillation_rate", bundle.data_block.control_type)
+        is_limit_cycle, gate_info = self._detect_limit_cycle(
+            pv_vals,
+            int(_params.get("min_zero_crossings", MIN_ZERO_CROSSINGS)),
+        )
         if not is_limit_cycle:
             logger.debug("[粘滞系数] 非极限环振荡段（平稳回路），返回无粘滞: %s", gate_info)
             return self._make_result(
@@ -210,7 +216,9 @@ class StictionIndexCalculator(MetricCalculatorBase):
         )
 
     @staticmethod
-    def _detect_limit_cycle(pv: np.ndarray) -> tuple[bool, dict[str, Any]]:
+    def _detect_limit_cycle(
+        pv: np.ndarray, min_zero_crossings: int = MIN_ZERO_CROSSINGS
+    ) -> tuple[bool, dict[str, Any]]:
         """极限环振荡门控（简化复用振荡率的零交叉 + IAE 相似率判据）.
 
         判据（全部满足才认为处于极限环）：
@@ -224,7 +232,7 @@ class StictionIndexCalculator(MetricCalculatorBase):
         x = pv - float(np.mean(pv))
         zero_crossings = OscillationRateCalculator._find_zero_crossings(x)
         info: dict[str, Any] = {"zero_crossings": len(zero_crossings)}
-        if len(zero_crossings) < MIN_ZERO_CROSSINGS:
+        if len(zero_crossings) < min_zero_crossings:
             return False, info
 
         segments = OscillationRateCalculator._compute_iae_segments(x, zero_crossings)

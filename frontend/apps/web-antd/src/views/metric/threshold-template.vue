@@ -28,6 +28,7 @@ import {
   InputNumber,
   message,
   Modal,
+  Popconfirm,
   Select,
   SelectOption,
   Table,
@@ -46,17 +47,24 @@ import {
 } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
+  ClpmDangerConfirmModal,
   ClpmEmptyState,
   ClpmInfoTip,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useTableDensity } from '#/composables/use-table-density';
 
 defineOptions({ name: 'MetricThresholdTemplate' });
 
 const { isAdmin } = useClpmRoles();
 const { themeColors } = useClpmTheme();
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'metric-threshold-template',
+);
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -227,60 +235,43 @@ function onLoopChange() {
   loadRecommendation();
 }
 
-/** 套用模板到回路级（ic_engineer 可用） */
+/** 套用模板到回路级（ic_engineer 可用，可逆轻操作走 Popconfirm 确认） */
 async function applyTemplate(diagCode: string) {
   if (!selectedLoopId.value) return;
-  Modal.confirm({
-    title: '套用模板到回路级？',
-    content: `将把 ${selectedLoop.value?.tagName} 所属回路类型（${recommendation.value?.loopType}）的 ${diagName(diagCode)} 模板阈值复制为回路级覆盖。若已有回路级覆盖将被更新。`,
-    okText: '确认套用',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await applyThresholdTemplateApi({
-          loopId: selectedLoopId.value ?? '',
-          diagCode,
-          targetScope: 'loop',
-        });
-        message.success('模板已套用到回路级');
-        await loadRecommendation();
-      } catch (error) {
-        message.error((error as Error).message ?? '套用失败');
-      }
-    },
-  });
+  try {
+    await applyThresholdTemplateApi({
+      loopId: selectedLoopId.value,
+      diagCode,
+      targetScope: 'loop',
+    });
+    message.success('模板已套用到回路级');
+    await loadRecommendation();
+  } catch (error) {
+    message.error((error as Error).message ?? '套用失败');
+  }
 }
 
-/** 删除回路级覆盖（恢复模板/默认） */
+/** 删除回路级覆盖（恢复模板/默认，可逆轻操作走 Popconfirm 确认） */
 async function resetLoopOverride(diagCode: string) {
   if (!selectedLoopId.value) return;
-  Modal.confirm({
-    title: '重置回路级阈值？',
-    content: `将删除 ${diagName(diagCode)} 的回路级覆盖，恢复为模板/全局默认值。`,
-    okText: '确认重置',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        const overrides = await getThresholdOverridesApi({
-          scopeType: 'loop',
-          scopeId: selectedLoopId.value ?? '',
-        });
-        const target = overrides.find(
-          (o: DiagnosisApi.ThresholdOverrideItem) => o.diagCode === diagCode,
-        );
-        if (!target) {
-          message.warning('该诊断项无回路级覆盖，无需重置');
-          return;
-        }
-        await deleteThresholdOverrideApi(target.overrideId);
-        message.success('回路级覆盖已删除');
-        await loadRecommendation();
-      } catch (error) {
-        message.error((error as Error).message ?? '重置失败');
-      }
-    },
-  });
+  try {
+    const overrides = await getThresholdOverridesApi({
+      scopeType: 'loop',
+      scopeId: selectedLoopId.value,
+    });
+    const target = overrides.find(
+      (o: DiagnosisApi.ThresholdOverrideItem) => o.diagCode === diagCode,
+    );
+    if (!target) {
+      message.warning('该诊断项无回路级覆盖，无需重置');
+      return;
+    }
+    await deleteThresholdOverrideApi(target.overrideId);
+    message.success('回路级覆盖已删除');
+    await loadRecommendation();
+  } catch (error) {
+    message.error((error as Error).message ?? '重置失败');
+  }
 }
 
 // ----- 回路级微调 Modal -----
@@ -341,37 +332,39 @@ async function saveTune() {
   }
 }
 
-async function deleteTune() {
-  Modal.confirm({
-    title: '删除回路级覆盖？',
-    content: '将恢复为模板/全局默认阈值。',
-    okText: '确认删除',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      // 通过推荐接口的 scopeChain 获取 loop_override 来源，再用覆盖列表查 ID
-      try {
-        const overrides = await getThresholdOverridesApi({
-          scopeType: 'loop',
-          scopeId: tuneForm.scopeId,
-        });
-        const target = overrides.find(
-          (o: DiagnosisApi.ThresholdOverrideItem) =>
-            o.diagCode === tuneForm.diagCode,
-        );
-        if (!target) {
-          message.warning('未找到回路级覆盖');
-          return;
-        }
-        await deleteThresholdOverrideApi(target.overrideId);
-        message.success('回路级覆盖已删除');
-        tuneModalVisible.value = false;
-        await loadRecommendation();
-      } catch (error) {
-        message.error((error as Error).message ?? '删除失败');
-      }
-    },
-  });
+/** 删除回路级覆盖：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） */
+const deleteTuneOpen = ref(false);
+const deleteTuneLoading = ref(false);
+
+function deleteTune() {
+  deleteTuneOpen.value = true;
+}
+
+async function handleDeleteTuneConfirm() {
+  deleteTuneLoading.value = true;
+  // 通过推荐接口的 scopeChain 获取 loop_override 来源，再用覆盖列表查 ID
+  try {
+    const overrides = await getThresholdOverridesApi({
+      scopeType: 'loop',
+      scopeId: tuneForm.scopeId,
+    });
+    const target = overrides.find(
+      (o: DiagnosisApi.ThresholdOverrideItem) => o.diagCode === tuneForm.diagCode,
+    );
+    if (!target) {
+      message.warning('未找到回路级覆盖');
+      return;
+    }
+    await deleteThresholdOverrideApi(target.overrideId);
+    message.success('回路级覆盖已删除');
+    deleteTuneOpen.value = false;
+    tuneModalVisible.value = false;
+    await loadRecommendation();
+  } catch (error) {
+    message.error((error as Error).message ?? '删除失败');
+  } finally {
+    deleteTuneLoading.value = false;
+  }
 }
 
 // ===========================================================================
@@ -519,6 +512,14 @@ onMounted(async () => {
           <span class="text-xs text-muted-foreground">
             共 {{ filteredTemplates.length }} 条模板
           </span>
+          <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+          <ClpmToolbarButton
+            class="ml-auto"
+            icon="ant-design:column-height-outlined"
+            :label="`密度：${densityLabel}`"
+            :tooltip="`密度：${densityLabel}（点击切换）`"
+            @click="cycleDensity"
+          />
         </div>
 
         <Table
@@ -527,7 +528,7 @@ onMounted(async () => {
           :loading="loadingTemplates"
           :pagination="false"
           row-key="overrideId"
-          size="small"
+          :size="tableSize"
           :scroll="{ x: 700 }"
         >
           <template #emptyText>
@@ -604,20 +605,26 @@ onMounted(async () => {
           :loading="loadingRecommendation"
           :pagination="false"
           row-key="diagCode"
-          size="small"
+          :size="tableSize"
           :scroll="{ x: 1100 }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'action'">
               <div class="flex gap-1">
-                <ClpmToolbarButton
-                  type="link"
-                  size="small"
-                  :disabled="!record.loopTypeTemplate"
-                  @click="applyTemplate(record.diagCode)"
+                <Popconfirm
+                  :title="`确认把 ${diagName(record.diagCode)} 模板阈值套用为回路级覆盖？已有回路级覆盖将被更新。`"
+                  ok-text="确认套用"
+                  cancel-text="取消"
+                  @confirm="applyTemplate(record.diagCode)"
                 >
-                  套用模板
-                </ClpmToolbarButton>
+                  <ClpmToolbarButton
+                    type="link"
+                    size="small"
+                    :disabled="!record.loopTypeTemplate"
+                  >
+                    套用模板
+                  </ClpmToolbarButton>
+                </Popconfirm>
                 <ClpmToolbarButton
                   type="link"
                   size="small"
@@ -625,15 +632,22 @@ onMounted(async () => {
                 >
                   {{ record.loopOverride ? '编辑微调' : '微调' }}
                 </ClpmToolbarButton>
-                <ClpmToolbarButton
-                  v-if="record.loopOverride"
-                  type="link"
-                  size="small"
-                  danger
-                  @click="resetLoopOverride(record.diagCode)"
+                <Popconfirm
+                  :title="`将删除 ${diagName(record.diagCode)} 的回路级覆盖，恢复为模板/全局默认值？`"
+                  ok-text="确认重置"
+                  ok-type="danger"
+                  cancel-text="取消"
+                  @confirm="resetLoopOverride(record.diagCode)"
                 >
-                  重置
-                </ClpmToolbarButton>
+                  <ClpmToolbarButton
+                    v-if="record.loopOverride"
+                    type="link"
+                    size="small"
+                    danger
+                  >
+                    重置
+                  </ClpmToolbarButton>
+                </Popconfirm>
               </div>
             </template>
           </template>
@@ -708,5 +722,19 @@ onMounted(async () => {
         <Button type="primary" @click="saveTune">保存</Button>
       </template>
     </Modal>
+
+    <!-- 删除回路级覆盖：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
+    <ClpmDangerConfirmModal
+      v-model:open="deleteTuneOpen"
+      title="删除回路级覆盖"
+      action="删除"
+      :target="tuneForm.diagCode"
+      impact-scope="删除后该回路的阈值将恢复为模板/全局默认值"
+      rollback-tip="此操作不可逆，如需恢复需重新套用模板或微调"
+      require-confirm-code
+      confirm-code-placeholder="请输入诊断项代码以确认"
+      :loading="deleteTuneLoading"
+      @confirm="handleDeleteTuneConfirm"
+    />
   </Page>
 </template>

@@ -427,6 +427,8 @@ class KpiSnapshotSchema(CamelModel):
     # 振荡/穿越指标
     oscillationAmplitude: float | None = None
     setpointCrossingCount: int | None = None
+    # F5：时间常数（秒，L1 DISPLAY_ONLY，激励不足窗口为 None）
+    timeConstant: float | None = None
 
 
 class KpiSnapshotListItem(CamelModel):
@@ -473,6 +475,8 @@ class KpiSnapshotListItem(CamelModel):
     valveOpMax: float | None = None
     oscillationAmplitude: float | None = None
     setpointCrossingCount: int | None = None
+    # F5：时间常数（秒，L1 DISPLAY_ONLY）
+    timeConstant: float | None = None
 
 
 class KpiSnapshotListData(CamelModel):

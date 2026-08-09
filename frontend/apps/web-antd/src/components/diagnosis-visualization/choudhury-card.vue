@@ -89,7 +89,7 @@ onMounted(() => {
       <div class="card-title">非线性检测</div>
       <div
         class="status-badge"
-        :style="{ backgroundColor: statusColor, color: '#fff' }"
+        :style="{ backgroundColor: statusColor }"
       >
         {{ isSticky ? '阀门粘滞' : '正常' }}
       </div>
@@ -141,13 +141,14 @@ onMounted(() => {
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: hsl(var(--foreground));
 }
 
 .status-badge {
   padding: 2px 10px;
   font-size: 11px;
   font-weight: 500;
+  color: hsl(0 0% 100%);
   border-radius: 4px;
 }
 
@@ -171,7 +172,7 @@ onMounted(() => {
   right: 8px;
   font-size: 11px;
   font-weight: 600;
-  color: #374151;
+  color: hsl(var(--foreground));
   transform: translateY(-50%);
 }
 
@@ -192,12 +193,12 @@ onMounted(() => {
 
 .metric-label {
   font-size: 11px;
-  color: #6b7280;
+  color: hsl(var(--muted-foreground));
 }
 
 .metric-value {
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: hsl(var(--foreground));
 }
 </style>

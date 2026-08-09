@@ -51,7 +51,7 @@ import {
   ClpmPageToolbar,
   ClpmStateOverlay,
 } from '#/components/clpm';
-import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import ConfidenceBadge from '#/components/clpm/confidence-badge.vue';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useTuningStore } from '#/store/tuning';

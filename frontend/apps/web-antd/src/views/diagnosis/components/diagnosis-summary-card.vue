@@ -23,6 +23,7 @@ import { Skeleton, Tag } from 'ant-design-vue';
 
 import { getTrackerListApi } from '#/api/diagnosis';
 import { ClpmKpiStrip } from '#/components/clpm';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
 import {
   DIAGNOSIS_LABEL_COLOR_HEX_MAP,
@@ -35,6 +36,7 @@ defineOptions({ name: 'DiagnosisSummaryCard' });
 
 const router = useRouter();
 const { getStatusMeta } = useIndustrialStatus();
+const { themeColors } = useClpmTheme();
 
 const loading = ref(false);
 const aggregates = ref<DiagnosisApi.DiagnosisAggregates | null>(null);
@@ -109,7 +111,7 @@ const labelBars = computed(() => {
       label,
       name: getDiagnosisLabelName(label),
       count,
-      color: DIAGNOSIS_LABEL_COLOR_HEX_MAP[label] ?? '#8c8c8c',
+      color: DIAGNOSIS_LABEL_COLOR_HEX_MAP[label] ?? themeColors.value.NEUTRAL,
     }))
     .filter((b) => b.count > 0)
     .toSorted((a, b) => b.count - a.count)
@@ -332,9 +334,9 @@ defineExpose({ refresh: load });
   padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #d46b08;
-  background: #fff7e6;
-  border: 1px solid #ffd591;
+  color: hsl(var(--status-warning));
+  background: hsl(var(--status-warning) / 10%);
+  border: 1px solid hsl(var(--status-warning) / 40%);
   border-radius: 10px;
 }
 
@@ -468,9 +470,9 @@ defineExpose({ refresh: load });
   flex-shrink: 0;
   padding: 0 6px;
   font-size: 11px;
-  color: #096dd9;
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
+  color: hsl(var(--status-info));
+  background: hsl(var(--status-info) / 10%);
+  border: 1px solid hsl(var(--status-info) / 40%);
   border-radius: 8px;
 }
 

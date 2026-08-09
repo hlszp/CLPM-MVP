@@ -103,14 +103,14 @@ test.describe('性能评估 E2E', () => {
   });
 
   // E2E-PERF-003: 评估看板 TOP5 回路表格
-  // pid-dashboard.vue: .clpm-pid-dashboard__top5-card 含 TOP5回路表格
+  // pid-dashboard.vue: .clpm-pid-dashboard__top5-card 含 TOP5 治理台账表格（C2-4 升级）
   test('E2E-PERF-003: 评估看板 TOP5 回路表格', async ({ page }) => {
     await page.goto('/metric/pid-dashboard');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
     // 验证 TOP5 回路卡片标题存在
-    const top5Title = page.getByText('TOP5回路', { exact: false }).first();
+    const top5Title = page.getByText('TOP5 治理台账', { exact: false }).first();
     await expect(top5Title).toBeVisible({ timeout: 15_000 });
 
     // 验证表格容器存在（容忍空数据：Empty 占位或 Table）
@@ -220,7 +220,7 @@ test.describe('性能评估 E2E', () => {
     await expect(tableOrCard).toBeVisible({ timeout: 15_000 });
 
     // 验证 TOP5 回路卡片标题存在
-    const top5Title = page.getByText('TOP5回路', { exact: false }).first();
+    const top5Title = page.getByText('TOP5 治理台账', { exact: false }).first();
     const hasTop5 = await top5Title.isVisible().catch(() => false);
     expect(hasTop5).toBeTruthy();
 

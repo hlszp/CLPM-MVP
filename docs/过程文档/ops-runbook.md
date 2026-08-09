@@ -296,3 +296,30 @@ sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 'podman inspect gitea.zlinfo
 ### celery-worker unhealthy（探活误报）
 
 server2 上 `clpm-celery-worker` 容器经常显示 `unhealthy` 状态，但实际正常消费任务。根因是 `celery inspect ping` 探活超时（Podman 环境下更明显）。诊断方式：查看 worker 日志确认任务正在执行 `podman logs --tail 5 clpm-celery-worker`。
+
+## uvicorn 静默挂死排查（2026-08-09）
+
+**现象**：进程存活但 0% CPU，全部 API（含 `/auth/login`）挂起无响应，前端 dev server 正常。dev 环境在持续压测/E2E 长跑+热重载累积下已复现 2 次。
+
+**根因类别**：连接风暴/资源耗竭型挂起（非代码死锁）。现场取证（`/proc/<pid>/net/tcp`）：netns 内 ~1.1 万 TIME_WAIT 到 Redis、数百到 TDengine REST 与厂端 API——短连接高频 churn 耗尽连接资源，新请求排队挂起。放大因素：DEBUG 全量日志（26 万行/天，SQL echo 双写）、远端厂 API 读超时 120s、NullPool 每请求独立 PG 连接且 `get_db` 全请求周期持有。
+
+**已加固（commit `2b9fb9d`，pytest 4139 全绿）**：
+- `app/core/db.py`：SQL echo 强制 False（DEBUG 下 echo 绕过 logger 双写全部 SQL）；`command_timeout=60`（慢 SQL 报错而非无限挂起）。
+- `app/core/logging.py`：DEBUG 下 sqlalchemy/httpx/httpcore/asyncpg/urllib3/websockets 钳制到 WARNING（业务日志不受影响）。
+
+**排查工具**：
+```bash
+# PG 连接监控（趋势+阈值告警；--dsn 直连模式用于后端已挂死时）
+uv run python scripts/monitor_db_connections.py --dsn "postgresql://clpm:<pwd>@localhost:7102/clpm" --interval 2 --duration 600
+# 连接风暴取证（TIME_WAIT 计数，按对端聚合）
+cat /proc/<uvicorn_pid>/net/tcp | awk 'NR>1 {print $3, $4}' | sort | uniq -c | sort -rn | head
+# 健康端点（后端活着时）
+curl -s http://localhost:7101/health/db-connections
+```
+
+**处置**：`kill -9 <uvicorn_pid>` 后按原参数重启（`uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload`）；Celery beat/worker 为独立单例进程组（beat+worker+3 pool 子进程），后端重启后会自动跳过重复拉起，**不要手工再启**。
+
+**预防与遗留**：
+- 远端厂 API `HISTORY_DATA_API_TIMEOUT` 120s 建议降至 30s（长跨度回算走 Celery 路径另行放宽）——待评审。
+- Redis 连接风暴精确归因（Celery kombu churn / per-WS pubsub）待下次复现时挂监控留趋势。
+- 压测类工作（E2E 全量/pytest 全量）连续多轮后，建议主动重启一次后端再跑关键验收。

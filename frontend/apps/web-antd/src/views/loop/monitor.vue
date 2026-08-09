@@ -32,7 +32,7 @@ import {
   ref,
   watch,
 } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -65,6 +65,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
+  ClpmBulletChart,
   ClpmDataHealthBadges,
   ClpmInfoTip,
   ClpmLoopLink,
@@ -72,20 +73,23 @@ import {
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
+import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import {
   LOOP_TYPE_COLOR_MAP,
   LOOP_TYPE_LABEL_MAP,
-  LOOP_TYPE_TAG_COLOR_MAP,
   MODE_COLOR_MAP,
   MODE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
+import { useTableDensity } from '#/composables/use-table-density';
 import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -98,10 +102,11 @@ import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'LoopMonitor' });
 
-const { isDark, themeColors } = useClpmTheme();
+const { themeColors } = useClpmTheme();
 const { modeLabelColor } = useLoopPalettes();
 
 const router = useRouter();
+const route = useRoute();
 
 // ===== 用户偏好 =====
 const {
@@ -266,6 +271,7 @@ const loopTypeStats = ref<Record<string, number>>({
 const controlModeStats = ref<Record<string, number>>({});
 
 /** 控制方式柱状图 */
+const { axisBase, getTooltipPreset } = useEchartsPreset();
 const modeChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderModeChart } = useEcharts(modeChartRef);
 
@@ -277,6 +283,7 @@ function updateModeChart() {
   const data = modeKeys.map((k) => stats[k] || 0);
   const colors = modeKeys.map((k) => MODE_COLOR_MAP[k]);
 
+  // 整改 A-15：轴/工具提示走 ECharts 工业 preset（统一字号/等宽/中性色/无阴影）
   renderModeChart({
     animation: false,
     grid: {
@@ -296,18 +303,16 @@ function updateModeChart() {
         type: 'bar',
       },
     ],
-    tooltip: {
-      axisPointer: { lineStyle: { width: 1 } },
-      trigger: 'axis',
-    },
+    tooltip: { ...getTooltipPreset(), trigger: 'axis' },
     xAxis: {
+      ...axisBase.value,
+      splitLine: undefined,
       data: labels,
       type: 'category',
-      axisLabel: { fontSize: 11 },
     },
     yAxis: {
+      ...axisBase.value,
       type: 'value',
-      axisLabel: { fontSize: 11 },
       splitLine: { show: false },
     },
   });
@@ -455,7 +460,7 @@ const columns: TableColumnsType = [
     customCell: () => ({ style: { 'text-align': 'right' } }),
   },
   {
-    title: '输出值 OP',
+    title: '输出值 OP(%)',
     key: 'op',
     width: 90,
     align: 'right',
@@ -667,8 +672,6 @@ const perfLoading = ref(false);
 const perfDetail = ref<LoopApi.MonitorDetail | null>(null);
 const perfWindow = ref<LoopApi.TrendWindow>('last_24_hours');
 const loopDetailForWeights = ref<LoopApi.LoopDetail | null>(null);
-const gaugeChartRef = ref<EchartsUIType>();
-const { renderEcharts: renderGaugeChart } = useEcharts(gaugeChartRef);
 
 // ===== 当前操作的回路 =====
 
@@ -787,6 +790,10 @@ const { toolbarItems } = usePageToolbar(() => ({
   setting: {},
   help: { onClick: handleHelp },
 }));
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('loop-monitor');
 
 /** 选中回路：仅记录选中状态（用于表格行高亮 + StatusFooter 显示） */
 function handleSelectLoop(record: LoopApi.MonitorListItem) {
@@ -963,7 +970,6 @@ async function loadPerfDetail() {
     perfDetail.value = detail;
     loopDetailForWeights.value = loopDetail;
     await nextTick();
-    renderGauge();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -971,42 +977,6 @@ async function loadPerfDetail() {
   }
 }
 
-/** 渲染仪表盘 */
-function renderGauge() {
-  const score = perfDetail.value?.kpiSummary.composite_score;
-  if (score === null || score === undefined) return;
-
-  renderGaugeChart({
-    series: [
-      {
-        axisLine: {
-          lineStyle: {
-            color: [
-              [0.6, themeColors.value.DANGER],
-              [0.8, themeColors.value.WARNING],
-              [1, themeColors.value.SUCCESS],
-            ],
-            width: 18,
-          },
-        },
-        axisTick: { show: false },
-        data: [{ name: '综合性能指数', value: score }],
-        detail: {
-          fontSize: 28,
-          formatter: '{value}',
-          offsetCenter: [0, '50%'],
-        },
-        max: 100,
-        min: 0,
-        pointer: { itemStyle: { color: 'auto' } },
-        progress: { show: true, width: 18 },
-        splitLine: { length: 18 },
-        title: { fontSize: 14, offsetCenter: [0, '80%'] },
-        type: 'gauge',
-      },
-    ],
-  });
-}
 
 function handlePerfWindowChange() {
   loadPerfDetail();
@@ -1088,13 +1058,6 @@ function handleToggleAutoRefresh(val: any) {
   }
 }
 
-// ===== 主题切换重渲图表 =====
-watch(isDark, () => {
-  nextTick(() => {
-    renderGauge();
-  });
-});
-
 // ===== 偏好持久化 =====
 
 /** 保存默认时间窗 */
@@ -1145,12 +1108,39 @@ function handleResetPreferences() {
 
 // ===== 生命周期 =====
 
+// 整改 C1-2：筛选/分页状态入 URL（刷新/分享/回退不丢巡检上下文）
+function applyQueryFromUrl() {
+  const q = route.query;
+  if (typeof q.plantNodeId === 'string') query.plantNodeId = q.plantNodeId;
+  if (typeof q.loopType === 'string') query.loopType = q.loopType;
+  if (typeof q.keyword === 'string') query.keyword = q.keyword;
+  if (typeof q.page === 'string' && Number(q.page) > 1)
+    query.page = Number(q.page);
+}
+
+/** 将当前筛选/分页写入 URL query（保留 loopId 深链参数） */
+function syncQueryToUrl() {
+  const q: Record<string, string> = {};
+  if (route.query.loopId) q.loopId = String(route.query.loopId);
+  if (query.plantNodeId) q.plantNodeId = query.plantNodeId;
+  if (query.loopType) q.loopType = query.loopType;
+  if (query.keyword) q.keyword = query.keyword;
+  if (query.page > 1) q.page = String(query.page);
+  router.replace({ query: q });
+}
+
 onMounted(() => {
+  applyQueryFromUrl();
   loadPlantNodes();
   loadList();
   loadLoopTypeStats();
   startAutoRefresh();
 });
+
+watch(
+  () => [query.plantNodeId, query.loopType, query.keyword, query.page],
+  syncQueryToUrl,
+);
 
 watch(
   () => query.plantNodeId,
@@ -1182,6 +1172,13 @@ onUnmounted(() => {
           :column-configs="columnConfigs"
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
+        />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
         />
       </template>
     </ClpmPageToolbar>
@@ -1247,6 +1244,11 @@ onUnmounted(() => {
                     : 'none',
               }"
               @click="handleTypeCardClick('ALL')"
+              role="button"
+              tabindex="0"
+              :aria-pressed="query.loopType === ''"
+              @keydown.enter="handleTypeCardClick('ALL')"
+              @keydown.space.prevent="handleTypeCardClick('ALL')"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1267,6 +1269,7 @@ onUnmounted(() => {
             </div>
             <div
               v-for="(count, key) in loopTypeStats"
+              v-show="count > 0"
               :key="key"
               class="flex items-center gap-2 px-3 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity"
               :style="{
@@ -1281,6 +1284,11 @@ onUnmounted(() => {
                     : 'none',
               }"
               @click="handleTypeCardClick(key)"
+              role="button"
+              tabindex="0"
+              :aria-pressed="query.loopType === key"
+              @keydown.enter="handleTypeCardClick(key)"
+              @keydown.space.prevent="handleTypeCardClick(key)"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1321,18 +1329,35 @@ onUnmounted(() => {
             <div
               class="flex items-center gap-2 px-3 py-1 rounded"
               :style="{
-                backgroundColor: `${MODE_COLOR_MAP['0']}15`,
-                borderLeft: `3px solid ${MODE_COLOR_MAP['0']}`,
+                backgroundColor:
+                  manualModeCount > 0
+                    ? `${MODE_COLOR_MAP['0']}15`
+                    : `${themeColors.NEUTRAL}08`,
+                borderLeft: `3px solid ${
+                  manualModeCount > 0
+                    ? MODE_COLOR_MAP['0']
+                    : themeColors.NEUTRAL
+                }`,
               }"
             >
               <span
                 class="w-2 h-2 rounded-full"
-                :style="{ backgroundColor: MODE_COLOR_MAP['0'] }"
+                :style="{
+                  backgroundColor:
+                    manualModeCount > 0
+                      ? MODE_COLOR_MAP['0']
+                      : themeColors.NEUTRAL,
+                }"
               ></span>
               <span class="text-sm text-gray-600">手动</span>
               <span
                 class="text-sm font-semibold"
-                :style="{ color: MODE_COLOR_MAP['0'] }"
+                :style="{
+                  color:
+                    manualModeCount > 0
+                      ? MODE_COLOR_MAP['0']
+                      : themeColors.NEUTRAL,
+                }"
                 >{{ manualModeCount }}</span
               >
             </div>
@@ -1401,7 +1426,12 @@ onUnmounted(() => {
                     {{ preset.name }}
                     <span
                       class="ml-1 text-gray-400 hover:text-red-500"
+                      role="button"
+                      tabindex="0"
+                      :aria-label="`删除预设 ${preset.name}`"
                       @click.stop="handleDeletePreset(preset.id)"
+                      @keydown.enter.stop="handleDeletePreset(preset.id)"
+                      @keydown.space.stop.prevent="handleDeletePreset(preset.id)"
                     >
                       ×
                     </span>
@@ -1455,7 +1485,7 @@ onUnmounted(() => {
           }"
           :row-key="(record: LoopApi.MonitorListItem) => record.loopId"
           :scroll="{ x: 1570 }"
-          size="small"
+          :size="tableSize"
           :row-class-name="
             (record) =>
               selectedLoop?.loopId === record.loopId
@@ -1506,14 +1536,7 @@ onUnmounted(() => {
               <span v-else class="text-slate-300">—</span>
             </template>
             <template v-else-if="column.key === 'loopType'">
-              <Tag
-                :color="
-                  LOOP_TYPE_TAG_COLOR_MAP[
-                    (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
-                  ] ?? 'default'
-                "
-                class="m-0"
-              >
+              <Tag class="clpm-tag-neutral m-0">
                 {{
                   LOOP_TYPE_LABEL_MAP[
                     (record as LoopApi.MonitorListItem).loopType ?? 'OTHER'
@@ -1534,9 +1557,6 @@ onUnmounted(() => {
                   mono
                   size="sm"
                 />
-                <span class="text-xs text-gray-500">{{
-                  (record as LoopApi.MonitorListItem).currentValues?.unit
-                }}</span>
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1554,9 +1574,6 @@ onUnmounted(() => {
                   size="sm"
                   :weight="600"
                 />
-                <span class="text-xs text-gray-500">{{
-                  (record as LoopApi.MonitorListItem).currentValues?.unit
-                }}</span>
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1573,7 +1590,6 @@ onUnmounted(() => {
                   mono
                   size="sm"
                 />
-                <span class="text-xs text-gray-500">%</span>
               </span>
               <span v-else class="text-gray-400">—</span>
             </template>
@@ -1617,6 +1633,10 @@ onUnmounted(() => {
                   mono
                   size="sm"
                   :weight="600"
+                />
+                <DayDeltaBadge
+                  :delta="(record as LoopApi.MonitorListItem).scoreDelta"
+                  :trend="(record as LoopApi.MonitorListItem).dayTrend"
                 />
               </span>
               <span v-else class="text-gray-400">—</span>
@@ -1673,7 +1693,16 @@ onUnmounted(() => {
                 v-else
                 class="text-gray-400 cursor-pointer hover:text-blue-500"
                 title="暂无诊断记录，点击进入诊断详情触发新诊断"
+                role="button"
+                tabindex="0"
+                aria-label="进入诊断详情"
                 @click="
+                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
+                "
+                @keydown.enter="
+                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
+                "
+                @keydown.space.prevent="
                   goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
                 "
               >
@@ -1688,23 +1717,26 @@ onUnmounted(() => {
               />
             </template>
             <template v-else-if="column.key === 'action'">
+              <!-- 整改 A-14：彩色 Tag 按钮墙 → 安静文字链接 -->
               <div class="flex items-center gap-1">
-                <Tag color="blue" class="cursor-pointer hover:opacity-80">
-                  <span @click="viewDetail(record as LoopApi.MonitorListItem)"
-                    >详情</span
-                  >
-                </Tag>
-                <Tag color="green" class="cursor-pointer hover:opacity-80">
-                  <span @click="openTrend(record as LoopApi.MonitorListItem)"
-                    >趋势</span
-                  >
-                </Tag>
-                <Tag color="orange" class="cursor-pointer hover:opacity-80">
-                  <span
-                    @click="openPerformance(record as LoopApi.MonitorListItem)"
-                    >性能</span
-                  >
-                </Tag>
+                <Button
+                  type="link"
+                  size="small"
+                  @click="viewDetail(record as LoopApi.MonitorListItem)"
+                  >详情</Button
+                >
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openTrend(record as LoopApi.MonitorListItem)"
+                  >趋势</Button
+                >
+                <Button
+                  type="link"
+                  size="small"
+                  @click="openPerformance(record as LoopApi.MonitorListItem)"
+                  >性能</Button
+                >
               </div>
             </template>
           </template>
@@ -1939,18 +1971,13 @@ onUnmounted(() => {
             class="flex items-center gap-6 rounded border p-4"
             :class="{ 'opacity-60': isPerfInconclusive }"
           >
-            <div style="width: 240px; height: 240px">
-              <EchartsUI
-                v-if="perfDetail.kpiSummary.composite_score != null"
-                ref="gaugeChartRef"
-                height="240px"
+            <!-- 整改 A-06：gauge 退役，子弹图（值条+分档区间带） -->
+            <div style="width: 280px">
+              <ClpmBulletChart
+                label="综合性能指数"
+                :value="perfDetail.kpiSummary.composite_score ?? null"
+                unit="分"
               />
-              <div
-                v-else
-                class="flex h-full items-center justify-center text-gray-400"
-              >
-                暂无评分
-              </div>
             </div>
             <div class="flex-1">
               <div class="text-sm text-gray-500">
@@ -2140,7 +2167,9 @@ onUnmounted(() => {
   visibility: hidden;
   gap: 1px;
   opacity: 0;
-  transition: all 0.2s ease;
+  transition:
+    visibility 0.2s ease,
+    opacity 0.2s ease;
 }
 
 :deep(.ant-table-row):hover .loop-row-actions {

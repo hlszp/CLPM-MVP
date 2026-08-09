@@ -494,6 +494,8 @@ async def list_loop_snapshots_endpoint(
                     if snap.setpoint_crossing_count is not None
                     else None
                 ),
+                # F5：时间常数（秒，激励不足窗口为 None）
+                timeConstant=_to_float(snap.time_constant),
             )
         )
 

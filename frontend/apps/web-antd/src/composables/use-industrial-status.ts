@@ -57,8 +57,12 @@ const STATUS_MAP: Record<string, IndustrialStatus> = {
   BAD: 'error',
   UNCERTAIN: 'warning',
   // Action Tracker 状态（§7.2.2 / §8.2.3，对齐实现契约 v2.0）
+  // P1a 闭环状态机：PENDING → IN_PROGRESS → VERIFYING → CLOSED（VERIFYING 可→REOPENED）
   PENDING: 'info',
   IN_PROGRESS: 'warning',
+  VERIFYING: 'info',
+  CLOSED: 'ok',
+  REOPENED: 'error',
   IMPLEMENTED: 'ok',
   IGNORED: 'neutral',
   // Loop 就绪状态（§8.2.1）

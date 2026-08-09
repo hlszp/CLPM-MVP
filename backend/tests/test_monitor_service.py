@@ -305,6 +305,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
@@ -337,6 +338,110 @@ class TestListLoopMonitor:
         assert item["dataHealth"]["pvCompleteness"] is None
         assert item["dataHealth"]["integrityStatus"] is None
 
+    def _make_snap(self, score: str) -> MagicMock:
+        """C1-1 测试用 KPI 快照（仅 score/ts_end/status 有效，其余速率字段 None）。"""
+        snap = MagicMock()
+        snap.loop_id = "loop-001"
+        snap.score = Decimal(score)
+        snap.status = "GOOD"
+        snap.confidence_level = "A"
+        snap.ts_end = datetime(2026, 8, 8, 6, 0, 0)
+        for f in (
+            "good_value_rate",
+            "auto_mode_rate",
+            "steady_rate",
+            "accuracy_rate",
+            "fast_rate",
+            "oscillation_rate",
+            "saturation_rate",
+            "valid_rate",
+            "effective_auto_rate",
+        ):
+            setattr(snap, f, None)
+        return snap
+
+    async def test_day_trend_worsened(self) -> None:
+        """C1-1：当前评分较昨日基线下降 ≥2 → dayTrend=WORSENED + scoreDelta 差值。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),  # Tag 关联（空）
+                _make_scalars_mock([self._make_snap("78.00")]),  # 最新 KPI 快照
+                _make_scalars_mock([self._make_snap("85.00")]),  # 昨日基线快照
+                _make_scalars_mock([]),  # mode mapping
+                _make_scalars_mock([]),  # 完整性巡检快照
+            ]
+        )
+        result = await list_loop_monitor(db)
+        item = result["items"][0]
+        assert item["score"] == 78.0
+        assert item["scoreDelta"] == -7.0
+        assert item["dayTrend"] == "WORSENED"
+
+    async def test_day_trend_improved_and_flat(self) -> None:
+        """C1-1：上升 ≥2 → IMPROVED；|delta| < 2 → FLAT。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([self._make_snap("86.50")]),
+                _make_scalars_mock([self._make_snap("83.00")]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        item = (await list_loop_monitor(db))["items"][0]
+        assert item["scoreDelta"] == 3.5
+        assert item["dayTrend"] == "IMPROVED"
+
+    async def test_day_trend_new_without_baseline(self) -> None:
+        """C1-1：有当前快照但无昨日基线 → dayTrend=NEW、scoreDelta=None。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([self._make_snap("80.00")]),
+                _make_scalars_mock([]),  # 昨日基线快照（空）
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        item = (await list_loop_monitor(db))["items"][0]
+        assert item["dayTrend"] == "NEW"
+        assert item["scoreDelta"] is None
+
+    async def test_day_trend_none_without_snapshot(self) -> None:
+        """C1-1：无当前快照 → dayTrend/scoreDelta 均为 None。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),  # 最新 KPI 快照（空）
+                _make_scalars_mock([]),  # 昨日基线快照（空）
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        item = (await list_loop_monitor(db))["items"][0]
+        assert item["dayTrend"] is None
+        assert item["scoreDelta"] is None
+
     async def test_is_active_filter_applied(self) -> None:
         """WS-D 阶段5：list 与 stats 口径统一，仅返回 is_active=True 的回路。
 
@@ -352,6 +457,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
@@ -379,6 +485,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
@@ -386,7 +493,7 @@ class TestListLoopMonitor:
         result = await list_loop_monitor(db, plant_node_id="unit-001")
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert db.execute.await_count == 8
+        assert db.execute.await_count == 9
 
     async def test_with_keyword_filter(self) -> None:
         """带 keyword 过滤时正确返回空列表。"""
@@ -437,6 +544,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag, sp_tag, op_tag, mode_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
@@ -462,6 +570,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([loop]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
@@ -469,9 +578,9 @@ class TestListLoopMonitor:
         result = await list_loop_monitor(db)
         item = result["items"][0]
         assert item["unitName"] is None
-        # count + loops + mappings + kpi_snapshot + mode_mapping + integrity = 6 次
+        # count + loops + mappings + kpi_snapshot + prev_snapshot + mode_mapping + integrity = 7 次
         # （跳过 plant node 查询；无 tags 因 mappings 为空）
-        assert db.execute.await_count == 6
+        assert db.execute.await_count == 7
 
     async def test_no_score_weight(self) -> None:
         """无 KPI 快照时 score 为 None（score 来自 KpiSnapshotHourly，非 loop.score_weight）。"""
@@ -485,6 +594,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock([_make_plant_node()]),
                 _make_scalars_mock([]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
@@ -508,6 +618,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([pv_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
@@ -538,6 +649,7 @@ class TestListLoopMonitor:
                 _make_scalars_mock(mappings),
                 _make_scalars_mock([mode_tag]),
                 _make_scalars_mock([]),  # KPI 快照查询（空）
+                _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_rows_iterable_mock(mode_mapping_rows),  # mode mapping 查询（有配置）
                 _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]

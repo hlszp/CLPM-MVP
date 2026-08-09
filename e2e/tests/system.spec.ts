@@ -113,6 +113,23 @@ test.describe('系统管理 E2E', () => {
       if (await disableBtn.isVisible().catch(() => false)) {
         await disableBtn.click();
         await page.waitForTimeout(500);
+        // ClpmDangerConfirmModal：需先填变更原因（≥10 字）+ 确认码，确认按钮才启用；
+        // 确认码 = displayName（username）组合（users.vue disableTarget 构成），
+        // 从弹窗提示文本动态提取，不硬编码
+        const dangerModal = page.locator('.ant-modal').last();
+        if (await dangerModal.isVisible().catch(() => false)) {
+          await dangerModal.locator('textarea').first().fill('E2E 自动化测试禁用用户');
+          const hintText = await dangerModal.locator('.clpm-danger-confirm__hint').last().innerText();
+          const expectedCode = hintText
+            .replace(/^请输入/, '')
+            .replace(/以确认.*$/, '')
+            .trim();
+          await dangerModal
+            .locator('input[placeholder*="以确认"], input')
+            .first()
+            .fill(expectedCode);
+          await page.waitForTimeout(300);
+        }
         const confirmBtn = page.getByRole('button', { name: /确定|确认/i }).last();
         if (await confirmBtn.isVisible().catch(() => false)) {
           await confirmBtn.click();
@@ -189,5 +206,46 @@ test.describe('系统管理 E2E', () => {
 
     // 验证权限级别标签存在（查看/协同/执行/管理/服务）
     expect(pageText).toMatch(/查看|协同|执行|管理|服务/);
+  });
+});
+
+/**
+ * 系统管理数据映射断言（UI/UX 整改 B5 回归守护）
+ *
+ * 回归背景：system.ts 类型与页面曾按 snake_case 绑定，而后端实际返回
+ * camelCase，导致用户列表全员"禁用"、审计日志全列 "—"。
+ */
+test.describe('系统管理数据映射断言（整改 B5）', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs('ADMIN');
+  });
+
+  test('E2E-SYS-DATA-001: 用户列表显示真实状态与姓名', async ({ page }) => {
+    await page.goto('/system/users');
+    await expect(page.locator('.ant-table-tbody tr.ant-table-row').first()).toBeVisible({
+      timeout: 15_000,
+    });
+    const adminRow = page
+      .locator('.ant-table-tbody tr.ant-table-row', { hasText: 'admin' })
+      .first();
+    // isActive 映射生效：admin 行显示"启用"而非"禁用"
+    await expect(adminRow).toContainText('启用');
+    // displayName 映射生效：姓名列显示真实姓名
+    await expect(adminRow).toContainText('系统管理员');
+  });
+
+  test('E2E-SYS-DATA-002: 审计日志列表列不渲染为 "—"', async ({ page }) => {
+    await page.goto('/system/audit');
+    await expect(page.locator('.ant-table-tbody tr.ant-table-row').first()).toBeVisible({
+      timeout: 15_000,
+    });
+    const firstRowText = await page
+      .locator('.ant-table-tbody tr.ant-table-row')
+      .first()
+      .innerText();
+    // 时间列不应以 "—" 开头（operatedAt 映射生效）
+    expect(firstRowText).not.toMatch(/^\s*—/);
+    // 操作类型应渲染为中文映射，不泄漏原始英文枚举（如 USER_DISABLE）
+    expect(firstRowText).not.toMatch(/[A-Z]{2,}_[A-Z_]{2,}/);
   });
 });

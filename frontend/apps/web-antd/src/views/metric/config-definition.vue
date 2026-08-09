@@ -39,8 +39,8 @@ const categoryConfig: Record<
   MetricCategory,
   { color: string; label: string; order: number }
 > = {
-  CORE: { color: 'success', label: '核心质量', order: 0 },
-  COMMISSIONING: { color: 'processing', label: '投用', order: 1 },
+  CORE: { color: 'default', label: '核心质量', order: 0 },
+  COMMISSIONING: { color: 'default', label: '投用', order: 1 },
   AUXILIARY_DIAGNOSTIC: { color: 'default', label: '辅助诊断', order: 2 },
 };
 

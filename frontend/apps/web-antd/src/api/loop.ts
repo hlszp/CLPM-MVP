@@ -397,6 +397,10 @@ export namespace LoopApi {
     controlMode: ControlMode;
     loopType?: LoopType;
     score: number;
+    /** C1-1 增量巡检："较昨日"评分增量（无基线/无当前评分时为 null） */
+    scoreDelta?: null | number;
+    /** C1-1 增量巡检：趋势 NEW/WORSENED/IMPROVED/FLAT（无当前评分时为 null） */
+    dayTrend?: 'FLAT' | 'IMPROVED' | 'NEW' | 'WORSENED' | null;
     /** 回路状态：READY/PARTIAL/INACTIVE（WS-D 阶段5：拆分 status） */
     loopStatus: LoopStatus;
     /** KPI 快照状态：SUCCESS/PARTIAL/INCONCLUSIVE（WS-D 阶段5：拆分 status） */

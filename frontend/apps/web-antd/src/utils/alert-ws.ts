@@ -1,24 +1,21 @@
 /**
- * WebSocket 预警实时推送客户端
+ * WebSocket 预警推送客户端（整改 E4）
  *
- * 连接后端 /api/v1/ws/alerts 端点，接收预警事件实时通知。
- * 支持自动重连、心跳检测、消息回调。
- *
- * 消息格式（dispatcher._notify 发布）:
- * { type: "alert", ruleCode, ruleName, loopId, severity, triggeredValue, triggeredAt, snapshot }
+ * 连接后端 /api/v1/ws/alerts 端点，接收规则引擎预警通知，
+ * 用于顶栏通知铃铛的实时预警条目推送。
+ * 模式与 utils/realtime-ws.ts 对齐：自动重连、心跳、消息回调。
  */
 
-export type AlertSeverity = 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
-
+/** 后端推送消息格式（见 ws_alert.py  docstring） */
 export type AlertWsMessage = {
-  loopId: string;
-  ruleCode: string;
-  ruleName: string;
-  severity: AlertSeverity;
-  snapshot: Record<string, any>;
-  triggeredAt: string;
-  triggeredValue: null | number;
-  type: 'alert';
+  loopId?: string;
+  ruleCode?: string;
+  ruleName?: string;
+  severity?: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
+  snapshot?: Record<string, unknown>;
+  triggeredAt?: string;
+  triggeredValue?: number;
+  type: 'alert' | 'ping' | string;
 };
 
 type MessageHandler = (msg: AlertWsMessage) => void;
@@ -36,7 +33,8 @@ class AlertWebSocket {
   private isManualClose = false;
   private reconnectAttempts = 0;
   private reconnectTimer: null | ReturnType<typeof setTimeout> = null;
-  private token = '';
+  private token: string = '';
+
   private ws: null | WebSocket = null;
 
   constructor() {
@@ -60,77 +58,58 @@ class AlertWebSocket {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
+    this.ws?.close();
+    this.ws = null;
   }
 
-  onMessage(handler: MessageHandler): () => void {
+  onMessage(handler: MessageHandler) {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
   }
 
   private _doConnect() {
     if (!this.token) return;
-
     try {
-      this.ws = new WebSocket(
-        `${this.baseUrl}?token=${encodeURIComponent(this.token)}`,
-      );
+      this.ws = new WebSocket(`${this.baseUrl}?token=${this.token}`);
     } catch {
       this._scheduleReconnect();
       return;
     }
 
-    this.ws.addEventListener('open', () => {
+    this.ws.onopen = () => {
       this.reconnectAttempts = 0;
-      if (import.meta.env.DEV) {
-        console.warn('[AlertWS] 已连接');
-      }
-    });
+    };
 
-    this.ws.addEventListener('message', (event) => {
+    this.ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ping') return;
-        if (data.type === 'alert') {
-          this.handlers.forEach((h) => h(data as AlertWsMessage));
+        const msg = JSON.parse(event.data) as AlertWsMessage;
+        // 心跳：回复 pong，不派发
+        if (msg.type === 'ping') {
+          this.ws?.send(JSON.stringify({ type: 'pong' }));
+          return;
         }
+        this.handlers.forEach((h) => h(msg));
       } catch {
-        // 非 JSON 消息，忽略
+        // 非法消息忽略
       }
-    });
+    };
 
-    this.ws.addEventListener('close', (event) => {
-      if (import.meta.env.DEV) {
-        console.warn(`[AlertWS] 连接关闭 (code=${event.code})`);
-      }
-      this.ws = null;
-      if (!this.isManualClose) {
-        this._scheduleReconnect();
-      }
-    });
+    this.ws.onclose = () => {
+      if (!this.isManualClose) this._scheduleReconnect();
+    };
 
-    this.ws.addEventListener('error', () => {
-      if (import.meta.env.DEV) {
-        console.warn('[AlertWS] 连接错误');
-      }
-    });
+    this.ws.onerror = () => {
+      this.ws?.close();
+    };
   }
 
   private _scheduleReconnect() {
-    if (this.reconnectTimer) return;
-    this.reconnectAttempts++;
+    if (this.reconnectTimer || this.isManualClose) return;
     const delay = Math.min(
-      RECONNECT_INTERVAL * this.reconnectAttempts,
+      RECONNECT_INTERVAL * 2 ** this.reconnectAttempts,
       MAX_RECONNECT_DELAY,
     );
-    if (import.meta.env.DEV) {
-      console.warn(
-        `[AlertWS] ${delay}ms 后重连 (第${this.reconnectAttempts}次)`,
-      );
-    }
+    this.reconnectAttempts += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this._doConnect();

@@ -38,7 +38,7 @@ const props = defineProps<{
   waveform: DiagnosisApi.WaveformResult | null;
 }>();
 
-const { isDark, themeColors } = useClpmTheme();
+const { isDark, themeColors, chartColors } = useClpmTheme();
 
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
@@ -150,7 +150,7 @@ function buildChart() {
     series.push({
       data: allEvents.map((e) => [e.xAxis, e.value]),
       itemStyle: {
-        borderColor: '#fff',
+        borderColor: chartColors.value.border,
         borderWidth: 1,
       },
       name: '算法事件点',

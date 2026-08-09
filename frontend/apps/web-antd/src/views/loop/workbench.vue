@@ -42,16 +42,20 @@ import {
 } from '#/api/tuning';
 import {
   ClpmAiDrawer,
+  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
 
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
 import KpiMetricCards from './components/kpi-metric-cards.vue';
+import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
+import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import ScoreTrendChart from './components/score-trend-chart.vue';
 import SimulateResultModal from './components/simulate-result-modal.vue';
 import TuneParamModal from './components/tune-param-modal.vue';
@@ -67,6 +71,23 @@ const router = useRouter();
 
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);
+
+/**
+ * 左栏虚拟滚动（D4）：行高约 57px（py-2 + 两行文本 + border），
+ * pageSize=100 时仅渲染可视窗口 + 5 行缓冲，长列表滚动不卡。
+ */
+const {
+  containerRef: loopListRef,
+  offsetY: loopListOffsetY,
+  onScroll: onLoopListScroll,
+  totalHeight: loopListTotalHeight,
+  visibleItems: visibleLoopItems,
+} = useVirtualList({ itemHeight: 57, items: loopList });
+
+/** 模板函数 ref：把容器元素写入组合式函数的 containerRef（函数 ref 对齐 VNodeRef 类型） */
+function setLoopListRef(el: unknown) {
+  loopListRef.value = (el as HTMLElement) || null;
+}
 const loopListLoading = ref(false);
 const loopListError = ref('');
 const searchKeyword = ref('');
@@ -249,8 +270,31 @@ const simulateModalOpen = ref(false);
 const simulateResult = ref<null | TuningApi.SimulationResult>(null);
 
 // ===== 参数整定（同步 tunePidApi） =====
+// 整改 B2（D1 签认）：不再以 riskConfirmed:true 静默跳过风险确认——
+// 先经 ClpmDangerConfirmModal（WARNING 简化级）用户确认后再调 API。
 const tuneLoading = ref(false);
-async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
+const riskConfirmOpen = ref(false);
+const riskConfirmKind = ref<'simulate' | 'tune'>('tune');
+const pendingTunePayload = ref<{ algorithm: TuningApi.Algorithm } | null>(
+  null,
+);
+
+const riskConfirmContent = computed(() =>
+  riskConfirmKind.value === 'tune'
+    ? {
+        impactScope:
+          '将基于最新辨识模型计算推荐 PID 并反写至整定区。仅输出建议，不会修改 DCS 参数。',
+        title: '参数整定计算确认',
+      }
+    : {
+        impactScope:
+          '将基于推荐 PID 与当前 PID 做闭环响应对比仿真。仅输出对比结果，不会修改 DCS 参数。',
+        title: '闭环仿真计算确认',
+      },
+);
+
+/** 参数整定入口（TuneParamModal @tune）：前置检查 → 打开确认窗 */
+function requestTune(payload: { algorithm: TuningApi.Algorithm }) {
   if (!selectedLoopId.value || !tuningLatest.value) {
     message.warning('请先进行回路辨识生成过程模型');
     return;
@@ -260,6 +304,26 @@ async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
     message.warning('当前无可用过程模型');
     return;
   }
+  pendingTunePayload.value = payload;
+  riskConfirmKind.value = 'tune';
+  riskConfirmOpen.value = true;
+}
+
+/** 确认窗确认后执行 */
+async function handleRiskConfirm() {
+  riskConfirmOpen.value = false;
+  if (riskConfirmKind.value === 'tune' && pendingTunePayload.value) {
+    await handleTune(pendingTunePayload.value);
+  } else if (riskConfirmKind.value === 'simulate') {
+    await handleSimulate();
+  }
+}
+
+async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
+  if (!selectedLoopId.value || !tuningLatest.value) return;
+  const latest = tuningLatest.value;
+  // 前置检查已在 requestTune 完成，此处仅作类型收窄兜底
+  if (!latest.modelType || !latest.modelParams) return;
   tuneLoading.value = true;
   try {
     const result = await tunePidApi({
@@ -284,7 +348,9 @@ async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
 
 // ===== 模拟仿真（同步 simulateTuningApi） =====
 const simulateLoading = ref(false);
-async function handleSimulate() {
+
+/** 模拟仿真入口：前置检查 → 打开确认窗 */
+function requestSimulate() {
   if (!selectedLoopId.value || !tuningLatest.value) {
     message.warning('请先进行回路辨识生成过程模型');
     return;
@@ -302,6 +368,20 @@ async function handleSimulate() {
     message.warning('未获取到当前 PID 参数');
     return;
   }
+  riskConfirmKind.value = 'simulate';
+  riskConfirmOpen.value = true;
+}
+
+async function handleSimulate() {
+  if (!selectedLoopId.value || !tuningLatest.value) return;
+  const latest = tuningLatest.value;
+  if (
+    !latest.modelType ||
+    !latest.modelParams ||
+    !latest.recommendedPid ||
+    !currentPid.value
+  )
+    return;
   simulateLoading.value = true;
   try {
     const result = await simulateTuningApi({
@@ -458,22 +538,13 @@ const { toolbarItems } = usePageToolbar(() => ({
   help: { onClick: handleHelp },
 }));
 
-// ===== 顶部区按钮：趋势 / 历史 =====
+// ===== 顶部区按钮：趋势（页面内弹窗，复用 LoopTrendModal） =====
+// 整改 B1 调整（用户决策）：概览区只保留"趋势"，"历史"按钮下线；
+// 趋势不再跳转路由，改为页内弹窗（与回路实时趋势弹窗同组件）。
+const trendModalOpen = ref(false);
 function goTrend() {
   if (selectedLoopId.value) {
-    router.push({
-      path: '/loop/monitor',
-      query: { loopId: selectedLoopId.value },
-    });
-  }
-}
-
-function goHistory() {
-  if (selectedLoopId.value) {
-    router.push({
-      path: '/loop/history',
-      query: { loopId: selectedLoopId.value },
-    });
+    trendModalOpen.value = true;
   }
 }
 
@@ -590,40 +661,68 @@ watch(
           />
         </div>
         <Spin :spinning="loopListLoading" size="small">
-          <div class="max-h-[calc(100vh-210px)] overflow-y-auto">
+          <div
+            :ref="setLoopListRef"
+            class="max-h-[calc(100vh-210px)] overflow-y-auto"
+            @scroll="onLoopListScroll"
+          >
             <div
-              v-for="item in loopList"
-              :key="item.loopId"
-              class="cursor-pointer border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-blue-50"
-              :class="{
-                'border-l-[3px] border-l-blue-500 bg-blue-50':
-                  item.loopId === selectedLoopId,
+              :style="{
+                height: `${loopListTotalHeight}px`,
+                position: 'relative',
               }"
-              @click="selectLoop(item.loopId)"
             >
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate text-sm font-medium">{{
-                  item.tagName
-                }}</span>
-                <span
-                  v-if="item.confidenceLevel"
-                  class="shrink-0 text-xs font-semibold"
+              <div :style="{ transform: `translateY(${loopListOffsetY}px)` }">
+                <div
+                  v-for="{ item } in visibleLoopItems"
+                  :key="item.loopId"
+                  class="cursor-pointer border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-blue-50"
                   :class="{
-                    'text-green-600': ['A', 'B'].includes(item.confidenceLevel),
-                    'text-orange-500': item.confidenceLevel === 'C',
-                    'text-red-500': ['D', 'E'].includes(item.confidenceLevel),
+                    'border-l-[3px] border-l-blue-500 bg-blue-50':
+                      item.loopId === selectedLoopId,
                   }"
+                  role="button"
+                  tabindex="0"
+                  :aria-current="
+                    item.loopId === selectedLoopId ? 'true' : undefined
+                  "
+                  @click="selectLoop(item.loopId)"
+                  @keydown.enter="selectLoop(item.loopId)"
+                  @keydown.space.prevent="selectLoop(item.loopId)"
                 >
-                  {{ item.confidenceLevel }}
-                </span>
-              </div>
-              <div class="mt-0.5 flex items-center justify-between gap-2">
-                <span class="truncate text-xs text-gray-400">{{
-                  item.description || '—'
-                }}</span>
-                <span class="shrink-0 text-xs text-gray-400"
-                  >评分 {{ item.score ?? '—' }}</span
-                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="truncate text-sm font-medium">{{
+                      item.tagName
+                    }}</span>
+                    <span
+                      v-if="item.confidenceLevel"
+                      class="shrink-0 text-xs font-semibold"
+                      :class="{
+                        'text-green-600': ['A', 'B'].includes(
+                          item.confidenceLevel,
+                        ),
+                        'text-orange-500': item.confidenceLevel === 'C',
+                        'text-red-500': ['D', 'E'].includes(
+                          item.confidenceLevel,
+                        ),
+                      }"
+                    >
+                      {{ item.confidenceLevel }}
+                    </span>
+                  </div>
+                  <div class="mt-0.5 flex items-center justify-between gap-2">
+                    <span class="truncate text-xs text-gray-400">{{
+                      item.description || '—'
+                    }}</span>
+                    <span class="shrink-0 text-xs text-gray-400"
+                      >评分 {{ item.score ?? '—' }}
+                      <DayDeltaBadge
+                        :delta="item.scoreDelta"
+                        :trend="item.dayTrend"
+                      />
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
             <div
@@ -666,7 +765,6 @@ watch(
             </div>
             <template #actions>
               <Button size="small" @click="goTrend">趋势</Button>
-              <Button size="small" @click="goHistory">历史</Button>
             </template>
           </WorkbenchSectionCard>
 
@@ -911,7 +1009,7 @@ watch(
                 size="small"
                 :loading="simulateLoading"
                 :disabled="simulateLoading || !tuningLatest"
-                @click="handleSimulate"
+                @click="requestSimulate"
               >
                 模拟仿真
               </Button>
@@ -960,7 +1058,22 @@ watch(
       :model-type="tuningLatest?.modelType ?? null"
       :model-params="tuningLatest?.modelParams ?? null"
       :current-pid="currentPid"
-      @tune="handleTune"
+      @tune="requestTune"
+    />
+
+    <!-- ===== 整定/仿真风险确认窗（整改 B2，WARNING 简化级） ===== -->
+    <ClpmDangerConfirmModal
+      v-model:open="riskConfirmOpen"
+      :title="riskConfirmContent.title"
+      action="计算"
+      :impact-scope="riskConfirmContent.impactScope"
+      rollback-tip="安全边界：只读建议 · 人工实施 · 需留痕；本平台不直接修改 DCS 的 P/I/D 参数。"
+      :require-confirm-code="false"
+      :require-reason="false"
+      :show-audit-note="false"
+      confirm-text="确认计算"
+      :loading="tuneLoading || simulateLoading"
+      @confirm="handleRiskConfirm"
     />
 
     <!-- ===== 模拟仿真结果弹窗 ===== -->
@@ -968,6 +1081,13 @@ watch(
       v-model:open="simulateModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       :result="simulateResult"
+    />
+
+    <!-- ===== 趋势弹窗（整改 B1：页内弹窗，复用 LoopTrendModal） ===== -->
+    <LoopTrendModal
+      v-model:open="trendModalOpen"
+      :loop-id="selectedLoopId"
+      :tag-name="selectedLoop?.tagName"
     />
 
     <!-- ===== AI 洞察右抽屉 ===== -->

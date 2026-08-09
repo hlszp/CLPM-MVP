@@ -45,14 +45,22 @@ const { themeColors } = useClpmTheme();
 // 元数据
 // ---------------------------------------------------------------------------
 
-/** 控制类型元数据（STABLE/SLOW/FAST/LOGIC） */
-const CONTROL_TYPE_META: Record<ControlType, { color: string; label: string }> =
-  {
-    STABLE: { label: '稳定型', color: '#10b981' },
-    SLOW: { label: '慢速型', color: '#3b82f6' },
-    FAST: { label: '快速型', color: '#f59e0b' },
-    LOGIC: { label: '逻辑型', color: '#722ed1' },
-  };
+/**
+ * 类别标签统一中性样式（色彩约定 D2：类别色板退役 → slate 中性，
+ * 控制类型是类别区分而非状态语义，随明暗主题响应）
+ */
+const CATEGORY_TAG_STYLE = {
+  color: 'hsl(var(--muted-foreground))',
+  backgroundColor: 'hsl(var(--muted) / 60%)',
+} as const;
+
+/** 控制类型元数据（STABLE/SLOW/FAST/LOGIC；类别色已退役，走 CATEGORY_TAG_STYLE） */
+const CONTROL_TYPE_META: Record<ControlType, { label: string }> = {
+  STABLE: { label: '稳定型' },
+  SLOW: { label: '慢速型' },
+  FAST: { label: '快速型' },
+  LOGIC: { label: '逻辑型' },
+};
 
 /** 控制类型展示顺序（对齐后端 4 控制类型） */
 const CONTROL_TYPES: ControlType[] = ['STABLE', 'SLOW', 'FAST', 'LOGIC'];
@@ -66,6 +74,12 @@ interface ParamMeta {
   precision: number;
   /** 渲染类型：number（默认数值输入）| switch（布尔开关，存 0/1） */
   type?: 'number' | 'switch';
+  /** F6：注册表下发的说明文字 */
+  description?: string;
+  /** F6：注册表下发的单位 */
+  unit?: string;
+  /** F6：注册表下发的分组名（Drawer 分组展示） */
+  category?: string;
 }
 
 /** 指标元数据（中文名 + 参数列定义与校验边界） */
@@ -173,8 +187,67 @@ const METRIC_META: Record<string, { params: ParamMeta[] }> = {
   },
 };
 
+/**
+ * 后端注册表元数据缓存（整改 F6 单源消费）：metricCode → paramKey → meta。
+ * 由 loadData 从 GET /configs/algorithm-params 响应的 paramMeta 填充。
+ */
+const backendParamMeta = ref<
+  Record<string, Record<string, MetricApi.AlgorithmParamMeta>>
+>({});
+
+/**
+ * 参数元数据解析（F6：注册表优先，前端硬编码兜底）：
+ * - 本地 METRIC_META 已有的指标：保留 title/step/precision，min/max 以注册表为准，
+ *   补充 description/unit/category；
+ * - 无本地硬编码的新指标（settling_time/effective_auto_rate/output_trip_index 等）：
+ *   完全由注册表生成参数列，实现"新指标零前端改动接入"。
+ */
 function paramMetaOf(metricCode: string): ParamMeta[] {
-  return METRIC_META[metricCode]?.params ?? [];
+  const local = METRIC_META[metricCode]?.params ?? [];
+  const remote = backendParamMeta.value[metricCode] ?? {};
+  if (local.length === 0) {
+    return Object.entries(remote).map(([key, m]) => ({
+      category: m.category,
+      description: m.description,
+      key,
+      max: m.max ?? 100,
+      min: m.min ?? 0,
+      precision: 3,
+      step: 0.01,
+      title: m.description || key,
+      type: m.type === 'bool' ? ('switch' as const) : ('number' as const),
+      unit: m.unit,
+    }));
+  }
+  return local.map((p) => {
+    const m = remote[p.key];
+    if (!m) return p;
+    return {
+      ...p,
+      category: m.category,
+      description: m.description,
+      max: m.max ?? p.max,
+      min: m.min ?? p.min,
+      unit: m.unit,
+    };
+  });
+}
+
+/** Drawer 分组展示：按 category 分组参数（未分组归入"其他"，保持原顺序） */
+function paramsByCategory(metricCode: string): [string, ParamMeta[]][] {
+  const groups: [string, ParamMeta[]][] = [];
+  const index = new Map<string, ParamMeta[]>();
+  for (const p of paramMetaOf(metricCode)) {
+    const c = p.category || '其他';
+    let arr = index.get(c);
+    if (!arr) {
+      arr = [];
+      index.set(c, arr);
+      groups.push([c, arr]);
+    }
+    arr.push(p);
+  }
+  return groups;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +350,15 @@ async function loadData() {
   try {
     const data = await getAlgorithmParamsApi();
     metrics.value = data.metrics ?? [];
+    // F6：缓存注册表元数据（paramMeta），paramMetaOf 消费
+    const metaMap: Record<
+      string,
+      Record<string, MetricApi.AlgorithmParamMeta>
+    > = {};
+    for (const g of data.metrics ?? []) {
+      if (g.paramMeta) metaMap[g.metricCode] = g.paramMeta;
+    }
+    backendParamMeta.value = metaMap;
     updatedAt.value = data.updatedAt ?? null;
     updatedBy.value = data.updatedBy ?? null;
   } catch {
@@ -456,7 +538,19 @@ async function handleSave() {
         params: { ...editParams[mc]?.[ct] },
       }),
     );
-    await saveMetricAlgorithmParamsApi(mc, { items });
+    // F6 重置默认：编辑值全部回落默认、且该控制类型原已覆盖 → 走 resetControlTypes
+    // 彻底清空存储行（避免历史残留键导致 merged ≠ defaults）
+    const resetControlTypes = CONTROL_TYPES.filter((ct) => {
+      const item = editingMetric.value?.items?.find(
+        (it) => it.controlType === ct,
+      );
+      if (!item?.overridden) return false;
+      const row = editParams[mc]?.[ct] ?? {};
+      return paramMetaOf(mc).every(
+        (p) => toNum(row[p.key]) === toNum(item.defaults?.[p.key]),
+      );
+    });
+    await saveMetricAlgorithmParamsApi(mc, { items, resetControlTypes });
     message.success('算法参数保存成功');
     drawerOpen.value = false;
     editingMetric.value = null;
@@ -518,13 +612,7 @@ onMounted(() => {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'controlType'">
-              <Tag
-                :color="
-                  CONTROL_TYPE_META[
-                    (record as MetricApi.AlgorithmParamsControlItem).controlType
-                  ]?.color
-                "
-              >
+              <Tag :style="CATEGORY_TAG_STYLE" class="border-0">
                 {{
                   CONTROL_TYPE_META[
                     (record as MetricApi.AlgorithmParamsControlItem).controlType
@@ -611,7 +699,7 @@ onMounted(() => {
         >
           <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <Tag :color="CONTROL_TYPE_META[ct]?.color">
+              <Tag :style="CATEGORY_TAG_STYLE" class="border-0">
                 {{ CONTROL_TYPE_META[ct]?.label }} ({{ ct }})
               </Tag>
             </div>
@@ -620,42 +708,55 @@ onMounted(() => {
             </Button>
           </div>
           <div class="grid grid-cols-1 gap-3">
+            <!-- F6：按注册表 category 分组展示 -->
             <div
-              v-for="p in paramMetaOf(editingMetric.metricCode)"
-              :key="p.key"
-              class="flex items-center justify-between gap-3"
+              v-for="[cat, params] in paramsByCategory(editingMetric.metricCode)"
+              :key="cat"
             >
-              <div class="flex flex-col">
-                <span class="text-sm">{{ p.title }}</span>
-                <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
-                  默认：
-                  {{
-                    p.type === 'switch'
-                      ? defaultValue(editingMetric, ct, p.key)
-                        ? '开启'
-                        : '关闭'
-                      : (defaultValue(editingMetric, ct, p.key) ?? '—')
-                  }}
-                </span>
+              <div
+                v-if="paramsByCategory(editingMetric.metricCode).length > 1"
+                class="mb-1.5 text-xs font-medium"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
+                {{ cat }}
               </div>
-              <Switch
-                v-if="p.type === 'switch'"
-                :checked="
-                  ensureEditRow(editingMetric.metricCode, ct)[p.key] === 1
-                "
-                @change="(checked) => handleParamSwitch(ct, p.key, checked)"
-              />
-              <InputNumber
-                v-else
-                v-model:value="
-                  ensureEditRow(editingMetric.metricCode, ct)[p.key]
-                "
-                :min="p.min"
-                :max="p.max"
-                :step="p.step"
-                :precision="p.precision"
-                style="width: 160px"
-              />
+              <div
+                v-for="p in params"
+                :key="p.key"
+                class="mb-2 flex items-center justify-between gap-3"
+              >
+                <div class="flex flex-col">
+                  <span class="text-sm">{{ p.title }}</span>
+                  <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
+                    默认：
+                    {{
+                      p.type === 'switch'
+                        ? defaultValue(editingMetric, ct, p.key)
+                          ? '开启'
+                          : '关闭'
+                        : (defaultValue(editingMetric, ct, p.key) ?? '—')
+                    }}{{ p.unit ? ` ${p.unit}` : '' }}
+                  </span>
+                </div>
+                <Switch
+                  v-if="p.type === 'switch'"
+                  :checked="
+                    ensureEditRow(editingMetric.metricCode, ct)[p.key] === 1
+                  "
+                  @change="(checked) => handleParamSwitch(ct, p.key, checked)"
+                />
+                <InputNumber
+                  v-else
+                  v-model:value="
+                    ensureEditRow(editingMetric.metricCode, ct)[p.key]
+                  "
+                  :min="p.min"
+                  :max="p.max"
+                  :step="p.step"
+                  :precision="p.precision"
+                  style="width: 160px"
+                />
+              </div>
             </div>
           </div>
         </div>

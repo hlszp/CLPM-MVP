@@ -588,6 +588,18 @@ async def list_diagnosis(
             }
         )
 
+    # C1-3 验证闭环：VERIFYING 状态超 24h 未闭环的超期条目数（按 updated_at 计时）
+    overdue_stmt = (
+        select(func.count())
+        .select_from(ActionTracker)
+        .where(
+            ActionTracker.action_status == "VERIFYING",
+            ActionTracker.updated_at.is_not(None),
+            ActionTracker.updated_at < datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24),
+        )
+    )
+    verify_overdue = (await db.execute(overdue_stmt)).scalar() or 0
+
     return {
         "items": items,
         "total": total,
@@ -597,6 +609,7 @@ async def list_diagnosis(
             "total": total,
             "statusCounts": status_counts,
             "labelCounts": label_counts,
+            "verifyOverdueCount": verify_overdue,
         },
     }
 

@@ -165,25 +165,24 @@ export function usePageToolbar(
       const items: ToolbarButtonItem[] = [];
       for (const action of group) {
         const c = cfg[action];
-        // #4: 所有 9 个标准工具始终渲染——未配置的工具灰显占位（Poka-Yoke 灰而不藏），
-        // 体现统一工具栏的一致性与功能丰富度。
-        const permitted = checkAccess(accessCodes, roles, c?.permission);
-        const disabled = !c || Boolean(c.disabled) || !permitted;
-        let disabledReason = '本页无此功能';
-        if (c) {
-          disabledReason =
-            c.disabledReason || (permitted ? '' : '当前角色无此操作权限');
-        }
+        // 整改 A-04（图标墙治理）：未声明的工具不渲染——"灰而不藏"仅适用于
+        // "页面有此功能但当前角色无权限"的场景；页面本就没有的功能占位渲染
+        // 会造成每页 9+ 图标墙，认知负荷过载（审查报告 SYS-P1-03）。
+        if (!c) continue;
+        const permitted = checkAccess(accessCodes, roles, c.permission);
+        const disabled = Boolean(c.disabled) || !permitted;
+        const disabledReason =
+          c.disabledReason || (permitted ? '' : '当前角色无此操作权限');
         items.push({
           kind: 'button',
           action,
-          label: c?.label || DEFAULT_LABEL[action],
-          onClick: c?.onClick ?? noop,
+          label: c.label || DEFAULT_LABEL[action],
+          onClick: c.onClick ?? noop,
           disabled,
           disabledReason,
-          loading: Boolean(c?.loading),
-          active: Boolean(c?.active),
-          tooltip: c?.tooltip || '',
+          loading: Boolean(c.loading),
+          active: Boolean(c.active),
+          tooltip: c.tooltip || '',
         });
       }
       if (items.length > 0) groups.push(items);

@@ -12,6 +12,8 @@ import { computed } from 'vue';
 
 import { Tag } from 'ant-design-vue';
 
+import { useClpmTheme } from '#/composables/use-clpm-theme';
+
 /** 质量码（原 AasApi.Quality，AAS 前端 API 层已随 D1 决策下线） */
 type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
@@ -21,20 +23,23 @@ const props = defineProps<{
   quality?: Quality;
 }>();
 
-const qualityMap: Record<
-  string,
-  { borderStyle?: string; color: string; label: string }
-> = {
-  BAD: { borderStyle: 'dashed', color: '#F43F5E', label: 'Bad' },
-  GOOD: { color: '#10B981', label: 'Good' },
-  UNCERTAIN: { color: '#F59E0B', label: 'Uncertain' },
-};
+const { themeColors } = useClpmTheme();
+
+// 质量码色 → CLPM 语义色（随明暗主题响应）：
+// Good → SUCCESS / Uncertain → WARNING / Bad → DANGER（虚线边框）
+const qualityMap = computed<
+  Record<string, { borderStyle?: string; color: string; label: string }>
+>(() => ({
+  BAD: { borderStyle: 'dashed', color: themeColors.value.DANGER, label: 'Bad' },
+  GOOD: { color: themeColors.value.SUCCESS, label: 'Good' },
+  UNCERTAIN: { color: themeColors.value.WARNING, label: 'Uncertain' },
+}));
 
 const current = computed(() => {
   if (!props.quality) {
     return { color: 'default', label: '—' };
   }
-  return qualityMap[props.quality] ?? { color: 'default', label: '—' };
+  return qualityMap.value[props.quality] ?? { color: 'default', label: '—' };
 });
 </script>
 

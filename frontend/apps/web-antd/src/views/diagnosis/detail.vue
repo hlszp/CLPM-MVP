@@ -29,6 +29,7 @@ import {
   Button,
   message,
   Modal,
+  Popconfirm,
   RadioGroup,
   Spin,
   Steps,
@@ -813,17 +814,43 @@ function handlePathStepClick(stepIndex: number) {
 
 // ===== P1a: 状态操作逻辑 =====
 
+/** P1a：状态操作确认文案（可逆轻操作走 Popconfirm 内联确认） */
+const actionConfirmMap: Record<
+  string,
+  { danger?: boolean; okText: string; title: string }
+> = {
+  claim: { title: '确定认领该异常并开始处理吗？', okText: '确定' },
+  verify_pass: {
+    title: '确认整改效果验证通过，该异常将标记为已闭环？',
+    okText: '确认闭环',
+  },
+  verify_fail: {
+    title: '整改效果未达预期，将重新打开该异常进行处理。是否继续？',
+    okText: '重开',
+  },
+  ignore: {
+    title: '确定忽略该异常吗？忽略后将不再出现在待处理列表中。',
+    okText: '确定忽略',
+    danger: true,
+  },
+};
+
+/** Popconfirm 确认后按操作类型分发 */
+function handleActionConfirm(key: string) {
+  if (key === 'claim') {
+    handleClaim();
+  } else if (key === 'verify_pass') {
+    handleVerifyPass();
+  } else if (key === 'verify_fail') {
+    handleVerifyFail();
+  } else if (key === 'ignore') {
+    handleIgnore();
+  }
+}
+
 /** 认领处理 */
-function handleClaim() {
-  Modal.confirm({
-    title: '认领处理',
-    content: '确定认领该异常并开始处理吗？',
-    okText: '确定',
-    cancelText: '取消',
-    onOk: async () => {
-      await updateStatus('IN_PROGRESS');
-    },
-  });
+async function handleClaim() {
+  await updateStatus('IN_PROGRESS');
 }
 
 /** 标记已实施 - 打开实施记录弹窗 */
@@ -855,46 +882,21 @@ async function handleImplementSubmit(data: ImplementSubmitData) {
 }
 
 /** 验证通过 */
-function handleVerifyPass() {
-  Modal.confirm({
-    title: '验证通过',
-    content: '确认整改效果验证通过，该异常将标记为已闭环？',
-    okText: '确认闭环',
-    cancelText: '取消',
-    onOk: async () => {
-      await updateStatus('CLOSED');
-    },
-  });
+async function handleVerifyPass() {
+  await updateStatus('CLOSED');
 }
 
 /** 验证不通过 - 重开 */
-function handleVerifyFail() {
-  Modal.confirm({
-    title: '验证不通过',
-    content: '整改效果未达预期，将重新打开该异常进行处理。是否继续？',
-    okText: '重开',
-    cancelText: '取消',
-    onOk: async () => {
-      // 重开需要填写原因，此处简化处理
-      await updateStatus('REOPENED', {
-        reopenReason: '自动验证不通过，请重新整定参数',
-      });
-    },
+async function handleVerifyFail() {
+  // 重开需要填写原因，此处简化处理
+  await updateStatus('REOPENED', {
+    reopenReason: '自动验证不通过，请重新整定参数',
   });
 }
 
 /** 标记忽略 */
-function handleIgnore() {
-  Modal.confirm({
-    title: '标记忽略',
-    content: '确定忽略该异常吗？忽略后将不再出现在待处理列表中。',
-    okText: '确定忽略',
-    okButtonProps: { danger: true },
-    cancelText: '取消',
-    onOk: async () => {
-      await updateStatus('IGNORED');
-    },
-  });
+async function handleIgnore() {
+  await updateStatus('IGNORED');
 }
 
 /** 统一状态更新 */
@@ -1087,7 +1089,12 @@ onMounted(() => {
                     <div
                       class="path-node"
                       :class="{ 'path-node--active': index === currentStep }"
+                      role="button"
+                      tabindex="0"
+                      :aria-current="index === currentStep ? 'step' : undefined"
                       @click="handlePathStepClick(index)"
+                      @keydown.enter="handlePathStepClick(index)"
+                      @keydown.space.prevent="handlePathStepClick(index)"
                     >
                       <div class="path-node-index">{{ index + 1 }}</div>
                       <div class="path-node-body">
@@ -1120,7 +1127,14 @@ onMounted(() => {
                 <div class="evidence-section">
                   <div
                     class="evidence-header"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!evidenceCollapsed"
                     @click="evidenceCollapsed = !evidenceCollapsed"
+                    @keydown.enter="evidenceCollapsed = !evidenceCollapsed"
+                    @keydown.space.prevent="
+                      evidenceCollapsed = !evidenceCollapsed
+                    "
                   >
                     <IconifyIcon
                       :icon="
@@ -1163,7 +1177,14 @@ onMounted(() => {
                 <div class="evidence-section mt-4">
                   <div
                     class="evidence-header"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="!waveformCollapsed"
                     @click="waveformCollapsed = !waveformCollapsed"
+                    @keydown.enter="waveformCollapsed = !waveformCollapsed"
+                    @keydown.space.prevent="
+                      waveformCollapsed = !waveformCollapsed
+                    "
                   >
                     <IconifyIcon
                       :icon="
@@ -1308,31 +1329,45 @@ onMounted(() => {
                     </div>
                   </div>
                   <div class="flex items-center gap-2">
-                    <Button
+                    <template
                       v-for="action in availableActions"
                       :key="action.key"
-                      :type="
-                        action.variant === 'primary' ? 'primary' : 'default'
-                      "
-                      :danger="action.danger"
-                      :loading="statusUpdating"
-                      size="small"
-                      @click="
-                        action.key === 'claim'
-                          ? handleClaim()
-                          : action.key === 'implement'
-                            ? handleImplement()
-                            : action.key === 'verify_pass'
-                              ? handleVerifyPass()
-                              : action.key === 'verify_fail'
-                                ? handleVerifyFail()
-                                : action.key === 'ignore'
-                                  ? handleIgnore()
-                                  : null
-                      "
                     >
-                      {{ action.label }}
-                    </Button>
+                      <Popconfirm
+                        v-if="action.key !== 'implement'"
+                        :title="actionConfirmMap[action.key]?.title"
+                        :ok-text="actionConfirmMap[action.key]?.okText"
+                        :ok-type="
+                          actionConfirmMap[action.key]?.danger
+                            ? 'danger'
+                            : 'primary'
+                        "
+                        cancel-text="取消"
+                        @confirm="handleActionConfirm(action.key)"
+                      >
+                        <Button
+                          :type="
+                            action.variant === 'primary'
+                              ? 'primary'
+                              : 'default'
+                          "
+                          :danger="action.danger"
+                          :loading="statusUpdating"
+                          size="small"
+                        >
+                          {{ action.label }}
+                        </Button>
+                      </Popconfirm>
+                      <Button
+                        v-else
+                        type="primary"
+                        :loading="statusUpdating"
+                        size="small"
+                        @click="handleImplement"
+                      >
+                        {{ action.label }}
+                      </Button>
+                    </template>
                   </div>
                 </div>
 
@@ -1404,14 +1439,16 @@ onMounted(() => {
                     点击下方按钮加入跟踪，开始异常处置闭环流程
                   </div>
                 </div>
-                <Button
-                  type="primary"
-                  class="mt-4"
-                  :loading="statusUpdating"
-                  @click="handleClaim"
+                <Popconfirm
+                  :title="actionConfirmMap.claim?.title"
+                  :ok-text="actionConfirmMap.claim?.okText"
+                  cancel-text="取消"
+                  @confirm="handleClaim"
                 >
-                  加入跟踪并认领
-                </Button>
+                  <Button type="primary" class="mt-4" :loading="statusUpdating">
+                    加入跟踪并认领
+                  </Button>
+                </Popconfirm>
               </div>
 
               <!-- 时间线组件 -->

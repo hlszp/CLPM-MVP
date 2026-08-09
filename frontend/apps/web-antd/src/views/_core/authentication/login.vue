@@ -62,7 +62,7 @@ const formSchema = computed((): VbenFormSchema[] => {
     :show-remember-me="false"
     :show-third-party-login="false"
     submit-button-text="登录"
-    sub-title="控制回路性能管理系统"
+    sub-title="控制回路性能评估与优化平台"
     title="CLPM 登录"
     @submit="authStore.authLogin"
   />

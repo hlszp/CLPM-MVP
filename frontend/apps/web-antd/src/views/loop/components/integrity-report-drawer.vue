@@ -16,6 +16,7 @@ import { computed, h, ref, watch } from 'vue';
 import {
   Button,
   Drawer,
+  Popconfirm,
   Progress,
   Table,
   Tabs,
@@ -196,6 +197,15 @@ function handleBackfill() {
   if (!hasSelected.value) return;
   emit('backfill', selectedLoopIds.value, props.tsStart, props.tsEnd);
 }
+
+/** 一键补齐 Popconfirm 文案（skip 策略仅补缺口，可逆轻操作） */
+const backfillConfirmTitle = computed(() => {
+  const rangeText =
+    props.tsStart && props.tsEnd
+      ? `时间范围 ${dayjs(props.tsStart).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(props.tsEnd).format('YYYY-MM-DD HH:mm')}。`
+      : '';
+  return `将对 ${selectedLoopIds.value.length} 个回路从远端导入缺失时段数据，采用 skip 策略（仅补缺口，不覆盖已有数据）。${rangeText}确认补齐？`;
+});
 </script>
 
 <template>
@@ -339,15 +349,18 @@ function handleBackfill() {
         <span class="integrity-footer-count">
           已选 {{ selectedLoopIds.length }} 个回路待补齐
         </span>
-        <Tooltip title="补齐采用 skip 策略，保留已有数据，仅从远端拉取缺失时段">
-          <Button
-            type="primary"
-            :disabled="!hasSelected"
-            @click="handleBackfill"
-          >
-            一键补齐缺失数据
-          </Button>
-        </Tooltip>
+        <Popconfirm
+          :title="backfillConfirmTitle"
+          ok-text="开始补齐"
+          cancel-text="取消"
+          @confirm="handleBackfill"
+        >
+          <Tooltip title="补齐采用 skip 策略，保留已有数据，仅从远端拉取缺失时段">
+            <Button type="primary" :disabled="!hasSelected">
+              一键补齐缺失数据
+            </Button>
+          </Tooltip>
+        </Popconfirm>
       </div>
     </template>
   </Drawer>

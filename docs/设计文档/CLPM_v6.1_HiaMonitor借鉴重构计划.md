@@ -497,3 +497,30 @@ def calculate(self, bundle: MetricDataBundle) -> MetricResult:
 | 时间常数 | ❌ 缺失 | P1 新增 |
 | 快速率 | ✅ 已有 | 抗扰性分析可选分支 |
 | 综合评分 | ✅ 已有 | 保持 R 折扣因子（国标对齐），不照搬 HiaMonitor 饱和惩罚 |
+
+---
+
+## 12. 附录：正向偏离回写（2026-08-09，整改 F11）
+
+以下来自差距分析（docs/过程文档/clpm-v6.1-hiamonitor-refactor-gap-analysis-2026-08-08.md §9）的复核结论：实现已超越本设计文档 v1.1 的规划，回写以保持文档与代码一致。
+
+### 12.1 可信度阈值配置化 + 两层防御架构（原设计 §2.5 列为 P2 延后）
+
+已完整落地：可配置阈值（sys_config 持久化 + Redis pub/sub 多进程同步 + 版本号去重 + 前端配置页）。v6.2 可信度统一改造（P2-2）将 INCONCLUSIVE 判定重构为**两层防御**：
+
+- **指标级可计算性阈值**（固定 0.20）：决定"能否算值"；
+- **回路级可信度分级**（可配置 D 阈值）：决定"结果是否可信"。
+
+综合评分层同时检查两者；D 阈值调高/调低均不会产生"可信度 E 但仍输出评分"的矛盾（详见差距分析 §4.4 复评）。原设计预警的耦合风险已被该架构实质性缓解。
+
+### 12.2 仪表故障率 FROZEN 复合判据（见差距分析 §4.6）
+
+实际实现采用 FROZEN 复合判据抑制平稳回路误报，比本设计伪代码更稳健；阈值复用 `ControlTypeThreshold`（`get_threshold_by_sampling_freq` 读取 `frozen_fault_min_minutes`/`frozen_std_pct`），闭环完整。
+
+### 12.3 算法参数乐观锁
+
+`algorithm_parameter.version` 字段已实现乐观锁（设计未提及），配合 UPSERT 防并发覆盖。
+
+### 12.4 参数注册表单源（2026-08-09 整改 F1/F6 追加）
+
+`algorithm_config.PARAM_META` 注册表（param_code → min/max/unit/description/type）+ `PARAM_CATEGORY` 分组为唯一事实源：服务端写入键白名单 + 值域强校验（`validate_metric_params`），前端配置页元数据（边界/说明/单位/分组）经 `paramMeta` 下发消费，消除前后端双维护。新增指标接入配置页零前端改动。

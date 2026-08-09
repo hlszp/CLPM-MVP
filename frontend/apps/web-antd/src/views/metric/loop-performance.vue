@@ -48,6 +48,11 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
+import { useRoute } from 'vue-router';
+
+import { useConfigAccess } from '#/composables/use-config-access';
+import { useEchartsPreset } from '#/composables/use-echarts-preset';
+
 import {
   Badge,
   Button,
@@ -59,6 +64,7 @@ import {
   Input,
   message,
   Modal,
+  CheckboxGroup,
   RadioGroup,
   RangePicker,
   Row,
@@ -86,6 +92,7 @@ import {
   ClpmInfoTip,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
 import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
@@ -100,7 +107,7 @@ import SlowResponseCard from '#/components/diagnosis-visualization/slow-response
 import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
 import StatisticsBarChart from '#/components/diagnosis-visualization/statistics-bar-chart.vue';
 import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
-import ConfidenceBadge from '#/components/metric/confidence-badge.vue';
+import ConfidenceBadge from '#/components/clpm/confidence-badge.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
@@ -109,6 +116,7 @@ import {
 } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
+import { useTableDensity } from '#/composables/use-table-density';
 import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import {
   DIAGNOSIS_LABEL_COLOR_MAP,
@@ -118,7 +126,7 @@ import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricLoopPerformance' });
 
-const { isDark, themeColors, chartColors } = useClpmTheme();
+const { isDark, themeColors } = useClpmTheme();
 const { modeLabelColor } = useLoopPalettes();
 
 // ===== 常量映射 =====
@@ -255,6 +263,10 @@ const query = reactive({
 
 /** 回路元数据 Map（loopId → LoopListItem） */
 const loopMap = shallowRef<Map<string, LoopApi.LoopListItem>>(new Map());
+
+const route = useRoute();
+const { canReadConfig } = useConfigAccess();
+const { axisBase, getTooltipPreset } = useEchartsPreset();
 
 /** 工厂节点树（保留层级结构供 TreeSelect 使用） */
 const plantNodeTree = ref<PlantNodeApi.PlantNode[]>([]);
@@ -649,6 +661,8 @@ async function loadLoopMap() {
 
 /** 加载定级阈值 */
 async function loadGradingThresholds() {
+  // 整改 C2-1：SPONSOR/EXPERT 无 /configs/* 读取权限，前置跳过避免 403 toast
+  if (!canReadConfig.value) return;
   try {
     const result = await getGradingThresholdsApi();
     gradingThresholds.value = result.thresholds || [];
@@ -772,6 +786,11 @@ const { toolbarItems } = usePageToolbar(() => ({
       }),
   },
 }));
+
+// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
+const { tableSize, densityLabel, cycleDensity } = useTableDensity(
+  'metric-loop-performance',
+);
 
 /** 抽屉内历史快照子表（最近 10 条） */
 const drawerHistory = ref<KpiSnapshotItem[]>([]);
@@ -941,6 +960,60 @@ const historyLoading = ref(false);
 const historyRecord = ref<LoopPerformanceRow | null>(null);
 const historyWindow = ref<number>(24);
 const historySnapshots = ref<KpiSnapshotItem[]>([]);
+
+// ===== 整改 F3：历史趋势指标多选（≤5） =====
+/** 可选指标注册表（综合评分=柱状，其余折线；系列色见 historyMetricColor） */
+const HISTORY_METRIC_OPTIONS = [
+  { label: '综合评分', value: 'score', kind: 'bar' },
+  { label: '准确率', value: 'accuracyRate', kind: 'line' },
+  { label: '快速率', value: 'fastRate', kind: 'line' },
+  { label: '平稳率', value: 'steadyRate', kind: 'line' },
+  { label: '有效自控率', value: 'effectiveAutoRate', kind: 'line' },
+  { label: '好值率', value: 'goodValueRate', kind: 'line' },
+  { label: '振荡率', value: 'oscillationRate', kind: 'line' },
+  { label: '饱和率', value: 'saturationRate', kind: 'line' },
+  { label: '仪表故障率', value: 'instrumentFaultRate', kind: 'line' },
+] as const;
+
+/**
+ * 历史趋势系列色：就近映射 themeColors 语义色（随明暗主题响应）。
+ * 默认 5 项（评分/准确/快速/平稳/自控）保持互异；非默认项允许撞色，
+ * 取舍同批次 A 图表族（区分色就近语义化，不再维护私有色板）。
+ */
+function historyMetricColor(metric: string): string {
+  const map: Record<string, string> = {
+    score: themeColors.value.INFO,
+    accuracyRate: themeColors.value.SUCCESS,
+    fastRate: themeColors.value.WARNING,
+    steadyRate: themeColors.value.NEUTRAL,
+    effectiveAutoRate: themeColors.value.DANGER,
+    goodValueRate: themeColors.value.INFO,
+    oscillationRate: themeColors.value.DANGER,
+    saturationRate: themeColors.value.WARNING,
+    instrumentFaultRate: themeColors.value.NEUTRAL,
+  };
+  return map[metric] ?? themeColors.value.NEUTRAL;
+}
+
+const HISTORY_METRIC_MAX = 5;
+
+const selectedHistoryMetrics = ref<string[]>([
+  'score',
+  'accuracyRate',
+  'fastRate',
+  'steadyRate',
+  'effectiveAutoRate',
+]);
+
+/** 多选变更：限制最多 5 项后重渲 */
+function handleHistoryMetricChange(values: (boolean | string | number)[]) {
+  if (values.length > HISTORY_METRIC_MAX) {
+    message.warning(`最多同时对比 ${HISTORY_METRIC_MAX} 个指标`);
+    return;
+  }
+  selectedHistoryMetrics.value = values.map(String);
+  renderHistoryTrend();
+}
 const historyChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderHistoryChart } = useEcharts(historyChartRef);
 
@@ -1003,90 +1076,48 @@ function renderHistoryTrend() {
     return t ? dayjs(t).format('MM-DD HH:mm') : '';
   });
 
-  const scores = data.map((s) => s.score ?? null);
-  const accuracy = data.map((s) => s.accuracyRate ?? null);
-  const fast = data.map((s) => s.fastRate ?? null);
-  const steady = data.map((s) => s.steadyRate ?? null);
-  const effectiveAuto = data.map((s) => s.effectiveAutoRate ?? null);
-
   const textColor = themeColors.value.NEUTRAL;
 
+  const selected = HISTORY_METRIC_OPTIONS.filter((o) =>
+    selectedHistoryMetrics.value.includes(o.value),
+  );
+
   renderHistoryChart({
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-    },
+    tooltip: { ...getTooltipPreset(), trigger: 'axis', axisPointer: { type: 'cross' } },
     legend: {
-      data: ['综合评分', '准确率', '快速率', '平稳率', '有效自控率'],
+      data: selected.map((o) => o.label),
       top: 0,
       textStyle: { color: textColor, fontSize: 12 },
     },
     grid: { top: 40, right: 24, bottom: 40, left: 48, containLabel: true },
     xAxis: {
+      ...axisBase.value,
       type: 'category',
       data: xLabels,
-      axisLabel: { color: textColor, fontSize: 11, hideOverlap: true },
     },
     yAxis: {
+      ...axisBase.value,
       type: 'value',
       min: 0,
       max: 100,
-      axisLabel: { color: textColor, fontSize: 11 },
-      splitLine: {
-        lineStyle: {
-          color: chartColors.value.splitLine,
-        },
-      },
     },
-    series: [
-      {
-        name: '综合评分',
-        type: 'bar',
-        data: scores,
-        itemStyle: { color: themeColors.value.INFO },
-        barWidth: '40%',
-      },
-      {
-        name: '准确率',
-        type: 'line',
-        data: accuracy,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.SUCCESS, width: 2 },
-        itemStyle: { color: themeColors.value.SUCCESS },
-      },
-      {
-        name: '快速率',
-        type: 'line',
-        data: fast,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.WARNING, width: 2 },
-        itemStyle: { color: themeColors.value.WARNING },
-      },
-      {
-        name: '平稳率',
-        type: 'line',
-        data: steady,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.ACCENT, width: 2 },
-        itemStyle: { color: themeColors.value.ACCENT },
-      },
-      {
-        name: '有效自控率',
-        type: 'line',
-        data: effectiveAuto,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 4,
-        lineStyle: { color: themeColors.value.DANGER, width: 2 },
-        itemStyle: { color: themeColors.value.DANGER },
-      },
-    ],
+    series: selected.map((o) => ({
+      name: o.label,
+      type: o.kind,
+      data: data.map((snap) => {
+        const v = snap[o.value as keyof KpiSnapshotItem];
+        return typeof v === 'number' ? v : null;
+      }),
+      ...(o.kind === 'bar'
+        ? { barWidth: '40%', itemStyle: { color: historyMetricColor(o.value) } }
+        : {
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 4,
+            lineStyle: { color: historyMetricColor(o.value), width: 2 },
+            itemStyle: { color: historyMetricColor(o.value) },
+          }),
+    })),
   });
 }
 
@@ -1235,6 +1266,12 @@ watch(isDark, () => {
 
 onMounted(async () => {
   await Promise.all([loadPlantNodes(), loadLoopMap(), loadGradingThresholds()]);
+  // 深链支持：?loopId=xxx → 自动按回路编号过滤（回路工作台"历史"按钮入口，整改 B1）
+  const loopIdQuery = route.query.loopId;
+  if (typeof loopIdQuery === 'string' && loopIdQuery) {
+    const tagName = loopMap.value.get(loopIdQuery)?.tagName;
+    if (tagName) query.loopTagName = tagName;
+  }
   loadList();
   loadStats();
 });
@@ -1250,6 +1287,13 @@ onMounted(async () => {
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -1322,6 +1366,9 @@ onMounted(async () => {
             >
             <div
               class="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selectedGrade === null"
               :style="{
                 backgroundColor:
                   selectedGrade === null
@@ -1334,6 +1381,8 @@ onMounted(async () => {
                     : 'none',
               }"
               @click="handleGradeCardClick(null)"
+              @keydown.enter="handleGradeCardClick(null)"
+              @keydown.space.prevent="handleGradeCardClick(null)"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1348,6 +1397,9 @@ onMounted(async () => {
               v-for="grade in [1, 2, 3, 4, 5]"
               :key="grade"
               class="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selectedGrade === grade"
               :style="{
                 backgroundColor:
                   selectedGrade === grade
@@ -1360,6 +1412,8 @@ onMounted(async () => {
                     : 'none',
               }"
               @click="handleGradeCardClick(grade)"
+              @keydown.enter="handleGradeCardClick(grade)"
+              @keydown.space.prevent="handleGradeCardClick(grade)"
             >
               <span
                 class="w-2 h-2 rounded-full"
@@ -1419,6 +1473,8 @@ onMounted(async () => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && rows.length === 0"
+      empty-text="暂无 KPI 评估快照"
+      empty-reason="当前筛选条件下没有评估数据；可调整时间窗/筛选条件，或先在回路工作台发起评估。"
       @retry="loadList"
     >
       <Table
@@ -1439,7 +1495,7 @@ onMounted(async () => {
           (record: LoopPerformanceRow) => `${record.loopId}-${record.tsStart}`
         "
         :scroll="{ x: 1250 }"
-        size="small"
+        :size="tableSize"
         @change="handleTableChange"
       >
         <template #headerCell="{ column }">
@@ -2090,6 +2146,21 @@ onMounted(async () => {
               button-style="solid"
               size="small"
               @change="handleHistoryWindowChange"
+            />
+          </div>
+
+          <!-- 指标多选（整改 F3：≤5 个指标对比） -->
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-gray-500">对比指标：</span>
+            <CheckboxGroup
+              :value="selectedHistoryMetrics"
+              :options="
+                HISTORY_METRIC_OPTIONS.map((o) => ({
+                  label: o.label,
+                  value: o.value,
+                }))
+              "
+              @change="handleHistoryMetricChange"
             />
           </div>
 

@@ -1,6 +1,6 @@
 # CLPM Design Baseline
 
-日期：2026-07-22（对齐 PRD v6.1、UI/UX v6.1 与重构后实现契约 v2.0）
+日期：2026-08-09（对齐 PRD v6.2、UI/UX v6.2 与重构后实现契约 v2.8）
 状态：active-baseline
 适用范围：CLPM 重构后正式前端与原型体验对齐
 
@@ -12,8 +12,8 @@
 
 | 类型 | 唯一来源 | 版本 |
 |---|---|---|
-| 产品需求 | `docs/设计文档/01-PRD/PRD.md` | v6.1 |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | v2.0 |
+| 产品需求 | `docs/设计文档/01-PRD/PRD.md` | v6.2 |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | v2.8 |
 | 功能规范 | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
 | 应用架构 | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
 | 数据模型 | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
