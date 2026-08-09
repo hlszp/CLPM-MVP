@@ -4,6 +4,7 @@
 |---|---|
 | 文档版本 | v1.0 |
 | 制定日期 | 2026-08-07 |
+| **执行状态** | **✅ 方案已全部执行完毕（2026-08-09）**：Phase 0 修信任（B1-B5 + E7 决策）、Phase 1 立风格（专项 A/E1-E3/C1-2/C2/F1-F4）、Phase 2 通动线（专项 D 全部 + C1/C2-4/E4-E6/F5/F6/F7/F8转BL-9/F11）+ Backlog BL-1~BL-8（BL-9 转设计提案待评审）；每项 commit hash 与门禁证据见《工作清单》，出口验收（Nielsen 32/40 + 全门禁 + E2E 75/14/5 无整改回归）见《p2-exit-report-2026-08-09.md》 |
 | 输入文档 | 《CLPM UI/UX 合并审查报告》v2.0（`docs/设计文档/06-UIUX/ui-ux-critical-review-2026-08-07.md`，下称"审查报告"，问题编号 SYS-*/ROLE-* 均出自其 §5）；《HiaMonitor 借鉴重构差距分析》（`docs/过程文档/clpm-v6.1-hiamonitor-refactor-gap-analysis-2026-08-08.md`，2026-08-08，经逐项抽查验证属实，对应专项 F） |
 | 适用范围 | `frontend/apps/web-antd` 全部业务页面与共享组件；默认**不改后端 API、不改数据库结构**（例外项在 §9 风险中标注） |
 | 约束 | 不破坏契约 v2.7 的 IA/路由/权限/状态机；不触碰 DCS 安全边界；风格 token 变更须回写 UI/UX 规范（v6.1→v6.2） |

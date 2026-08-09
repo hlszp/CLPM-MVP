@@ -19,18 +19,18 @@
 
 PRD v6.2 是产品需求的事实来源；实现契约 v2.7 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-08-07 修订 — IA 重构 Phase A-D 合入 main + 契约 v2.7 + 智能预警规则引擎 Phase 1 落地）
+## 当前基线（2026-08-09 修订 — UI/UX 整改 Phase 0-2 + Backlog 完成 + 契约 v2.8 + 后端宕死加固）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
 | 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.2（新增 §4.4.6 智能预警规则引擎 + §5.7 预警规则类型与 DSL 约束 + §7.1 预警求值性能要求） |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.7**（回路工作台单页四区重构 + 自动诊断 Beat 停用；原 v2.6 IA 重构 Phase A-D 全量合入 main：7 模块菜单/双轴导航/工程操作分离/诊断三区重构/整定单页 4 锚点/21 条旧路由 legacy redirect；v2.5 P3-04 AI 洞察全局赋能；v2.4 P3-01 整定知识库/38 表；v2.3 Phase 0 Truth First 状态机/模型来源门禁/37 表/bootstrap 收敛/安全边界） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.8**（增量 changelog：monitor 列表 scoreDelta/dayTrend+最需关注排序、aggregates verifyOverdueCount、algorithm-params paramMeta/resetControlTypes、快照 timeConstant；Action Tracker VERIFYING 闭环口径确认。原 v2.7：回路工作台单页四区重构 + IA 重构 Phase A-D 全量合入 main） |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
 | 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
 | 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
 | 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
 | API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v6.0 |
-| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.1**（已对齐 v6.1 代码，含 ZL 工业设计规范） |
+| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.2**（色彩约定与工业组件执行层整改版，配套《色彩约定表 v1.0》《文案与术语词表 v1.0》） |
 | 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.7） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
@@ -43,6 +43,7 @@ PRD v6.2 是产品需求的事实来源；实现契约 v2.7 是重构后 IA/路�
 | 数据质量评估报告 | `docs/过程文档/data-quality-assessment-report-2026-08-05.md` | v1.0（2026-08-05）：27个种子回路33天数据四维定量分析，近7天valid_rate~97%达A级可信度，7/2-7/7全空行需清理，7/22-7/28过密写入需排查 |
 | KPI计算方法审查 | `docs/过程文档/kpi-calculation-review-2026-08-05.md` | v1.0（2026-08-05）：26指标+综合评分+节点聚合全公式审查，3核心+1折扣指标完全符合GB/T 44693.2-2024，识别OP量程、饱和度分母、可信度继承等10项关键缺陷 |
 | 智能预警规则引擎方案 | `docs/过程文档/clpm-smart-alert-rule-engine-plan-2026-08-06.md` | v1.1（2026-08-06）：独立梳理智能预警规则引擎需求与技术方案，作为 PRD v6.2 / 契约 v2.7 输入；覆盖 4 类规则（阈值/统计漂移/组合条件/可信度联动）+ 时效窗口通用字段、DSL 设计、双轨触发（SignalR+Celery）、5 张新表、6 类 API、4 阶段实施路线图；**Phase 1 已落地**（2026-08-07）：5 表 + DSL/求值/抑制/分发/审计/缓存核心服务 + 19 API 端点 + dry-run + WebSocket 推送 + Celery 周期巡检 + 前端规则配置页/事件列表页；233 单测全绿 |
+| **UI/UX 整改（2026-08-07~09）** | `docs/设计文档/06-UIUX/` | **Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 全部完成**：审查报告 `ui-ux-critical-review-2026-08-07.md`、实施方案 `ui-ux-rectification-plan-2026-08-07.md`、**工作清单（进度事实来源）`ui-ux-rectification-checklist-2026-08-08.md`、Phase 2 出口报告 `p2-exit-report-2026-08-09.md`（Nielsen 20/40→32/40）、色彩约定表 `color-convention.md`、文案词表 `copywriting-glossary.md`、回路工作台专项评估 `loop-workbench-uiux-evaluation-2026-08-09.md`；Backlog 遗留 BL-5~9 见清单 §4（hex 存量已清零、密度 14 页已迁移、暗色走查已过、F8 评价周期提案待评审） |
 
 ## v6.0 核心架构组件
 
@@ -126,6 +127,7 @@ cd frontend && pnpm run format
 - 网络模式切换（Tailscale）验证命令、sudoers 免密、lifespan 预载细节 → ops-runbook §网络模式切换
 - 实时数据断点续传机制细节 → ops-runbook §数据链路
 - 诊断调度细节（**2026-08-07 起自动诊断 Beat 已停用**，仅保留手动触发；历史双轨口径备查）→ ops-runbook §诊断调度细节
+- **uvicorn 静默挂死排查**（2026-08-09 加固 `2b9fb9d`：SQL echo 关停 + `command_timeout=60` + 噪音日志钳制；现象=进程存活 0% CPU/API 全挂起，多为连接风暴/资源耗竭；取证=PG 连接监控 `scripts/monitor_db_connections.py`（支持 --dsn 直连）+ `/proc/<pid>/net/tcp` TIME_WAIT 计数）→ ops-runbook §uvicorn 静默挂死排查
 
 ## 核心决策
 
@@ -135,7 +137,7 @@ cd frontend && pnpm run format
 | 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
 | **数据架构** | **导入走远端、计算全本地**（2026-07-20 定调）：远端 AAS 历史接口仅"数据管理→历史数据导入"手工任务可调用；本地 TDengine 是所有计算任务唯一历史数据源；本地数据不完整按 INCONCLUSIVE 提示，由用户导入补齐；实时数据源唯一为 SignalR Hub。详见 `docs/过程文档/data-architecture-decision-local-first-2026-07-20.md` |
-| Action Tracker | 诊断中心子模块（子菜单路由），状态机 PENDING → IN_PROGRESS → IMPLEMENTED/IGNORED，中文显示为待处理/处理中/已实施/已忽略 |
+| Action Tracker | 诊断中心子模块（子菜单路由），P1a 闭环状态机 PENDING → IN_PROGRESS → VERIFYING → CLOSED（VERIFYING 可→REOPENED；存量 IMPLEMENTED 兼容映射 VERIFYING），中文显示为待处理/处理中/验证中/已闭环/重开/已忽略；VERIFYING 超 24h 计入"验证超期"待办 |
 | 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
 | 回路整定 | **Phase 2 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：基于历史数据自动辨识过程对象 G(s)=PV/OP（ARX/ARMAX/IV 算法栈 + DataPlanner + ConfidenceEvaluator）+ 异步任务化 + 多 PID 参数响应对比；保留阶跃实验为兜底路径；仍只输出建议、证据、风险和回退方案，不支持 DCS 参数下写 |
 | 技术护城河 | 可信数据 + 可解释诊断 + 可验证整定 + 安全闭环 + 规模化交付 |
@@ -145,7 +147,7 @@ cd frontend && pnpm run format
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**；sys_config 为配置真相源，.env 已移除业务 URL/Token。细节见 ops-runbook §网络模式切换 |
 | 远端仓库 | **gitea 为主远端**（remote 名 `origin`，`https://gitea.zlinfot.xyz:2087/zp/CLPM`）；GitHub 为镜像（remote 名 `github`，`hlszp/CLPM`），main 合并后 `git push github main` 同步 |
-| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.7 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.1 负责视觉与交互；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.8 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## Git 工作流
 
@@ -153,7 +155,7 @@ cd frontend && pnpm run format
 - **提交**：Conventional Commits `<type>(<scope>): <subject>`，subject ≤50 字符祈使句，body 解释"为什么"，按逻辑单元拆分，单 commit ≤500 行
 - **日常开发**：可直接在 main 上小步提交并 `git push origin main`；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
 - **IA 重构分支策略**（2026-08-06 起，**已完成**）：本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。**Phase A-D 全部完成并已合入 main**（2026-08-07）：A（路由重组 7 菜单 + 配置集中化 + AI 右抽屉 + 跨模块上下文基建 + E2E 同步）/ B（回路工作台 6 Tab 迁移，后续已改为单页四区 commit 5e216ba8）/ C（诊断三区重构 + 特征字典 + 列表置信度严重度）/ D（整定单页整合 4 锚点 + 嵌入式组件 + 旧路由重定向 + 方案确认留痕）；全部后端零改动；门禁全绿 ruff✅/pytest 3881✅/check:type✅/alembic✅/vitest 147✅；**契约已升 v2.7**
-- **PR**：无需在 gitea 网页端手工发起——对话中显式提出 PR 要求时，agent 直接通过 gitea API 创建并合并（token 在 origin remote URL 中），合并后同步镜像 `git push github main`
+- **PR**：无需在 gitea 网页端手工发起——对话中显式提出 PR 要求时，agent 直接通过 gitea API 创建（凭据取 git credential helper / ~/.git-credentials，origin URL 本身不含 token）；合并默认留给用户审，显式授权合并时 agent 可经 API 合并，合并后同步镜像 `git push github main`
 - **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支
 - **CI 现状**：gitea 侧无 CI，以提交前本地检查（ruff + pytest + check:type）为门禁；GitHub Actions 仅在镜像侧运行（当前账户欠费停用，2026-07-21）
 
@@ -161,7 +163,7 @@ cd frontend && pnpm run format
 
 | 方向 | 先读 | 关注点 |
 |---|---|---|
-| **IA/UX 信息架构整改（已完成）** | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` + `docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md` | **IA 重构 Phase A-D 全部完成并合入 main**（2026-08-07，后端零改动）：A 7 菜单重组 + AI 右抽屉 + 跨模块上下文 / B 回路工作台 6 Tab（后续已改为单页四区 commit 5e216ba8） / C 诊断三区重构 + 特征字典 / D 整定单页整合 4 锚点；**契约已升 v2.7**；后续待跟进：**P0紧急**（异常跟踪表格扩列、跨模块一键跳转、整定上下文传递、Action Tracker增加"验证中"状态——部分已随 Phase A-D 交付）、**P1重要**（回路配置向导化、引导式空状态、专业术语Tooltip、性能看板网格布局）；遵循ZL工业设计规范（Calm UI/Poka-Yoke/Glanceability/数据墨水比），不破坏现有API/数据库结构 |
+| **UI/UX 整改后续（Phase 3 候选）** | `docs/设计文档/06-UIUX/p2-exit-report-2026-08-09.md` §5 + 清单 §4 Backlog + `loop-workbench-uiux-evaluation-2026-08-09.md` | Phase 0-2 + Backlog 已完成（Nielsen 32/40）；候选：工作台 W-1~W-10 整改（三批方案已备）、SYS-P2-06 预警优先级三级语义化、F8 评价周期（清单 §6 提案待评审）、暗色正式开放前逐页走查收尾、hex `hsl(var(--status-*))` 非法写法存量排查 |
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 回路整定 Phase 2 后续 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **Phase 2.0-2.5 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：算法栈 + DataPlanner 接入 + 异步任务化 + 多 PID 对比 + 前端重构 + 全量门禁通过；待合并 main 后更新设计文档（PRD/FDS/ADS/IDS/契约 版本号升级）+ GB/T 44693.2 整定用例验证 |
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |

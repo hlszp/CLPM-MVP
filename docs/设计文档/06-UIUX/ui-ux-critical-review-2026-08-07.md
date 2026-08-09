@@ -4,6 +4,7 @@
 |---|---|
 | 文档版本 | v2.0（合并版：统一问题主清单 §5 为单一事实来源，ROLE 系列已全部并入） |
 | 审查日期 | 2026-08-07 |
+| **整改状态** | **✅ Phase 0-2 + Backlog 已全部完成（2026-08-09）**——进度与每项状态以《工作清单》`ui-ux-rectification-checklist-2026-08-08.md` 为唯一事实来源；出口验收见《Phase 2 出口报告》`p2-exit-report-2026-08-09.md`（Nielsen 20/40→32/40）。P0×5 全部清零；P1×13 全部落地或等价消解；P2×14 中 12 项完成、SYS-P2-06（预警优先级三级语义化）未排期入 Phase 3 候选；P3×5 完成 3 项、2 项转 backlog（见清单 §4 BL-5~BL-9 决策依据） |
 | 审查人 | 高级 UI/UX 设计师 + 前端开发工程师 + 流程工业仪控工程师/管理者视角（AI 代理执行） |
 | 配套文档 | 整改方案：`docs/设计文档/06-UIUX/ui-ux-rectification-plan-2026-08-07.md` |
 | 代码基线 | `main@a874d2c`，`frontend/apps/web-antd`（vben 5.7.0 + Vue 3 + antd-vue + ECharts） |

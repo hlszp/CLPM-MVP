@@ -1,9 +1,10 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.7
-**发布日期**：2026-08-07
-**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D）  
+**当前版本**：v2.8
+**发布日期**：2026-08-09
+**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D + UI/UX 整改 Phase 0-2）
+**v2.8 修订摘要（2026-08-09，UI/UX 整改 Phase 1-2 API 增量）**：登记 `GET /loops/monitor` 响应新增 `scoreDelta`/`dayTrend`（较昨日增量巡检）且默认排序改为最新快照评分升序 NULLS LAST（最需关注优先）；登记 `GET /diagnosis/list` aggregates 新增 `verifyOverdueCount`（VERIFYING 超 24h 未闭环计数）；登记 `GET|PUT /configs/algorithm-params` 响应新增 `paramMeta`（参数注册表 min/max/unit/description/category 单源下发）与 `AlgorithmParamsSaveRequest.resetControlTypes`（重置默认=清空覆盖回落算法默认）；登记 `GET /performance/loops/snapshots` 序列化新增 `timeConstant`（F5 时间常数计算器，L1 DISPLAY_ONLY，激励不足窗口为 null）与 `clpm_metric_data_requirement` 新增 time_constant 契约行；确认 Action Tracker P1a 闭环状态机（PENDING→IN_PROGRESS→VERIFYING→CLOSED，VERIFYING 可→REOPENED，存量 IMPLEMENTED 兼容映射 VERIFYING）；审计 `operationType`/`targetType` 为开放式枚举（前端映射见 audit.vue operationOptions/resourceOptions）。整改全貌见 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md` 与 `p2-exit-report-2026-08-09.md`
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
 **v2.1 修订摘要**：同步诊断中心 Batch 4-6 交付成果——A/B 对比已实现（含 `includeDiagnosis` 扩展）；登记 `GET /diagnosis/algorithms/meta`、`GET /diagnosis/statistics/export`、`GET /tracker/effectiveness`、`GET|PATCH /tracker/verification-config`；补全 Tracker 子路由清单；更新诊断中心路由决策（A/B 对比不再返回 501）；登记诊断任务自动归档机制与 D1-D6 功能扩展
 **v2.2 修订摘要**：同步 2026-07-28 全维度优化整改（Phase 0-5）——登记 `GET /performance/grade-distribution` 与 `/loops/snapshots?grade=`；权限码服务端落地（`require_perms`，loop/tuning/diagnosis 读端点收口）替代"待统一"标注；登记首次登录强制改密（`must_change_password`）；前端路由收紧（reports/aas-sync 仅 ADMIN、EXPERT→/diagnosis、SPONSOR→/metric）。整改全貌见 `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`
