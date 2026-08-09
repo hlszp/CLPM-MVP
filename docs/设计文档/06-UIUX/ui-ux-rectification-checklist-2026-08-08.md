@@ -100,10 +100,10 @@
 | E4 | 通知铃铛接 /ws/alerts 预警推送 | ✅ `e54862c`（alert-ws 客户端 + 铃铛初始拉取 ACTIVE 事件 + WS 实时推送 + 直达事件页；无权限静默空态） |
 | E5 | 锁屏评估与开启 | ✅ `e54862c`（preferences lockScreen=true，共用电脑/留场场景） |
 | E6 | v-access 按钮级权限 | ✅ 决策：不引入 v-access——项目自研 v-permission（通配+角色并集）已 63 处覆盖，能力更全 |
-| F5 | time_constant 计算器（复用 tuning_identification，L1 DISPLAY_ONLY） | ⬜ |
-| F6 | 算法参数配置页收尾（重置默认/category 分组/新指标元数据消费注册表） | ⬜ |
-| F8 | 批量配置评价周期 | ⬜ |
-| F11 | HiaMonitor 设计文档回写（正向偏离同步） | ⬜ |
+| F5 | time_constant 计算器（复用 tuning_identification，L1 DISPLAY_ONLY） | ✅ `ccfabc5`（TimeConstantCalculator：OP→PV 相关分析质心估 τ + 激励前置检测 + NaN/SVD 健壮性；注册表/kpi_calc 双快照表/快照 API 序列化/契约表迁移 f5timec001tc 全链；单测 5 例 + 健壮性矩阵 9 例；F7 MIN_GOOD_RATIO 顺批删除） |
+| F6 | 算法参数配置页收尾（重置默认/category 分组/新指标元数据消费注册表） | ✅ 后端 `721ec89`（PARAM_CATEGORY + paramMeta 下发 + resetControlTypes 清空语义，OpenAPI golden 同步，pytest 4125）；前端 `8d962ce`（注册表单源消费/新指标零改动接入/重置默认接线/Drawer 分组） |
+| F8 | 批量配置评价周期 | ⏸️ 转 BL-9：「评价周期」在现行领域模型无载体（loop_ledger 无该字段、评估为全局小时级调度），设计文档仅一句话无字段定义——先落字段+调度消费再做批量入口，否则是死字段 |
+| F11 | HiaMonitor 设计文档回写（正向偏离同步） | ✅ `cb44dd5`（§12 附录：可信度两层防御/FROZEN 复合判据/乐观锁/参数注册表单源） |
 | P2-出口 | Phase 2 出口：Nielsen 复评（目标 ≥28）+ 度量指标表全量复核 + 全门禁 + E2E | ⬜ |
 
 ## 4. Backlog（暂不排期，触发条件驱动）
@@ -123,6 +123,9 @@
 | BL-4 | Sponsor 登录"无权限访问"toast、TOP5 最优排序（已在方案 C2-1/C2-3，Phase 1） | 已在计划内 |
 | BL-5 | hex 存量 180 处/36 文件双轨语义色迁移（antd 系→工业 token；棘轮基线 scripts/hex-baseline.json 只减不增，改完一批跑 --update-baseline） | Phase 2 余量或 Phase 3 分批，优先 diagnosis-visualization 图表族（~60 处） |
 | BL-6 | antd Table 大表格虚拟化（评估结论：分页 ≤100 已控量；若未来单表 >500 行再启用，可复用 useVirtualList 或 antd virtual 属性） | 单表数据量超 500 行时 |
+| BL-7 | A-07 表格基线全量迁移：密度三档已封装 useTableDensity + manage.vue 样板（`60eff86`），其余 14 表格页逐页接入（density 按钮 + :size 绑定，~10 行/页）；首列/表头冻结按页评估随迁移处理 | Phase 3 或余量时逐页 |
+| BL-8 | E2 暗色逐页对比度走查：token 级审计已过（语义色/可信度色/图表文本 on 暗底全部 ≥5.45，WCAG AA 4.5+），逐页截图走查未做 | 暗色正式对用户开放前 |
+| BL-9 | F8 批量配置评价周期：领域模型先落 evaluation_period 字段 + 调度器消费，再加批量入口 | 字段定义评审后 |
 
 ---
 
