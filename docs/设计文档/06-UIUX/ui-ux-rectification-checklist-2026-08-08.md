@@ -123,7 +123,7 @@
 | BL-4 | Sponsor 登录"无权限访问"toast、TOP5 最优排序（已在方案 C2-1/C2-3，Phase 1） | 已在计划内 |
 | BL-5 | hex 存量 180 处/36 文件双轨语义色迁移（antd 系→工业 token；棘轮基线 scripts/hex-baseline.json 只减不增，改完一批跑 --update-baseline） | Phase 2 余量或 Phase 3 分批，优先 diagnosis-visualization 图表族（~60 处） |
 | BL-6 | antd Table 大表格虚拟化（评估结论：分页 ≤100 已控量；若未来单表 >500 行再启用，可复用 useVirtualList 或 antd virtual 属性） | 单表数据量超 500 行时 |
-| BL-7 | A-07 表格基线全量迁移：密度三档已封装 useTableDensity + manage.vue 样板（`60eff86`），其余 14 表格页逐页接入（density 按钮 + :size 绑定，~10 行/页）；首列/表头冻结按页评估随迁移处理 | Phase 3 或余量时逐页 |
+| BL-7 | A-07 表格基线全量迁移：密度三档已封装 useTableDensity + manage.vue 样板（`60eff86`），其余 14 表格页逐页接入（density 按钮 + :size 绑定，~10 行/页）；首列/表头冻结按页评估随迁移处理 | ✅ `a9b9ab4`（14 页全量接入，tracker 抽屉模式不渲染按钮；次级表按规范未动） |
 | BL-8 | E2 暗色逐页对比度走查：token 级审计已过（语义色/可信度色/图表文本 on 暗底全部 ≥5.45，WCAG AA 4.5+），逐页截图走查未做 | 暗色正式对用户开放前 |
 | BL-9 | F8 批量配置评价周期：领域模型先落 evaluation_period 字段 + 调度器消费，再加批量入口 | 字段定义评审后 |
 
