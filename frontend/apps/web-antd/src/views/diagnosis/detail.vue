@@ -557,7 +557,25 @@ async function handleGenerateReport() {
 }
 
 function handleRefresh() {
-  loadAll();
+  // P3-27：刷新前确认——存在未保存的交互状态（波形选点 / 阈值微调弹窗）时提示数据丢失
+  const hasUnsavedState =
+    selectedTime.value !== null || thresholdTuneVisible.value;
+  if (!hasUnsavedState) {
+    loadAll();
+    return;
+  }
+  Modal.confirm({
+    title: '确认刷新？',
+    content:
+      '刷新将重新加载诊断数据，当前波形选点与未保存的阈值微调内容将丢失。是否继续？',
+    okText: '刷新',
+    cancelText: '取消',
+    onOk: () => {
+      selectedTime.value = null;
+      thresholdTuneVisible.value = false;
+      loadAll();
+    },
+  });
 }
 
 /** 工具栏帮助 */

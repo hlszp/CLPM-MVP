@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import { defineAsyncComponent, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
 import { Badge, TabPane, Tabs } from 'ant-design-vue';
 
@@ -13,7 +14,17 @@ defineOptions({ name: 'MetricTasks' });
 
 type TabKey = 'auto' | 'history' | 'manual' | 'strategy';
 
-const activeTab = ref<TabKey>('manual');
+/**
+ * P3-21：默认 Tab 按角色选择
+ * - ADMIN：默认「自动任务」（关注定时评估计划与运行状态）
+ * - IC_ENGINEER / 其他：默认「手动任务」（日常按回路/时间窗触发重算）
+ */
+const userStore = useUserStore();
+const userRoles = computed(() => userStore.userInfo?.roles ?? []);
+const defaultTab: TabKey = userRoles.value.includes('ADMIN')
+  ? 'auto'
+  : 'manual';
+const activeTab = ref<TabKey>(defaultTab);
 
 /** 各 Tab 组件 key，切换时自增以强制重载 */
 const tabKeys = ref<Record<TabKey, number>>({

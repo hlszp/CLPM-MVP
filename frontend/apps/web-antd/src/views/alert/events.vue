@@ -22,17 +22,20 @@ import {
   message,
   Modal,
   Popconfirm,
+  RangePicker,
   Select,
   Space,
   Table,
   Tag,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import {
   acknowledgeEventApi,
   archiveEventApi,
   getAlertBadgeApi,
   getAlertEventsApi,
+  getAlertRulesApi,
   markFalsePositiveApi,
   resetAlertBadgeApi,
   resolveEventApi,
@@ -85,9 +88,27 @@ const query = reactive({
   status: undefined as AlertApi.EventStatus | undefined,
   severity: undefined as AlertApi.Severity | undefined,
   loopId: '',
+  // P3-43：新增规则与时间范围筛选
+  ruleId: undefined as string | undefined,
+  timeRange: undefined as [dayjs.Dayjs, dayjs.Dayjs] | undefined,
   page: 1,
   pageSize: 20,
 });
+
+/** P3-43：规则选项（用于规则筛选下拉） */
+const ruleOptions = ref<{ label: string; value: string }[]>([]);
+
+async function loadRuleOptions() {
+  try {
+    const res = await getAlertRulesApi({ limit: 200, offset: 0 });
+    ruleOptions.value = (res.items || []).map((r) => ({
+      label: `${r.ruleCode} · ${r.ruleName}`,
+      value: r.ruleId,
+    }));
+  } catch {
+    // 静默失败，规则筛选可保留为空
+  }
+}
 
 // 徽章
 const badgeCount = ref(0);
@@ -224,10 +245,18 @@ function handleResetColumns() {
 async function loadEvents() {
   loading.value = true;
   try {
+    // P3-43：时间范围结束值扩展到当日 23:59:59
+    const startTime = query.timeRange?.[0]?.format('YYYY-MM-DD HH:mm:ss');
+    const endTime = query.timeRange?.[1]?.endOf('day').format(
+      'YYYY-MM-DD HH:mm:ss',
+    );
     const params: AlertApi.EventListParams = {
       status: query.status,
       severity: query.severity,
       loopId: query.loopId || undefined,
+      ruleId: query.ruleId || undefined,
+      startTime,
+      endTime,
       limit: query.pageSize,
       offset: (query.page - 1) * query.pageSize,
     };
@@ -262,6 +291,8 @@ function handleReset() {
   query.status = undefined;
   query.severity = undefined;
   query.loopId = '';
+  query.ruleId = undefined;
+  query.timeRange = undefined;
   query.page = 1;
   loadEvents();
 }
@@ -439,6 +470,7 @@ function toggleFilter() {
 onMounted(() => {
   loadEvents();
   loadBadge();
+  loadRuleOptions();
 });
 </script>
 
@@ -500,6 +532,32 @@ onMounted(() => {
           "
         />
       </FormItem>
+      <!-- P3-43：新增规则筛选 -->
+      <FormItem label="规则" class="!mb-0">
+        <Select
+          v-model:value="query.ruleId"
+          allow-clear
+          show-search
+          placeholder="全部规则"
+          style="width: 220px"
+          :options="ruleOptions"
+          :filter-option="
+            (input: string, option: any) =>
+              String(option?.label ?? '')
+                .toLowerCase()
+                .includes(input.toLowerCase())
+          "
+        />
+      </FormItem>
+      <!-- P3-43：新增时间范围筛选 -->
+      <FormItem label="触发时间" class="!mb-0">
+        <RangePicker
+          v-model:value="query.timeRange"
+          show-time
+          format="YYYY-MM-DD HH:mm"
+          style="width: 280px"
+        />
+      </FormItem>
       <FormItem label="回路ID" class="!mb-0">
         <Input
           v-model:value="query.loopId"
@@ -516,6 +574,34 @@ onMounted(() => {
       <Badge :count="badgeCount" :offset="[-4, 4]">
         <Button size="small" @click="handleResetBadge">标记已读</Button>
       </Badge>
+    </div>
+
+    <!-- P3-15：颜色图例——说明严重度与状态的颜色语义，避免来源颜色语义冲突 -->
+    <div
+      v-if="filterVisible"
+      class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-dashed border-gray-200 bg-gray-50/50 px-3 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800/30"
+    >
+      <span class="font-medium text-gray-500 dark:text-gray-400">图例：</span>
+      <span class="text-gray-400 dark:text-gray-500">严重度</span>
+      <span
+        v-for="(color, key) in severityColor"
+        :key="`sev-${key}`"
+        class="inline-flex items-center gap-1"
+      >
+        <Tag :color="color" class="!m-0 !px-1 !py-0 text-xs">
+          {{ severityLabel[key as AlertApi.Severity] }}
+        </Tag>
+      </span>
+      <span class="ml-2 text-gray-400 dark:text-gray-500">状态</span>
+      <span
+        v-for="(color, key) in statusColor"
+        :key="`st-${key}`"
+        class="inline-flex items-center gap-1"
+      >
+        <Tag :color="color" class="!m-0 !px-1 !py-0 text-xs">
+          {{ statusLabel[key as AlertApi.EventStatus] }}
+        </Tag>
+      </span>
     </div>
 
     <!-- 事件表格 -->

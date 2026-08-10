@@ -95,11 +95,13 @@ const kpiCards = ref([
     title: '异常回路数（今日）',
     value: 0,
     unit: '个',
-    status: 'error' as const,
+    // P3-24：异常数为 0 时显示绿色（ok），>0 时显示红色（error）
+    status: 'ok' as 'error' | 'info' | 'neutral' | 'ok' | 'warning',
     icon: 'ant-design:alert-outlined',
     infoTip: '近 24 小时内被诊断为异常的回路数量',
     contextText: '近 24 小时',
     precision: 0,
+    neutralWhenZero: false,
   },
   {
     key: 'pending',
@@ -111,6 +113,7 @@ const kpiCards = ref([
     infoTip: '处理状态为"待处理"的诊断记录数',
     contextText: '需关注',
     precision: 0,
+    neutralWhenZero: true,
   },
   {
     key: 'implemented',
@@ -122,6 +125,7 @@ const kpiCards = ref([
     infoTip: '处理状态为"已实施"的诊断记录数',
     contextText: '近 30 天累计',
     precision: 0,
+    neutralWhenZero: true,
   },
   {
     key: 'avg_close_hours',
@@ -133,6 +137,7 @@ const kpiCards = ref([
     infoTip: '近 30 天平均任务闭环时长（小时）',
     contextText: '近 30 天',
     precision: 1,
+    neutralWhenZero: true,
   },
 ]);
 
@@ -223,6 +228,12 @@ async function loadOverview() {
     for (const [index, value] of values.entries()) {
       const card = kpiCards.value[index];
       if (card) card.value = value;
+    }
+
+    // P3-24：异常回路数卡片状态随数值变化——0=ok(绿)，>0=error(红)
+    const abnormalCard = kpiCards.value[0];
+    if (abnormalCard) {
+      abnormalCard.status = abnormalToday === 0 ? 'ok' : 'error';
     }
 
     // 渲染图表
@@ -452,7 +463,7 @@ onMounted(() => {
         :info-tip="card.infoTip"
         :context-text="card.contextText"
         :precision="card.precision"
-        neutral-when-zero
+        :neutral-when-zero="card.neutralWhenZero"
         :loading="loading"
       />
     </div>
