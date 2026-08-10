@@ -109,9 +109,12 @@ const form = reactive({
 });
 
 // 默认局域网地址（公网切换由 Tailscale 子网路由透明转发，URL 不变）
+// P3-08：默认地址移至环境变量，便于不同部署环境覆盖（.env VITE_AAS_*）
 const DEFAULT_HISTORY_API_URL =
+  import.meta.env.VITE_AAS_HISTORY_API_URL ||
   'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
 const DEFAULT_SIGNALR_HUB_URL =
+  import.meta.env.VITE_AAS_SIGNALR_HUB_URL ||
   'ws://192.168.100.2:81/signalr/realValueForClpmHub';
 
 // 网络模式切换状态
