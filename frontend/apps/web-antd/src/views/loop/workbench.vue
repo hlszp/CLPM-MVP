@@ -37,6 +37,8 @@ import {
 } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { useUserStore } from '@vben/stores';
+
 import { Page } from '@vben/common-ui';
 
 import {
@@ -134,13 +136,44 @@ function registerSectionVisibility() {
 const monitorCtx = useMonitorContext();
 
 // ===== MW-P4-02：workspace/table 模式切换 =====
-const isTableView = computed(() => monitorCtx.view.value === 'table');
+const userStore = useUserStore();
+const userRoles = computed(() => userStore.userInfo?.roles ?? []);
+/** EXPERT/SPONSOR 无 table 模式权限（对齐 use-saved-view canUseTableViewByRoles） */
+const canUseTableView = computed(() =>
+  userRoles.value.some((r) =>
+    ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'].includes(r),
+  ),
+);
+const isTableView = computed(
+  () => monitorCtx.view.value === 'table' && canUseTableView.value,
+);
+
+/**
+ * URL 规范化守卫：EXPERT/SPONSOR 直接输入 view=table 时回退到 workspace。
+ * 避免渲染无权限的表格组件 + URL 与实际视图一致（MW-P5-03 冒烟测试验证项）。
+ */
+watch(
+  () => monitorCtx.view.value,
+  (v) => {
+    if (v === 'table' && !canUseTableView.value) {
+      monitorCtx.update({ view: 'workspace' });
+    }
+  },
+  { immediate: true },
+);
 
 /** 视图模式切换（Segmented） */
-const viewModeOptions = [
-  { label: '单回路工作台', value: 'workspace' as const },
-  { label: '批量表格', value: 'table' as const },
-];
+const viewModeOptions = computed<
+  { label: string; value: 'table' | 'workspace' }[]
+>(() => {
+  const opts: { label: string; value: 'table' | 'workspace' }[] = [
+    { label: '单回路工作台', value: 'workspace' },
+  ];
+  if (canUseTableView.value) {
+    opts.push({ label: '批量表格', value: 'table' });
+  }
+  return opts;
+});
 
 function handleViewChange(val: number | string) {
   monitorCtx.update({ view: val === 'table' ? 'table' : 'workspace' });

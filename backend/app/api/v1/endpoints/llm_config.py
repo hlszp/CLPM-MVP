@@ -182,11 +182,13 @@ def _build_schema(raw: dict[str, str | None], updated_by: str | None) -> LlmConf
 @router.get("", response_model=ApiResponse[LlmConfigSchema])
 async def get_llm_config(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """获取当前 LLM 配置（API Key 脱敏返回）。
 
-    权限：ADMIN/IC_ENGINEER/PE_ENGINEER 可查看（与可信度阈值配置一致）。
+    权限：ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT 可查看。
+    EXPERT 放开是因为 AI 洞察组件嵌入诊断/整定/工作台页面，EXPERT 访问这些页面时
+    需查询 LLM 启用状态（仅 enabled/configured 布尔值 + 脱敏配置，无敏感信息泄露）。
     返回的 apiKey 为脱敏值（sk-***xxxx），apiKeyConfigured 标识是否已配置。
     """
     raw = await _load_raw_config(db)

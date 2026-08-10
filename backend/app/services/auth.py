@@ -92,6 +92,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "tracker:review",
         # 实现契约 §5：EXPERT 可查看整定相关页面（整定写端点本就对 EXPERT 开放）
         "tuning:view",
+        # MW-P5-03：工作台 authority 含 EXPERT，左栏 /loops/monitor 需 loop:view 只读权限，
+        # 否则进入工作台时左栏列表 403 触发"无权限访问"toast（权限不一致 bug 修复）
+        "loop:view",
     ],
 }
 
