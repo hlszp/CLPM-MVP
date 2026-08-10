@@ -1,11 +1,12 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 智能预警规则引擎路由模块（PRD v6.2 §4.4.6）
+ * 智能预警规则引擎旧路由兼容模块（PRD v6.2 §4.4.6）
  *
- * 独立于诊断中心的实时预警系统：
- * - 预警事件：日常运维操作（查看/确认/处置/误报标记/归档），面向所有工程师
- * - 预警规则：结构性配置（规则定义/订阅/启停），仅 ADMIN
+ * IA 收敛后：
+ * - 预警事件归入监控，作为运行结果处理；
+ * - 预警规则归入配置，作为结构性配置维护；
+ * - 本文件只负责旧书签/旧 E2E 的重定向，API 路径不变。
  *
  * 角色权限（PRD §3 + IDS v2.7）：
  * - ADMIN：全部（含规则配置、全局开关）
@@ -16,18 +17,17 @@ const routes: RouteRecordRaw[] = [
   {
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'],
-      icon: 'lucide:bell-ring',
-      order: 5,
+      hideInMenu: true,
       title: '预警',
     },
     name: 'Alert',
     path: '/alert',
-    redirect: '/alert/events',
+    redirect: '/monitor/alerts',
     children: [
       {
         name: 'AlertEvents',
         path: '/alert/events',
-        component: () => import('#/views/alert/events.vue'),
+        redirect: '/monitor/alerts',
         meta: {
           authority: [
             'ADMIN',
@@ -36,17 +36,17 @@ const routes: RouteRecordRaw[] = [
             'SPONSOR',
             'EXPERT',
           ],
-          icon: 'lucide:bell',
+          hideInMenu: true,
           title: '预警事件',
         },
       },
       {
         name: 'AlertRules',
         path: '/alert/rules',
-        component: () => import('#/views/alert/rules.vue'),
+        redirect: '/config/alert-rules',
         meta: {
           authority: ['ADMIN'],
-          icon: 'lucide:shield-alert',
+          hideInMenu: true,
           title: '预警规则',
         },
       },

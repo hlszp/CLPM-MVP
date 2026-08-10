@@ -64,8 +64,8 @@ import {
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
-  ClpmDataCanvas,
   ClpmBulletChart,
+  ClpmDataCanvas,
   ClpmDataHealthBadges,
   ClpmInfoTip,
   ClpmLoopLink,
@@ -75,8 +75,8 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
-import WaveformChart from '#/components/loop/waveform-chart.vue';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
+import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
@@ -977,7 +977,6 @@ async function loadPerfDetail() {
   }
 }
 
-
 function handlePerfWindowChange() {
   loadPerfDetail();
 }
@@ -1431,7 +1430,9 @@ onUnmounted(() => {
                       :aria-label="`删除预设 ${preset.name}`"
                       @click.stop="handleDeletePreset(preset.id)"
                       @keydown.enter.stop="handleDeletePreset(preset.id)"
-                      @keydown.space.stop.prevent="handleDeletePreset(preset.id)"
+                      @keydown.space.stop.prevent="
+                        handleDeletePreset(preset.id)
+                      "
                     >
                       ×
                     </span>

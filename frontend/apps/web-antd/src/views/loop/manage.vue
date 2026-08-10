@@ -68,8 +68,8 @@ import {
 import StatusBadge from '#/components/loop/status-badge.vue';
 import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
-import { useTableDensity } from '#/composables/use-table-density';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useTableDensity } from '#/composables/use-table-density';
 import {
   CONTROL_TYPE_EXPLANATIONS,
   IMPORTANCE_EXPLANATIONS,
@@ -1593,7 +1593,7 @@ watch(
             <template v-else-if="column.key === 'complexGroup'">
               <Tag
                 v-if="record.complexLoopGroupId && record.complexRole"
-                :color="'default'"
+                color="default"
                 class="m-0"
               >
                 {{ record.complexRole === 'MAIN' ? '主' : '副' }}
@@ -1780,7 +1780,7 @@ watch(
               <Tag
                 v-for="lp in groupCandidateLoops"
                 :key="lp.loopId"
-                :color="'default'"
+                color="default"
                 class="m-0"
               >
                 {{ lp.tagName }}
@@ -1889,7 +1889,10 @@ watch(
 .loop-config-table .ant-table-tbody > tr.ant-table-row-selected > td {
   background-color: hsl(var(--status-info) / 8%) !important;
   border-inline-end: none !important;
-  border-bottom-color: hsl(var(--status-info) / 8%) !important; /* 与背景同色，弱化横向分割线 */
+  border-bottom-color: hsl(
+    var(--status-info) / 8%
+  ) !important; /* 与背景同色，弱化横向分割线 */
+
   box-shadow: none !important;
 }
 

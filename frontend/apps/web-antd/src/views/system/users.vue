@@ -45,10 +45,10 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { ClpmEmptyState } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
-import { ClpmEmptyState } from '#/components/clpm';
 
 defineOptions({ name: 'SystemUsers' });
 
@@ -448,22 +448,24 @@ const { toolbarItems } = usePageToolbar(() => ({
             </div>
           </template>
         </template>
-          <template #emptyText>
-            <ClpmEmptyState
-              title="无匹配用户"
-              description="可调整筛选条件，或点击「新建用户」创建账号。"
-              :actions="[
-                { label: '新建用户', primary: true, onClick: handleOpenAdd },
-              ]"
-            />
-          </template>
+        <template #emptyText>
+          <ClpmEmptyState
+            title="无匹配用户"
+            description="可调整筛选条件，或点击「新建用户」创建账号。"
+            :actions="[
+              { label: '新建用户', primary: true, onClick: handleOpenAdd },
+            ]"
+          />
+        </template>
       </Table>
     </ClpmDataCanvas>
 
     <!-- 新增/编辑 Modal -->
     <Modal
       v-model:open="modalVisible"
-      :title="editingUser ? `编辑用户 - ${editingUser.displayName}` : '新建用户'"
+      :title="
+        editingUser ? `编辑用户 - ${editingUser.displayName}` : '新建用户'
+      "
       :confirm-loading="modalLoading"
       width="560px"
       @ok="handleSubmit"

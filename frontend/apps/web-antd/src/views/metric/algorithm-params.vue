@@ -710,7 +710,9 @@ onMounted(() => {
           <div class="grid grid-cols-1 gap-3">
             <!-- F6：按注册表 category 分组展示 -->
             <div
-              v-for="[cat, params] in paramsByCategory(editingMetric.metricCode)"
+              v-for="[cat, params] in paramsByCategory(
+                editingMetric.metricCode,
+              )"
               :key="cat"
             >
               <div

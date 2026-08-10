@@ -908,12 +908,7 @@ onMounted(() => {
         class="mb-2 flex flex-wrap items-center gap-1 text-xs"
       >
         <span :style="{ color: themeColors.NEUTRAL }">评级分布</span>
-        <Tag
-          v-for="lv in 5"
-          :key="lv"
-          :color="levelColor(lv)"
-          class="mr-0"
-        >
+        <Tag v-for="lv in 5" :key="lv" :color="levelColor(lv)" class="mr-0">
           {{ LEVEL_META[lv]?.label }} × {{ ratingDistribution[lv] ?? 0 }}
         </Tag>
         <Tag v-if="(ratingDistribution[0] ?? 0) > 0" class="mr-0">

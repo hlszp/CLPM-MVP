@@ -23,7 +23,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN'],
       icon: 'lucide:settings-2',
-      order: 6,
+      order: 5,
       title: '配置',
     },
     children: [
@@ -113,6 +113,17 @@ const routes: RouteRecordRaw[] = [
           icon: 'lucide:stethoscope',
           order: 8,
           title: '诊断配置',
+        },
+      },
+      {
+        name: 'ConfigAlertRules',
+        path: '/config/alert-rules',
+        component: () => import('#/views/alert/rules.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:bell-ring',
+          order: 9,
+          title: '预警规则',
         },
       },
       // PID 结构模板无独立页，redirect 到链路配置（原行为）

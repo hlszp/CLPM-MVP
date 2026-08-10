@@ -82,7 +82,10 @@ class TestHasPerms:
         assert has_perms("EXPERT", "tracker:review")
         # 实现契约 §5：EXPERT 可查看整定相关页面
         assert has_perms("EXPERT", "tuning:view")
-        assert not has_perms("EXPERT", "loop:view")
+        # MW-P5-03：工作台 authority 含 EXPERT，左栏 /loops/monitor 需 loop:view 只读权限
+        # 契约 §5 同步更新：EXPERT 扩展 loop:view（只读监控，不含 loop:edit/import）
+        assert has_perms("EXPERT", "loop:view")
+        assert not has_perms("EXPERT", "loop:edit")
 
     def test_unknown_role_denied(self) -> None:
         assert not has_perms("NO_SUCH_ROLE", "loop:view")

@@ -349,7 +349,8 @@ async function handleDeleteTuneConfirm() {
       scopeId: tuneForm.scopeId,
     });
     const target = overrides.find(
-      (o: DiagnosisApi.ThresholdOverrideItem) => o.diagCode === tuneForm.diagCode,
+      (o: DiagnosisApi.ThresholdOverrideItem) =>
+        o.diagCode === tuneForm.diagCode,
     );
     if (!target) {
       message.warning('未找到回路级覆盖');

@@ -1078,6 +1078,24 @@
             "description": "按回路类型筛选"
           },
           {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "精确查询指定回路（供深链接解析；不回退其他回路）",
+              "title": "Loopid"
+            },
+            "description": "精确查询指定回路（供深链接解析；不回退其他回路）"
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -9904,6 +9922,185 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/monitor/attention": {
+      "get": {
+        "tags": [
+          "monitor"
+        ],
+        "summary": "List Attention Endpoint",
+        "description": "统一关注队列——聚合预警/评分恶化/数据质量/Tracker/验证超期。",
+        "operationId": "list_attention_endpoint_api_v1_monitor_attention_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按装置/单元筛选",
+              "title": "Plantnodeid"
+            },
+            "description": "按装置/单元筛选"
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "来源筛选（可重复）：ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION",
+              "title": "Source"
+            },
+            "description": "来源筛选（可重复）：ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION"
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "优先级筛选（可重复）：URGENT/HIGH/MEDIUM/LOW",
+              "title": "Priority"
+            },
+            "description": "优先级筛选（可重复）：URGENT/HIGH/MEDIUM/LOW"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "状态筛选（可重复）：OPEN/ACKNOWLEDGED/SUPPRESSED/IN_PROGRESS/VERIFYING",
+              "title": "Status"
+            },
+            "description": "状态筛选（可重复）：OPEN/ACKNOWLEDGED/SUPPRESSED/IN_PROGRESS/VERIFYING"
+          },
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按回路精确筛选",
+              "title": "Loopid"
+            },
+            "description": "按回路精确筛选"
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按位号/标题模糊查询",
+              "title": "Keyword"
+            },
+            "description": "按位号/标题模糊查询"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/configs/metrics": {

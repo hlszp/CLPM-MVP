@@ -27,8 +27,12 @@ import LoginForm from '#/views/_core/authentication/login.vue';
 
 const notifications = ref<NotificationItem[]>([]);
 
-// ===== E4：通知铃铛接预警（/ws/alerts + 未确认事件拉取） =====
-/** 严重度 → 铃铛头像图标（emoji 避免新增图标依赖，与事件页口径一致） */
+// ===== E4 + MW-P2-08：通知铃铛接预警（/ws/alerts + 未确认事件拉取） =====
+/**
+ * 严重度 → 铃铛头像（沿用既有彩色圆点，不新增 Emoji 图标）。
+ * MW-P2-08：通知项保存 loopId/eventId/severity，点击进入关注队列定位 eventId；
+ * 「查看全部」进入关注队列 ALERT 筛选；已读状态仅本地标记，不等于事件已确认。
+ */
 const SEVERITY_AVATAR: Record<string, string> = {
   CRITICAL: '🔴',
   ERROR: '🟠',
@@ -39,19 +43,27 @@ const SEVERITY_AVATAR: Record<string, string> = {
 function eventToNotification(item: {
   eventId: string;
   loopId: string;
+  loopName?: string;
   ruleCode: string;
   ruleName?: string;
   severity?: string;
   triggeredAt?: string;
   triggeredValue?: number;
 }): NotificationItem {
+  // 保存业务字段供深链接使用：loopId/eventId/severity/occurredAt
+  // 点击单条进入关注队列并定位 eventId；已读状态仅本地标记，不等于事件已确认
   return {
     avatar: SEVERITY_AVATAR[item.severity ?? ''] ?? '🔵',
     date: item.triggeredAt ?? '',
+    eventId: item.eventId,
     id: item.eventId,
     isRead: false,
-    link: '/alert/events',
-    message: `回路 ${item.loopId} 触发值 ${item.triggeredValue ?? '—'}（${item.ruleCode}）`,
+    link: '/monitor/attention',
+    loopId: item.loopId,
+    loopName: item.loopName,
+    message: `回路 ${item.loopName || item.loopId.slice(0, 8)} 触发值 ${item.triggeredValue ?? '—'}（${item.ruleCode}）`,
+    query: { source: 'ALERT', eventId: item.eventId },
+    severity: item.severity,
     title: item.ruleName || item.ruleCode,
   };
 }
@@ -64,7 +76,17 @@ async function loadAlertNotifications() {
       limit: 10,
       status: 'ACTIVE',
     });
-    notifications.value = (r.items ?? []).map(eventToNotification);
+    notifications.value = (r.items ?? []).map((item) =>
+      eventToNotification({
+        eventId: item.eventId,
+        loopId: item.loopId,
+        loopName: item.loopName,
+        ruleCode: item.ruleCode,
+        severity: item.severity,
+        triggeredAt: item.triggeredAt,
+        triggeredValue: item.triggeredValue,
+      }),
+    );
   } catch {
     // 未接前置空态（E4 约束：不显示假徽标）
   }
@@ -117,7 +139,8 @@ onMounted(() => {
       if (msg.type !== 'alert') return;
       notifications.value = [
         eventToNotification({
-          eventId: `${msg.ruleCode}-${msg.triggeredAt ?? Date.now()}`,
+          eventId:
+            msg.eventId || `${msg.ruleCode}-${msg.triggeredAt ?? Date.now()}`,
           loopId: msg.loopId ?? '',
           ruleCode: msg.ruleCode ?? '',
           ruleName: msg.ruleName,
@@ -194,7 +217,9 @@ function handleMakeAll() {
 }
 
 const viewAll = () => {
-  router.push('/alert/events');
+  // MW-P2-08：「查看全部」进入关注队列 ALERT 筛选（当前行动项入口）
+  // 预警历史/审计/导出仍由 /monitor/alerts 承载
+  router.push({ path: '/monitor/attention', query: { source: 'ALERT' } });
 };
 
 const handleClick = (item: NotificationItem) => {

@@ -8,6 +8,7 @@
 
 /** 后端推送消息格式（见 ws_alert.py  docstring） */
 export type AlertWsMessage = {
+  eventId?: string;
   loopId?: string;
   ruleCode?: string;
   ruleName?: string;
@@ -76,11 +77,11 @@ class AlertWebSocket {
       return;
     }
 
-    this.ws.onopen = () => {
+    this.ws.addEventListener('open', () => {
       this.reconnectAttempts = 0;
-    };
+    });
 
-    this.ws.onmessage = (event) => {
+    this.ws.addEventListener('message', (event) => {
       try {
         const msg = JSON.parse(event.data) as AlertWsMessage;
         // 心跳：回复 pong，不派发
@@ -92,15 +93,15 @@ class AlertWebSocket {
       } catch {
         // 非法消息忽略
       }
-    };
+    });
 
-    this.ws.onclose = () => {
+    this.ws.addEventListener('close', () => {
       if (!this.isManualClose) this._scheduleReconnect();
-    };
+    });
 
-    this.ws.onerror = () => {
+    this.ws.addEventListener('error', () => {
       this.ws?.close();
-    };
+    });
   }
 
   private _scheduleReconnect() {

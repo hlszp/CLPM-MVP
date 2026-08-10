@@ -8,6 +8,8 @@
  * 工业设计口径（UI/UX v6.1 Calm UI）：紧凑布局，最大化 data-ink ratio，
  * 不加多余边框/阴影；任务运行时显示进度条与阶段文案。
  */
+import { IconifyIcon } from '@vben/icons';
+
 import { Progress, Spin } from 'ant-design-vue';
 
 defineOptions({ name: 'WorkbenchSectionCard' });
@@ -40,7 +42,7 @@ withDefaults(
     <!-- 标题栏 -->
     <div class="wb-section__header">
       <div class="wb-section__title">
-        <span v-if="icon" class="mr-1">{{ icon }}</span>
+        <IconifyIcon v-if="icon" :icon="icon" class="mr-1" :size="15" />
         <span class="font-medium">{{ title }}</span>
         <span v-if="progressStage" class="ml-2 text-xs text-gray-400">
           {{ progressStage }}
@@ -71,7 +73,7 @@ withDefaults(
         <Spin :spinning="loading" size="small">
           <slot v-if="!empty"></slot>
           <div v-else class="py-4 text-center text-xs text-gray-400">
-            {{ emptyText }}
+            <slot name="empty">{{ emptyText }}</slot>
           </div>
         </Spin>
       </div>

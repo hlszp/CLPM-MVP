@@ -4,13 +4,14 @@
  * 覆盖 2026-07-28 权限收紧项（IA 重构 Phase A 路径同步）：
  * - /system/reports 仅 ADMIN（后端 reports.py 全端点仅 ADMIN）
  * - /config/link（原 /loop/aas-sync）仅 ADMIN（后端 datasource.py/dcs.py 写端点仅 ADMIN）
- * - EXPERT 不可见监控/评估（仅诊断 + 整定）
+ * - EXPERT 不可见系统概览/评估，但可进入监控下回路工作台
  * - 诊断 / 整定对 EXPERT 放行
  */
 import type { RouteRecordRaw } from 'vue-router';
 
 import { describe, expect, it } from 'vitest';
 
+import alertRoutes from '#/router/routes/modules/alert';
 import assessRoutes from '#/router/routes/modules/assess';
 import configRoutes from '#/router/routes/modules/config';
 import diagnosisRoutes from '#/router/routes/modules/diagnosis';
@@ -55,6 +56,59 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
     expect(workbench).toBeDefined();
     expect(authorityOf(workbench!)).not.toContain('EXPERT');
     expect(authorityOf(workbench!)).toContain('SPONSOR');
+  });
+
+  it('监控承载回路工作台，且对 EXPERT 放行', () => {
+    const workbench = findRoute(
+      monitorRoutes,
+      (r) => r.path === '/monitor/loop-workbench',
+    );
+    expect(workbench).toBeDefined();
+    expect(authorityOf(workbench!)).toContain('EXPERT');
+    expect(workbench?.meta?.fullPathKey).toBe(false);
+  });
+
+  it('关注队列（/monitor/attention）全部角色可访问（Sponsor 只读）', () => {
+    const attention = findRoute(
+      monitorRoutes,
+      (r) => r.path === '/monitor/attention',
+    );
+    expect(attention).toBeDefined();
+    const auth = authorityOf(attention!);
+    // 五角色全部放行——Sponsor 可查看关注队列（只读，无 OPEN_WORKBENCH）
+    for (const role of [
+      'ADMIN',
+      'IC_ENGINEER',
+      'PE_ENGINEER',
+      'SPONSOR',
+      'EXPERT',
+    ]) {
+      expect(auth).toContain(role);
+    }
+  });
+
+  it('预警结果在监控、预警规则在配置；旧预警路由只做兼容跳转', () => {
+    const events = findRoute(
+      monitorRoutes,
+      (r) => r.path === '/monitor/alerts',
+    );
+    const legacyEvents = findRoute(
+      alertRoutes,
+      (r) => r.path === '/alert/events',
+    );
+    const legacyRules = findRoute(
+      alertRoutes,
+      (r) => r.path === '/alert/rules',
+    );
+    const rules = findRoute(
+      configRoutes,
+      (r) => r.path === '/config/alert-rules',
+    );
+    expect(events).toBeDefined();
+    expect(rules).toBeDefined();
+    expect(authorityOf(rules!)).toEqual(['ADMIN']);
+    expect(legacyEvents?.redirect).toBe('/monitor/alerts');
+    expect(legacyRules?.redirect).toBe('/config/alert-rules');
   });
 
   it('评估（/assess）所有可见子路由排除 EXPERT、放行 SPONSOR', () => {

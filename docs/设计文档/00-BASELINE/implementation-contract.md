@@ -1,10 +1,12 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.8
+**当前版本**：v2.9
 **发布日期**：2026-08-09
 **适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D + UI/UX 整改 Phase 0-2）
 **v2.8 修订摘要（2026-08-09，UI/UX 整改 Phase 1-2 API 增量）**：登记 `GET /loops/monitor` 响应新增 `scoreDelta`/`dayTrend`（较昨日增量巡检）且默认排序改为最新快照评分升序 NULLS LAST（最需关注优先）；登记 `GET /diagnosis/list` aggregates 新增 `verifyOverdueCount`（VERIFYING 超 24h 未闭环计数）；登记 `GET|PUT /configs/algorithm-params` 响应新增 `paramMeta`（参数注册表 min/max/unit/description/category 单源下发）与 `AlgorithmParamsSaveRequest.resetControlTypes`（重置默认=清空覆盖回落算法默认）；登记 `GET /performance/loops/snapshots` 序列化新增 `timeConstant`（F5 时间常数计算器，L1 DISPLAY_ONLY，激励不足窗口为 null）与 `clpm_metric_data_requirement` 新增 time_constant 契约行；确认 Action Tracker P1a 闭环状态机（PENDING→IN_PROGRESS→VERIFYING→CLOSED，VERIFYING 可→REOPENED，存量 IMPLEMENTED 兼容映射 VERIFYING）；审计 `operationType`/`targetType` 为开放式枚举（前端映射见 audit.vue operationOptions/resourceOptions）。整改全貌见 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md` 与 `p2-exit-report-2026-08-09.md`
+
+**v2.9 修订摘要（2026-08-09，监控—工作台 IA 再收敛）**：一级菜单由 7 个收敛为 6 个（监控/评估/诊断/整定/配置/系统），移除独立回路一级菜单；回路工作台归入监控，规范路径为 `/monitor/loop-workbench`，左侧列表承担跨回路扫视，右侧四区承担单回路监控、评估、诊断、整定闭环；高密度实时表保留为隐藏兼容视图 `/loop/monitor`，不再作为主导航入口。预警规则归入配置 `/config/alert-rules`（仅 ADMIN），预警事件归入监控 `/monitor/alerts`（全部角色）；旧 `/loop/workbench`、`/loop/detail/:id`、`/alert/events`、`/alert/rules` 保留重定向，后端 `/alert/*` API 不变。工作台概览改为自适应高度，补齐 PV/SP/OP/模式摘要、空态原因与下一步、非装饰性 Lucide 图标、未知算法/低可信度中性表达；持平趋势不再显示 ±0 噪声。
 **v2.0 修订摘要**：按当前代码重校前端 IA、API、31 张 ORM 表、诊断双状态机与缓存接入状态；D5 口径统一后全库引用为 v2.0（历史 v2.1 摘要并入本版）
 **v2.1 修订摘要**：同步诊断中心 Batch 4-6 交付成果——A/B 对比已实现（含 `includeDiagnosis` 扩展）；登记 `GET /diagnosis/algorithms/meta`、`GET /diagnosis/statistics/export`、`GET /tracker/effectiveness`、`GET|PATCH /tracker/verification-config`；补全 Tracker 子路由清单；更新诊断中心路由决策（A/B 对比不再返回 501）；登记诊断任务自动归档机制与 D1-D6 功能扩展
 **v2.2 修订摘要**：同步 2026-07-28 全维度优化整改（Phase 0-5）——登记 `GET /performance/grade-distribution` 与 `/loops/snapshots?grade=`；权限码服务端落地（`require_perms`，loop/tuning/diagnosis 读端点收口）替代"待统一"标注；登记首次登录强制改密（`must_change_password`）；前端路由收紧（reports/aas-sync 仅 ADMIN、EXPERT→/diagnosis、SPONSOR→/metric）。整改全貌见 `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md`
@@ -30,23 +32,33 @@
 
 ## 2. 信息架构契约
 
-CLPM 当前采用 **7 模块**（v2.6 IA 重构 Phase A-D 全量合入）：监控 / 回路 / 评估 / 诊断 / 整定 / 配置 / 系统。引入**双轴导航**（实体轴回路工作台 + 职能轴评估/诊断/整定）与**工程/操作分离**原则（结构性配置集中到 `/config/*`，操作性调参保留业务模块内联）。
+CLPM 当前采用 **6 个一级模块**：监控 / 评估 / 诊断 / 整定 / 配置 / 系统。回路是平台核心实体，但不再单独占用一级菜单；回路运行态统一收敛到监控下的回路工作台，回路结构性配置归配置模块。保留**双轴导航**（监控下的实体轴工作台 + 评估/诊断/整定职能轴）与**工程/操作分离**原则（结构性配置集中到 `/config/*`，操作性调参保留业务模块内联）。
 
 | 模块 | 轴 | 当前设计意图 | 当前主要路由 |
 |---|---|---|---|
-| 监控 | — | 运行驾驶舱（系统概览/回路实时/待办/数据链路健康） | `/dashboard/workbench`、`/loop/monitor` |
-| 回路 | 实体轴 | 单回路 360° 一站式工作台（单页四区：概览/评估/诊断/整定，v2.7 重构） | `/loop/workbench`；`/loop/detail/:id` → redirect `/loop/workbench?loopId=:id` |
+| 监控 | 实体轴 | 系统概览、跨回路扫视、单回路 360° 工作台、预警结果与运行处置 | `/dashboard/workbench`、`/monitor/loop-workbench`、`/monitor/alerts` |
 | 评估 | 职能轴 | 性能总览、回路性能趋势、评估任务、KPI 报表（跨回路批量） | `/metric/pid-dashboard`、`/metric/loop-performance`、`/metric/tasks`、`/metric/kpi-report` |
 | 诊断 | 职能轴 | 诊断总览、回路分析（列表）、诊断任务（Tabs 含历史记录）、异常跟踪、详情三区 | `/diagnosis/overview`、`/diagnosis/loop-analysis`、`/diagnosis/tasks`、`/diagnosis/tracker`、`/diagnosis/detail/:loopId` |
 | 整定 | 职能轴 | 整定工作台、整定任务详情（单页 4 锚点）、整定知识库、效果统计 | `/tuning/workbench`、`/tuning/detail`、`/tuning/knowledge-base`、`/tuning/stats` |
-| 配置 | — | 结构性配置集中（链路/测点/回路/数据源/指标/诊断）；操作性调参保留业务模块内联 | `/config/link`、`/config/tag`、`/config/loop`、`/config/datasource`、`/config/metric`、`/config/diagnosis` |
+| 配置 | — | 结构性配置集中（链路/测点/回路/数据源/指标/诊断/预警规则）；操作性调参保留业务模块内联 | `/config/link`、`/config/tag`、`/config/loop`、`/config/datasource`、`/config/metric`、`/config/diagnosis`、`/config/alert-rules` |
 | 系统 | — | 用户、审计、权限矩阵、自动报表、LLM 配置 | `/system/users`、`/system/audit`、`/system/permissions`、`/system/reports`、`/system/llm-config` |
 
 **模块口径声明（v2.6）**：
 - 评估任务为评估模块子页（`/metric/tasks`），任务详情跳转保留 `/tasks/:taskId` 兼容路由（隐藏）。
 - 结构性配置（链路/测点/回路/工厂/台账/指标/诊断/数据源/PID 模板）统一归入配置模块；操作性调参（诊断阈值微调、算法参数、时间窗、列设置）保留在各业务页内联。
 - 历史数据导入按钮保留在监控/评估工具栏（操作型，INCONCLUSIVE 时补数据），不埋进配置。
-- 旧路由（`/loop/aas-sync`、`/tag/list`、`/loop/manage`、`/metric/config`、`/diagnosis/config` 等）全部 legacy redirect 到新路径，保护书签与 E2E。
+- 旧路由（`/loop/aas-sync`、`/tag/list`、`/loop/manage`、`/loop/workbench`、`/alert/events`、`/alert/rules` 等）全部 legacy redirect 到新路径，保护书签与 E2E；`/loop/monitor` 保留为隐藏的高密度实时表视图。
+
+#### IA 再收敛：监控—回路工作台—预警（v2.9）
+
+| 用户任务 | 主入口 | 信息组织 | 设计边界 |
+|---|---|---|---|
+| 看全厂/跨回路当前状态 | `/monitor/loop-workbench` 左侧回路列表 | PV/SP/OP/模式、评分/较昨日趋势、可信度、搜索与选择 | 只给扫视所需摘要，不在列表复制完整诊断与整定详情 |
+| 处置单个回路 | `/monitor/loop-workbench?loopId=` 右侧工作台 | 概览 → 性能评估 → 诊断 → 整定，按同一回路上下文连续推进 | 每区保留摘要、1 个主图、明确动作；任务完成后自动反写 |
+| 查看/处置预警结果 | `/monitor/alerts` + 全局通知铃铛 | 事件列表、状态、严重度、回路上下文、确认/处置/归档 | 预警是运行结果，不制造独立一级模块 |
+| 配置预警规则 | `/config/alert-rules` | 规则定义、订阅、启停、试运行、审计 | 仅 ADMIN；规则配置不与运行事件混在同一页 |
+
+监控与工作台的合并采用“导航合并、认知任务分层”：跨回路扫视与单回路深度处置不强行压成一张普通表格。左侧列表承载监控入口，右侧工作台承载处置闭环；旧高密度实时表仅作为批量巡检/导出与兼容视图保留。
 
 ### 2.1 IA 重构 Phase A-D 变更清单 [v2.6 新增]
 
@@ -75,14 +87,15 @@ CLPM 当前采用 **7 模块**（v2.6 IA 重构 Phase A-D 全量合入）：监�
 
 **AI 右抽屉**：替换原 4 处内嵌 `ClpmAiInsight`，统一为工具栏 AI 图标 + 右侧 overlay 抽屉（480px，≤300ms 动画，遮罩可关）；两级门禁（LLM 配置 + 页面上下文）控制图标状态；整定场景本轮下线（图标灰显）。
 
-#### Phase B — 回路工作台单页四区（v2.7 重构，原 6 Tab 已废弃）
+#### Phase B — 回路工作台单页四区（v2.7 设计历史，v2.9 路由已收敛）
 
 **新增路由**：
 
 | 路由 | 组件 | 权限 | 说明 |
 |---|---|---|---|
-| `/loop` | redirect `/loop/workbench` | ADMIN/IC/PE/EXPERT | 回路父路由 |
-| `/loop/workbench` | `views/loop/workbench.vue` | ADMIN/IC/PE(只读)/EXPERT | 回路工作台主页（单页四区） |
+| `/monitor/loop-workbench` | `views/loop/workbench.vue` | ADMIN/IC/PE(只读)/EXPERT | 当前回路工作台主页（单页四区） |
+| `/loop` | redirect `/monitor/loop-workbench` | ADMIN/IC/PE/EXPERT | 旧回路父路由兼容入口 |
+| `/loop/workbench` | redirect `/monitor/loop-workbench` | ADMIN/IC/PE(只读)/EXPERT | 旧工作台路径兼容入口 |
 
 **单页四区布局**（v2.7，commit `5e216ba8`，原 6 Tab 已废弃）：页面垂直分为四区，左侧回路列表选中后 `router.replace` 更新 `?loopId=` query，**仅更新右侧子页面、不新增 tab/面包屑**（路由 meta `fullPathKey: false`，vben tab key 退化为 route.path）。
 
@@ -95,7 +108,7 @@ CLPM 当前采用 **7 模块**（v2.6 IA 重构 Phase A-D 全量合入）：监�
 
 **设计原则**：一个页面聚合评估/诊断/整定概况，可直接发起新任务并实时反写显示；详情通过弹窗展示。每区最多"摘要 + 1 主图 + 动作入口"。
 
-**重定向**：`/loop/detail/:id` → `/loop/workbench?loopId=:id`（兼容旧书签/monitor 行点击/E2E）。
+**重定向**：`/loop/detail/:id` → `/monitor/loop-workbench?loopId=:id`（兼容旧书签/monitor 行点击/E2E）。
 
 #### Phase C — 诊断三区重构 + 特征字典
 
@@ -129,19 +142,27 @@ CLPM 当前采用 **7 模块**（v2.6 IA 重构 Phase A-D 全量合入）：监�
 
 **重定向（7 条）**：`/tuning/flow`、`/tuning/flow/model`、`/tuning/flow/algorithm`、`/tuning/flow/simulation`、`/tuning/model`、`/tuning/algorithm`、`/tuning/simulation` → `/tuning/detail`（保留 query 参数）。
 
+#### IA 再收敛落地（v2.9，2026-08-09）
+
+- **一级菜单**：从 7 个收敛为 6 个，移除独立“回路”和“预警”一级菜单；当前菜单为监控 / 评估 / 诊断 / 整定 / 配置 / 系统。
+- **监控主入口**：`/monitor/loop-workbench` 使用 `views/loop/workbench.vue`，统一回路监控、性能评估、诊断和整定的同一回路上下文；`/monitor` 按角色进入系统概览（ADMIN/IC/PE/SPONSOR）或回路工作台（EXPERT），系统概览仍保留 `/dashboard/workbench` 子入口。
+- **跨回路扫视**：工作台左侧列表显示位号、PV/SP/OP、模式、评分/较昨日趋势和可信度；原 `/loop/monitor` 高密度实时表改为隐藏视图，保留批量巡检/导出和兼容能力。
+- **预警分层**：运行态预警事件使用 `/monitor/alerts`，规则配置使用 `/config/alert-rules`；原 `/alert/events`、`/alert/rules` 仅重定向，后端 `/alert/*` API 不迁移。
+- **上下文稳定性**：工作台的 `fullPathKey: false` 与 `router.replace` 继续生效；旧 `/loop/workbench`、`/loop/detail/:id` 统一重定向到 `/monitor/loop-workbench`。
+
 ## 3. 路由命名决策
 
 | 决策点 | 当前决策 | 说明 |
 |---|---|---|
 | 首页 | 使用 `/dashboard/workbench`（监控模块下） | `/` 可作为部署层默认入口，但产品路由以监控模块的系统概览路由为准。 |
-| 一级菜单数量 | 7 模块（v2.6） | 监控/回路/评估/诊断/整定/配置/系统；原"工作台门户"升级为"监控"，原"回路管理"拆分为"回路"+"配置"。 |
+| 一级菜单数量 | 6 个模块（v2.9） | 监控/评估/诊断/整定/配置/系统；回路运行态并入监控工作台，结构性配置并入配置，预警规则并入配置。 |
 | 双轴导航 | 实体轴（回路工作台）+ 职能轴（评估/诊断/整定） | 实体轴回答"这个回路怎么处置"，职能轴回答"全厂哪些回路有问题"；互为入口，loopId 上下文传递。 |
 | 工程/操作分离 | 结构性配置→`/config/*`；操作性调参→业务模块内联 | 结构性配置（链路/测点/回路/指标/诊断）一次性低频，集中到配置模块；操作性调参（阈值微调/算法参数/时间窗/列设置）高频上下文相关，保留内联。 |
 | leaf 路径稳定策略 | 评估模块 leaf 保留 `/metric/*` 绝对路径 | 父路由改为 `/assess`，但 leaf 路径（`/metric/pid-dashboard` 等）保持不变，避免硬编码路由大面积破坏；仅重命名高价值配置项（`/metric/config`→`/config/metric`）。 |
-| 监控模块 leaf | 保留 `/dashboard/workbench` 与 `/loop/monitor` | 父路由 `/monitor`，leaf 路径稳定不迁移，减少 E2E 破坏。 |
+| 监控模块 leaf | `/dashboard/workbench` + `/monitor/loop-workbench` + `/monitor/alerts` | `/loop/monitor` 仅保留为隐藏高密度兼容视图；监控主入口统一到回路工作台。 |
 | 性能评估 | 保留 `/metric/*` leaf | 不再强制回退到旧 UI/UX 的 `/performance/*`。 |
 | 指标配置 Tab 聚合 | 迁移到 `/config/metric` | 指标定义、权重、定级、可信度、KPI 算法参数等配置在聚合页内以 Tab 呈现；从性能评估模块迁入配置模块（工程/操作分离）。 |
-| 回路管理 | `/loop/workbench` 实体轴 + `/config/loop` 配置 | 回路工作台（运行态）归回路模块；回路配置（结构性）归配置模块；`/loop/manage` redirect 到 `/config/loop`。 |
+| 回路管理 | `/monitor/loop-workbench` 实体轴 + `/config/loop` 配置 | 回路工作台（运行态）归监控模块；回路配置（结构性）归配置模块；`/loop/manage` redirect 到 `/config/loop`。 |
 | Tag 管理 | 迁移到 `/config/tag` | AAS Tag 配置归配置模块；`/tag/list` redirect 到 `/config/tag`。 |
 | 诊断中心 | 三区重构 + 列表以回路为中心 | waveform 合入详情证据区，统计合入总览，A/B 对比合入 Tracker 抽屉，records 合入 tasks Tabs；详情页三区（结论/路径/证据）。A/B 对比已实现（`GET /diagnosis/ab-compare`，含 `includeDiagnosis` 扩展，Batch 4）；诊断报告导出已实现（CSV `GET /diagnosis/statistics/export` + PDF `POST /tracker/{loopId}/export`，D5）。 |
 | 整定单页 | `/tuning/detail` 单页 4 锚点 | 原 3 页向导（model/algorithm/simulation）整合为单页，锚点导航替代整页跳转；旧路由全量重定向。 |
@@ -235,12 +256,11 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | EXPERT | 可查看诊断与整定相关页面，可参与异常跟踪和专家建议。 |
 | SPONSOR | 只看工作台、性能汇总、诊断统计等汇总视图；不可进入单回路诊断详情、波形证据或异常跟踪编辑。 |
 
-### 5.1 7 模块权限矩阵 [v2.6 新增]
+### 5.1 6 个一级模块权限矩阵 [v2.9]
 
 | 模块 | ADMIN | IC_ENGINEER | PE_ENGINEER | EXPERT | SPONSOR |
 |---|---|---|---|---|---|
-| 监控（`/monitor`） | ✅ | ✅ | ✅ | — | ✅ |
-| 回路（`/loop`，实体轴） | ✅ | ✅ | 只读 | ✅ | — |
+| 监控（`/monitor`；工作台/事件） | ✅ | ✅ | ✅ | 工作台/事件 | 概览/事件 |
 | 评估（`/assess`） | ✅ | ✅ | ✅ | — | ✅ |
 | 诊断（`/diagnosis`） | ✅ | ✅ | 只读 | ✅ | 仅总览/任务/记录汇总 |
 | 整定（`/tuning`） | ✅ | ✅ | — | ✅ | — |
@@ -249,7 +269,7 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 
 **默认首页口径**：
 - ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR：默认 `/dashboard/workbench`（监控模块）。
-- EXPERT：默认 `/diagnosis`（诊断模块），不进监控。
+- EXPERT：默认 `/diagnosis`（诊断模块），可按回路上下文进入 `/monitor/loop-workbench`。
 - SPONSOR：默认 `/metric`（评估模块），仅看汇总视图。
 
 > **数据管理权限口径（D3，2026-07-21 对齐）**：历史数据导入（`/api/v1/loops/data-import/*`）与删除操作维持现状——允许 ADMIN / IC_ENGINEER 角色执行导入与删除；Tag 编辑/导入（D2）同口径。
@@ -573,4 +593,3 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 旧路由兼容 | 部分重定向 | 全量 legacy redirect（Phase A 11 条 + Phase B 1 条 + Phase C 2 条 + Phase D 7 条 = 21 条），`route-compat.spec.ts` 守护 | §2.1、`router/routes/modules/` |
 | 后端改动 | — | 零（全方案纯前端） | §2.1、IA 重构方案 §7 |
 | 门禁基线 | pytest 3456 / vitest 434 | pytest 3881 / vitest 147 / E2E 79（71 passed） | IA 重构方案 §8 Phase D |
-

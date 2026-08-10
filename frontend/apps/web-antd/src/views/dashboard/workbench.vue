@@ -20,6 +20,7 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
 import { Button, message, Tag, Tooltip } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import { getDatasourceHealthApi } from '#/api/datasource';
 import { getDiagnosisTasksApi, getTrackerListApi } from '#/api/diagnosis';
@@ -36,8 +37,6 @@ import {
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
-import dayjs from 'dayjs';
-
 import { formatTime, normalizeUtcTimestamp } from '#/utils/format';
 import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
 import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
@@ -116,7 +115,9 @@ const todoKpiItems = computed<KpiStripItem[]>(() => {
     });
   }
   // 整改 A-12：非零待办优先展示（稳定排序）
-  return items.sort((a, b) => Number(Number(b.value) > 0) - Number(Number(a.value) > 0));
+  return items.toSorted(
+    (a, b) => Number(Number(b.value) > 0) - Number(Number(a.value) > 0),
+  );
 });
 
 function handleTodoClick(item: KpiStripItem) {

@@ -60,9 +60,8 @@ const { themeColors } = useClpmTheme();
 const router = useRouter();
 
 // ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
-const { tableSize, densityLabel, cycleDensity } = useTableDensity(
-  'diagnosis-config',
-);
+const { tableSize, densityLabel, cycleDensity } =
+  useTableDensity('diagnosis-config');
 
 const loading = ref(false);
 const metricList = ref<DiagnosisApi.MetricItem[]>([]);

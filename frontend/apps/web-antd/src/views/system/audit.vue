@@ -387,14 +387,10 @@ const { toolbarItems } = usePageToolbar(() => ({
             </Tag>
           </template>
           <template v-else-if="column.key === 'targetId'">
-            <span class="font-mono text-xs">{{
-              record.targetId || '—'
-            }}</span>
+            <span class="font-mono text-xs">{{ record.targetId || '—' }}</span>
           </template>
           <template v-else-if="column.key === 'clientIp'">
-            <span class="font-mono text-xs">{{
-              record.clientIp || '—'
-            }}</span>
+            <span class="font-mono text-xs">{{ record.clientIp || '—' }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
             <Button

@@ -36,7 +36,7 @@ const router = useRouter();
 
 const detailPath = computed(() => {
   const paths = {
-    detail: `/loop/workbench?loopId=${props.loopId}`,
+    detail: `/monitor/loop-workbench?loopId=${props.loopId}`,
     diagnosis: `/diagnosis/detail/${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
@@ -47,11 +47,11 @@ const detailPath = computed(() => {
 const handleMenuClick = ({ key }: { key: number | string }) => {
   const keyStr = String(key);
   const routes: Record<string, string> = {
-    detail: `/loop/workbench?loopId=${props.loopId}`,
+    detail: `/monitor/loop-workbench?loopId=${props.loopId}`,
     diagnosis: `/diagnosis/detail/${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
-    trend: `/loop/monitor?loopId=${props.loopId}`,
+    trend: `/monitor/loop-workbench?loopId=${props.loopId}`,
     tracker: `/diagnosis/tracker?loopId=${props.loopId}`,
   };
   const path = routes[keyStr];

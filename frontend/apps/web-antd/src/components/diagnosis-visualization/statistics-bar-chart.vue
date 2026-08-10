@@ -369,7 +369,7 @@ onMounted(() => {
   transition: none;
 
   &.active {
-    color: hsl(0 0% 100%);
+    color: hsl(0deg 0% 100%);
     background-color: var(--status-info);
     border-color: var(--status-info);
   }

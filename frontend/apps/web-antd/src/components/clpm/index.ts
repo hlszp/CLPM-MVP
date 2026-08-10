@@ -1,7 +1,7 @@
 export { default as ClpmAiDrawer } from './ai-drawer.vue';
 export { default as ClpmAiInsight } from './ai-insight.vue';
-export { default as ClpmBulletChart } from './bullet-chart.vue';
 export { default as ClpmAlertDslEditor } from './alert-dsl-editor.vue';
+export { default as ClpmBulletChart } from './bullet-chart.vue';
 export { default as ClpmModal } from './clpm-modal.vue';
 export { default as ClpmColumnSettings } from './column-settings.vue';
 export { default as ClpmConfidenceBadge } from './confidence-badge.vue';

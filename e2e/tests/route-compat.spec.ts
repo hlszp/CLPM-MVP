@@ -13,6 +13,11 @@
  *   /diagnosis/config    → /config/diagnosis
  *   /system/pid-template → /config/link
  *   /loop/data           → /config/datasource
+ * - IA v2.9：
+ *   /loop/workbench      → /monitor/loop-workbench
+ *   /loop/detail/:id     → /monitor/loop-workbench?loopId=:id
+ *   /alert/events        → /monitor/alerts
+ *   /alert/rules         → /config/alert-rules
  *
  * 验证维度（tuning/diagnosis 每路由 3 个用例，config 每路由 1 个直链用例）：
  * - 直链访问旧路由 → URL 正确 redirect 到新路由，页面不白屏
@@ -39,6 +44,22 @@ const TUNING_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
 /** 诊断模块旧路由 → 新路由映射（redirect 目标含 query string） */
 const DIAGNOSIS_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
   { legacy: '/diagnosis/records', target: /\/diagnosis\/tasks(\?.*)?/ },
+];
+
+const IA_V29_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
+  { legacy: '/loop', target: /\/monitor\/loop-workbench/ },
+  { legacy: '/loop/workbench', target: /\/monitor\/loop-workbench/ },
+  {
+    legacy: '/loop/detail/00000000-0000-0000-0000-000000000201',
+    target: /\/monitor\/loop-workbench\?loopId=/,
+  },
+  // MW-P4-04：/loop/monitor redirect 到 ?view=table
+  {
+    legacy: '/loop/monitor',
+    target: /\/monitor\/loop-workbench\?view=table/,
+  },
+  { legacy: '/alert/events', target: /\/monitor\/alerts/ },
+  { legacy: '/alert/rules', target: /\/config\/alert-rules/ },
 ];
 
 test.describe('旧路由兼容 - 回路整定（V62-P0-037）', () => {
@@ -159,6 +180,20 @@ test.describe('旧路由兼容 - 配置集中化迁移（IA 重构 Phase A）', 
   }
 });
 
+test.describe('旧路由兼容 - 监控/工作台/预警 IA 收敛（v2.9）', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs('ADMIN');
+  });
+
+  for (const { legacy, target } of IA_V29_LEGACY_ROUTES) {
+    test(`E2E-ROUTE-IA29: ${legacy} redirect 不白屏`, async ({ page }) => {
+      await page.goto(legacy, { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(target, { timeout: 15_000 });
+      await expect(page.locator('body')).not.toBeEmpty();
+    });
+  }
+});
+
 /**
  * 工作台快捷导航（UI/UX 整改 B1，2026-08-08 用户决策调整）
  *
@@ -174,7 +209,7 @@ test.describe('工作台概览区按钮（整改 B1 调整）', () => {
   test('E2E-ROUTE-WB: "历史"按钮已下线，概览区仅保留"趋势"', async ({
     page,
   }) => {
-    await page.goto('/loop/workbench', { waitUntil: 'domcontentloaded' });
+    await page.goto('/monitor/loop-workbench', { waitUntil: 'domcontentloaded' });
     // antd 双汉字按钮可访问名带空格（"历 史"），用正则兼容
     const trendBtn = page.getByRole('button', { name: /趋\s*势/ });
     await expect(trendBtn).toBeVisible({ timeout: 15_000 });
@@ -186,7 +221,7 @@ test.describe('工作台概览区按钮（整改 B1 调整）', () => {
   test('E2E-ROUTE-WB: "趋势"按钮打开页内趋势弹窗（不跳路由）', async ({
     page,
   }) => {
-    await page.goto('/loop/workbench', { waitUntil: 'domcontentloaded' });
+    await page.goto('/monitor/loop-workbench', { waitUntil: 'domcontentloaded' });
     const trendBtn = page.getByRole('button', { name: /趋\s*势/ });
     await expect(trendBtn).toBeVisible({ timeout: 15_000 });
     await trendBtn.click();
@@ -197,6 +232,6 @@ test.describe('工作台概览区按钮（整改 B1 调整）', () => {
     await expect(page.getByText(/趋势 - /)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('时间范围：')).toBeVisible();
     // 不跳转路由：URL 仍停留在工作台
-    await expect(page).toHaveURL(/\/loop\/workbench/);
+    await expect(page).toHaveURL(/\/monitor\/loop-workbench/);
   });
 });
