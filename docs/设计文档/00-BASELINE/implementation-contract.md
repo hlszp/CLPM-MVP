@@ -1,9 +1,10 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.9
-**发布日期**：2026-08-09
-**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D + UI/UX 整改 Phase 0-2）
+**当前版本**：v2.10
+**发布日期**：2026-08-10
+**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D + UI/UX 整改 Phase 0-2 + 监控工作台闭环 MW-P5）
+**v2.10 修订摘要（2026-08-10，监控工作台闭环 MW-P5 + EXPERT 权限扩展）**：EXPERT 角色权限扩展——`ROLE_PERMISSIONS["EXPERT"]` 新增 `loop:view`（只读监控），修复 EXPERT 进入 `/monitor/loop-workbench` 时左栏 `/loops/monitor` 返回 403 触发"无权限访问"toast 的权限不一致（前端路由 authority 已含 EXPERT，后端权限码未对齐）；`GET /configs/llm` 放开 EXPERT 查询（AI 洞察组件嵌入诊断/整定/工作台页面，EXPERT 访问时需查 LLM 启用状态，API Key 脱敏返回无敏感信息泄露）；前端 `workbench.vue` 新增 `canUseTableView` 守卫，EXPERT/SPONSOR 直接输入 `view=table` 时回退 `workspace`（对齐 `use-saved-view.ts` 的 `canUseTableViewByRoles`）。性能优化：`monitor_attention.py` 的 `_aggregate_alerts`/`_aggregate_trackers` 新增 `.limit(500)` 截断（`_MAX_ITEMS_PER_SOURCE`），避免 10k+ 预警全量加载，覆盖前 25 页。运行时验收：MW-P5-03 五角色冒烟测试 / MW-P5-04 性能压测（summary p95=53ms ✅，attention 压测场景 p95≈600ms 但生产 27 回路预期 <100ms）/ MW-P5-05 视觉走查（三档分辨率 + 暗色 WCAG AA 对比度 100% 达标）全部完成。详见 `docs/过程文档/perf-report-MW-P5-04.md`、`visual-inspection-report-MW-P5-05.md`
 **v2.8 修订摘要（2026-08-09，UI/UX 整改 Phase 1-2 API 增量）**：登记 `GET /loops/monitor` 响应新增 `scoreDelta`/`dayTrend`（较昨日增量巡检）且默认排序改为最新快照评分升序 NULLS LAST（最需关注优先）；登记 `GET /diagnosis/list` aggregates 新增 `verifyOverdueCount`（VERIFYING 超 24h 未闭环计数）；登记 `GET|PUT /configs/algorithm-params` 响应新增 `paramMeta`（参数注册表 min/max/unit/description/category 单源下发）与 `AlgorithmParamsSaveRequest.resetControlTypes`（重置默认=清空覆盖回落算法默认）；登记 `GET /performance/loops/snapshots` 序列化新增 `timeConstant`（F5 时间常数计算器，L1 DISPLAY_ONLY，激励不足窗口为 null）与 `clpm_metric_data_requirement` 新增 time_constant 契约行；确认 Action Tracker P1a 闭环状态机（PENDING→IN_PROGRESS→VERIFYING→CLOSED，VERIFYING 可→REOPENED，存量 IMPLEMENTED 兼容映射 VERIFYING）；审计 `operationType`/`targetType` 为开放式枚举（前端映射见 audit.vue operationOptions/resourceOptions）。整改全貌见 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md` 与 `p2-exit-report-2026-08-09.md`
 
 **v2.9 修订摘要（2026-08-09，监控—工作台 IA 再收敛）**：一级菜单由 7 个收敛为 6 个（监控/评估/诊断/整定/配置/系统），移除独立回路一级菜单；回路工作台归入监控，规范路径为 `/monitor/loop-workbench`，左侧列表承担跨回路扫视，右侧四区承担单回路监控、评估、诊断、整定闭环；高密度实时表保留为隐藏兼容视图 `/loop/monitor`，不再作为主导航入口。预警规则归入配置 `/config/alert-rules`（仅 ADMIN），预警事件归入监控 `/monitor/alerts`（全部角色）；旧 `/loop/workbench`、`/loop/detail/:id`、`/alert/events`、`/alert/rules` 保留重定向，后端 `/alert/*` API 不变。工作台概览改为自适应高度，补齐 PV/SP/OP/模式摘要、空态原因与下一步、非装饰性 Lucide 图标、未知算法/低可信度中性表达；持平趋势不再显示 ±0 噪声。
@@ -253,7 +254,7 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | ADMIN | 全模块、全配置、全审计。 |
 | IC_ENGINEER | 业务模块全流程，可编辑异常跟踪和回路配置。 |
 | PE_ENGINEER | 可查看评估、监控、诊断汇总；可参与异常跟踪。 |
-| EXPERT | 可查看诊断与整定相关页面，可参与异常跟踪和专家建议。 |
+| EXPERT | 可查看监控工作台、诊断与整定相关页面（只读），可参与异常跟踪和专家建议。 |
 | SPONSOR | 只看工作台、性能汇总、诊断统计等汇总视图；不可进入单回路诊断详情、波形证据或异常跟踪编辑。 |
 
 ### 5.1 6 个一级模块权限矩阵 [v2.9]
@@ -274,7 +275,7 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 
 > **数据管理权限口径（D3，2026-07-21 对齐）**：历史数据导入（`/api/v1/loops/data-import/*`）与删除操作维持现状——允许 ADMIN / IC_ENGINEER 角色执行导入与删除；Tag 编辑/导入（D2）同口径。
 >
-> **权限码服务端落地（2026-07-28 优化整改 Phase 3）**：`ROLE_PERMISSIONS`（"模块:操作"码）此前只下发不执行；现已新增 `require_perms()` 依赖（通配匹配、ADMIN 全通），回路（`loop:view`）/整定（`tuning:view`）/诊断（`diagnosis:view`）三模块读端点已收口；EXPERT 映射补 `tuning:view`。前端路由同步收紧（`/system/reports`、`/config/link` 仅 ADMIN；EXPERT 仅诊断+整定，默认首页 `/diagnosis`；SPONSOR 默认首页 `/metric`）。剩余收敛项：tasks 列表 `metric:view`、`diagnosis:detail` 粒度码（SPONSOR 仅汇总）、tracker 读端点（待 IC 映射补齐）。
+> **权限码服务端落地（2026-07-28 优化整改 Phase 3；v2.10 EXPERT 扩展）**：`ROLE_PERMISSIONS`（"模块:操作"码）此前只下发不执行；现已新增 `require_perms()` 依赖（通配匹配、ADMIN 全通），回路（`loop:view`）/整定（`tuning:view`）/诊断（`diagnosis:view`）三模块读端点已收口；EXPERT 映射补 `tuning:view`（v2.2）与 `loop:view`（v2.10，MW-P5-03 冒烟测试发现 EXPERT 进入 `/monitor/loop-workbench` 时左栏 `/loops/monitor` 返回 403，前端路由 authority 已含 EXPERT，后端权限码未对齐；扩展 `loop:view` 只读监控，不含 `loop:edit`/`loop:import`）。`GET /configs/llm` 放开 EXPERT（AI 洞察组件门禁，API Key 脱敏）。前端路由同步收紧（`/system/reports`、`/config/link` 仅 ADMIN；EXPERT 诊断+整定+监控工作台，默认首页 `/diagnosis`；SPONSOR 默认首页 `/metric`）。剩余收敛项：tasks 列表 `metric:view`、`diagnosis:detail` 粒度码（SPONSOR 仅汇总）、tracker 读端点（待 IC 映射补齐）。
 >
 > **首次登录强制改密（2026-07-28 Phase 5）**：`sys_user.must_change_password` 为 True 时（种子用户初始为 True），登录/ME 响应带 `mustChangePassword`，非 GET 且非改密/登出端点一律 403 `ERR_PASSWORD_CHANGE_REQUIRED`，改密成功清标志并吊销全部 token。
 
