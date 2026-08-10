@@ -74,12 +74,15 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   VERIFICATION: '验证超期',
 };
 
+// P3-10：五来源颜色对齐 ZL 工业语义状态色板（P2-01），
+// 替换原鲜艳预设色 red/orange/purple/cyan/magenta →
+// error/warning/default/processing/success（降饱和、无紫色、暗色友好）
 const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
-  ALERT: 'red',
-  DEGRADATION: 'orange',
-  DATA_QUALITY: 'purple',
-  TRACKER: 'cyan',
-  VERIFICATION: 'magenta',
+  ALERT: 'error',
+  DEGRADATION: 'warning',
+  DATA_QUALITY: 'default',
+  TRACKER: 'processing',
+  VERIFICATION: 'success',
 };
 
 const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {

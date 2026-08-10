@@ -20,6 +20,7 @@ import { Page } from '@vben/common-ui';
 import {
   Alert,
   Button,
+  Card,
   Form,
   FormItem,
   Input,
@@ -267,153 +268,176 @@ const { toolbarItems } = usePageToolbar(() => ({
         </Alert>
 
         <Form layout="vertical" :model="form">
-          <!-- 启用开关 -->
-          <FormItem label="启用 LLM 解读">
-            <div class="flex items-center gap-2">
-              <Switch v-model:checked="form.enabled" />
-              <span class="text-sm opacity-70">
-                {{
-                  form.enabled
-                    ? '已启用（优先 LLM，失败回退模板）'
-                    : '未启用（仅规则模板）'
-                }}
-              </span>
-            </div>
-          </FormItem>
-
-          <!-- BaseURL -->
-          <FormItem label="BaseURL（API 根地址）">
-            <Input
-              v-model:value="form.endpoint"
-              placeholder="https://api.openai.com"
-              allow-clear
-            />
-            <template #extra>
-              <span class="text-xs opacity-60">
-                不含 <code>/v1</code> 后缀，系统自动拼接
-                <code>{BaseURL}/v1/chat/completions</code>
-              </span>
+          <!-- P3-13：表单分组——基础配置 -->
+          <Card size="small" class="mb-4" :bordered="true">
+            <template #title>
+              <span class="text-sm font-medium">基础配置</span>
             </template>
-          </FormItem>
-
-          <!-- API Key -->
-          <FormItem label="API Key">
-            <Input.Password
-              v-model:value="form.apiKey"
-              :placeholder="
-                apiKeyConfigured
-                  ? '已配置（保留原值，如需修改请重新填写）'
-                  : '请填写 API Key'
-              "
-              allow-clear
-            />
-            <template #extra>
-              <span v-if="apiKeyConfigured" class="text-xs opacity-60">
-                <Tag color="green" class="m-0" style="font-size: 11px">
-                  已配置
-                </Tag>
-                留空保存即保留原值，不会清空
-              </span>
-              <span v-else class="text-xs opacity-60">未配置</span>
-            </template>
-          </FormItem>
-
-          <!-- 模型 -->
-          <FormItem label="模型">
-            <Select
-              v-if="!isCustomModel"
-              v-model:value="modelSelectValue"
-              placeholder="选择常用模型或切换自定义"
-              :options="MODEL_OPTIONS"
-              allow-clear
-              @change="handleModelChange"
-            />
-            <Input
-              v-else
-              v-model:value="form.model"
-              placeholder="输入模型名，如 qwen2.5-7b-instruct"
-              allow-clear
-            >
-              <template #addonAfter>
-                <Tooltip title="切回预设列表">
-                  <span
-                    class="cursor-pointer"
-                    role="button"
-                    tabindex="0"
-                    @click="
-                      isCustomModel = false;
-                      modelSelectValue = undefined;
-                    "
-                    @keydown.enter="
-                      isCustomModel = false;
-                      modelSelectValue = undefined;
-                    "
-                    @keydown.space.prevent="
-                      isCustomModel = false;
-                      modelSelectValue = undefined;
-                    "
-                  >
-                    预设
-                  </span>
-                </Tooltip>
-              </template>
-            </Input>
-          </FormItem>
-
-          <!-- 超时 -->
-          <FormItem label="请求超时（秒）">
-            <InputNumber
-              v-model:value="form.timeout"
-              :min="5"
-              :max="300"
-              :step="5"
-              style="width: 100%"
-            />
-            <template #extra>
-              <span class="text-xs opacity-60">
-                建议保持默认 30 秒，网络较慢时可适当调大
-              </span>
-            </template>
-          </FormItem>
-
-          <!-- max_tokens -->
-          <FormItem label="最大输出 Token 数">
-            <InputNumber
-              v-model:value="form.maxTokens"
-              :min="256"
-              :max="32768"
-              :step="512"
-              style="width: 100%"
-            />
-            <template #extra>
-              <span class="text-xs opacity-60">
-                默认 4096。推理模型（如 deepseek-r1）建议
-                ≥4096，否则思考链可能耗尽 token 导致输出为空
-              </span>
-            </template>
-          </FormItem>
-
-          <!-- 连接测试 -->
-          <FormItem label="连接测试">
-            <div class="flex items-center gap-3">
-              <Button :loading="testing" @click="handleTest"> 测试连接 </Button>
-              <span v-if="testResult" class="flex items-center gap-2">
-                <Tag :color="testResult.success ? 'green' : 'red'" class="m-0">
-                  {{ testResult.success ? '成功' : '失败' }}
-                </Tag>
-                <span class="text-sm">
-                  {{ testResult.message }}
+            <!-- 启用开关 -->
+            <FormItem label="启用 LLM 解读">
+              <div class="flex items-center gap-2">
+                <Switch v-model:checked="form.enabled" />
+                <span class="text-sm opacity-70">
+                  {{
+                    form.enabled
+                      ? '已启用（优先 LLM，失败回退模板）'
+                      : '未启用（仅规则模板）'
+                  }}
                 </span>
-              </span>
-            </div>
-          </FormItem>
+              </div>
+            </FormItem>
 
-          <!-- 保存按钮 -->
-          <FormItem>
-            <Button type="primary" :loading="saving" @click="handleSave">
-              保存配置
-            </Button>
-          </FormItem>
+            <!-- BaseURL -->
+            <FormItem label="BaseURL（API 根地址）">
+              <Input
+                v-model:value="form.endpoint"
+                placeholder="https://api.openai.com"
+                allow-clear
+              />
+              <template #extra>
+                <span class="text-xs opacity-60">
+                  不含 <code>/v1</code> 后缀，系统自动拼接
+                  <code>{BaseURL}/v1/chat/completions</code>
+                </span>
+              </template>
+            </FormItem>
+
+            <!-- API Key -->
+            <FormItem label="API Key">
+              <Input.Password
+                v-model:value="form.apiKey"
+                :placeholder="
+                  apiKeyConfigured
+                    ? '已配置（保留原值，如需修改请重新填写）'
+                    : '请填写 API Key'
+                "
+                allow-clear
+              />
+              <template #extra>
+                <span v-if="apiKeyConfigured" class="text-xs opacity-60">
+                  <Tag color="green" class="m-0" style="font-size: 11px">
+                    已配置
+                  </Tag>
+                  留空保存即保留原值，不会清空
+                </span>
+                <span v-else class="text-xs opacity-60">未配置</span>
+              </template>
+            </FormItem>
+
+            <!-- 模型 -->
+            <FormItem label="模型">
+              <Select
+                v-if="!isCustomModel"
+                v-model:value="modelSelectValue"
+                placeholder="选择常用模型或切换自定义"
+                :options="MODEL_OPTIONS"
+                allow-clear
+                @change="handleModelChange"
+              />
+              <Input
+                v-else
+                v-model:value="form.model"
+                placeholder="输入模型名，如 qwen2.5-7b-instruct"
+                allow-clear
+              >
+                <template #addonAfter>
+                  <Tooltip title="切回预设列表">
+                    <span
+                      class="cursor-pointer"
+                      role="button"
+                      tabindex="0"
+                      @click="
+                        isCustomModel = false;
+                        modelSelectValue = undefined;
+                      "
+                      @keydown.enter="
+                        isCustomModel = false;
+                        modelSelectValue = undefined;
+                      "
+                      @keydown.space.prevent="
+                        isCustomModel = false;
+                        modelSelectValue = undefined;
+                      "
+                    >
+                      预设
+                    </span>
+                  </Tooltip>
+                </template>
+              </Input>
+            </FormItem>
+          </Card>
+
+          <!-- P3-13：表单分组——性能参数 -->
+          <Card size="small" class="mb-4" :bordered="true">
+            <template #title>
+              <span class="text-sm font-medium">性能参数</span>
+            </template>
+            <!-- 超时 -->
+            <FormItem label="请求超时（秒）">
+              <InputNumber
+                v-model:value="form.timeout"
+                :min="5"
+                :max="300"
+                :step="5"
+                style="width: 100%"
+              />
+              <template #extra>
+                <span class="text-xs opacity-60">
+                  建议保持默认 30 秒，网络较慢时可适当调大
+                </span>
+              </template>
+            </FormItem>
+
+            <!-- max_tokens -->
+            <FormItem label="最大输出 Token 数">
+              <InputNumber
+                v-model:value="form.maxTokens"
+                :min="256"
+                :max="32768"
+                :step="512"
+                style="width: 100%"
+              />
+              <template #extra>
+                <span class="text-xs opacity-60">
+                  默认 4096。推理模型（如 deepseek-r1）建议
+                  ≥4096，否则思考链可能耗尽 token 导致输出为空
+                </span>
+              </template>
+            </FormItem>
+          </Card>
+
+          <!-- P3-13：表单分组——连接与保存 -->
+          <Card size="small" :bordered="true">
+            <template #title>
+              <span class="text-sm font-medium">连接与保存</span>
+            </template>
+            <!-- 连接测试 -->
+            <FormItem label="连接测试">
+              <div class="flex items-center gap-3">
+                <Button :loading="testing" @click="handleTest">
+                  测试连接
+                </Button>
+                <span v-if="testResult" class="flex items-center gap-2">
+                  <Tag
+                    :color="testResult.success ? 'green' : 'red'"
+                    class="m-0"
+                  >
+                    {{ testResult.success ? '成功' : '失败' }}
+                  </Tag>
+                  <span class="text-sm">
+                    {{ testResult.message }}
+                  </span>
+                </span>
+              </div>
+            </FormItem>
+
+            <!-- 保存按钮 -->
+            <FormItem>
+              <Button type="primary" :loading="saving" @click="handleSave">
+                保存配置
+              </Button>
+            </FormItem>
+          </Card>
         </Form>
 
         <!-- 最近更新 -->

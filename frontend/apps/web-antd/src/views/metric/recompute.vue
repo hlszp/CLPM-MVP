@@ -83,7 +83,18 @@ const dangerTarget = computed(() => {
 
 const dangerImpact = computed(() => {
   if (dangerAction.value === 'batch-delete') {
-    return `将删除 ${selectedRowKeys.value.length} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
+    // P3-04：批量删除前预提示不可删除项（非终态任务不可删除）
+    const selected = selectedRowKeys.value.length;
+    const nonTerminal = taskList.value.filter(
+      (t) =>
+        selectedRowKeys.value.includes(t.taskId) &&
+        !['CANCELLED', 'FAILED', 'SUCCESS'].includes(t.status),
+    ).length;
+    const deletable = selected - nonTerminal;
+    if (nonTerminal > 0) {
+      return `已选中 ${selected} 个任务，其中 ${nonTerminal} 个为非终态（执行中/待执行）不可删除，将删除 ${deletable} 个终态任务；不影响已写入的 KPI 快照`;
+    }
+    return `将删除 ${selected} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
   }
   const t = dangerTask.value;
   if (!t) return '';
