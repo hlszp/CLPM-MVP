@@ -2177,11 +2177,12 @@ onMounted(async () => {
       </Spin>
     </Modal>
 
-    <!-- 诊断 Modal -->
+    <!-- 诊断 Modal（P3-19：max-width 限制避免超宽屏过大） -->
     <Modal
       v-model:open="diagModalVisible"
       :title="`诊断可视化 - ${diagRecord?.loopTagName ?? ''}`"
       width="90%"
+      :wrap-style="{ maxWidth: '1200px', margin: '0 auto' }"
       :footer="null"
       destroy-on-close
     >

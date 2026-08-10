@@ -53,19 +53,28 @@ const algorithmOptions: { label: string; value: TuningApi.Algorithm }[] = [
 ];
 
 /** 状态选项（Phase 2 对齐实现契约 v2.1 状态机） */
-const statusOptions: { label: string; value: TuningApi.TaskStatus }[] = [
-  // Phase 2 新枚举
-  { label: '草稿', value: 'DRAFT' },
-  { label: '执行中', value: 'RUNNING' },
-  { label: '已辨识', value: 'IDENTIFIED' },
-  { label: '已仿真', value: 'SIMULATED' },
-  { label: '已完成', value: 'COMPLETED' },
-  { label: '不确定', value: 'INCONCLUSIVE' },
-  { label: '已回退', value: 'ROLLED_BACK' },
-  // 旧枚举（兼容期保留）
-  { label: '待辨识（旧）', value: 'PENDING' },
-  { label: '已应用（旧）', value: 'APPLIED' },
-  { label: '已验证（旧）', value: 'VERIFIED' },
+/** P3-14：状态选项分组（新状态机 / 旧状态机兼容） */
+const statusOptions = [
+  {
+    label: '新状态机',
+    options: [
+      { label: '草稿', value: 'DRAFT' },
+      { label: '执行中', value: 'RUNNING' },
+      { label: '已辨识', value: 'IDENTIFIED' },
+      { label: '已仿真', value: 'SIMULATED' },
+      { label: '已完成', value: 'COMPLETED' },
+      { label: '不确定', value: 'INCONCLUSIVE' },
+      { label: '已回退', value: 'ROLLED_BACK' },
+    ] as { label: string; value: TuningApi.TaskStatus }[],
+  },
+  {
+    label: '旧状态机（兼容）',
+    options: [
+      { label: '待辨识（旧）', value: 'PENDING' },
+      { label: '已应用（旧）', value: 'APPLIED' },
+      { label: '已验证（旧）', value: 'VERIFIED' },
+    ] as { label: string; value: TuningApi.TaskStatus }[],
+  },
 ];
 
 /** P3-09：Select 搜索过滤函数 */
@@ -178,9 +187,13 @@ function algorithmName(code: TuningApi.Algorithm): string {
   return algorithmOptions.find((o) => o.value === code)?.label || code;
 }
 
-/** 状态显示名映射 */
+/** 状态显示名映射（P3-14：适配分组后的 options 结构） */
 function statusName(status: TuningApi.TaskStatus): string {
-  return statusOptions.find((o) => o.value === status)?.label || status;
+  for (const group of statusOptions) {
+    const found = group.options.find((o) => o.value === status);
+    if (found) return found.label;
+  }
+  return status;
 }
 
 /** 状态颜色映射（Phase 2 对齐实现契约 v2.1 状态机） */

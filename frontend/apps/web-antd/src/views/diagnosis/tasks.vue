@@ -31,10 +31,11 @@ import {
   Progress,
   Select,
   Space,
-  TabPane,
   Table,
+  TabPane,
   Tabs,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -42,8 +43,8 @@ import {
   archiveDiagnosisTaskApi,
   cancelDiagnosisTaskApi,
   deleteDiagnosisTaskApi,
-  getDiagnosisTaskStatsApi,
   getDiagnosisTasksApi,
+  getDiagnosisTaskStatsApi,
   runDiagnosisTaskApi,
   triggerDiagnosisApi,
 } from '#/api/diagnosis';
@@ -71,7 +72,7 @@ const { tableSize, densityLabel, cycleDensity } =
   useTableDensity('diagnosis-tasks');
 
 // ============ Tab 结构（P2-16-B2） ============
-type TaskTabKey = 'active' | 'completed' | 'archived';
+type TaskTabKey = 'active' | 'archived' | 'completed';
 
 const activeTab = ref<TaskTabKey>('active');
 
@@ -105,13 +106,13 @@ interface TabState {
   selectedRowKeys: string[];
   advancedFilterVisible: boolean;
   query: {
-    status: string | undefined;
-    triggerType: string | undefined;
-    timeWindow: DiagnosisApi.TimeWindow | undefined;
     page: number;
     pageSize: number;
+    status: string | undefined;
+    timeWindow: DiagnosisApi.TimeWindow | undefined;
+    triggerType: string | undefined;
   };
-  pollTimer: ReturnType<typeof setTimeout> | null;
+  pollTimer: null | ReturnType<typeof setTimeout>;
   pollCount: number;
 }
 
@@ -156,7 +157,7 @@ function stopAllPolling() {
 }
 
 // ============ P2-12 徽章自动刷新：每 30s 拉一次 stats，不打断用户操作 ============
-let badgeRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let badgeRefreshTimer: null | ReturnType<typeof setInterval> = null;
 function startBadgeRefresh() {
   stopBadgeRefresh();
   badgeRefreshTimer = setInterval(() => {
@@ -164,7 +165,7 @@ function startBadgeRefresh() {
     if (document.visibilityState === 'visible') {
       loadStats();
     }
-  }, 30000);
+  }, 30_000);
 }
 function stopBadgeRefresh() {
   if (badgeRefreshTimer) {
@@ -242,7 +243,7 @@ function scheduleActivePoll() {
 }
 
 /** Tab 切换：加载对应 Tab 数据；active Tab 启动轮询 */
-function handleTabChange(key: string | number) {
+function handleTabChange(key: number | string) {
   const k = String(key) as TaskTabKey;
   activeTab.value = k;
   loadTasks(k);
@@ -311,7 +312,7 @@ const statusOptionsByTab: Record<
     ['PENDING', 'RUNNING'].includes(o.value),
   ),
   completed: statusOptionsAll.filter((o) =>
-    ['SUCCESS', 'FAILED', 'CANCELLED'].includes(o.value),
+    ['CANCELLED', 'FAILED', 'SUCCESS'].includes(o.value),
   ),
   archived: statusOptionsAll,
 };
@@ -1097,14 +1098,18 @@ onMounted(async () => {
                       取消
                     </Button>
                   </Popconfirm>
-                  <Button
+                  <Tooltip
                     v-if="canArchive(record.status, 'active')"
-                    size="small"
-                    type="link"
-                    @click="handleArchive(record)"
+                    title="归档：将已完成任务移至「已归档」Tab，不删除数据，可随时查看"
                   >
-                    归档
-                  </Button>
+                    <Button
+                      size="small"
+                      type="link"
+                      @click="handleArchive(record)"
+                    >
+                      归档
+                    </Button>
+                  </Tooltip>
                   <Popconfirm
                     v-if="canDelete(record.status)"
                     title="确认删除该任务？"
@@ -1303,14 +1308,18 @@ onMounted(async () => {
                   >
                     详情
                   </Button>
-                  <Button
+                  <Tooltip
                     v-if="canArchive(record.status, 'completed')"
-                    size="small"
-                    type="link"
-                    @click="handleArchive(record)"
+                    title="归档：将已完成任务移至「已归档」Tab，不删除数据，可随时查看"
                   >
-                    归档
-                  </Button>
+                    <Button
+                      size="small"
+                      type="link"
+                      @click="handleArchive(record)"
+                    >
+                      归档
+                    </Button>
+                  </Tooltip>
                   <Popconfirm
                     v-if="canDelete(record.status)"
                     title="确认删除该任务？"

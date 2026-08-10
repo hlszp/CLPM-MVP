@@ -230,15 +230,17 @@ watch(
         />
       </template>
       <template #right>
-        <!-- 辨识可信度徽章 -->
-        <div
-          v-if="identifyConfidence"
-          class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
-          :style="{
-            borderColor: themeColors.SUCCESS,
-            background: `${themeColors.SUCCESS}10`,
-          }"
-        >
+        <!-- P3-34：徽章容器 flex-wrap 防窄屏折行错位 -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 辨识可信度徽章 -->
+          <div
+            v-if="identifyConfidence"
+            class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
+            :style="{
+              borderColor: themeColors.SUCCESS,
+              background: `${themeColors.SUCCESS}10`,
+            }"
+          >
           <IconifyIcon
             icon="ant-design:safety-certificate-outlined"
             :size="16"
@@ -269,6 +271,7 @@ watch(
           <span class="font-mono text-xs">
             P={{ currentPid.kp }} I={{ currentPid.ti }} D={{ currentPid.td }}
           </span>
+        </div>
         </div>
       </template>
       <template #actions>
@@ -340,6 +343,7 @@ watch(
 <style scoped>
 .anchor-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
 }
 
@@ -365,8 +369,22 @@ watch(
 }
 
 .anchor-item--active {
+  position: relative;
   background: hsl(var(--primary) / 8%);
   border-color: hsl(var(--primary));
+}
+
+/* P3-35：active 锚点增加左侧色条增强视觉定位 */
+.anchor-item--active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 60%;
+  background: hsl(var(--primary));
+  border-radius: 0 2px 2px 0;
+  transform: translateY(-50%);
 }
 
 .anchor-item--disabled {
