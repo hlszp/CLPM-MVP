@@ -31,6 +31,7 @@ import {
   Modal,
   Popconfirm,
   RadioGroup,
+  Skeleton,
   Spin,
   Steps,
   Table,
@@ -1013,7 +1014,12 @@ onMounted(() => {
       </template>
     </ClpmPageToolbar>
     <Spin :spinning="loading">
-      <div class="space-y-4">
+      <!-- P2-18：时间窗切换骨架屏过渡 -->
+      <div v-if="loading && !detail" class="space-y-4 p-4">
+        <Skeleton active :paragraph="{ rows: 2 }" />
+        <Skeleton active :paragraph="{ rows: 6 }" />
+      </div>
+      <div v-else class="space-y-4">
         <ClpmObjectSummaryBar
           v-if="detail"
           :title="detail.tagName"

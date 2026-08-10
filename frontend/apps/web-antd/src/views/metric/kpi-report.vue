@@ -27,6 +27,7 @@ import {
   message,
   RadioGroup,
   Select,
+  Skeleton,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -913,7 +914,15 @@ onMounted(() => {
           未评级 × {{ ratingDistribution[0] }}
         </Tag>
       </div>
+      <!-- P2-13/P2-15：报表切换骨架屏过渡 -->
+      <Skeleton
+        v-if="loading && currentData.length === 0"
+        active
+        :paragraph="{ rows: 8 }"
+        class="mb-4"
+      />
       <Table
+        v-show="!(loading && currentData.length === 0)"
         :columns="currentColumns"
         :data-source="currentData"
         :pagination="{

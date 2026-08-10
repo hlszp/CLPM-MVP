@@ -1,10 +1,11 @@
 <script lang="ts" setup>
-import { defineAsyncComponent, ref } from 'vue';
+import { defineAsyncComponent, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { TabPane, Tabs } from 'ant-design-vue';
+import { Badge, TabPane, Tabs } from 'ant-design-vue';
 
+import { getTaskListApi } from '#/api/task';
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
@@ -32,6 +33,22 @@ const StrategyTab = defineAsyncComponent(() => import('./task-strategy.vue'));
 /** 工具栏刷新态（刷新时短暂保持供工具栏反馈） */
 const loading = ref(false);
 
+/** P2-14：自动任务 Tab 活跃任务计数 */
+const activeTaskCount = ref(0);
+
+async function loadActiveTaskCount() {
+  try {
+    const result = await getTaskListApi({
+      status: 'RUNNING',
+      page: 1,
+      pageSize: 1,
+    });
+    activeTaskCount.value = result.total ?? 0;
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
 function handleTabChange(key: number | string) {
   const k = String(key) as TabKey;
   activeTab.value = k;
@@ -42,6 +59,7 @@ function handleTabChange(key: number | string) {
 function handleRefresh() {
   loading.value = true;
   tabKeys.value[activeTab.value] += 1;
+  loadActiveTaskCount();
   setTimeout(() => {
     loading.value = false;
   }, 300);
@@ -61,6 +79,10 @@ const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: handleRefresh, loading: loading.value },
   help: { onClick: handleHelp },
 }));
+
+onMounted(() => {
+  loadActiveTaskCount();
+});
 </script>
 
 <template>
@@ -79,7 +101,16 @@ const { toolbarItems } = usePageToolbar(() => ({
         <TabPane key="manual" tab="手动任务">
           <ManualTab :key="tabKeys.manual" />
         </TabPane>
-        <TabPane key="auto" tab="自动任务">
+        <TabPane key="auto">
+          <template #tab>
+            <Badge
+              :count="activeTaskCount"
+              :offset="[6, 0]"
+              size="small"
+            >
+              <span>自动任务</span>
+            </Badge>
+          </template>
           <AutoTab :key="tabKeys.auto" />
         </TabPane>
         <TabPane key="history" tab="评估历史">
