@@ -801,11 +801,22 @@ export namespace DiagnosisApi {
   export interface TaskListQueryParams {
     status?: string;
     triggerType?: string;
+    loopId?: string;
+    plantNodeId?: string;
     timeWindow?: TimeWindow;
-    /** 是否包含已归档任务（SUCCESS 完成即自动归档，2026-07-29） */
+    /** 是否包含已归档任务（SUCCESS 完成即自动归档） */
     includeArchived?: boolean;
+    /** 仅返回已归档任务（P2-16-B2 Tab 化）；与 includeArchived 同时为 true 时 archivedOnly 优先 */
+    archivedOnly?: boolean;
     page?: number;
     pageSize?: number;
+  }
+
+  /** 诊断任务 Tab 计数（P2-16-B2） */
+  export interface TaskStats {
+    active: number;
+    completed: number;
+    archived: number;
   }
 
   /** 诊断结果项（任务详情内嵌） */
@@ -1203,13 +1214,25 @@ export function triggerDiagnosisApi(data: DiagnosisApi.TriggerRequest) {
 }
 
 /**
- * 获取诊断任务列表（未归档） — 每回路一行
+ * 获取诊断任务列表（未归档/含已归档/仅已归档）
  */
 export function getDiagnosisTasksApi(params: DiagnosisApi.TaskListQueryParams) {
   return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
     '/diagnosis/tasks',
     { params },
   );
+}
+
+/**
+ * 获取诊断任务 Tab 计数（P2-16-B2）：active/completed/archived 三类
+ */
+export function getDiagnosisTaskStatsApi(params?: {
+  loopId?: string;
+  plantNodeId?: string;
+}) {
+  return requestClient.get<DiagnosisApi.TaskStats>('/diagnosis/tasks/stats', {
+    params,
+  });
 }
 
 /**
