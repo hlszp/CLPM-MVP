@@ -492,6 +492,10 @@ watch(isDark, () => {
       style="margin-bottom: 12px"
     />
     <div class="mb-4 mt-4">
+      <!-- IA 整改 C-5：标注上方统计区与下方列表数据来源维度不同，避免 total 差异误判 -->
+      <p class="mb-2 text-xs text-muted-foreground">
+        下方统计卡片与图表基于全部历史数据（不含列表筛选条件），与底部任务列表的筛选范围相互独立。
+      </p>
       <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />
     </div>
 
@@ -499,6 +503,7 @@ watch(isDark, () => {
     <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <ClpmDataCanvas
         title="算法分布"
+        description="基于全部历史整定任务，不含下方列表筛选条件"
         :loading="historyLoading"
         :empty="pieEmpty"
         empty-reason="暂无整定任务记录，无法生成算法分布"
@@ -507,6 +512,7 @@ watch(isDark, () => {
       </ClpmDataCanvas>
       <ClpmDataCanvas
         title="状态分布"
+        description="基于全部历史整定任务，不含下方列表筛选条件"
         :loading="historyLoading"
         :empty="barEmpty"
         empty-reason="暂无整定任务记录，无法生成状态分布"
@@ -516,7 +522,10 @@ watch(isDark, () => {
     </div>
 
     <!-- 底部任务列表 -->
-    <ClpmDataCanvas title="整定任务列表">
+    <ClpmDataCanvas
+      title="整定任务列表"
+      description="按下方筛选条件分页展示，与上方全局统计相互独立"
+    >
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
