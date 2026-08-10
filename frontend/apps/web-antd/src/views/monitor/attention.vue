@@ -50,6 +50,11 @@ import {
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
+import {
+  PRIORITY_LABEL,
+  PRIORITY_TO_STATUS,
+  statusTokenToAntdColor,
+} from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'MonitorAttention' });
@@ -57,20 +62,9 @@ defineOptions({ name: 'MonitorAttention' });
 const route = useRoute();
 const router = useRouter();
 
-// ===== 语义映射（不暴露裸英文枚举）=====
-const PRIORITY_LABEL: Record<MonitorApi.AttentionPriority, string> = {
-  URGENT: '紧急',
-  HIGH: '高',
-  MEDIUM: '中',
-  LOW: '低',
-};
-
-const PRIORITY_COLOR: Record<MonitorApi.AttentionPriority, string> = {
-  URGENT: 'red',
-  HIGH: 'volcano',
-  MEDIUM: 'orange',
-  LOW: 'blue',
-};
+// ===== 语义映射（P2-01：PRIORITY 收敛至 constants/clpm-ui.ts）=====
+const priorityColor = (priority: string) =>
+  statusTokenToAntdColor(PRIORITY_TO_STATUS[priority] ?? 'neutral');
 
 const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   ALERT: '活跃预警',
@@ -173,7 +167,7 @@ const columns: TableColumnsType = [
     customRender: ({ value }) =>
       h(
         Tag,
-        { color: PRIORITY_COLOR[value as MonitorApi.AttentionPriority] },
+        { color: priorityColor(value as MonitorApi.AttentionPriority) },
         () => PRIORITY_LABEL[value as MonitorApi.AttentionPriority] ?? value,
       ),
   },
@@ -588,7 +582,7 @@ watch(
         <Tag
           v-for="p in PRIORITY_ORDER"
           :key="p"
-          :color="query.priority.includes(p) ? PRIORITY_COLOR[p] : 'default'"
+          :color="query.priority.includes(p) ? priorityColor(p) : 'default'"
           class="cursor-pointer"
           @click="togglePriority(p)"
         >
@@ -732,7 +726,7 @@ watch(
       <template v-if="currentItem">
         <Descriptions :column="1" bordered size="small">
           <DescriptionsItem label="优先级">
-            <Tag :color="PRIORITY_COLOR[currentItem.priority]">
+            <Tag :color="priorityColor(currentItem.priority)">
               {{ PRIORITY_LABEL[currentItem.priority] }}
             </Tag>
           </DescriptionsItem>

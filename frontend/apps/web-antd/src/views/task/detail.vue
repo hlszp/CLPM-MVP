@@ -40,6 +40,11 @@ import {
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
+import {
+  statusTokenToAntdColor,
+  TASK_STATUS_LABEL,
+  TASK_STATUS_TO_STATUS,
+} from '#/constants/clpm-ui';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TaskDetail' });
@@ -53,22 +58,11 @@ const task = ref<null | TaskApi.TaskItem>(null);
 const notifications = ref<TaskApi.TaskNotification[]>([]);
 const cancelLoading = ref(false);
 
-// ---- 状态映射 ----
-const statusColorMap: Record<TaskApi.TaskStatus, string> = {
-  PENDING: 'default',
-  RUNNING: 'processing',
-  SUCCESS: 'success',
-  FAILED: 'error',
-  CANCELLED: 'warning',
-};
+// ---- 状态映射（P2-01：收敛至 constants/clpm-ui.ts）----
+const statusColorMap = (status: string) =>
+  statusTokenToAntdColor(TASK_STATUS_TO_STATUS[status] ?? 'neutral');
 
-const statusNameMap: Record<TaskApi.TaskStatus, string> = {
-  PENDING: '待执行',
-  RUNNING: '执行中',
-  SUCCESS: '成功',
-  FAILED: '失败',
-  CANCELLED: '已取消',
-};
+const statusNameMap = TASK_STATUS_LABEL;
 
 const stageNameMap: Record<string, string> = {
   FETCH_DATA: '取数',
@@ -251,7 +245,7 @@ onUnmounted(() => {
               {{
                 task.taskType === 'STANDARD' ? '标准评估任务' : '自定义评估任务'
               }}
-              <Tag :color="statusColorMap[task.status]" class="ml-2">
+              <Tag :color="statusColorMap(task.status)" class="ml-2">
                 {{ statusNameMap[task.status] }}
               </Tag>
             </h2>
@@ -363,7 +357,7 @@ onUnmounted(() => {
           {{ task.taskType === 'STANDARD' ? '标准评估' : '自定义评估' }}
         </DescriptionsItem>
         <DescriptionsItem label="状态">
-          <Tag :color="statusColorMap[task.status]">
+          <Tag :color="statusColorMap(task.status)">
             {{ statusNameMap[task.status] }}
           </Tag>
         </DescriptionsItem>
@@ -424,7 +418,7 @@ onUnmounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'status'">
-            <Tag :color="statusColorMap[record.status as TaskApi.TaskStatus]">
+            <Tag :color="statusColorMap(record.status as TaskApi.TaskStatus)">
               {{ statusNameMap[record.status as TaskApi.TaskStatus] }}
             </Tag>
           </template>

@@ -38,6 +38,11 @@ import {
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePolling } from '#/composables/use-polling';
+import {
+  statusTokenToAntdColor,
+  TASK_STATUS_LABEL,
+  TASK_STATUS_TO_STATUS,
+} from '#/constants/clpm-ui';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
@@ -57,22 +62,11 @@ const pageSize = ref(20);
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 
-// ============ 状态映射 ============
-const statusColorMap: Record<string, string> = {
-  PENDING: 'default',
-  RUNNING: 'processing',
-  SUCCESS: 'success',
-  FAILED: 'error',
-  CANCELLED: 'warning',
-};
+// ============ 状态映射（P2-01：收敛至 constants/clpm-ui.ts）============
+const statusColorMap = (status: string) =>
+  statusTokenToAntdColor(TASK_STATUS_TO_STATUS[status] ?? 'neutral');
 
-const statusTextMap: Record<string, string> = {
-  PENDING: '待执行',
-  RUNNING: '执行中',
-  SUCCESS: '成功',
-  FAILED: '失败',
-  CANCELLED: '已取消',
-};
+const statusTextMap = TASK_STATUS_LABEL;
 
 const taskTypeTextMap: Record<string, string> = {
   BACKFILL: '手动评估',
@@ -506,7 +500,7 @@ onUnmounted(() => {
             </span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <Tag :color="statusColorMap[record.status]">
+            <Tag :color="statusColorMap(record.status)">
               {{ statusTextMap[record.status] || record.status }}
             </Tag>
           </template>
@@ -600,7 +594,7 @@ onUnmounted(() => {
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">评估状态</span>
-            <Tag :color="statusColorMap[selectedTask.status]">
+            <Tag :color="statusColorMap(selectedTask.status)">
               {{ statusTextMap[selectedTask.status] || selectedTask.status }}
             </Tag>
           </div>
