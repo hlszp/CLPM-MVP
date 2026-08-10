@@ -16,9 +16,11 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  Dropdown,
   Form,
   FormItem,
   Input,
+  Menu,
   message,
   Modal,
   Popconfirm,
@@ -48,8 +50,11 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
 import { SEVERITY_LABEL } from '#/constants/clpm-ui';
+import { BADGE_REFRESH_INTERVAL } from '#/constants/polling';
+import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'AlertEvents' });
@@ -247,9 +252,9 @@ async function loadEvents() {
   try {
     // P3-43：时间范围结束值扩展到当日 23:59:59
     const startTime = query.timeRange?.[0]?.format('YYYY-MM-DD HH:mm:ss');
-    const endTime = query.timeRange?.[1]?.endOf('day').format(
-      'YYYY-MM-DD HH:mm:ss',
-    );
+    const endTime = query.timeRange?.[1]
+      ?.endOf('day')
+      .format('YYYY-MM-DD HH:mm:ss');
     const params: AlertApi.EventListParams = {
       status: query.status,
       severity: query.severity,
@@ -281,6 +286,15 @@ async function loadBadge() {
     // 静默失败
   }
 }
+
+// P3-42：徽章自动刷新——页面停留期间每 30s 轮询一次未读事件计数，
+// 页面隐藏自动暂停、可见时立即补跑；usePolling 内部 onScopeDispose 自动清理
+const { start: startBadgePolling } = usePolling(loadBadge, {
+  interval: BADGE_REFRESH_INTERVAL,
+  onGiveUp: () => {
+    /* 连续失败 3 次静默停止，不影响主列表功能 */
+  },
+});
 
 function handleSearch() {
   query.page = 1;
@@ -318,6 +332,8 @@ async function handleAcknowledge(record: AlertApi.EventItem) {
     await acknowledgeEventApi(record.eventId);
     message.success('事件已确认');
     await loadEvents();
+    // P3-42：确认后立即刷新徽章计数（无需等 30s 轮询）
+    loadBadge();
   } catch {
     message.error('确认失败');
   } finally {
@@ -346,6 +362,8 @@ async function handleResolve() {
     message.success('事件已处置');
     resolveVisible.value = false;
     await loadEvents();
+    // P3-42：处置后立即刷新徽章计数
+    loadBadge();
   } catch {
     message.error('处置失败');
   } finally {
@@ -405,13 +423,13 @@ async function handleResetBadge() {
   }
 }
 
-/** 导出当前筛选结果为 CSV（客户端生成，无需后端接口） */
-function exportEventsCsv() {
+/** P3-05：导出当前筛选结果为 CSV 或 Excel（客户端生成，无需后端接口） */
+function handleExport(format: 'csv' | 'excel') {
   if (eventList.value.length === 0) {
     message.warning('当前无可导出的数据');
     return;
   }
-  const header = [
+  const headers = [
     '回路',
     '规则代码',
     '严重度',
@@ -429,16 +447,13 @@ function exportEventsCsv() {
     formatTime(e.triggeredAt),
     String(e.triggerCount ?? ''),
   ]);
-  const csv = [header, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `alert-events-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  exportData({
+    filename: `alert-events-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '预警事件',
+  });
   message.success(`已导出 ${eventList.value.length} 条事件`);
 }
 
@@ -446,22 +461,23 @@ function handleHelp() {
   showPageHelp({
     title: '预警事件 帮助',
     content:
-      '预警事件由规则引擎实时求值产生。可按状态、严重度、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV。',
+      '预警事件由规则引擎实时求值产生。可按状态、严重度、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
-// ===== 统一工具栏（标准 5 工具：刷新/筛选/导出/列设置/帮助） =====
+// ===== 统一工具栏（标准 4 工具：刷新/筛选/列设置/帮助；导出独立 Dropdown） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: loadEvents, loading: loading.value },
   filter: { onClick: () => toggleFilter(), active: filterVisible.value },
-  export: {
-    onClick: exportEventsCsv,
-    permission: ['ADMIN', 'IC_ENGINEER'],
-    disabledReason: '仅工程师/管理员可导出',
-  },
   setting: {},
   help: { onClick: handleHelp },
 }));
+
+/** P3-05：导出权限检查（仅工程师/管理员可导出） */
+const canExport = computed(() => {
+  const roles = userStore.userInfo?.roles ?? [];
+  return roles.includes('ADMIN') || roles.includes('IC_ENGINEER');
+});
 
 function toggleFilter() {
   filterVisible.value = !filterVisible.value;
@@ -471,6 +487,8 @@ onMounted(() => {
   loadEvents();
   loadBadge();
   loadRuleOptions();
+  // P3-42：启动徽章自动轮询（页面隐藏暂停、卸载自动清理）
+  startBadgePolling();
 });
 </script>
 
@@ -490,6 +508,22 @@ onMounted(() => {
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            tooltip="导出当前筛选结果为 CSV 或 Excel"
+            :disabled="!canExport"
+            disabled-reason="仅工程师/管理员可导出"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
         <ClpmToolbarButton
           icon="ant-design:column-height-outlined"

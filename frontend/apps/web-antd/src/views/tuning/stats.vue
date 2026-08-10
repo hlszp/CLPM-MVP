@@ -20,7 +20,16 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Alert, Button, Select, Table, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Dropdown,
+  Menu,
+  message,
+  Select,
+  Table,
+  Tag,
+} from 'ant-design-vue';
 
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 import {
@@ -28,9 +37,11 @@ import {
   ClpmKpiStrip,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningStats' });
@@ -78,7 +89,10 @@ const statusOptions = [
 ];
 
 /** P3-09：Select 搜索过滤函数 */
-function filterSelectOption(input: string, option: undefined | { label?: unknown }) {
+function filterSelectOption(
+  input: string,
+  option: undefined | { label?: unknown },
+) {
   const label = String(option?.label ?? '');
   return label.toLowerCase().includes(input.toLowerCase());
 }
@@ -482,11 +496,66 @@ function handleHelp() {
   showPageHelp({
     title: '效果统计 帮助',
     content:
-      '查看整定任务分布、拟合质量与历史效果。顶部统计卡片（总任务数/已应用数/平均拟合度/算法种类数），中部图表区（算法分布饼图 + 状态分布柱状图），底部任务列表（按算法/状态筛选）。平台只输出建议，参数由授权人员人工实施并留痕。',
+      '查看整定任务分布、拟合质量与历史效果。顶部统计卡片（总任务数/已应用数/平均拟合度/算法种类数），中部图表区（算法分布饼图 + 状态分布柱状图），底部任务列表（按算法/状态筛选）。平台只输出建议，参数由授权人员人工实施并留痕。刷新按钮重新拉取统计数据与任务列表，点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
-// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+/** 算法标签映射（与 algorithmOptions 对齐） */
+const ALGORITHM_LABEL: Record<string, string> = {
+  IMC: 'IMC 内模控制',
+  LAMBDA: 'Lambda 整定',
+  ZN: 'Ziegler-Nichols',
+  COHEN_COON: 'Cohen-Coon',
+  SIMC: 'SIMC 简化 IMC',
+};
+
+/** 状态标签映射 */
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  RUNNING: '执行中',
+  IDENTIFIED: '已辨识',
+  SIMULATED: '已仿真',
+  COMPLETED: '已完成',
+  INCONCLUSIVE: '不确定',
+  ROLLED_BACK: '已回退',
+  PENDING: '待辨识（旧）',
+  APPLIED: '已应用（旧）',
+  VERIFIED: '已验证（旧）',
+};
+
+/** P3-05：导出当前筛选结果为 CSV 或 Excel */
+function handleExport(format: 'csv' | 'excel') {
+  if (taskList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const headers = [
+    '回路位号',
+    '模型类型',
+    '算法',
+    '拟合度',
+    '状态',
+    '创建时间',
+  ];
+  const rows = taskList.value.map((t) => [
+    t.tagName ?? '',
+    t.modelType,
+    ALGORITHM_LABEL[t.algorithm] ?? t.algorithm,
+    t.fittingScore == null ? '' : Number(t.fittingScore).toFixed(2),
+    STATUS_LABEL[t.status] ?? t.status,
+    formatTime(t.createdAt),
+  ]);
+  exportData({
+    filename: `tuning-stats-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '整定任务',
+  });
+  message.success(`已导出 ${taskList.value.length} 条记录`);
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助；导出独立 Dropdown） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: handleRefresh, loading: loading.value },
   help: { onClick: handleHelp },
@@ -510,6 +579,20 @@ watch(isDark, () => {
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            tooltip="导出当前筛选结果为 CSV 或 Excel"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
       </template>
     </ClpmPageToolbar>
     <Alert
@@ -621,11 +704,7 @@ watch(isDark, () => {
             {{ formatTime(record.createdAt) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <Button
-              type="link"
-              size="small"
-              @click="handleViewDetail(record)"
-            >
+            <Button type="link" size="small" @click="handleViewDetail(record)">
               查看详情
             </Button>
           </template>

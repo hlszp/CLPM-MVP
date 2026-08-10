@@ -24,6 +24,8 @@ import { Page } from '@vben/common-ui';
 
 import {
   DatePicker,
+  Dropdown,
+  Menu,
   message,
   RadioGroup,
   Select,
@@ -43,10 +45,12 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
-import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -451,22 +455,21 @@ const loopPrefs = usePagePreference('kpi-report-loop');
 
 const comprehensiveColumnConfigs = ref<ColumnConfig[]>(
   compPrefs.preferences.value.columns &&
-  compPrefs.preferences.value.columns.length > 0
+    compPrefs.preferences.value.columns.length > 0
     ? compPrefs.preferences.value.columns
     : COMPREHENSIVE_COLS,
 );
 const loopColumnConfigs = ref<ColumnConfig[]>(
   loopPrefs.preferences.value.columns &&
-  loopPrefs.preferences.value.columns.length > 0
+    loopPrefs.preferences.value.columns.length > 0
     ? loopPrefs.preferences.value.columns
     : LOOP_COLS,
 );
 
-const currentColumnConfigs = computed(
-  () =>
-    reportType.value === 'comprehensive'
-      ? comprehensiveColumnConfigs.value
-      : loopColumnConfigs.value,
+const currentColumnConfigs = computed(() =>
+  reportType.value === 'comprehensive'
+    ? comprehensiveColumnConfigs.value
+    : loopColumnConfigs.value,
 );
 
 function handleUpdateColumns(cols: ColumnConfig[]) {
@@ -499,12 +502,14 @@ function applyColumnVisibility(
   allColumns: TableColumnsType,
   configs: ColumnConfig[],
 ): TableColumnsType {
-  const configMap = new Map(configs.map((c, i) => [c.key, { visible: c.visible, order: i }]));
+  const configMap = new Map(
+    configs.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+  );
   const filtered = allColumns.filter((c) => {
     const cfg = configMap.get(getColumnKey(c));
     return cfg ? cfg.visible : true;
   });
-  // 注：避免使用 .toSorted()（ES2023），旧版 vue-tsc 解析器在后续数组解析时会误报 TS1005
+  // eslint-disable-next-line unicorn/no-array-sort
   return [...filtered].sort((a, b) => {
     const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
     const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
@@ -529,24 +534,74 @@ const _compCols = [
     dataIndex: 'avgScore',
     key: 'score',
     width: 90,
-    sorter: (a: Record<string, any>, b: Record<string, any>) => (a.avgScore ?? 0) - (b.avgScore ?? 0),
+    sorter: (a: Record<string, any>, b: Record<string, any>) =>
+      (a.avgScore ?? 0) - (b.avgScore ?? 0),
   },
-  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
+  {
+    title: '准确率',
+    dataIndex: 'accuracyRate',
+    key: 'accuracyRate',
+    width: 90,
+  },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
   { title: '平稳率', dataIndex: 'stabilityRate', key: 'steadyRate', width: 90 },
-  { title: '自控率', dataIndex: 'autoModeRate', key: 'autoModeRate', width: 90 },
-  { title: '有效自控率', dataIndex: 'effectiveAutoRate', key: 'effectiveAutoRate', width: 110 },
-  { title: '好值率', dataIndex: 'goodValueRate', key: 'goodValueRate', width: 90 },
-  { title: '饱和率', dataIndex: 'saturationRate', key: 'saturationRate', width: 90 },
-  { title: '振荡率', dataIndex: 'oscillationRate', key: 'oscillationRate', width: 90 },
-  { title: '参评回路数', dataIndex: 'evaluatedLoops', key: 'evaluatedLoops', width: 100, align: 'center' },
-  { title: '数据不足回路数', dataIndex: 'inconclusiveLoops', key: 'inconclusiveLoops', width: 120, align: 'center' },
+  {
+    title: '自控率',
+    dataIndex: 'autoModeRate',
+    key: 'autoModeRate',
+    width: 90,
+  },
+  {
+    title: '有效自控率',
+    dataIndex: 'effectiveAutoRate',
+    key: 'effectiveAutoRate',
+    width: 110,
+  },
+  {
+    title: '好值率',
+    dataIndex: 'goodValueRate',
+    key: 'goodValueRate',
+    width: 90,
+  },
+  {
+    title: '饱和率',
+    dataIndex: 'saturationRate',
+    key: 'saturationRate',
+    width: 90,
+  },
+  {
+    title: '振荡率',
+    dataIndex: 'oscillationRate',
+    key: 'oscillationRate',
+    width: 90,
+  },
+  {
+    title: '参评回路数',
+    dataIndex: 'evaluatedLoops',
+    key: 'evaluatedLoops',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '数据不足回路数',
+    dataIndex: 'inconclusiveLoops',
+    key: 'inconclusiveLoops',
+    width: 120,
+    align: 'center',
+  },
 ];
 const allComprehensiveColumns = _compCols as TableColumnsType;
 
 const _loopCols = [
   { title: '序号', key: 'index', width: 60, fixed: 'left' },
-  { title: '回路编号', dataIndex: 'loopTagName', key: 'loopTagName', width: 160, ellipsis: true, fixed: 'left' },
+  {
+    title: '回路编号',
+    dataIndex: 'loopTagName',
+    key: 'loopTagName',
+    width: 160,
+    ellipsis: true,
+    fixed: 'left',
+  },
   { title: '回路名称', key: 'loopName', width: 160, ellipsis: true },
   { title: '性能等级', key: 'rating', width: 100 },
   {
@@ -554,28 +609,93 @@ const _loopCols = [
     dataIndex: 'score',
     key: 'score',
     width: 100,
-    sorter: (a: Record<string, any>, b: Record<string, any>) => (a.score ?? 0) - (b.score ?? 0),
+    sorter: (a: Record<string, any>, b: Record<string, any>) =>
+      (a.score ?? 0) - (b.score ?? 0),
   },
-  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
+  {
+    title: '准确率',
+    dataIndex: 'accuracyRate',
+    key: 'accuracyRate',
+    width: 90,
+  },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
   { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 90 },
-  { title: '自控率', dataIndex: 'autoModeRate', key: 'autoModeRate', width: 90 },
-  { title: '有效自控率', dataIndex: 'effectiveAutoRate', key: 'effectiveAutoRate', width: 110 },
-  { title: '饱和率', dataIndex: 'saturationRate', key: 'saturationRate', width: 90 },
-  { title: '振荡率', dataIndex: 'oscillationRate', key: 'oscillationRate', width: 90 },
-  { title: '好值率', dataIndex: 'goodValueRate', key: 'goodValueRate', width: 90 },
-  { title: '理想稳定时间', dataIndex: 'idealSettlingTime', key: 'idealSettlingTime', width: 110 },
-  { title: '实际稳定时间', dataIndex: 'settlingTime', key: 'settlingTime', width: 110 },
-  { title: '输出跳变率', dataIndex: 'outputTravelIndex', key: 'outputTravelIndex', width: 100 },
-  { title: '阀门粘滞', dataIndex: 'stictionIndex', key: 'stictionIndex', width: 90 },
-  { title: '可信度', dataIndex: 'confidenceLevel', key: 'confidenceLevel', width: 80 },
-  { title: '评估次数', dataIndex: 'evalCount', key: 'evalCount', width: 90, align: 'center' },
+  {
+    title: '自控率',
+    dataIndex: 'autoModeRate',
+    key: 'autoModeRate',
+    width: 90,
+  },
+  {
+    title: '有效自控率',
+    dataIndex: 'effectiveAutoRate',
+    key: 'effectiveAutoRate',
+    width: 110,
+  },
+  {
+    title: '饱和率',
+    dataIndex: 'saturationRate',
+    key: 'saturationRate',
+    width: 90,
+  },
+  {
+    title: '振荡率',
+    dataIndex: 'oscillationRate',
+    key: 'oscillationRate',
+    width: 90,
+  },
+  {
+    title: '好值率',
+    dataIndex: 'goodValueRate',
+    key: 'goodValueRate',
+    width: 90,
+  },
+  {
+    title: '理想稳定时间',
+    dataIndex: 'idealSettlingTime',
+    key: 'idealSettlingTime',
+    width: 110,
+  },
+  {
+    title: '实际稳定时间',
+    dataIndex: 'settlingTime',
+    key: 'settlingTime',
+    width: 110,
+  },
+  {
+    title: '输出跳变率',
+    dataIndex: 'outputTravelIndex',
+    key: 'outputTravelIndex',
+    width: 100,
+  },
+  {
+    title: '阀门粘滞',
+    dataIndex: 'stictionIndex',
+    key: 'stictionIndex',
+    width: 90,
+  },
+  {
+    title: '可信度',
+    dataIndex: 'confidenceLevel',
+    key: 'confidenceLevel',
+    width: 80,
+  },
+  {
+    title: '评估次数',
+    dataIndex: 'evalCount',
+    key: 'evalCount',
+    width: 90,
+    align: 'center',
+  },
 ];
 const allLoopColumns = _loopCols as TableColumnsType;
 
 const currentColumns = computed(() =>
   reportType.value === 'comprehensive'
-    ? applyColumnVisibility(allComprehensiveColumns, comprehensiveColumnConfigs.value)
+    ? applyColumnVisibility(
+        allComprehensiveColumns,
+        comprehensiveColumnConfigs.value,
+      )
     : applyColumnVisibility(allLoopColumns, loopColumnConfigs.value),
 );
 
@@ -717,8 +837,8 @@ async function loadData() {
   }
 }
 
-// ============ CSV 导出 ============
-async function handleExport() {
+// ============ 导出（P3-23：支持 CSV/Excel 双格式） ============
+async function handleExport(format: 'csv' | 'excel' = 'csv') {
   if (currentData.value.length === 0) {
     message.warning('当前无数据可导出');
     return;
@@ -752,27 +872,17 @@ async function handleExport() {
         return String(val);
       }),
     );
-    const csv = [headers, ...rows]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','),
-      )
-      .join('\n');
-    // UTF-8 BOM 保证 Excel 正确识别中文
-    const blob = new Blob([`\uFEFF${csv}`], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const typeLabel =
       reportType.value === 'comprehensive' ? '综合报表' : '回路报表';
     const dateStr = dayjs().format('YYYYMMDD');
-    a.download = `KPI报表_${typeLabel}_${dateStr}.csv`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    message.success('导出成功');
+    exportData({
+      filename: `KPI报表_${typeLabel}_${dateStr}`,
+      format,
+      headers,
+      rows,
+      sheetName: typeLabel,
+    });
+    message.success(`已导出 ${rows.length} 条记录`);
   } catch (error: any) {
     console.error('导出失败:', error);
     message.error(error?.message || '导出失败');
@@ -807,10 +917,9 @@ function handleHelp() {
   });
 }
 
-// ===== 统一工具栏（标准 4 工具：刷新 / 导出 / 列设置 / 帮助） =====
+// ===== 统一工具栏（标准 3 工具：刷新 / 列设置 / 帮助；导出用 Dropdown） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: loadData, loading: loading.value },
-  export: { onClick: handleExport, loading: exporting.value },
   setting: {},
   help: { onClick: handleHelp },
 }));
@@ -890,6 +999,21 @@ onMounted(() => {
           @update:columns="handleUpdateColumns"
           @reset-columns="handleResetColumns"
         />
+        <!-- P3-23：导出 CSV/Excel 双格式 -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="ant-design:download-outlined"
+            label="导出"
+            :loading="exporting"
+            tooltip="导出当前报表数据"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
       </template>
     </ClpmPageToolbar>
 

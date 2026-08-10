@@ -21,9 +21,11 @@ import { Page } from '@vben/common-ui';
 import {
   Badge,
   Button,
+  Dropdown,
   Form,
   FormItem,
   Input,
+  Menu,
   message,
   Modal,
   Select,
@@ -52,6 +54,7 @@ import { ClpmEmptyState } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import { statusTokenToAntdColor } from '#/constants/clpm-ui';
+import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemUsers' });
@@ -461,11 +464,45 @@ function handleHelp() {
   showPageHelp({
     title: '用户管理 帮助',
     content:
-      '用户管理页：管理系统账号、角色、密码与启用状态。支持按用户名、角色、状态筛选；新增/编辑用户（弹窗表单）、重置密码、禁用用户（二次确认）。5 种角色：管理员 / 工艺专家 / 仪控工程师 / 性能工程师 / 赞助者。仅 ADMIN 可访问。刷新按钮重新拉取用户列表。',
+      '用户管理页：管理系统账号、角色、密码与启用状态。支持按用户名、角色、状态筛选；新增/编辑用户（弹窗表单）、重置密码、禁用用户（二次确认）。5 种角色：管理员 / 工艺专家 / 仪控工程师 / 性能工程师 / 赞助者。仅 ADMIN 可访问。刷新按钮重新拉取用户列表，点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
-// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+/** P3-05：导出当前筛选结果为 CSV 或 Excel */
+function handleExport(format: 'csv' | 'excel') {
+  if (userList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const headers = [
+    '用户名',
+    '姓名',
+    '角色',
+    '邮箱',
+    '状态',
+    '创建时间',
+    '最后登录',
+  ];
+  const rows = userList.value.map((u) => [
+    u.username,
+    u.displayName ?? '',
+    ROLE_LABELS[u.role as ClpmRole] ?? u.role,
+    u.email ?? '',
+    u.isActive ? '启用' : '禁用',
+    formatTime(u.createdAt),
+    formatTime(u.lastLoginAt),
+  ]);
+  exportData({
+    filename: `users-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '用户列表',
+  });
+  message.success(`已导出 ${userList.value.length} 条记录`);
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助；导出独立 Dropdown） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: handleRefresh, loading: loading.value },
   help: { onClick: handleHelp },
@@ -481,6 +518,20 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            tooltip="导出当前筛选结果为 CSV 或 Excel"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
         <ClpmToolbarButton
           icon="ant-design:column-height-outlined"
@@ -674,6 +725,10 @@ const { toolbarItems } = usePageToolbar(() => ({
             placeholder="登录用户名"
             :disabled="!!editingUser"
           />
+          <!-- P3-07：编辑模式下用户名不可修改的说明 -->
+          <template v-if="editingUser" #extra>
+            <span class="text-xs opacity-60">用户名创建后不可修改</span>
+          </template>
         </FormItem>
 
         <FormItem
@@ -745,13 +800,18 @@ const { toolbarItems } = usePageToolbar(() => ({
               >
                 随机生成
               </Button>
-              <Button
-                size="small"
-                :disabled="!resetForm.newPassword"
-                @click="handleCopyPassword"
+              <!-- P3-07：无密码时 disabled 增加 Tooltip -->
+              <Tooltip
+                :title="!resetForm.newPassword ? '请先生成或输入密码' : ''"
               >
-                复制密码
-              </Button>
+                <Button
+                  size="small"
+                  :disabled="!resetForm.newPassword"
+                  @click="handleCopyPassword"
+                >
+                  复制密码
+                </Button>
+              </Tooltip>
             </Space>
           </Space>
         </FormItem>

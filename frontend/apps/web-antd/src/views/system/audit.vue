@@ -23,6 +23,9 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  Dropdown,
+  Menu,
+  message,
   Select,
   Table,
   Tag,
@@ -38,6 +41,7 @@ import {
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
+import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemAudit' });
@@ -348,8 +352,44 @@ function handleHelp() {
   showPageHelp({
     title: '审计日志 帮助',
     content:
-      '审计日志页：按操作类型、时间范围和资源类型筛选查看系统关键变更记录（创建/更新/删除/登录/登出）。点击「查看详情」可在抽屉中查看变更前后值对比（JSON）。仅 ADMIN 可见，数据只读不可编辑。刷新按钮重新拉取当前筛选条件下的日志列表。',
+      '审计日志页：按操作类型、时间范围和资源类型筛选查看系统关键变更记录（创建/更新/删除/登录/登出）。点击「查看详情」可在抽屉中查看变更前后值对比（JSON）。仅 ADMIN 可见，数据只读不可编辑。刷新按钮重新拉取当前筛选条件下的日志列表。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
+}
+
+/** P3-05：导出当前筛选结果为 CSV 或 Excel */
+function handleExport(format: 'csv' | 'excel') {
+  if (auditList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const headers = [
+    '时间',
+    '操作人',
+    '操作类型',
+    '对象类型',
+    '对象ID',
+    '变更前',
+    '变更后',
+    '客户端IP',
+  ];
+  const rows = auditList.value.map((r) => [
+    formatTime(r.operatedAt),
+    r.operator,
+    r.operationType,
+    r.targetType ?? '',
+    r.targetId ?? '',
+    r.beforeValue == null ? '' : JSON.stringify(r.beforeValue),
+    r.afterValue == null ? '' : JSON.stringify(r.afterValue),
+    r.clientIp ?? '',
+  ]);
+  exportData({
+    filename: `audit-log-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '审计日志',
+  });
+  message.success(`已导出 ${auditList.value.length} 条记录`);
 }
 
 // ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
@@ -368,6 +408,20 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- P3-05：导出 CSV/Excel 双格式 -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="ant-design:download-outlined"
+            label="导出"
+            tooltip="导出当前筛选结果"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
         <ClpmToolbarButton
           icon="ant-design:column-height-outlined"
@@ -386,9 +440,12 @@ const { toolbarItems } = usePageToolbar(() => ({
           style="width: 200px"
           allow-clear
           show-search
-          :filter-option="(input: string, option: any) =>
-            option?.children?.[0]?.children?.[0]?.toLowerCase?.().includes(input.toLowerCase()) ||
-            option?.label?.toLowerCase?.().includes(input.toLowerCase())
+          :filter-option="
+            (input: string, option: any) =>
+              option?.children?.[0]?.children?.[0]
+                ?.toLowerCase?.()
+                .includes(input.toLowerCase()) ||
+              option?.label?.toLowerCase?.().includes(input.toLowerCase())
           "
           :options="operationOptions"
           @change="handleSearch"

@@ -25,6 +25,8 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  Dropdown,
+  Menu,
   message,
   Select,
   Table,
@@ -36,9 +38,14 @@ import dayjs from 'dayjs';
 import { getLoopListApi } from '#/api/loop';
 import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmDataCanvas, ClpmPageToolbar } from '#/components/clpm';
+import {
+  ClpmDataCanvas,
+  ClpmPageToolbar,
+  ClpmToolbarButton,
+} from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'MetricHistorySnapshots' });
@@ -403,7 +410,70 @@ const CONFIDENCE_LABEL_MAP: Record<string, string> = {
   E: 'E 不足',
 };
 
+/** P3-05：导出当前筛选结果为 CSV 或 Excel */
+function handleExport(format: 'csv' | 'excel') {
+  if (snapshotList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const headers = [
+    '回路',
+    '时间窗开始',
+    '时间窗结束',
+    '综合评分',
+    '准确率',
+    '快速率',
+    '平稳率',
+    '自控率',
+    '有效自控率',
+    '好值率',
+    '饱和率',
+    '振荡率',
+    '粘滞指数',
+    '稳态时间',
+    '行程指数',
+    '可信度',
+    '状态',
+  ];
+  const rows = snapshotList.value.map((s) => [
+    s.loopTagName ?? '',
+    formatLocalTime(s.tsStart, 'YYYY-MM-DD HH:mm'),
+    formatLocalTime(s.tsEnd, 'YYYY-MM-DD HH:mm'),
+    formatScore(s.score, s.confidenceLevel),
+    formatNumber(s.accuracyRate, '%'),
+    formatNumber(s.fastRate, '%'),
+    formatNumber(s.steadyRate, '%'),
+    formatNumber(s.autoModeRate, '%'),
+    formatNumber(s.effectiveAutoRate, '%'),
+    formatNumber(s.goodValueRate, '%'),
+    formatNumber(s.saturationRate, '%'),
+    formatNumber(s.oscillationRate, '%'),
+    formatNumber(s.stictionIndex),
+    formatNumber(s.settlingTime, 's'),
+    formatNumber(s.outputTravelIndex),
+    CONFIDENCE_LABEL_MAP[s.confidenceLevel ?? ''] ?? s.confidenceLevel,
+    STATUS_LABEL_MAP[s.status ?? ''] ?? s.status,
+  ]);
+  exportData({
+    filename: `kpi-snapshots-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '评估历史快照',
+  });
+  message.success(`已导出 ${snapshotList.value.length} 条记录`);
+}
+
 // ============ 生命周期 ============
+/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+async function refresh() {
+  await loadPlantNodeTree();
+  await loadLoops();
+  await loadList();
+}
+
+defineExpose({ refresh });
+
 onMounted(() => {
   loadPlantNodeTree();
   loadLoops();
@@ -425,6 +495,20 @@ onMounted(() => {
           <template #icon><RotateCw /></template>
           刷新
         </Button>
+        <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            tooltip="导出当前筛选结果为 CSV 或 Excel"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
       </template>
     </ClpmPageToolbar>
 
@@ -490,6 +574,7 @@ onMounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && snapshotList.length === 0"
+      empty-reason="暂无 KPI 快照记录。快照由评估任务自动生成，也可通过「手动任务」页发起重算产生"
       @retry="loadList"
     >
       <Table
@@ -810,7 +895,8 @@ onMounted(() => {
           </div>
         </template>
         <div v-else class="text-center py-4 text-muted-foreground">
-          暂无趋势数据
+          暂无趋势数据。该回路在选定时间范围内可能无 KPI
+          快照记录，请调整时间范围后重试
         </div>
       </template>
     </Drawer>
