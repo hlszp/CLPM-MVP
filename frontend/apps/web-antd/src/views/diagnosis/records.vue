@@ -591,9 +591,22 @@ onMounted(() => {
             <Button type="primary" :loading="loading" @click="handleSearch">
               查询
             </Button>
+            <Tooltip
+              v-if="selectedRowKeys.length === 0"
+              title="请先选择要删除的记录"
+            >
+              <span class="inline-block">
+                <Button danger disabled :loading="batchDeleteLoading">
+                  <template #icon>
+                    <IconifyIcon icon="ant-design:delete-outlined" />
+                  </template>
+                  批量删除
+                </Button>
+              </span>
+            </Tooltip>
             <Button
+              v-else
               danger
-              :disabled="selectedRowKeys.length === 0"
               :loading="batchDeleteLoading"
               @click="handleBatchDelete"
             >

@@ -1102,9 +1102,13 @@ onMounted(loadConfig);
                   "
                 />
                 <div v-if="savedMaskedToken" class="mt-1">
-                  <Checkbox v-model:checked="clearToken">
-                    清空已保存 Token
-                  </Checkbox>
+                  <Tooltip
+                    title="勾选后将清空已保存 Token，并禁用输入框，需重新填写"
+                  >
+                    <Checkbox v-model:checked="clearToken">
+                      清空已保存 Token
+                    </Checkbox>
+                  </Tooltip>
                 </div>
                 <div class="text-gray-400 mt-1 text-xs">
                   Token 打码显示（保留前后各 4 位）；留空 = 不变，输入新值 =

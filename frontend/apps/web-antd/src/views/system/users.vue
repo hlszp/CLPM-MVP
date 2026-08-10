@@ -14,7 +14,7 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { ClpmRole } from '#/api/auth';
 import type { SystemApi } from '#/api/system';
 
-import { onMounted, reactive, ref } from 'vue';
+import { h, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -48,6 +48,7 @@ import {
 import { ClpmEmptyState } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
+import { statusTokenToAntdColor } from '#/constants/clpm-ui';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemUsers' });
@@ -112,6 +113,12 @@ const columns: TableColumnsType = [
     key: 'isActive',
     width: 90,
     align: 'center',
+    customRender: ({ record }: { record: SystemApi.User }) =>
+      h(
+        Tag,
+        { color: statusTokenToAntdColor(record.isActive ? 'ok' : 'error') },
+        () => (record.isActive ? '启用' : '禁用'),
+      ),
   },
   {
     title: '最后登录',

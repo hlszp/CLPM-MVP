@@ -578,6 +578,18 @@ onMounted(() => {
             <Button
               type="link"
               size="small"
+              @click="
+                router.push({
+                  path: '/diagnosis/loop-analysis',
+                  query: { loopId: record.loopId },
+                })
+              "
+            >
+              分析
+            </Button>
+            <Button
+              type="link"
+              size="small"
               @click="handleQuickDiagnose(record.loopId)"
             >
               诊断

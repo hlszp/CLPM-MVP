@@ -23,6 +23,7 @@ import {
   Table,
   Tag,
   Textarea,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -299,14 +300,6 @@ function openEditModal(record: AlertApi.RuleItem) {
   editForm.isEnabled = record.isEnabled;
   editForm.dsl = record.dsl ? structuredClone(record.dsl) : {};
   editVisible.value = true;
-}
-
-function handleRuleTypeChange(value: any) {
-  const type = value as AlertApi.RuleType;
-  // 仅在创建模式下切换模板
-  if (editMode.value === 'create') {
-    editForm.dsl = structuredClone(dslTemplates[type]);
-  }
 }
 
 async function handleSave() {
@@ -614,9 +607,20 @@ onMounted(() => {
       <Form layout="vertical">
         <Space style="display: flex" :size="16">
           <FormItem label="规则代码" style="flex: 1" required>
+            <Tooltip
+              v-if="editMode === 'edit'"
+              title="编辑模式下不可修改，请新建规则"
+            >
+              <Input
+                v-model:value="editForm.ruleCode"
+                disabled
+                placeholder="如 PV_HIGH_ALARM"
+                :maxlength="50"
+              />
+            </Tooltip>
             <Input
+              v-else
               v-model:value="editForm.ruleCode"
-              :disabled="editMode === 'edit'"
               placeholder="如 PV_HIGH_ALARM"
               :maxlength="50"
             />
@@ -631,9 +635,32 @@ onMounted(() => {
         </Space>
         <Space style="display: flex" :size="16">
           <FormItem label="规则类型" style="width: 200px">
+            <Tooltip
+              v-if="editMode === 'edit'"
+              title="编辑模式下不可修改，请新建规则"
+            >
+              <Select
+                v-model:value="editForm.ruleType"
+                disabled
+                :options="
+                  (
+                    [
+                      'THRESHOLD',
+                      'DRIFT',
+                      'COMPOSITE',
+                      'CONFIDENCE',
+                    ] as AlertApi.RuleType[]
+                  ).map((v) => ({
+                    value: v,
+                    label: `${ruleTypeLabel[v]}（${v}）`,
+                  }))
+                "
+                placeholder="选择规则类型"
+              />
+            </Tooltip>
             <Select
+              v-else
               v-model:value="editForm.ruleType"
-              :disabled="editMode === 'edit'"
               :options="
                 (
                   [
@@ -647,7 +674,7 @@ onMounted(() => {
                   label: `${ruleTypeLabel[v]}（${v}）`,
                 }))
               "
-              @change="handleRuleTypeChange"
+              placeholder="选择规则类型"
             />
           </FormItem>
           <FormItem label="优先级" style="width: 140px">
