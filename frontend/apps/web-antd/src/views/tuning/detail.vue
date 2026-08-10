@@ -20,7 +20,7 @@ import { useRoute } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { Alert, message, Tag } from 'ant-design-vue';
+import { Alert, message, Tag, Tooltip } from 'ant-design-vue';
 
 import {
   ClpmLoopContextHeader,
@@ -103,6 +103,15 @@ function isAnchorDisabled(anchor: number): boolean {
     (anchor === 2 && !canAccessSimulation.value) ||
     (anchor === 3 && !canAccessConfirm.value)
   );
+}
+
+/** P2-19：disabled 锚点的门禁前置条件说明（供 Tooltip 展示） */
+function anchorGateHint(anchor: number): string {
+  if (anchor === 1 && !canAccessPid.value) return '请先完成「过程辨识」步骤';
+  if (anchor === 2 && !canAccessSimulation.value)
+    return '请先完成「PID 推荐」步骤，生成候选 PID 参数';
+  if (anchor === 3 && !canAccessConfirm.value) return '请先完成「闭环仿真」步骤';
+  return '';
 }
 
 /** 锚点切换（受门禁约束） */
@@ -270,21 +279,29 @@ watch(
     <!-- 锚点导航栏 -->
     <div class="anchor-nav sticky top-0 z-10 border-b bg-content px-4 py-2">
       <div class="flex items-center gap-2">
-        <div
+        <Tooltip
           v-for="anchor in ANCHORS"
           :key="anchor.key"
-          class="anchor-item"
-          :class="{
-            'anchor-item--active': activeAnchor === anchor.key,
-            'anchor-item--disabled': isAnchorDisabled(anchor.key),
-          }"
-          :role="isAnchorDisabled(anchor.key) ? undefined : 'button'"
-          :tabindex="isAnchorDisabled(anchor.key) ? -1 : 0"
-          :aria-pressed="activeAnchor === anchor.key"
-          @click="handleAnchorChange(anchor.key)"
-          @keydown.enter="handleAnchorChange(anchor.key)"
-          @keydown.space.prevent="handleAnchorChange(anchor.key)"
+          :title="
+            isAnchorDisabled(anchor.key)
+              ? anchorGateHint(anchor.key)
+              : undefined
+          "
+          :mouse-enter-delay="0.3"
         >
+          <div
+            class="anchor-item"
+            :class="{
+              'anchor-item--active': activeAnchor === anchor.key,
+              'anchor-item--disabled': isAnchorDisabled(anchor.key),
+            }"
+            :role="isAnchorDisabled(anchor.key) ? undefined : 'button'"
+            :tabindex="isAnchorDisabled(anchor.key) ? -1 : 0"
+            :aria-pressed="activeAnchor === anchor.key"
+            @click="handleAnchorChange(anchor.key)"
+            @keydown.enter="handleAnchorChange(anchor.key)"
+            @keydown.space.prevent="handleAnchorChange(anchor.key)"
+          >
           <div class="anchor-index">{{ anchor.key + 1 }}</div>
           <div class="anchor-body">
             <div class="anchor-title">{{ anchor.title }}</div>
@@ -296,6 +313,7 @@ watch(
             </div>
           </div>
         </div>
+        </Tooltip>
       </div>
     </div>
 

@@ -15,6 +15,7 @@ import type { TuningApi } from '#/api/tuning';
 import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
@@ -436,6 +437,16 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
+const router = useRouter();
+
+/** P2-21：查看详情——跳转整定任务详情页 */
+function handleViewDetail(record: Record<string, any>) {
+  router.push({
+    path: '/tuning/detail',
+    query: { taskId: record.id, returnTo: '/tuning/stats' },
+  });
+}
+
 onMounted(() => {
   loadHistory();
   loadList();
@@ -587,7 +598,13 @@ watch(isDark, () => {
             {{ formatTime(record.createdAt) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <Button type="link" size="small" disabled> 查看详情 </Button>
+            <Button
+              type="link"
+              size="small"
+              @click="handleViewDetail(record)"
+            >
+              查看详情
+            </Button>
           </template>
         </template>
       </Table>

@@ -19,7 +19,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
+import { Alert, Button, Card, Descriptions, DescriptionsItem, Drawer, Spin, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
@@ -551,6 +551,15 @@ function handleViewKnowledgeBase() {
   router.push('/tuning/knowledge-base');
 }
 
+/** P2-23：相似案例详情抽屉 */
+const caseDetailOpen = ref(false);
+const caseDetailItem = ref<KnowledgeBaseApi.KnowledgeEntry | null>(null);
+
+function handleViewCaseDetail(item: KnowledgeBaseApi.KnowledgeEntry) {
+  caseDetailItem.value = item;
+  caseDetailOpen.value = true;
+}
+
 /** 拟合度格式化 */
 function formatFittingScore(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
@@ -808,7 +817,7 @@ onMounted(() => {
               size="small"
               :body-style="{ padding: '12px 14px' }"
               class="cursor-pointer transition-shadow hover:shadow-md"
-              @click="handleViewKnowledgeBase"
+              @click="handleViewCaseDetail(item)"
             >
               <div class="mb-2 flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -947,5 +956,73 @@ onMounted(() => {
         </Table>
       </ClpmDataCanvas>
     </Spin>
+
+    <!-- P2-23：相似案例详情抽屉 -->
+    <Drawer
+      v-model:open="caseDetailOpen"
+      title="整定案例详情"
+      width="560"
+      :destroy-on-close="true"
+    >
+      <template v-if="caseDetailItem">
+        <Descriptions :column="1" bordered size="small">
+          <DescriptionsItem label="回路位号">
+            {{ caseDetailItem.tagName }}
+          </DescriptionsItem>
+          <DescriptionsItem label="问题类型">
+            <Tag v-if="caseDetailItem.diagnosisLabel" color="orange">
+              {{
+                DIAGNOSIS_TERM_EXPLANATIONS[caseDetailItem.diagnosisLabel]
+                  ?.term ?? caseDetailItem.diagnosisLabel
+              }}
+            </Tag>
+            <span v-else>—</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="算法">
+            {{ algorithmDisplay(caseDetailItem.algorithm) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="模型类型">
+            {{ caseDetailItem.modelType || '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="可信度">
+            <ClpmConfidenceBadge
+              v-if="caseDetailItem.confidenceLevel"
+              :level="caseDetailItem.confidenceLevel as any"
+            />
+            <span v-else>—</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="PID 变化">
+            {{ pidChangeText(caseDetailItem.pidBefore, caseDetailItem.pidAfter) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="效果">
+            <Tag
+              :color="
+                caseDetailItem.effectVerified === false ? 'red' : 'green'
+              "
+            >
+              {{
+                caseDetailItem.effectVerified === false
+                  ? '恶化'
+                  : caseDetailItem.effectVerified === true
+                    ? '改善'
+                    : '未验证'
+              }}
+            </Tag>
+            <span v-if="caseDetailItem.improvedCount" class="ml-2 text-green-600">
+              改善 {{ caseDetailItem.improvedCount }} 项
+            </span>
+            <span
+              v-if="caseDetailItem.deterioratedCount"
+              class="ml-2 text-red-600"
+            >
+              恶化 {{ caseDetailItem.deterioratedCount }} 项
+            </span>
+          </DescriptionsItem>
+          <DescriptionsItem label="实施时间">
+            {{ caseDetailItem.implementedAt ? formatTime(caseDetailItem.implementedAt) : '—' }}
+          </DescriptionsItem>
+        </Descriptions>
+      </template>
+    </Drawer>
   </Page>
 </template>
