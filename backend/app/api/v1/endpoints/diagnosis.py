@@ -68,6 +68,7 @@ from app.schemas.diagnosis import (
     DiagnosisTagSchema,
     DiagnosisTaskDetail,
     DiagnosisTaskListData,
+    DiagnosisTaskStats,
     DiagnosisThresholdRollbackRequest,
     DiagnosisThresholdVersionItem,
     DiagnosisTriggerData,
@@ -94,6 +95,7 @@ from app.services.diagnosis import (
     get_diagnosis_analytics,
     get_diagnosis_detail,
     get_diagnosis_task_detail,
+    get_diagnosis_task_stats,
     get_diagnosis_visualization,
     list_algorithm_meta,
     list_diagnosis,
@@ -678,12 +680,18 @@ async def list_tasks_endpoint(
     includeArchived: bool = Query(
         False, description="是否包含已归档任务（SUCCESS 完成即自动归档）"
     ),
+    archivedOnly: bool = Query(
+        False,
+        description=(
+            "仅返回已归档任务（P2-16 Tab 化）；与 includeArchived 同时为 True 时 archivedOnly 优先"
+        ),
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
-    """诊断任务列表（默认仅未归档；includeArchived=true 时含历史归档任务）。
+    """诊断任务列表（默认仅未归档；includeArchived 含归档；archivedOnly 仅已归档）。
 
     设计依据：PRD §5.6 / IDS §2.4 — GET /api/v1/diagnosis/tasks
     """
@@ -694,9 +702,25 @@ async def list_tasks_endpoint(
         loop_id=loopId,
         plant_node_id=plantNodeId,
         include_archived=includeArchived,
+        archived_only=archivedOnly,
         page=page,
         page_size=pageSize,
     )
+    return success(data=data)
+
+
+@router.get("/tasks/stats", response_model=ApiResponse[DiagnosisTaskStats])
+async def get_task_stats_endpoint(
+    loopId: str | None = Query(None, description="按回路 ID 筛选"),
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
+) -> dict:
+    """诊断任务 Tab 计数（进行中/已完成/已归档三类）。
+
+    P2-16-B2：诊断任务页改为 Tab 结构后，用于在 Tab 标题显示 Badge 数量。
+    """
+    data = await get_diagnosis_task_stats(db=db, loop_id=loopId, plant_node_id=plantNodeId)
     return success(data=data)
 
 

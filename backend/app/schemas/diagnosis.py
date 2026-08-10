@@ -895,6 +895,14 @@ class DiagnosisTaskListData(CamelModel):
     pageSize: int = 20
 
 
+class DiagnosisTaskStats(CamelModel):
+    """诊断任务 Tab 计数（P2-16-B2）：进行中/已完成/已归档。"""
+
+    active: int = 0
+    completed: int = 0
+    archived: int = 0
+
+
 class DiagnosisTaskResultItem(CamelModel):
     """诊断任务详情中的单条诊断结果。"""
 

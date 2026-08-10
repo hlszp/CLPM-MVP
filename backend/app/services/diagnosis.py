@@ -1177,6 +1177,56 @@ async def trigger_diagnosis(
     return {"tasks": tasks_list}
 
 
+ACTIVE_STATUSES = {"PENDING", "RUNNING"}
+
+
+async def get_diagnosis_task_stats(
+    db: AsyncSession,
+    *,
+    loop_id: str | None = None,
+    plant_node_id: str | None = None,
+) -> dict:
+    """诊断任务 Tab 计数（P2-16）：进行中/已完成/已归档 三类。
+
+    - active：未归档且状态 ∈ {PENDING, RUNNING}
+    - completed：未归档且状态为终态（SUCCESS/FAILED/CANCELLED）
+    - archived：已归档
+    """
+    base_stmt = select(DiagnosisTask)
+    if plant_node_id:
+        base_stmt = base_stmt.join(LoopLedger, DiagnosisTask.loop_id == LoopLedger.id).where(
+            LoopLedger.unit_id == plant_node_id
+        )
+    base_conds: list[Any] = []
+    if loop_id:
+        base_conds.append(DiagnosisTask.loop_id == loop_id)
+    for cond in base_conds:
+        base_stmt = base_stmt.where(cond)
+
+    # active: 未归档 & PENDING/RUNNING
+    active_stmt = select(func.count()).select_from(
+        base_stmt.where(
+            DiagnosisTask.is_archived.is_(False),
+            DiagnosisTask.status.in_(list(ACTIVE_STATUSES)),
+        ).subquery()
+    )
+    # completed: 未归档 & 终态
+    done_stmt = select(func.count()).select_from(
+        base_stmt.where(
+            DiagnosisTask.is_archived.is_(False),
+            DiagnosisTask.status.notin_(list(ACTIVE_STATUSES)),
+        ).subquery()
+    )
+    # archived
+    archived_stmt = select(func.count()).select_from(
+        base_stmt.where(DiagnosisTask.is_archived.is_(True)).subquery()
+    )
+    active = (await db.execute(active_stmt)).scalar() or 0
+    completed = (await db.execute(done_stmt)).scalar() or 0
+    archived = (await db.execute(archived_stmt)).scalar() or 0
+    return {"active": int(active), "completed": int(completed), "archived": int(archived)}
+
+
 async def list_diagnosis_tasks(
     db: AsyncSession,
     *,
@@ -1185,21 +1235,25 @@ async def list_diagnosis_tasks(
     loop_id: str | None = None,
     plant_node_id: str | None = None,
     include_archived: bool = False,
+    archived_only: bool = False,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
     """诊断任务列表（分页 + 筛选）。
 
     Args:
-        include_archived: True 时不做归档过滤（未归档 + 已归档全量返回）；
-            False（默认）仅未归档任务。SUCCESS 任务完成即自动归档，
-            需要"队列+历史"合一视图时传 True（2026-07-29）。
+        include_archived: True 时不做归档过滤（未归档 + 已归档全量返回）。
+            False（默认）仅未归档任务。SUCCESS 任务完成即自动归档。
+        archived_only: True 时仅返回已归档任务（P2-16 Tab 化"已归档"页）。
+            与 include_archived 同时为 True 时，archived_only 优先。
 
     Returns:
         {items, total, page, pageSize}
     """
     conditions: list[Any] = []
-    if not include_archived:
+    if archived_only:
+        conditions.append(DiagnosisTask.is_archived.is_(True))
+    elif not include_archived:
         conditions.append(DiagnosisTask.is_archived.is_(False))
     if status:
         conditions.append(DiagnosisTask.status == status)
