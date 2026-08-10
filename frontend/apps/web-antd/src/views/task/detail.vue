@@ -45,6 +45,7 @@ import {
   TASK_STATUS_LABEL,
   TASK_STATUS_TO_STATUS,
 } from '#/constants/clpm-ui';
+import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TaskDetail' });
@@ -181,7 +182,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
     await loadDetail();
     await loadNotifications();
   },
-  { interval: 5000 },
+  { interval: TASK_POLLING_INTERVAL },
 );
 
 // ---- 工具函数 ----

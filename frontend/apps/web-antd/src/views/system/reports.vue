@@ -48,6 +48,7 @@ import {
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
+import { PROGRESS_POLLING_INTERVAL } from '#/constants/polling';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemReports' });
@@ -197,10 +198,10 @@ async function pollTaskProgress() {
   }
 }
 
-/** 任务进度轮询（3s，usePolling 防堆积 + 页面隐藏自动暂停） */
+/** 任务进度轮询（PROGRESS_POLLING_INTERVAL，usePolling 防堆积 + 页面隐藏自动暂停） */
 const { start: startPolling, stop: stopPolling } = usePolling(
   pollTaskProgress,
-  { interval: 3000 },
+  { interval: PROGRESS_POLLING_INTERVAL },
 );
 
 /** 加载报表配置列表 */

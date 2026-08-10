@@ -43,6 +43,7 @@ import {
   TASK_STATUS_LABEL,
   TASK_STATUS_TO_STATUS,
 } from '#/constants/clpm-ui';
+import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
@@ -296,8 +297,6 @@ async function loadList() {
 }
 
 // ============ 自动刷新（polling 活跃任务） ============
-const POLLING_INTERVAL = 5000;
-
 function hasActiveTask(): boolean {
   return taskList.value.some(
     (t) => t.status === 'RUNNING' || t.status === 'PENDING',
@@ -314,7 +313,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
       stopPolling();
     }
   },
-  { interval: POLLING_INTERVAL },
+  { interval: TASK_POLLING_INTERVAL },
 );
 
 function updatePolling() {

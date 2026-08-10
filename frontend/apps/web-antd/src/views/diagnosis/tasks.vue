@@ -60,6 +60,10 @@ import {
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useTableDensity } from '#/composables/use-table-density';
 import { DIAGNOSIS_LABEL_OPTIONS } from '#/constants/diagnosis';
+import {
+  BADGE_REFRESH_INTERVAL,
+  TASK_POLLING_INTERVAL,
+} from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatTime } from '#/utils/format';
 
@@ -156,7 +160,7 @@ function stopAllPolling() {
   });
 }
 
-// ============ P2-12 徽章自动刷新：每 30s 拉一次 stats，不打断用户操作 ============
+// ============ P2-12 徽章自动刷新：BADGE_REFRESH_INTERVAL 拉一次 stats，不打断用户操作 ============
 let badgeRefreshTimer: null | ReturnType<typeof setInterval> = null;
 function startBadgeRefresh() {
   stopBadgeRefresh();
@@ -165,7 +169,7 @@ function startBadgeRefresh() {
     if (document.visibilityState === 'visible') {
       loadStats();
     }
-  }, 30_000);
+  }, BADGE_REFRESH_INTERVAL);
 }
 function stopBadgeRefresh() {
   if (badgeRefreshTimer) {
@@ -239,7 +243,7 @@ function scheduleActivePoll() {
       return;
     }
     scheduleActivePoll();
-  }, 5000);
+  }, TASK_POLLING_INTERVAL);
 }
 
 /** Tab 切换：加载对应 Tab 数据；active Tab 启动轮询 */

@@ -60,6 +60,7 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
+import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 
 import IntegrityReportDrawer from './components/integrity-report-drawer.vue';
@@ -296,7 +297,7 @@ const { start: startTaskPolling, stop: stopTaskPolling } = usePolling(
     // 本轮刷新后若无活跃任务，停止轮询
     if (!hasActiveTasks()) stopTaskPolling();
   },
-  { interval: 5000 },
+  { interval: TASK_POLLING_INTERVAL },
 );
 
 /** 按任务活跃度同步轮询开关（任务列表加载/任务操作完成后调用） */

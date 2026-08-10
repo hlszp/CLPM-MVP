@@ -44,6 +44,7 @@ import {
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePolling } from '#/composables/use-polling';
+import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricRecompute' });
@@ -325,8 +326,6 @@ async function loadList() {
 }
 
 // ============ 自动刷新（polling 活跃任务） ============
-const POLLING_INTERVAL = 5000;
-
 function hasActiveTask(): boolean {
   return taskList.value.some(
     (t) => t.status === 'RUNNING' || t.status === 'PENDING',
@@ -357,7 +356,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
       stopPolling();
     }
   },
-  { interval: POLLING_INTERVAL },
+  { interval: TASK_POLLING_INTERVAL },
 );
 
 function updatePolling() {
