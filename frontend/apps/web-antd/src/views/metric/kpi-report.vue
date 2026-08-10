@@ -16,6 +16,7 @@ import type { TableColumnsType } from 'ant-design-vue';
 import type { DashboardApi } from '#/api/dashboard';
 import type { ConfidenceLevel, KpiSnapshotItem, MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
@@ -43,6 +44,7 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
@@ -400,8 +402,118 @@ const ratingDistribution = computed<Record<number, number>>(() => {
   return dist;
 });
 
+// ============ 列设置（IA 整改 P2-10：综合默认显10列，回路默认显9列，可自定义）============
+
+/** 综合报表：14 列默认保留 10 列可见（隐藏饱和率/振荡率/数据不足） */
+const COMPREHENSIVE_COLS: ColumnConfig[] = [
+  { key: 'nodeName', label: '节点', visible: true },
+  { key: 'snapshotTime', label: '数据时间', visible: true },
+  { key: 'rating', label: '性能等级', visible: true },
+  { key: 'score', label: '性能评分', visible: true },
+  { key: 'accuracyRate', label: '准确率', visible: true },
+  { key: 'fastRate', label: '快速率', visible: true },
+  { key: 'steadyRate', label: '平稳率', visible: true },
+  { key: 'autoModeRate', label: '自控率', visible: true },
+  { key: 'effectiveAutoRate', label: '有效自控率', visible: true },
+  { key: 'goodValueRate', label: '好值率', visible: true },
+  { key: 'saturationRate', label: '饱和率', visible: false },
+  { key: 'oscillationRate', label: '振荡率', visible: false },
+  { key: 'evaluatedLoops', label: '参评回路数', visible: true },
+  { key: 'inconclusiveLoops', label: '数据不足回路数', visible: false },
+];
+
+/** 回路报表：18 列默认保留 9 列可见（其余默认隐藏） */
+const LOOP_COLS: ColumnConfig[] = [
+  { key: 'index', label: '序号', visible: true },
+  { key: 'loopTagName', label: '回路编号', visible: true },
+  { key: 'loopName', label: '回路名称', visible: true },
+  { key: 'rating', label: '性能等级', visible: true },
+  { key: 'score', label: '性能评分', visible: true },
+  { key: 'accuracyRate', label: '准确率', visible: true },
+  { key: 'fastRate', label: '快速率', visible: false },
+  { key: 'steadyRate', label: '平稳率', visible: true },
+  { key: 'autoModeRate', label: '自控率', visible: false },
+  { key: 'effectiveAutoRate', label: '有效自控率', visible: false },
+  { key: 'saturationRate', label: '饱和率', visible: false },
+  { key: 'oscillationRate', label: '振荡率', visible: false },
+  { key: 'goodValueRate', label: '好值率', visible: false },
+  { key: 'idealSettlingTime', label: '理想稳定时间', visible: false },
+  { key: 'settlingTime', label: '实际稳定时间', visible: false },
+  { key: 'outputTravelIndex', label: '输出跳变率', visible: false },
+  { key: 'stictionIndex', label: '阀门粘滞', visible: false },
+  { key: 'confidenceLevel', label: '可信度', visible: true },
+  { key: 'evalCount', label: '评估次数', visible: false },
+];
+
+const compPrefs = usePagePreference('kpi-report-comprehensive');
+const loopPrefs = usePagePreference('kpi-report-loop');
+
+const comprehensiveColumnConfigs = ref<ColumnConfig[]>(
+  compPrefs.preferences.value.columns &&
+  compPrefs.preferences.value.columns.length > 0
+    ? compPrefs.preferences.value.columns
+    : COMPREHENSIVE_COLS,
+);
+const loopColumnConfigs = ref<ColumnConfig[]>(
+  loopPrefs.preferences.value.columns &&
+  loopPrefs.preferences.value.columns.length > 0
+    ? loopPrefs.preferences.value.columns
+    : LOOP_COLS,
+);
+
+const currentColumnConfigs = computed(
+  () =>
+    reportType.value === 'comprehensive'
+      ? comprehensiveColumnConfigs.value
+      : loopColumnConfigs.value,
+);
+
+function handleUpdateColumns(cols: ColumnConfig[]) {
+  if (reportType.value === 'comprehensive') {
+    comprehensiveColumnConfigs.value = cols;
+    compPrefs.updateColumns(cols);
+  } else {
+    loopColumnConfigs.value = cols;
+    loopPrefs.updateColumns(cols);
+  }
+}
+
+function handleResetColumns() {
+  if (reportType.value === 'comprehensive') {
+    comprehensiveColumnConfigs.value = [...COMPREHENSIVE_COLS];
+    compPrefs.updateColumns([...COMPREHENSIVE_COLS]);
+  } else {
+    loopColumnConfigs.value = [...LOOP_COLS];
+    loopPrefs.updateColumns([...LOOP_COLS]);
+  }
+}
+
+function getColumnKey(col: TableColumnsType[number]): string {
+  const c = col as Record<string, unknown>;
+  return (c.dataIndex as string) || (c.key as string) || '';
+}
+
+/** 根据列设置过滤并排序后的可见列 */
+function applyColumnVisibility(
+  allColumns: TableColumnsType,
+  configs: ColumnConfig[],
+): TableColumnsType {
+  const configMap = new Map(configs.map((c, i) => [c.key, { visible: c.visible, order: i }]));
+  const filtered = allColumns.filter((c) => {
+    const cfg = configMap.get(getColumnKey(c));
+    return cfg ? cfg.visible : true;
+  });
+  // 注：避免使用 .toSorted()（ES2023），旧版 vue-tsc 解析器在后续数组解析时会误报 TS1005
+  return [...filtered].sort((a, b) => {
+    const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
+    const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
+    return aOrder - bOrder;
+  });
+}
+
 // ============ 表格列定义 ============
-const comprehensiveColumns = computed<TableColumnsType>(() => [
+// 注：使用 `as` 类型断言而非注解，规避旧版 vue-tsc 对大型数组字面量的 TS1005 误报
+const _compCols = [
   {
     title: '节点',
     dataIndex: 'nodeName',
@@ -416,78 +528,24 @@ const comprehensiveColumns = computed<TableColumnsType>(() => [
     dataIndex: 'avgScore',
     key: 'score',
     width: 90,
-    sorter: (a: Record<string, any>, b: Record<string, any>) =>
-      (a.avgScore ?? 0) - (b.avgScore ?? 0),
+    sorter: (a: Record<string, any>, b: Record<string, any>) => (a.avgScore ?? 0) - (b.avgScore ?? 0),
   },
-  {
-    title: '准确率',
-    dataIndex: 'accuracyRate',
-    key: 'accuracyRate',
-    width: 90,
-  },
+  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
-  {
-    title: '平稳率',
-    dataIndex: 'stabilityRate',
-    key: 'steadyRate',
-    width: 90,
-  },
-  {
-    title: '自控率',
-    dataIndex: 'autoModeRate',
-    key: 'autoModeRate',
-    width: 90,
-  },
-  {
-    title: '有效自控率',
-    dataIndex: 'effectiveAutoRate',
-    key: 'effectiveAutoRate',
-    width: 110,
-  },
-  {
-    title: '好值率',
-    dataIndex: 'goodValueRate',
-    key: 'goodValueRate',
-    width: 90,
-  },
-  {
-    title: '饱和率',
-    dataIndex: 'saturationRate',
-    key: 'saturationRate',
-    width: 90,
-  },
-  {
-    title: '振荡率',
-    dataIndex: 'oscillationRate',
-    key: 'oscillationRate',
-    width: 90,
-  },
-  {
-    title: '参评回路数',
-    dataIndex: 'evaluatedLoops',
-    key: 'evaluatedLoops',
-    width: 100,
-    align: 'center',
-  },
-  {
-    title: '数据不足回路数',
-    dataIndex: 'inconclusiveLoops',
-    key: 'inconclusiveLoops',
-    width: 120,
-    align: 'center',
-  },
-]);
+  { title: '平稳率', dataIndex: 'stabilityRate', key: 'steadyRate', width: 90 },
+  { title: '自控率', dataIndex: 'autoModeRate', key: 'autoModeRate', width: 90 },
+  { title: '有效自控率', dataIndex: 'effectiveAutoRate', key: 'effectiveAutoRate', width: 110 },
+  { title: '好值率', dataIndex: 'goodValueRate', key: 'goodValueRate', width: 90 },
+  { title: '饱和率', dataIndex: 'saturationRate', key: 'saturationRate', width: 90 },
+  { title: '振荡率', dataIndex: 'oscillationRate', key: 'oscillationRate', width: 90 },
+  { title: '参评回路数', dataIndex: 'evaluatedLoops', key: 'evaluatedLoops', width: 100, align: 'center' },
+  { title: '数据不足回路数', dataIndex: 'inconclusiveLoops', key: 'inconclusiveLoops', width: 120, align: 'center' },
+];
+const allComprehensiveColumns = _compCols as TableColumnsType;
 
-const loopColumns = computed<TableColumnsType>(() => [
+const _loopCols = [
   { title: '序号', key: 'index', width: 60, fixed: 'left' },
-  {
-    title: '回路编号',
-    dataIndex: 'loopTagName',
-    key: 'loopTagName',
-    width: 160,
-    ellipsis: true,
-    fixed: 'left',
-  },
+  { title: '回路编号', dataIndex: 'loopTagName', key: 'loopTagName', width: 160, ellipsis: true, fixed: 'left' },
   { title: '回路名称', key: 'loopName', width: 160, ellipsis: true },
   { title: '性能等级', key: 'rating', width: 100 },
   {
@@ -495,95 +553,29 @@ const loopColumns = computed<TableColumnsType>(() => [
     dataIndex: 'score',
     key: 'score',
     width: 100,
-    sorter: (a: Record<string, any>, b: Record<string, any>) =>
-      (a.score ?? 0) - (b.score ?? 0),
+    sorter: (a: Record<string, any>, b: Record<string, any>) => (a.score ?? 0) - (b.score ?? 0),
   },
-  {
-    title: '准确率',
-    dataIndex: 'accuracyRate',
-    key: 'accuracyRate',
-    width: 90,
-  },
+  { title: '准确率', dataIndex: 'accuracyRate', key: 'accuracyRate', width: 90 },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
-  {
-    title: '平稳率',
-    dataIndex: 'steadyRate',
-    key: 'steadyRate',
-    width: 90,
-  },
-  {
-    title: '自控率',
-    dataIndex: 'autoModeRate',
-    key: 'autoModeRate',
-    width: 90,
-  },
-  {
-    title: '有效自控率',
-    dataIndex: 'effectiveAutoRate',
-    key: 'effectiveAutoRate',
-    width: 110,
-  },
-  {
-    title: '饱和率',
-    dataIndex: 'saturationRate',
-    key: 'saturationRate',
-    width: 90,
-  },
-  {
-    title: '振荡率',
-    dataIndex: 'oscillationRate',
-    key: 'oscillationRate',
-    width: 90,
-  },
-  {
-    title: '好值率',
-    dataIndex: 'goodValueRate',
-    key: 'goodValueRate',
-    width: 90,
-  },
-  {
-    title: '理想稳定时间',
-    dataIndex: 'idealSettlingTime',
-    key: 'idealSettlingTime',
-    width: 110,
-  },
-  {
-    title: '实际稳定时间',
-    dataIndex: 'settlingTime',
-    key: 'settlingTime',
-    width: 110,
-  },
-  {
-    title: '输出跳变率',
-    dataIndex: 'outputTravelIndex',
-    key: 'outputTravelIndex',
-    width: 100,
-  },
-  {
-    title: '阀门粘滞',
-    dataIndex: 'stictionIndex',
-    key: 'stictionIndex',
-    width: 90,
-  },
-  {
-    title: '可信度',
-    dataIndex: 'confidenceLevel',
-    key: 'confidenceLevel',
-    width: 80,
-  },
-  {
-    title: '评估次数',
-    dataIndex: 'evalCount',
-    key: 'evalCount',
-    width: 90,
-    align: 'center',
-  },
-]);
+  { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 90 },
+  { title: '自控率', dataIndex: 'autoModeRate', key: 'autoModeRate', width: 90 },
+  { title: '有效自控率', dataIndex: 'effectiveAutoRate', key: 'effectiveAutoRate', width: 110 },
+  { title: '饱和率', dataIndex: 'saturationRate', key: 'saturationRate', width: 90 },
+  { title: '振荡率', dataIndex: 'oscillationRate', key: 'oscillationRate', width: 90 },
+  { title: '好值率', dataIndex: 'goodValueRate', key: 'goodValueRate', width: 90 },
+  { title: '理想稳定时间', dataIndex: 'idealSettlingTime', key: 'idealSettlingTime', width: 110 },
+  { title: '实际稳定时间', dataIndex: 'settlingTime', key: 'settlingTime', width: 110 },
+  { title: '输出跳变率', dataIndex: 'outputTravelIndex', key: 'outputTravelIndex', width: 100 },
+  { title: '阀门粘滞', dataIndex: 'stictionIndex', key: 'stictionIndex', width: 90 },
+  { title: '可信度', dataIndex: 'confidenceLevel', key: 'confidenceLevel', width: 80 },
+  { title: '评估次数', dataIndex: 'evalCount', key: 'evalCount', width: 90, align: 'center' },
+];
+const allLoopColumns = _loopCols as TableColumnsType;
 
 const currentColumns = computed(() =>
   reportType.value === 'comprehensive'
-    ? comprehensiveColumns.value
-    : loopColumns.value,
+    ? applyColumnVisibility(allComprehensiveColumns, comprehensiveColumnConfigs.value)
+    : applyColumnVisibility(allLoopColumns, loopColumnConfigs.value),
 );
 
 const currentData = computed(() =>
@@ -814,10 +806,11 @@ function handleHelp() {
   });
 }
 
-// ===== 统一工具栏（标准 3 工具：刷新 / 导出 / 帮助） =====
+// ===== 统一工具栏（标准 4 工具：刷新 / 导出 / 列设置 / 帮助） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: loadData, loading: loading.value },
   export: { onClick: handleExport, loading: exporting.value },
+  setting: {},
   help: { onClick: handleHelp },
 }));
 
@@ -890,7 +883,12 @@ onMounted(() => {
         show-search
       />
       <template #actions>
-        <ClpmStandardActions :items="toolbarItems" />
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="currentColumnConfigs"
+          @update:columns="handleUpdateColumns"
+          @reset-columns="handleResetColumns"
+        />
       </template>
     </ClpmPageToolbar>
 
