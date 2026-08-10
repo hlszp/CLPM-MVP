@@ -14,11 +14,12 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 import type { ClpmRole } from '#/api/auth';
 import type { SystemApi } from '#/api/system';
 
-import { h, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Badge,
   Button,
   Form,
   FormItem,
@@ -28,6 +29,7 @@ import {
   Select,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
@@ -68,6 +70,32 @@ const query = reactive({
   page: 1,
   pageSize: 20,
 });
+
+// ===== P2-07：批量操作（行多选 + 批量禁用/启用）=====
+const selectedRowKeys = ref<string[]>([]);
+const batchLoading = ref(false);
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (number | string)[]) => {
+    selectedRowKeys.value = keys as string[];
+  },
+}));
+
+/** 已选用户中可禁用的（当前启用）数量 */
+const selectedDisableCount = computed(
+  () =>
+    userList.value.filter(
+      (u) => selectedRowKeys.value.includes(u.id) && u.isActive,
+    ).length,
+);
+/** 已选用户中可启用的（当前禁用）数量 */
+const selectedEnableCount = computed(
+  () =>
+    userList.value.filter(
+      (u) => selectedRowKeys.value.includes(u.id) && !u.isActive,
+    ).length,
+);
 
 /** 角色选项 */
 const roleOptions = CLPM_ROLES.map((r) => ({
@@ -184,6 +212,7 @@ async function loadList() {
 
 function handleSearch() {
   query.page = 1;
+  selectedRowKeys.value = []; // P2-07：筛选时清空选择，避免跨页残留
   loadList();
 }
 
@@ -272,6 +301,79 @@ async function handleDisableConfirm() {
     // 错误已由拦截器处理
   } finally {
     disableLoading.value = false;
+  }
+}
+
+// ===== P2-07：批量禁用/启用 =====
+const batchDisableOpen = ref(false);
+const batchDisableLoading = ref(false);
+
+/** 批量禁用：打开确认弹窗 */
+function handleBatchDisable() {
+  if (selectedDisableCount.value === 0) {
+    message.warning('所选用户中没有可禁用的启用状态用户');
+    return;
+  }
+  batchDisableOpen.value = true;
+}
+
+/** 批量禁用：确认执行（Promise.all 并行调用 deleteUserApi） */
+async function handleBatchDisableConfirm() {
+  const targets = userList.value.filter(
+    (u) => selectedRowKeys.value.includes(u.id) && u.isActive,
+  );
+  if (targets.length === 0) return;
+  batchDisableLoading.value = true;
+  try {
+    const results = await Promise.allSettled(
+      targets.map((u) => deleteUserApi(u.id)),
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+    if (succeeded > 0) {
+      message.success(`已禁用 ${succeeded} 个用户`);
+    }
+    if (failed > 0) {
+      message.warning(`${failed} 个用户禁用失败`);
+    }
+    batchDisableOpen.value = false;
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchDisableLoading.value = false;
+  }
+}
+
+/** 批量启用：直接执行（启用为安全操作，无需危险确认） */
+async function handleBatchEnable() {
+  if (selectedEnableCount.value === 0) {
+    message.warning('所选用户中没有可启用的禁用状态用户');
+    return;
+  }
+  const targets = userList.value.filter(
+    (u) => selectedRowKeys.value.includes(u.id) && !u.isActive,
+  );
+  batchLoading.value = true;
+  try {
+    const results = await Promise.allSettled(
+      targets.map((u) => updateUserApi(u.id, { isActive: true })),
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+    if (succeeded > 0) {
+      message.success(`已启用 ${succeeded} 个用户`);
+    }
+    if (failed > 0) {
+      message.warning(`${failed} 个用户启用失败`);
+    }
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchLoading.value = false;
   }
 }
 
@@ -394,6 +496,62 @@ const { toolbarItems } = usePageToolbar(() => ({
         <Button type="primary" @click="handleOpenAdd">新建用户</Button>
       </div>
 
+      <!-- P2-07：批量操作工具栏（选中行时显示） -->
+      <div
+        v-if="selectedRowKeys.length > 0"
+        class="mb-3 flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-4 py-2"
+      >
+        <Badge :count="selectedRowKeys.length" :offset="[6, 0]" />
+        <span class="text-sm text-blue-700">
+          已选 {{ selectedRowKeys.length }} 个用户
+          <template v-if="selectedDisableCount > 0">
+            （{{ selectedDisableCount }} 个可禁用）
+          </template>
+          <template v-if="selectedEnableCount > 0">
+            （{{ selectedEnableCount }} 个可启用）
+          </template>
+        </span>
+        <div class="flex-1"></div>
+        <Tooltip
+          :title="
+            selectedDisableCount === 0
+              ? '所选用户中没有可禁用的启用状态用户'
+              : ''
+          "
+        >
+          <Button
+            size="small"
+            danger
+            :disabled="selectedDisableCount === 0"
+            :loading="batchDisableLoading"
+            @click="handleBatchDisable"
+          >
+            批量禁用
+          </Button>
+        </Tooltip>
+        <Tooltip
+          :title="
+            selectedEnableCount === 0
+              ? '所选用户中没有可启用的禁用状态用户'
+              : ''
+          "
+        >
+          <Button
+            size="small"
+            type="primary"
+            ghost
+            :disabled="selectedEnableCount === 0"
+            :loading="batchLoading"
+            @click="handleBatchEnable"
+          >
+            批量启用
+          </Button>
+        </Tooltip>
+        <Button size="small" type="text" @click="selectedRowKeys = []">
+          取消选择
+        </Button>
+      </div>
+
       <Table
         :columns="columns"
         :data-source="userList"
@@ -406,6 +564,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           showTotal: (t: number) => `共 ${t} 条`,
         }"
         :row-key="(record: SystemApi.User) => record.id"
+        :row-selection="rowSelection"
         :scroll="{ x: 1300 }"
         :size="tableSize"
         @change="handleTableChange"
@@ -564,6 +723,19 @@ const { toolbarItems } = usePageToolbar(() => ({
       :require-confirm-code="true"
       :loading="disableLoading"
       @confirm="handleDisableConfirm"
+    />
+
+    <!-- P2-07：批量禁用确认 - ClpmDangerConfirmModal -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDisableOpen"
+      title="批量禁用用户"
+      action="批量禁用"
+      :target="`${selectedDisableCount} 个启用状态用户`"
+      impact-scope="所选用户将无法登录系统、活跃会话将被终止"
+      rollback-tip="可随时在用户管理页批量重新启用"
+      :require-confirm-code="true"
+      :loading="batchDisableLoading"
+      @confirm="handleBatchDisableConfirm"
     />
   </Page>
 </template>

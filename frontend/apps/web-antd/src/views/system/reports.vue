@@ -13,11 +13,12 @@ import type { TableColumnsType } from 'ant-design-vue';
 
 import type { SystemApi } from '#/api/system';
 
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Badge,
   Button,
   Form,
   FormItem,
@@ -29,6 +30,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -52,6 +54,42 @@ defineOptions({ name: 'SystemReports' });
 
 const loading = ref(false);
 const reportList = ref<SystemApi.ReportConfig[]>([]);
+
+// ===== P2-07：批量操作（行多选 + 批量启用/停用/生成）=====
+const selectedRowKeys = ref<string[]>([]);
+const batchLoading = ref(false);
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (number | string)[]) => {
+    selectedRowKeys.value = keys as string[];
+  },
+}));
+
+/** 已选报表中可启用的（当前停用）数量 */
+const selectedEnableCount = computed(
+  () =>
+    reportList.value.filter(
+      (r) => selectedRowKeys.value.includes(r.id) && !r.isEnabled,
+    ).length,
+);
+/** 已选报表中可停用的（当前启用）数量 */
+const selectedDisableCount = computed(
+  () =>
+    reportList.value.filter(
+      (r) => selectedRowKeys.value.includes(r.id) && r.isEnabled,
+    ).length,
+);
+/** 已选报表中可生成的（启用且未在生成中）数量 */
+const selectedGenerateCount = computed(
+  () =>
+    reportList.value.filter(
+      (r) =>
+        selectedRowKeys.value.includes(r.id) &&
+        r.isEnabled &&
+        !taskProgressMap.value.has(r.id),
+    ).length,
+);
 
 /** 报表周期选项 */
 const periodOptions = [
@@ -277,6 +315,111 @@ async function handleGenerate(record: SystemApi.ReportConfig) {
   }
 }
 
+// ===== P2-07：批量启用/停用/生成 =====
+
+/** 批量启用报表配置 */
+async function handleBatchEnable() {
+  if (selectedEnableCount.value === 0) {
+    message.warning('所选报表中没有可启用的停用报表');
+    return;
+  }
+  const targets = reportList.value.filter(
+    (r) => selectedRowKeys.value.includes(r.id) && !r.isEnabled,
+  );
+  batchLoading.value = true;
+  try {
+    const results = await Promise.allSettled(
+      targets.map((r) => updateReportConfigApi(r.id, { isEnabled: true })),
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+    if (succeeded > 0) message.success(`已启用 ${succeeded} 个报表配置`);
+    if (failed > 0) message.warning(`${failed} 个报表启用失败`);
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+/** 批量停用报表配置 */
+async function handleBatchDisable() {
+  if (selectedDisableCount.value === 0) {
+    message.warning('所选报表中没有可停用的启用报表');
+    return;
+  }
+  const targets = reportList.value.filter(
+    (r) => selectedRowKeys.value.includes(r.id) && r.isEnabled,
+  );
+  batchLoading.value = true;
+  try {
+    const results = await Promise.allSettled(
+      targets.map((r) => updateReportConfigApi(r.id, { isEnabled: false })),
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+    if (succeeded > 0) message.success(`已停用 ${succeeded} 个报表配置`);
+    if (failed > 0) message.warning(`${failed} 个报表停用失败`);
+    selectedRowKeys.value = [];
+    await loadList();
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+/** 批量生成报表 */
+async function handleBatchGenerate() {
+  if (selectedGenerateCount.value === 0) {
+    message.warning('所选报表中没有可生成的启用报表（或正在生成中）');
+    return;
+  }
+  const targets = reportList.value.filter(
+    (r) =>
+      selectedRowKeys.value.includes(r.id) &&
+      r.isEnabled &&
+      !taskProgressMap.value.has(r.id),
+  );
+  batchLoading.value = true;
+  try {
+    const results = await Promise.allSettled(
+      targets.map((r) => generateReportApi(r.id)),
+    );
+    const succeeded = results.filter(
+      (r) => r.status === 'fulfilled',
+    ).length as number;
+    const failed = results.length - succeeded;
+    // 为成功提交的任务设置进度跟踪
+    for (const [i, target] of targets.entries()) {
+      if (results[i]!.status === 'fulfilled') {
+        const result = (
+          results[i] as PromiseFulfilledResult<SystemApi.ReportGenerateResult>
+        ).value;
+        taskProgressMap.value.set(target!.id, {
+          taskId: result.taskId,
+          configId: target!.id,
+          status: 'PROCESSING',
+          progress: 0,
+          message: '任务已提交，等待执行...',
+        });
+      }
+    }
+    if (succeeded > 0) {
+      message.success(`已提交 ${succeeded} 个报表生成任务`);
+      startPolling();
+    }
+    if (failed > 0) message.warning(`${failed} 个报表生成提交失败`);
+    selectedRowKeys.value = [];
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
 /** 根据 configId 获取报表名称 */
 function recordName(configId: string): string {
   const report = reportList.value.find((r) => r.id === configId);
@@ -360,12 +503,75 @@ const { toolbarItems } = usePageToolbar(() => ({
         <Button type="primary" @click="handleOpenAdd">新建报表</Button>
       </div>
 
+      <!-- P2-07：批量操作工具栏（选中行时显示） -->
+      <div
+        v-if="selectedRowKeys.length > 0"
+        class="mb-3 flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-4 py-2"
+      >
+        <Badge :count="selectedRowKeys.length" :offset="[6, 0]" />
+        <span class="text-sm text-blue-700">
+          已选 {{ selectedRowKeys.length }} 个报表配置
+        </span>
+        <div class="flex-1"></div>
+        <Tooltip
+          :title="
+            selectedEnableCount === 0 ? '所选报表中没有可启用的停用报表' : ''
+          "
+        >
+          <Button
+            size="small"
+            type="primary"
+            ghost
+            :disabled="selectedEnableCount === 0"
+            :loading="batchLoading"
+            @click="handleBatchEnable"
+          >
+            批量启用
+          </Button>
+        </Tooltip>
+        <Tooltip
+          :title="
+            selectedDisableCount === 0 ? '所选报表中没有可停用的启用报表' : ''
+          "
+        >
+          <Button
+            size="small"
+            :disabled="selectedDisableCount === 0"
+            :loading="batchLoading"
+            @click="handleBatchDisable"
+          >
+            批量停用
+          </Button>
+        </Tooltip>
+        <Tooltip
+          :title="
+            selectedGenerateCount === 0
+              ? '所选报表中没有可生成的启用报表（或正在生成中）'
+              : ''
+          "
+        >
+          <Button
+            size="small"
+            type="primary"
+            :disabled="selectedGenerateCount === 0"
+            :loading="batchLoading"
+            @click="handleBatchGenerate"
+          >
+            批量生成
+          </Button>
+        </Tooltip>
+        <Button size="small" type="text" @click="selectedRowKeys = []">
+          取消选择
+        </Button>
+      </div>
+
       <Table
         :columns="columns"
         :data-source="reportList"
         :loading="loading"
         :pagination="false"
         :row-key="(record: SystemApi.ReportConfig) => record.id"
+        :row-selection="rowSelection"
         :scroll="{ x: 1400 }"
         size="middle"
       >
