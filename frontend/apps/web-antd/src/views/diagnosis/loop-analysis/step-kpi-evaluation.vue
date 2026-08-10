@@ -15,7 +15,14 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Alert, Button, Descriptions, Drawer, Spin } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Descriptions,
+  Drawer,
+  message,
+  Spin,
+} from 'ant-design-vue';
 
 import { ClpmDataCanvas, ClpmKpiCard, ClpmKpiStrip } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -143,6 +150,32 @@ function handleViewDetail() {
 }
 
 function handleNext() {
+  // P3-26：Step 2 本地就近校验（父级 handleNext 也会再校验一次，双重保护）
+  if (!props.state.kpi.taskId) {
+    message.warning('请先点击「开始 KPI 评估」触发评估任务');
+    return;
+  }
+  if (
+    props.state.kpi.status === 'PENDING' ||
+    props.state.kpi.status === 'RUNNING'
+  ) {
+    message.warning('KPI 评估仍在进行中，请等待任务完成');
+    return;
+  }
+  if (
+    props.state.kpi.status === 'FAILED' ||
+    props.state.kpi.status === 'CANCELLED'
+  ) {
+    message.warning('KPI 评估已失败/取消，请重新触发评估');
+    return;
+  }
+  if (
+    props.state.kpi.status !== 'SUCCESS' ||
+    props.state.kpi.results.length === 0
+  ) {
+    message.warning('KPI 评估尚未产出完整结果，请等待评估完成');
+    return;
+  }
   emit('next');
 }
 

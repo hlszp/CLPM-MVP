@@ -42,10 +42,12 @@ import {
   Input,
   message,
   Modal,
+  Progress,
   Select,
   Space,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -411,6 +413,49 @@ const abCompareImplementedAt = ref('');
 /** 正在导出 PDF 的回路 ID（空串表示无导出中任务，防重复点击） */
 const exportingLoopId = ref('');
 
+/**
+ * P3-29：PDF 导出本地伪进度百分比（0-100）
+ *
+ * 现状：后端 API 仍是同步生成 `POST /tracker/{loopId}/export`（无异步 taskId 无进度接口）
+ * 方案：前端在同步请求期间按固定节拍推进进度至 92% cap（避免显示为挂死），
+ *       Blob 到达时瞬间跳到 100%。后端 P3-33 提供异步任务+进度 API 后，
+ *       只需把 handleExportPdf 的进度源从 setInterval 换成 usePolling(taskId) 即可。
+ */
+const pdfExportPercent = ref(0);
+let pdfExportTicker: null | ReturnType<typeof setInterval> = null;
+const PDF_EXPORT_TICK_MS = 500;
+const PDF_EXPORT_TICK_STEP = 8;
+const PDF_EXPORT_CAP_PERCENT = 92;
+
+/** 启动本地伪进度 ticker */
+function startPdfProgressTicker() {
+  if (pdfExportTicker) return;
+  pdfExportPercent.value = 0;
+  pdfExportTicker = setInterval(() => {
+    if (pdfExportPercent.value < PDF_EXPORT_CAP_PERCENT) {
+      pdfExportPercent.value = Math.min(
+        PDF_EXPORT_CAP_PERCENT,
+        pdfExportPercent.value + PDF_EXPORT_TICK_STEP,
+      );
+    }
+  }, PDF_EXPORT_TICK_MS);
+}
+
+/** 停止 ticker 并强制跳到指定百分比 */
+function stopPdfProgressTicker(finalPercent = 100) {
+  if (pdfExportTicker) {
+    clearInterval(pdfExportTicker);
+    pdfExportTicker = null;
+  }
+  pdfExportPercent.value = Math.max(0, Math.min(100, finalPercent));
+  // 100ms 后归 0 以便下次导出显示为 0 起步
+  setTimeout(() => {
+    if (pdfExportPercent.value >= 100) {
+      pdfExportPercent.value = 0;
+    }
+  }, 1000);
+}
+
 /** 工具栏 CSV 统计导出 loading（防重复点击） */
 const exportingCsv = ref(false);
 
@@ -528,15 +573,18 @@ function buildExportFileName(tagName: string): string {
   return `CLPM-诊断建议书-${tagName}-${date}.pdf`;
 }
 
-/** 导出 PDF（FDS §5.4.4：后端同步生成，前端 Blob 直接下载） */
+/** 导出 PDF（P3-29：同步模式下增加本地伪进度反馈；后端 P3-33 异步 API 上线后将切到真实进度轮询） */
 async function handleExportPdf(record: DiagnosisApi.TrackerItem) {
-  // 同一行正在导出时，避免重复提交
   if (exportingLoopId.value === record.loopId) {
     return;
   }
   exportingLoopId.value = record.loopId;
+  const startedAt = Date.now();
+  startPdfProgressTicker();
   try {
     const blob = await exportDiagnosisPdfApi(record.loopId);
+    // 后端返回 Blob → 本地跳 100%，然后 1s 后自动归零
+    stopPdfProgressTicker(100);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -545,10 +593,20 @@ async function handleExportPdf(record: DiagnosisApi.TrackerItem) {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    message.success('诊断建议书已导出');
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    message.success(
+      `诊断建议书已导出（耗时 ${elapsed}s）。后续版本将升级为异步任务模式，进度可追踪可取消。`,
+    );
   } catch {
-    // 错误已由拦截器处理
+    // 错误已由拦截器处理，UI 上归零
+    stopPdfProgressTicker(0);
   } finally {
+    // 兜底：1.5s 后确保进度条隐藏
+    setTimeout(() => {
+      if (pdfExportTicker) {
+        stopPdfProgressTicker(0);
+      }
+    }, 1500);
     exportingLoopId.value = '';
   }
 }
@@ -946,18 +1004,37 @@ watch(
               >
                 A/B对比
               </Button>
-              <Button
-                v-if="canExportPdf"
-                type="link"
-                size="small"
-                :loading="exportingLoopId === record.loopId"
-                :disabled="
-                  exportingLoopId !== '' && exportingLoopId !== record.loopId
-                "
-                @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+              <Tooltip
+                title="后端同步生成诊断建议书（含诊断证据 / 波形 / 处置建议），内容复杂时约需 5~15s。后续版本将升级为异步任务模式（可取消、实时追踪进度）。"
               >
-                导出PDF
-              </Button>
+                <Button
+                  v-if="canExportPdf"
+                  type="link"
+                  size="small"
+                  :loading="exportingLoopId === record.loopId"
+                  :disabled="
+                    exportingLoopId !== '' && exportingLoopId !== record.loopId
+                  "
+                  @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+                >
+                  导出PDF
+                </Button>
+              </Tooltip>
+              <!-- P3-29：该行导出时在按钮旁显示内联进度条（同步导出的伪进度；切异步后替换为真实进度数据） -->
+              <div
+                v-if="exportingLoopId === record.loopId"
+                class="mt-2"
+                style="max-width: 220px"
+              >
+                <Progress
+                  :percent="pdfExportPercent"
+                  :show-info="true"
+                  size="small"
+                  :stroke-color="
+                    pdfExportPercent >= 100 ? '#198754' : '#0d6efd'
+                  "
+                />
+              </div>
             </div>
           </template>
         </template>

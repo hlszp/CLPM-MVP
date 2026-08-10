@@ -30,6 +30,7 @@ import {
   message,
   Modal,
   Popconfirm,
+  Progress,
   RadioGroup,
   Skeleton,
   Spin,
@@ -95,6 +96,44 @@ const loading = ref(false);
 const waveformLoading = ref(false);
 const recommendationsLoading = ref(false);
 const reportGenerating = ref(false);
+
+/**
+ * P3-29：PDF 导出本地伪进度（同 tracker.vue 约定）
+ *
+ * 同步模式下每 500ms 推进 8%，到 92% 后 hold；Blob 返回时跳到 100%。
+ * 后端 P3-33 上线后可直接将此 ref 连接到异步任务的真实进度。
+ */
+const pdfExportPercent = ref(0);
+let pdfExportTicker: null | ReturnType<typeof setInterval> = null;
+const PDF_EXPORT_TICK_MS = 500;
+const PDF_EXPORT_TICK_STEP = 8;
+const PDF_EXPORT_CAP_PERCENT = 92;
+
+function startPdfProgressTicker() {
+  if (pdfExportTicker) return;
+  pdfExportPercent.value = 0;
+  pdfExportTicker = setInterval(() => {
+    if (pdfExportPercent.value < PDF_EXPORT_CAP_PERCENT) {
+      pdfExportPercent.value = Math.min(
+        PDF_EXPORT_CAP_PERCENT,
+        pdfExportPercent.value + PDF_EXPORT_TICK_STEP,
+      );
+    }
+  }, PDF_EXPORT_TICK_MS);
+}
+
+function stopPdfProgressTicker(finalPercent = 100) {
+  if (pdfExportTicker) {
+    clearInterval(pdfExportTicker);
+    pdfExportTicker = null;
+  }
+  pdfExportPercent.value = Math.max(0, Math.min(100, finalPercent));
+  setTimeout(() => {
+    if (pdfExportPercent.value >= 100) {
+      pdfExportPercent.value = 0;
+    }
+  }, 1000);
+}
 const timelineLoading = ref(false);
 const statusUpdating = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
@@ -534,12 +573,16 @@ async function loadTrackerAndTimeline() {
   }
 }
 
-/** FE-14: 生成并下载诊断建议书 PDF */
+/** FE-14: 生成并下载诊断建议书 PDF（P3-29：同步模式增加本地伪进度反馈） */
 async function handleGenerateReport() {
   if (!loopId.value) return;
+  if (reportGenerating.value) return;
   reportGenerating.value = true;
+  const startedAt = Date.now();
+  startPdfProgressTicker();
   try {
     const blob = await generateDiagnosisReportApi(loopId.value);
+    stopPdfProgressTicker(100);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -548,10 +591,16 @@ async function handleGenerateReport() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    message.success('诊断建议书已生成');
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    message.success(
+      `诊断建议书已生成（耗时 ${elapsed}s）。后续版本将升级为异步任务模式，进度可追踪可取消。`,
+    );
   } catch {
-    // 错误已由拦截器处理
+    stopPdfProgressTicker(0);
   } finally {
+    setTimeout(() => {
+      if (pdfExportTicker) stopPdfProgressTicker(0);
+    }, 1500);
     reportGenerating.value = false;
   }
 }
@@ -1020,6 +1069,7 @@ onMounted(() => {
           icon="export"
           label="导出报告"
           :loading="reportGenerating"
+          tooltip="生成并导出诊断建议书 PDF（同步模式，含诊断证据/波形/处置建议）。内容复杂时约需 5~15s；后续版本将升级为异步任务模式，进度可追踪可取消。"
           @click="handleGenerateReport"
         />
         <ClpmToolbarButton
@@ -1031,6 +1081,19 @@ onMounted(() => {
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
+    <!-- P3-29：PDF 导出进度条（同步模式本地伪进度，切异步任务 API 后接真实进度） -->
+    <div v-if="reportGenerating" class="mx-4 mt-3" style="max-width: 520px">
+      <Progress
+        :percent="pdfExportPercent"
+        :show-info="true"
+        size="small"
+        :stroke-color="pdfExportPercent >= 100 ? '#198754' : '#0d6efd'"
+      />
+      <p class="mt-1 text-xs" style="color: hsl(var(--muted))">
+        正在生成诊断建议书 PDF（同步模式）… 复杂回路约需
+        5~15s，等待期间请勿关闭页面。
+      </p>
+    </div>
     <Spin :spinning="loading">
       <!-- P2-18：时间窗切换骨架屏过渡 -->
       <div v-if="loading && !detail" class="space-y-4 p-4">
@@ -1206,7 +1269,7 @@ onMounted(() => {
                       class="py-4 text-center"
                       :style="{ color: themeColors.NEUTRAL }"
                     >
-                      暂无特征值
+                      暂无特征值数据。请确认诊断时间窗内是否有有效过程数据，或调整时间窗后重新诊断
                     </div>
                   </div>
                 </div>
@@ -1266,7 +1329,8 @@ onMounted(() => {
                         class="py-12 text-center"
                         :style="{ color: themeColors.NEUTRAL }"
                       >
-                        暂无波形数据
+                        暂无波形数据。请确认时间窗内 PV/SP/OP 数据完整且质量码为
+                        Good，或扩大时间窗后重试
                       </div>
                     </ClpmDataCanvas>
 
@@ -1289,7 +1353,7 @@ onMounted(() => {
                         class="py-4 text-center"
                         :style="{ color: themeColors.NEUTRAL }"
                       >
-                        暂无推理过程
+                        暂无推理过程数据。推理过程在诊断执行时自动生成，如未执行过诊断请先触发诊断
                       </div>
                     </div>
                   </div>

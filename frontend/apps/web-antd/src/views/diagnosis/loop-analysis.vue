@@ -12,7 +12,7 @@ import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Step, Steps } from 'ant-design-vue';
+import { message, Step, Steps } from 'ant-design-vue';
 
 import { ClpmPageToolbar, ClpmStandardActions } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
@@ -40,9 +40,78 @@ const currentStepComponent = computed(
 );
 
 function handleNext() {
-  if (state.current < 4) {
-    state.current += 1;
+  if (state.current >= 4) return;
+
+  // ========== P3-26：步骤切换前校验前置数据完整性 ==========
+  // 校验目标：当前步的"产出数据"必须齐全，即下一步的"输入前置条件"
+  const nextStep = state.current + 1;
+
+  // Step 1 → 2：需要已选择回路 + 时间范围（Step 1 本地也有双校验，父级兜底）
+  if (nextStep === 2) {
+    if (!state.config.loopId) {
+      message.warning('请先选择回路，再进入下一步');
+      return;
+    }
+    if (!state.config.startTime || !state.config.endTime) {
+      message.warning('请先设置时间范围，再进入下一步');
+      return;
+    }
   }
+
+  // Step 2 → 3：需要 KPI 评估任务成功并拿到结果（status=SUCCESS + results 非空）
+  if (nextStep === 3) {
+    if (!state.kpi.taskId) {
+      message.warning('请先点击"开始 KPI 评估"触发评估任务，再进入下一步');
+      return;
+    }
+    const running =
+      state.kpi.status === 'PENDING' || state.kpi.status === 'RUNNING';
+    const failed =
+      state.kpi.status === 'FAILED' || state.kpi.status === 'CANCELLED';
+    if (running) {
+      message.warning('KPI 评估仍在进行中，请等待任务完成后再进入下一步');
+      return;
+    }
+    if (failed) {
+      message.warning(
+        `KPI 评估已${state.kpi.status === 'CANCELLED' ? '取消' : '失败'}，请重新触发评估后再进入下一步`,
+      );
+      return;
+    }
+    if (state.kpi.status !== 'SUCCESS' || state.kpi.results.length === 0) {
+      message.warning('KPI 评估尚未产出完整结果，请等待评估完成后再进入下一步');
+      return;
+    }
+  }
+
+  // Step 3 → 4：需要诊断任务成功并拿到诊断详情
+  if (nextStep === 4) {
+    if (!state.diag.taskId) {
+      message.warning('请先点击"开始诊断分析"触发诊断任务，再进入下一步');
+      return;
+    }
+    const running =
+      state.diag.status === 'PENDING' || state.diag.status === 'RUNNING';
+    const failed =
+      state.diag.status === 'FAILED' || state.diag.status === 'CANCELLED';
+    if (running) {
+      message.warning('诊断分析仍在进行中，请等待任务完成后再进入下一步');
+      return;
+    }
+    if (failed) {
+      message.warning(
+        `诊断任务已${state.diag.status === 'CANCELLED' ? '取消' : '失败'}，请重新触发诊断后再进入下一步`,
+      );
+      return;
+    }
+    if (state.diag.status !== 'SUCCESS' || !state.diag.detail) {
+      message.warning('诊断尚未产出完整结果，请等待诊断完成后再进入下一步');
+      return;
+    }
+  }
+
+  // 所有校验通过 → 推进到下一步
+  state.current = nextStep;
 }
 
 function onStepChange(target: number) {
