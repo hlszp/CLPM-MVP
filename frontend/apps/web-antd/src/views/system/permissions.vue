@@ -14,7 +14,7 @@ import { ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Card, Tag } from 'ant-design-vue';
+import { Card, Tag, Tooltip } from 'ant-design-vue';
 
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
 import {
@@ -148,6 +148,19 @@ function roleLabel(role: ClpmRole): string {
   return ROLE_LABELS[role] || role;
 }
 
+/** P3-40：角色职责说明（hover Tooltip 展示） */
+const ROLE_DESCRIPTIONS: Record<ClpmRole, string> = {
+  ADMIN: '系统管理员：全模块管理权限，负责系统配置、用户管理、运维监控',
+  EXPERT: '工艺专家：诊断协同 + 整定执行，提供专业判断和整定建议',
+  IC_ENGINEER: '仪控工程师：回路管理 + 诊断执行 + 整定执行，日常运维主力',
+  PE_ENGINEER: '性能工程师：监控/评估/诊断查看，关注KPI趋势和绩效',
+  SPONSOR: '赞助者：监控/评估只读，管理评审和决策视角',
+};
+
+function roleDescription(role: ClpmRole): string {
+  return ROLE_DESCRIPTIONS[role] || '';
+}
+
 function roleColor(role: ClpmRole): string {
   const map: Record<ClpmRole, string> = {
     ADMIN: 'red',
@@ -233,9 +246,11 @@ const { toolbarItems } = usePageToolbar(() => ({
           <tbody>
             <tr v-for="row in dataSource" :key="row.role">
               <td class="border border-gray-200 px-4 py-3">
-                <Tag :color="roleColor(row.role)">
-                  {{ roleLabel(row.role) }}
-                </Tag>
+                <Tooltip :title="roleDescription(row.role)" placement="right">
+                  <Tag :color="roleColor(row.role)">
+                    {{ roleLabel(row.role) }}
+                  </Tag>
+                </Tooltip>
               </td>
               <td
                 v-for="m in MODULES"

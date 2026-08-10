@@ -68,6 +68,12 @@ const statusOptions: { label: string; value: TuningApi.TaskStatus }[] = [
   { label: '已验证（旧）', value: 'VERIFIED' },
 ];
 
+/** P3-09：Select 搜索过滤函数 */
+function filterSelectOption(input: string, option: undefined | { label?: unknown }) {
+  const label = String(option?.label ?? '');
+  return label.toLowerCase().includes(input.toLowerCase());
+}
+
 /** 查询参数 */
 const query = reactive({
   algorithm: undefined as TuningApi.Algorithm | undefined,
@@ -544,6 +550,8 @@ watch(isDark, () => {
           placeholder="算法筛选"
           style="width: 200px"
           allow-clear
+          show-search
+          :filter-option="filterSelectOption"
           :options="algorithmOptions"
         />
         <Select
@@ -551,6 +559,8 @@ watch(isDark, () => {
           placeholder="状态筛选"
           style="width: 160px"
           allow-clear
+          show-search
+          :filter-option="filterSelectOption"
           :options="statusOptions"
         />
         <Button type="primary" :loading="loading" @click="handleSearch">

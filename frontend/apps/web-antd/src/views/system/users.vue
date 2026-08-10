@@ -27,6 +27,7 @@ import {
   message,
   Modal,
   Select,
+  Space,
   Table,
   Tag,
   Tooltip,
@@ -420,6 +421,32 @@ function roleColor(role: ClpmRole): string {
   return map[role] || 'default';
 }
 
+// ===== P3-38：密码复制 + 随机生成 =====
+
+/** 复制密码到剪贴板 */
+async function handleCopyPassword() {
+  if (!resetForm.newPassword) {
+    message.warning('请先输入新密码');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(resetForm.newPassword);
+    message.success('密码已复制到剪贴板');
+  } catch {
+    message.error('复制失败，请手动选择复制');
+  }
+}
+
+/** 生成随机密码（大小写+数字，12位） */
+function handleGeneratePassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let pwd = '';
+  for (let i = 0; i < 12; i++) {
+    pwd += chars[Math.floor(Math.random() * chars.length)];
+  }
+  resetForm.newPassword = pwd;
+}
+
 onMounted(() => {
   loadList();
 });
@@ -704,10 +731,29 @@ const { toolbarItems } = usePageToolbar(() => ({
           label="新密码"
           :rules="[{ required: true, message: '请输入新密码' }]"
         >
-          <Input.Password
-            v-model:value="resetForm.newPassword"
-            placeholder="请输入新密码"
-          />
+          <Space direction="vertical" class="w-full" :size="8">
+            <Input.Password
+              v-model:value="resetForm.newPassword"
+              placeholder="请输入新密码"
+            />
+            <Space :size="8">
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                @click="handleGeneratePassword"
+              >
+                随机生成
+              </Button>
+              <Button
+                size="small"
+                :disabled="!resetForm.newPassword"
+                @click="handleCopyPassword"
+              >
+                复制密码
+              </Button>
+            </Space>
+          </Space>
         </FormItem>
       </Form>
     </Modal>
