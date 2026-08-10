@@ -432,6 +432,26 @@ function handleHelp() {
   });
 }
 
+// ===== IA 整改 P2-04：筛选栏折叠高级（问题类型+算法默认折叠，控制类型/效果恒展开） =====
+const advancedFilterVisible = ref(false);
+/** 已选高级筛选 badge 显示：diagnosisLabel 或 algorithm 激活时折叠态仍展示已选 */
+const diagLabelActive = computed(
+  () => query.diagnosisLabel !== undefined && query.diagnosisLabel !== null,
+);
+const algorithmActive = computed(
+  () => query.algorithm !== undefined && query.algorithm !== null,
+);
+const diagLabelText = computed(() => {
+  const opt = DIAGNOSIS_LABEL_OPTIONS.find(
+    (o) => o.value === query.diagnosisLabel,
+  );
+  return opt?.label || '';
+});
+const algorithmText = computed(() => {
+  const opt = algorithmOptions.find((o) => o.value === query.algorithm);
+  return opt?.label || '';
+});
+
 // ===== 统一工具栏（标准 3 工具：刷新 / 列设置 / 帮助） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: loadData, loading: loading.value },
@@ -444,31 +464,16 @@ const { toolbarItems } = usePageToolbar(() => ({
   <Page :hide-footer="true">
     <ClpmPageToolbar
       title="整定知识库"
-      description="验证通过的整定案例自动沉淀，支持按控制类型/问题类型查询相似案例"
+      description="验证通过的整定案例自动沉淀，支持按控制类型/效果筛选相似案例，高级筛选含问题类型/算法"
       :loading="loading"
     >
-      <template #filters>
+      <!-- 常用筛选：控制类型/效果（IA 整改 P2-04：默认展开） -->
+      <div class="flex flex-wrap items-center gap-2">
         <Select
           v-model:value="query.loopType"
           :options="loopTypeOptions"
           allow-clear
           placeholder="控制类型"
-          style="width: 120px"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.diagnosisLabel"
-          :options="DIAGNOSIS_LABEL_OPTIONS"
-          allow-clear
-          placeholder="问题类型"
-          style="width: 140px"
-          @change="handleSearch"
-        />
-        <Select
-          v-model:value="query.algorithm"
-          :options="algorithmOptions"
-          allow-clear
-          placeholder="算法"
           style="width: 120px"
           @change="handleSearch"
         />
@@ -480,7 +485,62 @@ const { toolbarItems } = usePageToolbar(() => ({
           style="width: 100px"
           @change="handleSearch"
         />
-      </template>
+        <!-- 已选高级筛选 badge（折叠时展示，可一键清除） -->
+        <Tag
+          v-if="!advancedFilterVisible && diagLabelActive"
+          closable
+          class="bg-muted/40"
+          @close="
+            query.diagnosisLabel = undefined;
+            handleSearch();
+          "
+        >
+          问题类型：{{ diagLabelText }}
+        </Tag>
+        <Tag
+          v-if="!advancedFilterVisible && algorithmActive"
+          closable
+          class="bg-muted/40"
+          @close="
+            query.algorithm = undefined;
+            handleSearch();
+          "
+        >
+          算法：{{ algorithmText }}
+        </Tag>
+        <a
+          class="text-xs cursor-pointer select-none"
+          @click="advancedFilterVisible = !advancedFilterVisible"
+        >
+          <IconifyIcon
+            :icon="
+              advancedFilterVisible
+                ? 'ant-design:up-outlined'
+                : 'ant-design:down-outlined'
+            "
+            class="mr-0.5"
+          />
+          {{ advancedFilterVisible ? '收起高级' : '高级筛选' }}
+        </a>
+        <template v-if="advancedFilterVisible">
+          <Select
+            v-model:value="query.diagnosisLabel"
+            :options="DIAGNOSIS_LABEL_OPTIONS"
+            allow-clear
+            placeholder="问题类型"
+            style="width: 140px"
+            @change="handleSearch"
+          />
+          <Select
+            v-model:value="query.algorithm"
+            :options="algorithmOptions"
+            allow-clear
+            placeholder="算法"
+            style="width: 120px"
+            @change="handleSearch"
+          />
+        </template>
+      </div>
       <template #actions>
         <ClpmStandardActions
           :items="toolbarItems"
