@@ -51,6 +51,7 @@ from app.schemas.tuning import (
 from app.schemas.tuning_knowledge import (
     TuningKnowledgeEntryItem,
     TuningKnowledgeListData,
+    TuningKnowledgeListStats,
     TuningKnowledgeSimilarData,
 )
 from app.services.tuning import (
@@ -559,6 +560,7 @@ async def list_knowledge_base_endpoint(
         total=result["total"],
         page=result["page"],
         pageSize=result["pageSize"],
+        stats=TuningKnowledgeListStats(**result["stats"]) if result.get("stats") else None,
     )
     return success(data=data)
 

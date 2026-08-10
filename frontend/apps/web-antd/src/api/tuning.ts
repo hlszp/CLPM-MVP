@@ -613,12 +613,22 @@ export namespace KnowledgeBaseApi {
     pageSize?: number;
   }
 
+  /** 列表全局统计（当前筛选条件下，非当前页）。IA 整改 C-2/T-3 新增，旧后端可能为 null */
+  export interface ListStats {
+    total: number;
+    improvedCount: number;
+    deterioratedCount: number;
+    unverifiedCount: number;
+    avgImprovedMetrics: null | number;
+  }
+
   /** 列表响应 */
   export interface ListData {
     items: KnowledgeEntry[];
     total: number;
     page: number;
     pageSize: number;
+    stats?: ListStats | null;
   }
 
   /** 相似案例查询参数 */

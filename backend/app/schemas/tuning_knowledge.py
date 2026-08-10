@@ -49,6 +49,26 @@ class TuningKnowledgeEntryItem(CamelModel):
     createdAt: str | None = None
 
 
+class TuningKnowledgeListStats(CamelModel):
+    """知识库全局统计（当前筛选条件下，非当前页）。
+
+    IA 整改 C-2/T-3：改善/恶化案例数之前基于当前页 recordList 计算，
+    翻页时 KPI 跳变；现由后端带相同筛选条件一次性聚合，前端直接取用。
+    所有计数均基于筛选后的全局范围（WHERE 条件一致），不是当前页 items 的长度。
+    """
+
+    total: int = 0
+    """总条目数（与 TuningKnowledgeListData.total 数值一致，冗余便于前端统一取用）。"""
+    improvedCount: int = 0
+    """改善案例数（effect_verified = True）。"""
+    deterioratedCount: int = 0
+    """恶化案例数（effect_verified = False）。"""
+    unverifiedCount: int = 0
+    """未验证案例数（effect_verified IS NULL）。"""
+    avgImprovedMetrics: float | None = None
+    """平均改善指标数（improved_count 字段平均值，未验证/缺失不计入分母，保留 2 位小数）。"""
+
+
 class TuningKnowledgeListData(CamelModel):
     """知识库列表响应 data 块。"""
 
@@ -56,6 +76,8 @@ class TuningKnowledgeListData(CamelModel):
     total: int = 0
     page: int = 1
     pageSize: int = 20
+    stats: TuningKnowledgeListStats | None = None
+    """当前筛选条件下的全局统计（新增字段，前端需 ?. 兜底兼容旧后端）。"""
 
 
 class TuningKnowledgeSimilarData(CamelModel):

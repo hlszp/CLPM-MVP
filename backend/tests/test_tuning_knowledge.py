@@ -151,6 +151,30 @@ def _make_scalar_count_result(value: int) -> MagicMock:
     return result
 
 
+def _make_stats_row_result(
+    *,
+    total: int = 0,
+    improved: int = 0,
+    deteriorated: int = 0,
+    unverified: int = 0,
+    avg_improved: float | None = None,
+) -> MagicMock:
+    """构造 .one() 返回统计聚合行的 mock（IA 整改 C-2/T-3 stats 查询）。
+
+    list_knowledge_entries 现在会多执行一次 stats 聚合查询，
+    测试需在 side_effect 中补充本次返回。
+    """
+    row = MagicMock()
+    row.total = total
+    row.improved = improved
+    row.deteriorated = deteriorated
+    row.unverified = unverified
+    row.avg_improved = avg_improved
+    result = MagicMock()
+    result.one.return_value = row
+    return result
+
+
 # ---------------------------------------------------------------------------
 # _find_tuning_record 测试
 # ---------------------------------------------------------------------------
@@ -426,6 +450,7 @@ class TestListKnowledgeEntries:
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_count_result(3),  # COUNT
+                _make_stats_row_result(total=3),  # stats 聚合
                 _make_scalars_result(entries),  # SELECT
             ]
         )
@@ -435,6 +460,12 @@ class TestListKnowledgeEntries:
         assert len(result["items"]) == 3
         assert result["page"] == 1
         assert result["pageSize"] == 20
+        # IA 整改 C-2/T-3：stats 字段应被填充
+        assert result["stats"]["total"] == 3
+        assert result["stats"]["improvedCount"] == 0
+        assert result["stats"]["deterioratedCount"] == 0
+        assert result["stats"]["unverifiedCount"] == 0
+        assert result["stats"]["avgImprovedMetrics"] is None
 
     @pytest.mark.asyncio
     async def test_filter_by_loop_type(self) -> None:
@@ -443,6 +474,7 @@ class TestListKnowledgeEntries:
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_count_result(2),
+                _make_stats_row_result(total=2),
                 _make_scalars_result([_make_entry(), _make_entry()]),
             ]
         )
@@ -457,6 +489,7 @@ class TestListKnowledgeEntries:
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_count_result(1),
+                _make_stats_row_result(total=1),
                 _make_scalars_result([_make_entry()]),
             ]
         )
@@ -471,12 +504,15 @@ class TestListKnowledgeEntries:
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_count_result(5),
+                _make_stats_row_result(total=5, improved=5),
                 _make_scalars_result([_make_entry() for _ in range(5)]),
             ]
         )
 
         result = await list_knowledge_entries(db, effect_verified=True)
         assert result["total"] == 5
+        # 筛选 effect_verified=True 时，stats.improvedCount 应反映该筛选条件下的计数
+        assert result["stats"]["improvedCount"] == 5
 
     @pytest.mark.asyncio
     async def test_pagination(self) -> None:
@@ -485,6 +521,7 @@ class TestListKnowledgeEntries:
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_count_result(50),
+                _make_stats_row_result(total=50),
                 _make_scalars_result([_make_entry() for _ in range(10)]),
             ]
         )
@@ -500,6 +537,7 @@ class TestListKnowledgeEntries:
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_count_result(0),
+                _make_stats_row_result(total=0),
                 _make_scalars_result([]),
             ]
         )

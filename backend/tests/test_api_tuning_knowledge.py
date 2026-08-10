@@ -76,6 +76,13 @@ class TestListKnowledgeBase:
                     "total": 3,
                     "page": 1,
                     "pageSize": 20,
+                    "stats": {
+                        "total": 3,
+                        "improvedCount": 2,
+                        "deterioratedCount": 1,
+                        "unverifiedCount": 0,
+                        "avgImprovedMetrics": 3.5,
+                    },
                 },
             ),
             mock_current_user(TEST_USERS["admin"]),
@@ -93,6 +100,13 @@ class TestListKnowledgeBase:
         assert "tagName" in item
         assert "diagnosisLabel" in item
         assert "matchSource" in item
+        # IA 整改 C-2/T-3：stats 字段应透传到响应
+        stats = body["data"]["stats"]
+        assert stats["total"] == 3
+        assert stats["improvedCount"] == 2
+        assert stats["deterioratedCount"] == 1
+        assert stats["unverifiedCount"] == 0
+        assert stats["avgImprovedMetrics"] == 3.5
 
     def test_list_with_filters(self, client, mock_db, fake_redis) -> None:
         """支持筛选参数。"""
@@ -126,7 +140,19 @@ class TestListKnowledgeBase:
             patch(
                 "app.api.v1.endpoints.tuning.list_knowledge_entries",
                 new_callable=AsyncMock,
-                return_value={"items": [], "total": 0, "page": 1, "pageSize": 20},
+                return_value={
+                    "items": [],
+                    "total": 0,
+                    "page": 1,
+                    "pageSize": 20,
+                    "stats": {
+                        "total": 0,
+                        "improvedCount": 0,
+                        "deterioratedCount": 0,
+                        "unverifiedCount": 0,
+                        "avgImprovedMetrics": None,
+                    },
+                },
             ),
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
@@ -135,8 +161,12 @@ class TestListKnowledgeBase:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
-        assert resp.json()["data"]["total"] == 0
-        assert resp.json()["data"]["items"] == []
+        data = resp.json()["data"]
+        assert data["total"] == 0
+        assert data["items"] == []
+        # 空结果时 stats 仍应返回（全 0 / avg 为 null）
+        assert data["stats"]["total"] == 0
+        assert data["stats"]["avgImprovedMetrics"] is None
 
     def test_list_camel_case_response(self, client, mock_db, fake_redis) -> None:
         """响应字段为 camelCase。"""

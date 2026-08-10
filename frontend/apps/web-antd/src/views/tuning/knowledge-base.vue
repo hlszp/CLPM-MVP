@@ -48,6 +48,8 @@ const { preferences: columnPrefs, updateColumns: persistColumns } =
 const loading = ref(false);
 const recordList = ref<KnowledgeBaseApi.KnowledgeEntry[]>([]);
 const total = ref(0);
+/** 当前筛选条件下的全局统计（IA 整改 C-2/T-3：KPI 条改用全局值，避免翻页跳变） */
+const stats = ref<KnowledgeBaseApi.ListStats | null>(null);
 
 /** 详情抽屉 */
 const drawerVisible = ref(false);
@@ -101,8 +103,44 @@ function handleResetColumns() {
 // 数据
 // ---------------------------------------------------------------------------
 
-/** KPI 条 */
+/** KPI 条
+ * IA 整改 C-2/T-3：改善/恶化案例数之前基于当前页 recordList 计算，
+ * 翻页时"总条目"不变但其余 3 项跳变，误导用户。
+ * 现优先使用后端返回的全局统计 stats（与当前筛选条件一致）；
+ * 旧后端不返回 stats 时回退到当前页统计并告警，保持向后兼容。
+ */
 const kpiItems = computed<KpiStripItem[]>(() => {
+  const s = stats.value;
+  if (s) {
+    return [
+      { key: 'total', label: '总条目', value: s.total, status: 'neutral' },
+      {
+        key: 'improved',
+        label: '改善案例',
+        value: s.improvedCount,
+        status: 'success',
+      },
+      {
+        key: 'deteriorated',
+        label: '恶化案例',
+        value: s.deterioratedCount,
+        status: 'danger',
+      },
+      {
+        key: 'avgImproved',
+        label: '平均改善指标数',
+        value: s.avgImprovedMetrics ?? 0,
+        status: 'warning',
+      },
+    ];
+  }
+  // 兜底：旧后端未返回 stats，回退到当前页统计（行为同改造前）
+  if (!import.meta.env.PROD) {
+     
+    console.warn(
+      '[knowledge-base] 后端未返回 stats 字段，KPI 条回退到当前页统计。建议升级后端以获取全局统计。',
+    );
+  }
   const items = recordList.value;
   const improved = items.filter((e) => e.effectVerified === true).length;
   const deteriorated = items.filter((e) => e.effectVerified === false).length;
@@ -323,6 +361,7 @@ async function loadData() {
     });
     recordList.value = resp.items;
     total.value = resp.total;
+    stats.value = resp.stats ?? null;
   } finally {
     loading.value = false;
   }
