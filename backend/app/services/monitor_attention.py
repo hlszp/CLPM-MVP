@@ -336,6 +336,11 @@ def _build_actions(
 # ---------------------------------------------------------------------------
 
 
+#: 单来源最多聚合条数（MW-P5-04 性能优化：避免 10k+ 预警全量加载）
+#: 500 条足够覆盖前 25 页（pageSize=20），超出部分通过分页引导用户细化筛选
+_MAX_ITEMS_PER_SOURCE = 500
+
+
 async def _aggregate_alerts(
     db: AsyncSession,
     loop_ids: set[str] | None,
@@ -349,6 +354,7 @@ async def _aggregate_alerts(
             LoopLedger.is_active.is_(True),
         )
         .order_by(AlertEvent.triggered_at.desc())
+        .limit(_MAX_ITEMS_PER_SOURCE)
     )
     if loop_ids is not None:
         stmt = stmt.where(AlertEvent.loop_id.in_(list(loop_ids)))
@@ -607,6 +613,7 @@ async def _aggregate_trackers(
             ActionTracker.action_status.in_(("PENDING", "IN_PROGRESS", "VERIFYING")),
         )
         .order_by(ActionTracker.created_at.desc())
+        .limit(_MAX_ITEMS_PER_SOURCE)
     )
     if loop_ids is not None:
         stmt = stmt.where(ActionTracker.loop_id.in_(list(loop_ids)))
