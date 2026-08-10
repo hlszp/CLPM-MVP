@@ -61,16 +61,22 @@ onMounted(() => {
 
 /** 工具栏刷新态 */
 const loading = ref(false);
-/** 强制重载当前步骤组件（刷新时自增） */
-const reloadKey = ref(0);
 
-/** 工具栏刷新：强制重载当前步骤 */
-function handleRefresh() {
+/** P3-01：当前步骤子组件 ref，替代 reloadKey 强制重建 */
+interface StepRef {
+  refresh?: () => Promise<void> | void;
+}
+
+const stepRef = ref<null | StepRef>(null);
+
+/** P3-01：工具栏刷新：调用当前步骤子组件 refresh() 方法 */
+async function handleRefresh() {
   loading.value = true;
-  reloadKey.value += 1;
-  setTimeout(() => {
+  try {
+    await stepRef.value?.refresh?.();
+  } finally {
     loading.value = false;
-  }, 300);
+  }
 }
 
 /** 工具栏帮助 */
@@ -114,10 +120,11 @@ const { toolbarItems } = usePageToolbar(() => ({
       </Steps>
     </div>
 
+    <!-- P3-01：用 ref 绑定替代 :key="reloadKey" 强制重建 -->
     <keep-alive class="mt-4">
       <component
         :is="currentStepComponent"
-        :key="reloadKey"
+        ref="stepRef"
         :state="state"
         @next="handleNext"
       />

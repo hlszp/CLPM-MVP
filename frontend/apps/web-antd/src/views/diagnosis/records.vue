@@ -528,6 +528,14 @@ onMounted(() => {
   loadPlantNodes();
   loadList();
 });
+
+/** P3-01：暴露 refresh() 给 task-center.vue 调用，替代 tabKey 强制重建 */
+async function refresh() {
+  await loadPlantNodes();
+  await loadList();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>

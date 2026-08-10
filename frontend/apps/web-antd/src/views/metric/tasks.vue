@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -26,13 +26,26 @@ const defaultTab: TabKey = userRoles.value.includes('ADMIN')
   : 'manual';
 const activeTab = ref<TabKey>(defaultTab);
 
-/** 各 Tab 组件 key，切换时自增以强制重载 */
-const tabKeys = ref<Record<TabKey, number>>({
-  manual: 0,
-  auto: 0,
-  history: 0,
-  strategy: 0,
-});
+/** P3-01：子组件 ref，替代 tabKeys 自增强制重建 */
+interface TabRef {
+  refresh?: () => Promise<void> | void;
+}
+
+const manualRef = ref<null | TabRef>(null);
+const autoRef = ref<null | TabRef>(null);
+const historyRef = ref<null | TabRef>(null);
+const strategyRef = ref<null | TabRef>(null);
+
+/** 按 activeTab 获取对应子组件 ref */
+function getActiveTabRef(): null | TabRef {
+  const refMap: Record<TabKey, typeof manualRef> = {
+    manual: manualRef,
+    auto: autoRef,
+    history: historyRef,
+    strategy: strategyRef,
+  };
+  return refMap[activeTab.value]?.value ?? null;
+}
 
 const ManualTab = defineAsyncComponent(() => import('./recompute.vue'));
 const AutoTab = defineAsyncComponent(() => import('#/views/task/list.vue'));
@@ -63,17 +76,18 @@ async function loadActiveTaskCount() {
 function handleTabChange(key: number | string) {
   const k = String(key) as TabKey;
   activeTab.value = k;
-  tabKeys.value[k] += 1;
 }
 
-/** 工具栏刷新：强制重载当前 Tab（子组件各自重新拉取数据） */
-function handleRefresh() {
+/** P3-01：工具栏刷新：调用当前活动 Tab 子组件 refresh() 方法 */
+async function handleRefresh() {
   loading.value = true;
-  tabKeys.value[activeTab.value] += 1;
-  loadActiveTaskCount();
-  setTimeout(() => {
+  try {
+    await nextTick();
+    await getActiveTabRef()?.refresh?.();
+    await loadActiveTaskCount();
+  } finally {
     loading.value = false;
-  }, 300);
+  }
 }
 
 /** 工具栏帮助 */
@@ -81,7 +95,7 @@ function handleHelp() {
   showPageHelp({
     title: '评估任务 帮助',
     content:
-      '评估任务管理页：手动任务（按回路/时间窗口触发重算）、自动任务（定时评估计划）、评估历史（KPI 快照查询）、策略配置（评估参数与权重策略）。刷新按钮重载当前 Tab 内容。',
+      '评估任务管理页：手动任务（按回路/时间窗口触发重算）、自动任务（定时评估计划）、评估历史（KPI 快照查询）、策略配置（评估参数与权重策略）。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
   });
 }
 
@@ -107,28 +121,25 @@ onMounted(() => {
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
+    <!-- P3-01：所有 Tab 用 ref 绑定替代 :key 强制重建 -->
     <div class="mt-4">
       <Tabs v-model:active-key="activeTab" @change="handleTabChange">
         <TabPane key="manual" tab="手动任务">
-          <ManualTab :key="tabKeys.manual" />
+          <ManualTab ref="manualRef" />
         </TabPane>
         <TabPane key="auto">
           <template #tab>
-            <Badge
-              :count="activeTaskCount"
-              :offset="[6, 0]"
-              size="small"
-            >
+            <Badge :count="activeTaskCount" :offset="[6, 0]" size="small">
               <span>自动任务</span>
             </Badge>
           </template>
-          <AutoTab :key="tabKeys.auto" />
+          <AutoTab ref="autoRef" />
         </TabPane>
         <TabPane key="history" tab="评估历史">
-          <HistoryTab :key="tabKeys.history" />
+          <HistoryTab ref="historyRef" />
         </TabPane>
         <TabPane key="strategy" tab="策略配置">
-          <StrategyTab :key="tabKeys.strategy" />
+          <StrategyTab ref="strategyRef" />
         </TabPane>
       </Tabs>
     </div>

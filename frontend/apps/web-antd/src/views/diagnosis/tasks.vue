@@ -369,7 +369,9 @@ function canCancel(
   status: DiagnosisApi.TaskStatus,
   tabKey: TaskTabKey,
 ): boolean {
-  return tabKey !== 'archived' && (status === 'PENDING' || status === 'RUNNING');
+  return (
+    tabKey !== 'archived' && (status === 'PENDING' || status === 'RUNNING')
+  );
 }
 /** 删除：执行中（RUNNING）不可删除，须先取消 */
 function canDelete(status: DiagnosisApi.TaskStatus): boolean {
@@ -752,9 +754,7 @@ async function handleDeleteConfirm() {
     await deleteDiagnosisTaskApi(record.taskId);
     message.success('任务已删除');
     currentState.value.selectedRowKeys =
-      currentState.value.selectedRowKeys.filter(
-        (k) => k !== record.taskId,
-      );
+      currentState.value.selectedRowKeys.filter((k) => k !== record.taskId);
     deleteOpen.value = false;
     refreshAfterMutation();
   } finally {
@@ -894,6 +894,14 @@ onMounted(async () => {
   // P2-12 启动徽章 30s 自动刷新
   startBadgeRefresh();
 });
+
+/** P3-01：暴露 refresh() 给 task-center.vue 调用，替代 tabKey 强制重建 */
+async function refresh() {
+  await loadStats();
+  await loadTasks(activeTab.value);
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -1045,19 +1053,22 @@ onMounted(async () => {
                     style="width: 100px"
                   />
                   <!-- 诊断标签（任务完成后显示） -->
-                  <div v-if="record.labels?.length" class="flex flex-wrap gap-1 justify-center max-w-[180px]">
+                  <div
+                    v-if="record.labels?.length"
+                    class="flex flex-wrap gap-1 justify-center max-w-[180px]"
+                  >
                     <Tag
                       v-for="(lb, idx) in record.labels.slice(0, 3)"
                       :key="idx"
                       :color="DIAG_LABEL_MAP[lb.label]?.color ?? 'default'"
-                      style="font-size: 11px; padding: 0 4px; margin: 0"
+                      style="padding: 0 4px; margin: 0; font-size: 11px"
                     >
                       {{ diagLabelText(lb.label) }}
                       {{ (lb.confidence * 100).toFixed(0) }}%
                     </Tag>
                     <Tag
                       v-if="record.labels.length > 3"
-                      style="font-size: 11px; padding: 0 4px; margin: 0"
+                      style="padding: 0 4px; margin: 0; font-size: 11px"
                     >
                       +{{ record.labels.length - 3 }}
                     </Tag>
@@ -1098,9 +1109,7 @@ onMounted(async () => {
                     title="确认取消该任务？"
                     @confirm="handleCancel(record)"
                   >
-                    <Button size="small" type="link" danger>
-                      取消
-                    </Button>
+                    <Button size="small" type="link" danger> 取消 </Button>
                   </Popconfirm>
                   <Tooltip
                     v-if="canArchive(record.status, 'active')"
@@ -1122,9 +1131,7 @@ onMounted(async () => {
                     :ok-button-props="{ danger: true }"
                     @confirm="handleDelete(record)"
                   >
-                    <Button size="small" type="link" danger>
-                      删除
-                    </Button>
+                    <Button size="small" type="link" danger> 删除 </Button>
                   </Popconfirm>
                 </Space>
               </template>
@@ -1264,19 +1271,22 @@ onMounted(async () => {
                   <Tag :color="statusConfig[record.status]?.color ?? 'default'">
                     {{ statusConfig[record.status]?.text ?? '未知' }}
                   </Tag>
-                  <div v-if="record.labels?.length" class="flex flex-wrap gap-1 justify-center max-w-[180px]">
+                  <div
+                    v-if="record.labels?.length"
+                    class="flex flex-wrap gap-1 justify-center max-w-[180px]"
+                  >
                     <Tag
                       v-for="(lb, idx) in record.labels.slice(0, 3)"
                       :key="idx"
                       :color="DIAG_LABEL_MAP[lb.label]?.color ?? 'default'"
-                      style="font-size: 11px; padding: 0 4px; margin: 0"
+                      style="padding: 0 4px; margin: 0; font-size: 11px"
                     >
                       {{ diagLabelText(lb.label) }}
                       {{ (lb.confidence * 100).toFixed(0) }}%
                     </Tag>
                     <Tag
                       v-if="record.labels.length > 3"
-                      style="font-size: 11px; padding: 0 4px; margin: 0"
+                      style="padding: 0 4px; margin: 0; font-size: 11px"
                     >
                       +{{ record.labels.length - 3 }}
                     </Tag>
@@ -1332,9 +1342,7 @@ onMounted(async () => {
                     :ok-button-props="{ danger: true }"
                     @confirm="handleDelete(record)"
                   >
-                    <Button size="small" type="link" danger>
-                      删除
-                    </Button>
+                    <Button size="small" type="link" danger> 删除 </Button>
                   </Popconfirm>
                 </Space>
               </template>
@@ -1473,22 +1481,29 @@ onMounted(async () => {
                   <Tag :color="statusConfig[record.status]?.color ?? 'default'">
                     {{ statusConfig[record.status]?.text ?? '未知' }}
                   </Tag>
-                  <Tag v-if="record.isArchived" color="default" style="font-size: 11px; padding: 0 4px; margin: 0">
+                  <Tag
+                    v-if="record.isArchived"
+                    color="default"
+                    style="padding: 0 4px; margin: 0; font-size: 11px"
+                  >
                     归档于 {{ formatTime(record.archivedAt) }}
                   </Tag>
-                  <div v-if="record.labels?.length" class="flex flex-wrap gap-1 justify-center max-w-[180px]">
+                  <div
+                    v-if="record.labels?.length"
+                    class="flex flex-wrap gap-1 justify-center max-w-[180px]"
+                  >
                     <Tag
                       v-for="(lb, idx) in record.labels.slice(0, 3)"
                       :key="idx"
                       :color="DIAG_LABEL_MAP[lb.label]?.color ?? 'default'"
-                      style="font-size: 11px; padding: 0 4px; margin: 0"
+                      style="padding: 0 4px; margin: 0; font-size: 11px"
                     >
                       {{ diagLabelText(lb.label) }}
                       {{ (lb.confidence * 100).toFixed(0) }}%
                     </Tag>
                     <Tag
                       v-if="record.labels.length > 3"
-                      style="font-size: 11px; padding: 0 4px; margin: 0"
+                      style="padding: 0 4px; margin: 0; font-size: 11px"
                     >
                       +{{ record.labels.length - 3 }}
                     </Tag>
@@ -1519,9 +1534,7 @@ onMounted(async () => {
                     :ok-button-props="{ danger: true }"
                     @confirm="handleDelete(record)"
                   >
-                    <Button size="small" type="link" danger>
-                      删除
-                    </Button>
+                    <Button size="small" type="link" danger> 删除 </Button>
                   </Popconfirm>
                 </Space>
               </template>

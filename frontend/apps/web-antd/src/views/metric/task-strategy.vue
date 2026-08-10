@@ -237,6 +237,13 @@ async function confirmSave() {
   }
 }
 
+/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+function refresh() {
+  return loadStrategy();
+}
+
+defineExpose({ refresh });
+
 onMounted(() => {
   loadStrategy();
 });
@@ -254,12 +261,14 @@ onMounted(() => {
         label="刷新"
         @click="loadStrategy"
       />
+      <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
       <ClpmToolbarButton
         v-permission="['ADMIN']"
         icon="ant-design:save-outlined"
         variant="primary"
         :loading="saving"
         :disabled="!hasChange"
+        :disabled-reason="!hasChange ? '无修改内容' : ''"
         label="保存配置"
         @click="handleSave"
       />

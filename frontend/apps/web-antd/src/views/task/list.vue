@@ -390,6 +390,13 @@ function getTaskTitle(record: TaskApi.TaskItem): string {
 }
 
 // ============ 生命周期 ============
+/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+function refresh() {
+  return loadList();
+}
+
+defineExpose({ refresh });
+
 onMounted(() => {
   loadList();
 });
@@ -453,7 +460,10 @@ onUnmounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && taskList.length === 0"
+      empty-reason="暂无自动评估任务记录。点击「触发标准评估」可对全部回路执行标准 KPI 评估"
+      empty-action-text="触发标准评估"
       @retry="loadList"
+      @empty-action="handleTriggerStandard"
     >
       <Table
         :columns="columns"

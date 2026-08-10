@@ -164,6 +164,13 @@ const sortedRecommendations = computed(() =>
 function handleNext() {
   emit('next');
 }
+
+/** P3-01：暴露 refresh() 给 loop-analysis.vue 调用（诊断结果纯基于 state，refresh 空实现保持接口一致） */
+function refresh() {
+  /* 诊断可视化与标签完全基于 state，无需显式刷新 */
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>

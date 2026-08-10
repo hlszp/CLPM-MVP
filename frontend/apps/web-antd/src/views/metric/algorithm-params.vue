@@ -27,6 +27,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -565,6 +566,13 @@ async function handleSave() {
 onMounted(() => {
   loadData();
 });
+
+/** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
+function refresh() {
+  return loadData();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -811,15 +819,26 @@ onMounted(() => {
       <template #footer>
         <div class="flex justify-end gap-2">
           <Button @click="drawerOpen = false">取消</Button>
-          <Button
-            v-permission="['ADMIN']"
-            type="primary"
-            :loading="saving"
-            :disabled="!hasChanges || !isValid"
-            @click="handleSave"
+          <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+          <Tooltip
+            :title="
+              !hasChanges
+                ? '无修改内容'
+                : !isValid
+                  ? '存在无效输入，请检查'
+                  : ''
+            "
           >
-            保存
-          </Button>
+            <Button
+              v-permission="['ADMIN']"
+              type="primary"
+              :loading="saving"
+              :disabled="!hasChanges || !isValid"
+              @click="handleSave"
+            >
+              保存
+            </Button>
+          </Tooltip>
         </div>
       </template>
     </Drawer>

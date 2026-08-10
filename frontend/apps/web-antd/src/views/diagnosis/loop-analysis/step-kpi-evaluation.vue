@@ -156,6 +156,16 @@ watch(
   },
   { deep: true },
 );
+
+/** P3-01：暴露 refresh() 给 loop-analysis.vue 调用（KPI 结果基于 state，refresh 仅触发雷达图重绘） */
+async function refresh() {
+  await nextTick();
+  if (isSuccess.value) {
+    renderRadar();
+  }
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>

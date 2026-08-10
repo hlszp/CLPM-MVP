@@ -285,6 +285,14 @@ watch(isDark, () => {
 });
 
 onMounted(loadData);
+
+/** P3-01：暴露 refresh() 给 loop-analysis.vue 调用 */
+async function refresh() {
+  await loadData();
+  await loadTrend();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
