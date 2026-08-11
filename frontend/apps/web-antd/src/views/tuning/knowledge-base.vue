@@ -136,7 +136,6 @@ const kpiItems = computed<KpiStripItem[]>(() => {
   }
   // 兜底：旧后端未返回 stats，回退到当前页统计（行为同改造前）
   if (!import.meta.env.PROD) {
-     
     console.warn(
       '[knowledge-base] 后端未返回 stats 字段，KPI 条回退到当前页统计。建议升级后端以获取全局统计。',
     );

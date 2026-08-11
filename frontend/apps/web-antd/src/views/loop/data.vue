@@ -420,27 +420,46 @@ const taskColumns: TableColumnsType = [
                   h(Button, { size: 'small', danger: true }, () => '取消'),
               },
             )
-          : h(
-              Button,
+          : // P3-07：disabled 回算按钮增加 Tooltip 说明原因
+            h(
+              Tooltip,
               {
-                size: 'small',
-                type: 'link',
-                disabled: record.status !== 'SUCCESS',
-                onClick: () => handleBackfill(record.taskId),
+                title:
+                  record.status === 'SUCCESS' ? '' : '仅导入成功的任务可回算',
               },
-              () => '回算',
+              {
+                default: () =>
+                  h(
+                    Button,
+                    {
+                      size: 'small',
+                      type: 'link',
+                      disabled: record.status !== 'SUCCESS',
+                      onClick: () => handleBackfill(record.taskId),
+                    },
+                    () => '回算',
+                  ),
+              },
             ),
         // 删除按钮：仅终态任务可删除（活跃任务需先取消）
+        // P3-07：disabled 删除按钮增加 Tooltip 说明原因
         h(
-          Button,
+          Tooltip,
+          { title: isActive ? '执行中/待执行的任务不可删除，请先取消' : '' },
           {
-            size: 'small',
-            type: 'link',
-            danger: true,
-            disabled: isActive,
-            onClick: () => handleDelete(record.taskId),
+            default: () =>
+              h(
+                Button,
+                {
+                  size: 'small',
+                  type: 'link',
+                  danger: true,
+                  disabled: isActive,
+                  onClick: () => handleDelete(record.taskId),
+                },
+                () => '删除',
+              ),
           },
-          () => '删除',
         ),
       ]);
     },

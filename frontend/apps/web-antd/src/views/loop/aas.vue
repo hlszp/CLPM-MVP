@@ -1469,15 +1469,22 @@ onMounted(loadConfig);
                 >
                   + 新增品牌
                 </Button>
-                <Button
-                  v-permission="['ADMIN']"
-                  size="small"
-                  type="primary"
-                  :disabled="vendors.length === 0"
-                  @click="openModelModal()"
+                <!-- P3-07：无厂商时 disabled 增加 Tooltip -->
+                <Tooltip
+                  :title="
+                    vendors.length === 0 ? '请先添加厂商后再新增型号' : ''
+                  "
                 >
-                  + 新增型号
-                </Button>
+                  <Button
+                    v-permission="['ADMIN']"
+                    size="small"
+                    type="primary"
+                    :disabled="vendors.length === 0"
+                    @click="openModelModal()"
+                  >
+                    + 新增型号
+                  </Button>
+                </Tooltip>
               </div>
             </template>
             <Alert

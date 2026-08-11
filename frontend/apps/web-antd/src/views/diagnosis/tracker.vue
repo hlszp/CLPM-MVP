@@ -53,6 +53,7 @@ import dayjs from 'dayjs';
 
 import {
   exportDiagnosisPdfApi,
+  exportDiagnosisPdfAsyncApi,
   exportDiagnosisStatisticsApi,
   getTrackerListApi,
   updateTrackerStatusApi,
@@ -69,6 +70,7 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useAsyncPdfExport } from '#/composables/use-async-pdf-export';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
@@ -414,47 +416,38 @@ const abCompareImplementedAt = ref('');
 const exportingLoopId = ref('');
 
 /**
- * P3-29：PDF 导出本地伪进度百分比（0-100）
- *
- * 现状：后端 API 仍是同步生成 `POST /tracker/{loopId}/export`（无异步 taskId 无进度接口）
- * 方案：前端在同步请求期间按固定节拍推进进度至 92% cap（避免显示为挂死），
- *       Blob 到达时瞬间跳到 100%。后端 P3-33 提供异步任务+进度 API 后，
- *       只需把 handleExportPdf 的进度源从 setInterval 换成 usePolling(taskId) 即可。
+ * V62-P3-33：PDF 导出改为异步任务模式（真实进度源=TaskTracker，不再使用本地伪进度）。
+ * 进度语义（与后端 generate_diagnosis_pdf_task 严格对齐）：
+ *   0.25  加载回路信息与诊断快照
+ *   0.50  获取整改推荐方案
+ *   0.75  生成 PDF 字节
+ *   0.95  写入导出目录
+ *   1.00  完成，自动 window.open 下载
  */
-const pdfExportPercent = ref(0);
-let pdfExportTicker: null | ReturnType<typeof setInterval> = null;
-const PDF_EXPORT_TICK_MS = 500;
-const PDF_EXPORT_TICK_STEP = 8;
-const PDF_EXPORT_CAP_PERCENT = 92;
+const {
+  currentStage: pdfExportStage,
+  isRunning: pdfExportRunning,
+  progress: pdfExportProgress,
+  runningTaskId: pdfExportRunningTaskId,
+  run: runPdfExport,
+} = useAsyncPdfExport();
 
-/** 启动本地伪进度 ticker */
-function startPdfProgressTicker() {
-  if (pdfExportTicker) return;
-  pdfExportPercent.value = 0;
-  pdfExportTicker = setInterval(() => {
-    if (pdfExportPercent.value < PDF_EXPORT_CAP_PERCENT) {
-      pdfExportPercent.value = Math.min(
-        PDF_EXPORT_CAP_PERCENT,
-        pdfExportPercent.value + PDF_EXPORT_TICK_STEP,
-      );
-    }
-  }, PDF_EXPORT_TICK_MS);
-}
-
-/** 停止 ticker 并强制跳到指定百分比 */
-function stopPdfProgressTicker(finalPercent = 100) {
-  if (pdfExportTicker) {
-    clearInterval(pdfExportTicker);
-    pdfExportTicker = null;
+/**
+ * 保持旧接口 exportingLoopId='{loopId}' 的语义用于在表格行内定位：
+ * 点击某行导出时把 loopId 写进 exportingLoopId，让模板 v-if 匹配该行。
+ * 因为 P3-33 进度是全局（TaskTracker 一次只运行一个），同一时刻 exportingLoopId
+ * 最多一个非空。
+ */
+watch(pdfExportRunningTaskId, (taskId, prevTaskId) => {
+  if (!taskId && prevTaskId) {
+    // 任务进入终态（成功/失败/取消），1.2s 后清理 exportingLoopId
+    setTimeout(() => {
+      if (!pdfExportRunningTaskId.value) {
+        exportingLoopId.value = '';
+      }
+    }, 1200);
   }
-  pdfExportPercent.value = Math.max(0, Math.min(100, finalPercent));
-  // 100ms 后归 0 以便下次导出显示为 0 起步
-  setTimeout(() => {
-    if (pdfExportPercent.value >= 100) {
-      pdfExportPercent.value = 0;
-    }
-  }, 1000);
-}
+});
 
 /** 工具栏 CSV 统计导出 loading（防重复点击） */
 const exportingCsv = ref(false);
@@ -573,41 +566,49 @@ function buildExportFileName(tagName: string): string {
   return `CLPM-诊断建议书-${tagName}-${date}.pdf`;
 }
 
-/** 导出 PDF（P3-29：同步模式下增加本地伪进度反馈；后端 P3-33 异步 API 上线后将切到真实进度轮询） */
+/**
+ * 导出 PDF（V62-P3-33 异步任务模式：提交 taskId → TaskTracker 轮询 → 100% 自动下载）
+ *
+ * 保留 fallback 分支：如果异步提交抛错（后端版本不匹配 / 数据库异常），
+ * 自动降级为同步 Blob 下载（旧行为，便于零停机兼容）。
+ */
 async function handleExportPdf(record: DiagnosisApi.TrackerItem) {
-  if (exportingLoopId.value === record.loopId) {
+  if (pdfExportRunning.value || exportingLoopId.value !== '') {
     return;
   }
   exportingLoopId.value = record.loopId;
   const startedAt = Date.now();
-  startPdfProgressTicker();
   try {
-    const blob = await exportDiagnosisPdfApi(record.loopId);
-    // 后端返回 Blob → 本地跳 100%，然后 1s 后自动归零
-    stopPdfProgressTicker(100);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = buildExportFileName(record.tagName);
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    await runPdfExport(() =>
+      exportDiagnosisPdfAsyncApi(record.loopId).then((res) => ({
+        taskId: res.taskId,
+      })),
+    );
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
     message.success(
-      `诊断建议书已导出（耗时 ${elapsed}s）。后续版本将升级为异步任务模式，进度可追踪可取消。`,
+      `诊断建议书异步导出任务已提交（从提交到下载耗时 ${elapsed}s），进度可在「任务中心」追踪。`,
     );
   } catch {
-    // 错误已由拦截器处理，UI 上归零
-    stopPdfProgressTicker(0);
-  } finally {
-    // 兜底：1.5s 后确保进度条隐藏
-    setTimeout(() => {
-      if (pdfExportTicker) {
-        stopPdfProgressTicker(0);
-      }
-    }, 1500);
-    exportingLoopId.value = '';
+    // 异步链路失败：降级为同步 Blob 下载（兼容旧行为）
+    try {
+      const blob = await exportDiagnosisPdfApi(record.loopId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildExportFileName(record.tagName);
+      document.body.append(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      message.success(
+        `诊断建议书已同步导出（耗时 ${elapsed}s，已自动降级兼容）`,
+      );
+    } finally {
+      setTimeout(() => {
+        exportingLoopId.value = '';
+      }, 1200);
+    }
   }
 }
 
@@ -1005,13 +1006,15 @@ watch(
                 A/B对比
               </Button>
               <Tooltip
-                title="后端同步生成诊断建议书（含诊断证据 / 波形 / 处置建议），内容复杂时约需 5~15s。后续版本将升级为异步任务模式（可取消、实时追踪进度）。"
+                title="异步生成诊断建议书 PDF（含诊断证据 / 波形 / 处置建议）；提交后在本行实时显示进度，完成后自动下载，详细可到「系统管理 → 任务中心」追踪。"
               >
                 <Button
                   v-if="canExportPdf"
                   type="link"
                   size="small"
-                  :loading="exportingLoopId === record.loopId"
+                  :loading="
+                    exportingLoopId === record.loopId && pdfExportRunning
+                  "
                   :disabled="
                     exportingLoopId !== '' && exportingLoopId !== record.loopId
                   "
@@ -1020,20 +1023,37 @@ watch(
                   导出PDF
                 </Button>
               </Tooltip>
-              <!-- P3-29：该行导出时在按钮旁显示内联进度条（同步导出的伪进度；切异步后替换为真实进度数据） -->
+              <!-- V62-P3-33：异步任务真实进度（进度源=TaskTracker，0.25/0.50/0.75/0.95/1.00 五段） -->
               <div
-                v-if="exportingLoopId === record.loopId"
+                v-if="
+                  exportingLoopId === record.loopId &&
+                  (pdfExportRunning ||
+                    (Number.isFinite(pdfExportProgress) &&
+                      pdfExportProgress > 0))
+                "
                 class="mt-2"
                 style="max-width: 220px"
               >
                 <Progress
-                  :percent="pdfExportPercent"
+                  :percent="
+                    Number.isFinite(pdfExportProgress)
+                      ? Math.round(pdfExportProgress * 100)
+                      : 0
+                  "
                   :show-info="true"
                   size="small"
                   :stroke-color="
-                    pdfExportPercent >= 100 ? '#198754' : '#0d6efd'
+                    Number.isFinite(pdfExportProgress) && pdfExportProgress >= 1
+                      ? '#198754'
+                      : '#0d6efd'
                   "
                 />
+                <div
+                  class="mt-1 text-[11px] leading-tight"
+                  :style="{ color: 'var(--clpm-text-subtle)' }"
+                >
+                  {{ pdfExportStage || '生成中…' }}
+                </div>
               </div>
             </div>
           </template>

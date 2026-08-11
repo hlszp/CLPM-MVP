@@ -1059,6 +1059,20 @@ export function exportDiagnosisPdfApi(loopId: string) {
 }
 
 /**
+ * V62-P3-33：异步提交「整改建议书 PDF」导出（避免大回路网关超时）。
+ *
+ * 返回 { taskId }，前端轮询 GET /tasks/{taskId}，进度 100% 后通过
+ * buildTaskDownloadUrl(taskId) 调用 window.open 触发下载。
+ */
+export function exportDiagnosisPdfAsyncApi(loopId: string) {
+  return requestClient.post<{ message?: string; taskId: string; }>(
+    `/tracker/${loopId}/export`,
+    undefined,
+    { params: { async: true } },
+  );
+}
+
+/**
  * 获取诊断统计报表 — IDS v3.2 §2.4
  */
 export function getDiagnosisAnalyticsApi(
@@ -1115,9 +1129,7 @@ export function getRecommendationsApi(loopId: string, tagCodes?: string[]) {
 }
 
 /**
- * 生成并下载诊断建议书 PDF — SVC-12
- *
- * 返回 Blob，前端通过 URL.createObjectURL 触发下载。
+ * 生成并下载诊断建议书 PDF — SVC-12（同步，直接返回 Blob）
  */
 export function generateDiagnosisReportApi(
   loopId: string,
@@ -1127,6 +1139,21 @@ export function generateDiagnosisReportApi(
     data,
     method: 'POST',
   });
+}
+
+/**
+ * V62-P3-33：异步生成「诊断建议书 PDF」，返回 { taskId }，与 tracker 异步导出
+ * 共用同一套 TaskTracker 轮询+下载链路。
+ */
+export function generateDiagnosisReportAsyncApi(
+  loopId: string,
+  data?: DiagnosisApi.DiagnosisReportParams,
+) {
+  return requestClient.post<{ message?: string; taskId: string; }>(
+    `/diagnosis/${loopId}/report`,
+    data ?? {},
+    { params: { async: true } },
+  );
 }
 
 /**

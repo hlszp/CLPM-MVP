@@ -19,7 +19,17 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { Alert, Button, Card, Descriptions, DescriptionsItem, Drawer, Spin, Table, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  DescriptionsItem,
+  Drawer,
+  Spin,
+  Table,
+  Tag,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
@@ -262,36 +272,53 @@ const pendingTuningCount = computed(() => {
 });
 
 /**
- * 后端当前未提供风险统计，必须明确展示“未计算”。
- * 不得用 0 代替未知；后续只有接口明确返回 calculated=true 且 count=0，
- * 才能把 0 作为真实统计值展示。
+ * V62-P2-22：风险 KPI 已改为后端统计对接（get_tuning_history_stats）。
+ * 语义：只有 riskSummary.calculated=true（即任意记录已生成 risk_assessment）
+ * 时，前端才能把 0 当真实值。否则显示"— 未计算"，不得用 0 冒充未知。
  */
-const uncalculatedRiskValue = '—';
-const uncalculatedRiskUnit = '未计算';
+const UNKNOWN_RISK_VALUE = '—';
+const UNKNOWN_RISK_UNIT = '未计算';
 
 /** 风险相关 KPI 指标（整改 A-03：去掉与上排重复的"已完成数"，零值中性） */
-const riskKpiItems = computed<KpiStripItem[]>(() => [
-  {
-    key: 'highRisk',
-    label: '风险任务数',
-    value: uncalculatedRiskValue,
-    unit: uncalculatedRiskUnit,
-    status: 'neutral',
-  },
-  {
-    key: 'overThreshold',
-    label: '超阈值任务数',
-    value: uncalculatedRiskValue,
-    unit: uncalculatedRiskUnit,
-    status: 'neutral',
-  },
-  {
-    key: 'pending',
-    label: '待整定数',
-    value: pendingTuningCount.value,
-    status: 'neutral',
-  },
-]);
+const riskKpiItems = computed<KpiStripItem[]>(() => {
+  const stats = historyStats.value;
+  const summary = stats?.riskSummary;
+  const calculated = Boolean(summary?.calculated);
+  const high = calculated ? Number(summary!.high) || 0 : Number.NaN;
+  const medium = calculated ? Number(summary!.medium) || 0 : Number.NaN;
+  // overThreshold = MEDIUM + HIGH（PID 变幅 ≥20% 或可信度不够，属"超阈值"风险）
+  const overThreshold = calculated ? high + medium : Number.NaN;
+  // pendingCount：后端明确返回优先；否则回退到现有 byStatus 派生（保持兼容）
+  const pending = stats?.pendingCount ?? pendingTuningCount.value;
+
+  return [
+    {
+      key: 'highRisk',
+      label: '风险任务数',
+      value: calculated ? String(high) : UNKNOWN_RISK_VALUE,
+      unit: calculated ? '项' : UNKNOWN_RISK_UNIT,
+      status: calculated ? (high > 0 ? 'danger' : 'success') : 'neutral',
+    },
+    {
+      key: 'overThreshold',
+      label: '超阈值任务数',
+      value: calculated ? String(overThreshold) : UNKNOWN_RISK_VALUE,
+      unit: calculated ? '项' : UNKNOWN_RISK_UNIT,
+      status: calculated
+        ? (overThreshold > 0
+          ? 'warning'
+          : 'success')
+        : 'neutral',
+    },
+    {
+      key: 'pending',
+      label: '待整定数',
+      value: String(pending),
+      unit: '项',
+      status: pending > 0 ? 'warning' : 'success',
+    },
+  ];
+});
 
 /** 加载整定历史统计 */
 async function loadHistory() {
@@ -992,13 +1019,13 @@ onMounted(() => {
             <span v-else>—</span>
           </DescriptionsItem>
           <DescriptionsItem label="PID 变化">
-            {{ pidChangeText(caseDetailItem.pidBefore, caseDetailItem.pidAfter) }}
+            {{
+              pidChangeText(caseDetailItem.pidBefore, caseDetailItem.pidAfter)
+            }}
           </DescriptionsItem>
           <DescriptionsItem label="效果">
             <Tag
-              :color="
-                caseDetailItem.effectVerified === false ? 'red' : 'green'
-              "
+              :color="caseDetailItem.effectVerified === false ? 'red' : 'green'"
             >
               {{
                 caseDetailItem.effectVerified === false
@@ -1008,7 +1035,10 @@ onMounted(() => {
                     : '未验证'
               }}
             </Tag>
-            <span v-if="caseDetailItem.improvedCount" class="ml-2 text-green-600">
+            <span
+              v-if="caseDetailItem.improvedCount"
+              class="ml-2 text-green-600"
+            >
               改善 {{ caseDetailItem.improvedCount }} 项
             </span>
             <span
@@ -1019,7 +1049,11 @@ onMounted(() => {
             </span>
           </DescriptionsItem>
           <DescriptionsItem label="实施时间">
-            {{ caseDetailItem.implementedAt ? formatTime(caseDetailItem.implementedAt) : '—' }}
+            {{
+              caseDetailItem.implementedAt
+                ? formatTime(caseDetailItem.implementedAt)
+                : '—'
+            }}
           </DescriptionsItem>
         </Descriptions>
       </template>

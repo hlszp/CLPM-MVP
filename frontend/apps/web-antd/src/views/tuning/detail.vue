@@ -110,7 +110,8 @@ function anchorGateHint(anchor: number): string {
   if (anchor === 1 && !canAccessPid.value) return '请先完成「过程辨识」步骤';
   if (anchor === 2 && !canAccessSimulation.value)
     return '请先完成「PID 推荐」步骤，生成候选 PID 参数';
-  if (anchor === 3 && !canAccessConfirm.value) return '请先完成「闭环仿真」步骤';
+  if (anchor === 3 && !canAccessConfirm.value)
+    return '请先完成「闭环仿真」步骤';
   return '';
 }
 
@@ -241,37 +242,37 @@ watch(
               background: `${themeColors.SUCCESS}10`,
             }"
           >
-          <IconifyIcon
-            icon="ant-design:safety-certificate-outlined"
-            :size="16"
-          />
-          <span :style="{ color: themeColors.NEUTRAL }">可信度</span>
-          <Tag color="success" class="!m-0">
-            {{ identifyConfidence.level }}
-          </Tag>
-          <span
-            v-if="identifyConfidence.score !== null"
-            class="text-xs"
-            :style="{ color: themeColors.NEUTRAL }"
+            <IconifyIcon
+              icon="ant-design:safety-certificate-outlined"
+              :size="16"
+            />
+            <span :style="{ color: themeColors.NEUTRAL }">可信度</span>
+            <Tag color="success" class="!m-0">
+              {{ identifyConfidence.level }}
+            </Tag>
+            <span
+              v-if="identifyConfidence.score !== null"
+              class="text-xs"
+              :style="{ color: themeColors.NEUTRAL }"
+            >
+              拟合 {{ Number(identifyConfidence.score).toFixed(2) }}
+            </span>
+          </div>
+          <!-- 当前 PID 徽章 -->
+          <div
+            v-if="currentPid"
+            class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
+            :style="{
+              borderColor: themeColors.INFO,
+              background: `${themeColors.INFO}10`,
+            }"
           >
-            拟合 {{ Number(identifyConfidence.score).toFixed(2) }}
-          </span>
-        </div>
-        <!-- 当前 PID 徽章 -->
-        <div
-          v-if="currentPid"
-          class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
-          :style="{
-            borderColor: themeColors.INFO,
-            background: `${themeColors.INFO}10`,
-          }"
-        >
-          <IconifyIcon icon="ant-design:control-outlined" :size="16" />
-          <span :style="{ color: themeColors.NEUTRAL }">推荐 PID</span>
-          <span class="font-mono text-xs">
-            P={{ currentPid.kp }} I={{ currentPid.ti }} D={{ currentPid.td }}
-          </span>
-        </div>
+            <IconifyIcon icon="ant-design:control-outlined" :size="16" />
+            <span :style="{ color: themeColors.NEUTRAL }">推荐 PID</span>
+            <span class="font-mono text-xs">
+              P={{ currentPid.kp }} I={{ currentPid.ti }} D={{ currentPid.td }}
+            </span>
+          </div>
         </div>
       </template>
       <template #actions>
@@ -305,17 +306,17 @@ watch(
             @keydown.enter="handleAnchorChange(anchor.key)"
             @keydown.space.prevent="handleAnchorChange(anchor.key)"
           >
-          <div class="anchor-index">{{ anchor.key + 1 }}</div>
-          <div class="anchor-body">
-            <div class="anchor-title">{{ anchor.title }}</div>
-            <div
-              class="anchor-subtitle"
-              :style="{ color: themeColors.NEUTRAL }"
-            >
-              {{ anchor.subtitle }}
+            <div class="anchor-index">{{ anchor.key + 1 }}</div>
+            <div class="anchor-body">
+              <div class="anchor-title">{{ anchor.title }}</div>
+              <div
+                class="anchor-subtitle"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
+                {{ anchor.subtitle }}
+              </div>
             </div>
           </div>
-        </div>
         </Tooltip>
       </div>
     </div>
@@ -376,12 +377,12 @@ watch(
 
 /* P3-35：active 锚点增加左侧色条增强视觉定位 */
 .anchor-item--active::before {
-  content: '';
   position: absolute;
   top: 50%;
   left: 0;
   width: 3px;
   height: 60%;
+  content: '';
   background: hsl(var(--primary));
   border-radius: 0 2px 2px 0;
   transform: translateY(-50%);

@@ -85,6 +85,24 @@ class RealtimeWebSocket {
   }
 
   /**
+   * 注册连接状态变化回调（P2 #38 UX14）
+   *
+   * WS 连接成功 / 断开 / 重连成功时触发，调用方可据此切换轮询策略
+   */
+  onConnectionChange(handler: () => void): () => void {
+    this.connectionHandlers.add(handler);
+    return () => this.connectionHandlers.delete(handler);
+  }
+
+  /**
+   * 注册消息回调
+   */
+  onMessage(handler: MessageHandler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
+  }
+
+  /**
    * P2-08：手动重连（清除自动重连定时器后立即重连）
    *
    * 供断线提示 Banner 的"重连"按钮调用。
@@ -101,24 +119,6 @@ class RealtimeWebSocket {
       this.ws = null;
     }
     this._doConnect();
-  }
-
-  /**
-   * 注册连接状态变化回调（P2 #38 UX14）
-   *
-   * WS 连接成功 / 断开 / 重连成功时触发，调用方可据此切换轮询策略
-   */
-  onConnectionChange(handler: () => void): () => void {
-    this.connectionHandlers.add(handler);
-    return () => this.connectionHandlers.delete(handler);
-  }
-
-  /**
-   * 注册消息回调
-   */
-  onMessage(handler: MessageHandler): () => void {
-    this.handlers.add(handler);
-    return () => this.handlers.delete(handler);
   }
 
   private _doConnect() {

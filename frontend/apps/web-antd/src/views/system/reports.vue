@@ -389,9 +389,8 @@ async function handleBatchGenerate() {
     const results = await Promise.allSettled(
       targets.map((r) => generateReportApi(r.id)),
     );
-    const succeeded = results.filter(
-      (r) => r.status === 'fulfilled',
-    ).length as number;
+    const succeeded = results.filter((r) => r.status === 'fulfilled')
+      .length as number;
     const failed = results.length - succeeded;
     // 为成功提交的任务设置进度跟踪
     for (const [i, target] of targets.entries()) {
@@ -639,14 +638,25 @@ const { toolbarItems } = usePageToolbar(() => ({
               >
                 编辑
               </Button>
-              <Button
-                type="link"
-                size="small"
-                :disabled="!record.isEnabled || !!getTaskProgress(record.id)"
-                @click="handleGenerate(record as SystemApi.ReportConfig)"
+              <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+              <Tooltip
+                :title="
+                  !record.isEnabled
+                    ? '报表已停用，请先启用后再生成'
+                    : getTaskProgress(record.id)
+                      ? '该报表正在生成中，请等待完成'
+                      : ''
+                "
               >
-                立即生成
-              </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  :disabled="!record.isEnabled || !!getTaskProgress(record.id)"
+                  @click="handleGenerate(record as SystemApi.ReportConfig)"
+                >
+                  立即生成
+                </Button>
+              </Tooltip>
               <Button
                 type="link"
                 size="small"

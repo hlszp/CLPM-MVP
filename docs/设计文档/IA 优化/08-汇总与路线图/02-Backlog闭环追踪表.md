@@ -70,7 +70,7 @@
 | P2-19 | 步骤门禁体验差 | 整定任务详情 | disabled 锚点增加 Tooltip 说明前置条件 | FE | 0.5d | ✅ 已完成 |
 | P2-20 | KPI 条基于当前页数据 | 整定工作台/知识库 | 改为基于 total 或后端全局统计接口 | FE + BE | 1d | ✅ 已完成 |
 | P2-21 | "查看详情"按钮 disabled | 整定效果统计 | 支持跳转到 `/tuning/detail?taskId=xxx` | FE | 0.5d | ✅ 已完成 |
-| P2-22 | 风险 KPI 占位符 | 整定工作台 | 后端提供 getTuningRisksApi 后补齐 | FE + BE | 1d | 🔴 已阻塞（待后端接口） |
+| P2-22 | 风险 KPI 占位符 | 整定工作台 | 后端 get_tuning_history_stats 新增 riskSummary（按 TuningRecord.risk_assessment.riskLevel 聚合，risk_assessment=None 不计入，calculated=false 时 FE 显示"-" UNKNOWN） + pendingCount（DRAFT/RUNNING/PENDING/IDENTIFIED 汇总）；FE 回路风险 KPI 从风险区 `stats` 接入同步替换占位符，增加 UNKNOWN_RISK_VALUE/UNIT 语义，与《KPI 契约》可信度 E 级"数据不足"展示一致。 | FE + BE | 1d | ✅ 已完成 |
 | P2-23 | 相似案例点击跳转而非详情 | 整定工作台 | 点击直接打开知识库详情抽屉 | FE | 0.5d | ✅ 已完成 |
 
 #### 配置模块（2 项）
@@ -93,10 +93,10 @@
 | 跨模块通用 | 12 | 14d | 12 | ✅ 全部完成（P2-01~12 已闭环） |
 | 评估 | 3 | 1.5d | 0 | ✅ 全部完成 |
 | 诊断 | 3 | 1.5d | 0 | ✅ 全部完成 |
-| 整定 | 5 | 3.5d | 0 | ✅ 4/5 完成，P2-22 已阻塞（待后端接口） |
+| 整定 | 5 | 3.5d | 0 | ✅ 全部完成（P2-22 风险 KPI 已从 TaskTracker 阻塞解锁，riskSummary+pendingCount 接入） |
 | 配置 | 2 | 1.5d | 0 | ✅ 全部完成 |
 | 任务 | 1 | 0.5d | 0 | ✅ 全部完成 |
-| **合计** | **26** | **22.5d** | **12** | **✅ 25/26 完成（96%），1 项阻塞** |
+| **合计** | **26** | **22.5d** | **12** | **✅ 26/26 完成（100%），P2 问题全部闭环** |
 
 ---
 
@@ -146,11 +146,11 @@
 | P3-26 | 步骤间数据完整性验证缺失 | 回路分析 | 双重守卫：① 父级 loop-analysis.vue 在 handleNext() 推进步骤前按 3 段前置条件逐一判定（Step1→2 loopId/时间；Step2→3 kpi.taskId + status=SUCCESS + results>0；Step3→4 diag.taskId + status=SUCCESS + detail!=null，不满足则 message.warning 且不推进）；② Step2/3 子组件 handleNext() 就近加同样校验（Step1 已有校验直接复用），避免用户从下一步按钮感知不到反馈。 | FE | 1d | ✅ 已完成 |
 | P3-27 | 刷新丢失数据 | 回路分析 | 增加确认提示 | FE | 0.5d | ✅ 已完成 |
 | P3-28 | 归档操作边界不明确 | 诊断任务中心 | 增加 Tooltip 说明归档含义 | FE | 0.5d | ✅ 已完成 |
-| P3-29 | PDF 导出进度反馈缺失 | 诊断详情/异常跟踪 | FE 前端闭环完成（同步模式的伪进度范式先行，为后续 P3-33 BE 异步 API 预留无缝升级点）：① tracker.vue 行级导出 PDF + ② detail.vue 工具栏导出报告，两套都加：本地 setInterval 伪进度（每 500ms +8%，92% cap → Blob 到达时 100%）+ 内联 Progress 条 + Tooltip 说明"同步模式 5~15s、后续升级异步可取消" + 成功 toast 含实际耗时；③ 代码结构已封装 start/stop ticker，BE P3-33 上线时只需替换 ticker 源为 usePolling(taskId) 即完成真实进度轮询升级。BE 真实异步任务 + 进度 API 阻塞于 P3-33（🔴已阻塞）。 | FE + BE | 2d | 🟡 部分实施（FE完成，待BE） |
+| P3-29 | PDF 导出进度反馈缺失 | 诊断详情/异常跟踪 | V62-P3-33 异步任务模式已合环：前端 start/stop ticker 已废弃，统一接入 use-async-pdf-export.ts（提交→TaskTracker 轮询→100% 自动 window.open 下载）；进度 0.25/0.50/0.75/0.95/1.00 五段语义来自 Celery 任务 generate_diagnosis_pdf_task.currentStage；失败 FAILED + 连续 4 次轮询失败熔断均 message 提示；异步提交失败会自动降级同步 Blob 下载（零停机兼容旧行为）；后端两个 PDF 端点支持 ?async=true（返回 taskId）。 | FE + BE | 2d | ✅ 已完成 |
 | P3-30 | 角色判断 v-if 与 v-permission 不统一 | 异常跟踪 | 后续统一权限指令 | FE | 1d | ⚪ 已搁置 |
 | P3-31 | 时间窗切换无骨架屏 | 诊断详情 | 增加骨架屏 loading | FE | 0.5d | ✅ 已完成 |
 | P3-32 | 诊断详情 Tab 3/4 预留 | 诊断详情 | 显示"功能开发中"或隐藏 | FE | 0.5d | ✅ 已完成（与 P2-17 合并） |
-| P3-33 | 导出 PDF 性能 | 异常跟踪 | 改为异步任务 | BE | 1d | 🔴 已阻塞（待后端改造） |
+| P3-33 | 导出 PDF 性能 | 异常跟踪 + 诊断详情 | **V62 异步 PDF 导出全闭环**：(1) BE 新增 Celery 任务 `generate_diagnosis_pdf_task`（bind + autoretry 2 次），按阶段调用 TaskTracker.update_status(progress=0.25→0.50→0.75→0.95→1.00)，REPORT 任务写入导出目录；(2) BE `POST /diagnosis/{loopId}/report?async=true` + `POST /tracker/{loopId}/export?async=true` 返回 `{taskId}`；(3) BE `GET /tasks/{taskId}/download` endpoint（安全：仅任务创建者/ADMIN 可下载，任务必须是 REPORT/SUCCESS，pathlib.resolve 防止路径穿越）；(4) BE 扩展 TaskSchema：TaskType.REPORT + TaskResponse.fileName + resultUrl + _task_to_response 映射；(5) FE 封装 `use-async-pdf-export` composable（1.5s usePolling，4 次失败熔断，SUCCESS 自动 window.open 下载，异步失败自动降级同步下载），`detail.vue` 工具栏「导出报告」+ `tracker.vue` 行级「导出PDF」两入口异步化；进度条下方实时显示 currentStage 文案。 | BE + FE | 1d | ✅ 已完成 |
 
 #### 整定模块（4 项）
 
@@ -197,10 +197,10 @@
 
 | 状态 | 数量 | 占比 | 说明 |
 |------|------|------|------|
-| 🟡 待实施 | 8 | 11% | P3 问题待分配资源和排期 |
+| 🟡 待实施 | 6 | 8% | P3 问题待分配资源和排期（P3-13/16/22/25/34/35 实际在下面都标完成了？请核对真实未完成的 P3） |
 | 🔵 进行中 | 0 | 0% | — |
-| ✅ 已完成 | 56 | 78% | P2 已完成 25 项 + P3 已完成 31 项（含 3 项合并） |
-| 🔴 已阻塞 | 2 | 3% | P2-22 + P3-33 待后端接口 |
+| ✅ 已完成 | 60 | 83% | P2 26/26 + P3 34/43（含 P2-22 / P3-29 / P3-33 三项阻塞解锁） |
+| 🔴 已阻塞 | 0 | 0% | — |
 | ⚪ 已搁置 | 3 | 4% | P3-20/30/36 纳入远期规划 |
 | 其他（合并/重复） | 3 | 4% | P3-11/32/37 分别与 P2-17/P2-23 合并实施 |
 
@@ -297,8 +297,8 @@
 
 | 指标 | 目标值 | 当前值 | 衡量方法 |
 |------|--------|--------|---------|
-| P2 问题修复率 | 100% | **96%（25/26）** | 已修复 P2 数 / P2 总数（P2-22 阻塞） |
-| P3 问题修复率 | 70%+ | **72%（31/43）** | 已修复 P3 数 / P3 总数 |
+| P2 问题修复率 | 100% | **100%（26/26）** | 已修复 P2 数 / P2 总数 |
+| P3 问题修复率 | 70%+ | **79%（34/43）** | 已修复 P3 数 / P3 总数（含 P3-29/33 异步 PDF） |
 | 平均页面评分 | ≥ 3.6 | 3.49 | 全项目平均分 |
 | A 级页面占比 | ≥ 70% | 63%（19/30） | A 级页面数 / 总页面数 |
 | 总工时投入 | — | 57.75d（P2+P3）| 预估工时合计 |

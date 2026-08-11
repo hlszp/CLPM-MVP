@@ -223,7 +223,7 @@ watch(isDark, () => {
     <EchartsUI v-if="waveform" ref="chartRef" height="360px" />
     <Empty
       v-else
-      description="暂无波形数据"
+      description="暂无波形数据。请确认已选择回路与时间窗，且时间窗内有有效过程数据"
       :image="Empty.PRESENTED_IMAGE_SIMPLE"
     />
   </ClpmDataCanvas>

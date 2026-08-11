@@ -21,6 +21,7 @@ import logging
 import os
 import tempfile
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, select
@@ -686,5 +687,221 @@ __all__ = [
     "AsyncTask",
     "NonRetryableError",
     "export_diagnosis_statistics",
+    "generate_diagnosis_pdf_task",
     "generate_report_task",
 ]
+
+# ---------------------------------------------------------------------------
+# V62-P3-33：诊断建议书 PDF 异步导出（修复大回路 PDF 超时网关 504）
+# ---------------------------------------------------------------------------
+
+# Redis TaskTracker 任务 Hash 的 key（与 task_tracker._task_key 保持一致）
+_TASK_KEY_PREFIX = "task:"
+# 产物路径过期时间：7 天（导出文件只作为短期下载缓存）
+_REPORT_ARTIFACT_TTL_SEC = 7 * 24 * 3600
+
+
+@celery_app.task(
+    name="app.tasks.report_generator.generate_diagnosis_pdf_task",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 2, "countdown": 30},
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def generate_diagnosis_pdf_task(
+    self: AsyncTask,
+    tracker_task_id: str,
+    loop_id: str,
+    variant: str = "tracker_export",
+    tag_codes: list[str] | None = None,
+) -> dict[str, Any]:
+    """诊断建议书 PDF 异步生成任务.
+
+    Args:
+        tracker_task_id: TaskTracker 创建的任务 ID（REPORT 类型），进度通过它回写
+        loop_id: 目标回路 ID
+        variant: "diagnosis_report"（POST /diagnosis/{id}/report 对应，文件名含
+            diagnosis_report）或 "tracker_export"（POST /tracker/{id}/export 对应）
+        tag_codes: 诊断建议书 variant 下用户勾选的推荐方案标签代码；None 表示
+            取该回路下所有推荐
+
+    Progress（前端进度条按此对齐）:
+        0.25 - 加载回路信息 + 诊断快照
+        0.50 - 加载推荐方案
+        0.75 - PDF 字节生成完成，正在写入导出目录
+        1.00 - 落盘完成，补写 file_path/file_name/result_url 到 Redis Hash
+    """
+    logger.info(
+        "[P3-33] PDF 异步导出任务启动 tracker_task_id=%s loop=%s variant=%s",
+        tracker_task_id,
+        loop_id,
+        variant,
+    )
+    try:
+        result = self.run_async(
+            _do_generate_diagnosis_pdf_task(
+                tracker_task_id=tracker_task_id,
+                loop_id=loop_id,
+                variant=variant,
+                tag_codes=tag_codes,
+            )
+        )
+        logger.info("[P3-33] PDF 异步导出任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("[P3-33] PDF 异步导出任务失败 tracker_task_id=%s", tracker_task_id)
+        # 尽力而为写 FAILED + error_message，前端轮询不会卡死
+        self.run_async(_maybe_mark_failed(tracker_task_id=tracker_task_id))
+        raise
+
+
+async def _maybe_mark_failed(tracker_task_id: str) -> None:
+    """任务异常兜底：标记 TaskTracker 为 FAILED，避免前端轮询挂死."""
+    try:
+        from app.services.task_tracker import TaskStatus, update_status
+
+        await update_status(
+            tracker_task_id,
+            TaskStatus.FAILED,
+            progress=0.0,
+            error_message="任务执行异常，详见服务端日志",
+            finished_at=datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds"),
+        )
+    except Exception:  # pragma: no cover - 兜底层再失败就只能记日志
+        logger.exception("mark PDF task FAILED 失败 task_id=%s", tracker_task_id)
+
+
+async def _do_generate_diagnosis_pdf_task(
+    *,
+    tracker_task_id: str,
+    loop_id: str,
+    variant: str,
+    tag_codes: list[str] | None,
+) -> dict[str, Any]:
+    """真正执行 PDF 生成逻辑（async，通过 AsyncTask.run_async 桥接）."""
+    from app.core.db import AsyncSessionLocal
+    from app.schemas.task import TaskStatus
+    from app.services.diagnosis import get_diagnosis_detail
+    from app.services.diagnosis_recommendation import (
+        get_recommendations,
+        get_recommendations_for_loop,
+    )
+    from app.services.diagnosis_report import generate_diagnosis_report
+    from app.services.task_tracker import update_status
+    from app.services.tracker import export_tracker_pdf  # noqa: F401 - 语义完整性留痕
+
+    started_at = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
+
+    # --- 25%：查回路诊断快照 ------------------------------------------------
+    await update_status(
+        tracker_task_id,
+        TaskStatus.RUNNING,
+        progress=0.25,
+        started_at=started_at,
+        current_stage="加载回路信息与诊断快照",
+    )
+    async with AsyncSessionLocal() as db:
+        snapshot_data = await get_diagnosis_detail(db=db, loop_id=loop_id)
+
+        # --- 50%：加载推荐方案 ----------------------------------------------
+        await update_status(
+            tracker_task_id,
+            TaskStatus.RUNNING,
+            progress=0.50,
+            current_stage="获取整改推荐方案",
+        )
+        if variant == "diagnosis_report" and tag_codes:
+            recommendations = get_recommendations(loop_id, tag_codes)
+        else:
+            recommendations = await get_recommendations_for_loop(db=db, loop_id=loop_id)
+
+        # variant=tracker_export 需要先查 tag_name 和生成统一文件名
+        from sqlalchemy import select
+
+        from app.models.loop import LoopLedger
+
+        loop_res = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
+        loop = loop_res.scalar_one_or_none()
+        tag_name = loop.tag_name if loop and loop.tag_name else loop_id
+
+    if variant == "tracker_export":
+        # --- 75%：生成 PDF bytes ------------------------------------------------
+        await update_status(
+            tracker_task_id,
+            TaskStatus.RUNNING,
+            progress=0.75,
+            current_stage="生成诊断建议书 PDF",
+        )
+        pdf_bytes = generate_diagnosis_report(
+            loop_id=loop_id,
+            snapshot_data=snapshot_data,
+            recommendations=recommendations,
+        )
+        date_str = datetime.now(UTC).replace(tzinfo=None).strftime("%Y-%m-%d")
+        file_name = f"CLPM-诊断建议书-{tag_name}-{date_str}.pdf"
+    else:  # diagnosis_report
+        await update_status(
+            tracker_task_id,
+            TaskStatus.RUNNING,
+            progress=0.75,
+            current_stage="生成诊断快照报告 PDF",
+        )
+        pdf_bytes = generate_diagnosis_report(
+            loop_id=loop_id,
+            snapshot_data=snapshot_data,
+            recommendations=recommendations,
+        )
+        file_name = f"diagnosis_report_{loop_id}.pdf"
+
+    # --- 落盘 + 100%：补写 Redis Hash 字段 ------------------------------------
+    await update_status(
+        tracker_task_id,
+        TaskStatus.RUNNING,
+        progress=0.95,
+        current_stage="写入导出文件",
+    )
+    export_dir = os.environ.get("CLPM_EXPORT_DIR", tempfile.gettempdir())
+    os.makedirs(export_dir, exist_ok=True)
+    # 文件名追加 tracker_task_id 前缀避免同回路同日导出互相覆盖
+    prefixed_name = f"{tracker_task_id}_{file_name}"
+    file_path = os.path.join(export_dir, prefixed_name)
+    with open(file_path, "wb") as f:
+        f.write(pdf_bytes)
+
+    # file_path（内部，不返回给前端）/ file_name（下载时保存名）
+    # / result_url（统一下载入口）一并写进 TaskTracker Redis Hash
+    from app.services.task_tracker import redis_client as task_redis
+
+    hash_key = f"{_TASK_KEY_PREFIX}{tracker_task_id}"
+    # 让 TTL 与 tasks endpoint 保持匹配：至少存在 7 天
+    await task_redis.hset(
+        hash_key,
+        mapping={
+            "file_name": file_name,
+            "file_path": file_path,
+            "result_url": f"/api/v1/tasks/{tracker_task_id}/download",
+        },
+    )
+    try:
+        await task_redis.expire(hash_key, _REPORT_ARTIFACT_TTL_SEC)
+    except Exception:  # pragma: no cover - expire 失败不阻断任务
+        logger.warning("设置 task hash TTL 失败 task=%s", tracker_task_id)
+
+    finished_at = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
+    await update_status(
+        tracker_task_id,
+        TaskStatus.SUCCESS,
+        progress=1.0,
+        finished_at=finished_at,
+        current_stage="文件已生成",
+    )
+    return {
+        "taskId": tracker_task_id,
+        "status": "SUCCESS",
+        "fileName": file_name,
+        "resultUrl": f"/api/v1/tasks/{tracker_task_id}/download",
+        "fileSize": len(pdf_bytes),
+    }

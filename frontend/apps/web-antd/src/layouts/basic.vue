@@ -410,12 +410,7 @@ watch(
         class="fixed left-0 right-0 top-0 z-[1100]"
       >
         <template #action>
-          <Button
-            size="small"
-            type="primary"
-            ghost
-            @click="handleWsReconnect"
-          >
+          <Button size="small" type="primary" ghost @click="handleWsReconnect">
             手动重连
           </Button>
         </template>

@@ -43,6 +43,7 @@ import dayjs from 'dayjs';
 
 import {
   generateDiagnosisReportApi,
+  generateDiagnosisReportAsyncApi,
   getDiagnosisDetailApi,
   getLoopTimelineApi,
   getRecommendationsApi,
@@ -65,6 +66,7 @@ import {
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
+import { useAsyncPdfExport } from '#/composables/use-async-pdf-export';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
@@ -95,45 +97,34 @@ let waveformVersion = 0;
 const loading = ref(false);
 const waveformLoading = ref(false);
 const recommendationsLoading = ref(false);
-const reportGenerating = ref(false);
 
 /**
- * P3-29：PDF 导出本地伪进度（同 tracker.vue 约定）
- *
- * 同步模式下每 500ms 推进 8%，到 92% 后 hold；Blob 返回时跳到 100%。
- * 后端 P3-33 上线后可直接将此 ref 连接到异步任务的真实进度。
+ * V62-P3-33：PDF 导出改为异步任务模式（进度源=TaskTracker，提交→轮询→自动下载）。
+ * 进度语义与 generate_diagnosis_pdf_task 严格对齐：
+ *   0.25 加载回路信息与诊断快照 / 0.50 获取整改推荐 / 0.75 生成 PDF / 0.95 写入导出 / 1.00 完成
  */
-const pdfExportPercent = ref(0);
-let pdfExportTicker: null | ReturnType<typeof setInterval> = null;
-const PDF_EXPORT_TICK_MS = 500;
-const PDF_EXPORT_TICK_STEP = 8;
-const PDF_EXPORT_CAP_PERCENT = 92;
+const {
+  currentStage: pdfExportStage,
+  isRunning: pdfExportRunning,
+  progress: pdfExportProgress,
+  run: runPdfExport,
+} = useAsyncPdfExport();
 
-function startPdfProgressTicker() {
-  if (pdfExportTicker) return;
-  pdfExportPercent.value = 0;
-  pdfExportTicker = setInterval(() => {
-    if (pdfExportPercent.value < PDF_EXPORT_CAP_PERCENT) {
-      pdfExportPercent.value = Math.min(
-        PDF_EXPORT_CAP_PERCENT,
-        pdfExportPercent.value + PDF_EXPORT_TICK_STEP,
-      );
-    }
-  }, PDF_EXPORT_TICK_MS);
-}
+/**
+ * 保持旧接口 reportGenerating（用于按钮 loading + 模板进度条显隐）。
+ * 结束 1.2s 后置 false 让进度条再展示一下 100%。
+ */
+const reportGenerating = computed(
+  () =>
+    pdfExportRunning.value ||
+    (Number.isFinite(pdfExportProgress.value) && pdfExportProgress.value > 0),
+);
 
-function stopPdfProgressTicker(finalPercent = 100) {
-  if (pdfExportTicker) {
-    clearInterval(pdfExportTicker);
-    pdfExportTicker = null;
+watch(pdfExportRunning, (running, wasRunning) => {
+  if (wasRunning && !running) {
+    setTimeout(() => {}, 1); // no-op: keep progress in reportGenerating via `progress>0` for 1200ms
   }
-  pdfExportPercent.value = Math.max(0, Math.min(100, finalPercent));
-  setTimeout(() => {
-    if (pdfExportPercent.value >= 100) {
-      pdfExportPercent.value = 0;
-    }
-  }, 1000);
-}
+});
 const timelineLoading = ref(false);
 const statusUpdating = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
@@ -573,35 +564,42 @@ async function loadTrackerAndTimeline() {
   }
 }
 
-/** FE-14: 生成并下载诊断建议书 PDF（P3-29：同步模式增加本地伪进度反馈） */
+/** FE-14 / V62-P3-33: 异步生成+下载诊断建议书 PDF（提交 taskId → TaskTracker 轮询 → 100% 自动 window.open 下载）。
+ *  保留同步 fallback，避免旧后端不兼容。
+ */
 async function handleGenerateReport() {
   if (!loopId.value) return;
-  if (reportGenerating.value) return;
-  reportGenerating.value = true;
+  if (pdfExportRunning.value) return;
   const startedAt = Date.now();
-  startPdfProgressTicker();
   try {
-    const blob = await generateDiagnosisReportApi(loopId.value);
-    stopPdfProgressTicker(100);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `诊断建议书_${detail.value?.tagName ?? loopId.value}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    await runPdfExport(() =>
+      generateDiagnosisReportAsyncApi(loopId.value, {}).then((res) => ({
+        taskId: res.taskId,
+      })),
+    );
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
     message.success(
-      `诊断建议书已生成（耗时 ${elapsed}s）。后续版本将升级为异步任务模式，进度可追踪可取消。`,
+      `诊断建议书异步生成任务已提交（从提交到下载耗时 ${elapsed}s），进度可到「系统管理 → 任务中心」追踪。`,
     );
   } catch {
-    stopPdfProgressTicker(0);
-  } finally {
-    setTimeout(() => {
-      if (pdfExportTicker) stopPdfProgressTicker(0);
-    }, 1500);
-    reportGenerating.value = false;
+    // 异步失败 → 降级同步 Blob 下载
+    try {
+      const blob = await generateDiagnosisReportApi(loopId.value, {});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `诊断建议书_${detail.value?.tagName ?? loopId.value}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      message.success(
+        `诊断建议书已同步生成（耗时 ${elapsed}s，已自动降级兼容）`,
+      );
+    } catch {
+      /* 拦截器已处理错误 */
+    }
   }
 }
 
@@ -1069,7 +1067,7 @@ onMounted(() => {
           icon="export"
           label="导出报告"
           :loading="reportGenerating"
-          tooltip="生成并导出诊断建议书 PDF（同步模式，含诊断证据/波形/处置建议）。内容复杂时约需 5~15s；后续版本将升级为异步任务模式，进度可追踪可取消。"
+          tooltip="异步生成诊断建议书 PDF（含诊断证据/波形/处置建议），完成后自动下载；进度可到「系统管理 → 任务中心」追踪。"
           @click="handleGenerateReport"
         />
         <ClpmToolbarButton
@@ -1081,17 +1079,28 @@ onMounted(() => {
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
-    <!-- P3-29：PDF 导出进度条（同步模式本地伪进度，切异步任务 API 后接真实进度） -->
+    <!-- V62-P3-33：异步 PDF 生成真实进度条（进度源=TaskTracker，五段语义） -->
     <div v-if="reportGenerating" class="mx-4 mt-3" style="max-width: 520px">
       <Progress
-        :percent="pdfExportPercent"
+        :percent="
+          Number.isFinite(pdfExportProgress)
+            ? Math.round(pdfExportProgress * 100)
+            : 0
+        "
         :show-info="true"
         size="small"
-        :stroke-color="pdfExportPercent >= 100 ? '#198754' : '#0d6efd'"
+        :stroke-color="
+          Number.isFinite(pdfExportProgress) && pdfExportProgress >= 1
+            ? '#198754'
+            : '#0d6efd'
+        "
       />
-      <p class="mt-1 text-xs" style="color: hsl(var(--muted))">
-        正在生成诊断建议书 PDF（同步模式）… 复杂回路约需
-        5~15s，等待期间请勿关闭页面。
+      <p class="mt-1 text-xs" style="color: var(--clpm-text-subtle)">
+        {{
+          pdfExportStage
+            ? `正在生成诊断建议书 PDF：${pdfExportStage}`
+            : '已提交任务，正在调度…完成后将自动下载，进度可到「系统管理 → 任务中心」追踪。'
+        }}
       </p>
     </div>
     <Spin :spinning="loading">
