@@ -206,7 +206,7 @@ function getSparklineColor(status?: string): string {
 <style scoped>
 .clpm-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 0;
   overflow: hidden;
   background: hsl(var(--card));
@@ -216,7 +216,7 @@ function getSparklineColor(status?: string): string {
 
 .clpm-kpi-strip__item {
   min-width: 0;
-  padding: 10px 12px;
+  padding: 7px 10px;
   cursor: default;
   border-right: 1px solid hsl(var(--border));
   transition: background 0.15s;
@@ -237,24 +237,24 @@ function getSparklineColor(status?: string): string {
 .clpm-kpi-strip__label {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 11px;
+  line-height: 14px;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 .clpm-kpi-strip__main {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: flex-end;
   justify-content: space-between;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 .clpm-kpi-strip__value-row {
   display: flex;
   flex: 1 1 auto;
-  gap: 4px;
+  gap: 3px;
   align-items: baseline;
   min-width: 0;
 }
@@ -269,16 +269,16 @@ function getSparklineColor(status?: string): string {
     Consolas,
     monospace
   );
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
-  line-height: 24px;
+  line-height: 20px;
   color: hsl(var(--foreground));
 }
 
 .clpm-kpi-strip__unit {
-  font-size: 12px;
+  font-size: 11px;
   color: hsl(var(--muted-foreground));
 }
 
@@ -293,12 +293,12 @@ function getSparklineColor(status?: string): string {
   display: flex;
   gap: 2px;
   align-items: center;
-  margin-top: 2px;
-  font-size: 12px;
+  margin-top: 1px;
+  font-size: 11px;
 }
 
 .clpm-kpi-strip__delta-arrow {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
 }
@@ -355,19 +355,19 @@ function getSparklineColor(status?: string): string {
 
 .clpm-kpi-strip__skeleton-line--label {
   width: 60%;
-  height: 12px;
-  margin-bottom: 8px;
+  height: 11px;
+  margin-bottom: 5px;
 }
 
 .clpm-kpi-strip__skeleton-line--value {
   width: 80%;
-  height: 20px;
-  margin-bottom: 6px;
+  height: 17px;
+  margin-bottom: 4px;
 }
 
 .clpm-kpi-strip__skeleton-line--delta {
   width: 40%;
-  height: 12px;
+  height: 11px;
 }
 
 @keyframes clpm-kpi-skeleton {
