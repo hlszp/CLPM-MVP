@@ -1,9 +1,10 @@
 # CLPM 重构后实现契约
 
 **文档状态**：active-baseline
-**当前版本**：v2.10
-**发布日期**：2026-08-10
-**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D + UI/UX 整改 Phase 0-2 + 监控工作台闭环 MW-P5）
+**当前版本**：v2.11
+**发布日期**：2026-08-11
+**适用范围**：重构后 CLPM V1.0 / Phase 1 代码与设计文档对齐（含 IA 重构 Phase A-D + UI/UX 整改 Phase 0-2 + 监控工作台闭环 MW-P5 + IA 评审 Backlog P2-22/P3-33 闭环）
+**v2.11 修订摘要（2026-08-11，IA 评审 Backlog P2-22/P3-33 闭环 + Worker 清理加固 + KPI 指标条紧凑化）**：(1) P3-33 异步 PDF 导出——新增 Celery 任务 `generate_diagnosis_pdf_task`（`app/tasks/report_generator.py`，bind+autoretry 2 次，按阶段调 `TaskTracker.update_status` progress 0.25→0.50→0.75→0.95→1.00）；`POST /diagnosis/{loopId}/report?async=true` 与 `POST /tracker/{loopId}/export?async=true` 返回 `{taskId}`；新增 `GET /tasks/{taskId}/download` 下载端点（安全：仅任务创建者/ADMIN 可下载，任务须 REPORT/SUCCESS，`pathlib.resolve` 防路径穿越）；`TaskType` 枚举新增 `REPORT`，`TaskResponse` 新增 `fileName`/`resultUrl`。(2) P2-22 风险统计——`GET /tuning/history` 响应新增 `riskSummary`（`{high, medium, low, total, calculated}`，按 `TuningRecord.risk_assessment->>'riskLevel'` 聚合，`risk_assessment=None` 不计入，`calculated=false` 时前端显示"— 未计算"）与 `pendingCount`（DRAFT+RUNNING+PENDING+IDENTIFIED 汇总）。(3) Celery Worker/Beat 清理加固——`app/main.py` lifespan 退出路径三层清理：① `killpg` 进程组终止（`start_new_session=True` 创建）；② `pgrep -f "celery.*clpm"` 兜底 `SIGTERM`；③ 5s 后 `SIGKILL` 强杀；`CLPM_SKIP_EXIT_HOOKS=1` 环境变量 + argv token 判断双重防护 pytest 进程误杀宿主 Celery（`tests/conftest.py` 设置）。(4) KPI 指标条紧凑化——`ClpmKpiStrip` 组件 `minmax(128px→92px)`、padding/字号收紧；整定工作台两个 KPI strip 合并为一个 7 项 strip（总任务/已完成/平均拟合度/近7天/风险/超阈值/待整定）。详见 commit `5a10a9fc`、`1bec0b2b`
 **v2.10 修订摘要（2026-08-10，监控工作台闭环 MW-P5 + EXPERT 权限扩展）**：EXPERT 角色权限扩展——`ROLE_PERMISSIONS["EXPERT"]` 新增 `loop:view`（只读监控），修复 EXPERT 进入 `/monitor/loop-workbench` 时左栏 `/loops/monitor` 返回 403 触发"无权限访问"toast 的权限不一致（前端路由 authority 已含 EXPERT，后端权限码未对齐）；`GET /configs/llm` 放开 EXPERT 查询（AI 洞察组件嵌入诊断/整定/工作台页面，EXPERT 访问时需查 LLM 启用状态，API Key 脱敏返回无敏感信息泄露）；前端 `workbench.vue` 新增 `canUseTableView` 守卫，EXPERT/SPONSOR 直接输入 `view=table` 时回退 `workspace`（对齐 `use-saved-view.ts` 的 `canUseTableViewByRoles`）。性能优化：`monitor_attention.py` 的 `_aggregate_alerts`/`_aggregate_trackers` 新增 `.limit(500)` 截断（`_MAX_ITEMS_PER_SOURCE`），避免 10k+ 预警全量加载，覆盖前 25 页。运行时验收：MW-P5-03 五角色冒烟测试 / MW-P5-04 性能压测（summary p95=53ms ✅，attention 压测场景 p95≈600ms 但生产 27 回路预期 <100ms）/ MW-P5-05 视觉走查（三档分辨率 + 暗色 WCAG AA 对比度 100% 达标）全部完成。详见 `docs/过程文档/perf-report-MW-P5-04.md`、`visual-inspection-report-MW-P5-05.md`
 **v2.8 修订摘要（2026-08-09，UI/UX 整改 Phase 1-2 API 增量）**：登记 `GET /loops/monitor` 响应新增 `scoreDelta`/`dayTrend`（较昨日增量巡检）且默认排序改为最新快照评分升序 NULLS LAST（最需关注优先）；登记 `GET /diagnosis/list` aggregates 新增 `verifyOverdueCount`（VERIFYING 超 24h 未闭环计数）；登记 `GET|PUT /configs/algorithm-params` 响应新增 `paramMeta`（参数注册表 min/max/unit/description/category 单源下发）与 `AlgorithmParamsSaveRequest.resetControlTypes`（重置默认=清空覆盖回落算法默认）；登记 `GET /performance/loops/snapshots` 序列化新增 `timeConstant`（F5 时间常数计算器，L1 DISPLAY_ONLY，激励不足窗口为 null）与 `clpm_metric_data_requirement` 新增 time_constant 契约行；确认 Action Tracker P1a 闭环状态机（PENDING→IN_PROGRESS→VERIFYING→CLOSED，VERIFYING 可→REOPENED，存量 IMPLEMENTED 兼容映射 VERIFYING）；审计 `operationType`/`targetType` 为开放式枚举（前端映射见 audit.vue operationOptions/resourceOptions）。整改全貌见 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md` 与 `p2-exit-report-2026-08-09.md`
 
@@ -204,7 +205,7 @@ CLPM 当前采用 **6 个一级模块**：监控 / 评估 / 诊断 / 整定 / �
 | AAS 同步 | `/api/v1/aas/*` | AAS 配置、同步触发、同步状态与日志、Tag 列表。 |
 | 配置中心 | `/api/v1/configs/*` | 含 `metrics`/`diagnosis`/`loop-type-weights`/`loop-level-weights`/`weight-templates`/`grading-thresholds`/`confidence-thresholds` 子领域。 |
 | 算法独立调用 | `/api/v1/algorithms/*` | 含 `kpi`/`diagnosis`/`tuning`/`dataplanner` 子领域，用于算法独立调试与数据计划。 |
-| 任务管理 | `/api/v1/tasks/*` | 标准评估、自定义评估、历史重算、任务通知、取消、删除、结果查询。 |
+| 任务管理 | `/api/v1/tasks/*` | 标准评估、自定义评估、历史重算、任务通知、取消、删除、结果查询。v2.11 新增 `TaskType.REPORT`（诊断建议书 PDF 异步生成）与 `GET /tasks/{taskId}/download`（安全下载：仅创建者/ADMIN，任务须 REPORT/SUCCESS，`pathlib.resolve` 防路径穿越）。 |
 | 节点级 KPI | `/api/v1/performance/nodes/*` | 节点快照、趋势、排行、对比、总览、监控。 |
 | 异常跟踪 | `/api/v1/tracker/*` | diagnosis.py 内的子路由（`tracker_router`），承担 Action Tracker 状态机流转、诊断建议书 PDF 导出、整改有效率统计与验证周期配置。详细子路由见 §4.5。 |
 | 诊断标签 | `/api/v1/diagnosis/tags/*` | 诊断标签管理。 |
@@ -229,7 +230,7 @@ Tracker 子路由挂载在 `/api/v1/tracker` 前缀下，定义于 `backend/app/
 | 方法 | 路径 | 功能 | 批次 |
 |---|---|---|---|
 | `PATCH` | `/{loopId}/status` | 更新 Action Tracker 处理状态（PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）；IMPLEMENTED 时必填 `mocRef` 或 `mocNotApplicable`+`mocReason`（D3 MOC 校验） | D2/D3 |
-| `POST` | `/{loopId}/export` | 导出诊断建议书 PDF（reportlab + STSong-Light 中文字体） | D5 |
+| `POST` | `/{loopId}/export` | 导出诊断建议书 PDF（reportlab + STSong-Light 中文字体）。v2.11 新增 `?async=true` 参数：返回 `{taskId}` 供前端轮询进度，Celery 任务 `generate_diagnosis_pdf_task` 分 5 段更新 progress（0.25/0.50/0.75/0.95/1.00），完成后 `GET /tasks/{taskId}/download` 下载 | D5/v2.11 |
 | `GET` | `/{loopId}` | 查询单回路 Tracker 详情（含 D1 建单来源、D4 整改效果验证字段） | D1/D4 |
 | `PATCH` | `/{loopId}` | 更新 Tracker 补充字段（comment/updatedBy 等） | D2 |
 | `GET` | `/effectiveness` | 整改有效率统计（支持 `timeWindow` + `plantNodeId` 筛选，返回已实施/已验证/改善/恶化数 + 每日趋势） | D4-3 |
@@ -594,3 +595,17 @@ auto_loop_ratio = count(representative.auto_mode_rate > 0) / loop_count × 100
 | 旧路由兼容 | 部分重定向 | 全量 legacy redirect（Phase A 11 条 + Phase B 1 条 + Phase C 2 条 + Phase D 7 条 = 21 条），`route-compat.spec.ts` 守护 | §2.1、`router/routes/modules/` |
 | 后端改动 | — | 零（全方案纯前端） | §2.1、IA 重构方案 §7 |
 | 门禁基线 | pytest 3456 / vitest 434 | pytest 3881 / vitest 147 / E2E 79（71 passed） | IA 重构方案 §8 Phase D |
+
+### v2.11 变更项（2026-08-11，IA 评审 Backlog P2-22/P3-33 闭环 + Worker 清理加固 + KPI 紧凑化）
+
+| 变更项 | v2.10 口径 | v2.11 口径 | 依据 |
+|---|---|---|---|
+| 异步 PDF 导出 | `POST /tracker/{loopId}/export` 同步生成 PDF | 新增 `?async=true` 参数返回 `{taskId}`；Celery 任务 `generate_diagnosis_pdf_task`（`app/tasks/report_generator.py`，autoretry 2 次）分 5 段更新 progress；`POST /diagnosis/{loopId}/report?async=true` 同理 | §4.5、`tasks/report_generator.py`、commit `5a10a9fc` |
+| PDF 下载端点 | 未声明 | `GET /tasks/{taskId}/download`：仅任务创建者/ADMIN 可下载，任务须 `TaskType.REPORT` + `SUCCESS`，`pathlib.resolve` 防路径穿越，运行中返回 425 | §4.3、`endpoints/tasks.py` |
+| TaskType 枚举 | `EVALUATION`/`CUSTOM`/`RECOMPUTE` | 新增 `REPORT`（诊断建议书 PDF 异步生成） | `schemas/task.py` |
+| TaskResponse | 无文件元数据 | 新增 `fileName`/`resultUrl` 字段（REPORT 任务专用） | `schemas/task.py` |
+| 整定历史统计 | `totalTasks`/`byAlgorithm`/`byStatus`/`avgFittingScore`/`recentTasks` | 新增 `riskSummary`（`{high, medium, low, total, calculated}`，按 `TuningRecord.risk_assessment->>'riskLevel'` 聚合）与 `pendingCount`（DRAFT+RUNNING+PENDING+IDENTIFIED） | `services/tuning.py`、`api/tuning.py` |
+| Celery 生命周期 | lifespan 启动 Worker/Beat，退出仅 `terminate` | 三层清理加固：① `killpg` 进程组（`start_new_session=True`）；② `pgrep -f "celery.*clpm"` 兜底 `SIGTERM`；③ 5s 后 `SIGKILL`；`CLPM_SKIP_EXIT_HOOKS=1` + argv token 双重防护 pytest 误杀宿主 Celery | `app/main.py`、`tests/conftest.py` |
+| KPI 指标条 | `ClpmKpiStrip` `minmax(128px, 1fr)`，整定工作台 2 个 strip 占两行 | `minmax(92px, 1fr)` + padding/字号收紧；整定工作台合并为 1 个 7 项 strip（总任务/已完成/平均拟合度/近7天/风险/超阈值/待整定） | `components/clpm/kpi-strip.vue`、`views/tuning/workbench.vue`、commit `1bec0b2b` |
+| 前端异步导出 | 同步 Blob 下载 | `use-async-pdf-export` composable（1.5s 轮询 + 4 次失败熔断 + SUCCESS 自动 `window.open` + 异步失败降级同步下载）；`detail.vue`/`tracker.vue` 两入口接入 | `composables/use-async-pdf-export.ts` |
+| 门禁基线 | pytest 4241 | 新增 `test_p2_022_risk_summary.py`（25 例）+ `test_p3_033_async_pdf.py` + vitest `use-async-pdf-export.test.ts` | `tests/` |
