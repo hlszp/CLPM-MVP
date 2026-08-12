@@ -15,7 +15,7 @@ import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -192,6 +192,7 @@ async function loadTasks(key: TaskTabKey, silent = false) {
       status: s.query.status,
       triggerType: s.query.triggerType,
       timeWindow: s.query.timeWindow,
+      loopId: getLoopIdFromQuery(),
       page: s.query.page,
       pageSize: s.query.pageSize,
     };
@@ -346,7 +347,18 @@ const statusConfig: Record<string, { color: string; text: string }> = {
 };
 
 // ============ 路由 ============
+const route = useRoute();
 const router = useRouter();
+
+/**
+ * FP-P0-04：消费 route.query.loopId 深链接参数。
+ * 从工作台/关注队列跳转 ?loopId=xxx 时，自动筛选该回路任务。
+ * loopId 只读自 URL，不在 Tab 状态内可编辑；用户切换 Tab 时 loopId 仍生效。
+ */
+function getLoopIdFromQuery(): string | undefined {
+  const v = route.query.loopId;
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
 
 // ============ 按钮状态机 ============
 /** 诊断：仅待执行状态可触发 */
@@ -921,6 +933,7 @@ defineExpose({ refresh });
         >
           <template #toolbar>
             <ClpmToolbarButton
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               type="primary"
               :disabled="!canTriggerNew"
               @click="openTriggerModal"
@@ -929,6 +942,7 @@ defineExpose({ refresh });
               新增诊断
             </ClpmToolbarButton>
             <ClpmToolbarButton
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               :disabled="selectedCount === 0 || activeTab === 'archived'"
               :loading="batchDiagnoseLoading"
               @click="handleBatchTrigger"
@@ -1089,6 +1103,7 @@ defineExpose({ refresh });
                     @confirm="handleRowDiagnose(record)"
                   >
                     <Button
+                      v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
                       size="small"
                       type="link"
                       :loading="rowDiagnoseLoading === record.taskId"
@@ -1098,6 +1113,7 @@ defineExpose({ refresh });
                   </Popconfirm>
                   <Button
                     v-if="canViewResult(record.status)"
+                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
@@ -1159,6 +1175,7 @@ defineExpose({ refresh });
         >
           <template #toolbar>
             <ClpmToolbarButton
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               type="primary"
               :disabled="!canTriggerNew"
               @click="openTriggerModal"
@@ -1316,6 +1333,7 @@ defineExpose({ refresh });
                   </Popconfirm>
                   <Button
                     v-if="canViewResult(record.status)"
+                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
@@ -1520,6 +1538,7 @@ defineExpose({ refresh });
                 <Space size="small" wrap>
                   <Button
                     v-if="canViewResult(record.status)"
+                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"

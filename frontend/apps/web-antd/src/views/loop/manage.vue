@@ -1447,7 +1447,7 @@ watch(
                 {
                   label: '从 AAS 同步',
                   icon: 'lucide:refresh-cw',
-                  onClick: () => router.push('/loop/aas'),
+                  onClick: () => router.push('/config/link'),
                 },
               ]"
             />

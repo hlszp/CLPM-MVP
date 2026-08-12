@@ -16,9 +16,8 @@ import { $t } from '#/locales';
 /**
  * 角色默认首页（实现契约 §5 + UI/UX §4.2 三方对齐基准）
  *
- * 后端 auth.py 的 ROLE_DEFAULT_HOME 当前全角色返回 /dashboard（后端归属另一波次整改），
- * 前端在登录跳转处先行落地本表：角色映射优先于后端 defaultHome 返回值。
- * 后端波次对齐后，本表与后端同口径，行为不变。
+ * FP-P0-08：后端 auth.py ROLE_DEFAULT_HOME 已对齐本表，事实源统一。
+ * 角色映射优先于后端 defaultHome 返回值（双保险），二者口径一致。
  *
  * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis
  * - SPONSOR：仅汇总视图 → /metric（重定向至 /metric/pid-dashboard）

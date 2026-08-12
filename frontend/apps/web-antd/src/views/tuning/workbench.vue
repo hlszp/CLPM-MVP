@@ -501,7 +501,7 @@ function handleStartTuning(record: DiagnosisApi.DiagnosisListItem) {
       diagnosisLabel: record.diagnosisLabel,
       from: 'diagnosis',
       // P1-07：携带返回路径（诊断详情页），flow 页可一键返回
-      returnTo: `/diagnosis/detail?loopId=${record.loopId}`,
+      returnTo: `/diagnosis/detail/${record.loopId}`,
     },
   });
 }

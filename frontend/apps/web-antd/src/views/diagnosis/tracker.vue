@@ -4,9 +4,9 @@
  *
  * 对齐 IDS v3.2 §2.4 + PRD §4.4
  * - 表格展示跟踪记录列表（回路位号/诊断标签/状态/创建时间/更新时间/操作）
- * - 状态标签颜色：PENDING(default)/IN_PROGRESS(processing)/IMPLEMENTED(success)/IGNORED(warning)
- * - 顶部 KpiStrip：待处理 / 处理中 / 已实施 / 已忽略 各状态计数
- * - 状态机可视化：待处理 → 处理中 → 已实施 / 已忽略
+ * - 状态标签颜色：PENDING(default)/IN_PROGRESS(processing)/VERIFYING(success)/IGNORED(warning)
+ * - 顶部 KpiStrip：待处理 / 处理中 / 验证中 / 已忽略 各状态计数
+ * - 状态机可视化：待处理 → 处理中 → 验证中 → 已闭环 / 已忽略
  * - 状态更新下拉菜单（仅 IC_ENGINEER 可操作），Modal 含"变更说明"审计字段
  * - "A/B 对比"按钮打开抽屉展示处置前后 KPI 对比图表
  * - "导出 PDF"按钮后端同步生成诊断建议书，前端 Blob 直接下载（FDS §5.4.4）
@@ -184,13 +184,15 @@ const severityOptions: {
 ];
 
 /** 处理状态选项（C1-3：补齐 P1a 闭环状态机全态） */
+/* FP-P0-07：移除 IMPLEMENTED 选项——后端 canonical 状态机为
+   PENDING→IN_PROGRESS→VERIFYING→CLOSED/REOPENED，IMPLEMENTED 仅为
+   历史兼容映射。存量 IMPLEMENTED 记录由后端自动映射为 VERIFYING。 */
 const statusOptions: { label: string; value: DiagnosisApi.ActionStatus }[] = [
   { label: '待处理', value: 'PENDING' },
   { label: '处理中', value: 'IN_PROGRESS' },
   { label: '验证中', value: 'VERIFYING' },
   { label: '已闭环', value: 'CLOSED' },
   { label: '重开', value: 'REOPENED' },
-  { label: '已实施', value: 'IMPLEMENTED' },
   { label: '已忽略', value: 'IGNORED' },
 ];
 
@@ -396,8 +398,8 @@ const statusForm = reactive({
   plannedAt: '',
 });
 
-/** D3: 当前是否需要展示 MOC 字段（仅 IMPLEMENTED 状态） */
-const showMocFields = computed(() => statusForm.status === 'IMPLEMENTED');
+/** D3: 当前是否需要展示 MOC 字段（FP-P0-07：VERIFYING 状态展示，对齐后端 Poka-Yoke） */
+const showMocFields = computed(() => statusForm.status === 'VERIFYING');
 
 /** V62-P3-008：计划执行时间 DatePicker 双向绑定（dayjs ↔ ISO 字符串） */
 const plannedAtDate = computed<dayjs.Dayjs | undefined>({
@@ -493,8 +495,8 @@ async function handleSubmitStatus() {
     message.warning('请填写变更说明');
     return;
   }
-  // D3: IMPLEMENTED 状态校验 MOC 变更管理关联
-  if (statusForm.status === 'IMPLEMENTED') {
+  // D3: VERIFYING 状态校验 MOC 变更管理关联（FP-P0-07：对齐后端 Poka-Yoke）
+  if (statusForm.status === 'VERIFYING') {
     if (statusForm.mocNotApplicable) {
       if (!statusForm.mocReason.trim()) {
         message.warning('勾选 MOC 不适用时，必须填写依据说明');
@@ -502,7 +504,7 @@ async function handleSubmitStatus() {
       }
     } else if (!statusForm.mocRef.trim()) {
       message.warning(
-        '标记已实施时必须填写 MOC 变更管理关联编号，或勾选"不适用"并填写依据说明',
+        '标记验证中时必须填写 MOC 变更管理关联编号，或勾选"不适用"并填写依据说明',
       );
       return;
     }
@@ -516,8 +518,8 @@ async function handleSubmitStatus() {
       // V62-P3-008：负责人与计划执行时间（可选，空值传 undefined 不覆盖）
       assignee: statusForm.assignee.trim() || undefined,
       plannedAt: statusForm.plannedAt || undefined,
-      // D3: 仅 IMPLEMENTED 时传递 MOC 字段，其他状态不传避免覆盖已有值
-      ...(statusForm.status === 'IMPLEMENTED'
+      // D3: 仅 VERIFYING 时传递 MOC 字段，其他状态不传避免覆盖已有值
+      ...(statusForm.status === 'VERIFYING'
         ? {
             mocRef: statusForm.mocRef.trim() || undefined,
             mocNotApplicable: statusForm.mocNotApplicable || undefined,
@@ -528,11 +530,11 @@ async function handleSubmitStatus() {
     message.success('状态更新成功');
     statusModalVisible.value = false;
     await loadList();
-    // F7：状态置为"已实施"后自动弹出 A/B 对比 Drawer（FDS §5.4.4）
-    if (statusForm.status === 'IMPLEMENTED' && editingItem.value) {
+    // F7：状态置为"验证中"后自动弹出 A/B 对比 Drawer（FDS §5.4.4）
+    if (statusForm.status === 'VERIFYING' && editingItem.value) {
       handleOpenAbCompare({
         ...editingItem.value,
-        actionStatus: 'IMPLEMENTED',
+        actionStatus: 'VERIFYING',
         updatedAt: new Date().toISOString(),
       });
     }
@@ -546,10 +548,14 @@ async function handleSubmitStatus() {
 /** 打开状态更新 Modal（直接打开，Modal 内含状态 Select，无需 Dropdown 快捷选择） */
 function handleOpenStatusModal(record: DiagnosisApi.TrackerItem) {
   editingItem.value = record;
-  statusForm.status = record.actionStatus as DiagnosisApi.ActionStatus;
+  // FP-P0-07：存量 IMPLEMENTED 记录映射为 VERIFYING（后端 canonical 状态机）
+  statusForm.status =
+    record.actionStatus === 'IMPLEMENTED'
+      ? 'VERIFYING'
+      : (record.actionStatus as DiagnosisApi.ActionStatus);
   statusForm.comment = record.comment || '';
   statusForm.changeRemark = '';
-  // D3: 预填已有 MOC 信息（已实施记录可查看历史值），新操作默认清空
+  // D3: 预填已有 MOC 信息（验证中记录可查看历史值），新操作默认清空
   statusForm.mocRef = record.mocRef || '';
   statusForm.mocNotApplicable = record.mocNotApplicable || false;
   statusForm.mocReason = record.mocReason || '';
@@ -672,9 +678,12 @@ async function handleExportCsv() {
 /** 打开 A/B 对比 */
 function handleOpenAbCompare(record: DiagnosisApi.TrackerItem) {
   abCompareLoopId.value = record.loopId;
-  // FDS §5.4.4：已实施状态时传递实施时间点，自动截取前后窗口
+  // FDS §5.4.4：验证中/已实施状态时传递实施时间点，自动截取前后窗口
+  // FP-P0-07：兼容存量 IMPLEMENTED 记录
   abCompareImplementedAt.value =
-    record.actionStatus === 'IMPLEMENTED' && record.updatedAt
+    (record.actionStatus === 'VERIFYING' ||
+      record.actionStatus === 'IMPLEMENTED') &&
+    record.updatedAt
       ? record.updatedAt
       : '';
   abCompareVisible.value = true;
@@ -1113,7 +1122,7 @@ watch(
           />
         </FormItem>
 
-        <!-- D3: MOC 变更管理关联（仅 IMPLEMENTED 状态展示，危化企业变更管理合规要求） -->
+        <!-- D3: MOC 变更管理关联（FP-P0-07：VERIFYING 状态展示，危化企业变更管理合规要求） -->
         <template v-if="showMocFields">
           <div class="moc-section-title">
             MOC 变更管理关联

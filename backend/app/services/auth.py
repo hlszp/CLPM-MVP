@@ -98,12 +98,16 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
 }
 
+# FP-P0-08：默认首页事实源统一——后端对齐前端 store/auth.ts ROLE_DEFAULT_HOME
+# EXPERT 仅诊断中心 + 回路整定 → /diagnosis
+# SPONSOR 仅汇总视图 → /metric（重定向至 /metric/pid-dashboard）
+# 其余角色 → /dashboard
 ROLE_DEFAULT_HOME: dict[str, str] = {
     "ADMIN": "/dashboard",
     "IC_ENGINEER": "/dashboard",
     "PE_ENGINEER": "/dashboard",
-    "SPONSOR": "/dashboard",
-    "EXPERT": "/dashboard",
+    "SPONSOR": "/metric",
+    "EXPERT": "/diagnosis",
 }
 
 
