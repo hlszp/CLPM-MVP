@@ -258,9 +258,9 @@ const selectedLoop = computed(
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
 
 async function loadLoopDetail(loopId: string): Promise<void> {
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const detail = await getLoopDetailApi(loopId).catch(() => null);
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) return;
+    if (!requestGuard.guard(loopId, capturedEpoch)) return;
     loopDetail.value = detail;
   });
 }
@@ -278,9 +278,9 @@ const diagnosisLoading = ref(false);
 
 async function loadDiagnosis(loopId: string): Promise<void> {
   diagnosisLoading.value = true;
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const detail = await getDiagnosisDetailApi(loopId).catch(() => null);
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+    if (!requestGuard.guard(loopId, capturedEpoch)) {
       return;
     }
     diagnosisDetail.value = detail;
@@ -319,12 +319,12 @@ async function loadScoreHistory(loopId: string): Promise<KpiSnapshotItem[]> {
 
 async function loadAssessment(loopId: string): Promise<void> {
   assessmentLoading.value = true;
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const [latest, snapshots] = await Promise.all([
       getLoopConfidenceLatestApi(loopId).catch(() => null),
       loadScoreHistory(loopId),
     ]);
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+    if (!requestGuard.guard(loopId, capturedEpoch)) {
       return;
     }
     assessmentDetail.value = latest;
@@ -347,13 +347,13 @@ const tuningDetail = ref<null | TuningApi.TuningTaskDetail>(null);
 
 async function loadTuning(loopId: string): Promise<void> {
   tuningLoading.value = true;
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const res = await getTuningTasksApi({
       loopId,
       page: 1,
       pageSize: 10,
     }).catch(() => ({ items: [], total: 0 }));
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+    if (!requestGuard.guard(loopId, capturedEpoch)) {
       return;
     }
     const items = (res.items || []).toSorted((a, b) =>
@@ -366,7 +366,7 @@ async function loadTuning(loopId: string): Promise<void> {
     const detail = detailId
       ? await getTuningTaskDetailApi(detailId).catch(() => null)
       : null;
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
+    if (!requestGuard.guard(loopId, capturedEpoch)) {
       return;
     }
     tuningDetail.value = detail;
@@ -656,22 +656,70 @@ const diagnosisLabels = computed(
   () => diagnosisDetail.value?.diagnosisLabels ?? [],
 );
 const DIAGNOSIS_LABEL_COLOR_MAP: Record<string, string> = {
-  HIGH_OSCILLATION: 'red',
-  LOOP_SATURATION: 'volcano',
-  STICKY_VALVE: 'orange',
-  POOR_TRACKING: 'gold',
-  SLUGGISH_RESPONSE: 'blue',
-  TIGHT_CONTROL: 'geekblue',
-  LOOSE_CONTROL: 'purple',
+  OSCILLATION: 'red',
+  VALVE_STICTION: 'orange',
+  OVERAGGRESSIVE: 'volcano',
+  OVERCONSERVATIVE: 'gold',
+  EXTERNAL_DISTURBANCE: 'blue',
+  QUALITY_ABNORMAL: 'magenta',
+  OUTPUT_SATURATION: 'purple',
+  MANUAL_REVIEW: 'default',
 };
 const DIAGNOSIS_LABEL_NAME_MAP: Record<string, string> = {
-  HIGH_OSCILLATION: '高频振荡',
-  LOOP_SATURATION: '回路饱和',
-  STICKY_VALVE: '阀门粘滞',
-  POOR_TRACKING: '跟踪不良',
-  SLUGGISH_RESPONSE: '响应迟缓',
-  TIGHT_CONTROL: '控制过紧',
-  LOOSE_CONTROL: '控制过松',
+  OSCILLATION: '振荡',
+  VALVE_STICTION: '阀门粘滞',
+  OVERAGGRESSIVE: '参数过激',
+  OVERCONSERVATIVE: '参数过保守',
+  EXTERNAL_DISTURBANCE: '外扰频繁',
+  QUALITY_ABNORMAL: 'PV 质量异常',
+  OUTPUT_SATURATION: '输出饱和',
+  MANUAL_REVIEW: '人工复核',
+};
+
+/**
+ * 诊断标签 → 关键特征值字段映射（对齐后端 ALGORITHM_META_STATIC.featureKeys）。
+ * 每个标签提取 2-4 个最有诊断价值的特征值展示。
+ * featureKey 别名兼容 data_simulator 实际写入的 key。
+ */
+const DIAG_FEATURE_DEFS: Record<
+  string,
+  { key: string; aliases?: string[]; label: string; unit?: string; fmt?: (v: number) => string }[]
+> = {
+  OSCILLATION: [
+    { key: 'oscillation_index', label: '振荡指数', fmt: (v) => v.toFixed(3) },
+    { key: 'oscillation_frequency', aliases: ['dominant_freq', 'frequency_hz', 'peak_frequency_hz'], label: '主频', unit: 'Hz', fmt: (v) => v.toFixed(4) },
+    { key: 'oscillation_amplitude', aliases: ['amplitude'], label: '振幅', fmt: (v) => v.toFixed(2) },
+    { key: 'iae_similarity', aliases: ['similarity'], label: 'IAE 相似度', fmt: (v) => `${(v * 100).toFixed(0)}%` },
+  ],
+  VALVE_STICTION: [
+    { key: 'stiction_index', label: '粘滞指数', fmt: (v) => v.toFixed(3) },
+    { key: 'fitting_score', aliases: ['r2'], label: '拟合度', fmt: (v) => `${(v * 100).toFixed(1)}%` },
+    { key: 'ngi', label: 'NGI', fmt: (v) => v.toFixed(3) },
+    { key: 'nli', label: 'NLI', fmt: (v) => v.toFixed(3) },
+  ],
+  OVERAGGRESSIVE: [
+    { key: 'overshoot', aliases: ['overshoot_pct'], label: '超调量', unit: '%', fmt: (v) => v.toFixed(1) },
+    { key: 'decay_ratio', label: '衰减比', fmt: (v) => v.toFixed(2) },
+    { key: 'harris_index', label: 'Harris 指数', fmt: (v) => v.toFixed(2) },
+  ],
+  OVERCONSERVATIVE: [
+    { key: 'time_constant', aliases: ['settling_time_s'], label: '时间常数', unit: 's', fmt: (v) => v.toFixed(0) },
+    { key: 'expected_time_constant', label: '期望时间常数', unit: 's', fmt: (v) => v.toFixed(0) },
+    { key: 'ratio', aliases: ['iae_ratio'], label: '比值', fmt: (v) => v.toFixed(2) },
+  ],
+  EXTERNAL_DISTURBANCE: [
+    { key: 'shift_count', label: '漂移次数', fmt: (v) => v.toFixed(0) },
+    { key: 'max_cusum', label: '最大累积和', fmt: (v) => v.toFixed(2) },
+  ],
+  QUALITY_ABNORMAL: [
+    { key: 'bad_quality_rate', label: '坏值率', fmt: (v) => `${(v * 100).toFixed(1)}%` },
+    { key: 'bad_points', label: '坏值点数', fmt: (v) => v.toFixed(0) },
+  ],
+  OUTPUT_SATURATION: [
+    { key: 'saturation_rate', label: '饱和率', fmt: (v) => `${(v * 100).toFixed(1)}%` },
+    { key: 'high_saturation_count', label: '高限次数', fmt: (v) => v.toFixed(0) },
+    { key: 'low_saturation_count', label: '低限次数', fmt: (v) => v.toFixed(0) },
+  ],
 };
 
 // ===== 派生：概览区字段 =====
@@ -1061,9 +1109,9 @@ async function loadProcessTrend(loopId: string): Promise<void> {
     return;
   }
   processTrendLoading.value = true;
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const detail = await getLoopMonitorDetailApi(loopId, tw).catch(() => null);
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) return;
+    if (!requestGuard.guard(loopId, capturedEpoch)) return;
     if (detail?.trend) {
       processTrendData.value = detail.trend;
       modeBands.value = extractModeBands(detail.trend);
@@ -1078,7 +1126,7 @@ async function loadProcessTrend(loopId: string): Promise<void> {
 /** 加载 KPI 历史快照（R4 主画布-性能指标模式） */
 async function loadKpiHistory(loopId: string): Promise<void> {
   kpiHistoryLoading.value = true;
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const now = dayjs();
     let startTime: dayjs.Dayjs;
     let endTime: dayjs.Dayjs = now;
@@ -1119,7 +1167,7 @@ async function loadKpiHistory(loopId: string): Promise<void> {
       sortOrder: 'asc',
       startTime: startTime.toISOString(),
     }).catch(() => ({ items: [], total: 0 }));
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) return;
+    if (!requestGuard.guard(loopId, capturedEpoch)) return;
     kpiHistory.value = (res.items || []).toSorted((a, b) =>
       (a.tsStart || '').localeCompare(b.tsStart || ''),
     );
@@ -1222,6 +1270,88 @@ const diagExtendedMetrics = computed(() => {
     { name: '振荡率', threshold: 40, value: s.oscillationRate ?? 0 },
   ];
 });
+
+/**
+ * R5 诊断卡：按诊断标签类型提取算法特征值（§2.2 表格第 13 行 v1.8）。
+ * 从 diagnosisDetail.featureValues 中按 DIAG_FEATURE_DEFS 映射提取关键字段，
+ * 只展示有值的字段，无值或无映射时不渲染（叙述类文字无来源时禁止显示）。
+ */
+interface DiagFeatureItem {
+  label: string;
+  text: string;
+}
+
+const diagFeatures = computed<DiagFeatureItem[]>(() => {
+  const detail = diagnosisDetail.value;
+  if (!detail?.featureValues) return [];
+  const fv = detail.featureValues;
+  const items: DiagFeatureItem[] = [];
+  const seen = new Set<string>();
+  for (const labelItem of diagnosisLabels.value) {
+    const defs = DIAG_FEATURE_DEFS[labelItem.label];
+    if (!defs) continue;
+    for (const def of defs) {
+      const keys = [def.key, ...(def.aliases ?? [])];
+      let raw: number | undefined;
+      for (const k of keys) {
+        const v = fv[k];
+        if (typeof v === 'number' && !Number.isNaN(v)) {
+          raw = v;
+          break;
+        }
+      }
+      if (raw == null) continue;
+      const dedupKey = `${labelItem.label}:${def.key}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+      const fmt = def.fmt ?? ((v: number) => String(v));
+      const text = def.unit ? `${fmt(raw)} ${def.unit}` : fmt(raw);
+      items.push({ label: def.label, text });
+    }
+  }
+  return items;
+});
+
+/** R5 诊断卡：规则模板建议（evidenceChain.reasoning，有则显示） */
+const diagReasoning = computed<string | null>(() => {
+  const r = diagnosisDetail.value?.evidenceChain?.reasoning;
+  if (!r || typeof r !== 'string' || r.trim().length === 0) return null;
+  return r.trim();
+});
+
+/** R5 整定卡：风险等级颜色映射 */
+function riskLevelColor(level?: null | string): string {
+  if (!level) return 'default';
+  const upper = level.toUpperCase();
+  if (upper === 'HIGH' || upper === 'CRITICAL') return 'red';
+  if (upper === 'MEDIUM' || upper === 'MODERATE') return 'orange';
+  if (upper === 'LOW') return 'green';
+  return 'default';
+}
+
+/** R5 整定卡：G(s) 传递函数格式化（FOPDT / SOPDT） */
+function transferFunctionText(
+  params?: null | { K?: null | number; T1?: null | number; T2?: null | number; tau?: null | number; theta?: null | number },
+): string {
+  if (!params) return '—';
+  const { K, T1, T2, tau, theta } = params;
+  const delay = theta ?? tau;
+  // SOPDT：有两个时间常数
+  if (T1 != null && T2 != null && K != null) {
+    const delayPart = delay != null && delay > 0 ? ` · e^(-${delay.toFixed(0)}s)` : '';
+    return `G(s) = ${K.toFixed(2)} / [(${T1.toFixed(0)}s+1)(${T2.toFixed(0)}s+1)]${delayPart}`;
+  }
+  // FOPDT：单时间常数
+  if (tau != null && K != null) {
+    const delayPart = delay != null && delay > 0 && delay !== tau ? ` · e^(-${delay.toFixed(0)}s)` : '';
+    return `G(s) = ${K.toFixed(2)} / (${tau.toFixed(0)}s+1)${delayPart}`;
+  }
+  if (T1 != null && K != null) {
+    const delayPart = delay != null && delay > 0 ? ` · e^(-${delay.toFixed(0)}s)` : '';
+    return `G(s) = ${K.toFixed(2)} / (${T1.toFixed(0)}s+1)${delayPart}`;
+  }
+  return '—';
+}
 
 // ===== R2 等级标签（动态阈值，useScoreColor 降级 GB/T 44693.2 §6.3 默认）=====
 const summaryScore = computed(() => summary.value?.scoreTrend.score ?? null);
@@ -1924,6 +2054,37 @@ const stageLabelMap: Record<string, string> = {
                             : Number(diagnosisDetail.fusedConfidence).toFixed(2)
                         }}</span>
                       </div>
+                      <div
+                        v-if="diagnosisDetail.confidenceLevel"
+                        class="wb-r5__diag-stat"
+                      >
+                        <span class="wb-r5__diag-stat-label">可信度等级</span>
+                        <Tag
+                          :color="confidenceTagColor(diagnosisDetail.confidenceLevel)"
+                          class="!text-[10px] !leading-none !px-1 !py-0"
+                        >{{ diagnosisDetail.confidenceLevel }}</Tag>
+                      </div>
+                    </div>
+                    <!-- 算法特征值（§2.2 v1.8：FFT 主频/振幅等算法输出） -->
+                    <div
+                      v-if="diagFeatures.length > 0"
+                      class="wb-r5__diag-features"
+                    >
+                      <div
+                        v-for="(feat, fi) in diagFeatures"
+                        :key="fi"
+                        class="wb-r5__diag-feature"
+                      >
+                        <span class="wb-r5__diag-feature-label">{{ feat.label }}</span>
+                        <span class="wb-r5__diag-feature-val">{{ feat.text }}</span>
+                      </div>
+                    </div>
+                    <!-- 规则模板建议（evidenceChain.reasoning，有则显示） -->
+                    <div
+                      v-if="diagReasoning"
+                      class="wb-r5__diag-reasoning"
+                    >
+                      {{ diagReasoning }}
                     </div>
                     <!-- 诊断扩展指标（负向横道） -->
                     <div
@@ -1969,39 +2130,53 @@ const stageLabelMap: Record<string, string> = {
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">当前 PID</span>
                       <span class="wb-r5__tune-val">{{
-                        pidText(currentPid)
+                        pidText(currentPid ?? tuningDetail?.currentPid ?? undefined)
                       }}</span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">推荐 PID</span>
                       <span
                         class="wb-r5__tune-val wb-r5__tune-val--highlight"
-                        >{{ pidText(tuningLatest?.recommendedPid) }}</span
+                        >{{ pidText(tuningDetail?.recommendedPid ?? tuningLatest?.recommendedPid) }}</span
                       >
                     </div>
                     <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">模型</span>
-                      <span class="wb-r5__tune-val">{{
-                        summary?.tuning?.modelType ||
-                        tuningLatest?.modelType ||
-                        '—'
+                      <span class="wb-r5__tune-label">辨识模型</span>
+                      <span class="wb-r5__tune-val wb-r5__tune-val--mono">{{
+                        transferFunctionText(tuningDetail?.modelParams ?? tuningLatest?.modelParams ?? undefined)
                       }}</span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">拟合度</span>
                       <span class="wb-r5__tune-val">
                         {{
-                          tuningLatest?.fittingScore == null
+                          (tuningDetail?.fittingScore ?? tuningLatest?.fittingScore) == null
                             ? '—'
-                            : `${(tuningLatest.fittingScore * 100).toFixed(1)}%`
+                            : `${((tuningDetail?.fittingScore ?? tuningLatest?.fittingScore)! * 100).toFixed(1)}%`
                         }}
                       </span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">风险等级</span>
-                      <span class="wb-r5__tune-val">{{
-                        summary?.tuning?.riskLevel || '—'
-                      }}</span>
+                      <span class="wb-r5__tune-val">
+                        <Tag
+                          v-if="summary?.tuning?.riskLevel"
+                          :color="riskLevelColor(summary.tuning.riskLevel)"
+                          class="!text-[10px] !leading-none !px-1.5 !py-0"
+                        >{{ summary.tuning.riskLevel }}</Tag>
+                        <span v-else>—</span>
+                      </span>
+                    </div>
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">可信度</span>
+                      <span class="wb-r5__tune-val">
+                        <Tag
+                          v-if="summary?.tuning?.confidenceLevel"
+                          :color="confidenceTagColor(summary.tuning.confidenceLevel)"
+                          class="!text-[10px] !leading-none !px-1 !py-0"
+                        >{{ summary.tuning.confidenceLevel }}</Tag>
+                        <span v-else>—</span>
+                      </span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">状态</span>
@@ -2882,6 +3057,43 @@ const stageLabelMap: Record<string, string> = {
   min-height: 0;
 }
 
+/* 算法特征值网格 */
+.wb-r5__diag-features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.wb-r5__diag-feature {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.wb-r5__diag-feature-label {
+  color: hsl(var(--foreground) / 45%);
+  white-space: nowrap;
+}
+
+.wb-r5__diag-feature-val {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground) / 85%);
+}
+
+/* 规则模板建议 */
+.wb-r5__diag-reasoning {
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: hsl(var(--foreground) / 65%);
+  background: hsl(var(--muted) / 40%);
+  border-radius: 3px;
+}
+
 /* 整定卡 */
 .wb-r5__tune-body {
   display: flex;
@@ -2923,6 +3135,12 @@ const stageLabelMap: Record<string, string> = {
 .wb-r5__tune-val--highlight {
   font-weight: 700;
   color: hsl(var(--primary));
+}
+
+.wb-r5__tune-val--mono {
+  font-size: 10px;
+  line-height: 1.3;
+  word-break: break-all;
 }
 
 .wb-r5__tune-safety {
