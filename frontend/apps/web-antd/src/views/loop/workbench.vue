@@ -389,6 +389,23 @@ async function loadSummary(loopId: string): Promise<void> {
   await requestGuard.run(async (_signal, capturedEpoch) => {
     const data = await getWorkbenchSummaryApi(loopId).catch(() => null);
     if (!requestGuard.guard(loopId, capturedEpoch)) return;
+
+    // === MOCK 开关：测试验证卡数据展示（测试完改为 false） ===
+    const USE_MOCK = false;
+    if (USE_MOCK && data) {
+      const { getMockSummary } = await import('./components/workbench-mock');
+      const mock = getMockSummary();
+      summary.value = {
+        ...data,
+        trackerTimeline: mock.trackerTimeline,
+        nextAction: mock.nextAction ?? data.nextAction,
+        lifecycle: mock.lifecycle ?? data.lifecycle,
+        activeAttention: mock.activeAttention ?? data.activeAttention,
+      };
+      summaryLoading.value = false;
+      return;
+    }
+
     summary.value = data;
     summaryLoading.value = false;
   });
@@ -3035,8 +3052,21 @@ const stageLabelMap: Record<string, string> = {
 /* 图表容器 */
 .wb-r4__chart {
   position: relative;
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 200px;
+}
+
+/* Spin 包装器高度传递 */
+.wb-r4__chart :deep(.ant-spin-nested-loading) {
+  flex: 1;
+  min-height: 0;
+}
+
+.wb-r4__chart :deep(.ant-spin-container) {
+  position: relative;
+  height: 100%;
 }
 
 /* ===== R5 证据四区 ===== */
@@ -3097,11 +3127,13 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-r5__radar {
+  position: relative;
   flex: 0 0 45%;
   min-height: 0;
 }
 
 .wb-r5__bars {
+  position: relative;
   flex: 1;
   min-height: 0;
 }

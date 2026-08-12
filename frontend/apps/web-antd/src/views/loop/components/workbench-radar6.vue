@@ -13,7 +13,7 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
@@ -170,7 +170,10 @@ watch(
   },
   { deep: true, flush: 'post' },
 );
-</script>
+
+onMounted(() => {
+  if (hasData.value) refresh();
+});</script>
 
 <template>
   <div class="radar6">
@@ -183,10 +186,10 @@ watch(
 
 <style scoped>
 .radar6 {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  min-height: 0;
 }
 
 .radar6__empty {

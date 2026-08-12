@@ -15,7 +15,7 @@ import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { KpiSnapshotItem } from '#/api/metric';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
@@ -251,7 +251,10 @@ watch(
   },
   { deep: true, flush: 'post' },
 );
-</script>
+
+onMounted(() => {
+  refresh();
+});</script>
 
 <template>
   <div class="kpi-history">
@@ -264,10 +267,10 @@ watch(
 
 <style scoped>
 .kpi-history {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  min-height: 0;
 }
 
 .kpi-history__empty {
