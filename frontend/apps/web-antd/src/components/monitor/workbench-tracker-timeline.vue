@@ -395,11 +395,6 @@ function handleVerify() {
         </div>
       </div>
 
-      <!-- 安全边界文案（始终可见） -->
-      <div class="tracker-timeline__safety" role="note">
-        安全边界：只读建议 · 人工实施 · 需留痕；平台不直接修改 DCS 的 P/I/D
-        参数。
-      </div>
     </div>
   </div>
 </template>
@@ -683,17 +678,5 @@ function handleVerify() {
 .effect-compare__kpi-change {
   font-size: 10px;
   color: hsl(var(--foreground) / 45%);
-}
-
-/* 安全边界文案 */
-.tracker-timeline__safety {
-  flex-shrink: 0;
-  padding: 2px 6px;
-  margin-top: 4px;
-  font-size: 10px;
-  color: hsl(var(--foreground) / 40%);
-  text-align: center;
-  background: hsl(var(--muted) / 30%);
-  border-radius: 3px;
 }
 </style>
