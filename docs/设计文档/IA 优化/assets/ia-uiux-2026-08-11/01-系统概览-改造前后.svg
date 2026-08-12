@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CLPM 系统概览改造前后线框</title>
+  <desc id="desc">左侧为当前跨模块卡片门户，右侧为角色化今日工作与证据概览目标结构。</desc>
+  <style>
+    text { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .h1 { font-size: 28px; font-weight: 700; }
+    .h2 { font-size: 18px; font-weight: 700; }
+    .h3 { font-size: 14px; font-weight: 650; }
+    .body { font-size: 12px; }
+    .small { font-size: 10px; fill: #667085; }
+    .label { font-size: 11px; font-weight: 650; fill: #344054; }
+    .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1; }
+    .surface { fill: #f8fafc; stroke: #d7e0ea; stroke-width: 1; }
+    .muted { fill: #eef2f6; stroke: #d7e0ea; stroke-width: 1; }
+    .blue { fill: #e9f2ff; stroke: #7db2f7; stroke-width: 1; }
+    .amber { fill: #fff5df; stroke: #e9b949; stroke-width: 1; }
+    .rose { fill: #fff0f1; stroke: #e26d78; stroke-width: 1; }
+    .green { fill: #edf8f1; stroke: #5ca979; stroke-width: 1; }
+    .callout { fill: #172033; }
+    .calloutText { font-size: 10px; font-weight: 650; fill: #ffffff; }
+    .white { fill: #ffffff !important; }
+  </style>
+
+  <rect width="1600" height="900" fill="#eef3f7"/>
+  <text id="doc-title" x="40" y="46" class="h1">样板 01｜系统概览：从“模块拼盘”到“角色化今日工作”</text>
+  <text x="40" y="72" class="body" fill="#667085">结构线框 · 非最终视觉稿 · 菜单名称保持“系统概览”，首屏内容按角色重排</text>
+
+  <rect x="32" y="96" width="752" height="772" rx="10" class="panel"/>
+  <rect x="816" y="96" width="752" height="772" rx="10" class="panel"/>
+  <rect x="32" y="96" width="752" height="52" rx="10" fill="#e7ebf0"/>
+  <rect x="816" y="96" width="752" height="52" rx="10" fill="#172033"/>
+  <text x="56" y="129" class="h2">当前结构｜跨模块数字门户</text>
+  <text x="840" y="129" class="h2 white">目标结构｜运行决策与今日工作门户</text>
+
+  <!-- Current -->
+  <rect x="52" y="164" width="712" height="42" rx="4" class="surface"/>
+  <text x="68" y="190" class="h3">工作台</text>
+  <text x="130" y="190" class="small">跨模块待办门户</text>
+  <text x="708" y="190" class="small mono">08:47:56 已刷新</text>
+
+  <g>
+    <rect x="52" y="220" width="172" height="72" rx="4" class="surface"/>
+    <rect x="232" y="220" width="172" height="72" rx="4" class="surface"/>
+    <rect x="412" y="220" width="172" height="72" rx="4" class="surface"/>
+    <rect x="592" y="220" width="172" height="72" rx="4" class="surface"/>
+    <text x="66" y="244" class="small">诊断待处理</text><text x="66" y="275" class="h2 mono">0</text>
+    <text x="246" y="244" class="small">异常跟踪待办</text><text x="246" y="275" class="h2 mono">0</text>
+    <text x="426" y="244" class="small">评估待执行</text><text x="426" y="275" class="h2 mono">0</text>
+    <text x="606" y="244" class="small">整定任务</text><text x="606" y="275" class="h2 mono">1</text>
+  </g>
+
+  <rect x="52" y="308" width="712" height="184" rx="4" class="surface"/>
+  <text x="68" y="334" class="h3">异常预测与提前预警</text>
+  <line x1="68" y1="346" x2="748" y2="346" stroke="#d7e0ea"/>
+  <rect x="324" y="374" width="168" height="76" rx="6" class="muted"/>
+  <text x="360" y="405" class="label">暂无高风险回路</text>
+  <text x="344" y="427" class="small">大面积空态占据首屏</text>
+
+  <rect x="52" y="508" width="712" height="132" rx="4" class="surface"/>
+  <text x="68" y="534" class="h3">数据链路健康状态</text>
+  <g>
+    <rect x="68" y="550" width="157" height="72" rx="4" class="panel"/>
+    <rect x="237" y="550" width="157" height="72" rx="4" class="panel"/>
+    <rect x="406" y="550" width="157" height="72" rx="4" class="panel"/>
+    <rect x="575" y="550" width="157" height="72" rx="4" class="panel"/>
+    <text x="112" y="578" class="small">实时订阅</text><text x="116" y="604" class="label">运行中</text>
+    <text x="280" y="578" class="small">网络模式</text><text x="273" y="604" class="label">局域网直连</text>
+    <text x="451" y="578" class="small">最近同步</text><text x="438" y="604" class="label mono">04:19:1</text>
+    <text x="623" y="578" class="small">Tailscale</text><text x="631" y="604" class="label">可用</text>
+  </g>
+
+  <rect x="52" y="656" width="350" height="176" rx="4" class="surface"/>
+  <rect x="414" y="656" width="350" height="176" rx="4" class="surface"/>
+  <text x="68" y="684" class="h3">诊断与异常跟踪</text>
+  <text x="430" y="684" class="h3">整改有效率</text>
+  <line x1="68" y1="700" x2="386" y2="700" stroke="#d7e0ea"/>
+  <line x1="430" y1="700" x2="748" y2="700" stroke="#d7e0ea"/>
+  <text x="166" y="764" class="small">信息分散为统计卡片</text>
+  <text x="527" y="764" class="small">未形成决策叙事</text>
+
+  <rect x="618" y="316" width="134" height="26" rx="13" class="callout"/>
+  <text x="632" y="333" class="calloutText">① 空态主导视觉</text>
+  <rect x="610" y="648" width="142" height="26" rx="13" class="callout"/>
+  <text x="624" y="665" class="calloutText">② 卡片权重趋同</text>
+  <rect x="65" y="802" width="190" height="26" rx="13" class="callout"/>
+  <text x="79" y="819" class="calloutText">③ 看到了数字，未看到下一步</text>
+
+  <!-- Target -->
+  <rect x="836" y="164" width="712" height="46" rx="4" class="surface"/>
+  <text x="852" y="183" class="small">范围</text><text x="852" y="199" class="label">全厂 · 全部装置</text>
+  <text x="1014" y="183" class="small">时间窗</text><text x="1014" y="199" class="label mono">近 24 h</text>
+  <text x="1138" y="183" class="small">数据新鲜度</text><text x="1138" y="199" class="label mono">8 s · 正常</text>
+  <text x="1300" y="183" class="small">证据可信度</text><text x="1300" y="199" class="label">A · 96.8%</text>
+  <rect x="1462" y="174" width="70" height="26" rx="4" class="blue"/>
+  <text x="1479" y="191" class="label">切换范围</text>
+
+  <text x="836" y="248" class="h2">今日工作</text>
+  <text x="929" y="248" class="body" fill="#667085">仪控工程师 · 先处理高风险与超期事项</text>
+  <rect x="836" y="266" width="438" height="296" rx="6" class="surface"/>
+  <text x="854" y="292" class="h3">优先处置</text>
+  <text x="1204" y="292" class="small mono">7 项</text>
+
+  <g>
+    <rect x="852" y="310" width="406" height="68" rx="4" class="rose"/>
+    <rect x="852" y="388" width="406" height="68" rx="4" class="amber"/>
+    <rect x="852" y="466" width="406" height="68" rx="4" class="panel"/>
+    <rect x="864" y="322" width="4" height="44" rx="2" fill="#d64555"/>
+    <rect x="864" y="400" width="4" height="44" rx="2" fill="#c07b17"/>
+    <rect x="864" y="478" width="4" height="44" rx="2" fill="#718096"/>
+    <text x="880" y="330" class="small">超期验证 · 安全关键回路</text>
+    <text x="880" y="350" class="h3 mono">41LIC4201_PIDA</text>
+    <text x="880" y="368" class="small">评分下降 8.2 · 已超期 6 h · 责任人：张工</text>
+    <text x="880" y="408" class="small">数据质量 · 结论被门禁</text>
+    <text x="880" y="428" class="h3 mono">80FIC31402_PIDA</text>
+    <text x="880" y="446" class="small">PV 有效率 72.4% · 需补数后重评</text>
+    <text x="880" y="486" class="small">绩效恶化 · 待受理</text>
+    <text x="880" y="506" class="h3 mono">41PIC40506_PIDA</text>
+    <text x="880" y="524" class="small">持续 3 h · 装置影响：中</text>
+    <rect x="1170" y="329" width="72" height="28" rx="4" class="rose"/><text x="1187" y="347" class="label">立即验证</text>
+    <rect x="1170" y="407" width="72" height="28" rx="4" class="amber"/><text x="1193" y="425" class="label">补数</text>
+    <rect x="1170" y="485" width="72" height="28" rx="4" class="blue"/><text x="1193" y="503" class="label">受理</text>
+  </g>
+
+  <rect x="1290" y="266" width="258" height="296" rx="6" class="surface"/>
+  <text x="1308" y="292" class="h3">我的责任与下一步</text>
+  <rect x="1308" y="310" width="222" height="66" rx="4" class="blue"/>
+  <text x="1322" y="332" class="small">当前首要事项</text>
+  <text x="1322" y="352" class="label">验证整改效果并决定关闭/重开</text>
+  <text x="1322" y="368" class="small mono">到期 10:00 · 剩余 01:12</text>
+  <text x="1308" y="410" class="small">待我受理</text><text x="1505" y="410" class="label mono">3</text>
+  <text x="1308" y="442" class="small">验证超期</text><text x="1505" y="442" class="label mono">1</text>
+  <text x="1308" y="474" class="small">待协作会签</text><text x="1505" y="474" class="label mono">2</text>
+  <rect x="1308" y="506" width="222" height="36" rx="4" fill="#1769c2"/>
+  <text x="1376" y="529" class="label white">打开完整工作队列</text>
+
+  <rect x="836" y="580" width="456" height="178" rx="6" class="surface"/>
+  <text x="854" y="606" class="h3">风险与绩效证据</text>
+  <text x="854" y="628" class="small">近 7 天 · 高风险回路 8 → 5 · 可信结论覆盖 92%</text>
+  <polyline points="862,718 912,690 962,700 1012,660 1062,676 1112,636 1162,646 1212,616 1264,626" fill="none" stroke="#1769c2" stroke-width="3"/>
+  <line x1="862" y1="730" x2="1270" y2="730" stroke="#d7e0ea"/>
+  <rect x="854" y="646" width="84" height="24" rx="12" class="green"/><text x="871" y="662" class="small">风险下降 37%</text>
+
+  <rect x="1308" y="580" width="240" height="178" rx="6" class="surface"/>
+  <text x="1326" y="606" class="h3">风险构成</text>
+  <rect x="1326" y="628" width="180" height="12" rx="6" fill="#d64555"/>
+  <rect x="1326" y="654" width="136" height="12" rx="6" fill="#c07b17"/>
+  <rect x="1326" y="680" width="92" height="12" rx="6" fill="#1769c2"/>
+  <text x="1326" y="714" class="small">超期验证 1 · 数据门禁 2 · 绩效恶化 4</text>
+
+  <rect x="836" y="776" width="712" height="60" rx="6" class="surface"/>
+  <text x="854" y="800" class="h3">数据链路</text>
+  <text x="948" y="800" class="small">实时订阅</text><text x="948" y="820" class="label">正常</text>
+  <text x="1072" y="800" class="small">最近同步</text><text x="1072" y="820" class="label mono">8 s</text>
+  <text x="1194" y="800" class="small">缺口回路</text><text x="1194" y="820" class="label mono">2</text>
+  <text x="1316" y="800" class="small">本月已验证改善</text><text x="1316" y="820" class="label mono">12 / 15</text>
+  <rect x="1438" y="790" width="90" height="30" rx="4" class="blue"/><text x="1450" y="809" class="label">查看数据健康</text>
+
+  <rect x="836" y="218" width="110" height="24" rx="12" class="callout"/>
+  <text x="849" y="234" class="calloutText">① 角色化标题</text>
+  <rect x="1154" y="270" width="102" height="24" rx="12" class="callout"/>
+  <text x="1167" y="286" class="calloutText">② 行动主轴</text>
+  <rect x="1434" y="270" width="96" height="24" rx="12" class="callout"/>
+  <text x="1447" y="286" class="calloutText">③ 决策坞</text>
+  <rect x="1170" y="586" width="104" height="24" rx="12" class="callout"/>
+  <text x="1183" y="602" class="calloutText">④ 证据叙事</text>
+
+  <text x="40" y="890" class="small">设计意图：同一路由、同一信息模型，按角色改变首屏排序与动作；高级感来自秩序、证据与决策密度，而非装饰性渐变。</text>
+</svg>

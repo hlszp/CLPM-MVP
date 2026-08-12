@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CLPM 关注队列改造前后线框</title>
+  <desc id="desc">左侧为当前重复状态标签表格，右侧为风险降噪的主从工作队列与证据抽屉。</desc>
+  <style>
+    text { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .h1 { font-size: 28px; font-weight: 700; }.h2 { font-size: 18px; font-weight: 700; }
+    .h3 { font-size: 14px; font-weight: 650; }.body { font-size: 12px; }
+    .small { font-size: 10px; fill: #667085; }.label { font-size: 11px; font-weight: 650; fill: #344054; }
+    .panel { fill: #fff; stroke: #cbd5e1; }.surface { fill: #f8fafc; stroke: #d7e0ea; }
+    .blue { fill: #e9f2ff; stroke: #7db2f7; }.amber { fill: #fff5df; stroke: #e9b949; }
+    .rose { fill: #fff0f1; stroke: #e26d78; }.green { fill: #edf8f1; stroke: #5ca979; }
+    .callout { fill: #172033; }.calloutText { font-size: 10px; font-weight: 650; fill: #fff; }
+    .white { fill: #fff !important; }
+  </style>
+  <rect width="1600" height="900" fill="#eef3f7"/>
+  <text x="40" y="46" class="h1">样板 02｜关注队列：从“警报清单”到“可受理的工作队列”</text>
+  <text x="40" y="72" class="body" fill="#667085">结构线框 · Attention 仍是系统派生候选；被人受理后转为持久闭环案例</text>
+  <rect x="32" y="96" width="752" height="772" rx="10" class="panel"/>
+  <rect x="816" y="96" width="752" height="772" rx="10" class="panel"/>
+  <rect x="32" y="96" width="752" height="52" rx="10" fill="#e7ebf0"/>
+  <rect x="816" y="96" width="752" height="52" rx="10" fill="#172033"/>
+  <text x="56" y="129" class="h2">当前结构｜扁平聚合表</text>
+  <text x="840" y="129" class="h2 white">目标结构｜主从式行动队列</text>
+
+  <!-- Current -->
+  <rect x="52" y="164" width="712" height="42" rx="4" class="surface"/>
+  <text x="68" y="190" class="h3">关注队列</text><text x="140" y="190" class="small">预警/恶化/质量/工单/验证五合一</text>
+  <rect x="52" y="218" width="712" height="58" rx="4" class="surface"/>
+  <g class="small">
+    <rect x="66" y="234" width="70" height="26" rx="3" class="rose"/><text x="82" y="251">紧急 0</text>
+    <rect x="144" y="234" width="70" height="26" rx="3" class="rose"/><text x="164" y="251">高 101</text>
+    <rect x="222" y="234" width="70" height="26" rx="3" class="surface"/><text x="240" y="251">中 108</text>
+    <rect x="300" y="234" width="74" height="26" rx="3" class="surface"/><text x="316" y="251">活跃预警</text>
+    <rect x="382" y="234" width="74" height="26" rx="3" class="surface"/><text x="397" y="251">评分恶化</text>
+    <rect x="464" y="234" width="74" height="26" rx="3" class="surface"/><text x="480" y="251">数据质量</text>
+    <rect x="548" y="234" width="124" height="26" rx="3" class="panel"/><text x="564" y="251">位号 / 标题</text>
+    <rect x="680" y="234" width="66" height="26" rx="3" fill="#1769c2"/><text x="701" y="251" class="white">查询</text>
+  </g>
+  <rect x="52" y="292" width="712" height="38" fill="#f2f4f7" stroke="#d7e0ea"/>
+  <text x="64" y="316" class="label">优先级　来源　　　回路　　　　　　摘要　　　　　　　　　状态　　　发生时间　　　　操作</text>
+  <g>
+    <rect x="52" y="330" width="712" height="50" class="panel"/>
+    <rect x="52" y="380" width="712" height="50" class="panel"/>
+    <rect x="52" y="430" width="712" height="50" class="panel"/>
+    <rect x="52" y="480" width="712" height="50" class="panel"/>
+    <rect x="52" y="530" width="712" height="50" class="panel"/>
+    <rect x="52" y="580" width="712" height="50" class="panel"/>
+    <rect x="52" y="630" width="712" height="50" class="panel"/>
+    <rect x="52" y="680" width="712" height="50" class="panel"/>
+  </g>
+  <g class="small">
+    <text x="66" y="360" fill="#c73949">高</text><text x="100" y="360" fill="#c73949">活跃预警</text><text x="172" y="360" class="mono">80LIC10603</text><text x="292" y="360">CONFIDENCE_DEGRADED 触发</text><text x="496" y="360" fill="#c73949">待处理</text><text x="560" y="360" class="mono">22:04</text><text x="678" y="360" fill="#1769c2">详情　工作台</text>
+    <text x="66" y="410" fill="#c73949">高</text><text x="100" y="410" fill="#c73949">活跃预警</text><text x="172" y="410" class="mono">80TIC10506</text><text x="292" y="410">CONFIDENCE_DEGRADED 触发</text><text x="496" y="410" fill="#c73949">待处理</text><text x="560" y="410" class="mono">22:04</text><text x="678" y="410" fill="#1769c2">详情　工作台</text>
+    <text x="66" y="460" fill="#c73949">高</text><text x="100" y="460" fill="#c73949">活跃预警</text><text x="172" y="460" class="mono">41PIC40506</text><text x="292" y="460">CONFIDENCE_DEGRADED 触发</text><text x="496" y="460" fill="#c73949">待处理</text><text x="560" y="460" class="mono">22:04</text><text x="678" y="460" fill="#1769c2">详情　工作台</text>
+    <text x="66" y="510" fill="#c73949">高</text><text x="100" y="510" fill="#c73949">活跃预警</text><text x="172" y="510" class="mono">80TIC10402</text><text x="292" y="510">CONFIDENCE_DEGRADED 触发</text><text x="496" y="510" fill="#c73949">待处理</text><text x="560" y="510" class="mono">22:04</text><text x="678" y="510" fill="#1769c2">详情　工作台</text>
+    <text x="66" y="560" fill="#c73949">高</text><text x="100" y="560" fill="#c73949">活跃预警</text><text x="172" y="560" class="mono">41PIC20124</text><text x="292" y="560">CONFIDENCE_DEGRADED 触发</text><text x="496" y="560" fill="#c73949">待处理</text><text x="560" y="560" class="mono">22:04</text><text x="678" y="560" fill="#1769c2">详情　工作台</text>
+  </g>
+  <rect x="590" y="300" width="158" height="24" rx="12" class="callout"/><text x="603" y="316" class="calloutText">① 状态色重复，难以扫视</text>
+  <rect x="548" y="726" width="200" height="24" rx="12" class="callout"/><text x="561" y="742" class="calloutText">② 无 owner / SLA / 受理承诺</text>
+  <rect x="65" y="786" width="200" height="24" rx="12" class="callout"/><text x="78" y="802" class="calloutText">③ 多来源相似项增加扫视负担</text>
+
+  <!-- Target -->
+  <rect x="836" y="164" width="712" height="46" rx="4" class="surface"/>
+  <text x="852" y="183" class="small">范围</text><text x="852" y="199" class="label">全厂 · 全部装置</text>
+  <text x="1000" y="183" class="small">视图</text><text x="1000" y="199" class="label">待我受理 · 高风险优先</text>
+  <text x="1214" y="183" class="small">更新时间</text><text x="1214" y="199" class="label mono">8 s 前</text>
+  <rect x="1438" y="174" width="92" height="26" rx="4" class="blue"/><text x="1454" y="191" class="label">保存为视图</text>
+
+  <rect x="836" y="226" width="424" height="610" rx="6" class="surface"/>
+  <rect x="1276" y="226" width="272" height="610" rx="6" class="surface"/>
+  <text x="854" y="254" class="h3">行动候选</text><text x="1204" y="254" class="small mono">27 项</text>
+  <rect x="852" y="270" width="392" height="34" rx="4" class="panel"/>
+  <text x="866" y="291" class="small">我的事项　高风险　超期　数据门禁　更多筛选</text>
+
+  <rect x="852" y="318" width="392" height="116" rx="5" class="rose"/>
+  <rect x="852" y="446" width="392" height="116" rx="5" class="amber"/>
+  <rect x="852" y="574" width="392" height="116" rx="5" class="panel"/>
+  <rect x="852" y="702" width="392" height="116" rx="5" class="panel"/>
+  <rect x="864" y="330" width="5" height="90" rx="2" fill="#d64555"/>
+  <text x="880" y="344" class="small">安全关键 · 验证超期 · 证据链完整</text>
+  <text x="880" y="366" class="h3 mono">41LIC4201_PIDA</text>
+  <text x="880" y="386" class="body">实施后振荡仍高于基线，需决定关闭或重开</text>
+  <text x="880" y="408" class="small">owner 张工 · 超期 6 h · 证据 A / 96.8%</text>
+  <rect x="1154" y="376" width="72" height="30" rx="4" fill="#d64555"/><text x="1170" y="395" class="label white">立即验证</text>
+  <rect x="864" y="458" width="5" height="90" rx="2" fill="#c07b17"/>
+  <text x="880" y="472" class="small">数据门禁 · 持续 2 h · 结论不可用</text>
+  <text x="880" y="494" class="h3 mono">80FIC31402_PIDA</text>
+  <text x="880" y="514" class="body">PV 有效率 72.4%，评估结论不可用</text>
+  <text x="880" y="536" class="small">未受理 · 持续 2 h · 建议：补数后重评</text>
+  <rect x="1154" y="504" width="72" height="30" rx="4" class="amber"/><text x="1177" y="523" class="label">受理</text>
+  <text x="880" y="600" class="small">评分恶化 · 中影响 · 持续 3 h</text>
+  <text x="880" y="622" class="h3 mono">41PIC40506_PIDA</text>
+  <text x="880" y="642" class="body">近 3 h 评分下降 4.8，可信度 B</text>
+  <text x="880" y="664" class="small">未受理 · 建议：进入工作台核查</text>
+  <rect x="1154" y="632" width="72" height="30" rx="4" class="blue"/><text x="1177" y="651" class="label">核查</text>
+  <text x="880" y="728" class="small">绩效预警 · 低影响 · 正在观察</text>
+  <text x="880" y="750" class="h3 mono">80TIC10506_PIDA</text>
+  <text x="880" y="770" class="body">持续时间未达受理阈值</text>
+  <text x="880" y="792" class="small">系统观察 · 预计 18 min 后重新评估</text>
+
+  <text x="1294" y="254" class="h3">证据与决策</text>
+  <text x="1294" y="280" class="small">选中：41LIC4201_PIDA</text>
+  <rect x="1294" y="296" width="236" height="84" rx="4" class="rose"/>
+  <text x="1308" y="320" class="small">为什么排第一</text>
+  <text x="1308" y="342" class="label">安全关键 × 验证超期 × 风险未降</text>
+  <text x="1308" y="362" class="small">因子：安全关键 · SLA 超期 · 风险未下降</text>
+  <rect x="1294" y="394" width="236" height="132" rx="4" class="panel"/>
+  <text x="1308" y="418" class="h3">关联证据</text>
+  <text x="1308" y="444" class="small">评估 v12 · 59.9 / A</text>
+  <text x="1308" y="466" class="small">诊断：阀门粘滞 · 置信 0.84</text>
+  <text x="1308" y="488" class="small">实施：PID 调整 · MOC-2026-081</text>
+  <text x="1308" y="510" class="small">验证：已采样 21 h / 24 h</text>
+  <rect x="1294" y="540" width="236" height="112" rx="4" class="blue"/>
+  <text x="1308" y="566" class="h3">唯一下一步</text>
+  <text x="1308" y="590" class="body">检查 A/B 证据并决定：</text>
+  <text x="1308" y="612" class="label">通过 → 关闭　失败 → 重开</text>
+  <text x="1308" y="636" class="small">权限：IC / 独立验证人</text>
+  <rect x="1294" y="666" width="236" height="42" rx="4" fill="#1769c2"/>
+  <text x="1371" y="692" class="label white">打开验证</text>
+  <rect x="1294" y="722" width="112" height="34" rx="4" class="panel"/><text x="1320" y="743" class="label">指派 / 到期</text>
+  <rect x="1418" y="722" width="112" height="34" rx="4" class="panel"/><text x="1448" y="743" class="label">更多证据</text>
+
+  <rect x="1074" y="230" width="166" height="24" rx="12" class="callout"/><text x="1087" y="246" class="calloutText">① 风险降噪 + 排序解释</text>
+  <rect x="1380" y="230" width="150" height="24" rx="12" class="callout"/><text x="1393" y="246" class="calloutText">② 证据与动作同屏</text>
+  <rect x="1036" y="812" width="204" height="24" rx="12" class="callout"/><text x="1049" y="828" class="calloutText">③ 一行一个主动作，其余收纳</text>
+
+  <text x="40" y="890" class="small">设计意图：减少红色噪声，用“风险解释、责任、时限、证据、唯一下一步”构成专业感；系统候选与人工承诺严格分层。</text>
+</svg>

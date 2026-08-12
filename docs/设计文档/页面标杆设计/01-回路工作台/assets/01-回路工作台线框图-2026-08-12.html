@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回路工作台 · 标杆线框图 v1.2（fixture F2 振荡劣化回路）</title>
+<style>
+  :root{
+    --ink:#1f2937; --ink-2:#4b5563; --ink-3:#9ca3af;
+    --line:#d9dee5; --line-soft:#e8ebf0;
+    --bg:#eef1f5; --panel:#ffffff;
+    --primary:#1d4ed8; --primary-soft:#eff4ff;
+    --ok:#1a7f4b; --warn:#b45309; --err:#c23434; --info:#2563eb;
+    --mono:"SF Mono",Consolas,"Roboto Mono",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;color:var(--ink);display:flex;justify-content:center;padding:16px;}
+  .frame{width:1366px;height:800px;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,.10);}
+  /* ---------- R1 页头 ---------- */
+  .hdr{height:40px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--line);background:#fbfcfe;}
+  .hdr .back{color:var(--primary);font-size:12px;text-decoration:none;white-space:nowrap;}
+  .hdr .tag{font-family:var(--mono);font-size:15px;font-weight:700;}
+  .hdr .desc{font-size:13px;color:var(--ink-2);}
+  .hdr .crumb{font-size:11px;color:var(--ink-3);}
+  .pill{font-size:10px;padding:1px 7px;border-radius:3px;font-weight:600;white-space:nowrap;}
+  .pill-auto{background:#e7f6ec;color:var(--ok);border:1px solid #bfe6cd;}
+  .pill-cascade{background:#eef2ff;color:#4338ca;border:1px solid #d5dbff;}
+  .hdr .sp{flex:1;}
+  .seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;}
+  .seg button{border:0;background:#fff;padding:3px 10px;font-size:11px;color:var(--ink-2);cursor:pointer;border-right:1px solid var(--line-soft);}
+  .seg button:last-child{border-right:0;}
+  .seg button.on{background:var(--primary);color:#fff;}
+  .fresh{font-size:10px;color:var(--ink-3);display:flex;align-items:center;gap:4px;white-space:nowrap;}
+  /* 自定义时间窗弹层（v1.6） */
+  .tw-pop{position:absolute;top:36px;right:10px;z-index:6;background:#fff;border:1px solid var(--line);border-radius:5px;padding:8px 10px;box-shadow:0 6px 20px rgba(15,23,42,.14);display:flex;gap:8px;align-items:center;font-size:11px;color:var(--ink-2);}
+  .tw-pop label{display:flex;align-items:center;gap:4px;}
+  .tw-pop input{border:1px solid var(--line);border-radius:3px;padding:2px 4px;font-size:10px;font-family:var(--mono);}
+  .tw-pop button{height:24px;padding:0 10px;border:0;border-radius:3px;background:var(--primary);color:#fff;font-size:11px;cursor:pointer;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;}
+  /* ---------- R2 状态条（含生命周期，v1.2 合并） ---------- */
+  .strip{height:34px;flex:none;display:flex;align-items:center;gap:20px;padding:0 14px;border-bottom:1px solid var(--line);background:#fff;}
+  .strip .item{font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px;white-space:nowrap;}
+  .strip .v{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--ink);}
+  .strip .down{color:var(--err);font-weight:700;font-size:11px;}
+  .grade{font-size:10px;font-weight:700;border:1px solid #f0c58a;color:var(--warn);border-radius:3px;padding:1px 6px;background:#fff8ec;}
+  .grade-tag{font-size:10px;font-weight:700;border-radius:3px;padding:1px 7px;border:1px solid;}
+  .grade-fair{background:#fff4e0;color:var(--warn);border-color:#f0d5a8;}
+  /* 状态条右侧：内联生命周期（v1.2 自 R3 并入） */
+  .life-inline{display:flex;align-items:center;font-size:10px;white-space:nowrap;}
+  .stage{display:flex;align-items:center;gap:4px;color:var(--ink-3);}
+  .stage.done{color:var(--ok);}
+  .stage.cur{color:var(--warn);font-weight:700;}
+  .stage .ic{width:12px;height:12px;border-radius:50%;border:2px solid currentColor;display:inline-flex;align-items:center;justify-content:center;font-size:8px;}
+  .stage.done .ic{background:var(--ok);border-color:var(--ok);color:#fff;}
+  .stage.cur .ic{border-color:var(--warn);}
+  .lsep{width:34px;height:1px;background:var(--line);margin:0 6px;}
+  /* ---------- 主体 ---------- */
+  .body{flex:1;display:flex;min-height:0;}
+  .maincol{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .toprow{flex:1.58;display:flex;min-height:0;border-bottom:1px solid var(--line);}
+  .ch-row{display:flex;align-items:center;gap:10px;}
+  /* 左脊柱（v1.2：树只管范围，回路单列，搜索支持装置） */
+  .spine{width:230px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#fafbfc;}
+  .spine .tools{padding:8px;border-bottom:1px solid var(--line-soft);}
+  .spine input{width:100%;height:26px;border:1px solid var(--line);border-radius:4px;padding:0 8px;font-size:11px;color:var(--ink);}
+  .spine .chips{display:flex;gap:4px;margin-top:6px;}
+  .chip{font-size:10px;padding:1px 8px;border:1px solid var(--line);border-radius:10px;color:var(--ink-2);background:#fff;}
+  .chip.on{border-color:var(--primary);color:var(--primary);background:var(--primary-soft);}
+  .tree{padding:6px 0;font-size:12px;flex:none;}
+  .tnode{padding:5px 10px;display:flex;align-items:center;gap:6px;color:var(--ink-2);cursor:default;}
+  .tnode.sel-unit{background:var(--primary-soft);color:var(--ink);font-weight:700;border-right:2px solid var(--primary);}
+  .tnode .badge{margin-left:auto;font-size:10px;background:#fde8e8;color:var(--err);border-radius:8px;padding:0 6px;font-weight:700;}
+  .tnode .badge.ok{background:#e7f6ec;color:var(--ok);}
+  .looplist{flex:1;overflow:hidden;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;}
+  .ll-head{font-size:10px;color:var(--ink-3);font-weight:700;padding:7px 10px 3px;display:flex;gap:6px;align-items:center;}
+  .ll-head .cnt{margin-left:auto;font-weight:400;}
+  .tloop{padding:4px 10px 4px 18px;display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--ink-2);}
+  .tloop.sel{background:var(--primary-soft);border-right:2px solid var(--primary);color:var(--ink);font-weight:700;}
+  .tloop .sc{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:700;}
+  .tloop .sc.bad{color:var(--err);} .tloop .sc.mid{color:var(--warn);} .tloop .sc.good{color:var(--ok);}
+  .sdot{width:6px;height:6px;border-radius:50%;flex:none;}
+  /* 脊柱折叠（v1.2：底部收起条，沉浸模式） */
+  .spine-fold{flex:none;height:26px;border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-3);cursor:pointer;background:#fff;user-select:none;}
+  .spine-fold:hover{color:var(--primary);}
+  .spine.collapsed{width:28px;}
+  .spine.collapsed .tools,.spine.collapsed .tree,.spine.collapsed .looplist{display:none;}
+  .spine.collapsed .spine-fold{height:100%;border-top:0;font-size:12px;}
+  /* 中央 */
+  .center{flex:1;display:flex;flex-direction:column;min-width:0;background:#fff;}
+  .canvas-wrap{flex:1;display:flex;flex-direction:column;padding:8px 10px 4px;min-height:0;position:relative;}
+  .canvas-head{display:flex;flex-direction:column;align-items:stretch;gap:3px;margin-bottom:4px;}
+  .canvas-title{font-size:12px;font-weight:700;}
+  .legend{display:flex;gap:12px;font-size:10px;color:var(--ink-2);margin-left:auto;align-items:center;}
+  .legend i{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:3px;}
+  .canvas{flex:1;border:1px solid var(--line-soft);border-radius:4px;position:relative;background:#fff;min-height:0;}
+  .canvas svg{width:100%;height:100%;display:block;}
+  /* R5 证据四区（v1.7：整体降高 20px） */
+  .evi{flex:1;display:flex;gap:8px;padding:7px 10px;min-height:0;}
+  .radar-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;}
+  .radar6{width:100%;max-width:220px;height:auto;max-height:100%;}
+  .card{flex:1;border:1px solid var(--line);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;background:#fff;min-width:0;}
+  .card h4{font-size:11px;color:var(--ink-2);font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+  .card h4 .more{margin-left:auto;font-size:10px;color:var(--primary);font-weight:400;white-space:nowrap;}
+  .card .meta{font-size:10px;color:var(--ink-3);margin-bottom:6px;}
+  .kpi-panel{display:flex;gap:8px;flex:1;min-height:0;}
+  .radar{width:88px;flex:none;}
+  .bars{flex:1;display:flex;flex-direction:column;justify-content:space-between;min-width:0;gap:1px;}
+  .bar-row{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--ink-2);}
+  .bar-row .bn{width:34px;text-align:right;flex:none;white-space:nowrap;}
+  .bar-row .bt{flex:1;height:6px;background:#f0f2f5;border-radius:2px;position:relative;overflow:hidden;}
+  /* 实时过程变量点值（v1.7） */
+  .rt{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px;color:var(--ink-2);white-space:nowrap;}
+  .rt-i b{font-family:var(--mono);font-weight:700;color:var(--ink);font-size:12px;}
+  .rt-mode{font-size:10px;font-weight:700;color:var(--ok);border:1px solid #bfe6cd;background:#e7f6ec;border-radius:3px;padding:0 6px;}
+  /* 诊断扩展指标网格（v1.6） */
+  .dx-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;}
+  .dx{display:flex;justify-content:space-between;font-size:10px;border-bottom:1px dashed var(--line-soft);padding:2px 0;}
+  .dx-l{color:var(--ink-3);}
+  .dx-v{font-family:var(--mono);font-weight:700;color:var(--ink);}
+  .dx-neg{font-size:9px;color:var(--ink-3);margin-top:5px;}
+  /* 整定卡分行指标（v1.10：撑满卡片高度） */
+  .tune-rows{flex:1;display:flex;flex-direction:column;justify-content:space-between;margin-top:2px;}
+  .trow{display:flex;justify-content:space-between;align-items:center;font-size:11px;border-bottom:1px dashed var(--line-soft);padding:4px 0;}
+  .bar-row .bf{height:100%;border-radius:2px;}
+  .bar-row .bv{width:26px;flex:none;font-family:var(--mono);}
+  .bar-row .th{position:absolute;top:-1px;width:1px;height:9px;background:#6b7280;}
+  .diag-tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:#fde8e8;color:var(--err);border:1px solid #f5c2c2;margin-right:4px;}
+  .diag-tag2{display:inline-block;font-size:11px;padding:2px 8px;border-radius:3px;background:#fff4e0;color:var(--warn);border:1px solid #f0d5a8;}
+  /* 右决策栏 */
+  .rail{width:280px;flex:none;border-left:1px solid var(--line);display:flex;flex-direction:column;background:#fafbfc;}
+  .dock{padding:10px;border-bottom:1px solid var(--line-soft);background:#fff;}
+  .dock .lab{font-size:10px;color:var(--ink-3);margin-bottom:6px;}
+  .dock .cta{width:100%;height:32px;border:0;border-radius:4px;background:var(--primary);color:#fff;font-size:13px;font-weight:700;cursor:pointer;}
+  .dock .why{font-size:10px;color:var(--ink-3);margin-top:6px;line-height:1.5;}
+  .dock .alt{margin-top:8px;display:flex;gap:6px;}
+  .dock .alt button{flex:1;height:24px;font-size:11px;border:1px solid var(--line);background:#fff;border-radius:4px;color:var(--ink-2);cursor:pointer;}
+  .att{padding:8px 10px;border-bottom:1px solid var(--line-soft);}
+  .att h5,.tl h5{font-size:10px;color:var(--ink-3);font-weight:700;margin-bottom:6px;}
+  .att-item{border:1px solid #f5c2c2;background:#fff5f5;border-radius:4px;padding:6px 8px;font-size:11px;margin-bottom:6px;}
+  .att-item .t{font-weight:700;color:var(--err);}
+  .att-item .d{font-size:10px;color:var(--ink-2);margin-top:2px;}
+  .att-item2{border:1px solid #f0d5a8;background:#fffaf0;}
+  .att-item2 .t{color:var(--warn);}
+  .tl{padding:8px 10px;flex:1;overflow:auto;}
+  .tl-item{display:flex;gap:8px;font-size:10px;color:var(--ink-2);margin-bottom:5px;line-height:1.35;}
+  .tl-item .tdot{width:8px;height:8px;border-radius:50%;margin-top:3px;flex:none;}
+  .tl-item .tt{font-family:var(--mono);color:var(--ink-3);white-space:nowrap;}
+  /* R6 */
+  .verify{height:26px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;padding:0 14px;font-size:11px;color:var(--ink-2);background:#fbfcfe;gap:8px;}
+  .verify .arrow{margin-left:auto;color:var(--ink-3);}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- ============ R1 页头 ============ -->
+  <div class="hdr">
+    <a class="back" href="#">‹ 关注队列</a>
+    <span class="tag">LIC-101</span>
+    <span class="desc">粗馏塔塔底液位控制</span>
+    <span class="crumb">一联合装置 / 常减压单元 / C-101 塔</span>
+    <span class="pill pill-auto">AUTO</span>
+    <span class="pill pill-cascade" title="串级副回路：FIC-114">串级主回路</span>
+    <span class="sp"></span>
+    <span class="fresh"><span class="dot"></span>数据 2 分钟前</span>
+  </div>
+
+  <!-- ============ R2 状态条（v1.2：生命周期并入右侧） ============ -->
+  <div class="strip">
+    <div class="item">综合评分 <span class="v">72.3</span> <span class="grade-tag grade-fair">合格</span> <span class="down">▼ 5.1 / 日</span> <span style="color:var(--ink-3);cursor:help;" title="最近评估快照（计算窗口 24h · 08-12 06:00），不随页面时间窗变化；查看历史请切换到「性能指标」模式">ⓘ</span></div>
+    <div class="item">可信度 <span class="grade">B 级 · 0.86</span></div>
+    <div class="item">有效率 <span class="v">96.8%</span></div>
+    <div class="item" style="color:var(--err);font-weight:700;">● 振荡特征明显（持续 6 小时）</div>
+    <span class="sp" style="flex:1;"></span>
+    <div class="life-inline">
+      <span class="stage done"><span class="ic">✓</span>数据</span><span class="lsep"></span>
+      <span class="stage done"><span class="ic">✓</span>评估</span><span class="lsep"></span>
+      <span class="stage cur"><span class="ic"></span>诊断·待发起</span><span class="lsep"></span>
+      <span class="stage"><span class="ic"></span>整定</span><span class="lsep"></span>
+      <span class="stage"><span class="ic"></span>验证</span>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- ============ 左脊柱（v1.2：树=范围轴，回路单列） ============ -->
+    <div class="spine">
+      <div class="tools">
+        <input placeholder="搜索位号 / 描述 / 装置…">
+        <div class="chips">
+          <span class="chip on">全部 27</span><span class="chip">异常 6</span><span class="chip">我的关注 3</span><span class="chip">收藏</span>
+        </div>
+      </div>
+      <div class="tree">
+        <div class="tnode">▾ 一联合装置<span class="badge">4</span></div>
+        <div class="tnode sel-unit" style="padding-left:18px;">▾ 常减压单元<span class="badge">3</span></div>
+        <div class="tnode" style="padding-left:18px;">▸ 加氢单元<span class="badge">1</span></div>
+        <div class="tnode">▸ 二联合装置<span class="badge">2</span></div>
+        <div class="tnode">▸ 公用工程<span class="badge ok">0</span></div>
+      </div>
+      <div class="looplist">
+        <div class="ll-head">回路 · 常减压单元<span class="cnt">4 条</span></div>
+        <div class="tloop sel"><span class="sdot" style="background:var(--err);"></span>LIC-101<span class="sc bad">72.3</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--err);"></span>FIC-114<span class="sc bad">68.9</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--warn);"></span>TIC-108<span class="sc mid">81.4</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--ok);"></span>PIC-122<span class="sc good">93.1</span></div>
+      </div>
+      <div class="spine-fold" id="spineFold">◀ 收起侧栏</div>
+    </div>
+
+    <!-- ============ 中央列（上排：画布+决策栏 / 下排：全宽证据区） ============ -->
+    <div class="maincol">
+      <div class="toprow">
+        <div class="center">
+      <!-- R4 主画布（双模式） -->
+      <div class="canvas-wrap">
+        <div class="canvas-head">
+          <div class="ch-row">
+            <div class="seg" id="modeSeg">
+              <button data-mode="pv" class="on">过程变量</button>
+              <button data-mode="kpi">性能指标</button>
+            </div>
+            <span class="canvas-title" id="canvasTitle">PV / SP / OP 同轴趋势 · 近 24 小时</span>
+            <span style="flex:1;"></span>
+            <div class="seg" id="twSeg">
+              <button data-tw="8h">8h</button>
+              <button data-tw="24h" class="on">24h</button>
+              <button data-tw="72h">72h</button>
+              <button data-tw="168h">168h</button>
+              <button data-tw="custom" id="twCustomBtn">自定义</button>
+            </div>
+            <div class="tw-pop hidden" id="twPop">
+              <label>起 <input type="datetime-local" value="2026-08-11T06:00" step="60"></label>
+              <label>止 <input type="datetime-local" value="2026-08-12T06:00" step="60"></label>
+              <button id="twApply">应用</button>
+            </div>
+          </div>
+          <div class="ch-row">
+            <div class="legend" id="pvLegend" style="margin-left:0;">
+              <span><i style="background:#1d4ed8;"></i>PV</span>
+              <span><i style="background:#6b7280;"></i>SP</span>
+              <span><i style="background:#b45309;"></i>OP(右轴)</span>
+              <span style="color:var(--ink-2);">事件标记：<span style="color:var(--err);">▼</span>=诊断打标 <span style="color:var(--ok);">◆</span>=整定实施 <span style="color:var(--primary);">▐</span>=效果验证窗 <span style="color:var(--ink-3);">▓</span>=数据缺口</span>
+            </div>
+            <div class="legend hidden" id="kpiLegend" style="margin-left:0;">
+              <span><i style="background:#1d4ed8;"></i>综合评分（折线）</span>
+              <span><i style="background:#1a7f4b;height:8px;width:8px;"></i>平稳率（棒）</span>
+              <span><i style="background:#7c3aed;height:8px;width:8px;"></i>准确率（棒）</span>
+              <span><i style="background:#b45309;height:8px;width:8px;"></i>快速率（棒）</span>
+              <span style="color:var(--ink-3);">棒图粒度：8h/24h 按小时 · 168h 聚合为日</span>
+            </div>
+            <!-- 实时过程变量点值（v1.7：PV/SP 两位小数等宽字体） -->
+            <div class="rt" id="rtVals">
+              <span class="rt-i">SP <b>50.00</b></span>
+              <span class="rt-i">PV <b style="color:var(--err);">58.42</b></span>
+              <span class="rt-i">OP <b>63.1%</b></span>
+              <span class="rt-i rt-mode">AUTO</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 过程变量模式 -->
+        <div class="canvas" id="cvPv">
+          <svg viewBox="0 0 820 300" preserveAspectRatio="none">
+            <!-- ===== 数据区（经 transform 适配轴边距） ===== -->
+            <g transform="translate(46,10) scale(0.8902,0.8667)">
+              <g stroke="#eef1f5" stroke-width="1">
+                <line x1="0" y1="60" x2="820" y2="60"/><line x1="0" y1="120" x2="820" y2="120"/>
+                <line x1="0" y1="180" x2="820" y2="180"/><line x1="0" y1="240" x2="820" y2="240"/>
+              </g>
+              <polyline points="0,150 820,150" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="6,4"/>
+              <path d="M0,152 C40,148 80,154 120,150 C160,146 200,153 240,151 C280,149 300,152 320,150
+                       C340,148 350,130 370,118 C390,106 400,180 420,192 C440,204 450,110 470,100
+                       C490,90 500,200 520,208 C540,216 550,95 570,88 C590,81 600,215 620,220
+                       C640,225 650,88 670,84 C690,80 700,222 720,224 C740,226 750,84 770,82
+                       C790,80 800,224 820,226"
+                    fill="none" stroke="#1d4ed8" stroke-width="1.8"/>
+              <path d="M0,255 L60,250 L90,262 L150,246 L180,258 L240,244 L300,252 L330,240 L360,258
+                       L390,236 L420,262 L450,232 L480,264 L510,228 L540,266 L570,226 L600,268
+                       L630,224 L660,270 L690,222 L720,272 L750,220 L780,274 L820,224"
+                    fill="none" stroke="#b45309" stroke-width="1.2" opacity=".85"/>
+              <rect x="252" y="20" width="46" height="265" fill="#9ca3af" opacity=".12"/>
+              <text x="258" y="34" font-size="10" fill="#6b7280">▓ 缺口 18min</text>
+              <g>
+                <line x1="352" y1="20" x2="352" y2="285" stroke="#c23434" stroke-width="1" stroke-dasharray="3,3"/>
+                <polygon points="352,20 346,30 358,30" fill="#c23434"/>
+                <text x="358" y="30" font-size="10" fill="#c23434" font-weight="bold">诊断：振荡（06:12）</text>
+              </g>
+              <g>
+                <line x1="140" y1="20" x2="140" y2="285" stroke="#1a7f4b" stroke-width="1" stroke-dasharray="3,3"/>
+                <polygon points="140,285 134,275 146,275" fill="#1a7f4b"/>
+                <text x="86" y="272" font-size="10" fill="#1a7f4b" font-weight="bold">◆ 昨日整定实施</text>
+              </g>
+              <rect x="560" y="20" width="120" height="265" fill="#1d4ed8" opacity=".05"/>
+              <text x="566" y="52" font-size="10" fill="#1d4ed8">▐ 验证窗（至 18:00）</text>
+              <text x="700" y="110" font-size="11" fill="#c23434" font-weight="bold">振荡加剧 →</text>
+            </g>
+            <!-- ===== 坐标轴（X 时间 / Y 左液位% / Y 右 OP%） ===== -->
+            <g font-size="9" fill="#9ca3af">
+              <line x1="46" y1="10" x2="46" y2="270" stroke="#d9dee5"/>
+              <line x1="776" y1="10" x2="776" y2="270" stroke="#d9dee5"/>
+              <line x1="46" y1="270" x2="776" y2="270" stroke="#d9dee5"/>
+              <text x="6" y="14" fill="#4b5563">液位%</text>
+              <text x="40" y="196" text-anchor="end">30</text>
+              <text x="40" y="170" text-anchor="end">40</text>
+              <text x="40" y="144" text-anchor="end">50</text>
+              <text x="40" y="118" text-anchor="end">60</text>
+              <text x="40" y="92" text-anchor="end">70</text>
+              <text x="784" y="14" fill="#b45309">OP%</text>
+              <text x="782" y="274">0</text>
+              <text x="782" y="209">50</text>
+              <text x="782" y="144">100</text>
+              <text x="46" y="284" text-anchor="middle">昨06:00</text>
+              <text x="168" y="284" text-anchor="middle">10:00</text>
+              <text x="289" y="284" text-anchor="middle">14:00</text>
+              <text x="411" y="284" text-anchor="middle">18:00</text>
+              <text x="533" y="284" text-anchor="middle">22:00</text>
+              <text x="654" y="284" text-anchor="middle">今02:00</text>
+              <text x="776" y="284" text-anchor="middle">06:00</text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- 性能指标模式（v1.9：综合评分折线 + 分指标棒图混合） -->
+        <div class="canvas hidden" id="cvKpi">
+          <svg viewBox="0 0 820 300" preserveAspectRatio="none">
+            <!-- ===== 数据区（经 transform 适配轴边距） ===== -->
+            <g transform="translate(46,10) scale(0.8902,0.8667)">
+              <g stroke="#eef1f5" stroke-width="1">
+                <line x1="0" y1="60" x2="820" y2="60"/><line x1="0" y1="120" x2="820" y2="120"/>
+                <line x1="0" y1="180" x2="820" y2="180"/><line x1="0" y1="240" x2="820" y2="240"/>
+              </g>
+              <!-- 棒图组（平稳率/准确率/快速率，JS 生成） -->
+              <g id="kpiBars"></g>
+              <line x1="0" y1="140" x2="820" y2="140" stroke="#c23434" stroke-width="1.2" stroke-dasharray="5,4" opacity=".8"/>
+              <text x="470" y="134" font-size="10" fill="#c23434">告警线 60（合格/警告边界 · 来源：配置-定级阈值）</text>
+              <!-- 综合评分折线（主线） -->
+              <path d="M0,70 C80,72 160,74 240,76 C320,78 380,86 440,96 C500,106 560,120 620,140
+                       C680,160 750,178 820,196"
+                    fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+              <g fill="#1d4ed8">
+                <circle cx="80" cy="72" r="2.5"/><circle cx="160" cy="74" r="2.5"/><circle cx="240" cy="76" r="2.5"/>
+                <circle cx="320" cy="78" r="2.5"/><circle cx="400" cy="90" r="2.5"/><circle cx="480" cy="106" r="2.5"/>
+                <circle cx="560" cy="120" r="2.5"/><circle cx="640" cy="146" r="2.5"/><circle cx="720" cy="172" r="2.5"/>
+                <circle cx="800" cy="193" r="2.5"/>
+              </g>
+              <text x="600" y="120" font-size="11" fill="#1d4ed8" font-weight="bold">评分三日 82.1 → 72.3</text>
+            </g>
+            <!-- ===== 坐标轴（X 时间 / Y 左评分 0-100） ===== -->
+            <g font-size="9" fill="#9ca3af">
+              <line x1="46" y1="10" x2="46" y2="270" stroke="#d9dee5"/>
+              <line x1="46" y1="270" x2="776" y2="270" stroke="#d9dee5"/>
+              <text x="6" y="14" fill="#4b5563">评分</text>
+              <text x="40" y="274" text-anchor="end">0</text>
+              <text x="40" y="228" text-anchor="end">20</text>
+              <text x="40" y="181" text-anchor="end">40</text>
+              <text x="40" y="135" text-anchor="end">60</text>
+              <text x="40" y="88" text-anchor="end">80</text>
+              <text x="40" y="42" text-anchor="end">100</text>
+              <text x="46" y="284" text-anchor="middle">昨06:00</text>
+              <text x="168" y="284" text-anchor="middle">10:00</text>
+              <text x="289" y="284" text-anchor="middle">14:00</text>
+              <text x="411" y="284" text-anchor="middle">18:00</text>
+              <text x="533" y="284" text-anchor="middle">22:00</text>
+              <text x="654" y="284" text-anchor="middle">今02:00</text>
+              <text x="776" y="284" text-anchor="middle">06:00</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+        </div><!-- /center -->
+
+        <!-- ============ 右决策栏（上排右侧，与画布同高） ============ -->
+        <div class="rail">
+          <div class="dock">
+            <div class="lab">下一步（系统推荐 · 唯一主动作）</div>
+            <button class="cta">发起诊断复核</button>
+            <div class="why">依据：评分日降 5.1 + 振荡标签 + 整定后未改善；诊断结果将决定走阀门检修还是重新整定。</div>
+            <div class="alt">
+              <button>转闭环案例</button><button>查看完整证据</button>
+            </div>
+          </div>
+          <div class="att">
+            <h5>活跃关注（2）</h5>
+            <div class="att-item">
+              <div class="t">◉ 评分日降超阈值</div>
+              <div class="d">72.3（-5.1）· 持续 6h · 未受理</div>
+            </div>
+            <div class="att-item att-item2">
+              <div class="t">◉ 整定后验证临近超期</div>
+              <div class="d">验证窗至今日 18:00 · 剩 5h42m</div>
+            </div>
+          </div>
+          <div class="tl">
+            <h5>闭环时间线（固定四段）</h5>
+            <div class="tl-item"><span class="tdot" style="background:#1a7f4b;"></span><span><span class="tt">昨 15:40</span><br>整定建议人工实施（Kp 0.80/Ti 90s）· MOC-0312</span></div>
+            <div class="tl-item"><span class="tdot" style="background:#b45309;"></span><span><span class="tt">今 06:12</span><br>诊断标记振荡，融合置信度 0.81</span></div>
+            <div class="tl-item"><span class="tdot" style="background:#c23434;"></span><span><span class="tt">今 08:00</span><br>评分日降触发关注项 · 待受理</span></div>
+            <div class="tl-item"><span class="tdot" style="background:#1d4ed8;"></span><span><span class="tt">今 18:00</span><br>验证窗截止 → VERIFYING 待判定</span></div>
+          </div>
+        </div>
+      </div><!-- /toprow -->
+
+      <!-- R5 证据四区（v1.5：全宽 | 评估雷达 | 指标横道 | 诊断 | 整定） -->
+      <div class="evi">
+        <!-- ① 评估雷达图（6 轴 + 中心评分等级） -->
+        <div class="card">
+          <h4>评估 · 六维形态<span class="more">完整证据 →</span></h4>
+          <div class="meta">08-12 06:00 · 可信度 B · 24h 窗口 · 证据 #A-20812</div>
+          <div class="radar-wrap">
+            <svg class="radar6" viewBox="0 0 190 150">
+              <!-- 网格：三层六边形 -->
+              <polygon points="85,23 130,49 130,101 85,127 40,101 40,49" fill="none" stroke="#d9dee5"/>
+              <polygon points="85,40 115,58 115,93 85,110 55,93 55,58" fill="none" stroke="#e8ebf0"/>
+              <polygon points="85,58 100,67 100,84 85,92 70,84 70,67" fill="none" stroke="#eef1f5"/>
+              <!-- 轴线 -->
+              <g stroke="#eef1f5">
+                <line x1="85" y1="75" x2="85" y2="23"/><line x1="85" y1="75" x2="130" y2="49"/>
+                <line x1="85" y1="75" x2="130" y2="101"/><line x1="85" y1="75" x2="85" y2="127"/>
+                <line x1="85" y1="75" x2="40" y2="101"/><line x1="85" y1="75" x2="40" y2="49"/>
+              </g>
+              <!-- 轴标签（v1.6：带数值，7 读数=中心评分+6 分指标） -->
+              <text x="85" y="16" font-size="8" fill="#4b5563" text-anchor="middle">平稳率 58</text>
+              <text x="136" y="52" font-size="8" fill="#4b5563">准确率 74</text>
+              <text x="136" y="105" font-size="8" fill="#4b5563">快速率 66</text>
+              <text x="85" y="142" font-size="8" fill="#4b5563" text-anchor="middle">自控率 92</text>
+              <text x="34" y="105" font-size="8" fill="#4b5563" text-anchor="end">好值率 85</text>
+              <text x="34" y="52" font-size="8" fill="#4b5563" text-anchor="end">饱和率 88</text>
+              <!-- 数值多边形：平稳58 准确74 快速66 自控92 好值85 饱和88 -->
+              <polygon points="85,45 118,56 115,92 85,123 47,97 45,52" fill="rgba(194,52,52,.12)" stroke="#c23434" stroke-width="1.5"/>
+              <!-- 中心：综合评分 + 等级 -->
+              <text x="85" y="72" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="middle">72.3</text>
+              <text x="85" y="86" font-size="9" font-weight="bold" fill="#b45309" text-anchor="middle">合格</text>
+            </svg>
+          </div>
+        </div>
+
+        <!-- ② 评估指标横道图（其余 6 项达成度） -->
+        <div class="card">
+          <h4>评估 · 指标横道<span class="more">明细 →</span></h4>
+          <div class="meta">8 项主要指标达成度（按控制类型阈值归一化 0-100）</div>
+          <div class="bars">
+            <div class="bar-row"><span class="bn">平稳率</span><div class="bt"><div class="bf" style="width:58%;background:#c23434;"></div><div class="th" style="left:80%;"></div></div><span class="bv">58</span></div>
+            <div class="bar-row"><span class="bn">准确率</span><div class="bt"><div class="bf" style="width:74%;background:#b45309;"></div><div class="th" style="left:80%;"></div></div><span class="bv">74</span></div>
+            <div class="bar-row"><span class="bn">快速率</span><div class="bt"><div class="bf" style="width:66%;background:#b45309;"></div><div class="th" style="left:75%;"></div></div><span class="bv">66</span></div>
+            <div class="bar-row"><span class="bn">自控率</span><div class="bt"><div class="bf" style="width:92%;background:#1a7f4b;"></div><div class="th" style="left:85%;"></div></div><span class="bv">92</span></div>
+            <div class="bar-row"><span class="bn">振荡率</span><div class="bt"><div class="bf" style="width:31%;background:#c23434;"></div><div class="th" style="left:70%;"></div></div><span class="bv">31</span></div>
+            <div class="bar-row"><span class="bn">调节时间</span><div class="bt"><div class="bf" style="width:62%;background:#b45309;"></div><div class="th" style="left:75%;"></div></div><span class="bv">62</span></div>
+            <div class="bar-row"><span class="bn">卡涩指数</span><div class="bt"><div class="bf" style="width:71%;background:#b45309;"></div><div class="th" style="left:75%;"></div></div><span class="bv">71</span></div>
+            <div class="bar-row"><span class="bn">行程指数</span><div class="bt"><div class="bf" style="width:83%;background:#1a7f4b;"></div><div class="th" style="left:80%;"></div></div><span class="bv">83</span></div>
+            <div style="font-size:9px;color:var(--ink-3);text-align:right;">… 共 12 项，明细见回路性能页 →</div>
+          </div>
+        </div>
+
+        <!-- ③ 诊断结论（v1.8：结构化字段为主体，无 LLM 依赖） -->
+        <div class="card">
+          <h4>诊断 · 待复核<span class="more">完整证据 →</span></h4>
+          <div class="meta">08-12 06:12 · 融合置信度 0.81 · 证据 #D-10433</div>
+          <div style="margin-bottom:6px;">
+            <span class="diag-tag">振荡 OSCILLATION</span>
+            <span class="diag-tag2">疑似阀门卡涩</span>
+          </div>
+          <div class="dx-grid" style="margin-bottom:4px;">
+            <div class="dx"><span class="dx-l">FFT 主频</span><span class="dx-v">0.42 Hz</span></div>
+            <div class="dx"><span class="dx-l">振幅变化(6h)</span><span class="dx-v" style="color:var(--err);">×2.3</span></div>
+          </div>
+          <div style="font-size:10px;color:var(--ink-2);border-left:2px solid var(--line);padding-left:6px;margin-bottom:5px;">
+            建议（规则模板）：检查阀门填料/定位器 → 复核 PI 参数
+          </div>
+          <div class="bars" style="margin-top:2px;">
+            <div class="bar-row"><span class="bn" style="width:52px;">饱和时间占比</span><div class="bt"><div class="bf" style="width:12%;background:#1a7f4b;"></div></div><span class="bv" style="width:34px;">12%</span></div>
+            <div class="bar-row"><span class="bn" style="width:52px;">粘滞系数</span><div class="bt"><div class="bf" style="width:42%;background:#b45309;"></div></div><span class="bv" style="width:34px;">0.42</span></div>
+            <div class="bar-row"><span class="bn" style="width:52px;">稳定时间</span><div class="bt"><div class="bf" style="width:58%;background:#b45309;"></div></div><span class="bv" style="width:34px;">312s</span></div>
+            <div class="bar-row"><span class="bn" style="width:52px;">振荡显著度</span><div class="bt"><div class="bf" style="width:69%;background:#c23434;"></div></div><span class="bv" style="width:34px;">69%</span></div>
+          </div>
+          <div class="dx-neg">▲ 负向指标：条越长越差（原始量纲，非达成度）</div>
+        </div>
+
+        <!-- ④ 整定结论（v1.10：分行撑满卡片高度） -->
+        <div class="card">
+          <h4>整定 · 有历史建议<span class="more">完整证据 →</span></h4>
+          <div class="meta">昨日 15:40 已人工实施 · MOC-2026-0312</div>
+          <div class="tune-rows">
+            <div class="trow"><span class="dx-l">当前 Kp / Ti</span><span class="dx-v">1.20 / 45s</span></div>
+            <div class="trow"><span class="dx-l">建议 Kp / Ti</span><span class="dx-v" style="color:var(--primary);">0.80 / 90s</span></div>
+            <div class="trow"><span class="dx-l">模型拟合度</span><span class="dx-v">92.3%</span></div>
+            <div class="trow"><span class="dx-l">风险等级</span><span class="dx-v" style="color:var(--warn);">中</span></div>
+            <div class="trow"><span class="dx-l">辨识模型</span><span class="dx-v">ARX</span></div>
+            <div class="trow"><span class="dx-l">状态</span><span class="dx-v" style="color:var(--warn);">验证中 → 18:00</span></div>
+          </div>
+          <div style="font-size:9px;color:var(--ink-3);margin-top:6px;">回退参数已记录 · 平台不自动下写 DCS（固定安全文案）</div>
+        </div>
+      </div>
+    </div><!-- /maincol -->
+  </div>
+
+  <!-- ============ R6 验证对比条（默认收起） ============ -->
+  <div class="verify">
+    <strong>验证对比</strong> · 整定前窗（昨 12:00–15:40）vs 整定后窗（昨 15:40–今）：平稳率 71% → 58%，未见改善
+    <span class="arrow">展开 A/B 对比 ▾</span>
+  </div>
+</div>
+
+<script>
+  // KPI 混合图：分指标棒图生成（v1.9，2h 桶 12 组，168h 时聚合为日粒度 7 组）
+  (function () {
+    const NS = 'http://www.w3.org/2000/svg';
+    const g = document.getElementById('kpiBars');
+    // [平稳率, 准确率, 快速率] 逐组下行（示意数据）
+    const data = [
+      [84, 80, 72], [83, 79, 71], [82, 79, 71], [80, 78, 70], [78, 77, 69], [75, 76, 68],
+      [72, 75, 67], [68, 74, 66], [64, 73, 65], [60, 72, 64], [56, 71, 63], [52, 70, 62],
+    ];
+    const colors = ['#1a7f4b', '#7c3aed', '#b45309'];
+    const n = data.length, gw = 820 / n, bw = 14, gap = 4;
+    const y = v => 270 - v * 2.32;
+    data.forEach((vals, i) => {
+      const gx = i * gw + (gw - (bw * 3 + gap * 2)) / 2;
+      vals.forEach((v, j) => {
+        const r = document.createElementNS(NS, 'rect');
+        r.setAttribute('x', gx + j * (bw + gap));
+        r.setAttribute('y', y(v));
+        r.setAttribute('width', bw);
+        r.setAttribute('height', 270 - y(v));
+        r.setAttribute('fill', colors[j]);
+        r.setAttribute('opacity', '0.75');
+        g.appendChild(r);
+      });
+    });
+  })();
+  // 脊柱折叠（沉浸模式）
+  const spine = document.querySelector('.spine');
+  const foldBtn = document.getElementById('spineFold');
+  foldBtn.addEventListener('click', () => {
+    spine.classList.toggle('collapsed');
+    foldBtn.textContent = spine.classList.contains('collapsed') ? '▶' : '◀ 收起侧栏';
+  });
+  const modeSeg = document.getElementById('modeSeg');
+  modeSeg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    modeSeg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    const kpi = b.dataset.mode === 'kpi';
+    document.getElementById('cvPv').classList.toggle('hidden', kpi);
+    document.getElementById('cvKpi').classList.toggle('hidden', !kpi);
+    document.getElementById('pvLegend').classList.toggle('hidden', kpi);
+    document.getElementById('kpiLegend').classList.toggle('hidden', !kpi);
+    const tw = document.querySelector('#twSeg button.on').dataset.tw;
+    document.getElementById('canvasTitle').textContent =
+      kpi ? 'KPI 历史趋势（评分/平稳率/准确率/快速率）· 近 ' + tw
+          : 'PV / SP / OP 同轴趋势 · 近 ' + tw;
+  });
+  const twSeg = document.getElementById('twSeg');
+  const twPop = document.getElementById('twPop');
+  const twCustomBtn = document.getElementById('twCustomBtn');
+  twSeg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.tw === 'custom') { twPop.classList.toggle('hidden'); return; }
+    twPop.classList.add('hidden');
+    twSeg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    const kpi = modeSeg.querySelector('button.on').dataset.mode === 'kpi';
+    document.getElementById('canvasTitle').textContent =
+      (kpi ? 'KPI 历史趋势（评分/平稳率/准确率/快速率）· 近 ' : 'PV / SP / OP 同轴趋势 · 近 ') + b.dataset.tw;
+  });
+  document.getElementById('twApply').addEventListener('click', () => {
+    const [s, e2] = [...twPop.querySelectorAll('input')].map(i => i.value.replace('T', ' ').slice(5, 16));
+    twSeg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === twCustomBtn));
+    const kpi = modeSeg.querySelector('button.on').dataset.mode === 'kpi';
+    document.getElementById('canvasTitle').textContent =
+      (kpi ? 'KPI 历史趋势 · ' : 'PV / SP / OP 同轴趋势 · ') + s + ' ~ ' + e2;
+    twPop.classList.add('hidden');
+  });
+</script>
+</body>
+</html>

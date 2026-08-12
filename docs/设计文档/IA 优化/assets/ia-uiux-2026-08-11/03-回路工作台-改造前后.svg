@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CLPM 回路工作台改造前后线框</title>
+  <desc id="desc">左侧为当前五区纵向超级页面及内容裁切，右侧为对象导航、证据画布、生命周期和决策坞三栏结构。</desc>
+  <style>
+    text { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+    .mono { font-family: "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .h1 { font-size: 28px; font-weight: 700; }.h2 { font-size: 18px; font-weight: 700; }
+    .h3 { font-size: 14px; font-weight: 650; }.body { font-size: 12px; }
+    .small { font-size: 10px; fill: #667085; }.label { font-size: 11px; font-weight: 650; fill: #344054; }
+    .panel { fill: #fff; stroke: #cbd5e1; }.surface { fill: #f8fafc; stroke: #d7e0ea; }
+    .blue { fill: #e9f2ff; stroke: #7db2f7; }.amber { fill: #fff5df; stroke: #e9b949; }
+    .rose { fill: #fff0f1; stroke: #e26d78; }.green { fill: #edf8f1; stroke: #5ca979; }
+    .callout { fill: #172033; }.calloutText { font-size: 10px; font-weight: 650; fill: #fff; }
+    .white { fill: #fff !important; }
+  </style>
+  <rect width="1600" height="900" fill="#eef3f7"/>
+  <text x="40" y="46" class="h1">样板 03｜回路工作台：从“五区超级页”到“证据画布 + 决策坞”</text>
+  <text x="40" y="72" class="body" fill="#667085">缩略结构示意 · 先修裁切与空动作；实施比例按 248px / 弹性主画布 / 320px</text>
+  <rect x="32" y="96" width="752" height="772" rx="10" class="panel"/>
+  <rect x="816" y="96" width="752" height="772" rx="10" class="panel"/>
+  <rect x="32" y="96" width="752" height="52" rx="10" fill="#e7ebf0"/>
+  <rect x="816" y="96" width="752" height="52" rx="10" fill="#172033"/>
+  <text x="56" y="129" class="h2">当前结构｜多区纵向编排</text>
+  <text x="840" y="129" class="h2 white">目标结构｜单回路决策工作站</text>
+
+  <!-- Current -->
+  <rect x="52" y="164" width="712" height="42" rx="4" class="surface"/>
+  <text x="68" y="190" class="h3">回路工作台</text><text x="162" y="190" class="small">单回路 360° 一站式处置</text>
+  <rect x="52" y="216" width="712" height="34" rx="4" class="surface"/>
+  <text x="66" y="238" class="small mono">在线　41LIC4201_PIDA　PV 50.48%　SP 50%　OP 49.95%　Auto　Good　08:42:16</text>
+  <rect x="52" y="260" width="712" height="32" rx="4" class="surface"/>
+  <text x="68" y="280" class="small">1 监控　→　2 评估　→　3 诊断　→　4 整定　→　5 验证</text>
+  <rect x="52" y="302" width="420" height="76" rx="4" class="surface"/>
+  <rect x="482" y="302" width="282" height="76" rx="4" class="surface"/>
+  <text x="68" y="328" class="h3">推荐：重新评估</text><text x="68" y="350" class="small">评分较昨日下降 2.0 分</text>
+  <rect x="380" y="326" width="74" height="30" rx="4" fill="#1769c2"/><text x="393" y="345" class="label white">重新评估</text>
+  <text x="498" y="328" class="h3">8 项待处理</text><text x="498" y="350" class="small">重复预警摘要横向铺开</text>
+  <rect x="52" y="390" width="150" height="442" rx="4" class="surface"/>
+  <text x="68" y="416" class="small">搜索回路位号</text>
+  <g class="small">
+    <rect x="60" y="432" width="134" height="58" rx="3" class="blue"/><text x="70" y="454" class="label mono">41LIC4201</text><text x="70" y="474">评分 59.9 ↓2.0</text>
+    <rect x="60" y="498" width="134" height="58" rx="3" class="panel"/><text x="70" y="520" class="label mono">80FIC31402</text><text x="70" y="540">评分 60.2 · A</text>
+    <rect x="60" y="564" width="134" height="58" rx="3" class="panel"/><text x="70" y="586" class="label mono">80FIC11906</text><text x="70" y="606">评分 60.3 · A</text>
+    <rect x="60" y="630" width="134" height="58" rx="3" class="panel"/><text x="70" y="652" class="label mono">41FIC20021</text><text x="70" y="672">评分 60.4 · A</text>
+    <rect x="60" y="696" width="134" height="58" rx="3" class="panel"/><text x="70" y="718" class="label mono">41TIC40108</text><text x="70" y="738">评分 60.7 · A</text>
+  </g>
+  <clipPath id="currentClip"><rect x="212" y="390" width="552" height="442" rx="4"/></clipPath>
+  <g clip-path="url(#currentClip)">
+    <rect x="212" y="390" width="552" height="442" rx="4" class="surface"/>
+    <text x="228" y="418" class="h3">回路概览</text>
+    <text x="228" y="444" class="small">评分 59.9 ↓2.0　可信度 A　有效率 96.8%</text>
+    <text x="228" y="472" class="small">位号、名称、量程、控制方式、设定值、实时值、数据健康</text>
+    <rect x="228" y="496" width="520" height="320" rx="5" class="panel"/>
+    <text x="420" y="654" class="small">概览子组件 height: 100%</text>
+    <text x="414" y="676" class="small">父容器 overflow-hidden</text>
+    <rect x="228" y="828" width="520" height="124" rx="5" class="blue"/>
+    <text x="244" y="854" class="h3">性能评估（被裁切）</text>
+    <rect x="228" y="964" width="520" height="124" rx="5" class="amber"/>
+    <text x="244" y="990" class="h3">诊断（被裁切）</text>
+  </g>
+  <line x1="212" y1="818" x2="764" y2="818" stroke="#d64555" stroke-width="3" stroke-dasharray="6 4"/>
+  <rect x="565" y="784" width="184" height="24" rx="12" class="callout"/><text x="578" y="800" class="calloutText">① 其余四区实际不可见风险</text>
+  <rect x="260" y="400" width="174" height="24" rx="12" class="callout"/><text x="273" y="416" class="calloutText">② 首屏没有主证据中心</text>
+  <rect x="66" y="804" width="132" height="24" rx="12" class="callout"/><text x="79" y="820" class="calloutText">③ 五区持续扩张</text>
+
+  <!-- Target -->
+  <rect x="836" y="164" width="712" height="50" rx="4" class="surface"/>
+  <text x="852" y="184" class="small">对象上下文</text><text x="852" y="201" class="label mono">E-4013 · 41LIC4201_PIDA</text>
+  <text x="1060" y="184" class="small">重要度 / 状态</text><text x="1060" y="201" class="label">安全关键 · 在线</text>
+  <text x="1212" y="184" class="small">时间 / 新鲜度</text><text x="1212" y="201" class="label mono">24 h · 8 s</text>
+  <text x="1370" y="184" class="small">可信度</text><text x="1370" y="201" class="label">A · 96.8%</text>
+  <rect x="836" y="226" width="712" height="46" rx="4" class="surface"/>
+  <text x="852" y="254" class="small">数据就绪　→　评估　→　诊断　→　干预　→　人工实施　→　验证　→　关闭 / 重开</text>
+  <rect x="1015" y="234" width="54" height="28" rx="14" class="blue"/><text x="1030" y="252" class="label">诊断</text>
+
+  <rect x="836" y="286" width="176" height="550" rx="6" class="surface"/>
+  <rect x="1024" y="286" width="336" height="550" rx="6" class="surface"/>
+  <rect x="1372" y="286" width="176" height="550" rx="6" class="surface"/>
+  <text x="852" y="312" class="h3">Loop Navigator</text>
+  <rect x="852" y="326" width="144" height="32" rx="4" class="panel"/><text x="864" y="347" class="small">位号 / 名称 / 风险</text>
+  <rect x="848" y="370" width="152" height="74" rx="4" class="rose"/>
+  <text x="860" y="392" class="label mono">41LIC4201</text><text x="860" y="412" class="small">↓8.2 · 超期验证</text><text x="860" y="430" class="small">A / 96.8%</text>
+  <rect x="848" y="452" width="152" height="74" rx="4" class="amber"/>
+  <text x="860" y="474" class="label mono">80FIC31402</text><text x="860" y="494" class="small">数据门禁</text><text x="860" y="512" class="small">D / 72.4%</text>
+  <rect x="848" y="534" width="152" height="74" rx="4" class="panel"/>
+  <text x="860" y="556" class="label mono">41PIC40506</text><text x="860" y="576" class="small">↓4.8 · 待核查</text><text x="860" y="594" class="small">B / 88.1%</text>
+  <text x="852" y="632" class="small">按风险、变化、可信度排序</text>
+  <text x="852" y="654" class="small">列表只承载快速扫描</text>
+
+  <text x="1042" y="312" class="h3">Evidence Canvas｜当前阶段主证据</text>
+  <text x="1042" y="338" class="small">主结论：阀门粘滞特征显著，需核查工况后选择干预</text>
+  <rect x="1042" y="354" width="300" height="242" rx="5" class="panel"/>
+  <line x1="1058" y1="560" x2="1326" y2="560" stroke="#d7e0ea"/>
+  <polyline points="1058,510 1080,478 1102,530 1124,450 1146,522 1168,438 1190,514 1212,462 1234,520 1256,446 1278,505 1300,470 1326,518" fill="none" stroke="#1769c2" stroke-width="2.5"/>
+  <line x1="1058" y1="486" x2="1326" y2="486" stroke="#c07b17" stroke-dasharray="5 4"/>
+  <text x="1058" y="580" class="small">PV / SP 趋势 · 阈值 · Bad/Uncertain 段保留</text>
+  <rect x="1042" y="610" width="94" height="62" rx="4" class="blue"/><text x="1054" y="632" class="small">评分</text><text x="1054" y="656" class="h3 mono">59.9 ↓2.0</text>
+  <rect x="1144" y="610" width="94" height="62" rx="4" class="panel"/><text x="1156" y="632" class="small">粘滞指数</text><text x="1156" y="656" class="h3 mono">0.84</text>
+  <rect x="1246" y="610" width="96" height="62" rx="4" class="panel"/><text x="1258" y="632" class="small">有效率</text><text x="1258" y="656" class="h3 mono">96.8%</text>
+  <rect x="1042" y="686" width="300" height="126" rx="4" class="panel"/>
+  <text x="1058" y="710" class="h3">Evidence Index</text>
+  <text x="1058" y="734" class="small">评估 v12　59.9 / A　2026-08-10 08:40</text>
+  <text x="1058" y="756" class="small">诊断 v7　阀门粘滞 0.84　证据 4 项</text>
+  <text x="1058" y="778" class="small">干预　尚未选择　查看专业详情 →</text>
+  <text x="1058" y="800" class="small">案例　CASE-2026-0811　owner 张工</text>
+
+  <text x="1390" y="312" class="h3">Decision Dock</text>
+  <rect x="1388" y="328" width="144" height="94" rx="4" class="blue"/>
+  <text x="1400" y="352" class="small">唯一下一步</text>
+  <text x="1400" y="376" class="label">核查工况并确认</text><text x="1400" y="394" class="label">干预路径</text>
+  <text x="1400" y="414" class="small">证据充分度 82%</text>
+  <text x="1390" y="454" class="small">责任人</text><text x="1488" y="454" class="label">张工</text>
+  <text x="1390" y="480" class="small">到期</text><text x="1488" y="480" class="label mono">10:00</text>
+  <text x="1390" y="506" class="small">案例状态</text><text x="1488" y="506" class="label">处理中</text>
+  <rect x="1388" y="532" width="144" height="40" rx="4" fill="#1769c2"/><text x="1419" y="557" class="label white">确认干预路径</text>
+  <rect x="1388" y="584" width="144" height="34" rx="4" class="panel"/><text x="1411" y="605" class="label">打开诊断证据</text>
+  <rect x="1388" y="630" width="144" height="34" rx="4" class="panel"/><text x="1411" y="651" class="label">查看完整案例</text>
+  <rect x="1388" y="688" width="144" height="88" rx="4" class="amber"/>
+  <text x="1400" y="712" class="small">安全边界</text><text x="1400" y="734" class="label">只输出建议与证据</text><text x="1400" y="754" class="small">不写入 DCS</text>
+
+  <rect x="1040" y="292" width="160" height="24" rx="12" class="callout"/><text x="1053" y="308" class="calloutText">① 一个主证据视觉中心</text>
+  <rect x="1390" y="292" width="140" height="24" rx="12" class="callout"/><text x="1403" y="308" class="calloutText">② 唯一可执行动作</text>
+  <rect x="845" y="806" width="150" height="24" rx="12" class="callout"/><text x="858" y="822" class="calloutText">③ 舰队扫描不抢主画布</text>
+
+  <text x="40" y="890" class="small">设计意图：工作台是“编排器”，不是专业详情集合；主画布随生命周期阶段切换，决策坞稳定回答责任、前置条件与下一步。</text>
+</svg>
