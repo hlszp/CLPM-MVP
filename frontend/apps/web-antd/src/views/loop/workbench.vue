@@ -391,16 +391,35 @@ function handleLifecycleStageClick(stage: MonitorApi.LifecycleStageName): void {
   }
 }
 
-/** nextAction 主动作点击：按 actionType 触发对应行为 */
+/** nextAction 主动作点击：按 actionType 触发对应行为（FP-P0-01：9 类动作全部接通） */
 function handleNextAction(actionType: MonitorApi.NextActionType): void {
+  const loopId = selectedLoopId.value;
   switch (actionType) {
-    case 'CONTINUE_MONITORING':
-    case 'CREATE_TRACKER':
-    case 'FIX_TAG_CONFIG':
-    case 'IMPORT_DATA':
-    case 'RECORD_IMPLEMENTATION':
+    case 'CONTINUE_MONITORING': {
+      message.info('回路当前无开放问题，持续监控中');
+      break;
+    }
+    case 'CREATE_TRACKER': {
+      if (!loopId) return;
+      router.push({ path: '/diagnosis/tracker', query: { loopId } });
+      break;
+    }
+    case 'FIX_TAG_CONFIG': {
+      router.push({ path: '/config/loop', query: loopId ? { loopId } : {} });
+      break;
+    }
+    case 'IMPORT_DATA': {
+      router.push({ path: '/config/datasource', query: loopId ? { loopId } : {} });
+      break;
+    }
+    case 'RECORD_IMPLEMENTATION': {
+      if (!loopId) return;
+      router.push({ path: '/diagnosis/tracker', query: { loopId } });
+      break;
+    }
     case 'VERIFY_EFFECT': {
-      // 这些动作由对应区组件处理或跳转
+      if (!loopId) return;
+      router.push({ path: '/diagnosis/tracker', query: { loopId } });
       break;
     }
     case 'RUN_ASSESSMENT': {
@@ -427,6 +446,24 @@ function goToDiagnosis() {
   router.push({
     path: '/diagnosis/tasks',
     query: { loopId: selectedLoopId.value },
+  });
+}
+
+/** 闭环时间线：查看 Tracker 详情（FP-P0-02：事件绑定修复） */
+function handleTrackerViewDetail(trackerId: string) {
+  const loopId = selectedLoopId.value;
+  router.push({
+    path: '/diagnosis/tracker',
+    query: { loopId: loopId ?? undefined, trackerId },
+  });
+}
+
+/** 闭环时间线：进入效果验证（FP-P0-02：事件绑定修复） */
+function handleTrackerVerify(trackerId: string) {
+  const loopId = selectedLoopId.value;
+  router.push({
+    path: '/diagnosis/tracker',
+    query: { loopId: loopId ?? undefined, trackerId, action: 'verify' },
   });
 }
 
@@ -1634,6 +1671,8 @@ watch(
                   summary?.unavailableSections?.includes('trackerTimeline') ??
                   false
                 "
+                @view-detail="handleTrackerViewDetail"
+                @verify="handleTrackerVerify"
               />
             </div>
           </template>

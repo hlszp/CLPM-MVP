@@ -921,6 +921,7 @@ defineExpose({ refresh });
         >
           <template #toolbar>
             <ClpmToolbarButton
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               type="primary"
               :disabled="!canTriggerNew"
               @click="openTriggerModal"
@@ -929,6 +930,7 @@ defineExpose({ refresh });
               新增诊断
             </ClpmToolbarButton>
             <ClpmToolbarButton
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               :disabled="selectedCount === 0 || activeTab === 'archived'"
               :loading="batchDiagnoseLoading"
               @click="handleBatchTrigger"
@@ -1089,6 +1091,7 @@ defineExpose({ refresh });
                     @confirm="handleRowDiagnose(record)"
                   >
                     <Button
+                      v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
                       size="small"
                       type="link"
                       :loading="rowDiagnoseLoading === record.taskId"
@@ -1098,6 +1101,7 @@ defineExpose({ refresh });
                   </Popconfirm>
                   <Button
                     v-if="canViewResult(record.status)"
+                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
@@ -1159,6 +1163,7 @@ defineExpose({ refresh });
         >
           <template #toolbar>
             <ClpmToolbarButton
+              v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
               type="primary"
               :disabled="!canTriggerNew"
               @click="openTriggerModal"
@@ -1316,6 +1321,7 @@ defineExpose({ refresh });
                   </Popconfirm>
                   <Button
                     v-if="canViewResult(record.status)"
+                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
@@ -1520,6 +1526,7 @@ defineExpose({ refresh });
                 <Space size="small" wrap>
                   <Button
                     v-if="canViewResult(record.status)"
+                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
