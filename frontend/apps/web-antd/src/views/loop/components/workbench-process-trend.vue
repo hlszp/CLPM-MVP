@@ -26,9 +26,16 @@ import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
 defineOptions({ name: 'WorkbenchProcessTrend' });
 
+const props = withDefaults(defineProps<Props>(), {
+  pvUnit: '',
+  opUnit: '%',
+  eventMarks: () => [],
+  modeBands: () => [],
+});
+
 /** 事件标记类型 */
 interface ProcessEventMark {
-  type: 'diagnosis' | 'tuning' | 'verify' | 'gap';
+  type: 'diagnosis' | 'gap' | 'tuning' | 'verify';
   timestamp: number;
   label?: string;
 }
@@ -53,13 +60,6 @@ interface Props {
   /** MODE 背景带数据（时间段+模式标签） */
   modeBands?: ModeBand[];
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  pvUnit: '',
-  opUnit: '%',
-  eventMarks: () => [],
-  modeBands: () => [],
-});
 
 const { chartTextColor, chartSplitLineColor } = useClpmTheme();
 const { getTooltipPreset } = useEchartsPreset();
@@ -176,9 +176,7 @@ function buildOption() {
       itemStyle: { color: PV_COLOR },
       data: pvData,
       markArea:
-        markAreas.length > 0
-          ? { silent: true, data: markAreas }
-          : undefined,
+        markAreas.length > 0 ? { silent: true, data: markAreas } : undefined,
       markPoint:
         markPoints.length > 0
           ? { symbol: 'triangle', symbolSize: 10, data: markPoints }
@@ -300,7 +298,13 @@ const hasData = computed(() => {
 });
 
 watch(
-  () => [props.trend, props.eventMarks, props.modeBands, props.pvUnit, props.opUnit],
+  () => [
+    props.trend,
+    props.eventMarks,
+    props.modeBands,
+    props.pvUnit,
+    props.opUnit,
+  ],
   () => {
     refresh();
   },

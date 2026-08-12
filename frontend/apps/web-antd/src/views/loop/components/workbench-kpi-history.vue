@@ -26,19 +26,19 @@ import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
 defineOptions({ name: 'WorkbenchKpiHistory' });
 
+const props = withDefaults(defineProps<Props>(), {
+  alarmLine: 60,
+  timeWindow: '24h',
+});
+
 interface Props {
   /** KPI 快照序列（来自 GET /performance/loops/snapshots） */
   snapshots: KpiSnapshotItem[];
   /** 告警线阈值（默认 60，来自定级阈值配置） */
   alarmLine?: number;
   /** 时间窗口档位 */
-  timeWindow?: '168h' | '24h' | '72h' | '8h' | 'custom';
+  timeWindow?: '8h' | '24h' | '72h' | '168h' | 'custom';
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  alarmLine: 60,
-  timeWindow: '24h',
-});
 
 const { chartTextColor, chartSplitLineColor } = useClpmTheme();
 const { getTooltipPreset } = useEchartsPreset();
@@ -62,7 +62,7 @@ interface Bucket {
   fast: number[];
 }
 
-function toBucketTs(ts: string | null, window: string): number | null {
+function toBucketTs(ts: null | string, window: string): null | number {
   if (!ts) return null;
   const d = dayjs(ts);
   if (!d.isValid()) return null;
@@ -73,7 +73,12 @@ function toBucketTs(ts: string | null, window: string): number | null {
   if (window === '72h') {
     // 2 小时桶
     const hour = d.hour();
-    return d.hour(hour - (hour % 2)).minute(0).second(0).millisecond(0).valueOf();
+    return d
+      .hour(hour - (hour % 2))
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .valueOf();
   }
   // 8h / 24h / custom：按小时
   return d.startOf('hour').valueOf();

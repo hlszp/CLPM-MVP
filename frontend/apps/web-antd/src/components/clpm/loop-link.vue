@@ -2,9 +2,8 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { useUserStore } from '@vben/stores';
-
 import { IconifyIcon } from '@vben/icons';
+import { useUserStore } from '@vben/stores';
 
 import { Dropdown, Menu } from 'ant-design-vue';
 
@@ -72,8 +71,10 @@ const linkClickable = computed(() => canAccess(props.defaultTarget));
 /** 下拉菜单是否有至少一个可见项（全不可见时隐藏触发器） */
 const hasVisibleMenuItem = computed(() => {
   const items = ['detail', 'diagnosis', 'tuning', 'performance', 'trend'];
-  return items.some((k) => canAccess(k)) ||
-    (props.showTracker && canAccess('tracker'));
+  return (
+    items.some((k) => canAccess(k)) ||
+    (props.showTracker && canAccess('tracker'))
+  );
 });
 
 const handleMenuClick = ({ key }: { key: number | string }) => {
@@ -116,7 +117,11 @@ const handleMenuClick = ({ key }: { key: number | string }) => {
     <span v-else class="clpm-loop-link__tag--static">
       {{ tagName || loopId }}
     </span>
-    <Dropdown v-if="showMenu && hasVisibleMenuItem" :trigger="['hover']" @click.stop>
+    <Dropdown
+      v-if="showMenu && hasVisibleMenuItem"
+      :trigger="['hover']"
+      @click.stop
+    >
       <span class="clpm-loop-link__menu-trigger">
         <IconifyIcon icon="lucide:chevron-down" :size="12" />
       </span>

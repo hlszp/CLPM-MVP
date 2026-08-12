@@ -18,6 +18,10 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'WorkbenchMetricBars' });
 
+const props = withDefaults(defineProps<Props>(), {
+  negative: false,
+});
+
 interface MetricBarItem {
   name: string;
   value: number; // 0-100
@@ -30,10 +34,6 @@ interface Props {
   /** 是否负向语义（长=差，用于诊断扩展指标） */
   negative?: boolean;
 }
-
-const props = withDefaults(defineProps<Props>(), {
-  negative: false,
-});
 
 const { themeColors } = useClpmTheme();
 
@@ -65,7 +65,8 @@ const rows = computed<Row[]>(() =>
     const raw = m.value;
     const v = typeof raw === 'number' && !Number.isNaN(raw) ? raw : 0;
     const clamped = Math.max(0, Math.min(100, v));
-    const color = m.color ?? (props.negative ? negativeColor(v) : positiveColor(v));
+    const color =
+      m.color ?? (props.negative ? negativeColor(v) : positiveColor(v));
     return {
       color,
       display: Number.isFinite(v) ? v.toFixed(1) : '—',
@@ -80,9 +81,7 @@ const rows = computed<Row[]>(() =>
 const hasData = computed(() => rows.value.length > 0);
 
 const labelText = computed(() =>
-  props.negative
-    ? '▲ 负向指标：条越长越差'
-    : '正向指标：条越长越好',
+  props.negative ? '▲ 负向指标：条越长越差' : '正向指标：条越长越好',
 );
 
 const labelColor = computed(() =>
@@ -157,9 +156,9 @@ const labelColor = computed(() =>
 
 .metric-bars__name {
   overflow: hidden;
+  text-overflow: ellipsis;
   color: hsl(var(--foreground) / 75%);
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .metric-bars__track {
@@ -186,8 +185,8 @@ const labelColor = computed(() =>
 }
 
 .metric-bars__value {
-  font-variant-numeric: tabular-nums;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 

@@ -1,6 +1,4 @@
 <script lang="ts" setup>
-import type { ComponentPublicInstance } from 'vue';
-
 /**
  * 回路工作台（单页四区重构 v2 · 2026-08-07）
  *
@@ -22,19 +20,16 @@ import type { ComponentPublicInstance } from 'vue';
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
-import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
+import type {
+  KpiSnapshotItem,
+  LoopConfidenceLatestItem,
+  MetricApi,
+} from '#/api/metric';
 import type { MonitorApi } from '#/api/monitor';
+import type { PlantNodeApi } from '#/api/plant-node';
 import type { TuningApi } from '#/api/tuning';
 
-import {
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  provide,
-  ref,
-  watch,
-} from 'vue';
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -48,6 +43,8 @@ import {
   Segmented,
   Spin,
   Tag,
+  Tooltip,
+  Tree,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -57,8 +54,13 @@ import {
   getLoopMonitorDetailApi,
   getLoopMonitorListApi,
 } from '#/api/loop';
-import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
+import {
+  getGradingThresholdsApi,
+  getLoopConfidenceLatestApi,
+  getLoopSnapshotsApi,
+} from '#/api/metric';
 import { getWorkbenchSummaryApi } from '#/api/monitor';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   getTuningTaskDetailApi,
   getTuningTasksApi,
@@ -82,7 +84,7 @@ import { useLatestRequest } from '#/composables/use-latest-request';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
-import { useSectionVisibility } from '#/composables/use-section-visibility';
+import { useScoreColor } from '#/composables/use-score-color';
 import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
 
@@ -91,6 +93,7 @@ import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
 import SimulateResultModal from './components/simulate-result-modal.vue';
 import TuneParamModal from './components/tune-param-modal.vue';
 import TuningTriggerModal from './components/tuning-trigger-modal.vue';
+import WorkbenchEffectCompare from './components/workbench-effect-compare.vue';
 import WorkbenchKpiHistory from './components/workbench-kpi-history.vue';
 import WorkbenchMetricBars from './components/workbench-metric-bars.vue';
 import WorkbenchProcessTrend from './components/workbench-process-trend.vue';
@@ -106,31 +109,6 @@ const router = useRouter();
 // ===== 请求代次保护（MW-P0-04）=====
 // 每次切换回路递增 epoch；异步响应写入前校验 epoch+loopId，丢弃旧响应。
 const requestGuard = useLatestRequest<string>();
-
-// ===== 区级延迟加载（MW-P3-10）=====
-// 评估趋势/诊断波形/整定仿真在可见时加载，避免首屏并发 6 路 API。
-// summary + loopDetail 立即加载（轻量概览）；其余三区在进入视口时加载。
-const assessVisibility = useSectionVisibility();
-const diagVisibility = useSectionVisibility();
-const tuneVisibility = useSectionVisibility();
-const assessSectionRef = ref<ComponentPublicInstance | null>(null);
-const diagSectionRef = ref<ComponentPublicInstance | null>(null);
-const tuneSectionRef = ref<ComponentPublicInstance | null>(null);
-
-/** 将组件实例 ref 转为 DOM 元素并注册到可见性追踪器 */
-function registerSectionVisibility() {
-  nextTick(() => {
-    assessVisibility.register(
-      (assessSectionRef.value?.$el as Element | undefined) ?? null,
-    );
-    diagVisibility.register(
-      (diagSectionRef.value?.$el as Element | undefined) ?? null,
-    );
-    tuneVisibility.register(
-      (tuneSectionRef.value?.$el as Element | undefined) ?? null,
-    );
-  });
-}
 
 // ===== 共享监控上下文（MW-P1-01）=====
 // URL 是真相源：view/loopId/plantNodeId/loopType/keyword/timeWindow 等
@@ -220,6 +198,49 @@ function setLoopListRef(el: unknown) {
 const loopListLoading = ref(false);
 const loopListError = ref('');
 const searchKeyword = ref('');
+
+// ===== 左脊柱装置树（仅到装置/单元级，回路列表独立成区）=====
+interface PlantTreeNode {
+  key: string;
+  title: string;
+  nodeType: PlantNodeApi.NodeType;
+  children?: PlantTreeNode[];
+}
+const plantTreeData = ref<PlantTreeNode[]>([]);
+const plantTreeLoading = ref(false);
+const plantTreeExpandedKeys = ref<string[]>([]);
+const plantTreeSelectedKeys = ref<string[]>([]);
+
+/** 将 PlantNodeApi.PlantNode 转为 ant Tree 节点（仅 FACTORY → AREA → UNIT） */
+function buildPlantTree(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
+  return nodes.map((n) => ({
+    children: n.children?.length ? buildPlantTree(n.children) : undefined,
+    key: n.id,
+    nodeType: n.type,
+    title: n.name,
+  }));
+}
+
+async function loadPlantTree(): Promise<void> {
+  plantTreeLoading.value = true;
+  try {
+    const tree = await getPlantNodeTreeApi();
+    plantTreeData.value = buildPlantTree(tree);
+    // 默认展开第一层（工厂）
+    plantTreeExpandedKeys.value = tree.map((n) => n.id);
+  } catch {
+    plantTreeData.value = [];
+  } finally {
+    plantTreeLoading.value = false;
+  }
+}
+
+/** 装置树节点选中：更新 plantNodeId 过滤回路列表 */
+function handlePlantTreeSelect(keys: (number | string)[]): void {
+  const key = keys[0] as string | undefined;
+  plantTreeSelectedKeys.value = key ? [key] : [];
+  monitorCtx.update({ plantNodeId: key ?? '' });
+}
 
 // ===== 右侧工作台状态 =====
 const selectedLoopId = ref<null | string>(null);
@@ -365,24 +386,22 @@ const summaryLoading = ref(false);
 
 async function loadSummary(loopId: string): Promise<void> {
   summaryLoading.value = true;
-  await requestGuard.run(async (signal, capturedEpoch) => {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
     const data = await getWorkbenchSummaryApi(loopId).catch(() => null);
-    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) {
-      return;
-    }
+    if (!requestGuard.guard(loopId, capturedEpoch)) return;
     summary.value = data;
     summaryLoading.value = false;
   });
 }
 
-/** 生命周期条点击：滚动到对应区 */
+/** 生命周期条点击：滚动到对应 R 区 */
 function handleLifecycleStageClick(stage: MonitorApi.LifecycleStageName): void {
   const map: Record<MonitorApi.LifecycleStageName, string> = {
-    MONITOR: '.wb-overview',
-    ASSESS: '.wb-assess',
-    DIAGNOSE: '.wb-diag',
-    TUNE: '.wb-tune',
-    VERIFY: '.wb-verify',
+    ASSESS: '.wb-r5__card--assess',
+    DIAGNOSE: '.wb-r5__card--diag',
+    MONITOR: '.wb-r1',
+    TUNE: '.wb-r5__card--tune',
+    VERIFY: '.wb-r6',
   };
   const selector = map[stage];
   if (selector) {
@@ -409,15 +428,13 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
       break;
     }
     case 'IMPORT_DATA': {
-      router.push({ path: '/config/datasource', query: loopId ? { loopId } : {} });
+      router.push({
+        path: '/config/datasource',
+        query: loopId ? { loopId } : {},
+      });
       break;
     }
     case 'RECORD_IMPLEMENTATION': {
-      if (!loopId) return;
-      router.push({ path: '/diagnosis/tracker', query: { loopId } });
-      break;
-    }
-    case 'VERIFY_EFFECT': {
       if (!loopId) return;
       router.push({ path: '/diagnosis/tracker', query: { loopId } });
       break;
@@ -432,6 +449,11 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
     }
     case 'RUN_TUNING': {
       tuningModalOpen.value = true;
+      break;
+    }
+    case 'VERIFY_EFFECT': {
+      if (!loopId) return;
+      router.push({ path: '/diagnosis/tracker', query: { loopId } });
       break;
     }
     default: {
@@ -468,51 +490,48 @@ const summaryDayTrend = computed<DayTrend | null>(
 
 // ===== 三区任务运行器（评估/诊断/辨识为异步任务） =====
 // MW-P3-10：任务完成后同时刷新 summary（生命周期/nextAction/活跃关注/验证时间线）
-const {
-  triggerAssessment,
-  triggerDiagnosis,
-  triggerTuning,
-} = useWorkbenchTaskRunner(
-  computed(() => selectedLoopId.value),
-  {
-    onAssessDone: async (loopId: string) => {
-      const [latest, snapshots] = await Promise.all([
-        getLoopConfidenceLatestApi(loopId).catch(() => null),
-        loadScoreHistory(loopId),
-      ]);
-      assessmentDetail.value = latest;
-      scoreHistory.value = snapshots;
-      // 刷新 summary（生命周期/评分趋势/活跃关注）
-      void loadSummary(loopId);
-    },
-    onDiagnosisDone: async (loopId: string) => {
-      diagnosisDetail.value = await getDiagnosisDetailApi(loopId).catch(
-        () => null,
-      );
-      // 刷新 summary（诊断阶段状态/nextAction）
-      void loadSummary(loopId);
-    },
-    onTuningDone: async (loopId: string) => {
-      const res = await getTuningTasksApi({
-        loopId,
-        page: 1,
-        pageSize: 10,
-      }).catch(() => ({ items: [], total: 0 }));
-      const items = (res.items || []).toSorted((a, b) =>
-        b.createdAt.localeCompare(a.createdAt),
-      );
-      tuningHistory.value = items;
-      tuningLatest.value = items[0] ?? null;
-      if (items[0]?.id) {
-        tuningDetail.value = await getTuningTaskDetailApi(items[0].id).catch(
+const { triggerAssessment, triggerDiagnosis, triggerTuning } =
+  useWorkbenchTaskRunner(
+    computed(() => selectedLoopId.value),
+    {
+      onAssessDone: async (loopId: string) => {
+        const [latest, snapshots] = await Promise.all([
+          getLoopConfidenceLatestApi(loopId).catch(() => null),
+          loadScoreHistory(loopId),
+        ]);
+        assessmentDetail.value = latest;
+        scoreHistory.value = snapshots;
+        // 刷新 summary（生命周期/评分趋势/活跃关注）
+        void loadSummary(loopId);
+      },
+      onDiagnosisDone: async (loopId: string) => {
+        diagnosisDetail.value = await getDiagnosisDetailApi(loopId).catch(
           () => null,
         );
-      }
-      // 刷新 summary（整定阶段状态/nextAction/trackerTimeline 含 effectCompare）
-      void loadSummary(loopId);
+        // 刷新 summary（诊断阶段状态/nextAction）
+        void loadSummary(loopId);
+      },
+      onTuningDone: async (loopId: string) => {
+        const res = await getTuningTasksApi({
+          loopId,
+          page: 1,
+          pageSize: 10,
+        }).catch(() => ({ items: [], total: 0 }));
+        const items = (res.items || []).toSorted((a, b) =>
+          b.createdAt.localeCompare(a.createdAt),
+        );
+        tuningHistory.value = items;
+        tuningLatest.value = items[0] ?? null;
+        if (items[0]?.id) {
+          tuningDetail.value = await getTuningTaskDetailApi(items[0].id).catch(
+            () => null,
+          );
+        }
+        // 刷新 summary（整定阶段状态/nextAction/trackerTimeline 含 effectCompare）
+        void loadSummary(loopId);
+      },
     },
-  },
-);
+  );
 
 // ===== 发起弹窗状态 =====
 const assessModalOpen = ref(false);
@@ -857,8 +876,15 @@ function handleSearchInput(): void {
 // 确认目标存在后再 selectLoop，避免对不存在回路发起无用请求。
 onMounted(() => {
   loadLoopList();
-  // MW-P3-10：注册区级可见性追踪（IntersectionObserver 延迟加载）
-  registerSectionVisibility();
+  loadPlantTree();
+  // 加载定级阈值（动态配置，降级 GB/T 44693.2 §6.3 默认）
+  getGradingThresholdsApi()
+    .then((res) => {
+      gradingThresholds.value = res?.thresholds ?? [];
+    })
+    .catch(() => {
+      gradingThresholds.value = [];
+    });
   // MW-P1-04/05：启动 WS 连接并注册消息回调
   startRealtime();
   onRealtimeMessage((msg) => {
@@ -915,23 +941,21 @@ watch(
   },
 );
 
-// 选中回路变化时加载数据（MW-P3-05 + MW-P3-10 区级延迟加载）
-// summary + loopDetail 立即加载（轻量概览）；评估/诊断/整定在区可见时加载。
+// R4 画布 loading 状态（提前声明，供 watch else 分支重置）
+const processTrendLoading = ref(false);
+const kpiHistoryLoading = ref(false);
+
+// 选中回路变化时加载数据（三栏布局：R5 证据区始终可见，无需延迟加载）
+// summary + loopDetail + 评估/诊断/整定数据一并加载。
 watch(
   selectedLoopId,
   (newId) => {
     if (newId) {
-      // 立即加载轻量概览数据
       loadLoopDetail(newId);
       loadSummary(newId);
-      // 重置区级可见标记——新回路的各区需重新等待可见
-      assessVisibility.reset();
-      diagVisibility.reset();
-      tuneVisibility.reset();
-      // 若区已可见（首屏可视区），立即触发加载
-      if (assessVisibility.shouldLoad(newId)) loadAssessment(newId);
-      if (diagVisibility.shouldLoad(newId)) loadDiagnosis(newId);
-      if (tuneVisibility.shouldLoad(newId)) loadTuning(newId);
+      loadAssessment(newId);
+      loadDiagnosis(newId);
+      loadTuning(newId);
     } else {
       diagnosisDetail.value = null;
       assessmentDetail.value = null;
@@ -941,56 +965,30 @@ watch(
       tuningDetail.value = null;
       loopDetail.value = null;
       summary.value = null;
-      assessVisibility.reset();
-      diagVisibility.reset();
-      tuneVisibility.reset();
+      // 重置 loading 状态（guard 取消时不会重置，此处兜底）
+      summaryLoading.value = false;
+      diagnosisLoading.value = false;
+      assessmentLoading.value = false;
+      tuningLoading.value = false;
     }
   },
   { immediate: true },
 );
 
-// MW-P3-10：区级可见时触发加载（首次进入视口或切换回路后再次可见）
-watch(
-  () => assessVisibility.onceVisible.value,
-  (visible) => {
-    if (visible && selectedLoopId.value) {
-      loadAssessment(selectedLoopId.value);
-    }
-  },
-);
-watch(
-  () => diagVisibility.onceVisible.value,
-  (visible) => {
-    if (visible && selectedLoopId.value) {
-      loadDiagnosis(selectedLoopId.value);
-    }
-  },
-);
-watch(
-  () => tuneVisibility.onceVisible.value,
-  (visible) => {
-    if (visible && selectedLoopId.value) {
-      loadTuning(selectedLoopId.value);
-    }
-  },
-);
-
 // ===== Phase 1 重构：R4 主画布数据（过程趋势 + KPI 历史）=====
 // 过程趋势数据（GET /loops/{id}/monitor 的 trend 字段）
 const processTrendData = ref<LoopApi.MonitorTrend | null>(null);
-const processTrendLoading = ref(false);
 // KPI 历史快照（用于 R4 性能指标模式）
 const kpiHistory = ref<KpiSnapshotItem[]>([]);
-const kpiHistoryLoading = ref(false);
 // 画布模式：过程变量 | 性能指标
 const canvasMode = ref<'kpi' | 'process'>('process');
 // 时间窗（设计文档 §2.4：8h/24h/72h/168h/自定义）
-const timeWindow = ref<'168h' | '24h' | '72h' | '8h' | 'custom'>('24h');
+const timeWindow = ref<'8h' | '24h' | '72h' | '168h' | 'custom'>('24h');
 // 自定义时间窗起止（分钟精度）
 const customStartTime = ref<string>('');
 const customEndTime = ref<string>('');
-// 告警线（默认 60，来自定级阈值配置 GET /configs/grading-thresholds）
-const alarmLine = ref<number>(60);
+// 定级阈值（动态加载，设计红线：禁止硬编码）
+const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 // 左脊柱折叠（沉浸模式）
 const sidebarCollapsed = ref(false);
 
@@ -1028,14 +1026,13 @@ function extractModeBands(trend: LoopApi.MonitorTrend): ModeBand[] {
   for (let i = 0; i < trend.timestamps.length; i++) {
     const ts = trend.timestamps[i]!;
     const mode = trend.mode[i];
-    const modeLabel =
-      mode === 1
-        ? 'AUTO'
-        : mode === 0
-          ? 'MANUAL'
-          : mode === 2
-            ? 'CAS'
-            : String(mode ?? 'UNKNOWN');
+    let modeLabel: string;
+    switch (mode) {
+      case 0: { modeLabel = 'MANUAL'; break; }
+      case 1: { modeLabel = 'AUTO'; break; }
+      case 2: { modeLabel = 'CAS'; break; }
+      default: { modeLabel = String(mode ?? 'UNKNOWN'); }
+    }
     if (modeLabel !== currentMode) {
       if (currentMode && bandStart !== null) {
         bands.push({ end: ts, mode: currentMode, start: bandStart });
@@ -1085,18 +1082,33 @@ async function loadKpiHistory(loopId: string): Promise<void> {
     const now = dayjs();
     let startTime: dayjs.Dayjs;
     let endTime: dayjs.Dayjs = now;
-    if (timeWindow.value === 'custom' && customStartTime.value && customEndTime.value) {
+    if (
+      timeWindow.value === 'custom' &&
+      customStartTime.value &&
+      customEndTime.value
+    ) {
       startTime = dayjs(customStartTime.value);
       endTime = dayjs(customEndTime.value);
-    } else if (timeWindow.value === '168h') {
-      startTime = now.subtract(7, 'day');
-    } else if (timeWindow.value === '72h') {
-      startTime = now.subtract(3, 'day');
-    } else if (timeWindow.value === '8h') {
+    } else switch (timeWindow.value) {
+ case '8h': {
       startTime = now.subtract(8, 'hour');
-    } else {
+    
+ break;
+ }
+ case '72h': {
+      startTime = now.subtract(3, 'day');
+    
+ break;
+ }
+ case '168h': {
+      startTime = now.subtract(7, 'day');
+    
+ break;
+ }
+ default: {
       startTime = now.subtract(24, 'hour');
     }
+ }
     const res = await getLoopSnapshotsApi({
       endTime: endTime.toISOString(),
       latestOnly: false,
@@ -1211,15 +1223,22 @@ const diagExtendedMetrics = computed(() => {
   ];
 });
 
-// ===== R2 等级标签计算（中文五档：优秀/良好/合格/警告/不合格）=====
-const gradeInfo = computed(() => {
-  const score = summary.value?.scoreTrend.score;
-  if (score == null) return { color: '#9ca3af', label: '—' };
-  if (score >= 90) return { color: '#1a7f4b', label: '优秀' };
-  if (score >= 80) return { color: '#1d4ed8', label: '良好' };
-  if (score >= 60) return { color: '#b45309', label: '合格' };
-  if (score >= 40) return { color: '#c23434', label: '警告' };
-  return { color: '#c23434', label: '不合格' };
+// ===== R2 等级标签（动态阈值，useScoreColor 降级 GB/T 44693.2 §6.3 默认）=====
+const summaryScore = computed(() => summary.value?.scoreTrend.score ?? null);
+const { color: gradeColor, label: gradeLabel } = useScoreColor(
+  summaryScore,
+  gradingThresholds,
+);
+
+const gradeInfo = computed(() => ({
+  color: gradeColor.value,
+  label: gradeLabel.value ?? '—',
+}));
+
+/** 告警线：取定级阈值中"警告"档 minScore（默认 60），随配置动态变化 */
+const alarmLine = computed<number>(() => {
+  const warn = gradingThresholds.value.find((t) => t.level === 4);
+  return warn?.minScore ?? 60;
 });
 
 // ===== 实时点值（R4 图例行右侧显示 SP/PV/OP/MODE）=====
@@ -1227,7 +1246,8 @@ const runtimePointValues = computed(() => {
   const r = summary.value?.runtime;
   if (!r) return null;
   return {
-    mode: r.modeLabel ?? (r.mode === 1 ? 'AUTO' : r.mode === 0 ? 'MANUAL' : '—'),
+    mode:
+      r.modeLabel ?? (r.mode === 1 ? 'AUTO' : (r.mode === 0 ? 'MANUAL' : '—')),
     op: r.op,
     pv: r.pv,
     pvQuality: r.pvQuality,
@@ -1243,6 +1263,32 @@ function pvValueColor(): string {
   if (r.pvQuality && r.pvQuality !== 'GOOD') return '#c23434';
   return 'inherit';
 }
+
+/** R2 评分 tooltip：B 类语义——计算窗口与时间可见（§2.6 配套规则1） */
+const scoreTooltip = computed<string>(() => {
+  const a = summary.value?.assessment;
+  const tw = a?.timeWindow ?? '24h';
+  const at = a?.resultAt ? formatTime(a.resultAt) : '—';
+  return `最近评估快照（计算窗口 ${tw} · ${at}），不随页面时间窗变化`;
+});
+
+/** R2 日 delta tooltip */
+const dayDeltaTooltip = computed<string>(() => {
+  return '与昨日同时段快照比较';
+});
+
+/** 数据新鲜度 tooltip */
+const freshnessTooltip = computed<string>(() => {
+  const f = summary.value?.dataFreshness;
+  if (!f) return '';
+  const status =
+    f.status === 'FRESH'
+      ? '数据新鲜'
+      : (f.status === 'DELAYED'
+        ? '数据延迟'
+        : '未知');
+  return `${status}${f.reason ? `：${f.reason}` : ''}`;
+});
 
 // ===== 时间窗选项 =====
 const timeWindowOptions = [
@@ -1277,7 +1323,6 @@ const lifecycleStages = computed(() => {
 
 const stageLabelMap: Record<string, string> = {
   ASSESS: '评估',
-  DATA: '数据',
   DIAGNOSE: '诊断',
   MONITOR: '数据',
   TUNE: '整定',
@@ -1313,8 +1358,11 @@ const stageLabelMap: Record<string, string> = {
 
     <!-- ===== 工作台模式（三栏布局：左脊柱 + 主区域 + 右决策栏） ===== -->
     <template v-if="!isTableView">
-      <div class="wb-layout" :class="{ 'wb-layout--collapsed': sidebarCollapsed }">
-        <!-- ===== 左脊柱：回路列表 ===== -->
+      <div
+        class="wb-layout"
+        :class="{ 'wb-layout--collapsed': sidebarCollapsed }"
+      >
+        <!-- ===== 左脊柱：装置树 + 回路列表 ===== -->
         <aside class="wb-sidebar">
           <div class="wb-sidebar__search">
             <Input
@@ -1325,6 +1373,37 @@ const stageLabelMap: Record<string, string> = {
               @input="handleSearchInput"
               @press-enter="() => loadLoopList(true)"
             />
+          </div>
+          <!-- 装置树（仅到装置/单元级，范围轴） -->
+          <div class="wb-sidebar__tree">
+            <div class="wb-sidebar__tree-title">
+              <span>装置</span>
+              <button
+                v-if="plantTreeSelectedKeys.length > 0"
+                class="wb-sidebar__tree-clear"
+                @click="handlePlantTreeSelect([])"
+              >
+                清除
+              </button>
+            </div>
+            <Spin :spinning="plantTreeLoading" size="small">
+              <Tree
+                v-if="plantTreeData.length > 0"
+                v-model:expanded-keys="plantTreeExpandedKeys"
+                v-model:selected-keys="plantTreeSelectedKeys"
+                :tree-data="plantTreeData as any"
+                :block-node="true"
+                :show-line="false"
+                class="wb-plant-tree"
+                @select="handlePlantTreeSelect"
+              />
+              <div v-else class="wb-sidebar__tree-empty">暂无装置数据</div>
+            </Spin>
+          </div>
+          <!-- 回路列表（当前选中单元的回路，独立成区） -->
+          <div class="wb-sidebar__list-title">
+            <span>回路</span>
+            <span class="wb-sidebar__list-count">{{ loopList.length }} 条</span>
           </div>
           <Spin :spinning="loopListLoading" size="small">
             <div
@@ -1343,10 +1422,14 @@ const stageLabelMap: Record<string, string> = {
                     v-for="{ item } in visibleLoopItems"
                     :key="item.loopId"
                     class="wb-loop-item"
-                    :class="{ 'wb-loop-item--active': item.loopId === selectedLoopId }"
+                    :class="{
+                      'wb-loop-item--active': item.loopId === selectedLoopId,
+                    }"
                     role="button"
                     tabindex="0"
-                    :aria-current="item.loopId === selectedLoopId ? 'true' : undefined"
+                    :aria-current="
+                      item.loopId === selectedLoopId ? 'true' : undefined
+                    "
                     @click="selectLoop(item.loopId)"
                     @keydown.enter="selectLoop(item.loopId)"
                     @keydown.space.prevent="selectLoop(item.loopId)"
@@ -1357,31 +1440,64 @@ const stageLabelMap: Record<string, string> = {
                         v-if="item.confidenceLevel"
                         class="wb-loop-item__conf"
                         :class="{
-                          'wb-loop-item__conf--ok': ['A', 'B'].includes(item.confidenceLevel),
-                          'wb-loop-item__conf--warn': item.confidenceLevel === 'C',
-                          'wb-loop-item__conf--err': ['D', 'E'].includes(item.confidenceLevel),
+                          'wb-loop-item__conf--ok': ['A', 'B'].includes(
+                            item.confidenceLevel,
+                          ),
+                          'wb-loop-item__conf--warn':
+                            item.confidenceLevel === 'C',
+                          'wb-loop-item__conf--err': ['D', 'E'].includes(
+                            item.confidenceLevel,
+                          ),
                         }"
-                      >{{ item.confidenceLevel }}</span>
+                        >{{ item.confidenceLevel }}</span
+                      >
                     </div>
                     <div class="wb-loop-item__desc">
-                      <span class="wb-loop-item__name">{{ item.description || '—' }}</span>
+                      <span class="wb-loop-item__name">{{
+                        item.description || '—'
+                      }}</span>
                       <span class="wb-loop-item__score">
                         {{ item.score ?? '—' }}
-                        <DayDeltaBadge :delta="item.scoreDelta" :trend="item.dayTrend" />
+                        <DayDeltaBadge
+                          :delta="item.scoreDelta"
+                          :trend="item.dayTrend"
+                        />
                       </span>
                     </div>
                     <div class="wb-loop-item__vals">
-                      <span>PV {{ currentValueText(item.currentValues?.pv, item.pvUnit) }}</span>
-                      <span>SP {{ currentValueText(item.currentValues?.sp, item.pvUnit) }}</span>
-                      <span>OP {{ currentValueText(item.currentValues?.op, item.opUnit) }}</span>
-                      <span class="wb-loop-item__mode">{{ item.currentValues?.modeLabel || '—' }}</span>
+                      <span
+                        >PV
+                        {{
+                          currentValueText(item.currentValues?.pv, item.pvUnit)
+                        }}</span
+                      >
+                      <span
+                        >SP
+                        {{
+                          currentValueText(item.currentValues?.sp, item.pvUnit)
+                        }}</span
+                      >
+                      <span
+                        >OP
+                        {{
+                          currentValueText(item.currentValues?.op, item.opUnit)
+                        }}</span
+                      >
+                      <span class="wb-loop-item__mode">{{
+                        item.currentValues?.modeLabel || '—'
+                      }}</span>
                     </div>
                   </div>
                 </div>
               </div>
-              <div v-if="!loopListLoading && loopListError" class="wb-sidebar__error">
+              <div
+                v-if="!loopListLoading && loopListError"
+                class="wb-sidebar__error"
+              >
                 <span>{{ loopListError }}</span>
-                <Button size="small" @click="() => loadLoopList(true)">重试</Button>
+                <Button size="small" @click="() => loadLoopList(true)"
+                  >重试</Button
+                >
               </div>
               <Empty
                 v-else-if="!loopListLoading && loopList.length === 0"
@@ -1392,7 +1508,10 @@ const stageLabelMap: Record<string, string> = {
             </div>
           </Spin>
           <!-- 沉浸模式折叠按钮 -->
-          <button class="wb-sidebar__toggle" @click="sidebarCollapsed = !sidebarCollapsed">
+          <button
+            class="wb-sidebar__toggle"
+            @click="sidebarCollapsed = !sidebarCollapsed"
+          >
             <span v-if="sidebarCollapsed">▶</span>
             <span v-else>◀</span>
           </button>
@@ -1401,17 +1520,29 @@ const stageLabelMap: Record<string, string> = {
         <!-- ===== 主区域 ===== -->
         <main class="wb-main">
           <!-- 深链接提示 -->
-          <div v-if="selectedLoop && injectedLoop" class="wb-deeplink-hint" role="status">
+          <div
+            v-if="selectedLoop && injectedLoop"
+            class="wb-deeplink-hint"
+            role="status"
+          >
             当前回路不在筛选结果中，已从深链接定位。可清空筛选以在左侧列表查看。
           </div>
 
           <!-- 未选回路 / 回路不存在 -->
           <div v-if="loopNotFound" class="wb-state wb-state--error">
-            <Empty description="回路不存在或已停用" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
-            <div class="wb-state__hint">URL 中的回路 ID 无效或已停用，请从左侧选择其他回路。</div>
+            <Empty
+              description="回路不存在或已停用"
+              :image="Empty.PRESENTED_IMAGE_SIMPLE"
+            />
+            <div class="wb-state__hint">
+              URL 中的回路 ID 无效或已停用，请从左侧选择其他回路。
+            </div>
           </div>
           <div v-else-if="!selectedLoop" class="wb-state wb-state--empty">
-            <Empty description="请从左侧选择回路" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+            <Empty
+              description="请从左侧选择回路"
+              :image="Empty.PRESENTED_IMAGE_SIMPLE"
+            />
           </div>
 
           <template v-else-if="selectedLoop">
@@ -1419,9 +1550,12 @@ const stageLabelMap: Record<string, string> = {
             <header class="wb-r1">
               <div class="wb-r1__left">
                 <span class="wb-r1__tag">{{ selectedLoop.tagName }}</span>
-                <span class="wb-r1__desc">{{ selectedLoop.description || '—' }}</span>
+                <span class="wb-r1__desc">{{
+                  selectedLoop.description || '—'
+                }}</span>
                 <span class="wb-r1__crumb">
-                  {{ selectedLoop.unitName || '—' }} · {{ selectedLoop.loopType || '—' }}
+                  {{ selectedLoop.unitName || '—' }} ·
+                  {{ selectedLoop.loopType || '—' }}
                 </span>
               </div>
               <div class="wb-r1__right">
@@ -1429,39 +1563,91 @@ const stageLabelMap: Record<string, string> = {
                   v-if="runtimePointValues"
                   class="wb-r1__mode-pill"
                   :class="{
-                    'wb-r1__mode-pill--auto': runtimePointValues.mode === 'AUTO',
-                    'wb-r1__mode-pill--man': runtimePointValues.mode === 'MANUAL' || runtimePointValues.mode === 'MAN',
+                    'wb-r1__mode-pill--auto':
+                      runtimePointValues.mode === 'AUTO',
+                    'wb-r1__mode-pill--man':
+                      runtimePointValues.mode === 'MANUAL' ||
+                      runtimePointValues.mode === 'MAN',
                   }"
-                >{{ runtimePointValues.mode }}</span>
-                <span v-if="summary?.dataFreshness" class="wb-r1__fresh">
-                  <span class="wb-r1__dot" :class="{ 'wb-r1__dot--stale': summary.dataFreshness.status === 'DELAYED' }"></span>
-                  {{ summary.dataFreshness.status === 'FRESH' ? '数据新鲜' : summary.dataFreshness.status === 'DELAYED' ? '数据延迟' : '未知' }}
-                </span>
+                  >{{ runtimePointValues.mode }}</span
+                >
+                <Tooltip
+                  v-if="summary?.dataFreshness"
+                  :title="freshnessTooltip"
+                  placement="bottom"
+                >
+                  <span class="wb-r1__fresh">
+                    <span
+                      class="wb-r1__dot"
+                      :class="{
+                        'wb-r1__dot--stale':
+                          summary.dataFreshness.status === 'DELAYED',
+                      }"
+                    ></span>
+                    {{
+                      summary.dataFreshness.status === 'FRESH'
+                        ? '数据新鲜'
+                        : summary.dataFreshness.status === 'DELAYED'
+                          ? '数据延迟'
+                          : '未知'
+                    }}
+                  </span>
+                </Tooltip>
               </div>
             </header>
 
             <!-- ===== R2 状态条（评分+等级+可信度+有效率+生命周期内联） ===== -->
             <div v-if="summary" class="wb-r2">
               <div class="wb-r2__left">
-                <span class="wb-r2__score">
-                  评分
-                  <span class="wb-r2__score-val">{{ summary.scoreTrend.score?.toFixed(1) ?? '—' }}</span>
-                  <DayDeltaBadge :delta="summary.scoreTrend.scoreDelta" :trend="summaryDayTrend ?? undefined" />
-                </span>
+                <Tooltip :title="scoreTooltip" placement="bottom">
+                  <span class="wb-r2__score">
+                    评分
+                    <span class="wb-r2__score-val">{{
+                      summary.scoreTrend.score?.toFixed(1) ?? '—'
+                    }}</span>
+                    <Tooltip :title="dayDeltaTooltip" placement="bottom">
+                      <DayDeltaBadge
+                        :delta="summary.scoreTrend.scoreDelta"
+                        :trend="summaryDayTrend ?? undefined"
+                      />
+                    </Tooltip>
+                  </span>
+                </Tooltip>
                 <span
                   class="wb-r2__grade"
-                  :style="{ color: gradeInfo.color, borderColor: gradeInfo.color }"
-                >{{ gradeInfo.label }}</span>
-                <span v-if="summary.dataHealth.confidenceLevel" class="wb-r2__item">
+                  :style="{
+                    color: gradeInfo.color,
+                    borderColor: gradeInfo.color,
+                  }"
+                  >{{ gradeInfo.label }}</span
+                >
+                <span
+                  v-if="summary.dataHealth.confidenceLevel"
+                  class="wb-r2__item"
+                >
                   可信度
-                  <Tag :color="confidenceTagColor(summary.dataHealth.confidenceLevel)" class="!m-0 !text-[10px]">
+                  <Tag
+                    :color="
+                      confidenceTagColor(summary.dataHealth.confidenceLevel)
+                    "
+                    class="!m-0 !text-[10px]"
+                  >
                     {{ summary.dataHealth.confidenceLevel }}
                   </Tag>
                 </span>
-                <span v-if="summary.dataHealth.validRate != null" class="wb-r2__item">
+                <span
+                  v-if="summary.dataHealth.validRate != null"
+                  class="wb-r2__item"
+                >
                   有效率 {{ (summary.dataHealth.validRate * 100).toFixed(1) }}%
                 </span>
-                <span v-if="summary.partial" class="wb-r2__partial">部分数据不可用</span>
+                <span
+                  v-if="summary.partial"
+                  class="wb-r2__partial"
+                  title="部分摘要数据源不可用，但不影响整体判断"
+                >
+                  部分数据不可用
+                </span>
               </div>
               <!-- 生命周期内联（v1.2 自 R3 并入） -->
               <div class="wb-r2__lifecycle">
@@ -1470,16 +1656,29 @@ const stageLabelMap: Record<string, string> = {
                     class="wb-r2__stage"
                     :class="{
                       'wb-r2__stage--done': s.status === 'COMPLETED',
-                      'wb-r2__stage--cur': s.status === 'RUNNING' || s.status === 'READY',
+                      'wb-r2__stage--cur':
+                        s.status === 'RUNNING' || s.status === 'READY',
                     }"
-                    @click="handleLifecycleStageClick(s.stage as MonitorApi.LifecycleStageName)"
-                  >{{ s.label }}</span>
-                  <span v-if="idx < lifecycleStages.length - 1" class="wb-r2__stage-sep">─</span>
+                    @click="
+                      handleLifecycleStageClick(
+                        s.stage as MonitorApi.LifecycleStageName,
+                      )
+                    "
+                    >{{ s.label }}</span
+                  >
+                  <span
+                    v-if="idx < lifecycleStages.length - 1"
+                    class="wb-r2__stage-sep"
+                    >─</span
+                  >
                 </template>
               </div>
             </div>
             <!-- summary 加载中骨架 -->
-            <div v-else-if="summaryLoading && selectedLoop" class="wb-r2 wb-r2--loading">
+            <div
+              v-else-if="summaryLoading && selectedLoop"
+              class="wb-r2 wb-r2--loading"
+            >
               <Spin size="small" />
               <span class="wb-r2__loading-text">正在加载工作台摘要…</span>
             </div>
@@ -1508,45 +1707,106 @@ const stageLabelMap: Record<string, string> = {
                     v-if="timeWindow === 'custom'"
                     class="wb-r4__custom-btn"
                     @click="customTimePopOpen = !customTimePopOpen"
-                  >自定义</button>
+                  >
+                    自定义
+                  </button>
                 </div>
               </div>
               <!-- 自定义时间窗弹层 -->
               <div v-if="customTimePopOpen" class="wb-r4__custom-pop">
-                <label>起 <input v-model="customStartTime" type="datetime-local" /></label>
-                <label>止 <input v-model="customEndTime" type="datetime-local" /></label>
+                <label
+                  >起 <input v-model="customStartTime" type="datetime-local"
+                /></label>
+                <label
+                  >止 <input v-model="customEndTime" type="datetime-local"
+                /></label>
                 <button @click="applyCustomTime">应用</button>
               </div>
               <!-- 画布头部第二行：图例 + 实时点值 -->
               <div class="wb-r4__legend">
                 <template v-if="canvasMode === 'process'">
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--pv"></span>PV</span>
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--sp"></span>SP</span>
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--op"></span>OP</span>
-                  <span v-if="eventMarks.length" class="wb-r4__legend-item">▼诊断 ◆整定 ▐验证</span>
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--pv"
+                    ></span
+                    >PV</span
+                  >
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--sp"
+                    ></span
+                    >SP</span
+                  >
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--op"
+                    ></span
+                    >OP</span
+                  >
+                  <span v-if="eventMarks.length > 0" class="wb-r4__legend-item"
+                    >▼诊断 ◆整定 ▐验证</span
+                  >
                 </template>
                 <template v-else>
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--score"></span>综合评分</span>
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--steady"></span>平稳率</span>
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--accuracy"></span>准确率</span>
-                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--fast"></span>快速率</span>
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--score"
+                    ></span
+                    >综合评分</span
+                  >
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--steady"
+                    ></span
+                    >平稳率</span
+                  >
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--accuracy"
+                    ></span
+                    >准确率</span
+                  >
+                  <span class="wb-r4__legend-item"
+                    ><span
+                      class="wb-r4__legend-line wb-r4__legend-line--fast"
+                    ></span
+                    >快速率</span
+                  >
                 </template>
                 <!-- 实时点值 -->
                 <span v-if="runtimePointValues" class="wb-r4__live-vals">
                   <span class="wb-r4__live-val">
-                    PV <span class="wb-r4__live-num" :style="{ color: pvValueColor() }">{{ runtimePointValues.pv?.toFixed(2) ?? '—' }}</span>
+                    PV
+                    <span
+                      class="wb-r4__live-num"
+                      :style="{ color: pvValueColor() }"
+                      >{{ runtimePointValues.pv?.toFixed(2) ?? '—' }}</span
+                    >
                   </span>
                   <span class="wb-r4__live-val">
-                    SP <span class="wb-r4__live-num">{{ runtimePointValues.sp?.toFixed(2) ?? '—' }}</span>
+                    SP
+                    <span class="wb-r4__live-num">{{
+                      runtimePointValues.sp?.toFixed(2) ?? '—'
+                    }}</span>
                   </span>
                   <span class="wb-r4__live-val">
-                    OP <span class="wb-r4__live-num">{{ runtimePointValues.op?.toFixed(1) ?? '—' }}%</span>
+                    OP
+                    <span class="wb-r4__live-num"
+                      >{{ runtimePointValues.op?.toFixed(1) ?? '—' }}%</span
+                    >
                   </span>
                 </span>
               </div>
               <!-- 趋势图 -->
               <div class="wb-r4__chart">
-                <Spin :spinning="canvasMode === 'process' ? processTrendLoading : kpiHistoryLoading" size="small">
+                <Spin
+                  :spinning="
+                    canvasMode === 'process'
+                      ? processTrendLoading
+                      : kpiHistoryLoading
+                  "
+                  size="small"
+                >
                   <WorkbenchProcessTrend
                     v-if="canvasMode === 'process'"
                     :trend="processTrendData"
@@ -1572,13 +1832,21 @@ const stageLabelMap: Record<string, string> = {
                 <div class="wb-r5__card-header">
                   <span class="wb-r5__card-title">评估</span>
                   <span class="wb-r5__card-meta">
-                    {{ latestSnapshot ? `24h 窗口 · ${formatTime(latestSnapshot.tsStart)}` : '—' }}
+                    {{
+                      latestSnapshot
+                        ? `24h 窗口 · ${formatTime(latestSnapshot.tsStart)}`
+                        : '—'
+                    }}
                   </span>
                   <router-link
                     v-if="selectedLoopId"
-                    :to="{ path: '/performance/loops', query: { loopId: selectedLoopId } }"
+                    :to="{
+                      path: '/performance/loops',
+                      query: { loopId: selectedLoopId },
+                    }"
                     class="wb-r5__card-link"
-                  >完整证据 →</router-link>
+                    >完整证据 →</router-link
+                  >
                 </div>
                 <div class="wb-r5__assess-body">
                   <div class="wb-r5__radar">
@@ -1602,37 +1870,70 @@ const stageLabelMap: Record<string, string> = {
                 <div class="wb-r5__card-header">
                   <span class="wb-r5__card-title">诊断</span>
                   <span class="wb-r5__card-meta">
-                    {{ summary?.diagnosis?.resultAt ? formatTime(summary.diagnosis.resultAt) : '—' }}
+                    {{
+                      summary?.diagnosis?.resultAt
+                        ? formatTime(summary.diagnosis.resultAt)
+                        : '—'
+                    }}
                   </span>
                   <router-link
                     v-if="selectedLoopId"
-                    :to="{ path: '/diagnosis/detail', query: { loopId: selectedLoopId } }"
+                    :to="{
+                      path: '/diagnosis/detail',
+                      query: { loopId: selectedLoopId },
+                    }"
                     class="wb-r5__card-link"
-                  >完整证据 →</router-link>
+                    >完整证据 →</router-link
+                  >
                 </div>
                 <div class="wb-r5__diag-body">
-                  <div v-if="diagnosisDetail || summary?.diagnosis" class="wb-r5__diag-content">
+                  <div
+                    v-if="diagnosisDetail || summary?.diagnosis"
+                    class="wb-r5__diag-content"
+                  >
                     <div class="wb-r5__diag-labels">
                       <Tag
                         v-for="(item, idx) in diagnosisLabels"
                         :key="idx"
-                        :color="DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'"
+                        :color="
+                          DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'
+                        "
                         class="!text-[11px]"
                       >
-                        {{ item.labelName || DIAGNOSIS_LABEL_NAME_MAP[item.label] || item.label }}
-                        <span class="ml-1 opacity-60">{{ Number(item.confidence).toFixed(2) }}</span>
+                        {{
+                          item.labelName ||
+                          DIAGNOSIS_LABEL_NAME_MAP[item.label] ||
+                          item.label
+                        }}
+                        <span class="ml-1 opacity-60">{{
+                          Number(item.confidence).toFixed(2)
+                        }}</span>
                       </Tag>
-                      <span v-if="diagnosisLabels.length === 0" class="wb-r5__diag-empty-label">未检测到异常标签</span>
+                      <span
+                        v-if="diagnosisLabels.length === 0"
+                        class="wb-r5__diag-empty-label"
+                        >未检测到异常标签</span
+                      >
                     </div>
                     <div v-if="diagnosisDetail" class="wb-r5__diag-stats">
                       <div class="wb-r5__diag-stat">
                         <span class="wb-r5__diag-stat-label">融合置信度</span>
-                        <span class="wb-r5__diag-stat-val">{{ diagnosisDetail.fusedConfidence == null ? '—' : Number(diagnosisDetail.fusedConfidence).toFixed(2) }}</span>
+                        <span class="wb-r5__diag-stat-val">{{
+                          diagnosisDetail.fusedConfidence == null
+                            ? '—'
+                            : Number(diagnosisDetail.fusedConfidence).toFixed(2)
+                        }}</span>
                       </div>
                     </div>
                     <!-- 诊断扩展指标（负向横道） -->
-                    <div v-if="diagExtendedMetrics.length" class="wb-r5__diag-ext">
-                      <WorkbenchMetricBars :metrics="diagExtendedMetrics" :negative="true" />
+                    <div
+                      v-if="diagExtendedMetrics.length > 0"
+                      class="wb-r5__diag-ext"
+                    >
+                      <WorkbenchMetricBars
+                        :metrics="diagExtendedMetrics"
+                        :negative="true"
+                      />
                     </div>
                   </div>
                   <div v-else class="wb-r5__empty-mini">暂无诊断数据</div>
@@ -1644,41 +1945,69 @@ const stageLabelMap: Record<string, string> = {
                 <div class="wb-r5__card-header">
                   <span class="wb-r5__card-title">整定</span>
                   <span class="wb-r5__card-meta">
-                    {{ summary?.tuning?.resultAt ? formatTime(summary.tuning.resultAt) : '—' }}
+                    {{
+                      summary?.tuning?.resultAt
+                        ? formatTime(summary.tuning.resultAt)
+                        : '—'
+                    }}
                   </span>
                   <router-link
                     v-if="selectedLoopId"
-                    :to="{ path: '/tuning/workbench', query: { loopId: selectedLoopId } }"
+                    :to="{
+                      path: '/tuning/workbench',
+                      query: { loopId: selectedLoopId },
+                    }"
                     class="wb-r5__card-link"
-                  >完整证据 →</router-link>
+                    >完整证据 →</router-link
+                  >
                 </div>
                 <div class="wb-r5__tune-body">
-                  <div v-if="summary?.tuning || tuningLatest" class="wb-r5__tune-rows">
+                  <div
+                    v-if="summary?.tuning || tuningLatest"
+                    class="wb-r5__tune-rows"
+                  >
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">当前 PID</span>
-                      <span class="wb-r5__tune-val">{{ pidText(currentPid) }}</span>
+                      <span class="wb-r5__tune-val">{{
+                        pidText(currentPid)
+                      }}</span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">推荐 PID</span>
-                      <span class="wb-r5__tune-val wb-r5__tune-val--highlight">{{ pidText(tuningLatest?.recommendedPid) }}</span>
+                      <span
+                        class="wb-r5__tune-val wb-r5__tune-val--highlight"
+                        >{{ pidText(tuningLatest?.recommendedPid) }}</span
+                      >
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">模型</span>
-                      <span class="wb-r5__tune-val">{{ summary?.tuning?.modelType || tuningLatest?.modelType || '—' }}</span>
+                      <span class="wb-r5__tune-val">{{
+                        summary?.tuning?.modelType ||
+                        tuningLatest?.modelType ||
+                        '—'
+                      }}</span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">拟合度</span>
                       <span class="wb-r5__tune-val">
-                        {{ tuningLatest?.fittingScore == null ? '—' : `${(tuningLatest.fittingScore * 100).toFixed(1)}%` }}
+                        {{
+                          tuningLatest?.fittingScore == null
+                            ? '—'
+                            : `${(tuningLatest.fittingScore * 100).toFixed(1)}%`
+                        }}
                       </span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">风险等级</span>
-                      <span class="wb-r5__tune-val">{{ summary?.tuning?.riskLevel || '—' }}</span>
+                      <span class="wb-r5__tune-val">{{
+                        summary?.tuning?.riskLevel || '—'
+                      }}</span>
                     </div>
                     <div class="wb-r5__tune-row">
                       <span class="wb-r5__tune-label">状态</span>
-                      <span class="wb-r5__tune-val">{{ summary?.tuning?.status || tuningLatest?.status || '—' }}</span>
+                      <span class="wb-r5__tune-val">{{
+                        summary?.tuning?.status || tuningLatest?.status || '—'
+                      }}</span>
                     </div>
                   </div>
                   <div v-else class="wb-r5__empty-mini">暂无整定数据</div>
@@ -1689,13 +2018,14 @@ const stageLabelMap: Record<string, string> = {
               </div>
             </section>
 
-            <!-- ===== R6 验证对比条（可展开，默认收起） ===== -->
-            <section v-if="summary?.trackerTimeline" class="wb-r6">
-              <WorkbenchTrackerTimeline
-                :tracker="summary.trackerTimeline"
-                :unavailable="summary?.unavailableSections?.includes('trackerTimeline') ?? false"
-                @view-detail="handleTrackerViewDetail"
-                @verify="handleTrackerVerify"
+            <!-- ===== R6 验证对比条（A/B 窗口效果对比，默认收起） ===== -->
+            <section
+              v-if="summary?.trackerTimeline?.effectCompare"
+              class="wb-r6"
+            >
+              <WorkbenchEffectCompare
+                :effect-compare="summary.trackerTimeline.effectCompare"
+                :tracker-status="summary.trackerTimeline.actionStatus"
               />
             </section>
           </template>
@@ -1724,7 +2054,10 @@ const stageLabelMap: Record<string, string> = {
             <WorkbenchTrackerTimeline
               v-if="summary?.trackerTimeline"
               :tracker="summary.trackerTimeline"
-              :unavailable="summary?.unavailableSections?.includes('trackerTimeline') ?? false"
+              :unavailable="
+                summary?.unavailableSections?.includes('trackerTimeline') ??
+                false
+              "
               :compact="true"
               @view-detail="handleTrackerViewDetail"
               @verify="handleTrackerVerify"
@@ -1800,6 +2133,8 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-layout--collapsed .wb-sidebar__search,
+.wb-layout--collapsed .wb-sidebar__tree,
+.wb-layout--collapsed .wb-sidebar__list-title,
 .wb-layout--collapsed .wb-sidebar__list,
 .wb-layout--collapsed .wb-sidebar__toggle span {
   display: none;
@@ -1814,7 +2149,9 @@ const stageLabelMap: Record<string, string> = {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 6px;
-  transition: flex-basis 0.2s ease, width 0.2s ease;
+  transition:
+    flex-basis 0.2s ease,
+    width 0.2s ease;
 }
 
 .wb-sidebar__search {
@@ -1823,10 +2160,96 @@ const stageLabelMap: Record<string, string> = {
   border-bottom: 1px solid hsl(var(--border) / 40%);
 }
 
+/* 装置树区 */
+.wb-sidebar__tree {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 35%;
+  border-bottom: 1px solid hsl(var(--border) / 40%);
+}
+
+.wb-sidebar__tree-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 50%);
+}
+
+.wb-sidebar__tree-clear {
+  padding: 0 4px;
+  font-size: 10px;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.wb-sidebar__tree .ant-spin-nested-loading {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.wb-sidebar__tree-empty {
+  padding: 16px;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 40%);
+  text-align: center;
+}
+
+/* 紧凑型装置树 */
+.wb-plant-tree {
+  font-size: 12px;
+}
+
+.wb-plant-tree :deep(.ant-tree-node-content-wrapper) {
+  min-height: 26px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 26px;
+}
+
+.wb-plant-tree :deep(.ant-tree-switcher) {
+  width: 16px;
+}
+
+.wb-plant-tree :deep(.ant-tree-title) {
+  font-size: 12px;
+}
+
+.wb-plant-tree
+  :deep(.ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected) {
+  background: hsl(var(--primary) / 12%);
+}
+
+/* 回路列表标题 */
+.wb-sidebar__list-title {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 50%);
+  border-bottom: 1px solid hsl(var(--border) / 40%);
+}
+
+.wb-sidebar__list-count {
+  font-size: 10px;
+  font-weight: 400;
+  color: hsl(var(--foreground) / 35%);
+}
+
 .wb-sidebar__list {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .wb-sidebar__empty {
@@ -1845,8 +2268,8 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-sidebar__toggle {
-  flex: 0 0 24px;
   display: flex;
+  flex: 0 0 24px;
   align-items: center;
   justify-content: center;
   height: 24px;
@@ -1875,25 +2298,25 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-loop-item--active {
+  padding-left: 7px;
   background: hsl(var(--primary) / 8%);
   border-left: 3px solid hsl(var(--primary));
-  padding-left: 7px;
 }
 
 .wb-loop-item__header {
   display: flex;
-  justify-content: space-between;
   gap: 6px;
   align-items: center;
+  justify-content: space-between;
 }
 
 .wb-loop-item__tag {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: 600;
   color: hsl(var(--foreground));
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .wb-loop-item__conf {
@@ -1902,24 +2325,32 @@ const stageLabelMap: Record<string, string> = {
   font-weight: 700;
 }
 
-.wb-loop-item__conf--ok { color: #1a7f4b; }
-.wb-loop-item__conf--warn { color: #b45309; }
-.wb-loop-item__conf--err { color: #c23434; }
+.wb-loop-item__conf--ok {
+  color: #1a7f4b;
+}
+
+.wb-loop-item__conf--warn {
+  color: #b45309;
+}
+
+.wb-loop-item__conf--err {
+  color: #c23434;
+}
 
 .wb-loop-item__desc {
   display: flex;
-  justify-content: space-between;
   gap: 6px;
   align-items: center;
+  justify-content: space-between;
   margin-top: 2px;
 }
 
 .wb-loop-item__name {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   color: hsl(var(--foreground) / 50%);
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .wb-loop-item__score {
@@ -1982,9 +2413,9 @@ const stageLabelMap: Record<string, string> = {
 .wb-r1 {
   display: flex;
   flex: 0 0 36px;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
   padding: 0 10px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
@@ -2000,7 +2431,7 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-r1__tag {
   flex-shrink: 0;
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   font-size: 14px;
   font-weight: 700;
   color: hsl(var(--foreground));
@@ -2008,10 +2439,10 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-r1__desc {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: hsl(var(--foreground) / 70%);
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .wb-r1__crumb {
@@ -2022,9 +2453,9 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-r1__right {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   align-items: center;
-  flex-shrink: 0;
 }
 
 .wb-r1__mode-pill {
@@ -2072,9 +2503,9 @@ const stageLabelMap: Record<string, string> = {
 .wb-r2 {
   display: flex;
   flex: 0 0 32px;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
   padding: 0 10px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
@@ -2082,8 +2513,8 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-r2--loading {
-  justify-content: flex-start;
   gap: 6px;
+  justify-content: flex-start;
   font-size: 12px;
   color: hsl(var(--foreground) / 45%);
 }
@@ -2104,11 +2535,11 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-r2__score-val {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   font-size: 14px;
   font-weight: 700;
-  color: hsl(var(--foreground));
   font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
 }
 
 .wb-r2__grade {
@@ -2148,8 +2579,8 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-r2__stage {
   padding: 1px 4px;
-  cursor: pointer;
   color: hsl(var(--foreground) / 40%);
+  cursor: pointer;
   border-radius: 2px;
   transition: color 0.15s;
 }
@@ -2185,9 +2616,9 @@ const stageLabelMap: Record<string, string> = {
 .wb-r4__header {
   display: flex;
   flex: 0 0 auto;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   padding: 4px 10px;
   border-bottom: 1px solid hsl(var(--border) / 40%);
 }
@@ -2234,8 +2665,8 @@ const stageLabelMap: Record<string, string> = {
 .wb-r4__custom-pop input {
   width: 130px;
   padding: 2px 4px;
+  font-family: 'SF Mono', Consolas, monospace;
   font-size: 10px;
-  font-family: "SF Mono", Consolas, monospace;
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 3px;
 }
@@ -2258,9 +2689,9 @@ const stageLabelMap: Record<string, string> = {
   gap: 12px;
   align-items: center;
   padding: 2px 10px;
-  border-bottom: 1px solid hsl(var(--border) / 40%);
   font-size: 11px;
   color: hsl(var(--foreground) / 60%);
+  border-bottom: 1px solid hsl(var(--border) / 40%);
 }
 
 .wb-r4__legend-item {
@@ -2277,13 +2708,33 @@ const stageLabelMap: Record<string, string> = {
   border-radius: 1px;
 }
 
-.wb-r4__legend-line--pv { background: #1d4ed8; }
-.wb-r4__legend-line--sp { background: #6b7280; }
-.wb-r4__legend-line--op { background: #b45309; }
-.wb-r4__legend-line--score { background: #1d4ed8; }
-.wb-r4__legend-line--steady { background: #1a7f4b; }
-.wb-r4__legend-line--accuracy { background: #7c3aed; }
-.wb-r4__legend-line--fast { background: #b45309; }
+.wb-r4__legend-line--pv {
+  background: #1d4ed8;
+}
+
+.wb-r4__legend-line--sp {
+  background: #6b7280;
+}
+
+.wb-r4__legend-line--op {
+  background: #b45309;
+}
+
+.wb-r4__legend-line--score {
+  background: #1d4ed8;
+}
+
+.wb-r4__legend-line--steady {
+  background: #1a7f4b;
+}
+
+.wb-r4__legend-line--accuracy {
+  background: #7c3aed;
+}
+
+.wb-r4__legend-line--fast {
+  background: #b45309;
+}
 
 /* 实时点值 */
 .wb-r4__live-vals {
@@ -2299,11 +2750,11 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-r4__live-num {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   font-size: 12px;
   font-weight: 600;
-  color: hsl(var(--foreground));
   font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
 }
 
 /* 图表容器 */
@@ -2354,8 +2805,8 @@ const stageLabelMap: Record<string, string> = {
   margin-left: auto;
   font-size: 10px;
   color: hsl(var(--primary));
-  text-decoration: none;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .wb-r5__card-link:hover {
@@ -2419,11 +2870,11 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-r5__diag-stat-val {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   font-size: 13px;
   font-weight: 600;
-  color: hsl(var(--foreground));
   font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground));
 }
 
 .wb-r5__diag-ext {
@@ -2463,10 +2914,10 @@ const stageLabelMap: Record<string, string> = {
 }
 
 .wb-r5__tune-val {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: 'SF Mono', Consolas, monospace;
   font-weight: 500;
-  color: hsl(var(--foreground) / 85%);
   font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground) / 85%);
 }
 
 .wb-r5__tune-val--highlight {

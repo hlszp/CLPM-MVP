@@ -22,15 +22,17 @@ import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
 defineOptions({ name: 'WorkbenchRadar6' });
 
+const props = defineProps<Props>();
+
 interface Props {
   /** 六轴数据（0-100 达成度） */
   axes: {
-    steadyRate: number;
     accuracyRate: number;
-    fastRate: number;
     autoModeRate: number;
+    fastRate: number;
     goodValueRate: number;
     saturationRate: number;
+    steadyRate: number;
   };
   /** 中心综合评分 */
   score: null | number;
@@ -39,8 +41,6 @@ interface Props {
   /** 等级颜色 */
   gradeColor?: string;
 }
-
-const props = defineProps<Props>();
 
 const { chartTextColor, chartSplitLineColor } = useClpmTheme();
 const { getEchartsBase } = useEchartsPreset();
@@ -164,12 +164,7 @@ function refresh() {
 const hasData = computed(() => !!props.axes);
 
 watch(
-  () => [
-    props.axes,
-    props.score,
-    props.grade,
-    props.gradeColor,
-  ],
+  () => [props.axes, props.score, props.grade, props.gradeColor],
   () => {
     if (hasData.value) refresh();
   },
