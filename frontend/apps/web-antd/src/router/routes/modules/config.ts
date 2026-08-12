@@ -21,7 +21,10 @@ const routes: RouteRecordRaw[] = [
     path: '/config',
     redirect: '/config/loop',
     meta: {
-      authority: ['ADMIN'],
+      // FP-P0-05：父路由 authority 取子路由并集，避免 filterTree 不递归导致
+      // IC_ENGINEER/PE_ENGINEER 永远看不到"配置"菜单（子页查看权死配置）。
+      // 仅 ADMIN 可访问的子页（链路/指标/诊断/预警规则配置）由各自 authority 守卫。
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
       icon: 'lucide:settings-2',
       order: 5,
       title: '配置',
