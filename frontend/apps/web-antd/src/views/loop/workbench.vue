@@ -52,7 +52,11 @@ import {
 import dayjs from 'dayjs';
 
 import { getDiagnosisDetailApi } from '#/api/diagnosis';
-import { getLoopDetailApi, getLoopMonitorListApi } from '#/api/loop';
+import {
+  getLoopDetailApi,
+  getLoopMonitorDetailApi,
+  getLoopMonitorListApi,
+} from '#/api/loop';
 import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
 import { getWorkbenchSummaryApi } from '#/api/monitor';
 import {
@@ -68,12 +72,9 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
-import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
-import LoopLiveStatusBar from '#/components/monitor/loop-live-status-bar.vue';
 import MonitorContextToolbar from '#/components/monitor/monitor-context-toolbar.vue';
 import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
-import WorkbenchLifecycleBar from '#/components/monitor/workbench-lifecycle-bar.vue';
 import WorkbenchNextAction from '#/components/monitor/workbench-next-action.vue';
 import WorkbenchTrackerTimeline from '#/components/monitor/workbench-tracker-timeline.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
@@ -87,13 +88,13 @@ import { formatTime } from '#/utils/format';
 
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
-import KpiMetricCards from './components/kpi-metric-cards.vue';
-import ScoreTrendChart from './components/score-trend-chart.vue';
 import SimulateResultModal from './components/simulate-result-modal.vue';
 import TuneParamModal from './components/tune-param-modal.vue';
 import TuningTriggerModal from './components/tuning-trigger-modal.vue';
-import WorkbenchDiagnosisChart from './components/workbench-diagnosis-chart.vue';
-import WorkbenchSectionCard from './components/workbench-section-card.vue';
+import WorkbenchKpiHistory from './components/workbench-kpi-history.vue';
+import WorkbenchMetricBars from './components/workbench-metric-bars.vue';
+import WorkbenchProcessTrend from './components/workbench-process-trend.vue';
+import WorkbenchRadar6 from './components/workbench-radar6.vue';
 import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner';
 
 defineOptions({ name: 'MonitorLoopWorkbench' });
@@ -189,7 +190,6 @@ function handleFleetLoopClick(loopId: string) {
 const {
   applyMessage: applyRealtimeMessage,
   connectionStatus: wsConnectionStatus,
-  lastMessageAt: wsLastMessageAt,
   onMessage: onRealtimeMessage,
   start: startRealtime,
   startFallback: startRealtimeFallback,
@@ -440,15 +440,6 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
   }
 }
 
-/** 跳转到诊断任务列表页，预填当前回路 ID（F-EVAL-001：诊断入口改为跳转） */
-function goToDiagnosis() {
-  if (!selectedLoopId.value) return;
-  router.push({
-    path: '/diagnosis/tasks',
-    query: { loopId: selectedLoopId.value },
-  });
-}
-
 /** 闭环时间线：查看 Tracker 详情（FP-P0-02：事件绑定修复） */
 function handleTrackerViewDetail(trackerId: string) {
   const loopId = selectedLoopId.value;
@@ -478,9 +469,6 @@ const summaryDayTrend = computed<DayTrend | null>(
 // ===== 三区任务运行器（评估/诊断/辨识为异步任务） =====
 // MW-P3-10：任务完成后同时刷新 summary（生命周期/nextAction/活跃关注/验证时间线）
 const {
-  assessment: assessTask,
-  diagnosis: diagTask,
-  tuning: tuneTask,
   triggerAssessment,
   triggerDiagnosis,
   triggerTuning,
@@ -612,29 +600,6 @@ async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
 // ===== 模拟仿真（同步 simulateTuningApi） =====
 const simulateLoading = ref(false);
 
-/** 模拟仿真入口：前置检查 → 打开确认窗 */
-function requestSimulate() {
-  if (!selectedLoopId.value || !tuningLatest.value) {
-    message.warning('请先进行回路辨识生成过程模型');
-    return;
-  }
-  const latest = tuningLatest.value;
-  if (!latest.modelType || !latest.modelParams) {
-    message.warning('当前无可用过程模型');
-    return;
-  }
-  if (!latest.recommendedPid) {
-    message.warning('请先进行参数整定生成推荐 PID');
-    return;
-  }
-  if (!currentPid.value) {
-    message.warning('未获取到当前 PID 参数');
-    return;
-  }
-  riskConfirmKind.value = 'simulate';
-  riskConfirmOpen.value = true;
-}
-
 async function handleSimulate() {
   if (!selectedLoopId.value || !tuningLatest.value) return;
   const latest = tuningLatest.value;
@@ -700,37 +665,8 @@ function rangeText(
   if (min == null && max == null) return '—';
   return `${min ?? '—'} ~ ${max ?? '—'}${unit ? ` ${unit}` : ''}`;
 }
-
-const overviewFields = computed(() => {
-  const l = selectedLoop.value;
-  if (!l) return [];
-  const cv = l.currentValues;
-  const dh = l.dataHealth;
-  const validRatePct =
-    dh?.validRate == null ? null : `${(dh.validRate * 100).toFixed(1)}%`;
-  return [
-    { label: '位号', value: l.tagName },
-    { label: '名称', value: l.description || '—' },
-    { label: '量程', value: rangeText(l.pvRange, l.pvUnit) },
-    { label: '控制方式', value: l.controlMode || '—' },
-    {
-      label: '设定值',
-      value: cv?.sp == null ? '—' : `${cv.sp}${l.pvUnit ? ` ${l.pvUnit}` : ''}`,
-    },
-    {
-      label: '实时值',
-      value: cv?.pv == null ? '—' : `${cv.pv}${l.pvUnit ? ` ${l.pvUnit}` : ''}`,
-    },
-    {
-      label: '数据健康度',
-      value:
-        validRatePct == null
-          ? (dh?.confidenceLevel ?? '—')
-          : `${validRatePct} · ${dh?.confidenceLevel ?? '—'}`,
-    },
-  ];
-});
-
+// rangeText 保留用于未来概览字段扩展
+void rangeText;
 function currentValueText(
   value: null | number | undefined,
   unit?: null | string,
@@ -740,15 +676,6 @@ function currentValueText(
 }
 
 // ===== 派生：整定行字段 =====
-const ALGORITHM_LABEL: Record<string, string> = {
-  COHEN_COON: 'Cohen-Coon',
-  IMC: 'IMC',
-  LAMBDA: 'Lambda',
-  SIMC: 'SIMC',
-  ZN: 'Ziegler-Nichols',
-  IDENTIFICATION_ONLY: '仅过程辨识',
-};
-
 function confidenceTagColor(level?: string): string {
   if (level === 'A' || level === 'B') return 'green';
   if (level === 'C') return 'blue';
@@ -760,33 +687,6 @@ function pidText(pid?: null | TuningApi.PidParams): string {
   if (!pid) return '—';
   return `P=${pid.kp}, Ti=${pid.ti}s, Td=${pid.td}s`;
 }
-
-const modelParamsText = computed(() => {
-  const p = tuningLatest.value?.modelParams;
-  if (!p) return '—';
-  const parts: string[] = [];
-  if (p.K != null) parts.push(`K=${Number(p.K).toFixed(3)}`);
-  if (p.tau != null) parts.push(`τ=${Number(p.tau).toFixed(1)}s`);
-  if (p.theta != null) parts.push(`θ=${Number(p.theta).toFixed(1)}s`);
-  return parts.join(' / ') || '—';
-});
-
-const overshoot = computed(() => {
-  const m = tuningDetail.value?.simulationResult?.recommendedMetrics;
-  return m?.overshoot ?? null;
-});
-
-/** 上升时间（秒） */
-const riseTime = computed(() => {
-  const m = tuningDetail.value?.simulationResult?.recommendedMetrics;
-  return m?.riseTime ?? null;
-});
-
-/** 稳定时间（秒） */
-const settlingTime = computed(() => {
-  const m = tuningDetail.value?.simulationResult?.recommendedMetrics;
-  return m?.settlingTime ?? null;
-});
 
 // ===== AI 洞察两级门禁 =====
 const { gateStatus, gateTooltip, init: initAiGate } = useAiInsightGate();
@@ -825,16 +725,6 @@ const { toolbarItems } = usePageToolbar(() => ({
   },
   help: { onClick: handleHelp },
 }));
-
-// ===== 顶部区按钮：趋势（页面内弹窗，复用 LoopTrendModal） =====
-// 整改 B1 调整（用户决策）：概览区只保留"趋势"，"历史"按钮下线；
-// 趋势不再跳转路由，改为页内弹窗（与回路实时趋势弹窗同组件）。
-const trendModalOpen = ref(false);
-function goTrend() {
-  if (selectedLoopId.value) {
-    trendModalOpen.value = true;
-  }
-}
 
 // ===== 数据加载 =====
 /**
@@ -1084,6 +974,315 @@ watch(
     }
   },
 );
+
+// ===== Phase 1 重构：R4 主画布数据（过程趋势 + KPI 历史）=====
+// 过程趋势数据（GET /loops/{id}/monitor 的 trend 字段）
+const processTrendData = ref<LoopApi.MonitorTrend | null>(null);
+const processTrendLoading = ref(false);
+// KPI 历史快照（用于 R4 性能指标模式）
+const kpiHistory = ref<KpiSnapshotItem[]>([]);
+const kpiHistoryLoading = ref(false);
+// 画布模式：过程变量 | 性能指标
+const canvasMode = ref<'kpi' | 'process'>('process');
+// 时间窗（设计文档 §2.4：8h/24h/72h/168h/自定义）
+const timeWindow = ref<'168h' | '24h' | '72h' | '8h' | 'custom'>('24h');
+// 自定义时间窗起止（分钟精度）
+const customStartTime = ref<string>('');
+const customEndTime = ref<string>('');
+// 告警线（默认 60，来自定级阈值配置 GET /configs/grading-thresholds）
+const alarmLine = ref<number>(60);
+// 左脊柱折叠（沉浸模式）
+const sidebarCollapsed = ref(false);
+
+/** 事件标记类型 */
+interface ProcessEventMark {
+  type: 'diagnosis' | 'gap' | 'tuning' | 'verify';
+  timestamp: number;
+  label?: string;
+}
+
+/** MODE 背景带 */
+interface ModeBand {
+  start: number;
+  end: number;
+  mode: string;
+  color?: string;
+}
+
+const modeBands = ref<ModeBand[]>([]);
+const eventMarks = ref<ProcessEventMark[]>([]);
+
+/** 时间窗选项映射到后端 TrendWindow（168h/custom 暂不支持过程趋势） */
+const TREND_WINDOW_MAP: Record<string, LoopApi.TrendWindow> = {
+  '8h': 'last_8_hours',
+  '24h': 'last_24_hours',
+  '72h': 'last_72_hours',
+};
+
+/** 从趋势数据提取 MODE 背景带 */
+function extractModeBands(trend: LoopApi.MonitorTrend): ModeBand[] {
+  const bands: ModeBand[] = [];
+  if (!trend.timestamps || trend.timestamps.length === 0) return bands;
+  let currentMode = '';
+  let bandStart: null | number = null;
+  for (let i = 0; i < trend.timestamps.length; i++) {
+    const ts = trend.timestamps[i]!;
+    const mode = trend.mode[i];
+    const modeLabel =
+      mode === 1
+        ? 'AUTO'
+        : mode === 0
+          ? 'MANUAL'
+          : mode === 2
+            ? 'CAS'
+            : String(mode ?? 'UNKNOWN');
+    if (modeLabel !== currentMode) {
+      if (currentMode && bandStart !== null) {
+        bands.push({ end: ts, mode: currentMode, start: bandStart });
+      }
+      bandStart = ts;
+      currentMode = modeLabel;
+    }
+  }
+  if (currentMode && bandStart !== null) {
+    bands.push({
+      end: trend.timestamps[trend.timestamps.length - 1]!,
+      mode: currentMode,
+      start: bandStart,
+    });
+  }
+  return bands;
+}
+
+/** 加载过程趋势数据（R4 主画布-过程变量模式） */
+async function loadProcessTrend(loopId: string): Promise<void> {
+  const tw = TREND_WINDOW_MAP[timeWindow.value];
+  if (!tw) {
+    // 168h/custom 暂不支持过程趋势（后端无对应档位）
+    processTrendData.value = null;
+    modeBands.value = [];
+    return;
+  }
+  processTrendLoading.value = true;
+  await requestGuard.run(async (signal, capturedEpoch) => {
+    const detail = await getLoopMonitorDetailApi(loopId, tw).catch(() => null);
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) return;
+    if (detail?.trend) {
+      processTrendData.value = detail.trend;
+      modeBands.value = extractModeBands(detail.trend);
+    } else {
+      processTrendData.value = null;
+      modeBands.value = [];
+    }
+    processTrendLoading.value = false;
+  });
+}
+
+/** 加载 KPI 历史快照（R4 主画布-性能指标模式） */
+async function loadKpiHistory(loopId: string): Promise<void> {
+  kpiHistoryLoading.value = true;
+  await requestGuard.run(async (signal, capturedEpoch) => {
+    const now = dayjs();
+    let startTime: dayjs.Dayjs;
+    let endTime: dayjs.Dayjs = now;
+    if (timeWindow.value === 'custom' && customStartTime.value && customEndTime.value) {
+      startTime = dayjs(customStartTime.value);
+      endTime = dayjs(customEndTime.value);
+    } else if (timeWindow.value === '168h') {
+      startTime = now.subtract(7, 'day');
+    } else if (timeWindow.value === '72h') {
+      startTime = now.subtract(3, 'day');
+    } else if (timeWindow.value === '8h') {
+      startTime = now.subtract(8, 'hour');
+    } else {
+      startTime = now.subtract(24, 'hour');
+    }
+    const res = await getLoopSnapshotsApi({
+      endTime: endTime.toISOString(),
+      latestOnly: false,
+      loopId,
+      page: 1,
+      pageSize: 200,
+      sortBy: 'tsStart',
+      sortOrder: 'asc',
+      startTime: startTime.toISOString(),
+    }).catch(() => ({ items: [], total: 0 }));
+    if (signal.aborted || !requestGuard.guard(loopId, capturedEpoch)) return;
+    kpiHistory.value = (res.items || []).toSorted((a, b) =>
+      (a.tsStart || '').localeCompare(b.tsStart || ''),
+    );
+    kpiHistoryLoading.value = false;
+  });
+}
+
+/** 从 summary 构建事件标记（诊断/整定/验证） */
+const computedEventMarks = computed<ProcessEventMark[]>(() => {
+  if (!summary.value) return [];
+  const marks: ProcessEventMark[] = [];
+  const diagTime = summary.value.diagnosis?.resultAt;
+  if (diagTime) {
+    marks.push({
+      label: '诊断',
+      timestamp: dayjs(diagTime).valueOf(),
+      type: 'diagnosis',
+    });
+  }
+  const tuneTime = summary.value.tuning?.resultAt;
+  if (tuneTime) {
+    marks.push({
+      label: '整定',
+      timestamp: dayjs(tuneTime).valueOf(),
+      type: 'tuning',
+    });
+  }
+  return marks;
+});
+
+watch(
+  computedEventMarks,
+  (v) => {
+    eventMarks.value = v;
+  },
+  { immediate: true },
+);
+
+// 时间窗变化时重新加载趋势和 KPI 历史
+watch(
+  [selectedLoopId, timeWindow],
+  ([newLoopId]) => {
+    if (newLoopId) {
+      loadProcessTrend(newLoopId);
+      loadKpiHistory(newLoopId);
+    } else {
+      processTrendData.value = null;
+      kpiHistory.value = [];
+      modeBands.value = [];
+      eventMarks.value = [];
+    }
+  },
+  { immediate: false },
+);
+
+// ===== R5 评估证据：雷达图 + 指标横道图数据 =====
+/** 最新快照（雷达/横道图数据源，取 scoreHistory 最后一条） */
+const latestSnapshot = computed(
+  () => scoreHistory.value[scoreHistory.value.length - 1] ?? null,
+);
+
+/** R5 六轴雷达数据（平稳/准确/快速/自控/好值/饱和） */
+const radarAxes = computed(() => {
+  const s = latestSnapshot.value;
+  if (!s) return null;
+  return {
+    accuracyRate: s.accuracyRate ?? 0,
+    autoModeRate: s.autoModeRate ?? 0,
+    fastRate: s.fastRate ?? 0,
+    goodValueRate: s.goodValueRate ?? 0,
+    saturationRate: s.saturationRate ?? 0,
+    steadyRate: s.steadyRate ?? 0,
+  };
+});
+
+/** R5 指标横道图数据（8 项主要指标达成度） */
+const metricBarsData = computed(() => {
+  const s = latestSnapshot.value;
+  if (!s) return [];
+  return [
+    { name: '振荡率', threshold: 40, value: s.oscillationRate ?? 0 },
+    { name: '仪表故障率', threshold: 30, value: s.instrumentFaultRate ?? 0 },
+    { name: '有效自控率', threshold: 60, value: s.effectiveAutoRate ?? 0 },
+    { name: '调节时间', threshold: 60, value: s.settlingTime ?? 0 },
+    { name: '卡涩指数', threshold: 40, value: s.stictionIndex ?? 0 },
+    { name: '行程指数', threshold: 60, value: s.outputTravelIndex ?? 0 },
+    { name: 'PV标准差', threshold: 50, value: s.pvStd ?? 0 },
+    { name: 'OP标准差', threshold: 50, value: s.opStd ?? 0 },
+  ];
+});
+
+/** R5 诊断扩展指标（负向横道：饱和率/粘滞系数/稳定时间/振荡率） */
+const diagExtendedMetrics = computed(() => {
+  const s = latestSnapshot.value;
+  if (!s) return [];
+  return [
+    { name: '饱和率', threshold: 40, value: s.saturationRate ?? 0 },
+    { name: '粘滞系数', threshold: 40, value: s.stictionIndex ?? 0 },
+    { name: '稳定时间', threshold: 60, value: s.settlingTime ?? 0 },
+    { name: '振荡率', threshold: 40, value: s.oscillationRate ?? 0 },
+  ];
+});
+
+// ===== R2 等级标签计算（中文五档：优秀/良好/合格/警告/不合格）=====
+const gradeInfo = computed(() => {
+  const score = summary.value?.scoreTrend.score;
+  if (score == null) return { color: '#9ca3af', label: '—' };
+  if (score >= 90) return { color: '#1a7f4b', label: '优秀' };
+  if (score >= 80) return { color: '#1d4ed8', label: '良好' };
+  if (score >= 60) return { color: '#b45309', label: '合格' };
+  if (score >= 40) return { color: '#c23434', label: '警告' };
+  return { color: '#c23434', label: '不合格' };
+});
+
+// ===== 实时点值（R4 图例行右侧显示 SP/PV/OP/MODE）=====
+const runtimePointValues = computed(() => {
+  const r = summary.value?.runtime;
+  if (!r) return null;
+  return {
+    mode: r.modeLabel ?? (r.mode === 1 ? 'AUTO' : r.mode === 0 ? 'MANUAL' : '—'),
+    op: r.op,
+    pv: r.pv,
+    pvQuality: r.pvQuality,
+    pvUnit: r.pvUnit ?? '',
+    sp: r.sp,
+  };
+});
+
+/** PV 偏离 SP 超阈值或质量码非 GOOD 时着色 */
+function pvValueColor(): string {
+  const r = runtimePointValues.value;
+  if (!r) return 'inherit';
+  if (r.pvQuality && r.pvQuality !== 'GOOD') return '#c23434';
+  return 'inherit';
+}
+
+// ===== 时间窗选项 =====
+const timeWindowOptions = [
+  { label: '8h', value: '8h' as const },
+  { label: '24h', value: '24h' as const },
+  { label: '72h', value: '72h' as const },
+  { label: '168h', value: '168h' as const },
+  { label: '自定义', value: 'custom' as const },
+];
+
+/** 自定义时间窗确认 */
+const customTimePopOpen = ref(false);
+function applyCustomTime() {
+  if (customStartTime.value && customEndTime.value) {
+    timeWindow.value = 'custom';
+    customTimePopOpen.value = false;
+    if (selectedLoopId.value) {
+      loadKpiHistory(selectedLoopId.value);
+    }
+  }
+}
+
+// ===== 生命周期内联标签（R2 右侧紧凑态）=====
+const lifecycleStages = computed(() => {
+  if (!summary.value?.lifecycle?.stages) return [];
+  return summary.value.lifecycle.stages.map((s) => ({
+    label: stageLabelMap[s.stage] ?? s.stage,
+    stage: s.stage,
+    status: s.status,
+  }));
+});
+
+const stageLabelMap: Record<string, string> = {
+  ASSESS: '评估',
+  DATA: '数据',
+  DIAGNOSE: '诊断',
+  MONITOR: '数据',
+  TUNE: '整定',
+  VERIFY: '验证',
+};
 </script>
 
 <template>
@@ -1094,14 +1293,12 @@ watch(
       :loading="loopListLoading"
     >
       <template #actions>
-        <!-- MW-P4-02：workspace/table 模式切换 -->
         <Segmented
           :value="monitorCtx.view.value"
           :options="viewModeOptions"
           size="small"
           @change="handleViewChange"
         />
-        <!-- MW-P1-02：共享监控工具栏（装置/类型/搜索/保存视图） -->
         <MonitorContextToolbar
           :attention-only-hidden="true"
           page-key="monitor-workbench"
@@ -1111,64 +1308,18 @@ watch(
       </template>
     </ClpmPageToolbar>
 
-    <!-- ===== MW-P4-02/P4-03：批量表格模式（筛选共享 useMonitorContext）===== -->
+    <!-- ===== 批量表格模式 ===== -->
     <LoopFleetView v-if="isTableView" @loop-click="handleFleetLoopClick" />
 
-    <!-- ===== MW-P4-02：工作台模式（workspace）===== -->
+    <!-- ===== 工作台模式（三栏布局：左脊柱 + 主区域 + 右决策栏） ===== -->
     <template v-if="!isTableView">
-      <!-- MW-P1-05：回路实时状态条（PV/SP/OP/MODE + WS 连接状态 + 采样时间） -->
-      <LoopLiveStatusBar
-        v-if="selectedLoop"
-        :loop="selectedLoop"
-        :connection-status="wsConnectionStatus"
-        :last-message-at="wsLastMessageAt"
-        :data-freshness="summary?.dataFreshness"
-        class="mb-2"
-      />
-
-      <!-- MW-P3-07：生命周期条 + 推荐下一步 + 活跃关注项（首屏 summary 接入） -->
-      <template v-if="summary">
-        <div class="mb-2 flex flex-col gap-2">
-          <WorkbenchLifecycleBar
-            :lifecycle="summary.lifecycle"
-            :unavailable-sections="summary.unavailableSections"
-            @stage-click="handleLifecycleStageClick"
-          />
-          <!-- emit: stageClick（Vue 模板 @stage-click 自动映射） -->
-          <div class="flex gap-2">
-            <div class="flex-1">
-              <WorkbenchNextAction
-                :next-action="summary.nextAction"
-                @action="handleNextAction"
-              />
-            </div>
-            <div class="flex-1">
-              <WorkbenchActiveAttention
-                :active-attention="summary.activeAttention"
-                :loop-id="selectedLoopId ?? ''"
-              />
-            </div>
-          </div>
-        </div>
-      </template>
-      <!-- summary 加载中骨架 -->
-      <div
-        v-else-if="summaryLoading && selectedLoop"
-        class="mb-2 flex items-center gap-2 rounded border bg-white px-3 py-2 text-xs text-gray-400"
-      >
-        <Spin size="small" />
-        <span>正在加载工作台摘要…</span>
-      </div>
-
-      <div class="flex h-[calc(100vh-180px)] gap-2">
-        <!-- ===== 左侧：回路列表（MW-P1-03 服务端分页 + 无限加载） ===== -->
-        <div
-          class="flex w-60 shrink-0 flex-col overflow-hidden rounded-lg border bg-white"
-        >
-          <div class="border-b p-2">
+      <div class="wb-layout" :class="{ 'wb-layout--collapsed': sidebarCollapsed }">
+        <!-- ===== 左脊柱：回路列表 ===== -->
+        <aside class="wb-sidebar">
+          <div class="wb-sidebar__search">
             <Input
               v-model:value="searchKeyword"
-              placeholder="搜索回路位号..."
+              placeholder="搜索位号/装置/描述..."
               allow-clear
               size="small"
               @input="handleSearchInput"
@@ -1178,7 +1329,7 @@ watch(
           <Spin :spinning="loopListLoading" size="small">
             <div
               :ref="setLoopListRef"
-              class="max-h-[calc(100vh-250px)] overflow-y-auto"
+              class="wb-sidebar__list"
               @scroll="handleLoopListScroll"
             >
               <div
@@ -1191,529 +1342,415 @@ watch(
                   <div
                     v-for="{ item } in visibleLoopItems"
                     :key="item.loopId"
-                    class="cursor-pointer border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-blue-50"
-                    :class="{
-                      'border-l-[3px] border-l-blue-500 bg-blue-50':
-                        item.loopId === selectedLoopId,
-                    }"
+                    class="wb-loop-item"
+                    :class="{ 'wb-loop-item--active': item.loopId === selectedLoopId }"
                     role="button"
                     tabindex="0"
-                    :aria-current="
-                      item.loopId === selectedLoopId ? 'true' : undefined
-                    "
+                    :aria-current="item.loopId === selectedLoopId ? 'true' : undefined"
                     @click="selectLoop(item.loopId)"
                     @keydown.enter="selectLoop(item.loopId)"
                     @keydown.space.prevent="selectLoop(item.loopId)"
                   >
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="truncate text-sm font-medium">{{
-                        item.tagName
-                      }}</span>
+                    <div class="wb-loop-item__header">
+                      <span class="wb-loop-item__tag">{{ item.tagName }}</span>
                       <span
                         v-if="item.confidenceLevel"
-                        class="shrink-0 text-xs font-semibold"
+                        class="wb-loop-item__conf"
                         :class="{
-                          'text-green-600': ['A', 'B'].includes(
-                            item.confidenceLevel,
-                          ),
-                          'text-orange-500': item.confidenceLevel === 'C',
-                          'text-red-500': ['D', 'E'].includes(
-                            item.confidenceLevel,
-                          ),
+                          'wb-loop-item__conf--ok': ['A', 'B'].includes(item.confidenceLevel),
+                          'wb-loop-item__conf--warn': item.confidenceLevel === 'C',
+                          'wb-loop-item__conf--err': ['D', 'E'].includes(item.confidenceLevel),
                         }"
-                      >
-                        {{ item.confidenceLevel }}
+                      >{{ item.confidenceLevel }}</span>
+                    </div>
+                    <div class="wb-loop-item__desc">
+                      <span class="wb-loop-item__name">{{ item.description || '—' }}</span>
+                      <span class="wb-loop-item__score">
+                        {{ item.score ?? '—' }}
+                        <DayDeltaBadge :delta="item.scoreDelta" :trend="item.dayTrend" />
                       </span>
                     </div>
-                    <div class="mt-0.5 flex items-center justify-between gap-2">
-                      <span class="truncate text-xs text-gray-400">{{
-                        item.description || '—'
-                      }}</span>
-                      <span class="shrink-0 text-xs text-gray-400"
-                        >评分 {{ item.score ?? '—' }}
-                        <DayDeltaBadge
-                          :delta="item.scoreDelta"
-                          :trend="item.dayTrend"
-                        />
-                      </span>
-                    </div>
-                    <div
-                      class="mt-1 flex items-center gap-2 whitespace-nowrap text-[11px] text-gray-500"
-                    >
-                      <span
-                        >PV
-                        {{
-                          currentValueText(item.currentValues?.pv, item.pvUnit)
-                        }}</span
-                      >
-                      <span
-                        >SP
-                        {{
-                          currentValueText(item.currentValues?.sp, item.pvUnit)
-                        }}</span
-                      >
-                      <span
-                        >OP
-                        {{
-                          currentValueText(item.currentValues?.op, item.opUnit)
-                        }}</span
-                      >
-                      <span class="truncate">{{
-                        item.currentValues?.modeLabel || '模式—'
-                      }}</span>
+                    <div class="wb-loop-item__vals">
+                      <span>PV {{ currentValueText(item.currentValues?.pv, item.pvUnit) }}</span>
+                      <span>SP {{ currentValueText(item.currentValues?.sp, item.pvUnit) }}</span>
+                      <span>OP {{ currentValueText(item.currentValues?.op, item.opUnit) }}</span>
+                      <span class="wb-loop-item__mode">{{ item.currentValues?.modeLabel || '—' }}</span>
                     </div>
                   </div>
                 </div>
               </div>
-              <div
-                v-if="!loopListLoading && loopListError"
-                class="flex flex-col items-center gap-2 py-8 text-center text-xs text-red-500"
-              >
+              <div v-if="!loopListLoading && loopListError" class="wb-sidebar__error">
                 <span>{{ loopListError }}</span>
-                <Button size="small" @click="() => loadLoopList(true)"
-                  >重试</Button
-                >
+                <Button size="small" @click="() => loadLoopList(true)">重试</Button>
               </div>
               <Empty
                 v-else-if="!loopListLoading && loopList.length === 0"
                 description="暂无回路"
                 :image="Empty.PRESENTED_IMAGE_SIMPLE"
-                class="py-8"
+                class="wb-sidebar__empty"
               />
             </div>
           </Spin>
-        </div>
+          <!-- 沉浸模式折叠按钮 -->
+          <button class="wb-sidebar__toggle" @click="sidebarCollapsed = !sidebarCollapsed">
+            <span v-if="sidebarCollapsed">▶</span>
+            <span v-else>◀</span>
+          </button>
+        </aside>
 
-        <!-- ===== 右侧：单页四区垂直布局（概览自适应 + 三行均分） ===== -->
-        <div class="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
-          <!-- MW-P0-03：深链接目标不在当前筛选结果中时提示 -->
-          <div
-            v-if="selectedLoop && injectedLoop"
-            class="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-700"
-            role="status"
-          >
+        <!-- ===== 主区域 ===== -->
+        <main class="wb-main">
+          <!-- 深链接提示 -->
+          <div v-if="selectedLoop && injectedLoop" class="wb-deeplink-hint" role="status">
             当前回路不在筛选结果中，已从深链接定位。可清空筛选以在左侧列表查看。
           </div>
-          <!-- MW-P0-03：深链接目标不存在/已停用/无权限 -->
-          <div
-            v-if="loopNotFound"
-            class="flex flex-1 items-center justify-center rounded-lg border bg-white"
-          >
-            <div class="flex flex-col items-center gap-2 py-12 text-center">
-              <Empty
-                description="回路不存在或已停用"
-                :image="Empty.PRESENTED_IMAGE_SIMPLE"
-              />
-              <div class="text-xs text-gray-400">
-                URL 中的回路 ID
-                无效或已停用，已保留原链接。请从左侧选择其他回路。
-              </div>
-            </div>
+
+          <!-- 未选回路 / 回路不存在 -->
+          <div v-if="loopNotFound" class="wb-state wb-state--error">
+            <Empty description="回路不存在或已停用" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+            <div class="wb-state__hint">URL 中的回路 ID 无效或已停用，请从左侧选择其他回路。</div>
           </div>
+          <div v-else-if="!selectedLoop" class="wb-state wb-state--empty">
+            <Empty description="请从左侧选择回路" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+          </div>
+
           <template v-else-if="selectedLoop">
-            <!-- ① 回路概览 10% -->
-            <WorkbenchSectionCard
-              class="wb-overview"
-              title="回路概览"
-              icon="lucide:activity"
-              :loading="false"
-              :empty="false"
-            >
-              <!-- MW-P3-05：summary 评分趋势 + 数据健康度（首屏摘要接入） -->
-              <div v-if="summary" class="mb-1 flex items-center gap-3 text-xs">
+            <!-- ===== R1 页头 ===== -->
+            <header class="wb-r1">
+              <div class="wb-r1__left">
+                <span class="wb-r1__tag">{{ selectedLoop.tagName }}</span>
+                <span class="wb-r1__desc">{{ selectedLoop.description || '—' }}</span>
+                <span class="wb-r1__crumb">
+                  {{ selectedLoop.unitName || '—' }} · {{ selectedLoop.loopType || '—' }}
+                </span>
+              </div>
+              <div class="wb-r1__right">
                 <span
-                  v-if="summary.scoreTrend.score != null"
-                  class="text-gray-600"
-                >
+                  v-if="runtimePointValues"
+                  class="wb-r1__mode-pill"
+                  :class="{
+                    'wb-r1__mode-pill--auto': runtimePointValues.mode === 'AUTO',
+                    'wb-r1__mode-pill--man': runtimePointValues.mode === 'MANUAL' || runtimePointValues.mode === 'MAN',
+                  }"
+                >{{ runtimePointValues.mode }}</span>
+                <span v-if="summary?.dataFreshness" class="wb-r1__fresh">
+                  <span class="wb-r1__dot" :class="{ 'wb-r1__dot--stale': summary.dataFreshness.status === 'DELAYED' }"></span>
+                  {{ summary.dataFreshness.status === 'FRESH' ? '数据新鲜' : summary.dataFreshness.status === 'DELAYED' ? '数据延迟' : '未知' }}
+                </span>
+              </div>
+            </header>
+
+            <!-- ===== R2 状态条（评分+等级+可信度+有效率+生命周期内联） ===== -->
+            <div v-if="summary" class="wb-r2">
+              <div class="wb-r2__left">
+                <span class="wb-r2__score">
                   评分
-                  <span class="font-semibold">{{
-                    summary.scoreTrend.score.toFixed(1)
-                  }}</span>
-                  <DayDeltaBadge
-                    :delta="summary.scoreTrend.scoreDelta"
-                    :trend="summaryDayTrend"
-                  />
+                  <span class="wb-r2__score-val">{{ summary.scoreTrend.score?.toFixed(1) ?? '—' }}</span>
+                  <DayDeltaBadge :delta="summary.scoreTrend.scoreDelta" :trend="summaryDayTrend ?? undefined" />
                 </span>
                 <span
-                  v-if="summary.dataHealth.confidenceLevel"
-                  class="text-gray-600"
-                >
+                  class="wb-r2__grade"
+                  :style="{ color: gradeInfo.color, borderColor: gradeInfo.color }"
+                >{{ gradeInfo.label }}</span>
+                <span v-if="summary.dataHealth.confidenceLevel" class="wb-r2__item">
                   可信度
-                  <Tag
-                    :color="
-                      confidenceTagColor(summary.dataHealth.confidenceLevel)
-                    "
-                    class="!m-0 !text-[10px]"
-                  >
+                  <Tag :color="confidenceTagColor(summary.dataHealth.confidenceLevel)" class="!m-0 !text-[10px]">
                     {{ summary.dataHealth.confidenceLevel }}
                   </Tag>
                 </span>
-                <span
-                  v-if="summary.dataHealth.validRate != null"
-                  class="text-gray-600"
-                >
+                <span v-if="summary.dataHealth.validRate != null" class="wb-r2__item">
                   有效率 {{ (summary.dataHealth.validRate * 100).toFixed(1) }}%
                 </span>
-                <span v-if="summary.partial" class="text-amber-600">
-                  部分数据不可用
+                <span v-if="summary.partial" class="wb-r2__partial">部分数据不可用</span>
+              </div>
+              <!-- 生命周期内联（v1.2 自 R3 并入） -->
+              <div class="wb-r2__lifecycle">
+                <template v-for="(s, idx) in lifecycleStages" :key="s.stage">
+                  <span
+                    class="wb-r2__stage"
+                    :class="{
+                      'wb-r2__stage--done': s.status === 'COMPLETED',
+                      'wb-r2__stage--cur': s.status === 'RUNNING' || s.status === 'READY',
+                    }"
+                    @click="handleLifecycleStageClick(s.stage as MonitorApi.LifecycleStageName)"
+                  >{{ s.label }}</span>
+                  <span v-if="idx < lifecycleStages.length - 1" class="wb-r2__stage-sep">─</span>
+                </template>
+              </div>
+            </div>
+            <!-- summary 加载中骨架 -->
+            <div v-else-if="summaryLoading && selectedLoop" class="wb-r2 wb-r2--loading">
+              <Spin size="small" />
+              <span class="wb-r2__loading-text">正在加载工作台摘要…</span>
+            </div>
+
+            <!-- ===== R4 主画布（过程变量 / 性能指标 双模式） ===== -->
+            <section class="wb-r4">
+              <!-- 画布头部第一行：模式切换 + 标题 + 时间窗 -->
+              <div class="wb-r4__header">
+                <div class="wb-r4__mode">
+                  <Segmented
+                    v-model:value="canvasMode"
+                    :options="[
+                      { label: '过程变量', value: 'process' },
+                      { label: '性能指标', value: 'kpi' },
+                    ]"
+                    size="small"
+                  />
+                </div>
+                <div class="wb-r4__time-window">
+                  <Segmented
+                    v-model:value="timeWindow"
+                    :options="timeWindowOptions"
+                    size="small"
+                  />
+                  <button
+                    v-if="timeWindow === 'custom'"
+                    class="wb-r4__custom-btn"
+                    @click="customTimePopOpen = !customTimePopOpen"
+                  >自定义</button>
+                </div>
+              </div>
+              <!-- 自定义时间窗弹层 -->
+              <div v-if="customTimePopOpen" class="wb-r4__custom-pop">
+                <label>起 <input v-model="customStartTime" type="datetime-local" /></label>
+                <label>止 <input v-model="customEndTime" type="datetime-local" /></label>
+                <button @click="applyCustomTime">应用</button>
+              </div>
+              <!-- 画布头部第二行：图例 + 实时点值 -->
+              <div class="wb-r4__legend">
+                <template v-if="canvasMode === 'process'">
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--pv"></span>PV</span>
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--sp"></span>SP</span>
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--op"></span>OP</span>
+                  <span v-if="eventMarks.length" class="wb-r4__legend-item">▼诊断 ◆整定 ▐验证</span>
+                </template>
+                <template v-else>
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--score"></span>综合评分</span>
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--steady"></span>平稳率</span>
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--accuracy"></span>准确率</span>
+                  <span class="wb-r4__legend-item"><span class="wb-r4__legend-line wb-r4__legend-line--fast"></span>快速率</span>
+                </template>
+                <!-- 实时点值 -->
+                <span v-if="runtimePointValues" class="wb-r4__live-vals">
+                  <span class="wb-r4__live-val">
+                    PV <span class="wb-r4__live-num" :style="{ color: pvValueColor() }">{{ runtimePointValues.pv?.toFixed(2) ?? '—' }}</span>
+                  </span>
+                  <span class="wb-r4__live-val">
+                    SP <span class="wb-r4__live-num">{{ runtimePointValues.sp?.toFixed(2) ?? '—' }}</span>
+                  </span>
+                  <span class="wb-r4__live-val">
+                    OP <span class="wb-r4__live-num">{{ runtimePointValues.op?.toFixed(1) ?? '—' }}%</span>
+                  </span>
                 </span>
               </div>
-              <div class="wb-overview__grid">
-                <div
-                  v-for="field in overviewFields"
-                  :key="field.label"
-                  class="wb-overview__field"
-                >
-                  <span class="wb-overview__label">{{ field.label }}</span>
-                  <span class="wb-overview__value">{{ field.value }}</span>
+              <!-- 趋势图 -->
+              <div class="wb-r4__chart">
+                <Spin :spinning="canvasMode === 'process' ? processTrendLoading : kpiHistoryLoading" size="small">
+                  <WorkbenchProcessTrend
+                    v-if="canvasMode === 'process'"
+                    :trend="processTrendData"
+                    :pv-unit="selectedLoop?.pvUnit || ''"
+                    :op-unit="selectedLoop?.opUnit || '%'"
+                    :event-marks="eventMarks"
+                    :mode-bands="modeBands"
+                  />
+                  <WorkbenchKpiHistory
+                    v-else
+                    :snapshots="kpiHistory"
+                    :alarm-line="alarmLine"
+                    :time-window="timeWindow"
+                  />
+                </Spin>
+              </div>
+            </section>
+
+            <!-- ===== R5 证据四区（评估雷达+横道 / 诊断卡 / 整定卡） ===== -->
+            <section class="wb-r5">
+              <!-- 评估卡（雷达图 + 指标横道图） -->
+              <div class="wb-r5__card wb-r5__card--assess">
+                <div class="wb-r5__card-header">
+                  <span class="wb-r5__card-title">评估</span>
+                  <span class="wb-r5__card-meta">
+                    {{ latestSnapshot ? `24h 窗口 · ${formatTime(latestSnapshot.tsStart)}` : '—' }}
+                  </span>
+                  <router-link
+                    v-if="selectedLoopId"
+                    :to="{ path: '/performance/loops', query: { loopId: selectedLoopId } }"
+                    class="wb-r5__card-link"
+                  >完整证据 →</router-link>
+                </div>
+                <div class="wb-r5__assess-body">
+                  <div class="wb-r5__radar">
+                    <WorkbenchRadar6
+                      v-if="radarAxes"
+                      :axes="radarAxes"
+                      :score="summary?.scoreTrend.score ?? null"
+                      :grade="gradeInfo.label"
+                      :grade-color="gradeInfo.color"
+                    />
+                    <div v-else class="wb-r5__empty-mini">暂无评估数据</div>
+                  </div>
+                  <div class="wb-r5__bars">
+                    <WorkbenchMetricBars :metrics="metricBarsData" />
+                  </div>
                 </div>
               </div>
-              <template #actions>
-                <Button size="small" @click="goTrend">趋势</Button>
-              </template>
-            </WorkbenchSectionCard>
 
-            <!-- ② 性能评估 30%（50/50：12 卡片 + 评分趋势） -->
-            <WorkbenchSectionCard
-              ref="assessSectionRef"
-              class="wb-row wb-assess"
-              title="性能评估"
-              icon="lucide:chart-column"
-              :loading="assessmentLoading"
-              :empty="!assessmentLoading && !assessmentDetail"
-              empty-text="暂无评估数据"
-              :progress="
-                assessTask.isRunning ? (assessTask.progress ?? 0) : null
-              "
-              :progress-stage="
-                assessTask.isRunning ? assessTask.progressStage : null
-              "
-            >
-              <div class="wb-split">
-                <div class="wb-split__left">
-                  <KpiMetricCards />
+              <!-- 诊断卡 -->
+              <div class="wb-r5__card wb-r5__card--diag">
+                <div class="wb-r5__card-header">
+                  <span class="wb-r5__card-title">诊断</span>
+                  <span class="wb-r5__card-meta">
+                    {{ summary?.diagnosis?.resultAt ? formatTime(summary.diagnosis.resultAt) : '—' }}
+                  </span>
+                  <router-link
+                    v-if="selectedLoopId"
+                    :to="{ path: '/diagnosis/detail', query: { loopId: selectedLoopId } }"
+                    class="wb-r5__card-link"
+                  >完整证据 →</router-link>
                 </div>
-                <div class="wb-split__right">
-                  <ScoreTrendChart />
-                </div>
-              </div>
-              <template #actions>
-                <Button
-                  type="primary"
-                  size="small"
-                  :loading="assessTask.isRunning"
-                  :disabled="assessTask.isRunning"
-                  @click="assessModalOpen = true"
-                >
-                  {{ assessTask.isRunning ? '评估中…' : '发起评估' }}
-                </Button>
-              </template>
-              <template #empty>
-                <div>当前回路暂无有效评估快照</div>
-                <div class="mt-1 text-[11px] text-gray-400">
-                  数据范围：近 72 小时；可调整时间窗或发起性能评估
-                </div>
-              </template>
-            </WorkbenchSectionCard>
-
-            <!-- ③ 回路诊断 30%（50/50：标签+置信度 + PV/OP·FFT 曲线） -->
-            <WorkbenchSectionCard
-              ref="diagSectionRef"
-              class="wb-row wb-diag"
-              title="回路诊断"
-              icon="lucide:stethoscope"
-              :loading="diagnosisLoading"
-              :empty="!diagnosisLoading && !diagnosisDetail"
-              empty-text="暂无诊断数据"
-              :progress="diagTask.isRunning ? (diagTask.progress ?? 0) : null"
-              :progress-stage="
-                diagTask.isRunning ? diagTask.progressStage : null
-              "
-            >
-              <div class="wb-split">
-                <div class="wb-split__left">
-                  <div v-if="diagnosisDetail" class="wb-diag">
-                    <div class="wb-diag__cards">
-                      <div class="wb-diag__card">
-                        <span class="wb-diag__card-label">综合评分</span>
-                        <span class="wb-diag__card-value">
-                          {{
-                            Number(diagnosisDetail.compositeScore).toFixed(2)
-                          }}
-                        </span>
-                      </div>
-                      <div class="wb-diag__card">
-                        <span class="wb-diag__card-label">融合置信度</span>
-                        <span class="wb-diag__card-value">
-                          {{
-                            diagnosisDetail.fusedConfidence == null
-                              ? '—'
-                              : Number(diagnosisDetail.fusedConfidence).toFixed(
-                                  2,
-                                )
-                          }}
-                        </span>
-                      </div>
-                      <div class="wb-diag__card">
-                        <span class="wb-diag__card-label">诊断时间</span>
-                        <span
-                          class="wb-diag__card-value wb-diag__card-value--sm"
-                        >
-                          {{ formatTime(diagnosisDetail.diagnosedAt) }}
-                        </span>
-                      </div>
-                    </div>
-                    <div class="wb-diag__labels">
+                <div class="wb-r5__diag-body">
+                  <div v-if="diagnosisDetail || summary?.diagnosis" class="wb-r5__diag-content">
+                    <div class="wb-r5__diag-labels">
                       <Tag
                         v-for="(item, idx) in diagnosisLabels"
                         :key="idx"
-                        :color="
-                          DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'
-                        "
+                        :color="DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'"
+                        class="!text-[11px]"
                       >
-                        {{
-                          item.labelName ||
-                          DIAGNOSIS_LABEL_NAME_MAP[item.label] ||
-                          item.label
-                        }}
-                        <span class="ml-1 text-gray-400">
-                          {{ Number(item.confidence).toFixed(2) }}
-                        </span>
+                        {{ item.labelName || DIAGNOSIS_LABEL_NAME_MAP[item.label] || item.label }}
+                        <span class="ml-1 opacity-60">{{ Number(item.confidence).toFixed(2) }}</span>
                       </Tag>
-                      <span
-                        v-if="diagnosisLabels.length === 0"
-                        class="text-xs text-gray-400"
-                      >
-                        未检测到异常标签
-                      </span>
+                      <span v-if="diagnosisLabels.length === 0" class="wb-r5__diag-empty-label">未检测到异常标签</span>
+                    </div>
+                    <div v-if="diagnosisDetail" class="wb-r5__diag-stats">
+                      <div class="wb-r5__diag-stat">
+                        <span class="wb-r5__diag-stat-label">融合置信度</span>
+                        <span class="wb-r5__diag-stat-val">{{ diagnosisDetail.fusedConfidence == null ? '—' : Number(diagnosisDetail.fusedConfidence).toFixed(2) }}</span>
+                      </div>
+                    </div>
+                    <!-- 诊断扩展指标（负向横道） -->
+                    <div v-if="diagExtendedMetrics.length" class="wb-r5__diag-ext">
+                      <WorkbenchMetricBars :metrics="diagExtendedMetrics" :negative="true" />
                     </div>
                   </div>
-                </div>
-                <div class="wb-split__right">
-                  <WorkbenchDiagnosisChart :loop-id="selectedLoopId" />
+                  <div v-else class="wb-r5__empty-mini">暂无诊断数据</div>
                 </div>
               </div>
-              <template #actions>
-                <Button
-                  type="primary"
-                  size="small"
-                  :loading="diagTask.isRunning"
-                  :disabled="diagTask.isRunning"
-                  @click="goToDiagnosis"
-                >
-                  {{ diagTask.isRunning ? '诊断中…' : '发起诊断' }}
-                </Button>
-              </template>
-              <template #empty>
-                <div>当前回路暂无诊断记录</div>
-                <div class="mt-1 text-[11px] text-gray-400">
-                  需要先具备可用历史数据；可直接发起一次诊断
-                </div>
-              </template>
-            </WorkbenchSectionCard>
 
-            <!-- ④ 回路整定 30%（50/50：当前PID+模型+指标 + 推荐 PID） -->
-            <WorkbenchSectionCard
-              ref="tuneSectionRef"
-              class="wb-row wb-tune"
-              title="回路整定"
-              icon="lucide:settings-2"
-              :loading="tuningLoading"
-              :empty="!tuningLoading && !tuningLatest"
-              empty-text="暂无整定记录"
-              :progress="tuneTask.isRunning ? (tuneTask.progress ?? 0) : null"
-              :progress-stage="
-                tuneTask.isRunning ? tuneTask.progressStage : null
-              "
-            >
-              <div class="wb-split">
-                <div class="wb-split__left">
-                  <div class="wb-tune">
-                    <div class="wb-tune__row">
-                      <span class="wb-tune__item">
-                        当前 PID：
-                        <span class="font-medium">{{
-                          pidText(currentPid)
-                        }}</span>
-                      </span>
-                      <span class="wb-tune__item">
-                        模型：{{ tuningLatest?.modelType || '—' }}
-                      </span>
-                      <span class="wb-tune__item">
-                        时间常数/参数：{{ modelParamsText }}
+              <!-- 整定卡 -->
+              <div class="wb-r5__card wb-r5__card--tune">
+                <div class="wb-r5__card-header">
+                  <span class="wb-r5__card-title">整定</span>
+                  <span class="wb-r5__card-meta">
+                    {{ summary?.tuning?.resultAt ? formatTime(summary.tuning.resultAt) : '—' }}
+                  </span>
+                  <router-link
+                    v-if="selectedLoopId"
+                    :to="{ path: '/tuning/workbench', query: { loopId: selectedLoopId } }"
+                    class="wb-r5__card-link"
+                  >完整证据 →</router-link>
+                </div>
+                <div class="wb-r5__tune-body">
+                  <div v-if="summary?.tuning || tuningLatest" class="wb-r5__tune-rows">
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">当前 PID</span>
+                      <span class="wb-r5__tune-val">{{ pidText(currentPid) }}</span>
+                    </div>
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">推荐 PID</span>
+                      <span class="wb-r5__tune-val wb-r5__tune-val--highlight">{{ pidText(tuningLatest?.recommendedPid) }}</span>
+                    </div>
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">模型</span>
+                      <span class="wb-r5__tune-val">{{ summary?.tuning?.modelType || tuningLatest?.modelType || '—' }}</span>
+                    </div>
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">拟合度</span>
+                      <span class="wb-r5__tune-val">
+                        {{ tuningLatest?.fittingScore == null ? '—' : `${(tuningLatest.fittingScore * 100).toFixed(1)}%` }}
                       </span>
                     </div>
-                    <div class="wb-tune__row">
-                      <span class="wb-tune__item">
-                        算法：
-                        <span class="font-medium">
-                          {{
-                            ALGORITHM_LABEL[tuningLatest?.algorithm || ''] ||
-                            (tuningLatest?.algorithm ? '未知辨识算法' : '—')
-                          }}
-                        </span>
-                      </span>
-                      <span class="wb-tune__item">
-                        拟合度：
-                        <span class="font-semibold">
-                          {{
-                            tuningLatest?.fittingScore == null
-                              ? '—'
-                              : `${(tuningLatest.fittingScore * 100).toFixed(1)}%`
-                          }}
-                        </span>
-                      </span>
-                      <span class="wb-tune__item">
-                        超调量：
-                        <span class="font-semibold">
-                          {{
-                            overshoot == null ? '—' : `${overshoot.toFixed(2)}%`
-                          }}
-                        </span>
-                      </span>
-                      <span class="wb-tune__item">
-                        上升时间：
-                        <span class="font-semibold">
-                          {{
-                            riseTime == null ? '—' : `${riseTime.toFixed(1)}s`
-                          }}
-                        </span>
-                      </span>
-                      <span class="wb-tune__item">
-                        稳定时间：
-                        <span class="font-semibold">
-                          {{
-                            settlingTime == null
-                              ? '—'
-                              : `${settlingTime.toFixed(1)}s`
-                          }}
-                        </span>
-                      </span>
-                      <span
-                        v-if="tuningLatest?.confidenceLevel"
-                        class="wb-tune__item"
-                      >
-                        可信度：
-                        <Tag
-                          :color="
-                            confidenceTagColor(tuningLatest.confidenceLevel)
-                          "
-                        >
-                          {{ tuningLatest.confidenceLevel }}
-                        </Tag>
-                      </span>
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">风险等级</span>
+                      <span class="wb-r5__tune-val">{{ summary?.tuning?.riskLevel || '—' }}</span>
+                    </div>
+                    <div class="wb-r5__tune-row">
+                      <span class="wb-r5__tune-label">状态</span>
+                      <span class="wb-r5__tune-val">{{ summary?.tuning?.status || tuningLatest?.status || '—' }}</span>
                     </div>
                   </div>
-                </div>
-                <div class="wb-split__right">
-                  <div class="wb-tune__recommend">
-                    <div class="wb-tune__recommend-label">推荐 PID</div>
-                    <div class="wb-tune__recommend-value">
-                      {{ pidText(tuningLatest?.recommendedPid) }}
-                    </div>
-                    <div class="wb-tune__recommend-time">
-                      更新时间：{{
-                        tuningLatest ? formatTime(tuningLatest.createdAt) : '—'
-                      }}
-                    </div>
+                  <div v-else class="wb-r5__empty-mini">暂无整定数据</div>
+                  <div class="wb-r5__tune-safety">
+                    安全边界：只读建议 · 人工实施 · 需留痕
                   </div>
                 </div>
               </div>
-              <template #actions>
-                <Button
-                  size="small"
-                  :loading="tuneTask.isRunning"
-                  :disabled="tuneTask.isRunning"
-                  @click="tuningModalOpen = true"
-                >
-                  {{ tuneTask.isRunning ? '辨识中…' : '回路辨识' }}
-                </Button>
-                <Button
-                  size="small"
-                  :loading="tuneLoading"
-                  :disabled="tuneLoading || !tuningLatest"
-                  :title="
-                    tuningLatest
-                      ? '基于最新辨识结果生成参数建议'
-                      : '请先完成一次回路辨识'
-                  "
-                  @click="tuneParamModalOpen = true"
-                >
-                  参数整定
-                </Button>
-                <Button
-                  size="small"
-                  :loading="simulateLoading"
-                  :disabled="simulateLoading || !tuningLatest"
-                  :title="
-                    tuningLatest
-                      ? '使用最新辨识结果执行只读仿真'
-                      : '请先完成一次回路辨识'
-                  "
-                  @click="requestSimulate"
-                >
-                  模拟仿真
-                </Button>
-              </template>
-              <template #empty>
-                <div>当前回路暂无整定辨识记录</div>
-                <div class="mt-1 text-[11px] text-gray-400">
-                  参数整定和模拟仿真依赖最新过程辨识结果
-                </div>
-              </template>
-            </WorkbenchSectionCard>
+            </section>
 
-            <!-- ⑤ 闭环验证时间线 30%（MW-P3-08） -->
-            <div class="wb-verify wb-row">
+            <!-- ===== R6 验证对比条（可展开，默认收起） ===== -->
+            <section v-if="summary?.trackerTimeline" class="wb-r6">
               <WorkbenchTrackerTimeline
-                :tracker="summary?.trackerTimeline"
-                :unavailable="
-                  summary?.unavailableSections?.includes('trackerTimeline') ??
-                  false
-                "
+                :tracker="summary.trackerTimeline"
+                :unavailable="summary?.unavailableSections?.includes('trackerTimeline') ?? false"
                 @view-detail="handleTrackerViewDetail"
                 @verify="handleTrackerVerify"
               />
-            </div>
+            </section>
           </template>
+        </main>
 
-          <div
-            v-else
-            class="flex flex-1 items-center justify-center rounded-lg border bg-white"
-          >
-            <Empty
-              description="请从左侧选择回路"
-              :image="Empty.PRESENTED_IMAGE_SIMPLE"
-              class="py-12"
+        <!-- ===== 右决策栏 ===== -->
+        <aside v-if="selectedLoop" class="wb-decision">
+          <!-- Decision Dock（唯一下一步） -->
+          <div v-if="summary?.nextAction" class="wb-decision__dock">
+            <WorkbenchNextAction
+              :next-action="summary.nextAction"
+              @action="handleNextAction"
             />
           </div>
-        </div>
+          <!-- 活跃关注 -->
+          <div v-if="summary?.activeAttention" class="wb-decision__attention">
+            <div class="wb-decision__section-title">活跃关注</div>
+            <WorkbenchActiveAttention
+              :active-attention="summary.activeAttention"
+              :loop-id="selectedLoopId ?? ''"
+            />
+          </div>
+          <!-- 闭环时间线 -->
+          <div class="wb-decision__timeline">
+            <div class="wb-decision__section-title">闭环时间线</div>
+            <WorkbenchTrackerTimeline
+              v-if="summary?.trackerTimeline"
+              :tracker="summary.trackerTimeline"
+              :unavailable="summary?.unavailableSections?.includes('trackerTimeline') ?? false"
+              :compact="true"
+              @view-detail="handleTrackerViewDetail"
+              @verify="handleTrackerVerify"
+            />
+            <div v-else class="wb-decision__empty">暂无时间线</div>
+          </div>
+        </aside>
       </div>
     </template>
-    <!-- ===== /MW-P4-02 工作台模式 ===== -->
 
-    <!-- ===== 发起评估弹窗 ===== -->
+    <!-- ===== 弹窗组件 ===== -->
     <AssessTriggerModal
       v-model:open="assessModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerAssessment"
     />
-
-    <!-- ===== 发起诊断弹窗 ===== -->
     <DiagnosisTriggerModal
       v-model:open="diagModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerDiagnosis"
     />
-
-    <!-- ===== 回路辨识弹窗 ===== -->
     <TuningTriggerModal
       v-model:open="tuningModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerTuning"
     />
-
-    <!-- ===== 参数整定弹窗 ===== -->
     <TuneParamModal
       v-model:open="tuneParamModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
@@ -1722,8 +1759,6 @@ watch(
       :current-pid="currentPid"
       @tune="requestTune"
     />
-
-    <!-- ===== 整定/仿真风险确认窗（整改 B2，WARNING 简化级） ===== -->
     <ClpmDangerConfirmModal
       v-model:open="riskConfirmOpen"
       :title="riskConfirmContent.title"
@@ -1737,22 +1772,11 @@ watch(
       :loading="tuneLoading || simulateLoading"
       @confirm="handleRiskConfirm"
     />
-
-    <!-- ===== 模拟仿真结果弹窗 ===== -->
     <SimulateResultModal
       v-model:open="simulateModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       :result="simulateResult"
     />
-
-    <!-- ===== 趋势弹窗（整改 B1：页内弹窗，复用 LoopTrendModal） ===== -->
-    <LoopTrendModal
-      v-model:open="trendModalOpen"
-      :loop-id="selectedLoopId"
-      :tag-name="selectedLoop?.tagName"
-    />
-
-    <!-- ===== AI 洞察右抽屉 ===== -->
     <ClpmAiDrawer
       v-model:open="aiDrawerOpen"
       scene="performance"
@@ -1762,162 +1786,767 @@ watch(
 </template>
 
 <style scoped>
-/* 四区垂直布局：概览自适应高度 + 三行共享剩余空间 */
-.wb-overview {
+/* ===== 三栏布局 ===== */
+.wb-layout {
+  display: flex;
+  gap: 6px;
+  height: calc(100vh - 110px);
+  min-height: 0;
+}
+
+.wb-layout--collapsed .wb-sidebar {
+  width: 28px;
+  overflow: hidden;
+}
+
+.wb-layout--collapsed .wb-sidebar__search,
+.wb-layout--collapsed .wb-sidebar__list,
+.wb-layout--collapsed .wb-sidebar__toggle span {
+  display: none;
+}
+
+/* ===== 左脊柱 ===== */
+.wb-sidebar {
+  display: flex;
+  flex: 0 0 240px;
+  flex-direction: column;
+  overflow: hidden;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 6px;
+  transition: flex-basis 0.2s ease, width 0.2s ease;
+}
+
+.wb-sidebar__search {
   flex: 0 0 auto;
-  min-height: 62px;
+  padding: 6px 8px;
+  border-bottom: 1px solid hsl(var(--border) / 40%);
 }
 
-.wb-row {
-  flex: 1 1 0;
+.wb-sidebar__list {
+  flex: 1;
+  overflow-y: auto;
   min-height: 0;
 }
 
-/* 概览区字段网格（紧凑单行） */
-.wb-overview__grid {
+.wb-sidebar__empty {
+  padding: 32px 0;
+}
+
+.wb-sidebar__error {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 20px;
+  flex-direction: column;
+  gap: 8px;
   align-items: center;
-  height: auto;
-  min-height: 36px;
-  font-size: 13px;
-}
-
-.wb-overview__field {
-  display: flex;
-  gap: 4px;
-  align-items: baseline;
-  white-space: nowrap;
-}
-
-.wb-overview__label {
+  padding: 24px;
   font-size: 12px;
-  color: hsl(var(--foreground) / 45%);
+  color: hsl(var(--destructive));
+  text-align: center;
 }
 
-.wb-overview__value {
-  font-weight: 500;
-  color: hsl(var(--foreground) / 85%);
-}
-
-/* 通用 50/50 分栏 */
-.wb-split {
+.wb-sidebar__toggle {
+  flex: 0 0 24px;
   display: flex;
-  gap: 12px;
-  height: 100%;
-  min-height: 0;
-}
-
-.wb-split__left {
-  display: flex;
-  flex: 1 1 50%;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.wb-split__right {
-  display: flex;
-  flex: 1 1 50%;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  padding: 4px;
-  background: hsl(var(--muted) / 20%);
-  border: 1px solid hsl(var(--border) / 40%);
-  border-radius: 4px;
-}
-
-/* 诊断行 */
-.wb-diag {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.wb-diag__cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.wb-diag__card {
-  display: flex;
-  flex: 1 1 30%;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 8px;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  font-size: 10px;
+  color: hsl(var(--foreground) / 50%);
+  cursor: pointer;
   background: hsl(var(--muted) / 30%);
-  border: 1px solid hsl(var(--border) / 50%);
-  border-radius: 4px;
+  border: 0;
+  border-top: 1px solid hsl(var(--border) / 40%);
 }
 
-.wb-diag__card-label {
+.wb-sidebar__toggle:hover {
+  background: hsl(var(--muted) / 50%);
+}
+
+/* 回路列表项 */
+.wb-loop-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid hsl(var(--border) / 30%);
+  transition: background 0.15s;
+}
+
+.wb-loop-item:hover {
+  background: hsl(var(--primary) / 5%);
+}
+
+.wb-loop-item--active {
+  background: hsl(var(--primary) / 8%);
+  border-left: 3px solid hsl(var(--primary));
+  padding-left: 7px;
+}
+
+.wb-loop-item__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  align-items: center;
+}
+
+.wb-loop-item__tag {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wb-loop-item__conf {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wb-loop-item__conf--ok { color: #1a7f4b; }
+.wb-loop-item__conf--warn { color: #b45309; }
+.wb-loop-item__conf--err { color: #c23434; }
+
+.wb-loop-item__desc {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.wb-loop-item__name {
+  overflow: hidden;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 50%);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wb-loop-item__score {
+  flex-shrink: 0;
   font-size: 11px;
   color: hsl(var(--foreground) / 50%);
 }
 
-.wb-diag__card-value {
-  font-size: 16px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+.wb-loop-item__vals {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
+  white-space: nowrap;
+}
+
+.wb-loop-item__mode {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== 主区域 ===== */
+.wb-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wb-deeplink-hint {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #b45309;
+  background: #fff8ec;
+  border: 1px solid #f0d5a8;
+  border-radius: 4px;
+}
+
+.wb-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 6px;
+}
+
+.wb-state__hint {
+  font-size: 12px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+/* ===== R1 页头 ===== */
+.wb-r1 {
+  display: flex;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+}
+
+.wb-r1__left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.wb-r1__tag {
+  flex-shrink: 0;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
   color: hsl(var(--foreground));
 }
 
-.wb-diag__card-value--sm {
+.wb-r1__desc {
+  overflow: hidden;
   font-size: 12px;
-  font-weight: 500;
+  color: hsl(var(--foreground) / 70%);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.wb-diag__labels {
+.wb-r1__crumb {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 40%);
+}
+
+.wb-r1__right {
   display: flex;
-  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.wb-r1__mode-pill {
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 3px;
+}
+
+.wb-r1__mode-pill--auto {
+  color: #1a7f4b;
+  background: #e7f6ec;
+  border-color: #bfe6cd;
+}
+
+.wb-r1__mode-pill--man {
+  color: #c23434;
+  background: #fde8e8;
+  border-color: #f5b0b0;
+}
+
+.wb-r1__fresh {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
+  white-space: nowrap;
+}
+
+.wb-r1__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: #1a7f4b;
+  border-radius: 50%;
+}
+
+.wb-r1__dot--stale {
+  background: #c23434;
+}
+
+/* ===== R2 状态条 ===== */
+.wb-r2 {
+  display: flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 10px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+}
+
+.wb-r2--loading {
+  justify-content: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+.wb-r2__left {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.wb-r2__score {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: hsl(var(--foreground) / 60%);
+  white-space: nowrap;
+}
+
+.wb-r2__score-val {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-r2__grade {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 3px;
+}
+
+.wb-r2__item {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: hsl(var(--foreground) / 60%);
+  white-space: nowrap;
+}
+
+.wb-r2__partial {
+  padding: 1px 7px;
+  font-size: 10px;
+  color: #b45309;
+  background: #fff8ec;
+  border: 1px solid #f0d5a8;
+  border-radius: 3px;
+}
+
+/* 生命周期内联 */
+.wb-r2__lifecycle {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.wb-r2__stage {
+  padding: 1px 4px;
+  cursor: pointer;
+  color: hsl(var(--foreground) / 40%);
+  border-radius: 2px;
+  transition: color 0.15s;
+}
+
+.wb-r2__stage:hover {
+  color: hsl(var(--foreground) / 70%);
+}
+
+.wb-r2__stage--done {
+  color: #1a7f4b;
+}
+
+.wb-r2__stage--cur {
+  font-weight: 700;
+  color: #b45309;
+}
+
+.wb-r2__stage-sep {
+  color: hsl(var(--foreground) / 25%);
+}
+
+/* ===== R4 主画布 ===== */
+.wb-r4 {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+}
+
+.wb-r4__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid hsl(var(--border) / 40%);
+}
+
+.wb-r4__mode {
+  display: flex;
   gap: 4px;
   align-items: center;
 }
 
-/* 整定行 */
-.wb-tune {
+.wb-r4__time-window {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
+  gap: 4px;
+  align-items: center;
 }
 
-.wb-tune__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+.wb-r4__custom-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  background: hsl(var(--primary) / 8%);
+  border: 1px solid hsl(var(--primary) / 20%);
+  border-radius: 3px;
 }
 
-.wb-tune__item {
-  color: hsl(var(--foreground) / 70%);
+.wb-r4__custom-pop {
+  position: absolute;
+  right: 10px;
+  z-index: 6;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 60%);
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgb(15 23 42 / 12%);
+}
+
+.wb-r4__custom-pop input {
+  width: 130px;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-family: "SF Mono", Consolas, monospace;
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 3px;
+}
+
+.wb-r4__custom-pop button {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: #fff;
+  cursor: pointer;
+  background: hsl(var(--primary));
+  border: 0;
+  border-radius: 3px;
+}
+
+/* 图例行 */
+.wb-r4__legend {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  align-items: center;
+  padding: 2px 10px;
+  border-bottom: 1px solid hsl(var(--border) / 40%);
+  font-size: 11px;
+  color: hsl(var(--foreground) / 60%);
+}
+
+.wb-r4__legend-item {
+  display: flex;
+  gap: 4px;
+  align-items: center;
   white-space: nowrap;
 }
 
-.wb-tune__recommend {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  justify-content: center;
-  height: 100%;
+.wb-r4__legend-line {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
 }
 
-.wb-tune__recommend-label {
-  font-size: 12px;
+.wb-r4__legend-line--pv { background: #1d4ed8; }
+.wb-r4__legend-line--sp { background: #6b7280; }
+.wb-r4__legend-line--op { background: #b45309; }
+.wb-r4__legend-line--score { background: #1d4ed8; }
+.wb-r4__legend-line--steady { background: #1a7f4b; }
+.wb-r4__legend-line--accuracy { background: #7c3aed; }
+.wb-r4__legend-line--fast { background: #b45309; }
+
+/* 实时点值 */
+.wb-r4__live-vals {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.wb-r4__live-val {
+  font-size: 11px;
   color: hsl(var(--foreground) / 50%);
 }
 
-.wb-tune__recommend-value {
-  font-size: 16px;
+.wb-r4__live-num {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 12px;
   font-weight: 600;
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* 图表容器 */
+.wb-r4__chart {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+}
+
+/* ===== R5 证据四区 ===== */
+.wb-r5 {
+  display: flex;
+  flex: 0 0 200px;
+  gap: 4px;
+}
+
+.wb-r5__card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+}
+
+.wb-r5__card-header {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid hsl(var(--border) / 40%);
+}
+
+.wb-r5__card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.wb-r5__card-meta {
+  font-size: 10px;
+  color: hsl(var(--foreground) / 40%);
+}
+
+.wb-r5__card-link {
+  margin-left: auto;
+  font-size: 10px;
+  color: hsl(var(--primary));
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.wb-r5__card-link:hover {
+  text-decoration: underline;
+}
+
+/* 评估卡 */
+.wb-r5__assess-body {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  min-height: 0;
+}
+
+.wb-r5__radar {
+  flex: 0 0 45%;
+  min-height: 0;
+}
+
+.wb-r5__bars {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 诊断卡 */
+.wb-r5__diag-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  padding: 4px;
+  font-size: 12px;
+}
+
+.wb-r5__diag-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.wb-r5__diag-empty-label {
+  font-size: 11px;
+  color: hsl(var(--foreground) / 40%);
+}
+
+.wb-r5__diag-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.wb-r5__diag-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wb-r5__diag-stat-label {
+  font-size: 10px;
+  color: hsl(var(--foreground) / 45%);
+}
+
+.wb-r5__diag-stat-val {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-r5__diag-ext {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 整定卡 */
+.wb-r5__tune-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px;
+}
+
+.wb-r5__tune-rows {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+
+.wb-r5__tune-row {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.wb-r5__tune-label {
+  flex: 0 0 60px;
+  color: hsl(var(--foreground) / 50%);
+}
+
+.wb-r5__tune-val {
+  font-family: "SF Mono", Consolas, monospace;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 85%);
+  font-variant-numeric: tabular-nums;
+}
+
+.wb-r5__tune-val--highlight {
+  font-weight: 700;
   color: hsl(var(--primary));
 }
 
-.wb-tune__recommend-time {
+.wb-r5__tune-safety {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  font-size: 10px;
+  color: hsl(var(--foreground) / 35%);
+  text-align: center;
+  border-top: 1px dashed hsl(var(--border) / 40%);
+}
+
+.wb-r5__empty-mini {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
-  color: hsl(var(--foreground) / 45%);
+  color: hsl(var(--foreground) / 40%);
+}
+
+/* ===== R6 验证对比条 ===== */
+.wb-r6 {
+  flex: 0 0 auto;
+}
+
+/* ===== 右决策栏 ===== */
+.wb-decision {
+  display: flex;
+  flex: 0 0 280px;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.wb-decision__dock {
+  flex: 0 0 auto;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--primary) / 20%);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px hsl(var(--primary) / 8%);
+}
+
+.wb-decision__attention {
+  flex: 0 0 auto;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+}
+
+.wb-decision__timeline {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / 60%);
+  border-radius: 4px;
+}
+
+.wb-decision__section-title {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 60%);
+  border-bottom: 1px solid hsl(var(--border) / 40%);
+}
+
+.wb-decision__empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 40%);
 }
 </style>
