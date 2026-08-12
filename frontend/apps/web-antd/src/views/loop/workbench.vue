@@ -1329,6 +1329,27 @@ function riskLevelColor(level?: null | string): string {
   return 'default';
 }
 
+/** R5 验证卡：Tracker 状态颜色映射 */
+function trackerStatusColor(status?: null | string): string {
+  if (!status) return 'default';
+  const upper = status.toUpperCase();
+  if (upper === 'CLOSED') return 'green';
+  if (upper === 'VERIFYING') return 'blue';
+  if (upper === 'IN_PROGRESS') return 'processing';
+  if (upper === 'REOPENED') return 'orange';
+  if (upper === 'IGNORED') return 'default';
+  return 'default';
+}
+
+/** R5 验证卡：验证结论颜色映射 */
+function effectConclusionColor(conclusion?: null | string): string {
+  if (!conclusion) return 'default';
+  const upper = conclusion.toUpperCase();
+  if (upper === 'IMPROVED') return 'green';
+  if (upper === 'DETERIORATED') return 'red';
+  return 'default';
+}
+
 /** R5 整定卡：G(s) 传递函数格式化（FOPDT / SOPDT） */
 function transferFunctionText(
   params?: null | { K?: null | number; T1?: null | number; T2?: null | number; tau?: null | number; theta?: null | number },
@@ -2191,9 +2212,88 @@ const stageLabelMap: Record<string, string> = {
                   </div>
                 </div>
               </div>
-            </section>
 
-            <!-- ===== R6 验证对比条（A/B 窗口效果对比，默认收起） ===== -->
+              <!-- ===== 验证卡（第四张：闭环验证状态） ===== -->
+              <div class="wb-r5__card wb-r5__card--verify">
+                <div class="wb-r5__card-header">
+                  <span class="wb-r5__card-title">验证</span>
+                  <span class="wb-r5__card-meta">
+                    {{
+                      summary?.trackerTimeline?.effectVerifiedAt
+                        ? formatTime(summary.trackerTimeline.effectVerifiedAt)
+                        : summary?.trackerTimeline?.createdAt
+                          ? formatTime(summary.trackerTimeline.createdAt)
+                          : '—'
+                    }}
+                  </span>
+                  <a
+                    v-if="summary?.trackerTimeline?.trackerId"
+                    class="wb-r5__card-link"
+                    @click="handleTrackerViewDetail(summary.trackerTimeline.trackerId)"
+                  >完整记录 →</a>
+                </div>
+                <div class="wb-r5__verify-body">
+                  <template v-if="summary?.trackerTimeline">
+                    <div class="wb-r5__tune-rows">
+                      <div class="wb-r5__tune-row">
+                        <span class="wb-r5__tune-label">Tracker 状态</span>
+                        <span class="wb-r5__tune-val">
+                          <Tag
+                            :color="trackerStatusColor(summary.trackerTimeline.actionStatus)"
+                            class="!text-[10px] !leading-none !px-1.5 !py-0"
+                          >{{ summary.trackerTimeline.actionStatus }}</Tag>
+                        </span>
+                      </div>
+                      <div class="wb-r5__tune-row">
+                        <span class="wb-r5__tune-label">验证结论</span>
+                        <span class="wb-r5__tune-val">
+                          <Tag
+                            v-if="summary.trackerTimeline.effectCompare?.conclusion"
+                            :color="effectConclusionColor(summary.trackerTimeline.effectCompare.conclusion)"
+                            class="!text-[10px] !leading-none !px-1.5 !py-0"
+                          >{{ summary.trackerTimeline.effectCompare.conclusionLabel ?? summary.trackerTimeline.effectCompare.conclusion }}</Tag>
+                          <span v-else>—</span>
+                        </span>
+                      </div>
+                      <div class="wb-r5__tune-row">
+                        <span class="wb-r5__tune-label">评分变化</span>
+                        <span class="wb-r5__tune-val">
+                          <template v-if="summary.trackerTimeline.effectCompare?.scoreChange">
+                            {{ summary.trackerTimeline.effectCompare.scoreChange.before ?? '—' }}
+                            → {{ summary.trackerTimeline.effectCompare.scoreChange.after ?? '—' }}
+                            <span
+                              v-if="summary.trackerTimeline.effectCompare.scoreChange.change != null"
+                              :style="{ color: summary.trackerTimeline.effectCompare.scoreChange.improved ? '#1a7f4b' : '#c23434' }"
+                            >({{ summary.trackerTimeline.effectCompare.scoreChange.change > 0 ? '+' : '' }}{{ summary.trackerTimeline.effectCompare.scoreChange.change }})</span>
+                          </template>
+                          <span v-else>—</span>
+                        </span>
+                      </div>
+                      <div class="wb-r5__tune-row">
+                        <span class="wb-r5__tune-label">实施时间</span>
+                        <span class="wb-r5__tune-val">{{
+                          summary.trackerTimeline.implementedAt
+                            ? formatTime(summary.trackerTimeline.implementedAt)
+                            : '—'
+                        }}</span>
+                      </div>
+                      <div class="wb-r5__tune-row">
+                        <span class="wb-r5__tune-label">超期</span>
+                        <span class="wb-r5__tune-val">
+                          <Tag
+                            v-if="summary.trackerTimeline.isOverdue"
+                            color="red"
+                            class="!text-[10px] !leading-none !px-1.5 !py-0"
+                          >超 {{ summary.trackerTimeline.overdueHours ?? 0 }}h</Tag>
+                          <span v-else style="color: hsl(var(--foreground) / 45%)">否</span>
+                        </span>
+                      </div>
+                    </div>
+                  </template>
+                  <div v-else class="wb-r5__empty-mini">暂无验证数据</div>
+                </div>
+              </div>
+            </section>
             <section
               v-if="summary?.trackerTimeline?.effectCompare"
               class="wb-r6"
@@ -3152,6 +3252,15 @@ const stageLabelMap: Record<string, string> = {
   border-top: 1px dashed hsl(var(--border) / 40%);
 }
 
+/* 验证卡 */
+.wb-r5__verify-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px 6px;
+}
+
 .wb-r5__empty-mini {
   display: flex;
   flex: 1;
@@ -3173,7 +3282,6 @@ const stageLabelMap: Record<string, string> = {
   flex-direction: column;
   gap: 4px;
   min-height: 0;
-  overflow-y: auto;
 }
 
 .wb-decision__dock {
@@ -3186,6 +3294,8 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-decision__attention {
   flex: 0 0 auto;
+  max-height: 120px;
+  overflow: hidden;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 4px;
@@ -3195,7 +3305,7 @@ const stageLabelMap: Record<string, string> = {
   display: flex;
   flex: 1;
   flex-direction: column;
-  min-height: 100px;
+  min-height: 200px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 4px;
