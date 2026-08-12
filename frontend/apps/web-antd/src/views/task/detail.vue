@@ -148,7 +148,7 @@ async function handleMarkRead(notification: TaskApi.TaskNotification) {
 }
 
 function handleBack() {
-  router.push('/tasks');
+  router.push('/metric/tasks');
 }
 
 /** 工具栏刷新：重载任务详情与通知 */

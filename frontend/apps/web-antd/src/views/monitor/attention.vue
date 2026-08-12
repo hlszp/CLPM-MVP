@@ -134,6 +134,7 @@ const lastRefresh = ref('');
 
 const query = reactive({
   plantNodeId: undefined as string | undefined,
+  loopId: undefined as string | undefined,
   source: [] as MonitorApi.AttentionSource[],
   priority: [] as MonitorApi.AttentionPriority[],
   status: [] as MonitorApi.AttentionStatus[],
@@ -266,6 +267,7 @@ async function loadData() {
   try {
     const res = await getAttentionListApi({
       plantNodeId: query.plantNodeId || undefined,
+      loopId: query.loopId || undefined,
       source: query.source.length > 0 ? query.source : undefined,
       priority: query.priority.length > 0 ? query.priority : undefined,
       status: query.status.length > 0 ? query.status : undefined,
@@ -317,6 +319,7 @@ function handleResetFilters() {
   query.priority = [];
   query.status = [];
   query.keyword = '';
+  query.loopId = undefined;
   query.page = 1;
   loadData();
 }
@@ -480,7 +483,7 @@ function goToAlertHistory() {
   router.push({
     path: '/monitor/alerts',
     query: query.source.includes('ALERT')
-      ? { loopId: query.plantNodeId || undefined }
+      ? { loopId: query.loopId || undefined }
       : {},
   });
 }
@@ -498,12 +501,16 @@ const { toolbarItems } = usePageToolbar(() => ({
   help: { onClick: handleHelp },
 }));
 
-// ===== 深链接：?eventId= 自动打开目标详情；?source= 初始筛选 =====
+// ===== 深链接：?eventId= 自动打开目标详情；?source= 初始筛选；?loopId= 按回路筛选 =====
 function applyUrlContext() {
   const sourceParam = route.query.source as string | undefined;
   const eventIdParam = route.query.eventId as string | undefined;
+  const loopIdParam = route.query.loopId as string | undefined;
   if (sourceParam && SOURCE_SET.has(sourceParam)) {
     query.source = [sourceParam as MonitorApi.AttentionSource];
+  }
+  if (loopIdParam) {
+    query.loopId = loopIdParam;
   }
   return eventIdParam;
 }
@@ -531,6 +538,8 @@ watch(
   (q) => {
     const newSource = q.source as string | undefined;
     const newEventId = q.eventId as string | undefined;
+    const newLoopId = q.loopId as string | undefined;
+    let needReload = false;
     if (
       newSource &&
       SOURCE_SET.has(newSource) &&
@@ -538,6 +547,14 @@ watch(
     ) {
       query.source = [newSource as MonitorApi.AttentionSource];
       query.page = 1;
+      needReload = true;
+    }
+    if ((newLoopId ?? undefined) !== (query.loopId ?? undefined)) {
+      query.loopId = newLoopId;
+      query.page = 1;
+      needReload = true;
+    }
+    if (needReload) {
       loadData().then(() => {
         if (newEventId) tryOpenDetailByEventId(newEventId);
       });
