@@ -38,6 +38,12 @@ import {
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePolling } from '#/composables/use-polling';
+import {
+  statusTokenToAntdColor,
+  TASK_STATUS_LABEL,
+  TASK_STATUS_TO_STATUS,
+} from '#/constants/clpm-ui';
+import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
@@ -57,22 +63,11 @@ const pageSize = ref(20);
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 
-// ============ 状态映射 ============
-const statusColorMap: Record<string, string> = {
-  PENDING: 'default',
-  RUNNING: 'processing',
-  SUCCESS: 'success',
-  FAILED: 'error',
-  CANCELLED: 'warning',
-};
+// ============ 状态映射（P2-01：收敛至 constants/clpm-ui.ts）============
+const statusColorMap = (status: string) =>
+  statusTokenToAntdColor(TASK_STATUS_TO_STATUS[status] ?? 'neutral');
 
-const statusTextMap: Record<string, string> = {
-  PENDING: '待执行',
-  RUNNING: '执行中',
-  SUCCESS: '成功',
-  FAILED: '失败',
-  CANCELLED: '已取消',
-};
+const statusTextMap = TASK_STATUS_LABEL;
 
 const taskTypeTextMap: Record<string, string> = {
   BACKFILL: '手动评估',
@@ -108,7 +103,18 @@ const dangerTarget = computed(() => {
 
 const dangerImpact = computed(() => {
   if (dangerAction.value === 'batch-delete') {
-    return `将删除 ${selectedRowKeys.value.length} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
+    // P3-04：批量删除前预提示不可删除项（非终态任务不可删除）
+    const selected = selectedRowKeys.value.length;
+    const nonTerminal = taskList.value.filter(
+      (t) =>
+        selectedRowKeys.value.includes(t.taskId) &&
+        !['CANCELLED', 'FAILED', 'SUCCESS'].includes(t.status),
+    ).length;
+    const deletable = selected - nonTerminal;
+    if (nonTerminal > 0) {
+      return `已选中 ${selected} 个任务，其中 ${nonTerminal} 个为非终态（执行中/待执行）不可删除，将删除 ${deletable} 个终态任务；不影响已写入的 KPI 快照`;
+    }
+    return `将删除 ${selected} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
   }
   const t = dangerTask.value;
   if (!t) return '';
@@ -302,8 +308,6 @@ async function loadList() {
 }
 
 // ============ 自动刷新（polling 活跃任务） ============
-const POLLING_INTERVAL = 5000;
-
 function hasActiveTask(): boolean {
   return taskList.value.some(
     (t) => t.status === 'RUNNING' || t.status === 'PENDING',
@@ -320,7 +324,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
       stopPolling();
     }
   },
-  { interval: POLLING_INTERVAL },
+  { interval: TASK_POLLING_INTERVAL },
 );
 
 function updatePolling() {
@@ -386,6 +390,13 @@ function getTaskTitle(record: TaskApi.TaskItem): string {
 }
 
 // ============ 生命周期 ============
+/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+function refresh() {
+  return loadList();
+}
+
+defineExpose({ refresh });
+
 onMounted(() => {
   loadList();
 });
@@ -449,7 +460,10 @@ onUnmounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && taskList.length === 0"
+      empty-reason="暂无自动评估任务记录。点击「触发标准评估」可对全部回路执行标准 KPI 评估"
+      empty-action-text="触发标准评估"
       @retry="loadList"
+      @empty-action="handleTriggerStandard"
     >
       <Table
         :columns="columns"
@@ -506,7 +520,7 @@ onUnmounted(() => {
             </span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <Tag :color="statusColorMap[record.status]">
+            <Tag :color="statusColorMap(record.status)">
               {{ statusTextMap[record.status] || record.status }}
             </Tag>
           </template>
@@ -600,7 +614,7 @@ onUnmounted(() => {
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">评估状态</span>
-            <Tag :color="statusColorMap[selectedTask.status]">
+            <Tag :color="statusColorMap(selectedTask.status)">
               {{ statusTextMap[selectedTask.status] || selectedTask.status }}
             </Tag>
           </div>

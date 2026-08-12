@@ -17,6 +17,10 @@ from uuid import uuid4
 os.environ.setdefault("JWT_SECRET_KEY", "ci-test-secret-key-at-least-32-characters-long!!!")
 os.environ.setdefault("DEBUG", "true")
 
+# CLPM 退出钩子防护：pytest 进程结束时绝对不能对宿主机运行的同项目 celery
+# 执行真实的 SIGTERM/SIGKILL。这是主防线，argv 级 token 判断为次防线。
+os.environ.setdefault("CLPM_SKIP_EXIT_HOOKS", "1")
+
 import pytest
 from fastapi.testclient import TestClient
 

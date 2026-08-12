@@ -1615,6 +1615,38 @@ async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
     avg_fitting = avg_result.scalar()
     avg_fitting_score = round(float(avg_fitting), 2) if avg_fitting else None
 
+    # V62-P2-22：风险等级统计（risk_assessment JSON -> riskLevel GROUP BY）
+    # 基于 risk_assessment->>'riskLevel'；仅统计已生成风险评估的记录。
+    risk_level_col = TuningRecord.risk_assessment["riskLevel"].as_string()
+    risk_result = await db.execute(
+        select(risk_level_col, func.count())
+        .select_from(TuningRecord)
+        .where(TuningRecord.risk_assessment.isnot(None))
+        .group_by(risk_level_col)
+    )
+    by_risk_raw: dict[str, int] = {
+        str(row[0]): int(row[1]) for row in risk_result.all() if row[0] is not None
+    }
+    risk_high = by_risk_raw.get("HIGH", 0)
+    risk_medium = by_risk_raw.get("MEDIUM", 0)
+    risk_low = by_risk_raw.get("LOW", 0)
+    risk_total = risk_high + risk_medium + risk_low
+    risk_summary = {
+        "high": risk_high,
+        "medium": risk_medium,
+        "low": risk_low,
+        "total": risk_total,
+        "calculated": risk_total > 0,
+    }
+
+    # V62-P2-22：待整定数（DRAFT/RUNNING/PENDING/IDENTIFIED 汇总，后端统一口径）
+    pending_count = (
+        by_status.get("DRAFT", 0)
+        + by_status.get("RUNNING", 0)
+        + by_status.get("PENDING", 0)
+        + by_status.get("IDENTIFIED", 0)
+    )
+
     # 最近 10 条任务
     recent_result = await db.execute(
         select(TuningRecord, LoopLedger.tag_name)
@@ -1630,6 +1662,8 @@ async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
         "byStatus": by_status,
         "avgFittingScore": avg_fitting_score,
         "recentTasks": recent_tasks,
+        "riskSummary": risk_summary,
+        "pendingCount": pending_count,
     }
 
 

@@ -68,6 +68,7 @@ from app.schemas.diagnosis import (
     DiagnosisTagSchema,
     DiagnosisTaskDetail,
     DiagnosisTaskListData,
+    DiagnosisTaskStats,
     DiagnosisThresholdRollbackRequest,
     DiagnosisThresholdVersionItem,
     DiagnosisTriggerData,
@@ -94,6 +95,7 @@ from app.services.diagnosis import (
     get_diagnosis_analytics,
     get_diagnosis_detail,
     get_diagnosis_task_detail,
+    get_diagnosis_task_stats,
     get_diagnosis_visualization,
     list_algorithm_meta,
     list_diagnosis,
@@ -678,12 +680,18 @@ async def list_tasks_endpoint(
     includeArchived: bool = Query(
         False, description="是否包含已归档任务（SUCCESS 完成即自动归档）"
     ),
+    archivedOnly: bool = Query(
+        False,
+        description=(
+            "仅返回已归档任务（P2-16 Tab 化）；与 includeArchived 同时为 True 时 archivedOnly 优先"
+        ),
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
-    """诊断任务列表（默认仅未归档；includeArchived=true 时含历史归档任务）。
+    """诊断任务列表（默认仅未归档；includeArchived 含归档；archivedOnly 仅已归档）。
 
     设计依据：PRD §5.6 / IDS §2.4 — GET /api/v1/diagnosis/tasks
     """
@@ -694,9 +702,25 @@ async def list_tasks_endpoint(
         loop_id=loopId,
         plant_node_id=plantNodeId,
         include_archived=includeArchived,
+        archived_only=archivedOnly,
         page=page,
         page_size=pageSize,
     )
+    return success(data=data)
+
+
+@router.get("/tasks/stats", response_model=ApiResponse[DiagnosisTaskStats])
+async def get_task_stats_endpoint(
+    loopId: str | None = Query(None, description="按回路 ID 筛选"),
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
+) -> dict:
+    """诊断任务 Tab 计数（进行中/已完成/已归档三类）。
+
+    P2-16-B2：诊断任务页改为 Tab 结构后，用于在 Tab 标题显示 Badge 数量。
+    """
+    data = await get_diagnosis_task_stats(db=db, loop_id=loopId, plant_node_id=plantNodeId)
     return success(data=data)
 
 
@@ -934,15 +958,42 @@ async def get_recommendations_endpoint(
 async def generate_report_endpoint(
     loop_id: uuid.UUID,
     body: DiagnosisReportRequest | None = None,
+    async_mode: bool = Query(
+        False,
+        alias="async",
+        description="V62-P3-33：true=异步模式，立即返回 taskId，前端轮询 /tasks/{taskId}",
+    ),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
-) -> Response:
+):
     """生成并下载 PDF 建议书（SVC-12）。
 
     内容：回路信息 + 诊断结果 + 性能指标 + 可能原因 + 解决方案推荐 + 生成时间。
-    返回 PDF 文件 bytes。
+    默认同步返回 PDF bytes；``?async=true`` 时异步提交 TaskTracker，返回
+    ``{taskId}``，前端用 ``GET /api/v1/tasks/{taskId}`` 轮询，SUCCESS 时
+    通过 ``/api/v1/tasks/{taskId}/download`` 下载。
     """
     loop_id_str = str(loop_id)
+    if async_mode:
+        from app.schemas.task import TaskType
+        from app.services.task_tracker import create_task
+
+        tracker_task_id = await create_task(
+            TaskType.REPORT,
+            created_by=user.username,
+            created_by_id=str(user.id),
+            title=f"诊断建议书导出：{loop_id_str}",
+        )
+        from app.tasks.report_generator import generate_diagnosis_pdf_task
+
+        generate_diagnosis_pdf_task.delay(
+            tracker_task_id=tracker_task_id,
+            loop_id=loop_id_str,
+            variant="diagnosis_report",
+            tag_codes=body.tag_codes if body and body.tag_codes else None,
+        )
+        return success(data={"taskId": tracker_task_id}, message="导出任务已提交")
+
     # 1. 获取诊断详情作为快照数据
     snapshot_data = await get_diagnosis_detail(db=db, loop_id=loop_id_str)
 
@@ -1073,13 +1124,38 @@ async def get_loop_timeline_endpoint(
 @tracker_router.post("/{loop_id}/export")
 async def export_tracker_endpoint(
     loop_id: uuid.UUID,
+    async_mode: bool = Query(
+        False,
+        alias="async",
+        description="V62-P3-33：true=异步提交，返回 {taskId}，避免大回路 PDF 超时",
+    ),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("IC_ENGINEER", "ADMIN", "PE_ENGINEER")),
-) -> Response:
-    """导出诊断建议书 PDF（同步生成，直接下载）。
+):
+    """导出诊断建议书 PDF（默认同步直接下载，?async=true 走 TaskTracker）。
 
-    复用 SVC-12 报告生成器，文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf
+    复用 SVC-12 报告生成器，文件名格式：CLPM-诊断建议书-[位号]-[日期].pdf。
     """
+    loop_id_str = str(loop_id)
+    if async_mode:
+        from app.schemas.task import TaskType
+        from app.services.task_tracker import create_task
+
+        tracker_task_id = await create_task(
+            TaskType.REPORT,
+            created_by=user.username,
+            created_by_id=str(user.id),
+            title=f"整改建议书导出：{loop_id_str}",
+        )
+        from app.tasks.report_generator import generate_diagnosis_pdf_task
+
+        generate_diagnosis_pdf_task.delay(
+            tracker_task_id=tracker_task_id,
+            loop_id=loop_id_str,
+            variant="tracker_export",
+        )
+        return success(data={"taskId": tracker_task_id}, message="导出任务已提交")
+
     pdf_bytes, filename = await export_tracker_pdf(db=db, loop_id=str(loop_id))
     quoted_filename = quote(filename)
     return Response(

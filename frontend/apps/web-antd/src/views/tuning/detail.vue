@@ -20,7 +20,7 @@ import { useRoute } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { Alert, message, Tag } from 'ant-design-vue';
+import { Alert, message, Tag, Tooltip } from 'ant-design-vue';
 
 import {
   ClpmLoopContextHeader,
@@ -103,6 +103,16 @@ function isAnchorDisabled(anchor: number): boolean {
     (anchor === 2 && !canAccessSimulation.value) ||
     (anchor === 3 && !canAccessConfirm.value)
   );
+}
+
+/** P2-19：disabled 锚点的门禁前置条件说明（供 Tooltip 展示） */
+function anchorGateHint(anchor: number): string {
+  if (anchor === 1 && !canAccessPid.value) return '请先完成「过程辨识」步骤';
+  if (anchor === 2 && !canAccessSimulation.value)
+    return '请先完成「PID 推荐」步骤，生成候选 PID 参数';
+  if (anchor === 3 && !canAccessConfirm.value)
+    return '请先完成「闭环仿真」步骤';
+  return '';
 }
 
 /** 锚点切换（受门禁约束） */
@@ -221,45 +231,48 @@ watch(
         />
       </template>
       <template #right>
-        <!-- 辨识可信度徽章 -->
-        <div
-          v-if="identifyConfidence"
-          class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
-          :style="{
-            borderColor: themeColors.SUCCESS,
-            background: `${themeColors.SUCCESS}10`,
-          }"
-        >
-          <IconifyIcon
-            icon="ant-design:safety-certificate-outlined"
-            :size="16"
-          />
-          <span :style="{ color: themeColors.NEUTRAL }">可信度</span>
-          <Tag color="success" class="!m-0">
-            {{ identifyConfidence.level }}
-          </Tag>
-          <span
-            v-if="identifyConfidence.score !== null"
-            class="text-xs"
-            :style="{ color: themeColors.NEUTRAL }"
+        <!-- P3-34：徽章容器 flex-wrap 防窄屏折行错位 -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 辨识可信度徽章 -->
+          <div
+            v-if="identifyConfidence"
+            class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
+            :style="{
+              borderColor: themeColors.SUCCESS,
+              background: `${themeColors.SUCCESS}10`,
+            }"
           >
-            拟合 {{ Number(identifyConfidence.score).toFixed(2) }}
-          </span>
-        </div>
-        <!-- 当前 PID 徽章 -->
-        <div
-          v-if="currentPid"
-          class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
-          :style="{
-            borderColor: themeColors.INFO,
-            background: `${themeColors.INFO}10`,
-          }"
-        >
-          <IconifyIcon icon="ant-design:control-outlined" :size="16" />
-          <span :style="{ color: themeColors.NEUTRAL }">推荐 PID</span>
-          <span class="font-mono text-xs">
-            P={{ currentPid.kp }} I={{ currentPid.ti }} D={{ currentPid.td }}
-          </span>
+            <IconifyIcon
+              icon="ant-design:safety-certificate-outlined"
+              :size="16"
+            />
+            <span :style="{ color: themeColors.NEUTRAL }">可信度</span>
+            <Tag color="success" class="!m-0">
+              {{ identifyConfidence.level }}
+            </Tag>
+            <span
+              v-if="identifyConfidence.score !== null"
+              class="text-xs"
+              :style="{ color: themeColors.NEUTRAL }"
+            >
+              拟合 {{ Number(identifyConfidence.score).toFixed(2) }}
+            </span>
+          </div>
+          <!-- 当前 PID 徽章 -->
+          <div
+            v-if="currentPid"
+            class="flex items-center gap-2 rounded border px-3 py-1 text-sm"
+            :style="{
+              borderColor: themeColors.INFO,
+              background: `${themeColors.INFO}10`,
+            }"
+          >
+            <IconifyIcon icon="ant-design:control-outlined" :size="16" />
+            <span :style="{ color: themeColors.NEUTRAL }">推荐 PID</span>
+            <span class="font-mono text-xs">
+              P={{ currentPid.kp }} I={{ currentPid.ti }} D={{ currentPid.td }}
+            </span>
+          </div>
         </div>
       </template>
       <template #actions>
@@ -270,32 +283,41 @@ watch(
     <!-- 锚点导航栏 -->
     <div class="anchor-nav sticky top-0 z-10 border-b bg-content px-4 py-2">
       <div class="flex items-center gap-2">
-        <div
+        <Tooltip
           v-for="anchor in ANCHORS"
           :key="anchor.key"
-          class="anchor-item"
-          :class="{
-            'anchor-item--active': activeAnchor === anchor.key,
-            'anchor-item--disabled': isAnchorDisabled(anchor.key),
-          }"
-          :role="isAnchorDisabled(anchor.key) ? undefined : 'button'"
-          :tabindex="isAnchorDisabled(anchor.key) ? -1 : 0"
-          :aria-pressed="activeAnchor === anchor.key"
-          @click="handleAnchorChange(anchor.key)"
-          @keydown.enter="handleAnchorChange(anchor.key)"
-          @keydown.space.prevent="handleAnchorChange(anchor.key)"
+          :title="
+            isAnchorDisabled(anchor.key)
+              ? anchorGateHint(anchor.key)
+              : undefined
+          "
+          :mouse-enter-delay="0.3"
         >
-          <div class="anchor-index">{{ anchor.key + 1 }}</div>
-          <div class="anchor-body">
-            <div class="anchor-title">{{ anchor.title }}</div>
-            <div
-              class="anchor-subtitle"
-              :style="{ color: themeColors.NEUTRAL }"
-            >
-              {{ anchor.subtitle }}
+          <div
+            class="anchor-item"
+            :class="{
+              'anchor-item--active': activeAnchor === anchor.key,
+              'anchor-item--disabled': isAnchorDisabled(anchor.key),
+            }"
+            :role="isAnchorDisabled(anchor.key) ? undefined : 'button'"
+            :tabindex="isAnchorDisabled(anchor.key) ? -1 : 0"
+            :aria-pressed="activeAnchor === anchor.key"
+            @click="handleAnchorChange(anchor.key)"
+            @keydown.enter="handleAnchorChange(anchor.key)"
+            @keydown.space.prevent="handleAnchorChange(anchor.key)"
+          >
+            <div class="anchor-index">{{ anchor.key + 1 }}</div>
+            <div class="anchor-body">
+              <div class="anchor-title">{{ anchor.title }}</div>
+              <div
+                class="anchor-subtitle"
+                :style="{ color: themeColors.NEUTRAL }"
+              >
+                {{ anchor.subtitle }}
+              </div>
             </div>
           </div>
-        </div>
+        </Tooltip>
       </div>
     </div>
 
@@ -322,6 +344,7 @@ watch(
 <style scoped>
 .anchor-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
 }
 
@@ -347,8 +370,22 @@ watch(
 }
 
 .anchor-item--active {
+  position: relative;
   background: hsl(var(--primary) / 8%);
   border-color: hsl(var(--primary));
+}
+
+/* P3-35：active 锚点增加左侧色条增强视觉定位 */
+.anchor-item--active::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 60%;
+  content: '';
+  background: hsl(var(--primary));
+  border-radius: 0 2px 2px 0;
+  transform: translateY(-50%);
 }
 
 .anchor-item--disabled {

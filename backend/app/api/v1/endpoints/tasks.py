@@ -429,6 +429,9 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         tsEnd=_to_str_or_none(data.get("ts_end")),
         loopIds=loop_ids,
         plantNodeIds=plant_node_ids,
+        # V62-P3-33：报告导出任务产物
+        fileName=_to_str_or_none(data.get("file_name")),
+        resultUrl=_to_str_or_none(data.get("result_url")),
     )
 
 
@@ -1502,6 +1505,96 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
         "dataLineage": snapshot.data_lineage,
         "createdAt": (snapshot.created_at.isoformat() if snapshot.created_at else None),
     }
+
+
+# ---------------------------------------------------------------------------
+# V62-P3-33：异步导出产物下载（权限=创建人 or ADMIN，带文件名校验）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{task_id}/download")
+async def download_task_artifact_endpoint(
+    task_id: str,
+    user: SysUser = Depends(get_current_user),
+):
+    """下载任务产生的文件产物（如异步导出 PDF）。
+
+    访问控制：创建人自己或 ADMIN 角色可下载；其他用户 403。
+    过期与路径安全：
+    - 任务必须存在且 status ∈ {SUCCESS,FAILED}（RUNNING 时返回 425 Too Early）
+    - file_path 必须存在于 Redis Hash 中，且文件真实存在
+    - 不允许路径包含 ``../`` 或以 ``/`` 开头的文件名（防止 ../../etc/shadow 攻击）
+    - Content-Disposition 使用 file_name 字段作为保存名（UTF-8 兼容）
+    """
+    from urllib.parse import quote
+
+    from app.core.exceptions import BizError
+    from app.services.task_tracker import get_task
+
+    data = await get_task(task_id)
+    if data is None:
+        raise BizError(
+            code="ERR_TASK_NOT_FOUND",
+            message=f"任务不存在或已过期: {task_id}",
+            status_code=404,
+        )
+
+    # 访问控制：创建人 or ADMIN
+    is_admin = user.role == "ADMIN"
+    is_owner = data.get("created_by") == user.username
+    if not (is_admin or is_owner):
+        raise BizError(
+            code="ERR_FORBIDDEN",
+            message="无权下载该任务产物",
+            status_code=403,
+        )
+
+    status = data.get("status", "")
+    if status in {"PENDING", "RUNNING"}:
+        raise BizError(
+            code="ERR_TASK_NOT_COMPLETED",
+            message=f"任务尚未完成: {status}",
+            status_code=425,
+        )
+
+    file_path = (data.get("file_path") or "").strip()
+    file_name = (data.get("file_name") or f"task_{task_id}.bin").strip()
+    if not file_path:
+        raise BizError(
+            code="ERR_FILE_MISSING",
+            message="任务未产生可下载产物",
+            status_code=404,
+        )
+
+    # 路径安全：file_path 是后端写入绝对路径，前端无法控制
+    # 这里只校验 file_name，防止响应头下载时产生路径穿越
+    safe_name = file_name.replace("/", "_").replace("\\", "_").lstrip(".")
+    if not safe_name:
+        safe_name = f"task_{task_id}.bin"
+
+    import os
+
+    if not os.path.isfile(file_path):
+        raise BizError(
+            code="ERR_FILE_MISSING",
+            message="文件已被清理或不存在，请重新发起导出",
+            status_code=410,
+        )
+
+    from fastapi.responses import FileResponse
+
+    return FileResponse(
+        path=file_path,
+        media_type="application/octet-stream",
+        filename=safe_name,
+        content_disposition_type="attachment",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="task-{task_id[:8]}.bin"; '
+                f"filename*=UTF-8''{quote(safe_name)}"
+            )
+        },
+    )
 
 
 __all__ = ["router"]

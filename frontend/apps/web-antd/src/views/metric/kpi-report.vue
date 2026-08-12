@@ -16,6 +16,7 @@ import type { TableColumnsType } from 'ant-design-vue';
 import type { DashboardApi } from '#/api/dashboard';
 import type { ConfidenceLevel, KpiSnapshotItem, MetricApi } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
+import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
@@ -23,9 +24,12 @@ import { Page } from '@vben/common-ui';
 
 import {
   DatePicker,
+  Dropdown,
+  Menu,
   message,
   RadioGroup,
   Select,
+  Skeleton,
   Table,
   Tag,
 } from 'ant-design-vue';
@@ -41,9 +45,12 @@ import {
   ClpmDataCanvas,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
+import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 
@@ -400,8 +407,119 @@ const ratingDistribution = computed<Record<number, number>>(() => {
   return dist;
 });
 
+// ============ 列设置（IA 整改 P2-10：综合默认显10列，回路默认显9列，可自定义）============
+
+/** 综合报表：14 列默认保留 10 列可见（隐藏饱和率/振荡率/数据不足） */
+const COMPREHENSIVE_COLS: ColumnConfig[] = [
+  { key: 'nodeName', label: '节点', visible: true },
+  { key: 'snapshotTime', label: '数据时间', visible: true },
+  { key: 'rating', label: '性能等级', visible: true },
+  { key: 'score', label: '性能评分', visible: true },
+  { key: 'accuracyRate', label: '准确率', visible: true },
+  { key: 'fastRate', label: '快速率', visible: true },
+  { key: 'steadyRate', label: '平稳率', visible: true },
+  { key: 'autoModeRate', label: '自控率', visible: true },
+  { key: 'effectiveAutoRate', label: '有效自控率', visible: true },
+  { key: 'goodValueRate', label: '好值率', visible: true },
+  { key: 'saturationRate', label: '饱和率', visible: false },
+  { key: 'oscillationRate', label: '振荡率', visible: false },
+  { key: 'evaluatedLoops', label: '参评回路数', visible: true },
+  { key: 'inconclusiveLoops', label: '数据不足回路数', visible: false },
+];
+
+/** 回路报表：18 列默认保留 9 列可见（其余默认隐藏） */
+const LOOP_COLS: ColumnConfig[] = [
+  { key: 'index', label: '序号', visible: true },
+  { key: 'loopTagName', label: '回路编号', visible: true },
+  { key: 'loopName', label: '回路名称', visible: true },
+  { key: 'rating', label: '性能等级', visible: true },
+  { key: 'score', label: '性能评分', visible: true },
+  { key: 'accuracyRate', label: '准确率', visible: true },
+  { key: 'fastRate', label: '快速率', visible: false },
+  { key: 'steadyRate', label: '平稳率', visible: true },
+  { key: 'autoModeRate', label: '自控率', visible: false },
+  { key: 'effectiveAutoRate', label: '有效自控率', visible: false },
+  { key: 'saturationRate', label: '饱和率', visible: false },
+  { key: 'oscillationRate', label: '振荡率', visible: false },
+  { key: 'goodValueRate', label: '好值率', visible: false },
+  { key: 'idealSettlingTime', label: '理想稳定时间', visible: false },
+  { key: 'settlingTime', label: '实际稳定时间', visible: false },
+  { key: 'outputTravelIndex', label: '输出跳变率', visible: false },
+  { key: 'stictionIndex', label: '阀门粘滞', visible: false },
+  { key: 'confidenceLevel', label: '可信度', visible: true },
+  { key: 'evalCount', label: '评估次数', visible: false },
+];
+
+const compPrefs = usePagePreference('kpi-report-comprehensive');
+const loopPrefs = usePagePreference('kpi-report-loop');
+
+const comprehensiveColumnConfigs = ref<ColumnConfig[]>(
+  compPrefs.preferences.value.columns &&
+    compPrefs.preferences.value.columns.length > 0
+    ? compPrefs.preferences.value.columns
+    : COMPREHENSIVE_COLS,
+);
+const loopColumnConfigs = ref<ColumnConfig[]>(
+  loopPrefs.preferences.value.columns &&
+    loopPrefs.preferences.value.columns.length > 0
+    ? loopPrefs.preferences.value.columns
+    : LOOP_COLS,
+);
+
+const currentColumnConfigs = computed(() =>
+  reportType.value === 'comprehensive'
+    ? comprehensiveColumnConfigs.value
+    : loopColumnConfigs.value,
+);
+
+function handleUpdateColumns(cols: ColumnConfig[]) {
+  if (reportType.value === 'comprehensive') {
+    comprehensiveColumnConfigs.value = cols;
+    compPrefs.updateColumns(cols);
+  } else {
+    loopColumnConfigs.value = cols;
+    loopPrefs.updateColumns(cols);
+  }
+}
+
+function handleResetColumns() {
+  if (reportType.value === 'comprehensive') {
+    comprehensiveColumnConfigs.value = [...COMPREHENSIVE_COLS];
+    compPrefs.updateColumns([...COMPREHENSIVE_COLS]);
+  } else {
+    loopColumnConfigs.value = [...LOOP_COLS];
+    loopPrefs.updateColumns([...LOOP_COLS]);
+  }
+}
+
+function getColumnKey(col: TableColumnsType[number]): string {
+  const c = col as Record<string, unknown>;
+  return (c.dataIndex as string) || (c.key as string) || '';
+}
+
+/** 根据列设置过滤并排序后的可见列 */
+function applyColumnVisibility(
+  allColumns: TableColumnsType,
+  configs: ColumnConfig[],
+): TableColumnsType {
+  const configMap = new Map(
+    configs.map((c, i) => [c.key, { visible: c.visible, order: i }]),
+  );
+  const filtered = allColumns.filter((c) => {
+    const cfg = configMap.get(getColumnKey(c));
+    return cfg ? cfg.visible : true;
+  });
+  // eslint-disable-next-line unicorn/no-array-sort
+  return [...filtered].sort((a, b) => {
+    const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
+    const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
+    return aOrder - bOrder;
+  });
+}
+
 // ============ 表格列定义 ============
-const comprehensiveColumns = computed<TableColumnsType>(() => [
+// 注：使用 `as` 类型断言而非注解，规避旧版 vue-tsc 对大型数组字面量的 TS1005 误报
+const _compCols = [
   {
     title: '节点',
     dataIndex: 'nodeName',
@@ -426,12 +544,7 @@ const comprehensiveColumns = computed<TableColumnsType>(() => [
     width: 90,
   },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
-  {
-    title: '平稳率',
-    dataIndex: 'stabilityRate',
-    key: 'steadyRate',
-    width: 90,
-  },
+  { title: '平稳率', dataIndex: 'stabilityRate', key: 'steadyRate', width: 90 },
   {
     title: '自控率',
     dataIndex: 'autoModeRate',
@@ -476,9 +589,10 @@ const comprehensiveColumns = computed<TableColumnsType>(() => [
     width: 120,
     align: 'center',
   },
-]);
+];
+const allComprehensiveColumns = _compCols as TableColumnsType;
 
-const loopColumns = computed<TableColumnsType>(() => [
+const _loopCols = [
   { title: '序号', key: 'index', width: 60, fixed: 'left' },
   {
     title: '回路编号',
@@ -505,12 +619,7 @@ const loopColumns = computed<TableColumnsType>(() => [
     width: 90,
   },
   { title: '快速率', dataIndex: 'fastRate', key: 'fastRate', width: 90 },
-  {
-    title: '平稳率',
-    dataIndex: 'steadyRate',
-    key: 'steadyRate',
-    width: 90,
-  },
+  { title: '平稳率', dataIndex: 'steadyRate', key: 'steadyRate', width: 90 },
   {
     title: '自控率',
     dataIndex: 'autoModeRate',
@@ -578,12 +687,16 @@ const loopColumns = computed<TableColumnsType>(() => [
     width: 90,
     align: 'center',
   },
-]);
+];
+const allLoopColumns = _loopCols as TableColumnsType;
 
 const currentColumns = computed(() =>
   reportType.value === 'comprehensive'
-    ? comprehensiveColumns.value
-    : loopColumns.value,
+    ? applyColumnVisibility(
+        allComprehensiveColumns,
+        comprehensiveColumnConfigs.value,
+      )
+    : applyColumnVisibility(allLoopColumns, loopColumnConfigs.value),
 );
 
 const currentData = computed(() =>
@@ -724,8 +837,8 @@ async function loadData() {
   }
 }
 
-// ============ CSV 导出 ============
-async function handleExport() {
+// ============ 导出（P3-23：支持 CSV/Excel 双格式） ============
+async function handleExport(format: 'csv' | 'excel' = 'csv') {
   if (currentData.value.length === 0) {
     message.warning('当前无数据可导出');
     return;
@@ -759,27 +872,17 @@ async function handleExport() {
         return String(val);
       }),
     );
-    const csv = [headers, ...rows]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','),
-      )
-      .join('\n');
-    // UTF-8 BOM 保证 Excel 正确识别中文
-    const blob = new Blob([`\uFEFF${csv}`], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const typeLabel =
       reportType.value === 'comprehensive' ? '综合报表' : '回路报表';
     const dateStr = dayjs().format('YYYYMMDD');
-    a.download = `KPI报表_${typeLabel}_${dateStr}.csv`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    message.success('导出成功');
+    exportData({
+      filename: `KPI报表_${typeLabel}_${dateStr}`,
+      format,
+      headers,
+      rows,
+      sheetName: typeLabel,
+    });
+    message.success(`已导出 ${rows.length} 条记录`);
   } catch (error: any) {
     console.error('导出失败:', error);
     message.error(error?.message || '导出失败');
@@ -814,10 +917,10 @@ function handleHelp() {
   });
 }
 
-// ===== 统一工具栏（标准 3 工具：刷新 / 导出 / 帮助） =====
+// ===== 统一工具栏（标准 3 工具：刷新 / 列设置 / 帮助；导出用 Dropdown） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: loadData, loading: loading.value },
-  export: { onClick: handleExport, loading: exporting.value },
+  setting: {},
   help: { onClick: handleHelp },
 }));
 
@@ -890,7 +993,27 @@ onMounted(() => {
         show-search
       />
       <template #actions>
-        <ClpmStandardActions :items="toolbarItems" />
+        <ClpmStandardActions
+          :items="toolbarItems"
+          :column-configs="currentColumnConfigs"
+          @update:columns="handleUpdateColumns"
+          @reset-columns="handleResetColumns"
+        />
+        <!-- P3-23：导出 CSV/Excel 双格式 -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="ant-design:download-outlined"
+            label="导出"
+            :loading="exporting"
+            tooltip="导出当前报表数据"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
       </template>
     </ClpmPageToolbar>
 
@@ -915,7 +1038,15 @@ onMounted(() => {
           未评级 × {{ ratingDistribution[0] }}
         </Tag>
       </div>
+      <!-- P2-13/P2-15：报表切换骨架屏过渡 -->
+      <Skeleton
+        v-if="loading && currentData.length === 0"
+        active
+        :paragraph="{ rows: 8 }"
+        class="mb-4"
+      />
       <Table
+        v-show="!(loading && currentData.length === 0)"
         :columns="currentColumns"
         :data-source="currentData"
         :pagination="{

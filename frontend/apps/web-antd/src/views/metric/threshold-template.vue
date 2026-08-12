@@ -482,6 +482,15 @@ onMounted(async () => {
   await loadTemplates();
   await searchLoops();
 });
+
+/** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
+async function refresh() {
+  await loadAlgorithmMeta();
+  await loadTemplates();
+  await searchLoops();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -618,10 +627,14 @@ onMounted(async () => {
                   cancel-text="取消"
                   @confirm="applyTemplate(record.diagCode)"
                 >
+                  <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
                   <ClpmToolbarButton
                     type="link"
                     size="small"
                     :disabled="!record.loopTypeTemplate"
+                    :disabled-reason="
+                      !record.loopTypeTemplate ? '该回路无匹配模板' : ''
+                    "
                   >
                     套用模板
                   </ClpmToolbarButton>

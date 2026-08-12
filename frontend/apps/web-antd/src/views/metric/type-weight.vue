@@ -23,6 +23,7 @@ import {
   Modal,
   RadioGroup,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import { getWeightTemplatesApi, saveWeightTemplatesApi } from '#/api/metric';
@@ -256,6 +257,13 @@ function resetCurrentToDefault() {
 onMounted(() => {
   loadList();
 });
+
+/** P3-01：子组件暴露 refresh() 替代父组件 typeWeightKey 强制重建 */
+function refresh() {
+  return loadList();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -272,22 +280,28 @@ onMounted(() => {
           label="刷新"
           @click="loadList"
         />
-        <Button
-          v-permission="['ADMIN']"
-          :disabled="!allValid"
-          @click="resetCurrentToDefault"
-        >
-          重置当前为默认
-        </Button>
-        <Button
-          v-permission="['ADMIN']"
-          type="primary"
-          :loading="saving"
-          :disabled="!allValid"
-          @click="handleSave"
-        >
-          保存为新版本
-        </Button>
+        <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+        <Tooltip :title="!allValid ? '存在无效权重，请检查' : ''">
+          <Button
+            v-permission="['ADMIN']"
+            :disabled="!allValid"
+            @click="resetCurrentToDefault"
+          >
+            重置当前为默认
+          </Button>
+        </Tooltip>
+        <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+        <Tooltip :title="!allValid ? '存在无效权重，请检查' : ''">
+          <Button
+            v-permission="['ADMIN']"
+            type="primary"
+            :loading="saving"
+            :disabled="!allValid"
+            @click="handleSave"
+          >
+            保存为新版本
+          </Button>
+        </Tooltip>
       </div>
     </div>
 

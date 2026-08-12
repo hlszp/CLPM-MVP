@@ -14,7 +14,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,25 +186,70 @@ async def list_knowledge_entries(
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
-    """知识库列表查询（支持筛选+分页）。"""
+    """知识库列表查询（支持筛选+分页）。
+
+    Returns dict keys: items / total / page / pageSize / stats。
+    其中 stats 为当前筛选条件下的全局聚合（非当前页），见 TuningKnowledgeListStats。
+    """
     stmt = select(TuningKnowledgeEntry)
     count_stmt = select(func.count(TuningKnowledgeEntry.id))
+
+    # IA 整改 C-2/T-3：stats 复用完全相同的 WHERE 条件，保证 total 与 stats 维度一致
+    stats_stmt = select(
+        func.count(TuningKnowledgeEntry.id).label("total"),
+        func.count(case((TuningKnowledgeEntry.effect_verified.is_(True), 1))).label("improved"),
+        func.count(case((TuningKnowledgeEntry.effect_verified.is_(False), 1))).label(
+            "deteriorated"
+        ),
+        func.count(case((TuningKnowledgeEntry.effect_verified.is_(None), 1))).label("unverified"),
+        func.avg(TuningKnowledgeEntry.improved_count).label("avg_improved"),
+    )
 
     if loop_type:
         stmt = stmt.where(TuningKnowledgeEntry.loop_type == loop_type)
         count_stmt = count_stmt.where(TuningKnowledgeEntry.loop_type == loop_type)
+        stats_stmt = stats_stmt.where(TuningKnowledgeEntry.loop_type == loop_type)
     if diagnosis_label:
         stmt = stmt.where(TuningKnowledgeEntry.diagnosis_label == diagnosis_label)
         count_stmt = count_stmt.where(TuningKnowledgeEntry.diagnosis_label == diagnosis_label)
+        stats_stmt = stats_stmt.where(TuningKnowledgeEntry.diagnosis_label == diagnosis_label)
     if algorithm:
         stmt = stmt.where(TuningKnowledgeEntry.algorithm == algorithm)
         count_stmt = count_stmt.where(TuningKnowledgeEntry.algorithm == algorithm)
+        stats_stmt = stats_stmt.where(TuningKnowledgeEntry.algorithm == algorithm)
     if effect_verified is not None:
         stmt = stmt.where(TuningKnowledgeEntry.effect_verified == effect_verified)
         count_stmt = count_stmt.where(TuningKnowledgeEntry.effect_verified == effect_verified)
+        stats_stmt = stats_stmt.where(TuningKnowledgeEntry.effect_verified == effect_verified)
 
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
+
+    # stats 聚合一次查询拿到全部指标
+    # 用 .one() 拿到单行（聚合查询无 GROUP BY 必返回一行，即使全表空）；
+    # SQLite/PG 行为一致：count 返回 0，avg 返回 NULL。
+    stats_row = (await db.execute(stats_stmt)).one()
+    stats_total = stats_row.total or 0
+    improved = stats_row.improved or 0
+    deteriorated = stats_row.deteriorated or 0
+    unverified = stats_row.unverified or 0
+    avg_improved_raw = stats_row.avg_improved
+    # avg_improved: Decimal|None → float|None，四舍五入保留 2 位
+    if avg_improved_raw is None:
+        avg_improved = None
+    else:
+        try:
+            avg_improved = round(float(avg_improved_raw), 2)
+        except (TypeError, ValueError):
+            avg_improved = None
+
+    stats = {
+        "total": int(stats_total or 0),
+        "improvedCount": int(improved or 0),
+        "deterioratedCount": int(deteriorated or 0),
+        "unverifiedCount": int(unverified or 0),
+        "avgImprovedMetrics": avg_improved,
+    }
 
     stmt = stmt.order_by(desc(TuningKnowledgeEntry.created_at))
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
@@ -216,6 +261,7 @@ async def list_knowledge_entries(
         "total": total,
         "page": page,
         "pageSize": page_size,
+        "stats": stats,
     }
 
 

@@ -12,6 +12,12 @@
  */
 import type { LoopApi } from '#/api/loop';
 
+import {
+  IMPORTANCE_LEVEL_LABEL,
+  IMPORTANCE_LEVEL_TO_STATUS,
+  STATUS_TOKEN_TO_BADGE_CLASS,
+} from '#/constants/clpm-ui';
+
 /** 变更确认弹窗上下文类型 */
 export type ConfirmContextType = 'batch' | 'tagMapping' | 'update';
 
@@ -31,27 +37,25 @@ export function formatOpLimit(
   return String(value);
 }
 
-/** v5.3：重要等级视觉编码（ZL 语义色 — 1 级 rose / 2 级 amber / 3 级 slate） */
+/**
+ * 重要等级视觉编码（P2-01：收敛至 clpm-ui.ts 语义 token）
+ * 1 级=关键(error) / 2 级=重要(warning) / 3 级=一般(neutral)
+ */
 export const IMPORTANCE_LEVEL_TAG: Record<
   number,
   { badgeClass: string; label: string }
-> = {
-  1: {
-    label: '1 级',
-    badgeClass:
-      'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30',
-  },
-  2: {
-    label: '2 级',
-    badgeClass:
-      'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
-  },
-  3: {
-    label: '3 级',
-    badgeClass:
-      'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
-  },
-};
+> = Object.fromEntries(
+  [1, 2, 3].map((level) => {
+    const token = IMPORTANCE_LEVEL_TO_STATUS[level] ?? 'neutral';
+    return [
+      level,
+      {
+        label: IMPORTANCE_LEVEL_LABEL[level] ?? `${level} 级`,
+        badgeClass: STATUS_TOKEN_TO_BADGE_CLASS[token],
+      },
+    ];
+  }),
+);
 
 export const LOOP_TYPE_MAP: Record<
   string,

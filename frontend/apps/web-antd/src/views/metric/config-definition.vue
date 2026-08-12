@@ -198,6 +198,13 @@ function categoryLabel(cat: MetricCategory): string {
 
 /** 综合评分公式说明 */
 const compositeFormula = 'P = (A·a + F·f + S·s) / (a + f + s) × R';
+
+/** P3-01：静态 Tab 暴露空 refresh() 以保持接口一致 */
+function refresh() {
+  /* 纯静态配置，无需刷新数据 */
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>

@@ -35,7 +35,7 @@ import {
   ref,
   watch,
 } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -99,6 +99,7 @@ import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner'
 defineOptions({ name: 'MonitorLoopWorkbench' });
 
 const route = useRoute();
+const router = useRouter();
 // router 由 monitorCtx.update 内部调用 router.replace，此页面不再直接使用
 
 // ===== 请求代次保护（MW-P0-04）=====
@@ -418,6 +419,15 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
       break;
     }
   }
+}
+
+/** 跳转到诊断任务列表页，预填当前回路 ID（F-EVAL-001：诊断入口改为跳转） */
+function goToDiagnosis() {
+  if (!selectedLoopId.value) return;
+  router.push({
+    path: '/diagnosis/tasks',
+    query: { loopId: selectedLoopId.value },
+  });
 }
 
 /** summary 评分趋势的 dayTrend 类型收窄（供 DayDeltaBadge 使用） */
@@ -1452,7 +1462,7 @@ watch(
                   size="small"
                   :loading="diagTask.isRunning"
                   :disabled="diagTask.isRunning"
-                  @click="diagModalOpen = true"
+                  @click="goToDiagnosis"
                 >
                   {{ diagTask.isRunning ? '诊断中…' : '发起诊断' }}
                 </Button>

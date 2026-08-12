@@ -102,6 +102,25 @@ class RealtimeWebSocket {
     return () => this.handlers.delete(handler);
   }
 
+  /**
+   * P2-08：手动重连（清除自动重连定时器后立即重连）
+   *
+   * 供断线提示 Banner 的"重连"按钮调用。
+   */
+  reconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+    this.isManualClose = false;
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this._doConnect();
+  }
+
   private _doConnect() {
     if (!this.token) return;
 
@@ -161,12 +180,12 @@ class RealtimeWebSocket {
 
   private _scheduleReconnect() {
     if (this.reconnectTimer) return;
-    this.reconnectAttempts++;
-    // 指数退避，最大 30 秒
+    // P2-08：指数退避（3s * 2^attempts，与 alert-ws.ts 一致）
     const delay = Math.min(
-      RECONNECT_INTERVAL * this.reconnectAttempts,
+      RECONNECT_INTERVAL * 2 ** this.reconnectAttempts,
       MAX_RECONNECT_DELAY,
     );
+    this.reconnectAttempts++;
     // P3 #57: 控制台日志环境守卫，生产环境不输出
     if (import.meta.env.DEV) {
       console.warn(

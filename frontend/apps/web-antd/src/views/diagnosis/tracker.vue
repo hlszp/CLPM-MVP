@@ -42,15 +42,18 @@ import {
   Input,
   message,
   Modal,
+  Progress,
   Select,
   Space,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
   exportDiagnosisPdfApi,
+  exportDiagnosisPdfAsyncApi,
   exportDiagnosisStatisticsApi,
   getTrackerListApi,
   updateTrackerStatusApi,
@@ -67,6 +70,7 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useAsyncPdfExport } from '#/composables/use-async-pdf-export';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useIndustrialStatus } from '#/composables/use-industrial-status';
@@ -411,6 +415,40 @@ const abCompareImplementedAt = ref('');
 /** 正在导出 PDF 的回路 ID（空串表示无导出中任务，防重复点击） */
 const exportingLoopId = ref('');
 
+/**
+ * V62-P3-33：PDF 导出改为异步任务模式（真实进度源=TaskTracker，不再使用本地伪进度）。
+ * 进度语义（与后端 generate_diagnosis_pdf_task 严格对齐）：
+ *   0.25  加载回路信息与诊断快照
+ *   0.50  获取整改推荐方案
+ *   0.75  生成 PDF 字节
+ *   0.95  写入导出目录
+ *   1.00  完成，自动 window.open 下载
+ */
+const {
+  currentStage: pdfExportStage,
+  isRunning: pdfExportRunning,
+  progress: pdfExportProgress,
+  runningTaskId: pdfExportRunningTaskId,
+  run: runPdfExport,
+} = useAsyncPdfExport();
+
+/**
+ * 保持旧接口 exportingLoopId='{loopId}' 的语义用于在表格行内定位：
+ * 点击某行导出时把 loopId 写进 exportingLoopId，让模板 v-if 匹配该行。
+ * 因为 P3-33 进度是全局（TaskTracker 一次只运行一个），同一时刻 exportingLoopId
+ * 最多一个非空。
+ */
+watch(pdfExportRunningTaskId, (taskId, prevTaskId) => {
+  if (!taskId && prevTaskId) {
+    // 任务进入终态（成功/失败/取消），1.2s 后清理 exportingLoopId
+    setTimeout(() => {
+      if (!pdfExportRunningTaskId.value) {
+        exportingLoopId.value = '';
+      }
+    }, 1200);
+  }
+});
+
 /** 工具栏 CSV 统计导出 loading（防重复点击） */
 const exportingCsv = ref(false);
 
@@ -528,28 +566,49 @@ function buildExportFileName(tagName: string): string {
   return `CLPM-诊断建议书-${tagName}-${date}.pdf`;
 }
 
-/** 导出 PDF（FDS §5.4.4：后端同步生成，前端 Blob 直接下载） */
+/**
+ * 导出 PDF（V62-P3-33 异步任务模式：提交 taskId → TaskTracker 轮询 → 100% 自动下载）
+ *
+ * 保留 fallback 分支：如果异步提交抛错（后端版本不匹配 / 数据库异常），
+ * 自动降级为同步 Blob 下载（旧行为，便于零停机兼容）。
+ */
 async function handleExportPdf(record: DiagnosisApi.TrackerItem) {
-  // 同一行正在导出时，避免重复提交
-  if (exportingLoopId.value === record.loopId) {
+  if (pdfExportRunning.value || exportingLoopId.value !== '') {
     return;
   }
   exportingLoopId.value = record.loopId;
+  const startedAt = Date.now();
   try {
-    const blob = await exportDiagnosisPdfApi(record.loopId);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = buildExportFileName(record.tagName);
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    message.success('诊断建议书已导出');
+    await runPdfExport(() =>
+      exportDiagnosisPdfAsyncApi(record.loopId).then((res) => ({
+        taskId: res.taskId,
+      })),
+    );
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    message.success(
+      `诊断建议书异步导出任务已提交（从提交到下载耗时 ${elapsed}s），进度可在「任务中心」追踪。`,
+    );
   } catch {
-    // 错误已由拦截器处理
-  } finally {
-    exportingLoopId.value = '';
+    // 异步链路失败：降级为同步 Blob 下载（兼容旧行为）
+    try {
+      const blob = await exportDiagnosisPdfApi(record.loopId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildExportFileName(record.tagName);
+      document.body.append(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      message.success(
+        `诊断建议书已同步导出（耗时 ${elapsed}s，已自动降级兼容）`,
+      );
+    } finally {
+      setTimeout(() => {
+        exportingLoopId.value = '';
+      }, 1200);
+    }
   }
 }
 
@@ -946,18 +1005,56 @@ watch(
               >
                 A/B对比
               </Button>
-              <Button
-                v-if="canExportPdf"
-                type="link"
-                size="small"
-                :loading="exportingLoopId === record.loopId"
-                :disabled="
-                  exportingLoopId !== '' && exportingLoopId !== record.loopId
-                "
-                @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+              <Tooltip
+                title="异步生成诊断建议书 PDF（含诊断证据 / 波形 / 处置建议）；提交后在本行实时显示进度，完成后自动下载，详细可到「系统管理 → 任务中心」追踪。"
               >
-                导出PDF
-              </Button>
+                <Button
+                  v-if="canExportPdf"
+                  type="link"
+                  size="small"
+                  :loading="
+                    exportingLoopId === record.loopId && pdfExportRunning
+                  "
+                  :disabled="
+                    exportingLoopId !== '' && exportingLoopId !== record.loopId
+                  "
+                  @click="handleExportPdf(record as DiagnosisApi.TrackerItem)"
+                >
+                  导出PDF
+                </Button>
+              </Tooltip>
+              <!-- V62-P3-33：异步任务真实进度（进度源=TaskTracker，0.25/0.50/0.75/0.95/1.00 五段） -->
+              <div
+                v-if="
+                  exportingLoopId === record.loopId &&
+                  (pdfExportRunning ||
+                    (Number.isFinite(pdfExportProgress) &&
+                      pdfExportProgress > 0))
+                "
+                class="mt-2"
+                style="max-width: 220px"
+              >
+                <Progress
+                  :percent="
+                    Number.isFinite(pdfExportProgress)
+                      ? Math.round(pdfExportProgress * 100)
+                      : 0
+                  "
+                  :show-info="true"
+                  size="small"
+                  :stroke-color="
+                    Number.isFinite(pdfExportProgress) && pdfExportProgress >= 1
+                      ? '#198754'
+                      : '#0d6efd'
+                  "
+                />
+                <div
+                  class="mt-1 text-[11px] leading-tight"
+                  :style="{ color: 'var(--clpm-text-subtle)' }"
+                >
+                  {{ pdfExportStage || '生成中…' }}
+                </div>
+              </div>
             </div>
           </template>
         </template>

@@ -382,3 +382,189 @@ export const ALERT_OPERATOR_LABEL: Record<string, string> = {
   NOT_IN: '不属于',
   RATE_OF_CHANGE: '变化率',
 };
+
+// ===========================================================================
+// P2-01 状态颜色统一映射（2026-08-10）
+//
+// 色彩约定表 v1.0 单一来源：industrial-light.css 的 --status-* 变量族。
+// 本专章集中所有"业务状态/严重度 → 语义 token"映射，消除各视图散落的
+// statusColorMap / PRIORITY_COLOR / IMPORTANCE_LEVEL_TAG 等硬编码。
+//
+// 三层架构：
+//   业务状态（PENDING/URGENT/...）→ StatusToken（ok/warning/...）→ 表现层
+//                                                             ├─ antd Tag color
+//                                                             ├─ CSS 变量
+//                                                             └─ hex（ECharts）
+//
+// 使用方式：
+//   import { TASK_STATUS_TO_STATUS, statusTokenToAntdColor } from '#/constants/clpm-ui';
+//   <Tag :color="statusTokenToAntdColor(TASK_STATUS_TO_STATUS[row.status])">
+//
+// 响应式场景（ECharts/暗色）请用 useClpmTheme().themeColors 直接取 hex。
+// ===========================================================================
+
+/**
+ * 语义状态 token — 对齐 industrial-light.css 的 --status-* 变量族
+ *
+ * - ok       → --status-ok      (#198754) 正常/达标/成功
+ * - warning  → --status-warning  (#B45309) 警告/需关注
+ * - error    → --status-error    (#DC3545) 危险/故障/失败
+ * - info     → --status-info     (#0D6EFD) 信息/进行中
+ * - neutral  → --status-neutral  (#6C757D) 中性/未知/无数据
+ */
+export type StatusToken = 'error' | 'info' | 'neutral' | 'ok' | 'warning';
+
+/** 语义 token → Ant Design Vue Tag color 属性值 */
+export const STATUS_TOKEN_TO_ANTD_COLOR: Record<StatusToken, string> = {
+  ok: 'success',
+  warning: 'warning',
+  error: 'error',
+  info: 'processing',
+  neutral: 'default',
+};
+
+/** 语义 token → CSS 变量引用（用于内联 style / 自定义组件） */
+export const STATUS_TOKEN_TO_CSS_VAR: Record<StatusToken, string> = {
+  ok: 'var(--status-ok)',
+  warning: 'var(--status-warning)',
+  error: 'var(--status-error)',
+  info: 'var(--status-info)',
+  neutral: 'var(--status-neutral)',
+};
+
+/** 语义 token → hex 浅色值（仅用于 ECharts 等无法消费 CSS 变量的场景；暗色请用 useClpmTheme） */
+export const STATUS_TOKEN_TO_HEX: Record<StatusToken, string> = {
+  ok: '#198754',
+  warning: '#b45309',
+  error: '#dc3545',
+  info: '#0d6efd',
+  neutral: '#6c757d',
+};
+
+/**
+ * 语义 token → Tailwind badge class（浅底+深字+边框+暗色覆盖）
+ *
+ * 用于自定义 span badge 场景（如回路重要等级），统一语义色表现层。
+ * 暗色覆盖对齐 industrial-light.css §10.5 的半透明策略。
+ */
+export const STATUS_TOKEN_TO_BADGE_CLASS: Record<StatusToken, string> = {
+  ok: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30',
+  warning:
+    'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30',
+  error:
+    'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30',
+  info: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30',
+  neutral:
+    'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/30',
+};
+
+/** 语义 token → antd Tag color（便捷别名） */
+export function statusTokenToAntdColor(token: StatusToken): string {
+  return STATUS_TOKEN_TO_ANTD_COLOR[token];
+}
+
+/** 语义 token → CSS 变量（便捷别名） */
+export function statusTokenToCssVar(token: StatusToken): string {
+  return STATUS_TOKEN_TO_CSS_VAR[token];
+}
+
+// ---------------------------------------------------------------------------
+// 任务状态映射（统一 task/list.vue + task/detail.vue，原 statusColorMap）
+// 对齐 TaskApi.TaskStatus: PENDING | RUNNING | SUCCESS | FAILED | CANCELLED
+// ---------------------------------------------------------------------------
+
+export const TASK_STATUS_TO_STATUS: Record<string, StatusToken> = {
+  PENDING: 'neutral',
+  RUNNING: 'info',
+  SUCCESS: 'ok',
+  FAILED: 'error',
+  CANCELLED: 'warning',
+};
+
+export const TASK_STATUS_LABEL: Record<string, string> = {
+  PENDING: '待执行',
+  RUNNING: '执行中',
+  SUCCESS: '成功',
+  FAILED: '失败',
+  CANCELLED: '已取消',
+};
+
+// ---------------------------------------------------------------------------
+// 关注优先级映射（统一 monitor/attention.vue，原 PRIORITY_COLOR）
+// 对齐 MonitorApi.AttentionPriority: URGENT | HIGH | MEDIUM | LOW
+// 色彩约定：URGENT=需立即行动(error) / HIGH=需关注(warning) /
+//           MEDIUM=待处理(info) / LOW=低优先(neutral)
+// ---------------------------------------------------------------------------
+
+export const PRIORITY_TO_STATUS: Record<string, StatusToken> = {
+  URGENT: 'error',
+  HIGH: 'warning',
+  MEDIUM: 'info',
+  LOW: 'neutral',
+};
+
+export const PRIORITY_LABEL: Record<string, string> = {
+  URGENT: '紧急',
+  HIGH: '高',
+  MEDIUM: '中',
+  LOW: '低',
+};
+
+// ---------------------------------------------------------------------------
+// 回路重要等级映射（统一 use-loop-changes.ts IMPORTANCE_LEVEL_TAG）
+// 1 级=关键(error) / 2 级=重要(warning) / 3 级=一般(neutral)
+// ---------------------------------------------------------------------------
+
+export const IMPORTANCE_LEVEL_TO_STATUS: Record<number, StatusToken> = {
+  1: 'error',
+  2: 'warning',
+  3: 'neutral',
+};
+
+export const IMPORTANCE_LEVEL_LABEL: Record<number, string> = {
+  1: '1 级',
+  2: '2 级',
+  3: '3 级',
+};
+
+// ---------------------------------------------------------------------------
+// 诊断紧急程度映射（统一 diagnosis.ts DIAGNOSIS_URGENCY_COLOR）
+// high=紧急(error) / medium=一般(warning) / low=低(neutral)
+// ---------------------------------------------------------------------------
+
+export const URGENCY_TO_STATUS: Record<string, StatusToken> = {
+  high: 'error',
+  medium: 'warning',
+  low: 'neutral',
+};
+
+// ---------------------------------------------------------------------------
+// 行动状态映射（统一 preferences.ts ACTION_STATUS_COLOR_MAP，P2-01 收敛至此）
+// PENDING=待处理(warning) / IN_PROGRESS=进行中(info) /
+// IMPLEMENTED=已完成(ok) / IGNORED=已忽略(neutral)
+// ---------------------------------------------------------------------------
+
+export const ACTION_STATUS_TO_STATUS: Record<string, StatusToken> = {
+  PENDING: 'warning',
+  IN_PROGRESS: 'info',
+  IMPLEMENTED: 'ok',
+  IGNORED: 'neutral',
+};
+
+// ---------------------------------------------------------------------------
+// 连接/质量状态映射（统一 loop-live-status-bar.vue 等组件）
+// ---------------------------------------------------------------------------
+
+export const CONNECTION_STATUS_TO_STATUS: Record<string, StatusToken> = {
+  CONNECTED: 'ok',
+  DISCONNECTED: 'error',
+  RECONNECTING: 'warning',
+  UNKNOWN: 'neutral',
+};
+
+export const QUALITY_STATUS_TO_STATUS: Record<string, StatusToken> = {
+  GOOD: 'ok',
+  BAD: 'error',
+  UNCERTAIN: 'warning',
+  UNKNOWN: 'neutral',
+};

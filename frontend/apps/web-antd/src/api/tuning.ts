@@ -423,6 +423,17 @@ export namespace TuningApi {
     byStatus: Record<string, number>;
     avgFittingScore?: null | number;
     recentTasks: TuningTaskItem[];
+    /** V62-P2-22：风险等级统计（risk_assessment->>'riskLevel' 聚合）。 */
+    riskSummary?: {
+      /** 是否有任何一条记录已生成风险评估（true 才能把 0 当成真实值）。 */
+      calculated: boolean;
+      high: number;
+      low: number;
+      medium: number;
+      total: number;
+    } | null;
+    /** V62-P2-22：待整定数（DRAFT+RUNNING+PENDING+IDENTIFIED，后端统一口径）。 */
+    pendingCount?: number;
   }
 
   /** 整定方法参数定义 */
@@ -613,12 +624,22 @@ export namespace KnowledgeBaseApi {
     pageSize?: number;
   }
 
+  /** 列表全局统计（当前筛选条件下，非当前页）。IA 整改 C-2/T-3 新增，旧后端可能为 null */
+  export interface ListStats {
+    total: number;
+    improvedCount: number;
+    deterioratedCount: number;
+    unverifiedCount: number;
+    avgImprovedMetrics: null | number;
+  }
+
   /** 列表响应 */
   export interface ListData {
     items: KnowledgeEntry[];
     total: number;
     page: number;
     pageSize: number;
+    stats?: ListStats | null;
   }
 
   /** 相似案例查询参数 */

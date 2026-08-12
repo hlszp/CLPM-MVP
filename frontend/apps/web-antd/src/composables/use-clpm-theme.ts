@@ -66,12 +66,17 @@ const LIGHT_CONFIDENCE = {
   E: '#6c757d',
 } as const;
 
-/** 可信度等级色板（深色模式，亮度提升对齐 ZL Tailwind 400） */
+/** 可信度等级色板（深色模式，亮度提升对齐 ZL Tailwind 400）
+ *
+ * P2-01 修正（2026-08-10）：D 级从 orange-400(#fb923c) 改为 rose-400(#fb7185)，
+ * 与浅色 D=#dc3545(rose-700) 保持色相一致（均属红色系"警示"语义），
+ * 避免暗色下 D 级从红变橙的色相跳变。
+ */
 const DARK_CONFIDENCE = {
   A: '#34d399', // emerald-400
-  B: '#2dd4bf', // teal-400
+  B: '#60a5fa', // blue-400（与 INFO 对齐，浅色 B=#0d6efd blue-600）
   C: '#fbbf24', // amber-400
-  D: '#fb923c', // orange-400
+  D: '#fb7185', // rose-400（修正：原 orange-400 色相不一致）
   E: '#94a3b8', // slate-400
 } as const;
 

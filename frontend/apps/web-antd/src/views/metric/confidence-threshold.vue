@@ -24,6 +24,7 @@ import {
   Modal,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -225,6 +226,13 @@ async function confirmSave() {
 onMounted(() => {
   loadList();
 });
+
+/** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
+function refresh() {
+  return loadList();
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>
@@ -242,15 +250,18 @@ onMounted(() => {
           label="刷新"
           @click="loadList"
         />
-        <Button
-          v-permission="['ADMIN']"
-          type="primary"
-          :loading="saving"
-          :disabled="!isValid"
-          @click="handleSave"
-        >
-          保存
-        </Button>
+        <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+        <Tooltip :title="!isValid ? '存在无效输入，请检查阈值范围' : ''">
+          <Button
+            v-permission="['ADMIN']"
+            type="primary"
+            :loading="saving"
+            :disabled="!isValid"
+            @click="handleSave"
+          >
+            保存
+          </Button>
+        </Tooltip>
       </div>
     </div>
 

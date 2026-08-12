@@ -91,8 +91,12 @@ const boardAggregate = ref<DashboardApi.BoardAggregateResult | null>(null);
 const boardTrend = ref<DashboardApi.BoardTrendResult | null>(null);
 const autoRateRt = ref<DashboardApi.AutoRateRt | null>(null);
 
-/** 实时数据过期阈值（分钟），超过则标灰/警示 */
-const RT_STALE_MINUTES = 10;
+/**
+ * 实时数据过期阈值（分钟），超过则标灰/警示
+ * P3-17：改为从环境变量读取，可在 .env 中配置 VITE_RT_STALE_MINUTES
+ */
+const RT_STALE_MINUTES =
+  Number(import.meta.env.VITE_RT_STALE_MINUTES ?? 10) || 10;
 
 /** 实时数据新鲜度：readAt 为空（DB 回退）或超过阈值视为过期 */
 const rtStale = computed(() => {

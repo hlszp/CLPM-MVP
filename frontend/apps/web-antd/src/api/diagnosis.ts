@@ -801,11 +801,22 @@ export namespace DiagnosisApi {
   export interface TaskListQueryParams {
     status?: string;
     triggerType?: string;
+    loopId?: string;
+    plantNodeId?: string;
     timeWindow?: TimeWindow;
-    /** 是否包含已归档任务（SUCCESS 完成即自动归档，2026-07-29） */
+    /** 是否包含已归档任务（SUCCESS 完成即自动归档） */
     includeArchived?: boolean;
+    /** 仅返回已归档任务（P2-16-B2 Tab 化）；与 includeArchived 同时为 true 时 archivedOnly 优先 */
+    archivedOnly?: boolean;
     page?: number;
     pageSize?: number;
+  }
+
+  /** 诊断任务 Tab 计数（P2-16-B2） */
+  export interface TaskStats {
+    active: number;
+    completed: number;
+    archived: number;
   }
 
   /** 诊断结果项（任务详情内嵌） */
@@ -1048,6 +1059,20 @@ export function exportDiagnosisPdfApi(loopId: string) {
 }
 
 /**
+ * V62-P3-33：异步提交「整改建议书 PDF」导出（避免大回路网关超时）。
+ *
+ * 返回 { taskId }，前端轮询 GET /tasks/{taskId}，进度 100% 后通过
+ * buildTaskDownloadUrl(taskId) 调用 window.open 触发下载。
+ */
+export function exportDiagnosisPdfAsyncApi(loopId: string) {
+  return requestClient.post<{ message?: string; taskId: string; }>(
+    `/tracker/${loopId}/export`,
+    undefined,
+    { params: { async: true } },
+  );
+}
+
+/**
  * 获取诊断统计报表 — IDS v3.2 §2.4
  */
 export function getDiagnosisAnalyticsApi(
@@ -1104,9 +1129,7 @@ export function getRecommendationsApi(loopId: string, tagCodes?: string[]) {
 }
 
 /**
- * 生成并下载诊断建议书 PDF — SVC-12
- *
- * 返回 Blob，前端通过 URL.createObjectURL 触发下载。
+ * 生成并下载诊断建议书 PDF — SVC-12（同步，直接返回 Blob）
  */
 export function generateDiagnosisReportApi(
   loopId: string,
@@ -1116,6 +1139,21 @@ export function generateDiagnosisReportApi(
     data,
     method: 'POST',
   });
+}
+
+/**
+ * V62-P3-33：异步生成「诊断建议书 PDF」，返回 { taskId }，与 tracker 异步导出
+ * 共用同一套 TaskTracker 轮询+下载链路。
+ */
+export function generateDiagnosisReportAsyncApi(
+  loopId: string,
+  data?: DiagnosisApi.DiagnosisReportParams,
+) {
+  return requestClient.post<{ message?: string; taskId: string; }>(
+    `/diagnosis/${loopId}/report`,
+    data ?? {},
+    { params: { async: true } },
+  );
 }
 
 /**
@@ -1203,13 +1241,25 @@ export function triggerDiagnosisApi(data: DiagnosisApi.TriggerRequest) {
 }
 
 /**
- * 获取诊断任务列表（未归档） — 每回路一行
+ * 获取诊断任务列表（未归档/含已归档/仅已归档）
  */
 export function getDiagnosisTasksApi(params: DiagnosisApi.TaskListQueryParams) {
   return requestClient.get<PaginatedResponse<DiagnosisApi.TaskItem>>(
     '/diagnosis/tasks',
     { params },
   );
+}
+
+/**
+ * 获取诊断任务 Tab 计数（P2-16-B2）：active/completed/archived 三类
+ */
+export function getDiagnosisTaskStatsApi(params?: {
+  loopId?: string;
+  plantNodeId?: string;
+}) {
+  return requestClient.get<DiagnosisApi.TaskStats>('/diagnosis/tasks/stats', {
+    params,
+  });
 }
 
 /**

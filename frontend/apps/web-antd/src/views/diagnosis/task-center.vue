@@ -15,7 +15,7 @@
  * - records.vue 内部已有的 Tabs（归档记录/诊断标签）作为"历史"分区下的二级导航保留
  * - activeTab 与 URL query 双向同步，支持深链和浏览器前进后退
  */
-import { defineAsyncComponent, onMounted, ref, watch } from 'vue';
+import { defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Tabs } from 'ant-design-vue';
@@ -30,11 +30,13 @@ const router = useRouter();
 
 const activeTab = ref<'active' | 'history'>('active');
 
-/** 各 Tab 组件 key，切换/刷新时自增以强制重载 */
-const tabKeys = ref<{ active: number; history: number }>({
-  active: 0,
-  history: 0,
-});
+/** P3-01：子组件 ref，替代 tabKeys 自增强制重建 */
+interface TabRef {
+  refresh?: () => Promise<void> | void;
+}
+
+const tasksViewRef = ref<null | TabRef>(null);
+const recordsViewRef = ref<null | TabRef>(null);
 
 /** 工具栏刷新态 */
 const loading = ref(false);
@@ -62,13 +64,17 @@ watch(activeTab, (val) => {
   }
 });
 
-/** 工具栏刷新：强制重载当前 Tab（子组件各自重新拉取数据） */
-function handleRefresh() {
+/** P3-01：工具栏刷新：调用当前活动 Tab 子组件 refresh() 方法 */
+async function handleRefresh() {
   loading.value = true;
-  tabKeys.value[activeTab.value] += 1;
-  setTimeout(() => {
+  try {
+    const targetRef =
+      activeTab.value === 'active' ? tasksViewRef.value : recordsViewRef.value;
+    await nextTick();
+    await targetRef?.refresh?.();
+  } finally {
     loading.value = false;
-  }, 300);
+  }
 }
 
 /** 工具栏帮助 */
@@ -76,7 +82,7 @@ function handleHelp() {
   showPageHelp({
     title: '诊断任务中心 帮助',
     content:
-      '诊断任务中心：「进行中」Tab 管理未归档诊断任务（触发诊断 / 取消 / 详情 / 归档 / 删除），「历史」Tab 查看已归档诊断记录与诊断标签面板。刷新按钮重载当前 Tab 内容。',
+      '诊断任务中心：「进行中」Tab 管理未归档诊断任务（触发诊断 / 取消 / 详情 / 归档 / 删除），「历史」Tab 查看已归档诊断记录与诊断标签面板。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
   });
 }
 
@@ -98,12 +104,13 @@ const { toolbarItems } = usePageToolbar(() => ({
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
+    <!-- P3-01：用 ref 绑定替代 :key 强制重建 -->
     <Tabs v-model:active-key="activeTab" class="mt-4">
       <Tabs.TabPane key="active" tab="进行中" force-render>
-        <DiagnosisTasksView :key="tabKeys.active" />
+        <DiagnosisTasksView ref="tasksViewRef" />
       </Tabs.TabPane>
       <Tabs.TabPane key="history" tab="历史" force-render>
-        <DiagnosisRecordsView :key="tabKeys.history" />
+        <DiagnosisRecordsView ref="recordsViewRef" />
       </Tabs.TabPane>
     </Tabs>
   </div>

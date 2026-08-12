@@ -16,7 +16,7 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { computed } from 'vue';
 
-import { Alert, Button, Empty, Spin, Tag } from 'ant-design-vue';
+import { Alert, Button, Empty, message, Spin, Tag } from 'ant-design-vue';
 
 import { ClpmDataCanvas } from '#/components/clpm';
 import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
@@ -162,8 +162,38 @@ const sortedRecommendations = computed(() =>
 );
 
 function handleNext() {
+  // P3-26：Step 3 本地就近校验（父级 handleNext 也会再校验一次，双重保护）
+  if (!props.state.diag.taskId) {
+    message.warning('请先点击「开始诊断分析」触发诊断任务');
+    return;
+  }
+  if (
+    props.state.diag.status === 'PENDING' ||
+    props.state.diag.status === 'RUNNING'
+  ) {
+    message.warning('诊断分析仍在进行中，请等待任务完成');
+    return;
+  }
+  if (
+    props.state.diag.status === 'FAILED' ||
+    props.state.diag.status === 'CANCELLED'
+  ) {
+    message.warning('诊断任务已失败/取消，请重新触发诊断');
+    return;
+  }
+  if (props.state.diag.status !== 'SUCCESS' || !props.state.diag.detail) {
+    message.warning('诊断尚未产出完整结果，请等待诊断完成');
+    return;
+  }
   emit('next');
 }
+
+/** P3-01：暴露 refresh() 给 loop-analysis.vue 调用（诊断结果纯基于 state，refresh 空实现保持接口一致） */
+function refresh() {
+  /* 诊断可视化与标签完全基于 state，无需显式刷新 */
+}
+
+defineExpose({ refresh });
 </script>
 
 <template>

@@ -15,11 +15,21 @@ import type { TuningApi } from '#/api/tuning';
 import type { KpiStripItem } from '#/components/clpm';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Alert, Button, Select, Table, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Dropdown,
+  Menu,
+  message,
+  Select,
+  Table,
+  Tag,
+} from 'ant-design-vue';
 
 import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 import {
@@ -27,9 +37,11 @@ import {
   ClpmKpiStrip,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'TuningStats' });
@@ -52,20 +64,38 @@ const algorithmOptions: { label: string; value: TuningApi.Algorithm }[] = [
 ];
 
 /** 状态选项（Phase 2 对齐实现契约 v2.1 状态机） */
-const statusOptions: { label: string; value: TuningApi.TaskStatus }[] = [
-  // Phase 2 新枚举
-  { label: '草稿', value: 'DRAFT' },
-  { label: '执行中', value: 'RUNNING' },
-  { label: '已辨识', value: 'IDENTIFIED' },
-  { label: '已仿真', value: 'SIMULATED' },
-  { label: '已完成', value: 'COMPLETED' },
-  { label: '不确定', value: 'INCONCLUSIVE' },
-  { label: '已回退', value: 'ROLLED_BACK' },
-  // 旧枚举（兼容期保留）
-  { label: '待辨识（旧）', value: 'PENDING' },
-  { label: '已应用（旧）', value: 'APPLIED' },
-  { label: '已验证（旧）', value: 'VERIFIED' },
+/** P3-14：状态选项分组（新状态机 / 旧状态机兼容） */
+const statusOptions = [
+  {
+    label: '新状态机',
+    options: [
+      { label: '草稿', value: 'DRAFT' },
+      { label: '执行中', value: 'RUNNING' },
+      { label: '已辨识', value: 'IDENTIFIED' },
+      { label: '已仿真', value: 'SIMULATED' },
+      { label: '已完成', value: 'COMPLETED' },
+      { label: '不确定', value: 'INCONCLUSIVE' },
+      { label: '已回退', value: 'ROLLED_BACK' },
+    ] as { label: string; value: TuningApi.TaskStatus }[],
+  },
+  {
+    label: '旧状态机（兼容）',
+    options: [
+      { label: '待辨识（旧）', value: 'PENDING' },
+      { label: '已应用（旧）', value: 'APPLIED' },
+      { label: '已验证（旧）', value: 'VERIFIED' },
+    ] as { label: string; value: TuningApi.TaskStatus }[],
+  },
 ];
+
+/** P3-09：Select 搜索过滤函数 */
+function filterSelectOption(
+  input: string,
+  option: undefined | { label?: unknown },
+) {
+  const label = String(option?.label ?? '');
+  return label.toLowerCase().includes(input.toLowerCase());
+}
 
 /** 查询参数 */
 const query = reactive({
@@ -171,9 +201,13 @@ function algorithmName(code: TuningApi.Algorithm): string {
   return algorithmOptions.find((o) => o.value === code)?.label || code;
 }
 
-/** 状态显示名映射 */
+/** 状态显示名映射（P3-14：适配分组后的 options 结构） */
 function statusName(status: TuningApi.TaskStatus): string {
-  return statusOptions.find((o) => o.value === status)?.label || status;
+  for (const group of statusOptions) {
+    const found = group.options.find((o) => o.value === status);
+    if (found) return found.label;
+  }
+  return status;
 }
 
 /** 状态颜色映射（Phase 2 对齐实现契约 v2.1 状态机） */
@@ -436,6 +470,16 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
+const router = useRouter();
+
+/** P2-21：查看详情——跳转整定任务详情页 */
+function handleViewDetail(record: Record<string, any>) {
+  router.push({
+    path: '/tuning/detail',
+    query: { taskId: record.id, returnTo: '/tuning/stats' },
+  });
+}
+
 onMounted(() => {
   loadHistory();
   loadList();
@@ -452,11 +496,66 @@ function handleHelp() {
   showPageHelp({
     title: '效果统计 帮助',
     content:
-      '查看整定任务分布、拟合质量与历史效果。顶部统计卡片（总任务数/已应用数/平均拟合度/算法种类数），中部图表区（算法分布饼图 + 状态分布柱状图），底部任务列表（按算法/状态筛选）。平台只输出建议，参数由授权人员人工实施并留痕。',
+      '查看整定任务分布、拟合质量与历史效果。顶部统计卡片（总任务数/已应用数/平均拟合度/算法种类数），中部图表区（算法分布饼图 + 状态分布柱状图），底部任务列表（按算法/状态筛选）。平台只输出建议，参数由授权人员人工实施并留痕。刷新按钮重新拉取统计数据与任务列表，点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
-// ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
+/** 算法标签映射（与 algorithmOptions 对齐） */
+const ALGORITHM_LABEL: Record<string, string> = {
+  IMC: 'IMC 内模控制',
+  LAMBDA: 'Lambda 整定',
+  ZN: 'Ziegler-Nichols',
+  COHEN_COON: 'Cohen-Coon',
+  SIMC: 'SIMC 简化 IMC',
+};
+
+/** 状态标签映射 */
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  RUNNING: '执行中',
+  IDENTIFIED: '已辨识',
+  SIMULATED: '已仿真',
+  COMPLETED: '已完成',
+  INCONCLUSIVE: '不确定',
+  ROLLED_BACK: '已回退',
+  PENDING: '待辨识（旧）',
+  APPLIED: '已应用（旧）',
+  VERIFIED: '已验证（旧）',
+};
+
+/** P3-05：导出当前筛选结果为 CSV 或 Excel */
+function handleExport(format: 'csv' | 'excel') {
+  if (taskList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const headers = [
+    '回路位号',
+    '模型类型',
+    '算法',
+    '拟合度',
+    '状态',
+    '创建时间',
+  ];
+  const rows = taskList.value.map((t) => [
+    t.tagName ?? '',
+    t.modelType,
+    ALGORITHM_LABEL[t.algorithm] ?? t.algorithm,
+    t.fittingScore == null ? '' : Number(t.fittingScore).toFixed(2),
+    STATUS_LABEL[t.status] ?? t.status,
+    formatTime(t.createdAt),
+  ]);
+  exportData({
+    filename: `tuning-stats-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '整定任务',
+  });
+  message.success(`已导出 ${taskList.value.length} 条记录`);
+}
+
+// ===== 统一工具栏（标准 2 工具：刷新 / 帮助；导出独立 Dropdown） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: handleRefresh, loading: loading.value },
   help: { onClick: handleHelp },
@@ -480,6 +579,20 @@ watch(isDark, () => {
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="export"
+            label="导出"
+            tooltip="导出当前筛选结果为 CSV 或 Excel"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
       </template>
     </ClpmPageToolbar>
     <Alert
@@ -492,6 +605,10 @@ watch(isDark, () => {
       style="margin-bottom: 12px"
     />
     <div class="mb-4 mt-4">
+      <!-- IA 整改 C-5：标注上方统计区与下方列表数据来源维度不同，避免 total 差异误判 -->
+      <p class="mb-2 text-xs text-muted-foreground">
+        下方统计卡片与图表基于全部历史数据（不含列表筛选条件），与底部任务列表的筛选范围相互独立。
+      </p>
       <ClpmKpiStrip :items="kpiStripItems" :loading="historyLoading" />
     </div>
 
@@ -499,6 +616,7 @@ watch(isDark, () => {
     <div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <ClpmDataCanvas
         title="算法分布"
+        description="基于全部历史整定任务，不含下方列表筛选条件"
         :loading="historyLoading"
         :empty="pieEmpty"
         empty-reason="暂无整定任务记录，无法生成算法分布"
@@ -507,6 +625,7 @@ watch(isDark, () => {
       </ClpmDataCanvas>
       <ClpmDataCanvas
         title="状态分布"
+        description="基于全部历史整定任务，不含下方列表筛选条件"
         :loading="historyLoading"
         :empty="barEmpty"
         empty-reason="暂无整定任务记录，无法生成状态分布"
@@ -516,7 +635,10 @@ watch(isDark, () => {
     </div>
 
     <!-- 底部任务列表 -->
-    <ClpmDataCanvas title="整定任务列表">
+    <ClpmDataCanvas
+      title="整定任务列表"
+      description="按下方筛选条件分页展示，与上方全局统计相互独立"
+    >
       <!-- 筛选栏 -->
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -524,6 +646,8 @@ watch(isDark, () => {
           placeholder="算法筛选"
           style="width: 200px"
           allow-clear
+          show-search
+          :filter-option="filterSelectOption"
           :options="algorithmOptions"
         />
         <Select
@@ -531,6 +655,8 @@ watch(isDark, () => {
           placeholder="状态筛选"
           style="width: 160px"
           allow-clear
+          show-search
+          :filter-option="filterSelectOption"
           :options="statusOptions"
         />
         <Button type="primary" :loading="loading" @click="handleSearch">
@@ -578,7 +704,9 @@ watch(isDark, () => {
             {{ formatTime(record.createdAt) }}
           </template>
           <template v-else-if="column.key === 'action'">
-            <Button type="link" size="small" disabled> 查看详情 </Button>
+            <Button type="link" size="small" @click="handleViewDetail(record)">
+              查看详情
+            </Button>
           </template>
         </template>
       </Table>

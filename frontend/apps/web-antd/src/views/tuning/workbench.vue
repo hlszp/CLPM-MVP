@@ -3,7 +3,7 @@
  * S7-TUNE-001 整定工作台
  *
  * 对齐 IDS v3.2 §2.5 + PRD §4.5
- * - 顶部：4 个统计卡片（总任务数/已完成/平均拟合度/近 7 天任务数）
+ * - 顶部：7 项 KPI 指标条（总任务数/已完成/平均拟合度/近 7 天/风险任务数/超阈值/待整定，一行紧凑布局）
  * - 中部：整定流程导航卡片（模型辨识/整定算法/闭环仿真/效果统计）
  * - 底部：最近整定任务表格（recentTasks 前 10 条）
  */
@@ -19,7 +19,17 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { Alert, Button, Card, Spin, Table, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  DescriptionsItem,
+  Drawer,
+  Spin,
+  Table,
+  Tag,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisListApi } from '#/api/diagnosis';
@@ -216,40 +226,6 @@ function getFittingStatus(value: number): NonNullable<KpiStripItem['status']> {
   return 'danger';
 }
 
-const kpiStripItems = computed<KpiStripItem[]>(() => [
-  {
-    key: 'total',
-    label: '总任务数',
-    value: totalTasks.value,
-    status: 'neutral',
-  },
-  {
-    key: 'completed',
-    label: '已完成',
-    value: completedCount.value,
-    // 整改 A-03：零值中性（0 已完成不着色）
-    status: completedCount.value > 0 ? 'success' : 'neutral',
-  },
-  {
-    key: 'fitting',
-    label: '平均拟合度',
-    // 整改 A-03：无数据时显示"—"且中性，不得显示伪 0.00% 红色
-    value:
-      avgFittingScore.value === null ? '—' : avgFittingScore.value.toFixed(2),
-    unit: avgFittingScore.value === null ? '' : '%',
-    status:
-      avgFittingScore.value === null
-        ? 'neutral'
-        : getFittingStatus(avgFittingScore.value),
-  },
-  {
-    key: 'recent',
-    label: '近 7 天任务数',
-    value: recent7DaysCount.value,
-    status: 'neutral',
-  },
-]);
-
 /** 待整定数（Phase 2：DRAFT/RUNNING/PENDING + IDENTIFIED） */
 const pendingTuningCount = computed(() => {
   const byStatus = historyStats.value?.byStatus || {};
@@ -262,36 +238,77 @@ const pendingTuningCount = computed(() => {
 });
 
 /**
- * 后端当前未提供风险统计，必须明确展示“未计算”。
- * 不得用 0 代替未知；后续只有接口明确返回 calculated=true 且 count=0，
- * 才能把 0 作为真实统计值展示。
+ * V62-P2-22：风险 KPI 已改为后端统计对接（get_tuning_history_stats）。
+ * 语义：只有 riskSummary.calculated=true（即任意记录已生成 risk_assessment）
+ * 时，前端才能把 0 当真实值。否则显示"— 未计算"，不得用 0 冒充未知。
  */
-const uncalculatedRiskValue = '—';
-const uncalculatedRiskUnit = '未计算';
+const UNKNOWN_RISK_VALUE = '—';
+const UNKNOWN_RISK_UNIT = '未计算';
 
-/** 风险相关 KPI 指标（整改 A-03：去掉与上排重复的"已完成数"，零值中性） */
-const riskKpiItems = computed<KpiStripItem[]>(() => [
-  {
-    key: 'highRisk',
-    label: '风险任务数',
-    value: uncalculatedRiskValue,
-    unit: uncalculatedRiskUnit,
-    status: 'neutral',
-  },
-  {
-    key: 'overThreshold',
-    label: '超阈值任务数',
-    value: uncalculatedRiskValue,
-    unit: uncalculatedRiskUnit,
-    status: 'neutral',
-  },
-  {
-    key: 'pending',
-    label: '待整定数',
-    value: pendingTuningCount.value,
-    status: 'neutral',
-  },
-]);
+const kpiStripItems = computed<KpiStripItem[]>(() => {
+  const stats = historyStats.value;
+  const summary = stats?.riskSummary;
+  const calculated = Boolean(summary?.calculated);
+  const high = calculated ? Number(summary!.high) || 0 : Number.NaN;
+  const medium = calculated ? Number(summary!.medium) || 0 : Number.NaN;
+  const overThreshold = calculated ? high + medium : Number.NaN;
+  const pending = stats?.pendingCount ?? pendingTuningCount.value;
+
+  return [
+    {
+      key: 'total',
+      label: '总任务数',
+      value: totalTasks.value,
+      status: 'neutral',
+    },
+    {
+      key: 'completed',
+      label: '已完成',
+      value: completedCount.value,
+      status: completedCount.value > 0 ? 'success' : 'neutral',
+    },
+    {
+      key: 'fitting',
+      label: '平均拟合度',
+      value:
+        avgFittingScore.value === null ? '—' : avgFittingScore.value.toFixed(2),
+      unit: avgFittingScore.value === null ? '' : '%',
+      status:
+        avgFittingScore.value === null
+          ? 'neutral'
+          : getFittingStatus(avgFittingScore.value),
+    },
+    {
+      key: 'recent',
+      label: '近 7 天',
+      value: recent7DaysCount.value,
+      status: 'neutral',
+    },
+    {
+      key: 'highRisk',
+      label: '风险任务数',
+      value: calculated ? String(high) : UNKNOWN_RISK_VALUE,
+      unit: calculated ? '项' : UNKNOWN_RISK_UNIT,
+      status: calculated ? (high > 0 ? 'danger' : 'success') : 'neutral',
+    },
+    {
+      key: 'overThreshold',
+      label: '超阈值',
+      value: calculated ? String(overThreshold) : UNKNOWN_RISK_VALUE,
+      unit: calculated ? '项' : UNKNOWN_RISK_UNIT,
+      status: calculated
+        ? (overThreshold > 0 ? 'warning' : 'success')
+        : 'neutral',
+    },
+    {
+      key: 'pending',
+      label: '待整定',
+      value: String(pending),
+      unit: '项',
+      status: pending > 0 ? 'warning' : 'success',
+    },
+  ];
+});
 
 /** 加载整定历史统计 */
 async function loadHistory() {
@@ -551,6 +568,15 @@ function handleViewKnowledgeBase() {
   router.push('/tuning/knowledge-base');
 }
 
+/** P2-23：相似案例详情抽屉 */
+const caseDetailOpen = ref(false);
+const caseDetailItem = ref<KnowledgeBaseApi.KnowledgeEntry | null>(null);
+
+function handleViewCaseDetail(item: KnowledgeBaseApi.KnowledgeEntry) {
+  caseDetailItem.value = item;
+  caseDetailOpen.value = true;
+}
+
 /** 拟合度格式化 */
 function formatFittingScore(val: null | number | undefined): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '—';
@@ -648,13 +674,9 @@ onMounted(() => {
         </template>
       </Alert>
 
+      <!-- KPI 指标条：总任务/已完成/平均拟合度/近7天/风险/超阈值/待整定（一行紧凑布局） -->
       <div class="mb-4 mt-4">
         <ClpmKpiStrip :items="kpiStripItems" />
-      </div>
-
-      <!-- 风险相关 KPI 指标 -->
-      <div class="mb-4">
-        <ClpmKpiStrip :items="riskKpiItems" />
       </div>
 
       <ClpmDataCanvas title="整定流程" class="mb-4">
@@ -808,7 +830,7 @@ onMounted(() => {
               size="small"
               :body-style="{ padding: '12px 14px' }"
               class="cursor-pointer transition-shadow hover:shadow-md"
-              @click="handleViewKnowledgeBase"
+              @click="handleViewCaseDetail(item)"
             >
               <div class="mb-2 flex items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -947,5 +969,80 @@ onMounted(() => {
         </Table>
       </ClpmDataCanvas>
     </Spin>
+
+    <!-- P2-23：相似案例详情抽屉 -->
+    <Drawer
+      v-model:open="caseDetailOpen"
+      title="整定案例详情"
+      width="560"
+      :destroy-on-close="true"
+    >
+      <template v-if="caseDetailItem">
+        <Descriptions :column="1" bordered size="small">
+          <DescriptionsItem label="回路位号">
+            {{ caseDetailItem.tagName }}
+          </DescriptionsItem>
+          <DescriptionsItem label="问题类型">
+            <Tag v-if="caseDetailItem.diagnosisLabel" color="orange">
+              {{
+                DIAGNOSIS_TERM_EXPLANATIONS[caseDetailItem.diagnosisLabel]
+                  ?.term ?? caseDetailItem.diagnosisLabel
+              }}
+            </Tag>
+            <span v-else>—</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="算法">
+            {{ algorithmDisplay(caseDetailItem.algorithm) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="模型类型">
+            {{ caseDetailItem.modelType || '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="可信度">
+            <ClpmConfidenceBadge
+              v-if="caseDetailItem.confidenceLevel"
+              :level="caseDetailItem.confidenceLevel as any"
+            />
+            <span v-else>—</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="PID 变化">
+            {{
+              pidChangeText(caseDetailItem.pidBefore, caseDetailItem.pidAfter)
+            }}
+          </DescriptionsItem>
+          <DescriptionsItem label="效果">
+            <Tag
+              :color="caseDetailItem.effectVerified === false ? 'red' : 'green'"
+            >
+              {{
+                caseDetailItem.effectVerified === false
+                  ? '恶化'
+                  : caseDetailItem.effectVerified === true
+                    ? '改善'
+                    : '未验证'
+              }}
+            </Tag>
+            <span
+              v-if="caseDetailItem.improvedCount"
+              class="ml-2 text-green-600"
+            >
+              改善 {{ caseDetailItem.improvedCount }} 项
+            </span>
+            <span
+              v-if="caseDetailItem.deterioratedCount"
+              class="ml-2 text-red-600"
+            >
+              恶化 {{ caseDetailItem.deterioratedCount }} 项
+            </span>
+          </DescriptionsItem>
+          <DescriptionsItem label="实施时间">
+            {{
+              caseDetailItem.implementedAt
+                ? formatTime(caseDetailItem.implementedAt)
+                : '—'
+            }}
+          </DescriptionsItem>
+        </Descriptions>
+      </template>
+    </Drawer>
   </Page>
 </template>

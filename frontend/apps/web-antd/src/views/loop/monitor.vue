@@ -1903,7 +1903,9 @@ onUnmounted(() => {
               :height="trendChartHeight"
             />
           </div>
-          <div v-else class="py-12 text-center text-gray-400">暂无趋势数据</div>
+          <div v-else class="py-12 text-center text-gray-400">
+            暂无趋势数据。请确认时间窗内有实时/历史数据，或调整时间窗后重试
+          </div>
         </div>
       </Spin>
     </ClpmModal>
@@ -2091,7 +2093,9 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <div v-else class="py-12 text-center text-gray-400">暂无性能数据</div>
+        <div v-else class="py-12 text-center text-gray-400">
+          暂无性能数据。该回路在当前时间窗内可能无 KPI 快照，请调整时间窗后重试
+        </div>
       </Spin>
     </Modal>
 

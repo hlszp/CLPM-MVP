@@ -23,6 +23,9 @@ import {
   Descriptions,
   DescriptionsItem,
   Drawer,
+  Dropdown,
+  Menu,
+  message,
   Select,
   Table,
   Tag,
@@ -38,6 +41,7 @@ import {
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
+import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'SystemAudit' });
@@ -57,79 +61,134 @@ const query = reactive({
   pageSize: 20,
 });
 
-/** 操作类型选项（全量对齐后端 SysAuditLog.operation_type ~55 种，2026-08-09 补全） */
-const operationOptions: { label: string; value: SystemApi.OperationType }[] = [
-  // 基础
-  { label: '创建', value: 'CREATE' },
-  { label: '更新', value: 'UPDATE' },
-  { label: '删除', value: 'DELETE' },
-  { label: '登录', value: 'LOGIN' },
-  { label: '登出', value: 'LOGOUT' },
-  { label: '登录失败', value: 'LOGIN_FAILED' },
-  { label: '启用', value: 'ENABLE' },
-  // 用户
-  { label: '新建用户', value: 'USER_CREATE' },
-  { label: '更新用户', value: 'USER_UPDATE' },
-  { label: '禁用用户', value: 'USER_DISABLE' },
-  { label: '重置密码', value: 'USER_RESET_PASSWORD' },
-  // 回路
-  { label: '新建回路', value: 'LOOP_CREATE' },
-  { label: '更新回路', value: 'LOOP_UPDATE' },
-  { label: '删除回路', value: 'LOOP_DELETE' },
-  { label: '批量配置回路', value: 'LOOP_BATCH_UPDATE' },
-  { label: '批量删除回路', value: 'LOOP_BATCH_DELETE' },
-  { label: '批量分组回路', value: 'LOOP_BATCH_GROUPING' },
-  { label: '回路导入更新', value: 'LOOP_IMPORT_UPDATE' },
-  { label: '回路 Tag 映射更新', value: 'LOOP_TAG_MAPPING_UPDATE' },
-  { label: '回路重要等级权重更新', value: 'LOOP_LEVEL_WEIGHT_UPDATE' },
-  { label: '回路类型权重更新', value: 'LOOP_TYPE_WEIGHT_UPDATE' },
-  // 装置节点
-  { label: '新建装置节点', value: 'PLANT_NODE_CREATE' },
-  { label: '更新装置节点', value: 'PLANT_NODE_UPDATE' },
-  { label: '删除装置节点', value: 'PLANT_NODE_DELETE' },
-  { label: '装置节点导入', value: 'PLANT_NODE_IMPORT' },
-  { label: '装置节点导入更新', value: 'PLANT_NODE_IMPORT_UPDATE' },
-  // 位号
-  { label: '更新位号', value: 'TAG_UPDATE' },
-  { label: '删除位号', value: 'TAG_DELETE' },
-  { label: '位号导入', value: 'TAG_IMPORT' },
-  // 指标与评估配置
-  { label: '指标配置更新', value: 'METRIC_CONFIG_UPDATE' },
-  { label: '指标配置批量更新', value: 'METRIC_CONFIG_BATCH_UPDATE' },
-  { label: '定级阈值更新', value: 'GRADING_THRESHOLD_UPDATE' },
-  { label: '可信度阈值更新', value: 'CONFIDENCE_THRESHOLD_UPDATE' },
-  { label: '权重模板保存', value: 'WEIGHT_TEMPLATE_SAVE' },
-  { label: '算法参数更新', value: 'ALGORITHM_PARAMS_UPDATE' },
-  { label: '异常值参数更新', value: 'OUTLIER_PARAMS_UPDATE' },
-  { label: 'AAS 配置更新', value: 'AAS_CONFIG_UPDATE' },
-  { label: 'MODE 映射替换', value: 'MODE_MAPPING_REPLACE' },
-  // 诊断
-  { label: '诊断配置更新', value: 'DIAG_CONFIG_UPDATE' },
-  { label: '诊断配置批量更新', value: 'DIAG_CONFIG_BATCH_UPDATE' },
-  { label: '诊断配置审批通过', value: 'DIAG_CONFIG_APPROVE' },
-  { label: '诊断配置驳回', value: 'DIAG_CONFIG_REJECT' },
-  { label: '诊断配置回滚', value: 'DIAG_CONFIG_ROLLBACK' },
-  { label: '诊断规则更新', value: 'DIAG_RULE_UPDATE' },
-  { label: '诊断标签处理', value: 'DIAG_TAG_RESOLVE' },
-  { label: '诊断任务归档', value: 'DIAG_TASK_ARCHIVE' },
-  { label: '诊断任务取消', value: 'DIAG_TASK_CANCEL' },
-  { label: '诊断任务删除', value: 'DIAG_TASK_DELETE' },
-  { label: '诊断阈值删除', value: 'DIAG_THRESHOLD_DELETE' },
-  { label: '异常跟踪状态更新', value: 'TRACKER_STATUS_UPDATE' },
-  // 预警
-  { label: '预警规则更新', value: 'ENGINE_RULE_UPDATE' },
-  // 整定
-  { label: '整定 PID 应用', value: 'TUNE_PID' },
-  { label: '新建整定任务', value: 'CREATE_TUNING_TASK' },
-  // 报表
-  { label: '新建报表配置', value: 'REPORT_CONFIG_CREATE' },
-  { label: '报表配置更新', value: 'REPORT_CONFIG_UPDATE' },
-  { label: '生成报表', value: 'REPORT_GENERATE' },
-  // 数据源与系统
-  { label: '数据源配置更新', value: 'DATASOURCE_CONFIG_UPDATE' },
-  { label: 'Tailscale 切换', value: 'TAILSCALE_SWITCH' },
-  { label: 'LLM 配置更新', value: 'LLM_CONFIG_UPDATE' },
+/**
+ * 操作类型选项（全量对齐后端 SysAuditLog.operation_type ~55 种，2026-08-09 补全）
+ * P2-11：按模块分组 + Select showSearch 支持搜索过滤
+ */
+const operationOptions: {
+  label: string;
+  options: { label: string; value: SystemApi.OperationType }[];
+}[] = [
+  {
+    label: '基础',
+    options: [
+      { label: '创建', value: 'CREATE' },
+      { label: '更新', value: 'UPDATE' },
+      { label: '删除', value: 'DELETE' },
+      { label: '登录', value: 'LOGIN' },
+      { label: '登出', value: 'LOGOUT' },
+      { label: '登录失败', value: 'LOGIN_FAILED' },
+      { label: '启用', value: 'ENABLE' },
+    ],
+  },
+  {
+    label: '用户',
+    options: [
+      { label: '新建用户', value: 'USER_CREATE' },
+      { label: '更新用户', value: 'USER_UPDATE' },
+      { label: '禁用用户', value: 'USER_DISABLE' },
+      { label: '重置密码', value: 'USER_RESET_PASSWORD' },
+    ],
+  },
+  {
+    label: '回路',
+    options: [
+      { label: '新建回路', value: 'LOOP_CREATE' },
+      { label: '更新回路', value: 'LOOP_UPDATE' },
+      { label: '删除回路', value: 'LOOP_DELETE' },
+      { label: '批量配置回路', value: 'LOOP_BATCH_UPDATE' },
+      { label: '批量删除回路', value: 'LOOP_BATCH_DELETE' },
+      { label: '批量分组回路', value: 'LOOP_BATCH_GROUPING' },
+      { label: '回路导入更新', value: 'LOOP_IMPORT_UPDATE' },
+      { label: '回路 Tag 映射更新', value: 'LOOP_TAG_MAPPING_UPDATE' },
+      { label: '回路重要等级权重更新', value: 'LOOP_LEVEL_WEIGHT_UPDATE' },
+      { label: '回路类型权重更新', value: 'LOOP_TYPE_WEIGHT_UPDATE' },
+    ],
+  },
+  {
+    label: '装置节点',
+    options: [
+      { label: '新建装置节点', value: 'PLANT_NODE_CREATE' },
+      { label: '更新装置节点', value: 'PLANT_NODE_UPDATE' },
+      { label: '删除装置节点', value: 'PLANT_NODE_DELETE' },
+      { label: '装置节点导入', value: 'PLANT_NODE_IMPORT' },
+      { label: '装置节点导入更新', value: 'PLANT_NODE_IMPORT_UPDATE' },
+    ],
+  },
+  {
+    label: '位号',
+    options: [
+      { label: '更新位号', value: 'TAG_UPDATE' },
+      { label: '删除位号', value: 'TAG_DELETE' },
+      { label: '位号导入', value: 'TAG_IMPORT' },
+    ],
+  },
+  {
+    label: '指标与评估配置',
+    options: [
+      { label: '指标配置更新', value: 'METRIC_CONFIG_UPDATE' },
+      { label: '指标配置批量更新', value: 'METRIC_CONFIG_BATCH_UPDATE' },
+      { label: '定级阈值更新', value: 'GRADING_THRESHOLD_UPDATE' },
+      { label: '可信度阈值更新', value: 'CONFIDENCE_THRESHOLD_UPDATE' },
+      { label: '权重模板保存', value: 'WEIGHT_TEMPLATE_SAVE' },
+      { label: '算法参数更新', value: 'ALGORITHM_PARAMS_UPDATE' },
+      { label: '异常值参数更新', value: 'OUTLIER_PARAMS_UPDATE' },
+      { label: 'AAS 配置更新', value: 'AAS_CONFIG_UPDATE' },
+      { label: 'MODE 映射替换', value: 'MODE_MAPPING_REPLACE' },
+    ],
+  },
+  {
+    label: '诊断',
+    options: [
+      { label: '诊断配置更新', value: 'DIAG_CONFIG_UPDATE' },
+      { label: '诊断配置批量更新', value: 'DIAG_CONFIG_BATCH_UPDATE' },
+      { label: '诊断配置审批通过', value: 'DIAG_CONFIG_APPROVE' },
+      { label: '诊断配置驳回', value: 'DIAG_CONFIG_REJECT' },
+      { label: '诊断配置回滚', value: 'DIAG_CONFIG_ROLLBACK' },
+      { label: '诊断规则更新', value: 'DIAG_RULE_UPDATE' },
+      { label: '诊断标签处理', value: 'DIAG_TAG_RESOLVE' },
+      { label: '诊断任务归档', value: 'DIAG_TASK_ARCHIVE' },
+      { label: '诊断任务取消', value: 'DIAG_TASK_CANCEL' },
+      { label: '诊断任务删除', value: 'DIAG_TASK_DELETE' },
+      { label: '诊断阈值删除', value: 'DIAG_THRESHOLD_DELETE' },
+      { label: '异常跟踪状态更新', value: 'TRACKER_STATUS_UPDATE' },
+    ],
+  },
+  {
+    label: '预警',
+    options: [{ label: '预警规则更新', value: 'ENGINE_RULE_UPDATE' }],
+  },
+  {
+    label: '整定',
+    options: [
+      { label: '整定 PID 应用', value: 'TUNE_PID' },
+      { label: '新建整定任务', value: 'CREATE_TUNING_TASK' },
+    ],
+  },
+  {
+    label: '报表',
+    options: [
+      { label: '新建报表配置', value: 'REPORT_CONFIG_CREATE' },
+      { label: '报表配置更新', value: 'REPORT_CONFIG_UPDATE' },
+      { label: '生成报表', value: 'REPORT_GENERATE' },
+    ],
+  },
+  {
+    label: '数据源与系统',
+    options: [
+      { label: '数据源配置更新', value: 'DATASOURCE_CONFIG_UPDATE' },
+      { label: 'Tailscale 切换', value: 'TAILSCALE_SWITCH' },
+      { label: 'LLM 配置更新', value: 'LLM_CONFIG_UPDATE' },
+    ],
+  },
 ];
+
+/** P2-11：扁平化操作类型列表（供 operationLabel 查找） */
+const operationFlatMap = new Map(
+  operationOptions.flatMap((g) =>
+    g.options.map((o) => [o.value, o.label] as const),
+  ),
+);
 
 /** 操作类型颜色映射 */
 const operationColorMap: Record<SystemApi.OperationType, string> = {
@@ -258,7 +317,7 @@ function handleViewDetail(record: SystemApi.AuditLog) {
 }
 
 function operationLabel(op: SystemApi.OperationType): string {
-  return operationOptions.find((o) => o.value === op)?.label || op;
+  return operationFlatMap.get(op) ?? op;
 }
 
 function resourceLabel(rt?: null | string): string {
@@ -293,8 +352,44 @@ function handleHelp() {
   showPageHelp({
     title: '审计日志 帮助',
     content:
-      '审计日志页：按操作类型、时间范围和资源类型筛选查看系统关键变更记录（创建/更新/删除/登录/登出）。点击「查看详情」可在抽屉中查看变更前后值对比（JSON）。仅 ADMIN 可见，数据只读不可编辑。刷新按钮重新拉取当前筛选条件下的日志列表。',
+      '审计日志页：按操作类型、时间范围和资源类型筛选查看系统关键变更记录（创建/更新/删除/登录/登出）。点击「查看详情」可在抽屉中查看变更前后值对比（JSON）。仅 ADMIN 可见，数据只读不可编辑。刷新按钮重新拉取当前筛选条件下的日志列表。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
+}
+
+/** P3-05：导出当前筛选结果为 CSV 或 Excel */
+function handleExport(format: 'csv' | 'excel') {
+  if (auditList.value.length === 0) {
+    message.warning('当前无可导出的数据');
+    return;
+  }
+  const headers = [
+    '时间',
+    '操作人',
+    '操作类型',
+    '对象类型',
+    '对象ID',
+    '变更前',
+    '变更后',
+    '客户端IP',
+  ];
+  const rows = auditList.value.map((r) => [
+    formatTime(r.operatedAt),
+    r.operator,
+    r.operationType,
+    r.targetType ?? '',
+    r.targetId ?? '',
+    r.beforeValue == null ? '' : JSON.stringify(r.beforeValue),
+    r.afterValue == null ? '' : JSON.stringify(r.afterValue),
+    r.clientIp ?? '',
+  ]);
+  exportData({
+    filename: `audit-log-${new Date().toISOString().slice(0, 10)}`,
+    format,
+    headers,
+    rows,
+    sheetName: '审计日志',
+  });
+  message.success(`已导出 ${auditList.value.length} 条记录`);
 }
 
 // ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
@@ -313,6 +408,20 @@ const { toolbarItems } = usePageToolbar(() => ({
     >
       <template #actions>
         <ClpmStandardActions :items="toolbarItems" />
+        <!-- P3-05：导出 CSV/Excel 双格式 -->
+        <Dropdown>
+          <ClpmToolbarButton
+            icon="ant-design:download-outlined"
+            label="导出"
+            tooltip="导出当前筛选结果"
+          />
+          <template #overlay>
+            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
+              <Menu.Item key="csv">导出 CSV</Menu.Item>
+              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
         <ClpmToolbarButton
           icon="ant-design:column-height-outlined"
@@ -327,9 +436,17 @@ const { toolbarItems } = usePageToolbar(() => ({
       <div class="mb-4 flex flex-wrap items-center gap-3">
         <Select
           v-model:value="query.operationType"
-          placeholder="操作类型"
-          style="width: 140px"
+          placeholder="操作类型（可搜索）"
+          style="width: 200px"
           allow-clear
+          show-search
+          :filter-option="
+            (input: string, option: any) =>
+              option?.children?.[0]?.children?.[0]
+                ?.toLowerCase?.()
+                .includes(input.toLowerCase()) ||
+              option?.label?.toLowerCase?.().includes(input.toLowerCase())
+          "
           :options="operationOptions"
           @change="handleSearch"
         />

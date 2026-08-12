@@ -26,7 +26,7 @@ import { useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Space, Table, Tag } from 'ant-design-vue';
+import { Button, RadioGroup, Space, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisAnalyticsApi, getDiagnosisListApi } from '#/api/diagnosis';
@@ -63,6 +63,21 @@ const { getStatusMeta } = useIndustrialStatus();
 const loading = ref(false);
 const hasError = ref(false);
 
+/** P3-25：趋势图时间范围切换（7/14/30/90 天，默认 30 天） */
+const trendDays = ref(30);
+const trendRangeOptions = [
+  { label: '7天', value: 7 },
+  { label: '14天', value: 14 },
+  { label: '30天', value: 30 },
+  { label: '90天', value: 90 },
+];
+const trendRangeLabel = computed(() => `近 ${trendDays.value} 天`);
+
+/** P3-25：切换趋势时间范围后重新加载数据 */
+function handleTrendRangeChange() {
+  loadOverview();
+}
+
 /** 统计数据 */
 const analyticsData = ref<DiagnosisApi.AnalyticsResult | null>(null);
 
@@ -95,11 +110,13 @@ const kpiCards = ref([
     title: '异常回路数（今日）',
     value: 0,
     unit: '个',
-    status: 'error' as const,
+    // P3-24：异常数为 0 时显示绿色（ok），>0 时显示红色（error）
+    status: 'ok' as 'error' | 'info' | 'neutral' | 'ok' | 'warning',
     icon: 'ant-design:alert-outlined',
     infoTip: '近 24 小时内被诊断为异常的回路数量',
     contextText: '近 24 小时',
     precision: 0,
+    neutralWhenZero: false,
   },
   {
     key: 'pending',
@@ -111,6 +128,7 @@ const kpiCards = ref([
     infoTip: '处理状态为"待处理"的诊断记录数',
     contextText: '需关注',
     precision: 0,
+    neutralWhenZero: true,
   },
   {
     key: 'implemented',
@@ -122,6 +140,7 @@ const kpiCards = ref([
     infoTip: '处理状态为"已实施"的诊断记录数',
     contextText: '近 30 天累计',
     precision: 0,
+    neutralWhenZero: true,
   },
   {
     key: 'avg_close_hours',
@@ -133,6 +152,7 @@ const kpiCards = ref([
     infoTip: '近 30 天平均任务闭环时长（小时）',
     contextText: '近 30 天',
     precision: 1,
+    neutralWhenZero: true,
   },
 ]);
 
@@ -180,8 +200,9 @@ async function loadOverview() {
   hasError.value = false;
   try {
     // 并行加载统计 + 今日异常列表（timeWindow=last_24_hours）
+    // P3-25：趋势图时间范围可切换（7/14/30/90 天）
     const now = dayjs();
-    const start = now.subtract(30, 'day');
+    const start = now.subtract(trendDays.value, 'day');
     const [analytics, todayList] = await Promise.all([
       getDiagnosisAnalyticsApi({
         startTime: start.format('YYYY-MM-DD HH:mm:ss'),
@@ -223,6 +244,18 @@ async function loadOverview() {
     for (const [index, value] of values.entries()) {
       const card = kpiCards.value[index];
       if (card) card.value = value;
+    }
+
+    // P3-25：KPI 卡片上下文文案随趋势时间范围动态更新
+    const avgCloseCard = kpiCards.value[3];
+    if (avgCloseCard) {
+      avgCloseCard.contextText = trendRangeLabel.value;
+    }
+
+    // P3-24：异常回路数卡片状态随数值变化——0=ok(绿)，>0=error(红)
+    const abnormalCard = kpiCards.value[0];
+    if (abnormalCard) {
+      abnormalCard.status = abnormalToday === 0 ? 'ok' : 'error';
     }
 
     // 渲染图表
@@ -383,7 +416,7 @@ function handleHelp() {
   showPageHelp({
     title: '诊断总览 帮助',
     content:
-      '诊断中心默认着陆页：展示异常回路数（今日）、待处理/已闭环任务数、平均闭环时长 4 项 KPI；标签分布饼图与近 30 天异常趋势（已解决数 + 平均闭环时长双 Y 轴）；底部 Top 5 异常回路表格按综合评分升序排列。点击「查看全部」进入诊断任务列表。',
+      '诊断中心默认着陆页：展示异常回路数（今日）、待处理/已闭环任务数、平均闭环时长 4 项 KPI；标签分布饼图与异常趋势（已解决数 + 平均闭环时长双 Y 轴），趋势图时间范围可在 7/14/30/90 天间切换；底部 Top 5 异常回路表格按综合评分升序排列。点击「查看全部」进入诊断任务列表。',
   });
 }
 
@@ -452,7 +485,7 @@ onMounted(() => {
         :info-tip="card.infoTip"
         :context-text="card.contextText"
         :precision="card.precision"
-        neutral-when-zero
+        :neutral-when-zero="card.neutralWhenZero"
         :loading="loading"
       />
     </div>
@@ -460,12 +493,12 @@ onMounted(() => {
     <!-- 中间区域：左侧标签分布饼图 + 右侧异常趋势折线图 -->
     <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <ClpmDataCanvas
-        title="诊断标签分布"
-        description="近 30 天 8 类诊断标签占比"
+        :title="`诊断标签分布（${trendRangeLabel}）`"
+        :description="`${trendRangeLabel} 8 类诊断标签占比`"
         :loading="loading"
         :error="hasError"
         :empty="pieEmpty"
-        empty-reason="近 30 天无诊断标签记录"
+        :empty-reason="`${trendRangeLabel}无诊断标签记录`"
         loading-variant="opacity"
         @retry="handleRetry"
       >
@@ -473,15 +506,26 @@ onMounted(() => {
       </ClpmDataCanvas>
 
       <ClpmDataCanvas
-        title="近 30 天异常趋势"
+        :title="`${trendRangeLabel}异常趋势`"
         description="已解决数与平均闭环时长双 Y 轴趋势"
         :loading="loading"
         :error="hasError"
         :empty="trendEmpty"
-        empty-reason="近 30 天无闭环处理记录"
+        :empty-reason="`${trendRangeLabel}无闭环处理记录`"
         loading-variant="opacity"
         @retry="handleRetry"
       >
+        <!-- P3-25：趋势图时间范围切换（7/14/30/90 天） -->
+        <div class="absolute right-3 top-2 z-10">
+          <RadioGroup
+            v-model:value="trendDays"
+            size="small"
+            button-style="solid"
+            :options="trendRangeOptions"
+            option-type="button"
+            @change="handleTrendRangeChange"
+          />
+        </div>
         <EchartsUI ref="trendChartRef" height="320px" />
       </ClpmDataCanvas>
     </div>
@@ -574,6 +618,18 @@ onMounted(() => {
               @click="handleViewDetail(record.loopId)"
             >
               详情
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              @click="
+                router.push({
+                  path: '/diagnosis/loop-analysis',
+                  query: { loopId: record.loopId },
+                })
+              "
+            >
+              分析
             </Button>
             <Button
               type="link"

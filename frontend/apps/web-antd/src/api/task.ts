@@ -18,7 +18,12 @@ import { requestClient } from '#/api/request';
 
 export namespace TaskApi {
   /** 任务类型（对齐 app.schemas.task.TaskType） */
-  export type TaskType = 'BACKFILL' | 'CUSTOM' | 'STANDARD';
+  export type TaskType =
+    | 'BACKFILL'
+    | 'CUSTOM'
+    | 'REPORT'
+    | 'STANDARD'
+    | 'TUNING';
 
   /** 任务状态（对齐 app.schemas.task.TaskStatus） */
   export type TaskStatus =
@@ -112,6 +117,10 @@ export namespace TaskApi {
     loopIds?: null | string[];
     /** 装置 ID 列表（仅 BACKFILL） */
     plantNodeIds?: null | string[];
+    /** V62-P3-33：产物文件名（仅 REPORT 等带文件的任务） */
+    fileName?: null | string;
+    /** V62-P3-33：产物下载路径，例 /api/v1/tasks/{taskId}/download */
+    resultUrl?: null | string;
   }
 
   /** 任务列表响应 */
@@ -321,4 +330,13 @@ export function getTaskResultsApi(
     `${BASE}/${taskId}/results`,
     { params },
   );
+}
+
+/**
+ * 构造下载 URL（供 window.open 打开触发下载）。
+ *
+ * 登录态 Cookie 为 First-party，直接 window.open 相对路径即可自动携带 Cookie。
+ */
+export function buildTaskDownloadUrl(taskId: string): string {
+  return `${BASE}/${taskId}/download`;
 }

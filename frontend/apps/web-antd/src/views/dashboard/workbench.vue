@@ -284,11 +284,21 @@ const { toolbarItems } = usePageToolbar(() => ({
     <ClpmPredictionCard class="mt-4" :top-n="10" />
 
     <!-- P1-05：数据链路健康状态卡片（常驻工作台首屏） -->
+    <!-- P3-41：增强视觉权重——状态色左边框 + 标题图标 + 数据源配置入口 -->
     <ClpmDataCanvas
       class="mt-4"
+      :class="`clpm-link-health clpm-link-health--${signalrStatus.color}`"
       title="数据链路健康状态"
       description="实时订阅与历史数据源连通性一览，断连时红色告警"
     >
+      <template #extra>
+        <Button size="small" @click="router.push('/loop/aas')">
+          <template #icon>
+            <IconifyIcon icon="ant-design:setting-outlined" />
+          </template>
+          数据源配置
+        </Button>
+      </template>
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <!-- 实时订阅状态 -->
         <div class="flex flex-col items-center gap-1 rounded border p-3">
@@ -409,3 +419,23 @@ const { toolbarItems } = usePageToolbar(() => ({
     <ClpmAiDrawer v-model:open="aiDrawerOpen" scene="workbench" />
   </Page>
 </template>
+
+<style scoped>
+/* P3-41：数据链路健康卡片视觉权重增强——状态色左边框 + 浅色底 */
+.clpm-link-health {
+  border-left: 4px solid hsl(var(--border));
+  transition: border-left-color 0.3s ease;
+}
+
+.clpm-link-health--success {
+  border-left-color: hsl(var(--status-ok));
+}
+
+.clpm-link-health--error {
+  border-left-color: hsl(var(--status-error));
+}
+
+.clpm-link-health--default {
+  border-left-color: hsl(var(--muted-foreground));
+}
+</style>

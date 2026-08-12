@@ -17,14 +17,14 @@
 
 先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.2。
 
-PRD v6.2 是产品需求的事实来源；实现契约 v2.10 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
+PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-08-10 修订 — 监控工作台闭环 MW-P5 完成 + 契约 v2.10 + 运行时验收收口）
+## 当前基线（2026-08-11 修订 — IA 评审 Backlog P2-22/P3-33 闭环 + 契约 v2.11 + Worker 清理加固）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
 | 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.2（新增 §4.4.6 智能预警规则引擎 + §5.7 预警规则类型与 DSL 约束 + §7.1 预警求值性能要求） |
-| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.10**（增量 changelog：EXPERT 扩展 `loop:view` 只读 + `GET /configs/llm` 放开 EXPERT + workbench canUseTableView 守卫 + monitor_attention LIMIT 截断优化 + MW-P5-03/04/05 运行时验收。原 v2.9：监控—工作台 IA 再收敛 6 菜单。原 v2.8：monitor scoreDelta/dayTrend、aggregates verifyOverdueCount、algorithm-params paramMeta、快照 timeConstant、Action Tracker VERIFYING 闭环口径） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.11**（增量 changelog：P3-33 异步 PDF 导出（Celery `generate_diagnosis_pdf_task` + `GET /tasks/{taskId}/download` 安全下载）+ P2-22 风险统计（`riskSummary`/`pendingCount`）+ Celery Worker/Beat 三层清理加固（killpg+pgrep+SIGKILL）+ KPI 指标条紧凑化（minmax 128→92px）。原 v2.10：EXPERT 扩展 `loop:view` 只读 + `GET /configs/llm` 放开 EXPERT + workbench canUseTableView 守卫 + monitor_attention LIMIT 截断优化 + MW-P5-03/04/05 运行时验收。原 v2.9：监控—工作台 IA 再收敛 6 菜单。原 v2.8：monitor scoreDelta/dayTrend、aggregates verifyOverdueCount、algorithm-params paramMeta、快照 timeConstant、Action Tracker VERIFYING 闭环口径） |
 | **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
 | 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
 | 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
@@ -59,6 +59,8 @@ PRD v6.2 是产品需求的事实来源；实现契约 v2.10 是重构后 IA/路
 | 过程对象辨识算法栈 | `app/services/tuning_identification/` (excitation/nonparametric/arx/armax/iv/order_selection/discrete_to_continuous/pipeline) | 回路整定 Phase 2：基于历史 OP/PV 时序辨识过程对象 G(s)=PV/OP；分层算法栈（激励检测→非参数粗估→ARX/ARMAX/IV 参数化辨识→阶次选择 AIC/BIC→离散→连续转换→可信度评估）；接入 DataPlanner 8 步预处理 + ConfidenceEvaluator A/B/C/D/E 等级 |
 | AI 洞察服务 | `app/services/ai_insight/` (context/base/service/scenes/diagnosis/performance/tuning/workbench) + `app/services/llm_provider.py` | P3-04 AI 洞察全局赋能：`SceneStrategy` 抽象基类 + 4 场景策略（诊断/性能/整定/工作台），`POST /ai-insight/{scene}` 统一入口，`mode=auto/llm/template`，LLM 失败自动 fallback 规则模板；`AiInsightContext.knowledgeContext` 为 RAG 扩展点（第一期恒 None）；LLM 配置 6 键存 sys_config（`llm.enabled/endpoint/api_key/model/timeout/max_tokens`），max_tokens 可配修复推理模型空输出；前端通用组件 `ClpmAiInsight`（LLM 未启用时按 hideWhenDisabled 隐藏或显示启用提示），4 场景嵌入 |
 | 智能预警规则引擎 | `app/services/alert_rule_engine/` (dsl/evaluator/suppressor/dispatcher/audit/cache/service) + `app/tasks/alert_patrol.py` + `app/api/v1/endpoints/alert.py` + `ws_alert.py` | PRD v6.2 §4.4.6 智能预警规则引擎 Phase 1：4 类规则 DSL（THRESHOLD/CONFIDENCE/COMPOSITE/DRIFT）+ 规则求值（时效窗口/可信度门禁/持续时长）+ Redis 抑制（冷却/去抖/去重/手动抑制）+ 动作分发（CREATE_EVENT/CREATE_TRACKER/NOTIFY）+ 规则缓存 30s TTL + 审计日志；5 张表（alert_rule/subscription/event/audit_log/suppression）；19 API 端点 + dry-run 试运行 + WebSocket `/api/v1/ws/alerts` 实时推送；Celery Beat `alert-patrol` 每分钟巡检 + `alert-suppression-cleanup` 每小时清理；前端规则配置页（表单+DSL JSON 双模式）+ 事件列表页 |
+| 异步报表生成 | `app/tasks/report_generator.py` | P3-33 诊断建议书 PDF 异步生成：Celery 任务 `generate_diagnosis_pdf_task`（bind+autoretry 2 次），分 5 段更新 TaskTracker progress（0.25/0.50/0.75/0.95/1.00），REPORT 类型任务写入导出目录；前端 `use-async-pdf-export` composable 轮询 + 4 次失败熔断 + SUCCESS 自动下载 + 异步失败降级同步 |
+| Celery 生命周期管理 | `app/main.py` (lifespan) | Worker/Beat 随后端自动启动（v6.1）；**退出三层清理加固**（v2.11）：① `killpg` 进程组终止（`start_new_session=True`）；② `pgrep -f "celery.*clpm"` 兜底 `SIGTERM`；③ 5s 后 `SIGKILL` 强杀；`CLPM_SKIP_EXIT_HOOKS=1` + argv token 双重防护 pytest 误杀宿主 Celery（`tests/conftest.py` 设置） |
 
 ## 开发环境运行指南
 
@@ -148,7 +150,7 @@ cd frontend && pnpm run format
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**；sys_config 为配置真相源，.env 已移除业务 URL/Token。细节见 ops-runbook §网络模式切换 |
 | 远端仓库 | **gitea 为主远端**（remote 名 `origin`，`https://gitea.zlinfot.xyz:2087/zp/CLPM`）；GitHub 为镜像（remote 名 `github`，`hlszp/CLPM`），main 合并后 `git push github main` 同步 |
-| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.10 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.11 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## Git 工作流
 
@@ -170,7 +172,7 @@ cd frontend && pnpm run format
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
 | E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **E2E 79 用例**（2026-08-06）：71 passed / 3 既有失败（D3-MOC/F4-F5/TUNE-009，非 Phase A 引入，均为 07-28 后新增测试）/ 2 flaky / 3 skipped；IA 重构 Phase A 路由已全量同步 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
-| 新功能开发 | PRD v6.2 → 实现契约 v2.10 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
+| 新功能开发 | PRD v6.2 → 实现契约 v2.11 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
 | 网络模式切换后续改进 | ops-runbook §网络模式切换 | 仅余 ③ 公网模式 ping 延迟抖动优化（低优先级） |
 
 ## Stale docs 防护

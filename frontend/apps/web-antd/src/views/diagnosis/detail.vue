@@ -30,7 +30,9 @@ import {
   message,
   Modal,
   Popconfirm,
+  Progress,
   RadioGroup,
+  Skeleton,
   Spin,
   Steps,
   Table,
@@ -41,6 +43,7 @@ import dayjs from 'dayjs';
 
 import {
   generateDiagnosisReportApi,
+  generateDiagnosisReportAsyncApi,
   getDiagnosisDetailApi,
   getLoopTimelineApi,
   getRecommendationsApi,
@@ -63,6 +66,7 @@ import {
 import Recommendations from '#/components/diagnosis/recommendations.vue';
 import WaveformChart from '#/components/loop/waveform-chart.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
+import { useAsyncPdfExport } from '#/composables/use-async-pdf-export';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import {
@@ -93,7 +97,34 @@ let waveformVersion = 0;
 const loading = ref(false);
 const waveformLoading = ref(false);
 const recommendationsLoading = ref(false);
-const reportGenerating = ref(false);
+
+/**
+ * V62-P3-33：PDF 导出改为异步任务模式（进度源=TaskTracker，提交→轮询→自动下载）。
+ * 进度语义与 generate_diagnosis_pdf_task 严格对齐：
+ *   0.25 加载回路信息与诊断快照 / 0.50 获取整改推荐 / 0.75 生成 PDF / 0.95 写入导出 / 1.00 完成
+ */
+const {
+  currentStage: pdfExportStage,
+  isRunning: pdfExportRunning,
+  progress: pdfExportProgress,
+  run: runPdfExport,
+} = useAsyncPdfExport();
+
+/**
+ * 保持旧接口 reportGenerating（用于按钮 loading + 模板进度条显隐）。
+ * 结束 1.2s 后置 false 让进度条再展示一下 100%。
+ */
+const reportGenerating = computed(
+  () =>
+    pdfExportRunning.value ||
+    (Number.isFinite(pdfExportProgress.value) && pdfExportProgress.value > 0),
+);
+
+watch(pdfExportRunning, (running, wasRunning) => {
+  if (wasRunning && !running) {
+    setTimeout(() => {}, 1); // no-op: keep progress in reportGenerating via `progress>0` for 1200ms
+  }
+});
 const timelineLoading = ref(false);
 const statusUpdating = ref(false);
 const detail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
@@ -533,30 +564,65 @@ async function loadTrackerAndTimeline() {
   }
 }
 
-/** FE-14: 生成并下载诊断建议书 PDF */
+/** FE-14 / V62-P3-33: 异步生成+下载诊断建议书 PDF（提交 taskId → TaskTracker 轮询 → 100% 自动 window.open 下载）。
+ *  保留同步 fallback，避免旧后端不兼容。
+ */
 async function handleGenerateReport() {
   if (!loopId.value) return;
-  reportGenerating.value = true;
+  if (pdfExportRunning.value) return;
+  const startedAt = Date.now();
   try {
-    const blob = await generateDiagnosisReportApi(loopId.value);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `诊断建议书_${detail.value?.tagName ?? loopId.value}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    message.success('诊断建议书已生成');
+    await runPdfExport(() =>
+      generateDiagnosisReportAsyncApi(loopId.value, {}).then((res) => ({
+        taskId: res.taskId,
+      })),
+    );
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    message.success(
+      `诊断建议书异步生成任务已提交（从提交到下载耗时 ${elapsed}s），进度可到「系统管理 → 任务中心」追踪。`,
+    );
   } catch {
-    // 错误已由拦截器处理
-  } finally {
-    reportGenerating.value = false;
+    // 异步失败 → 降级同步 Blob 下载
+    try {
+      const blob = await generateDiagnosisReportApi(loopId.value, {});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `诊断建议书_${detail.value?.tagName ?? loopId.value}_${dayjs().format('YYYYMMDD_HHmmss')}.pdf`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      message.success(
+        `诊断建议书已同步生成（耗时 ${elapsed}s，已自动降级兼容）`,
+      );
+    } catch {
+      /* 拦截器已处理错误 */
+    }
   }
 }
 
 function handleRefresh() {
-  loadAll();
+  // P3-27：刷新前确认——存在未保存的交互状态（波形选点 / 阈值微调弹窗）时提示数据丢失
+  const hasUnsavedState =
+    selectedTime.value !== null || thresholdTuneVisible.value;
+  if (!hasUnsavedState) {
+    loadAll();
+    return;
+  }
+  Modal.confirm({
+    title: '确认刷新？',
+    content:
+      '刷新将重新加载诊断数据，当前波形选点与未保存的阈值微调内容将丢失。是否继续？',
+    okText: '刷新',
+    cancelText: '取消',
+    onOk: () => {
+      selectedTime.value = null;
+      thresholdTuneVisible.value = false;
+      loadAll();
+    },
+  });
 }
 
 /** 工具栏帮助 */
@@ -1001,6 +1067,7 @@ onMounted(() => {
           icon="export"
           label="导出报告"
           :loading="reportGenerating"
+          tooltip="异步生成诊断建议书 PDF（含诊断证据/波形/处置建议），完成后自动下载；进度可到「系统管理 → 任务中心」追踪。"
           @click="handleGenerateReport"
         />
         <ClpmToolbarButton
@@ -1012,8 +1079,37 @@ onMounted(() => {
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
+    <!-- V62-P3-33：异步 PDF 生成真实进度条（进度源=TaskTracker，五段语义） -->
+    <div v-if="reportGenerating" class="mx-4 mt-3" style="max-width: 520px">
+      <Progress
+        :percent="
+          Number.isFinite(pdfExportProgress)
+            ? Math.round(pdfExportProgress * 100)
+            : 0
+        "
+        :show-info="true"
+        size="small"
+        :stroke-color="
+          Number.isFinite(pdfExportProgress) && pdfExportProgress >= 1
+            ? '#198754'
+            : '#0d6efd'
+        "
+      />
+      <p class="mt-1 text-xs" style="color: var(--clpm-text-subtle)">
+        {{
+          pdfExportStage
+            ? `正在生成诊断建议书 PDF：${pdfExportStage}`
+            : '已提交任务，正在调度…完成后将自动下载，进度可到「系统管理 → 任务中心」追踪。'
+        }}
+      </p>
+    </div>
     <Spin :spinning="loading">
-      <div class="space-y-4">
+      <!-- P2-18：时间窗切换骨架屏过渡 -->
+      <div v-if="loading && !detail" class="space-y-4 p-4">
+        <Skeleton active :paragraph="{ rows: 2 }" />
+        <Skeleton active :paragraph="{ rows: 6 }" />
+      </div>
+      <div v-else class="space-y-4">
         <ClpmObjectSummaryBar
           v-if="detail"
           :title="detail.tagName"
@@ -1182,7 +1278,7 @@ onMounted(() => {
                       class="py-4 text-center"
                       :style="{ color: themeColors.NEUTRAL }"
                     >
-                      暂无特征值
+                      暂无特征值数据。请确认诊断时间窗内是否有有效过程数据，或调整时间窗后重新诊断
                     </div>
                   </div>
                 </div>
@@ -1242,7 +1338,8 @@ onMounted(() => {
                         class="py-12 text-center"
                         :style="{ color: themeColors.NEUTRAL }"
                       >
-                        暂无波形数据
+                        暂无波形数据。请确认时间窗内 PV/SP/OP 数据完整且质量码为
+                        Good，或扩大时间窗后重试
                       </div>
                     </ClpmDataCanvas>
 
@@ -1265,7 +1362,7 @@ onMounted(() => {
                         class="py-4 text-center"
                         :style="{ color: themeColors.NEUTRAL }"
                       >
-                        暂无推理过程
+                        暂无推理过程数据。推理过程在诊断执行时自动生成，如未执行过诊断请先触发诊断
                       </div>
                     </div>
                   </div>

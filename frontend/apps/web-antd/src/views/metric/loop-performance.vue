@@ -2007,7 +2007,11 @@ onMounted(async () => {
                     v-else
                     class="flex h-full items-center justify-center text-gray-400"
                   >
-                    {{ drawerDiagLoading ? '加载中...' : '暂无散点数据' }}
+                    {{
+                      drawerDiagLoading
+                        ? '加载中...'
+                        : '暂无散点数据。该回路在当前时间窗内可能无诊断记录，请调整时间窗或选择其他回路'
+                    }}
                   </div>
                 </Card>
               </Col>
@@ -2123,7 +2127,7 @@ onMounted(async () => {
           v-else-if="!confDrawerLoading"
           class="py-12 text-center text-gray-400"
         >
-          暂无评估记录
+          暂无评估记录。该回路尚未执行过 KPI 评估，请前往「评估任务」页触发评估
         </div>
       </Spin>
     </Drawer>
@@ -2171,17 +2175,18 @@ onMounted(async () => {
             <EchartsUI ref="historyChartRef" height="380px" />
           </div>
           <div v-else class="py-12 text-center text-gray-400">
-            暂无历史趋势数据
+            暂无历史趋势数据。请确认时间窗内有 KPI 快照数据，或扩大时间窗后重试
           </div>
         </div>
       </Spin>
     </Modal>
 
-    <!-- 诊断 Modal -->
+    <!-- 诊断 Modal（P3-19：max-width 限制避免超宽屏过大） -->
     <Modal
       v-model:open="diagModalVisible"
       :title="`诊断可视化 - ${diagRecord?.loopTagName ?? ''}`"
       width="90%"
+      :wrap-style="{ maxWidth: '1200px', margin: '0 auto' }"
       :footer="null"
       destroy-on-close
     >
@@ -2434,7 +2439,7 @@ onMounted(async () => {
           </Tabs>
         </div>
         <div v-else class="py-12 text-center text-gray-400">
-          暂无诊断可视化数据
+          暂无诊断可视化数据。请确认该回路已执行诊断，或调整时间窗后重试
         </div>
       </Spin>
     </Modal>

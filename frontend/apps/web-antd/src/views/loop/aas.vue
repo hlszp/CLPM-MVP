@@ -109,9 +109,12 @@ const form = reactive({
 });
 
 // 默认局域网地址（公网切换由 Tailscale 子网路由透明转发，URL 不变）
+// P3-08：默认地址移至环境变量，便于不同部署环境覆盖（.env VITE_AAS_*）
 const DEFAULT_HISTORY_API_URL =
+  import.meta.env.VITE_AAS_HISTORY_API_URL ||
   'http://192.168.100.2:81/api/services/v1/HistoryData/Get';
 const DEFAULT_SIGNALR_HUB_URL =
+  import.meta.env.VITE_AAS_SIGNALR_HUB_URL ||
   'ws://192.168.100.2:81/signalr/realValueForClpmHub';
 
 // 网络模式切换状态
@@ -1102,9 +1105,13 @@ onMounted(loadConfig);
                   "
                 />
                 <div v-if="savedMaskedToken" class="mt-1">
-                  <Checkbox v-model:checked="clearToken">
-                    清空已保存 Token
-                  </Checkbox>
+                  <Tooltip
+                    title="勾选后将清空已保存 Token，并禁用输入框，需重新填写"
+                  >
+                    <Checkbox v-model:checked="clearToken">
+                      清空已保存 Token
+                    </Checkbox>
+                  </Tooltip>
                 </div>
                 <div class="text-gray-400 mt-1 text-xs">
                   Token 打码显示（保留前后各 4 位）；留空 = 不变，输入新值 =
@@ -1462,15 +1469,22 @@ onMounted(loadConfig);
                 >
                   + 新增品牌
                 </Button>
-                <Button
-                  v-permission="['ADMIN']"
-                  size="small"
-                  type="primary"
-                  :disabled="vendors.length === 0"
-                  @click="openModelModal()"
+                <!-- P3-07：无厂商时 disabled 增加 Tooltip -->
+                <Tooltip
+                  :title="
+                    vendors.length === 0 ? '请先添加厂商后再新增型号' : ''
+                  "
                 >
-                  + 新增型号
-                </Button>
+                  <Button
+                    v-permission="['ADMIN']"
+                    size="small"
+                    type="primary"
+                    :disabled="vendors.length === 0"
+                    @click="openModelModal()"
+                  >
+                    + 新增型号
+                  </Button>
+                </Tooltip>
               </div>
             </template>
             <Alert

@@ -33,12 +33,14 @@ class TaskType(StrEnum):
         CUSTOM: 自定义评估任务（用户按需触发，选定回路/指标/时间范围）
         BACKFILL: 历史重算任务（按时间窗批量重算，覆盖标准快照）
         TUNING: 回路整定任务（辨识/整定/仿真异步任务，V62-P1-013 接入 TaskTracker）
+        REPORT: 报告导出任务（诊断建议书 PDF 等异步导出，P3-33 接入 TaskTracker）
     """
 
     STANDARD = "STANDARD"
     CUSTOM = "CUSTOM"
     BACKFILL = "BACKFILL"
     TUNING = "TUNING"
+    REPORT = "REPORT"
 
 
 class TaskStatus(StrEnum):
@@ -122,7 +124,7 @@ class TaskResponse(CamelModel):
 
     Attributes:
         taskId: 任务 ID
-        taskType: 任务类型（STANDARD/CUSTOM）
+        taskType: 任务类型（STANDARD/CUSTOM/BACKFILL/TUNING/REPORT）
         status: 任务状态（PENDING/RUNNING/SUCCESS/FAILED/CANCELLED）
         progress: 进度 0~1
         currentStage: 当前阶段（取数/预处理/指标计算/可信度判定）
@@ -134,6 +136,8 @@ class TaskResponse(CamelModel):
         finishedAt: 完成时间
         errorMessage: 失败原因
         createdBy: 创建人用户名
+        fileName: 产出文件名（仅 REPORT 任务，如 CLPM-诊断建议书-xxx.pdf）
+        resultUrl: 产物下载路径（仅 REPORT/其他有产物的任务，如 /api/v1/tasks/{taskId}/download）
     """
 
     taskId: str
@@ -155,6 +159,11 @@ class TaskResponse(CamelModel):
     tsEnd: str | None = Field(None, description="重算时间窗结束（仅 BACKFILL）")
     loopIds: list[str] | None = Field(None, description="回路 ID 列表（仅 BACKFILL）")
     plantNodeIds: list[str] | None = Field(None, description="装置 ID 列表（仅 BACKFILL）")
+    # V62-P3-33：报告导出任务产物（异步 PDF 下载用）
+    fileName: str | None = Field(None, description="产出文件名（仅 REPORT 等带文件产物的任务）")
+    resultUrl: str | None = Field(
+        None, description="产物下载路径，如 /api/v1/tasks/{taskId}/download（仅带产物的任务）"
+    )
 
 
 class BackfillPreviewResult(CamelModel):

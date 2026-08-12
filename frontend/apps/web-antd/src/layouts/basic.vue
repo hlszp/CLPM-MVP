@@ -16,7 +16,7 @@ import {
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 
-import { Popover } from 'ant-design-vue';
+import { Alert, Button, Popover } from 'ant-design-vue';
 
 import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';
 import { $t } from '#/locales';
@@ -104,6 +104,22 @@ const { isDark } = usePreferences();
 // ===== P2-05：全局实时数据状态指示 =====
 const wsStatus = ref(realtimeWs.status);
 const wsLastRefresh = ref<string>('');
+
+/** P2-08：断线提示 Banner 可见性（非 online 时显示） */
+const wsBannerVisible = computed(
+  () => wsStatus.value !== 'online' && wsStatus.value !== 'offline',
+);
+/** P2-08：断线提示文案 */
+const wsBannerMessage = computed(() => {
+  if (wsStatus.value === 'reconnecting')
+    return '实时数据连接中断，正在自动重连…';
+  return '实时数据连接已断开，请检查网络后手动重连。';
+});
+
+/** P2-08：手动重连 */
+function handleWsReconnect() {
+  realtimeWs.reconnect();
+}
 
 let wsConnectionUnsubscribe: (() => void) | null = null;
 let wsMessageUnsubscribe: (() => void) | null = null;
@@ -382,5 +398,23 @@ watch(
     <template #lock-screen>
       <LockScreen :avatar @to-login="handleLogout" />
     </template>
+
+    <!-- P2-08：WebSocket 断线提示 Banner（Teleport 到 body，固定顶部） -->
+    <Teleport to="body">
+      <Alert
+        v-if="wsBannerVisible"
+        :message="wsBannerMessage"
+        type="warning"
+        show-icon
+        banner
+        class="fixed left-0 right-0 top-0 z-[1100]"
+      >
+        <template #action>
+          <Button size="small" type="primary" ghost @click="handleWsReconnect">
+            手动重连
+          </Button>
+        </template>
+      </Alert>
+    </Teleport>
   </BasicLayout>
 </template>

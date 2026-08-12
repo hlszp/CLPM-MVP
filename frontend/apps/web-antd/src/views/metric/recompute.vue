@@ -28,6 +28,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -44,6 +45,7 @@ import {
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { usePolling } from '#/composables/use-polling';
+import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricRecompute' });
@@ -82,7 +84,18 @@ const dangerTarget = computed(() => {
 
 const dangerImpact = computed(() => {
   if (dangerAction.value === 'batch-delete') {
-    return `将删除 ${selectedRowKeys.value.length} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
+    // P3-04：批量删除前预提示不可删除项（非终态任务不可删除）
+    const selected = selectedRowKeys.value.length;
+    const nonTerminal = taskList.value.filter(
+      (t) =>
+        selectedRowKeys.value.includes(t.taskId) &&
+        !['CANCELLED', 'FAILED', 'SUCCESS'].includes(t.status),
+    ).length;
+    const deletable = selected - nonTerminal;
+    if (nonTerminal > 0) {
+      return `已选中 ${selected} 个任务，其中 ${nonTerminal} 个为非终态（执行中/待执行）不可删除，将删除 ${deletable} 个终态任务；不影响已写入的 KPI 快照`;
+    }
+    return `将删除 ${selected} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
   }
   const t = dangerTask.value;
   if (!t) return '';
@@ -325,8 +338,6 @@ async function loadList() {
 }
 
 // ============ 自动刷新（polling 活跃任务） ============
-const POLLING_INTERVAL = 5000;
-
 function hasActiveTask(): boolean {
   return taskList.value.some(
     (t) => t.status === 'RUNNING' || t.status === 'PENDING',
@@ -357,7 +368,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
       stopPolling();
     }
   },
-  { interval: POLLING_INTERVAL },
+  { interval: TASK_POLLING_INTERVAL },
 );
 
 function updatePolling() {
@@ -576,6 +587,11 @@ async function handleStartTask(record: TaskApi.TaskItem) {
 }
 
 // ============ 生命周期 ============
+/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+function refresh() {
+  return loadList();
+}
+
 onMounted(() => {
   loadList();
 });
@@ -584,8 +600,9 @@ onUnmounted(() => {
   stopPolling();
 });
 
-// 暴露给单元测试的接口（<script setup> 默认私有，需 defineExpose 才能被 vm 访问）
+// 暴露给父组件 + 单元测试的接口（<script setup> 默认私有，需 defineExpose 才能被 vm 访问）
 defineExpose({
+  refresh,
   columns,
   formatProgress,
   formatTime,
@@ -613,14 +630,19 @@ defineExpose({
           <template #icon><Plus /></template>
           新建任务
         </Button>
-        <Button
-          danger
-          :disabled="selectedRowKeys.length === 0"
-          :loading="dangerLoading && dangerAction === 'batch-delete'"
-          @click="handleBatchDelete"
+        <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+        <Tooltip
+          :title="selectedRowKeys.length === 0 ? '请先选择要删除的任务' : ''"
         >
-          删除
-        </Button>
+          <Button
+            danger
+            :disabled="selectedRowKeys.length === 0"
+            :loading="dangerLoading && dangerAction === 'batch-delete'"
+            @click="handleBatchDelete"
+          >
+            删除
+          </Button>
+        </Tooltip>
         <Button @click="loadList">
           <template #icon><RotateCw /></template>
           刷新
@@ -654,7 +676,10 @@ defineExpose({
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && taskList.length === 0"
+      empty-reason="暂无手动评估任务记录。点击「发起重算」可对指定时间窗的回路进行 KPI 重新评估"
+      empty-action-text="发起重算"
       @retry="loadList"
+      @empty-action="openDrawer"
     >
       <Table
         :columns="columns"
@@ -857,14 +882,17 @@ defineExpose({
           <Button :loading="previewLoading" @click="handlePreview">
             预览影响范围
           </Button>
-          <Button
-            type="primary"
-            :loading="drawerLoading"
-            :disabled="!previewResult"
-            @click="handleSubmit"
-          >
-            确认重算
-          </Button>
+          <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
+          <Tooltip :title="!previewResult ? '请先点击「预览影响范围」' : ''">
+            <Button
+              type="primary"
+              :loading="drawerLoading"
+              :disabled="!previewResult"
+              @click="handleSubmit"
+            >
+              确认重算
+            </Button>
+          </Tooltip>
         </Space>
       </template>
     </Drawer>

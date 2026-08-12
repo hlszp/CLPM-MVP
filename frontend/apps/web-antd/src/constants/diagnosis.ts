@@ -36,28 +36,36 @@ export const DIAGNOSIS_LABEL_OPTIONS: {
   { label: '人工复核', value: 'MANUAL_REVIEW' },
 ];
 
-/** 诊断标签颜色映射（Ant Design Vue Tag 颜色名） */
+/** 诊断标签颜色映射（Ant Design Vue Tag 颜色名）
+ *
+ * P2-01 修正（2026-08-10）：语义对齐——承载严重度暗示的标签改用 antd 状态色名
+ *（error/warning/default），非语义类别标签保留区分色（purple/cyan/geekblue）。
+ */
 export const DIAGNOSIS_LABEL_COLOR_MAP: Record<DiagnosisLabel, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'purple',
-  OVERCONSERVATIVE: 'blue',
-  EXTERNAL_DISTURBANCE: 'cyan',
-  QUALITY_ABNORMAL: 'default',
-  OUTPUT_SATURATION: 'gold',
-  MANUAL_REVIEW: 'default',
+  OSCILLATION: 'error', // 振荡-严重故障（原 red）
+  VALVE_STICTION: 'warning', // 阀门粘滞-需关注（原 orange）
+  OVERAGGRESSIVE: 'purple', // 参数过激-类别
+  OVERCONSERVATIVE: 'geekblue', // 参数过保守-类别（原 blue→geekblue 避开 info 语义）
+  EXTERNAL_DISTURBANCE: 'cyan', // 外扰-类别
+  QUALITY_ABNORMAL: 'default', // 质量异常-中性
+  OUTPUT_SATURATION: 'warning', // 输出饱和-需关注（原 gold）
+  MANUAL_REVIEW: 'default', // 人工复核-中性
 };
 
-/** 诊断标签十六进制颜色映射（用于 ECharts 图表） */
+/** 诊断标签十六进制颜色映射（用于 ECharts 图表）
+ *
+ * P2-01 修正（2026-08-10）：废止 antd 旧色（#ff4d4f/#faad14/#1890ff）对齐色彩约定表 v1.0。
+ * 语义色对齐 --status-*，类别色用 antd 色板对应值。
+ */
 export const DIAGNOSIS_LABEL_COLOR_HEX_MAP: Record<DiagnosisLabel, string> = {
-  OSCILLATION: '#ff4d4f',
-  VALVE_STICTION: '#fa8c16',
-  OVERAGGRESSIVE: '#722ed1',
-  OVERCONSERVATIVE: '#1890ff',
-  EXTERNAL_DISTURBANCE: '#13c2c2',
-  QUALITY_ABNORMAL: '#8c8c8c',
-  OUTPUT_SATURATION: '#faad14',
-  MANUAL_REVIEW: '#d9d9d9',
+  OSCILLATION: '#dc3545', // --status-error（原 #ff4d4f）
+  VALVE_STICTION: '#b45309', // --status-warning（原 #fa8c16）
+  OVERAGGRESSIVE: '#722ed1', // purple-6（保留类别色）
+  OVERCONSERVATIVE: '#2f54eb', // geekblue-6（原 #1890ff，避开 info 语义蓝）
+  EXTERNAL_DISTURBANCE: '#13c2c2', // cyan-6（保留类别色）
+  QUALITY_ABNORMAL: '#6c757d', // --status-neutral（原 #8c8c8c）
+  OUTPUT_SATURATION: '#b45309', // --status-warning（原 #faad14）
+  MANUAL_REVIEW: '#6c757d', // --status-neutral（原 #d9d9d9）
 };
 
 /**
@@ -103,11 +111,11 @@ export const DIAGNOSIS_ACTION_TYPE_LABEL: Record<DiagnosisActionType, string> =
     review: '人工复核',
   };
 
-/** 动作类型 → Tag 颜色 */
+/** 动作类型 → Tag 颜色（类别色，P2-01 对齐：maintenance 从 orange→warning 语义化） */
 export const DIAGNOSIS_ACTION_TYPE_COLOR: Record<DiagnosisActionType, string> =
   {
     tuning: 'purple',
-    maintenance: 'orange',
+    maintenance: 'warning', // 仪表维护-需关注（原 orange）
     investigation: 'cyan',
     review: 'default',
   };
@@ -119,10 +127,10 @@ export const DIAGNOSIS_URGENCY_LABEL: Record<DiagnosisUrgency, string> = {
   low: '低',
 };
 
-/** 紧急程度 → 颜色 */
+/** 紧急程度 → 颜色（P2-01 对齐语义色：high=error / medium=warning / low=default） */
 export const DIAGNOSIS_URGENCY_COLOR: Record<DiagnosisUrgency, string> = {
-  high: 'red',
-  medium: 'gold',
+  high: 'error', // 原 red
+  medium: 'warning', // 原 gold
   low: 'default',
 };
 

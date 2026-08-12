@@ -18,8 +18,8 @@ defineOptions({ name: 'MetricWeightConfig' });
 
 const restoring = ref(false);
 
-/** 子组件 key（用于恢复默认后强制刷新） */
-const typeWeightKey = ref(0);
+/** P3-01：子组件 ref，替代 typeWeightKey 强制重建 */
+const typeWeightRef = ref<InstanceType<typeof TypeWeightContent> | null>(null);
 
 /** 恢复国标默认值二次确认弹窗 */
 const restoreConfirmOpen = ref(false);
@@ -29,6 +29,13 @@ function handleRestoreDefaults() {
   restoreConfirmOpen.value = true;
 }
 
+/** P3-01：暴露 refresh() 给顶层 config.vue 调用 */
+async function refresh() {
+  await typeWeightRef.value?.refresh();
+}
+
+defineExpose({ refresh });
+
 /** 确认恢复国标默认值 */
 async function handleRestoreConfirm() {
   restoring.value = true;
@@ -36,8 +43,8 @@ async function handleRestoreConfirm() {
     await restoreWeightDefaultsApi();
     message.success('已恢复为国标默认权重模板（生成新版本生效）');
     restoreConfirmOpen.value = false;
-    // 触发组件刷新
-    typeWeightKey.value += 1;
+    // P3-01：调用子组件 refresh()，不再自增 key 强制重建
+    await refresh();
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -62,7 +69,8 @@ async function handleRestoreConfirm() {
       </Button>
     </ClpmPageToolbar>
     <div class="mt-4">
-      <TypeWeightContent :key="typeWeightKey" />
+      <!-- P3-01：用 ref 绑定替代 :key 强制重建 -->
+      <TypeWeightContent ref="typeWeightRef" />
     </div>
 
     <!-- 恢复国标默认值二次确认弹窗（高危操作：物理+逻辑屏障） -->

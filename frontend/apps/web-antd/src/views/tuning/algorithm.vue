@@ -31,6 +31,7 @@ import {
   Select,
   Spin,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -654,15 +655,24 @@ watch(
         </Collapse>
 
         <div class="mt-4">
-          <Button
-            type="primary"
-            size="large"
-            :disabled="!canTune"
-            :loading="loading"
-            @click="handleTune"
+          <!-- P3-07：disabled 按钮增加 Tooltip 说明门禁原因 -->
+          <Tooltip
+            :title="
+              !canTune
+                ? modelUsageGate.reason || '需明确模型来源后方可执行整定'
+                : ''
+            "
           >
-            执行整定
-          </Button>
+            <Button
+              type="primary"
+              size="large"
+              :disabled="!canTune"
+              :loading="loading"
+              @click="handleTune"
+            >
+              执行整定
+            </Button>
+          </Tooltip>
         </div>
       </ClpmDataCanvas>
 
@@ -720,14 +730,23 @@ watch(
 
         <!-- 操作按钮 -->
         <div class="mt-4 flex gap-2">
-          <Button
-            type="primary"
-            size="large"
-            :disabled="!canTune"
-            @click="handleGoSimulation"
+          <!-- P3-07：disabled 按钮增加 Tooltip 说明门禁原因 -->
+          <Tooltip
+            :title="
+              !canTune
+                ? modelUsageGate.reason || '需明确模型来源后方可执行仿真'
+                : ''
+            "
           >
-            进行闭环仿真 →
-          </Button>
+            <Button
+              type="primary"
+              size="large"
+              :disabled="!canTune"
+              @click="handleGoSimulation"
+            >
+              进行闭环仿真 →
+            </Button>
+          </Tooltip>
           <Popconfirm
             :title="`将使用算法「${algorithmNameMap[form.algorithm] || form.algorithm}」的推荐 PID 参数保存为整定任务，是否继续？`"
             ok-text="确认保存"
