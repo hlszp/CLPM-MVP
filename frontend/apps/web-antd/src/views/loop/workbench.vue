@@ -1162,7 +1162,7 @@ async function loadKpiHistory(loopId: string): Promise<void> {
       latestOnly: false,
       loopId,
       page: 1,
-      pageSize: 200,
+      pageSize: 100,
       sortBy: 'tsStart',
       sortOrder: 'asc',
       startTime: startTime.toISOString(),
