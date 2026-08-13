@@ -2,7 +2,7 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）。
 
-产品文档基线：**v6.1**（当前需求、IA 与 ZL 工业设计规范口径）。后端运行时版本由 `APP_VERSION` 管理（当前默认 `1.0.0`），发布版本由 Git tag 管理；三者用途不同，不要求数值相同。
+产品文档基线：**v6.2**（当前需求、IA 与 ZL 工业设计规范口径）。后端运行时版本由 `APP_VERSION` 管理（当前默认 `1.0.0`），发布版本由 Git tag 管理；三者用途不同，不要求数值相同。
 
 ## 项目简介
 
@@ -34,7 +34,7 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（4139 passed，1 skipped，23 deselected，33 xfailed）+ vitest（466/466 全绿）+ Playwright E2E（94 例：75 passed 基线 + 13 环境类既有失败，见 06-UIUX 出口报告） |
+| 测试 | pytest（4241 passed）+ vitest（434 passed）+ Playwright E2E（94 例：75 passed 基线 + 13 环境类既有失败，见 06-UIUX 出口报告） |
 
 ## 快速开始（开发环境）
 
@@ -308,7 +308,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 交付架构设计（v6.0） | `docs/设计文档/03-ADS/ADS.md` |
 | 数据模型设计（v6.0） | `docs/设计文档/04-DDS/DDS.md` |
 | API 接口设计（v6.0） | `docs/设计文档/05-IDS/IDS.md` |
-| UI/UX 设计规范（v6.1） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
+| UI/UX 设计规范（v6.2） | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` |
 | 重构后实现契约（v2.11） | `docs/设计文档/00-BASELINE/implementation-contract.md` |
 | v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
 | 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.11 为准） |
@@ -330,13 +330,13 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | 产品文档基线 **v6.3**；实现契约 v2.11；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。本轮基线（2026-08-11）：IA 评审 Backlog P2-22/P3-33 闭环（风险统计 + 异步 PDF 导出）+ Celery Worker 清理加固 + KPI 指标条紧凑化；上轮（2026-08-10）：监控工作台闭环 MW-P5 全部完成（五角色冒烟测试全绿 + 性能压测 summary p95=53ms + 视觉走查 WCAG AA 100% 达标），pytest 4241 passed / vitest 全绿 / ruff✅ / check:type✅ |
+| 当前版本 | 产品文档基线 **v6.2**；实现契约 v2.11；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。本轮基线（2026-08-14）：页面标杆设计落地（系统概览页严格对标 v3.1 标杆设计完整重写：R1 页头 segmented 时间窗 + R2 全厂锚点 KPI 六指标 + R3 工厂模型树联动 + R4 帕累托对比 + 微型扇形图；关注队列页列宽优化）+ dashboard API AlertEvent 导入修复 + 时间窗北京时间对齐；上轮（2026-08-11）：IA 评审 Backlog P2-22/P3-33 闭环（风险统计 + 异步 PDF 导出）+ Celery Worker 清理加固 + KPI 指标条紧凑化；pytest 4241 passed / vitest 434 passed / ruff✅ / check:type✅ |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
 | 首版范围 | 监控（系统概览/跨回路扫视/回路工作台/预警事件）、回路结构配置、性能评估（看板/排行/任务/统计）、诊断中心（诊断/异常跟踪/统计）、回路整定、系统管理；预警规则归配置 |
 | 模块架构 | 6 个一级模块（契约 v2.11）：监控/评估/诊断/整定/配置/系统；回路运行态归入监控下回路工作台，预警事件归监控、规则归配置；双轴导航和各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → VERIFYING → CLOSED，P1a 闭环），诊断中心子模块 |
-| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.11 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.3 负责视觉与交互（继承 v6.2 色彩约定表 v1.0 + 文案词表 v1.0） |
+| 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.11 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表 v1.0 + 文案词表 v1.0）；页面标杆设计负责逐页高保真线框图与实施验收 |
 | UI/UX 整改 | 2026-08-07~09 三轮（Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 清理），Nielsen 20/40→32/40；进度事实来源 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md`，出口报告 `p2-exit-report-2026-08-09.md` |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
@@ -371,7 +371,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | `docs/设计文档/05-IDS/IDS.md` | 当前系统 API 接口设计 |
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
 | `docs/设计文档/00-BASELINE/implementation-contract.md` | 重构后实现契约：IA、路由、API、权限、状态机、KPI 与阶段口径 |
-| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件历史基线；现行路由与实现口径以实现契约 v2.7 为准） |
+| `docs/设计文档/页面标杆设计/` | 逐页高保真线框图与标杆设计规范（系统概览/关注队列/回路工作台/回路列表），含 HTML 线框图与 PNG 效果图 |
+| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件历史基线；现行路由与实现口径以实现契约 v2.11 为准） |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 | `backend/` | FastAPI 后端（API + Celery 任务 + 算法引擎） |
 | `frontend/` | Vue 3 前端 monorepo（web-antd 为生产应用） |

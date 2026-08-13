@@ -1,6 +1,6 @@
 # CLPM Agent Guidance
 
-本项目是危化企业控制回路性能评估与优化平台（CLPM v6.1），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.1（含 ZL 工业设计规范对齐）。
+本项目是危化企业控制回路性能评估与优化平台（CLPM v6.2），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.2（含 ZL 工业设计规范对齐 + 页面标杆设计逐页落地）。
 
 **拆分文档索引**（按需阅读，不必全读）：
 
@@ -10,6 +10,7 @@
 | v6 交付历史追溯（Phase 0-6、各 PR 清单） | `docs/过程文档/v6-delivery-history.md` |
 | 引用旧文档前查是否已失效 | `docs/过程文档/stale-docs.md` |
 | **UX/IA审查与整改**（信息架构、交互设计、闭环流程评估） | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` |
+| **页面标杆设计**（逐页高保真线框图、布局规范、实施验收） | `docs/设计文档/页面标杆设计/`（01-回路工作台 / 02-回路列表 / 03-关注队列 / 04-系统概览） |
 | 数据质量评估报告（完整性/准确性/一致性/时效性四维定量分析） | `docs/过程文档/data-quality-assessment-report-2026-08-05.md` |
 | KPI计算方法系统性审查（26指标公式+国标准合度+10项缺陷） | `docs/过程文档/kpi-calculation-review-2026-08-05.md` |
 
@@ -17,9 +18,9 @@
 
 先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.2。
 
-PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.1 是视觉与交互输入文件（已对齐 v6.1 代码，含 ZL 工业设计规范）；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
+PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.2 是视觉与交互输入文件（已对齐 v6.2 代码，含 ZL 工业设计规范）；页面标杆设计是逐页高保真线框图与实施验收的事实来源；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
 
-## 当前基线（2026-08-11 修订 — IA 评审 Backlog P2-22/P3-33 闭环 + 契约 v2.11 + Worker 清理加固）
+## 当前基线（2026-08-14 修订 — 页面标杆设计落地 + 系统概览页对标重写 + dashboard API 修复）
 
 | 类型 | 文件 | 版本 |
 |---|---|---|
@@ -31,7 +32,7 @@ PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路
 | 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
 | API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v6.0 |
 | UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.2**（色彩约定与工业组件执行层整改版，配套《色彩约定表 v1.0》《文案与术语词表 v1.0》） |
-| 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.7） |
+| 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.11） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
@@ -45,6 +46,7 @@ PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路
 | 智能预警规则引擎方案 | `docs/过程文档/clpm-smart-alert-rule-engine-plan-2026-08-06.md` | v1.1（2026-08-06）：独立梳理智能预警规则引擎需求与技术方案，作为 PRD v6.2 / 契约 v2.7 输入；覆盖 4 类规则（阈值/统计漂移/组合条件/可信度联动）+ 时效窗口通用字段、DSL 设计、双轨触发（SignalR+Celery）、5 张新表、6 类 API、4 阶段实施路线图；**Phase 1 已落地**（2026-08-07）：5 表 + DSL/求值/抑制/分发/审计/缓存核心服务 + 19 API 端点 + dry-run + WebSocket 推送 + Celery 周期巡检 + 前端规则配置页/事件列表页；233 单测全绿 |
 | **UI/UX 整改（2026-08-07~09）** | `docs/设计文档/06-UIUX/` | **Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 全部完成**：审查报告 `ui-ux-critical-review-2026-08-07.md`、实施方案 `ui-ux-rectification-plan-2026-08-07.md`、**工作清单（进度事实来源）`ui-ux-rectification-checklist-2026-08-08.md`、Phase 2 出口报告 `p2-exit-report-2026-08-09.md`（Nielsen 20/40→32/40）、色彩约定表 `color-convention.md`、文案词表 `copywriting-glossary.md`、回路工作台专项评估 `loop-workbench-uiux-evaluation-2026-08-09.md`；Backlog 遗留 BL-5~9 见清单 §4（hex 存量已清零、密度 14 页已迁移、暗色走查已过、F8 评价周期提案待评审） |
 | **监控工作台闭环（2026-08-09~10）** | `docs/设计文档/06-UIUX/monitor-workbench-rectification-checklist-2026-08-09.md` | **MW-P0~P5 全部完成**（分支 `codex/monitor-workbench-closed-loop`，已 `--no-ff` 合入 main `30fb933c`）：统一关注队列（五来源聚合+四级优先级+角色化动作）+ 回路工作台单页四区重构（LoopFleetView 抽取+workspace/table 双模式+useSavedView 共享上下文）+ 实施前后对比+区级延迟加载；MW-P5-03 五角色冒烟测试全绿（EXPERT 权限扩展 `loop:view`+`GET /configs/llm` 放开+canUseTableView 守卫）/ MW-P5-04 性能压测（summary p95=53ms ✅，attention 压测场景 p95≈600ms 已 LIMIT 优化，生产 27 回路预期 <100ms）/ MW-P5-05 视觉走查（12 亮色+4 暗色截图，WCAG AA 对比度 100% 达标）；门禁全绿 ruff✅/pytest 4241✅/check:type✅/hex✅；性能报告 `docs/过程文档/perf-report-MW-P5-04.md`、视觉报告 `visual-inspection-report-MW-P5-05.md` |
+| **页面标杆设计（2026-08-12~14）** | `docs/设计文档/页面标杆设计/` | **04-系统概览 + 03-关注队列已完成对标落地**：逐页高保真线框图（HTML+PNG）+ 标杆设计规范文档；04 系统概览 v3.1（R1 页头 segmented 时间窗 + R2 全厂锚点 KPI 六指标五档 + R3 工厂模型树联动 + R4 帕累托三率柱+评分折线 + 微型扇形图本级+下一级）严格对标重写 `workbench.vue`；03 关注队列列宽优化；dashboard API AlertEvent 导入修复 + 时间窗北京时间对齐；门禁全绿 ruff✅/check:type✅/dashboard+monitor 57 tests passed |
 
 ## v6.0 核心架构组件
 
@@ -150,7 +152,7 @@ cd frontend && pnpm run format
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**；sys_config 为配置真相源，.env 已移除业务 URL/Token。细节见 ops-runbook §网络模式切换 |
 | 远端仓库 | **gitea 为主远端**（remote 名 `origin`，`https://gitea.zlinfot.xyz:2087/zp/CLPM`）；GitHub 为镜像（remote 名 `github`，`hlszp/CLPM`），main 合并后 `git push github main` 同步 |
-| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.11 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.11 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；页面标杆设计负责逐页高保真线框图与实施验收；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
 ## Git 工作流
 
@@ -167,10 +169,11 @@ cd frontend && pnpm run format
 | 方向 | 先读 | 关注点 |
 |---|---|---|
 | **UI/UX 整改后续（Phase 3 候选）** | `docs/设计文档/06-UIUX/p2-exit-report-2026-08-09.md` §5 + 清单 §4 Backlog + `loop-workbench-uiux-evaluation-2026-08-09.md` | Phase 0-2 + Backlog 已完成（Nielsen 32/40）；候选：工作台 W-1~W-10 整改（三批方案已备）、SYS-P2-06 预警优先级三级语义化、F8 评价周期（清单 §6 提案待评审）、暗色正式开放前逐页走查收尾、hex `hsl(var(--status-*))` 非法写法存量排查 |
+| **页面标杆设计后续** | `docs/设计文档/页面标杆设计/` | 04-系统概览 + 03-关注队列已对标落地；待落地：01-回路工作台标杆设计对标、02-回路列表标杆设计对标；每页含 HTML 线框图 + PNG 效果图 + 标杆设计规范 md |
 | Bug 修复 / 功能增强 | README.md → AGENTS.md → 相关设计文档 → 对应代码 | 遵循"问题定位-修复实施-测试验证-效果确认"闭环流程 |
 | 回路整定 Phase 2 后续 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **Phase 2.0-2.5 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：算法栈 + DataPlanner 接入 + 异步任务化 + 多 PID 对比 + 前端重构 + 全量门禁通过；待合并 main 后更新设计文档（PRD/FDS/ADS/IDS/契约 版本号升级）+ GB/T 44693.2 整定用例验证 |
 | 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
-| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.1 → v6.1 新增页面 | **E2E 79 用例**（2026-08-06）：71 passed / 3 既有失败（D3-MOC/F4-F5/TUNE-009，非 Phase A 引入，均为 07-28 后新增测试）/ 2 flaky / 3 skipped；IA 重构 Phase A 路由已全量同步 |
+| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.2 → v6.2 新增页面 | **E2E 79 用例**（2026-08-06）：71 passed / 3 既有失败（D3-MOC/F4-F5/TUNE-009，非 Phase A 引入，均为 07-28 后新增测试）/ 2 flaky / 3 skipped；IA 重构 Phase A 路由已全量同步 |
 | 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
 | 新功能开发 | PRD v6.2 → 实现契约 v2.11 → v4.0 重构实施方案 → 对应设计文档 | 遵循模块"配置→运行→分析"三态自包含原则 |
 | 网络模式切换后续改进 | ops-runbook §网络模式切换 | 仅余 ③ 公网模式 ping 延迟抖动优化（低优先级） |
