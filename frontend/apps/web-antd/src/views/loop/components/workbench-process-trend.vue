@@ -29,8 +29,10 @@ defineOptions({ name: 'WorkbenchProcessTrend' });
 const props = withDefaults(defineProps<Props>(), {
   pvUnit: '',
   opUnit: '%',
+  pvRange: null,
   eventMarks: () => [],
   modeBands: () => [],
+  seriesVisible: () => ({ pv: true, sp: true, op: true }),
 });
 
 /** 事件标记类型 */
@@ -59,6 +61,10 @@ interface Props {
   eventMarks?: ProcessEventMark[];
   /** MODE 背景带数据（时间段+模式标签） */
   modeBands?: ModeBand[];
+  /** 曲线显隐控制（由外层图例点击驱动） */
+  seriesVisible?: { pv: boolean; sp: boolean; op: boolean };
+  /** PV 量程上下限（固定 Y 轴范围，不随数据自动调整） */
+  pvRange?: null | { max: null | number; min: null | number };
 }
 
 const { chartTextColor, chartSplitLineColor } = useClpmTheme();
@@ -88,9 +94,12 @@ function modeBandColor(mode: string, custom?: string): string {
   return 'rgba(108, 117, 125, 0.06)';
 }
 
-/** 时间戳格式化 */
+/** 时间戳格式化：轴标签用分钟级，tooltip 用秒级 */
 function fmtTime(ts: number): string {
   return dayjs(ts).format('MM-DD HH:mm');
+}
+function fmtTimeSec(ts: number): string {
+  return dayjs(ts).format('MM-DD HH:mm:ss');
 }
 
 /** 事件标记 → markPoint data */
@@ -205,7 +214,7 @@ function buildOption() {
   ];
   return {
     backgroundColor: 'transparent',
-    grid: { top: 28, right: 50, bottom: 40, left: 45, containLabel: true },
+    grid: { top: 28, right: 26, bottom: 30, left: 8, containLabel: true },
     tooltip: {
       ...getTooltipPreset(),
       trigger: 'axis' as const,
@@ -215,7 +224,7 @@ function buildOption() {
         if (arr.length === 0) return '';
         const first = arr[0];
         const ts = first?.axisValue;
-        const time = ts ? fmtTime(Number(ts)) : '—';
+        const time = ts ? fmtTimeSec(Number(ts)) : '—';
         const lines: string[] = [time];
         for (const p of arr) {
           const name = p?.seriesName ?? '';
@@ -228,12 +237,12 @@ function buildOption() {
       },
     },
     legend: {
-      data: ['PV', 'SP', 'OP'],
-      top: 4,
-      right: 8,
-      textStyle: { fontSize: 11, color: chartTextColor.value },
-      itemWidth: 12,
-      itemHeight: 8,
+      show: false,
+      selected: {
+        PV: props.seriesVisible.pv,
+        SP: props.seriesVisible.sp,
+        OP: props.seriesVisible.op,
+      },
     },
     xAxis: {
       type: 'time' as const,
@@ -251,7 +260,8 @@ function buildOption() {
         type: 'value' as const,
         name: `PV/SP${pvUnitSuffix}`,
         nameTextStyle: { fontSize: 10, color: chartTextColor.value },
-        scale: true,
+        min: props.pvRange?.min ?? undefined,
+        max: props.pvRange?.max ?? undefined,
         axisLabel: { color: chartTextColor.value, fontSize: 10 },
         splitLine: {
           lineStyle: {
@@ -282,6 +292,16 @@ function buildOption() {
         end: 100,
         showDetail: false,
       },
+      {
+        type: 'slider',
+        yAxisIndex: [0, 1],
+        orient: 'vertical',
+        right: 4,
+        width: 14,
+        start: 0,
+        end: 100,
+        showDetail: false,
+      },
     ],
     series,
   };
@@ -289,7 +309,7 @@ function buildOption() {
 
 function refresh() {
   const opt = buildOption();
-  if (opt) renderEcharts(opt);
+  if (opt) renderEcharts(opt as any);
 }
 
 const hasData = computed(() => {
@@ -304,6 +324,7 @@ watch(
     props.modeBands,
     props.pvUnit,
     props.opUnit,
+    props.seriesVisible,
   ],
   () => {
     refresh();

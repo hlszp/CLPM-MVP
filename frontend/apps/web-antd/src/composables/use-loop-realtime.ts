@@ -29,11 +29,14 @@ export interface RealtimeMessage {
   value: string;
 }
 
-/** 回路实时值（与 LoopApi.MonitorListItem.currentValues 对齐） */
+/** 回路实时值（7 个：PV/SP/OP/MODE/P/I/D，全量 WS 实时推送） */
 export interface LoopRealtimeValues {
   mode: null | number;
   modeLabel: null | string;
   op: null | number;
+  pidD: null | number;
+  pidI: null | number;
+  pidP: null | number;
   pv: null | number;
   pvQuality: null | string;
   readAt: null | string;
@@ -57,7 +60,7 @@ export interface UseLoopRealtimeReturn {
   /**
    * 将 WS 消息应用到匹配回路。
    * - 按 tagName 匹配；不匹配则跳过
-   * - PV/SP/OP/MODE 局部更新；PID_P/I/D 忽略
+   * - 7 个实时值全部支持：PV/SP/OP/MODE + PID_P/PID_I/PID_D
    * - MODE 只做安全默认映射（0→Manual / ≥1→Auto），自定义映射以 REST 为权威
    * - PV 质量码统一走 mapQualityToLabel
    */
@@ -151,8 +154,19 @@ export function useLoopRealtime(): UseLoopRealtimeReturn {
         cv.sp = numValue;
         break;
       }
+      case 'PID_P': {
+        cv.pidP = numValue;
+        break;
+      }
+      case 'PID_I': {
+        cv.pidI = numValue;
+        break;
+      }
+      case 'PID_D': {
+        cv.pidD = numValue;
+        break;
+      }
       default: {
-        // PID_P/PID_I/PID_D 不在监控列表/工作台状态条展示
         return false;
       }
     }

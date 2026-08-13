@@ -7,8 +7,8 @@
  * 实时逻辑改用 useLoopRealtime（MW-P1-04）。
  *
  * MW-P4-03：筛选条件（装置/类型/关键词/只看关注项）统一从 useMonitorContext
- * 读取，不再维护内部筛选状态，与 workspace 模式共享同一 URL 真相源。
- * 保存视图、搜索框由父页面的 MonitorContextToolbar 统一提供。
+ * 读取，不再维护内部筛选状态，与左侧导航共享同一 URL 真相源。
+ * 筛选功能通过左侧装置树+回路列表区域实现，本面板不再重复显示。
  *
  * 对齐整改方案 §8 Phase 4。
  */
@@ -87,13 +87,17 @@ const errorMessage = ref<null | string>(null);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
 const typeStats = ref<Record<string, number>>({});
+/** 控制方式统计（后端基于 Redis 实时 MODE 值全量聚合） */
+const modeStats = ref<Record<string, number>>({});
 
 // ===== 诊断标签 map =====
 const diagLabelMap = ref<
   Record<string, { color: string; label: string; labelCode: string }>
 >({});
 
-// ===== 表格列定义（与旧 monitor.vue 一致）=====
+// ===== 表格列定义（对齐 02 回路列表标杆 v1.4：13 默认列 + 组态字段收起）=====
+// 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 回路等级 / 性能评分 / SP / PV / OP / MODE / 诊断标签 / 可信度 / 操作
+// 量程/单位为组态字段，默认收起（buildDefaultColumnConfigs 中设 visible=false）
 const columns: TableColumnsType = [
   {
     title: '回路位号',
@@ -103,7 +107,7 @@ const columns: TableColumnsType = [
     align: 'left',
   },
   {
-    title: '名称',
+    title: '描述',
     dataIndex: 'description',
     key: 'description',
     width: 180,
@@ -111,35 +115,35 @@ const columns: TableColumnsType = [
     align: 'left',
   },
   {
-    title: '所属单元',
+    title: '装置·单元',
     dataIndex: 'unitName',
     key: 'unitName',
     width: 120,
     align: 'center',
   },
-  { title: '测量量程', key: 'pvRange', width: 100, align: 'center' },
-  { title: '单位', key: 'pvUnit', width: 55, align: 'center' },
   {
-    title: '类型',
+    title: '回路类型',
     dataIndex: 'loopType',
     key: 'loopType',
     width: 100,
     align: 'center',
   },
+  { title: '回路等级', key: 'grade', width: 80, align: 'center' },
+  {
+    title: '性能评分',
+    dataIndex: 'score',
+    key: 'score',
+    width: 110,
+    align: 'right',
+  },
   { title: '设定值 SP', key: 'sp', width: 90, align: 'right' },
   { title: '测量值 PV', key: 'pv', width: 90, align: 'right' },
   { title: '输出值 OP(%)', key: 'op', width: 90, align: 'right' },
-  { title: '控制方式', key: 'mode', width: 110, align: 'center' },
-  {
-    title: '性能指数',
-    dataIndex: 'score',
-    key: 'score',
-    width: 85,
-    align: 'right',
-  },
+  { title: 'MODE', key: 'mode', width: 110, align: 'center' },
   { title: '诊断标签', key: 'diagLabel', width: 110, align: 'center' },
-  { title: '数据健康度', key: 'dataHealth', width: 130, align: 'center' },
-  { title: '操作', key: 'action', width: 120, fixed: 'right', align: 'center' },
+  { title: '可信度', key: 'dataHealth', width: 100, align: 'center' },
+  { title: '测量量程', key: 'pvRange', width: 100, align: 'center' },
+  { title: '单位', key: 'pvUnit', width: 55, align: 'center' },
 ];
 
 function getColumnKey(col: any): string {
@@ -153,10 +157,12 @@ function getColumnKey(col: any): string {
 }
 
 function buildDefaultColumnConfigs(): ColumnConfig[] {
+  // 组态字段（量程/单位）默认收起，进列配置可手动开启
+  const hiddenKeys = new Set(['pvRange', 'pvUnit']);
   return columns.map((c: any, i: number) => ({
     key: getColumnKey(c),
     label: String(c.title ?? ''),
-    visible: true,
+    visible: !hiddenKeys.has(getColumnKey(c)),
     order: i,
   }));
 }
@@ -230,6 +236,84 @@ const totalLoops = computed(() =>
 /** 当前回路类型（从 monitorCtx 读取，用于统计卡片高亮） */
 const currentLoopType = computed(() => monitorCtx.loopType.value ?? '');
 
+// ===== 回路等级配置（对齐 use-score-color GB/T 44693.2-2024 §6.3 默认阈值）=====
+// 五档：优秀(≥90) / 良好(≥80) / 合格(≥60) / 警告(≥40) / 不合格(<40)
+// tagColor 使用 Ant Design Tag 预设色：绿→蓝→金→橙→红 形成视觉渐变
+type GradeKey = 'excellent' | 'good' | 'fair' | 'warning' | 'poor';
+
+interface GradeStats {
+  excellent: number;
+  good: number;
+  fair: number;
+  warning: number;
+  poor: number;
+  none: number;
+}
+
+const GRADE_CONFIG: ReadonlyArray<{
+  key: GradeKey;
+  label: string;
+  minScore: number;
+  tagColor: string;
+}> = [
+  { key: 'excellent', label: '优秀', minScore: 90, tagColor: 'green' },
+  { key: 'good', label: '良好', minScore: 80, tagColor: 'blue' },
+  { key: 'fair', label: '合格', minScore: 60, tagColor: 'gold' },
+  { key: 'warning', label: '警告', minScore: 40, tagColor: 'orange' },
+  { key: 'poor', label: '不合格', minScore: 0, tagColor: 'red' },
+];
+
+/** 基于当前页回路列表计算各等级数量 */
+const gradeStats = computed<GradeStats>(() => {
+  const stats: GradeStats = {
+    excellent: 0,
+    good: 0,
+    fair: 0,
+    warning: 0,
+    poor: 0,
+    none: 0,
+  };
+  for (const item of monitorList.value) {
+    const score = item.score;
+    if (score == null || Number.isNaN(score)) {
+      stats.none++;
+      continue;
+    }
+    for (const cfg of GRADE_CONFIG) {
+      if (score >= cfg.minScore) {
+        stats[cfg.key]++;
+        break;
+      }
+    }
+  }
+  return stats;
+});
+
+// ===== 实时自控率（基于后端 controlModeStats 全量统计）=====
+// 自控率 = (自动+串级+远程+先控) / (手动+自动+串级+远程+先控+未知)
+// mode 值：0=手动, 1=自动, 2=串级, 3=远程, 4=先控
+const autoControlRate = computed(() => {
+  const s = modeStats.value;
+  const auto =
+    (s['1'] ?? 0) + (s['2'] ?? 0) + (s['3'] ?? 0) + (s['4'] ?? 0);
+  const denom =
+    (s['0'] ?? 0) + auto + (s['unknown'] ?? 0);
+  if (denom === 0) return 0;
+  return (auto / denom) * 100;
+});
+
+const autoControlRateText = computed(
+  () => `${autoControlRate.value.toFixed(1)}%`,
+);
+
+const autoControlRateColorClass = computed(() => {
+  const rate = autoControlRate.value;
+  if (rate >= 90) return 'text-emerald-600';
+  if (rate >= 80) return 'text-blue-600';
+  if (rate >= 60) return 'text-amber-600';
+  return 'text-rose-600';
+});
+
 function handleTypeCardClick(type: string) {
   // MW-P4-03：类型筛选写入共享上下文（URL），不再维护内部状态
   if (type === 'ALL') {
@@ -255,7 +339,12 @@ async function loadList() {
       page: query.page,
       pageSize: query.pageSize,
     });
-    monitorList.value = data.items;
+    // 标杆 v1.4：默认按评分升序（最差在前），当前页内排序，服务端排序待 E-2 扩展
+    monitorList.value = data.items.toSorted((a, b) => {
+      const sa = a.score ?? 999;
+      const sb = b.score ?? 999;
+      return sa - sb;
+    });
     total.value = data.total;
     loadDiagLabels(data.items.map((it) => it.loopId));
   } catch (error: any) {
@@ -274,8 +363,9 @@ async function loadLoopTypeStats() {
     const data = await getLoopTypeStatsApi(
       monitorCtx.plantNodeId.value ?? undefined,
     );
-    typeStats.value =
-      (data as any).loopTypeStats || (data as Record<string, number>);
+    const payload = data as any;
+    typeStats.value = payload.loopTypeStats || payload;
+    modeStats.value = payload.controlModeStats || {};
   } catch {
     // 错误已由拦截器处理
   }
@@ -325,14 +415,14 @@ function exportCsv() {
   }
   const header = [
     '回路位号',
-    '名称',
-    '所属单元',
-    '类型',
+    '描述',
+    '装置·单元',
+    '回路类型',
     'SP',
     'PV',
     'OP',
-    '控制方式',
-    '性能指数',
+    'MODE',
+    '性能评分',
   ];
   const rows = monitorList.value.map((m) => [
     m.tagName ?? '',
@@ -361,7 +451,7 @@ function exportCsv() {
   message.success(`已导出 ${monitorList.value.length} 条回路`);
 }
 
-// ===== 行点击 → 切换到 workspace =====
+// ===== 行点击 → 切换到该回路详情 =====
 function handleRowClick(record: LoopApi.MonitorListItem) {
   emit('loopClick', record.loopId);
 }
@@ -375,16 +465,32 @@ function modeText(record: LoopApi.MonitorListItem): string {
   return record.currentValues?.modeLabel || '—';
 }
 
+// ===== 回路等级（对齐 GRADE_CONFIG / useScoreColor GB/T 44693.2-2024 §6.3 默认阈值）=====
+// 空评分返回中性灰，严禁映射为红色（"数据不足"不是"不合格"）
+function getGradeTag(
+  score: number | null | undefined,
+): { color: string; label: string } {
+  if (score == null || Number.isNaN(score))
+    return { color: 'default', label: '—' };
+  for (const cfg of GRADE_CONFIG) {
+    if (score >= cfg.minScore)
+      return { color: cfg.tagColor, label: cfg.label };
+  }
+  return { color: 'default', label: '—' };
+}
+
 // ===== 实时更新 =====
 onMessage((msg) => {
   applyMessage(msg, monitorList.value as any[]);
   lastRefreshAt.value = new Date();
 });
 
-// ===== 自动刷新：WS 在线不轮询，断连 30s 轮询 =====
+// ===== 自动刷新：WS 在线时仅靠 WS 推送更新 7 个实时值（PV/SP/OP/MODE/P/I/D），
+// ===== 其余数据（统计/KPI 计算值/诊断等）只在手动刷新页面时更新；
+// ===== WS 断连时回退到 30s 轮询，保证数据不会长时间停滞。
 watch(wsConnectionStatus, (status) => {
+  stopFallback();
   if (status === 'online') {
-    stopFallback();
     loadList();
   } else {
     startFallback(async () => {
@@ -438,15 +544,14 @@ defineExpose({
 
 <template>
   <div class="loop-fleet-view">
-    <!-- 表格工具条（导出/密度/自动刷新；筛选由父页面 MonitorContextToolbar 统一提供） -->
+    <!-- 表格工具条：左侧标题 + 右侧操作（导出/密度/自动刷新） -->
     <div class="loop-fleet-view__toolbar">
+      <div class="loop-fleet-view__title">
+        <span class="text-[15px] font-semibold text-gray-800">回路清单</span>
+      </div>
       <div class="!ml-auto flex items-center gap-2 text-sm text-gray-500">
         <Button size="small" @click="exportCsv">导出</Button>
-        <Button size="small" @click="cycleDensity">
-          密度：{{ densityLabel }}
-        </Button>
         <template v-if="showAutoRefresh">
-          <span>自动刷新（30s）</span>
           <Switch
             :checked="autoRefresh"
             @change="
@@ -496,6 +601,47 @@ defineExpose({
             </Tag>
             <span class="text-sm font-bold">{{ count }}</span>
           </div>
+
+          <!-- 分隔符：类型统计 ↔ 等级统计 -->
+          <div class="mx-1 h-5 w-px bg-gray-200"></div>
+
+          <!-- 回路等级统计（基于当前页数据，五档颜色区分） -->
+          <div
+            v-for="cfg in GRADE_CONFIG"
+            v-show="gradeStats[cfg.key] > 0"
+            :key="`grade-${cfg.key}`"
+            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5"
+          >
+            <Tag :color="cfg.tagColor" class="m-0">{{ cfg.label }}</Tag>
+            <span class="text-sm font-bold text-gray-800">{{
+              gradeStats[cfg.key]
+            }}</span>
+          </div>
+          <!-- 无评分回路（数据不足，中性灰，不计入任何等级） -->
+          <div
+            v-if="gradeStats.none > 0"
+            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5"
+          >
+            <Tag color="default" class="m-0">无评分</Tag>
+            <span class="text-sm font-bold text-gray-400">{{
+              gradeStats.none
+            }}</span>
+          </div>
+
+          <!-- 分隔符：等级统计 ↔ 实时自控率 -->
+          <div class="mx-1 h-5 w-px bg-gray-200"></div>
+
+          <!-- 实时自控率（基于后端 controlModeStats 全量统计） -->
+          <div
+            class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5"
+          >
+            <span class="text-sm font-medium text-gray-600">实时自控率</span>
+            <span
+              class="text-sm font-bold"
+              :class="autoControlRateColorClass"
+              >{{ autoControlRateText }}</span
+            >
+          </div>
         </div>
       </Card>
     </div>
@@ -513,7 +659,7 @@ defineExpose({
         showTotal: (t: number) => `共 ${t} 条`,
       }"
       :size="tableSize"
-      :scroll="{ x: 1400 }"
+      :scroll="{ x: 1500 }"
       row-key="loopId"
       class="loop-fleet-view__table"
       :row-class-name="
@@ -568,6 +714,16 @@ defineExpose({
             }}
           </Tag>
         </template>
+        <template v-else-if="column.key === 'grade'">
+          <Tag
+            :color="
+              getGradeTag((record as LoopApi.MonitorListItem).score).color
+            "
+            class="m-0"
+          >
+            {{ getGradeTag((record as LoopApi.MonitorListItem).score).label }}
+          </Tag>
+        </template>
         <template v-else-if="column.key === 'sp'">
           <ClpmNumeric
             v-if="(record as LoopApi.MonitorListItem).currentValues?.sp != null"
@@ -585,7 +741,6 @@ defineExpose({
             :precision="2"
             mono
             size="sm"
-            :weight="600"
           />
           <span v-else class="text-gray-400">—</span>
         </template>
@@ -632,10 +787,9 @@ defineExpose({
             ></span>
             <ClpmNumeric
               :value="(record as LoopApi.MonitorListItem).score"
-              :precision="1"
+              :precision="2"
               mono
               size="sm"
-              :weight="600"
             />
             <DayDeltaBadge
               :delta="(record as LoopApi.MonitorListItem).scoreDelta"
@@ -662,15 +816,6 @@ defineExpose({
           <span class="text-xs text-gray-500">
             {{ (record as LoopApi.MonitorListItem).confidenceLevel ?? '—' }}
           </span>
-        </template>
-        <template v-else-if="column.key === 'action'">
-          <Button
-            type="link"
-            size="small"
-            @click="handleRowClick(record as LoopApi.MonitorListItem)"
-          >
-            进入工作台
-          </Button>
         </template>
       </template>
 

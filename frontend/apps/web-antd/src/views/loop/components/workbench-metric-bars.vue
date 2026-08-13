@@ -20,6 +20,7 @@ defineOptions({ name: 'WorkbenchMetricBars' });
 
 const props = withDefaults(defineProps<Props>(), {
   negative: false,
+  showHint: true,
 });
 
 interface MetricBarItem {
@@ -33,6 +34,8 @@ interface Props {
   metrics: MetricBarItem[];
   /** 是否负向语义（长=差，用于诊断扩展指标） */
   negative?: boolean;
+  /** 是否显示底部正向/负向指标提示行 */
+  showHint?: boolean;
 }
 
 const { themeColors } = useClpmTheme();
@@ -118,7 +121,7 @@ const labelColor = computed(() =>
           {{ row.display }}
         </div>
       </div>
-      <div class="metric-bars__hint" :style="{ color: labelColor }">
+      <div v-if="props.showHint" class="metric-bars__hint" :style="{ color: labelColor }">
         {{ labelText }}
       </div>
     </div>
@@ -141,9 +144,9 @@ const labelColor = computed(() =>
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  justify-content: space-around;
   min-height: 0;
-  padding: 4px 0;
 }
 
 .metric-bars__row {
