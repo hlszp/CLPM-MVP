@@ -297,7 +297,9 @@ const kpiStripItems = computed<KpiStripItem[]>(() => {
       value: calculated ? String(overThreshold) : UNKNOWN_RISK_VALUE,
       unit: calculated ? '项' : UNKNOWN_RISK_UNIT,
       status: calculated
-        ? (overThreshold > 0 ? 'warning' : 'success')
+        ? (overThreshold > 0
+          ? 'warning'
+          : 'success')
         : 'neutral',
     },
     {

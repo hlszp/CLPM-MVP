@@ -15,6 +15,7 @@
 import type { TaskApi } from '#/api/task';
 
 import { effectScope } from 'vue';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // --- mock 依赖 ---
@@ -64,7 +65,8 @@ function makeTaskItem(
 
 describe('useAsyncPdfExport', () => {
   it('提交成功 → 轮询 → SUCCESS 自动 window.open 下载', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -72,7 +74,7 @@ describe('useAsyncPdfExport', () => {
     getTaskDetailApiMock.mockResolvedValueOnce(
       makeTaskItem({
         status: 'SUCCESS',
-        progress: 1.0,
+        progress: 1,
         currentStage: '文件已生成',
         resultUrl: '/api/v1/tasks/task-001/download',
       }),
@@ -103,14 +105,15 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('resultUrl 缺失时回退到 buildTaskDownloadUrl', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
     getTaskDetailApiMock.mockResolvedValueOnce(
       makeTaskItem({
         status: 'SUCCESS',
-        progress: 1.0,
+        progress: 1,
         resultUrl: null, // 缺失
       }),
     );
@@ -129,7 +132,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('SUCCESS 后再次轮询到达不重复触发 window.open', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -137,7 +141,7 @@ describe('useAsyncPdfExport', () => {
     getTaskDetailApiMock.mockResolvedValue(
       makeTaskItem({
         status: 'SUCCESS',
-        progress: 1.0,
+        progress: 1,
         resultUrl: '/api/v1/tasks/task-dup/download',
       }),
     );
@@ -156,14 +160,15 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('FAILED → message.error 并清理 runningTaskId', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
     getTaskDetailApiMock.mockResolvedValueOnce(
       makeTaskItem({
         status: 'FAILED',
-        progress: 0.0,
+        progress: 0,
         errorMessage: 'PDF 渲染失败：回路数据为空',
       }),
     );
@@ -183,7 +188,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('FAILED 无 errorMessage 时使用通用文案', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -205,7 +211,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('连续 4 次轮询失败 → 熔断 + message.warning', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -229,7 +236,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('重复提交被拒绝（已有任务进行中）', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -252,7 +260,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('提交函数抛错 → runningTaskId 清理 + 错误重新抛出', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -269,14 +278,15 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('window.open 抛错时降级为 message.warning', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
     getTaskDetailApiMock.mockResolvedValueOnce(
       makeTaskItem({
         status: 'SUCCESS',
-        progress: 1.0,
+        progress: 1,
         resultUrl: '/api/v1/tasks/task-blocked/download',
       }),
     );
@@ -302,7 +312,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('手动 cancel() 停止轮询并清理状态', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -328,7 +339,8 @@ describe('useAsyncPdfExport', () => {
   });
 
   it('进度阶段语义对齐后端五段（0.25→0.50→0.75→0.95→1.00）', async () => {
-    const { useAsyncPdfExport } = await import('../composables/use-async-pdf-export');
+    const { useAsyncPdfExport } =
+      await import('../composables/use-async-pdf-export');
     const scope = effectScope();
     const api = scope.run(() => useAsyncPdfExport())!;
 
@@ -337,7 +349,7 @@ describe('useAsyncPdfExport', () => {
       { progress: 0.5, currentStage: '获取整改推荐方案' },
       { progress: 0.75, currentStage: '生成诊断建议书 PDF' },
       { progress: 0.95, currentStage: '写入导出文件' },
-      { progress: 1.0, currentStage: '文件已生成', status: 'SUCCESS' as const },
+      { progress: 1, currentStage: '文件已生成', status: 'SUCCESS' as const },
     ];
 
     for (const stage of stages) {

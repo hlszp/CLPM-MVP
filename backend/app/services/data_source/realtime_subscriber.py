@@ -90,7 +90,7 @@ _WATCHDOG_RECV_TIMEOUT = 30.0
 # SP/MODE 等低频信号刷新间隔（秒）—— AAS 仅在值变化时推送 updateRealValues，
 # SP/MODE/PID 变化频率低，需定期重新调用 SubscribeAsync 获取 Completion 响应中的
 # 当前值，刷新 Redis 缓存（TTL 3600s），避免低频信号过期后前端显示空白。
-_SIGNALR_REFRESH_INTERVAL = 300.0  # 5 分钟
+_SIGNALR_REFRESH_INTERVAL = 60.0  # 1 分钟
 
 # loop_part → (loop_id, unit_id) 缓存 TTL（秒）：flush 热路径不每拍查库
 _LOOP_META_CACHE_TTL = 300.0

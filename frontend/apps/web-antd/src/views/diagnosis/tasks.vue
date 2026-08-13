@@ -1113,7 +1113,12 @@ defineExpose({ refresh });
                   </Popconfirm>
                   <Button
                     v-if="canViewResult(record.status)"
-                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
+                    v-permission="[
+                      'ADMIN',
+                      'IC_ENGINEER',
+                      'PE_ENGINEER',
+                      'EXPERT',
+                    ]"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
@@ -1333,7 +1338,12 @@ defineExpose({ refresh });
                   </Popconfirm>
                   <Button
                     v-if="canViewResult(record.status)"
-                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
+                    v-permission="[
+                      'ADMIN',
+                      'IC_ENGINEER',
+                      'PE_ENGINEER',
+                      'EXPERT',
+                    ]"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"
@@ -1538,7 +1548,12 @@ defineExpose({ refresh });
                 <Space size="small" wrap>
                   <Button
                     v-if="canViewResult(record.status)"
-                    v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT']"
+                    v-permission="[
+                      'ADMIN',
+                      'IC_ENGINEER',
+                      'PE_ENGINEER',
+                      'EXPERT',
+                    ]"
                     size="small"
                     type="link"
                     @click="handleViewDetail(record)"

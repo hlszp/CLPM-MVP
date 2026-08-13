@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回路列表 · 标杆线框图 v1.0（fixture：常减压·常压塔单元 48 回路）</title>
+<style>
+  :root{
+    --ink:#1f2937; --ink-2:#4b5563; --ink-3:#9ca3af;
+    --line:#d9dee5; --line-soft:#e8ebf0;
+    --bg:#eef1f5; --panel:#ffffff;
+    --primary:#1d4ed8; --primary-soft:#eff4ff;
+    --ok:#1a7f4b; --warn:#b45309; --err:#c23434; --err2:#8f1d1d; --info:#2563eb;
+    --mono:"SF Mono",Consolas,"Roboto Mono",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;color:var(--ink);display:flex;justify-content:center;padding:16px;}
+  .frame{width:1366px;height:800px;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,.10);}
+  /* ---------- R1 页头 ---------- */
+  .hdr{height:40px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--line);background:#fbfcfe;}
+  .hdr .tag{font-size:15px;font-weight:700;}
+  .hdr .crumb{font-size:11px;color:var(--ink-3);}
+  .hdr .sp{flex:1;}
+  .fresh{font-size:10px;color:var(--ink-3);display:flex;align-items:center;gap:4px;white-space:nowrap;}
+  .fresh b{color:var(--ink-2);}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;}
+  .help{font-size:11px;color:var(--primary);white-space:nowrap;}
+  /* ---------- R2 范围摘要条 ---------- */
+  .strip{height:34px;flex:none;display:flex;align-items:center;gap:22px;padding:0 14px;border-bottom:1px solid var(--line);background:#fff;}
+  .strip .item{font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:6px;white-space:nowrap;}
+  .strip .v{font-family:var(--mono);font-weight:700;font-size:14px;color:var(--ink);}
+  .strip .bad{color:var(--err);font-weight:700;}
+  .strip .note{margin-left:auto;font-size:10px;color:var(--ink-3);white-space:nowrap;}
+  /* ---------- R3 工具行 ---------- */
+  .toolbar{height:38px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line);background:#fbfcfe;}
+  .seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;}
+  .seg button{border:0;background:#fff;padding:3px 12px;font-size:11px;color:var(--ink-2);cursor:pointer;border-right:1px solid var(--line-soft);}
+  .seg button:last-child{border-right:0;}
+  .seg button.on{background:var(--primary);color:#fff;}
+  .seg button.dis{color:var(--ink-3);background:#f5f6f8;cursor:not-allowed;}
+  .sel{font-size:11px;color:var(--ink-2);border:1px solid var(--line);border-radius:4px;background:#fff;padding:3px 8px;display:flex;align-items:center;gap:4px;white-space:nowrap;}
+  .sel b{color:var(--ink);}
+  .fchip{font-size:10px;padding:2px 8px;border:1px solid #c7d6f5;border-radius:10px;color:var(--primary);background:var(--primary-soft);white-space:nowrap;}
+  .toolbar .sp{flex:1;}
+  .exp{font-size:11px;color:var(--ink-2);border:1px solid var(--line);border-radius:4px;padding:3px 10px;background:#fff;white-space:nowrap;}
+  .rt-toggle{font-size:11px;color:var(--ink-2);border:1px solid var(--line);border-radius:4px;padding:3px 10px;background:#fff;cursor:pointer;white-space:nowrap;}
+  .rt-toggle.on{border-color:var(--primary);color:var(--primary);background:var(--primary-soft);}
+  /* ---------- 主体 ---------- */
+  .body{flex:1;display:flex;min-height:0;}
+  .maincol{flex:1;display:flex;flex-direction:column;min-width:0;}
+  /* 左脊柱（与 01 工作台同款） */
+  .spine{width:230px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;background:#fafbfc;}
+  .spine .tools{padding:8px;border-bottom:1px solid var(--line-soft);}
+  .spine input{width:100%;height:26px;border:1px solid var(--line);border-radius:4px;padding:0 8px;font-size:11px;color:var(--ink);}
+  .spine .chips{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;}
+  .chip{font-size:10px;padding:1px 8px;border:1px solid var(--line);border-radius:10px;color:var(--ink-2);background:#fff;}
+  .chip.on{border-color:var(--primary);color:var(--primary);background:var(--primary-soft);}
+  .chip.placeholder{border-style:dashed;color:var(--ink-3);}
+  .tree{padding:6px 0;font-size:12px;flex:none;}
+  .tnode{padding:5px 10px;display:flex;align-items:center;gap:6px;color:var(--ink-2);cursor:default;}
+  .tnode.sel-unit{background:var(--primary-soft);color:var(--ink);font-weight:700;border-right:2px solid var(--primary);}
+  .tnode .badge{margin-left:auto;font-size:10px;background:#fde8e8;color:var(--err);border-radius:8px;padding:0 6px;font-weight:700;}
+  .tnode .badge.ok{background:#e7f6ec;color:var(--ok);}
+  .looplist{flex:1;overflow:hidden;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;}
+  .ll-head{font-size:10px;color:var(--ink-3);font-weight:700;padding:7px 10px 3px;display:flex;gap:6px;align-items:center;}
+  .ll-head .cnt{margin-left:auto;font-weight:400;}
+  .tloop{padding:4px 10px 4px 18px;display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--ink-2);}
+  .tloop .sc{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:700;}
+  .tloop .sc.bad{color:var(--err);} .tloop .sc.mid{color:var(--warn);} .tloop .sc.good{color:var(--ok);}
+  .sdot{width:6px;height:6px;border-radius:50%;flex:none;}
+  .spine-fold{flex:none;height:26px;border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink-3);cursor:pointer;background:#fff;user-select:none;}
+  .spine-fold:hover{color:var(--primary);}
+  .spine.collapsed{width:28px;}
+  .spine.collapsed .tools,.spine.collapsed .tree,.spine.collapsed .looplist{display:none;}
+  .spine.collapsed .spine-fold{height:100%;border-top:0;font-size:12px;}
+  /* ---------- R2.5 等级速览卡（v1.3：单行紧凑，右对齐统计） ---------- */
+  .gstrip{flex:none;display:flex;gap:6px;padding:5px 12px;border-bottom:1px solid var(--line);background:#fff;align-items:center;}
+  .gcard{border:1px solid var(--line);border-radius:4px;background:#fbfcfe;padding:2px 10px 2px 8px;display:flex;align-items:center;gap:5px;cursor:pointer;position:relative;user-select:none;white-space:nowrap;}
+  .gcard::before{content:"";width:4px;height:14px;border-radius:2px;background:var(--line);flex:none;}
+  .gcard:hover{box-shadow:0 1px 6px rgba(15,23,42,.10);}
+  .gcard.on{border-color:var(--primary);background:var(--primary-soft);box-shadow:inset 0 0 0 1px var(--primary);}
+  .gcard .gc-n{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink);}
+  .gcard .gc-l{font-size:10px;color:var(--ink-2);}
+  .gcard.gc-excellent::before{background:var(--ok);} .gcard.gc-good::before{background:var(--info);}
+  .gcard.gc-fair::before{background:var(--warn);} .gcard.gc-warn::before{background:var(--err);}
+  .gcard.gc-fail::before{background:var(--err2);}
+  .gstrip .sp{flex:1;}
+  .gstat{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
+  .gstat .gs-l{font-size:10px;color:var(--ink-2);}
+  .gstat .gs-n{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--ink);}
+  .gstat .gs-s{font-size:9px;color:var(--ink-3);}
+  .gstat.rate .gs-n{color:var(--primary);}
+  .gsep{width:1px;height:16px;background:var(--line);margin:0 4px;}
+  /* ---------- R4 主画布：列表视图 ---------- */
+  .canvas{flex:1;display:flex;flex-direction:column;min-height:0;background:#fff;padding:6px 10px;}
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  thead th{font-size:10px;color:var(--ink-3);font-weight:700;text-align:left;padding:6px 8px;border-bottom:2px solid var(--line);white-space:nowrap;background:#fbfcfe;position:sticky;top:0;}
+  thead th.num,td.num{text-align:right;font-family:var(--mono);}
+  thead th.ctr,td.ctr{text-align:center;}
+  tbody td{padding:5px 8px;border-bottom:1px solid var(--line-soft);color:var(--ink-2);white-space:nowrap;}
+  tbody tr{cursor:pointer;}
+  tbody tr:hover{background:#f6f8ff;}
+  tbody tr.row-bad{background:#fff7f7;}
+  tbody tr.row-bad:hover{background:#ffefef;}
+  .tagname{font-family:var(--mono);font-weight:700;color:var(--ink);font-size:12px;}
+  .desc-sub{font-size:10px;color:var(--ink-3);margin-top:1px;font-family:inherit;}
+  .score{display:inline-block;min-width:46px;text-align:right;font-family:var(--mono);font-weight:400;font-size:13px;color:var(--ink);}
+  .delta{display:inline-block;min-width:42px;text-align:left;font-size:10px;font-weight:700;margin-left:6px;}
+  .delta.down{color:var(--err);} .delta.up{color:var(--ok);} .delta.flat{color:var(--ink-3);}
+  .grade-tag{font-size:10px;font-weight:700;border-radius:3px;padding:1px 7px;border:1px solid;margin-left:6px;}
+  .g-excellent{background:#e7f6ec;color:var(--ok);border-color:#bfe6cd;}
+  .g-good{background:#e8f0fe;color:var(--info);border-color:#c8dcfb;}
+  .g-fair{background:#fff4e0;color:var(--warn);border-color:#f0d5a8;}
+  .g-warn{background:#fde8e8;color:var(--err);border-color:#f5c2c2;}
+  .g-fail{background:#f8d7d7;color:var(--err2);border-color:#eeb0b0;}
+  .mode{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;border:1px solid;}
+  .m-auto{background:#e7f6ec;color:var(--ok);border-color:#bfe6cd;}
+  .m-man{background:#fde8e8;color:var(--err);border-color:#f5c2c2;}
+  .m-cas{background:#eef2ff;color:#4338ca;border-color:#d5dbff;}
+  .st{height:8px;width:8px;border-radius:50%;display:inline-block;margin-left:5px;}
+  .diag{font-size:10px;padding:1px 6px;border-radius:3px;background:#fde8e8;color:var(--err);border:1px solid #f5c2c2;}
+  .diag2{font-size:10px;padding:1px 6px;border-radius:3px;background:#fff4e0;color:var(--warn);border:1px solid #f0d5a8;}
+  .conf{font-size:10px;font-weight:700;width:18px;height:18px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;border:1px solid;}
+  .c-a{background:#e7f6ec;color:var(--ok);border-color:#bfe6cd;}
+  .c-b{background:#e8f0fe;color:var(--info);border-color:#c8dcfb;}
+  .c-c{background:#fff4e0;color:var(--warn);border-color:#f0d5a8;}
+  .c-d{background:#fde8e8;color:var(--err);border-color:#f5c2c2;}
+  .col-rt th, .col-rt td{background:#fcfdff;}
+  /* ---------- 操作列：跳转工作台（v1.4） ---------- */
+  .wb-link{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--primary);border:1px solid #c8d9fb;border-radius:3px;padding:1px 7px;background:#f2f6ff;cursor:pointer;white-space:nowrap;}
+  .wb-link:hover{background:var(--primary);color:#fff;border-color:var(--primary);}
+  .lcard .wb-link{margin-left:auto;}
+  /* ---------- 跳转提示 toast（线框演示用） ---------- */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f172a;color:#fff;font-size:11px;padding:6px 14px;border-radius:5px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:99;font-family:var(--mono);}
+  /* ---------- R4 主画布：卡片视图 ---------- */
+  .cards{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-content:start;}
+  .lcard{border:1px solid var(--line);border-radius:5px;background:#fff;padding:8px 10px 7px;position:relative;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-height:108px;}
+  .lcard:hover{box-shadow:0 2px 10px rgba(15,23,42,.10);}
+  .lcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:5px 0 0 5px;}
+  .lcard.b-fail::before{background:var(--err2);} .lcard.b-warn::before{background:var(--err);}
+  .lcard.b-fair::before{background:var(--warn);} .lcard.b-good::before{background:var(--info);}
+  .lcard.b-excellent::before{background:var(--ok);}
+  .lc-top{display:flex;align-items:baseline;gap:6px;}
+  .lc-score{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--ink);}
+  .lc-top .grade-tag{margin-left:0;}
+  .lc-delta{margin-left:auto;}
+  .lc-name{font-family:var(--mono);font-weight:700;font-size:12px;color:var(--ink);}
+  .lc-desc{font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .lc-meta{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-2);margin-top:auto;}
+  .lc-meta .conf{margin-left:auto;}
+  /* ---------- R5 分页条 ---------- */
+  .pager{height:34px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:11px;color:var(--ink-2);background:#fbfcfe;}
+  .pg{border:1px solid var(--line);border-radius:3px;padding:1px 8px;background:#fff;}
+  .pg.on{background:var(--primary);color:#fff;border-color:var(--primary);}
+  .pager .sp{flex:1;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- ============ R1 页头 ============ -->
+  <div class="hdr">
+    <span class="tag">回路列表</span>
+    <span class="crumb">常减压装置 / 常压塔单元（当前范围）</span>
+    <span class="sp"></span>
+    <span class="fresh"><span class="dot"></span>KPI 快照 <b>10:00</b> · 实时点 10:07（B 类快照口径）</span>
+    <span class="help">? 帮助</span>
+  </div>
+
+  <!-- ============ R2 范围摘要条（v1.3：平均分移入 R2.5 综合性能，不重复显示） ============ -->
+  <div class="strip">
+    <div class="item">范围 <span class="v">48</span> 回路</div>
+    <div class="item">警告+不合格 <span class="v bad">5</span></div>
+    <div class="item">可信度 ≥B <span class="v">82%</span></div>
+    <div class="item">较昨日恶化 <span class="v bad">2</span> 条</div>
+    <span class="note">聚合口径：当前范围全量（E-1 聚合）</span>
+  </div>
+
+  <!-- ============ R2.5 等级速览卡（v1.3：单行高度，数量+点击筛选；右侧综合性能/实时自控率） ============ -->
+  <div class="gstrip" id="gstrip">
+    <div class="gcard on" data-g="all" data-n="48"><span class="gc-n">48</span><span class="gc-l">全部</span></div>
+    <div class="gcard gc-excellent" data-g="excellent" data-n="10"><span class="gc-n">10</span><span class="gc-l">优秀</span></div>
+    <div class="gcard gc-good" data-g="good" data-n="14"><span class="gc-n">14</span><span class="gc-l">良好</span></div>
+    <div class="gcard gc-fair" data-g="fair" data-n="19"><span class="gc-n">19</span><span class="gc-l">合格</span></div>
+    <div class="gcard gc-warn" data-g="warn" data-n="4"><span class="gc-n">4</span><span class="gc-l">警告</span></div>
+    <div class="gcard gc-fail" data-g="fail" data-n="1"><span class="gc-n">1</span><span class="gc-l">不合格</span></div>
+    <span class="sp"></span>
+    <div class="gstat"><span class="gs-l">综合性能</span><span class="gs-n" id="avgScore">76.8</span><span class="gs-s">简单平均·随筛选联动</span></div>
+    <span class="gsep"></span>
+    <div class="gstat rate"><span class="gs-l">实时自控率</span><span class="gs-n">87.5%</span><span class="gs-s">AUTO/CAS 42/48 · mode 实时口径</span></div>
+  </div>
+
+  <!-- ============ R3 工具行 ============ -->
+  <div class="toolbar">
+    <div class="seg" id="viewSeg">
+      <button data-v="list" class="on">列表</button>
+      <button data-v="card" title="当前范围 48 条 ≤100，可用">卡片</button>
+    </div>
+    <span class="sel">状态 <b>全部</b> ▾</span>
+    <span class="sel">类型 <b>全部</b> ▾</span>
+    <span class="sel">排序 <b>评分升序（最差在前）</b> ▾</span>
+    <span class="fchip">范围：常压塔单元 48 ×</span>
+    <span class="sp"></span>
+    <span class="exp">⭳ 导出（ADMIN/IC/PE）</span>
+  </div>
+
+  <div class="body">
+    <!-- ============ 左脊柱（与 01 工作台同款） ============ -->
+    <div class="spine" id="spine">
+      <div class="tools">
+        <input placeholder="搜索位号 / 描述 / 装置…">
+        <div class="chips">
+          <span class="chip">全部 1000</span><span class="chip">异常 23</span><span class="chip placeholder">我的关注（占位·F5）</span>
+        </div>
+      </div>
+      <div class="tree">
+        <div class="tnode sel-unit">▾ 常减压装置 · 420<span class="badge">8</span></div>
+        <div class="tnode sel-unit" style="padding-left:18px;">▾ 常压塔单元 · 48<span class="badge">5</span></div>
+        <div class="tnode" style="padding-left:18px;">▸ 减压塔单元 · 96<span class="badge">2</span></div>
+        <div class="tnode" style="padding-left:18px;">▸ 换热单元 · 132<span class="badge">1</span></div>
+        <div class="tnode">▸ 催化裂化装置 · 340<span class="badge">12</span></div>
+        <div class="tnode">▸ 加氢精制装置 · 240<span class="badge ok">3</span></div>
+      </div>
+      <div class="looplist">
+        <div class="ll-head">回路 · 常压塔单元<span class="cnt">48 条 · 评分升序</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--err2);"></span>FIC-2209<span class="sc bad">41.2</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--err);"></span>TIC-2215<span class="sc bad">55.6</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--err);"></span>PIC-2203<span class="sc bad">58.9</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--err);"></span>FIC-2211<span class="sc bad">63.0</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--warn);"></span>LIC-101<span class="sc mid">72.3</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--warn);"></span>TIC-108<span class="sc mid">74.8</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--ok);"></span>FIC-114<span class="sc good">78.2</span></div>
+        <div class="tloop"><span class="sdot" style="background:var(--ok);"></span>PIC-122<span class="sc good">93.1</span></div>
+      </div>
+      <div class="spine-fold" id="spineFold">◀ 收起侧栏</div>
+    </div>
+
+    <!-- ============ R4 主画布 ============ -->
+    <div class="maincol">
+
+      <!-- 列表视图（默认） -->
+      <div class="canvas" id="cvList">
+        <div style="flex:1;overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:86px;">位号</th>
+              <th style="width:172px;">描述</th>
+              <th style="width:100px;">装置 · 单元</th>
+              <th class="ctr" style="width:62px;">回路类型</th>
+              <th class="ctr" style="width:66px;">回路等级</th>
+              <th class="num" style="width:126px;">性能评分（快照）▲</th>
+              <th class="num col-rt" style="width:74px;">SP</th>
+              <th class="num col-rt" style="width:74px;">PV</th>
+              <th class="num col-rt" style="width:56px;">OP%</th>
+              <th class="ctr" style="width:62px;">MODE</th>
+              <th class="ctr" style="width:82px;">诊断标签</th>
+              <th class="ctr" style="width:50px;">可信度</th>
+              <th class="ctr" style="width:78px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        </div>
+      </div>
+
+      <!-- 卡片视图（筛选后 ≤100 条可用） -->
+      <div class="canvas hidden" id="cvCard">
+        <div class="cards" id="cardGrid"></div>
+      </div>
+
+      <!-- ============ R5 分页条 ============ -->
+      <div class="pager">
+        <span class="pg">‹</span><span class="pg on">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">›</span>
+        <span style="color:var(--ink-3);">20 / 页 ▾</span>
+        <span class="sp"></span>
+        <span id="fcount">共 <b>48</b> 条 · 服务端分页（≤100/页）</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- fixture：常压塔单元 48 回路（评分升序，展示前 13 条） ----------
+const G = {
+  fail:  ['g-fail','不合格'], warn: ['g-warn','警告'], fair: ['g-fair','合格'],
+  good:  ['g-good','良好'],   excellent: ['g-excellent','优秀']
+};
+const rows = [
+  {t:'FIC-2209', d:'常三线蜡油流量控制',   u:'常减压·常压塔', s:41.2, g:'fail',  dl:-3.4, dt:'down', mode:'MAN', st:'#c23434', diag:'卡涩',    conf:'D', sp:118.50, pv:104.32, op:78.4},
+  {t:'TIC-2215', d:'常压塔顶温度控制',     u:'常减压·常压塔', s:55.6, g:'warn',  dl:-1.8, dt:'down', mode:'AUTO',st:'#c23434', diag:'振荡',    conf:'C', sp:126.00, pv:131.74, op:61.2},
+  {t:'PIC-2203', d:'塔顶回流罐压力控制',   u:'常减压·常压塔', s:58.9, g:'warn',  dl:0.0,  dt:'flat', mode:'AUTO',st:'#b45309', diag:'饱和',    conf:'C', sp:0.14,  pv:0.19,   op:88.6},
+  {t:'LIC-2207', d:'常二线汽提塔液位',     u:'常减压·常压塔', s:61.3, g:'warn',  dl:-0.7, dt:'down', mode:'MAN', st:'#c23434', diag:'手动干预',conf:'B', sp:55.00, pv:47.85,  op:42.1},
+  {t:'FIC-2211', d:'常一线抽出流量',       u:'常减压·常压塔', s:63.0, g:'warn',  dl:0.0,  dt:'flat', mode:'AUTO',st:'#b45309', diag:'',        conf:'B', sp:86.40, pv:84.12,  op:37.9},
+  {t:'FIC-2218', d:'常压塔进料流量',       u:'常减压·常压塔', s:68.9, g:'fair',  dl:0.4,  dt:'up',   mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'B', sp:212.0, pv:209.66, op:45.3},
+  {t:'LIC-101',  d:'粗馏塔塔底液位控制',   u:'常减压·常压塔', s:72.3, g:'fair',  dl:-5.1, dt:'down', mode:'AUTO',st:'#b45309', diag:'振荡',    conf:'B', sp:50.00, pv:53.86,  op:52.7},
+  {t:'TIC-108',  d:'常压塔中段温度',       u:'常减压·常压塔', s:74.8, g:'fair',  dl:-0.2, dt:'flat', mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:268.5, pv:267.92, op:33.4},
+  {t:'FIC-114',  d:'塔底抽出流量(串级副)', u:'常减压·常压塔', s:78.2, g:'good',  dl:1.1,  dt:'up',   mode:'CAS', st:'#1a7f4b', diag:'',        conf:'A', sp:96.30, pv:96.05,  op:41.8},
+  {t:'PIC-1105', d:'常压塔顶压力',         u:'常减压·常压塔', s:81.4, g:'good',  dl:0.0,  dt:'flat', mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:0.11,  pv:0.11,   op:29.5},
+  {t:'LIC-1120', d:'回流罐液位',           u:'常减压·常压塔', s:85.0, g:'good',  dl:0.6,  dt:'up',   mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:62.00, pv:61.87,  op:35.2},
+  {t:'TIC-1131', d:'常一线换热温度',       u:'常减压·常压塔', s:88.6, g:'good',  dl:0.0,  dt:'flat', mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:182.4, pv:182.51, op:26.9},
+  {t:'PIC-122',  d:'燃料气压力控制',       u:'常减压·常压塔', s:93.1, g:'excellent', dl:0.2, dt:'up',mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:0.35,  pv:0.35,   op:18.3},
+  {t:'FIC-1301', d:'常压塔中段回流',       u:'常减压·常压塔', s:93.8, g:'excellent', dl:0.0, dt:'flat',mode:'AUTO',st:'#1a7f4b', diag:'',       conf:'A', sp:64.20, pv:64.18,  op:22.6},
+  {t:'LIC-1304', d:'常压塔进料缓冲罐液位', u:'常减压·常压塔', s:94.2, g:'excellent', dl:0.1, dt:'up',mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:58.00, pv:58.04,  op:31.7},
+  {t:'TIC-1308', d:'常二线换热温度',       u:'常减压·常压塔', s:94.9, g:'excellent', dl:0.0, dt:'flat',mode:'AUTO',st:'#1a7f4b', diag:'',       conf:'A', sp:196.3, pv:196.28, op:24.1},
+  {t:'PIC-1312', d:'汽提蒸汽压力',         u:'常减压·常压塔', s:95.4, g:'excellent', dl:0.3, dt:'up',mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:0.42,  pv:0.42,   op:16.8},
+  {t:'FIC-1316', d:'常顶冷回流流量',       u:'常减压·常压塔', s:96.1, g:'excellent', dl:0.0, dt:'flat',mode:'CAS',st:'#1a7f4b', diag:'',        conf:'A', sp:74.50, pv:74.52,  op:28.3},
+  {t:'LIC-1320', d:'常三线集油箱液位',     u:'常减压·常压塔', s:96.7, g:'excellent', dl:0.2, dt:'up',mode:'AUTO',st:'#1a7f4b', diag:'',        conf:'A', sp:45.00, pv:45.03,  op:19.9},
+  {t:'TIC-1324', d:'常压塔底温度',         u:'常减压·常压塔', s:97.3, g:'excellent', dl:0.0, dt:'flat',mode:'AUTO',st:'#1a7f4b', diag:'',       conf:'A', sp:342.6, pv:342.55, op:15.4},
+];
+
+const gradeTag = g => `<span class="grade-tag ${G[g][0]}">${G[g][1]}</span>`;
+const delta = r => r.dt==='flat'
+  ? `<span class="delta flat">—</span>`
+  : `<span class="delta ${r.dt}">${r.dt==='down'?'▼':'▲'} ${Math.abs(r.dl).toFixed(1)}</span>`;
+const modePill = m => m==='MAN' ? `<span class="mode m-man">MAN</span>` : m==='CAS' ? `<span class="mode m-cas">CAS</span>` : `<span class="mode m-auto">AUTO</span>`;
+const diagTag = r => r.diag==='' ? '<span style="color:var(--ink-3);">—</span>'
+  : (r.diag==='饱和'||r.diag==='手动干预' ? `<span class="diag2">${r.diag}</span>` : `<span class="diag">${r.diag}</span>`);
+const confTag = c => `<span class="conf c-${c.toLowerCase()}">${c}</span>`;
+
+// 跳转回路工作台（v1.4）：操作列 / 行点击 / 卡片点击 均携带列表上下文
+function jumpWB(tag){
+  const t = document.getElementById('toast');
+  t.textContent = `→ /loop/monitor?loopId=${tag}&from=list&scope=常压塔单元（上下文保持，R-E）`;
+  t.style.opacity = 1; clearTimeout(t._h); t._h = setTimeout(()=>t.style.opacity=0, 1600);
+}
+
+// 列表视图（v1.4：13 列 = v1.2 拍板 12 字段 + 操作列；性能评分右对齐两位小数 + 空格 + 环比箭头分值）
+function renderList(data){
+  document.getElementById('tbody').innerHTML = data.map((r,i)=>`
+  <tr class="${i<4 && r.g!=='excellent' && r.g!=='good'?'row-bad':''}" title="点击 → 回路工作台（携带列表上下文）" onclick="jumpWB('${r.t}')">
+    <td><span class="tagname">${r.t}</span></td>
+    <td style="font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:172px;">${r.d}</td>
+    <td style="font-size:10px;">${r.u}</td>
+    <td class="ctr" style="font-size:10px;">${r.lt||'PID'}</td>
+    <td class="ctr">${gradeTag(r.g)}</td>
+    <td class="num"><span class="score">${r.s.toFixed(2)}</span>${delta(r)}</td>
+    <td class="num col-rt"><span style="font-family:var(--mono);">${r.sp.toFixed(2)}</span></td>
+    <td class="num col-rt"><span style="font-family:var(--mono);color:${Math.abs(r.pv-r.sp)>5?'var(--err)':'var(--ink)'};">${r.pv.toFixed(2)}</span></td>
+    <td class="num col-rt"><span style="font-family:var(--mono);">${r.op.toFixed(1)}</span></td>
+    <td class="ctr">${modePill(r.mode)}</td>
+    <td class="ctr">${diagTag(r)}</td>
+    <td class="ctr">${confTag(r.conf)}</td>
+    <td class="ctr"><span class="wb-link" onclick="event.stopPropagation();jumpWB('${r.t}')">工作台 ↗</span></td>
+  </tr>`).join('');
+}
+
+// 卡片视图（v1.4：整卡点击跳转 + 显式"工作台 ↗"入口）
+function renderCards(data){
+  document.getElementById('cardGrid').innerHTML = data.slice(0,20).map(r=>`
+  <div class="lcard b-${r.g}" title="点击 → 回路工作台（携带列表上下文）" onclick="jumpWB('${r.t}')">
+    <div class="lc-top"><span class="lc-score">${r.s.toFixed(1)}</span>${gradeTag(r.g)}<span class="lc-delta">${delta(r)}</span></div>
+    <div class="lc-name">${r.t}</div>
+    <div class="lc-desc">${r.d}</div>
+    <div class="lc-meta">${modePill(r.mode)}<span class="st" style="background:${r.st};"></span>${r.diag?diagTag(r):''}${confTag(r.conf)}<span class="wb-link" onclick="event.stopPropagation();jumpWB('${r.t}')">工作台 ↗</span></div>
+  </div>`).join('');
+}
+renderList(rows); renderCards(rows);
+
+// 等级速览卡快速筛选（v1.1）+ 综合性能联动（v1.3：筛选后回路评分简单平均）
+let gradeFilter = 'all';
+document.getElementById('gstrip').addEventListener('click', e=>{
+  const c = e.target.closest('.gcard'); if(!c) return;
+  gradeFilter = c.dataset.g;
+  document.querySelectorAll('#gstrip .gcard').forEach(x=>x.classList.toggle('on', x===c));
+  const data = gradeFilter==='all' ? rows : rows.filter(r=>r.g===gradeFilter);
+  renderList(data); renderCards(data);
+  document.getElementById('avgScore').textContent = gradeFilter==='all'
+    ? '76.8'
+    : (data.reduce((a,r)=>a+r.s,0)/(data.length||1)).toFixed(1);
+  document.getElementById('fcount').innerHTML = gradeFilter==='all'
+    ? '共 <b>48</b> 条 · 服务端分页（≤100/页）'
+    : `筛选：${G[gradeFilter][1]} <b>${c.dataset.n}</b> 条 · 共 48 条`;
+});
+
+// 视图切换
+document.getElementById('viewSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b||b.classList.contains('dis')) return;
+  document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on', x===b));
+  const card = b.dataset.v==='card';
+  document.getElementById('cvList').classList.toggle('hidden', card);
+  document.getElementById('cvCard').classList.toggle('hidden', !card);
+});
+
+// 脊柱沉浸折叠（E4）
+document.getElementById('spineFold').addEventListener('click', ()=>{
+  const sp = document.getElementById('spine');
+  const c = sp.classList.toggle('collapsed');
+  document.getElementById('spineFold').textContent = c ? '▶' : '◀ 收起侧栏';
+});
+</script>
+</body>
+</html>

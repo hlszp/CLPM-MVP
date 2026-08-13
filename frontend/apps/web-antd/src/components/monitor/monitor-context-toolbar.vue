@@ -22,10 +22,22 @@ const props = withDefaults(
     attentionOnlyHidden?: boolean;
     /** 保存视图的 pageKey */
     pageKey?: string;
+    /** 是否显示装置/单元选择器（控制台 Tab 传 false 隐藏） */
+    showPlantNode?: boolean;
+    /** 是否显示回路类型选择器（控制台 Tab 传 false 隐藏） */
+    showLoopType?: boolean;
+    /** 是否显示搜索框（控制台 Tab 传 false 隐藏） */
+    showSearch?: boolean;
+    /** 是否显示保存视图下拉（控制台 Tab 传 false 隐藏） */
+    showSavedView?: boolean;
   }>(),
   {
     attentionOnlyHidden: true,
     pageKey: 'monitor-workbench',
+    showPlantNode: true,
+    showLoopType: true,
+    showSearch: true,
+    showSavedView: true,
   },
 );
 
@@ -139,6 +151,7 @@ onMounted(() => {
   <div class="flex items-center gap-2">
     <!-- 装置/单元 -->
     <Select
+      v-if="showPlantNode"
       :value="monitorCtx.plantNodeId.value ?? ''"
       :options="plantNodeOptions"
       size="small"
@@ -150,6 +163,7 @@ onMounted(() => {
 
     <!-- 回路类型 -->
     <Select
+      v-if="showLoopType"
       :value="monitorCtx.loopType.value ?? ''"
       :options="loopTypeOptions"
       size="small"
@@ -159,8 +173,9 @@ onMounted(() => {
       @change="handleLoopTypeChange"
     />
 
-    <!-- 关键词搜索（300ms 防抖） -->
+    <!-- 关键词搜索（300ms 防抖，仅回路清单 Tab 显示） -->
     <Input
+      v-if="showSearch"
       v-model:value="localKeyword"
       size="small"
       class="w-44"
@@ -186,8 +201,9 @@ onMounted(() => {
       <span>只看关注项</span>
     </label>
 
-    <!-- 保存视图 -->
+    <!-- 保存视图（仅回路清单 Tab 显示） -->
     <Select
+      v-if="showSavedView"
       :value="undefined"
       size="small"
       class="w-32"

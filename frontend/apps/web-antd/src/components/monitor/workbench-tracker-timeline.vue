@@ -1,13 +1,12 @@
-/** * 工作台 Tracker/实施/验证时间线（MW-P3-08 + MW-P3-09） * *
-显示建单来源、状态变化、负责人、MOC、实施 PID、实施时间、验证计划和结果。 *
-VERIFYING 超期显示超期时长和"立即验证"。 * CLOSED
-显示改善/无变化/恶化结论；REOPENED 显示原因。 *
-实施前后对比（MW-P3-09）：评分、核心 KPI、PID 和验证时间窗， *
-无基线/窗口不足/可信度不足时显示 INCONCLUSIVE，不显示伪 0。 * 所有编辑动作复用
-Tracker API 和权限，不另建状态机。 *
-平台安全边界文案始终可见：只读建议、人工实施、需留痕。 * * 对齐整改方案 §7.1
-闭环时间线。 */
 <script lang="ts" setup>
+/**
+ * 工作台闭环时间线（MW-P3-08 + MW-P3-09 · Phase 2 重构）
+ *
+ * 固定 4 节点闭环：评估 → 诊断 → 处置 → 验证
+ * - 处置节点聚合整定/维修/实施等动作
+ * - 每个节点独立显示时间、状态、关键信息
+ * - 节点间用连接线标识流程进度
+ */
 import type { MonitorApi } from '#/api/monitor';
 
 import { computed } from 'vue';
@@ -21,6 +20,12 @@ defineOptions({ name: 'WorkbenchTrackerTimeline' });
 const props = defineProps<{
   /** Tracker 时间线数据（来自 summary.trackerTimeline） */
   tracker?: MonitorApi.TrackerTimeline | null;
+  /** 评估摘要 */
+  assessment?: MonitorApi.AssessmentSummary | null;
+  /** 诊断摘要 */
+  diagnosis?: MonitorApi.DiagnosisSummary | null;
+  /** 整定摘要 */
+  tuning?: MonitorApi.TuningSummary | null;
   /** 是否数据来源不可用 */
   unavailable?: boolean;
 }>();
@@ -39,79 +44,219 @@ const STATUS_META: Record<string, { color: string; label: string }> = {
   IGNORED: { color: 'default', label: '已忽略' },
 };
 
-const CONCLUSION_META: Record<
-  string,
-  { color: string; icon: string; label: string }
-> = {
-  IMPROVED: { color: 'success', icon: 'lucide:trending-up', label: '改善' },
-  NO_CHANGE: { color: 'default', icon: 'lucide:minus', label: '无明显变化' },
-  DETERIORATED: {
-    color: 'error',
-    icon: 'lucide:trending-down',
-    label: '恶化',
-  },
-};
+/** 4 个固定节点定义 */
+type NodeKey = 'assess' | 'diagnose' | 'action' | 'verify';
 
-const EFFECT_STATUS_META: Record<string, { color: string; label: string }> = {
-  PENDING: { color: 'default', label: '待验证' },
-  INCONCLUSIVE: { color: 'warning', label: '证据不足' },
-  COMPLETED: { color: 'success', label: '已验证' },
-};
+interface TimelineNode {
+  key: NodeKey;
+  label: string;
+  icon: string;
+  state: 'done' | 'current' | 'pending' | 'skipped' | 'failed';
+  stateLabel: string;
+  time: string;
+  details: { label: string; value: string; highlight?: boolean }[];
+}
 
-const statusMeta = computed(() => {
-  if (!props.tracker) return null;
-  return (
-    STATUS_META[props.tracker.actionStatus] ?? {
-      color: 'default',
-      label: props.tracker.actionStatus,
+/** 根据数据推导 4 节点状态 */
+const nodes = computed<TimelineNode[]>(() => {
+  const t = props.tracker;
+  const a = props.assessment;
+  const d = props.diagnosis;
+  const tu = props.tuning;
+
+  const actionStatus = t?.actionStatus ?? 'PENDING';
+  const isVerifying = actionStatus === 'VERIFYING';
+  const isClosed = actionStatus === 'CLOSED';
+  const isReopened = actionStatus === 'REOPENED';
+  const hasImplemented = !!t?.implementedAt;
+  const hasDiagnosis = !!d;
+  const hasAssessment = !!a;
+  const hasTuning = !!tu;
+
+  // 评估节点
+  const assessState = hasAssessment ? 'done' as const : 'pending' as const;
+  const assess: TimelineNode = {
+    key: 'assess',
+    label: '评估',
+    icon: '📊',
+    state: assessState,
+    stateLabel: hasAssessment ? '已完成' : '待评估',
+    time: a?.resultAt ? formatTime(a.resultAt) : '—',
+    details: [
+      { label: '评分', value: a?.score != null ? a.score.toFixed(1) : '—' },
+      { label: '可信度', value: a?.confidenceLevel ?? '—' },
+      { label: '状态', value: a?.status ?? '—' },
+    ].filter((x) => x.value !== '—'),
+  };
+
+  // 诊断节点
+  const diagState: TimelineNode['state'] = hasDiagnosis
+    ? 'done'
+    : hasAssessment
+      ? 'pending'
+      : 'skipped';
+  const diag: TimelineNode = {
+    key: 'diagnose',
+    label: '诊断',
+    icon: '🔍',
+    state: diagState,
+    stateLabel: hasDiagnosis ? '已诊断' : '待诊断',
+    time: d?.resultAt ? formatTime(d.resultAt) : '—',
+    details: [
+      { label: '诊断', value: d?.diagLabel ?? t?.diagnosisLabel ?? '—', highlight: true },
+      { label: '置信度', value: d?.confidence != null ? d.confidence.toFixed(2) : '—' },
+    ].filter((x) => x.value !== '—'),
+  };
+
+  // 处置节点（整定 + 实施 + 维修）
+  const actionState: TimelineNode['state'] = hasImplemented
+    ? 'done'
+    : isVerifying || isClosed
+      ? 'done'
+      : hasDiagnosis
+        ? 'current'
+        : 'skipped';
+
+  const actionDetails: TimelineNode['details'] = [];
+  if (hasTuning) {
+    actionDetails.push({
+      label: '整定算法',
+      value: tu?.algorithm ?? tu?.modelType ?? '—',
+      highlight: true,
+    });
+    if (tu?.recommendedPid) {
+      const pid = tu.recommendedPid;
+      actionDetails.push({
+        label: '推荐 PID',
+        value: `P=${pid.p ?? '—'}, I=${pid.i ?? '—'}, D=${pid.d ?? '—'}`,
+      });
     }
-  );
+    actionDetails.push({
+      label: '拟合度',
+      value: tu?.fittingScore != null ? `${(tu.fittingScore * 100).toFixed(1)}%` : '—',
+    });
+  }
+  if (hasImplemented) {
+    actionDetails.push({
+      label: '实施人',
+      value: t?.implementedBy ?? '—',
+    });
+    if (t?.newPid) {
+      const pid = t.newPid;
+      actionDetails.push({
+        label: '实施 PID',
+        value: `P=${pid.p ?? '—'}, I=${pid.i ?? '—'}, D=${pid.d ?? '—'}`,
+      });
+    }
+    if (t?.mocRef) {
+      actionDetails.push({ label: 'MOC', value: t.mocRef });
+    }
+  }
+
+  const action: TimelineNode = {
+    key: 'action',
+    label: '处置',
+    icon: '⚙️',
+    state: actionState,
+    stateLabel: hasImplemented
+      ? '已实施'
+      : isVerifying || isClosed
+        ? '已实施'
+        : hasTuning
+          ? '整定中'
+          : '待处置',
+    time: hasImplemented ? formatTime(t?.implementedAt) : '—',
+    details: actionDetails.filter((x) => x.value !== '—'),
+  };
+
+  // 验证节点
+  const hasEffectVerified = !!t?.effectVerifiedAt || isClosed;
+
+  let verifyState: TimelineNode['state'] = 'pending';
+  let verifyLabel = '待验证';
+  if (isVerifying && !t?.isOverdue) {
+    verifyState = 'current';
+    verifyLabel = '验证中';
+  } else if (isVerifying && t?.isOverdue) {
+    verifyState = 'current';
+    verifyLabel = '验证超期';
+  } else if (isClosed || hasEffectVerified) {
+    verifyState = 'done';
+    verifyLabel = '已验证';
+  } else if (isReopened) {
+    verifyState = 'failed';
+    verifyLabel = '验证失败';
+  } else if (hasImplemented) {
+    verifyState = 'pending';
+    verifyLabel = '待验证';
+  } else {
+    verifyState = 'skipped';
+    verifyLabel = '待验证';
+  }
+
+  const verifyDetails: TimelineNode['details'] = [];
+  if (t?.effectCompare?.conclusionLabel) {
+    verifyDetails.push({
+      label: '结论',
+      value: t.effectCompare.conclusionLabel,
+      highlight: true,
+    });
+  } else if (t?.effectCompare?.conclusion) {
+    const labelMap: Record<string, string> = {
+      IMPROVED: '改善',
+      NO_CHANGE: '无明显变化',
+      DETERIORATED: '恶化',
+    };
+    verifyDetails.push({
+      label: '结论',
+      value: labelMap[t.effectCompare.conclusion] ?? t.effectCompare.conclusion,
+      highlight: true,
+    });
+  }
+  if (t?.effectCompare?.scoreChange) {
+    const sc = t.effectCompare.scoreChange;
+    const change = sc.change != null ? `${sc.change > 0 ? '+' : ''}${sc.change.toFixed(1)}` : '—';
+    verifyDetails.push({
+      label: '评分',
+      value: `${sc.before?.toFixed(1) ?? '—'} → ${sc.after?.toFixed(1) ?? '—'} (${change})`,
+    });
+  }
+  if (t?.isOverdue && isVerifying) {
+    verifyDetails.push({
+      label: '超期',
+      value: `${t.overdueHours?.toFixed(0) ?? ''}h`,
+    });
+  }
+
+  const verify: TimelineNode = {
+    key: 'verify',
+    label: '验证',
+    icon: '✅',
+    state: verifyState as TimelineNode['state'],
+    stateLabel: verifyLabel,
+    time:
+      t?.effectVerifiedAt
+        ? formatTime(t.effectVerifiedAt)
+        : t?.closedAt
+          ? formatTime(t.closedAt)
+          : t?.plannedAt
+            ? `计划 ${formatTime(t.plannedAt)}`
+            : '—',
+    details: verifyDetails.filter((x) => x.value !== '—'),
+  };
+
+  return [assess, diag, action, verify];
 });
+
+const hasAnyData = computed(
+  () =>
+    !!props.assessment ||
+    !!props.diagnosis ||
+    !!props.tuning ||
+    !!props.tracker,
+);
 
 const isVerifying = computed(() => props.tracker?.actionStatus === 'VERIFYING');
-const isClosed = computed(() => props.tracker?.actionStatus === 'CLOSED');
-const isReopened = computed(() => props.tracker?.actionStatus === 'REOPENED');
-
-/** 实施前后对比（MW-P3-09） */
-const effectCompare = computed(() => props.tracker?.effectCompare ?? null);
-
-const effectStatusMeta = computed(() => {
-  if (!effectCompare.value) return null;
-  return (
-    EFFECT_STATUS_META[effectCompare.value.status] ?? {
-      color: 'default',
-      label: effectCompare.value.status,
-    }
-  );
-});
-
-const conclusionMeta = computed(() => {
-  if (!effectCompare.value?.conclusion) return null;
-  return CONCLUSION_META[effectCompare.value.conclusion] ?? null;
-});
-
-/** 评分变化展示文本（不显示伪 0，无数据用 —） */
-const scoreChangeText = computed(() => {
-  const sc = effectCompare.value?.scoreChange;
-  if (!sc) return null;
-  const before = sc.before == null ? '—' : sc.before.toFixed(1);
-  const after = sc.after == null ? '—' : sc.after.toFixed(1);
-  const change =
-    sc.change == null
-      ? '—'
-      : `${sc.change > 0 ? '+' : ''}${sc.change.toFixed(1)}`;
-  return { before, after, change, improved: sc.improved };
-});
-
-function pidText(pid?: null | { d?: number; i?: number; p?: number }): string {
-  if (!pid) return '—';
-  return `P=${pid.p ?? '—'}, I=${pid.i ?? '—'}, D=${pid.d ?? '—'}`;
-}
-
-function kpiChangeText(change?: null | number): string {
-  if (change == null) return '—';
-  return `${change > 0 ? '+' : ''}${change.toFixed(2)}`;
-}
 
 function goToTrackerDetail(trackerId: string) {
   emit('viewDetail', trackerId);
@@ -131,33 +276,29 @@ function handleVerify() {
       <span class="text-amber-600">闭环时间线数据暂时不可用</span>
     </div>
 
-    <!-- 无 Tracker -->
+    <!-- 无数据 -->
     <Empty
-      v-else-if="!tracker"
-      description="暂无整改工单"
+      v-else-if="!hasAnyData"
+      description="暂无闭环数据"
       :image="Empty.PRESENTED_IMAGE_SIMPLE"
       class="!py-4"
     />
 
-    <!-- Tracker 时间线 -->
+    <!-- 4 节点闭环时间线 -->
     <div v-else class="tracker-timeline__body">
-      <!-- 顶部：状态 + 标签 + 操作 -->
-      <div class="tracker-timeline__header">
+      <!-- 顶部：工单状态 + 操作 -->
+      <div v-if="tracker" class="tracker-timeline__header">
         <div class="tracker-timeline__header-left">
           <Tag
-            v-if="statusMeta"
-            :color="statusMeta.color"
+            v-if="STATUS_META[tracker.actionStatus]"
+            :color="STATUS_META[tracker.actionStatus]?.color ?? 'default'"
             class="!m-0 !text-[11px]"
           >
-            {{ statusMeta.label }}
+            {{ STATUS_META[tracker.actionStatus]?.label ?? tracker.actionStatus }}
           </Tag>
           <span v-if="tracker.diagnosisLabel" class="tracker-timeline__label">
             {{ tracker.diagnosisLabel }}
           </span>
-          <span v-if="tracker.severity" class="tracker-timeline__severity">
-            严重度：{{ tracker.severity }}
-          </span>
-          <!-- VERIFYING 超期标记 -->
           <Tag v-if="tracker.isOverdue" color="error" class="!m-0 !text-[10px]">
             超期 {{ tracker.overdueHours?.toFixed(0) ?? '' }}h
           </Tag>
@@ -181,224 +322,38 @@ function handleVerify() {
         </div>
       </div>
 
-      <!-- 时间线节点 -->
-      <div class="tracker-timeline__steps">
-        <!-- 建单 -->
-        <div class="tt-step tt-step--done">
-          <span class="tt-step__dot"></span>
-          <div class="tt-step__content">
-            <span class="tt-step__label">建单</span>
-            <span class="tt-step__time">{{
-              formatTime(tracker.createdAt) || '—'
-            }}</span>
-            <span v-if="tracker.triggerType" class="tt-step__meta">
-              来源：{{ tracker.triggerType === 'auto' ? '自动' : '手动' }}
-            </span>
-            <span v-if="tracker.assignee" class="tt-step__meta">
-              负责人：{{ tracker.assignee }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 实施 -->
-        <div
-          class="tt-step"
-          :class="{
-            'tt-step--done': tracker.implementedAt,
-            'tt-step--pending': !tracker.implementedAt,
-          }"
-        >
-          <span class="tt-step__dot"></span>
-          <div class="tt-step__content">
-            <span class="tt-step__label">人工实施</span>
-            <span class="tt-step__time">{{
-              formatTime(tracker.implementedAt) || '待实施'
-            }}</span>
-            <span v-if="tracker.implementedBy" class="tt-step__meta">
-              实施人：{{ tracker.implementedBy }}
-            </span>
-            <span v-if="tracker.newPid" class="tt-step__meta">
-              实施 PID：{{ pidText(tracker.newPid) }}
-            </span>
-            <!-- MOC 信息 -->
-            <span v-if="tracker.mocNotApplicable" class="tt-step__meta">
-              MOC：不适用
-            </span>
-            <span v-else-if="tracker.mocRef" class="tt-step__meta">
-              MOC：{{ tracker.mocRef }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 验证 -->
-        <div
-          class="tt-step"
-          :class="{
-            'tt-step--done':
-              isClosed || (tracker.effectVerifiedAt && !isReopened),
-            'tt-step--pending': isVerifying && !tracker.isOverdue,
-            'tt-step--overdue': isVerifying && tracker.isOverdue,
-            'tt-step--failed': isReopened,
-          }"
-        >
-          <span class="tt-step__dot"></span>
-          <div class="tt-step__content">
-            <span class="tt-step__label">
-              {{ isReopened ? '验证失败' : '效果验证' }}
-            </span>
-            <span class="tt-step__time">{{
-              formatTime(tracker.effectVerifiedAt || tracker.closedAt) ||
-              (isVerifying ? '等待验证' : '—')
-            }}</span>
-            <!-- REOPENED 原因 -->
-            <span
-              v-if="isReopened && tracker.reopenReason"
-              class="tt-step__meta tt-step__meta--error"
-            >
-              重开原因：{{ tracker.reopenReason }}
-            </span>
-            <!-- 计划验证时间 -->
-            <span v-if="tracker.plannedAt && !isClosed" class="tt-step__meta">
-              计划验证：{{ formatTime(tracker.plannedAt) }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== 实施前后对比（MW-P3-09）===== -->
-      <div
-        v-if="effectCompare"
-        class="effect-compare"
-        role="region"
-        aria-label="实施前后对比"
-      >
-        <div class="effect-compare__header">
-          <span class="effect-compare__title">实施前后对比</span>
-          <Tag
-            v-if="effectStatusMeta"
-            :color="effectStatusMeta.color"
-            class="!m-0 !text-[10px]"
-          >
-            {{ effectStatusMeta.label }}
-          </Tag>
-          <Tag
-            v-if="conclusionMeta"
-            :color="conclusionMeta.color"
-            class="!m-0 !text-[10px]"
-          >
-            {{ conclusionMeta.label }}
-          </Tag>
-          <span
-            v-if="effectCompare.confidence"
-            class="effect-compare__confidence"
-          >
-            可信度：{{ effectCompare.confidence }}
-          </span>
-        </div>
-
-        <!-- 原因说明（INCONCLUSIVE / PENDING） -->
-        <div
-          v-if="effectCompare.reason"
-          class="effect-compare__reason"
-          :class="{
-            'effect-compare__reason--warn':
-              effectCompare.status === 'INCONCLUSIVE',
-          }"
-        >
-          {{ effectCompare.reason }}
-        </div>
-
-        <!-- 时间窗 -->
-        <div v-if="effectCompare.timeWindow" class="effect-compare__window">
-          <span class="effect-compare__window-label">对比窗口</span>
-          <span class="effect-compare__window-value">
-            实施前 {{ formatTime(effectCompare.timeWindow.beforeStart) }} ~
-            {{ formatTime(effectCompare.timeWindow.beforeEnd) }}
-          </span>
-          <span class="effect-compare__window-sep">→</span>
-          <span class="effect-compare__window-value">
-            实施后 {{ formatTime(effectCompare.timeWindow.afterStart) }} ~
-            {{ formatTime(effectCompare.timeWindow.afterEnd) }}
-          </span>
-        </div>
-
-        <!-- 评分变化 -->
-        <div v-if="scoreChangeText" class="effect-compare__row">
-          <span class="effect-compare__row-label">综合评分</span>
-          <span class="effect-compare__row-values">
-            <span class="effect-compare__val-before">
-              {{ scoreChangeText.before }}
-            </span>
-            <span class="effect-compare__val-arrow">→</span>
-            <span class="effect-compare__val-after">
-              {{ scoreChangeText.after }}
-            </span>
-            <span
-              class="effect-compare__val-change"
-              :class="{
-                'effect-compare__val-change--up':
-                  scoreChangeText.improved === true,
-                'effect-compare__val-change--down':
-                  scoreChangeText.improved === false,
-              }"
-            >
-              ({{ scoreChangeText.change }})
-            </span>
-          </span>
-        </div>
-
-        <!-- 核心 KPI 变化 -->
-        <div
-          v-if="effectCompare.coreKpiChanges.length > 0"
-          class="effect-compare__kpi-list"
-        >
+      <!-- 4 节点时间线 -->
+      <div class="tt-flow">
+        <template v-for="(node, idx) in nodes" :key="node.key">
+          <!-- 连接线（除最后一个节点） -->
           <div
-            v-for="kpi in effectCompare.coreKpiChanges"
-            :key="kpi.metricKey"
-            class="effect-compare__kpi-item"
+            v-if="idx < nodes.length - 1"
+            class="tt-flow__connector"
+            :class="{
+              'tt-flow__connector--done':
+                node.state === 'done' || node.state === 'current',
+            }"
+          ></div>
+          <!-- 节点 -->
+          <div
+            class="tt-node"
+            :class="`tt-node--${node.state}`"
           >
-            <span class="effect-compare__kpi-name">{{ kpi.metricName }}</span>
-            <span class="effect-compare__kpi-values">
-              <span>{{
-                kpi.before == null ? '—' : kpi.before.toFixed(2)
-              }}</span>
-              <span class="effect-compare__val-arrow">→</span>
-              <span>{{ kpi.after == null ? '—' : kpi.after.toFixed(2) }}</span>
-              <span
-                class="effect-compare__kpi-change"
-                :class="{
-                  'effect-compare__val-change--up': kpi.improved === true,
-                  'effect-compare__val-change--down': kpi.improved === false,
-                }"
-              >
-                ({{ kpiChangeText(kpi.change) }})
+            <div class="tt-node__head">
+              <span class="tt-node__icon">{{ node.icon }}</span>
+              <span class="tt-node__label">{{ node.label }}</span>
+              <span class="tt-node__state">{{ node.stateLabel }}</span>
+            </div>
+            <div class="tt-node__body">
+              <span v-if="node.time !== '—'" class="tt-node__time">{{ node.time }}</span>
+              <span v-for="(d, di) in node.details" :key="di" class="tt-node__detail" :class="{ 'tt-node__detail--highlight': d.highlight }">
+                <span class="tt-node__detail-label">{{ d.label }}</span>
+                <span class="tt-node__detail-value">{{ d.value }}</span>
               </span>
-            </span>
+              <span v-if="node.details.length === 0 && node.time === '—'" class="tt-node__empty">暂无数据</span>
+            </div>
           </div>
-        </div>
-
-        <!-- PID 变化 -->
-        <div
-          v-if="effectCompare.pidBefore || effectCompare.pidAfter"
-          class="effect-compare__row"
-        >
-          <span class="effect-compare__row-label">PID 变化</span>
-          <span class="effect-compare__row-values">
-            <span class="effect-compare__val-before">
-              {{ pidText(effectCompare.pidBefore) }}
-            </span>
-            <span class="effect-compare__val-arrow">→</span>
-            <span class="effect-compare__val-after">
-              {{ pidText(effectCompare.pidAfter) }}
-            </span>
-          </span>
-        </div>
-      </div>
-
-      <!-- 安全边界文案（始终可见） -->
-      <div class="tracker-timeline__safety" role="note">
-        安全边界：只读建议 · 人工实施 · 需留痕；平台不直接修改 DCS 的 P/I/D
-        参数。
+        </template>
       </div>
     </div>
   </div>
@@ -408,7 +363,7 @@ function handleVerify() {
 .tracker-timeline {
   height: 100%;
   min-height: 0;
-  padding: 6px 10px;
+  padding: 4px 8px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 6px;
@@ -431,16 +386,17 @@ function handleVerify() {
 
 .tracker-timeline__header {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .tracker-timeline__header-left {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
 }
 
@@ -457,243 +413,148 @@ function handleVerify() {
   color: hsl(var(--foreground) / 85%);
 }
 
-.tracker-timeline__severity {
-  font-size: 11px;
-  color: hsl(var(--foreground) / 50%);
-}
-
-/* 时间线步骤 */
-.tracker-timeline__steps {
+/* ===== 4 节点时间流 ===== */
+.tt-flow {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
 }
 
-.tt-step {
+.tt-flow__connector {
   position: relative;
-  display: flex;
-  gap: 8px;
+  width: 2px;
+  height: 10px;
+  margin-left: 9px;
+  background: hsl(var(--border) / 60%);
+}
+
+.tt-flow__connector--done {
+  background: hsl(var(--status-ok) / 60%);
+}
+
+.tt-node {
+  position: relative;
   padding: 2px 0;
-  padding-left: 4px;
+  padding-left: 20px;
 }
 
-.tt-step:not(:last-child)::before {
+/* 节点圆点 */
+.tt-node::before {
   position: absolute;
-  top: 14px;
-  bottom: -2px;
-  left: 7px;
-  width: 1px;
+  top: 6px;
+  left: 4px;
+  width: 12px;
+  height: 12px;
   content: '';
-  background: hsl(var(--border));
-}
-
-.tt-step__dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  margin-top: 4px;
   background: hsl(var(--muted));
-  border: 1px solid hsl(var(--border));
+  border: 2px solid hsl(var(--border));
   border-radius: 50%;
 }
 
-.tt-step--done .tt-step__dot {
+.tt-node--done::before {
   background: hsl(var(--status-ok));
   border-color: hsl(var(--status-ok));
 }
 
-.tt-step--pending .tt-step__dot {
-  background: hsl(var(--status-info) / 30%);
+.tt-node--current::before {
+  background: hsl(var(--status-info) / 40%);
   border-color: hsl(var(--status-info));
+  box-shadow: 0 0 0 3px hsl(var(--status-info) / 20%);
 }
 
-.tt-step--overdue .tt-step__dot {
+.tt-node--pending::before {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--border));
+}
+
+.tt-node--skipped::before {
+  background: transparent;
+  border-color: hsl(var(--border) / 40%);
+  border-style: dashed;
+}
+
+.tt-node--failed::before {
   background: hsl(var(--status-error));
   border-color: hsl(var(--status-error));
 }
 
-.tt-step--failed .tt-step__dot {
-  background: hsl(var(--status-error));
-  border-color: hsl(var(--status-error));
-}
-
-.tt-step__content {
+.tt-node__head {
   display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.tt-step__label {
-  font-size: 12px;
-  font-weight: 500;
-  color: hsl(var(--foreground) / 85%);
-}
-
-.tt-step__time {
-  font-size: 11px;
-  color: hsl(var(--foreground) / 60%);
-}
-
-.tt-step__meta {
-  font-size: 11px;
-  color: hsl(var(--foreground) / 45%);
-}
-
-.tt-step__meta--error {
-  color: hsl(var(--status-error) / 80%);
-}
-
-/* ===== 实施前后对比（MW-P3-09）===== */
-.effect-compare {
-  flex-shrink: 0;
-  padding: 6px 8px;
-  margin-top: 4px;
-  background: hsl(var(--muted) / 20%);
-  border: 1px solid hsl(var(--border) / 40%);
-  border-radius: 4px;
-}
-
-.effect-compare__header {
-  display: flex;
-  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  margin-bottom: 4px;
 }
 
-.effect-compare__title {
+.tt-node__icon {
+  font-size: 12px;
+}
+
+.tt-node__label {
   font-size: 12px;
   font-weight: 600;
   color: hsl(var(--foreground) / 85%);
 }
 
-.effect-compare__confidence {
+.tt-node__state {
   font-size: 10px;
-  color: hsl(var(--foreground) / 45%);
-}
-
-.effect-compare__reason {
-  margin-bottom: 4px;
-  font-size: 11px;
   color: hsl(var(--foreground) / 50%);
 }
 
-.effect-compare__reason--warn {
-  color: hsl(var(--status-warn) / 80%);
+.tt-node--done .tt-node__state {
+  color: hsl(var(--status-ok));
 }
 
-.effect-compare__window {
+.tt-node--current .tt-node__state {
+  color: hsl(var(--status-info));
+}
+
+.tt-node--failed .tt-node__state {
+  color: hsl(var(--status-error));
+}
+
+.tt-node__body {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  margin-bottom: 4px;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 2px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.tt-node__time {
   font-size: 10px;
-  color: hsl(var(--foreground) / 45%);
+  color: hsl(var(--foreground) / 50%);
 }
 
-.effect-compare__window-label {
-  font-weight: 500;
+.tt-node__detail {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  font-size: 11px;
 }
 
-.effect-compare__window-value {
-  white-space: nowrap;
+.tt-node__detail-label {
+  flex-shrink: 0;
+  color: hsl(var(--foreground) / 50%);
 }
 
-.effect-compare__window-sep {
+.tt-node__detail-value {
+  color: hsl(var(--foreground) / 80%);
+}
+
+.tt-node__detail--highlight .tt-node__detail-value {
+  font-weight: 600;
+  color: hsl(var(--foreground) / 90%);
+}
+
+.tt-node__empty {
+  font-size: 11px;
   color: hsl(var(--foreground) / 30%);
 }
 
-.effect-compare__row {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  padding: 1px 0;
-  font-size: 11px;
-}
-
-.effect-compare__row-label {
-  flex-shrink: 0;
-  width: 60px;
-  color: hsl(var(--foreground) / 50%);
-}
-
-.effect-compare__row-values {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: baseline;
-}
-
-.effect-compare__val-before {
-  color: hsl(var(--foreground) / 60%);
-}
-
-.effect-compare__val-arrow {
-  color: hsl(var(--foreground) / 30%);
-}
-
-.effect-compare__val-after {
-  font-weight: 500;
-  color: hsl(var(--foreground) / 85%);
-}
-
-.effect-compare__val-change {
-  font-size: 10px;
-  color: hsl(var(--foreground) / 45%);
-}
-
-.effect-compare__val-change--up {
-  color: hsl(var(--status-ok) / 80%);
-}
-
-.effect-compare__val-change--down {
-  color: hsl(var(--status-error) / 80%);
-}
-
-.effect-compare__kpi-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 2px 0;
-}
-
-.effect-compare__kpi-item {
-  display: flex;
-  gap: 4px;
-  align-items: baseline;
-  font-size: 11px;
-}
-
-.effect-compare__kpi-name {
-  color: hsl(var(--foreground) / 50%);
-}
-
-.effect-compare__kpi-values {
-  display: flex;
-  gap: 3px;
-  align-items: baseline;
-}
-
-.effect-compare__kpi-change {
-  font-size: 10px;
-  color: hsl(var(--foreground) / 45%);
-}
-
-/* 安全边界文案 */
-.tracker-timeline__safety {
-  flex-shrink: 0;
-  padding: 2px 6px;
-  margin-top: 4px;
-  font-size: 10px;
-  color: hsl(var(--foreground) / 40%);
-  text-align: center;
-  background: hsl(var(--muted) / 30%);
-  border-radius: 3px;
+.tt-node--skipped .tt-node__body {
+  opacity: 0.5;
 }
 </style>

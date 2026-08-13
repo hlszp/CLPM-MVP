@@ -1065,7 +1065,7 @@ export function exportDiagnosisPdfApi(loopId: string) {
  * buildTaskDownloadUrl(taskId) 调用 window.open 触发下载。
  */
 export function exportDiagnosisPdfAsyncApi(loopId: string) {
-  return requestClient.post<{ message?: string; taskId: string; }>(
+  return requestClient.post<{ message?: string; taskId: string }>(
     `/tracker/${loopId}/export`,
     undefined,
     { params: { async: true } },
@@ -1149,7 +1149,7 @@ export function generateDiagnosisReportAsyncApi(
   loopId: string,
   data?: DiagnosisApi.DiagnosisReportParams,
 ) {
-  return requestClient.post<{ message?: string; taskId: string; }>(
+  return requestClient.post<{ message?: string; taskId: string }>(
     `/diagnosis/${loopId}/report`,
     data ?? {},
     { params: { async: true } },
