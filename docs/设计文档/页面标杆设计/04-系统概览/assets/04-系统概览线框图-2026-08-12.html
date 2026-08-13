@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>04-系统概览线框图（页型 A 概览双联）v1.0</title>
+<title>04-系统概览线框图 v3.1（管理者一屏总览 · 联动式）</title>
 <style>
   :root{
     --ink:#0f172a; --ink-2:#334155; --ink-3:#94a3b8;
@@ -24,71 +24,104 @@
   .lamp.bad .dot{background:var(--err);}
   .lamp.bad{border-color:#f5c2c2;color:var(--err);font-weight:700;}
   .seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;}
-  .seg button{border:0;background:#fff;padding:4px 11px;font-size:11px;cursor:pointer;color:var(--ink-2);}
+  .seg button{border:0;background:#fff;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--ink-2);}
   .seg button.on{background:var(--primary);color:#fff;}
   .hdr .sp{flex:1;}
   .hdr .help{font-size:10px;color:var(--primary);border:1px solid #c8d9fb;border-radius:3px;padding:2px 8px;cursor:pointer;}
 
-  /* 链路健康展开面板 */
-  .health-panel{flex:none;display:none;border-bottom:1px solid var(--line);background:#fef6f6;padding:10px 14px;gap:10px;}
+  .health-panel{flex:none;display:none;border-bottom:1px solid var(--line);background:#fef6f6;padding:8px 14px;gap:10px;}
   .health-panel.show{display:flex;}
-  .hcell{flex:1;border:1px solid #f5c2c2;border-radius:5px;background:#fff;padding:8px 10px;display:flex;flex-direction:column;gap:3px;font-size:11px;}
-  .hcell .lab{font-size:10px;color:var(--ink-3);}
-  .hcell .val{font-weight:700;}
-  .hcell .val.bad{color:var(--err);}
-  .hcell .cfg{margin-left:auto;align-self:center;font-size:10px;color:var(--primary);border:1px solid #c8d9fb;border-radius:3px;padding:3px 9px;background:#fff;cursor:pointer;white-space:nowrap;}
+  .hcell{flex:1;border:1px solid #f5c2c2;border-radius:5px;background:#fff;padding:6px 10px;font-size:11px;}
+  .hcell .lab{font-size:10px;color:var(--ink-3);display:block;}
+  .hcell .val{font-weight:700;} .hcell .val.bad{color:var(--err);}
 
-  /* R2 双联画布 */
-  .dual{flex:1;display:flex;min-height:0;gap:0;}
-  .pane-l{width:58%;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
-  .pane-r{flex:1;display:flex;flex-direction:column;min-height:0;background:#fcfdff;}
-  .pane-h{height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;background:#fbfcfe;}
-  .pane-h .note{margin-left:auto;font-size:10px;font-weight:400;color:var(--ink-3);}
-  .pane-b{flex:1;overflow:auto;padding:8px 10px;}
-
-  /* 左联：健康矩阵 */
-  .nrow{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;padding:11px 12px;margin-bottom:9px;background:#fff;cursor:pointer;}
-  .nrow:hover{box-shadow:0 1px 6px rgba(15,23,42,.08);}
-  .nrow.unit{margin-left:22px;padding:9px 12px;background:#fcfdff;}
-  .nrow .nm{font-weight:700;font-size:12px;}
-  .nrow.unit .nm{font-weight:400;font-size:11px;}
-  .nrow .lc{font-size:10px;color:var(--ink-3);}
-  .nrow .metrics{margin-left:auto;display:flex;gap:14px;font-size:10px;color:var(--ink-3);align-items:center;}
-  .nrow .metrics b{font-family:var(--mono);font-weight:400;font-size:12px;color:var(--ink);margin-left:3px;}
-  .heat{border-left-width:5px;border-left-style:solid;}
-  .heat-warn{border-left-color:var(--err);} .heat-fair{border-left-color:var(--warn);}
-  .heat-good{border-left-color:var(--info);} .heat-ex{border-left-color:var(--ok);}
-  .heat-none{border-left-color:var(--line);}
-  .gtag{font-size:10px;font-weight:700;border-radius:3px;padding:1px 7px;border:1px solid;}
-  .g-warn{background:#fde8e8;color:var(--err);border-color:#f5c2c2;}
+  /* R2 KPI 统计带（全厂锚点） */
+  .kpis{height:88px;flex:none;display:flex;align-items:stretch;border-bottom:1px solid var(--line);background:#fff;padding:8px 16px;gap:0;}
+  .kpi{padding:2px 18px;border-right:1px solid var(--line-soft);display:flex;flex-direction:column;justify-content:center;gap:2px;}
+  .kpi .kl{font-size:10px;color:var(--ink-3);}
+  .kpi .kv{font-family:var(--mono);font-size:20px;font-weight:400;color:var(--ink);}
+  .kpi .kv small{font-size:10px;color:var(--ink-3);}
+  .kpi.main{display:flex;flex-direction:row;align-items:center;gap:10px;padding-right:22px;}
+  .kpi.main .kv{font-size:32px;}
+  .kpi .mini{height:4px;border-radius:2px;background:#eef2f7;position:relative;width:96px;margin-top:2px;}
+  .kpi .mini i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;}
+  .gtag{font-size:11px;font-weight:700;border-radius:3px;padding:2px 9px;border:1px solid;}
   .g-fair{background:#fff4e0;color:var(--warn);border-color:#f0d5a8;}
   .g-good{background:#e8f0fe;color:var(--info);border-color:#c8dcfb;}
+  .g-warn{background:#fde8e8;color:var(--err);border-color:#f5c2c2;}
   .g-ex{background:#e7f6ec;color:var(--ok);border-color:#bfe6cd;}
-  .g-none{background:#f1f5f9;color:var(--ink-3);border-color:var(--line);}
-  .nosnap{font-size:10px;color:var(--ink-3);}
-  .plant-total{display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:var(--ink-2);background:#f6f8fc;border-radius:5px;border:1px solid var(--line);}
-  .plant-total b{font-family:var(--mono);font-size:13px;font-weight:400;}
+  .kpis .dist-mini{margin-left:auto;display:flex;flex-direction:column;justify-content:center;gap:4px;}
+  .dm-row{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-3);}
+  .dm-bar{display:flex;height:10px;width:170px;border-radius:3px;overflow:hidden;}
+  .dm-bar i{height:100%;}
+  .kpis .loops{font-size:10px;color:var(--ink-3);text-align:right;line-height:1.5;}
+  .kpis .loops b{font-family:var(--mono);color:var(--ink-2);}
 
-  /* 右联：例外 Top-10 */
-  .aitem{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:5px;padding:9px 12px;margin-bottom:9px;background:#fff;cursor:pointer;}
-  .aitem:hover{box-shadow:0 1px 6px rgba(15,23,42,.08);}
-  .aitem.urgent{background:#fdf2f2;border-color:#f0d0d0;}
-  .pdot{width:8px;height:8px;border-radius:50%;flex:none;}
-  .pd-urgent{background:var(--err2);} .pd-high{background:var(--err);} .pd-medium{background:var(--info);} .pd-low{background:var(--ink-3);}
-  .aitem .tg{font-family:var(--mono);font-weight:700;font-size:12px;color:var(--ink);}
-  .aitem .why{font-size:10px;color:var(--err);background:#fde8e8;border-radius:3px;padding:1px 6px;white-space:nowrap;}
-  .aitem .why.calm{color:var(--ink-2);background:#f1f5f9;}
-  .aitem .src{font-size:10px;color:var(--ink-3);white-space:nowrap;}
-  .aitem .act{margin-left:auto;font-size:10px;font-weight:700;color:#fff;background:var(--primary);border-radius:3px;padding:2px 9px;white-space:nowrap;cursor:pointer;}
-  .aitem .act.ro{background:#fff;color:var(--primary);border:1px solid #c8d9fb;}
-  .viewall{flex:none;margin:4px 10px 8px;border:1px dashed var(--line);border-radius:5px;text-align:center;padding:6px;font-size:11px;color:var(--primary);cursor:pointer;background:#fff;}
+  /* R3 联动主区 */
+  .main{flex:1;display:flex;min-height:0;border-bottom:1px solid var(--line);}
+  .selcol{width:22%;border-right:1px solid var(--line);background:#fbfcfe;display:flex;flex-direction:column;min-height:0;}
+  .selcol .sh{height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;font-size:10px;font-weight:700;color:var(--ink-3);border-bottom:1px solid var(--line-soft);}
+  .selcol .sh input{flex:1;min-width:0;height:20px;border:1px solid var(--line);border-radius:3px;padding:0 6px;font-size:10px;background:#fff;color:var(--ink);}
+  .selcol .sh .tb{font-size:9px;color:var(--primary);border:1px solid #c8d9fb;border-radius:3px;padding:1px 5px;cursor:pointer;background:#fff;white-space:nowrap;}
+  .selcol .sb{flex:1;overflow:auto;padding:4px 4px;}
+  /* 树节点：风格统一自回路控制台 plant-node-tree（antd Tree · 24px 行高 · 类型图标 · 尾部回路数） */
+  .trow{display:flex;align-items:center;gap:5px;height:24px;padding:0 6px;border-radius:3px;cursor:pointer;font-size:11px;color:var(--ink-2);white-space:nowrap;}
+  .trow:hover{background:#eef4fd;}
+  .trow.on{background:#e6efff;box-shadow:inset 2px 0 0 var(--primary);color:var(--ink);}
+  .trow .arr{width:12px;flex:none;color:var(--ink-3);font-size:9px;text-align:center;}
+  .trow .tic{flex:none;font-size:11px;line-height:1;}
+  .trow .nm{overflow:hidden;text-overflow:ellipsis;}
+  .trow.on .nm{font-weight:700;}
+  .trow .cnt{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--ink-3);flex:none;}
+  .trow .cnt b{font-weight:400;color:var(--ink-2);}
+  .trow .cdot{width:6px;height:6px;border-radius:50%;flex:none;}
+  .trow.nosnap{color:var(--ink-3);cursor:default;}
+  .trow .lc{font-size:9px;color:var(--err);}
+  .ti-factory{color:#2563eb;} .ti-device{color:#d97706;} .ti-unit{color:#64748b;}
+  .c-ex{background:var(--ok);} .c-good{background:var(--info);} .c-fair{background:var(--warn);} .c-warn{background:var(--err);} .c-fail{background:var(--err2);} .c-none{background:var(--ink-3);}
 
-  /* R3 待办窄条 */
-  .todo{height:38px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 14px;background:#fbfcfe;font-size:11px;color:var(--ink-3);}
-  .tchip{border:1px solid var(--line);border-radius:10px;padding:2px 10px;background:#fff;font-size:10px;color:var(--ink-2);cursor:pointer;}
-  .tchip b{font-family:var(--mono);}
-  .tchip.hot{border-color:#f5c2c2;color:var(--err);}
-  .tchip.hot b{color:var(--err);}
+  .trendcol{width:48%;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:#fff;}
+  .pane-h{height:32px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--line-soft);font-size:11px;font-weight:700;background:#fbfcfe;}
+  .pane-h .note{margin-left:auto;font-size:10px;font-weight:400;color:var(--ink-3);}
+  .trend-b{flex:1;position:relative;padding:6px 8px 2px;}
+  .legend{display:flex;gap:12px;font-size:10px;color:var(--ink-2);padding:2px 12px 6px;}
+  .legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+
+  .focuscol{flex:1;display:flex;flex-direction:column;min-height:0;background:#fcfdff;}
+  .focus-b{flex:1;overflow:auto;padding:6px 8px;}
+  .frow{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:5px;background:#fff;padding:5px 9px;margin-bottom:5px;font-size:11px;cursor:pointer;}
+  .frow:hover{box-shadow:0 1px 5px rgba(15,23,42,.08);}
+  .frow .rk{font-family:var(--mono);font-weight:700;color:var(--ink-3);width:16px;}
+  .frow .rk.top{color:var(--err);}
+  .frow .tg{font-family:var(--mono);font-weight:700;font-size:11px;color:var(--ink);}
+  .frow .sc{font-family:var(--mono);font-size:11px;margin-left:auto;}
+  .frow .wk{font-size:9px;color:var(--err);background:#fde8e8;border-radius:3px;padding:0 5px;white-space:nowrap;}
+  .frow .go{font-size:9px;font-weight:700;color:var(--primary);border:1px solid #c8d9fb;border-radius:3px;padding:1px 6px;background:#f2f6ff;white-space:nowrap;}
+  .frow .gs{font-size:9px;font-weight:700;border-radius:3px;padding:1px 6px;border:1px solid;}
+  .chips{flex:none;display:flex;gap:6px;padding:7px 10px;border-top:1px solid var(--line-soft);font-size:10px;align-items:center;}
+  .chip{border:1px solid var(--line);border-radius:10px;padding:2px 9px;background:#fff;cursor:pointer;color:var(--ink-2);}
+  .chip b{font-family:var(--mono);}
+  .chip.hot{border-color:#f5c2c2;color:var(--err);}
+  .chip.hot b{color:var(--err);}
+
+  /* R4 装置对比区 */
+  .cmp{height:236px;flex:none;display:flex;}
+  .cmp-l{width:58%;border-right:1px solid var(--line);display:flex;flex-direction:column;}
+  .cmp-r{flex:1;display:flex;flex-direction:column;background:#fcfdff;}
+  .cmp-b{flex:1;padding:4px 12px 8px;position:relative;}
+  .stack-row{display:flex;align-items:center;gap:8px;margin:13px 8px;}
+  .stack-row .sn{width:88px;font-size:11px;font-weight:700;text-align:right;}
+  .stack-row .sb2{flex:1;display:flex;height:16px;border-radius:3px;overflow:hidden;border:1px solid var(--line-soft);}
+  .stack-row .sb2 i{height:100%;}
+  .stack-row .sv{width:130px;font-size:9px;color:var(--ink-3);font-family:var(--mono);}
+  /* R4 右：等级分布微型扇形图 */
+  .pie-wrap{flex:1;display:flex;align-items:center;gap:4px;padding:6px 12px;overflow:auto;}
+  .pie-cell{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:104px;flex:1;}
+  .pie-cell .pn{font-size:10px;font-weight:700;color:var(--ink-2);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pie-cell .pn.cur{color:var(--primary);}
+  .pie-cell .ps{font-size:8px;color:var(--ink-3);font-family:var(--mono);}
+  .pie-cell .ps em{font-style:normal;color:var(--err);}
+  .pie-cell.nodata{opacity:.55;}
 
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f172a;color:#fff;font-size:11px;padding:6px 14px;border-radius:5px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:99;font-family:var(--mono);}
 </style>
@@ -99,223 +132,452 @@
   <!-- R1 页头 -->
   <div class="hdr">
     <span class="tag">系统概览</span>
-    <span class="fresh">KPI 快照 <b id="snapTs">10:00</b> · B 类口径 · <b id="twLabel">今日</b></span>
+    <span class="fresh">KPI 快照 <b>10:00</b> · B 类口径 · <b id="twLabel">今日</b> · <span id="granLabel">按小时</span></span>
     <span class="lamp" id="lamp"><span class="dot"></span><span id="lampTxt">数据链路正常</span></span>
     <div class="seg" id="twSeg">
-      <button data-tw="today" class="on">今日</button>
-      <button data-tw="yesterday">昨日</button>
-      <button data-tw="last_7_days">近 7 天</button>
-      <button data-tw="last_30_days">近 30 天</button>
+      <button data-tw="last_8_hours" data-g="按小时">近 8h</button>
+      <button data-tw="today" data-g="按小时" class="on">今日</button>
+      <button data-tw="yesterday" data-g="按小时">昨日</button>
+      <button data-tw="last_7_days" data-g="按日聚合">近 7 天</button>
+      <button data-tw="last_30_days" data-g="按日聚合">近 30 天</button>
     </div>
     <span class="sp"></span>
-    <span class="help">? 帮助（双联口径 · 五档定级）</span>
+    <span class="help">? 帮助（三率定义 · 五档定级 · 联动逻辑）</span>
   </div>
 
-  <!-- 链路健康展开（S5：异常时红点，点击展开原四格） -->
+  <!-- 链路健康展开 -->
   <div class="health-panel" id="healthPanel">
     <div class="hcell"><span class="lab">实时订阅</span><span class="val bad">已停机 ✕</span></div>
     <div class="hcell"><span class="lab">网络模式</span><span class="val">局域网直连</span></div>
-    <div class="hcell"><span class="lab">最近同步</span><span class="val" style="font-family:var(--mono);">08-12 09:58:41</span></div>
+    <div class="hcell"><span class="lab">最近同步</span><span class="val" style="font-family:var(--mono);">08-13 09:58:41</span></div>
     <div class="hcell"><span class="lab">Tailscale</span><span class="val" style="color:var(--ok);">可用</span></div>
-    <span class="cfg">⚙ 数据源配置</span>
   </div>
 
-  <!-- R2 双联画布 -->
-  <div class="dual">
+  <!-- R2 KPI 统计带（全厂锚点，常驻） -->
+  <div class="kpis">
+    <div class="kpi main">
+      <div><div class="kl">全厂综合评分</div><div class="kv">73.80</div></div>
+      <span class="gtag g-fair">合格</span>
+    </div>
+    <div class="kpi"><span class="kl">平稳率</span><span class="kv">78.9<small>%</small></span><span class="mini"><i style="width:78.9%;background:var(--info);"></i></span></div>
+    <div class="kpi"><span class="kl">快速率</span><span class="kv">69.8<small>%</small></span><span class="mini"><i style="width:69.8%;background:#7c3aed;"></i></span></div>
+    <div class="kpi"><span class="kl">准确率</span><span class="kv">82.7<small>%</small></span><span class="mini"><i style="width:82.7%;background:var(--ok);"></i></span></div>
+    <div class="kpi"><span class="kl">实时自控率 <small>(实时口径)</small></span><span class="kv">84.6<small>%</small></span><span class="mini"><i style="width:84.6%;background:#0d9488;"></i></span></div>
+    <div class="kpi"><span class="kl">好值率</span><span class="kv">91.2<small>%</small></span><span class="mini"><i style="width:91.2%;background:var(--ok);"></i></span></div>
+    <div class="kpi" style="border-right:none;">
+      <div class="loops">回路 <b>1,000</b> · 参评 <b>932</b><br>INCONCLUSIVE <b>68</b>（数据不足，显式）</div>
+    </div>
+    <div class="dist-mini">
+      <div class="dm-row">单元五档分布（12 单元）</div>
+      <div class="dm-row"><div class="dm-bar">
+        <i style="width:33%;background:#1a7f4b;"></i><i style="width:25%;background:#2563eb;"></i><i style="width:25%;background:#b45309;"></i><i style="width:17%;background:#c23434;"></i><i style="width:0%;background:#a12222;"></i>
+      </div></div>
+      <div class="dm-row">优秀4 · 良好3 · 合格3 · 警告2 · 不合格0</div>
+    </div>
+  </div>
 
-    <!-- 左联：装置层级健康矩阵 -->
-    <div class="pane-l">
-      <div class="pane-h">装置健康矩阵 <span class="note">评分升序（最差在前）· 点击节点 → 回路列表</span></div>
-      <div class="pane-b" id="matrix">
-        <div class="plant-total">全厂合计 · <b>1,000</b> 回路 · 综合评分 <b id="fScore">73.80</b> · 实时自控率 <b>84.6%</b> · 平稳率 <b>78.9%</b></div>
-
-        <div class="nrow heat heat-warn" data-node="clh" id="nodeClh">
-          <span id="clhArrow">▾</span><span class="nm">催化裂化装置</span><span class="lc">340 回路 · 全厂最差装置</span>
-          <span class="gtag g-warn">警告</span>
-          <span class="metrics">评分 <b>68.90</b> 自控率 <b>79.4%</b> 平稳率 <b>71.8%</b></span>
-        </div>
-        <div id="clhUnits">
-          <div class="nrow unit heat heat-warn" data-unit="反应再生单元">
-            <span class="nm">反应再生单元</span><span class="lc">86 回路</span>
-            <span class="gtag g-warn">警告</span>
-            <div class="metrics">评分 <b>61.40</b> 自控率 <b>76.2%</b> 平稳率 <b>64.9%</b></div>
-          </div>
-          <div class="nrow unit heat heat-fair" data-unit="分馏单元">
-            <span class="nm">分馏单元</span><span class="lc">92 回路</span>
-            <span class="gtag g-fair">合格</span>
-            <div class="metrics">评分 <b>71.60</b> 自控率 <b>80.1%</b> 平稳率 <b>74.3%</b></div>
-          </div>
-          <div class="nrow unit heat heat-fair" data-unit="吸收稳定单元">
-            <span class="nm">吸收稳定单元</span><span class="lc">78 回路</span>
-            <span class="gtag g-fair">合格</span>
-            <div class="metrics">评分 <b>73.90</b> 自控率 <b>81.7%</b> 平稳率 <b>75.8%</b></div>
-          </div>
-          <div class="nrow unit heat heat-good" data-unit="余热回收单元">
-            <span class="nm">余热回收单元</span><span class="lc">84 回路</span>
-            <span class="gtag g-good">良好</span>
-            <div class="metrics">评分 <b>80.20</b> 自控率 <b>85.6%</b> 平稳率 <b>82.4%</b></div>
-          </div>
-        </div>
-
-        <div class="nrow heat heat-warn" data-node="cj" id="nodeCj">
-          <span id="cjArrow">▾</span><span class="nm">常减压装置</span><span class="lc">420 回路</span>
-          <span class="gtag g-warn">警告</span>
-          <div class="metrics">评分 <b>71.20</b> 自控率 <b>82.1%</b> 平稳率 <b>76.4%</b></div>
-        </div>
-        <div id="cjUnits">
-          <div class="nrow unit heat heat-warn" data-unit="常压塔单元">
-            <span class="nm">常压塔单元</span><span class="lc">48 回路 · 全厂最差单元</span>
-            <span class="gtag g-warn">警告</span>
-            <div class="metrics">评分 <b>63.50</b> 自控率 <b>87.5%</b> 平稳率 <b>68.2%</b></div>
-          </div>
-          <div class="nrow unit heat heat-fair" data-unit="减压塔单元">
-            <span class="nm">减压塔单元</span><span class="lc">96 回路</span>
-            <span class="gtag g-fair">合格</span>
-            <div class="metrics">评分 <b>74.80</b> 自控率 <b>81.3%</b> 平稳率 <b>79.1%</b></div>
-          </div>
-          <div class="nrow unit heat heat-fair" data-unit="换热单元">
-            <span class="nm">换热单元</span><span class="lc">132 回路</span>
-            <span class="gtag g-fair">合格</span>
-            <div class="metrics">评分 <b>76.20</b> 自控率 <b>80.9%</b> 平稳率 <b>81.5%</b></div>
-          </div>
-          <div class="nrow unit heat heat-none">
-            <span class="nm">污油回收单元</span><span class="lc nosnap">144 回路 · 未启用 KPI 评估（D-1 灰色占位）</span>
-            <span class="gtag g-none">无快照</span>
-          </div>
-        </div>
-
-        <div class="nrow heat heat-good" data-node="jhq" id="nodeJhq">
-          <span id="jhqArrow">▾</span><span class="nm">加氢精制装置</span><span class="lc">240 回路</span>
-          <span class="gtag g-good">良好</span>
-          <div class="metrics">评分 <b>86.30</b> 自控率 <b>93.2%</b> 平稳率 <b>88.6%</b></div>
-        </div>
-        <div id="jhqUnits">
-          <div class="nrow unit heat heat-good" data-unit="加氢反应单元">
-            <span class="nm">加氢反应单元</span><span class="lc">72 回路</span>
-            <span class="gtag g-good">良好</span>
-            <div class="metrics">评分 <b>84.10</b> 自控率 <b>92.0%</b> 平稳率 <b>86.3%</b></div>
-          </div>
-          <div class="nrow unit heat heat-ex" data-unit="加氢分馏单元">
-            <span class="nm">加氢分馏单元</span><span class="lc">66 回路</span>
-            <span class="gtag g-ex">优秀</span>
-            <div class="metrics">评分 <b>91.50</b> 自控率 <b>95.8%</b> 平稳率 <b>92.7%</b></div>
-          </div>
-          <div class="nrow unit heat heat-good" data-unit="脱硫单元">
-            <span class="nm">脱硫单元</span><span class="lc">58 回路</span>
-            <span class="gtag g-good">良好</span>
-            <div class="metrics">评分 <b>85.70</b> 自控率 <b>93.9%</b> 平稳率 <b>88.1%</b></div>
-          </div>
-          <div class="nrow unit heat heat-good" data-unit="循环氢单元">
-            <span class="nm">循环氢单元</span><span class="lc">44 回路</span>
-            <span class="gtag g-good">良好</span>
-            <div class="metrics">评分 <b>87.90</b> 自控率 <b>94.6%</b> 平稳率 <b>89.4%</b></div>
-          </div>
-        </div>
+  <!-- R3 联动主区 -->
+  <div class="main">
+    <!-- 左栏：工厂模型树（风格统一 plant-node-tree · 单选联动非导航） -->
+    <div class="selcol">
+      <div class="sh"><input id="treeSearch" placeholder="搜索装置 / 单元…"><span class="tb" id="expAll">展开</span><span class="tb" id="colAll">折叠</span></div>
+      <div class="sb" id="selBox"></div>
+    </div>
+    <!-- 中栏：范围趋势 -->
+    <div class="trendcol">
+      <div class="pane-h" id="trendTitle">当前范围：全厂 · 今日</div>
+      <div class="trend-b" id="trendBox"></div>
+      <div class="legend">
+        <span><i style="background:#1d4ed8;"></i>综合评分（右轴同 0-100）</span>
+        <span><i style="background:#2563eb;"></i>平稳率</span>
+        <span><i style="background:#0d9488;"></i>实时自控率</span>
+        <span style="color:var(--ink-3);">快速/准确率趋势待 E-T1（kpi_node_snapshot_hourly 字段已有）</span>
       </div>
     </div>
-
-    <!-- 右联：今日例外 Top-10 -->
-    <div class="pane-r">
-      <div class="pane-h">今日例外 Top-10 <span class="note">实时聚合口径 · 不受时间窗影响 · 来自关注队列</span></div>
-      <div class="pane-b" id="exceptions"></div>
-      <div class="viewall" id="viewAll">查看全部 26 项 →（进关注队列）</div>
+    <!-- 右栏：重点关注 -->
+    <div class="focuscol">
+      <div class="pane-h" id="focusTitle">重点关注回路 Top 10<span class="note">全厂 · 评分升序 · /performance/ranking</span></div>
+      <div class="focus-b" id="focusBox"></div>
+      <div class="chips">
+        <span style="color:var(--ink-3);">关键事项：</span>
+        <span class="chip hot" data-s="ALERT">活跃预警 <b>8</b></span>
+        <span class="chip hot" data-s="VERIFICATION">验证超期 <b>2</b></span>
+        <span class="chip" data-s="DATA_QUALITY">数据质量 <b>4</b></span>
+      </div>
     </div>
   </div>
 
-  <!-- R3 待办窄条（降格） -->
-  <div class="todo">
-    <span>我的工作积压：</span>
-    <span class="tchip hot">异常跟踪待办 <b>7</b></span>
-    <span class="tchip hot">验证超期 <b>2</b></span>
-    <span class="tchip">诊断待处理 <b>5</b></span>
-    <span class="tchip">评估待执行 <b>3</b></span>
-    <span class="tchip">整定任务 <b>4</b></span>
-    <span style="margin-left:auto;font-size:10px;">次要区域 · 零值中性 · 非零优先（A-03/A-12 保留）</span>
+  <!-- R4 装置对比区（随 R3 树节点联动：显示选中节点的下一层） -->
+  <div class="cmp">
+    <div class="cmp-l">
+      <div class="pane-h" id="cmpTitle">综合性能对比（帕累托）<span class="note">棒=平稳/快速/准确率 · 折线=综合评分 · 降序 · /board/aggregate</span></div>
+      <div class="cmp-b" id="cmpChart"></div>
+    </div>
+    <div class="cmp-r">
+      <div class="pane-h" id="pieTitle">回路等级分布<span class="note">本级 + 下一级 · 待 E-1 五档计数聚合（与 02 同批）</span></div>
+      <div class="pie-wrap" id="pieBox"></div>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
-// ---------- 右联 fixture：03 关注队列前 10 条（服务端分诊排序即 Top-N） ----------
-const ex = [
-  {p:'URGENT', t:'FIC-2209', why:'严重预警未确认 · 重复触发 3 次', src:'活跃预警', act:'进入工作台', eid:'EVT-8812'},
-  {p:'URGENT', t:'TIC-2215', why:'严重度 CRITICAL · 待处置工单', src:'待处置工单', act:'进入工作台', tid:'TR-3041'},
-  {p:'URGENT', t:'PIC-2203', why:'完整性 CRITICAL', src:'数据质量', act:'进入工作台'},
-  {p:'HIGH', t:'LIC-101', why:'验证超期 26 小时', src:'验证超期', act:'查看工单', tid:'TR-2988'},
-  {p:'HIGH', t:'TIC-2215', why:'评分日降 12.4', src:'评分恶化', act:'进入工作台'},
-  {p:'HIGH', t:'TIC-2215', why:'高级别预警未处置', src:'活跃预警', act:'进入工作台', eid:'EVT-8807'},
-  {p:'HIGH', t:'LIC-2207', why:'高级别预警未处置 · 已确认', src:'活跃预警', act:'进入工作台', eid:'EVT-8799'},
-  {p:'HIGH', t:'PIC-2203', why:'处理中工单 · 严重度 ERROR', src:'待处置工单', act:'查看工单', tid:'TR-2977'},
-  {p:'HIGH', t:'FIC-2209', why:'验证超期 25 小时', src:'验证超期', act:'查看工单', tid:'TR-2955'},
-  {p:'MEDIUM', t:'LIC-101', why:'WARN 级预警待处理', src:'活跃预警', act:'进入工作台', eid:'EVT-8801'},
+// ---------- fixture ----------
+const GC = { excellent:'#1a7f4b', good:'#2563eb', fair:'#b45309', warn:'#c23434', fail:'#a12222' };
+const DEVICES = [
+  { id:'clh', name:'催化裂化装置', loops:340, score:68.90, g:['warn','警告'], steady:71.8, fast:62.3, acc:74.5,
+    dist:[12,38,190,82,18],
+    units:[
+      { name:'反应再生单元', loops:86, score:61.40, g:['warn','警告'], steady:63.5, fast:55.2, acc:66.8, dist:[3,8,44,24,7] },
+      { name:'分馏单元', loops:92, score:71.60, g:['fair','合格'], steady:73.2, fast:64.5, acc:76.1, dist:[4,14,52,18,4] },
+      { name:'吸收稳定单元', loops:78, score:73.90, g:['fair','合格'], steady:75.8, fast:66.9, acc:78.3, dist:[3,10,50,13,2] },
+      { name:'余热回收单元', loops:84, score:80.20, g:['good','良好'], steady:82.4, fast:74.6, acc:84.0, dist:[2,6,44,27,5] },
+    ]},
+  { id:'cj', name:'常减压装置', loops:420, score:71.20, g:['warn','警告'], steady:76.4, fast:66.1, acc:78.2,
+    dist:[22,64,248,71,15],
+    units:[
+      { name:'常压塔单元', loops:48, score:63.50, g:['warn','警告'], worst:true, steady:66.2, fast:52.8, acc:70.4, dist:[1,4,24,15,4] },
+      { name:'减压塔单元', loops:96, score:74.80, g:['fair','合格'], steady:77.1, fast:67.5, acc:79.6, dist:[5,16,58,14,3] },
+      { name:'换热单元', loops:132, score:76.20, g:['fair','合格'], steady:78.9, fast:69.2, acc:81.1, dist:[8,24,76,20,4] },
+      { name:'污油回收单元', loops:144, nosnap:true },
+    ]},
+  { id:'jhq', name:'加氢精制装置', loops:240, score:86.30, g:['good','良好'], steady:88.6, fast:84.2, acc:91.3,
+    dist:[58,96,76,9,1],
+    units:[
+      { name:'加氢反应单元', loops:72, score:84.10, g:['good','良好'], steady:86.2, fast:80.5, acc:88.4, dist:[14,30,24,4,0] },
+      { name:'脱硫单元', loops:58, score:85.70, g:['good','良好'], steady:87.4, fast:82.8, acc:89.9, dist:[12,26,18,2,0] },
+      { name:'循环氢单元', loops:44, score:87.90, g:['good','良好'], steady:89.5, fast:85.1, acc:91.2, dist:[12,20,11,1,0] },
+      { name:'加氢分馏单元', loops:66, score:91.50, g:['excellent','优秀'], steady:92.8, fast:88.6, acc:94.1, dist:[20,20,23,2,1] },
+    ]},
 ];
-document.getElementById('exceptions').innerHTML = ex.map((it,i)=>`
-  <div class="aitem ${it.p==='URGENT'?'urgent':''}" data-i="${i}">
-    <span class="pdot pd-${it.p.toLowerCase()}"></span>
-    <span class="tg">${it.t}</span>
-    <span class="src">${it.src}</span>
-    <span class="why ${it.p==='MEDIUM'||it.p==='LOW'?'calm':''}">${it.why}</span>
-    <span class="act">${it.act} ↗</span>
-  </div>`).join('');
+const PLANT_DIST = [92,198,514,162,34]; // 全厂回路五档（含 INCONCLUSIVE 折算占位）
+// 常压塔单元：评分最低 10 回路（升序）回路级三率 fixture
+const LOOP_BARS = {
+  'cj::常压塔单元': [
+    ['FIC-2209',41.2,45.6,29.1,48.3],['TIC-2215',55.6,58.2,48.3,61.4],['PIC-2203',58.9,62.4,52.6,64.1],
+    ['LIC-2207',61.3,64.8,57.2,66.5],['FIC-2211',63.0,66.5,60.1,68.2],['FIC-2218',68.9,71.2,65.4,72.3],
+    ['LIC-101',72.3,71.0,68.8,75.6],['TIC-108',74.8,76.1,70.6,77.9],['FIC-114',78.2,80.4,74.5,82.1],['PIC-1102',79.6,81.2,76.3,83.0],
+  ],
+};
+// 其他单元：确定性伪生成（线框演示用，真实实现走 /performance/ranking?plantNodeId=单元）
+function loopBars(uk, unitScore){
+  if(LOOP_BARS[uk]) return LOOP_BARS[uk].map(r=>({name:r[0],score:r[1],steady:r[2],fast:r[3],acc:r[4]}));
+  let h=0; for(const c of uk) h=(h*31+c.charCodeAt(0))>>>0;
+  const rnd=()=>{ h=(h*1103515245+12345)>>>0; return h/4294967296; };
+  const out=[]; const base=unitScore-22;
+  for(let i=0;i<10;i++){
+    const sc=base+i*2.6+rnd()*1.8;
+    out.push({ name:['FIC','TIC','PIC','LIC'][Math.floor(rnd()*4)]+'-'+String(1000+Math.floor(rnd()*9000)),
+      score:+sc.toFixed(1), steady:+(sc+3+rnd()*4).toFixed(1), fast:+(sc-6-rnd()*5).toFixed(1), acc:+(sc+5+rnd()*4).toFixed(1) });
+  }
+  return out;
+}
+const LOOPS_TOP = {
+  plant: [
+    ['FIC-2209',41.20,'fail','不合格','快速率 29.1%'],['TIC-2215',55.60,'warn','警告','快速率 48.3%'],
+    ['PIC-2203',58.90,'warn','警告','准确率 64.1%'],['LIC-2207',61.30,'warn','警告','快速率 57.2%'],
+    ['FIC-2211',63.00,'warn','警告','平稳率 66.5%'],['FIC-2218',68.90,'fair','合格','快速率 65.4%'],
+    ['LIC-101',72.30,'fair','合格','平稳率 71.0%'],['TIC-108',74.80,'fair','合格','快速率 70.6%'],
+    ['FIC-114',78.20,'good','良好','准确率 82.1%'],['PIC-1105',81.40,'good','良好','—'],
+  ],
+  cj: [
+    ['FIC-2209',41.20,'fail','不合格','快速率 29.1%'],['TIC-2215',55.60,'warn','警告','快速率 48.3%'],
+    ['PIC-2203',58.90,'warn','警告','准确率 64.1%'],['LIC-2207',61.30,'warn','警告','快速率 57.2%'],
+    ['FIC-2211',63.00,'warn','警告','平稳率 66.5%'],['FIC-2218',68.90,'fair','合格','快速率 65.4%'],
+    ['LIC-101',72.30,'fair','合格','平稳率 71.0%'],['TIC-108',74.80,'fair','合格','快速率 70.6%'],
+    ['FIC-2204',null,'none','—','INCONCLUSIVE'],['FIC-114',78.20,'good','良好','准确率 82.1%'],
+  ],
+  cjtower: [
+    ['FIC-2209',41.20,'fail','不合格','快速率 29.1%'],['TIC-2215',55.60,'warn','警告','快速率 48.3%'],
+    ['PIC-2203',58.90,'warn','警告','准确率 64.1%'],['LIC-2207',61.30,'warn','警告','快速率 57.2%'],
+    ['FIC-2211',63.00,'warn','警告','平稳率 66.5%'],['FIC-2218',68.90,'fair','合格','快速率 65.4%'],
+    ['LIC-101',72.30,'fair','合格','平稳率 71.0%'],['TIC-108',74.80,'fair','合格','快速率 70.6%'],
+    ['FIC-2204',null,'none','—','INCONCLUSIVE'],['FIC-114',78.20,'good','良好','准确率 82.1%'],
+  ],
+  clh: [
+    ['FIC-3301',39.80,'fail','不合格','快速率 26.4%'],['TIC-3315',52.10,'warn','警告','平稳率 49.7%'],
+    ['PIC-3308',57.40,'warn','警告','准确率 60.2%'],['LIC-3321',60.90,'warn','警告','快速率 54.8%'],
+    ['FIC-3325',64.20,'warn','警告','平稳率 67.1%'],['TIC-3330',67.50,'fair','合格','快速率 63.9%'],
+    ['PIC-3333',70.10,'fair','合格','平稳率 72.4%'],['FIC-3338',73.60,'fair','合格','准确率 76.8%'],
+    ['LIC-3342',77.20,'good','良好','快速率 72.5%'],['TIC-3347',80.50,'good','良好','—'],
+  ],
+  jhq: [
+    ['FIC-4102',62.70,'warn','警告','快速率 58.3%'],['TIC-4108',66.40,'fair','合格','平稳率 68.9%'],
+    ['PIC-4112',69.80,'fair','合格','准确率 72.4%'],['LIC-4116',73.20,'fair','合格','快速率 69.7%'],
+    ['FIC-4120',76.50,'fair','合格','平稳率 78.1%'],['TIC-4124',79.30,'good','良好','准确率 81.6%'],
+    ['PIC-4128',82.40,'good','良好','快速率 78.9%'],['FIC-4132',84.10,'good','良好','平稳率 85.2%'],
+    ['LIC-4136',86.80,'good','良好','—'],['TIC-4140',89.20,'good','良好','—'],
+  ],
+};
+
+// 趋势 fixture 生成
+function genTrend(base, amp, n, drop){
+  const s=[], st=[], au=[];
+  for(let i=0;i<n;i++){
+    const w = Math.sin(i/3.1)*amp + (drop? -drop*i/n : 0);
+    s.push(+(base+w).toFixed(1));
+    st.push(+(base+4+Math.sin(i/2.7+1)*amp*0.7+(drop?-drop*0.8*i/n:0)).toFixed(1));
+    au.push(+(84+Math.sin(i/4.2+2)*2.5).toFixed(1));
+  }
+  return {score:s, steady:st, auto:au};
+}
+const TW_N = { last_8_hours:8, today:24, yesterday:24, last_7_days:7, last_30_days:30 };
+const TRENDS = {
+  plant:   { base:74.5, amp:2.2, drop:2.4 },
+  clh:     { base:70.5, amp:2.8, drop:3.6 },
+  cj:      { base:73.0, amp:2.4, drop:4.2 },
+  jhq:     { base:86.0, amp:1.2, drop:-0.6 },
+  cjtower: { base:70.5, amp:2.0, drop:8.0 }, // 常压塔单元：明显下坠
+};
+
+let scope = { key:'plant', name:'全厂' };
+let tw = 'today';
+let expanded = new Set(['plant']); // 默认展开 1 级：全厂 → 装置可见，单元折叠
+let treeQ = '';
 
 function toast(msg){
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.style.opacity = 1;
-  clearTimeout(t._h); t._h = setTimeout(()=>t.style.opacity=0, 1600);
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.opacity=1;
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.opacity=0,1600);
 }
 
-// 右联点击 → 01 工作台（携带 eventId/trackerId）
-document.getElementById('exceptions').addEventListener('click', e=>{
-  const row = e.target.closest('.aitem'); if(!row) return;
-  const it = ex[+row.dataset.i];
-  const extra = it.eid ? `&eventId=${it.eid}` : (it.tid ? `&trackerId=${it.tid}` : '');
-  toast(`→ /monitor/loop-workbench?loopId=${it.t}&section=overview${extra}&from=overview`);
-});
-document.getElementById('viewAll').addEventListener('click', ()=> toast('→ /monitor/attention（03 关注队列，范围一致）'));
-
-// 左联：装置展开/收起（装置级下钻依赖 02 G2 修复，修复前降级为展开/收起——D-2）
-function bindToggle(rowId, unitsId, arrowId){
-  document.getElementById(rowId).addEventListener('click', ()=>{
-    const u = document.getElementById(unitsId);
-    const hidden = u.style.display === 'none';
-    u.style.display = hidden ? '' : 'none';
-    document.getElementById(arrowId).textContent = hidden ? '▾' : '▸';
+// ---------- 左栏：工厂模型树（antd Tree 风格 · 单选联动非导航） ----------
+function renderSel(){
+  const box = document.getElementById('selBox');
+  const q = treeQ.trim();
+  const match = s => !q || s.includes(q);
+  let h = '';
+  // L0 全厂（工厂图标 · 蓝）
+  const plantOpen = expanded.has('plant') || !!q;
+  h += `<div class="trow ${scope.key==='plant'?'on':''}" data-k="plant" data-n="全厂">
+    <span class="arr" data-tgl="plant">${plantOpen?'▾':'▸'}</span><span class="tic ti-factory">⌂</span>
+    <span class="nm">全厂</span><span class="cdot c-fair"></span>
+    <span class="cnt"><b>73.80</b> · 1,000</span></div>`;
+  if(plantOpen) DEVICES.forEach(d=>{
+    const uk = u => d.id+'::'+u.name;
+    const visUnits = d.units.filter(u=>match(u.name));
+    if(q && !match(d.name) && !visUnits.length) return;
+    const open = expanded.has(d.id) || (!!q && visUnits.length>0);
+    // L1 装置（appstore 图标 · 琥珀）
+    h += `<div class="trow ${scope.key===d.id?'on':''}" data-k="${d.id}" data-n="${d.name}" data-dev="${d.id}" style="padding-left:18px;">
+      <span class="arr" data-tgl="${d.id}">${open?'▾':'▸'}</span><span class="tic ti-device">▦</span>
+      <span class="nm">${d.name}</span><span class="cdot c-${d.g[0]}"></span>
+      <span class="cnt"><b>${d.score.toFixed(2)}</b> · ${d.loops}</span></div>`;
+    if(open) (q?visUnits:d.units).forEach(u=>{
+      // L2 单元（database 图标 · 石灰）
+      if(u.nosnap){ h += `<div class="trow nosnap" style="padding-left:30px;"><span class="arr"></span><span class="tic ti-unit">▤</span>
+        <span class="nm">${u.name}</span><span class="cnt">无快照 · ${u.loops}</span></div>`; return; }
+      h += `<div class="trow ${scope.key===uk(u)?'on':''}" data-k="${uk(u)}" data-n="${u.name}" data-dev="${d.id}" style="padding-left:30px;">
+        <span class="arr"></span><span class="tic ti-unit">▤</span>
+        <span class="nm">${u.name}</span><span class="cdot c-${u.g[0]}"></span>
+        ${u.worst?'<span class="lc">全厂最差</span>':''}
+        <span class="cnt"><b>${u.score.toFixed(2)}</b> · ${u.loops}</span></div>`;
+    });
   });
-}
-bindToggle('nodeCj','cjUnits','cjArrow');
-bindToggle('nodeClh','clhUnits','clhArrow');
-bindToggle('nodeJhq','jhqUnits','jhqArrow');
-document.querySelectorAll('.nrow.unit[data-unit]').forEach(el=>{
-  el.addEventListener('click', e=>{
+  box.innerHTML = h || '<div style="padding:12px;font-size:10px;color:var(--ink-3);">无匹配节点</div>';
+  // 箭头：仅展开/折叠，不改范围；节点名：单选联动
+  box.querySelectorAll('[data-tgl]').forEach(a=>a.addEventListener('click',e=>{
     e.stopPropagation();
-    toast(`→ /monitor/loops?plantNodeId=${el.dataset.unit}&from=overview（02 回路列表，评分升序）`);
+    const k=a.dataset.tgl; expanded.has(k)?expanded.delete(k):expanded.add(k); renderSel();
+  }));
+  box.querySelectorAll('.trow[data-k]').forEach(r=>r.addEventListener('click',()=>{
+    const k=r.dataset.k, dev=r.dataset.dev;
+    if(scope.key===k && k!=='plant'){ scope={key:'plant',name:'全厂'}; }
+    else { scope={ key:k, name:r.dataset.n, dev }; if(dev) expanded.add(dev); }
+    renderAll();
+  }));
+}
+
+// ---------- 中栏趋势（SVG，时间轴+数值轴） ----------
+function renderTrend(){
+  const n = TW_N[tw];
+  const cfg = TRENDS[scope.key] || TRENDS[scope.dev] || TRENDS.plant;
+  const data = genTrend(cfg.base, cfg.amp, n, cfg.drop);
+  const W=620, H=310, L=34, R=8, T=10, B=26;
+  const iw=W-L-R, ih=H-T-B;
+  // 动态数值轴：下限随数据收紧（保住告警线 60 可见），避免曲线顶部扎堆、下半留白
+  const all=[...data.score,...data.steady,...data.auto];
+  const yMin=Math.min(50, Math.floor((Math.min(...all)-6)/10)*10);
+  const x=i=>L+iw*(i/(n-1));
+  const y=v=>T+ih*(1-(v-yMin)/(100-yMin));
+  const path=a=>a.map((v,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const dots=a=>a.map((v,i)=> n<=8||i%Math.ceil(n/12)===0||i===n-1 ? `<circle cx="${x(i)}" cy="${y(v)}" r="2.4" fill="#1d4ed8"/>`:'').join('');
+  let xl='';
+  const step=Math.ceil(n/6);
+  for(let i=0;i<n;i+=step){
+    const lab = (tw==='last_7_days'||tw==='last_30_days') ? `08-${String(13-(n-1-i)).padStart(2,'0')}` : `${String(i).padStart(2,'0')}:00`;
+    const anchor = i===0 ? 'start' : (i+step>=n ? 'end' : 'middle');
+    xl += `<text x="${x(i)}" y="${H-8}" font-size="9" fill="#94a3b8" text-anchor="${anchor}">${lab}</text>`;
+  }
+  let gl='';
+  for(let v=yMin;v<=100;v+=10){
+    gl += `<line x1="${L}" y1="${y(v)}" x2="${W-R}" y2="${y(v)}" stroke="${v===60?'#c23434':'#eef2f7'}" ${v===60?'stroke-dasharray="5,4" stroke-width="1.2"':'stroke-width="1"'}/>`+
+          `<text x="${L-5}" y="${y(v)+3}" font-size="9" fill="#94a3b8" text-anchor="end">${v}</text>`;
+  }
+  gl += `<text x="${W-R-2}" y="${y(60)-4}" font-size="9" fill="#c23434" text-anchor="end">告警线 60（合格/警告阈值 · 配置）</text>`;
+  document.getElementById('trendBox').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none" style="display:block;">
+      ${gl}
+      <path d="${path(data.auto)}" fill="none" stroke="#0d9488" stroke-width="1.4" opacity=".85"/>
+      <path d="${path(data.steady)}" fill="none" stroke="#2563eb" stroke-width="1.4" opacity=".85"/>
+      <path d="${path(data.score)}" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+      ${dots(data.score)}
+      ${xl}
+    </svg>`;
+  const gran = (tw==='last_7_days'||tw==='last_30_days')?'按日聚合':'按小时';
+  document.getElementById('trendTitle').innerHTML =
+    `当前范围：${scope.name} · ${document.getElementById('twLabel').textContent} <span class="note">${gran} · /nodes/{id}/trend 或 /board/trend</span>`;
+}
+
+// ---------- 右栏重点关注 ----------
+function renderFocus(){
+  const key = scope.key==='cjtower'||scope.key.startsWith('cj::')?'cjtower'
+    : (LOOPS_TOP[scope.key]?scope.key:(LOOPS_TOP[scope.dev]?scope.dev:'plant'));
+  const items = LOOPS_TOP[key];
+  document.getElementById('focusTitle').innerHTML =
+    `重点关注回路 Top 10<span class="note">${scope.name} · 评分升序 · /performance/ranking（递归）</span>`;
+  document.getElementById('focusBox').innerHTML = items.map((r,i)=>`
+    <div class="frow" data-t="${r[0]}">
+      <span class="rk ${i<3?'top':''}">${i+1}</span>
+      <span class="tg">${r[0]}</span>
+      ${r[1]===null?'<span class="gs" style="color:var(--ink-3);border-color:var(--line);">INCONCLUSIVE</span>'
+        :`<span class="sc">${r[1].toFixed(2)}</span><span class="gs" style="color:${GC[r[2]]};border-color:${GC[r[2]]}33;background:${GC[r[2]]}11;">${r[3]}</span>`}
+      <span class="wk">${r[4]==='—'?'':('最弱 '+r[4])}</span>
+      <span class="go">工作台 ↗</span>
+    </div>`).join('') +
+    `<div class="frow" style="justify-content:center;border-style:dashed;color:var(--primary);" id="viewAll">查看全部 →（进 02，按${scope.name}范围筛选）</div>`;
+  document.getElementById('focusBox').querySelectorAll('.frow[data-t]').forEach(r=>r.addEventListener('click',()=>
+    toast(`→ /monitor/loop-workbench?loopId=${r.dataset.t}&from=overview（01 回路工作台）`)));
+  document.getElementById('viewAll').addEventListener('click',()=>
+    toast(`→ /monitor/loops?plantNodeId=${scope.name}&from=overview（02 回路列表）`));
+}
+
+// ---------- R4 左：综合性能对比（帕累托：柱=三率，折线=综合评分；范围=选中节点下一层） ----------
+function cmpScope(){
+  if(scope.key==='plant')
+    return { kind:'装置', parent:'全厂', asc:false,
+      items: DEVICES.map(d=>({name:d.name,score:d.score,steady:d.steady,fast:d.fast,acc:d.acc})) };
+  const dev = DEVICES.find(d=>d.id===scope.dev) || DEVICES[0];
+  if(scope.key===scope.dev)
+    return { kind:'单元', parent:dev.name, asc:false,
+      items: dev.units.filter(u=>!u.nosnap).map(u=>({name:u.name,score:u.score,steady:u.steady,fast:u.fast,acc:u.acc})) };
+  const u = dev.units.find(x=>scope.key===dev.id+'::'+x.name);
+  return { kind:'回路', parent:scope.name, asc:true, items: loopBars(scope.key, u?u.score:70) };
+}
+function renderCmp(){
+  const sc = cmpScope();
+  const items = [...sc.items].sort((a,b)=> sc.asc ? a.score-b.score : b.score-a.score);
+  const n = items.length;
+  const W=740, H=172, L=34, R=8, T=18, B=30, iw=W-L-R, ih=H-T-B;
+  const group=iw/n, bw=Math.max(5, Math.min(13,(group-16)/3.4));
+  let bars='', pts=[];
+  items.forEach((d,i)=>{
+    const cx=L+group*i+group/2;
+    [['steady','#2563eb'],['fast','#7c3aed'],['acc','#1a7f4b']].forEach((s,j)=>{
+      const v=Math.max(0,Math.min(100,d[s[0]])), bh=ih*v/100;
+      bars += `<rect x="${(cx-(bw*1.5+2)+j*(bw+2)).toFixed(1)}" y="${(T+ih-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5" fill="${s[1]}"/>`;
+    });
+    pts.push([cx, d.score]);
+    const short = n>6 ? d.name.replace('单元','') : d.name;
+    bars += `<text x="${cx}" y="${H-16}" font-size="${n>6?8:10}" fill="#334155" text-anchor="middle">${short}</text>`;
+    bars += `<text x="${cx}" y="${H-5}" font-size="8" fill="#94a3b8" text-anchor="middle" font-family="var(--mono)">${d.score.toFixed(1)}</text>`;
   });
-});
+  let gl='';
+  [0,25,50,75,100].forEach(v=>{
+    gl += `<line x1="${L}" y1="${T+ih-ih*v/100}" x2="${W-R}" y2="${T+ih-ih*v/100}" stroke="#eef2f7"/>`+
+          `<text x="${L-5}" y="${T+ih-ih*v/100+3}" font-size="9" fill="#94a3b8" text-anchor="end">${v}</text>`;
+  });
+  const line = pts.map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)},${(T+ih-ih*p[1]/100).toFixed(1)}`).join(' ');
+  const dots = pts.map(p=>`<circle cx="${p[0]}" cy="${(T+ih-ih*p[1]/100).toFixed(1)}" r="2.6" fill="#1d4ed8"/>`).join('');
+  document.getElementById('cmpChart').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none" style="display:block;">
+      ${gl}${bars}
+      <path d="${line}" fill="none" stroke="#1d4ed8" stroke-width="2"/>${dots}
+    </svg>`;
+  document.getElementById('cmpTitle').innerHTML = sc.kind==='回路'
+    ? `综合性能对比 · ${sc.parent} 评分最低 10 回路<span class="note">升序 · /performance/ranking（plantNodeId 递归）</span>`
+    : `综合性能对比 · ${sc.parent} 下属 ${n} ${sc.kind}<span class="note">综合评分降序（帕累托）· 柱=平稳/快速/准确率 · 折线=综合评分 · /board/aggregate</span>`;
+}
 
-// 时间窗切换：左联口径标注联动，右联不变（S4）
-const twData = {
-  today:        {label:'今日',    fs:'73.80'},
-  yesterday:    {label:'昨日',    fs:'72.40'},
-  last_7_days:  {label:'近 7 天', fs:'71.90'},
-  last_30_days: {label:'近 30 天',fs:'70.60'},
-};
+// ---------- R4 右：回路等级分布微型扇形图（本级 + 下一级；选中单元时仅本级） ----------
+function donutSVG(dist, loops){
+  const colors=['#1a7f4b','#2563eb','#b45309','#c23434','#a12222'];
+  if(!dist) return `<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="24" fill="none" stroke="#e2e8f0" stroke-width="10" stroke-dasharray="3,4"/>
+    <text x="32" y="30" font-size="8" fill="#94a3b8" text-anchor="middle">无数据</text>
+    <text x="32" y="40" font-size="8" fill="#94a3b8" text-anchor="middle" font-family="var(--mono)">${loops} 回路</text></svg>`;
+  const tot=dist.reduce((a,b)=>a+b,0), C=2*Math.PI*24;
+  let off=0, segs='';
+  dist.forEach((v,i)=>{ if(!v) return;
+    const len=v/tot*C;
+    segs += `<circle cx="32" cy="32" r="24" fill="none" stroke="${colors[i]}" stroke-width="10"
+      stroke-dasharray="${len.toFixed(1)} ${(C-len).toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 32 32)"/>`;
+    off += len;
+  });
+  return `<svg width="64" height="64" viewBox="0 0 64 64">${segs}
+    <text x="32" y="30" font-size="11" fill="#0f172a" text-anchor="middle" font-family="var(--mono)">${loops}</text>
+    <text x="32" y="41" font-size="7" fill="#94a3b8" text-anchor="middle">回路</text></svg>`;
+}
+function renderPies(){
+  const cur = donutCell => donutCell; // noop for readability
+  let cells;
+  if(scope.key==='plant'){
+    cells = [{name:'全厂（本级）', dist:PLANT_DIST, loops:1000, cur:true},
+      ...DEVICES.map(d=>({name:d.name, dist:d.dist, loops:d.loops}))];
+  } else {
+    const dev = DEVICES.find(d=>d.id===scope.dev) || DEVICES[0];
+    if(scope.key===scope.dev){
+      cells = [{name:dev.name+'（本级）', dist:dev.dist, loops:dev.loops, cur:true},
+        ...dev.units.map(u=> u.nosnap ? {name:u.name, dist:null, loops:u.loops} : {name:u.name, dist:u.dist, loops:u.loops})];
+    } else {
+      const u = dev.units.find(x=>scope.key===dev.id+'::'+x.name);
+      cells = [{name:u.name+'（本级）', dist:u.dist, loops:u.loops, cur:true}];
+    }
+  }
+  document.getElementById('pieBox').innerHTML = cells.map(c=>{
+    const bad = c.dist ? c.dist[3]+c.dist[4] : null;
+    return `<div class="pie-cell ${c.dist?'':'nodata'}">${donutSVG(c.dist, c.loops)}
+      <span class="pn ${c.cur?'cur':''}">${c.name}</span>
+      <span class="ps">${bad===null?'未启用 KPI':`警告+不合格 <em>${bad}</em>`}</span></div>`;
+  }).join('') + `<div style="min-width:120px;flex:none;font-size:9px;color:var(--ink-3);line-height:1.7;padding-left:6px;border-left:1px dashed var(--line);">
+    图例：<span style="color:#1a7f4b;">■</span>优秀 <span style="color:#2563eb;">■</span>良好 <span style="color:#b45309;">■</span>合格 <span style="color:#c23434;">■</span>警告 <span style="color:#a12222;">■</span>不合格<br>源：02 E-1 范围聚合（待扩展）</div>`;
+  document.getElementById('pieTitle').innerHTML = scope.key==='plant'
+    ? '回路等级分布<span class="note">全厂 + 3 装置 · 待 E-1 五档计数聚合（与 02 同批）</span>'
+    : (scope.key===scope.dev
+      ? `回路等级分布<span class="note">${scope.name} + 下属单元 · 待 E-1</span>`
+      : `回路等级分布<span class="note">仅本级（${scope.name}）· 待 E-1</span>`);
+}
+
+function renderAll(){ renderSel(); renderTrend(); renderFocus(); renderCmp(); renderPies(); }
+
+// 时间窗
 document.getElementById('twSeg').addEventListener('click', e=>{
-  const b = e.target.closest('button'); if(!b) return;
-  document.querySelectorAll('#twSeg button').forEach(x=>x.classList.toggle('on', x===b));
-  const d = twData[b.dataset.tw];
-  document.getElementById('twLabel').textContent = d.label;
-  document.getElementById('fScore').textContent = d.fs;
-  toast(`/nodes/overview?timeWindow=${b.dataset.tw}（左联重取；右联实时聚合口径不变）`);
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#twSeg button').forEach(x=>x.classList.toggle('on',x===b));
+  tw=b.dataset.tw;
+  document.getElementById('twLabel').textContent=b.textContent;
+  document.getElementById('granLabel').textContent=b.dataset.g;
+  renderTrend();
+  toast(`全域同口径 timeWindow=${tw}（锚点层+联动层同步重取）`);
 });
 
-// 链路指示灯：S5 演示——红点 + 展开四格
-document.getElementById('lamp').addEventListener('click', ()=>{
-  const lamp = document.getElementById('lamp');
-  const panel = document.getElementById('healthPanel');
-  const bad = lamp.classList.toggle('bad');
-  document.getElementById('lampTxt').textContent = bad ? '数据链路异常：实时订阅停机' : '数据链路正常';
-  panel.classList.toggle('show', bad);
+// 关键事项 chips → 03
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>
+  toast(`→ /monitor/attention?source=${c.dataset.s}&from=overview（03 关注队列）`)));
+
+// 链路指示灯
+document.getElementById('lamp').addEventListener('click',()=>{
+  const lamp=document.getElementById('lamp'), panel=document.getElementById('healthPanel');
+  const bad=lamp.classList.toggle('bad');
+  document.getElementById('lampTxt').textContent=bad?'数据链路异常：实时订阅停机':'数据链路正常';
+  panel.classList.toggle('show',bad);
 });
+
+// 树搜索与展开/折叠
+document.getElementById('treeSearch').addEventListener('input', e=>{ treeQ=e.target.value; renderSel(); });
+document.getElementById('expAll').addEventListener('click', ()=>{ expanded=new Set(['plant',...DEVICES.map(d=>d.id)]); renderSel(); });
+document.getElementById('colAll').addEventListener('click', ()=>{ expanded=new Set(); renderSel(); });
+
+renderAll();
 </script>
 </body>
 </html>

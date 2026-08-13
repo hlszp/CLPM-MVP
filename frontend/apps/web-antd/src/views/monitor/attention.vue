@@ -1,35 +1,41 @@
 <script lang="ts" setup>
 /**
- * 关注队列页面（整改方案 §8.1 / MW-P2-06~09）
+ * 关注队列标杆页面（v1.2：按回路合并分组）
  *
- * 统一聚合五类关注来源：ALERT / DEGRADATION / DATA_QUALITY / TRACKER / VERIFICATION
- * 服务端按角色生成 primaryAction/actions，前端直接使用不做权限推断。
+ * 页型 D：队列分诊——回答"今天先干什么"
+ * 主表一行=一个"问题回路"，行内展开子项明细
  *
- * 深链接：?eventId= 自动打开目标详情；?source=ALERT 按 ALERT 筛选。
- * 动作复用：确认/处置/误报/归档 调用现有 alert API，不另建状态机。
- * Sponsor 只读：服务端不返回 OPEN_WORKBENCH/写动作，前端仅渲染返回的 actions。
+ * 设计规范：docs/设计文档/页面标杆设计/03-关注队列/
  */
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type { TableColumnsType } from 'ant-design-vue';
+import type { MenuProps } from 'ant-design-vue';
 
 import type { MonitorApi } from '#/api/monitor';
-import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
-import { computed, h, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import 'dayjs/locale/zh-cn';
 
 import {
+  Badge,
   Button,
+  Card,
   Descriptions,
   DescriptionsItem,
   Drawer,
+  Dropdown,
   FormItem,
   Input,
   message,
   Modal,
+  Pagination,
   Space,
+  Spin,
   Table,
   Tag,
   Textarea,
@@ -44,25 +50,36 @@ import {
 import { getAttentionListApi } from '#/api/monitor';
 import {
   ClpmEmptyState,
-  ClpmPageToolbar,
-  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
-import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { showPageHelp } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import {
   PRIORITY_LABEL,
   PRIORITY_TO_STATUS,
   statusTokenToAntdColor,
 } from '#/constants/clpm-ui';
-import { formatTime } from '#/utils/format';
+import { formatTime, normalizeUtcTimestamp } from '#/utils/format';
+
+dayjs.extend(relativeTime);
+dayjs.locale('zh-cn');
 
 defineOptions({ name: 'MonitorAttention' });
 
 const route = useRoute();
 const router = useRouter();
 
-// ===== 语义映射（P2-01：PRIORITY 收敛至 constants/clpm-ui.ts）=====
+// ===== 相对时间格式化 =====
+function formatRelative(ts: string | null | undefined): string {
+  if (!ts) return '-';
+  try {
+    return dayjs(normalizeUtcTimestamp(ts)).fromNow();
+  } catch {
+    return formatTime(ts);
+  }
+}
+
+// ===== 语义映射 =====
 const priorityColor = (priority: string) =>
   statusTokenToAntdColor(PRIORITY_TO_STATUS[priority] ?? 'neutral');
 
@@ -74,9 +91,6 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   VERIFICATION: '验证超期',
 };
 
-// P3-10：五来源颜色对齐 ZL 工业语义状态色板（P2-01），
-// 替换原鲜艳预设色 red/orange/purple/cyan/magenta →
-// error/warning/default/processing/success（降饱和、无紫色、暗色友好）
 const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   ALERT: 'error',
   DEGRADATION: 'warning',
@@ -94,8 +108,8 @@ const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
 };
 
 const STATUS_COLOR: Record<MonitorApi.AttentionStatus, string> = {
-  OPEN: 'red',
-  ACKNOWLEDGED: 'orange',
+  OPEN: 'error',
+  ACKNOWLEDGED: 'warning',
   SUPPRESSED: 'default',
   IN_PROGRESS: 'processing',
   VERIFYING: 'warning',
@@ -114,22 +128,30 @@ const SOURCE_ORDER: MonitorApi.AttentionSource[] = [
   'TRACKER',
   'VERIFICATION',
 ];
-/** 来源合法值集合（用于深链接参数校验） */
 const SOURCE_SET = new Set<string>(SOURCE_ORDER);
 
-// ===== 表格密度三档（持久化）=====
+// ===== 表格密度三档 =====
 const { tableSize, densityLabel, cycleDensity } =
   useTableDensity('monitor-attention');
 
 // ===== 列表状态 =====
 const loading = ref(false);
-const attentionList = ref<MonitorApi.AttentionItem[]>([]);
-const total = ref(0);
+const attentionGroups = ref<MonitorApi.AttentionGroup[]>([]);
+const totalGroups = ref(0);
+const totalItems = ref(0);
 const aggregates = ref<MonitorApi.AttentionAggregates>({
   byPriority: {},
   bySource: {},
   byStatus: {},
+  byGroupPriority: {},
+  groupCount: 0,
+  openCount: 0,
+  urgentCount: 0,
+  verificationOverdue: 0,
+  dataQualityCount: 0,
 });
+const truncated = ref<Record<string, boolean>>({});
+const loadedAt = ref('');
 const lastRefresh = ref('');
 
 const query = reactive({
@@ -143,8 +165,8 @@ const query = reactive({
   pageSize: 20,
 });
 
-// 筛选区折叠态（工具栏「筛选」工具切换）
-const filterVisible = ref(true);
+// 展开行状态
+const expandedRowKeys = ref<string[]>([]);
 
 // ===== 详情抽屉 =====
 const detailVisible = ref(false);
@@ -160,44 +182,27 @@ const resolveLoading = ref(false);
 // ===== 行内动作防重复提交 =====
 const actingAttentionId = ref('');
 
-// ===== 列定义 =====
+// ===== 主表八列定版（v1.2） =====
 const columns: TableColumnsType = [
   {
-    title: '优先级',
-    dataIndex: 'priority',
-    key: 'priority',
-    width: 80,
+    title: '序号',
+    key: 'index',
+    width: 60,
     fixed: 'left',
-    customRender: ({ value }) =>
-      h(
-        Tag,
-        { color: priorityColor(value as MonitorApi.AttentionPriority) },
-        () => PRIORITY_LABEL[value as MonitorApi.AttentionPriority] ?? value,
-      ),
+    align: 'center',
   },
   {
-    title: '来源',
-    dataIndex: 'source',
-    key: 'source',
-    width: 110,
-    customRender: ({ value }) =>
-      h(
-        Tag,
-        { color: SOURCE_COLOR[value as MonitorApi.AttentionSource] },
-        () => SOURCE_LABEL[value as MonitorApi.AttentionSource] ?? value,
-      ),
-  },
-  {
-    title: '回路',
+    title: '回路号',
     dataIndex: 'tagName',
     key: 'tagName',
-    width: 140,
-    ellipsis: true,
+    width: 180,
+    fixed: 'left',
   },
   {
-    title: '摘要',
-    dataIndex: 'summary',
-    key: 'summary',
+    title: '装置·单元',
+    dataIndex: 'unitName',
+    key: 'unitName',
+    width: 160,
     ellipsis: true,
   },
   {
@@ -205,61 +210,35 @@ const columns: TableColumnsType = [
     dataIndex: 'status',
     key: 'status',
     width: 90,
-    customRender: ({ value }) =>
-      h(
-        Tag,
-        { color: STATUS_COLOR[value as MonitorApi.AttentionStatus] },
-        () => STATUS_LABEL[value as MonitorApi.AttentionStatus] ?? value,
-      ),
+    align: 'center',
   },
   {
-    title: '发生时间',
-    dataIndex: 'occurredAt',
-    key: 'occurredAt',
-    width: 170,
-    customRender: ({ value }) => formatTime(value),
+    title: '来源',
+    dataIndex: 'sources',
+    key: 'sources',
+    width: 280,
   },
   {
-    title: '排序原因',
-    dataIndex: 'rankReasons',
-    key: 'rankReasons',
-    width: 200,
+    title: '摘要',
+    dataIndex: 'summary',
+    key: 'summary',
     ellipsis: true,
-    customRender: ({ value }) => (value as string[])?.join('；') ?? '-',
+    minWidth: 280,
+  },
+  {
+    title: '更新时间',
+    dataIndex: 'updatedAt',
+    key: 'updatedAt',
+    width: 130,
   },
   {
     title: '操作',
     key: 'actions',
-    width: 160,
+    width: 80,
     fixed: 'right',
+    align: 'center',
   },
 ];
-
-// ===== 列设置（排除「操作」列，其始终可见不可隐藏） =====
-function buildDefaultColumnConfigs(): ColumnConfig[] {
-  return columns
-    .filter((c: any) => c.key !== 'actions')
-    .map((c: any, i: number) => ({
-      key: String(c.key),
-      label: String(c.title ?? ''),
-      visible: true,
-      order: i,
-    }));
-}
-const columnConfigs = ref<ColumnConfig[]>(buildDefaultColumnConfigs());
-const visibleColumns = computed<TableColumnsType>(() =>
-  columns.filter((c: any) => {
-    if (c.key === 'actions') return true;
-    const cfg = columnConfigs.value.find((cc) => cc.key === c.key);
-    return cfg ? cfg.visible : true;
-  }),
-);
-function handleUpdateColumns(cols: ColumnConfig[]) {
-  columnConfigs.value = cols;
-}
-function handleResetColumns() {
-  columnConfigs.value = buildDefaultColumnConfigs();
-}
 
 // ===== 数据加载 =====
 async function loadData() {
@@ -275,15 +254,20 @@ async function loadData() {
       page: query.page,
       pageSize: query.pageSize,
     });
-    attentionList.value = res.items;
-    total.value = res.total;
+    attentionGroups.value = res.items;
+    totalGroups.value = res.totalGroups;
+    totalItems.value = res.totalItems;
     aggregates.value = res.aggregates;
+    truncated.value = res.truncated || {};
+    loadedAt.value = res.loadedAt || new Date().toISOString();
     lastRefresh.value = new Date().toLocaleTimeString('zh-CN', {
       hour12: false,
     });
   } catch (error: any) {
     message.error(error?.message ?? '加载关注队列失败');
-    attentionList.value = [];
+    attentionGroups.value = [];
+    totalGroups.value = 0;
+    totalItems.value = 0;
   } finally {
     loading.value = false;
   }
@@ -292,6 +276,7 @@ async function loadData() {
 // ===== 筛选切换 =====
 function handleFilterChange() {
   query.page = 1;
+  expandedRowKeys.value = [];
   loadData();
 }
 
@@ -311,6 +296,7 @@ function togglePriority(p: MonitorApi.AttentionPriority) {
 
 function handleKeywordSearch() {
   query.page = 1;
+  expandedRowKeys.value = [];
   loadData();
 }
 
@@ -321,24 +307,52 @@ function handleResetFilters() {
   query.keyword = '';
   query.loopId = undefined;
   query.page = 1;
+  expandedRowKeys.value = [];
   loadData();
 }
 
 // ===== 分页 =====
-function handlePageChange(pag: TablePaginationConfig) {
-  query.page = pag.current ?? 1;
-  query.pageSize = pag.pageSize ?? 20;
+function handlePageChange(page: number, pageSize: number) {
+  query.page = page;
+  query.pageSize = pageSize;
+  expandedRowKeys.value = [];
   loadData();
 }
 
-// ===== 详情抽屉 =====
-function openDetail(item: MonitorApi.AttentionItem) {
+// ===== 展开/折叠行 =====
+function toggleExpand(group: MonitorApi.AttentionGroup) {
+  const idx = expandedRowKeys.value.indexOf(group.groupId);
+  if (idx >= 0) {
+    expandedRowKeys.value.splice(idx, 1);
+  } else {
+    expandedRowKeys.value.push(group.groupId);
+  }
+}
+
+// ===== 执行跳转动作 =====
+function executeNavAction(action: MonitorApi.AttentionAction) {
+  if (!action.enabled) {
+    if (action.disabledReason) {
+      message.warning(action.disabledReason);
+    }
+    return;
+  }
+  if (action.target) {
+    router.push({
+      path: action.target.route,
+      query: { ...action.target.query, from: '/monitor/attention' },
+    });
+  }
+}
+
+// ===== 详情抽屉（子项） =====
+function openChildDetail(item: MonitorApi.AttentionItem) {
   currentItem.value = item;
   detailVisible.value = true;
 }
 
-// ===== 动作执行 =====
-async function executeAction(
+// ===== 子项动作执行 =====
+async function executeChildAction(
   item: MonitorApi.AttentionItem,
   action: MonitorApi.AttentionAction,
 ) {
@@ -349,22 +363,14 @@ async function executeAction(
     return;
   }
 
-  // 跳转类动作
-  if (
-    action.target &&
-    (action.type === 'OPEN_WORKBENCH' ||
-      action.type === 'VIEW_ALERT_HISTORY' ||
-      action.type === 'BACK_TO_OVERVIEW' ||
-      action.type === 'VIEW_DETAIL')
-  ) {
+  if (action.target) {
     router.push({
       path: action.target.route,
-      query: action.target.query,
+      query: { ...action.target.query, from: '/monitor/attention' },
     });
     return;
   }
 
-  // ALERT 来源写操作——复用现有 alert API
   if (item.source === 'ALERT' && item.eventId) {
     if (actingAttentionId.value) return;
     actingAttentionId.value = item.attentionId;
@@ -396,7 +402,6 @@ async function executeAction(
   }
 }
 
-// 处置动作：打开弹窗收集处置说明（与预警事件页口径一致）
 function openResolveModal(item: MonitorApi.AttentionItem) {
   if (!item.eventId) return;
   resolvingAttentionId.value = item.attentionId;
@@ -427,81 +432,52 @@ async function handleResolveSubmit() {
   }
 }
 
-// 归档动作由「预警记录」页承载（VIEW_ALERT_HISTORY 跳转），关注队列不直接归档。
-
-// ===== 导出当前筛选结果为 CSV（客户端生成，无需后端接口）=====
-function exportAttentionCsv() {
-  if (attentionList.value.length === 0) {
-    message.warning('当前无可导出的数据');
-    return;
-  }
-  const header = [
-    '优先级',
-    '来源',
-    '回路',
-    '摘要',
-    '状态',
-    '发生时间',
-    '排序原因',
-  ];
-  const rows = attentionList.value.map((i) => [
-    PRIORITY_LABEL[i.priority] ?? i.priority,
-    SOURCE_LABEL[i.source] ?? i.source,
-    i.tagName,
-    i.summary,
-    STATUS_LABEL[i.status] ?? i.status,
-    formatTime(i.occurredAt),
-    (i.rankReasons ?? []).join('；'),
-  ]);
-  const csv = [header, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `attention-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  message.success(`已导出 ${attentionList.value.length} 条关注项`);
+// ===== 组行类名（紧急红底/高优先级左条） =====
+function getRowClassName(record: MonitorApi.AttentionGroup) {
+  if (record.priority === 'URGENT') return 'row-urgent';
+  if (record.priority === 'HIGH') return 'row-high';
+  return '';
 }
 
+// ===== 子项更多菜单 =====
+function buildChildMenu(item: MonitorApi.AttentionItem): MenuProps {
+  const items: MenuProps['items'] = item.actions
+    .filter(
+      (a) =>
+        a.type !== 'OPEN_WORKBENCH' &&
+        a.type !== 'VIEW_DETAIL' &&
+        a.type !== 'BACK_TO_OVERVIEW',
+    )
+    .map((a) => ({
+      key: a.type,
+      label: a.label + (a.disabledReason ? `（${a.disabledReason}）` : ''),
+      disabled: !a.enabled,
+      onClick: () => {
+        if (a.type === 'RESOLVE') {
+          openResolveModal(item);
+        } else {
+          executeChildAction(item, a);
+        }
+      },
+    }));
+  return { items };
+}
+
+// ===== 工具栏 =====
 function handleHelp() {
   showPageHelp({
     title: '关注队列 帮助',
-    content:
-      '关注队列统一聚合五类当前行动项：活跃预警、评分恶化、数据质量异常、待处置工单、验证超期。按优先级和来源筛选；点击「详情」查看完整信息；对预警事件可执行确认/处置/误报/归档。仅承载当前行动项，历史记录请查看「预警记录」。',
+    content: `
+      <p><b>五来源定义</b>：活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件）、评分恶化（日降≥2分）、数据质量（完整性告警或可信度 D/E）、待处置工单（PENDING/IN_PROGRESS）、验证超期（验证中超过24小时）。</p>
+      <p><b>优先级规则</b>：紧急=CRITICAL 活跃预警或 CRITICAL 工单；高=ERROR 预警/验证超期/完整性 CRITICAL/日降≥10分；中=WARN/开放工单/完整性 WARNING/日降5-10分；低=INFO/日降2-5分/可信度 D/E。</p>
+      <p><b>排序规则</b>：优先级从高到低 → 同级：未确认 → 超期 → 处理中/验证中 → 已确认 → 已抑制 → 时间倒序。</p>
+      <p><b>合并规则</b>：同一回路的多个关注项合并为一行；组优先级=组内最高；展开可看子项明细。</p>
+      <p>点击「进入工作台」可跳转至回路工作台查看详情并处置，携带上下文直接定位相关证据。</p>
+    `,
   });
 }
 
-function toggleFilter() {
-  filterVisible.value = !filterVisible.value;
-}
-
-// 跳转预警记录（历史/审计/导出入口）
-function goToAlertHistory() {
-  router.push({
-    path: '/monitor/alerts',
-    query: query.source.includes('ALERT')
-      ? { loopId: query.loopId || undefined }
-      : {},
-  });
-}
-
-// ===== 统一工具栏（标准 5 工具：刷新/筛选/导出/列设置/帮助）=====
-const { toolbarItems } = usePageToolbar(() => ({
-  refresh: { onClick: loadData, loading: loading.value },
-  filter: { onClick: () => toggleFilter(), active: filterVisible.value },
-  export: {
-    onClick: exportAttentionCsv,
-    permission: ['ADMIN', 'IC_ENGINEER'],
-    disabledReason: '仅工程师/管理员可导出',
-  },
-  setting: {},
-  help: { onClick: handleHelp },
-}));
-
-// ===== 深链接：?eventId= 自动打开目标详情；?source= 初始筛选；?loopId= 按回路筛选 =====
+// ===== 深链接 =====
 function applyUrlContext() {
   const sourceParam = route.query.source as string | undefined;
   const eventIdParam = route.query.eventId as string | undefined;
@@ -515,13 +491,42 @@ function applyUrlContext() {
   return eventIdParam;
 }
 
-// 深链接 eventId：数据加载后在列表中查找并打开详情
 function tryOpenDetailByEventId(eventId: string) {
-  const target = attentionList.value.find((i) => i.eventId === eventId);
-  if (target) {
-    openDetail(target);
+  for (const g of attentionGroups.value) {
+    const child = g.children.find((c) => c.eventId === eventId);
+    if (child) {
+      expandedRowKeys.value = [g.groupId];
+      setTimeout(() => openChildDetail(child), 100);
+      return;
+    }
   }
 }
+
+// ===== 截断提示 =====
+const hasTruncation = computed(() => Object.values(truncated.value).some(Boolean));
+const truncationMessage = computed(() => {
+  const sources = Object.entries(truncated.value)
+    .filter(([, v]) => v)
+    .map(([k]) => SOURCE_LABEL[k as MonitorApi.AttentionSource] || k);
+  if (sources.length === 0) return '';
+  return `已达单来源 500 条聚合上限（${sources.join('、')}），请细化筛选`;
+});
+
+// ===== 是否有筛选（用于空态区分） =====
+const hasFilters = computed(
+  () =>
+    query.source.length > 0 ||
+    query.priority.length > 0 ||
+    query.status.length > 0 ||
+    !!query.keyword ||
+    !!query.loopId ||
+    !!query.plantNodeId,
+);
+
+// ===== 当前页项数 =====
+const currentPageItemCount = computed(() =>
+  attentionGroups.value.reduce((s, g) => s + g.children.length, 0),
+);
 
 // ===== 生命周期 =====
 onMounted(async () => {
@@ -532,7 +537,6 @@ onMounted(async () => {
   }
 });
 
-// URL query 变化时重新加载（浏览器前进/后退/铃铛深链接）
 watch(
   () => route.query,
   (q) => {
@@ -566,71 +570,155 @@ watch(
 </script>
 
 <template>
-  <Page>
-    <!-- 统一工具栏（吸顶 · 右对齐 · 彩色语义图标） -->
-    <ClpmPageToolbar
-      title="关注队列"
-      subtitle="当前行动项——预警/恶化/质量/工单/验证五合一"
-      :loading="loading"
-      :last-refresh="lastRefresh"
-    >
-      <template #actions>
-        <ClpmStandardActions
-          :items="toolbarItems"
-          :column-configs="columnConfigs"
-          @update:columns="handleUpdateColumns"
-          @reset-columns="handleResetColumns"
-        />
-        <!-- 密度三档切换 -->
-        <ClpmToolbarButton
-          icon="ant-design:column-height-outlined"
-          :label="`密度：${densityLabel}`"
-          :tooltip="`密度：${densityLabel}（点击切换）`"
-          @click="cycleDensity"
-        />
-      </template>
-    </ClpmPageToolbar>
+  <Page
+    title="关注队列"
+    :affix-tabs="true"
+    icon="lucide:list-todo"
+  >
+    <template #headerActions>
+      <ClpmToolbarButton
+        icon="lucide:refresh-cw"
+        label="刷新"
+        :loading="loading"
+        tooltip="刷新关注队列数据"
+        @click="loadData"
+      />
+      <ClpmToolbarButton
+        icon="lucide:help-circle"
+        label="帮助"
+        tooltip="查看关注队列使用说明"
+        @click="handleHelp"
+      />
+      <ClpmToolbarButton
+        icon="ant-design:column-height-outlined"
+        :label="`密度：${densityLabel}`"
+        :tooltip="`密度：${densityLabel}（点击切换）`"
+        @click="cycleDensity"
+      />
+    </template>
 
-    <!-- 筛选区（工具栏「筛选」工具可折叠） -->
+    <div class="h-full flex flex-col overflow-hidden bg-[var(--clr-surface)]">
+      <Spin :spinning="loading" class="flex-1 flex flex-col min-h-0">
+        <div class="flex flex-col h-full p-3 gap-3 overflow-auto">
+    <!-- 截断提示条 -->
     <div
-      class="clpm-filter-bar"
-      :class="{ 'clpm-filter-bar--collapsed': !filterVisible }"
+      v-if="hasTruncation"
+      class="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
     >
-      <!-- 优先级标签筛选 -->
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-xs text-gray-500">优先级</span>
-        <Tag
+      <IconifyIcon icon="lucide:alert-triangle" :size="16" />
+      <span>{{ truncationMessage }}</span>
+    </div>
+
+    <!-- R2 摘要条 -->
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-gray-100 bg-white px-4 py-3">
+      <div class="flex items-baseline gap-2">
+        <span class="text-2xl font-semibold tabular-nums text-red-600">
+          {{ aggregates.openCount || 0 }}
+        </span>
+        <span class="text-sm text-gray-500">待处理</span>
+      </div>
+      <div class="h-5 w-px bg-gray-200" />
+      <div class="flex items-baseline gap-2">
+        <span class="text-2xl font-semibold tabular-nums">
+          {{ aggregates.groupCount || 0 }}
+        </span>
+        <span class="text-sm text-gray-500">问题回路</span>
+      </div>
+      <div v-if="aggregates.urgentCount" class="h-5 w-px bg-gray-200" />
+      <div v-if="aggregates.urgentCount" class="flex items-baseline gap-2">
+        <span class="text-2xl font-semibold tabular-nums text-red-600">
+          {{ aggregates.urgentCount }}
+        </span>
+        <span class="text-sm text-gray-500">紧急</span>
+      </div>
+      <div
+        v-if="aggregates.verificationOverdue"
+        class="h-5 w-px bg-gray-200"
+      />
+      <div v-if="aggregates.verificationOverdue" class="flex items-baseline gap-2">
+        <span class="text-2xl font-semibold tabular-nums text-orange-600">
+          {{ aggregates.verificationOverdue }}
+        </span>
+        <span class="text-sm text-gray-500">验证超期</span>
+      </div>
+      <div v-if="aggregates.dataQualityCount" class="h-5 w-px bg-gray-200" />
+      <div v-if="aggregates.dataQualityCount" class="flex items-baseline gap-2">
+        <span class="text-2xl font-semibold tabular-nums text-gray-600">
+          {{ aggregates.dataQualityCount }}
+        </span>
+        <span class="text-sm text-gray-500">数据质量</span>
+      </div>
+      <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+        <IconifyIcon icon="lucide:clock" :size="12" />
+        <span>聚合于 {{ formatTime(loadedAt) }}</span>
+      </div>
+    </div>
+
+    <!-- R2.5 优先级速览卡 + 来源 chips -->
+    <div class="flex flex-wrap items-center gap-3">
+      <!-- 优先级速览卡（组口径） -->
+      <div class="flex items-center gap-1.5">
+        <button
+          class="rounded-md border px-3 py-1.5 text-sm transition-colors"
+          :class="
+            query.priority.length === 0
+              ? 'border-blue-400 bg-blue-50 text-blue-700'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+          "
+          @click="() => { query.priority = []; handleFilterChange(); }"
+        >
+          全部
+          <span class="ml-1 font-semibold tabular-nums">
+            {{ aggregates.groupCount || 0 }}
+          </span>
+          <span class="text-xs text-gray-400 ml-0.5">
+            ({{ totalItems }}项)
+          </span>
+        </button>
+        <button
           v-for="p in PRIORITY_ORDER"
           :key="p"
-          :color="query.priority.includes(p) ? priorityColor(p) : 'default'"
-          class="cursor-pointer"
+          class="rounded-md border px-3 py-1.5 text-sm transition-colors"
+          :class="
+            query.priority.includes(p)
+              ? 'border-current'
+              : 'border-gray-200 bg-white hover:border-gray-300'
+          "
+          :style="
+            query.priority.includes(p)
+              ? `border-color: var(--ant-${priorityColor(p)}-color); background: var(--ant-${priorityColor(p)}-color-1); color: var(--ant-${priorityColor(p)}-color);`
+              : ''
+          "
           @click="togglePriority(p)"
         >
           {{ PRIORITY_LABEL[p] }}
-          <span v-if="aggregates.byPriority[p]" class="ml-1 opacity-70">
-            {{ aggregates.byPriority[p] }}
+          <span class="ml-1 font-semibold tabular-nums">
+            {{ aggregates.byGroupPriority?.[p] || 0 }}
           </span>
-        </Tag>
+        </button>
       </div>
 
-      <!-- 来源标签筛选 -->
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-xs text-gray-500">来源</span>
+      <!-- 来源 chips（项口径） -->
+      <div class="ml-auto flex items-center gap-1.5">
         <Tag
           v-for="s in SOURCE_ORDER"
           :key="s"
           :color="query.source.includes(s) ? SOURCE_COLOR[s] : 'default'"
-          class="cursor-pointer"
+          class="cursor-pointer !mb-0"
+          style="margin: 0; font-size: 12px;"
           @click="toggleSource(s)"
         >
           {{ SOURCE_LABEL[s] }}
-          <span v-if="aggregates.bySource[s]" class="ml-1 opacity-70">
-            {{ aggregates.bySource[s] }}
+          <span class="ml-1 opacity-70 tabular-nums">
+            {{ aggregates.bySource[s] || 0 }}
           </span>
         </Tag>
       </div>
+    </div>
 
-      <FormItem label="关键词" class="!mb-0">
+    <!-- R3 筛选工具条 -->
+    <div class="clpm-filter-bar">
+      <FormItem label="搜索" class="!mb-0">
         <Input
           v-model:value="query.keyword"
           allow-clear
@@ -643,100 +731,275 @@ watch(
       <Space class="!ml-auto">
         <Button type="primary" @click="handleKeywordSearch">查询</Button>
         <Button @click="handleResetFilters">重置</Button>
-        <Button type="link" size="small" @click="goToAlertHistory">
-          查看预警记录
-        </Button>
       </Space>
     </div>
 
-    <!-- 关注队列表格 -->
-    <Table
-      :columns="visibleColumns"
-      :data-source="attentionList"
-      :loading="loading"
-      :pagination="{
-        current: query.page,
-        pageSize: query.pageSize,
-        total,
-        showSizeChanger: true,
-        showTotal: (t: number) => `共 ${t} 条`,
-      }"
-      :size="tableSize"
-      :scroll="{ x: 1200 }"
-      row-key="attentionId"
-      @change="handlePageChange"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'actions'">
+    <!-- R4 分诊主表（flex-1 占满剩余空间） -->
+    <Card :bordered="false" size="small" class="flex-1 flex flex-col min-h-0 shadow-sm">
+      <Table
+        :columns="columns"
+        :data-source="attentionGroups"
+        :loading="loading"
+        :pagination="false"
+        :size="tableSize"
+        :scroll="{ x: 1360, y: 'calc(100vh - 420px)' }"
+        :row-key="(record: MonitorApi.AttentionGroup) => record.groupId"
+        :expanded-row-keys="expandedRowKeys"
+        :expand-icon-column-index="-1"
+        :row-class-name="getRowClassName"
+        class="flex-1"
+        @expandedRowsChange="(keys: (string | number)[]) => (expandedRowKeys = keys as string[])"
+      >
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'">
+          <span class="tabular-nums text-gray-500">
+            {{ (query.page - 1) * query.pageSize + index + 1 }}
+          </span>
+        </template>
+
+        <template v-else-if="column.key === 'tagName'">
+          <div class="flex items-center gap-2">
+            <Tag
+              :color="priorityColor(record.priority)"
+              class="!mr-0 !px-1.5"
+              style="font-size: 11px; line-height: 16px;"
+            >
+              {{ record.priorityLabel }}
+            </Tag>
+            <span class="font-mono font-semibold text-gray-800">
+              {{ record.tagName }}
+            </span>
+          </div>
+        </template>
+
+        <template v-else-if="column.key === 'unitName'">
+          <span class="text-gray-600">{{ record.unitName || '-' }}</span>
+        </template>
+
+        <template v-else-if="column.key === 'status'">
+          <Tag :color="STATUS_COLOR[record.status as keyof typeof STATUS_COLOR]">
+            {{ STATUS_LABEL[record.status as keyof typeof STATUS_LABEL] }}
+          </Tag>
+        </template>
+
+        <template v-else-if="column.key === 'sources'">
           <Space :size="4">
-            <Button
-              type="link"
-              size="small"
-              @click="openDetail(record as MonitorApi.AttentionItem)"
+            <Tag
+              v-for="s in record.sources.slice(0, 3)"
+              :key="s"
+              :color="SOURCE_COLOR[s as keyof typeof SOURCE_COLOR]"
+              style="margin: 0; font-size: 12px;"
             >
-              详情
-            </Button>
-            <Button
-              v-if="
-                record.primaryAction &&
-                record.primaryAction.type !== 'VIEW_DETAIL' &&
-                record.primaryAction.type !== 'OPEN_WORKBENCH'
-              "
-              type="link"
-              size="small"
-              :disabled="!record.primaryAction.enabled || !!actingAttentionId"
-              @click="
-                executeAction(
-                  record as MonitorApi.AttentionItem,
-                  record.primaryAction,
-                )
-              "
+              {{ SOURCE_LABEL[s as keyof typeof SOURCE_LABEL] }}
+            </Tag>
+            <Tag
+              v-if="record.sources.length > 3"
+              style="margin: 0; font-size: 12px;"
             >
-              {{ record.primaryAction.label }}
-            </Button>
-            <Button
-              v-if="
-                record.source === 'ALERT' &&
-                record.eventId &&
-                record.actions?.some(
-                  (a: MonitorApi.AttentionAction) =>
-                    a.type === 'OPEN_WORKBENCH',
-                )
-              "
-              type="link"
-              size="small"
-              @click="
-                executeAction(
-                  record as MonitorApi.AttentionItem,
-                  (record.actions as MonitorApi.AttentionAction[]).find(
-                    (a) => a.type === 'OPEN_WORKBENCH',
-                  )!,
-                )
-              "
+              +{{ record.sources.length - 3 }}
+            </Tag>
+            <Badge
+              v-if="record.itemCount > 1"
+              :count="record.itemCount"
+              :size="'small'"
+              :style="{ background: '#666' }"
+            />
+          </Space>
+        </template>
+
+        <template v-else-if="column.key === 'summary'">
+          <Tooltip :title="record.summary">
+            <span>{{ record.summary }}</span>
+          </Tooltip>
+        </template>
+
+        <template v-else-if="column.key === 'updatedAt'">
+          <div class="flex items-center gap-1">
+            <Tooltip :title="formatTime(record.updatedAt)">
+              <span :class="{ 'text-red-600': record.isOverdue }">
+                {{ formatRelative(record.updatedAt) }}
+              </span>
+            </Tooltip>
+            <IconifyIcon
+              v-if="record.isOverdue"
+              icon="lucide:alert-circle"
+              :size="14"
+              class="text-red-500"
+            />
+          </div>
+        </template>
+
+        <template v-else-if="column.key === 'actions'">
+          <Space :size="0">
+            <Tooltip
+              :title="expandedRowKeys.includes(record.groupId) ? '收起子项' : '展开子项'"
             >
-              进入工作台
-            </Button>
+              <Button type="text" size="small" class="!px-1" @click="toggleExpand(record as MonitorApi.AttentionGroup)">
+                <IconifyIcon
+                  :icon="
+                    expandedRowKeys.includes(record.groupId)
+                      ? 'lucide:chevron-up'
+                      : 'lucide:chevron-down'
+                  "
+                  :size="16"
+                />
+              </Button>
+            </Tooltip>
+            <Tooltip title="进入回路工作台">
+              <Button
+                type="text"
+                size="small"
+                class="!px-1"
+                :disabled="!record.primaryAction?.enabled"
+                @click="executeNavAction(record.primaryAction)"
+              >
+                <IconifyIcon icon="lucide:external-link" :size="16" />
+              </Button>
+            </Tooltip>
           </Space>
         </template>
       </template>
 
+      <!-- 展开子项明细 -->
+      <template #expandedRowRender="{ record }">
+        <div class="py-2 pl-8 pr-4 bg-gray-50/50">
+          <div class="mb-2 text-xs font-medium text-gray-500">
+            {{ record.tagName }} 的 {{ record.itemCount }} 个关注项：
+          </div>
+          <div class="space-y-1">
+            <div
+              v-for="child in record.children"
+              :key="child.attentionId"
+              class="flex items-center gap-3 rounded border border-gray-100 bg-white px-3 py-2 text-sm"
+            >
+              <Tag
+                :color="SOURCE_COLOR[child.source as keyof typeof SOURCE_COLOR]"
+                class="!mr-0"
+                style="font-size: 11px;"
+              >
+                {{ SOURCE_LABEL[child.source as keyof typeof SOURCE_LABEL] }}
+              </Tag>
+              <Tag
+                :color="priorityColor(child.priority)"
+                class="!mr-0"
+                style="font-size: 11px;"
+              >
+                {{ PRIORITY_LABEL[child.priority as keyof typeof PRIORITY_LABEL] }}
+              </Tag>
+              <Tag
+                :color="STATUS_COLOR[child.status as keyof typeof STATUS_COLOR]"
+                class="!mr-0"
+                style="font-size: 11px;"
+              >
+                {{ STATUS_LABEL[child.status as keyof typeof STATUS_LABEL] }}
+              </Tag>
+              <Tooltip :title="child.summary">
+                <span class="flex-1 truncate text-gray-700">
+                  {{ child.summary }}
+                </span>
+              </Tooltip>
+              <div v-if="child.rankReasons?.length" class="flex gap-1">
+                <Tag
+                  v-for="(r, i) in child.rankReasons.slice(0, 2)"
+                  :key="i"
+                  color="default"
+                  class="!mr-0"
+                  style="font-size: 11px;"
+                >
+                  {{ r }}
+                </Tag>
+                <Tag
+                  v-if="child.rankReasons.length > 2"
+                  color="default"
+                  class="!mr-0"
+                  style="font-size: 11px;"
+                >
+                  +{{ child.rankReasons.length - 2 }}
+                </Tag>
+              </div>
+              <Tooltip :title="formatTime(child.updatedAt || child.occurredAt)">
+                <span class="text-gray-400 whitespace-nowrap tabular-nums">
+                  {{ formatRelative(child.updatedAt || child.occurredAt) }}
+                </span>
+              </Tooltip>
+              <Space :size="2">
+                <Button type="link" size="small" @click="openChildDetail(child)">
+                  详情
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  :disabled="!child.primaryAction?.enabled"
+                  @click="executeNavAction(child.primaryAction)"
+                >
+                  工作台
+                </Button>
+                <Dropdown
+                  v-if="child.actions?.length > 2"
+                  :menu="buildChildMenu(child)"
+                  trigger="click"
+                >
+                  <Button type="link" size="small" class="!px-1">
+                    <IconifyIcon icon="lucide:more-horizontal" :size="16" />
+                  </Button>
+                </Dropdown>
+              </Space>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 空态 -->
       <template #emptyText>
         <ClpmEmptyState
+          v-if="!hasFilters && totalItems === 0"
           scene="tracker"
-          title="暂无关注项"
-          description="当前没有需要处理的预警、评分恶化、数据质量异常或开放工单。"
+          title="今日无例外，回路运行正常"
+          description="当前筛选范围内没有需要处理的关注项。"
+        />
+        <ClpmEmptyState
+          v-else
+          scene="tracker"
+          title="筛选无结果"
+          description="当前筛选条件下没有匹配的关注项，请尝试调整筛选条件。"
           :actions="[
             {
-              label: '查看预警记录',
-              icon: 'lucide:history',
-              onClick: goToAlertHistory,
+              label: '清除筛选',
+              icon: 'lucide:x',
+              onClick: handleResetFilters,
             },
           ]"
         />
       </template>
     </Table>
+    </Card>
 
-    <!-- 详情抽屉 -->
+    <!-- R5 分页条（双口径） -->
+    <div class="flex items-center justify-between text-sm text-gray-500">
+      <div v-if="totalGroups > 0">
+        第 {{ query.page }} 页 · {{ query.pageSize }}/页
+        <span class="mx-2">｜</span>
+        已加载 {{ Math.min(query.page * query.pageSize, totalGroups) }} 回路组 ·
+        {{ currentPageItemCount }} 项
+        <span class="mx-2">/</span>
+        共 {{ totalGroups }} 回路组 · {{ totalItems }} 项
+      </div>
+      <div v-else class="invisible">占位</div>
+      <Pagination
+        v-model:current="query.page"
+        v-model:page-size="query.pageSize"
+        :total="totalGroups"
+        :show-size-changer="true"
+        :show-total="(t: number) => `共 ${t} 回路组`"
+        :page-size-options="['10', '20', '50']"
+        @change="handlePageChange"
+      />
+    </div>
+        </div>
+      </Spin>
+    </div>
+
+    <!-- 详情抽屉（子项） -->
     <Drawer
       v-model:open="detailVisible"
       title="关注项详情"
@@ -747,17 +1010,17 @@ watch(
         <Descriptions :column="1" bordered size="small">
           <DescriptionsItem label="优先级">
             <Tag :color="priorityColor(currentItem.priority)">
-              {{ PRIORITY_LABEL[currentItem.priority] }}
+              {{ PRIORITY_LABEL[currentItem.priority as keyof typeof PRIORITY_LABEL] }}
             </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="来源">
-            <Tag :color="SOURCE_COLOR[currentItem.source]">
-              {{ SOURCE_LABEL[currentItem.source] }}
+            <Tag :color="SOURCE_COLOR[currentItem.source as keyof typeof SOURCE_COLOR]">
+              {{ SOURCE_LABEL[currentItem.source as keyof typeof SOURCE_LABEL] }}
             </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="状态">
-            <Tag :color="STATUS_COLOR[currentItem.status]">
-              {{ STATUS_LABEL[currentItem.status] }}
+            <Tag :color="STATUS_COLOR[currentItem.status as keyof typeof STATUS_COLOR]">
+              {{ STATUS_LABEL[currentItem.status as keyof typeof STATUS_LABEL] }}
             </Tag>
             <span class="ml-2 text-xs text-gray-400">
               来源状态：{{ currentItem.sourceStatus }}
@@ -765,6 +1028,9 @@ watch(
           </DescriptionsItem>
           <DescriptionsItem label="回路">
             {{ currentItem.tagName }}
+          </DescriptionsItem>
+          <DescriptionsItem label="装置·单元">
+            {{ currentItem.unitName || '-' }}
           </DescriptionsItem>
           <DescriptionsItem label="标题">
             {{ currentItem.title }}
@@ -800,7 +1066,6 @@ watch(
           </DescriptionsItem>
         </Descriptions>
 
-        <!-- 动作区：服务端按角色生成，Sponsor 仅 VIEW_DETAIL/BACK_TO_OVERVIEW -->
         <div class="mt-4">
           <div class="mb-2 text-sm font-medium text-gray-700">可用操作</div>
           <Space wrap>
@@ -818,7 +1083,7 @@ watch(
               @click="
                 action.type === 'RESOLVE'
                   ? openResolveModal(currentItem)
-                  : executeAction(currentItem, action)
+                  : executeChildAction(currentItem, action)
               "
             >
               {{ action.label }}
@@ -835,14 +1100,12 @@ watch(
           </div>
         </div>
 
-        <!-- 安全边界提示（不使用 Emoji，用图标+文字） -->
         <div
           class="mt-4 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700"
         >
-          <Tooltip>
-            <template #title>
-              平台只输出建议、证据、风险和回退方案；参数由授权人员人工实施并留痕。
-            </template>
+          <Tooltip
+            title="平台只输出建议、证据、风险和回退方案；参数由授权人员人工实施并留痕。"
+          >
             <span class="inline-flex items-center gap-1">
               <IconifyIcon icon="lucide:shield-alert" :size="13" />
               平台安全边界：只读建议、人工实施、需留痕
@@ -884,12 +1147,23 @@ watch(
   gap: 12px;
   align-items: center;
   padding: 12px 16px;
-  margin-bottom: 12px;
   background: hsl(var(--card) / 60%);
   border-radius: 6px;
 }
 
-.clpm-filter-bar--collapsed {
-  display: none;
+:deep(.row-urgent) {
+  background-color: hsl(var(--destructive) / 6%);
+}
+
+:deep(.row-urgent:hover) > td {
+  background-color: hsl(var(--destructive) / 10%) !important;
+}
+
+:deep(.row-high) {
+  box-shadow: inset 3px 0 0 hsl(var(--warning));
+}
+
+:deep(.ant-table-expanded-row) > td {
+  padding: 0 !important;
 }
 </style>

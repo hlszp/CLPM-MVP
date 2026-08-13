@@ -83,6 +83,29 @@ export namespace MonitorApi {
     taskId?: string;
     primaryAction: AttentionAction;
     actions: AttentionAction[];
+    isOverdue?: boolean;
+  }
+
+  /** 关注组（按回路合并，v1.1+） */
+  export interface AttentionGroup {
+    groupId: string;
+    loopId: string;
+    tagName: string;
+    unitName?: string;
+    priority: AttentionPriority;
+    priorityLabel: string;
+    status: AttentionStatus;
+    sources: AttentionSource[];
+    sourceLabels: string[];
+    summary: string;
+    title: string;
+    updatedAt?: string;
+    isOverdue: boolean;
+    itemCount: number;
+    rankReasons: string[];
+    primaryAction: AttentionAction;
+    actions: AttentionAction[];
+    children: AttentionItem[];
   }
 
   /** 聚合统计 */
@@ -90,15 +113,25 @@ export namespace MonitorApi {
     byPriority: Record<string, number>;
     bySource: Record<string, number>;
     byStatus: Record<string, number>;
+    byGroupPriority?: Record<string, number>;
+    groupCount?: number;
+    openCount?: number;
+    urgentCount?: number;
+    verificationOverdue?: number;
+    dataQualityCount?: number;
   }
 
   /** 关注队列列表响应 */
   export interface AttentionListData {
-    items: AttentionItem[];
+    items: AttentionGroup[];
     total: number;
+    totalGroups: number;
+    totalItems: number;
     page: number;
     pageSize: number;
     aggregates: AttentionAggregates;
+    truncated?: Record<string, boolean>;
+    loadedAt?: string;
   }
 
   /** 关注队列查询参数 */

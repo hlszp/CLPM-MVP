@@ -266,6 +266,95 @@ export namespace DashboardApi {
     /** 是否命中 Redis 缓存 */
     cached?: boolean;
   }
+
+  // -------------------------------------------------------------------------
+  // 04-系统概览 标杆页聚合接口
+  // -------------------------------------------------------------------------
+
+  /** 系统概览 KPI 统计带 */
+  export interface SystemOverviewSummary {
+    totalLoops: number;
+    evaluatedLoops: number;
+    inconclusiveLoops: number;
+    excludedLoops: number;
+    avgScore: number | null;
+    autoModeRate: number | null;
+    stabilityRate: number | null;
+    attentionCount: number;
+    pendingTrackerCount: number;
+  }
+
+  /** 评分等级分布 */
+  export interface ScoreDistribution {
+    /** 差（<70分） */
+    poor: number;
+    /** 一般（70-84分） */
+    fair: number;
+    /** 良好（85-94分） */
+    good: number;
+    /** 优秀（≥95分） */
+    excellent: number;
+  }
+
+  /** 关注队列汇总 */
+  export interface AttentionSummary {
+    alertCount: number;
+    degradationCount: number;
+    dataQualityCount: number;
+    trackerCount: number;
+    total: number;
+    pendingCount: number;
+  }
+
+  /** 实时自控率 */
+  export interface AutoRate {
+    rate: number | null;
+    autoCount: number;
+    manualCount: number;
+    totalCount: number;
+    modeCounts: Record<string, number>;
+    readAt: string | null;
+  }
+
+  /** Top 问题回路 */
+  export interface TopLoopItem {
+    loopId: string;
+    tagName: string;
+    description: string | null;
+    score: number | null;
+    autoModeRate: number | null;
+    unitName: string | null;
+  }
+
+  /** 趋势数据 */
+  export interface OverviewTrend {
+    timestamps: string[];
+    avgScore: (number | null)[];
+    autoModeRate: (number | null)[];
+    stabilityRate: (number | null)[];
+  }
+
+  /** 对比指标 */
+  export interface OverviewCompare {
+    scoreDelta: number | null;
+    autoDelta: number | null;
+    stabilityDelta: number | null;
+  }
+
+  /** 系统概览聚合响应 */
+  export interface SystemOverviewResult {
+    summary: SystemOverviewSummary;
+    scoreDistribution: ScoreDistribution;
+    attentionSummary: AttentionSummary;
+    autoRate: AutoRate;
+    diagnosisDistribution: Record<string, number>;
+    topLoops: TopLoopItem[];
+    trend: OverviewTrend;
+    compare: OverviewCompare;
+    timeWindow: string;
+    windowStart: string;
+    windowEnd: string;
+  }
 }
 
 /**
@@ -332,6 +421,20 @@ export function getBoardTrendApi(params?: {
 export function getPredictionsApi(params?: DashboardApi.PredictionQueryParams) {
   return requestClient.get<DashboardApi.PredictionResult>(
     '/dashboard/predictions',
+    { params },
+  );
+}
+
+/**
+ * 获取系统概览聚合数据 — 04-系统概览标杆页
+ * 一次返回概览页所需的全部统计数据
+ */
+export function getSystemOverviewApi(params?: {
+  plantId?: string;
+  timeWindow?: string;
+}) {
+  return requestClient.get<DashboardApi.SystemOverviewResult>(
+    '/dashboard/system-overview',
     { params },
   );
 }

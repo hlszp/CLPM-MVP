@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>03-关注队列线框图（页型 D 队列分诊）v1.0</title>
+<title>03-关注队列线框图（页型 D 队列分诊）v1.2 · 同回路合并 + 中文优先级 + 八列主表</title>
 <style>
   :root{
     --ink:#0f172a; --ink-2:#334155; --ink-3:#94a3b8;
@@ -107,6 +107,19 @@
   .act-more{font-size:10px;color:var(--ink-3);border:1px solid var(--line);border-radius:3px;padding:2px 6px;background:#fff;cursor:pointer;margin-left:4px;}
   .overdue{color:var(--err);font-weight:700;}
 
+  /* v1.1 同回路合并：组行 + 展开子项 */
+  .gcount{display:inline-block;font-size:9px;font-weight:700;color:var(--primary);background:#f2f6ff;border:1px solid #c8d9fb;border-radius:8px;padding:0 6px;margin-left:5px;}
+  .gexp{display:inline-block;width:14px;color:var(--ink-3);font-size:9px;}
+  tr.open .gexp{color:var(--primary);}
+  .sum-more{font-size:9px;color:var(--ink-3);margin-left:5px;}
+  tr.subrow td{background:#fbfcfe;border-bottom:1px solid var(--line-soft);padding:4px 8px 4px 30px;cursor:default;}
+  tr.subrow:hover{background:#fbfcfe !important;}
+  .subtbl{width:100%;font-size:10px;}
+  .subtbl td{padding:3px 8px;border-bottom:1px dashed var(--line-soft);white-space:nowrap;}
+  .subtbl tr:last-child td{border-bottom:none;}
+  .subtbl .lab{color:var(--ink-3);font-size:9px;}
+  .act-sub{font-size:9px;font-weight:700;color:var(--primary);border:1px solid #c8d9fb;border-radius:3px;padding:1px 6px;background:#fff;cursor:pointer;}
+
   /* R5 分页条 */
   .pager{height:34px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:11px;color:var(--ink-2);background:#fbfcfe;}
   .pg{border:1px solid var(--line);border-radius:3px;padding:1px 8px;background:#fff;}
@@ -139,26 +152,27 @@
   <!-- R2 摘要条 -->
   <div class="sumrow">
     <span>开放 <b id="sOpen">14</b> 项</span>
-    <span class="crit">URGENT <b id="sUrgent">3</b></span>
+    <span>涉及 <b>11</b> 回路</span>
+    <span class="crit">紧急 <b id="sUrgent">3</b></span>
     <span class="crit">验证超期 <b>2</b></span>
     <span>数据质量 <b>4</b></span>
-    <span class="right">聚合口径：当前范围全量 · 响应 aggregates 单一聚合源</span>
+    <span class="right">聚合口径：当前范围全量 · 响应 aggregates 单一聚合源 · 主表按回路合并</span>
   </div>
 
-  <!-- R2.5 优先级速览卡 -->
+  <!-- R2.5 优先级速览卡（组口径：组优先级=组内最高） -->
   <div class="pstrip" id="pstrip">
-    <div class="pcard on" data-p="all"><b>26</b> 全部</div>
-    <div class="pcard" data-p="URGENT"><span class="bar p-urgent"></span><b>3</b> URGENT</div>
-    <div class="pcard" data-p="HIGH"><span class="bar p-high"></span><b>6</b> HIGH</div>
-    <div class="pcard" data-p="MEDIUM"><span class="bar p-medium"></span><b>11</b> MEDIUM</div>
-    <div class="pcard" data-p="LOW"><span class="bar p-low"></span><b>6</b> LOW</div>
+    <div class="pcard on" data-p="all"><b>11</b> 全部<small style="color:var(--ink-3);">（26 项）</small></div>
+    <div class="pcard" data-p="URGENT"><span class="bar p-urgent"></span><b>3</b> 紧急</div>
+    <div class="pcard" data-p="HIGH"><span class="bar p-high"></span><b>2</b> 高</div>
+    <div class="pcard" data-p="MEDIUM"><span class="bar p-medium"></span><b>4</b> 中</div>
+    <div class="pcard" data-p="LOW"><span class="bar p-low"></span><b>2</b> 低</div>
     <div class="right">
       <span class="srcchip" data-s="ALERT">活跃预警 <b>8</b></span>
       <span class="srcchip" data-s="DEGRADATION">评分恶化 <b>6</b></span>
       <span class="srcchip" data-s="DATA_QUALITY">数据质量 <b>4</b></span>
       <span class="srcchip" data-s="TRACKER">待处置工单 <b>5</b></span>
       <span class="srcchip" data-s="VERIFICATION">验证超期 <b>3</b></span>
-      <span class="loaded" id="loadedTxt">已加载 26 / 共 26 项</span>
+      <span class="loaded" id="loadedTxt">已加载 11 回路组 · 26 项 / 共 26 项</span>
     </div>
   </div>
 
@@ -196,15 +210,14 @@
       <table>
         <thead>
           <tr>
-            <th style="width:74px;">优先级</th>
-            <th class="ctr" style="width:86px;">来源</th>
-            <th style="width:96px;">回路位号</th>
-            <th style="width:104px;">装置 · 单元</th>
-            <th style="width:236px;">摘要（规则模板）</th>
+            <th style="width:86px;">序号</th>
+            <th style="width:118px;">回路号</th>
+            <th style="width:110px;">装置 · 单元</th>
             <th class="ctr" style="width:70px;">状态</th>
-            <th style="width:76px;">发生时间</th>
-            <th style="width:210px;">为什么排在这</th>
-            <th style="width:150px;">操作</th>
+            <th class="ctr" style="width:150px;">标签（多标签可展开）</th>
+            <th style="width:250px;">摘要</th>
+            <th style="width:84px;">更新时间</th>
+            <th class="ctr" style="width:130px;">操作</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -234,7 +247,7 @@
 
 <script>
 // ---------- fixture：常压塔单元 26 条关注项（与 01/02 同一回路族） ----------
-const P = { URGENT:['pr-urgent','URGENT'], HIGH:['pr-high','HIGH'], MEDIUM:['pr-medium','MEDIUM'], LOW:['pr-low','LOW'] };
+const P = { URGENT:['pr-urgent','紧急'], HIGH:['pr-high','高'], MEDIUM:['pr-medium','中'], LOW:['pr-low','低'] };
 const S = { ALERT:['s-alert','活跃预警'], DEGRADATION:['s-degr','评分恶化'], DATA_QUALITY:['s-dq','数据质量'], TRACKER:['s-tracker','待处置工单'], VERIFICATION:['s-ver','验证超期'] };
 const ST = { OPEN:['st-open','待处理'], ACKNOWLEDGED:['st-ack','已确认'], SUPPRESSED:['st-sup','已抑制'], IN_PROGRESS:['st-prog','处理中'], VERIFYING:['st-ver','验证中'] };
 const U = '常减压·常压塔';
@@ -276,26 +289,90 @@ function jumpWB(it){
 }
 
 let prioFilter = 'all', srcFilter = null;
+let expanded = new Set();
+
+// ---------- v1.1 同回路合并：items → 回路组（演示合并规则；实现=服务端 G3 分组） ----------
+const PR = { URGENT:0, HIGH:1, MEDIUM:2, LOW:3 };
+function groupByLoop(list){
+  const map = new Map();
+  list.forEach((it, idx)=>{
+    if(!map.has(it.t)) map.set(it.t, { tag:it.t, items:[], firstIdx:idx });
+    map.get(it.t).items.push(it);
+  });
+  const groups = [...map.values()];
+  groups.forEach(g=>{
+    g.items.sort((a,b)=>PR[a.p]-PR[b.p] || 0);
+    g.top = g.items[0];                       // 组首项=最高优先级（同级保持分诊排序）
+    g.p = g.top.p;
+    g.sources = [...new Set(g.items.map(x=>x.s))];
+    g.reasons = [];
+    g.items.forEach(x=>x.r.forEach(rr=>{ if(!g.reasons.some(y=>y[0]===rr[0])) g.reasons.push(rr); }));
+    g.reasons.sort((a,b)=>b[1]-a[1]);          // 热理由优先
+  });
+  groups.sort((a,b)=>PR[a.p]-PR[b.p] || a.firstIdx-b.firstIdx);
+  return groups;
+}
 
 function render(){
-  let data = items.filter(it =>
-    (prioFilter==='all' || it.p===prioFilter) &&
+  const filt = items.filter(it =>
+    (prioFilter==='all' || true) &&            // 组口径过滤在组级做
     (!srcFilter || it.s===srcFilter));
-  document.getElementById('tbody').innerHTML = data.map(it=>`
-  <tr class="${it.p==='URGENT'?'row-urgent':it.p==='HIGH'?'row-high':''}" onclick="jumpWB(items.find(x=>x.t==='${it.t}'&&x.s==='${it.s}'&&x.sum==='${it.sum.replace(/'/g,"")}'))">
-    <td><span class="prio ${P[it.p][0]}">${P[it.p][1]}</span></td>
-    <td class="ctr"><span class="srctag ${S[it.s][0]}">${S[it.s][1]}</span></td>
-    <td><span class="tagname">${it.t}</span></td>
+  let groups = groupByLoop(filt);
+  if(prioFilter!=='all') groups = groups.filter(g=>g.p===prioFilter);
+
+  document.getElementById('tbody').innerHTML = groups.map((g, gi)=>{
+    const n = g.items.length;
+    const main = `
+  <tr class="${g.p==='URGENT'?'row-urgent':g.p==='HIGH'?'row-high':''} ${expanded.has(g.tag)?'open':''}" data-g="${g.tag}">
+    <td><span style="font-family:var(--mono);color:var(--ink-3);">${gi+1}</span> <span class="prio ${P[g.p][0]}">${P[g.p][1]}</span></td>
+    <td><span class="tagname">${g.tag}</span>${n>1?`<span class="gcount">${n} 项</span>`:''}</td>
     <td style="font-size:10px;">${U}</td>
-    <td style="font-size:11px;white-space:normal;">${it.sum}</td>
-    <td class="ctr"><span class="st2 ${ST[it.st][0]}">${ST[it.st][1]}</span></td>
-    <td><span class="time ${it.od?'overdue':''}">${it.tm}${it.od?' ⚠':''}</span></td>
-    <td>${it.r.map(x=>`<span class="reason ${x[1]?'hot':''}">${x[0]}</span>`).join('')}</td>
-    <td><span class="act-main">${it.act} ↗</span><span class="act-more">⋯</span></td>
-  </tr>`).join('');
-  const open = data.filter(x=>x.st==='OPEN').length;
+    <td class="ctr"><span class="st2 ${ST[g.top.st][0]}">${ST[g.top.st][1]}</span></td>
+    <td class="ctr">${g.sources.slice(0,3).map(s=>`<span class="srctag ${S[s][0]}" style="margin:1px 2px;">${S[s][1]}</span>`).join('')}${g.sources.length>3?`<span class="sum-more">+${g.sources.length-3}</span>`:''}</td>
+    <td style="font-size:11px;white-space:normal;">${g.top.sum}${n>1?`<span class="sum-more">等 ${n} 项</span>`:''}</td>
+    <td><span class="time ${g.top.od?'overdue':''}">${g.top.tm}${g.top.od?' ⚠':''}</span></td>
+    <td class="ctr"><span class="act-sub" data-exp="${g.tag}">${expanded.has(g.tag)?'收起 ▴':'展开 ▾'}</span> <span class="act-main" data-act="${g.tag}">工作台 ↗</span></td>
+  </tr>`;
+    if(!expanded.has(g.tag)) return main;
+    const sub = `
+  <tr class="subrow"><td></td><td colspan="7">
+    <table class="subtbl">${g.items.map(it=>`
+      <tr>
+        <td style="width:86px;"><span class="srctag ${S[it.s][0]}">${S[it.s][1]}</span></td>
+        <td style="width:56px;"><span class="prio ${P[it.p][0]}">${P[it.p][1]}</span></td>
+        <td style="white-space:normal;min-width:220px;">${it.sum}</td>
+        <td style="width:64px;"><span class="st2 ${ST[it.st][0]}">${ST[it.st][1]}</span></td>
+        <td style="width:84px;"><span class="time ${it.od?'overdue':''}">${it.tm}${it.od?' ⚠':''}</span></td>
+        <td>${it.r.map(x=>`<span class="reason ${x[1]?'hot':''}">${x[0]}</span>`).join('')}</td>
+        <td style="width:96px;text-align:right;"><span class="act-sub" data-sub="${it.s}|${it.t}|${it.sum.replace(/'/g,'')}">工作台 ↗</span></td>
+      </tr>`).join('')}
+    </table>
+  </td></tr>`;
+    return main + sub;
+  }).join('');
+
+  // 交互：点行或"展开"=展开/收起；点"工作台"=下钻 01（携带回路+事件上下文）
+  document.querySelectorAll('#tbody tr[data-g]').forEach(r=>r.addEventListener('click', e=>{
+    if(e.target.closest('.act-main')||e.target.closest('.act-sub')) return;
+    const k=r.dataset.g; expanded.has(k)?expanded.delete(k):expanded.add(k); render();
+  }));
+  document.querySelectorAll('[data-exp]').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    const k=b.dataset.exp; expanded.has(k)?expanded.delete(k):expanded.add(k); render();
+  }));
+  document.querySelectorAll('.act-main[data-act]').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    const g = groups.find(x=>x.tag===b.dataset.act); jumpWB(g.top);
+  }));
+  document.querySelectorAll('.act-sub[data-sub]').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    const [s,t,sum] = b.dataset.sub.split('|');
+    jumpWB(items.find(x=>x.s===s&&x.t===t&&x.sum.replace(/'/g,'')===sum));
+  }));
+
+  const itemCount = groups.reduce((a,g)=>a+g.items.length,0);
   document.getElementById('fcount').innerHTML =
-    `已加载 <b>${data.length}</b> / 共 <b>${data.length}</b> 项（筛选集合口径） · 服务端分诊排序 · 单来源聚合上限 500 条`;
+    `已加载 <b>${groups.length}</b> 回路组 · <b>${itemCount}</b> 项 / 共 <b>${itemCount}</b> 项（筛选集合口径） · 服务端分诊排序+按回路合并 · 单来源聚合上限 500 条`;
 }
 
 render();

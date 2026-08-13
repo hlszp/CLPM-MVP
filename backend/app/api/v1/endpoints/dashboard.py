@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.db import get_db
+from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
@@ -358,24 +359,44 @@ def _resolve_aggregate_window(time_window: str | None) -> tuple[datetime, dateti
     """解析 board/aggregate 时间窗为 (start, end)（naive UTC）；None=不启用窗口.
 
     取值与 board/trend 对齐：last_8_hours/today/yesterday/last_7_days/last_30_days，
-    未识别值回退 today（24 小时）。
+    未识别值回退 today。
+
+    注意：所有时间统一转换为 UTC 存储，计算本地日期时需加 UTC+8 偏移。
     """
     if not time_window:
         return None
-    now = datetime.now(UTC).replace(tzinfo=None)
+    # UTC 现在时间，北京时间（UTC+8）
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
+    # 北京时间现在
+    now_cst = now_utc + timedelta(hours=8)
     if time_window == "last_8_hours":
-        start = now - timedelta(hours=8)
+        start = now_utc - timedelta(hours=8)
+        end = now_utc
     elif time_window == "today":
-        start = now - timedelta(hours=24)
+        # 今日：北京时间今日 00:00 → 当前时间
+        today_start_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = today_start_cst - timedelta(hours=8)  # 转 UTC
+        end = now_utc
     elif time_window == "yesterday":
-        return now - timedelta(days=2), now - timedelta(days=1)
+        # 昨日：北京时间昨日 00:00 → 今日 00:00
+        today_start_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start_cst = today_start_cst - timedelta(days=1)
+        start = yesterday_start_cst - timedelta(hours=8)  # 转 UTC
+        end = today_start_cst - timedelta(hours=8)
     elif time_window == "last_7_days":
-        start = now - timedelta(days=7)
+        # 近7天：从7天前的0点到现在
+        start_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
+        start = start_cst - timedelta(hours=8)
+        end = now_utc
     elif time_window == "last_30_days":
-        start = now - timedelta(days=30)
+        # 近30天：从30天前的0点到现在
+        start_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=29)
+        start = start_cst - timedelta(hours=8)
+        end = now_utc
     else:
-        start = now - timedelta(hours=24)
-    return start, now
+        start = now_utc - timedelta(hours=24)
+        end = now_utc
+    return start, end
 
 
 # 窗口聚合的 rate 字段（unit_kpi_summary 列名 → 响应 item 键名）
@@ -754,3 +775,551 @@ async def get_predictions_endpoint(
 
 
 __all__ = ["router"]
+
+
+# ---------------------------------------------------------------------------
+# 系统概览标杆页聚合接口（04-系统概览）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/system-overview", response_model=ApiResponse[dict])
+async def get_system_overview_endpoint(
+    plantId: str | None = Query(None, description="按装置/单元筛选；为空统计全厂"),
+    timeWindow: str = Query(
+        "last_8_hours",
+        description="时间窗：last_8_hours/today/yesterday/last_7_days/last_30_days",
+    ),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """系统概览标杆页聚合接口（04-系统概览）。
+
+    一次返回概览页所需的全部统计数据，减少前端请求数：
+    - summary: KPI 统计带（8 个统计卡片）
+    - scoreDistribution: 评分等级分布
+    - attentionSummary: 关注队列五来源汇总
+    - autoRate: 实时自控率（含模式分布）
+    - diagnosisDistribution: 诊断建议类型分布
+    - topLoops: Top 10 问题回路
+    - trend: 窗口内趋势对比数据
+    - compare: 与上一窗口对比指标（scoreDelta/autoDelta/stabilityDelta）
+    """
+    from app.services.node_performance import (
+        collect_descendant_loop_ids,
+        query_realtime_auto_rate,
+    )
+
+    window = _resolve_aggregate_window(timeWindow)
+    if window is None:
+        window = _resolve_aggregate_window("last_8_hours")
+    start, end = window  # type: ignore[misc]
+
+    # 上一窗口（对比用）
+    window_delta = end - start
+    prev_start = start - window_delta
+    prev_end = start
+
+    # 获取节点范围内的回路 ID
+    if plantId:
+        loop_ids = await collect_descendant_loop_ids(db, plantId)
+    else:
+        loop_query = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+        result = await db.execute(loop_query)
+        loop_ids = [str(row[0]) for row in result.all()]
+
+    total_loops_count = len(loop_ids)
+
+    # ========== 1. 基础回路数统计 ==========
+    excluded_loops = 0
+    evaluated_loops = 0
+    inconclusive_loops = 0
+    if loop_ids:
+        # excluded_loops
+        ex_result = await db.execute(
+            select(func.count())
+            .select_from(LoopLedger)
+            .where(
+                LoopLedger.id.in_(loop_ids),
+                LoopLedger.include_in_evaluation.is_(False),
+            )
+        )
+        excluded_loops = int(ex_result.scalar() or 0)
+
+        # evaluated_loops: 窗口内有 SUCCESS 快照
+        success_result = await db.execute(
+            select(func.distinct(KpiSnapshotHourly.loop_id))
+            .select_from(KpiSnapshotHourly)
+            .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+                KpiSnapshotHourly.status == "SUCCESS",
+                LoopLedger.include_in_evaluation.is_(True),
+            )
+        )
+        success_loop_ids = [str(row[0]) for row in success_result.all()]
+        evaluated_loops = len(success_loop_ids)
+
+        # inconclusive_loops: 窗口内只有 INCONCLUSIVE 无 SUCCESS
+        ic_result = await db.execute(
+            select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+            .select_from(KpiSnapshotHourly)
+            .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+                KpiSnapshotHourly.status == "INCONCLUSIVE",
+                KpiSnapshotHourly.loop_id.notin_(success_loop_ids) if success_loop_ids else True,
+                LoopLedger.include_in_evaluation.is_(True),
+            )
+        )
+        inconclusive_loops = int(ic_result.scalar() or 0)
+
+    # ========== 2. 综合评分、自控率、稳定率（每回路窗口内最新快照再平均） ==========
+    async def _calc_window_metrics(s: datetime, e: datetime) -> dict:
+        """取每个回路窗口内最新 SUCCESS 快照，再平均。"""
+        if not loop_ids:
+            return {
+                "avgScore": None,
+                "autoModeRate": None,
+                "stabilityRate": None,
+                "goodValueRate": None,
+            }
+        subq = (
+            select(
+                KpiSnapshotHourly.loop_id.label("lid"),
+                func.max(KpiSnapshotHourly.ts_start).label("max_ts"),
+            )
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= s,
+                KpiSnapshotHourly.ts_start <= e,
+                KpiSnapshotHourly.status == "SUCCESS",
+            )
+            .group_by(KpiSnapshotHourly.loop_id)
+            .subquery()
+        )
+        stmt = select(
+            KpiSnapshotHourly.score,
+            KpiSnapshotHourly.auto_mode_rate,
+            KpiSnapshotHourly.steady_rate,
+            KpiSnapshotHourly.good_value_rate,
+        ).join(
+            subq,
+            (KpiSnapshotHourly.loop_id == subq.c.lid)
+            & (KpiSnapshotHourly.ts_start == subq.c.max_ts),
+        )
+        r = await db.execute(stmt)
+        rows = r.all()
+        if not rows:
+            return {
+                "avgScore": None,
+                "autoModeRate": None,
+                "stabilityRate": None,
+                "goodValueRate": None,
+            }
+        scores = [float(x[0]) for x in rows if x[0] is not None]
+        autos = [float(x[1]) for x in rows if x[1] is not None]
+        stables = [float(x[2]) for x in rows if x[2] is not None]
+        goods = [float(x[3]) for x in rows if x[3] is not None]
+        return {
+            "avgScore": round(sum(scores) / len(scores), 2) if scores else None,
+            "autoModeRate": round(sum(autos) / len(autos), 2) if autos else None,
+            "stabilityRate": round(sum(stables) / len(stables), 2) if stables else None,
+            "goodValueRate": round(sum(goods) / len(goods), 2) if goods else None,
+        }
+
+    cur_metrics = await _calc_window_metrics(start, end)
+    prev_metrics = await _calc_window_metrics(prev_start, prev_end)
+
+    def _delta(cur: float | None, prev: float | None) -> float | None:
+        if cur is None or prev is None or prev == 0:
+            return None
+        return round(cur - prev, 2)
+
+    compare = {
+        "scoreDelta": _delta(cur_metrics["avgScore"], prev_metrics["avgScore"]),
+        "autoDelta": _delta(cur_metrics["autoModeRate"], prev_metrics["autoModeRate"]),
+        "stabilityDelta": _delta(cur_metrics["stabilityRate"], prev_metrics["stabilityRate"]),
+    }
+
+    # ========== 3. 评分等级分布 ==========
+    poor_loops = 0
+    fair_loops = 0
+    good_loops = 0
+    excellent_loops = 0
+    # 直接查窗口内最新 SUCCESS 快照评分
+    if loop_ids:
+        subq = (
+            select(
+                KpiSnapshotHourly.loop_id.label("lid"),
+                func.max(KpiSnapshotHourly.ts_start).label("max_ts"),
+            )
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+                KpiSnapshotHourly.status == "SUCCESS",
+            )
+            .group_by(KpiSnapshotHourly.loop_id)
+            .subquery()
+        )
+        score_stmt = select(KpiSnapshotHourly.score).join(
+            subq,
+            (KpiSnapshotHourly.loop_id == subq.c.lid)
+            & (KpiSnapshotHourly.ts_start == subq.c.max_ts),
+        )
+        score_rows = (await db.execute(score_stmt)).all()
+        for (score_val,) in score_rows:
+            if score_val is None:
+                continue
+            sv = float(score_val)
+            if sv < 70:
+                poor_loops += 1
+            elif sv < 85:
+                fair_loops += 1
+            elif sv < 95:
+                good_loops += 1
+            else:
+                excellent_loops += 1
+
+    score_distribution = {
+        "poor": poor_loops,
+        "fair": fair_loops,
+        "good": good_loops,
+        "excellent": excellent_loops,
+    }
+
+    # ========== 4. 关注队列汇总（复用 monitor_attention 聚合逻辑） ==========
+    alert_count = 0
+    degradation_count = 0
+    data_quality_count = 0
+    tracker_count = 0
+    attention_count = 0
+
+    if loop_ids:
+        # 预警事件（近24h未关闭）
+        from app.models.alert import AlertEvent
+
+        alert_result = await db.execute(
+            select(func.count(func.distinct(AlertEvent.id))).where(
+                AlertEvent.loop_id.in_(loop_ids),
+                AlertEvent.status.in_(["ACTIVE", "ACKNOWLEDGED"]),
+                AlertEvent.triggered_at
+                >= datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24),
+            )
+        )
+        alert_count = int(alert_result.scalar() or 0)
+
+        # 性能退化：评分<70的回路（窗口内最新评分）
+        degradation_count = poor_loops
+
+        # 数据质量：窗口内 valid_rate < 80% 的回路
+        dq_result = await db.execute(
+            select(func.count(func.distinct(KpiSnapshotHourly.loop_id))).where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+                KpiSnapshotHourly.valid_rate < 0.80,
+                KpiSnapshotHourly.status.in_(["SUCCESS", "INCONCLUSIVE"]),
+            )
+        )
+        data_quality_count = int(dq_result.scalar() or 0)
+
+        # 待处理跟踪项（PENDING/IN_PROGRESS/VERIFYING）
+        from app.models.tracker import ActionTracker
+
+        tracker_result = await db.execute(
+            select(func.count(func.distinct(ActionTracker.id))).where(
+                ActionTracker.loop_id.in_(loop_ids),
+                ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS", "VERIFYING"]),
+            )
+        )
+        tracker_count = int(tracker_result.scalar() or 0)
+
+        # 简单去重：按回路计数有问题的回路数
+        problem_loops = set()
+        # 预警相关回路
+        if alert_count > 0:
+            alert_loops_result = await db.execute(
+                select(func.distinct(AlertEvent.loop_id)).where(
+                    AlertEvent.loop_id.in_(loop_ids),
+                    AlertEvent.status.in_(["ACTIVE", "ACKNOWLEDGED"]),
+                    AlertEvent.triggered_at
+                    >= datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24),
+                )
+            )
+            problem_loops.update(str(r[0]) for r in alert_loops_result.all())
+        # 退化回路
+        if poor_loops > 0:
+            poor_result = await db.execute(
+                select(KpiSnapshotHourly.loop_id)
+                .join(
+                    subq,
+                    (KpiSnapshotHourly.loop_id == subq.c.lid)
+                    & (KpiSnapshotHourly.ts_start == subq.c.max_ts),
+                )
+                .where(KpiSnapshotHourly.score < 70)
+            )
+            problem_loops.update(str(r[0]) for r in poor_result.all())
+        # 数据质量问题回路
+        if data_quality_count > 0:
+            dq_loops_result = await db.execute(
+                select(func.distinct(KpiSnapshotHourly.loop_id)).where(
+                    KpiSnapshotHourly.loop_id.in_(loop_ids),
+                    KpiSnapshotHourly.ts_start >= start,
+                    KpiSnapshotHourly.ts_start <= end,
+                    KpiSnapshotHourly.valid_rate < 0.80,
+                    KpiSnapshotHourly.status.in_(["SUCCESS", "INCONCLUSIVE"]),
+                )
+            )
+            problem_loops.update(str(r[0]) for r in dq_loops_result.all())
+        # 待处理跟踪项回路
+        if tracker_count > 0:
+            tracker_loops_result = await db.execute(
+                select(func.distinct(ActionTracker.loop_id)).where(
+                    ActionTracker.loop_id.in_(loop_ids),
+                    ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS", "VERIFYING"]),
+                )
+            )
+            problem_loops.update(str(r[0]) for r in tracker_loops_result.all())
+        attention_count = len(problem_loops)
+
+    attention_summary = {
+        "alertCount": alert_count,
+        "degradationCount": degradation_count,
+        "dataQualityCount": data_quality_count,
+        "trackerCount": tracker_count,
+        "total": attention_count,
+        "pendingCount": tracker_count,
+    }
+
+    # ========== 5. 实时自控率 ==========
+    auto_rate_data = None
+    if loop_ids:
+        auto_rate_data = await query_realtime_auto_rate(db, loop_ids)
+    default_mode_counts = {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0}
+    if auto_rate_data and auto_rate_data.get("mode_counts"):
+        default_mode_counts.update({str(k): v for k, v in auto_rate_data["mode_counts"].items()})
+    auto_rate = {
+        "rate": float(auto_rate_data["rate"])
+        if auto_rate_data and auto_rate_data.get("rate") is not None
+        else None,
+        "autoCount": auto_rate_data["auto_count"] if auto_rate_data else 0,
+        "manualCount": auto_rate_data["manual_count"] if auto_rate_data else 0,
+        "totalCount": auto_rate_data["total_count"] if auto_rate_data else 0,
+        "modeCounts": default_mode_counts,
+        "readAt": auto_rate_data["read_at"] if auto_rate_data else None,
+    }
+
+    # ========== 6. 诊断建议类型分布 ==========
+    diagnosis_distribution: dict[str, int] = {}
+    if loop_ids:
+        # 每回路取窗口内最新诊断结果
+        diag_subq = (
+            select(
+                DiagnosisResult.loop_id.label("lid"),
+                func.max(DiagnosisResult.diagnosed_at).label("max_diag_at"),
+            )
+            .where(
+                DiagnosisResult.loop_id.in_(loop_ids),
+                DiagnosisResult.diagnosed_at >= start,
+                DiagnosisResult.diagnosed_at <= end,
+            )
+            .group_by(DiagnosisResult.loop_id)
+            .subquery()
+        )
+        diag_stmt = select(DiagnosisResult.diag_label).join(
+            diag_subq,
+            (DiagnosisResult.loop_id == diag_subq.c.lid)
+            & (DiagnosisResult.diagnosed_at == diag_subq.c.max_diag_at),
+        )
+        diag_rows = (await db.execute(diag_stmt)).all()
+        for (label,) in diag_rows:
+            if label:
+                diagnosis_distribution[label] = diagnosis_distribution.get(label, 0) + 1
+
+    # ========== 7. Top 10 问题回路 ==========
+    top_loops: list[dict] = []
+    if loop_ids:
+        # 按评分升序取最差 10 个
+        top_subq = (
+            select(
+                KpiSnapshotHourly.loop_id.label("lid"),
+                func.max(KpiSnapshotHourly.ts_start).label("max_ts"),
+            )
+            .where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+                KpiSnapshotHourly.status == "SUCCESS",
+            )
+            .group_by(KpiSnapshotHourly.loop_id)
+            .subquery()
+        )
+        top_stmt = (
+            select(
+                LoopLedger.id,
+                LoopLedger.tag_name,
+                LoopLedger.description,
+                KpiSnapshotHourly.score,
+                KpiSnapshotHourly.auto_mode_rate,
+                PlantNode.name.label("unit_name"),
+            )
+            .join(
+                top_subq,
+                (KpiSnapshotHourly.loop_id == top_subq.c.lid)
+                & (KpiSnapshotHourly.ts_start == top_subq.c.max_ts),
+            )
+            .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+            .outerjoin(PlantNode, LoopLedger.unit_id == PlantNode.id)
+            .order_by(KpiSnapshotHourly.score.asc().nullslast())
+            .limit(10)
+        )
+        top_rows = (await db.execute(top_stmt)).all()
+        for row in top_rows:
+            top_loops.append(
+                {
+                    "loopId": str(row.id),
+                    "tagName": row.tag_name,
+                    "description": row.description,
+                    "score": float(row.score) if row.score is not None else None,
+                    "autoModeRate": float(row.auto_mode_rate)
+                    if row.auto_mode_rate is not None
+                    else None,
+                    "unitName": row.unit_name,
+                }
+            )
+
+    # ========== 8. 趋势数据：短窗口按小时，长窗口按天 ==========
+    timestamps: list[str] = []
+    score_trend: list[float | None] = []
+    auto_trend: list[float | None] = []
+    stability_trend: list[float | None] = []
+
+    # 判断聚合粒度：近8h/today/yesterday按小时，近7天/近30天按天
+    use_day_granularity = timeWindow in ["last_7_days", "last_30_days"]
+
+    if loop_ids:
+        if use_day_granularity:
+            # 按天聚合
+            day_col = func.date_trunc("day", KpiSnapshotHourly.ts_start).label("day")
+            stmt = (
+                select(
+                    day_col,
+                    func.avg(KpiSnapshotHourly.score).label("avg_score"),
+                    func.avg(KpiSnapshotHourly.auto_mode_rate).label("avg_auto"),
+                    func.avg(KpiSnapshotHourly.steady_rate).label("avg_stable"),
+                    func.count(func.distinct(KpiSnapshotHourly.loop_id)).label("loop_count"),
+                )
+                .where(
+                    KpiSnapshotHourly.loop_id.in_(loop_ids),
+                    KpiSnapshotHourly.ts_start >= start,
+                    KpiSnapshotHourly.ts_start <= end,
+                    KpiSnapshotHourly.status == "SUCCESS",
+                )
+                .group_by(day_col)
+                .order_by(day_col.asc())
+            )
+            rows = (await db.execute(stmt)).all()
+            row_map = {r.day.strftime("%Y-%m-%d"): r for r in rows}
+            current = start.replace(hour=0, minute=0, second=0, microsecond=0)
+            while current <= end:
+                day_key = current.strftime("%Y-%m-%d")
+                timestamps.append(f"{day_key}T00:00:00")
+                r = row_map.get(day_key)
+                if r and r.loop_count and r.loop_count > 0:
+                    score_trend.append(
+                        round(float(r.avg_score), 2) if r.avg_score is not None else None
+                    )
+                    auto_trend.append(
+                        round(float(r.avg_auto), 2) if r.avg_auto is not None else None
+                    )
+                    stability_trend.append(
+                        round(float(r.avg_stable), 2) if r.avg_stable is not None else None
+                    )
+                else:
+                    score_trend.append(None)
+                    auto_trend.append(None)
+                    stability_trend.append(None)
+                current += timedelta(days=1)
+        else:
+            # 按小时聚合
+            hour_col = func.date_trunc("hour", KpiSnapshotHourly.ts_start).label("hour")
+            stmt = (
+                select(
+                    hour_col,
+                    func.avg(KpiSnapshotHourly.score).label("avg_score"),
+                    func.avg(KpiSnapshotHourly.auto_mode_rate).label("avg_auto"),
+                    func.avg(KpiSnapshotHourly.steady_rate).label("avg_stable"),
+                    func.count(func.distinct(KpiSnapshotHourly.loop_id)).label("loop_count"),
+                )
+                .where(
+                    KpiSnapshotHourly.loop_id.in_(loop_ids),
+                    KpiSnapshotHourly.ts_start >= start,
+                    KpiSnapshotHourly.ts_start <= end,
+                    KpiSnapshotHourly.status == "SUCCESS",
+                )
+                .group_by(hour_col)
+                .order_by(hour_col.asc())
+            )
+            rows = (await db.execute(stmt)).all()
+            row_map = {r.hour.strftime("%Y-%m-%dT%H:00:00"): r for r in rows}
+            current = start.replace(minute=0, second=0, microsecond=0)
+            while current <= end:
+                hour_key = current.strftime("%Y-%m-%dT%H:00:00")
+                timestamps.append(hour_key)
+                r = row_map.get(hour_key)
+                if r and r.loop_count and r.loop_count > 0:
+                    score_trend.append(
+                        round(float(r.avg_score), 2) if r.avg_score is not None else None
+                    )
+                    auto_trend.append(
+                        round(float(r.avg_auto), 2) if r.avg_auto is not None else None
+                    )
+                    stability_trend.append(
+                        round(float(r.avg_stable), 2) if r.avg_stable is not None else None
+                    )
+                else:
+                    score_trend.append(None)
+                    auto_trend.append(None)
+                    stability_trend.append(None)
+                current += timedelta(hours=1)
+
+    trend = {
+        "timestamps": timestamps,
+        "avgScore": score_trend,
+        "autoModeRate": auto_trend,
+        "stabilityRate": stability_trend,
+    }
+
+    # ========== 组装响应 ==========
+    summary = {
+        "totalLoops": total_loops_count,
+        "evaluatedLoops": evaluated_loops,
+        "inconclusiveLoops": inconclusive_loops,
+        "excludedLoops": excluded_loops,
+        "avgScore": cur_metrics["avgScore"],
+        "autoModeRate": cur_metrics["autoModeRate"],
+        "stabilityRate": cur_metrics["stabilityRate"],
+        "attentionCount": attention_count,
+        "pendingTrackerCount": tracker_count,
+    }
+
+    return success(
+        data={
+            "summary": summary,
+            "scoreDistribution": score_distribution,
+            "attentionSummary": attention_summary,
+            "autoRate": auto_rate,
+            "diagnosisDistribution": diagnosis_distribution,
+            "topLoops": top_loops,
+            "trend": trend,
+            "compare": compare,
+            "timeWindow": timeWindow,
+            "windowStart": start.isoformat(),
+            "windowEnd": end.isoformat(),
+        }
+    )

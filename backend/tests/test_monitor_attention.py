@@ -54,6 +54,7 @@ def _make_raw_item(
         loop_id=loop_id,
         tag_name=tag_name,
         unit_name=None,
+        area_name=None,
         title="测试项",
         summary="测试摘要",
         priority=priority,
@@ -412,19 +413,19 @@ class TestListAttention:
         db.execute = AsyncMock(side_effect=side_effect)
         result = await list_attention(db, role="ADMIN")
         assert result["total"] == 1
-        assert result["items"][0]["priority"] == "URGENT"
-        assert result["items"][0]["status"] == "OPEN"
-        assert result["items"][0]["sourceStatus"] == "ACTIVE"
+        group = result["items"][0]
+        assert group["priority"] == "URGENT"
+        assert group["status"] == "OPEN"
+        assert group["itemCount"] == 1
+        child = group["children"][0]
+        assert child["sourceStatus"] == "ACTIVE"
+        assert child["priority"] == "URGENT"
 
     @pytest.mark.asyncio
     async def test_ALERT状态映射(self):
         """ACTIVE→OPEN, ACKNOWLEDGED→ACKNOWLEDGED, SUPPRESSED→SUPPRESSED。"""
         db = _make_db_mock()
         now = datetime.now(UTC).replace(tzinfo=None)
-        loop = MagicMock()
-        loop.id = "loop-001"
-        loop.tag_name = "LIC-101"
-        loop.is_active = True
 
         statuses = [
             ("ACTIVE", "OPEN"),
@@ -432,6 +433,7 @@ class TestListAttention:
             ("SUPPRESSED", "SUPPRESSED"),
         ]
         pairs = []
+        loops = []
         for i, (src_status, _) in enumerate(statuses):
             evt = MagicMock()
             evt.id = f"evt-{i}"
@@ -444,6 +446,12 @@ class TestListAttention:
             evt.confidence_level = None
             evt.trigger_count = 1
             evt.tracker_id = None
+            # 使用不同的回路，确保每个 evt 成为独立分组
+            loop = MagicMock()
+            loop.id = f"loop-{i:03d}"
+            loop.tag_name = f"LIC-{101 + i}"
+            loop.is_active = True
+            loops.append(loop)
             pairs.append((evt, loop))
 
         alert_result = MagicMock()
@@ -458,7 +466,11 @@ class TestListAttention:
 
         db.execute = AsyncMock(side_effect=side_effect)
         result = await list_attention(db, role="ADMIN")
-        status_map = {item["sourceStatus"]: item["status"] for item in result["items"]}
+        # 从 children 中收集状态映射（每个 group 有一个 child）
+        status_map = {}
+        for group in result["items"]:
+            child = group["children"][0]
+            status_map[child["sourceStatus"]] = child["status"]
         for src, expected in statuses:
             assert status_map.get(src) == expected
 
@@ -497,8 +509,9 @@ class TestListAttention:
         db.execute = AsyncMock(side_effect=side_effect)
         result = await list_attention(db, role="ADMIN")
         assert len(result["items"]) == 1
-        assert len(result["items"][0]["rankReasons"]) >= 1
-        assert any("重复触发" in r for r in result["items"][0]["rankReasons"])
+        group = result["items"][0]
+        assert len(group["rankReasons"]) >= 1
+        assert any("重复触发" in r for r in group["rankReasons"])
 
     @pytest.mark.asyncio
     async def test_attentionId格式(self):
@@ -534,7 +547,9 @@ class TestListAttention:
 
         db.execute = AsyncMock(side_effect=side_effect)
         result = await list_attention(db, role="ADMIN")
-        assert result["items"][0]["attentionId"] == "ALERT:evt-abc"
+        group = result["items"][0]
+        child = group["children"][0]
+        assert child["attentionId"] == "ALERT:evt-abc"
 
     @pytest.mark.asyncio
     async def test_keyword筛选(self):
@@ -593,13 +608,9 @@ class TestListAttention:
 
     @pytest.mark.asyncio
     async def test_分页正确(self):
-        """分页 page/pageSize 正确切片。"""
+        """分页 page/pageSize 正确切片（基于分组）。"""
         db = _make_db_mock()
         now = datetime.now(UTC).replace(tzinfo=None)
-        loop = MagicMock()
-        loop.id = "loop-001"
-        loop.tag_name = "LIC-101"
-        loop.is_active = True
 
         pairs = []
         for i in range(5):
@@ -614,6 +625,11 @@ class TestListAttention:
             evt.confidence_level = None
             evt.trigger_count = 1
             evt.tracker_id = None
+            # 使用不同的回路，确保每个 evt 成为独立分组
+            loop = MagicMock()
+            loop.id = f"loop-{i:03d}"
+            loop.tag_name = f"LIC-{101 + i}"
+            loop.is_active = True
             pairs.append((evt, loop))
 
         alert_result = MagicMock()

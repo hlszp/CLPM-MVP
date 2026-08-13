@@ -133,8 +133,18 @@ uv run alembic upgrade head
 ### 5. 启动开发服务器
 
 ```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload --reload-include '*.py'
 ```
+
+> ⚠️ 不要改回 `uvicorn[standard]`：其传递依赖 uvloop 在 macOS 26 上会导致
+> `uv__stream_io` 空指针崩溃（SIGSEGV，"Python 意外退出"弹窗，每次 uvicorn
+> worker 重启时随机触发）。pyproject 已拆出 standard extras 并排除 uvloop，
+> uvicorn `--loop auto` 自动使用 CPython asyncio 原生事件循环。
+>
+> ⚠️ 必须保留 `--reload-include '*.py'`：celery worker/beat 的日志持续写入
+> `backend/logs/`，watchfiles 默认监听整个 backend/，日志变化会触发 uvicorn
+> --reload 无限重启循环（每 ~25 秒杀 celery 再拉起）。只监听 *.py 后 reload
+> 仅对代码变更生效。
 
 ### 6. 默认账号
 
@@ -151,8 +161,8 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 ## 常用命令
 
 ```bash
-# 启动开发服务器（热重载）
-uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
+# 启动开发服务器（热重载；必须带 --reload-include '*.py'，见 §5 注释）
+uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload --reload-include '*.py'
 
 # 运行测试
 uv run pytest -q

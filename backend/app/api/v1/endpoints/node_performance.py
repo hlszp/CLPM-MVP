@@ -42,6 +42,8 @@ router = APIRouter(prefix="/performance/nodes", tags=["performance-node"])
 def _parse_time_window(time_window: str) -> tuple[datetime, datetime]:
     """时间窗字符串 → (start, end)。"""
     now = datetime.now(UTC).replace(tzinfo=None)
+    if time_window == "last_8_hours":
+        return now - timedelta(hours=8), now
     if time_window == "today":
         return now - timedelta(hours=24), now
     if time_window == "yesterday":

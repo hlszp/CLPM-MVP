@@ -19,7 +19,7 @@ export type ControlType = 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
 export type DataPlannerControlType = 'CC' | 'FC' | 'LC' | 'PC' | 'TC';
 
 /** 时间窗枚举 */
-export type TimeWindow = 'last_7_days' | 'last_30_days' | 'today' | 'yesterday';
+export type TimeWindow = 'last_8_hours' | 'last_7_days' | 'last_30_days' | 'today' | 'yesterday';
 
 /** 报表粒度 */
 export type Granularity = 'day' | 'hour' | 'month' | 'week';
