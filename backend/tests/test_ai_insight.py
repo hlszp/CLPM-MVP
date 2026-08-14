@@ -116,6 +116,7 @@ def _board_data() -> dict:
 # ===========================================================================
 
 
+@pytest.mark.skip(reason="MVP: diagnosis module disabled")
 class TestDiagnosisScene:
     """诊断场景：复用 diagnosis_interpretation 模板与 prompt。"""
 
@@ -245,6 +246,7 @@ class TestPerformanceScene:
 # ===========================================================================
 
 
+@pytest.mark.skip(reason="MVP: tuning module disabled")
 class TestTuningScene:
     """整定场景：基于辨识结果与推荐 PID 生成建议。"""
 
@@ -342,8 +344,9 @@ class TestWorkbenchScene:
 class TestSceneRegistry:
     """场景注册表与通用编排边界。"""
 
-    def test_registry_has_four_scenes(self) -> None:
-        assert set(SCENE_REGISTRY.keys()) == {"diagnosis", "performance", "tuning", "workbench"}
+    def test_registry_has_two_scenes(self) -> None:
+        """MVP 精简：仅保留 performance/workbench 场景。"""
+        assert set(SCENE_REGISTRY.keys()) == {"performance", "workbench"}
 
     def test_each_scene_has_strategy(self) -> None:
         for scene_id, strategy in SCENE_REGISTRY.items():
@@ -361,13 +364,15 @@ class TestSceneRegistry:
 
     @pytest.mark.asyncio
     async def test_invalid_mode_raises(self) -> None:
+        """MVP 精简：使用 performance 场景测试无效 mode。"""
         db = AsyncMock()
+        snap, tag = _perf_snapshot()
         with patch(
-            "app.services.ai_insight.scenes.diagnosis.get_diagnosis_detail",
-            new=AsyncMock(return_value=_diag_detail()),
+            "app.services.ai_insight.scenes.performance.list_loop_snapshots",
+            new=AsyncMock(return_value=([(snap, tag)], 1)),
         ):
             with pytest.raises(BizError) as exc:
-                await generate_insight(db, "diagnosis", loop_id="loop-001", mode="invalid")
+                await generate_insight(db, "performance", loop_id="loop-001", mode="invalid")
         assert exc.value.code == "ERR_INVALID_MODE"
         assert exc.value.status_code == 422
 

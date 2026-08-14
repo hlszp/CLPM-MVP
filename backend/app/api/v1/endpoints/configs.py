@@ -28,15 +28,18 @@ from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
-from app.models.diagnosis import DiagnosisConfig
+
+# MVP 精简：已屏蔽诊断模块 → 不再导入 DiagnosisConfig
+# from app.models.diagnosis import DiagnosisConfig
 from app.models.metric import MetricConfig
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.config import (
-    DiagnosisConfigBatchResponse,
-    DiagnosisConfigBatchUpdateRequest,
-    DiagnosisConfigItem,
-    DiagnosisConfigUpdateItem,
+    # MVP 精简：已屏蔽诊断配置接口
+    # DiagnosisConfigBatchResponse,
+    # DiagnosisConfigBatchUpdateRequest,
+    # DiagnosisConfigItem,
+    # DiagnosisConfigUpdateItem,
     MetricConfigBatchResponse,
     MetricConfigBatchUpdateRequest,
     MetricConfigItem,
@@ -145,22 +148,23 @@ def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
     }
 
 
-def _diagnosis_to_response_dict(c: DiagnosisConfig) -> dict[str, Any]:
-    """将 DiagnosisConfig ORM 转为响应字典."""
-    return {
-        "diagId": str(c.id),
-        "diagKey": c.diag_code,
-        "diagName": c.diag_name,
-        "label": c.diag_code,  # diag_code 即为 label 枚举值
-        "algorithmType": c.algorithm_type,
-        "calcMethod": c.calc_method,
-        "params": c.params,
-        "threshold": c.threshold,
-        "isEnabled": bool(c.is_enabled) if c.is_enabled is not None else True,
-        "algorithmVersion": None,
-        "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
-        "updatedBy": c.updated_by,
-    }
+# MVP 精简：已屏蔽诊断配置接口 → 辅助函数停用
+# def _diagnosis_to_response_dict(c: DiagnosisConfig) -> dict[str, Any]:
+#     """将 DiagnosisConfig ORM 转为响应字典."""
+#     return {
+#         "diagId": str(c.id),
+#         "diagKey": c.diag_code,
+#         "diagName": c.diag_name,
+#         "label": c.diag_code,  # diag_code 即为 label 枚举值
+#         "algorithmType": c.algorithm_type,
+#         "calcMethod": c.calc_method,
+#         "params": c.params,
+#         "threshold": c.threshold,
+#         "isEnabled": bool(c.is_enabled) if c.is_enabled is not None else True,
+#         "algorithmVersion": None,
+#         "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
+#         "updatedBy": c.updated_by,
+#     }
 
 
 async def _write_audit(
@@ -212,26 +216,27 @@ async def _apply_metric_update(
     config.version = (config.version or 1) + 1
 
 
-async def _apply_diagnosis_update(
-    db: AsyncSession,
-    config: DiagnosisConfig,
-    item: DiagnosisConfigUpdateItem,
-    operator: str,
-) -> None:
-    """将单个诊断配置更新项应用到 ORM 对象（不提交事务）."""
-    if item.algorithmType is not None:
-        config.algorithm_type = item.algorithmType
-    if item.calcMethod is not None:
-        config.calc_method = item.calcMethod
-    if item.params is not None:
-        config.params = item.params
-    if item.threshold is not None:
-        config.threshold = item.threshold
-    if item.isEnabled is not None:
-        config.is_enabled = item.isEnabled
-    config.updated_by = operator
-    config.updated_at = _now_naive()
-    config.version = (config.version or 1) + 1
+# MVP 精简：已屏蔽诊断配置接口 → 辅助函数停用
+# async def _apply_diagnosis_update(
+#     db: AsyncSession,
+#     config: DiagnosisConfig,
+#     item: DiagnosisConfigUpdateItem,
+#     operator: str,
+# ) -> None:
+#     """将单个诊断配置更新项应用到 ORM 对象（不提交事务）."""
+#     if item.algorithmType is not None:
+#         config.algorithm_type = item.algorithmType
+#     if item.calcMethod is not None:
+#         config.calc_method = item.calcMethod
+#     if item.params is not None:
+#         config.params = item.params
+#     if item.threshold is not None:
+#         config.threshold = item.threshold
+#     if item.isEnabled is not None:
+#         config.is_enabled = item.isEnabled
+#     config.updated_by = operator
+#     config.updated_at = _now_naive()
+#     config.version = (config.version or 1) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -426,104 +431,107 @@ async def batch_update_metric_configs(
 
 
 # ---------------------------------------------------------------------------
-# §2.9.1 GET /configs/diagnosis — 批量获取诊断配置
+# MVP 精简：已屏蔽诊断配置接口（GET/PUT /configs/diagnosis），保留代码以备恢复
 # ---------------------------------------------------------------------------
-
-
-@router.get("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
-async def batch_get_diagnosis_configs(
-    db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
-) -> dict:
-    """批量获取诊断配置（全部 8 类诊断标签）.
-
-    设计依据：IDS §2.9.1
-    """
-    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
-    configs = list(result.scalars().all())
-
-    items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
-
-    resp = DiagnosisConfigBatchResponse(items=items)
-    return success(data=resp.model_dump())
-
-
-# ---------------------------------------------------------------------------
-# §2.9.2 PUT /configs/diagnosis — 批量更新诊断配置（事务性）
-# ---------------------------------------------------------------------------
-
-
-@router.put("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
-async def batch_update_diagnosis_configs(
-    body: DiagnosisConfigBatchUpdateRequest,
-    db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
-) -> dict:
-    """批量更新诊断配置（事务性，任一项失败全部回滚）.
-
-    设计依据：IDS §2.9.2
-    """
-    if not body.items:
-        raise BizError(
-            code="ERR_VALIDATION",
-            message="更新列表不能为空",
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    diag_ids = [item.diagId for item in body.items]
-    result = await db.execute(select(DiagnosisConfig).where(DiagnosisConfig.id.in_(diag_ids)))
-    config_map: dict[str, DiagnosisConfig] = {str(c.id): c for c in result.scalars().all()}
-
-    missing = [did for did in diag_ids if did not in config_map]
-    if missing:
-        raise BizError(
-            code="ERR_DIAG_CONFIG_NOT_FOUND",
-            message=f"诊断配置不存在: {missing[0]}",
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    import json
-
-    # 应用所有更新（暂不提交）
-    for item in body.items:
-        config = config_map[item.diagId]
-        before_snapshot = _diagnosis_to_response_dict(config)
-        await _apply_diagnosis_update(db, config, item, user.username)
-        after_snapshot = _diagnosis_to_response_dict(config)
-        await _write_audit(
-            db=db,
-            operator=user.username,
-            operation_type="DIAG_CONFIG_BATCH_UPDATE",
-            target_type="diagnosis_config",
-            target_id=str(config.id),
-            before_value=json.dumps(before_snapshot, ensure_ascii=False, default=str),
-            after_value=json.dumps(after_snapshot, ensure_ascii=False, default=str),
-        )
-
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        logger.exception("批量更新诊断配置事务提交失败")
-        raise BizError(
-            code="ERR_INTERNAL",
-            message="事务提交失败，已回滚",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        ) from None
-
-    # 重新查询返回完整列表
-    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
-    configs = list(result.scalars().all())
-    items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
-
-    resp = DiagnosisConfigBatchResponse(items=items, updatedCount=len(body.items))
-
-    logger.info(
-        "批量更新诊断配置成功: updated=%d, operator=%s",
-        len(body.items),
-        user.username,
-    )
-    return success(data=resp.model_dump(), message="批量更新成功")
+# # ---------------------------------------------------------------------------
+# # §2.9.1 GET /configs/diagnosis — 批量获取诊断配置
+# # ---------------------------------------------------------------------------
+#
+#
+# @router.get("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
+# async def batch_get_diagnosis_configs(
+#     db: AsyncSession = Depends(get_db),
+#     _: SysUser = Depends(get_current_user),
+# ) -> dict:
+#     """批量获取诊断配置（全部 8 类诊断标签）.
+#
+#     设计依据：IDS §2.9.1
+#     """
+#     result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
+#     configs = list(result.scalars().all())
+#
+#     items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
+#
+#     resp = DiagnosisConfigBatchResponse(items=items)
+#     return success(data=resp.model_dump())
+#
+#
+# # ---------------------------------------------------------------------------
+# # §2.9.2 PUT /configs/diagnosis — 批量更新诊断配置（事务性）
+# # ---------------------------------------------------------------------------
+#
+#
+# @router.put("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
+# async def batch_update_diagnosis_configs(
+#     body: DiagnosisConfigBatchUpdateRequest,
+#     db: AsyncSession = Depends(get_db),
+#     user: SysUser = Depends(require_roles("ADMIN")),
+# ) -> dict:
+#     """批量更新诊断配置（事务性，任一项失败全部回滚）.
+#
+#     设计依据：IDS §2.9.2
+#     """
+#     if not body.items:
+#         raise BizError(
+#             code="ERR_VALIDATION",
+#             message="更新列表不能为空",
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#         )
+#
+#     diag_ids = [item.diagId for item in body.items]
+#     result = await db.execute(select(DiagnosisConfig).where(DiagnosisConfig.id.in_(diag_ids)))
+#     config_map: dict[str, DiagnosisConfig] = {str(c.id): c for c in result.scalars().all()}
+#
+#     missing = [did for did in diag_ids if did not in config_map]
+#     if missing:
+#         raise BizError(
+#             code="ERR_DIAG_CONFIG_NOT_FOUND",
+#             message=f"诊断配置不存在: {missing[0]}",
+#             status_code=status.HTTP_404_NOT_FOUND,
+#         )
+#
+#     import json
+#
+#     # 应用所有更新（暂不提交）
+#     for item in body.items:
+#         config = config_map[item.diagId]
+#         before_snapshot = _diagnosis_to_response_dict(config)
+#         await _apply_diagnosis_update(db, config, item, user.username)
+#         after_snapshot = _diagnosis_to_response_dict(config)
+#         await _write_audit(
+#             db=db,
+#             operator=user.username,
+#             operation_type="DIAG_CONFIG_BATCH_UPDATE",
+#             target_type="diagnosis_config",
+#             target_id=str(config.id),
+#             before_value=json.dumps(before_snapshot, ensure_ascii=False, default=str),
+#             after_value=json.dumps(after_snapshot, ensure_ascii=False, default=str),
+#         )
+#
+#     try:
+#         await db.commit()
+#     except Exception:
+#         await db.rollback()
+#         logger.exception("批量更新诊断配置事务提交失败")
+#         raise BizError(
+#             code="ERR_INTERNAL",
+#             message="事务提交失败，已回滚",
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#         ) from None
+#
+#     # 重新查询返回完整列表
+#     result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
+#     configs = list(result.scalars().all())
+#     items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
+#
+#     resp = DiagnosisConfigBatchResponse(items=items, updatedCount=len(body.items))
+#
+#     logger.info(
+#         "批量更新诊断配置成功: updated=%d, operator=%s",
+#         len(body.items),
+#         user.username,
+#     )
+#     return success(data=resp.model_dump(), message="批量更新成功")
 
 
 __all__ = ["router"]

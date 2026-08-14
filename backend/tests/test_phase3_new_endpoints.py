@@ -16,8 +16,12 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
 from tests.test_api_tasks import task_redis  # noqa: F401 — reuse FakeTaskRedis fixture
+
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
 
 # ---------------------------------------------------------------------------
 # 辅助函数

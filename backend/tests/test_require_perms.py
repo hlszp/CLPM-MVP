@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from app.api.deps import _perm_matches, has_perms
 from tests.conftest import TEST_USERS, mock_current_user
 
@@ -167,6 +169,7 @@ class TestLoopReadGuard:
 # ===========================================================================
 
 
+@pytest.mark.skip(reason="MVP: tuning module disabled")
 class TestTuningReadGuard:
     """SPONSOR/PE_ENGINEER 无 tuning 权限码 → 403；ADMIN/IC_ENGINEER 正常。"""
 
@@ -229,6 +232,7 @@ class TestTuningReadGuard:
 # ===========================================================================
 
 
+@pytest.mark.skip(reason="MVP: diagnosis module disabled")
 class TestDiagnosisReadGuard:
     """SPONSOR/EXPERT 持有 diagnosis:view（汇总视图口径），诊断列表放行。"""
 

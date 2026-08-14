@@ -12,7 +12,11 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
+
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
 
 # ===========================================================================
 # 辅助函数

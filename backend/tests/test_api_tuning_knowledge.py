@@ -12,7 +12,11 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
+
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
 
 
 def _make_orm_entry(

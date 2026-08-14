@@ -657,8 +657,15 @@ class TestRolePermissions:
     def test_default_home_all_roles(self) -> None:
         from app.services.auth import get_default_home
 
-        for role in ("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "SPONSOR", "EXPERT"):
-            assert get_default_home(role) == "/dashboard"
+        expected = {
+            "ADMIN": "/dashboard",
+            "IC_ENGINEER": "/dashboard",
+            "PE_ENGINEER": "/dashboard",
+            "SPONSOR": "/metric",
+            "EXPERT": "/dashboard",
+        }
+        for role, home in expected.items():
+            assert get_default_home(role) == home, f"{role} 默认首页应为 {home}"
 
 
 # ===========================================================================

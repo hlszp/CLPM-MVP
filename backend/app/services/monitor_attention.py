@@ -1045,11 +1045,12 @@ async def list_attention(
         dq_items, dq_trunc = await _aggregate_degradation_and_data_quality(db, loop_ids, name_map)
         raw_items.extend(dq_items)
 
-    if source_filter is None or "TRACKER" in source_filter or "VERIFICATION" in source_filter:
-        tracker_items, tracker_trunc = await _aggregate_trackers(db, loop_ids, name_map)
-        raw_items.extend(tracker_items)
-        if tracker_trunc:
-            truncated["TRACKER"] = True
+    # MVP 精简：已屏蔽诊断/整改模块 → 不再聚合 TRACKER/VERIFICATION 来源
+    # if source_filter is None or "TRACKER" in source_filter or "VERIFICATION" in source_filter:
+    #     tracker_items, tracker_trunc = await _aggregate_trackers(db, loop_ids, name_map)
+    #     raw_items.extend(tracker_items)
+    #     if tracker_trunc:
+    #         truncated["TRACKER"] = True
 
     # 过滤
     filtered = raw_items

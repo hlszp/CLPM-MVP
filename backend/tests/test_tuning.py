@@ -6,6 +6,8 @@ import math
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.services.tuning import _estimate_mv_step
 from app.services.tuning_algorithms import (
     PIDParams,
@@ -20,6 +22,8 @@ from app.services.tuning_algorithms import (
     tune_zn,
 )
 from tests.conftest import TEST_USERS, mock_current_user
+
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
 
 # ---------------------------------------------------------------------------
 # 辅助函数

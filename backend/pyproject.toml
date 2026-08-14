@@ -42,6 +42,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-timeout>=2.3",
     "ruff>=0.6",
     "mypy>=1.11",
 ]
@@ -78,6 +79,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # -m "not integration": 跳过集成测试（需真实 AAS API，仅本地运行）
 addopts = "-m 'not integration'"
+# 超时兜底：单测试 30s 无进展即 fail，防止 DB/Redis/Celery 残留依赖导致无限 hang
+timeout = 30
+timeout_method = "thread"
 markers = [
     "integration: 集成测试（需真实 AAS API 等外部服务，CI 跳过）",
 ]
@@ -91,6 +95,7 @@ ignore_missing_imports = true
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-timeout>=2.3",
     "ruff>=0.6",
     "mypy>=1.11",
     "pytest-cov>=7.1.0",

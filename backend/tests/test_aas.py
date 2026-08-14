@@ -22,6 +22,8 @@ from tests.conftest import TEST_USERS, mock_current_user
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
+
 # 测试用 Tag 数据
 TAG_001 = MagicMock()
 TAG_001.id = "00000000-0000-0000-0000-000000000301"

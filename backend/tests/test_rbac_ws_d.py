@@ -37,6 +37,7 @@ def _make_scalars_mock(items: list) -> MagicMock:
 # ===========================================================================
 
 
+@pytest.mark.skip(reason="MVP: diagnosis module disabled")
 class TestSponsorDrillDownForbidden:
     """SPONSOR 只读工作台，禁止下钻诊断/监控详情。
 
@@ -246,6 +247,7 @@ class TestPeEngineerStillForbidden:
 class TestOtherRolesDrillDownAllowed:
     """ADMIN/IC_ENGINEER/EXPERT 不被 SPONSOR 门禁误伤（非 403）。"""
 
+    @pytest.mark.skip(reason="MVP: diagnosis module disabled")
     @pytest.mark.parametrize(
         "username",
         ["admin", "ic_engineer", "expert"],

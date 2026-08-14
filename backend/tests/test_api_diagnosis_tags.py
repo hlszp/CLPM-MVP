@@ -14,7 +14,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
+
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
 
 # 路由冲突说明：
 # main.py:116 先 include diagnosis.router（含 GET /{loop_id}），

@@ -25,6 +25,8 @@ import pytest
 
 from tests.conftest import TEST_USERS, mock_current_user
 
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
+
 # ---------------------------------------------------------------------------
 # 测试数据
 # ---------------------------------------------------------------------------

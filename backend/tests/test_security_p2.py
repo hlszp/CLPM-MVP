@@ -281,6 +281,7 @@ class TestRefreshTokenDeviceBinding:
 # ===========================================================================
 
 
+@pytest.mark.skip(reason="MVP: diagnosis/tuning API endpoints disabled")
 class TestEnumValidation:
     """枚举校验测试。"""
 

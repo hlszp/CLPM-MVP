@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.db import get_db
-from app.models.diagnosis import DiagnosisResult
+
+# MVP 精简：已屏蔽诊断模块 → 不再导入 DiagnosisResult
+# from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
@@ -1028,16 +1030,16 @@ async def get_system_overview_endpoint(
         )
         data_quality_count = int(dq_result.scalar() or 0)
 
-        # 待处理跟踪项（PENDING/IN_PROGRESS/VERIFYING）
-        from app.models.tracker import ActionTracker
-
-        tracker_result = await db.execute(
-            select(func.count(func.distinct(ActionTracker.id))).where(
-                ActionTracker.loop_id.in_(loop_ids),
-                ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS", "VERIFYING"]),
-            )
-        )
-        tracker_count = int(tracker_result.scalar() or 0)
+        # MVP 精简：已屏蔽诊断/整改模块 → tracker 统计恒为 0
+        # from app.models.tracker import ActionTracker
+        # tracker_result = await db.execute(
+        #     select(func.count(func.distinct(ActionTracker.id))).where(
+        #         ActionTracker.loop_id.in_(loop_ids),
+        #         ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS", "VERIFYING"]),
+        #     )
+        # )
+        # tracker_count = int(tracker_result.scalar() or 0)
+        tracker_count = 0
 
         # 简单去重：按回路计数有问题的回路数
         problem_loops = set()
@@ -1076,15 +1078,15 @@ async def get_system_overview_endpoint(
                 )
             )
             problem_loops.update(str(r[0]) for r in dq_loops_result.all())
-        # 待处理跟踪项回路
-        if tracker_count > 0:
-            tracker_loops_result = await db.execute(
-                select(func.distinct(ActionTracker.loop_id)).where(
-                    ActionTracker.loop_id.in_(loop_ids),
-                    ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS", "VERIFYING"]),
-                )
-            )
-            problem_loops.update(str(r[0]) for r in tracker_loops_result.all())
+        # MVP 精简：tracker_count 恒为 0，跳过待处理跟踪项回路统计
+        # if tracker_count > 0:
+        #     tracker_loops_result = await db.execute(
+        #         select(func.distinct(ActionTracker.loop_id)).where(
+        #             ActionTracker.loop_id.in_(loop_ids),
+        #             ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS", "VERIFYING"]),
+        #         )
+        #     )
+        #     problem_loops.update(str(r[0]) for r in tracker_loops_result.all())
         attention_count = len(problem_loops)
 
     attention_summary = {
@@ -1115,31 +1117,32 @@ async def get_system_overview_endpoint(
     }
 
     # ========== 6. 诊断建议类型分布 ==========
+    # MVP 精简：已屏蔽诊断模块 → 诊断分布恒为空
     diagnosis_distribution: dict[str, int] = {}
-    if loop_ids:
-        # 每回路取窗口内最新诊断结果
-        diag_subq = (
-            select(
-                DiagnosisResult.loop_id.label("lid"),
-                func.max(DiagnosisResult.diagnosed_at).label("max_diag_at"),
-            )
-            .where(
-                DiagnosisResult.loop_id.in_(loop_ids),
-                DiagnosisResult.diagnosed_at >= start,
-                DiagnosisResult.diagnosed_at <= end,
-            )
-            .group_by(DiagnosisResult.loop_id)
-            .subquery()
-        )
-        diag_stmt = select(DiagnosisResult.diag_label).join(
-            diag_subq,
-            (DiagnosisResult.loop_id == diag_subq.c.lid)
-            & (DiagnosisResult.diagnosed_at == diag_subq.c.max_diag_at),
-        )
-        diag_rows = (await db.execute(diag_stmt)).all()
-        for (label,) in diag_rows:
-            if label:
-                diagnosis_distribution[label] = diagnosis_distribution.get(label, 0) + 1
+    # if loop_ids:
+    #     # 每回路取窗口内最新诊断结果
+    #     diag_subq = (
+    #         select(
+    #             DiagnosisResult.loop_id.label("lid"),
+    #             func.max(DiagnosisResult.diagnosed_at).label("max_diag_at"),
+    #         )
+    #         .where(
+    #             DiagnosisResult.loop_id.in_(loop_ids),
+    #             DiagnosisResult.diagnosed_at >= start,
+    #             DiagnosisResult.diagnosed_at <= end,
+    #         )
+    #         .group_by(DiagnosisResult.loop_id)
+    #         .subquery()
+    #     )
+    #     diag_stmt = select(DiagnosisResult.diag_label).join(
+    #         diag_subq,
+    #         (DiagnosisResult.loop_id == diag_subq.c.lid)
+    #         & (DiagnosisResult.diagnosed_at == diag_subq.c.max_diag_at),
+    #     )
+    #     diag_rows = (await db.execute(diag_stmt)).all()
+    #     for (label,) in diag_rows:
+    #         if label:
+    #             diagnosis_distribution[label] = diagnosis_distribution.get(label, 0) + 1
 
     # ========== 7. Top 10 问题回路 ==========
     top_loops: list[dict] = []

@@ -17,6 +17,8 @@ from app.core.exceptions import BizError
 from app.services import diagnosis_interpretation as interp
 from app.services import llm_provider
 
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
+
 # ===========================================================================
 # 辅助函数
 # ===========================================================================

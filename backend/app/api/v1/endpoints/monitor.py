@@ -4,8 +4,8 @@
 - GET /api/v1/monitor/attention            统一关注队列（分页+筛选）
 - GET /api/v1/monitor/loops/{loopId}/summary  工作台首屏摘要（BFF）
 
-关注队列聚合五类来源（ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION），
-不新增数据库表；动作由服务端按角色生成。
+关注队列聚合三类来源（ALERT/DEGRADATION/DATA_QUALITY），不新增数据库表；
+动作由服务端按角色生成。（MVP 精简：已移除 TRACKER/VERIFICATION 来源）
 
 工作台摘要一次返回首屏所需的全部摘要（运行态/数据健康度/评分趋势/活跃关注/
 评估/诊断/整定摘要/Tracker 时间线/生命周期/nextAction），单个来源失败时返回
@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 #: 合法来源
-_VALID_SOURCES = frozenset(("ALERT", "DEGRADATION", "DATA_QUALITY", "TRACKER", "VERIFICATION"))
+_VALID_SOURCES = frozenset(
+    ("ALERT", "DEGRADATION", "DATA_QUALITY")
+)  # MVP 精简：移除 TRACKER/VERIFICATION
 #: 合法优先级
 _VALID_PRIORITIES = frozenset(("URGENT", "HIGH", "MEDIUM", "LOW"))
 #: 合法状态
@@ -42,7 +44,7 @@ _VALID_STATUSES = frozenset(("OPEN", "ACKNOWLEDGED", "SUPPRESSED", "IN_PROGRESS"
 async def list_attention_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     source: list[str] | None = Query(
-        None, description="来源筛选（可重复）：ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION"
+        None, description="来源筛选（可重复）：ALERT/DEGRADATION/DATA_QUALITY"
     ),
     priority: list[str] | None = Query(
         None, description="优先级筛选（可重复）：URGENT/HIGH/MEDIUM/LOW"
@@ -57,7 +59,7 @@ async def list_attention_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """统一关注队列——聚合预警/评分恶化/数据质量/Tracker/验证超期。"""
+    """统一关注队列——聚合预警/评分恶化/数据质量。（MVP：Tracker/验证超期已移除）"""
     # 过滤非法枚举值（静默忽略，不报 400）
     sources = [s for s in (source or []) if s in _VALID_SOURCES] or None
     priorities = [p for p in (priority or []) if p in _VALID_PRIORITIES] or None

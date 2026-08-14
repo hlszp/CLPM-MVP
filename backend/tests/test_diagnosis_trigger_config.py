@@ -22,6 +22,8 @@ from app.models.sys_config import SysConfig
 from app.services import diagnosis_trigger_config as svc
 from tests.conftest import TEST_USERS, mock_current_user
 
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
+
 # ---------------------------------------------------------------------------
 # 运行时缓存隔离：每个用例结束后重置缓存为默认值
 # ---------------------------------------------------------------------------

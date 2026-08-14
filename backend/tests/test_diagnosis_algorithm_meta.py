@@ -19,6 +19,8 @@ from app.services.diagnosis import ALGORITHM_META_STATIC, list_algorithm_meta
 from app.services.tracker import _diff_label_changes
 from tests.conftest import TEST_USERS, mock_current_user
 
+pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
+
 # 8 类诊断标签（与 ALGORITHM_META_STATIC 一致）
 _ALL_LABELS = list(ALGORITHM_META_STATIC.keys())
 

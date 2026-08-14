@@ -1,15 +1,12 @@
-"""AI 洞察通用接口（4 场景统一入口）。
+"""AI 洞察通用接口（MVP 仅 performance/workbench 场景）。
 
-单端点 POST /ai-insight/{scene} 服务 4 场景：
-- diagnosis：回路诊断解读（迁移自 POST /diagnosis/{loopId}/interpret）
+单端点 POST /ai-insight/{scene} 服务 2 场景（MVP 精简：已移除 diagnosis/tuning）：
 - performance：性能评估分析（基于 6 大 KPI 指标）
-- tuning：回路整定建议（基于辨识结果 + 推荐 PID + 仿真）
 - workbench：工作台运维洞察（基于全局看板）
 
 设计要点：
 - 前端只传 scene + 可选 loopId/taskId + mode，后端按 scene 自取上下文（防注入、保证一致性）
 - LLM 未启用或调用失败时自动 fallback 规则模板，功能不阻断
-- 旧端点 POST /diagnosis/{loopId}/interpret 内部代理到本服务，向后兼容
 
 权限：ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT（SPONSOR 只读，禁止生成洞察消耗 LLM 配额）
 """
@@ -56,9 +53,8 @@ async def generate_insight_endpoint(
     - **template**：仅规则模板（离线可用）
     - **llm**：仅 LLM，不可用时抛 503（供前端强制走 LLM）
 
-    场景必填参数：
-    - diagnosis / performance：loopId
-    - tuning：taskId
+    场景必填参数（MVP 仅 performance/workbench）：
+    - performance：loopId
     - workbench：无必填参数
     """
     data = await generate_insight(

@@ -6,16 +6,19 @@
 from __future__ import annotations
 
 from app.services.ai_insight.base import SceneStrategy
-from app.services.ai_insight.scenes.diagnosis import DiagnosisScene
+
+# MVP 精简：已屏蔽诊断/整定场景
+# from app.services.ai_insight.scenes.diagnosis import DiagnosisScene
 from app.services.ai_insight.scenes.performance import PerformanceScene
-from app.services.ai_insight.scenes.tuning import TuningScene
+
+# from app.services.ai_insight.scenes.tuning import TuningScene
 from app.services.ai_insight.scenes.workbench import WorkbenchScene
 
-# 场景注册表：scene_id → 策略实例
+# 场景注册表：scene_id → 策略实例（MVP 仅保留 performance/workbench）
 SCENE_REGISTRY: dict[str, SceneStrategy] = {
-    "diagnosis": DiagnosisScene(),
+    # "diagnosis": DiagnosisScene(),
     "performance": PerformanceScene(),
-    "tuning": TuningScene(),
+    # "tuning": TuningScene(),
     "workbench": WorkbenchScene(),
 }
 

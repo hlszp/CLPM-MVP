@@ -296,6 +296,16 @@ def _is_production() -> bool:
     return os.environ.get("ENV", "").lower() == "production"
 
 
+def _is_test() -> bool:
+    """判断当前是否为测试环境（pytest）。
+
+    测试模式下跳过 Celery 子进程启动、DB 配置预载、实时订阅器启动，
+    避免 TestClient lifespan fork 子进程和连接真实 PostgreSQL 导致 hang。
+    conftest.py 设置 CLPM_TEST_MODE=1 激活此守卫。
+    """
+    return os.environ.get("CLPM_TEST_MODE", "").strip() in {"1", "true", "yes", "on"}
+
+
 def _any_beat_process_running() -> bool:
     """pgrep 扫描是否已有 celery beat 进程在运行（Beat 单例兜底检查）.
 
@@ -568,6 +578,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     logger.info("数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用")
+
+    # 测试模式守卫：跳过 Celery 子进程启动、DB 配置预载、实时订阅器启动，
+    # 避免 TestClient lifespan fork 子进程和连接真实 PostgreSQL 导致 hang。
+    # conftest.py 通过 CLPM_TEST_MODE=1 激活此守卫，测试使用 mock DB + FakeRedis。
+    if _is_test():
+        logger.info("测试模式：跳过 Celery/DB预载/订阅器启动")
+        yield
+        logger.info("测试模式：跳过 Celery/订阅器停止")
+        return
 
     # v6.1：自动启动 Celery Beat 调度进程和 Celery Worker 任务执行进程
     # 生产环境由 docker-compose 独立 celery-beat / celery-worker 容器接管，避免重复启动

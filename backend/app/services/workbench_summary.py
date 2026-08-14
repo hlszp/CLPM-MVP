@@ -1227,33 +1227,36 @@ async def get_workbench_summary(
         assessment = None
         unavailable.append("assessment")
 
-    # --- 诊断摘要 ---
-    try:
-        diagnosis = await _build_diagnosis_summary(db, loop_id)
-    except Exception:  # noqa: BLE001
-        logger.warning("summary: 诊断摘要构建失败", exc_info=True)
-        diagnosis = None
-        unavailable.append("diagnosis")
+    # --- 诊断摘要 ---（MVP 精简：已屏蔽诊断模块，恒为 None）
+    # try:
+    #     diagnosis = await _build_diagnosis_summary(db, loop_id)
+    # except Exception:  # noqa: BLE001
+    #     logger.warning("summary: 诊断摘要构建失败", exc_info=True)
+    #     diagnosis = None
+    #     unavailable.append("diagnosis")
+    diagnosis = None
 
-    # --- 整定摘要 ---
-    try:
-        tuning = await _build_tuning_summary(db, loop_id)
-    except Exception:  # noqa: BLE001
-        logger.warning("summary: 整定摘要构建失败", exc_info=True)
-        tuning = None
-        unavailable.append("tuning")
+    # --- 整定摘要 ---（MVP 精简：已屏蔽整定模块，恒为 None）
+    # try:
+    #     tuning = await _build_tuning_summary(db, loop_id)
+    # except Exception:  # noqa: BLE001
+    #     logger.warning("summary: 整定摘要构建失败", exc_info=True)
+    #     tuning = None
+    #     unavailable.append("tuning")
+    tuning = None
 
-    # --- Tracker 时间线（MW-P3-09：传入整定 current_pid 作为实施前基线） ---
-    try:
-        tracker = await _build_tracker_timeline(
-            db,
-            loop_id,
-            tuning_current_pid=tuning.get("currentPid") if tuning else None,
-        )
-    except Exception:  # noqa: BLE001
-        logger.warning("summary: Tracker 时间线构建失败", exc_info=True)
-        tracker = None
-        unavailable.append("trackerTimeline")
+    # --- Tracker 时间线 ---（MVP 精简：已屏蔽整改模块，恒为 None）
+    # try:
+    #     tracker = await _build_tracker_timeline(
+    #         db,
+    #         loop_id,
+    #         tuning_current_pid=tuning.get("currentPid") if tuning else None,
+    #     )
+    # except Exception:  # noqa: BLE001
+    #     logger.warning("summary: Tracker 时间线构建失败", exc_info=True)
+    #     tracker = None
+    #     unavailable.append("trackerTimeline")
+    tracker = None
 
     # --- 活跃关注项 ---
     try:

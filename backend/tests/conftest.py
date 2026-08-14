@@ -21,6 +21,10 @@ os.environ.setdefault("DEBUG", "true")
 # 执行真实的 SIGTERM/SIGKILL。这是主防线，argv 级 token 判断为次防线。
 os.environ.setdefault("CLPM_SKIP_EXIT_HOOKS", "1")
 
+# 测试模式守卫：lifespan 检测此标记后跳过 Celery 子进程启动、DB 配置预载、
+# 实时订阅器启动，避免 TestClient fork 子进程和连接真实 PostgreSQL 导致 hang。
+os.environ.setdefault("CLPM_TEST_MODE", "1")
+
 import pytest
 from fastapi.testclient import TestClient
 

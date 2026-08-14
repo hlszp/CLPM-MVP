@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 
 client = TestClient(app)
@@ -34,7 +35,7 @@ def test_openapi_schema_available() -> None:
     response = client.get("/openapi.json")
     assert response.status_code == 200
     schema = response.json()
-    assert schema["info"]["title"] == "CLPM"
+    assert schema["info"]["title"] == settings.APP_NAME
 
 
 # ---------------------------------------------------------------------------

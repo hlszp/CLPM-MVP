@@ -601,7 +601,7 @@ class TestGetWorkbenchSummary:
 
     @pytest.mark.asyncio
     async def test_部分来源失败返回partial_true(self) -> None:
-        """评估/诊断/整定来源抛异常时 partial=true 且 unavailableSections 含对应项。"""
+        """评估/数据健康来源抛异常时 partial=true。（MVP：诊断/整定/tracker 恒为 None）"""
         db = AsyncMock()
         loop = _make_loop()
 
@@ -624,18 +624,7 @@ class TestGetWorkbenchSummary:
                 "app.services.workbench_summary._build_assessment_summary",
                 AsyncMock(side_effect=RuntimeError("db down")),
             ),
-            patch(
-                "app.services.workbench_summary._build_diagnosis_summary",
-                AsyncMock(return_value=_diagnosis()),
-            ),
-            patch(
-                "app.services.workbench_summary._build_tuning_summary",
-                AsyncMock(return_value=_tuning()),
-            ),
-            patch(
-                "app.services.workbench_summary._build_tracker_timeline",
-                AsyncMock(return_value=_tracker()),
-            ),
+            # MVP 精简：诊断/整定/tracker 已屏蔽，不再调用 _build_*_summary/timeline
             patch(
                 "app.services.workbench_summary._build_active_attention",
                 AsyncMock(return_value={"total": 0, "highestPriority": None, "items": []}),
@@ -651,8 +640,10 @@ class TestGetWorkbenchSummary:
         # 失败的来源为 None
         assert data["assessment"] is None
         assert data["dataHealth"] == {}
-        # 其他来源正常
-        assert data["diagnosis"] is not None
+        # MVP 屏蔽：诊断/整定/tracker 恒为 None
+        assert data["diagnosis"] is None
+        assert data["tuning"] is None
+        assert data["trackerTimeline"] is None
 
     @pytest.mark.asyncio
     async def test_PE角色写动作disabled(self) -> None:

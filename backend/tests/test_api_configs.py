@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------
@@ -467,6 +469,7 @@ class TestUpdateMetricConfigs:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="MVP: diagnosis config endpoints disabled")
 class TestGetDiagnosisConfigs:
     """GET /api/v1/configs/diagnosis tests."""
 
@@ -520,6 +523,7 @@ class TestGetDiagnosisConfigs:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="MVP: diagnosis config endpoints disabled")
 class TestUpdateDiagnosisConfigs:
     """PUT /api/v1/configs/diagnosis tests."""
 

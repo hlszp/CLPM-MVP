@@ -28,10 +28,12 @@ from app.main import (
 )
 
 _OWN_BEAT_CMDLINE = (
-    "/usr/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile celerybeat.pid"
+    f"/usr/bin/python -m celery -A app.tasks.celery_app beat -l info "
+    f"--pidfile /path/to/{main_module._PROJECT_TAG}/backend/celerybeat.pid"
 )
 _OWN_WORKER_CMDLINE = (
-    "/usr/bin/python -m celery -A app.tasks.celery_app worker -l info -Q default,dead_letter"
+    f"/usr/bin/python -m celery -A app.tasks.celery_app worker -l info "
+    f"-Q default,dead_letter --hostname {main_module._PROJECT_TAG}@%h"
 )
 
 
