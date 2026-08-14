@@ -7,8 +7,6 @@
  * 注意：类型仅在 DashboardApi 命名空间内导出，避免与 index.ts 的 `export *` 冲突。
  * DiagnosisLabel 复用 diagnosis.ts 的定义，保证标签语义一致。
  */
-import type { DiagnosisLabel } from '#/api/diagnosis';
-
 import { requestClient } from '#/api/request';
 
 export namespace DashboardApi {
@@ -71,7 +69,7 @@ export namespace DashboardApi {
     /** 综合评分 */
     composite_score: number;
     /** 预诊标签列表（8 类诊断标签） */
-    diagnosis_labels: DiagnosisLabel[];
+    diagnosis_labels: string[];
     /** 关键指标 */
     key_metric: KeyMetric;
   }

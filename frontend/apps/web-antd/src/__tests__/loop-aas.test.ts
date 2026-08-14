@@ -219,20 +219,18 @@ describe('loopAas（数据接入页）', () => {
     expect(wrapper.html()).toContain('<!-- v-permission: ADMIN -->');
   });
 
-  it('确认流统一由 ClpmDangerConfirmModal 承载（5 个实例）', async () => {
+  it('确认流统一由 ClpmDangerConfirmModal 承载（3 个实例）', async () => {
     const wrapper = mountAas();
     await flushPromises();
 
     const modals = wrapper.findAllComponents({
       name: 'ClpmDangerConfirmModal',
     });
-    expect(modals.length).toBe(5);
+    expect(modals.length).toBe(3);
     const titles = modals.map((m) => m.props('title'));
     expect(titles).toEqual(
       expect.arrayContaining([
         '切换网络模式',
-        '测试历史数据源连接',
-        '测试实时数据源连接',
         '删除 DCS 品牌',
         '删除 DCS 型号',
       ]),

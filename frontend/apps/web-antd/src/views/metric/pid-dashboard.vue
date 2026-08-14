@@ -7,11 +7,9 @@ import type {
   MetricApi,
   TimeWindow,
 } from '#/api';
-import type { DiagnosisApi } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -20,7 +18,6 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import {
   Button,
   Drawer,
-  message,
   Select,
   Table,
   Tooltip,
@@ -40,15 +37,12 @@ import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
-import DiagnosisSummaryCard from '#/views/diagnosis/components/diagnosis-summary-card.vue';
-import TrackerEffectivenessCard from '#/views/diagnosis/components/tracker-effectiveness-card.vue';
 
 defineOptions({ name: 'PidDashboard' });
 
 const { isDark, themeColors, chartColors } = useClpmTheme();
 const { canReadConfig } = useConfigAccess();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
-const router = useRouter();
 
 const timeWindowOptions = [
   { label: '近8小时', value: 'last_8_hours' },
@@ -113,7 +107,6 @@ const rtReadAtText = computed(() => {
 });
 
 const rankingList = ref<MetricApi.RankingItem[]>([]);
-const diagnosisLoading = ref(false);
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 /** 各性能等级回路数分布（服务端 SQL 聚合，喂"回路等级占比"饼图） */
 const gradeDistribution = ref<GradeDistributionResult | null>(null);
@@ -388,27 +381,6 @@ const top5Columns = [
     width: 65,
     align: 'right' as const,
   },
-  // C2-4 Bad Actor 治理台账：处置状态 + 责任人 + 效果验证
-  {
-    title: '治理状态',
-    dataIndex: 'governance',
-    key: 'governance',
-    width: 110,
-  },
-  {
-    title: '效果验证',
-    dataIndex: 'verified',
-    key: 'verified',
-    width: 70,
-    align: 'center' as const,
-  },
-  {
-    title: '',
-    dataIndex: 'diagnosis',
-    key: 'diagnosis',
-    width: 40,
-    align: 'center' as const,
-  },
 ];
 
 const top5TableData = computed(() => {
@@ -629,22 +601,6 @@ function formatNumber(val: null | number | undefined, digits = 1): string {
   return Number(val).toFixed(digits);
 }
 
-async function handleDiagnosis(loopId: string) {
-  if (diagnosisLoading.value) return;
-  diagnosisLoading.value = true;
-  try {
-    const { triggerDiagnosisApi } = await import('#/api/diagnosis');
-    await triggerDiagnosisApi({ loopIds: [loopId] });
-    message.success('诊断任务已创建');
-    router.push('/diagnosis/tasks');
-  } catch {
-    // 错误 toast 由 api/request.ts 拦截器统一弹出，视图层不重复提示
-    console.error('[CLPM] 创建诊断任务失败');
-  } finally {
-    diagnosisLoading.value = false;
-  }
-}
-
 async function loadBoard() {
   try {
     const { getBoardAggregateApi, getBoardTrendApi } =
@@ -700,49 +656,10 @@ async function loadRanking() {
       limit: 5,
     });
     rankingList.value = items.filter((it) => it.includeInEvaluation !== false);
-    await loadGovernanceStatus();
   } catch {
     // 错误 toast 由拦截器统一处理；保留旧数据
   }
 }
-
-/**
- * C2-4 Bad Actor 治理台账：TOP5 回路关联 Action Tracker 处置状态。
- * 逐回路取最新一条 tracker（created_at 倒序），5 次轻量并行请求；
- * 失败时静默降级为"未建单"展示，不影响主排行。
- */
-const governanceMap = ref<Record<string, DiagnosisApi.TrackerItem | null>>({});
-
-async function loadGovernanceStatus() {
-  const { getTrackerListApi } = await import('#/api/diagnosis');
-  const entries = await Promise.all(
-    top5List.value.map(async (item) => {
-      try {
-        const r = await getTrackerListApi({
-          loopId: item.loopId,
-          page: 1,
-          pageSize: 1,
-          sortBy: 'created_at',
-        });
-        return [item.loopId, r.items?.[0] ?? null] as const;
-      } catch {
-        return [item.loopId, null] as const;
-      }
-    }),
-  );
-  governanceMap.value = Object.fromEntries(entries);
-}
-
-/** 治理状态中文名（词表：tracker 闭环状态机全态） */
-const GOVERNANCE_STATUS_LABEL: Record<string, string> = {
-  CLOSED: '已闭环',
-  IGNORED: '已忽略',
-  IMPLEMENTED: '已实施',
-  IN_PROGRESS: '处理中',
-  PENDING: '待处理',
-  REOPENED: '重开',
-  VERIFYING: '验证中',
-};
 
 /** timeWindow → 滚动窗口毫秒数（口径同后端 TIME_WINDOWS：today=近 24h） */
 const TIME_WINDOW_DURATION_MS: Record<string, number> = {
@@ -819,7 +736,7 @@ function handleHelp() {
   showPageHelp({
     title: '评估看板 帮助',
     content:
-      '工厂级 KPI 评估看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率 6 仪表盘 + 性能指标趋势图 + 回路等级占比饼图 + 装置/单元性能明细表 + TOP5 回路（可切换升降序）。支持按工厂节点树筛选与时间窗口切换（近 8h / 24h / 168h / 近 1 月）。点击 TOP5 行右侧箭头可一键发起该回路诊断。',
+      '工厂级 KPI 评估看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率 6 仪表盘 + 性能指标趋势图 + 回路等级占比饼图 + 装置/单元性能明细表 + TOP5 回路（可切换升降序）。支持按工厂节点树筛选与时间窗口切换（近 8h / 24h / 168h / 近 1 月）。',
   });
 }
 
@@ -1090,66 +1007,6 @@ onMounted(() => {
                       record.score
                     }}</span>
                   </template>
-                  <!-- C2-4：治理状态（Action Tracker 处置状态 + 责任人） -->
-                  <template v-if="column.key === 'governance'">
-                    <template v-if="governanceMap[record.loopId]">
-                      <span class="text-xs">
-                        {{
-                          GOVERNANCE_STATUS_LABEL[
-                            governanceMap[record.loopId]!.actionStatus
-                          ] ?? governanceMap[record.loopId]!.actionStatus
-                        }}
-                      </span>
-                      <span
-                        v-if="
-                          governanceMap[record.loopId]!.assignee ??
-                          governanceMap[record.loopId]!.triggeredBy
-                        "
-                        class="ml-1 text-xs text-gray-400"
-                      >
-                        ·
-                        {{
-                          governanceMap[record.loopId]!.assignee ??
-                          governanceMap[record.loopId]!.triggeredBy
-                        }}
-                      </span>
-                    </template>
-                    <span v-else class="text-xs text-gray-400">未建单</span>
-                  </template>
-                  <!-- C2-4：效果验证（T+7d 自动回写口径） -->
-                  <template v-if="column.key === 'verified'">
-                    <template v-if="governanceMap[record.loopId]">
-                      <span
-                        v-if="
-                          governanceMap[record.loopId]!.effectVerified === true
-                        "
-                        class="text-xs text-emerald-600"
-                        >改善</span
-                      >
-                      <span
-                        v-else-if="
-                          governanceMap[record.loopId]!.effectVerified === false
-                        "
-                        class="text-xs text-rose-600"
-                        >未改善</span
-                      >
-                      <span v-else class="text-xs text-gray-400">未验证</span>
-                    </template>
-                    <span v-else class="text-xs text-gray-400">—</span>
-                  </template>
-                  <template v-if="column.key === 'diagnosis'">
-                    <Button
-                      type="text"
-                      size="small"
-                      :loading="diagnosisLoading"
-                      aria-label="进入诊断"
-                      @click="handleDiagnosis(record.loopId)"
-                    >
-                      <template #icon>
-                        <IconifyIcon icon="ant-design:right-outlined" />
-                      </template>
-                    </Button>
-                  </template>
                 </template>
                 <template #emptyText>
                   <ClpmEmptyState
@@ -1187,12 +1044,6 @@ onMounted(() => {
                 >
               </div>
             </div>
-          </div>
-
-          <!-- D1/D4：诊断聚合卡 + 整改有效率卡（门户卡，两列并列） -->
-          <div class="clpm-pid-dashboard__diag-row">
-            <DiagnosisSummaryCard />
-            <TrackerEffectivenessCard />
           </div>
         </div>
       </div>

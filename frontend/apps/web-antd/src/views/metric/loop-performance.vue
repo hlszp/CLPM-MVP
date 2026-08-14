@@ -21,7 +21,6 @@ import type { Dayjs } from 'dayjs';
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type {
   ConfidenceLevel,
@@ -54,7 +53,6 @@ import {
   Button,
   Card,
   CheckboxGroup,
-  Col,
   Descriptions,
   DescriptionsItem,
   Drawer,
@@ -63,17 +61,14 @@ import {
   Modal,
   RadioGroup,
   RangePicker,
-  Row,
   Select,
   Spin,
   Table,
-  Tabs,
   Tag,
   TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisVisualizationApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
   getGradeDistributionApi,
@@ -91,19 +86,6 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import ConfidenceBadge from '#/components/clpm/confidence-badge.vue';
-import ChoudhuryCard from '#/components/diagnosis-visualization/choudhury-card.vue';
-import CusumChart from '#/components/diagnosis-visualization/cusum-chart.vue';
-import IaeCard from '#/components/diagnosis-visualization/iae-card.vue';
-import KanoCard from '#/components/diagnosis-visualization/kano-card.vue';
-import QualityTimelineChart from '#/components/diagnosis-visualization/quality-timeline-chart.vue';
-import RadarChart from '#/components/diagnosis-visualization/radar-chart.vue';
-import SaturationChart from '#/components/diagnosis-visualization/saturation-chart.vue';
-import ScatterChart from '#/components/diagnosis-visualization/scatter-chart.vue';
-import ScoreBreakdown from '#/components/diagnosis-visualization/score-breakdown.vue';
-import SlowResponseCard from '#/components/diagnosis-visualization/slow-response-card.vue';
-import SpectrumChart from '#/components/diagnosis-visualization/spectrum-chart.vue';
-import StatisticsBarChart from '#/components/diagnosis-visualization/statistics-bar-chart.vue';
-import StepResponseChart from '#/components/diagnosis-visualization/step-response-chart.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useConfigAccess } from '#/composables/use-config-access';
@@ -116,10 +98,6 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { useTableDensity } from '#/composables/use-table-density';
 import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
-import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
-  DIAGNOSIS_LABEL_NAME_MAP,
-} from '#/constants/diagnosis';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricLoopPerformance' });
@@ -794,15 +772,6 @@ const { tableSize, densityLabel, cycleDensity } = useTableDensity(
 const drawerHistory = ref<KpiSnapshotItem[]>([]);
 const drawerHistoryLoading = ref(false);
 
-/** 抽屉 Tab：性能详情 / 综合评估 */
-const drawerTab = ref<'comprehensive' | 'detail'>('detail');
-
-/** 抽屉综合评估 Tab 所需的诊断可视化数据（PV-OP 散点图等） */
-const drawerDiagData = ref<DiagnosisApi.DiagnosisVisualizationData | null>(
-  null,
-);
-const drawerDiagLoading = ref(false);
-
 async function loadDrawerHistory(loopId: string) {
   drawerHistoryLoading.value = true;
   try {
@@ -820,39 +789,10 @@ async function loadDrawerHistory(loopId: string) {
   }
 }
 
-/** 加载抽屉综合评估 Tab 所需诊断可视化数据 */
-async function loadDrawerDiag() {
-  if (!drawerRecord.value?.loopId) return;
-  drawerDiagLoading.value = true;
-  try {
-    drawerDiagData.value = await getDiagnosisVisualizationApi(
-      drawerRecord.value.loopId,
-    );
-  } catch (error: any) {
-    console.error('加载综合评估诊断数据失败:', error);
-    drawerDiagData.value = null;
-  } finally {
-    drawerDiagLoading.value = false;
-  }
-}
-
-/** 抽屉 Tab 切换：首次切到综合评估时懒加载诊断数据 */
-function handleDrawerTabChange(key: number | string) {
-  if (
-    String(key) === 'comprehensive' &&
-    drawerDiagData.value === null &&
-    !drawerDiagLoading.value
-  ) {
-    loadDrawerDiag();
-  }
-}
-
 function openDetail(record: LoopPerformanceRow) {
   drawerRecord.value = record;
   drawerVisible.value = true;
   drawerHistory.value = [];
-  drawerTab.value = 'detail';
-  drawerDiagData.value = null;
   if (record.loopId) {
     loadDrawerHistory(record.loopId);
   }
@@ -862,8 +802,6 @@ function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
   drawerHistory.value = [];
-  drawerTab.value = 'detail';
-  drawerDiagData.value = null;
 }
 
 /** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互）。
@@ -1127,69 +1065,7 @@ function handleHistoryWindowChange() {
   loadHistoryData();
 }
 
-// ===== 诊断 Modal =====
-
-const diagModalVisible = ref(false);
-const diagLoading = ref(false);
-const diagRecord = ref<LoopPerformanceRow | null>(null);
-const diagData = ref<DiagnosisApi.DiagnosisVisualizationData | null>(null);
-const diagActiveTab = ref<'history' | 'overview' | 'spectrum' | 'time'>(
-  'overview',
-);
-
-async function openDiagnosis(record: LoopPerformanceRow) {
-  diagRecord.value = record;
-  diagModalVisible.value = true;
-  diagActiveTab.value = 'overview';
-  diagData.value = null;
-  if (!record.loopId) {
-    message.warning('该记录缺少回路 ID，无法获取诊断数据');
-    return;
-  }
-  diagLoading.value = true;
-  try {
-    diagData.value = await getDiagnosisVisualizationApi(record.loopId);
-  } catch (error) {
-    // 错误 toast 由 api/request.ts 拦截器统一弹出，Modal 内展示"暂无诊断可视化数据"
-    console.error('加载诊断可视化数据失败:', error);
-  } finally {
-    diagLoading.value = false;
-  }
-}
-
-// ===== 诊断 Modal - 评估历史 Tab（简化版 snapshots 表格） =====
-
-const diagHistoryLoading = ref(false);
-const diagHistorySnapshots = ref<KpiSnapshotItem[]>([]);
-const diagHistoryTotal = ref(0);
-const diagHistoryPage = ref(1);
-const diagHistoryPageSize = ref(10);
-const diagHistoryStatus = ref<KpiStatus | undefined>();
-const diagHistoryConfidence = ref<ConfidenceLevel | undefined>();
-
-async function loadDiagHistory() {
-  if (!diagRecord.value?.loopId) return;
-  diagHistoryLoading.value = true;
-  try {
-    const params: KpiSnapshotQueryParams = {
-      loopId: diagRecord.value.loopId,
-      latestOnly: false,
-      page: diagHistoryPage.value,
-      pageSize: diagHistoryPageSize.value,
-    };
-    if (diagHistoryStatus.value) params.status = diagHistoryStatus.value;
-    if (diagHistoryConfidence.value)
-      params.confidenceLevel = diagHistoryConfidence.value;
-    const result = await getLoopSnapshotsApi(params);
-    diagHistorySnapshots.value = result.items || [];
-    diagHistoryTotal.value = result.total;
-  } catch {
-    diagHistorySnapshots.value = [];
-    diagHistoryTotal.value = 0;
-  } finally {
-    diagHistoryLoading.value = false;
-  }
-}
+// ===== 抽屉历史快照子表列定义（复用于详情抽屉历史子表） =====
 
 const diagHistoryColumns: TableColumnsType = [
   {
@@ -1240,21 +1116,6 @@ const diagHistoryColumns: TableColumnsType = [
     width: 90,
   },
 ];
-
-function handleDiagHistoryTabChange() {
-  if (
-    diagActiveTab.value === 'history' &&
-    diagHistorySnapshots.value.length === 0
-  ) {
-    loadDiagHistory();
-  }
-}
-
-function handleDiagHistoryTableChange(p: TablePaginationConfig) {
-  diagHistoryPage.value = p.current || 1;
-  diagHistoryPageSize.value = p.pageSize || 10;
-  loadDiagHistory();
-}
 
 // ===== 主题切换重渲图表 =====
 
@@ -1629,16 +1490,6 @@ onMounted(async () => {
                 </template>
                 历史
               </Button>
-              <Button
-                type="link"
-                size="small"
-                @click.stop="openDiagnosis(record as LoopPerformanceRow)"
-              >
-                <template #icon>
-                  <IconifyIcon icon="ant-design:stethoscope-outlined" />
-                </template>
-                诊断
-              </Button>
             </div>
           </template>
         </template>
@@ -1655,12 +1506,6 @@ onMounted(async () => {
       @close="closeDetail"
     >
       <template v-if="drawerRecord">
-        <Tabs
-          v-model:active-key="drawerTab"
-          size="small"
-          @change="handleDrawerTabChange"
-        >
-          <Tabs.TabPane key="detail" tab="性能详情">
             <!-- 回路基本信息 -->
             <div class="mb-2 text-sm font-medium">回路基本信息</div>
             <Descriptions
@@ -1965,80 +1810,6 @@ onMounted(async () => {
                 </template>
               </template>
             </Table>
-          </Tabs.TabPane>
-
-          <!-- 综合评估 Tab -->
-          <Tabs.TabPane key="comprehensive" tab="综合评估">
-            <Row :gutter="[12, 12]">
-              <!-- Row 1 左：核心指标雷达图 -->
-              <Col :span="12">
-                <Card :bordered="false" class="chart-card">
-                  <RadarChart
-                    :accuracy="drawerRecord.accuracyRate"
-                    :fast="drawerRecord.fastRate"
-                    :stability="drawerRecord.steadyRate"
-                  />
-                </Card>
-              </Col>
-              <!-- Row 1 右：综合评分分解 -->
-              <!-- 默认权重 40/30/30；可通过 getLoopTypeWeightsApi() 按控制类型获取实际配置权重 -->
-              <Col :span="12">
-                <Card :bordered="false" class="chart-card">
-                  <ScoreBreakdown
-                    :score="drawerRecord.score"
-                    :accuracy="drawerRecord.accuracyRate"
-                    :fast="drawerRecord.fastRate"
-                    :stability="drawerRecord.steadyRate"
-                    :effective-auto-rate="drawerRecord.effectiveAutoRate"
-                    :weight-a="40"
-                    :weight-f="30"
-                    :weight-s="30"
-                  />
-                </Card>
-              </Col>
-              <!-- Row 2 左：PV-OP 散点图（复用诊断组件，需懒加载 diagData） -->
-              <Col :span="12">
-                <Card :bordered="false" class="chart-card">
-                  <ScatterChart
-                    v-if="drawerDiagData"
-                    :data="drawerDiagData.scatterPlot"
-                  />
-                  <div
-                    v-else
-                    class="flex h-full items-center justify-center text-gray-400"
-                  >
-                    {{
-                      drawerDiagLoading
-                        ? '加载中...'
-                        : '暂无散点数据。该回路在当前时间窗内可能无诊断记录，请调整时间窗或选择其他回路'
-                    }}
-                  </div>
-                </Card>
-              </Col>
-              <!-- Row 2 右：信号统计与阀门诊断 -->
-              <Col :span="12">
-                <Card :bordered="false" class="chart-card">
-                  <StatisticsBarChart
-                    :pv-mean="drawerRecord.pvMean"
-                    :pv-std="drawerRecord.pvStd"
-                    :sp-mean="drawerRecord.spMean"
-                    :sp-std="drawerRecord.spStd"
-                    :op-mean="drawerRecord.opMean"
-                    :op-std="drawerRecord.opStd"
-                    :valve-linearity="drawerRecord.valveLinearity"
-                    :valve-nonlinearity="drawerRecord.valveNonlinearity"
-                    :valve-op-min="drawerRecord.valveOpMin"
-                    :valve-op-max="drawerRecord.valveOpMax"
-                    :oscillation-amplitude="drawerRecord.oscillationAmplitude"
-                    :setpoint-crossing-count="
-                      drawerRecord.setpointCrossingCount
-                    "
-                  />
-                </Card>
-              </Col>
-            </Row>
-          </Tabs.TabPane>
-        </Tabs>
       </template>
     </Drawer>
 
@@ -2177,269 +1948,6 @@ onMounted(async () => {
           <div v-else class="py-12 text-center text-gray-400">
             暂无历史趋势数据。请确认时间窗内有 KPI 快照数据，或扩大时间窗后重试
           </div>
-        </div>
-      </Spin>
-    </Modal>
-
-    <!-- 诊断 Modal（P3-19：max-width 限制避免超宽屏过大） -->
-    <Modal
-      v-model:open="diagModalVisible"
-      :title="`诊断可视化 - ${diagRecord?.loopTagName ?? ''}`"
-      width="90%"
-      :wrap-style="{ maxWidth: '1200px', margin: '0 auto' }"
-      :footer="null"
-      destroy-on-close
-    >
-      <Spin :spinning="diagLoading">
-        <div v-if="diagData" class="space-y-3">
-          <!-- 诊断摘要 -->
-          <Card :bordered="false" size="small">
-            <Row :gutter="[16, 16]">
-              <Col :span="6">
-                <div class="summary-card">
-                  <div class="summary-label">综合评分</div>
-                  <div
-                    class="summary-value"
-                    :style="{ color: scoreColor(diagData.compositeScore) }"
-                  >
-                    {{ diagData.compositeScore?.toFixed(1) ?? '—' }}
-                  </div>
-                </div>
-              </Col>
-              <Col :span="6">
-                <div class="summary-card">
-                  <div class="summary-label">融合置信度</div>
-                  <div class="summary-value">
-                    {{ ((diagData.fusedConfidence ?? 0) * 100).toFixed(1) }}%
-                  </div>
-                </div>
-              </Col>
-              <Col :span="12">
-                <div class="summary-card">
-                  <div class="summary-label">诊断标签</div>
-                  <div class="summary-tags">
-                    <Tag
-                      v-for="label in diagData.diagnosisLabels"
-                      :key="label.label"
-                      :color="
-                        (label.label &&
-                          DIAGNOSIS_LABEL_COLOR_MAP[
-                            label.label as keyof typeof DIAGNOSIS_LABEL_COLOR_MAP
-                          ]) ||
-                        'default'
-                      "
-                    >
-                      {{
-                        label.label &&
-                        DIAGNOSIS_LABEL_NAME_MAP[
-                          label.label as keyof typeof DIAGNOSIS_LABEL_NAME_MAP
-                        ]
-                      }}
-                      ({{ (label.confidence * 100).toFixed(0) }}%)
-                    </Tag>
-                  </div>
-                </div>
-              </Col>
-            </Row>
-          </Card>
-
-          <!-- 4 个 Tab 页 -->
-          <Tabs
-            v-model:active-key="diagActiveTab"
-            @change="handleDiagHistoryTabChange"
-          >
-            <!-- Tab 1: 诊断概览 -->
-            <Tabs.TabPane key="overview" tab="诊断概览">
-              <Row :gutter="[12, 12]">
-                <Col :span="8">
-                  <Card :bordered="false" class="mini-card">
-                    <QualityTimelineChart :data="diagData.qualityTimeline" />
-                  </Card>
-                </Col>
-                <Col :span="8">
-                  <Card :bordered="false" class="mini-card">
-                    <SaturationChart :data="diagData.saturationAnalysis" />
-                  </Card>
-                </Col>
-                <Col :span="8">
-                  <Card :bordered="false" class="mini-card">
-                    <SlowResponseCard :data="diagData.slowResponse" />
-                  </Card>
-                </Col>
-                <Col :span="8">
-                  <Card :bordered="false" class="mini-card">
-                    <ChoudhuryCard :data="diagData.choudhury" />
-                  </Card>
-                </Col>
-                <Col :span="8">
-                  <Card :bordered="false" class="mini-card">
-                    <IaeCard :data="diagData.iaeAnalysis" />
-                  </Card>
-                </Col>
-                <Col :span="8">
-                  <Card :bordered="false" class="mini-card">
-                    <KanoCard :data="diagData.kano" />
-                  </Card>
-                </Col>
-              </Row>
-            </Tabs.TabPane>
-
-            <!-- Tab 2: 频谱分析 -->
-            <Tabs.TabPane key="spectrum" tab="频谱分析">
-              <Card :bordered="false">
-                <SpectrumChart :data="diagData.spectrum" />
-              </Card>
-            </Tabs.TabPane>
-
-            <!-- Tab 3: 时域分析 -->
-            <Tabs.TabPane key="time" tab="时域分析">
-              <Row :gutter="[16, 16]">
-                <Col :span="12">
-                  <Card :bordered="false" class="chart-card">
-                    <StepResponseChart :data="diagData.stepResponse" />
-                  </Card>
-                </Col>
-                <Col :span="12">
-                  <Card :bordered="false" class="chart-card">
-                    <CusumChart :data="diagData.cusumAnalysis" />
-                  </Card>
-                </Col>
-                <Col :span="12">
-                  <Card :bordered="false" class="chart-card">
-                    <ScatterChart :data="diagData.scatterPlot" />
-                  </Card>
-                </Col>
-              </Row>
-            </Tabs.TabPane>
-
-            <!-- Tab 4: 评估历史 -->
-            <Tabs.TabPane key="history" tab="评估历史">
-              <!-- 筛选区 -->
-              <div class="mb-3 flex flex-wrap items-center gap-2">
-                <Select
-                  v-model:value="diagHistoryStatus"
-                  :options="statusOptions"
-                  placeholder="状态"
-                  allow-clear
-                  style="width: 130px"
-                  @change="loadDiagHistory"
-                />
-                <Select
-                  v-model:value="diagHistoryConfidence"
-                  placeholder="可信度"
-                  allow-clear
-                  style="width: 130px"
-                  @change="loadDiagHistory"
-                >
-                  <Select.Option value="A">A 优秀</Select.Option>
-                  <Select.Option value="B">B 良好</Select.Option>
-                  <Select.Option value="C">C 一般</Select.Option>
-                  <Select.Option value="D">D 较差</Select.Option>
-                  <Select.Option value="E">E 不足</Select.Option>
-                </Select>
-                <Button type="primary" size="small" @click="loadDiagHistory">
-                  刷新
-                </Button>
-              </div>
-
-              <Table
-                :columns="diagHistoryColumns"
-                :data-source="diagHistorySnapshots"
-                :loading="diagHistoryLoading"
-                :pagination="{
-                  current: diagHistoryPage,
-                  pageSize: diagHistoryPageSize,
-                  total: diagHistoryTotal,
-                  showSizeChanger: true,
-                  showTotal: (t: number) => `共 ${t} 条`,
-                }"
-                row-key="tsStart"
-                size="small"
-                :scroll="{ x: 800 }"
-                @change="handleDiagHistoryTableChange"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'tsRange'">
-                    <span class="font-mono text-xs">
-                      {{
-                        formatTsRange(
-                          (record as KpiSnapshotItem).tsStart,
-                          (record as KpiSnapshotItem).tsEnd,
-                        )
-                      }}
-                    </span>
-                  </template>
-                  <template v-else-if="column.key === 'score'">
-                    <span
-                      class="font-semibold"
-                      :style="{
-                        color: scoreColor((record as KpiSnapshotItem).score),
-                      }"
-                    >
-                      {{ formatNumber((record as KpiSnapshotItem).score) }}
-                    </span>
-                  </template>
-                  <template
-                    v-else-if="
-                      (
-                        [
-                          'accuracyRate',
-                          'fastRate',
-                          'steadyRate',
-                          'effectiveAutoRate',
-                        ] as string[]
-                      ).includes(column.key as string)
-                    "
-                  >
-                    <span class="font-mono text-xs">
-                      {{
-                        formatNumber(
-                          getMetricValue(
-                            record as KpiSnapshotItem,
-                            column.dataIndex as string,
-                          ),
-                          '%',
-                        )
-                      }}
-                    </span>
-                  </template>
-                  <template v-else-if="column.key === 'confidenceLevel'">
-                    <Badge
-                      v-if="(record as KpiSnapshotItem).confidenceLevel"
-                      :color="
-                        CONFIDENCE_COLOR_MAP[
-                          (record as KpiSnapshotItem).confidenceLevel!
-                        ]
-                      "
-                      :text="
-                        CONFIDENCE_LABEL_MAP[
-                          (record as KpiSnapshotItem).confidenceLevel!
-                        ]
-                      "
-                    />
-                    <span v-else class="text-gray-400">—</span>
-                  </template>
-                  <template v-else-if="column.key === 'status'">
-                    <Tag
-                      :color="
-                        STATUS_COLOR_MAP[(record as KpiSnapshotItem).status] ||
-                        'default'
-                      "
-                      class="m-0"
-                    >
-                      {{
-                        STATUS_LABEL_MAP[(record as KpiSnapshotItem).status] ||
-                        (record as KpiSnapshotItem).status
-                      }}
-                    </Tag>
-                  </template>
-                </template>
-              </Table>
-            </Tabs.TabPane>
-          </Tabs>
-        </div>
-        <div v-else class="py-12 text-center text-gray-400">
-          暂无诊断可视化数据。请确认该回路已执行诊断，或调整时间窗后重试
         </div>
       </Spin>
     </Modal>

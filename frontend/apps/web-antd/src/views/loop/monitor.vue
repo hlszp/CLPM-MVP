@@ -3,7 +3,6 @@ import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import type { DiagnosisLabel } from '#/api/diagnosis';
 /**
  * S2-LOOP-011 回路监控列表页
  *
@@ -55,7 +54,6 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisListApi } from '#/api/diagnosis';
 import {
   getLoopDetailApi,
   getLoopMonitorDetailApi,
@@ -67,7 +65,6 @@ import {
   ClpmBulletChart,
   ClpmDataCanvas,
   ClpmDataHealthBadges,
-  ClpmInfoTip,
   ClpmLoopLink,
   ClpmModal,
   ClpmNumeric,
@@ -90,11 +87,6 @@ import {
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
-import { DIAGNOSIS_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
-import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
-  getDiagnosisLabelName,
-} from '#/constants/diagnosis';
 import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
@@ -244,17 +236,6 @@ const total = ref(0);
  * 区分"接口异常"（errorState）与"接口正常但无数据"（空态）。
  * 错误已由全局拦截器 toast，这里仅用于渲染内联错误占位，避免误报"暂无数据"。 */
 const errorMessage = ref<null | string>(null);
-
-/**
- * D6 入口整合：回路 → 最新诊断标签展示信息 map。
- *
- * 监控列表每页 20 条回路加载后，并行调用诊断列表 API（loopIds 批量过滤）
- * 建立该 map。表格"诊断标签"列据此渲染彩色 Tag，点击跳转诊断详情页。
- * 失败时降级为空 map，诊断列显示"—"，不阻塞主列表。
- */
-const diagLabelMap = ref<
-  Record<string, { color: string; label: string; labelCode: string }>
->({});
 
 /** 按回路类型统计数量（后端 API 获取，支持递归子节点） */
 const loopTypeStats = ref<Record<string, number>>({
@@ -484,8 +465,6 @@ const columns: TableColumnsType = [
     },
     customCell: () => ({ style: { 'text-align': 'right' } }),
   },
-  // D6 入口整合：诊断标签列——展示最新诊断标签，点击跳转诊断详情页
-  { title: '诊断标签', key: 'diagLabel', width: 110, align: 'center' },
   // 数据健康度（方案 A §5）：可信度 + 预处理有效率 + PV 完整度
   { title: '数据健康度', key: 'dataHealth', width: 130, align: 'center' },
   { title: '操作', key: 'action', width: 160, fixed: 'right', align: 'center' },
@@ -768,7 +747,7 @@ function handleHelp() {
   showPageHelp({
     title: '回路监控 帮助',
     content:
-      '按装置/单元、类型、关键字筛选回路；统计卡片可点击快速筛选。列表展示实时 SP/PV/OP、控制方式、性能指数与诊断标签。工具栏「时间窗」切换趋势弹窗默认范围，「列设置」自定义显示列。WS 在线时实时推送，断连自动降级为轮询。',
+      '按装置/单元、类型、关键字筛选回路；统计卡片可点击快速筛选。列表展示实时 SP/PV/OP、控制方式、性能指数。工具栏「时间窗」切换趋势弹窗默认范围，「列设置」自定义显示列。WS 在线时实时推送，断连自动降级为轮询。',
   });
 }
 
@@ -839,61 +818,15 @@ async function loadList() {
     });
     monitorList.value = data.items;
     total.value = data.total;
-    // D6 入口整合：并行加载当前页回路的最新诊断标签（不阻塞主列表，
-    // 失败时诊断列降级显示"—"；WS 实时刷新触发的局部更新不重查诊断标签）
-    loadDiagLabels(data.items.map((it) => it.loopId));
   } catch (error: any) {
     // 错误已由拦截器 toast；此处仅记录用于内联错误占位渲染
     errorMessage.value = error?.message ?? '加载失败';
     // 出错时清空旧列表，避免显示过期数据混淆
     monitorList.value = [];
     total.value = 0;
-    diagLabelMap.value = {};
   } finally {
     loading.value = false;
     lastRefreshAt.value = new Date();
-  }
-}
-
-/**
- * D6 入口整合：批量加载回路的最新诊断标签，建立 loopId → {color, label} map。
- *
- * 后端 list_diagnosis 接口新增 loop_ids 批量过滤参数，一次请求拿回当前页
- * 全部回路的最新诊断结果（pageSize=100 覆盖单页 20 条 + 重复回路）。
- * 前端按 loopId 建立映射，表格"诊断标签"列据此渲染。
- */
-async function loadDiagLabels(loopIds: string[]) {
-  if (loopIds.length === 0) {
-    diagLabelMap.value = {};
-    return;
-  }
-  try {
-    const data = await getDiagnosisListApi({
-      loopIds,
-      page: 1,
-      pageSize: 100,
-    });
-    const map: Record<
-      string,
-      { color: string; label: string; labelCode: string }
-    > = {};
-    for (const item of data.items ?? []) {
-      const labelName =
-        item.labelName ||
-        getDiagnosisLabelName(item.diagnosisLabel as DiagnosisLabel);
-      const color =
-        DIAGNOSIS_LABEL_COLOR_MAP[item.diagnosisLabel as DiagnosisLabel] ??
-        'default';
-      map[item.loopId] = {
-        color,
-        label: labelName,
-        labelCode: item.diagnosisLabel,
-      };
-    }
-    diagLabelMap.value = map;
-  } catch {
-    // 错误已由拦截器处理；诊断列降级显示"—"
-    diagLabelMap.value = {};
   }
 }
 
@@ -985,11 +918,6 @@ function handlePerfWindowChange() {
 
 function viewDetail(record: LoopApi.MonitorListItem) {
   router.push(`/loop/detail/${record.loopId}`);
-}
-
-/** D6 入口整合：跳转诊断详情页（诊断标签列点击 + 无诊断回路也可跳转触发新诊断） */
-function goDiagnosisDetail(loopId: string) {
-  router.push(`/diagnosis/detail/${loopId}`);
 }
 
 /** P3 #53: 跳转到回路管理（WS-D 阶段5：修复死链 /loop/tag-mapping → /loop/manage，
@@ -1641,74 +1569,6 @@ onUnmounted(() => {
                 />
               </span>
               <span v-else class="text-gray-400">—</span>
-            </template>
-            <!-- D6 入口整合：诊断标签列——展示最新诊断标签彩色 Tag，点击跳转诊断详情 -->
-            <template v-else-if="column.key === 'diagLabel'">
-              <span
-                v-if="diagLabelMap[(record as LoopApi.MonitorListItem).loopId]"
-                class="inline-flex items-center gap-1"
-              >
-                <Tag
-                  :color="
-                    diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
-                      .color
-                  "
-                  class="m-0 cursor-pointer hover:opacity-80"
-                  @click="
-                    goDiagnosisDetail(
-                      (record as LoopApi.MonitorListItem).loopId,
-                    )
-                  "
-                >
-                  {{
-                    diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
-                      .label
-                  }}
-                </Tag>
-                <ClpmInfoTip
-                  v-if="
-                    (
-                      DIAGNOSIS_TERM_EXPLANATIONS as Record<
-                        string,
-                        { term: string; short: string; detail?: string }
-                      >
-                    )[
-                      diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
-                        .labelCode
-                    ]
-                  "
-                  :tip="
-                    (
-                      DIAGNOSIS_TERM_EXPLANATIONS as Record<
-                        string,
-                        { term: string; short: string; detail?: string }
-                      >
-                    )[
-                      diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!
-                        .labelCode
-                    ]!.short
-                  "
-                />
-              </span>
-              <span
-                v-else
-                class="text-gray-400 cursor-pointer hover:text-blue-500"
-                title="暂无诊断记录，点击进入诊断详情触发新诊断"
-                role="button"
-                tabindex="0"
-                aria-label="进入诊断详情"
-                @click="
-                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
-                "
-                @keydown.enter="
-                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
-                "
-                @keydown.space.prevent="
-                  goDiagnosisDetail((record as LoopApi.MonitorListItem).loopId)
-                "
-              >
-                —
-              </span>
             </template>
             <!-- 数据健康度（方案 A §5）：可信度 + 预处理有效率（PV 完整度已与 PV 数值列重复，隐藏） -->
             <template v-else-if="column.key === 'dataHealth'">

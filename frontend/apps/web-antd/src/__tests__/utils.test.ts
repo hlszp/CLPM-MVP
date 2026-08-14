@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { flattenNodes, formatTime, labelName } from '#/utils/format';
+import { flattenNodes, formatTime } from '#/utils/format';
 
 describe('工具函数测试', () => {
   // UT-UTIL-001: formatTime-ISO字符串
@@ -43,10 +43,4 @@ describe('工具函数测试', () => {
     expect(result.map((n) => n.id)).toEqual(['1', '1-1', '1-2', '1-2-1', '2']);
   });
 
-  // UT-UTIL-006: labelName-标签映射（OSCILLATION → "振荡"）
-  it('uT-UTIL-006: labelName 正确映射诊断标签为中文名称', () => {
-    expect(labelName('OSCILLATION')).toBe('振荡');
-    expect(labelName('VALVE_STICTION')).toBe('阀门粘滞');
-    expect(labelName('OUTPUT_SATURATION')).toBe('输出饱和');
-  });
 });

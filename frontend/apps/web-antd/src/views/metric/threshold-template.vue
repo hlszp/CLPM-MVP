@@ -14,7 +14,6 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
-import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 
 import { computed, h, onMounted, reactive, ref } from 'vue';
@@ -36,15 +35,6 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
-import {
-  applyThresholdTemplateApi,
-  deleteThresholdOverrideApi,
-  getAlgorithmMetaApi,
-  getThresholdOverridesApi,
-  getThresholdRecommendationsApi,
-  getThresholdTemplatesApi,
-  upsertThresholdOverrideApi,
-} from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
 import {
   ClpmDangerConfirmModal,
@@ -95,13 +85,7 @@ const metaMap = reactive<
 >(new Map());
 
 async function loadAlgorithmMeta() {
-  const res = await getAlgorithmMetaApi();
-  for (const item of res.items) {
-    metaMap.set(item.label, {
-      labelName: item.labelName,
-      thresholdKeys: item.thresholdKeys ?? [],
-    });
-  }
+  // 诊断模块已删除，算法元数据暂不可用
 }
 
 function diagName(diagCode: string): string {
@@ -113,7 +97,7 @@ function diagName(diagCode: string): string {
 // ===========================================================================
 
 const selectedLoopType = ref<string>('FLOW');
-const templates = ref<DiagnosisApi.ThresholdOverrideItem[]>([]);
+const templates = ref<any[]>([]);
 const loadingTemplates = ref(false);
 
 /** 当前 loop_type 的模板（按 diag_code 排序） */
@@ -124,12 +108,8 @@ const filteredTemplates = computed(() =>
 );
 
 async function loadTemplates() {
-  loadingTemplates.value = true;
-  try {
-    templates.value = await getThresholdTemplatesApi();
-  } finally {
-    loadingTemplates.value = false;
-  }
+  // 诊断模块已删除，阈值模板暂不可用
+  loadingTemplates.value = false;
 }
 
 /** 阈值键值对渲染为紧凑标签文本 */
@@ -156,7 +136,7 @@ const editKeys = computed(() => {
   return [...new Set([...fromMeta, ...fromExisting])];
 });
 
-function openEditModal(item: DiagnosisApi.ThresholdOverrideItem) {
+function openEditModal(item: any) {
   editForm.diagCode = item.diagCode;
   editForm.scopeType = item.scopeType;
   editForm.scopeId = item.scopeId;
@@ -166,19 +146,8 @@ function openEditModal(item: DiagnosisApi.ThresholdOverrideItem) {
 }
 
 async function saveTemplate() {
-  try {
-    await upsertThresholdOverrideApi({
-      diagCode: editForm.diagCode,
-      scopeType: editForm.scopeType as DiagnosisApi.ThresholdScopeType,
-      scopeId: editForm.scopeId,
-      threshold: { ...editForm.threshold },
-    });
-    message.success('模板阈值已保存');
-    editModalVisible.value = false;
-    await loadTemplates();
-  } catch (error) {
-    message.error((error as Error).message ?? '保存失败');
-  }
+  message.warning('诊断模块已移除，模板保存功能暂不可用');
+  editModalVisible.value = false;
 }
 
 // ===========================================================================
@@ -190,9 +159,7 @@ const loopOptions = ref<LoopApi.LoopListItem[]>([]);
 const selectedLoopId = ref<string | undefined>(undefined);
 const searchingLoops = ref(false);
 
-const recommendation = ref<DiagnosisApi.ThresholdRecommendationResult | null>(
-  null,
-);
+const recommendation = ref<any | null>(null);
 const loadingRecommendation = ref(false);
 
 const selectedLoop = computed(() =>
@@ -218,17 +185,9 @@ async function loadRecommendation() {
     recommendation.value = null;
     return;
   }
-  loadingRecommendation.value = true;
-  try {
-    recommendation.value = await getThresholdRecommendationsApi(
-      selectedLoopId.value,
-    );
-  } catch (error) {
-    message.error((error as Error).message ?? '加载推荐失败');
-    recommendation.value = null;
-  } finally {
-    loadingRecommendation.value = false;
-  }
+  // 诊断模块已删除，阈值推荐暂不可用
+  loadingRecommendation.value = false;
+  recommendation.value = null;
 }
 
 function onLoopChange() {
@@ -236,42 +195,15 @@ function onLoopChange() {
 }
 
 /** 套用模板到回路级（ic_engineer 可用，可逆轻操作走 Popconfirm 确认） */
-async function applyTemplate(diagCode: string) {
+async function applyTemplate(_diagCode: string) {
   if (!selectedLoopId.value) return;
-  try {
-    await applyThresholdTemplateApi({
-      loopId: selectedLoopId.value,
-      diagCode,
-      targetScope: 'loop',
-    });
-    message.success('模板已套用到回路级');
-    await loadRecommendation();
-  } catch (error) {
-    message.error((error as Error).message ?? '套用失败');
-  }
+  message.warning('诊断模块已移除，阈值模板套用功能暂不可用');
 }
 
 /** 删除回路级覆盖（恢复模板/默认，可逆轻操作走 Popconfirm 确认） */
-async function resetLoopOverride(diagCode: string) {
+async function resetLoopOverride(_diagCode: string) {
   if (!selectedLoopId.value) return;
-  try {
-    const overrides = await getThresholdOverridesApi({
-      scopeType: 'loop',
-      scopeId: selectedLoopId.value,
-    });
-    const target = overrides.find(
-      (o: DiagnosisApi.ThresholdOverrideItem) => o.diagCode === diagCode,
-    );
-    if (!target) {
-      message.warning('该诊断项无回路级覆盖，无需重置');
-      return;
-    }
-    await deleteThresholdOverrideApi(target.overrideId);
-    message.success('回路级覆盖已删除');
-    await loadRecommendation();
-  } catch (error) {
-    message.error((error as Error).message ?? '重置失败');
-  }
+  message.warning('诊断模块已移除，阈值重置功能暂不可用');
 }
 
 // ----- 回路级微调 Modal -----
@@ -300,7 +232,7 @@ const tuneKeys = computed(() => {
 function openTuneModal(diagCode: string) {
   if (!selectedLoopId.value) return;
   const rec = recommendation.value?.recommendations.find(
-    (r) => r.diagCode === diagCode,
+    (r: any) => r.diagCode === diagCode,
   );
   tuneForm.diagCode = diagCode;
   tuneForm.loopId = selectedLoopId.value;
@@ -317,19 +249,8 @@ function openTuneModal(diagCode: string) {
 }
 
 async function saveTune() {
-  try {
-    await upsertThresholdOverrideApi({
-      diagCode: tuneForm.diagCode,
-      scopeType: 'loop',
-      scopeId: tuneForm.scopeId,
-      threshold: { ...tuneForm.threshold },
-    });
-    message.success('回路级阈值已保存');
-    tuneModalVisible.value = false;
-    await loadRecommendation();
-  } catch (error) {
-    message.error((error as Error).message ?? '保存失败');
-  }
+  message.warning('诊断模块已移除，回路级阈值保存功能暂不可用');
+  tuneModalVisible.value = false;
 }
 
 /** 删除回路级覆盖：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） */
@@ -341,31 +262,10 @@ function deleteTune() {
 }
 
 async function handleDeleteTuneConfirm() {
-  deleteTuneLoading.value = true;
-  // 通过推荐接口的 scopeChain 获取 loop_override 来源，再用覆盖列表查 ID
-  try {
-    const overrides = await getThresholdOverridesApi({
-      scopeType: 'loop',
-      scopeId: tuneForm.scopeId,
-    });
-    const target = overrides.find(
-      (o: DiagnosisApi.ThresholdOverrideItem) =>
-        o.diagCode === tuneForm.diagCode,
-    );
-    if (!target) {
-      message.warning('未找到回路级覆盖');
-      return;
-    }
-    await deleteThresholdOverrideApi(target.overrideId);
-    message.success('回路级覆盖已删除');
-    deleteTuneOpen.value = false;
-    tuneModalVisible.value = false;
-    await loadRecommendation();
-  } catch (error) {
-    message.error((error as Error).message ?? '删除失败');
-  } finally {
-    deleteTuneLoading.value = false;
-  }
+  message.warning('诊断模块已移除，回路级覆盖删除功能暂不可用');
+  deleteTuneLoading.value = false;
+  deleteTuneOpen.value = false;
+  tuneModalVisible.value = false;
 }
 
 // ===========================================================================
@@ -417,7 +317,7 @@ const recommendColumns = computed<TableColumnsType>(() => [
         {
           title: record.scopeChain
             .map(
-              (s: DiagnosisApi.ThresholdScopeSource) =>
+              (s: any) =>
                 `${s.source}${s.isApplied ? ' ✓' : ''}`,
             )
             .join(' → '),
@@ -553,7 +453,7 @@ defineExpose({ refresh });
                 type="link"
                 size="small"
                 @click="
-                  openEditModal(record as DiagnosisApi.ThresholdOverrideItem)
+                  openEditModal(record as any)
                 "
               >
                 编辑

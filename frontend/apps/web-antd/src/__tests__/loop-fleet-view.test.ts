@@ -239,7 +239,7 @@ describe('LoopFleetView 表格列增强', () => {
     });
   });
 
-  it('列顺序符合 02 标杆 v1.4 的 13 列清单', async () => {
+  it('列顺序符合 02 标杆 v1.4 的 12 列清单（MVP 移除诊断标签列）', async () => {
     const w = mountFleetView();
     await vi.dynamicImportSettled();
 
@@ -257,7 +257,6 @@ describe('LoopFleetView 表格列增强', () => {
       'pv',
       'op',
       'mode',
-      'diagLabel',
       'dataHealth',
     ];
     expect(keys).toEqual(expectedKeys);

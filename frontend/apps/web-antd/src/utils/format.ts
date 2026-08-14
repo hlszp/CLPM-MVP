@@ -28,12 +28,6 @@
 
 import dayjs from 'dayjs';
 
-export type { DiagnosisLabel } from '#/api/diagnosis';
-export {
-  DIAGNOSIS_LABEL_NAME_MAP,
-  getDiagnosisLabelName as labelName,
-} from '#/constants/diagnosis';
-
 export { flattenNodes } from '#/utils/plant-node';
 export type { TreeNode } from '#/utils/plant-node';
 

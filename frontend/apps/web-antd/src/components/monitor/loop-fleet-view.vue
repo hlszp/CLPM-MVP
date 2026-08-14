@@ -29,7 +29,6 @@ import {
 import { Button, Card, message, Switch, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisListApi } from '#/api/diagnosis';
 import { getLoopMonitorListApi, getLoopTypeStatsApi } from '#/api/loop';
 import { ClpmNumeric } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
@@ -42,10 +41,6 @@ import {
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { useTableDensity } from '#/composables/use-table-density';
-import {
-  DIAGNOSIS_LABEL_COLOR_MAP,
-  getDiagnosisLabelName,
-} from '#/constants/diagnosis';
 
 defineOptions({ name: 'LoopFleetView' });
 
@@ -90,13 +85,8 @@ const typeStats = ref<Record<string, number>>({});
 /** 控制方式统计（后端基于 Redis 实时 MODE 值全量聚合） */
 const modeStats = ref<Record<string, number>>({});
 
-// ===== 诊断标签 map =====
-const diagLabelMap = ref<
-  Record<string, { color: string; label: string; labelCode: string }>
->({});
-
-// ===== 表格列定义（对齐 02 回路列表标杆 v1.4：13 默认列 + 组态字段收起）=====
-// 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 回路等级 / 性能评分 / SP / PV / OP / MODE / 诊断标签 / 可信度 / 操作
+// ===== 表格列定义（对齐 02 回路列表标杆 v1.4：12 默认列 + 组态字段收起）=====
+// 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 回路等级 / 性能评分 / SP / PV / OP / MODE / 可信度 / 操作
 // 量程/单位为组态字段，默认收起（buildDefaultColumnConfigs 中设 visible=false）
 const columns: TableColumnsType = [
   {
@@ -140,7 +130,6 @@ const columns: TableColumnsType = [
   { title: '测量值 PV', key: 'pv', width: 90, align: 'right' },
   { title: '输出值 OP(%)', key: 'op', width: 90, align: 'right' },
   { title: 'MODE', key: 'mode', width: 110, align: 'center' },
-  { title: '诊断标签', key: 'diagLabel', width: 110, align: 'center' },
   { title: '可信度', key: 'dataHealth', width: 100, align: 'center' },
   { title: '测量量程', key: 'pvRange', width: 100, align: 'center' },
   { title: '单位', key: 'pvUnit', width: 55, align: 'center' },
@@ -346,12 +335,10 @@ async function loadList() {
       return sa - sb;
     });
     total.value = data.total;
-    loadDiagLabels(data.items.map((it) => it.loopId));
   } catch (error: any) {
     errorMessage.value = error?.message ?? '加载失败';
     monitorList.value = [];
     total.value = 0;
-    diagLabelMap.value = {};
   } finally {
     loading.value = false;
     lastRefreshAt.value = new Date();
@@ -368,36 +355,6 @@ async function loadLoopTypeStats() {
     modeStats.value = payload.controlModeStats || {};
   } catch {
     // 错误已由拦截器处理
-  }
-}
-
-async function loadDiagLabels(loopIds: string[]) {
-  if (loopIds.length === 0) {
-    diagLabelMap.value = {};
-    return;
-  }
-  try {
-    const data = await getDiagnosisListApi({ loopIds, page: 1, pageSize: 100 });
-    const map: Record<
-      string,
-      { color: string; label: string; labelCode: string }
-    > = {};
-    for (const item of data.items ?? []) {
-      const labelName =
-        item.labelName || getDiagnosisLabelName(item.diagnosisLabel as any);
-      const color =
-        (DIAGNOSIS_LABEL_COLOR_MAP as Record<string, string>)[
-          item.diagnosisLabel as string
-        ] ?? 'default';
-      map[item.loopId] = {
-        color,
-        label: labelName,
-        labelCode: item.diagnosisLabel,
-      };
-    }
-    diagLabelMap.value = map;
-  } catch {
-    diagLabelMap.value = {};
   }
 }
 
@@ -486,7 +443,7 @@ onMessage((msg) => {
 });
 
 // ===== 自动刷新：WS 在线时仅靠 WS 推送更新 7 个实时值（PV/SP/OP/MODE/P/I/D），
-// ===== 其余数据（统计/KPI 计算值/诊断等）只在手动刷新页面时更新；
+// ===== 其余数据（统计/KPI 计算值等）只在手动刷新页面时更新；
 // ===== WS 断连时回退到 30s 轮询，保证数据不会长时间停滞。
 watch(wsConnectionStatus, (status) => {
   stopFallback();
@@ -796,20 +753,6 @@ defineExpose({
               :trend="(record as LoopApi.MonitorListItem).dayTrend"
             />
           </span>
-          <span v-else class="text-gray-400">—</span>
-        </template>
-        <template v-else-if="column.key === 'diagLabel'">
-          <Tag
-            v-if="diagLabelMap[(record as LoopApi.MonitorListItem).loopId]"
-            :color="
-              diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!.color
-            "
-            class="m-0"
-          >
-            {{
-              diagLabelMap[(record as LoopApi.MonitorListItem).loopId]!.label
-            }}
-          </Tag>
           <span v-else class="text-gray-400">—</span>
         </template>
         <template v-else-if="column.key === 'dataHealth'">
