@@ -50,6 +50,7 @@ graphify-out/
 
 # 性能实测与诊断产物（不入库）
 logs-frontend-dev.log
+logs-mvp-uvicorn.log
 output/
 .playwright-cli/
 __pycache__/

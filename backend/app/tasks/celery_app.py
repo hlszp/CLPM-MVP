@@ -27,15 +27,18 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.tasks.kpi_calc",
-        "app.tasks.aas_sync",
-        "app.tasks.diagnosis_engine",
+        # MVP 精简：已屏蔽 AAS/OPC UA 同步模块 → 不注册 aas_sync
+        # "app.tasks.aas_sync",
+        # MVP 精简：已屏蔽诊断模块 → 不注册 diagnosis_engine / tracker_verification
+        # "app.tasks.diagnosis_engine",
+        # "app.tasks.tracker_verification",
         "app.tasks.report_generator",
         "app.tasks.audit_archive",
         "app.tasks.dead_letter",
         "app.tasks.data_link_monitor",
         "app.tasks.data_integrity_check",
-        "app.tasks.tracker_verification",
-        "app.tasks.tuning",
+        # MVP 精简：已屏蔽整定模块 → 不注册 tuning
+        # "app.tasks.tuning",
         "app.tasks.alert_patrol",
     ],
 )
@@ -124,16 +127,17 @@ class AsyncTask(Task):
 # include 参数只对 worker 生效，Beat 进程不会自动导入这些模块，
 # 导致 beat_schedule 中的定时调度计划（kpi-calc-hourly 等）不会被注册。
 # 必须放在 AsyncTask 类定义之后，避免循环导入。
-import app.tasks.aas_sync  # noqa: E402, F401
+# MVP 精简：已移除 AAS/诊断/整定 相关任务 → 不再 import，Beat 也不再注册相应调度
+# import app.tasks.aas_sync  # noqa: E402, F401
 import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
 import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
-import app.tasks.diagnosis_engine  # noqa: E402, F401
+# import app.tasks.diagnosis_engine  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
-import app.tasks.tracker_verification  # noqa: E402, F401
-import app.tasks.tuning  # noqa: E402, F401
+# import app.tasks.tracker_verification  # noqa: E402, F401
+# import app.tasks.tuning  # noqa: E402, F401
 
 
 def _preload_datasource_config_sync() -> None:
@@ -155,19 +159,21 @@ def _preload_datasource_config_sync() -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("worker 子进程预载异常值检测参数失败（将使用算法默认值）: %s", exc)
             # 预载诊断触发条件（整改计划 C6，失败回落默认值）
-            try:
-                from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
-
-                await preload_diagnosis_trigger(db)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("worker 子进程预载诊断触发条件失败（将使用默认值）: %s", exc)
+            # MVP 精简：已屏蔽诊断模块 → 跳过诊断触发条件预载
+            # try:
+            #     from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
+            #
+            #     await preload_diagnosis_trigger(db)
+            # except Exception as exc:  # noqa: BLE001
+            #     logger.warning("worker 子进程预载诊断触发条件失败（将使用默认值）: %s", exc)
             # 预载诊断专家规则（整改计划 C2，失败回退到空列表，触发硬编码规则兜底）
-            try:
-                from app.services.diagnosis_rule import preload_rules
-
-                await preload_rules(db)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("worker 子进程预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
+            # MVP 精简：已屏蔽诊断模块 → 跳过诊断专家规则预载
+            # try:
+            #     from app.services.diagnosis_rule import preload_rules
+            #
+            #     await preload_rules(db)
+            # except Exception as exc:  # noqa: BLE001
+            #     logger.warning("worker 子进程预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
             # P0-B: 预载指标算法参数（失败回落算法默认值）
             try:
                 from app.services.algorithm_config import preload_algorithm_params

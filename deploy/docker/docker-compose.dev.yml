@@ -1,10 +1,16 @@
-# CLPM 开发环境容器编排
+# CLPM-MVP 开发环境容器编排
 # 使用 Orbstack 作为容器运行时
 # 启动: docker compose -f deploy/docker/docker-compose.dev.yml up -d
 # 停止: docker compose -f deploy/docker/docker-compose.dev.yml down
 # 重置: docker compose -f deploy/docker/docker-compose.dev.yml down -v
+#
+# MVP 精简版端口规划：与原完整项目（CLPM，端口 7xxx 段）完全隔离
+# - PostgreSQL: 17102（原 7102）
+# - Redis:      17103（原 7103）
+# - TDengine:   17104/17115（原 7104/7115）
+# 容器名、卷名、网络名均加 -mvp 后缀避免与原项目冲突
 
-name: clpm-dev
+name: clpm-mvp-dev
 
 services:
   # ============================================================
@@ -12,10 +18,10 @@ services:
   # ============================================================
   postgres:
     image: postgres:16
-    container_name: clpm-postgres
+    container_name: clpm-mvp-postgres
     restart: unless-stopped
     ports:
-      - "7102:5432"
+      - "17102:5432"
     environment:
       POSTGRES_USER: clpm
       POSTGRES_PASSWORD: clpm_dev_2026
@@ -32,20 +38,20 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - clpm-net
+      - clpm-mvp-net
 
   # ============================================================
   # TDengine 3.x - 时序数据存储
   # ============================================================
   tdengine:
     image: tdengine/tdengine:3.3.6.0
-    container_name: clpm-tdengine
+    container_name: clpm-mvp-tdengine
     restart: unless-stopped
     ports:
-      - "7104:6030"
-      - "7115:6041"
+      - "17104:6030"
+      - "17115:6041"
     environment:
-      TAOS_FQDN: clpm-tdengine
+      TAOS_FQDN: clpm-mvp-tdengine
       TZ: Asia/Shanghai
     volumes:
       - td_data:/var/lib/taos
@@ -58,17 +64,17 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - clpm-net
+      - clpm-mvp-net
 
   # ============================================================
   # Redis 7 - 缓存与消息队列
   # ============================================================
   redis:
     image: redis:7-alpine
-    container_name: clpm-redis
+    container_name: clpm-mvp-redis
     restart: unless-stopped
     ports:
-      - "7103:6379"
+      - "17103:6379"
     environment:
       TZ: Asia/Shanghai
     volumes:
@@ -80,25 +86,22 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - clpm-net
+      - clpm-mvp-net
 
   # ============================================================
   # Mock Data Server - 模拟远端数据源服务（仅开发环境）
-  # 提供 HistoryDataAppService API + SignalR Hub 模拟
-  # 正式项目可整体移除，不影响主应用
-  # ⚠️ 已停用：数据仿真改由 backend/scripts/realtime_simulator.py 独立运行
-  #    （launchd 开机自启），直接写 TDengine + Redis，不再经由 WebSocket Hub。
-  #    如需临时启用：docker compose --profile mock up -d mock-data-server
+  # MVP 精简版已屏蔽 AAS 同步模块，mock-data-server 默认不启用
+  # 如需临时启用：docker compose --profile mock up -d mock-data-server
   # ============================================================
   mock-data-server:
     profiles: ["mock"]
     build:
       context: ../..
       dockerfile: deploy/docker/mock_data_server.Dockerfile
-    container_name: clpm-mock-data-server
+    container_name: clpm-mvp-mock-data-server
     restart: unless-stopped
     ports:
-      - "7106:7106"
+      - "17106:7106"
     environment:
       TDENGINE_HOST: tdengine
       TDENGINE_PORT: "6030"
@@ -120,23 +123,23 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - clpm-net
+      - clpm-mvp-net
 
 # ============================================================
 # 数据卷
 # ============================================================
 volumes:
   pg_data:
-    name: clpm_pg_data
+    name: clpm_mvp_pg_data
   td_data:
-    name: clpm_td_data
+    name: clpm_mvp_td_data
   redis_data:
-    name: clpm_redis_data
+    name: clpm_mvp_redis_data
 
 # ============================================================
 # 网络
 # ============================================================
 networks:
-  clpm-net:
-    name: clpm-dev-net
+  clpm-mvp-net:
+    name: clpm-mvp-dev-net
     driver: bridge

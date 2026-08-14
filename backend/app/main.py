@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -28,7 +29,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.endpoints import (
-    aas,
+    # MVP 精简：已屏蔽 AAS/OPC UA 同步模块 → 不注册 aas
+    # aas,
     # AI 洞察通用服务（4 场景统一入口：诊断/性能/整定/工作台）
     ai_insight,
     # 智能预警规则引擎（PRD v6.2 §4.4.6）
@@ -46,12 +48,13 @@ from app.api.v1.endpoints import (
     datasource,
     # v6.1: DCS 配置管理（品牌/型号/MODE 定义/映射矩阵）
     dcs,
-    diagnosis,
-    diagnosis_trigger_config,
+    # MVP 精简：已屏蔽诊断模块 → 不注册 diagnosis / diagnosis_trigger_config
+    # diagnosis,
+    # diagnosis_trigger_config,
     grading_config,
     health,
-    # P3-04: LLM 配置（自然语言诊断解读）
-    llm_config,
+    # P3-04: LLM 配置（自然语言诊断解读）—— 依赖诊断模块，MVP 一并移除
+    # llm_config,
     # Phase 3: 回路数据管理（历史数据导入）
     loop_data,
     loop_level_weight,
@@ -67,7 +70,8 @@ from app.api.v1.endpoints import (
     realtime,
     reports,
     tags,
-    tuning,
+    # MVP 精简：已屏蔽整定模块 → 不注册 tuning
+    # tuning,
     users,
     weight_config,
     ws_alert,
@@ -98,10 +102,21 @@ _celery_worker_process: subprocess.Popen | None = None
 _celery_beat_log_handle: TextIO | None = None
 _celery_worker_log_handle: TextIO | None = None
 
-# pgrep 匹配特征：必须同时包含本项目 Celery 应用入口（-A app.tasks.celery_app），
-# 避免误匹配本机其他项目的 celery 进程导致误判跳过启动
-_BEAT_PGREP_PATTERN = r"celery.*-A app\.tasks\.celery_app.*beat"
-_WORKER_PGREP_PATTERN = r"celery.*-A app\.tasks\.celery_app.*worker"
+# 项目级隔离标识：从 main.py 所在路径推导项目根目录 basename（如 CLPM-MVP），
+# 作为 pgrep 的唯一匹配标记，避免同机多个 CLPM 项目（如原项目 CLPM 与 MVP 项目
+# CLPM-MVP）的 celery 进程互相误杀。
+# 边界锚定消除 basename 互为前缀（CLPM 是 CLPM-MVP 前缀）的子串误匹配：
+#  - worker 支持 --hostname，命令行含 {tag}@%h，pattern 锚定 "tag@"
+#  - beat 不支持 --hostname，靠 --pidfile 路径含 {tag}/，pattern 锚定 "tag/"
+# CLPM@/CLPM/ 与 CLPM-MVP@/CLPM-MVP/ 互斥，双向不误匹配。
+_PROJECT_TAG = os.path.basename(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
+_PROJECT_TAG_RE = re.escape(_PROJECT_TAG)
+# pgrep 匹配特征：必须同时包含本项目 Celery 应用入口（-A app.tasks.celery_app）
+# 和项目唯一标识，避免误匹配本机其他项目的 celery 进程导致误判/误杀
+_BEAT_PGREP_PATTERN = rf"celery.*-A app\.tasks\.celery_app.*beat.*{_PROJECT_TAG_RE}/"
+_WORKER_PGREP_PATTERN = rf"celery.*-A app\.tasks\.celery_app.*worker.*{_PROJECT_TAG_RE}@"
 
 # 看门狗：worker/beat 进程探活周期（秒）。仅告警不自动拉起，
 # 避免与 _start_celery_* 的单例防护冲突（多实例并发拉起）
@@ -454,6 +469,8 @@ def _start_celery_worker() -> None:
                     "4",
                     "-Q",
                     "default,dead_letter",
+                    "--hostname",
+                    f"{_PROJECT_TAG}@%h",
                 ],
                 cwd=os.getcwd(),
                 stdout=log_handle,
@@ -609,23 +626,25 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     # 从 sys_config 预载诊断触发条件到进程内缓存（整改计划 C6，
     # 预载失败回落默认值 score_threshold=60/concurrency=5/min_data_points=32，不阻塞启动）
-    from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
-
-    try:
-        async with AsyncSessionLocal() as db:
-            await preload_diagnosis_trigger(db)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("从 sys_config 预载诊断触发条件失败（将使用默认值）: %s", exc)
+    # MVP 精简：已屏蔽诊断模块 → 跳过诊断触发条件预载
+    # from app.services.diagnosis_trigger_config import preload_diagnosis_trigger
+    #
+    # try:
+    #     async with AsyncSessionLocal() as db:
+    #         await preload_diagnosis_trigger(db)
+    # except Exception as exc:  # noqa: BLE001
+    #     logger.warning("从 sys_config 预载诊断触发条件失败（将使用默认值）: %s", exc)
 
     # 预载诊断专家规则到进程内缓存（整改计划 C2，
     # 预载失败回退到空列表，触发 _diagnose_loop 硬编码规则兜底，不阻塞启动）
-    from app.services.diagnosis_rule import preload_rules
-
-    try:
-        async with AsyncSessionLocal() as db:
-            await preload_rules(db)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
+    # MVP 精简：已屏蔽诊断模块 → 跳过诊断专家规则预载
+    # from app.services.diagnosis_rule import preload_rules
+    #
+    # try:
+    #     async with AsyncSessionLocal() as db:
+    #         await preload_rules(db)
+    # except Exception as exc:  # noqa: BLE001
+    #     logger.warning("预载诊断专家规则失败（将回退到硬编码规则）: %s", exc)
 
     # 可信度统一 Phase 3（P3-2 / D4）：预载可信度阈值 + 启动 pub/sub 订阅线程
     # 预载失败回落算法默认值，不阻塞启动；订阅线程确保运行时阈值变更实时同步
@@ -858,7 +877,8 @@ def create_app() -> FastAPI:
     # Phase 3: 回路数据管理（历史数据导入）
     v1_router.include_router(loop_data.router)
     v1_router.include_router(tags.router)
-    v1_router.include_router(aas.router)
+    # MVP 精简：已屏蔽 AAS/OPC UA 同步模块 → 不挂载 aas.router
+    # v1_router.include_router(aas.router)
     v1_router.include_router(datasource.router)
     v1_router.include_router(performance.router)
     # S3-METRIC 节点级性能评估（GB/T 44693.2-2024 §6.4 综合评估）
@@ -867,11 +887,12 @@ def create_app() -> FastAPI:
     v1_router.include_router(dashboard.router)
     # S4 诊断中心：诊断、波形、Tracker、诊断标签
     # v4.0: tags_router 须在 diagnosis.router 之前注册，避免 GET /{loop_id} 拦截 /diagnosis/tags
-    v1_router.include_router(diagnosis.tags_router)
-    v1_router.include_router(diagnosis.router)
-    v1_router.include_router(diagnosis.timeseries_router)
+    # MVP 精简：已屏蔽诊断模块 → 不挂载所有 diagnosis.*_router
+    # v1_router.include_router(diagnosis.tags_router)
+    # v1_router.include_router(diagnosis.router)
+    # v1_router.include_router(diagnosis.timeseries_router)
     v1_router.include_router(tags.timeseries_router)
-    v1_router.include_router(diagnosis.tracker_router)
+    # v1_router.include_router(diagnosis.tracker_router)
     # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
     v1_router.include_router(dataplanner.router)
     # v4.0: 算法服务接口（IDS §2.7）
@@ -887,14 +908,16 @@ def create_app() -> FastAPI:
     v1_router.include_router(grading_config.router)
     # v6.1: 数据可信度阈值管理
     v1_router.include_router(confidence_config.router)
-    v1_router.include_router(llm_config.router)  # P3-04: LLM 配置
+    # P3-04: LLM 配置（诊断/整定 AI 解读依赖）—— MVP 随诊断一并移除
+    # v1_router.include_router(llm_config.router)
     v1_router.include_router(ai_insight.router)  # AI 洞察通用服务（4 场景统一入口）
 
     # v6.2: 8 类异常值检测参数与启停开关配置
     v1_router.include_router(outlier_config.router)
     # P0-B: 算法参数配置
     v1_router.include_router(algorithm_config.router)
-    v1_router.include_router(diagnosis_trigger_config.router)
+    # MVP 精简：已屏蔽诊断模块 → 不挂载 diagnosis_trigger_config.router
+    # v1_router.include_router(diagnosis_trigger_config.router)
     # v4.0: 评估任务管理（标准/自定义）
     v1_router.include_router(eval_tasks.router)
     # S5 系统管理：用户管理、审计日志、报表配置
@@ -902,7 +925,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(audit_logs.router)
     v1_router.include_router(reports.router)
     # S7 回路整定：模型辨识、PID 整定、闭环仿真
-    v1_router.include_router(tuning.router)
+    # MVP 精简：已屏蔽整定模块 → 不挂载 tuning.router
+    # v1_router.include_router(tuning.router)
     # 重构方案 v1.2：回路配置 CRUD（投用定义、类型权重、级别权重）
     v1_router.include_router(loop_mode_mapping.router)
     v1_router.include_router(loop_type_weight.router)

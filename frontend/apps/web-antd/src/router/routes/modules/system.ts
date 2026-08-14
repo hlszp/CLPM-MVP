@@ -62,17 +62,18 @@ const routes: RouteRecordRaw[] = [
           title: '自动报表',
         },
       },
-      {
-        // P3-04：LLM 配置（自然语言诊断解读服务配置）
-        name: 'SystemLlmConfig',
-        path: '/system/llm-config',
-        component: () => import('#/views/system/llm-config.vue'),
-        meta: {
-          authority: ['ADMIN'],
-          icon: 'lucide:bot',
-          title: 'LLM 配置',
-        },
-      },
+      // MVP 精简：已屏蔽诊断模块 → 移除「LLM 配置」（自然语言诊断解读服务配置）
+      // {
+      //   // P3-04：LLM 配置（自然语言诊断解读服务配置）
+      //   name: 'SystemLlmConfig',
+      //   path: '/system/llm-config',
+      //   component: () => import('#/views/system/llm-config.vue'),
+      //   meta: {
+      //     authority: ['ADMIN'],
+      //     icon: 'lucide:bot',
+      //     title: 'LLM 配置',
+      //   },
+      // },
       {
         // 已迁移至配置模块-指标配置（KPI 算法参数 Tab）
         // 保留重定向以兼容旧 URL 和书签

@@ -100,6 +100,14 @@ import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner'
 
 defineOptions({ name: 'MonitorLoopWorkbench' });
 
+/**
+ * MVP 精简特性开关：诊断/整定模块屏蔽
+ * —— true 表示当前为 MVP 版本，屏蔽诊断（含异常跟踪验证）和整定两区，
+ *    不再加载相关 API，UI 中对应卡片/弹窗/生命周期阶段不渲染。
+ * —— 后续恢复完整功能时，只需改为 false 即可，无需重构代码。
+ */
+const MVP_DISABLE_DIAGNOSIS_TUNING = true;
+
 const route = useRoute();
 const router = useRouter();
 // router 由 monitorCtx.update 内部调用 router.replace，此页面不再直接使用
@@ -291,6 +299,12 @@ const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
 const diagnosisLoading = ref(false);
 
 async function loadDiagnosis(loopId: string): Promise<void> {
+  // MVP 精简：屏蔽诊断模块 → 短路，不请求 API 也不填充数据
+  if (MVP_DISABLE_DIAGNOSIS_TUNING) {
+    diagnosisDetail.value = null;
+    diagnosisLoading.value = false;
+    return;
+  }
   diagnosisLoading.value = true;
   await requestGuard.run(async (_signal, capturedEpoch) => {
     const detail = await getDiagnosisDetailApi(loopId).catch(() => null);
@@ -360,6 +374,14 @@ const tuningHistory = ref<TuningApi.TuningTaskItem[]>([]);
 const tuningDetail = ref<null | TuningApi.TuningTaskDetail>(null);
 
 async function loadTuning(loopId: string): Promise<void> {
+  // MVP 精简：屏蔽整定模块 → 短路，不请求 API 也不填充数据
+  if (MVP_DISABLE_DIAGNOSIS_TUNING) {
+    tuningLatest.value = null;
+    tuningLoading.value = false;
+    tuningHistory.value = [];
+    tuningDetail.value = null;
+    return;
+  }
   tuningLoading.value = true;
   await requestGuard.run(async (_signal, capturedEpoch) => {
     const res = await getTuningTasksApi({
@@ -1438,7 +1460,12 @@ function applyCustomTime() {
 // ===== 生命周期内联标签（R2 右侧紧凑态）=====
 const lifecycleStages = computed(() => {
   if (!summary.value?.lifecycle?.stages) return [];
-  return summary.value.lifecycle.stages.map((s) => ({
+  const raw = summary.value.lifecycle.stages;
+  // MVP 精简：屏蔽诊断/整定模块 → 过滤掉 DIAGNOSE / TUNE / VERIFY 三个阶段
+  const filtered = MVP_DISABLE_DIAGNOSIS_TUNING
+    ? raw.filter((s) => !['DIAGNOSE', 'TUNE', 'VERIFY'].includes(s.stage))
+    : raw;
+  return filtered.map((s) => ({
     label: stageLabelMap[s.stage] ?? s.stage,
     stage: s.stage,
     status: s.status,
@@ -1953,7 +1980,8 @@ const stageLabelMap: Record<string, string> = {
               />
             </div>
             <!-- 闭环时间线（固定 4 节点：评估→诊断→处置→验证） -->
-            <div class="wb-decision__timeline">
+            <!-- MVP 精简：时间线含诊断/验证阶段 → 条件隐藏（保留"活跃关注"和"唯一下一步"） -->
+            <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-decision__timeline">
               <div class="wb-decision__section-title">闭环时间线</div>
               <WorkbenchTrackerTimeline
                 v-if="summary"
@@ -2022,8 +2050,8 @@ const stageLabelMap: Record<string, string> = {
                 </div>
               </div>
 
-              <!-- 诊断卡 -->
-              <div class="wb-r5__card wb-r5__card--diag">
+              <!-- 诊断卡（MVP 精简：已屏蔽诊断模块 → 条件隐藏） -->
+              <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-r5__card wb-r5__card--diag">
                 <div class="wb-r5__card-header">
                   <Tooltip title="负向指标：横道条越长表示该异常越严重（诊断风险越高）">
                     <span class="wb-r5__card-title">诊断</span>
@@ -2110,8 +2138,8 @@ const stageLabelMap: Record<string, string> = {
                 </div>
               </div>
 
-              <!-- 整定卡 -->
-              <div class="wb-r5__card wb-r5__card--tune">
+              <!-- 整定卡（MVP 精简：已屏蔽整定模块 → 条件隐藏） -->
+              <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-r5__card wb-r5__card--tune">
                 <div class="wb-r5__card-header">
                   <span class="wb-r5__card-title">整定</span>
                   <span class="wb-r5__card-meta">
@@ -2202,7 +2230,8 @@ const stageLabelMap: Record<string, string> = {
               </div>
 
               <!-- ===== 验证卡（第四张：闭环验证状态） ===== -->
-              <div class="wb-r5__card wb-r5__card--verify">
+              <!-- MVP 精简：验证属于诊断/整定闭环（VERIFY 阶段） → 条件隐藏 -->
+              <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-r5__card wb-r5__card--verify">
                 <div class="wb-r5__card-header">
                   <span class="wb-r5__card-title">验证</span>
                   <span class="wb-r5__card-meta">
@@ -2283,7 +2312,7 @@ const stageLabelMap: Record<string, string> = {
               </div>
             </section>
             <section
-              v-if="summary?.trackerTimeline?.effectCompare"
+              v-if="!MVP_DISABLE_DIAGNOSIS_TUNING && summary?.trackerTimeline?.effectCompare"
               class="wb-r6"
             >
               <WorkbenchEffectCompare
@@ -2301,16 +2330,19 @@ const stageLabelMap: Record<string, string> = {
       @trigger="triggerAssessment"
     />
     <DiagnosisTriggerModal
+      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
       v-model:open="diagModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerDiagnosis"
     />
     <TuningTriggerModal
+      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
       v-model:open="tuningModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerTuning"
     />
     <TuneParamModal
+      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
       v-model:open="tuneParamModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       :model-type="tuningLatest?.modelType ?? null"
@@ -2332,6 +2364,7 @@ const stageLabelMap: Record<string, string> = {
       @confirm="handleRiskConfirm"
     />
     <SimulateResultModal
+      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
       v-model:open="simulateModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       :result="simulateResult"
