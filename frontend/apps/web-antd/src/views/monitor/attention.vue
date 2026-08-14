@@ -87,18 +87,12 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   ALERT: '活跃预警',
   DEGRADATION: '评分恶化',
   DATA_QUALITY: '数据质量',
-  // MVP 精简：已屏蔽诊断模块 → 移除 TRACKER（待处置工单/异常跟踪）、VERIFICATION（验证超期）
-  TRACKER: '待处置工单',
-  VERIFICATION: '验证超期',
 };
 
 const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   ALERT: 'error',
   DEGRADATION: 'warning',
   DATA_QUALITY: 'default',
-  // MVP 精简：诊断相关来源保留映射定义，确保类型安全；UI 过滤不会显示
-  TRACKER: 'processing',
-  VERIFICATION: 'success',
 };
 
 const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
@@ -106,7 +100,6 @@ const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
   ACKNOWLEDGED: '已确认',
   SUPPRESSED: '已抑制',
   IN_PROGRESS: '处理中',
-  VERIFYING: '验证中',
 };
 
 const STATUS_COLOR: Record<MonitorApi.AttentionStatus, string> = {
@@ -114,7 +107,6 @@ const STATUS_COLOR: Record<MonitorApi.AttentionStatus, string> = {
   ACKNOWLEDGED: 'warning',
   SUPPRESSED: 'default',
   IN_PROGRESS: 'processing',
-  VERIFYING: 'warning',
 };
 
 const PRIORITY_ORDER: MonitorApi.AttentionPriority[] = [
@@ -127,9 +119,6 @@ const SOURCE_ORDER: MonitorApi.AttentionSource[] = [
   'ALERT',
   'DEGRADATION',
   'DATA_QUALITY',
-  // MVP 精简：已屏蔽诊断模块 → 移除 TRACKER / VERIFICATION 两个来源（筛选和排序均不显示）
-  // 'TRACKER',
-  // 'VERIFICATION',
 ];
 const SOURCE_SET = new Set<string>(SOURCE_ORDER);
 
@@ -150,7 +139,6 @@ const aggregates = ref<MonitorApi.AttentionAggregates>({
   groupCount: 0,
   openCount: 0,
   urgentCount: 0,
-  verificationOverdue: 0,
   dataQualityCount: 0,
 });
 const truncated = ref<Record<string, boolean>>({});
@@ -258,29 +246,10 @@ async function loadData() {
       pageSize: query.pageSize,
     });
 
-    // MVP 精简：已屏蔽诊断模块 → 客户端过滤掉 TRACKER / VERIFICATION 来源项
-    // （诊断异常跟踪 Action Tracker 的产物，属于被屏蔽功能）
-    const DIAGNOSIS_SOURCES = new Set(['TRACKER', 'VERIFICATION'] as MonitorApi.AttentionSource[]);
-    const filteredGroups: MonitorApi.AttentionGroup[] = [];
-    let filteredItemCount = 0;
-    for (const g of res.items) {
-      const keepItems = g.children.filter((it) => !DIAGNOSIS_SOURCES.has(it.source));
-      if (keepItems.length > 0) {
-        filteredGroups.push({ ...g, children: keepItems, itemCount: keepItems.length });
-        filteredItemCount += keepItems.length;
-      }
-    }
-    attentionGroups.value = filteredGroups;
-    totalGroups.value = filteredGroups.length;
-    totalItems.value = filteredItemCount;
-    // aggregates 同步剔除诊断相关来源
-    const agg = { ...res.aggregates };
-    const src = { ...(agg.bySource ?? {}) };
-    delete src['TRACKER'];
-    delete src['VERIFICATION'];
-    agg.bySource = src;
-    agg.verificationOverdue = 0;
-    aggregates.value = agg;
+    attentionGroups.value = res.items;
+    totalGroups.value = res.totalGroups;
+    totalItems.value = res.totalItems;
+    aggregates.value = res.aggregates;
 
     truncated.value = res.truncated || {};
     loadedAt.value = res.loadedAt || new Date().toISOString();
@@ -492,9 +461,9 @@ function handleHelp() {
   showPageHelp({
     title: '关注队列 帮助',
     content: `
-      <p><b>五来源定义</b>：活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件）、评分恶化（日降≥2分）、数据质量（完整性告警或可信度 D/E）、待处置工单（PENDING/IN_PROGRESS）、验证超期（验证中超过24小时）。</p>
-      <p><b>优先级规则</b>：紧急=CRITICAL 活跃预警或 CRITICAL 工单；高=ERROR 预警/验证超期/完整性 CRITICAL/日降≥10分；中=WARN/开放工单/完整性 WARNING/日降5-10分；低=INFO/日降2-5分/可信度 D/E。</p>
-      <p><b>排序规则</b>：优先级从高到低 → 同级：未确认 → 超期 → 处理中/验证中 → 已确认 → 已抑制 → 时间倒序。</p>
+      <p><b>三来源定义</b>：活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件）、评分恶化（日降≥2分）、数据质量（完整性告警或可信度 D/E）。</p>
+      <p><b>优先级规则</b>：紧急=CRITICAL 活跃预警；高=ERROR 预警/完整性 CRITICAL/日降≥10分；中=WARN/完整性 WARNING/日降5-10分；低=INFO/日降2-5分/可信度 D/E。</p>
+      <p><b>排序规则</b>：优先级从高到低 → 同级：未确认 → 超期 → 处理中 → 已确认 → 已抑制 → 时间倒序。</p>
       <p><b>合并规则</b>：同一回路的多个关注项合并为一行；组优先级=组内最高；展开可看子项明细。</p>
       <p>点击「进入工作台」可跳转至回路工作台查看详情并处置，携带上下文直接定位相关证据。</p>
     `,
@@ -654,16 +623,6 @@ watch(
           {{ aggregates.urgentCount }}
         </span>
         <span class="text-sm text-gray-500">紧急</span>
-      </div>
-      <div
-        v-if="aggregates.verificationOverdue"
-        class="h-5 w-px bg-gray-200"
-      />
-      <div v-if="aggregates.verificationOverdue" class="flex items-baseline gap-2">
-        <span class="text-2xl font-semibold tabular-nums text-orange-600">
-          {{ aggregates.verificationOverdue }}
-        </span>
-        <span class="text-sm text-gray-500">验证超期</span>
       </div>
       <div v-if="aggregates.dataQualityCount" class="h-5 w-px bg-gray-200" />
       <div v-if="aggregates.dataQualityCount" class="flex items-baseline gap-2">

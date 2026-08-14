@@ -13,7 +13,6 @@
  * - attentionOnly: 只看关注项（Phase 2 API 就绪后启用）
  * - timeWindow: 8h/12h/24h/48h/72h 五档
  * - eventId: 预警事件深链接
- * - trackerId: Tracker 深链接
  * - section: 工作台区锚点
  *
  * 对齐整改方案 §9.1。
@@ -30,12 +29,7 @@ export type MonitorView = 'table' | 'workspace';
 export type MonitorTimeWindow = '8h' | '12h' | '24h' | '48h' | '72h';
 
 /** 工作台区锚点 */
-export type WorkbenchSection =
-  | 'assessment'
-  | 'diagnosis'
-  | 'overview'
-  | 'tuning'
-  | 'verification';
+export type WorkbenchSection = 'assessment' | 'overview';
 
 /** 监控上下文完整状态 */
 export interface MonitorContext {
@@ -47,7 +41,6 @@ export interface MonitorContext {
   plantNodeId: null | string;
   section: null | WorkbenchSection;
   timeWindow: MonitorTimeWindow;
-  trackerId: null | string;
   view: MonitorView;
 }
 
@@ -61,7 +54,6 @@ const CONTEXT_KEYS = [
   'attentionOnly',
   'timeWindow',
   'eventId',
-  'trackerId',
   'section',
 ] as const;
 
@@ -78,13 +70,7 @@ const VALID_TIME_WINDOWS = new Set<MonitorTimeWindow>([
 const VALID_VIEWS = new Set<MonitorView>(['table', 'workspace']);
 
 /** 合法区锚点集合 */
-const VALID_SECTIONS = new Set<WorkbenchSection>([
-  'assessment',
-  'diagnosis',
-  'overview',
-  'tuning',
-  'verification',
-]);
+const VALID_SECTIONS = new Set<WorkbenchSection>(['assessment', 'overview']);
 
 /** 解析字符串 query 值，空/未定义返回 null */
 function parseStr(v: unknown): null | string {
@@ -154,7 +140,6 @@ export function useMonitorContext() {
     plantNodeId: parseStr(route.query.plantNodeId),
     section: parseSection(route.query.section),
     timeWindow: parseTimeWindow(route.query.timeWindow),
-    trackerId: parseStr(route.query.trackerId),
     view: parseView(route.query.view),
   }));
 
@@ -167,7 +152,6 @@ export function useMonitorContext() {
   const attentionOnly = computed(() => context.value.attentionOnly);
   const timeWindow = computed(() => context.value.timeWindow);
   const eventId = computed(() => context.value.eventId);
-  const trackerId = computed(() => context.value.trackerId);
   const section = computed(() => context.value.section);
 
   /**
@@ -214,7 +198,7 @@ export function useMonitorContext() {
 
   /**
    * 携带当前监控上下文跳转到目标路径。
-   * 保留 loopId/timeWindow/eventId/trackerId 等已知上下文，不默认丢弃。
+   * 保留 loopId/timeWindow/eventId 等已知上下文，不默认丢弃。
    */
   function navigateWithMonitorContext(
     target: string,
@@ -225,7 +209,6 @@ export function useMonitorContext() {
     if (current.loopId) carry.loopId = current.loopId;
     if (current.timeWindow) carry.timeWindow = current.timeWindow;
     if (current.eventId) carry.eventId = current.eventId;
-    if (current.trackerId) carry.trackerId = current.trackerId;
     router.push({ path: target, query: { ...carry, ...extra } });
   }
 
@@ -241,7 +224,6 @@ export function useMonitorContext() {
     plantNodeId,
     section,
     timeWindow,
-    trackerId,
     view,
     // 操作
     navigateWithMonitorContext,

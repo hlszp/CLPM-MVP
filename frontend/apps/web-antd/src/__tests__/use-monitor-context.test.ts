@@ -66,7 +66,6 @@ describe('useMonitorContext', () => {
     expect(ctx.attentionOnly.value).toBe(false);
     expect(ctx.timeWindow.value).toBe('24h');
     expect(ctx.eventId.value).toBeNull();
-    expect(ctx.trackerId.value).toBeNull();
     expect(ctx.section.value).toBeNull();
   });
 
@@ -78,9 +77,8 @@ describe('useMonitorContext', () => {
       loopId: 'loop-abc',
       loopType: 'FC',
       plantNodeId: 'unit-01',
-      section: 'diagnosis',
+      section: 'assessment',
       timeWindow: '72h',
-      trackerId: 'trk-01',
       view: 'table',
     });
 
@@ -94,8 +92,7 @@ describe('useMonitorContext', () => {
     expect(ctx.attentionOnly.value).toBe(true);
     expect(ctx.timeWindow.value).toBe('72h');
     expect(ctx.eventId.value).toBe('evt-001');
-    expect(ctx.trackerId.value).toBe('trk-01');
-    expect(ctx.section.value).toBe('diagnosis');
+    expect(ctx.section.value).toBe('assessment');
   });
 
   it('非法值回退：view→workspace, timeWindow→24h, section→null', () => {
@@ -215,7 +212,7 @@ describe('useMonitorContext', () => {
     });
   });
 
-  it('context 完整对象包含所有 10 个字段', () => {
+  it('context 完整对象包含所有 9 个字段', () => {
     const ctx = useMonitorContext();
     const c = ctx.context.value;
 
@@ -227,18 +224,11 @@ describe('useMonitorContext', () => {
     expect(c).toHaveProperty('attentionOnly');
     expect(c).toHaveProperty('timeWindow');
     expect(c).toHaveProperty('eventId');
-    expect(c).toHaveProperty('trackerId');
     expect(c).toHaveProperty('section');
   });
 
-  it('section 合法值：overview/assessment/diagnosis/tuning/verification', () => {
-    const valid = [
-      'overview',
-      'assessment',
-      'diagnosis',
-      'tuning',
-      'verification',
-    ] as const;
+  it('section 合法值：overview/assessment', () => {
+    const valid = ['overview', 'assessment'] as const;
 
     for (const s of valid) {
       resetMock();

@@ -408,7 +408,6 @@ const chips = computed(() => {
   const bySrc = agg?.bySource ?? {};
   return [
     { label: '活跃预警', count: bySrc['ALERT'] ?? bySrc['alert'] ?? 0, source: 'ALERT', hot: true },
-    { label: '验证超期', count: agg?.verificationOverdue ?? 0, source: 'VERIFICATION', hot: true },
     { label: '数据质量', count: agg?.dataQualityCount ?? bySrc['DATA_QUALITY'] ?? bySrc['data_quality'] ?? 0, source: 'DATA_QUALITY', hot: false },
   ];
 });

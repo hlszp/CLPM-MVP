@@ -3,7 +3,7 @@ import type { FilterPreset } from './use-clpm-preferences';
 /**
  * 保存视图 composable（MW-P4-03 统一筛选与保存视图）
  *
- * 保存视图包含模式、筛选和时间窗，不包含 eventId/trackerId/section（深链接上下文）。
+ * 保存视图包含模式、筛选和时间窗，不包含 eventId/section（深链接上下文）。
  * 应用保存视图时无权限字段被安全忽略：EXPERT/SPONSOR 不能使用 table 模式，
  * 应用 view=table 时回退到 workspace。
  *
@@ -18,7 +18,7 @@ import { useUserStore } from '@vben/stores';
 import { usePagePreference } from './use-clpm-preferences';
 import { useMonitorContext } from './use-monitor-context';
 
-/** 保存视图包含的字段（不包含 eventId/trackerId/section） */
+/** 保存视图包含的字段（不包含 eventId/section） */
 export const SAVED_VIEW_FIELDS = [
   'view',
   'timeWindow',
@@ -41,7 +41,7 @@ export function canUseTableViewByRoles(roles: string[]): boolean {
 
 /**
  * 构建保存视图的 filters 对象。
- * 只包含 SAVED_VIEW_FIELDS，排除 eventId/trackerId/section。
+ * 只包含 SAVED_VIEW_FIELDS，排除 eventId/section。
  */
 export function buildSavedViewFilters(
   ctx: MonitorContext,
@@ -59,7 +59,7 @@ export function buildSavedViewFilters(
 /**
  * 从预设构建应用 patch，执行权限安全过滤。
  * - view=table 对无权限角色回退为 workspace
- * - 明确清除 eventId/trackerId/section（保存视图不携带深链接上下文）
+ * - 明确清除 eventId/section（保存视图不携带深链接上下文）
  */
 export function buildApplyPatch(
   preset: FilterPreset,
@@ -82,9 +82,8 @@ export function buildApplyPatch(
   if (f.attentionOnly !== undefined) {
     patch.attentionOnly = !!f.attentionOnly;
   }
-  // 明确清除深链接上下文——保存视图不携带 eventId/trackerId/section
+  // 明确清除深链接上下文——保存视图不携带 eventId/section
   patch.eventId = null;
-  patch.trackerId = null;
   patch.section = null;
 
   return patch;

@@ -38,8 +38,6 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   ALERT: '预警',
   DEGRADATION: '评分恶化',
   DATA_QUALITY: '数据质量',
-  TRACKER: '工单',
-  VERIFICATION: '验证超期',
 };
 
 const highestPriorityMeta = computed(() => {

@@ -31,7 +31,6 @@ function makeCtx(overrides: Partial<MonitorContext> = {}): MonitorContext {
     attentionOnly: false,
     timeWindow: '24h',
     eventId: null,
-    trackerId: null,
     section: null,
     ...overrides,
   };
@@ -123,13 +122,8 @@ describe('useSavedView', () => {
       expect(filters).not.toHaveProperty('eventId');
     });
 
-    it('不包含 trackerId 字段', () => {
-      const filters = buildSavedViewFilters(makeCtx({ trackerId: 'trk-456' }));
-      expect(filters).not.toHaveProperty('trackerId');
-    });
-
     it('不包含 section 字段', () => {
-      const filters = buildSavedViewFilters(makeCtx({ section: 'diagnosis' }));
+      const filters = buildSavedViewFilters(makeCtx({ section: 'assessment' }));
       expect(filters).not.toHaveProperty('section');
     });
 
@@ -232,12 +226,6 @@ describe('useSavedView', () => {
       expect(patch.eventId).toBeNull();
     });
 
-    it('始终清除 trackerId 为 null', () => {
-      const preset = makePreset({ view: 'workspace' });
-      const patch = buildApplyPatch(preset, ['ADMIN']);
-      expect(patch.trackerId).toBeNull();
-    });
-
     it('始终清除 section 为 null', () => {
       const preset = makePreset({ view: 'workspace' });
       const patch = buildApplyPatch(preset, ['ADMIN']);
@@ -274,7 +262,6 @@ describe('useSavedView', () => {
         keyword: 'FT-101',
         attentionOnly: true,
         eventId: null,
-        trackerId: null,
         section: null,
       });
     });
@@ -296,7 +283,6 @@ describe('useSavedView', () => {
       expect(patch.keyword).toBe('TT-201');
       expect(patch.attentionOnly).toBe(false);
       expect(patch.eventId).toBeNull();
-      expect(patch.trackerId).toBeNull();
       expect(patch.section).toBeNull();
     });
   });

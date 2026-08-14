@@ -1,24 +1,18 @@
 <script lang="ts" setup>
 /**
- * 回路工作台（单页四区重构 v2 · 2026-08-07）
+ * 回路工作台（单页两区 · MVP 精简版）
  *
  * 双轴导航 · 实体轴：单回路 360° 一站式处置
- * master-detail 布局：左侧回路列表 + 右侧单页四区
+ * master-detail 布局：左侧回路列表 + 右侧单页两区
  *
- * 四区垂直布局（概览自适应 + 三行均分）：
+ * 两区垂直布局（概览 + 评估）：
  *   ① 回路概览：位号/名称/量程/控制方式/设定值/实时值/数据健康度
- *   ② 性能评估（30%）：12 大指标卡片（50%）+ 评分趋势图（50%，8/12/24/48/72h 可切）
- *   ③ 回路诊断（30%）：诊断标签+置信度卡片（50%）+ PV/OP·FFT 曲线（50%）
- *   ④ 回路整定（30%）：当前 PID/模型/时间常数/超调量（50%）+ 推荐 PID（50%）
- *      按钮：回路辨识 / 参数整定 / 模拟仿真
+ *   ② 性能评估：12 大指标卡片 + 评分趋势图（8/12/24/48/72h 可切）
  *
- * 一页内一览概况并可直接发起任务、实时反写。详情走弹窗。
+ * 一页内一览概况并可直接发起评估任务、实时反写。详情走弹窗。
  * 点击左侧回路 → router.replace 更新 URL query；路由 meta.fullPathKey=false
  * 确保不新增 tab/面包屑，仅更新右侧子页面。
- *
- * 后端零改动：全部组合现有 API
  */
-import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type {
   KpiSnapshotItem,
@@ -27,7 +21,6 @@ import type {
 } from '#/api/metric';
 import type { MonitorApi } from '#/api/monitor';
 import type { PlantNodeApi } from '#/api/plant-node';
-import type { TuningApi } from '#/api/tuning';
 
 import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -47,7 +40,6 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisDetailApi } from '#/api/diagnosis';
 import {
   getLoopDetailApi,
   getLoopMonitorDetailApi,
@@ -61,14 +53,7 @@ import {
 import { getWorkbenchSummaryApi } from '#/api/monitor';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
-  getTuningTaskDetailApi,
-  getTuningTasksApi,
-  simulateTuningApi,
-  tunePidApi,
-} from '#/api/tuning';
-import {
   ClpmAiDrawer,
-  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
@@ -76,7 +61,6 @@ import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
 import WorkbenchNextAction from '#/components/monitor/workbench-next-action.vue';
-import WorkbenchTrackerTimeline from '#/components/monitor/workbench-tracker-timeline.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
@@ -87,11 +71,6 @@ import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
 
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
-import DiagnosisTriggerModal from './components/diagnosis-trigger-modal.vue';
-import SimulateResultModal from './components/simulate-result-modal.vue';
-import TuneParamModal from './components/tune-param-modal.vue';
-import TuningTriggerModal from './components/tuning-trigger-modal.vue';
-import WorkbenchEffectCompare from './components/workbench-effect-compare.vue';
 import WorkbenchKpiHistory from './components/workbench-kpi-history.vue';
 import WorkbenchMetricBars from './components/workbench-metric-bars.vue';
 import WorkbenchProcessTrend from './components/workbench-process-trend.vue';
@@ -99,14 +78,6 @@ import WorkbenchRadar6 from './components/workbench-radar6.vue';
 import { useWorkbenchTaskRunner } from './composables/use-workbench-task-runner';
 
 defineOptions({ name: 'MonitorLoopWorkbench' });
-
-/**
- * MVP 精简特性开关：诊断/整定模块屏蔽
- * —— true 表示当前为 MVP 版本，屏蔽诊断（含异常跟踪验证）和整定两区，
- *    不再加载相关 API，UI 中对应卡片/弹窗/生命周期阶段不渲染。
- * —— 后续恢复完整功能时，只需改为 false 即可，无需重构代码。
- */
-const MVP_DISABLE_DIAGNOSIS_TUNING = true;
 
 const route = useRoute();
 const router = useRouter();
@@ -287,39 +258,6 @@ async function loadLoopDetail(loopId: string): Promise<void> {
   });
 }
 
-// 当前 PID（P/I/D），来自回路运行态参数
-const currentPid = computed<null | TuningApi.PidParams>(() => {
-  const r = loopDetail.value?.runtimeParams;
-  if (!r) return null;
-  return { kp: r.pidP, td: r.pidD, ti: r.pidI };
-});
-
-// ===== 诊断数据（provide 给诊断行共用） =====
-const diagnosisDetail = ref<DiagnosisApi.DiagnosisDetail | null>(null);
-const diagnosisLoading = ref(false);
-
-async function loadDiagnosis(loopId: string): Promise<void> {
-  // MVP 精简：屏蔽诊断模块 → 短路，不请求 API 也不填充数据
-  if (MVP_DISABLE_DIAGNOSIS_TUNING) {
-    diagnosisDetail.value = null;
-    diagnosisLoading.value = false;
-    return;
-  }
-  diagnosisLoading.value = true;
-  await requestGuard.run(async (_signal, capturedEpoch) => {
-    const detail = await getDiagnosisDetailApi(loopId).catch(() => null);
-    if (!requestGuard.guard(loopId, capturedEpoch)) {
-      return;
-    }
-    diagnosisDetail.value = detail;
-    diagnosisLoading.value = false;
-  });
-}
-
-provide('diagnosisDetail', diagnosisDetail);
-provide('diagnosisLoading', diagnosisLoading);
-provide('loadDiagnosis', loadDiagnosis);
-
 // ===== 评估数据（provide 给评估行 / KpiMetricCards / ScoreTrendChart 共用） =====
 const assessmentDetail = ref<LoopConfidenceLatestItem | null>(null);
 const assessmentLoading = ref(false);
@@ -366,57 +304,9 @@ provide('assessmentLoading', assessmentLoading);
 provide('scoreHistory', scoreHistory);
 provide('loadAssessment', loadAssessment);
 
-// ===== 整定数据（provide 给整定行） =====
-const tuningLatest = ref<null | TuningApi.TuningTaskItem>(null);
-const tuningLoading = ref(false);
-const tuningHistory = ref<TuningApi.TuningTaskItem[]>([]);
-/** 最新整定任务详情（含 simulationResult，用于超调量等指标） */
-const tuningDetail = ref<null | TuningApi.TuningTaskDetail>(null);
-
-async function loadTuning(loopId: string): Promise<void> {
-  // MVP 精简：屏蔽整定模块 → 短路，不请求 API 也不填充数据
-  if (MVP_DISABLE_DIAGNOSIS_TUNING) {
-    tuningLatest.value = null;
-    tuningLoading.value = false;
-    tuningHistory.value = [];
-    tuningDetail.value = null;
-    return;
-  }
-  tuningLoading.value = true;
-  await requestGuard.run(async (_signal, capturedEpoch) => {
-    const res = await getTuningTasksApi({
-      loopId,
-      page: 1,
-      pageSize: 10,
-    }).catch(() => ({ items: [], total: 0 }));
-    if (!requestGuard.guard(loopId, capturedEpoch)) {
-      return;
-    }
-    const items = (res.items || []).toSorted((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    );
-    tuningHistory.value = items;
-    tuningLatest.value = items[0] ?? null;
-    // 拉取最新任务详情以获取仿真指标（超调量等）
-    const detailId = items[0]?.id;
-    const detail = detailId
-      ? await getTuningTaskDetailApi(detailId).catch(() => null)
-      : null;
-    if (!requestGuard.guard(loopId, capturedEpoch)) {
-      return;
-    }
-    tuningDetail.value = detail;
-    tuningLoading.value = false;
-  });
-}
-
-provide('tuningLatest', tuningLatest);
-provide('tuningLoading', tuningLoading);
-provide('loadTuning', loadTuning);
-
 // ===== 工作台摘要 summary（MW-P3-05~08）=====
 // 首屏一次返回全部摘要（运行态/数据健康度/评分趋势/活跃关注/
-// 评估/诊断/整定摘要/Tracker 时间线/生命周期/nextAction）
+// 评估/生命周期/nextAction）
 const summary = ref<MonitorApi.WorkbenchSummary | null>(null);
 const summaryLoading = ref(false);
 
@@ -426,22 +316,6 @@ async function loadSummary(loopId: string): Promise<void> {
     const data = await getWorkbenchSummaryApi(loopId).catch(() => null);
     if (!requestGuard.guard(loopId, capturedEpoch)) return;
 
-    // === MOCK 开关：测试验证卡数据展示（测试完改为 false） ===
-    const USE_MOCK = false;
-    if (USE_MOCK && data) {
-      const { getMockSummary } = await import('./components/workbench-mock');
-      const mock = getMockSummary();
-      summary.value = {
-        ...data,
-        trackerTimeline: mock.trackerTimeline,
-        nextAction: mock.nextAction ?? data.nextAction,
-        lifecycle: mock.lifecycle ?? data.lifecycle,
-        activeAttention: mock.activeAttention ?? data.activeAttention,
-      };
-      summaryLoading.value = false;
-      return;
-    }
-
     summary.value = data;
     summaryLoading.value = false;
   });
@@ -449,12 +323,9 @@ async function loadSummary(loopId: string): Promise<void> {
 
 /** 生命周期条点击：滚动到对应 R 区 */
 function handleLifecycleStageClick(stage: MonitorApi.LifecycleStageName): void {
-  const map: Record<MonitorApi.LifecycleStageName, string> = {
+  const map: Partial<Record<MonitorApi.LifecycleStageName, string>> = {
     ASSESS: '.wb-r5__card--assess',
-    DIAGNOSE: '.wb-r5__card--diag',
     MONITOR: '.wb-r1',
-    TUNE: '.wb-r5__card--tune',
-    VERIFY: '.wb-r6',
   };
   const selector = map[stage];
   if (selector) {
@@ -463,17 +334,12 @@ function handleLifecycleStageClick(stage: MonitorApi.LifecycleStageName): void {
   }
 }
 
-/** nextAction 主动作点击：按 actionType 触发对应行为（FP-P0-01：9 类动作全部接通） */
+/** nextAction 主动作点击：按 actionType 触发对应行为 */
 function handleNextAction(actionType: MonitorApi.NextActionType): void {
   const loopId = selectedLoopId.value;
   switch (actionType) {
     case 'CONTINUE_MONITORING': {
       message.info('回路当前无开放问题，持续监控中');
-      break;
-    }
-    case 'CREATE_TRACKER': {
-      if (!loopId) return;
-      router.push({ path: '/diagnosis/tracker', query: { loopId } });
       break;
     }
     case 'FIX_TAG_CONFIG': {
@@ -487,50 +353,14 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
       });
       break;
     }
-    case 'RECORD_IMPLEMENTATION': {
-      if (!loopId) return;
-      router.push({ path: '/diagnosis/tracker', query: { loopId } });
-      break;
-    }
     case 'RUN_ASSESSMENT': {
       assessModalOpen.value = true;
-      break;
-    }
-    case 'RUN_DIAGNOSIS': {
-      diagModalOpen.value = true;
-      break;
-    }
-    case 'RUN_TUNING': {
-      tuningModalOpen.value = true;
-      break;
-    }
-    case 'VERIFY_EFFECT': {
-      if (!loopId) return;
-      router.push({ path: '/diagnosis/tracker', query: { loopId } });
       break;
     }
     default: {
       break;
     }
   }
-}
-
-/** 闭环时间线：查看 Tracker 详情（FP-P0-02：事件绑定修复） */
-function handleTrackerViewDetail(trackerId: string) {
-  const loopId = selectedLoopId.value;
-  router.push({
-    path: '/diagnosis/tracker',
-    query: { loopId: loopId ?? undefined, trackerId },
-  });
-}
-
-/** 闭环时间线：进入效果验证（FP-P0-02：事件绑定修复） */
-function handleTrackerVerify(trackerId: string) {
-  const loopId = selectedLoopId.value;
-  router.push({
-    path: '/diagnosis/tracker',
-    query: { loopId: loopId ?? undefined, trackerId, action: 'verify' },
-  });
 }
 
 /** summary 评分趋势的 dayTrend 类型收窄（供 DayDeltaBadge 使用） */
@@ -541,194 +371,26 @@ const summaryDayTrend = computed<DayTrend | null>(
     (summary.value?.scoreTrend.dayTrend as DayTrend | null | undefined) ?? null,
 );
 
-// ===== 三区任务运行器（评估/诊断/辨识为异步任务） =====
-// MW-P3-10：任务完成后同时刷新 summary（生命周期/nextAction/活跃关注/验证时间线）
-const { triggerAssessment, triggerDiagnosis, triggerTuning } =
-  useWorkbenchTaskRunner(
-    computed(() => selectedLoopId.value),
-    {
-      onAssessDone: async (loopId: string) => {
-        const [latest, snapshots] = await Promise.all([
-          getLoopConfidenceLatestApi(loopId).catch(() => null),
-          loadScoreHistory(loopId),
-        ]);
-        assessmentDetail.value = latest;
-        scoreHistory.value = snapshots;
-        // 刷新 summary（生命周期/评分趋势/活跃关注）
-        void loadSummary(loopId);
-      },
-      onDiagnosisDone: async (loopId: string) => {
-        diagnosisDetail.value = await getDiagnosisDetailApi(loopId).catch(
-          () => null,
-        );
-        // 刷新 summary（诊断阶段状态/nextAction）
-        void loadSummary(loopId);
-      },
-      onTuningDone: async (loopId: string) => {
-        const res = await getTuningTasksApi({
-          loopId,
-          page: 1,
-          pageSize: 10,
-        }).catch(() => ({ items: [], total: 0 }));
-        const items = (res.items || []).toSorted((a, b) =>
-          b.createdAt.localeCompare(a.createdAt),
-        );
-        tuningHistory.value = items;
-        tuningLatest.value = items[0] ?? null;
-        if (items[0]?.id) {
-          tuningDetail.value = await getTuningTaskDetailApi(items[0].id).catch(
-            () => null,
-          );
-        }
-        // 刷新 summary（整定阶段状态/nextAction/trackerTimeline 含 effectCompare）
-        void loadSummary(loopId);
-      },
+// ===== 评估任务运行器 =====
+// MW-P3-10：任务完成后同时刷新 summary（生命周期/nextAction/活跃关注）
+const { triggerAssessment } = useWorkbenchTaskRunner(
+  computed(() => selectedLoopId.value),
+  {
+    onAssessDone: async (loopId: string) => {
+      const [latest, snapshots] = await Promise.all([
+        getLoopConfidenceLatestApi(loopId).catch(() => null),
+        loadScoreHistory(loopId),
+      ]);
+      assessmentDetail.value = latest;
+      scoreHistory.value = snapshots;
+      // 刷新 summary（生命周期/评分趋势/活跃关注）
+      void loadSummary(loopId);
     },
-  );
+  },
+);
 
 // ===== 发起弹窗状态 =====
 const assessModalOpen = ref(false);
-const diagModalOpen = ref(false);
-const tuningModalOpen = ref(false);
-const tuneParamModalOpen = ref(false);
-const simulateModalOpen = ref(false);
-const simulateResult = ref<null | TuningApi.SimulationResult>(null);
-
-// ===== 参数整定（同步 tunePidApi） =====
-// 整改 B2（D1 签认）：不再以 riskConfirmed:true 静默跳过风险确认——
-// 先经 ClpmDangerConfirmModal（WARNING 简化级）用户确认后再调 API。
-const tuneLoading = ref(false);
-const riskConfirmOpen = ref(false);
-const riskConfirmKind = ref<'simulate' | 'tune'>('tune');
-const pendingTunePayload = ref<null | { algorithm: TuningApi.Algorithm }>(null);
-
-const riskConfirmContent = computed(() =>
-  riskConfirmKind.value === 'tune'
-    ? {
-        impactScope:
-          '将基于最新辨识模型计算推荐 PID 并反写至整定区。仅输出建议，不会修改 DCS 参数。',
-        title: '参数整定计算确认',
-      }
-    : {
-        impactScope:
-          '将基于推荐 PID 与当前 PID 做闭环响应对比仿真。仅输出对比结果，不会修改 DCS 参数。',
-        title: '闭环仿真计算确认',
-      },
-);
-
-/** 参数整定入口（TuneParamModal @tune）：前置检查 → 打开确认窗 */
-function requestTune(payload: { algorithm: TuningApi.Algorithm }) {
-  if (!selectedLoopId.value || !tuningLatest.value) {
-    message.warning('请先进行回路辨识生成过程模型');
-    return;
-  }
-  const latest = tuningLatest.value;
-  if (!latest.modelType || !latest.modelParams) {
-    message.warning('当前无可用过程模型');
-    return;
-  }
-  pendingTunePayload.value = payload;
-  riskConfirmKind.value = 'tune';
-  riskConfirmOpen.value = true;
-}
-
-/** 确认窗确认后执行 */
-async function handleRiskConfirm() {
-  riskConfirmOpen.value = false;
-  if (riskConfirmKind.value === 'tune' && pendingTunePayload.value) {
-    await handleTune(pendingTunePayload.value);
-  } else if (riskConfirmKind.value === 'simulate') {
-    await handleSimulate();
-  }
-}
-
-async function handleTune(payload: { algorithm: TuningApi.Algorithm }) {
-  if (!selectedLoopId.value || !tuningLatest.value) return;
-  const latest = tuningLatest.value;
-  // 前置检查已在 requestTune 完成，此处仅作类型收窄兜底
-  if (!latest.modelType || !latest.modelParams) return;
-  tuneLoading.value = true;
-  try {
-    const result = await tunePidApi({
-      algorithm: payload.algorithm,
-      currentPid: currentPid.value ?? undefined,
-      loopId: selectedLoopId.value,
-      modelParams: latest.modelParams,
-      modelSource: 'IDENTIFICATION_RECORD',
-      modelType: latest.modelType,
-      riskConfirmed: true,
-      sourceRecordId: latest.id,
-    });
-    // 反写推荐 PID 到整定行
-    tuningLatest.value = { ...latest, recommendedPid: result.recommendedPid };
-    message.success('参数整定完成，已更新推荐 PID');
-  } catch (error: any) {
-    message.error(error?.message ?? '参数整定失败');
-  } finally {
-    tuneLoading.value = false;
-  }
-}
-
-// ===== 模拟仿真（同步 simulateTuningApi） =====
-const simulateLoading = ref(false);
-
-async function handleSimulate() {
-  if (!selectedLoopId.value || !tuningLatest.value) return;
-  const latest = tuningLatest.value;
-  if (
-    !latest.modelType ||
-    !latest.modelParams ||
-    !latest.recommendedPid ||
-    !currentPid.value
-  )
-    return;
-  simulateLoading.value = true;
-  try {
-    const result = await simulateTuningApi({
-      currentPid: currentPid.value,
-      loopId: selectedLoopId.value,
-      modelParams: latest.modelParams,
-      modelSource: 'IDENTIFICATION_RECORD',
-      modelType: latest.modelType,
-      recommendedPid: latest.recommendedPid,
-      riskConfirmed: true,
-      sourceRecordId: latest.id,
-    });
-    simulateResult.value = result;
-    simulateModalOpen.value = true;
-    message.success('模拟仿真完成');
-  } catch (error: any) {
-    message.error(error?.message ?? '模拟仿真失败');
-  } finally {
-    simulateLoading.value = false;
-  }
-}
-
-// ===== 派生：诊断标签列表 =====
-const diagnosisLabels = computed(
-  () => diagnosisDetail.value?.diagnosisLabels ?? [],
-);
-const DIAGNOSIS_LABEL_COLOR_MAP: Record<string, string> = {
-  OSCILLATION: 'red',
-  VALVE_STICTION: 'orange',
-  OVERAGGRESSIVE: 'volcano',
-  OVERCONSERVATIVE: 'gold',
-  EXTERNAL_DISTURBANCE: 'blue',
-  QUALITY_ABNORMAL: 'magenta',
-  OUTPUT_SATURATION: 'purple',
-  MANUAL_REVIEW: 'default',
-};
-const DIAGNOSIS_LABEL_NAME_MAP: Record<string, string> = {
-  OSCILLATION: '振荡',
-  VALVE_STICTION: '阀门粘滞',
-  OVERAGGRESSIVE: '参数过激',
-  OVERCONSERVATIVE: '参数过保守',
-  EXTERNAL_DISTURBANCE: '外扰频繁',
-  QUALITY_ABNORMAL: 'PV 质量异常',
-  OUTPUT_SATURATION: '输出饱和',
-  MANUAL_REVIEW: '人工复核',
-};
-
 
 // ===== 派生：概览区字段 =====
 function rangeText(
@@ -775,19 +437,12 @@ function buildLoopTooltip(item: LoopApi.MonitorListItem): string {
   return lines.join('\n');
 }
 
-// ===== 派生：整定行字段 =====
+// ===== 派生：可信度标签颜色 =====
 function confidenceTagColor(level?: string): string {
   if (level === 'A' || level === 'B') return 'green';
   if (level === 'C') return 'blue';
   if (level === 'D') return 'gold';
   return 'default';
-}
-
-function pidText(pid?: null | TuningApi.PidParams): string {
-  if (!pid) return '—';
-  const fmt = (v: null | number | undefined) =>
-    typeof v === 'number' ? v.toFixed(2) : '—';
-  return `P=${fmt(pid.kp)}, Ti=${fmt(pid.ti)}s, Td=${fmt(pid.td)}s`;
 }
 
 // ===== AI 洞察两级门禁 =====
@@ -801,7 +456,7 @@ function handleHelp() {
   showPageHelp({
     title: '回路工作台 帮助',
     content:
-      '左侧选择回路，右侧单页展示概览/评估/诊断/整定概况。可直接发起评估、诊断、辨识、整定、仿真任务，任务完成后自动反写。「AI 洞察」基于当前回路生成性能分析。',
+      '左侧选择回路，右侧单页展示概览/评估概况。可直接发起评估任务，任务完成后自动反写。「AI 洞察」基于当前回路生成性能分析。',
   });
 }
 
@@ -1024,22 +679,14 @@ watch(
       loadLoopDetail(newId);
       loadSummary(newId);
       loadAssessment(newId);
-      loadDiagnosis(newId);
-      loadTuning(newId);
     } else {
-      diagnosisDetail.value = null;
       assessmentDetail.value = null;
       scoreHistory.value = [];
-      tuningLatest.value = null;
-      tuningHistory.value = [];
-      tuningDetail.value = null;
       loopDetail.value = null;
       summary.value = null;
       // 重置 loading 状态（guard 取消时不会重置，此处兜底）
       summaryLoading.value = false;
-      diagnosisLoading.value = false;
       assessmentLoading.value = false;
-      tuningLoading.value = false;
     }
   },
   { immediate: true },
@@ -1288,85 +935,6 @@ const metricBarsData = computed(() => {
   ];
 });
 
-/** R5 诊断扩展指标（负向横道：坏值率/饱和率/振荡率/粘滞系数/稳定时间/行程指数） */
-const diagExtendedMetrics = computed(() => {
-  const s = latestSnapshot.value;
-  const detail = diagnosisDetail.value;
-  let badRate = 0;
-  if (typeof detail?.featureValues?.['badRate'] === 'number') {
-    badRate = detail.featureValues.badRate as number;
-  } else if (typeof detail?.featureValues?.['bad_rate'] === 'number') {
-    badRate = detail.featureValues.bad_rate as number;
-  } else if (typeof detail?.featureValues?.['invalid_rate'] === 'number') {
-    badRate = detail.featureValues.invalid_rate as number;
-  } else if (typeof s?.goodValueRate === 'number') {
-    badRate = Math.max(0, 100 - s.goodValueRate);
-  }
-  return [
-    { name: '坏值率', threshold: 40, value: badRate },
-    { name: '饱和率', threshold: 40, value: s?.saturationRate ?? 0 },
-    { name: '振荡率', threshold: 40, value: s?.oscillationRate ?? 0 },
-    { name: '粘滞系数', threshold: 40, value: s?.stictionIndex ?? 0 },
-    { name: '稳定时间', threshold: 60, value: s?.settlingTime ?? 0 },
-    { name: '行程指数', threshold: 60, value: s?.outputTravelIndex ?? 0 },
-  ];
-});
-
-/** R5 整定卡：风险等级颜色映射 */
-function riskLevelColor(level?: null | string): string {
-  if (!level) return 'default';
-  const upper = level.toUpperCase();
-  if (upper === 'HIGH' || upper === 'CRITICAL') return 'red';
-  if (upper === 'MEDIUM' || upper === 'MODERATE') return 'orange';
-  if (upper === 'LOW') return 'green';
-  return 'default';
-}
-
-/** R5 验证卡：Tracker 状态颜色映射 */
-function trackerStatusColor(status?: null | string): string {
-  if (!status) return 'default';
-  const upper = status.toUpperCase();
-  if (upper === 'CLOSED') return 'green';
-  if (upper === 'VERIFYING') return 'blue';
-  if (upper === 'IN_PROGRESS') return 'processing';
-  if (upper === 'REOPENED') return 'orange';
-  if (upper === 'IGNORED') return 'default';
-  return 'default';
-}
-
-/** R5 验证卡：验证结论颜色映射 */
-function effectConclusionColor(conclusion?: null | string): string {
-  if (!conclusion) return 'default';
-  const upper = conclusion.toUpperCase();
-  if (upper === 'IMPROVED') return 'green';
-  if (upper === 'DETERIORATED') return 'red';
-  return 'default';
-}
-
-/** R5 整定卡：G(s) 传递函数格式化（FOPDT / SOPDT） */
-function transferFunctionText(
-  params?: null | { K?: null | number; T1?: null | number; T2?: null | number; tau?: null | number; theta?: null | number },
-): string {
-  if (!params) return '—';
-  const { K, T1, T2, tau, theta } = params;
-  const delay = theta ?? tau;
-  // SOPDT：有两个时间常数
-  if (T1 != null && T2 != null && K != null) {
-    const delayPart = delay != null && delay > 0 ? ` · e^(-${delay.toFixed(0)}s)` : '';
-    return `G(s) = ${K.toFixed(2)} / [(${T1.toFixed(0)}s+1)(${T2.toFixed(0)}s+1)]${delayPart}`;
-  }
-  // FOPDT：单时间常数
-  if (tau != null && K != null) {
-    const delayPart = delay != null && delay > 0 && delay !== tau ? ` · e^(-${delay.toFixed(0)}s)` : '';
-    return `G(s) = ${K.toFixed(2)} / (${tau.toFixed(0)}s+1)${delayPart}`;
-  }
-  if (T1 != null && K != null) {
-    const delayPart = delay != null && delay > 0 ? ` · e^(-${delay.toFixed(0)}s)` : '';
-    return `G(s) = ${K.toFixed(2)} / (${T1.toFixed(0)}s+1)${delayPart}`;
-  }
-  return '—';
-}
-
 // ===== R2 等级标签（动态阈值，useScoreColor 降级 GB/T 44693.2 §6.3 默认）=====
 const summaryScore = computed(() => summary.value?.scoreTrend.score ?? null);
 const { color: gradeColor, label: gradeLabel } = useScoreColor(
@@ -1461,10 +1029,10 @@ function applyCustomTime() {
 const lifecycleStages = computed(() => {
   if (!summary.value?.lifecycle?.stages) return [];
   const raw = summary.value.lifecycle.stages;
-  // MVP 精简：屏蔽诊断/整定模块 → 过滤掉 DIAGNOSE / TUNE / VERIFY 三个阶段
-  const filtered = MVP_DISABLE_DIAGNOSIS_TUNING
-    ? raw.filter((s) => !['DIAGNOSE', 'TUNE', 'VERIFY'].includes(s.stage))
-    : raw;
+  // MVP 精简：仅保留评估和数据两个阶段
+  const filtered = raw.filter((s) =>
+    ['ASSESS', 'MONITOR'].includes(s.stage),
+  );
   return filtered.map((s) => ({
     label: stageLabelMap[s.stage] ?? s.stage,
     stage: s.stage,
@@ -1474,10 +1042,7 @@ const lifecycleStages = computed(() => {
 
 const stageLabelMap: Record<string, string> = {
   ASSESS: '评估',
-  DIAGNOSE: '诊断',
   MONITOR: '数据',
-  TUNE: '整定',
-  VERIFY: '验证',
 };
 </script>
 
@@ -1979,30 +1544,11 @@ const stageLabelMap: Record<string, string> = {
                 :loop-id="selectedLoopId ?? ''"
               />
             </div>
-            <!-- 闭环时间线（固定 4 节点：评估→诊断→处置→验证） -->
-            <!-- MVP 精简：时间线含诊断/验证阶段 → 条件隐藏（保留"活跃关注"和"唯一下一步"） -->
-            <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-decision__timeline">
-              <div class="wb-decision__section-title">闭环时间线</div>
-              <WorkbenchTrackerTimeline
-                v-if="summary"
-                :tracker="summary.trackerTimeline"
-                :assessment="summary.assessment"
-                :diagnosis="summary.diagnosis"
-                :tuning="summary.tuning"
-                :unavailable="
-                  summary?.unavailableSections?.includes('trackerTimeline') ??
-                  false
-                "
-                @view-detail="handleTrackerViewDetail"
-                @verify="handleTrackerVerify"
-              />
-              <div v-else class="wb-decision__empty">暂无时间线</div>
-            </div>
           </aside>
 
-        <!-- ===== 下层：R5证据四区 + R6验证对比条（仅回路详情模式显示） ===== -->
+        <!-- ===== 下层：R5证据区（仅回路详情模式显示） ===== -->
           <div v-if="selectedLoop" class="wb-main-lower">
-            <!-- ===== R5 证据五区（评估.综合性能 / 评估.指标详情 / 诊断 / 整定 / 验证） ===== -->
+            <!-- ===== R5 证据区（评估.综合性能 / 评估.指标详情） ===== -->
             <section class="wb-r5">
               <!-- 评估.综合性能卡（雷达图） -->
               <div class="wb-r5__card wb-r5__card--assess">
@@ -2049,276 +1595,6 @@ const stageLabelMap: Record<string, string> = {
                   <WorkbenchMetricBars :metrics="metricBarsData" :show-hint="false" />
                 </div>
               </div>
-
-              <!-- 诊断卡（MVP 精简：已屏蔽诊断模块 → 条件隐藏） -->
-              <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-r5__card wb-r5__card--diag">
-                <div class="wb-r5__card-header">
-                  <Tooltip title="负向指标：横道条越长表示该异常越严重（诊断风险越高）">
-                    <span class="wb-r5__card-title">诊断</span>
-                  </Tooltip>
-                  <span class="wb-r5__card-meta">
-                    {{
-                      summary?.diagnosis?.resultAt
-                        ? formatTime(summary.diagnosis.resultAt)
-                        : '—'
-                    }}
-                  </span>
-                  <router-link
-                    v-if="selectedLoopId"
-                    :to="{
-                      path: '/diagnosis/detail',
-                      query: { loopId: selectedLoopId },
-                    }"
-                    class="wb-r5__card-link"
-                    >完整证据 →</router-link
-                  >
-                </div>
-                <div class="wb-r5__diag-body">
-                  <div
-                    v-if="diagnosisDetail || summary?.diagnosis"
-                    class="wb-r5__diag-content"
-                  >
-                    <div class="wb-r5__diag-labels">
-                      <Tag
-                        v-for="(item, idx) in diagnosisLabels"
-                        :key="idx"
-                        :color="
-                          DIAGNOSIS_LABEL_COLOR_MAP[item.label] || 'default'
-                        "
-                        class="!text-[11px]"
-                      >
-                        {{
-                          item.labelName ||
-                          DIAGNOSIS_LABEL_NAME_MAP[item.label] ||
-                          item.label
-                        }}
-                        <span class="ml-1 opacity-60">{{
-                          Number(item.confidence).toFixed(2)
-                        }}</span>
-                      </Tag>
-                      <span
-                        v-if="diagnosisLabels.length === 0"
-                        class="wb-r5__diag-empty-label"
-                        >未检测到异常标签</span
-                      >
-                    </div>
-                    <div v-if="diagnosisDetail" class="wb-r5__diag-stats">
-                      <div class="wb-r5__diag-stat">
-                        <span class="wb-r5__diag-stat-label">融合置信度</span>
-                        <span class="wb-r5__diag-stat-val">{{
-                          diagnosisDetail.fusedConfidence == null
-                            ? '—'
-                            : Number(diagnosisDetail.fusedConfidence).toFixed(2)
-                        }}</span>
-                      </div>
-                      <div
-                        v-if="diagnosisDetail.confidenceLevel"
-                        class="wb-r5__diag-stat"
-                      >
-                        <span class="wb-r5__diag-stat-label">可信度等级</span>
-                        <Tag
-                          :color="confidenceTagColor(diagnosisDetail.confidenceLevel)"
-                          class="!text-[10px] !leading-none !px-1 !py-0"
-                        >{{ diagnosisDetail.confidenceLevel }}</Tag>
-                      </div>
-                    </div>
-                    <!-- 诊断扩展指标（负向横道：坏值率/饱和率/振荡率/粘滞系数/稳定时间） -->
-                    <div
-                      v-if="diagExtendedMetrics.length > 0"
-                      class="wb-r5__diag-ext"
-                    >
-                      <WorkbenchMetricBars
-                        :metrics="diagExtendedMetrics"
-                        :negative="true"
-                        :show-hint="false"
-                      />
-                    </div>
-                  </div>
-                  <div v-else class="wb-r5__empty-mini">暂无诊断数据</div>
-                </div>
-              </div>
-
-              <!-- 整定卡（MVP 精简：已屏蔽整定模块 → 条件隐藏） -->
-              <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-r5__card wb-r5__card--tune">
-                <div class="wb-r5__card-header">
-                  <span class="wb-r5__card-title">整定</span>
-                  <span class="wb-r5__card-meta">
-                    {{
-                      summary?.tuning?.resultAt
-                        ? formatTime(summary.tuning.resultAt)
-                        : '—'
-                    }}
-                  </span>
-                  <router-link
-                    v-if="selectedLoopId"
-                    :to="{
-                      path: '/tuning/workbench',
-                      query: { loopId: selectedLoopId },
-                    }"
-                    class="wb-r5__card-link"
-                    >完整证据 →</router-link
-                  >
-                </div>
-                <div class="wb-r5__tune-body">
-                  <div
-                    v-if="summary?.tuning || tuningLatest"
-                    class="wb-r5__tune-rows"
-                  >
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">当前 PID</span>
-                      <span class="wb-r5__tune-val">{{
-                        pidText(currentPid ?? tuningDetail?.currentPid ?? undefined)
-                      }}</span>
-                    </div>
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">推荐 PID</span>
-                      <span
-                        class="wb-r5__tune-val wb-r5__tune-val--highlight"
-                        >{{ pidText(tuningDetail?.recommendedPid ?? tuningLatest?.recommendedPid) }}</span
-                      >
-                    </div>
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">辨识模型</span>
-                      <span class="wb-r5__tune-val wb-r5__tune-val--mono">{{
-                        transferFunctionText(tuningDetail?.modelParams ?? tuningLatest?.modelParams ?? undefined)
-                      }}</span>
-                    </div>
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">拟合度</span>
-                      <span class="wb-r5__tune-val">
-                        {{
-                          (tuningDetail?.fittingScore ?? tuningLatest?.fittingScore) == null
-                            ? '—'
-                            : `${((tuningDetail?.fittingScore ?? tuningLatest?.fittingScore)! * 100).toFixed(1)}%`
-                        }}
-                      </span>
-                    </div>
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">风险等级</span>
-                      <span class="wb-r5__tune-val">
-                        <Tag
-                          v-if="summary?.tuning?.riskLevel"
-                          :color="riskLevelColor(summary.tuning.riskLevel)"
-                          class="!text-[10px] !leading-none !px-1.5 !py-0"
-                        >{{ summary.tuning.riskLevel }}</Tag>
-                        <span v-else>—</span>
-                      </span>
-                    </div>
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">可信度</span>
-                      <span class="wb-r5__tune-val">
-                        <Tag
-                          v-if="summary?.tuning?.confidenceLevel"
-                          :color="confidenceTagColor(summary.tuning.confidenceLevel)"
-                          class="!text-[10px] !leading-none !px-1 !py-0"
-                        >{{ summary.tuning.confidenceLevel }}</Tag>
-                        <span v-else>—</span>
-                      </span>
-                    </div>
-                    <div class="wb-r5__tune-row">
-                      <span class="wb-r5__tune-label">状态</span>
-                      <span class="wb-r5__tune-val">{{
-                        summary?.tuning?.status || tuningLatest?.status || '—'
-                      }}</span>
-                    </div>
-                  </div>
-                  <div v-else class="wb-r5__empty-mini">暂无整定数据</div>
-                  <div class="wb-r5__tune-safety">
-                    安全边界：只读建议 · 人工实施 · 需留痕
-                  </div>
-                </div>
-              </div>
-
-              <!-- ===== 验证卡（第四张：闭环验证状态） ===== -->
-              <!-- MVP 精简：验证属于诊断/整定闭环（VERIFY 阶段） → 条件隐藏 -->
-              <div v-if="!MVP_DISABLE_DIAGNOSIS_TUNING" class="wb-r5__card wb-r5__card--verify">
-                <div class="wb-r5__card-header">
-                  <span class="wb-r5__card-title">验证</span>
-                  <span class="wb-r5__card-meta">
-                    {{
-                      summary?.trackerTimeline?.effectVerifiedAt
-                        ? formatTime(summary.trackerTimeline.effectVerifiedAt)
-                        : summary?.trackerTimeline?.createdAt
-                          ? formatTime(summary.trackerTimeline.createdAt)
-                          : '—'
-                    }}
-                  </span>
-                  <a
-                    v-if="summary?.trackerTimeline?.trackerId"
-                    class="wb-r5__card-link"
-                    @click="handleTrackerViewDetail(summary.trackerTimeline.trackerId)"
-                  >完整记录 →</a>
-                </div>
-                <div class="wb-r5__verify-body">
-                  <template v-if="summary?.trackerTimeline">
-                    <div class="wb-r5__tune-rows">
-                      <div class="wb-r5__tune-row">
-                        <span class="wb-r5__tune-label">Tracker 状态</span>
-                        <span class="wb-r5__tune-val">
-                          <Tag
-                            :color="trackerStatusColor(summary.trackerTimeline.actionStatus)"
-                            class="!text-[10px] !leading-none !px-1.5 !py-0"
-                          >{{ summary.trackerTimeline.actionStatus }}</Tag>
-                        </span>
-                      </div>
-                      <div class="wb-r5__tune-row">
-                        <span class="wb-r5__tune-label">验证结论</span>
-                        <span class="wb-r5__tune-val">
-                          <Tag
-                            v-if="summary.trackerTimeline.effectCompare?.conclusion"
-                            :color="effectConclusionColor(summary.trackerTimeline.effectCompare.conclusion)"
-                            class="!text-[10px] !leading-none !px-1.5 !py-0"
-                          >{{ summary.trackerTimeline.effectCompare.conclusionLabel ?? summary.trackerTimeline.effectCompare.conclusion }}</Tag>
-                          <span v-else>—</span>
-                        </span>
-                      </div>
-                      <div class="wb-r5__tune-row">
-                        <span class="wb-r5__tune-label">评分变化</span>
-                        <span class="wb-r5__tune-val">
-                          <template v-if="summary.trackerTimeline.effectCompare?.scoreChange">
-                            {{ summary.trackerTimeline.effectCompare.scoreChange.before ?? '—' }}
-                            → {{ summary.trackerTimeline.effectCompare.scoreChange.after ?? '—' }}
-                            <span
-                              v-if="summary.trackerTimeline.effectCompare.scoreChange.change != null"
-                              :style="{ color: summary.trackerTimeline.effectCompare.scoreChange.improved ? '#1a7f4b' : '#c23434' }"
-                            >({{ summary.trackerTimeline.effectCompare.scoreChange.change > 0 ? '+' : '' }}{{ summary.trackerTimeline.effectCompare.scoreChange.change }})</span>
-                          </template>
-                          <span v-else>—</span>
-                        </span>
-                      </div>
-                      <div class="wb-r5__tune-row">
-                        <span class="wb-r5__tune-label">实施时间</span>
-                        <span class="wb-r5__tune-val">{{
-                          summary.trackerTimeline.implementedAt
-                            ? formatTime(summary.trackerTimeline.implementedAt)
-                            : '—'
-                        }}</span>
-                      </div>
-                      <div class="wb-r5__tune-row">
-                        <span class="wb-r5__tune-label">超期</span>
-                        <span class="wb-r5__tune-val">
-                          <Tag
-                            v-if="summary.trackerTimeline.isOverdue"
-                            color="red"
-                            class="!text-[10px] !leading-none !px-1.5 !py-0"
-                          >超 {{ summary.trackerTimeline.overdueHours ?? 0 }}h</Tag>
-                          <span v-else style="color: hsl(var(--foreground) / 45%)">否</span>
-                        </span>
-                      </div>
-                    </div>
-                  </template>
-                  <div v-else class="wb-r5__empty-mini">暂无验证数据</div>
-                </div>
-              </div>
-            </section>
-            <section
-              v-if="!MVP_DISABLE_DIAGNOSIS_TUNING && summary?.trackerTimeline?.effectCompare"
-              class="wb-r6"
-            >
-              <WorkbenchEffectCompare
-                :effect-compare="summary.trackerTimeline.effectCompare"
-                :tracker-status="summary.trackerTimeline.actionStatus"
-              />
             </section>
           </div>
       </div>
@@ -2328,46 +1604,6 @@ const stageLabelMap: Record<string, string> = {
       v-model:open="assessModalOpen"
       :loop-tag-name="selectedLoop?.tagName"
       @trigger="triggerAssessment"
-    />
-    <DiagnosisTriggerModal
-      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
-      v-model:open="diagModalOpen"
-      :loop-tag-name="selectedLoop?.tagName"
-      @trigger="triggerDiagnosis"
-    />
-    <TuningTriggerModal
-      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
-      v-model:open="tuningModalOpen"
-      :loop-tag-name="selectedLoop?.tagName"
-      @trigger="triggerTuning"
-    />
-    <TuneParamModal
-      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
-      v-model:open="tuneParamModalOpen"
-      :loop-tag-name="selectedLoop?.tagName"
-      :model-type="tuningLatest?.modelType ?? null"
-      :model-params="tuningLatest?.modelParams ?? null"
-      :current-pid="currentPid"
-      @tune="requestTune"
-    />
-    <ClpmDangerConfirmModal
-      v-model:open="riskConfirmOpen"
-      :title="riskConfirmContent.title"
-      action="计算"
-      :impact-scope="riskConfirmContent.impactScope"
-      rollback-tip="安全边界：只读建议 · 人工实施 · 需留痕；本平台不直接修改 DCS 的 P/I/D 参数。"
-      :require-confirm-code="false"
-      :require-reason="false"
-      :show-audit-note="false"
-      confirm-text="确认计算"
-      :loading="tuneLoading || simulateLoading"
-      @confirm="handleRiskConfirm"
-    />
-    <SimulateResultModal
-      v-if="!MVP_DISABLE_DIAGNOSIS_TUNING"
-      v-model:open="simulateModalOpen"
-      :loop-tag-name="selectedLoop?.tagName"
-      :result="simulateResult"
     />
     <ClpmAiDrawer
       v-model:open="aiDrawerOpen"
@@ -2380,7 +1616,7 @@ const stageLabelMap: Record<string, string> = {
 <style scoped>
 /* ===== 统一 CSS Grid 布局：左脊柱通高 + 上部(趋势+决策) + 下部(4卡片) =====
  *   列宽：左脊柱(240px / 折叠 28px / 全屏 0) · 主区域(1fr) · 决策栏(280px)
- *   行高：R1R2(auto) · R4+决策栏(1fr) · R5+R6(auto)
+ *   行高：R1R2(auto) · R4+决策栏(1fr) · R5(auto)
  * Grid Areas:
  *   ┌─────────┬─────────┬──────────┐
  *   │ sidebar │ toprow  │ toprow   │  行1 (auto)
@@ -3389,161 +2625,6 @@ const stageLabelMap: Record<string, string> = {
   padding: 6px 8px;
 }
 
-/* 诊断卡 */
-.wb-r5__diag-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 0;
-  padding: 6px 8px;
-  font-size: 12px;
-}
-
-.wb-r5__diag-labels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-
-.wb-r5__diag-empty-label {
-  font-size: 11px;
-  color: hsl(var(--foreground) / 40%);
-}
-
-.wb-r5__diag-stats {
-  display: flex;
-  gap: 8px;
-}
-
-.wb-r5__diag-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.wb-r5__diag-stat-label {
-  font-size: 10px;
-  color: hsl(var(--foreground) / 45%);
-}
-
-.wb-r5__diag-stat-val {
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: hsl(var(--foreground));
-}
-
-.wb-r5__diag-ext {
-  flex: 1;
-  min-height: 0;
-}
-
-/* 算法特征值网格 */
-.wb-r5__diag-features {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px 8px;
-  padding: 2px 0;
-  font-size: 11px;
-}
-
-.wb-r5__diag-feature {
-  display: flex;
-  gap: 4px;
-  align-items: baseline;
-}
-
-.wb-r5__diag-feature-label {
-  color: hsl(var(--foreground) / 45%);
-  white-space: nowrap;
-}
-
-.wb-r5__diag-feature-val {
-  font-family: 'SF Mono', Consolas, monospace;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: hsl(var(--foreground) / 85%);
-}
-
-/* 规则模板建议 */
-.wb-r5__diag-reasoning {
-  padding: 4px 6px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: hsl(var(--foreground) / 65%);
-  background: hsl(var(--muted) / 40%);
-  border-radius: 3px;
-}
-
-/* 整定卡 */
-.wb-r5__tune-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  padding: 4px;
-}
-
-.wb-r5__tune-rows {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 0;
-}
-
-.wb-r5__tune-row {
-  display: flex;
-  flex: 1;
-  gap: 6px;
-  align-items: center;
-  padding: 2px 4px;
-  font-size: 11px;
-}
-
-.wb-r5__tune-label {
-  flex: 0 0 60px;
-  color: hsl(var(--foreground) / 50%);
-}
-
-.wb-r5__tune-val {
-  font-family: 'SF Mono', Consolas, monospace;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: hsl(var(--foreground) / 85%);
-}
-
-.wb-r5__tune-val--highlight {
-  font-weight: 700;
-  color: hsl(var(--primary));
-}
-
-.wb-r5__tune-val--mono {
-  font-size: 10px;
-  line-height: 1.3;
-  word-break: break-all;
-}
-
-.wb-r5__tune-safety {
-  flex: 0 0 auto;
-  padding: 2px 4px;
-  font-size: 10px;
-  color: hsl(var(--foreground) / 35%);
-  text-align: center;
-  border-top: 1px dashed hsl(var(--border) / 40%);
-}
-
-/* 验证卡 */
-.wb-r5__verify-body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  padding: 4px 6px;
-}
-
 .wb-r5__empty-mini {
   display: flex;
   flex: 1;
@@ -3553,16 +2634,7 @@ const stageLabelMap: Record<string, string> = {
   color: hsl(var(--foreground) / 40%);
 }
 
-/* ===== R6 验证对比条 ===== */
-.wb-r6 {
-  flex: 0 0 auto;
-}
-
-/* ===== 右决策栏（注意：此块是 grid-area: decision 的补充，不能覆盖第一定义的 grid-area 属性）===== */
-
-/* 决策栏不通高（v1.5 设计）：高度由 grid row 2 约束，与 R4 画布底部平齐，不溢出滚动 */
-
-/* dock 和 attention 固定高度，timeline 区域 flex:1 独立溢出滚动 */
+/* ===== 右决策栏 ===== */
 
 .wb-decision__dock {
   flex: 0 0 auto;
@@ -3576,17 +2648,6 @@ const stageLabelMap: Record<string, string> = {
   flex: 0 0 auto;
   max-height: 200px;
   overflow: hidden;
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border) / 60%);
-  border-radius: 4px;
-}
-
-.wb-decision__timeline {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden auto;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
   border-radius: 4px;

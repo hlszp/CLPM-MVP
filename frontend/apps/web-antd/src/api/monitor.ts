@@ -8,12 +8,7 @@ import { requestClient } from '#/api/request';
 
 export namespace MonitorApi {
   /** 关注来源 */
-  export type AttentionSource =
-    | 'ALERT'
-    | 'DATA_QUALITY'
-    | 'DEGRADATION'
-    | 'TRACKER'
-    | 'VERIFICATION';
+  export type AttentionSource = 'ALERT' | 'DATA_QUALITY' | 'DEGRADATION';
 
   /** 优先级 */
   export type AttentionPriority = 'HIGH' | 'LOW' | 'MEDIUM' | 'URGENT';
@@ -23,8 +18,7 @@ export namespace MonitorApi {
     | 'ACKNOWLEDGED'
     | 'IN_PROGRESS'
     | 'OPEN'
-    | 'SUPPRESSED'
-    | 'VERIFYING';
+    | 'SUPPRESSED';
 
   /** 可信度等级 */
   export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -33,7 +27,6 @@ export namespace MonitorApi {
   export type AttentionActionType =
     | 'ACKNOWLEDGE'
     | 'BACK_TO_OVERVIEW'
-    | 'CREATE_TRACKER'
     | 'MARK_FALSE_POSITIVE'
     | 'OPEN_WORKBENCH'
     | 'RESOLVE'
@@ -79,7 +72,6 @@ export namespace MonitorApi {
     score?: number;
     scoreDelta?: number;
     eventId?: string;
-    trackerId?: string;
     taskId?: string;
     primaryAction: AttentionAction;
     actions: AttentionAction[];
@@ -117,7 +109,6 @@ export namespace MonitorApi {
     groupCount?: number;
     openCount?: number;
     urgentCount?: number;
-    verificationOverdue?: number;
     dataQualityCount?: number;
   }
 
