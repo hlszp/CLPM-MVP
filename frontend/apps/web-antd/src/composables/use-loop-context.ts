@@ -2,7 +2,7 @@
  * 跨模块回路上下文 composable（IA 重构 Phase A）
  *
  * 统一 ?loopId= / ?taskId= query 规范，封装跨模块跳转。
- * 所有跨模块跳转（评估→诊断→整定→回路）统一走本 composable，
+ * 所有跨模块跳转统一走本 composable，
  * 避免各页面自行拼 query 字符串导致上下文丢失。
  *
  * 对齐 IA 重构方案 §3.1（双轴互为入口，loopId 上下文）。
@@ -22,8 +22,8 @@ export interface LoopContext {
  *
  * 用法：
  *   const { loopId, navigateWithLoop, withLoop } = useLoopContext();
- *   navigateWithLoop('/diagnosis/detail/LIC-101', 'LIC-101');
- *   <router-link :to="withLoop('/tuning/workbench')">开始整定</router-link>
+ *   navigateWithLoop('/monitor/loop-workbench', 'LIC-101');
+ *   <router-link :to="withLoop('/monitor/loops')">查看回路</router-link>
  */
 export function useLoopContext() {
   const route = useRoute();

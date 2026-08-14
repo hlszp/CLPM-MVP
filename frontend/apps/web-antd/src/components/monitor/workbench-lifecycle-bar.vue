@@ -1,6 +1,6 @@
-/** * 工作台生命周期条（MW-P3-07） * * 五阶段状态可扫描：MONITOR → ASSESS →
-DIAGNOSE → TUNE → VERIFY * 当前/阻塞/超期状态有文字和图标，不只靠颜色。 *
-点击阶段滚动到对应区或展开验证时间线。 * * 对齐整改方案 §7.2 生命周期状态。 */
+/** * 工作台生命周期条（MW-P3-07） * * 两阶段状态可扫描：MONITOR → ASSESS *
+当前/阻塞/超期状态有文字和图标，不只靠颜色。 *
+点击阶段滚动到对应区。 * * 对齐整改方案 §7.2 生命周期状态。 */
 <script lang="ts" setup>
 import type { MonitorApi } from '#/api/monitor';
 
@@ -28,9 +28,6 @@ const STAGE_META: Record<
 > = {
   MONITOR: { icon: 'lucide:radio', label: '监控' },
   ASSESS: { icon: 'lucide:chart-column', label: '评估' },
-  DIAGNOSE: { icon: 'lucide:stethoscope', label: '诊断' },
-  TUNE: { icon: 'lucide:settings-2', label: '整定' },
-  VERIFY: { icon: 'lucide:check-circle', label: '验证' },
 };
 
 const STATUS_META: Record<
@@ -56,9 +53,6 @@ function isStageUnavailable(stage: MonitorApi.LifecycleStageName): boolean {
   const map: Record<MonitorApi.LifecycleStageName, string[]> = {
     MONITOR: ['runtime'],
     ASSESS: ['assessment'],
-    DIAGNOSE: ['diagnosis'],
-    TUNE: ['tuning'],
-    VERIFY: ['trackerTimeline'],
   };
   const sections = props.unavailableSections ?? [];
   return map[stage].some((s) => sections.includes(s));

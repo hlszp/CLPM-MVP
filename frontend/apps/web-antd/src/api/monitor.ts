@@ -140,12 +140,7 @@ export namespace MonitorApi {
   // ===== 工作台摘要 summary（MW-P3-01 ~ MW-P3-04）=====
 
   /** 生命周期阶段名 */
-  export type LifecycleStageName =
-    | 'ASSESS'
-    | 'DIAGNOSE'
-    | 'MONITOR'
-    | 'TUNE'
-    | 'VERIFY';
+  export type LifecycleStageName = 'ASSESS' | 'MONITOR';
 
   /** 生命周期阶段状态 */
   export type LifecycleStageStatus =
@@ -175,14 +170,9 @@ export namespace MonitorApi {
   /** nextAction 动作类型 */
   export type NextActionType =
     | 'CONTINUE_MONITORING'
-    | 'CREATE_TRACKER'
     | 'FIX_TAG_CONFIG'
     | 'IMPORT_DATA'
-    | 'RECORD_IMPLEMENTATION'
-    | 'RUN_ASSESSMENT'
-    | 'RUN_DIAGNOSIS'
-    | 'RUN_TUNING'
-    | 'VERIFY_EFFECT';
+    | 'RUN_ASSESSMENT';
 
   /** 推荐下一步 */
   export interface NextAction {

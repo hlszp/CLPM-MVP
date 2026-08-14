@@ -5,7 +5,6 @@
  * - /system/reports 仅 ADMIN（后端 reports.py 全端点仅 ADMIN）
  * - /config/link（原 /loop/aas-sync）仅 ADMIN（后端 datasource.py/dcs.py 写端点仅 ADMIN）
  * - EXPERT 不可见系统概览/评估，但可进入监控下回路工作台
- * - 诊断 / 整定对 EXPERT 放行
  */
 import type { RouteRecordRaw } from 'vue-router';
 
@@ -14,10 +13,8 @@ import { describe, expect, it } from 'vitest';
 import alertRoutes from '#/router/routes/modules/alert';
 import assessRoutes from '#/router/routes/modules/assess';
 import configRoutes from '#/router/routes/modules/config';
-import diagnosisRoutes from '#/router/routes/modules/diagnosis';
 import monitorRoutes from '#/router/routes/modules/monitor';
 import systemRoutes from '#/router/routes/modules/system';
-import tuningRoutes from '#/router/routes/modules/tuning';
 
 function findRoute(
   routes: RouteRecordRaw[],
@@ -131,26 +128,4 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
     }
   });
 
-  it('诊断对 EXPERT 放行', () => {
-    const parent = diagnosisRoutes[0]!;
-    expect(authorityOf(parent)).toContain('EXPERT');
-    for (const path of [
-      '/diagnosis/overview',
-      '/diagnosis/tasks',
-      '/diagnosis/records',
-      '/diagnosis/tracker',
-    ]) {
-      const route = findRoute(diagnosisRoutes, (r) => r.path === path);
-      expect(route, path).toBeDefined();
-      expect(authorityOf(route!)).toContain('EXPERT');
-    }
-  });
-
-  it('整定对 EXPERT 放行', () => {
-    const parent = tuningRoutes[0]!;
-    expect(authorityOf(parent)).toContain('EXPERT');
-    for (const child of parent.children ?? []) {
-      expect(authorityOf(child)).toContain('EXPERT');
-    }
-  });
 });
