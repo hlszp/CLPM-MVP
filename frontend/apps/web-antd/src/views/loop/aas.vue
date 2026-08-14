@@ -140,9 +140,6 @@ const needRestart = computed(() => {
 // 网络模式切换（瞬断实时链路，属高危操作）
 const networkSwitchOpen = ref(false);
 const networkSwitchTarget = ref<DataSourceApi.NetworkMode | null>(null);
-// 测试连接（先按当前表单隐式保存配置，操作前显式确认）
-const testHistoryOpen = ref(false);
-const testSignalrOpen = ref(false);
 
 const networkSwitchTargetLabel = computed(() =>
   networkSwitchTarget.value === 'wan'
@@ -282,13 +279,8 @@ async function saveSignalrConfig() {
   }
 }
 
-/** 测试连接会先按当前表单隐式保存配置，操作前显式提示确认 */
-function testHistory() {
-  testHistoryOpen.value = true;
-}
-
-/** 历史数据源"保存并测试"确认回调（ClpmDangerConfirmModal @confirm） */
-async function confirmTestHistory() {
+/** 测试历史数据源连接：先按当前表单保存配置，再发起连接测试 */
+async function testHistory() {
   testingHistory.value = true;
   historyTestResult.value = null;
   try {
@@ -296,7 +288,6 @@ async function confirmTestHistory() {
     config.value = data;
     resetTokenState(data);
     historyTestResult.value = await testHistoryApiApi();
-    testHistoryOpen.value = false;
   } catch {
     // 错误提示由请求拦截器统一处理
   } finally {
@@ -304,13 +295,8 @@ async function confirmTestHistory() {
   }
 }
 
-/** 测试连接会先按当前表单隐式保存配置，操作前显式提示确认 */
-function testSignalr() {
-  testSignalrOpen.value = true;
-}
-
-/** 实时数据源"保存并测试"确认回调（ClpmDangerConfirmModal @confirm） */
-async function confirmTestSignalr() {
+/** 测试实时数据源连接：先按当前表单保存配置，再发起连接测试 */
+async function testSignalr() {
   testingSignalr.value = true;
   signalrTestResult.value = null;
   try {
@@ -323,7 +309,6 @@ async function confirmTestSignalr() {
     });
     config.value = data;
     signalrTestResult.value = await testSignalrApi();
-    testSignalrOpen.value = false;
   } catch {
     // 错误提示由请求拦截器统一处理
   } finally {
@@ -1690,34 +1675,6 @@ onMounted(loadConfig);
       :show-audit-note="false"
       :loading="switchingNetwork"
       @confirm="confirmNetworkSwitch"
-    />
-
-    <!-- 测试历史数据源连接：先隐式保存配置，操作前显式确认 -->
-    <ClpmDangerConfirmModal
-      v-model:open="testHistoryOpen"
-      title="测试历史数据源连接"
-      action="保存并测试"
-      impact-scope="将先按当前表单内容保存历史数据源配置，再发起连接测试"
-      confirm-text="保存并测试"
-      :require-confirm-code="false"
-      :require-reason="false"
-      :show-audit-note="false"
-      :loading="testingHistory"
-      @confirm="confirmTestHistory"
-    />
-
-    <!-- 测试实时数据源连接：先隐式保存配置，操作前显式确认 -->
-    <ClpmDangerConfirmModal
-      v-model:open="testSignalrOpen"
-      title="测试实时数据源连接"
-      action="保存并测试"
-      impact-scope="将先按当前表单内容保存实时数据源配置，再发起连接测试"
-      confirm-text="保存并测试"
-      :require-confirm-code="false"
-      :require-reason="false"
-      :show-audit-note="false"
-      :loading="testingSignalr"
-      @confirm="confirmTestSignalr"
     />
 
     <!-- 删除 DCS 品牌：危险确认弹窗 -->

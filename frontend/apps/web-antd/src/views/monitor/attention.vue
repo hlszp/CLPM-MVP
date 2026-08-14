@@ -87,6 +87,7 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   ALERT: '活跃预警',
   DEGRADATION: '评分恶化',
   DATA_QUALITY: '数据质量',
+  // MVP 精简：已屏蔽诊断模块 → 移除 TRACKER（待处置工单/异常跟踪）、VERIFICATION（验证超期）
   TRACKER: '待处置工单',
   VERIFICATION: '验证超期',
 };
@@ -95,6 +96,7 @@ const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   ALERT: 'error',
   DEGRADATION: 'warning',
   DATA_QUALITY: 'default',
+  // MVP 精简：诊断相关来源保留映射定义，确保类型安全；UI 过滤不会显示
   TRACKER: 'processing',
   VERIFICATION: 'success',
 };
@@ -125,8 +127,9 @@ const SOURCE_ORDER: MonitorApi.AttentionSource[] = [
   'ALERT',
   'DEGRADATION',
   'DATA_QUALITY',
-  'TRACKER',
-  'VERIFICATION',
+  // MVP 精简：已屏蔽诊断模块 → 移除 TRACKER / VERIFICATION 两个来源（筛选和排序均不显示）
+  // 'TRACKER',
+  // 'VERIFICATION',
 ];
 const SOURCE_SET = new Set<string>(SOURCE_ORDER);
 
@@ -254,10 +257,31 @@ async function loadData() {
       page: query.page,
       pageSize: query.pageSize,
     });
-    attentionGroups.value = res.items;
-    totalGroups.value = res.totalGroups;
-    totalItems.value = res.totalItems;
-    aggregates.value = res.aggregates;
+
+    // MVP 精简：已屏蔽诊断模块 → 客户端过滤掉 TRACKER / VERIFICATION 来源项
+    // （诊断异常跟踪 Action Tracker 的产物，属于被屏蔽功能）
+    const DIAGNOSIS_SOURCES = new Set(['TRACKER', 'VERIFICATION'] as MonitorApi.AttentionSource[]);
+    const filteredGroups: MonitorApi.AttentionGroup[] = [];
+    let filteredItemCount = 0;
+    for (const g of res.items) {
+      const keepItems = g.children.filter((it) => !DIAGNOSIS_SOURCES.has(it.source));
+      if (keepItems.length > 0) {
+        filteredGroups.push({ ...g, children: keepItems, itemCount: keepItems.length });
+        filteredItemCount += keepItems.length;
+      }
+    }
+    attentionGroups.value = filteredGroups;
+    totalGroups.value = filteredGroups.length;
+    totalItems.value = filteredItemCount;
+    // aggregates 同步剔除诊断相关来源
+    const agg = { ...res.aggregates };
+    const src = { ...(agg.bySource ?? {}) };
+    delete src['TRACKER'];
+    delete src['VERIFICATION'];
+    agg.bySource = src;
+    agg.verificationOverdue = 0;
+    aggregates.value = agg;
+
     truncated.value = res.truncated || {};
     loadedAt.value = res.loadedAt || new Date().toISOString();
     lastRefresh.value = new Date().toLocaleTimeString('zh-CN', {

@@ -28,6 +28,7 @@ import {
   DatePicker,
   Input,
   message,
+  Modal,
   Popconfirm,
   Progress,
   Radio,
@@ -51,7 +52,6 @@ import {
 } from '#/api/loop-data';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
-  ClpmDangerConfirmModal,
   ClpmPageToolbar,
   ClpmStandardActions,
   ClpmToolbarButton,
@@ -668,62 +668,54 @@ async function handleBackfill(taskId: string) {
   }
 }
 
-/** 删除导入任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01），删除后不可恢复 */
-const deleteOpen = ref(false);
-const deleteTargetId = ref('');
-const deleteLoading = ref(false);
-
+/** 删除导入任务：简单确认（删除后不可恢复） */
 function handleDelete(taskId: string) {
-  deleteTargetId.value = taskId;
-  deleteOpen.value = true;
+  Modal.confirm({
+    title: '确定删除？',
+    content: '删除后该导入任务记录将不可恢复',
+    okType: 'danger',
+    okText: '删除',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await deleteImportApi(taskId);
+        message.success('已删除导入任务');
+        await loadTasks();
+        syncTaskPolling();
+      } catch {
+        // 错误已由拦截器透传
+      }
+    },
+  });
 }
 
-async function handleDeleteConfirm() {
-  if (!deleteTargetId.value) return;
-  deleteLoading.value = true;
-  try {
-    await deleteImportApi(deleteTargetId.value);
-    message.success('已删除导入任务');
-    deleteOpen.value = false;
-    await loadTasks();
-    syncTaskPolling();
-  } catch {
-    // 错误已由拦截器透传
-  } finally {
-    deleteLoading.value = false;
-  }
-}
-
-/** 批量删除导入任务：危险确认弹窗（批量走软确认，免确认码） */
-const batchDeleteOpen = ref(false);
-const batchDeleteLoading = ref(false);
-
+/** 批量删除导入任务：简单确认 */
 function handleBatchDelete() {
   if (selectedTaskIds.value.length === 0) {
     message.warning('请选择要删除的任务');
     return;
   }
-  batchDeleteOpen.value = true;
-}
-
-async function handleBatchDeleteConfirm() {
-  batchDeleteLoading.value = true;
-  try {
-    // 批量删除走并发控制（allSettled 语义：单项失败不中断其余项）
-    const { fulfilled } = await runWithConcurrency(
-      selectedTaskIds.value,
-      (taskId) => deleteImportApi(taskId),
-    );
-    if (fulfilled > 0) {
-      message.success(`已删除 ${fulfilled} 个导入任务`);
-    }
-    selectedTaskIds.value = [];
-    batchDeleteOpen.value = false;
-    await loadTasks();
-    syncTaskPolling();
-  } finally {
-    batchDeleteLoading.value = false;
-  }
+  const count = selectedTaskIds.value.length;
+  Modal.confirm({
+    title: '确定删除？',
+    content: `将删除选中的 ${count} 个导入任务，删除后不可恢复`,
+    okType: 'danger',
+    okText: '删除',
+    cancelText: '取消',
+    onOk: async () => {
+      // 批量删除走并发控制（allSettled 语义：单项失败不中断其余项）
+      const { fulfilled } = await runWithConcurrency(
+        selectedTaskIds.value,
+        (taskId) => deleteImportApi(taskId),
+      );
+      if (fulfilled > 0) {
+        message.success(`已删除 ${fulfilled} 个导入任务`);
+      }
+      selectedTaskIds.value = [];
+      await loadTasks();
+      syncTaskPolling();
+    },
+  });
 }
 
 function hasActiveTasks() {
@@ -1057,32 +1049,6 @@ onMounted(async () => {
       @backfill="handleBackfillFromIntegrity"
     />
 
-    <!-- 删除导入任务：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
-    <ClpmDangerConfirmModal
-      v-model:open="deleteOpen"
-      title="删除导入任务"
-      action="删除"
-      :target="deleteTargetId.slice(0, 8)"
-      impact-scope="删除后该导入任务记录将不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      require-confirm-code
-      confirm-code-placeholder="请输入任务 ID 前 8 位以确认"
-      :loading="deleteLoading"
-      @confirm="handleDeleteConfirm"
-    />
-
-    <!-- 批量删除导入任务：危险确认弹窗（批量软确认，免确认码） -->
-    <ClpmDangerConfirmModal
-      v-model:open="batchDeleteOpen"
-      title="批量删除导入任务"
-      action="删除"
-      :target="`选中的 ${selectedTaskIds.length} 个任务`"
-      impact-scope="删除后这些导入任务记录将不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :require-confirm-code="false"
-      :loading="batchDeleteLoading"
-      @confirm="handleBatchDeleteConfirm"
-    />
   </Page>
 </template>
 
