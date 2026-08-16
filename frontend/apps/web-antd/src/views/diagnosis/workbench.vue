@@ -296,9 +296,11 @@ onMounted(() => {
     border-top: 1px solid hsl(var(--primary) / 30%);
     border-bottom: 1px solid hsl(var(--primary) / 30%);
   }
+
   td:first-child {
     border-left: 1px solid hsl(var(--primary) / 30%);
   }
+
   td:last-child {
     border-right: 1px solid hsl(var(--primary) / 30%);
   }
