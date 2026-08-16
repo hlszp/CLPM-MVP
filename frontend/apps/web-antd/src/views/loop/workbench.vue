@@ -1704,24 +1704,27 @@ const stageLabelMap: Record<string, string> = {
 .wb-fleet-placeholder {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   align-items: center;
   justify-content: center;
   height: 100%;
-  gap: 12px;
   padding: 48px 24px;
   text-align: center;
 }
+
 .wb-fleet-placeholder__title {
   font-size: 16px;
   font-weight: 600;
   color: #1f2937;
 }
+
 .wb-fleet-placeholder__desc {
-  font-size: 13px;
-  color: #6b7280;
   max-width: 360px;
+  font-size: 13px;
   line-height: 1.6;
+  color: #6b7280;
 }
+
 .wb-fleet-placeholder__link {
   margin-top: 8px;
 }

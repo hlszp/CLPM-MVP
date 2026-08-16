@@ -467,10 +467,10 @@ defineExpose({ refresh });
   justify-content: center;
   width: 32px;
   height: 24px;
-  cursor: pointer;
-  border-radius: 4px;
-  border: 1px solid hsl(var(--border));
   overflow: hidden;
+  cursor: pointer;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -483,18 +483,18 @@ defineExpose({ refresh });
   inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0;
-  cursor: pointer;
   padding: 0;
+  cursor: pointer;
   border: 0;
+  opacity: 0;
 }
 
 .color-picker-swatch {
   display: block;
   width: 22px;
   height: 16px;
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
   pointer-events: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
 }
 </style>

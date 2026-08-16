@@ -228,24 +228,24 @@ const deltaInfo = computed(() => {
 }
 
 .clpm-bullet__label {
+  flex-shrink: 0;
   font-size: 13px;
   color: hsl(var(--muted-foreground));
-  flex-shrink: 0;
 }
 
 .clpm-bullet__delta {
   display: inline-flex;
-  align-items: baseline;
+  flex-shrink: 0;
   gap: 2px;
+  align-items: baseline;
   padding: 0 4px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 15px;
-  border-radius: 3px;
   white-space: nowrap;
-  flex-shrink: 0;
+  border-radius: 3px;
 }
 
 .clpm-bullet__delta-val {
@@ -342,16 +342,16 @@ const deltaInfo = computed(() => {
 .clpm-bullet--compact .clpm-bullet__label {
   font-size: 11px;
   line-height: 1.2;
-  white-space: nowrap;
   color: hsl(var(--muted-foreground));
+  white-space: nowrap;
 }
 
 .clpm-bullet--compact .clpm-bullet__value-row {
   display: flex;
-  width: 100%;
   gap: 6px;
   align-items: baseline;
   justify-content: space-between;
+  width: 100%;
 }
 
 .clpm-bullet--compact .clpm-bullet__value {
@@ -362,17 +362,17 @@ const deltaInfo = computed(() => {
 }
 
 .clpm-bullet--compact .clpm-bullet__unit {
+  margin-left: 1px;
   font-size: 10px;
   font-weight: 500;
-  margin-left: 1px;
 }
 
 .clpm-bullet--compact .clpm-bullet__delta {
+  gap: 1px;
+  align-self: center;
   padding: 0 4px;
   font-size: 9px;
   line-height: 13px;
-  gap: 1px;
-  align-self: center;
 }
 
 .clpm-bullet--compact .clpm-bullet__delta-arrow {
@@ -381,8 +381,8 @@ const deltaInfo = computed(() => {
 
 .clpm-bullet--compact .clpm-bullet__track {
   height: 8px;
-  border-radius: 2px;
   overflow: hidden;
+  border-radius: 2px;
 }
 
 .clpm-bullet--compact .clpm-bullet__bar {
