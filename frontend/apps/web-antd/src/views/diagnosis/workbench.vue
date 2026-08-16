@@ -43,10 +43,10 @@ const selectedLoopIds = ref<string[]>([]);
 async function loadLoopOptions(keyword = '') {
   loopLoading.value = true;
   try {
-    // 空 keyword 不传参（后端对空字符串 keyword 返回 422）
+    // 后端 /loops pageSize 上限 le=100，超出直接 422；空 keyword 不传参
     const params = keyword
-      ? { page: 1, pageSize: 200, keyword }
-      : { page: 1, pageSize: 200 };
+      ? { page: 1, pageSize: 100, keyword }
+      : { page: 1, pageSize: 100 };
     const res = await getLoopListApi(params);
     loopOptions.value = res.items.map((l: LoopApi.LoopListItem) => ({
       label: l.tagName,
