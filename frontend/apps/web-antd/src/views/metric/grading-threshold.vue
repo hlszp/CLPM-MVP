@@ -4,8 +4,8 @@
  *
  * 对齐 UI/UX v5.3 §6.1.4 + FDS v5.1 §5.2.4
  * - 5 级定级表（EXCELLENT/GOOD/FAIR/WARNING/POOR）
- * - 每行可编辑 minScore/maxScore
- * - 颜色固定不可编辑
+ * - 每行可编辑 minScore/maxScore/label/color
+ * - 颜色支持自定义（点击色块弹出颜色选择器）
  * - 双命名展示：以"一级 (EXCELLENT)"格式
  * - 严格递增校验（level N minScore == level N+1 maxScore）
  * - "保存为新版本"按钮 + 二次确认弹窗
@@ -69,19 +69,35 @@ function levelColor(level: number): string {
 
 /** 编辑态：以 level 为 key 存储编辑中的值 */
 const editState = reactive<
-  Record<number, { label: string; maxScore: number; minScore: number }>
+  Record<
+    number,
+    { color: string; label: string; maxScore: number; minScore: number }
+  >
 >({});
 
 /** 获取编辑态（保证非 undefined，用于模板 v-model） */
 function editStateOf(level: number): {
+  color: string;
   label: string;
   maxScore: number;
   minScore: number;
 } {
   if (!editState[level]) {
-    editState[level] = { label: '', minScore: 0, maxScore: 0 };
+    editState[level] = {
+      color: levelColor(level),
+      label: '',
+      minScore: 0,
+      maxScore: 0,
+    };
   }
-  return editState[level] ?? { label: '', minScore: 0, maxScore: 0 };
+  return (
+    editState[level] ?? {
+      color: levelColor(level),
+      label: '',
+      minScore: 0,
+      maxScore: 0,
+    }
+  );
 }
 
 const columns: TableColumnsType = [
@@ -105,10 +121,10 @@ const columns: TableColumnsType = [
     width: 160,
   },
   {
-    title: '颜色（固定）',
+    title: '颜色',
     dataIndex: 'color',
     key: 'color',
-    width: 130,
+    width: 160,
   },
   { title: '校验', key: 'validation', width: 120 },
 ];
@@ -122,6 +138,7 @@ async function loadList() {
     // 同步编辑态
     for (const item of list.value) {
       editState[item.level] = {
+        color: item.color ?? levelColor(item.level),
         label:
           item.label ?? LEVEL_META[item.level]?.cnLabel ?? `L${item.level}`,
         minScore: item.minScore,
@@ -132,13 +149,13 @@ async function loadList() {
     const defaultLevels = [1, 2, 3, 4, 5];
     const defaults: Record<
       number,
-      { label: string; max: number; min: number }
+      { color: string; label: string; max: number; min: number }
     > = {
-      1: { label: '优秀', min: 90, max: 100 },
-      2: { label: '良好', min: 80, max: 90 },
-      3: { label: '合格', min: 60, max: 80 },
-      4: { label: '警告', min: 40, max: 60 },
-      5: { label: '不合格', min: 0, max: 40 },
+      1: { color: '#52c41a', label: '优秀', min: 90, max: 100 },
+      2: { color: '#1890ff', label: '良好', min: 80, max: 90 },
+      3: { color: '#faad14', label: '合格', min: 60, max: 80 },
+      4: { color: '#fa8c16', label: '警告', min: 40, max: 60 },
+      5: { color: '#f5222d', label: '不合格', min: 0, max: 40 },
     };
     for (const lv of defaultLevels) {
       if (!list.value.some((it) => it.level === lv)) {
@@ -148,10 +165,11 @@ async function loadList() {
           label: defaults[lv]?.label ?? `L${lv}`,
           minScore: defaults[lv]?.min ?? 0,
           maxScore: defaults[lv]?.max ?? 100,
-          color: levelColor(lv),
+          color: defaults[lv]?.color ?? levelColor(lv),
         };
         list.value.push(placeholder);
         editState[lv] = {
+          color: placeholder.color ?? levelColor(lv),
           label: placeholder.label ?? '',
           minScore: placeholder.minScore,
           maxScore: placeholder.maxScore,
@@ -218,7 +236,7 @@ async function confirmSave() {
       label: editState[item.level]?.label ?? item.label ?? '',
       minScore: editState[item.level]?.minScore ?? item.minScore,
       maxScore: editState[item.level]?.maxScore ?? item.maxScore,
-      color: levelColor(item.level),
+      color: editState[item.level]?.color ?? item.color ?? levelColor(item.level),
     }));
     await saveGradingThresholdsApi({ thresholds });
     message.success('定级阈值保存成功（已生成新版本）');
@@ -289,7 +307,7 @@ defineExpose({ refresh });
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'level'">
-          <Tag :color="levelColor(record.level)">
+          <Tag :color="editStateOf(record.level).color">
             {{ LEVEL_META[record.level]?.cnLabel ?? `L${record.level}` }}
             ({{ record.name }})
           </Tag>
@@ -328,17 +346,28 @@ defineExpose({ refresh });
         </template>
         <template v-else-if="column.key === 'color'">
           <div class="flex items-center gap-2">
-            <span
-              class="inline-block h-4 w-6 rounded"
-              :style="{
-                background: levelColor(record.level),
-              }"
-            ></span>
+            <label class="color-picker-trigger">
+              <input
+                type="color"
+                :value="editStateOf(record.level).color"
+                class="color-picker-input"
+                @input="
+                  (e: Event) =>
+                    (editStateOf(record.level).color = (
+                      e.target as HTMLInputElement
+                    ).value)
+                "
+              />
+              <span
+                class="color-picker-swatch"
+                :style="{ background: editStateOf(record.level).color }"
+              ></span>
+            </label>
             <span
               class="font-mono text-xs"
               :style="{ color: themeColors.NEUTRAL }"
             >
-              {{ levelColor(record.level) }}
+              {{ editStateOf(record.level).color }}
             </span>
           </div>
         </template>
@@ -364,8 +393,8 @@ defineExpose({ refresh });
         例如：一级 (EXCELLENT) minScore=90，则二级 (GOOD) maxScore 须=90。
       </p>
       <p class="mt-1">
-        <strong>颜色说明：</strong>
-        颜色由国标定义，不可编辑。一级绿/二级蓝/三级黄/四级橙/五级红。
+        <strong>颜色配置：</strong>
+        点击颜色方块可自定义各等级显示颜色，保存后全站生效。
       </p>
     </div>
 
@@ -429,5 +458,43 @@ defineExpose({ refresh });
 
 :deep(.row-violated:hover > td) {
   background-color: hsl(var(--status-error) / 12%) !important;
+}
+
+.color-picker-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid hsl(var(--border));
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.color-picker-trigger:hover {
+  border-color: hsl(var(--primary));
+}
+
+.color-picker-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0;
+  border: 0;
+}
+
+.color-picker-swatch {
+  display: block;
+  width: 22px;
+  height: 16px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
 }
 </style>

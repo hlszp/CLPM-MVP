@@ -196,8 +196,12 @@ async def get_auto_rate_rt_endpoint(
 async def get_board_trend_endpoint(
     plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
     timeWindow: str = Query(
-        "today", description="时间窗：last_8_hours/today/yesterday/last_7_days/last_30_days"
+        "today",
+        description="时间窗：last_8_hours/last_24_hours/last_72_hours/last_168_hours/"
+        "today/yesterday/last_7_days/last_30_days/custom",
     ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -207,6 +211,8 @@ async def get_board_trend_endpoint(
     - ``avgScore``: 综合性能评分（加权平均）
     - ``autoModeRate``: 平均自控率（加权平均）
     - ``stabilityRate``: 稳定率（加权平均）
+    - ``fastRate``: 快速率（加权平均，04-系统概览 v4.0）
+    - ``accuracyRate``: 准确率（加权平均，04-系统概览 v4.0）
     - ``evaluatedLoops``: 参评回路数（求和）
 
     若指定 ``plantId``，返回该节点及其所有下属节点的聚合趋势；
@@ -215,12 +221,26 @@ async def get_board_trend_endpoint(
     设计依据：FDS v5.1 §5.3.7, UIUX v5.3 ①, DDS v4.1 §2.17
 
     v6.1 更新：支持递归聚合当前节点及所有下属节点的趋势数据（使用 PostgreSQL 递归 CTE）
+    v4.4 更新：新增 last_24/72/168 小时滚动窗口与 custom 自定义起止窗口
     """
-    from datetime import datetime, timedelta
+
+    def _parse_dt(s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
 
     now = datetime.now(UTC).replace(tzinfo=None)
-    if timeWindow == "last_8_hours":
+    if timeWindow == "custom" and startTime and endTime:
+        start = _parse_dt(startTime) or (now - timedelta(hours=24))
+        now = _parse_dt(endTime) or now
+    elif timeWindow == "last_8_hours":
         start = now - timedelta(hours=8)
+    elif timeWindow in ("last_24_hours", "last_72_hours", "last_168_hours"):
+        hours = {"last_24_hours": 24, "last_72_hours": 72, "last_168_hours": 168}[timeWindow]
+        start = now - timedelta(hours=hours)
     elif timeWindow == "today":
         start = now - timedelta(hours=24)
     elif timeWindow == "yesterday":
@@ -267,6 +287,8 @@ async def get_board_trend_endpoint(
                 "avgScore": [],
                 "autoModeRate": [],
                 "stabilityRate": [],
+                "fastRate": [],
+                "accuracyRate": [],
                 "evaluatedLoops": [],
                 "totalLoops": total_loops_count,
             }
@@ -282,6 +304,8 @@ async def get_board_trend_endpoint(
             UnitKpiSummary.avg_score,
             UnitKpiSummary.auto_mode_rate,
             UnitKpiSummary.stability_rate,
+            UnitKpiSummary.fast_rate,
+            UnitKpiSummary.accuracy_rate,
         ).where(
             UnitKpiSummary.node_id.in_(descendant_ids),
             UnitKpiSummary.snapshot_time >= start,
@@ -296,6 +320,8 @@ async def get_board_trend_endpoint(
             func.sum(subq.c.avg_score * subq.c.evaluated_loops).label("score_weighted_sum"),
             func.sum(subq.c.auto_mode_rate * subq.c.evaluated_loops).label("auto_weighted_sum"),
             func.sum(subq.c.stability_rate * subq.c.evaluated_loops).label("stable_weighted_sum"),
+            func.sum(subq.c.fast_rate * subq.c.evaluated_loops).label("fast_weighted_sum"),
+            func.sum(subq.c.accuracy_rate * subq.c.evaluated_loops).label("acc_weighted_sum"),
         )
         .group_by(subq.c.hour)
         .order_by(subq.c.hour.asc())
@@ -315,6 +341,8 @@ async def get_board_trend_endpoint(
     avg_score: list[float | None] = []
     auto_mode_rate: list[float | None] = []
     stability_rate: list[float | None] = []
+    fast_rate: list[float | None] = []
+    accuracy_rate: list[float | None] = []
     evaluated_loops: list[int] = []
 
     current = start.replace(minute=0, second=0, microsecond=0)
@@ -329,15 +357,21 @@ async def get_board_trend_endpoint(
                 avg_score.append(round(float(row.score_weighted_sum or 0) / total, 2))
                 auto_mode_rate.append(round(float(row.auto_weighted_sum or 0) / total, 2))
                 stability_rate.append(round(float(row.stable_weighted_sum or 0) / total, 2))
+                fast_rate.append(round(float(row.fast_weighted_sum or 0) / total, 2))
+                accuracy_rate.append(round(float(row.acc_weighted_sum or 0) / total, 2))
             else:
                 avg_score.append(None)
                 auto_mode_rate.append(None)
                 stability_rate.append(None)
+                fast_rate.append(None)
+                accuracy_rate.append(None)
         else:
             evaluated_loops.append(0)
             avg_score.append(None)
             auto_mode_rate.append(None)
             stability_rate.append(None)
+            fast_rate.append(None)
+            accuracy_rate.append(None)
         current += timedelta(hours=1)
 
     return success(
@@ -346,6 +380,8 @@ async def get_board_trend_endpoint(
             "avgScore": avg_score,
             "autoModeRate": auto_mode_rate,
             "stabilityRate": stability_rate,
+            "fastRate": fast_rate,
+            "accuracyRate": accuracy_rate,
             "evaluatedLoops": evaluated_loops,
             "totalLoops": total_loops_count,
         }
@@ -357,22 +393,36 @@ async def get_board_trend_endpoint(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_aggregate_window(time_window: str | None) -> tuple[datetime, datetime] | None:
+def _resolve_aggregate_window(
+    time_window: str | None,
+    start_dt: datetime | None = None,
+    end_dt: datetime | None = None,
+) -> tuple[datetime, datetime] | None:
     """解析 board/aggregate 时间窗为 (start, end)（naive UTC）；None=不启用窗口.
 
-    取值与 board/trend 对齐：last_8_hours/today/yesterday/last_7_days/last_30_days，
-    未识别值回退 today。
+    取值与 board/trend 对齐：
+    last_8_hours/last_24_hours/last_72_hours/last_168_hours（滚动窗口）/
+    today/yesterday/last_7_days/last_30_days（北京日历日）/
+    custom（start_dt/end_dt 必填），未识别值回退 today。
 
     注意：所有时间统一转换为 UTC 存储，计算本地日期时需加 UTC+8 偏移。
     """
     if not time_window:
         return None
+    if time_window == "custom":
+        if start_dt is None or end_dt is None:
+            return None
+        return start_dt, end_dt
     # UTC 现在时间，北京时间（UTC+8）
     now_utc = datetime.now(UTC).replace(tzinfo=None)
     # 北京时间现在
     now_cst = now_utc + timedelta(hours=8)
     if time_window == "last_8_hours":
         start = now_utc - timedelta(hours=8)
+        end = now_utc
+    elif time_window in ("last_24_hours", "last_72_hours", "last_168_hours"):
+        hours = {"last_24_hours": 24, "last_72_hours": 72, "last_168_hours": 168}[time_window]
+        start = now_utc - timedelta(hours=hours)
         end = now_utc
     elif time_window == "today":
         # 今日：北京时间今日 00:00 → 当前时间
@@ -506,9 +556,11 @@ async def get_board_aggregate_endpoint(
     plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
     timeWindow: str | None = Query(
         None,
-        description="时间窗：last_8_hours/today/yesterday/last_7_days/last_30_days；"
-        "缺省=每节点最新快照（现状）",
+        description="时间窗：last_8_hours/last_24_hours/last_72_hours/last_168_hours/"
+        "today/yesterday/last_7_days/last_30_days/custom；缺省=每节点最新快照（现状）",
     ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -543,7 +595,23 @@ async def get_board_aggregate_endpoint(
     """
     from app.services.node_performance import collect_descendant_loop_ids
 
-    window = _resolve_aggregate_window(timeWindow)
+    def _parse_dt(s: datetime | str | None) -> datetime | None:
+        # isinstance 守卫：直接调用端点函数时（单测场景），未传参数的默认值是
+        # FastAPI Query 对象而非 None，非字符串输入一律视为未指定
+        if isinstance(s, datetime):
+            return s.replace(tzinfo=None)
+        if not isinstance(s, str):
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
+
+    window = _resolve_aggregate_window(
+        timeWindow,
+        start_dt=_parse_dt(startTime),
+        end_dt=_parse_dt(endTime),
+    )
 
     # 获取实际回路数（去重，避免父子节点重复累加）
     if plantId:

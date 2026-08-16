@@ -525,10 +525,10 @@ def _lttb_downsample_datablock(
 ]:
     """对 DataBlock 数据应用 LTTB 降采样（多序列共享时间戳）。
 
-    复用现有 ``app.services.waveform.lttb_downsample_multi_series`` 函数，
+    复用现有 ``app.services.trend_service.lttb_downsample_multi_series`` 函数，
     以 PV 序列为参考进行降采样，其他信号/有效性/异常原因码按相同索引采样。
     """
-    from app.services.waveform import lttb_downsample_multi_series
+    from app.services.trend_service import lttb_downsample_multi_series
 
     # datetime → 毫秒时间戳（LTTB 需要数值）
     ts_millis: list[int] = []

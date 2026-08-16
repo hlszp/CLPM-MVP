@@ -135,16 +135,31 @@ async def update_rule_endpoint(
 async def get_board_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
-        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+        "today",
+        description="时间窗：today/yesterday/last_8_hours/last_24_hours/"
+        "last_72_hours/last_168_hours/last_7_days/last_30_days/custom",
     ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """全局看板（所有角色）。Redis 缓存 5 分钟。"""
+
+    def _parse_dt(s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
+
     data = await get_board(
         db=db,
         plant_node_id=plantNodeId,
         time_window=timeWindow,
+        start_time=_parse_dt(startTime),
+        end_time=_parse_dt(endTime),
     )
     return success(data=data)
 
@@ -158,8 +173,12 @@ async def get_board_endpoint(
 async def get_ranking_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
-        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+        "today",
+        description="时间窗：today/yesterday/last_8_hours/last_24_hours/"
+        "last_72_hours/last_168_hours/last_7_days/last_30_days/custom",
     ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     limit: int = Query(20, ge=1, le=100, description="返回条数（最多 100）"),
     offset: int = Query(0, ge=0, description="偏移量（配合 limit 实现分页拉全量）"),
     sortBy: str = Query("score", description="排序字段：score/steady_rate/good_value_rate"),
@@ -172,6 +191,15 @@ async def get_ranking_endpoint(
     性能 #12：新增 ``offset`` 参数支持前端循环分页拉全量，
     解决 >100 回路时等级占比饼图少计的问题。
     """
+
+    def _parse_dt(s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
+
     data = await get_ranking(
         db=db,
         plant_node_id=plantNodeId,
@@ -180,6 +208,8 @@ async def get_ranking_endpoint(
         offset=offset,
         sort_by=sortBy,
         sort_order=sortOrder,
+        start_time=_parse_dt(startTime),
+        end_time=_parse_dt(endTime),
     )
     return success(data=data)
 

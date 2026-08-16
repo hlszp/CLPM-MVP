@@ -576,28 +576,13 @@ class TestDashboardService:
         assert any(s is not None for s in result["composite_scores"])
 
     async def test_pending_alerts_count(self) -> None:
-        """待处理异常数正确统计。"""
+        """待处理异常数（MVP：诊断/跟踪器模型已移除，恒返回零值）。"""
         from app.services.dashboard import _build_pending_alerts
 
         db = AsyncMock()
-        trackers = [
-            _make_tracker(action_status="PENDING"),
-            _make_tracker(action_status="IN_PROGRESS"),
-        ]
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return _make_scalars_mock(trackers)
-            if call_count[0] == 2:
-                return _make_scalar_mock(5)
-            return _make_scalars_mock([])
-
-        db.execute = AsyncMock(side_effect=execute_side_effect)
         result = await _build_pending_alerts(db=db, plant_id=None)
-        assert result["open_trackers"] == 2
-        assert result["open_diagnoses"] == 5
+        assert result["open_trackers"] == 0
+        assert result["open_diagnoses"] == 0
 
     async def test_kpi_cards_trend_calculation(self) -> None:
         """KPI 卡片趋势计算正确。"""

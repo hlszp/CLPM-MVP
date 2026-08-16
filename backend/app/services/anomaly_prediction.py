@@ -27,7 +27,6 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 
 logger = logging.getLogger(__name__)
@@ -507,29 +506,12 @@ async def _batch_query_recent_diagnosis_labels(
     start: datetime,
     now: datetime,
 ) -> dict[str, list[str]]:
-    """批量查询各回路最近的诊断标签。"""
-    if not loop_ids:
-        return {}
+    """批量查询各回路最近的诊断标签。
 
-    result = await db.execute(
-        select(DiagnosisResult.loop_id, DiagnosisResult.diag_label)
-        .where(
-            DiagnosisResult.loop_id.in_(loop_ids),
-            DiagnosisResult.diagnosed_at >= start,
-            DiagnosisResult.diagnosed_at <= now,
-            DiagnosisResult.diag_label.is_not(None),
-        )
-        .order_by(DiagnosisResult.diagnosed_at.desc())
-    )
-
-    labels_map: dict[str, list[str]] = {}
-    for lid, label in result.all():
-        lid_str = str(lid) if lid else ""
-        if not lid_str or not label:
-            continue
-        if lid_str not in labels_map:
-            labels_map[lid_str] = [label]
-    return labels_map
+    诊断模型已在重构中移除，暂返回空字典以保持接口兼容；
+    调用方通过 ``.get(loop_id, [])`` 取到空列表，行为正确。
+    """
+    return {}
 
 
 async def _batch_query_plant_names(db: AsyncSession, loops: Iterable[LoopLedger]) -> dict[str, str]:

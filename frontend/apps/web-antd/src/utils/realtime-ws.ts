@@ -62,10 +62,26 @@ class RealtimeWebSocket {
 
   /**
    * 连接 WebSocket（需先传入 token）
+   *
+   * 幂等保护：连接建立中/已连接且 token 未变化时直接复用，
+   * 避免 layout 全局建连与 monitor/tag 页面级建连产生重复 WebSocket。
    */
   connect(token: string) {
+    if (
+      this.token === token &&
+      (this.ws?.readyState === WebSocket.OPEN ||
+        this.ws?.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
     this.token = token;
     this.isManualClose = false;
+    if (this.ws) {
+      // token 变化或连接已关闭：先清理旧连接再重连
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
     this._doConnect();
   }
 
@@ -133,7 +149,11 @@ class RealtimeWebSocket {
       return;
     }
 
-    this.ws.addEventListener('open', () => {
+    // 连接身份：事件回调仅对"当前生效连接"生效，被替换的旧连接事件全部忽略
+    const activeWs = this.ws;
+
+    activeWs.addEventListener('open', () => {
+      if (this.ws !== activeWs) return;
       this.reconnectAttempts = 0;
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
@@ -142,7 +162,8 @@ class RealtimeWebSocket {
       this._notifyConnectionChange();
     });
 
-    this.ws.addEventListener('message', (event) => {
+    activeWs.addEventListener('message', (event) => {
+      if (this.ws !== activeWs) return;
       try {
         const data = JSON.parse(event.data);
         // 跳过心跳消息
@@ -154,7 +175,8 @@ class RealtimeWebSocket {
       }
     });
 
-    this.ws.addEventListener('close', (event) => {
+    activeWs.addEventListener('close', (event) => {
+      if (this.ws !== activeWs) return;
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
         console.warn(`[RealtimeWS] 连接关闭 (code=${event.code})`);
@@ -166,7 +188,8 @@ class RealtimeWebSocket {
       }
     });
 
-    this.ws.addEventListener('error', () => {
+    activeWs.addEventListener('error', () => {
+      if (this.ws !== activeWs) return;
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
         console.warn('[RealtimeWS] 连接错误');

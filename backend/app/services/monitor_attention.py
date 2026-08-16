@@ -40,7 +40,6 @@ from app.models.metric import (
     LoopIntegritySnapshot,
 )
 from app.models.plant_node import PlantNode
-from app.models.tracker import ActionTracker
 from app.services.plant_node_tree import collect_descendant_node_ids
 
 logger = logging.getLogger(__name__)
@@ -48,9 +47,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
-
-#: 验证周期（小时）——对齐 diagnosis.py verifyOverdueCount 口径
-VERIFICATION_PERIOD_HOURS = 24
 
 #: 评分恶化阈值
 SCORE_DELTA_DEGRADATION = -2  # 进入关注队列的最低门槛
@@ -72,12 +68,6 @@ ALERT_SEVERITY_PRIORITY: dict[str, str] = {
     "INFO": "LOW",
 }
 
-#: Tracker 状态映射
-TRACKER_STATUS_MAP: dict[str, str] = {
-    "PENDING": "OPEN",
-    "IN_PROGRESS": "IN_PROGRESS",
-}
-
 #: 中文优先级标签
 PRIORITY_LABEL: dict[str, str] = {
     "URGENT": "紧急",
@@ -91,8 +81,6 @@ SOURCE_LABEL: dict[str, str] = {
     "ALERT": "活跃预警",
     "DEGRADATION": "评分恶化",
     "DATA_QUALITY": "数据质量",
-    "TRACKER": "待处置工单",
-    "VERIFICATION": "验证超期",
 }
 
 # ---------------------------------------------------------------------------
@@ -216,13 +204,21 @@ def _upgrade_priority(current: str, target: str) -> str:
 
 
 def _is_overdue(item: _RawItem) -> bool:
-    """判断是否超期（仅 VERIFICATION 来源）。"""
+    """判断是否超期。
+
+    VERIFICATION 来源时，若 updated_at 超过 24 小时则判定超期。
+    其他来源不判定超期。
+    """
     if item.source != "VERIFICATION":
         return False
     if item.updated_at is None:
         return False
-    now = datetime.now(UTC).replace(tzinfo=None)
-    return (now - item.updated_at) > timedelta(hours=VERIFICATION_PERIOD_HOURS)
+    now = datetime.now(UTC)
+    # 兼容 naive datetime（测试数据可能不带 tzinfo）
+    updated = item.updated_at
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=UTC)
+    return (now - updated) > timedelta(hours=24)
 
 
 # ---------------------------------------------------------------------------
@@ -716,135 +712,6 @@ async def _aggregate_degradation_and_data_quality(
 
 
 # ---------------------------------------------------------------------------
-# 聚合：TRACKER + VERIFICATION
-# ---------------------------------------------------------------------------
-
-
-async def _aggregate_trackers(
-    db: AsyncSession,
-    loop_ids: set[str] | None,
-    name_map: dict[str, tuple[str | None, str | None]],
-) -> tuple[list[_RawItem], bool]:
-    """聚合开放 Tracker（PENDING/IN_PROGRESS）和验证超期（VERIFYING）。
-
-    VERIFYING 超过验证周期的归入 VERIFICATION 来源，不进入 TRACKER。
-
-    Returns:
-        (items, truncated) - truncated 表示是否达到 _MAX_ITEMS_PER_SOURCE 上限
-    """
-    now = datetime.now(UTC).replace(tzinfo=None)
-    overdue_threshold = now - timedelta(hours=VERIFICATION_PERIOD_HOURS)
-
-    stmt = (
-        select(ActionTracker, LoopLedger)
-        .join(LoopLedger, ActionTracker.loop_id == LoopLedger.id, isouter=True)
-        .where(
-            ActionTracker.action_status.in_(("PENDING", "IN_PROGRESS", "VERIFYING")),
-        )
-        .order_by(ActionTracker.created_at.desc())
-        .limit(_MAX_ITEMS_PER_SOURCE + 1)
-    )
-    if loop_ids is not None:
-        stmt = stmt.where(ActionTracker.loop_id.in_(list(loop_ids)))
-
-    result = await db.execute(stmt)
-    rows = result.all()
-    truncated = len(rows) > _MAX_ITEMS_PER_SOURCE
-    rows = rows[:_MAX_ITEMS_PER_SOURCE]
-
-    items: list[_RawItem] = []
-    for tracker, loop in rows:
-        if loop is None:
-            continue
-        if not loop.is_active:
-            continue
-        lid = str(loop.id)
-        area_name, unit_name = name_map.get(lid, (None, None))
-
-        if tracker.action_status == "VERIFYING":
-            # 判断是否超期
-            updated = tracker.updated_at or tracker.created_at
-            is_overdue = updated < overdue_threshold
-            if not is_overdue:
-                continue  # 未超期的 VERIFYING 不进入关注队列
-
-            overdue_hours = (now - updated).total_seconds() / 3600
-            reasons = [f"验证已超期 {overdue_hours:.0f} 小时"]
-            if tracker.severity:
-                reasons.append(f"严重度 {tracker.severity}")
-
-            items.append(
-                _RawItem(
-                    source="VERIFICATION",
-                    source_id=str(tracker.id),
-                    loop_id=lid,
-                    tag_name=loop.tag_name,
-                    unit_name=unit_name,
-                    area_name=area_name,
-                    title="验证超期",
-                    summary=(f"回路 {loop.tag_name} 实施后验证超期 {overdue_hours:.0f} 小时"),
-                    priority="HIGH",
-                    source_severity=tracker.severity,
-                    status="VERIFYING",
-                    source_status="VERIFYING",
-                    rank_reasons=reasons,
-                    occurred_at=tracker.created_at,
-                    updated_at=updated,
-                    confidence_level=None,
-                    score=None,
-                    score_delta=None,
-                    event_id=None,
-                    tracker_id=str(tracker.id),
-                    task_id=None,
-                )
-            )
-        else:
-            # PENDING / IN_PROGRESS → TRACKER 来源
-            status = TRACKER_STATUS_MAP.get(tracker.action_status, "OPEN")
-            reasons: list[str] = []
-            if tracker.action_status == "PENDING":
-                reasons.append("待处置工单")
-            else:
-                reasons.append("处理中工单")
-            if tracker.severity:
-                reasons.append(f"严重度 {tracker.severity}")
-
-            priority = "MEDIUM"
-            if tracker.severity == "CRITICAL":
-                priority = "URGENT"
-            elif tracker.severity == "ERROR":
-                priority = "HIGH"
-
-            label = tracker.diagnosis_label or "异常"
-            items.append(
-                _RawItem(
-                    source="TRACKER",
-                    source_id=str(tracker.id),
-                    loop_id=lid,
-                    tag_name=loop.tag_name,
-                    unit_name=unit_name,
-                    area_name=area_name,
-                    title=f"工单：{label}",
-                    summary=f"回路 {loop.tag_name} 工单 {label} 待处置",
-                    priority=priority,
-                    source_severity=tracker.severity,
-                    status=status,
-                    source_status=tracker.action_status,
-                    rank_reasons=reasons,
-                    occurred_at=tracker.created_at,
-                    updated_at=tracker.updated_at,
-                    confidence_level=None,
-                    score=None,
-                    score_delta=None,
-                    event_id=None,
-                    tracker_id=str(tracker.id),
-                    task_id=None,
-                )
-            )
-    return items, truncated
-
-
-# ---------------------------------------------------------------------------
 # 分组逻辑（G3：同回路合并）
 # ---------------------------------------------------------------------------
 
@@ -1044,13 +911,6 @@ async def list_attention(
     if source_filter is None or "DEGRADATION" in source_filter or "DATA_QUALITY" in source_filter:
         dq_items, dq_trunc = await _aggregate_degradation_and_data_quality(db, loop_ids, name_map)
         raw_items.extend(dq_items)
-
-    # MVP 精简：已屏蔽诊断/整改模块 → 不再聚合 TRACKER/VERIFICATION 来源
-    # if source_filter is None or "TRACKER" in source_filter or "VERIFICATION" in source_filter:
-    #     tracker_items, tracker_trunc = await _aggregate_trackers(db, loop_ids, name_map)
-    #     raw_items.extend(tracker_items)
-    #     if tracker_trunc:
-    #         truncated["TRACKER"] = True
 
     # 过滤
     filtered = raw_items

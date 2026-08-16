@@ -76,6 +76,9 @@ TIME_WINDOWS: dict[str, timedelta] = {
     "today": timedelta(days=1),
     "yesterday": timedelta(days=1),
     "last_8_hours": timedelta(hours=8),
+    "last_24_hours": timedelta(hours=24),
+    "last_72_hours": timedelta(hours=72),
+    "last_168_hours": timedelta(hours=168),
     "last_7_days": timedelta(days=7),
     "last_30_days": timedelta(days=30),
 }
@@ -310,14 +313,20 @@ async def get_board(
     db: AsyncSession,
     plant_node_id: str | None = None,
     time_window: str = "today",
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
 ) -> dict:
     """全局看板数据。
 
-    Redis 缓存 5 分钟。
+    Redis 缓存 5 分钟。``time_window="custom"`` 时需提供 ``start_time``/``end_time``。
     """
     cache_key = DASHBOARD_CACHE_KEY_TEMPLATE.format(
         plant_node_id=plant_node_id or "all",
-        time_window=time_window,
+        time_window=(
+            f"custom:{start_time.isoformat()}~{end_time.isoformat()}"
+            if time_window == "custom" and start_time and end_time
+            else time_window
+        ),
     )
     try:
         cached = await redis_client.get(cache_key)
@@ -327,15 +336,18 @@ async def get_board(
         logger.warning("读取看板缓存失败: %s", exc)
 
     # 计算 time_window 对应的时间范围
-    now = datetime.now(UTC).replace(tzinfo=None)
-    if time_window == "today":
-        start = now - timedelta(hours=24)
-    elif time_window == "yesterday":
-        start = now - timedelta(days=2)
-        now = now - timedelta(days=1)
+    if time_window == "custom" and start_time is not None and end_time is not None:
+        start, now = start_time, end_time
     else:
-        delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
-        start = now - delta
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if time_window == "today":
+            start = now - timedelta(hours=24)
+        elif time_window == "yesterday":
+            start = now - timedelta(days=2)
+            now = now - timedelta(days=1)
+        else:
+            delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
+            start = now - delta
 
     # 获取装置名称
     plant_node_name = "全厂"
@@ -627,6 +639,8 @@ async def get_ranking(
     offset: int = 0,
     sort_by: str = "score",
     sort_order: str = "asc",
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
 ) -> list[dict]:
     """低效回路排行。
 
@@ -635,16 +649,20 @@ async def get_ranking(
         offset: 偏移量（配合 limit 实现分页拉全量）
         sort_by: 排序字段 score/steady_rate/good_value_rate
         sort_order: asc/desc（默认 asc，分数最低的在前）
+        start_time/end_time: ``time_window="custom"`` 时的自定义窗口
     """
-    now = datetime.now(UTC).replace(tzinfo=None)
-    if time_window == "today":
-        start = now - timedelta(hours=24)
-    elif time_window == "yesterday":
-        start = now - timedelta(days=2)
-        now = now - timedelta(days=1)
+    if time_window == "custom" and start_time is not None and end_time is not None:
+        start, now = start_time, end_time
     else:
-        delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
-        start = now - delta
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if time_window == "today":
+            start = now - timedelta(hours=24)
+        elif time_window == "yesterday":
+            start = now - timedelta(days=2)
+            now = now - timedelta(days=1)
+        else:
+            delta = TIME_WINDOWS.get(time_window, timedelta(days=1))
+            start = now - delta
 
     # 排序字段白名单（防止 SQL 注入：不直接拼接用户输入到 SQL）
     sort_field_map = {

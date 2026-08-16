@@ -54,45 +54,51 @@ interface Props {
   size?: 'default' | 'small';
 }
 
-/** 状态元数据 */
+/**
+ * 状态元数据
+ *
+ * 注意：--status-* token 定义为 hex 值（industrial-light.css），
+ * 禁止 hsl(var(--status-*)) 包装（hsl(#xxxxxx) 非法 → 颜色失效回退黑色）；
+ * 半透明背景/边框用 color-mix 派生。
+ */
 const statusMeta = computed(() => {
   const map = {
     online: {
-      color: 'hsl(var(--status-ok))',
-      bgColor: 'hsl(var(--status-ok) / 0.12)',
-      borderColor: 'hsl(var(--status-ok) / 0.4)',
+      color: 'var(--status-ok)',
+      bgColor: 'color-mix(in srgb, var(--status-ok) 12%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--status-ok) 40%, transparent)',
       text: '在线',
       icon: 'lucide:radio',
       pulse: true,
     },
     delayed: {
-      color: 'hsl(var(--status-warning))',
-      bgColor: 'hsl(var(--status-warning) / 0.12)',
-      borderColor: 'hsl(var(--status-warning) / 0.4)',
+      color: 'var(--status-warning)',
+      bgColor: 'color-mix(in srgb, var(--status-warning) 12%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--status-warning) 40%, transparent)',
       text: '延迟',
       icon: 'lucide:clock-alert',
       pulse: false,
     },
     failed: {
-      color: 'hsl(var(--status-error))',
-      bgColor: 'hsl(var(--status-error) / 0.12)',
-      borderColor: 'hsl(var(--status-error) / 0.4)',
+      color: 'var(--status-error)',
+      bgColor: 'color-mix(in srgb, var(--status-error) 12%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--status-error) 40%, transparent)',
       text: '失败',
       icon: 'lucide:wifi-off',
       pulse: false,
     },
     refreshing: {
-      color: 'hsl(var(--status-info))',
-      bgColor: 'hsl(var(--status-info) / 0.12)',
-      borderColor: 'hsl(var(--status-info) / 0.4)',
+      color: 'var(--status-info)',
+      bgColor: 'color-mix(in srgb, var(--status-info) 12%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--status-info) 40%, transparent)',
       text: '刷新中',
       icon: 'lucide:refresh-cw',
       pulse: true,
     },
     offline: {
-      color: 'hsl(var(--status-neutral))',
-      bgColor: 'hsl(var(--status-neutral) / 0.12)',
-      borderColor: 'hsl(var(--status-neutral) / 0.4)',
+      color: 'var(--status-neutral)',
+      bgColor: 'color-mix(in srgb, var(--status-neutral) 12%, transparent)',
+      borderColor: 'color-mix(in srgb, var(--status-neutral) 40%, transparent)',
       text: '离线',
       icon: 'lucide:circle-off',
       pulse: false,

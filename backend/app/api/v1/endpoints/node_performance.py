@@ -39,11 +39,23 @@ from app.services.node_performance import (
 router = APIRouter(prefix="/performance/nodes", tags=["performance-node"])
 
 
-def _parse_time_window(time_window: str) -> tuple[datetime, datetime]:
-    """时间窗字符串 → (start, end)。"""
+def _parse_time_window(
+    time_window: str,
+    start_dt: datetime | None = None,
+    end_dt: datetime | None = None,
+) -> tuple[datetime, datetime]:
+    """时间窗字符串 → (start, end)；custom 时直接使用给定起止时间。"""
+    if time_window == "custom" and start_dt is not None and end_dt is not None:
+        return start_dt, end_dt
     now = datetime.now(UTC).replace(tzinfo=None)
     if time_window == "last_8_hours":
         return now - timedelta(hours=8), now
+    if time_window == "last_24_hours":
+        return now - timedelta(hours=24), now
+    if time_window == "last_72_hours":
+        return now - timedelta(hours=72), now
+    if time_window == "last_168_hours":
+        return now - timedelta(hours=168), now
     if time_window == "today":
         return now - timedelta(hours=24), now
     if time_window == "yesterday":
@@ -109,8 +121,12 @@ async def get_node_trend_endpoint(
 @router.get("/ranking", response_model=ApiResponse[list[NodeRankingItem]])
 async def get_node_ranking_endpoint(
     timeWindow: str = Query(
-        "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
+        "today",
+        description="时间窗：today/yesterday/last_8_hours/last_24_hours/"
+        "last_72_hours/last_168_hours/last_7_days/last_30_days/custom",
     ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     nodeType: str | None = Query(None, description="节点类型筛选：FACTORY/UNIT/EQUIPMENT"),
     sortBy: str = Query(
         "score", description="排序字段：score/steady_rate/auto_loop_ratio/effective_auto_rate"
@@ -121,7 +137,20 @@ async def get_node_ranking_endpoint(
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """节点间性能排名（所有角色）。"""
-    start, end = _parse_time_window(timeWindow)
+
+    def _parse_dt(s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
+
+    start, end = _parse_time_window(
+        timeWindow,
+        start_dt=_parse_dt(startTime),
+        end_dt=_parse_dt(endTime),
+    )
     data = await get_node_ranking(
         db=db,
         start=start,

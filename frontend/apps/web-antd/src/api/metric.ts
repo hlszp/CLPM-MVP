@@ -19,7 +19,18 @@ export type ControlType = 'FAST' | 'LOGIC' | 'SLOW' | 'STABLE';
 export type DataPlannerControlType = 'CC' | 'FC' | 'LC' | 'PC' | 'TC';
 
 /** 时间窗枚举 */
-export type TimeWindow = 'last_8_hours' | 'last_7_days' | 'last_30_days' | 'today' | 'yesterday';
+export type TimeWindow =
+  | 'last_8_hours'
+  | 'last_24_hours'
+  | 'last_72_hours'
+  | 'last_168_hours'
+  | 'last_7_days'
+  | 'last_30_days'
+  | 'today'
+  | 'yesterday';
+
+/** 时间窗参数（含自定义窗口；custom 时需同时提供 startTime/endTime） */
+export type TimeWindowParam = TimeWindow | 'custom';
 
 /** 报表粒度 */
 export type Granularity = 'day' | 'hour' | 'month' | 'week';
@@ -234,7 +245,11 @@ export namespace MetricApi {
     plantNodeId?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
-    timeWindow: TimeWindow;
+    timeWindow: TimeWindowParam;
+    /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+    startTime?: string;
+    /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
+    endTime?: string;
   }
 
   /** 报表筛选范围 */
@@ -578,8 +593,8 @@ export namespace MetricApi {
   // 节点级 KPI 类型（对齐 IDS v3.2 §6.4 — GB/T 44693.2-2024）
   // ========================================================================
 
-  /** 节点类型筛选 */
-  export type NodeFilterType = 'EQUIPMENT' | 'FACTORY' | 'UNIT';
+  /** 节点类型筛选（AREA=装置级，04-系统概览 v4.0） */
+  export type NodeFilterType = 'AREA' | 'EQUIPMENT' | 'FACTORY' | 'UNIT';
 
   /** 节点监控维度 */
   export type NodeMonitorDimension = 'day' | 'hour' | 'month';
@@ -719,7 +734,11 @@ export namespace MetricApi {
 
   /** 节点排名查询参数 */
   export interface NodeRankingQueryParams {
-    timeWindow: TimeWindow;
+    timeWindow: TimeWindowParam;
+    /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+    startTime?: string;
+    /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
+    endTime?: string;
     nodeType?: NodeFilterType;
     sortBy?: 'autoLoopRatio' | 'effectiveAutoRate' | 'score' | 'steadyRate';
     sortOrder?: 'asc' | 'desc';

@@ -183,6 +183,10 @@ export namespace DashboardApi {
     avgScore: (null | number)[];
     autoModeRate: (null | number)[];
     stabilityRate: (null | number)[];
+    /** 快速率加权平均（04-系统概览 v4.0） */
+    fastRate?: (null | number)[];
+    /** 准确率加权平均（04-系统概览 v4.0） */
+    accuracyRate?: (null | number)[];
     evaluatedLoops: number[];
     totalLoops: number;
   }
@@ -384,6 +388,10 @@ export function getAutoRateRtApi(params?: { plantId?: string }) {
 export function getBoardAggregateApi(params?: {
   plantId?: string;
   timeWindow?: string;
+  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+  startTime?: string;
+  /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
+  endTime?: string;
 }) {
   return requestClient.get<DashboardApi.BoardAggregateResult>(
     '/dashboard/board/aggregate',
@@ -400,6 +408,10 @@ export function getBoardAggregateApi(params?: {
 export function getBoardTrendApi(params?: {
   plantId?: string;
   timeWindow?: string;
+  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+  startTime?: string;
+  /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
+  endTime?: string;
 }) {
   return requestClient.get<DashboardApi.BoardTrendResult>(
     '/dashboard/board/trend',

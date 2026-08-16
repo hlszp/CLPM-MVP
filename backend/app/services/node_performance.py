@@ -768,6 +768,9 @@ async def get_node_trend(
             series("realtime_auto_rate", "实时自控率"),
             series("steady_rate", KPI_NAME_MAP.get("steady_rate", "平稳率")),
             series("effective_auto_rate", KPI_NAME_MAP.get("effective_auto_rate", "有效自控率")),
+            # 04-系统概览 v4.0：趋势区三率折线（快速率/准确率）
+            series("fast_rate", KPI_NAME_MAP.get("fast_response_rate", "快速率")),
+            series("accuracy_rate", KPI_NAME_MAP.get("accuracy_rate", "准确率")),
         ],
     }
 

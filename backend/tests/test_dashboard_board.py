@@ -123,23 +123,38 @@ class TestResolveAggregateWindow:
         assert timedelta(hours=7.9) < end - start < timedelta(hours=8.1)
 
     def test_today_is_24h(self) -> None:
+        """今日：北京时间今日 00:00 → 当前时间（时长 0~24h 日历日语义）。"""
         start, end = _resolve_aggregate_window("today")  # type: ignore[misc]
-        assert timedelta(hours=23.9) < end - start < timedelta(hours=24.1)
+        assert timedelta(hours=0) < end - start <= timedelta(hours=24.1)
+        # start 为北京今日 0 点（UTC 16:00 前一天）
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
+        now_cst = now_utc + timedelta(hours=8)
+        today_start_utc = now_cst.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+            hours=8
+        )
+        assert abs((start - today_start_utc).total_seconds()) < 2
 
     def test_yesterday(self) -> None:
+        """昨日：北京时间昨日 00:00 → 今日 00:00（整 24h，end=今日 0 点）。"""
         start, end = _resolve_aggregate_window("yesterday")  # type: ignore[misc]
         assert abs((end - start).total_seconds() - 86400) < 2
-        # end 距现在约 1 天
-        now = datetime.now(UTC).replace(tzinfo=None)
-        assert abs((now - end).total_seconds() - 86400) < 2
+        # end = 北京今日 0 点（UTC）
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
+        now_cst = now_utc + timedelta(hours=8)
+        today_start_utc = now_cst.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+            hours=8
+        )
+        assert abs((end - today_start_utc).total_seconds()) < 2
 
     def test_last_7_days(self) -> None:
+        """近 7 天：北京时间 6 天前 0 点 → 现在（6~7 天，含今日共 7 个日历日）。"""
         start, end = _resolve_aggregate_window("last_7_days")  # type: ignore[misc]
-        assert timedelta(days=6.9) < end - start < timedelta(days=7.1)
+        assert timedelta(days=6) < end - start <= timedelta(days=7.1)
 
     def test_last_30_days(self) -> None:
+        """近 30 天：北京时间 29 天前 0 点 → 现在（29~30 天，含今日共 30 个日历日）。"""
         start, end = _resolve_aggregate_window("last_30_days")  # type: ignore[misc]
-        assert timedelta(days=29.9) < end - start < timedelta(days=30.1)
+        assert timedelta(days=29) < end - start <= timedelta(days=30.1)
 
     def test_unknown_falls_back_to_24h(self) -> None:
         start, end = _resolve_aggregate_window("bogus")  # type: ignore[misc]

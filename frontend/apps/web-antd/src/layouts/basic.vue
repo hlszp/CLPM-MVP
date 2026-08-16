@@ -150,6 +150,9 @@ onMounted(() => {
   // E4：预警铃铛——初始拉取 + WS 实时推送
   loadAlertNotifications();
   if (accessStore.accessToken) {
+    // P2-05：实时数据 WS 全局建连（顶栏在线徽章在任意页面真实反映连接状态；
+    // connect 幂等，monitor/tag 页面级建连复用同一连接，不产生重复 WebSocket）
+    realtimeWs.connect(accessStore.accessToken);
     alertWs.connect(accessStore.accessToken);
     alertWsUnsubscribe = alertWs.onMessage((msg) => {
       if (msg.type !== 'alert') return;
@@ -168,8 +171,8 @@ onMounted(() => {
       ].slice(0, 20); // 列表上限 20 条，防内存膨胀
     });
   }
-  // P2-03：首次登录自动触发 Onboarding Tour
-  tourRef.value?.triggerIfFirstTime();
+  // MVP 精简：移除首次登录自动弹出"CLPM 平台快速入门"引导
+  // tourRef.value?.triggerIfFirstTime();
 });
 
 onUnmounted(() => {

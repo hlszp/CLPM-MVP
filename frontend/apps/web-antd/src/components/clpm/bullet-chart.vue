@@ -26,6 +26,9 @@ const props = withDefaults(defineProps<Props>(), {
   invert: false,
   meta: '',
   target: undefined,
+  delta: null,
+  compact: false,
+  color: undefined,
 });
 
 interface Props {
@@ -47,6 +50,12 @@ interface Props {
   meta?: string;
   /** 目标值（显示为目标刻线） */
   target?: number;
+  /** 环比差值（较上一统计窗口）：正=↑绿 / 负=↓红 / 持平=→灰；null 不显示 */
+  delta?: null | number;
+  /** 紧凑模式（窄卡片区用）：压缩字号/间距，标签数值单行不折行 */
+  compact?: boolean;
+  /** 主题色（值条+数值颜色）；不传则按 level 自动着色 */
+  color?: string;
 }
 
 const hasValue = computed(
@@ -68,12 +77,16 @@ const level = computed<'danger' | 'ok' | 'warning'>(() => {
 });
 
 const barColor = computed(() => {
+  if (props.compact && props.color) return props.color;
+  if (props.compact) return 'hsl(216 91% 42%)';
   if (level.value === 'danger') return 'var(--status-error)';
   if (level.value === 'warning') return 'var(--status-warning)';
   return 'var(--color-slate-700)';
 });
 
 const valueColor = computed(() => {
+  if (props.compact && props.color) return props.color;
+  if (props.compact) return 'hsl(216 91% 42%)';
   if (level.value === 'danger') return 'var(--status-error)';
   if (level.value === 'warning') return 'var(--status-warning)';
   return 'hsl(var(--foreground))';
@@ -85,10 +98,25 @@ function toPct(v: number): number {
 
 const barPct = computed(() => (hasValue.value ? toPct(props.value!) : 0));
 
-/** 三段定性区间（灰阶：差→好 由深到浅） */
+/** 三段定性区间（灰阶：差→好 由深到浅；compact 模式更浅以突出值条；若传 color 则用同色系淡阶） */
 const zones = computed(() => {
   const fairPct = toPct(props.fair);
   const goodPct = toPct(props.good);
+  if (props.compact) {
+    const c = props.color;
+    if (c) {
+      return [
+        { color: `color-mix(in srgb, ${c} 22%, white)`, width: fairPct },
+        { color: `color-mix(in srgb, ${c} 13%, white)`, width: goodPct - fairPct },
+        { color: `color-mix(in srgb, ${c} 6%, white)`, width: 100 - goodPct },
+      ];
+    }
+    return [
+      { color: 'hsl(216 16% 88%)', width: fairPct },
+      { color: 'hsl(216 16% 93%)', width: goodPct - fairPct },
+      { color: 'hsl(216 16% 97%)', width: 100 - goodPct },
+    ];
+  }
   return [
     { color: 'var(--color-slate-200)', width: fairPct },
     { color: 'var(--color-slate-100)', width: goodPct - fairPct },
@@ -105,17 +133,52 @@ const valueText = computed(() => {
   const v = props.value!;
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 });
+
+/** 环比角标（方向箭头 + 绝对值；|delta|<0.05 视为持平）
+ *  拆分为 arrow/val，支持"指标名称→指标值→环比值→环比箭头"顺序 */
+const deltaInfo = computed(() => {
+  const d = props.delta;
+  if (d === null || d === undefined || Number.isNaN(d)) return null;
+  const abs = Math.abs(d);
+  if (abs < 0.05) {
+    return { cls: 'clpm-bullet__delta--flat', arrow: '→', val: '0.0', tip: '环比持平' };
+  }
+  return d > 0
+    ? {
+        cls: 'clpm-bullet__delta--up',
+        arrow: '↑',
+        val: abs.toFixed(1),
+        tip: `环比 +${abs.toFixed(1)}`,
+      }
+    : {
+        cls: 'clpm-bullet__delta--down',
+        arrow: '↓',
+        val: abs.toFixed(1),
+        tip: `环比 -${abs.toFixed(1)}`,
+      };
+});
 </script>
 
 <template>
-  <div class="clpm-bullet">
+  <div class="clpm-bullet" :class="{ 'clpm-bullet--compact': compact }">
     <div class="clpm-bullet__head">
       <span class="clpm-bullet__label">{{ label }}</span>
-      <span class="clpm-bullet__value" :style="{ color: valueColor }">
-        {{ valueText
-        }}<span v-if="hasValue && unit" class="clpm-bullet__unit">{{
-          unit
-        }}</span>
+      <span class="clpm-bullet__value-row">
+        <span class="clpm-bullet__value" :style="{ color: valueColor }">
+          {{ valueText
+          }}<span v-if="hasValue && unit" class="clpm-bullet__unit">{{
+            unit
+          }}</span>
+        </span>
+        <span
+          v-if="deltaInfo"
+          class="clpm-bullet__delta"
+          :class="deltaInfo.cls"
+          :title="deltaInfo.tip"
+        >
+          <span class="clpm-bullet__delta-val">{{ deltaInfo.val }}</span>
+          <span class="clpm-bullet__delta-arrow">{{ deltaInfo.arrow }}</span>
+        </span>
       </span>
     </div>
     <div class="clpm-bullet__track">
@@ -139,7 +202,7 @@ const valueText = computed(() => {
         title="目标值"
       ></div>
     </div>
-    <div v-if="meta" class="clpm-bullet__meta">{{ meta }}</div>
+    <div v-if="meta && !compact" class="clpm-bullet__meta">{{ meta }}</div>
   </div>
 </template>
 
@@ -157,9 +220,56 @@ const valueText = computed(() => {
   justify-content: space-between;
 }
 
+.clpm-bullet__value-row {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
 .clpm-bullet__label {
   font-size: 13px;
   color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+}
+
+.clpm-bullet__delta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.clpm-bullet__delta-val {
+  font-variant-numeric: tabular-nums;
+}
+
+.clpm-bullet__delta-arrow {
+  font-weight: 700;
+  line-height: 1;
+}
+
+.clpm-bullet__delta--up {
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+}
+
+.clpm-bullet__delta--down {
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+}
+
+.clpm-bullet__delta--flat {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--accent));
 }
 
 .clpm-bullet__value {
@@ -214,5 +324,70 @@ const valueText = computed(() => {
 .clpm-bullet__meta {
   font-size: 11px;
   color: hsl(var(--muted-foreground));
+}
+
+/* ══════ 紧凑模式（窄卡片区：行2 仪表带）══════
+ * 三行布局：① 指标名称 ② 指标值 + 环比值/箭头 ③ 横向进度条（蓝条+灰底）
+ * 隐藏 meta（统计窗口说明），值/条统一使用工业蓝 */
+.clpm-bullet--compact {
+  gap: 4px;
+}
+
+.clpm-bullet--compact .clpm-bullet__head {
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+.clpm-bullet--compact .clpm-bullet__label {
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-bullet--compact .clpm-bullet__value-row {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.clpm-bullet--compact .clpm-bullet__value {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.clpm-bullet--compact .clpm-bullet__unit {
+  font-size: 10px;
+  font-weight: 500;
+  margin-left: 1px;
+}
+
+.clpm-bullet--compact .clpm-bullet__delta {
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 13px;
+  gap: 1px;
+  align-self: center;
+}
+
+.clpm-bullet--compact .clpm-bullet__delta-arrow {
+  font-size: 10px;
+}
+
+.clpm-bullet--compact .clpm-bullet__track {
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.clpm-bullet--compact .clpm-bullet__bar {
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
 }
 </style>

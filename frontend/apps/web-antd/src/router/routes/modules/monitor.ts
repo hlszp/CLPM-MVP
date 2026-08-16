@@ -16,7 +16,7 @@ function monitorHome() {
  * 对齐 IA 收敛方案：监控负责跨回路扫视、预警结果与单回路闭环处置。
  *
  * 角色权限（实现契约 §5）：
- * - 系统概览：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR
+ * - 装置工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR
  * - 关注队列：全部角色（Sponsor 只读，无 OPEN_WORKBENCH）
  * - 回路工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / EXPERT
  * - 预警事件：全部角色
@@ -45,7 +45,7 @@ const routes: RouteRecordRaw[] = [
           affixTab: true,
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
-          title: '系统概览',
+          title: '装置工作台',
         },
       },
       {

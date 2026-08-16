@@ -28,7 +28,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.diagnosis import DiagnosisResult, DiagnosisTask
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import (
     KpiSnapshotHourly,
@@ -37,15 +36,9 @@ from app.models.metric import (
 )
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
-from app.models.tracker import ActionTracker
-from app.models.tuning import TuningRecord
 from app.services.data_source.realtime_subscriber import get_subscriber
-from app.services.monitor_attention import VERIFICATION_PERIOD_HOURS
 
 logger = logging.getLogger(__name__)
-
-#: 验证周期（与 monitor_attention 对齐）
-_VERIFY_HOURS = VERIFICATION_PERIOD_HOURS
 
 #: 评分恶化阈值（与 monitor_attention 对齐，用于 nextAction 判定）
 _SCORE_DELTA_DEGRADATION = -2
@@ -351,90 +344,13 @@ async def _build_assessment_summary(db: AsyncSession, loop_id: str) -> dict | No
 
 
 async def _build_diagnosis_summary(db: AsyncSession, loop_id: str) -> dict | None:
-    """最新诊断摘要（不含证据链大对象）。"""
-    # 最新诊断结果
-    diag_result = await db.execute(
-        select(DiagnosisResult)
-        .where(DiagnosisResult.loop_id == loop_id)
-        .order_by(DiagnosisResult.diagnosed_at.desc())
-        .limit(1)
-    )
-    diag = diag_result.scalar_one_or_none()
-    if not diag:
-        return None
-
-    # 最新诊断任务状态
-    task_status: str | None = None
-    task_id = diag.task_id
-    if task_id:
-        task_result = await db.execute(
-            select(DiagnosisTask.status).where(DiagnosisTask.id == task_id)
-        )
-        task_status = task_result.scalar_one_or_none()
-
-    labels: list[str] = []
-    if task_id:
-        labels_result = await db.execute(
-            select(DiagnosisResult.diag_label).where(
-                DiagnosisResult.loop_id == loop_id, DiagnosisResult.task_id == task_id
-            )
-        )
-        labels = [r[0] for r in labels_result.all() if r[0]]
-    elif diag.diag_label:
-        labels = [diag.diag_label]
-
-    confidence = _to_float(diag.confidence)
-    label_text = diag.diag_label or "需人工复核"
-    summary_text = f"诊断标签：{label_text}"
-    if confidence is not None:
-        summary_text += f"（可信度 {confidence:.0f}%）"
-
-    return {
-        "diagLabel": diag.diag_label,
-        "confidence": confidence,
-        "status": task_status or "SUCCESS",
-        "resultAt": _iso(diag.diagnosed_at),
-        "taskId": str(task_id) if task_id else None,
-        "labels": labels,
-        "summary": summary_text,
-    }
+    """最新诊断摘要（MVP 精简：已屏蔽诊断模块，恒返回 None）。"""
+    return None
 
 
 async def _build_tuning_summary(db: AsyncSession, loop_id: str) -> dict | None:
-    """最新整定摘要（不含仿真曲线点）。"""
-    tune_result = await db.execute(
-        select(TuningRecord)
-        .where(TuningRecord.loop_id == loop_id)
-        .order_by(TuningRecord.created_at.desc())
-        .limit(1)
-    )
-    tune = tune_result.scalar_one_or_none()
-    if not tune:
-        return None
-
-    risk_level: str | None = None
-    if tune.risk_assessment and isinstance(tune.risk_assessment, dict):
-        risk_level = tune.risk_assessment.get("risk_level")
-
-    fitting = _to_float(tune.fitting_score)
-    summary_text = f"整定状态：{tune.status}"
-    if tune.model_type:
-        summary_text += f"，模型 {tune.model_type}"
-    if fitting is not None:
-        summary_text += f"，拟合度 {fitting:.1f}"
-
-    return {
-        "status": tune.status,
-        "modelType": tune.model_type,
-        "algorithm": tune.algorithm,
-        "confidenceLevel": tune.confidence_level,
-        "resultAt": _iso(tune.completed_at or tune.created_at),
-        "currentPid": tune.current_pid,
-        "recommendedPid": tune.recommended_pid,
-        "fittingScore": fitting,
-        "riskLevel": risk_level,
-        "summary": summary_text,
-    }
+    """最新整定摘要（MVP 精简：已屏蔽整定模块，恒返回 None）。"""
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +364,7 @@ async def _build_tracker_timeline(
     *,
     tuning_current_pid: dict | None = None,
 ) -> dict | None:
-    """最新开放 Tracker 及其实施/验证状态。
+    """最新开放 Tracker 及其实施/验证状态（MVP 精简：已屏蔽整改模块，恒返回 None）。
 
     优先返回开放态（PENDING/IN_PROGRESS/VERIFYING）的最新一条；
     无开放态则返回最近一次闭环（CLOSED/REOPENED）用于展示验证结论。
@@ -456,82 +372,7 @@ async def _build_tracker_timeline(
     ``tuning_current_pid`` 为实施前 PID 基线（来自最新整定记录的 current_pid），
     传入后用于 MW-P3-09 实施前后对比。
     """
-    # 开放态优先
-    open_result = await db.execute(
-        select(ActionTracker)
-        .where(
-            ActionTracker.loop_id == loop_id,
-            ActionTracker.action_status.in_(("PENDING", "IN_PROGRESS", "VERIFYING")),
-        )
-        .order_by(ActionTracker.created_at.desc())
-        .limit(1)
-    )
-    tracker = open_result.scalar_one_or_none()
-
-    if tracker is None:
-        # 回退到最近一次闭环/重开
-        closed_result = await db.execute(
-            select(ActionTracker)
-            .where(
-                ActionTracker.loop_id == loop_id,
-                ActionTracker.action_status.in_(("CLOSED", "REOPENED")),
-            )
-            .order_by(ActionTracker.updated_at.desc().nulls_last())
-            .limit(1)
-        )
-        tracker = closed_result.scalar_one_or_none()
-
-    if tracker is None:
-        return None
-
-    is_overdue = False
-    overdue_hours: float | None = None
-    if tracker.action_status == "VERIFYING":
-        updated = tracker.updated_at or tracker.created_at
-        if updated:
-            now = datetime.now(UTC).replace(tzinfo=None)
-            if (now - updated) > timedelta(hours=_VERIFY_HOURS):
-                is_overdue = True
-                overdue_hours = (now - updated).total_seconds() / 3600
-
-    new_pid: dict | None = None
-    if any(v is not None for v in (tracker.new_pid_p, tracker.new_pid_i, tracker.new_pid_d)):
-        new_pid = {
-            "p": tracker.new_pid_p,
-            "i": tracker.new_pid_i,
-            "d": tracker.new_pid_d,
-        }
-
-    return {
-        "trackerId": str(tracker.id),
-        "diagnosisLabel": tracker.diagnosis_label,
-        "actionStatus": tracker.action_status,
-        "severity": tracker.severity,
-        "triggerType": tracker.trigger_type,
-        "assignee": tracker.assignee,
-        "createdAt": _iso(tracker.created_at),
-        "updatedAt": _iso(tracker.updated_at),
-        "implementedAt": _iso(tracker.implemented_at),
-        "implementedBy": tracker.implemented_by,
-        "newPid": new_pid,
-        "mocRef": tracker.moc_ref,
-        "mocNotApplicable": tracker.moc_not_applicable,
-        "plannedAt": _iso(tracker.planned_at),
-        "closedAt": _iso(tracker.closed_at),
-        "effectVerified": tracker.effect_verified,
-        "effectVerifiedAt": _iso(tracker.effect_verified_at),
-        "abCompareSummary": tracker.ab_compare_summary,
-        "effectCompare": _build_effect_compare(
-            tracker=tracker,
-            ab_compare_summary=tracker.ab_compare_summary,
-            effect_verified=tracker.effect_verified,
-            effect_verified_at=tracker.effect_verified_at,
-            tuning_current_pid=tuning_current_pid,
-        ),
-        "reopenReason": tracker.reopen_reason,
-        "isOverdue": is_overdue,
-        "overdueHours": overdue_hours,
-    }
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -548,13 +389,13 @@ _MAX_CORE_KPI_ITEMS = 4
 
 def _build_effect_compare(
     *,
-    tracker: ActionTracker | None,
+    tracker: Any | None,
     ab_compare_summary: dict | None,
     effect_verified: bool | None,
     effect_verified_at: datetime | None,
     tuning_current_pid: dict | None,
 ) -> dict | None:
-    """构建实施前后对比（MW-P3-09）。
+    """构建实施前后对比。
 
     复用 tracker.ab_compare_summary 存储快照，不重复实现
     ``/tracker/effectiveness`` 计算逻辑。
@@ -567,143 +408,107 @@ def _build_effect_compare(
 
     无基线、窗口不足、可信度不足时返回 INCONCLUSIVE，不显示伪 0。
     """
-    if tracker is None or not tracker.implemented_at:
+    if tracker is None:
+        return None
+    if tracker.implemented_at is None:
         return None
 
-    implemented_at = tracker.implemented_at
-    if implemented_at.tzinfo is None:
-        implemented_at = implemented_at.replace(tzinfo=UTC)
+    impl_at: datetime = tracker.implemented_at
+    if impl_at.tzinfo is None:
+        impl_at = impl_at.replace(tzinfo=UTC)
 
-    # 时间窗：[T-7d, T) 与 (T, T+7d]（与 get_ab_compare 口径一致）
-    before_start = (implemented_at - timedelta(days=7)).isoformat()
-    before_end = implemented_at.isoformat()
-    after_start = implemented_at.isoformat()
-    after_end = (implemented_at + timedelta(days=7)).isoformat()
+    # 时间窗：T-7d ~ T 与 T ~ T+7d
+    window = {
+        "beforeStart": (impl_at - timedelta(days=7)).isoformat(),
+        "beforeEnd": impl_at.isoformat(),
+        "afterStart": impl_at.isoformat(),
+        "afterEnd": (impl_at + timedelta(days=7)).isoformat(),
+    }
 
-    pid_after: dict | None = None
-    if any(v is not None for v in (tracker.new_pid_p, tracker.new_pid_i, tracker.new_pid_d)):
-        pid_after = {
-            "p": tracker.new_pid_p,
-            "i": tracker.new_pid_i,
-            "d": tracker.new_pid_d,
-        }
+    # PID 参数（before=当前整定参数，after=实施后参数）
+    pid_before = tuning_current_pid
+    new_p = tracker.new_pid_p
+    new_i = tracker.new_pid_i
+    new_d = tracker.new_pid_d
+    pid_after = (
+        {"p": new_p, "i": new_i, "d": new_d}
+        if new_p is not None or new_i is not None or new_d is not None
+        else None
+    )
 
     # 无 ab_compare_summary → PENDING
-    if not ab_compare_summary:
+    if ab_compare_summary is None:
         return {
             "status": "PENDING",
             "conclusion": None,
             "conclusionLabel": "待验证",
-            "implementedAt": implemented_at.isoformat(),
-            "verifiedAt": _iso(effect_verified_at),
-            "timeWindow": {
-                "beforeStart": before_start,
-                "beforeEnd": before_end,
-                "afterStart": after_start,
-                "afterEnd": after_end,
-            },
             "scoreChange": None,
             "coreKpiChanges": [],
-            "pidBefore": tuning_current_pid,
+            "pidBefore": pid_before,
             "pidAfter": pid_after,
+            "timeWindow": window,
             "dataInsufficient": False,
-            "confidence": None,
-            "reason": "实施后未到验证周期（T+7d），暂无对比数据",
+            "confidence": "PENDING",
+            "verified": effect_verified,
+            "verifiedAt": effect_verified_at.isoformat() if effect_verified_at else None,
         }
 
     data_insufficient = bool(ab_compare_summary.get("dataInsufficient", False))
-    kpi_comparison: list[dict] = ab_compare_summary.get("kpiComparison", [])
-    improved_count = int(ab_compare_summary.get("improvedCount", 0))
-    deteriorated_count = int(ab_compare_summary.get("deterioratedCount", 0))
+    kpi_comparison: list[dict] = ab_compare_summary.get("kpiComparison", []) or []
 
-    # 提取评分变化（metricKey == "score"）
-    score_item = next(
-        (k for k in kpi_comparison if k.get("metricKey") == _SCORE_METRIC_KEY),
-        None,
-    )
-    score_change: dict | None = None
-    if score_item:
-        score_change = {
-            "before": score_item.get("before"),
-            "after": score_item.get("after"),
-            "change": score_item.get("change"),
-            "improved": score_item.get("improved"),
-        }
-
-    # 提取核心 KPI 变化（排除综合评分，最多 4 项）
-    core_items: list[dict] = []
+    # 提取 score 变化
+    score_change = None
+    core_kpi_changes: list[dict] = []
     for kpi in kpi_comparison:
-        if kpi.get("metricKey") == _SCORE_METRIC_KEY:
-            continue
-        core_items.append(
-            {
-                "metricKey": kpi.get("metricKey"),
-                "metricName": kpi.get("metricName"),
-                "before": kpi.get("before"),
-                "after": kpi.get("after"),
-                "change": kpi.get("change"),
-                "improved": kpi.get("improved"),
-            }
-        )
-        if len(core_items) >= _MAX_CORE_KPI_ITEMS:
-            break
+        if kpi.get("metricKey") == "score":
+            score_change = kpi
+        else:
+            core_kpi_changes.append(kpi)
+    # 最多 4 项
+    core_kpi_changes = core_kpi_changes[:4]
 
-    # INCONCLUSIVE：数据不足
     if data_insufficient:
         return {
             "status": "INCONCLUSIVE",
             "conclusion": None,
             "conclusionLabel": "证据不足",
-            "implementedAt": implemented_at.isoformat(),
-            "verifiedAt": _iso(effect_verified_at),
-            "timeWindow": {
-                "beforeStart": before_start,
-                "beforeEnd": before_end,
-                "afterStart": after_start,
-                "afterEnd": after_end,
-            },
             "scoreChange": score_change,
-            "coreKpiChanges": core_items,
-            "pidBefore": tuning_current_pid,
+            "coreKpiChanges": core_kpi_changes,
+            "pidBefore": pid_before,
             "pidAfter": pid_after,
+            "timeWindow": window,
             "dataInsufficient": True,
             "confidence": "INSUFFICIENT",
-            "reason": "实施后窗口数据不足 24 小时，无法判定效果",
+            "verified": effect_verified,
+            "verifiedAt": effect_verified_at.isoformat() if effect_verified_at else None,
         }
 
     # COMPLETED：判定结论
+    improved_count = int(ab_compare_summary.get("improvedCount", 0))
+    deteriorated_count = int(ab_compare_summary.get("deterioratedCount", 0))
     if improved_count > deteriorated_count:
         conclusion = "IMPROVED"
         conclusion_label = "改善"
-        confidence = "HIGH" if improved_count >= 3 else "MEDIUM"
     elif deteriorated_count > improved_count:
         conclusion = "DETERIORATED"
         conclusion_label = "恶化"
-        confidence = "HIGH" if deteriorated_count >= 3 else "MEDIUM"
     else:
         conclusion = "NO_CHANGE"
         conclusion_label = "无明显变化"
-        confidence = "MEDIUM"
 
     return {
         "status": "COMPLETED",
         "conclusion": conclusion,
         "conclusionLabel": conclusion_label,
-        "implementedAt": implemented_at.isoformat(),
-        "verifiedAt": _iso(effect_verified_at),
-        "timeWindow": {
-            "beforeStart": before_start,
-            "beforeEnd": before_end,
-            "afterStart": after_start,
-            "afterEnd": after_end,
-        },
         "scoreChange": score_change,
-        "coreKpiChanges": core_items,
-        "pidBefore": tuning_current_pid,
+        "coreKpiChanges": core_kpi_changes,
+        "pidBefore": pid_before,
         "pidAfter": pid_after,
+        "timeWindow": window,
         "dataInsufficient": False,
-        "confidence": confidence,
-        "reason": f"改善 {improved_count} 项 / 恶化 {deteriorated_count} 项",
+        "confidence": "HIGH" if effect_verified else "MEDIUM",
+        "verified": effect_verified,
+        "verifiedAt": effect_verified_at.isoformat() if effect_verified_at else None,
     }
 
 

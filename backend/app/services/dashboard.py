@@ -22,11 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
 from app.core.redis import redis_client
-from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
-from app.models.tracker import ActionTracker
 
 logger = logging.getLogger(__name__)
 
@@ -308,52 +306,12 @@ async def _aggregate_counts_sql(
     now: datetime,
     previous_start: datetime,
 ) -> dict[str, dict[str, Any]]:
-    """SQL 聚合 alarm_count 和 operation_count（合并 4 次查询为 2 次）。
+    """SQL 聚合 alarm_count 和 operation_count。
 
-    使用 case() 条件聚合同时计算 current 和 previous 周期的计数。
+    诊断模型已移除，暂返回零值，不影响 dashboard 核心功能。
     """
-    # alarm_count: 诊断结果数
-    diag_cur_cond = DiagnosisResult.diagnosed_at >= current_start
-    diag_prev_cond = DiagnosisResult.diagnosed_at < current_start
-
-    diag_stmt = select(
-        func.count(case((diag_cur_cond, 1), else_=None)).label("cur_cnt"),
-        func.count(case((diag_prev_cond, 1), else_=None)).label("prev_cnt"),
-    ).where(
-        DiagnosisResult.diagnosed_at >= previous_start,
-        DiagnosisResult.diagnosed_at <= now,
-    )
-    if plant_id:
-        diag_stmt = diag_stmt.join(
-            LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True
-        ).where(LoopLedger.unit_id == plant_id)
-
-    diag_result = await session.execute(diag_stmt)
-    diag_row = diag_result.one()
-    alarm_count = _make_card(diag_row.cur_cnt or 0, diag_row.prev_cnt or 0, unit="次")
-
-    # operation_count: ActionTracker 更新数
-    tracker_cur_cond = ActionTracker.updated_at >= current_start
-    tracker_prev_cond = ActionTracker.updated_at < current_start
-
-    tracker_stmt = select(
-        func.count(case((tracker_cur_cond, 1), else_=None)).label("cur_cnt"),
-        func.count(case((tracker_prev_cond, 1), else_=None)).label("prev_cnt"),
-    ).where(
-        ActionTracker.updated_at.is_not(None),
-        ActionTracker.updated_at >= previous_start,
-        ActionTracker.updated_at <= now,
-    )
-    if plant_id:
-        tracker_stmt = tracker_stmt.join(
-            LoopLedger, ActionTracker.loop_id == LoopLedger.id, isouter=True
-        ).where(LoopLedger.unit_id == plant_id)
-
-    tracker_result = await session.execute(tracker_stmt)
-    tracker_row = tracker_result.one()
-    operation_count = _make_card(tracker_row.cur_cnt or 0, tracker_row.prev_cnt or 0, unit="次")
-
-    return {"alarm_count": alarm_count, "operation_count": operation_count}
+    zero_card = _make_card(0, 0, unit="次")
+    return {"alarm_count": zero_card, "operation_count": zero_card}
 
 
 async def _aggregate_trend_summary_sql(
@@ -471,7 +429,7 @@ async def _fill_async_kpi_cards(
     )
     kpi_cards["alarm_count"] = _make_card(alarm_count_current, alarm_count_previous, unit="次")
 
-    # operation_count: 当前周期 ActionTracker 更新数
+    # operation_count: 当前周期跟踪器更新数
     operation_count_current = await _count_tracker_updates(
         db=db, plant_id=plant_id, start=current_start, end=now
     )
@@ -598,25 +556,11 @@ async def _build_inefficient_loops(
 async def _batch_query_diagnosis_labels(
     db: AsyncSession, loop_ids: list[str]
 ) -> dict[str, list[str]]:
-    """批量查询回路的诊断标签（取最新一条诊断结果）。"""
-    if not loop_ids:
-        return {}
+    """批量查询回路的诊断标签（取最新一条诊断结果）。
 
-    # 查询每个回路的最新诊断标签
-    result = await db.execute(
-        select(DiagnosisResult.loop_id, DiagnosisResult.diag_label)
-        .where(DiagnosisResult.loop_id.in_(loop_ids))
-        .where(DiagnosisResult.diag_label.is_not(None))
-        .order_by(DiagnosisResult.diagnosed_at.desc())
-    )
-    labels_map: dict[str, list[str]] = {}
-    for lid, label in result.all():
-        lid_str = str(lid) if lid else ""
-        if not lid_str or not label:
-            continue
-        if lid_str not in labels_map:
-            labels_map[lid_str] = [label]
-    return labels_map
+    诊断模型已移除，暂返回空字典。
+    """
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -672,50 +616,11 @@ async def _build_pending_alerts(
     *,
     plant_id: str | None,
 ) -> dict[str, Any]:
-    """构建待处理异常数。"""
-    # open_trackers: ActionTracker 状态为 PENDING/IN_PROGRESS 的记录数
-    # open_diagnoses: 有诊断结果且 ActionTracker 状态为 PENDING/IN_PROGRESS 的回路数
+    """构建待处理异常数。
 
-    if plant_id:
-        # 按装置过滤：JOIN loop_ledger
-        tracker_stmt = (
-            select(ActionTracker)
-            .join(LoopLedger, ActionTracker.loop_id == LoopLedger.id, isouter=True)
-            .where(LoopLedger.unit_id == plant_id)
-            .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
-        )
-        diag_stmt = (
-            select(func.count(func.distinct(DiagnosisResult.loop_id)))
-            .join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True)
-            .join(
-                ActionTracker,
-                ActionTracker.loop_id == LoopLedger.id,
-                isouter=True,
-            )
-            .where(LoopLedger.unit_id == plant_id)
-            .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
-        )
-    else:
-        tracker_stmt = select(ActionTracker).where(
-            ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"])
-        )
-        diag_stmt = (
-            select(func.count(func.distinct(DiagnosisResult.loop_id)))
-            .join(
-                ActionTracker,
-                ActionTracker.loop_id == DiagnosisResult.loop_id,
-                isouter=True,
-            )
-            .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
-        )
-
-    tracker_result = await db.execute(tracker_stmt)
-    open_trackers = len(list(tracker_result.scalars().all()))
-
-    diag_result = await db.execute(diag_stmt)
-    open_diagnoses = diag_result.scalar() or 0
-
-    return {"open_diagnoses": open_diagnoses, "open_trackers": open_trackers}
+    诊断/跟踪器模型已移除，暂返回零值。
+    """
+    return {"open_diagnoses": 0, "open_trackers": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -730,25 +635,11 @@ async def _count_diagnoses(
     start: datetime,
     end: datetime,
 ) -> int:
-    """统计时间窗内的诊断结果数。"""
-    if plant_id:
-        stmt = (
-            select(func.count())
-            .select_from(DiagnosisResult)
-            .join(LoopLedger, DiagnosisResult.loop_id == LoopLedger.id, isouter=True)
-            .where(DiagnosisResult.diagnosed_at >= start)
-            .where(DiagnosisResult.diagnosed_at <= end)
-            .where(LoopLedger.unit_id == plant_id)
-        )
-    else:
-        stmt = (
-            select(func.count())
-            .select_from(DiagnosisResult)
-            .where(DiagnosisResult.diagnosed_at >= start)
-            .where(DiagnosisResult.diagnosed_at <= end)
-        )
-    result = await db.execute(stmt)
-    return result.scalar() or 0
+    """统计时间窗内的诊断结果数。
+
+    诊断模型已移除，暂返回 0。
+    """
+    return 0
 
 
 async def _count_tracker_updates(
@@ -758,27 +649,11 @@ async def _count_tracker_updates(
     start: datetime,
     end: datetime,
 ) -> int:
-    """统计时间窗内的 ActionTracker 更新数。"""
-    if plant_id:
-        stmt = (
-            select(func.count())
-            .select_from(ActionTracker)
-            .join(LoopLedger, ActionTracker.loop_id == LoopLedger.id, isouter=True)
-            .where(ActionTracker.updated_at.is_not(None))
-            .where(ActionTracker.updated_at >= start)
-            .where(ActionTracker.updated_at <= end)
-            .where(LoopLedger.unit_id == plant_id)
-        )
-    else:
-        stmt = (
-            select(func.count())
-            .select_from(ActionTracker)
-            .where(ActionTracker.updated_at.is_not(None))
-            .where(ActionTracker.updated_at >= start)
-            .where(ActionTracker.updated_at <= end)
-        )
-    result = await db.execute(stmt)
-    return result.scalar() or 0
+    """统计时间窗内的跟踪器更新数。
+
+    跟踪器模型已移除，暂返回 0。
+    """
+    return 0
 
 
 # ---------------------------------------------------------------------------

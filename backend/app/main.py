@@ -53,8 +53,8 @@ from app.api.v1.endpoints import (
     # diagnosis_trigger_config,
     grading_config,
     health,
-    # P3-04: LLM 配置（自然语言诊断解读）—— 依赖诊断模块，MVP 一并移除
-    # llm_config,
+    # P3-04: LLM 配置（AI 洞察门禁依赖；endpoint 本身独立，不依赖诊断模块）
+    llm_config,
     # Phase 3: 回路数据管理（历史数据导入）
     loop_data,
     loop_level_weight,
@@ -927,8 +927,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(grading_config.router)
     # v6.1: 数据可信度阈值管理
     v1_router.include_router(confidence_config.router)
-    # P3-04: LLM 配置（诊断/整定 AI 解读依赖）—— MVP 随诊断一并移除
-    # v1_router.include_router(llm_config.router)
+    # P3-04: LLM 配置（AI 洞察门禁读取；endpoint 独立，不依赖诊断模块）
+    v1_router.include_router(llm_config.router)
     v1_router.include_router(ai_insight.router)  # AI 洞察通用服务（4 场景统一入口）
 
     # v6.2: 8 类异常值检测参数与启停开关配置
