@@ -463,9 +463,19 @@ async def run_diagnosis_for_loop(
     # ---- 数据门禁（消费质量结论）----
     await _report(0.2, "数据门禁")
     window_seconds = max(1.0, (end - start).total_seconds())
+    # 应有点数按实测中位采样间隔推算（中位数对缺失段稳健）：
+    # 数据源可能是 1s 或 1min 采样，按 1s 硬编码会把稀疏采样恒判为断点超限
+    if len(aligned) >= 2:
+        ts_sec = _ts_list_to_seconds([d["ts"] for d in aligned])
+        diffs = np.diff(ts_sec)
+        positive = diffs[diffs > 0]
+        median_interval = float(np.median(positive)) if len(positive) else 1.0
+    else:
+        median_interval = 1.0
+    expected_points = int(window_seconds / max(median_interval, 1e-3))
     gate = evaluate_gate(
         point_count=len(aligned),
-        expected_points=int(window_seconds),
+        expected_points=expected_points,
         valid_rate=valid_rate,
         confidence_level=confidence_level,
     )
