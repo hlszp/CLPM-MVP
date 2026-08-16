@@ -50,6 +50,8 @@ from app.api.v1.endpoints import (
     dcs,
     # MVP 精简：已屏蔽诊断模块 → 不注册 diagnosis / diagnosis_trigger_config
     # diagnosis,
+    # MVP v2 诊断模块（2026-08-16 重设计：元算子+原因分类，仅手动触发）
+    diagnosis_v2,
     # diagnosis_trigger_config,
     grading_config,
     health,
@@ -330,7 +332,11 @@ def _start_celery_beat() -> None:
     _celery_ever_touched = True
 
     # 检查是否已有 Beat 进程在运行（通过 celerybeat.pid 文件）
-    pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
+    # 将 pidfile 和 schedule 文件都放在 logs/ 目录下，避免在项目根目录写文件
+    # 触发 uvicorn --reload 的文件监视导致循环重启
+    os.makedirs("logs", exist_ok=True)
+    pid_file = os.path.join(os.getcwd(), "logs", "celerybeat.pid")
+    schedule_file = os.path.join(os.getcwd(), "logs", "celerybeat-schedule")
     if os.path.exists(pid_file):
         try:
             with open(pid_file) as f:
@@ -353,7 +359,6 @@ def _start_celery_beat() -> None:
         return
 
     try:
-        os.makedirs("logs", exist_ok=True)
         # stderr 合并到 stdout，单句柄减少 fd 占用；句柄存入模块级引用，
         # 由 _stop_celery_beat 关闭，避免 lifespan 重启泄漏 fd
         log_handle = open("logs/celery-beat.log", "a")  # noqa: SIM115
@@ -370,6 +375,8 @@ def _start_celery_beat() -> None:
                     "info",
                     "--pidfile",
                     pid_file,
+                    "--schedule",
+                    schedule_file,
                 ],
                 cwd=os.getcwd(),
                 stdout=log_handle,
@@ -906,12 +913,14 @@ def create_app() -> FastAPI:
     v1_router.include_router(dashboard.router)
     # S4 诊断中心：诊断、波形、Tracker、诊断标签
     # v4.0: tags_router 须在 diagnosis.router 之前注册，避免 GET /{loop_id} 拦截 /diagnosis/tags
-    # MVP 精简：已屏蔽诊断模块 → 不挂载所有 diagnosis.*_router
+    # MVP 精简：已屏蔽旧诊断模块 → 不挂载所有 diagnosis.*_router
     # v1_router.include_router(diagnosis.tags_router)
     # v1_router.include_router(diagnosis.router)
     # v1_router.include_router(diagnosis.timeseries_router)
     v1_router.include_router(tags.timeseries_router)
     # v1_router.include_router(diagnosis.tracker_router)
+    # MVP v2 诊断模块（重设计版：/diagnosis/run|runs|operators|export）
+    v1_router.include_router(diagnosis_v2.router)
     # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
     v1_router.include_router(dataplanner.router)
     # v4.0: 算法服务接口（IDS §2.7）

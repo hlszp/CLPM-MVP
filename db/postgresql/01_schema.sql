@@ -1651,6 +1651,44 @@ CREATE INDEX IF NOT EXISTS idx_alert_suppression_loop   ON alert_suppression (lo
 CREATE INDEX IF NOT EXISTS idx_alert_suppression_expiry ON alert_suppression (end_at, is_active);
 CREATE INDEX IF NOT EXISTS idx_alert_suppression_rule   ON alert_suppression (rule_id, is_active);
 
+-- 14.6 diagnosis_run（MVP v2 诊断模块：一次诊断一条完整结论，2026-08-16）
+CREATE TABLE IF NOT EXISTS diagnosis_run (
+    id                  UUID PRIMARY KEY,
+    task_id             VARCHAR(64),
+    loop_id             UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    triggered_by        VARCHAR(64) NOT NULL DEFAULT 'system',
+    time_window_start   TIMESTAMP    NOT NULL,
+    time_window_end     TIMESTAMP    NOT NULL,
+    operator_group      VARCHAR(8)   NOT NULL DEFAULT 'full',
+    status              VARCHAR(16)  NOT NULL DEFAULT 'RUNNING',
+    data_gate           JSONB,
+    operator_results    JSONB,
+    fusion_results      JSONB,
+    symptom_tags        JSONB,
+    primary_category    VARCHAR(32),
+    primary_confidence  NUMERIC(4,3),
+    secondary_categories JSONB,
+    pending_review      JSONB,
+    severity            VARCHAR(8),
+    rationale           JSONB,
+    recommendations     JSONB,
+    evidence_charts     JSONB,
+    threshold_version   VARCHAR(32),
+    algorithm_version   VARCHAR(32),
+    started_at          TIMESTAMP,
+    finished_at         TIMESTAMP,
+    duration_ms         INTEGER,
+    created_at          TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_diagnosis_run_status CHECK (status IN ('RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED')),
+    CONSTRAINT ck_diagnosis_run_category CHECK (primary_category IS NULL OR primary_category IN
+        ('TUNING', 'VALVE', 'INSTRUMENT', 'PROCESS', 'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
+    CONSTRAINT ck_diagnosis_run_severity CHECK (severity IS NULL OR severity IN ('HIGH', 'MEDIUM', 'LOW'))
+);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_run_loop_created ON diagnosis_run (loop_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (primary_category);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_run_task         ON diagnosis_run (task_id);
+
 -- =============================================================================
 -- 脚本结束
 -- =============================================================================
