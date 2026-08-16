@@ -25,11 +25,12 @@ v1.1/v1.2 更新：
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert import AlertEvent
@@ -40,7 +41,6 @@ from app.models.metric import (
     LoopIntegritySnapshot,
 )
 from app.models.plant_node import PlantNode
-from app.services.plant_node_tree import collect_descendant_node_ids
 
 logger = logging.getLogger(__name__)
 
@@ -222,64 +222,8 @@ def _is_overdue(item: _RawItem) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 节点名称查询（G1 修复：获取装置·单元名称）
+# 名称格式化（聚合查询内已通过 JOIN 直接带出装置/单元名称）
 # ---------------------------------------------------------------------------
-
-
-async def _build_node_name_map(
-    db: AsyncSession,
-    loop_ids: set[str] | None = None,
-) -> dict[str, tuple[str | None, str | None]]:
-    """构建 loop_id → (area_name, unit_name) 映射。
-
-    通过 LoopLedger.unit_id → PlantNode → parent (AREA) 两级查询，
-    返回 (装置名, 单元名) 元组，用于"装置·单元"列显示。
-    """
-    # 1. 查询所有有 unit_id 的回路
-    stmt = select(LoopLedger.id, LoopLedger.unit_id).where(
-        LoopLedger.is_active.is_(True),
-        LoopLedger.unit_id.isnot(None),
-    )
-    if loop_ids is not None:
-        stmt = stmt.where(LoopLedger.id.in_(list(loop_ids)))
-    result = await db.execute(stmt)
-    loop_unit_pairs = result.all()
-
-    if not loop_unit_pairs:
-        return {}
-
-    unit_ids = {str(r[1]) for r in loop_unit_pairs if r[1]}
-    if not unit_ids:
-        return {}
-
-    # 2. 批量查询 UNIT 节点及其父节点
-    node_stmt = select(PlantNode.id, PlantNode.name, PlantNode.parent_id, PlantNode.type).where(
-        PlantNode.id.in_(list(unit_ids))
-    )
-    nodes_result = await db.execute(node_stmt)
-    unit_nodes = {str(n.id): (n.name, n.parent_id, n.type) for n in nodes_result.all()}
-
-    # 3. 查询父节点（AREA 级）
-    parent_ids = {str(pid) for _, pid, _ in unit_nodes.values() if pid}
-    parent_names: dict[str, str] = {}
-    if parent_ids:
-        parent_stmt = select(PlantNode.id, PlantNode.name).where(PlantNode.id.in_(list(parent_ids)))
-        parent_result = await db.execute(parent_stmt)
-        parent_names = {str(p.id): p.name for p in parent_result.all()}
-
-    # 4. 构建 loop_id → (area_name, unit_name)
-    name_map: dict[str, tuple[str | None, str | None]] = {}
-    for loop_id, unit_id in loop_unit_pairs:
-        lid = str(loop_id)
-        uid = str(unit_id) if unit_id else None
-        if uid and uid in unit_nodes:
-            unit_name, parent_id, _ = unit_nodes[uid]
-            area_name = parent_names.get(str(parent_id)) if parent_id else None
-            name_map[lid] = (area_name, unit_name)
-        else:
-            name_map[lid] = (None, None)
-
-    return name_map
 
 
 def _format_unit_display(area_name: str | None, unit_name: str | None) -> str | None:
@@ -445,16 +389,29 @@ _MAX_ITEMS_PER_SOURCE = 500
 async def _aggregate_alerts(
     db: AsyncSession,
     loop_ids: set[str] | None,
-    name_map: dict[str, tuple[str | None, str | None]],
 ) -> tuple[list[_RawItem], bool]:
     """聚合活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED）。
+
+    直接 JOIN LoopLedger + PlantNode（unit）+ parent（area）一次性带出名称，
+    避免后续额外查 name_map。
 
     Returns:
         (items, truncated) - truncated 表示是否达到 _MAX_ITEMS_PER_SOURCE 上限
     """
+    # 别名：unit 节点和 area（父节点）
+    unit_node = PlantNode.__table__.alias("unit_node")
+    area_node = PlantNode.__table__.alias("area_node")
+
     stmt = (
-        select(AlertEvent, LoopLedger)
+        select(
+            AlertEvent,
+            LoopLedger,
+            unit_node.c.name.label("unit_name"),
+            area_node.c.name.label("area_name"),
+        )
         .join(LoopLedger, AlertEvent.loop_id == LoopLedger.id)
+        .outerjoin(unit_node, LoopLedger.unit_id == unit_node.c.id)
+        .outerjoin(area_node, unit_node.c.parent_id == area_node.c.id)
         .where(
             AlertEvent.status.in_(("ACTIVE", "ACKNOWLEDGED", "SUPPRESSED")),
             LoopLedger.is_active.is_(True),
@@ -471,7 +428,7 @@ async def _aggregate_alerts(
     rows = rows[:_MAX_ITEMS_PER_SOURCE]
 
     items: list[_RawItem] = []
-    for evt, loop in rows:
+    for evt, loop, unit_name, area_name in rows:
         status = ALERT_STATUS_MAP.get(evt.status, "OPEN")
         priority = ALERT_SEVERITY_PRIORITY.get(evt.severity, "LOW")
         reasons: list[str] = []
@@ -485,7 +442,6 @@ async def _aggregate_alerts(
             reasons.append(f"重复触发 {evt.trigger_count} 次")
 
         lid = str(loop.id)
-        area_name, unit_name = name_map.get(lid, (None, None))
 
         items.append(
             _RawItem(
@@ -523,7 +479,6 @@ async def _aggregate_alerts(
 async def _aggregate_degradation_and_data_quality(
     db: AsyncSession,
     loop_ids: set[str] | None,
-    name_map: dict[str, tuple[str | None, str | None]],
 ) -> tuple[list[_RawItem], bool]:
     """聚合评分恶化（DEGRADATION）和数据质量（DATA_QUALITY）。
 
@@ -531,34 +486,50 @@ async def _aggregate_degradation_and_data_quality(
     DATA_QUALITY：完整性 WARNING/CRITICAL 或 可信度 D/E
     每回路每来源最多一项。
 
+    优化：Loop 与 PlantNode 一次 JOIN 带出名称；KPI/完整性/可信度 4 次查询并行。
+
     Returns:
         (items, truncated) - 本来源无上限概念，truncated 恒为 False
     """
-    # 查询活跃回路
-    loop_stmt = select(LoopLedger).where(LoopLedger.is_active.is_(True))
+    # 别名：unit 节点和 area（父节点）
+    unit_node = PlantNode.__table__.alias("unit_node_dq")
+    area_node = PlantNode.__table__.alias("area_node_dq")
+
+    # 查询活跃回路（直接 JOIN 带出装置/单元名称，省掉单独的 name_map 查询）
+    loop_stmt = (
+        select(
+            LoopLedger,
+            unit_node.c.name.label("unit_name"),
+            area_node.c.name.label("area_name"),
+        )
+        .outerjoin(unit_node, LoopLedger.unit_id == unit_node.c.id)
+        .outerjoin(area_node, unit_node.c.parent_id == area_node.c.id)
+        .where(LoopLedger.is_active.is_(True))
+    )
     if loop_ids is not None:
         loop_stmt = loop_stmt.where(LoopLedger.id.in_(list(loop_ids)))
     loop_result = await db.execute(loop_stmt)
-    loops = loop_result.scalars().all()
-    if not loops:
+    loop_rows = loop_result.all()
+    if not loop_rows:
         return [], False
 
-    active_loop_ids = [str(loop.id) for loop in loops]
-    loop_map = {str(loop.id): loop for loop in loops}
+    active_loop_ids = [str(r[0].id) for r in loop_rows]
+    # loop_info: loop_id -> (loop, area_name, unit_name)
+    loop_info: dict[str, tuple[LoopLedger, str | None, str | None]] = {}
+    for loop, unit_name, area_name in loop_rows:
+        loop_info[str(loop.id)] = (loop, area_name, unit_name)
 
-    # 批量查最新 KPI 快照 + 昨日基线（DISTINCT ON）
-    snap_map: dict[str, KpiSnapshotHourly] = {}
-    prev_map: dict[str, KpiSnapshotHourly] = {}
-    if active_loop_ids:
+    # ===== 4 次查询并行化（asyncio.gather）=====
+    async def _fetch_latest_snap():
         s_stmt = (
             select(KpiSnapshotHourly)
             .where(KpiSnapshotHourly.loop_id.in_(active_loop_ids))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
-        for snap in (await db.execute(s_stmt)).scalars().all():
-            snap_map[str(snap.loop_id)] = snap
+        return {str(s.loop_id): s for s in (await db.execute(s_stmt)).scalars().all()}
 
+    async def _fetch_prev_snap():
         p_stmt = (
             select(KpiSnapshotHourly)
             .where(
@@ -568,12 +539,9 @@ async def _aggregate_degradation_and_data_quality(
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
-        for snap in (await db.execute(p_stmt)).scalars().all():
-            prev_map[str(snap.loop_id)] = snap
+        return {str(s.loop_id): s for s in (await db.execute(p_stmt)).scalars().all()}
 
-    # 批量查最新完整性快照
-    integrity_map: dict[str, LoopIntegritySnapshot] = {}
-    if active_loop_ids:
+    async def _fetch_integrity():
         i_stmt = (
             select(LoopIntegritySnapshot)
             .where(LoopIntegritySnapshot.loop_id.in_(active_loop_ids))
@@ -583,24 +551,26 @@ async def _aggregate_degradation_and_data_quality(
                 LoopIntegritySnapshot.check_date.desc(),
             )
         )
-        for snap in (await db.execute(i_stmt)).scalars().all():
-            integrity_map[str(snap.loop_id)] = snap
+        return {str(s.loop_id): s for s in (await db.execute(i_stmt)).scalars().all()}
 
-    # 批量查最新可信度
-    confidence_map: dict[str, LoopConfidenceLatest] = {}
-    if active_loop_ids:
+    async def _fetch_confidence():
         c_stmt = select(LoopConfidenceLatest).where(
             LoopConfidenceLatest.loop_id.in_(active_loop_ids)
         )
-        for snap in (await db.execute(c_stmt)).scalars().all():
-            confidence_map[str(snap.loop_id)] = snap
+        return {str(s.loop_id): s for s in (await db.execute(c_stmt)).scalars().all()}
+
+    snap_map, prev_map, integrity_map, confidence_map = await asyncio.gather(
+        _fetch_latest_snap(),
+        _fetch_prev_snap(),
+        _fetch_integrity(),
+        _fetch_confidence(),
+    )
 
     items: list[_RawItem] = []
 
-    for lid, loop in loop_map.items():
+    for lid, (loop, area_name, unit_name) in loop_info.items():
         snap = snap_map.get(lid)
         prev = prev_map.get(lid)
-        area_name, unit_name = name_map.get(lid, (None, None))
 
         # --- DEGRADATION ---
         if snap and snap.score is not None:
@@ -729,8 +699,29 @@ def _group_items_by_loop(
     - 组状态/摘要/主动作=组首项
     - 时间=组内最新
     - 来源 chips 并列、rankReasons 合并去重
+
+    v1.3 性能优化：缓存 _build_actions 结果，避免同一(loop_id, event_id, tracker_id)重复计算。
     """
     groups: dict[str, dict[str, Any]] = {}
+    # 动作缓存：key=(source, loop_id, event_id, tracker_id)
+    action_cache: dict[tuple, tuple[dict, list[dict]]] = {}
+
+    def _get_cached_actions(
+        source: str,
+        loop_id: str,
+        event_id: str | None,
+        tracker_id: str | None,
+    ):
+        key = (source, loop_id, event_id, tracker_id)
+        if key not in action_cache:
+            action_cache[key] = _build_actions(
+                source=source,
+                loop_id=loop_id,
+                event_id=event_id,
+                tracker_id=tracker_id,
+                role=role,
+            )
+        return action_cache[key]
 
     for item in items:
         key = item.loop_id
@@ -777,23 +768,15 @@ def _group_items_by_loop(
     result: list[dict[str, Any]] = []
     for _idx, g in enumerate(group_list, 1):
         first = g["_first_item"]
-        primary, actions = _build_actions(
-            source=first.source,
-            loop_id=g["loopId"],
-            event_id=first.event_id,
-            tracker_id=first.tracker_id,
-            role=role,
+        primary, actions = _get_cached_actions(
+            first.source, g["loopId"], first.event_id, first.tracker_id
         )
 
         # 子项转换为响应格式
         children_resp = []
         for child in g["children"]:
-            child_primary, child_actions = _build_actions(
-                source=child.source,
-                loop_id=child.loop_id,
-                event_id=child.event_id,
-                tracker_id=child.tracker_id,
-                role=role,
+            child_primary, child_actions = _get_cached_actions(
+                child.source, child.loop_id, child.event_id, child.tracker_id
             )
             children_resp.append(_item_to_dict(child, child_primary, child_actions))
 
@@ -849,68 +832,102 @@ async def list_attention(
     page_size: int = 20,
     role: str = "ADMIN",
 ) -> dict:
-    """查询统一关注队列（v1.2：同回路合并分组）。
+    """查询统一关注队列（v1.3：性能优化版）。
+
+    优化点：
+    - 聚合函数内部直接 JOIN PlantNode 带出名称，省去单独的 _build_node_name_map 3 次 DB 查询
+    - DEGRADATION/DATA_QUALITY 4 次指标查询 asyncio.gather 并行
+    - ALERT 和 (DEGRADATION+DATA_QUALITY) 两大来源聚合并行
+    - _group_items_by_loop 中缓存 _build_actions 结果
+    - plantNodeId 路径用一次 CTE 直接找出所有相关 UNIT 下的 loop_ids，减少 round-trip
 
     Returns:
         ``{groups, totalGroups, totalItems, page, pageSize, aggregates, truncated, loadedAt}``
     """
-    # G2 修复：递归解析 plantNodeId 子节点
-    target_unit_ids: set[str] | None = None
     loop_ids: set[str] | None = None
 
     if plant_node_id:
-        # 查询节点类型决定递归深度
-        node_stmt = select(PlantNode.type).where(PlantNode.id == plant_node_id)
-        node_type_result = await db.execute(node_stmt)
-        node_type_row = node_type_result.first()
-        node_type = node_type_row[0] if node_type_row else None
-
-        if node_type in ("FACTORY", "AREA"):
-            # 递归获取所有子孙节点 ID
-            descendant_ids = await collect_descendant_node_ids(db, plant_node_id)
-            # 收集所有 UNIT 节点 ID（回路直接挂在 UNIT 下）
-            all_node_ids = set(descendant_ids)
-            all_node_ids.add(plant_node_id)
-            # 查询这些节点下的 UNIT
-            unit_stmt = select(PlantNode.id).where(
-                PlantNode.id.in_(list(all_node_ids)),
-                PlantNode.type == "UNIT",
+        # 一次递归CTE获取自身+所有子孙节点ID，再直接JOIN LoopLedger查出loop_ids
+        # 省掉"查type→查children→查units→查loops"的中间步骤
+        cte_sql = text(
+            """
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :root_id
+                UNION ALL
+                SELECT child.id
+                FROM plant_node child
+                JOIN node_tree nt ON child.parent_id = nt.id
             )
-            unit_result = await db.execute(unit_stmt)
-            target_unit_ids = {str(r[0]) for r in unit_result.all()}
-        else:
-            # UNIT 节点：直接匹配
-            target_unit_ids = {plant_node_id}
-
-    # 确定回路范围
-    if target_unit_ids or loop_id:
-        l_stmt = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
-        if target_unit_ids:
-            l_stmt = l_stmt.where(LoopLedger.unit_id.in_(list(target_unit_ids)))
+            SELECT DISTINCT ll.id
+            FROM loop_ledger ll
+            JOIN node_tree nt ON ll.unit_id = nt.id
+            WHERE ll.is_active = true
+            """
+        )
         if loop_id:
-            l_stmt = l_stmt.where(LoopLedger.id == loop_id)
-        lid_result = await db.execute(l_stmt)
-        loop_ids = {str(r[0]) for r in lid_result.all()}
+            # 同时指定了 loop_id：追加精确过滤
+            cte_sql = text(
+                """
+                WITH RECURSIVE node_tree AS (
+                    SELECT id FROM plant_node WHERE id = :root_id
+                    UNION ALL
+                    SELECT child.id
+                    FROM plant_node child
+                    JOIN node_tree nt ON child.parent_id = nt.id
+                )
+                SELECT DISTINCT ll.id
+                FROM loop_ledger ll
+                JOIN node_tree nt ON ll.unit_id = nt.id
+                WHERE ll.is_active = true AND ll.id = :loop_id
+                """
+            )
+            result = await db.execute(cte_sql, {"root_id": plant_node_id, "loop_id": loop_id})
+        else:
+            result = await db.execute(cte_sql, {"root_id": plant_node_id})
+        loop_ids = {str(r[0]) for r in result.all()}
         if not loop_ids:
             return _empty_result(page, page_size)
+    elif loop_id:
+        # 仅指定 loop_id：直接校验存在性
+        l_stmt = select(LoopLedger.id).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.id == loop_id,
+        )
+        lid_result = await db.execute(l_stmt)
+        row = lid_result.first()
+        if not row:
+            return _empty_result(page, page_size)
+        loop_ids = {str(row[0])}
 
-    # 预先构建节点名称映射（G1）
-    name_map = await _build_node_name_map(db, loop_ids)
-
-    # 聚合五类来源
+    # 聚合五类来源（两大分支并行）
     source_filter = set(sources) if sources else None
     raw_items: list[_RawItem] = []
     truncated: dict[str, bool] = {}
 
-    if source_filter is None or "ALERT" in source_filter:
-        alert_items, alert_trunc = await _aggregate_alerts(db, loop_ids, name_map)
-        raw_items.extend(alert_items)
-        if alert_trunc:
-            truncated["ALERT"] = True
+    # 准备并行任务
+    tasks = []
+    task_labels = []
 
-    if source_filter is None or "DEGRADATION" in source_filter or "DATA_QUALITY" in source_filter:
-        dq_items, dq_trunc = await _aggregate_degradation_and_data_quality(db, loop_ids, name_map)
-        raw_items.extend(dq_items)
+    need_alert = source_filter is None or "ALERT" in source_filter
+    need_dq = (
+        source_filter is None or "DEGRADATION" in source_filter or "DATA_QUALITY" in source_filter
+    )
+
+    if need_alert:
+        tasks.append(_aggregate_alerts(db, loop_ids))
+        task_labels.append("ALERT")
+    if need_dq:
+        tasks.append(_aggregate_degradation_and_data_quality(db, loop_ids))
+        task_labels.append("DQ")
+
+    results = await asyncio.gather(*tasks) if tasks else []
+    for label, res in zip(task_labels, results, strict=True):
+        items, trunc = res
+        raw_items.extend(items)
+        if trunc:
+            if label == "ALERT":
+                truncated["ALERT"] = True
+            # DQ 分支内部 DEGRADATION/DATA_QUALITY 不截断
 
     # 过滤
     filtered = raw_items
@@ -931,7 +948,7 @@ async def list_attention(
     # 排序
     filtered.sort(key=_sort_key)
 
-    # G3：分组
+    # G3：分组（已含 actions 缓存）
     groups = _group_items_by_loop(filtered, role)
 
     # 聚合统计（项口径）

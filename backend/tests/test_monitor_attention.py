@@ -286,16 +286,19 @@ def _make_db_mock() -> AsyncMock:
     return db
 
 
+def _make_empty_result() -> MagicMock:
+    """构造统一的空结果 mock（支持 scalars().all() 和 all()）。"""
+    m = MagicMock()
+    m.scalars.return_value.all.return_value = []
+    m.all.return_value = []
+    m.scalar.return_value = 0
+    m.scalar_one_or_none.return_value = None
+    return m
+
+
 def _configure_db_empty(db: AsyncMock) -> None:
     """配置 db 返回空结果。"""
-    db.execute = AsyncMock(
-        return_value=MagicMock(
-            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))),
-            all=MagicMock(return_value=[]),
-            scalar=MagicMock(return_value=0),
-            scalar_one_or_none=MagicMock(return_value=None),
-        )
-    )
+    db.execute = AsyncMock(return_value=_make_empty_result())
 
 
 class TestListAttention:
@@ -318,19 +321,16 @@ class TestListAttention:
     @pytest.mark.asyncio
     async def test_plant_node_id无匹配回路返回空(self):
         db = _make_db_mock()
-        # loop 查询返回空
-        empty_result = MagicMock()
-        empty_result.all.return_value = []
-        db.execute = AsyncMock(return_value=empty_result)
+        # CTE 查询返回空 loop_ids
+        db.execute = AsyncMock(return_value=_make_empty_result())
         result = await list_attention(db, plant_node_id="unit-001", role="ADMIN")
         assert result["total"] == 0
 
     @pytest.mark.asyncio
     async def test_loop_id无匹配回路返回空(self):
         db = _make_db_mock()
-        empty_result = MagicMock()
-        empty_result.all.return_value = []
-        db.execute = AsyncMock(return_value=empty_result)
+        # loop 存在性校验返回空
+        db.execute = AsyncMock(return_value=_make_empty_result())
         result = await list_attention(db, loop_id="nonexistent-loop", role="ADMIN")
         assert result["total"] == 0
 
@@ -358,11 +358,10 @@ class TestListAttention:
         loop.is_active = True
 
         alert_result = MagicMock()
-        alert_result.all.return_value = [(evt, loop)]
+        alert_result.all.return_value = [(evt, loop, None, None)]
 
         # 后续聚合查询返回空
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             stmt_str = str(stmt)
@@ -401,9 +400,8 @@ class TestListAttention:
         loop.is_active = True
 
         alert_result = MagicMock()
-        alert_result.all.return_value = [(evt, loop)]
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        alert_result.all.return_value = [(evt, loop, None, None)]
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
@@ -452,12 +450,11 @@ class TestListAttention:
             loop.tag_name = f"LIC-{101 + i}"
             loop.is_active = True
             loops.append(loop)
-            pairs.append((evt, loop))
+            pairs.append((evt, loop, None, None))
 
         alert_result = MagicMock()
         alert_result.all.return_value = pairs
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
@@ -497,9 +494,8 @@ class TestListAttention:
         loop.is_active = True
 
         alert_result = MagicMock()
-        alert_result.all.return_value = [(evt, loop)]
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        alert_result.all.return_value = [(evt, loop, None, None)]
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
@@ -536,9 +532,8 @@ class TestListAttention:
         loop.is_active = True
 
         alert_result = MagicMock()
-        alert_result.all.return_value = [(evt, loop)]
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        alert_result.all.return_value = [(evt, loop, None, None)]
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
@@ -592,9 +587,8 @@ class TestListAttention:
         evt2.tracker_id = None
 
         alert_result = MagicMock()
-        alert_result.all.return_value = [(evt1, loop1), (evt2, loop2)]
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        alert_result.all.return_value = [(evt1, loop1, None, None), (evt2, loop2, None, None)]
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
@@ -630,12 +624,11 @@ class TestListAttention:
             loop.id = f"loop-{i:03d}"
             loop.tag_name = f"LIC-{101 + i}"
             loop.is_active = True
-            pairs.append((evt, loop))
+            pairs.append((evt, loop, None, None))
 
         alert_result = MagicMock()
         alert_result.all.return_value = pairs
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
@@ -672,9 +665,8 @@ class TestListAttention:
         evt.tracker_id = None
 
         alert_result = MagicMock()
-        alert_result.all.return_value = [(evt, loop)]
-        empty_result = MagicMock()
-        empty_result.scalars.return_value.all.return_value = []
+        alert_result.all.return_value = [(evt, loop, None, None)]
+        empty_result = _make_empty_result()
 
         def side_effect(stmt, *args, **kwargs):
             if "alert_event" in str(stmt):
