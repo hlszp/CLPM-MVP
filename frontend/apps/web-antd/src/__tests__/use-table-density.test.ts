@@ -3,13 +3,27 @@
  *
  * 覆盖：默认紧凑、循环切换顺序、antd size 映射、跨实例持久化
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useTableDensity } from '#/composables/use-table-density';
 
 describe('useTableDensity', () => {
   beforeEach(() => {
-    localStorage.clear();
+    // 测试环境 localStorage 实现不完整（无 clear/removeItem），
+    // 用内存 stub 提供完整 Storage 语义并与环境解耦
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => {
+        store.clear();
+      },
+    });
   });
 
   it('默认紧凑（工业高密度场景）', () => {

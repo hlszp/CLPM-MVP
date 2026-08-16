@@ -54,13 +54,13 @@ import { getWorkbenchSummaryApi } from '#/api/monitor';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmAiDrawer,
+  ClpmDecisionDock,
   ClpmPageToolbar,
   ClpmStandardActions,
+  ClpmToolbarButton,
 } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
-import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
-import WorkbenchNextAction from '#/components/monitor/workbench-next-action.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
@@ -83,6 +83,20 @@ const route = useRoute();
 const router = useRouter();
 // router 由 monitorCtx.update 内部调用 router.replace，此页面不再直接使用
 
+/** 返回系统概览（面包屑导航） */
+function goBackToOverview() {
+  router.push({ path: '/dashboard/workbench' });
+}
+
+/** 初始化：从 URL query 消费 plantNodeId 上下文（从系统概览跳转时带过来） */
+function initFromRouteQuery() {
+  const plantNodeId = route.query.plantNodeId as string | undefined;
+  if (plantNodeId) {
+    monitorCtx.update({ plantNodeId });
+    plantTreeSelectedKeys.value = [plantNodeId];
+  }
+}
+
 // ===== 请求代次保护（MW-P0-04）=====
 // 每次切换回路递增 epoch；异步响应写入前校验 epoch+loopId，丢弃旧响应。
 const requestGuard = useLatestRequest<string>();
@@ -92,11 +106,6 @@ const requestGuard = useLatestRequest<string>();
 const monitorCtx = useMonitorContext();
 
 // ===== 路由模式：左侧导航驱动右侧切换（选装置→清单，选回路→详情） =====
-
-/** 回路清单中点击回路行 → 切换到该回路详情 */
-function handleFleetLoopClick(loopId: string) {
-  selectLoop(loopId);
-}
 
 // ===== 实时数据（MW-P1-04/05/06）=====
 // 复用全局 realtimeWs 单例；WS 断连时 30 秒轮询降级
@@ -363,6 +372,13 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
   }
 }
 
+/** 发起诊断：跳转诊断工作台并携带当前回路上下文（MVP v2 诊断模块入口） */
+function goDiagnose(): void {
+  const loopId = selectedLoopId.value;
+  if (!loopId) return;
+  router.push({ path: '/diagnosis/workbench', query: { loopId, from: 'workbench' } });
+}
+
 /** summary 评分趋势的 dayTrend 类型收窄（供 DayDeltaBadge 使用） */
 type DayTrend = 'FLAT' | 'IMPROVED' | 'NEW' | 'WORSENED';
 
@@ -600,6 +616,8 @@ function selectLoop(loopId: null | string): void {
 // MW-P0-03：不在 onMounted 预设 selectedLoopId——由 loadLoopList 解析深链接，
 // 确认目标存在后再 selectLoop，避免对不存在回路发起无用请求。
 onMounted(() => {
+  // 初始化：从 URL query 消费跨页上下文（plantNodeId 等）
+  initFromRouteQuery();
   loadLoopList();
   loadPlantTree();
   // 加载定级阈值（动态配置，降级 GB/T 44693.2 §6.3 默认）
@@ -1049,7 +1067,24 @@ const stageLabelMap: Record<string, string> = {
 <template>
   <Page>
     <ClpmPageToolbar :loading="loopListLoading">
+      <!-- 从系统概览跳转过来时显示返回面包屑 -->
+      <template #context v-if="route.query.from === 'overview'">
+        <button
+          class="flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs text-blue-600 hover:border-blue-200 hover:bg-blue-50"
+          @click="goBackToOverview"
+        >
+          <span>←</span>
+          <span>系统概览</span>
+        </button>
+      </template>
       <template #actions>
+        <ClpmToolbarButton
+          :disabled="!selectedLoopId"
+          :disabled-reason="selectedLoopId ? undefined : '先选择回路'"
+          icon="lucide:stethoscope"
+          label="发起诊断"
+          @click="goDiagnose"
+        />
         <ClpmStandardActions :items="toolbarItems" />
       </template>
     </ClpmPageToolbar>
@@ -1205,9 +1240,23 @@ const stageLabelMap: Record<string, string> = {
               </div>
             </div>
 
-          <!-- ===== 回路清单模式（未选中回路时显示） ===== -->
+          <!-- ===== 未选中回路引导区（面点分离：不再内嵌完整大表格，引导去独立回路列表） ===== -->
           <div v-else-if="!selectedLoop" class="wb-fleet-area">
-            <LoopFleetView @loop-click="handleFleetLoopClick" />
+            <div class="wb-fleet-placeholder">
+              <div class="wb-fleet-placeholder__icon">
+                <div class="i-lucide:list w-12 h-12 text-gray-300" />
+              </div>
+              <div class="wb-fleet-placeholder__title">选择一个回路开始诊断</div>
+              <div class="wb-fleet-placeholder__desc">
+                从左侧装置树中选择单元，或在回路列表中点击位号即可进入工作台
+              </div>
+              <router-link to="/monitor/loops" class="wb-fleet-placeholder__link">
+                <Button type="primary">
+                  <template #icon><div class="i-lucide:external-link w-4 h-4" /></template>
+                  前往回路列表扫视全厂
+                </Button>
+              </router-link>
+            </div>
           </div>
 
           <!-- ===== 顶部行（grid-area: toprow，跨中间+决策两列宽）：R1页头 + R2状态条 ===== -->
@@ -1530,9 +1579,14 @@ const stageLabelMap: Record<string, string> = {
           <!-- ===== 右决策栏（grid-area: decision，仅最右列，只与 R4 等高） ===== -->
           <aside v-if="selectedLoop" class="wb-decision">
             <!-- Decision Dock（唯一下一步） -->
-            <div v-if="summary?.nextAction" class="wb-decision__dock">
-              <WorkbenchNextAction
-                :next-action="summary.nextAction"
+            <div class="wb-decision__dock">
+              <ClpmDecisionDock
+                :floating="false"
+                :next-action="summary?.nextAction ?? null"
+                :loading="summaryLoading"
+                :has-data="summary != null"
+                :partial="summary?.partial ?? false"
+                :stale="summary?.dataFreshness?.status === 'DELAYED'"
                 @action="handleNextAction"
               />
             </div>
@@ -1644,6 +1698,32 @@ const stageLabelMap: Record<string, string> = {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+/* 未选中回路引导占位（面点分离：不再内嵌完整大表格） */
+.wb-fleet-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+}
+.wb-fleet-placeholder__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.wb-fleet-placeholder__desc {
+  font-size: 13px;
+  color: #6b7280;
+  max-width: 360px;
+  line-height: 1.6;
+}
+.wb-fleet-placeholder__link {
+  margin-top: 8px;
 }
 
 /* 折叠态：左脊柱 28px 窄条 */

@@ -1,0 +1,188 @@
+/**
+ * 诊断模块 API（MVP v2 重设计版）
+ *
+ * 设计文档：docs/MVP设计/07-诊断模块设计方案.md §9.1
+ * 后端：backend/app/api/v1/endpoints/diagnosis_v2.py（/api/v1/diagnosis/*）
+ */
+
+import type { PageQuery, PaginatedResponse } from '#/api/types';
+import { requestClient } from '#/api/request';
+
+export namespace DiagnosisApi {
+  /** 原因分类代码（7 类，设计 §3.1）；展示元数据见 views/diagnosis/constants.ts */
+  export type Category =
+    | 'TUNING'
+    | 'VALVE'
+    | 'INSTRUMENT'
+    | 'PROCESS'
+    | 'UTILIZATION'
+    | 'DESIGN'
+    | 'DATA_INSUFFICIENT';
+
+  export type Severity = 'HIGH' | 'MEDIUM' | 'LOW';
+  export type RunStatus = 'FAILED' | 'PARTIAL' | 'RUNNING' | 'SUCCESS';
+
+  /** 分类判定（主/次/待复核三态，设计 §7.3） */
+  export interface CategoryJudgement {
+    category: Category;
+    categoryLabel: string;
+    confidence: number;
+    basis: string[];
+    status: 'pending_review' | 'primary' | 'secondary';
+    contaminationNote?: null | string;
+  }
+
+  export interface Recommendation {
+    content: string;
+    basis: string;
+    direction: string;
+    priority: number;
+  }
+
+  /** 数据门禁结论（设计 §4.3：消费日常质量结论） */
+  export interface GateInfo {
+    passed: boolean;
+    pointCount: number;
+    expectedPoints: number;
+    validRate: number;
+    confidenceLevel: string;
+    gapRatio: number;
+    reason?: null | string;
+  }
+
+  /** 证据波形快照（LTTB ≤2000 点，自包含） */
+  export interface ChartSnapshot {
+    trend: { ts: number[]; pv?: (null | number)[]; sp?: (null | number)[]; op?: (null | number)[] };
+    scatter: { pv: number[]; op: number[] };
+  }
+
+  export interface OperatorResult {
+    operator: string;
+    executed: boolean;
+    skipReason?: null | string;
+    detected: boolean;
+    confidence: number;
+    features: Record<string, any>;
+    evidence: Array<{ feature: string; value: any; threshold?: any; judgment: string }>;
+    error?: null | string;
+  }
+
+  /** 记录列表行（列表页） */
+  export interface RunListItem {
+    id: string;
+    taskId?: null | string;
+    loopId: string;
+    loopTagName?: null | string;
+    triggeredBy: string;
+    timeWindowStart: string;
+    timeWindowEnd: string;
+    operatorGroup: string;
+    status: RunStatus;
+    primaryCategory?: null | Category;
+    primaryCategoryLabel?: null | string;
+    primaryConfidence?: null | number;
+    secondaryCategories: CategoryJudgement[];
+    pendingReview: CategoryJudgement[];
+    severity?: null | Severity;
+    createdAt: string;
+  }
+
+  /** 诊断完整详情（结果面板） */
+  export interface RunDetail extends RunListItem {
+    dataGate: GateInfo;
+    operatorResults: Record<string, OperatorResult>;
+    fusionResults: Record<
+      string,
+      { family: string; symptomTag: string; detected: boolean; confidence: number; fused: boolean }
+    >;
+    symptomTags: Record<string, { detected: boolean; confidence: number }>;
+    rationale: string[];
+    recommendations: Recommendation[];
+    evidenceCharts?: ChartSnapshot;
+    thresholdVersion?: null | string;
+    algorithmVersion?: null | string;
+    startedAt?: null | string;
+    finishedAt?: null | string;
+    durationMs?: null | number;
+  }
+
+  /** 算子注册表项（GET /operators，AI 工具目录同源） */
+  export interface OperatorInfo {
+    name: string;
+    displayName: string;
+    family: string;
+    diagCode: string;
+    description: string;
+    requiredSignals: string[];
+    minSampleRate: number;
+    outputsSchema: Record<string, string>;
+    thresholdSchema: Record<string, unknown>;
+    symptomTags: string[];
+    enabledByDefault: boolean;
+    fastGroup: boolean;
+  }
+
+  export type TimeWindowPreset = 'last_24h' | 'last_30d' | 'last_7d';
+  export type OperatorGroup = 'fast' | 'full';
+
+  export interface TriggerBody {
+    loopIds: string[];
+    timeWindow: { preset?: TimeWindowPreset; start?: string; end?: string };
+    operatorGroup: OperatorGroup;
+  }
+
+  export interface TriggerResult {
+    taskId: string;
+    accepted: number;
+  }
+
+  export interface RunQuery extends PageQuery {
+    loopId?: string;
+    category?: Category;
+    severity?: Severity;
+    status?: RunStatus;
+    taskId?: string;
+    startTime?: string;
+    endTime?: string;
+  }
+}
+
+/**
+ * 发起诊断（异步任务，返回 taskId 供轮询）
+ */
+export function triggerDiagnosisApi(data: DiagnosisApi.TriggerBody) {
+  return requestClient.post<DiagnosisApi.TriggerResult>('/diagnosis/run', data);
+}
+
+/**
+ * 诊断记录列表（筛选/分页）
+ */
+export function getDiagnosisRunsApi(params: DiagnosisApi.RunQuery) {
+  return requestClient.get<PaginatedResponse<DiagnosisApi.RunListItem>>('/diagnosis/runs', {
+    params,
+  });
+}
+
+/**
+ * 单次诊断完整详情（含算子结果/证据链/波形快照）
+ */
+export function getDiagnosisRunDetailApi(id: string) {
+  return requestClient.get<DiagnosisApi.RunDetail>(`/diagnosis/runs/${id}`);
+}
+
+/**
+ * 算子注册表元数据（算子说明 + AI 工具目录）
+ */
+export function getDiagnosisOperatorsApi() {
+  return requestClient.get<DiagnosisApi.OperatorInfo[]>('/diagnosis/operators');
+}
+
+/**
+ * 诊断记录 CSV 导出（返回文本，页面侧构造 Blob 下载）
+ */
+export function exportDiagnosisRunsApi(params: Omit<DiagnosisApi.RunQuery, 'page' | 'pageSize'>) {
+  return requestClient.get<string>('/diagnosis/export', {
+    params,
+    responseType: 'blob',
+  });
+}
