@@ -90,6 +90,35 @@ def _sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[str]:
     return [_sanitize_validation_error(e) for e in errors]
 
 
+def _brief_validation_errors(
+    errors: list[dict[str, Any]], *, max_input_len: int = 100
+) -> list[dict[str, Any]]:
+    """压缩校验错误用于日志：截断 input 原始值，避免大 body 刷屏。
+
+    保留 loc/type/msg/ctx（约束详情如 {"le": 100}），这些是排查参数
+    校验问题的关键线索；响应体在非 DEBUG 下已脱敏，服务端日志是唯一
+    的详细现场（如 GET /loops?pageSize=200 → loc=query.pageSize、
+    type=less_than_equal、ctx.le=100）。
+    """
+    brief: list[dict[str, Any]] = []
+    for err in errors:
+        item: dict[str, Any] = {
+            "type": err.get("type"),
+            "loc": err.get("loc"),
+            "msg": err.get("msg"),
+        }
+        ctx = err.get("ctx")
+        if ctx is not None:
+            item["ctx"] = jsonable_encoder(ctx)
+        input_val = err.get("input")
+        if isinstance(input_val, str) and len(input_val) > max_input_len:
+            item["input"] = f"{input_val[:max_input_len]}...(len={len(input_val)})"
+        else:
+            item["input"] = input_val
+        brief.append(item)
+    return brief
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all global exception handlers on the FastAPI app."""
 
@@ -106,6 +135,15 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _handle_validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        # 参数校验失败留痕：记录 method/path/query 与完整校验详情
+        # （loc/type/msg/ctx），非 DEBUG 响应体已脱敏，此日志是唯一现场
+        logger.warning(
+            "Validation failed: %s %s query=%s errors=%s",
+            request.method,
+            request.url.path,
+            dict(request.query_params),
+            _brief_validation_errors(exc.errors()),
+        )
         if settings.DEBUG:
             response = JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

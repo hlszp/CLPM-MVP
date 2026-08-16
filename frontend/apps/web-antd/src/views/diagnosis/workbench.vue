@@ -42,18 +42,28 @@ const selectedLoopIds = ref<string[]>([]);
 
 async function loadLoopOptions(keyword = '') {
   loopLoading.value = true;
+  // 后端 /loops pageSize 上限 le=100，超出直接 422；空 keyword 不传参
+  const params = keyword
+    ? { page: 1, pageSize: 100, keyword }
+    : { page: 1, pageSize: 100 };
   try {
-    // 后端 /loops pageSize 上限 le=100，超出直接 422；空 keyword 不传参
-    const params = keyword
-      ? { page: 1, pageSize: 100, keyword }
-      : { page: 1, pageSize: 100 };
     const res = await getLoopListApi(params);
     loopOptions.value = res.items.map((l: LoopApi.LoopListItem) => ({
       label: l.tagName,
       value: l.loopId,
     }));
-  } catch {
+  } catch (error) {
     loopOptions.value = [];
+    // 422 等失败留痕：状态码 + 后端返回体 + 本次请求参数，
+    // 便于排查参数校验类问题（如 pageSize 超上限）
+    const resp = (
+      error as { response?: { data?: unknown; status?: number } }
+    ).response;
+    console.error('[诊断工作台/回路选项] 加载失败:', {
+      status: resp?.status,
+      data: resp?.data,
+      params,
+    });
   } finally {
     loopLoading.value = false;
   }
