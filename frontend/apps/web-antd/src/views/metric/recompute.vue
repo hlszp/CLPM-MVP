@@ -509,7 +509,9 @@ async function handleSubmit() {
       dryRun: false,
     });
     const taskId = (result as { taskId: string }).taskId;
-    message.success(`任务已创建: ${taskId}`);
+    // 创建后自动启动任务（无需用户再点一次"评估"按钮）
+    await startTaskApi(taskId);
+    message.success(`任务已创建并启动: ${taskId.slice(0, 8)}...`);
     drawerVisible.value = false;
     loadList();
   } catch (error) {

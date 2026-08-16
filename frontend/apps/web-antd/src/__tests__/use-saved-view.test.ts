@@ -32,6 +32,7 @@ function makeCtx(overrides: Partial<MonitorContext> = {}): MonitorContext {
     timeWindow: '24h',
     eventId: null,
     section: null,
+    from: null,
     ...overrides,
   };
 }

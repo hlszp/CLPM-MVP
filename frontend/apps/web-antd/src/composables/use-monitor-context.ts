@@ -35,6 +35,7 @@ export type WorkbenchSection = 'assessment' | 'overview';
 export interface MonitorContext {
   attentionOnly: boolean;
   eventId: null | string;
+  from: null | string;
   keyword: string;
   loopId: null | string;
   loopType: null | string;
@@ -55,6 +56,7 @@ const CONTEXT_KEYS = [
   'timeWindow',
   'eventId',
   'section',
+  'from',
 ] as const;
 
 /** 合法时间窗集合 */
@@ -134,6 +136,7 @@ export function useMonitorContext() {
   const context = computed<MonitorContext>(() => ({
     attentionOnly: parseBool(route.query.attentionOnly),
     eventId: parseStr(route.query.eventId),
+    from: parseStr(route.query.from),
     keyword: parseKeyword(route.query.keyword),
     loopId: parseStr(route.query.loopId),
     loopType: parseStr(route.query.loopType),
@@ -153,6 +156,7 @@ export function useMonitorContext() {
   const timeWindow = computed(() => context.value.timeWindow);
   const eventId = computed(() => context.value.eventId);
   const section = computed(() => context.value.section);
+  const from = computed(() => context.value.from);
 
   /**
    * 增量更新上下文（合并到现有 query，未传字段保留原值）。
@@ -218,6 +222,7 @@ export function useMonitorContext() {
     // 便捷读取
     attentionOnly,
     eventId,
+    from,
     keyword,
     loopId,
     loopType,

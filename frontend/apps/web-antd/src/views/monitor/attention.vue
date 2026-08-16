@@ -50,6 +50,7 @@ import {
 import { getAttentionListApi } from '#/api/monitor';
 import {
   ClpmEmptyState,
+  ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp } from '#/composables/use-page-toolbar';
@@ -68,6 +69,11 @@ defineOptions({ name: 'MonitorAttention' });
 
 const route = useRoute();
 const router = useRouter();
+
+/** 返回系统概览（面包屑导航） */
+function goBackToOverview() {
+  router.push({ path: '/dashboard/workbench' });
+}
 
 // ===== 相对时间格式化 =====
 function formatRelative(ts: string | null | undefined): string {
@@ -475,11 +481,15 @@ function applyUrlContext() {
   const sourceParam = route.query.source as string | undefined;
   const eventIdParam = route.query.eventId as string | undefined;
   const loopIdParam = route.query.loopId as string | undefined;
+  const plantNodeIdParam = route.query.plantNodeId as string | undefined;
   if (sourceParam && SOURCE_SET.has(sourceParam)) {
     query.source = [sourceParam as MonitorApi.AttentionSource];
   }
   if (loopIdParam) {
     query.loopId = loopIdParam;
+  }
+  if (plantNodeIdParam) {
+    query.plantNodeId = plantNodeIdParam;
   }
   return eventIdParam;
 }
@@ -536,6 +546,7 @@ watch(
     const newSource = q.source as string | undefined;
     const newEventId = q.eventId as string | undefined;
     const newLoopId = q.loopId as string | undefined;
+    const newPlantNodeId = q.plantNodeId as string | undefined;
     let needReload = false;
     if (
       newSource &&
@@ -551,6 +562,11 @@ watch(
       query.page = 1;
       needReload = true;
     }
+    if ((newPlantNodeId ?? undefined) !== (query.plantNodeId ?? undefined)) {
+      query.plantNodeId = newPlantNodeId;
+      query.page = 1;
+      needReload = true;
+    }
     if (needReload) {
       loadData().then(() => {
         if (newEventId) tryOpenDetailByEventId(newEventId);
@@ -563,32 +579,40 @@ watch(
 </script>
 
 <template>
-  <Page
-    title="关注队列"
-    :affix-tabs="true"
-    icon="lucide:list-todo"
-  >
-    <template #headerActions>
-      <ClpmToolbarButton
-        icon="lucide:refresh-cw"
-        label="刷新"
-        :loading="loading"
-        tooltip="刷新关注队列数据"
-        @click="loadData"
-      />
-      <ClpmToolbarButton
-        icon="lucide:help-circle"
-        label="帮助"
-        tooltip="查看关注队列使用说明"
-        @click="handleHelp"
-      />
-      <ClpmToolbarButton
-        icon="ant-design:column-height-outlined"
-        :label="`密度：${densityLabel}`"
-        :tooltip="`密度：${densityLabel}（点击切换）`"
-        @click="cycleDensity"
-      />
-    </template>
+  <Page>
+    <ClpmPageToolbar title="关注队列" :loading="loading">
+      <!-- 从系统概览跳转过来时显示返回面包屑 -->
+      <template #context v-if="route.query.from === 'overview'">
+        <button
+          class="flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs text-blue-600 hover:border-blue-200 hover:bg-blue-50"
+          @click="goBackToOverview"
+        >
+          <span>←</span>
+          <span>系统概览</span>
+        </button>
+      </template>
+      <template #actions>
+        <ClpmToolbarButton
+          icon="lucide:refresh-cw"
+          label="刷新"
+          :loading="loading"
+          tooltip="刷新关注队列数据"
+          @click="loadData"
+        />
+        <ClpmToolbarButton
+          icon="lucide:help-circle"
+          label="帮助"
+          tooltip="查看关注队列使用说明"
+          @click="handleHelp"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:column-height-outlined"
+          :label="`密度：${densityLabel}`"
+          :tooltip="`密度：${densityLabel}（点击切换）`"
+          @click="cycleDensity"
+        />
+      </template>
+    </ClpmPageToolbar>
 
     <div class="h-full flex flex-col overflow-hidden bg-[var(--clr-surface)]">
       <Spin :spinning="loading" class="flex-1 flex flex-col min-h-0">

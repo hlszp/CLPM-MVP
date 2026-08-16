@@ -148,6 +148,19 @@ function getGrade(score: null | number | undefined): {
   return { ...last, letter: String.fromCharCode(65 + gradeCfgs.value.length - 1) };
 }
 
+/** 告警线阈值：警告等级（倒数第二档）的 minScore；默认60 */
+const warningThreshold = computed(() => {
+  // 倒数第二档即"警告"等级；若配置不足两档则回落60
+  const warn = gradeCfgs.value[gradeCfgs.value.length - 2];
+  return warn?.min ?? 60;
+});
+
+/** 告警线颜色：取警告等级配置色，默认 #c23434 */
+const warningColor = computed(() => {
+  const warn = gradeCfgs.value[gradeCfgs.value.length - 2];
+  return warn?.color ?? '#c23434';
+});
+
 // ================ 状态 ================
 const router = useRouter();
 
@@ -443,7 +456,22 @@ function clearSelection() {
 function goToLoop(loopId: string) {
   router.push({
     path: '/monitor/loop-workbench',
-    query: { from: 'overview', loopId },
+    query: {
+      from: 'overview',
+      loopId,
+      ...(selected.value?.id ? { plantNodeId: selected.value.id } : {}),
+    },
+  });
+}
+
+/** 跳转到关注队列（可选传 plantNodeId 筛选上下文） */
+function goToAttention(plantNodeId?: string) {
+  router.push({
+    path: '/monitor/attention',
+    query: {
+      from: 'overview',
+      ...(plantNodeId ? { plantNodeId } : {}),
+    },
   });
 }
 
@@ -830,7 +858,7 @@ const trendGeo = computed(() => {
     iw: W - L - R,
     ih: H - T - B,
     yMin: Math.min(
-      50,
+      warningThreshold.value - 10,
       Math.floor((Math.min(...(all.length > 0 ? all : [100])) - 6) / 10) * 10,
     ),
     yMax: 100,
@@ -864,14 +892,18 @@ const trendSvg = computed(() => {
     return d;
   };
 
-  // 网格 + 告警线 60
+  // 网格 + 告警线（取自定级阈值配置，禁硬编码）
+  const wt = warningThreshold.value;
+  const wc = warningColor.value;
   let grid = '';
   for (let v = yMin; v <= yMax; v += 10) {
-    const is60 = v === 60;
-    grid += `<line x1="${L}" y1="${y(v).toFixed(1)}" x2="${W - R}" y2="${y(v).toFixed(1)}" stroke="${is60 ? '#c23434' : '#eef2f7'}"${is60 ? ' stroke-dasharray="5,4" stroke-width="1.2"' : ''}/>`;
+    grid += `<line x1="${L}" y1="${y(v).toFixed(1)}" x2="${W - R}" y2="${y(v).toFixed(1)}" stroke="#eef2f7"/>`;
     grid += `<text x="${L - 5}" y="${(y(v) + 3).toFixed(1)}" font-size="9" fill="#94a3b8" text-anchor="end">${v}</text>`;
   }
-  grid += `<text x="${L + 4}" y="${(y(60) - 4).toFixed(1)}" font-size="9" fill="#c23434" text-anchor="start">告警线 60</text>`;
+  // 告警线：单独画虚线（不依赖网格刻度）
+  const wy = y(Math.max(yMin, Math.min(yMax, wt))).toFixed(1);
+  grid += `<line x1="${L}" y1="${wy}" x2="${W - R}" y2="${wy}" stroke="${wc}" stroke-dasharray="5,4" stroke-width="1.2"/>`;
+  grid += `<text x="${L + 4}" y="${(Number(wy) - 4).toFixed(1)}" font-size="9" fill="${wc}" text-anchor="start">告警线 ${wt}</text>`;
 
   // X 轴标签（≥120 小时 → M/D；其余 → HH:00）
   let xl = '';
@@ -1767,10 +1799,11 @@ const radarSvg = computed(() => {
               <div class="flex-none text-[10px] text-gray-500">
                 阀门运行区间异常
                 <span
-                  class="font-mono font-bold"
+                  class="font-mono font-bold cursor-pointer hover:underline"
                   :class="
                     valveAlerts.length > 0 ? 'text-red-500' : 'text-gray-400'
                   "
+                  @click="valveAlerts.length > 0 && goToAttention(selected?.id)"
                   >{{ valveAlerts.length }}</span
                 >
                 <span class="text-[9px] text-gray-400">回路（OP≤5% 或 ≥95%）</span>
@@ -1923,7 +1956,7 @@ const radarSvg = computed(() => {
               class="flex h-6 flex-none items-center border-t border-gray-100 px-3 text-[10px] text-gray-400"
             >
               选中: <span class="font-bold text-gray-600">{{ scopeLabel }}</span>
-              · {{ twLabel }} · 告警线 60
+              · {{ twLabel }} · 告警线 {{ warningThreshold }}
             </div>
           </div>
 
