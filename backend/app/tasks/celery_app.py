@@ -32,6 +32,8 @@ celery_app = Celery(
         # MVP 精简：已屏蔽诊断模块 → 不注册 diagnosis_engine / tracker_verification
         # "app.tasks.diagnosis_engine",
         # "app.tasks.tracker_verification",
+        # MVP v2 诊断模块（2026-08-16 重设计，仅手动触发；旧引擎保持屏蔽）
+        "app.tasks.diagnosis_v2",
         "app.tasks.report_generator",
         "app.tasks.audit_archive",
         "app.tasks.dead_letter",
@@ -135,6 +137,7 @@ import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
 
 # import app.tasks.diagnosis_engine  # noqa: E402, F401
+import app.tasks.diagnosis_v2  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
 

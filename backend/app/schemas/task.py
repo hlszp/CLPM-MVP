@@ -34,6 +34,7 @@ class TaskType(StrEnum):
         BACKFILL: 历史重算任务（按时间窗批量重算，覆盖标准快照）
         TUNING: 回路整定任务（辨识/整定/仿真异步任务，V62-P1-013 接入 TaskTracker）
         REPORT: 报告导出任务（诊断建议书 PDF 等异步导出，P3-33 接入 TaskTracker）
+        DIAGNOSIS: 回路诊断任务（MVP v2 诊断模块手动批量触发）
     """
 
     STANDARD = "STANDARD"
@@ -41,6 +42,7 @@ class TaskType(StrEnum):
     BACKFILL = "BACKFILL"
     TUNING = "TUNING"
     REPORT = "REPORT"
+    DIAGNOSIS = "DIAGNOSIS"
 
 
 class TaskStatus(StrEnum):
