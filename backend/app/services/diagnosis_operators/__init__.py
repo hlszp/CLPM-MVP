@@ -6,6 +6,15 @@
 可调参数全部经 threshold_schema 注入；同输入必同输出。
 """
 
+# 导入算子模块以触发注册（子模块仅依赖 base 契约与外部纯计算库）
+from app.services.diagnosis_operators import (  # noqa: E402, F401
+    disturbance,
+    oscillation,
+    saturation,
+    sensor,
+    stiction,
+    tuning,
+)
 from app.services.diagnosis_operators.base import (
     OPERATOR_REGISTRY,
     EvidenceItem,
