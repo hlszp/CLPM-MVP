@@ -49,12 +49,30 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        // 面点分离：回路列表独立成页（页型 B），全角色可见（含 EXPERT/SPONSOR）
+        // /loop/monitor 旧书签重定向到本页
+        name: 'MonitorLoops',
+        path: '/monitor/loops',
+        component: () => import('#/views/monitor/loops.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+            'EXPERT',
+          ],
+          icon: 'lucide:list',
+          title: '回路列表',
+        },
+      },
+      {
         name: 'MonitorLoopRealtime',
         path: '/loop/monitor',
-        // MW-P4-04：/loop/monitor 统一重定向到工作台 table 模式
+        // 面点分离：旧 /loop/monitor 重定向到独立回路列表页（不再进工作台 table 模式）
         redirect: (to) => ({
-          path: '/monitor/loop-workbench',
-          query: { ...to.query, view: 'table' },
+          path: '/monitor/loops',
+          query: { ...to.query },
         }),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
