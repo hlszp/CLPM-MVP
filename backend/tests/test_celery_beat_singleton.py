@@ -13,21 +13,32 @@ from app.main import _any_beat_process_running, _start_celery_beat
 
 
 class TestBeatSingletonGuard:
-    """_start_celery_beat 的重复启动防护。"""
+    """_start_celery_beat 的重复启动防护。
+
+    2026-08-16：pidfile/schedule 迁移至 logs/ 目录（避免 uvicorn --reload
+    监视项目根目录文件导致循环重启），测试同步使用 logs/celerybeat.pid。
+    """
 
     def test_skip_when_pidfile_alive(self, tmp_path, monkeypatch):
         """pidfile 指向活进程时跳过启动。"""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "celerybeat.pid").write_text(str(os.getpid()))
+        os.makedirs(tmp_path / "logs", exist_ok=True)
+        (tmp_path / "logs" / "celerybeat.pid").write_text(str(os.getpid()))
 
-        with patch("app.main.subprocess.Popen") as mock_popen:
+        with (
+            patch("app.main.subprocess.Popen") as mock_popen,
+            patch("app.main._any_beat_process_running", return_value=True) as mock_any,
+        ):
             _start_celery_beat()
             mock_popen.assert_not_called()
+            # pidfile 命中活进程时短路，无需 pgrep 兜底
+            mock_any.assert_not_called()
 
     def test_start_when_pidfile_dead(self, tmp_path, monkeypatch):
         """pidfile 指向死进程时清理并启动新 beat。"""
         monkeypatch.chdir(tmp_path)
-        pid_file = tmp_path / "celerybeat.pid"
+        os.makedirs(tmp_path / "logs", exist_ok=True)
+        pid_file = tmp_path / "logs" / "celerybeat.pid"
         pid_file.write_text("999999999")
 
         with (
