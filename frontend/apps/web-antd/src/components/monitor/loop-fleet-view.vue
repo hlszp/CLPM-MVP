@@ -84,6 +84,8 @@ const total = ref(0);
 const typeStats = ref<Record<string, number>>({});
 /** 控制方式统计（后端基于 Redis 实时 MODE 值全量聚合） */
 const modeStats = ref<Record<string, number>>({});
+/** E-1 服务端聚合统计（全量不分页，五档计数/平均分/WORSENED/MODE分布） */
+const aggregate = ref<LoopApi.MonitorAggregate | null>(null);
 
 // ===== 表格列定义（对齐 02 回路列表标杆 v1.4：12 默认列 + 组态字段收起）=====
 // 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 回路等级 / 性能评分 / SP / PV / OP / MODE / 可信度 / 操作
@@ -252,7 +254,7 @@ const GRADE_CONFIG: ReadonlyArray<{
   { key: 'poor', label: '不合格', minScore: 0, tagColor: 'red' },
 ];
 
-/** 基于当前页回路列表计算各等级数量 */
+/** E-1：优先使用服务端全量聚合（gradeCounts），降级为当前页前端计算 */
 const gradeStats = computed<GradeStats>(() => {
   const stats: GradeStats = {
     excellent: 0,
@@ -262,6 +264,18 @@ const gradeStats = computed<GradeStats>(() => {
     poor: 0,
     none: 0,
   };
+  // 优先服务端聚合
+  const ag = aggregate.value;
+  if (ag?.gradeCounts) {
+    stats.excellent = ag.gradeCounts.EXCELLENT ?? 0;
+    stats.good = ag.gradeCounts.GOOD ?? 0;
+    stats.fair = ag.gradeCounts.FAIR ?? 0;
+    stats.warning = ag.gradeCounts.WARNING ?? 0;
+    stats.poor = ag.gradeCounts.POOR ?? 0;
+    stats.none = ag.gradeCounts.INCONCLUSIVE ?? 0;
+    return stats;
+  }
+  // 降级：当前页前端计算
   for (const item of monitorList.value) {
     const score = item.score;
     if (score == null || Number.isNaN(score)) {
@@ -278,17 +292,29 @@ const gradeStats = computed<GradeStats>(() => {
   return stats;
 });
 
-// ===== 实时自控率（基于后端 controlModeStats 全量统计）=====
-// 自控率 = (自动+串级+远程+先控) / (手动+自动+串级+远程+先控+未知)
-// mode 值：0=手动, 1=自动, 2=串级, 3=远程, 4=先控
+/** 综合性能（简单平均，筛选联动）：优先服务端聚合 */
+const avgScore = computed<number | null>(() => {
+  return aggregate.value?.avgScore ?? null;
+});
+
+/** 较昨日恶化数：优先服务端聚合 */
+const worsenedCount = computed<number>(() => {
+  return aggregate.value?.worsenedCount ?? 0;
+});
+
+// ===== 实时自控率 =====
+// E-1 优先服务端 aggregate.autoControlRate（全量 MODE 分布聚合），降级为 modeStats 计算
 const autoControlRate = computed(() => {
+  if (aggregate.value?.autoControlRate != null) {
+    return aggregate.value.autoControlRate;
+  }
   const s = modeStats.value;
   const auto =
     (s['1'] ?? 0) + (s['2'] ?? 0) + (s['3'] ?? 0) + (s['4'] ?? 0);
   const denom =
     (s['0'] ?? 0) + auto + (s['unknown'] ?? 0);
   if (denom === 0) return 0;
-  return (auto / denom) * 100;
+  return Number(((auto / denom) * 100).toFixed(1));
 });
 
 const autoControlRateText = computed(
@@ -328,17 +354,19 @@ async function loadList() {
       page: query.page,
       pageSize: query.pageSize,
     });
-    // 标杆 v1.4：默认按评分升序（最差在前），当前页内排序，服务端排序待 E-2 扩展
+    // 标杆 v1.4：默认按评分升序（最差在前）；服务端 C1-1 已排序，前端作为双保险
     monitorList.value = data.items.toSorted((a, b) => {
       const sa = a.score ?? 999;
       const sb = b.score ?? 999;
       return sa - sb;
     });
     total.value = data.total;
+    aggregate.value = data.aggregate ?? null;
   } catch (error: any) {
     errorMessage.value = error?.message ?? '加载失败';
     monitorList.value = [];
     total.value = 0;
+    aggregate.value = null;
   } finally {
     loading.value = false;
     lastRefreshAt.value = new Date();
@@ -585,10 +613,34 @@ defineExpose({
             }}</span>
           </div>
 
-          <!-- 分隔符：等级统计 ↔ 实时自控率 -->
+          <!-- 分隔符：等级统计 ↔ 综合统计 -->
           <div class="mx-1 h-5 w-px bg-gray-200"></div>
 
-          <!-- 实时自控率（基于后端 controlModeStats 全量统计） -->
+          <!-- 综合性能（简单平均，E-1 服务端聚合，筛选联动） -->
+          <div
+            v-if="avgScore != null"
+            class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5"
+          >
+            <span class="text-sm font-medium text-gray-600">综合性能</span>
+            <span class="text-sm font-bold text-gray-800">{{ avgScore.toFixed(1) }}</span>
+            <Tooltip title="筛选集合评分简单平均（非加权）" placement="bottom">
+              <span class="cursor-help text-[10px] text-gray-400">简单平均</span>
+            </Tooltip>
+          </div>
+
+          <!-- 较昨日恶化（E-1 服务端聚合，scoreDelta ≤ -2） -->
+          <div
+            v-if="worsenedCount > 0"
+            class="flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-1.5"
+          >
+            <span class="text-sm font-medium text-rose-600">较昨日恶化</span>
+            <span class="text-sm font-bold text-rose-700">{{ worsenedCount }}</span>
+          </div>
+
+          <!-- 分隔符：综合统计 ↔ 实时自控率 -->
+          <div class="mx-1 h-5 w-px bg-gray-200"></div>
+
+          <!-- 实时自控率（E-1 优先服务端聚合，降级 modeStats） -->
           <div
             class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5"
           >
@@ -598,6 +650,9 @@ defineExpose({
               :class="autoControlRateColorClass"
               >{{ autoControlRateText }}</span
             >
+            <Tooltip title="实时口径（MODE 分布），与 KPI 有效自控率（快照口径）不同" placement="bottom">
+              <span class="cursor-help text-[10px] text-gray-400">实时</span>
+            </Tooltip>
           </div>
         </div>
       </Card>

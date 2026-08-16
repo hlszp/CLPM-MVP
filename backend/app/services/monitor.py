@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +22,7 @@ from app.core.exceptions import BizError
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly, LoopIntegritySnapshot
 from app.models.plant_node import PlantNode
+from app.models.sys_config import SysConfig
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ALGORITHM_VERSION
 from app.services.data_source.realtime_subscriber import get_subscriber
@@ -318,6 +320,179 @@ async def _get_descendant_node_ids(db: AsyncSession, parent_id: str) -> list[str
     return await collect_descendant_node_ids(db, parent_id)
 
 
+# 默认五档阈值（GB/T 44693.2-2024 §6.3），与前端 GRADE_CONFIG 对齐
+_DEFAULT_GRADE_THRESHOLDS = [
+    {"name": "EXCELLENT", "label": "优秀", "minScore": 90, "color": "green"},
+    {"name": "GOOD", "label": "良好", "minScore": 80, "color": "blue"},
+    {"name": "FAIR", "label": "合格", "minScore": 60, "color": "gold"},
+    {"name": "WARNING", "label": "警告", "minScore": 40, "color": "orange"},
+    {"name": "POOR", "label": "不合格", "minScore": 0, "color": "red"},
+]
+
+# MODE 数值 → 标签映射（0=手动,1=自动,2=串级,3=远程,4=先控），与前端 MODE_LABEL_MAP 对齐
+_MODE_NUMERIC_TO_LABEL: dict[int, str] = {
+    0: "MAN",
+    1: "AUTO",
+    2: "CAS",
+    3: "REMOTE",
+    4: "ADVANCED",
+}
+
+
+async def _load_aggregate_grading_thresholds(db: AsyncSession) -> list[dict]:
+    """加载定级阈值；未配置时回退国标默认值。"""
+    from app.api.v1.endpoints.grading_config import _KEY_CURRENT
+
+    result = await db.execute(select(SysConfig).where(SysConfig.key == _KEY_CURRENT))
+    cfg = result.scalar_one_or_none()
+    if cfg and cfg.value:
+        try:
+            thresholds = json.loads(cfg.value).get("thresholds")
+            if isinstance(thresholds, list) and thresholds:
+                return sorted(thresholds, key=lambda t: t["level"])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+    return list(_DEFAULT_GRADE_THRESHOLDS)
+
+
+def _classify_grade(score: float | None, thresholds: list[dict]) -> str:
+    """根据评分返回等级名；score 为 None 返回 'INCONCLUSIVE'。"""
+    if score is None:
+        return "INCONCLUSIVE"
+    for t in thresholds:
+        if score >= t["minScore"]:
+            return t["name"]
+    return "INCONCLUSIVE"
+
+
+async def _build_loop_monitor_aggregate(
+    db: AsyncSession,
+    conditions: list,
+) -> dict[str, Any]:
+    """回路监控列表聚合统计（E-1）。
+
+    返回字段：
+    - gradeCounts: 五档计数 + INCONCLUSIVE（无评分）
+    - avgScore: 简单平均评分（仅计有评分回路，保留1位小数）
+    - scoredCount: 有评分回路数（avgScore 分母）
+    - worsenedCount: 较昨日恶化（dayTrend=WORSENED，scoreDelta ≤ -2）回路数
+    - modeDistribution: MODE 实时分布 {AUTO/CAS/MAN/REMOTE/ADVANCED/UNKNOWN: count}
+    - autoControlRate: 实时自控率 (AUTO+CAS+REMOTE+ADVANCED) / total（百分比，1位小数）
+    """
+    # 1) 查符合条件的全部 loop_id
+    id_stmt = select(LoopLedger.id)
+    for cond in conditions:
+        id_stmt = id_stmt.where(cond)
+    id_result = await db.execute(id_stmt)
+    all_loop_ids = [str(row[0]) for row in id_result.all()]
+    if not all_loop_ids:
+        return {
+            "gradeCounts": {t["name"]: 0 for t in _DEFAULT_GRADE_THRESHOLDS} | {"INCONCLUSIVE": 0},
+            "avgScore": None,
+            "scoredCount": 0,
+            "worsenedCount": 0,
+            "modeDistribution": {},
+            "autoControlRate": 0.0,
+        }
+
+    # 2) 批量查最新快照 score
+    latest_snap_sq = (
+        select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
+        .distinct(KpiSnapshotHourly.loop_id)
+        .where(KpiSnapshotHourly.loop_id.in_(all_loop_ids))
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+        .subquery("agg_latest_snap")
+    )
+    ls_result = await db.execute(select(latest_snap_sq.c.loop_id, latest_snap_sq.c.score))
+    score_map: dict[str, float | None] = {}
+    for loop_id, score_val in ls_result.all():
+        score_map[str(loop_id)] = float(score_val) if score_val is not None else None
+
+    # 3) 批量查"昨日基线"快照（今日 0 点前最新一条），用于计算 WORSENED
+    prev_snap_sq = (
+        select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
+        .distinct(KpiSnapshotHourly.loop_id)
+        .where(KpiSnapshotHourly.loop_id.in_(all_loop_ids))
+        .where(KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()))
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+        .subquery("agg_prev_snap")
+    )
+    ps_result = await db.execute(select(prev_snap_sq.c.loop_id, prev_snap_sq.c.score))
+    prev_score_map: dict[str, float | None] = {}
+    for loop_id, score_val in ps_result.all():
+        prev_score_map[str(loop_id)] = float(score_val) if score_val is not None else None
+
+    # 4) 加载 grading 阈值并分档统计
+    thresholds = await _load_aggregate_grading_thresholds(db)
+    grade_counts: dict[str, int] = {t["name"]: 0 for t in _DEFAULT_GRADE_THRESHOLDS}
+    grade_counts["INCONCLUSIVE"] = 0
+    total_score = 0.0
+    scored_count = 0
+    worsened_count = 0
+
+    for lid in all_loop_ids:
+        sc = score_map.get(lid)
+        grade = _classify_grade(sc, thresholds)
+        grade_counts[grade] = grade_counts.get(grade, 0) + 1
+        if sc is not None:
+            total_score += sc
+            scored_count += 1
+            # 较昨日恶化判定：有昨日评分且 delta ≤ -2
+            prev_sc = prev_score_map.get(lid)
+            if prev_sc is not None and (sc - prev_sc) <= -2:
+                worsened_count += 1
+
+    avg_score = round(total_score / scored_count, 1) if scored_count > 0 else None
+
+    # 5) MODE 分布：批量查 MODE tag 的 current_value（PG 最新同步值）
+    #    先找所有回路的 MODE tag 映射
+    mode_map_result = await db.execute(
+        select(LoopTagMapping.loop_id, LoopTagMapping.tag_id)
+        .where(LoopTagMapping.loop_id.in_(all_loop_ids))
+        .where(LoopTagMapping.tag_role == "MODE")
+    )
+    mode_tag_ids: dict[str, str] = {}
+    for loop_id, tag_id in mode_map_result.all():
+        mode_tag_ids[str(loop_id)] = str(tag_id)
+
+    mode_distribution: dict[str, int] = {}
+    auto_modes = {"AUTO", "CAS", "REMOTE", "ADVANCED"}
+    auto_count = 0
+    mode_total = 0
+
+    if mode_tag_ids:
+        tag_id_list = list(mode_tag_ids.values())
+        tag_result = await db.execute(
+            select(TagRegistry.id, TagRegistry.current_value).where(TagRegistry.id.in_(tag_id_list))
+        )
+        tag_val_map: dict[str, float | None] = {}
+        for tag_id, cv in tag_result.all():
+            tag_val_map[str(tag_id)] = float(cv) if cv is not None else None
+
+        # 反转 loop_id → mode_label
+        for _lid, tid in mode_tag_ids.items():
+            cv = tag_val_map.get(tid)
+            mode_total += 1
+            if cv is None:
+                label = "UNKNOWN"
+            else:
+                label = _MODE_NUMERIC_TO_LABEL.get(int(cv), "UNKNOWN")
+            mode_distribution[label] = mode_distribution.get(label, 0) + 1
+            if label in auto_modes:
+                auto_count += 1
+
+    auto_control_rate = round((auto_count / mode_total) * 100, 1) if mode_total > 0 else 0.0
+
+    return {
+        "gradeCounts": grade_counts,
+        "avgScore": avg_score,
+        "scoredCount": scored_count,
+        "worsenedCount": worsened_count,
+        "modeDistribution": mode_distribution,
+        "autoControlRate": auto_control_rate,
+    }
+
+
 async def list_loop_monitor(
     db: AsyncSession,
     plant_node_id: str | None = None,
@@ -369,6 +544,13 @@ async def list_loop_monitor(
         count_stmt = count_stmt.where(cond)
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
+
+    # ===== E-1 aggregate 聚合（范围内全量统计，不分页）=====
+    # 用于回路列表页 R2 摘要条 + R2.5 等级速览卡，与分页列表同一筛选口径
+    aggregate: dict[str, Any] | None = None
+    if total > 0 and not loop_id:
+        # 深链接精确查询（loop_id）场景下不计算 aggregate（前端不需要）
+        aggregate = await _build_loop_monitor_aggregate(db, conditions)
 
     # C1-1 增量巡检：默认排序"最需关注"优先——最新快照评分升序（差回路在前），
     # 无快照回路排最后，次级按创建时间倒序保持确定性
@@ -662,6 +844,7 @@ async def list_loop_monitor(
         "total": total,
         "page": page,
         "pageSize": page_size,
+        "aggregate": aggregate,
     }
 
 

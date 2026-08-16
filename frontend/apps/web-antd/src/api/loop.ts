@@ -448,6 +448,22 @@ export namespace LoopApi {
     loopId?: string;
   }
 
+  /** 回路监控列表聚合统计（E-1，服务端返回，不分页全量范围） */
+  export interface MonitorAggregate {
+    /** 五档评分计数 + INCONCLUSIVE（无评分） */
+    gradeCounts: Record<'EXCELLENT' | 'GOOD' | 'FAIR' | 'WARNING' | 'POOR' | 'INCONCLUSIVE', number>;
+    /** 简单平均评分（仅计有评分回路，1位小数） */
+    avgScore: number | null;
+    /** 有评分回路数（avgScore 分母） */
+    scoredCount: number;
+    /** 较昨日恶化（scoreDelta ≤ -2）回路数 */
+    worsenedCount: number;
+    /** MODE 实时分布（AUTO/CAS/MAN/REMOTE/ADVANCED/UNKNOWN） */
+    modeDistribution: Record<string, number>;
+    /** 实时自控率（AUTO+CAS+REMOTE+ADVANCED 占比，百分比，1位小数） */
+    autoControlRate: number;
+  }
+
   /** 回路监控列表响应（IDS v3.2 §2.2.15） */
   export interface MonitorListResult {
     view: 'card' | 'list';
@@ -455,6 +471,8 @@ export namespace LoopApi {
     total: number;
     page: number;
     pageSize: number;
+    /** E-1 聚合统计（深链接 loop_id 精确查询时为 null） */
+    aggregate: MonitorAggregate | null;
   }
 
   /** 回路监控详情 - 趋势数据（IDS v3.2 §2.2.14） */

@@ -274,8 +274,41 @@ class TestGetLoopTagValues:
 # ===========================================================================
 
 
+_MOCK_AGGREGATE_RESULT: dict = {
+    "gradeCounts": {
+        "EXCELLENT": 0,
+        "GOOD": 0,
+        "FAIR": 1,
+        "WARNING": 0,
+        "POOR": 0,
+        "INCONCLUSIVE": 0,
+    },
+    "avgScore": 78.0,
+    "scoredCount": 1,
+    "worsenedCount": 1,
+    "modeDistribution": {"AUTO": 1},
+    "autoControlRate": 100.0,
+}
+
+# 类级别 patch _build_loop_monitor_aggregate：避免测试中因聚合查询需要额外
+# 构造 db.execute mock；loop_id 精确查询/total=0 的用例不会触发聚合。
+_mock_aggregate_patcher = patch(
+    "app.services.monitor._build_loop_monitor_aggregate",
+    new_callable=AsyncMock,
+    return_value=_MOCK_AGGREGATE_RESULT,
+)
+
+
 class TestListLoopMonitor:
     """list_loop_monitor：回路监控列表查询。"""
+
+    @classmethod
+    def setup_class(cls) -> None:
+        _mock_aggregate_patcher.start()
+
+    @classmethod
+    def teardown_class(cls) -> None:
+        _mock_aggregate_patcher.stop()
 
     async def test_empty_list(self) -> None:
         """无回路时返回 total=0, items=[]。"""
