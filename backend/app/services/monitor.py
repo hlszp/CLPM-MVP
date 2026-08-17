@@ -58,11 +58,13 @@ TREND_WINDOWS: dict[str, timedelta] = {
 
 # 默认 MODE 值 → 控制模式映射（向后兼容，无 loop_mode_mapping 配置时使用）
 # 与 node_performance.py 的 DEFAULT_AUTO_MODES={1,2,3} 语义一致
+# 默认映射：前端 ControlMode 仅 'Auto' | 'Cascade' | 'Manual'，REMOTE(3)/APC(4) 归并为 Auto
 _DEFAULT_MODE_LABELS: dict[int, str] = {
     0: "Manual",
     1: "Auto",
     2: "Cascade",
-    3: "Cascade",
+    3: "Auto",
+    4: "Auto",
 }
 
 # 数据库 mode_label（LoopModeMapping.mode_label，全大写）→ 前端 ControlMode（首字母大写）转换
@@ -329,15 +331,6 @@ _DEFAULT_GRADE_THRESHOLDS = [
     {"name": "POOR", "label": "不合格", "minScore": 0, "color": "red"},
 ]
 
-# MODE 数值 → 标签映射（0=手动,1=自动,2=串级,3=远程,4=先控），与前端 MODE_LABEL_MAP 对齐
-_MODE_NUMERIC_TO_LABEL: dict[int, str] = {
-    0: "MAN",
-    1: "AUTO",
-    2: "CAS",
-    3: "REMOTE",
-    4: "ADVANCED",
-}
-
 
 async def _load_aggregate_grading_thresholds(db: AsyncSession) -> list[dict]:
     """加载定级阈值；未配置时回退国标默认值。"""
@@ -444,22 +437,56 @@ async def _build_loop_monitor_aggregate(
 
     avg_score = round(total_score / scored_count, 1) if scored_count > 0 else None
 
-    # 5) MODE 分布：批量查 MODE tag 的 current_value（PG 最新同步值）
-    #    先找所有回路的 MODE tag 映射
+    # 5) MODE 分布：优先 Redis 实时缓存，回退 PG current_value；配置驱动映射
+    #    查 MODE tag 映射 + 回路 dcs_model_id，供 mode_resolver 做 DCS 型号映射
     mode_map_result = await db.execute(
-        select(LoopTagMapping.loop_id, LoopTagMapping.tag_id)
+        select(
+            LoopTagMapping.loop_id,
+            LoopTagMapping.tag_id,
+            TagRegistry.tag_name,
+            LoopLedger.dcs_model_id,
+        )
+        .join(TagRegistry, TagRegistry.id == LoopTagMapping.tag_id)
+        .join(LoopLedger, LoopLedger.id == LoopTagMapping.loop_id)
         .where(LoopTagMapping.loop_id.in_(all_loop_ids))
         .where(LoopTagMapping.tag_role == "MODE")
     )
-    mode_tag_ids: dict[str, str] = {}
-    for loop_id, tag_id in mode_map_result.all():
-        mode_tag_ids[str(loop_id)] = str(tag_id)
+    mode_tag_info: dict[str, dict[str, str | None]] = {}  # loop_id → tag 信息
+    mode_tag_name_to_loop: dict[str, str] = {}
+    for loop_id, tag_id, tag_name, dcs_model_id in mode_map_result.all():
+        lid = str(loop_id)
+        tid = str(tag_id)
+        mode_tag_info[lid] = {
+            "tag_id": tid,
+            "tag_name": tag_name or "",
+            "dcs_model_id": str(dcs_model_id) if dcs_model_id else None,
+        }
+        if tag_name:
+            mode_tag_name_to_loop[tag_name] = lid
 
-    mode_distribution: dict[str, int] = {}
-    auto_modes = {"AUTO", "CAS", "REMOTE", "ADVANCED"}
-    auto_count = 0
-    mode_total = 0
+    # 5a) 从 Redis 读取实时 MODE 值（与 items 加载逻辑一致）
+    redis_mode_values: dict[str, float | None] = {}  # loop_id → raw_mode_value
+    try:
+        subscriber = get_subscriber()
+        mode_tag_names = [
+            str(info["tag_name"]) for info in mode_tag_info.values() if info["tag_name"]
+        ]
+        if mode_tag_names:
+            cached_list = await subscriber.get_cached_values(mode_tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc and tc in mode_tag_name_to_loop:
+                    lid = mode_tag_name_to_loop[tc]
+                    try:
+                        redis_mode_values[lid] = float(item.get("value"))
+                    except (TypeError, ValueError):
+                        redis_mode_values[lid] = None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("aggregate MODE: 从 Redis 读取实时值失败，回退到数据库值: %s", exc)
 
+    # 5b) 从 PG 读取 current_value 作为回退
+    mode_tag_ids = {lid: str(info["tag_id"]) for lid, info in mode_tag_info.items()}
+    pg_mode_values: dict[str, float | None] = {}
     if mode_tag_ids:
         tag_id_list = list(mode_tag_ids.values())
         tag_result = await db.execute(
@@ -468,18 +495,56 @@ async def _build_loop_monitor_aggregate(
         tag_val_map: dict[str, float | None] = {}
         for tag_id, cv in tag_result.all():
             tag_val_map[str(tag_id)] = float(cv) if cv is not None else None
+        for lid, tid in mode_tag_ids.items():
+            pg_mode_values[lid] = tag_val_map.get(tid)
 
-        # 反转 loop_id → mode_label
-        for _lid, tid in mode_tag_ids.items():
-            cv = tag_val_map.get(tid)
-            mode_total += 1
-            if cv is None:
-                label = "UNKNOWN"
-            else:
-                label = _MODE_NUMERIC_TO_LABEL.get(int(cv), "UNKNOWN")
+    # 5c) 配置驱动：读取 MODE 定义和自控模式集合
+    from app.services.mode_resolver import (  # noqa: E402
+        build_raw_to_standard_map,
+        get_auto_modes,
+        get_mode_definitions,
+    )
+
+    auto_mode_set = await get_auto_modes(db)
+    mode_defs = await get_mode_definitions(db)
+    standard_to_label: dict[int, str] = {d["standard_mode"]: d["label_en"] for d in mode_defs}
+
+    # 5d) 按 dcs_model_id 分组，批量构建 raw→standard 映射
+    model_groups: dict[str | None, list[str]] = {}
+    for lid, info in mode_tag_info.items():
+        mid = info.get("dcs_model_id")
+        model_groups.setdefault(mid, []).append(lid)
+
+    raw_to_standard_maps: dict[str | None, dict[int, int]] = {}
+    for mid, _loops_in_group in model_groups.items():
+        raw_to_standard_maps[mid] = await build_raw_to_standard_map(db, mid)
+
+    # 5e) 优先 Redis，回退 PG，经 DCS 型号映射解析为标准 MODE，再统计分布
+    mode_distribution: dict[str, int] = {}
+    auto_count = 0
+    mode_total = 0
+
+    for lid in all_loop_ids:
+        if lid not in mode_tag_info:
+            continue
+        mode_total += 1
+        cv = redis_mode_values.get(lid)
+        if cv is None:
+            cv = pg_mode_values.get(lid)
+        if cv is None:
+            label = "UNKNOWN"
             mode_distribution[label] = mode_distribution.get(label, 0) + 1
-            if label in auto_modes:
-                auto_count += 1
+            continue
+        # DCS 原始 MODE → 标准 MODE
+        raw_mode = int(cv)
+        mid = mode_tag_info[lid].get("dcs_model_id")
+        r2s_map = raw_to_standard_maps.get(mid, {})
+        standard_mode = r2s_map.get(raw_mode, raw_mode)  # 无映射时 1:1 回退
+        # 标准 MODE → 标签
+        label = standard_to_label.get(standard_mode, "UNKNOWN")
+        mode_distribution[label] = mode_distribution.get(label, 0) + 1
+        if standard_mode in auto_mode_set:
+            auto_count += 1
 
     auto_control_rate = round((auto_count / mode_total) * 100, 1) if mode_total > 0 else 0.0
 

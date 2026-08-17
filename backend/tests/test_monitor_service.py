@@ -179,9 +179,13 @@ class TestModeValueToLabel:
         """2 → Cascade。"""
         assert _mode_value_to_label(2) == "Cascade"
 
-    def test_cascade_value_3(self) -> None:
-        """3 → Cascade。"""
-        assert _mode_value_to_label(3) == "Cascade"
+    def test_remote_value_3(self) -> None:
+        """3 → Auto（远程 REMOTE 归并为 Auto，非手动）。"""
+        assert _mode_value_to_label(3) == "Auto"
+
+    def test_apc_value_4(self) -> None:
+        """4 → Auto（先控 APC 归并为 Auto，非手动）。"""
+        assert _mode_value_to_label(4) == "Auto"
 
     def test_unknown(self) -> None:
         """99 → Unknown。"""

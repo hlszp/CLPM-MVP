@@ -458,9 +458,9 @@ export namespace LoopApi {
     scoredCount: number;
     /** 较昨日恶化（scoreDelta ≤ -2）回路数 */
     worsenedCount: number;
-    /** MODE 实时分布（AUTO/CAS/MAN/REMOTE/ADVANCED/UNKNOWN） */
+    /** MODE 实时分布（AUTO/CAS/MANUAL/REMOTE/APC/UNKNOWN） */
     modeDistribution: Record<string, number>;
-    /** 实时自控率（AUTO+CAS+REMOTE+ADVANCED 占比，百分比，1位小数） */
+    /** 实时自控率（is_auto=true 的 MODE 占比，配置驱动，百分比，1位小数） */
     autoControlRate: number;
   }
 
