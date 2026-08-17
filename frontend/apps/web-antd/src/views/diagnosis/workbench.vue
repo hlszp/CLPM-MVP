@@ -20,12 +20,12 @@ import {
   Button,
   Card,
   Checkbox,
+  Dropdown,
   Empty,
   Input,
   Progress,
   RangePicker,
   Segmented,
-  Select,
   Spin,
   Table,
   Tree,
@@ -186,14 +186,6 @@ function onCustomRangeChange(val: unknown): void {
 const operatorCatalog = ref<DiagnosisApi.OperatorInfo[]>([]);
 /** 勾选的算子（默认全部=全量；部分勾选=细选提交 operators） */
 const checkedOperators = ref<string[]>([]);
-
-const operatorOptions = computed(() =>
-  operatorCatalog.value.map((o) => ({
-    label: o.displayName,
-    value: o.name,
-    title: `${o.description}｜置信口径：${o.confidenceBasis ?? '—'}`,
-  })),
-);
 
 const allOperatorsChecked = computed(
   () =>
@@ -544,37 +536,52 @@ onMounted(() => {
             >
               需起&lt;止且跨度 ≤31 天
             </span>
-            <Select
-              v-model:value="checkedOperators"
-              :dropdown-match-select-width="false"
-              :options="operatorOptions"
-              class="diag-operator-select"
-              mode="multiple"
-              placeholder="选择算子（默认全量）"
-            >
-              <template #dropdownRender="{ menuNode: menu }">
-                <component :is="menu" />
-                <div class="diag-select-actions">
-                  <button type="button" @mousedown.prevent @click="checkAllOperators">
-                    全选
-                  </button>
-                  <button type="button" @mousedown.prevent @click="checkFastGroup">
-                    快速组
-                  </button>
-                  <button
-                    type="button"
-                    @mousedown.prevent
-                    @click="checkedOperators = []"
+            <!-- 算子选择：单行触发器显示汇总，下拉面板为多选框列表 -->
+            <Dropdown :trigger="['click']" placement="bottomLeft">
+              <div class="diag-operator-trigger">
+                <span
+                  :class="
+                    checkedOperators.length === 0 ? 'diag-operator-trigger__ph' : ''
+                  "
+                  class="truncate"
+                >
+                  {{
+                    checkedOperators.length > 0
+                      ? `选择了 ${checkedOperators.length} 个算子`
+                      : '选择诊断算子'
+                  }}
+                </span>
+                <span class="diag-operator-trigger__arrow">▾</span>
+              </div>
+              <template #overlay>
+                <div class="diag-operator-panel">
+                  <Checkbox.Group
+                    v-model:value="checkedOperators"
+                    class="diag-operator-list"
                   >
-                    清空
-                  </button>
+                    <div
+                      v-for="o in operatorCatalog"
+                      :key="o.name"
+                      :title="`${o.description}｜置信口径：${o.confidenceBasis ?? '—'}`"
+                      class="diag-operator-row"
+                    >
+                      <Checkbox :value="o.name">
+                        {{ o.displayName }}
+                      </Checkbox>
+                    </div>
+                  </Checkbox.Group>
+                  <div class="diag-operator-footer">
+                    <button type="button" @click="checkAllOperators">全选</button>
+                    <button type="button" @click="checkFastGroup">快速组</button>
+                    <button type="button" @click="checkedOperators = []">清空</button>
+                    <span class="diag-operator-footer__count">
+                      {{ checkedOperators.length }}/{{ operatorCatalog.length }}
+                      {{ allOperatorsChecked ? '（全量）' : '（细选）' }}
+                    </span>
+                  </div>
                 </div>
               </template>
-            </Select>
-            <span class="text-xs text-neutral-400">
-              算子 {{ checkedOperators.length }}/{{ operatorCatalog.length }}
-              {{ allOperatorsChecked ? '（全量）' : '（细选）' }}
-            </span>
+            </Dropdown>
             <Button
               :disabled="!canTrigger"
               :loading="runner.running.value"
@@ -862,10 +869,36 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 算子下拉多选（行2 筛选条件） */
-.diag-operator-select {
-  flex: 0 1 380px;
-  min-width: 240px;
+/* 算子选择触发器（模拟 Select 单行外观，显示汇总文本） */
+.diag-operator-trigger {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  width: 200px;
+  height: 30px;
+  padding: 0 8px 0 12px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-operator-trigger:hover {
+  border-color: hsl(var(--primary) / 50%);
+}
+
+.diag-operator-trigger__ph {
+  color: hsl(var(--muted-foreground));
+}
+
+.diag-operator-trigger__arrow {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* 行1 回路多选框 chips */
@@ -890,16 +923,42 @@ onMounted(() => {
 </style>
 
 <style>
-/* 算子下拉底部快捷操作（下拉面板挂载于 body，需非 scoped 样式） */
-.diag-select-actions {
+/* 算子下拉面板（Dropdown overlay 挂载于 body，需非 scoped 样式） */
+.diag-operator-panel {
+  min-width: 300px;
+  padding: 8px;
+  background: hsl(var(--popover));
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 12%);
+}
+
+.diag-operator-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.diag-operator-row {
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.diag-operator-row:hover {
+  background: hsl(var(--accent));
+}
+
+.diag-operator-footer {
   display: flex;
   gap: 12px;
-  justify-content: flex-end;
-  padding: 5px 12px;
+  align-items: center;
+  padding: 6px 6px 2px;
   border-top: 1px solid hsl(var(--border));
 }
 
-.diag-select-actions button {
+.diag-operator-footer button {
   padding: 0 4px;
   font-size: 12px;
   color: hsl(var(--primary));
@@ -908,7 +967,13 @@ onMounted(() => {
   border: none;
 }
 
-.diag-select-actions button:hover {
+.diag-operator-footer button:hover {
   text-decoration: underline;
+}
+
+.diag-operator-footer__count {
+  margin-left: auto;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 </style>
