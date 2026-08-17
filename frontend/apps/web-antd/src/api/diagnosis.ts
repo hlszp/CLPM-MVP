@@ -22,6 +22,8 @@ export namespace DiagnosisApi {
 
   export type Severity = 'HIGH' | 'MEDIUM' | 'LOW';
   export type RunStatus = 'FAILED' | 'PARTIAL' | 'RUNNING' | 'SUCCESS';
+  /** 触发类型：手动 / 分级定时 / 预警事件（§12 三层自动诊断） */
+  export type TriggerType = 'EVENT' | 'MANUAL' | 'SCHEDULED';
 
   /** 分类判定（主/次/待复核三态，设计 §7.3） */
   export interface CategoryJudgement {
@@ -75,6 +77,9 @@ export namespace DiagnosisApi {
     loopId: string;
     loopTagName?: null | string;
     triggeredBy: string;
+    /** 触发类型（MANUAL 手动 / SCHEDULED 分级定时 / EVENT 预警事件） */
+    triggerType?: null | TriggerType;
+    triggerTypeLabel?: null | string;
     timeWindowStart: string;
     timeWindowEnd: string;
     operatorGroup: string;
@@ -146,6 +151,8 @@ export namespace DiagnosisApi {
     runId: null | string;
     /** 该回路第几次结论（1=最新, 2=次新；未诊断回路为 null） */
     runSeq?: null | number;
+    triggerType?: null | TriggerType;
+    triggerTypeLabel?: null | string;
     primaryCategory?: null | Category;
     primaryCategoryLabel?: null | string;
     primaryConfidence?: null | number;

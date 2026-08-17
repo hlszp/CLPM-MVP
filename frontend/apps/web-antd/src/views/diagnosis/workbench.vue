@@ -39,7 +39,13 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
-import { CATEGORY_META, RUN_STATUS_TEXT, SEVERITY_TEXT } from './constants';
+import {
+  CATEGORY_META,
+  RUN_STATUS_TEXT,
+  SEVERITY_TEXT,
+  TRIGGER_TYPE_COLOR,
+  TRIGGER_TYPE_TEXT,
+} from './constants';
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 
@@ -337,6 +343,7 @@ const latestColumns = [
   { dataIndex: 'loopTagName', title: '回路', width: 140 },
   { dataIndex: 'lastDiagnosedAt', title: '最近诊断', width: 110 },
   { key: 'diagInterval', title: '诊断间隔', width: 100 },
+  { dataIndex: 'triggerType', title: '触发方式', width: 88 },
   { dataIndex: 'primaryCategoryLabel', title: '上次诊断分类', width: 150 },
   { dataIndex: 'primaryConfidence', title: '置信度', width: 80 },
   { dataIndex: 'severity', title: '严重度', width: 70 },
@@ -845,6 +852,19 @@ onUnmounted(() => {
                   :style="diagIntervalColor(record as DiagnosisApi.LatestRunItem) ? { color: diagIntervalColor(record as DiagnosisApi.LatestRunItem), fontWeight: 500 } : {}"
                 >
                   {{ diagInterval(record as DiagnosisApi.LatestRunItem) }}
+                </span>
+                <span v-else class="text-neutral-400">—</span>
+              </template>
+              <template v-else-if="column.dataIndex === 'triggerType'">
+                <span
+                  v-if="record.triggerType"
+                  :style="{ color: TRIGGER_TYPE_COLOR[record.triggerType] }"
+                >
+                  {{
+                    record.triggerTypeLabel ??
+                    TRIGGER_TYPE_TEXT[record.triggerType] ??
+                    record.triggerType
+                  }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
               </template>

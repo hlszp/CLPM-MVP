@@ -49,3 +49,17 @@ export const RUN_STATUS_TEXT: Record<string, string> = {
   RUNNING: '进行中',
   SUCCESS: '完成',
 };
+
+/** 触发类型标签（§12 三层自动诊断：手动 / 分级定时 / 预警事件） */
+export const TRIGGER_TYPE_TEXT: Record<string, string> = {
+  EVENT: '事件触发',
+  MANUAL: '手动诊断',
+  SCHEDULED: '定期诊断',
+};
+
+/** 触发类型色（工业语义：定期=青、事件=橙、手动=中性） */
+export const TRIGGER_TYPE_COLOR: Record<string, string> = {
+  EVENT: '#ea580c',
+  MANUAL: '#6c757d',
+  SCHEDULED: '#0891b2',
+};

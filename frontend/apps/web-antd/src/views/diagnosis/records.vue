@@ -28,7 +28,14 @@ import {
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
-import { CATEGORY_META, CATEGORY_OPTIONS, RUN_STATUS_TEXT, SEVERITY_TEXT } from './constants';
+import {
+  CATEGORY_META,
+  CATEGORY_OPTIONS,
+  RUN_STATUS_TEXT,
+  SEVERITY_TEXT,
+  TRIGGER_TYPE_COLOR,
+  TRIGGER_TYPE_TEXT,
+} from './constants';
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 
 const { RangePicker } = DatePicker;
@@ -123,6 +130,7 @@ const columns = [
   { dataIndex: 'primaryConfidence', title: '置信度', width: 80 },
   { dataIndex: 'severity', title: '严重度', width: 76 },
   { dataIndex: 'timeWindowStart', title: '时间窗', width: 220 },
+  { dataIndex: 'triggerType', title: '触发方式', width: 88 },
   { dataIndex: 'triggeredBy', title: '发起人', width: 100 },
   { dataIndex: 'status', title: '状态', width: 90 },
 ];
@@ -261,6 +269,19 @@ onMounted(load);
             </template>
             <template v-else-if="column.dataIndex === 'timeWindowStart'">
               {{ fmtWindow(record as DiagnosisApi.RunListItem) }}
+            </template>
+            <template v-else-if="column.dataIndex === 'triggerType'">
+              <span
+                v-if="record.triggerType"
+                :style="{ color: TRIGGER_TYPE_COLOR[record.triggerType] }"
+              >
+                {{
+                  record.triggerTypeLabel ??
+                  TRIGGER_TYPE_TEXT[record.triggerType] ??
+                  record.triggerType
+                }}
+              </span>
+              <span v-else class="text-neutral-400">—</span>
             </template>
             <template v-else-if="column.dataIndex === 'status'">
               {{ RUN_STATUS_TEXT[record.status] ?? record.status }}
