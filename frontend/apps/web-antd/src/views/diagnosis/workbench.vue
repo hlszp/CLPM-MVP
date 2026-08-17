@@ -47,10 +47,12 @@ const route = useRoute();
 const router = useRouter();
 
 // ===== 左脊柱：装置树 =====
+/** ant Tree 节点约定为 {key, title}（TreeSelect 才是 {value, label}，
+ *  误用会让 Tree 自动生成 "0-0" 假 key 传给后端 → UUID 列 500） */
 interface PlantTreeNode {
   children?: PlantTreeNode[];
-  label: string;
-  value: string;
+  key: string;
+  title: string;
 }
 
 const plantTreeData = ref<PlantTreeNode[]>([]);
@@ -61,8 +63,8 @@ const selectedPlantNodeId = ref<string | undefined>(undefined);
 
 function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
   return nodes.map((n) => ({
-    value: n.id,
-    label: n.name,
+    key: n.id,
+    title: n.name,
     children: n.children?.length ? buildTreeNodes(n.children) : undefined,
   }));
 }

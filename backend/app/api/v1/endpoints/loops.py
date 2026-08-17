@@ -22,6 +22,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -30,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_perms, require_roles
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
+from app.core.exceptions import BizError
 from app.models.loop import LoopLedger
 from app.models.metric import LoopConfidenceLatest
 from app.models.sys_user import SysUser
@@ -106,6 +109,16 @@ async def list_loops_endpoint(
     _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """分页查询回路列表。"""
+    # 防御：plantNodeId 非法 UUID 直接 400（否则 PG UUID 列比较抛 500）
+    if plantNodeId is not None:
+        try:
+            UUID(plantNodeId)
+        except ValueError:
+            raise BizError(
+                code="ERR_PARAM",
+                message="plantNodeId 格式非法（应为 UUID）",
+                status_code=400,
+            ) from None
     # v5.3 对齐 DDS v4.1：level → importanceLevel（保留 level 向后兼容）
     effective_level = importanceLevel if importanceLevel is not None else level
     try:
