@@ -1,10 +1,13 @@
 <!--
-  CLPM 数据完整性检查报告抽屉
+  CLPM 数据完整性检查报告抽屉（行级判定简化版）
 
   展示完整性检查结果：
   - 顶部 4 个 KPI 卡片（整体完整度/完整/部分/缺失回路数）
   - 双 Tab 表格（按回路 / 按时间）
   - 底部操作栏：勾选缺失回路后一键补齐（强制 skip 策略）
+
+  判定逻辑（2026-08-17 简化）：按秒级时间戳是否有行判定完整性，
+  不检查列值是否为 NULL。列 NULL 属于数据质量范畴，由预处理 pipeline 处理。
 
   父组件通过 @backfill 事件接收选中回路，复用既有 startImportApi。
 -->
@@ -101,23 +104,13 @@ const loopColumns = computed(() => [
   {
     title: '实际/预期点数',
     key: 'points',
-    width: 140,
+    width: 160,
   },
   {
     title: '缺失小时',
     dataIndex: 'missingHourCount',
     key: 'missingHourCount',
     width: 90,
-  },
-  {
-    title: '缺失列',
-    key: 'missingColumns',
-    width: 120,
-    customRender: ({ record }: { record: LoopDataApi.LoopIntegrityDetail }) => {
-      const cols = record.missingColumns ?? [];
-      if (cols.length === 0) return '—';
-      return cols.map((c) => c.toUpperCase()).join(', ');
-    },
   },
   {
     title: '首条时间',
@@ -213,7 +206,7 @@ const backfillConfirmTitle = computed(() => {
     v-model:open="drawerVisible"
     title="数据完整性检查报告"
     placement="right"
-    :width="1000"
+    :width="860"
     :body-style="{ paddingBottom: '60px' }"
   >
     <template v-if="result">
@@ -251,11 +244,24 @@ const backfillConfirmTitle = computed(() => {
         />
       </div>
 
+      <!-- 数据源不可用警告 -->
+      <div
+        v-if="result.dataSourceUnavailable"
+        class="integrity-datasource-warning"
+      >
+        <div class="i-lucide:alert-triangle w-4 h-4" />
+        <span>
+          TDengine 数据源不可用（{{ result.failedLoopIds.length }} 个回路查询失败），
+          以下结果不反映真实数据缺失，请勿据此补齐数据
+        </span>
+      </div>
+
       <!-- 检查范围提示 -->
       <div class="integrity-meta">
         检查范围：{{ dayjs(result.tsStart).format('YYYY-MM-DD HH:mm') }} ~
         {{ dayjs(result.tsEnd).format('YYYY-MM-DD HH:mm') }}
-        ｜ 采样间隔：{{ result.expectedInterval }}s ｜ 检查时间：{{
+        ｜ 采样间隔：{{ result.expectedInterval }}s ｜ 判定方式：行级点数比对（COUNT(*)）
+        ｜ 检查时间：{{
           dayjs(result.checkedAt).format('YYYY-MM-DD HH:mm:ss')
         }}
       </div>
@@ -270,7 +276,7 @@ const backfillConfirmTitle = computed(() => {
             :row-selection="rowSelection"
             size="small"
             :pagination="{ pageSize: 20, showSizeChanger: false }"
-            :scroll="{ x: 1050, y: 400 }"
+            :scroll="{ x: 800, y: 400 }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'status'">
@@ -295,32 +301,6 @@ const backfillConfirmTitle = computed(() => {
                 {{ record.actualPoints.toLocaleString() }} /
                 {{ record.expectedPoints.toLocaleString() }}
               </template>
-            </template>
-            <template #expandedRowRender="{ record }">
-              <div v-if="record.colDetails" class="integrity-col-details">
-                <span class="integrity-col-details-title">列级完整度：</span>
-                <span
-                  v-for="(detail, col) in record.colDetails"
-                  :key="col"
-                  class="integrity-col-item"
-                >
-                  <span class="integrity-col-name">{{
-                    String(col).toUpperCase()
-                  }}</span>
-                  <Progress
-                    :percent="Math.round(detail.completeness * 100)"
-                    size="small"
-                    :show-info="true"
-                    :status="
-                      detail.completeness >= 0.95
-                        ? 'success'
-                        : detail.completeness >= 0.2
-                          ? 'active'
-                          : 'exception'
-                    "
-                  />
-                </span>
-              </div>
             </template>
           </Table>
         </Tabs.TabPane>
@@ -376,6 +356,19 @@ const backfillConfirmTitle = computed(() => {
   margin-bottom: 12px;
 }
 
+.integrity-datasource-warning {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 10%);
+  border: 1px solid hsl(var(--destructive) / 30%);
+  border-radius: 6px;
+}
+
 .integrity-meta {
   padding: 8px 12px;
   margin-bottom: 12px;
@@ -404,34 +397,6 @@ const backfillConfirmTitle = computed(() => {
 .integrity-footer-count {
   font-size: 13px;
   color: hsl(var(--foreground) / 70%);
-}
-
-.integrity-col-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  align-items: center;
-  padding: 8px 16px;
-}
-
-.integrity-col-details-title {
-  width: 100%;
-  font-size: 12px;
-  color: hsl(var(--foreground) / 60%);
-}
-
-.integrity-col-item {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  min-width: 160px;
-}
-
-.integrity-col-name {
-  width: 48px;
-  font-size: 12px;
-  font-weight: 600;
-  color: hsl(var(--foreground) / 80%);
 }
 
 @media (max-width: 768px) {

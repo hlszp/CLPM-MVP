@@ -152,16 +152,8 @@ class IntegrityCheckRequest(CamelModel):
     expectedInterval: int = Field(1, ge=1, le=3600, description="预期采样间隔（秒）")
 
 
-class ColumnIntegrityDetail(CamelModel):
-    """单列完整性明细."""
-
-    expectedPoints: int
-    actualPoints: int
-    completeness: float  # 0.0 ~ 1.0
-
-
 class LoopIntegrityDetail(CamelModel):
-    """单回路完整性明细."""
+    """单回路完整性明细（行级判定：COUNT(*) vs 预期点数）."""
 
     loopId: str
     tagName: str | None = None
@@ -173,11 +165,6 @@ class LoopIntegrityDetail(CamelModel):
     lastTs: str | None = None
     status: IntegrityStatus
     missingHourCount: int
-    # 列级缺失明细（2026-07-22 新增：各列分别的完整度）
-    colDetails: dict[str, ColumnIntegrityDetail] | None = Field(
-        None, description="各数据列的完整性明细 pv/sp/op/mode/pid_p/pid_i/pid_d"
-    )
-    missingColumns: list[str] | None = Field(None, description="有缺失的列名列表")
 
 
 class TimeGap(CamelModel):
@@ -199,6 +186,8 @@ class IntegrityCheckResponse(CamelModel):
     missingLoopCount: int
     loopDetails: list[LoopIntegrityDetail]
     timeGaps: list[TimeGap]
+    dataSourceUnavailable: bool = False
+    failedLoopIds: list[str] = Field(default_factory=list)
     tsStart: str
     tsEnd: str
     expectedInterval: int
@@ -213,7 +202,6 @@ class ImportTaskListResponse(CamelModel):
 
 
 __all__ = [
-    "ColumnIntegrityDetail",
     "ConflictStrategy",
     "ImportRequest",
     "ImportStatus",

@@ -1,36 +1,31 @@
 """数据完整性检查服务.
 
-对本地 TDengine 宽表做完整性检查，输出：
+对本地 TDengine 宽表做完整性检查（行级判定，简化版）：
 - 整体完整度（百分比）
-- 主要时间缺口（哪些时间段缺数据）
+- 主要时间缺口（哪些时间段缺数据，小时粒度）
 - 主要回路缺口（哪些回路缺数据）
-- 列级缺失明细（pv/sp/op/mode/pid_p/pid_i/pid_d 各列的缺失情况）
 
 设计依据：
 - 数据架构决策：计算全本地，仅查 TDengine，不调远端 API
-- 性能：单回路 1 次 INTERVAL(1h) 聚合查询（含各列 COUNT），Semaphore(10) 并发限流
+- 性能：单回路 1 次 INTERVAL(1h) 聚合查询（COUNT(*)），Semaphore(10) 并发限流
 - 复用 data_import._batch_get_loop_data 获取回路→subtable 映射
 
-缺失定义（2026-07-22 用户口径确认，2026-07-28 COV 口径修订）：
-1. "缺失" = 该时间戳没有记录，或列为空值（NULL）
-2. 质量码不是 Good，只要有值不算缺失
+缺失定义（2026-08-17 简化为行级判定）：
+1. "缺失" = 该秒级时间戳没有行（即 COUNT(*) 统计的行数少于预期点数）
+2. 不检查任何列的值是否为 NULL——列 NULL 属于数据质量范畴，
+   由质量码和预处理 pipeline 处理，不在完整性检查中混合判定
 3. 时间范围按筛选实际给定：不足整点的首尾桶用实际秒数算预期点数，不用固定 3600
-4. COV 列（sp/mode/pid_p/pid_i/pid_d）按变化写入、稀疏存储，不按点数判定：
-   窗口起点前有值（前向填充初始值）或窗口内有变化点即视为连续有值；
-   仅 PV/OP 高频连续量按点数判定缺失
-5. TDengine 故障（连接失败/SQL 错误）与"真无数据"严格区分：
+4. TDengine 故障（连接失败/SQL 错误）与"真无数据"严格区分：
    查询失败抛 TDengineError，报告 dataSourceUnavailable=True，
    不判为缺失（避免误导用户在数据源宕机时重新导入）
 
 检查算法：
-- 对每个回路宽表按小时分桶，同时对 7 个数据列分别 COUNT(col)
+- 对每个回路宽表按小时分桶，COUNT(*) 统计每桶实际行数
 - expected_per_bucket = 桶实际秒数 / interval_s（首尾桶用实际跨度）
-- PV/OP 列完整度 = actual_col_count / expected_col_count
-- COV 列完整度 = 1.0（窗口前有初始值或窗口内有变化点）否则 0.0
-- 回路完整度 = 所有列 actual 之和 / 所有列 expected 之和
-- 缺失小时桶：PV 或 OP 列 actual < expected 视为该小时有缺失
+- 回路完整度 = 实际总行数 / 预期总行数
+- 缺失小时桶：实际行数 < 预期行数 视为该小时有缺失
 
-时区口径（P0-3 修复）：
+时区口径：
 - 查询边界经 ``_to_utc_z`` 统一为带 Z 的 UTC 串（服务器按 +8 解释 naive 串）
 - 期望桶枚举与 REST 返回桶键统一按 naive UTC（epoch 小时）对齐，
   带时区输入一律 astimezone(UTC) 后再去 tzinfo，不直接丢弃时区
@@ -47,7 +42,6 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.tdengine import TDengineError, execute_sql
-from app.core.tdengine_native import COV_FILL_COLUMNS, query_last_values_before
 from app.models.loop import LoopLedger
 from app.schemas.loop_data import IntegrityStatus
 from app.services.data_import import _batch_get_loop_data
@@ -60,15 +54,6 @@ _CONCURRENCY = 10
 # 时间缺口返回上限（按影响回路数倒序取 Top N）
 _MAX_TIME_GAPS = 50
 
-# 宽表 7 个数据列（ts 不计，pv_quality 是质量码不计入缺失判定）
-_DATA_COLUMNS = ("pv", "sp", "op", "mode", "pid_p", "pid_i", "pid_d")
-
-# COV（变化时写入）列：稀疏存储，不按点数判定缺失（与 tdengine_native.COV_FILL_COLUMNS 一致）
-_COV_COLUMNS: tuple[str, ...] = COV_FILL_COLUMNS
-
-# 高频连续量列：按点数判定缺失（预期点数 = 窗口秒数 / 采样间隔）
-_POINT_COLUMNS = tuple(c for c in _DATA_COLUMNS if c not in _COV_COLUMNS)
-
 
 async def check_integrity(
     db: Any,
@@ -77,7 +62,7 @@ async def check_integrity(
     ts_end: str,
     expected_interval_s: int = 1,
 ) -> dict[str, Any]:
-    """对本地 TDengine 数据做完整性检查.
+    """对本地 TDengine 数据做完整性检查（行级判定）.
 
     Args:
         db: 异步数据库会话
@@ -114,7 +99,7 @@ async def check_integrity(
         logger.info("完整性检查: 无有效 subtable，返回空结果")
         return _empty_response(ts_start, ts_end, expected_interval_s)
 
-    # 4. 并发查询每个回路的小时分桶（含各列 COUNT）
+    # 4. 并发查询每个回路的小时分桶（COUNT(*) 行级统计）
     sem = asyncio.Semaphore(_CONCURRENCY)
     results = await asyncio.gather(
         *[_query_loop_bucket(sem, lid, sub, ts_start, ts_end) for lid, sub in targets],
@@ -160,42 +145,29 @@ async def _query_loop_bucket(
     ts_start: str,
     ts_end: str,
 ) -> dict[str, Any]:
-    """单回路小时分桶查询，同时统计各数据列的非空计数.
-
-    单条 SQL 拿到：各列分桶非空计数 + 各列总计 + 首/末时间。
-    COUNT(col) 只统计 col 非 NULL 的行，NULL 不计入（符合"列为空值算缺失"口径）。
-
-    另查询窗口起点之前各 COV 列的最后有效值（前向填充初始值）：
-    COV 列稀疏存储，窗口前有值即视为窗口内连续有值。
+    """单回路小时分桶查询，COUNT(*) 统计每桶实际行数.
 
     TDengine 故障时抛 TDengineError（raise_on_error=True），由聚合层
     统一报告"数据源不可用"，不降级为空结果误判缺失。
     """
     async with sem:
-        # 构造各列的 COUNT 表达式
-        count_cols = ", ".join(f"COUNT({c}) AS cnt_{c}" for c in _DATA_COLUMNS)
         # 查询边界统一归一化为带 Z 的 UTC 串：服务器按 +8 解释 naive 字符串，
-        # 直接拼 naive 输入会使过滤窗口偏移 8 小时（P0-3 修复口径）
+        # 直接拼 naive 输入会使过滤窗口偏移 8 小时
         utc_start = _to_utc_z(ts_start)
         sql = (
-            f"SELECT _wstart AS bucket_start, {count_cols} "
+            f"SELECT _wstart AS bucket_start, COUNT(*) AS cnt "
             f"FROM {settings.TDENGINE_DB}.{subtable} "
             f"WHERE ts >= '{utc_start}' AND ts <= '{_to_utc_z(ts_end)}' "
             f"INTERVAL(1h) ORDER BY bucket_start ASC"
         )
         try:
             rows = await execute_sql(sql, raise_on_error=True)
-            # COV 列前向填充初始值（复用 tdengine_native，内部失败返回 {} 不抛错）
-            cov_seed = await query_last_values_before(subtable, utc_start)
         except TDengineError as exc:
             exc.loop_id = loop_id  # type: ignore[attr-defined]  # 聚合层报告用
             raise
 
-        # 各列总计数
-        col_totals: dict[str, int] = dict.fromkeys(_DATA_COLUMNS, 0)
-        for r in rows:
-            for c in _DATA_COLUMNS:
-                col_totals[c] += int(r.get(f"cnt_{c}", 0))
+        # 总行数
+        total_rows = sum(int(r.get("cnt", 0)) for r in rows)
 
         first_ts = str(rows[0]["bucket_start"]) if rows else None
         last_ts = str(rows[-1]["bucket_start"]) if rows else None
@@ -203,8 +175,7 @@ async def _query_loop_bucket(
             "loop_id": loop_id,
             "subtable": subtable,
             "buckets": rows,
-            "col_totals": col_totals,
-            "cov_seed": cov_seed,
+            "total_rows": total_rows,
             "first_ts": first_ts,
             "last_ts": last_ts,
         }
@@ -218,7 +189,7 @@ def _aggregate(
     ts_end: str,
     expected_interval_s: int,
 ) -> dict[str, Any]:
-    """聚合所有回路的查询结果，计算完整度与缺口."""
+    """聚合所有回路的查询结果，计算完整度与缺口（行级判定）."""
     start_dt = _parse_dt(ts_start)
     end_dt = _parse_dt(ts_end)
     expected_points_per_sec = 1.0 / expected_interval_s  # 每秒预期点数
@@ -226,15 +197,15 @@ def _aggregate(
     if total_seconds <= 0:
         return _empty_response(ts_start, ts_end, expected_interval_s)
 
-    # 预期总点数 = 时间范围实际秒数 / 采样间隔
-    expected_total_per_col = total_seconds * expected_points_per_sec
+    # 预期总行数 = 时间范围实际秒数 / 采样间隔
+    expected_total = total_seconds * expected_points_per_sec
 
     # 枚举所有期望的小时桶，记录每桶的预期点数（首尾桶用实际秒数）
     expected_buckets = _enumerate_hour_buckets_with_expected(start_dt, end_dt, expected_interval_s)
-    # expected_buckets: list[(bucket_start_str, bucket_expected_points_per_col)]
+    # expected_buckets: list[(bucket_start_str, bucket_expected_points)]
 
     loop_details: list[dict[str, Any]] = []
-    # hour_gap_map: {bucket_start_str: [loop_ids with pv/op missing]}
+    # hour_gap_map: {bucket_start_str: [loop_ids with missing rows]}
     hour_gap_map: dict[str, list[str]] = {b[0]: [] for b in expected_buckets}
 
     total_actual_all = 0
@@ -247,66 +218,32 @@ def _aggregate(
             # TDengine 故障 ≠ 该时段无数据：报告数据源不可用，不判缺失
             failed_loop_ids.append(getattr(r, "loop_id", "unknown"))
             logger.warning(
-                "完整性检查: 回路 %s 查询失败（数据源不可用）: %s", failed_loop_ids[-1], r
+                "完整性检查: 回路 %s 查询失败（数据源不可用）: %s",
+                failed_loop_ids[-1],
+                r,
             )
             continue
         if isinstance(r, Exception):
             logger.warning("完整性检查: 回路查询失败: %s", r)
             continue
         loop_id = r["loop_id"]
-        cov_seed = r.get("cov_seed") or {}
 
-        # 构建桶查询索引：bucket_start_str -> {col: cnt}
-        bucket_map: dict[str, dict[str, int]] = {}
+        # 构建桶查询索引：bucket_start_str -> actual_count
+        bucket_map: dict[str, int] = {}
         for b in r["buckets"]:
             key = _normalize_bucket_key(str(b["bucket_start"]))
-            bucket_map[key] = {c: int(b.get(f"cnt_{c}", 0)) for c in _DATA_COLUMNS}
+            bucket_map[key] = int(b.get("cnt", 0))
 
-        # 各列完整度
-        col_details: dict[str, dict[str, Any]] = {}
-        loop_actual_all = 0
-        loop_expected_all = 0
-
-        for col in _DATA_COLUMNS:
-            col_actual = r["col_totals"].get(col, 0)
-            if col in _COV_COLUMNS:
-                # COV 列稀疏存储（变化才写）：窗口起点前有初始值或窗口内
-                # 有变化点即视为连续有值，不按点数判定（P1 口径修订）
-                cov_covered = cov_seed.get(col) is not None or col_actual > 0
-                col_completeness = 1.0 if cov_covered else 0.0
-                col_actual = int(expected_total_per_col) if cov_covered else 0
-            else:
-                # PV/OP 高频连续量：按点数判定
-                col_completeness = (
-                    min(col_actual / expected_total_per_col, 1.0)
-                    if expected_total_per_col > 0
-                    else 0.0
-                )
-            col_details[col] = {
-                "expectedPoints": int(expected_total_per_col),
-                "actualPoints": col_actual,
-                "completeness": round(col_completeness, 4),
-            }
-            loop_actual_all += col_actual
-            loop_expected_all += expected_total_per_col
-
-        # 回路整体完整度 = 所有列实际点数之和 / 所有列预期点数之和
-        completeness = (
-            min(loop_actual_all / loop_expected_all, 1.0) if loop_expected_all > 0 else 0.0
-        )
+        # 回路完整度 = 实际行数 / 预期行数
+        actual = r["total_rows"]
+        completeness = min(actual / expected_total, 1.0) if expected_total > 0 else 0.0
         status = _classify_status(completeness)
 
-        # 列级缺失统计：该回路哪些列有缺失
-        missing_columns = [col for col in _DATA_COLUMNS if col_details[col]["completeness"] < 1.0]
-
-        # 找该回路的缺失小时桶（PV/OP 任一列 actual < expected 即缺失；
-        # COV 列稀疏存储不参与桶级点数判定）
+        # 找该回路的缺失小时桶：实际行数 < 预期行数即缺失
         missing_hour_count = 0
         for bh_str, bh_expected in expected_buckets:
-            bucket_actual = bucket_map.get(bh_str, {})
-            # 该桶 PV/OP 任一列实际 < 预期 → 记为缺失
-            is_missing = any(bucket_actual.get(col, 0) < bh_expected for col in _POINT_COLUMNS)
-            if is_missing:
+            bucket_actual = bucket_map.get(bh_str, 0)
+            if bucket_actual < bh_expected:
                 missing_hour_count += 1
                 hour_gap_map[bh_str].append(loop_id)
 
@@ -315,19 +252,17 @@ def _aggregate(
                 "loopId": loop_id,
                 "tagName": tag_name_map.get(loop_id, ""),
                 "subtable": r["subtable"],
-                "expectedPoints": int(loop_expected_all),
-                "actualPoints": loop_actual_all,
+                "expectedPoints": int(expected_total),
+                "actualPoints": actual,
                 "completeness": round(completeness, 4),
                 "firstTs": r["first_ts"],
                 "lastTs": r["last_ts"],
                 "status": status,
                 "missingHourCount": missing_hour_count,
-                "colDetails": col_details,
-                "missingColumns": missing_columns,
             }
         )
-        total_actual_all += loop_actual_all
-        total_expected_all += loop_expected_all
+        total_actual_all += actual
+        total_expected_all += expected_total
 
     # 时间缺口：取 affected_loop_count > 0 的桶，按影响回路数倒序取 Top N
     time_gaps: list[dict[str, Any]] = []
@@ -339,8 +274,8 @@ def _aggregate(
         bh_end = min(bh_dt + timedelta(hours=1), end_dt)
         time_gaps.append(
             {
-                "startTs": bh_str,
-                "endTs": bh_end.strftime("%Y-%m-%d %H:%M:%S"),
+                "startTs": bh_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "endTs": bh_end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                 "affectedLoopCount": len(loops),
                 "affectedLoopIds": loops,
             }
@@ -383,7 +318,7 @@ def _classify_status(completeness: float) -> str:
 def _parse_dt(ts_str: str) -> datetime:
     """解析 ISO 8601 时间字符串为 naive UTC datetime.
 
-    时区口径（P0-3 修复）：带时区的输入（含 Z / +08:00 偏移）先
+    时区口径：带时区的输入（含 Z / +08:00 偏移）先
     astimezone 到 UTC 再去 tzinfo，而非直接丢弃时区（直接丢弃会把
     +8 墙钟错当成 UTC，桶键与 TDengine REST 返回的 UTC 桶错位 8 小时）；
     naive 输入按本代码库约定视为 UTC。
@@ -416,7 +351,7 @@ def _normalize_bucket_key(bucket_str: str) -> str:
 def _enumerate_hour_buckets_with_expected(
     start_dt: datetime, end_dt: datetime, interval_s: int
 ) -> list[tuple[str, float]]:
-    """枚举所有期望的小时桶，并计算每桶每列的预期点数.
+    """枚举所有期望的小时桶，并计算每桶的预期点数.
 
     首尾不足整点的桶用实际秒数算预期点数，中间完整小时桶用 3600 秒算。
 

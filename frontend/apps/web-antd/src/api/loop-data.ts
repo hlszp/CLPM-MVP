@@ -72,14 +72,7 @@ export namespace LoopDataApi {
     expectedInterval?: number;
   }
 
-  /** 单列完整性明细 */
-  export interface ColumnIntegrityDetail {
-    expectedPoints: number;
-    actualPoints: number;
-    completeness: number;
-  }
-
-  /** 单回路完整性明细 */
+  /** 单回路完整性明细（行级判定：COUNT(*) vs 预期点数） */
   export interface LoopIntegrityDetail {
     loopId: string;
     tagName?: string;
@@ -91,10 +84,6 @@ export namespace LoopDataApi {
     lastTs?: string;
     status: IntegrityStatus;
     missingHourCount: number;
-    /** 各数据列的完整性明细 pv/sp/op/mode/pid_p/pid_i/pid_d */
-    colDetails?: Record<string, ColumnIntegrityDetail>;
-    /** 有缺失的列名列表 */
-    missingColumns?: string[];
   }
 
   /** 时间缺口 */
@@ -114,6 +103,8 @@ export namespace LoopDataApi {
     missingLoopCount: number;
     loopDetails: LoopIntegrityDetail[];
     timeGaps: TimeGap[];
+    dataSourceUnavailable: boolean;
+    failedLoopIds: string[];
     tsStart: string;
     tsEnd: string;
     expectedInterval: number;

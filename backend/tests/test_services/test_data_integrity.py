@@ -1,11 +1,12 @@
-"""数据完整性检查服务单元测试（P0-3 时区修复）.
+"""数据完整性检查服务单元测试（行级判定简化版）.
 
 覆盖：
 - ``_parse_dt`` 带时区输入 astimezone(UTC) 后再去 tzinfo（不直接丢弃时区）
 - ``_to_utc_z`` SQL 查询边界统一输出带 Z 的 UTC 串
 - 桶键 epoch 对齐：REST 返回的 UTC 桶起点与期望枚举桶键一致
-- ``_query_loop_bucket`` SQL 边界归一化为 Z 串
+- ``_query_loop_bucket`` SQL 边界归一化为 Z 串，使用 COUNT(*) 行级统计
 - ``_aggregate`` 端到端桶对齐（+8 偏移输入窗口 × UTC 桶键，回归用例）
+- TDengine 故障明确报告 dataSourceUnavailable，不误判缺失
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ from unittest.mock import patch
 import pytest
 
 from app.services.data_integrity import (
-    _DATA_COLUMNS,
     _aggregate,
     _enumerate_hour_buckets_with_expected,
     _normalize_bucket_key,
@@ -87,27 +87,18 @@ class TestBucketKeyAlignment:
 
 
 @pytest.mark.asyncio
-async def test_query_loop_bucket_sql_uses_utc_z_bounds() -> None:
-    """_query_loop_bucket 的 SQL 边界必须归一化为带 Z 的 UTC 串.
-
-    修复前直接拼接 naive 输入，服务器按 +8 解释导致过滤窗口偏移 8 小时。
-    """
+async def test_query_loop_bucket_sql_uses_count_star_and_utc_bounds() -> None:
+    """_query_loop_bucket 使用 COUNT(*) 行级统计，SQL 边界归一化为带 Z 的 UTC 串."""
     import asyncio
 
     captured: list[str] = []
 
     async def fake_execute_sql(sql: str, *, raise_on_error: bool = False) -> list[dict]:
         captured.append(sql)
-        return []
+        return [{"bucket_start": "2026-07-28T02:00:00.000Z", "cnt": 3600}]
 
-    async def fake_seed(subtable: str, start_time: str) -> dict:
-        return {}
-
-    with (
-        patch("app.services.data_integrity.execute_sql", new=fake_execute_sql),
-        patch("app.services.data_integrity.query_last_values_before", new=fake_seed),
-    ):
-        await _query_loop_bucket(
+    with patch("app.services.data_integrity.execute_sql", new=fake_execute_sql):
+        result = await _query_loop_bucket(
             asyncio.Semaphore(1),
             "loop-1",
             "d_loop_x",
@@ -116,16 +107,21 @@ async def test_query_loop_bucket_sql_uses_utc_z_bounds() -> None:
         )
 
     assert len(captured) == 1
-    assert "ts >= '2026-07-28T02:00:00.000Z'" in captured[0]
-    assert "ts <= '2026-07-28T03:00:00.000Z'" in captured[0]
+    sql = captured[0]
+    # 行级判定：使用 COUNT(*) 而非多个 COUNT(col)
+    assert "COUNT(*) AS cnt" in sql
+    assert "ts >= '2026-07-28T02:00:00.000Z'" in sql
+    assert "ts <= '2026-07-28T03:00:00.000Z'" in sql
+    assert "INTERVAL(1h)" in sql
+    # 返回结构简化：total_rows 替代 col_totals，无 cov_seed
+    assert result["total_rows"] == 3600
+    assert "cov_seed" not in result
+    assert "col_totals" not in result
 
 
 @pytest.mark.asyncio
-async def test_query_loop_bucket_raise_on_error_and_cov_seed() -> None:
-    """_query_loop_bucket 必须以 raise_on_error=True 调用，并带回 COV 初始值.
-
-    TDengine 故障时抛 TDengineError（携带 loop_id），不降级为空结果误判缺失。
-    """
+async def test_query_loop_bucket_raise_on_error() -> None:
+    """_query_loop_bucket 必须以 raise_on_error=True 调用，TDengine故障上抛并携带loop_id."""
     import asyncio
 
     from app.core.tdengine import TDengineError
@@ -136,14 +132,7 @@ async def test_query_loop_bucket_raise_on_error_and_cov_seed() -> None:
         seen_kwargs.append({"raise_on_error": raise_on_error})
         return []
 
-    async def fake_seed(subtable: str, start_time: str) -> dict:
-        assert start_time == "2026-07-28T02:00:00.000Z"
-        return {"sp": 50.0, "mode": 1}
-
-    with (
-        patch("app.services.data_integrity.execute_sql", new=fake_execute_sql),
-        patch("app.services.data_integrity.query_last_values_before", new=fake_seed),
-    ):
+    with patch("app.services.data_integrity.execute_sql", new=fake_execute_sql):
         result = await _query_loop_bucket(
             asyncio.Semaphore(1),
             "loop-1",
@@ -153,7 +142,7 @@ async def test_query_loop_bucket_raise_on_error_and_cov_seed() -> None:
         )
 
     assert seen_kwargs == [{"raise_on_error": True}]
-    assert result["cov_seed"] == {"sp": 50.0, "mode": 1}
+    assert result["total_rows"] == 0
 
     # TDengine 故障：异常上抛且携带 loop_id（供聚合层报告）
     async def failing_execute_sql(sql: str, *, raise_on_error: bool = False) -> list[dict]:
@@ -171,103 +160,8 @@ async def test_query_loop_bucket_raise_on_error_and_cov_seed() -> None:
     assert exc_info.value.loop_id == "loop-1"
 
 
-class TestCovColumnJudgement:
-    """P1：COV 列（sp/mode/pid_*）稀疏存储口径.
-
-    窗口起点前有值或窗口内有变化点即视为连续有值，不按点数判定；
-    仅 PV/OP 按点数判定缺失。
-    """
-
-    @staticmethod
-    def _make_result(
-        pv_cnt: int,
-        op_cnt: int,
-        cov_cnt: int,
-        cov_seed: dict,
-    ) -> dict:
-        col_totals = {"pv": pv_cnt, "op": op_cnt} | dict.fromkeys(
-            ["sp", "mode", "pid_p", "pid_i", "pid_d"], cov_cnt
-        )
-        bucket_row = {"bucket_start": "2026-07-28T02:00:00.000Z"} | {
-            f"cnt_{c}": v for c, v in col_totals.items()
-        }
-        return {
-            "loop_id": "loop-1",
-            "subtable": "d_loop_x",
-            "buckets": [bucket_row],
-            "col_totals": col_totals,
-            "cov_seed": cov_seed,
-            "first_ts": "2026-07-28T02:00:00.000Z",
-            "last_ts": "2026-07-28T02:00:00.000Z",
-        }
-
-    _WINDOW = {
-        "ts_start": "2026-07-28T02:00:00Z",
-        "ts_end": "2026-07-28T03:00:00Z",
-        "expected_interval_s": 1,
-    }
-
-    def _run(self, result: dict) -> dict:
-        return _aggregate(
-            results=[result],
-            loop_ids=["loop-1"],
-            tag_name_map={"loop-1": "TIC-101"},
-            **self._WINDOW,
-        )
-
-    def test_cov_seed_present_not_reported_missing(self) -> None:
-        """COV 列窗口内 0 变化点但窗口前有初始值 → 视为连续有值，不报缺失."""
-        seed = dict.fromkeys(["sp", "mode", "pid_p", "pid_i", "pid_d"], 1.0)
-        report = self._run(self._make_result(3600, 3600, 0, seed))
-
-        detail = report["loopDetails"][0]
-        assert detail["completeness"] == 1.0
-        assert detail["status"] == "COMPLETE"
-        assert detail["missingHourCount"] == 0
-        assert detail["missingColumns"] == []
-        for col in ("sp", "mode", "pid_p", "pid_i", "pid_d"):
-            assert detail["colDetails"][col]["completeness"] == 1.0
-        assert report["overallCompleteness"] == 1.0
-        assert report["dataSourceUnavailable"] is False
-
-    def test_cov_change_points_in_window_not_missing(self) -> None:
-        """COV 列窗口内有变化点（>0）即使无初始值 → 视为有值，不报缺失."""
-        report = self._run(self._make_result(3600, 3600, 5, {}))
-
-        detail = report["loopDetails"][0]
-        assert detail["completeness"] == 1.0
-        assert detail["missingColumns"] == []
-
-    def test_cov_no_seed_no_changes_reported_missing(self) -> None:
-        """COV 列窗口前无初始值且窗口内 0 变化点 → 判缺失."""
-        report = self._run(self._make_result(3600, 3600, 0, {}))
-
-        detail = report["loopDetails"][0]
-        cov_cols = ("sp", "mode", "pid_p", "pid_i", "pid_d")
-        for col in cov_cols:
-            assert detail["colDetails"][col]["completeness"] == 0.0
-        assert sorted(detail["missingColumns"]) == sorted(cov_cols)
-        # 回路完整度 = PV+OP 实际 / 7 列预期 = 7200 / 25200
-        assert detail["completeness"] == pytest.approx(round(7200 / 25200, 4))
-        # PV/OP 点数满 → 无小时级缺口（COV 不参与桶级判定）
-        assert detail["missingHourCount"] == 0
-        assert report["timeGaps"] == []
-
-    def test_pv_op_still_judged_by_point_count(self) -> None:
-        """PV/OP 高频连续量仍按点数判定：半数点 → 完整度 0.5 + 小时缺口."""
-        seed = dict.fromkeys(["sp", "mode", "pid_p", "pid_i", "pid_d"], 1.0)
-        report = self._run(self._make_result(1800, 3600, 0, seed))
-
-        detail = report["loopDetails"][0]
-        assert detail["colDetails"]["pv"]["completeness"] == 0.5
-        assert detail["colDetails"]["op"]["completeness"] == 1.0
-        assert "pv" in detail["missingColumns"]
-        assert detail["missingHourCount"] == 1
-        assert len(report["timeGaps"]) == 1
-
-
 class TestDataSourceUnavailable:
-    """P2：TDengine 故障明确报告'数据源不可用'，不误判为全量缺失."""
+    """TDengine 故障明确报告'数据源不可用'，不误判为全量缺失."""
 
     def test_tdengine_error_not_reported_as_missing(self) -> None:
         from app.core.tdengine import TDengineError
@@ -297,16 +191,11 @@ class TestDataSourceUnavailable:
 
         err = TDengineError("timeout")
         err.loop_id = "loop-bad"
-        full = dict.fromkeys(_DATA_COLUMNS, 3600)
         ok = {
             "loop_id": "loop-ok",
             "subtable": "d_loop_ok",
-            "buckets": [
-                {"bucket_start": "2026-07-28T02:00:00.000Z"}
-                | {f"cnt_{c}": 3600 for c in _DATA_COLUMNS}
-            ],
-            "col_totals": full,
-            "cov_seed": {},
+            "buckets": [{"bucket_start": "2026-07-28T02:00:00.000Z", "cnt": 3600}],
+            "total_rows": 3600,
             "first_ts": "2026-07-28T02:00:00.000Z",
             "last_ts": "2026-07-28T02:00:00.000Z",
         }
@@ -326,18 +215,14 @@ class TestDataSourceUnavailable:
         assert report["overallCompleteness"] == 1.0
 
 
-def test_aggregate_aligns_plus8_window_with_utc_buckets() -> None:
-    """_aggregate 端到端：+8 偏移输入窗口 × REST UTC 桶键，数据完整时不应误报缺失."""
-    full = dict.fromkeys(_DATA_COLUMNS, 3600)
-    bucket_row = {"bucket_start": "2026-07-28T02:00:00.000Z"} | {
-        f"cnt_{c}": 3600 for c in _DATA_COLUMNS
-    }
+def test_aggregate_full_data_reports_complete() -> None:
+    """_aggregate 端到端：+8 偏移输入窗口 × UTC 桶键，数据完整时不应误报缺失（行级COUNT(*)判定）."""
     results = [
         {
             "loop_id": "loop-1",
             "subtable": "d_loop_x",
-            "buckets": [bucket_row],
-            "col_totals": full,
+            "buckets": [{"bucket_start": "2026-07-28T02:00:00.000Z", "cnt": 3600}],
+            "total_rows": 3600,
             "first_ts": "2026-07-28T02:00:00.000Z",
             "last_ts": "2026-07-28T02:00:00.000Z",
         }
@@ -355,5 +240,64 @@ def test_aggregate_aligns_plus8_window_with_utc_buckets() -> None:
     assert detail["missingHourCount"] == 0
     assert detail["completeness"] == 1.0
     assert detail["status"] == "COMPLETE"
+    # 行级判定：无 colDetails/missingColumns 字段
+    assert "colDetails" not in detail
+    assert "missingColumns" not in detail
     assert report["timeGaps"] == []
     assert report["overallCompleteness"] == 1.0
+
+
+def test_aggregate_partial_data_reports_missing_hours() -> None:
+    """行级判定：半数点数 → 完整度 0.5，有小时缺口."""
+    results = [
+        {
+            "loop_id": "loop-1",
+            "subtable": "d_loop_x",
+            "buckets": [{"bucket_start": "2026-07-28T02:00:00.000Z", "cnt": 1800}],
+            "total_rows": 1800,
+            "first_ts": "2026-07-28T02:00:00.000Z",
+            "last_ts": "2026-07-28T02:00:00.000Z",
+        }
+    ]
+    report = _aggregate(
+        results=results,
+        loop_ids=["loop-1"],
+        tag_name_map={"loop-1": "TIC-101"},
+        ts_start="2026-07-28T02:00:00Z",
+        ts_end="2026-07-28T03:00:00Z",
+        expected_interval_s=1,
+    )
+
+    detail = report["loopDetails"][0]
+    assert detail["completeness"] == 0.5
+    assert detail["status"] == "PARTIAL"
+    assert detail["missingHourCount"] == 1
+    assert len(report["timeGaps"]) == 1
+    assert report["timeGaps"][0]["affectedLoopCount"] == 1
+
+
+def test_aggregate_no_data_reports_missing() -> None:
+    """无数据行 → 完整度0，状态MISSING."""
+    results = [
+        {
+            "loop_id": "loop-1",
+            "subtable": "d_loop_x",
+            "buckets": [],
+            "total_rows": 0,
+            "first_ts": None,
+            "last_ts": None,
+        }
+    ]
+    report = _aggregate(
+        results=results,
+        loop_ids=["loop-1"],
+        tag_name_map={"loop-1": "TIC-101"},
+        ts_start="2026-07-28T02:00:00Z",
+        ts_end="2026-07-28T03:00:00Z",
+        expected_interval_s=1,
+    )
+
+    detail = report["loopDetails"][0]
+    assert detail["completeness"] == 0.0
+    assert detail["status"] == "MISSING"
+    assert detail["missingHourCount"] == 1
