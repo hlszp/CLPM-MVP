@@ -91,7 +91,7 @@ EXPECTED_OPERATORS = {
     "slow_response": ("tuning", ("pv", "sp"), True),
     "disturbance_burst": ("disturbance", ("pv", "sp"), True),
     "sensor_fault": ("sensor", ("pv",), True),
-    "quality_code_rules": ("sensor", ("pv_quality",), False),
+    "quality_code_rules": ("link", ("pv_quality",), False),
     "output_saturation": ("saturation", ("op", "mode"), True),
 }
 

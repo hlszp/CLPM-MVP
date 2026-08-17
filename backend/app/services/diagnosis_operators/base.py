@@ -20,6 +20,7 @@ import numpy as np
 FAMILY_OSCILLATION = "oscillation"
 FAMILY_STICTION = "stiction"
 FAMILY_SENSOR = "sensor"
+FAMILY_LINK = "link"
 FAMILY_TUNING = "tuning"
 FAMILY_DISTURBANCE = "disturbance"
 FAMILY_SATURATION = "saturation"
@@ -41,6 +42,7 @@ class OperatorMeta:
     symptom_tags: tuple[str, ...]  # 命中时产出的症状标签（原 8 类症状体系）
     enabled_by_default: bool = True
     fast_group: bool = False  # 是否属于 fast 预设（每族代表算子，共 7 个）
+    confidence_basis: str = ""  # 置信度计算口径说明（界面/文档直接展示）
 
 
 @dataclass
@@ -128,6 +130,7 @@ def list_operators() -> list[dict[str, Any]]:
                 "symptomTags": list(meta.symptom_tags),
                 "enabledByDefault": meta.enabled_by_default,
                 "fastGroup": meta.fast_group,
+                "confidenceBasis": meta.confidence_basis,
             }
         )
     return out

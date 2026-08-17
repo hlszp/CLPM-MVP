@@ -34,6 +34,7 @@ from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.task import TaskType
 from app.services.diagnosis_operators import list_operators
+from app.services.diagnosis_operators.classification import get_confidence_definitions
 from app.services.task_tracker import create_task
 
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
@@ -48,6 +49,7 @@ _CATEGORY_LABELS = {
     "TUNING": "参数问题（PID 整定）",
     "VALVE": "阀门/执行机构问题",
     "INSTRUMENT": "仪表/测量问题",
+    "COMMUNICATION": "通信链路问题",
     "PROCESS": "工艺/外扰问题",
     "UTILIZATION": "投用/操作问题",
     "DESIGN": "组态/设计问题",
@@ -130,6 +132,8 @@ def _run_to_detail(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
             "startedAt": row.started_at.isoformat() if row.started_at else None,
             "finishedAt": row.finished_at.isoformat() if row.finished_at else None,
             "durationMs": row.duration_ms,
+            # 置信度显式定义（分类级 + 算子级 + 融合规则，常量生成不入库）
+            "confidenceDefinitions": get_confidence_definitions(),
         }
     )
     return detail

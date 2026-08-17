@@ -145,6 +145,7 @@ def _bias_shift_kernel(
         },
         symptom_tags=("EXTERNAL_DISTURBANCE",),
         fast_group=True,
+        confidence_basis="命中（与 SP 变更无关的偏差确认突变）时 min(0.95, 突变频率 ÷ 20 次/h)",
     )
 )
 def detect_bias_shift(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:

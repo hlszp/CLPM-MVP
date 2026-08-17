@@ -5,6 +5,7 @@
 输出：主分类（唯一）+ 次分类（≤2）+ 待复核（污染链降级）+ 判定依据 + 处置建议 + 严重度
 
 证据污染链（分类粒度声明，MVP 简化）：
+    通信链路 ──污染──> 仪表 / 阀门 / 工艺外扰 / 参数（断流 → 波形与质量结论全部失真）
     仪表 ──污染──> 阀门 / 工艺外扰 / 参数   （PV 失真 → 下游判定失真）
     阀门 ──污染──> 参数                    （粘滞限幅振荡 → 超调/衰减比失真）
     工艺外扰 ──污染──> 参数                （扰动污染阶跃响应特征）
@@ -21,12 +22,13 @@ from app.services.diagnosis_operators.fusion import FamilyFusion
 from app.services.diagnosis_operators.gate import GateResult
 
 # ---------------------------------------------------------------------------
-# 分类常量（7 类，见设计 §3.1）
+# 分类常量（8 类，见设计 §3.1）
 # ---------------------------------------------------------------------------
 
 TUNING = "TUNING"
 VALVE = "VALVE"
 INSTRUMENT = "INSTRUMENT"
+COMMUNICATION = "COMMUNICATION"
 PROCESS = "PROCESS"
 UTILIZATION = "UTILIZATION"
 DESIGN = "DESIGN"
@@ -36,6 +38,7 @@ CATEGORY_LABELS: dict[str, str] = {
     TUNING: "参数问题（PID 整定）",
     VALVE: "阀门/执行机构问题",
     INSTRUMENT: "仪表/测量问题",
+    COMMUNICATION: "通信链路问题",
     PROCESS: "工艺/外扰问题",
     UTILIZATION: "投用/操作问题",
     DESIGN: "组态/设计问题",
@@ -46,6 +49,7 @@ CATEGORY_DIRECTIONS: dict[str, str] = {
     TUNING: "重新整定参数",
     VALVE: "检修/更换配件",
     INSTRUMENT: "校验/维护",
+    COMMUNICATION: "检查通信链路",
     PROCESS: "工艺分析/前馈/解耦",
     UTILIZATION: "恢复自动投用",
     DESIGN: "重新组态/改造",
@@ -54,6 +58,7 @@ CATEGORY_DIRECTIONS: dict[str, str] = {
 
 #: 证据污染链：主因 → 其证据所污染的下游分类
 CONTAMINATION_MAP: dict[str, tuple[str, ...]] = {
+    COMMUNICATION: (INSTRUMENT, VALVE, PROCESS, TUNING),
     INSTRUMENT: (VALVE, PROCESS, TUNING),
     VALVE: (TUNING,),
     PROCESS: (TUNING,),
@@ -140,17 +145,32 @@ def _feature(op_results: dict[str, OperatorResult], name: str, key: str, default
 
 
 def _sensor_basis(op_results: dict[str, OperatorResult]) -> list[str]:
+    """仪表（传感器波形侧）判定依据；质量码部分已拆至 link 族。"""
     basis: list[str] = []
     sub = _feature(op_results, "sensor_fault", "sensor_subtype", None)
     if sub:
         basis.append(f"传感器故障子类型 {sub}")
+    frozen = _feature(op_results, "sensor_fault", "frozen_segment_ratio", 0.0)
+    if frozen:
+        basis.append(f"冻结段占比 {float(frozen):.1%}")
+    return basis or ["传感器波形检测命中"]
+
+
+def _link_basis(op_results: dict[str, OperatorResult], gate: GateResult) -> list[str]:
+    """通信链路判定依据：连续 Bad 断流段 + 落库缺口。"""
+    basis: list[str] = []
     pattern = _feature(op_results, "quality_code_rules", "quality_pattern", None)
     if pattern and pattern != "NORMAL":
-        basis.append(f"质量码模式 {pattern}")
+        basis.append(f"质量码模式 {pattern}（连续 Bad 断流）")
+    max_bad = _feature(op_results, "quality_code_rules", "max_consecutive_bad", 0)
+    if max_bad:
+        basis.append(f"最长连续 Bad {int(max_bad)} 点")
     bad_rate = _feature(op_results, "quality_code_rules", "bad_rate", 0.0)
     if bad_rate:
         basis.append(f"Bad 质量码占比 {bad_rate:.1%}")
-    return basis or ["仪表族检测命中"]
+    if gate.gap_ratio > 0.1:
+        basis.append(f"落库缺口率 {gate.gap_ratio:.1%}（佐证）")
+    return basis or ["链路族检测命中"]
 
 
 def _stiction_basis(fusion: FamilyFusion, op_results: dict[str, OperatorResult]) -> list[str]:
@@ -186,6 +206,7 @@ def classify(
     osc = fusions.get("OSCILLATION")
     stiction = fusions.get("VALVE_STICTION")
     sensor = fusions.get("QUALITY_ABNORMAL")
+    link = fusions.get("LINK_ABNORMAL")
     over = fusions.get("OVERAGGRESSIVE")
     under = fusions.get("OVERCONSERVATIVE")
     dist = fusions.get("EXTERNAL_DISTURBANCE")
@@ -212,14 +233,27 @@ def classify(
         result.severity = None
         return result
 
-    # 级 1：仪表族命中 → INSTRUMENT
+    # 级 0.5：链路族命中（连续 Bad 断流 Q001）→ COMMUNICATION
+    # 排查惯例"先通信后仪表"：链路断流时仪表/阀门/工艺/参数波形结论全部失真，
+    # 故 COMMUNICATION 优先于 INSTRUMENT 且污染下游全部波形类分类
+    if link is not None and link.detected:
+        candidates.append(
+            {
+                "category": COMMUNICATION,
+                "confidence": link.confidence,
+                "basis": _link_basis(op_results, gate),
+                "rec": "检查通信链路：OPC 服务器/网络/采集卡（修复断流后复诊确认下游结论）",
+            }
+        )
+
+    # 级 1：仪表族命中（传感器波形侧）→ INSTRUMENT
     if sensor is not None and sensor.detected:
         candidates.append(
             {
                 "category": INSTRUMENT,
                 "confidence": sensor.confidence,
                 "basis": _sensor_basis(op_results),
-                "rec": "检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）",
+                "rec": "检查校验变送器/仪表（修复后复诊确认下游结论）",
             }
         )
 
@@ -436,3 +470,44 @@ def _severity(score_avg: float | None, primary_conf: float, category: str) -> st
     if (score is not None and score < 60) or primary_conf >= 0.6:
         return "MEDIUM"
     return "LOW"
+
+
+# ---------------------------------------------------------------------------
+# 置信度显式定义（API 详情附加展示，不入库）
+# ---------------------------------------------------------------------------
+
+#: 分类级置信度口径（主分类置信度如何得出）
+CATEGORY_CONFIDENCE_BASIS: dict[str, str] = {
+    COMMUNICATION: (
+        "质量码算子 Q001 档位：按最长连续断流段时长分级"
+        "（≤60s→0.60 / ≤600s→0.75 / >600s→0.90）；落库缺口率仅作佐证不计分"
+    ),
+    INSTRUMENT: "传感器波形特征定档取最高：卡死 0.85 / 噪声突增 0.70 / 漂移 0.65",
+    TUNING: (
+        "过激 = min(0.95, 满足指标数/3)；迟缓 = min(0.9, τ比/10)"
+        "（响应窗到达率 <63.2% 时 τ 外推不可靠记 0）；同族取最大"
+    ),
+    VALVE: ("粘滞方向：族内 ≥2 算子命中经 D-S 交叉验证融合；饱和方向 = min(1.0, OP 贴限时长占比)"),
+    PROCESS: "外扰算子 min(0.95, 突变频率/20 次/h)；纯振荡推断（无粘滞/过激证据）固定 0.50",
+    UTILIZATION: "min(0.95, 1 − 时间窗自动投用率)，来自 KPI 快照统计",
+    DESIGN: "Phase 2 启用前不参与置信度评估",
+    DATA_INSUFFICIENT: "门禁短路输出，不参与置信度评估（记 0）",
+}
+
+
+def get_confidence_definitions() -> dict[str, Any]:
+    """分类级 + 算子级 + 融合规则置信度口径（诊断详情 API 附加返回）。"""
+    from app.services.diagnosis_operators import OPERATOR_REGISTRY
+
+    return {
+        "categories": dict(CATEGORY_CONFIDENCE_BASIS),
+        "operators": {
+            name: meta.confidence_basis for name, (meta, _fn) in OPERATOR_REGISTRY.items()
+        },
+        "fusion": (
+            "同族 ≥2 算子命中时按 Dempster-Shafer 交叉验证融合"
+            "（两条高置信证据互证 → 置信上调；证据冲突 → 趋近 0.5）；"
+            "单算子命中时置信度原样传递"
+        ),
+        "secondaryGate": SECONDARY_MIN_CONFIDENCE,
+    }

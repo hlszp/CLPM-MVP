@@ -231,6 +231,105 @@ def test_contamination_instrument_downgrades_tuning() -> None:
     assert not any("整定" in rec.content or "Kp" in rec.content for rec in r.recommendations)
 
 
+# ---------------------------------------------------------------------------
+# 通信链路分类（COMMUNICATION，独立 link 族）
+# ---------------------------------------------------------------------------
+
+
+def _quality_op(pattern: str = "Q001", conf: float = 0.9, max_bad: int = 1200):
+    return OperatorResult(
+        "quality_code_rules",
+        True,
+        detected=True,
+        confidence=conf,
+        features={
+            "quality_pattern": pattern,
+            "max_consecutive_bad": max_bad,
+            "bad_rate": 0.014,
+        },
+    )
+
+
+def test_communication_primary_on_q001() -> None:
+    """Q001 连续断流 → COMMUNICATION 主分类，basis 含断流与缺口佐证。"""
+    fusions = {"LINK_ABNORMAL": _fusion(True, 0.9)}
+    gate = GateResult(
+        passed=True,
+        point_count=64000,
+        expected_points=86400,
+        valid_rate=0.99,
+        confidence_level="A",
+        gap_ratio=0.26,
+    )
+    r = classify(
+        fusions,
+        {"quality_code_rules": _quality_op()},
+        {"auto_rate_avg": 1.0, "score_avg": 70},
+        gate,
+    )
+    assert r.primary is not None
+    assert r.primary.category == "COMMUNICATION"
+    assert any("连续 Bad" in b for b in r.primary.basis)
+    assert any("落库缺口率" in b for b in r.primary.basis)
+    assert r.recommendations[0].content.startswith("检查通信链路")
+
+
+def test_communication_priority_over_instrument() -> None:
+    """链路 + 仪表波形同时命中 → 先通信后仪表：COMMUNICATION 主，仪表转待复核。"""
+    fusions = {
+        "LINK_ABNORMAL": _fusion(True, 0.9),
+        "QUALITY_ABNORMAL": _fusion(True, 0.85),
+    }
+    op_results = {
+        "quality_code_rules": _quality_op(),
+        "sensor_fault": OperatorResult(
+            "sensor_fault",
+            True,
+            detected=True,
+            confidence=0.85,
+            features={"sensor_subtype": "frozen"},
+        ),
+    }
+    r = classify(fusions, op_results, {"auto_rate_avg": 1.0, "score_avg": 70}, _gate())
+    assert r.primary.category == "COMMUNICATION"
+    # 仪表被链路污染 → 待复核而非次分类
+    assert any(j.category == INSTRUMENT for j in r.pending_review)
+    assert not any(j.category == INSTRUMENT for j in r.secondary)
+
+
+def test_contamination_communication_downgrades_tuning() -> None:
+    """链路主因 + 过激命中 → 参数判定被污染转待复核。"""
+    fusions = {
+        "LINK_ABNORMAL": _fusion(True, 0.75),
+        "OVERAGGRESSIVE": _fusion(True, 0.9),
+    }
+    r = classify(
+        fusions,
+        {"quality_code_rules": _quality_op(conf=0.75)},
+        {"auto_rate_avg": 1.0, "score_avg": 70},
+        _gate(),
+    )
+    assert r.primary.category == "COMMUNICATION"
+    assert any(j.category == TUNING for j in r.pending_review)
+
+
+def test_get_confidence_definitions_structure() -> None:
+    """置信度显式定义：分类级 + 算子级 + 融合规则齐全。"""
+    from app.services.diagnosis_operators.classification import (
+        get_confidence_definitions,
+    )
+
+    defs = get_confidence_definitions()
+    assert "COMMUNICATION" in defs["categories"]
+    assert defs["categories"]["COMMUNICATION"]
+    # 算子级：注册表全覆盖
+    from app.services.diagnosis_operators import OPERATOR_REGISTRY
+
+    assert set(defs["operators"]) == set(OPERATOR_REGISTRY)
+    assert all(defs["operators"].values())  # 每个算子都有口径文案
+    assert "Dempster-Shafer" in defs["fusion"]
+
+
 def test_contamination_valve_downgrades_tuning() -> None:
     fusions = {
         "VALVE_STICTION": _fusion(True, 0.88, contributors=2),

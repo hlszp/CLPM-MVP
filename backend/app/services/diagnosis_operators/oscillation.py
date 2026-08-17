@@ -238,6 +238,9 @@ def _iae_kernel(
         },
         symptom_tags=("OSCILLATION",),
         fast_group=False,
+        confidence_basis=(
+            "命中（能量占比/完整周期数/信噪比三条件同时满足）时 min(1.0, 主峰能量占比 × 1.5)"
+        ),
     )
 )
 def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:
@@ -287,6 +290,7 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
         },
         symptom_tags=("OSCILLATION",),
         fast_group=True,
+        confidence_basis="命中（IAE 相似率与过零密度双门）时 min(1.0, 正负偏差积分相似率 × 1.5)",
     )
 )
 def detect_iae(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:

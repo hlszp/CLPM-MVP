@@ -63,8 +63,8 @@ class DiagnosisRun(Base, TimestampMixin):
         ),
         CheckConstraint(
             "primary_category IS NULL OR primary_category IN "
-            "('TUNING', 'VALVE', 'INSTRUMENT', 'PROCESS', 'UTILIZATION', 'DESIGN', "
-            "'DATA_INSUFFICIENT')",
+            "('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS', "
+            "'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')",
             name="ck_diagnosis_run_category",
         ),
         CheckConstraint(

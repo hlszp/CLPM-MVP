@@ -344,6 +344,9 @@ def _slow_kernel(
         },
         symptom_tags=("OVERAGGRESSIVE",),
         fast_group=True,
+        confidence_basis=(
+            "超调/衰减比/稳态误差 3 项指标满足 ≥2 项才判过激；置信度 = min(0.95, 满足项数 / 3)"
+        ),
     )
 )
 def detect_step(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:
@@ -397,6 +400,11 @@ def detect_step(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
         },
         symptom_tags=("OVERCONSERVATIVE",),
         fast_group=True,
+        confidence_basis=(
+            "有 SP 阶跃：min(0.9, 实际/期望时间常数比 ÷ 10)；"
+            "无阶跃（稳态偏差）：min(0.8, 偏差比 × 3)；"
+            "响应窗到达率 <63.2% 时 τ 为外推值不可靠，记 0 不判"
+        ),
     )
 )
 def detect_slow(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:

@@ -353,6 +353,10 @@ def _quality_kernel(
         },
         symptom_tags=("QUALITY_ABNORMAL",),
         fast_group=True,
+        confidence_basis=(
+            "按故障子类型定档取最高：卡死 0.85 / 噪声突增 0.70 / 漂移 0.65；"
+            "SP 同向同步变化可排除漂移（工艺真实变化不扣分）"
+        ),
     )
 )
 def detect_sensor_fault(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:
@@ -387,15 +391,19 @@ def detect_sensor_fault(input: OperatorInput, threshold: dict[str, Any]) -> Oper
     OperatorMeta(
         name="quality_code_rules",
         display_name="PV 质量码规则检测",
-        family="sensor",
+        family="link",
         diag_code="QUALITY_ABNORMAL",
-        description="Q001-Q005 质量码时序模式规则（连续 Bad/间歇 Bad/Uncertain/突变/恢复）",
+        description=(
+            "Q001-Q005 质量码时序模式规则（连续 Bad/间歇 Bad/Uncertain/突变/恢复）；"
+            "Q001 连续断流段指向通信链路问题（独立 link 族）"
+        ),
         required_signals=("pv_quality",),
         min_sample_rate=0.0,
         outputs_schema={
             "quality_pattern": "命中模式(Q001-Q005/NORMAL)",
             "bad_rate": "Bad 点占比",
             "bad_count": "Bad 点数",
+            "bad_segments": "断流段定位（最长 3 段，窗口偏移秒）",
         },
         threshold_schema={
             "q001_consecutive_bad": 10,
@@ -405,8 +413,14 @@ def detect_sensor_fault(input: OperatorInput, threshold: dict[str, Any]) -> Oper
             "q005_min_bad": 3,
             "q005_max_bad": 10,
         },
-        symptom_tags=("QUALITY_ABNORMAL",),
+        symptom_tags=("LINK_ABNORMAL",),
         fast_group=False,
+        confidence_basis=(
+            "按命中模式定档：Q001 按最长连续断流段时长分级"
+            "（≤60s→0.60 / ≤600s→0.75 / >600s→0.90）；"
+            "Q004 持续坏点 0.80；Q002 高坏点率 0.60 / Q003 高不确定率 0.60；"
+            "Q005 零星坏点 0.40"
+        ),
     )
 )
 def detect_quality(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:

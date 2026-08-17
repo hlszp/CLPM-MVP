@@ -295,6 +295,7 @@ def _kano_kernel(pv: np.ndarray, op: np.ndarray) -> dict[str, Any]:
         threshold_schema={},
         symptom_tags=("VALVE_STICTION",),
         fast_group=True,
+        confidence_basis="命中（PV-OP 相平面椭圆回环）时 min(1.0, (椭圆拟合分 + 粘滞指数) / 2)",
     )
 )
 def detect_ellipse(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:  # noqa: ARG001
@@ -333,6 +334,9 @@ def detect_ellipse(input: OperatorInput, threshold: dict[str, Any]) -> OperatorR
         threshold_schema={"choudhury_ngi_threshold": 1.0, "choudhury_nli_threshold": 0.01},
         symptom_tags=("VALVE_STICTION",),
         fast_group=False,
+        confidence_basis=(
+            "命中（NGI 谐波间隙 + NLI 非线性双门）时 min(1.0, NGI×0.5 + NLI×0.3 + 椭圆拟合分×0.2)"
+        ),
     )
 )
 def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:
@@ -377,6 +381,7 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
         threshold_schema={},
         symptom_tags=("VALVE_STICTION",),
         fast_group=False,
+        confidence_basis="命中（OP 几乎不动而 PV 大幅变化）时 min(1.0, Kano 统计粘滞比)",
     )
 )
 def detect_kano(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:  # noqa: ARG001

@@ -137,6 +137,7 @@ def _saturation_kernel(
         },
         symptom_tags=("OUTPUT_SATURATION",),
         fast_group=True,
+        confidence_basis="命中（AUTO 模式下 OP 贴工程限位时长超阈）时 min(1.0, 饱和时长占比 × 3)",
     )
 )
 def detect_saturation(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:
