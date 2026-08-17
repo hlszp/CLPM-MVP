@@ -100,8 +100,14 @@ const badSegments = computed(() => {
       ?.features as Record<string, any> | undefined
   )?.bad_segments;
   if (!Array.isArray(segs) || segs.length === 0) return [];
-  const base = props.detail.timeWindowStart
-    ? new Date(props.detail.timeWindowStart).getTime()
+  // timeWindowStart 为 naive UTC ISO（无 Z 后缀）：直接 new Date 会被浏览器
+  // 当本地时间解析，断流时段显示成 UTC 钟点数字（差 8 小时）；补 Z 后按
+  // UTC 解析，dayjs 格式化时自动转本地时区
+  const ws = props.detail.timeWindowStart;
+  const base = ws
+    ? new Date(
+        /[Zz]|[+-]\d{2}:?\d{2}$/.test(ws) ? ws : `${ws}Z`,
+      ).getTime()
     : null;
   return segs.map((s: any) => {
     const startS = Number(s.start_offset_s ?? 0);

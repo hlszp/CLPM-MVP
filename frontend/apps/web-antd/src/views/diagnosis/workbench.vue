@@ -256,12 +256,13 @@ async function handleTrigger() {
     message.warning(`自定义时间范围无效：需起<止且跨度 ≤${MAX_CUSTOM_DAYS} 天`);
     return;
   }
-  // 预设窗口 → preset；自定义 → start/end（小时整点；终点超当前时刻取当前）
+  // 预设窗口 → preset；自定义 → start/end（起点整点化；终点取所选时刻原值，
+  // 超当前时刻截断为当前——不再 endOf('hour') 扩到整点末尾，避免窗口被加长）
   const timeWindowBody =
     timeWindow.value === 'custom'
       ? (() => {
           const [s, e] = customRange.value!;
-          const end = e.isAfter(dayjs()) ? dayjs() : e.endOf('hour');
+          const end = e.isAfter(dayjs()) ? dayjs() : e;
           return {
             start: s.startOf('hour').toISOString(),
             end: end.toISOString(),
