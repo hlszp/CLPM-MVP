@@ -142,6 +142,8 @@ export namespace DiagnosisApi {
     loopIds: string[];
     timeWindow: { preset?: TimeWindowPreset; start?: string; end?: string };
     operatorGroup: OperatorGroup;
+    /** 单算子细选白名单（空/缺省=按 operatorGroup 执行） */
+    operators?: string[];
   }
 
   export interface TriggerResult {

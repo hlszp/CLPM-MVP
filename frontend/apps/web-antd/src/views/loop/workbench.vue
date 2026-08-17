@@ -1708,11 +1708,7 @@ const stageLabelMap: Record<string, string> = {
   grid-template-columns: 1fr 280px;
 }
 
-/* 各子项 grid-area 分配 */
-.wb-sidebar {
-  grid-area: sidebar;
-}
-
+/* 各子项 grid-area 分配（.wb-sidebar 的 grid-area 见左脊柱完整样式块） */
 .wb-top-row {
   display: flex;
   flex-direction: column;
@@ -1794,6 +1790,7 @@ const stageLabelMap: Record<string, string> = {
 .wb-sidebar {
   display: flex;
   flex-direction: column;
+  grid-area: sidebar;
   overflow: hidden;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border) / 60%);
@@ -1831,12 +1828,6 @@ const stageLabelMap: Record<string, string> = {
   cursor: pointer;
   background: none;
   border: 0;
-}
-
-.wb-sidebar__tree .ant-spin-nested-loading {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .wb-sidebar__tree-empty {
