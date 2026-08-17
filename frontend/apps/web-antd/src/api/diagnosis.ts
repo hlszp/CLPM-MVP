@@ -138,12 +138,14 @@ export namespace DiagnosisApi {
   export type TimeWindowPreset = 'last_24h' | 'last_30d' | 'last_7d';
   export type OperatorGroup = 'fast' | 'full';
 
-  /** 每回路最新诊断概览行（GET /runs/latest，工作台装置节点概览） */
+  /** 每回路最近诊断概览行（GET /runs/latest，工作台装置节点概览；每回路最多 2 行） */
   export interface LatestRunItem {
     loopId: string;
     loopTagName: string;
-    /** 最新一次诊断记录 ID（null=从未诊断） */
+    /** 该次诊断记录 ID（null=从未诊断） */
     runId: null | string;
+    /** 该回路第几次结论（1=最新, 2=次新；未诊断回路为 null） */
+    runSeq?: null | number;
     primaryCategory?: null | Category;
     primaryCategoryLabel?: null | string;
     primaryConfidence?: null | number;

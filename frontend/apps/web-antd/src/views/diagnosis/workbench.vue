@@ -11,7 +11,7 @@ import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 import type { Dayjs } from 'dayjs';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -308,14 +308,76 @@ async function loadLatestOverview(): Promise<void> {
   }
 }
 
+// ===== 最新诊断概览筛选（全部/已诊断/未诊断） =====
+type LatestFilter = 'all' | 'diagnosed' | 'undiagnosed';
+const latestFilter = ref<LatestFilter>('all');
+
+const filteredLatestItems = computed(() => {
+  if (latestFilter.value === 'all') return latestItems.value;
+  if (latestFilter.value === 'diagnosed')
+    return latestItems.value.filter((item) => item.runId);
+  return latestItems.value.filter((item) => !item.runId);
+});
+
+/** 未诊断回路数（按 loopId 去重；展示层每回路最多 2 行） */
+const undiagnosedCount = computed(
+  () =>
+    new Set(
+      latestItems.value.filter((item) => !item.runId).map((item) => item.loopId),
+    ).size,
+);
+
+/** 概览覆盖回路数（按 loopId 去重，用于标题"N 个回路"） */
+const overviewLoopCount = computed(
+  () => new Set(latestItems.value.map((item) => item.loopId)).size,
+);
+
 const latestColumns = [
   { dataIndex: 'loopTagName', title: '回路', width: 140 },
   { dataIndex: 'lastDiagnosedAt', title: '最近诊断', width: 110 },
-  { dataIndex: 'primaryCategoryLabel', title: '主分类', width: 150 },
+  { key: 'diagInterval', title: '诊断间隔', width: 100 },
+  { dataIndex: 'primaryCategoryLabel', title: '上次诊断分类', width: 150 },
   { dataIndex: 'primaryConfidence', title: '置信度', width: 80 },
   { dataIndex: 'severity', title: '严重度', width: 70 },
   { dataIndex: 'status', title: '状态', width: 90 },
+  { key: 'action', title: '操作', width: 100 },
 ];
+
+/** 诊断间隔实时刷新心跳（60s，驱动相对时间重算） */
+const nowTick = ref(0);
+let nowTickTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 诊断间隔：当前时间 - 最近诊断时间（相对时间显示，用于观察回路诊断频率） */
+function diagInterval(record: DiagnosisApi.LatestRunItem): string {
+  // 引用 nowTick 使定时器触发时自动重算
+  void nowTick.value;
+  if (!record.lastDiagnosedAt) return '—';
+  const naive = record.lastDiagnosedAt;
+  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naive) ? naive : `${naive}Z`;
+  const last = dayjs(withZ);
+  if (!last.isValid()) return '—';
+  const diffMin = dayjs().diff(last, 'minute');
+  if (diffMin < 1) return '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} 小时前`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 30) return `${diffDay} 天前`;
+  return last.format('YYYY-MM-DD');
+}
+
+/** 诊断间隔着色：超过 24h 未诊断的回路用警告色提示 */
+function diagIntervalColor(record: DiagnosisApi.LatestRunItem): string {
+  if (!record.lastDiagnosedAt) return '';
+  const naive = record.lastDiagnosedAt;
+  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naive) ? naive : `${naive}Z`;
+  const last = dayjs(withZ);
+  if (!last.isValid()) return '';
+  const diffHour = dayjs().diff(last, 'hour');
+  if (diffHour >= 72) return 'hsl(var(--destructive))';
+  if (diffHour >= 24) return 'hsl(var(--warning, 38 92% 50%))';
+  return '';
+}
 
 function latestCatColor(record: DiagnosisApi.LatestRunItem): string {
   return record.primaryCategory
@@ -326,6 +388,33 @@ function latestCatColor(record: DiagnosisApi.LatestRunItem): string {
 function openLatestDetail(record: DiagnosisApi.LatestRunItem): void {
   if (record.runId) {
     loadDetail(record.runId);
+  }
+}
+
+/** 正在快捷诊断的回路 ID（按钮 loading/防重复点击） */
+const quickDiagnosingId = ref('');
+
+/** 快捷诊断：对任意回路直接发起诊断（未诊断首诊 / 已诊断复评） */
+async function quickDiagnose(loopId: string) {
+  if (quickDiagnosingId.value || runner.running.value) return;
+  quickDiagnosingId.value = loopId;
+  try {
+    // 只选当前回路（清空其他已选，避免超限）
+    selectedLoopIds.value = [loopId];
+    // 确保配置为默认（24h + 全算子）
+    timeWindow.value = '24h';
+    if (!allOperatorsChecked.value) {
+      checkAllOperators();
+    }
+    // 等待 Vue 响应式更新后触发
+    await nextTick();
+    if (canTrigger.value) {
+      await handleTrigger();
+    } else {
+      message.warning('当前无法发起诊断，请检查配置');
+    }
+  } finally {
+    quickDiagnosingId.value = '';
   }
 }
 
@@ -369,6 +458,17 @@ onMounted(() => {
   const q = route.query.loopId;
   if (typeof q === 'string' && q) {
     selectedLoopIds.value = [q];
+  }
+  // 诊断间隔心跳：每 60s 驱动相对时间重算
+  nowTickTimer = setInterval(() => {
+    nowTick.value += 1;
+  }, 60_000);
+});
+
+onUnmounted(() => {
+  if (nowTickTimer) {
+    clearInterval(nowTickTimer);
+    nowTickTimer = null;
   }
 });
 </script>
@@ -673,9 +773,38 @@ onMounted(() => {
             最新诊断概览
             <span class="text-xs font-normal text-neutral-400">
               {{ selectedPlantNodeId ? '当前装置范围' : '全厂' }} ·
-              {{ latestItems.length }} 个回路
+              {{ overviewLoopCount }} 个回路（每回路最多展示最近 2 次结论）
             </span>
           </template>
+          <!-- 引导条：存在未诊断回路时提示 -->
+          <div
+            v-if="undiagnosedCount > 0"
+            class="diag-guide-bar"
+          >
+            <span class="diag-guide-bar__icon">i</span>
+            <span>
+              <strong>{{ undiagnosedCount }}</strong> 个回路尚未诊断，勾选左侧回路后点击"发起诊断"开始首次诊断
+            </span>
+          </div>
+          <!-- 筛选标签 -->
+          <div class="diag-latest-filter">
+            <button
+              v-for="f in [
+                { key: 'all', label: '全部' },
+                { key: 'diagnosed', label: '已诊断' },
+                { key: 'undiagnosed', label: '未诊断' },
+              ]"
+              :key="f.key"
+              class="diag-latest-filter__btn"
+              :class="{ 'diag-latest-filter__btn--active': latestFilter === f.key }"
+              @click="latestFilter = f.key as LatestFilter"
+            >
+              {{ f.label }}
+              <span v-if="f.key === 'undiagnosed' && undiagnosedCount > 0" class="diag-latest-filter__count">
+                {{ undiagnosedCount }}
+              </span>
+            </button>
+          </div>
           <Table
             :columns="latestColumns"
             :custom-row="
@@ -684,16 +813,39 @@ onMounted(() => {
                 onClick: () => openLatestDetail(record),
               })
             "
-            :data-source="latestItems"
+            :data-source="filteredLatestItems"
             :loading="latestLoading"
             :pagination="false"
-            row-key="loopId"
+            :row-key="(record: DiagnosisApi.LatestRunItem) => record.runId ?? `${record.loopId}-none`"
+            :row-class-name="
+              (record: DiagnosisApi.LatestRunItem) =>
+                record.runSeq === 2 ? 'diag-latest-row--prev' : ''
+            "
             size="small"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'lastDiagnosedAt'">
+              <template v-if="column.dataIndex === 'loopTagName'">
+                <span
+                  v-if="record.runSeq === 2"
+                  class="diag-latest-prev-tag"
+                  title="该回路上一次诊断结论"
+                >
+                  └ 上次
+                </span>
+                <span v-else>{{ record.loopTagName }}</span>
+              </template>
+              <template v-else-if="column.dataIndex === 'lastDiagnosedAt'">
                 <span v-if="record.runId">{{ fmtUtc(record.lastDiagnosedAt) }}</span>
                 <span v-else class="text-neutral-400">未诊断</span>
+              </template>
+              <template v-else-if="column.key === 'diagInterval'">
+                <span
+                  v-if="record.lastDiagnosedAt"
+                  :style="diagIntervalColor(record as DiagnosisApi.LatestRunItem) ? { color: diagIntervalColor(record as DiagnosisApi.LatestRunItem), fontWeight: 500 } : {}"
+                >
+                  {{ diagInterval(record as DiagnosisApi.LatestRunItem) }}
+                </span>
+                <span v-else class="text-neutral-400">—</span>
               </template>
               <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
                 <span
@@ -728,6 +880,17 @@ onMounted(() => {
                     : '—'
                 }}
               </template>
+              <template v-else-if="column.key === 'action'">
+                <Button
+                  size="small"
+                  type="link"
+                  :loading="quickDiagnosingId === record.loopId"
+                  :disabled="runner.running.value && quickDiagnosingId !== record.loopId"
+                  @click.stop="quickDiagnose(record.loopId)"
+                >
+                  立即诊断
+                </Button>
+              </template>
             </template>
           </Table>
         </Card>
@@ -752,6 +915,94 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   align-items: stretch;
+}
+
+/* 引导条：未诊断回路提示 */
+.diag-guide-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 10%);
+  border: 1px solid hsl(var(--primary) / 30%);
+  border-radius: 6px;
+}
+
+.diag-guide-bar__icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 15%);
+  border-radius: 50%;
+}
+
+/* 最新诊断概览筛选标签 */
+.diag-latest-filter {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0 0 8px;
+}
+
+.diag-latest-filter__btn {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.diag-latest-filter__btn:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+}
+
+.diag-latest-filter__btn--active {
+  font-weight: 500;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 8%);
+  border-color: hsl(var(--primary) / 20%);
+}
+
+.diag-latest-filter__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: hsl(var(--primary));
+  border-radius: 8px;
+}
+
+/* 概览表次新行（每回路第 2 次结论）视觉弱化 */
+:deep(.diag-latest-row--prev) td {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--accent) / 40%);
+}
+
+.diag-latest-prev-tag {
+  padding-left: 10px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* ===== 左脊柱 ===== */

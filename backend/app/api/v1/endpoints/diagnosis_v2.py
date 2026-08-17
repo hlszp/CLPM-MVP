@@ -298,9 +298,12 @@ async def get_latest_runs_per_loop(
     _: SysUser = Depends(get_current_user),
     plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
 ) -> dict:
-    """每回路最新一条诊断概览（工作台装置节点选中时的概览列表）。
+    """每回路最近 2 次诊断概览（工作台装置节点选中时的概览列表）。
 
-    无诊断记录的回路也列出（runId=null，前端显示"未诊断"）。
+    展示层幂等口径：每回路最多返回最近 2 条结论（最新+次新），便于对比
+    "上次 vs 这次"的诊断变化；诊断记录全量保留于 diagnosis_run 表（后续
+    故障统计使用），本接口仅做展示收敛。
+    无诊断记录的回路也列出（runId=null，前端显示"未诊断"，占 1 行）。
     """
     # 防御：plantNodeId 非法 UUID 直接 400（否则 PG UUID 列比较抛 500）
     if plantNodeId is not None:
@@ -324,10 +327,9 @@ async def get_latest_runs_per_loop(
         LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
-                ORDER BY dr.created_at DESC LIMIT 1
+                ORDER BY dr.created_at DESC LIMIT 2
             ) r ON true
             WHERE ll.is_active = true
-            ORDER BY last_diagnosed_at DESC NULLS LAST, ll.tag_name
             """
     )
     params: dict[str, str] = {}
@@ -349,35 +351,63 @@ async def get_latest_runs_per_loop(
             LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
-                ORDER BY dr.created_at DESC LIMIT 1
+                ORDER BY dr.created_at DESC LIMIT 2
             ) r ON true
             WHERE ll.is_active = true AND ll.unit_id IN (SELECT id FROM node_tree)
-            ORDER BY last_diagnosed_at DESC NULLS LAST, ll.tag_name
             """
         )
         params["root_id"] = plantNodeId
 
-    rows = (await db.execute(sql, params)).all()
-    items = [
-        {
-            "loopId": str(r.loop_id),
-            "loopTagName": r.tag_name,
-            "runId": str(r.run_id) if r.run_id else None,
-            "primaryCategory": r.primary_category,
-            "primaryCategoryLabel": _CATEGORY_LABELS.get(r.primary_category or "", None)
-            if r.run_id
-            else None,
-            "primaryConfidence": float(r.primary_confidence)
-            if r.primary_confidence is not None
-            else None,
-            "severity": r.severity,
-            "status": r.status,
-            "lastDiagnosedAt": r.last_diagnosed_at.isoformat() if r.last_diagnosed_at else None,
-            "timeWindowStart": r.time_window_start.isoformat() if r.time_window_start else None,
-            "timeWindowEnd": r.time_window_end.isoformat() if r.time_window_end else None,
-        }
-        for r in rows
-    ]
+    rows = list((await db.execute(sql, params)).all())
+
+    # 排序：有诊断的回路按"回路最新诊断时间"降序在前，未诊断回路垫底（按位号）；
+    # 同一回路内按诊断时间降序（最新 → 次新），保证同一回路的 2 条相邻
+    loop_latest: dict[str, Any] = {}
+    for r in rows:
+        if r.last_diagnosed_at:
+            lid = str(r.loop_id)
+            cur = loop_latest.get(lid)
+            if cur is None or r.last_diagnosed_at > cur:
+                loop_latest[lid] = r.last_diagnosed_at
+
+    def _sort_key(r: Any) -> tuple:
+        lid = str(r.loop_id)
+        latest = loop_latest.get(lid)
+        return (
+            0 if latest else 1,
+            -latest.timestamp() if latest else 0,
+            r.tag_name or "",
+            -r.last_diagnosed_at.timestamp() if r.last_diagnosed_at else 0,
+        )
+
+    rows.sort(key=_sort_key)
+
+    seq_counter: dict[str, int] = {}
+    items = []
+    for r in rows:
+        lid = str(r.loop_id)
+        seq_counter[lid] = seq_counter.get(lid, 0) + 1
+        items.append(
+            {
+                "loopId": lid,
+                "loopTagName": r.tag_name,
+                "runId": str(r.run_id) if r.run_id else None,
+                # 该回路第几次结论（1=最新, 2=次新；未诊断回路为 None）
+                "runSeq": seq_counter[lid] if r.run_id else None,
+                "primaryCategory": r.primary_category,
+                "primaryCategoryLabel": _CATEGORY_LABELS.get(r.primary_category or "", None)
+                if r.run_id
+                else None,
+                "primaryConfidence": float(r.primary_confidence)
+                if r.primary_confidence is not None
+                else None,
+                "severity": r.severity,
+                "status": r.status,
+                "lastDiagnosedAt": r.last_diagnosed_at.isoformat() if r.last_diagnosed_at else None,
+                "timeWindowStart": r.time_window_start.isoformat() if r.time_window_start else None,
+                "timeWindowEnd": r.time_window_end.isoformat() if r.time_window_end else None,
+            }
+        )
     return success({"items": items, "total": len(items)})
 
 
