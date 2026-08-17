@@ -138,6 +138,22 @@ export namespace DiagnosisApi {
   export type TimeWindowPreset = 'last_24h' | 'last_30d' | 'last_7d';
   export type OperatorGroup = 'fast' | 'full';
 
+  /** 每回路最新诊断概览行（GET /runs/latest，工作台装置节点概览） */
+  export interface LatestRunItem {
+    loopId: string;
+    loopTagName: string;
+    /** 最新一次诊断记录 ID（null=从未诊断） */
+    runId: null | string;
+    primaryCategory?: null | Category;
+    primaryCategoryLabel?: null | string;
+    primaryConfidence?: null | number;
+    severity?: null | Severity;
+    status?: null | RunStatus;
+    lastDiagnosedAt?: null | string;
+    timeWindowStart?: null | string;
+    timeWindowEnd?: null | string;
+  }
+
   export interface TriggerBody {
     loopIds: string[];
     timeWindow: { preset?: TimeWindowPreset; start?: string; end?: string };
@@ -176,6 +192,14 @@ export function getDiagnosisRunsApi(params: DiagnosisApi.RunQuery) {
   return requestClient.get<PaginatedResponse<DiagnosisApi.RunListItem>>('/diagnosis/runs', {
     params,
   });
+}
+
+/** 每回路最新诊断概览（装置节点下钻；无诊断记录的回路 runId=null） */
+export function getDiagnosisRunsLatestApi(plantNodeId?: string) {
+  return requestClient.get<{ items: DiagnosisApi.LatestRunItem[]; total: number }>(
+    '/diagnosis/runs/latest',
+    { params: plantNodeId ? { plantNodeId } : undefined },
+  );
 }
 
 /**
