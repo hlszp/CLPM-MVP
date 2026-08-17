@@ -43,10 +43,13 @@ def run_diagnosis_batch(
     task_id: str,
     operator_group: str = "full",
     triggered_by: str = "user",
+    operators: list[str] | None = None,
 ) -> dict:
-    """批量诊断入口（同步壳，异步执行）。"""
+    """批量诊断入口（同步壳，异步执行）。operators=单算子细选白名单。"""
     return self.run_async(
-        _do_run_batch(loop_ids, start, end, task_id, operator_group, triggered_by)
+        _do_run_batch(
+            loop_ids, start, end, task_id, operator_group, triggered_by, operators
+        )
     )
 
 
@@ -57,6 +60,7 @@ async def _do_run_batch(
     task_id: str,
     operator_group: str,
     triggered_by: str,
+    operators: list[str] | None = None,
 ) -> dict:
     start_dt = datetime.fromisoformat(start)
     end_dt = datetime.fromisoformat(end)
@@ -97,6 +101,7 @@ async def _do_run_batch(
                     task_id=task_id,
                     triggered_by=triggered_by,
                     operator_group=operator_group,
+                    operators=operators,
                     progress_cb=_progress,
                 )
                 if run is None:

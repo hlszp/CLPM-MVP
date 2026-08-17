@@ -71,6 +71,8 @@ class TriggerDiagnosisBody(BaseModel):
     loopIds: list[UUID]
     timeWindow: TimeWindowBody = Field(default_factory=TimeWindowBody)
     operatorGroup: str = Field("full", pattern="^(full|fast)$")
+    """单算子细选白名单（None/空=按 operatorGroup 执行；落库记 custom）"""
+    operators: list[str] | None = None
 
 
 def _resolve_window(body: TimeWindowBody) -> tuple[datetime, datetime]:
@@ -198,6 +200,17 @@ async def trigger_diagnosis(
         triggered_by="user",
         title=f"回路诊断（{len(loop_ids)} 个回路）",
     )
+    # 单算子细选：校验合法算子名（防拼写错误静默空跑）
+    selected_ops = [o for o in (body.operators or []) if o]
+    if selected_ops:
+        valid = {m["name"] for m in list_operators()}
+        unknown = [o for o in selected_ops if o not in valid]
+        if unknown:
+            raise BizError(
+                code="ERR_PARAM",
+                message=f"未知算子: {unknown[:5]}（可用: {sorted(valid)}）",
+                status_code=400,
+            )
     celery_result = run_diagnosis_batch.delay(
         loop_ids=loop_ids,
         start=start.isoformat(),
@@ -205,6 +218,7 @@ async def trigger_diagnosis(
         task_id=task_id,
         operator_group=body.operatorGroup,
         triggered_by=user.username,
+        operators=selected_ops or None,
     )
     from app.services.task_tracker import set_celery_task_ids
 

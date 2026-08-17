@@ -63,6 +63,52 @@ class TestTriggerDiagnosis:
         assert kwargs["task_id"] == body["data"]["taskId"]
         assert kwargs["operator_group"] == "full"
 
+    def test_trigger_with_operator_selection(self, client, fake_redis) -> None:
+        """算子细选：合法名单经 delay 透传；未细选时 operators=None。"""
+        with (
+            patch("app.tasks.diagnosis_v2.run_diagnosis_batch") as mock_celery,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery.delay.return_value = MagicMock(id="celery-1")
+            from app.core.db import get_db
+
+            mock_db = MagicMock()
+            mock_db.execute = _seq_execute([_loops_result(), _pv_mapping_result()])
+            client.app.dependency_overrides[get_db] = lambda: mock_db
+
+            resp = client.post(
+                "/api/v1/diagnosis/run",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": [LOOP_ID],
+                    "timeWindow": {"preset": "last_24h"},
+                    "operators": ["quality_code_rules", "sensor_fault"],
+                },
+            )
+        assert resp.status_code == 200
+        kwargs = mock_celery.delay.call_args.kwargs
+        assert kwargs["operators"] == ["quality_code_rules", "sensor_fault"]
+
+    def test_trigger_with_unknown_operator_rejected(self, client) -> None:
+        """未知算子名 → 400（防拼写错误静默空跑）。"""
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            from app.core.db import get_db
+
+            mock_db = MagicMock()
+            mock_db.execute = _seq_execute([_loops_result(), _pv_mapping_result()])
+            client.app.dependency_overrides[get_db] = lambda: mock_db
+
+            resp = client.post(
+                "/api/v1/diagnosis/run",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": [LOOP_ID],
+                    "timeWindow": {"preset": "last_24h"},
+                    "operators": ["not_an_operator"],
+                },
+            )
+        assert resp.status_code == 400
+
     def test_trigger_loop_not_found(self, client) -> None:
         empty = MagicMock()
         empty.scalars.return_value.all.return_value = []

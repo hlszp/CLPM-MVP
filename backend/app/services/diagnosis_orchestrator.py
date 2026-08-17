@@ -321,12 +321,20 @@ def _run_operators(
     op_input: OperatorInput,
     effective_thresholds: dict[str, dict[str, Any]],
     operator_group: str,
+    operators: list[str] | None = None,
 ) -> tuple[dict[str, OperatorResult], dict[str, FamilyFusion]]:
-    """执行全部算子并按症状分组做族内融合。"""
+    """执行全部算子并按症状分组做族内融合。
+
+    operators 为单算子细选白名单（None=不细选）：与 fast 组过滤叠加生效。
+    """
+    selected = set(operators) if operators else None
     results: dict[str, OperatorResult] = {}
     for name, (meta, fn) in OPERATOR_REGISTRY.items():
         if operator_group == "fast" and not meta.fast_group:
             results[name] = OperatorResult(name, executed=False, skip_reason="fast 组未包含该算子")
+            continue
+        if selected is not None and name not in selected:
+            results[name] = OperatorResult(name, executed=False, skip_reason="未在本次细选算子内")
             continue
         missing = [
             s
@@ -368,9 +376,14 @@ async def run_diagnosis_for_loop(
     task_id: str | None = None,
     triggered_by: str = "system",
     operator_group: str = "full",
+    operators: list[str] | None = None,
     progress_cb: ProgressCb | None = None,
 ) -> DiagnosisRun | None:
-    """单回路一次诊断：返回落库后的 DiagnosisRun；回路不存在返回 None。"""
+    """单回路一次诊断：返回落库后的 DiagnosisRun；回路不存在返回 None。
+
+    operator_group: full/fast；operators 非空时按单算子细选白名单执行
+    （落库 operator_group 记为 custom）。
+    """
 
     async def _report(frac: float, stage: str) -> None:
         if progress_cb is not None:
@@ -520,7 +533,9 @@ async def run_diagnosis_for_loop(
             kpi_context=kpi_ctx,
         )
 
-        op_results, fusions = _run_operators(op_input, effective_thresholds, operator_group)
+        op_results, fusions = _run_operators(
+            op_input, effective_thresholds, operator_group, operators
+        )
         await _report(0.9, "融合与分类")
         classification: ClassificationResult = classify(fusions, op_results, kpi_ctx, gate)
     else:
@@ -541,7 +556,7 @@ async def run_diagnosis_for_loop(
         triggered_by=triggered_by,
         time_window_start=start,
         time_window_end=end,
-        operator_group=operator_group,
+        operator_group="custom" if operators else operator_group,
         status="PARTIAL" if has_error else "SUCCESS",
         data_gate=gate.to_dict(),
         operator_results={name: _operator_result_to_dict(r) for name, r in op_results.items()},
