@@ -22,7 +22,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
@@ -278,6 +278,93 @@ async def list_diagnosis_runs(
 
     items = [_run_to_summary(row, tag_name) for row, tag_name in rows]
     return success({"items": items, "total": total, "page": page, "pageSize": pageSize})
+
+
+@router.get("/runs/latest", response_model=ApiResponse[dict])
+async def get_latest_runs_per_loop(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
+) -> dict:
+    """每回路最新一条诊断概览（工作台装置节点选中时的概览列表）。
+
+    无诊断记录的回路也列出（runId=null，前端显示"未诊断"）。
+    """
+    # 防御：plantNodeId 非法 UUID 直接 400（否则 PG UUID 列比较抛 500）
+    if plantNodeId is not None:
+        try:
+            UUID(plantNodeId)
+        except ValueError:
+            raise BizError(
+                code="ERR_PARAM",
+                message="plantNodeId 格式非法（应为 UUID）",
+                status_code=400,
+            ) from None
+
+    sql = text(
+        """
+        SELECT ll.id AS loop_id, ll.tag_name,
+               r.id AS run_id, r.primary_category, r.primary_confidence,
+               r.severity, r.status,
+               COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
+               r.time_window_start, r.time_window_end
+        FROM loop_ledger ll
+        LEFT JOIN LATERAL (
+            SELECT * FROM diagnosis_run dr
+            WHERE dr.loop_id = ll.id
+            ORDER BY dr.created_at DESC LIMIT 1
+        ) r ON true
+        WHERE ll.is_active = true
+        """
+    )
+    params: dict[str, str] = {}
+    if plantNodeId:
+        sql = text(
+            """
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :root_id
+                UNION ALL
+                SELECT child.id FROM plant_node child
+                JOIN node_tree nt ON child.parent_id = nt.id
+            )
+            SELECT ll.id AS loop_id, ll.tag_name,
+                   r.id AS run_id, r.primary_category, r.primary_confidence,
+                   r.severity, r.status,
+                   COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
+                   r.time_window_start, r.time_window_end
+            FROM loop_ledger ll
+            LEFT JOIN LATERAL (
+                SELECT * FROM diagnosis_run dr
+                WHERE dr.loop_id = ll.id
+                ORDER BY dr.created_at DESC LIMIT 1
+            ) r ON true
+            WHERE ll.is_active = true AND ll.unit_id IN (SELECT id FROM node_tree)
+            """
+        )
+        params["root_id"] = plantNodeId
+
+    rows = (await db.execute(sql, params)).all()
+    items = [
+        {
+            "loopId": str(r.loop_id),
+            "loopTagName": r.tag_name,
+            "runId": str(r.run_id) if r.run_id else None,
+            "primaryCategory": r.primary_category,
+            "primaryCategoryLabel": _CATEGORY_LABELS.get(r.primary_category or "", None)
+            if r.run_id
+            else None,
+            "primaryConfidence": float(r.primary_confidence)
+            if r.primary_confidence is not None
+            else None,
+            "severity": r.severity,
+            "status": r.status,
+            "lastDiagnosedAt": r.last_diagnosed_at.isoformat() if r.last_diagnosed_at else None,
+            "timeWindowStart": r.time_window_start.isoformat() if r.time_window_start else None,
+            "timeWindowEnd": r.time_window_end.isoformat() if r.time_window_end else None,
+        }
+        for r in rows
+    ]
+    return success({"items": items, "total": len(items)})
 
 
 @router.get("/runs/{run_id}", response_model=ApiResponse[dict])

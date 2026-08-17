@@ -47,9 +47,7 @@ def run_diagnosis_batch(
 ) -> dict:
     """批量诊断入口（同步壳，异步执行）。operators=单算子细选白名单。"""
     return self.run_async(
-        _do_run_batch(
-            loop_ids, start, end, task_id, operator_group, triggered_by, operators
-        )
+        _do_run_batch(loop_ids, start, end, task_id, operator_group, triggered_by, operators)
     )
 
 
