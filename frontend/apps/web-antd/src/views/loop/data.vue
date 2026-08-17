@@ -169,18 +169,84 @@ const loopColumns: TableColumnsType = [
   },
 ];
 
-/** 当前页全选状态：仅针对当前页 loops，不再覆盖全部 totalLoops */
+/** 当前页 ID 集合（表格行渲染用） */
 const currentPageIds = computed(() => loops.value.map((l) => l.loopId));
 
-const allSelected = computed(
-  () =>
+/** 已选 ID 集合（O(1) 查询，供全选/半选状态判定） */
+const selectedIdSet = computed(() => new Set(selectedLoopIds.value));
+
+// --- 全选（覆盖当前筛选条件下全部回路，含未显示的分页） ---
+const selectAllLoading = ref(false);
+/**
+ * 筛选全集缓存：signature 为筛选条件签名（装置/单元 + 关键字），
+ * ids 为该条件下全部 READY 回路 ID（跨分页累取）。
+ * 用途：① 全选/取消全选的作用域；② 全选/半选状态的精确判定。
+ * 筛选条件变更时失效（handleLoopSearch 内清空）。
+ */
+const filteredIdsCache = ref<null | { ids: string[]; signature: string }>(null);
+
+function currentFilterSignature(): string {
+  return JSON.stringify({
+    plantNodeId: selectedPlantNodeId.value ?? null,
+    keyword: searchKeyword.value.trim(),
+  });
+}
+
+/**
+ * 拉取当前筛选条件下全部回路 ID。
+ * 后端 GET /loops pageSize 上限 100，按页累取；上限 50 页（5000 个）防失控。
+ */
+async function fetchAllFilteredLoopIds(): Promise<string[]> {
+  const PAGE_SIZE = 100; // 后端 pageSize 校验上限 le=100
+  const MAX_PAGES = 50;
+  const ids: string[] = [];
+  let total = 0;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const resp = await getLoopListApi({
+      page,
+      pageSize: PAGE_SIZE,
+      isActive: true,
+      status: 'READY',
+      keyword: searchKeyword.value.trim() || undefined,
+      plantNodeId: selectedPlantNodeId.value,
+    } as any);
+    const items = resp.items ?? [];
+    total = resp.total ?? 0;
+    for (const item of items) ids.push(item.loopId);
+    if (ids.length >= total || items.length === 0) break;
+  }
+  if (ids.length < total) {
+    // 超过安全上限（5000）时显式提示，避免静默截断导致"以为全选实则遗漏"
+    message.warning(`回路共 ${total} 个，全选仅覆盖前 ${ids.length} 个`);
+  }
+  return ids;
+}
+
+/** 全选状态：缓存有效时按筛选全集精确判定，否则退化为当前页口径 */
+const allSelected = computed(() => {
+  const cache = filteredIdsCache.value;
+  if (cache && cache.signature === currentFilterSignature()) {
+    return (
+      cache.ids.length > 0 &&
+      cache.ids.every((id) => selectedIdSet.value.has(id))
+    );
+  }
+  return (
     currentPageIds.value.length > 0 &&
-    currentPageIds.value.every((id) => selectedLoopIds.value.includes(id)),
-);
+    currentPageIds.value.every((id) => selectedIdSet.value.has(id))
+  );
+});
 
 const indeterminate = computed(() => {
+  const cache = filteredIdsCache.value;
+  if (cache && cache.signature === currentFilterSignature()) {
+    const selectedCount = cache.ids.filter((id) =>
+      selectedIdSet.value.has(id),
+    ).length;
+    return selectedCount > 0 && selectedCount < cache.ids.length;
+  }
   const selectedInPage = currentPageIds.value.filter((id) =>
-    selectedLoopIds.value.includes(id),
+    selectedIdSet.value.has(id),
   );
   return (
     selectedInPage.length > 0 &&
@@ -188,18 +254,34 @@ const indeterminate = computed(() => {
   );
 });
 
-function handleSelectAll(e: any) {
-  const pageIds = currentPageIds.value;
-  if (e.target.checked) {
-    // 选中当前页全部（合并到已选集合，去重）
-    const merged = new Set([...selectedLoopIds.value, ...pageIds]);
-    selectedLoopIds.value = [...merged];
-  } else {
-    // 取消当前页全部
-    const pageSet = new Set(pageIds);
-    selectedLoopIds.value = selectedLoopIds.value.filter(
-      (id) => !pageSet.has(id),
-    );
+/**
+ * 全选/取消全选：作用于当前筛选条件下全部回路（含未显示分页），
+ * 不仅仅是当前页。勾选=并入筛选全集；取消=从已选中剔除筛选全集。
+ */
+async function handleSelectAll(e: any) {
+  const checked = !!e.target.checked;
+  selectAllLoading.value = true;
+  try {
+    const signature = currentFilterSignature();
+    if (!filteredIdsCache.value || filteredIdsCache.value.signature !== signature) {
+      const ids = await fetchAllFilteredLoopIds();
+      filteredIdsCache.value = { signature, ids };
+    }
+    const allIds = filteredIdsCache.value.ids;
+    if (checked) {
+      selectedLoopIds.value = [
+        ...new Set([...selectedLoopIds.value, ...allIds]),
+      ];
+    } else {
+      const removeSet = new Set(allIds);
+      selectedLoopIds.value = selectedLoopIds.value.filter(
+        (id) => !removeSet.has(id),
+      );
+    }
+  } catch {
+    message.error('获取筛选回路全集失败，请重试');
+  } finally {
+    selectAllLoading.value = false;
   }
 }
 
@@ -510,9 +592,10 @@ function handleLoopPageChange(pag: TablePaginationConfig) {
   loadLoops();
 }
 
-/** 触发筛选时重置到第 1 页 */
+/** 触发筛选时重置到第 1 页（筛选条件变更，全选筛选全集缓存同步失效） */
 function handleLoopSearch() {
   loopPage.value = 1;
+  filteredIdsCache.value = null;
   loadLoops();
 }
 
@@ -740,7 +823,7 @@ function handleHelp() {
   showPageHelp({
     title: '数据管理 帮助',
     content:
-      '历史数据导入页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页），右侧选择时间范围/采样间隔/冲突策略后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。支持数据完整性检查（按小时分桶列级缺失统计）与一键补齐缺口（skip 策略）。任务列表展示进度/状态，活跃任务自动轮询。',
+      '历史数据导入页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页；"全选"覆盖当前筛选条件下全部回路，含未显示分页），右侧选择时间范围/采样间隔/冲突策略后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。支持数据完整性检查（按小时分桶列级缺失统计）与一键补齐缺口（skip 策略）。任务列表展示进度/状态，活跃任务自动轮询。',
   });
 }
 
@@ -844,13 +927,20 @@ onMounted(async () => {
             class="shrink-0 flex items-center justify-between border-t px-3 py-1.5"
             style="background: hsl(var(--muted) / 42%)"
           >
-            <Checkbox
-              :checked="allSelected"
-              :indeterminate="indeterminate"
-              @change="handleSelectAll"
+            <Tooltip
+              title="选中当前筛选条件下全部回路（含未显示分页）；取消则剔除全部"
             >
-              <span class="text-xs">全选</span>
-            </Checkbox>
+              <Checkbox
+                :checked="allSelected"
+                :indeterminate="indeterminate"
+                :disabled="selectAllLoading"
+                @change="handleSelectAll"
+              >
+                <span class="text-xs">{{
+                  selectAllLoading ? '获取中...' : '全选'
+                }}</span>
+              </Checkbox>
+            </Tooltip>
             <div class="flex gap-2">
               <Button
                 size="small"
@@ -906,6 +996,8 @@ onMounted(async () => {
               :row-selection="{
                 selectedRowKeys: selectedLoopIds,
                 onChange: (keys: any) => (selectedLoopIds = keys as string[]),
+                // 跨分页保留选中态：全选覆盖筛选全集后，切换分页不丢已选行
+                preserveSelectedRowKeys: true,
               }"
               row-key="loopId"
               size="small"
