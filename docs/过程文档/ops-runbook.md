@@ -42,6 +42,24 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 
 ## Celery Worker 运维
 
+### uvicorn --reload 与 Celery 冲突（reload 风暴，2026-08-17 实测，已根治）
+
+**现象**：开发态导入任务"一直没有执行"——任务记录停 PENDING，或捡取后跑十几秒即冻结在 RUNNING 低进度（心跳 `last_progress_at` 停更）；`pgrep -f celery` 进程数为 0，broker 队列（Redis DB 1 `LLEN default`）有积压。
+
+**根因**：`uvicorn --reload` 默认监听整个 `backend/` 目录，而 Celery 的运行时文件写在监听树内（`logs/celerybeat-schedule` 每 5 分钟落盘、`logs/celery-worker.log` 持续写入、`logs/celerybeat.pid`）：Celery 写文件 → 触发 reload → lifespan 重启时旧 worker/beat 被 warm shutdown → 新 worker 起来又写文件 → 再 reload，形成**reload 风暴**。叠加代码批量改动（短时间多次保存）时，worker 会在"刚拉起就被杀"之间循环，最终全部消失；正在执行的导入/回填任务被中途 SIGKILL，留下 RUNNING 僵尸任务。
+
+**识别**：
+
+```bash
+pgrep -f celery | wc -l          # 0 = worker/beat 全灭
+# Redis（应用 DB 0）：任务卡 PENDING 或 RUNNING 且 last_progress_at 停更
+# Redis（broker DB 1）：LLEN default 有积压
+```
+
+**处置**：杀掉 uvicorn（注意 `--reload` 下监听进程与真正的 server 子进程是两个 PID，都需清掉）→ **不带 `--reload`** 重启后端（lifespan 自动拉起 worker+beat）→ 对 RUNNING 僵尸任务用 `_update_task_cas` 置 FAILED（注明原因）→ 按原参数（loop_ids/ts 范围/skip 策略存于任务 Hash）重新 `delay()` 补发。2026-08-17 起清扫器按心跳判活（`IMPORT_TASK_STALL_TIMEOUT_SECONDS`=1800s），即使不人工介入，停滞 30 分钟也会自动判 FAILED，不再无声卡死。
+
+**预防**：开发态后端直接 `uv run uvicorn app.main:app --host 0.0.0.0 --port <port>`（不带 `--reload`）；确需热重载时把监听目录限定到源码（`--reload-dir app`），务必排除 `logs/`。生产/容器部署本就不用 `--reload`，不受影响。
+
 ### Worker 静默挂死的识别与处置（2026-07-19 实测）
 
 worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspect` 无响应、日志停更数小时），表现为任务卡 PENDING、broker 队列持续积压。
