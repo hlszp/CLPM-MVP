@@ -8,6 +8,8 @@
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
+import type { PlantNodeApi } from '#/api/plant-node';
+import type { Dayjs } from 'dayjs';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -18,13 +20,17 @@ import {
   Button,
   Card,
   Progress,
+  RangePicker,
   Segmented,
   Select,
   Table,
+  TreeSelect,
   message,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import { getLoopListApi } from '#/api/loop';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
@@ -35,17 +41,63 @@ import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 const route = useRoute();
 const router = useRouter();
 
+// ---- 装置树（按装置定位回路，参考回路工作台左脊柱） ----
+interface PlantTreeNode {
+  children?: PlantTreeNode[];
+  label: string;
+  value: string;
+}
+
+const plantTreeData = ref<PlantTreeNode[]>([]);
+const plantTreeLoading = ref(false);
+/** 当前选中装置节点 ID（空 = 全厂） */
+const selectedPlantNodeId = ref<string | undefined>(undefined);
+
+function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
+  return nodes.map((n) => ({
+    value: n.id,
+    label: n.name,
+    children: n.children?.length ? buildTreeNodes(n.children) : undefined,
+  }));
+}
+
+async function loadPlantTree(): Promise<void> {
+  plantTreeLoading.value = true;
+  try {
+    const tree = await getPlantNodeTreeApi();
+    plantTreeData.value = buildTreeNodes(tree);
+  } catch {
+    plantTreeData.value = [];
+  } finally {
+    plantTreeLoading.value = false;
+  }
+}
+
+/** 装置切换：重拉该装置回路，并清出已选中但不在新范围的回路 */
+function handlePlantChange(value: string | undefined): void {
+  selectedPlantNodeId.value = value || undefined;
+  loadLoopOptions('', selectedPlantNodeId.value).then(() => {
+    const available = new Set(loopOptions.value.map((o) => o.value));
+    selectedLoopIds.value = selectedLoopIds.value.filter((id) =>
+      available.has(id),
+    );
+  });
+}
+
 // ---- 回路选项 ----
 const loopOptions = ref<Array<{ label: string; value: string }>>([]);
 const loopLoading = ref(false);
 const selectedLoopIds = ref<string[]>([]);
 
-async function loadLoopOptions(keyword = '') {
+async function loadLoopOptions(
+  keyword = '',
+  plantNodeId?: string,
+): Promise<void> {
   loopLoading.value = true;
   // 后端 /loops pageSize 上限 le=100，超出直接 422；空 keyword 不传参
-  const params = keyword
-    ? { page: 1, pageSize: 100, keyword }
-    : { page: 1, pageSize: 100 };
+  const params: Record<string, unknown> = { page: 1, pageSize: 100 };
+  if (keyword) params.keyword = keyword;
+  if (plantNodeId) params.plantNodeId = plantNodeId;
   try {
     const res = await getLoopListApi(params);
     loopOptions.value = res.items.map((l: LoopApi.LoopListItem) => ({
@@ -70,11 +122,37 @@ async function loadLoopOptions(keyword = '') {
 }
 
 // ---- 发起配置 ----
-const timeWindow = ref<'24h' | '30d' | '7d'>('7d');
+type TimeWindowKey = '24h' | '30d' | '7d' | 'custom';
+const timeWindow = ref<TimeWindowKey>('7d');
 const operatorGroup = ref<'fast' | 'full'>('full');
 const timeWindowMap = { '24h': 'last_24h', '30d': 'last_30d', '7d': 'last_7d' } as const;
+/** 自定义时间范围（timeWindow='custom' 时启用；默认近 7 天） */
+const customRange = ref<[Dayjs, Dayjs] | null>([
+  dayjs().subtract(7, 'day'),
+  dayjs(),
+]);
+/** 自定义跨度上限（与预设最长 30 天对齐） */
+const MAX_CUSTOM_DAYS = 31;
 
-const canTrigger = computed(() => selectedLoopIds.value.length > 0 && !runner.running.value);
+const customRangeValid = computed(() => {
+  if (timeWindow.value !== 'custom') return true;
+  const [s, e] = customRange.value ?? [];
+  return Boolean(
+    s && e && e.isAfter(s) && e.diff(s, 'day') <= MAX_CUSTOM_DAYS,
+  );
+});
+
+const canTrigger = computed(
+  () =>
+    selectedLoopIds.value.length > 0 &&
+    !runner.running.value &&
+    customRangeValid.value,
+);
+
+/** RangePicker 变更（antd 与 dayjs 双版本类型声明冲突，运行时同一 dayjs 实例） */
+function onCustomRangeChange(val: unknown): void {
+  customRange.value = val as [Dayjs, Dayjs];
+}
 
 // ---- 任务执行（细粒度进度 + 完成后拉结果） ----
 const selectedRunId = ref('');
@@ -105,10 +183,27 @@ const runner = useDiagnosisRunner({
 });
 
 async function handleTrigger() {
+  if (!customRangeValid.value) {
+    message.warning(`自定义时间范围无效：需起<止且跨度 ≤${MAX_CUSTOM_DAYS} 天`);
+    return;
+  }
+  // 预设窗口 → preset；自定义 → start/end（ISO；终点为今天时取当前时刻，
+  // 避免未来空数据窗；历史日则取当日末）
+  const timeWindowBody =
+    timeWindow.value === 'custom'
+      ? (() => {
+          const [s, e] = customRange.value!;
+          const end = e.isSame(dayjs(), 'day') ? dayjs() : e.endOf('day');
+          return {
+            start: s.startOf('day').toISOString(),
+            end: end.toISOString(),
+          };
+        })()
+      : { preset: timeWindowMap[timeWindow.value] };
   try {
     await runner.trigger({
       loopIds: selectedLoopIds.value,
-      timeWindow: { preset: timeWindowMap[timeWindow.value] },
+      timeWindow: timeWindowBody,
       operatorGroup: operatorGroup.value,
     });
     message.info('诊断任务已提交');
@@ -150,6 +245,7 @@ function goBackToWorkbench() {
 }
 
 onMounted(() => {
+  loadPlantTree();
   loadLoopOptions();
   const q = route.query.loopId;
   if (typeof q === 'string' && q) {
@@ -187,6 +283,19 @@ onMounted(() => {
     <!-- 发起区 -->
     <Card class="mb-4" size="small">
       <div class="flex flex-wrap items-center gap-3">
+        <TreeSelect
+          :field-names="{ children: 'children', label: 'label', value: 'value' }"
+          :loading="plantTreeLoading"
+          :tree-data="plantTreeData as any"
+          :value="selectedPlantNodeId"
+          allow-clear
+          placeholder="按装置筛选（空=全厂）"
+          show-search
+          style="min-width: 200px"
+          tree-node-filter-prop="label"
+          tree-default-expand-all
+          @change="handlePlantChange"
+        />
         <Select
           v-model:value="selectedLoopIds"
           :loading="loopLoading"
@@ -194,7 +303,11 @@ onMounted(() => {
           :options="loopOptions"
           mode="multiple"
           option-filter-prop="label"
-          placeholder="选择回路（可多选，支持搜索）"
+          :placeholder="
+            selectedPlantNodeId
+              ? '选择该装置下的回路（可多选）'
+              : '选择回路（可多选，支持搜索）'
+          "
           show-search
           style="min-width: 320px"
         />
@@ -204,8 +317,22 @@ onMounted(() => {
             { label: '24 小时', value: '24h' },
             { label: '7 天', value: '7d' },
             { label: '30 天', value: '30d' },
+            { label: '自定义', value: 'custom' },
           ]"
         />
+        <RangePicker
+          v-if="timeWindow === 'custom'"
+          :allow-clear="false"
+          :disabled-date="(d: Dayjs) => d.isAfter(dayjs(), 'day')"
+          :value="customRange as any"
+          @change="onCustomRangeChange"
+        />
+        <span
+          v-if="timeWindow === 'custom' && !customRangeValid"
+          class="text-xs text-red-500"
+        >
+          需起&lt;止且跨度 ≤31 天
+        </span>
         <Segmented
           v-model:value="operatorGroup"
           :options="[
