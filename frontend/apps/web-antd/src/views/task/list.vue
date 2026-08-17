@@ -239,6 +239,12 @@ const columns = computed<TableColumnsType>(() => [
     align: 'center',
   },
   {
+    title: '结果摘要',
+    key: 'resultSummary',
+    width: 140,
+    align: 'center',
+  },
+  {
     title: '评估进度',
     dataIndex: 'progress',
     key: 'progress',
@@ -523,6 +529,30 @@ onUnmounted(() => {
             <Tag :color="statusColorMap(record.status)">
               {{ statusTextMap[record.status] || record.status }}
             </Tag>
+          </template>
+          <template v-else-if="column.key === 'resultSummary'">
+            <template v-if="record.status === 'SUCCESS'">
+              <span class="font-mono text-xs">
+                {{ record.loopsDone ?? record.loopsTotal ?? 0 }}/{{ record.loopsTotal ?? 0 }} 回路
+              </span>
+            </template>
+            <template v-else-if="record.status === 'FAILED'">
+              <span
+                class="text-xs"
+                :style="{ color: themeColors.DANGER }"
+                :title="record.errorMessage ?? ''"
+              >
+                {{ (record.errorMessage ?? '执行失败').slice(0, 20) }}{{ (record.errorMessage ?? '').length > 20 ? '…' : '' }}
+              </span>
+            </template>
+            <template v-else-if="record.status === 'RUNNING'">
+              <span class="text-xs text-neutral-400">
+                {{ record.currentStage ?? '执行中' }}
+              </span>
+            </template>
+            <template v-else>
+              <span :style="{ color: themeColors.NEUTRAL }">—</span>
+            </template>
           </template>
           <template v-else-if="column.key === 'progress'">
             <Progress
