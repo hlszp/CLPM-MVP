@@ -304,6 +304,12 @@ def _to_str_or_none(value: Any) -> str | None:
 
 def _task_to_response(data: dict[str, Any]) -> dict[str, Any]:
     """将 Redis Hash 转换为响应字典."""
+    # result 为 JSON 串（含 loopCoverage 覆盖率明细），解析后透出供 UI 展示
+    result_raw = data.get("result", "")
+    try:
+        result = json.loads(result_raw) if result_raw else None
+    except (ValueError, TypeError):
+        result = None
     return {
         "taskId": data.get("task_id", ""),
         "status": data.get("status", ImportStatus.PENDING.value),
@@ -320,6 +326,7 @@ def _task_to_response(data: dict[str, Any]) -> dict[str, Any]:
         "createdBy": _to_str_or_none(data.get("created_by")),
         "conflictStrategy": data.get("conflict_strategy", "overwrite"),
         "triggerBackfill": data.get("trigger_backfill", "false") == "true",
+        "result": result,
     }
 
 
@@ -566,11 +573,38 @@ async def import_history_data(
         # 并发处理所有回路
         tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
         task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
+
+        # 覆盖率反馈：每回路 导入点数 vs 预期点数（窗口秒数 / interval）。
+        # "任务成功"≠"数据补齐"：远端部分时段无数据时缺口仍在，此处量化暴露。
+        expected_per_loop = (end_dt - start_dt).total_seconds() / max(interval, 1)
+        loop_coverage: list[dict[str, Any]] = []
         for task_result in task_results:
             if isinstance(task_result, BaseException):
                 errors.append(f"导入协程异常: {task_result}")
-            elif task_result[2]:
-                errors.append(task_result[2])
+                continue
+            i, count, error = task_result
+            lid = loop_ids[i]
+            if error:
+                errors.append(error)
+            coverage = (
+                round(min(count / expected_per_loop, 1.0), 4) if expected_per_loop > 0 else 0.0
+            )
+            loop_coverage.append(
+                {
+                    "loopId": lid,
+                    "importedPoints": count,
+                    "expectedPoints": int(expected_per_loop),
+                    "coverage": coverage,
+                }
+            )
+        loop_coverage.sort(key=lambda c: c["coverage"])
+        low_coverage = [c["loopId"] for c in loop_coverage if c["coverage"] < 0.9]
+        if low_coverage:
+            logger.warning(
+                "导入覆盖率低于 90%% 的回路 %d 个: %s",
+                len(low_coverage),
+                low_coverage[:10],
+            )
 
         succeeded = shared_succeeded
         failed = shared_failed
@@ -580,6 +614,9 @@ async def import_history_data(
             "succeeded": succeeded,
             "failed": failed,
             "errors": errors[:10],  # 只保留前 10 条错误
+            # 覆盖率明细（按覆盖率升序，缺口最大的排最前；存入任务 result 字段）
+            "loopCoverage": loop_coverage,
+            "lowCoverageLoopIds": low_coverage,
         }
 
         # 更新任务终态
@@ -698,6 +735,16 @@ async def _import_single_loop(
             chunk_end.isoformat(),
             interval,
         )
+
+        # 覆盖率反馈：远端该分块无任何时间戳时显式告警（此前静默跳过，
+        # 任务仍报 SUCCESS，用户无从得知缺口来自远端而非本地链路）
+        if not raw_data or not raw_data[0]:
+            logger.warning(
+                "远端该分块无数据: loop=%s, 窗口=%s ~ %s",
+                loop_id,
+                chunk_start.isoformat(),
+                chunk_end.isoformat(),
+            )
 
         if raw_data:
             # 转换为宽表行
@@ -1061,14 +1108,19 @@ def _parse_int_val(value: Any) -> int | None:
         return None
 
 
-def _map_quality(value: Any) -> int:
-    """外部质量码 → CLPM 内部质量码（1=Good, 0=Bad）."""
+def _map_quality(value: Any) -> int | None:
+    """外部质量码 → CLPM 内部质量码（1=Good, 0=Bad；缺失=None/NULL）.
+
+    与实时写入口径对齐（realtime_subscriber._build_row）：远端未携带质量码
+    （qualities 缺失/短于 values）或不可解析时写 NULL，不臆断为 Bad——
+    Bad 会被诊断门禁剔除，误标会造成"导入后反而缺数"。
+    """
     if value is None:
-        return 0
+        return None
     try:
         q_int = int(value)
     except (ValueError, TypeError):
-        return 0
+        return None
     return 1 if q_int in _GOOD_QUALITY_CODES else 0
 
 

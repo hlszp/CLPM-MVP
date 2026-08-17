@@ -123,6 +123,9 @@ class ImportTaskResponse(CamelModel):
     createdBy: str | None = None
     conflictStrategy: str = "overwrite"
     triggerBackfill: bool = False
+    # 导入结果明细（JSON 解析后透出）：含 loopCoverage 每回路覆盖率
+    # （importedPoints/expectedPoints/coverage）与 lowCoverageLoopIds
+    result: dict | None = None
 
 
 class IntegrityStatus(StrEnum):
