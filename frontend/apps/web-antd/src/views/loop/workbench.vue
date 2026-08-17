@@ -60,6 +60,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
+import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
@@ -106,6 +107,11 @@ const requestGuard = useLatestRequest<string>();
 const monitorCtx = useMonitorContext();
 
 // ===== 路由模式：左侧导航驱动右侧切换（选装置→清单，选回路→详情） =====
+
+/** 回路清单中点击回路行 → 切换到该回路详情 */
+function handleFleetLoopClick(loopId: string) {
+  selectLoop(loopId);
+}
 
 // ===== 实时数据（MW-P1-04/05/06）=====
 // 复用全局 realtimeWs 单例；WS 断连时 30 秒轮询降级
@@ -1240,23 +1246,9 @@ const stageLabelMap: Record<string, string> = {
               </div>
             </div>
 
-          <!-- ===== 未选中回路引导区（面点分离：不再内嵌完整大表格，引导去独立回路列表） ===== -->
+          <!-- ===== 回路清单区（恢复：未选回路时显示当前装置范围的回路清单） ===== -->
           <div v-else-if="!selectedLoop" class="wb-fleet-area">
-            <div class="wb-fleet-placeholder">
-              <div class="wb-fleet-placeholder__icon">
-                <div class="i-lucide:list w-12 h-12 text-gray-300" />
-              </div>
-              <div class="wb-fleet-placeholder__title">选择一个回路开始诊断</div>
-              <div class="wb-fleet-placeholder__desc">
-                从左侧装置树中选择单元，或在回路列表中点击位号即可进入工作台
-              </div>
-              <router-link to="/monitor/loops" class="wb-fleet-placeholder__link">
-                <Button type="primary">
-                  <template #icon><div class="i-lucide:external-link w-4 h-4" /></template>
-                  前往回路列表扫视全厂
-                </Button>
-              </router-link>
-            </div>
+            <LoopFleetView @loop-click="handleFleetLoopClick" />
           </div>
 
           <!-- ===== 顶部行（grid-area: toprow，跨中间+决策两列宽）：R1页头 + R2状态条 ===== -->
@@ -1700,34 +1692,7 @@ const stageLabelMap: Record<string, string> = {
   overflow: auto;
 }
 
-/* 未选中回路引导占位（面点分离：不再内嵌完整大表格） */
-.wb-fleet-placeholder {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 48px 24px;
-  text-align: center;
-}
-
-.wb-fleet-placeholder__title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.wb-fleet-placeholder__desc {
-  max-width: 360px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #6b7280;
-}
-
-.wb-fleet-placeholder__link {
-  margin-top: 8px;
-}
+/* 回路清单区（未选回路时显示，恢复内嵌 LoopFleetView） */
 
 /* 折叠态：左脊柱 28px 窄条 */
 .wb-layout--collapsed {
