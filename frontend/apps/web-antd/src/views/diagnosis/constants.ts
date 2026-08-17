@@ -15,6 +15,11 @@ export const CATEGORY_META: Record<DiagnosisApi.Category, CategoryMeta> = {
   TUNING: { label: '参数问题', color: '#0d6efd', direction: '重新整定参数' },
   VALVE: { label: '阀门/执行机构问题', color: '#b45309', direction: '检修/更换配件' },
   INSTRUMENT: { label: '仪表/测量问题', color: '#6f42c1', direction: '校验/维护' },
+  COMMUNICATION: {
+    label: '通信链路问题',
+    color: '#0284c7',
+    direction: '检查通信链路',
+  },
   PROCESS: { label: '工艺/外扰问题', color: '#0d9488', direction: '工艺分析/前馈/解耦' },
   UTILIZATION: { label: '投用/操作问题', color: '#ca8a04', direction: '恢复自动投用' },
   DESIGN: { label: '组态/设计问题', color: '#795548', direction: '重新组态/改造' },

@@ -9,11 +9,12 @@ import type { PageQuery, PaginatedResponse } from '#/api/types';
 import { requestClient } from '#/api/request';
 
 export namespace DiagnosisApi {
-  /** 原因分类代码（7 类，设计 §3.1）；展示元数据见 views/diagnosis/constants.ts */
+  /** 原因分类代码（8 类，设计 §3.1）；展示元数据见 views/diagnosis/constants.ts */
   export type Category =
     | 'TUNING'
     | 'VALVE'
     | 'INSTRUMENT'
+    | 'COMMUNICATION'
     | 'PROCESS'
     | 'UTILIZATION'
     | 'DESIGN'
@@ -104,6 +105,8 @@ export namespace DiagnosisApi {
     startedAt?: null | string;
     finishedAt?: null | string;
     durationMs?: null | number;
+    /** 置信度显式定义（分类级 + 算子级 + 融合规则） */
+    confidenceDefinitions?: ConfidenceDefinitions;
   }
 
   /** 算子注册表项（GET /operators，AI 工具目录同源） */
@@ -120,6 +123,16 @@ export namespace DiagnosisApi {
     symptomTags: string[];
     enabledByDefault: boolean;
     fastGroup: boolean;
+    /** 置信度计算口径说明 */
+    confidenceBasis?: string;
+  }
+
+  /** 置信度显式定义（详情 API 附加返回，不入库） */
+  export interface ConfidenceDefinitions {
+    categories: Record<string, string>;
+    operators: Record<string, string>;
+    fusion: string;
+    secondaryGate: number;
   }
 
   export type TimeWindowPreset = 'last_24h' | 'last_30d' | 'last_7d';

@@ -19,6 +19,7 @@ import {
   Badge,
   Collapse,
   CollapsePanel,
+  Popover,
   Table,
   Tag,
   Tooltip,
@@ -52,6 +53,19 @@ function confPercent(conf?: null | number) {
   if (conf == null) return '—';
   return `${Math.round(conf * 100)}%`;
 }
+
+/** 主分类置信度口径说明（详情 API confidenceDefinitions 动态返回） */
+const primaryConfBasis = computed(() => {
+  const defs = props.detail.confidenceDefinitions;
+  const cat = props.detail.primaryCategory;
+  if (!defs || !cat) return null;
+  const lines = [
+    `【${CATEGORY_META[cat]?.label ?? cat}】${defs.categories[cat] ?? ''}`,
+    `【族内融合】${defs.fusion}`,
+    `【次分类门槛】置信度 ≥${defs.secondaryGate} 才纳入次分类`,
+  ];
+  return lines.filter((l) => !l.endsWith('】'));
+});
 
 const activeKeys = ref<string[]>([]);
 
@@ -247,8 +261,28 @@ watch(isDark, () => {
           </div>
         </div>
         <div class="text-right">
-          <div class="text-lg font-semibold tabular-nums">
-            {{ confPercent(detail.primaryConfidence) }}
+          <div class="flex items-center justify-end gap-1">
+            <span class="text-lg font-semibold tabular-nums">
+              {{ confPercent(detail.primaryConfidence) }}
+            </span>
+            <Popover v-if="primaryConfBasis" trigger="click" placement="leftTop">
+              <template #content>
+                <div class="max-w-320px space-y-1 text-xs leading-5">
+                  <div
+                    v-for="(line, i) in primaryConfBasis"
+                    :key="i"
+                    class="whitespace-pre-wrap"
+                  >
+                    {{ line }}
+                  </div>
+                </div>
+              </template>
+              <span
+                class="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-solid border-neutral-300 text-10px text-neutral-500 hover:border-blue-400 hover:text-blue-500"
+              >
+                ?
+              </span>
+            </Popover>
           </div>
           <div class="text-xs text-neutral-500">置信度</div>
         </div>
