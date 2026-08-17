@@ -89,6 +89,40 @@ class TestTriggerDiagnosis:
         kwargs = mock_celery.delay.call_args.kwargs
         assert kwargs["operators"] == ["quality_code_rules", "sensor_fault"]
 
+    def test_trigger_custom_window_strips_timezone(self, client, fake_redis) -> None:
+        """自定义时间窗带 Z 后缀（前端 toISOString）→ 归一化为 naive UTC。
+
+        回归：aware datetime 直传会使 kpi_snapshot_hourly（TIMESTAMP
+        WITHOUT TIME ZONE）比较抛 asyncpg DataError → 任务级"诊断失败"。
+        """
+        with (
+            patch("app.tasks.diagnosis_v2.run_diagnosis_batch") as mock_celery,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery.delay.return_value = MagicMock(id="celery-1")
+            from app.core.db import get_db
+
+            mock_db = MagicMock()
+            mock_db.execute = _seq_execute([_loops_result(), _pv_mapping_result()])
+            client.app.dependency_overrides[get_db] = lambda: mock_db
+
+            resp = client.post(
+                "/api/v1/diagnosis/run",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": [LOOP_ID],
+                    "timeWindow": {
+                        # 北京时间 10:00/12:00 整点 → UTC 02:00/04:00（naive）
+                        "start": "2026-08-17T02:00:00.000Z",
+                        "end": "2026-08-17T04:00:00.000Z",
+                    },
+                },
+            )
+        assert resp.status_code == 200
+        kwargs = mock_celery.delay.call_args.kwargs
+        assert kwargs["start"] == "2026-08-17T02:00:00"
+        assert kwargs["end"] == "2026-08-17T04:00:00"
+
     def test_trigger_with_unknown_operator_rejected(self, client) -> None:
         """未知算子名 → 400（防拼写错误静默空跑）。"""
         with mock_current_user(TEST_USERS["ic_engineer"]):

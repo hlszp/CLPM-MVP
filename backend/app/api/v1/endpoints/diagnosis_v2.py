@@ -75,8 +75,20 @@ class TriggerDiagnosisBody(BaseModel):
     operators: list[str] | None = None
 
 
+def _to_naive_utc(dt: datetime) -> datetime:
+    """aware datetime（前端 ISO 带 Z/+08:00）→ naive UTC。
+
+    PG 业务列统一 TIMESTAMP WITHOUT TIME ZONE（naive UTC 口径），
+    aware 值直接比较/落库会抛 asyncpg DataError
+    （can't subtract offset-naive and offset-aware datetimes）。
+    """
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
 def _resolve_window(body: TimeWindowBody) -> tuple[datetime, datetime]:
-    end = body.end or _utcnow_naive()
+    end = _to_naive_utc(body.end) if body.end else _utcnow_naive()
     if body.preset:
         hours = _TIME_WINDOW_PRESETS.get(body.preset)
         if hours is None:
@@ -85,7 +97,7 @@ def _resolve_window(body: TimeWindowBody) -> tuple[datetime, datetime]:
             )
         start = end - timedelta(hours=hours)
     elif body.start:
-        start = body.start
+        start = _to_naive_utc(body.start)
     else:
         raise BizError(
             code="ERR_PARAM", message="timeWindow 需提供 preset 或 start", status_code=400
