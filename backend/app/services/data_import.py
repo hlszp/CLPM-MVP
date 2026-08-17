@@ -427,6 +427,8 @@ async def import_history_data(
             task_id,
             new_status=ImportStatus.RUNNING.value,
             started_at=_now_iso(),
+            # 进度心跳起点：清扫器以此判活（无心跳旧任务回退 started_at 口径）
+            last_progress_at=_now_iso(),
         )
         if cas_code == "BLOCKED":
             # 已终态（入口预检查漏网的 TOCTOU 窗口兜底）— 不执行导入
@@ -469,9 +471,14 @@ async def import_history_data(
         # 计算动态分块大小
         chunk_hours = _compute_chunk_hours(start_dt, end_dt)
 
-        # 计算总小时窗口数，用于进度计算
+        # 计算进度总量：进度回调按"分块"触发（每分块 1 次），
+        # 总量必须是 回路数 × 每回路分块数。
+        # 注意不能按小时数计量——chunk_hours>1 时（时间窗 >30h）分块数 < 小时数，
+        # 按小时计量会导致进度只能爬到 1/chunk_hours（如 33%）后长期"停滞"，
+        # 直到任务结束才跳变 100%。
         total_hours = math.ceil((end_dt - start_dt).total_seconds() / 3600)
-        total_units = total * total_hours  # 总进度单位 = 回路数 × 小时数
+        chunks_per_loop = max(1, math.ceil(total_hours / max(chunk_hours, 1)))
+        total_units = total * chunks_per_loop  # 总进度单位 = 回路数 × 每回路分块数
 
         import asyncio as _asyncio_sem
 
@@ -491,13 +498,15 @@ async def import_history_data(
                 if chunk_complete > 0:
                     shared_completed_units += chunk_complete
                 cur_units = shared_completed_units
-            # 进度 = 完成的小时窗口数 / 总小时窗口数
+            # 进度 = 完成的分块数 / 总分块数；同时写 last_progress_at 心跳，
+            # 供清扫器区分"执行中但停滞"（卡死）与"执行中且持续推进"（正常长任务）
             progress_value = round(cur_units / total_units, 4) if total_units > 0 else 1.0
             await _update_task(
                 task_id,
                 progress=progress_value,
                 imported_count=cur_s,
                 error_count=cur_f,
+                last_progress_at=_now_iso(),
             )
 
         async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
@@ -531,7 +540,7 @@ async def import_history_data(
                     return (i, 0, error)
 
                 try:
-                    count = await _import_single_loop(
+                    count, failed_windows = await _import_single_loop(
                         loop_id=lid,
                         start_dt=start_dt,
                         end_dt=end_dt,
@@ -544,8 +553,24 @@ async def import_history_data(
                         task_id=task_id,
                         on_chunk_complete=_on_chunk_complete,
                     )
-                    if count <= 0:
+                    if count <= 0 and not failed_windows:
                         raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
+                    if failed_windows:
+                        # 分块级容错后仍存在失败窗口：已写入的部分数据保留，
+                        # 回路计为失败（覆盖率按实际写入点数反馈），
+                        # 缺口可用 skip 策略再导入补齐（overwrite 会先 DELETE 误删实时行，禁止）
+                        first = failed_windows[0]
+                        error = (
+                            f"loop {lid}: {len(failed_windows)} 个分块导入失败"
+                            f"（已写入 {count} 点），首个失败窗口 "
+                            f"{first['start']}~{first['end']}: {first['error']}"
+                        )
+                        logger.warning("回路部分分块导入失败: %s", error)
+                        async with progress_lock:
+                            shared_failed += 1
+                            shared_completed_units += max(chunks_per_loop - loop_done, 0)
+                        await _record_progress()
+                        return (i, count, error)
                     logger.info(
                         "回路导入完成: loop_id=%s, points=%d (%d/%d)",
                         lid,
@@ -558,9 +583,9 @@ async def import_history_data(
                 except Exception as exc:
                     async with progress_lock:
                         shared_failed += 1
-                        # 失败时补齐本回路剩余小时窗口（按本回路已完成数计算，
+                        # 失败时补齐本回路剩余分块（按本回路已完成 chunk 数计算，
                         # 不能用共享计数器取模——多回路并发交错时会失真）
-                        shared_completed_units += max(total_hours - loop_done, 0)
+                        shared_completed_units += max(chunks_per_loop - loop_done, 0)
                     error = f"loop {lid}: {exc}"
                     logger.warning("回路导入失败: %s", error)
                     await _record_progress()
@@ -669,7 +694,11 @@ async def import_history_data(
                     task_id,
                     new_status=fallback_status,
                     finished_at=_now_iso(),
-                    error_message="导入任务异常中断",
+                    # 携带中断时的部分进度，便于用户判断已导入规模并决定是否补数
+                    error_message=(
+                        f"导入任务异常中断（已完成分块 {shared_completed_units}/{total_units}，"
+                        f"成功 {shared_succeeded} 回路 / 失败 {shared_failed} 回路）"
+                    ),
                 )
                 if cas_code == "BLOCKED":
                     logger.info(
@@ -695,8 +724,14 @@ async def _import_single_loop(
     chunk_hours: int = 1,
     task_id: str | None = None,
     on_chunk_complete: callable | None = None,
-) -> int:
+) -> tuple[int, list[dict[str, str]]]:
     """导入单个回路的历史数据.
+
+    分块级容错：单个分块拉取/写入失败时记录失败窗口并继续后续分块，
+    不再整回路中断——远端短时故障只影响故障期间的分块，避免"一个分块
+    504 导致整回路剩余窗口全部放弃"的数据缺口放大。失败窗口由调用方
+    汇总上报（回路计失败、覆盖率按实际写入点数反馈），缺口可用 skip
+    策略再导入补齐。
 
     Args:
         subtable: 已构造好的 TDengine 子表名
@@ -707,11 +742,11 @@ async def _import_single_loop(
         on_chunk_complete: 每完成一个小时分块时的回调函数
 
     Returns:
-        导入的数据点数
+        (导入的数据点数, 失败分块窗口列表[{start, end, error}])
     """
     if not role_tag_map:
         logger.warning("回路 %s 无有效 tag 映射，跳过", loop_id)
-        return 0
+        return 0, []
 
     # 冲突处理：删除旧数据（overwrite 策略）
     if conflict_strategy == ConflictStrategy.OVERWRITE.value:
@@ -719,48 +754,66 @@ async def _import_single_loop(
 
     # 按动态分块拉取 + 写入（每 chunk 前检查任务是否被取消）
     total_count = 0
+    failed_windows: list[dict[str, str]] = []
     chunk_start = start_dt
     while chunk_start < end_dt:
         # chunk 级取消检查：任务被取消时立即停止拉取，已写入的数据保留
         if task_id and await _is_task_cancelled(task_id):
             logger.info("回路 %s 导入被取消（已写入 %d 点），跳过剩余分块", loop_id, total_count)
-            return total_count
+            return total_count, failed_windows
 
         chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
 
-        # 从远端 API 拉取数据
-        raw_data = await _fetch_remote_history(
-            list(role_tag_map.values()),
-            chunk_start.isoformat(),
-            chunk_end.isoformat(),
-            interval,
-        )
+        try:
+            # 从远端 API 拉取数据（内含 3 次指数退避重试 + 熔断快速失败）
+            raw_data = await _fetch_remote_history(
+                list(role_tag_map.values()),
+                chunk_start.isoformat(),
+                chunk_end.isoformat(),
+                interval,
+            )
 
-        # 覆盖率反馈：远端该分块无任何时间戳时显式告警（此前静默跳过，
-        # 任务仍报 SUCCESS，用户无从得知缺口来自远端而非本地链路）
-        if not raw_data or not raw_data[0]:
+            # 覆盖率反馈：远端该分块无任何时间戳时显式告警（此前静默跳过，
+            # 任务仍报 SUCCESS，用户无从得知缺口来自远端而非本地链路）。
+            # 注意：远端无数据 ≠ 分块失败（该时段本就无记录），不计入 failed_windows。
+            if not raw_data or not raw_data[0]:
+                logger.warning(
+                    "远端该分块无数据: loop=%s, 窗口=%s ~ %s",
+                    loop_id,
+                    chunk_start.isoformat(),
+                    chunk_end.isoformat(),
+                )
+
+            if raw_data:
+                # 转换为宽表行
+                rows = _convert_to_wide_rows(raw_data, role_tag_map)
+                if rows:
+                    # 批量写入 TDengine
+                    count = await batch_insert(subtable, rows, loop_id=loop_id, unit_id=unit_id)
+                    total_count += count
+        except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
+            failed_windows.append(
+                {
+                    "start": chunk_start.isoformat(),
+                    "end": chunk_end.isoformat(),
+                    "error": str(exc)[:200],
+                }
+            )
             logger.warning(
-                "远端该分块无数据: loop=%s, 窗口=%s ~ %s",
+                "分块导入失败（已重试仍失败，继续后续分块）: loop=%s, 窗口=%s ~ %s, err=%s",
                 loop_id,
                 chunk_start.isoformat(),
                 chunk_end.isoformat(),
+                exc,
             )
-
-        if raw_data:
-            # 转换为宽表行
-            rows = _convert_to_wide_rows(raw_data, role_tag_map)
-            if rows:
-                # 批量写入 TDengine
-                count = await batch_insert(subtable, rows, loop_id=loop_id, unit_id=unit_id)
-                total_count += count
 
         chunk_start = chunk_end
 
-        # 小时分块完成时触发进度回调
+        # 小时分块完成时触发进度回调（含失败分块——进度语义是"已处理"，不是"已成功"）
         if on_chunk_complete:
             await on_chunk_complete()
 
-    return total_count
+    return total_count, failed_windows
 
 
 async def _get_loop_tag_mapping(db: Any, loop_id: str) -> dict[str, str]:
@@ -1251,15 +1304,20 @@ async def delete_import_task(task_id: str) -> bool:
 
 
 async def sweep_stale_running_tasks() -> dict[str, Any]:
-    """清扫超时 RUNNING 导入任务（worker 被杀导致任务永久卡"执行中"）.
+    """清扫停滞/超时 RUNNING 导入任务（worker 卡死或被杀导致任务永久卡"执行中"）.
 
-    遍历导入任务索引，找出 RUNNING 且 started_at 距今超过
-    ``IMPORT_TASK_RUNNING_TIMEOUT_SECONDS`` 的任务，置为 FAILED。
+    遍历导入任务索引，找出 RUNNING 且判定已停滞的任务，置为 FAILED：
+    - 有 last_progress_at 心跳（新版任务）：超过
+      ``IMPORT_TASK_STALL_TIMEOUT_SECONDS`` 无进度推进 → 判卡死。
+      长任务只要持续推进进度即视为存活，不会被误清扫。
+    - 无心跳（旧版任务）：started_at 距今超过
+      ``IMPORT_TASK_RUNNING_TIMEOUT_SECONDS`` → 兜底清扫。
 
     Returns:
         {"swept": N, "details": [...]}
     """
     timeout = int(settings.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS)
+    stall_timeout = int(settings.IMPORT_TASK_STALL_TIMEOUT_SECONDS)
     now_ts = datetime.now(UTC).timestamp()
     task_ids = await redis_client.zrange(_IMPORT_TASK_INDEX, 0, -1)
     swept: list[str] = []
@@ -1269,20 +1327,29 @@ async def sweep_stale_running_tasks() -> dict[str, Any]:
             continue
         if data.get("status") != ImportStatus.RUNNING.value:
             continue
+        last_progress_at = data.get("last_progress_at", "")
         started_at = data.get("started_at", "")
-        if not started_at:
+        ref_raw = last_progress_at or started_at
+        if not ref_raw:
             continue
         try:
-            started_ts = datetime.fromisoformat(started_at).timestamp()
+            ref_ts = datetime.fromisoformat(ref_raw).timestamp()
         except (ValueError, TypeError):
             continue
-        if now_ts - started_ts < timeout:
+        # 有心跳按停滞阈值判活，无心跳（旧任务）按 RUNNING 总时长兜底
+        threshold = stall_timeout if last_progress_at else timeout
+        if now_ts - ref_ts < threshold:
             continue
+        error_msg = (
+            f"进度停滞超时（>{threshold}s 无进度推进），疑为 worker 卡死"
+            if last_progress_at
+            else f"RUNNING 超时（>{timeout}s），疑为 worker 异常终止"
+        )
         cas_code, _old = await _update_task_cas(
             tid,
             new_status=ImportStatus.FAILED.value,
             finished_at=_now_iso(),
-            error_message=f"RUNNING 超时（>{timeout}s），疑为 worker 异常终止",
+            error_message=error_msg,
         )
         if cas_code == "BLOCKED":
             # 原 worker 恰好同时完成（置 SUCCESS），CAS 拒绝覆盖终态

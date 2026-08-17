@@ -77,6 +77,9 @@ class TDengineConnectionPool:
             password=settings.TDENGINE_PASSWORD,
             database=settings.TDENGINE_DB,
             timezone=UTC,
+            # taosrest 默认 timeout=None（requests 无限等待），TDengine 无响应时
+            # 调用线程会永久阻塞（导入任务"停滞"根因之一），显式超时快速失败
+            timeout=settings.TDENGINE_REST_TIMEOUT,
         )
         cls._created_count += 1
         logger.debug("创建 TDengine REST 连接 #%d (url=%s)", cls._created_count, url)

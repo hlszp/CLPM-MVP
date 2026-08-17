@@ -73,8 +73,10 @@ class TestParseHelpers:
     def test_map_quality_bad(self):
         assert _map_quality(0) == 0
         assert _map_quality(2) == 0
-        assert _map_quality(None) == 0
-        assert _map_quality("abc") == 0
+        # 缺失/不可解析 → None（写 NULL），不臆断为 Bad——Bad 会被诊断门禁剔除，
+        # 误标会造成"导入后反而缺数"（与 realtime_subscriber._build_row 口径对齐）
+        assert _map_quality(None) is None
+        assert _map_quality("abc") is None
 
     def test_parse_ts_str_iso(self):
         """naive（无时区）视为已在目标时区 _TARGET_TZ（Asia/Shanghai）。"""
@@ -708,6 +710,7 @@ def _mock_import_settings():
     with patch("app.services.data_import.settings") as mock:
         mock.IMPORT_TASK_TTL_DAYS = 30
         mock.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS = 7200
+        mock.IMPORT_TASK_STALL_TIMEOUT_SECONDS = 1800
         yield mock
 
 
@@ -1119,20 +1122,20 @@ class TestImportProgressPerLoop:
         }
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
-            """loop-A 完成全部 6 窗口；loop-B 完成 2 窗口后失败（交错执行）."""
+            """loop-A 完成全部 6 分块；loop-B 完成 2 分块后失败（交错执行）."""
             if loop_id == "loop-A":
                 for _ in range(6):
                     await asyncio.sleep(0)  # 让出事件循环，制造并发交错
                     if on_chunk_complete:
                         await on_chunk_complete()
-                return 100
+                return 100, []
             if loop_id == "loop-B":
                 for _ in range(2):
                     await asyncio.sleep(0)
                     if on_chunk_complete:
                         await on_chunk_complete()
                 raise HistoryDataSourceError("远端历史数据 API 504")
-            return 0
+            return 0, []
 
         progress_updates: list[float] = []
         orig_update_task = di._update_task
@@ -1217,7 +1220,7 @@ class TestImportProgressPerLoop:
                 await b_failed.wait()  # 等 B 失败后再完成最后 1 窗口
                 if on_chunk_complete:
                     await on_chunk_complete()
-                return 100
+                return 100, []
             if loop_id == "loop-B":
                 await a_part_done.wait()  # 确保失败时 A 已计入 5 窗口
                 for _ in range(2):
@@ -1225,7 +1228,7 @@ class TestImportProgressPerLoop:
                         await on_chunk_complete()
                 b_failed.set()
                 raise HistoryDataSourceError("远端历史数据 API 504")
-            return 0
+            return 0, []
 
         progress_updates: list[float] = []
         orig_update_task = di._update_task
@@ -1265,3 +1268,254 @@ class TestImportProgressPerLoop:
         assert all(0.0 <= p <= 1.0 for p in progress_updates)
         assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
         assert progress_updates[-1] == 1.0
+
+
+class TestImportProgressChunkUnits:
+    """进度计量口径：按分块数而非小时数（chunk_hours>1 时进度必须能爬到 1.0）.
+
+    修复前 total_units = 回路数 × 小时数，而进度回调按分块触发（每分块 1 次）。
+    时间窗 >30h 时 chunk_hours=3，分块数仅为小时数的 1/3，进度爬到 ~33% 即长期
+    "停滞"，任务结束时才跳变 100%——表现为大数据量导入假停滞。
+    """
+
+    @pytest.mark.asyncio
+    async def test_progress_reaches_100_with_multi_hour_chunks(self):
+        """72h 窗口 → chunk_hours=3 → 每回路 24 分块；进度单调且末次 _update_task 即 1.0."""
+        import asyncio
+
+        from app.services import data_import as di
+
+        fake = _FakeRedisImport()
+        ts_start = "2026-07-15T00:00:00+00:00"
+        ts_end = "2026-07-18T00:00:00+00:00"  # 72h → chunk_hours=3 → chunks_per_loop=24
+        loop_ids = ["loop-A", "loop-B"]
+        loop_data_map = {
+            "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
+            "loop-B": {"role_tag_map": {"PV": "B.PV"}, "unit_id": "u1", "subtable": "t_b"},
+        }
+
+        async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
+            for _ in range(24):  # 与 chunks_per_loop=24 对齐
+                await asyncio.sleep(0)
+                if on_chunk_complete:
+                    await on_chunk_complete()
+            return 100, []
+
+        progress_updates: list[float] = []
+        orig_update_task = di._update_task
+
+        async def spy_update_task(task_id, **fields):
+            if "progress" in fields:
+                progress_updates.append(float(fields["progress"]))
+            await orig_update_task(task_id, **fields)
+
+        mock_session = AsyncMock()
+
+        with (
+            patch("app.services.data_import.redis_client", fake),
+            patch(
+                "app.services.data_import._batch_get_loop_data",
+                new=AsyncMock(return_value=loop_data_map),
+            ),
+            patch(
+                "app.services.data_import._import_single_loop",
+                side_effect=fake_import_single_loop,
+            ),
+            patch("app.services.data_import._update_task", side_effect=spy_update_task),
+            patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+        ):
+            task_id = await di.create_import_task(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                trigger_backfill=False,
+                created_by="tester",
+                celery_task_id="celery-chunk-units",
+            )
+            result = await di.import_history_data(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                task_id=task_id,
+            )
+
+        assert result["succeeded"] == 2
+        assert progress_updates
+        assert all(0.0 <= p <= 1.0 for p in progress_updates)
+        assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
+        # 修复前此处只能到 48/72≈0.667（2 回路 × 24 分块 / 2 回路 × 72 小时）
+        assert progress_updates[-1] == 1.0
+
+
+class TestImportSingleLoopChunkFaultTolerance:
+    """_import_single_loop 分块级容错：单分块失败记录窗口后继续，不整回路中断."""
+
+    @pytest.mark.asyncio
+    async def test_chunk_failure_continues_remaining_chunks(self):
+        """中间分块 504：后续分块仍执行，返回部分点数 + 失败窗口明细."""
+        from datetime import datetime, timedelta
+
+        from app.services import data_import as di
+
+        start = datetime(2026, 7, 15, 0, 0, 0)
+        end = start + timedelta(hours=3)  # chunk_hours=1 → 3 个分块
+
+        def _payload() -> tuple[list[str], dict[str, dict]]:
+            return (
+                ["2026-07-15T00:00:00", "2026-07-15T00:00:01"],
+                {"A.PV": {"values": [1.0, 2.0], "qualities": [1, 1]}},
+            )
+
+        fetch_calls: list[str] = []
+
+        async def fake_fetch(tag_codes, start_time, end_time, interval):
+            fetch_calls.append(start_time)
+            if start_time.startswith("2026-07-15T01"):
+                raise HistoryDataSourceError("远端历史数据 API 返回 HTTP 504")
+            return _payload()
+
+        completed_chunks: list[int] = []
+
+        async def on_chunk() -> None:
+            completed_chunks.append(1)
+
+        with (
+            patch("app.services.data_import._fetch_remote_history", side_effect=fake_fetch),
+            patch(
+                "app.services.data_import.batch_insert",
+                new=AsyncMock(return_value=2),
+            ),
+        ):
+            count, failed_windows = await di._import_single_loop(
+                loop_id="loop-1",
+                start_dt=start,
+                end_dt=end,
+                interval=1,
+                conflict_strategy="skip",
+                subtable="t_a",
+                unit_id="u1",
+                role_tag_map={"PV": "A.PV"},
+                chunk_hours=1,
+                task_id=None,
+                on_chunk_complete=on_chunk,
+            )
+
+        assert len(fetch_calls) == 3  # 失败分块不中断后续分块
+        assert count == 4  # 2 个成功分块 × 2 点
+        assert len(failed_windows) == 1
+        assert failed_windows[0]["start"].startswith("2026-07-15T01")
+        assert "504" in failed_windows[0]["error"]
+        # 进度回调覆盖全部已处理分块（含失败分块——进度语义是"已处理"）
+        assert len(completed_chunks) == 3
+
+    @pytest.mark.asyncio
+    async def test_partial_chunk_failure_marks_loop_failed_but_keeps_coverage(self):
+        """整任务视角：分块失败的回路计 failed，但覆盖率按实际写入点数反馈."""
+        from app.services import data_import as di
+
+        fake = _FakeRedisImport()
+        ts_start = "2026-07-15T00:00:00+00:00"
+        ts_end = "2026-07-15T03:00:00+00:00"  # 3h → chunk_hours=1 → 3 分块
+        loop_ids = ["loop-A"]
+        loop_data_map = {
+            "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
+        }
+
+        def _payload() -> tuple[list[str], dict[str, dict]]:
+            return (
+                ["2026-07-15T00:00:00", "2026-07-15T00:00:01"],
+                {"A.PV": {"values": [1.0, 2.0], "qualities": [1, 1]}},
+            )
+
+        async def fake_fetch(tag_codes, start_time, end_time, interval):
+            # 起始小时（naive 窗口 08:00 +8 时区换算后为第二分块）失败
+            if "T09:00:00" in start_time:
+                raise HistoryDataSourceError("远端历史数据 API 返回 HTTP 504")
+            return _payload()
+
+        mock_session = AsyncMock()
+
+        with (
+            patch("app.services.data_import.redis_client", fake),
+            patch(
+                "app.services.data_import._batch_get_loop_data",
+                new=AsyncMock(return_value=loop_data_map),
+            ),
+            patch("app.services.data_import._fetch_remote_history", side_effect=fake_fetch),
+            patch(
+                "app.services.data_import.batch_insert",
+                new=AsyncMock(return_value=2),
+            ),
+            patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+        ):
+            task_id = await di.create_import_task(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                trigger_backfill=False,
+                created_by="tester",
+                celery_task_id="celery-partial",
+            )
+            result = await di.import_history_data(
+                loop_ids=loop_ids,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                conflict_strategy="skip",
+                task_id=task_id,
+            )
+
+        assert result["succeeded"] == 0
+        assert result["failed"] == 1
+        assert "分块导入失败" in result["errors"][0]
+        # 覆盖率按实际写入点数反馈（4 点 / 预期 10800 点），不谎报为 0
+        coverage = result["loopCoverage"][0]
+        assert coverage["importedPoints"] == 4
+        assert coverage["coverage"] > 0
+
+
+class TestSweepStaleRunningTasksHeartbeat:
+    """清扫器心跳判活：last_progress_at 存在时按停滞阈值（而非 started_at 总时长）."""
+
+    @pytest.mark.asyncio
+    async def test_recent_heartbeat_keeps_long_running_task_alive(self, _mock_import_settings):
+        """started_at 已超 2h 旧口径，但心跳新鲜（持续推进）的长任务不应被误清扫."""
+        from datetime import UTC, datetime, timedelta
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:long-1"] = {
+            "task_id": "long-1",
+            "status": "RUNNING",
+            "started_at": (datetime.now(UTC) - timedelta(hours=5)).isoformat(),
+            "last_progress_at": (datetime.now(UTC) - timedelta(seconds=60)).isoformat(),
+        }
+        fake._zsets["import_task:index"] = {"long-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 0
+        assert fake._hashes["import_task:long-1"]["status"] == "RUNNING"
+
+    @pytest.mark.asyncio
+    async def test_stale_heartbeat_sweeps_with_stall_message(self, _mock_import_settings):
+        """心跳超过停滞阈值（1800s）无推进 → 判卡死置 FAILED，错误信息指明停滞."""
+        from datetime import UTC, datetime, timedelta
+
+        fake = _FakeRedisImport()
+        fake._hashes["import_task:stall-1"] = {
+            "task_id": "stall-1",
+            "status": "RUNNING",
+            "started_at": (datetime.now(UTC) - timedelta(minutes=40)).isoformat(),
+            "last_progress_at": (datetime.now(UTC) - timedelta(minutes=35)).isoformat(),
+        }
+        fake._zsets["import_task:index"] = {"stall-1": 1.0}
+
+        with patch("app.services.data_import.redis_client", fake):
+            result = await sweep_stale_running_tasks()
+
+        assert result["swept"] == 1
+        assert fake._hashes["import_task:stall-1"]["status"] == "FAILED"
+        assert "停滞" in fake._hashes["import_task:stall-1"]["error_message"]

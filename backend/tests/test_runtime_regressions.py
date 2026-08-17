@@ -138,7 +138,7 @@ async def test_zero_point_import_marks_loop_and_task_failed() -> None:
                 }
             ),
         ),
-        patch.object(data_import, "_import_single_loop", new=AsyncMock(return_value=0)),
+        patch.object(data_import, "_import_single_loop", new=AsyncMock(return_value=(0, []))),
         patch.object(data_import, "_is_task_cancelled", new=AsyncMock(return_value=False)),
         patch.object(data_import, "_update_task", new=update_task),
         patch.object(data_import, "_update_task_cas", new=update_task_cas),

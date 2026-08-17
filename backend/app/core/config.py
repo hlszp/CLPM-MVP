@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     TDENGINE_DB: str = "clpm_ts"
     # 批量写入批次大小（一条 INSERT SQL 插入的行数，实测 1000 行 7ms）
     TDENGINE_BATCH_SIZE: int = 1000
+    # TDengine REST 阻塞操作超时（秒）。taosrest 默认 timeout=None（无限等待），
+    # TDengine 侧连接半开/无响应时导入任务的写库调用会无限挂起（表现为"进度停滞"），
+    # 显式超时后异常上抛走分块级容错与失败上报。
+    TDENGINE_REST_TIMEOUT: int = 60
     # 实时数据 flush 间隔（秒，RealtimeSubscriber 缓冲区刷新频率）
     TDENGINE_FLUSH_INTERVAL: float = 1.0
 
@@ -120,7 +124,11 @@ class Settings(BaseSettings):
 
     # ---- 导入任务生命周期 ----
     IMPORT_TASK_TTL_DAYS: int = 30  # 导入任务 Redis 记录 TTL（天）
-    IMPORT_TASK_RUNNING_TIMEOUT_SECONDS: int = 7200  # RUNNING 超时阈值（2h，超时清扫置 FAILED）
+    IMPORT_TASK_RUNNING_TIMEOUT_SECONDS: int = 7200  # RUNNING 超时阈值（2h，兜底旧任务无心跳）
+    # 进度停滞阈值（秒）：任务每完成一个分块都会写 last_progress_at 心跳，
+    # 超过该时长无任何进度推进即判定卡死（清扫置 FAILED / 重投允许接续）。
+    # 需大于最慢单分块耗时上限（远端 120s×4 次重试 + 写库 60s×11 批 ≈ 19min）。
+    IMPORT_TASK_STALL_TIMEOUT_SECONDS: int = 1800
 
     # ---- 数据链路监控 ----
     DATA_LINK_CHECK_INTERVAL_MINUTES: int = 10  # 链路健康检查 Beat 间隔（分钟）

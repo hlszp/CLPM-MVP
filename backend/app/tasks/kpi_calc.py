@@ -3693,19 +3693,28 @@ async def _check_import_idempotency(task_id: str | None) -> dict | None:
         return _build_cached_result(data)
 
     if status == ImportStatus.RUNNING.value:
+        # 心跳判活：新版任务每分块写 last_progress_at，
+        # 有心跳按停滞阈值判定（长任务持续推进即视为存活，不会被误杀重投）；
+        # 无心跳的旧任务回退 started_at + RUNNING 总时长兜底口径。
+        last_progress_at = data.get("last_progress_at", "")
         started_at = data.get("started_at", "")
-        if started_at:
+        ref_raw = last_progress_at or started_at
+        if ref_raw:
             try:
-                started_ts = datetime.fromisoformat(started_at).timestamp()
+                ref_ts = datetime.fromisoformat(ref_raw).timestamp()
             except (ValueError, TypeError):
-                started_ts = 0.0
+                ref_ts = 0.0
             now_ts = datetime.now(UTC).timestamp()
-            threshold = int(settings.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS)
-            age = now_ts - started_ts
+            threshold = (
+                int(settings.IMPORT_TASK_STALL_TIMEOUT_SECONDS)
+                if last_progress_at
+                else int(settings.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS)
+            )
+            age = now_ts - ref_ts
             if age < threshold:
-                # 前次 worker 仍在执行窗口内 → 跳过（防并发重投）
+                # 前次 worker 仍在存活窗口内 → 跳过（防并发重投）
                 logger.warning(
-                    "导入任务重投且 RUNNING 未超时: task_id=%s, age=%.0fs, threshold=%ds, 跳过执行",
+                    "导入任务重投且 RUNNING 未停滞: task_id=%s, age=%.0fs, threshold=%ds, 跳过执行",
                     task_id,
                     age,
                     threshold,
@@ -3717,14 +3726,14 @@ async def _check_import_idempotency(task_id: str | None) -> dict | None:
                     "errors": [f"concurrent redelivery skipped (age={age:.0f}s)"],
                     "skipped_redelivery": True,
                 }
-            # RUNNING 超时 → 前次 worker 已死，允许接续执行
+            # RUNNING 停滞/超时 → 前次 worker 已死或卡死，允许接续执行
             logger.warning(
-                "导入任务重投且 RUNNING 已超时: task_id=%s, age=%.0fs, 接续执行（覆盖 RUNNING）",
+                "导入任务重投 RUNNING 已停滞/超时: task_id=%s age=%.0fs, 接续执行",
                 task_id,
                 age,
             )
             return None
-        # started_at 缺失：异常数据，放行交 _do_import 内 CAS 兜底
+        # started_at/last_progress_at 均缺失：异常数据，放行交 _do_import 内 CAS 兜底
         return None
 
     # PENDING → 正常执行
