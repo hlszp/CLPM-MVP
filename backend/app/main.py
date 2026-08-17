@@ -362,6 +362,9 @@ def _start_celery_beat() -> None:
         # stderr 合并到 stdout，单句柄减少 fd 占用；句柄存入模块级引用，
         # 由 _stop_celery_beat 关闭，避免 lifespan 重启泄漏 fd
         log_handle = open("logs/celery-beat.log", "a")  # noqa: SIM115
+        # 注入宿主 PID：子进程看门狗据此监视宿主，宿主被 SIGKILL/崩溃时
+        # 自行 SIGTERM 退出，防独立进程组孤儿滞留（app/tasks/parent_watchdog.py）
+        child_env = {**os.environ, "CLPM_PARENT_PID": str(os.getpid())}
         try:
             _celery_beat_process = subprocess.Popen(
                 [
@@ -379,6 +382,7 @@ def _start_celery_beat() -> None:
                     schedule_file,
                 ],
                 cwd=os.getcwd(),
+                env=child_env,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 # 方案 B：新 session = 独立进程组，便于 shutdown 一次性
@@ -471,6 +475,8 @@ def _start_celery_worker() -> None:
         # 否则死信无人消费永久堆积）；stderr 合并到 stdout，句柄由
         # _stop_celery_worker 关闭，避免 lifespan 重启泄漏 fd
         log_handle = open("logs/celery-worker.log", "a")  # noqa: SIM115
+        # 注入宿主 PID：子进程看门狗据此监视宿主（同 _start_celery_beat）
+        child_env = {**os.environ, "CLPM_PARENT_PID": str(os.getpid())}
         try:
             _celery_worker_process = subprocess.Popen(
                 [
@@ -490,6 +496,7 @@ def _start_celery_worker() -> None:
                     f"{_PROJECT_TAG}@%h",
                 ],
                 cwd=os.getcwd(),
+                env=child_env,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 # 方案 B：启动时新建 session，本 worker master 自动成为进程
@@ -546,21 +553,33 @@ def _stop_celery_worker() -> None:
 
 
 async def _celery_watchdog_check() -> None:
-    """单次探活：worker/beat 任一缺失时记录 error 级告警日志。
+    """单次探活：worker/beat 任一缺失时自动补拉起。
 
-    仅告警不自动拉起：自动拉起会与 _start_celery_* 的单例防护
-    （pidfile/pgrep）竞争，多实例并发拉起风险大于收益；由运维按告警处置。
+    v6.2 升级（2026-08-18）：从"仅告警"升级为"探活缺失→自动补拉起"。
+    动机：uvicorn --reload 热重载存在时序竞态——旧 reload worker 退出时
+    清理了自己的 Celery 子进程，而新 worker 启动瞬间 pgrep 仍能扫到
+    旧进程（尚未死透）→ 单例防护跳过启动 → Celery 全空停摆，只能重启
+    后端恢复。自动补拉起形成自愈闭环。
+
+    安全性：补拉起走 _start_celery_*，其单例防护（pidfile/pgrep）本身
+    就是防重复的兜底——若进程确实存在则拉起被跳过，不存在重复拉起风险。
+
+    探活前先 reap 本实例 spawn 的子进程（poll）：子进程被 SIGKILL 后
+    若不 reap 会以 <defunct> 僵尸态滞留 PID 表，pgrep 仍匹配其 cmdline
+    → 误判"进程在位"→ 永不补拉起（2026-08-18 实测）。
     """
+    for proc in (_celery_beat_process, _celery_worker_process):
+        if proc is not None:
+            try:
+                proc.poll()  # 非阻塞 reap：已死则回收僵尸，活着无副作用
+            except Exception:  # noqa: BLE001
+                pass
     if not await asyncio.to_thread(_any_beat_process_running):
-        logger.error(
-            "看门狗告警：未检测到 Celery Beat 进程，定时任务将不会触发，"
-            "请检查 logs/celery-beat.log 并重启后端"
-        )
+        logger.warning("看门狗：未检测到 Celery Beat，自动补拉起")
+        await asyncio.to_thread(_start_celery_beat)
     if not await asyncio.to_thread(_any_worker_process_running):
-        logger.error(
-            "看门狗告警：未检测到 Celery Worker 进程，任务将不会被消费，"
-            "请检查 logs/celery-worker.log 并重启后端"
-        )
+        logger.warning("看门狗：未检测到 Celery Worker，自动补拉起")
+        await asyncio.to_thread(_start_celery_worker)
 
 
 async def _celery_watchdog_loop(stop_event: asyncio.Event) -> None:
@@ -792,6 +811,12 @@ def _shutdown_celery_once() -> None:
     if _celery_shutdown_done:
         return
     _celery_shutdown_done = True
+
+    # 工具进程守卫（2026-08-18 修复：此前 _should_skip_exit_hooks 是死代码
+    # 从未被调用，pytest 退出时 atexit 真的 SIGKILL 了宿主机正在运行的
+    # 生产 Celery——conftest 虽设 CLPM_SKIP_EXIT_HOOKS=1 但没人读它）
+    if _should_skip_exit_hooks():
+        return
 
     if _is_production():
         # 生产：celery-beat / celery-worker 由独立容器接管，禁止本进程清理

@@ -211,11 +211,35 @@ def _preload_datasource_config_sync() -> None:
 # 若不预载，settings 中的业务 URL/Token 为空（.env 已移除），导入与远端取数
 # 任务会报 "HISTORY_DATA_API_URL 未配置"。子进程每次重建都会重新预载，
 # 因此 worker 生命周期内的配置变更最多在子进程回收后生效。
-from celery.signals import worker_process_init  # noqa: E402
+from celery.signals import (  # noqa: E402
+    beat_init,
+    worker_process_init,
+    worker_ready,
+)
+
+# 父进程看门狗（防孤儿）：宿主 uvicorn 被 SIGKILL/崩溃时三层退出钩子
+# 均无法执行，Celery 独立进程组滞留；beat/worker 主进程监视宿主
+# （CLPM_PARENT_PID），prefork 子进程监视直接父进程（worker master，
+# 覆盖 master 单独崩溃时 pool 无人派活的瘫痪态），级联自退出。
+from app.tasks.parent_watchdog import (  # noqa: E402
+    install_direct_parent,
+    install_from_env,
+)
+
+
+@beat_init.connect
+def _on_beat_init(**kwargs: object) -> None:
+    install_from_env("beat")
+
+
+@worker_ready.connect
+def _on_worker_ready(**kwargs: object) -> None:
+    install_from_env("worker")
 
 
 @worker_process_init.connect
 def _on_worker_process_init(**kwargs: object) -> None:
+    install_direct_parent("worker-pool")
     try:
         _preload_datasource_config_sync()
         logger.info("worker 子进程已从 sys_config 预载数据源配置")
