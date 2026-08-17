@@ -188,6 +188,11 @@ class RealtimeSubscriber:
             str, dict[str, Any]
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
+        # 低频角色（SP/MODE/PID_*）跨flush持久缓存：上次已知值。
+        # 解决"低频角色没变化→buffer中缺失→flush写NULL"的问题——flush时合并_last_known，
+        # 未在本tick出现的角色取最近已知值，保证TDengine宽表每行非PV字段完整。
+        # 结构: {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
+        self._last_known: dict[str, dict[str, Any]] = {}
         # 断点续传状态（接收点 vs 落库点分离）
         self._last_data_at: float | None = None  # 接收点：最后收到数据时间（epoch 秒，wall clock）
         self._last_flushed_at: float | None = None  # 落库点：最后成功 flush 时间（仅成功后推进）
@@ -548,14 +553,20 @@ class RealtimeSubscriber:
         # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
         loop_part, role = self._parse_tag_code(tag_code)
         if loop_part:
+            role_payload = {
+                "value": item.get("value"),
+                "quality": item.get("quality"),
+                "ts": item.get("collectTime", ""),
+            }
             async with self._buffer_lock:
                 if loop_part not in self._buffer:
                     self._buffer[loop_part] = {}
-                self._buffer[loop_part][role] = {
-                    "value": item.get("value"),
-                    "quality": item.get("quality"),
-                    "ts": item.get("collectTime", ""),
-                }
+                self._buffer[loop_part][role] = role_payload
+                # 同步更新跨flush持久缓存：保留每个角色最近已知值，
+                # 供 flush 时合并进完整行，避免低频角色（SP/MODE/PID_*）写NULL
+                if loop_part not in self._last_known:
+                    self._last_known[loop_part] = {}
+                self._last_known[loop_part][role] = role_payload
 
         # MODE 变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
         # 自动/手动/自控率卡片下次查询拿到最新值，而非等 60s TTL 自然过期。
@@ -1071,7 +1082,11 @@ class RealtimeSubscriber:
         tables_rows: list[dict[str, Any]] = []
 
         for loop_part, roles_data in buffer_copy.items():
-            row = self._build_row(roles_data)
+            # 合并跨flush持久缓存：本tick buffer优先（新值覆盖旧值），
+            # 未出现在本tick中的低频角色（SP/MODE/PID_*）取最近已知值，避免写NULL
+            merged_roles: dict[str, Any] = dict(self._last_known.get(loop_part, {}))
+            merged_roles.update(roles_data)
+            row = self._build_row(merged_roles)
             row_dict = {
                 "ts": row[0],
                 "pv": row[1],
