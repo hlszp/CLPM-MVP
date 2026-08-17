@@ -317,7 +317,7 @@ class TestRunsLatestEndpoint:
     """GET /api/v1/diagnosis/runs/latest（每回路最新诊断概览）。"""
 
     @staticmethod
-    def _row(*, tag: str, run_id, diagnosed: datetime | None):
+    def _row(*, tag: str, run_id, diagnosed: datetime | None, trigger_type: str | None = None):
         from types import SimpleNamespace
 
         return SimpleNamespace(
@@ -331,6 +331,7 @@ class TestRunsLatestEndpoint:
             last_diagnosed_at=diagnosed,
             time_window_start=None,
             time_window_end=None,
+            trigger_type=trigger_type,
         )
 
     def _override_execute(self, client, execute) -> None:
@@ -361,6 +362,7 @@ class TestRunsLatestEndpoint:
         assert items[0]["runId"] == str(rid)
         assert items[0]["primaryCategoryLabel"] == "阀门/执行机构问题"
         assert items[0]["lastDiagnosedAt"] == "2026-08-16T12:00:00"
+        assert items[0]["triggerType"] is None  # 行未带 trigger_type 时安全缺省
         assert items[1]["runId"] is None
         assert items[1]["primaryCategoryLabel"] is None
 
@@ -374,26 +376,40 @@ class TestRunsLatestEndpoint:
         assert resp.status_code == 400
 
     def test_latest_orders_desc_nulls_last(self, client) -> None:
-        """两个 SQL 分支都必须 ORDER BY 诊断时间 DESC NULLS LAST（未诊断垫底）。"""
-        captured: list[str] = []
+        """排序行为：回路按最新诊断时间降序在前，未诊断回路垫底；透出 triggerType。"""
 
         async def _execute(sql, params=None):  # noqa: ARG001
-            captured.append(str(sql))
+            rid_new, rid_old = uuid4(), uuid4()
             rows_r = MagicMock()
-            rows_r.all.return_value = []
+            rows_r.all.return_value = [
+                self._row(
+                    tag="NEW",
+                    run_id=rid_new,
+                    diagnosed=datetime(2026, 8, 18, 6, 0, 0),
+                    trigger_type="SCHEDULED",
+                ),
+                self._row(
+                    tag="OLD",
+                    run_id=rid_old,
+                    diagnosed=datetime(2026, 8, 17, 6, 0, 0),
+                    trigger_type="EVENT",
+                ),
+                self._row(tag="NONE", run_id=None, diagnosed=None),
+            ]
             return rows_r
 
         with mock_current_user(TEST_USERS["admin"]):
             self._override_execute(client, _execute)
-            client.get(
+            resp = client.get(
                 "/api/v1/diagnosis/runs/latest",
                 headers={"Authorization": "Bearer fake-token"},
             )
-            client.get(
-                "/api/v1/diagnosis/runs/latest",
-                headers={"Authorization": "Bearer fake-token"},
-                params={"plantNodeId": str(uuid4())},
-            )
-        assert len(captured) == 2
-        for sql in captured:
-            assert "ORDER BY last_diagnosed_at DESC NULLS LAST" in sql
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        tags = [i["loopTagName"] for i in items]
+        # 已诊断回路按最新诊断时间降序在前，未诊断垫底
+        assert tags == ["NEW", "OLD", "NONE"]
+        assert items[0]["triggerType"] == "SCHEDULED"
+        assert items[0]["triggerTypeLabel"] == "定期诊断"
+        assert items[1]["triggerTypeLabel"] == "事件触发"
+        assert items[2]["triggerType"] is None

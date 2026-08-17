@@ -4,6 +4,7 @@
 - CREATE_EVENT  写入 alert_event 表 + 设置冷却期 + 严重度升级
 - CREATE_TRACKER 写入 action_tracker 表（诊断中心异常跟踪）
 - NOTIFY        发布 Redis pub/sub 通知 + 徽章计数
+- TRIGGER_DIAGNOSIS 发起事件驱动诊断（自动诊断层②，设计文档 §12.4）
 
 调用前已由 evaluator + suppressor 完成"是否触发"判定；dispatcher 仅负责
 "触发后做什么"，且每个 action 独立 try/except，单个动作失败不阻塞其他动作。
@@ -13,14 +14,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import redis_client
 from app.models.alert import AlertEvent
+from app.models.diagnosis_run import DiagnosisRun
 from app.services.alert_rule_engine.evaluator import EvaluationResult, upgrade_severity
 from app.services.alert_rule_engine.suppressor import Suppressor
 
@@ -77,6 +80,9 @@ async def dispatch(
             elif act_type == "NOTIFY":
                 await _notify(rule, loop_id, result, final_severity, created_event_id)
                 outcomes["NOTIFY"] = "published"
+            elif act_type == "TRIGGER_DIAGNOSIS":
+                diagnosis_task_id = await _trigger_diagnosis(rule, loop_id)
+                outcomes["TRIGGER_DIAGNOSIS"] = diagnosis_task_id
         except Exception:  # noqa: BLE001
             logger.warning(
                 "动作执行失败 rule=%s action=%s loop=%s",
@@ -254,3 +260,95 @@ async def _notify(
         await _suppressor.increment_badge(user_ids)
     except Exception:  # noqa: BLE001
         logger.warning("徽章计数异常", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# TRIGGER_DIAGNOSIS：事件驱动诊断（自动诊断层②，设计文档 §12.4）
+# ---------------------------------------------------------------------------
+
+#: 事件诊断防抖窗口：同回路该时长内已有 EVENT run 则跳过
+_EVENT_DIAGNOSIS_DEDUP_HOURS = 6
+
+#: 事件诊断窗口钳制：下限保证证据量，上限控数据量
+_EVENT_WINDOW_MIN_S = 3600
+_EVENT_WINDOW_MAX_S = 7 * 86400
+
+
+async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
+    """预警命中 → 自动发起该回路诊断（trigger_type=EVENT）。
+
+    - 诊断窗口 = 规则 condition.windowSeconds，钳制 [1h, 7d]
+    - 防抖：同回路 6h 内已有 EVENT 诊断则跳过（幂等，防连环触发）
+    - 独立 TaskTracker 建单，任务失败不影响其他动作
+
+    Returns:
+        诊断任务 ID；防抖跳过/失败返回 None。
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.schemas.task import TaskType
+    from app.services.task_tracker import create_task
+
+    # 防抖：最近 EVENT 诊断
+    async with AsyncSessionLocal() as db:
+        recent = await db.execute(
+            select(DiagnosisRun.created_at)
+            .where(
+                DiagnosisRun.loop_id == loop_id,
+                DiagnosisRun.trigger_type == "EVENT",
+            )
+            .order_by(DiagnosisRun.created_at.desc())
+            .limit(1)
+        )
+        last_at = recent.scalar_one_or_none()
+    if last_at is not None:
+        last_naive = last_at if last_at.tzinfo is None else last_at.replace(tzinfo=None)
+        now_naive = datetime.now(UTC).replace(tzinfo=None)
+        if (now_naive - last_naive) < timedelta(hours=_EVENT_DIAGNOSIS_DEDUP_HOURS):
+            logger.info(
+                "事件诊断防抖跳过: loop=%s 最近 EVENT 诊断 %s（%dh 内）",
+                loop_id,
+                last_at,
+                _EVENT_DIAGNOSIS_DEDUP_HOURS,
+            )
+            return None
+
+    # 诊断窗口：规则时效窗口钳制 [1h, 7d]
+    dsl = rule.get("dsl", {})
+    window_s = int(dsl.get("condition", {}).get("windowSeconds", 1800))
+    window_s = max(_EVENT_WINDOW_MIN_S, min(window_s, _EVENT_WINDOW_MAX_S))
+    end = datetime.now(UTC).replace(tzinfo=None)
+    start = end - timedelta(seconds=window_s)
+
+    rule_code = rule.get("ruleCode", "rule")
+    task_id = str(uuid4())
+    await create_task(
+        task_type=TaskType.DIAGNOSIS,
+        created_by=f"alert:{rule_code}",
+        created_by_id="00000000-0000-0000-0000-000000000001",
+        loop_ids=[loop_id],
+        triggered_by="event",
+        title=f"事件触发诊断（{rule.get('ruleName', rule_code)}）",
+    )
+
+    from app.tasks.diagnosis_v2 import run_diagnosis_batch
+
+    celery_result = run_diagnosis_batch.delay(
+        loop_ids=[loop_id],
+        start=start.isoformat(),
+        end=end.isoformat(),
+        task_id=task_id,
+        operator_group="full",
+        triggered_by=f"alert:{rule_code}",
+        trigger_type="EVENT",
+    )
+    from app.services.task_tracker import set_celery_task_ids
+
+    await set_celery_task_ids(task_id, [celery_result.id])
+    logger.info(
+        "事件驱动诊断已发起: loop=%s rule=%s window=%ds taskId=%s",
+        loop_id,
+        rule_code,
+        window_s,
+        task_id,
+    )
+    return task_id

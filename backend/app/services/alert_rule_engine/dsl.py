@@ -24,7 +24,7 @@ OPERATORS = frozenset({">", ">=", "<", "<=", "==", "!=", "IN", "NOT_IN", "RATE_O
 SEVERITIES = frozenset({"INFO", "WARN", "ERROR", "CRITICAL"})
 CONFIDENCE_LEVELS = frozenset({"A", "B", "C", "D", "E"})
 CONFIDENCE_ACTIONS = frozenset({"SUPPRESS", "DOWNGRADE"})
-ACTION_TYPES = frozenset({"CREATE_EVENT", "CREATE_TRACKER", "NOTIFY"})
+ACTION_TYPES = frozenset({"CREATE_EVENT", "CREATE_TRACKER", "NOTIFY", "TRIGGER_DIAGNOSIS"})
 STATISTICS = frozenset({"MEAN", "STDDEV", "P95", "P99", "MIN", "MAX"})
 DEVIATION_TYPES = frozenset({"ABSOLUTE", "RELATIVE", "SIGMA"})
 BASELINE_TYPES = frozenset({"STATIC", "HISTORICAL", "RULE_BASED"})

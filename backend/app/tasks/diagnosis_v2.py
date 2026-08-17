@@ -44,10 +44,16 @@ def run_diagnosis_batch(
     operator_group: str = "full",
     triggered_by: str = "user",
     operators: list[str] | None = None,
+    trigger_type: str = "MANUAL",
 ) -> dict:
-    """批量诊断入口（同步壳，异步执行）。operators=单算子细选白名单。"""
+    """批量诊断入口（同步壳，异步执行）。
+
+    operators=单算子细选白名单；trigger_type=MANUAL/SCHEDULED/EVENT（§12）。
+    """
     return self.run_async(
-        _do_run_batch(loop_ids, start, end, task_id, operator_group, triggered_by, operators)
+        _do_run_batch(
+            loop_ids, start, end, task_id, operator_group, triggered_by, operators, trigger_type
+        )
     )
 
 
@@ -59,6 +65,7 @@ async def _do_run_batch(
     operator_group: str,
     triggered_by: str,
     operators: list[str] | None = None,
+    trigger_type: str = "MANUAL",
 ) -> dict:
     start_dt = datetime.fromisoformat(start)
     end_dt = datetime.fromisoformat(end)
@@ -100,6 +107,7 @@ async def _do_run_batch(
                     triggered_by=triggered_by,
                     operator_group=operator_group,
                     operators=operators,
+                    trigger_type=trigger_type,
                     progress_cb=_progress,
                 )
                 if run is None:
@@ -109,7 +117,9 @@ async def _do_run_batch(
         except Exception as exc:  # noqa: BLE001
             logger.exception("诊断回路 %s 执行失败: %s", loop_id, exc)
             failed.append({"loopId": loop_id, "error": str(exc)})
-            await _record_failed_run(loop_id, start_dt, end_dt, task_id, triggered_by, str(exc))
+            await _record_failed_run(
+                loop_id, start_dt, end_dt, task_id, triggered_by, str(exc), trigger_type
+            )
 
         await update_status(
             task_id,
@@ -140,6 +150,7 @@ async def _record_failed_run(
     task_id: str,
     triggered_by: str,
     error: str,
+    trigger_type: str = "MANUAL",
 ) -> None:
     """失败回路留痕：status=FAILED 的 run 行（回路存在时）。"""
     try:
@@ -156,6 +167,7 @@ async def _record_failed_run(
                     task_id=task_id,
                     loop_id=loop_id,
                     triggered_by=triggered_by,
+                    trigger_type=trigger_type,
                     time_window_start=start_dt,
                     time_window_end=end_dt,
                     status="FAILED",

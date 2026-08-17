@@ -377,12 +377,14 @@ async def run_diagnosis_for_loop(
     triggered_by: str = "system",
     operator_group: str = "full",
     operators: list[str] | None = None,
+    trigger_type: str = "MANUAL",
     progress_cb: ProgressCb | None = None,
 ) -> DiagnosisRun | None:
     """单回路一次诊断：返回落库后的 DiagnosisRun；回路不存在返回 None。
 
     operator_group: full/fast；operators 非空时按单算子细选白名单执行
     （落库 operator_group 记为 custom）。
+    trigger_type: MANUAL/SCHEDULED/EVENT（§12 自动诊断三层触发）。
     """
 
     async def _report(frac: float, stage: str) -> None:
@@ -554,6 +556,7 @@ async def run_diagnosis_for_loop(
         task_id=task_id,
         loop_id=str(loop_id),
         triggered_by=triggered_by,
+        trigger_type=trigger_type,
         time_window_start=start,
         time_window_end=end,
         operator_group="custom" if operators else operator_group,

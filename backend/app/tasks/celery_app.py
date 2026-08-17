@@ -137,6 +137,7 @@ import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
 
 # import app.tasks.diagnosis_engine  # noqa: E402, F401
+import app.tasks.diagnosis_schedule  # noqa: E402, F401
 import app.tasks.diagnosis_v2  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401

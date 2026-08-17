@@ -33,6 +33,8 @@ class DiagnosisRun(Base, TimestampMixin):
         nullable=False,
     )
     triggered_by: Mapped[str] = mapped_column(String(64), nullable=False, server_default="system")
+    #: 触发类型（§12 自动诊断）：MANUAL 手动 / SCHEDULED 分级定时 / EVENT 预警事件
+    trigger_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="MANUAL")
     time_window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     time_window_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     operator_group: Mapped[str] = mapped_column(String(8), nullable=False, server_default="full")
@@ -70,6 +72,10 @@ class DiagnosisRun(Base, TimestampMixin):
         CheckConstraint(
             "severity IS NULL OR severity IN ('HIGH', 'MEDIUM', 'LOW')",
             name="ck_diagnosis_run_severity",
+        ),
+        CheckConstraint(
+            "trigger_type IN ('MANUAL', 'SCHEDULED', 'EVENT')",
+            name="ck_diagnosis_run_trigger_type",
         ),
         Index("idx_diagnosis_run_loop_created", "loop_id", "created_at"),
         Index("idx_diagnosis_run_category", "primary_category"),

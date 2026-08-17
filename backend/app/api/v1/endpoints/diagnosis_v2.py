@@ -56,6 +56,9 @@ _CATEGORY_LABELS = {
     "DATA_INSUFFICIENT": "数据不足/无法判定",
 }
 
+#: 触发类型标签（§12 自动诊断：MANUAL 手动 / SCHEDULED 分级定时 / EVENT 预警事件）
+_TRIGGER_TYPE_LABELS = {"MANUAL": "手动诊断", "SCHEDULED": "定期诊断", "EVENT": "事件触发"}
+
 
 def _utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -114,6 +117,8 @@ def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
         "loopId": str(row.loop_id),
         "loopTagName": loop_tag,
         "triggeredBy": row.triggered_by,
+        "triggerType": row.trigger_type,
+        "triggerTypeLabel": _TRIGGER_TYPE_LABELS.get(row.trigger_type, row.trigger_type),
         "timeWindowStart": row.time_window_start.isoformat() if row.time_window_start else None,
         "timeWindowEnd": row.time_window_end.isoformat() if row.time_window_end else None,
         "operatorGroup": row.operator_group,
@@ -322,7 +327,7 @@ async def get_latest_runs_per_loop(
                r.id AS run_id, r.primary_category, r.primary_confidence,
                r.severity, r.status,
                COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
-               r.time_window_start, r.time_window_end
+               r.time_window_start, r.time_window_end, r.trigger_type
         FROM loop_ledger ll
         LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
@@ -346,7 +351,7 @@ async def get_latest_runs_per_loop(
                    r.id AS run_id, r.primary_category, r.primary_confidence,
                    r.severity, r.status,
                    COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
-                   r.time_window_start, r.time_window_end
+                   r.time_window_start, r.time_window_end, r.trigger_type
             FROM loop_ledger ll
             LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
@@ -394,6 +399,10 @@ async def get_latest_runs_per_loop(
                 "runId": str(r.run_id) if r.run_id else None,
                 # 该回路第几次结论（1=最新, 2=次新；未诊断回路为 None）
                 "runSeq": seq_counter[lid] if r.run_id else None,
+                "triggerType": r.trigger_type if r.run_id else None,
+                "triggerTypeLabel": (
+                    _TRIGGER_TYPE_LABELS.get(r.trigger_type or "", "") if r.run_id else None
+                ),
                 "primaryCategory": r.primary_category,
                 "primaryCategoryLabel": _CATEGORY_LABELS.get(r.primary_category or "", None)
                 if r.run_id
