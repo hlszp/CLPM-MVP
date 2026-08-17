@@ -243,11 +243,11 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
 // ============ 等级元数据 ============
 /** 5 级性能定级中文标签（颜色走 levelColor 单源） */
 const LEVEL_META: Record<number, { label: string }> = {
-  1: { label: '一级' },
-  2: { label: '二级' },
-  3: { label: '三级' },
-  4: { label: '四级' },
-  5: { label: '五级' },
+  1: { label: '优秀' },
+  2: { label: '良好' },
+  3: { label: '合格' },
+  4: { label: '警告' },
+  5: { label: '不合格' },
 };
 
 /**

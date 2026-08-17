@@ -44,11 +44,11 @@ const list = ref<MetricApi.GradingThresholdItem[]>([]);
 
 /** 5 级定级元数据（名称、中文等级；颜色走 levelColor 单源） */
 const LEVEL_META: Record<number, { cnLabel: string; name: string }> = {
-  1: { name: 'EXCELLENT', cnLabel: '一级' },
-  2: { name: 'GOOD', cnLabel: '二级' },
-  3: { name: 'FAIR', cnLabel: '三级' },
-  4: { name: 'WARNING', cnLabel: '四级' },
-  5: { name: 'POOR', cnLabel: '五级' },
+  1: { name: 'EXCELLENT', cnLabel: '优秀' },
+  2: { name: 'GOOD', cnLabel: '良好' },
+  3: { name: 'FAIR', cnLabel: '合格' },
+  4: { name: 'WARNING', cnLabel: '警告' },
+  5: { name: 'POOR', cnLabel: '不合格' },
 };
 
 /**
@@ -176,7 +176,7 @@ async function loadList() {
         };
       }
     }
-    // 按 level 降序（一级在上）
+    // 按 level 降序（优秀在上）
     list.value.sort((a, b) => a.level - b.level);
   } catch {
     // 错误已由拦截器处理

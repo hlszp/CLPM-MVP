@@ -148,7 +148,7 @@ const CONFIDENCE_LABEL_MAP: Record<string, string> = {
   E: 'E 不足',
 };
 
-/** 评估等级颜色（一级~五级） */
+/** 评估等级颜色（优秀/良好/合格/警告/不合格） */
 const GRADE_COLOR_MAP: Record<number, string> = {
   1: 'green',
   2: 'blue',
@@ -158,11 +158,11 @@ const GRADE_COLOR_MAP: Record<number, string> = {
 };
 
 const GRADE_LABEL_MAP: Record<number, string> = {
-  1: '一级',
-  2: '二级',
-  3: '三级',
-  4: '四级',
-  5: '五级',
+  1: '优秀',
+  2: '良好',
+  3: '合格',
+  4: '警告',
+  5: '不合格',
 };
 
 /** 控制类型筛选选项 */
@@ -452,7 +452,7 @@ const { renderEcharts: renderGradeChart } = useEcharts(gradeChartRef);
 /** 渲染等级分布饼状图 */
 function updateGradeChart() {
   const grades = [1, 2, 3, 4, 5];
-  const labels = ['一级', '二级', '三级', '四级', '五级'];
+  const labels = ['优秀', '良好', '合格', '警告', '不合格'];
   const data = grades.map((g) => ({
     value: gradeStats.value[g] || 0,
     itemStyle: { color: gradeCardColor(g) },
