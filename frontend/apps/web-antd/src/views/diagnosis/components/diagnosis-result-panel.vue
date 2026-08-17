@@ -9,9 +9,10 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import dayjs from 'dayjs';
 
 import {
   Alert,
@@ -77,6 +78,37 @@ watch(
   },
   { immediate: true },
 );
+
+/** 断流段定位：质量码算子 bad_segments（窗口偏移秒）→ 本地钟点时段 */
+const badSegments = computed(() => {
+  const segs = (
+    props.detail.operatorResults?.quality_code_rules
+      ?.features as Record<string, any> | undefined
+  )?.bad_segments;
+  if (!Array.isArray(segs) || segs.length === 0) return [];
+  const base = props.detail.timeWindowStart
+    ? new Date(props.detail.timeWindowStart).getTime()
+    : null;
+  return segs.map((s: any) => {
+    const startS = Number(s.start_offset_s ?? 0);
+    const endS = Number(s.end_offset_s ?? startS);
+    const durS = Math.max(1, endS - startS);
+    const fmt = (off: number) =>
+      base == null ? '—' : dayjs(base + off * 1000).format('MM-DD HH:mm');
+    return {
+      points: s.points ?? 0,
+      startText: fmt(startS),
+      endText: fmt(endS),
+      offsetText: `${Math.round(startS / 60)}~${Math.round(endS / 60)} min`,
+      duration:
+        durS < 60
+          ? `${durS.toFixed(0)} 秒`
+          : durS < 3600
+            ? `${(durS / 60).toFixed(1)} 分钟`
+            : `${(durS / 3600).toFixed(1)} 小时`,
+    };
+  });
+});
 
 /** 证据链：全部算子的特征值行 */
 const featureRows = ref<
@@ -265,6 +297,29 @@ watch(isDark, () => {
       <Tag v-for="s in symptomRows" :key="s.label" color="default">
         {{ s.label }} · {{ confPercent(s.confidence) }}
       </Tag>
+    </div>
+
+    <!-- ③+ 数据质量行：门禁指标（诊断可信度前提）+ 断流时段定位 -->
+    <div
+      v-if="detail.dataGate"
+      class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-solid border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/60"
+    >
+      <span class="font-medium">数据质量 {{ detail.dataGate.confidenceLevel }} 级</span>
+      <span>点数 {{ detail.dataGate.pointCount.toLocaleString() }}/{{ detail.dataGate.expectedPoints.toLocaleString() }}</span>
+      <span>有效 {{ (detail.dataGate.validRate * 100).toFixed(1) }}%</span>
+      <span>缺口 {{ (detail.dataGate.gapRatio * 100).toFixed(1) }}%</span>
+      <template v-if="badSegments.length">
+        <span class="font-medium text-red-500">断流时段</span>
+        <Tooltip
+          v-for="(seg, i) in badSegments"
+          :key="i"
+          :title="`窗口内偏移 ${seg.offsetText}；${seg.points} 点`"
+        >
+          <Tag color="red" :bordered="false">
+            {{ seg.startText }}~{{ seg.endText }}（{{ seg.duration }}）
+          </Tag>
+        </Tooltip>
+      </template>
     </div>
 
     <!-- ④ 处置建议区（R1-R5 排序由后端给出） -->
