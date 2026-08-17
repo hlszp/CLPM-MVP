@@ -133,3 +133,25 @@ class TestTriggerTypePassthrough:
         assert _TRIGGER_TYPE_LABELS["MANUAL"] == "手动诊断"
         assert _TRIGGER_TYPE_LABELS["SCHEDULED"] == "定期诊断"
         assert _TRIGGER_TYPE_LABELS["EVENT"] == "事件触发"
+
+
+class TestTaskSelfBinding:
+    """回归：任务装饰器缺 bind=True 时 Celery 真实调用抛 TypeError
+    （2026-08-18 手动 invoke 实测暴露；走 apply() 走完整绑定链路）。"""
+
+    def test_run_daily_binds_self(self) -> None:
+        from app.tasks import diagnosis_schedule
+
+        with patch.object(
+            diagnosis_schedule.AsyncTask, "run_async", return_value={"level": 1}
+        ) as mock_run:
+            result = diagnosis_schedule.run_daily.apply().get()
+        assert result == {"level": 1}
+        mock_run.assert_called_once()
+
+    def test_run_weekly_binds_self(self) -> None:
+        from app.tasks import diagnosis_schedule
+
+        with patch.object(diagnosis_schedule.AsyncTask, "run_async", return_value={"level": 2}):
+            result = diagnosis_schedule.run_weekly.apply().get()
+        assert result == {"level": 2}

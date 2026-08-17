@@ -152,13 +152,13 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
     }
 
 
-@celery_app.task(name="app.tasks.diagnosis_schedule.run_daily", base=AsyncTask)
+@celery_app.task(name="app.tasks.diagnosis_schedule.run_daily", bind=True, base=AsyncTask)
 def run_daily(self: AsyncTask) -> dict:
     """每日 01:10：1 级关键回路，近 24h 窗口。"""
     return self.run_async(_run_scheduled(1, timedelta(hours=24)))
 
 
-@celery_app.task(name="app.tasks.diagnosis_schedule.run_weekly", base=AsyncTask)
+@celery_app.task(name="app.tasks.diagnosis_schedule.run_weekly", bind=True, base=AsyncTask)
 def run_weekly(self: AsyncTask) -> dict:
     """每周日 02:10：2 级重要回路，近 7d 窗口。"""
     return self.run_async(_run_scheduled(2, timedelta(days=7)))
