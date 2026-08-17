@@ -25,6 +25,7 @@ import {
   Progress,
   RangePicker,
   Segmented,
+  Select,
   Spin,
   Table,
   Tree,
@@ -94,7 +95,11 @@ function handlePlantTreeSelect(keys: (number | string)[]): void {
 const loopItems = ref<LoopApi.LoopListItem[]>([]);
 const loopLoading = ref(false);
 const loopKeyword = ref('');
+/** 批量诊断回路上限（行1 多选框展示约束） */
+const MAX_SELECTED_LOOPS = 10;
 const selectedLoopIds = ref<string[]>([]);
+/** 跨装置回路名称缓存：切换装置树后仍能显示已选回路的位号/名称 */
+const loopCache = ref(new Map<string, LoopApi.LoopListItem>());
 
 const filteredLoops = computed(() => {
   const kw = loopKeyword.value.trim().toLowerCase();
@@ -114,6 +119,7 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
   try {
     const res = await getLoopListApi(params);
     loopItems.value = res.items;
+    for (const l of res.items) loopCache.value.set(l.loopId, l);
   } catch (error) {
     loopItems.value = [];
     const resp = (
@@ -133,15 +139,23 @@ function toggleLoop(loopId: string): void {
   const idx = selectedLoopIds.value.indexOf(loopId);
   if (idx >= 0) {
     selectedLoopIds.value.splice(idx, 1);
+  } else if (selectedLoopIds.value.length >= MAX_SELECTED_LOOPS) {
+    message.warning(`最多同时选择 ${MAX_SELECTED_LOOPS} 个回路`);
   } else {
     selectedLoopIds.value.push(loopId);
   }
 }
 
-const selectedLoopNames = computed(() =>
-  selectedLoopIds.value
-    .map((id) => loopItems.value.find((l) => l.loopId === id)?.tagName ?? id)
-    .join('、'),
+/** 行1 展示：选中回路（位号+名称；跨装置从缓存取名称） */
+const selectedLoopChips = computed(() =>
+  selectedLoopIds.value.map((id) => {
+    const l = loopCache.value.get(id);
+    return {
+      loopId: id,
+      tagName: l?.tagName ?? id,
+      description: l?.description ?? '',
+    };
+  }),
 );
 
 // ===== 配置：时间范围（小时粒度） =====
@@ -468,7 +482,42 @@ onMounted(() => {
 
       <!-- ===== 右主区：配置 + 结果 ===== -->
       <div class="diag-main">
-        <!-- 配置区 -->
+        <!-- ===== 回路诊断界面（勾选回路后显示；未勾选时下方显示最新诊断概览） ===== -->
+        <template v-if="selectedLoopIds.length > 0">
+        <!-- 行1：选中回路（多回路 → 多选框，点击可移除；上限 10 个） -->
+        <Card class="mb-3" size="small">
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span class="text-xs font-medium text-neutral-500">选中回路</span>
+            <template v-if="selectedLoopChips.length === 1">
+              <span class="text-sm font-semibold">
+                {{ selectedLoopChips[0]!.tagName }}
+              </span>
+              <span
+                class="max-w-480px truncate text-xs text-neutral-400"
+                :title="selectedLoopChips[0]!.description"
+              >
+                {{ selectedLoopChips[0]!.description || '—' }}
+              </span>
+            </template>
+            <template v-else>
+              <Checkbox
+                v-for="c in selectedLoopChips"
+                :key="c.loopId"
+                :checked="true"
+                class="diag-loop-chip"
+                @click.prevent="toggleLoop(c.loopId)"
+              >
+                <span :title="c.description">{{ c.tagName }}</span>
+              </Checkbox>
+            </template>
+            <span class="ml-auto text-xs text-neutral-400">
+              {{ selectedLoopIds.length }}/{{ MAX_SELECTED_LOOPS }}
+              {{ selectedLoopChips.length > 1 ? '· 点击勾选框移除' : '' }}
+            </span>
+          </div>
+        </Card>
+
+        <!-- 行2：筛选条件（时间窗 + 算子下拉多选）+ 发起诊断 -->
         <Card class="mb-4" size="small">
           <div class="flex flex-wrap items-center gap-3">
             <Segmented
@@ -495,24 +544,35 @@ onMounted(() => {
             >
               需起&lt;止且跨度 ≤31 天
             </span>
-            <span class="text-xs text-neutral-500">算子</span>
-            <Checkbox.Group
+            <Select
               v-model:value="checkedOperators"
+              :dropdown-match-select-width="false"
               :options="operatorOptions"
-              class="diag-operator-checks"
+              class="diag-operator-select"
+              mode="multiple"
+              placeholder="选择算子（默认全量）"
             >
-              <template #label="{ label }">
-                <span :title="label">{{ label }}</span>
+              <template #dropdownRender="{ menuNode: menu }">
+                <component :is="menu" />
+                <div class="diag-select-actions">
+                  <button type="button" @mousedown.prevent @click="checkAllOperators">
+                    全选
+                  </button>
+                  <button type="button" @mousedown.prevent @click="checkFastGroup">
+                    快速组
+                  </button>
+                  <button
+                    type="button"
+                    @mousedown.prevent
+                    @click="checkedOperators = []"
+                  >
+                    清空
+                  </button>
+                </div>
               </template>
-            </Checkbox.Group>
-            <button class="diag-quick-btn" type="button" @click="checkAllOperators">
-              全选
-            </button>
-            <button class="diag-quick-btn" type="button" @click="checkFastGroup">
-              快速组
-            </button>
+            </Select>
             <span class="text-xs text-neutral-400">
-              {{ checkedOperators.length }}/{{ operatorCatalog.length }}
+              算子 {{ checkedOperators.length }}/{{ operatorCatalog.length }}
               {{ allOperatorsChecked ? '（全量）' : '（细选）' }}
             </span>
             <Button
@@ -523,16 +583,6 @@ onMounted(() => {
             >
               发起诊断
             </Button>
-            <span v-if="selectedLoopIds.length === 0" class="text-xs text-neutral-400">
-              先在左侧勾选回路
-            </span>
-            <span
-              v-else
-              class="max-w-360px truncate text-xs text-neutral-500"
-              :title="selectedLoopNames"
-            >
-              已选 {{ selectedLoopIds.length }} 个：{{ selectedLoopNames }}
-            </span>
           </div>
           <div v-if="runner.running.value || runner.progress.value > 0" class="mt-3">
             <Progress
@@ -549,8 +599,69 @@ onMounted(() => {
           </div>
         </Card>
 
-        <!-- 最新诊断概览（跟随装置树选择；点击行查看结论详情） -->
-        <Card class="mb-4" size="small">
+        <!-- 行3+：诊断结果 → 详情/处置建议/证据链 -->
+        <ClpmDataCanvas
+          :empty="runner.resultItems.value.length === 0"
+          empty-text="发起诊断后在此查看结果"
+          class="mb-4"
+        >
+          <Card size="small" title="诊断结果">
+            <Table
+              :columns="resultColumns"
+              :custom-row="
+                (record: DiagnosisApi.RunListItem) => ({
+                  onClick: () => loadDetail(record.id),
+                })
+              "
+              :data-source="runner.resultItems.value"
+              :pagination="false"
+              :row-class-name="
+                (record: DiagnosisApi.RunListItem) =>
+                  record.id === selectedRunId ? 'diag-row-selected' : ''
+              "
+              row-key="id"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.dataIndex === 'status'">
+                  {{
+                    record.status === 'SUCCESS'
+                      ? '完成'
+                      : record.status === 'PARTIAL'
+                        ? '部分完成'
+                        : record.status
+                  }}
+                </template>
+                <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
+                  <span
+                    v-if="record.primaryCategoryLabel"
+                    :style="{
+                      color: catColor(record as DiagnosisApi.RunListItem),
+                    }"
+                    class="font-medium"
+                  >
+                    {{ record.primaryCategoryLabel }}
+                  </span>
+                  <span v-else class="text-neutral-400">—</span>
+                </template>
+                <template v-else-if="column.dataIndex === 'primaryConfidence'">
+                  {{ confOf(record as DiagnosisApi.RunListItem) }}
+                </template>
+                <template v-else-if="column.dataIndex === 'severity'">
+                  {{
+                    record.severity
+                      ? (SEVERITY_TEXT[record.severity] ?? record.severity)
+                      : '—'
+                  }}
+                </template>
+              </template>
+            </Table>
+          </Card>
+        </ClpmDataCanvas>
+        </template>
+
+        <!-- ===== 最新诊断概览（未勾选回路时显示；按诊断时间降序、未诊断垫底） ===== -->
+        <Card v-else class="mb-4" size="small">
           <template #title>
             最新诊断概览
             <span class="text-xs font-normal text-neutral-400">
@@ -613,66 +724,6 @@ onMounted(() => {
             </template>
           </Table>
         </Card>
-
-        <!-- 结果区（本次发起的诊断结果） -->
-        <ClpmDataCanvas
-          :empty="runner.resultItems.value.length === 0"
-          empty-text="发起诊断后在此查看结果"
-          class="mb-4"
-        >
-          <Card size="small" title="诊断结果">
-            <Table
-              :columns="resultColumns"
-              :custom-row="
-                (record: DiagnosisApi.RunListItem) => ({
-                  onClick: () => loadDetail(record.id),
-                })
-              "
-              :data-source="runner.resultItems.value"
-              :pagination="false"
-              :row-class-name="
-                (record: DiagnosisApi.RunListItem) =>
-                  record.id === selectedRunId ? 'diag-row-selected' : ''
-              "
-              row-key="id"
-              size="small"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.dataIndex === 'status'">
-                  {{
-                    record.status === 'SUCCESS'
-                      ? '完成'
-                      : record.status === 'PARTIAL'
-                        ? '部分完成'
-                        : record.status
-                  }}
-                </template>
-                <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
-                  <span
-                    v-if="record.primaryCategoryLabel"
-                    :style="{
-                      color: catColor(record as DiagnosisApi.RunListItem),
-                    }"
-                    class="font-medium"
-                  >
-                    {{ record.primaryCategoryLabel }}
-                  </span>
-                  <span v-else class="text-neutral-400">—</span>
-                </template>
-                <template v-else-if="column.dataIndex === 'primaryConfidence'">
-                  {{ confOf(record as DiagnosisApi.RunListItem) }}
-                </template>
-                <template v-else-if="column.dataIndex === 'severity'">
-                  {{
-                    record.severity
-                      ? (SEVERITY_TEXT[record.severity] ?? record.severity)
-                      : '—'
-                  }}
-                </template>
-              </template>
-            </Table>
-          </Card>
-        </ClpmDataCanvas>
 
         <!-- 结论详情（结果表/概览表点击行加载） -->
         <Card v-if="selectedDetail || detailLoading" size="small" title="结论详情">
@@ -811,25 +862,15 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 算子勾选组：换行平铺（工业高密度） */
-.diag-operator-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
+/* 算子下拉多选（行2 筛选条件） */
+.diag-operator-select {
+  flex: 0 1 380px;
+  min-width: 240px;
+}
+
+/* 行1 回路多选框 chips */
+.diag-loop-chip {
   font-size: 12px;
-}
-
-.diag-quick-btn {
-  padding: 0 6px;
-  font-size: 11px;
-  color: hsl(var(--primary));
-  cursor: pointer;
-  background: none;
-  border: none;
-}
-
-.diag-quick-btn:hover {
-  text-decoration: underline;
 }
 
 :deep(.diag-row-selected) {
@@ -845,5 +886,29 @@ onMounted(() => {
   td:last-child {
     border-right: 1px solid hsl(var(--primary) / 30%);
   }
+}
+</style>
+
+<style>
+/* 算子下拉底部快捷操作（下拉面板挂载于 body，需非 scoped 样式） */
+.diag-select-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 5px 12px;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.diag-select-actions button {
+  padding: 0 4px;
+  font-size: 12px;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.diag-select-actions button:hover {
+  text-decoration: underline;
 }
 </style>
