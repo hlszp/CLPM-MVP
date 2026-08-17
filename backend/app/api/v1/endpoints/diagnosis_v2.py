@@ -310,12 +310,13 @@ async def get_latest_runs_per_loop(
                r.time_window_start, r.time_window_end
         FROM loop_ledger ll
         LEFT JOIN LATERAL (
-            SELECT * FROM diagnosis_run dr
-            WHERE dr.loop_id = ll.id
-            ORDER BY dr.created_at DESC LIMIT 1
-        ) r ON true
-        WHERE ll.is_active = true
-        """
+                SELECT * FROM diagnosis_run dr
+                WHERE dr.loop_id = ll.id
+                ORDER BY dr.created_at DESC LIMIT 1
+            ) r ON true
+            WHERE ll.is_active = true
+            ORDER BY last_diagnosed_at DESC NULLS LAST, ll.tag_name
+            """
     )
     params: dict[str, str] = {}
     if plantNodeId:
@@ -339,6 +340,7 @@ async def get_latest_runs_per_loop(
                 ORDER BY dr.created_at DESC LIMIT 1
             ) r ON true
             WHERE ll.is_active = true AND ll.unit_id IN (SELECT id FROM node_tree)
+            ORDER BY last_diagnosed_at DESC NULLS LAST, ll.tag_name
             """
         )
         params["root_id"] = plantNodeId

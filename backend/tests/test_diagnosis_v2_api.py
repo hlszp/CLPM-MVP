@@ -277,3 +277,89 @@ class TestRunsEndpoints:
         assert "主分类" in resp.text
         assert "仪表/测量问题" in resp.text
         assert resp.headers["content-type"].startswith("text/csv")
+
+
+class TestRunsLatestEndpoint:
+    """GET /api/v1/diagnosis/runs/latest（每回路最新诊断概览）。"""
+
+    @staticmethod
+    def _row(*, tag: str, run_id, diagnosed: datetime | None):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            loop_id=uuid4(),
+            tag_name=tag,
+            run_id=run_id,
+            primary_category="VALVE" if run_id else None,
+            primary_confidence=0.7 if run_id else None,
+            severity="LOW" if run_id else None,
+            status="SUCCESS" if run_id else None,
+            last_diagnosed_at=diagnosed,
+            time_window_start=None,
+            time_window_end=None,
+        )
+
+    def _override_execute(self, client, execute) -> None:
+        from app.core.db import get_db
+
+        mock_db = MagicMock()
+        mock_db.execute = execute
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+
+    def test_latest_serialization_with_undiagnosed(self, client) -> None:
+        """已诊断行带结论标签；未诊断回路 runId=null 一并返回。"""
+        rid = uuid4()
+        rows = [
+            self._row(tag="L1", run_id=rid, diagnosed=datetime(2026, 8, 16, 12, 0, 0)),
+            self._row(tag="L2", run_id=None, diagnosed=None),
+        ]
+        rows_r = MagicMock()
+        rows_r.all.return_value = rows
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_execute(client, _seq_execute([rows_r]))
+            resp = client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        assert resp.json()["data"]["total"] == 2
+        assert items[0]["runId"] == str(rid)
+        assert items[0]["primaryCategoryLabel"] == "阀门/执行机构问题"
+        assert items[0]["lastDiagnosedAt"] == "2026-08-16T12:00:00"
+        assert items[1]["runId"] is None
+        assert items[1]["primaryCategoryLabel"] is None
+
+    def test_latest_invalid_plant_node_id_rejected(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"plantNodeId": "not-a-uuid"},
+            )
+        assert resp.status_code == 400
+
+    def test_latest_orders_desc_nulls_last(self, client) -> None:
+        """两个 SQL 分支都必须 ORDER BY 诊断时间 DESC NULLS LAST（未诊断垫底）。"""
+        captured: list[str] = []
+
+        async def _execute(sql, params=None):  # noqa: ARG001
+            captured.append(str(sql))
+            rows_r = MagicMock()
+            rows_r.all.return_value = []
+            return rows_r
+
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_execute(client, _execute)
+            client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+            client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"plantNodeId": str(uuid4())},
+            )
+        assert len(captured) == 2
+        for sql in captured:
+            assert "ORDER BY last_diagnosed_at DESC NULLS LAST" in sql
