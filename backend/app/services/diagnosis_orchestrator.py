@@ -486,6 +486,14 @@ async def run_diagnosis_for_loop(
     # ---- 算子执行 + 融合 + 分类 ----
     if gate.passed:
         op_rows = [d for d in aligned if d.get("op") is not None]
+        # 原始序列相对秒（与 pv_quality 同长度/同基准）：供质量码算子把
+        # Bad 段索引映射为窗口内偏移秒（前端结合 timeWindowStart 展示
+        # 本地钟点）；对齐轴 timestamps 长度不含 BAD 行，无法直接复用
+        if raw_series is not None and len(raw_series.timestamps) > 0:
+            raw_ts_sec = _ts_list_to_seconds(list(raw_series.timestamps))
+            pv_quality_ts = raw_ts_sec - float(np.nanmin(raw_ts_sec))
+        else:
+            pv_quality_ts = np.array([], dtype=float)
         signals: dict[str, np.ndarray] = {
             "pv": np.array([d["pv"] for d in aligned if d.get("pv") is not None], dtype=float),
             "sp": np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float),
@@ -494,6 +502,7 @@ async def run_diagnosis_for_loop(
             # 与引擎"仅自控模式计分子"语义一致且保证索引对齐）
             "mode": np.array([d.get("mode") for d in op_rows], dtype=object),
             "pv_quality": np.array(pv_quality_codes, dtype=int),
+            "pv_quality_ts": pv_quality_ts,
         }
 
         ts_seconds = _ts_list_to_seconds([d["ts"] for d in aligned])

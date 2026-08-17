@@ -222,10 +222,15 @@ def _sensor_fault_kernel(
 def _quality_kernel(
     pv_quality: np.ndarray,
     threshold: dict | None = None,
+    *,
+    sample_interval: float = 1.0,
 ) -> dict[str, Any]:
     """PV 质量码 Q001-Q005 规则（等价复制自引擎 _analyze_quality L2024-2162）。
 
     输入为 0/1/2 数值质量码序列（GOOD/UNCERTAIN/BAD），内部翻译为标签后走原逻辑。
+
+    优化增强（相对旧引擎）：Q001 置信度按最长连续 Bad 段时长分级
+    （≤60s→0.6 / ≤600s→0.75 / >600s→0.9），并输出 bad 段起止索引。
     """
     if threshold is None:
         threshold = {}
@@ -253,20 +258,23 @@ def _quality_kernel(
         bad_rate = bad_count / total
         uncertain_rate = uncertain_count / total
 
-        # 计算 Bad 连续段（用于 Q001/Q004/Q005）
+        # 计算 Bad 连续段（用于 Q001/Q004/Q005）；记录每段起止索引（闭区间）
         bad_segments: list[int] = []
+        bad_runs: list[tuple[int, int, int]] = []  # (start_idx, end_idx, length)
         current_bad_run = 0
         max_consecutive_bad = 0
-        for q in quality_seq:
+        for idx, q in enumerate(quality_seq):
             if q == "BAD":
                 current_bad_run += 1
             else:
                 if current_bad_run > 0:
                     bad_segments.append(current_bad_run)
+                    bad_runs.append((idx - current_bad_run, idx - 1, current_bad_run))
                     max_consecutive_bad = max(max_consecutive_bad, current_bad_run)
                 current_bad_run = 0
         if current_bad_run > 0:
             bad_segments.append(current_bad_run)
+            bad_runs.append((total - current_bad_run, total - 1, current_bad_run))
             max_consecutive_bad = max(max_consecutive_bad, current_bad_run)
 
         q001_hit = max_consecutive_bad > q001_consecutive_bad
@@ -278,7 +286,10 @@ def _quality_kernel(
         # 按优先级选择质量模式（Q001 > Q004 > Q002 > Q003 > Q005 > NORMAL）
         if q001_hit:
             quality_pattern = "Q001"
-            confidence = 0.9
+            # 置信度按最长 Bad 段时长分级（秒 = 点数 × 采样间隔）：
+            # 瞬时断流(≤60s) 0.6 / 短时断流(≤600s) 0.75 / 持续断流(>600s) 0.9
+            max_bad_seconds = max_consecutive_bad * max(sample_interval, 1e-3)
+            confidence = 0.9 if max_bad_seconds > 600 else (0.75 if max_bad_seconds > 60 else 0.6)
             abnormal = True
         elif q004_hit:
             quality_pattern = "Q004"
@@ -308,6 +319,8 @@ def _quality_kernel(
             "total": total,
             "bad_count": bad_count,
             "quality_pattern": quality_pattern,
+            "max_consecutive_bad": max_consecutive_bad,
+            "bad_runs": bad_runs,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("质量码分析失败: %s", exc)
@@ -400,7 +413,38 @@ def detect_quality(input: OperatorInput, threshold: dict[str, Any]) -> OperatorR
     pv_quality = input.signals.get("pv_quality")
     if pv_quality is None or len(pv_quality) == 0:
         return OperatorResult("quality_code_rules", executed=False, skip_reason="pv_quality 缺失")
-    res = _quality_kernel(pv_quality, threshold)
+    sample_interval = float(input.meta.get("sample_interval", 1.0))
+    res = _quality_kernel(pv_quality, threshold, sample_interval=sample_interval)
+
+    # 断流段详情（最多 3 段，按长度降序）：偏移秒 = 索引 × 采样间隔；
+    # 若编排层提供原始时间轴 pv_quality_ts（与 pv_quality 同长度）则用精确值。
+    # 前端结合 timeWindowStart + offset 展示本地钟点。
+    pv_quality_ts = input.signals.get("pv_quality_ts")
+    ts_arr = (
+        np.asarray(pv_quality_ts, dtype=float)
+        if pv_quality_ts is not None and len(pv_quality_ts) == len(pv_quality)
+        else None
+    )
+    bad_segments: list[dict[str, Any]] = []
+    for start, end, length in sorted(res.get("bad_runs") or [], key=lambda r: r[2], reverse=True)[
+        :3
+    ]:
+        seg: dict[str, Any] = {"points": length}
+        if ts_arr is not None:
+            seg["start_offset_s"] = round(float(ts_arr[start]), 1)
+            seg["end_offset_s"] = round(float(ts_arr[end]), 1)
+        else:
+            seg["start_offset_s"] = round(start * sample_interval, 1)
+            seg["end_offset_s"] = round(end * sample_interval, 1)
+        bad_segments.append(seg)
+
+    top_seg = bad_segments[0] if bad_segments else None
+    seg_judgment = "质量码模式 " + ("异常" if res["abnormal"] else "正常")
+    if top_seg is not None and res["abnormal"]:
+        seg_judgment += (
+            f"；最长断流段 {top_seg['points']} 点"
+            f"（窗口偏移 {top_seg['start_offset_s']}~{top_seg['end_offset_s']}s）"
+        )
     return OperatorResult(
         "quality_code_rules",
         executed=True,
@@ -411,13 +455,15 @@ def detect_quality(input: OperatorInput, threshold: dict[str, Any]) -> OperatorR
             "bad_rate": round(float(res["bad_rate"]), 4),
             "bad_count": res["bad_count"],
             "total": res["total"],
+            "max_consecutive_bad": res.get("max_consecutive_bad", 0),
+            "bad_segments": bad_segments,
         },
         evidence=[
             EvidenceItem(
                 "quality_pattern",
                 res["quality_pattern"],
                 "NORMAL",
-                "质量码模式 " + ("异常" if res["abnormal"] else "正常"),
+                seg_judgment,
             ),
         ],
     )

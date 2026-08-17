@@ -186,6 +186,29 @@ def test_slow_response_detects_sluggish_loop() -> None:
     res = _run("slow_response", {"pv": pv, "sp": sp}, meta={"loop_type": "FLOW"})
     assert res.executed and res.detected
     assert res.features["ratio"] > 2.0
+    # 窗口末到达率 ≈100% > 63.2% → 拟合可靠
+    assert res.features["fit_degenerate"] is False
+    assert res.features["reached_fraction"] > 0.632
+
+
+def test_slow_response_degenerate_window_not_detected() -> None:
+    """拟合防护（优化增强）：阶跃后 PV 几乎不跟随（到达率<63.2%）时，
+    τ 为窗外外推值不可靠 → 判"数据不支持"（不判迟缓），避免输出
+    ratio=数千倍的病态结论误导用户。"""
+    n = 3600
+    sp = np.full(n, 50.0)
+    sp[600:] = 60.0  # SP 阶跃 +10
+    # PV 阶跃后仅爬升 2%（到达率 0.02 ≪ 0.632）
+    pv = np.full(n, 50.0)
+    pv[600:] = 50.0 + 0.2
+    res = _run("slow_response", {"pv": pv, "sp": sp}, meta={"loop_type": "FLOW"})
+    assert res.executed
+    assert not res.detected
+    assert res.confidence == 0.0
+    assert res.features["fit_degenerate"] is True
+    assert res.features["reached_fraction"] < 0.632
+    # ratio 仍输出拟合值供参考，但证据文案标注不可靠
+    assert "不可靠" in res.evidence[0].judgment
 
 
 def test_disturbance_burst_detects_frequent_shifts() -> None:
@@ -225,11 +248,72 @@ def test_quality_code_rules_detects_all_bad() -> None:
     res = _run("quality_code_rules", {"pv_quality": np.full(3600, 2)})
     assert res.executed and res.detected
     assert res.features["quality_pattern"] == "Q001"
+    # 3600 连续 Bad（1s 采样 = 3600s > 600s）→ 持续断流档 0.9
+    assert res.features["max_consecutive_bad"] == 3600
+    assert res.confidence == 0.9
 
 
 def test_quality_code_rules_normal() -> None:
     res = _run("quality_code_rules", {"pv_quality": np.zeros(3600, dtype=int)})
     assert res.executed and not res.detected
+    assert res.features["bad_segments"] == []
+
+
+def test_quality_q001_confidence_graded_by_duration() -> None:
+    """Q001 置信度按最长连续 Bad 段时长分级（优化增强）。"""
+    # 30 连续 Bad（30s ≤ 60s）→ 瞬时断流档 0.6
+    q = np.zeros(3600, dtype=int)
+    q[100:130] = 2
+    res = _run("quality_code_rules", {"pv_quality": q})
+    assert res.detected
+    assert res.features["quality_pattern"] == "Q001"
+    assert res.confidence == 0.6
+
+    # 300 连续 Bad（60s < 300s ≤ 600s）→ 短时断流档 0.75
+    q2 = np.zeros(3600, dtype=int)
+    q2[100:400] = 2
+    res2 = _run("quality_code_rules", {"pv_quality": q2})
+    assert res2.detected
+    assert res2.confidence == 0.75
+
+    # 1200 连续 Bad（>600s）→ 持续断流档 0.9
+    q3 = np.zeros(3600, dtype=int)
+    q3[100:1300] = 2
+    res3 = _run("quality_code_rules", {"pv_quality": q3})
+    assert res3.detected
+    assert res3.confidence == 0.9
+
+
+def test_quality_bad_segments_with_raw_timeline() -> None:
+    """断流段详情：有原始时间轴 pv_quality_ts 时输出精确偏移秒（取最长 3 段）。"""
+    q = np.zeros(3600, dtype=int)
+    q[500:600] = 2  # 100 点段（最长）
+    q[2000:2030] = 2  # 30 点段
+    q[3000:3015] = 2  # 15 点段（Q004 级零星段，不判 Q001 但仍记录）
+    ts = np.arange(3600, dtype=float) * 1.0
+    res = _run(
+        "quality_code_rules",
+        {"pv_quality": q, "pv_quality_ts": ts},
+    )
+    segs = res.features["bad_segments"]
+    assert len(segs) == 3
+    # 按长度降序：100/30/15
+    assert segs[0]["points"] == 100
+    assert segs[0]["start_offset_s"] == 500.0
+    assert segs[0]["end_offset_s"] == 599.0
+    assert segs[2]["points"] == 15
+    # 证据文案带最长段定位信息
+    assert "500" in res.evidence[0].judgment
+
+
+def test_quality_bad_segments_fallback_to_sample_interval() -> None:
+    """无原始时间轴时按 索引×采样间隔 折算偏移。"""
+    q = np.zeros(1000, dtype=int)
+    q[100:200] = 2
+    res = _run("quality_code_rules", {"pv_quality": q})
+    segs = res.features["bad_segments"]
+    assert segs[0]["start_offset_s"] == 100.0
+    assert segs[0]["end_offset_s"] == 199.0
 
 
 def test_output_saturation_detects_pinned_op() -> None:

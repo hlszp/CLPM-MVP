@@ -292,13 +292,21 @@ def _slow_kernel(
 
         expected_tau = _expected_time_constant(loop_type, tau_map)
 
-        ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
-        detected = bool(ratio > ratio_threshold)
+        # 拟合防护（优化增强）：一阶系统时间常数定义为到达 63.2% 目标的时刻，
+        # 若响应窗结束时 PV 到达率不足 63.2%，τ 是窗外的外推值不可靠
+        # （典型场景：SP 阶跃后 PV 几乎不动，拟合出 τ=数小时的病态值）。
+        # 此时判"数据不支持"而非输出误导性 ratio。
+        reached_fraction = float(np.clip((pv_response[-1] - old_sp) / step_size, -1.0, 1.0))
+        fit_degenerate = bool(reached_fraction < 0.632)
 
-        if detected:
-            confidence = min(0.9, ratio / 10.0)
-        else:
+        ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
+
+        if fit_degenerate:
+            detected = False
             confidence = 0.0
+        else:
+            detected = bool(ratio > ratio_threshold)
+            confidence = min(0.9, ratio / 10.0) if detected else 0.0
 
         return {
             "detected": detected,
@@ -306,6 +314,8 @@ def _slow_kernel(
             "time_constant": time_constant,
             "expected_time_constant": expected_tau,
             "ratio": ratio,
+            "reached_fraction": round(reached_fraction, 4),
+            "fit_degenerate": fit_degenerate,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("响应迟缓检测失败: %s", exc)
@@ -411,13 +421,19 @@ def detect_slow(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
             "time_constant": res["time_constant"],
             "expected_time_constant": res["expected_time_constant"],
             "ratio": res["ratio"],
+            "reached_fraction": res.get("reached_fraction", 1.0),
+            "fit_degenerate": res.get("fit_degenerate", False),
         },
         evidence=[
             EvidenceItem(
                 "ratio",
                 round(float(res["ratio"]), 3),
                 threshold.get("slow_response_ratio_threshold"),
-                "实际/期望时间常数比" + ("超阈" if res["detected"] else "未超阈"),
+                (
+                    "响应窗内 PV 到达率不足 63.2%，τ 为外推值不可靠（不判迟缓）"
+                    if res.get("fit_degenerate")
+                    else "实际/期望时间常数比" + ("超阈" if res["detected"] else "未超阈")
+                ),
             ),
         ],
     )
