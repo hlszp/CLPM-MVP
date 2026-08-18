@@ -39,8 +39,8 @@ celery_app = Celery(
         "app.tasks.dead_letter",
         "app.tasks.data_link_monitor",
         "app.tasks.data_integrity_check",
-        # MVP 精简：已屏蔽整定模块 → 不注册 tuning
-        # "app.tasks.tuning",
+        # 整定模块（09 设计方案恢复：历史辨识异步任务）
+        "app.tasks.tuning",
         "app.tasks.alert_patrol",
     ],
 )
@@ -144,7 +144,7 @@ import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
 
 # import app.tasks.tracker_verification  # noqa: E402, F401
-# import app.tasks.tuning  # noqa: E402, F401
+import app.tasks.tuning  # noqa: E402, F401  # 整定模块（09 设计方案恢复）
 
 
 def _preload_datasource_config_sync() -> None:
