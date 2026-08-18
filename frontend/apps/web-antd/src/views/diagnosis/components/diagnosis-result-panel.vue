@@ -33,8 +33,6 @@ import {
   CATEGORY_META,
   SEVERITY_COLOR,
   SEVERITY_TEXT,
-  TRIGGER_TYPE_COLOR,
-  TRIGGER_TYPE_TEXT,
 } from '../constants';
 
 const props = withDefaults(
@@ -286,16 +284,6 @@ watch(isDark, () => {
         <div class="flex-1">
           <div class="text-lg font-semibold" :style="{ color: metaOf(detail.primaryCategory).color }">
             {{ detail.primaryCategoryLabel ?? metaOf(detail.primaryCategory).label }}
-          </div>
-          <div class="text-xs text-neutral-500">
-            处置方向：{{ metaOf(detail.primaryCategory).direction }} · 发起人
-            {{ detail.triggeredBy }}
-            <template v-if="detail.triggerType">
-              ·
-              <span :style="{ color: TRIGGER_TYPE_COLOR[detail.triggerType] }">
-                {{ detail.triggerTypeLabel ?? TRIGGER_TYPE_TEXT[detail.triggerType] }}
-              </span>
-            </template>
           </div>
         </div>
         <div class="text-right">
