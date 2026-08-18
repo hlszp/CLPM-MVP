@@ -583,6 +583,9 @@ async def start_handling(
         item.kpi_after = None
     item.status = "HANDLING"
     await db.commit()
+    # commit 后 updated_at（onupdate=func.now() 服务端计算值）已过期，
+    # refresh 重新加载后再序列化，避免懒加载触发新查询 500
+    await db.refresh(item)
     return success(_item_to_dict(item))
 
 
@@ -609,6 +612,9 @@ async def submit_handling(
     item.submitted_at = _utcnow_naive()
     item.status = "VERIFYING"
     await db.commit()
+    # commit 后 updated_at（onupdate=func.now() 服务端计算值）已过期，
+    # refresh 重新加载后再序列化，避免懒加载触发新查询 500
+    await db.refresh(item)
     return success(_item_to_dict(item))
 
 
@@ -650,6 +656,9 @@ async def verify_handling(
     item.verified_at = _utcnow_naive()
     item.status = "CLOSED" if body.verifyResult == "EFFECTIVE" else "REOPENED"
     await db.commit()
+    # commit 后 updated_at（onupdate=func.now() 服务端计算值）已过期，
+    # refresh 重新加载后再序列化，避免懒加载触发新查询 500
+    await db.refresh(item)
     return success(_item_to_dict(item))
 
 
@@ -669,6 +678,9 @@ async def ignore_handling(
     item.ignore_reason = body.ignoreReason.strip()
     item.status = "IGNORED"
     await db.commit()
+    # commit 后 updated_at（onupdate=func.now() 服务端计算值）已过期，
+    # refresh 重新加载后再序列化，避免懒加载触发新查询 500
+    await db.refresh(item)
     return success(_item_to_dict(item))
 
 

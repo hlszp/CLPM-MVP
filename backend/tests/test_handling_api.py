@@ -121,12 +121,13 @@ def _scalar_result(value: Any) -> MagicMock:
 
 
 def _override_db(client, results: list) -> MagicMock:
-    """mock db：按序返回 execute 结果；commit 可断言。"""
+    """mock db：按序返回 execute 结果；commit/refresh 可断言。"""
     from app.core.db import get_db
 
     mock_db = MagicMock()
     mock_db.execute = _seq_execute(results)
     mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock()
     client.app.dependency_overrides[get_db] = lambda: mock_db
     return mock_db
 
@@ -144,6 +145,7 @@ def _capture_override_db(client, results: list, captured: list) -> MagicMock:
     mock_db = MagicMock()
     mock_db.execute = _execute
     mock_db.commit = AsyncMock()
+    mock_db.refresh = AsyncMock()
     client.app.dependency_overrides[get_db] = lambda: mock_db
     return mock_db
 
