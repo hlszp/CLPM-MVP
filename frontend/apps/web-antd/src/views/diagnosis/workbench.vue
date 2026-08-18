@@ -53,10 +53,11 @@ import {
   TRIGGER_TYPE_TEXT,
   scoreGrade,
 } from './constants';
+import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
 import DiagnosisHistoryDrawer from './components/history-drawer.vue';
-import DiagnosisReviewModal from './components/review-modal.vue';
+import DiagnosisReviewDrawer from './components/review-drawer.vue';
 import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 
 const route = useRoute();
@@ -367,19 +368,20 @@ const undiagnosedCount = computed(
 const overviewLoopCount = computed(() => latestItems.value.length);
 
 const latestColumns = [
-  { dataIndex: 'loopTagName', title: '回路', width: 120 },
-  { dataIndex: 'loopDescription', title: '名称', width: 130, ellipsis: true },
-  { dataIndex: 'importanceLevel', title: '等级', width: 64 },
-  { dataIndex: 'latestScore', title: '性能评分', width: 96 },
-  { dataIndex: 'primaryCategoryLabel', title: '诊断结论', width: 150 },
-  { dataIndex: 'primaryConfidence', title: '置信度', width: 76 },
-  { dataIndex: 'severity', title: '严重度', width: 70 },
-  { dataIndex: 'triggerType', title: '触发方式', width: 88 },
-  { dataIndex: 'runCount', title: '诊断次序', width: 88 },
-  { dataIndex: 'reviewResultLabels', title: '复核结论', width: 150, ellipsis: true },
-  { dataIndex: 'reviewStatus', title: '状态', width: 82 },
-  { dataIndex: 'lastDiagnosedAt', title: '诊断时间', width: 110 },
-  { key: 'action', title: '操作', width: 176, fixed: 'right' as const },
+  { dataIndex: 'loopTagName', title: '回路', width: 116 },
+  { dataIndex: 'loopDescription', title: '名称', width: 126, ellipsis: true },
+  { dataIndex: 'importanceLevel', title: '等级', width: 54 },
+  { dataIndex: 'latestScore', title: '性能评分', width: 70 },
+  { key: 'scoreGrade', title: '性能等级', width: 66 },
+  { dataIndex: 'primaryCategoryLabel', title: '诊断结论', width: 140, ellipsis: true },
+  { dataIndex: 'primaryConfidence', title: '置信度', width: 62 },
+  { dataIndex: 'severity', title: '严重度', width: 54 },
+  { dataIndex: 'triggerType', title: '触发方式', width: 80 },
+  { dataIndex: 'runCount', title: '诊断次序', width: 68 },
+  { dataIndex: 'reviewResultLabels', title: '复核结论', width: 130, ellipsis: true },
+  { dataIndex: 'reviewStatus', title: '状态', width: 66 },
+  { dataIndex: 'lastDiagnosedAt', title: '诊断时间', width: 96 },
+  { key: 'action', title: '操作', width: 156, fixed: 'right' as const },
 ];
 
 function latestCatColor(record: DiagnosisApi.LatestRunItem): string {
@@ -389,10 +391,14 @@ function latestCatColor(record: DiagnosisApi.LatestRunItem): string {
 }
 
 function openLatestDetail(record: DiagnosisApi.LatestRunItem): void {
-  if (record.runId) {
-    loadDetail(record.runId);
-  }
+  // 概览行点击 → 诊断详情弹窗（基本信息 + KPI + 结论 + 证据）
+  detailItem.value = record;
+  detailModalOpen.value = true;
 }
+
+// ===== 诊断详情弹窗（2026-08-18：行点击弹出） =====
+const detailModalOpen = ref(false);
+const detailItem = ref<DiagnosisApi.LatestRunItem | null>(null);
 
 /** 正在快捷诊断的回路 ID（按钮 loading/防重复点击） */
 const quickDiagnosingId = ref('');
@@ -798,16 +804,6 @@ onMounted(() => {
               {{ overviewLoopCount }} 个回路（一回路一条最新结论）
             </span>
           </template>
-          <!-- 引导条：存在未诊断回路时提示 -->
-          <div
-            v-if="undiagnosedCount > 0"
-            class="diag-guide-bar"
-          >
-            <span class="diag-guide-bar__icon">i</span>
-            <span>
-              <strong>{{ undiagnosedCount }}</strong> 个回路尚未诊断，勾选左侧回路后点击"发起诊断"开始首次诊断
-            </span>
-          </div>
           <!-- 筛选：诊断状态标签 + 等级/评分/结论/严重度下拉 -->
           <div class="diag-latest-filter">
             <button
@@ -868,6 +864,7 @@ onMounted(() => {
             />
           </div>
           <Table
+            class="diag-latest-table"
             :columns="latestColumns"
             :custom-row="
               (record: DiagnosisApi.LatestRunItem) => ({
@@ -879,7 +876,7 @@ onMounted(() => {
             :loading="latestLoading"
             :pagination="false"
             :row-key="(record: DiagnosisApi.LatestRunItem) => record.loopId"
-            :scroll="{ x: 1420 }"
+            :scroll="{ x: 1330 }"
             size="small"
           >
             <template #bodyCell="{ column, record }">
@@ -901,13 +898,18 @@ onMounted(() => {
               <template v-else-if="column.dataIndex === 'latestScore'">
                 <span
                   v-if="record.latestScore != null"
-                  :style="{ color: scoreGrade(record.latestScore)?.color }"
                   class="font-medium tabular-nums"
                 >
                   {{ record.latestScore.toFixed(1) }}
-                  <span class="text-xs">
-                    （{{ scoreGrade(record.latestScore)?.label }}）
-                  </span>
+                </span>
+                <span v-else class="text-neutral-400">—</span>
+              </template>
+              <template v-else-if="column.key === 'scoreGrade'">
+                <span
+                  v-if="record.latestScore != null"
+                  :style="{ color: scoreGrade(record.latestScore)?.color }"
+                >
+                  {{ scoreGrade(record.latestScore)?.label }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
               </template>
@@ -1028,9 +1030,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 概览行操作弹层：证据 / 复核 / 历史 -->
+    <!-- 概览行操作弹层：证据 / 复核 / 历史 + 行点击诊断详情 -->
     <DiagnosisEvidenceDrawer v-model:open="evidenceOpen" :run-id="evidenceRunId" />
-    <DiagnosisReviewModal
+    <DiagnosisReviewDrawer
       v-model:open="reviewOpen"
       :item="reviewItem"
       @done="onReviewDone"
@@ -1040,42 +1042,26 @@ onMounted(() => {
       :loop-id="historyItem?.loopId ?? null"
       :loop-tag-name="historyItem?.loopTagName"
     />
+    <DiagnosisDetailModal v-model:open="detailModalOpen" :item="detailItem" />
   </Page>
 </template>
 
 <style scoped>
+/* 最新诊断概览表：紧凑字体 + 单行不换行（2026-08-18） */
+.diag-latest-table :deep(.ant-table-cell) {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.diag-latest-table :deep(.ant-table-cell .ant-btn-link) {
+  padding: 0 2px;
+  font-size: 12px;
+}
+
 .diag-layout {
   display: flex;
   gap: 12px;
   align-items: stretch;
-}
-
-/* 引导条：未诊断回路提示 */
-.diag-guide-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: hsl(var(--primary));
-  background: hsl(var(--primary) / 10%);
-  border: 1px solid hsl(var(--primary) / 30%);
-  border-radius: 6px;
-}
-
-.diag-guide-bar__icon {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  font-size: 10px;
-  font-weight: 700;
-  color: hsl(var(--primary));
-  background: hsl(var(--primary) / 15%);
-  border-radius: 50%;
 }
 
 /* 最新诊断概览筛选标签 */

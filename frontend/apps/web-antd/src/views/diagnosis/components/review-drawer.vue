@@ -1,19 +1,28 @@
 <script setup lang="ts">
 /**
- * 诊断复核弹窗 —— 记录人工复核结论（多选）与复核意见。
+ * 诊断复核抽屉 —— 右侧推出，记录人工复核结论（多选）与复核意见。
  *
- * 概览列表"复核"操作专用（2026-08-18）：提交后覆盖式更新该次诊断的
- * review 字段（review_status=REVIEWED）；已复核记录回显上次结论可改判。
+ * 概览列表"复核"操作专用（2026-08-18）：与证据/历史抽屉形态一致；
+ * 提交后覆盖式更新该次诊断的 review 字段（review_status=REVIEWED）；
+ * 已复核记录回显上次结论可改判。
  */
 import { reactive, ref, watch } from 'vue';
 
-import { Form, FormItem, Input, Modal, Select, message } from 'ant-design-vue';
-
-const { TextArea } = Input;
+import {
+  Button,
+  Drawer,
+  Form,
+  FormItem,
+  Input,
+  Select,
+  message,
+} from 'ant-design-vue';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 import { reviewDiagnosisRunApi } from '#/api/diagnosis';
 import { CATEGORY_OPTIONS } from '../constants';
+
+const { TextArea } = Input;
 
 const props = defineProps<{
   item: DiagnosisApi.LatestRunItem | null;
@@ -63,13 +72,11 @@ async function submit() {
 </script>
 
 <template>
-  <Modal
+  <Drawer
     v-model:open="open"
     :title="`诊断复核 · ${item?.loopTagName ?? ''}（AI 结论：${item?.primaryCategoryLabel ?? '—'}）`"
-    :confirm-loading="submitting"
-    ok-text="提交复核"
-    width="520"
-    @ok="submit"
+    width="440"
+    :destroy-on-close="true"
   >
     <Form layout="vertical" class="pt-2">
       <FormItem label="复核结论（多选）" required>
@@ -86,10 +93,18 @@ async function submit() {
           v-model:value="form.reviewComment"
           :maxlength="500"
           placeholder="例：现场确认为变送器漂移，已安排 8 月 20 日校验"
-          :rows="3"
+          :rows="4"
           show-count
         />
       </FormItem>
     </Form>
-  </Modal>
+    <template #footer>
+      <div class="flex justify-end gap-2">
+        <Button @click="open = false">取消</Button>
+        <Button :loading="submitting" type="primary" @click="submit">
+          提交复核
+        </Button>
+      </div>
+    </template>
+  </Drawer>
 </template>
