@@ -245,9 +245,7 @@ async def _pull_kpi_windows(
     return before, after
 
 
-async def _writeback_tuning_record(
-    db: AsyncSession, item: LoopActionItem, status: str
-) -> None:
+async def _writeback_tuning_record(db: AsyncSession, item: LoopActionItem, status: str) -> None:
     """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的处置项。"""
     if item.action_type != "TUNING" or not item.tuning_record_id:
         return
