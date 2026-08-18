@@ -192,6 +192,35 @@ export namespace DiagnosisApi {
     reviewComment?: null | string;
   }
 
+  /** 处置建议项（§9.4 处置闭环：建议-处置-验证-关闭，当前仅建议态） */
+  export interface ActionItem {
+    id: string;
+    runId: string;
+    loopId: string;
+    /** 来源：SYSTEM 系统按诊断/复核结论带出 / MANUAL 人工新增 */
+    source: 'MANUAL' | 'SYSTEM';
+    category?: null | string;
+    categoryLabel?: null | string;
+    /** 处置措施内容 */
+    content: string;
+    /** 依据（如"诊断结论：参数问题"或"人工复核：..."） */
+    basis?: null | string;
+    /** 优先级（1 最高；人工新增为 null） */
+    priority?: null | number;
+    /** 生命周期：PENDING 待处置（后续扩展处置/验证/关闭） */
+    status: string;
+    /** 建议人（SYSTEM="系统"；MANUAL=登录用户名） */
+    suggestedBy: string;
+    /** 建议时间（naive UTC ISO，Z 后缀） */
+    suggestedAt?: null | string;
+  }
+
+  /** 人工新增处置措施请求体 */
+  export interface CreateActionBody {
+    content: string;
+    basis?: null | string;
+  }
+
   export interface TriggerBody {
     loopIds: string[];
     timeWindow: { preset?: TimeWindowPreset; start?: string; end?: string };
@@ -254,6 +283,28 @@ export function getDiagnosisRunDetailApi(id: string) {
 export function reviewDiagnosisRunApi(id: string, data: DiagnosisApi.ReviewBody) {
   return requestClient.post<DiagnosisApi.RunListItem>(
     `/diagnosis/runs/${id}/review`,
+    data,
+  );
+}
+
+/**
+ * 处置建议列表（首次拉取为空时后端按诊断/复核结论自动生成系统建议）
+ */
+export function getRunActionsApi(runId: string) {
+  return requestClient.get<{ items: DiagnosisApi.ActionItem[] }>(
+    `/diagnosis/runs/${runId}/actions`,
+  );
+}
+
+/**
+ * 人工新增处置措施（建议人/建议时间由后端按登录用户与服务器时间填入）
+ */
+export function createRunActionApi(
+  runId: string,
+  data: DiagnosisApi.CreateActionBody,
+) {
+  return requestClient.post<DiagnosisApi.ActionItem>(
+    `/diagnosis/runs/${runId}/actions`,
     data,
   );
 }

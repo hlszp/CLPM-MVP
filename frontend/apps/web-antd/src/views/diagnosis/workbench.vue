@@ -1042,7 +1042,11 @@ onMounted(() => {
       :loop-id="historyItem?.loopId ?? null"
       :loop-tag-name="historyItem?.loopTagName"
     />
-    <DiagnosisDetailModal v-model:open="detailModalOpen" :item="detailItem" />
+    <DiagnosisDetailModal
+      v-model:open="detailModalOpen"
+      :item="detailItem"
+      @reviewed="onReviewDone"
+    />
   </Page>
 </template>
 

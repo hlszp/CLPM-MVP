@@ -22,6 +22,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,11 +31,13 @@ from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.loop_action_item import LoopActionItem
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.task import TaskType
 from app.services.diagnosis_operators import list_operators
 from app.services.diagnosis_operators.classification import get_confidence_definitions
+from app.services.loop_action_templates import STANDARD_ACTION_TEMPLATES
 from app.services.task_tracker import create_task
 
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
@@ -83,6 +86,13 @@ class ReviewRunBody(BaseModel):
 
     reviewResults: list[str] = Field(min_length=1, description="复核结论多选（原因分类代码）")
     reviewComment: str | None = Field(None, max_length=500, description="复核意见")
+
+
+class CreateActionBody(BaseModel):
+    """人工新增处置措施请求体（§9.4 处置建议）。"""
+
+    content: str = Field(min_length=1, max_length=500, description="处置措施内容")
+    basis: str | None = Field(None, max_length=500, description="依据（可选）")
 
 
 def _to_naive_utc(dt: datetime) -> datetime:
@@ -355,9 +365,149 @@ async def review_diagnosis_run(
     row.review_comment = body.reviewComment
     row.reviewed_by = user.username
     row.reviewed_at = _utcnow_naive()
+    # 复核结论变更后，按复核结论重新带出系统处置建议（保留人工新增）
+    await db.execute(
+        sa_delete(LoopActionItem).where(
+            LoopActionItem.run_id == row.id, LoopActionItem.source == "SYSTEM"
+        )
+    )
     await db.commit()
 
     return success(_run_to_summary(row, None))
+
+
+def _action_to_item(row: LoopActionItem) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "runId": row.run_id,
+        "loopId": row.loop_id,
+        "source": row.source,
+        "category": row.category,
+        "categoryLabel": _CATEGORY_LABELS.get(row.category, row.category) if row.category else None,
+        "content": row.content,
+        "basis": row.basis,
+        "priority": row.priority,
+        "status": row.status,
+        "suggestedBy": row.suggested_by,
+        "suggestedAt": row.suggested_at.isoformat() + "Z" if row.suggested_at else None,
+    }
+
+
+async def _generate_system_actions(db: AsyncSession, run: DiagnosisRun) -> None:
+    """按诊断结论/人工复核结论自动生成标准处置建议（§9.4）。
+
+    分类来源：已复核 → review_results（人工复核优先）；
+    未复核 → primary_category + secondary_categories（诊断结论）。
+    同一 run 已有记录时不重复生成（由调用方保证）。
+    """
+    if run.review_status == "REVIEWED" and run.review_results:
+        categories = [c for c in run.review_results if c in STANDARD_ACTION_TEMPLATES]
+        basis_prefix = "人工复核"
+    else:
+        categories = (
+            [run.primary_category] if run.primary_category in STANDARD_ACTION_TEMPLATES else []
+        )
+        for j in run.secondary_categories or []:
+            cat = j.get("category")
+            if cat in STANDARD_ACTION_TEMPLATES and cat not in categories:
+                categories.append(cat)
+        basis_prefix = "诊断结论"
+    now = _utcnow_naive()
+    for cat in categories:
+        label = _CATEGORY_LABELS.get(cat, cat)
+        for tpl in STANDARD_ACTION_TEMPLATES[cat]:
+            db.add(
+                LoopActionItem(
+                    run_id=run.id,
+                    loop_id=run.loop_id,
+                    source="SYSTEM",
+                    category=cat,
+                    content=f"{tpl['action']}：{tpl['description']}",
+                    basis=f"{basis_prefix}：{label}",
+                    priority=tpl["priority"],
+                    status="PENDING",
+                    suggested_by="系统",
+                    suggested_at=now,
+                )
+            )
+    await db.flush()
+
+
+@router.get("/runs/{run_id}/actions", response_model=ApiResponse[dict])
+async def list_run_actions(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """处置建议列表（§9.4）。首次拉取为空时自动按诊断/复核结论生成系统建议。"""
+    run = (
+        await db.execute(select(DiagnosisRun).where(DiagnosisRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise BizError(code="ERR_NOT_FOUND", message=f"诊断记录不存在: {run_id}", status_code=404)
+
+    rows = (
+        (
+            await db.execute(
+                select(LoopActionItem)
+                .where(LoopActionItem.run_id == run_id)
+                .order_by(
+                    LoopActionItem.priority.asc().nulls_last(), LoopActionItem.suggested_at.asc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        await _generate_system_actions(db, run)
+        await db.commit()
+        rows = (
+            (
+                await db.execute(
+                    select(LoopActionItem)
+                    .where(LoopActionItem.run_id == run_id)
+                    .order_by(
+                        LoopActionItem.priority.asc().nulls_last(),
+                        LoopActionItem.suggested_at.asc(),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return success({"items": [_action_to_item(r) for r in rows]})
+
+
+@router.post("/runs/{run_id}/actions", response_model=ApiResponse[dict])
+async def create_run_action(
+    run_id: str,
+    body: CreateActionBody,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+) -> dict:
+    """人工新增处置措施（建议人=当前登录用户，建议时间=服务器当前时间）。"""
+    run = (
+        await db.execute(select(DiagnosisRun).where(DiagnosisRun.id == run_id))
+    ).scalar_one_or_none()
+    if run is None:
+        raise BizError(code="ERR_NOT_FOUND", message=f"诊断记录不存在: {run_id}", status_code=404)
+
+    row = LoopActionItem(
+        run_id=run.id,
+        loop_id=run.loop_id,
+        source="MANUAL",
+        category=None,
+        content=body.content,
+        basis=body.basis,
+        priority=None,
+        status="PENDING",
+        suggested_by=user.username,
+        suggested_at=_utcnow_naive(),
+    )
+    db.add(row)
+    await db.commit()
+    return success(_action_to_item(row))
 
 
 @router.get("/runs/latest", response_model=ApiResponse[dict])

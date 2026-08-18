@@ -1,32 +1,54 @@
 <script setup lang="ts">
 /**
- * 诊断详情弹窗 —— 遮罩模式，点击概览行弹出（2026-08-18 v2）。
+ * 诊断详情弹窗 —— 遮罩模式，点击概览行弹出（2026-08-18 v3）。
  *
- * 交互：标题栏可拖动移动；右下角手柄可调整宽高（初始 720px，较 v1 收窄）。
- * 结构：顶部三信息区（回路基本信息 / 最新性能评估指标 / 诊断基本信息）+
- * 下方三个 Tab（诊断结论 / 证据链 / 处置建议，DiagnosisResultPanel section 模式）。
+ * 交互：标题栏可拖动移动；右下角手柄可调整宽高（初始 720px）。
+ * 结构：
+ * - 顶部三信息卡（回路基本信息 / 性能评估指标 / 诊断基本信息，Descriptions 标签+值）
+ * - Tab1 诊断结论：上=结论卡（结论/置信度/严重度/症状中文）；
+ *   下=人工复核表单（复核结论多选 + 意见；复核时间/复核人自动填入）
+ * - Tab2 诊断证据：数据质量 / 波形快照 / 特征值 三区默认全展开
+ * - Tab3 处置建议：系统按诊断/复核结论自动带出标准建议 + 人工新增处置措施
  */
 import { computed, nextTick, ref, watch } from 'vue';
 
 import dayjs from 'dayjs';
 import {
+  Button,
+  Descriptions,
+  DescriptionsItem,
   Empty,
+  Form,
+  FormItem,
+  Input,
   Modal,
+  Select,
   Skeleton,
   Spin,
   TabPane,
   Tabs,
+  Tag,
+  Textarea,
+  message,
 } from 'ant-design-vue';
+
+import { useUserStore } from '@vben/stores';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { KpiSnapshotItem } from '#/api/metric';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
-import { getDiagnosisRunDetailApi } from '#/api/diagnosis';
+import {
+  createRunActionApi,
+  getDiagnosisRunDetailApi,
+  getRunActionsApi,
+  reviewDiagnosisRunApi,
+} from '#/api/diagnosis';
 import { getLoopSnapshotsApi } from '#/api/metric';
 import { getLoopListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
+  CATEGORY_OPTIONS,
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
   TRIGGER_TYPE_COLOR,
@@ -39,7 +61,15 @@ const props = defineProps<{
   item: DiagnosisApi.LatestRunItem | null;
 }>();
 
+const emit = defineEmits<{ reviewed: [] }>();
+
 const open = defineModel<boolean>('open', { default: false });
+
+const userStore = useUserStore();
+/** 当前用户（复核人自动填入；后端以登录态为准，前端仅展示） */
+const currentUserName = computed(
+  () => userStore.userInfo?.realName || userStore.userInfo?.username || '—',
+);
 
 // ===== 数据加载 =====
 const detailLoading = ref(false);
@@ -103,8 +133,7 @@ async function load(item: DiagnosisApi.LatestRunItem) {
   loopInfo.value = null;
   getLoopListApi({ keyword: item.loopTagName, page: 1, pageSize: 20 })
     .then((res) => {
-      loopInfo.value =
-        res.items.find((l) => l.loopId === item.loopId) ?? null;
+      loopInfo.value = res.items.find((l) => l.loopId === item.loopId) ?? null;
     })
     .catch(() => {
       loopInfo.value = null;
@@ -140,9 +169,7 @@ const unitPath = computed(() => {
     parts.unshift(cur.name);
     cur = cur.parentId ? nodeIndex.value.get(cur.parentId) : undefined;
   }
-  return parts.length > 0
-    ? parts.join('.')
-    : (info.unitName || '—');
+  return parts.length > 0 ? parts.join('.') : (info.unitName || '—');
 });
 
 /** PV 量程文本（min~max 单位） */
@@ -174,12 +201,104 @@ const twEnd = computed(
   () => props.item?.timeWindowEnd ?? runDetail.value?.timeWindowEnd,
 );
 
+// ===== Tab1 下半：人工复核表单 =====
+const reviewForm = ref<{ reviewComment: string; reviewResults: string[] }>({
+  reviewResults: [],
+  reviewComment: '',
+});
+const reviewSubmitting = ref(false);
+/** 复核时间展示：未复核=当前系统时间（自动填入）；已复核=上次复核时间 */
+const reviewTimeText = computed(() => {
+  if (props.item?.reviewStatus === 'REVIEWED' && props.item.reviewedAt) {
+    return fmtLocal(props.item.reviewedAt);
+  }
+  return dayjs().format('YYYY-MM-DD HH:mm:ss');
+});
+/** 复核人展示：未复核=当前登录用户；已复核=上次复核人 */
+const reviewerText = computed(() => {
+  if (props.item?.reviewStatus === 'REVIEWED' && props.item.reviewedBy) {
+    return props.item.reviewedBy;
+  }
+  return currentUserName.value;
+});
+
+async function submitReview() {
+  if (!props.item?.runId) return;
+  if (reviewForm.value.reviewResults.length === 0) {
+    message.warning('请至少选择一项复核结论');
+    return;
+  }
+  reviewSubmitting.value = true;
+  try {
+    await reviewDiagnosisRunApi(props.item.runId, {
+      reviewComment: reviewForm.value.reviewComment || null,
+      reviewResults: reviewForm.value.reviewResults,
+    });
+    message.success('复核已记录');
+    emit('reviewed');
+    // 刷新诊断详情 + 处置建议（后端已按复核结论重置系统建议）
+    if (props.item.runId) {
+      load(props.item);
+      actionsLoaded.value = false;
+      if (activeTab.value === 'advice') loadActions();
+    }
+  } finally {
+    reviewSubmitting.value = false;
+  }
+}
+
+// ===== Tab3：处置建议 =====
+const actionsLoading = ref(false);
+const actionsLoaded = ref(false);
+const actionItems = ref<DiagnosisApi.ActionItem[]>([]);
+const newActionContent = ref('');
+const newActionSubmitting = ref(false);
+
+async function loadActions(): Promise<void> {
+  const runId = props.item?.runId;
+  if (!runId) return;
+  actionsLoading.value = true;
+  try {
+    const res = await getRunActionsApi(runId);
+    actionItems.value = res.items;
+    actionsLoaded.value = true;
+  } catch {
+    actionItems.value = [];
+  } finally {
+    actionsLoading.value = false;
+  }
+}
+
+async function submitNewAction(): Promise<void> {
+  const runId = props.item?.runId;
+  const content = newActionContent.value.trim();
+  if (!runId || !content) {
+    if (!content) message.warning('请输入处置措施内容');
+    return;
+  }
+  newActionSubmitting.value = true;
+  try {
+    await createRunActionApi(runId, { content });
+    message.success('处置措施已添加');
+    newActionContent.value = '';
+    loadActions();
+  } finally {
+    newActionSubmitting.value = false;
+  }
+}
+
 // ===== Tabs =====
 const activeTab = ref('conclusion');
 
+watch(activeTab, (tab) => {
+  if (tab === 'advice' && !actionsLoaded.value && props.item?.runId) {
+    loadActions();
+  }
+});
+
 // ===== 拖动 + 调整宽高 =====
 const modalW = ref(720);
-const bodyH = ref(520);
+const bodyH = ref(560);
 const MIN_W = 640;
 const MIN_H = 360;
 
@@ -270,6 +389,16 @@ function bindDragOnce() {
 watch(open, (v) => {
   if (v && props.item) {
     activeTab.value = 'conclusion';
+    // 复核表单回显：已复核预填上次结论（可改判）；未复核默认勾选 AI 主分类
+    reviewForm.value.reviewResults = props.item.reviewResults?.length
+      ? [...props.item.reviewResults]!
+      : props.item.primaryCategory
+        ? [props.item.primaryCategory]
+        : [];
+    reviewForm.value.reviewComment = '';
+    actionsLoaded.value = false;
+    actionItems.value = [];
+    newActionContent.value = '';
     load(props.item);
     nextTick(bindDragOnce);
   } else if (!v) {
@@ -288,140 +417,170 @@ watch(open, (v) => {
     wrap-class-name="diag-detail-modal"
   >
     <div v-if="item" class="diag-detail-body">
-      <!-- ===== 顶部三信息区（Tabs 上方） ===== -->
+      <!-- ===== 顶部三信息卡（标签+值，排列整齐） ===== -->
       <div class="diag-detail-top">
         <!-- ① 回路基本信息 -->
-        <div class="diag-detail-row">
-          <span class="diag-detail-row__title">回路基本信息</span>
-          <span class="diag-info">
-            <span class="diag-info__k">位号</span>
-            <span class="diag-info__v font-semibold">{{ item.loopTagName }}</span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">名称</span>
-            <span class="diag-info__v">{{ item.loopDescription || '—' }}</span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">等级</span>
-            <span
-              v-if="item.importanceLevel"
-              class="diag-info__v"
-              :style="{ color: IMPORTANCE_LEVEL_COLOR[item.importanceLevel] }"
-            >
-              {{ IMPORTANCE_LEVEL_TEXT[item.importanceLevel] }}
-            </span>
-            <span v-else class="diag-info__v">—</span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">量程</span>
-            <span class="diag-info__v tabular-nums">{{ rangeText }}</span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">装置.单元</span>
-            <span class="diag-info__v">{{ unitPath }}</span>
-          </span>
+        <div class="diag-detail-card">
+          <div class="diag-detail-card__title">回路基本信息</div>
+          <Descriptions :column="5" bordered size="small" class="diag-detail-desc">
+            <DescriptionsItem label="回路位号">
+              <span class="font-semibold">{{ item.loopTagName }}</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="回路名称">
+              <span class="diag-ellipsis" :title="item.loopDescription ?? ''">
+                {{ item.loopDescription || '—' }}
+              </span>
+            </DescriptionsItem>
+            <DescriptionsItem label="回路等级">
+              <span
+                v-if="item.importanceLevel"
+                :style="{ color: IMPORTANCE_LEVEL_COLOR[item.importanceLevel] }"
+              >
+                {{ IMPORTANCE_LEVEL_TEXT[item.importanceLevel] }}
+              </span>
+              <span v-else>—</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="量程">
+              <span class="tabular-nums">{{ rangeText }}</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="装置.单元">
+              <span class="diag-ellipsis" :title="unitPath">{{ unitPath }}</span>
+            </DescriptionsItem>
+          </Descriptions>
         </div>
 
         <!-- ② 最新性能评估指标 -->
-        <div class="diag-detail-row">
-          <span class="diag-detail-row__title">性能评估指标</span>
-          <Skeleton
-            v-if="kpiLoading"
-            :paragraph="{ rows: 1 }"
-            active
-            class="flex-1"
-          />
-          <template v-else-if="kpi">
-            <span class="diag-info">
-              <span class="diag-info__k">综合评分</span>
-              <span
-                class="diag-info__v text-base font-semibold tabular-nums"
-                :style="{ color: grade?.color }"
-              >
+        <div class="diag-detail-card">
+          <div class="diag-detail-card__title">性能评估指标</div>
+          <Skeleton v-if="kpiLoading" :paragraph="{ rows: 1 }" active />
+          <Descriptions v-else-if="kpi" :column="5" bordered size="small" class="diag-detail-desc">
+            <DescriptionsItem label="综合评分">
+              <span class="font-semibold tabular-nums" :style="{ color: grade?.color }">
                 {{ kpi.score != null ? kpi.score.toFixed(1) : '—' }}
               </span>
-            </span>
-            <span class="diag-info">
-              <span class="diag-info__k">等级</span>
-              <span
-                class="diag-info__v"
-                :style="{ color: grade?.color }"
-              >
-                {{ grade?.label ?? '—' }}
-              </span>
-            </span>
-            <span
-              v-for="r in kpiRates"
-              :key="r.label"
-              class="diag-info"
-            >
-              <span class="diag-info__k">{{ r.label }}</span>
-              <span class="diag-info__v tabular-nums">{{ r.value }}</span>
-            </span>
-            <span class="diag-info">
-              <span class="diag-info__k">评估窗口</span>
-              <span class="diag-info__v tabular-nums">
+            </DescriptionsItem>
+            <DescriptionsItem label="性能等级">
+              <span v-if="grade" :style="{ color: grade.color }">{{ grade.label }}</span>
+              <span v-else>—</span>
+            </DescriptionsItem>
+            <DescriptionsItem v-for="r in kpiRates" :key="r.label" :label="r.label">
+              <span class="tabular-nums">{{ r.value }}</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="评估窗口">
+              <span class="tabular-nums">
                 {{ fmtLocal(kpi.tsStart) }} ~ {{ fmtLocal(kpi.tsEnd) }}
               </span>
-            </span>
-          </template>
-          <span v-else class="text-xs text-neutral-400">
+            </DescriptionsItem>
+          </Descriptions>
+          <div v-else class="diag-detail-card__empty">
             暂无性能评估数据（尚未生成 KPI 快照）
-          </span>
+          </div>
         </div>
 
         <!-- ③ 诊断基本信息 -->
-        <div class="diag-detail-row">
-          <span class="diag-detail-row__title">诊断基本信息</span>
-          <span class="diag-info">
-            <span class="diag-info__k">诊断次序</span>
-            <span class="diag-info__v">
+        <div class="diag-detail-card">
+          <div class="diag-detail-card__title">诊断基本信息</div>
+          <Descriptions :column="4" bordered size="small" class="diag-detail-desc">
+            <DescriptionsItem label="诊断次序">
               {{ item.runCount ? `第 ${item.runCount} 次` : '未诊断' }}
-            </span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">诊断时间</span>
-            <span class="diag-info__v tabular-nums">
-              {{ fmtLocal(item.lastDiagnosedAt) }}
-            </span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">触发方式</span>
-            <span
-              v-if="item.triggerType"
-              class="diag-info__v"
-              :style="{ color: TRIGGER_TYPE_COLOR[item.triggerType] }"
-            >
-              {{
-                item.triggerTypeLabel ??
-                TRIGGER_TYPE_TEXT[item.triggerType] ??
-                item.triggerType
-              }}
-            </span>
-            <span v-else class="diag-info__v">—</span>
-          </span>
-          <span class="diag-info">
-            <span class="diag-info__k">时间窗口</span>
-            <span class="diag-info__v tabular-nums">
-              {{ fmtLocal(twStart) }} ~ {{ fmtLocal(twEnd) }}
-            </span>
-          </span>
+            </DescriptionsItem>
+            <DescriptionsItem label="诊断时间">
+              <span class="tabular-nums">{{ fmtLocal(item.lastDiagnosedAt) }}</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="触发方式">
+              <span
+                v-if="item.triggerType"
+                :style="{ color: TRIGGER_TYPE_COLOR[item.triggerType] }"
+              >
+                {{
+                  item.triggerTypeLabel ??
+                  TRIGGER_TYPE_TEXT[item.triggerType] ??
+                  item.triggerType
+                }}
+              </span>
+              <span v-else>—</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="时间窗口">
+              <span class="tabular-nums">
+                {{ fmtLocal(twStart) }} ~ {{ fmtLocal(twEnd) }}
+              </span>
+            </DescriptionsItem>
+          </Descriptions>
         </div>
       </div>
 
-      <!-- ===== 三 Tab：诊断结论 / 证据链 / 处置建议 ===== -->
+      <!-- ===== 三 Tab：诊断结论 / 诊断证据 / 处置建议 ===== -->
       <Tabs v-model:active-key="activeTab" class="diag-detail-tabs" size="small">
+        <!-- Tab1 诊断结论：上=AI 结论；下=人工复核 -->
         <TabPane key="conclusion" tab="诊断结论">
           <Empty v-if="!item.runId" class="py-6" description="该回路尚未诊断" />
-          <Spin v-else-if="detailLoading" class="block py-6" />
-          <DiagnosisResultPanel
-            v-else-if="runDetail"
-            :detail="runDetail"
-            section="conclusion"
-          />
-          <Empty v-else class="py-6" description="诊断详情加载失败" />
+          <template v-else>
+            <Spin v-if="detailLoading" class="block py-6" />
+            <template v-else>
+              <DiagnosisResultPanel
+                v-if="runDetail"
+                :detail="runDetail"
+                section="conclusion"
+              />
+              <Empty v-else class="py-6" description="诊断详情加载失败" />
+            </template>
+
+            <!-- 人工复核（复核时间/复核人自动填入） -->
+            <div class="diag-review">
+              <div class="diag-review__title">
+                人工复核
+                <Tag
+                  v-if="item.reviewStatus === 'REVIEWED'"
+                  color="green"
+                  style="margin-left: 6px"
+                >
+                  已复核
+                </Tag>
+                <Tag v-else color="orange" style="margin-left: 6px">待复核</Tag>
+              </div>
+              <Form layout="vertical" class="diag-review__form">
+                <FormItem label="复核结论（多选）" required>
+                  <Select
+                    v-model:value="reviewForm.reviewResults"
+                    :options="CATEGORY_OPTIONS"
+                    mode="multiple"
+                    placeholder="选择人工确认的问题分类（可多选）"
+                    :max-tag-count="4"
+                  />
+                </FormItem>
+                <FormItem label="复核意见">
+                  <Textarea
+                    v-model:value="reviewForm.reviewComment"
+                    :maxlength="500"
+                    placeholder="记录现场核实情况、处理安排等（可选，≤500 字）"
+                    :rows="3"
+                    show-count
+                  />
+                </FormItem>
+                <div class="diag-review__meta">
+                  <div class="diag-review__field">
+                    <span class="diag-review__k">复核时间</span>
+                    <Input :value="reviewTimeText" readonly size="small" />
+                  </div>
+                  <div class="diag-review__field">
+                    <span class="diag-review__k">复核人</span>
+                    <Input :value="reviewerText" readonly size="small" />
+                  </div>
+                  <Button
+                    :loading="reviewSubmitting"
+                    type="primary"
+                    @click="submitReview"
+                  >
+                    {{ item.reviewStatus === 'REVIEWED' ? '更新复核' : '提交复核' }}
+                  </Button>
+                </div>
+              </Form>
+            </div>
+          </template>
         </TabPane>
-        <TabPane key="evidence" tab="证据链">
+
+        <!-- Tab2 诊断证据：数据质量/波形快照/特征值（默认全展开） -->
+        <TabPane key="evidence" tab="诊断证据">
           <Empty v-if="!item.runId" class="py-6" description="该回路尚未诊断" />
           <Spin v-else-if="detailLoading" class="block py-6" />
           <DiagnosisResultPanel
@@ -431,15 +590,60 @@ watch(open, (v) => {
           />
           <Empty v-else class="py-6" description="诊断详情加载失败" />
         </TabPane>
+
+        <!-- Tab3 处置建议：系统带出 + 人工新增 -->
         <TabPane key="advice" tab="处置建议">
           <Empty v-if="!item.runId" class="py-6" description="该回路尚未诊断" />
-          <Spin v-else-if="detailLoading" class="block py-6" />
-          <DiagnosisResultPanel
-            v-else-if="runDetail"
-            :detail="runDetail"
-            section="advice"
-          />
-          <Empty v-else class="py-6" description="诊断详情加载失败" />
+          <template v-else>
+            <Spin v-if="actionsLoading" class="block py-6" />
+            <template v-else>
+              <div v-if="actionItems.length" class="diag-action-list">
+                <div
+                  v-for="a in actionItems"
+                  :key="a.id"
+                  class="diag-action-item"
+                >
+                  <div class="flex items-start gap-2">
+                    <Tag :color="a.source === 'SYSTEM' ? 'blue' : 'green'" class="mt-0.5 shrink-0">
+                      {{ a.source === 'SYSTEM' ? `系统建议 R${a.priority}` : '人工新增' }}
+                    </Tag>
+                    <div class="min-w-0 flex-1">
+                      <div>{{ a.content }}</div>
+                      <div class="mt-0.5 text-xs text-neutral-500">
+                        依据：{{ a.basis || '—' }} · 建议人 {{ a.suggestedBy }} ·
+                        {{ fmtLocal(a.suggestedAt) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <Empty v-else class="py-4" description="暂无处置建议" />
+
+              <!-- 新增处置措施（建议人/建议时间由系统自动带入） -->
+              <div class="diag-action-new">
+                <div class="diag-review__title">新增处置措施</div>
+                <Textarea
+                  v-model:value="newActionContent"
+                  :maxlength="500"
+                  :rows="2"
+                  placeholder="输入处置措施（建议人与建议时间将自动记录为当前登录用户与系统时间）"
+                />
+                <div class="diag-action-new__footer">
+                  <span class="text-xs text-neutral-400">
+                    建议人 {{ currentUserName }} · {{ dayjs().format('YYYY-MM-DD HH:mm') }}
+                  </span>
+                  <Button
+                    :loading="newActionSubmitting"
+                    size="small"
+                    type="primary"
+                    @click="submitNewAction"
+                  >
+                    添加
+                  </Button>
+                </div>
+              </div>
+            </template>
+          </template>
         </TabPane>
       </Tabs>
 
@@ -468,46 +672,50 @@ watch(open, (v) => {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  gap: 6px;
-  max-height: 45%;
+  gap: 8px;
   margin-bottom: 8px;
-  padding: 8px 10px;
-  overflow: auto;
-  background: hsl(var(--accent) / 25%);
+}
+
+.diag-detail-modal .diag-detail-card {
+  background: hsl(var(--accent) / 20%);
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
 }
 
-.diag-detail-modal .diag-detail-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  align-items: baseline;
+.diag-detail-modal .diag-detail-card__title {
+  padding: 4px 10px 0;
   font-size: 12px;
-  line-height: 20px;
-}
-
-.diag-detail-modal .diag-detail-row__title {
-  flex-shrink: 0;
-  width: 76px;
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
 
-.diag-detail-modal .diag-info {
-  display: inline-flex;
-  gap: 4px;
-  align-items: baseline;
-  min-width: 0;
+.diag-detail-modal .diag-detail-card__empty {
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
-.diag-detail-modal .diag-info__k {
-  color: hsl(var(--accent-foreground) / 55%);
+/* Descriptions 标签+值紧凑形态 */
+.diag-detail-modal .diag-detail-desc {
+  font-size: 12px;
+}
+
+.diag-detail-modal .diag-detail-desc .ant-descriptions-item-label {
+  width: 88px;
+  font-size: 12px;
+  color: hsl(var(--accent-foreground) / 60%);
   white-space: nowrap;
 }
 
-.diag-detail-modal .diag-info__v {
-  font-weight: 500;
+.diag-detail-modal .diag-detail-desc .ant-descriptions-item-content {
+  font-size: 12px;
+}
+
+.diag-detail-modal .diag-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Tabs 占满剩余高度，tab 内容区滚动 */
@@ -521,8 +729,76 @@ watch(open, (v) => {
 .diag-detail-modal .diag-detail-tabs > .ant-tabs-content-holder {
   flex: 1;
   min-height: 0;
-  overflow: auto;
   padding-right: 2px;
+  overflow: auto;
+}
+
+/* 人工复核区（诊断结论 Tab 下半） */
+.diag-detail-modal .diag-review {
+  margin-top: 12px;
+  padding: 12px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-detail-modal .diag-review__title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 85%);
+}
+
+.diag-detail-modal .diag-review__meta {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.diag-detail-modal .diag-review__field {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+}
+
+.diag-detail-modal .diag-review__k {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* 处置建议列表 */
+.diag-detail-modal .diag-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diag-detail-modal .diag-action-item {
+  padding: 8px 10px;
+  font-size: 12px;
+  background: hsl(var(--accent) / 20%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-detail-modal .diag-action-new {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: hsl(var(--card));
+  border: 1px dashed hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-detail-modal .diag-action-new__footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
 }
 
 /* 右下角宽高手柄 */

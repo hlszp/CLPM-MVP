@@ -85,7 +85,7 @@ const primaryConfBasis = computed(() => {
   return lines.filter((l) => !l.endsWith('】'));
 });
 
-const activeKeys = ref<string[]>([]);
+const activeKeys = ref<string[]>(['features', 'charts']);
 
 /** 症状标签行：fusionResults 中 detected 的症状 */
 const symptomRows = ref<Array<{ label: string; confidence: number }>>([]);
@@ -96,6 +96,7 @@ const SYMPTOM_LABELS: Record<string, string> = {
   OVERCONSERVATIVE: '响应迟缓',
   EXTERNAL_DISTURBANCE: '外部扰动',
   QUALITY_ABNORMAL: '质量异常',
+  LINK_ABNORMAL: '通信链路异常',
   OUTPUT_SATURATION: '输出饱和',
 };
 watch(
@@ -410,7 +411,7 @@ watch(isDark, () => {
 
     <!-- ⑤ 证据链折叠区 -->
     <Collapse v-if="showEvidence" v-model:active-key="activeKeys" class="diag-evidence">
-      <CollapsePanel v-if="featureRows?.length" header="证据链 · 特征值" key="features">
+      <CollapsePanel v-if="featureRows?.length" header="特征值" key="features">
         <Table
           :columns="[
             { title: '算子', dataIndex: 'operator', width: 180 },
@@ -425,7 +426,7 @@ watch(isDark, () => {
           size="small"
         />
       </CollapsePanel>
-      <CollapsePanel v-if="detail.evidenceCharts" header="证据链 · 波形快照" key="charts">
+      <CollapsePanel v-if="detail.evidenceCharts" header="波形快照" key="charts">
         <div class="space-y-3">
           <div>
             <div class="mb-1 text-xs text-neutral-500">PV/SP/OP 趋势（诊断时间窗）</div>

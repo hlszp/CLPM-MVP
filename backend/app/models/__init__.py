@@ -24,6 +24,7 @@ from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.loop_action_item import LoopActionItem
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
 from app.models.metric import (
     KpiSnapshotCustom,
@@ -58,6 +59,7 @@ __all__ = [
     "PlantNode",
     "ProcessModelVersion",
     "LoopLedger",
+    "LoopActionItem",
     "LoopTagMapping",
     "LoopModeMapping",
     "LoopTypeWeight",

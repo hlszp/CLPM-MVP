@@ -1689,6 +1689,32 @@ CREATE INDEX IF NOT EXISTS idx_diagnosis_run_loop_created ON diagnosis_run (loop
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (primary_category);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_task         ON diagnosis_run (task_id);
 
+-- -----------------------------------------------------------------------------
+-- 回路处置建议（§9.4 处置闭环：建议-处置-验证-关闭，当前仅建议态；2026-08-18）
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS loop_action_item (
+    id            UUID PRIMARY KEY,
+    run_id        UUID NOT NULL REFERENCES diagnosis_run(id) ON DELETE CASCADE,
+    loop_id       UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    source        VARCHAR(8)   NOT NULL DEFAULT 'SYSTEM',
+    category      VARCHAR(32),
+    content       TEXT         NOT NULL,
+    basis         VARCHAR(500),
+    priority      INTEGER,
+    status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    suggested_by  VARCHAR(64)  NOT NULL,
+    suggested_at  TIMESTAMP    NOT NULL,
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT ck_loop_action_item_source CHECK (source IN ('SYSTEM', 'MANUAL')),
+    CONSTRAINT ck_loop_action_item_status CHECK (status IN ('PENDING')),
+    CONSTRAINT ck_loop_action_item_category CHECK (category IS NULL OR category IN
+        ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS',
+         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT'))
+);
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_run  ON loop_action_item (run_id);
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_loop ON loop_action_item (loop_id, suggested_at);
+
 -- =============================================================================
 -- 脚本结束
 -- =============================================================================

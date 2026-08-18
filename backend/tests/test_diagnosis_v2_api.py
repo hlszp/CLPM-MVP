@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from app.models.diagnosis_run import DiagnosisRun
+from app.models.loop_action_item import LoopActionItem
 from tests.conftest import TEST_USERS, mock_current_user
 
 LOOP_ID = str(uuid4())
@@ -514,5 +515,157 @@ class TestReviewEndpoint:
                 f"/api/v1/diagnosis/runs/{RUN_ID}/review",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"reviewResults": ["VALVE"]},
+            )
+        assert resp.status_code == 403
+
+
+def _make_action(
+    *,
+    source: str = "SYSTEM",
+    category: str | None = "INSTRUMENT",
+    content: str = "校验测量仪表",
+    basis: str = "诊断结论：仪表/测量问题",
+    priority: int | None = 1,
+    suggested_by: str = "系统",
+) -> LoopActionItem:
+    from datetime import UTC
+
+    return LoopActionItem(
+        id=str(uuid4()),
+        run_id=RUN_ID,
+        loop_id=LOOP_ID,
+        source=source,
+        category=category,
+        content=content,
+        basis=basis,
+        priority=priority,
+        status="PENDING",
+        suggested_by=suggested_by,
+        suggested_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+
+
+class TestRunActionsEndpoint:
+    """GET/POST /api/v1/diagnosis/runs/{id}/actions（§9.4 处置建议）。"""
+
+    def _override_db(self, client, run_or_none, list_results) -> MagicMock:
+        """mock db：第 1 次 execute 返回 run（scalar_one_or_none），
+        后续 execute 按序返回列表查询结果（scalars().all()）。"""
+        from app.core.db import get_db
+
+        run_r = MagicMock()
+        run_r.scalar_one_or_none.return_value = run_or_none
+        mock_db = MagicMock()
+        mock_db.execute = _seq_execute([run_r, *list_results])
+        mock_db.commit = AsyncMock()
+        mock_db.flush = AsyncMock()
+        mock_db.add = MagicMock()
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+        return mock_db
+
+    @staticmethod
+    def _list_result(items: list) -> MagicMock:
+        r = MagicMock()
+        r.scalars.return_value.all.return_value = items
+        return r
+
+    def test_list_generates_system_actions_when_empty(self, client) -> None:
+        """首次拉取为空 → 按诊断结论自动生成标准建议（INSTRUMENT 2 条）。"""
+        run = _make_run()
+        generated = [
+            _make_action(content="校验测量仪表：对变送器进行零点/量程校验…", priority=1),
+            _make_action(content="检查信号接线与屏蔽：排查信号电缆…", priority=2),
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            mock_db = self._override_db(
+                client, run, [self._list_result([]), self._list_result(generated)]
+            )
+            resp = client.get(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        assert len(items) == 2
+        assert all(i["source"] == "SYSTEM" for i in items)
+        assert items[0]["categoryLabel"] == "仪表/测量问题"
+        assert items[0]["suggestedBy"] == "系统"
+        # 生成路径：db.add 被调用并提交
+        assert mock_db.add.call_count == 2
+        mock_db.commit.assert_awaited()
+
+    def test_list_returns_existing_without_regeneration(self, client) -> None:
+        run = _make_run()
+        existing = [
+            _make_action(source="MANUAL", category=None, content="人工措施", suggested_by="admin")
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            mock_db = self._override_db(client, run, [self._list_result(existing)])
+            resp = client.get(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        assert len(items) == 1
+        assert items[0]["source"] == "MANUAL"
+        assert items[0]["suggestedBy"] == "admin"
+        mock_db.add.assert_not_called()
+
+    def test_list_uses_review_results_when_reviewed(self, client) -> None:
+        """已复核 → 按复核结论生成（basis=人工复核前缀）。"""
+        run = _make_run()
+        run.review_status = "REVIEWED"
+        run.review_results = ["TUNING"]
+        generated = [
+            _make_action(
+                category="TUNING",
+                content="重新整定 PID 参数：…",
+                basis="人工复核：参数问题（PID 整定）",
+                priority=1,
+            ),
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, run, [self._list_result([]), self._list_result(generated)])
+            resp = client.get(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        assert items[0]["basis"].startswith("人工复核")
+
+    def test_list_run_not_found(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, None, [])
+            resp = client.get(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+
+    def test_create_manual_action(self, client) -> None:
+        """人工新增：source=MANUAL，建议人=当前登录用户。"""
+        run = _make_run()
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            mock_db = self._override_db(client, run, [])
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"content": "安排 8 月 20 日变送器校验", "basis": "现场确认漂移"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["source"] == "MANUAL"
+        assert data["suggestedBy"] == TEST_USERS["ic_engineer"].username
+        assert data["suggestedAt"] is not None
+        mock_db.add.assert_called_once()
+
+    def test_create_action_forbidden_for_sponsor(self, client) -> None:
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"content": "x"},
             )
         assert resp.status_code == 403
