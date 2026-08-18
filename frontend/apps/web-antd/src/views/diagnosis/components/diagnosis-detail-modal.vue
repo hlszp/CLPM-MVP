@@ -1,14 +1,13 @@
 <script setup lang="ts">
 /**
- * 诊断详情弹窗 —— 遮罩模式，点击概览行弹出（2026-08-18 v3）。
+ * 诊断详情弹窗 —— 遮罩模式，点击概览行弹出（2026-08-18 v4）。
  *
- * 交互：标题栏可拖动移动；右下角手柄可调整宽高（初始 720px）。
- * 结构：
- * - 顶部三信息卡（回路基本信息 / 性能评估指标 / 诊断基本信息，Descriptions 标签+值）
- * - Tab1 诊断结论：上=结论卡（结论/置信度/严重度/症状中文）；
- *   下=人工复核表单（复核结论多选 + 意见；复核时间/复核人自动填入）
- * - Tab2 诊断证据：数据质量 / 波形快照 / 特征值 三区默认全展开
- * - Tab3 处置建议：系统按诊断/复核结论自动带出标准建议 + 人工新增处置措施
+ * 交互：标题栏可拖动移动；右下角手柄可调整宽高（默认 800×600）。
+ * 结构（单页三区块，不再分 Tab）：
+ * - 顶部三信息卡：回路基本信息 / 性能评估指标（单行）/ 诊断基本信息
+ * - ① 诊断结论：AI 结论卡 + 人工复核表单（复核时间/复核人自动填入）
+ * - ② 诊断证据：数据质量 / 波形快照 / 特征值（默认全展开）
+ * - ③ 处置建议：系统按诊断/复核结论自动带出 + 人工新增处置措施
  */
 import { computed, nextTick, ref, watch } from 'vue';
 
@@ -25,8 +24,6 @@ import {
   Select,
   Skeleton,
   Spin,
-  TabPane,
-  Tabs,
   Tag,
   Textarea,
   message,
@@ -180,7 +177,7 @@ const rangeText = computed(() => {
   return `${r.min ?? '?'}~${r.max ?? '?'}${unit ? ` ${unit}` : ''}`;
 });
 
-/** 性能评估指标 6 率（用户指定口径） */
+/** 性能评估指标 6 率（单行紧凑展示） */
 const kpiRates = computed(() => {
   const k = kpi.value;
   return [
@@ -201,7 +198,7 @@ const twEnd = computed(
   () => props.item?.timeWindowEnd ?? runDetail.value?.timeWindowEnd,
 );
 
-// ===== Tab1 下半：人工复核表单 =====
+// ===== ① 诊断结论：人工复核表单 =====
 const reviewForm = ref<{ reviewComment: string; reviewResults: string[] }>({
   reviewResults: [],
   reviewComment: '',
@@ -239,17 +236,15 @@ async function submitReview() {
     // 刷新诊断详情 + 处置建议（后端已按复核结论重置系统建议）
     if (props.item.runId) {
       load(props.item);
-      actionsLoaded.value = false;
-      if (activeTab.value === 'advice') loadActions();
+      loadActions();
     }
   } finally {
     reviewSubmitting.value = false;
   }
 }
 
-// ===== Tab3：处置建议 =====
+// ===== ③ 处置建议 =====
 const actionsLoading = ref(false);
-const actionsLoaded = ref(false);
 const actionItems = ref<DiagnosisApi.ActionItem[]>([]);
 const newActionContent = ref('');
 const newActionSubmitting = ref(false);
@@ -261,7 +256,6 @@ async function loadActions(): Promise<void> {
   try {
     const res = await getRunActionsApi(runId);
     actionItems.value = res.items;
-    actionsLoaded.value = true;
   } catch {
     actionItems.value = [];
   } finally {
@@ -287,18 +281,9 @@ async function submitNewAction(): Promise<void> {
   }
 }
 
-// ===== Tabs =====
-const activeTab = ref('conclusion');
-
-watch(activeTab, (tab) => {
-  if (tab === 'advice' && !actionsLoaded.value && props.item?.runId) {
-    loadActions();
-  }
-});
-
 // ===== 拖动 + 调整宽高 =====
-const modalW = ref(720);
-const bodyH = ref(560);
+const modalW = ref(800);
+const bodyH = ref(600);
 const MIN_W = 640;
 const MIN_H = 360;
 
@@ -388,7 +373,6 @@ function bindDragOnce() {
 
 watch(open, (v) => {
   if (v && props.item) {
-    activeTab.value = 'conclusion';
     // 复核表单回显：已复核预填上次结论（可改判）；未复核默认勾选 AI 主分类
     reviewForm.value.reviewResults = props.item.reviewResults?.length
       ? [...props.item.reviewResults]!
@@ -396,10 +380,10 @@ watch(open, (v) => {
         ? [props.item.primaryCategory]
         : [];
     reviewForm.value.reviewComment = '';
-    actionsLoaded.value = false;
     actionItems.value = [];
     newActionContent.value = '';
     load(props.item);
+    loadActions();
     nextTick(bindDragOnce);
   } else if (!v) {
     resetModalPosition();
@@ -417,7 +401,7 @@ watch(open, (v) => {
     wrap-class-name="diag-detail-modal"
   >
     <div v-if="item" class="diag-detail-body">
-      <!-- ===== 顶部三信息卡（标签+值，排列整齐） ===== -->
+      <!-- ===== 顶部三信息卡 ===== -->
       <div class="diag-detail-top">
         <!-- ① 回路基本信息 -->
         <div class="diag-detail-card">
@@ -449,29 +433,40 @@ watch(open, (v) => {
           </Descriptions>
         </div>
 
-        <!-- ② 最新性能评估指标 -->
+        <!-- ② 性能评估指标（单行紧凑） -->
         <div class="diag-detail-card">
           <div class="diag-detail-card__title">性能评估指标</div>
-          <Skeleton v-if="kpiLoading" :paragraph="{ rows: 1 }" active />
-          <Descriptions v-else-if="kpi" :column="5" bordered size="small" class="diag-detail-desc">
-            <DescriptionsItem label="综合评分">
-              <span class="font-semibold tabular-nums" :style="{ color: grade?.color }">
+          <Skeleton
+            v-if="kpiLoading"
+            :paragraph="{ rows: 1 }"
+            active
+            class="diag-kpi-skeleton"
+          />
+          <div v-else-if="kpi" class="diag-kpi-row">
+            <span class="diag-kpi__item">
+              <span class="diag-kpi__k">综合评分</span>
+              <span
+                class="font-semibold tabular-nums"
+                :style="{ color: grade?.color }"
+              >
                 {{ kpi.score != null ? kpi.score.toFixed(1) : '—' }}
               </span>
-            </DescriptionsItem>
-            <DescriptionsItem label="性能等级">
-              <span v-if="grade" :style="{ color: grade.color }">{{ grade.label }}</span>
-              <span v-else>—</span>
-            </DescriptionsItem>
-            <DescriptionsItem v-for="r in kpiRates" :key="r.label" :label="r.label">
+            </span>
+            <span class="diag-kpi__item">
+              <span class="diag-kpi__k">等级</span>
+              <span :style="{ color: grade?.color }">{{ grade?.label ?? '—' }}</span>
+            </span>
+            <span v-for="r in kpiRates" :key="r.label" class="diag-kpi__item">
+              <span class="diag-kpi__k">{{ r.label }}</span>
               <span class="tabular-nums">{{ r.value }}</span>
-            </DescriptionsItem>
-            <DescriptionsItem label="评估窗口">
+            </span>
+            <span class="diag-kpi__item diag-kpi__item--window">
+              <span class="diag-kpi__k">评估窗口</span>
               <span class="tabular-nums">
-                {{ fmtLocal(kpi.tsStart) }} ~ {{ fmtLocal(kpi.tsEnd) }}
+                {{ fmtLocal(kpi.tsStart) }}~{{ fmtLocal(kpi.tsEnd) }}
               </span>
-            </DescriptionsItem>
-          </Descriptions>
+            </span>
+          </div>
           <div v-else class="diag-detail-card__empty">
             暂无性能评估数据（尚未生成 KPI 快照）
           </div>
@@ -502,27 +497,28 @@ watch(open, (v) => {
             </DescriptionsItem>
             <DescriptionsItem label="时间窗口">
               <span class="tabular-nums">
-                {{ fmtLocal(twStart) }} ~ {{ fmtLocal(twEnd) }}
+                {{ fmtLocal(twStart) }}~{{ fmtLocal(twEnd) }}
               </span>
             </DescriptionsItem>
           </Descriptions>
         </div>
       </div>
 
-      <!-- ===== 三 Tab：诊断结论 / 诊断证据 / 处置建议 ===== -->
-      <Tabs v-model:active-key="activeTab" class="diag-detail-tabs" size="small">
-        <!-- Tab1 诊断结论：上=AI 结论；下=人工复核 -->
-        <TabPane key="conclusion" tab="诊断结论">
-          <Empty v-if="!item.runId" class="py-6" description="该回路尚未诊断" />
+      <!-- ===== 单页三区块（可滚动） ===== -->
+      <div class="diag-detail-content">
+        <!-- ① 诊断结论 -->
+        <div class="diag-section">
+          <div class="diag-section__title">诊断结论</div>
+          <Empty v-if="!item.runId" class="py-4" description="该回路尚未诊断" />
           <template v-else>
-            <Spin v-if="detailLoading" class="block py-6" />
+            <Spin v-if="detailLoading" class="block py-4" />
             <template v-else>
               <DiagnosisResultPanel
                 v-if="runDetail"
                 :detail="runDetail"
                 section="conclusion"
               />
-              <Empty v-else class="py-6" description="诊断详情加载失败" />
+              <Empty v-else class="py-4" description="诊断详情加载失败" />
             </template>
 
             <!-- 人工复核（复核时间/复核人自动填入） -->
@@ -553,7 +549,7 @@ watch(open, (v) => {
                     v-model:value="reviewForm.reviewComment"
                     :maxlength="500"
                     placeholder="记录现场核实情况、处理安排等（可选，≤500 字）"
-                    :rows="3"
+                    :rows="2"
                     show-count
                   />
                 </FormItem>
@@ -577,25 +573,27 @@ watch(open, (v) => {
               </Form>
             </div>
           </template>
-        </TabPane>
+        </div>
 
-        <!-- Tab2 诊断证据：数据质量/波形快照/特征值（默认全展开） -->
-        <TabPane key="evidence" tab="诊断证据">
-          <Empty v-if="!item.runId" class="py-6" description="该回路尚未诊断" />
-          <Spin v-else-if="detailLoading" class="block py-6" />
+        <!-- ② 诊断证据 -->
+        <div class="diag-section">
+          <div class="diag-section__title">诊断证据</div>
+          <Empty v-if="!item.runId" class="py-4" description="该回路尚未诊断" />
+          <Spin v-else-if="detailLoading" class="block py-4" />
           <DiagnosisResultPanel
             v-else-if="runDetail"
             :detail="runDetail"
             section="evidence"
           />
-          <Empty v-else class="py-6" description="诊断详情加载失败" />
-        </TabPane>
+          <Empty v-else class="py-4" description="诊断详情加载失败" />
+        </div>
 
-        <!-- Tab3 处置建议：系统带出 + 人工新增 -->
-        <TabPane key="advice" tab="处置建议">
-          <Empty v-if="!item.runId" class="py-6" description="该回路尚未诊断" />
+        <!-- ③ 处置建议 -->
+        <div class="diag-section">
+          <div class="diag-section__title">处置建议</div>
+          <Empty v-if="!item.runId" class="py-4" description="该回路尚未诊断" />
           <template v-else>
-            <Spin v-if="actionsLoading" class="block py-6" />
+            <Spin v-if="actionsLoading" class="block py-4" />
             <template v-else>
               <div v-if="actionItems.length" class="diag-action-list">
                 <div
@@ -644,8 +642,8 @@ watch(open, (v) => {
               </div>
             </template>
           </template>
-        </TabPane>
-      </Tabs>
+        </div>
+      </div>
 
       <!-- 右下角宽高手柄 -->
       <div class="diag-detail-resize" @mousedown="onResizeStart" />
@@ -672,7 +670,7 @@ watch(open, (v) => {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 8px;
 }
 
@@ -683,16 +681,20 @@ watch(open, (v) => {
 }
 
 .diag-detail-modal .diag-detail-card__title {
-  padding: 4px 10px 0;
-  font-size: 12px;
+  padding: 3px 10px 0;
+  font-size: 11px;
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
 
 .diag-detail-modal .diag-detail-card__empty {
-  padding: 6px 10px 8px;
-  font-size: 12px;
+  padding: 4px 10px 6px;
+  font-size: 11px;
   color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-kpi-skeleton {
+  padding: 4px 10px 6px;
 }
 
 /* Descriptions 标签+值紧凑形态 */
@@ -701,14 +703,15 @@ watch(open, (v) => {
 }
 
 .diag-detail-modal .diag-detail-desc .ant-descriptions-item-label {
-  width: 88px;
-  font-size: 12px;
+  width: 76px;
+  font-size: 11px;
   color: hsl(var(--accent-foreground) / 60%);
   white-space: nowrap;
 }
 
 .diag-detail-modal .diag-detail-desc .ant-descriptions-item-content {
   font-size: 12px;
+  padding: 4px 8px;
 }
 
 .diag-detail-modal .diag-ellipsis {
@@ -718,25 +721,79 @@ watch(open, (v) => {
   white-space: nowrap;
 }
 
-/* Tabs 占满剩余高度，tab 内容区滚动 */
-.diag-detail-modal .diag-detail-tabs {
+/* 性能评估指标单行 */
+.diag-detail-modal .diag-kpi-row {
+  display: flex;
+  gap: 2px 14px;
+  align-items: baseline;
+  padding: 4px 10px 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.diag-detail-modal .diag-kpi__item {
+  display: inline-flex;
+  gap: 3px;
+  align-items: baseline;
+  flex-shrink: 0;
+}
+
+.diag-detail-modal .diag-kpi__k {
+  font-size: 11px;
+  color: hsl(var(--accent-foreground) / 55%);
+}
+
+.diag-detail-modal .diag-kpi__item--window {
+  margin-left: auto;
+}
+
+/* 单页内容区（滚动） */
+.diag-detail-modal .diag-detail-content {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 10px;
   min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+  font-size: 12px;
 }
 
-.diag-detail-modal .diag-detail-tabs > .ant-tabs-content-holder {
-  flex: 1;
-  min-height: 0;
-  padding-right: 2px;
-  overflow: auto;
+.diag-detail-modal .diag-section {
+  flex-shrink: 0;
 }
 
-/* 人工复核区（诊断结论 Tab 下半） */
+.diag-detail-modal .diag-section__title {
+  padding: 2px 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 85%);
+  background: hsl(var(--accent) / 40%);
+  border-left: 3px solid hsl(var(--primary) / 60%);
+  border-radius: 3px;
+}
+
+/* 区块内容紧凑（表格/标签/文本统一 12px） */
+.diag-detail-modal .diag-section .ant-table {
+  font-size: 12px;
+}
+
+.diag-detail-modal .diag-section .ant-table-cell {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.diag-detail-modal .diag-section .ant-tag {
+  font-size: 11px;
+}
+
+/* 人工复核区（诊断结论区块内） */
 .diag-detail-modal .diag-review {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
@@ -745,10 +802,18 @@ watch(open, (v) => {
 .diag-detail-modal .diag-review__title {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 6px;
+  font-size: 12px;
   font-weight: 600;
   color: hsl(var(--foreground) / 85%);
+}
+
+.diag-detail-modal .diag-review__form .ant-form-item {
+  margin-bottom: 8px;
+}
+
+.diag-detail-modal .diag-review__form .ant-form-item-label > label {
+  font-size: 12px;
 }
 
 .diag-detail-modal .diag-review__meta {
@@ -766,7 +831,7 @@ watch(open, (v) => {
 
 .diag-detail-modal .diag-review__k {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 11px;
   color: hsl(var(--muted-foreground));
 }
 
@@ -778,7 +843,7 @@ watch(open, (v) => {
 }
 
 .diag-detail-modal .diag-action-item {
-  padding: 8px 10px;
+  padding: 6px 10px;
   font-size: 12px;
   background: hsl(var(--accent) / 20%);
   border: 1px solid hsl(var(--border));
@@ -786,8 +851,8 @@ watch(open, (v) => {
 }
 
 .diag-detail-modal .diag-action-new {
-  margin-top: 10px;
-  padding: 10px 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
   background: hsl(var(--card));
   border: 1px dashed hsl(var(--border));
   border-radius: 6px;
