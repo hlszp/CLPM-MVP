@@ -57,11 +57,25 @@ class DiagnosisRun(Base, TimestampMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # --- 人工复核（§9.3 复核闭环，2026-08-18）---
+    #: 复核状态：PENDING 待复核 / REVIEWED 已复核
+    review_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PENDING", server_default="PENDING"
+    )
+    #: 复核结论（多选，存原因分类代码数组，与 primary_category 同域）
+    review_results: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    review_comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
             "status IN ('RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED')",
             name="ck_diagnosis_run_status",
+        ),
+        CheckConstraint(
+            "review_status IN ('PENDING', 'REVIEWED')",
+            name="ck_diagnosis_run_review_status",
         ),
         CheckConstraint(
             "primary_category IS NULL OR primary_category IN "

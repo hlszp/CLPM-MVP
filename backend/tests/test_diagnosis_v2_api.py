@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from app.models.diagnosis_run import DiagnosisRun
@@ -317,12 +317,27 @@ class TestRunsLatestEndpoint:
     """GET /api/v1/diagnosis/runs/latest（每回路最新诊断概览）。"""
 
     @staticmethod
-    def _row(*, tag: str, run_id, diagnosed: datetime | None, trigger_type: str | None = None):
+    def _row(
+        *,
+        tag: str,
+        run_id,
+        diagnosed: datetime | None,
+        trigger_type: str | None = None,
+        importance_level: int | None = 2,
+        latest_score=91.5,
+        run_count: int = 3,
+        review_status: str | None = "PENDING",
+        review_results=None,
+        reviewed_by: str | None = None,
+        reviewed_at: datetime | None = None,
+    ):
         from types import SimpleNamespace
 
         return SimpleNamespace(
             loop_id=uuid4(),
             tag_name=tag,
+            loop_description=f"{tag} 描述",
+            importance_level=importance_level,
             run_id=run_id,
             primary_category="VALVE" if run_id else None,
             primary_confidence=0.7 if run_id else None,
@@ -332,6 +347,12 @@ class TestRunsLatestEndpoint:
             time_window_start=None,
             time_window_end=None,
             trigger_type=trigger_type,
+            latest_score=latest_score if run_id else None,
+            run_count=run_count,
+            review_status=review_status if run_id else None,
+            review_results=review_results if run_id else None,
+            reviewed_by=reviewed_by,
+            reviewed_at=reviewed_at,
         )
 
     def _override_execute(self, client, execute) -> None:
@@ -363,8 +384,17 @@ class TestRunsLatestEndpoint:
         assert items[0]["primaryCategoryLabel"] == "阀门/执行机构问题"
         assert items[0]["lastDiagnosedAt"] == "2026-08-16T12:00:00"
         assert items[0]["triggerType"] is None  # 行未带 trigger_type 时安全缺省
+        # 2026-08-18 重构：回路等级/名称/性能评分/诊断次序/复核字段
+        assert items[0]["importanceLevel"] == 2
+        assert items[0]["loopDescription"] == "L1 描述"
+        assert items[0]["latestScore"] == 91.5
+        assert items[0]["runCount"] == 3
+        assert items[0]["reviewStatus"] == "PENDING"
+        assert items[0]["reviewResultLabels"] == []
         assert items[1]["runId"] is None
         assert items[1]["primaryCategoryLabel"] is None
+        assert items[1]["runCount"] == 0
+        assert items[1]["reviewStatus"] is None
 
     def test_latest_invalid_plant_node_id_rejected(self, client) -> None:
         with mock_current_user(TEST_USERS["admin"]):
@@ -413,3 +443,76 @@ class TestRunsLatestEndpoint:
         assert items[0]["triggerTypeLabel"] == "定期诊断"
         assert items[1]["triggerTypeLabel"] == "事件触发"
         assert items[2]["triggerType"] is None
+
+
+class TestReviewEndpoint:
+    """POST /api/v1/diagnosis/runs/{id}/review（复核闭环，2026-08-18）。"""
+
+    def _override_db_scalar(self, client, run_or_none) -> None:
+        """mock db.execute → result.scalar_one_or_none() 返回指定 run。"""
+        from app.core.db import get_db
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = run_or_none
+        mock_db = MagicMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.commit = AsyncMock()
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+
+    def test_review_success(self, client) -> None:
+        run = _make_run()
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            self._override_db_scalar(client, run)
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/review",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "reviewResults": ["INSTRUMENT", "TUNING"],
+                    "reviewComment": "现场确认为仪表漂移叠加参数偏松",
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["reviewStatus"] == "REVIEWED"
+        assert data["reviewResults"] == ["INSTRUMENT", "TUNING"]
+        assert data["reviewResultLabels"] == ["仪表/测量问题", "参数问题（PID 整定）"]
+        assert data["reviewedBy"] == TEST_USERS["ic_engineer"].username
+        assert data["reviewedAt"] is not None
+
+    def test_review_rejects_unknown_category(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/review",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"reviewResults": ["NOT_A_CATEGORY"]},
+            )
+        assert resp.status_code == 400
+
+    def test_review_rejects_empty_results(self, client) -> None:
+        """空复核结论被 pydantic min_length 拦截（422）。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/review",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"reviewResults": []},
+            )
+        assert resp.status_code == 422
+
+    def test_review_run_not_found(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db_scalar(client, None)
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/review",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"reviewResults": ["VALVE"]},
+            )
+        assert resp.status_code == 404
+
+    def test_review_forbidden_for_sponsor(self, client) -> None:
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/review",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"reviewResults": ["VALVE"]},
+            )
+        assert resp.status_code == 403

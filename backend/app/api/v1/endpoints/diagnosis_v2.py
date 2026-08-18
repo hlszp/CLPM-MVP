@@ -78,6 +78,13 @@ class TriggerDiagnosisBody(BaseModel):
     operators: list[str] | None = None
 
 
+class ReviewRunBody(BaseModel):
+    """复核请求体（§9.3 复核闭环）。"""
+
+    reviewResults: list[str] = Field(min_length=1, description="复核结论多选（原因分类代码）")
+    reviewComment: str | None = Field(None, max_length=500, description="复核意见")
+
+
 def _to_naive_utc(dt: datetime) -> datetime:
     """aware datetime（前端 ISO 带 Z/+08:00）→ naive UTC。
 
@@ -111,6 +118,7 @@ def _resolve_window(body: TimeWindowBody) -> tuple[datetime, datetime]:
 
 
 def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
+    review_results = row.review_results or []
     return {
         "id": row.id,
         "taskId": row.task_id,
@@ -131,6 +139,14 @@ def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
         "secondaryCategories": row.secondary_categories or [],
         "pendingReview": row.pending_review or [],
         "severity": row.severity,
+        "reviewStatus": row.review_status,
+        "reviewResults": review_results,
+        "reviewResultLabels": [
+            _CATEGORY_LABELS.get(c, c) for c in review_results if isinstance(c, str)
+        ],
+        "reviewComment": row.review_comment,
+        "reviewedBy": row.reviewed_by,
+        "reviewedAt": row.reviewed_at.isoformat() if row.reviewed_at else None,
         "createdAt": row.created_at.isoformat() if row.created_at else None,
     }
 
@@ -252,6 +268,7 @@ async def list_diagnosis_runs(
     category: str | None = Query(None),
     severity: str | None = Query(None),
     status: str | None = Query(None, alias="status"),
+    reviewStatus: str | None = Query(None, description="PENDING / REVIEWED"),
     taskId: str | None = Query(None),
     startTime: datetime | None = Query(None),
     endTime: datetime | None = Query(None),
@@ -268,6 +285,14 @@ async def list_diagnosis_runs(
         conditions.append(DiagnosisRun.severity == severity)
     if status:
         conditions.append(DiagnosisRun.status == status)
+    if reviewStatus:
+        if reviewStatus not in ("PENDING", "REVIEWED"):
+            raise BizError(
+                code="ERR_PARAM",
+                message="reviewStatus 仅支持 PENDING / REVIEWED",
+                status_code=400,
+            )
+        conditions.append(DiagnosisRun.review_status == reviewStatus)
     if taskId:
         conditions.append(DiagnosisRun.task_id == taskId)
     if startTime:
@@ -297,18 +322,58 @@ async def list_diagnosis_runs(
     return success({"items": items, "total": total, "page": page, "pageSize": pageSize})
 
 
+@router.post("/runs/{run_id}/review", response_model=ApiResponse[dict])
+async def review_diagnosis_run(
+    run_id: str,
+    body: ReviewRunBody,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+) -> dict:
+    """人工复核诊断结论（§9.3 复核闭环）。
+
+    - 复核结论：多选原因分类（与诊断分类同域 8 类），至少 1 项
+    - 复核意见：≤500 字可选
+    - 幂等语义：重复复核覆盖上一次结论（reviewed_by/at 更新为最新）
+    """
+    valid_categories = set(_CATEGORY_LABELS)
+    unknown = [c for c in body.reviewResults if c not in valid_categories]
+    if unknown:
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"未知复核结论分类: {unknown[:5]}（可用: {sorted(valid_categories)}）",
+            status_code=400,
+        )
+
+    row = (
+        await db.execute(select(DiagnosisRun).where(DiagnosisRun.id == run_id))
+    ).scalar_one_or_none()
+    if row is None:
+        raise BizError(code="ERR_NOT_FOUND", message=f"诊断记录不存在: {run_id}", status_code=404)
+
+    row.review_status = "REVIEWED"
+    row.review_results = body.reviewResults
+    row.review_comment = body.reviewComment
+    row.reviewed_by = user.username
+    row.reviewed_at = _utcnow_naive()
+    await db.commit()
+
+    return success(_run_to_summary(row, None))
+
+
 @router.get("/runs/latest", response_model=ApiResponse[dict])
 async def get_latest_runs_per_loop(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
     plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
 ) -> dict:
-    """每回路最近 2 次诊断概览（工作台装置节点选中时的概览列表）。
+    """每回路 1 条最新诊断概览（工作台概览列表，2026-08-18 重构）。
 
-    展示层幂等口径：每回路最多返回最近 2 条结论（最新+次新），便于对比
-    "上次 vs 这次"的诊断变化；诊断记录全量保留于 diagnosis_run 表（后续
-    故障统计使用），本接口仅做展示收敛。
-    无诊断记录的回路也列出（runId=null，前端显示"未诊断"，占 1 行）。
+    - 一回路一记录：仅取该回路最新 1 次诊断结论（对比需求由"历史"抽屉承担）
+    - 补充回路静态属性：名称（description）、回路等级（importance_level）
+    - 性能评分：kpi_snapshot_hourly 该回路最新一条有 score 的快照
+    - 诊断次序：该回路累计诊断次数（run_count，"第 N 次"语义）
+    - 复核：review_status / review_results / reviewed_by / reviewed_at
+    无诊断记录的回路也列出（runId=null，前端显示"未诊断"）。
     """
     # 防御：plantNodeId 非法 UUID 直接 400（否则 PG UUID 列比较抛 500）
     if plantNodeId is not None:
@@ -323,17 +388,30 @@ async def get_latest_runs_per_loop(
 
     sql = text(
         """
-        SELECT ll.id AS loop_id, ll.tag_name,
+        SELECT ll.id AS loop_id, ll.tag_name, ll.description AS loop_description,
+               ll.importance_level,
                r.id AS run_id, r.primary_category, r.primary_confidence,
-               r.severity, r.status,
+               r.severity, r.status, r.trigger_type,
+               r.review_status, r.review_results, r.reviewed_by, r.reviewed_at,
                COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
-               r.time_window_start, r.time_window_end, r.trigger_type
+               r.time_window_start, r.time_window_end,
+               k.score AS latest_score,
+               rc.run_count
         FROM loop_ledger ll
         LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
-                ORDER BY dr.created_at DESC LIMIT 2
+                ORDER BY dr.created_at DESC LIMIT 1
             ) r ON true
+        LEFT JOIN LATERAL (
+                SELECT ks.score FROM kpi_snapshot_hourly ks
+                WHERE ks.loop_id = ll.id AND ks.score IS NOT NULL
+                ORDER BY ks.ts_start DESC LIMIT 1
+            ) k ON true
+        LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS run_count FROM diagnosis_run dr
+                WHERE dr.loop_id = ll.id
+            ) rc ON true
             WHERE ll.is_active = true
             """
     )
@@ -347,17 +425,30 @@ async def get_latest_runs_per_loop(
                 SELECT child.id FROM plant_node child
                 JOIN node_tree nt ON child.parent_id = nt.id
             )
-            SELECT ll.id AS loop_id, ll.tag_name,
+            SELECT ll.id AS loop_id, ll.tag_name, ll.description AS loop_description,
+                   ll.importance_level,
                    r.id AS run_id, r.primary_category, r.primary_confidence,
-                   r.severity, r.status,
+                   r.severity, r.status, r.trigger_type,
+                   r.review_status, r.review_results, r.reviewed_by, r.reviewed_at,
                    COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
-                   r.time_window_start, r.time_window_end, r.trigger_type
+                   r.time_window_start, r.time_window_end,
+                   k.score AS latest_score,
+                   rc.run_count
             FROM loop_ledger ll
             LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
-                ORDER BY dr.created_at DESC LIMIT 2
+                ORDER BY dr.created_at DESC LIMIT 1
             ) r ON true
+            LEFT JOIN LATERAL (
+                SELECT ks.score FROM kpi_snapshot_hourly ks
+                WHERE ks.loop_id = ll.id AND ks.score IS NOT NULL
+                ORDER BY ks.ts_start DESC LIMIT 1
+            ) k ON true
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS run_count FROM diagnosis_run dr
+                WHERE dr.loop_id = ll.id
+            ) rc ON true
             WHERE ll.is_active = true AND ll.unit_id IN (SELECT id FROM node_tree)
             """
         )
@@ -365,40 +456,32 @@ async def get_latest_runs_per_loop(
 
     rows = list((await db.execute(sql, params)).all())
 
-    # 排序：有诊断的回路按"回路最新诊断时间"降序在前，未诊断回路垫底（按位号）；
-    # 同一回路内按诊断时间降序（最新 → 次新），保证同一回路的 2 条相邻
-    loop_latest: dict[str, Any] = {}
-    for r in rows:
-        if r.last_diagnosed_at:
-            lid = str(r.loop_id)
-            cur = loop_latest.get(lid)
-            if cur is None or r.last_diagnosed_at > cur:
-                loop_latest[lid] = r.last_diagnosed_at
-
+    # 排序：有诊断的回路按"回路最新诊断时间"降序在前，未诊断回路垫底（按位号）
     def _sort_key(r: Any) -> tuple:
-        lid = str(r.loop_id)
-        latest = loop_latest.get(lid)
+        latest = r.last_diagnosed_at
         return (
             0 if latest else 1,
             -latest.timestamp() if latest else 0,
             r.tag_name or "",
-            -r.last_diagnosed_at.timestamp() if r.last_diagnosed_at else 0,
         )
 
     rows.sort(key=_sort_key)
 
-    seq_counter: dict[str, int] = {}
     items = []
     for r in rows:
-        lid = str(r.loop_id)
-        seq_counter[lid] = seq_counter.get(lid, 0) + 1
+        review_results = (
+            [c for c in (r.review_results or []) if isinstance(c, str)] if r.run_id else []
+        )
         items.append(
             {
-                "loopId": lid,
+                "loopId": str(r.loop_id),
                 "loopTagName": r.tag_name,
+                "loopDescription": r.loop_description,
+                "importanceLevel": int(r.importance_level) if r.importance_level else None,
                 "runId": str(r.run_id) if r.run_id else None,
-                # 该回路第几次结论（1=最新, 2=次新；未诊断回路为 None）
-                "runSeq": seq_counter[lid] if r.run_id else None,
+                # 诊断次序：该回路累计第几次诊断（未诊断为 None）
+                "runCount": int(r.run_count) if r.run_id else 0,
+                "latestScore": float(r.latest_score) if r.latest_score is not None else None,
                 "triggerType": r.trigger_type if r.run_id else None,
                 "triggerTypeLabel": (
                     _TRIGGER_TYPE_LABELS.get(r.trigger_type or "", "") if r.run_id else None
@@ -412,6 +495,11 @@ async def get_latest_runs_per_loop(
                 else None,
                 "severity": r.severity,
                 "status": r.status,
+                "reviewStatus": r.review_status if r.run_id else None,
+                "reviewResults": review_results,
+                "reviewResultLabels": [_CATEGORY_LABELS.get(c, c) for c in review_results],
+                "reviewedBy": r.reviewed_by if r.run_id else None,
+                "reviewedAt": r.reviewed_at.isoformat() if r.reviewed_at else None,
                 "lastDiagnosedAt": r.last_diagnosed_at.isoformat() if r.last_diagnosed_at else None,
                 "timeWindowStart": r.time_window_start.isoformat() if r.time_window_start else None,
                 "timeWindowEnd": r.time_window_end.isoformat() if r.time_window_end else None,
