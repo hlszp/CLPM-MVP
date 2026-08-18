@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import type { DiagnosisApi } from '#/api/diagnosis';
+import type { LoopApi } from '#/api/loop';
+import type { KpiSnapshotItem } from '#/api/metric';
+import type { PlantNodeApi } from '#/api/plant-node';
+
 /**
  * 诊断详情弹窗 —— 遮罩模式，点击概览行弹出（2026-08-18 v5）。
  *
@@ -11,14 +16,17 @@
  * - Tab3 处置建议：系统按诊断/复核结论自动带出 + 人工新增处置措施
  */
 import { computed, nextTick, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
-import dayjs from 'dayjs';
+import { useUserStore } from '@vben/stores';
+
 import {
   Button,
   Empty,
   Form,
   FormItem,
   Input,
+  message,
   Modal,
   Select,
   Skeleton,
@@ -27,15 +35,9 @@ import {
   Tabs,
   Tag,
   Textarea,
-  message,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
-import { useUserStore } from '@vben/stores';
-
-import type { DiagnosisApi } from '#/api/diagnosis';
-import type { KpiSnapshotItem } from '#/api/metric';
-import type { LoopApi } from '#/api/loop';
-import type { PlantNodeApi } from '#/api/plant-node';
 import {
   createRunActionApi,
   deleteRunActionApi,
@@ -44,16 +46,21 @@ import {
   reviewDiagnosisRunApi,
   updateRunActionApi,
 } from '#/api/diagnosis';
-import { getLoopSnapshotsApi } from '#/api/metric';
 import { getLoopListApi } from '#/api/loop';
+import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  STATUS_COLOR as HANDLING_STATUS_COLOR,
+  STATUS_TEXT as HANDLING_STATUS_TEXT,
+} from '#/views/handling/constants';
+
 import {
   CATEGORY_OPTIONS,
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
+  scoreGrade,
   TRIGGER_TYPE_COLOR,
   TRIGGER_TYPE_TEXT,
-  scoreGrade,
 } from '../constants';
 import DiagnosisResultPanel from './diagnosis-result-panel.vue';
 
@@ -64,6 +71,14 @@ const props = defineProps<{
 const emit = defineEmits<{ reviewed: [] }>();
 
 const open = defineModel<boolean>('open', { default: false });
+
+const router = useRouter();
+
+/** 「去处置」：携带 actionId 跳处置清单页，自动打开对应详情抽屉（§8.4 联动） */
+function gotoHandling(actionId: string): void {
+  open.value = false;
+  router.push({ path: '/handling', query: { focus: actionId } });
+}
 
 const userStore = useUserStore();
 /** 当前用户（复核人自动填入；后端以登录态为准，前端仅展示） */
@@ -107,7 +122,9 @@ async function ensureNodeIndex(): Promise<void> {
 /** naive UTC → 本地时间 */
 function fmtLocal(naiveIso?: null | string): string {
   if (!naiveIso) return '—';
-  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveIso) ? naiveIso : `${naiveIso}Z`;
+  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveIso)
+    ? naiveIso
+    : `${naiveIso}Z`;
   return dayjs(withZ).format('MM-DD HH:mm');
 }
 
@@ -169,7 +186,7 @@ const unitPath = computed(() => {
     parts.unshift(cur.name);
     cur = cur.parentId ? nodeIndex.value.get(cur.parentId) : undefined;
   }
-  return parts.length > 0 ? parts.join('.') : (info.unitName || '—');
+  return parts.length > 0 ? parts.join('.') : info.unitName || '—';
 });
 
 /** PV 量程文本（min~max 单位） */
@@ -342,9 +359,7 @@ const activeTab = ref('conclusion');
 /** 默认 860：KPI 单行（评分+等级+6率 ≈795px）+ body padding 32px */
 const modalW = ref(860);
 /** 高度按视口自适应（尽量完整显示 Tab 内容）：视口 - 标题栏/页边余量，clamp [520, 880] */
-const bodyH = ref(
-  Math.min(Math.max(window.innerHeight - 200, 520), 880),
-);
+const bodyH = ref(Math.min(Math.max(window.innerHeight - 200, 520), 880));
 const MIN_W = 720;
 const MIN_H = 360;
 
@@ -438,9 +453,9 @@ watch(open, (v) => {
     // 复核表单回显：已复核预填上次结论（可改判）；未复核默认勾选 AI 主分类
     reviewForm.value.reviewResults = props.item.reviewResults?.length
       ? [...props.item.reviewResults]!
-      : props.item.primaryCategory
+      : (props.item.primaryCategory
         ? [props.item.primaryCategory]
-        : [];
+        : []);
     reviewForm.value.reviewComment = '';
     actionItems.value = [];
     newActionContent.value = '';
@@ -471,7 +486,9 @@ watch(open, (v) => {
           <div class="diag-info-row">
             <span class="diag-info__item">
               <span class="diag-info__k">位号</span>
-              <span class="diag-info__v font-semibold">{{ item.loopTagName }}</span>
+              <span class="diag-info__v font-semibold">{{
+                item.loopTagName
+              }}</span>
             </span>
             <span class="diag-info__item">
               <span class="diag-info__k">名称</span>
@@ -591,7 +608,11 @@ watch(open, (v) => {
       </div>
 
       <!-- ===== 三 Tab：诊断结论 / 诊断证据 / 处置建议 ===== -->
-      <Tabs v-model:active-key="activeTab" class="diag-detail-tabs" size="small">
+      <Tabs
+        v-model:active-key="activeTab"
+        class="diag-detail-tabs"
+        size="small"
+      >
         <!-- Tab1 诊断结论：上=AI 结论；下=人工复核 -->
         <TabPane key="conclusion" tab="诊断结论">
           <Empty v-if="!item.runId" class="py-4" description="该回路尚未诊断" />
@@ -652,7 +673,9 @@ watch(open, (v) => {
                     type="primary"
                     @click="submitReview"
                   >
-                    {{ item.reviewStatus === 'REVIEWED' ? '更新复核' : '提交复核' }}
+                    {{
+                      item.reviewStatus === 'REVIEWED' ? '更新复核' : '提交复核'
+                    }}
                   </Button>
                 </div>
               </Form>
@@ -678,7 +701,7 @@ watch(open, (v) => {
           <template v-else>
             <Spin v-if="actionsLoading" class="block py-4" />
             <template v-else>
-              <div v-if="actionItems.length" class="diag-action-list">
+              <div v-if="actionItems.length > 0" class="diag-action-list">
                 <div
                   v-for="a in actionItems"
                   :key="a.id"
@@ -690,11 +713,17 @@ watch(open, (v) => {
                       v-model:value="editingContent"
                       :maxlength="500"
                       :rows="2"
-                      autoFocus
+                      auto-focus
                     />
                     <div class="mt-1 flex justify-end gap-2">
-                      <Button size="small" @click="cancelEditAction">取消</Button>
-                      <Button size="small" type="primary" @click="saveEditAction">
+                      <Button size="small" @click="cancelEditAction"
+                        >取消</Button
+                      >
+                      <Button
+                        size="small"
+                        type="primary"
+                        @click="saveEditAction"
+                      >
                         保存
                       </Button>
                     </div>
@@ -702,17 +731,48 @@ watch(open, (v) => {
                   <!-- 展示态 -->
                   <template v-else>
                     <div class="flex items-start gap-2">
-                      <Tag :color="a.source === 'SYSTEM' ? 'blue' : 'green'" class="mt-0.5 shrink-0">
-                        {{ a.source === 'SYSTEM' ? `系统建议 R${a.priority}` : '人工新增' }}
+                      <Tag
+                        :color="a.source === 'SYSTEM' ? 'blue' : 'green'"
+                        class="mt-0.5 shrink-0"
+                      >
+                        {{
+                          a.source === 'SYSTEM'
+                            ? `系统建议 R${a.priority}`
+                            : '人工新增'
+                        }}
+                      </Tag>
+                      <!-- 处置状态 tag（PENDING 之外的状态在诊断侧可见，§8.4） -->
+                      <Tag
+                        v-if="a.status && a.status !== 'PENDING'"
+                        :color="
+                          HANDLING_STATUS_COLOR[
+                            a.status as keyof typeof HANDLING_STATUS_COLOR
+                          ] ?? 'default'
+                        "
+                        class="mt-0.5 shrink-0"
+                      >
+                        {{
+                          HANDLING_STATUS_TEXT[
+                            a.status as keyof typeof HANDLING_STATUS_TEXT
+                          ] ?? a.status
+                        }}
                       </Tag>
                       <div class="min-w-0 flex-1">
                         <div>{{ a.content }}</div>
                         <div class="mt-0.5 text-xs text-neutral-500">
-                          依据：{{ a.basis || '—' }} · 建议人 {{ a.suggestedBy }} ·
+                          依据：{{ a.basis || '—' }} · 建议人
+                          {{ a.suggestedBy }} ·
                           {{ fmtLocal(a.suggestedAt) }}
                         </div>
                       </div>
                       <div class="flex shrink-0 gap-1" @click.stop>
+                        <Button
+                          size="small"
+                          type="link"
+                          @click="gotoHandling(a.id)"
+                        >
+                          去处置
+                        </Button>
                         <Button
                           v-if="a.source === 'MANUAL'"
                           size="small"
@@ -747,7 +807,8 @@ watch(open, (v) => {
                 />
                 <div class="diag-action-new__footer">
                   <span class="text-xs text-neutral-400">
-                    建议人 {{ currentUserName }} · {{ dayjs().format('YYYY-MM-DD HH:mm') }}
+                    建议人 {{ currentUserName }} ·
+                    {{ dayjs().format('YYYY-MM-DD HH:mm') }}
                   </span>
                   <Button
                     :loading="newActionSubmitting"
@@ -765,7 +826,7 @@ watch(open, (v) => {
       </Tabs>
 
       <!-- 右下角宽高手柄 -->
-      <div class="diag-detail-resize" @mousedown="onResizeStart" />
+      <div class="diag-detail-resize" @mousedown="onResizeStart"></div>
     </div>
   </Modal>
 </template>
@@ -792,8 +853,8 @@ watch(open, (v) => {
 
 .diag-detail-modal .diag-detail-top {
   display: flex;
-  flex-direction: column;
   flex-shrink: 0;
+  flex-direction: column;
   gap: 6px;
   margin-bottom: 8px;
 }
@@ -845,9 +906,9 @@ watch(open, (v) => {
 
 .diag-detail-modal .diag-info__item {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 3px;
   align-items: baseline;
-  flex-shrink: 0;
 }
 
 .diag-detail-modal .diag-info__item--end {
@@ -869,8 +930,8 @@ watch(open, (v) => {
   max-width: 176px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
   vertical-align: bottom;
+  white-space: nowrap;
 }
 
 /* Tabs 占满剩余高度，tab 内容区滚动 */
@@ -905,8 +966,8 @@ watch(open, (v) => {
 
 /* 人工复核区（诊断结论 Tab 下半） */
 .diag-detail-modal .diag-review {
-  margin-top: 10px;
   padding: 10px 12px;
+  margin-top: 10px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
@@ -964,8 +1025,8 @@ watch(open, (v) => {
 }
 
 .diag-detail-modal .diag-action-new {
-  margin-top: 8px;
   padding: 8px 10px;
+  margin-top: 8px;
   background: hsl(var(--card));
   border: 1px dashed hsl(var(--border));
   border-radius: 6px;
@@ -988,11 +1049,7 @@ watch(open, (v) => {
   width: 16px;
   height: 16px;
   cursor: nwse-resize;
-  background: linear-gradient(
-    135deg,
-    transparent 50%,
-    hsl(var(--border)) 50%
-  );
+  background: linear-gradient(135deg, transparent 50%, hsl(var(--border)) 50%);
   border-end-end-radius: 8px;
 }
 
