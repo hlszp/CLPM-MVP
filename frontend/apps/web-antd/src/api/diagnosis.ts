@@ -310,6 +310,28 @@ export function createRunActionApi(
 }
 
 /**
+ * 修改人工新增的处置措施（仅 MANUAL 可改；SYSTEM 建议不可编辑）
+ */
+export function updateRunActionApi(
+  actionId: string,
+  data: DiagnosisApi.CreateActionBody,
+) {
+  return requestClient.put<DiagnosisApi.ActionItem>(
+    `/diagnosis/runs/actions/${actionId}`,
+    data,
+  );
+}
+
+/**
+ * 删除处置建议（系统建议与人工新增均可删）
+ */
+export function deleteRunActionApi(actionId: string) {
+  return requestClient.delete<{ deleted: boolean; id: string }>(
+    `/diagnosis/runs/actions/${actionId}`,
+  );
+}
+
+/**
  * 算子注册表元数据（算子说明 + AI 工具目录）
  */
 export function getDiagnosisOperatorsApi() {

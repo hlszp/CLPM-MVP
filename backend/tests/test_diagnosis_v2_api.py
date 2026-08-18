@@ -669,3 +669,98 @@ class TestRunActionsEndpoint:
                 json={"content": "x"},
             )
         assert resp.status_code == 403
+
+
+class TestActionUpdateDeleteEndpoints:
+    """PUT/DELETE /api/v1/diagnosis/runs/actions/{id}（建议编辑/删除，2026-08-18）。"""
+
+    ACTION_ID = str(uuid4())
+
+    def _override_db(self, client, action_or_none) -> MagicMock:
+        from app.core.db import get_db
+
+        r = MagicMock()
+        r.scalar_one_or_none.return_value = action_or_none
+        mock_db = MagicMock()
+        mock_db.execute = AsyncMock(return_value=r)
+        mock_db.commit = AsyncMock()
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+        return mock_db
+
+    def test_update_manual_action(self, client) -> None:
+        action = _make_action(
+            source="MANUAL", category=None, content="旧内容", suggested_by="admin"
+        )
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            self._override_db(client, action)
+            resp = client.put(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"content": "新内容：安排周六检修", "basis": "现场复核确认"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["content"] == "新内容：安排周六检修"
+        assert data["basis"] == "现场复核确认"
+
+    def test_update_system_action_rejected(self, client) -> None:
+        """系统建议不可编辑（400）。"""
+        action = _make_action(source="SYSTEM")
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, action)
+            resp = client.put(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"content": "改系统建议"},
+            )
+        assert resp.status_code == 400
+
+    def test_update_not_found(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, None)
+            resp = client.put(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"content": "x"},
+            )
+        assert resp.status_code == 404
+
+    def test_delete_system_action(self, client) -> None:
+        """系统建议可删除。"""
+        action = _make_action(source="SYSTEM")
+        with mock_current_user(TEST_USERS["admin"]):
+            mock_db = self._override_db(client, action)
+            resp = client.delete(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["deleted"] is True
+        mock_db.commit.assert_awaited()
+
+    def test_delete_manual_action(self, client) -> None:
+        action = _make_action(source="MANUAL", category=None, suggested_by="admin")
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            self._override_db(client, action)
+            resp = client.delete(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+
+    def test_delete_not_found(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, None)
+            resp = client.delete(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+
+    def test_delete_forbidden_for_sponsor(self, client) -> None:
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.delete(
+                f"/api/v1/diagnosis/runs/actions/{self.ACTION_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403

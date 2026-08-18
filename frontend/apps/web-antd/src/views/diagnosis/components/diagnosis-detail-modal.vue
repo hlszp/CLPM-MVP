@@ -38,9 +38,11 @@ import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 import {
   createRunActionApi,
+  deleteRunActionApi,
   getDiagnosisRunDetailApi,
   getRunActionsApi,
   reviewDiagnosisRunApi,
+  updateRunActionApi,
 } from '#/api/diagnosis';
 import { getLoopSnapshotsApi } from '#/api/metric';
 import { getLoopListApi } from '#/api/loop';
@@ -250,6 +252,10 @@ const actionItems = ref<DiagnosisApi.ActionItem[]>([]);
 const newActionContent = ref('');
 const newActionSubmitting = ref(false);
 
+/** 行内编辑状态（仅 MANUAL）：editingId + 编辑内容 */
+const editingActionId = ref('');
+const editingContent = ref('');
+
 async function loadActions(): Promise<void> {
   const runId = props.item?.runId;
   if (!runId) return;
@@ -280,6 +286,53 @@ async function submitNewAction(): Promise<void> {
   } finally {
     newActionSubmitting.value = false;
   }
+}
+
+function startEditAction(a: DiagnosisApi.ActionItem): void {
+  editingActionId.value = a.id;
+  editingContent.value = a.content;
+}
+
+function cancelEditAction(): void {
+  editingActionId.value = '';
+  editingContent.value = '';
+}
+
+async function saveEditAction(): Promise<void> {
+  const content = editingContent.value.trim();
+  if (!editingActionId.value || !content) {
+    if (!content) message.warning('处置措施内容不能为空');
+    return;
+  }
+  try {
+    await updateRunActionApi(editingActionId.value, { content });
+    message.success('处置措施已更新');
+    cancelEditAction();
+    loadActions();
+  } catch {
+    /* 错误提示由请求拦截器统一弹出 */
+  }
+}
+
+async function removeAction(a: DiagnosisApi.ActionItem): Promise<void> {
+  Modal.confirm({
+    title: '删除处置建议',
+    content: `确定删除该${a.source === 'SYSTEM' ? '系统建议' : '人工新增措施'}吗？${
+      a.source === 'SYSTEM' ? '（删除后不会自动重建，除非重新提交复核）' : ''
+    }`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await deleteRunActionApi(a.id);
+        message.success('已删除');
+        loadActions();
+      } catch {
+        /* 错误提示由请求拦截器统一弹出 */
+      }
+    },
+  });
 }
 
 // ===== Tabs =====
@@ -631,18 +684,54 @@ watch(open, (v) => {
                   :key="a.id"
                   class="diag-action-item"
                 >
-                  <div class="flex items-start gap-2">
-                    <Tag :color="a.source === 'SYSTEM' ? 'blue' : 'green'" class="mt-0.5 shrink-0">
-                      {{ a.source === 'SYSTEM' ? `系统建议 R${a.priority}` : '人工新增' }}
-                    </Tag>
-                    <div class="min-w-0 flex-1">
-                      <div>{{ a.content }}</div>
-                      <div class="mt-0.5 text-xs text-neutral-500">
-                        依据：{{ a.basis || '—' }} · 建议人 {{ a.suggestedBy }} ·
-                        {{ fmtLocal(a.suggestedAt) }}
+                  <!-- 行内编辑态（仅 MANUAL） -->
+                  <template v-if="editingActionId === a.id">
+                    <Textarea
+                      v-model:value="editingContent"
+                      :maxlength="500"
+                      :rows="2"
+                      autoFocus
+                    />
+                    <div class="mt-1 flex justify-end gap-2">
+                      <Button size="small" @click="cancelEditAction">取消</Button>
+                      <Button size="small" type="primary" @click="saveEditAction">
+                        保存
+                      </Button>
+                    </div>
+                  </template>
+                  <!-- 展示态 -->
+                  <template v-else>
+                    <div class="flex items-start gap-2">
+                      <Tag :color="a.source === 'SYSTEM' ? 'blue' : 'green'" class="mt-0.5 shrink-0">
+                        {{ a.source === 'SYSTEM' ? `系统建议 R${a.priority}` : '人工新增' }}
+                      </Tag>
+                      <div class="min-w-0 flex-1">
+                        <div>{{ a.content }}</div>
+                        <div class="mt-0.5 text-xs text-neutral-500">
+                          依据：{{ a.basis || '—' }} · 建议人 {{ a.suggestedBy }} ·
+                          {{ fmtLocal(a.suggestedAt) }}
+                        </div>
+                      </div>
+                      <div class="flex shrink-0 gap-1" @click.stop>
+                        <Button
+                          v-if="a.source === 'MANUAL'"
+                          size="small"
+                          type="link"
+                          @click="startEditAction(a)"
+                        >
+                          编辑
+                        </Button>
+                        <Button
+                          danger
+                          size="small"
+                          type="link"
+                          @click="removeAction(a)"
+                        >
+                          删除
+                        </Button>
                       </div>
                     </div>
-                  </div>
+                  </template>
                 </div>
               </div>
               <Empty v-else class="py-4" description="暂无处置建议" />

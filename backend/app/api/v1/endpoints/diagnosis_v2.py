@@ -510,6 +510,58 @@ async def create_run_action(
     return success(_action_to_item(row))
 
 
+class UpdateActionBody(BaseModel):
+    """人工修改处置措施请求体（仅 MANUAL 可改）。"""
+
+    content: str = Field(min_length=1, max_length=500, description="处置措施内容")
+    basis: str | None = Field(None, max_length=500, description="依据（可选）")
+
+
+async def _get_action_or_404(db: AsyncSession, action_id: str) -> LoopActionItem:
+    row = (
+        await db.execute(select(LoopActionItem).where(LoopActionItem.id == action_id))
+    ).scalar_one_or_none()
+    if row is None:
+        raise BizError(
+            code="ERR_NOT_FOUND", message=f"处置建议不存在: {action_id}", status_code=404
+        )
+    return row
+
+
+@router.put("/runs/actions/{action_id}", response_model=ApiResponse[dict])
+async def update_run_action(
+    action_id: str,
+    body: UpdateActionBody,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+) -> dict:
+    """修改人工新增的处置措施（仅 MANUAL 可改；SYSTEM 建议不可编辑）。"""
+    row = await _get_action_or_404(db, action_id)
+    if row.source != "MANUAL":
+        raise BizError(
+            code="ERR_PARAM",
+            message="系统建议不可编辑（可删除或重新复核后自动重建）",
+            status_code=400,
+        )
+    row.content = body.content
+    row.basis = body.basis
+    await db.commit()
+    return success(_action_to_item(row))
+
+
+@router.delete("/runs/actions/{action_id}", response_model=ApiResponse[dict])
+async def delete_run_action(
+    action_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+) -> dict:
+    """删除处置建议（系统建议与人工新增均可删）。"""
+    await _get_action_or_404(db, action_id)
+    await db.execute(sa_delete(LoopActionItem).where(LoopActionItem.id == action_id))
+    await db.commit()
+    return success({"id": action_id, "deleted": True})
+
+
 @router.get("/runs/latest", response_model=ApiResponse[dict])
 async def get_latest_runs_per_loop(
     db: AsyncSession = Depends(get_db),
