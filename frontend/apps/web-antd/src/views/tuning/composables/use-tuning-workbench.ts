@@ -116,7 +116,7 @@ export function useTuningWorkbench() {
     try {
       const res = await getLoopListApi({
         page: 1,
-        pageSize: 200,
+        pageSize: 100,
         keyword: keyword || undefined,
       });
       state.loopOptions = res.items.map((l) => ({

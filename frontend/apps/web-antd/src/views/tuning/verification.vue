@@ -52,7 +52,7 @@ async function loadLoops(keyword = '') {
   try {
     const res = await getLoopListApi({
       page: 1,
-      pageSize: 200,
+      pageSize: 100,
       keyword: keyword || undefined,
     });
     loopOptions.value = res.items.map((l) => ({
