@@ -1690,7 +1690,8 @@ CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (prim
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_task         ON diagnosis_run (task_id);
 
 -- -----------------------------------------------------------------------------
--- 回路处置建议（§9.4 处置闭环：建议-处置-验证-关闭，当前仅建议态；2026-08-18）
+-- 回路处置建议（处置模块 Phase 1：建议-处置-验证-关闭全生命周期；2026-08-18）
+-- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3 数据模型 / §4 状态机
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS loop_action_item (
     id            UUID PRIMARY KEY,
@@ -1704,16 +1705,39 @@ CREATE TABLE IF NOT EXISTS loop_action_item (
     status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     suggested_by  VARCHAR(64)  NOT NULL,
     suggested_at  TIMESTAMP    NOT NULL,
+    -- 处置模块 Phase 1 扩展（§3.2）
+    action_type      VARCHAR(16),
+    action_detail    JSONB,
+    handled_by       VARCHAR(64),
+    handled_at       TIMESTAMP,
+    submitted_at     TIMESTAMP,
+    verify_run_id    UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
+    verify_result    VARCHAR(16),
+    verify_note      VARCHAR(500),
+    verified_by      VARCHAR(64),
+    verified_at      TIMESTAMP,
+    kpi_before       JSONB,
+    kpi_after        JSONB,
+    tuning_record_id UUID,
+    ignore_reason    VARCHAR(200),
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
     CONSTRAINT ck_loop_action_item_source CHECK (source IN ('SYSTEM', 'MANUAL')),
-    CONSTRAINT ck_loop_action_item_status CHECK (status IN ('PENDING')),
+    CONSTRAINT ck_loop_action_item_status CHECK (status IN
+        ('PENDING', 'HANDLING', 'VERIFYING', 'CLOSED', 'REOPENED', 'IGNORED')),
     CONSTRAINT ck_loop_action_item_category CHECK (category IS NULL OR category IN
         ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS',
-         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT'))
+         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
+    CONSTRAINT ck_loop_action_item_action_type CHECK (action_type IS NULL OR action_type IN
+        ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
+         'UTILIZATION', 'RECONFIG', 'OTHER')),
+    CONSTRAINT ck_loop_action_item_verify_result CHECK
+        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
 );
-CREATE INDEX IF NOT EXISTS idx_loop_action_item_run  ON loop_action_item (run_id);
-CREATE INDEX IF NOT EXISTS idx_loop_action_item_loop ON loop_action_item (loop_id, suggested_at);
+COMMENT ON TABLE loop_action_item IS '回路处置建议（处置模块 Phase 1：建议-处置-验证-关闭全生命周期）';
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_run    ON loop_action_item (run_id);
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_loop   ON loop_action_item (loop_id, suggested_at);
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_status ON loop_action_item (status, updated_at DESC);
 
 -- =============================================================================
 -- 脚本结束
