@@ -74,10 +74,10 @@ const open = defineModel<boolean>('open', { default: false });
 
 const router = useRouter();
 
-/** 「去处置」：携带 actionId 跳处置清单页，自动打开对应详情抽屉（§8.4 联动） */
+/** 「去处置」：携带 actionId 跳处置工作台，自动打开对应详情抽屉（§8.6 联动） */
 function gotoHandling(actionId: string): void {
   open.value = false;
-  router.push({ path: '/handling', query: { focus: actionId } });
+  router.push({ path: '/handling/workbench', query: { focus: actionId } });
 }
 
 const userStore = useUserStore();

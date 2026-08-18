@@ -155,6 +155,96 @@ export namespace HandlingApi {
       beforeStart: null | string;
     };
   }
+
+  /** 按回路聚合行（GET /loops，档案页主查询，§6.4） */
+  export interface LoopAggregateItem {
+    loopId: string;
+    loopTagName: string;
+    loopDescription?: null | string;
+    importanceLevel?: null | number;
+    unitPath?: null | string;
+    /** 六状态计数（小写键） */
+    counts: {
+      closed: number;
+      handling: number;
+      ignored: number;
+      pending: number;
+      reopened: number;
+      verifying: number;
+    };
+    /** 累计处置项数 */
+    totalCount: number;
+    lastSuggestedAt?: null | string;
+    lastHandledAt?: null | string;
+    lastHandledBy?: null | string;
+    /** 最近一次闭环 kpi_after.score − kpi_before.score（无闭环为 null） */
+    lastClosedKpiDelta?: null | number;
+  }
+
+  /** 档案页查询（GET /loops） */
+  export interface LoopQuery extends PageQuery {
+    plantNodeId?: string;
+    importanceLevel?: number;
+    keyword?: string;
+    /** 仅看有在途（pending+handling+verifying>0） */
+    activeOnly?: boolean;
+    /** recent=最近建议时间倒序（默认）/ reopened=重开次数倒序 */
+    sort?: 'recent' | 'reopened';
+  }
+
+  /** 统计页汇总指标（GET /statistics，§6.4；无 CLOSED 记录时为 null） */
+  export interface StatisticsSummary {
+    /** 本月闭环数 */
+    closedThisMonth: null | number;
+    /** 闭环率（closed / 已验证，无验证记录为 null） */
+    closeRate: null | number;
+    /** 平均处置时长（suggested_at → verified_at 均值，小时） */
+    avgCycleHours: null | number;
+    /** 无效重开率（INEFFECTIVE / 已验证） */
+    ineffectiveRate: null | number;
+    /** 平均 KPI 改善分（闭环项 kpi delta 均值） */
+    avgKpiDelta: null | number;
+  }
+
+  /** 月度趋势行 */
+  export interface MonthlyTrendItem {
+    /** 月份（YYYY-MM，北京时间） */
+    month: string;
+    closed: number;
+    closeRate: null | number;
+  }
+
+  /** 处置类型分布行 */
+  export interface TypeDistItem {
+    type: null | string;
+    label: string;
+    count: number;
+  }
+
+  /** 装置分布行 */
+  export interface UnitDistItem {
+    unit: string;
+    closed: number;
+  }
+
+  /** Top 问题回路行（重开次数降序） */
+  export interface TopLoopItem {
+    loopId: string;
+    loopTagName: string;
+    unitPath?: null | string;
+    totalCount: number;
+    reopened: number;
+    lastClosedKpiDelta?: null | number;
+  }
+
+  /** 统计页数据（GET /statistics） */
+  export interface StatisticsData {
+    summary: StatisticsSummary;
+    monthly: MonthlyTrendItem[];
+    byType: TypeDistItem[];
+    byUnit: UnitDistItem[];
+    topLoops: TopLoopItem[];
+  }
 }
 
 /** 处置清单（分页/筛选；排序=状态分组优先级 + updatedAt DESC） */
@@ -214,4 +304,19 @@ export function getKpiComparisonApi(id: string) {
   return requestClient.post<HandlingApi.KpiComparison>(
     `/handling/items/${id}/kpi-comparison`,
   );
+}
+
+/** 按回路聚合（档案页主查询，§6.4；Phase 1F 后端待交付） */
+export function getHandlingLoopsApi(params: HandlingApi.LoopQuery) {
+  return requestClient.get<PaginatedResponse<HandlingApi.LoopAggregateItem>>(
+    '/handling/loops',
+    { params },
+  );
+}
+
+/** 处置统计页数据（§6.4；Phase 1F 后端待交付） */
+export function getHandlingStatisticsApi(months = 6) {
+  return requestClient.get<HandlingApi.StatisticsData>('/handling/statistics', {
+    params: { months },
+  });
 }
