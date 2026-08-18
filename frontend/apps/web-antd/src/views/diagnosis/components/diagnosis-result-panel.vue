@@ -37,9 +37,25 @@ import {
   TRIGGER_TYPE_TEXT,
 } from '../constants';
 
-const props = defineProps<{
-  detail: DiagnosisApi.RunDetail;
-}>();
+const props = withDefaults(
+  defineProps<{
+    detail: DiagnosisApi.RunDetail;
+    /** 区段筛选：all=全部（默认，工作台/记录抽屉共用）；
+     * conclusion=诊断结论；evidence=证据链；advice=处置建议（诊断详情弹窗三 Tab） */
+    section?: 'advice' | 'all' | 'conclusion' | 'evidence';
+  }>(),
+  { section: 'all' },
+);
+
+const showConclusion = computed(
+  () => props.section === 'all' || props.section === 'conclusion',
+);
+const showEvidence = computed(
+  () => props.section === 'all' || props.section === 'evidence',
+);
+const showAdvice = computed(
+  () => props.section === 'all' || props.section === 'advice',
+);
 
 const { isDark } = useClpmTheme();
 
@@ -247,7 +263,7 @@ watch(isDark, () => {
   <div class="diag-result-panel space-y-4">
     <!-- ① 分类定性卡 -->
     <div
-      v-if="detail.primaryCategory"
+      v-if="showConclusion && detail.primaryCategory"
       class="rounded-lg border p-4"
       :style="{
         borderColor: `${metaOf(detail.primaryCategory).color}55`,
@@ -316,7 +332,7 @@ watch(isDark, () => {
     </div>
 
     <!-- ② 并存 / 待复核 chips -->
-    <div v-if="detail.secondaryCategories?.length || detail.pendingReview?.length" class="space-y-1">
+    <div v-if="showConclusion && (detail.secondaryCategories?.length || detail.pendingReview?.length)" class="space-y-1">
       <div v-if="detail.secondaryCategories?.length" class="flex flex-wrap items-center gap-2">
         <span class="text-xs text-neutral-500">并存问题</span>
         <Tooltip v-for="j in detail.secondaryCategories" :key="j.category" :title="j.basis?.join('；')">
@@ -340,7 +356,7 @@ watch(isDark, () => {
     </div>
 
     <!-- ③ 症状标签行 -->
-    <div v-if="symptomRows.length" class="flex flex-wrap items-center gap-2">
+    <div v-if="showConclusion && symptomRows.length" class="flex flex-wrap items-center gap-2">
       <span class="text-xs text-neutral-500">症状证据</span>
       <Tag v-for="s in symptomRows" :key="s.label" color="default">
         {{ s.label }} · {{ confPercent(s.confidence) }}
@@ -349,7 +365,7 @@ watch(isDark, () => {
 
     <!-- ③+ 数据质量行：门禁指标（诊断可信度前提）+ 断流时段定位 -->
     <div
-      v-if="detail.dataGate"
+      v-if="showEvidence && detail.dataGate"
       class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-solid border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/60"
     >
       <span class="font-medium">数据质量 {{ detail.dataGate.confidenceLevel }} 级</span>
@@ -371,7 +387,7 @@ watch(isDark, () => {
     </div>
 
     <!-- ④ 处置建议区（R1-R5 排序由后端给出） -->
-    <div v-if="detail.recommendations?.length">
+    <div v-if="showAdvice && detail.recommendations?.length">
       <div class="mb-2 text-sm font-medium">处置建议</div>
       <ol class="space-y-2">
         <li
@@ -393,7 +409,7 @@ watch(isDark, () => {
     </div>
 
     <!-- ⑤ 证据链折叠区 -->
-    <Collapse v-model:active-key="activeKeys" class="diag-evidence">
+    <Collapse v-if="showEvidence" v-model:active-key="activeKeys" class="diag-evidence">
       <CollapsePanel v-if="featureRows?.length" header="证据链 · 特征值" key="features">
         <Table
           :columns="[
