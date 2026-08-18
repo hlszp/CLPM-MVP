@@ -13,9 +13,8 @@
  */
 import { mount } from '@vue/test-utils';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 import dayjs from 'dayjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ===== Mock API（#/api） =====
 const getBoardAggregateApiMock = vi.fn();
@@ -27,7 +26,8 @@ vi.mock('#/api', () => ({
   getAutoRateRtApi: (...a: unknown[]) => getAutoRateRtApiMock(...a),
   getBoardAggregateApi: (...a: unknown[]) => getBoardAggregateApiMock(...a),
   getBoardTrendApi: (...a: unknown[]) => getBoardTrendApiMock(...a),
-  getGradingThresholdsApi: (...a: unknown[]) => getGradingThresholdsApiMock(...a),
+  getGradingThresholdsApi: (...a: unknown[]) =>
+    getGradingThresholdsApiMock(...a),
 }));
 
 // ===== Mock API（#/api/metric） =====
@@ -38,7 +38,8 @@ const getRankingApiMock = vi.fn();
 const getLoopSnapshotsApiMock = vi.fn();
 
 vi.mock('#/api/metric', () => ({
-  getGradeDistributionApi: (...a: unknown[]) => getGradeDistributionApiMock(...a),
+  getGradeDistributionApi: (...a: unknown[]) =>
+    getGradeDistributionApiMock(...a),
   getLoopSnapshotsApi: (...a: unknown[]) => getLoopSnapshotsApiMock(...a),
   getNodeRankingApi: (...a: unknown[]) => getNodeRankingApiMock(...a),
   getNodeTrendApi: (...a: unknown[]) => getNodeTrendApiMock(...a),
@@ -340,11 +341,11 @@ describe('装置工作台 v4.3', () => {
       .findAll('button')
       .filter((b) =>
         [
+          '自定义',
           '近 8 小时',
           '近 24 小时',
           '近 72 小时',
           '近 168 小时',
-          '自定义',
         ].includes(b.text()),
       );
     expect(twItems).toHaveLength(5);
@@ -409,9 +410,7 @@ describe('装置工作台 v4.3', () => {
     // 点击"常减压装置"行首折叠箭头（▼）→ 该装置下单元行收起
     const areaRow = findUnitRow(w, '常减压装置');
     expect(areaRow).toBeDefined();
-    const arrow = areaRow!
-      .findAll('span')
-      .find((s) => s.text() === '▼');
+    const arrow = areaRow!.findAll('span').find((s) => s.text() === '▼');
     expect(arrow).toBeDefined();
     await arrow!.trigger('click');
     await Promise.resolve();
@@ -441,8 +440,18 @@ describe('装置工作台 v4.3', () => {
         type: 'AREA',
         parentId: null,
         children: [
-          { id: 'unit-1', name: '脱甲烷单元', type: 'UNIT', parentId: 'area-1' },
-          { id: 'unit-2', name: '脱乙烷单元', type: 'UNIT', parentId: 'area-1' },
+          {
+            id: 'unit-1',
+            name: '脱甲烷单元',
+            type: 'UNIT',
+            parentId: 'area-1',
+          },
+          {
+            id: 'unit-2',
+            name: '脱乙烷单元',
+            type: 'UNIT',
+            parentId: 'area-1',
+          },
         ],
       },
     ]);
@@ -509,9 +518,7 @@ describe('装置工作台 v4.3', () => {
     const w = await mountWorkbench();
     expect(getNodeRankingApiMock).toHaveBeenCalledTimes(2); // AREA + UNIT
 
-    const item72h = w
-      .findAll('button')
-      .find((b) => b.text() === '近 72 小时');
+    const item72h = w.findAll('button').find((b) => b.text() === '近 72 小时');
     await item72h!.trigger('click');
     for (let i = 0; i < 5; i++) {
       await Promise.resolve();
@@ -530,9 +537,7 @@ describe('装置工作台 v4.3', () => {
     expect(getNodeRankingApiMock).toHaveBeenCalledTimes(2); // AREA + UNIT
 
     // 点击"自定义" → pageTimeWindow=custom，弹出起止选择面板，未选范围提示
-    const itemCustom = w
-      .findAll('button')
-      .find((b) => b.text() === '自定义');
+    const itemCustom = w.findAll('button').find((b) => b.text() === '自定义');
     await itemCustom!.trigger('click');
     await Promise.resolve();
     expect(w.find('[data-testid="range-picker"]').exists()).toBe(true);
@@ -608,8 +613,9 @@ describe('装置工作台 v4.3', () => {
         totalLoops: 27,
       },
     };
-    getBoardAggregateApiMock.mockImplementation((params: { timeWindow?: string }) =>
-      Promise.resolve(params?.timeWindow === 'custom' ? prev : cur),
+    getBoardAggregateApiMock.mockImplementation(
+      (params: { timeWindow?: string }) =>
+        Promise.resolve(params?.timeWindow === 'custom' ? prev : cur),
     );
 
     const w = await mountWorkbench();

@@ -15,13 +15,7 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import {
-  Button,
-  Drawer,
-  Select,
-  Table,
-  Tooltip,
-} from 'ant-design-vue';
+import { Button, Drawer, Select, Table, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {

@@ -107,7 +107,10 @@ const zones = computed(() => {
     if (c) {
       return [
         { color: `color-mix(in srgb, ${c} 22%, white)`, width: fairPct },
-        { color: `color-mix(in srgb, ${c} 13%, white)`, width: goodPct - fairPct },
+        {
+          color: `color-mix(in srgb, ${c} 13%, white)`,
+          width: goodPct - fairPct,
+        },
         { color: `color-mix(in srgb, ${c} 6%, white)`, width: 100 - goodPct },
       ];
     }
@@ -141,7 +144,12 @@ const deltaInfo = computed(() => {
   if (d === null || d === undefined || Number.isNaN(d)) return null;
   const abs = Math.abs(d);
   if (abs < 0.05) {
-    return { cls: 'clpm-bullet__delta--flat', arrow: '→', val: '0.0', tip: '环比持平' };
+    return {
+      cls: 'clpm-bullet__delta--flat',
+      arrow: '→',
+      val: '0.0',
+      tip: '环比持平',
+    };
   }
   return d > 0
     ? {

@@ -279,9 +279,9 @@ export namespace DashboardApi {
     evaluatedLoops: number;
     inconclusiveLoops: number;
     excludedLoops: number;
-    avgScore: number | null;
-    autoModeRate: number | null;
-    stabilityRate: number | null;
+    avgScore: null | number;
+    autoModeRate: null | number;
+    stabilityRate: null | number;
     attentionCount: number;
     pendingTrackerCount: number;
   }
@@ -310,37 +310,37 @@ export namespace DashboardApi {
 
   /** 实时自控率 */
   export interface AutoRate {
-    rate: number | null;
+    rate: null | number;
     autoCount: number;
     manualCount: number;
     totalCount: number;
     modeCounts: Record<string, number>;
-    readAt: string | null;
+    readAt: null | string;
   }
 
   /** Top 问题回路 */
   export interface TopLoopItem {
     loopId: string;
     tagName: string;
-    description: string | null;
-    score: number | null;
-    autoModeRate: number | null;
-    unitName: string | null;
+    description: null | string;
+    score: null | number;
+    autoModeRate: null | number;
+    unitName: null | string;
   }
 
   /** 趋势数据 */
   export interface OverviewTrend {
     timestamps: string[];
-    avgScore: (number | null)[];
-    autoModeRate: (number | null)[];
-    stabilityRate: (number | null)[];
+    avgScore: (null | number)[];
+    autoModeRate: (null | number)[];
+    stabilityRate: (null | number)[];
   }
 
   /** 对比指标 */
   export interface OverviewCompare {
-    scoreDelta: number | null;
-    autoDelta: number | null;
-    stabilityDelta: number | null;
+    scoreDelta: null | number;
+    autoDelta: null | number;
+    stabilityDelta: null | number;
   }
 
   /** 系统概览聚合响应 */
@@ -386,12 +386,12 @@ export function getAutoRateRtApi(params?: { plantId?: string }) {
  * v6.1.4：可选 timeWindow——缺省为每节点最新快照，指定后 rate 字段按窗口加权
  */
 export function getBoardAggregateApi(params?: {
-  plantId?: string;
-  timeWindow?: string;
-  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
-  startTime?: string;
   /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
   endTime?: string;
+  plantId?: string;
+  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+  startTime?: string;
+  timeWindow?: string;
 }) {
   return requestClient.get<DashboardApi.BoardAggregateResult>(
     '/dashboard/board/aggregate',
@@ -406,12 +406,12 @@ export function getBoardAggregateApi(params?: {
  * 递归聚合当前节点及所有下属节点的趋势数据
  */
 export function getBoardTrendApi(params?: {
-  plantId?: string;
-  timeWindow?: string;
-  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
-  startTime?: string;
   /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
   endTime?: string;
+  plantId?: string;
+  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+  startTime?: string;
+  timeWindow?: string;
 }) {
   return requestClient.get<DashboardApi.BoardTrendResult>(
     '/dashboard/board/trend',

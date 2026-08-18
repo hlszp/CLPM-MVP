@@ -230,7 +230,7 @@ const currentLoopType = computed(() => monitorCtx.loopType.value ?? '');
 // ===== 回路等级配置（对齐 use-score-color GB/T 44693.2-2024 §6.3 默认阈值）=====
 // 五档：优秀(≥90) / 良好(≥80) / 合格(≥60) / 警告(≥40) / 不合格(<40)
 // tagColor 使用 Ant Design Tag 预设色：绿→蓝→金→橙→红 形成视觉渐变
-type GradeKey = 'excellent' | 'good' | 'fair' | 'warning' | 'poor';
+type GradeKey = 'excellent' | 'fair' | 'good' | 'poor' | 'warning';
 
 interface GradeStats {
   excellent: number;
@@ -293,7 +293,7 @@ const gradeStats = computed<GradeStats>(() => {
 });
 
 /** 综合性能（简单平均，筛选联动）：优先服务端聚合 */
-const avgScore = computed<number | null>(() => {
+const avgScore = computed<null | number>(() => {
   return aggregate.value?.avgScore ?? null;
 });
 
@@ -309,10 +309,8 @@ const autoControlRate = computed(() => {
     return aggregate.value.autoControlRate;
   }
   const s = modeStats.value;
-  const auto =
-    (s['1'] ?? 0) + (s['2'] ?? 0) + (s['3'] ?? 0) + (s['4'] ?? 0);
-  const denom =
-    (s['0'] ?? 0) + auto + (s['unknown'] ?? 0);
+  const auto = (s['1'] ?? 0) + (s['2'] ?? 0) + (s['3'] ?? 0) + (s['4'] ?? 0);
+  const denom = (s['0'] ?? 0) + auto + (s.unknown ?? 0);
   if (denom === 0) return 0;
   return Number(((auto / denom) * 100).toFixed(1));
 });
@@ -452,14 +450,14 @@ function modeText(record: LoopApi.MonitorListItem): string {
 
 // ===== 回路等级（对齐 GRADE_CONFIG / useScoreColor GB/T 44693.2-2024 §6.3 默认阈值）=====
 // 空评分返回中性灰，严禁映射为红色（"数据不足"不是"不合格"）
-function getGradeTag(
-  score: number | null | undefined,
-): { color: string; label: string } {
+function getGradeTag(score: null | number | undefined): {
+  color: string;
+  label: string;
+} {
   if (score == null || Number.isNaN(score))
     return { color: 'default', label: '—' };
   for (const cfg of GRADE_CONFIG) {
-    if (score >= cfg.minScore)
-      return { color: cfg.tagColor, label: cfg.label };
+    if (score >= cfg.minScore) return { color: cfg.tagColor, label: cfg.label };
   }
   return { color: 'default', label: '—' };
 }
@@ -622,9 +620,13 @@ defineExpose({
             class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5"
           >
             <span class="text-sm font-medium text-gray-600">综合性能</span>
-            <span class="text-sm font-bold text-gray-800">{{ avgScore.toFixed(1) }}</span>
+            <span class="text-sm font-bold text-gray-800">{{
+              avgScore.toFixed(1)
+            }}</span>
             <Tooltip title="筛选集合评分简单平均（非加权）" placement="bottom">
-              <span class="cursor-help text-[10px] text-gray-400">简单平均</span>
+              <span class="cursor-help text-[10px] text-gray-400"
+                >简单平均</span
+              >
             </Tooltip>
           </div>
 
@@ -634,7 +636,9 @@ defineExpose({
             class="flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-1.5"
           >
             <span class="text-sm font-medium text-rose-600">较昨日恶化</span>
-            <span class="text-sm font-bold text-rose-700">{{ worsenedCount }}</span>
+            <span class="text-sm font-bold text-rose-700">{{
+              worsenedCount
+            }}</span>
           </div>
 
           <!-- 分隔符：综合统计 ↔ 实时自控率 -->
@@ -650,7 +654,10 @@ defineExpose({
               :class="autoControlRateColorClass"
               >{{ autoControlRateText }}</span
             >
-            <Tooltip title="实时口径（MODE 分布），与 KPI 有效自控率（快照口径）不同" placement="bottom">
+            <Tooltip
+              title="实时口径（MODE 分布），与 KPI 有效自控率（快照口径）不同"
+              placement="bottom"
+            >
               <span class="cursor-help text-[10px] text-gray-400">实时</span>
             </Tooltip>
           </div>

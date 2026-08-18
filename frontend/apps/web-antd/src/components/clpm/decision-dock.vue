@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { MonitorApi } from '#/api/monitor';
+import type { StateFace } from '#/composables/types/operational-context';
+
 /**
  * ClpmDecisionDock
  * Phase 1-B 决策坞：右下角浮动操作条
@@ -16,31 +19,31 @@
  * - empty: 隐藏
  */
 import { computed } from 'vue';
+
 import { Button, Tag } from 'ant-design-vue';
-import type { MonitorApi } from '#/api/monitor';
-import type { StateFace } from '#/composables/types/operational-context';
+
 import { injectOperationalContext } from '#/composables/use-operational-context';
 
 defineOptions({ name: 'ClpmDecisionDock' });
 
 const props = withDefaults(
   defineProps<{
-    /** 是否浮动在右下角（false 则为内联块） */
-    floating?: boolean;
-    /** 手动模式：nextAction（优先级高于inject） */
-    nextAction?: MonitorApi.NextAction | null;
-    /** 手动模式：loading状态 */
-    loading?: boolean;
     /** 手动模式：error状态 */
     error?: Error | null;
-    /** 手动模式：stateFace六态（不传则自动从props计算） */
-    stateFace?: StateFace;
+    /** 是否浮动在右下角（false 则为内联块） */
+    floating?: boolean;
     /** 手动模式：是否有数据 */
     hasData?: boolean;
+    /** 手动模式：loading状态 */
+    loading?: boolean;
+    /** 手动模式：nextAction（优先级高于inject） */
+    nextAction?: MonitorApi.NextAction | null;
     /** 手动模式：数据是否partial */
     partial?: boolean;
     /** 手动模式：数据是否stale */
     stale?: boolean;
+    /** 手动模式：stateFace六态（不传则自动从props计算） */
+    stateFace?: StateFace;
     /** 手动模式：自定义状态文案 */
     statusLabel?: string;
   }>(),
@@ -65,7 +68,12 @@ const emit = defineEmits<{
 const injectedCtx = injectOperationalContext();
 
 // 判断是否使用props模式
-const isPropsMode = computed(() => props.nextAction !== undefined || props.loading !== undefined || props.stateFace !== undefined);
+const isPropsMode = computed(
+  () =>
+    props.nextAction !== undefined ||
+    props.loading !== undefined ||
+    props.stateFace !== undefined,
+);
 
 // 统一数据源
 const loading = computed(() => {
@@ -84,7 +92,7 @@ const nextAction = computed(() => {
 });
 
 const hasData = computed(() => {
-  if (isPropsMode.value) return props.hasData ?? (props.nextAction != null);
+  if (isPropsMode.value) return props.hasData ?? props.nextAction != null;
   return injectedCtx?.summary.value != null;
 });
 
@@ -119,16 +127,21 @@ const statusMeta = computed(() => {
     return { label: props.statusLabel, color: 'default' as const };
   }
   switch (stateFace.value) {
-    case 'loading':
-      return { label: '加载中', color: 'processing' as const };
-    case 'error':
+    case 'error': {
       return { label: '加载失败', color: 'error' as const };
-    case 'partial':
+    }
+    case 'loading': {
+      return { label: '加载中', color: 'processing' as const };
+    }
+    case 'partial': {
       return { label: '部分数据不可用', color: 'warning' as const };
-    case 'stale':
+    }
+    case 'stale': {
       return { label: '数据陈旧', color: 'warning' as const };
-    default:
+    }
+    default: {
       return null;
+    }
   }
 });
 
@@ -153,7 +166,8 @@ function handleRetry() {
 <template>
   <div
     v-if="visible"
-    :class="['decision-dock', { 'decision-dock--floating': floating }]"
+    class="decision-dock"
+    :class="[{ 'decision-dock--floating': floating }]"
     role="region"
     aria-label="决策坞"
   >
@@ -170,10 +184,7 @@ function handleRetry() {
         <div class="decision-dock__label">
           {{ nextAction.label }}
         </div>
-        <div
-          v-if="nextAction.reason"
-          class="decision-dock__reason"
-        >
+        <div v-if="nextAction.reason" class="decision-dock__reason">
           {{ nextAction.reason }}
         </div>
       </div>

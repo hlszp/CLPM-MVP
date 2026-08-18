@@ -533,7 +533,10 @@ onUnmounted(() => {
           <template v-else-if="column.key === 'resultSummary'">
             <template v-if="record.status === 'SUCCESS'">
               <span class="font-mono text-xs">
-                {{ record.loopsDone ?? record.loopsTotal ?? 0 }}/{{ record.loopsTotal ?? 0 }} 回路
+                {{ record.loopsDone ?? record.loopsTotal ?? 0 }}/{{
+                  record.loopsTotal ?? 0
+                }}
+                回路
               </span>
             </template>
             <template v-else-if="record.status === 'FAILED'">
@@ -542,7 +545,8 @@ onUnmounted(() => {
                 :style="{ color: themeColors.DANGER }"
                 :title="record.errorMessage ?? ''"
               >
-                {{ (record.errorMessage ?? '执行失败').slice(0, 20) }}{{ (record.errorMessage ?? '').length > 20 ? '…' : '' }}
+                {{ (record.errorMessage ?? '执行失败').slice(0, 20)
+                }}{{ (record.errorMessage ?? '').length > 20 ? '…' : '' }}
               </span>
             </template>
             <template v-else-if="record.status === 'RUNNING'">

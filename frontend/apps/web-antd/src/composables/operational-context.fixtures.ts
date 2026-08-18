@@ -1,11 +1,14 @@
+import type { UrlContext } from './types/operational-context';
+
 /**
  * operational-context.fixtures.ts
  * Phase 1 共享载体：测试/Storybook/开发用 mock 数据工厂
  */
 import type { MonitorApi } from '#/api/monitor';
-import type { UrlContext } from './types/operational-context';
 
-export function createDefaultUrlContext(overrides: Partial<UrlContext> = {}): UrlContext {
+export function createDefaultUrlContext(
+  overrides: Partial<UrlContext> = {},
+): UrlContext {
   return {
     loopId: 'LP-001',
     from: null,
@@ -35,7 +38,7 @@ export function createMockWorkbenchSummary(
     importanceLevel: 8,
     runtime: {
       pv: 125.6,
-      sp: 125.0,
+      sp: 125,
       op: 45.2,
       mode: 1,
       modeLabel: 'Auto',
@@ -92,7 +95,12 @@ export function createMockWorkbenchSummary(
     trackerTimeline: null,
     lifecycle: {
       stages: [
-        { stage: 'ASSESS', status: 'COMPLETED', resultAt: '2026-08-14T10:00:00+08:00', reason: '' },
+        {
+          stage: 'ASSESS',
+          status: 'COMPLETED',
+          resultAt: '2026-08-14T10:00:00+08:00',
+          reason: '',
+        },
         { stage: 'MONITOR', status: 'READY', resultAt: null, reason: '' },
       ],
       currentStage: 'MONITOR',
@@ -116,7 +124,12 @@ export function createMockWorkbenchSummary(
 
 /** 加载中状态 */
 export function createLoadingContext() {
-  return { loading: true, error: null, summary: null, stateFace: 'loading' as const };
+  return {
+    loading: true,
+    error: null,
+    summary: null,
+    stateFace: 'loading' as const,
+  };
 }
 
 /** 错误状态 */
@@ -131,7 +144,12 @@ export function createErrorContext(message = '网络请求失败') {
 
 /** 空状态（无 loopId） */
 export function createEmptyContext() {
-  return { loading: false, error: null, summary: null, stateFace: 'empty' as const };
+  return {
+    loading: false,
+    error: null,
+    summary: null,
+    stateFace: 'empty' as const,
+  };
 }
 
 /** partial 部分失败状态 */
@@ -154,7 +172,11 @@ export function createStaleContext() {
     loading: false,
     error: null,
     summary: createMockWorkbenchSummary({
-      dataFreshness: { status: 'DELAYED', thresholdSeconds: 60, reason: '已停滞 320 秒' },
+      dataFreshness: {
+        status: 'DELAYED',
+        thresholdSeconds: 60,
+        reason: '已停滞 320 秒',
+      },
     }),
     stateFace: 'stale' as const,
   };

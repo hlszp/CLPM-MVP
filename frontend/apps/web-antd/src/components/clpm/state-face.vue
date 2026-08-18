@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { StateFace } from '#/composables/types/operational-context';
+
 /**
  * ClpmStateFace
  * Phase 1-D 状态组件族：六态包装组件
@@ -17,39 +19,41 @@
  * - ready: 直接透传 slot
  */
 import { computed } from 'vue';
+
 import { Alert } from 'ant-design-vue';
-import type { StateFace } from '#/composables/types/operational-context';
+
 import { injectOperationalContext } from '#/composables/use-operational-context';
+
 import ClpmStateOverlay from './state-overlay.vue';
 
 defineOptions({ name: 'ClpmStateFace' });
 
 const props = withDefaults(
   defineProps<{
-    /** 手动模式：stateFace六态（优先级高于inject） */
-    status?: StateFace;
     /** 空状态描述 */
     emptyDescription?: string;
     /** 空状态标题 */
     emptyTitle?: string;
     /** 错误信息 */
     errorMessage?: string;
-    /** 错误重试按钮文字 */
-    retryText?: string;
-    /** 手动模式：partial 态自定义提示 */
-    partialMessage?: string;
-    /** 手动模式：stale 态自定义提示 */
-    staleMessage?: string;
-    /** 手动模式：是否显示loading */
-    loading?: boolean;
     /** 手动模式：是否有数据 */
     hasData?: boolean;
-    /** 手动模式：是否partial */
-    partial?: boolean;
-    /** 手动模式：是否stale */
-    stale?: boolean;
     /** 内联模式（不使用min-height:200px占位） */
     inline?: boolean;
+    /** 手动模式：是否显示loading */
+    loading?: boolean;
+    /** 手动模式：是否partial */
+    partial?: boolean;
+    /** 手动模式：partial 态自定义提示 */
+    partialMessage?: string;
+    /** 错误重试按钮文字 */
+    retryText?: string;
+    /** 手动模式：是否stale */
+    stale?: boolean;
+    /** 手动模式：stale 态自定义提示 */
+    staleMessage?: string;
+    /** 手动模式：stateFace六态（优先级高于inject） */
+    status?: StateFace;
   }>(),
   {
     status: undefined,
@@ -74,12 +78,13 @@ const emit = defineEmits<{
 const injectedCtx = injectOperationalContext();
 
 // 判断是否使用props模式
-const isPropsMode = computed(() =>
-  props.status !== undefined
-  || props.loading !== undefined
-  || props.hasData !== undefined
-  || props.partial !== undefined
-  || props.stale !== undefined,
+const isPropsMode = computed(
+  () =>
+    props.status !== undefined ||
+    props.loading !== undefined ||
+    props.hasData !== undefined ||
+    props.partial !== undefined ||
+    props.stale !== undefined,
 );
 
 // 统一数据源
@@ -121,15 +126,23 @@ const stateFace = computed<StateFace>(() => {
 // StateOverlay只处理loading/error/empty；partial/stale/ready透传
 const overlayStatus = computed(() => {
   switch (stateFace.value) {
-    case 'loading': return 'loading';
-    case 'error': return 'error';
-    case 'empty': return 'empty';
-    default: return 'success';
+    case 'empty': {
+      return 'empty';
+    }
+    case 'error': {
+      return 'error';
+    }
+    case 'loading': {
+      return 'loading';
+    }
+    default: {
+      return 'success';
+    }
   }
 });
 
-const showWarningBar = computed(() =>
-  stateFace.value === 'partial' || stateFace.value === 'stale',
+const showWarningBar = computed(
+  () => stateFace.value === 'partial' || stateFace.value === 'stale',
 );
 
 const warningType = computed(() =>
@@ -149,7 +162,7 @@ function handleRetry() {
 </script>
 
 <template>
-  <div :class="['state-face', { 'state-face--inline': inline }]">
+  <div class="state-face" :class="[{ 'state-face--inline': inline }]">
     <!-- partial/stale 警告条 -->
     <Alert
       v-if="showWarningBar"
@@ -169,7 +182,7 @@ function handleRetry() {
       :retry-text="retryText"
       @retry="handleRetry"
     >
-      <slot />
+      <slot></slot>
     </ClpmStateOverlay>
   </div>
 </template>

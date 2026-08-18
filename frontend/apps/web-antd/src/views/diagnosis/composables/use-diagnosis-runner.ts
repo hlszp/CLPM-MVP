@@ -75,7 +75,11 @@ export function useDiagnosisRunner(options?: {
     pollTaskId = '';
     running.value = false;
     try {
-      const res = await getDiagnosisRunsApi({ taskId: lastTaskId, page: 1, pageSize: 100 });
+      const res = await getDiagnosisRunsApi({
+        taskId: lastTaskId,
+        page: 1,
+        pageSize: 100,
+      });
       resultItems.value = res.items;
       options?.onFinished?.(res.items);
     } catch {

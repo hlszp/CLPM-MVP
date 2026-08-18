@@ -236,7 +236,8 @@ async function confirmSave() {
       label: editState[item.level]?.label ?? item.label ?? '',
       minScore: editState[item.level]?.minScore ?? item.minScore,
       maxScore: editState[item.level]?.maxScore ?? item.maxScore,
-      color: editState[item.level]?.color ?? item.color ?? levelColor(item.level),
+      color:
+        editState[item.level]?.color ?? item.color ?? levelColor(item.level),
     }));
     await saveGradingThresholdsApi({ thresholds });
     message.success('定级阈值保存成功（已生成新版本）');
@@ -471,7 +472,9 @@ defineExpose({ refresh });
   cursor: pointer;
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .color-picker-trigger:hover {

@@ -263,7 +263,10 @@ async function handleSelectAll(e: any) {
   selectAllLoading.value = true;
   try {
     const signature = currentFilterSignature();
-    if (!filteredIdsCache.value || filteredIdsCache.value.signature !== signature) {
+    if (
+      !filteredIdsCache.value ||
+      filteredIdsCache.value.signature !== signature
+    ) {
       const ids = await fetchAllFilteredLoopIds();
       filteredIdsCache.value = { signature, ids };
     }
@@ -1140,7 +1143,6 @@ onMounted(async () => {
       :expected-interval="interval"
       @backfill="handleBackfillFromIntegrity"
     />
-
   </Page>
 </template>
 

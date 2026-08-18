@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { DiagnosisApi } from '#/api/diagnosis';
+
 /**
  * 诊断历史抽屉 —— 单回路诊断历史（纵向地铁进度条时间线，倒序）。
  *
@@ -7,12 +9,11 @@
  */
 import { ref, watch } from 'vue';
 
+import { Drawer, Empty, Spin } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { Drawer, Empty, Spin } from 'ant-design-vue';
-
-import type { DiagnosisApi } from '#/api/diagnosis';
 import { getDiagnosisRunsApi } from '#/api/diagnosis';
+
 import { CATEGORY_META } from '../constants';
 
 const props = defineProps<{
@@ -31,14 +32,20 @@ const PAGE_SIZE = 50;
 /** naive UTC → 本地时间（对齐断流时段修复口径：补 Z 解析） */
 function fmtLocal(naiveUtc?: null | string): string {
   if (!naiveUtc) return '—';
-  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveUtc) ? naiveUtc : `${naiveUtc}Z`;
+  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveUtc)
+    ? naiveUtc
+    : `${naiveUtc}Z`;
   return dayjs(withZ).format('MM-DD HH:mm');
 }
 
 async function load(loopId: string) {
   loading.value = true;
   try {
-    const res = await getDiagnosisRunsApi({ loopId, page: 1, pageSize: PAGE_SIZE });
+    const res = await getDiagnosisRunsApi({
+      loopId,
+      page: 1,
+      pageSize: PAGE_SIZE,
+    });
     items.value = res.items;
     total.value = res.total;
   } finally {
@@ -67,7 +74,10 @@ function catColor(record: DiagnosisApi.RunListItem): string {
     :destroy-on-close="true"
   >
     <Spin :spinning="loading">
-      <Empty v-if="!loading && items.length === 0" description="该回路暂无诊断记录" />
+      <Empty
+        v-if="!loading && items.length === 0"
+        description="该回路暂无诊断记录"
+      />
       <!-- 纵向地铁进度条：左侧轨道线 + 节点圆点，倒序（最新在顶部） -->
       <div v-else class="diag-history">
         <div
@@ -80,12 +90,14 @@ function catColor(record: DiagnosisApi.RunListItem): string {
               class="diag-history__dot"
               :class="{ 'diag-history__dot--latest': idx === 0 }"
               :style="{ borderColor: catColor(rec) }"
-            />
+            ></span>
           </div>
           <div class="diag-history__body">
             <div class="diag-history__head">
               <span v-if="idx === 0" class="diag-history__badge">最新</span>
-              <span class="diag-history__time">{{ fmtLocal(rec.createdAt) }}</span>
+              <span class="diag-history__time">{{
+                fmtLocal(rec.createdAt)
+              }}</span>
             </div>
             <div class="diag-history__cat" :style="{ color: catColor(rec) }">
               {{ rec.primaryCategoryLabel ?? '未判定' }}
@@ -101,7 +113,11 @@ function catColor(record: DiagnosisApi.RunListItem): string {
             <div class="diag-history__meta">
               {{ rec.triggerTypeLabel ?? '手动诊断' }}
               <template v-if="rec.reviewStatus === 'REVIEWED'">
-                · 已复核{{ rec.reviewResultLabels?.length ? `：${rec.reviewResultLabels.join('、')}` : '' }}
+                · 已复核{{
+                  rec.reviewResultLabels?.length
+                    ? `：${rec.reviewResultLabels.join('、')}`
+                    : ''
+                }}
               </template>
             </div>
           </div>
@@ -129,8 +145,8 @@ function catColor(record: DiagnosisApi.RunListItem): string {
   position: relative;
   display: flex;
   flex-shrink: 0;
-  width: 14px;
   justify-content: center;
+  width: 14px;
 }
 
 .diag-history__item:not(:last-child) .diag-history__rail::after {
@@ -182,8 +198,8 @@ function catColor(record: DiagnosisApi.RunListItem): string {
 
 .diag-history__time {
   font-size: 12px;
-  color: hsl(var(--accent-foreground) / 55%);
   font-variant-numeric: tabular-nums;
+  color: hsl(var(--accent-foreground) / 55%);
 }
 
 .diag-history__cat {

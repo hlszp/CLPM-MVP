@@ -121,7 +121,11 @@ const labelColor = computed(() =>
           {{ row.display }}
         </div>
       </div>
-      <div v-if="props.showHint" class="metric-bars__hint" :style="{ color: labelColor }">
+      <div
+        v-if="props.showHint"
+        class="metric-bars__hint"
+        :style="{ color: labelColor }"
+      >
         {{ labelText }}
       </div>
     </div>

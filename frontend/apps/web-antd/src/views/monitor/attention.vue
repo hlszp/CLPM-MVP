@@ -17,9 +17,6 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn';
 
 import {
   Badge,
@@ -41,6 +38,8 @@ import {
   Textarea,
   Tooltip,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 
 import {
   acknowledgeEventApi,
@@ -62,10 +61,11 @@ import {
 } from '#/constants/clpm-ui';
 import { formatTime, normalizeUtcTimestamp } from '#/utils/format';
 
-dayjs.extend(relativeTime);
-dayjs.locale('zh-cn');
+import 'dayjs/locale/zh-cn';
 
 defineOptions({ name: 'MonitorAttention' });
+dayjs.extend(relativeTime);
+dayjs.locale('zh-cn');
 
 const route = useRoute();
 const router = useRouter();
@@ -76,7 +76,7 @@ function goBackToOverview() {
 }
 
 // ===== 相对时间格式化 =====
-function formatRelative(ts: string | null | undefined): string {
+function formatRelative(ts: null | string | undefined): string {
   if (!ts) return '-';
   try {
     return dayjs(normalizeUtcTimestamp(ts)).fromNow();
@@ -321,10 +321,10 @@ function handlePageChange(page: number, pageSize: number) {
 // ===== 展开/折叠行 =====
 function toggleExpand(group: MonitorApi.AttentionGroup) {
   const idx = expandedRowKeys.value.indexOf(group.groupId);
-  if (idx >= 0) {
-    expandedRowKeys.value.splice(idx, 1);
-  } else {
+  if (idx === -1) {
     expandedRowKeys.value.push(group.groupId);
+  } else {
+    expandedRowKeys.value.splice(idx, 1);
   }
 }
 
@@ -506,7 +506,9 @@ function tryOpenDetailByEventId(eventId: string) {
 }
 
 // ===== 截断提示 =====
-const hasTruncation = computed(() => Object.values(truncated.value).some(Boolean));
+const hasTruncation = computed(() =>
+  Object.values(truncated.value).some(Boolean),
+);
 const truncationMessage = computed(() => {
   const sources = Object.entries(truncated.value)
     .filter(([, v]) => v)
@@ -617,391 +619,470 @@ watch(
     <div class="h-full flex flex-col overflow-hidden bg-[var(--clr-surface)]">
       <Spin :spinning="loading" class="flex-1 flex flex-col min-h-0">
         <div class="flex flex-col h-full p-3 gap-3 overflow-auto">
-    <!-- 截断提示条 -->
-    <div
-      v-if="hasTruncation"
-      class="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
-    >
-      <IconifyIcon icon="lucide:alert-triangle" :size="16" />
-      <span>{{ truncationMessage }}</span>
-    </div>
-
-    <!-- R2 摘要条 -->
-    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-gray-100 bg-white px-4 py-3">
-      <div class="flex items-baseline gap-2">
-        <span class="text-2xl font-semibold tabular-nums text-red-600">
-          {{ aggregates.openCount || 0 }}
-        </span>
-        <span class="text-sm text-gray-500">待处理</span>
-      </div>
-      <div class="h-5 w-px bg-gray-200" />
-      <div class="flex items-baseline gap-2">
-        <span class="text-2xl font-semibold tabular-nums">
-          {{ aggregates.groupCount || 0 }}
-        </span>
-        <span class="text-sm text-gray-500">问题回路</span>
-      </div>
-      <div v-if="aggregates.urgentCount" class="h-5 w-px bg-gray-200" />
-      <div v-if="aggregates.urgentCount" class="flex items-baseline gap-2">
-        <span class="text-2xl font-semibold tabular-nums text-red-600">
-          {{ aggregates.urgentCount }}
-        </span>
-        <span class="text-sm text-gray-500">紧急</span>
-      </div>
-      <div v-if="aggregates.dataQualityCount" class="h-5 w-px bg-gray-200" />
-      <div v-if="aggregates.dataQualityCount" class="flex items-baseline gap-2">
-        <span class="text-2xl font-semibold tabular-nums text-gray-600">
-          {{ aggregates.dataQualityCount }}
-        </span>
-        <span class="text-sm text-gray-500">数据质量</span>
-      </div>
-      <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
-        <IconifyIcon icon="lucide:clock" :size="12" />
-        <span>聚合于 {{ formatTime(loadedAt) }}</span>
-      </div>
-    </div>
-
-    <!-- R2.5 优先级速览卡 + 来源 chips -->
-    <div class="flex flex-wrap items-center gap-3">
-      <!-- 优先级速览卡（组口径） -->
-      <div class="flex items-center gap-1.5">
-        <button
-          class="rounded-md border px-3 py-1.5 text-sm transition-colors"
-          :class="
-            query.priority.length === 0
-              ? 'border-blue-400 bg-blue-50 text-blue-700'
-              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-          "
-          @click="() => { query.priority = []; handleFilterChange(); }"
-        >
-          全部
-          <span class="ml-1 font-semibold tabular-nums">
-            {{ aggregates.groupCount || 0 }}
-          </span>
-          <span class="text-xs text-gray-400 ml-0.5">
-            ({{ totalItems }}项)
-          </span>
-        </button>
-        <button
-          v-for="p in PRIORITY_ORDER"
-          :key="p"
-          class="rounded-md border px-3 py-1.5 text-sm transition-colors"
-          :class="
-            query.priority.includes(p)
-              ? 'border-current'
-              : 'border-gray-200 bg-white hover:border-gray-300'
-          "
-          :style="
-            query.priority.includes(p)
-              ? `border-color: var(--ant-${priorityColor(p)}-color); background: var(--ant-${priorityColor(p)}-color-1); color: var(--ant-${priorityColor(p)}-color);`
-              : ''
-          "
-          @click="togglePriority(p)"
-        >
-          {{ PRIORITY_LABEL[p] }}
-          <span class="ml-1 font-semibold tabular-nums">
-            {{ aggregates.byGroupPriority?.[p] || 0 }}
-          </span>
-        </button>
-      </div>
-
-      <!-- 来源 chips（项口径） -->
-      <div class="ml-auto flex items-center gap-1.5">
-        <Tag
-          v-for="s in SOURCE_ORDER"
-          :key="s"
-          :color="query.source.includes(s) ? SOURCE_COLOR[s] : 'default'"
-          class="cursor-pointer !mb-0"
-          style="margin: 0; font-size: 12px;"
-          @click="toggleSource(s)"
-        >
-          {{ SOURCE_LABEL[s] }}
-          <span class="ml-1 opacity-70 tabular-nums">
-            {{ aggregates.bySource[s] || 0 }}
-          </span>
-        </Tag>
-      </div>
-    </div>
-
-    <!-- R3 筛选工具条 -->
-    <div class="clpm-filter-bar">
-      <FormItem label="搜索" class="!mb-0">
-        <Input
-          v-model:value="query.keyword"
-          allow-clear
-          placeholder="位号 / 标题"
-          style="width: 200px"
-          @press-enter="handleKeywordSearch"
-        />
-      </FormItem>
-
-      <Space class="!ml-auto">
-        <Button type="primary" @click="handleKeywordSearch">查询</Button>
-        <Button @click="handleResetFilters">重置</Button>
-      </Space>
-    </div>
-
-    <!-- R4 分诊主表（flex-1 占满剩余空间） -->
-    <Card :bordered="false" size="small" class="flex-1 flex flex-col min-h-0 shadow-sm">
-      <Table
-        :columns="columns"
-        :data-source="attentionGroups"
-        :loading="loading"
-        :pagination="false"
-        :size="tableSize"
-        :scroll="{ x: 1360, y: 'calc(100vh - 420px)' }"
-        :row-key="(record: MonitorApi.AttentionGroup) => record.groupId"
-        :expanded-row-keys="expandedRowKeys"
-        :expand-icon-column-index="-1"
-        :row-class-name="getRowClassName"
-        class="flex-1"
-        @expandedRowsChange="(keys: (string | number)[]) => (expandedRowKeys = keys as string[])"
-      >
-      <template #bodyCell="{ column, record, index }">
-        <template v-if="column.key === 'index'">
-          <span class="tabular-nums text-gray-500">
-            {{ (query.page - 1) * query.pageSize + index + 1 }}
-          </span>
-        </template>
-
-        <template v-else-if="column.key === 'tagName'">
-          <div class="flex items-center gap-2">
-            <Tag
-              :color="priorityColor(record.priority)"
-              class="!mr-0 !px-1.5"
-              style="font-size: 11px; line-height: 16px;"
-            >
-              {{ record.priorityLabel }}
-            </Tag>
-            <span class="font-mono font-semibold text-gray-800">
-              {{ record.tagName }}
-            </span>
+          <!-- 截断提示条 -->
+          <div
+            v-if="hasTruncation"
+            class="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+          >
+            <IconifyIcon icon="lucide:alert-triangle" :size="16" />
+            <span>{{ truncationMessage }}</span>
           </div>
-        </template>
 
-        <template v-else-if="column.key === 'unitName'">
-          <span class="text-gray-600">{{ record.unitName || '-' }}</span>
-        </template>
-
-        <template v-else-if="column.key === 'status'">
-          <Tag :color="STATUS_COLOR[record.status as keyof typeof STATUS_COLOR]">
-            {{ STATUS_LABEL[record.status as keyof typeof STATUS_LABEL] }}
-          </Tag>
-        </template>
-
-        <template v-else-if="column.key === 'sources'">
-          <Space :size="4">
-            <Tag
-              v-for="s in record.sources.slice(0, 3)"
-              :key="s"
-              :color="SOURCE_COLOR[s as keyof typeof SOURCE_COLOR]"
-              style="margin: 0; font-size: 12px;"
-            >
-              {{ SOURCE_LABEL[s as keyof typeof SOURCE_LABEL] }}
-            </Tag>
-            <Tag
-              v-if="record.sources.length > 3"
-              style="margin: 0; font-size: 12px;"
-            >
-              +{{ record.sources.length - 3 }}
-            </Tag>
-            <Badge
-              v-if="record.itemCount > 1"
-              :count="record.itemCount"
-              :size="'small'"
-              :style="{ background: '#666' }"
-            />
-          </Space>
-        </template>
-
-        <template v-else-if="column.key === 'summary'">
-          <Tooltip :title="record.summary">
-            <span>{{ record.summary }}</span>
-          </Tooltip>
-        </template>
-
-        <template v-else-if="column.key === 'updatedAt'">
-          <div class="flex items-center gap-1">
-            <Tooltip :title="formatTime(record.updatedAt)">
-              <span :class="{ 'text-red-600': record.isOverdue }">
-                {{ formatRelative(record.updatedAt) }}
+          <!-- R2 摘要条 -->
+          <div
+            class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-gray-100 bg-white px-4 py-3"
+          >
+            <div class="flex items-baseline gap-2">
+              <span class="text-2xl font-semibold tabular-nums text-red-600">
+                {{ aggregates.openCount || 0 }}
               </span>
-            </Tooltip>
-            <IconifyIcon
-              v-if="record.isOverdue"
-              icon="lucide:alert-circle"
-              :size="14"
-              class="text-red-500"
-            />
-          </div>
-        </template>
-
-        <template v-else-if="column.key === 'actions'">
-          <Space :size="0">
-            <Tooltip
-              :title="expandedRowKeys.includes(record.groupId) ? '收起子项' : '展开子项'"
-            >
-              <Button type="text" size="small" class="!px-1" @click="toggleExpand(record as MonitorApi.AttentionGroup)">
-                <IconifyIcon
-                  :icon="
-                    expandedRowKeys.includes(record.groupId)
-                      ? 'lucide:chevron-up'
-                      : 'lucide:chevron-down'
-                  "
-                  :size="16"
-                />
-              </Button>
-            </Tooltip>
-            <Tooltip title="进入回路工作台">
-              <Button
-                type="text"
-                size="small"
-                class="!px-1"
-                :disabled="!record.primaryAction?.enabled"
-                @click="executeNavAction(record.primaryAction)"
-              >
-                <IconifyIcon icon="lucide:external-link" :size="16" />
-              </Button>
-            </Tooltip>
-          </Space>
-        </template>
-      </template>
-
-      <!-- 展开子项明细 -->
-      <template #expandedRowRender="{ record }">
-        <div class="py-2 pl-8 pr-4 bg-gray-50/50">
-          <div class="mb-2 text-xs font-medium text-gray-500">
-            {{ record.tagName }} 的 {{ record.itemCount }} 个关注项：
-          </div>
-          <div class="space-y-1">
+              <span class="text-sm text-gray-500">待处理</span>
+            </div>
+            <div class="h-5 w-px bg-gray-200"></div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-2xl font-semibold tabular-nums">
+                {{ aggregates.groupCount || 0 }}
+              </span>
+              <span class="text-sm text-gray-500">问题回路</span>
+            </div>
             <div
-              v-for="child in record.children"
-              :key="child.attentionId"
-              class="flex items-center gap-3 rounded border border-gray-100 bg-white px-3 py-2 text-sm"
+              v-if="aggregates.urgentCount"
+              class="h-5 w-px bg-gray-200"
+            ></div>
+            <div
+              v-if="aggregates.urgentCount"
+              class="flex items-baseline gap-2"
             >
-              <Tag
-                :color="SOURCE_COLOR[child.source as keyof typeof SOURCE_COLOR]"
-                class="!mr-0"
-                style="font-size: 11px;"
-              >
-                {{ SOURCE_LABEL[child.source as keyof typeof SOURCE_LABEL] }}
-              </Tag>
-              <Tag
-                :color="priorityColor(child.priority)"
-                class="!mr-0"
-                style="font-size: 11px;"
-              >
-                {{ PRIORITY_LABEL[child.priority as keyof typeof PRIORITY_LABEL] }}
-              </Tag>
-              <Tag
-                :color="STATUS_COLOR[child.status as keyof typeof STATUS_COLOR]"
-                class="!mr-0"
-                style="font-size: 11px;"
-              >
-                {{ STATUS_LABEL[child.status as keyof typeof STATUS_LABEL] }}
-              </Tag>
-              <Tooltip :title="child.summary">
-                <span class="flex-1 truncate text-gray-700">
-                  {{ child.summary }}
-                </span>
-              </Tooltip>
-              <div v-if="child.rankReasons?.length" class="flex gap-1">
-                <Tag
-                  v-for="(r, i) in child.rankReasons.slice(0, 2)"
-                  :key="i"
-                  color="default"
-                  class="!mr-0"
-                  style="font-size: 11px;"
-                >
-                  {{ r }}
-                </Tag>
-                <Tag
-                  v-if="child.rankReasons.length > 2"
-                  color="default"
-                  class="!mr-0"
-                  style="font-size: 11px;"
-                >
-                  +{{ child.rankReasons.length - 2 }}
-                </Tag>
-              </div>
-              <Tooltip :title="formatTime(child.updatedAt || child.occurredAt)">
-                <span class="text-gray-400 whitespace-nowrap tabular-nums">
-                  {{ formatRelative(child.updatedAt || child.occurredAt) }}
-                </span>
-              </Tooltip>
-              <Space :size="2">
-                <Button type="link" size="small" @click="openChildDetail(child)">
-                  详情
-                </Button>
-                <Button
-                  type="link"
-                  size="small"
-                  :disabled="!child.primaryAction?.enabled"
-                  @click="executeNavAction(child.primaryAction)"
-                >
-                  工作台
-                </Button>
-                <Dropdown
-                  v-if="child.actions?.length > 2"
-                  :menu="buildChildMenu(child)"
-                  trigger="click"
-                >
-                  <Button type="link" size="small" class="!px-1">
-                    <IconifyIcon icon="lucide:more-horizontal" :size="16" />
-                  </Button>
-                </Dropdown>
-              </Space>
+              <span class="text-2xl font-semibold tabular-nums text-red-600">
+                {{ aggregates.urgentCount }}
+              </span>
+              <span class="text-sm text-gray-500">紧急</span>
+            </div>
+            <div
+              v-if="aggregates.dataQualityCount"
+              class="h-5 w-px bg-gray-200"
+            ></div>
+            <div
+              v-if="aggregates.dataQualityCount"
+              class="flex items-baseline gap-2"
+            >
+              <span class="text-2xl font-semibold tabular-nums text-gray-600">
+                {{ aggregates.dataQualityCount }}
+              </span>
+              <span class="text-sm text-gray-500">数据质量</span>
+            </div>
+            <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+              <IconifyIcon icon="lucide:clock" :size="12" />
+              <span>聚合于 {{ formatTime(loadedAt) }}</span>
             </div>
           </div>
-        </div>
-      </template>
 
-      <!-- 空态 -->
-      <template #emptyText>
-        <ClpmEmptyState
-          v-if="!hasFilters && totalItems === 0"
-          scene="tracker"
-          title="今日无例外，回路运行正常"
-          description="当前筛选范围内没有需要处理的关注项。"
-        />
-        <ClpmEmptyState
-          v-else
-          scene="tracker"
-          title="筛选无结果"
-          description="当前筛选条件下没有匹配的关注项，请尝试调整筛选条件。"
-          :actions="[
-            {
-              label: '清除筛选',
-              icon: 'lucide:x',
-              onClick: handleResetFilters,
-            },
-          ]"
-        />
-      </template>
-    </Table>
-    </Card>
+          <!-- R2.5 优先级速览卡 + 来源 chips -->
+          <div class="flex flex-wrap items-center gap-3">
+            <!-- 优先级速览卡（组口径） -->
+            <div class="flex items-center gap-1.5">
+              <button
+                class="rounded-md border px-3 py-1.5 text-sm transition-colors"
+                :class="
+                  query.priority.length === 0
+                    ? 'border-blue-400 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                "
+                @click="
+                  () => {
+                    query.priority = [];
+                    handleFilterChange();
+                  }
+                "
+              >
+                全部
+                <span class="ml-1 font-semibold tabular-nums">
+                  {{ aggregates.groupCount || 0 }}
+                </span>
+                <span class="text-xs text-gray-400 ml-0.5">
+                  ({{ totalItems }}项)
+                </span>
+              </button>
+              <button
+                v-for="p in PRIORITY_ORDER"
+                :key="p"
+                class="rounded-md border px-3 py-1.5 text-sm transition-colors"
+                :class="
+                  query.priority.includes(p)
+                    ? 'border-current'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                "
+                :style="
+                  query.priority.includes(p)
+                    ? `border-color: var(--ant-${priorityColor(p)}-color); background: var(--ant-${priorityColor(p)}-color-1); color: var(--ant-${priorityColor(p)}-color);`
+                    : ''
+                "
+                @click="togglePriority(p)"
+              >
+                {{ PRIORITY_LABEL[p] }}
+                <span class="ml-1 font-semibold tabular-nums">
+                  {{ aggregates.byGroupPriority?.[p] || 0 }}
+                </span>
+              </button>
+            </div>
 
-    <!-- R5 分页条（双口径） -->
-    <div class="flex items-center justify-between text-sm text-gray-500">
-      <div v-if="totalGroups > 0">
-        第 {{ query.page }} 页 · {{ query.pageSize }}/页
-        <span class="mx-2">｜</span>
-        已加载 {{ Math.min(query.page * query.pageSize, totalGroups) }} 回路组 ·
-        {{ currentPageItemCount }} 项
-        <span class="mx-2">/</span>
-        共 {{ totalGroups }} 回路组 · {{ totalItems }} 项
-      </div>
-      <div v-else class="invisible">占位</div>
-      <Pagination
-        v-model:current="query.page"
-        v-model:page-size="query.pageSize"
-        :total="totalGroups"
-        :show-size-changer="true"
-        :show-total="(t: number) => `共 ${t} 回路组`"
-        :page-size-options="['10', '20', '50']"
-        @change="handlePageChange"
-      />
-    </div>
+            <!-- 来源 chips（项口径） -->
+            <div class="ml-auto flex items-center gap-1.5">
+              <Tag
+                v-for="s in SOURCE_ORDER"
+                :key="s"
+                :color="query.source.includes(s) ? SOURCE_COLOR[s] : 'default'"
+                class="cursor-pointer !mb-0"
+                style="margin: 0; font-size: 12px"
+                @click="toggleSource(s)"
+              >
+                {{ SOURCE_LABEL[s] }}
+                <span class="ml-1 opacity-70 tabular-nums">
+                  {{ aggregates.bySource[s] || 0 }}
+                </span>
+              </Tag>
+            </div>
+          </div>
+
+          <!-- R3 筛选工具条 -->
+          <div class="clpm-filter-bar">
+            <FormItem label="搜索" class="!mb-0">
+              <Input
+                v-model:value="query.keyword"
+                allow-clear
+                placeholder="位号 / 标题"
+                style="width: 200px"
+                @press-enter="handleKeywordSearch"
+              />
+            </FormItem>
+
+            <Space class="!ml-auto">
+              <Button type="primary" @click="handleKeywordSearch">查询</Button>
+              <Button @click="handleResetFilters">重置</Button>
+            </Space>
+          </div>
+
+          <!-- R4 分诊主表（flex-1 占满剩余空间） -->
+          <Card
+            :bordered="false"
+            size="small"
+            class="flex-1 flex flex-col min-h-0 shadow-sm"
+          >
+            <Table
+              :columns="columns"
+              :data-source="attentionGroups"
+              :loading="loading"
+              :pagination="false"
+              :size="tableSize"
+              :scroll="{ x: 1360, y: 'calc(100vh - 420px)' }"
+              :row-key="(record: MonitorApi.AttentionGroup) => record.groupId"
+              :expanded-row-keys="expandedRowKeys"
+              :expand-icon-column-index="-1"
+              :row-class-name="getRowClassName"
+              class="flex-1"
+              @expanded-rows-change="
+                (keys: (string | number)[]) =>
+                  (expandedRowKeys = keys as string[])
+              "
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'index'">
+                  <span class="tabular-nums text-gray-500">
+                    {{ (query.page - 1) * query.pageSize + index + 1 }}
+                  </span>
+                </template>
+
+                <template v-else-if="column.key === 'tagName'">
+                  <div class="flex items-center gap-2">
+                    <Tag
+                      :color="priorityColor(record.priority)"
+                      class="!mr-0 !px-1.5"
+                      style="font-size: 11px; line-height: 16px"
+                    >
+                      {{ record.priorityLabel }}
+                    </Tag>
+                    <span class="font-mono font-semibold text-gray-800">
+                      {{ record.tagName }}
+                    </span>
+                  </div>
+                </template>
+
+                <template v-else-if="column.key === 'unitName'">
+                  <span class="text-gray-600">{{
+                    record.unitName || '-'
+                  }}</span>
+                </template>
+
+                <template v-else-if="column.key === 'status'">
+                  <Tag
+                    :color="
+                      STATUS_COLOR[record.status as keyof typeof STATUS_COLOR]
+                    "
+                  >
+                    {{
+                      STATUS_LABEL[record.status as keyof typeof STATUS_LABEL]
+                    }}
+                  </Tag>
+                </template>
+
+                <template v-else-if="column.key === 'sources'">
+                  <Space :size="4">
+                    <Tag
+                      v-for="s in record.sources.slice(0, 3)"
+                      :key="s"
+                      :color="SOURCE_COLOR[s as keyof typeof SOURCE_COLOR]"
+                      style="margin: 0; font-size: 12px"
+                    >
+                      {{ SOURCE_LABEL[s as keyof typeof SOURCE_LABEL] }}
+                    </Tag>
+                    <Tag
+                      v-if="record.sources.length > 3"
+                      style="margin: 0; font-size: 12px"
+                    >
+                      +{{ record.sources.length - 3 }}
+                    </Tag>
+                    <Badge
+                      v-if="record.itemCount > 1"
+                      :count="record.itemCount"
+                      size="small"
+                      :style="{ background: '#666' }"
+                    />
+                  </Space>
+                </template>
+
+                <template v-else-if="column.key === 'summary'">
+                  <Tooltip :title="record.summary">
+                    <span>{{ record.summary }}</span>
+                  </Tooltip>
+                </template>
+
+                <template v-else-if="column.key === 'updatedAt'">
+                  <div class="flex items-center gap-1">
+                    <Tooltip :title="formatTime(record.updatedAt)">
+                      <span :class="{ 'text-red-600': record.isOverdue }">
+                        {{ formatRelative(record.updatedAt) }}
+                      </span>
+                    </Tooltip>
+                    <IconifyIcon
+                      v-if="record.isOverdue"
+                      icon="lucide:alert-circle"
+                      :size="14"
+                      class="text-red-500"
+                    />
+                  </div>
+                </template>
+
+                <template v-else-if="column.key === 'actions'">
+                  <Space :size="0">
+                    <Tooltip
+                      :title="
+                        expandedRowKeys.includes(record.groupId)
+                          ? '收起子项'
+                          : '展开子项'
+                      "
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        class="!px-1"
+                        @click="
+                          toggleExpand(record as MonitorApi.AttentionGroup)
+                        "
+                      >
+                        <IconifyIcon
+                          :icon="
+                            expandedRowKeys.includes(record.groupId)
+                              ? 'lucide:chevron-up'
+                              : 'lucide:chevron-down'
+                          "
+                          :size="16"
+                        />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title="进入回路工作台">
+                      <Button
+                        type="text"
+                        size="small"
+                        class="!px-1"
+                        :disabled="!record.primaryAction?.enabled"
+                        @click="executeNavAction(record.primaryAction)"
+                      >
+                        <IconifyIcon icon="lucide:external-link" :size="16" />
+                      </Button>
+                    </Tooltip>
+                  </Space>
+                </template>
+              </template>
+
+              <!-- 展开子项明细 -->
+              <template #expandedRowRender="{ record }">
+                <div class="py-2 pl-8 pr-4 bg-gray-50/50">
+                  <div class="mb-2 text-xs font-medium text-gray-500">
+                    {{ record.tagName }} 的 {{ record.itemCount }} 个关注项：
+                  </div>
+                  <div class="space-y-1">
+                    <div
+                      v-for="child in record.children"
+                      :key="child.attentionId"
+                      class="flex items-center gap-3 rounded border border-gray-100 bg-white px-3 py-2 text-sm"
+                    >
+                      <Tag
+                        :color="
+                          SOURCE_COLOR[
+                            child.source as keyof typeof SOURCE_COLOR
+                          ]
+                        "
+                        class="!mr-0"
+                        style="font-size: 11px"
+                      >
+                        {{
+                          SOURCE_LABEL[
+                            child.source as keyof typeof SOURCE_LABEL
+                          ]
+                        }}
+                      </Tag>
+                      <Tag
+                        :color="priorityColor(child.priority)"
+                        class="!mr-0"
+                        style="font-size: 11px"
+                      >
+                        {{
+                          PRIORITY_LABEL[
+                            child.priority as keyof typeof PRIORITY_LABEL
+                          ]
+                        }}
+                      </Tag>
+                      <Tag
+                        :color="
+                          STATUS_COLOR[
+                            child.status as keyof typeof STATUS_COLOR
+                          ]
+                        "
+                        class="!mr-0"
+                        style="font-size: 11px"
+                      >
+                        {{
+                          STATUS_LABEL[
+                            child.status as keyof typeof STATUS_LABEL
+                          ]
+                        }}
+                      </Tag>
+                      <Tooltip :title="child.summary">
+                        <span class="flex-1 truncate text-gray-700">
+                          {{ child.summary }}
+                        </span>
+                      </Tooltip>
+                      <div v-if="child.rankReasons?.length" class="flex gap-1">
+                        <Tag
+                          v-for="(r, i) in child.rankReasons.slice(0, 2)"
+                          :key="i"
+                          color="default"
+                          class="!mr-0"
+                          style="font-size: 11px"
+                        >
+                          {{ r }}
+                        </Tag>
+                        <Tag
+                          v-if="child.rankReasons.length > 2"
+                          color="default"
+                          class="!mr-0"
+                          style="font-size: 11px"
+                        >
+                          +{{ child.rankReasons.length - 2 }}
+                        </Tag>
+                      </div>
+                      <Tooltip
+                        :title="formatTime(child.updatedAt || child.occurredAt)"
+                      >
+                        <span
+                          class="text-gray-400 whitespace-nowrap tabular-nums"
+                        >
+                          {{
+                            formatRelative(child.updatedAt || child.occurredAt)
+                          }}
+                        </span>
+                      </Tooltip>
+                      <Space :size="2">
+                        <Button
+                          type="link"
+                          size="small"
+                          @click="openChildDetail(child)"
+                        >
+                          详情
+                        </Button>
+                        <Button
+                          type="link"
+                          size="small"
+                          :disabled="!child.primaryAction?.enabled"
+                          @click="executeNavAction(child.primaryAction)"
+                        >
+                          工作台
+                        </Button>
+                        <Dropdown
+                          v-if="child.actions?.length > 2"
+                          :menu="buildChildMenu(child)"
+                          trigger="click"
+                        >
+                          <Button type="link" size="small" class="!px-1">
+                            <IconifyIcon
+                              icon="lucide:more-horizontal"
+                              :size="16"
+                            />
+                          </Button>
+                        </Dropdown>
+                      </Space>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 空态 -->
+              <template #emptyText>
+                <ClpmEmptyState
+                  v-if="!hasFilters && totalItems === 0"
+                  scene="tracker"
+                  title="今日无例外，回路运行正常"
+                  description="当前筛选范围内没有需要处理的关注项。"
+                />
+                <ClpmEmptyState
+                  v-else
+                  scene="tracker"
+                  title="筛选无结果"
+                  description="当前筛选条件下没有匹配的关注项，请尝试调整筛选条件。"
+                  :actions="[
+                    {
+                      label: '清除筛选',
+                      icon: 'lucide:x',
+                      onClick: handleResetFilters,
+                    },
+                  ]"
+                />
+              </template>
+            </Table>
+          </Card>
+
+          <!-- R5 分页条（双口径） -->
+          <div class="flex items-center justify-between text-sm text-gray-500">
+            <div v-if="totalGroups > 0">
+              第 {{ query.page }} 页 · {{ query.pageSize }}/页
+              <span class="mx-2">｜</span>
+              已加载
+              {{ Math.min(query.page * query.pageSize, totalGroups) }} 回路组 ·
+              {{ currentPageItemCount }} 项
+              <span class="mx-2">/</span>
+              共 {{ totalGroups }} 回路组 · {{ totalItems }} 项
+            </div>
+            <div v-else class="invisible">占位</div>
+            <Pagination
+              v-model:current="query.page"
+              v-model:page-size="query.pageSize"
+              :total="totalGroups"
+              :show-size-changer="true"
+              :show-total="(t: number) => `共 ${t} 回路组`"
+              :page-size-options="['10', '20', '50']"
+              @change="handlePageChange"
+            />
+          </div>
         </div>
       </Spin>
     </div>
@@ -1017,17 +1098,33 @@ watch(
         <Descriptions :column="1" bordered size="small">
           <DescriptionsItem label="优先级">
             <Tag :color="priorityColor(currentItem.priority)">
-              {{ PRIORITY_LABEL[currentItem.priority as keyof typeof PRIORITY_LABEL] }}
+              {{
+                PRIORITY_LABEL[
+                  currentItem.priority as keyof typeof PRIORITY_LABEL
+                ]
+              }}
             </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="来源">
-            <Tag :color="SOURCE_COLOR[currentItem.source as keyof typeof SOURCE_COLOR]">
-              {{ SOURCE_LABEL[currentItem.source as keyof typeof SOURCE_LABEL] }}
+            <Tag
+              :color="
+                SOURCE_COLOR[currentItem.source as keyof typeof SOURCE_COLOR]
+              "
+            >
+              {{
+                SOURCE_LABEL[currentItem.source as keyof typeof SOURCE_LABEL]
+              }}
             </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="状态">
-            <Tag :color="STATUS_COLOR[currentItem.status as keyof typeof STATUS_COLOR]">
-              {{ STATUS_LABEL[currentItem.status as keyof typeof STATUS_LABEL] }}
+            <Tag
+              :color="
+                STATUS_COLOR[currentItem.status as keyof typeof STATUS_COLOR]
+              "
+            >
+              {{
+                STATUS_LABEL[currentItem.status as keyof typeof STATUS_LABEL]
+              }}
             </Tag>
             <span class="ml-2 text-xs text-gray-400">
               来源状态：{{ currentItem.sourceStatus }}

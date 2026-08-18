@@ -19,7 +19,13 @@ import type { MonitorApi } from '#/api/monitor';
 export type { MonitorApi };
 
 // 六态
-export type StateFace = 'loading' | 'empty' | 'partial' | 'stale' | 'error' | 'ready';
+export type StateFace =
+  | 'empty'
+  | 'error'
+  | 'loading'
+  | 'partial'
+  | 'ready'
+  | 'stale';
 
 // Evidence 可用状态
 export type EvidenceState = StateFace;
@@ -29,15 +35,15 @@ export type EvidenceState = StateFace;
 // ---------------------------------------------------------------------------
 
 export interface UrlContext {
-  loopId: string | null;
-  from: 'overview' | 'list' | 'attention' | null;
-  section: string | null;
-  anchor: string | null;
-  eventId: string | null;
-  trackerId: string | null;
-  taskId: string | null;
-  timeWindow: '24h' | '7d' | '30d';
-  plantNodeId: string | null;
+  loopId: null | string;
+  from: 'attention' | 'list' | 'overview' | null;
+  section: null | string;
+  anchor: null | string;
+  eventId: null | string;
+  trackerId: null | string;
+  taskId: null | string;
+  timeWindow: '7d' | '24h' | '30d';
+  plantNodeId: null | string;
 }
 
 /** URL query 键 */
@@ -78,8 +84,8 @@ export interface OperationalContext {
   summary: MonitorApi.WorkbenchSummary;
   urlContext: UrlContext;
   navigation: {
-    from: UrlContext['from'];
     backTo: DeepLink | null;
+    from: UrlContext['from'];
   };
   stateFace: StateFace;
 }
@@ -103,7 +109,7 @@ export interface StateFaceConfig {
   actions?: Array<{
     label: string;
     onClick: () => void;
-    type?: 'primary' | 'default' | 'link';
+    type?: 'default' | 'link' | 'primary';
   }>;
   unavailableSections?: string[];
   staleReason?: string;

@@ -22,14 +22,14 @@ const props = withDefaults(
     attentionOnlyHidden?: boolean;
     /** 保存视图的 pageKey */
     pageKey?: string;
-    /** 是否显示装置/单元选择器（控制台 Tab 传 false 隐藏） */
-    showPlantNode?: boolean;
     /** 是否显示回路类型选择器（控制台 Tab 传 false 隐藏） */
     showLoopType?: boolean;
-    /** 是否显示搜索框（控制台 Tab 传 false 隐藏） */
-    showSearch?: boolean;
+    /** 是否显示装置/单元选择器（控制台 Tab 传 false 隐藏） */
+    showPlantNode?: boolean;
     /** 是否显示保存视图下拉（控制台 Tab 传 false 隐藏） */
     showSavedView?: boolean;
+    /** 是否显示搜索框（控制台 Tab 传 false 隐藏） */
+    showSearch?: boolean;
   }>(),
   {
     attentionOnlyHidden: true,

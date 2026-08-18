@@ -6,21 +6,22 @@
  */
 
 import type { PageQuery, PaginatedResponse } from '#/api/types';
+
 import { requestClient } from '#/api/request';
 
 export namespace DiagnosisApi {
   /** 原因分类代码（8 类，设计 §3.1）；展示元数据见 views/diagnosis/constants.ts */
   export type Category =
-    | 'TUNING'
-    | 'VALVE'
-    | 'INSTRUMENT'
     | 'COMMUNICATION'
-    | 'PROCESS'
-    | 'UTILIZATION'
+    | 'DATA_INSUFFICIENT'
     | 'DESIGN'
-    | 'DATA_INSUFFICIENT';
+    | 'INSTRUMENT'
+    | 'PROCESS'
+    | 'TUNING'
+    | 'UTILIZATION'
+    | 'VALVE';
 
-  export type Severity = 'HIGH' | 'MEDIUM' | 'LOW';
+  export type Severity = 'HIGH' | 'LOW' | 'MEDIUM';
   export type RunStatus = 'FAILED' | 'PARTIAL' | 'RUNNING' | 'SUCCESS';
   /** 触发类型：手动 / 分级定时 / 预警事件（§12 三层自动诊断） */
   export type TriggerType = 'EVENT' | 'MANUAL' | 'SCHEDULED';
@@ -55,8 +56,13 @@ export namespace DiagnosisApi {
 
   /** 证据波形快照（LTTB ≤2000 点，自包含） */
   export interface ChartSnapshot {
-    trend: { ts: number[]; pv?: (null | number)[]; sp?: (null | number)[]; op?: (null | number)[] };
-    scatter: { pv: number[]; op: number[] };
+    trend: {
+      op?: (null | number)[];
+      pv?: (null | number)[];
+      sp?: (null | number)[];
+      ts: number[];
+    };
+    scatter: { op: number[]; pv: number[] };
   }
 
   export interface OperatorResult {
@@ -66,7 +72,12 @@ export namespace DiagnosisApi {
     detected: boolean;
     confidence: number;
     features: Record<string, any>;
-    evidence: Array<{ feature: string; value: any; threshold?: any; judgment: string }>;
+    evidence: Array<{
+      feature: string;
+      judgment: string;
+      threshold?: any;
+      value: any;
+    }>;
     error?: null | string;
   }
 
@@ -84,7 +95,7 @@ export namespace DiagnosisApi {
     timeWindowEnd: string;
     operatorGroup: string;
     status: RunStatus;
-    primaryCategory?: null | Category;
+    primaryCategory?: Category | null;
     primaryCategoryLabel?: null | string;
     primaryConfidence?: null | number;
     secondaryCategories: CategoryJudgement[];
@@ -106,9 +117,15 @@ export namespace DiagnosisApi {
     operatorResults: Record<string, OperatorResult>;
     fusionResults: Record<
       string,
-      { family: string; symptomTag: string; detected: boolean; confidence: number; fused: boolean }
+      {
+        confidence: number;
+        detected: boolean;
+        family: string;
+        fused: boolean;
+        symptomTag: string;
+      }
     >;
-    symptomTags: Record<string, { detected: boolean; confidence: number }>;
+    symptomTags: Record<string, { confidence: number; detected: boolean }>;
     rationale: string[];
     recommendations: Recommendation[];
     evidenceCharts?: ChartSnapshot;
@@ -147,7 +164,7 @@ export namespace DiagnosisApi {
     secondaryGate: number;
   }
 
-  export type TimeWindowPreset = 'last_24h' | 'last_30d' | 'last_7d';
+  export type TimeWindowPreset = 'last_7d' | 'last_24h' | 'last_30d';
   export type OperatorGroup = 'fast' | 'full';
 
   /** 每回路最新诊断概览行（GET /runs/latest，2026-08-18 重构：一回路一条） */
@@ -166,7 +183,7 @@ export namespace DiagnosisApi {
     latestScore?: null | number;
     triggerType?: null | TriggerType;
     triggerTypeLabel?: null | string;
-    primaryCategory?: null | Category;
+    primaryCategory?: Category | null;
     primaryCategoryLabel?: null | string;
     primaryConfidence?: null | number;
     severity?: null | Severity;
@@ -223,7 +240,7 @@ export namespace DiagnosisApi {
 
   export interface TriggerBody {
     loopIds: string[];
-    timeWindow: { preset?: TimeWindowPreset; start?: string; end?: string };
+    timeWindow: { end?: string; preset?: TimeWindowPreset; start?: string };
     operatorGroup: OperatorGroup;
     /** 单算子细选白名单（空/缺省=按 operatorGroup 执行） */
     operators?: string[];
@@ -257,17 +274,22 @@ export function triggerDiagnosisApi(data: DiagnosisApi.TriggerBody) {
  * 诊断记录列表（筛选/分页）
  */
 export function getDiagnosisRunsApi(params: DiagnosisApi.RunQuery) {
-  return requestClient.get<PaginatedResponse<DiagnosisApi.RunListItem>>('/diagnosis/runs', {
-    params,
-  });
+  return requestClient.get<PaginatedResponse<DiagnosisApi.RunListItem>>(
+    '/diagnosis/runs',
+    {
+      params,
+    },
+  );
 }
 
 /** 每回路最新诊断概览（装置节点下钻；无诊断记录的回路 runId=null） */
 export function getDiagnosisRunsLatestApi(plantNodeId?: string) {
-  return requestClient.get<{ items: DiagnosisApi.LatestRunItem[]; total: number }>(
-    '/diagnosis/runs/latest',
-    { params: plantNodeId ? { plantNodeId } : undefined },
-  );
+  return requestClient.get<{
+    items: DiagnosisApi.LatestRunItem[];
+    total: number;
+  }>('/diagnosis/runs/latest', {
+    params: plantNodeId ? { plantNodeId } : undefined,
+  });
 }
 
 /**
@@ -280,7 +302,10 @@ export function getDiagnosisRunDetailApi(id: string) {
 /**
  * 人工复核诊断结论（复核结论多选 + 意见；重复复核覆盖）
  */
-export function reviewDiagnosisRunApi(id: string, data: DiagnosisApi.ReviewBody) {
+export function reviewDiagnosisRunApi(
+  id: string,
+  data: DiagnosisApi.ReviewBody,
+) {
   return requestClient.post<DiagnosisApi.RunListItem>(
     `/diagnosis/runs/${id}/review`,
     data,
@@ -341,7 +366,9 @@ export function getDiagnosisOperatorsApi() {
 /**
  * 诊断记录 CSV 导出（返回文本，页面侧构造 Blob 下载）
  */
-export function exportDiagnosisRunsApi(params: Omit<DiagnosisApi.RunQuery, 'page' | 'pageSize'>) {
+export function exportDiagnosisRunsApi(
+  params: Omit<DiagnosisApi.RunQuery, 'page' | 'pageSize'>,
+) {
   return requestClient.get<string>('/diagnosis/export', {
     params,
     responseType: 'blob',

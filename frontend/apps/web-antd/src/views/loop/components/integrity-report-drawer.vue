@@ -249,10 +249,10 @@ const backfillConfirmTitle = computed(() => {
         v-if="result.dataSourceUnavailable"
         class="integrity-datasource-warning"
       >
-        <div class="i-lucide:alert-triangle w-4 h-4" />
+        <div class="i-lucide:alert-triangle w-4 h-4"></div>
         <span>
-          TDengine 数据源不可用（{{ result.failedLoopIds.length }} 个回路查询失败），
-          以下结果不反映真实数据缺失，请勿据此补齐数据
+          TDengine 数据源不可用（{{ result.failedLoopIds.length }}
+          个回路查询失败）， 以下结果不反映真实数据缺失，请勿据此补齐数据
         </span>
       </div>
 
@@ -260,8 +260,8 @@ const backfillConfirmTitle = computed(() => {
       <div class="integrity-meta">
         检查范围：{{ dayjs(result.tsStart).format('YYYY-MM-DD HH:mm') }} ~
         {{ dayjs(result.tsEnd).format('YYYY-MM-DD HH:mm') }}
-        ｜ 采样间隔：{{ result.expectedInterval }}s ｜ 判定方式：行级点数比对（COUNT(*)）
-        ｜ 检查时间：{{
+        ｜ 采样间隔：{{ result.expectedInterval }}s ｜
+        判定方式：行级点数比对（COUNT(*)） ｜ 检查时间：{{
           dayjs(result.checkedAt).format('YYYY-MM-DD HH:mm:ss')
         }}
       </div>

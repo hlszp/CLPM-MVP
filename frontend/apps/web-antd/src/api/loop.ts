@@ -451,9 +451,12 @@ export namespace LoopApi {
   /** 回路监控列表聚合统计（E-1，服务端返回，不分页全量范围） */
   export interface MonitorAggregate {
     /** 五档评分计数 + INCONCLUSIVE（无评分） */
-    gradeCounts: Record<'EXCELLENT' | 'GOOD' | 'FAIR' | 'WARNING' | 'POOR' | 'INCONCLUSIVE', number>;
+    gradeCounts: Record<
+      'EXCELLENT' | 'FAIR' | 'GOOD' | 'INCONCLUSIVE' | 'POOR' | 'WARNING',
+      number
+    >;
     /** 简单平均评分（仅计有评分回路，1位小数） */
-    avgScore: number | null;
+    avgScore: null | number;
     /** 有评分回路数（avgScore 分母） */
     scoredCount: number;
     /** 较昨日恶化（scoreDelta ≤ -2）回路数 */

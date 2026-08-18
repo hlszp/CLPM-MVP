@@ -42,5 +42,4 @@ describe('工具函数测试', () => {
     expect(result).toHaveLength(5);
     expect(result.map((n) => n.id)).toEqual(['1', '1-1', '1-2', '1-2-1', '2']);
   });
-
 });

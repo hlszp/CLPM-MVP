@@ -316,10 +316,7 @@ const recommendColumns = computed<TableColumnsType>(() => [
         Tooltip,
         {
           title: record.scopeChain
-            .map(
-              (s: any) =>
-                `${s.source}${s.isApplied ? ' ✓' : ''}`,
-            )
+            .map((s: any) => `${s.source}${s.isApplied ? ' ✓' : ''}`)
             .join(' → '),
         },
         () =>
@@ -452,9 +449,7 @@ defineExpose({ refresh });
                 v-if="isAdmin"
                 type="link"
                 size="small"
-                @click="
-                  openEditModal(record as any)
-                "
+                @click="openEditModal(record as any)"
               >
                 编辑
               </ClpmToolbarButton>

@@ -46,7 +46,7 @@ const mockMonitorItems = [
     currentValues: {
       sp: 80,
       pv: 82.5,
-      op: 55.0,
+      op: 55,
       mode: 'MAN',
       modeLabel: '手动',
     },
@@ -293,9 +293,7 @@ describe('LoopFleetView 表格列增强', () => {
     const w = mountFleetView();
     await vi.dynamicImportSettled();
 
-    const headerTexts = w
-      .findAll('.table-headers span')
-      .map((h) => h.text());
+    const headerTexts = w.findAll('.table-headers span').map((h) => h.text());
 
     expect(headerTexts).toContain('描述');
     expect(headerTexts).toContain('装置·单元');

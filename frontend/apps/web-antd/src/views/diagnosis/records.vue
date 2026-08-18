@@ -5,6 +5,7 @@
  * 设计文档：docs/MVP设计/07-诊断模块设计方案.md §9.2
  */
 import type { Dayjs } from 'dayjs';
+
 import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { onMounted, reactive, ref } from 'vue';
@@ -15,9 +16,9 @@ import {
   Card,
   DatePicker,
   Drawer,
+  message,
   Select,
   Table,
-  message,
 } from 'ant-design-vue';
 
 import {
@@ -28,6 +29,8 @@ import {
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+
+import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 import {
   CATEGORY_META,
   CATEGORY_OPTIONS,
@@ -38,7 +41,6 @@ import {
   TRIGGER_TYPE_COLOR,
   TRIGGER_TYPE_TEXT,
 } from './constants';
-import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 
 const { RangePicker } = DatePicker;
 
@@ -88,7 +90,7 @@ function handleTableChange(pag: { current?: number; pageSize?: number }) {
 
 // ---- 抽屉详情 ----
 const drawerOpen = ref(false);
-const detail = ref<null | DiagnosisApi.RunDetail>(null);
+const detail = ref<DiagnosisApi.RunDetail | null>(null);
 const detailLoading = ref(false);
 
 async function openDetail(record: DiagnosisApi.RunListItem) {
@@ -112,7 +114,9 @@ async function handleExport() {
       status: query.status,
     });
     const url = URL.createObjectURL(
-      new Blob([blob as unknown as BlobPart], { type: 'text/csv;charset=utf-8' }),
+      new Blob([blob as unknown as BlobPart], {
+        type: 'text/csv;charset=utf-8',
+      }),
     );
     const a = document.createElement('a');
     a.href = url;
@@ -156,7 +160,9 @@ function catColor(record: DiagnosisApi.RunListItem) {
 function secondaryText(record: DiagnosisApi.RunListItem) {
   if (!record.secondaryCategories?.length) return '—';
   return record.secondaryCategories
-    .map((j) => j.categoryLabel ?? CATEGORY_META[j.category]?.label ?? j.category)
+    .map(
+      (j) => j.categoryLabel ?? CATEGORY_META[j.category]?.label ?? j.category,
+    )
     .join('、');
 }
 
@@ -187,7 +193,11 @@ onMounted(load);
 
     <!-- 筛选行 -->
     <div class="mb-3 mt-2 flex flex-wrap items-center gap-3">
-      <RangePicker v-model:value="query.range" style="width: 240px" @change="load()" />
+      <RangePicker
+        v-model:value="query.range"
+        style="width: 240px"
+        @change="load()"
+      />
       <Select
         v-model:value="query.category"
         :allow-clear="true"
@@ -234,7 +244,10 @@ onMounted(load);
     </div>
 
     <Card :body-style="{ padding: '0' }" size="small">
-      <ClpmDataCanvas :empty="!loading && items.length === 0" empty-text="暂无诊断记录">
+      <ClpmDataCanvas
+        :empty="!loading && items.length === 0"
+        empty-text="暂无诊断记录"
+      >
         <Table
           :columns="columns"
           :custom-row="
@@ -282,7 +295,11 @@ onMounted(load);
               }}
             </template>
             <template v-else-if="column.dataIndex === 'severity'">
-              {{ record.severity ? (SEVERITY_TEXT[record.severity] ?? record.severity) : '—' }}
+              {{
+                record.severity
+                  ? (SEVERITY_TEXT[record.severity] ?? record.severity)
+                  : '—'
+              }}
             </template>
             <template v-else-if="column.dataIndex === 'timeWindowStart'">
               {{ fmtWindow(record as DiagnosisApi.RunListItem) }}
@@ -311,7 +328,9 @@ onMounted(load);
                 v-if="record.reviewStatus"
                 :style="{ color: REVIEW_STATUS_COLOR[record.reviewStatus] }"
               >
-                {{ REVIEW_STATUS_TEXT[record.reviewStatus] ?? record.reviewStatus }}
+                {{
+                  REVIEW_STATUS_TEXT[record.reviewStatus] ?? record.reviewStatus
+                }}
               </span>
               <span v-else class="text-neutral-400">—</span>
             </template>
@@ -323,7 +342,12 @@ onMounted(load);
       </ClpmDataCanvas>
     </Card>
 
-    <Drawer v-model:open="drawerOpen" title="诊断结论" width="720" :destroy-on-close="true">
+    <Drawer
+      v-model:open="drawerOpen"
+      title="诊断结论"
+      width="720"
+      :destroy-on-close="true"
+    >
       <ClpmDataCanvas
         :empty="!detail"
         :loading="detailLoading"

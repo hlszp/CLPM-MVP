@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Dayjs } from 'dayjs';
+
 /**
  * 诊断工作台 —— 左脊柱（装置树 + 回路清单多选）+ 右主区（配置 + 结果）。
  *
@@ -9,7 +11,6 @@
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
-import type { Dayjs } from 'dayjs';
 
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -23,6 +24,7 @@ import {
   Dropdown,
   Empty,
   Input,
+  message,
   Progress,
   RangePicker,
   Segmented,
@@ -30,7 +32,6 @@ import {
   Spin,
   Table,
   Tree,
-  message,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -40,6 +41,13 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+
+import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
+import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
+import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
+import DiagnosisHistoryDrawer from './components/history-drawer.vue';
+import DiagnosisReviewDrawer from './components/review-drawer.vue';
+import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 import {
   CATEGORY_META,
   CATEGORY_OPTIONS,
@@ -48,17 +56,11 @@ import {
   REVIEW_STATUS_COLOR,
   REVIEW_STATUS_TEXT,
   SCORE_GRADES,
+  scoreGrade,
   SEVERITY_TEXT,
   TRIGGER_TYPE_COLOR,
   TRIGGER_TYPE_TEXT,
-  scoreGrade,
 } from './constants';
-import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
-import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
-import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
-import DiagnosisHistoryDrawer from './components/history-drawer.vue';
-import DiagnosisReviewDrawer from './components/review-drawer.vue';
-import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 
 const route = useRoute();
 const router = useRouter();
@@ -139,9 +141,8 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
     for (const l of res.items) loopCache.value.set(l.loopId, l);
   } catch (error) {
     loopItems.value = [];
-    const resp = (
-      error as { response?: { data?: unknown; status?: number } }
-    ).response;
+    const resp = (error as { response?: { data?: unknown; status?: number } })
+      .response;
     console.error('[诊断工作台/回路清单] 加载失败:', {
       status: resp?.status,
       data: resp?.data,
@@ -154,7 +155,7 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
 
 function toggleLoop(loopId: string): void {
   const idx = selectedLoopIds.value.indexOf(loopId);
-  if (idx >= 0) {
+  if (idx !== -1) {
     selectedLoopIds.value.splice(idx, 1);
   } else if (selectedLoopIds.value.length >= MAX_SELECTED_LOOPS) {
     message.warning(`最多同时选择 ${MAX_SELECTED_LOOPS} 个回路`);
@@ -176,9 +177,13 @@ const selectedLoopChips = computed(() =>
 );
 
 // ===== 配置：时间范围（小时粒度） =====
-type TimeWindowKey = '24h' | '30d' | '7d' | 'custom';
+type TimeWindowKey = '7d' | '24h' | '30d' | 'custom';
 const timeWindow = ref<TimeWindowKey>('24h');
-const timeWindowMap = { '24h': 'last_24h', '30d': 'last_30d', '7d': 'last_7d' } as const;
+const timeWindowMap = {
+  '24h': 'last_24h',
+  '30d': 'last_30d',
+  '7d': 'last_7d',
+} as const;
 /** 自定义时间范围（小时粒度；默认近 24 小时整点） */
 const customRange = ref<[Dayjs, Dayjs] | null>([
   dayjs().subtract(24, 'hour').startOf('hour'),
@@ -189,9 +194,7 @@ const MAX_CUSTOM_DAYS = 31;
 const customRangeValid = computed(() => {
   if (timeWindow.value !== 'custom') return true;
   const [s, e] = customRange.value ?? [];
-  return Boolean(
-    s && e && e.isAfter(s) && e.diff(s, 'day') <= MAX_CUSTOM_DAYS,
-  );
+  return Boolean(s && e && e.isAfter(s) && e.diff(s, 'day') <= MAX_CUSTOM_DAYS);
 });
 
 /** RangePicker 变更（antd 与 dayjs 双版本类型声明冲突，运行时同一实例） */
@@ -232,7 +235,7 @@ async function loadOperators(): Promise<void> {
 
 // ===== 任务执行（细粒度进度 + 完成后拉结果） =====
 const selectedRunId = ref('');
-const selectedDetail = ref<null | DiagnosisApi.RunDetail>(null);
+const selectedDetail = ref<DiagnosisApi.RunDetail | null>(null);
 const detailLoading = ref(false);
 
 async function loadDetail(runId: string) {
@@ -309,7 +312,9 @@ const latestLoading = ref(false);
 /** 后端时间为 naive UTC ISO（无 Z 后缀），补 Z 后按本地时区展示 */
 function fmtUtc(naiveIso?: null | string): string {
   if (!naiveIso) return '—';
-  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveIso) ? naiveIso : `${naiveIso}Z`;
+  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveIso)
+    ? naiveIso
+    : `${naiveIso}Z`;
   return dayjs(withZ).format('MM-DD HH:mm');
 }
 
@@ -347,15 +352,15 @@ const filteredLatestItems = computed(() => {
       list = list.filter((i) => {
         if (i.latestScore == null) return false;
         return (
-          i.latestScore >= grade.min &&
-          (next ? i.latestScore < next.min : true)
+          i.latestScore >= grade.min && (next ? i.latestScore < next.min : true)
         );
       });
     }
   }
   if (filterCategory.value)
     list = list.filter((i) => i.primaryCategory === filterCategory.value);
-  if (filterSeverity.value) list = list.filter((i) => i.severity === filterSeverity.value);
+  if (filterSeverity.value)
+    list = list.filter((i) => i.severity === filterSeverity.value);
   return list;
 });
 
@@ -373,12 +378,22 @@ const latestColumns = [
   { dataIndex: 'importanceLevel', title: '等级', width: 54 },
   { dataIndex: 'latestScore', title: '性能评分', width: 70 },
   { key: 'scoreGrade', title: '性能等级', width: 66 },
-  { dataIndex: 'primaryCategoryLabel', title: '诊断结论', width: 140, ellipsis: true },
+  {
+    dataIndex: 'primaryCategoryLabel',
+    title: '诊断结论',
+    width: 140,
+    ellipsis: true,
+  },
   { dataIndex: 'primaryConfidence', title: '置信度', width: 62 },
   { dataIndex: 'severity', title: '严重度', width: 54 },
   { dataIndex: 'triggerType', title: '触发方式', width: 80 },
   { dataIndex: 'runCount', title: '诊断次序', width: 68 },
-  { dataIndex: 'reviewResultLabels', title: '复核结论', width: 130, ellipsis: true },
+  {
+    dataIndex: 'reviewResultLabels',
+    title: '复核结论',
+    width: 130,
+    ellipsis: true,
+  },
   { dataIndex: 'reviewStatus', title: '状态', width: 66 },
   { dataIndex: 'lastDiagnosedAt', title: '诊断时间', width: 96 },
   { key: 'action', title: '操作', width: 156, fixed: 'right' as const },
@@ -604,195 +619,215 @@ onMounted(() => {
       <div class="diag-main">
         <!-- ===== 回路诊断界面（勾选回路后显示；未勾选时下方显示最新诊断概览） ===== -->
         <template v-if="selectedLoopIds.length > 0">
-        <!-- 行1：选中回路（多回路 → 多选框，点击可移除；上限 10 个） -->
-        <Card class="mb-3" size="small">
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span class="text-xs font-medium text-neutral-500">选中回路</span>
-            <template v-if="selectedLoopChips.length === 1">
-              <span class="text-sm font-semibold">
-                {{ selectedLoopChips[0]!.tagName }}
-              </span>
-              <span
-                class="max-w-480px truncate text-xs text-neutral-400"
-                :title="selectedLoopChips[0]!.description"
-              >
-                {{ selectedLoopChips[0]!.description || '—' }}
-              </span>
-            </template>
-            <template v-else>
-              <Checkbox
-                v-for="c in selectedLoopChips"
-                :key="c.loopId"
-                :checked="true"
-                class="diag-loop-chip"
-                @click.prevent="toggleLoop(c.loopId)"
-              >
-                <span :title="c.description">{{ c.tagName }}</span>
-              </Checkbox>
-            </template>
-            <span class="ml-auto text-xs text-neutral-400">
-              {{ selectedLoopIds.length }}/{{ MAX_SELECTED_LOOPS }}
-              {{ selectedLoopChips.length > 1 ? '· 点击勾选框移除' : '' }}
-            </span>
-          </div>
-        </Card>
-
-        <!-- 行2：筛选条件（时间窗 + 算子下拉多选）+ 发起诊断 -->
-        <Card class="mb-4" size="small">
-          <div class="flex flex-wrap items-center gap-3">
-            <Segmented
-              v-model:value="timeWindow"
-              :options="[
-                { label: '24 小时', value: '24h' },
-                { label: '7 天', value: '7d' },
-                { label: '30 天', value: '30d' },
-                { label: '自定义', value: 'custom' },
-              ]"
-            />
-            <RangePicker
-              v-if="timeWindow === 'custom'"
-              :allow-clear="false"
-              :disabled-date="(d: Dayjs) => d.isAfter(dayjs(), 'day')"
-              :format="'MM-DD HH:00'"
-              :show-time="{ format: 'HH', hideDisabledOptions: true }"
-              :value="customRange as any"
-              @change="onCustomRangeChange"
-            />
-            <span
-              v-if="timeWindow === 'custom' && !customRangeValid"
-              class="text-xs text-red-500"
-            >
-              需起&lt;止且跨度 ≤31 天
-            </span>
-            <!-- 算子选择：单行触发器显示汇总，下拉面板为多选框列表 -->
-            <Dropdown :trigger="['click']" placement="bottomLeft">
-              <div class="diag-operator-trigger">
-                <span
-                  :class="
-                    checkedOperators.length === 0 ? 'diag-operator-trigger__ph' : ''
-                  "
-                  class="truncate"
-                >
-                  {{
-                    checkedOperators.length > 0
-                      ? `选择了 ${checkedOperators.length} 个算子`
-                      : '选择诊断算子'
-                  }}
+          <!-- 行1：选中回路（多回路 → 多选框，点击可移除；上限 10 个） -->
+          <Card class="mb-3" size="small">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span class="text-xs font-medium text-neutral-500">选中回路</span>
+              <template v-if="selectedLoopChips.length === 1">
+                <span class="text-sm font-semibold">
+                  {{ selectedLoopChips[0]!.tagName }}
                 </span>
-                <span class="diag-operator-trigger__arrow">▾</span>
-              </div>
-              <template #overlay>
-                <div class="diag-operator-panel">
-                  <Checkbox.Group
-                    v-model:value="checkedOperators"
-                    class="diag-operator-list"
-                  >
-                    <div
-                      v-for="o in operatorCatalog"
-                      :key="o.name"
-                      :title="`${o.description}｜置信口径：${o.confidenceBasis ?? '—'}`"
-                      class="diag-operator-row"
-                    >
-                      <Checkbox :value="o.name">
-                        {{ o.displayName }}
-                      </Checkbox>
-                    </div>
-                  </Checkbox.Group>
-                  <div class="diag-operator-footer">
-                    <button type="button" @click="checkAllOperators">全选</button>
-                    <button type="button" @click="checkFastGroup">快速组</button>
-                    <button type="button" @click="checkedOperators = []">清空</button>
-                    <span class="diag-operator-footer__count">
-                      {{ checkedOperators.length }}/{{ operatorCatalog.length }}
-                      {{ allOperatorsChecked ? '（全量）' : '（细选）' }}
-                    </span>
-                  </div>
-                </div>
+                <span
+                  class="max-w-480px truncate text-xs text-neutral-400"
+                  :title="selectedLoopChips[0]!.description"
+                >
+                  {{ selectedLoopChips[0]!.description || '—' }}
+                </span>
               </template>
-            </Dropdown>
-            <Button
-              :disabled="!canTrigger"
-              :loading="runner.running.value"
-              type="primary"
-              @click="handleTrigger"
-            >
-              发起诊断
-            </Button>
-          </div>
-          <div v-if="runner.running.value || runner.progress.value > 0" class="mt-3">
-            <Progress
-              :percent="Math.round(runner.progress.value * 100)"
-              :status="runner.errorMessage.value ? 'exception' : 'active'"
-              size="small"
-            />
-            <div class="mt-1 text-xs text-neutral-500">
-              {{ runner.stage.value || '等待执行' }}
+              <template v-else>
+                <Checkbox
+                  v-for="c in selectedLoopChips"
+                  :key="c.loopId"
+                  :checked="true"
+                  class="diag-loop-chip"
+                  @click.prevent="toggleLoop(c.loopId)"
+                >
+                  <span :title="c.description">{{ c.tagName }}</span>
+                </Checkbox>
+              </template>
+              <span class="ml-auto text-xs text-neutral-400">
+                {{ selectedLoopIds.length }}/{{ MAX_SELECTED_LOOPS }}
+                {{ selectedLoopChips.length > 1 ? '· 点击勾选框移除' : '' }}
+              </span>
             </div>
-          </div>
-          <div v-if="runner.errorMessage.value" class="mt-2 text-xs text-red-500">
-            {{ runner.errorMessage.value }}
-          </div>
-        </Card>
-
-        <!-- 行3+：诊断结果 → 详情/处置建议/证据链 -->
-        <ClpmDataCanvas
-          :empty="runner.resultItems.value.length === 0"
-          empty-text="发起诊断后在此查看结果"
-          class="mb-4"
-        >
-          <Card size="small" title="诊断结果">
-            <Table
-              :columns="resultColumns"
-              :custom-row="
-                (record: DiagnosisApi.RunListItem) => ({
-                  onClick: () => loadDetail(record.id),
-                })
-              "
-              :data-source="runner.resultItems.value"
-              :pagination="false"
-              :row-class-name="
-                (record: DiagnosisApi.RunListItem) =>
-                  record.id === selectedRunId ? 'diag-row-selected' : ''
-              "
-              row-key="id"
-              size="small"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.dataIndex === 'status'">
-                  {{
-                    record.status === 'SUCCESS'
-                      ? '完成'
-                      : record.status === 'PARTIAL'
-                        ? '部分完成'
-                        : record.status
-                  }}
-                </template>
-                <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
-                  <span
-                    v-if="record.primaryCategoryLabel"
-                    :style="{
-                      color: catColor(record as DiagnosisApi.RunListItem),
-                    }"
-                    class="font-medium"
-                  >
-                    {{ record.primaryCategoryLabel }}
-                  </span>
-                  <span v-else class="text-neutral-400">—</span>
-                </template>
-                <template v-else-if="column.dataIndex === 'primaryConfidence'">
-                  {{ confOf(record as DiagnosisApi.RunListItem) }}
-                </template>
-                <template v-else-if="column.dataIndex === 'severity'">
-                  {{
-                    record.severity
-                      ? (SEVERITY_TEXT[record.severity] ?? record.severity)
-                      : '—'
-                  }}
-                </template>
-              </template>
-            </Table>
           </Card>
-        </ClpmDataCanvas>
+
+          <!-- 行2：筛选条件（时间窗 + 算子下拉多选）+ 发起诊断 -->
+          <Card class="mb-4" size="small">
+            <div class="flex flex-wrap items-center gap-3">
+              <Segmented
+                v-model:value="timeWindow"
+                :options="[
+                  { label: '24 小时', value: '24h' },
+                  { label: '7 天', value: '7d' },
+                  { label: '30 天', value: '30d' },
+                  { label: '自定义', value: 'custom' },
+                ]"
+              />
+              <RangePicker
+                v-if="timeWindow === 'custom'"
+                :allow-clear="false"
+                :disabled-date="(d: Dayjs) => d.isAfter(dayjs(), 'day')"
+                format="MM-DD HH:00"
+                :show-time="{ format: 'HH', hideDisabledOptions: true }"
+                :value="customRange as any"
+                @change="onCustomRangeChange"
+              />
+              <span
+                v-if="timeWindow === 'custom' && !customRangeValid"
+                class="text-xs text-red-500"
+              >
+                需起&lt;止且跨度 ≤31 天
+              </span>
+              <!-- 算子选择：单行触发器显示汇总，下拉面板为多选框列表 -->
+              <Dropdown :trigger="['click']" placement="bottomLeft">
+                <div class="diag-operator-trigger">
+                  <span
+                    :class="
+                      checkedOperators.length === 0
+                        ? 'diag-operator-trigger__ph'
+                        : ''
+                    "
+                    class="truncate"
+                  >
+                    {{
+                      checkedOperators.length > 0
+                        ? `选择了 ${checkedOperators.length} 个算子`
+                        : '选择诊断算子'
+                    }}
+                  </span>
+                  <span class="diag-operator-trigger__arrow">▾</span>
+                </div>
+                <template #overlay>
+                  <div class="diag-operator-panel">
+                    <Checkbox.Group
+                      v-model:value="checkedOperators"
+                      class="diag-operator-list"
+                    >
+                      <div
+                        v-for="o in operatorCatalog"
+                        :key="o.name"
+                        :title="`${o.description}｜置信口径：${o.confidenceBasis ?? '—'}`"
+                        class="diag-operator-row"
+                      >
+                        <Checkbox :value="o.name">
+                          {{ o.displayName }}
+                        </Checkbox>
+                      </div>
+                    </Checkbox.Group>
+                    <div class="diag-operator-footer">
+                      <button type="button" @click="checkAllOperators">
+                        全选
+                      </button>
+                      <button type="button" @click="checkFastGroup">
+                        快速组
+                      </button>
+                      <button type="button" @click="checkedOperators = []">
+                        清空
+                      </button>
+                      <span class="diag-operator-footer__count">
+                        {{ checkedOperators.length }}/{{
+                          operatorCatalog.length
+                        }}
+                        {{ allOperatorsChecked ? '（全量）' : '（细选）' }}
+                      </span>
+                    </div>
+                  </div>
+                </template>
+              </Dropdown>
+              <Button
+                :disabled="!canTrigger"
+                :loading="runner.running.value"
+                type="primary"
+                @click="handleTrigger"
+              >
+                发起诊断
+              </Button>
+            </div>
+            <div
+              v-if="runner.running.value || runner.progress.value > 0"
+              class="mt-3"
+            >
+              <Progress
+                :percent="Math.round(runner.progress.value * 100)"
+                :status="runner.errorMessage.value ? 'exception' : 'active'"
+                size="small"
+              />
+              <div class="mt-1 text-xs text-neutral-500">
+                {{ runner.stage.value || '等待执行' }}
+              </div>
+            </div>
+            <div
+              v-if="runner.errorMessage.value"
+              class="mt-2 text-xs text-red-500"
+            >
+              {{ runner.errorMessage.value }}
+            </div>
+          </Card>
+
+          <!-- 行3+：诊断结果 → 详情/处置建议/证据链 -->
+          <ClpmDataCanvas
+            :empty="runner.resultItems.value.length === 0"
+            empty-text="发起诊断后在此查看结果"
+            class="mb-4"
+          >
+            <Card size="small" title="诊断结果">
+              <Table
+                :columns="resultColumns"
+                :custom-row="
+                  (record: DiagnosisApi.RunListItem) => ({
+                    onClick: () => loadDetail(record.id),
+                  })
+                "
+                :data-source="runner.resultItems.value"
+                :pagination="false"
+                :row-class-name="
+                  (record: DiagnosisApi.RunListItem) =>
+                    record.id === selectedRunId ? 'diag-row-selected' : ''
+                "
+                row-key="id"
+                size="small"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.dataIndex === 'status'">
+                    {{
+                      record.status === 'SUCCESS'
+                        ? '完成'
+                        : record.status === 'PARTIAL'
+                          ? '部分完成'
+                          : record.status
+                    }}
+                  </template>
+                  <template
+                    v-else-if="column.dataIndex === 'primaryCategoryLabel'"
+                  >
+                    <span
+                      v-if="record.primaryCategoryLabel"
+                      :style="{
+                        color: catColor(record as DiagnosisApi.RunListItem),
+                      }"
+                      class="font-medium"
+                    >
+                      {{ record.primaryCategoryLabel }}
+                    </span>
+                    <span v-else class="text-neutral-400">—</span>
+                  </template>
+                  <template
+                    v-else-if="column.dataIndex === 'primaryConfidence'"
+                  >
+                    {{ confOf(record as DiagnosisApi.RunListItem) }}
+                  </template>
+                  <template v-else-if="column.dataIndex === 'severity'">
+                    {{
+                      record.severity
+                        ? (SEVERITY_TEXT[record.severity] ?? record.severity)
+                        : '—'
+                    }}
+                  </template>
+                </template>
+              </Table>
+            </Card>
+          </ClpmDataCanvas>
         </template>
 
         <!-- ===== 最新诊断概览（未勾选回路时显示；按诊断时间降序、未诊断垫底） ===== -->
@@ -814,11 +849,16 @@ onMounted(() => {
               ]"
               :key="f.key"
               class="diag-latest-filter__btn"
-              :class="{ 'diag-latest-filter__btn--active': latestFilter === f.key }"
+              :class="{
+                'diag-latest-filter__btn--active': latestFilter === f.key,
+              }"
               @click="latestFilter = f.key as LatestFilter"
             >
               {{ f.label }}
-              <span v-if="f.key === 'undiagnosed' && undiagnosedCount > 0" class="diag-latest-filter__count">
+              <span
+                v-if="f.key === 'undiagnosed' && undiagnosedCount > 0"
+                class="diag-latest-filter__count"
+              >
                 {{ undiagnosedCount }}
               </span>
             </button>
@@ -837,7 +877,9 @@ onMounted(() => {
             <Select
               v-model:value="filterScoreGrade"
               :allow-clear="true"
-              :options="SCORE_GRADES.map((g) => ({ label: g.label, value: g.key }))"
+              :options="
+                SCORE_GRADES.map((g) => ({ label: g.label, value: g.key }))
+              "
               placeholder="性能评分"
               size="small"
               style="width: 100px"
@@ -884,14 +926,21 @@ onMounted(() => {
                 {{ record.loopTagName }}
               </template>
               <template v-else-if="column.dataIndex === 'loopDescription'">
-                <span class="text-neutral-500">{{ record.loopDescription || '—' }}</span>
+                <span class="text-neutral-500">{{
+                  record.loopDescription || '—'
+                }}</span>
               </template>
               <template v-else-if="column.dataIndex === 'importanceLevel'">
                 <span
                   v-if="record.importanceLevel"
-                  :style="{ color: IMPORTANCE_LEVEL_COLOR[record.importanceLevel] }"
+                  :style="{
+                    color: IMPORTANCE_LEVEL_COLOR[record.importanceLevel],
+                  }"
                 >
-                  {{ IMPORTANCE_LEVEL_TEXT[record.importanceLevel] ?? record.importanceLevel }}
+                  {{
+                    IMPORTANCE_LEVEL_TEXT[record.importanceLevel] ??
+                    record.importanceLevel
+                  }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
               </template>
@@ -969,12 +1018,17 @@ onMounted(() => {
                   v-if="record.reviewStatus"
                   :style="{ color: REVIEW_STATUS_COLOR[record.reviewStatus] }"
                 >
-                  {{ REVIEW_STATUS_TEXT[record.reviewStatus] ?? record.reviewStatus }}
+                  {{
+                    REVIEW_STATUS_TEXT[record.reviewStatus] ??
+                    record.reviewStatus
+                  }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
               </template>
               <template v-else-if="column.dataIndex === 'lastDiagnosedAt'">
-                <span v-if="record.runId">{{ fmtUtc(record.lastDiagnosedAt) }}</span>
+                <span v-if="record.runId">{{
+                  fmtUtc(record.lastDiagnosedAt)
+                }}</span>
                 <span v-else class="text-neutral-400">未诊断</span>
               </template>
               <template v-else-if="column.key === 'action'">
@@ -983,7 +1037,9 @@ onMounted(() => {
                     size="small"
                     type="link"
                     :disabled="!record.runId"
-                    @click.stop="openEvidence(record as DiagnosisApi.LatestRunItem)"
+                    @click.stop="
+                      openEvidence(record as DiagnosisApi.LatestRunItem)
+                    "
                   >
                     证据
                   </Button>
@@ -991,14 +1047,18 @@ onMounted(() => {
                     size="small"
                     type="link"
                     :disabled="!record.runId"
-                    @click.stop="openReview(record as DiagnosisApi.LatestRunItem)"
+                    @click.stop="
+                      openReview(record as DiagnosisApi.LatestRunItem)
+                    "
                   >
                     复核
                   </Button>
                   <Button
                     size="small"
                     type="link"
-                    @click.stop="openHistory(record as DiagnosisApi.LatestRunItem)"
+                    @click.stop="
+                      openHistory(record as DiagnosisApi.LatestRunItem)
+                    "
                   >
                     历史
                   </Button>
@@ -1006,7 +1066,10 @@ onMounted(() => {
                     size="small"
                     type="link"
                     :loading="quickDiagnosingId === record.loopId"
-                    :disabled="runner.running.value && quickDiagnosingId !== record.loopId"
+                    :disabled="
+                      runner.running.value &&
+                      quickDiagnosingId !== record.loopId
+                    "
                     @click.stop="quickDiagnose(record.loopId)"
                   >
                     诊断
@@ -1018,20 +1081,30 @@ onMounted(() => {
         </Card>
 
         <!-- 结论详情（结果表/概览表点击行加载） -->
-        <Card v-if="selectedDetail || detailLoading" size="small" title="结论详情">
+        <Card
+          v-if="selectedDetail || detailLoading"
+          size="small"
+          title="结论详情"
+        >
           <ClpmDataCanvas
             :empty="!selectedDetail"
             :loading="detailLoading"
             empty-text="加载中..."
           >
-            <DiagnosisResultPanel v-if="selectedDetail" :detail="selectedDetail" />
+            <DiagnosisResultPanel
+              v-if="selectedDetail"
+              :detail="selectedDetail"
+            />
           </ClpmDataCanvas>
         </Card>
       </div>
     </div>
 
     <!-- 概览行操作弹层：证据 / 复核 / 历史 + 行点击诊断详情 -->
-    <DiagnosisEvidenceDrawer v-model:open="evidenceOpen" :run-id="evidenceRunId" />
+    <DiagnosisEvidenceDrawer
+      v-model:open="evidenceOpen"
+      :run-id="evidenceRunId"
+    />
     <DiagnosisReviewDrawer
       v-model:open="reviewOpen"
       :item="reviewItem"
@@ -1234,10 +1307,10 @@ onMounted(() => {
 /* 算子选择触发器（模拟 Select 单行外观，显示汇总文本） */
 .diag-operator-trigger {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-  flex-shrink: 0;
   width: 200px;
   height: 30px;
   padding: 0 8px 0 12px;

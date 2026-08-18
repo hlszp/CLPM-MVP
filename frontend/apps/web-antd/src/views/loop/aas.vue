@@ -1620,6 +1620,5 @@ onMounted(loadConfig);
       :loading="modelDeleteLoading"
       @confirm="confirmModelDelete"
     />
-
   </Page>
 </template>

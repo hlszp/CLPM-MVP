@@ -203,9 +203,7 @@ export function useWorkbenchTaskRunner(
 }
 
 // ===== 默认回调：重载评估数据（供 workbench.vue 直接使用） =====
-export function createDefaultReloadCallbacks(
-  setAssessment: (v: any) => void,
-) {
+export function createDefaultReloadCallbacks(setAssessment: (v: any) => void) {
   return {
     onAssessDone: async (loopId: string) => {
       try {

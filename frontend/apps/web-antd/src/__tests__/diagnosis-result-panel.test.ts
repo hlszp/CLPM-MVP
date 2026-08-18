@@ -1,3 +1,5 @@
+import type { DiagnosisApi } from '#/api/diagnosis';
+
 /**
  * DiagnosisResultPanel 组件测试。
  *
@@ -6,9 +8,8 @@
  * 数据不足提示、症状标签行。
  */
 import { mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
 
-import type { DiagnosisApi } from '#/api/diagnosis';
+import { describe, expect, it, vi } from 'vitest';
 
 // ---- mock 依赖（模式参照 state-overlay.test.ts）----
 vi.mock('@vben/plugins/echarts', () => ({

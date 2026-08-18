@@ -31,7 +31,7 @@ const monitorCtx = useMonitorContext();
 
 // ===== 关键词搜索（防抖 300ms）=====
 const keyword = ref(monitorCtx.keyword.value);
-let keywordTimer: ReturnType<typeof setTimeout> | null = null;
+let keywordTimer: null | ReturnType<typeof setTimeout> = null;
 
 watch(keyword, (val) => {
   if (keywordTimer) clearTimeout(keywordTimer);
@@ -73,7 +73,7 @@ function handleLoopClick(loopId: string) {
             class="!w-64"
           >
             <template #prefix>
-              <div class="i-lucide:search w-4 h-4 text-gray-400" />
+              <div class="i-lucide:search w-4 h-4 text-gray-400"></div>
             </template>
           </Input>
           <Tooltip title="支持位号、回路描述、装置名称模糊匹配">
@@ -99,5 +99,3 @@ function handleLoopClick(loopId: string) {
   background: var(--clpm-bg-canvas, #f5f6f8);
 }
 </style>
-
-

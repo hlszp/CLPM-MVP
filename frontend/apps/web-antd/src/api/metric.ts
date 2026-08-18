@@ -20,17 +20,17 @@ export type DataPlannerControlType = 'CC' | 'FC' | 'LC' | 'PC' | 'TC';
 
 /** 时间窗枚举 */
 export type TimeWindow =
+  | 'last_7_days'
   | 'last_8_hours'
   | 'last_24_hours'
+  | 'last_30_days'
   | 'last_72_hours'
   | 'last_168_hours'
-  | 'last_7_days'
-  | 'last_30_days'
   | 'today'
   | 'yesterday';
 
 /** 时间窗参数（含自定义窗口；custom 时需同时提供 startTime/endTime） */
-export type TimeWindowParam = TimeWindow | 'custom';
+export type TimeWindowParam = 'custom' | TimeWindow;
 
 /** 报表粒度 */
 export type Granularity = 'day' | 'hour' | 'month' | 'week';

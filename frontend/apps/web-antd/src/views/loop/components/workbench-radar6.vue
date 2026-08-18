@@ -173,7 +173,8 @@ watch(
 
 onMounted(() => {
   if (hasData.value) refresh();
-});</script>
+});
+</script>
 
 <template>
   <div class="radar6">

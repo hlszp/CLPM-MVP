@@ -7,13 +7,14 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
+import type { DiagnosisApi } from '#/api/diagnosis';
+
 import { nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Drawer, Empty, Table } from 'ant-design-vue';
 
-import type { DiagnosisApi } from '#/api/diagnosis';
 import { getDiagnosisRunDetailApi } from '#/api/diagnosis';
 
 const props = defineProps<{
@@ -104,11 +105,16 @@ function buildTrendOption() {
         showSymbol: false,
         type: 'line',
       },
-      { data: toPoints(chart?.op), name: 'OP', showSymbol: false, type: 'line' },
+      {
+        data: toPoints(chart?.op),
+        name: 'OP',
+        showSymbol: false,
+        type: 'line',
+      },
     ],
     tooltip: { trigger: 'axis' },
     xAxis: {
-      axisLabel: { formatter: (v: number) => `${Math.round(v / 60000)}m` },
+      axisLabel: { formatter: (v: number) => `${Math.round(v / 60_000)}m` },
       type: 'time',
     },
     yAxis: { scale: true, type: 'value' },
@@ -150,7 +156,9 @@ function renderCharts() {
     width="680"
     :destroy-on-close="true"
   >
-    <div v-if="loading" class="py-8 text-center text-neutral-400">证据加载中...</div>
+    <div v-if="loading" class="py-8 text-center text-neutral-400">
+      证据加载中...
+    </div>
     <template v-else-if="detail">
       <!-- 证据已按保留策略清理 -->
       <Empty

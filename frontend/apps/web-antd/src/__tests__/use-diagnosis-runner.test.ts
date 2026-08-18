@@ -57,7 +57,10 @@ describe('useDiagnosisRunner', () => {
           currentStage: '完成 2/2',
         });
       const finished = vi.fn();
-      runsMock.mockResolvedValue({ items: [makeItem('run-1'), makeItem('run-2')], total: 2 });
+      runsMock.mockResolvedValue({
+        items: [makeItem('run-1'), makeItem('run-2')],
+        total: 2,
+      });
 
       const runner = useDiagnosisRunner({ onFinished: finished });
       await runner.trigger({

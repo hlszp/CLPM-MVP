@@ -145,6 +145,18 @@ export function useLoopRealtime(): UseLoopRealtimeReturn {
         cv.op = numValue;
         break;
       }
+      case 'PID_D': {
+        cv.pidD = numValue;
+        break;
+      }
+      case 'PID_I': {
+        cv.pidI = numValue;
+        break;
+      }
+      case 'PID_P': {
+        cv.pidP = numValue;
+        break;
+      }
       case 'PV': {
         cv.pv = numValue;
         cv.pvQuality = mapQualityToLabel(msg.quality);
@@ -152,18 +164,6 @@ export function useLoopRealtime(): UseLoopRealtimeReturn {
       }
       case 'SP': {
         cv.sp = numValue;
-        break;
-      }
-      case 'PID_P': {
-        cv.pidP = numValue;
-        break;
-      }
-      case 'PID_I': {
-        cv.pidI = numValue;
-        break;
-      }
-      case 'PID_D': {
-        cv.pidD = numValue;
         break;
       }
       default: {

@@ -17,13 +17,7 @@ const routes: RouteRecordRaw[] = [
     path: '/diagnosis',
     redirect: '/diagnosis/workbench',
     meta: {
-      authority: [
-        'ADMIN',
-        'EXPERT',
-        'IC_ENGINEER',
-        'PE_ENGINEER',
-        'SPONSOR',
-      ],
+      authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:stethoscope',
       order: 3,
       title: '诊断',

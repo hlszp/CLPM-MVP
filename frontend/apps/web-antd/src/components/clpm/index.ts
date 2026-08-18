@@ -26,8 +26,8 @@ export { default as ClpmPredictionCard } from './prediction-card.vue';
 export { default as ClpmRealtimeStatus } from './realtime-status.vue';
 export { default as ClpmSeverityBadge } from './severity-badge.vue';
 export { default as ClpmStandardActions } from './standard-actions.vue';
-export { default as ClpmStateOverlay } from './state-overlay.vue';
 export { default as ClpmStateFace } from './state-face.vue';
+export { default as ClpmStateOverlay } from './state-overlay.vue';
 export { default as ClpmTagAssociationBadge } from './tag-association-badge.vue';
 export { default as ClpmToolbarButton } from './toolbar-button.vue';
 export {

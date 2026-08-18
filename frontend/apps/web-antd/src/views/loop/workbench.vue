@@ -22,7 +22,15 @@ import type {
 import type { MonitorApi } from '#/api/monitor';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onMounted,
+  onUnmounted,
+  provide,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -146,9 +154,7 @@ const filteredLoopList = computed(() => {
     );
   }
   if (filterGrade.value) {
-    list = list.filter(
-      (l) => performanceLevel(l.score) === filterGrade.value,
-    );
+    list = list.filter((l) => performanceLevel(l.score) === filterGrade.value);
   }
   return list;
 });
@@ -188,7 +194,7 @@ const searchKeyword = ref('');
 // ===== 性能等级（基于综合评分 score）=====
 // A(优)≥90  B(良)≥80  C(中)≥70  D(合格)≥60  E(差)<60
 type PerfGrade = 'A' | 'B' | 'C' | 'D' | 'E';
-function performanceLevel(score: number | null | undefined): PerfGrade | null {
+function performanceLevel(score: null | number | undefined): null | PerfGrade {
   if (score == null) return null;
   if (score >= 90) return 'A';
   if (score >= 80) return 'B';
@@ -197,7 +203,7 @@ function performanceLevel(score: number | null | undefined): PerfGrade | null {
   return 'E';
 }
 const PERF_GRADES: PerfGrade[] = ['A', 'B', 'C', 'D', 'E'];
-const filterGrade = ref<PerfGrade | null>(null);
+const filterGrade = ref<null | PerfGrade>(null);
 function toggleGradeFilter(g: PerfGrade) {
   filterGrade.value = filterGrade.value === g ? null : g;
 }
@@ -382,7 +388,10 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
 function goDiagnose(): void {
   const loopId = selectedLoopId.value;
   if (!loopId) return;
-  router.push({ path: '/diagnosis/workbench', query: { loopId, from: 'workbench' } });
+  router.push({
+    path: '/diagnosis/workbench',
+    query: { loopId, from: 'workbench' },
+  });
 }
 
 /** summary 评分趋势的 dayTrend 类型收窄（供 DayDeltaBadge 使用） */
@@ -436,10 +445,10 @@ function currentValueText(
 
 /** 左脊柱回路悬停 Tooltip：显示回路名称、评分、实时 PV/SP/OP/MODE 等完整信息 */
 function buildLoopTooltip(item: LoopApi.MonitorListItem): string {
-  const lines: string[] = [];
-  lines.push(`位号：${item.tagName}`);
+  const lines: string[] = [`位号：${item.tagName}`];
   if (item.description) lines.push(`名称：${item.description}`);
-  if (item.confidenceLevel) lines.push(`数据可信度：${item.confidenceLevel} 级`);
+  if (item.confidenceLevel)
+    lines.push(`数据可信度：${item.confidenceLevel} 级`);
   const perf = performanceLevel(item.score);
   if (perf) lines.push(`性能等级：${perf} 级`);
   if (item.score != null) {
@@ -454,8 +463,10 @@ function buildLoopTooltip(item: LoopApi.MonitorListItem): string {
   const spText = currentValueText(item.currentValues?.sp, item.pvUnit);
   const opText = currentValueText(item.currentValues?.op, item.opUnit);
   const modeText = item.currentValues?.modeLabel || '—';
-  lines.push(`PV ${pvText}  |  SP ${spText}`);
-  lines.push(`OP ${opText}  |  MODE ${modeText}`);
+  lines.push(
+    `PV ${pvText}  |  SP ${spText}`,
+    `OP ${opText}  |  MODE ${modeText}`,
+  );
   return lines.join('\n');
 }
 
@@ -725,7 +736,7 @@ const kpiHistory = ref<KpiSnapshotItem[]>([]);
 const canvasMode = ref<'kpi' | 'process'>('process');
 // 过程变量模式：曲线显隐控制（由图例点击驱动）
 const processSeriesVisible = reactive({ pv: true, sp: true, op: true });
-function toggleProcessSeries(key: 'pv' | 'sp' | 'op') {
+function toggleProcessSeries(key: 'op' | 'pv' | 'sp') {
   processSeriesVisible[key] = !processSeriesVisible[key];
 }
 // 时间窗（设计文档 §2.4：8h/24h/72h/168h/自定义）
@@ -776,10 +787,21 @@ function extractModeBands(trend: LoopApi.MonitorTrend): ModeBand[] {
     const mode = trend.mode[i];
     let modeLabel: string;
     switch (mode) {
-      case 0: { modeLabel = 'MANUAL'; break; }
-      case 1: { modeLabel = 'AUTO'; break; }
-      case 2: { modeLabel = 'CAS'; break; }
-      default: { modeLabel = String(mode ?? 'UNKNOWN'); }
+      case 0: {
+        modeLabel = 'MANUAL';
+        break;
+      }
+      case 1: {
+        modeLabel = 'AUTO';
+        break;
+      }
+      case 2: {
+        modeLabel = 'CAS';
+        break;
+      }
+      default: {
+        modeLabel = String(mode ?? 'UNKNOWN');
+      }
     }
     if (modeLabel !== currentMode) {
       if (currentMode && bandStart !== null) {
@@ -837,26 +859,27 @@ async function loadKpiHistory(loopId: string): Promise<void> {
     ) {
       startTime = dayjs(customStartTime.value);
       endTime = dayjs(customEndTime.value);
-    } else switch (timeWindow.value) {
- case '8h': {
-      startTime = now.subtract(8, 'hour');
-    
- break;
- }
- case '72h': {
-      startTime = now.subtract(3, 'day');
-    
- break;
- }
- case '168h': {
-      startTime = now.subtract(7, 'day');
-    
- break;
- }
- default: {
-      startTime = now.subtract(24, 'hour');
-    }
- }
+    } else
+      switch (timeWindow.value) {
+        case '8h': {
+          startTime = now.subtract(8, 'hour');
+
+          break;
+        }
+        case '72h': {
+          startTime = now.subtract(3, 'day');
+
+          break;
+        }
+        case '168h': {
+          startTime = now.subtract(7, 'day');
+
+          break;
+        }
+        default: {
+          startTime = now.subtract(24, 'hour');
+        }
+      }
     const res = await getLoopSnapshotsApi({
       endTime: endTime.toISOString(),
       latestOnly: false,
@@ -1054,9 +1077,7 @@ const lifecycleStages = computed(() => {
   if (!summary.value?.lifecycle?.stages) return [];
   const raw = summary.value.lifecycle.stages;
   // MVP 精简：仅保留评估和数据两个阶段
-  const filtered = raw.filter((s) =>
-    ['ASSESS', 'MONITOR'].includes(s.stage),
-  );
+  const filtered = raw.filter((s) => ['ASSESS', 'MONITOR'].includes(s.stage));
   return filtered.map((s) => ({
     label: stageLabelMap[s.stage] ?? s.stage,
     stage: s.stage,
@@ -1096,77 +1117,80 @@ const stageLabelMap: Record<string, string> = {
     </ClpmPageToolbar>
 
     <!-- ===== 工作台布局：左脊柱 + 右侧动态切换（清单/详情） ===== -->
-      <div
-        class="wb-layout"
-        :class="{
-          'wb-layout--collapsed': sidebarCollapsed,
-          'wb-layout--fullscreen': leftSpineHidden,
-        }"
-      >
-        <!-- ===== 统一 CSS Grid：左脊柱通高 + 上部(趋势+决策) + 下部(4卡片) ===== -->
-          <!-- ===== 左脊柱：装置树 + 回路列表（grid-area: sidebar，跨全部3行全高） ===== -->
-          <aside v-show="!leftSpineHidden" class="wb-sidebar">
-          <!-- 装置树（仅到装置/单元级，范围轴） -->
-          <div class="wb-sidebar__tree">
-            <div class="wb-sidebar__tree-title">
-              <span>装置</span>
-              <button
-                v-if="plantTreeSelectedKeys.length > 0"
-                class="wb-sidebar__tree-clear"
-                @click="handlePlantTreeSelect([])"
-              >
-                清除
-              </button>
-            </div>
-            <Spin :spinning="plantTreeLoading" size="small">
-              <Tree
-                v-if="plantTreeData.length > 0"
-                v-model:expanded-keys="plantTreeExpandedKeys"
-                v-model:selected-keys="plantTreeSelectedKeys"
-                :tree-data="plantTreeData as any"
-                :block-node="true"
-                :show-line="false"
-                class="wb-plant-tree"
-                @select="handlePlantTreeSelect"
-              />
-              <div v-else class="wb-sidebar__tree-empty">暂无装置数据</div>
-            </Spin>
+    <div
+      class="wb-layout"
+      :class="{
+        'wb-layout--collapsed': sidebarCollapsed,
+        'wb-layout--fullscreen': leftSpineHidden,
+      }"
+    >
+      <!-- ===== 统一 CSS Grid：左脊柱通高 + 上部(趋势+决策) + 下部(4卡片) ===== -->
+      <!-- ===== 左脊柱：装置树 + 回路列表（grid-area: sidebar，跨全部3行全高） ===== -->
+      <aside v-show="!leftSpineHidden" class="wb-sidebar">
+        <!-- 装置树（仅到装置/单元级，范围轴） -->
+        <div class="wb-sidebar__tree">
+          <div class="wb-sidebar__tree-title">
+            <span>装置</span>
+            <button
+              v-if="plantTreeSelectedKeys.length > 0"
+              class="wb-sidebar__tree-clear"
+              @click="handlePlantTreeSelect([])"
+            >
+              清除
+            </button>
           </div>
-          <!-- 回路列表（当前选中单元的回路，独立成区） -->
-          <div class="wb-sidebar__list-title">
-            <span>回路</span>
-            <span class="wb-sidebar__list-count">{{ filteredLoopList.length }}/{{ loopList.length }} 条</span>
-          </div>
-          <div class="wb-sidebar__search">
-            <Input
-              v-model:value="searchKeyword"
-              placeholder="搜索位号/描述..."
-              allow-clear
-              size="small"
+          <Spin :spinning="plantTreeLoading" size="small">
+            <Tree
+              v-if="plantTreeData.length > 0"
+              v-model:expanded-keys="plantTreeExpandedKeys"
+              v-model:selected-keys="plantTreeSelectedKeys"
+              :tree-data="plantTreeData as any"
+              :block-node="true"
+              :show-line="false"
+              class="wb-plant-tree"
+              @select="handlePlantTreeSelect"
             />
-            <div class="wb-sidebar__grade-filter">
-              <button
-                v-for="g in PERF_GRADES"
-                :key="g"
-                class="wb-grade-chip"
-                :class="[
-                  `wb-grade-chip--${g.toLowerCase()}`,
-                  { 'wb-grade-chip--active': filterGrade === g },
-                ]"
-                :title="`筛选 ${g} 级回路`"
-                @click="toggleGradeFilter(g)"
-              >
-                {{ g }}<span class="wb-grade-chip__count">{{ gradeCounts[g] }}</span>
-              </button>
-            </div>
+            <div v-else class="wb-sidebar__tree-empty">暂无装置数据</div>
+          </Spin>
+        </div>
+        <!-- 回路列表（当前选中单元的回路，独立成区） -->
+        <div class="wb-sidebar__list-title">
+          <span>回路</span>
+          <span class="wb-sidebar__list-count"
+            >{{ filteredLoopList.length }}/{{ loopList.length }} 条</span
+          >
+        </div>
+        <div class="wb-sidebar__search">
+          <Input
+            v-model:value="searchKeyword"
+            placeholder="搜索位号/描述..."
+            allow-clear
+            size="small"
+          />
+          <div class="wb-sidebar__grade-filter">
+            <button
+              v-for="g in PERF_GRADES"
+              :key="g"
+              class="wb-grade-chip"
+              :class="[
+                `wb-grade-chip--${g.toLowerCase()}`,
+                { 'wb-grade-chip--active': filterGrade === g },
+              ]"
+              :title="`筛选 ${g} 级回路`"
+              @click="toggleGradeFilter(g)"
+            >
+              {{ g
+              }}<span class="wb-grade-chip__count">{{ gradeCounts[g] }}</span>
+            </button>
           </div>
-          <div class="wb-sidebar__list-wrap">
-            <Spin :spinning="loopListLoading" size="small">
-              <div
-                :ref="setLoopListRef"
-                class="wb-sidebar__list"
-                @scroll="handleLoopListScroll"
-              >
+        </div>
+        <div class="wb-sidebar__list-wrap">
+          <Spin :spinning="loopListLoading" size="small">
+            <div
+              :ref="setLoopListRef"
+              class="wb-sidebar__list"
+              @scroll="handleLoopListScroll"
+            >
               <div
                 :style="{
                   height: `${loopListTotalHeight}px`,
@@ -1174,15 +1198,13 @@ const stageLabelMap: Record<string, string> = {
                 }"
               >
                 <div :style="{ transform: `translateY(${loopListOffsetY}px)` }">
-                  <div
-                    v-for="{ item } in visibleLoopItems"
-                    :key="item.loopId"
-                  >
+                  <div v-for="{ item } in visibleLoopItems" :key="item.loopId">
                     <Tooltip :title="buildLoopTooltip(item)" placement="right">
                       <div
                         class="wb-loop-item"
                         :class="{
-                          'wb-loop-item--active': item.loopId === selectedLoopId,
+                          'wb-loop-item--active':
+                            item.loopId === selectedLoopId,
                         }"
                         role="button"
                         tabindex="0"
@@ -1194,7 +1216,9 @@ const stageLabelMap: Record<string, string> = {
                         @keydown.space.prevent="selectLoop(item.loopId)"
                       >
                         <div class="wb-loop-item__header">
-                          <span class="wb-loop-item__tag">{{ item.tagName }}</span>
+                          <span class="wb-loop-item__tag">{{
+                            item.tagName
+                          }}</span>
                           <span
                             v-if="performanceLevel(item.score)"
                             class="wb-loop-item__conf"
@@ -1224,426 +1248,432 @@ const stageLabelMap: Record<string, string> = {
               />
             </div>
           </Spin>
+        </div>
+        <!-- 沉浸模式折叠按钮 -->
+        <button
+          class="wb-sidebar__toggle"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
+          <span v-if="sidebarCollapsed">▶</span>
+          <span v-else>◀</span>
+        </button>
+      </aside>
+
+      <!-- ===== 回路不存在空态 ===== -->
+      <div
+        v-if="loopNotFound"
+        class="wb-state wb-state--error wb-state--gridfull"
+      >
+        <Empty
+          description="回路不存在或已停用"
+          :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        />
+        <div class="wb-state__hint">
+          URL 中的回路 ID 无效或已停用，请从左侧选择其他回路。
+        </div>
+      </div>
+
+      <!-- ===== 回路清单区（恢复：未选回路时显示当前装置范围的回路清单） ===== -->
+      <div v-else-if="!selectedLoop" class="wb-fleet-area">
+        <LoopFleetView @loop-click="handleFleetLoopClick" />
+      </div>
+
+      <!-- ===== 顶部行（grid-area: toprow，跨中间+决策两列宽）：R1页头 + R2状态条 ===== -->
+      <div class="wb-top-row" v-if="selectedLoop">
+        <!-- 深链接提示 -->
+        <div v-if="injectedLoop" class="wb-deeplink-hint" role="status">
+          当前回路不在筛选结果中，已从深链接定位。可清空筛选以在左侧列表查看。
+        </div>
+
+        <!-- ===== R1 页头 ===== -->
+        <header class="wb-r1">
+          <div class="wb-r1__left">
+            <span class="wb-r1__tag">{{ selectedLoop.tagName }}</span>
+            <span class="wb-r1__desc">{{
+              selectedLoop.description || '—'
+            }}</span>
+            <span class="wb-r1__crumb">
+              {{ selectedLoop.unitName || '—' }} ·
+              {{ selectedLoop.loopType || '—' }}
+            </span>
           </div>
-          <!-- 沉浸模式折叠按钮 -->
-          <button
-            class="wb-sidebar__toggle"
-            @click="sidebarCollapsed = !sidebarCollapsed"
-          >
-            <span v-if="sidebarCollapsed">▶</span>
-            <span v-else>◀</span>
-          </button>
-          </aside>
-
-          <!-- ===== 回路不存在空态 ===== -->
-            <div v-if="loopNotFound" class="wb-state wb-state--error wb-state--gridfull">
-              <Empty
-                description="回路不存在或已停用"
-                :image="Empty.PRESENTED_IMAGE_SIMPLE"
-              />
-              <div class="wb-state__hint">
-                URL 中的回路 ID 无效或已停用，请从左侧选择其他回路。
-              </div>
-            </div>
-
-          <!-- ===== 回路清单区（恢复：未选回路时显示当前装置范围的回路清单） ===== -->
-          <div v-else-if="!selectedLoop" class="wb-fleet-area">
-            <LoopFleetView @loop-click="handleFleetLoopClick" />
-          </div>
-
-          <!-- ===== 顶部行（grid-area: toprow，跨中间+决策两列宽）：R1页头 + R2状态条 ===== -->
-          <div class="wb-top-row" v-if="selectedLoop">
-            <!-- 深链接提示 -->
-            <div
-              v-if="injectedLoop"
-              class="wb-deeplink-hint"
-              role="status"
+          <div class="wb-r1__right">
+            <span
+              v-if="runtimePointValues"
+              class="wb-r1__mode-pill"
+              :class="{
+                'wb-r1__mode-pill--auto': runtimePointValues.mode === 'AUTO',
+                'wb-r1__mode-pill--man':
+                  runtimePointValues.mode === 'MANUAL' ||
+                  runtimePointValues.mode === 'MAN',
+              }"
+              >{{ runtimePointValues.mode }}</span
             >
-              当前回路不在筛选结果中，已从深链接定位。可清空筛选以在左侧列表查看。
-            </div>
-
-              <!-- ===== R1 页头 ===== -->
-              <header class="wb-r1">
-                <div class="wb-r1__left">
-                  <span class="wb-r1__tag">{{ selectedLoop.tagName }}</span>
-                  <span class="wb-r1__desc">{{
-                    selectedLoop.description || '—'
-                  }}</span>
-                  <span class="wb-r1__crumb">
-                    {{ selectedLoop.unitName || '—' }} ·
-                    {{ selectedLoop.loopType || '—' }}
-                  </span>
-                </div>
-                <div class="wb-r1__right">
-                  <span
-                    v-if="runtimePointValues"
-                    class="wb-r1__mode-pill"
-                    :class="{
-                      'wb-r1__mode-pill--auto':
-                        runtimePointValues.mode === 'AUTO',
-                      'wb-r1__mode-pill--man':
-                        runtimePointValues.mode === 'MANUAL' ||
-                        runtimePointValues.mode === 'MAN',
-                    }"
-                    >{{ runtimePointValues.mode }}</span
-                  >
-                  <Tooltip
-                    v-if="summary?.dataFreshness"
-                    :title="freshnessTooltip"
-                    placement="bottom"
-                  >
-                    <span class="wb-r1__fresh">
-                      <span
-                        class="wb-r1__dot"
-                        :class="{
-                          'wb-r1__dot--stale':
-                            summary.dataFreshness.status === 'DELAYED',
-                        }"
-                      ></span>
-                      {{
-                        summary.dataFreshness.status === 'FRESH'
-                          ? '数据新鲜'
-                          : summary.dataFreshness.status === 'DELAYED'
-                            ? '数据延迟'
-                            : '未知'
-                      }}
-                    </span>
-                  </Tooltip>
-                </div>
-              </header>
-
-              <!-- ===== R2 状态条（评分+等级+可信度+有效率+生命周期内联） ===== -->
-              <div v-if="summary" class="wb-r2">
-                <div class="wb-r2__left">
-                  <Tooltip :title="scoreTooltip" placement="bottom">
-                    <span class="wb-r2__score">
-                      评分
-                      <span class="wb-r2__score-val">{{
-                        summary.scoreTrend.score?.toFixed(1) ?? '—'
-                      }}</span>
-                      <Tooltip :title="dayDeltaTooltip" placement="bottom">
-                        <DayDeltaBadge
-                          :delta="summary.scoreTrend.scoreDelta"
-                          :trend="summaryDayTrend ?? undefined"
-                        />
-                      </Tooltip>
-                    </span>
-                  </Tooltip>
-                  <span
-                    class="wb-r2__grade"
-                    :style="{
-                      color: gradeInfo.color,
-                      borderColor: gradeInfo.color,
-                    }"
-                    >{{ gradeInfo.label }}</span
-                  >
-                  <span
-                    v-if="summary.dataHealth.confidenceLevel"
-                    class="wb-r2__item"
-                  >
-                    可信度
-                    <Tag
-                      :color="
-                        confidenceTagColor(summary.dataHealth.confidenceLevel)
-                      "
-                      class="!m-0 !text-[10px]"
-                    >
-                      {{ summary.dataHealth.confidenceLevel }}
-                    </Tag>
-                  </span>
-                  <span
-                    v-if="summary.dataHealth.validRate != null"
-                    class="wb-r2__item"
-                  >
-                    有效率 {{ (summary.dataHealth.validRate * 100).toFixed(1) }}%
-                  </span>
-                  <span
-                    v-if="summary.partial"
-                    class="wb-r2__partial"
-                    title="部分摘要数据源不可用，但不影响整体判断"
-                  >
-                    部分数据不可用
-                  </span>
-                </div>
-                <!-- 生命周期内联（v1.2 自 R3 并入） -->
-                <div class="wb-r2__lifecycle">
-                  <template v-for="(s, idx) in lifecycleStages" :key="s.stage">
-                    <span
-                      class="wb-r2__stage"
-                      :class="{
-                        'wb-r2__stage--done': s.status === 'COMPLETED',
-                        'wb-r2__stage--cur':
-                          s.status === 'RUNNING' || s.status === 'READY',
-                      }"
-                      @click="
-                        handleLifecycleStageClick(
-                          s.stage as MonitorApi.LifecycleStageName,
-                        )
-                      "
-                      >{{ s.label }}</span
-                    >
-                    <span
-                      v-if="idx < lifecycleStages.length - 1"
-                      class="wb-r2__stage-sep"
-                      >─</span
-                    >
-                  </template>
-                </div>
-                <!-- 全屏布局切换按钮 -->
-                <button
-                  class="wb-r2__fullscreen-btn"
-                  :title="leftSpineHidden ? '恢复三栏布局' : '主区域扩展至全宽'"
-                  @click="leftSpineHidden = !leftSpineHidden"
-                >
-                  <span style="font-size: 13px">{{ leftSpineHidden ? '▦' : '⬌' }}</span>
-                  <span style=" margin-left: 3px;font-size: 11px">
-                    {{ leftSpineHidden ? '退出全宽' : '全宽' }}
-                  </span>
-                </button>
-              </div>
-              <!-- summary 加载中骨架 -->
-              <div
-                v-else-if="summaryLoading && selectedLoop"
-                class="wb-r2 wb-r2--loading"
-              >
-                <Spin size="small" />
-                <span class="wb-r2__loading-text">正在加载工作台摘要…</span>
-              </div>
+            <Tooltip
+              v-if="summary?.dataFreshness"
+              :title="freshnessTooltip"
+              placement="bottom"
+            >
+              <span class="wb-r1__fresh">
+                <span
+                  class="wb-r1__dot"
+                  :class="{
+                    'wb-r1__dot--stale':
+                      summary.dataFreshness.status === 'DELAYED',
+                  }"
+                ></span>
+                {{
+                  summary.dataFreshness.status === 'FRESH'
+                    ? '数据新鲜'
+                    : summary.dataFreshness.status === 'DELAYED'
+                      ? '数据延迟'
+                      : '未知'
+                }}
+              </span>
+            </Tooltip>
           </div>
+        </header>
 
-          <!-- ===== R4 主画布（grid-area: r4，仅中间列） ===== -->
-          <div class="wb-r4-wrapper">
-            <template v-if="selectedLoop">
-              <section class="wb-r4">
-                <!-- 画布头部第一行：模式切换 + 标题 + 时间窗 -->
-                <div class="wb-r4__header">
-                  <div class="wb-r4__mode">
-                    <Segmented
-                      v-model:value="canvasMode"
-                      :options="[
-                        { label: '过程变量', value: 'process' },
-                        { label: '性能指标', value: 'kpi' },
-                      ]"
-                      size="small"
-                    />
-                  </div>
-                  <div class="wb-r4__time-window">
-                    <Segmented
-                      v-model:value="timeWindow"
-                      :options="timeWindowOptions"
-                      size="small"
-                    />
-                    <button
-                      v-if="timeWindow === 'custom'"
-                      class="wb-r4__custom-btn"
-                      @click="customTimePopOpen = !customTimePopOpen"
-                    >
-                      自定义
-                    </button>
-                  </div>
-                </div>
-                <!-- 自定义时间窗弹层 -->
-                <div v-if="customTimePopOpen" class="wb-r4__custom-pop">
-                  <label
-                    >起 <input v-model="customStartTime" type="datetime-local"
-                  /></label>
-                  <label
-                    >止 <input v-model="customEndTime" type="datetime-local"
-                  /></label>
-                  <button @click="applyCustomTime">应用</button>
-                </div>
-                <!-- 画布头部第二行：图例 + 实时点值 -->
-                <div class="wb-r4__legend">
-                  <template v-if="canvasMode === 'process'">
-                    <span
-                      class="wb-r4__legend-item"
-                      :class="{ 'wb-r4__legend-item--hidden': !processSeriesVisible.pv }"
-                      @click="toggleProcessSeries('pv')"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--pv"
-                      ></span
-                      >PV</span
-                    >
-                    <span
-                      class="wb-r4__legend-item"
-                      :class="{ 'wb-r4__legend-item--hidden': !processSeriesVisible.sp }"
-                      @click="toggleProcessSeries('sp')"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--sp"
-                      ></span
-                      >SP</span
-                    >
-                    <span
-                      class="wb-r4__legend-item"
-                      :class="{ 'wb-r4__legend-item--hidden': !processSeriesVisible.op }"
-                      @click="toggleProcessSeries('op')"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--op"
-                      ></span
-                      >OP</span
-                    >
-                    <span v-if="eventMarks.length > 0" class="wb-r4__legend-item"
-                      >▼诊断 ◆整定 ▐验证</span
-                    >
-                  </template>
-                  <template v-else>
-                    <span class="wb-r4__legend-item"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--score"
-                      ></span
-                      >综合评分</span
-                    >
-                    <span class="wb-r4__legend-item"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--steady"
-                      ></span
-                      >平稳率</span
-                    >
-                    <span class="wb-r4__legend-item"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--accuracy"
-                      ></span
-                      >准确率</span
-                    >
-                    <span class="wb-r4__legend-item"
-                      ><span
-                        class="wb-r4__legend-line wb-r4__legend-line--fast"
-                      ></span
-                      >快速率</span
-                    >
-                  </template>
-                  <!-- 实时点值 -->
-                  <span v-if="runtimePointValues" class="wb-r4__live-vals">
-                    <span class="wb-r4__live-val">
-                      PV
-                      <span
-                        class="wb-r4__live-num"
-                        :style="{ color: pvValueColor() }"
-                        >{{ runtimePointValues.pv?.toFixed(2) ?? '—' }}</span
-                      >
-                    </span>
-                    <span class="wb-r4__live-val">
-                      SP
-                      <span class="wb-r4__live-num">{{
-                        runtimePointValues.sp?.toFixed(2) ?? '—'
-                      }}</span>
-                    </span>
-                    <span class="wb-r4__live-val">
-                      OP
-                      <span class="wb-r4__live-num"
-                        >{{ runtimePointValues.op?.toFixed(1) ?? '—' }}%</span
-                      >
-                    </span>
-                  </span>
-                </div>
-                <!-- 趋势图 -->
-                <div class="wb-r4__chart">
-                  <Spin
-                    :spinning="
-                      canvasMode === 'process'
-                        ? processTrendLoading
-                        : kpiHistoryLoading
-                    "
-                    size="small"
-                  >
-                    <WorkbenchProcessTrend
-                      v-if="canvasMode === 'process'"
-                      :trend="processTrendData"
-                      :pv-unit="selectedLoop?.pvUnit || ''"
-                      :op-unit="selectedLoop?.opUnit || '%'"
-                      :pv-range="null"
-                      :event-marks="eventMarks"
-                      :mode-bands="modeBands"
-                      :series-visible="processSeriesVisible"
-                    />
-                    <WorkbenchKpiHistory
-                      v-else
-                      :snapshots="kpiHistory"
-                      :alarm-line="alarmLine"
-                      :time-window="timeWindow"
-                    />
-                  </Spin>
-                </div>
-              </section>
+        <!-- ===== R2 状态条（评分+等级+可信度+有效率+生命周期内联） ===== -->
+        <div v-if="summary" class="wb-r2">
+          <div class="wb-r2__left">
+            <Tooltip :title="scoreTooltip" placement="bottom">
+              <span class="wb-r2__score">
+                评分
+                <span class="wb-r2__score-val">{{
+                  summary.scoreTrend.score?.toFixed(1) ?? '—'
+                }}</span>
+                <Tooltip :title="dayDeltaTooltip" placement="bottom">
+                  <DayDeltaBadge
+                    :delta="summary.scoreTrend.scoreDelta"
+                    :trend="summaryDayTrend ?? undefined"
+                  />
+                </Tooltip>
+              </span>
+            </Tooltip>
+            <span
+              class="wb-r2__grade"
+              :style="{
+                color: gradeInfo.color,
+                borderColor: gradeInfo.color,
+              }"
+              >{{ gradeInfo.label }}</span
+            >
+            <span v-if="summary.dataHealth.confidenceLevel" class="wb-r2__item">
+              可信度
+              <Tag
+                :color="confidenceTagColor(summary.dataHealth.confidenceLevel)"
+                class="!m-0 !text-[10px]"
+              >
+                {{ summary.dataHealth.confidenceLevel }}
+              </Tag>
+            </span>
+            <span
+              v-if="summary.dataHealth.validRate != null"
+              class="wb-r2__item"
+            >
+              有效率 {{ (summary.dataHealth.validRate * 100).toFixed(1) }}%
+            </span>
+            <span
+              v-if="summary.partial"
+              class="wb-r2__partial"
+              title="部分摘要数据源不可用，但不影响整体判断"
+            >
+              部分数据不可用
+            </span>
+          </div>
+          <!-- 生命周期内联（v1.2 自 R3 并入） -->
+          <div class="wb-r2__lifecycle">
+            <template v-for="(s, idx) in lifecycleStages" :key="s.stage">
+              <span
+                class="wb-r2__stage"
+                :class="{
+                  'wb-r2__stage--done': s.status === 'COMPLETED',
+                  'wb-r2__stage--cur':
+                    s.status === 'RUNNING' || s.status === 'READY',
+                }"
+                @click="
+                  handleLifecycleStageClick(
+                    s.stage as MonitorApi.LifecycleStageName,
+                  )
+                "
+                >{{ s.label }}</span
+              >
+              <span
+                v-if="idx < lifecycleStages.length - 1"
+                class="wb-r2__stage-sep"
+                >─</span
+              >
             </template>
           </div>
-
-          <!-- ===== 右决策栏（grid-area: decision，仅最右列，只与 R4 等高） ===== -->
-          <aside v-if="selectedLoop" class="wb-decision">
-            <!-- Decision Dock（唯一下一步） -->
-            <div class="wb-decision__dock">
-              <ClpmDecisionDock
-                :floating="false"
-                :next-action="summary?.nextAction ?? null"
-                :loading="summaryLoading"
-                :has-data="summary != null"
-                :partial="summary?.partial ?? false"
-                :stale="summary?.dataFreshness?.status === 'DELAYED'"
-                @action="handleNextAction"
-              />
-            </div>
-            <!-- 活跃关注 -->
-            <div v-if="summary?.activeAttention" class="wb-decision__attention">
-              <div class="wb-decision__section-title">活跃关注</div>
-              <WorkbenchActiveAttention
-                :active-attention="summary.activeAttention"
-                :loop-id="selectedLoopId ?? ''"
-              />
-            </div>
-          </aside>
-
-        <!-- ===== 下层：R5证据区（仅回路详情模式显示） ===== -->
-          <div v-if="selectedLoop" class="wb-main-lower">
-            <!-- ===== R5 证据区（评估.综合性能 / 评估.指标详情） ===== -->
-            <section class="wb-r5">
-              <!-- 评估.综合性能卡（雷达图） -->
-              <div class="wb-r5__card wb-r5__card--assess">
-                <div class="wb-r5__card-header">
-                  <span class="wb-r5__card-title">评估.综合性能</span>
-                  <span class="wb-r5__card-meta">
-                    {{
-                      latestSnapshot
-                        ? `24h · ${formatTime(latestSnapshot.tsStart)}`
-                        : '—'
-                    }}
-                  </span>
-                  <router-link
-                    v-if="selectedLoopId"
-                    :to="{
-                      path: '/performance/loops',
-                      query: { loopId: selectedLoopId },
-                    }"
-                    class="wb-r5__card-link"
-                    >详情 →</router-link
-                  >
-                </div>
-                <div class="wb-r5__radar">
-                  <WorkbenchRadar6
-                    v-if="radarAxes"
-                    :axes="radarAxes"
-                    :score="summary?.scoreTrend.score ?? null"
-                    :grade="gradeInfo.label"
-                    :grade-color="gradeInfo.color"
-                  />
-                  <div v-else class="wb-r5__empty-mini">暂无评估数据</div>
-                </div>
-              </div>
-
-              <!-- 评估.指标详情卡（指标横道图） -->
-              <div class="wb-r5__card wb-r5__card--metric">
-                <div class="wb-r5__card-header">
-                  <Tooltip title="正向指标：横道条越长表示指标达成度越高（性能越好）">
-                    <span class="wb-r5__card-title">评估.指标详情</span>
-                  </Tooltip>
-                  <span class="wb-r5__card-meta">8 项指标达成度</span>
-                </div>
-                <div class="wb-r5__bars">
-                  <WorkbenchMetricBars :metrics="metricBarsData" :show-hint="false" />
-                </div>
-              </div>
-            </section>
-          </div>
+          <!-- 全屏布局切换按钮 -->
+          <button
+            class="wb-r2__fullscreen-btn"
+            :title="leftSpineHidden ? '恢复三栏布局' : '主区域扩展至全宽'"
+            @click="leftSpineHidden = !leftSpineHidden"
+          >
+            <span style="font-size: 13px">{{
+              leftSpineHidden ? '▦' : '⬌'
+            }}</span>
+            <span style="margin-left: 3px; font-size: 11px">
+              {{ leftSpineHidden ? '退出全宽' : '全宽' }}
+            </span>
+          </button>
+        </div>
+        <!-- summary 加载中骨架 -->
+        <div
+          v-else-if="summaryLoading && selectedLoop"
+          class="wb-r2 wb-r2--loading"
+        >
+          <Spin size="small" />
+          <span class="wb-r2__loading-text">正在加载工作台摘要…</span>
+        </div>
       </div>
+
+      <!-- ===== R4 主画布（grid-area: r4，仅中间列） ===== -->
+      <div class="wb-r4-wrapper">
+        <template v-if="selectedLoop">
+          <section class="wb-r4">
+            <!-- 画布头部第一行：模式切换 + 标题 + 时间窗 -->
+            <div class="wb-r4__header">
+              <div class="wb-r4__mode">
+                <Segmented
+                  v-model:value="canvasMode"
+                  :options="[
+                    { label: '过程变量', value: 'process' },
+                    { label: '性能指标', value: 'kpi' },
+                  ]"
+                  size="small"
+                />
+              </div>
+              <div class="wb-r4__time-window">
+                <Segmented
+                  v-model:value="timeWindow"
+                  :options="timeWindowOptions"
+                  size="small"
+                />
+                <button
+                  v-if="timeWindow === 'custom'"
+                  class="wb-r4__custom-btn"
+                  @click="customTimePopOpen = !customTimePopOpen"
+                >
+                  自定义
+                </button>
+              </div>
+            </div>
+            <!-- 自定义时间窗弹层 -->
+            <div v-if="customTimePopOpen" class="wb-r4__custom-pop">
+              <label
+                >起 <input v-model="customStartTime" type="datetime-local"
+              /></label>
+              <label
+                >止 <input v-model="customEndTime" type="datetime-local"
+              /></label>
+              <button @click="applyCustomTime">应用</button>
+            </div>
+            <!-- 画布头部第二行：图例 + 实时点值 -->
+            <div class="wb-r4__legend">
+              <template v-if="canvasMode === 'process'">
+                <span
+                  class="wb-r4__legend-item"
+                  :class="{
+                    'wb-r4__legend-item--hidden': !processSeriesVisible.pv,
+                  }"
+                  @click="toggleProcessSeries('pv')"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--pv"
+                  ></span
+                  >PV</span
+                >
+                <span
+                  class="wb-r4__legend-item"
+                  :class="{
+                    'wb-r4__legend-item--hidden': !processSeriesVisible.sp,
+                  }"
+                  @click="toggleProcessSeries('sp')"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--sp"
+                  ></span
+                  >SP</span
+                >
+                <span
+                  class="wb-r4__legend-item"
+                  :class="{
+                    'wb-r4__legend-item--hidden': !processSeriesVisible.op,
+                  }"
+                  @click="toggleProcessSeries('op')"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--op"
+                  ></span
+                  >OP</span
+                >
+                <span v-if="eventMarks.length > 0" class="wb-r4__legend-item"
+                  >▼诊断 ◆整定 ▐验证</span
+                >
+              </template>
+              <template v-else>
+                <span class="wb-r4__legend-item"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--score"
+                  ></span
+                  >综合评分</span
+                >
+                <span class="wb-r4__legend-item"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--steady"
+                  ></span
+                  >平稳率</span
+                >
+                <span class="wb-r4__legend-item"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--accuracy"
+                  ></span
+                  >准确率</span
+                >
+                <span class="wb-r4__legend-item"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--fast"
+                  ></span
+                  >快速率</span
+                >
+              </template>
+              <!-- 实时点值 -->
+              <span v-if="runtimePointValues" class="wb-r4__live-vals">
+                <span class="wb-r4__live-val">
+                  PV
+                  <span
+                    class="wb-r4__live-num"
+                    :style="{ color: pvValueColor() }"
+                    >{{ runtimePointValues.pv?.toFixed(2) ?? '—' }}</span
+                  >
+                </span>
+                <span class="wb-r4__live-val">
+                  SP
+                  <span class="wb-r4__live-num">{{
+                    runtimePointValues.sp?.toFixed(2) ?? '—'
+                  }}</span>
+                </span>
+                <span class="wb-r4__live-val">
+                  OP
+                  <span class="wb-r4__live-num"
+                    >{{ runtimePointValues.op?.toFixed(1) ?? '—' }}%</span
+                  >
+                </span>
+              </span>
+            </div>
+            <!-- 趋势图 -->
+            <div class="wb-r4__chart">
+              <Spin
+                :spinning="
+                  canvasMode === 'process'
+                    ? processTrendLoading
+                    : kpiHistoryLoading
+                "
+                size="small"
+              >
+                <WorkbenchProcessTrend
+                  v-if="canvasMode === 'process'"
+                  :trend="processTrendData"
+                  :pv-unit="selectedLoop?.pvUnit || ''"
+                  :op-unit="selectedLoop?.opUnit || '%'"
+                  :pv-range="null"
+                  :event-marks="eventMarks"
+                  :mode-bands="modeBands"
+                  :series-visible="processSeriesVisible"
+                />
+                <WorkbenchKpiHistory
+                  v-else
+                  :snapshots="kpiHistory"
+                  :alarm-line="alarmLine"
+                  :time-window="timeWindow"
+                />
+              </Spin>
+            </div>
+          </section>
+        </template>
+      </div>
+
+      <!-- ===== 右决策栏（grid-area: decision，仅最右列，只与 R4 等高） ===== -->
+      <aside v-if="selectedLoop" class="wb-decision">
+        <!-- Decision Dock（唯一下一步） -->
+        <div class="wb-decision__dock">
+          <ClpmDecisionDock
+            :floating="false"
+            :next-action="summary?.nextAction ?? null"
+            :loading="summaryLoading"
+            :has-data="summary != null"
+            :partial="summary?.partial ?? false"
+            :stale="summary?.dataFreshness?.status === 'DELAYED'"
+            @action="handleNextAction"
+          />
+        </div>
+        <!-- 活跃关注 -->
+        <div v-if="summary?.activeAttention" class="wb-decision__attention">
+          <div class="wb-decision__section-title">活跃关注</div>
+          <WorkbenchActiveAttention
+            :active-attention="summary.activeAttention"
+            :loop-id="selectedLoopId ?? ''"
+          />
+        </div>
+      </aside>
+
+      <!-- ===== 下层：R5证据区（仅回路详情模式显示） ===== -->
+      <div v-if="selectedLoop" class="wb-main-lower">
+        <!-- ===== R5 证据区（评估.综合性能 / 评估.指标详情） ===== -->
+        <section class="wb-r5">
+          <!-- 评估.综合性能卡（雷达图） -->
+          <div class="wb-r5__card wb-r5__card--assess">
+            <div class="wb-r5__card-header">
+              <span class="wb-r5__card-title">评估.综合性能</span>
+              <span class="wb-r5__card-meta">
+                {{
+                  latestSnapshot
+                    ? `24h · ${formatTime(latestSnapshot.tsStart)}`
+                    : '—'
+                }}
+              </span>
+              <router-link
+                v-if="selectedLoopId"
+                :to="{
+                  path: '/performance/loops',
+                  query: { loopId: selectedLoopId },
+                }"
+                class="wb-r5__card-link"
+                >详情 →</router-link
+              >
+            </div>
+            <div class="wb-r5__radar">
+              <WorkbenchRadar6
+                v-if="radarAxes"
+                :axes="radarAxes"
+                :score="summary?.scoreTrend.score ?? null"
+                :grade="gradeInfo.label"
+                :grade-color="gradeInfo.color"
+              />
+              <div v-else class="wb-r5__empty-mini">暂无评估数据</div>
+            </div>
+          </div>
+
+          <!-- 评估.指标详情卡（指标横道图） -->
+          <div class="wb-r5__card wb-r5__card--metric">
+            <div class="wb-r5__card-header">
+              <Tooltip
+                title="正向指标：横道条越长表示指标达成度越高（性能越好）"
+              >
+                <span class="wb-r5__card-title">评估.指标详情</span>
+              </Tooltip>
+              <span class="wb-r5__card-meta">8 项指标达成度</span>
+            </div>
+            <div class="wb-r5__bars">
+              <WorkbenchMetricBars
+                :metrics="metricBarsData"
+                :show-hint="false"
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
 
     <!-- ===== 弹窗组件 ===== -->
     <AssessTriggerModal
@@ -1676,8 +1706,7 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-layout {
   display: grid;
-  grid-template:
-    "sidebar toprow   toprow" auto "sidebar r4       decision" 1fr "sidebar lower    lower" auto / 240px 1fr 280px;
+  grid-template: 'sidebar toprow   toprow' auto 'sidebar r4       decision' 1fr 'sidebar lower    lower' auto / 240px 1fr 280px;
   gap: 6px;
   height: calc(100vh - 110px);
   min-height: 0;
@@ -1702,9 +1731,9 @@ const stageLabelMap: Record<string, string> = {
 /* 全屏态：左脊柱隐藏，只剩中间+决策两列 */
 .wb-layout--fullscreen {
   grid-template-areas:
-    "toprow   toprow"
-    "r4       decision"
-    "lower    lower";
+    'toprow   toprow'
+    'r4       decision'
+    'lower    lower';
   grid-template-columns: 1fr 280px;
 }
 
