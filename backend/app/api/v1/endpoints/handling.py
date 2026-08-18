@@ -538,6 +538,353 @@ async def get_handling_item(
 
 
 # ---------------------------------------------------------------------------
+# 档案与统计（§6.4，Phase 1F）
+# ---------------------------------------------------------------------------
+
+#: 按回路聚合的聚合列模板（loops 主查询与 topLoops 共用口径）
+_AGG_COLUMNS_SQL = """
+    ll.id AS loop_id, ll.tag_name AS loop_tag_name,
+    ll.description AS loop_description, ll.importance_level, ll.unit_id,
+    COUNT(*) FILTER (WHERE ai.status = 'PENDING')   AS cnt_pending,
+    COUNT(*) FILTER (WHERE ai.status = 'HANDLING')  AS cnt_handling,
+    COUNT(*) FILTER (WHERE ai.status = 'VERIFYING') AS cnt_verifying,
+    COUNT(*) FILTER (WHERE ai.status = 'CLOSED')    AS cnt_closed,
+    COUNT(*) FILTER (WHERE ai.status = 'REOPENED')  AS cnt_reopened,
+    COUNT(*) FILTER (WHERE ai.status = 'IGNORED')   AS cnt_ignored,
+    COUNT(*) AS total_count,
+    MAX(ai.suggested_at) AS last_suggested_at,
+    MAX(ai.handled_at)   AS last_handled_at,
+    (ARRAY_AGG(ai.handled_by ORDER BY ai.handled_at DESC NULLS LAST)
+        FILTER (WHERE ai.handled_by IS NOT NULL))[1] AS last_handled_by,
+    (ARRAY_AGG(
+        (ai.kpi_after ->> 'score')::float8 - (ai.kpi_before ->> 'score')::float8
+        ORDER BY ai.verified_at DESC NULLS LAST)
+        FILTER (WHERE ai.status = 'CLOSED'
+                AND ai.kpi_before ->> 'score' IS NOT NULL
+                AND ai.kpi_after  ->> 'score' IS NOT NULL))[1] AS last_closed_kpi_delta,
+    COUNT(*) FILTER (WHERE ai.verify_result = 'INEFFECTIVE') AS cnt_ineffective
+"""
+
+#: KPI 改善筛选（§6.4 扩展：按最近闭环 KPI delta 情况筛回路）
+_KPI_DELTA_FILTERS = {
+    "improved": "agg.last_closed_kpi_delta > 0",
+    "degraded": "agg.last_closed_kpi_delta < 0",
+    "closed": "agg.cnt_closed > 0",
+    "unclosed": "agg.cnt_closed = 0",
+}
+
+
+def _loop_agg_row_to_item(r: Any, unit_paths: dict[str, str]) -> dict[str, Any]:
+    """回路聚合行序列化（camelCase，对齐前端 HandlingApi.LoopAggregateItem）。"""
+    delta = r.last_closed_kpi_delta
+    return {
+        "loopId": str(r.loop_id),
+        "loopTagName": r.loop_tag_name,
+        "loopDescription": r.loop_description,
+        "importanceLevel": int(r.importance_level) if r.importance_level else None,
+        "unitPath": unit_paths.get(str(r.unit_id)) if r.unit_id else None,
+        "counts": {
+            "pending": int(r.cnt_pending),
+            "handling": int(r.cnt_handling),
+            "verifying": int(r.cnt_verifying),
+            "closed": int(r.cnt_closed),
+            "reopened": int(r.cnt_reopened),
+            "ignored": int(r.cnt_ignored),
+        },
+        "totalCount": int(r.total_count),
+        "lastSuggestedAt": _iso(r.last_suggested_at),
+        "lastHandledAt": _iso(r.last_handled_at),
+        "lastHandledBy": r.last_handled_by,
+        "lastClosedKpiDelta": round(float(delta), 2) if delta is not None else None,
+    }
+
+
+@router.get("/loops", response_model=ApiResponse[dict])
+async def list_handling_loops(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
+    importanceLevel: int | None = Query(None, ge=1, le=3),
+    keyword: str | None = Query(None, description="回路位号/名称模糊"),
+    status: str | None = Query(
+        None, description="状态分布筛选（多值逗号分隔；回路在该状态计数>0 即命中）"
+    ),
+    kpiDelta: str | None = Query(
+        None,
+        pattern="^(improved|degraded|closed|unclosed)$",
+        description="KPI 改善筛选：improved 改善/degraded 恶化/closed 有闭环/unclosed 无闭环",
+    ),
+    activeOnly: bool = Query(False, description="仅看有在途（待处置+处置中+验证中>0）"),
+    sort: str = Query("recent", pattern="^(recent|reopened)$"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+) -> dict:
+    """按回路聚合（档案页主查询，§6.4）。
+
+    - 聚合：六状态计数 + 累计处置数 + 最近建议/处置时间与处置人 + 最近闭环 KPI delta
+    - 筛选：plantNodeId 递归 / 等级 / 位号模糊 / 状态分布 / KPI 改善 / 仅看在途
+    - 排序：recent=最近建议时间倒序（默认）；reopened=重开次数倒序（问题回路 Top）
+    """
+    statuses = [s for s in (status or "").split(",") if s]
+    for s in statuses:
+        if s not in _STATUS_LABELS:
+            raise _err_param(f"status 非法: {s}（合法值: {', '.join(_STATUS_LABELS)}）")
+
+    where: list[str] = ["1=1"]
+    params: dict[str, Any] = {}
+    if importanceLevel:
+        where.append("ll.importance_level = :importance_level")
+        params["importance_level"] = importanceLevel
+    if keyword:
+        where.append("(ll.tag_name ILIKE :kw OR ll.description ILIKE :kw)")
+        params["kw"] = f"%{keyword}%"
+    if plantNodeId is not None:
+        subtree = (
+            await db.execute(
+                text(
+                    """
+                    WITH RECURSIVE node_tree AS (
+                        SELECT id FROM plant_node WHERE id = :root_id
+                        UNION ALL
+                        SELECT child.id FROM plant_node child
+                        JOIN node_tree nt ON child.parent_id = nt.id
+                    )
+                    SELECT id FROM node_tree
+                    """
+                ),
+                {"root_id": plantNodeId},
+            )
+        ).all()
+        where.append("ll.unit_id = ANY(CAST(:unit_ids AS uuid[]))")
+        params["unit_ids"] = [str(r.id) for r in subtree]
+
+    agg_inner = (
+        f"SELECT {_AGG_COLUMNS_SQL} FROM loop_action_item ai "
+        f"JOIN loop_ledger ll ON ll.id = ai.loop_id "
+        f"WHERE {' AND '.join(where)} "
+        f"GROUP BY ll.id, ll.tag_name, ll.description, ll.importance_level, ll.unit_id"
+    )
+
+    # 聚合后筛选（HAVING 语义，作用于外层 WHERE）
+    post: list[str] = []
+    if statuses:
+        post.append(" OR ".join(f"agg.cnt_{s.lower()} > 0" for s in statuses))
+    if kpiDelta:
+        post.append(_KPI_DELTA_FILTERS[kpiDelta])
+    if activeOnly:
+        post.append("(agg.cnt_pending + agg.cnt_handling + agg.cnt_verifying) > 0")
+    post_where = f" WHERE {' AND '.join(post)}" if post else ""
+
+    order = (
+        "agg.cnt_reopened DESC, agg.cnt_ineffective DESC, agg.last_suggested_at DESC"
+        if sort == "reopened"
+        else "agg.last_suggested_at DESC NULLS LAST"
+    )
+
+    total = (
+        await db.execute(text(f"SELECT COUNT(*) FROM ({agg_inner}) agg{post_where}"), params)
+    ).scalar() or 0
+    rows = list(
+        (
+            await db.execute(
+                text(
+                    f"SELECT * FROM ({agg_inner}) agg{post_where} "
+                    f"ORDER BY {order} LIMIT :limit OFFSET :offset"
+                ),
+                {**params, "limit": pageSize, "offset": (page - 1) * pageSize},
+            )
+        ).all()
+    )
+    unit_paths = await _load_unit_paths(db)
+    return success(
+        {
+            "items": [_loop_agg_row_to_item(r, unit_paths) for r in rows],
+            "total": int(total),
+            "page": page,
+            "pageSize": pageSize,
+        }
+    )
+
+
+@router.get("/statistics", response_model=ApiResponse[dict])
+async def get_handling_statistics(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    months: int = Query(6, ge=1, le=12, description="月度趋势窗口（月数）"),
+) -> dict:
+    """处置统计页数据（§6.4）。
+
+    - summary：本月（北京时间月界）闭环数 / 闭环率 / 平均处置时长 / 无效重开率 /
+      平均 KPI 改善分；无验证记录时相关项为 null（前端显示空态）
+    - monthly：近 N 月（北京时间月界，按 verified_at 归月）闭环数与闭环率，空月补零
+    - byType / byUnit / topLoops：类型分布、装置闭环分布、重开次数 Top 10
+    """
+    # 北京月界：本月 1 号 0 点（北京时间）→ naive UTC
+    now_bj = datetime.now(_BJ_TZ)
+    month_start_bj = now_bj.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start_utc = month_start_bj.astimezone(UTC).replace(tzinfo=None)
+
+    s = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  COUNT(*) FILTER (WHERE status = 'CLOSED' AND verified_at >= :month_start)
+                    AS closed_this_month,
+                  COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed_total,
+                  COUNT(*) FILTER (WHERE verify_result IS NOT NULL) AS verified_total,
+                  COUNT(*) FILTER (WHERE verify_result = 'INEFFECTIVE') AS ineffective_total,
+                  AVG(EXTRACT(EPOCH FROM (verified_at - suggested_at)) / 3600.0)
+                    FILTER (WHERE status = 'CLOSED'
+                            AND verified_at IS NOT NULL AND suggested_at IS NOT NULL)
+                    AS avg_cycle_hours,
+                  AVG((kpi_after ->> 'score')::float8 - (kpi_before ->> 'score')::float8)
+                    FILTER (WHERE status = 'CLOSED'
+                            AND kpi_before ->> 'score' IS NOT NULL
+                            AND kpi_after  ->> 'score' IS NOT NULL)
+                    AS avg_kpi_delta
+                FROM loop_action_item
+                """
+            ),
+            {"month_start": month_start_utc},
+        )
+    ).one()
+
+    def _rate(num: Any, den: Any) -> float | None:
+        return round(float(num) / float(den), 4) if den else None
+
+    summary = {
+        "closedThisMonth": int(s.closed_this_month),
+        "closeRate": _rate(s.closed_total, s.verified_total),
+        "avgCycleHours": round(float(s.avg_cycle_hours), 1) if s.avg_cycle_hours else None,
+        "ineffectiveRate": _rate(s.ineffective_total, s.verified_total),
+        "avgKpiDelta": round(float(s.avg_kpi_delta), 1) if s.avg_kpi_delta else None,
+    }
+
+    # 月度趋势：verified_at 归月（北京时间），空月补零
+    def _shift_months_bj(dt_bj: datetime, back: int) -> datetime:
+        """北京时间 naive 月份回退（无 dateutil 依赖的手写实现）。"""
+        total = dt_bj.year * 12 + (dt_bj.month - 1) - back
+        return dt_bj.replace(year=total // 12, month=total % 12 + 1)
+
+    range_start_bj = _shift_months_bj(month_start_bj, months - 1)
+    range_start_utc = range_start_bj.astimezone(UTC).replace(tzinfo=None)
+    monthly_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT to_char(
+                         (verified_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai'),
+                         'YYYY-MM') AS month,
+                       COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed,
+                       COUNT(*) AS verified
+                FROM loop_action_item
+                WHERE verify_result IS NOT NULL AND verified_at >= :range_start
+                GROUP BY 1
+                """
+            ),
+            {"range_start": range_start_utc},
+        )
+    ).all()
+    monthly_map = {r.month: (int(r.closed), int(r.verified)) for r in monthly_rows}
+    monthly: list[dict[str, Any]] = []
+    cur = range_start_bj
+    while cur <= month_start_bj:
+        key = cur.strftime("%Y-%m")
+        closed, verified = monthly_map.get(key, (0, 0))
+        monthly.append(
+            {
+                "month": key,
+                "closed": closed,
+                "closeRate": round(closed / verified, 4) if verified else None,
+            }
+        )
+        cur = cur.replace(day=28) + timedelta(days=4)  # 跨月进位：28 号 +4 天必到下月
+        cur = cur.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    by_type_rows = (
+        await db.execute(
+            text(
+                "SELECT action_type, COUNT(*) AS cnt FROM loop_action_item "
+                "WHERE action_type IS NOT NULL GROUP BY action_type ORDER BY cnt DESC"
+            ),
+        )
+    ).all()
+    by_type = [
+        {
+            "type": r.action_type,
+            "label": _ACTION_TYPE_LABELS.get(r.action_type, r.action_type),
+            "count": int(r.cnt),
+        }
+        for r in by_type_rows
+    ]
+
+    by_unit_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(pn.name, '未分配装置') AS unit,
+                       COUNT(*) FILTER (WHERE ai.status = 'CLOSED') AS closed
+                FROM loop_action_item ai
+                JOIN loop_ledger ll ON ll.id = ai.loop_id
+                LEFT JOIN plant_node pn ON pn.id = ll.unit_id
+                GROUP BY 1 ORDER BY closed DESC
+                """
+            ),
+        )
+    ).all()
+    by_unit = [{"unit": r.unit, "closed": int(r.closed)} for r in by_unit_rows]
+
+    top_rows = list(
+        (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT * FROM (
+                        SELECT {_AGG_COLUMNS_SQL}
+                        FROM loop_action_item ai
+                        JOIN loop_ledger ll ON ll.id = ai.loop_id
+                        GROUP BY ll.id, ll.tag_name, ll.description,
+                                 ll.importance_level, ll.unit_id
+                    ) agg
+                    WHERE agg.total_count > 0
+                    ORDER BY agg.cnt_reopened DESC, agg.cnt_ineffective DESC,
+                             agg.total_count DESC
+                    LIMIT 10
+                    """
+                ),
+            )
+        ).all()
+    )
+    unit_paths = await _load_unit_paths(db)
+    top_loops = [
+        {
+            "loopId": str(r.loop_id),
+            "loopTagName": r.loop_tag_name,
+            "unitPath": unit_paths.get(str(r.unit_id)) if r.unit_id else None,
+            "totalCount": int(r.total_count),
+            "reopened": int(r.cnt_reopened),
+            "lastClosedKpiDelta": (
+                round(float(r.last_closed_kpi_delta), 2)
+                if r.last_closed_kpi_delta is not None
+                else None
+            ),
+        }
+        for r in top_rows
+    ]
+
+    return success(
+        {
+            "summary": summary,
+            "monthly": monthly,
+            "byType": by_type,
+            "byUnit": by_unit,
+            "topLoops": top_loops,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # 流转端点（§6.2）
 # ---------------------------------------------------------------------------
 

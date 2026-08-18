@@ -866,3 +866,320 @@ class TestDetailEndpoint:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
+
+
+# ===========================================================================
+# GET /handling/loops（§6.4 按回路聚合）/ GET /handling/statistics（统计页）
+# ===========================================================================
+
+
+def _one_result(row: Any) -> MagicMock:
+    r = MagicMock()
+    r.one.return_value = row
+    return r
+
+
+def _make_agg_row(**over: Any) -> MagicMock:
+    """回路聚合行 mock（_AGG_COLUMNS_SQL 各列）。"""
+    row = MagicMock()
+    row.loop_id = LOOP_ID
+    row.loop_tag_name = "90PIC51212A_PIDA"
+    row.loop_description = "辛醇罐TK521A顶部压力"
+    row.importance_level = 1
+    row.unit_id = UNIT_ID
+    row.cnt_pending = 2
+    row.cnt_handling = 1
+    row.cnt_verifying = 0
+    row.cnt_closed = 3
+    row.cnt_reopened = 1
+    row.cnt_ignored = 0
+    row.total_count = 7
+    row.last_suggested_at = datetime(2026, 8, 18, 6, 0, 0)
+    row.last_handled_at = datetime(2026, 8, 18, 9, 0, 0)
+    row.last_handled_by = "mock-仪控班"
+    row.last_closed_kpi_delta = 18.2
+    row.cnt_ineffective = 1
+    for k, v in over.items():
+        setattr(row, k, v)
+    return row
+
+
+class TestLoopsEndpoint:
+    """GET /api/v1/handling/loops（§6.4 按回路聚合）。"""
+
+    def _get(self, client, params: dict | None = None, user_key: str = "admin"):
+        with mock_current_user(TEST_USERS[user_key]):
+            return client.get(
+                "/api/v1/handling/loops",
+                params=params or {},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+    def test_loops_ok_mapping(self, client) -> None:
+        """聚合行映射：counts 小写六键 + unitPath + lastClosedKpiDelta。"""
+        _override_db(
+            client,
+            [_count_result(1), _all_result([_make_agg_row()]), _all_result(_plant_node_rows())],
+        )
+        resp = self._get(client)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        item = data["items"][0]
+        assert item["loopId"] == LOOP_ID
+        assert item["unitPath"] == "一联合装置.常减压单元"
+        assert item["counts"] == {
+            "pending": 2,
+            "handling": 1,
+            "verifying": 0,
+            "closed": 3,
+            "reopened": 1,
+            "ignored": 0,
+        }
+        assert item["totalCount"] == 7
+        assert item["lastHandledBy"] == "mock-仪控班"
+        assert item["lastClosedKpiDelta"] == pytest.approx(18.2)
+        assert item["lastSuggestedAt"].endswith("Z")
+
+    def test_loops_status_distribution_filter_sql(self, client) -> None:
+        """状态分布筛选：回路在任一指定状态计数>0（HAVING 语义）。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client, {"status": "PENDING,REOPENED"})
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[0])
+        assert "cnt_pending > 0 OR agg.cnt_reopened > 0" in sql
+
+    @pytest.mark.parametrize(
+        ("kpi_delta", "frag"),
+        [
+            ("improved", "agg.last_closed_kpi_delta > 0"),
+            ("degraded", "agg.last_closed_kpi_delta < 0"),
+            ("closed", "agg.cnt_closed > 0"),
+            ("unclosed", "agg.cnt_closed = 0"),
+        ],
+    )
+    def test_loops_kpi_delta_filter_sql(self, client, kpi_delta: str, frag: str) -> None:
+        """KPI 改善筛选：四档口径断言。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client, {"kpiDelta": kpi_delta})
+        assert resp.status_code == 200
+        assert frag in _pg_sql(captured[0])
+
+    def test_loops_active_only_sql(self, client) -> None:
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client, {"activeOnly": "true"})
+        assert resp.status_code == 200
+        assert "(agg.cnt_pending + agg.cnt_handling + agg.cnt_verifying) > 0" in _pg_sql(
+            captured[0]
+        )
+
+    def test_loops_sort_reopened_sql(self, client) -> None:
+        """reopened 排序：重开次数 → 无效次数 → 最近建议时间（问题回路 Top）。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client, {"sort": "reopened"})
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[1])
+        assert "cnt_reopened DESC" in sql
+        assert "cnt_ineffective DESC" in sql
+
+    def test_loops_recent_sort_default(self, client) -> None:
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client)
+        assert resp.status_code == 200
+        assert "last_suggested_at DESC" in _pg_sql(captured[1])
+
+    def test_loops_invalid_status_value(self, client) -> None:
+        """非法状态值 → ERR_PARAM 400。"""
+        resp = self._get(client, {"status": "BOGUS"})
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_loops_invalid_kpi_delta(self, client) -> None:
+        """非法 kpiDelta 枚举 → 参数校验 422。"""
+        resp = self._get(client, {"kpiDelta": "bogus"})
+        assert resp.status_code == 422
+
+    def test_loops_invalid_sort(self, client) -> None:
+        resp = self._get(client, {"sort": "bogus"})
+        assert resp.status_code == 422
+
+    def test_loops_all_roles_can_view(self, client) -> None:
+        """档案查看：全部登录用户（§7）。"""
+        _override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+        )
+        resp = self._get(client, user_key="sponsor")
+        assert resp.status_code == 200
+
+
+class TestStatisticsEndpoint:
+    """GET /api/v1/handling/statistics（§6.4 统计页数据）。"""
+
+    def _get(self, client, params: dict | None = None, user_key: str = "admin"):
+        with mock_current_user(TEST_USERS[user_key]):
+            return client.get(
+                "/api/v1/handling/statistics",
+                params=params or {},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+    @staticmethod
+    def _summary_row(**over: Any) -> MagicMock:
+        row = MagicMock()
+        row.closed_this_month = 3
+        row.closed_total = 6
+        row.verified_total = 8
+        row.ineffective_total = 2
+        row.avg_cycle_hours = Decimal("36.5")
+        row.avg_kpi_delta = Decimal("12.4")
+        for k, v in over.items():
+            setattr(row, k, v)
+        return row
+
+    def test_statistics_full(self, client) -> None:
+        """summary 比率计算 / monthly 空月补齐 / byType label / topLoops unitPath。"""
+        from collections import namedtuple
+        from datetime import timedelta
+        from datetime import timezone as dt_timezone
+
+        MRow = namedtuple("MRow", ["month", "closed", "verified"])
+        TRow = namedtuple("TRow", ["action_type", "cnt"])
+        URow = namedtuple("URow", ["unit", "closed"])
+        # 当前月按北京时间口径（与实现 _BJ_TZ 月界一致，避免 UTC 月末边界错位）
+        now_month = datetime.now(dt_timezone(timedelta(hours=8))).strftime("%Y-%m")
+        _override_db(
+            client,
+            [
+                _one_result(self._summary_row()),
+                _all_result([MRow(now_month, 3, 4)]),
+                _all_result([TRow("TUNING", 5), TRow("VALVE", 2)]),
+                _all_result([URow("一联合装置", 4)]),
+                _all_result([_make_agg_row()]),
+                _all_result(_plant_node_rows()),
+            ],
+        )
+        resp = self._get(client, {"months": 6})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        s = data["summary"]
+        assert s["closedThisMonth"] == 3
+        assert s["closeRate"] == pytest.approx(0.75)
+        assert s["ineffectiveRate"] == pytest.approx(0.25)
+        assert s["avgCycleHours"] == pytest.approx(36.5)
+        assert s["avgKpiDelta"] == pytest.approx(12.4)
+        # monthly：6 个月序列（空月补零），末月为当前月
+        assert len(data["monthly"]) == 6
+        assert data["monthly"][-1]["month"] == now_month
+        assert data["monthly"][-1]["closed"] == 3
+        assert data["monthly"][-1]["closeRate"] == pytest.approx(0.75)
+        assert data["monthly"][0]["closed"] == 0
+        assert data["monthly"][0]["closeRate"] is None
+        # byType：中文 label
+        assert data["byType"][0] == {"count": 5, "label": "参数整定", "type": "TUNING"}
+        assert data["byUnit"][0] == {"closed": 4, "unit": "一联合装置"}
+        # topLoops：unitPath 树回溯
+        assert data["topLoops"][0]["unitPath"] == "一联合装置.常减压单元"
+        assert data["topLoops"][0]["reopened"] == 1
+
+    def test_statistics_empty_no_closed(self, client) -> None:
+        """无验证记录：比率/时长/改善为 null，不返回误导性 0。"""
+        row = self._summary_row(
+            closed_this_month=0,
+            closed_total=0,
+            verified_total=0,
+            ineffective_total=0,
+            avg_cycle_hours=None,
+            avg_kpi_delta=None,
+        )
+        _override_db(
+            client,
+            [
+                _one_result(row),
+                _all_result([]),
+                _all_result([]),
+                _all_result([]),
+                _all_result([]),
+                _all_result(_plant_node_rows()),
+            ],
+        )
+        resp = self._get(client)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        s = data["summary"]
+        assert s["closedThisMonth"] == 0
+        assert s["closeRate"] is None
+        assert s["avgCycleHours"] is None
+        assert s["ineffectiveRate"] is None
+        assert s["avgKpiDelta"] is None
+        assert all(m["closeRate"] is None for m in data["monthly"])
+
+    def test_statistics_months_validation(self, client) -> None:
+        """months 越界（>12 / <1）→ 422 参数校验。"""
+        resp = self._get(client, {"months": 13})
+        assert resp.status_code == 422
+        resp = self._get(client, {"months": 0})
+        assert resp.status_code == 422
+
+    def test_statistics_months_sequence_boundaries(self, client) -> None:
+        """跨年月份序列：months=3 从当前月往前 3 个月（含跨年正确性）。"""
+        _override_db(
+            client,
+            [
+                _one_result(self._summary_row()),
+                _all_result([]),
+                _all_result([]),
+                _all_result([]),
+                _all_result([]),
+                _all_result(_plant_node_rows()),
+            ],
+        )
+        resp = self._get(client, {"months": 3})
+        assert resp.status_code == 200
+        months = [m["month"] for m in resp.json()["data"]["monthly"]]
+        assert len(months) == 3
+        # 序列单调递增且相邻月份差 1（跨年/跨月正确）
+        for prev, cur in zip(months, months[1:], strict=False):
+            py, pm = (int(x) for x in prev.split("-"))
+            cy, cm = (int(x) for x in cur.split("-"))
+            assert (cy * 12 + cm) - (py * 12 + pm) == 1
+
+    def test_statistics_all_roles_can_view(self, client) -> None:
+        _override_db(
+            client,
+            [
+                _one_result(self._summary_row()),
+                _all_result([]),
+                _all_result([]),
+                _all_result([]),
+                _all_result([]),
+                _all_result(_plant_node_rows()),
+            ],
+        )
+        resp = self._get(client, user_key="expert")
+        assert resp.status_code == 200
