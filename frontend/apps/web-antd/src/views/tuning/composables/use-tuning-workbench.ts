@@ -9,6 +9,7 @@ import type { TuningApi } from '#/api/tuning';
 
 import { computed, reactive, toRefs } from 'vue';
 
+import { getLoopDetailApi, getLoopListApi } from '#/api/loop';
 import {
   comparePidsApi,
   getTuningTaskStatusApi,
@@ -18,14 +19,13 @@ import {
   tuneMatrixApi,
   tuneSingleApi,
 } from '#/api/tuning';
-import { getLoopDetailApi, getLoopListApi } from '#/api/loop';
 
 /** 辨识结果（统一历史/阶跃双路径的输出形态） */
 export interface IdentifyOutcome {
   modelType: TuningApi.ModelType;
   params: TuningApi.ModelParams;
   fittingScore: number;
-  confidenceLevel?: TuningApi.ConfidenceLevel | null;
+  confidenceLevel?: null | TuningApi.ConfidenceLevel;
   /** 服务端持久化的辨识记录 ID（阶跃路径 recordId / 历史路径 result.recordId） */
   recordId?: null | string;
   dataSource: 'HISTORY' | 'STEP_EXPERIMENT';
@@ -37,7 +37,7 @@ export interface IdentifyOutcome {
 export interface MatrixRow {
   algorithm: TuningApi.TuningAlgorithm;
   ok: boolean;
-  pid: TuningApi.PidParams | null;
+  pid: null | TuningApi.PidParams;
   error?: string;
   checked: boolean;
   /** 算法参数微调值（IMC/LAMBDA: lambdaRatio；SIMC: tauCRatio） */
@@ -68,7 +68,7 @@ export function useTuningWorkbench() {
     currentPidMissing: false,
     // ① 辨识
     identifyPath: 'HISTORY' as 'HISTORY' | 'STEP',
-    timeRange: null as null | [string, string],
+    timeRange: null as [string, string] | null,
     identifying: false,
     identifyProgress: 0,
     identifyStage: '' as string,
@@ -81,7 +81,7 @@ export function useTuningWorkbench() {
     matrixError: '' as string,
     // ③ 仿真
     simulating: false,
-    simResult: null as TuningApi.SimulationResult | null,
+    simResult: null as null | TuningApi.SimulationResult,
     simCandidates: [] as SimCandidate[],
     simError: '' as string,
     // ④ 确认
@@ -97,17 +97,28 @@ export function useTuningWorkbench() {
       state.outcome.confidenceLevel !== 'D' &&
       state.outcome.confidenceLevel !== 'E',
   );
-  const checkedRows = computed(() => state.matrixRows.filter((r) => r.checked && r.ok && r.pid));
-  const canSimulate = computed(
-    () => canTune.value && checkedRows.value.length >= 1 && checkedRows.value.length <= 2,
+  const checkedRows = computed(() =>
+    state.matrixRows.filter((r) => r.checked && r.ok && r.pid),
   );
-  const canConfirm = computed(() => !!state.simResult && !!state.finalLabel && !state.saving);
+  const canSimulate = computed(
+    () =>
+      canTune.value &&
+      checkedRows.value.length > 0 &&
+      checkedRows.value.length <= 2,
+  );
+  const canConfirm = computed(
+    () => !!state.simResult && !!state.finalLabel && !state.saving,
+  );
 
   // ===== 回路 =====
   async function loadLoops(keyword = '') {
     state.loopsLoading = true;
     try {
-      const res = await getLoopListApi({ page: 1, pageSize: 200, keyword: keyword || undefined });
+      const res = await getLoopListApi({
+        page: 1,
+        pageSize: 200,
+        keyword: keyword || undefined,
+      });
       state.loopOptions = res.items.map((l) => ({
         value: l.loopId,
         label: `${l.tagName} ${l.description || ''}`.trim(),
@@ -126,7 +137,11 @@ export function useTuningWorkbench() {
     state.currentPidMissing = false;
     try {
       const detail = await getLoopDetailApi(loopId);
-      const rp = detail.runtimeParams as { pidD?: null | number; pidI?: null | number; pidP?: null | number };
+      const rp = detail.runtimeParams as {
+        pidD?: null | number;
+        pidI?: null | number;
+        pidP?: null | number;
+      };
       if (rp && rp.pidP != null && rp.pidI != null) {
         state.currentPid = { kp: rp.pidP, ti: rp.pidI, td: rp.pidD ?? 0 };
       } else {
@@ -257,7 +272,7 @@ export function useTuningWorkbench() {
         pid: r.ok ? (r.result?.recommendedPid ?? null) : null,
         error: r.error,
         checked: false,
-        paramValue: 1.0,
+        paramValue: 1,
         recomputing: false,
       }));
     } catch (error: any) {
@@ -306,11 +321,17 @@ export function useTuningWorkbench() {
       const simCandidates: SimCandidate[] = [];
       if (state.currentPid) {
         candidates.push({ label: '当前 PID', ...state.currentPid });
-        simCandidates.push({ label: '当前 PID', pid: state.currentPid, isCurrent: true });
+        simCandidates.push({
+          label: '当前 PID',
+          pid: state.currentPid,
+          isCurrent: true,
+        });
       }
       for (const row of checkedRows.value) {
         const paramKey = ALGO_PARAM_KEY[row.algorithm];
-        const label = paramKey ? `${row.algorithm}（${paramKey}=${row.paramValue}）` : row.algorithm;
+        const label = paramKey
+          ? `${row.algorithm}（${paramKey}=${row.paramValue}）`
+          : row.algorithm;
         candidates.push({ label, ...row.pid! });
         simCandidates.push({ label, pid: row.pid!, isCurrent: false });
       }
@@ -321,7 +342,9 @@ export function useTuningWorkbench() {
         currentPid: state.currentPid ?? undefined,
         loopId: state.loopId,
         sourceRecordId: state.outcome.recordId ?? undefined,
-        modelSource: state.outcome.recordId ? 'IDENTIFICATION_RECORD' : 'MANUAL',
+        modelSource: state.outcome.recordId
+          ? 'IDENTIFICATION_RECORD'
+          : 'MANUAL',
         riskConfirmed: true,
       });
       state.simResult = res;
@@ -339,9 +362,14 @@ export function useTuningWorkbench() {
     if (!canConfirm.value || !state.outcome) return null;
     state.saving = true;
     try {
-      const chosen = state.simCandidates.find((c) => c.label === state.finalLabel);
-      if (!chosen || chosen.isCurrent) throw new Error('请选择推荐参数组作为最终方案');
-      const algoRow = state.matrixRows.find((r) => state.finalLabel.startsWith(r.algorithm));
+      const chosen = state.simCandidates.find(
+        (c) => c.label === state.finalLabel,
+      );
+      if (!chosen || chosen.isCurrent)
+        throw new Error('请选择推荐参数组作为最终方案');
+      const algoRow = state.matrixRows.find((r) =>
+        state.finalLabel.startsWith(r.algorithm),
+      );
       const res = await saveTuningTaskApi({
         loopId: state.loopId,
         modelType: state.outcome.modelType,

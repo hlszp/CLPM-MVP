@@ -75,7 +75,12 @@ const columns = [
   { dataIndex: 'modelType', key: 'modelType', title: '模型', width: 90 },
   { dataIndex: 'algorithm', key: 'algorithm', title: '算法', width: 120 },
   { key: 'pid', title: '推荐 P/I/D', width: 200 },
-  { dataIndex: 'fittingScore', key: 'fittingScore', title: '拟合度', width: 90 },
+  {
+    dataIndex: 'fittingScore',
+    key: 'fittingScore',
+    title: '拟合度',
+    width: 90,
+  },
   { dataIndex: 'status', key: 'status', title: '状态', width: 100 },
   { key: 'created', title: '创建人/时间', width: 190 },
   { key: 'actions', title: '操作', width: 130 },
@@ -110,9 +115,19 @@ onMounted(() => {
 
 <template>
   <Page>
-    <ClpmPageToolbar subtitle="整定方案历史追溯：保存的方案 → 实施 → 验证闭环" title="整定记录">
+    <ClpmPageToolbar
+      subtitle="整定方案历史追溯：保存的方案 → 实施 → 验证闭环"
+      title="整定记录"
+    >
       <template #actions>
-        <Button size="small" @click="loadList(); loadStats()">刷新</Button>
+        <Button
+          size="small"
+          @click="
+            loadList();
+            loadStats();
+          "
+          >刷新</Button
+        >
       </template>
     </ClpmPageToolbar>
 
@@ -128,7 +143,11 @@ onMounted(() => {
       </Card>
       <Card size="small" class="stats-card">
         <div class="stats-num">
-          {{ stats?.avgFittingScore == null ? '—' : `${stats.avgFittingScore.toFixed(1)}%` }}
+          {{
+            stats?.avgFittingScore == null
+              ? '—'
+              : `${stats.avgFittingScore.toFixed(1)}%`
+          }}
         </div>
         <div class="stats-label">平均拟合度</div>
       </Card>
@@ -168,7 +187,12 @@ onMounted(() => {
         }"
         row-key="id"
         size="small"
-        @change="(p: any) => { pagination.current = p.current; loadList(); }"
+        @change="
+          (p: any) => {
+            pagination.current = p.current;
+            loadList();
+          }
+        "
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'pid'">
@@ -176,7 +200,11 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'fittingScore'">
             <span class="clpm-num" :class="fittingClass(record.fittingScore)">
-              {{ record.fittingScore == null ? '—' : `${record.fittingScore.toFixed(1)}%` }}
+              {{
+                record.fittingScore == null
+                  ? '—'
+                  : `${record.fittingScore.toFixed(1)}%`
+              }}
             </span>
           </template>
           <template v-else-if="column.key === 'status'">
@@ -185,17 +213,32 @@ onMounted(() => {
             </Tag>
           </template>
           <template v-else-if="column.key === 'created'">
-            <span class="text-xs">{{ record.createdBy ?? '—' }} · {{ record.createdAt }}</span>
+            <span class="text-xs"
+              >{{ record.createdBy ?? '—' }} · {{ record.createdAt }}</span
+            >
           </template>
           <template v-else-if="column.key === 'actions'">
-            <Button size="small" type="link" @click="openDetail(record as TuningApi.TuningTaskItem)">详情</Button>
-            <Button size="small" type="link" @click="goVerification(record as TuningApi.TuningTaskItem)">去验证</Button>
+            <Button
+              size="small"
+              type="link"
+              @click="openDetail(record as TuningApi.TuningTaskItem)"
+              >详情</Button
+            >
+            <Button
+              size="small"
+              type="link"
+              @click="goVerification(record as TuningApi.TuningTaskItem)"
+              >去验证</Button
+            >
           </template>
         </template>
       </Table>
     </Card>
 
-    <RecordDetailDrawer v-model:visible="drawerVisible" :record-id="activeRecordId" />
+    <RecordDetailDrawer
+      v-model:visible="drawerVisible"
+      :record-id="activeRecordId"
+    />
   </Page>
 </template>
 

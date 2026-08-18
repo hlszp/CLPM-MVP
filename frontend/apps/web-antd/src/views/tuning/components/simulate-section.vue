@@ -13,6 +13,7 @@ import type { TuningWorkbenchContext } from '../composables/use-tuning-workbench
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
 import { Alert, Button, Card, Table } from 'ant-design-vue';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -31,7 +32,9 @@ const { renderEcharts } = useEcharts(chartRef);
 const SERIES_COLORS = ['#6b7280', '#1d4ed8', '#b45309'];
 
 const simResult = computed(() => ctx.simResult.value);
-const candidates = computed(() => ctx.simResult.value?.candidateResponses ?? []);
+const candidates = computed(
+  () => ctx.simResult.value?.candidateResponses ?? [],
+);
 
 function render() {
   const res = simResult.value;
@@ -41,7 +44,10 @@ function render() {
     type: 'line' as const,
     showSymbol: false,
     data: c.response.pv,
-    lineStyle: { width: c.label === '当前 PID' ? 1.5 : 2, color: SERIES_COLORS[i] },
+    lineStyle: {
+      width: c.label === '当前 PID' ? 1.5 : 2,
+      color: SERIES_COLORS[i],
+    },
     itemStyle: { color: SERIES_COLORS[i] },
   }));
   nextTick(() => {
@@ -52,7 +58,7 @@ function render() {
       tooltip: getTooltipPreset(),
       xAxis: {
         type: 'category',
-        data: res.timestamps.map((t) => String(t)),
+        data: res.timestamps.map(String),
         name: '秒',
         axisLabel: { color: chartTextColor.value },
       },
@@ -123,7 +129,7 @@ const metricRows = computed(() =>
     />
 
     <template v-if="simResult">
-      <EchartsUI ref="chartRef" style="height: 320px; width: 100%" />
+      <EchartsUI ref="chartRef" style="width: 100%; height: 320px" />
       <Table
         class="mt-3"
         :columns="metricColumns"

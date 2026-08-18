@@ -12,7 +12,15 @@ import type { TuningApi } from '#/api/tuning';
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
-import { Descriptions, DescriptionsItem, Drawer, Empty, Spin, Tag } from 'ant-design-vue';
+
+import {
+  Descriptions,
+  DescriptionsItem,
+  Drawer,
+  Empty,
+  Spin,
+  Tag,
+} from 'ant-design-vue';
 
 import { getTuningTaskDetailApi } from '#/api/tuning';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -35,11 +43,12 @@ const SERIES_COLORS = ['#6b7280', '#1d4ed8', '#b45309'];
 const simCandidates = computed(
   () =>
     (detail.value?.simulationResult as any)?.candidateResponses as
-      | { label: string; response: { pv: number[] } }[]
-      | undefined,
+      | undefined
+      | { label: string; response: { pv: number[] } }[],
 );
 const simTimestamps = computed(
-  () => (detail.value?.simulationResult as any)?.timestamps as number[] | undefined,
+  () =>
+    (detail.value?.simulationResult as any)?.timestamps as number[] | undefined,
 );
 
 function renderChart() {
@@ -61,7 +70,7 @@ function renderChart() {
       tooltip: getTooltipPreset(),
       xAxis: {
         type: 'category',
-        data: ts.map((t) => String(t)),
+        data: ts.map(String),
         axisLabel: { color: chartTextColor.value },
       },
       yAxis: {
@@ -114,27 +123,51 @@ const paramsText = computed(() => {
     <Spin :spinning="loading">
       <template v-if="detail">
         <Descriptions size="small" :column="2" bordered>
-          <DescriptionsItem label="回路">{{ detail.tagName ?? detail.loopId }}</DescriptionsItem>
+          <DescriptionsItem label="回路">{{
+            detail.tagName ?? detail.loopId
+          }}</DescriptionsItem>
           <DescriptionsItem label="状态">
             <Tag>{{ detail.status }}</Tag>
           </DescriptionsItem>
-          <DescriptionsItem label="模型类型">{{ detail.modelType }}</DescriptionsItem>
+          <DescriptionsItem label="模型类型">{{
+            detail.modelType
+          }}</DescriptionsItem>
           <DescriptionsItem label="模型参数">{{ paramsText }}</DescriptionsItem>
-          <DescriptionsItem label="整定算法">{{ detail.algorithm }}</DescriptionsItem>
+          <DescriptionsItem label="整定算法">{{
+            detail.algorithm
+          }}</DescriptionsItem>
           <DescriptionsItem label="拟合度">
-            {{ detail.fittingScore == null ? '—' : `${detail.fittingScore.toFixed(1)}%` }}
+            {{
+              detail.fittingScore == null
+                ? '—'
+                : `${detail.fittingScore.toFixed(1)}%`
+            }}
           </DescriptionsItem>
-          <DescriptionsItem label="推荐 PID">{{ fmtPid(detail.recommendedPid) }}</DescriptionsItem>
-          <DescriptionsItem label="当前 PID">{{ fmtPid(detail.currentPid) }}</DescriptionsItem>
-          <DescriptionsItem label="可信度">{{ detail.confidenceLevel ?? '—' }}</DescriptionsItem>
+          <DescriptionsItem label="推荐 PID">{{
+            fmtPid(detail.recommendedPid)
+          }}</DescriptionsItem>
+          <DescriptionsItem label="当前 PID">{{
+            fmtPid(detail.currentPid)
+          }}</DescriptionsItem>
+          <DescriptionsItem label="可信度">{{
+            detail.confidenceLevel ?? '—'
+          }}</DescriptionsItem>
           <DescriptionsItem label="创建">
             {{ detail.createdBy ?? '—' }} · {{ detail.createdAt }}
           </DescriptionsItem>
         </Descriptions>
 
         <div class="mt-4 text-xs font-medium text-neutral-500">仿真快照</div>
-        <EchartsUI v-if="simCandidates?.length" ref="chartRef" style="height: 260px; width: 100%" />
-        <Empty v-else description="无仿真快照数据" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+        <EchartsUI
+          v-if="simCandidates?.length"
+          ref="chartRef"
+          style="width: 100%; height: 260px"
+        />
+        <Empty
+          v-else
+          description="无仿真快照数据"
+          :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        />
       </template>
     </Spin>
   </Drawer>

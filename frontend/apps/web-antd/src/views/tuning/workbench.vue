@@ -38,7 +38,9 @@ const anchors = [
 ];
 
 function scrollTo(href: string) {
-  document.querySelector(href)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document
+    .querySelector(href)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 onMounted(async () => {

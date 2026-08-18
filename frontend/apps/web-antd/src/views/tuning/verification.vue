@@ -11,7 +11,14 @@ import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, DatePicker, RadioButton, RadioGroup, Select } from 'ant-design-vue';
+import {
+  Button,
+  Card,
+  DatePicker,
+  RadioButton,
+  RadioGroup,
+  Select,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
@@ -21,9 +28,9 @@ import { getTuningTaskDetailApi } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import TuningVerifyCompare from '#/components/clpm/tuning-verify-compare.vue';
 
-dayjs.extend(utc);
-
 defineOptions({ name: 'TuningVerification' });
+
+dayjs.extend(utc);
 
 const route = useRoute();
 
@@ -34,12 +41,20 @@ const pointTime = ref<dayjs.Dayjs | undefined>();
 const windowHours = ref(24);
 
 // 已提交的查询（驱动共享组件）
-const query = ref<{ loopId: string; pointTime: string; windowHours: number } | null>(null);
+const query = ref<null | {
+  loopId: string;
+  pointTime: string;
+  windowHours: number;
+}>(null);
 
 async function loadLoops(keyword = '') {
   loopsLoading.value = true;
   try {
-    const res = await getLoopListApi({ page: 1, pageSize: 200, keyword: keyword || undefined });
+    const res = await getLoopListApi({
+      page: 1,
+      pageSize: 200,
+      keyword: keyword || undefined,
+    });
     loopOptions.value = res.items.map((l) => ({
       value: l.loopId,
       label: `${l.tagName} ${l.description || ''}`.trim(),
@@ -70,7 +85,9 @@ async function derivePointTime(recordId: string, loop: string) {
     } as any);
     const withSubmit = (handling.items as any[])
       .filter((it) => it.tuningRecordId === recordId && it.submittedAt)
-      .sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)));
+      .toSorted((a, b) =>
+        String(b.submittedAt).localeCompare(String(a.submittedAt)),
+      );
     const iso = withSubmit[0]?.submittedAt ?? record.createdAt;
     // 后端 naive UTC（Z 后缀）→ 本地展示
     pointTime.value = dayjs(iso);

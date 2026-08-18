@@ -17,6 +17,7 @@ import type { TuningApi } from '#/api/tuning';
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+
 import { Empty, Spin, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
@@ -68,9 +69,14 @@ function buildTrendOption(
   title: string,
   yRange: { max: number; min: number },
 ) {
-  const xData = wf.timestamps.map(fmtTs);
+  const xData = wf.timestamps.map((ts) => fmtTs(ts));
   return {
-    title: { text: title, left: 8, top: 4, textStyle: { fontSize: 12, color: chartTextColor.value } },
+    title: {
+      text: title,
+      left: 8,
+      top: 4,
+      textStyle: { fontSize: 12, color: chartTextColor.value },
+    },
     grid: { bottom: 32, left: 56, right: 56, top: 32 },
     legend: { textStyle: { color: chartTextColor.value }, top: 4, right: 8 },
     tooltip: getTooltipPreset(),
@@ -96,9 +102,31 @@ function buildTrendOption(
       },
     ],
     series: [
-      { name: 'PV', type: 'line' as const, showSymbol: false, data: wf.pv, lineStyle: { color: PV_COLOR }, itemStyle: { color: PV_COLOR } },
-      { name: 'SP', type: 'line' as const, showSymbol: false, data: wf.sp, lineStyle: { color: SP_COLOR, type: 'dashed' as const }, itemStyle: { color: SP_COLOR } },
-      { name: 'OP', type: 'line' as const, showSymbol: false, yAxisIndex: 1, data: wf.op, lineStyle: { color: OP_COLOR, width: 1 }, itemStyle: { color: OP_COLOR } },
+      {
+        name: 'PV',
+        type: 'line' as const,
+        showSymbol: false,
+        data: wf.pv,
+        lineStyle: { color: PV_COLOR },
+        itemStyle: { color: PV_COLOR },
+      },
+      {
+        name: 'SP',
+        type: 'line' as const,
+        showSymbol: false,
+        data: wf.sp,
+        lineStyle: { color: SP_COLOR, type: 'dashed' as const },
+        itemStyle: { color: SP_COLOR },
+      },
+      {
+        name: 'OP',
+        type: 'line' as const,
+        showSymbol: false,
+        yAxisIndex: 1,
+        data: wf.op,
+        lineStyle: { color: OP_COLOR, width: 1 },
+        itemStyle: { color: OP_COLOR },
+      },
     ],
   };
 }
@@ -113,9 +141,15 @@ function computeYRange(): { max: number; min: number } {
   if (vals.length === 0) return { min: 0, max: 1 };
   let min = Math.min(...vals);
   let max = Math.max(...vals);
-  if (max - min < 1e-6) { max += 1; min -= 1; }
+  if (max - min < 1e-6) {
+    max += 1;
+    min -= 1;
+  }
   const pad = (max - min) * 0.08;
-  return { min: Math.floor((min - pad) * 100) / 100, max: Math.ceil((max + pad) * 100) / 100 };
+  return {
+    min: Math.floor((min - pad) * 100) / 100,
+    max: Math.ceil((max + pad) * 100) / 100,
+  };
 }
 
 function renderAll() {
@@ -139,11 +173,33 @@ function renderAll() {
       grid: { bottom: 40, left: 56, right: 24, top: 32 },
       legend: { textStyle: { color: chartTextColor.value }, top: 4 },
       tooltip: { trigger: 'item' },
-      xAxis: { type: 'value' as const, name: 'OP', axisLabel: { color: chartTextColor.value }, splitLine: { lineStyle: { color: chartSplitLineColor.value } } },
-      yAxis: { type: 'value' as const, name: 'PV', axisLabel: { color: chartTextColor.value }, splitLine: { lineStyle: { color: chartSplitLineColor.value } } },
+      xAxis: {
+        type: 'value' as const,
+        name: 'OP',
+        axisLabel: { color: chartTextColor.value },
+        splitLine: { lineStyle: { color: chartSplitLineColor.value } },
+      },
+      yAxis: {
+        type: 'value' as const,
+        name: 'PV',
+        axisLabel: { color: chartTextColor.value },
+        splitLine: { lineStyle: { color: chartSplitLineColor.value } },
+      },
       series: [
-        { name: '前窗', type: 'scatter' as const, symbolSize: 5, data: toXY(d.before), itemStyle: { color: BEFORE_COLOR, opacity: 0.55 } },
-        { name: '后窗', type: 'scatter' as const, symbolSize: 5, data: toXY(d.after), itemStyle: { color: AFTER_COLOR, opacity: 0.75 } },
+        {
+          name: '前窗',
+          type: 'scatter' as const,
+          symbolSize: 5,
+          data: toXY(d.before),
+          itemStyle: { color: BEFORE_COLOR, opacity: 0.55 },
+        },
+        {
+          name: '后窗',
+          type: 'scatter' as const,
+          symbolSize: 5,
+          data: toXY(d.after),
+          itemStyle: { color: AFTER_COLOR, opacity: 0.75 },
+        },
       ],
     });
   });
@@ -168,10 +224,16 @@ async function load() {
   }
 }
 
-watch(() => [props.loopId, props.pointTime, props.windowHours], load, { immediate: true });
+watch(() => [props.loopId, props.pointTime, props.windowHours], load, {
+  immediate: true,
+});
 
 // ===== KPI 摘要条 =====
-const KPI_KEYS: { key: keyof TuningApi.KpiSummary; label: string; percent?: boolean }[] = [
+const KPI_KEYS: {
+  key: keyof TuningApi.KpiSummary;
+  label: string;
+  percent?: boolean;
+}[] = [
   { key: 'score', label: '评分' },
   { key: 'goodValueRate', label: '完好率', percent: true },
   { key: 'effectiveAutoRate', label: '有效自控率', percent: true },
@@ -195,18 +257,24 @@ const kpiRows = computed<KpiDeltaRow[]>(() => {
     const bv = b?.[key];
     const av = a?.[key];
     const fmt = (v: any) =>
-      typeof v === 'number' ? (percent ? `${(v * 100).toFixed(1)}%` : v.toFixed(1)) : '—';
+      typeof v === 'number'
+        ? (percent
+          ? `${(v * 100).toFixed(1)}%`
+          : v.toFixed(1))
+        : '—';
     const delta =
       typeof bv === 'number' && typeof av === 'number'
-        ? percent
+        ? (percent
           ? (av - bv) * 100
-          : av - bv
+          : av - bv)
         : null;
     return { key, label, before: fmt(bv), after: fmt(av), delta };
   });
 });
 
-const hasKpi = computed(() => !!(data.value?.kpiBefore || data.value?.kpiAfter));
+const hasKpi = computed(
+  () => !!(data.value?.kpiBefore || data.value?.kpiAfter),
+);
 </script>
 
 <template>
@@ -228,7 +296,13 @@ const hasKpi = computed(() => !!(data.value?.kpiBefore || data.value?.kpiAfter))
             <span
               v-if="row.delta != null"
               class="kpi-delta"
-              :class="row.delta > 0 ? 'kpi-delta--up' : row.delta < 0 ? 'kpi-delta--down' : ''"
+              :class="
+                row.delta > 0
+                  ? 'kpi-delta--up'
+                  : row.delta < 0
+                    ? 'kpi-delta--down'
+                    : ''
+              "
             >
               {{ row.delta > 0 ? '▲' : row.delta < 0 ? '▼' : '' }}
               {{ Math.abs(row.delta).toFixed(1) }}
@@ -236,11 +310,13 @@ const hasKpi = computed(() => !!(data.value?.kpiBefore || data.value?.kpiAfter))
           </div>
         </div>
       </div>
-      <div v-else class="mb-2 text-xs text-neutral-400">窗口内无 KPI 快照（数据不足）</div>
+      <div v-else class="mb-2 text-xs text-neutral-400">
+        窗口内无 KPI 快照（数据不足）
+      </div>
 
       <!-- 前后窗趋势对比（上下分区） -->
-      <EchartsUI ref="beforeChartRef" style="height: 240px; width: 100%" />
-      <EchartsUI ref="afterChartRef" style="height: 240px; width: 100%" />
+      <EchartsUI ref="beforeChartRef" style="width: 100%; height: 240px" />
+      <EchartsUI ref="afterChartRef" style="width: 100%; height: 240px" />
 
       <!-- X-Y 轨迹对比 -->
       <div class="mt-2 flex items-center gap-2">
@@ -248,9 +324,13 @@ const hasKpi = computed(() => !!(data.value?.kpiBefore || data.value?.kpiAfter))
         <Tag :color="BEFORE_COLOR" class="mr-0">前窗</Tag>
         <Tag :color="AFTER_COLOR">后窗</Tag>
       </div>
-      <EchartsUI ref="xyChartRef" style="height: 260px; width: 100%" />
+      <EchartsUI ref="xyChartRef" style="width: 100%; height: 260px" />
     </template>
-    <Empty v-else-if="!loading" description="请选择回路与对比时点" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+    <Empty
+      v-else-if="!loading"
+      description="请选择回路与对比时点"
+      :image="Empty.PRESENTED_IMAGE_SIMPLE"
+    />
   </Spin>
 </template>
 

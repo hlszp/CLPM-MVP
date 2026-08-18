@@ -7,12 +7,21 @@
  * 最多勾选 2 组进入仿真（超出禁选并提示）。
  */
 import type { TuningWorkbenchContext } from '../composables/use-tuning-workbench';
+import type { MatrixRow } from '../composables/use-tuning-workbench';
 
 import { computed } from 'vue';
 
-import { Alert, Button, Card, Checkbox, InputNumber, Spin, Table, Tag, Tooltip } from 'ant-design-vue';
-
-import type { MatrixRow } from '../composables/use-tuning-workbench';
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  InputNumber,
+  Spin,
+  Table,
+  Tag,
+  Tooltip,
+} from 'ant-design-vue';
 
 const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 const { ctx } = props;
@@ -62,7 +71,9 @@ const columns = [
   <Card id="tuning-anchor-matrix" size="small" class="tuning-section">
     <template #title>
       <span class="section-title">② 整定矩阵（全算法对比）</span>
-      <span class="ml-2 text-xs font-normal text-neutral-400">勾选 1~2 组进入仿真</span>
+      <span class="ml-2 text-xs font-normal text-neutral-400"
+        >勾选 1~2 组进入仿真</span
+      >
     </template>
 
     <Alert
@@ -81,36 +92,61 @@ const columns = [
     />
 
     <Spin :spinning="ctx.matrixLoading.value">
-      <Table :columns="columns" :data-source="rows" :pagination="false" size="small" row-key="algorithm">
+      <Table
+        :columns="columns"
+        :data-source="rows"
+        :pagination="false"
+        size="small"
+        row-key="algorithm"
+      >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'select'">
             <Checkbox
               :checked="record.checked"
-              :disabled="!record.ok || !record.pid || (!record.checked && checkedCount >= 2)"
+              :disabled="
+                !record.ok ||
+                !record.pid ||
+                (!record.checked && checkedCount >= 2)
+              "
               @change="handleCheck(record)"
             />
           </template>
           <template v-else-if="column.key === 'algorithm'">
-            <Tag :color="record.ok ? 'processing' : 'default'">{{ record.algorithm }}</Tag>
+            <Tag :color="record.ok ? 'processing' : 'default'">{{
+              record.algorithm
+            }}</Tag>
           </template>
           <template v-else-if="column.key === 'kp'">
-            <span class="clpm-num">{{ record.ok ? fmtPid(record.pid?.kp) : '—' }}</span>
+            <span class="clpm-num">{{
+              record.ok ? fmtPid(record.pid?.kp) : '—'
+            }}</span>
           </template>
           <template v-else-if="column.key === 'ti'">
-            <span class="clpm-num">{{ record.ok ? fmtPid(record.pid?.ti) : '—' }}</span>
+            <span class="clpm-num">{{
+              record.ok ? fmtPid(record.pid?.ti) : '—'
+            }}</span>
           </template>
           <template v-else-if="column.key === 'td'">
-            <span class="clpm-num">{{ record.ok ? fmtPid(record.pid?.td) : '—' }}</span>
+            <span class="clpm-num">{{
+              record.ok ? fmtPid(record.pid?.td) : '—'
+            }}</span>
           </template>
           <template v-else-if="column.key === 'note'">
             <Tooltip v-if="!record.ok" :title="record.error">
               <span class="text-red-500">计算失败</span>
             </Tooltip>
-            <span v-else class="text-xs text-neutral-500">{{ ALGO_NOTES[record.algorithm] }}</span>
+            <span v-else class="text-xs text-neutral-500">{{
+              ALGO_NOTES[record.algorithm]
+            }}</span>
           </template>
           <template v-else-if="column.key === 'tune'">
-            <div v-if="ALGO_PARAM_LABEL[record.algorithm]" class="flex items-center gap-1">
-              <span class="text-xs text-neutral-400">{{ ALGO_PARAM_LABEL[record.algorithm] }}</span>
+            <div
+              v-if="ALGO_PARAM_LABEL[record.algorithm]"
+              class="flex items-center gap-1"
+            >
+              <span class="text-xs text-neutral-400">{{
+                ALGO_PARAM_LABEL[record.algorithm]
+              }}</span>
               <InputNumber
                 v-model:value="record.paramValue"
                 size="small"
@@ -134,10 +170,18 @@ const columns = [
 
       <!-- 当前 PID 对照行（固定灰底） -->
       <div class="current-pid-row">
-        <span class="text-xs font-medium text-neutral-500">当前 DCS PID 对照</span>
-        <span class="clpm-num">P {{ currentPid ? fmtPid(currentPid.kp) : '—' }}</span>
-        <span class="clpm-num">I {{ currentPid ? fmtPid(currentPid.ti) : '—' }}</span>
-        <span class="clpm-num">D {{ currentPid ? fmtPid(currentPid.td) : '—' }}</span>
+        <span class="text-xs font-medium text-neutral-500"
+          >当前 DCS PID 对照</span
+        >
+        <span class="clpm-num"
+          >P {{ currentPid ? fmtPid(currentPid.kp) : '—' }}</span
+        >
+        <span class="clpm-num"
+          >I {{ currentPid ? fmtPid(currentPid.ti) : '—' }}</span
+        >
+        <span class="clpm-num"
+          >D {{ currentPid ? fmtPid(currentPid.td) : '—' }}</span
+        >
       </div>
     </Spin>
   </Card>

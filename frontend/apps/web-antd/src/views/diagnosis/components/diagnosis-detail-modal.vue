@@ -83,7 +83,10 @@ function gotoHandling(actionId: string): void {
 /** 「去整定」：TUNING 类建议跳整定工作台并预填回路（09 设计方案 §6.5 联动） */
 function gotoTuning(loopId: string): void {
   open.value = false;
-  router.push({ path: '/tuning/workbench', query: { from: 'diagnosis', loopId } });
+  router.push({
+    path: '/tuning/workbench',
+    query: { from: 'diagnosis', loopId },
+  });
 }
 
 const userStore = useUserStore();

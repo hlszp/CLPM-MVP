@@ -54,7 +54,7 @@ export namespace TuningApi {
     algorithmVersion: string;
     dataPoints: number;
     recordId?: null | string;
-    fittedCurve?: { [key: string]: any[] } | null;
+    fittedCurve?: null | { [key: string]: any[] };
   }
 
   /** 历史数据辨识异步响应 */
@@ -70,14 +70,14 @@ export namespace TuningApi {
     progress: number;
     stage?: null | string;
     message?: null | string;
-    result?: {
+    result?: null | {
+      [key: string]: any;
       confidenceLevel?: ConfidenceLevel;
       fittingScore?: number;
       modelType?: ModelType;
       params?: ModelParams;
       reason?: string;
-      [key: string]: any;
-    } | null;
+    };
     error?: null | string;
   }
 
@@ -95,14 +95,14 @@ export namespace TuningApi {
     algorithm: string;
     recommendedPid: PidParams;
     currentPid?: null | PidParams;
-    algorithmParams?: Record<string, any> | null;
+    algorithmParams?: null | Record<string, any>;
     algorithmVersion: string;
     notes?: null | string;
-    risk?: {
-      riskLevel: string;
-      factors: string[];
+    risk?: null | {
       description?: null | string;
-    } | null;
+      factors: string[];
+      riskLevel: string;
+    };
     rollbackPid?: null | PidParams;
   }
 
@@ -146,9 +146,9 @@ export namespace TuningApi {
     loopId: string;
     tagName?: null | string;
     modelType: ModelType;
-    modelParams?: Record<string, any> | null;
+    modelParams?: null | Record<string, any>;
     algorithm: string;
-    recommendedPid?: PidParams | null;
+    recommendedPid?: null | PidParams;
     fittingScore?: null | number;
     status: TuningTaskStatus;
     createdBy?: null | string;
@@ -164,8 +164,8 @@ export namespace TuningApi {
   }
 
   export interface TuningTaskDetail extends TuningTaskItem {
-    simulationResult?: Record<string, any> | null;
-    currentPid?: PidParams | null;
+    simulationResult?: null | Record<string, any>;
+    currentPid?: null | PidParams;
   }
 
   export interface TuningTaskListData {
@@ -234,11 +234,11 @@ export function getTuningMethodsApi() {
 
 /** 阶跃实验辨识（同步） */
 export function identifyStepApi(data: {
-  loopId: string;
-  startTime: string;
   endTime: string;
-  modelType?: TuningApi.ModelType;
+  loopId: string;
   method?: string;
+  modelType?: TuningApi.ModelType;
+  startTime: string;
 }) {
   return requestClient.post<TuningApi.ModelIdentifyResult>(
     '/tuning/identify',
@@ -248,10 +248,10 @@ export function identifyStepApi(data: {
 
 /** 历史数据辨识（异步，返回 taskId 轮询） */
 export function identifyHistoryApi(data: {
+  candidateModelTypes?: TuningApi.ModelType[];
+  endTime: string;
   loopId: string;
   startTime: string;
-  endTime: string;
-  candidateModelTypes?: TuningApi.ModelType[];
   thetaEstimate?: null | number;
 }) {
   return requestClient.post<TuningApi.IdentifyHistoryAsyncResponse>(
@@ -276,29 +276,29 @@ export function cancelTuningTaskApi(taskId: string) {
 
 /** 单算法整定（矩阵行内参数微调重算） */
 export function tuneSingleApi(data: {
-  modelType: TuningApi.ModelType;
-  modelParams: TuningApi.ModelParams;
   algorithm: TuningApi.TuningAlgorithm;
-  algorithmParams?: Record<string, any> | null;
+  algorithmParams?: null | Record<string, any>;
   currentPid?: null | TuningApi.PidParams;
   loopId?: null | string;
-  sourceRecordId?: null | string;
+  modelParams: TuningApi.ModelParams;
   modelSource?: string;
+  modelType: TuningApi.ModelType;
   riskConfirmed?: boolean;
+  sourceRecordId?: null | string;
 }) {
   return requestClient.post<TuningApi.TuneResult>('/tuning/tune', data);
 }
 
 /** 全算法矩阵（5 算法一次全算，09 §4.2） */
 export function tuneMatrixApi(data: {
-  modelType: TuningApi.ModelType;
-  modelParams: TuningApi.ModelParams;
-  algorithmParams?: Record<string, any> | null;
+  algorithmParams?: null | Record<string, any>;
   currentPid?: null | TuningApi.PidParams;
   loopId?: null | string;
-  sourceRecordId?: null | string;
+  modelParams: TuningApi.ModelParams;
   modelSource?: string;
+  modelType: TuningApi.ModelType;
   riskConfirmed?: boolean;
+  sourceRecordId?: null | string;
 }) {
   return requestClient.post<{ rows: TuningApi.TuneMatrixRow[] }>(
     '/tuning/tune/matrix',
@@ -308,17 +308,17 @@ export function tuneMatrixApi(data: {
 
 /** 多 PID 对比仿真（pidCandidates ≥2 组） */
 export function comparePidsApi(data: {
-  modelType: TuningApi.ModelType;
-  modelParams: TuningApi.ModelParams;
-  pidCandidates: TuningApi.PidParamsWithLabel[];
   currentPid?: null | TuningApi.PidParams;
+  loopId?: null | string;
+  modelParams: TuningApi.ModelParams;
+  modelSource?: string;
+  modelType: TuningApi.ModelType;
+  pidCandidates: TuningApi.PidParamsWithLabel[];
+  riskConfirmed?: boolean;
+  setpointStep?: number;
   simDuration?: number;
   simStep?: number;
-  setpointStep?: number;
-  loopId?: null | string;
   sourceRecordId?: null | string;
-  modelSource?: string;
-  riskConfirmed?: boolean;
 }) {
   return requestClient.post<TuningApi.SimulationResult>(
     '/tuning/compare',
@@ -328,27 +328,27 @@ export function comparePidsApi(data: {
 
 /** 保存整定方案（09 §4.4：显式保存才落记录） */
 export function saveTuningTaskApi(data: {
-  loopId: string;
-  modelType: TuningApi.ModelType;
-  modelParams: TuningApi.ModelParams;
+  [key: string]: any;
   algorithm: string;
-  recommendedPid: TuningApi.PidParams;
   currentPid?: null | TuningApi.PidParams;
   fittingScore?: null | number;
-  simulationResult?: Record<string, any> | null;
+  loopId: string;
+  modelParams: TuningApi.ModelParams;
+  modelType: TuningApi.ModelType;
+  recommendedPid: TuningApi.PidParams;
+  simulationResult?: null | Record<string, any>;
   status?: TuningApi.TuningTaskStatus;
-  [key: string]: any;
 }) {
   return requestClient.post<{ id: string }>('/tuning/tasks', data);
 }
 
 /** 整定任务列表（分页 + 筛选） */
 export function getTuningTasksApi(params: {
-  loopId?: string;
   algorithm?: string;
-  status?: string;
+  loopId?: string;
   page?: number;
   pageSize?: number;
+  status?: string;
 }) {
   return requestClient.get<TuningApi.TuningTaskListData>('/tuning/tasks', {
     params,

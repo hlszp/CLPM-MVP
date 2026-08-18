@@ -62,7 +62,9 @@ function goHandling() {
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-xs text-neutral-500">最终方案</span>
         <RadioGroup v-model:value="ctx.finalLabel.value" size="small">
-          <Radio v-for="label in options" :key="label" :value="label">{{ label }}</Radio>
+          <Radio v-for="label in options" :key="label" :value="label">{{
+            label
+          }}</Radio>
         </RadioGroup>
         <Button
           type="primary"
@@ -83,7 +85,9 @@ function goHandling() {
         message="方案已保存。请线下实施后在处置模块记录闭环（平台不直接下写 DCS 参数）"
       >
         <template #action>
-          <Button size="small" type="link" @click="goHandling">创建处置项 →</Button>
+          <Button size="small" type="link" @click="goHandling"
+            >创建处置项 →</Button
+          >
         </template>
       </Alert>
     </template>

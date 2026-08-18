@@ -27,9 +27,10 @@ import utc from 'dayjs/plugin/utc';
 
 import { ClpmConfidenceBadge } from '#/components/clpm';
 
+const props = defineProps<{ ctx: TuningWorkbenchContext }>();
+
 dayjs.extend(utc);
 
-const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 const { ctx } = props;
 
 const rangeValue = ref<[dayjs.Dayjs, dayjs.Dayjs] | undefined>([
@@ -45,7 +46,9 @@ const MODEL_TYPE_LABEL: Record<string, string> = {
 
 const outcome = computed(() => ctx.outcome.value);
 const isLowConfidence = computed(
-  () => outcome.value?.confidenceLevel === 'D' || outcome.value?.confidenceLevel === 'E',
+  () =>
+    outcome.value?.confidenceLevel === 'D' ||
+    outcome.value?.confidenceLevel === 'E',
 );
 
 /** 徽标等级（ClpmConfidenceBadge 不含 INCONCLUSIVE，映射为 null 不显示） */
@@ -107,8 +110,14 @@ const paramItems = computed(() => {
     </div>
 
     <!-- 异步进度（历史路径） -->
-    <div v-if="ctx.identifying.value && ctx.identifyPath.value === 'HISTORY'" class="mt-3">
-      <Progress :percent="Math.round(ctx.identifyProgress.value)" size="small" />
+    <div
+      v-if="ctx.identifying.value && ctx.identifyPath.value === 'HISTORY'"
+      class="mt-3"
+    >
+      <Progress
+        :percent="Math.round(ctx.identifyProgress.value)"
+        size="small"
+      />
       <div class="mt-1 text-xs text-neutral-400">
         {{ ctx.identifyStage.value || '任务排队中…' }}
       </div>
@@ -125,8 +134,12 @@ const paramItems = computed(() => {
     <!-- 辨识结果卡 -->
     <template v-if="outcome">
       <div class="mt-3 flex items-center gap-3">
-        <Tag color="blue">{{ MODEL_TYPE_LABEL[outcome.modelType] ?? outcome.modelType }}</Tag>
-        <span class="text-sm">拟合度 <b>{{ outcome.fittingScore.toFixed(1) }}%</b></span>
+        <Tag color="blue">{{
+          MODEL_TYPE_LABEL[outcome.modelType] ?? outcome.modelType
+        }}</Tag>
+        <span class="text-sm"
+          >拟合度 <b>{{ outcome.fittingScore.toFixed(1) }}%</b></span
+        >
         <ClpmConfidenceBadge v-if="badgeLevel" :level="badgeLevel" />
         <span class="text-xs text-neutral-400">
           {{ outcome.dataSource === 'HISTORY' ? '历史数据' : '阶跃实验' }}
@@ -140,7 +153,11 @@ const paramItems = computed(() => {
         show-icon
       />
       <Descriptions class="mt-2" size="small" :column="4" bordered>
-        <DescriptionsItem v-for="item in paramItems" :key="item.label" :label="item.label">
+        <DescriptionsItem
+          v-for="item in paramItems"
+          :key="item.label"
+          :label="item.label"
+        >
           {{ item.value }}
         </DescriptionsItem>
       </Descriptions>
