@@ -362,7 +362,13 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
                 "nli",
                 round(float(res["nli"]), 4),
                 threshold.get("choudhury_nli_threshold"),
-                "非线性指数",
+                # NLI 为 NGI 辅证门；补充超阈措辞以便证据表"是否命中"列可解析
+                "非线性指数"
+                + (
+                    "超阈"
+                    if float(res["nli"]) >= float(threshold.get("choudhury_nli_threshold", 0))
+                    else "未超阈"
+                ),
             ),
         ],
     )

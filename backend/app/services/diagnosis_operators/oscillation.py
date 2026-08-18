@@ -260,7 +260,9 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
         },
         evidence=[
             EvidenceItem(
-                "osc_index",
+                # 特征名与 outputs_schema 键保持一致（"index"=振荡指数），
+                # 否则前端按注册表中文名映射不到，证据表显示英文原名
+                "index",
                 round(float(res["index"]), 4),
                 threshold.get("fft_osc_index_threshold"),
                 "主峰能量占比" + ("达标" if res["detected"] else "未达标"),

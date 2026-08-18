@@ -9,10 +9,11 @@
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
+import type { DiagnosisApi } from '#/api/diagnosis';
+
 import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
-import dayjs from 'dayjs';
 
 import {
   Alert,
@@ -24,8 +25,7 @@ import {
   Tag,
   Tooltip,
 } from 'ant-design-vue';
-
-import type { DiagnosisApi } from '#/api/diagnosis';
+import dayjs from 'dayjs';
 
 import { getDiagnosisOperatorsApi } from '#/api/diagnosis';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -36,6 +36,15 @@ import {
   SEVERITY_TEXT,
 } from '../constants';
 
+const props = withDefaults(
+  defineProps<{
+    detail: DiagnosisApi.RunDetail;
+    /** 区段筛选：all=全部（默认，工作台/记录抽屉共用）；
+     * conclusion=诊断结论；evidence=证据链；advice=处置建议（诊断详情弹窗三 Tab） */
+    section?: 'advice' | 'all' | 'conclusion' | 'evidence';
+  }>(),
+  { section: 'all' },
+);
 /** 算子注册表缓存：name → { displayName, outputsSchema(特征名→中文含义) }。
  *  模块级共享（面板多处实例只拉一次）；加载失败回退英文原名。 */
 const operatorLabelCache = new Map<
@@ -67,22 +76,18 @@ function ensureOperatorRegistry(): void {
 /** 判定文本 → 是否命中（负向词优先；无法解析返回 null 显示 —） */
 function parseHit(judgment: string): boolean | null {
   if (!judgment) return null;
-  if (/未达标|未超阈|未超过|未命中|无命中|正常|低于/.test(judgment)) {
+  if (/未达标|未超阈|未超过|未达阈|未命中|无命中|正常|低于/.test(judgment)) {
     return false;
   }
-  if (/达标|超阈|超过|命中|异常/.test(judgment)) return true;
+  if (/达标|超阈|达阈|超过|命中|异常/.test(judgment)) return true;
   return null;
 }
 
-const props = withDefaults(
-  defineProps<{
-    detail: DiagnosisApi.RunDetail;
-    /** 区段筛选：all=全部（默认，工作台/记录抽屉共用）；
-     * conclusion=诊断结论；evidence=证据链；advice=处置建议（诊断详情弹窗三 Tab） */
-    section?: 'advice' | 'all' | 'conclusion' | 'evidence';
-  }>(),
-  { section: 'all' },
-);
+/** 历史 evidence 特征名兜底（曾与 outputs_schema 键不一致，已纠正；
+ *  旧诊断记录 JSONB 中仍存旧键，映射回中文） */
+const FEATURE_LABEL_FALLBACK: Record<string, string> = {
+  osc_index: '振荡指数',
+};
 
 const showConclusion = computed(
   () => props.section === 'all' || props.section === 'conclusion',
@@ -99,7 +104,7 @@ const { isDark } = useClpmTheme();
 const severityText = SEVERITY_TEXT;
 const severityColor = SEVERITY_COLOR;
 
-function metaOf(category?: null | DiagnosisApi.Category) {
+function metaOf(category?: DiagnosisApi.Category | null) {
   if (!category) return CATEGORY_META.DATA_INSUFFICIENT;
   return CATEGORY_META[category] ?? CATEGORY_META.DATA_INSUFFICIENT;
 }
@@ -126,7 +131,7 @@ const primaryConfBasis = computed(() => {
 const activeKeys = ref<string[]>(['charts']);
 
 /** 症状标签行：fusionResults 中 detected 的症状 */
-const symptomRows = ref<Array<{ label: string; confidence: number }>>([]);
+const symptomRows = ref<Array<{ confidence: number; label: string; }>>([]);
 const SYMPTOM_LABELS: Record<string, string> = {
   OSCILLATION: '振荡',
   VALVE_STICTION: '阀门粘滞',
@@ -180,9 +185,9 @@ const badSegments = computed(() => {
       duration:
         durS < 60
           ? `${durS.toFixed(0)} 秒`
-          : durS < 3600
+          : (durS < 3600
             ? `${(durS / 60).toFixed(1)} 分钟`
-            : `${(durS / 3600).toFixed(1)} 小时`,
+            : `${(durS / 3600).toFixed(1)} 小时`),
     };
   });
 });
@@ -225,7 +230,10 @@ watch(
             operator: name,
             operatorLabel: labels?.displayName ?? name,
             feature: ev.feature,
-            featureLabel: labels?.outputsSchema[ev.feature] ?? ev.feature,
+            featureLabel:
+            labels?.outputsSchema[ev.feature] ??
+            FEATURE_LABEL_FALLBACK[ev.feature] ??
+            ev.feature,
             value: String(ev.value ?? '—'),
             threshold: ev.threshold == null ? '—' : String(ev.threshold),
             judgment: ev.judgment || '—',
@@ -270,7 +278,7 @@ function buildTrendOption() {
       { data: toPoints(chart?.op), name: 'OP', showSymbol: false, type: 'line' },
     ],
     tooltip: { trigger: 'axis' },
-    xAxis: { axisLabel: { formatter: (v: number) => `${Math.round(v / 60000)}m` }, type: 'time' },
+    xAxis: { axisLabel: { formatter: (v: number) => `${Math.round(v / 60_000)}m` }, type: 'time' },
     yAxis: { scale: true, type: 'value' },
   };
 }
@@ -335,7 +343,7 @@ watch(isDark, () => {
         <span
           class="inline-block h-8 w-1.5 rounded-full"
           :style="{ background: metaOf(detail.primaryCategory).color }"
-        />
+        ></span>
         <div class="flex-1">
           <div class="text-lg font-semibold" :style="{ color: metaOf(detail.primaryCategory).color }">
             {{ detail.primaryCategoryLabel ?? metaOf(detail.primaryCategory).label }}
@@ -407,7 +415,7 @@ watch(isDark, () => {
     </div>
 
     <!-- ③ 症状标签行 -->
-    <div v-if="showConclusion && symptomRows.length" class="flex flex-wrap items-center gap-2">
+    <div v-if="showConclusion && symptomRows.length > 0" class="flex flex-wrap items-center gap-2">
       <span class="text-xs text-neutral-500">症状证据</span>
       <Tag v-for="s in symptomRows" :key="s.label" color="default">
         {{ s.label }} · {{ confPercent(s.confidence) }}
@@ -423,7 +431,7 @@ watch(isDark, () => {
       <span>点数 {{ detail.dataGate.pointCount.toLocaleString() }}/{{ detail.dataGate.expectedPoints.toLocaleString() }}</span>
       <span>有效 {{ (detail.dataGate.validRate * 100).toFixed(1) }}%</span>
       <span>缺口 {{ (detail.dataGate.gapRatio * 100).toFixed(1) }}%</span>
-      <template v-if="badSegments.length">
+      <template v-if="badSegments.length > 0">
         <span class="font-medium text-red-500">断流时段</span>
         <Tooltip
           v-for="(seg, i) in badSegments"
