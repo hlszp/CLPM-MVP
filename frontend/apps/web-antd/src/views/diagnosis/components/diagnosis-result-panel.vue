@@ -85,7 +85,8 @@ const primaryConfBasis = computed(() => {
   return lines.filter((l) => !l.endsWith('】'));
 });
 
-const activeKeys = ref<string[]>(['features', 'charts']);
+/** 证据折叠区：波形快照默认展开（上部），特征值默认折叠（下部） */
+const activeKeys = ref<string[]>(['charts']);
 
 /** 症状标签行：fusionResults 中 detected 的症状 */
 const symptomRows = ref<Array<{ label: string; confidence: number }>>([]);
@@ -248,11 +249,17 @@ function renderCharts() {
   renderScatter(buildScatterOption() as any);
 }
 
-watch(activeKeys, (keys) => {
-  if (keys.includes('charts')) {
-    nextTick(renderCharts);
-  }
-});
+watch(
+  activeKeys,
+  (keys) => {
+    if (keys.includes('charts')) {
+      nextTick(renderCharts);
+    }
+  },
+  // immediate：默认展开 charts 时（如诊断详情证据 Tab 首次挂载）也触发渲染，
+  // 否则面板开着但图表空白（需手动折叠再展开才绘制）
+  { immediate: true },
+);
 watch(isDark, () => {
   if (activeKeys.value.includes('charts')) {
     nextTick(renderCharts);
@@ -409,8 +416,20 @@ watch(isDark, () => {
       </ol>
     </div>
 
-    <!-- ⑤ 证据链折叠区 -->
+    <!-- ⑤ 证据链折叠区：波形快照在上（默认展开），特征值在下（默认折叠） -->
     <Collapse v-if="showEvidence" v-model:active-key="activeKeys" class="diag-evidence">
+      <CollapsePanel v-if="detail.evidenceCharts" header="波形快照" key="charts">
+        <div class="space-y-3">
+          <div>
+            <div class="mb-1 text-xs text-neutral-500">PV/SP/OP 趋势（诊断时间窗）</div>
+            <EchartsUI ref="trendChartRef" height="260px" />
+          </div>
+          <div>
+            <div class="mb-1 text-xs text-neutral-500">PV-OP 散点（回环/粘滞形态）</div>
+            <EchartsUI ref="scatterChartRef" height="240px" />
+          </div>
+        </div>
+      </CollapsePanel>
       <CollapsePanel v-if="featureRows?.length" header="特征值" key="features">
         <Table
           :columns="[
@@ -425,18 +444,6 @@ watch(isDark, () => {
           row-key="key"
           size="small"
         />
-      </CollapsePanel>
-      <CollapsePanel v-if="detail.evidenceCharts" header="波形快照" key="charts">
-        <div class="space-y-3">
-          <div>
-            <div class="mb-1 text-xs text-neutral-500">PV/SP/OP 趋势（诊断时间窗）</div>
-            <EchartsUI ref="trendChartRef" height="260px" />
-          </div>
-          <div>
-            <div class="mb-1 text-xs text-neutral-500">PV-OP 散点（回环/粘滞形态）</div>
-            <EchartsUI ref="scatterChartRef" height="240px" />
-          </div>
-        </div>
       </CollapsePanel>
     </Collapse>
   </div>
