@@ -18,8 +18,10 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
@@ -27,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
+from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -42,6 +45,7 @@ from app.schemas.tuning import (
     SimulateRequest,
     SimulationResult,
     TaskProgress,
+    TuneMatrixRequest,
     TuneRequest,
     TuneResult,
     TuningHistoryStats,
@@ -72,6 +76,8 @@ from app.services.tuning_knowledge import (
     list_knowledge_entries,
     recommend_similar,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tuning", tags=["tuning"])
 
@@ -255,6 +261,48 @@ async def tune_pid_endpoint(
     db.add(log)
     await db.commit()
     return success(data=data)
+
+
+@router.post("/tune/matrix", response_model=ApiResponse[dict])
+async def tune_matrix_endpoint(
+    body: TuneMatrixRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+) -> dict:
+    """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    IMC/LAMBDA/ZN/COHEN_COON/SIMC 5 算法一次全算；单算法失败不阻断，
+    该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计日志——
+    审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
+    """
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    rows: list[dict[str, Any]] = []
+    for algo in ("IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"):
+        try:
+            result = await tune_pid(
+                model_type=source_context.model_type,
+                model_params=source_context.model_params,
+                algorithm=algo,
+                algorithm_params=body.algorithmParams,
+                current_pid=body.currentPid.model_dump() if body.currentPid else None,
+                loop_id=source_context.loop_id,
+                source_context=source_context,
+            )
+            rows.append({"algorithm": algo, "ok": True, "result": result})
+        except BizError as exc:
+            rows.append({"algorithm": algo, "ok": False, "error": exc.message})
+        except Exception as exc:  # noqa: BLE001  # 单算法异常不阻断矩阵其余行
+            logger.warning("整定矩阵 %s 算法计算失败: %s", algo, exc)
+            rows.append({"algorithm": algo, "ok": False, "error": str(exc)})
+    return success(data={"rows": rows})
 
 
 # ---------------------------------------------------------------------------
