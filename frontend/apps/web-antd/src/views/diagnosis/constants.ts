@@ -63,3 +63,48 @@ export const TRIGGER_TYPE_COLOR: Record<string, string> = {
   MANUAL: '#6c757d',
   SCHEDULED: '#0891b2',
 };
+
+/** 回路重要性等级（loop_ledger.importance_level） */
+export const IMPORTANCE_LEVEL_TEXT: Record<number, string> = {
+  1: '1级',
+  2: '2级',
+  3: '3级',
+};
+
+/** 等级工业语义色：1级关键=红、2级重要=橙、3级一般=中性 */
+export const IMPORTANCE_LEVEL_COLOR: Record<number, string> = {
+  1: '#dc2626',
+  2: '#ea580c',
+  3: '#6c757d',
+};
+
+/** 复核状态 */
+export const REVIEW_STATUS_TEXT: Record<string, string> = {
+  PENDING: '待复核',
+  REVIEWED: '已复核',
+};
+
+/** 复核状态色：待复核=橙（需人工介入）、已复核=绿（闭环完成） */
+export const REVIEW_STATUS_COLOR: Record<string, string> = {
+  PENDING: '#ea580c',
+  REVIEWED: '#16a34a',
+};
+
+/**
+ * 性能评分五档（对齐 FDS §5.2.4 / GB/T 44693.2 定级阈值）
+ */
+export const SCORE_GRADES = [
+  { key: 'excellent', label: '优秀', min: 90, color: '#16a34a' },
+  { key: 'good', label: '良好', min: 80, color: '#65a30d' },
+  { key: 'qualified', label: '合格', min: 60, color: '#0891b2' },
+  { key: 'warning', label: '警告', min: 40, color: '#ea580c' },
+  { key: 'failed', label: '不合格', min: -Infinity, color: '#dc2626' },
+] as const;
+
+export type ScoreGradeKey = (typeof SCORE_GRADES)[number]['key'];
+
+/** 评分 → 档位（含色/文案）；null 返回 null */
+export function scoreGrade(score: null | number | undefined) {
+  if (score == null || Number.isNaN(score)) return null;
+  return SCORE_GRADES.find((g) => score >= g.min) ?? null;
+}

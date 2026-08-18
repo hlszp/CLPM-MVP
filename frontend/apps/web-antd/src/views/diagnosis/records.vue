@@ -31,6 +31,8 @@ import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import {
   CATEGORY_META,
   CATEGORY_OPTIONS,
+  REVIEW_STATUS_COLOR,
+  REVIEW_STATUS_TEXT,
   RUN_STATUS_TEXT,
   SEVERITY_TEXT,
   TRIGGER_TYPE_COLOR,
@@ -51,6 +53,7 @@ const query = reactive({
   category: undefined as DiagnosisApi.Category | undefined,
   severity: undefined as DiagnosisApi.Severity | undefined,
   status: undefined as DiagnosisApi.RunStatus | undefined,
+  reviewStatus: undefined as DiagnosisApi.ReviewStatus | undefined,
   range: undefined as [Dayjs, Dayjs] | undefined,
 });
 
@@ -63,6 +66,7 @@ async function load() {
       category: query.category,
       severity: query.severity,
       status: query.status,
+      reviewStatus: query.reviewStatus,
     };
     if (query.range) {
       params.startTime = `${query.range[0].format('YYYY-MM-DD')}T00:00:00`;
@@ -131,6 +135,8 @@ const columns = [
   { dataIndex: 'severity', title: '严重度', width: 76 },
   { dataIndex: 'timeWindowStart', title: '时间窗', width: 220 },
   { dataIndex: 'triggerType', title: '触发方式', width: 88 },
+  { dataIndex: 'reviewResultLabels', title: '复核结论', width: 150 },
+  { dataIndex: 'reviewStatus', title: '复核状态', width: 88 },
   { dataIndex: 'triggeredBy', title: '发起人', width: 100 },
   { dataIndex: 'status', title: '状态', width: 90 },
 ];
@@ -214,6 +220,17 @@ onMounted(load);
         style="width: 120px"
         @change="load()"
       />
+      <Select
+        v-model:value="query.reviewStatus"
+        :allow-clear="true"
+        :options="[
+          { label: '待复核', value: 'PENDING' },
+          { label: '已复核', value: 'REVIEWED' },
+        ]"
+        placeholder="复核状态"
+        style="width: 110px"
+        @change="load()"
+      />
     </div>
 
     <Card :body-style="{ padding: '0' }" size="small">
@@ -280,6 +297,21 @@ onMounted(load);
                   TRIGGER_TYPE_TEXT[record.triggerType] ??
                   record.triggerType
                 }}
+              </span>
+              <span v-else class="text-neutral-400">—</span>
+            </template>
+            <template v-else-if="column.dataIndex === 'reviewResultLabels'">
+              <span v-if="record.reviewResultLabels?.length" class="text-xs">
+                {{ record.reviewResultLabels.join('、') }}
+              </span>
+              <span v-else class="text-neutral-400">—</span>
+            </template>
+            <template v-else-if="column.dataIndex === 'reviewStatus'">
+              <span
+                v-if="record.reviewStatus"
+                :style="{ color: REVIEW_STATUS_COLOR[record.reviewStatus] }"
+              >
+                {{ REVIEW_STATUS_TEXT[record.reviewStatus] ?? record.reviewStatus }}
               </span>
               <span v-else class="text-neutral-400">—</span>
             </template>

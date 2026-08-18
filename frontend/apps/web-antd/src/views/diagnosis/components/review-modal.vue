@@ -1,0 +1,95 @@
+<script setup lang="ts">
+/**
+ * 诊断复核弹窗 —— 记录人工复核结论（多选）与复核意见。
+ *
+ * 概览列表"复核"操作专用（2026-08-18）：提交后覆盖式更新该次诊断的
+ * review 字段（review_status=REVIEWED）；已复核记录回显上次结论可改判。
+ */
+import { reactive, ref, watch } from 'vue';
+
+import { Form, FormItem, Input, Modal, Select, message } from 'ant-design-vue';
+
+const { TextArea } = Input;
+
+import type { DiagnosisApi } from '#/api/diagnosis';
+import { reviewDiagnosisRunApi } from '#/api/diagnosis';
+import { CATEGORY_OPTIONS } from '../constants';
+
+const props = defineProps<{
+  item: DiagnosisApi.LatestRunItem | null;
+}>();
+
+const open = defineModel<boolean>('open', { default: false });
+
+const emit = defineEmits<{ done: [] }>();
+
+const submitting = ref(false);
+const form = reactive<{ reviewComment: string; reviewResults: string[] }>({
+  reviewResults: [],
+  reviewComment: '',
+});
+
+watch(open, (v) => {
+  if (v && props.item) {
+    // 回显：已复核记录预填上次结论/意见（可改判）；建议默认勾选 AI 主分类
+    form.reviewResults = props.item.reviewResults?.length
+      ? [...props.item.reviewResults]!
+      : props.item.primaryCategory
+        ? [props.item.primaryCategory]
+        : [];
+    form.reviewComment = '';
+  }
+});
+
+async function submit() {
+  if (!props.item?.runId) return;
+  if (form.reviewResults.length === 0) {
+    message.warning('请至少选择一项复核结论');
+    return;
+  }
+  submitting.value = true;
+  try {
+    await reviewDiagnosisRunApi(props.item.runId, {
+      reviewComment: form.reviewComment || null,
+      reviewResults: form.reviewResults,
+    });
+    message.success('复核已记录');
+    open.value = false;
+    emit('done');
+  } finally {
+    submitting.value = false;
+  }
+}
+</script>
+
+<template>
+  <Modal
+    v-model:open="open"
+    :title="`诊断复核 · ${item?.loopTagName ?? ''}（AI 结论：${item?.primaryCategoryLabel ?? '—'}）`"
+    :confirm-loading="submitting"
+    ok-text="提交复核"
+    width="520"
+    @ok="submit"
+  >
+    <Form layout="vertical" class="pt-2">
+      <FormItem label="复核结论（多选）" required>
+        <Select
+          v-model:value="form.reviewResults"
+          :options="CATEGORY_OPTIONS"
+          mode="multiple"
+          placeholder="选择人工确认的问题分类（可多选）"
+          :max-tag-count="4"
+        />
+      </FormItem>
+      <FormItem label="复核意见" help="记录现场核实情况、处理安排等（可选，≤500 字）">
+        <TextArea
+          v-model:value="form.reviewComment"
+          :maxlength="500"
+          placeholder="例：现场确认为变送器漂移，已安排 8 月 20 日校验"
+          :rows="3"
+          show-count
+        />
+      </FormItem>
+    </Form>
+  </Modal>
+</template>

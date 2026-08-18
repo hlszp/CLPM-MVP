@@ -90,6 +90,13 @@ export namespace DiagnosisApi {
     secondaryCategories: CategoryJudgement[];
     pendingReview: CategoryJudgement[];
     severity?: null | Severity;
+    /** 复核闭环（2026-08-18） */
+    reviewStatus?: null | ReviewStatus;
+    reviewResults?: string[];
+    reviewResultLabels?: string[];
+    reviewComment?: null | string;
+    reviewedBy?: null | string;
+    reviewedAt?: null | string;
     createdAt: string;
   }
 
@@ -143,14 +150,20 @@ export namespace DiagnosisApi {
   export type TimeWindowPreset = 'last_24h' | 'last_30d' | 'last_7d';
   export type OperatorGroup = 'fast' | 'full';
 
-  /** 每回路最近诊断概览行（GET /runs/latest，工作台装置节点概览；每回路最多 2 行） */
+  /** 每回路最新诊断概览行（GET /runs/latest，2026-08-18 重构：一回路一条） */
   export interface LatestRunItem {
     loopId: string;
     loopTagName: string;
+    /** 回路名称（loop_ledger.description） */
+    loopDescription?: null | string;
+    /** 回路等级（1 关键 / 2 重要 / 3 一般） */
+    importanceLevel?: null | number;
     /** 该次诊断记录 ID（null=从未诊断） */
     runId: null | string;
-    /** 该回路第几次结论（1=最新, 2=次新；未诊断回路为 null） */
-    runSeq?: null | number;
+    /** 该回路累计诊断次数（"第 N 次"；未诊断为 0） */
+    runCount?: number;
+    /** 最近性能评分（kpi_snapshot_hourly 最新有值快照） */
+    latestScore?: null | number;
     triggerType?: null | TriggerType;
     triggerTypeLabel?: null | string;
     primaryCategory?: null | Category;
@@ -158,9 +171,25 @@ export namespace DiagnosisApi {
     primaryConfidence?: null | number;
     severity?: null | Severity;
     status?: null | RunStatus;
+    reviewStatus?: null | ReviewStatus;
+    reviewResults?: string[];
+    reviewResultLabels?: string[];
+    reviewedBy?: null | string;
+    reviewedAt?: null | string;
     lastDiagnosedAt?: null | string;
     timeWindowStart?: null | string;
     timeWindowEnd?: null | string;
+  }
+
+  /** 复核状态：PENDING 待复核 / REVIEWED 已复核 */
+  export type ReviewStatus = 'PENDING' | 'REVIEWED';
+
+  /** 复核请求体 */
+  export interface ReviewBody {
+    /** 复核结论多选（原因分类代码，与诊断分类同域） */
+    reviewResults: string[];
+    /** 复核意见（≤500 字可选） */
+    reviewComment?: null | string;
   }
 
   export interface TriggerBody {
@@ -181,6 +210,7 @@ export namespace DiagnosisApi {
     category?: Category;
     severity?: Severity;
     status?: RunStatus;
+    reviewStatus?: ReviewStatus;
     taskId?: string;
     startTime?: string;
     endTime?: string;
@@ -216,6 +246,16 @@ export function getDiagnosisRunsLatestApi(plantNodeId?: string) {
  */
 export function getDiagnosisRunDetailApi(id: string) {
   return requestClient.get<DiagnosisApi.RunDetail>(`/diagnosis/runs/${id}`);
+}
+
+/**
+ * 人工复核诊断结论（复核结论多选 + 意见；重复复核覆盖）
+ */
+export function reviewDiagnosisRunApi(id: string, data: DiagnosisApi.ReviewBody) {
+  return requestClient.post<DiagnosisApi.RunListItem>(
+    `/diagnosis/runs/${id}/review`,
+    data,
+  );
 }
 
 /**
