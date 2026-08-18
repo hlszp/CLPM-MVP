@@ -54,6 +54,7 @@ from app.api.v1.endpoints import (
     diagnosis_v2,
     # diagnosis_trigger_config,
     grading_config,
+    handling,
     health,
     # P3-04: LLM 配置（AI 洞察门禁依赖；endpoint 本身独立，不依赖诊断模块）
     llm_config,
@@ -946,6 +947,8 @@ def create_app() -> FastAPI:
     # v1_router.include_router(diagnosis.tracker_router)
     # MVP v2 诊断模块（重设计版：/diagnosis/run|runs|operators|export）
     v1_router.include_router(diagnosis_v2.router)
+    # 处置模块 Phase 1（/handling/items/* 流转端点，08-处置模块设计方案 §6.2）
+    v1_router.include_router(handling.router)
     # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
     v1_router.include_router(dataplanner.router)
     # v4.0: 算法服务接口（IDS §2.7）
