@@ -75,6 +75,7 @@ class TestLogin:
                     "metric:view",
                     "diagnosis:view",
                     "alert:view",
+                    "handling:view",
                 ]
             elif username == "expert":
                 assert "tracker:review" in perms
@@ -643,6 +644,7 @@ class TestRolePermissions:
             "metric:view",
             "diagnosis:view",
             "alert:view",
+            "handling:view",
         ]
 
     def test_expert_permissions(self) -> None:
