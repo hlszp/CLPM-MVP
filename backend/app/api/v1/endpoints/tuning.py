@@ -18,15 +18,18 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_perms, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
+from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -42,6 +45,7 @@ from app.schemas.tuning import (
     SimulateRequest,
     SimulationResult,
     TaskProgress,
+    TuneMatrixRequest,
     TuneRequest,
     TuneResult,
     TuningHistoryStats,
@@ -53,6 +57,11 @@ from app.schemas.tuning_knowledge import (
     TuningKnowledgeListData,
     TuningKnowledgeListStats,
     TuningKnowledgeSimilarData,
+)
+from app.services.kpi_snapshot import (
+    iso_z,
+    kpi_summary,
+    latest_snapshot_in_window,
 )
 from app.services.tuning import (
     authorize_tuning_model,
@@ -72,6 +81,9 @@ from app.services.tuning_knowledge import (
     list_knowledge_entries,
     recommend_similar,
 )
+from app.services.waveform import get_waveform
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tuning", tags=["tuning"])
 
@@ -257,6 +269,48 @@ async def tune_pid_endpoint(
     return success(data=data)
 
 
+@router.post("/tune/matrix", response_model=ApiResponse[dict])
+async def tune_matrix_endpoint(
+    body: TuneMatrixRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+) -> dict:
+    """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    IMC/LAMBDA/ZN/COHEN_COON/SIMC 5 算法一次全算；单算法失败不阻断，
+    该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计日志——
+    审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
+    """
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    rows: list[dict[str, Any]] = []
+    for algo in ("IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"):
+        try:
+            result = await tune_pid(
+                model_type=source_context.model_type,
+                model_params=source_context.model_params,
+                algorithm=algo,
+                algorithm_params=body.algorithmParams,
+                current_pid=body.currentPid.model_dump() if body.currentPid else None,
+                loop_id=source_context.loop_id,
+                source_context=source_context,
+            )
+            rows.append({"algorithm": algo, "ok": True, "result": result})
+        except BizError as exc:
+            rows.append({"algorithm": algo, "ok": False, "error": exc.message})
+        except Exception as exc:  # noqa: BLE001  # 单算法异常不阻断矩阵其余行
+            logger.warning("整定矩阵 %s 算法计算失败: %s", algo, exc)
+            rows.append({"algorithm": algo, "ok": False, "error": str(exc)})
+    return success(data={"rows": rows})
+
+
 # ---------------------------------------------------------------------------
 # 闭环仿真
 # ---------------------------------------------------------------------------
@@ -345,6 +399,63 @@ async def compare_pids_endpoint(
         setpoint_step=body.setpointStep,
     )
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 效果验证（09 设计方案 §4.5）
+# ---------------------------------------------------------------------------
+
+
+def _parse_point_time(s: str) -> datetime:
+    """ISO 8601 → naive UTC（aware 输入归一化，禁止 aware/naive 混入库查询）。"""
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"pointTime 不是合法 ISO 8601 时间: {s}",
+            status_code=400,
+        ) from None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
+@router.get("/verification/data", response_model=ApiResponse[dict])
+async def verification_data_endpoint(
+    loopId: str = Query(..., description="回路 ID"),
+    pointTime: str = Query(..., description="对比时点 ISO 8601（naive UTC 或带时区）"),
+    windowHours: int = Query(..., description="窗口小时数：1/2/24"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """效果验证前后窗曲线数据（全部登录用户只读；实时拉取不落库）。
+
+    前窗 [pointTime−window, pointTime] 与后窗 [pointTime, pointTime+window]
+    各拉一次 SP/PV/OP 波形 + 窗口内最新 KPI 快照摘要（无快照侧为 null）；
+    后窗超出当前时刻时 afterTruncated=true，前端标注"数据截至当前时刻"。
+    """
+    if windowHours not in (1, 2, 24):
+        raise BizError(code="ERR_PARAM", message="windowHours 仅支持 1/2/24", status_code=400)
+    point = _parse_point_time(pointTime)
+    delta = timedelta(hours=windowHours)
+    before = await get_waveform(db, loopId, start_time=iso_z(point - delta), end_time=iso_z(point))
+    after = await get_waveform(db, loopId, start_time=iso_z(point), end_time=iso_z(point + delta))
+    kpi_before = kpi_summary(await latest_snapshot_in_window(db, loopId, point - delta, point))
+    kpi_after = kpi_summary(await latest_snapshot_in_window(db, loopId, point, point + delta))
+    now_naive = datetime.now(UTC).replace(tzinfo=None)
+    return success(
+        data={
+            "loopId": loopId,
+            "pointTime": iso_z(point),
+            "windowHours": windowHours,
+            "before": before,
+            "after": after,
+            "kpiBefore": kpi_before,
+            "kpiAfter": kpi_after,
+            "afterTruncated": (point + delta) > now_naive,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------

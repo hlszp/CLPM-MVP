@@ -33,6 +33,7 @@ from app.models.diagnosis_run import DiagnosisRun
 from app.models.loop_action_item import ACTION_TYPES, LoopActionItem
 from app.models.metric import KpiSnapshotHourly
 from app.models.sys_user import SysUser
+from app.models.tuning import TuningRecord
 from app.schemas.common import ApiResponse, success
 
 router = APIRouter(prefix="/handling", tags=["handling"])
@@ -242,6 +243,15 @@ async def _pull_kpi_windows(
         )
         after = _kpi_summary(snap)
     return before, after
+
+
+async def _writeback_tuning_record(db: AsyncSession, item: LoopActionItem, status: str) -> None:
+    """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的处置项。"""
+    if item.action_type != "TUNING" or not item.tuning_record_id:
+        return
+    rec = await db.get(TuningRecord, item.tuning_record_id)
+    if rec is not None:
+        rec.status = status
 
 
 def _validate_action_detail(action_type: str | None, detail: dict[str, Any]) -> None:
@@ -958,6 +968,8 @@ async def submit_handling(
     item.action_detail = merged
     item.submitted_at = _utcnow_naive()
     item.status = "VERIFYING"
+    # 09 设计方案 §5.4：TUNING 类提交验证 → 回写整定记录 APPLIED（同事务提交）
+    await _writeback_tuning_record(db, item, "APPLIED")
     await db.commit()
     # commit 后 updated_at（onupdate=func.now() 服务端计算值）已过期，
     # refresh 重新加载后再序列化，避免懒加载触发新查询 500
@@ -1002,6 +1014,10 @@ async def verify_handling(
     item.verified_by = user.username
     item.verified_at = _utcnow_naive()
     item.status = "CLOSED" if body.verifyResult == "EFFECTIVE" else "REOPENED"
+    # 09 设计方案 §5.4：TUNING 类验证有效 → VERIFIED；无效重开 → 回退 SIMULATED
+    await _writeback_tuning_record(
+        db, item, "VERIFIED" if body.verifyResult == "EFFECTIVE" else "SIMULATED"
+    )
     await db.commit()
     # commit 后 updated_at（onupdate=func.now() 服务端计算值）已过期，
     # refresh 重新加载后再序列化，避免懒加载触发新查询 500

@@ -73,8 +73,7 @@ from app.api.v1.endpoints import (
     realtime,
     reports,
     tags,
-    # MVP 精简：已屏蔽整定模块 → 不注册 tuning
-    # tuning,
+    tuning,  # 整定模块（09 设计方案恢复为一级模块）
     users,
     weight_config,
     ws_alert,
@@ -980,9 +979,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(users.router)
     v1_router.include_router(audit_logs.router)
     v1_router.include_router(reports.router)
-    # S7 回路整定：模型辨识、PID 整定、闭环仿真
-    # MVP 精简：已屏蔽整定模块 → 不挂载 tuning.router
-    # v1_router.include_router(tuning.router)
+    # S7 回路整定：模型辨识、PID 整定、闭环仿真（09 设计方案恢复为一级模块）
+    v1_router.include_router(tuning.router)
     # 重构方案 v1.2：回路配置 CRUD（投用定义、类型权重、级别权重）
     v1_router.include_router(loop_mode_mapping.router)
     v1_router.include_router(loop_type_weight.router)

@@ -6,8 +6,6 @@ import math
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.services.tuning import _estimate_mv_step
 from app.services.tuning_algorithms import (
     PIDParams,
@@ -22,8 +20,6 @@ from app.services.tuning_algorithms import (
     tune_zn,
 )
 from tests.conftest import TEST_USERS, mock_current_user
-
-pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
 
 # ---------------------------------------------------------------------------
 # 辅助函数
@@ -511,11 +507,22 @@ class TestTuningAPI:
         avg_result = MagicMock()
         avg_result.scalar = MagicMock(return_value=Decimal("92.50"))
 
+        # V62-P2-22：风险等级统计查询（服务第 5 次 db.execute）
+        risk_result = MagicMock()
+        risk_result.all = MagicMock(return_value=[])
+
         recent_result = MagicMock()
         recent_result.all = MagicMock(return_value=[])
 
         mock_db.execute = AsyncMock(
-            side_effect=[total_result, algo_result, status_result, avg_result, recent_result]
+            side_effect=[
+                total_result,
+                algo_result,
+                status_result,
+                avg_result,
+                risk_result,
+                recent_result,
+            ]
         )
 
         with mock_current_user(TEST_USERS["admin"]):

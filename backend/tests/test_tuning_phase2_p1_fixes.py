@@ -30,8 +30,6 @@ import pytest
 from app.services.tuning_algorithms import PIDParams, simulate_closed_loop
 from tests.conftest import TEST_USERS, mock_current_user
 
-pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
-
 # ---------------------------------------------------------------------------
 # P1-3：SOPDT 仿真参数契约
 # ---------------------------------------------------------------------------

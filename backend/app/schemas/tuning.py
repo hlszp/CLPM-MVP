@@ -265,6 +265,28 @@ class TuneResult(CamelModel):
     )
 
 
+class TuneMatrixRequest(CamelModel):
+    """POST /tuning/tune/matrix 请求体（09 设计方案 §4.2 全算法矩阵）。
+
+    与 TuneRequest 相同但无 algorithm 单值字段——5 种算法一次全算，
+    单行失败不阻断（该行返回错误标记，前端置灰）。
+    """
+
+    modelType: ModelType = Field(..., description="模型类型: FOPDT/SOPDT/IPDT")
+    modelParams: ModelParams
+    algorithmParams: dict[str, Any] | None = Field(
+        None, description="算法参数（如 lambda 比例系数），5 算法共用"
+    )
+    currentPid: PidParams | None = Field(None, description="当前 PID 参数（用于对比）")
+    loopId: str | None = Field(None, description="回路 ID（可选，用于记录）")
+    sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
+    modelSource: ModelSource | None = Field(
+        None,
+        description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
+    )
+    riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
+
+
 # ---------------------------------------------------------------------------
 # 闭环仿真
 # ---------------------------------------------------------------------------

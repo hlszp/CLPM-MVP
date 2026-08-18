@@ -35,6 +35,7 @@ import {
   submitHandlingApi,
   verifyHandlingApi,
 } from '#/api/handling';
+import TuningVerifyCompare from '#/components/clpm/tuning-verify-compare.vue';
 import { formatLocalTime } from '#/utils/format';
 
 import {
@@ -60,6 +61,8 @@ const router = useRouter();
 
 const loading = ref(false);
 const detail = ref<HandlingApi.Detail | null>(null);
+/** 曲线对比折叠块（VERIFYING；展开才加载，区级延迟加载口径） */
+const curveOpen = ref(false);
 
 const drawerOpen = computed({
   get: () => props.open,
@@ -576,8 +579,25 @@ const fmt = (ts: null | string | undefined) =>
             </div>
           </template>
 
-          <!-- VERIFYING：KPI 对比卡 + 有效/无效 -->
+          <!-- VERIFYING：曲线对比 + KPI 对比卡 + 有效/无效 -->
           <template v-else-if="detail.status === 'VERIFYING'">
+            <!-- 曲线对比（09 设计方案 §6.4：前后窗趋势 + PV/OP X-Y，共享组件） -->
+            <div class="mb-2 rounded border border-neutral-200 dark:border-neutral-700">
+              <button
+                class="flex w-full items-center justify-between px-2 py-1.5 text-xs font-medium"
+                @click="curveOpen = !curveOpen"
+              >
+                <span>曲线对比（前后窗趋势 + X-Y 轨迹）</span>
+                <span class="text-neutral-400">{{ curveOpen ? '收起 ▲' : '展开 ▼' }}</span>
+              </button>
+              <div v-if="curveOpen" class="px-2 pb-2">
+                <TuningVerifyCompare
+                  :loop-id="detail.loopId"
+                  :point-time="detail.submittedAt ?? ''"
+                  :window-hours="24"
+                />
+              </div>
+            </div>
             <Spin :spinning="kpiLoading">
               <div class="mb-2 rounded bg-neutral-50 p-2 dark:bg-neutral-800">
                 <div class="mb-1 flex items-center justify-between">

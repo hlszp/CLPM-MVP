@@ -80,6 +80,15 @@ function gotoHandling(actionId: string): void {
   router.push({ path: '/handling/workbench', query: { focus: actionId } });
 }
 
+/** 「去整定」：TUNING 类建议跳整定工作台并预填回路（09 设计方案 §6.5 联动） */
+function gotoTuning(loopId: string): void {
+  open.value = false;
+  router.push({
+    path: '/tuning/workbench',
+    query: { from: 'diagnosis', loopId },
+  });
+}
+
 const userStore = useUserStore();
 /** 当前用户（复核人自动填入；后端以登录态为准，前端仅展示） */
 const currentUserName = computed(
@@ -766,6 +775,14 @@ watch(open, (v) => {
                         </div>
                       </div>
                       <div class="flex shrink-0 gap-1" @click.stop>
+                        <Button
+                          v-if="a.category === 'TUNING'"
+                          size="small"
+                          type="link"
+                          @click="gotoTuning(a.loopId)"
+                        >
+                          去整定
+                        </Button>
                         <Button
                           size="small"
                           type="link"
