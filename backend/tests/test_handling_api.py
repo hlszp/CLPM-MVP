@@ -623,3 +623,244 @@ class TestKpiComparisonEndpoint:
         _override_db(client, [_scalar_result(item)])
         resp = self._post(client, user_key="sponsor")
         assert resp.status_code == 403
+
+
+# ===========================================================================
+# GET /handling/items（清单）/ /items/stats（统计）/ /items/{id}（详情）（§6.1）
+# ===========================================================================
+
+UNIT_ID = str(uuid4())
+PLANT_ID = str(uuid4())
+
+
+def _all_result(rows: list) -> MagicMock:
+    r = MagicMock()
+    r.all.return_value = rows
+    return r
+
+
+def _count_result(n: int) -> MagicMock:
+    r = MagicMock()
+    r.scalar.return_value = n
+    return r
+
+
+def _make_list_row(**over: Any) -> MagicMock:
+    """清单 SQL 行（ai.* + ll 回路字段）mock。"""
+    row = MagicMock()
+    row.id = ITEM_ID
+    row.run_id = RUN_ID
+    row.loop_id = LOOP_ID
+    row.loop_tag_name = "90PIC51212A"
+    row.loop_description = "反应器压力控制"
+    row.importance_level = 1
+    row.unit_id = UNIT_ID
+    row.source = "SYSTEM"
+    row.category = "TUNING"
+    row.content = "重新整定 PID 参数：当前回路存在振荡"
+    row.action_type = "TUNING"
+    row.status = "PENDING"
+    row.priority = 1
+    row.suggested_by = "系统"
+    row.suggested_at = datetime(2026, 8, 9, 0, 0, 0)
+    row.handled_by = None
+    row.handled_at = None
+    row.submitted_at = None
+    row.verify_result = None
+    row.verified_by = None
+    row.verified_at = None
+    row.updated_at = datetime(2026, 8, 9, 1, 0, 0)
+    row.basis = "诊断结论：参数问题（PID 整定）"
+    row.action_detail = None
+    row.kpi_before = None
+    row.kpi_after = None
+    row.verify_run_id = None
+    row.verify_note = None
+    row.ignore_reason = None
+    row.tuning_record_id = None
+    for k, v in over.items():
+        setattr(row, k, v)
+    return row
+
+
+def _plant_node_rows() -> list:
+    plant = MagicMock()
+    plant.id = PLANT_ID
+    plant.name = "一联合装置"
+    plant.parent_id = None
+    unit = MagicMock()
+    unit.id = UNIT_ID
+    unit.name = "常减压单元"
+    unit.parent_id = PLANT_ID
+    return [plant, unit]
+
+
+class TestListEndpoint:
+    """GET /api/v1/handling/items（§6.1 清单）。"""
+
+    def _get(self, client, params: dict | None = None, user_key: str = "admin"):
+        with mock_current_user(TEST_USERS[user_key]):
+            return client.get(
+                "/api/v1/handling/items",
+                params=params or {},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+    def test_list_ok_with_unit_path(self, client) -> None:
+        """清单行字段 + unitPath（plant_node 树回溯，评审决策 #12）。"""
+        _override_db(
+            client,
+            [_count_result(1), _all_result([_make_list_row()]), _all_result(_plant_node_rows())],
+        )
+        resp = self._get(client)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        item = data["items"][0]
+        assert item["loopTagName"] == "90PIC51212A"
+        assert item["importanceLevel"] == 1
+        assert item["unitPath"] == "一联合装置.常减压单元"
+        assert item["statusLabel"] == "待处置"
+        assert item["actionTypeLabel"] == "参数整定"
+        assert item["categoryLabel"] == "参数问题（PID 整定）"
+        assert item["suggestedAt"].endswith("Z")
+
+    def test_list_status_filter_and_order_sql(self, client) -> None:
+        """status 多值过滤 + 排序口径：状态分组优先级 + updatedAt DESC（§6.1）。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client, {"status": "PENDING,REOPENED"})
+        assert resp.status_code == 200
+        count_sql = _pg_sql(captured[0])
+        assert "ai.status = ANY" in count_sql
+        list_sql = _pg_sql(captured[1])
+        assert "CASE ai.status" in list_sql
+        assert "updated_at DESC" in list_sql
+
+    def test_list_keyword_and_type_filters(self, client) -> None:
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client, {"keyword": "90PIC", "actionType": "VALVE", "source": "MANUAL"})
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[0])
+        assert "ILIKE" in sql
+        assert "ai.action_type = " in sql
+        assert "ai.source = " in sql
+
+    def test_list_plant_node_recursion(self, client) -> None:
+        """plantNodeId 先递归取子树，再以 unit_id ANY 过滤。"""
+        captured: list = []
+        subtree_row = MagicMock()
+        subtree_row.id = UNIT_ID
+        _capture_override_db(
+            client,
+            [
+                _all_result([subtree_row]),
+                _count_result(0),
+                _all_result([]),
+                _all_result(_plant_node_rows()),
+            ],
+            captured,
+        )
+        resp = self._get(client, {"plantNodeId": PLANT_ID})
+        assert resp.status_code == 200
+        assert "WITH RECURSIVE node_tree" in _pg_sql(captured[0])
+        assert "ll.unit_id = ANY" in _pg_sql(captured[1])
+
+    def test_list_all_roles_can_view(self, client) -> None:
+        """清单查看：全部登录用户（含 SPONSOR 只读，§7）。"""
+        _override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+        )
+        resp = self._get(client, user_key="sponsor")
+        assert resp.status_code == 200
+
+
+class TestStatsEndpoint:
+    """GET /api/v1/handling/items/stats（§6.1 状态统计）。"""
+
+    def test_stats_counts_and_month_closed(self, client) -> None:
+        from collections import namedtuple
+
+        srow = namedtuple("SRow", ["status", "count"])
+        rows = [srow("PENDING", 3), srow("HANDLING", 2), srow("CLOSED", 5)]
+        _override_db(client, [_all_result(rows), _count_result(4)])
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/handling/items/stats",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["counts"]["PENDING"] == 3
+        assert data["counts"]["HANDLING"] == 2
+        assert data["counts"]["CLOSED"] == 5
+        assert data["counts"]["VERIFYING"] == 0
+        assert data["monthClosed"] == 4
+
+
+class TestDetailEndpoint:
+    """GET /api/v1/handling/items/{id}（§6.1 详情）。"""
+
+    def test_detail_ok(self, client) -> None:
+        row = _make_list_row(
+            status="CLOSED",
+            handled_by="ic_engineer",
+            handled_at=HANDLED_AT,
+            submitted_at=SUBMITTED_AT,
+            verify_result="EFFECTIVE",
+            verify_note="评分回升",
+            verified_by="admin",
+            verified_at=datetime(2026, 8, 14, 2, 0, 0),
+            action_detail={"pidBefore": {"p": 1.2}, "pidAfter": {"p": 0.8}},
+            kpi_before={"score": 72.3},
+            kpi_after={"score": 88.6},
+        )
+        _override_db(client, [_all_result([row]), _all_result(_plant_node_rows())])
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/handling/items/{ITEM_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["status"] == "CLOSED"
+        assert data["unitPath"] == "一联合装置.常减压单元"
+        assert data["basis"] == "诊断结论：参数问题（PID 整定）"
+        assert data["actionDetail"]["pidAfter"] == {"p": 0.8}
+        assert data["kpiBefore"] == {"score": 72.3}
+        assert data["kpiAfter"] == {"score": 88.6}
+        assert data["verifyResultLabel"] == "有效"
+        assert data["verifyNote"] == "评分回升"
+
+    def test_detail_not_found(self, client) -> None:
+        _override_db(client, [_all_result([])])
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/handling/items/{ITEM_ID}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_NOT_FOUND"
+
+    def test_stats_route_not_shadowed_by_detail(self, client) -> None:
+        """/items/stats 必须先于 /items/{item_id} 注册（否则被当作 id 404）。"""
+        from collections import namedtuple
+
+        srow = namedtuple("SRow", ["status", "count"])
+        _override_db(client, [_all_result([srow("PENDING", 1)]), _count_result(0)])
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/handling/items/stats",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200

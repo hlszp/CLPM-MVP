@@ -1,7 +1,10 @@
-"""处置模块 API（Phase 1 后端：5 个流转端点）。
+"""处置模块 API（Phase 1 后端）。
 
 设计文档：docs/MVP设计/08-处置模块设计方案.md §4 状态机 / §6 API 定义
 端点清单（前缀 /handling）：
+- GET  /items                     处置清单（分页/筛选/状态分组排序，§6.1）
+- GET  /items/stats               状态统计（各状态计数 + 本月闭环数，§6.1）
+- GET  /items/{id}                处置详情（清单行 + action_detail/kpi 固化/忽略原因，§6.1）
 - POST /items/{id}/start           开始处置（PENDING/REOPENED → HANDLING）
 - POST /items/{id}/submit          提交验证（HANDLING → VERIFYING，按类型校验必填子字段）
 - POST /items/{id}/verify          验证结论（VERIFYING → CLOSED/REOPENED，服务端固化 KPI 前后快照）
@@ -14,15 +17,16 @@ CLOSED / IGNORED 为终态，CLOSED 不允许重开（评审决策 #9）。
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import get_current_user, require_roles
+from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.diagnosis_run import DiagnosisRun
@@ -248,6 +252,289 @@ def _validate_action_detail(action_type: str | None, detail: dict[str, Any]) -> 
         pid_after = detail.get("pidAfter")
         if not isinstance(pid_after, dict) or not pid_after:
             raise _err_param("TUNING 类型提交验证时 actionDetail.pidAfter 必填（非空对象）")
+
+
+# ---------------------------------------------------------------------------
+# 清单/详情/统计（§6.1）
+# ---------------------------------------------------------------------------
+
+#: 清单排序的状态分组优先级（§6.1：PENDING→REOPENED→HANDLING→VERIFYING→其他）
+_STATUS_RANK_SQL = (
+    "CASE ai.status WHEN 'PENDING' THEN 0 WHEN 'REOPENED' THEN 1 "
+    "WHEN 'HANDLING' THEN 2 WHEN 'VERIFYING' THEN 3 ELSE 4 END"
+)
+
+_BJ_TZ = timezone(timedelta(hours=8))
+
+
+def _to_naive_utc(dt: datetime) -> datetime:
+    """aware datetime（前端 ISO 带 Z/+08:00）→ naive UTC（同诊断模块口径）。"""
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
+def _build_unit_paths(rows: list[Any]) -> dict[str, str]:
+    """plant_node 平铺行 → 节点全路径映射（"装置.单元" 树回溯，评审决策 #12）。"""
+    nodes = {
+        str(r.id): (r.name, str(r.parent_id) if r.parent_id else None)
+        for r in rows
+        if r.id is not None
+    }
+    paths: dict[str, str] = {}
+    for nid in nodes:
+        parts: list[str] = []
+        cur: str | None = nid
+        seen: set[str] = set()
+        while cur and cur not in seen:
+            seen.add(cur)
+            node = nodes.get(cur)
+            if node is None:
+                break
+            parts.append(node[0])
+            cur = node[1]
+        paths[nid] = ".".join(reversed(parts))
+    return paths
+
+
+def _list_row_to_item(r: Any, unit_paths: dict[str, str]) -> dict[str, Any]:
+    """清单行序列化（§6.1 返回行字段）。"""
+    return {
+        "id": str(r.id),
+        "runId": str(r.run_id),
+        "loopId": str(r.loop_id),
+        "loopTagName": r.loop_tag_name,
+        "loopDescription": r.loop_description,
+        "importanceLevel": int(r.importance_level) if r.importance_level else None,
+        "unitId": str(r.unit_id) if r.unit_id else None,
+        "unitPath": unit_paths.get(str(r.unit_id)) if r.unit_id else None,
+        "source": r.source,
+        "category": r.category,
+        "categoryLabel": _CATEGORY_LABELS.get(r.category) if r.category else None,
+        "content": r.content,
+        "actionType": r.action_type,
+        "actionTypeLabel": (
+            _ACTION_TYPE_LABELS.get(r.action_type, r.action_type) if r.action_type else None
+        ),
+        "status": r.status,
+        "statusLabel": _STATUS_LABELS.get(r.status, r.status),
+        "priority": r.priority,
+        "suggestedBy": r.suggested_by,
+        "suggestedAt": _iso(r.suggested_at),
+        "handledBy": r.handled_by,
+        "handledAt": _iso(r.handled_at),
+        "submittedAt": _iso(r.submitted_at),
+        "verifyResult": r.verify_result,
+        "verifyResultLabel": (
+            {"EFFECTIVE": "有效", "INEFFECTIVE": "无效"}.get(r.verify_result)
+            if r.verify_result
+            else None
+        ),
+        "verifiedBy": r.verified_by,
+        "verifiedAt": _iso(r.verified_at),
+        "updatedAt": _iso(r.updated_at),
+    }
+
+
+def _build_list_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
+    """按查询参数拼装 WHERE 子句（仅追加出现的条件，参数走 named params）。"""
+    conds = ["1=1"]
+    if args.get("statuses"):
+        conds.append("ai.status = ANY(CAST(:statuses AS text[]))")
+        params["statuses"] = args["statuses"]
+    if args.get("action_type"):
+        conds.append("ai.action_type = :action_type")
+        params["action_type"] = args["action_type"]
+    if args.get("source"):
+        conds.append("ai.source = :source")
+        params["source"] = args["source"]
+    if args.get("loop_id"):
+        conds.append("ai.loop_id = :loop_id")
+        params["loop_id"] = args["loop_id"]
+    if args.get("importance_level"):
+        conds.append("ll.importance_level = :importance_level")
+        params["importance_level"] = args["importance_level"]
+    if args.get("keyword"):
+        conds.append("(ll.tag_name ILIKE :kw OR ai.content ILIKE :kw)")
+        params["kw"] = f"%{args['keyword']}%"
+    if args.get("start"):
+        conds.append("ai.suggested_at >= :start_ts")
+        params["start_ts"] = args["start"]
+    if args.get("end"):
+        conds.append("ai.suggested_at <= :end_ts")
+        params["end_ts"] = args["end"]
+    if args.get("unit_ids") is not None:
+        conds.append("ll.unit_id = ANY(CAST(:unit_ids AS uuid[]))")
+        params["unit_ids"] = args["unit_ids"]
+    return " AND ".join(conds)
+
+
+async def _load_unit_paths(db: AsyncSession) -> dict[str, str]:
+    rows = list((await db.execute(text("SELECT id, name, parent_id FROM plant_node"))).all())
+    return _build_unit_paths(rows)
+
+
+@router.get("/items", response_model=ApiResponse[dict])
+async def list_handling_items(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    status: str | None = Query(None, description="状态多值，逗号分隔"),
+    actionType: str | None = Query(None),
+    source: str | None = Query(None, pattern="^(SYSTEM|MANUAL)$"),
+    plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
+    loopId: str | None = Query(None),
+    importanceLevel: int | None = Query(None, ge=1, le=3),
+    keyword: str | None = Query(None, description="回路位号/建议内容模糊"),
+    startTime: datetime | None = Query(None, description="建议时间起（ISO）"),
+    endTime: datetime | None = Query(None, description="建议时间止（ISO）"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+) -> dict:
+    """处置清单（分页）。排序：状态分组优先级 + updatedAt DESC（§6.1）。"""
+    args: dict[str, Any] = {
+        "statuses": [s for s in (status or "").split(",") if s] or None,
+        "action_type": actionType,
+        "source": source,
+        "loop_id": loopId,
+        "importance_level": importanceLevel,
+        "keyword": keyword,
+        "start": _to_naive_utc(startTime) if startTime else None,
+        "end": _to_naive_utc(endTime) if endTime else None,
+    }
+    if plantNodeId is not None:
+        subtree = (
+            await db.execute(
+                text(
+                    """
+                    WITH RECURSIVE node_tree AS (
+                        SELECT id FROM plant_node WHERE id = :root_id
+                        UNION ALL
+                        SELECT child.id FROM plant_node child
+                        JOIN node_tree nt ON child.parent_id = nt.id
+                    )
+                    SELECT id FROM node_tree
+                    """
+                ),
+                {"root_id": plantNodeId},
+            )
+        ).all()
+        args["unit_ids"] = [str(r.id) for r in subtree]
+
+    params: dict[str, Any] = {}
+    where = _build_list_filters(params, args)
+
+    total = (
+        await db.execute(
+            text(
+                f"SELECT COUNT(*) FROM loop_action_item ai "
+                f"JOIN loop_ledger ll ON ll.id = ai.loop_id WHERE {where}"
+            ),
+            params,
+        )
+    ).scalar() or 0
+
+    rows = list(
+        (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT ai.*, ll.tag_name AS loop_tag_name,
+                           ll.description AS loop_description,
+                           ll.importance_level, ll.unit_id
+                    FROM loop_action_item ai
+                    JOIN loop_ledger ll ON ll.id = ai.loop_id
+                    WHERE {where}
+                    ORDER BY {_STATUS_RANK_SQL}, ai.updated_at DESC
+                    LIMIT :limit OFFSET :offset
+                    """
+                ),
+                {**params, "limit": pageSize, "offset": (page - 1) * pageSize},
+            )
+        ).all()
+    )
+    unit_paths = await _load_unit_paths(db)
+    return success(
+        {
+            "items": [_list_row_to_item(r, unit_paths) for r in rows],
+            "total": int(total),
+            "page": page,
+            "pageSize": pageSize,
+        }
+    )
+
+
+@router.get("/items/stats", response_model=ApiResponse[dict])
+async def get_handling_stats(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """状态统计（§6.1：各状态计数 + 本月闭环数；本月按北京时间月界）。"""
+    rows = (
+        await db.execute(text("SELECT status, COUNT(*) FROM loop_action_item GROUP BY status"))
+    ).all()
+    counts = dict.fromkeys(_STATUS_LABELS, 0)
+    for r in rows:
+        counts[r.status] = int(r[1])
+
+    month_start_utc = (
+        (datetime.now(_BJ_TZ).replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+        .astimezone(UTC)
+        .replace(tzinfo=None)
+    )
+    month_closed = (
+        await db.execute(
+            text(
+                "SELECT COUNT(*) FROM loop_action_item "
+                "WHERE status = 'CLOSED' AND verified_at >= :month_start"
+            ),
+            {"month_start": month_start_utc},
+        )
+    ).scalar() or 0
+    return success({"counts": counts, "monthClosed": int(month_closed)})
+
+
+@router.get("/items/{item_id}", response_model=ApiResponse[dict])
+async def get_handling_item(
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """处置详情（§6.1：清单行全部字段 + action_detail/kpi 固化/ignore_reason/basis）。"""
+    rows = list(
+        (
+            await db.execute(
+                text(
+                    """
+                    SELECT ai.*, ll.tag_name AS loop_tag_name,
+                           ll.description AS loop_description,
+                           ll.importance_level, ll.unit_id
+                    FROM loop_action_item ai
+                    JOIN loop_ledger ll ON ll.id = ai.loop_id
+                    WHERE ai.id = :item_id
+                    """
+                ),
+                {"item_id": item_id},
+            )
+        ).all()
+    )
+    if not rows:
+        raise BizError(code="ERR_NOT_FOUND", message=f"处置项不存在: {item_id}", status_code=404)
+    r = rows[0]
+    unit_paths = await _load_unit_paths(db)
+    item = _list_row_to_item(r, unit_paths)
+    item.update(
+        {
+            "basis": r.basis,
+            "actionDetail": r.action_detail,
+            "kpiBefore": r.kpi_before,
+            "kpiAfter": r.kpi_after,
+            "verifyRunId": str(r.verify_run_id) if r.verify_run_id else None,
+            "verifyNote": r.verify_note,
+            "ignoreReason": r.ignore_reason,
+            "tuningRecordId": str(r.tuning_record_id) if r.tuning_record_id else None,
+        }
+    )
+    return success(item)
 
 
 # ---------------------------------------------------------------------------
