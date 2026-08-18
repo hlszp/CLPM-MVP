@@ -10,8 +10,6 @@ import pytest
 from app.core.exceptions import BizError
 from tests.conftest import TEST_USERS, mock_current_user
 
-pytestmark = pytest.mark.skip(reason="MVP: diagnosis/tuning/AAS/tracker module disabled")
-
 _MODEL_PARAMS = {"K": 1.2, "tau": 30.0, "theta": 5.0}
 
 
