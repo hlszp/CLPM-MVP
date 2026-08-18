@@ -27,6 +27,7 @@ import {
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 
+import { getDiagnosisOperatorsApi } from '#/api/diagnosis';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 import {
@@ -34,6 +35,44 @@ import {
   SEVERITY_COLOR,
   SEVERITY_TEXT,
 } from '../constants';
+
+/** 算子注册表缓存：name → { displayName, outputsSchema(特征名→中文含义) }。
+ *  模块级共享（面板多处实例只拉一次）；加载失败回退英文原名。 */
+const operatorLabelCache = new Map<
+  string,
+  { displayName: string; outputsSchema: Record<string, string> }
+>();
+let operatorRegistryLoaded = false;
+/** 注册表就绪回调（首个使用中的面板实例注册，用于就绪后重算中文列） */
+let onRegistryReady: (() => void) | null = null;
+
+function ensureOperatorRegistry(): void {
+  if (operatorRegistryLoaded) return;
+  operatorRegistryLoaded = true;
+  getDiagnosisOperatorsApi()
+    .then((ops) => {
+      for (const o of ops) {
+        operatorLabelCache.set(o.name, {
+          displayName: o.displayName,
+          outputsSchema: o.outputsSchema ?? {},
+        });
+      }
+      onRegistryReady?.();
+    })
+    .catch(() => {
+      /* 注册表加载失败时特征表回退英文原名 */
+    });
+}
+
+/** 判定文本 → 是否命中（负向词优先；无法解析返回 null 显示 —） */
+function parseHit(judgment: string): boolean | null {
+  if (!judgment) return null;
+  if (/未达标|未超阈|未超过|未命中|无命中|正常|低于/.test(judgment)) {
+    return false;
+  }
+  if (/达标|超阈|超过|命中|异常/.test(judgment)) return true;
+  return null;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -148,13 +187,16 @@ const badSegments = computed(() => {
   });
 });
 
-/** 证据链：全部算子的特征值行 */
+/** 证据链：全部算子的特征值行（算子/特征中文化 + 是否命中） */
 const featureRows = ref<
   Array<{
+    feature: string;
+    featureLabel: string;
+    hit: boolean | null;
+    judgment: string;
     key: string;
     operator: string;
-    feature: string;
-    judgment: string;
+    operatorLabel: string;
     threshold: string;
     value: string;
   }>
@@ -162,27 +204,40 @@ const featureRows = ref<
 watch(
   () => props.detail,
   (d) => {
-    const rows: Array<{
-      key: string;
-      operator: string;
-      feature: string;
-      judgment: string;
-      threshold: string;
-      value: string;
-    }> = [];
-    for (const [name, op] of Object.entries(d.operatorResults ?? {})) {
-      for (const ev of op.evidence ?? []) {
-        rows.push({
-          key: `${name}-${ev.feature}`,
-          operator: name,
-          feature: ev.feature,
-          value: String(ev.value ?? '—'),
-          threshold: ev.threshold == null ? '—' : String(ev.threshold),
-          judgment: ev.judgment || '—',
-        });
+    ensureOperatorRegistry();
+    const build = () => {
+      const rows: Array<{
+        feature: string;
+        featureLabel: string;
+        hit: boolean | null;
+        judgment: string;
+        key: string;
+        operator: string;
+        operatorLabel: string;
+        threshold: string;
+        value: string;
+      }> = [];
+      for (const [name, op] of Object.entries(d.operatorResults ?? {})) {
+        const labels = operatorLabelCache.get(name);
+        for (const ev of op.evidence ?? []) {
+          rows.push({
+            key: `${name}-${ev.feature}`,
+            operator: name,
+            operatorLabel: labels?.displayName ?? name,
+            feature: ev.feature,
+            featureLabel: labels?.outputsSchema[ev.feature] ?? ev.feature,
+            value: String(ev.value ?? '—'),
+            threshold: ev.threshold == null ? '—' : String(ev.threshold),
+            judgment: ev.judgment || '—',
+            hit: parseHit(ev.judgment || ''),
+          });
+        }
       }
-    }
-    featureRows.value = rows;
+      featureRows.value = rows;
+    };
+    build();
+    // 注册表异步就绪后重算（首次使用时 detail 可能先到，中文名先回退英文）
+    onRegistryReady = build;
   },
   { immediate: true },
 );
@@ -421,17 +476,28 @@ watch(isDark, () => {
       <CollapsePanel v-if="featureRows?.length" header="特征值" key="features">
         <Table
           :columns="[
-            { title: '算子', dataIndex: 'operator', width: 180 },
-            { title: '特征', dataIndex: 'feature', width: 160 },
-            { title: '实测值', dataIndex: 'value', width: 110 },
-            { title: '阈值', dataIndex: 'threshold', width: 110 },
+            { title: '算子', dataIndex: 'operatorLabel', width: 170 },
+            { title: '特征', dataIndex: 'featureLabel', width: 140 },
+            { title: '实测值', dataIndex: 'value', width: 100 },
+            { title: '阈值', dataIndex: 'threshold', width: 100 },
+            { title: '是否命中', dataIndex: 'hit', width: 80 },
             { title: '判定', dataIndex: 'judgment' },
           ]"
           :data-source="featureRows"
           :pagination="false"
           row-key="key"
           size="small"
-        />
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'hit'">
+              <span v-if="record.hit === true" class="font-medium" style="color: #16a34a">
+                命中
+              </span>
+              <span v-else-if="record.hit === false" class="text-neutral-400">未命中</span>
+              <span v-else class="text-neutral-400">—</span>
+            </template>
+          </template>
+        </Table>
       </CollapsePanel>
     </Collapse>
   </div>
