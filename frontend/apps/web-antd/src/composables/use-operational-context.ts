@@ -9,11 +9,19 @@
  * 4. 统一 loading/empty/partial/stale/error/ready 六态
  */
 
+import type {
+  DeepLink,
+  StateFace,
+  UrlContext,
+} from './types/operational-context';
+
+import type { MonitorApi } from '#/api/monitor';
+
 import { computed, inject, provide, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+
 import { getWorkbenchSummaryApi } from '#/api/monitor';
-import type { MonitorApi } from '#/api/monitor';
-import type { DeepLink, StateFace, UrlContext } from './types/operational-context';
+
 import { URL_CONTEXT_KEYS } from './types/operational-context';
 
 function createDefaultUrlContext(): UrlContext {
@@ -32,13 +40,14 @@ function createDefaultUrlContext(): UrlContext {
 
 function parseUrlContext(query: Record<string, unknown>): UrlContext {
   const ctx = createDefaultUrlContext();
-  const getStr = (k: string): string | null => {
+  const getStr = (k: string): null | string => {
     const v = query[k];
     return typeof v === 'string' && v ? v : null;
   };
   ctx.loopId = getStr(URL_CONTEXT_KEYS.loopId);
   const from = getStr(URL_CONTEXT_KEYS.from);
-  if (from === 'overview' || from === 'list' || from === 'attention') ctx.from = from;
+  if (from === 'overview' || from === 'list' || from === 'attention')
+    ctx.from = from;
   ctx.section = getStr(URL_CONTEXT_KEYS.section);
   ctx.anchor = getStr(URL_CONTEXT_KEYS.anchor);
   ctx.eventId = getStr(URL_CONTEXT_KEYS.eventId);
@@ -72,8 +81,9 @@ export function useOperationalContext() {
     error.value = null;
     try {
       summary.value = await getWorkbenchSummaryApi(loopId);
-    } catch (e) {
-      error.value = e instanceof Error ? e : new Error(String(e));
+    } catch (error_) {
+      error.value =
+        error_ instanceof Error ? error_ : new Error(String(error_));
       summary.value = null;
     } finally {
       loading.value = false;
@@ -90,11 +100,18 @@ export function useOperationalContext() {
   }
 
   function updateUrl(patch: Partial<UrlContext>) {
-    const newQuery: Record<string, string> = { ...(route.query as Record<string, string>) };
+    // 需移除的 key 集合：先重建 query 对象，避免动态 delete
+    const removed = new Set<string>();
     for (const [k, v] of Object.entries(patch)) {
-      if (v === null || v === undefined) {
-        delete newQuery[k];
-      } else {
+      if (v === null || v === undefined) removed.add(k);
+    }
+    const newQuery: Record<string, string> = Object.fromEntries(
+      Object.entries(route.query as Record<string, string>).filter(
+        ([k]) => !removed.has(k),
+      ),
+    );
+    for (const [k, v] of Object.entries(patch)) {
+      if (v !== null && v !== undefined) {
         newQuery[k] = String(v);
       }
     }
@@ -103,31 +120,33 @@ export function useOperationalContext() {
   }
 
   function navigateWith(target: {
-    path: string;
-    loopId?: string | null;
+    anchor?: null | string;
+    eventId?: null | string;
     from?: UrlContext['from'];
-    section?: string | null;
-    anchor?: string | null;
-    eventId?: string | null;
-    trackerId?: string | null;
-    taskId?: string | null;
-    timeWindow?: UrlContext['timeWindow'];
-    plantNodeId?: string | null;
+    loopId?: null | string;
+    path: string;
+    plantNodeId?: null | string;
     replace?: boolean;
+    section?: null | string;
+    taskId?: null | string;
+    timeWindow?: UrlContext['timeWindow'];
+    trackerId?: null | string;
   }) {
     const query: Record<string, string> = {};
     const loopIdToUse = target.loopId ?? urlContext.value.loopId;
     if (loopIdToUse) query[URL_CONTEXT_KEYS.loopId] = loopIdToUse;
     if (target.from) query[URL_CONTEXT_KEYS.from] = target.from;
-    else if (urlContext.value.from) query[URL_CONTEXT_KEYS.from] = urlContext.value.from;
+    else if (urlContext.value.from)
+      query[URL_CONTEXT_KEYS.from] = urlContext.value.from;
     if (target.section) query[URL_CONTEXT_KEYS.section] = target.section;
     if (target.anchor) query[URL_CONTEXT_KEYS.anchor] = target.anchor;
     if (target.eventId) query[URL_CONTEXT_KEYS.eventId] = target.eventId;
     if (target.trackerId) query[URL_CONTEXT_KEYS.trackerId] = target.trackerId;
     if (target.taskId) query[URL_CONTEXT_KEYS.taskId] = target.taskId;
-    if (target.timeWindow) query[URL_CONTEXT_KEYS.timeWindow] = target.timeWindow;
-    else query[URL_CONTEXT_KEYS.timeWindow] = urlContext.value.timeWindow;
-    if (target.plantNodeId) query[URL_CONTEXT_KEYS.plantNodeId] = target.plantNodeId;
+    query[URL_CONTEXT_KEYS.timeWindow] =
+      target.timeWindow || urlContext.value.timeWindow;
+    if (target.plantNodeId)
+      query[URL_CONTEXT_KEYS.plantNodeId] = target.plantNodeId;
 
     const nav = target.replace ? router.replace : router.push;
     nav({ path: target.path, query });
@@ -155,9 +174,10 @@ export function useOperationalContext() {
   // ----- 派生导航 -----
   const navigation = computed(() => ({
     from: urlContext.value.from,
-    backTo: urlContext.value.from === 'overview'
-      ? { path: '/dashboard/workbench' } as DeepLink
-      : null,
+    backTo:
+      urlContext.value.from === 'overview'
+        ? ({ path: '/dashboard/workbench' } as DeepLink)
+        : null,
   }));
 
   // ----- 便捷访问器（直接访问 summary 字段） -----
@@ -166,13 +186,21 @@ export function useOperationalContext() {
   const assessment = computed(() => summary.value?.assessment ?? null);
   const diagnosis = computed(() => summary.value?.diagnosis ?? null);
   const tuning = computed(() => summary.value?.tuning ?? null);
-  const trackerTimeline = computed(() => summary.value?.trackerTimeline ?? null);
+  const trackerTimeline = computed(
+    () => summary.value?.trackerTimeline ?? null,
+  );
   const dataHealth = computed(() => summary.value?.dataHealth ?? null);
   const scoreTrend = computed(() => summary.value?.scoreTrend ?? null);
-  const activeAttention = computed(() => summary.value?.activeAttention ?? null);
+  const activeAttention = computed(
+    () => summary.value?.activeAttention ?? null,
+  );
   const lifecycle = computed(() => summary.value?.lifecycle ?? null);
-  const hasTracker = computed(() => summary.value?.trackerTimeline?.trackerId != null);
-  const unavailableSections = computed(() => summary.value?.unavailableSections ?? []);
+  const hasTracker = computed(
+    () => summary.value?.trackerTimeline?.trackerId != null,
+  );
+  const unavailableSections = computed(
+    () => summary.value?.unavailableSections ?? [],
+  );
 
   function isSectionAvailable(section: string): boolean {
     return !unavailableSections.value.includes(section);
@@ -183,7 +211,10 @@ export function useOperationalContext() {
     const action = nextAction.value;
     if (!action?.enabled || !action.target) return;
     const { route: targetRoute, query: targetQuery } = action.target;
-    const mergedQuery = { ...(route.query as Record<string, string>), ...targetQuery };
+    const mergedQuery = {
+      ...(route.query as Record<string, string>),
+      ...targetQuery,
+    };
     router.push({ path: targetRoute, query: mergedQuery });
   }
 
@@ -226,22 +257,34 @@ export function useOperationalContext() {
 
 const OPERATIONAL_CONTEXT_KEY = Symbol('operational-context');
 
-export type OperationalContextInstance = ReturnType<typeof useOperationalContext>;
+export type OperationalContextInstance = ReturnType<
+  typeof useOperationalContext
+>;
 
-export function provideOperationalContext(instance?: OperationalContextInstance): OperationalContextInstance {
+export function provideOperationalContext(
+  instance?: OperationalContextInstance,
+): OperationalContextInstance {
   const ctx = instance ?? useOperationalContext();
   provide(OPERATIONAL_CONTEXT_KEY, ctx);
   return ctx;
 }
 
-export function injectOperationalContext(): OperationalContextInstance | null {
-  return inject<OperationalContextInstance | null>(OPERATIONAL_CONTEXT_KEY, null);
+export function injectOperationalContext(): null | OperationalContextInstance {
+  return inject<null | OperationalContextInstance>(
+    OPERATIONAL_CONTEXT_KEY,
+    null,
+  );
 }
 
 export function injectOperationalContextOrThrow(): OperationalContextInstance {
-  const ctx = inject<OperationalContextInstance | null>(OPERATIONAL_CONTEXT_KEY, null);
+  const ctx = inject<null | OperationalContextInstance>(
+    OPERATIONAL_CONTEXT_KEY,
+    null,
+  );
   if (!ctx) {
-    throw new Error('injectOperationalContextOrThrow: no OperationalContext provider found');
+    throw new Error(
+      'injectOperationalContextOrThrow: no OperationalContext provider found',
+    );
   }
   return ctx;
 }

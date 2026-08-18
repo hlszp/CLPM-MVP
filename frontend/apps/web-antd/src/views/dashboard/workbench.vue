@@ -141,11 +141,14 @@ function getGrade(score: null | number | undefined): {
   for (let i = 0; i < gradeCfgs.value.length; i++) {
     const g = gradeCfgs.value[i]!;
     if (score >= g.min) {
-      return { ...g, letter: String.fromCharCode(65 + i) }; // A=0,B=1...
+      return { ...g, letter: String.fromCodePoint(65 + i) }; // A=0,B=1...
     }
   }
   const last = gradeCfgs.value[gradeCfgs.value.length - 1]!;
-  return { ...last, letter: String.fromCharCode(65 + gradeCfgs.value.length - 1) };
+  return {
+    ...last,
+    letter: String.fromCodePoint(65 + gradeCfgs.value.length - 1),
+  };
 }
 
 /** 告警线阈值：警告等级（倒数第二档）的 minScore；默认60 */
@@ -165,9 +168,11 @@ const warningColor = computed(() => {
 const router = useRouter();
 
 /** 选中节点（排名即导航；null = 全厂） */
-const selected = ref<null | { id: string; name: string; type: 'AREA' | 'UNIT' }>(
-  null,
-);
+const selected = ref<null | {
+  id: string;
+  name: string;
+  type: 'AREA' | 'UNIT';
+}>(null);
 
 /** §4 重点回路排序：asc = 评分最低 10 / desc = 评分最高 10 */
 const topMode = ref<'asc' | 'desc'>('asc');
@@ -177,7 +182,7 @@ const agg = ref<DashboardApi.BoardAggregateResult | null>(null);
 const autoRate = ref<DashboardApi.AutoRateRt | null>(null);
 const gradeDist = ref<GradeDistributionResult | null>(null);
 /** 上一窗口聚合（环比基线；加载失败为 null → 不显示环比） */
-const prevAgg = ref<null | (typeof agg.value)>(null);
+const prevAgg = ref<null | typeof agg.value>(null);
 
 // §6 运行状态：阀门 OP 行程越限回路（实时快照，与时间窗无关）
 interface ValveAlertItem {
@@ -252,9 +257,11 @@ const trendHours = computed(() => {
 });
 
 /** 上一窗口请求参数（环比基线）：当前窗口向前平移一个窗口长度；custom 未选范围为 null */
-const prevWindowParams = computed<
-  null | { endTime: string; startTime: string; timeWindow: 'custom' }
->(() => {
+const prevWindowParams = computed<null | {
+  endTime: string;
+  startTime: string;
+  timeWindow: 'custom';
+}>(() => {
   let startMs: number;
   let endMs: number;
   if (pageTimeWindow.value === 'custom') {
@@ -313,8 +320,7 @@ async function loadCards() {
   if (a.status === 'fulfilled') agg.value = a.value;
   if (r.status === 'fulfilled') autoRate.value = r.value;
   if (g.status === 'fulfilled') gradeDist.value = g.value;
-  prevAgg.value =
-    p.status === 'fulfilled' && p.value ? p.value : null;
+  prevAgg.value = p.status === 'fulfilled' && p.value ? p.value : null;
 }
 
 async function loadRankings() {
@@ -421,7 +427,8 @@ async function loadValveAlerts() {
         const lo = it.valveOpMin;
         const hi = it.valveOpMax;
         return (
-          (lo !== null && lo <= 5) || (hi !== null && hi !== undefined && hi >= 95)
+          (lo !== null && lo <= 5) ||
+          (hi !== null && hi !== undefined && hi >= 95)
         );
       })
       .map((it) => ({
@@ -643,7 +650,8 @@ const pieSegments = computed(() => {
     { key: 'POOR', label: '不合格' },
     { key: 'INCONCLUSIVE', label: '待评估' },
   ];
-  const segs: { color: string; count: number; label: string; pct: number }[] = [];
+  const segs: { color: string; count: number; label: string; pct: number }[] =
+    [];
   for (const def of defs) {
     const count = d[def.key] ?? 0;
     if (count <= 0) continue;
@@ -718,9 +726,7 @@ function metricText(
 ): string {
   if (!item || !metric) return '—';
   const v = item[metric];
-  return typeof v === 'number' && Number.isFinite(v)
-    ? fmt(v, digits)
-    : '—';
+  return typeof v === 'number' && Number.isFinite(v) ? fmt(v, digits) : '—';
 }
 
 // ================ §3 装置-单元树形排名（装置行折叠/展开单元行，工厂树 join 层级） ================
@@ -789,7 +795,9 @@ const treeRows = computed<TreeRow[]>(() => {
       item: area,
     });
     const units = unitRanking.value
-      .filter((u) => unitParentMap.value.get(u.plantNodeId) === area.plantNodeId)
+      .filter(
+        (u) => unitParentMap.value.get(u.plantNodeId) === area.plantNodeId,
+      )
       .toSorted(by);
     for (const u of units) grouped.add(u.plantNodeId);
     if (!expandedAreas.value.has(area.plantNodeId)) continue;
@@ -829,7 +837,9 @@ const treeRows = computed<TreeRow[]>(() => {
 });
 
 /** 行数 ≤ 10 时，拉伸行高等间距填满列表区；> 10 行时自然高度+滚动 */
-const stretchRows = computed(() => treeRows.value.length > 0 && treeRows.value.length <= 10);
+const stretchRows = computed(
+  () => treeRows.value.length > 0 && treeRows.value.length <= 10,
+);
 
 // ================ §5 趋势双轴柱线图（左轴五线 + 右轴参评回路数柱） ================
 /** 趋势图几何（viewBox 坐标）：SVG 生成与悬浮十字线映射共用，避免两处漂移 */
@@ -979,9 +989,7 @@ const trendTip = computed(() => {
   if (i === null || !t) return null;
   const d = t.timestamps[i] ? new Date(t.timestamps[i]!) : null;
   const time = d
-    ? (trendHours.value >= 120
-        ? `${d.getMonth() + 1}/${d.getDate()} `
-        : '') +
+    ? (trendHours.value >= 120 ? `${d.getMonth() + 1}/${d.getDate()} ` : '') +
       `${d.getHours().toString().padStart(2, '0')}:00`
     : '—';
   const rows: { color: string; label: string; text: string }[] = [];
@@ -1121,14 +1129,14 @@ const radarSvg = computed(() => {
   const pts = dims
     .map((d, i) => {
       const rad =
-        d.value === null ? 0 : r * Math.max(0, Math.min(100, d.value)) / 100;
+        d.value === null ? 0 : (r * Math.max(0, Math.min(100, d.value))) / 100;
       return `${px(i, rad).toFixed(1)},${py(i, rad).toFixed(1)}`;
     })
     .join(' ');
   svg += `<polygon points="${pts}" fill="rgba(37,99,235,.16)" stroke="#2563eb" stroke-width="1.5"/>`;
   dims.forEach((d, i) => {
     const rad =
-      d.value === null ? 0 : r * Math.max(0, Math.min(100, d.value)) / 100;
+      d.value === null ? 0 : (r * Math.max(0, Math.min(100, d.value))) / 100;
     svg += `<circle cx="${px(i, rad).toFixed(1)}" cy="${py(i, rad).toFixed(1)}" r="2" fill="#2563eb"><title>${d.label} ${d.value === null ? '—' : `${fmt(d.value)}%`}</title></circle>`;
   });
   // 轴端标注：指标名 + 数值两行式（按角度对齐）
@@ -1136,8 +1144,7 @@ const radarSvg = computed(() => {
     const lx = px(i, r + 16);
     const ly = py(i, r + 16);
     const cosA = Math.cos(angle(i));
-    const anchor =
-      Math.abs(cosA) < 0.3 ? 'middle' : (cosA > 0 ? 'start' : 'end');
+    const anchor = Math.abs(cosA) < 0.3 ? 'middle' : (cosA > 0 ? 'start' : 'end');
     const sinA = Math.sin(angle(i));
     // 顶部轴整体上移一行、底部轴下移一行，水平轴居中对齐
     const base = sinA < -0.3 ? -14 : (sinA > 0.3 ? -2 : 1);
@@ -1147,7 +1154,6 @@ const radarSvg = computed(() => {
 
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block">${svg}</svg>`;
 });
-
 </script>
 
 <template>
@@ -1177,8 +1183,8 @@ const radarSvg = computed(() => {
             "
             @click="
               pageTimeWindow === 'custom' &&
-                customRange &&
-                (showCustomPicker = !showCustomPicker)
+              customRange &&
+              (showCustomPicker = !showCustomPicker)
             "
             >{{ rangeLabel }}</span
           >
@@ -1200,7 +1206,9 @@ const radarSvg = computed(() => {
               </div>
             </div>
             <!-- 时间窗按钮组（与"评分最高/最低 10"风格一致：选中蓝底白字，未选中白底灰字+左分隔线） -->
-            <div class="flex overflow-hidden rounded border border-gray-200 text-xs">
+            <div
+              class="flex overflow-hidden rounded border border-gray-200 text-xs"
+            >
               <button
                 v-for="(o, idx) in TIME_WINDOW_OPTIONS"
                 :key="o.value"
@@ -1262,8 +1270,8 @@ const radarSvg = computed(() => {
                 class="mt-1 inline-block rounded border px-2 py-0.5 text-[11px] font-bold"
                 :style="{
                   color: getGrade(r1.avgScore).color,
-                  borderColor: `${getGrade(r1.avgScore).color }33`,
-                  background: `${getGrade(r1.avgScore).color }11`,
+                  borderColor: `${getGrade(r1.avgScore).color}33`,
+                  background: `${getGrade(r1.avgScore).color}11`,
                 }"
               >
                 {{ getGrade(r1.avgScore).label }}
@@ -1372,7 +1380,9 @@ const radarSvg = computed(() => {
               <span>参评</span>
               <span
                 class="font-mono text-sm font-bold"
-                :class="r1.evaluatedLoops > 0 ? 'text-blue-700' : 'text-gray-700'"
+                :class="
+                  r1.evaluatedLoops > 0 ? 'text-blue-700' : 'text-gray-700'
+                "
                 >{{ r1.evaluatedLoops }}</span
               >
             </div>
@@ -1420,7 +1430,9 @@ const radarSvg = computed(() => {
                   :style="{ background: seg.color }"
                 ></span>
                 <span class="text-gray-500">{{ seg.label }}</span>
-                <span class="font-mono font-bold text-gray-700">{{ seg.count }}</span>
+                <span class="font-mono font-bold text-gray-700">{{
+                  seg.count
+                }}</span>
               </div>
             </div>
           </div>
@@ -1468,14 +1480,20 @@ const radarSvg = computed(() => {
               class="flex h-8 flex-none items-center border-b border-gray-100 px-2.5 text-[11px] font-bold text-gray-700 dark:border-slate-700 dark:text-slate-100"
             >
               装置-单元排名
-              <span class="ml-auto text-[9px] font-normal text-gray-400 dark:text-slate-500"
+              <span
+                class="ml-auto text-[9px] font-normal text-gray-400 dark:text-slate-500"
                 >全厂 · 点击表头排序 · {{ twLabel }}</span
               >
             </div>
             <!-- 表头（按字符数百分比分配：3+3+12+4+4+5×5=51字符，按用户要求每列 = N/39*100%） -->
             <div
               class="grid h-8 flex-none items-center border-b border-gray-100 bg-gray-50/60 px-2.5 text-[11px] text-gray-500 dark:border-slate-700 dark:bg-slate-700/40 dark:text-slate-400"
-              style="grid-template-columns: calc(3 / 39 * 100%) calc(3 / 39 * 100%) calc(12 / 39 * 100%) calc(4 / 39 * 100%) calc(4 / 39 * 100%) repeat(5, calc(5 / 39 * 100%))"
+              style="
+                grid-template-columns:
+                  calc(3 / 39 * 100%) calc(3 / 39 * 100%)
+                  calc(12 / 39 * 100%) calc(4 / 39 * 100%) calc(4 / 39 * 100%)
+                  repeat(5, calc(5 / 39 * 100%));
+              "
             >
               <span class="text-center"></span>
               <span class="text-center">排名</span>
@@ -1489,10 +1507,12 @@ const radarSvg = computed(() => {
                 "
                 title="按回路数降序"
                 @click="unitSortKey = 'loops'"
-              >回路数{{ unitSortKey === 'loops' ? ' ▾' : '' }}</button>
+              >
+                回路数{{ unitSortKey === 'loops' ? ' ▾' : '' }}
+              </button>
               <span class="text-center">等级</span>
               <button
-                v-for="k in ['score','steady','fast','acc','auto'] as const"
+                v-for="k in ['score', 'steady', 'fast', 'acc', 'auto'] as const"
                 :key="k"
                 class="cursor-pointer border-0 bg-transparent text-right text-[11px]"
                 :class="
@@ -1500,14 +1520,28 @@ const radarSvg = computed(() => {
                     ? 'font-bold text-blue-700 dark:text-blue-400'
                     : 'text-gray-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400'
                 "
-                :title="`按${({score:'评分',steady:'平稳率',fast:'快速率',acc:'准确率',auto:'自控率'})[k]}降序`"
+                :title="`按${{ score: '评分', steady: '平稳率', fast: '快速率', acc: '准确率', auto: '自控率' }[k]}降序`"
                 @click="unitSortKey = k"
-              >{{ ({score:'评分',steady:'平稳率',fast:'快速率',acc:'准确率',auto:'自控率'})[k] }}{{ unitSortKey === k ? ' ▾' : '' }}</button>
+              >
+                {{
+                  {
+                    score: '评分',
+                    steady: '平稳率',
+                    fast: '快速率',
+                    acc: '准确率',
+                    auto: '自控率',
+                  }[k]
+                }}{{ unitSortKey === k ? ' ▾' : '' }}
+              </button>
             </div>
             <!-- 树形数据行：≤10 行时 flex-col 均分高度填满；>10 行时自然高度+滚动 -->
             <div
               class="min-h-0 flex-1"
-              :class="stretchRows ? 'rank-rows-stretch flex flex-col overflow-hidden' : 'overflow-y-auto'"
+              :class="
+                stretchRows
+                  ? 'rank-rows-stretch flex flex-col overflow-hidden'
+                  : 'overflow-y-auto'
+              "
             >
               <div
                 v-for="row in treeRows"
@@ -1518,10 +1552,13 @@ const radarSvg = computed(() => {
                   row.kind === 'area'
                     ? 'bg-gray-50/70 font-bold dark:bg-slate-700/30'
                     : 'hover:bg-blue-50/60 dark:hover:bg-slate-700/40',
-                  selected?.id === row.id ? 'bg-blue-50 dark:bg-blue-900/30' : '',
+                  selected?.id === row.id
+                    ? 'bg-blue-50 dark:bg-blue-900/30'
+                    : '',
                 ]"
                 :style="{
-                  gridTemplateColumns: 'calc(3 / 39 * 100%) calc(3 / 39 * 100%) calc(12 / 39 * 100%) calc(4 / 39 * 100%) calc(4 / 39 * 100%) repeat(5, calc(5 / 39 * 100%))',
+                  gridTemplateColumns:
+                    'calc(3 / 39 * 100%) calc(3 / 39 * 100%) calc(12 / 39 * 100%) calc(4 / 39 * 100%) calc(4 / 39 * 100%) repeat(5, calc(5 / 39 * 100%))',
                   borderLeft:
                     selected?.id === row.id
                       ? '3px solid #2563eb'
@@ -1556,18 +1593,24 @@ const radarSvg = computed(() => {
                         ? 'font-bold text-gray-400 dark:text-slate-500'
                         : 'text-transparent'
                   "
-                >{{ row.kind === 'area' ? row.rank : '·' }}</span>
+                  >{{ row.kind === 'area' ? row.rank : '·' }}</span
+                >
                 <!-- 名称（折叠箭头在名称前；单元行缩进） -->
                 <span
                   class="flex items-center gap-1 truncate px-1.5"
-                  :class="row.kind === 'area' ? 'text-gray-800 dark:text-white' : 'text-gray-600 dark:text-slate-300'"
+                  :class="
+                    row.kind === 'area'
+                      ? 'text-gray-800 dark:text-white'
+                      : 'text-gray-600 dark:text-slate-300'
+                  "
                   :title="row.name"
                 >
                   <span
                     v-if="row.kind === 'area'"
                     class="flex-none w-3 text-center text-[10px] text-gray-400 hover:text-blue-600 dark:text-slate-500 dark:hover:text-blue-400"
                     @click.stop="toggleAreaExpand(row.id)"
-                  >{{ expandedAreas.has(row.id) ? '▼' : '►' }}</span>
+                    >{{ expandedAreas.has(row.id) ? '▼' : '►' }}</span
+                  >
                   <span
                     class="min-w-0 truncate"
                     :class="row.kind === 'unit' ? 'pl-4' : ''"
@@ -1577,8 +1620,13 @@ const radarSvg = computed(() => {
                 <!-- 回路数 -->
                 <span
                   class="text-right font-mono"
-                  :class="row.kind === 'area' ? 'font-bold text-gray-700 dark:text-slate-200' : 'text-gray-500 dark:text-slate-400'"
-                >{{ metricText(row.item, 'loopCount', 0) }}</span>
+                  :class="
+                    row.kind === 'area'
+                      ? 'font-bold text-gray-700 dark:text-slate-200'
+                      : 'text-gray-500 dark:text-slate-400'
+                  "
+                  >{{ metricText(row.item, 'loopCount', 0) }}</span
+                >
                 <!-- 等级（A/B/C/D/E 色块） -->
                 <span class="text-center">
                   <span
@@ -1586,12 +1634,21 @@ const radarSvg = computed(() => {
                     class="inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold text-white"
                     :style="{ background: getGrade(row.item.score).color }"
                     :title="getGrade(row.item.score).label"
-                  >{{ getGrade(row.item.score).letter }}</span>
-                  <span v-else class="text-gray-300 dark:text-slate-600">—</span>
+                    >{{ getGrade(row.item.score).letter }}</span
+                  >
+                  <span v-else class="text-gray-300 dark:text-slate-600"
+                    >—</span
+                  >
                 </span>
                 <!-- 5 个指标列（评分带等级色） -->
                 <span
-                  v-for="(m, idx) in (['score','steadyRate','fastRate','accuracyRate','autoModeRate'] as const)"
+                  v-for="(m, idx) in [
+                    'score',
+                    'steadyRate',
+                    'fastRate',
+                    'accuracyRate',
+                    'autoModeRate',
+                  ] as const"
                   :key="m"
                   class="text-right font-mono"
                   :class="
@@ -1606,7 +1663,8 @@ const radarSvg = computed(() => {
                       ? { color: getGrade(row.item.score).color }
                       : {}
                   "
-                >{{ metricText(row.item, m, 1) }}</span>
+                  >{{ metricText(row.item, m, 1) }}</span
+                >
               </div>
               <div
                 v-if="treeRows.length === 0"
@@ -1620,7 +1678,9 @@ const radarSvg = computed(() => {
             >
               <span class="text-gray-400 dark:text-slate-500"
                 >范围:
-                <span class="font-bold text-gray-600 dark:text-slate-200">{{ scopeLabel }}</span
+                <span class="font-bold text-gray-600 dark:text-slate-200">{{
+                  scopeLabel
+                }}</span
                 >，装置 {{ areaRanking.length }} / 单元
                 {{ unitRanking.length }}</span
               >
@@ -1682,12 +1742,16 @@ const radarSvg = computed(() => {
                 <span
                   class="w-5 flex-none font-mono text-[10px] font-bold"
                   :class="
-                    topMode === 'asc' && idx < 3 ? 'text-red-500' : 'text-gray-400'
+                    topMode === 'asc' && idx < 3
+                      ? 'text-red-500'
+                      : 'text-gray-400'
                   "
                   >{{ idx + 1 }}</span
                 >
                 <div class="min-w-0 flex-1">
-                  <div class="truncate font-mono text-[11px] font-bold text-gray-800">
+                  <div
+                    class="truncate font-mono text-[11px] font-bold text-gray-800"
+                  >
                     {{ item.tagName }}
                   </div>
                   <div class="truncate text-[9px] text-gray-400">
@@ -1710,8 +1774,8 @@ const radarSvg = computed(() => {
                   class="flex-none rounded border px-1 text-[9px] font-bold"
                   :style="{
                     color: getGrade(item.score).color,
-                    borderColor: `${getGrade(item.score).color }33`,
-                    background: `${getGrade(item.score).color }11`,
+                    borderColor: `${getGrade(item.score).color}33`,
+                    background: `${getGrade(item.score).color}11`,
                   }"
                   >{{ getGrade(item.score).label }}</span
                 >
@@ -1740,7 +1804,9 @@ const radarSvg = computed(() => {
               >
                 清除选择
               </button>
-              <span v-else class="ml-auto text-gray-300">点击行进入回路工作台</span>
+              <span v-else class="ml-auto text-gray-300"
+                >点击行进入回路工作台</span
+              >
             </div>
           </div>
 
@@ -1768,9 +1834,7 @@ const radarSvg = computed(() => {
                 <span
                   class="w-6 flex-none"
                   :class="
-                    row.emphasis
-                      ? 'font-bold text-red-500'
-                      : 'text-gray-500'
+                    row.emphasis ? 'font-bold text-red-500' : 'text-gray-500'
                   "
                   >{{ row.label }}</span
                 >
@@ -1806,7 +1870,9 @@ const radarSvg = computed(() => {
                   @click="valveAlerts.length > 0 && goToAttention(selected?.id)"
                   >{{ valveAlerts.length }}</span
                 >
-                <span class="text-[9px] text-gray-400">回路（OP≤5% 或 ≥95%）</span>
+                <span class="text-[9px] text-gray-400"
+                  >回路（OP≤5% 或 ≥95%）</span
+                >
               </div>
               <div class="min-h-0 flex-1 overflow-y-auto">
                 <div
@@ -1815,9 +1881,10 @@ const radarSvg = computed(() => {
                   class="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-[10px] hover:bg-blue-50/60"
                   @click="goToLoop(v.loopId)"
                 >
-                  <span class="min-w-0 flex-1 truncate font-mono text-gray-700">{{
-                    v.tagName
-                  }}</span>
+                  <span
+                    class="min-w-0 flex-1 truncate font-mono text-gray-700"
+                    >{{ v.tagName }}</span
+                  >
                   <span class="flex-none font-mono text-[9px] text-red-500">{{
                     v.range
                   }}</span>
@@ -1861,23 +1928,26 @@ const radarSvg = computed(() => {
                   <span
                     class="inline-block h-0.5 w-2.5 rounded"
                     :style="{
-                      background: scoreVisible
-                        ? LINE_COLORS.score
-                        : '#cbd5e1',
+                      background: scoreVisible ? LINE_COLORS.score : '#cbd5e1',
                     }"
                   ></span>
                   综合评分
                 </button>
                 <button
-                  v-for="lg in ([
+                  v-for="lg in [
                     { key: 'steady', label: '平稳率' },
                     { key: 'fast', label: '快速率' },
                     { key: 'acc', label: '准确率' },
                     { key: 'auto', label: '自控率' },
-                  ] as { key: 'acc' | 'auto' | 'fast' | 'steady'; label: string }[])"
+                  ] as {
+                    key: 'acc' | 'auto' | 'fast' | 'steady';
+                    label: string;
+                  }[]"
                   :key="lg.key"
                   class="flex cursor-pointer items-center gap-1 border-0 bg-white"
-                  :class="lineVisible[lg.key] ? 'text-gray-600' : 'text-gray-300'"
+                  :class="
+                    lineVisible[lg.key] ? 'text-gray-600' : 'text-gray-300'
+                  "
                   @click="lineVisible[lg.key] = !lineVisible[lg.key]"
                 >
                   <span
@@ -1938,7 +2008,8 @@ const radarSvg = computed(() => {
                         :style="{ background: row.color }"
                       ></span>
                       <span class="text-gray-500">{{ row.label }}</span>
-                      <span class="ml-auto font-mono font-semibold text-gray-700"
+                      <span
+                        class="ml-auto font-mono font-semibold text-gray-700"
                         >{{ row.text }}</span
                       >
                     </div>
@@ -1955,8 +2026,9 @@ const radarSvg = computed(() => {
             <div
               class="flex h-6 flex-none items-center border-t border-gray-100 px-3 text-[10px] text-gray-400"
             >
-              选中: <span class="font-bold text-gray-600">{{ scopeLabel }}</span>
-              · {{ twLabel }} · 告警线 {{ warningThreshold }}
+              选中:
+              <span class="font-bold text-gray-600">{{ scopeLabel }}</span> ·
+              {{ twLabel }} · 告警线 {{ warningThreshold }}
             </div>
           </div>
 
@@ -1967,7 +2039,9 @@ const radarSvg = computed(() => {
             <div
               class="flex h-9 flex-none items-center gap-2 border-b border-gray-100 px-2.5"
             >
-              <span class="text-[11px] font-bold text-gray-700">装置指标对比</span>
+              <span class="text-[11px] font-bold text-gray-700"
+                >装置指标对比</span
+              >
               <span class="ml-auto text-[9px] font-normal text-gray-400"
                 >{{ twLabel }} · 点击柱组选中</span
               >
@@ -1999,8 +2073,7 @@ const radarSvg = computed(() => {
                 ><span
                   class="inline-block h-2 w-2 rounded-sm"
                   :style="{ background: AREA_BAR_COLORS.fast }"
-                ></span
-                >
+                ></span>
                 快速
               </span>
               <span class="flex items-center gap-1"

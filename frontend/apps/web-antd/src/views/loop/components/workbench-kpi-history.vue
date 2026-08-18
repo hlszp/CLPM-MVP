@@ -100,7 +100,7 @@ function aggregateBuckets(): Bucket[] {
     if (s.accuracyRate != null) b.accuracy.push(Number(s.accuracyRate));
     if (s.fastRate != null) b.fast.push(Number(s.fastRate));
   }
-  return [...map.values()].sort((a, b) => a.ts - b.ts);
+  return [...map.values()].toSorted((a, b) => a.ts - b.ts);
 }
 
 function avg(arr: number[]): null | number {
@@ -254,7 +254,8 @@ watch(
 
 onMounted(() => {
   refresh();
-});</script>
+});
+</script>
 
 <template>
   <div class="kpi-history">

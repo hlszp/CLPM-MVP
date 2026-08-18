@@ -78,6 +78,7 @@ class RealtimeWebSocket {
     this.isManualClose = false;
     if (this.ws) {
       // token 变化或连接已关闭：先清理旧连接再重连
+      // eslint-disable-next-line unicorn/prefer-add-event-listener -- onclose 属性方式注册，置 null 即注销（手动关闭前防止触发重连回调）
       this.ws.onclose = null;
       this.ws.close();
       this.ws = null;

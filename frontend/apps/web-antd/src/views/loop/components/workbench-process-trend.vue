@@ -62,7 +62,7 @@ interface Props {
   /** MODE 背景带数据（时间段+模式标签） */
   modeBands?: ModeBand[];
   /** 曲线显隐控制（由外层图例点击驱动） */
-  seriesVisible?: { pv: boolean; sp: boolean; op: boolean };
+  seriesVisible?: { op: boolean; pv: boolean; sp: boolean };
   /** PV 量程上下限（固定 Y 轴范围，不随数据自动调整） */
   pvRange?: null | { max: null | number; min: null | number };
 }
@@ -102,37 +102,32 @@ function fmtTimeSec(ts: number): string {
   return dayjs(ts).format('MM-DD HH:mm:ss');
 }
 
+/** 事件类型 → 标记样式（避免嵌套三元，查表法） */
+const EVENT_MARK_STYLE: Record<string, { color: string; symbol: string }> = {
+  diagnosis: { color: DIAG_COLOR, symbol: 'triangle' },
+  tuning: { color: TUNE_COLOR, symbol: 'diamond' },
+  verify: { color: VERIFY_COLOR, symbol: 'rect' },
+};
+
 /** 事件标记 → markPoint data */
 function buildEventMarkPoints() {
   if (!props.eventMarks || props.eventMarks.length === 0) return [];
   return props.eventMarks.map((m) => {
-    const color =
-      m.type === 'diagnosis'
-        ? DIAG_COLOR
-        : m.type === 'tuning'
-          ? TUNE_COLOR
-          : m.type === 'verify'
-            ? VERIFY_COLOR
-            : GAP_COLOR;
-    const symbol =
-      m.type === 'diagnosis'
-        ? 'triangle'
-        : m.type === 'tuning'
-          ? 'diamond'
-          : m.type === 'verify'
-            ? 'rect'
-            : 'roundRect';
+    const style = EVENT_MARK_STYLE[m.type] ?? {
+      color: GAP_COLOR,
+      symbol: 'roundRect',
+    };
     return {
       coord: [m.timestamp, 0],
-      symbol,
+      symbol: style.symbol,
       symbolSize: 10,
-      itemStyle: { color, borderColor: 'transparent' },
+      itemStyle: { color: style.color, borderColor: 'transparent' },
       label: {
         show: !!m.label,
         formatter: m.label ?? '',
         position: 'top',
         fontSize: 10,
-        color,
+        color: style.color,
       },
     };
   });

@@ -20,13 +20,16 @@
  * </ClpmEvidenceCanvas>
  */
 import { computed } from 'vue';
+
 import { Alert, Spin } from 'ant-design-vue';
+
 import { injectOperationalContext } from '#/composables/use-operational-context';
+
 import ClpmEmptyState from './empty-state.vue';
 
 defineOptions({ name: 'ClpmEvidenceCanvas' });
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     /** 紧凑模式：减小 padding */
     compact?: boolean;
@@ -35,7 +38,14 @@ const props = withDefaults(
   }>(),
   {
     compact: false,
-    sections: () => ['dataHealth', 'scoreTrend', 'assessment', 'diagnosis', 'tuning', 'tracker'],
+    sections: () => [
+      'dataHealth',
+      'scoreTrend',
+      'assessment',
+      'diagnosis',
+      'tuning',
+      'tracker',
+    ],
   },
 );
 
@@ -46,7 +56,9 @@ const isGlobalError = computed(() => ctx?.stateFace.value === 'error');
 const isEmpty = computed(() => ctx?.stateFace.value === 'empty');
 const isPartial = computed(() => ctx?.stateFace.value === 'partial');
 const isStale = computed(() => ctx?.stateFace.value === 'stale');
-const errorMessage = computed(() => ctx?.error.value?.message ?? '数据加载失败');
+const errorMessage = computed(
+  () => ctx?.error.value?.message ?? '数据加载失败',
+);
 const unavailableList = computed(() => ctx?.unavailableSections.value ?? []);
 
 function isSectionAvailable(section: string): boolean {
@@ -59,7 +71,10 @@ function reload() {
 </script>
 
 <template>
-  <div :class="['evidence-canvas', { 'evidence-canvas--compact': compact }]">
+  <div
+    class="evidence-canvas"
+    :class="[{ 'evidence-canvas--compact': compact }]"
+  >
     <!-- 全局 stale 警告条 -->
     <Alert
       v-if="isStale"
@@ -88,7 +103,7 @@ function reload() {
       tip="加载中..."
       class="evidence-canvas__spin"
     >
-      <div class="evidence-canvas__loading-placeholder" />
+      <div class="evidence-canvas__loading-placeholder"></div>
     </Spin>
 
     <!-- error 状态 -->
@@ -122,7 +137,7 @@ function reload() {
           <!-- 区块不可用：显示占位 -->
           <section
             v-if="!isSectionAvailable(section)"
-            :class="['evidence-canvas__section', 'evidence-canvas__section--unavailable']"
+            class="evidence-canvas__section evidence-canvas__section--unavailable"
           >
             <div class="evidence-canvas__section-unavailable">
               <span class="evidence-canvas__section-name">{{ section }}</span>
@@ -130,8 +145,12 @@ function reload() {
             </div>
           </section>
           <!-- 区块可用：渲染 slot -->
-          <section v-else :class="['evidence-canvas__section', `evidence-canvas__section--${section}`]">
-            <slot :name="section" :ctx="ctx" />
+          <section
+            v-else
+            class="evidence-canvas__section"
+            :class="[`evidence-canvas__section--${section}`]"
+          >
+            <slot :name="section" :ctx="ctx"></slot>
           </section>
         </template>
       </div>
