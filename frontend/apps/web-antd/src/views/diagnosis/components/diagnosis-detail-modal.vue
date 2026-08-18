@@ -286,9 +286,12 @@ async function submitNewAction(): Promise<void> {
 const activeTab = ref('conclusion');
 
 // ===== 拖动 + 调整宽高 =====
-/** 默认 860：KPI 单行（评分+等级+6率+评估窗口 ≈795px）+ body padding 32px */
+/** 默认 860：KPI 单行（评分+等级+6率 ≈795px）+ body padding 32px */
 const modalW = ref(860);
-const bodyH = ref(600);
+/** 高度按视口自适应（尽量完整显示 Tab 内容）：视口 - 标题栏/页边余量，clamp [520, 880] */
+const bodyH = ref(
+  Math.min(Math.max(window.innerHeight - 200, 520), 880),
+);
 const MIN_W = 720;
 const MIN_H = 360;
 
@@ -450,9 +453,17 @@ watch(open, (v) => {
           </div>
         </div>
 
-        <!-- ② 性能评估指标（单行） -->
+        <!-- ② 性能评估指标（单行；评估窗口在标题右侧） -->
         <div class="diag-detail-card">
-          <div class="diag-detail-card__title">性能评估指标</div>
+          <div class="diag-detail-card__title">
+            <span>性能评估指标</span>
+            <span
+              v-if="!kpiLoading && kpi"
+              class="diag-detail-card__extra tabular-nums"
+            >
+              评估窗口 {{ fmtLocal(kpi.tsStart) }}~{{ fmtLocal(kpi.tsEnd) }}
+            </span>
+          </div>
           <Skeleton
             v-if="kpiLoading"
             :paragraph="{ rows: 1 }"
@@ -478,12 +489,6 @@ watch(open, (v) => {
             <span v-for="r in kpiRates" :key="r.label" class="diag-info__item">
               <span class="diag-info__k">{{ r.label }}</span>
               <span class="diag-info__v tabular-nums">{{ r.value }}</span>
-            </span>
-            <span class="diag-info__item diag-info__item--end">
-              <span class="diag-info__k">评估窗口</span>
-              <span class="diag-info__v tabular-nums">
-                {{ fmtLocal(kpi.tsStart) }}~{{ fmtLocal(kpi.tsEnd) }}
-              </span>
             </span>
           </div>
           <div v-else class="diag-detail-card__empty">
@@ -711,10 +716,20 @@ watch(open, (v) => {
 }
 
 .diag-detail-modal .diag-detail-card__title {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
   padding: 3px 10px 0;
   font-size: 11px;
   font-weight: 600;
   color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-detail-card__extra {
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .diag-detail-modal .diag-detail-card__empty {

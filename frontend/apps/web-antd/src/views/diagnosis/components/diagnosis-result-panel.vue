@@ -293,7 +293,8 @@ watch(isDark, () => {
         </div>
         <div class="text-right">
           <div class="flex items-center justify-end gap-1">
-            <span class="text-lg font-semibold tabular-nums">
+            <span class="text-xs text-neutral-500">置信度</span>
+            <span class="text-xs font-medium tabular-nums">
               {{ confPercent(detail.primaryConfidence) }}
             </span>
             <Popover v-if="primaryConfBasis" trigger="click" placement="leftTop">
@@ -315,7 +316,6 @@ watch(isDark, () => {
               </span>
             </Popover>
           </div>
-          <div class="text-xs text-neutral-500">置信度</div>
         </div>
         <Badge
           v-if="detail.severity"
