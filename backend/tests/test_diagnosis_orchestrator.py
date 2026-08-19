@@ -143,3 +143,95 @@ async def test_loop_not_found_returns_none() -> None:
     db.execute.side_effect = [result]
     run = await orch.run_diagnosis_for_loop(db, LOOP_ID, start=START, end=END)
     assert run is None
+
+
+# ---------------------------------------------------------------------------
+# 方案 A：metricSummary 聚合（2026-08-19）
+# ---------------------------------------------------------------------------
+
+
+class TestBuildMetricSummary:
+    """_build_metric_summary：窗口 KPI 均值 + 算子特征 → 0~100 统一口径。"""
+
+    def test_full_kpi_window(self) -> None:
+        """KPI 窗口均值齐全：负向全 kpi 源，坏值率=100−好值率。"""
+        kpi_avgs = {
+            "goodValueRate": 93.67,
+            "saturationRate": 0.53,
+            "oscillationRate": 82.84,
+            "stictionIndex": 0.0,
+            "settlingTime": 12.5,
+            "outputTripIndex": 3.2,
+            "score": 66.68,
+            "effectiveAutoRate": 99.47,
+        }
+        ops = {
+            "quality_code_rules": {"features": {"bad_rate": 0.0633}},
+            "output_saturation": {"features": {"saturation_rate": 0.0044}},
+        }
+        ms = orch._build_metric_summary(kpi_avgs, ops)
+        neg = ms["negative"]
+        assert neg["badValueRate"] == round(100 - 93.67, 2)
+        assert neg["saturationRate"] == 0.53
+        assert neg["oscillationRate"] == 82.84
+        assert neg["stictionIndex"] == 0.0
+        assert neg["settlingTime"] == 12.5
+        assert neg["outputTravelIndex"] == 3.2
+        assert ms["source"]["badValueRate"] == "kpi"
+        assert ms["source"]["saturationRate"] == "kpi"
+        assert ms["positive"]["score"] == 66.68
+        assert ms["positive"]["effectiveAutoRate"] == 99.47
+
+    def test_operator_fallback(self) -> None:
+        """窗口无 KPI 快照：算子特征 0~1 → ×100 兜底，source=operator。"""
+        ops = {
+            "quality_code_rules": {"features": {"bad_rate": 0.0633}},
+            "output_saturation": {"features": {"saturation_rate": 0.0044}},
+            "stiction_ellipse": {"features": {"stiction_index": 0.42}},
+        }
+        ms = orch._build_metric_summary({}, ops)
+        neg = ms["negative"]
+        assert neg["badValueRate"] == 6.33
+        assert neg["saturationRate"] == 0.44
+        assert neg["stictionIndex"] == 42.0
+        assert ms["source"]["badValueRate"] == "operator"
+        assert ms["source"]["saturationRate"] == "operator"
+        assert ms["source"]["stictionIndex"] == "operator"
+        assert ms["positive"]["score"] is None
+
+    def test_empty_inputs(self) -> None:
+        """全空输入：负向全 None，source=none，不抛异常。"""
+        ms = orch._build_metric_summary({}, {})
+        assert all(v is None for v in ms["negative"].values())
+        assert set(ms["source"].values()) == {"none"}
+        assert all(v is None for v in ms["positive"].values())
+
+    def test_invalid_operator_feature_ignored(self) -> None:
+        """算子特征非法值（None/字符串）：透传 None 不抛异常。"""
+        ops = {
+            "quality_code_rules": {"features": {"bad_rate": "not-a-number"}},
+            "output_saturation": {"features": {"saturation_rate": None}},
+        }
+        ms = orch._build_metric_summary({}, ops)
+        assert ms["negative"]["badValueRate"] is None
+        assert ms["negative"]["saturationRate"] is None
+
+    def test_kpi_priority_over_operator(self) -> None:
+        """KPI 与算子同时有值：KPI 优先（同时间窗口径更可信）。"""
+        kpi_avgs = {"saturationRate": 2.11}
+        ops = {"output_saturation": {"features": {"saturation_rate": 0.9}}}
+        ms = orch._build_metric_summary(kpi_avgs, ops)
+        assert ms["negative"]["saturationRate"] == 2.11
+        assert ms["source"]["saturationRate"] == "kpi"
+
+
+@pytest.mark.asyncio
+async def test_run_persists_metric_summary() -> None:
+    """诊断 run 落库携带 metricSummary（非空且含 negative/positive/source）。"""
+    run, _ = await _run(_frozen_series())
+    assert run is not None
+    ms = run.metric_summary
+    assert isinstance(ms, dict)
+    assert set(ms.keys()) == {"negative", "positive", "source"}
+    assert "badValueRate" in ms["negative"]
+    assert "score" in ms["positive"]

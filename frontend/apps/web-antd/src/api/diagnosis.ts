@@ -133,6 +133,8 @@ export namespace DiagnosisApi {
     rationale: string[];
     recommendations: Recommendation[];
     evidenceCharts?: ChartSnapshot;
+    /** 诊断指标汇总（方案 A：窗口 KPI 均值 + 算子特征，0~100 统一口径） */
+    metricSummary?: null | MetricSummary;
     thresholdVersion?: null | string;
     algorithmVersion?: null | string;
     startedAt?: null | string;
@@ -166,6 +168,31 @@ export namespace DiagnosisApi {
     operators: Record<string, string>;
     fusion: string;
     secondaryGate: number;
+  }
+
+  /** 诊断指标汇总（方案 A，2026-08-19）：窗口 KPI 均值 + 算子特征，0~100 统一口径 */
+  export interface MetricSummary {
+    /** 负向指标（值越大越差）：坏值率/饱和率/振荡率/粘滞系数（%），稳定时间（秒），行程指数 */
+    negative: {
+      badValueRate?: null | number;
+      saturationRate?: null | number;
+      oscillationRate?: null | number;
+      stictionIndex?: null | number;
+      settlingTime?: null | number;
+      outputTravelIndex?: null | number;
+    };
+    /** 正向指标（KPI 窗口均值，%）：综合评分 + 6 率 */
+    positive: {
+      score?: null | number;
+      effectiveAutoRate?: null | number;
+      autoModeRate?: null | number;
+      goodValueRate?: null | number;
+      steadyRate?: null | number;
+      accuracyRate?: null | number;
+      fastRate?: null | number;
+    };
+    /** 各负向指标来源：kpi（窗口快照均值）/ operator（算子特征换算）/ none（无数据） */
+    source: Record<string, string>;
   }
 
   export type TimeWindowPreset = 'last_7d' | 'last_24h' | 'last_30d';

@@ -123,6 +123,79 @@ const primaryConfBasis = computed(() => {
   return lines.filter((l) => !l.endsWith('】'));
 });
 
+// ===== ③++ 诊断指标汇总（方案 A：窗口 KPI 均值 + 算子特征，0~100 统一口径）=====
+
+/** 负向指标展示行（值越大越差；稳定时间为秒，行程指数为指数值） */
+const negativeMetricRows = computed(() => {
+  const ms = props.detail.metricSummary;
+  if (!ms?.negative) return [];
+  const units: Record<string, string> = {
+    badValueRate: '%',
+    oscillationRate: '%',
+    outputTravelIndex: '',
+    saturationRate: '%',
+    settlingTime: ' s',
+    stictionIndex: '%',
+  };
+  const labels: Record<string, string> = {
+    badValueRate: '坏值率',
+    oscillationRate: '振荡率',
+    outputTravelIndex: '行程指数',
+    saturationRate: '饱和率',
+    settlingTime: '稳定时间',
+    stictionIndex: '粘滞系数',
+  };
+  return Object.keys(labels)
+    .map((key) => {
+      const v = ms.negative[key as keyof typeof ms.negative];
+      const src = ms.source?.[key];
+      return {
+        key,
+        label: labels[key]!,
+        source: src,
+        text: v == null ? '—' : `${Number(v).toFixed(1)}${units[key]}`,
+        value: v == null ? 0 : Number(v),
+      };
+    })
+    .filter((r) => r.source !== 'none' || r.text !== '—');
+});
+
+/** 正向指标展示行（KPI 窗口均值，%） */
+const positiveMetricRows = computed(() => {
+  const ms = props.detail.metricSummary;
+  if (!ms?.positive) return [];
+  const labels: Record<string, string> = {
+    accuracyRate: '准确率',
+    autoModeRate: '自控率',
+    effectiveAutoRate: '有效自控率',
+    fastRate: '快速率',
+    goodValueRate: '好值率',
+    score: '综合评分',
+    steadyRate: '平稳率',
+  };
+  return Object.keys(labels)
+    .map((key) => {
+      const v = ms.positive[key as keyof typeof ms.positive];
+      return {
+        key,
+        label: labels[key]!,
+        text: v == null ? '—' : `${Number(v).toFixed(1)}%`,
+        value: v == null ? 0 : Number(v),
+      };
+    })
+    .filter((r) => r.value > 0 || r.text !== '—');
+});
+
+const SOURCE_TEXT: Record<string, string> = {
+  kpi: 'KPI窗口均值',
+  none: '无数据',
+  operator: '算子特征',
+};
+
+function sourceText(src?: string): string {
+  return SOURCE_TEXT[src ?? 'none'] ?? src ?? '无数据';
+}
+
 /** 证据折叠区：波形快照默认展开（上部），特征值默认折叠（下部） */
 const activeKeys = ref<string[]>(['charts']);
 
@@ -515,6 +588,65 @@ watch(isDark, () => {
           </Tag>
         </Tooltip>
       </template>
+    </div>
+
+    <!-- ③++ 诊断指标汇总（方案 A：窗口 KPI 均值 + 算子特征，0~100 统一口径） -->
+    <div
+      v-if="showEvidence && (negativeMetricRows.length > 0 || positiveMetricRows.length > 0)"
+      class="rounded border border-solid border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800/60"
+    >
+      <div class="mb-1.5 flex items-center gap-2">
+        <span class="text-xs font-medium">诊断指标汇总</span>
+        <Tooltip
+          title="诊断时间窗内 KPI 快照均值与算子特征聚合，统一 0~100 口径；负向指标值越大越差"
+        >
+          <span
+            class="flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-solid border-neutral-300 text-9px text-neutral-500 hover:border-blue-400 hover:text-blue-500"
+          >
+            ?
+          </span>
+        </Tooltip>
+      </div>
+      <!-- 负向：紧凑横排（值 + 来源 Tag） -->
+      <div
+        v-if="negativeMetricRows.length > 0"
+        class="flex flex-wrap items-center gap-x-4 gap-y-1"
+      >
+        <span class="text-xs text-red-500/80">负向</span>
+        <Tooltip
+          v-for="m in negativeMetricRows"
+          :key="m.key"
+          :title="`数据来源：${sourceText(m.source)}`"
+        >
+          <span class="inline-flex items-center gap-1 text-xs tabular-nums">
+            <span class="text-neutral-500">{{ m.label }}</span>
+            <span class="font-medium">{{ m.text }}</span>
+            <Tag
+              v-if="m.source && m.source !== 'none'"
+              :bordered="false"
+              class="!m-0 !px-1 !text-10px !leading-none"
+              :color="m.source === 'kpi' ? 'blue' : 'cyan'"
+            >
+              {{ m.source === 'kpi' ? 'KPI' : '算子' }}
+            </Tag>
+          </span>
+        </Tooltip>
+      </div>
+      <!-- 正向：紧凑横排 -->
+      <div
+        v-if="positiveMetricRows.length > 0"
+        class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1"
+      >
+        <span class="text-xs text-green-600/80">正向</span>
+        <span
+          v-for="m in positiveMetricRows"
+          :key="m.key"
+          class="inline-flex items-center gap-1 text-xs tabular-nums"
+        >
+          <span class="text-neutral-500">{{ m.label }}</span>
+          <span class="font-medium">{{ m.text }}</span>
+        </span>
+      </div>
     </div>
 
     <!-- ④ 处置建议区（R1-R5 排序由后端给出） -->

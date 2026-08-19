@@ -52,6 +52,9 @@ class DiagnosisRun(Base, TimestampMixin):
     rationale: Mapped[dict] = mapped_column(JSONB, nullable=True)
     recommendations: Mapped[dict] = mapped_column(JSONB, nullable=True)
     evidence_charts: Mapped[dict] = mapped_column(JSONB, nullable=True)
+    #: 诊断指标汇总（方案 A，2026-08-19）：诊断时间窗内 KPI 快照均值 + 算子特征，
+    #: 统一 0~100 口径（坏值率/饱和率/振荡率/粘滞系数/稳定时间/行程指数 + 6 正向率）
+    metric_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     threshold_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

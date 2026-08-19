@@ -172,6 +172,8 @@ def _run_to_detail(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
             "rationale": row.rationale,
             "recommendations": row.recommendations,
             "evidenceCharts": row.evidence_charts,
+            # 方案 A：诊断指标汇总（窗口 KPI 均值 + 算子特征，0~100 统一口径）
+            "metricSummary": row.metric_summary,
             "thresholdVersion": row.threshold_version,
             "algorithmVersion": row.algorithm_version,
             "startedAt": row.started_at.isoformat() if row.started_at else None,

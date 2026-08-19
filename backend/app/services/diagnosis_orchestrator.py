@@ -214,15 +214,49 @@ def _apply_outlier_preprocessing(
 
 
 async def _kpi_context(db: Any, loop_id: str, start: datetime, end: datetime) -> dict[str, Any]:
-    """时间窗内 KPI 快照均值（投用率/评分），供分类映射层消费。"""
+    """时间窗内 KPI 快照均值（投用率/评分），供分类映射层消费。
+
+    附带 ``_window_averages``（camelCase 全指标均值）供 metricSummary 聚合复用
+    （下划线键为编排器内部约定，分类层不消费）。
+    """
+    kpi_avgs = await _kpi_window_averages(db, loop_id, start, end)
+    return {
+        "auto_rate_avg": kpi_avgs.get("effectiveAutoRate"),
+        "score_avg": kpi_avgs.get("score"),
+        "_window_averages": kpi_avgs,
+    }
+
+
+#: 窗口 KPI 均值查询列（metricSummary 聚合 + 分类上下文共用）
+_KPI_AVG_COLUMNS = (
+    "score",
+    "effective_auto_rate",
+    "auto_mode_rate",
+    "good_value_rate",
+    "steady_rate",
+    "accuracy_rate",
+    "fast_rate",
+    "oscillation_rate",
+    "saturation_rate",
+    "stiction_index",
+    "settling_time",
+    "output_trip_index",
+)
+
+
+async def _kpi_window_averages(
+    db: Any, loop_id: str, start: datetime, end: datetime
+) -> dict[str, Any]:
+    """诊断时间窗内 KPI 快照各指标均值（camelCase 键；窗口无快照返回空 dict）。
+
+    与 _kpi_context 同口径：ts_start 落在 [start, end] 的 SUCCESS 快照。
+    """
     from app.models.metric import KpiSnapshotHourly as _K
 
+    cols = [func.avg(getattr(_K, c)) for c in _KPI_AVG_COLUMNS]
     row = (
         await db.execute(
-            select(
-                func.avg(_K.effective_auto_rate),
-                func.avg(_K.score),
-            ).where(
+            select(*cols).where(
                 _K.loop_id == loop_id,
                 _K.ts_start >= start,
                 _K.ts_start <= end,
@@ -230,11 +264,120 @@ async def _kpi_context(db: Any, loop_id: str, start: datetime, end: datetime) ->
             )
         )
     ).one_or_none()
-    auto_avg, score_avg = row if row else (None, None)
+    if not row or all(v is None for v in row):
+        return {}
+
+    def _camel(snake: str) -> str:
+        parts = snake.split("_")
+        return parts[0] + "".join(p.title() for p in parts[1:])
+
+    # row 可能是较短的 mock 元组（测试）或完整 12 列聚合行；按列名 zip 截齐
+    values = tuple(row)[: len(_KPI_AVG_COLUMNS)]
     return {
-        "auto_rate_avg": float(auto_avg) if auto_avg is not None else None,
-        "score_avg": float(score_avg) if score_avg is not None else None,
+        _camel(c): round(float(v), 2)
+        for c, v in zip(_KPI_AVG_COLUMNS, values, strict=False)
+        if v is not None
     }
+
+
+def _build_metric_summary(
+    kpi_avgs: dict[str, Any],
+    op_results: dict[str, Any],
+) -> dict[str, Any]:
+    """诊断指标汇总（方案 A）：窗口 KPI 均值 + 算子特征，统一 0~100 口径。
+
+    口径约定：
+    - KPI 源指标（0~100）：饱和率/振荡率/粘滞系数/好值率等直接取窗口均值；
+    - 算子源指标（0~1 小数）：saturation_rate/bad_rate/stiction_index 换算 ×100，
+      仅在窗口无对应 KPI 快照时兜底（KPI 与诊断同一时间窗，优先级更高）；
+    - 坏值率：KPI 好值率均值换算 100−goodValueRate（对齐原工作台诊断卡口径），
+      无快照时用质量码算子 bad_rate×100 兜底；
+    - 稳定时间（秒）/行程指数（0~100）：非率类指标原值透传，前端按各自单位展示。
+
+    Returns:
+        {
+          "negative": {badValueRate, saturationRate, oscillationRate,
+                       stictionIndex, settlingTime, outputTravelIndex},
+          "positive": {score, effectiveAutoRate, autoModeRate, goodValueRate,
+                       steadyRate, accuracyRate, fastRate},
+          "source":   {各指标来源 kpi|operator|derived，供前端标注}
+        }
+    """
+    ops: dict[str, Any] = op_results or {}
+
+    def _op_feature(op_name: str, key: str) -> Any:
+        feats = (ops.get(op_name) or {}).get("features") or {}
+        return feats.get(key)
+
+    def _pct_from_ratio(v: Any) -> Any:
+        """0~1 小数 → 0~100 百分比（None/非法透传 None）。"""
+        if v is None:
+            return None
+        try:
+            return round(float(v) * 100.0, 2)
+        except (TypeError, ValueError):
+            return None
+
+    # ---- 负向指标 ----
+    bad_rate_ratio = _op_feature("quality_code_rules", "bad_rate")
+    if kpi_avgs.get("goodValueRate") is not None:
+        bad_value_rate = round(100.0 - float(kpi_avgs["goodValueRate"]), 2)
+        bad_src = "kpi"
+    elif bad_rate_ratio is not None:
+        bad_value_rate = _pct_from_ratio(bad_rate_ratio)
+        bad_src = "operator"
+    else:
+        bad_value_rate, bad_src = None, "none"
+
+    if kpi_avgs.get("saturationRate") is not None:
+        sat_rate, sat_src = kpi_avgs["saturationRate"], "kpi"
+    else:
+        sat_rate = _pct_from_ratio(_op_feature("output_saturation", "saturation_rate"))
+        sat_src = "operator" if sat_rate is not None else "none"
+
+    osc_rate = kpi_avgs.get("oscillationRate")
+    stiction = kpi_avgs.get("stictionIndex")
+    if stiction is None:
+        stiction = _pct_from_ratio(_op_feature("stiction_ellipse", "stiction_index"))
+    settling = kpi_avgs.get("settlingTime")
+    travel = kpi_avgs.get("outputTripIndex")
+
+    negative: dict[str, Any] = {
+        "badValueRate": bad_value_rate,
+        "saturationRate": sat_rate,
+        "oscillationRate": osc_rate,
+        "stictionIndex": stiction,
+        "settlingTime": settling,
+        "outputTravelIndex": travel,
+    }
+    source: dict[str, str] = {
+        "badValueRate": bad_src,
+        "saturationRate": sat_src,
+        "oscillationRate": "kpi" if osc_rate is not None else "none",
+        "stictionIndex": (
+            "kpi"
+            if kpi_avgs.get("stictionIndex") is not None
+            else ("operator" if stiction is not None else "none")
+        ),
+        "settlingTime": "kpi" if settling is not None else "none",
+        "outputTravelIndex": "kpi" if travel is not None else "none",
+    }
+
+    # ---- 正向指标（全部 KPI 窗口均值） ----
+    positive = {
+        k: kpi_avgs.get(k)
+        for k in (
+            "score",
+            "effectiveAutoRate",
+            "autoModeRate",
+            "goodValueRate",
+            "steadyRate",
+            "accuracyRate",
+            "fastRate",
+        )
+    }
+
+    return {"negative": negative, "positive": positive, "source": source}
 
 
 async def _effective_thresholds(db: Any, loop_id: str) -> dict[str, dict[str, Any]]:
@@ -529,6 +672,8 @@ async def run_diagnosis_for_loop(
     )
 
     kpi_ctx = await _kpi_context(db, loop_id, start, end)
+    # 方案 A：窗口 KPI 均值随上下文带回（同一次查询），供 metricSummary 聚合
+    kpi_avgs: dict[str, Any] = kpi_ctx.get("_window_averages") or {}
     sample_interval = _compute_sample_interval(aligned) if aligned else 1.0
 
     # ---- 算子执行 + 融合 + 分类 ----
@@ -578,12 +723,16 @@ async def run_diagnosis_for_loop(
         fusions = {}
         classification = classify({}, {}, kpi_ctx, gate)
 
-    # ---- 波形快照 + 落库 ----
+    # ---- 波形快照 + 指标汇总 + 落库 ----
     await _report(0.95, "证据快照与落库")
     charts = _build_chart_snapshots(
         aligned,
         pv_range=_resolve_pv_range(mappings, tags_map),
         op_range=_resolve_op_range(mappings, tags_map),
+    )
+    # 方案 A：诊断指标汇总（窗口 KPI 均值 + 算子特征，0~100 统一口径）
+    metric_summary = _build_metric_summary(
+        kpi_avgs, {name: _operator_result_to_dict(r) for name, r in op_results.items()}
     )
     has_error = any(r.error for r in op_results.values())
     finished_at = datetime.utcnow()
@@ -617,6 +766,7 @@ async def run_diagnosis_for_loop(
         rationale=classification.rationale,
         recommendations=[r.to_dict() for r in classification.recommendations],
         evidence_charts=charts,
+        metric_summary=metric_summary,
         threshold_version=(
             "default" if not effective_thresholds else f"override:{len(effective_thresholds)}"
         ),
