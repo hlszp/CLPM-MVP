@@ -331,6 +331,7 @@ class TestRunsLatestEndpoint:
         review_results=None,
         reviewed_by: str | None = None,
         reviewed_at: datetime | None = None,
+        metric_summary=None,
     ):
         from types import SimpleNamespace
 
@@ -354,6 +355,7 @@ class TestRunsLatestEndpoint:
             review_results=review_results if run_id else None,
             reviewed_by=reviewed_by,
             reviewed_at=reviewed_at,
+            metric_summary=metric_summary,
         )
 
     def _override_execute(self, client, execute) -> None:
@@ -366,8 +368,18 @@ class TestRunsLatestEndpoint:
     def test_latest_serialization_with_undiagnosed(self, client) -> None:
         """已诊断行带结论标签；未诊断回路 runId=null 一并返回。"""
         rid = uuid4()
+        metric_summary = {
+            "negative": {"badValueRate": 1.16, "oscillationRate": 97.07},
+            "positive": {"score": 60.95},
+            "source": {"badValueRate": "kpi"},
+        }
         rows = [
-            self._row(tag="L1", run_id=rid, diagnosed=datetime(2026, 8, 16, 12, 0, 0)),
+            self._row(
+                tag="L1",
+                run_id=rid,
+                diagnosed=datetime(2026, 8, 16, 12, 0, 0),
+                metric_summary=metric_summary,
+            ),
             self._row(tag="L2", run_id=None, diagnosed=None),
         ]
         rows_r = MagicMock()
@@ -392,10 +404,13 @@ class TestRunsLatestEndpoint:
         assert items[0]["runCount"] == 3
         assert items[0]["reviewStatus"] == "PENDING"
         assert items[0]["reviewResultLabels"] == []
+        # metricSummary 透传（2026-08-19：回路工作台 R5 诊断卡/整定摘要条消费）
+        assert items[0]["metricSummary"] == metric_summary
         assert items[1]["runId"] is None
         assert items[1]["primaryCategoryLabel"] is None
         assert items[1]["runCount"] == 0
         assert items[1]["reviewStatus"] is None
+        assert items[1]["metricSummary"] is None
 
     def test_latest_invalid_plant_node_id_rejected(self, client) -> None:
         with mock_current_user(TEST_USERS["admin"]):
@@ -405,6 +420,69 @@ class TestRunsLatestEndpoint:
                 params={"plantNodeId": "not-a-uuid"},
             )
         assert resp.status_code == 400
+
+    def test_latest_invalid_loop_id_rejected(self, client) -> None:
+        """loopId 非 UUID 直接 400（与 plantNodeId 同防御）。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopId": "not-a-uuid"},
+            )
+        assert resp.status_code == 400
+
+    def test_latest_loop_id_filter(self, client) -> None:
+        """loopId 单回路过滤：SQL 拼入 ll.id = :loop_id 且参数透传。"""
+        captured: dict = {}
+
+        async def _execute(sql, params=None):
+            captured["sql"] = str(sql)
+            captured["params"] = params
+            rid = uuid4()
+            rows_r = MagicMock()
+            rows_r.all.return_value = [
+                self._row(tag="L1", run_id=rid, diagnosed=datetime(2026, 8, 19, 8, 0, 0))
+            ]
+            return rows_r
+
+        loop_id = str(uuid4())
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_execute(client, _execute)
+            resp = client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopId": loop_id},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 1
+        # 单回路过滤：条件与参数均生效（plantNodeId 未传 → 无 node_tree CTE）
+        assert "ll.id = :loop_id" in captured["sql"]
+        assert "node_tree" not in captured["sql"]
+        assert captured["params"] == {"loop_id": loop_id}
+
+    def test_latest_plant_node_and_loop_combined(self, client) -> None:
+        """plantNodeId + loopId 同时传入：CTE 与回路过滤并存（AND 语义）。"""
+        captured: dict = {}
+
+        async def _execute(sql, params=None):
+            captured["sql"] = str(sql)
+            captured["params"] = params
+            rows_r = MagicMock()
+            rows_r.all.return_value = []
+            return rows_r
+
+        plant_id, loop_id = str(uuid4()), str(uuid4())
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_execute(client, _execute)
+            resp = client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"plantNodeId": plant_id, "loopId": loop_id},
+            )
+        assert resp.status_code == 200
+        assert "WITH RECURSIVE node_tree" in captured["sql"]
+        assert "ll.id = :loop_id" in captured["sql"]
+        assert captured["params"] == {"root_id": plant_id, "loop_id": loop_id}
 
     def test_latest_orders_desc_nulls_last(self, client) -> None:
         """排序行为：回路按最新诊断时间降序在前，未诊断回路垫底；透出 triggerType。"""

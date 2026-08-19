@@ -227,6 +227,9 @@ export namespace DiagnosisApi {
     lastDiagnosedAt?: null | string;
     timeWindowStart?: null | string;
     timeWindowEnd?: null | string;
+    /** 诊断指标汇总（窗口 KPI 均值+算子特征，0~100 口径；未诊断为 null）。
+     *  回路工作台 R5 诊断卡 / 整定工作台摘要条消费（2026-08-19） */
+    metricSummary?: null | MetricSummary;
   }
 
   /** 复核状态：PENDING 待复核 / REVIEWED 已复核 */
@@ -313,13 +316,19 @@ export function getDiagnosisRunsApi(params: DiagnosisApi.RunQuery) {
   );
 }
 
-/** 每回路最新诊断概览（装置节点下钻；无诊断记录的回路 runId=null） */
-export function getDiagnosisRunsLatestApi(plantNodeId?: string) {
+/** 每回路最新诊断概览（装置节点下钻 / loopId 单回路；无诊断记录的回路 runId=null） */
+export function getDiagnosisRunsLatestApi(
+  plantNodeId?: string,
+  loopId?: string,
+) {
+  const params: { loopId?: string; plantNodeId?: string } = {};
+  if (plantNodeId) params.plantNodeId = plantNodeId;
+  if (loopId) params.loopId = loopId;
   return requestClient.get<{
     items: DiagnosisApi.LatestRunItem[];
     total: number;
   }>('/diagnosis/runs/latest', {
-    params: plantNodeId ? { plantNodeId } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
   });
 }
 

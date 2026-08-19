@@ -140,12 +140,12 @@ function mountPanel(detail: DiagnosisApi.RunDetail) {
 }
 
 describe('DiagnosisResultPanel', () => {
-  it('渲染主分类卡：分类名/置信度/严重度/处置方向', () => {
+  it('渲染主分类卡：分类名/置信度/严重度', () => {
+    // fc991020 已移除结论卡 direction 副标题（精简设计），断言同步对齐
     const wrapper = mountPanel(makeDetail());
     const text = wrapper.text();
     expect(text).toContain('仪表/测量问题');
     expect(text).toContain('85%');
-    expect(text).toContain('校验/维护');
     expect(text).toContain('严重度 高');
   });
 

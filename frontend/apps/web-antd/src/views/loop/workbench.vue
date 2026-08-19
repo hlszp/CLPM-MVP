@@ -13,6 +13,7 @@
  * 点击左侧回路 → router.replace 更新 URL query；路由 meta.fullPathKey=false
  * 确保不新增 tab/面包屑，仅更新右侧子页面。
  */
+import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type {
   KpiSnapshotItem,
@@ -48,6 +49,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
 import {
   getLoopDetailApi,
   getLoopMonitorDetailApi,
@@ -80,6 +82,7 @@ import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
 
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
+import WorkbenchDiagnosisCard from './components/workbench-diagnosis-card.vue';
 import WorkbenchKpiHistory from './components/workbench-kpi-history.vue';
 import WorkbenchMetricBars from './components/workbench-metric-bars.vue';
 import WorkbenchProcessTrend from './components/workbench-process-trend.vue';
@@ -341,6 +344,32 @@ async function loadSummary(loopId: string): Promise<void> {
     summaryLoading.value = false;
   });
 }
+
+// ===== R5 诊断卡：最新诊断概览（含 metricSummary，2026-08-19）=====
+// 单回路 latest（loopId 过滤）；失败静默（诊断卡显示空态不阻塞页面）
+const latestDiagnosis = ref<DiagnosisApi.LatestRunItem | null>(null);
+
+async function loadLatestDiagnosis(loopId: string): Promise<void> {
+  await requestGuard.run(async (_signal, capturedEpoch) => {
+    const data = await getDiagnosisRunsLatestApi(undefined, loopId).catch(
+      () => null,
+    );
+    if (!requestGuard.guard(loopId, capturedEpoch)) return;
+    latestDiagnosis.value = data?.items[0] ?? null;
+  });
+}
+
+/** 诊断卡 header meta：诊断时间 + 第 N 次（naive UTC 补 Z 转本地） */
+const diagnosisMetaText = computed(() => {
+  const item = latestDiagnosis.value;
+  if (!item?.runId) return '未诊断';
+  const s = item.lastDiagnosedAt;
+  if (!s) return '—';
+  const iso = /[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? s : `${s}Z`;
+  const time = dayjs(iso).format('MM-DD HH:mm');
+  const count = item.runCount;
+  return count && count > 1 ? `${time} · 第${count}次` : time;
+});
 
 /** 生命周期条点击：滚动到对应 R 区 */
 function handleLifecycleStageClick(stage: MonitorApi.LifecycleStageName): void {
@@ -714,11 +743,13 @@ watch(
       loadLoopDetail(newId);
       loadSummary(newId);
       loadAssessment(newId);
+      void loadLatestDiagnosis(newId);
     } else {
       assessmentDetail.value = null;
       scoreHistory.value = [];
       loopDetail.value = null;
       summary.value = null;
+      latestDiagnosis.value = null;
       // 重置 loading 状态（guard 取消时不会重置，此处兜底）
       summaryLoading.value = false;
       assessmentLoading.value = false;
@@ -1670,6 +1701,28 @@ const stageLabelMap: Record<string, string> = {
                 :show-hint="false"
               />
             </div>
+          </div>
+
+          <!-- 诊断.最新结论卡（负向指标横条，metricSummary 口径） -->
+          <div class="wb-r5__card wb-r5__card--diag">
+            <div class="wb-r5__card-header">
+              <Tooltip
+                title="最新诊断结论与负向指标：诊断时间窗内 KPI 均值+算子特征，统一 0~100 口径，条越长越差"
+              >
+                <span class="wb-r5__card-title">诊断.最新结论</span>
+              </Tooltip>
+              <span class="wb-r5__card-meta">{{ diagnosisMetaText }}</span>
+              <a
+                v-if="selectedLoopId"
+                class="wb-r5__card-link"
+                @click.prevent="goDiagnose"
+                >报告 →</a
+              >
+            </div>
+            <WorkbenchDiagnosisCard
+              :item="latestDiagnosis"
+              @diagnose="goDiagnose"
+            />
           </div>
         </section>
       </div>

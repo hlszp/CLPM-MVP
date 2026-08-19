@@ -569,6 +569,7 @@ async def get_latest_runs_per_loop(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
     plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
+    loopId: str | None = Query(None, description="回路 ID（单回路最新诊断，工作台/整定上下文用）"),
 ) -> dict:
     """每回路 1 条最新诊断概览（工作台概览列表，2026-08-18 重构）。
 
@@ -577,21 +578,40 @@ async def get_latest_runs_per_loop(
     - 性能评分：kpi_snapshot_hourly 该回路最新一条有 score 的快照
     - 诊断次序：该回路累计诊断次数（run_count，"第 N 次"语义）
     - 复核：review_status / review_results / reviewed_by / reviewed_at
+    - metricSummary：诊断指标汇总（窗口 KPI 均值+算子特征，0~100 口径，
+      回路工作台 R5 诊断卡 / 整定工作台摘要条消费）
     无诊断记录的回路也列出（runId=null，前端显示"未诊断"）。
     """
-    # 防御：plantNodeId 非法 UUID 直接 400（否则 PG UUID 列比较抛 500）
-    if plantNodeId is not None:
-        try:
-            UUID(plantNodeId)
-        except ValueError:
-            raise BizError(
-                code="ERR_PARAM",
-                message="plantNodeId 格式非法（应为 UUID）",
-                status_code=400,
-            ) from None
+    # 防御：非 UUID 直接 400（否则 PG UUID 列比较抛 500）
+    for param_name, param_value in (("plantNodeId", plantNodeId), ("loopId", loopId)):
+        if param_value is not None:
+            try:
+                UUID(param_value)
+            except ValueError:
+                raise BizError(
+                    code="ERR_PARAM",
+                    message=f"{param_name} 格式非法（应为 UUID）",
+                    status_code=400,
+                ) from None
+
+    cte = (
+        "WITH RECURSIVE node_tree AS ("
+        "SELECT id FROM plant_node WHERE id = :root_id "
+        "UNION ALL "
+        "SELECT child.id FROM plant_node child "
+        "JOIN node_tree nt ON child.parent_id = nt.id) "
+        if plantNodeId
+        else ""
+    )
+    conditions = ["ll.is_active = true"]
+    if plantNodeId:
+        conditions.append("ll.unit_id IN (SELECT id FROM node_tree)")
+    if loopId:
+        conditions.append("ll.id = :loop_id")
 
     sql = text(
-        """
+        f"""
+        {cte}
         SELECT ll.id AS loop_id, ll.tag_name, ll.description AS loop_description,
                ll.importance_level,
                r.id AS run_id, r.primary_category, r.primary_confidence,
@@ -599,6 +619,7 @@ async def get_latest_runs_per_loop(
                r.review_status, r.review_results, r.reviewed_by, r.reviewed_at,
                COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
                r.time_window_start, r.time_window_end,
+               r.metric_summary,
                k.score AS latest_score,
                rc.run_count
         FROM loop_ledger ll
@@ -616,47 +637,14 @@ async def get_latest_runs_per_loop(
                 SELECT COUNT(*) AS run_count FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
             ) rc ON true
-            WHERE ll.is_active = true
+            WHERE {" AND ".join(conditions)}
             """
     )
     params: dict[str, str] = {}
     if plantNodeId:
-        sql = text(
-            """
-            WITH RECURSIVE node_tree AS (
-                SELECT id FROM plant_node WHERE id = :root_id
-                UNION ALL
-                SELECT child.id FROM plant_node child
-                JOIN node_tree nt ON child.parent_id = nt.id
-            )
-            SELECT ll.id AS loop_id, ll.tag_name, ll.description AS loop_description,
-                   ll.importance_level,
-                   r.id AS run_id, r.primary_category, r.primary_confidence,
-                   r.severity, r.status, r.trigger_type,
-                   r.review_status, r.review_results, r.reviewed_by, r.reviewed_at,
-                   COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
-                   r.time_window_start, r.time_window_end,
-                   k.score AS latest_score,
-                   rc.run_count
-            FROM loop_ledger ll
-            LEFT JOIN LATERAL (
-                SELECT * FROM diagnosis_run dr
-                WHERE dr.loop_id = ll.id
-                ORDER BY dr.created_at DESC LIMIT 1
-            ) r ON true
-            LEFT JOIN LATERAL (
-                SELECT ks.score FROM kpi_snapshot_hourly ks
-                WHERE ks.loop_id = ll.id AND ks.score IS NOT NULL
-                ORDER BY ks.ts_start DESC LIMIT 1
-            ) k ON true
-            LEFT JOIN LATERAL (
-                SELECT COUNT(*) AS run_count FROM diagnosis_run dr
-                WHERE dr.loop_id = ll.id
-            ) rc ON true
-            WHERE ll.is_active = true AND ll.unit_id IN (SELECT id FROM node_tree)
-            """
-        )
         params["root_id"] = plantNodeId
+    if loopId:
+        params["loop_id"] = loopId
 
     rows = list((await db.execute(sql, params)).all())
 
@@ -707,6 +695,8 @@ async def get_latest_runs_per_loop(
                 "lastDiagnosedAt": r.last_diagnosed_at.isoformat() if r.last_diagnosed_at else None,
                 "timeWindowStart": r.time_window_start.isoformat() if r.time_window_start else None,
                 "timeWindowEnd": r.time_window_end.isoformat() if r.time_window_end else None,
+                # 诊断指标汇总（窗口 KPI 均值+算子特征，0~100 口径；未诊断为 None）
+                "metricSummary": r.metric_summary if r.run_id else None,
             }
         )
     return success({"items": items, "total": len(items)})
