@@ -44,7 +44,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm lint
+        run: pnpm -F @vben/web-antd run lint
 
       - name: Typecheck
         run: pnpm -F @vben/web-antd run typecheck
