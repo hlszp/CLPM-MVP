@@ -33,6 +33,7 @@ HistoryModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
 # 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
 # V62-P3-006：新增 IDENTIFICATION_ONLY——纯辨识记录不再用 IMC 占位
+# MANUAL_TUNING：矩阵第 6 行"手动整定"——参数由工程师手工设定，不经算法计算
 TuningAlgorithm = Literal[
     "IMC",
     "LAMBDA",
@@ -40,6 +41,7 @@ TuningAlgorithm = Literal[
     "COHEN_COON",
     "SIMC",
     "IDENTIFICATION_ONLY",
+    "MANUAL_TUNING",
 ]
 
 # 整定任务状态（Phase 2 新枚举 + 兼容旧枚举）

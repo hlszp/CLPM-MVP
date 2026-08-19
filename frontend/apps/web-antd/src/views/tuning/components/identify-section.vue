@@ -6,9 +6,11 @@
  *        / 阶跃实验辨识（兜底，同步）。
  * 结果卡：模型类型/参数/拟合度/可信度徽标；D/E 级警示（下游置灰由 ctx 门禁驱动）。
  */
+import type { TuningApi } from '#/api/tuning';
+
 import type { TuningWorkbenchContext } from '../composables/use-tuning-workbench';
 
-import { computed, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import {
   Alert,
@@ -16,16 +18,20 @@ import {
   Card,
   Descriptions,
   DescriptionsItem,
+  InputNumber,
   Progress,
   RadioButton,
   RadioGroup,
   RangePicker,
+  Select,
   Tag,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
 import { ClpmConfidenceBadge } from '#/components/clpm';
+
+import { fmtNum2 } from '../constants';
 
 const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 
@@ -83,13 +89,52 @@ const paramItems = computed(() => {
   if (!o) return [];
   const items: { label: string; value: string }[] = [];
   const p = o.params;
-  if (p.K != null) items.push({ label: '增益 K', value: String(p.K) });
-  if (p.tau != null) items.push({ label: '时间常数 τ', value: `${p.tau} s` });
-  if (p.T1 != null) items.push({ label: 'T1', value: `${p.T1} s` });
-  if (p.T2 != null) items.push({ label: 'T2', value: `${p.T2} s` });
-  if (p.theta != null) items.push({ label: '纯滞后 θ', value: `${p.theta} s` });
+  if (p.K != null) items.push({ label: '增益 K', value: fmtNum2(p.K) });
+  if (p.tau != null) items.push({ label: '时间常数 τ', value: `${fmtNum2(p.tau)} s` });
+  if (p.T1 != null) items.push({ label: 'T1', value: `${fmtNum2(p.T1)} s` });
+  if (p.T2 != null) items.push({ label: 'T2', value: `${fmtNum2(p.T2)} s` });
+  if (p.theta != null) items.push({ label: '纯滞后 θ', value: `${fmtNum2(p.theta)} s` });
   return items;
 });
+
+// ===== 手动修改过程模型（辨识后可人工选择模型类型/调整参数） =====
+const editing = ref(false);
+const MODEL_TYPE_OPTIONS = [
+  { label: '一阶滞后（FOPDT）', value: 'FOPDT' },
+  { label: '二阶滞后（SOPDT）', value: 'SOPDT' },
+  { label: '积分对象（IPDT）', value: 'IPDT' },
+];
+const editForm = reactive({
+  modelType: 'FOPDT' as TuningApi.ModelType,
+  K: 1,
+  tau: 10,
+  T1: 10,
+  T2: 1,
+  theta: 0,
+});
+
+function startEdit() {
+  const o = outcome.value;
+  if (!o) return;
+  editForm.modelType = o.modelType;
+  editForm.K = o.params.K ?? 1;
+  editForm.tau = o.params.tau ?? 10;
+  editForm.T1 = o.params.T1 ?? 10;
+  editForm.T2 = o.params.T2 ?? 1;
+  editForm.theta = o.params.theta ?? 0;
+  editing.value = true;
+}
+
+async function applyEdit() {
+  editing.value = false;
+  const params =
+    editForm.modelType === 'SOPDT'
+      ? { K: editForm.K, T1: editForm.T1, T2: editForm.T2, theta: editForm.theta }
+      : editForm.modelType === 'IPDT'
+        ? { K: editForm.K, theta: editForm.theta }
+        : { K: editForm.K, tau: editForm.tau, theta: editForm.theta };
+  await ctx.applyManualModel(editForm.modelType, params);
+}
 </script>
 
 <template>
@@ -157,13 +202,27 @@ const paramItems = computed(() => {
         <Tag color="blue">{{
           MODEL_TYPE_LABEL[outcome.modelType] ?? outcome.modelType
         }}</Tag>
-        <span class="text-sm"
+        <span v-if="outcome.dataSource !== 'MANUAL'" class="text-sm"
           >拟合度 <b>{{ outcome.fittingScore.toFixed(1) }}%</b></span
         >
         <ClpmConfidenceBadge v-if="badgeLevel" :level="badgeLevel" />
         <span class="text-xs text-neutral-400">
-          {{ outcome.dataSource === 'HISTORY' ? '历史数据' : '阶跃实验' }}
+          {{
+            outcome.dataSource === 'HISTORY'
+              ? '历史数据'
+              : outcome.dataSource === 'STEP_EXPERIMENT'
+                ? '阶跃实验'
+                : '人工修改'
+          }}
         </span>
+        <Button
+          size="small"
+          class="ml-auto"
+          :disabled="ctx.identifying.value"
+          @click="startEdit"
+        >
+          手动修改模型
+        </Button>
       </div>
       <Alert
         v-if="isLowConfidence"
@@ -181,6 +240,80 @@ const paramItems = computed(() => {
           {{ item.value }}
         </DescriptionsItem>
       </Descriptions>
+
+      <!-- 手动修改模型编辑区 -->
+      <div v-if="editing" class="mt-2 model-edit">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-neutral-500">模型类型</span>
+          <Select
+            v-model:value="editForm.modelType"
+            :options="MODEL_TYPE_OPTIONS"
+            size="small"
+            style="width: 180px"
+          />
+          <span class="ml-2 text-xs font-medium text-neutral-500">增益 K</span>
+          <InputNumber
+            v-model:value="editForm.K"
+            size="small"
+            :precision="2"
+            :min="0.01"
+            :step="0.1"
+            style="width: 96px"
+          />
+          <template v-if="editForm.modelType === 'FOPDT'">
+            <span class="text-xs font-medium text-neutral-500">时间常数 τ (s)</span>
+            <InputNumber
+              v-model:value="editForm.tau"
+              size="small"
+              :precision="2"
+              :min="0.1"
+              :step="1"
+              style="width: 96px"
+            />
+          </template>
+          <template v-if="editForm.modelType === 'SOPDT'">
+            <span class="text-xs font-medium text-neutral-500">T1 (s)</span>
+            <InputNumber
+              v-model:value="editForm.T1"
+              size="small"
+              :precision="2"
+              :min="0.1"
+              :step="1"
+              style="width: 96px"
+            />
+            <span class="text-xs font-medium text-neutral-500">T2 (s)</span>
+            <InputNumber
+              v-model:value="editForm.T2"
+              size="small"
+              :precision="2"
+              :min="0.1"
+              :step="1"
+              style="width: 96px"
+            />
+          </template>
+          <span class="text-xs font-medium text-neutral-500">纯滞后 θ (s)</span>
+          <InputNumber
+            v-model:value="editForm.theta"
+            size="small"
+            :precision="2"
+            :min="0"
+            :step="1"
+            style="width: 96px"
+          />
+          <Button
+            type="primary"
+            size="small"
+            :disabled="editForm.K == null || (editForm.modelType === 'FOPDT' && editForm.tau == null)"
+            @click="applyEdit"
+          >
+            应用
+          </Button>
+          <Button size="small" @click="editing = false">取消</Button>
+        </div>
+        <div class="mt-1 text-xs text-neutral-400">
+          应用后将脱离辨识记录（模型来源=人工，需确认风险），矩阵与仿真按新模型重算
+        </div>
+      </div>
     </template>
   </Card>
 </template>
@@ -189,5 +322,12 @@ const paramItems = computed(() => {
 .section-title {
   font-size: 13px;
   font-weight: 600;
+}
+
+.model-edit {
+  padding: 8px 10px;
+  background: hsl(var(--accent));
+  border: 1px dashed hsl(var(--border));
+  border-radius: 4px;
 }
 </style>

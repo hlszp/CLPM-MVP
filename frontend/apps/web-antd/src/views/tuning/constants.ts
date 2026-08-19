@@ -9,12 +9,18 @@ export const TUNING_ALGO_LABELS: Record<string, string> = {
   ZN: 'Z-N 整定（ZN）',
   COHEN_COON: 'Cohen-Coon（COHEN_COON）',
   SIMC: '简化内模控制（SIMC）',
+  MANUAL_TUNING: '手动整定（MANUAL）',
 };
 
 /** 算法 key → 「中文（英文缩写）」；未知 key 原样返回，空值显示 — */
 export function tuningAlgoLabel(algo: null | string | undefined): string {
   if (!algo) return '—';
   return TUNING_ALGO_LABELS[algo] ?? algo;
+}
+
+/** 数值统一两位小数显示（过程模型/PID 参数口径）；空值显示 — */
+export function fmtNum2(v: null | number | undefined): string {
+  return v == null || Number.isNaN(v) ? '—' : v.toFixed(2);
 }
 
 /** 回路重要性等级（loop_ledger.importance_level；口径同诊断模块） */

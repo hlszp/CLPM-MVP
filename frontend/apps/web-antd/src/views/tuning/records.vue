@@ -17,7 +17,7 @@ import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 
 import RecordDetailDrawer from './components/record-detail-drawer.vue';
-import { tuningAlgoLabel } from './constants';
+import { tuningAlgoLabel, fmtNum2 } from './constants';
 
 defineOptions({ name: 'TuningRecords' });
 
@@ -105,7 +105,7 @@ function goVerification(row: TuningApi.TuningTaskItem) {
 
 function fmtPid(pid?: null | TuningApi.PidParams): string {
   if (!pid) return '—';
-  return `${pid.kp} / ${pid.ti} / ${pid.td}`;
+  return `${fmtNum2(pid.kp)} / ${fmtNum2(pid.ti)} / ${fmtNum2(pid.td)}`;
 }
 
 onMounted(() => {

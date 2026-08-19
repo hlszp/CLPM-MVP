@@ -22,15 +22,15 @@ import {
 
 import { tuningAlgoLabel } from '../constants';
 
-/** 辨识结果（统一历史/阶跃双路径的输出形态） */
+/** 辨识结果（统一历史/阶跃双路径的输出形态；MANUAL=人工修改后的模型） */
 export interface IdentifyOutcome {
   modelType: TuningApi.ModelType;
   params: TuningApi.ModelParams;
   fittingScore: number;
   confidenceLevel?: null | TuningApi.ConfidenceLevel;
-  /** 服务端持久化的辨识记录 ID（阶跃路径 recordId / 历史路径 result.recordId） */
+  /** 服务端持久化的辨识记录 ID（阶跃路径 recordId / 历史路径 result.recordId）；人工修改后置空 */
   recordId?: null | string;
-  dataSource: 'HISTORY' | 'STEP_EXPERIMENT';
+  dataSource: 'HISTORY' | 'MANUAL' | 'STEP_EXPERIMENT';
   identifyMethod?: null | string;
   reason?: null | string;
 }
@@ -61,6 +61,9 @@ const ALGO_PARAM_KEY: Record<string, string> = {
   LAMBDA: 'lambdaRatio',
   SIMC: 'tauCRatio',
 };
+
+/** 仿真最多可勾选的推荐参数组数（+ 当前 PID = 曲线上限 6 条） */
+const MAX_SIM_CANDIDATES = 5;
 
 export function useTuningWorkbench() {
   const state = reactive({
@@ -100,13 +103,21 @@ export function useTuningWorkbench() {
       state.outcome.confidenceLevel !== 'E',
   );
   const checkedRows = computed(() =>
-    state.matrixRows.filter((r) => r.checked && r.ok && r.pid),
+    state.matrixRows.filter(
+      (r) =>
+        r.checked &&
+        r.ok &&
+        r.pid &&
+        // 手动整定行输入清空（null）时视为无效，不可进入仿真
+        r.pid.kp != null &&
+        r.pid.ti != null,
+    ),
   );
   const canSimulate = computed(
     () =>
       canTune.value &&
       checkedRows.value.length > 0 &&
-      checkedRows.value.length <= 2,
+      checkedRows.value.length <= MAX_SIM_CANDIDATES,
   );
   const canConfirm = computed(
     () => !!state.simResult && !!state.finalLabel && !state.saving,
@@ -272,6 +283,17 @@ export function useTuningWorkbench() {
         paramValue: 1,
         recomputing: false,
       }));
+      // 第 6 行：手动整定（P/I/D 工程师手工设定；预填当前 PID 便于起步）
+      state.matrixRows.push({
+        algorithm: 'MANUAL_TUNING',
+        ok: true,
+        pid: state.currentPid
+          ? { ...state.currentPid }
+          : { kp: 1, ti: 10, td: 0 },
+        checked: false,
+        paramValue: 1,
+        recomputing: false,
+      });
     } catch (error: any) {
       state.matrixError = error?.message || '矩阵计算失败';
     } finally {
@@ -279,8 +301,31 @@ export function useTuningWorkbench() {
     }
   }
 
-  /** 行内算法参数微调后单行重算 */
+  /** 人工修改过程模型：替换 outcome 并按新模型重算矩阵（走 MANUAL 来源门禁） */
+  async function applyManualModel(
+    modelType: TuningApi.ModelType,
+    params: TuningApi.ModelParams,
+  ) {
+    state.outcome = {
+      modelType,
+      params: { ...params },
+      fittingScore: 0,
+      confidenceLevel: null,
+      recordId: null,
+      dataSource: 'MANUAL',
+      identifyMethod: null,
+      reason: '人工修改模型（脱离辨识记录）',
+    };
+    state.simResult = null;
+    state.simCandidates = [];
+    state.finalLabel = '';
+    state.savedRecordId = '';
+    await runMatrix();
+  }
+
+  /** 行内算法参数微调后单行重算（手动整定行不经算法计算，无重算） */
   async function recomputeRow(row: MatrixRow) {
+    if (row.algorithm === 'MANUAL_TUNING') return;
     row.recomputing = true;
     try {
       const paramKey = ALGO_PARAM_KEY[row.algorithm];
@@ -300,10 +345,10 @@ export function useTuningWorkbench() {
     }
   }
 
-  /** 勾选控制：最多 2 组 */
+  /** 勾选控制：最多 MAX_SIM_CANDIDATES 组 */
   function toggleRow(row: MatrixRow) {
     if (!row.ok || !row.pid) return;
-    if (!row.checked && checkedRows.value.length >= 2) return; // 超出禁选
+    if (!row.checked && checkedRows.value.length >= MAX_SIM_CANDIDATES) return; // 超出禁选
     row.checked = !row.checked;
   }
 
@@ -375,6 +420,7 @@ export function useTuningWorkbench() {
       const algoRow = state.matrixRows.find(
         (r) => r.algorithm === chosen.algorithm,
       );
+      const isManualModel = state.outcome.dataSource === 'MANUAL';
       const res = await saveTuningTaskApi({
         loopId: state.loopId,
         modelType: state.outcome.modelType,
@@ -382,11 +428,14 @@ export function useTuningWorkbench() {
         algorithm: algoRow?.algorithm ?? 'IMC',
         recommendedPid: chosen.pid,
         currentPid: state.currentPid ?? undefined,
-        fittingScore: state.outcome.fittingScore,
+        // 人工修改模型无拟合度可言；辨识来源元数据仅服务端辨识链结果携带
+        fittingScore: isManualModel ? undefined : state.outcome.fittingScore,
         simulationResult: state.simResult as unknown as Record<string, any>,
         status: 'SIMULATED',
-        identifyMethod: state.outcome.identifyMethod ?? undefined,
-        dataSource: state.outcome.dataSource,
+        identifyMethod: isManualModel
+          ? undefined
+          : (state.outcome.identifyMethod ?? undefined),
+        dataSource: isManualModel ? undefined : state.outcome.dataSource,
         confidenceLevel: state.outcome.confidenceLevel ?? undefined,
       });
       state.savedRecordId = res.id;
@@ -406,6 +455,7 @@ export function useTuningWorkbench() {
     selectLoop,
     runIdentify,
     runMatrix,
+    applyManualModel,
     recomputeRow,
     toggleRow,
     runSimulate,

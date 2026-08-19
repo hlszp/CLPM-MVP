@@ -2,8 +2,8 @@
 /**
  * 整定工作台 · 锚点③ 仿真对比（09 设计方案 §4.3/§6.2）
  *
- * 当前 PID + 勾选推荐组（1~2 组）在同一辨识模型上做 SP 阶跃响应仿真：
- * 曲线叠加图（当前=灰/推荐1=蓝/推荐2=橙）+ 量化指标表
+ * 当前 PID + 勾选推荐组（1~5 组）在同一辨识模型上做 SP 阶跃响应仿真：
+ * 曲线叠加图（当前=灰，推荐组最多 5 条按序取色）+ 量化指标表
  * （上升时间/超调量/调节时间/ITAE）。
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
@@ -28,8 +28,15 @@ const { getTooltipPreset } = useEchartsPreset();
 const chartRef = ref<EchartsUIType>();
 const { renderEcharts } = useEcharts(chartRef);
 
-/** 候选配色：当前=灰 / 推荐1=蓝 / 推荐2=橙（09 §6.2） */
-const SERIES_COLORS = ['#6b7280', '#1d4ed8', '#b45309'];
+/** 候选配色（当前=灰；推荐组 5 色，与曲线顺序一致） */
+const SERIES_COLORS = [
+  '#6b7280', // 当前 PID（灰）
+  '#1d4ed8', // 推荐 1（蓝）
+  '#b45309', // 推荐 2（橙）
+  '#0f766e', // 推荐 3（青）
+  '#7c3aed', // 推荐 4（紫）
+  '#be185d', // 推荐 5（玫红）
+];
 
 const simResult = computed(() => ctx.simResult.value);
 const candidates = computed(
@@ -46,9 +53,9 @@ function render() {
     data: c.response.pv,
     lineStyle: {
       width: c.label === '当前 PID' ? 1.5 : 2,
-      color: SERIES_COLORS[i],
+      color: SERIES_COLORS[i % SERIES_COLORS.length],
     },
-    itemStyle: { color: SERIES_COLORS[i] },
+    itemStyle: { color: SERIES_COLORS[i % SERIES_COLORS.length] },
   }));
   nextTick(() => {
     renderEcharts({
@@ -124,7 +131,7 @@ const metricRows = computed(() =>
     <Alert
       v-else-if="!ctx.canSimulate.value && !simResult"
       type="info"
-      message="请先在②整定矩阵勾选 1~2 组推荐参数"
+      message="请先在②整定矩阵勾选 1~5 组推荐参数"
       show-icon
     />
 

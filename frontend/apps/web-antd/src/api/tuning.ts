@@ -10,8 +10,15 @@ import { requestClient } from '#/api/request';
 export namespace TuningApi {
   /** 模型类型 */
   export type ModelType = 'FOPDT' | 'IPDT' | 'SOPDT';
-  /** 整定算法（矩阵 5 算法） */
-  export type TuningAlgorithm = 'COHEN_COON' | 'IMC' | 'LAMBDA' | 'SIMC' | 'ZN';
+  /** 整定算法（矩阵 5 算法 + 手动整定） */
+  export type TuningAlgorithm =
+    | 'COHEN_COON'
+    | 'IDENTIFICATION_ONLY'
+    | 'IMC'
+    | 'LAMBDA'
+    | 'MANUAL_TUNING'
+    | 'SIMC'
+    | 'ZN';
   /** 可信度等级 */
   export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E' | 'INCONCLUSIVE';
   /** 整定任务状态（MVP 实际使用 SIMULATED→APPLIED→VERIFIED 路径） */

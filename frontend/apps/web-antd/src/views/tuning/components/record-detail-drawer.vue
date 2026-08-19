@@ -26,7 +26,7 @@ import { getTuningTaskDetailApi } from '#/api/tuning';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
-import { tuningAlgoLabel } from '../constants';
+import { tuningAlgoLabel, fmtNum2 } from '../constants';
 
 const props = defineProps<{ recordId: null | string; visible: boolean }>();
 const emit = defineEmits<{ 'update:visible': [boolean] }>();
@@ -102,7 +102,7 @@ watch(
 
 function fmtPid(pid?: null | TuningApi.PidParams): string {
   if (!pid) return '—';
-  return `P ${pid.kp} / I ${pid.ti} / D ${pid.td}`;
+  return `P ${fmtNum2(pid.kp)} / I ${fmtNum2(pid.ti)} / D ${fmtNum2(pid.td)}`;
 }
 
 const paramsText = computed(() => {
@@ -110,7 +110,9 @@ const paramsText = computed(() => {
   if (!p) return '—';
   return Object.entries(p)
     .filter(([, v]) => v != null)
-    .map(([k, v]) => `${k}=${v}`)
+    .map(([k, v]) =>
+      typeof v === 'number' ? `${k}=${fmtNum2(v)}` : `${k}=${v}`,
+    )
     .join('，');
 });
 </script>

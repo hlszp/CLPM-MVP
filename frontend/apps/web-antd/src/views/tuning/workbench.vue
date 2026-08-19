@@ -55,6 +55,7 @@ import { useTuningWorkbench } from './composables/use-tuning-workbench';
 import {
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
+  fmtNum2,
   scoreGrade,
 } from './constants';
 
@@ -296,7 +297,7 @@ async function loadOverview(): Promise<void> {
 }
 
 function fmtPid(v: null | number | undefined): string {
-  return v == null ? '—' : String(Math.round(v * 1000) / 1000);
+  return fmtNum2(v);
 }
 
 /** 选中回路的位号（总览/清单缓存中查找，用于流程区标题） */
