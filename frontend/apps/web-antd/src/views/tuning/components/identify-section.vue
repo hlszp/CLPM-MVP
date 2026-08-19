@@ -8,7 +8,7 @@
  */
 import type { TuningWorkbenchContext } from '../composables/use-tuning-workbench';
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import {
   Alert,
@@ -37,6 +37,17 @@ const rangeValue = ref<[dayjs.Dayjs, dayjs.Dayjs] | undefined>([
   dayjs().subtract(7, 'day'),
   dayjs(),
 ]);
+
+/** 路径切换默认窗口：历史=近 7 天；阶跃=近 6 小时（窄窗更易满足单阶跃前提） */
+watch(
+  () => ctx.identifyPath.value,
+  (path) => {
+    rangeValue.value =
+      path === 'STEP'
+        ? [dayjs().subtract(6, 'hour'), dayjs()]
+        : [dayjs().subtract(7, 'day'), dayjs()];
+  },
+);
 
 const MODEL_TYPE_LABEL: Record<string, string> = {
   FOPDT: '一阶滞后（FOPDT）',
@@ -108,6 +119,15 @@ const paramItems = computed(() => {
         开始辨识
       </Button>
     </div>
+
+    <Alert
+      v-if="ctx.identifyPath.value === 'STEP'"
+      class="mt-3"
+      type="info"
+      message="阶跃辨识要求窗口内仅含一次显著 OP 阶跃"
+      description="请选择阶跃实验前后的窄时间窗（如 10~30 分钟）；窗口内包含多次调节变化将被拒绝（ERR_TUNING_STEP_INVALID）。正常运行数据请改用「历史数据辨识」。"
+      show-icon
+    />
 
     <!-- 异步进度（历史路径） -->
     <div
