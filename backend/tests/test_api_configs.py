@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------
@@ -469,7 +467,6 @@ class TestUpdateMetricConfigs:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="MVP: diagnosis config endpoints disabled")
 class TestGetDiagnosisConfigs:
     """GET /api/v1/configs/diagnosis tests."""
 
@@ -523,7 +520,6 @@ class TestGetDiagnosisConfigs:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="MVP: diagnosis config endpoints disabled")
 class TestUpdateDiagnosisConfigs:
     """PUT /api/v1/configs/diagnosis tests."""
 
@@ -635,6 +631,167 @@ class TestUpdateDiagnosisConfigs:
             json={"items": [{"diagId": "d-1", "isEnabled": False}]},
         )
         assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/configs/diagnosis + DELETE /api/v1/configs/diagnosis/{diag_id}
+# （2026-08-19 诊断配置页 CRUD 扩展）
+# ---------------------------------------------------------------------------
+
+
+def _make_scalar_one_or_none(obj: MagicMock | None) -> MagicMock:
+    """构造 db.execute() 返回值，scalar_one_or_none() 返回 obj."""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = obj
+    return result
+
+
+class TestCreateDiagnosisConfig:
+    """POST /api/v1/configs/diagnosis tests."""
+
+    def test_create_success(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 新增诊断配置成功（重建被删除的枚举项场景）."""
+        full_set = _build_full_diagnosis_set()
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none(None),  # 唯一性检查：不存在（曾被删除）
+                _make_execute_return(full_set),  # 重新查询全部
+            ]
+        )
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+
+        body = {
+            "item": {
+                "diagKey": "MANUAL_REVIEW",
+                "diagName": "人工复核（重建）",
+                "algorithmType": "MANUAL",
+                "calcMethod": "EXPERT_RULE",
+                "threshold": {"k": 1.0},
+                "isEnabled": True,
+            },
+        }
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/configs/diagnosis",
+                json=body,
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"
+        assert len(resp.json()["data"]["items"]) == 8
+        # add 调用 2 次：DiagnosisConfig + SysAuditLog 审计日志
+        added_types = [type(call.args[0]).__name__ for call in mock_db.add.call_args_list]
+        assert added_types == ["DiagnosisConfig", "SysAuditLog"]
+        mock_db.commit.assert_awaited_once()
+
+    def test_invalid_diag_code(self, client, mock_db, fake_redis) -> None:
+        """枚举外 diag_code 返回 422（防脏数据毒化批量 GET 的 Literal 校验）."""
+        mock_db.add = MagicMock()
+        body = {
+            "item": {
+                "diagKey": "TEST_DIAG_NOT_IN_ENUM",
+                "diagName": "非法项",
+                "algorithmType": "X",
+            },
+        }
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/configs/diagnosis",
+                json=body,
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "ERR_INVALID_DIAG_CODE"
+        mock_db.add.assert_not_called()
+
+    def test_duplicate_diag_code(self, client, mock_db, fake_redis) -> None:
+        """diag_code 重复返回 409 ERR_DIAG_CODE_DUPLICATED."""
+        existing = _make_diagnosis_config(diag_id="d-1", diag_code="OSCILLATION")
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(existing))
+        mock_db.add = MagicMock()
+
+        body = {
+            "item": {
+                "diagKey": "OSCILLATION",
+                "diagName": "振荡",
+                "algorithmType": "FFT",
+            },
+        }
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/configs/diagnosis",
+                json=body,
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "ERR_DIAG_CODE_DUPLICATED"
+
+    def test_non_admin_forbidden(self, client, mock_db, fake_redis) -> None:
+        """IC_ENGINEER 不能新增诊断配置（403）."""
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post(
+                "/api/v1/configs/diagnosis",
+                json={
+                    "item": {
+                        "diagKey": "X",
+                        "diagName": "x",
+                        "algorithmType": "Y",
+                    }
+                },
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403
+
+    def test_no_token(self, client) -> None:
+        """未认证请求返回 401."""
+        resp = client.post(
+            "/api/v1/configs/diagnosis",
+            json={"item": {"diagKey": "X", "diagName": "x", "algorithmType": "Y"}},
+        )
+        assert resp.status_code == 401
+
+
+class TestDeleteDiagnosisConfig:
+    """DELETE /api/v1/configs/diagnosis/{diag_id} tests."""
+
+    def test_delete_success(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 删除诊断配置成功."""
+        target = _make_diagnosis_config(diag_id="d-1", diag_code="OSCILLATION")
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(target))
+        mock_db.delete = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                "/api/v1/configs/diagnosis/d-1",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["deletedDiagId"] == "d-1"
+        mock_db.delete.assert_awaited_once_with(target)
+        mock_db.commit.assert_awaited_once()
+
+    def test_not_found(self, client, mock_db, fake_redis) -> None:
+        """diagId 不存在返回 404 ERR_DIAG_CONFIG_NOT_FOUND."""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none(None))
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete(
+                "/api/v1/configs/diagnosis/nonexistent",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_DIAG_CONFIG_NOT_FOUND"
+
+    def test_non_admin_forbidden(self, client, mock_db, fake_redis) -> None:
+        """IC_ENGINEER 不能删除诊断配置（403）."""
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.delete(
+                "/api/v1/configs/diagnosis/d-1",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

@@ -107,18 +107,17 @@ const routes: RouteRecordRaw[] = [
           title: '指标配置',
         },
       },
-      // MVP 精简：已屏蔽诊断模块 → 移除「诊断配置」菜单项
-      // {
-      //   name: 'ConfigDiagnosis',
-      //   path: '/config/diagnosis',
-      //   component: () => import('#/views/diagnosis/config.vue'),
-      //   meta: {
-      //     authority: ['ADMIN'],
-      //     icon: 'lucide:stethoscope',
-      //     order: 8,
-      //     title: '诊断配置',
-      //   },
-      // },
+      {
+        name: 'ConfigDiagnosis',
+        path: '/config/diagnosis',
+        component: () => import('#/views/diagnosis/config.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:stethoscope',
+          order: 8,
+          title: '诊断配置',
+        },
+      },
       {
         name: 'ConfigAlertRules',
         path: '/config/alert-rules',
@@ -214,13 +213,12 @@ const routes: RouteRecordRaw[] = [
         redirect: '/config/metric',
         meta: { authority: ['ADMIN'], hideInMenu: true, title: '指标配置' },
       },
-      // MVP 精简：已屏蔽诊断模块 → 移除「诊断配置」legacy redirect
-      // {
-      //   name: 'LegacyDiagnosisConfig',
-      //   path: '/diagnosis/config',
-      //   redirect: '/config/diagnosis',
-      //   meta: { authority: ['ADMIN'], hideInMenu: true, title: '诊断配置' },
-      // },
+      {
+        name: 'LegacyDiagnosisConfig',
+        path: '/diagnosis/config',
+        redirect: '/config/diagnosis',
+        meta: { authority: ['ADMIN'], hideInMenu: true, title: '诊断配置' },
+      },
       {
         name: 'LegacySystemPidTemplate',
         path: '/system/pid-template',

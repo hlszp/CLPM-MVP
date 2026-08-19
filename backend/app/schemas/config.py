@@ -220,6 +220,34 @@ class DiagnosisConfigBatchUpdateRequest(CamelModel):
     items: list[DiagnosisConfigUpdateItem] = Field(default_factory=list)
 
 
+class DiagnosisConfigCreateItem(CamelModel):
+    """诊断配置创建项（2026-08-19 诊断配置页 CRUD 扩展）.
+
+    Attributes:
+        diagKey: 诊断代码（唯一，如 OSCILLATION）
+        diagName: 诊断中文名
+        algorithmType: 算法类型
+        calcMethod: 计算方法
+        params: 算法参数
+        threshold: 阈值对象
+        isEnabled: 是否启用
+    """
+
+    diagKey: str = Field(min_length=1, max_length=50)
+    diagName: str = Field(min_length=1, max_length=100)
+    algorithmType: str = Field(min_length=1, max_length=50)
+    calcMethod: str | None = Field(None, max_length=50)
+    params: dict[str, Any] | None = None
+    threshold: dict[str, Any] | None = None
+    isEnabled: bool = True
+
+
+class DiagnosisConfigCreateRequest(CamelModel):
+    """诊断配置创建请求（单条创建）."""
+
+    item: DiagnosisConfigCreateItem
+
+
 class DiagnosisConfigBatchResponse(CamelModel):
     """批量获取/更新诊断配置响应.
 

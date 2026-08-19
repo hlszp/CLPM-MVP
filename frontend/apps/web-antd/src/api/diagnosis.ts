@@ -394,6 +394,98 @@ export function getDiagnosisOperatorsApi() {
   return requestClient.get<DiagnosisApi.OperatorInfo[]>('/diagnosis/operators');
 }
 
+// ---------------------------------------------------------------------------
+// 诊断配置 CRUD（/configs/diagnosis，2026-08-19 诊断配置页）
+// ---------------------------------------------------------------------------
+
+export namespace DiagnosisConfigApi {
+  /** 诊断配置项（GET/PUT 批量响应） */
+  export interface ConfigItem {
+    diagId: string;
+    diagKey: string | null;
+    diagName: string | null;
+    label: string | null;
+    algorithmType: string | null;
+    calcMethod: string | null;
+    params: Record<string, any> | null;
+    threshold: Record<string, any> | null;
+    isEnabled: boolean;
+    algorithmVersion: string | null;
+    updatedAt: string | null;
+    updatedBy: string | null;
+  }
+
+  /** 批量响应 */
+  export interface BatchResponse {
+    items: ConfigItem[];
+    updatedCount?: number | null;
+  }
+
+  /** 更新项（批量 PUT） */
+  export interface UpdateItem {
+    diagId: string;
+    label?: string | null;
+    algorithmType?: string | null;
+    calcMethod?: string | null;
+    params?: Record<string, any> | null;
+    threshold?: Record<string, any> | null;
+    isEnabled?: boolean | null;
+  }
+
+  /** 创建项（POST） */
+  export interface CreateItem {
+    diagKey: string;
+    diagName: string;
+    algorithmType: string;
+    calcMethod?: string | null;
+    params?: Record<string, any> | null;
+    threshold?: Record<string, any> | null;
+    isEnabled?: boolean;
+  }
+}
+
+/**
+ * 批量获取诊断配置（8 类诊断标签）
+ */
+export function getDiagnosisConfigsApi() {
+  return requestClient.get<DiagnosisConfigApi.BatchResponse>(
+    '/configs/diagnosis',
+  );
+}
+
+/**
+ * 批量更新诊断配置（事务性，任一项失败全部回滚；仅 ADMIN）
+ */
+export function updateDiagnosisConfigsApi(
+  data: DiagnosisConfigApi.UpdateItem[],
+) {
+  return requestClient.put<DiagnosisConfigApi.BatchResponse>(
+    '/configs/diagnosis',
+    { items: data },
+  );
+}
+
+/**
+ * 新增单条诊断配置（diagKey 唯一；仅 ADMIN）
+ */
+export function createDiagnosisConfigApi(
+  data: DiagnosisConfigApi.CreateItem,
+) {
+  return requestClient.post<DiagnosisConfigApi.BatchResponse>(
+    '/configs/diagnosis',
+    { item: data },
+  );
+}
+
+/**
+ * 删除单条诊断配置（仅 ADMIN）
+ */
+export function deleteDiagnosisConfigApi(diagId: string) {
+  return requestClient.delete<{ deletedDiagId: string }>(
+    `/configs/diagnosis/${diagId}`,
+  );
+}
+
 /**
  * 诊断记录 CSV 导出（返回文本，页面侧构造 Blob 下载）
  */
