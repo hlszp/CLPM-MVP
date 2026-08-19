@@ -76,6 +76,22 @@ def _resolve_pv_range(
     return min_v, max_v
 
 
+def _resolve_op_range(
+    mappings: dict[str, LoopTagMapping],
+    tags_map: dict[str, TagRegistry],
+) -> tuple[float, float]:
+    """解析 OP Tag 量程（趋势图右轴用），缺省回退 0.0~100.0。"""
+    mapping = mappings.get("OP")
+    tag = tags_map.get(str(mapping.tag_id)) if mapping else None
+    range_min = getattr(tag, "range_min", None)
+    range_max = getattr(tag, "range_max", None)
+    min_v = float(range_min) if isinstance(range_min, int | float) else 0.0
+    max_v = float(range_max) if isinstance(range_max, int | float) else 100.0
+    if max_v <= min_v:
+        return 0.0, 100.0
+    return min_v, max_v
+
+
 def _ts_list_to_seconds(ts_list: list[Any]) -> np.ndarray:
     """时间戳序列 → 浮点秒（向量化，复制自引擎 L4113-4173）。
 
@@ -251,11 +267,24 @@ def _thresholds_for(
 # ---------------------------------------------------------------------------
 
 
-def _build_chart_snapshots(aligned: list[dict[str, Any]]) -> dict[str, Any]:
-    """证据波形快照：趋势（LTTB ≤2000 点）+ PV-OP 散点（等步长抽稀 ≤2000）。"""
+def _build_chart_snapshots(
+    aligned: list[dict[str, Any]],
+    pv_range: tuple[float, float] | None = None,
+    op_range: tuple[float, float] | None = None,
+) -> dict[str, Any]:
+    """证据波形快照：趋势（LTTB ≤2000 点）+ PV-OP 散点（等步长抽稀 ≤2000）。
+
+    趋势附带 pvRange/opRange 轴量程（前端双 Y 轴：左轴 PV/SP，右轴 OP）；
+    量程解析失败时不带字段，前端回退数据自适应。
+    """
     n = len(aligned)
     if n == 0:
-        return {"trend": {"ts": [], "pv": [], "sp": [], "op": []}, "scatter": {"pv": [], "op": []}}
+        empty_trend: dict[str, Any] = {"ts": [], "pv": [], "sp": [], "op": []}
+        if pv_range:
+            empty_trend["pvRange"] = {"min": pv_range[0], "max": pv_range[1]}
+        if op_range:
+            empty_trend["opRange"] = {"min": op_range[0], "max": op_range[1]}
+        return {"trend": empty_trend, "scatter": {"pv": [], "op": []}}
 
     ts_sec = _ts_list_to_seconds([d.get("ts") for d in aligned])
     base = float(np.nanmin(ts_sec)) if len(ts_sec) else 0.0
@@ -276,6 +305,10 @@ def _build_chart_snapshots(aligned: list[dict[str, Any]]) -> dict[str, Any]:
         }
     else:
         trend = {"ts": ts_ms, **series_map}
+    if pv_range:
+        trend["pvRange"] = {"min": pv_range[0], "max": pv_range[1]}
+    if op_range:
+        trend["opRange"] = {"min": op_range[0], "max": op_range[1]}
 
     scatter_pv = [d["pv"] for d in aligned if d.get("pv") is not None and d.get("op") is not None]
     scatter_op = [d["op"] for d in aligned if d.get("pv") is not None and d.get("op") is not None]
@@ -547,7 +580,11 @@ async def run_diagnosis_for_loop(
 
     # ---- 波形快照 + 落库 ----
     await _report(0.95, "证据快照与落库")
-    charts = _build_chart_snapshots(aligned)
+    charts = _build_chart_snapshots(
+        aligned,
+        pv_range=_resolve_pv_range(mappings, tags_map),
+        op_range=_resolve_op_range(mappings, tags_map),
+    )
     has_error = any(r.error for r in op_results.values())
     finished_at = datetime.utcnow()
 

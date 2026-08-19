@@ -61,6 +61,10 @@ export namespace DiagnosisApi {
       pv?: (null | number)[];
       sp?: (null | number)[];
       ts: number[];
+      /** PV/SP 左轴量程（诊断时从 Tag 解析；旧记录无此字段前端自适应） */
+      pvRange?: { max: number; min: number };
+      /** OP 右轴量程 */
+      opRange?: { max: number; min: number };
     };
     scatter: { op: number[]; pv: number[] };
   }

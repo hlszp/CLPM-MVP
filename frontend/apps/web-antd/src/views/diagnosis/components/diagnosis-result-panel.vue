@@ -256,10 +256,14 @@ function buildTrendOption() {
   const ts = chart?.ts ?? [];
   const toPoints = (arr?: (null | number)[]) =>
     (arr ?? []).map((v, i) => [ts[i], v ?? null]);
+  // 双 Y 轴：左轴 PV/SP（PV 量程），右轴 OP（OP 量程）；
+  // 旧记录无量程字段时回退 scale 自适应
+  const pvRange = chart?.pvRange;
+  const opRange = chart?.opRange;
   return {
     animation: false,
     color: ['#1d4ed8', '#6b7280', '#b45309'],
-    grid: { bottom: 48, left: 56, right: 16, top: 32 },
+    grid: { bottom: 48, left: 56, right: 48, top: 32 },
     legend: { data: ['PV', 'SP', 'OP'], top: 0 },
     series: [
       {
@@ -268,6 +272,7 @@ function buildTrendOption() {
         name: 'PV',
         showSymbol: false,
         type: 'line',
+        yAxisIndex: 0,
       },
       {
         lineStyle: { type: 'dashed' },
@@ -275,12 +280,14 @@ function buildTrendOption() {
         name: 'SP',
         showSymbol: false,
         type: 'line',
+        yAxisIndex: 0,
       },
       {
         data: toPoints(chart?.op),
         name: 'OP',
         showSymbol: false,
         type: 'line',
+        yAxisIndex: 1,
       },
     ],
     tooltip: { trigger: 'axis' },
@@ -288,7 +295,21 @@ function buildTrendOption() {
       axisLabel: { formatter: (v: number) => `${Math.round(v / 60_000)}m` },
       type: 'time',
     },
-    yAxis: { scale: true, type: 'value' },
+    yAxis: [
+      {
+        name: 'PV/SP',
+        scale: !pvRange,
+        type: 'value',
+        ...(pvRange ? { max: pvRange.max, min: pvRange.min } : {}),
+      },
+      {
+        name: 'OP',
+        scale: !opRange,
+        splitLine: false,
+        type: 'value',
+        ...(opRange ? { max: opRange.max, min: opRange.min } : {}),
+      },
+    ],
   };
 }
 
