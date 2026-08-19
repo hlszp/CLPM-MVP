@@ -9,7 +9,7 @@ import type { TuningApi } from '#/api/tuning';
 
 import { computed, reactive, toRefs } from 'vue';
 
-import { getLoopDetailApi, getLoopListApi } from '#/api/loop';
+import { getLoopDetailApi } from '#/api/loop';
 import {
   comparePidsApi,
   getTuningTaskStatusApi,
@@ -19,6 +19,8 @@ import {
   tuneMatrixApi,
   tuneSingleApi,
 } from '#/api/tuning';
+
+import { tuningAlgoLabel } from '../constants';
 
 /** 辨识结果（统一历史/阶跃双路径的输出形态） */
 export interface IdentifyOutcome {
@@ -50,6 +52,8 @@ export interface SimCandidate {
   label: string;
   pid: TuningApi.PidParams;
   isCurrent: boolean;
+  /** 推荐组对应的矩阵算法 key（当前 PID 组为空）；显示文案与逻辑匹配解耦 */
+  algorithm?: TuningApi.TuningAlgorithm;
 }
 
 const ALGO_PARAM_KEY: Record<string, string> = {
@@ -62,8 +66,6 @@ export function useTuningWorkbench() {
   const state = reactive({
     // 回路
     loopId: '' as string,
-    loopOptions: [] as { description: string; label: string; value: string }[],
-    loopsLoading: false,
     currentPid: null as null | TuningApi.PidParams,
     currentPidMissing: false,
     // ① 辨识
@@ -111,22 +113,12 @@ export function useTuningWorkbench() {
   );
 
   // ===== 回路 =====
-  async function loadLoops(keyword = '') {
-    state.loopsLoading = true;
-    try {
-      const res = await getLoopListApi({
-        page: 1,
-        pageSize: 100,
-        keyword: keyword || undefined,
-      });
-      state.loopOptions = res.items.map((l) => ({
-        value: l.loopId,
-        label: `${l.tagName} ${l.description || ''}`.trim(),
-        description: l.description,
-      }));
-    } finally {
-      state.loopsLoading = false;
-    }
+  /** 清除回路选择（返回回路总览；切换装置节点时调用） */
+  function clearLoop() {
+    state.loopId = '';
+    state.currentPid = null;
+    state.currentPidMissing = false;
+    resetDownstream();
   }
 
   async function selectLoop(loopId: string) {
@@ -256,7 +248,12 @@ export function useTuningWorkbench() {
       currentPid: state.currentPid,
       loopId: state.loopId,
       sourceRecordId: o.recordId ?? undefined,
-      modelSource: o.recordId ? 'IDENTIFICATION_RECORD' : 'MANUAL',
+      // 阶跃记录后端要求声明 STEP_EXPERIMENT 来源（authorize_tuning_model 门禁）
+      modelSource: o.recordId
+        ? o.dataSource === 'STEP_EXPERIMENT'
+          ? 'STEP_EXPERIMENT'
+          : 'IDENTIFICATION_RECORD'
+        : 'MANUAL',
       riskConfirmed: true,
     };
   }
@@ -330,10 +327,15 @@ export function useTuningWorkbench() {
       for (const row of checkedRows.value) {
         const paramKey = ALGO_PARAM_KEY[row.algorithm];
         const label = paramKey
-          ? `${row.algorithm}（${paramKey}=${row.paramValue}）`
-          : row.algorithm;
+          ? `${tuningAlgoLabel(row.algorithm)}·${paramKey}=${row.paramValue}`
+          : tuningAlgoLabel(row.algorithm);
         candidates.push({ label, ...row.pid! });
-        simCandidates.push({ label, pid: row.pid!, isCurrent: false });
+        simCandidates.push({
+          label,
+          pid: row.pid!,
+          isCurrent: false,
+          algorithm: row.algorithm,
+        });
       }
       const res = await comparePidsApi({
         modelType: state.outcome.modelType,
@@ -343,7 +345,9 @@ export function useTuningWorkbench() {
         loopId: state.loopId,
         sourceRecordId: state.outcome.recordId ?? undefined,
         modelSource: state.outcome.recordId
-          ? 'IDENTIFICATION_RECORD'
+          ? state.outcome.dataSource === 'STEP_EXPERIMENT'
+            ? 'STEP_EXPERIMENT'
+            : 'IDENTIFICATION_RECORD'
           : 'MANUAL',
         riskConfirmed: true,
       });
@@ -367,8 +371,9 @@ export function useTuningWorkbench() {
       );
       if (!chosen || chosen.isCurrent)
         throw new Error('请选择推荐参数组作为最终方案');
-      const algoRow = state.matrixRows.find((r) =>
-        state.finalLabel.startsWith(r.algorithm),
+      // 用候选组携带的算法 key 精确匹配矩阵行（不再依赖显示文案 startsWith）
+      const algoRow = state.matrixRows.find(
+        (r) => r.algorithm === chosen.algorithm,
       );
       const res = await saveTuningTaskApi({
         loopId: state.loopId,
@@ -397,7 +402,7 @@ export function useTuningWorkbench() {
     canSimulate,
     canConfirm,
     checkedRows,
-    loadLoops,
+    clearLoop,
     selectLoop,
     runIdentify,
     runMatrix,

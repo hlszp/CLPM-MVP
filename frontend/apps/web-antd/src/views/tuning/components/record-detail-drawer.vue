@@ -26,6 +26,8 @@ import { getTuningTaskDetailApi } from '#/api/tuning';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
+import { tuningAlgoLabel } from '../constants';
+
 const props = defineProps<{ recordId: null | string; visible: boolean }>();
 const emit = defineEmits<{ 'update:visible': [boolean] }>();
 
@@ -134,7 +136,7 @@ const paramsText = computed(() => {
           }}</DescriptionsItem>
           <DescriptionsItem label="模型参数">{{ paramsText }}</DescriptionsItem>
           <DescriptionsItem label="整定算法">{{
-            detail.algorithm
+            tuningAlgoLabel(detail.algorithm)
           }}</DescriptionsItem>
           <DescriptionsItem label="拟合度">
             {{

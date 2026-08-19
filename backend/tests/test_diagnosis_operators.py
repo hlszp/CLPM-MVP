@@ -352,7 +352,9 @@ _EQUIV_CASES = {
     "oscillation_fft": lambda: (_sine(),),
     "oscillation_iae": lambda: (_sine(), np.full(3600, 50.0)),
     "stiction_ellipse": lambda: _stiction_pv_op(),
-    "stiction_choudhury": lambda: _stiction_pv_op(),
+    # stiction_choudhury 已移出等价性对照（2026-08-19 P1/P3 修复后与旧引擎
+    # 有意分叉：NLI 噪声底校正 + 极限环前提门控），行为回归由下方
+    # test_bicoherence_* / test_choudhury_* 专项用例守护。
     "stiction_kano": lambda: _stiction_pv_op(),
     "step_response_overshoot": lambda: _step_signal(),
     "disturbance_burst": lambda: _disturbance_signal(),
@@ -492,3 +494,93 @@ def test_kernel_equivalence_with_engine(name: str) -> None:
             assert new_v == old_v, f"{name}.{key}: {new_v} != {old_v}"
         else:
             assert new_v == pytest.approx(float(old_v), abs=1e-9), f"{name}.{key}"
+
+
+# ---------------------------------------------------------------------------
+# P1/P3 粘滞算法修复回归（2026-08-19）
+# P1：双相干性 4 段估计噪声底 ≈ 1/4，纯白噪声 NLI 饱和 1.0 → NLI 门失效
+# P3：Choudhury/Kano 缺极限环前提门控，非振荡段（工况跳变+静止拼接）
+#     的 OP 增量重尾伪命中（41FIC40504_PIDA 2026-08-18 18-22 时段实例）
+# ---------------------------------------------------------------------------
+
+
+def test_bicoherence_white_noise_below_nli_threshold() -> None:
+    """P1 回归：纯白噪声的 NLI 须低于 0.01 门（修复前饱和 1.0）。"""
+    rng = np.random.default_rng(42)
+    for _ in range(3):
+        noise = rng.normal(0, 0.15, 8192)
+        nli = ops.stiction._compute_max_bicoherence(noise)
+        assert nli < 0.01, f"白噪声 NLI={nli} 超阈（噪声底校正失效）"
+
+
+def test_bicoherence_detects_quadratic_phase_coupling() -> None:
+    """P1 正向对照：二次相位耦合信号 NLI 须超阈（防噪声底校正过度）。"""
+    rng = np.random.default_rng(7)
+    n = 8192
+    t = np.arange(n)
+    b1, b2 = 5, 9  # 段长 128（= n // 64）的 bin 序号，耦合对 (5,9)→14
+    ph1, ph2 = 0.3, 1.1
+    x = (
+        np.cos(2 * np.pi * b1 * t / 128 + ph1)
+        + np.cos(2 * np.pi * b2 * t / 128 + ph2)
+        + 0.8 * np.cos(2 * np.pi * (b1 + b2) * t / 128 + ph1 + ph2)
+    )
+    x = x + rng.normal(0, 0.3, n)
+    nli = ops.stiction._compute_max_bicoherence(x)
+    assert nli > 0.01, f"耦合信号 NLI={nli} 未检出（校正过度）"
+
+
+def _nonlimitcycle_pv_op(n: int = 6000) -> tuple[np.ndarray, np.ndarray]:
+    """非极限环场景（41FIC40504 实测形态）：PV 近似恒定 + OP 工况跳变与静止。"""
+    rng = np.random.default_rng(11)
+    pv = 0.44 + rng.normal(0, 0.002, n)
+    op = np.full(n, 46.0)
+    op[1000:1500] = 66.0  # 工况调整段
+    op[3000] = 27.0  # 跳变尖峰（差分重尾 → NGI 门伪命中源）
+    op = op + rng.normal(0, 0.15, n)
+    return pv, op
+
+
+def test_choudhury_kernel_gated_without_limit_cycle() -> None:
+    """P3 回归：非极限环段 Choudhury 不予检出，报 no_limit_cycle。"""
+    pv, op = _nonlimitcycle_pv_op()
+    res = ops.stiction._choudhury_kernel(pv, op, None)
+    assert res["detected"] is False
+    assert res["confidence"] == 0.0
+    assert res["reason"] == "no_limit_cycle"
+    assert "zero_crossings" in res  # 门控统计量随结果落库供复核
+
+
+def test_kano_kernel_gated_without_limit_cycle() -> None:
+    """P3 回归：非极限环段 Kano 不予检出，报 no_limit_cycle。"""
+    pv, op = _nonlimitcycle_pv_op()
+    res = ops.stiction._kano_kernel(pv, op)
+    assert res["detected"] is False
+    assert res["confidence"] == 0.0
+    assert res["reason"] == "no_limit_cycle"
+
+
+def test_choudhury_detects_stiction_with_limit_cycle() -> None:
+    """P3 正向对照：极限环 PV + 停走锯齿 OP → 通过门控且检出（防门控过严）。"""
+    rng = np.random.default_rng(13)
+    n = 8193  # 差分后 8192 点 = 64 段 × 段长 128，锯齿周期对齐段界保证相位相干
+    period = 128
+    t = np.arange(n)
+    pv = 0.44 + 0.02 * np.sign(np.sin(2 * np.pi * t / period)) + rng.normal(0, 0.0005, n)
+    op = 46.0 + 2.0 * ((t % period) / period) + rng.normal(0, 0.01, n)
+    res = ops.stiction._choudhury_kernel(pv, op, None)
+    assert res.get("reason") != "no_limit_cycle"
+    assert res["ngi"] > 1.0
+    assert res["nli"] > 0.01
+    assert res["detected"] is True
+
+
+def test_choudhury_operator_reports_gate_evidence() -> None:
+    """P3 证据口径：门控命中时算子 executed 且证据为前提不成立（非指标未超阈）。"""
+    pv, op = _nonlimitcycle_pv_op()
+    res = _run("stiction_choudhury", {"pv": pv, "op": op})
+    assert res.executed and not res.detected
+    assert res.confidence == 0.0
+    assert len(res.evidence) == 1
+    assert res.evidence[0].feature == "limit_cycle_gate"
+    assert "前提不成立" in res.evidence[0].judgment

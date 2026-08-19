@@ -17,6 +17,7 @@ import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 
 import RecordDetailDrawer from './components/record-detail-drawer.vue';
+import { tuningAlgoLabel } from './constants';
 
 defineOptions({ name: 'TuningRecords' });
 
@@ -73,7 +74,7 @@ async function loadList() {
 const columns = [
   { dataIndex: 'tagName', key: 'tagName', title: '回路位号', width: 160 },
   { dataIndex: 'modelType', key: 'modelType', title: '模型', width: 90 },
-  { dataIndex: 'algorithm', key: 'algorithm', title: '算法', width: 120 },
+  { dataIndex: 'algorithm', key: 'algorithm', title: '算法', width: 180 },
   { key: 'pid', title: '推荐 P/I/D', width: 200 },
   {
     dataIndex: 'fittingScore',
@@ -195,7 +196,10 @@ onMounted(() => {
         "
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'pid'">
+          <template v-if="column.key === 'algorithm'">
+            {{ tuningAlgoLabel(record.algorithm) }}
+          </template>
+          <template v-else-if="column.key === 'pid'">
             <span class="clpm-num">{{ fmtPid(record.recommendedPid) }}</span>
           </template>
           <template v-else-if="column.key === 'fittingScore'">

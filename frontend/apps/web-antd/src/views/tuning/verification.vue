@@ -2,7 +2,7 @@
 /**
  * 效果验证页（09 设计方案 §6.4）
  *
- * 选回路 + 对比时点 + 窗口（1h/2h/24h）→ 前后窗趋势 + X-Y 轨迹 + KPI 摘要。
+ * 选回路 + 对比时点 + 窗口（1/2/4/8/24/72/168h）→ 前后窗趋势 + X-Y 轨迹 + KPI 摘要。
  * 时点来源（决策 #5 记录带出+可改）：整定记录「去验证」进入时反查该回路
  * TUNING 处置项的 submittedAt 带出；无关联处置时退用整定记录创建时间。
  */
@@ -15,8 +15,6 @@ import {
   Button,
   Card,
   DatePicker,
-  RadioButton,
-  RadioGroup,
   Select,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -39,6 +37,12 @@ const loopOptions = ref<{ label: string; value: string }[]>([]);
 const loopsLoading = ref(false);
 const pointTime = ref<dayjs.Dayjs | undefined>();
 const windowHours = ref(24);
+
+/** 前后窗窗口选项（小时） */
+const WINDOW_OPTIONS = [1, 2, 4, 8, 24, 72, 168].map((h) => ({
+  label: `${h}h`,
+  value: h,
+}));
 
 // 已提交的查询（驱动共享组件）
 const query = ref<null | {
@@ -133,11 +137,12 @@ onMounted(async () => {
           format="YYYY-MM-DD HH:mm"
           placeholder="对比时点"
         />
-        <RadioGroup v-model:value="windowHours" size="small">
-          <RadioButton :value="1">1h</RadioButton>
-          <RadioButton :value="2">2h</RadioButton>
-          <RadioButton :value="24">24h</RadioButton>
-        </RadioGroup>
+        <Select
+          v-model:value="windowHours"
+          :options="WINDOW_OPTIONS"
+          size="small"
+          style="width: 96px"
+        />
         <Button
           type="primary"
           size="small"

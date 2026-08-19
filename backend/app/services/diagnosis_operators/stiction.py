@@ -1,15 +1,22 @@
 """粘滞族元算子：椭圆拟合 / Choudhury NGI-NLI / Kano 统计法。
 
-内核等价复制自 app/tasks/diagnosis_engine.py：
-- _ellipse_kernel   ← _detect_valve_stiction（L1971-2022，复用 KPI 侧内核）
-- _choudhury_kernel ← _detect_choudhury_nonlinearity（L2710-2806）
-                      + _compute_max_bicoherence（L2645-2707）
-- _kano_kernel      ← _detect_kano_stiction（L2809-2913）
+内核源自 app/tasks/diagnosis_engine.py（复制后独立演进）：
+- _ellipse_kernel   ← _detect_valve_stiction（复用 KPI 侧内核）
+- _choudhury_kernel ← _detect_choudhury_nonlinearity + _compute_max_bicoherence
+- _kano_kernel      ← _detect_kano_stiction
+
+2026-08-19 P1/P3 修复（与旧引擎有意分叉；旧引擎未挂载仅测试引用）：
+- P1：_compute_max_bicoherence 分段数 4→64 + 白噪声底校正 ln(M/α)/K，
+      修复纯白噪声 NLI 饱和 1.0 导致的 NLI 门失效；
+- P3：_choudhury_kernel/_kano_kernel 增加极限环前提门控（与椭圆法
+      assess_stiction_features 同判据），修复非振荡段"工况跳变+静止
+      微扰"拼接的 OP 增量重尾伪命中（41FIC40504 复核实例）。
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -23,10 +30,18 @@ from app.services.diagnosis_operators.base import (
 )
 from app.services.metric_calculator.stiction import (
     MIN_FITTING_SCORE,
+    MIN_HALF_PERIOD_SAMPLES,
+    MIN_IAE_SIMILARITY,
+    MIN_ZERO_CROSSINGS,
+    StictionIndexCalculator,
     assess_stiction_features,
 )
 
 logger = logging.getLogger(__name__)
+
+#: P1 噪声底校正族系显著性水平（白噪声 max 校正上界 (c/K)·ln(M/α) 中的 α，
+#: 取 0.1% 保守值；实测 200 次白噪声试验逐对校正后 NLI>0.01 的比率 ≈ α）
+_NLI_FALSE_ALARM_ALPHA = 0.001
 
 
 def _empty_stiction_result() -> dict[str, Any]:
@@ -97,17 +112,34 @@ def _ellipse_kernel(
         return _empty_stiction_result()
 
 
-def _compute_max_bicoherence(signal: np.ndarray, n_seg: int = 4, n_freq: int = 16) -> float:
-    """计算信号的最大双相干性（NLI 近似，等价复制自引擎 L2645-2707）。"""
+def _compute_max_bicoherence(signal: np.ndarray, n_seg: int = 64, n_freq: int = 16) -> float:
+    """计算信号的最大双相干性（NLI 近似，分段平均 + 逐对噪声底校正）。
+
+    P1 修复（2026-08-19）：原 4 段无重叠估计的噪声底 ≈ 1/4——单段
+    bic² ≡ 1（|x1·x2·x3*|² 与分母恒等），4 段平均压不下去，纯白噪声
+    的 max bic² 也饱和到 1.0，NLI 门（>0.01）完全失效。
+
+    修复口径（Hinich χ²₂ 渐近 + 逐对异方差校正）：
+    1. 非重叠分段数提至默认 64（段长不足 8 点时降级，段数不足 4 时放弃）；
+    2. K 段独立估计下单对白噪声 E[bic²] = c/K：对角对 (f1=f2) 因
+       t = x(f)²·x*(2f) 的四阶矩 E|x|⁴=2S² → c=2（200 次白噪声试验
+       实测：对角 0.0316 vs 2/64、非对角 0.0156 vs 1/64，精确吻合）；
+    3. M 个频点对取 max 的族系显著性上界 ≈ (c/K)·ln(M/α)，
+       NLI = max(0, max(bic² − bias))。
+
+    注：重尾（非高斯）信号的 6 阶矩会推高真实噪声底，校正后仍可能
+    偏高——由 P3 极限环前提门控兜底（非振荡段一律不予检出）。
+    """
     n = len(signal)
-    seg_len = n // n_seg
-    if seg_len < 8:
+    seg_count = max(1, min(n_seg, n // 8))
+    seg_len = n // seg_count
+    if seg_len < 8 or seg_count < 4:
         return 0.0
 
     try:
-        # 构建分段矩阵 (n_seg, seg_len) 并计算 FFT
-        segments = np.empty((n_seg, seg_len), dtype=float)
-        for i in range(n_seg):
+        # 非重叠分段（段间独立，噪声底 1/K 解析可算）
+        segments = np.empty((seg_count, seg_len), dtype=float)
+        for i in range(seg_count):
             seg = signal[i * seg_len : (i + 1) * seg_len]
             segments[i] = seg - np.mean(seg)
 
@@ -143,7 +175,13 @@ def _compute_max_bicoherence(signal: np.ndarray, n_seg: int = 4, n_freq: int = 1
         denom = np.sqrt(psd_f1 * psd_f2 * psd_f12) + 1e-12
 
         bic = (np.abs(bis) / denom) ** 2
-        return float(min(1.0, np.max(bic)))
+
+        # 逐对噪声底校正：白噪声单对 E[bic²] = c/K（对角对 c=2，见 docstring）；
+        # M 对取 max 的族系显著性上界 ≈ (c/K)·ln(M/α)
+        m_pairs = int(len(f1_valid))
+        diag_scale = np.where(f1_valid == f2_valid, 2.0, 1.0)
+        bias = (diag_scale / seg_count) * math.log(m_pairs / _NLI_FALSE_ALARM_ALPHA)
+        return float(min(1.0, max(0.0, float(np.max(bic - bias)))))
     except Exception as exc:  # noqa: BLE001
         logger.debug("双相干性计算失败: %s", exc)
         return 0.0
@@ -169,6 +207,16 @@ def _choudhury_kernel(
 
         op_arr = op[:min_len].astype(float)
         pv_arr = pv[:min_len].astype(float)
+
+        # P3 前提门控（2026-08-19）：Choudhury/Kano/椭圆三法均以回路处于
+        # 极限环振荡为物理前提；非振荡段的 OP 增量重尾（工况跳变+静止
+        # 微扰拼接）会伪命中 NGI 门（41FIC40504 复核实例）。门控判据与
+        # 椭圆法 assess_stiction_features 同源（G1 增强），三算子口径统一。
+        is_limit_cycle, gate_info = StictionIndexCalculator._detect_limit_cycle(pv_arr)
+        if not is_limit_cycle:
+            result = _empty_choudhury_result()
+            result.update({"reason": "no_limit_cycle", **gate_info})
+            return result
 
         op_centered = op_arr - np.mean(op_arr)
         op_std = float(np.std(op_centered))
@@ -223,6 +271,14 @@ def _kano_kernel(pv: np.ndarray, op: np.ndarray) -> dict[str, Any]:
     try:
         pv_arr = pv[:min_len].astype(float)
         op_arr = op[:min_len].astype(float)
+
+        # P3 前提门控（2026-08-19）：同 Choudhury——粘滞三法以极限环振荡
+        # 为物理前提，非振荡段"OP 不动 PV 大动"更可能是外扰/传感器问题。
+        is_limit_cycle, gate_info = StictionIndexCalculator._detect_limit_cycle(pv_arr)
+        if not is_limit_cycle:
+            result = _empty_kano_result()
+            result.update({"reason": "no_limit_cycle", **gate_info})
+            return result
 
         pv_std = float(np.std(pv_arr))
         op_std = float(np.std(op_arr))
@@ -321,13 +377,33 @@ def detect_ellipse(input: OperatorInput, threshold: dict[str, Any]) -> OperatorR
     )
 
 
+def _limit_cycle_gate_evidence(gate_info: dict[str, Any]) -> EvidenceItem:
+    """构造极限环前提门控证据项（P3）：明确拦截原因，避免误读为指标未超阈。"""
+    zc = int(gate_info.get("zero_crossings", 0) or 0)
+    half = float(gate_info.get("mean_half_period", 0.0) or 0.0)
+    if zc < MIN_ZERO_CROSSINGS:
+        detail = f"零交叉 {zc} < {MIN_ZERO_CROSSINGS}"
+    elif half < MIN_HALF_PERIOD_SAMPLES:
+        detail = f"平均半周期 {half:.1f} < {MIN_HALF_PERIOD_SAMPLES} 采样"
+    else:
+        s_a = float(gate_info.get("s_a", 0.0) or 0.0)
+        s_b = float(gate_info.get("s_b", 0.0) or 0.0)
+        detail = f"IAE 相似率 s_a={s_a:.2f}/s_b={s_b:.2f} < {MIN_IAE_SIMILARITY}"
+    return EvidenceItem(
+        "limit_cycle_gate",
+        "no_limit_cycle",
+        "limit_cycle",
+        f"非极限环振荡段（{detail}）：粘滞检测物理前提不成立，指标不参与判定",
+    )
+
+
 @operator(
     OperatorMeta(
         name="stiction_choudhury",
         display_name="Choudhury NGI/NLI 检测",
         family="stiction",
         diag_code="VALVE_STICTION",
-        description="OP 增量域非高斯指数（NGI）+ 双相干性非线性指数（NLI）检测粘滞",
+        description="OP 增量域非高斯指数（NGI）+ 双相干性非线性指数（NLI）检测粘滞（需极限环前提）",
         required_signals=("pv", "op"),
         min_sample_rate=0.0,
         outputs_schema={"ngi": "非高斯指数", "nli": "非线性指数"},
@@ -345,6 +421,24 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
     if pv is None or op is None or min(len(pv), len(op)) < 32:
         return OperatorResult("stiction_choudhury", executed=False, skip_reason="pv/op 数据不足")
     res = _choudhury_kernel(pv, op, threshold)
+    if res.get("reason") == "no_limit_cycle":
+        # P3 门控命中：证据表报"前提不成立"，避免误导性的"指标未超阈"
+        return OperatorResult(
+            "stiction_choudhury",
+            executed=True,
+            detected=False,
+            confidence=0.0,
+            features={
+                "ngi": res["ngi"],
+                "nli": res["nli"],
+                "fitting_score": res["fitting_score"],
+                "zero_crossings": res.get("zero_crossings"),
+                "mean_half_period": res.get("mean_half_period"),
+                "s_a": res.get("s_a"),
+                "s_b": res.get("s_b"),
+            },
+            evidence=[_limit_cycle_gate_evidence(res)],
+        )
     return OperatorResult(
         "stiction_choudhury",
         executed=True,
@@ -380,7 +474,7 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
         display_name="Kano 统计法粘滞检测",
         family="stiction",
         diag_code="VALVE_STICTION",
-        description="OP 单调分段统计：OP 几乎不变但 PV 大幅变化的粘滞区间占比",
+        description="OP 单调分段统计：OP 几乎不变但 PV 大幅变化的粘滞区间占比（需极限环振荡前提）",
         required_signals=("pv", "op"),
         min_sample_rate=0.0,
         outputs_schema={"stiction_ratio": "粘滞区间占比", "correlation": "PV-OP 相关系数"},
@@ -396,6 +490,24 @@ def detect_kano(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
     if pv is None or op is None or min(len(pv), len(op)) < 16:
         return OperatorResult("stiction_kano", executed=False, skip_reason="pv/op 数据不足")
     res = _kano_kernel(pv, op)
+    if res.get("reason") == "no_limit_cycle":
+        # P3 门控命中：证据表报"前提不成立"，避免误导性的"指标未超阈"
+        return OperatorResult(
+            "stiction_kano",
+            executed=True,
+            detected=False,
+            confidence=0.0,
+            features={
+                "stiction_ratio": res["stiction_ratio"],
+                "correlation": res["correlation"],
+                "std_ratio": res["std_ratio"],
+                "zero_crossings": res.get("zero_crossings"),
+                "mean_half_period": res.get("mean_half_period"),
+                "s_a": res.get("s_a"),
+                "s_b": res.get("s_b"),
+            },
+            evidence=[_limit_cycle_gate_evidence(res)],
+        )
     return OperatorResult(
         "stiction_kano",
         executed=True,

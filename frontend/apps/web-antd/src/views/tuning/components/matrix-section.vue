@@ -23,6 +23,8 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
+import { tuningAlgoLabel } from '../constants';
+
 const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 const { ctx } = props;
 
@@ -58,7 +60,7 @@ function handleCheck(record: Record<string, any>) {
 
 const columns = [
   { key: 'select', title: '仿真', width: 56 },
-  { key: 'algorithm', title: '算法', width: 130 },
+  { key: 'algorithm', title: '算法', width: 180 },
   { key: 'kp', title: 'P（比例增益）', width: 110 },
   { key: 'ti', title: 'I（积分时间 s）', width: 120 },
   { key: 'td', title: 'D（微分时间 s）', width: 120 },
@@ -113,7 +115,7 @@ const columns = [
           </template>
           <template v-else-if="column.key === 'algorithm'">
             <Tag :color="record.ok ? 'processing' : 'default'">{{
-              record.algorithm
+              tuningAlgoLabel(record.algorithm)
             }}</Tag>
           </template>
           <template v-else-if="column.key === 'kp'">

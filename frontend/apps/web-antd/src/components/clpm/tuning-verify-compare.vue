@@ -29,7 +29,7 @@ interface Props {
   loopId: string;
   /** 对比时点 ISO 串（naive UTC 或带 Z）；为空则不查询 */
   pointTime?: string;
-  /** 窗口小时数 1/2/24 */
+  /** 窗口小时数 1/2/4/8/24/72/168 */
   windowHours?: number;
 }
 
@@ -256,18 +256,16 @@ const kpiRows = computed<KpiDeltaRow[]>(() => {
   return KPI_KEYS.map(({ key, label, percent }) => {
     const bv = b?.[key];
     const av = a?.[key];
+    // 后端快照已是 0~100 百分比口径（Numeric(5,2)），直接拼接 % 展示，
+    // 不可再 ×100（与 handling-detail-drawer fmtKpi 同口径）。
     const fmt = (v: any) =>
       typeof v === 'number'
         ? (percent
-          ? `${(v * 100).toFixed(1)}%`
+          ? `${v.toFixed(1)}%`
           : v.toFixed(1))
         : '—';
     const delta =
-      typeof bv === 'number' && typeof av === 'number'
-        ? (percent
-          ? (av - bv) * 100
-          : av - bv)
-        : null;
+      typeof bv === 'number' && typeof av === 'number' ? av - bv : null;
     return { key, label, before: fmt(bv), after: fmt(av), delta };
   });
 });

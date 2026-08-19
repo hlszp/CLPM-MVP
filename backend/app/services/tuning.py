@@ -437,6 +437,21 @@ async def _fetch_preprocessed_signals(
     }
 
 
+def _infer_ts_from_grid(timestamps: list[float], sampling_freq: float) -> float:
+    """从实际时间戳网格推导采样周期（秒），标签仅作兜底.
+
+    Args:
+        timestamps: 相对秒时序（_to_rel_seconds 输出）
+        sampling_freq: DataBlock 标签解析的频率（Hz），仅在网格不可用时兜底
+    """
+    if len(timestamps) >= 2:
+        diffs = [b - a for a, b in zip(timestamps, timestamps[1:], strict=False)]
+        positive = sorted(d for d in diffs if d > 0)
+        if positive:
+            return positive[len(positive) // 2]
+    return 1.0 / sampling_freq if sampling_freq > 0 else 1.0
+
+
 def _parse_sampling_freq_hz(label: object) -> float:
     """解析 DataBlock.sampling_freq 标签为采样频率（Hz，数值）.
 
@@ -663,7 +678,11 @@ async def identify_model_from_history(
     pv = signals["pv"]
     op = signals["op"]
     sp = signals["sp"]
-    ts = 1.0 / signals["sampling_freq"] if signals["sampling_freq"] > 0 else 1.0
+    # ts 以实际时间戳网格为准（相邻点间隔中位数）；sampling_freq 标签仅作兜底——
+    # DataPlanner 查询不回聚（query_trend_data 忽略 interval_s），标签与真实网格
+    # 可能不一致（如 control_type=FAST 回落 TC 后标签 5s、实际 1s），直接信标签
+    # 会把 tau/theta 放大 5 倍。
+    ts = _infer_ts_from_grid(signals["timestamps"], signals["sampling_freq"])
 
     if len(pv) < 50 or len(op) < 50:
         raise BizError(
@@ -869,6 +888,9 @@ async def identify_model(
     timestamps_raw = waveform.get("timestamps", [])
 
     # 按同一索引过滤 PV/OP/时间，避免分别过滤后信号错位。
+    # 边界过滤：底层趋势查询 ts <= end 右闭区间，恰好落在 end 的首行属于下一段
+    # 数据（值可能完全不同），会在窗口尾部引入虚假跳变，必须排除。
+    end_epoch = datetime.fromisoformat(end_time.replace("Z", "+00:00")).timestamp()
     pv_values: list[float] = []
     op_values: list[float] = []
     timestamps: list[float] = []  # 绝对 Unix 时间戳（秒），用于响应绘图
@@ -881,6 +903,8 @@ async def identify_model(
         except (TypeError, ValueError):
             continue
         if not (np.isfinite(pv) and np.isfinite(op) and np.isfinite(ts_sec)):
+            continue
+        if ts_sec >= end_epoch:
             continue
         pv_values.append(pv)
         op_values.append(op)

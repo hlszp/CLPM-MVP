@@ -425,7 +425,7 @@ def _parse_point_time(s: str) -> datetime:
 async def verification_data_endpoint(
     loopId: str = Query(..., description="回路 ID"),
     pointTime: str = Query(..., description="对比时点 ISO 8601（naive UTC 或带时区）"),
-    windowHours: int = Query(..., description="窗口小时数：1/2/24"),
+    windowHours: int = Query(..., description="窗口小时数：1/2/4/8/24/72/168"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -435,8 +435,12 @@ async def verification_data_endpoint(
     各拉一次 SP/PV/OP 波形 + 窗口内最新 KPI 快照摘要（无快照侧为 null）；
     后窗超出当前时刻时 afterTruncated=true，前端标注"数据截至当前时刻"。
     """
-    if windowHours not in (1, 2, 24):
-        raise BizError(code="ERR_PARAM", message="windowHours 仅支持 1/2/24", status_code=400)
+    if windowHours not in (1, 2, 4, 8, 24, 72, 168):
+        raise BizError(
+            code="ERR_PARAM",
+            message="windowHours 仅支持 1/2/4/8/24/72/168",
+            status_code=400,
+        )
     point = _parse_point_time(pointTime)
     delta = timedelta(hours=windowHours)
     before = await get_waveform(db, loopId, start_time=iso_z(point - delta), end_time=iso_z(point))
