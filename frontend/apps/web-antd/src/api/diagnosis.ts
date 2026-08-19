@@ -58,13 +58,13 @@ export namespace DiagnosisApi {
   export interface ChartSnapshot {
     trend: {
       op?: (null | number)[];
-      pv?: (null | number)[];
-      sp?: (null | number)[];
-      ts: number[];
-      /** PV/SP 左轴量程（诊断时从 Tag 解析；旧记录无此字段前端自适应） */
-      pvRange?: { max: number; min: number };
       /** OP 右轴量程 */
       opRange?: { max: number; min: number };
+      pv?: (null | number)[];
+      /** PV/SP 左轴量程（诊断时从 Tag 解析；旧记录无此字段前端自适应） */
+      pvRange?: { max: number; min: number };
+      sp?: (null | number)[];
+      ts: number[];
     };
     scatter: { op: number[]; pv: number[] };
   }
@@ -134,7 +134,7 @@ export namespace DiagnosisApi {
     recommendations: Recommendation[];
     evidenceCharts?: ChartSnapshot;
     /** 诊断指标汇总（方案 A：窗口 KPI 均值 + 算子特征，0~100 统一口径） */
-    metricSummary?: null | MetricSummary;
+    metricSummary?: MetricSummary | null;
     thresholdVersion?: null | string;
     algorithmVersion?: null | string;
     startedAt?: null | string;
@@ -175,21 +175,21 @@ export namespace DiagnosisApi {
     /** 负向指标（值越大越差）：坏值率/饱和率/振荡率/粘滞系数（%），稳定时间（秒），行程指数 */
     negative: {
       badValueRate?: null | number;
-      saturationRate?: null | number;
       oscillationRate?: null | number;
-      stictionIndex?: null | number;
-      settlingTime?: null | number;
       outputTravelIndex?: null | number;
+      saturationRate?: null | number;
+      settlingTime?: null | number;
+      stictionIndex?: null | number;
     };
     /** 正向指标（KPI 窗口均值，%）：综合评分 + 6 率 */
     positive: {
-      score?: null | number;
-      effectiveAutoRate?: null | number;
-      autoModeRate?: null | number;
-      goodValueRate?: null | number;
-      steadyRate?: null | number;
       accuracyRate?: null | number;
+      autoModeRate?: null | number;
+      effectiveAutoRate?: null | number;
       fastRate?: null | number;
+      goodValueRate?: null | number;
+      score?: null | number;
+      steadyRate?: null | number;
     };
     /** 各负向指标来源：kpi（窗口快照均值）/ operator（算子特征换算）/ none（无数据） */
     source: Record<string, string>;
@@ -229,7 +229,7 @@ export namespace DiagnosisApi {
     timeWindowEnd?: null | string;
     /** 诊断指标汇总（窗口 KPI 均值+算子特征，0~100 口径；未诊断为 null）。
      *  回路工作台 R5 诊断卡 / 整定工作台摘要条消费（2026-08-19） */
-    metricSummary?: null | MetricSummary;
+    metricSummary?: MetricSummary | null;
   }
 
   /** 复核状态：PENDING 待复核 / REVIEWED 已复核 */
@@ -411,33 +411,33 @@ export namespace DiagnosisConfigApi {
   /** 诊断配置项（GET/PUT 批量响应） */
   export interface ConfigItem {
     diagId: string;
-    diagKey: string | null;
-    diagName: string | null;
-    label: string | null;
-    algorithmType: string | null;
-    calcMethod: string | null;
-    params: Record<string, any> | null;
-    threshold: Record<string, any> | null;
+    diagKey: null | string;
+    diagName: null | string;
+    label: null | string;
+    algorithmType: null | string;
+    calcMethod: null | string;
+    params: null | Record<string, any>;
+    threshold: null | Record<string, any>;
     isEnabled: boolean;
-    algorithmVersion: string | null;
-    updatedAt: string | null;
-    updatedBy: string | null;
+    algorithmVersion: null | string;
+    updatedAt: null | string;
+    updatedBy: null | string;
   }
 
   /** 批量响应 */
   export interface BatchResponse {
     items: ConfigItem[];
-    updatedCount?: number | null;
+    updatedCount?: null | number;
   }
 
   /** 更新项（批量 PUT） */
   export interface UpdateItem {
     diagId: string;
-    label?: string | null;
-    algorithmType?: string | null;
-    calcMethod?: string | null;
-    params?: Record<string, any> | null;
-    threshold?: Record<string, any> | null;
+    label?: null | string;
+    algorithmType?: null | string;
+    calcMethod?: null | string;
+    params?: null | Record<string, any>;
+    threshold?: null | Record<string, any>;
     isEnabled?: boolean | null;
   }
 
@@ -446,9 +446,9 @@ export namespace DiagnosisConfigApi {
     diagKey: string;
     diagName: string;
     algorithmType: string;
-    calcMethod?: string | null;
-    params?: Record<string, any> | null;
-    threshold?: Record<string, any> | null;
+    calcMethod?: null | string;
+    params?: null | Record<string, any>;
+    threshold?: null | Record<string, any>;
     isEnabled?: boolean;
   }
 }

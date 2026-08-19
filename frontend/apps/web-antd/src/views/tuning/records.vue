@@ -17,7 +17,7 @@ import { getTuningHistoryApi, getTuningTasksApi } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 
 import RecordDetailDrawer from './components/record-detail-drawer.vue';
-import { tuningAlgoLabel, fmtNum2 } from './constants';
+import { fmtNum2, tuningAlgoLabel } from './constants';
 
 defineOptions({ name: 'TuningRecords' });
 

@@ -24,7 +24,7 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
-import { tuningAlgoLabel, fmtNum2 } from '../constants';
+import { fmtNum2, tuningAlgoLabel } from '../constants';
 
 const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 const { ctx } = props;

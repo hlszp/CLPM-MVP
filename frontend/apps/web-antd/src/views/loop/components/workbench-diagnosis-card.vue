@@ -19,18 +19,19 @@ import { computed } from 'vue';
 import { Button, Tag, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import WorkbenchMetricBars from './workbench-metric-bars.vue';
 import { SEVERITY_COLOR } from '../../diagnosis/constants';
+import WorkbenchMetricBars from './workbench-metric-bars.vue';
 
 defineOptions({ name: 'WorkbenchDiagnosisCard' });
+
+const props = defineProps<Props>();
+
+const emit = defineEmits<{ diagnose: [] }>();
 
 interface Props {
   /** 最新诊断概览（null=未诊断或未加载） */
   item: DiagnosisApi.LatestRunItem | null;
 }
-
-const props = defineProps<Props>();
-const emit = defineEmits<{ diagnose: [] }>();
 
 /** 有诊断记录（runId 非空） */
 const hasRun = computed(() => props.item?.runId != null);

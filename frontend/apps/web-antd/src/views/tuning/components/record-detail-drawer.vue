@@ -26,7 +26,7 @@ import { getTuningTaskDetailApi } from '#/api/tuning';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
-import { tuningAlgoLabel, fmtNum2 } from '../constants';
+import { fmtNum2, tuningAlgoLabel } from '../constants';
 
 const props = defineProps<{ recordId: null | string; visible: boolean }>();
 const emit = defineEmits<{ 'update:visible': [boolean] }>();

@@ -12,8 +12,8 @@ import {
   Popconfirm,
   Select,
   Switch,
-  TabPane,
   Table,
+  TabPane,
   Tabs,
   Tag,
   Textarea,
@@ -23,19 +23,19 @@ import {
 import {
   createDiagnosisConfigApi,
   deleteDiagnosisConfigApi,
+  type DiagnosisApi,
+  type DiagnosisConfigApi,
   getDiagnosisConfigsApi,
   getDiagnosisOperatorsApi,
   updateDiagnosisConfigsApi,
-  type DiagnosisApi,
-  type DiagnosisConfigApi,
 } from '#/api/diagnosis';
 import {
   ClpmPageToolbar,
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
-import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'DiagnosisConfig' });
 
@@ -83,7 +83,7 @@ const DIAG_CODE_OPTIONS = Object.keys(DIAG_CODE_TEXT);
 
 /** 键值对 schema → 紧凑展示串（k=v；中文说明）；对象值 JSON 序列化防 [object Object] */
 function schemaEntriesText(
-  schema: Record<string, unknown> | null | undefined,
+  schema: null | Record<string, unknown> | undefined,
 ): string {
   if (!schema) return '-';
   const entries = Object.entries(schema);
@@ -354,11 +354,7 @@ const loading = ref(false);
 async function handleRefresh() {
   loading.value = true;
   try {
-    if (activeTab.value === 'operators') {
-      await loadOperators();
-    } else {
-      await loadConfigs();
-    }
+    await (activeTab.value === 'operators' ? loadOperators() : loadConfigs());
   } finally {
     loading.value = false;
   }
@@ -553,7 +549,7 @@ defineExpose({
             v-model:value="form.paramsText"
             :rows="5"
             :class="{ 'border-red-500': !!paramsError }"
-            placeholder='{"param": value}'
+            placeholder="{&quot;param&quot;: value}"
           />
           <span v-if="paramsError" class="text-xs text-red-500">{{ paramsError }}</span>
         </div>
@@ -563,7 +559,7 @@ defineExpose({
             v-model:value="form.thresholdText"
             :rows="8"
             :class="{ 'border-red-500': !!thresholdError }"
-            placeholder='{"threshold_key": value}'
+            placeholder="{&quot;threshold_key&quot;: value}"
           />
           <span v-if="thresholdError" class="text-xs text-red-500">{{ thresholdError }}</span>
           <span class="text-xs text-muted-foreground">

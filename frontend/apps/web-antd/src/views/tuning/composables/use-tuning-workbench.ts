@@ -261,9 +261,9 @@ export function useTuningWorkbench() {
       sourceRecordId: o.recordId ?? undefined,
       // 阶跃记录后端要求声明 STEP_EXPERIMENT 来源（authorize_tuning_model 门禁）
       modelSource: o.recordId
-        ? o.dataSource === 'STEP_EXPERIMENT'
+        ? (o.dataSource === 'STEP_EXPERIMENT'
           ? 'STEP_EXPERIMENT'
-          : 'IDENTIFICATION_RECORD'
+          : 'IDENTIFICATION_RECORD')
         : 'MANUAL',
       riskConfirmed: true,
     };
@@ -390,9 +390,9 @@ export function useTuningWorkbench() {
         loopId: state.loopId,
         sourceRecordId: state.outcome.recordId ?? undefined,
         modelSource: state.outcome.recordId
-          ? state.outcome.dataSource === 'STEP_EXPERIMENT'
+          ? (state.outcome.dataSource === 'STEP_EXPERIMENT'
             ? 'STEP_EXPERIMENT'
-            : 'IDENTIFICATION_RECORD'
+            : 'IDENTIFICATION_RECORD')
           : 'MANUAL',
         riskConfirmed: true,
       });

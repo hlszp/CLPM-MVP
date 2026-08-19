@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TuningWorkbenchContext } from '../composables/use-tuning-workbench';
+
 /**
  * 整定工作台 · 锚点① 过程辨识（09 设计方案 §4.1/§6.2）
  *
@@ -7,8 +9,6 @@
  * 结果卡：模型类型/参数/拟合度/可信度徽标；D/E 级警示（下游置灰由 ctx 门禁驱动）。
  */
 import type { TuningApi } from '#/api/tuning';
-
-import type { TuningWorkbenchContext } from '../composables/use-tuning-workbench';
 
 import { computed, reactive, ref, watch } from 'vue';
 
@@ -130,9 +130,9 @@ async function applyEdit() {
   const params =
     editForm.modelType === 'SOPDT'
       ? { K: editForm.K, T1: editForm.T1, T2: editForm.T2, theta: editForm.theta }
-      : editForm.modelType === 'IPDT'
+      : (editForm.modelType === 'IPDT'
         ? { K: editForm.K, theta: editForm.theta }
-        : { K: editForm.K, tau: editForm.tau, theta: editForm.theta };
+        : { K: editForm.K, tau: editForm.tau, theta: editForm.theta });
   await ctx.applyManualModel(editForm.modelType, params);
 }
 </script>

@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TableColumnsType } from 'ant-design-vue';
+
 /**
  * 整定工作台（整定模块主入口，09 设计方案 §6.2）
  *
@@ -16,8 +18,6 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { HandlingApi } from '#/api/handling';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
-
-import type { TableColumnsType } from 'ant-design-vue';
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -45,17 +45,17 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
-import { SEVERITY_COLOR } from '../diagnosis/constants';
 
+import { SEVERITY_COLOR } from '../diagnosis/constants';
 import ConfirmSection from './components/confirm-section.vue';
 import IdentifySection from './components/identify-section.vue';
 import MatrixSection from './components/matrix-section.vue';
 import SimulateSection from './components/simulate-section.vue';
 import { useTuningWorkbench } from './composables/use-tuning-workbench';
 import {
+  fmtNum2,
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
-  fmtNum2,
   scoreGrade,
 } from './constants';
 
