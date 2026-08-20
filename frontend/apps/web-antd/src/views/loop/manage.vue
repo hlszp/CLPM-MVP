@@ -800,13 +800,13 @@ function handleBatchDelete() {
   openBatchDanger();
 }
 
-/** 批量软删除危险确认回调（ClpmDangerConfirmModal @confirm） */
+/** 批量删除危险确认回调（ClpmDangerConfirmModal @confirm） */
 async function handleBatchDangerConfirm() {
   if (selectedRowKeys.value.length === 0) return;
   const loopCount = selectedRowKeys.value.length;
   batchDangerLoading.value = true;
   const hide = message.loading(
-    `正在软删除 ${loopCount} 个回路（停用监控）…`,
+    `正在删除 ${loopCount} 个回路（级联清理关联数据）…`,
     0,
   );
   try {
@@ -815,7 +815,9 @@ async function handleBatchDangerConfirm() {
       action: 'delete',
     });
     hide();
-    message.success(`批量软删除成功，共影响 ${result.affected} 个回路`);
+    message.success(
+      `批量删除成功，共删除 ${result.affected} 个回路（Tag 映射已解绑，关联数据已级联清理）`,
+    );
     selectedRowKeys.value = [];
     batchDangerOpen.value = false;
     await loadList();
@@ -1901,9 +1903,11 @@ watch(
       title="批量删除回路"
       action="删除"
       :target="`选中的 ${selectedRowKeys.length} 个回路`"
-      impact-scope="将软删除（停用监控）选中的回路、可通过重新启用恢复"
-      rollback-tip="此操作为软删除，可通过重新启用恢复"
-      :require-confirm-code="false"
+      impact-scope="将级联解绑每个回路的 7 个 Tag 映射、级联清理 KPI 快照/诊断/处置/整定等关联数据，不可恢复"
+      rollback-tip="此操作不可逆，删除后无法恢复（Tag 测点本体保留，解除关联后可在测点配置中删除）"
+      require-confirm-code
+      :confirm-code="`删除 ${selectedRowKeys.length} 个回路`"
+      confirm-code-placeholder="请输入「删除 N 个回路」以确认"
       :loading="batchDangerLoading"
       @confirm="handleBatchDangerConfirm"
     />

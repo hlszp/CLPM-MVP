@@ -196,7 +196,7 @@ async def batch_config_loops_endpoint(
 
     两种模式（互斥）：
     - 更新模式：提供 updates 字段（isMonitored/isStatEnabled/importanceLevel/includeInEvaluation）
-    - 删除模式：action="delete"（软删除：is_active=False）
+    - 删除模式：action="delete"（硬删除：解绑 Tag 映射 + 级联清理关联数据，不可恢复）
 
     所有操作均记录审计日志。
     """

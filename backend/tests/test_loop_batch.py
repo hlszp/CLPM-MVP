@@ -3,7 +3,7 @@
 测试覆盖：
 - TEST-01: batch_update_loops — 批量更新监控状态
 - TEST-02: batch_update_loops — 批量更新级别
-- TEST-03: batch_delete_loops — 批量软删除
+- TEST-03: batch_delete_loops — 批量硬删除（解绑映射 + 级联删除）
 - TEST-04: batch_update_loops — 空列表抛异常
 - TEST-05: check_node_monitor_trigger — 无位号配置返回 True
 - TEST-06: check_node_monitor_trigger — 位号值匹配返回 True
@@ -40,6 +40,24 @@ def _make_scalar_one_or_none_mock(value: object) -> MagicMock:
     result = MagicMock()
     result.scalar_one_or_none.return_value = value
     return result
+
+
+def _make_scalar_mock(value: object) -> MagicMock:
+    """构造 execute 返回值，支持 scalar()（如 COUNT 聚合）。"""
+    result = MagicMock()
+    result.scalar.return_value = value
+    return result
+
+
+def _make_mapping(
+    loop_id: str = "loop-001",
+    tag_id: str = "tag-001",
+) -> MagicMock:
+    """构造 LoopTagMapping mock。"""
+    mapping = MagicMock()
+    mapping.loop_id = loop_id
+    mapping.tag_id = tag_id
+    return mapping
 
 
 def _make_loop(
@@ -206,21 +224,45 @@ class TestBatchUpdateLoopsLevel:
 
 
 # ===========================================================================
-# TEST-03: 批量软删除
+# TEST-03: 批量硬删除
 # ===========================================================================
 
 
 class TestBatchDeleteLoops:
-    """批量软删除测试。"""
+    """批量硬删除测试（解绑 Tag 映射 + 级联删除，不可恢复）。"""
 
     @pytest.mark.asyncio
     async def test_batch_delete_loops(self) -> None:
-        """批量软删除应将 is_active=False, status=INACTIVE。"""
+        """批量硬删除：每回路删除映射、db.delete 本体、写审计、单事务提交。"""
         loop1 = _make_loop("loop-001", is_active=True, status="READY")
         loop2 = _make_loop("loop-002", is_active=True, status="PARTIAL")
+        mapping1 = _make_mapping("loop-001", "tag-101")
+        mapping2 = _make_mapping("loop-002", "tag-201")
+        tag1 = _make_tag("tag-101")
+        tag2 = _make_tag("tag-201")
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1, loop2]))
+        # 调用序列：
+        # 1. select(LoopLedger) → [loop1, loop2]
+        # 2. loop1: select(LoopTagMapping) → [mapping1]
+        # 3. loop1: delete(LoopTagMapping)（返回值未用）
+        # 4. loop1/tag-101: COUNT 引用 → 0（无其他回路引用）
+        # 5. loop1/tag-101: select(TagRegistry) → tag1（清除 is_linked）
+        # 6-9. loop2 同上
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop1, loop2]),
+                _make_scalars_mock([mapping1]),
+                MagicMock(),
+                _make_scalar_mock(0),
+                _make_scalar_one_or_none_mock(tag1),
+                _make_scalars_mock([mapping2]),
+                MagicMock(),
+                _make_scalar_mock(0),
+                _make_scalar_one_or_none_mock(tag2),
+            ]
+        )
+        db.delete = AsyncMock()
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -231,18 +273,54 @@ class TestBatchDeleteLoops:
         )
 
         assert result == {"deleted": 2, "skipped": []}
-        assert loop1.is_active is False
-        assert loop1.status == "INACTIVE"
-        assert loop2.is_active is False
-        assert loop2.status == "INACTIVE"
+        # 硬删除：回路本体通过 db.delete 删除（而非改 is_active）
+        assert db.delete.await_count == 2
+        db.delete.assert_any_await(loop1)
+        db.delete.assert_any_await(loop2)
+        assert loop1.is_active is True  # 不再翻转 is_active
+        # 解绑后未被引用的 Tag 清除 is_linked
+        assert tag1.is_linked is False
+        assert tag2.is_linked is False
+        # 每回路一条审计
         assert db.add.call_count == 2
         db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_delete_loops_shared_tag_keeps_linked(self) -> None:
+        """Tag 仍被其他回路引用时不清除 is_linked（is_linked 由映射派生）。"""
+        loop1 = _make_loop("loop-001", is_active=True, status="READY")
+        mapping1 = _make_mapping("loop-001", "tag-shared")
+        tag = _make_tag("tag-shared")
+        tag.is_linked = True
+
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop1]),
+                _make_scalars_mock([mapping1]),
+                MagicMock(),
+                _make_scalar_mock(3),  # 仍被 3 个其他回路引用
+            ]
+        )
+        db.delete = AsyncMock()
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        result = await batch_delete_loops(
+            db=db,
+            loop_ids=["loop-001"],
+            operator="admin",
+        )
+
+        assert result == {"deleted": 1, "skipped": []}
+        assert tag.is_linked is True  # 仍被引用，保持关联状态
 
     @pytest.mark.asyncio
     async def test_batch_delete_loops_not_found(self) -> None:
         """无匹配回路时 deleted=0，全部进入 skipped。"""
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        db.delete = AsyncMock()
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -254,6 +332,7 @@ class TestBatchDeleteLoops:
 
         assert result["deleted"] == 0
         assert result["skipped"] == [{"loopId": "loop-999", "reason": "回路不存在"}]
+        db.delete.assert_not_awaited()
         db.add.assert_not_called()
 
     @pytest.mark.asyncio
@@ -262,7 +341,13 @@ class TestBatchDeleteLoops:
         loop1 = _make_loop("loop-001", is_active=True, status="READY")
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1]))
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop1]),
+                _make_scalars_mock([]),  # loop1 无 Tag 映射
+            ]
+        )
+        db.delete = AsyncMock()
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -274,6 +359,7 @@ class TestBatchDeleteLoops:
 
         assert result["deleted"] == 1
         assert result["skipped"] == [{"loopId": "loop-999", "reason": "回路不存在"}]
+        db.delete.assert_awaited_once_with(loop1)
 
 
 # ===========================================================================

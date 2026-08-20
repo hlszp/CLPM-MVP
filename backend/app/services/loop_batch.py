@@ -2,7 +2,7 @@
 
 提供：
 - ``batch_update_loops``: 批量更新回路（监控/统计/重要等级/参评）
-- ``batch_delete_loops``: 批量软删除回路（is_active=False）
+- ``batch_delete_loops``: 批量硬删除回路（解绑 Tag 映射 + 级联清理关联数据）
 - ``check_node_monitor_trigger``: SVC-10 位号触发监控检查
 
 所有写操作均记录审计日志。
@@ -15,12 +15,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
-from app.models.loop import LoopLedger
+from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 
@@ -174,7 +174,7 @@ async def batch_update_loops(
 
 
 # ---------------------------------------------------------------------------
-# SVC-09: 批量软删除回路
+# SVC-09: 批量硬删除回路
 # ---------------------------------------------------------------------------
 
 
@@ -183,7 +183,17 @@ async def batch_delete_loops(
     loop_ids: list[str],
     operator: str,
 ) -> dict:
-    """批量软删除回路（is_active=False，不实际删除记录）。
+    """批量硬删除回路（与单个删除口径一致，不可恢复）。
+
+    每个回路：
+    1. 删除 LoopTagMapping 关联记录（通常 7 条：PV/SP/OP/MODE/PID_P/PID_I/PID_D），
+       解除关联后不再被任何回路引用的 Tag 其 is_linked 一并清除；
+    2. 硬删除回路本体，ON DELETE CASCADE 自动级联清理 kpi_snapshot /
+       loop_confidence_latest / diagnosis_run / action_tracker / tuning_record /
+       alert_event 等 18 张关联表；
+    3. 写审计日志。
+
+    单事务提交（任一回路失败全部回滚）。
 
     Args:
         db: 异步数据库会话
@@ -191,7 +201,7 @@ async def batch_delete_loops(
         operator: 操作人
 
     Returns:
-        {"deleted": 软删除数量, "skipped": [{"loopId", "reason"}]}
+        {"deleted": 硬删除数量, "skipped": [{"loopId", "reason"}]}
         skipped 为请求中但未找到的回路 ID
 
     Raises:
@@ -213,36 +223,58 @@ async def batch_delete_loops(
     if not loops:
         return {"deleted": 0, "skipped": skipped}
 
-    # 逐回路软删除并写审计（target_id 为 UUID 单列，每回路一条）
     for loop in loops:
+        loop_id = str(loop.id)
         before = {
-            "loopId": str(loop.id),
+            "loopId": loop_id,
             "tagName": loop.tag_name,
             "is_active": loop.is_active,
             "status": loop.status,
         }
-        loop.is_active = False
-        loop.status = "INACTIVE"
-        loop.updated_by = operator
-        after = {
-            "loopId": str(loop.id),
-            "tagName": loop.tag_name,
-            "is_active": False,
-            "status": "INACTIVE",
-        }
+
+        # 1. 级联解绑：删除本回路的 Tag 映射
+        mappings_result = await db.execute(
+            select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+        )
+        mappings = mappings_result.scalars().all()
+        mapped_tag_ids = [str(m.tag_id) for m in mappings]
+        if mappings:
+            await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
+            # is_linked 由映射派生：仅当 Tag 不再被任何回路引用时才清除
+            for tag_id in mapped_tag_ids:
+                ref_count_result = await db.execute(
+                    select(func.count())
+                    .select_from(LoopTagMapping)
+                    .where(LoopTagMapping.tag_id == tag_id)
+                )
+                if (ref_count_result.scalar() or 0) > 0:
+                    continue
+                t_result = await db.execute(select(TagRegistry).where(TagRegistry.id == tag_id))
+                tag = t_result.scalar_one_or_none()
+                if tag:
+                    tag.is_linked = False
+
+        # 2. 硬删除回路本体（ON DELETE CASCADE 级联清理关联表）
+        await db.delete(loop)
+
+        # 3. 审计
         await _write_audit(
             db=db,
             operator=operator,
             operation_type="LOOP_BATCH_DELETE",
             target_type="loop_ledger",
-            target_id=str(loop.id),
+            target_id=loop_id,
             before_value=json.dumps(before, ensure_ascii=False, default=str),
-            after_value=json.dumps(after, ensure_ascii=False, default=str),
+            after_value=json.dumps(
+                {"tagName": loop.tag_name, "deleted": True},
+                ensure_ascii=False,
+            ),
         )
+
     await db.commit()
 
     logger.info(
-        "[批量软删除] 已软删除 %d 个回路（操作人: %s）",
+        "[批量删除] 已硬删除 %d 个回路（操作人: %s）",
         len(loops),
         operator,
     )
