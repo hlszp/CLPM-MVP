@@ -46,6 +46,7 @@ from app.models.sys_config import SysConfig
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.config import (
+    WeightCustomMetricItem,
     WeightTemplateItem,
     WeightTemplateSaveRequest,
     WeightTemplateSchema,
@@ -245,6 +246,7 @@ async def _save_template_version(
     templates: list[WeightTemplateItem],
     operator: str,
     remark: str | None = None,
+    custom_metrics: list | None = None,
 ) -> WeightTemplateSchema:
     """保存权重模板为新版本并写入历史.
 
@@ -266,20 +268,24 @@ async def _save_template_version(
     new_template = WeightTemplateSchema(
         version=new_version,
         templates=templates,
+        customMetrics=custom_metrics or [],
         updatedAt=_now_iso(),
         updatedBy=operator,
     )
 
-    # 加载历史并追加当前版本
+    # 加载历史并追加当前版本（含生效/失效时间）
     history = await _load_history(db)
     history.append(
         {
             "version": current.version,
             "templates": [t.model_dump() for t in current.templates],
+            "customMetrics": [c.model_dump() for c in current.customMetrics],
             "updatedAt": current.updatedAt,
             "updatedBy": current.updatedBy,
             "remark": remark or f"保存版本 {new_version} 前的快照",
             "isCurrent": False,
+            "effectiveAt": current.updatedAt,
+            "expiresAt": new_template.updatedAt,
         }
     )
 
@@ -371,6 +377,7 @@ async def save_weight_templates(
         templates=body.templates,
         operator=user.username,
         remark=body.remark,
+        custom_metrics=body.customMetrics,
     )
 
     try:
@@ -420,10 +427,13 @@ async def get_weight_template_history(
     current_item = {
         "version": current.version,
         "templates": [t.model_dump() for t in current.templates],
+        "customMetrics": [c.model_dump() for c in current.customMetrics],
         "updatedAt": current.updatedAt,
         "updatedBy": current.updatedBy,
         "remark": "当前生效版本" if current.version > 0 else "国标默认版本",
         "isCurrent": True,
+        "effectiveAt": current.updatedAt,
+        "expiresAt": None,
     }
 
     # 按版本号倒序
@@ -506,12 +516,16 @@ async def rollback_weight_template(
     # 校验回滚版本的权重和
     _validate_core_weight_sum(rollback_items)
 
-    # 保存为新版本（归档当前版本到历史）
+    # 保存为新版本（归档当前版本到历史；自定义指标行一并回滚）
+    rollback_custom_metrics = [
+        WeightCustomMetricItem(**c) for c in target.get("customMetrics", [])
+    ]
     result = await _save_template_version(
         db=db,
         templates=rollback_items,
         operator=user.username,
         remark=f"回滚自版本 {version}",
+        custom_metrics=rollback_custom_metrics,
     )
 
     try:

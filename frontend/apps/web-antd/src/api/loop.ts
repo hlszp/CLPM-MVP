@@ -634,6 +634,29 @@ export namespace LoopApi {
     /** 组成员数 */
     memberCount: number;
   }
+
+  /** Excel 导入单行错误 */
+  export interface LoopImportError {
+    row: number;
+    tagName?: null | string;
+    message: string;
+  }
+
+  /** Excel 导入结果（upsert：回路编号已存在则更新，否则新建） */
+  export interface LoopImportResult {
+    /** 总行数 */
+    total: number;
+    /** 新建数 */
+    inserted: number;
+    /** 更新数 */
+    updated: number;
+    /** 失败数 */
+    failed: number;
+    /** 失败行明细 */
+    errors: LoopImportError[];
+    /** tag 重关联告警 */
+    warnings: string[];
+  }
 }
 
 /**

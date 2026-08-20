@@ -39,11 +39,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/configs/algorithm-params", tags=["algorithm-config"])
 
-#: 指标代码 → 中文名映射
+#: 指标代码 → 中文名映射（页面标题「中文（english_code）」格式）
 _METRIC_NAMES = {
     "oscillation_rate": "振荡率",
     "fast_rate": "快速率",
     "accuracy_rate": "准确率",
+    "settling_time": "稳态时间",
+    "effective_auto_rate": "有效自控率",
+    "output_trip_index": "输出行程指数",
 }
 
 

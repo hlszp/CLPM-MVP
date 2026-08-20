@@ -28,10 +28,16 @@ import {
 } from 'ant-design-vue';
 
 import {
+  getGradingThresholdHistoryApi,
   getGradingThresholdsApi,
+  rollbackGradingThresholdApi,
   saveGradingThresholdsApi,
 } from '#/api/metric';
-import { ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmHelpIcon,
+  ClpmToolbarButton,
+  ClpmVersionHistoryModal,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricGradingThreshold' });
@@ -41,6 +47,16 @@ const { themeColors } = useClpmTheme();
 const loading = ref(false);
 const saving = ref(false);
 const list = ref<MetricApi.GradingThresholdItem[]>([]);
+const currentVersion = ref(0);
+
+/** 帮助内容（汇总原页面说明块） */
+const HELP_CONTENT = [
+  '配置 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）。',
+  '· 校验规则：相邻等级须满足「level N 的 minScore == level N+1 的 maxScore」，例如：一级 (EXCELLENT) minScore=90，则二级 (GOOD) maxScore 须=90。',
+  '· 边界约束：一级 maxScore=100（满分上限），五级 minScore=0（最低下限）。',
+  '· 颜色配置：点击颜色方块可自定义各等级显示颜色，保存后全站生效。',
+  '· 每次保存自动生成新版本并立即生效；「版本」入口可查看各版本生效—失效时间并回滚。',
+].join('\n');
 
 /** 5 级定级元数据（名称、中文等级；颜色走 levelColor 单源） */
 const LEVEL_META: Record<number, { cnLabel: string; name: string }> = {
@@ -134,6 +150,7 @@ async function loadList() {
   loading.value = true;
   try {
     const data = await getGradingThresholdsApi();
+    currentVersion.value = data.version ?? 0;
     list.value = data.thresholds ?? [];
     // 同步编辑态
     for (const item of list.value) {
@@ -255,6 +272,39 @@ onMounted(() => {
   loadList();
 });
 
+// ===== 版本历史 =====
+
+const versionOpen = ref(false);
+const versionLoading = ref(false);
+const versionItems = ref<MetricApi.VersionHistoryItem[]>([]);
+const rollingBack = ref(false);
+
+async function openVersionHistory() {
+  versionOpen.value = true;
+  versionLoading.value = true;
+  try {
+    const data = await getGradingThresholdHistoryApi();
+    versionItems.value = data.items ?? [];
+  } catch {
+    versionItems.value = [];
+  } finally {
+    versionLoading.value = false;
+  }
+}
+
+async function handleRollback(version: number) {
+  rollingBack.value = true;
+  try {
+    await rollbackGradingThresholdApi(version);
+    message.success(`已回滚到版本 v${version}（生成新版本）`);
+    await Promise.all([loadList(), openVersionHistory()]);
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    rollingBack.value = false;
+  }
+}
+
 /** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
 function refresh() {
   return loadList();
@@ -265,13 +315,14 @@ defineExpose({ refresh });
 
 <template>
   <div class="metric-grading-threshold">
-    <div class="mb-3 flex items-center justify-between">
-      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
-        配置 5 级性能定级阈值（EXCELLENT/GOOD/FAIR/WARNING/POOR）。
-        相邻等级的分数区间须严格衔接（即 level N 的 minScore == level N+1 的
-        maxScore）。
-      </p>
-      <div class="flex gap-2">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center text-sm" :style="{ color: themeColors.NEUTRAL }">
+        <span>5 级性能定级阈值，相邻等级分数区间须严格衔接。</span>
+        <ClpmHelpIcon title="定级阈值 帮助" :content="HELP_CONTENT" />
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <Tag class="mr-1">当前版本 v{{ currentVersion }}</Tag>
+        <Button size="small" @click="openVersionHistory"> 版本 </Button>
         <ClpmToolbarButton
           icon="ant-design:reload-outlined"
           :loading="loading"
@@ -387,18 +438,6 @@ defineExpose({ refresh });
       </template>
     </Table>
 
-    <div class="mt-3 text-xs" :style="{ color: themeColors.NEUTRAL }">
-      <p>
-        <strong>校验规则：</strong>
-        相邻等级须满足「level N 的 minScore == level N+1 的 maxScore」，
-        例如：一级 (EXCELLENT) minScore=90，则二级 (GOOD) maxScore 须=90。
-      </p>
-      <p class="mt-1">
-        <strong>颜色配置：</strong>
-        点击颜色方块可自定义各等级显示颜色，保存后全站生效。
-      </p>
-    </div>
-
     <!-- 保存确认弹窗 -->
     <Modal
       v-model:open="confirmVisible"
@@ -444,11 +483,22 @@ defineExpose({ refresh });
             }"
           >
             保存后将以新版本生效，所有回路的性能定级将在下次评估时按新阈值划分。
-            可在「版本历史」Tab 查看历史版本并回滚。
+            可通过「版本」入口查看历史版本并回滚。
           </p>
         </div>
       </div>
     </Modal>
+
+    <!-- 版本历史 -->
+    <ClpmVersionHistoryModal
+      v-model:open="versionOpen"
+      title="定级阈值 版本历史"
+      :items="versionItems"
+      :loading="versionLoading"
+      :rolling-back="rollingBack"
+      rollbackable
+      @rollback="handleRollback"
+    />
   </div>
 </template>
 

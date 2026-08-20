@@ -524,11 +524,17 @@ class TestUpdateDiagnosisConfigs:
     """PUT /api/v1/configs/diagnosis tests."""
 
     def test_update_success(self, client, mock_db, fake_redis) -> None:
-        """ADMIN 批量更新诊断配置成功."""
+        """ADMIN 批量更新诊断配置成功（自动归档版本快照）."""
         full_set = _build_full_diagnosis_set()
         mock_db.execute = AsyncMock(
             side_effect=[
                 _make_execute_return(full_set[:2]),  # 按 ID 查询
+                # 版本快照（_snapshot_diagnosis_version）：全量查询 + sys_config 读写
+                _make_execute_return(full_set),  # 快照：select DiagnosisConfig
+                _make_scalar_one_or_none(None),  # 快照：读 sys_config version
+                _make_scalar_one_or_none(None),  # 快照：读 sys_config history
+                _make_scalar_one_or_none(None),  # 写 sys_config version（select upsert）
+                _make_scalar_one_or_none(None),  # 写 sys_config history（select upsert）
                 _make_execute_return(full_set),  # 重新查询全部
             ]
         )
@@ -650,11 +656,17 @@ class TestCreateDiagnosisConfig:
     """POST /api/v1/configs/diagnosis tests."""
 
     def test_create_success(self, client, mock_db, fake_redis) -> None:
-        """ADMIN 新增诊断配置成功（重建被删除的枚举项场景）."""
+        """ADMIN 新增诊断配置成功（重建被删除的枚举项场景，自动归档版本快照）."""
         full_set = _build_full_diagnosis_set()
         mock_db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_one_or_none(None),  # 唯一性检查：不存在（曾被删除）
+                # 版本快照（_snapshot_diagnosis_version）：全量查询 + sys_config 读写
+                _make_execute_return(full_set),  # 快照：select DiagnosisConfig
+                _make_scalar_one_or_none(None),  # 快照：读 sys_config version
+                _make_scalar_one_or_none(None),  # 快照：读 sys_config history
+                _make_scalar_one_or_none(None),  # 写 sys_config version（select upsert）
+                _make_scalar_one_or_none(None),  # 写 sys_config history（select upsert）
                 _make_execute_return(full_set),  # 重新查询全部
             ]
         )
@@ -680,9 +692,9 @@ class TestCreateDiagnosisConfig:
         assert resp.status_code == 200
         assert resp.json()["code"] == "0"
         assert len(resp.json()["data"]["items"]) == 8
-        # add 调用 2 次：DiagnosisConfig + SysAuditLog 审计日志
+        # add 调用：DiagnosisConfig + SysAuditLog 审计 + 快照 SysConfig ×2
         added_types = [type(call.args[0]).__name__ for call in mock_db.add.call_args_list]
-        assert added_types == ["DiagnosisConfig", "SysAuditLog"]
+        assert added_types == ["DiagnosisConfig", "SysAuditLog", "SysConfig", "SysConfig"]
         mock_db.commit.assert_awaited_once()
 
     def test_invalid_diag_code(self, client, mock_db, fake_redis) -> None:

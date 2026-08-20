@@ -11,6 +11,7 @@ export { default as ClpmDataHealthBadges } from './data-health-badges.vue';
 export { default as ClpmDecisionDock } from './decision-dock.vue';
 export { default as ClpmEmptyState } from './empty-state.vue';
 export { default as ClpmEvidenceCanvas } from './evidence-canvas.vue';
+export { default as ClpmHelpIcon } from './help-icon.vue';
 export { default as ClpmInfoTip } from './info-tip.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
@@ -38,8 +39,9 @@ export {
   type ToolbarAction,
   type ToolbarVariant,
 } from './toolbar-config';
-
 export { default as ClpmToolbarDivider } from './toolbar-divider.vue';
+
+export { default as ClpmVersionHistoryModal } from './version-history-modal.vue';
 
 /**
  * UI-05 ClpmTable 表格规范封装（v6.1 §7.16 / §15.2 UI-05）

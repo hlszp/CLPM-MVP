@@ -50,6 +50,145 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/configs", tags=["configs"])
 
+# 诊断配置版本化 sys_config 键（快照模式：每次 CRUD 自动归档全量快照）
+_KEY_DIAG_VERSION = "diagnosis_config.version"
+_KEY_DIAG_VERSION_DESC = "诊断配置当前版本快照（JSON，含 version + items）"
+_KEY_DIAG_HISTORY = "diagnosis_config.history"
+_KEY_DIAG_HISTORY_DESC = "诊断配置历史版本快照列表（JSON 数组，含生效/失效时间）"
+
+
+def _now_iso() -> str:
+    """当前 UTC 时间的 ISO 8601 字符串."""
+    from datetime import UTC as _UTC
+
+    return datetime.now(_UTC).isoformat()
+
+
+async def _get_sys_config(db: AsyncSession, key: str) -> str | None:
+    from app.models.sys_config import SysConfig
+
+    result = await db.execute(select(SysConfig).where(SysConfig.key == key))
+    cfg = result.scalar_one_or_none()
+    return cfg.value if cfg else None
+
+
+async def _set_sys_config(
+    db: AsyncSession,
+    key: str,
+    value: str,
+    description: str,
+    operator: str,
+) -> None:
+    from app.models.sys_config import SysConfig
+
+    result = await db.execute(select(SysConfig).where(SysConfig.key == key))
+    cfg = result.scalar_one_or_none()
+    now = _now_naive()
+    if cfg is None:
+        cfg = SysConfig(
+            key=key,
+            value=value,
+            description=description,
+            updated_by=operator,
+            updated_at=now,
+        )
+        db.add(cfg)
+    else:
+        cfg.value = value
+        cfg.description = description
+        cfg.updated_by = operator
+        cfg.updated_at = now
+
+
+async def _load_diag_version(db: AsyncSession) -> dict:
+    """读取诊断配置当前版本快照（无则返回 version=0 空快照）."""
+    import json as _json
+
+    raw = await _get_sys_config(db, _KEY_DIAG_VERSION)
+    if not raw:
+        return {"version": 0, "items": [], "updatedAt": None, "updatedBy": None}
+    try:
+        data = _json.loads(raw)
+        return data if isinstance(data, dict) else {"version": 0, "items": []}
+    except (ValueError, TypeError):
+        return {"version": 0, "items": []}
+
+
+async def _load_diag_history(db: AsyncSession) -> list:
+    import json as _json
+
+    raw = await _get_sys_config(db, _KEY_DIAG_HISTORY)
+    if not raw:
+        return []
+    try:
+        history = _json.loads(raw)
+        return history if isinstance(history, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+async def _snapshot_diagnosis_version(
+    db: AsyncSession,
+    operator: str,
+    remark: str | None = None,
+) -> int:
+    """将当前诊断配置全量归档为新版本（在 CRUD 事务内、commit 前调用）.
+
+    需先 flush 使同事务内的增删改对 SELECT 可见。
+    返回新版本号。
+    """
+    import json as _json
+
+    await db.flush()
+    result = await db.execute(
+        select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc())
+    )
+    items = [_diagnosis_to_response_dict(c) for c in result.scalars().all()]
+
+    current = await _load_diag_version(db)
+    new_version = current.get("version", 0) + 1
+    now = _now_iso()
+
+    # 归档旧版本到历史（补充失效时间）
+    history = await _load_diag_history(db)
+    history.append(
+        {
+            "version": current.get("version", 0),
+            "items": current.get("items", []),
+            "updatedAt": current.get("updatedAt"),
+            "updatedBy": current.get("updatedBy"),
+            "remark": remark or f"保存版本 {new_version} 前的快照",
+            "isCurrent": False,
+            "effectiveAt": current.get("updatedAt"),
+            "expiresAt": now,
+        }
+    )
+
+    await _set_sys_config(
+        db,
+        _KEY_DIAG_VERSION,
+        _json.dumps(
+            {
+                "version": new_version,
+                "items": items,
+                "updatedAt": now,
+                "updatedBy": operator,
+            },
+            ensure_ascii=False,
+            default=str,
+        ),
+        _KEY_DIAG_VERSION_DESC,
+        operator,
+    )
+    await _set_sys_config(
+        db,
+        _KEY_DIAG_HISTORY,
+        _json.dumps(history, ensure_ascii=False, default=str),
+        _KEY_DIAG_HISTORY_DESC,
+        operator,
+    )
+    return new_version
+
 # v4.0 指标体系 3+1+8 结构（对齐 IDS §2.8）
 # 3 核心指标（参与权重校验）
 _CORE_METRIC_CODES: tuple[str, ...] = (
@@ -504,6 +643,10 @@ async def batch_update_diagnosis_configs(
         )
 
     try:
+        # 版本快照（同事务内归档，原子生效）
+        new_version = await _snapshot_diagnosis_version(
+            db, user.username, remark=f"批量更新 {len(body.items)} 项诊断配置"
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -522,11 +665,12 @@ async def batch_update_diagnosis_configs(
     resp = DiagnosisConfigBatchResponse(items=items, updatedCount=len(body.items))
 
     logger.info(
-        "批量更新诊断配置成功: updated=%d, operator=%s",
+        "批量更新诊断配置成功: updated=%d, version=%d, operator=%s",
         len(body.items),
+        new_version,
         user.username,
     )
-    return success(data=resp.model_dump(), message="批量更新成功")
+    return success(data=resp.model_dump(), message="批量更新成功（已生成新版本）")
 
 
 # ---------------------------------------------------------------------------
@@ -597,6 +741,10 @@ async def create_diagnosis_config(
     )
 
     try:
+        # 版本快照（同事务内归档，原子生效）
+        new_version = await _snapshot_diagnosis_version(
+            db, user.username, remark=f"新增诊断配置 {item.diagKey}"
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -611,10 +759,15 @@ async def create_diagnosis_config(
     configs = list(result.scalars().all())
     items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
 
-    logger.info("新增诊断配置成功: diag_code=%s, operator=%s", item.diagKey, user.username)
+    logger.info(
+        "新增诊断配置成功: diag_code=%s, version=%d, operator=%s",
+        item.diagKey,
+        new_version,
+        user.username,
+    )
     return success(
         data=DiagnosisConfigBatchResponse(items=items).model_dump(),
-        message="新增成功",
+        message="新增成功（已生成新版本）",
     )
 
 
@@ -659,6 +812,10 @@ async def delete_diagnosis_config(
     )
 
     try:
+        # 版本快照（同事务内归档，原子生效）
+        new_version = await _snapshot_diagnosis_version(
+            db, user.username, remark=f"删除诊断配置 {config.diag_code}"
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -670,11 +827,175 @@ async def delete_diagnosis_config(
         ) from None
 
     logger.info(
-        "删除诊断配置成功: diag_code=%s, operator=%s",
+        "删除诊断配置成功: diag_code=%s, version=%d, operator=%s",
         config.diag_code,
+        new_version,
         user.username,
     )
-    return success(data={"deletedDiagId": diag_id}, message="删除成功")
+    return success(data={"deletedDiagId": diag_id}, message="删除成功（已生成新版本）")
+
+
+# ---------------------------------------------------------------------------
+# GET /configs/diagnosis/history — 诊断配置版本历史（快照模式）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/diagnosis/history", response_model=ApiResponse[dict])
+async def get_diagnosis_config_history(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """查询诊断配置版本历史（仅 ADMIN，快照含生效/失效时间）."""
+    current = await _load_diag_version(db)
+    history = await _load_diag_history(db)
+
+    for item in history:
+        item["isCurrent"] = False
+
+    current_item = {
+        "version": current.get("version", 0),
+        "items": current.get("items", []),
+        "updatedAt": current.get("updatedAt"),
+        "updatedBy": current.get("updatedBy"),
+        "remark": "当前生效版本" if current.get("version", 0) > 0 else "初始版本",
+        "isCurrent": True,
+        "effectiveAt": current.get("updatedAt"),
+        "expiresAt": None,
+    }
+
+    all_items = [current_item] + sorted(
+        history, key=lambda x: x.get("version", 0), reverse=True
+    )
+    return success(
+        data={"items": all_items, "currentVersion": current.get("version", 0)}
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /configs/diagnosis/{version}/rollback — 回滚诊断配置到指定版本
+# ---------------------------------------------------------------------------
+
+
+@router.post("/diagnosis/{version}/rollback", response_model=ApiResponse[dict])
+async def rollback_diagnosis_config(
+    version: int,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """回滚诊断配置到指定历史版本（仅 ADMIN）.
+
+    将快照中的全部配置项同步回 DiagnosisConfig 表（按 diag_code upsert，
+    快照中不存在的行删除），回滚本身生成新版本号保留追溯链。
+    """
+    import json as _json
+
+    if version < 1:
+        raise BizError(
+            code="ERR_INVALID_VERSION",
+            message="版本号必须为正整数",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    history = await _load_diag_history(db)
+    target = next((h for h in history if h.get("version") == version), None)
+    if target is None:
+        raise BizError(
+            code="ERR_VERSION_NOT_FOUND",
+            message=f"历史版本 {version} 不存在",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    target_items = target.get("items", [])
+    if not isinstance(target_items, list):
+        target_items = []
+
+    # 同步快照到表：按 diagKey upsert，多余行删除
+    result = await db.execute(select(DiagnosisConfig))
+    existing_map = {c.diag_code: c for c in result.scalars().all()}
+
+    target_codes = set()
+    for item in target_items:
+        diag_code = item.get("diagKey")
+        if not diag_code:
+            continue
+        target_codes.add(diag_code)
+        existing = existing_map.get(diag_code)
+        if existing is not None:
+            existing.diag_name = item.get("diagName") or existing.diag_name
+            existing.algorithm_type = (
+                item.get("algorithmType") or existing.algorithm_type
+            )
+            existing.calc_method = item.get("calcMethod") or existing.calc_method
+            existing.params = item.get("params") or existing.params
+            existing.threshold = item.get("threshold") or existing.threshold
+            existing.is_enabled = (
+                item.get("isEnabled")
+                if item.get("isEnabled") is not None
+                else existing.is_enabled
+            )
+            existing.updated_by = user.username
+            existing.updated_at = _now_naive()
+            existing.version = (existing.version or 1) + 1
+        else:
+            db.add(
+                DiagnosisConfig(
+                    id=str(uuid4()),
+                    diag_code=diag_code,
+                    diag_name=item.get("diagName") or diag_code,
+                    algorithm_type=item.get("algorithmType") or "",
+                    calc_method=item.get("calcMethod") or "",
+                    params=item.get("params") or {},
+                    threshold=item.get("threshold") or {},
+                    is_enabled=(
+                        item.get("isEnabled")
+                        if item.get("isEnabled") is not None
+                        else True
+                    ),
+                    version=1,
+                    updated_by=user.username,
+                    updated_at=_now_naive(),
+                )
+            )
+
+    # 删除快照中不存在的行
+    for code, cfg in existing_map.items():
+        if code not in target_codes:
+            await db.delete(cfg)
+
+    # 审计 + 版本快照
+    await _write_audit(
+        db=db,
+        operator=user.username,
+        operation_type="DIAG_CONFIG_ROLLBACK",
+        target_type="sys_config",
+        target_id=_KEY_DIAG_VERSION,
+        before_value=None,
+        after_value=_json.dumps(target_items, ensure_ascii=False, default=str),
+    )
+    new_version = await _snapshot_diagnosis_version(
+        db, user.username, remark=f"回滚自版本 {version}"
+    )
+
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("回滚诊断配置事务提交失败")
+        raise BizError(
+            code="ERR_INTERNAL",
+            message="事务提交失败，已回滚",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ) from None
+
+    logger.info(
+        "诊断配置已回滚: from_version=%d, to_new_version=%d, operator=%s",
+        version,
+        new_version,
+        user.username,
+    )
+    return success(
+        data={"version": new_version}, message=f"已回滚到版本 {version}"
+    )
 
 
 __all__ = ["router"]

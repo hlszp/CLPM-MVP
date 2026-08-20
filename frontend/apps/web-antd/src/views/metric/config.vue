@@ -28,12 +28,6 @@ const OutlierParamsTab = defineAsyncComponent(
 const AlgorithmParamsTab = defineAsyncComponent(
   () => import('./algorithm-params.vue'),
 );
-const ThresholdTemplateTab = defineAsyncComponent(
-  () => import('./threshold-template.vue'),
-);
-const VersionHistoryTab = defineAsyncComponent(
-  () => import('./config-version-history.vue'),
-);
 
 /** P3-01：子组件 ref Map，替代 tabKeys 自增强制重建 */
 interface TabRef {
@@ -46,8 +40,6 @@ const gradingRef = ref<null | TabRef>(null);
 const confidenceRef = ref<null | TabRef>(null);
 const outlierRef = ref<null | TabRef>(null);
 const algorithmRef = ref<null | TabRef>(null);
-const thresholdTemplateRef = ref<null | TabRef>(null);
-const versionHistoryRef = ref<null | TabRef>(null);
 
 /** 按 activeTab 获取对应子组件 ref */
 function getActiveTabRef(): null | TabRef {
@@ -57,8 +49,6 @@ function getActiveTabRef(): null | TabRef {
     definition: definitionRef,
     grading: gradingRef,
     outlier: outlierRef,
-    'threshold-template': thresholdTemplateRef,
-    version: versionHistoryRef,
     weight: weightRef,
   };
   return refMap[activeTab.value]?.value ?? null;
@@ -71,8 +61,6 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   definition: 'KPI 指标元数据、计算公式与单位定义',
   grading: '性能等级分档阈值（优/良/中/差/劣）',
   outlier: '异常值检测算法参数（Z-Score/IQR/3σ 等）',
-  'threshold-template': '诊断特征阈值模板（预警/异常门限）',
-  version: '各类配置版本变更记录，ADMIN 可回滚到历史版本',
   weight: '综合评分各 KPI 指标权重配置',
 };
 
@@ -97,7 +85,7 @@ function handleHelp() {
   showPageHelp({
     title: '指标配置 帮助',
     content:
-      '指标配置页：指标定义（KPI 指标元数据与公式）、权重配置（综合评分各指标权重）、定级阈值（性能等级分档）、数据可信度（valid_rate 阈值 A/B/C/D/E）、异常值检测参数、KPI 算法参数、诊断阈值模板、版本历史（P3-06：各类配置版本变更与回滚）。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
+      '指标配置页：指标定义（KPI 指标元数据与公式，支持编辑指标名称/说明）、权重配置（4 种控制类型的指标权重矩阵，版本化管理）、定级阈值（性能等级分档，版本化管理）、数据可信度（valid_rate 阈值 A/B/C/D/E）、异常值检测参数、KPI 算法参数。各类配置保存后自动生成新版本并立即生效，版本查看在各 Tab 内进行。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
   });
 }
 
@@ -112,7 +100,7 @@ const { toolbarItems } = usePageToolbar(() => ({
   <Page>
     <ClpmPageToolbar
       title="指标配置"
-      subtitle="指标定义 / 权重 / 定级阈值 / 可信度 / 异常值 / 算法参数 / 诊断阈值模板 / 版本历史"
+      subtitle="指标定义 / 权重 / 定级阈值 / 可信度 / 异常值 / 算法参数"
       :loading="loading"
     >
       <template #actions>
@@ -169,25 +157,6 @@ const { toolbarItems } = usePageToolbar(() => ({
             </Tooltip>
           </template>
           <AlgorithmParamsTab ref="algorithmRef" />
-        </TabPane>
-        <TabPane key="threshold-template">
-          <template #tab>
-            <Tooltip
-              :title="TAB_DESCRIPTIONS['threshold-template']"
-              placement="top"
-            >
-              <span>诊断阈值模板</span>
-            </Tooltip>
-          </template>
-          <ThresholdTemplateTab ref="thresholdTemplateRef" />
-        </TabPane>
-        <TabPane key="version">
-          <template #tab>
-            <Tooltip :title="TAB_DESCRIPTIONS.version" placement="top">
-              <span>版本历史</span>
-            </Tooltip>
-          </template>
-          <VersionHistoryTab ref="versionHistoryRef" />
         </TabPane>
       </Tabs>
     </div>

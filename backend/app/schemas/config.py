@@ -288,6 +288,24 @@ class WeightTemplateItem(CamelModel):
     saturationRate: int = Field(0, ge=0, le=100)
 
 
+class WeightCustomMetricItem(CamelModel):
+    """自定义指标权重行（矩阵表格新增行，仅登记不参与计算引擎）.
+
+    Attributes:
+        metricCode: 指标代码（模板内唯一，snake_case）
+        metricName: 指标名称
+        stable / slow / fast / logic: 4 类控制类型下的权重（0-100，
+            不参与核心指标权重和校验）
+    """
+
+    metricCode: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    metricName: str = Field(..., min_length=1, max_length=50)
+    stable: int = Field(0, ge=0, le=100)
+    slow: int = Field(0, ge=0, le=100)
+    fast: int = Field(0, ge=0, le=100)
+    logic: int = Field(0, ge=0, le=100)
+
+
 class WeightTemplateSchema(CamelModel):
     """权重模板（4 类控制类型的权重集合）.
 
@@ -298,10 +316,13 @@ class WeightTemplateSchema(CamelModel):
     - LOGIC: 逻辑型
 
     有效自控率（effective_auto_rate）为折扣因子 R，不参与权重和校验。
+
+    customMetrics 为矩阵表格中的自定义指标行（仅登记，不参与综合评分）。
     """
 
     version: int = 1
     templates: list[WeightTemplateItem] = Field(default_factory=list)
+    customMetrics: list[WeightCustomMetricItem] = Field(default_factory=list)
     updatedAt: str | None = None
     updatedBy: str | None = None
 
@@ -310,6 +331,7 @@ class WeightTemplateSaveRequest(CamelModel):
     """权重模板保存请求（保存为新版本）."""
 
     templates: list[WeightTemplateItem] = Field(..., min_length=1, max_length=4)
+    customMetrics: list[WeightCustomMetricItem] = Field(default_factory=list, max_length=20)
     remark: str | None = Field(None, max_length=500)
 
 
@@ -334,7 +356,7 @@ class GradingThresholdItem(CamelModel):
 
 
 class GradingThresholdSchema(CamelModel):
-    """定级阈值配置（5 级）.
+    """定级阈值配置（5 级，版本化存储）.
 
     对齐 FDS v5.1 §5.2.4：
     - 1 级 EXCELLENT (≥90) 绿色
@@ -342,17 +364,21 @@ class GradingThresholdSchema(CamelModel):
     - 3 级 FAIR (60-80) 黄色
     - 4 级 WARNING (40-60) 橙色
     - 5 级 POOR (<40) 红色
+
+    version=0 表示国标默认版本；每次保存自动 +1 并归档历史。
     """
 
+    version: int = 0
     thresholds: list[GradingThresholdItem] = Field(default_factory=list)
     updatedAt: str | None = None
     updatedBy: str | None = None
 
 
 class GradingThresholdSaveRequest(CamelModel):
-    """定级阈值更新请求."""
+    """定级阈值更新请求（保存为新版本）."""
 
     thresholds: list[GradingThresholdItem] = Field(..., min_length=5, max_length=5)
+    remark: str | None = Field(None, max_length=500)
 
 
 class ConfidenceThresholdItem(CamelModel):
@@ -374,7 +400,7 @@ class ConfidenceThresholdItem(CamelModel):
 
 
 class ConfidenceThresholdSchema(CamelModel):
-    """可信度阈值配置（5 级 A/B/C/D/E）.
+    """可信度阈值配置（5 级 A/B/C/D/E，版本化存储）.
 
     对齐算法说明 §3.7.2：
     - A 级: valid_rate >= 0.95（数据充分）
@@ -382,17 +408,21 @@ class ConfidenceThresholdSchema(CamelModel):
     - C 级: 0.60 <= valid_rate < 0.80（数据一般）
     - D 级: 0.20 <= valid_rate < 0.60（数据不足）
     - E 级: valid_rate < 0.20 → INCONCLUSIVE（可信度不足）
+
+    version=0 表示算法规范默认版本；每次保存自动 +1 并归档历史。
     """
 
+    version: int = 0
     thresholds: list[ConfidenceThresholdItem] = Field(default_factory=list)
     updatedAt: str | None = None
     updatedBy: str | None = None
 
 
 class ConfidenceThresholdSaveRequest(CamelModel):
-    """可信度阈值更新请求."""
+    """可信度阈值更新请求（保存为新版本）."""
 
     thresholds: list[ConfidenceThresholdItem] = Field(..., min_length=5, max_length=5)
+    remark: str | None = Field(None, max_length=500)
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +594,8 @@ class VersionHistoryItem(CamelModel):
         updatedBy: 更新人
         remark: 备注
         isCurrent: 是否为当前版本
+        effectiveAt: 生效时间（该版本开始生效的 UTC ISO 时间）
+        expiresAt: 失效时间（被新版本取代的 UTC ISO 时间，当前版本为 None）
     """
 
     version: int
@@ -571,12 +603,87 @@ class VersionHistoryItem(CamelModel):
     updatedBy: str | None = None
     remark: str | None = None
     isCurrent: bool = False
+    effectiveAt: str | None = None
+    expiresAt: str | None = None
 
 
 class VersionHistorySchema(CamelModel):
     """版本历史列表."""
 
     items: list[VersionHistoryItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 指标定义（指标配置-指标定义 Tab：CRUD + 版本化）
+# ---------------------------------------------------------------------------
+
+
+class MetricDefinitionItem(CamelModel):
+    """指标定义单项.
+
+    Attributes:
+        metricCode: 指标代码（全局唯一）
+        metricName: 指标名称（可编辑）
+        category: 类别（COMPOSITE 综合评分 / CORE 核心质量 / COMMISSIONING 投用 /
+            AUXILIARY_DIAGNOSTIC 辅助诊断 / CUSTOM 自定义）
+        formula: 算法公式（内置指标只读，自定义指标可编辑）
+        description: 说明（可编辑）
+        unit: 单位（可选）
+        isBuiltin: 是否内置指标（内置不可删除，代码/类别/公式锁定）
+        isEnabled: 是否启用
+        sortOrder: 显示顺序
+        updatedAt / updatedBy: 最近修改信息
+    """
+
+    metricCode: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    metricName: str = Field(..., min_length=1, max_length=50)
+    category: str = Field(
+        ...,
+        pattern=r"^(COMPOSITE|CORE|COMMISSIONING|AUXILIARY_DIAGNOSTIC|CUSTOM)$",
+    )
+    formula: str | None = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=1000)
+    unit: str | None = Field(None, max_length=20)
+    isBuiltin: bool = True
+    isEnabled: bool = True
+    sortOrder: int = 0
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class MetricDefinitionListSchema(CamelModel):
+    """指标定义列表（版本化存储于 sys_config）."""
+
+    version: int = 1
+    items: list[MetricDefinitionItem] = Field(default_factory=list)
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class MetricDefinitionCreateRequest(CamelModel):
+    """新增自定义指标定义请求.
+
+    新增的指标 category 固定为 CUSTOM，仅作为登记项（不参与 KPI 计算引擎）。
+    """
+
+    metricCode: str = Field(..., min_length=2, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    metricName: str = Field(..., min_length=1, max_length=50)
+    formula: str | None = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=1000)
+    unit: str | None = Field(None, max_length=20)
+
+
+class MetricDefinitionUpdateRequest(CamelModel):
+    """更新指标定义请求（名称/说明/单位/公式/启停）.
+
+    内置指标的 metricCode 与 category 锁定不可改；formula 仅自定义指标可改。
+    """
+
+    metricName: str | None = Field(None, min_length=1, max_length=50)
+    formula: str | None = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=1000)
+    unit: str | None = Field(None, max_length=20)
+    isEnabled: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +796,10 @@ __all__ = [
     "MetricConfigBatchUpdateRequest",
     "MetricConfigItem",
     "MetricConfigUpdateItem",
+    "MetricDefinitionCreateRequest",
+    "MetricDefinitionItem",
+    "MetricDefinitionListSchema",
+    "MetricDefinitionUpdateRequest",
     "MetricThresholdSchema",
     "OutlierControlType",
     "OutlierParamsSaveRequest",

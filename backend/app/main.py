@@ -64,6 +64,8 @@ from app.api.v1.endpoints import (
     loop_mode_mapping,
     loop_type_weight,
     loops,
+    # 指标定义管理（指标配置-指标定义 Tab：CRUD + 版本化）
+    metric_definition,
     # 监控模块：关注队列（整改方案 §8.1）
     monitor,
     node_performance,
@@ -961,6 +963,8 @@ def create_app() -> FastAPI:
     # v5.3: 权重模板管理（FDS §5.2.2）+ 定级阈值管理（FDS §5.2.4）
     v1_router.include_router(weight_config.router)
     v1_router.include_router(grading_config.router)
+    # 指标定义管理（指标配置-指标定义 Tab：CRUD + 版本化）
+    v1_router.include_router(metric_definition.router)
     # v6.1: 数据可信度阈值管理
     v1_router.include_router(confidence_config.router)
     # P3-04: LLM 配置（AI 洞察门禁读取；endpoint 独立，不依赖诊断模块）

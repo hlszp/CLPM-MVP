@@ -403,10 +403,22 @@ export namespace MetricApi {
     saturationRate: number;
   }
 
-  /** 权重模板（4 类控制类型的权重集合） */
+  /** 自定义指标权重行（矩阵表格新增行，仅登记不参与计算引擎） */
+  export interface WeightCustomMetricItem {
+    metricCode: string;
+    metricName: string;
+    stable: number;
+    slow: number;
+    fast: number;
+    logic: number;
+  }
+
+  /** 权重模板（4 类控制类型的权重集合 + 自定义指标行） */
   export interface WeightTemplateSchema {
     version: number;
     templates: WeightTemplateItem[];
+    /** 自定义指标权重行（矩阵表格新增，不参与综合评分） */
+    customMetrics?: WeightCustomMetricItem[];
     updatedAt?: null | string;
     updatedBy?: null | string;
   }
@@ -414,6 +426,7 @@ export namespace MetricApi {
   /** 权重模板保存请求 */
   export interface WeightTemplateSaveRequest {
     templates: WeightTemplateItem[];
+    customMetrics?: WeightCustomMetricItem[];
     remark?: string;
   }
 
@@ -428,16 +441,19 @@ export namespace MetricApi {
     color?: null | string;
   }
 
-  /** 定级阈值配置（5 级） */
+  /** 定级阈值配置（5 级，版本化存储） */
   export interface GradingThresholdSchema {
+    /** 版本号（0=国标默认） */
+    version: number;
     thresholds: GradingThresholdItem[];
     updatedAt?: null | string;
     updatedBy?: null | string;
   }
 
-  /** 定级阈值更新请求 */
+  /** 定级阈值更新请求（保存为新版本） */
   export interface GradingThresholdSaveRequest {
     thresholds: GradingThresholdItem[];
+    remark?: string;
   }
 
   /** 可信度阈值单项 */
@@ -449,16 +465,19 @@ export namespace MetricApi {
     color?: null | string;
   }
 
-  /** 可信度阈值配置（5 级 A/B/C/D/E） */
+  /** 可信度阈值配置（5 级 A/B/C/D/E，版本化存储） */
   export interface ConfidenceThresholdSchema {
+    /** 版本号（0=算法规范默认） */
+    version: number;
     thresholds: ConfidenceThresholdItem[];
     updatedAt?: null | string;
     updatedBy?: null | string;
   }
 
-  /** 可信度阈值更新请求 */
+  /** 可信度阈值更新请求（保存为新版本） */
   export interface ConfidenceThresholdSaveRequest {
     thresholds: ConfidenceThresholdItem[];
+    remark?: string;
   }
 
   /** 异常值检测控制类型（回路物理类型：流量/压力/温度/液位/成分） */
@@ -514,12 +533,74 @@ export namespace MetricApi {
     updatedBy?: null | string;
     remark?: null | string;
     isCurrent: boolean;
+    /** 生效时间（该版本开始生效的 UTC ISO 时间） */
+    effectiveAt?: null | string;
+    /** 失效时间（被新版本取代的 UTC ISO 时间，当前版本为 null） */
+    expiresAt?: null | string;
   }
 
   /** 版本历史列表 */
   export interface VersionHistorySchema {
     items: VersionHistoryItem[];
     currentVersion?: number;
+  }
+
+  /** 指标类别（COMPOSITE 综合评分 / CORE 核心质量 / COMMISSIONING 投用 / AUXILIARY_DIAGNOSTIC 辅助诊断 / CUSTOM 自定义） */
+  export type MetricDefinitionCategory =
+    | 'AUXILIARY_DIAGNOSTIC'
+    | 'COMMISSIONING'
+    | 'COMPOSITE'
+    | 'CORE'
+    | 'CUSTOM';
+
+  /** 指标定义单项 */
+  export interface MetricDefinitionItem {
+    /** 指标代码（全局唯一，内置指标锁定） */
+    metricCode: string;
+    /** 指标名称（可编辑） */
+    metricName: string;
+    /** 类别 */
+    category: MetricDefinitionCategory;
+    /** 算法公式（内置只读，自定义可编辑） */
+    formula?: null | string;
+    /** 说明 */
+    description?: null | string;
+    /** 单位 */
+    unit?: null | string;
+    /** 是否内置指标（内置不可删除） */
+    isBuiltin: boolean;
+    /** 是否启用 */
+    isEnabled: boolean;
+    /** 显示顺序 */
+    sortOrder: number;
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 指标定义列表（版本化存储） */
+  export interface MetricDefinitionListSchema {
+    version: number;
+    items: MetricDefinitionItem[];
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 新增自定义指标定义请求 */
+  export interface MetricDefinitionCreateRequest {
+    metricCode: string;
+    metricName: string;
+    formula?: string;
+    description?: string;
+    unit?: string;
+  }
+
+  /** 更新指标定义请求 */
+  export interface MetricDefinitionUpdateRequest {
+    metricName?: string;
+    formula?: string;
+    description?: string;
+    unit?: string;
+    isEnabled?: boolean;
   }
 
   /** AAS 同步状态 */
@@ -1084,7 +1165,7 @@ export function getGradingThresholdsApi() {
 }
 
 /**
- * 更新定级阈值 — 仅 ADMIN
+ * 更新定级阈值（保存为新版本）— 仅 ADMIN
  */
 export function saveGradingThresholdsApi(
   data: MetricApi.GradingThresholdSaveRequest,
@@ -1092,6 +1173,24 @@ export function saveGradingThresholdsApi(
   return requestClient.post<MetricApi.GradingThresholdSchema>(
     GRADING_BASE,
     data,
+  );
+}
+
+/**
+ * 获取定级阈值版本历史 — 仅 ADMIN
+ */
+export function getGradingThresholdHistoryApi() {
+  return requestClient.get<MetricApi.VersionHistorySchema>(
+    `${GRADING_BASE}/history`,
+  );
+}
+
+/**
+ * 回滚定级阈值到指定版本 — 仅 ADMIN
+ */
+export function rollbackGradingThresholdApi(version: number) {
+  return requestClient.post<MetricApi.GradingThresholdSchema>(
+    `${GRADING_BASE}/${version}/rollback`,
   );
 }
 
@@ -1111,7 +1210,7 @@ export function getConfidenceThresholdsApi() {
 }
 
 /**
- * 更新数据可信度阈值 — 仅 ADMIN
+ * 更新数据可信度阈值（保存为新版本）— 仅 ADMIN
  */
 export function saveConfidenceThresholdsApi(
   data: MetricApi.ConfidenceThresholdSaveRequest,
@@ -1119,6 +1218,93 @@ export function saveConfidenceThresholdsApi(
   return requestClient.post<MetricApi.ConfidenceThresholdSchema>(
     CONFIDENCE_BASE,
     data,
+  );
+}
+
+/**
+ * 获取可信度阈值版本历史 — 仅 ADMIN
+ */
+export function getConfidenceThresholdHistoryApi() {
+  return requestClient.get<MetricApi.VersionHistorySchema>(
+    `${CONFIDENCE_BASE}/history`,
+  );
+}
+
+/**
+ * 回滚可信度阈值到指定版本 — 仅 ADMIN
+ */
+export function rollbackConfidenceThresholdApi(version: number) {
+  return requestClient.post<MetricApi.ConfidenceThresholdSchema>(
+    `${CONFIDENCE_BASE}/${version}/rollback`,
+  );
+}
+
+// ===========================================================================
+// 指标定义管理 API（指标配置-指标定义 Tab：CRUD + 版本化）
+// ===========================================================================
+
+const METRIC_DEFINITION_BASE = '/configs/metric-definitions';
+
+/**
+ * 获取当前指标定义列表（内置 13 项 + 自定义）
+ */
+export function getMetricDefinitionsApi() {
+  return requestClient.get<MetricApi.MetricDefinitionListSchema>(
+    METRIC_DEFINITION_BASE,
+  );
+}
+
+/**
+ * 新增自定义指标定义 — 仅 ADMIN（保存后自动生成新版本并生效）
+ */
+export function createMetricDefinitionApi(
+  data: MetricApi.MetricDefinitionCreateRequest,
+) {
+  return requestClient.post<MetricApi.MetricDefinitionListSchema>(
+    METRIC_DEFINITION_BASE,
+    data,
+  );
+}
+
+/**
+ * 更新指标定义 — 仅 ADMIN（保存后自动生成新版本并生效）
+ *
+ * 内置指标：仅允许更新名称/说明/单位/启停；自定义指标：另可更新公式。
+ */
+export function updateMetricDefinitionApi(
+  metricCode: string,
+  data: MetricApi.MetricDefinitionUpdateRequest,
+) {
+  return requestClient.put<MetricApi.MetricDefinitionListSchema>(
+    `${METRIC_DEFINITION_BASE}/${metricCode}`,
+    data,
+  );
+}
+
+/**
+ * 删除自定义指标定义 — 仅 ADMIN（内置指标不可删除）
+ */
+export function deleteMetricDefinitionApi(metricCode: string) {
+  return requestClient.delete<MetricApi.MetricDefinitionListSchema>(
+    `${METRIC_DEFINITION_BASE}/${metricCode}`,
+  );
+}
+
+/**
+ * 获取指标定义版本历史 — 仅 ADMIN
+ */
+export function getMetricDefinitionHistoryApi() {
+  return requestClient.get<MetricApi.VersionHistorySchema>(
+    `${METRIC_DEFINITION_BASE}/history`,
+  );
+}
+
+/**
+ * 回滚指标定义到指定版本 — 仅 ADMIN
+ */
+export function rollbackMetricDefinitionApi(version: number) {
+  return requestClient.post<MetricApi.MetricDefinitionListSchema>(
+    `${METRIC_DEFINITION_BASE}/${version}/rollback`,
   );
 }
 

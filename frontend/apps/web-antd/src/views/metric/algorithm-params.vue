@@ -34,7 +34,7 @@ import {
   getAlgorithmParamsApi,
   saveMetricAlgorithmParamsApi,
 } from '#/api/metric';
-import { ClpmDataCanvas, ClpmToolbarButton } from '#/components/clpm';
+import { ClpmDataCanvas, ClpmHelpIcon, ClpmToolbarButton } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { formatTime } from '#/utils/format';
 
@@ -567,6 +567,15 @@ onMounted(() => {
   loadData();
 });
 
+/** 帮助内容（KPI 算法参数说明汇总） */
+const HELP_CONTENT = [
+  'KPI 算法参数配置：按指标（振荡率/快速率/准确率/稳态时间/有效自控率/输出行程指数）× 4 种控制类型（STABLE/SLOW/FAST/LOGIC）展示参数生效值。',
+  '· 参数值来源三层合并：算法默认值 < 系统级覆盖（algorithm_parameter 表）< 指标级覆盖；「覆盖状态」列显示当前生效配置是否偏离算法默认。',
+  '· 编辑抽屉按参数分组展示，含值域校验（min/max）、单位与说明；恢复默认将清空该指标对应控制类型的存储覆盖行，回落算法默认。',
+  '· 保存后立即生效（运行时缓存热更新），KPI 计算任务下次执行时使用新参数。',
+  '· 参数说明由后端注册表（paramMeta）统一下发，新指标零前端改动接入。',
+].join('\n');
+
 /** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
 function refresh() {
   return loadData();
@@ -578,12 +587,13 @@ defineExpose({ refresh });
 <template>
   <div class="metric-algorithm-params">
     <div class="mb-3 flex items-center justify-between">
-      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
+      <div class="flex items-center text-sm" :style="{ color: themeColors.NEUTRAL }">
         <span v-if="updatedAt">
           最近更新：{{ updatedBy ?? '-' }} @ {{ formatTime(updatedAt) }}
         </span>
         <span v-else>暂无更新记录</span>
-      </p>
+        <ClpmHelpIcon title="KPI 算法参数 帮助" :content="HELP_CONTENT" />
+      </div>
       <ClpmToolbarButton
         icon="ant-design:reload-outlined"
         :loading="loading"

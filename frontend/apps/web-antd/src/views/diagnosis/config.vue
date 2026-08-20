@@ -1,23 +1,35 @@
 <script lang="ts" setup>
+/**
+ * 诊断配置页（单页合并版）
+ *
+ * - 原两 Tab（诊断指标字典 / 诊断配置管理）合并为单页列表：
+ *   主表 = 诊断配置（CRUD），算子字典信息（家族/输出指标/默认阈值参数/所需信号）
+ *   通过 diagCode 关联内嵌到「详情」弹窗与算子列展示
+ * - 顶部动作：帮助符号 / 版本（生效—失效时间 + 回滚）/ 刷新 / 新增配置
+ * - 版本管理：每次增删改自动归档全量快照为新版本（后端 sys_config 快照模式）
+ * - 仅 ADMIN 可写；非 ADMIN 只读
+ */
 import type { TableColumnsType } from 'ant-design-vue';
+
+import type { MetricApi } from '#/api/metric';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Button,
   Card,
+  Descriptions,
+  DescriptionsItem,
   Input,
   Modal,
   Popconfirm,
   Select,
   Switch,
   Table,
-  TabPane,
-  Tabs,
   Tag,
   Textarea,
-  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -25,23 +37,25 @@ import {
   deleteDiagnosisConfigApi,
   type DiagnosisApi,
   type DiagnosisConfigApi,
+  getDiagnosisConfigHistoryApi,
   getDiagnosisConfigsApi,
   getDiagnosisOperatorsApi,
+  rollbackDiagnosisConfigApi,
   updateDiagnosisConfigsApi,
 } from '#/api/diagnosis';
 import {
+  ClpmHelpIcon,
   ClpmPageToolbar,
   ClpmStandardActions,
-  ClpmToolbarButton,
+  ClpmVersionHistoryModal,
 } from '#/components/clpm';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
-import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { usePageToolbar } from '#/composables/use-page-toolbar';
+import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'DiagnosisConfig' });
 
 const { isAdmin } = useClpmRoles();
-
-const activeTab = ref('operators');
 
 // ---------------------------------------------------------------------------
 // 常量：症状码（diag_code）与算子家族的中文映射
@@ -73,13 +87,19 @@ function diagCodeText(code: null | string): string {
 }
 
 function familyMeta(family: string) {
-  return (
-    FAMILY_TEXT[family] ?? { color: 'default', label: family || '-' }
-  );
+  return FAMILY_TEXT[family] ?? { color: 'default', label: family || '-' };
 }
 
 /** 诊断代码枚举（后端 DiagnosisLabel Literal；新增仅可从中选择） */
 const DIAG_CODE_OPTIONS = Object.keys(DIAG_CODE_TEXT);
+
+/** 帮助内容（汇总原两 Tab 说明） */
+const HELP_CONTENT = [
+  '诊断配置页（单页）：管理 8 类诊断标签的全局默认配置（算法类型/计算方法/算法参数/阈值/启停），支持新增、编辑、删除与行内启停，仅 ADMIN 可操作。',
+  '· 诊断指标（算子）为 11 个诊断元算子的代码级注册表（家族/输出指标/默认阈值参数/所需信号），不可通过配置新增算子——其完整信息见每行「详情」弹窗。',
+  '· 生效优先级：全局默认 < 回路类型模板 < 装置 < 回路（修改全局默认不影响已配置的覆盖层）。',
+  '· 每次增删改自动归档全量快照为新版本并立即生效；「版本」入口可查看各版本生效—失效时间并回滚。',
+].join('\n');
 
 /** 键值对 schema → 紧凑展示串（k=v；中文说明）；对象值 JSON 序列化防 [object Object] */
 function schemaEntriesText(
@@ -98,7 +118,7 @@ function schemaEntriesText(
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1：诊断指标（算子注册表字典，只读）
+// 数据加载：算子字典 + 诊断配置
 // ---------------------------------------------------------------------------
 
 const operatorsLoading = ref(false);
@@ -113,56 +133,15 @@ async function loadOperators() {
   }
 }
 
-const operatorColumns: TableColumnsType = [
-  { title: '指标（算子）', dataIndex: 'displayName', key: 'displayName', width: 160 },
-  {
-    title: '家族',
-    dataIndex: 'family',
-    key: 'family',
-    width: 80,
-  },
-  {
-    title: '诊断码',
-    dataIndex: 'diagCode',
-    key: 'diagCode',
-    width: 150,
-    customRender: ({ text }) => diagCodeText(text),
-  },
-  { title: '说明', dataIndex: 'description', key: 'description', ellipsis: true },
-  {
-    title: '输出指标',
-    dataIndex: 'outputsSchema',
-    key: 'outputsSchema',
-    width: 320,
-    ellipsis: true,
-    customRender: ({ text }) =>
-      Object.entries(text ?? {})
-        .map(([k, v]) => `${k}(${v})`)
-        .join('；') || '-',
-  },
-  {
-    title: '默认阈值参数',
-    dataIndex: 'thresholdSchema',
-    key: 'thresholdSchema',
-    width: 280,
-    ellipsis: true,
-    customRender: ({ text }) => schemaEntriesText(text),
-  },
-  {
-    title: '所需信号',
-    dataIndex: 'requiredSignals',
-    key: 'requiredSignals',
-    width: 130,
-    customRender: ({ text }) => (text ?? []).join(' / ') || '-',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Tab 2：诊断配置（CRUD）
-// ---------------------------------------------------------------------------
+/** 按 diagCode 关联算子（一个配置对应一个或多个算子；展示首个 + 数量） */
+function operatorsOf(diagKey: null | string): DiagnosisApi.OperatorInfo[] {
+  if (!diagKey) return [];
+  return operators.value.filter((op) => op.diagCode === diagKey);
+}
 
 const configsLoading = ref(false);
 const configs = ref<DiagnosisConfigApi.ConfigItem[]>([]);
+const currentVersion = ref(0);
 
 /** 已存在的诊断代码（新增时禁用，防重复提交 409） */
 const existingDiagKeys = computed(
@@ -174,34 +153,72 @@ async function loadConfigs() {
   try {
     const resp = await getDiagnosisConfigsApi();
     configs.value = resp.items ?? [];
+    // 版本号从历史接口头部获取（轻量：仅列表页首次加载时同步一次）
+    void syncVersion();
   } finally {
     configsLoading.value = false;
   }
 }
+
+async function syncVersion() {
+  try {
+    const data = await getDiagnosisConfigHistoryApi();
+    currentVersion.value = data.currentVersion ?? 0;
+  } catch {
+    // 非管理员或接口异常时静默
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 主表格：诊断配置列表（含算子关联列）
+// ---------------------------------------------------------------------------
 
 const configColumns: TableColumnsType = [
   {
     title: '诊断代码',
     dataIndex: 'diagKey',
     key: 'diagKey',
-    width: 170,
+    width: 150,
     customRender: ({ text }) => diagCodeText(text),
   },
-  { title: '名称', dataIndex: 'diagName', key: 'diagName', width: 130 },
-  { title: '算法类型', dataIndex: 'algorithmType', key: 'algorithmType', width: 130 },
-  { title: '计算方法', dataIndex: 'calcMethod', key: 'calcMethod', width: 160 },
+  { title: '名称', dataIndex: 'diagName', key: 'diagName', width: 120 },
+  {
+    title: '算子（家族）',
+    key: 'operators',
+    width: 170,
+    ellipsis: true,
+  },
+  { title: '算法类型', dataIndex: 'algorithmType', key: 'algorithmType', width: 120 },
+  { title: '计算方法', dataIndex: 'calcMethod', key: 'calcMethod', width: 150 },
   {
     title: '启用',
     dataIndex: 'isEnabled',
     key: 'isEnabled',
     width: 90,
   },
-  { title: '更新人', dataIndex: 'updatedBy', key: 'updatedBy', width: 90 },
-  { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 150 },
-  { title: '操作', key: 'actions', width: 130, fixed: 'right' },
+  {
+    title: '更新',
+    key: 'updated',
+    width: 150,
+  },
+  { title: '操作', key: 'actions', width: 150, fixed: 'right' },
 ];
 
-// ----- 编辑 / 新增（共用 Modal 表单 + JSON 文本域） -----
+// ---------------------------------------------------------------------------
+// 详情弹窗（配置 + 关联算子字典）
+// ---------------------------------------------------------------------------
+
+const detailOpen = ref(false);
+const detailTarget = ref<DiagnosisConfigApi.ConfigItem | null>(null);
+
+function handleDetail(record: DiagnosisConfigApi.ConfigItem) {
+  detailTarget.value = record;
+  detailOpen.value = true;
+}
+
+// ---------------------------------------------------------------------------
+// 编辑 / 新增（共用 Modal 表单 + JSON 文本域）
+// ---------------------------------------------------------------------------
 
 type EditMode = 'create' | 'update';
 
@@ -247,6 +264,16 @@ function parseJsonText(text: string, errRef: { value: string }): null | Record<s
 const modalTitle = computed(() =>
   modalMode.value === 'create' ? '新增诊断配置' : '编辑诊断配置',
 );
+
+/** 新增时从关联算子带出默认算法信息 */
+function applyOperatorDefaults(diagKey: string) {
+  const op = operatorsOf(diagKey)[0];
+  if (op) {
+    form.diagName = form.diagName || diagCodeText(diagKey);
+    form.algorithmType = form.algorithmType || op.family.toUpperCase();
+    form.thresholdText = JSON.stringify(op.thresholdSchema ?? {}, null, 2);
+  }
+}
 
 function openEditModal(record: DiagnosisConfigApi.ConfigItem) {
   modalMode.value = 'update';
@@ -300,7 +327,10 @@ async function handleSave() {
         params,
         threshold,
       });
-      Modal.success({ content: `已新增诊断配置 ${form.diagKey}`, title: '新增成功' });
+      Modal.success({
+        content: `已新增诊断配置 ${form.diagKey}（生成新版本）`,
+        title: '新增成功',
+      });
     } else {
       await updateDiagnosisConfigsApi([
         {
@@ -312,7 +342,10 @@ async function handleSave() {
           threshold,
         },
       ]);
-      Modal.success({ content: `已保存诊断配置 ${form.diagKey}`, title: '保存成功' });
+      Modal.success({
+        content: `已保存诊断配置 ${form.diagKey}（生成新版本）`,
+        title: '保存成功',
+      });
     }
     modalVisible.value = false;
     await loadConfigs();
@@ -324,7 +357,7 @@ async function handleSave() {
 async function handleDelete(record: DiagnosisConfigApi.ConfigItem) {
   await deleteDiagnosisConfigApi(record.diagId);
   Modal.success({
-    content: `已删除诊断配置 ${record.diagKey}（阈值覆盖等关联配置不受影响）`,
+    content: `已删除诊断配置 ${record.diagKey}（生成新版本；阈值覆盖等关联配置不受影响）`,
     title: '删除成功',
   });
   await loadConfigs();
@@ -340,37 +373,65 @@ async function handleToggleEnabled(
   ]);
   record.isEnabled = enabled;
   Modal.success({
-    content: `${record.diagKey} 已${enabled ? '启用' : '停用'}`,
+    content: `${record.diagKey} 已${enabled ? '启用' : '停用'}（生成新版本）`,
     title: enabled ? '已启用' : '已停用',
   });
+  void syncVersion();
 }
 
 // ---------------------------------------------------------------------------
-// 工具栏（刷新当前 Tab / 帮助）
+// 版本历史
 // ---------------------------------------------------------------------------
 
-const loading = ref(false);
+const versionOpen = ref(false);
+const versionLoading = ref(false);
+const versionItems = ref<MetricApi.VersionHistoryItem[]>([]);
+const rollingBack = ref(false);
 
-async function handleRefresh() {
-  loading.value = true;
+async function openVersionHistory() {
+  versionOpen.value = true;
+  versionLoading.value = true;
   try {
-    await (activeTab.value === 'operators' ? loadOperators() : loadConfigs());
+    const data = await getDiagnosisConfigHistoryApi();
+    versionItems.value = data.items ?? [];
+    currentVersion.value = data.currentVersion ?? 0;
+  } catch {
+    versionItems.value = [];
   } finally {
-    loading.value = false;
+    versionLoading.value = false;
   }
 }
 
-function handleHelp() {
-  showPageHelp({
-    title: '诊断配置 帮助',
-    content:
-      '诊断配置页：「诊断指标」展示 11 个诊断元算子的指标字典（输出指标与默认阈值参数，代码级定义只读）；「诊断配置」管理 8 类诊断标签的全局默认配置（算法类型/计算方法/算法参数/阈值/启停），支持新增、编辑、删除与行内启停，仅 ADMIN 可操作。修改全局默认后，回路级阈值覆盖（诊断阈值模板）不受影响；生效优先级为 全局默认 < 回路类型模板 < 装置 < 回路。',
-  });
+async function handleRollback(version: number) {
+  rollingBack.value = true;
+  try {
+    await rollbackDiagnosisConfigApi(version);
+    Modal.success({
+      content: `已回滚到版本 v${version}（生成新版本）`,
+      title: '回滚成功',
+    });
+    await Promise.all([loadConfigs(), openVersionHistory()]);
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    rollingBack.value = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 工具栏（刷新 / 帮助）
+// ---------------------------------------------------------------------------
+
+const loading = computed(
+  () => configsLoading.value || operatorsLoading.value,
+);
+
+async function handleRefresh() {
+  await Promise.all([loadOperators(), loadConfigs()]);
 }
 
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: handleRefresh, loading: loading.value },
-  help: { onClick: handleHelp },
 }));
 
 onMounted(() => {
@@ -387,7 +448,7 @@ defineExpose({
   <Page>
     <ClpmPageToolbar
       title="诊断配置"
-      subtitle="诊断指标字典 / 诊断配置管理"
+      subtitle="诊断配置管理（算子字典内嵌详情）"
       :loading="loading"
     >
       <template #actions>
@@ -396,105 +457,203 @@ defineExpose({
     </ClpmPageToolbar>
 
     <div class="mt-4">
-      <Tabs v-model:active-key="activeTab">
-        <!-- Tab 1：诊断指标（算子字典，只读） -->
-        <TabPane key="operators">
-          <template #tab>
-            <Tooltip title="11 个诊断元算子的指标与默认参数定义（代码级，只读）" placement="top">
-              <span>诊断指标</span>
-            </Tooltip>
-          </template>
-          <Card size="small">
-            <Table
-              :columns="operatorColumns"
-              :data-source="operators"
-              :loading="operatorsLoading"
-              :pagination="false"
-              row-key="name"
+      <Card size="small">
+        <!-- 头部：简短说明 + 帮助符号 + 动作 -->
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center text-sm text-muted-foreground">
+            <span>
+              已配置 {{ configs.length }}/8 类诊断标签（全局默认层，
+              生效优先级：全局默认 &lt; 模板 &lt; 装置 &lt; 回路）
+            </span>
+            <ClpmHelpIcon title="诊断配置 帮助" :content="HELP_CONTENT" />
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Tag class="mr-1">当前版本 v{{ currentVersion }}</Tag>
+            <Button size="small" @click="openVersionHistory"> 版本 </Button>
+            <Button
+              v-if="isAdmin"
+              type="primary"
               size="small"
-              :scroll="{ x: 1300 }"
+              @click="openCreateModal()"
             >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'family'">
-                  <Tag :color="familyMeta((record as any).family).color">
-                    {{ familyMeta((record as any).family).label }}
-                  </Tag>
-                </template>
-              </template>
-            </Table>
-          </Card>
-        </TabPane>
+              新增配置
+            </Button>
+          </div>
+        </div>
 
-        <!-- Tab 2：诊断配置（CRUD） -->
-        <TabPane key="configs">
-          <template #tab>
-            <Tooltip title="8 类诊断标签的全局默认配置（算法/参数/阈值/启停）管理" placement="top">
-              <span>诊断配置</span>
-            </Tooltip>
-          </template>
-          <Card size="small">
-            <div v-if="isAdmin" class="mb-3 flex justify-end">
-              <ClpmToolbarButton
-                :icon-only="false"
-                label="新增配置"
-                type="primary"
-                size="small"
-                @click="openCreateModal()"
-              />
-            </div>
-            <Table
-              :columns="configColumns"
-              :data-source="configs"
-              :loading="configsLoading"
-              :pagination="false"
-              row-key="diagId"
-              size="small"
-              :scroll="{ x: 1200 }"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'isEnabled'">
-                  <Switch
-                    v-if="isAdmin"
-                    :checked="(record as any).isEnabled"
-                    checked-children="启"
-                    size="small"
-                    un-checked-children="停"
-                    @change="(v: any) => handleToggleEnabled(record as any, !!v)"
-                  />
-                  <Tag v-else :color="(record as any).isEnabled ? 'green' : 'default'">
-                    {{ (record as any).isEnabled ? '启用' : '停用' }}
-                  </Tag>
-                </template>
-                <template v-else-if="column.key === 'actions'">
-                  <template v-if="isAdmin">
-                    <ClpmToolbarButton
-                      :icon-only="false"
-                      label="编辑"
-                      type="link"
-                      size="small"
-                      @click="openEditModal(record as any)"
-                    />
-                    <Popconfirm
-                      :title="`确认删除诊断配置 ${diagCodeText((record as any).diagKey)}？全局默认将失效，回路阈值覆盖不受影响。`"
-                      @confirm="handleDelete(record as any)"
-                    >
-                      <ClpmToolbarButton
-                        :icon-only="false"
-                        danger
-                        label="删除"
-                        type="link"
-                        size="small"
-                      />
-                    </Popconfirm>
-                  </template>
-                  <span v-else class="text-xs text-muted-foreground">只读</span>
-                </template>
+        <!-- 诊断配置列表（含算子关联列） -->
+        <Table
+          :columns="configColumns"
+          :data-source="configs"
+          :loading="configsLoading"
+          :pagination="false"
+          row-key="diagId"
+          size="small"
+          :scroll="{ x: 1200 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'operators'">
+              <template
+                v-if="operatorsOf((record as any).diagKey).length > 0"
+              >
+                <Tag
+                  v-for="op in operatorsOf((record as any).diagKey).slice(0, 2)"
+                  :key="op.name"
+                  :color="familyMeta(op.family).color"
+                  class="mr-1"
+                >
+                  {{ op.displayName }}
+                </Tag>
+                <span
+                  v-if="operatorsOf((record as any).diagKey).length > 2"
+                  class="text-xs text-muted-foreground"
+                >
+                  +{{ operatorsOf((record as any).diagKey).length - 2 }}
+                </span>
               </template>
-            </Table>
-          </Card>
-        </TabPane>
-      </Tabs>
+              <span v-else class="text-xs text-muted-foreground">—</span>
+            </template>
+            <template v-else-if="column.key === 'isEnabled'">
+              <Switch
+                v-if="isAdmin"
+                :checked="(record as any).isEnabled"
+                checked-children="启"
+                size="small"
+                un-checked-children="停"
+                @change="(v: any) => handleToggleEnabled(record as any, !!v)"
+              />
+              <Tag v-else :color="(record as any).isEnabled ? 'green' : 'default'">
+                {{ (record as any).isEnabled ? '启用' : '停用' }}
+              </Tag>
+            </template>
+            <template v-else-if="column.key === 'updated'">
+              <span class="text-xs text-muted-foreground">
+                <template v-if="(record as any).updatedAt">
+                  {{ formatTime((record as any).updatedAt) }}
+                  <template v-if="(record as any).updatedBy">
+                    （{{ (record as any).updatedBy }}）
+                  </template>
+                </template>
+                <template v-else>—</template>
+              </span>
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <div class="flex items-center gap-1">
+                <Button
+                  type="link"
+                  size="small"
+                  @click="handleDetail(record as any)"
+                >
+                  详情
+                </Button>
+                <template v-if="isAdmin">
+                  <Button
+                    type="link"
+                    size="small"
+                    @click="openEditModal(record as any)"
+                  >
+                    编辑
+                  </Button>
+                  <Popconfirm
+                    :title="`确认删除诊断配置 ${diagCodeText((record as any).diagKey)}？全局默认将失效，回路阈值覆盖不受影响。`"
+                    @confirm="handleDelete(record as any)"
+                  >
+                    <Button type="link" size="small" danger> 删除 </Button>
+                  </Popconfirm>
+                </template>
+                <span v-if="!isAdmin" class="text-xs text-muted-foreground">只读</span>
+              </div>
+            </template>
+          </template>
+        </Table>
+      </Card>
     </div>
+
+    <!-- 详情弹窗（配置 + 关联算子字典） -->
+    <Modal
+      v-model:open="detailOpen"
+      title="诊断配置详情"
+      :footer="null"
+      width="720px"
+    >
+      <Descriptions
+        v-if="detailTarget"
+        :column="1"
+        bordered
+        size="small"
+        class="pt-2"
+      >
+        <DescriptionsItem label="诊断代码">
+          {{ diagCodeText(detailTarget.diagKey) }}
+          <span class="ml-1 font-mono text-xs">{{ detailTarget.diagKey }}</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="名称">
+          {{ detailTarget.diagName ?? '—' }}
+        </DescriptionsItem>
+        <DescriptionsItem label="算法类型 / 计算方法">
+          {{ detailTarget.algorithmType ?? '—' }} /
+          {{ detailTarget.calcMethod ?? '—' }}
+        </DescriptionsItem>
+        <DescriptionsItem label="状态">
+          {{ detailTarget.isEnabled ? '启用' : '停用' }}
+        </DescriptionsItem>
+        <DescriptionsItem label="算法参数（全局默认）">
+          <span class="font-mono text-xs">
+            {{ schemaEntriesText(detailTarget.params) }}
+          </span>
+        </DescriptionsItem>
+        <DescriptionsItem label="阈值（全局默认）">
+          <span class="font-mono text-xs">
+            {{ schemaEntriesText(detailTarget.threshold) }}
+          </span>
+        </DescriptionsItem>
+        <DescriptionsItem label="最近更新">
+          <span class="text-xs">
+            <template v-if="detailTarget.updatedAt">
+              {{ formatTime(detailTarget.updatedAt) }}
+              <template v-if="detailTarget.updatedBy">
+                （{{ detailTarget.updatedBy }}）
+              </template>
+            </template>
+            <template v-else>—</template>
+          </span>
+        </DescriptionsItem>
+        <DescriptionsItem
+          v-if="operatorsOf(detailTarget.diagKey).length > 0"
+          label="关联算子（代码级注册表，只读）"
+        >
+          <div
+            v-for="op in operatorsOf(detailTarget.diagKey)"
+            :key="op.name"
+            class="mb-2 border-b pb-2 text-xs last:mb-0 last:border-b-0 last:pb-0"
+          >
+            <div class="mb-1 flex items-center gap-2">
+              <Tag :color="familyMeta(op.family).color">
+                {{ familyMeta(op.family).label }}
+              </Tag>
+              <strong>{{ op.displayName }}</strong>
+              <span class="font-mono text-muted-foreground">{{ op.name }}</span>
+            </div>
+            <div class="text-muted-foreground">{{ op.description }}</div>
+            <div class="mt-1">
+              输出指标：<span class="font-mono">{{
+                Object.entries(op.outputsSchema ?? {})
+                  .map(([k, v]) => `${k}(${v})`)
+                  .join('；') || '—'
+              }}</span>
+            </div>
+            <div class="mt-1">
+              默认阈值参数：<span class="font-mono">{{
+                schemaEntriesText(op.thresholdSchema)
+              }}</span>
+            </div>
+            <div class="mt-1">
+              所需信号：{{ (op.requiredSignals ?? []).join(' / ') || '—' }}
+            </div>
+          </div>
+        </DescriptionsItem>
+      </Descriptions>
+    </Modal>
 
     <!-- 编辑 / 新增 Modal -->
     <Modal
@@ -515,6 +674,7 @@ defineExpose({
             v-model:value="form.diagKey"
             class="flex-1"
             placeholder="选择诊断代码（8 类标签之一）"
+            @change="(v: any) => applyOperatorDefaults(v as string)"
           >
             <Select.Option
               v-for="code in DIAG_CODE_OPTIONS"
@@ -563,10 +723,21 @@ defineExpose({
           />
           <span v-if="thresholdError" class="text-xs text-red-500">{{ thresholdError }}</span>
           <span class="text-xs text-muted-foreground">
-            修改全局默认不影响已配置的回路类型模板/装置/回路级覆盖（生效优先级：全局默认 &lt; 模板 &lt; 装置 &lt; 回路）
+            修改全局默认不影响已配置的回路类型模板/装置/回路级覆盖（生效优先级：全局默认 &lt; 模板 &lt; 装置 &lt; 回路）；保存后自动生成新版本
           </span>
         </div>
       </div>
     </Modal>
+
+    <!-- 版本历史 -->
+    <ClpmVersionHistoryModal
+      v-model:open="versionOpen"
+      title="诊断配置 版本历史"
+      :items="versionItems"
+      :loading="versionLoading"
+      :rolling-back="rollingBack"
+      :rollbackable="isAdmin"
+      @rollback="handleRollback"
+    />
   </Page>
 </template>

@@ -91,6 +91,27 @@ export namespace TagApi {
     tagType?: TagType;
     tdengineTagId?: string;
   }
+
+  /** Excel 导入单行错误 */
+  export interface TagImportError {
+    row: number;
+    tagName?: null | string;
+    message: string;
+  }
+
+  /** Excel 导入结果（upsert：位号存在则更新，否则新建） */
+  export interface TagImportResult {
+    /** 总行数 */
+    total: number;
+    /** 新建数 */
+    inserted: number;
+    /** 更新数 */
+    updated: number;
+    /** 失败数 */
+    failed: number;
+    /** 失败行明细 */
+    errors: TagImportError[];
+  }
 }
 
 /**

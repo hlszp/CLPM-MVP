@@ -5,6 +5,7 @@
  * 后端：backend/app/api/v1/endpoints/diagnosis_v2.py（/api/v1/diagnosis/*）
  */
 
+import type { MetricApi } from '#/api/metric';
 import type { PageQuery, PaginatedResponse } from '#/api/types';
 
 import { requestClient } from '#/api/request';
@@ -492,6 +493,24 @@ export function createDiagnosisConfigApi(
 export function deleteDiagnosisConfigApi(diagId: string) {
   return requestClient.delete<{ deletedDiagId: string }>(
     `/configs/diagnosis/${diagId}`,
+  );
+}
+
+/**
+ * 获取诊断配置版本历史（快照模式，仅 ADMIN）
+ */
+export function getDiagnosisConfigHistoryApi() {
+  return requestClient.get<MetricApi.VersionHistorySchema>(
+    '/configs/diagnosis/history',
+  );
+}
+
+/**
+ * 回滚诊断配置到指定版本（仅 ADMIN）
+ */
+export function rollbackDiagnosisConfigApi(version: number) {
+  return requestClient.post<{ version: number }>(
+    `/configs/diagnosis/${version}/rollback`,
   );
 }
 

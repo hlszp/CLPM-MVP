@@ -824,9 +824,9 @@ async function handleRefresh() {
 /** 工具栏帮助 */
 function handleHelp() {
   showPageHelp({
-    title: '数据管理 帮助',
+    title: '数据检查 帮助',
     content:
-      '历史数据导入页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页；"全选"覆盖当前筛选条件下全部回路，含未显示分页），右侧选择时间范围/采样间隔/冲突策略后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。支持数据完整性检查（按小时分桶列级缺失统计）与一键补齐缺口（skip 策略）。任务列表展示进度/状态，活跃任务自动轮询。',
+      '数据检查页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页；"全选"覆盖当前筛选条件下全部回路，含未显示分页），右侧选择时间范围/采样间隔/冲突策略后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。支持数据完整性检查（按小时分桶列级缺失统计）与一键补齐缺口（skip 策略）。任务列表展示进度/状态，活跃任务自动轮询。',
   });
 }
 
@@ -856,7 +856,7 @@ onMounted(async () => {
 <template>
   <Page>
     <ClpmPageToolbar
-      title="数据管理"
+      title="数据检查"
       subtitle="从远端 API 导入历史数据到本地 TDengine，支持冲突处理与 KPI 回算"
       compact
       :loading="taskLoading"

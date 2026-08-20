@@ -21,7 +21,7 @@ import type { PlantNodeApi } from '#/api/plant-node';
  */
 import type { TagApi } from '#/api/tag';
 
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useAccessStore } from '@vben/stores';
@@ -40,6 +40,7 @@ import {
   Select,
   Table,
   Tag,
+  Tooltip,
   Upload,
 } from 'ant-design-vue';
 
@@ -486,11 +487,33 @@ function handleImportBeforeUpload(file: File): boolean {
   const formData = new FormData();
   formData.append('file', file);
   requestClient
-    .post('/tags/import', formData, {
+    .post<TagApi.TagImportResult>('/tags/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    .then(() => {
-      message.success('导入成功');
+    .then((result) => {
+      // upsert 语义：位号已存在则更新（列表可能无可见变化），必须反馈明细
+      const summary = `共 ${result.total} 行：新增 ${result.inserted} 项，更新 ${result.updated} 项，失败 ${result.failed} 项`;
+      if (result.failed > 0 && result.errors.length > 0) {
+        Modal.error({
+          title: '导入完成（部分行失败）',
+          width: 520,
+          content: h('div', null, [
+            h('p', null, summary),
+            h(
+              'ul',
+              { style: { 'max-height': '220px', overflow: 'auto', 'padding-left': '20px' } },
+              result.errors.slice(0, 20).map((e) =>
+                h('li', null, `第 ${e.row} 行${e.tagName ? `（${e.tagName}）` : ''}：${e.message}`),
+              ),
+            ),
+            result.errors.length > 20
+              ? h('p', { style: { color: '#888' } }, `… 其余 ${result.errors.length - 20} 条错误省略`)
+              : null,
+          ]),
+        });
+      } else {
+        message.success(`导入完成：${summary}`);
+      }
       loadList();
     })
     .catch(() => {
@@ -838,16 +861,24 @@ const { toolbarItems } = usePageToolbar(() => ({
                 >
                   编辑
                 </Button>
-                <Button
-                  v-permission="['ADMIN']"
-                  type="link"
-                  size="small"
-                  danger
-                  :disabled="(record as TagApi.TagItem).isLinked"
-                  @click="openDanger(record as TagApi.TagItem)"
+                <Tooltip
+                  :title="
+                    (record as TagApi.TagItem).isLinked
+                      ? '已关联回路，请先在「回路配置」中解除该测点与回路的关联'
+                      : ''
+                  "
                 >
-                  删除
-                </Button>
+                  <Button
+                    v-permission="['ADMIN']"
+                    type="link"
+                    size="small"
+                    danger
+                    :disabled="(record as TagApi.TagItem).isLinked"
+                    @click="openDanger(record as TagApi.TagItem)"
+                  >
+                    删除
+                  </Button>
+                </Tooltip>
               </div>
             </div>
           </template>

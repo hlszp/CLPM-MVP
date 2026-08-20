@@ -24,7 +24,7 @@ import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -906,13 +906,14 @@ async function handleExport() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `回路管理_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = `回路管理_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.download = filename;
     document.body.append(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
     hide();
-    message.success('导出成功');
+    message.success(`已导出 ${filename}`);
   } catch (error) {
     hide();
     console.error('操作失败:', error);
@@ -927,12 +928,50 @@ function handleImportBeforeUpload(file: File): boolean {
   const formData = new FormData();
   formData.append('file', file);
   requestClient
-    .post('/loops/import', formData, {
+    .post<LoopApi.LoopImportResult>('/loops/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    .then(() => {
+    .then((result) => {
       hide();
-      message.success('导入成功');
+      // upsert 语义：回路编号已存在则更新（列表可能无可见变化），必须反馈明细
+      const summary = `共 ${result.total} 行：新增 ${result.inserted} 条，更新 ${result.updated} 条，失败 ${result.failed} 条`;
+      if (result.failed > 0 && result.errors.length > 0) {
+        Modal.error({
+          title: '导入完成（部分行失败）',
+          width: 520,
+          content: h('div', null, [
+            h('p', null, summary),
+            h(
+              'ul',
+              {
+                style: {
+                  'max-height': '220px',
+                  overflow: 'auto',
+                  'padding-left': '20px',
+                },
+              },
+              result.errors
+                .slice(0, 20)
+                .map((e) =>
+                  h(
+                    'li',
+                    null,
+                    `第 ${e.row} 行${e.tagName ? `（${e.tagName}）` : ''}：${e.message}`,
+                  ),
+                ),
+            ),
+            result.errors.length > 20
+              ? h(
+                  'p',
+                  { style: { color: '#888' } },
+                  `… 其余 ${result.errors.length - 20} 条错误省略`,
+                )
+              : null,
+          ]),
+        });
+      } else {
+        message.success(`导入完成：${summary}`);
+      }
       loadList();
     })
     .catch((error) => {

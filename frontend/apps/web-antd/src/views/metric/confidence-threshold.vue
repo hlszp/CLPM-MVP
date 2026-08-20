@@ -28,10 +28,16 @@ import {
 } from 'ant-design-vue';
 
 import {
+  getConfidenceThresholdHistoryApi,
   getConfidenceThresholdsApi,
+  rollbackConfidenceThresholdApi,
   saveConfidenceThresholdsApi,
 } from '#/api/metric';
-import { ClpmToolbarButton } from '#/components/clpm';
+import {
+  ClpmHelpIcon,
+  ClpmToolbarButton,
+  ClpmVersionHistoryModal,
+} from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 
 defineOptions({ name: 'MetricConfidenceThreshold' });
@@ -41,6 +47,16 @@ const { themeColors, confidenceColors } = useClpmTheme();
 const loading = ref(false);
 const saving = ref(false);
 const list = ref<MetricApi.ConfidenceThresholdItem[]>([]);
+const currentVersion = ref(0);
+
+/** 帮助内容（汇总原页面说明块） */
+const HELP_CONTENT = [
+  '配置 5 级数据可信度阈值（A/B/C/D/E），基于评估窗内有效数据率（valid_rate）判定。',
+  '· 校验规则：相邻等级须满足「level N 的 minRate > level N+1 的 minRate」，例如：A级 minRate=0.95，则 B 级 minRate 须 < 0.95。',
+  '· 颜色说明：颜色由算法规范定义，不可编辑。A级绿/B级蓝/C级黄/D级橙/E级红。',
+  '· E 级说明：E 级 minRate 固定为 0，当有效数据率低于 D 级阈值时判定为 E 级，评估结果标记为 INCONCLUSIVE（可信度不足，不输出评分）。',
+  '· 每次保存自动生成新版本并立即生效；「版本」入口可查看各版本生效—失效时间并回滚。',
+].join('\n');
 
 /** 5 级可信度元数据（名称、中文等级、描述；颜色走 levelColor 单源） */
 const LEVEL_META: Record<
@@ -118,6 +134,7 @@ async function loadList() {
   loading.value = true;
   try {
     const data = await getConfidenceThresholdsApi();
+    currentVersion.value = data.version ?? 0;
     list.value = data.thresholds ?? [];
     // 同步编辑态
     for (const item of list.value) {
@@ -212,7 +229,7 @@ async function confirmSave() {
       color: levelColor(item.level),
     }));
     await saveConfidenceThresholdsApi({ thresholds });
-    message.success('可信度阈值保存成功');
+    message.success('可信度阈值保存成功（已生成新版本）');
     confirmVisible.value = false;
     await loadList();
   } catch {
@@ -227,6 +244,39 @@ onMounted(() => {
   loadList();
 });
 
+// ===== 版本历史 =====
+
+const versionOpen = ref(false);
+const versionLoading = ref(false);
+const versionItems = ref<MetricApi.VersionHistoryItem[]>([]);
+const rollingBack = ref(false);
+
+async function openVersionHistory() {
+  versionOpen.value = true;
+  versionLoading.value = true;
+  try {
+    const data = await getConfidenceThresholdHistoryApi();
+    versionItems.value = data.items ?? [];
+  } catch {
+    versionItems.value = [];
+  } finally {
+    versionLoading.value = false;
+  }
+}
+
+async function handleRollback(version: number) {
+  rollingBack.value = true;
+  try {
+    await rollbackConfidenceThresholdApi(version);
+    message.success(`已回滚到版本 v${version}（生成新版本）`);
+    await Promise.all([loadList(), openVersionHistory()]);
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    rollingBack.value = false;
+  }
+}
+
 /** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
 function refresh() {
   return loadList();
@@ -237,13 +287,14 @@ defineExpose({ refresh });
 
 <template>
   <div class="metric-confidence-threshold">
-    <div class="mb-3 flex items-center justify-between">
-      <p class="text-sm" :style="{ color: themeColors.NEUTRAL }">
-        配置 5 级数据可信度阈值（A/B/C/D/E）。 相邻等级的 minRate 须严格递减（A
-        > B > C > D > E）， E 级 minRate 固定为 0（可信度不足，评估结果为
-        INCONCLUSIVE）。
-      </p>
-      <div class="flex gap-2">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center text-sm" :style="{ color: themeColors.NEUTRAL }">
+        <span>5 级数据可信度阈值（A-E），相邻等级 minRate 须严格递减。</span>
+        <ClpmHelpIcon title="数据可信度 帮助" :content="HELP_CONTENT" />
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <Tag class="mr-1">当前版本 v{{ currentVersion }}</Tag>
+        <Button size="small" @click="openVersionHistory"> 版本 </Button>
         <ClpmToolbarButton
           icon="ant-design:reload-outlined"
           :loading="loading"
@@ -259,7 +310,7 @@ defineExpose({ refresh });
             :disabled="!isValid"
             @click="handleSave"
           >
-            保存
+            保存为新版本
           </Button>
         </Tooltip>
       </div>
@@ -343,27 +394,10 @@ defineExpose({ refresh });
       </template>
     </Table>
 
-    <div class="mt-3 text-xs" :style="{ color: themeColors.NEUTRAL }">
-      <p>
-        <strong>校验规则：</strong>
-        相邻等级须满足「level N 的 minRate > level N+1 的 minRate」， 例如：A级
-        minRate=0.95，则 B 级 minRate 须 &lt; 0.95。
-      </p>
-      <p class="mt-1">
-        <strong>颜色说明：</strong>
-        颜色由算法规范定义，不可编辑。A级绿/B级蓝/C级黄/D级橙/E级红。
-      </p>
-      <p class="mt-1">
-        <strong>E 级说明：</strong>
-        E 级 minRate 固定为 0，当有效数据率低于 D 级阈值时判定为 E 级，
-        评估结果标记为 INCONCLUSIVE（可信度不足，不输出评分）。
-      </p>
-    </div>
-
     <!-- 保存确认弹窗 -->
     <Modal
       v-model:open="confirmVisible"
-      title="确认保存可信度阈值"
+      title="确认保存可信度阈值（新版本）"
       :confirm-loading="confirmLoading"
       ok-text="确认保存"
       cancel-text="取消"
@@ -412,11 +446,22 @@ defineExpose({ refresh });
           >
             保存后立即生效，所有回路的可信度判定将在下次评估时按新阈值划分。
             有效数据率低于 D 级阈值的回路将被判定为 E 级（INCONCLUSIVE），
-            不输出综合评分。
+            不输出综合评分。可通过「版本」入口查看历史版本并回滚。
           </p>
         </div>
       </div>
     </Modal>
+
+    <!-- 版本历史 -->
+    <ClpmVersionHistoryModal
+      v-model:open="versionOpen"
+      title="数据可信度阈值 版本历史"
+      :items="versionItems"
+      :loading="versionLoading"
+      :rolling-back="rollingBack"
+      rollbackable
+      @rollback="handleRollback"
+    />
   </div>
 </template>
 
