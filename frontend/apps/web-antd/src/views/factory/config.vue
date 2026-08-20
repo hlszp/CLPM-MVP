@@ -4,11 +4,17 @@
  *
  * - 左侧：工厂模型树（工厂 → 装置 → 单元，选择联动右侧列表筛选）
  * - 右侧：节点分页列表（层级路径/父节点/来源标记/参评/更新时间 + CRUD）
+ * - 导入/导出（Excel）：导出全部层级（父先子后）；导入逐行 upsert，
+ *   完成后反馈新增/更新/失败明细（导入仅 ADMIN）
  * - AAS 工厂模型同步（独立同步配置区）：同步设置（连接配置/启停）+
  *   连接测试 + 全量同步 + 同步日志；source_node_id 标记 AAS 同步节点
  *   （本地改名会被下次同步覆盖，主数据语义）
  */
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type {
+  TableColumnsType,
+  TablePaginationConfig,
+  UploadProps,
+} from 'ant-design-vue';
 
 import type { PlantNodeApi } from '#/api/plant-node';
 import type {
@@ -17,7 +23,7 @@ import type {
   PlantNodeListItem,
 } from '#/api/plant-node';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -35,15 +41,18 @@ import {
   Table,
   Tag,
   Tooltip,
+  Upload,
 } from 'ant-design-vue';
 
 import {
   createPlantNodeApi,
   deletePlantNodeApi,
+  exportPlantNodesApi,
   getFactorySyncLogsApi,
   getFactorySyncSettingApi,
   getPlantNodeListApi,
   getPlantNodeTreeApi,
+  importPlantNodesApi,
   saveFactorySyncSettingApi,
   syncFactoryModelApi,
   testFactorySyncApi,
@@ -78,6 +87,7 @@ function typeText(t: string): string {
 const HELP_CONTENT = [
   '工厂配置页：工厂-装置-单元三层结构的定义与管理（左侧树 + 右侧列表），回路挂在单元节点下。',
   '· 层级约束：工厂为根节点，装置挂在工厂下，单元挂在装置下；存在子节点或关联回路的节点不可删除。',
+  '· 导入/导出（Excel）：导出全部层级（列：节点名称/节点类型/父节点名称/层级路径，父先子后）；导入为逐行 upsert（名称+父节点已存在则更新，否则新建），可先导出作为模板修改后回灌；导入仅 ADMIN。',
   '· AAS 工厂模型同步（独立同步配置区）：从 AAS 高级过程报警系统拉取区域节点（AreaNode）全量数据，按来源标记（source_node_id）upsert——AAS 同步节点的名称/层级以 AAS 为准（本地改名会被下次同步覆盖）；本地维护节点不受同步影响。',
   '· 连接协议：ABP 动态 API（登录 TokenAuth + 区域节点分页接口），默认地址可在同步设置中调整。',
   '· 同步需先在「同步设置」中启用并配置账号；「立即同步」为手动全量触发，同步结果可在「同步日志」中查看。',
@@ -270,6 +280,101 @@ async function handleDelete(record: PlantNodeListItem) {
     // 错误已由拦截器处理（含子节点/回路保护提示）
   }
 }
+
+// ===== 导入 / 导出（Excel） =====
+
+const exporting = ref(false);
+
+/** 导出工厂层级 Excel（列：节点名称/节点类型/父节点名称/层级路径，父先子后） */
+async function handleExport() {
+  exporting.value = true;
+  try {
+    const blob = await exportPlantNodesApi();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const filename = `工厂模型_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.download = filename;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    message.success(`已导出 ${filename}`);
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    exporting.value = false;
+  }
+}
+
+const importing = ref(false);
+
+/**
+ * 导入工厂层级 Excel（Upload beforeUpload 钩子，仅 ADMIN）
+ *
+ * 逐行 upsert：节点名称 + 父节点已存在则更新，否则新建；
+ * 导入完成反馈明细（upsert 语义下列表可能无可见变化，必须反馈新增/更新/失败计数）。
+ */
+function handleImportBeforeUpload(file: File): boolean {
+  importing.value = true;
+  importPlantNodesApi(file)
+    .then((result) => {
+      const summary = `共 ${result.total} 行：新增 ${result.inserted} 个，更新 ${result.updated} 个，失败 ${result.failed} 个`;
+      if (result.failed > 0 && result.errors.length > 0) {
+        Modal.error({
+          title: '导入完成（部分行失败）',
+          width: 520,
+          content: h('div', null, [
+            h('p', null, summary),
+            h(
+              'ul',
+              {
+                style: {
+                  'max-height': '220px',
+                  overflow: 'auto',
+                  'padding-left': '20px',
+                },
+              },
+              result.errors.slice(0, 20).map((e) =>
+                h(
+                  'li',
+                  null,
+                  `第 ${e.row} 行${e.name ? `（${e.name}）` : ''}：${e.message}`,
+                ),
+              ),
+            ),
+            result.errors.length > 20
+              ? h(
+                  'p',
+                  { style: { color: '#888' } },
+                  `… 其余 ${result.errors.length - 20} 条错误省略`,
+                )
+              : null,
+          ]),
+        });
+      } else {
+        message.success(`导入完成：${summary}`);
+      }
+      // 刷新树 + 列表（导入可能新建/更新节点）
+      void Promise.all([loadTree(), loadList()]);
+    })
+    .catch(() => {
+      // 错误已由拦截器处理
+    })
+    .finally(() => {
+      importing.value = false;
+    });
+  // 返回 false 阻止 Upload 组件默认上传行为
+  return false;
+}
+
+const uploadAccept = '.xlsx,.xls';
+
+const uploadProps: UploadProps = {
+  accept: uploadAccept,
+  showUploadList: false,
+  beforeUpload: handleImportBeforeUpload as UploadProps['beforeUpload'],
+};
 
 // ===== AAS 同步 =====
 
@@ -537,7 +642,16 @@ onMounted(() => {
             @change="handleSearch"
           />
           <Button @click="handleSearch">查询</Button>
-          <div class="!ml-auto">
+          <div class="!ml-auto flex items-center gap-2">
+            <Upload v-bind="uploadProps">
+              <Button
+                v-permission="['ADMIN']"
+                :loading="importing"
+              >
+                导入
+              </Button>
+            </Upload>
+            <Button :loading="exporting" @click="handleExport"> 导出 </Button>
             <Button
               v-permission="['ADMIN']"
               type="primary"

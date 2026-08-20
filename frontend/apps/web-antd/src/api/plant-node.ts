@@ -86,32 +86,53 @@ export function deletePlantNodeApi(nodeId: string) {
   );
 }
 
-/**
- * 导出工厂节点 Excel
- */
-export function exportPlantNodesApi() {
-  return requestClient.get<Blob>('/plant-nodes/export', {
-    responseType: 'blob',
-  });
+/** 工厂节点导入单行错误 */
+export interface PlantNodeImportError {
+  /** 行号 */
+  row: number;
+  /** 节点名称（解析到时） */
+  name?: null | string;
+  /** 错误原因 */
+  message: string;
+}
+
+/** 工厂节点导入结果（upsert：名称+父节点存在则更新，否则新建） */
+export interface PlantNodeImportResult {
+  total: number;
+  inserted: number;
+  updated: number;
+  failed: number;
+  errors: PlantNodeImportError[];
 }
 
 /**
- * 导入工厂节点 Excel
+ * 导出工厂节点 Excel（.xlsx）
+ *
+ * 注意：必须走 requestClient.download（responseReturn: 'body' + responseType:
+ * 'blob'）；普通 get 会被统一响应拦截器按 code 字段校验，Blob 无该字段导致导出失败。
+ * 列结构（4 列）：节点名称 / 节点类型 / 父节点名称 / 层级路径（父先子后，可直接回灌导入）。
+ */
+export function exportPlantNodesApi() {
+  return requestClient.download<Blob>('/plant-nodes/export');
+}
+
+/**
+ * 导入工厂节点 Excel（.xlsx，仅 ADMIN）
+ *
+ * 逐行 upsert：节点名称 + 父节点已存在则更新，否则新建。
  */
 export function importPlantNodesApi(file: File) {
   const formData = new FormData();
   formData.append('file', file);
-  return requestClient.post<{
-    errors: string[];
-    failed: number;
-    inserted: number;
-    total: number;
-    updated: number;
-  }>('/plant-nodes/import', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
+  return requestClient.post<PlantNodeImportResult>(
+    '/plant-nodes/import',
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     },
-  });
+  );
 }
 
 // ===========================================================================
