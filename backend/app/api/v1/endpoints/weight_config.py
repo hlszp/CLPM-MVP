@@ -517,9 +517,7 @@ async def rollback_weight_template(
     _validate_core_weight_sum(rollback_items)
 
     # 保存为新版本（归档当前版本到历史；自定义指标行一并回滚）
-    rollback_custom_metrics = [
-        WeightCustomMetricItem(**c) for c in target.get("customMetrics", [])
-    ]
+    rollback_custom_metrics = [WeightCustomMetricItem(**c) for c in target.get("customMetrics", [])]
     result = await _save_template_version(
         db=db,
         templates=rollback_items,

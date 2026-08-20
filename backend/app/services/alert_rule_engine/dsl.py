@@ -389,8 +389,7 @@ def _validate_metric_threshold_condition(
             {
                 "field": "condition.checkIntervalMinutes",
                 "message": (
-                    f"必须为 {MIN_CHECK_INTERVAL_MINUTES}-"
-                    f"{MAX_CHECK_INTERVAL_MINUTES} 整数（分钟）"
+                    f"必须为 {MIN_CHECK_INTERVAL_MINUTES}-{MAX_CHECK_INTERVAL_MINUTES} 整数（分钟）"
                 ),
             }
         )

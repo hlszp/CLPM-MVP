@@ -344,9 +344,7 @@ async def _save_version(
         }
     )
 
-    await _set_config_value(
-        db, _KEY_CURRENT, new_thresholds.model_dump_json(), _KEY_DESC, operator
-    )
+    await _set_config_value(db, _KEY_CURRENT, new_thresholds.model_dump_json(), _KEY_DESC, operator)
     await _set_config_value(
         db,
         _KEY_HISTORY,
@@ -477,9 +475,7 @@ async def get_grading_threshold_history(
         "expiresAt": None,
     }
 
-    all_items = [current_item] + sorted(
-        history, key=lambda x: x.get("version", 0), reverse=True
-    )
+    all_items = [current_item] + sorted(history, key=lambda x: x.get("version", 0), reverse=True)
     return success(data={"items": all_items, "currentVersion": current.version})
 
 
@@ -530,9 +526,7 @@ async def rollback_grading_thresholds(
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    rollback_items = [
-        GradingThresholdItem.model_validate(t) for t in target.get("thresholds", [])
-    ]
+    rollback_items = [GradingThresholdItem.model_validate(t) for t in target.get("thresholds", [])]
     if not rollback_items:
         raise BizError(
             code="ERR_VERSION_EMPTY",

@@ -320,9 +320,7 @@ async def _save_version(
         }
     )
 
-    await _set_config_value(
-        db, _KEY_CURRENT, new_thresholds.model_dump_json(), _KEY_DESC, operator
-    )
+    await _set_config_value(db, _KEY_CURRENT, new_thresholds.model_dump_json(), _KEY_DESC, operator)
     await _set_config_value(
         db,
         _KEY_HISTORY,
@@ -358,9 +356,7 @@ async def _commit_or_rollback(db: AsyncSession, action: str) -> None:
         ) from None
 
 
-async def _apply_runtime_thresholds(
-    thresholds: list[ConfidenceThresholdItem], source: str
-) -> None:
+async def _apply_runtime_thresholds(thresholds: list[ConfidenceThresholdItem], source: str) -> None:
     """更新运行时阈值缓存（当前进程立即生效）+ Redis pub/sub 广播（其他进程同步）.
 
     可信度统一 Phase 3（P3-2 / D4）：多进程阈值同步。
@@ -439,9 +435,7 @@ async def save_confidence_thresholds(
     )
 
     # 更新运行时阈值缓存 + 广播其他进程
-    await _apply_runtime_thresholds(
-        new_thresholds.thresholds, source=f"api:{user.username}"
-    )
+    await _apply_runtime_thresholds(new_thresholds.thresholds, source=f"api:{user.username}")
 
     return success(data=new_thresholds.model_dump(), message="可信度阈值已保存为新版本")
 
@@ -477,9 +471,7 @@ async def get_confidence_threshold_history(
         "expiresAt": None,
     }
 
-    all_items = [current_item] + sorted(
-        history, key=lambda x: x.get("version", 0), reverse=True
-    )
+    all_items = [current_item] + sorted(history, key=lambda x: x.get("version", 0), reverse=True)
     return success(data={"items": all_items, "currentVersion": current.version})
 
 
@@ -488,9 +480,7 @@ async def get_confidence_threshold_history(
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "/{version}/rollback", response_model=ApiResponse[ConfidenceThresholdSchema]
-)
+@router.post("/{version}/rollback", response_model=ApiResponse[ConfidenceThresholdSchema])
 async def rollback_confidence_thresholds(
     version: int,
     db: AsyncSession = Depends(get_db),
@@ -516,9 +506,7 @@ async def rollback_confidence_thresholds(
             remark="回滚到算法规范默认值（源版本 0）",
         )
         await _commit_or_rollback(db, "回滚")
-        await _apply_runtime_thresholds(
-            result.thresholds, source=f"api:{user.username}"
-        )
+        await _apply_runtime_thresholds(result.thresholds, source=f"api:{user.username}")
         logger.info(
             "可信度阈值已回滚到算法默认: new_version=%d, operator=%s",
             result.version,
@@ -555,9 +543,7 @@ async def rollback_confidence_thresholds(
         remark=f"回滚自版本 {version}",
     )
     await _commit_or_rollback(db, "回滚")
-    await _apply_runtime_thresholds(
-        result.thresholds, source=f"api:{user.username}"
-    )
+    await _apply_runtime_thresholds(result.thresholds, source=f"api:{user.username}")
 
     logger.info(
         "可信度阈值已回滚: from_version=%d, to_new_version=%d, operator=%s",

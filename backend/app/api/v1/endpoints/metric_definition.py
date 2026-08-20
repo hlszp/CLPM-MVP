@@ -177,8 +177,7 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "category": "AUXILIARY_DIAGNOSTIC",
         "formula": "saturated_duration / total_duration × 100",
         "description": (
-            "OP 输出处于饱和区间（高限或低限）的时长占比。"
-            "饱和判定阈值可配置，默认 ±2% 量程范围。"
+            "OP 输出处于饱和区间（高限或低限）的时长占比。饱和判定阈值可配置，默认 ±2% 量程范围。"
         ),
         "unit": None,
         "sortOrder": 33,
@@ -310,9 +309,7 @@ async def _write_audit(
 
 def _build_default_definitions() -> MetricDefinitionListSchema:
     """构建内置默认指标定义列表（version=1，首次访问时落库）."""
-    items = [
-        MetricDefinitionItem(isBuiltin=True, **d) for d in _BUILTIN_DEFINITIONS
-    ]
+    items = [MetricDefinitionItem(isBuiltin=True, **d) for d in _BUILTIN_DEFINITIONS]
     return MetricDefinitionListSchema(
         version=1,
         items=items,
@@ -425,9 +422,7 @@ async def _save_version(
     return new_list
 
 
-def _find_item(
-    items: list[MetricDefinitionItem], metric_code: str
-) -> MetricDefinitionItem | None:
+def _find_item(items: list[MetricDefinitionItem], metric_code: str) -> MetricDefinitionItem | None:
     return next((i for i in items if i.metricCode == metric_code), None)
 
 
@@ -554,9 +549,7 @@ async def update_metric_definition(
                     body.description if body.description is not None else item.description
                 ),
                 "unit": body.unit if body.unit is not None else item.unit,
-                "isEnabled": (
-                    body.isEnabled if body.isEnabled is not None else item.isEnabled
-                ),
+                "isEnabled": (body.isEnabled if body.isEnabled is not None else item.isEnabled),
                 # 公式：内置锁定，自定义可改
                 "formula": (
                     body.formula
@@ -610,8 +603,7 @@ async def delete_metric_definition(
         raise BizError(
             code="ERR_METRIC_BUILTIN_LOCKED",
             message=(
-                f"内置指标 {metric_code} 为 KPI 计算引擎依赖项，不可删除；"
-                "可停用或编辑名称/说明"
+                f"内置指标 {metric_code} 为 KPI 计算引擎依赖项，不可删除；可停用或编辑名称/说明"
             ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
@@ -664,9 +656,7 @@ async def get_metric_definition_history(
         "expiresAt": None,
     }
 
-    all_items = [current_item] + sorted(
-        history, key=lambda x: x.get("version", 0), reverse=True
-    )
+    all_items = [current_item] + sorted(history, key=lambda x: x.get("version", 0), reverse=True)
     return success(data={"items": all_items, "currentVersion": current.version})
 
 
@@ -698,9 +688,7 @@ async def rollback_metric_definition(
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    rollback_items = [
-        MetricDefinitionItem.model_validate(i) for i in target.get("items", [])
-    ]
+    rollback_items = [MetricDefinitionItem.model_validate(i) for i in target.get("items", [])]
     if not rollback_items:
         raise BizError(
             code="ERR_VERSION_EMPTY",

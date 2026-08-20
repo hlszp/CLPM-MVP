@@ -140,9 +140,7 @@ async def _snapshot_diagnosis_version(
     import json as _json
 
     await db.flush()
-    result = await db.execute(
-        select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc())
-    )
+    result = await db.execute(select(DiagnosisConfig).order_by(DiagnosisConfig.diag_code.asc()))
     items = [_diagnosis_to_response_dict(c) for c in result.scalars().all()]
 
     current = await _load_diag_version(db)
@@ -188,6 +186,7 @@ async def _snapshot_diagnosis_version(
         operator,
     )
     return new_version
+
 
 # v4.0 指标体系 3+1+8 结构（对齐 IDS §2.8）
 # 3 核心指标（参与权重校验）
@@ -863,12 +862,8 @@ async def get_diagnosis_config_history(
         "expiresAt": None,
     }
 
-    all_items = [current_item] + sorted(
-        history, key=lambda x: x.get("version", 0), reverse=True
-    )
-    return success(
-        data={"items": all_items, "currentVersion": current.get("version", 0)}
-    )
+    all_items = [current_item] + sorted(history, key=lambda x: x.get("version", 0), reverse=True)
+    return success(data={"items": all_items, "currentVersion": current.get("version", 0)})
 
 
 # ---------------------------------------------------------------------------
@@ -922,16 +917,12 @@ async def rollback_diagnosis_config(
         existing = existing_map.get(diag_code)
         if existing is not None:
             existing.diag_name = item.get("diagName") or existing.diag_name
-            existing.algorithm_type = (
-                item.get("algorithmType") or existing.algorithm_type
-            )
+            existing.algorithm_type = item.get("algorithmType") or existing.algorithm_type
             existing.calc_method = item.get("calcMethod") or existing.calc_method
             existing.params = item.get("params") or existing.params
             existing.threshold = item.get("threshold") or existing.threshold
             existing.is_enabled = (
-                item.get("isEnabled")
-                if item.get("isEnabled") is not None
-                else existing.is_enabled
+                item.get("isEnabled") if item.get("isEnabled") is not None else existing.is_enabled
             )
             existing.updated_by = user.username
             existing.updated_at = _now_naive()
@@ -947,9 +938,7 @@ async def rollback_diagnosis_config(
                     params=item.get("params") or {},
                     threshold=item.get("threshold") or {},
                     is_enabled=(
-                        item.get("isEnabled")
-                        if item.get("isEnabled") is not None
-                        else True
+                        item.get("isEnabled") if item.get("isEnabled") is not None else True
                     ),
                     version=1,
                     updated_by=user.username,
@@ -993,9 +982,7 @@ async def rollback_diagnosis_config(
         new_version,
         user.username,
     )
-    return success(
-        data={"version": new_version}, message=f"已回滚到版本 {version}"
-    )
+    return success(data={"version": new_version}, message=f"已回滚到版本 {version}")
 
 
 __all__ = ["router"]
