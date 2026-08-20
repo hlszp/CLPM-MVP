@@ -1,22 +1,20 @@
-# CLPM
+# CLPM-MVP
 
-危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）。
+危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）— **MVP 精简 + 闭环重建版**（自 CLPM v6.2 派生，设计事实来源见 `docs/MVP设计/`）。
 
-产品文档基线：**v6.2**（当前需求、IA 与 ZL 工业设计规范口径）。后端运行时版本由 `APP_VERSION` 管理（当前默认 `1.0.0`），发布版本由 Git tag 管理；三者用途不同，不要求数值相同。
+产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。后端运行时版本由 `APP_VERSION` 管理（当前默认 `1.0.0`），发布版本由 Git tag 管理；三者用途不同，不要求数值相同。
 
 ## 项目简介
 
-CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆盖"监控 → 评估 → 诊断 → 整定"全流程，提供：
+CLPM-MVP 是面向危化企业控制回路的绩效治理与优化闭环平台，覆盖"**监控 → 评估 → 诊断 → 整定 → 处置**"完整闭环（2026-08-19 重建完成），提供：
 
-- **工作台门户**：跨模块待办（诊断待处理/异常跟踪待办/验证超期/评估待执行/整定任务）+ 异常预测提前预警 + 数据链路健康
-- **回路管理**：AAS Tag 同步 / 回路台账 / Tag 关联 / 实时监控（"较昨日"增量徽标 + 最需关注默认排序）/ 回路工作台单页四区（v2.11 监控工作台闭环 + IA 评审 Backlog 闭环，统一关注队列五来源聚合 + 四级优先级 + 角色化动作 + workspace/table 双模式 + 虚拟滚动）
-- **性能评估**：KPI 看板 / TOP5 Bad Actor 治理台账（评分+责任人+处置+验证一表）/ 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 异常值检测参数 / KPI 算法参数——注册表 paramMeta 单源下发 + 重置默认） / 可信度标识 / 工业桌面端驾驶舱样式
-- **诊断中心**：诊断配置（阈值/启停真实生效）/ 异常诊断（振荡/阀门粘滞/参数过激过保守/外扰/质量异常/输出饱和 + 传感器故障与 Harris 指数，D-S 证据融合）/ 事件+体检双轨自动诊断 / Action Tracker（P1a 闭环状态机：PENDING→IN_PROGRESS→VERIFYING→CLOSED，超 24h 验证超期进待办；KPI A/B 对比 + 同步 PDF 建议书）/ 统计
+- **监控**：关注队列（ALERT/DEGRADATION/DATA_QUALITY 三来源聚合 + 四级优先级 + 角色化动作）/ 回路工作台单页多区（运行态 + 评分趋势 + 诊断卡 + 活跃关注项）/ 回路台账 / Tag 关联 / 实时监控
+- **性能评估**：KPI 看板 / 节点排名 / 统计分析 / 指标配置（指标定义 / 引擎规则 / 类型权重 / 级别权重 / 异常值检测参数 / KPI 算法参数）/ 可信度标识
+- **诊断**（MVP 重建，2026-08-16）：诊断工作台（发起+结果一体，两页式 IA）/ 诊断记录（历史+导出）；6+1 原因分类体系 + 元算子架构 + 证据污染链；仅手动触发
+- **回路整定**（MVP 重建，2026-08-19）：整定工作台（辨识→矩阵→仿真→确认单页流程）/ 整定记录 / 效果验证（前后窗曲线对比 + X-Y）；后端复用 Phase 2 算法栈（ARX/ARMAX/IV 辨识 + 全算法矩阵 + 闭环仿真）
+- **处置**（MVP 新建，2026-08-19）：处置工作台（统计卡+清单+流转抽屉，5 态轻量状态机）/ 处置档案（回路维度聚合）/ 处置统计（月度趋势/分布/Top 回路）；KPI 前后对比验证
 - **智能预警**：规则引擎（阈值/漂移/组合/可信度 DSL）+ 事件流（确认→处置→归档，误报标记/撤销）+ 顶栏通知铃铛 /ws/alerts 实时推送
-- **回路整定**：FOPDT/SOPDT/IPDT 模型辨识 + IMC/Lambda/Z-N/Cohen-Coon/SIMC 五种整定算法 + 闭环仿真 + time_constant 时间常数（L1 DISPLAY_ONLY）
-- **评估任务**：标准/自定义评估任务全生命周期（触发 → 进度跟踪 → 阶段时间线 → 通知），作为性能评估执行体系的一部分
-- **系统管理**：用户管理 / 审计日志（操作/资源类型全量中文映射）/ 权限矩阵 / 自动报表
-- **体验基线**：表格密度三档（紧凑/标准/宽松按页持久化）/ 亮暗双主题（对比度 WCAG AA 达标）/ 可访问性（aria+键盘+reduced-motion）/ 锁屏 / 文案词表与色彩约定表单源
+- **系统管理**：用户管理 / 审计日志 / 权限矩阵 / 自动报表
 
 平台遵循"只读 DCS、只输出建议"的安全边界，不直接写入 DCS。
 
@@ -50,6 +48,8 @@ CLPM 是面向危化企业控制回路的绩效治理与优化闭环平台，覆
 docker compose -f deploy/docker/docker-compose.dev.yml up -d
 ```
 
+> MVP 端口隔离（与原 CLPM 项目区分，原端口 +10000）：后端 API **17101**、前端 **15666**、mock 数据服务 **17106**；开发容器名 `clpm-mvp-*`、数据卷 `clpm_mvp_*`。
+
 ### 2. 启动后端
 
 ```bash
@@ -57,10 +57,10 @@ cd backend
 cp .env.example .env          # 首次执行
 uv sync                        # 安装依赖
 uv run alembic upgrade head    # 执行数据库迁移
-uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 --reload
 ```
 
-后端 API 文档：http://localhost:7101/docs
+后端 API 文档：http://localhost:17101/docs
 
 > **v6.1 说明**：后端启动时自动启动 Celery Beat（定时调度）和 Celery Worker（任务执行）子进程，无需手动启动。修改 Celery 任务代码后需重启后端让新代码生效。
 
@@ -69,10 +69,10 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
 ```bash
 cd frontend
 pnpm install
-pnpm run dev:antd              # 默认端口 5666
+pnpm run dev:antd              # 默认端口 15666（MVP 隔离端口）
 ```
 
-前端访问地址：http://localhost:5666
+前端访问地址：http://localhost:15666
 
 ### 5. 默认账号
 
@@ -149,17 +149,19 @@ docker compose -f deploy/docker/docker-compose.dev.yml up -d mock-data-server
 # 方式 2：本地运行
 cd mock_data_server
 pip install -r requirements.txt
-PYTHONPATH=/path/to/CLPM python -m uvicorn mock_data_server.main:app --host 0.0.0.0 --port 7106
+PYTHONPATH=/path/to/CLPM-MVP python -m uvicorn mock_data_server.main:app --host 0.0.0.0 --port 7106
 ```
 
-服务启动后：
-- 历史数据 API：`POST http://localhost:7106/api/services/v1/HistoryData/Get`（查 TDengine）
-- 实时数据 Hub：`WS ws://localhost:7106/signalr/realValueForClpmHub`（正弦波模拟）
-- 健康检查：`GET http://localhost:7106/health`
+服务启动后（Docker 方式宿主端口为 **17106**，本地运行方式端口为 7106）：
+- 历史数据 API：`POST http://localhost:17106/api/services/v1/HistoryData/Get`（查 TDengine，Docker 方式）
+- 实时数据 Hub：`WS ws://localhost:17106/signalr/realValueForClpmHub`（正弦波模拟，Docker 方式）
+- 健康检查：`GET http://localhost:17106/health`（Docker 方式）
 
 > **注意**：`mock_data_server/` 是独立目录，正式项目可整体删除，不影响主应用。
 
 ## 生产部署
+
+> **MVP 说明**：`docker-compose.prod.yml` 当前仍沿用原项目容器名（`clpm-*`）与端口（7141/7101），**生产隔离改造尚未执行**；开发环境已完成 `clpm-mvp-*` 隔离。生产部署前需先完成容器名/端口/数据卷的 MVP 隔离改造。
 
 ### 环境要求
 

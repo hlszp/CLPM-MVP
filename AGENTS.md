@@ -1,5 +1,21 @@
 # CLPM Agent Guidance
 
+## ⚠️ MVP 覆盖说明（2026-08-20，优先级最高，与下方 v6.2 内容冲突时以本节为准）
+
+本仓库是 **CLPM-MVP**（自原 CLPM v6.2 派生的精简 + 闭环重建版），不是原 CLPM 项目。下方 v6.2 历史内容仅作架构背景参考。
+
+**现行事实来源**：`docs/MVP设计/`（01~10 设计与实施文档 + README 索引）。MVP 差异要点：
+
+- **模块现状**："监控 → 评估 → 诊断 → 整定 → 处置"完整闭环已重建（2026-08-19）：诊断两页式（07 方案，2026-08-16）/ 整定三页式（09 方案恢复一级模块，2026-08-19）/ 处置三页式（08 处置方案，2026-08-19 新建）；前端路由模块 `monitor/assess/diagnosis/tuning/handling/alert/config/system/task/loop`
+- **纪律**：**不删除诊断/整定专属前后端文件**；构建闭环而非屏蔽闭环
+- **端口**：后端 API **17101**、前端 **15666**、mock 数据服务 **17106**（原端口 +10000 隔离）；开发容器 `clpm-mvp-*`；生产 compose 仍为原项目口径（隔离改造未执行）
+- **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
+- **CI**：GitHub Actions 已启用且通过（Backend：ruff/format/pytest+coverage；Frontend：eslint apps/web-antd/typecheck/build/E2E）。注意 `@vben/web-antd` 包无 lint 脚本，Lint 用 `pnpm exec eslint apps/web-antd --cache`（限定应用代码，避免扫描 vben 框架包）
+- **已知残留**：精简阶段 5 个聚合 service stub 化（monitor_attention 关注队列三来源 / workbench_summary 诊断/整定/tracker 摘要恒 None / dashboard 与 anomaly_prediction 计数恒零），部分已被新 API 路径绕过；是否恢复 monitor_attention 的 TRACKER/VERIFICATION 来源待人工决策（详见 `docs/MVP设计/README.md` §已知残留）
+- **CLPM-engine/ 目录**：已加入 .gitignore，独立管理不入库
+
+---
+
 本项目是危化企业控制回路性能评估与优化平台（CLPM v6.2），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.2（含 ZL 工业设计规范对齐 + 页面标杆设计逐页落地）。
 
 **拆分文档索引**（按需阅读，不必全读）：
@@ -72,11 +88,11 @@ PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路
 # 1. 基础设施
 docker compose -f deploy/docker/docker-compose.dev.yml up -d
 
-# 2. 后端 API (port 7101)
+# 2. 后端 API (port 17101，MVP 隔离端口)
 #    v6.1：后端启动时自动启动 Celery Beat 调度进程和 Celery Worker 任务执行进程
-cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 7101 --reload
+cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 --reload
 
-# 3. 前端 (port 5666)
+# 3. 前端 (port 15666，MVP 隔离端口)
 cd frontend && pnpm run dev:antd
 ```
 
@@ -124,7 +140,7 @@ cd frontend && pnpm run format
 - **断点续传禁止 overwrite**：gap backfill 复用 `import_history_data` 时必须 `conflict_strategy="skip"`（overwrite 会先 DELETE 误删实时行）；手工导入 overwrite 强制 `tsEnd ≤ now-5min`
 - **断点续传配置运行时可调**（2026-08-06）：总开关 `gapBackfillEnabled`（默认**关闭**）与缺口阈值 `gapBackfillMinGapSeconds`（默认 600s=10 分钟）已纳入 `sys_config`，经 UI 链路配置页修改即时生效（订阅器每次触发读 settings，无需重启）；`.env` 中 `GAP_BACKFILL_*` 仅作启动兜底默认值
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
-- **前端端口是 5666**，后端 API 为 7101
+- **前端端口是 15666**，后端 API 为 17101（MVP 隔离端口，见顶部 MVP 覆盖说明）
 
 排障与背景细节（按需查阅 `docs/过程文档/ops-runbook.md`）：
 
@@ -151,18 +167,17 @@ cd frontend && pnpm run format
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；重构后路由/页面以 `docs/设计文档/00-BASELINE/implementation-contract.md` 为准 |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 网络模式 | 应用层局域网/公网切换（2026-07-19）：**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**；sys_config 为配置真相源，.env 已移除业务 URL/Token。细节见 ops-runbook §网络模式切换 |
-| 远端仓库 | **gitea 为主远端**（remote 名 `origin`，`https://gitea.zlinfot.xyz:2087/zp/CLPM`）；GitHub 为镜像（remote 名 `github`，`hlszp/CLPM`），main 合并后 `git push github main` 同步 |
+| 远端仓库 | **github 为主远端**（remote 名 `github`，`https://github.com/hlszp/CLPM-MVP`，唯一可推送目标）；`origin` = 原 CLPM gitea（pushurl 已锁死 `DISABLE_PUSH_TO_UPSTREAM`，**严禁推送**） |
 | 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.11 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；页面标杆设计负责逐页高保真线框图与实施验收；v4.0 重构实施方案负责 7 阶段实施蓝图 |
 
-## Git 工作流
+## Git 工作流（MVP 口径，2026-08-20 修订）
 
-- **远端**：`origin` = gitea（主），`github` = GitHub（镜像）；main 跟踪 `origin/main`
+- **远端**：`github` = `https://github.com/hlszp/CLPM-MVP`（**主远端，唯一可推送**）；`origin` = 原 CLPM gitea（pushurl 锁死 `DISABLE_PUSH_TO_UPSTREAM`，**严禁任何推送**）；main 跟踪 `github/main`
 - **提交**：Conventional Commits `<type>(<scope>): <subject>`，subject ≤50 字符祈使句，body 解释"为什么"，按逻辑单元拆分，单 commit ≤500 行
-- **日常开发**：可直接在 main 上小步提交并 `git push origin main`；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
+- **日常开发**：可直接在 main 上小步提交并 `git push github main`；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
 - **IA 重构分支策略**（2026-08-06 起，**已完成**）：本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。**Phase A-D 全部完成并已合入 main**（2026-08-07）：A（路由重组 7 菜单 + 配置集中化 + AI 右抽屉 + 跨模块上下文基建 + E2E 同步）/ B（回路工作台 6 Tab 迁移，后续已改为单页四区 commit 5e216ba8）/ C（诊断三区重构 + 特征字典 + 列表置信度严重度）/ D（整定单页整合 4 锚点 + 嵌入式组件 + 旧路由重定向 + 方案确认留痕）；全部后端零改动；门禁全绿 ruff✅/pytest 3881✅/check:type✅/alembic✅/vitest 147✅；**契约已升 v2.7**
-- **PR**：无需在 gitea 网页端手工发起——对话中显式提出 PR 要求时，agent 直接通过 gitea API 创建（凭据取 git credential helper / ~/.git-credentials，origin URL 本身不含 token）；合并默认留给用户审，显式授权合并时 agent 可经 API 合并，合并后同步镜像 `git push github main`
-- **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支
-- **CI 现状**：gitea 侧无 CI，以提交前本地检查（ruff + pytest + check:type）为门禁；GitHub Actions 仅在镜像侧运行（当前账户欠费停用，2026-07-21）
+- **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支；**禁止对原项目（origin）做任何提交动作**
+- **CI 现状**（2026-08-20 更新）：GitHub Actions 已启用且通过（`.github/workflows/ci.yml`，push/PR 触发 main/develop）；Backend（ruff check + format + pytest --cov 60% 门槛，Redis service 容器）/ Frontend（eslint apps/web-antd + typecheck + build + E2E 非阻塞）；提交前本地检查（ruff + pytest + check:type）仍是第一道门禁
 
 ## 下阶段规则
 
