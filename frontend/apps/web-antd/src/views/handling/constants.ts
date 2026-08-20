@@ -1,8 +1,11 @@
 /**
- * 处置模块展示常量（Phase 1）
+ * 处置模块展示常量
  *
- * 设计文档：docs/MVP设计/08-处置模块设计方案.md §4 状态机 / §5 处置类型 / §8.2 状态色
+ * 设计文档：docs/MVP设计/08-处置模块设计方案.md
+ * - v2.0（§4 双状态机 / §8.1 工作台双 Tab）：建议 4 态 + 工单 6 态常量
+ * - v1.x（Phase 1）：STATUS_* / STATUS_TAB_OPTIONS 等仅供存量页面引用，勿删
  */
+
 import type { HandlingApi } from '#/api/handling';
 
 /** 状态中文名（§4.1） */
@@ -155,4 +158,85 @@ export const ACTION_DETAIL_FIELDS: Record<
     { key: 'dcEngineer', label: 'DCS 工程师', type: 'text' },
   ],
   OTHER: [{ key: 'note', label: '说明', type: 'text' }],
+};
+
+// ===========================================================================
+// v2.0 双实体常量（§4 状态机 / §8.1 工作台双 Tab）
+// ===========================================================================
+
+/** 建议状态中文名（§4.1，4 态 + 忽略终态） */
+export const SUGGESTION_STATUS_TEXT: Record<
+  HandlingApi.SuggestionStatus,
+  string
+> = {
+  PENDING: '待审核',
+  ACCEPTED: '已接受',
+  CONVERTED: '已转工单',
+  REJECTED: '已驳回',
+  IGNORED: '已忽略',
+};
+
+/** 建议状态色（§8.1）：待审核=橙 / 已接受=蓝 / 已转工单=绿 / 已驳回=红 / 已忽略=灰 */
+export const SUGGESTION_STATUS_COLOR: Record<
+  HandlingApi.SuggestionStatus,
+  string
+> = {
+  PENDING: 'orange',
+  ACCEPTED: 'blue',
+  CONVERTED: 'green',
+  REJECTED: 'red',
+  IGNORED: 'default',
+};
+
+/** 建议状态筛选（工作台 Tab1；全部置空前端不传 status 参数） */
+export const SUGGESTION_TAB_OPTIONS: Array<{
+  label: string;
+  value: '' | HandlingApi.SuggestionStatus;
+}> = [
+  { label: '全部', value: '' },
+  { label: '待审核', value: 'PENDING' },
+  { label: '已接受', value: 'ACCEPTED' },
+  { label: '已转工单', value: 'CONVERTED' },
+  { label: '已驳回', value: 'REJECTED' },
+  { label: '已忽略', value: 'IGNORED' },
+];
+
+/** 工单状态中文名（§4.2，6 态） */
+export const ORDER_STATUS_TEXT: Record<HandlingApi.OrderStatus, string> = {
+  PENDING: '待执行',
+  EXECUTING: '执行中',
+  VERIFYING: '验证中',
+  CLOSED: '已闭环',
+  REOPENED: '重开',
+  CANCELLED: '已作废',
+};
+
+/** 工单状态色（§8.1）：待执行=橙 / 执行中=蓝 / 验证中=青 / 已闭环=绿 / 重开=红 / 已作废=灰 */
+export const ORDER_STATUS_COLOR: Record<HandlingApi.OrderStatus, string> = {
+  PENDING: 'orange',
+  EXECUTING: 'blue',
+  VERIFYING: 'cyan',
+  CLOSED: 'green',
+  REOPENED: 'red',
+  CANCELLED: 'default',
+};
+
+/** 工单状态筛选（工作台 Tab2；全部置空前端不传 status 参数） */
+export const ORDER_TAB_OPTIONS: Array<{
+  label: string;
+  value: '' | HandlingApi.OrderStatus;
+}> = [
+  { label: '全部', value: '' },
+  { label: '待执行', value: 'PENDING' },
+  { label: '执行中', value: 'EXECUTING' },
+  { label: '验证中', value: 'VERIFYING' },
+  { label: '已闭环', value: 'CLOSED' },
+  { label: '重开', value: 'REOPENED' },
+  { label: '已作废', value: 'CANCELLED' },
+];
+
+/** 工单来源中文名（§3.2 source：建议转化 / 手动新建） */
+export const ORDER_SOURCE_TEXT: Record<HandlingApi.OrderSource, string> = {
+  DIAGNOSIS: '建议转化',
+  MANUAL: '手动新建',
 };

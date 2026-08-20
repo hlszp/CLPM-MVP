@@ -1690,12 +1690,58 @@ CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (prim
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_task         ON diagnosis_run (task_id);
 
 -- -----------------------------------------------------------------------------
--- 回路处置建议（处置模块 Phase 1：建议-处置-验证-关闭全生命周期；2026-08-18）
--- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3 数据模型 / §4 状态机
+-- 处置工单（处置模块 v2.0 双实体：排程-执行-验证-闭环执行载体；2026-08-20）
+-- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3.2 数据模型 / §4.2 状态机 / §3.3 编号规则
+-- 注意：须先于 loop_action_item 建表（后者 converted_order_id 引用本表）
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS handling_order (
+    id            UUID PRIMARY KEY,
+    order_no      VARCHAR(32)  NOT NULL UNIQUE,
+    loop_id       UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    source        VARCHAR(16)  NOT NULL,
+    suggestion_ids JSONB,
+    title         VARCHAR(200) NOT NULL,
+    action_type   VARCHAR(16)  NOT NULL,
+    action_detail JSONB,
+    planned_at    TIMESTAMP,
+    planned_by    VARCHAR(64),
+    handler       VARCHAR(64),
+    started_at    TIMESTAMP,
+    feedback_log  JSONB,
+    submitted_at  TIMESTAMP,
+    verify_run_id UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
+    verify_result VARCHAR(16),
+    verify_note   VARCHAR(500),
+    verified_by   VARCHAR(64),
+    verified_at   TIMESTAMP,
+    kpi_before    JSONB,
+    kpi_after     JSONB,
+    tuning_record_id UUID,
+    cancel_reason VARCHAR(200),
+    status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT ck_handling_order_source CHECK (source IN ('DIAGNOSIS', 'MANUAL')),
+    CONSTRAINT ck_handling_order_status CHECK (status IN
+        ('PENDING', 'EXECUTING', 'VERIFYING', 'CLOSED', 'REOPENED', 'CANCELLED')),
+    CONSTRAINT ck_handling_order_action_type CHECK (action_type IN
+        ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
+         'UTILIZATION', 'RECONFIG', 'OTHER')),
+    CONSTRAINT ck_handling_order_verify_result CHECK
+        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
+);
+COMMENT ON TABLE handling_order IS '处置工单（处置模块 v2.0：排程-执行-验证-闭环执行载体）';
+CREATE INDEX IF NOT EXISTS idx_handling_order_status  ON handling_order (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_handling_order_loop    ON handling_order (loop_id);
+CREATE INDEX IF NOT EXISTS idx_handling_order_planned ON handling_order (planned_at);
+
+-- -----------------------------------------------------------------------------
+-- 回路处置建议（处置模块 v2.0 双实体：建议汇聚与审核对象；2026-08-20）
+-- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3.1 数据模型 / §4.1 状态机
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS loop_action_item (
     id            UUID PRIMARY KEY,
-    run_id        UUID NOT NULL REFERENCES diagnosis_run(id) ON DELETE CASCADE,
+    run_id        UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
     loop_id       UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
     source        VARCHAR(8)   NOT NULL DEFAULT 'SYSTEM',
     category      VARCHAR(32),
@@ -1705,39 +1751,25 @@ CREATE TABLE IF NOT EXISTS loop_action_item (
     status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     suggested_by  VARCHAR(64)  NOT NULL,
     suggested_at  TIMESTAMP    NOT NULL,
-    -- 处置模块 Phase 1 扩展（§3.2）
-    action_type      VARCHAR(16),
-    action_detail    JSONB,
-    handled_by       VARCHAR(64),
-    handled_at       TIMESTAMP,
-    submitted_at     TIMESTAMP,
-    verify_run_id    UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
-    verify_result    VARCHAR(16),
-    verify_note      VARCHAR(500),
-    verified_by      VARCHAR(64),
-    verified_at      TIMESTAMP,
-    kpi_before       JSONB,
-    kpi_after        JSONB,
-    tuning_record_id UUID,
-    ignore_reason    VARCHAR(200),
+    -- 审核域（§3.1 v2.0 新增）
+    reviewed_by       VARCHAR(64),
+    reviewed_at       TIMESTAMP,
+    rejected_reason   VARCHAR(200),
+    converted_order_id UUID REFERENCES handling_order(id) ON DELETE SET NULL,
+    ignore_reason     VARCHAR(200),
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
     CONSTRAINT ck_loop_action_item_source CHECK (source IN ('SYSTEM', 'MANUAL')),
     CONSTRAINT ck_loop_action_item_status CHECK (status IN
-        ('PENDING', 'HANDLING', 'VERIFYING', 'CLOSED', 'REOPENED', 'IGNORED')),
+        ('PENDING', 'ACCEPTED', 'CONVERTED', 'REJECTED', 'IGNORED')),
     CONSTRAINT ck_loop_action_item_category CHECK (category IS NULL OR category IN
         ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS',
-         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
-    CONSTRAINT ck_loop_action_item_action_type CHECK (action_type IS NULL OR action_type IN
-        ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
-         'UTILIZATION', 'RECONFIG', 'OTHER')),
-    CONSTRAINT ck_loop_action_item_verify_result CHECK
-        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
+         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT'))
 );
-COMMENT ON TABLE loop_action_item IS '回路处置建议（处置模块 Phase 1：建议-处置-验证-关闭全生命周期）';
+COMMENT ON TABLE loop_action_item IS '回路处置建议（处置模块 v2.0：建议汇聚与审核对象）';
 CREATE INDEX IF NOT EXISTS idx_loop_action_item_run    ON loop_action_item (run_id);
 CREATE INDEX IF NOT EXISTS idx_loop_action_item_loop   ON loop_action_item (loop_id, suggested_at);
-CREATE INDEX IF NOT EXISTS idx_loop_action_item_status ON loop_action_item (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_status ON loop_action_item (status, suggested_at DESC);
 
 -- =============================================================================
 -- 脚本结束

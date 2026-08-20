@@ -23,6 +23,7 @@ from app.models.dcs_vendor import DcsVendor
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.engine import EngineRule
+from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_action_item import LoopActionItem
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
@@ -60,6 +61,7 @@ __all__ = [
     "ProcessModelVersion",
     "LoopLedger",
     "LoopActionItem",
+    "HandlingOrder",
     "LoopTagMapping",
     "LoopModeMapping",
     "LoopTypeWeight",

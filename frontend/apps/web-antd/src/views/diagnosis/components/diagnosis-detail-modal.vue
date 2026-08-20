@@ -49,9 +49,10 @@ import {
 import { getLoopListApi } from '#/api/loop';
 import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+// v2.0 处置双实体：建议状态映射改用建议侧常量（原 HANDLING_STATUS_* 为 v1.x 工单旧口径）
 import {
-  STATUS_COLOR as HANDLING_STATUS_COLOR,
-  STATUS_TEXT as HANDLING_STATUS_TEXT,
+  SUGGESTION_STATUS_COLOR,
+  SUGGESTION_STATUS_TEXT,
 } from '#/views/handling/constants';
 
 import {
@@ -750,22 +751,25 @@ watch(open, (v) => {
                             : '人工新增'
                         }}
                       </Tag>
-                      <!-- 处置状态 tag（PENDING 之外的状态在诊断侧可见，§8.4） -->
+                      <!-- 处置建议状态 tag（PENDING 之外的状态在诊断侧可见，§8.4；
+                           v2.0 建议状态机：ACCEPTED/CONVERTED/REJECTED/IGNORED） -->
                       <Tag
                         v-if="a.status && a.status !== 'PENDING'"
                         :color="
-                          HANDLING_STATUS_COLOR[
-                            a.status as keyof typeof HANDLING_STATUS_COLOR
+                          SUGGESTION_STATUS_COLOR[
+                            a.status as keyof typeof SUGGESTION_STATUS_COLOR
                           ] ?? 'default'
                         "
                         class="mt-0.5 shrink-0"
                       >
                         {{
-                          HANDLING_STATUS_TEXT[
-                            a.status as keyof typeof HANDLING_STATUS_TEXT
+                          SUGGESTION_STATUS_TEXT[
+                            a.status as keyof typeof SUGGESTION_STATUS_TEXT
                           ] ?? a.status
                         }}
                       </Tag>
+                      <!-- TODO(v2.0-H2): CONVERTED 行额外显示 convertedOrderNo
+                           （诊断侧 actions 接口需回链该字段后启用） -->
                       <div class="min-w-0 flex-1">
                         <div>{{ a.content }}</div>
                         <div class="mt-0.5 text-xs text-neutral-500">
