@@ -64,17 +64,8 @@ const routes: RouteRecordRaw[] = [
           title: '回路配置',
         },
       },
-      // 工厂模型/回路台账已并入回路配置（FE-04），保留 redirect 兼容
-      {
-        name: 'ConfigFactory',
-        path: '/config/factory',
-        redirect: '/config/loop',
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
-          hideInMenu: true,
-          title: '工厂模型',
-        },
-      },
+      // 回路台账已并入回路配置（FE-04），保留 redirect 兼容
+      // （工厂模型 /config/factory 已恢复为独立页面「工厂配置」）
       {
         name: 'ConfigLedger',
         path: '/config/ledger',
@@ -86,13 +77,24 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'ConfigFactory',
+        path: '/config/factory',
+        component: () => import('#/views/factory/config.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:factory',
+          order: 6,
+          title: '工厂配置',
+        },
+      },
+      {
         name: 'ConfigDatasource',
         path: '/config/datasource',
         component: () => import('#/views/loop/data.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:database',
-          order: 6,
+          order: 7,
           title: '数据检查',
         },
       },
@@ -103,7 +105,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN'],
           icon: 'lucide:settings',
-          order: 7,
+          order: 8,
           title: '指标配置',
         },
       },
@@ -114,7 +116,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN'],
           icon: 'lucide:stethoscope',
-          order: 8,
+          order: 9,
           title: '诊断配置',
         },
       },
@@ -125,7 +127,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN'],
           icon: 'lucide:bell-ring',
-          order: 9,
+          order: 10,
           title: '预警规则',
         },
       },

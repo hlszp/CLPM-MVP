@@ -47,6 +47,22 @@ class PlantNodeTree(PlantNodeInfo):
 PlantNodeTree.model_rebuild()
 
 
+class PlantNodeListItem(CamelModel):
+    """工厂节点列表项（工厂配置页分页列表，含路径与来源标记）。"""
+
+    id: str
+    name: str
+    type: str
+    parentId: str | None = None
+    parentName: str | None = None
+    """层级路径（如「工厂A / 装置B / 单元C」）"""
+    path: str | None = None
+    isKpiEnabled: bool | None = None
+    """AAS 同步来源节点 Id（有值=AAS 同步节点，本地改名会被同步覆盖）"""
+    sourceNodeId: int | None = None
+    updatedAt: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # 批量导入导出 schemas
 # ---------------------------------------------------------------------------

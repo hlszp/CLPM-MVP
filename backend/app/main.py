@@ -52,6 +52,8 @@ from app.api.v1.endpoints import (
     # diagnosis,
     # MVP v2 诊断模块（2026-08-16 重设计：元算子+原因分类，仅手动触发）
     diagnosis_v2,
+    # 工厂模型 AAS 同步（工厂配置页：独立同步配置区 + 全量同步）
+    factory_sync,
     # diagnosis_trigger_config,
     grading_config,
     handling,
@@ -965,6 +967,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(grading_config.router)
     # 指标定义管理（指标配置-指标定义 Tab：CRUD + 版本化）
     v1_router.include_router(metric_definition.router)
+    # 工厂模型 AAS 同步（工厂配置页）
+    v1_router.include_router(factory_sync.router)
     # v6.1: 数据可信度阈值管理
     v1_router.include_router(confidence_config.router)
     # P3-04: LLM 配置（AI 洞察门禁读取；endpoint 独立，不依赖诊断模块）

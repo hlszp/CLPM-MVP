@@ -113,3 +113,134 @@ export function importPlantNodesApi(file: File) {
     },
   });
 }
+
+// ===========================================================================
+// 工厂配置页：分页列表 + AAS 工厂模型同步（2026-08-20）
+// ===========================================================================
+
+/** 工厂节点列表项（含层级路径与来源标记） */
+export interface PlantNodeListItem {
+  id: string;
+  name: string;
+  type: PlantNodeApi.NodeType;
+  parentId: null | string;
+  parentName: null | string;
+  /** 层级路径（如「工厂A / 装置B / 单元C」） */
+  path: null | string;
+  isKpiEnabled: boolean | null;
+  /** AAS 同步来源节点 Id（有值=AAS 同步节点，本地改名会被同步覆盖） */
+  sourceNodeId: null | number;
+  updatedAt: null | string;
+}
+
+/** 工厂节点分页列表查询参数 */
+export interface PlantNodeListQuery {
+  keyword?: string;
+  nodeType?: PlantNodeApi.NodeType;
+  /** 来源筛选：aas（AAS 同步）/ local（本地维护） */
+  source?: 'aas' | 'local';
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * 工厂节点分页列表（工厂配置页）
+ */
+export function getPlantNodeListApi(params: PlantNodeListQuery) {
+  return requestClient.get<{
+    items: PlantNodeListItem[];
+    total: number;
+  }>('/plant-nodes/list', { params });
+}
+
+/** AAS 同步配置（密码脱敏） */
+export interface FactorySyncSetting {
+  baseUrl: string;
+  authApiPath: string;
+  nodesApiPath: string;
+  userName: string;
+  isEnabled: boolean;
+  pageBatchSize: number;
+  lastSyncAt: null | string;
+  lastSyncStatus: null | string;
+  lastSyncSummary: null | string;
+  /** 是否已配置密码（密码不回传） */
+  hasPassword: boolean;
+}
+
+/** 保存 AAS 同步配置参数（password 空=保留原密码） */
+export interface FactorySyncSettingUpdate {
+  baseUrl: string;
+  authApiPath: string;
+  nodesApiPath: string;
+  userName: string;
+  password?: string;
+  isEnabled: boolean;
+  pageBatchSize: number;
+}
+
+/** 同步日志项 */
+export interface FactorySyncLog {
+  id: string;
+  syncType: string;
+  startTime: string;
+  durationMs: number;
+  status: string;
+  nodesTotal: number;
+  nodesCreated: number;
+  nodesUpdated: number;
+  trigger: string;
+  operatorName: string;
+  errorMessage: null | string;
+}
+
+/**
+ * 读取 AAS 同步配置（密码脱敏）— 仅 ADMIN
+ */
+export function getFactorySyncSettingApi() {
+  return requestClient.get<FactorySyncSetting>('/configs/factory-sync/settings');
+}
+
+/**
+ * 保存 AAS 同步配置（运行时生效）— 仅 ADMIN
+ */
+export function saveFactorySyncSettingApi(data: FactorySyncSettingUpdate) {
+  return requestClient.put<FactorySyncSetting>(
+    '/configs/factory-sync/settings',
+    data,
+  );
+}
+
+/**
+ * 连接测试（登录 AAS 验证账号）— 仅 ADMIN
+ */
+export function testFactorySyncApi() {
+  return requestClient.post<{
+    latencyMs: number;
+    message: string;
+    success: boolean;
+  }>('/configs/factory-sync/test');
+}
+
+/**
+ * 全量同步 AAS 工厂模型（AreaNode → plant_node upsert）— 仅 ADMIN
+ */
+export function syncFactoryModelApi() {
+  return requestClient.post<{
+    created: number;
+    durationMs: number;
+    message: string;
+    nodesTotal: number;
+    status: string;
+    updated: number;
+  }>('/configs/factory-sync/sync');
+}
+
+/**
+ * 同步日志（倒序）— 仅 ADMIN
+ */
+export function getFactorySyncLogsApi(limit = 20) {
+  return requestClient.get<FactorySyncLog[]>('/configs/factory-sync/logs', {
+    params: { limit },
+  });
+}

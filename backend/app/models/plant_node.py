@@ -5,7 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +52,11 @@ class PlantNode(Base):
         nullable=True,
         comment='触发监控的位号值（如 "true"/"1"/"ON"）',
     )
+    source_node_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="AAS AreaNode Id 同步来源标记（有值=AAS 同步节点，本地改名会被下次同步覆盖）",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now(), nullable=False
@@ -54,4 +68,5 @@ class PlantNode(Base):
             name="ck_plant_node_type",
         ),
         Index("idx_plant_node_monitor_tag_id", "monitor_tag_id"),
+        Index("idx_plant_node_source_node_id", "source_node_id"),
     )
