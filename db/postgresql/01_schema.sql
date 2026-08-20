@@ -1771,6 +1771,23 @@ CREATE INDEX IF NOT EXISTS idx_loop_action_item_run    ON loop_action_item (run_
 CREATE INDEX IF NOT EXISTS idx_loop_action_item_loop   ON loop_action_item (loop_id, suggested_at);
 CREATE INDEX IF NOT EXISTS idx_loop_action_item_status ON loop_action_item (status, suggested_at DESC);
 
+-- -----------------------------------------------------------------------------
+-- 通用字典项（可配置枚举，如 MEASURE_TYPE 测点类型；2026-08-20）
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_dict_item (
+    id          VARCHAR(36)  PRIMARY KEY,
+    dict_type   VARCHAR(50)  NOT NULL,
+    item_code   VARCHAR(50)  NOT NULL,
+    item_label  VARCHAR(100) NOT NULL,
+    sort_order  INTEGER      NOT NULL DEFAULT 0,
+    is_enabled  BOOLEAN      NOT NULL DEFAULT TRUE,
+    updated_by  VARCHAR(50),
+    updated_at  TIMESTAMP,
+    CONSTRAINT uk_sys_dict_item_type_code UNIQUE (dict_type, item_code)
+);
+COMMENT ON TABLE sys_dict_item IS '通用字典项（可配置枚举）';
+CREATE INDEX IF NOT EXISTS ix_sys_dict_item_dict_type ON sys_dict_item (dict_type);
+
 -- =============================================================================
 -- 脚本结束
 -- =============================================================================

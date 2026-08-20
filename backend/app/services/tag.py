@@ -21,8 +21,15 @@ from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
+from app.services.dict_item import (
+    DICT_MEASURE_TYPE,
+    DICT_TAG_TYPE,
+    dict_items_hint,
+    get_dict_items,
+    normalize_by_dict,
+)
 
-# 测点类型枚举
+# 测点类型枚举（出厂默认；运行时以 sys_dict_item 字典为准，见 dict_item service）
 MEASURE_TYPES = ("TEMPERATURE", "PRESSURE", "LEVEL", "FLOW", "ANALYSIS", "SPEED", "OTHER")
 # 参数类型枚举
 TAG_TYPES = ("PV", "SP", "OP", "MODE", "PID_P", "PID_I", "PID_D", "OTHER")
@@ -86,6 +93,22 @@ def _cell_str(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def normalize_measure_type(value: str) -> str | None:
+    """测点类型归一化（同步版本，仅兜底场景使用）。
+
+    运行时校验请用 ``await normalize_by_dict(db, DICT_MEASURE_TYPE, value)``
+    （以 sys_dict_item 字典为准，支持用户自定义类型）。
+    本函数仅按出厂默认枚举 + 中文别名归一，用于字典服务不可用的兜底。
+    """
+    v = value.strip()
+    if not v:
+        return None
+    upper = v.upper()
+    if upper in MEASURE_TYPES:
+        return upper
+    return None
 
 
 def _cell_float(value: object) -> float | None:
@@ -344,6 +367,106 @@ async def get_tag_detail(db: AsyncSession, tag_id: str) -> dict:
     return _build_tag_dict(tag, loop_map.get(tag_id), realtime_cache)
 
 
+async def create_tag(
+    db: AsyncSession,
+    operator: str,
+    tag_name: str,
+    tag_description: str | None = None,
+    range_min: float | None = None,
+    range_max: float | None = None,
+    unit: str | None = None,
+    measure_type: str | None = None,
+    tag_type: str | None = None,
+    tdengine_tag_id: str | None = None,
+) -> dict:
+    """新建测点。
+
+    校验：位号唯一（重复返回 ERR_TAG_ALREADY_EXISTS）、枚举合法。
+    is_linked 恒为 False（仅由回路映射派生，与导入路径口径一致）。
+
+    Raises:
+        BizError: ERR_TAG_ALREADY_EXISTS / ERR_MEASURE_TYPE_INVALID / ERR_TAG_TYPE_INVALID
+    """
+    # 位号唯一性校验
+    dup = await db.execute(select(TagRegistry).where(TagRegistry.tag_name == tag_name))
+    if dup.scalar_one_or_none() is not None:
+        raise BizError(
+            code="ERR_TAG_ALREADY_EXISTS",
+            message=f"位号已存在: {tag_name}",
+            status_code=400,
+        )
+
+    # 枚举校验（以字典为准，支持自定义类型；中文别名自动归一为 code）
+    if measure_type is not None:
+        normalized = await normalize_by_dict(db, DICT_MEASURE_TYPE, measure_type)
+        if normalized is None:
+            raise BizError(
+                code="ERR_MEASURE_TYPE_INVALID",
+                message=(
+                    f"测点类型无效: {measure_type}，"
+                    f"支持的类型：{await dict_items_hint(db, DICT_MEASURE_TYPE)}"
+                ),
+                status_code=400,
+            )
+        measure_type = normalized
+    if tag_type is not None:
+        normalized_tt = await normalize_by_dict(db, DICT_TAG_TYPE, tag_type)
+        if normalized_tt is None:
+            raise BizError(
+                code="ERR_TAG_TYPE_INVALID",
+                message=(
+                    f"参数类型无效: {tag_type}，"
+                    f"支持的类型：{await dict_items_hint(db, DICT_TAG_TYPE)}"
+                ),
+                status_code=400,
+            )
+        tag_type = normalized_tt
+
+    tag = TagRegistry(
+        id=str(uuid4()),
+        tag_name=tag_name,
+        tag_description=tag_description or None,
+        # tag_type 已归一为字典 code；缺省 OTHER
+        tag_type=tag_type or "OTHER",
+        # measure_type 已由 normalize_by_dict 归一为字典 code（保留原始大小写）
+        measure_type=measure_type,
+        range_min=range_min,
+        range_max=range_max,
+        unit=unit or None,
+        tdengine_tag_id=tdengine_tag_id or None,
+        is_linked=False,  # 仅由回路映射派生
+        last_sync_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(tag)
+
+    after_json = json.dumps(
+        {
+            "tagName": tag.tag_name,
+            "tagDescription": tag.tag_description,
+            "tagType": tag.tag_type,
+            "measureType": tag.measure_type,
+            "rangeMin": tag.range_min,
+            "rangeMax": tag.range_max,
+            "unit": tag.unit,
+            "tdengineTagId": tag.tdengine_tag_id,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+
+    await _write_audit(
+        db=db,
+        operator=operator,
+        operation_type="TAG_CREATE",
+        target_type="tag_registry",
+        target_id=str(tag.id),
+        after_value=after_json,
+    )
+    await db.commit()
+
+    return _build_tag_dict(tag)
+
+
 async def update_tag(
     db: AsyncSession,
     tag_id: str,
@@ -370,13 +493,33 @@ async def update_tag(
             status_code=404,
         )
 
-    # WS-C 7-7：tag_type 合法值校验（与导入路径一致，避免落库触发 CHECK 约束 500）
-    if tag_type is not None and tag_type.upper() not in TAG_TYPES:
-        raise BizError(
-            code="ERR_TAG_TYPE_INVALID",
-            message=f"参数类型无效: {tag_type}",
-            status_code=400,
-        )
+    # WS-C 7-7：tag_type 合法值校验（以字典为准，支持中文别名与自定义类型）
+    if tag_type is not None:
+        normalized_tt = await normalize_by_dict(db, DICT_TAG_TYPE, tag_type)
+        if normalized_tt is None:
+            raise BizError(
+                code="ERR_TAG_TYPE_INVALID",
+                message=(
+                    f"参数类型无效: {tag_type}，"
+                    f"支持的类型：{await dict_items_hint(db, DICT_TAG_TYPE)}"
+                ),
+                status_code=400,
+            )
+        tag_type = normalized_tt
+
+    # measure_type 归一化校验（以字典为准，支持中文别名与自定义类型）
+    if measure_type is not None:
+        normalized = await normalize_by_dict(db, DICT_MEASURE_TYPE, measure_type)
+        if normalized is None:
+            raise BizError(
+                code="ERR_MEASURE_TYPE_INVALID",
+                message=(
+                    f"测点类型无效: {measure_type}，"
+                    f"支持的类型：{await dict_items_hint(db, DICT_MEASURE_TYPE)}"
+                ),
+                status_code=400,
+            )
+        measure_type = normalized
 
     before = {
         "tagDescription": tag.tag_description,
@@ -400,7 +543,8 @@ async def update_tag(
     if measure_type is not None:
         tag.measure_type = measure_type
     if tag_type is not None:
-        tag.tag_type = tag_type.upper()
+        # 已归一为字典 code（保留原始大小写）
+        tag.tag_type = tag_type
     if tdengine_tag_id is not None:
         tag.tdengine_tag_id = tdengine_tag_id
 
@@ -597,6 +741,11 @@ async def export_tags(
     ws.title = "测点清单"
     ws.append(EXPORT_HEADERS)
 
+    # code → label（导出列与前端展示口径一致；导入支持 code/label 双向识别）
+    # enabled_only=False：禁用类型的历史数据也要能显示 label
+    measure_type_cn = dict(await get_dict_items(db, DICT_MEASURE_TYPE, enabled_only=False))
+    tag_type_cn = dict(await get_dict_items(db, DICT_TAG_TYPE, enabled_only=False))
+
     for tag in tags:
         loop_info = loop_map.get(str(tag.id))
         unit_name = loop_info.get("unitName") if loop_info else ""
@@ -605,11 +754,11 @@ async def export_tags(
             [
                 tag.tag_name,
                 tag.tag_description or "",
-                tag.measure_type or "",
+                measure_type_cn.get(tag.measure_type or "", tag.measure_type or ""),
                 tag.range_min if tag.range_min is not None else "",
                 tag.range_max if tag.range_max is not None else "",
                 tag.unit or "",
-                tag.tag_type,
+                tag_type_cn.get(tag.tag_type or "", tag.tag_type or ""),
                 unit_name or "",
                 tag.tdengine_tag_id or "",
                 is_linked_str,
@@ -684,29 +833,41 @@ async def import_tags(
         tdengine_tag_id = _cell_str(row[8]) if len(row) > 8 else ""
         # WS-C 7-10：row[9]「是否启用」列忽略不导入（is_linked 仅由回路映射派生）
 
-        # 校验 measure_type
-        if measure_type and measure_type.upper() not in MEASURE_TYPES:
-            errors.append(
-                {
-                    "row": row_idx,
-                    "tagName": tag_name,
-                    "message": f"测点类型无效: {measure_type}",
-                }
-            )
-            failed += 1
-            continue
+        # 校验 measure_type（以字典为准：支持中文别名与自定义类型，温度→TEMPERATURE）
+        if measure_type:
+            normalized_mt = await normalize_by_dict(db, DICT_MEASURE_TYPE, measure_type)
+            if normalized_mt is None:
+                errors.append(
+                    {
+                        "row": row_idx,
+                        "tagName": tag_name,
+                        "message": (
+                            f"测点类型无效: {measure_type}，"
+                            f"支持的类型：{await dict_items_hint(db, DICT_MEASURE_TYPE)}"
+                        ),
+                    }
+                )
+                failed += 1
+                continue
+            measure_type = normalized_mt
 
-        # 校验 tag_type
-        if tag_type and tag_type.upper() not in TAG_TYPES:
-            errors.append(
-                {
-                    "row": row_idx,
-                    "tagName": tag_name,
-                    "message": f"参数类型无效: {tag_type}",
-                }
-            )
-            failed += 1
-            continue
+        # 校验 tag_type（以字典为准：支持中文别名与自定义类型，测量值→PV）
+        if tag_type:
+            normalized_tt = await normalize_by_dict(db, DICT_TAG_TYPE, tag_type)
+            if normalized_tt is None:
+                errors.append(
+                    {
+                        "row": row_idx,
+                        "tagName": tag_name,
+                        "message": (
+                            f"参数类型无效: {tag_type}，"
+                            f"支持的类型：{await dict_items_hint(db, DICT_TAG_TYPE)}"
+                        ),
+                    }
+                )
+                failed += 1
+                continue
+            tag_type = normalized_tt
 
         # 按名称查找所属单元（仅查找，不存储到 TagRegistry）
         if plant_node_name and plant_node_name not in plant_node_cache:
@@ -722,11 +883,13 @@ async def import_tags(
                     db=db,
                     tag_name=tag_name,
                     tag_description=tag_description,
-                    measure_type=measure_type.upper() or None,
+                    # measure_type 已归一为字典 code（保留原始大小写）
+                    measure_type=measure_type or None,
                     range_min=range_min,
                     range_max=range_max,
                     unit=unit or None,
-                    tag_type=tag_type.upper() or None,
+                    # tag_type 已归一为字典 code（保留原始大小写）
+                    tag_type=tag_type or None,
                     tdengine_tag_id=tdengine_tag_id or None,
                     operator=operator,
                 )
@@ -870,6 +1033,8 @@ async def _import_one_row(
 __all__ = [
     "MEASURE_TYPES",
     "TAG_TYPES",
+    "batch_delete_tags",
+    "create_tag",
     "delete_tag",
     "export_tags",
     "get_tag_detail",

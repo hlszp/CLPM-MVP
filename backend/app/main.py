@@ -52,6 +52,8 @@ from app.api.v1.endpoints import (
     # diagnosis,
     # MVP v2 诊断模块（2026-08-16 重设计：元算子+原因分类，仅手动触发）
     diagnosis_v2,
+    # 通用字典项（可配置枚举：测点类型等）
+    dicts,
     # 工厂模型 AAS 同步（工厂配置页：独立同步配置区 + 全量同步）
     factory_sync,
     # diagnosis_trigger_config,
@@ -928,6 +930,8 @@ def create_app() -> FastAPI:
     v1_router = APIRouter(prefix="/api/v1")
     v1_router.include_router(auth.router)
     v1_router.include_router(plant_nodes.router)
+    # 通用字典项（可配置枚举：测点类型等）
+    v1_router.include_router(dicts.router)
     v1_router.include_router(loops.router)
     # Phase 3: 回路数据管理（历史数据导入）
     v1_router.include_router(loop_data.router)
@@ -950,7 +954,7 @@ def create_app() -> FastAPI:
     # v1_router.include_router(diagnosis.tracker_router)
     # MVP v2 诊断模块（重设计版：/diagnosis/run|runs|operators|export）
     v1_router.include_router(diagnosis_v2.router)
-    # 处置模块 Phase 1（/handling/items/* 流转端点，08-处置模块设计方案 §6.2）
+    # 处置模块 v2.0 双实体（/handling/suggestions|orders|loops|statistics，08-处置模块设计方案 §6）
     v1_router.include_router(handling.router)
     # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
     v1_router.include_router(dataplanner.router)

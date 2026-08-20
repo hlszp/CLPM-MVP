@@ -45,6 +45,7 @@ from app.models.process_model_version import ProcessModelVersion
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
 from app.models.sys_config import SysConfig
+from app.models.sys_dict_item import SysDictItem
 from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
@@ -56,6 +57,7 @@ __all__ = [
     "Base",
     "TimestampMixin",
     "AlgorithmParameter",
+    "SysDictItem",
     "SysUser",
     "PlantNode",
     "ProcessModelVersion",

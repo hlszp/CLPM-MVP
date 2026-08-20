@@ -43,6 +43,17 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        // 通用字典项（可配置枚举：测点类型等），业务下拉与导入校验自动生效
+        name: 'SystemDict',
+        path: '/system/dict',
+        component: () => import('#/views/system/dict.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:book-marked',
+          title: '字典管理',
+        },
+      },
+      {
         name: 'SystemPermissions',
         path: '/system/permissions',
         component: () => import('#/views/system/permissions.vue'),

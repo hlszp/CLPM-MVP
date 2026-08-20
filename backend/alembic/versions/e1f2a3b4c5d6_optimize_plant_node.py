@@ -16,8 +16,9 @@ Create Date: 2026-08-20
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e1f2a3b4c5d6"
@@ -60,9 +61,7 @@ def upgrade() -> None:
         "uq_plant_node_parent_name",
         "plant_node",
         [
-            sa.text(
-                "COALESCE(parent_id::text, '00000000-0000-0000-0000-000000000000')"
-            ),
+            sa.text("COALESCE(parent_id::text, '00000000-0000-0000-0000-000000000000')"),
             sa.text("name"),
         ],
         unique=True,
@@ -88,6 +87,4 @@ def downgrade() -> None:
         autoincrement=False,
         nullable=True,
     )
-    op.create_index(
-        "idx_plant_node_monitor_tag_id", "plant_node", ["monitor_tag_id"]
-    )
+    op.create_index("idx_plant_node_monitor_tag_id", "plant_node", ["monitor_tag_id"])

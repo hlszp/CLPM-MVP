@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLPM 绩效驾驶舱 · 设计线框图</title>
+<style>
+/* ================= 主题变量（作用域：驾驶舱整体，不影响后台） ================= */
+:root[data-theme="dark"]{
+  --bg:#0A1220; --panel:#0F1A2E; --panel2:#13203A; --panel3:#182847;
+  --border:rgba(148,176,220,.16); --border2:rgba(148,176,220,.26);
+  --text:#E8EFFA; --text2:#93A7C4; --text3:#5E7396;
+  --g5:#34D399; --g4:#60A5FA; --g3:#F5A623; --g2:#F87171; --g1:#EF4444;
+  --accent:#38BDF8; --auto:#34D399; --score:#60A5FA;
+  --shadow:0 8px 32px rgba(0,0,0,.45);
+  --hover:rgba(96,165,250,.08);
+}
+:root[data-theme="light"]{
+  --bg:#F3F5F9; --panel:#FFFFFF; --panel2:#F7F9FC; --panel3:#EEF2F8;
+  --border:#E3E8F0; --border2:#CBD5E4;
+  --text:#1C2B3A; --text2:#5A6B80; --text3:#8C9AAD;
+  --g5:#1A7F4B; --g4:#2563EB; --g3:#B45309; --g2:#C23434; --g1:#A12222;
+  --accent:#0369A1; --auto:#15803D; --score:#1D4ED8;
+  --shadow:0 8px 28px rgba(28,43,58,.12);
+  --hover:rgba(37,99,235,.06);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:"PingFang SC","Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;font-size:13px;overflow:hidden}
+.cockpit{display:flex;flex-direction:column;height:100vh;min-width:1180px}
+
+/* ================= 顶栏 ================= */
+header{height:64px;flex:none;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;padding:0 20px;background:var(--panel);border-bottom:1px solid var(--border)}
+.tabs{display:flex;gap:4px;justify-self:start}
+.tab{padding:7px 18px;border-radius:6px;cursor:pointer;color:var(--text2);font-size:14px;transition:.15s;user-select:none}
+.tab:hover{color:var(--text);background:var(--hover)}
+.tab.active{color:var(--text);background:var(--panel3);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.title-wrap{display:flex;align-items:center;gap:16px}
+.main-title{font-size:20px;font-weight:700;letter-spacing:4px;text-align:center;line-height:1.25;color:var(--text)}
+.main-title small{display:block;font-size:10px;color:var(--text3);letter-spacing:1px;font-weight:400;margin-top:1px}
+.deco{position:relative;width:130px;height:2px;background:linear-gradient(90deg,transparent,var(--accent));flex:none}
+.deco::before{content:'';position:absolute;right:-1px;top:-2px;width:6px;height:6px;transform:rotate(45deg);background:var(--accent)}
+.deco::after{content:'';position:absolute;right:16px;top:-1px;width:4px;height:4px;transform:rotate(45deg);background:var(--accent);opacity:.5}
+.deco.flip{background:linear-gradient(90deg,var(--accent),transparent)}
+.deco.flip::before{right:auto;left:-1px}
+.deco.flip::after{right:auto;left:16px}
+.header-ops{justify-self:end;display:flex;align-items:center;gap:12px}
+.winpills{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:3px}
+.winpill{padding:4px 12px;border-radius:5px;cursor:pointer;color:var(--text2);font-size:12px;user-select:none}
+.winpill.active{background:var(--accent);color:#fff;font-weight:600}
+.clock{text-align:right;line-height:1.25}
+.clock b{font-size:16px;font-variant-numeric:tabular-nums}
+.clock div{font-size:11px;color:var(--text3)}
+.iconbtn{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.iconbtn:hover{color:var(--text);border-color:var(--border2)}
+.btn-backend{height:36px;padding:0 18px;border-radius:8px;border:1px solid var(--border2);background:linear-gradient(135deg,var(--accent),#2563EB);color:#fff;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.5px}
+.btn-backend:hover{filter:brightness(1.1)}
+
+/* ================= 页面骨架 ================= */
+main{flex:1;min-height:0;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
+.row{display:grid;gap:12px;min-height:0}
+.row-3{grid-template-columns:20% 45% 35%}
+.row-mid{height:340px;flex:none}
+.row-bot{flex:1}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.panel-h{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border)}
+.panel-h b{font-size:13.5px}
+.panel-h .sub{font-size:11px;color:var(--text3)}
+.panel-h .accent{color:var(--accent)}
+.panel-b{flex:1;min-height:0;overflow:auto;padding:10px 12px}
+
+/* ================= §1 KPI 指标带 ================= */
+.kpiband{height:112px;flex:none;display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;justify-content:center;gap:5px;cursor:pointer;transition:.15s;position:relative}
+.kpi:hover{border-color:var(--border2);background:var(--panel2)}
+.kpi .k-label{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px}
+.kpi .k-value{font-size:27px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05;display:flex;align-items:baseline;gap:7px}
+.kpi .k-value small{font-size:13px;font-weight:600;color:var(--text3)}
+.kpi .k-delta{font-size:11.5px;display:flex;align-items:center;gap:5px;color:var(--text2)}
+.up{color:var(--g5)} .down{color:var(--g2)}
+.badge-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.gradebar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:2px}
+.gradebar i{height:100%}
+.kpi .arrow{position:absolute;top:10px;right:12px;font-size:12px;color:var(--text3)}
+
+/* ================= §2 装置排名（rankno 徽章供横道图使用；v1.5 已删页2 排名行样式） ================= */
+.rankno{width:20px;height:20px;border-radius:6px;background:var(--panel3);color:var(--text2);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+
+/* ================= §3 趋势 ================= */
+.chartwrap{width:100%;height:100%;display:flex;flex-direction:column}
+.legend{display:flex;gap:16px;font-size:11.5px;color:var(--text2);padding:2px 4px 6px}
+.legend i{width:14px;height:3px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:5px}
+svg text{font-family:inherit}
+
+/* ================= §4 待办 ================= */
+.pills{display:flex;gap:6px;margin-bottom:9px}
+.pill{flex:1;text-align:center;padding:5px 2px;border-radius:7px;background:var(--panel2);border:1px solid var(--border);font-size:11px;color:var(--text2);line-height:1.3}
+.pill b{display:block;font-size:16px;color:var(--text);font-variant-numeric:tabular-nums}
+.pill.p5 b{color:var(--g2)} .pill.p4 b{color:var(--accent)} .pill.p3 b{color:var(--g3)} .pill.p2 b{color:var(--g5)} .pill.p1 b{color:var(--text2)}
+.todorow{display:flex;align-items:center;gap:9px;padding:7.5px 9px;border-radius:8px;cursor:pointer;transition:.12s}
+.todorow:hover{background:var(--hover)}
+.todorow .loop{font-size:12.5px;font-weight:600;width:62px;flex:none}
+.todorow .desc{flex:1;min-width:0;font-size:12.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st{flex:none;font-size:11px;padding:2px 8px;border-radius:10px}
+.st-pending{background:rgba(248,113,113,.14);color:var(--g2)}
+.st-doing{background:rgba(56,189,248,.14);color:var(--accent)}
+.st-verify{background:rgba(245,166,35,.16);color:var(--g3)}
+.dur{flex:none;font-size:11px;color:var(--text3);width:66px;text-align:right}
+.dur.over{color:var(--g1);font-weight:700}
+
+/* ================= §5 漏斗 ================= */
+.fstage{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:.12s}
+.fstage:hover{background:var(--hover)}
+.fstage .fnum{width:44px;font-size:21px;font-weight:700;font-variant-numeric:tabular-nums;flex:none;text-align:center}
+.fstage .fbody{flex:1}
+.fstage .fbody b{font-size:12.5px;display:block}
+.fstage .fbar{height:7px;border-radius:4px;background:var(--panel3);margin-top:5px;overflow:hidden}
+.fstage .fbar i{display:block;height:100%;border-radius:4px}
+.fconv{padding:1px 10px 1px 30px;font-size:11.5px;color:var(--text3);display:flex;align-items:center;gap:6px}
+.fconv b{color:var(--accent);font-variant-numeric:tabular-nums}
+.fbacklog{margin:8px 10px 4px;padding:8px 12px;border-radius:8px;background:var(--panel2);border:1px dashed var(--border2);font-size:11.5px;color:var(--text2);display:flex;justify-content:space-around;text-align:center;line-height:1.5}
+.fbacklog b{display:block;font-size:15px;color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ================= §6 表格 ================= */
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;color:var(--text3);font-weight:500;text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel)}
+td{padding:6.5px 8px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:middle}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:var(--hover)}
+.lp{font-weight:600}
+.lp small{display:block;font-weight:400;color:var(--text3);font-size:11px}
+.scoretd{font-weight:700;font-variant-numeric:tabular-nums}
+.dimtag{font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(245,166,35,.14);color:var(--g3)}
+.dimtag.bad{background:rgba(239,68,68,.14);color:var(--g1)}
+.dimtag.ok{background:rgba(52,211,153,.13);color:var(--g5)}
+.planttag{font-size:11px;color:var(--text3)}
+
+/* ================= §7 预警流 ================= */
+.alertrow{display:flex;gap:10px;padding:8px 9px;border-radius:8px;cursor:pointer;transition:.12s;align-items:flex-start}
+.alertrow:hover{background:var(--hover)}
+.alv{width:4px;border-radius:2px;align-self:stretch;flex:none}
+.al-red{background:var(--g1)} .al-orange{background:var(--g3)} .al-yellow{background:#EAB308} .al-blue{background:var(--g4)}
+.albody{flex:1;min-width:0}
+.albody b{font-size:12.5px;display:block}
+.albody .meta{font-size:11px;color:var(--text3);margin-top:2px;display:flex;gap:10px}
+.altime{flex:none;font-size:11px;color:var(--text3);text-align:right;line-height:1.4}
+.unconfirm{font-size:10px;color:var(--g1);border:1px solid var(--g1);border-radius:8px;padding:0 5px;margin-left:6px;vertical-align:1px}
+
+/* ================= 页2 回路状态墙 ================= */
+.loops-wrap{flex:1;min-height:0;display:flex;gap:12px}
+/* ================= 页2 布局（紧凑化：v1.5 三区域高度压缩，一屏无滚动） ================= */
+.tree{width:215px;flex:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column}
+.tree-h{height:34px;flex:none;display:flex;align-items:center;padding:0 13px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px}
+.tree-b{flex:1;overflow:auto;padding:6px}
+.tnode{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--text2);font-size:12.5px;transition:.12s}
+.tnode:hover{background:var(--hover)}
+.tnode.active{background:var(--hover);color:var(--text);font-weight:600}
+.tnode .cnt{margin-left:auto;font-size:11px;color:var(--text3);background:var(--panel3);border-radius:8px;padding:0 7px}
+.tnode.child{margin-left:18px}
+.loops-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.filters{flex:none;display:flex;gap:8px;align-items:center}
+.pager{margin-left:auto;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:3px}
+.pgbtn{min-width:26px;height:26px;border-radius:5px;border:none;background:transparent;color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+.pgbtn:hover:not(:disabled){background:var(--panel3);color:var(--text)}
+.pgbtn:disabled{opacity:.3;cursor:default}
+.pginfo{font-size:11.5px;color:var(--text2);padding:0 8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fgroup{display:flex;gap:3px;background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:3px}
+.fbtn{padding:4px 11px;border-radius:5px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
+.fbtn.active{background:var(--accent);color:#fff;font-weight:600}
+.cardgrid{flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));grid-auto-rows:minmax(118px,auto);gap:9px;align-content:start;padding:2px 2px 8px}
+.loopcard{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:8px 12px 8px 14px;cursor:pointer;position:relative;overflow:hidden;transition:.15s}
+.loopcard:hover{border-color:var(--border2);transform:translateY(-1px)}
+.loopcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3.5px}
+.lc-g5::before{background:var(--g5)} .lc-g4::before{background:var(--g4)} .lc-g3::before{background:var(--g3)} .lc-g2::before{background:var(--g2)} .lc-g1::before{background:var(--g1)}
+.lc-head{display:flex;align-items:baseline;gap:8px}
+.lc-head b{font-size:13.5px}
+.lc-head span{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lc-score{position:absolute;top:8px;right:11px;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.lc-rt{display:flex;gap:14px;margin:5px 0 2px;font-variant-numeric:tabular-nums}
+.lc-rt .kv b{font-size:13px;font-weight:600}
+.lc-rt .kv span{font-size:10px;color:var(--text3);display:block}
+.lc-tags{display:flex;gap:6px;align-items:center;min-height:18px}
+.modetag{font-size:10.5px;padding:1.5px 7px;border-radius:8px;background:var(--panel3);color:var(--text2)}
+.modetag.auto{background:rgba(52,211,153,.14);color:var(--g5)}
+.modetag.man{background:rgba(245,166,35,.15);color:var(--g3)}
+.lc-spark{height:20px;margin-top:4px;opacity:.85}
+
+/* ================= 弹窗 ================= */
+.overlay{position:fixed;inset:0;background:rgba(4,10,20,.62);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:50}
+.overlay.open{display:flex}
+.modal{width:900px;max-width:94vw;max-height:90vh;background:var(--panel);border:1px solid var(--border2);border-radius:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+.m-h{flex:none;display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border)}
+.m-h .gradechip{font-size:11.5px;padding:3px 10px;border-radius:10px;color:#fff;font-weight:600}
+.m-h b{font-size:16px}
+.m-h .sub{color:var(--text3);font-size:12px}
+.m-h .score{margin-left:auto;font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.m-close{width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:var(--text3);font-size:18px;cursor:pointer}
+.m-close:hover{background:var(--panel3);color:var(--text)}
+.m-b{flex:1;min-height:0;overflow:auto;padding:16px 20px}
+.m-cols{display:grid;grid-template-columns:215px 1fr 250px;gap:16px}
+.m-sec h4{font-size:12px;color:var(--text3);font-weight:500;margin-bottom:8px}
+.rtgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rtkv{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.rtkv b{font-size:15px;display:block;font-variant-numeric:tabular-nums}
+.rtkv span{font-size:10.5px;color:var(--text3)}
+.rtkv.hl b{color:var(--accent)}
+.m-foot{flex:none;border-top:1px solid var(--border);padding:11px 20px;display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text2);background:var(--panel2)}
+.m-foot .tag{font-size:11px;padding:2px 8px;border-radius:9px;background:var(--panel3);color:var(--text2)}
+.tline{margin-top:4px}
+.tl-row{display:flex;gap:10px;padding:6px 0}
+.tl-dot{width:9px;height:9px;border-radius:50%;margin-top:4px;flex:none;background:var(--accent)}
+.tl-row.done .tl-dot{background:var(--g5)}
+.tl-row.wait .tl-dot{background:var(--g3)}
+.tl-body b{font-size:12.5px;display:block}
+.tl-body span{font-size:11px;color:var(--text3)}
+.tl-line{width:1.5px;background:var(--border2);margin:0 3.5px -6px;flex:none}
+
+/* ================= 页2 右侧详情面板（v1.5：两段弹性布局，无滚动条） ================= */
+.gradechip{font-size:11.5px;padding:3px 10px;border-radius:10px;color:#fff;font-weight:600;flex:none}
+.detail{width:368px;flex:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.d-h{flex:none;display:flex;align-items:center;gap:9px;padding:7px 12px;border-bottom:1px solid var(--border);min-height:44px}
+.d-nav{display:flex;gap:5px;margin-left:8px}
+.navbtn{width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);cursor:pointer;font-size:12px;line-height:1}
+.navbtn:hover{color:var(--text);border-color:var(--border2)}
+.navbtn:disabled{opacity:.35;cursor:default}
+.d-b{flex:1;min-height:0;overflow:hidden;padding:8px 12px;display:flex;flex-direction:column;gap:8px}
+.d-sec h4{font-size:12px;color:var(--text3);font-weight:500;margin-bottom:5px;display:flex;align-items:center;gap:7px}
+.livedot{width:6px;height:6px;border-radius:50%;background:var(--g5);animation:pulse 2s infinite;flex:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.loopcard.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+
+/* ================= 总览 §2 装置排名横道图（固定全厂口径） ================= */
+.rbrow{padding:9px 10px 8px}
+.rb-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.rb-top b{font-size:13px}
+.rb-deg{font-size:11px;color:var(--text3);margin-left:auto}
+.rb-deg b{color:var(--g2);font-size:12.5px}
+.rb-score{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;width:44px;text-align:right;flex:none}
+.rb-track{position:relative;height:10px;border-radius:5px;background:var(--panel3)}
+.rb-track i{display:block;height:100%;border-radius:5px}
+.rb-avg{position:absolute;top:0;bottom:0;width:0;border-left:1.5px dashed var(--text3);opacity:.55}
+.rbrow:nth-child(1) .rankno{background:var(--g5);color:#fff}
+.rbrow:nth-child(2) .rankno{background:var(--g4);color:#fff}
+.rbrow:nth-child(3) .rankno{background:var(--g3);color:#fff}
+
+/* toast */
+.toast{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-8px);background:var(--panel3);border:1px solid var(--border2);color:var(--text);padding:10px 20px;border-radius:10px;font-size:12.5px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:70vw;text-align:center;line-height:1.6}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="cockpit">
+
+<!-- ============ 顶栏 ============ -->
+<header>
+  <nav class="tabs">
+    <div class="tab active" data-page="overview">总览</div>
+    <div class="tab" data-page="loops">回路</div>
+  </nav>
+  <div class="title-wrap">
+    <span class="deco"></span>
+    <div class="main-title">控制回路绩效监控驾驶舱<small>设计线框图 · mock 数据</small></div>
+    <span class="deco flip"></span>
+  </div>
+  <div class="header-ops">
+    <div class="winpills" id="winpills">
+      <div class="winpill active" data-win="24h">近 24h</div>
+      <div class="winpill" data-win="7d">近 7 天</div>
+      <div class="winpill" data-win="30d">近 30 天</div>
+    </div>
+    <div class="clock"><b id="clockTime">--:--:--</b><div id="clockDate">----</div></div>
+    <button class="iconbtn" id="themeBtn" title="深/浅主题切换">◐</button>
+    <button class="btn-backend" id="backendBtn">管理后台 ↗</button>
+  </div>
+</header>
+
+<!-- ============ 页1 总览 ============ -->
+<main id="page-overview">
+
+  <!-- §1 KPI 指标带 -->
+  <section class="kpiband">
+    <div class="kpi" data-modal="list" data-title="全厂综合评分详情">
+      <div class="k-label"><span class="badge-dot" style="background:var(--g4)"></span>全厂综合评分</div>
+      <div class="k-value" style="color:var(--g4)">84.2</div>
+      <div class="k-delta"><span class="up">▲ 1.2</span>较上一窗口 · 良好</div>
+    </div>
+    <div class="kpi" data-modal="list" data-title="自动投用率详情">
+      <div class="k-label"><span class="badge-dot" style="background:var(--auto)"></span>自动投用率</div>
+      <div class="k-value" style="color:var(--auto)">91.2<small>%</small></div>
+      <div class="k-delta"><span class="up">▲ 0.8</span>自动+串级+远程+先控</div>
+    </div>
+    <div class="kpi" data-modal="list" data-title="回路总数 · 等级分布">
+      <div class="k-label"><span class="badge-dot" style="background:var(--text2)"></span>回路总数</div>
+      <div class="k-value">34<small>个</small></div>
+      <div class="gradebar"><i style="width:20.6%;background:var(--g5)"></i><i style="width:44.1%;background:var(--g4)"></i><i style="width:20.6%;background:var(--g3)"></i><i style="width:11.8%;background:var(--g2)"></i><i style="width:2.9%;background:var(--g1)"></i></div>
+    </div>
+    <div class="kpi" data-modal="list" data-title="劣化回路清单（警告+不合格）">
+      <div class="k-label"><span class="badge-dot" style="background:var(--g2)"></span>劣化回路</div>
+      <div class="k-value" style="color:var(--g2)">5<small>个</small></div>
+      <div class="k-delta">警告 4 · 不合格 1 ｜ 环比下降 <span class="down">2</span></div>
+    </div>
+    <div class="kpi" data-modal="list" data-title="处置待办明细">
+      <div class="k-label"><span class="badge-dot" style="background:var(--accent)"></span>处置待办</div>
+      <div class="k-value" style="color:var(--accent)">13<small>项</small></div>
+      <div class="k-delta">待处理 6 · 处理中 4 · 验证中 3 ｜ <span class="down">超期 2</span></div>
+    </div>
+    <div class="kpi" data-modal="list" data-title="预警事件明细">
+      <div class="k-label"><span class="badge-dot" style="background:var(--g3)"></span>预警事件</div>
+      <div class="k-value" style="color:var(--g3)">5<small>起</small></div>
+      <div class="k-delta">时间窗内活跃 ｜ <span class="down">未确认 2</span></div>
+    </div>
+  </section>
+
+  <!-- 中排 -->
+  <section class="row row-3 row-mid">
+
+    <!-- §2 装置排名横道图（固定全厂口径，不随节点变更；节点联动雷达在页2 右侧面板） -->
+    <div class="panel">
+      <div class="panel-h"><b>装置排名</b><span class="sub">全厂 · 固定口径</span></div>
+      <div class="panel-b" id="deviceRankBars"></div>
+    </div>
+
+    <!-- §3 绩效发展趋势 -->
+    <div class="panel">
+      <div class="panel-h"><b>绩效发展趋势</b><span class="sub" id="trendScope">全厂</span></div>
+      <div class="panel-b" style="display:flex">
+        <div class="chartwrap">
+          <div class="legend"><span><i style="background:var(--score)"></i>综合评分</span><span><i style="background:var(--auto)"></i>自动投用率</span></div>
+          <div style="flex:1;min-height:0" id="trendChart"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- §4 处置待办 -->
+    <div class="panel">
+      <div class="panel-h"><b>处置待办</b><span class="sub">点击查看详情（舱内弹窗）</span></div>
+      <div class="panel-b">
+        <div class="pills">
+          <div class="pill p5"><b>6</b>待处理</div>
+          <div class="pill p4"><b>4</b>处理中</div>
+          <div class="pill p3"><b>3</b>验证中</div>
+          <div class="pill p2"><b>18</b>已闭环</div>
+          <div class="pill p1"><b>1</b>重开</div>
+        </div>
+        <div id="todoList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 底排 -->
+  <section class="row row-3 row-bot">
+
+    <!-- §5 闭环治理漏斗 -->
+    <div class="panel">
+      <div class="panel-h"><b>闭环治理漏斗</b><span class="sub">时间窗内</span></div>
+      <div class="panel-b" id="funnel"></div>
+    </div>
+
+    <!-- §6 问题回路 TOP-8 -->
+    <div class="panel">
+      <div class="panel-h"><b>问题回路 TOP-8</b><span class="sub" id="loopTopScope">按劣化程度</span></div>
+      <div class="panel-b" style="padding:4px 6px">
+        <table>
+          <thead><tr><th style="width:130px">回路</th><th>装置</th><th style="width:52px">评分</th><th style="width:88px">最差维度</th><th style="width:78px">7天趋势</th></tr></thead>
+          <tbody id="loopTop"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- §7 预警事件流 -->
+    <div class="panel">
+      <div class="panel-h"><b>预警事件流</b><span class="sub">WebSocket 实时</span></div>
+      <div class="panel-b" id="alertStream"></div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ 页2 回路状态墙 ============ -->
+<main id="page-loops" hidden>
+  <div class="loops-wrap">
+    <aside class="tree">
+      <div class="tree-h">工厂模型</div>
+      <div class="tree-b" id="deviceTree"></div>
+    </aside>
+    <div class="loops-main">
+      <div class="filters">
+        <div class="fgroup" id="gradeFilter">
+          <div class="fbtn active" data-grade="all">全部</div>
+          <div class="fbtn" data-grade="g5">优秀</div>
+          <div class="fbtn" data-grade="g4">良好</div>
+          <div class="fbtn" data-grade="g3">合格</div>
+          <div class="fbtn" data-grade="g2">警告</div>
+          <div class="fbtn" data-grade="g1">不合格</div>
+        </div>
+        <div class="fgroup" id="sortFilter">
+          <div class="fbtn active" data-sort="score">评分降序</div>
+          <div class="fbtn" data-sort="worst">劣化优先</div>
+        </div>
+        <div class="pager" id="pager"></div>
+      </div>
+      <div class="cardgrid" id="cardGrid"></div>
+    </div>
+    <!-- 右侧详情面板：默认聚合视图；点击回路卡后切换为单回路详情（纯只读） -->
+    <aside class="detail">
+      <div class="d-h" id="detailHead"></div>
+      <div class="d-b" id="detailBody"></div>
+    </aside>
+  </div>
+</main>
+</div>
+
+<!-- ============ 弹窗：回路详情（深度） ============ -->
+<div class="overlay" id="modal-loop">
+  <div class="modal">
+    <div class="m-h">
+      <span class="gradechip" id="ml-chip" style="background:var(--g1)">不合格</span>
+      <b id="ml-title">TIC-408</b><span class="sub" id="ml-sub">乙烯裂解炉出口温度 · 乙烯装置 · 裂解单元</span>
+      <span class="score" id="ml-score" style="color:var(--g1)">55</span>
+      <button class="m-close" data-close>✕</button>
+    </div>
+    <div class="m-b">
+      <div class="m-cols">
+        <div class="m-sec">
+          <h4>实时数据</h4>
+          <div class="rtgrid">
+            <div class="rtkv hl"><span>PV</span><b>832.4 ℃</b></div>
+            <div class="rtkv"><span>SP</span><b>830.0 ℃</b></div>
+            <div class="rtkv"><span>OP</span><b>62.5 %</b></div>
+            <div class="rtkv"><span>模式</span><b style="font-size:13px">自动</b></div>
+            <div class="rtkv"><span>P</span><b>1.80</b></div>
+            <div class="rtkv"><span>I</span><b>0.60</b></div>
+            <div class="rtkv"><span>D</span><b>0.10</b></div>
+            <div class="rtkv"><span>可信度</span><b style="font-size:13px;color:var(--g3)">B</b></div>
+          </div>
+        </div>
+        <div class="m-sec">
+          <h4>趋势（时间窗内 PV / SP / OP）</h4>
+          <div id="modalChart" style="height:238px"></div>
+        </div>
+        <div class="m-sec">
+          <h4>六维性能雷达</h4>
+          <div id="radarChart" style="height:238px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <span class="tag">最近诊断</span><span id="ml-diag">检出持续振荡，疑似阀门粘滞（置信度 B）</span>
+      <span class="tag">处置状态</span><span id="ml-todo">处理中：更换阀门定位器（已停留 3.2h）</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 弹窗：待办详情 ============ -->
+<div class="overlay" id="modal-todo">
+  <div class="modal" style="width:620px">
+    <div class="m-h">
+      <span class="gradechip" style="background:var(--g3)">验证中</span>
+      <b>LIC-112 · 塔底液位波动治理</b>
+      <button class="m-close" data-close>✕</button>
+    </div>
+    <div class="m-b">
+      <div class="m-sec" style="margin-bottom:14px"><h4>问题摘要</h4>
+        塔底液位持续振荡（幅值 ±4.2%，周期约 18min），评估为警告级；2026-08-18 诊断检出积分饱和倾向，建议下调积分时间并检查调节阀。
+      </div>
+      <div class="m-sec"><h4>处置时间线（只读）</h4>
+        <div class="tline">
+          <div class="tl-row done"><div><div class="tl-dot"></div><div class="tl-line"></div></div><div class="tl-body"><b>待处理 · 创建</b><span>08-18 09:12 · 系统（评估触发）</span></div></div>
+          <div class="tl-row done"><div><div class="tl-dot"></div><div class="tl-line"></div></div><div class="tl-body"><b>处理中 · 参数调整完成</b><span>08-18 14:35 · IC_ENGINEER 张工：积分时间 0.8→0.5</span></div></div>
+          <div class="tl-row wait"><div class="tl-dot"></div><div class="tl-body"><b>验证中 · KPI 前后对比</b><span style="color:var(--g1)">08-19 15:20 起 · 已超期 26h（>24h）</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="m-foot"><span class="tag">提示</span>驾驶舱仅查看；处置操作请经顶栏「管理后台」进入处置模块</div>
+  </div>
+</div>
+
+<!-- ============ 弹窗：预警事件详情 ============ -->
+<div class="overlay" id="modal-event">
+  <div class="modal" style="width:620px">
+    <div class="m-h">
+      <span class="gradechip" style="background:var(--g1)">紧急</span>
+      <b>振荡幅度超限</b>
+      <button class="m-close" data-close>✕</button>
+    </div>
+    <div class="m-b">
+      <table>
+        <tbody>
+          <tr><td style="color:var(--text3);width:110px">关联回路</td><td><b>TIC-408</b> · 乙烯裂解炉出口温度（不合格 55）</td></tr>
+          <tr><td style="color:var(--text3)">规则定义</td><td>PV 振荡幅值 > 量程 3% 且持续 ≥ 30min（DSL: THRESHOLD）</td></tr>
+          <tr><td style="color:var(--text3)">触发值</td><td>振荡幅值 <b style="color:var(--g1)">3.8%</b>（阈值 3.0%）</td></tr>
+          <tr><td style="color:var(--text3)">首次触发</td><td>今日 10:32 ｜ 持续 2.1h（冷却抑制 60min）</td></tr>
+          <tr><td style="color:var(--text3)">确认状态</td><td><span class="unconfirm">未确认</span></td></tr>
+          <tr><td style="color:var(--text3)">处置关联</td><td>处置单「TIC-408 振荡治理」· 处理中（更换阀门定位器）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="m-foot"><span class="tag">提示</span>驾驶舱仅查看；事件确认与处置请经顶栏「管理后台」进入预警中心</div>
+  </div>
+</div>
+
+<!-- ============ 弹窗：清单类（动态填充） ============ -->
+<div class="overlay" id="modal-list">
+  <div class="modal" style="width:680px">
+    <div class="m-h">
+      <b id="listTitle">清单</b><button class="m-close" data-close>✕</button>
+    </div>
+    <div class="m-b" id="listBody" style="padding:6px 8px"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= 工具 ================= */
+const $=(s,p=document)=>p.querySelector(s), $$=(s,p=document)=>[...p.querySelectorAll(s)];
+const GRADE={g5:{n:'优秀',c:()=>getComputedStyle(document.documentElement).getPropertyValue('--g5')},g4:{n:'良好',c:()=>getComputedStyle(document.documentElement).getPropertyValue('--g4')},g3:{n:'合格',c:()=>getComputedStyle(document.documentElement).getPropertyValue('--g3')},g2:{n:'警告',c:()=>getComputedStyle(document.documentElement).getPropertyValue('--g2')},g1:{n:'不合格',c:()=>getComputedStyle(document.documentElement).getPropertyValue('--g1')}};
+function gradeOf(s){return s>=95?'g5':s>=85?'g4':s>=70?'g3':s>=60?'g2':'g1'}
+const fmt=(n)=>n.toFixed(1);
+
+/* ================= mock 数据 ================= */
+const PLANTS=[
+  {id:'cdjy',name:'常减压装置',score:89.2,dist:[5,3,0,1,0],deg:1,loops:8},
+  {id:'chm',name:'催化裂化装置',score:82.1,dist:[2,4,1,1,0],deg:1,loops:7},
+  {id:'jy',name:'加氢精制装置',score:90.5,dist:[3,2,1,0,0],deg:0,loops:6},
+  {id:'yx',name:'乙烯装置',score:83.5,dist:[2,3,2,0,1],deg:1,loops:6},
+];
+const LOOPS=[
+  {no:'TIC-408',name:'裂解炉出口温度',plant:'yx',score:55,worst:['平稳率',38],mode:'自动',pv:'832.4 ℃',sp:'830.0 ℃',conf:'B',down:true},
+  {no:'LIC-112',name:'常减压塔底液位',plant:'cdjy',score:63,worst:['平稳率',46],mode:'自动',pv:'58.2 %',sp:'58.0 %',conf:'B'},
+  {no:'PIC-215',name:'气压机出口压力',plant:'chm',score:68,worst:['快速率',51],mode:'自动',pv:'1.02 MPa',sp:'1.00 MPa',conf:'C',down:true},
+  {no:'TIC-208',name:'再生温度',plant:'chm',score:75,worst:['有效率',58],mode:'自动',pv:'701.5 ℃',sp:'700.0 ℃',conf:'A'},
+  {no:'LIC-312',name:'分离器液位',plant:'jy',score:72,worst:['平稳率',60],mode:'自动',pv:'45.6 %',sp:'45.0 %',conf:'A'},
+  {no:'FIC-203',name:'进料流量',plant:'chm',score:88,worst:['准确率',68],mode:'串级',pv:'128.4 t/h',sp:'128.0 t/h',conf:'B'},
+  {no:'TIC-105',name:'塔顶温度',plant:'cdjy',score:87,worst:['准确率',69],mode:'自动',pv:'118.2 ℃',sp:'118.0 ℃',conf:'A'},
+  {no:'TIC-305',name:'反应器入口温度',plant:'jy',score:86,worst:['平稳率',71],mode:'自动',pv:'328.6 ℃',sp:'328.0 ℃',conf:'A'},
+  {no:'PIC-412',name:'分离塔压力',plant:'yx',score:84,worst:['快速率',70],mode:'自动',pv:'3.52 MPa',sp:'3.50 MPa',conf:'A'},
+  {no:'FIC-101',name:'常减压进料流量',plant:'cdjy',score:95,worst:null,mode:'自动',pv:'185.2 t/h',sp:'185.0 t/h',conf:'A'},
+  {no:'FIC-401',name:'急冷油流量',plant:'yx',score:96,worst:null,mode:'自动',pv:'64.8 t/h',sp:'65.0 t/h',conf:'A'},
+  {no:'FIC-301',name:'加氢进料流量',plant:'jy',score:93,worst:null,mode:'自动',pv:'86.3 t/h',sp:'86.0 t/h',conf:'A'},
+  {no:'TIC-110',name:'常压塔侧线温度',plant:'cdjy',score:91,worst:null,mode:'自动',pv:'236.4 ℃',sp:'236.0 ℃',conf:'A'},
+  {no:'LIC-215',name:'沉降器液位',plant:'chm',score:82,worst:['平稳率',72],mode:'手动',pv:'51.2 %',sp:'50.0 %',conf:'B'},
+  {no:'FIC-405',name:'稀释蒸汽流量',plant:'yx',score:89,worst:null,mode:'远程',pv:'22.1 t/h',sp:'22.0 t/h',conf:'A'},
+  {no:'TIC-310',name:'分馏塔底温度',plant:'jy',score:90,worst:null,mode:'自动',pv:'346.8 ℃',sp:'346.0 ℃',conf:'A'},
+];
+/* 补充 mock 回路至 34 个（演示卡片墙分页：每页 20 个） */
+(function(){
+  const dims=['平稳率','快速率','准确率','有效率','好值率','自控率'];
+  const names=['塔顶回流温度','原料进料流量','储罐液位','蒸汽管网压力','加热炉出口温度','循环水流量','分离器液位','产品出装置流量','再沸蒸汽流量','汽包液位','中段回流温度','燃料气压力','急冷水流量','压缩机级间压力','碱液循环流量','反应器床层温度','分馏塔中段温度','溶剂再生塔底温度'];
+  const scores=[93,97,66,86,90,95,61,79,92,88,77,72,96,87,95,89,91,96];
+  const plants=['cdjy','chm','jy','yx'];
+  const tags=['TIC','FIC','LIC','PIC'];
+  const fmtVal={TIC:v=>v.toFixed(1)+' ℃',FIC:v=>v.toFixed(1)+' t/h',LIC:v=>v.toFixed(1)+' %',PIC:v=>v.toFixed(2)+' MPa'};
+  names.forEach((nm,i)=>{
+    const tag=tags[i%4];
+    const base=tag==='TIC'?150+i*2.3:tag==='FIC'?60+i*3.1:tag==='LIC'?42+i*1.8:0.85+i*0.04;
+    const s=scores[i];
+    LOOPS.push({
+      no:`${tag}-${String(210+i*3).padStart(3,'0')}`,
+      name:nm,plant:plants[i%4],score:s,
+      worst:s<80?[dims[i%6],Math.min(64,40+s%25)]:null,
+      mode:s<70?'手动':'自动',
+      pv:fmtVal[tag](base),sp:fmtVal[tag](base*0.995),
+      conf:i%7===0?'B':'A',
+      down:s<85&&i%3===0
+    });
+  });
+})();
+const TODOS=[
+  {loop:'TIC-408',desc:'振荡治理 · 更换阀门定位器',st:'doing',stn:'处理中',dur:'3.2h'},
+  {loop:'LIC-112',desc:'塔底液位波动 · 参数调整后验证',st:'verify',stn:'验证中',dur:'26h',over:true},
+  {loop:'PIC-215',desc:'调节阀更换',st:'pending',stn:'待处理',dur:'5.1h'},
+  {loop:'TIC-208',desc:'阀位饱和排查',st:'pending',stn:'待处理',dur:'8.4h'},
+  {loop:'FIC-203',desc:'流量计漂移校验',st:'verify',stn:'验证中',dur:'12h'},
+  {loop:'LIC-215',desc:'手动模式长期未投自动',st:'pending',stn:'待处理',dur:'1.8h'},
+];
+const ALERTS=[
+  {lv:'al-red',lvn:'紧急',title:'振荡幅度超限',loop:'TIC-408',t:'10:32',dur:'持续 2.1h',unconfirm:true},
+  {lv:'al-orange',lvn:'重要',title:'综合评分连续下跌',loop:'LIC-112',t:'09:47',dur:'持续 3.0h'},
+  {lv:'al-orange',lvn:'重要',title:'阀位饱和持续',loop:'TIC-208',t:'昨 22:40',dur:'持续 11h'},
+  {lv:'al-yellow',lvn:'一般',title:'数据可信度不足',loop:'FIC-203',t:'08:15',dur:'已恢复'},
+  {lv:'al-blue',lvn:'提示',title:'投用率低于阈值',loop:'催化裂化装置',t:'昨 20:00',dur:'持续 14h'},
+];
+
+/* ================= 总览 §2 装置排名横道图（固定全厂口径，不随节点变更） ================= */
+const NODE_KPI={
+  '':{score:84.2,rates:[91.2,88.1,85.3,82.7,90.2,87.5]},
+  cdjy:{score:89.2,rates:[93.8,90.5,87.2,85.1,92.0,89.4]},
+  chm:{score:82.1,rates:[89.5,84.2,82.8,79.4,88.1,83.0]},
+  jy:{score:90.5,rates:[95.1,92.3,89.6,87.8,94.2,91.5]},
+  yx:{score:83.5,rates:[90.8,83.6,83.1,80.2,86.9,85.7]},
+};
+/* 装置劣化数：按 LOOPS 实际数据动态计算（供总览 §2 横道图使用） */
+const degradedOf=id=>LOOPS.filter(x=>x.plant===id&&(gradeOf(x.score)==='g2'||gradeOf(x.score)==='g1')).length;
+function renderRankBars(){
+  const avg=NODE_KPI[''].score;
+  const rows=PLANTS.slice().sort((a,b)=>b.score-a.score);
+  $('#deviceRankBars').innerHTML=rows.map((p,i)=>{
+    const g=gradeOf(p.score),deg=degradedOf(p.id);
+    return `<div class="rbrow">
+      <div class="rb-top"><span class="rankno">${i+1}</span><b>${p.name}</b><span class="rb-deg">${deg?'<b>'+deg+'</b> 劣化':'—'}</span><span class="rb-score" style="color:var(--${g})">${fmt(p.score)}</span></div>
+      <div class="rb-track"><i style="width:${p.score}%;background:var(--${g})"></i><span class="rb-avg" style="left:${avg}%"></span></div>
+    </div>`;
+  }).join('')+`<div style="text-align:center;font-size:11px;color:var(--text3);padding:10px 0 2px">固定全厂口径（不随节点变更）· 竖虚线 = 全厂平均 ${fmt(avg)}</div>`;
+}
+
+/* ================= §3 趋势图（SVG） ================= */
+function genTrend(win){
+  const n=win==='24h'?24:win==='7d'?28:30;
+  const pts1=[],pts2=[];let s=83.2,a=91.5;
+  for(let i=0;i<n;i++){s+= (Math.sin(i*.7)+Math.sin(i*.23))*.35+.12; a+=Math.sin(i*.5)*.3+.08; pts1.push(Math.max(75,Math.min(90,s))); pts2.push(Math.max(88,Math.min(96,a)));}
+  const W=620,H=210,L=34,R=8,T=10,B=22;
+  const x=i=>L+(W-L-R)*i/(n-1), y=v=>T+(H-T-B)*(1-(v-70)/30);
+  const line=p=>p.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const ticks=[75,80,85,90];
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%" preserveAspectRatio="none">
+    ${ticks.map(t=>`<line x1="${L}" y1="${y(t)}" x2="${W-R}" y2="${y(t)}" stroke="var(--border)" stroke-width="1"/><text x="${L-6}" y="${y(t)+3}" font-size="9" fill="var(--text3)" text-anchor="end">${t}</text>`).join('')}
+    <polygon points="${L},${y(pts1[0])} ${line(pts1)} ${x(n-1)},${H-B} ${L},${H-B}" fill="var(--score)" opacity="0.08"/>
+    <polyline points="${line(pts1)}" fill="none" stroke="var(--score)" stroke-width="2"/>
+    <polyline points="${line(pts2)}" fill="none" stroke="var(--auto)" stroke-width="2"/>
+    <text x="${L}" y="${H-6}" font-size="9" fill="var(--text3)">${win==='24h'?'-24h':'-'+(win==='7d'?'7d':'30d')}</text>
+    <text x="${W-R}" y="${H-6}" font-size="9" fill="var(--text3)" text-anchor="end">现在</text>
+  </svg>`;
+}
+function renderTrend(){$('#trendChart').innerHTML=genTrend(curWin)}
+
+/* ================= §4 待办 ================= */
+function renderTodos(){
+  $('#todoList').innerHTML=TODOS.map(t=>`<div class="todorow" data-modal="todo">
+    <span class="loop">${t.loop}</span><span class="desc">${t.desc}</span>
+    <span class="st st-${t.st}">${t.stn}</span><span class="dur ${t.over?'over':''}">${t.over?'⚠ ':''}${t.dur}</span>
+  </div>`).join('');
+}
+
+/* ================= §5 漏斗 ================= */
+const FUNNEL=[
+  {n:'发现异常',v:9,pct:100,k:'g2'},
+  {n:'完成诊断',v:7,pct:78,k:'g3'},
+  {n:'产出方案',v:5,pct:71,k:'g4'},
+  {n:'处置闭环',v:4,pct:80,k:'g5'},
+];
+function renderFunnel(){
+  $('#funnel').innerHTML=FUNNEL.map((f,i)=>`
+    <div class="fstage" data-modal="list" data-title="漏斗 · ${f.n}回路清单">
+      <div class="fnum" style="color:var(--${f.k})">${f.v}</div>
+      <div class="fbody"><b>${f.n}</b><div class="fbar"><i style="width:${f.pct}%;background:var(--${f.k})"></i></div></div>
+    </div>
+    ${i<FUNNEL.length-1?`<div class="fconv">↳ 转化率 <b>${FUNNEL[i+1].pct}%</b></div>`:''}
+  `).join('')+`<div class="fbacklog">
+    <div><b>6</b>待处理</div><div><b>4</b>处理中</div><div><b style="color:var(--g3)">3</b>验证中</div>
+  </div><div style="text-align:center;font-size:11px;color:var(--text3);padding-top:6px">口径：治理转化链（发现→诊断→方案→闭环）</div>`;
+}
+
+/* ================= §6 问题回路 ================= */
+function sparkSvg(pts,w=70,h=22,color){
+  const min=Math.min(...pts),max=Math.max(...pts);
+  const p=pts.map((v,i)=>`${(i/(pts.length-1)*w).toFixed(1)},${(h-2-(v-min)/(max-min||1)*(h-4)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}"><polyline points="${p}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+function renderLoopTop(){
+  const rows=LOOPS.slice().sort((a,b)=>a.score-b.score).slice(0,8);
+  $('#loopTop').innerHTML=rows.map(l=>{
+    const g=gradeOf(l.score);
+    const trend=[...Array(10)].map((_,i)=>l.score+(l.down?-1:1)*(i*.6)+Math.sin(i*1.3)*1.2);
+    return `<tr class="clickable" data-modal="loop" data-no="${l.no}">
+      <td class="lp">${l.no}<small>${l.name}</small></td>
+      <td class="planttag">${PLANTS.find(p=>p.id===l.plant).name.replace('装置','')}</td>
+      <td class="scoretd" style="color:var(--${g})">${l.score}</td>
+      <td>${l.worst?`<span class="dimtag ${l.worst[1]<50?'bad':''}">${l.worst[0]} ${l.worst[1]}</span>`:'<span class="dimtag ok">正常</span>'}</td>
+      <td>${sparkSvg(trend,70,20,l.down?'var(--g2)':'var(--g5)')}</td>
+    </tr>`;
+  }).join('')||`<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">暂无数据</td></tr>`;
+}
+
+/* ================= §7 预警流 ================= */
+function renderAlerts(){
+  $('#alertStream').innerHTML=ALERTS.map(a=>`<div class="alertrow" data-modal="event">
+    <div class="alv ${a.lv}"></div>
+    <div class="albody"><b>${a.title}${a.unconfirm?'<span class="unconfirm">未确认</span>':''}</b>
+      <div class="meta"><span>${a.loop}</span><span>${a.lvn}</span></div></div>
+    <div class="altime">${a.t}<br>${a.dur}</div>
+  </div>`).join('');
+}
+
+/* ================= 页2 卡片墙（分页：每页 20） ================= */
+const PAGE_SIZE=20;
+function totalPages(){return Math.max(1,Math.ceil(currentList.length/PAGE_SIZE))}
+function renderPager(){
+  const tp=totalPages(),p=cardState.page;
+  $('#pager').innerHTML=`<button class="pgbtn" data-pg="prev" ${p<=1?'disabled':''}>‹</button>
+    <span class="pginfo">第 ${p} / ${tp} 页 · 共 ${currentList.length} 个</span>
+    <button class="pgbtn" data-pg="next" ${p>=tp?'disabled':''}>›</button>`;
+}
+function renderTree(){
+  $('#deviceTree').innerHTML=`<div class="tnode active" data-plant=""><span>🏭 全厂</span><span class="cnt">${LOOPS.length}</span></div>`+
+    PLANTS.map(p=>`<div class="tnode child" data-plant="${p.id}"><span>${p.name}</span><span class="cnt">${LOOPS.filter(l=>l.plant===p.id).length}</span></div>`).join('');
+}
+function renderCards(syncPage=true){
+  const gradeF=cardState.grade, sortK=cardState.sort, plantF=cardState.plant;
+  let list=LOOPS.filter(l=>(!plantF||l.plant===plantF)&&(!gradeF.startsWith('g')||gradeOf(l.score)===gradeF));
+  list.sort((a,b)=>sortK==='score'?b.score-a.score:(a.worst? a.worst[1]:100)-(b.worst?b.worst[1]:100));
+  currentList=list;
+  /* 选中回路页码同步（筛选/选择变化时跟随；手动翻页不重置）；被过滤则清除 */
+  if(cardState.selected){
+    const idx=list.findIndex(x=>x.no===cardState.selected);
+    if(idx<0)cardState.selected=null;
+    else if(syncPage)cardState.page=Math.floor(idx/PAGE_SIZE)+1;
+  }
+  if(!cardState.selected)cardState.page=Math.min(cardState.page||1,totalPages());
+  const start=(cardState.page-1)*PAGE_SIZE, pageList=list.slice(start,start+PAGE_SIZE);
+  const modeCls={'自动':'auto','串级':'auto','远程':'auto','手动':'man','先控':'auto'};
+  $('#cardGrid').innerHTML=pageList.map(l=>{
+    const g=gradeOf(l.score);
+    const trend=[...Array(12)].map((_,i)=>l.score+(l.down?-1:1)*(i*.5)+Math.sin(i*1.1)*1.5);
+    return `<div class="loopcard lc-${g}${cardState.selected===l.no?' selected':''}" data-no="${l.no}">
+      <div class="lc-head"><b>${l.no}</b><span>${l.name}</span></div>
+      <div class="lc-score" style="color:var(--${g})">${l.score}</div>
+      <div class="lc-rt">
+        <div class="kv"><span>PV</span><b>${l.pv}</b></div>
+        <div class="kv"><span>SP</span><b>${l.sp}</b></div>
+      </div>
+      <div class="lc-tags"><span class="modetag ${modeCls[l.mode]||''}">${l.mode}</span>
+        ${l.worst?`<span class="dimtag ${l.worst[1]<50?'bad':''}">${l.worst[0]} ${l.worst[1]}</span>`:''}</div>
+      <div class="lc-spark">${sparkSvg(trend,200,24,l.down?'var(--g2)':'var(--g5)')}</div>
+    </div>`;
+  }).join('')||`<div style="grid-column:1/-1;text-align:center;color:var(--text3);padding:40px">无匹配回路</div>`;
+  renderPager();
+  renderDetail();
+}
+
+/* ================= 雷达图（六维统一口径 + 中心综合评分） ================= */
+const RADAR_DIMS=['自控率','平稳率','准确率','快速率','好值率','有效率'];
+function radarVals(l){
+  return RADAR_DIMS.map((d,i)=>{
+    if(l.worst&&l.worst[0]===d)return l.worst[1];
+    const v=l.score+6+((l.no.charCodeAt(5)+i*11)%13)-6;
+    return Math.max(58,Math.min(97,Math.round(v)));
+  });
+}
+function radarSvg(vals,score,W,H){
+  const R2=Math.min(W,H)/2-32,CX=W/2,CY=H/2,g=gradeOf(score);
+  const pt=(i,r)=>{const a=-Math.PI/2+i*Math.PI/3;return[CX+Math.cos(a)*r,CY+Math.sin(a)*r]};
+  const ring=r=>RADAR_DIMS.map((_,i)=>pt(i,r).map(v=>v.toFixed(1)).join(',')).join(' ');
+  const data=vals.map((v,i)=>pt(i,Math.max(v,25)/100*R2).map(x=>x.toFixed(1)).join(',')).join(' ');
+  const lines=RADAR_DIMS.map((_,i)=>{const[x,y]=pt(i,R2);return `<line x1="${CX}" y1="${CY}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)"/>`}).join('');
+  const labels=RADAR_DIMS.map((d,i)=>{const[x,y]=pt(i,R2+14);const v=vals[i];return `<text x="${x.toFixed(1)}" y="${(y+3).toFixed(1)}" font-size="10" fill="var(--text2)" text-anchor="middle">${d} ${v%1===0?v:v.toFixed(1)}</text>`}).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%">
+    ${[.25,.5,.75,1].map(t=>`<polygon points="${ring(R2*t)}" fill="none" stroke="var(--border)"/>`).join('')}
+    ${lines}<polygon points="${data}" fill="var(--score)" fill-opacity=".18" stroke="var(--score)" stroke-width="2"/>${labels}
+    <circle cx="${CX}" cy="${CY}" r="27" fill="var(--panel)" stroke="var(--border2)"/>
+    <text x="${CX}" y="${CY+3}" font-size="16" font-weight="700" fill="var(--${g})" text-anchor="middle">${score%1===0?score:score.toFixed(1)}</text>
+    <text x="${CX}" y="${CY+15}" font-size="8" fill="var(--text3)" text-anchor="middle">综合评分</text></svg>`;
+}
+/* 控制模式微型柱状图（静态无动画，随节点选择联动口径） */
+function modeBarSvg(mc,W,H){
+  const keys=['自动','串级','远程','手动','先控'];
+  const colors={'自动':'var(--g5)','串级':'var(--g4)','远程':'var(--accent)','手动':'var(--g3)','先控':'var(--score)'};
+  const bw=30,pad=12,gap=(W-pad*2-bw*keys.length)/(keys.length-1);
+  const chartH=H-18,max=Math.max(1,...keys.map(k=>mc[k]||0));
+  const bars=keys.map((k,i)=>{
+    const c=mc[k]||0,h=Math.max(c>0?5:2,c/max*(chartH-16)),x=pad+i*(bw+gap),y=chartH-h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" rx="2.5" fill="${colors[k]}" opacity="${c>0?0.92:0.28}"/>
+      <text x="${(x+bw/2).toFixed(1)}" y="${(y-4).toFixed(1)}" font-size="10.5" font-weight="600" fill="var(--text2)" text-anchor="middle">${c}</text>
+      <text x="${(x+bw/2).toFixed(1)}" y="${H-3}" font-size="9.5" fill="var(--text3)" text-anchor="middle">${k}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%">${bars}</svg>`;
+}
+function loopTrendSvg(l,W,H){
+  const n=60,L=8,R=8,T=10,B=18;
+  const amp=l.worst?(l.worst[0]==='平稳率'&&l.worst[1]<50?3.2:1.5):0.6;
+  const pv=[],op=[];
+  for(let i=0;i<n;i++){pv.push(Math.sin(i*.45)*amp+Math.sin(i*.08)*amp*.6);op.push(Math.sin(i*.45+Math.PI*.9)*amp*.8);}
+  const mn=-amp*2.4,mx=amp*2.4;
+  const x=i=>L+(W-L-R)*i/(n-1),y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
+  const line=p=>p.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%">
+    <line x1="${L}" y1="${y(0)}" x2="${W-R}" y2="${y(0)}" stroke="var(--g3)" stroke-width="1.2" stroke-dasharray="5 3"/>
+    <polyline points="${line(op)}" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".8"/>
+    <polyline points="${line(pv)}" fill="none" stroke="var(--score)" stroke-width="2"/>
+    <text x="${L}" y="${H-4}" font-size="9" fill="var(--text3)">-24h</text><text x="${W-R}" y="${H-4}" font-size="9" fill="var(--text3)" text-anchor="end">现在</text>
+    <text x="${W-R}" y="${T+8}" font-size="9" fill="var(--score)" text-anchor="end">PV</text>
+    <text x="${W-R}" y="${T+19}" font-size="9" fill="var(--accent)" text-anchor="end">OP</text>
+    <text x="${W-R}" y="${T+30}" font-size="9" fill="var(--g3)" text-anchor="end">SP(虚线)</text>
+  </svg>`;
+}
+const opOf=l=>(55+(l.no.charCodeAt(5)%25))+' %';
+const pOf=l=>(1+((l.no.charCodeAt(4)+l.no.charCodeAt(5))%30)/10).toFixed(2);
+const iOf=l=>(0.3+((l.no.charCodeAt(4)*2+l.no.charCodeAt(5))%9)/10).toFixed(2);
+const dOf=l=>((l.no.charCodeAt(5)%4)/10).toFixed(2);
+function selectLoop(no){
+  cardState.selected=no;
+  const idx=currentList.findIndex(x=>x.no===no);
+  if(idx>=0)cardState.page=Math.floor(idx/PAGE_SIZE)+1;
+  renderCards();
+  const el=$('.loopcard.selected');if(el)el.scrollIntoView({block:'nearest'});
+}
+function renderDetail(){
+  const head=$('#detailHead'),body=$('#detailBody');
+  const l=cardState.selected?LOOPS.find(x=>x.no===cardState.selected):null;
+  if(!l){
+    /* 聚合视图（v1.5 两段弹性，无滚动条）：控制模式微型柱状图（固定高）+ 节点雷达（弹性占满剩余高度） */
+    const node=cardState.plant;
+    const nodeName=node?PLANTS.find(x=>x.id===node).name:'全厂';
+    const scope=LOOPS.filter(x=>!node||x.plant===node);
+    const mc={};scope.forEach(x=>mc[x.mode]=(mc[x.mode]||0)+1);
+    const k=NODE_KPI[node||''];
+    head.innerHTML=`<b style="font-size:14px">节点性能</b><span style="font-size:11px;color:var(--text3)">${nodeName} · 工厂模型联动</span>`;
+    body.innerHTML=`
+      <div class="d-sec" style="flex:none"><h4>控制模式 · ${nodeName}（${scope.length} 个回路）</h4>${modeBarSvg(mc,340,64)}</div>
+      <div class="d-sec" style="flex:1;min-height:0;display:flex;flex-direction:column"><h4><span class="livedot"></span>节点性能雷达（六率 + 中心综合评分）</h4><div style="flex:1;min-height:0">${radarSvg(k.rates,k.score,330,220)}</div></div>
+      <div style="flex:none;font-size:11px;color:var(--text3);text-align:center;padding:1px 0 2px">左树选择节点联动 · 点击回路卡查看单回路详情</div>`;
+    return;
+  }
+  /* 单回路详情（弹性布局：趋势固定高，雷达占剩余） */
+  const g=gradeOf(l.score),plant=PLANTS.find(p=>p.id===l.plant);
+  const todo=TODOS.find(t=>t.loop===l.no);
+  const idx=currentList.findIndex(x=>x.no===l.no);
+  head.innerHTML=`
+    <span class="gradechip" style="background:var(--${g})">${GRADE[g].n}</span>
+    <div style="min-width:0"><b style="font-size:14px">${l.no}</b><div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.name} · ${plant.name}</div></div>
+    <span style="margin-left:auto;font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--${g})">${l.score}</span>
+    <div class="d-nav">
+      <button class="navbtn" id="prevLoop" title="上一回路"${idx<=0?' disabled':''}>‹</button>
+      <button class="navbtn" id="nextLoop" title="下一回路"${idx>=currentList.length-1?' disabled':''}>›</button>
+      <button class="navbtn" id="closeLoop" title="取消选择">×</button>
+    </div>`;
+  body.innerHTML=`
+    <div class="d-sec" style="flex:none"><h4><span class="livedot"></span>实时数据（WebSocket）</h4>
+      <div class="rtgrid">
+        <div class="rtkv hl"><span>PV</span><b>${l.pv}</b></div>
+        <div class="rtkv"><span>SP</span><b>${l.sp}</b></div>
+        <div class="rtkv"><span>OP</span><b>${opOf(l)}</b></div>
+        <div class="rtkv"><span>模式</span><b style="font-size:12.5px">${l.mode}</b></div>
+        <div class="rtkv"><span>P</span><b>${pOf(l)}</b></div>
+        <div class="rtkv"><span>I</span><b>${iOf(l)}</b></div>
+        <div class="rtkv"><span>D</span><b>${dOf(l)}</b></div>
+        <div class="rtkv"><span>可信度</span><b style="font-size:12.5px;color:var(--${l.conf==='A'?'g5':l.conf==='B'?'g3':'g2'})">${l.conf}</b></div>
+      </div></div>
+    <div class="d-sec" style="flex:none"><h4>实时趋势（近 24h · PV / OP，虚线 = SP）</h4><div style="height:130px">${loopTrendSvg(l,330,130)}</div></div>
+    <div class="d-sec" style="flex:1;min-height:120px;display:flex;flex-direction:column"><h4>六维性能雷达（中心=综合评分）</h4><div style="flex:1;min-height:0">${radarSvg(radarVals(l),l.score,330,190)}</div></div>
+    <div class="d-sec" style="flex:none"><h4>最近闭环记录（只读）</h4>
+      <div style="font-size:12px;color:var(--text2);line-height:1.7">
+        · 最近诊断：${l.worst?`检出<b style="color:var(--text)">${l.worst[0]}</b>倾向（可信度 ${l.conf}）`:'无异常检出'}<br>
+        · 处置状态：${todo?`<b style="color:var(--text)">${todo.stn}</b> · ${todo.desc}（停留 ${todo.dur}）`:'暂无进行中处置'}
+      </div></div>`;
+  const pv=$('#prevLoop'),nx=$('#nextLoop');
+  if(pv)pv.onclick=()=>selectLoop(currentList[idx-1].no);
+  if(nx)nx.onclick=()=>selectLoop(currentList[idx+1].no);
+  const cl=$('#closeLoop');if(cl)cl.onclick=()=>{cardState.selected=null;renderCards();};
+}
+
+/* ================= 弹窗图表（按回路动态渲染） ================= */
+function renderModalCharts(l){
+  const g=gradeOf(l.score),plant=PLANTS.find(p=>p.id===l.plant);
+  $('#ml-chip').textContent=GRADE[g].n;$('#ml-chip').style.background=`var(--${g})`;
+  $('#ml-title').textContent=l.no;
+  $('#ml-sub').textContent=`${l.name} · ${plant.name}`;
+  const sc=$('#ml-score');sc.textContent=l.score;sc.style.color=`var(--${g})`;
+  $('#modalChart').innerHTML=loopTrendSvg(l,380,238);
+  $('#radarChart').innerHTML=radarSvg(radarVals(l),l.score,250,238);
+  const todo=TODOS.find(t=>t.loop===l.no);
+  $('#ml-diag').innerHTML=l.worst?`检出<b style="color:var(--g2)">${l.worst[0]}</b>倾向（可信度 ${l.conf}）`:'无异常检出';
+  $('#ml-todo').innerHTML=todo?`<b>${todo.stn}</b> · ${todo.desc}（停留 ${todo.dur}）`:'暂无进行中处置';
+}
+
+/* ================= 清单类弹窗内容 ================= */
+const LISTS={
+'劣化回路清单（警告+不合格）':[
+  ['TIC-408','乙烯装置','55','不合格','平稳率 38'],['LIC-112','常减压装置','63','警告','平稳率 46'],['PIC-215','催化裂化装置','68','警告','快速率 51'],['LIC-216','加氢精制','66','警告','准确率 56'],['TIC-222','加氢精制','61','警告','平稳率 51']],
+'漏斗 · 发现异常回路清单':[
+  ['TIC-408','乙烯装置','55','不合格','平稳率 38'],['LIC-112','常减压装置','63','警告','平稳率 46'],['PIC-215','催化裂化装置','68','警告','快速率 51'],['TIC-208','催化裂化装置','75','合格','有效率 58'],['LIC-312','加氢精制','72','合格','平稳率 60'],['FIC-203','催化裂化装置','88','良好','准确率（可信度 B）'],['LIC-215','催化裂化装置','82','良好','手动模式'],['PIC-412','乙烯装置','84','良好','快速率 70'],['TIC-105','常减压装置','87','良好','准确率 69']],
+'漏斗 · 完成诊断回路清单':[['TIC-408','振荡 · 阀门粘滞','B','08-19'],['LIC-112','积分饱和','B','08-18'],['PIC-215','阀门老化','C','08-17'],['TIC-208','阀位饱和','A','08-16'],['LIC-312','参数保守','A','08-15'],['FIC-203','流量计漂移','B','08-14'],['LIC-215','手动未投','A','08-13']],
+'漏斗 · 产出方案回路清单':[['TIC-408','更换定位器 + IMC 重整定','处理中'],['LIC-112','积分时间 0.8→0.5','验证中'],['PIC-215','更换调节阀','待处理'],['TIC-208','阀位限幅排查','待处理'],['LIC-312','参数微调建议','已确认']],
+'漏斗 · 处置闭环回路清单':[['FIC-203','流量计校验','已闭环 08-12'],['TIC-105','参数优化','已闭环 08-10'],['FIC-301','滤波加强','已闭环 08-08'],['TIC-110','SP 微调','已闭环 08-05']],
+'处置待办明细':[['TIC-408','振荡治理','处理中','3.2h'],['LIC-112','液位波动验证','验证中(超期)','26h'],['PIC-215','调节阀更换','待处理','5.1h'],['TIC-208','阀位饱和排查','待处理','8.4h'],['FIC-203','流量计校验','验证中','12h'],['LIC-215','手动未投自动','待处理','1.8h']],
+'预警事件明细':[['振荡幅度超限','TIC-408','紧急','未确认'],['综合评分连续下跌','LIC-112','重要','已确认'],['阀位饱和持续','TIC-208','重要','已确认'],['数据可信度不足','FIC-203','一般','已恢复'],['投用率低于阈值','催化裂化装置','提示','持续中']],
+'全厂综合评分详情':[['全厂综合评分','84.2','良好','▲ 1.2'],['环比窗口','72.0 - 24.0','—','—'],['参评回路','34','—','—'],['最差装置','催化裂化装置','82.1','合格']],
+'自动投用率详情':[['自动投用率','91.2%','—','▲ 0.8'],['自动','29','—','—'],['串级','1','—','—'],['远程','1','—','—'],['手动','3','—','—']],
+'回路总数 · 等级分布':[['优秀（≥95）','7','20.6%','—'],['良好（85-95）','15','44.1%','—'],['合格（70-85）','7','20.6%','—'],['警告（60-70）','4','11.8%','—'],['不合格（<60）','1','2.9%','—']],
+};
+function openList(title){
+  $('#listTitle').textContent=title;
+  const rows=LISTS[title]||[['示例','—','—','—']];
+  $('#listBody').innerHTML=`<table><thead><tr>${rows[0].map((_,i)=>`<th style="width:${i===0?'120px':i===1?'auto':'80px'}">${['名称/回路','详情','等级/状态','其它'][i]||''}</th>`).join('')}</tr></thead><tbody>${
+    rows.map(r=>`<tr class="clickable" data-modal="loop">${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  openModal('list');
+}
+
+/* ================= 交互逻辑 ================= */
+let curWin='24h', cardState={grade:'all',sort:'score',plant:'',selected:null,page:1}, currentList=[];
+
+/* Tab 切换 */
+$$('.tab').forEach(t=>t.onclick=()=>{
+  $$('.tab').forEach(x=>x.classList.toggle('active',x===t));
+  $('#page-overview').hidden=t.dataset.page!=='overview';
+  $('#page-loops').hidden=t.dataset.page!=='loops';
+});
+/* 时间窗 */
+$$('#winpills .winpill').forEach(p=>p.onclick=()=>{
+  $$('#winpills .winpill').forEach(x=>x.classList.toggle('active',x===p));
+  curWin=p.dataset.win; renderTrend(); showToast(`时间窗已切换：${p.textContent}（页面级联动）`);
+});
+/* 主题 */
+const themeBtn=$('#themeBtn');
+themeBtn.onclick=()=>{
+  const html=document.documentElement;
+  const next=html.dataset.theme==='dark'?'light':'dark';
+  html.dataset.theme=next; localStorage.setItem('cockpit-theme',next);
+  showToast(next==='dark'?'已切换深色主题（默认）':'已切换浅色主题');
+};
+/* 时钟 */
+function tick(){
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  $('#clockTime').textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  $('#clockDate').textContent=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} 周${'日一二三四五六'[d.getDay()]}`;
+}
+setInterval(tick,1000);tick();
+/* 管理后台（权限验证演示） */
+$('#backendBtn').onclick=()=>showToast('权限验证演示：按 sys_config「cockpit.backend_access_roles」校验当前角色。<br>当前演示视角 = SPONSOR（管理者，默认无后台权限）→ 拦截；IC/PE 工程师视角 → 放行进入后台');
+/* toast */
+let toastTimer;
+function showToast(msg){const t=$('#toast');t.innerHTML=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),3200)}
+/* 弹窗系统 */
+function openModal(id){$$('.overlay').forEach(o=>o.classList.remove('open'));$(`#modal-${id}`).classList.add('open')}
+function closeModal(){$$('.overlay').forEach(o=>o.classList.remove('open'))}
+$$('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o||e.target.dataset.close!==undefined&&e.target.closest('[data-close]'))closeModal()}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+/* 委托：data-modal 点击 */
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-modal]');if(!el)return;
+  const id=el.dataset.modal;
+  if(id==='list'){openList(el.dataset.title||'清单');return}
+  if(id==='loop'){
+    const l=LOOPS.find(x=>x.no===el.dataset.no)||LOOPS[0];
+    renderModalCharts(l);openModal('loop');return;
+  }
+  openModal(id);
+});
+/* 总览 §2 节点雷达已改排名横道图；页2 右侧面板 v1.5 已删排名段（无行点击委托） */
+/* 页2 筛选/排序/树 */
+$('#gradeFilter').addEventListener('click',e=>{
+  const b=e.target.closest('.fbtn');if(!b)return;
+  $$('#gradeFilter .fbtn').forEach(x=>x.classList.toggle('active',x===b));
+  cardState.grade=b.dataset.grade;renderCards();
+});
+$('#sortFilter').addEventListener('click',e=>{
+  const b=e.target.closest('.fbtn');if(!b)return;
+  $$('#sortFilter .fbtn').forEach(x=>x.classList.toggle('active',x===b));
+  cardState.sort=b.dataset.sort;renderCards();
+});
+$('#deviceTree').addEventListener('click',e=>{
+  const n=e.target.closest('.tnode');if(!n)return;
+  $$('#deviceTree .tnode').forEach(x=>x.classList.toggle('active',x===n));
+  cardState.plant=n.dataset.plant;renderCards();
+});
+/* 页2 回路卡点击 → 右侧详情面板（内联，纯只读） */
+$('#cardGrid').addEventListener('click',e=>{
+  const c=e.target.closest('.loopcard');if(!c||cardState.selected===c.dataset.no)return;
+  selectLoop(c.dataset.no);
+});
+/* 页2 卡片墙分页（右上角切换） */
+$('#pager').addEventListener('click',e=>{
+  const b=e.target.closest('.pgbtn');if(!b||b.disabled)return;
+  const tp=totalPages();
+  cardState.page=b.dataset.pg==='prev'?Math.max(1,cardState.page-1):Math.min(tp,cardState.page+1);
+  renderCards(false);
+  $('#cardGrid').scrollTop=0;
+});
+
+/* ================= 初始化 ================= */
+(function init(){
+  const saved=localStorage.getItem('cockpit-theme');
+  if(saved)document.documentElement.dataset.theme=saved;
+  renderRankBars();renderTrend();renderTodos();renderFunnel();renderLoopTop();renderAlerts();
+  renderTree();renderCards();
+})();
+</script>
+</body>
+</html>
