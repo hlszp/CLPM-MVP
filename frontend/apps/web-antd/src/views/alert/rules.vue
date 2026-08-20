@@ -96,14 +96,129 @@ const editLoading = ref(false);
 
 const ruleTypeColor: Record<AlertApi.RuleType, string> = {
   // 整改 A-02 类别中性化：规则类型为中性分类，antd default 灰阶
+  METRIC_THRESHOLD: 'blue',
   THRESHOLD: 'default',
   DRIFT: 'default',
   COMPOSITE: 'default',
   CONFIDENCE: 'default',
 };
 
+// ===== 指标阈值预警（METRIC_THRESHOLD）表单状态 =====
+
+const metricForm = reactive({
+  metricSource: 'KPI' as 'DIAGNOSIS' | 'KPI',
+  metricCode: 'score',
+  operator: '<' as '<' | '<=' | '>' | '>=',
+  value: 60,
+  checkIntervalMinutes: 60,
+  durationCount: 1,
+});
+
+/** KPI 来源可监测指标（loop_confidence_latest 载体） */
+const KPI_METRIC_OPTIONS = [
+  { value: 'score', label: '综合评分（score，0-100）' },
+  { value: 'accuracy_rate', label: '准确率（accuracy_rate）' },
+  { value: 'fast_rate', label: '快速率（fast_rate）' },
+  { value: 'steady_rate', label: '稳定率（steady_rate）' },
+  { value: 'effective_auto_rate', label: '有效自控率（effective_auto_rate）' },
+  { value: 'auto_mode_rate', label: '自控率（auto_mode_rate）' },
+  { value: 'oscillation_rate', label: '振荡率（oscillation_rate）' },
+  { value: 'saturation_rate', label: '饱和率（saturation_rate）' },
+  { value: 'good_value_rate', label: '好值率（good_value_rate）' },
+  { value: 'valid_rate', label: '有效数据率（valid_rate，0-1）' },
+];
+
+/** DIAGNOSIS 来源可监测指标（diagnosis_run 最新一条载体） */
+const DIAGNOSIS_METRIC_OPTIONS = [
+  { value: 'severity', label: '诊断严重度（severity，低=1/中=2/高=3）' },
+  { value: 'primary_confidence', label: '主因置信度（primary_confidence，0-1）' },
+];
+
+const METRIC_OPERATOR_OPTIONS = [
+  { value: '<', label: '低于（<）' },
+  { value: '<=', label: '低于等于（≤）' },
+  { value: '>', label: '高于（>）' },
+  { value: '>=', label: '高于等于（≥）' },
+];
+
+const CHECK_INTERVAL_OPTIONS = [
+  { value: 10, label: '每 10 分钟' },
+  { value: 30, label: '每 30 分钟' },
+  { value: 60, label: '每 1 小时' },
+  { value: 360, label: '每 6 小时' },
+  { value: 720, label: '每 12 小时' },
+  { value: 1440, label: '每 24 小时' },
+];
+
+/** 指标来源切换时重置指标代码 */
+function handleMetricSourceChange() {
+  metricForm.metricCode =
+    metricForm.metricSource === 'KPI' ? 'score' : 'severity';
+}
+
+/** 从 DSL condition 恢复指标表单（编辑存量指标阈值规则） */
+function loadMetricFormFromDsl(dsl: Record<string, any>) {
+  const c = dsl?.condition ?? {};
+  metricForm.metricSource = c.metricSource === 'DIAGNOSIS' ? 'DIAGNOSIS' : 'KPI';
+  metricForm.metricCode = c.metricCode ?? 'score';
+  metricForm.operator = (['<', '<=', '>', '>='] as const).includes(c.operator)
+    ? c.operator
+    : '<';
+  metricForm.value = typeof c.value === 'number' ? c.value : 60;
+  metricForm.checkIntervalMinutes =
+    typeof c.checkIntervalMinutes === 'number' ? c.checkIntervalMinutes : 60;
+  metricForm.durationCount =
+    typeof c.durationCount === 'number' ? c.durationCount : 1;
+}
+
+/** 由指标表单构建 METRIC_THRESHOLD DSL */
+function buildMetricDsl(): Record<string, any> {
+  return {
+    ruleType: 'METRIC_THRESHOLD',
+    scope: { loopSelector: { type: 'ALL' } },
+    condition: {
+      metricSource: metricForm.metricSource,
+      metricCode: metricForm.metricCode,
+      operator: metricForm.operator,
+      value: metricForm.value,
+      checkIntervalMinutes: metricForm.checkIntervalMinutes,
+      durationCount: metricForm.durationCount,
+    },
+    durationSeconds: 0,
+    cooldownSeconds: metricForm.checkIntervalMinutes * 60,
+    severity: 'WARN',
+    actions: [{ type: 'CREATE_EVENT' }, { type: 'NOTIFY' }],
+    priority: editForm.priority,
+    dedupKey: '${loop_id}+${rule_id}',
+  };
+}
+
+/** 当前编辑的是否为指标阈值规则 */
+const isMetricRule = computed(() => editForm.ruleType === 'METRIC_THRESHOLD');
+
 // DSL 模板
 const dslTemplates: Record<AlertApi.RuleType, Record<string, any>> = {
+  METRIC_THRESHOLD: {
+    ruleType: 'METRIC_THRESHOLD',
+    scope: { loopSelector: { type: 'ALL' } },
+    condition: {
+      metricSource: 'KPI',
+      metricCode: 'score',
+      operator: '<',
+      value: 60,
+      checkIntervalMinutes: 60,
+      durationCount: 1,
+    },
+    durationSeconds: 0,
+    cooldownSeconds: 3600,
+    severity: 'WARN',
+    actions: [
+      { type: 'CREATE_EVENT' },
+      { type: 'NOTIFY' },
+    ],
+    priority: 100,
+    dedupKey: '${loop_id}+${rule_id}',
+  },
   THRESHOLD: {
     ruleType: 'THRESHOLD',
     scope: { loopSelector: { type: 'ALL' } },
@@ -280,12 +395,14 @@ function openCreateModal() {
   editForm.ruleId = '';
   editForm.ruleCode = '';
   editForm.ruleName = '';
-  editForm.ruleType = 'THRESHOLD';
+  editForm.ruleType = 'METRIC_THRESHOLD';
   editForm.description = '';
   editForm.priority = 100;
   editForm.isEnabled = true;
   // #8: 深拷贝模板 DSL 对象，避免引用污染
-  editForm.dsl = structuredClone(dslTemplates.THRESHOLD);
+  editForm.dsl = structuredClone(dslTemplates.METRIC_THRESHOLD);
+  // 同步指标表单默认值
+  loadMetricFormFromDsl(editForm.dsl);
   editVisible.value = true;
 }
 
@@ -299,6 +416,9 @@ function openEditModal(record: AlertApi.RuleItem) {
   editForm.priority = record.priority;
   editForm.isEnabled = record.isEnabled;
   editForm.dsl = record.dsl ? structuredClone(record.dsl) : {};
+  if (record.ruleType === 'METRIC_THRESHOLD') {
+    loadMetricFormFromDsl(editForm.dsl);
+  }
   editVisible.value = true;
 }
 
@@ -307,8 +427,12 @@ async function handleSave() {
     message.warning('规则代码和名称不可为空');
     return;
   }
-  // #8: DSL 由可视化编辑器生成，无需手动 JSON.parse
-  const dsl = editForm.dsl;
+  // 指标阈值规则：由表单构建 DSL；其余存量类型：由可视化编辑器维护
+  const dsl = isMetricRule.value ? buildMetricDsl() : editForm.dsl;
+  if (isMetricRule.value && metricForm.value === undefined) {
+    message.warning('请填写阈值');
+    return;
+  }
   if (!dsl || !dsl.ruleType) {
     message.warning('规则 DSL 未配置完整');
     return;
@@ -432,8 +556,16 @@ function exportRulesCsv() {
 function handleHelp() {
   showPageHelp({
     title: '预警规则 帮助',
-    content:
-      '规则类型：阈值、漂移、组合、可信度。DSL 以 JSON 描述触发条件、时效窗口、动作与抑制策略；字段键名保留英文以对齐后端校验。全局开关暂停后所有规则停止求值，但保留已产生的事件。',
+    content: [
+      '预警规则（指标阈值预警）：基于评估指标（KPI）或诊断结果设定阈值与监测周期，按周期定期检查回路最新结果，超阈值生成预警记录并通知（铃铛/预警记录页）。预警后的响应动作（工单/诊断联动）不再自动触发，由人工在处置/诊断模块处理。',
+      '· 指标来源：KPI（综合评分/准确率/快速率/稳定率/自控率等评估指标，来自每回路最新评估结果）或 DIAGNOSIS（诊断严重度/主因置信度，来自最新一次诊断）。',
+      '· 监测周期：巡检任务每分钟运行，每条规则按自己的周期到期才检查（5 分钟-24 小时）。',
+      '· 连续超限次数：需连续 N 个周期检查均超限才触发（防瞬时抖动，默认 1）。',
+      '· 数据新鲜度：评估/诊断结果超过 2× 监测周期未更新时跳过检查（任务停摆不误报）。',
+      '· 冷却期：触发后默认冷却一个监测周期，避免重复告警。',
+      '· 存量规则：阈值/漂移/组合/可信度 4 类实时值规则为存量兼容（仅可编辑/停用/删除，不再支持新建），建议以指标阈值规则替代。',
+      '· 全局开关暂停后所有规则停止求值，但保留已产生的事件。',
+    ].join('\n'),
   });
 }
 
@@ -465,7 +597,7 @@ onMounted(() => {
     <!-- 统一工具栏 -->
     <ClpmPageToolbar
       title="预警规则"
-      subtitle="阈值 / 漂移 / 组合 / 可信度 四类规则配置"
+      subtitle="基于评估/诊断指标的阈值预警（定期检查，仅记录与通知）"
       :loading="loading"
       :last-refresh="lastRefresh"
     >
@@ -496,10 +628,11 @@ onMounted(() => {
           v-model:value="query.ruleType"
           allow-clear
           placeholder="全部"
-          style="width: 160px"
+          style="width: 180px"
           :options="
             (
               [
+                'METRIC_THRESHOLD',
                 'THRESHOLD',
                 'DRIFT',
                 'COMPOSITE',
@@ -586,7 +719,7 @@ onMounted(() => {
       <template #emptyText>
         <ClpmEmptyState
           title="暂无预警规则"
-          description="点击右上角「新建规则」创建阈值/漂移/组合/可信度规则；新建前可用试运行（dry-run）验证触发效果。"
+          description="点击右上角「新建规则」创建指标阈值预警（基于评估/诊断指标，定期检查超阈值生成预警记录与通知）。"
           :actions="[
             { label: '新建规则', primary: true, onClick: openCreateModal },
           ]"
@@ -634,7 +767,7 @@ onMounted(() => {
           </FormItem>
         </Space>
         <Space style="display: flex" :size="16">
-          <FormItem label="规则类型" style="width: 200px">
+          <FormItem label="规则类型" style="width: 220px">
             <Tooltip
               v-if="editMode === 'edit'"
               title="编辑模式下不可修改，请新建规则"
@@ -645,6 +778,7 @@ onMounted(() => {
                 :options="
                   (
                     [
+                      'METRIC_THRESHOLD',
                       'THRESHOLD',
                       'DRIFT',
                       'COMPOSITE',
@@ -658,22 +792,16 @@ onMounted(() => {
                 placeholder="选择规则类型"
               />
             </Tooltip>
+            <!-- 新建仅支持指标阈值规则（4 类实时值规则为存量兼容，不再新建） -->
             <Select
               v-else
               v-model:value="editForm.ruleType"
-              :options="
-                (
-                  [
-                    'THRESHOLD',
-                    'DRIFT',
-                    'COMPOSITE',
-                    'CONFIDENCE',
-                  ] as AlertApi.RuleType[]
-                ).map((v) => ({
-                  value: v,
-                  label: `${ruleTypeLabel[v]}（${v}）`,
-                }))
-              "
+              :options="[
+                {
+                  value: 'METRIC_THRESHOLD',
+                  label: `${ruleTypeLabel.METRIC_THRESHOLD}（METRIC_THRESHOLD）`,
+                },
+              ]"
               placeholder="选择规则类型"
             />
           </FormItem>
@@ -697,12 +825,85 @@ onMounted(() => {
             placeholder="规则描述（可选）"
           />
         </FormItem>
-        <FormItem label="规则配置" required>
-          <ClpmAlertDslEditor
-            v-model="editForm.dsl"
-            :rule-type="editForm.ruleType"
-          />
-        </FormItem>
+        <!-- 指标阈值规则：简化表单（来源/指标/操作符/阈值/周期/连续次数） -->
+        <template v-if="isMetricRule">
+          <FormItem label="指标来源" required>
+            <Select
+              v-model:value="metricForm.metricSource"
+              :options="[
+                { value: 'KPI', label: '评估指标（KPI，来自最新评估结果）' },
+                {
+                  value: 'DIAGNOSIS',
+                  label: '诊断结果（来自最新一次诊断）',
+                },
+              ]"
+              @change="handleMetricSourceChange"
+            />
+          </FormItem>
+          <FormItem label="监测指标" required>
+            <Select
+              v-model:value="metricForm.metricCode"
+              :options="
+                metricForm.metricSource === 'KPI'
+                  ? KPI_METRIC_OPTIONS
+                  : DIAGNOSIS_METRIC_OPTIONS
+              "
+              placeholder="选择监测指标"
+            />
+          </FormItem>
+          <Space style="display: flex" :size="16">
+            <FormItem label="触发条件" required style="flex: 1">
+              <div class="flex items-center gap-2">
+                <Select
+                  v-model:value="metricForm.operator"
+                  :options="METRIC_OPERATOR_OPTIONS"
+                  style="width: 140px"
+                />
+                <InputNumber
+                  v-model:value="metricForm.value"
+                  :min="0"
+                  :max="1000"
+                  :step="1"
+                  style="flex: 1"
+                  placeholder="阈值"
+                />
+              </div>
+            </FormItem>
+            <FormItem label="监测周期" required style="width: 180px">
+              <Select
+                v-model:value="metricForm.checkIntervalMinutes"
+                :options="CHECK_INTERVAL_OPTIONS"
+              />
+            </FormItem>
+          </Space>
+          <FormItem label="连续超限次数（防抖）">
+            <InputNumber
+              v-model:value="metricForm.durationCount"
+              :min="1"
+              :max="10"
+              style="width: 180px"
+            />
+            <span class="ml-2 text-xs text-gray-500">
+              需连续 N 个周期检查均超限才触发
+            </span>
+          </FormItem>
+          <div class="mb-2 rounded p-2 text-xs text-gray-500" style="background: hsl(var(--muted) / 42%)">
+            触发动作：生成预警记录 + 站内通知（不自动创建工单/触发诊断，由人工在处置/诊断模块处理）。
+          </div>
+        </template>
+
+        <!-- 存量 4 类实时值规则：保留可视化 DSL 编辑器（兼容编辑） -->
+        <template v-else>
+          <div class="mb-2 rounded p-2 text-xs" style="background: hsl(var(--status-warning) / 0.08); color: hsl(var(--status-warning))">
+            存量实时值规则（{{ ruleTypeLabel[editForm.ruleType] }}）为兼容保留，建议以指标阈值规则替代后删除。
+          </div>
+          <FormItem label="规则配置" required>
+            <ClpmAlertDslEditor
+              v-model="editForm.dsl"
+              :rule-type="editForm.ruleType"
+            />
+          </FormItem>
+        </template>
       </Form>
     </Modal>
 

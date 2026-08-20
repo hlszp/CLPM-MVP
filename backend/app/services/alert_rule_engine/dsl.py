@@ -1,8 +1,14 @@
 """DSL 解析与校验（方案 §3 + 附录 A）。
 
-4 类规则（THRESHOLD/DRIFT/COMPOSITE/CONFIDENCE）+ 通用字段
-（durationSeconds/cooldownSeconds/severity/confidencePolicy/timeWindow/actions/
-priority/dedupKey）。校验规则见附录 A。
+规则类型：
+- METRIC_THRESHOLD（指标阈值预警，2026-08-20 重构主推）：基于评估指标（KPI）
+  或诊断结果的阈值预警，按监测周期定期检查，生成预警记录 + 通知，
+  不产生工单/诊断联动动作。
+- THRESHOLD/DRIFT/COMPOSITE/CONFIDENCE（4 类实时值 DSL 规则，存量兼容，
+  前端不再支持新建）。
+
+通用字段：durationSeconds/cooldownSeconds/severity/confidencePolicy/timeWindow/
+actions/priority/dedupKey。校验规则见附录 A。
 
 使用：``validate_dsl(dsl_dict)`` → 校验通过返回 normalized DSL，失败抛 ValidationError。
 """
@@ -17,7 +23,7 @@ from typing import Any
 # 枚举常量（对齐方案 §3）
 # ---------------------------------------------------------------------------
 
-RULE_TYPES = frozenset({"THRESHOLD", "DRIFT", "COMPOSITE", "CONFIDENCE"})
+RULE_TYPES = frozenset({"METRIC_THRESHOLD", "THRESHOLD", "DRIFT", "COMPOSITE", "CONFIDENCE"})
 LOOP_SELECTOR_TYPES = frozenset({"ALL", "LOOP", "PLANT", "CONTROL_TYPE"})
 METRICS = frozenset({"PV", "SP", "OP", "MODE", "PID_P", "PID_I", "PID_D"})
 OPERATORS = frozenset({">", ">=", "<", "<=", "==", "!=", "IN", "NOT_IN", "RATE_OF_CHANGE"})
@@ -25,12 +31,42 @@ SEVERITIES = frozenset({"INFO", "WARN", "ERROR", "CRITICAL"})
 CONFIDENCE_LEVELS = frozenset({"A", "B", "C", "D", "E"})
 CONFIDENCE_ACTIONS = frozenset({"SUPPRESS", "DOWNGRADE"})
 ACTION_TYPES = frozenset({"CREATE_EVENT", "CREATE_TRACKER", "NOTIFY", "TRIGGER_DIAGNOSIS"})
+#: METRIC_THRESHOLD 规则允许的动作（纯记录 + 通知，不做工单/诊断联动）
+METRIC_ACTION_TYPES = frozenset({"CREATE_EVENT", "NOTIFY"})
 STATISTICS = frozenset({"MEAN", "STDDEV", "P95", "P99", "MIN", "MAX"})
 DEVIATION_TYPES = frozenset({"ABSOLUTE", "RELATIVE", "SIGMA"})
 BASELINE_TYPES = frozenset({"STATIC", "HISTORICAL", "RULE_BASED"})
 COMPOSITE_LOGIC = frozenset({"AND", "OR", "NOT", "SEQUENCE"})
 COMPOSITE_OPERAND_TYPES = frozenset({"THRESHOLD", "DRIFT", "CONFIDENCE", "COMPOSITE"})
 DEDUP_KEY_VARS = frozenset({"loop_id", "rule_id", "tag_code", "severity"})
+
+#: METRIC_THRESHOLD 指标来源
+METRIC_SOURCES = frozenset({"KPI", "DIAGNOSIS"})
+#: KPI 来源可监测的指标代码（loop_confidence_latest 载体）
+KPI_METRIC_CODES = frozenset(
+    {
+        "score",
+        "accuracy_rate",
+        "fast_rate",
+        "steady_rate",
+        "effective_auto_rate",
+        "auto_mode_rate",
+        "oscillation_rate",
+        "saturation_rate",
+        "good_value_rate",
+        "valid_rate",
+    }
+)
+#: DIAGNOSIS 来源可监测的指标代码（diagnosis_run 最新一条载体）
+#: severity 映射数值：LOW=1 / MEDIUM=2 / HIGH=3（用 GT/GE 比较）
+DIAGNOSIS_METRIC_CODES = frozenset({"severity", "primary_confidence"})
+#: METRIC_THRESHOLD 比较符
+METRIC_OPERATORS = frozenset({">", ">=", "<", "<="})
+
+MIN_CHECK_INTERVAL_MINUTES = 5
+MAX_CHECK_INTERVAL_MINUTES = 1440
+MIN_DURATION_COUNT = 1
+MAX_DURATION_COUNT = 10
 
 MAX_DSL_LENGTH = 4000
 MAX_NESTING_DEPTH = 3
@@ -207,17 +243,20 @@ def validate_dsl(dsl: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(actions, list) or len(actions) < 1:
         errors.append({"field": "actions", "message": "至少 1 个动作"})
     else:
+        # METRIC_THRESHOLD 仅允许 CREATE_EVENT/NOTIFY（纯记录 + 通知，
+        # 不做工单/诊断联动）；其余类型允许全部 4 类动作
+        allowed_actions = METRIC_ACTION_TYPES if rule_type == "METRIC_THRESHOLD" else ACTION_TYPES
         has_create_event = False
         for i, act in enumerate(actions):
             if not isinstance(act, dict):
                 errors.append({"field": f"actions[{i}]", "message": "必须为对象"})
                 continue
             act_type = act.get("type")
-            if act_type not in ACTION_TYPES:
+            if act_type not in allowed_actions:
                 errors.append(
                     {
                         "field": f"actions[{i}].type",
-                        "message": f"必须为 {ACTION_TYPES} 之一",
+                        "message": f"必须为 {allowed_actions} 之一",
                     }
                 )
             if act_type == "CREATE_EVENT":
@@ -264,7 +303,9 @@ def _validate_condition(
     condition: dict[str, Any], rule_type: str, errors: list[dict[str, str]]
 ) -> None:
     """按规则类型校验 condition 子结构。"""
-    if rule_type == "THRESHOLD":
+    if rule_type == "METRIC_THRESHOLD":
+        _validate_metric_threshold_condition(condition, errors)
+    elif rule_type == "THRESHOLD":
         _validate_threshold_condition(condition, errors)
     elif rule_type == "DRIFT":
         _validate_drift_condition(condition, errors)
@@ -279,6 +320,93 @@ def _validate_condition(
                     "message": f"CONFIDENCE 规则 maxLevel 必须为 {CONFIDENCE_LEVELS} 之一",
                 }
             )
+
+
+def _validate_metric_threshold_condition(
+    condition: dict[str, Any], errors: list[dict[str, str]]
+) -> None:
+    """METRIC_THRESHOLD（指标阈值预警）条件校验。
+
+    结构::
+
+        {
+          "metricSource": "KPI" | "DIAGNOSIS",
+          "metricCode": "score" | "severity" | ...,
+          "operator": ">" | ">=" | "<" | "<=",
+          "value": <数值阈值>,
+          "checkIntervalMinutes": <监测周期 5-1440>,
+          "durationCount": <连续超限次数 1-10>
+        }
+    """
+    metric_source = condition.get("metricSource")
+    if metric_source not in METRIC_SOURCES:
+        errors.append(
+            {
+                "field": "condition.metricSource",
+                "message": f"必须为 {sorted(METRIC_SOURCES)} 之一",
+            }
+        )
+        metric_source = None
+
+    metric_code = condition.get("metricCode")
+    if metric_source == "KPI":
+        if metric_code not in KPI_METRIC_CODES:
+            errors.append(
+                {
+                    "field": "condition.metricCode",
+                    "message": f"KPI 来源必须为 {sorted(KPI_METRIC_CODES)} 之一",
+                }
+            )
+    elif metric_source == "DIAGNOSIS":
+        if metric_code not in DIAGNOSIS_METRIC_CODES:
+            errors.append(
+                {
+                    "field": "condition.metricCode",
+                    "message": f"DIAGNOSIS 来源必须为 {sorted(DIAGNOSIS_METRIC_CODES)} 之一",
+                }
+            )
+
+    operator = condition.get("operator")
+    if operator not in METRIC_OPERATORS:
+        errors.append(
+            {
+                "field": "condition.operator",
+                "message": f"必须为 {sorted(METRIC_OPERATORS)} 之一",
+            }
+        )
+
+    value = condition.get("value")
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        errors.append({"field": "condition.value", "message": "必须为数值"})
+
+    interval = condition.get("checkIntervalMinutes", 60)
+    if (
+        not isinstance(interval, int)
+        or interval < MIN_CHECK_INTERVAL_MINUTES
+        or interval > MAX_CHECK_INTERVAL_MINUTES
+    ):
+        errors.append(
+            {
+                "field": "condition.checkIntervalMinutes",
+                "message": (
+                    f"必须为 {MIN_CHECK_INTERVAL_MINUTES}-"
+                    f"{MAX_CHECK_INTERVAL_MINUTES} 整数（分钟）"
+                ),
+            }
+        )
+
+    duration_count = condition.get("durationCount", 1)
+    if (
+        not isinstance(duration_count, int)
+        or duration_count < MIN_DURATION_COUNT
+        or duration_count > MAX_DURATION_COUNT
+    ):
+        errors.append(
+            {
+                "field": "condition.durationCount",
+                "message": f"必须为 {MIN_DURATION_COUNT}-{MAX_DURATION_COUNT} 整数",
+            }
+        )
 
 
 def _validate_threshold_condition(condition: dict[str, Any], errors: list[dict[str, str]]) -> None:

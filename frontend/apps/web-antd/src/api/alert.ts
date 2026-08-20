@@ -8,7 +8,12 @@ import { requestClient } from '#/api/request';
 
 export namespace AlertApi {
   /** 规则类型 */
-  export type RuleType = 'COMPOSITE' | 'CONFIDENCE' | 'DRIFT' | 'THRESHOLD';
+  export type RuleType =
+    | 'COMPOSITE'
+    | 'CONFIDENCE'
+    | 'DRIFT'
+    | 'METRIC_THRESHOLD'
+    | 'THRESHOLD';
 
   /** 订阅范围类型 */
   export type ScopeType = 'ALL' | 'CONTROL_TYPE' | 'LOOP' | 'PLANT';

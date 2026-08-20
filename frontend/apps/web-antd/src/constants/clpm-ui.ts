@@ -285,13 +285,14 @@ export const TAG_SLOT_TERM_EXPLANATIONS: Record<string, TermExplanation> = {
 
 /** 规则类型 → 中文 */
 export const ALERT_RULE_TYPE_LABEL: Record<
-  'COMPOSITE' | 'CONFIDENCE' | 'DRIFT' | 'THRESHOLD',
+  'COMPOSITE' | 'CONFIDENCE' | 'DRIFT' | 'METRIC_THRESHOLD' | 'THRESHOLD',
   string
 > = {
-  THRESHOLD: '阈值',
-  DRIFT: '漂移',
-  COMPOSITE: '组合',
-  CONFIDENCE: '可信度',
+  METRIC_THRESHOLD: '指标阈值',
+  THRESHOLD: '阈值（存量）',
+  DRIFT: '漂移（存量）',
+  COMPOSITE: '组合（存量）',
+  CONFIDENCE: '可信度（存量）',
 };
 
 /** 监控指标 → 中文（对齐 7 个 Tag 角色） */

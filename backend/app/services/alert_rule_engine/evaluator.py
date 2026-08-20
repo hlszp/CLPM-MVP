@@ -102,7 +102,12 @@ async def evaluate_rule(
     rule_type = dsl.get("ruleType")
     condition = dsl.get("condition", {})
 
-    if rule_type == "THRESHOLD":
+    if rule_type == "METRIC_THRESHOLD":
+        # 指标阈值预警：基于评估/诊断结果，按监测周期检查（周期节流在函数内）
+        return await _evaluate_metric_threshold_rule(
+            db, rule, condition, loop_id, severity, confidence_level
+        )
+    elif rule_type == "THRESHOLD":
         triggered, triggered_value, snapshot = _evaluate_threshold(condition, current_values)
     elif rule_type == "CONFIDENCE":
         triggered, triggered_value, snapshot = _evaluate_confidence(condition, confidence_level)
@@ -433,6 +438,200 @@ async def _get_current_values(loop_id: str) -> dict[str, float | str]:
     except Exception:  # noqa: BLE001
         logger.debug("实时值读取异常，返回空值", exc_info=True)
     return values
+
+
+# ---------------------------------------------------------------------------
+# METRIC_THRESHOLD（指标阈值预警）求值
+# ---------------------------------------------------------------------------
+
+#: 诊断严重度 → 数值映射（severity 指标比较用）
+_DIAG_SEVERITY_MAP = {"LOW": 1.0, "MEDIUM": 2.0, "HIGH": 3.0}
+
+
+async def _evaluate_metric_threshold_rule(
+    db: AsyncSession,
+    rule: dict[str, Any],
+    condition: dict[str, Any],
+    loop_id: str,
+    severity: str,
+    confidence_level: str | None,
+) -> EvaluationResult:
+    """指标阈值预警求值（基于评估 KPI / 诊断结果，按监测周期检查）。
+
+    流程：
+    1. 周期节流：Redis ``alert:metriccheck:<rule_id>:<loop_id>`` SETNX EX
+       checkIntervalMinutes×60s —— 存在则本周期已检查过，跳过；
+    2. 数据新鲜度：结果时间早于 2× 监测周期则视为陈旧，跳过；
+    3. 取指标值并比较；
+    4. 连续超限计数：Redis ``alert:mcount:<rule_id>:<loop_id>`` INCR，
+       达到 durationCount 才触发（触发后清零重新计数）；未超限即清零。
+    """
+    from app.core.redis import redis_client
+
+    dsl = rule.get("dsl", {})
+    rule_id = str(rule.get("id", ""))
+    metric_source = condition.get("metricSource", "KPI")
+    metric_code = condition.get("metricCode")
+    operator = condition.get("operator")
+    threshold_value = condition.get("value")
+    interval_minutes = condition.get("checkIntervalMinutes", 60)
+    duration_count = condition.get("durationCount", 1)
+
+    # dedupKey 渲染（与主流程一致）
+    dedup_template = dsl.get("dedupKey", "${loop_id}+${rule_id}")
+    dedup_key = render_dedup_key(dedup_template, loop_id=loop_id, rule_id=rule_id)
+
+    def _result(triggered: bool, snapshot: dict[str, Any], value: float | None = None):
+        return EvaluationResult(
+            triggered=triggered,
+            triggered_value=value,
+            condition_snapshot=snapshot,
+            confidence_level=confidence_level,
+            severity=severity,
+            dedup_key=dedup_key,
+        )
+
+    # 1. 周期节流（Redis 不可用时退化为每次都检查）
+    check_key = f"alert:metriccheck:{rule_id}:{loop_id}"
+    try:
+        already_checked = not await redis_client.set(
+            check_key, "1", ex=max(interval_minutes, 1) * 60, nx=True
+        )
+        if already_checked:
+            return _result(False, {"reason": "interval_not_reached"})
+    except Exception:  # noqa: BLE001
+        logger.debug("指标预警周期节流检查失败（Redis 异常，按需继续）", exc_info=True)
+
+    # 2. 取指标值
+    try:
+        if metric_source == "DIAGNOSIS":
+            actual, data_time = await _get_latest_diagnosis_metric(db, loop_id, metric_code)
+        else:
+            actual, data_time = await _get_latest_kpi_metric(db, loop_id, metric_code)
+    except Exception:  # noqa: BLE001
+        logger.warning("指标预警取值失败: loop=%s metric=%s", loop_id, metric_code, exc_info=True)
+        return _result(False, {"reason": "query_failed", "metric": metric_code})
+
+    if actual is None:
+        return _result(False, {"reason": "no_data", "metric": metric_code})
+
+    # 3. 数据新鲜度：早于 2× 监测周期视为陈旧（评估/诊断任务停摆时不误报）
+    if data_time is not None:
+        from datetime import UTC, datetime
+
+        age_seconds = (datetime.now(UTC) - data_time).total_seconds()
+        if age_seconds > max(interval_minutes * 60 * 2, 7200):
+            return _result(
+                False,
+                {"reason": "stale_data", "metric": metric_code, "ageSeconds": age_seconds},
+            )
+
+    # 4. 比较
+    triggered = _compare(actual, operator, float(threshold_value))
+    snapshot = {
+        "metricSource": metric_source,
+        "metric": metric_code,
+        "operator": operator,
+        "threshold": threshold_value,
+        "actualValue": actual,
+        "dataTime": data_time.isoformat() if data_time else None,
+    }
+
+    # 5. 连续超限计数（Redis 异常时按 durationCount=1 直接判定）
+    if duration_count > 1:
+        mcount_key = f"alert:mcount:{rule_id}:{loop_id}"
+        try:
+            if triggered:
+                count = await redis_client.incr(mcount_key)
+                await redis_client.expire(mcount_key, max(interval_minutes * 60 * 4, 86400))
+                if count < duration_count:
+                    return _result(False, {**snapshot, "consecutiveCount": count})
+                # 达到连续次数：清零计数（冷却期后需重新累计）
+                await redis_client.delete(mcount_key)
+            else:
+                await redis_client.delete(mcount_key)
+        except Exception:  # noqa: BLE001
+            logger.debug("指标预警连续计数失败（Redis 异常，直接判定）", exc_info=True)
+
+    return _result(triggered, snapshot, actual)
+
+
+async def _get_latest_kpi_metric(
+    db: AsyncSession, loop_id: str, metric_code: str | None
+) -> tuple[float | None, Any]:
+    """从 loop_confidence_latest（每回路单行）读取 KPI 指标值与评估时间。
+
+    Returns:
+        (指标值, 评估时刻 timezone-aware UTC)；无数据返回 (None, None)。
+    """
+    from datetime import UTC
+
+    from sqlalchemy import select
+
+    from app.models.metric import LoopConfidenceLatest
+
+    row = (
+        await db.execute(
+            select(LoopConfidenceLatest).where(LoopConfidenceLatest.loop_id == loop_id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None, None
+
+    value: float | None = None
+    if metric_code == "score":
+        value = float(row.score) if row.score is not None else None
+    elif metric_code == "valid_rate":
+        value = float(row.valid_rate) if row.valid_rate is not None else None
+    elif metric_code and row.metrics and metric_code in row.metrics:
+        entry = row.metrics[metric_code]
+        # metrics JSONB 结构：{code: {value: x, confidence: ...}} 或直接数值
+        if isinstance(entry, dict):
+            raw = entry.get("value")
+            value = float(raw) if raw is not None else None
+        elif isinstance(entry, int | float):
+            value = float(entry)
+
+    eval_time = row.eval_time if row.eval_time is not None else row.updated_at
+    aware_time = (
+        eval_time.replace(tzinfo=UTC) if eval_time and eval_time.tzinfo is None else eval_time
+    )
+    return value, aware_time
+
+
+async def _get_latest_diagnosis_metric(
+    db: AsyncSession, loop_id: str, metric_code: str | None
+) -> tuple[float | None, Any]:
+    """从 diagnosis_run 最新一条读取诊断指标值与诊断时间。
+
+    可监测指标：severity（LOW=1/MEDIUM=2/HIGH=3）、primary_confidence（0-1）。
+    """
+    from datetime import UTC
+
+    from sqlalchemy import select
+
+    from app.models.diagnosis_run import DiagnosisRun
+
+    row = (
+        await db.execute(
+            select(DiagnosisRun)
+            .where(DiagnosisRun.loop_id == loop_id)
+            .order_by(DiagnosisRun.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None, None
+
+    value: float | None = None
+    if metric_code == "severity":
+        value = _DIAG_SEVERITY_MAP.get(row.severity or "")
+    elif metric_code == "primary_confidence":
+        value = float(row.primary_confidence) if row.primary_confidence is not None else None
+
+    created = row.created_at
+    aware_time = created.replace(tzinfo=UTC) if created and created.tzinfo is None else created
+    return value, aware_time
 
 
 # ---------------------------------------------------------------------------
