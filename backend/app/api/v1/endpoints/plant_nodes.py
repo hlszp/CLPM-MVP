@@ -66,12 +66,39 @@ async def list_plant_nodes_paged(
     source: str | None = Query(
         None, description="按来源筛选：aas（AAS 同步节点）/ local（本地维护）"
     ),
+    nodeId: uuid.UUID | None = Query(
+        None, description="按节点（含全部子树）筛选：左侧树选中节点联动"
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
-    """工厂节点分页列表（工厂配置页：含层级路径/父节点名/来源标记）。"""
+    """工厂节点分页列表（工厂配置页：含层级路径/父节点名/来源标记）。
+
+    ``nodeId`` 支持按节点子树筛选（选中装置节点 → 返回该装置本身 +
+    其下全部单元节点，三层结构一次展开即可）。
+    """
+    # 全量节点（子树计算 + 路径构建共用）
+    all_nodes = (await db.execute(select(PlantNode))).scalars().all()
+    node_map = {n.id: n for n in all_nodes}
+
+    # nodeId 子树筛选：BFS 收集选中节点及其全部后代
+    subtree_ids: set[str] | None = None
+    if nodeId is not None:
+        subtree_ids = {str(nodeId)}
+        queue = [str(nodeId)]
+        children_index: dict[str | None, list[PlantNode]] = {}
+        for n in all_nodes:
+            children_index.setdefault(n.parent_id, []).append(n)
+        while queue:
+            current = queue.pop()
+            for child in children_index.get(current, []):
+                child_id = str(child.id)
+                if child_id not in subtree_ids:
+                    subtree_ids.add(child_id)
+                    queue.append(child_id)
+
     stmt = select(PlantNode)
     if keyword:
         stmt = stmt.where(PlantNode.name.ilike(f"%{keyword}%"))
@@ -81,6 +108,8 @@ async def list_plant_nodes_paged(
         stmt = stmt.where(PlantNode.source_node_id.isnot(None))
     elif source == "local":
         stmt = stmt.where(PlantNode.source_node_id.is_(None))
+    if subtree_ids is not None:
+        stmt = stmt.where(PlantNode.id.in_(subtree_ids))
 
     # 计数
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -98,10 +127,6 @@ async def list_plant_nodes_paged(
         .scalars()
         .all()
     )
-
-    # 全量 id→节点映射（构建路径与父名）
-    all_nodes = (await db.execute(select(PlantNode))).scalars().all()
-    node_map = {n.id: n for n in all_nodes}
 
     def build_path(node: PlantNode) -> str:
         parts: list[str] = []

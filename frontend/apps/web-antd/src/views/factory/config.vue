@@ -59,6 +59,7 @@ import {
   updatePlantNodeApi,
 } from '#/api/plant-node';
 import {
+  ClpmDangerConfirmModal,
   ClpmHelpIcon,
   ClpmPageToolbar,
   ClpmStandardActions,
@@ -112,8 +113,9 @@ async function loadTree() {
 
 function handleTreeSelect(node: null | PlantNodeApi.PlantNode) {
   selectedNode.value = node;
-  // 联动右侧列表：选中节点 → 按名称过滤（同词根）
-  query.keyword = node ? node.name : undefined;
+  // 联动右侧列表：按选中节点（含全部子树）筛选，清除关键字避免交叉过滤
+  query.nodeId = node?.id;
+  query.keyword = undefined;
   query.page = 1;
   loadList();
 }
@@ -127,9 +129,21 @@ const query = reactive({
   keyword: undefined as string | undefined,
   nodeType: undefined as PlantNodeApi.NodeType | undefined,
   source: undefined as 'aas' | 'local' | undefined,
+  nodeId: undefined as string | undefined,
   page: 1,
   pageSize: 20,
 });
+
+// ===== 行选择（批量删除） =====
+
+const selectedRowKeys = ref<string[]>([]);
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (number | string)[]) => {
+    selectedRowKeys.value = keys.map(String);
+  },
+}));
 
 const columns: TableColumnsType = [
   { title: '名称', dataIndex: 'name', key: 'name', width: 160 },
@@ -174,6 +188,7 @@ async function loadList() {
       keyword: query.keyword,
       nodeType: query.nodeType,
       source: query.source,
+      nodeId: query.nodeId,
       page: query.page,
       pageSize: query.pageSize,
     });
@@ -187,8 +202,81 @@ async function loadList() {
 }
 
 function handleSearch() {
+  // 手动搜索时清除树选择（避免交叉过滤导致空结果）
+  if (query.keyword) {
+    selectedNode.value = null;
+    query.nodeId = undefined;
+  }
   query.page = 1;
   loadList();
+}
+
+// ===== 批量删除（串行逐节点，后删父级原则由服务端保护兜底） =====
+
+const batchDeleteOpen = ref(false);
+const batchDeleteLoading = ref(false);
+
+function openBatchDelete() {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选要删除的节点');
+    return;
+  }
+  batchDeleteOpen.value = true;
+}
+
+/** 选中项中含子节点的父节点（提示将被跳过） */
+const selectedWithChildren = computed(() => {
+  const idSet = new Set(selectedRowKeys.value);
+  return list.value.filter(
+    (n) => idSet.has(n.id) && n.parentId && idSet.has(n.parentId),
+  ).length;
+});
+
+async function handleBatchDeleteConfirm() {
+  const ids = [...selectedRowKeys.value];
+  if (ids.length === 0) return;
+  batchDeleteLoading.value = true;
+  const hide = message.loading(`正在删除 ${ids.length} 个节点…`, 0);
+  let deleted = 0;
+  const failed: Array<{ name: string; reason: string }> = [];
+  try {
+    // 串行删除：子先父后（列表按类型排序 UNIT 在 FACTORY 后不可靠，直接串行
+    // 依赖后端「存在子节点拒删」保护——失败的（含父子同选时先删父失败）收集后重试一轮）
+    for (const id of ids) {
+      try {
+        await deletePlantNodeApi(id);
+        deleted += 1;
+      } catch {
+        failed.push({ name: id, reason: '' });
+      }
+    }
+    // 第二轮：重试失败的（第一轮删除子节点后父节点应可删）
+    const retry: Array<{ name: string; reason: string }> = [];
+    for (const f of failed) {
+      try {
+        await deletePlantNodeApi(f.name);
+        deleted += 1;
+      } catch {
+        retry.push(f);
+      }
+    }
+    hide();
+    if (retry.length > 0) {
+      message.warning(
+        `已删除 ${deleted} 个节点，${retry.length} 个删除失败（存在子节点或关联回路的节点不可删除）`,
+      );
+    } else {
+      message.success(`批量删除成功，共删除 ${deleted} 个节点`);
+    }
+    selectedRowKeys.value = [];
+    batchDeleteOpen.value = false;
+    await Promise.all([loadTree(), loadList()]);
+  } catch {
+    hide();
+    // 错误已由拦截器处理
+  } finally {
+    batchDeleteLoading.value = false;
+  }
 }
 
 function handlePageChange(pag: TablePaginationConfig) {
@@ -654,6 +742,14 @@ onMounted(() => {
             <Button :loading="exporting" @click="handleExport"> 导出 </Button>
             <Button
               v-permission="['ADMIN']"
+              danger
+              :disabled="selectedRowKeys.length === 0"
+              @click="openBatchDelete"
+            >
+              批量删除{{ selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : '' }}
+            </Button>
+            <Button
+              v-permission="['ADMIN']"
               type="primary"
               @click="openCreateModal"
             >
@@ -667,6 +763,7 @@ onMounted(() => {
           :columns="columns"
           :data-source="list"
           :loading="loading"
+          :row-selection="rowSelection"
           :pagination="{
             current: query.page,
             pageSize: query.pageSize,
@@ -864,5 +961,20 @@ onMounted(() => {
         </template>
       </Table>
     </Modal>
+
+    <!-- 批量删除节点：危险确认弹窗 -->
+    <ClpmDangerConfirmModal
+      v-model:open="batchDeleteOpen"
+      title="批量删除工厂节点"
+      action="删除"
+      :target="`选中的 ${selectedRowKeys.length} 个节点`"
+      :impact-scope="`将删除选中的 ${selectedRowKeys.length} 个节点${selectedWithChildren > 0 ? '（父子同选时先删子后删父，自动两轮处理）' : ''}；存在子节点或关联回路的节点将被跳过并在结果中提示`"
+      rollback-tip="此操作不可逆，删除后无法恢复"
+      require-confirm-code
+      :confirm-code="`删除 ${selectedRowKeys.length} 个节点`"
+      confirm-code-placeholder="请输入「删除 N 个节点」以确认"
+      :loading="batchDeleteLoading"
+      @confirm="handleBatchDeleteConfirm"
+    />
   </Page>
 </template>

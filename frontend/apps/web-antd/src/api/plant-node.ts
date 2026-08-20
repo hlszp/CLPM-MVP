@@ -160,6 +160,8 @@ export interface PlantNodeListQuery {
   nodeType?: PlantNodeApi.NodeType;
   /** 来源筛选：aas（AAS 同步）/ local（本地维护） */
   source?: 'aas' | 'local';
+  /** 按节点（含全部子树）筛选：左侧树选中节点联动 */
+  nodeId?: string;
   page: number;
   pageSize: number;
 }
