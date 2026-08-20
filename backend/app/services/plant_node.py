@@ -51,6 +51,7 @@ def _node_to_dict(node: PlantNode) -> dict:
         "type": node.type,
         "parentId": str(node.parent_id) if node.parent_id else None,
         "isKpiEnabled": bool(node.is_kpi_enabled) if node.is_kpi_enabled is not None else False,
+        "sortOrder": node.sort_order or 0,
     }
 
 
@@ -62,14 +63,14 @@ async def list_plant_tree(db: AsyncSession, parent_id: str | None = None) -> lis
         parent_id: 父节点 ID。None 表示从顶层开始
 
     Returns:
-        树形结构列表（递归 children）
+        树形结构列表（递归 children，同级按 sort_order → name 排序）
     """
     result = await db.execute(select(PlantNode))
     all_nodes = result.scalars().all()
 
-    # 构建父子映射
+    # 构建父子映射（同级按 sort_order → name 排序）
     children_map: dict[str | None, list[PlantNode]] = {}
-    for node in all_nodes:
+    for node in sorted(all_nodes, key=lambda n: (n.sort_order or 0, n.name)):
         key = str(node.parent_id) if node.parent_id else None
         children_map.setdefault(key, []).append(node)
 
@@ -125,12 +126,26 @@ async def create_plant_node(
                 status_code=404,
             )
 
+    # 同父重名校验（数据库唯一约束兜底，前置校验给出友好错误）
+    dup_stmt = select(PlantNode).where(PlantNode.name == name)
+    if parent_id:
+        dup_stmt = dup_stmt.where(PlantNode.parent_id == parent_id)
+    else:
+        dup_stmt = dup_stmt.where(PlantNode.parent_id.is_(None))
+    if (await db.execute(dup_stmt)).scalar_one_or_none() is not None:
+        raise BizError(
+            code="ERR_NODE_NAME_DUPLICATED",
+            message=f"同级已存在同名节点「{name}」，节点名称在同一父级下不可重复",
+            status_code=409,
+        )
+
     # 创建节点
     node = PlantNode(
         id=str(uuid4()),
         name=name,
         type=node_type,
         parent_id=parent_id,
+        updated_by=operator,
     )
     db.add(node)
     await db.flush()
@@ -160,8 +175,9 @@ async def update_plant_node(
     name: str,
     operator: str,
     is_kpi_enabled: bool | None = None,
+    sort_order: int | None = None,
 ) -> dict:
-    """更新工厂节点（名称 + 是否纳入性能评估）。
+    """更新工厂节点（名称 + 排序 + 是否纳入性能评估）。
 
     Raises:
         BizError: ERR_NODE_NOT_FOUND (节点不存在)
@@ -176,9 +192,27 @@ async def update_plant_node(
         )
 
     before_value = f'{{"name":"{node.name}","isKpiEnabled":{node.is_kpi_enabled}}}'
+
+    # 改名时校验同父重名（改名场景才需要；数据库唯一约束兜底）
+    if name != node.name:
+        dup_stmt = select(PlantNode).where(PlantNode.name == name, PlantNode.id != node_id)
+        if node.parent_id:
+            dup_stmt = dup_stmt.where(PlantNode.parent_id == node.parent_id)
+        else:
+            dup_stmt = dup_stmt.where(PlantNode.parent_id.is_(None))
+        if (await db.execute(dup_stmt)).scalar_one_or_none() is not None:
+            raise BizError(
+                code="ERR_NODE_NAME_DUPLICATED",
+                message=f"同级已存在同名节点「{name}」，节点名称在同一父级下不可重复",
+                status_code=409,
+            )
+
     node.name = name
     if is_kpi_enabled is not None:
         node.is_kpi_enabled = is_kpi_enabled
+    if sort_order is not None:
+        node.sort_order = sort_order
+    node.updated_by = operator
     after_value = f'{{"name":"{name}","isKpiEnabled":{node.is_kpi_enabled}}}'
 
     await _write_audit(
@@ -481,6 +515,7 @@ async def _import_one_node(
             ensure_ascii=False,
         )
         node.type = node_type
+        node.updated_by = f"import:{operator}"
         after_value = json.dumps(
             {"name": name, "type": node_type, "parentId": parent_id},
             ensure_ascii=False,
@@ -500,6 +535,7 @@ async def _import_one_node(
             name=name,
             type=node_type,
             parent_id=parent_id,
+            updated_by=f"import:{operator}",
         )
         db.add(node)
         await db.flush()

@@ -26,6 +26,9 @@ class PlantNodeUpdate(CamelModel):
 
     name: str = Field(..., min_length=1, max_length=100, description="节点名称")
     isKpiEnabled: bool | None = Field(None, description="是否纳入性能评估")
+    sortOrder: int | None = Field(
+        None, ge=0, le=999_999, description="同级展示排序（小值在前，同值按名称）"
+    )
 
 
 class PlantNodeInfo(CamelModel):
@@ -60,6 +63,10 @@ class PlantNodeListItem(CamelModel):
     isKpiEnabled: bool | None = None
     """AAS 同步来源节点 Id（有值=AAS 同步节点，本地改名会被同步覆盖）"""
     sourceNodeId: int | None = None
+    """同级展示排序（小值在前，同值按名称）"""
+    sortOrder: int = 0
+    """最后操作人（用户名 / aas:sync / import:用户名）"""
+    updatedBy: str | None = None
     updatedAt: str | None = None
 
 

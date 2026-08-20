@@ -115,11 +115,11 @@ async def list_plant_nodes_paged(
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
 
-    # 分页（名称排序）
+    # 分页（排序：sort_order → name）
     rows = (
         (
             await db.execute(
-                stmt.order_by(PlantNode.type, PlantNode.name)
+                stmt.order_by(PlantNode.sort_order, PlantNode.name)
                 .offset((page - 1) * pageSize)
                 .limit(pageSize)
             )
@@ -150,6 +150,8 @@ async def list_plant_nodes_paged(
             path=build_path(n),
             isKpiEnabled=n.is_kpi_enabled,
             sourceNodeId=n.source_node_id,
+            sortOrder=n.sort_order or 0,
+            updatedBy=n.updated_by,
             updatedAt=n.updated_at.isoformat() if n.updated_at else None,
         )
         for n in rows
@@ -226,13 +228,14 @@ async def update_plant_node_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """更新工厂节点（名称 + 是否纳入性能评估，仅 ADMIN）。"""
+    """更新工厂节点（名称 + 排序 + 是否纳入性能评估，仅 ADMIN）。"""
     data = await update_plant_node(
         db=db,
         node_id=str(node_id),
         name=body.name,
         operator=user.username,
         is_kpi_enabled=body.isKpiEnabled,
+        sort_order=body.sortOrder,
     )
     return success(data=data, message="更新成功")
 

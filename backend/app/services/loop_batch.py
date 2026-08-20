@@ -1,9 +1,8 @@
-"""Loop batch operations & monitor trigger services (配置增强).
+"""Loop batch operations services (配置增强).
 
 提供：
 - ``batch_update_loops``: 批量更新回路（监控/统计/重要等级/参评）
 - ``batch_delete_loops``: 批量硬删除回路（解绑 Tag 映射 + 级联清理关联数据）
-- ``check_node_monitor_trigger``: SVC-10 位号触发监控检查
 
 所有写操作均记录审计日志。
 """
@@ -12,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select
@@ -21,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger, LoopTagMapping
-from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
@@ -283,107 +281,15 @@ async def batch_delete_loops(
 
 
 # ---------------------------------------------------------------------------
-# SVC-10: 位号触发监控检查
+# SVC-10 位号触发监控（check_node_monitor_trigger）已于 2026-08-20 移除：
+# 该功能从未接线（全代码库无调用方），plant_node.monitor_tag_id /
+# monitor_trigger_value 字段全 NULL，属死代码 + 死字段。迁移
+# e1f2a3b4c5d6 已同步删除两列。若将来需要"按位号值启停节点监控"，
+# 按实际需求重新设计。
 # ---------------------------------------------------------------------------
-
-
-async def check_node_monitor_trigger(
-    db: AsyncSession,
-    plant_node_id: str,
-) -> bool:
-    """位号触发监控检查（SVC-10）。
-
-    查询 plant_node.monitor_tag_id：
-    - 无 monitor_tag_id 配置时返回 True（默认监控）
-    - 有配置时查询 TDengine 最新值，值等于 monitor_trigger_value 时返回 True
-    - 否则返回 False
-
-    Args:
-        db: 异步数据库会话
-        plant_node_id: 工厂节点 ID
-
-    Returns:
-        是否应监控该节点下的回路
-
-    Raises:
-        BizError: ERR_NODE_NOT_FOUND (节点不存在)
-    """
-    result = await db.execute(select(PlantNode).where(PlantNode.id == plant_node_id))
-    node = result.scalar_one_or_none()
-    if node is None:
-        raise BizError(
-            code="ERR_NODE_NOT_FOUND",
-            message=f"工厂节点不存在: {plant_node_id}",
-            status_code=404,
-        )
-
-    # 无 monitor_tag_id 配置 → 默认监控
-    if not node.monitor_tag_id:
-        return True
-
-    # 查询 monitor_tag_id 对应的 tag_name
-    tag_result = await db.execute(select(TagRegistry).where(TagRegistry.id == node.monitor_tag_id))
-    tag = tag_result.scalar_one_or_none()
-    if tag is None:
-        # 配置了 monitor_tag_id 但 tag 已删除 → 默认监控
-        logger.warning(
-            "[SVC-10] 节点 %s 的 monitor_tag_id %s 对应 Tag 不存在，回退默认监控",
-            plant_node_id,
-            node.monitor_tag_id,
-        )
-        return True
-
-    # 通过数据源工厂获取查询函数（适配 tdengine/remote_api）
-    from app.services.data_source.factory import get_provider
-
-    query_trend_data = get_provider().query_trend_data
-
-    # 查询历史数据最新值（最近 5 分钟）
-    end_time = datetime.now(UTC).replace(tzinfo=None)
-    start_time = end_time - timedelta(minutes=5)
-    trend_data = await query_trend_data(
-        tag_name=tag.tag_name,
-        start_time=start_time.isoformat(),
-        end_time=end_time.isoformat(),
-    )
-
-    if not trend_data:
-        # 无数据时默认不监控（避免误报）
-        logger.info(
-            "[SVC-10] 节点 %s 的监控位号 %s 无最近数据，返回 False",
-            plant_node_id,
-            tag.tag_name,
-        )
-        return False
-
-    # 取最新一条数据点
-    latest = trend_data[-1]
-    latest_value = latest.get("value")
-
-    # 与 monitor_trigger_value 比较（字符串化后比较，支持 "true"/"1"/"ON"）
-    trigger_value = node.monitor_trigger_value
-    if trigger_value is None:
-        # 配置了 monitor_tag_id 但无 trigger_value → 默认监控
-        return True
-
-    # 数值与字符串均可比较：将 latest_value 字符串化
-    latest_str = str(latest_value).strip().lower() if latest_value is not None else ""
-    trigger_str = str(trigger_value).strip().lower()
-
-    matched = latest_str == trigger_str
-    logger.info(
-        "[SVC-10] 节点 %s 监控位号 %s 最新值=%s, 触发值=%s, 匹配=%s",
-        plant_node_id,
-        tag.tag_name,
-        latest_value,
-        trigger_value,
-        matched,
-    )
-    return matched
 
 
 __all__ = [
     "batch_delete_loops",
     "batch_update_loops",
-    "check_node_monitor_trigger",
 ]

@@ -36,6 +36,8 @@ export namespace PlantNodeApi {
   /** 更新节点参数（IDS v3.2 §2.2.3） */
   export interface UpdatePlantNodeParams {
     name: string;
+    /** 同级展示排序（小值在前，同值按名称） */
+    sortOrder?: number;
   }
 
   /** 通用操作结果 */
@@ -151,6 +153,10 @@ export interface PlantNodeListItem {
   isKpiEnabled: boolean | null;
   /** AAS 同步来源节点 Id（有值=AAS 同步节点，本地改名会被同步覆盖） */
   sourceNodeId: null | number;
+  /** 同级展示排序（小值在前，同值按名称） */
+  sortOrder: number;
+  /** 最后操作人（用户名 / aas:sync / import:用户名） */
+  updatedBy: null | string;
   updatedAt: null | string;
 }
 

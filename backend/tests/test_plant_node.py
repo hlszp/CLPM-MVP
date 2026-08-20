@@ -21,12 +21,14 @@ FACTORY_NODE.id = "00000000-0000-0000-0000-000000000101"
 FACTORY_NODE.name = "加氢联合车间"
 FACTORY_NODE.type = "FACTORY"
 FACTORY_NODE.parent_id = None
+FACTORY_NODE.sort_order = 0
 
 UNIT_NODE = MagicMock()
 UNIT_NODE.id = "00000000-0000-0000-0000-000000000102"
 UNIT_NODE.name = "加氢精制"
 UNIT_NODE.type = "UNIT"
 UNIT_NODE.parent_id = "00000000-0000-0000-0000-000000000101"
+UNIT_NODE.sort_order = 0
 
 
 def _make_scalars_mock(items: list) -> MagicMock:
@@ -82,8 +84,13 @@ class TestPlantNodeCreate:
 
     def test_create_node_admin_success(self, client, mock_db, fake_redis) -> None:
         """ADMIN 可以创建节点。"""
-        # mock: 查询父节点存在、commit 成功
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(FACTORY_NODE))
+        # mock 调用序列：父节点存在 → 同父重名检查无冲突
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(FACTORY_NODE),  # 父节点存在
+                _make_scalar_one_or_none_mock(None),  # 同父重名检查：无冲突
+            ]
+        )
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/plant-nodes",
@@ -95,6 +102,23 @@ class TestPlantNodeCreate:
         assert body["code"] == "0"
         assert body["data"]["name"] == "新装置"
         assert body["data"]["type"] == "UNIT"
+
+    def test_create_node_duplicate_name_rejected(self, client, mock_db, fake_redis) -> None:
+        """同父下创建同名节点返回 409（数据库唯一约束的前置友好校验）。"""
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(FACTORY_NODE),  # 父节点存在
+                _make_scalar_one_or_none_mock(UNIT_NODE),  # 同父重名检查：已存在
+            ]
+        )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/plant-nodes",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"name": "加氢精制", "type": "UNIT", "parentId": FACTORY_NODE.id},
+            )
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "ERR_NODE_NAME_DUPLICATED"
 
     def test_create_node_ic_engineer_forbidden(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 不能创建节点（403）。"""

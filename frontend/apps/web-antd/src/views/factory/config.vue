@@ -161,6 +161,13 @@ const columns: TableColumnsType = [
     ellipsis: true,
   },
   {
+    title: '排序',
+    dataIndex: 'sortOrder',
+    key: 'sortOrder',
+    width: 70,
+    align: 'center',
+  },
+  {
     title: '来源',
     key: 'source',
     width: 100,
@@ -172,11 +179,9 @@ const columns: TableColumnsType = [
     width: 80,
   },
   {
-    title: '更新时间',
-    dataIndex: 'updatedAt',
-    key: 'updatedAt',
-    width: 150,
-    customRender: ({ value }) => (value ? formatTime(value) : '—'),
+    title: '更新',
+    key: 'updated',
+    width: 170,
   },
   { title: '操作', key: 'action', width: 130, fixed: 'right' },
 ];
@@ -295,6 +300,7 @@ const form = reactive({
   name: '',
   type: 'FACTORY' as PlantNodeApi.NodeType,
   parentId: '' as string,
+  sortOrder: 0,
 });
 
 /** 树扁平化为父节点选项（显示完整路径） */
@@ -320,6 +326,7 @@ function openCreateModal() {
   form.name = '';
   form.type = 'FACTORY';
   form.parentId = selectedNode.value?.id ?? '';
+  form.sortOrder = 0;
   modalVisible.value = true;
 }
 
@@ -329,6 +336,7 @@ function openEditModal(record: PlantNodeListItem) {
   form.name = record.name;
   form.type = record.type;
   form.parentId = record.parentId ?? '';
+  form.sortOrder = record.sortOrder ?? 0;
   modalVisible.value = true;
 }
 
@@ -347,7 +355,10 @@ async function handleSave() {
       });
       message.success('节点已创建');
     } else {
-      await updatePlantNodeApi(form.id, { name: form.name.trim() });
+      await updatePlantNodeApi(form.id, {
+        name: form.name.trim(),
+        sortOrder: form.sortOrder,
+      });
       message.success('节点已更新');
     }
     modalVisible.value = false;
@@ -786,6 +797,17 @@ onMounted(() => {
                 {{ record.isKpiEnabled ? '参评' : '—' }}
               </Tag>
             </template>
+            <template v-else-if="column.key === 'updated'">
+              <span class="text-xs" :style="{ color: themeColors.NEUTRAL }">
+                <template v-if="record.updatedAt">
+                  {{ formatTime(record.updatedAt) }}
+                  <template v-if="record.updatedBy">
+                    （{{ record.updatedBy }}）
+                  </template>
+                </template>
+                <template v-else>—</template>
+              </span>
+            </template>
             <template v-else-if="column.key === 'action'">
               <div class="flex items-center gap-1">
                 <Button
@@ -862,8 +884,19 @@ onMounted(() => {
             placeholder="不选则为顶层节点（工厂）"
           />
         </FormItem>
+        <FormItem label="排序值">
+          <InputNumber
+            v-model:value="form.sortOrder"
+            :min="0"
+            :max="999999"
+            style="width: 160px"
+          />
+          <span class="ml-2 text-xs" :style="{ color: themeColors.NEUTRAL }">
+            同级小值在前（AAS 同步节点由同步覆盖）
+          </span>
+        </FormItem>
         <div v-if="modalMode === 'edit'" class="text-xs" :style="{ color: themeColors.NEUTRAL }">
-          编辑仅支持修改名称；类型与父级调整请删除后重建（存在子节点/回路时不可删除）。
+          编辑支持修改名称与排序；类型与父级调整请删除后重建（存在子节点/回路时不可删除）。
         </div>
       </Form>
     </Modal>

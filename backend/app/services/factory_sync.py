@@ -384,11 +384,15 @@ async def sync_factory_model(db: AsyncSession, operator: str) -> dict[str, Any]:
                 parent_local_id = source_to_local[int(aas_parent)]
 
             existing = existing_by_source.get(aas_id)
+            # AAS 无显式顺序字段：用 AAS Id 映射排序值（同 AAS-erm 的 SortOrder 策略）
+            sort_value = int(aas_id % 1_000_000)
             if existing is not None:
                 # 更新（主数据语义：名称/类型/父级以 AAS 为准）
                 existing.name = name[:100]
                 existing.type = node_type
                 existing.parent_id = parent_local_id
+                existing.sort_order = sort_value
+                existing.updated_by = "aas:sync"
                 existing.updated_at = _now_naive()
                 updated += 1
                 source_to_local[aas_id] = existing.id
@@ -400,6 +404,8 @@ async def sync_factory_model(db: AsyncSession, operator: str) -> dict[str, Any]:
                     parent_id=parent_local_id,
                     is_kpi_enabled=False,
                     source_node_id=aas_id,
+                    sort_order=sort_value,
+                    updated_by="aas:sync",
                 )
                 db.add(new_node)
                 created += 1

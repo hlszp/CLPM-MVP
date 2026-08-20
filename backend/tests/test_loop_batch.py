@@ -1,18 +1,15 @@
-"""Loop batch operations & monitor trigger tests (配置增强).
+"""Loop batch operations tests (配置增强).
 
 测试覆盖：
 - TEST-01: batch_update_loops — 批量更新监控状态
 - TEST-02: batch_update_loops — 批量更新级别
 - TEST-03: batch_delete_loops — 批量硬删除（解绑映射 + 级联删除）
 - TEST-04: batch_update_loops — 空列表抛异常
-- TEST-05: check_node_monitor_trigger — 无位号配置返回 True
-- TEST-06: check_node_monitor_trigger — 位号值匹配返回 True
-- TEST-07: check_node_monitor_trigger — 位号值不匹配返回 False
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -20,7 +17,6 @@ from app.core.exceptions import BizError
 from app.services.loop_batch import (
     batch_delete_loops,
     batch_update_loops,
-    check_node_monitor_trigger,
 )
 
 # ===========================================================================
@@ -78,20 +74,6 @@ def _make_loop(
     loop.status = status
     loop.updated_by = None
     return loop
-
-
-def _make_plant_node(
-    node_id: str = "node-001",
-    monitor_tag_id: str | None = None,
-    monitor_trigger_value: str | None = None,
-) -> MagicMock:
-    """构造 PlantNode mock。"""
-    node = MagicMock()
-    node.id = node_id
-    node.name = "测试装置"
-    node.monitor_tag_id = monitor_tag_id
-    node.monitor_trigger_value = monitor_trigger_value
-    return node
 
 
 def _make_tag(
@@ -399,195 +381,7 @@ class TestBatchUpdateEmptyList:
 
 
 # ===========================================================================
-# TEST-05: 无位号配置返回 True
+# SVC-10 位号触发监控（check_node_monitor_trigger）测试已随死代码一并移除
+#（2026-08-20：功能从未接线，plant_node.monitor_tag_id/monitor_trigger_value
+#  字段已由迁移 e1f2a3b4c5d6 删除）。
 # ===========================================================================
-
-
-class TestCheckNodeMonitorTriggerNoTag:
-    """无位号配置测试。"""
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_no_tag(self) -> None:
-        """plant_node 无 monitor_tag_id 时返回 True（默认监控）。"""
-        node = _make_plant_node("node-001", monitor_tag_id=None)
-
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(node))
-
-        result = await check_node_monitor_trigger(db, "node-001")
-
-        assert result is True
-
-
-# ===========================================================================
-# TEST-06: 位号值匹配返回 True
-# ===========================================================================
-
-
-class TestCheckNodeMonitorTriggerMatch:
-    """位号值匹配测试。"""
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_match(self) -> None:
-        """位号最新值等于 trigger_value 时返回 True。"""
-        node = _make_plant_node(
-            "node-001",
-            monitor_tag_id="tag-001",
-            monitor_trigger_value="ON",
-        )
-        tag = _make_tag("tag-001", "MONITOR_TAG_001")
-
-        db = AsyncMock()
-        # 1st execute: 查 plant_node；2nd execute: 查 tag_registry
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_one_or_none_mock(node),
-                _make_scalar_one_or_none_mock(tag),
-            ]
-        )
-
-        async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
-            return [{"ts": "2026-06-24T08:00:00Z", "value": "ON", "quality": "GOOD"}]
-
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
-        with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
-        ):
-            result = await check_node_monitor_trigger(db, "node-001")
-
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_match_numeric(self) -> None:
-        """数值型触发值匹配（trigger_value="1", latest_value=1）。"""
-        node = _make_plant_node(
-            "node-001",
-            monitor_tag_id="tag-001",
-            monitor_trigger_value="1",
-        )
-        tag = _make_tag("tag-001", "MONITOR_TAG_001")
-
-        db = AsyncMock()
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_one_or_none_mock(node),
-                _make_scalar_one_or_none_mock(tag),
-            ]
-        )
-
-        async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
-            return [{"ts": "2026-06-24T08:00:00Z", "value": 1, "quality": "GOOD"}]
-
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
-        with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
-        ):
-            result = await check_node_monitor_trigger(db, "node-001")
-
-        assert result is True
-
-
-# ===========================================================================
-# TEST-07: 位号值不匹配返回 False
-# ===========================================================================
-
-
-class TestCheckNodeMonitorTriggerMismatch:
-    """位号值不匹配测试。"""
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_mismatch(self) -> None:
-        """位号最新值不等于 trigger_value 时返回 False。"""
-        node = _make_plant_node(
-            "node-001",
-            monitor_tag_id="tag-001",
-            monitor_trigger_value="ON",
-        )
-        tag = _make_tag("tag-001", "MONITOR_TAG_001")
-
-        db = AsyncMock()
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_one_or_none_mock(node),
-                _make_scalar_one_or_none_mock(tag),
-            ]
-        )
-
-        async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
-            return [{"ts": "2026-06-24T08:00:00Z", "value": "OFF", "quality": "GOOD"}]
-
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
-        with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
-        ):
-            result = await check_node_monitor_trigger(db, "node-001")
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_no_data(self) -> None:
-        """数据源无数据时返回 False。"""
-        node = _make_plant_node(
-            "node-001",
-            monitor_tag_id="tag-001",
-            monitor_trigger_value="ON",
-        )
-        tag = _make_tag("tag-001", "MONITOR_TAG_001")
-
-        db = AsyncMock()
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_one_or_none_mock(node),
-                _make_scalar_one_or_none_mock(tag),
-            ]
-        )
-
-        async def _mock_query_trend(tag_name: str, start_time: str, end_time: str):
-            return []
-
-        mock_provider = MagicMock()
-        mock_provider.query_trend_data = AsyncMock(side_effect=_mock_query_trend)
-        with patch(
-            "app.services.data_source.factory.get_provider",
-            return_value=mock_provider,
-        ):
-            result = await check_node_monitor_trigger(db, "node-001")
-
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_node_not_found(self) -> None:
-        """节点不存在时抛 ERR_NODE_NOT_FOUND。"""
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
-
-        with pytest.raises(BizError) as exc_info:
-            await check_node_monitor_trigger(db, "node-999")
-        assert exc_info.value.code == "ERR_NODE_NOT_FOUND"
-
-    @pytest.mark.asyncio
-    async def test_check_node_monitor_trigger_tag_deleted(self) -> None:
-        """monitor_tag_id 配置但 tag 已删除时回退默认监控（True）。"""
-        node = _make_plant_node(
-            "node-001",
-            monitor_tag_id="tag-001",
-            monitor_trigger_value="ON",
-        )
-
-        db = AsyncMock()
-        db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_one_or_none_mock(node),
-                _make_scalar_one_or_none_mock(None),  # tag 已删除
-            ]
-        )
-
-        result = await check_node_monitor_trigger(db, "node-001")
-
-        assert result is True
