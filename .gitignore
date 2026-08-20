@@ -61,3 +61,6 @@ logs/
 
 # 本地 pnpm 缓存（不应入库）
 .pnpm-store/
+
+# CLPM-engine 引擎目录（独立管理，不入库）
+CLPM-engine/
