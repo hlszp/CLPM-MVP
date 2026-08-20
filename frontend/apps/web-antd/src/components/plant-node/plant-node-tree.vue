@@ -2,7 +2,7 @@
 /**
  * 统一工厂模型树组件（UI/UX v6.1 §15 工业风格改造）
  *
- * 改造要点（对齐 ZL IndustrialDesignReference.html §1 状态语义色 + §2 hover-reveal）：
+ * 改造要点（对齐 ZL IndustrialDesignReference.html §1 状态语义色）：
  * - 节点视觉升级：IconifyIcon 按类型区分（工厂/装置/单元）
  * - 类型徽章：ZL 语义色（bg-*-50/text-*-700/border-*-200）
  * - 节点尾部显示回路数（外部传入 loopCounts，递归累加子节点）
@@ -11,13 +11,8 @@
  * 工厂结构三层：FACTORY（工厂）→ AREA（装置/车间）→ UNIT（单元）
  * 回路挂在 UNIT 节点下。
  *
- * 抽象自 loop/manage.vue 和 metric/dashboard.vue 的公共树逻辑：
- * - 数据加载（getPlantNodeTreeApi）
- * - 搜索过滤（仅展开匹配节点的父级路径，非全量展开）
- * - 展开/折叠控制（全部展开 / 全部折叠按钮）
- * - 选中事件 emit
- * - CRUD 操作（新增、编辑、删除节点）
- * - 导入/导出 Excel
+ * 纯浏览组件：数据加载 / 搜索过滤 / 展开折叠 / 选中事件。
+ * 节点管理（CRUD/导入导出）统一在「工厂配置」页（views/factory/config.vue）。
  *
  * 使用方式：
  * <PlantNodeTree card-title="工厂模型" :width="280"
@@ -30,30 +25,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import {
-  Button,
-  Card,
-  Dropdown,
-  Input,
-  Menu,
-  MenuItem,
-  message,
-  Modal,
-  Spin,
-  Tooltip,
-  Tree,
-  Upload,
-} from 'ant-design-vue';
+import { Button, Card, Input, Spin, Tooltip, Tree } from 'ant-design-vue';
 
-import {
-  createPlantNodeApi,
-  deletePlantNodeApi,
-  exportPlantNodesApi,
-  getPlantNodeTreeApi,
-  importPlantNodesApi,
-  updatePlantNodeApi,
-} from '#/api/plant-node';
-import { ClpmDangerConfirmModal } from '#/components/clpm';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 
 interface TreeNode {
   children?: TreeNode[];
@@ -75,7 +49,6 @@ const props = withDefaults(defineProps<Props>(), {
   width: 280,
   showSearch: true,
   showCollapseButtons: true,
-  showCrudButtons: false,
   defaultExpandLevel: 1,
   maxHeight: 'calc(100vh - 300px)',
   showStats: false,
@@ -133,8 +106,6 @@ interface Props {
   showSearch?: boolean;
   /** 是否显示展开/折叠按钮 */
   showCollapseButtons?: boolean;
-  /** 是否显示 CRUD 操作按钮 */
-  showCrudButtons?: boolean;
   /** 默认展开层级（0=不展开，1=展开第一层） */
   defaultExpandLevel?: number;
   /** 树容器最大高度 */
@@ -157,37 +128,6 @@ const autoExpandParent = ref(true);
 const treeCollapsed = ref(false);
 const selectedNode = ref<null | TreeNode>(null);
 const selectedKeys = ref<(number | string)[]>([]);
-
-// CRUD Modal
-const crudModalVisible = ref(false);
-const crudModalMode = ref<'create' | 'edit'>('create');
-const crudFormName = ref('');
-const crudFormType = ref<'AREA' | 'FACTORY' | 'UNIT'>('UNIT');
-const crudFormParentId = ref<null | string>(null);
-const crudLoading = ref(false);
-
-// 删除确认模态框（ZL §9 高危操作二次确认）
-const deleteModalVisible = ref(false);
-const deleteTargetNode = ref<null | TreeNode>(null);
-const deleteLoading = ref(false);
-/** 删除操作的影响范围描述 */
-const deleteImpactScope = computed(() => {
-  if (!deleteTargetNode.value) return '';
-  const node = deleteTargetNode.value;
-  const loopCount = loopCountByNode.value[node.key as string] ?? 0;
-  const childCount = node.children?.length ?? 0;
-  // 后端策略：有子节点或关联回路的节点不允许删除，必须先清理
-  if (childCount > 0 && loopCount > 0) {
-    return `当前节点包含 ${childCount} 个子节点和 ${loopCount} 个回路，需先删除子节点和迁移回路后才能删除`;
-  }
-  if (childCount > 0) {
-    return `当前节点包含 ${childCount} 个子节点，需先删除所有子节点后才能删除`;
-  }
-  if (loopCount > 0) {
-    return `当前节点关联 ${loopCount} 个回路，需先迁移回路到其他单元后才能删除`;
-  }
-  return '仅删除当前节点，不可恢复';
-});
 
 /** 将后端 PlantNode 转为 Ant Design Tree 节点 */
 function toTreeNode(node: PlantNodeApi.PlantNode): TreeNode {
@@ -406,115 +346,28 @@ function collapseAll() {
   autoExpandParent.value = true;
 }
 
-/** 打开新增节点弹窗 */
-function openCreateModal(parentNode?: TreeNode) {
-  crudModalMode.value = 'create';
-  crudFormName.value = '';
-  crudFormParentId.value = (parentNode?.key as string) ?? null;
-  // 根据父节点类型设置默认子节点类型（FACTORY → AREA → UNIT）
-  const parentType: string | undefined = parentNode?.node?.type;
-  if (parentType === 'FACTORY') {
-    crudFormType.value = 'AREA';
-  } else if (parentType === 'AREA') {
-    crudFormType.value = 'UNIT';
-  } else {
-    crudFormType.value = 'UNIT';
-  }
-  crudModalVisible.value = true;
-}
-
-/** 打开编辑节点弹窗 */
-function openEditModal(node: TreeNode) {
-  crudModalMode.value = 'edit';
-  crudFormName.value = node.node.name;
-  crudFormType.value = node.node.type as 'AREA' | 'FACTORY' | 'UNIT';
-  crudFormParentId.value = node.node.parentId ?? null;
-  selectedNode.value = node;
-  crudModalVisible.value = true;
-}
-
-/** 提交 CRUD 表单 */
-async function handleCrudSubmit() {
-  if (!crudFormName.value.trim()) {
-    message.warning('请输入节点名称');
-    return;
-  }
-
-  crudLoading.value = true;
-  try {
-    if (crudModalMode.value === 'create') {
-      await createPlantNodeApi({
-        name: crudFormName.value.trim(),
-        parentId: crudFormParentId.value,
-        type: crudFormType.value as PlantNodeApi.NodeType,
-      });
-      message.success('创建成功');
-    } else {
-      if (!selectedNode.value?.key) return;
-      await updatePlantNodeApi(selectedNode.value.key as string, {
-        name: crudFormName.value.trim(),
-      });
-      message.success('更新成功');
+/** 是否全部父节点均已展开（基于当前可见的过滤树判断） */
+const isAllExpanded = computed(() => {
+  const parentKeys: (number | string)[] = [];
+  function collectParentKeys(nodes: TreeNode[]) {
+    for (const n of nodes) {
+      if (n.children && n.children.length > 0) {
+        parentKeys.push(n.key);
+        collectParentKeys(n.children);
+      }
     }
-    crudModalVisible.value = false;
-    loadTree();
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    crudLoading.value = false;
   }
-}
+  collectParentKeys(filteredTreeData.value);
+  if (parentKeys.length === 0) return false;
+  return parentKeys.every((k) => expandedKeys.value.includes(k));
+});
 
-/** 打开删除确认模态框（ZL §9 高危操作二次确认） */
-function openDeleteModal(node: TreeNode) {
-  deleteTargetNode.value = node;
-  deleteModalVisible.value = true;
-}
-
-/** 确认删除节点 */
-async function handleConfirmDelete() {
-  if (!deleteTargetNode.value) return;
-  deleteLoading.value = true;
-  try {
-    await deletePlantNodeApi(deleteTargetNode.value.key as string);
-    message.success('删除成功');
-    deleteModalVisible.value = false;
-    deleteTargetNode.value = null;
-    loadTree();
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    deleteLoading.value = false;
-  }
-}
-
-/** 导出 Excel */
-async function handleExport() {
-  try {
-    const blob = await exportPlantNodesApi();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'plant_nodes_export.xlsx';
-    a.click();
-    window.URL.revokeObjectURL(url);
-    message.success('导出成功');
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
-/** 导入 Excel */
-async function handleImport(options: any) {
-  const { file } = options;
-  try {
-    const result = await importPlantNodesApi(file);
-    message.success(
-      `导入完成：新增 ${result.inserted} 条，更新 ${result.updated} 条`,
-    );
-    loadTree();
-  } catch {
-    // 错误已由拦截器处理
+/** 全部展开/全部折叠 切换（单按钮合并） */
+function toggleExpandAll() {
+  if (isAllExpanded.value) {
+    collapseAll();
+  } else {
+    expandAll();
   }
 }
 
@@ -570,41 +423,6 @@ defineExpose({ loadTree, expandAll, collapseAll });
             </template>
           </Button>
         </Tooltip>
-        <!-- CRUD 按钮：新增工厂 + 导入 + 导出 -->
-        <template v-if="showCrudButtons">
-          <Tooltip title="新增工厂">
-            <Button
-              type="text"
-              size="small"
-              class="text-blue-600"
-              @click="openCreateModal()"
-            >
-              <template #icon>
-                <IconifyIcon icon="ant-design:plus-outlined" />
-              </template>
-            </Button>
-          </Tooltip>
-          <Tooltip title="导入 Excel">
-            <Upload
-              :custom-request="handleImport"
-              :show-upload-list="false"
-              accept=".xlsx"
-            >
-              <Button type="text" size="small">
-                <template #icon>
-                  <IconifyIcon icon="ant-design:upload-outlined" />
-                </template>
-              </Button>
-            </Upload>
-          </Tooltip>
-          <Tooltip title="导出 Excel">
-            <Button type="text" size="small" @click="handleExport">
-              <template #icon>
-                <IconifyIcon icon="ant-design:download-outlined" />
-              </template>
-            </Button>
-          </Tooltip>
-        </template>
       </div>
     </template>
 
@@ -637,20 +455,19 @@ defineExpose({ loadTree, expandAll, collapseAll });
           {{ treeStats.totalLoops }}
         </span>
       </span>
-      <!-- 统计栏右侧：展开/折叠树节点按钮（最右侧） -->
+      <!-- 统计栏右侧：展开/折叠切换按钮（最右侧，单击在全部展开/全部折叠间切换） -->
       <template v-if="showCollapseButtons">
         <span class="ml-auto"></span>
-        <Tooltip title="全部展开">
-          <Button type="text" size="small" @click="expandAll">
+        <Tooltip :title="isAllExpanded ? '全部折叠' : '全部展开'">
+          <Button type="text" size="small" @click="toggleExpandAll">
             <template #icon>
-              <IconifyIcon icon="ant-design:node-expand-outlined" />
-            </template>
-          </Button>
-        </Tooltip>
-        <Tooltip title="全部折叠">
-          <Button type="text" size="small" @click="collapseAll">
-            <template #icon>
-              <IconifyIcon icon="ant-design:node-collapse-outlined" />
+              <IconifyIcon
+                :icon="
+                  isAllExpanded
+                    ? 'ant-design:node-collapse-outlined'
+                    : 'ant-design:node-expand-outlined'
+                "
+              />
             </template>
           </Button>
         </Tooltip>
@@ -693,90 +510,7 @@ defineExpose({ loadTree, expandAll, collapseAll });
           "
         >
           <template #title="nodeData">
-            <Dropdown :trigger="['contextmenu']" v-if="showCrudButtons">
-              <div class="plant-node-tree__node group">
-                <IconifyIcon
-                  :icon="getNodeTypeConfig((nodeData as any).node?.type).icon"
-                  class="plant-node-tree__node-icon"
-                  :style="{
-                    color: getNodeTypeConfig((nodeData as any).node?.type)
-                      .iconColor,
-                  }"
-                />
-                <span class="plant-node-tree__node-title">
-                  {{ nodeData.title }}
-                </span>
-                <span
-                  v-if="(loopCountByNode[nodeData.key as string] ?? 0) > 0"
-                  class="plant-node-tree__loop-count"
-                >
-                  {{ loopCountByNode[nodeData.key as string] }}
-                </span>
-                <!-- hover reveal 操作按钮组（ZL §2） -->
-                <div v-if="showCrudButtons" class="plant-node-tree__actions">
-                  <Tooltip title="新增子节点">
-                    <Button
-                      type="text"
-                      size="small"
-                      class="plant-node-tree__action-btn"
-                      @click.stop="openCreateModal(nodeData as TreeNode)"
-                    >
-                      <template #icon>
-                        <IconifyIcon icon="ant-design:plus-outlined" />
-                      </template>
-                    </Button>
-                  </Tooltip>
-                  <Tooltip title="编辑">
-                    <Button
-                      type="text"
-                      size="small"
-                      class="plant-node-tree__action-btn"
-                      @click.stop="openEditModal(nodeData as TreeNode)"
-                    >
-                      <template #icon>
-                        <IconifyIcon icon="ant-design:edit-outlined" />
-                      </template>
-                    </Button>
-                  </Tooltip>
-                  <Tooltip title="删除">
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      class="plant-node-tree__action-btn"
-                      @click.stop="openDeleteModal(nodeData as TreeNode)"
-                    >
-                      <template #icon>
-                        <IconifyIcon icon="ant-design:delete-outlined" />
-                      </template>
-                    </Button>
-                  </Tooltip>
-                </div>
-              </div>
-              <template #overlay>
-                <Menu>
-                  <MenuItem
-                    key="create"
-                    @click="openCreateModal(nodeData as TreeNode)"
-                  >
-                    新增子节点
-                  </MenuItem>
-                  <MenuItem
-                    key="edit"
-                    @click="openEditModal(nodeData as TreeNode)"
-                  >
-                    编辑
-                  </MenuItem>
-                  <MenuItem
-                    key="delete"
-                    @click="openDeleteModal(nodeData as TreeNode)"
-                  >
-                    删除
-                  </MenuItem>
-                </Menu>
-              </template>
-            </Dropdown>
-            <div v-else class="plant-node-tree__node">
+            <div class="plant-node-tree__node">
               <IconifyIcon
                 :icon="getNodeTypeConfig((nodeData as any).node?.type).icon"
                 class="plant-node-tree__node-icon"
@@ -802,71 +536,6 @@ defineExpose({ loadTree, expandAll, collapseAll });
         </div>
       </div>
     </Spin>
-
-    <!-- CRUD Modal -->
-    <Modal
-      v-model:open="crudModalVisible"
-      :title="crudModalMode === 'create' ? '新增节点' : '编辑节点'"
-      :confirm-loading="crudLoading"
-      @ok="handleCrudSubmit"
-    >
-      <div class="flex flex-col gap-4">
-        <div>
-          <label class="text-sm text-slate-600 dark:text-slate-300">
-            节点名称：
-          </label>
-          <Input
-            v-model:value="crudFormName"
-            placeholder="请输入节点名称"
-            class="mt-1"
-          />
-        </div>
-        <div v-if="crudModalMode === 'create'">
-          <label class="text-sm text-slate-600 dark:text-slate-300">
-            节点类型：
-          </label>
-          <div class="mt-1 flex gap-2">
-            <Button
-              :type="crudFormType === 'FACTORY' ? 'primary' : 'default'"
-              size="small"
-              @click="crudFormType = 'FACTORY'"
-            >
-              工厂
-            </Button>
-            <Button
-              :type="crudFormType === 'AREA' ? 'primary' : 'default'"
-              size="small"
-              @click="crudFormType = 'AREA'"
-            >
-              装置
-            </Button>
-            <Button
-              :type="crudFormType === 'UNIT' ? 'primary' : 'default'"
-              size="small"
-              @click="crudFormType = 'UNIT'"
-            >
-              单元
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Modal>
-
-    <!-- 删除确认模态框（ZL §9 高危操作二次确认） -->
-    <ClpmDangerConfirmModal
-      v-model:open="deleteModalVisible"
-      title="删除工厂节点"
-      action="删除"
-      :target="deleteTargetNode?.title ?? ''"
-      :impact-scope="deleteImpactScope"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      require-confirm-code
-      :confirm-code="deleteTargetNode?.title ?? ''"
-      confirm-code-placeholder="请输入节点名称以确认"
-      require-reason
-      :loading="deleteLoading"
-      @confirm="handleConfirmDelete"
-    />
   </Card>
 </template>
 
@@ -924,40 +593,6 @@ defineExpose({ loadTree, expandAll, collapseAll });
   font-feature-settings: 'tnum';
   font-variant-numeric: tabular-nums;
   color: hsl(var(--muted-foreground));
-}
-
-/* —— hover reveal 操作按钮组（ZL §2）—— */
-.plant-node-tree__actions {
-  display: flex;
-  visibility: hidden;
-  gap: 2px;
-  align-items: center;
-  margin-left: 8px;
-  opacity: 0;
-  transition:
-    opacity 0.15s ease,
-    visibility 0.15s ease;
-}
-
-.plant-node-tree__node:hover .plant-node-tree__actions {
-  visibility: visible;
-  opacity: 1;
-}
-
-/* 操作按钮样式：默认透明，hover 时浅灰背景 */
-.plant-node-tree__action-btn {
-  height: 22px !important;
-  padding: 0 4px !important;
-  font-size: 12px !important;
-  border-radius: 3px !important;
-}
-
-.plant-node-tree__action-btn:hover {
-  background-color: hsl(var(--accent) / 10%) !important;
-}
-
-.plant-node-tree__action-btn.ant-btn-dangerous:hover {
-  background-color: hsl(var(--destructive) / 10%) !important;
 }
 
 /* 暗色模式徽章适配 */

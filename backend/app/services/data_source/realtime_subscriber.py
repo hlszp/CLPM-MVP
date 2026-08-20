@@ -206,6 +206,8 @@ class RealtimeSubscriber:
         # TDengine TAGS 仅子表首次创建生效，实时先行创建的子表 TAG 必须带真实值）
         self._loop_meta_cache: dict[str, tuple[str, str]] = {}
         self._loop_meta_cache_at: float = 0.0  # 上次缓存刷新（含失败尝试）的 monotonic 时间
+        # 测点 tag_name → (loop_part=回路 tag_name, role)，与 _loop_meta_cache 同源刷新
+        self._tag_role_cache: dict[str, tuple[str, str]] = {}
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -551,7 +553,7 @@ class RealtimeSubscriber:
         await redis_client.publish(_PUBSUB_CHANNEL, value)
 
         # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
-        loop_part, role = self._parse_tag_code(tag_code)
+        loop_part, role = await self._parse_tag_code(tag_code)
         if loop_part:
             role_payload = {
                 "value": item.get("value"),
@@ -583,16 +585,33 @@ class RealtimeSubscriber:
             # 失败可忽略：60s TTL 自然过期，最多延迟 1 分钟
             logger.debug("失效 loop 统计缓存失败（可忽略，TTL 60s 自然过期）: %s", exc)
 
-    def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
-        """解析 tagCode 为回路部分和角色。
+    async def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
+        """解析 tagCode 为 (loop_part, role)。
 
-        示例: "LIC-101.PV" → ("LIC-101", "PV")
-              "LIC-101" → ("LIC-101", "PV")
+        以 PG 的 tag→role 映射为准（loop_part=回路台账 tag_name，权威来源）。
+        历史 bug（2026-08-20 修复）：此前按点号切分且未命中硬判 PV——
+        本项目测点名 `41LIC30044_PIDA_SP` 无点号 → 整名当 loop_part +
+        角色恒 PV，导致子表名带角色后缀、角色列错置。
+
+        兜底：映射未命中时按点号风格解析（兼容 signal_sim 仿真 tag）；
+        仍无法识别返回 ("", "")，调用方跳过缓冲（Redis 实时值缓存不受影响）。
         """
+        # 缓存过期时刷新（miss 且距上次刷新超过最小间隔，防 DB 故障时每条消息打库）
+        now = time.monotonic()
+        miss_due = now - self._loop_meta_cache_at > _LOOP_META_MISS_REFRESH_MIN_INTERVAL
+        if (not self._tag_role_cache) or (tag_code not in self._tag_role_cache and miss_due):
+            try:
+                await self._refresh_loop_meta_cache()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("刷新 tag→role 映射失败: %s", exc)
+
+        hit = self._tag_role_cache.get(tag_code)
+        if hit:
+            return hit
         if "." in tag_code:
             loop_part, role = tag_code.rsplit(".", 1)
             return loop_part, role.upper()
-        return tag_code, "PV"
+        return "", ""
 
     # ------------------------------------------------------------------
     # 断点续传（Gap Backfill）
@@ -1024,26 +1043,56 @@ class RealtimeSubscriber:
         return {lp: self._loop_meta_cache.get(lp, ("", "")) for lp in loop_parts}
 
     async def _refresh_loop_meta_cache(self) -> None:
-        """从数据库重建 loop_part → (loop_id, unit_id) 缓存（仅含活跃且有 tag 映射的回路）."""
+        """从数据库重建两个缓存（仅含活跃且有 tag 映射的回路）.
+
+        - ``_loop_meta_cache``: loop_part(=回路台账 tag_name) → (loop_id, unit_id)
+        - ``_tag_role_cache``: 测点 tag_name → (loop_part, role)
+
+        历史 bug（2026-08-20 修复）：此前 loop_part 从「第一个测点名」rsplit('.')
+        反推，但测点名用下划线分隔角色（xx_PV）→ 剥离失败且顺序不稳定，
+        导致同一回路多张子表、_parse_tag_code 角色误判。现在 loop_part 唯一
+        权威来源 = 回路台账 tag_name（天然不含测点角色后缀）。
+        """
         from sqlalchemy import select
 
-        from app.models.loop import LoopLedger
-        from app.services.data_import import _batch_get_loop_data
+        from app.models.loop import LoopLedger, LoopTagMapping
+        from app.models.tag import TagRegistry
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
-            loop_ids = [str(row[0]) for row in result.all()]
-            data_map = await _batch_get_loop_data(db, loop_ids) if loop_ids else {}
+            loop_result = await db.execute(
+                select(LoopLedger.id, LoopLedger.tag_name, LoopLedger.unit_id).where(
+                    LoopLedger.is_active.is_(True)
+                )
+            )
+            loops = loop_result.all()
+            if not loops:
+                return
+            loop_ids = [str(r[0]) for r in loops]
+            mapping_result = await db.execute(
+                select(LoopTagMapping.loop_id, LoopTagMapping.tag_role, TagRegistry.tag_name)
+                .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+                .where(LoopTagMapping.loop_id.in_(loop_ids))
+            )
+            role_rows = mapping_result.all()
 
-        cache: dict[str, tuple[str, str]] = {}
-        for lid, meta in data_map.items():
-            role_tag_map = meta.get("role_tag_map") or {}
-            if not role_tag_map:
+        # loop_id → 回路台账 tag_name（loop_part 权威来源）
+        lid_to_loop_name: dict[str, str] = {}
+        meta_cache: dict[str, tuple[str, str]] = {}
+        for lid, tag_name, unit_id in loops:
+            if not tag_name:
                 continue
-            first_tag = next(iter(role_tag_map.values()))
-            loop_part = first_tag.rsplit(".", 1)[0] if "." in first_tag else first_tag
-            cache.setdefault(loop_part, (lid, meta.get("unit_id") or ""))
-        self._loop_meta_cache = cache
+            lid_to_loop_name[str(lid)] = tag_name
+            meta_cache.setdefault(tag_name, (str(lid), str(unit_id) if unit_id else ""))
+
+        # 测点 tag_name → (loop_part, role)
+        tag_role_cache: dict[str, tuple[str, str]] = {}
+        for lid, tag_role, tag_name in role_rows:
+            loop_name = lid_to_loop_name.get(str(lid))
+            if loop_name and tag_name:
+                tag_role_cache[tag_name] = (loop_name, str(tag_role).upper())
+
+        self._loop_meta_cache = meta_cache
+        self._tag_role_cache = tag_role_cache
         self._loop_meta_cache_at = time.monotonic()
 
     async def _flush_loop(self) -> None:

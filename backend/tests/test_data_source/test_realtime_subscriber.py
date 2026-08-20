@@ -1492,33 +1492,44 @@ async def test_flush_buffer_writeback_unknown_loop_part_falls_back_to_empty():
 
 @pytest.mark.asyncio
 async def test_get_loop_meta_map_builds_cache_from_db():
-    """_get_loop_meta_map 经 _batch_get_loop_data 构建 loop_part → (loop_id, unit_id) 缓存."""
-    sub = RealtimeSubscriber()
-    loop_data_map = {
-        "loop-1": {
-            "role_tag_map": {"PV": "LIC-101.PV", "SP": "LIC-101.SP"},
-            "unit_id": "unit-1",
-            "subtable": "t_lic_101",
-        },
-        "loop-2": {"role_tag_map": {}, "unit_id": "", "subtable": ""},  # 无映射，不入缓存
-    }
+    """_get_loop_meta_map 构建两个缓存：loop_part→(loop_id, unit_id) 与 tag→(loop_part, role).
 
-    with (
-        patch(
-            "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
-            return_value=_mock_loop_db(["loop-1", "loop-2"]),
-        ),
-        patch(
-            "app.services.data_import._batch_get_loop_data",
-            new=AsyncMock(return_value=loop_data_map),
-        ),
+    loop_part 权威来源 = 回路台账 tag_name（2026-08-20 子表名 bug 修复后口径）。
+    """
+    sub = RealtimeSubscriber()
+
+    # 第一次 execute：活跃回路 (id, tag_name, unit_id)；第二次：映射 (loop_id, role, tag_name)
+    loops_result = MagicMock()
+    loops_result.all.return_value = [
+        ("loop-1", "LIC-101", "unit-1"),
+        ("loop-2", "", "unit-2"),  # 无 tag_name，不入缓存
+    ]
+    mapping_result = MagicMock()
+    mapping_result.all.return_value = [
+        ("loop-1", "PV", "LIC-101.PV"),
+        ("loop-1", "SP", "LIC-101.SP"),
+    ]
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(side_effect=[loops_result, mapping_result])
+    mock_session_ctx = AsyncMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+
+    with patch(
+        "app.services.data_source.realtime_subscriber.AsyncSessionLocal",
+        return_value=mock_session_ctx,
     ):
         meta = await sub._get_loop_meta_map(["LIC-101", "UNKNOWN"])
 
     assert meta["LIC-101"] == ("loop-1", "unit-1")
     assert meta["UNKNOWN"] == ("", "")
-    # 无映射回路不进缓存
+    # 无 tag_name 回路不进缓存
     assert sub._loop_meta_cache == {"LIC-101": ("loop-1", "unit-1")}
+    # tag → (loop_part, role) 映射：loop_part 为回路台账 tag_name（无角色后缀）
+    assert sub._tag_role_cache == {
+        "LIC-101.PV": ("LIC-101", "PV"),
+        "LIC-101.SP": ("LIC-101", "SP"),
+    }
 
 
 def test_build_row_ts_prefers_pv_collect_time():

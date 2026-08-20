@@ -73,7 +73,10 @@ export namespace LoopApi {
     pid_d: boolean;
   }
 
-  /** 回路类型（TEMPERATURE/PRESSURE/LEVEL/FLOW/ANALYSIS/SPEED/OTHER） */
+  /**
+   * 回路类型（出厂 7 种 + 字典自定义类型，见 系统管理 → 字典管理 → 回路类型）
+   * (string & {}) 保留字面量自动补全，同时允许字典自定义 code（如 CURRENT）
+   */
   export type LoopType =
     | 'ANALYSIS'
     | 'FLOW'
@@ -81,7 +84,8 @@ export namespace LoopApi {
     | 'OTHER'
     | 'PRESSURE'
     | 'SPEED'
-    | 'TEMPERATURE';
+    | 'TEMPERATURE'
+    | (string & {});
 
   /** 量程信息（从关联 Tag 引用，不冗余存储） */
   export interface RangeInfo {

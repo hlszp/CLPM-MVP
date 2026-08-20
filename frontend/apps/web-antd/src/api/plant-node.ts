@@ -38,6 +38,8 @@ export namespace PlantNodeApi {
     name: string;
     /** 同级展示排序（小值在前，同值按名称） */
     sortOrder?: number;
+    /** 是否纳入性能评估（KPI 参评开关；省略不修改） */
+    isKpiEnabled?: boolean;
   }
 
   /** 通用操作结果 */

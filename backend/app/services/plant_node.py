@@ -294,8 +294,8 @@ async def delete_plant_node(
 # 批量导入导出
 # ---------------------------------------------------------------------------
 
-# Excel 列头（4 列）
-EXPORT_HEADERS = ["节点名称", "节点类型", "父节点名称", "层级路径"]
+# Excel 列头（5 列）
+EXPORT_HEADERS = ["节点名称", "节点类型", "父节点名称", "是否参评", "层级路径"]
 
 
 def _cell_str(value: object) -> str:
@@ -308,7 +308,7 @@ def _cell_str(value: object) -> str:
 async def export_plant_nodes(db: AsyncSession) -> bytes:
     """导出所有工厂节点为 Excel 文件（.xlsx），返回文件字节。
 
-    列结构（4 列）：节点名称 / 节点类型 / 父节点名称 / 层级路径。
+    列结构（5 列）：节点名称 / 节点类型 / 父节点名称 / 是否参评 / 层级路径。
     节点按层级顺序输出（父节点在子节点之前），便于导入。
     """
     result = await db.execute(select(PlantNode))
@@ -362,8 +362,9 @@ async def export_plant_nodes(db: AsyncSession) -> bytes:
             parent = node_map.get(str(node.parent_id))
             if parent:
                 parent_name = parent.name
+        kpi_str = "是" if node.is_kpi_enabled else "否"
         path = build_path(str(node.id))
-        ws.append([node.name, node.type, parent_name, path])
+        ws.append([node.name, node.type, parent_name, kpi_str, path])
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -377,7 +378,10 @@ async def import_plant_nodes(
 ) -> dict:
     """批量导入工厂节点（Excel .xlsx）。
 
-    逐行处理：按 name + parent 查找节点，存在则更新类型，不存在则新建。
+    逐行处理：按 name + parent 查找节点，存在则更新（类型/参评），不存在则新建。
+    Excel 列结构（5 列）：节点名称 / 节点类型 / 父节点名称 / 是否参评 / 层级路径。
+    「层级路径」仅展示用，导入时忽略——层级关系由「父节点名称」推导，路径由系统自动生成。
+    「是否参评」空值时不修改现有值；「是/否」显式设置。
     返回 {total, inserted, updated, failed, errors[]}。
     """
     try:
@@ -412,7 +416,25 @@ async def import_plant_nodes(
 
         node_type = _cell_str(row[1]) if len(row) > 1 else ""
         parent_name = _cell_str(row[2]) if len(row) > 2 else ""
-        # 第 4 列（层级路径）仅用于展示，导入时不使用
+        kpi_raw = _cell_str(row[3]) if len(row) > 3 else ""
+        # 第 5 列（层级路径）仅用于展示，导入时忽略——路径由系统按父节点自动生成
+        # 参评列解析：空=不修改；「是/否/true/false/1/0」显式设置
+        is_kpi_enabled: bool | None = None
+        if kpi_raw:
+            if kpi_raw in ("是", "true", "True", "TRUE", "1"):
+                is_kpi_enabled = True
+            elif kpi_raw in ("否", "false", "False", "FALSE", "0"):
+                is_kpi_enabled = False
+            else:
+                errors.append(
+                    {
+                        "row": row_idx,
+                        "name": name,
+                        "message": f"是否参评列值非法（{kpi_raw}），仅支持 是/否",
+                    }
+                )
+                failed += 1
+                continue
 
         # 节点类型校验
         if node_type not in VALID_NODE_TYPES:
@@ -436,6 +458,7 @@ async def import_plant_nodes(
                     parent_name=parent_name,
                     operator=operator,
                     parent_cache=parent_cache,
+                    is_kpi_enabled=is_kpi_enabled,
                 )
         except Exception as exc:  # noqa: BLE001
             failed += 1
@@ -465,10 +488,12 @@ async def _import_one_node(
     parent_name: str,
     operator: str,
     parent_cache: dict[str, str],
+    is_kpi_enabled: bool | None = None,
 ) -> bool:
     """处理单行导入，返回是否为更新（True）或新建（False）。
 
     在调用方的 SAVEPOINT 内执行，异常会触发回滚至 SAVEPOINT。
+    is_kpi_enabled=None 时不修改现有值（新建则默认 False）。
     """
     # 查找父节点
     parent_id: str | None = None
@@ -511,13 +536,21 @@ async def _import_one_node(
                 "name": node.name,
                 "type": node.type,
                 "parentId": str(node.parent_id) if node.parent_id else None,
+                "isKpiEnabled": node.is_kpi_enabled,
             },
             ensure_ascii=False,
         )
         node.type = node_type
+        if is_kpi_enabled is not None:
+            node.is_kpi_enabled = is_kpi_enabled
         node.updated_by = f"import:{operator}"
         after_value = json.dumps(
-            {"name": name, "type": node_type, "parentId": parent_id},
+            {
+                "name": name,
+                "type": node_type,
+                "parentId": parent_id,
+                "isKpiEnabled": node.is_kpi_enabled,
+            },
             ensure_ascii=False,
         )
         await _write_audit(
@@ -535,6 +568,7 @@ async def _import_one_node(
             name=name,
             type=node_type,
             parent_id=parent_id,
+            is_kpi_enabled=is_kpi_enabled if is_kpi_enabled is not None else False,
             updated_by=f"import:{operator}",
         )
         db.add(node)
@@ -548,7 +582,12 @@ async def _import_one_node(
             target_type="plant_node",
             target_id=str(node.id),
             after_value=json.dumps(
-                {"name": name, "type": node_type, "parentId": parent_id},
+                {
+                    "name": name,
+                    "type": node_type,
+                    "parentId": parent_id,
+                    "isKpiEnabled": node.is_kpi_enabled,
+                },
                 ensure_ascii=False,
             ),
         )

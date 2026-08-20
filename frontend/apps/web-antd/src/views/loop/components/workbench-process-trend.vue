@@ -2,9 +2,9 @@
 /**
  * 工作台 R4 主画布 · 过程变量模式（Phase 1 重构 · 2026-08-12）
  *
- * PV/SP/OP 同轴趋势图：
- * - 双 Y 轴：左轴 PV/SP（工程单位），右轴 OP（%）
- * - PV 蓝色实线 / SP 灰色虚线 / OP 琥珀色细线
+ * PV/SP/OP/MODE 同轴趋势图：
+ * - 三 Y 轴：左轴 PV/SP（工程单位），右轴 OP（%），最右 MODE（枚举阶梯）
+ * - PV 蓝色实线 / SP 灰色虚线 / OP 琥珀色细线 / MODE 紫色阶梯线
  * - MODE 背景带（markArea）：AUTO 绿浅底 / MANUAL 红浅底
  * - 事件标记（markPoint）：▼ 诊断 / ◆ 整定 / ▐ 验证 / ▓ 缺口
  * - tooltip axis 模式 + dataZoom inside+slider
@@ -32,7 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   pvRange: null,
   eventMarks: () => [],
   modeBands: () => [],
-  seriesVisible: () => ({ pv: true, sp: true, op: true }),
+  seriesVisible: () => ({ pv: true, sp: true, op: true, mode: true }),
 });
 
 /** 事件标记类型 */
@@ -62,7 +62,7 @@ interface Props {
   /** MODE 背景带数据（时间段+模式标签） */
   modeBands?: ModeBand[];
   /** 曲线显隐控制（由外层图例点击驱动） */
-  seriesVisible?: { op: boolean; pv: boolean; sp: boolean };
+  seriesVisible?: { mode: boolean; op: boolean; pv: boolean; sp: boolean };
   /** PV 量程上下限（固定 Y 轴范围，不随数据自动调整） */
   pvRange?: null | { max: null | number; min: null | number };
 }
@@ -77,10 +77,24 @@ const { renderEcharts } = useEcharts(chartRef);
 const PV_COLOR = '#1d4ed8';
 const SP_COLOR = '#6b7280';
 const OP_COLOR = '#b45309';
+const MODE_COLOR = '#7c3aed';
 const DIAG_COLOR = '#c23434';
 const TUNE_COLOR = '#1a7f4b';
 const VERIFY_COLOR = '#1d4ed8';
 const GAP_COLOR = '#9ca3af';
+
+/** MODE 枚举值 → 轴标签（与 DCS MODE 映射约定一致：0=手动 1=自动 2=串级） */
+const MODE_VALUE_LABELS: Record<number, string> = {
+  0: 'MANUAL',
+  1: 'AUTO',
+  2: 'CAS',
+};
+/** tooltip 用：MODE 数值 → 中文说明 */
+const MODE_VALUE_CN: Record<number, string> = {
+  0: '手动',
+  1: '自动',
+  2: '串级',
+};
 
 /** MODE → 背景色映射（浅底） */
 function modeBandColor(mode: string, custom?: string): string {
@@ -162,6 +176,10 @@ function buildOption() {
     ts,
     t.op[i] ?? null,
   ]);
+  const modeData: [number, null | number][] = t.timestamps.map((ts, i) => [
+    ts,
+    t.mode[i] ?? null,
+  ]);
 
   const markPoints = buildEventMarkPoints();
   const markAreas = buildModeBandAreas();
@@ -206,10 +224,22 @@ function buildOption() {
       itemStyle: { color: OP_COLOR, opacity: 0.85 },
       data: opData,
     },
+    {
+      name: 'MODE',
+      type: 'line',
+      yAxisIndex: 2,
+      showSymbol: false,
+      connectNulls: true,
+      // 阶梯线：MODE 是状态量，切换时刻垂直跳变，用 step 直观表达
+      step: 'end',
+      lineStyle: { width: 1.4, color: MODE_COLOR, opacity: 0.9 },
+      itemStyle: { color: MODE_COLOR, opacity: 0.9 },
+      data: modeData,
+    },
   ];
   return {
     backgroundColor: 'transparent',
-    grid: { top: 28, right: 26, bottom: 30, left: 8, containLabel: true },
+    grid: { top: 28, right: 64, bottom: 30, left: 8, containLabel: true },
     tooltip: {
       ...getTooltipPreset(),
       trigger: 'axis' as const,
@@ -224,6 +254,18 @@ function buildOption() {
         for (const p of arr) {
           const name = p?.seriesName ?? '';
           const v = p?.value?.[1];
+          if (name === 'MODE') {
+            // 状态量：显示 枚举标签（中文），不显示小数
+            const mv = v == null ? null : Number(v);
+            const label =
+              mv == null
+                ? '—'
+                : `${MODE_VALUE_LABELS[mv] ?? String(mv)}（${MODE_VALUE_CN[mv] ?? '未知'}）`;
+            lines.push(
+              `<span style="color:${p?.color}">●</span> MODE: <b>${label}</b>`,
+            );
+            continue;
+          }
           lines.push(
             `<span style="color:${p?.color}">●</span> ${name}: <b>${v == null ? '—' : Number(v).toFixed(2)}</b>`,
           );
@@ -237,6 +279,7 @@ function buildOption() {
         PV: props.seriesVisible.pv,
         SP: props.seriesVisible.sp,
         OP: props.seriesVisible.op,
+        MODE: props.seriesVisible.mode,
       },
     },
     xAxis: {
@@ -274,6 +317,24 @@ function buildOption() {
         max: 100,
         position: 'right' as const,
         axisLabel: { color: chartTextColor.value, fontSize: 10 },
+        splitLine: { show: false },
+      },
+      {
+        // MODE 枚举轴：0=MANUAL / 1=AUTO / 2=CAS（区间 [-0.5, 2.5] 居中显示）
+        type: 'value' as const,
+        name: 'MODE',
+        nameTextStyle: { fontSize: 10, color: MODE_COLOR },
+        min: -0.5,
+        max: 2.5,
+        position: 'right' as const,
+        offset: 38,
+        axisLabel: {
+          color: MODE_COLOR,
+          fontSize: 10,
+          formatter: (val: number) =>
+            MODE_VALUE_LABELS[val] ? String(MODE_VALUE_LABELS[val]) : '',
+          interval: 0,
+        },
         splitLine: { show: false },
       },
     ],

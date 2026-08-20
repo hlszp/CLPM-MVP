@@ -382,6 +382,6 @@ class TestBatchUpdateEmptyList:
 
 # ===========================================================================
 # SVC-10 位号触发监控（check_node_monitor_trigger）测试已随死代码一并移除
-#（2026-08-20：功能从未接线，plant_node.monitor_tag_id/monitor_trigger_value
+# （2026-08-20：功能从未接线，plant_node.monitor_tag_id/monitor_trigger_value
 #  字段已由迁移 e1f2a3b4c5d6 删除）。
 # ===========================================================================

@@ -18,6 +18,7 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form';
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface';
 import type { DefaultOptionType } from 'ant-design-vue/es/select';
 
+import type { DictApi } from '#/api/dict';
 import type { LoopApi } from '#/api/loop';
 import type { TagApi } from '#/api/tag';
 
@@ -49,6 +50,10 @@ import {
 
 import { getModelsApi } from '#/api/dcs';
 import {
+  DICT_TYPE_LOOP_TYPE,
+  getDictItemsApi,
+} from '#/api/dict';
+import {
   createLoopApi,
   getLoopDetailApi,
   getLoopTagsApi,
@@ -62,7 +67,7 @@ import StatusBadge from '#/components/loop/status-badge.vue';
 import { TAG_SLOT_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 
-import { LOOP_TYPE_MAP, SLOT_KEYS } from './use-loop-changes';
+import { SLOT_KEYS } from './use-loop-changes';
 
 defineOptions({ name: 'LoopEditDrawer' });
 
@@ -74,6 +79,25 @@ const emit = defineEmits<{
   /** 保存成功，通知父组件刷新列表 */
   saved: [];
 }>();
+
+// ===== 回路类型字典（可配置：系统管理 → 字典管理 → 回路类型）=====
+const loopTypeDictOptions = ref<Array<{ label: string; value: string }>>([]);
+
+async function loadLoopTypeDict() {
+  try {
+    // 含禁用项：编辑存量回路（自定义/已禁用类型）时下拉仍能正确显示 label
+    const items: DictApi.DictItemOption[] = await getDictItemsApi(
+      DICT_TYPE_LOOP_TYPE,
+      false,
+    );
+    loopTypeDictOptions.value = items.map((i) => ({
+      label: i.itemLabel,
+      value: i.itemCode,
+    }));
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
 
 interface Props {
   /** 所属单元下拉选项（工厂节点路径标签），由父组件统一加载 */
@@ -626,6 +650,8 @@ async function open(
   mode: 'create' | 'edit' | 'view',
   defaultUnitId?: string,
 ) {
+  // 回路类型字典（低频变更，每次打开抽屉刷新即可）
+  void loadLoopTypeDict();
   if (!record) {
     openCreate(defaultUnitId);
     return;
@@ -1124,12 +1150,7 @@ defineExpose({
                   v-model:value="formState.loopType"
                   placeholder="请选择回路类型"
                   :disabled="isViewMode"
-                  :options="
-                    Object.entries(LOOP_TYPE_MAP).map(([value, { label }]) => ({
-                      label,
-                      value,
-                    }))
-                  "
+                  :options="loopTypeDictOptions"
                 />
               </FormItem>
             </div>

@@ -20,6 +20,7 @@ import type {
 
 import type { ConfirmContextType, DiffEntry } from './manage/use-loop-changes';
 
+import type { DictApi } from '#/api/dict';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 import type { ColumnConfig } from '#/composables/use-clpm-preferences';
@@ -47,6 +48,10 @@ import {
   Upload,
 } from 'ant-design-vue';
 
+import {
+  DICT_TYPE_LOOP_TYPE,
+  getDictItemsApi,
+} from '#/api/dict';
 import {
   batchConfigLoopsApi,
   batchGroupLoopsApi,
@@ -130,6 +135,7 @@ type ViewMode = 'compact' | 'tags';
 const viewMode = ref<ViewMode>('compact');
 
 // ===== 树（使用统一组件 PlantNodeTree）=====
+const treeRef = ref<InstanceType<typeof PlantNodeTree>>();
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNode = ref<null | PlantNodeApi.PlantNode>(null);
 
@@ -162,6 +168,20 @@ async function loadLoopCounts() {
   } catch (error) {
     console.error('[回路数聚合] 加载失败:', error);
   }
+}
+
+/**
+ * 数据变更后联动刷新：回路列表 + 工厂模型树（结构 + 回路计数）+ 装置下拉选项。
+ * 导入可能自动新建 UNIT 节点（树结构变化），新建/删除/修改装置会改变树回路计数；
+ * 只刷列表不刷树会导致"工厂模型与回路台账不一致"，需手动刷新页面才能对齐。
+ */
+async function refreshAfterMutation() {
+  await Promise.all([
+    loadList(),
+    loadLoopCounts(),
+    loadPlantNodes(),
+    treeRef.value?.loadTree() ?? Promise.resolve(),
+  ]);
 }
 
 /** 选中树节点（由 PlantNodeTree emit 触发） */
@@ -239,20 +259,42 @@ const statusOptions: {
   { label: '未启用', value: 'INACTIVE' },
 ];
 
-/** v6.1：回路类型筛选选项（温度/压力/液位/流量/分析/速度/其他） */
-const loopTypeOptions: {
-  label: string;
-  value: LoopApi.LoopType | undefined;
-}[] = [
+/**
+ * 回路类型字典（可配置：系统管理 → 字典管理 → 回路类型）
+ * - all：含禁用项与自定义项，用于列表展示 label
+ * - enabled：仅启用项，用于筛选下拉
+ */
+const loopTypeDictAll = ref<DictApi.DictItemOption[]>([]);
+const loopTypeDictEnabled = ref<DictApi.DictItemOption[]>([]);
+
+const loopTypeLabelMap = computed<Record<string, string>>(() =>
+  Object.fromEntries(loopTypeDictAll.value.map((i) => [i.itemCode, i.itemLabel])),
+);
+
+/** 列表展示：字典 label 优先，未知 code 兜底显示原值 */
+function loopTypeLabel(loopType: null | string | undefined): string {
+  if (!loopType) return '其他';
+  return loopTypeLabelMap.value[loopType] ?? loopType;
+}
+
+const loopTypeOptions = computed(() => [
   { label: '全部', value: undefined },
-  { label: '温度', value: 'TEMPERATURE' },
-  { label: '压力', value: 'PRESSURE' },
-  { label: '液位', value: 'LEVEL' },
-  { label: '流量', value: 'FLOW' },
-  { label: '分析', value: 'ANALYSIS' },
-  { label: '速度', value: 'SPEED' },
-  { label: '其他', value: 'OTHER' },
-];
+  ...loopTypeDictEnabled.value.map((i) => ({
+    label: i.itemLabel,
+    value: i.itemCode as LoopApi.LoopType | undefined,
+  })),
+]);
+
+async function loadLoopTypeDict() {
+  try {
+    [loopTypeDictAll.value, loopTypeDictEnabled.value] = await Promise.all([
+      getDictItemsApi(DICT_TYPE_LOOP_TYPE, false),
+      getDictItemsApi(DICT_TYPE_LOOP_TYPE, true),
+    ]);
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
 
 /**
  * ant-design-vue Select 的 SelectValue 不接受 boolean（仅 string | number），
@@ -820,7 +862,7 @@ async function handleBatchDangerConfirm() {
     );
     selectedRowKeys.value = [];
     batchDangerOpen.value = false;
-    await loadList();
+    await refreshAfterMutation();
   } catch (error) {
     hide();
     console.error('操作失败:', error);
@@ -974,7 +1016,7 @@ function handleImportBeforeUpload(file: File): boolean {
       } else {
         message.success(`导入完成：${summary}`);
       }
-      loadList();
+      refreshAfterMutation();
     })
     .catch((error) => {
       hide();
@@ -1076,7 +1118,7 @@ const activeFilterBadges = computed(() => {
   }
 
   if (query.loopType) {
-    const opt = loopTypeOptions.find((o) => o.value === query.loopType);
+    const opt = loopTypeOptions.value.find((o) => o.value === query.loopType);
     badges.push({
       key: 'loopType',
       label: '类型',
@@ -1112,7 +1154,7 @@ function handleHelp() {
 
 // ===== 统一工具栏（标准 3 工具：刷新 / 列设置 / 帮助） =====
 const { toolbarItems } = usePageToolbar(() => ({
-  refresh: { onClick: loadList, loading: loading.value },
+  refresh: { onClick: refreshAfterMutation, loading: loading.value },
   setting: {},
   help: { onClick: handleHelp },
 }));
@@ -1127,7 +1169,7 @@ async function handleDangerConfirm() {
     message.success('回路删除成功');
     drawerRef.value?.closeIfLoop(record.loopId);
     dangerOpen.value = false;
-    await loadList();
+    await refreshAfterMutation();
   } catch (error) {
     console.error('操作失败:', error);
     message.error('回路删除失败，请重试或联系管理员');
@@ -1150,6 +1192,7 @@ onMounted(() => {
   loadPlantNodes();
   loadList();
   loadLoopCounts();
+  loadLoopTypeDict();
 });
 
 watch(
@@ -1182,11 +1225,11 @@ watch(
 
     <!-- 单页布局：左侧工厂树 + 右侧回路表格（方案 A） -->
     <div class="flex gap-3" style="height: calc(100vh - 220px)">
-      <!-- 左侧工厂模型树 -->
+      <!-- 左侧工厂模型树（节点管理统一在「工厂配置」页，此处仅浏览与筛选） -->
       <PlantNodeTree
+        ref="treeRef"
         card-title="工厂模型"
         :width="280"
-        :show-crud-buttons="true"
         :default-expand-level="2"
         :show-stats="true"
         :loop-counts="loopCountsByNodeId"
@@ -1502,7 +1545,7 @@ watch(
                     'bg-slate-100 text-slate-700 border-slate-200',
                 ]"
               >
-                {{ LOOP_TYPE_MAP[record.loopType ?? 'OTHER']?.label ?? '其他' }}
+                {{ loopTypeLabel(record.loopType) }}
               </span>
             </template>
             <template v-else-if="column.key === 'controlType'">
@@ -1720,7 +1763,7 @@ watch(
       ref="drawerRef"
       :plant-node-options="plantNodeOptions"
       @request-confirm="onDrawerRequestConfirm"
-      @saved="loadList"
+      @saved="refreshAfterMutation"
     />
 
     <!-- 批量配置弹窗 -->

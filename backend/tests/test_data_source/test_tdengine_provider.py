@@ -84,20 +84,17 @@ def test_provider_satisfies_protocol():
 # ---------------------------------------------------------------------------
 
 
-def _make_db_with_mapping(tag_name: str = "TC101.pv") -> AsyncMock:
-    """构造可解析宽表名的 mock db（LoopTagMapping + TagRegistry 各一次查询）."""
-    mapping = MagicMock()
-    mapping.tag_id = "tag-1"
-    tag = MagicMock()
-    tag.tag_name = tag_name
+def _make_db_with_mapping(tag_name: str = "TC101") -> AsyncMock:
+    """构造可解析宽表名的 mock db（LoopLedger.tag_name 单次查询）.
 
-    mapping_result = MagicMock()
-    mapping_result.scalars.return_value.all.return_value = [mapping]
-    tag_result = MagicMock()
-    tag_result.scalars.return_value.all.return_value = [tag]
+    2026-08-20 子表名 bug 修复后：_resolve_subtable 只查回路台账 tag_name
+    （scalar_one_or_none），不再查 mapping + tag 两步。
+    """
+    loop_result = MagicMock()
+    loop_result.scalar_one_or_none.return_value = tag_name
 
     db = AsyncMock()
-    db.execute = AsyncMock(side_effect=[mapping_result, tag_result])
+    db.execute = AsyncMock(return_value=loop_result)
     return db
 
 

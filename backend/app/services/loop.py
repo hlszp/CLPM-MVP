@@ -28,6 +28,12 @@ from app.models.loop import COMPLEX_ROLE_MAIN, LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
 from app.services.cache.invalidation import CacheInvalidator
+from app.services.dict_item import (
+    DICT_LOOP_TYPE,
+    dict_items_hint,
+    get_dict_items,
+    normalize_by_dict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1762,24 +1768,9 @@ def _cell_str(value: object) -> str:
     return str(value).strip()
 
 
-def _normalize_loop_type(raw: str) -> str | None:
-    """v6.1：回路类型中英文双向识别。
-
-    接受中文（温度/压力/液位/...）或英文（TEMPERATURE/PRESSURE/...），
-    统一返回英文枚举值。未知值原样返回（由上层校验）。
-    """
-    if not raw:
-        return None
-    val = raw.strip()
-    # 中文 → 英文
-    if val in LOOP_TYPE_FROM_CN:
-        return LOOP_TYPE_FROM_CN[val]
-    # 英文（大小写不敏感）→ 标准大写
-    upper = val.upper()
-    if upper in LOOP_TYPE_TO_CN:
-        return upper
-    # 未知值原样返回（允许自定义扩展，前端兜底显示）
-    return val
+# 注：回路类型归一化已改走字典（normalize_by_dict，DICT_LOOP_TYPE），
+# 原硬编码 _normalize_loop_type 已移除；LOOP_TYPE_TO_CN/FROM_CN 仅保留作
+# 测试与统计场景的出厂默认映射。
 
 
 def _normalize_control_type(raw: str) -> str | None:
@@ -1881,6 +1872,10 @@ async def export_loops(
     ws.title = "回路台账"
     ws.append(EXPORT_HEADERS)
 
+    # 回路类型 code → label（以字典为准；enabled_only=False 含禁用项，
+    # 存量自定义 code 兜底显示原值；导入支持 code/label 双向识别）
+    loop_type_cn = dict(await get_dict_items(db, DICT_LOOP_TYPE, enabled_only=False))
+
     for loop in loops:
         tags = tag_name_map.get(str(loop.id), {})
         unit_name = unit_map.get(str(loop.unit_id)) if loop.unit_id else ""
@@ -1892,7 +1887,7 @@ async def export_loops(
         importance_level_str = str(loop.importance_level) if loop.importance_level else ""
         # v6.1：枚举值导出为中文（用户友好，便于 Excel 编辑）
         loop_type_str = (
-            LOOP_TYPE_TO_CN.get(loop.loop_type.upper(), loop.loop_type) if loop.loop_type else ""
+            loop_type_cn.get(loop.loop_type or "", loop.loop_type or "") if loop.loop_type else ""
         )
         control_type_str = (
             CONTROL_TYPE_TO_CN.get(loop.control_type.upper(), loop.control_type)
@@ -2017,10 +2012,28 @@ async def import_loops(
         is_active_str = _cell_str(row[7]) if len(row) > 7 else "是"
         is_active = is_active_str in ("是", "true", "True", "1", "YES", "yes", "Y", "y")
         # v6.1：回路类型 / 控制类型 中英文双向识别
+        # 回路类型以字典为准（可配置：系统管理 → 字典管理 → 回路类型）；
+        # 归一失败（如「电流」未注册）报行级错误并指引，不再原样落库触发约束
         loop_type_raw = (
             _cell_str(row[_LOOP_TYPE_COLUMN_INDEX]) if len(row) > _LOOP_TYPE_COLUMN_INDEX else ""
         )
-        loop_type = _normalize_loop_type(loop_type_raw)
+        loop_type: str | None = None
+        if loop_type_raw:
+            loop_type = await normalize_by_dict(db, DICT_LOOP_TYPE, loop_type_raw)
+            if loop_type is None:
+                failed += 1
+                errors.append(
+                    {
+                        "row": row_idx,
+                        "tagName": tag_name,
+                        "message": (
+                            f"回路类型无效: {loop_type_raw}，"
+                            f"支持的类型：{await dict_items_hint(db, DICT_LOOP_TYPE)}；"
+                            "自定义类型请先在「系统管理 → 字典管理 → 回路类型」中添加"
+                        ),
+                    }
+                )
+                continue
         control_type_raw = (
             _cell_str(row[_CONTROL_TYPE_COLUMN_INDEX])
             if len(row) > _CONTROL_TYPE_COLUMN_INDEX

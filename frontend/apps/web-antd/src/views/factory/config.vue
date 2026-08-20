@@ -3,9 +3,11 @@
  * 工厂配置页（列表 + 树形结构）
  *
  * - 左侧：工厂模型树（工厂 → 装置 → 单元，选择联动右侧列表筛选）
- * - 右侧：节点分页列表（层级路径/父节点/来源标记/参评/更新时间 + CRUD）
- * - 导入/导出（Excel）：导出全部层级（父先子后）；导入逐行 upsert，
- *   完成后反馈新增/更新/失败明细（导入仅 ADMIN）
+ * - 右侧：节点分页列表（父节点/层级路径/来源标记/参评/更新时间 + CRUD）
+ * - 参评：ADMIN 行内 Switch 直接切换（高频开关不进编辑弹窗）；非 ADMIN 只读
+ * - 导入/导出（Excel）：导出 5 列（名称/类型/父节点/是否参评/层级路径，父先子后）；
+ *   导入逐行 upsert，层级路径列忽略（路径由系统按父节点自动生成），
+ *   是否参评列留空不修改现有值（导入仅 ADMIN）
  * - AAS 工厂模型同步（独立同步配置区）：同步设置（连接配置/启停）+
  *   连接测试 + 全量同步 + 同步日志；source_node_id 标记 AAS 同步节点
  *   （本地改名会被下次同步覆盖，主数据语义）
@@ -26,6 +28,7 @@ import type {
 import { computed, h, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -73,6 +76,12 @@ defineOptions({ name: 'FactoryConfig' });
 
 const { themeColors } = useClpmTheme();
 
+// 非 ADMIN 只读展示参评状态（ADMIN 走行内 Switch）
+const userStore = useUserStore();
+const hasAdminPermission = computed(() =>
+  (userStore.userInfo?.roles ?? []).includes('ADMIN'),
+);
+
 // ===== 常量 =====
 
 const TYPE_TEXT: Record<string, string> = {
@@ -88,7 +97,7 @@ function typeText(t: string): string {
 const HELP_CONTENT = [
   '工厂配置页：工厂-装置-单元三层结构的定义与管理（左侧树 + 右侧列表），回路挂在单元节点下。',
   '· 层级约束：工厂为根节点，装置挂在工厂下，单元挂在装置下；存在子节点或关联回路的节点不可删除。',
-  '· 导入/导出（Excel）：导出全部层级（列：节点名称/节点类型/父节点名称/层级路径，父先子后）；导入为逐行 upsert（名称+父节点已存在则更新，否则新建），可先导出作为模板修改后回灌；导入仅 ADMIN。',
+  '· 导入/导出（Excel）：导出列（5 列）：节点名称/节点类型/父节点名称/是否参评/层级路径，父先子后；导入逐行 upsert（名称+父节点已存在则更新，否则新建），「层级路径」导入时忽略（层级由父节点推导、系统自动生成），「是否参评」留空不修改现有值；可先导出作为模板修改后回灌；导入仅 ADMIN。',
   '· AAS 工厂模型同步（独立同步配置区）：从 AAS 高级过程报警系统拉取区域节点（AreaNode）全量数据，按来源标记（source_node_id）upsert——AAS 同步节点的名称/层级以 AAS 为准（本地改名会被下次同步覆盖）；本地维护节点不受同步影响。',
   '· 连接协议：ABP 动态 API（登录 TokenAuth + 区域节点分页接口），默认地址可在同步设置中调整。',
   '· 同步需先在「同步设置」中启用并配置账号；「立即同步」为手动全量触发，同步结果可在「同步日志」中查看。',
@@ -153,6 +162,13 @@ const columns: TableColumnsType = [
     key: 'type',
     width: 90,
     customRender: ({ value }) => typeText(value),
+  },
+  {
+    title: '父节点',
+    dataIndex: 'parentName',
+    key: 'parentName',
+    width: 140,
+    ellipsis: true,
   },
   {
     title: '层级路径',
@@ -377,6 +393,28 @@ async function handleDelete(record: PlantNodeListItem) {
     await Promise.all([loadTree(), loadList()]);
   } catch {
     // 错误已由拦截器处理（含子节点/回路保护提示）
+  }
+}
+
+// ===== 参评行内切换（高频开关操作，不进编辑弹窗） =====
+
+const kpiToggling = ref<Set<string>>(new Set());
+
+async function handleKpiToggle(record: PlantNodeListItem, checked: boolean) {
+  if (kpiToggling.value.has(record.id)) return;
+  kpiToggling.value.add(record.id);
+  try {
+    await updatePlantNodeApi(record.id, {
+      name: record.name,
+      isKpiEnabled: checked,
+    });
+    record.isKpiEnabled = checked;
+    message.success(`「${record.name}」已${checked ? '纳入' : '移出'}性能评估`);
+  } catch {
+    // 失败回滚显示（乐观更新不落地）
+    record.isKpiEnabled = !checked;
+  } finally {
+    kpiToggling.value.delete(record.id);
   }
 }
 
@@ -792,8 +830,25 @@ onMounted(() => {
               <Tag v-if="record.sourceNodeId" color="blue"> AAS 同步 </Tag>
               <Tag v-else> 本地 </Tag>
             </template>
+            <template v-else-if="column.key === 'parentName'">
+              <span v-if="record.parentName">{{ record.parentName }}</span>
+              <span v-else class="text-gray-400">—（顶层）</span>
+            </template>
             <template v-else-if="column.key === 'isKpiEnabled'">
-              <Tag :color="record.isKpiEnabled ? 'green' : 'default'">
+              <!-- ADMIN：行内开关直接切换；非 ADMIN：只读 Tag 展示 -->
+              <Switch
+                v-permission="['ADMIN']"
+                size="small"
+                :checked="record.isKpiEnabled"
+                :loading="kpiToggling.has(record.id)"
+                checked-children="参评"
+                un-checked-children="停用"
+                @change="
+                  (checked: unknown) =>
+                    handleKpiToggle(record as PlantNodeListItem, checked === true)
+                "
+              />
+              <Tag v-if="!hasAdminPermission" :color="record.isKpiEnabled ? 'green' : 'default'">
                 {{ record.isKpiEnabled ? '参评' : '—' }}
               </Tag>
             </template>
