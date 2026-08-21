@@ -4,9 +4,9 @@
 
 本仓库是 **CLPM-MVP**（自原 CLPM v6.2 派生的精简 + 闭环重建版），不是原 CLPM 项目。下方 v6.2 历史内容仅作架构背景参考。
 
-**现行事实来源**：`docs/MVP设计/`（01~10 设计与实施文档 + README 索引）。MVP 差异要点：
+**现行事实来源**：`docs/MVP设计/`（01~11 设计与实施文档 + README 索引）。MVP 差异要点：
 
-- **模块现状**："监控 → 评估 → 诊断 → 整定 → 处置"完整闭环已重建（2026-08-19）：诊断两页式（07 方案，2026-08-16）/ 整定三页式（09 方案恢复一级模块，2026-08-19）/ 处置三页式（08 处置方案，2026-08-19 新建）；前端路由模块 `monitor/assess/diagnosis/tuning/handling/alert/config/system/task/loop`
+- **模块现状**："监控 → 评估 → 诊断 → 整定 → 处置"完整闭环已重建（2026-08-19）：诊断两页式（07 方案，2026-08-16）/ 整定三页式（09 方案恢复一级模块，2026-08-19）/ 处置已升 **v2.0 双实体**（08 处置方案：loop_action_item 收敛为建议实体 + 新建 handling_order 处置工单表，2026-08-20）；前端路由模块 `monitor/assess/diagnosis/tuning/handling/alert/config/system/task/loop`，左侧导航按闭环顺序排列（监控-评估-诊断-整定-处置-配置-系统，2026-08-22）；系统管理含可配置字典管理页（MEASURE_TYPE/TAG_TYPE/LOOP_TYPE 三类字典，2026-08-21）
 - **纪律**：**不删除诊断/整定专属前后端文件**；构建闭环而非屏蔽闭环
 - **端口**：后端 API **17101**、前端 **15666**、mock 数据服务 **17106**（原端口 +10000 隔离）；开发容器 `clpm-mvp-*`；生产 compose 仍为原项目口径（隔离改造未执行）
 - **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
@@ -176,7 +176,7 @@ cd frontend && pnpm run format
 - **提交**：Conventional Commits `<type>(<scope>): <subject>`，subject ≤50 字符祈使句，body 解释"为什么"，按逻辑单元拆分，单 commit ≤500 行
 - **日常开发**：可直接在 main 上小步提交并 `git push github main`；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
 - **IA 重构分支策略**（2026-08-06 起，**已完成**）：本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。**Phase A-D 全部完成并已合入 main**（2026-08-07）：A（路由重组 7 菜单 + 配置集中化 + AI 右抽屉 + 跨模块上下文基建 + E2E 同步）/ B（回路工作台 6 Tab 迁移，后续已改为单页四区 commit 5e216ba8）/ C（诊断三区重构 + 特征字典 + 列表置信度严重度）/ D（整定单页整合 4 锚点 + 嵌入式组件 + 旧路由重定向 + 方案确认留痕）；全部后端零改动；门禁全绿 ruff✅/pytest 3881✅/check:type✅/alembic✅/vitest 147✅；**契约已升 v2.7**
-- **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支；**禁止对原项目（origin）做任何提交动作**
+- **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支；**禁止对原项目（origin）做任何提交动作**；**提交/推送/CI 仅在用户显式要求时执行**（2026-08-22 纪律）——小改动完成后直接报告结果，不主动提交，不同步等待 CI（报告"已触发"即可）
 - **CI 现状**（2026-08-20 更新）：GitHub Actions 已启用且通过（`.github/workflows/ci.yml`，push/PR 触发 main/develop）；Backend（ruff check + format + pytest --cov 60% 门槛，Redis service 容器）/ Frontend（eslint apps/web-antd + typecheck + build + E2E 非阻塞）；提交前本地检查（ruff + pytest + check:type）仍是第一道门禁
 
 ## 下阶段规则
