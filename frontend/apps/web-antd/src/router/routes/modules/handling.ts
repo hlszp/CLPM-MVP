@@ -24,7 +24,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:clipboard-check',
-      order: 4,
+      order: 5,
       title: '处置',
     },
     children: [

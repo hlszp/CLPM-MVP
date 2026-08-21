@@ -16,7 +16,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER'],
       icon: 'lucide:settings',
-      order: 6,
+      order: 7,
       title: '系统',
     },
     name: 'System',

@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:sliders-horizontal',
-      order: 5,
+      order: 4,
       title: '整定',
     },
     children: [
