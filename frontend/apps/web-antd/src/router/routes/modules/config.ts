@@ -26,7 +26,7 @@ const routes: RouteRecordRaw[] = [
       // 仅 ADMIN 可访问的子页（链路/指标/诊断/预警规则配置）由各自 authority 守卫。
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
       icon: 'lucide:settings-2',
-      order: 5,
+      order: 6,
       title: '配置',
     },
     children: [
