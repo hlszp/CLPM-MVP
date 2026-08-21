@@ -543,6 +543,106 @@ async def test_gap_backfill_skipped_when_gap_too_small():
     assert sub._backfill_task is None
 
 
+# ---------------------------------------------------------------------------
+# 自愈测试（2026-08-21 事故修复：远端重启掐断连接后主任务静默死亡）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refresh_loop_revives_dead_main_task():
+    """主任务已退出时，刷新循环应自动重建（自愈 1）."""
+    import asyncio
+
+    sub = RealtimeSubscriber()
+    sub._running = True
+
+    # 主任务已死（已完成）
+    async def _dead():
+        return
+
+    dead_task = asyncio.create_task(_dead())
+    await dead_task
+    sub._task = dead_task
+
+    # 新主任务占位：自愈会以新 create_task(self._run()) 替换
+    run_calls = []
+
+    async def _fake_run():
+        run_calls.append(1)
+        await asyncio.sleep(30)
+
+    sub._run = _fake_run
+
+    with patch("app.services.data_source.realtime_subscriber._SIGNALR_REFRESH_INTERVAL", 0.05):
+        refresh = asyncio.create_task(sub._refresh_loop())
+        try:
+            await asyncio.sleep(0.3)  # 越过多个刷新周期
+        finally:
+            refresh.cancel()
+            try:
+                await refresh
+            except asyncio.CancelledError:
+                pass
+
+    assert run_calls, "自愈应重建主任务（调用 _run）"
+    assert sub._task is not None and sub._task is not dead_task
+    if sub._task is not None:
+        sub._task.cancel()
+        try:
+            await sub._task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_refresh_loop_recycles_stuck_main_task():
+    """数据停滞超阈值且看门狗未生效（主任务卡死）时，强制取消重建（自愈 2）."""
+    import asyncio
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    sub._running = True
+    sub._last_data_at = _time.time() - 999  # 停滞远超阈值
+
+    # 主任务"活着"但卡死（长时间 sleep，模拟 recv 卡住）
+    async def _stuck():
+        await asyncio.sleep(100)
+
+    sub._task = asyncio.create_task(_stuck())
+
+    rebuilds = []
+
+    async def _fake_run():
+        rebuilds.append(1)
+        await asyncio.sleep(30)
+
+    sub._run = _fake_run
+
+    with (
+        patch("app.services.data_source.realtime_subscriber._SIGNALR_REFRESH_INTERVAL", 0.05),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
+        mock_settings.SIGNALR_STALL_TIMEOUT_SECONDS = 300
+        refresh = asyncio.create_task(sub._refresh_loop())
+        try:
+            await asyncio.sleep(0.3)
+        finally:
+            refresh.cancel()
+            try:
+                await refresh
+            except asyncio.CancelledError:
+                pass
+
+    assert rebuilds, "自愈应强制重建卡死的主任务"
+    assert sub._task is not None and sub._task.done() is False
+    if sub._task is not None:
+        sub._task.cancel()
+        try:
+            await sub._task
+        except asyncio.CancelledError:
+            pass
+
+
 @pytest.mark.asyncio
 async def test_gap_backfill_skipped_when_disabled():
     """GAP_BACKFILL_ENABLED=False 时不触发补数."""

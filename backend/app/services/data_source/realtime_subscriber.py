@@ -188,6 +188,9 @@ class RealtimeSubscriber:
             str, dict[str, Any]
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
+        # 后台 fire-and-forget 任务引用集合（防 GC 中途回收——事件循环对任务仅弱引用，
+        # 2026-08-21 事故：MODE 缓存失效任务被 GC 出现 "Task was destroyed but it is pending"）
+        self._bg_tasks: set[asyncio.Task] = set()
         # 低频角色（SP/MODE/PID_*）跨flush持久缓存：上次已知值。
         # 解决"低频角色没变化→buffer中缺失→flush写NULL"的问题——flush时合并_last_known，
         # 未在本tick出现的角色取最近已知值，保证TDengine宽表每行非PV字段完整。
@@ -230,6 +233,9 @@ class RealtimeSubscriber:
         # 使首次连接成功即可感知进程停机期间的数据缺口
         await self._load_checkpoint()
         self._task = asyncio.create_task(self._run())
+        # 主任务意外退出观测（2026-08-21 事故：远端引擎重启掐断连接后
+        # 主任务静默死亡，看门狗随之失效，无任何日志可查）
+        self._task.add_done_callback(self._on_main_task_done)
         self._flush_task = asyncio.create_task(self._flush_loop())
         self._refresh_task = asyncio.create_task(self._refresh_loop())
         logger.info(
@@ -284,6 +290,35 @@ class RealtimeSubscriber:
         # 停止前 flush 剩余数据
         await self._flush_buffer()
         logger.info("实时数据订阅已停止")
+
+    def _on_main_task_done(self, task: asyncio.Task) -> None:
+        """主任务退出观测：运行期内意外退出（非 stop() 触发）记错误日志.
+
+        2026-08-21 事故根因之一：远端引擎重启掐断 WS 连接后主任务静默死亡，
+        看门狗随主任务一同失效，无任何日志；本回调补齐退出可观测性，
+        自愈重建由 ``_refresh_loop`` 的存活检查负责。
+        """
+        if not self._running or task.cancelled():
+            return
+        exc = None
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is None:
+            logger.error("实时订阅主任务意外退出（无异常，疑似被 GC/外部取消）")
+        else:
+            logger.error("实时订阅主任务异常退出: %s", exc, exc_info=exc)
+
+    def _spawn_bg(self, coro) -> None:
+        """启动 fire-and-forget 后台任务并保持引用（防 GC 中途回收）.
+
+        事件循环对任务仅持弱引用，无引用的任务可能被 GC 出现
+        ``Task was destroyed but it is pending``（2026-08-21 日志实锤）。
+        """
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
 
     async def _run(self) -> None:
         """主循环：连接 → 订阅 → 接收 → 重连（指数退避）."""
@@ -483,11 +518,43 @@ class RealtimeSubscriber:
 
         刷新通过同一 WebSocket 连接发送 invocation，Completion 响应由
         ``_connect_and_subscribe`` 的接收循环经 ``_handle_signalr_message`` 处理。
+
+        自愈（2026-08-21 事故修复）：本循环独立于主任务存活，每周期检查——
+        - 主任务已退出（远端重启掐断连接后静默死亡）→ 重建主任务；
+        - 数据停滞超过看门狗阈值 + 60s 余量但看门狗未生效（主任务卡死）→
+          取消并重建主任务。
         """
+        stall_timeout = float(settings.SIGNALR_STALL_TIMEOUT_SECONDS)
         while self._running:
             try:
                 await asyncio.sleep(_SIGNALR_REFRESH_INTERVAL)
-                if not self._running or self._ws is None or not self._subscribed_tags:
+                if not self._running:
+                    continue
+                # --- 自愈 1：主任务已死 → 重建 ---
+                if self._task is None or self._task.done():
+                    logger.warning("自愈：实时订阅主任务已退出，重建连接循环")
+                    self._task = asyncio.create_task(self._run())
+                    self._task.add_done_callback(self._on_main_task_done)
+                    continue
+                # --- 自愈 2：数据停滞超阈值但看门狗未处理（主任务卡死）→ 强制重建 ---
+                if self._last_data_at is not None:
+                    idle = time.time() - self._last_data_at
+                    if idle > stall_timeout + 60:
+                        logger.warning(
+                            "自愈：数据停滞 %.0fs（阈值 %.0fs）且看门狗未生效，强制重建主任务",
+                            idle,
+                            stall_timeout,
+                        )
+                        self._task.cancel()
+                        try:
+                            await self._task
+                        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                            pass
+                        await self._close_ws_safely()
+                        self._task = asyncio.create_task(self._run())
+                        self._task.add_done_callback(self._on_main_task_done)
+                        continue
+                if self._ws is None or not self._subscribed_tags:
                     continue
                 # 重新发送 SubscribeAsync 获取所有订阅 Tag 的当前值
                 # AAS 会返回 Completion (type=3) 响应，由接收循环统一处理
@@ -573,8 +640,9 @@ class RealtimeSubscriber:
         # MODE 变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
         # 自动/手动/自控率卡片下次查询拿到最新值，而非等 60s TTL 自然过期。
         # MODE 低频变化（小时级），失效代价低。
+        # 注意：经 _spawn_bg 保持引用，防 GC 中途回收（asyncio 任务弱引用陷阱）。
         if role == "MODE":
-            asyncio.create_task(self._invalidate_loop_stats_cache())
+            self._spawn_bg(self._invalidate_loop_stats_cache())
 
     async def _invalidate_loop_stats_cache(self) -> None:
         """MODE 变化时失效回路统计缓存，确保监控卡片下次查询拿到最新值."""
