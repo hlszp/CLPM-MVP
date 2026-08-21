@@ -277,13 +277,13 @@ INSERT INTO tag_registry (id, tag_name, tag_description, tag_type, current_value
 -- 依赖关系：parent_id 自引用（FACTORY 先于 AREA/UNIT）；monitor_tag_id 引用 tag_registry
 -- =============================================================================
 
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('35af8328-e72d-414f-bfc9-b0c0caad71ee', 'EO 工厂', 'FACTORY', NULL, true, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('2181a13b-45eb-4306-9d19-c143f1b3ed11', '致联工厂', 'FACTORY', NULL, false, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('ff26e255-dcb9-45b4-8b79-a0d1c8c51fae', 'EO 装置', 'AREA', '35af8328-e72d-414f-bfc9-b0c0caad71ee', true, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('1807ba4b-de8f-4a18-9994-f3f965b4bce8', '共用工程', 'AREA', '35af8328-e72d-414f-bfc9-b0c0caad71ee', true, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('ad6a0993-0e83-4645-87f8-edecd2c85356', '急冷分离单元', 'UNIT', '1807ba4b-de8f-4a18-9994-f3f965b4bce8', true, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('3353a2b2-2d4f-4907-9964-fb2aac837352', '脱甲烷精馏单元', 'UNIT', 'ff26e255-dcb9-45b4-8b79-a0d1c8c51fae', true, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
-INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, monitor_tag_id, monitor_trigger_value, created_at, updated_at) VALUES ('07f43143-4f47-4f31-869c-bcdae8ecd865', '醛化反应单元', 'UNIT', 'ff26e255-dcb9-45b4-8b79-a0d1c8c51fae', true, NULL, NULL, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('35af8328-e72d-414f-bfc9-b0c0caad71ee', 'EO 工厂', 'FACTORY', NULL, true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('2181a13b-45eb-4306-9d19-c143f1b3ed11', '致联工厂', 'FACTORY', NULL, false, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('ff26e255-dcb9-45b4-8b79-a0d1c8c51fae', 'EO 装置', 'AREA', '35af8328-e72d-414f-bfc9-b0c0caad71ee', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('1807ba4b-de8f-4a18-9994-f3f965b4bce8', '共用工程', 'AREA', '35af8328-e72d-414f-bfc9-b0c0caad71ee', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('ad6a0993-0e83-4645-87f8-edecd2c85356', '急冷分离单元', 'UNIT', '1807ba4b-de8f-4a18-9994-f3f965b4bce8', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('3353a2b2-2d4f-4907-9964-fb2aac837352', '脱甲烷精馏单元', 'UNIT', 'ff26e255-dcb9-45b4-8b79-a0d1c8c51fae', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
+INSERT INTO plant_node (id, name, type, parent_id, is_kpi_enabled, created_at, updated_at) VALUES('07f43143-4f47-4f31-869c-bcdae8ecd865', '醛化反应单元', 'UNIT', 'ff26e255-dcb9-45b4-8b79-a0d1c8c51fae', true, NOW(), NOW()) ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
 -- 4. 性能指标配置 (metric_config)
