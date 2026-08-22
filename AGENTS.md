@@ -6,7 +6,7 @@
 
 **现行事实来源**：`docs/MVP设计/`（01~11 设计与实施文档 + README 索引）。MVP 差异要点：
 
-- **模块现状**："监控 → 评估 → 诊断 → 整定 → 处置"完整闭环已重建（2026-08-19）：诊断两页式（07 方案，2026-08-16）/ 整定三页式（09 方案恢复一级模块，2026-08-19）/ 处置已升 **v2.0 双实体**（08 处置方案：loop_action_item 收敛为建议实体 + 新建 handling_order 处置工单表，2026-08-20）；前端路由模块 `monitor/assess/diagnosis/tuning/handling/alert/config/system/task/loop`，左侧导航按闭环顺序排列（监控-评估-诊断-整定-处置-配置-系统，2026-08-22）；系统管理含可配置字典管理页（MEASURE_TYPE/TAG_TYPE/LOOP_TYPE 三类字典，2026-08-21）
+- **模块现状**："监控 → 评估 → 诊断 → 整定 → 处置 → 统计报告"完整闭环 + 管理层视图已落地（2026-08-23 IA 优化 P0~P4 完成）：诊断两页式（07 方案，2026-08-16）/ 整定三页式（09 方案恢复一级模块，2026-08-19）/ 处置已升 **v2.0 双实体**（08 处置方案：loop_action_item 收敛为建议实体 + 新建 handling_order 处置工单表，2026-08-20）；**统计报告升为一级菜单**（order=6，配置→7、系统→8），含管理总览/绩效/诊断/处置/收益/订阅配置 6 子页，成熟度 S1/S2/S3 自适应骨架 + 旧路径 redirect 就位；**模块热插拔**落地（`app/core/modules.py` 注册表 + `use-modules` composable + 系统-模块管理页 + `beat_registry.py` 条件调度 + 5 处跨模块守卫），诊断/整定/处置支持按客户阶段弹性启用禁用；**适用性评估 L0~L4** 落地（fitness_level/fitness_tags/fitness_detail 三字段加 `kpi_snapshot_hourly` 与 `_custom`、ClpmFitnessBadge 公共组件、7 个 IA 落点、诊断 L0/L1 阻止 L2 横幅、整定 L3 以下 ERR_TUNING_FITNESS_INSUFFICIENT 门禁）；前端路由模块 `monitor/assess/diagnosis/tuning/handling/reports/alert/config/system/task/loop`，左侧导航按闭环顺序排列（监控-评估-诊断-整定-处置-统计报告-配置-系统，2026-08-23）；系统管理含可配置字典管理页（MEASURE_TYPE/TAG_TYPE/LOOP_TYPE 三类字典，2026-08-21）+ 模块管理页
 - **纪律**：**不删除诊断/整定专属前后端文件**；构建闭环而非屏蔽闭环
 - **端口**：后端 API **17101**、前端 **15666**、mock 数据服务 **17106**（原端口 +10000 隔离）；开发容器 `clpm-mvp-*`；生产 compose 仍为原项目口径（隔离改造未执行）
 - **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
