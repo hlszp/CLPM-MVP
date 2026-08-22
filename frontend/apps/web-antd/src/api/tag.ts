@@ -75,8 +75,10 @@ export namespace TagApi {
   /** 测点列表查询参数 */
   export interface TagQueryParams extends PageQuery {
     keyword?: string;
-    measureType?: MeasureType;
-    tagType?: TagType;
+    /** 测点类型字典 code（可配置：系统管理 → 字典管理） */
+    measureType?: string;
+    /** 参数类型字典 code（可配置：系统管理 → 字典管理） */
+    tagType?: string;
     plantNodeId?: string;
     isLinked?: boolean;
   }
@@ -87,8 +89,24 @@ export namespace TagApi {
     rangeMin?: null | number;
     rangeMax?: null | number;
     unit?: string;
-    measureType?: MeasureType;
-    tagType?: TagType;
+    /** 测点类型字典 code（可配置：系统管理 → 字典管理） */
+    measureType?: string;
+    /** 参数类型字典 code（可配置：系统管理 → 字典管理） */
+    tagType?: string;
+    tdengineTagId?: string;
+  }
+
+  /** 新建测点参数 */
+  export interface CreateTagParams {
+    tagName: string;
+    tagDescription?: string;
+    rangeMin?: null | number;
+    rangeMax?: null | number;
+    unit?: string;
+    /** 测点类型字典 code（可配置：系统管理 → 字典管理） */
+    measureType?: string;
+    /** 参数类型字典 code（可配置：系统管理 → 字典管理） */
+    tagType?: string;
     tdengineTagId?: string;
   }
 
@@ -128,6 +146,15 @@ export function getTagListApi(params: TagApi.TagQueryParams) {
  */
 export function getTagDetailApi(tagId: string) {
   return requestClient.get<TagApi.TagItem>(`/tags/${tagId}`);
+}
+
+/**
+ * 新建测点（ADMIN/IC_ENGINEER）
+ *
+ * 位号唯一；isLinked 恒为 false（仅由回路映射派生）
+ */
+export function createTagApi(data: TagApi.CreateTagParams) {
+  return requestClient.post<TagApi.TagItem>('/tags', data);
 }
 
 /**

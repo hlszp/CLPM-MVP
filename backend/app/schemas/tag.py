@@ -93,6 +93,20 @@ class TagDetail(CamelModel):
     unitName: str | None = None
 
 
+class TagCreate(CamelModel):
+    """POST /api/v1/tags 请求体（新建测点）。"""
+
+    tagName: str = Field(..., pattern=TAG_NAME_PATTERN, description="位号（唯一）")
+    tagDescription: str | None = Field(None, max_length=255)
+    rangeMin: float | None = None
+    rangeMax: float | None = None
+    unit: str | None = Field(None, max_length=20)
+    measureType: str | None = None
+    # 合法值由 service 层按 MEASURE_TYPES / TAG_TYPES 校验
+    tagType: str | None = Field(None, description="参数类型 PV/SP/OP/MODE/PID_P/PID_I/PID_D/OTHER")
+    tdengineTagId: str | None = Field(None, max_length=100)
+
+
 class TagUpdate(CamelModel):
     """PUT /api/v1/tags/{id} 请求体。"""
 

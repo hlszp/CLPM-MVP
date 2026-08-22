@@ -766,8 +766,13 @@ const kpiHistory = ref<KpiSnapshotItem[]>([]);
 // 画布模式：过程变量 | 性能指标
 const canvasMode = ref<'kpi' | 'process'>('process');
 // 过程变量模式：曲线显隐控制（由图例点击驱动）
-const processSeriesVisible = reactive({ pv: true, sp: true, op: true });
-function toggleProcessSeries(key: 'op' | 'pv' | 'sp') {
+const processSeriesVisible = reactive({
+  pv: true,
+  sp: true,
+  op: true,
+  mode: true,
+});
+function toggleProcessSeries(key: 'mode' | 'op' | 'pv' | 'sp') {
   processSeriesVisible[key] = !processSeriesVisible[key];
 }
 // 时间窗（设计文档 §2.4：8h/24h/72h/168h/自定义）
@@ -1537,6 +1542,17 @@ const stageLabelMap: Record<string, string> = {
                     class="wb-r4__legend-line wb-r4__legend-line--op"
                   ></span
                   >OP</span
+                >
+                <span
+                  class="wb-r4__legend-item"
+                  :class="{
+                    'wb-r4__legend-item--hidden': !processSeriesVisible.mode,
+                  }"
+                  @click="toggleProcessSeries('mode')"
+                  ><span
+                    class="wb-r4__legend-line wb-r4__legend-line--mode"
+                  ></span
+                  >MODE</span
                 >
                 <span v-if="eventMarks.length > 0" class="wb-r4__legend-item"
                   >▼诊断 ◆整定 ▐验证</span
@@ -2623,6 +2639,10 @@ const stageLabelMap: Record<string, string> = {
 
 .wb-r4__legend-line--op {
   background: #b45309;
+}
+
+.wb-r4__legend-line--mode {
+  background: #7c3aed;
 }
 
 .wb-r4__legend-line--score {

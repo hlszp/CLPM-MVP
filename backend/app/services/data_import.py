@@ -875,13 +875,16 @@ async def _batch_get_loop_data(
     )
     tag_name_map = {str(t.id): t.tag_name for t in t_result.scalars().all()}
 
-    # 3. 一次性加载所有回路的 unit_id
+    # 3. 一次性加载所有回路的 unit_id + tag_name（子表名唯一权威来源）
     l_result = await db.execute(
         select(LoopLedger).where(LoopLedger.id.in_([UUID(lid) for lid in loop_ids]))
     )
-    unit_map = {
-        str(loop.id): str(loop.unit_id) if loop.unit_id else "" for loop in l_result.scalars().all()
-    }
+    loop_meta_map: dict[str, tuple[str, str]] = {}
+    for loop in l_result.scalars().all():
+        loop_meta_map[str(loop.id)] = (
+            str(loop.unit_id) if loop.unit_id else "",
+            loop.tag_name or "",
+        )
 
     # 4. 组装结果
     result: dict[str, dict] = {}
@@ -893,16 +896,13 @@ async def _batch_get_loop_data(
             if tag_name:
                 role_tag_map[role] = tag_name
 
-        unit_id = unit_map.get(lid, "")
+        unit_id, loop_tag_name = loop_meta_map.get(lid, ("", ""))
 
-        # 构造子表名
-        subtable = ""
-        if role_tag_map:
-            first_tag_name = next(iter(role_tag_map.values()))
-            loop_part = (
-                first_tag_name.rsplit(".", 1)[0] if "." in first_tag_name else first_tag_name
-            )
-            subtable = make_subtable_name(loop_part)
+        # 子表名：从回路台账 tag_name 生成（天然不含测点角色后缀）。
+        # 历史 bug（2026-08-20 修复）：此前从「第一个测点名」r.split('.') 反推回路名，
+        # 但本项目测点名用下划线分隔角色（xx_PV），剥离失败导致子表名带角色后缀、
+        # 且不同批次第一测点不同 → 同一回路多张子表、数据分裂（235 张表 vs 应为 125 张）
+        subtable = make_subtable_name(loop_tag_name) if loop_tag_name else ""
 
         result[lid] = {
             "role_tag_map": role_tag_map,

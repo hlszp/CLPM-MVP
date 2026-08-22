@@ -39,6 +39,7 @@ from app.schemas.tag import (
     BatchWaveformResponse,
     TagBatchDeleteRequest,
     TagBatchDeleteResult,
+    TagCreate,
     TagDeleteResult,
     TagDetail,
     TagImportResult,
@@ -50,6 +51,7 @@ from app.schemas.tag import (
 )
 from app.services.tag import (
     batch_delete_tags,
+    create_tag,
     delete_tag,
     export_tags,
     get_tag_detail,
@@ -167,6 +169,31 @@ async def batch_delete_tags_endpoint(
 # ---------------------------------------------------------------------------
 # Tag CRUD by ID
 # ---------------------------------------------------------------------------
+
+
+@router.post("", response_model=ApiResponse[TagDetail])
+async def create_tag_endpoint(
+    body: TagCreate,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """新建测点（ADMIN/IC_ENGINEER）。
+
+    位号唯一；is_linked 恒为 False（仅由回路映射派生）。
+    """
+    data = await create_tag(
+        db=db,
+        operator=user.username,
+        tag_name=body.tagName,
+        tag_description=body.tagDescription,
+        range_min=body.rangeMin,
+        range_max=body.rangeMax,
+        unit=body.unit,
+        measure_type=body.measureType,
+        tag_type=body.tagType,
+        tdengine_tag_id=body.tdengineTagId,
+    )
+    return success(data=data, message="测点创建成功")
 
 
 @router.get("/match-loop", response_model=ApiResponse[list])

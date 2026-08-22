@@ -23,6 +23,7 @@ from app.models.dcs_vendor import DcsVendor
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.engine import EngineRule
+from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_action_item import LoopActionItem
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
@@ -44,6 +45,7 @@ from app.models.process_model_version import ProcessModelVersion
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
 from app.models.sys_config import SysConfig
+from app.models.sys_dict_item import SysDictItem
 from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
@@ -55,11 +57,13 @@ __all__ = [
     "Base",
     "TimestampMixin",
     "AlgorithmParameter",
+    "SysDictItem",
     "SysUser",
     "PlantNode",
     "ProcessModelVersion",
     "LoopLedger",
     "LoopActionItem",
+    "HandlingOrder",
     "LoopTagMapping",
     "LoopModeMapping",
     "LoopTypeWeight",

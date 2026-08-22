@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""处置模块流转闭环 mock 数据构造（PENDING → HANDLING → VERIFYING）。
+"""处置模块流转闭环 mock 数据构造（v2.0 双实体：建议 → 工单 PENDING → EXECUTING → VERIFYING）。
 
-用途：本地验证处置状态机与 KPI 前后对比逻辑（08-处置模块设计方案 §4）。
+用途：本地验证处置状态机与 KPI 前后对比逻辑（08-处置模块设计方案 v2.0 §4）。
 做法：
-1. 经真实 API 驱动状态流转（start → submit），端到端验证状态机与守卫；
+1. 经真实 API 驱动双实体流转（建议 accept → convert 转工单 → 工单 start → submit），
+   端到端验证状态机与守卫；
 2. 直插 kpi_snapshot_hourly 前后窗口 mock 快照：
-   - 前窗 [handled_at−24h, handled_at]：较差指标（score≈71，振荡高，可信度 C）
+   - 前窗 [started_at−24h, started_at]：较差指标（score≈71，振荡高，可信度 C）
    - 后窗 [submitted_at, submitted_at+24h]：改善指标（score≈89，可信度 B）
    mock 行 data_lineage 带 {"mock": "handling-flow"} 标记，ts 取 :30 分偏移
    避开真实整点快照的唯一约束（uq_kpi_snapshot_hourly_loop_ts）；
-3. 拉取 kpi-comparison 打印对比结果。
+3. 拉取工单 kpi-comparison 打印对比结果。
 
 用法（后端需在 17101 运行）::
 
     cd backend && uv run python scripts/mock_handling_flow.py
     cd backend && uv run python scripts/mock_handling_flow.py --loop-keyword 90PIC51212A
-    cd backend && uv run python scripts/mock_handling_flow.py --item-id <uuid>
+    cd backend && uv run python scripts/mock_handling_flow.py --suggestion-id <uuid>
     cd backend && uv run python scripts/mock_handling_flow.py --cleanup   # 仅清理 mock 快照
 
-执行后处置项停在 VERIFYING，可在前端 /handling 打开详情抽屉查看
+执行后工单停在 VERIFYING，可在前端 /handling 工单清单打开详情抽屉查看
 KPI 对比卡并人工点击「有效·闭环 / 无效·重开」完成最后一步。
 """
 
@@ -42,8 +43,8 @@ parser = argparse.ArgumentParser(description="处置模块流转闭环 mock 数�
 parser.add_argument("--base-url", default="http://localhost:17101", help="后端 API 根地址")
 parser.add_argument("--username", default="admin")
 parser.add_argument("--password", default="admin123")
-parser.add_argument("--item-id", default=None, help="指定处置项 ID（缺省取第一条 PENDING）")
-parser.add_argument("--loop-keyword", default=None, help="按回路位号模糊筛选 PENDING 处置项")
+parser.add_argument("--suggestion-id", default=None, help="指定建议 ID（缺省取第一条 PENDING）")
+parser.add_argument("--loop-keyword", default=None, help="按回路位号模糊筛选 PENDING 建议")
 parser.add_argument(
     "--cleanup",
     action="store_true",
@@ -117,9 +118,9 @@ AFTER_METRICS = {
 
 
 async def insert_mock_snapshots(
-    loop_id: str, item_id: str, handled_at: datetime, submitted_at: datetime
+    loop_id: str, order_id: str, started_at: datetime, submitted_at: datetime
 ) -> tuple[int, int]:
-    """前窗 6 条（:30 偏移，末条贴 handled_at 前 30min）+ 后窗 12 条。
+    """前窗 6 条（:30 偏移，末条贴 started_at 前 30min）+ 后窗 12 条。
 
     返回 (前窗插入数, 后窗插入数)。已存在同 ts_start 的行跳过（幂等可重跑）。
     """
@@ -144,13 +145,13 @@ async def insert_mock_snapshots(
             status="SUCCESS",
             algorithm_version="mock-handling-flow",
             confidence_level=metrics["confidence_level"],
-            data_lineage={"mock": MOCK_TAG, "itemId": item_id},
+            data_lineage={"mock": MOCK_TAG, "orderId": order_id},
         )
 
-    # 前窗：末条贴 handled_at−1min（压过窗口内真实整点快照，保证 mock 被"最新一条"选中），
+    # 前窗：末条贴 started_at−1min（压过窗口内真实整点快照，保证 mock 被"最新一条"选中），
     # 其余按 1h 间隔往前铺 6 条
     before_rows = [
-        _row(loop_id, handled_at - timedelta(minutes=1 + 60 * i), BEFORE_METRICS) for i in range(6)
+        _row(loop_id, started_at - timedelta(minutes=1 + 60 * i), BEFORE_METRICS) for i in range(6)
     ]
     # 后窗：末条贴 submitted_at+23h30m（演示期内不被未来真实整点快照反超），
     # 其余按 1h 间隔往前铺 12 条
@@ -217,46 +218,90 @@ async def amain() -> None:
         client.headers["Authorization"] = f"Bearer {token}"
         print(f"[OK] 登录 {args.username}")
 
-        # 1. 选 PENDING 处置项
-        if args.item_id:
-            item = _must_ok(client.get(f"/api/v1/handling/items/{args.item_id}"), "查询处置项")
-            if item["status"] != "PENDING":
-                print(f"[失败] 处置项当前状态为 {item['status']}，仅支持从 PENDING 开始")
+        # 1. 选 PENDING 建议（审核对象）
+        if args.suggestion_id:
+            sug = _must_ok(
+                client.get(
+                    "/api/v1/handling/suggestions",
+                    params={"status": "PENDING", "pageSize": 100},
+                ),
+                "查询建议清单",
+            )
+            hit = next((i for i in sug["items"] if i["id"] == args.suggestion_id), None)
+            if hit is None or hit["status"] != "PENDING":
+                print(f"[失败] 建议 {args.suggestion_id} 不存在或非 PENDING")
                 sys.exit(1)
+            suggestion_id = args.suggestion_id
+            loop_id = hit["loopId"]
+            print(f"[OK] 选中建议 {suggestion_id}（回路 {hit['loopTagName']}）")
         else:
             params: dict = {"status": "PENDING", "pageSize": 50}
             if args.loop_keyword:
                 params["keyword"] = args.loop_keyword
-            data = _must_ok(client.get("/api/v1/handling/items", params=params), "查询清单")
+            data = _must_ok(
+                client.get("/api/v1/handling/suggestions", params=params), "查询建议清单"
+            )
             if not data["items"]:
-                print("[失败] 没有可选的 PENDING 处置项（可先跑诊断生成建议）")
+                print("[失败] 没有可选的 PENDING 建议（可先跑诊断生成建议）")
                 sys.exit(1)
-            item = data["items"][0]
-        item_id = item["id"]
-        loop_id = item["loopId"]
-        print(f"[OK] 选中处置项 {item_id}（回路 {item['loopTagName']}）")
+            suggestion_id = data["items"][0]["id"]
+            loop_id = data["items"][0]["loopId"]
+            print(f"[OK] 选中建议 {suggestion_id}（回路 {data['items'][0]['loopTagName']}）")
 
-        # 2. start：PENDING → HANDLING
+        # 2. 建议审核：PENDING → ACCEPTED
+        accepted = _must_ok(
+            client.post(f"/api/v1/handling/suggestions/{suggestion_id}/accept"), "接受建议 accept"
+        )
+        assert accepted["status"] == "ACCEPTED", accepted["status"]
+        print("[OK] accept → ACCEPTED")
+
+        # 3. 转工单：ACCEPTED → CONVERTED（生成工单）
+        order = _must_ok(
+            client.post(
+                "/api/v1/handling/suggestions/convert",
+                json={
+                    "suggestionIds": [suggestion_id],
+                    "actionType": "TUNING",
+                    "handler": "mock-仪控班",
+                },
+            ),
+            "转工单 convert",
+        )
+        assert order["status"] == "PENDING", order["status"]
+        order_id = order["id"]
+        print(f"[OK] convert → 工单 {order['orderNo']}（PENDING）")
+
+        # 4. 开工：PENDING → EXECUTING
         started = _must_ok(
             client.post(
-                f"/api/v1/handling/items/{item_id}/start",
+                f"/api/v1/handling/orders/{order_id}/start",
                 json={
-                    "actionType": "TUNING",
                     "handler": "mock-仪控班",
                     "pidBefore": {"p": 1.2, "i": 20, "d": 0},
                     "actionDetail": {"method": "Lambda 整定法（mock）"},
                 },
             ),
-            "开始处置 start",
+            "开工 start",
         )
-        assert started["status"] == "HANDLING", started["status"]
-        handled_at = _naive(started["handledAt"])
-        print(f"[OK] start → HANDLING（handled_at={handled_at}）")
+        assert started["status"] == "EXECUTING", started["status"]
+        started_at = _naive(started["startedAt"])
+        print(f"[OK] start → EXECUTING（started_at={started_at}）")
 
-        # 3. submit：HANDLING → VERIFYING
+        # 5. 执行反馈（自环追加，状态不变）
+        feedback = _must_ok(
+            client.post(
+                f"/api/v1/handling/orders/{order_id}/feedback",
+                json={"content": "参数已按整定建议下发，观察 24h（mock）"},
+            ),
+            "执行反馈 feedback",
+        )
+        assert feedback["status"] == "EXECUTING", feedback["status"]
+        print(f"[OK] feedback → 反馈 {len(feedback['feedbackLog'])} 条")
+
+        # 6. 提交验证：EXECUTING → VERIFYING
         submitted = _must_ok(
             client.post(
-                f"/api/v1/handling/items/{item_id}/submit",
+                f"/api/v1/handling/orders/{order_id}/submit",
                 json={
                     "actionDetail": {
                         "pidAfter": {"p": 0.8, "i": 35, "d": 0},
@@ -270,13 +315,13 @@ async def amain() -> None:
         submitted_at = _naive(submitted["submittedAt"])
         print(f"[OK] submit → VERIFYING（submitted_at={submitted_at}）")
 
-        # 4. 注入前后窗 KPI mock 快照
-        nb, na = await insert_mock_snapshots(loop_id, item_id, handled_at, submitted_at)
+        # 7. 注入前后窗 KPI mock 快照
+        nb, na = await insert_mock_snapshots(loop_id, order_id, started_at, submitted_at)
         print(f"[OK] mock 快照注入：前窗 {nb} 条（score≈71/C），后窗 {na} 条（score≈89/B）")
 
-        # 5. kpi-comparison 预览验证
+        # 8. 工单 kpi-comparison 预览验证
         cmp_data = _must_ok(
-            client.post(f"/api/v1/handling/items/{item_id}/kpi-comparison"), "KPI 对比预览"
+            client.post(f"/api/v1/handling/orders/{order_id}/kpi-comparison"), "KPI 对比预览"
         )
         before = cmp_data["kpiBefore"] or {}
         after = cmp_data["kpiAfter"] or {}
@@ -307,8 +352,8 @@ async def amain() -> None:
 
         print(
             f"""
-[完成] 处置项 {item_id} 已停在 VERIFYING。
-前端验证：打开 /handling → 点击该行 → 抽屉「验证中」区可见 KPI 对比卡，
+[完成] 工单 {order["orderNo"]}（{order_id}）已停在 VERIFYING。
+前端验证：打开 /handling 工单 Tab → 点击该行 → 抽屉「验证中」区可见 KPI 对比卡，
 点击「有效·闭环 / 无效·重开」时服务端将固化上述快照到 kpi_before/after。
 清理 mock 快照：uv run python scripts/mock_handling_flow.py --cleanup
 """

@@ -67,9 +67,11 @@ def test_orm_has_38_tables() -> None:
     知识库，2026-08-05）= 40 + 智能预警规则引擎 5 表（alert_rule /
     alert_rule_subscription / alert_event / alert_rule_audit_log /
     alert_suppression，2026-08-07）= 45 + diagnosis_run（MVP v2 诊断模块，
-    2026-08-16）= 46 + loop_action_item（§9.4 回路处置建议，2026-08-18）= 47。
+    2026-08-16）= 46 + loop_action_item（§9.4 回路处置建议，2026-08-18）= 47
+    + sys_dict_item（通用字典项，2026-08-20 并行会话）= 48
+    + handling_order（处置模块 v2.0 双实体工单，2026-08-20）= 49。
     """
-    assert len(Base.metadata.tables) == 47
+    assert len(Base.metadata.tables) == 49
 
 
 def test_partial_unique_index_current_exists() -> None:

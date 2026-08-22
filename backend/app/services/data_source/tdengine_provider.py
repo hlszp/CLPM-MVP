@@ -100,26 +100,20 @@ class TDengineProvider:
             # 模块级 asyncio.Lock（跨事件循环绑定会拖垮全部取数）。
             from sqlalchemy import select
 
-            from app.models.loop import LoopTagMapping
-            from app.models.tag import TagRegistry
+            from app.models.loop import LoopLedger
 
-            mapping_result = await db.execute(
-                select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id)
+            # 子表名唯一权威来源：回路台账 tag_name（天然不含测点角色后缀）。
+            # 历史 bug（2026-08-20 修复）：此前取「第一个测点名」rsplit('.') 反推，
+            # 但测点名用下划线分隔角色（xx_PV）→ 剥离失败且顺序不稳定 → 子表名漂移
+            loop_result = await db.execute(
+                select(LoopLedger.tag_name).where(LoopLedger.id == loop_id)
             )
-            mappings = list(mapping_result.scalars().all())
-            if not mappings:
-                logger.debug("宽表查询: 回路 %s 无 tag 映射", loop_id)
+            loop_tag_name = loop_result.scalar_one_or_none()
+            if not loop_tag_name:
+                logger.debug("宽表查询: 回路 %s 不存在或无 tag_name", loop_id)
                 return None
 
-            tag_ids = [str(mapping.tag_id) for mapping in mappings]
-            tag_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
-            tags = list(tag_result.scalars().all())
-            if not tags:
-                logger.debug("宽表查询: 回路 %s 无 tag 记录", loop_id)
-                return None
-
-            tag_name = tags[0].tag_name
-            loop_part = tag_name.rsplit(".", 1)[0] if "." in tag_name else tag_name
+            loop_part = loop_tag_name
             subtable = make_subtable_name(loop_part)
             # 仅缓存成功解析的结果（None 不缓存，见文件头设计说明）
             _subtable_cache[loop_id] = (

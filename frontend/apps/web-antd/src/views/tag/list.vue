@@ -5,6 +5,7 @@ import type {
   UploadProps,
 } from 'ant-design-vue';
 
+import type { DictApi } from '#/api/dict';
 import type { PlantNodeApi } from '#/api/plant-node';
 /**
  * 测点清单页
@@ -13,7 +14,8 @@ import type { PlantNodeApi } from '#/api/plant-node';
  * - 测点类型彩色 Tag 展示
  * - 质量戳：GOOD 绿 / BAD 红 / UNCERTAIN 黄
  * - 支持按装置/单元、测点类型、参数类型、位号、关联状态筛选
- * - 单条编辑 Modal（名称/测点类型/量程/单位/参数类型/原始ID）
+ * - 图标化工具栏：新建测点 / 批量删除 / 清除选择 | 导入 / 导出（对齐回路配置页风格）
+ * - 新建/编辑双用 Modal（新建时位号必填唯一；编辑时位号只读）
  * - 删除二次确认，已关联测点不允许删除
  * - 详情 Drawer 展示完整信息
  * - 导入/导出：Excel 批量导入导出
@@ -44,10 +46,16 @@ import {
   Upload,
 } from 'ant-design-vue';
 
+import {
+  DICT_TYPE_MEASURE_TYPE,
+  DICT_TYPE_TAG_TYPE,
+  getDictItemsApi,
+} from '#/api/dict';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import {
   batchDeleteTagsApi,
+  createTagApi,
   deleteTagApi,
   getTagListApi,
   updateTagApi,
@@ -81,8 +89,8 @@ const tagList = ref<TagApi.TagItem[]>([]);
 const total = ref(0);
 const query = reactive({
   plantNodeId: undefined as string | undefined,
-  measureType: undefined as TagApi.MeasureType | undefined,
-  tagType: undefined as TagApi.TagType | undefined,
+  measureType: undefined as string | undefined,
+  tagType: undefined as string | undefined,
   isLinked: undefined as string | undefined,
   keyword: '',
   page: 1,
@@ -169,44 +177,74 @@ const CATEGORY_TAG_STYLE = {
   backgroundColor: 'hsl(var(--muted) / 60%)',
 } as const;
 
-/** 测点类型映射（类别色已退役，展示统一走 CATEGORY_TAG_STYLE 中性样式） */
-const MEASURE_TYPE_MAP: Record<string, { label: string }> = {
-  TEMPERATURE: { label: '温度' },
-  PRESSURE: { label: '压力' },
-  LEVEL: { label: '液位' },
-  FLOW: { label: '流量' },
-  ANALYSIS: { label: '分析' },
-  SPEED: { label: '速度' },
-  OTHER: { label: '其他' },
-};
+/**
+ * 测点类型字典（可配置：系统管理 → 字典管理）
+ * - all：含禁用项，用于存量数据的 label 展示
+ * - enabled：仅启用项，用于筛选下拉与新建/编辑下拉
+ */
+const measureTypeAll = ref<DictApi.DictItemOption[]>([]);
+const measureTypeEnabled = ref<DictApi.DictItemOption[]>([]);
 
-const measureTypeOptions = [
+const measureTypeLabelMap = computed<Record<string, string>>(() =>
+  Object.fromEntries(measureTypeAll.value.map((i) => [i.itemCode, i.itemLabel])),
+);
+
+const measureTypeOptions = computed(() => [
   { label: '全部', value: undefined },
-  ...Object.entries(MEASURE_TYPE_MAP).map(([value, { label }]) => ({
-    label,
-    value,
+  ...measureTypeEnabled.value.map((i) => ({
+    label: i.itemLabel,
+    value: i.itemCode,
   })),
-];
+]);
 
-/** 参数类型映射（类别色已退役，展示统一走 CATEGORY_TAG_STYLE 中性样式） */
-const TAG_TYPE_MAP: Record<string, { label: string }> = {
-  PV: { label: 'PV' },
-  SP: { label: 'SP' },
-  OP: { label: 'OP' },
-  MODE: { label: 'MODE' },
-  PID_P: { label: 'PID_P' },
-  PID_I: { label: 'PID_I' },
-  PID_D: { label: 'PID_D' },
-  OTHER: { label: '其他' },
-};
+const measureTypeEditOptions = computed(() =>
+  measureTypeEnabled.value.map((i) => ({
+    label: i.itemLabel,
+    value: i.itemCode,
+  })),
+);
 
-const tagTypeOptions = [
+async function loadMeasureTypes() {
+  try {
+    [measureTypeAll.value, measureTypeEnabled.value] = await Promise.all([
+      getDictItemsApi(DICT_TYPE_MEASURE_TYPE, false),
+      getDictItemsApi(DICT_TYPE_MEASURE_TYPE, true),
+    ]);
+    [tagTypeAll.value, tagTypeEnabled.value] = await Promise.all([
+      getDictItemsApi(DICT_TYPE_TAG_TYPE, false),
+      getDictItemsApi(DICT_TYPE_TAG_TYPE, true),
+    ]);
+  } catch {
+    // 错误已由拦截器处理
+  }
+}
+
+/**
+ * 参数类型字典（可配置：系统管理 → 字典管理）
+ * - all：含禁用项，用于存量数据的 label 展示
+ * - enabled：仅启用项，用于筛选下拉与新建/编辑下拉
+ */
+const tagTypeAll = ref<DictApi.DictItemOption[]>([]);
+const tagTypeEnabled = ref<DictApi.DictItemOption[]>([]);
+
+const tagTypeLabelMap = computed<Record<string, string>>(() =>
+  Object.fromEntries(tagTypeAll.value.map((i) => [i.itemCode, i.itemLabel])),
+);
+
+const tagTypeOptions = computed(() => [
   { label: '全部', value: undefined },
-  ...Object.entries(TAG_TYPE_MAP).map(([value, { label }]) => ({
-    label,
-    value,
+  ...tagTypeEnabled.value.map((i) => ({
+    label: i.itemLabel,
+    value: i.itemCode,
   })),
-];
+]);
+
+const tagTypeEditOptions = computed(() =>
+  tagTypeEnabled.value.map((i) => ({
+    label: i.itemLabel,
+    value: i.itemCode,
+  })),
+);
 
 const linkedOptions = [
   { label: '全部', value: undefined },
@@ -247,17 +285,19 @@ const columns: TableColumnsType = [
   { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
-// Modal state
+// Modal state（新建/编辑双用）
 const modalVisible = ref(false);
 const modalLoading = ref(false);
+const modalMode = ref<'create' | 'edit'>('edit');
 const editingTag = ref<null | TagApi.TagItem>(null);
 const formState = reactive({
+  tagName: '',
   tagDescription: '',
-  measureType: 'OTHER' as TagApi.MeasureType | undefined,
+  measureType: 'OTHER' as string | undefined,
   rangeMin: undefined as number | undefined,
   rangeMax: undefined as number | undefined,
   unit: '',
-  tagType: 'PV' as TagApi.TagType | undefined,
+  tagType: 'PV' as string | undefined,
   tdengineTagId: '',
 });
 
@@ -305,18 +345,6 @@ async function loadList() {
   }
 }
 
-/** 是否有生效的筛选条件（有筛选时空列表不触发画布空态，避免筛选区被空态替换） */
-const hasActiveFilter = computed(
-  () =>
-    !!(
-      query.plantNodeId ||
-      query.measureType ||
-      query.tagType ||
-      query.isLinked !== undefined ||
-      query.keyword
-    ),
-);
-
 function handleSearch() {
   query.page = 1;
   selectedRowKeys.value = [];
@@ -330,9 +358,26 @@ function handleTableChange(pagination: TablePaginationConfig) {
   loadList();
 }
 
+/** 打开新建 Modal */
+function handleAdd() {
+  modalMode.value = 'create';
+  editingTag.value = null;
+  formState.tagName = '';
+  formState.tagDescription = '';
+  formState.measureType = 'OTHER';
+  formState.rangeMin = undefined;
+  formState.rangeMax = undefined;
+  formState.unit = '';
+  formState.tagType = 'PV';
+  formState.tdengineTagId = '';
+  modalVisible.value = true;
+}
+
 /** 打开编辑 Modal */
 function handleEdit(record: TagApi.TagItem) {
+  modalMode.value = 'edit';
   editingTag.value = record;
+  formState.tagName = record.tagName;
   formState.tagDescription = record.tagDescription ?? '';
   formState.measureType = record.measureType ?? 'OTHER';
   formState.rangeMin = record.rangeMin ?? undefined;
@@ -343,8 +388,36 @@ function handleEdit(record: TagApi.TagItem) {
   modalVisible.value = true;
 }
 
-/** 提交编辑表单 */
+/** 提交新建/编辑表单 */
 async function handleSubmit() {
+  if (modalMode.value === 'create') {
+    if (!formState.tagName.trim()) {
+      message.warning('请输入位号');
+      return;
+    }
+    modalLoading.value = true;
+    try {
+      await createTagApi({
+        tagName: formState.tagName.trim(),
+        tagDescription: formState.tagDescription,
+        measureType: formState.measureType,
+        rangeMin: formState.rangeMin ?? null,
+        rangeMax: formState.rangeMax ?? null,
+        unit: formState.unit,
+        tagType: formState.tagType,
+        tdengineTagId: formState.tdengineTagId,
+      });
+      message.success('测点创建成功');
+      modalVisible.value = false;
+      await loadList();
+    } catch {
+      // 错误已由拦截器处理
+    } finally {
+      modalLoading.value = false;
+    }
+    return;
+  }
+
   if (!editingTag.value) return;
   modalLoading.value = true;
   try {
@@ -565,6 +638,7 @@ function handleRealtimeMessage(msg: {
 
 onMounted(() => {
   loadPlantNodes();
+  loadMeasureTypes();
   loadList();
   // 连接 WebSocket 实时推送
   const accessStore = useAccessStore();
@@ -594,7 +668,7 @@ function handleHelp() {
   showPageHelp({
     title: '测点清单 帮助',
     content:
-      '测点清单页：管理从 AAS 同步的 OPC 测点（位号 / 名称 / 测点类型 / 量程 / 实时值 / 质量戳 / 参数类型 / 所属单元）。支持按装置/单元、测点类型、参数类型、关联状态、位号关键词筛选；单条编辑、批量删除（已关联回路的测点不允许删除）、Excel 批量导入导出。质量戳 GOOD 绿 / BAD 红 / UNCERTAIN 黄。刷新按钮重新拉取测点列表。',
+      '测点清单页：管理从 AAS 同步或手工录入的 OPC 测点（位号 / 名称 / 测点类型 / 量程 / 实时值 / 质量戳 / 参数类型 / 所属单元）。支持按装置/单元、测点类型、参数类型、关联状态、位号关键词筛选；支持新建测点（位号唯一）、单条编辑、批量删除（已关联回路的测点不允许删除）、Excel 批量导入导出。质量戳 GOOD 绿 / BAD 红 / UNCERTAIN 黄。刷新按钮重新拉取测点列表。',
   });
 }
 
@@ -628,10 +702,6 @@ const { toolbarItems } = usePageToolbar(() => ({
       title="测点清单"
       :loading="loading"
       :error="loadError"
-      :empty="
-        !loading && !loadError && tagList.length === 0 && !hasActiveFilter
-      "
-      empty-text="暂无测点数据"
       @retry="loadList"
     >
       <!-- 筛选区 -->
@@ -680,30 +750,50 @@ const { toolbarItems } = usePageToolbar(() => ({
           @press-enter="handleSearch"
         />
         <Button type="primary" @click="handleSearch">查询</Button>
-        <!-- 批量操作 + 导入导出 -->
-        <div class="ml-auto flex items-center gap-2">
-          <!-- 批量删除（仅 ADMIN，选中时显示，由 ClpmDangerConfirmModal 二次确认） -->
-          <Button
-            v-if="selectedRowKeys.length > 0"
-            v-permission="['ADMIN']"
-            danger
-            :loading="batchDeleting"
-            @click="openBatchDanger"
-          >
-            批量删除<template v-if="selectedRowKeys.length > 0">
-              ({{ selectedRowKeys.length }})
-            </template>
-          </Button>
-          <Upload v-bind="uploadProps">
-            <Button
-              v-permission="['ADMIN', 'IC_ENGINEER']"
-              :loading="importing"
-            >
-              导入
-            </Button>
-          </Upload>
-          <Button :loading="exporting" @click="handleExport">导出</Button>
-        </div>
+      </div>
+
+      <!-- 工具栏（图标化，对齐回路配置页风格）— 左侧=新建/批量操作；右侧=导入/导出 -->
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <ClpmToolbarButton
+          v-permission="['ADMIN', 'IC_ENGINEER']"
+          icon="create"
+          label="新建测点"
+          @click="handleAdd"
+        />
+        <ClpmToolbarButton
+          v-permission="['ADMIN']"
+          icon="delete"
+          label="批量删除"
+          variant="danger"
+          :disabled="selectedRowKeys.length === 0"
+          disabled-reason="请先选择测点"
+          :loading="batchDeleting"
+          @click="openBatchDanger"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:close-outlined"
+          label="清除选择"
+          :disabled="selectedRowKeys.length === 0"
+          disabled-reason="尚未选择测点"
+          @click="selectedRowKeys = []"
+        />
+
+        <!-- 右侧：数据交互工具 -->
+        <span class="ml-auto"></span>
+        <Upload v-bind="uploadProps">
+          <ClpmToolbarButton
+            v-permission="['ADMIN', 'IC_ENGINEER']"
+            icon="import"
+            label="导入"
+            :loading="importing"
+          />
+        </Upload>
+        <ClpmToolbarButton
+          icon="export"
+          label="导出"
+          :loading="exporting"
+          @click="handleExport"
+        />
       </div>
 
       <Table
@@ -745,7 +835,7 @@ const { toolbarItems } = usePageToolbar(() => ({
               :style="CATEGORY_TAG_STYLE"
               class="m-0 border-0"
             >
-              {{ MEASURE_TYPE_MAP[record.measureType]?.label ?? '其他' }}
+              {{ measureTypeLabelMap[record.measureType] ?? record.measureType }}
             </Tag>
             <span v-else class="text-gray-400">—</span>
           </template>
@@ -812,7 +902,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           </template>
           <template v-else-if="column.key === 'tagType'">
             <Tag :style="CATEGORY_TAG_STYLE" class="m-0 border-0">
-              {{ TAG_TYPE_MAP[record.tagType]?.label ?? record.tagType }}
+              {{ tagTypeLabelMap[record.tagType] ?? record.tagType }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'unitName'">
@@ -886,15 +976,26 @@ const { toolbarItems } = usePageToolbar(() => ({
       </Table>
     </ClpmDataCanvas>
 
-    <!-- 编辑 Modal -->
+    <!-- 新建/编辑 Modal -->
     <Modal
       v-model:open="modalVisible"
-      title="编辑测点"
+      :title="modalMode === 'create' ? '新建测点' : '编辑测点'"
       :confirm-loading="modalLoading"
       width="640px"
       @ok="handleSubmit"
     >
       <Form :model="formState" layout="vertical" class="pt-4">
+        <FormItem
+          name="tagName"
+          label="位号"
+          :required="modalMode === 'create'"
+        >
+          <Input
+            v-model:value="formState.tagName"
+            :disabled="modalMode === 'edit'"
+            placeholder="请输入测点位号（唯一）"
+          />
+        </FormItem>
         <div class="grid grid-cols-2 gap-4">
           <FormItem name="tagDescription" label="名称">
             <Input
@@ -906,12 +1007,7 @@ const { toolbarItems } = usePageToolbar(() => ({
             <Select
               v-model:value="formState.measureType"
               placeholder="请选择测点类型"
-              :options="
-                Object.entries(MEASURE_TYPE_MAP).map(([value, { label }]) => ({
-                  label,
-                  value,
-                }))
-              "
+              :options="measureTypeEditOptions"
             />
           </FormItem>
         </div>
@@ -942,12 +1038,7 @@ const { toolbarItems } = usePageToolbar(() => ({
             <Select
               v-model:value="formState.tagType"
               placeholder="请选择参数类型"
-              :options="
-                Object.entries(TAG_TYPE_MAP).map(([value, { label }]) => ({
-                  label,
-                  value,
-                }))
-              "
+              :options="tagTypeEditOptions"
             />
           </FormItem>
         </div>
@@ -987,7 +1078,7 @@ const { toolbarItems } = usePageToolbar(() => ({
             :style="CATEGORY_TAG_STYLE"
             class="m-0 border-0"
           >
-            {{ MEASURE_TYPE_MAP[detailData.measureType]?.label ?? '其他' }}
+            {{ measureTypeLabelMap[detailData.measureType] ?? detailData.measureType }}
           </Tag>
           <span v-else class="text-gray-400">—</span>
         </DescriptionsItem>
@@ -1008,7 +1099,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         </DescriptionsItem>
         <DescriptionsItem label="参数类型">
           <Tag :style="CATEGORY_TAG_STYLE" class="m-0 border-0">
-            {{ TAG_TYPE_MAP[detailData.tagType]?.label ?? detailData.tagType }}
+            {{ tagTypeLabelMap[detailData.tagType] ?? detailData.tagType }}
           </Tag>
         </DescriptionsItem>
         <DescriptionsItem label="所属单元">

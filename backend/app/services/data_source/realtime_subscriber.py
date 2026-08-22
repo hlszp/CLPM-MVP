@@ -188,6 +188,9 @@ class RealtimeSubscriber:
             str, dict[str, Any]
         ] = {}  # {loop_part: {role: {"value": ..., "quality": ..., "ts": ...}}}
         self._buffer_lock = asyncio.Lock()
+        # 后台 fire-and-forget 任务引用集合（防 GC 中途回收——事件循环对任务仅弱引用，
+        # 2026-08-21 事故：MODE 缓存失效任务被 GC 出现 "Task was destroyed but it is pending"）
+        self._bg_tasks: set[asyncio.Task] = set()
         # 低频角色（SP/MODE/PID_*）跨flush持久缓存：上次已知值。
         # 解决"低频角色没变化→buffer中缺失→flush写NULL"的问题——flush时合并_last_known，
         # 未在本tick出现的角色取最近已知值，保证TDengine宽表每行非PV字段完整。
@@ -206,6 +209,8 @@ class RealtimeSubscriber:
         # TDengine TAGS 仅子表首次创建生效，实时先行创建的子表 TAG 必须带真实值）
         self._loop_meta_cache: dict[str, tuple[str, str]] = {}
         self._loop_meta_cache_at: float = 0.0  # 上次缓存刷新（含失败尝试）的 monotonic 时间
+        # 测点 tag_name → (loop_part=回路 tag_name, role)，与 _loop_meta_cache 同源刷新
+        self._tag_role_cache: dict[str, tuple[str, str]] = {}
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -228,6 +233,9 @@ class RealtimeSubscriber:
         # 使首次连接成功即可感知进程停机期间的数据缺口
         await self._load_checkpoint()
         self._task = asyncio.create_task(self._run())
+        # 主任务意外退出观测（2026-08-21 事故：远端引擎重启掐断连接后
+        # 主任务静默死亡，看门狗随之失效，无任何日志可查）
+        self._task.add_done_callback(self._on_main_task_done)
         self._flush_task = asyncio.create_task(self._flush_loop())
         self._refresh_task = asyncio.create_task(self._refresh_loop())
         logger.info(
@@ -282,6 +290,35 @@ class RealtimeSubscriber:
         # 停止前 flush 剩余数据
         await self._flush_buffer()
         logger.info("实时数据订阅已停止")
+
+    def _on_main_task_done(self, task: asyncio.Task) -> None:
+        """主任务退出观测：运行期内意外退出（非 stop() 触发）记错误日志.
+
+        2026-08-21 事故根因之一：远端引擎重启掐断 WS 连接后主任务静默死亡，
+        看门狗随主任务一同失效，无任何日志；本回调补齐退出可观测性，
+        自愈重建由 ``_refresh_loop`` 的存活检查负责。
+        """
+        if not self._running or task.cancelled():
+            return
+        exc = None
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is None:
+            logger.error("实时订阅主任务意外退出（无异常，疑似被 GC/外部取消）")
+        else:
+            logger.error("实时订阅主任务异常退出: %s", exc, exc_info=exc)
+
+    def _spawn_bg(self, coro) -> None:
+        """启动 fire-and-forget 后台任务并保持引用（防 GC 中途回收）.
+
+        事件循环对任务仅持弱引用，无引用的任务可能被 GC 出现
+        ``Task was destroyed but it is pending``（2026-08-21 日志实锤）。
+        """
+        t = asyncio.create_task(coro)
+        self._bg_tasks.add(t)
+        t.add_done_callback(self._bg_tasks.discard)
 
     async def _run(self) -> None:
         """主循环：连接 → 订阅 → 接收 → 重连（指数退避）."""
@@ -481,11 +518,43 @@ class RealtimeSubscriber:
 
         刷新通过同一 WebSocket 连接发送 invocation，Completion 响应由
         ``_connect_and_subscribe`` 的接收循环经 ``_handle_signalr_message`` 处理。
+
+        自愈（2026-08-21 事故修复）：本循环独立于主任务存活，每周期检查——
+        - 主任务已退出（远端重启掐断连接后静默死亡）→ 重建主任务；
+        - 数据停滞超过看门狗阈值 + 60s 余量但看门狗未生效（主任务卡死）→
+          取消并重建主任务。
         """
+        stall_timeout = float(settings.SIGNALR_STALL_TIMEOUT_SECONDS)
         while self._running:
             try:
                 await asyncio.sleep(_SIGNALR_REFRESH_INTERVAL)
-                if not self._running or self._ws is None or not self._subscribed_tags:
+                if not self._running:
+                    continue
+                # --- 自愈 1：主任务已死 → 重建 ---
+                if self._task is None or self._task.done():
+                    logger.warning("自愈：实时订阅主任务已退出，重建连接循环")
+                    self._task = asyncio.create_task(self._run())
+                    self._task.add_done_callback(self._on_main_task_done)
+                    continue
+                # --- 自愈 2：数据停滞超阈值但看门狗未处理（主任务卡死）→ 强制重建 ---
+                if self._last_data_at is not None:
+                    idle = time.time() - self._last_data_at
+                    if idle > stall_timeout + 60:
+                        logger.warning(
+                            "自愈：数据停滞 %.0fs（阈值 %.0fs）且看门狗未生效，强制重建主任务",
+                            idle,
+                            stall_timeout,
+                        )
+                        self._task.cancel()
+                        try:
+                            await self._task
+                        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                            pass
+                        await self._close_ws_safely()
+                        self._task = asyncio.create_task(self._run())
+                        self._task.add_done_callback(self._on_main_task_done)
+                        continue
+                if self._ws is None or not self._subscribed_tags:
                     continue
                 # 重新发送 SubscribeAsync 获取所有订阅 Tag 的当前值
                 # AAS 会返回 Completion (type=3) 响应，由接收循环统一处理
@@ -551,7 +620,7 @@ class RealtimeSubscriber:
         await redis_client.publish(_PUBSUB_CHANNEL, value)
 
         # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
-        loop_part, role = self._parse_tag_code(tag_code)
+        loop_part, role = await self._parse_tag_code(tag_code)
         if loop_part:
             role_payload = {
                 "value": item.get("value"),
@@ -571,8 +640,9 @@ class RealtimeSubscriber:
         # MODE 变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
         # 自动/手动/自控率卡片下次查询拿到最新值，而非等 60s TTL 自然过期。
         # MODE 低频变化（小时级），失效代价低。
+        # 注意：经 _spawn_bg 保持引用，防 GC 中途回收（asyncio 任务弱引用陷阱）。
         if role == "MODE":
-            asyncio.create_task(self._invalidate_loop_stats_cache())
+            self._spawn_bg(self._invalidate_loop_stats_cache())
 
     async def _invalidate_loop_stats_cache(self) -> None:
         """MODE 变化时失效回路统计缓存，确保监控卡片下次查询拿到最新值."""
@@ -583,16 +653,33 @@ class RealtimeSubscriber:
             # 失败可忽略：60s TTL 自然过期，最多延迟 1 分钟
             logger.debug("失效 loop 统计缓存失败（可忽略，TTL 60s 自然过期）: %s", exc)
 
-    def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
-        """解析 tagCode 为回路部分和角色。
+    async def _parse_tag_code(self, tag_code: str) -> tuple[str, str]:
+        """解析 tagCode 为 (loop_part, role)。
 
-        示例: "LIC-101.PV" → ("LIC-101", "PV")
-              "LIC-101" → ("LIC-101", "PV")
+        以 PG 的 tag→role 映射为准（loop_part=回路台账 tag_name，权威来源）。
+        历史 bug（2026-08-20 修复）：此前按点号切分且未命中硬判 PV——
+        本项目测点名 `41LIC30044_PIDA_SP` 无点号 → 整名当 loop_part +
+        角色恒 PV，导致子表名带角色后缀、角色列错置。
+
+        兜底：映射未命中时按点号风格解析（兼容 signal_sim 仿真 tag）；
+        仍无法识别返回 ("", "")，调用方跳过缓冲（Redis 实时值缓存不受影响）。
         """
+        # 缓存过期时刷新（miss 且距上次刷新超过最小间隔，防 DB 故障时每条消息打库）
+        now = time.monotonic()
+        miss_due = now - self._loop_meta_cache_at > _LOOP_META_MISS_REFRESH_MIN_INTERVAL
+        if (not self._tag_role_cache) or (tag_code not in self._tag_role_cache and miss_due):
+            try:
+                await self._refresh_loop_meta_cache()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("刷新 tag→role 映射失败: %s", exc)
+
+        hit = self._tag_role_cache.get(tag_code)
+        if hit:
+            return hit
         if "." in tag_code:
             loop_part, role = tag_code.rsplit(".", 1)
             return loop_part, role.upper()
-        return tag_code, "PV"
+        return "", ""
 
     # ------------------------------------------------------------------
     # 断点续传（Gap Backfill）
@@ -1024,26 +1111,56 @@ class RealtimeSubscriber:
         return {lp: self._loop_meta_cache.get(lp, ("", "")) for lp in loop_parts}
 
     async def _refresh_loop_meta_cache(self) -> None:
-        """从数据库重建 loop_part → (loop_id, unit_id) 缓存（仅含活跃且有 tag 映射的回路）."""
+        """从数据库重建两个缓存（仅含活跃且有 tag 映射的回路）.
+
+        - ``_loop_meta_cache``: loop_part(=回路台账 tag_name) → (loop_id, unit_id)
+        - ``_tag_role_cache``: 测点 tag_name → (loop_part, role)
+
+        历史 bug（2026-08-20 修复）：此前 loop_part 从「第一个测点名」rsplit('.')
+        反推，但测点名用下划线分隔角色（xx_PV）→ 剥离失败且顺序不稳定，
+        导致同一回路多张子表、_parse_tag_code 角色误判。现在 loop_part 唯一
+        权威来源 = 回路台账 tag_name（天然不含测点角色后缀）。
+        """
         from sqlalchemy import select
 
-        from app.models.loop import LoopLedger
-        from app.services.data_import import _batch_get_loop_data
+        from app.models.loop import LoopLedger, LoopTagMapping
+        from app.models.tag import TagRegistry
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
-            loop_ids = [str(row[0]) for row in result.all()]
-            data_map = await _batch_get_loop_data(db, loop_ids) if loop_ids else {}
+            loop_result = await db.execute(
+                select(LoopLedger.id, LoopLedger.tag_name, LoopLedger.unit_id).where(
+                    LoopLedger.is_active.is_(True)
+                )
+            )
+            loops = loop_result.all()
+            if not loops:
+                return
+            loop_ids = [str(r[0]) for r in loops]
+            mapping_result = await db.execute(
+                select(LoopTagMapping.loop_id, LoopTagMapping.tag_role, TagRegistry.tag_name)
+                .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+                .where(LoopTagMapping.loop_id.in_(loop_ids))
+            )
+            role_rows = mapping_result.all()
 
-        cache: dict[str, tuple[str, str]] = {}
-        for lid, meta in data_map.items():
-            role_tag_map = meta.get("role_tag_map") or {}
-            if not role_tag_map:
+        # loop_id → 回路台账 tag_name（loop_part 权威来源）
+        lid_to_loop_name: dict[str, str] = {}
+        meta_cache: dict[str, tuple[str, str]] = {}
+        for lid, tag_name, unit_id in loops:
+            if not tag_name:
                 continue
-            first_tag = next(iter(role_tag_map.values()))
-            loop_part = first_tag.rsplit(".", 1)[0] if "." in first_tag else first_tag
-            cache.setdefault(loop_part, (lid, meta.get("unit_id") or ""))
-        self._loop_meta_cache = cache
+            lid_to_loop_name[str(lid)] = tag_name
+            meta_cache.setdefault(tag_name, (str(lid), str(unit_id) if unit_id else ""))
+
+        # 测点 tag_name → (loop_part, role)
+        tag_role_cache: dict[str, tuple[str, str]] = {}
+        for lid, tag_role, tag_name in role_rows:
+            loop_name = lid_to_loop_name.get(str(lid))
+            if loop_name and tag_name:
+                tag_role_cache[tag_name] = (loop_name, str(tag_role).upper())
+
+        self._loop_meta_cache = meta_cache
+        self._tag_role_cache = tag_role_cache
         self._loop_meta_cache_at = time.monotonic()
 
     async def _flush_loop(self) -> None:

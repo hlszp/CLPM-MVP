@@ -66,8 +66,9 @@ CREATE TABLE IF NOT EXISTS plant_node (
     type                    VARCHAR(20)     NOT NULL,
     parent_id               UUID,
     is_kpi_enabled          BOOLEAN         DEFAULT FALSE,
-    monitor_tag_id          UUID,
-    monitor_trigger_value   VARCHAR(20),
+    source_node_id          BIGINT,
+    sort_order              INTEGER         NOT NULL DEFAULT 0,
+    updated_by              VARCHAR(100),
     created_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_plant_node_parent        FOREIGN KEY (parent_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
@@ -80,8 +81,9 @@ COMMENT ON COLUMN plant_node.name IS '节点名称（如：常减压装置）';
 COMMENT ON COLUMN plant_node.type IS '节点类型：FACTORY/AREA/UNIT；回路挂在 UNIT';
 COMMENT ON COLUMN plant_node.parent_id IS '父节点 ID（自引用）';
 COMMENT ON COLUMN plant_node.is_kpi_enabled IS '是否纳入性能评估（TRUE 时生成节点级 KPI 快照）';
-COMMENT ON COLUMN plant_node.monitor_tag_id IS '位号触发监控的位号 ID（NULL 表示默认监控，FK→tag_registry）';
-COMMENT ON COLUMN plant_node.monitor_trigger_value IS '触发监控的位号值（如 "true"/"1"/"ON"），值匹配时该节点下回路应监控';
+COMMENT ON COLUMN plant_node.source_node_id IS 'AAS AreaNode Id 同步来源标记（有值=AAS 同步节点，本地改名会被下次同步覆盖）';
+COMMENT ON COLUMN plant_node.sort_order IS '同级展示排序（小值在前，同值按名称）';
+COMMENT ON COLUMN plant_node.updated_by IS '最后操作人（用户名 / aas:sync / import:用户名）';
 COMMENT ON COLUMN plant_node.created_at IS '创建时间';
 COMMENT ON COLUMN plant_node.updated_at IS '更新时间';
 
@@ -118,7 +120,7 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     CONSTRAINT uk_loop_ledger_tag_name UNIQUE (tag_name),
     CONSTRAINT fk_loop_ledger_unit_id  FOREIGN KEY (unit_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
     CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE')),
-    CONSTRAINT ck_loop_ledger_loop_type CHECK (loop_type IN ('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER')),
+    -- loop_type 合法性改由 sys_dict_item 字典校验（迁移 h4c5d6e7f8a9 移除 CHECK）
     CONSTRAINT ck_loop_ledger_importance_level CHECK (importance_level IN (1, 2, 3)),
     CONSTRAINT ck_loop_ledger_complex_role CHECK (complex_role IS NULL OR complex_role IN ('MAIN', 'SUB')),
     CONSTRAINT ck_loop_ledger_complex_group_coherence CHECK (
@@ -164,26 +166,15 @@ CREATE TABLE IF NOT EXISTS tag_registry (
     measure_type    VARCHAR(20),
     tdengine_tag_id VARCHAR(100),
     CONSTRAINT uk_tag_registry_tag_name UNIQUE (tag_name),
-    CONSTRAINT ck_tag_registry_type     CHECK (tag_type IN ('PV', 'SP', 'OP', 'MODE', 'PID_P', 'PID_I', 'PID_D', 'OTHER')),
-    CONSTRAINT ck_tag_registry_quality  CHECK (quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN')),
-    CONSTRAINT ck_tag_registry_measure_type CHECK (
-        measure_type IS NULL OR measure_type IN ('TEMPERATURE', 'PRESSURE', 'LEVEL', 'FLOW', 'ANALYSIS', 'SPEED', 'OTHER')
-    )
+    CONSTRAINT ck_tag_registry_quality  CHECK (quality IS NULL OR quality IN ('GOOD', 'BAD', 'UNCERTAIN'))
+    -- tag_type / measure_type 合法性改由 sys_dict_item 字典校验
+    -- （迁移 g3b4c5d6e7f8 / f2a3b4c5d6e7 分别移除 CHECK）
 );
 
--- plant_node / loop_ledger 在 tag_registry 之前创建；延后添加跨表外键，
+-- loop_ledger 在 tag_registry 之前创建；延后添加跨表外键，
 -- 保证空 PostgreSQL 的生产 bootstrap 可顺序执行。
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'fk_plant_node_monitor_tag'
-          AND conrelid = 'plant_node'::regclass
-    ) THEN
-        ALTER TABLE plant_node
-            ADD CONSTRAINT fk_plant_node_monitor_tag
-            FOREIGN KEY (monitor_tag_id) REFERENCES tag_registry(id) ON DELETE RESTRICT;
-    END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'fk_loop_ledger_modeattr'
@@ -689,7 +680,7 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     -- fk_tuning_record_process_model_version 延迟到 process_model_version 表创建后添加（见下方 DO 块）
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
-    CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC', 'IDENTIFICATION_ONLY')),
+    CONSTRAINT ck_tuning_record_algo    CHECK (algorithm IN ('IMC', 'LAMBDA', 'ZN', 'COHEN_COON', 'SIMC', 'IDENTIFICATION_ONLY', 'MANUAL_TUNING')),
     CONSTRAINT ck_tuning_record_status  CHECK (status IN ('DRAFT', 'RUNNING', 'IDENTIFIED', 'SIMULATED', 'COMPLETED', 'INCONCLUSIVE', 'ROLLED_BACK', 'PENDING', 'APPLIED', 'VERIFIED')),
     CONSTRAINT ck_tuning_record_identify_method CHECK (identify_method IS NULL OR identify_method IN ('HISTORICAL_ARX', 'HISTORICAL_ARMAX', 'HISTORICAL_IV', 'STEP_TWO_POINT', 'STEP_AREA', 'STEP_NLS')),
     CONSTRAINT ck_tuning_record_data_source CHECK (data_source IS NULL OR data_source IN ('HISTORY', 'STEP_EXPERIMENT', 'fallback_step'))
@@ -1516,8 +1507,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_config_key ON sys_config (key);
 -- loop_mode_mapping 索引（重构方案 v1.2）
 CREATE INDEX IF NOT EXISTS idx_loop_mode_mapping_loop_id ON loop_mode_mapping (loop_id);
 
--- plant_node 索引（SVC-10 位号触发监控）
-CREATE INDEX IF NOT EXISTS idx_plant_node_monitor_tag_id ON plant_node (monitor_tag_id);
+-- plant_node 索引（迁移 d9e0f1a2b3c4 + e1f2a3b4c5d6）
+CREATE INDEX IF NOT EXISTS idx_plant_node_source_node_id ON plant_node (source_node_id);
+-- 同父重名唯一约束（表达式索引：根节点 parent_id 归一化处理）
+CREATE UNIQUE INDEX IF NOT EXISTS uq_plant_node_parent_name
+    ON plant_node (COALESCE(parent_id::text, '00000000-0000-0000-0000-000000000000'), name);
 
 -- process_model_version 索引（V62-P3-003 模型生命周期）
 -- P3-004 并发一致性：同一回路至多一个 CURRENT（部分唯一索引）
@@ -1680,22 +1674,80 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
     duration_ms         INTEGER,
     created_at          TIMESTAMP NOT NULL DEFAULT now(),
     updated_at          TIMESTAMP NOT NULL DEFAULT now(),
+    -- 诊断触发类型（迁移 a7b8c9d0e1f2）：MANUAL=手动选择 / SCHEDULED=等级周期 / EVENT=预警规则
+    trigger_type        VARCHAR(16)  NOT NULL DEFAULT 'MANUAL',
+    -- 指标摘要（迁移 a3b4c5d6e7f8）：6 负向 + 7 正向指标，统一 0-100 标度
+    metric_summary      JSONB,
+    -- 人工复核四件套（迁移 b8c9d0e1f2a3）
+    review_status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    review_results      JSONB,
+    review_comment      VARCHAR(500),
+    reviewed_by         VARCHAR(64),
+    reviewed_at         TIMESTAMP,
     CONSTRAINT ck_diagnosis_run_status CHECK (status IN ('RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED')),
     CONSTRAINT ck_diagnosis_run_category CHECK (primary_category IS NULL OR primary_category IN
-        ('TUNING', 'VALVE', 'INSTRUMENT', 'PROCESS', 'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
-    CONSTRAINT ck_diagnosis_run_severity CHECK (severity IS NULL OR severity IN ('HIGH', 'MEDIUM', 'LOW'))
+        ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS', 'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
+    CONSTRAINT ck_diagnosis_run_severity CHECK (severity IS NULL OR severity IN ('HIGH', 'MEDIUM', 'LOW')),
+    CONSTRAINT ck_diagnosis_run_trigger_type CHECK (trigger_type IN ('MANUAL', 'SCHEDULED', 'EVENT')),
+    CONSTRAINT ck_diagnosis_run_review_status CHECK (review_status IN ('PENDING', 'REVIEWED'))
 );
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_loop_created ON diagnosis_run (loop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (primary_category);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_task         ON diagnosis_run (task_id);
 
 -- -----------------------------------------------------------------------------
--- 回路处置建议（处置模块 Phase 1：建议-处置-验证-关闭全生命周期；2026-08-18）
--- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3 数据模型 / §4 状态机
+-- 处置工单（处置模块 v2.0 双实体：排程-执行-验证-闭环执行载体；2026-08-20）
+-- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3.2 数据模型 / §4.2 状态机 / §3.3 编号规则
+-- 注意：须先于 loop_action_item 建表（后者 converted_order_id 引用本表）
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS handling_order (
+    id            UUID PRIMARY KEY,
+    order_no      VARCHAR(32)  NOT NULL UNIQUE,
+    loop_id       UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    source        VARCHAR(16)  NOT NULL,
+    suggestion_ids JSONB,
+    title         VARCHAR(200) NOT NULL,
+    action_type   VARCHAR(16)  NOT NULL,
+    action_detail JSONB,
+    planned_at    TIMESTAMP,
+    planned_by    VARCHAR(64),
+    handler       VARCHAR(64),
+    started_at    TIMESTAMP,
+    feedback_log  JSONB,
+    submitted_at  TIMESTAMP,
+    verify_run_id UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
+    verify_result VARCHAR(16),
+    verify_note   VARCHAR(500),
+    verified_by   VARCHAR(64),
+    verified_at   TIMESTAMP,
+    kpi_before    JSONB,
+    kpi_after     JSONB,
+    tuning_record_id UUID,
+    cancel_reason VARCHAR(200),
+    status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT ck_handling_order_source CHECK (source IN ('DIAGNOSIS', 'MANUAL')),
+    CONSTRAINT ck_handling_order_status CHECK (status IN
+        ('PENDING', 'EXECUTING', 'VERIFYING', 'CLOSED', 'REOPENED', 'CANCELLED')),
+    CONSTRAINT ck_handling_order_action_type CHECK (action_type IN
+        ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
+         'UTILIZATION', 'RECONFIG', 'OTHER')),
+    CONSTRAINT ck_handling_order_verify_result CHECK
+        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
+);
+COMMENT ON TABLE handling_order IS '处置工单（处置模块 v2.0：排程-执行-验证-闭环执行载体）';
+CREATE INDEX IF NOT EXISTS idx_handling_order_status  ON handling_order (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_handling_order_loop    ON handling_order (loop_id);
+CREATE INDEX IF NOT EXISTS idx_handling_order_planned ON handling_order (planned_at);
+
+-- -----------------------------------------------------------------------------
+-- 回路处置建议（处置模块 v2.0 双实体：建议汇聚与审核对象；2026-08-20）
+-- 设计文档：docs/MVP设计/08-处置模块设计方案.md §3.1 数据模型 / §4.1 状态机
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS loop_action_item (
     id            UUID PRIMARY KEY,
-    run_id        UUID NOT NULL REFERENCES diagnosis_run(id) ON DELETE CASCADE,
+    run_id        UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
     loop_id       UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
     source        VARCHAR(8)   NOT NULL DEFAULT 'SYSTEM',
     category      VARCHAR(32),
@@ -1705,39 +1757,42 @@ CREATE TABLE IF NOT EXISTS loop_action_item (
     status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     suggested_by  VARCHAR(64)  NOT NULL,
     suggested_at  TIMESTAMP    NOT NULL,
-    -- 处置模块 Phase 1 扩展（§3.2）
-    action_type      VARCHAR(16),
-    action_detail    JSONB,
-    handled_by       VARCHAR(64),
-    handled_at       TIMESTAMP,
-    submitted_at     TIMESTAMP,
-    verify_run_id    UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
-    verify_result    VARCHAR(16),
-    verify_note      VARCHAR(500),
-    verified_by      VARCHAR(64),
-    verified_at      TIMESTAMP,
-    kpi_before       JSONB,
-    kpi_after        JSONB,
-    tuning_record_id UUID,
-    ignore_reason    VARCHAR(200),
+    -- 审核域（§3.1 v2.0 新增）
+    reviewed_by       VARCHAR(64),
+    reviewed_at       TIMESTAMP,
+    rejected_reason   VARCHAR(200),
+    converted_order_id UUID REFERENCES handling_order(id) ON DELETE SET NULL,
+    ignore_reason     VARCHAR(200),
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
     CONSTRAINT ck_loop_action_item_source CHECK (source IN ('SYSTEM', 'MANUAL')),
     CONSTRAINT ck_loop_action_item_status CHECK (status IN
-        ('PENDING', 'HANDLING', 'VERIFYING', 'CLOSED', 'REOPENED', 'IGNORED')),
+        ('PENDING', 'ACCEPTED', 'CONVERTED', 'REJECTED', 'IGNORED')),
     CONSTRAINT ck_loop_action_item_category CHECK (category IS NULL OR category IN
         ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS',
-         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
-    CONSTRAINT ck_loop_action_item_action_type CHECK (action_type IS NULL OR action_type IN
-        ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
-         'UTILIZATION', 'RECONFIG', 'OTHER')),
-    CONSTRAINT ck_loop_action_item_verify_result CHECK
-        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
+         'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT'))
 );
-COMMENT ON TABLE loop_action_item IS '回路处置建议（处置模块 Phase 1：建议-处置-验证-关闭全生命周期）';
+COMMENT ON TABLE loop_action_item IS '回路处置建议（处置模块 v2.0：建议汇聚与审核对象）';
 CREATE INDEX IF NOT EXISTS idx_loop_action_item_run    ON loop_action_item (run_id);
 CREATE INDEX IF NOT EXISTS idx_loop_action_item_loop   ON loop_action_item (loop_id, suggested_at);
-CREATE INDEX IF NOT EXISTS idx_loop_action_item_status ON loop_action_item (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_loop_action_item_status ON loop_action_item (status, suggested_at DESC);
+
+-- -----------------------------------------------------------------------------
+-- 通用字典项（可配置枚举，如 MEASURE_TYPE 测点类型；2026-08-20）
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_dict_item (
+    id          VARCHAR(36)  PRIMARY KEY,
+    dict_type   VARCHAR(50)  NOT NULL,
+    item_code   VARCHAR(50)  NOT NULL,
+    item_label  VARCHAR(100) NOT NULL,
+    sort_order  INTEGER      NOT NULL DEFAULT 0,
+    is_enabled  BOOLEAN      NOT NULL DEFAULT TRUE,
+    updated_by  VARCHAR(50),
+    updated_at  TIMESTAMP,
+    CONSTRAINT uk_sys_dict_item_type_code UNIQUE (dict_type, item_code)
+);
+COMMENT ON TABLE sys_dict_item IS '通用字典项（可配置枚举）';
+CREATE INDEX IF NOT EXISTS ix_sys_dict_item_dict_type ON sys_dict_item (dict_type);
 
 -- =============================================================================
 -- 脚本结束
