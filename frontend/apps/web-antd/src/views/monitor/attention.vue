@@ -93,12 +93,14 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   ALERT: '活跃预警',
   DEGRADATION: '评分恶化',
   DATA_QUALITY: '数据质量',
+  FITNESS_ABNORMAL: '适用性异常',
 };
 
 const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   ALERT: 'error',
   DEGRADATION: 'warning',
   DATA_QUALITY: 'default',
+  FITNESS_ABNORMAL: 'purple',
 };
 
 const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
@@ -125,8 +127,44 @@ const SOURCE_ORDER: MonitorApi.AttentionSource[] = [
   'ALERT',
   'DEGRADATION',
   'DATA_QUALITY',
+  'FITNESS_ABNORMAL',
 ];
 const SOURCE_SET = new Set<string>(SOURCE_ORDER);
+
+/** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
+const ATT_FITNESS_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const attFitnessTagToCn = (t: string) => ATT_FITNESS_TAG_CN[t] ?? t;
+/** FITNESS_ABNORMAL Tooltip 文案：等级 + 原因标签 */
+function attFitnessTip(
+  level: null | string | undefined,
+  tags: null | string[] | undefined,
+): string {
+  const lv = level ?? '';
+  const tagText =
+    tags && tags.length > 0
+      ? tags.map((t) => attFitnessTagToCn(t)).join('、')
+      : '适用性异常';
+  return `适用性异常（${lv || 'NA'}）：${tagText}`;
+}
 
 // ===== 表格密度三档 =====
 const { tableSize, densityLabel, cycleDensity } =
@@ -827,14 +865,53 @@ watch(
 
                 <template v-else-if="column.key === 'sources'">
                   <Space :size="4">
-                    <Tag
+                    <template
                       v-for="s in record.sources.slice(0, 3)"
                       :key="s"
-                      :color="SOURCE_COLOR[s as keyof typeof SOURCE_COLOR]"
-                      style="margin: 0; font-size: 12px"
                     >
-                      {{ SOURCE_LABEL[s as keyof typeof SOURCE_LABEL] }}
-                    </Tag>
+                      <Tooltip
+                        v-if="s === 'FITNESS_ABNORMAL'"
+                        :title="
+                          attFitnessTip(
+                            (record as MonitorApi.AttentionGroup)
+                              .fitnessLevel,
+                            (record as MonitorApi.AttentionGroup)
+                              .fitnessTags,
+                          )
+                        "
+                        placement="top"
+                      >
+                        <Tag
+                          :color="
+                            SOURCE_COLOR[
+                              s as keyof typeof SOURCE_COLOR
+                            ]
+                          "
+                          style="margin: 0; font-size: 12px"
+                        >
+                          {{
+                            SOURCE_LABEL[
+                              s as keyof typeof SOURCE_LABEL
+                            ]
+                          }}
+                        </Tag>
+                      </Tooltip>
+                      <Tag
+                        v-else
+                        :color="
+                          SOURCE_COLOR[
+                            s as keyof typeof SOURCE_COLOR
+                          ]
+                        "
+                        style="margin: 0; font-size: 12px"
+                      >
+                        {{
+                          SOURCE_LABEL[
+                            s as keyof typeof SOURCE_LABEL
+                          ]
+                        }}
+                      </Tag>
+                    </template>
                     <Tag
                       v-if="record.sources.length > 3"
                       style="margin: 0; font-size: 12px"
@@ -926,7 +1003,31 @@ watch(
                       :key="child.attentionId"
                       class="flex items-center gap-3 rounded border border-gray-100 bg-white px-3 py-2 text-sm"
                     >
+                      <Tooltip
+                        v-if="child.source === 'FITNESS_ABNORMAL'"
+                        :title="
+                          attFitnessTip(child.fitnessLevel, child.fitnessTags)
+                        "
+                        placement="top"
+                      >
+                        <Tag
+                          :color="
+                            SOURCE_COLOR[
+                              child.source as keyof typeof SOURCE_COLOR
+                            ]
+                          "
+                          class="!mr-0"
+                          style="font-size: 11px"
+                        >
+                          {{
+                            SOURCE_LABEL[
+                              child.source as keyof typeof SOURCE_LABEL
+                            ]
+                          }}
+                        </Tag>
+                      </Tooltip>
                       <Tag
+                        v-else
                         :color="
                           SOURCE_COLOR[
                             child.source as keyof typeof SOURCE_COLOR

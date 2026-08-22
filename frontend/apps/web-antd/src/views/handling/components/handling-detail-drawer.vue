@@ -36,6 +36,7 @@ import {
   verifyHandlingApi,
 } from '#/api/handling';
 import TuningVerifyCompare from '#/components/clpm/tuning-verify-compare.vue';
+import { useModules } from '#/composables/use-modules';
 import { formatLocalTime } from '#/utils/format';
 
 import {
@@ -58,6 +59,7 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const { moduleEnabled } = useModules();
 
 const loading = ref(false);
 const detail = ref<HandlingApi.Detail | null>(null);
@@ -291,6 +293,7 @@ function fmtKpi(
 /** 复诊入口：跳诊断工作台对该回路复诊（§8.3） */
 function goRevisit() {
   if (!detail.value) return;
+  if (!moduleEnabled('diagnosis')) return;
   router.push({
     path: '/diagnosis/workbench',
     query: { loopId: detail.value.loopId },

@@ -4,20 +4,22 @@ import type { RouteRecordRaw } from 'vue-router';
  * 系统管理路由模块
  *
  * 对齐 UI/UX v4.1 §4.2 + §5.2 + PRD §4.6
- * - 用户管理 / 审计日志 / 权限矩阵 / 自动报表
+ * - 用户管理 / 审计日志 / 权限矩阵 / 字典管理
+ * - 自动报表已迁入「统计报告-订阅配置」（/reports/subscription），旧路径保留 redirect
  *
  * 角色权限（PRD §3 + 实现契约 §5 + UI/UX §4.2）：
  * - 用户管理 / 审计日志 / 算法参数配置：仅 ADMIN
  * - 权限矩阵：所有角色可查看
- * - 自动报表：仅 ADMIN（后端 reports.py 全端点仅 ADMIN，2026-07-28 收紧对齐）
+ * - 订阅配置（原自动报表）：仅 ADMIN（后端 reports.py 全端点仅 ADMIN，2026-07-28 收紧对齐）
  */
 const routes: RouteRecordRaw[] = [
   {
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER'],
       icon: 'lucide:settings',
-      order: 7,
+      order: 8,
       title: '系统',
+      module: 'system',
     },
     name: 'System',
     path: '/system',
@@ -63,14 +65,25 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'SystemModules',
+        path: '/system/modules',
+        component: () => import('#/views/system/modules.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:blocks',
+          title: '模块管理',
+        },
+      },
+      {
+        // 自动报表已迁入统计报告-订阅配置（IA 优化 P0，2026-08-22）
         name: 'SystemReports',
         path: '/system/reports',
-        component: () => import('#/views/system/reports.vue'),
+        redirect: '/reports/subscription',
         meta: {
           // 实现契约 §5：后端 reports.py 全端点仅 ADMIN，前端同步收紧
           authority: ['ADMIN'],
-          icon: 'lucide:file-text',
-          title: '自动报表',
+          hideInMenu: true,
+          title: '订阅配置',
         },
       },
       // MVP 精简：已屏蔽诊断模块 → 移除「LLM 配置」（自然语言诊断解读服务配置）

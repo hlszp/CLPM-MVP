@@ -57,6 +57,7 @@ from app.api.v1.endpoints import (
     # 工厂模型 AAS 同步（工厂配置页：独立同步配置区 + 全量同步）
     factory_sync,
     # diagnosis_trigger_config,
+    fitness_threshold_config,
     grading_config,
     handling,
     health,
@@ -88,11 +89,13 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import (
     tasks as eval_tasks,
 )
+from app.api.v1.endpoints.system import modules as system_modules
 from app.core.config import settings
 from app.core.db import dispose_engine
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger, setup_logging
 from app.core.metrics import MetricsMiddleware, setup_metrics
+from app.core.modules import is_module_enabled, load_enabled_modules
 from app.core.redis import close_redis
 from app.middleware.idempotency import IdempotencyMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -655,6 +658,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("从 sys_config 预载数据源配置失败（将使用 .env 默认值）: %s", exc)
 
+    # 预载模块启用状态（IA 优化 P1：模块热插拔，路由已在 create_app 时注册，
+    # 此处刷新缓存供跨模块守卫/beat_registry 使用；失败不阻塞启动）
+    try:
+        async with AsyncSessionLocal() as db:
+            enabled = await load_enabled_modules(db)
+        logger.info("模块启用状态已预载: %s", ", ".join(sorted(enabled)))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预载模块启用状态失败（将使用路由注册时的缓存）: %s", exc)
+
     # 从 sys_config 预载异常值检测参数/开关到进程内缓存（热路径不查库，
     # 预载失败回落 thresholds.py 算法默认值，不阻塞启动）
     from app.services.preprocessing.outlier_params import preload_outlier_params
@@ -952,10 +964,14 @@ def create_app() -> FastAPI:
     # v1_router.include_router(diagnosis.timeseries_router)
     v1_router.include_router(tags.timeseries_router)
     # v1_router.include_router(diagnosis.tracker_router)
-    # MVP v2 诊断模块（重设计版：/diagnosis/run|runs|operators|export）
-    v1_router.include_router(diagnosis_v2.router)
-    # 处置模块 v2.0 双实体（/handling/suggestions|orders|loops|statistics，08-处置模块设计方案 §6）
-    v1_router.include_router(handling.router)
+    # 模块热插拔：诊断/整定/处置三个可选路由按启用状态条件注册
+    # （顶层 import 保持不动，model 必须注册到 SQLAlchemy，符合"不删数据"原则）
+    if is_module_enabled("diagnosis"):
+        # MVP v2 诊断模块（重设计版：/diagnosis/run|runs|operators|export）
+        v1_router.include_router(diagnosis_v2.router)
+    if is_module_enabled("handling"):
+        # 处置模块 v2.0 双实体（/handling/suggestions|orders|loops|statistics，08-处置方案 §6）
+        v1_router.include_router(handling.router)
     # v4.0: DataPlanner 内部管理接口（仅 ADMIN）
     v1_router.include_router(dataplanner.router)
     # v4.0: 算法服务接口（IDS §2.7）
@@ -969,6 +985,8 @@ def create_app() -> FastAPI:
     # v5.3: 权重模板管理（FDS §5.2.2）+ 定级阈值管理（FDS §5.2.4）
     v1_router.include_router(weight_config.router)
     v1_router.include_router(grading_config.router)
+    # IA优化P2: 适用性阈值配置
+    v1_router.include_router(fitness_threshold_config.router)
     # 指标定义管理（指标配置-指标定义 Tab：CRUD + 版本化）
     v1_router.include_router(metric_definition.router)
     # 工厂模型 AAS 同步（工厂配置页）
@@ -991,8 +1009,11 @@ def create_app() -> FastAPI:
     v1_router.include_router(users.router)
     v1_router.include_router(audit_logs.router)
     v1_router.include_router(reports.router)
+    # 系统-模块管理（基础模块，始终可用）
+    v1_router.include_router(system_modules.router)
     # S7 回路整定：模型辨识、PID 整定、闭环仿真（09 设计方案恢复为一级模块）
-    v1_router.include_router(tuning.router)
+    if is_module_enabled("tuning"):
+        v1_router.include_router(tuning.router)
     # 重构方案 v1.2：回路配置 CRUD（投用定义、类型权重、级别权重）
     v1_router.include_router(loop_mode_mapping.router)
     v1_router.include_router(loop_type_weight.router)

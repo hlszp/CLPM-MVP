@@ -75,6 +75,7 @@ import WorkbenchActiveAttention from '#/components/monitor/workbench-active-atte
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
 import { useLoopRealtime } from '#/composables/use-loop-realtime';
+import { useModules } from '#/composables/use-modules';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
@@ -83,6 +84,7 @@ import { formatTime } from '#/utils/format';
 
 import AssessTriggerModal from './components/assess-trigger-modal.vue';
 import WorkbenchDiagnosisCard from './components/workbench-diagnosis-card.vue';
+import WorkbenchFitnessBadge from './components/workbench-fitness-badge.vue';
 import WorkbenchKpiHistory from './components/workbench-kpi-history.vue';
 import WorkbenchMetricBars from './components/workbench-metric-bars.vue';
 import WorkbenchProcessTrend from './components/workbench-process-trend.vue';
@@ -94,6 +96,9 @@ defineOptions({ name: 'MonitorLoopWorkbench' });
 const route = useRoute();
 const router = useRouter();
 // router 由 monitorCtx.update 内部调用 router.replace，此页面不再直接使用
+
+/** 模块热插拔判断（诊断/整定模块禁用时卡片移除、按钮灰显） */
+const { moduleEnabled } = useModules();
 
 /** 返回系统概览（面包屑导航） */
 function goBackToOverview() {
@@ -350,6 +355,11 @@ async function loadSummary(loopId: string): Promise<void> {
 const latestDiagnosis = ref<DiagnosisApi.LatestRunItem | null>(null);
 
 async function loadLatestDiagnosis(loopId: string): Promise<void> {
+  // 模块热插拔：诊断模块禁用时不调用 API
+  if (!moduleEnabled('diagnosis')) {
+    latestDiagnosis.value = null;
+    return;
+  }
   await requestGuard.run(async (_signal, capturedEpoch) => {
     const data = await getDiagnosisRunsLatestApi(undefined, loopId).catch(
       () => null,
@@ -417,6 +427,16 @@ function handleNextAction(actionType: MonitorApi.NextActionType): void {
 function goDiagnose(): void {
   const loopId = selectedLoopId.value;
   if (!loopId) return;
+  const lv = fitnessLevel.value;
+  // L0/L1：阻止跳转
+  if (lv === 'L0' || lv === 'L1') {
+    message.error(
+      `回路适用性不足（${lv}），${
+        fitnessTagsText.value ? `原因：${fitnessTagsText.value}；` : ''
+      }请先补齐数据或切换控制模式后再诊断`,
+    );
+    return;
+  }
   router.push({
     path: '/diagnosis/workbench',
     query: { loopId, from: 'workbench' },
@@ -430,6 +450,77 @@ const summaryDayTrend = computed<DayTrend | null>(
   () =>
     (summary.value?.scoreTrend.dayTrend as DayTrend | null | undefined) ?? null,
 );
+
+// ========== P2 IA优化：适用性（fitness）门禁 ==========
+/** L2 异常横幅时，用户点击「仍然发起诊断」后放行 */
+const forceAllowDiagnosis = ref(false);
+
+/** fitness 中文映射（与 fitness-badge.vue 同口径） */
+const FITNESS_TAG_HUMAN: Record<string, string> = {
+  DATA_INSUFFICIENT: '数据不足',
+  MANUAL_DOMINANT: '手动模式主导（>80%）',
+  LOW_AUTO_RATE: '自控率偏低（<20%）',
+  OP_SATURATED: 'OP 输出饱和',
+  SP_PV_DEVIATION: 'SP-PV 持续大偏离',
+  NO_EXCITATION: '无有效激励',
+  WEAK_RESPONSE: 'PV 对 OP 响应弱',
+};
+
+const fitnessLevel = computed<null | string>(() => {
+  const lv = summary.value?.fitnessLevel;
+  return lv || null;
+});
+const fitnessTags = computed<null | string[]>(() => {
+  const t = summary.value?.fitnessTags;
+  return Array.isArray(t) && t.length > 0 ? t : null;
+});
+const fitnessTagsHuman = computed<string[]>(() => {
+  if (!fitnessTags.value) return [];
+  return fitnessTags.value.map((t) => FITNESS_TAG_HUMAN[t] ?? t);
+});
+const fitnessTagsText = computed(() => fitnessTagsHuman.value.join('；'));
+
+const isFitnessL0L1 = computed(
+  () => fitnessLevel.value === 'L0' || fitnessLevel.value === 'L1',
+);
+const isFitnessL2 = computed(() => fitnessLevel.value === 'L2');
+
+/** 诊断/整定按钮是否禁用（不含 L2=forceAllow 放行场景） */
+const diagnosisDisabled = computed(() => {
+  if (!selectedLoopId.value) return true;
+  if (!moduleEnabled('diagnosis')) return true;
+  if (isFitnessL0L1.value) return true;
+  if (isFitnessL2.value && !forceAllowDiagnosis.value) return false; // L2 允许手动确认后发起，按钮本身不禁用
+  return false;
+});
+/** 诊断按钮禁用原因文字 */
+const diagnosisDisabledReason = computed<string | undefined>(() => {
+  if (!moduleEnabled('diagnosis')) return '诊断模块未启用';
+  if (!selectedLoopId.value) return '先选择回路';
+  if (isFitnessL0L1.value) {
+    return `不可评估（${fitnessLevel.value}）${
+      fitnessTagsText.value ? `：${fitnessTagsText.value}` : ''
+    }`;
+  }
+  return undefined;
+});
+
+/** 整定禁用原因 Tooltip（被 R2"诊断/整定不可用"按钮 Tooltip 引用） */
+const tuningDisabledReason = computed<string | undefined>(() => {
+  const lv = fitnessLevel.value;
+  if (!selectedLoopId.value) return '先选择回路';
+  if (lv === 'L0' || lv === 'L1' || lv === 'L2') {
+    return `适用性等级 ${lv} 不满足整定要求（需要 L3+）${
+      fitnessTagsText.value ? `（原因：${fitnessTagsText.value}）` : ''
+    }`;
+  }
+  return undefined;
+});
+
+// 切换回路 → 重置 forceAllowDiagnosis
+watch(selectedLoopId, () => {
+  forceAllowDiagnosis.value = false;
+});
 
 // ===== 评估任务运行器 =====
 // MW-P3-10：任务完成后同时刷新 summary（生命周期/nextAction/活跃关注）
@@ -934,25 +1025,29 @@ async function loadKpiHistory(loopId: string): Promise<void> {
   });
 }
 
-/** 从 summary 构建事件标记（诊断/整定/验证） */
+/** 从 summary 构建事件标记（诊断/整定/验证，按模块启用状态过滤） */
 const computedEventMarks = computed<ProcessEventMark[]>(() => {
   if (!summary.value) return [];
   const marks: ProcessEventMark[] = [];
-  const diagTime = summary.value.diagnosis?.resultAt;
-  if (diagTime) {
-    marks.push({
-      label: '诊断',
-      timestamp: dayjs(diagTime).valueOf(),
-      type: 'diagnosis',
-    });
+  if (moduleEnabled('diagnosis')) {
+    const diagTime = summary.value.diagnosis?.resultAt;
+    if (diagTime) {
+      marks.push({
+        label: '诊断',
+        timestamp: dayjs(diagTime).valueOf(),
+        type: 'diagnosis',
+      });
+    }
   }
-  const tuneTime = summary.value.tuning?.resultAt;
-  if (tuneTime) {
-    marks.push({
-      label: '整定',
-      timestamp: dayjs(tuneTime).valueOf(),
-      type: 'tuning',
-    });
+  if (moduleEnabled('tuning')) {
+    const tuneTime = summary.value.tuning?.resultAt;
+    if (tuneTime) {
+      marks.push({
+        label: '整定',
+        timestamp: dayjs(tuneTime).valueOf(),
+        type: 'tuning',
+      });
+    }
   }
   return marks;
 });
@@ -1142,8 +1237,8 @@ const stageLabelMap: Record<string, string> = {
       </template>
       <template #actions>
         <ClpmToolbarButton
-          :disabled="!selectedLoopId"
-          :disabled-reason="selectedLoopId ? undefined : '先选择回路'"
+          :disabled="diagnosisDisabled"
+          :disabled-reason="diagnosisDisabledReason"
           icon="lucide:stethoscope"
           label="发起诊断"
           @click="goDiagnose"
@@ -1442,6 +1537,14 @@ const stageLabelMap: Record<string, string> = {
               >
             </template>
           </div>
+          <!-- P2 IA优化：适用性徽章（R2 状态条右侧） -->
+          <div class="wb-r2__fitness-badge ml-2 mr-2">
+            <WorkbenchFitnessBadge
+              :loop-id="selectedLoopId ?? ''"
+              :level="fitnessLevel ?? undefined"
+              :tags="fitnessTags"
+            />
+          </div>
           <!-- 全屏布局切换按钮 -->
           <button
             class="wb-r2__fullscreen-btn"
@@ -1455,6 +1558,42 @@ const stageLabelMap: Record<string, string> = {
               {{ leftSpineHidden ? '退出全宽' : '全宽' }}
             </span>
           </button>
+        </div>
+        <!-- ===== P2 IA优化：适用性横幅（L2 警告 / L0L1 不可评估） ===== -->
+        <div v-if="summary && isFitnessL2" class="wb-fitness-banner wb-fitness-banner--l2">
+          <div class="wb-fitness-banner__left">
+            <span class="i-lucide:triangle-alert wb-fitness-banner__icon"></span>
+            <div class="wb-fitness-banner__body">
+              <div class="wb-fitness-banner__title">控制条件异常（L2）</div>
+              <div v-if="fitnessTagsHuman.length > 0" class="wb-fitness-banner__subtitle">
+                原因：{{ fitnessTagsText }}
+              </div>
+            </div>
+          </div>
+          <Button
+            size="small"
+            :type="forceAllowDiagnosis ? 'default' : 'primary'"
+            :disabled="forceAllowDiagnosis"
+            @click="forceAllowDiagnosis = true"
+          >
+            {{ forceAllowDiagnosis ? '已允许发起诊断' : '仍然发起诊断' }}
+          </Button>
+        </div>
+        <div v-else-if="summary && isFitnessL0L1" class="wb-fitness-banner wb-fitness-banner--l0l1">
+          <div class="wb-fitness-banner__left">
+            <span class="i-lucide:database-off wb-fitness-banner__icon"></span>
+            <div class="wb-fitness-banner__body">
+              <div class="wb-fitness-banner__title">
+                不可评估（{{ fitnessLevel }}）：诊断、整定入口已关闭
+              </div>
+              <div v-if="fitnessTagsHuman.length > 0" class="wb-fitness-banner__subtitle">
+                原因：{{ fitnessTagsText }}
+              </div>
+            </div>
+          </div>
+          <Tooltip :title="tuningDisabledReason" placement="left">
+            <Button size="small" disabled>诊断 / 整定不可用</Button>
+          </Tooltip>
         </div>
         <!-- summary 加载中骨架 -->
         <div
@@ -1720,7 +1859,8 @@ const stageLabelMap: Record<string, string> = {
           </div>
 
           <!-- 诊断.最新结论卡（负向指标横条，metricSummary 口径） -->
-          <div class="wb-r5__card wb-r5__card--diag">
+          <!-- 模块热插拔：诊断禁用时 v-if 移除，Flexbox flex:1 自动重排 -->
+          <div v-if="moduleEnabled('diagnosis')" class="wb-r5__card wb-r5__card--diag">
             <div class="wb-r5__card-header">
               <Tooltip
                 title="最新诊断结论与负向指标：诊断时间窗内 KPI 均值+算子特征，统一 0~100 口径，条越长越差"
@@ -2810,5 +2950,67 @@ const stageLabelMap: Record<string, string> = {
   justify-content: center;
   font-size: 11px;
   color: hsl(var(--foreground) / 40%);
+}
+
+/* ===== P2 IA优化：适用性横幅（L2 amber / L0L1 slate） ===== */
+.wb-fitness-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border: 1px solid;
+}
+.wb-fitness-banner__left {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.wb-fitness-banner__icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  display: inline-block;
+}
+.wb-fitness-banner__body {
+  min-width: 0;
+  flex: 1;
+}
+.wb-fitness-banner__title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.wb-fitness-banner__subtitle {
+  font-size: 11px;
+  margin-top: 2px;
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+/* L2 琥珀警告横幅 */
+.wb-fitness-banner--l2 {
+  background: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-amber-500) 40%, transparent);
+  color: var(--color-amber-800);
+}
+.wb-fitness-banner--l2 .wb-fitness-banner__icon {
+  color: var(--color-amber-600);
+}
+
+/* L0/L1 中性灰（不红不警告） */
+.wb-fitness-banner--l0l1 {
+  background: color-mix(in srgb, var(--color-slate-500) 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-slate-500) 30%, transparent);
+  color: var(--color-slate-700);
+}
+.wb-fitness-banner--l0l1 .wb-fitness-banner__icon {
+  color: var(--color-slate-500);
 }
 </style>

@@ -30,6 +30,7 @@ import {
   Card,
   Empty,
   Input,
+  message,
   Spin,
   Table,
   Tag,
@@ -40,7 +41,11 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
 import { getHandlingItemsApi } from '#/api/handling';
-import { getLoopDetailApi, getLoopListApi } from '#/api/loop';
+import {
+  getLoopDetailApi,
+  getLoopListApi,
+  getLoopMonitorListApi,
+} from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
@@ -60,6 +65,69 @@ import {
 } from './constants';
 
 defineOptions({ name: 'TuningWorkbench' });
+/** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
+const TUNING_ENTRY_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const tuningTagToCn = (t: string) => TUNING_ENTRY_TAG_CN[t] ?? t;
+const tuningTagsToText = (tags: string[]) => tags.map((t) => tuningTagToCn(t)).join('、');
+
+/** P2 IA优化：总览表格「调参优化」入口按钮点击处理
+ *  —— 先查 fitness，L0/L1 阻止并弹 error；L2 弹 warning Toast；L3+/未评定 正常进整定。
+ */
+async function handleGoTuning(record: OverviewRow) {
+  const loopId = record.loopId;
+  const tagName = record.tagName || loopId;
+  let level: null | string;
+  let tags: string[];
+  try {
+    const res = await getLoopMonitorListApi({ loopId, page: 1, pageSize: 1 });
+    const item = res.items?.[0];
+    level = (item?.fitnessLevel as null | string) ?? null;
+    tags = Array.isArray(item?.fitnessTags) ? (item.fitnessTags as string[]) : [];
+  } catch {
+    level = null;
+    tags = [];
+  }
+  if (level === 'L0' || level === 'L1') {
+    const reason = tags.length > 0 ? tuningTagsToText(tags) : '适用性不足';
+    message.error({
+      content: `回路「${tagName}」适用性不足（${level}），不建议做整定：${reason}。先消除异常来源后再操作。`,
+      duration: 6,
+    });
+    return;
+  }
+  // Toast 提示（G3 要求）
+  if (level === 'L2') {
+    const reason = tags.length > 0 ? tuningTagsToText(tags) : '控制条件异常';
+    message.warning({
+      content: `【调参优化】L2 条件异常：${reason}。当前控制状态可能影响整定结论，建议先修正再做整定。`,
+      duration: 5,
+    });
+  } else if (level === 'L3' || level === 'L4' || level === 'L5') {
+    message.success(`【调参优化】当前适用性等级 = ${level}，可正常整定。`);
+  } else {
+    message.info(`【调参优化】尚未评定适用性等级。`);
+  }
+  ctx.selectLoop(loopId);
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -696,14 +764,19 @@ onBeforeUnmount(() => {
                 </span>
               </template>
               <template v-else-if="column.key === 'action'">
-                <Button
-                  type="link"
-                  size="small"
-                  class="p-0"
-                  @click.stop="ctx.selectLoop(record.loopId)"
+                <Tooltip
+                  title="进入整定流程前会校验适用性（L0/L1 阻止，L2 提示）"
+                  placement="top"
                 >
-                  去整定
-                </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    class="p-0"
+                    @click.stop="handleGoTuning(record as OverviewRow)"
+                  >
+                    调参优化
+                  </Button>
+                </Tooltip>
               </template>
             </template>
           </Table>

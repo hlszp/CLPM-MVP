@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BizError
+from app.core.modules import is_module_enabled
 from app.core.redis import redis_client
 from app.models.audit import SysAuditLog
 from app.models.engine import EngineRule
@@ -389,6 +390,45 @@ async def get_board(
         "message": (f"存在 {inconclusive_count} 个不确定结果" if inconclusive_count > 0 else None),
     }
 
+    # P2 IA优化：L0~L4 适用性分布（从窗口内每回路最新快照 fitness_level 汇总）
+    fitness_distribution: dict[str, int] = {
+        "L0": 0,
+        "L1": 0,
+        "L2": 0,
+        "L3": 0,
+        "L4": 0,
+    }
+    try:
+        from app.models.metric import KpiSnapshotHourly as _KpiHourly
+
+        subq_latest = (
+            select(_KpiHourly.loop_id, _KpiHourly.fitness_level)
+            .distinct(_KpiHourly.loop_id)
+            .order_by(_KpiHourly.loop_id, _KpiHourly.ts_start.desc())
+        )
+        if plant_node_id:
+            from app.services.node_performance import collect_descendant_loop_ids
+
+            scope_ids = await collect_descendant_loop_ids(db, plant_node_id)
+            if scope_ids:
+                subq_latest = subq_latest.where(_KpiHourly.loop_id.in_(scope_ids))
+        subq_latest = subq_latest.where(
+            _KpiHourly.ts_start >= start,
+            _KpiHourly.ts_start <= now,
+        )
+        subquery = subq_latest.subquery()
+        stmt_lvl = (
+            select(subquery.c.fitness_level, func.count())
+            .select_from(subquery)
+            .group_by(subquery.c.fitness_level)
+        )
+        rows = (await db.execute(stmt_lvl)).all()
+        for lvl, cnt in rows:
+            if lvl in fitness_distribution:
+                fitness_distribution[lvl] = int(cnt or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_board fitness 分布计算失败，已忽略: %s", exc)
+
     data = {
         "filterScope": {
             "plantNodeId": plant_node_id,
@@ -399,6 +439,7 @@ async def get_board(
         "kpiSummary": kpi_summary,
         "steadyRateTrend": steady_trend,
         "partialWarning": partial_warning,
+        "fitnessDistribution": fitness_distribution,
     }
 
     # 写入缓存
@@ -729,9 +770,10 @@ async def get_ranking(
     # 查询预诊断（从 action_tracker 取最新开放态诊断标签）
     # D1/D2 整改：仅取 PENDING/IN_PROGRESS 的 tracker，避免已闭环的历史记录
     # 干扰预诊断展示；同一回路可能有多个标签的 tracker，取最新一条
+    # 模块热插拔：诊断模块禁用时跳过 tracker 查询
     diagnosis_map: dict[str, str] = {}
     action_status_map: dict[str, str] = {}
-    if loop_ids:
+    if loop_ids and is_module_enabled("diagnosis"):
         t_result = await db.execute(
             select(ActionTracker)
             .where(ActionTracker.loop_id.in_(loop_ids))
@@ -774,6 +816,18 @@ async def get_ranking(
                 "algorithmVersion": ALGORITHM_VERSION,
                 "preDiagnosis": diagnosis_map.get(loop_id),
                 "actionStatus": action_status_map.get(loop_id, "PENDING"),
+                "includeInEvaluation": (loop.include_in_evaluation if loop is not None else None),
+                "validRate": _to_float(snap.valid_rate),
+                "samplingFreq": snap.sampling_freq,
+                "qualityPolicy": snap.quality_policy,
+                "confidenceLevel": snap.confidence_level,
+                # P2 IA优化：适用性评估字段（从快照直接取）
+                "fitnessLevel": snap.fitness_level,
+                "fitnessTags": (
+                    list(snap.fitness_tags)
+                    if isinstance(snap.fitness_tags, list)
+                    else (None if snap.fitness_tags is None else list(snap.fitness_tags))
+                ),
             }
         )
 
@@ -1452,7 +1506,10 @@ async def _aggregate_bad_actor_distribution(
     # 查询 action_tracker 中开放态诊断标签
     # D1 整改：补 created_at DESC 排序，确保同一回路多条记录时取到最新一条
     # （与 L717 回路排行榜预诊断标签查询口径一致）
+    # 模块热插拔：诊断模块禁用时跳过 tracker 查询，返回空分布
     unique_loop_ids = list(set(loop_ids))
+    if not is_module_enabled("diagnosis"):
+        return []
     t_result = await db.execute(
         select(ActionTracker)
         .where(ActionTracker.loop_id.in_(unique_loop_ids))

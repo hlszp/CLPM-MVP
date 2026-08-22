@@ -17,8 +17,14 @@ interface Props {
   title?: string;
   /** 描述文字 */
   description?: string;
-  /** 预设场景：tracker(无异常) / data(无数据) / loop(无回路) / task(无任务) / custom */
-  scene?: 'custom' | 'data' | 'loop' | 'task' | 'tracker';
+  /** 预设场景：tracker(无异常) / data(无数据) / loop(无回路) / task(无任务) / module-disabled(模块未启用) / custom */
+  scene?:
+    | 'custom'
+    | 'data'
+    | 'loop'
+    | 'module-disabled'
+    | 'task'
+    | 'tracker';
   /** 操作按钮 */
   actions?: EmptyAction[];
   /** 图标大小 */
@@ -33,7 +39,13 @@ const props = withDefaults(defineProps<Props>(), {
   iconSize: 48,
 });
 
-type SceneKey = 'custom' | 'data' | 'loop' | 'task' | 'tracker';
+type SceneKey =
+  | 'custom'
+  | 'data'
+  | 'loop'
+  | 'module-disabled'
+  | 'task'
+  | 'tracker';
 
 interface SceneConfig {
   title: string;
@@ -46,6 +58,11 @@ const presetScenes: Record<SceneKey, SceneConfig> = {
     title: '暂无待处理异常',
     description: '当前回路运行状态良好，未检测到需要跟踪处理的诊断异常',
     icon: 'lucide:check-circle-2',
+  },
+  'module-disabled': {
+    title: '模块未启用',
+    description: '该功能所属模块尚未启用，请联系管理员在「系统-模块管理」中启用',
+    icon: 'lucide:lock',
   },
   data: {
     title: '暂无数据',
@@ -71,7 +88,14 @@ const presetScenes: Record<SceneKey, SceneConfig> = {
 
 const sceneConfig = computed<SceneConfig>(() => {
   const key = (
-    ['tracker', 'data', 'loop', 'task', 'custom'] as SceneKey[]
+    [
+      'tracker',
+      'data',
+      'loop',
+      'module-disabled',
+      'task',
+      'custom',
+    ] as SceneKey[]
   ).includes(props.scene as SceneKey)
     ? (props.scene as SceneKey)
     : 'custom';

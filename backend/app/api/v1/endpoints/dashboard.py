@@ -1379,10 +1379,43 @@ async def get_system_overview_endpoint(
         "pendingTrackerCount": tracker_count,
     }
 
+    # P2 IA优化：L0~L4 适用性分布
+    fitness_distribution: dict[str, int] = {
+        "L0": 0,
+        "L1": 0,
+        "L2": 0,
+        "L3": 0,
+        "L4": 0,
+    }
+    if loop_ids:
+        try:
+            subq_latest = (
+                select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.fitness_level)
+                .distinct(KpiSnapshotHourly.loop_id)
+                .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+            ).where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+            )
+            subquery = subq_latest.subquery()
+            stmt = (
+                select(subquery.c.fitness_level, func.count())
+                .select_from(subquery)
+                .group_by(subquery.c.fitness_level)
+            )
+            rows = (await db.execute(stmt)).all()
+            for lvl, cnt in rows:
+                if lvl in fitness_distribution:
+                    fitness_distribution[lvl] = int(cnt or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("system-overview fitness 分布计算失败，已忽略: %s", exc)
+
     return success(
         data={
             "summary": summary,
             "scoreDistribution": score_distribution,
+            "fitnessDistribution": fitness_distribution,
             "attentionSummary": attention_summary,
             "autoRate": auto_rate,
             "diagnosisDistribution": diagnosis_distribution,

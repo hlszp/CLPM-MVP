@@ -26,7 +26,7 @@ import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { RangePicker, Spin } from 'ant-design-vue';
+import { RangePicker, Spin, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 import utcPlugin from 'dayjs/plugin/utc';
 
@@ -44,7 +44,7 @@ import {
   getRankingApi,
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { ClpmBulletChart } from '#/components/clpm';
+import { ClpmBulletChart, ClpmFitnessBadge } from '#/components/clpm';
 
 // dayjs utc 插件：自定义时间窗 → UTC naive ISO（后端统一 UTC 存储口径）
 dayjs.extend(utcPlugin);
@@ -639,10 +639,14 @@ const modeRows = computed(() => {
 const pieSegments = computed(() => {
   const d = gradeDist.value;
   if (!d || !d.total) return [];
-  const defs: {
-    key: Exclude<keyof GradeDistributionResult, 'total'>;
-    label: string;
-  }[] = [
+  type GradeKey =
+    | 'EXCELLENT'
+    | 'FAIR'
+    | 'GOOD'
+    | 'INCONCLUSIVE'
+    | 'POOR'
+    | 'WARNING';
+  const defs: { key: GradeKey; label: string }[] = [
     { key: 'EXCELLENT', label: '优秀' },
     { key: 'GOOD', label: '良好' },
     { key: 'FAIR', label: '合格' },
@@ -653,7 +657,7 @@ const pieSegments = computed(() => {
   const segs: { color: string; count: number; label: string; pct: number }[] =
     [];
   for (const def of defs) {
-    const count = d[def.key] ?? 0;
+    const count: number = d[def.key] ?? 0;
     if (count <= 0) continue;
     const color =
       def.key === 'INCONCLUSIVE'
@@ -664,7 +668,7 @@ const pieSegments = computed(() => {
       label: def.label,
       color,
       count,
-      pct: (count / d.total) * 100,
+      pct: (count / (d.total || 1)) * 100,
     });
   }
   return segs;
@@ -699,6 +703,48 @@ const pieSvg = computed(() => {
     angle = next;
   }
   return `<svg width="48" height="48" viewBox="0 0 48 48">${paths}</svg>`;
+});
+
+// ================ §1.5 适用性分布（5 段堆叠横条，P2 IA优化） ================
+const FITNESS_ORDER = ['L0', 'L1', 'L2', 'L3', 'L4'] as const;
+const FITNESS_COLOR: Record<string, string> = {
+  L0: 'var(--color-slate-500)',
+  L1: 'var(--color-slate-400)',
+  L2: 'var(--color-amber-500)',
+  L3: 'var(--color-blue-500)',
+  L4: 'var(--color-emerald-500)',
+};
+const FITNESS_LABEL: Record<string, string> = {
+  L0: '不可评估（L0）',
+  L1: '仅可监视（L1）',
+  L2: '条件异常（L2）',
+  L3: '待激励（L3）',
+  L4: '可优化（L4）',
+};
+const FITNESS_EXTRA_TIP: Record<string, string> = {
+  L0: ' — 不适用，不计入差回路',
+  L1: ' — 不适用，不计入差回路',
+  L2: '',
+  L3: '',
+  L4: '',
+};
+
+const fitnessSegments = computed(() => {
+  const raw = gradeDist.value?.fitnessDistribution;
+  const dist: Record<string, number> = raw && typeof raw === 'object' ? raw : {};
+  const total = FITNESS_ORDER.reduce((s, lv) => s + (Number(dist[lv]) || 0), 0);
+  const segs = FITNESS_ORDER.map((lv) => {
+    const count = Number(dist[lv]) || 0;
+    return {
+      level: lv,
+      count,
+      pct: total > 0 ? (count / total) * 100 : 0,
+      color: FITNESS_COLOR[lv],
+      label: FITNESS_LABEL[lv],
+      extraTip: FITNESS_EXTRA_TIP[lv],
+    };
+  });
+  return { segs, total };
 });
 
 // ================ §3 单元排名多维表格（表头可按维度重排） ================
@@ -1438,11 +1484,67 @@ const radarSvg = computed(() => {
           </div>
         </div>
 
+        <!-- ══════ 行2.5 适用性分布（5 段堆叠横条，P2 IA优化） ══════ -->
+        <div
+          class="flex flex-none flex-col rounded border border-gray-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
+          style="height: 70px"
+        >
+          <div class="flex items-center text-[11px]">
+            <span class="font-bold text-gray-700 dark:text-slate-100">
+              适用性分层（L0~L4）
+            </span>
+            <span class="ml-auto text-gray-500 dark:text-slate-400">
+              共 {{ fitnessSegments.total }} 条回路
+            </span>
+          </div>
+          <!-- 5 段堆叠横条 -->
+          <div class="mt-1 flex h-3 w-full overflow-hidden rounded-sm">
+            <template v-for="seg in fitnessSegments.segs" :key="seg.level">
+              <Tooltip
+                v-if="seg.count > 0 || fitnessSegments.total === 0"
+                :title="`${seg.label}：${seg.count} 条（${seg.pct.toFixed(0)}%）${seg.extraTip}`"
+                placement="top"
+              >
+                <div
+                  class="h-full border-r border-white first:rounded-l-sm last:rounded-r-sm last:border-r-0 dark:border-slate-800"
+                  :style="{
+                    width: `${fitnessSegments.total > 0 ? Math.max(seg.pct, seg.count > 0 ? 1 : 0) : 20}%`,
+                    background: seg.color,
+                    minWidth:
+                      seg.count > 0 && fitnessSegments.total > 0 ? '1px' : '0',
+                  }"
+                ></div>
+              </Tooltip>
+            </template>
+          </div>
+          <!-- 下方 5 个徽章 + 计数 -->
+          <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+            <template v-for="seg in fitnessSegments.segs" :key="seg.level">
+              <span class="flex items-center gap-1">
+                <ClpmFitnessBadge
+                  :level="seg.level"
+                  size="sm"
+                  :show-label="true"
+                />
+                <span class="font-mono font-bold text-gray-700 dark:text-slate-200">
+                  {{ seg.count }}
+                </span>
+              </span>
+            </template>
+            <span
+              v-if="fitnessSegments.total === 0"
+              class="ml-auto text-gray-400 dark:text-slate-500"
+            >
+              暂无分层数据（后端 fitnessDistribution 未就绪）
+            </span>
+          </div>
+        </div>
+
         <!-- ══════ 中排四列：全厂雷达 / 装置-单元树形排名 / 重点回路 / 运行状态 ══════ -->
         <div class="flex h-[398px] flex-none gap-1">
           <!-- §2 全厂雷达（六维平均，自行2右端迁入中排左侧，替代原装置排名区） -->
           <div
-            class="flex w-[calc(20%_-_3px)] min-w-0 flex-col rounded border border-gray-200 bg-white"
+            class="flex min-w-0 flex-[1] flex-col rounded border border-gray-200 bg-white"
           >
             <div
               class="flex h-8 flex-none items-center border-b border-gray-100 px-2.5 text-[11px] font-bold text-gray-700"
@@ -1474,7 +1576,7 @@ const radarSvg = computed(() => {
 
           <!-- §3 装置-单元树形排名（合并原装置/单元排名：装置行折叠/展开单元行，表头点击切换排序维度） -->
           <div
-            class="flex w-[calc(40%_-_3px)] min-w-0 flex-col rounded border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800"
+            class="flex min-w-0 flex-[2] flex-col rounded border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800"
           >
             <div
               class="flex h-8 flex-none items-center border-b border-gray-100 px-2.5 text-[11px] font-bold text-gray-700 dark:border-slate-700 dark:text-slate-100"
@@ -1699,7 +1801,7 @@ const radarSvg = computed(() => {
 
           <!-- §4 重点回路 -->
           <div
-            class="flex w-[calc(20%_-_3px)] min-w-0 flex-col rounded border border-gray-200 bg-white"
+            class="flex min-w-0 flex-[1] flex-col rounded border border-gray-200 bg-white"
           >
             <div
               class="flex h-8 flex-none items-center gap-2 border-b border-gray-100 px-2.5 text-[11px] font-bold text-gray-700"
@@ -1812,7 +1914,7 @@ const radarSvg = computed(() => {
 
           <!-- §6 运行状态（实时口径：MODE 分布 + 阀门 OP 行程越限，不随时间窗变化） -->
           <div
-            class="flex w-[calc(20%_-_3px)] min-w-0 flex-col rounded border border-gray-200 bg-white"
+            class="flex min-w-0 flex-[1] flex-col rounded border border-gray-200 bg-white"
           >
             <div
               class="flex h-8 flex-none items-center border-b border-gray-100 px-2.5 text-[11px] font-bold text-gray-700"

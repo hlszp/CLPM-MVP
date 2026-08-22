@@ -15,7 +15,7 @@ import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Drawer, Select, Table, Tooltip } from 'ant-design-vue';
+import { Button, Drawer, Select, Table, Tag, Tooltip } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -44,6 +44,41 @@ const timeWindowOptions = [
   { label: '168小时', value: 'last_7_days' },
   { label: '近1月', value: 'last_30_days' },
 ];
+
+/** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
+const PID_NA_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const pidNATagToCn = (t: string) => PID_NA_TAG_CN[t] ?? t;
+/** 不适用（L0/L1）时的 Tooltip */
+function fitnessNATip(
+  level: null | string | undefined,
+  tags: null | string[] | undefined,
+): string {
+  const lv = level ?? '';
+  const tagText =
+    tags && tags.length > 0 ? tags.map((t) => pidNATagToCn(t)).join('、') : '适用性不足';
+  return `不适用（${lv || 'NA'}）：${tagText}`;
+}
+/** 不适用时统一中性灰 slate（与其他模块一致，不红不警告） */
+const FITNESS_NA_COLOR = 'var(--color-slate-500)';
 
 const timeWindow = ref<TimeWindow>('today');
 
@@ -362,6 +397,13 @@ const top5Columns = [
   },
   { title: '名称', dataIndex: 'loopName', key: 'loopName', ellipsis: true },
   {
+    title: '性能评级',
+    dataIndex: 'rating',
+    key: 'rating',
+    width: 80,
+    align: 'center' as const,
+  },
+  {
     title: '性能评分',
     dataIndex: 'score',
     key: 'score',
@@ -379,14 +421,30 @@ const top5Columns = [
 
 const top5TableData = computed(() => {
   return top5List.value.map((item, index) => {
+    const fitnessLevel = item.fitnessLevel ?? null;
+    const fitnessTags = Array.isArray(item.fitnessTags) ? item.fitnessTags : null;
+    const isFitnessNA = fitnessLevel === 'L0' || fitnessLevel === 'L1';
+    const ratingLevel = getRatingLevel(item.score);
+    const ratingLabel = ratingLevel
+      ? ratingLabels.value[ratingLevel] ?? `L${ratingLevel}`
+      : '—';
     return {
       key: item.loopId,
       index: index + 1,
       loopId: item.loopId,
       tagName: item.tagName,
       loopName: item.loopName || item.tagName || '—',
-      score: formatNumber(item.score),
-      scoreColor: scoreColor(item.score),
+      // P2 IA优化：L0/L1 显示"不适用"中性灰
+      ratingText: isFitnessNA ? '不适用' : ratingLabel,
+      ratingColor: isFitnessNA
+        ? FITNESS_NA_COLOR
+        : (ratingLevel
+          ? gradeColor(Number(ratingLevel))
+          : ''),
+      isFitnessNA,
+      fitnessNATipText: isFitnessNA ? fitnessNATip(fitnessLevel, fitnessTags) : '',
+      score: isFitnessNA ? '—' : formatNumber(item.score),
+      scoreColor: isFitnessNA ? FITNESS_NA_COLOR : scoreColor(item.score),
       steadyRate: `${formatNumber(item.steadyRate)}%`,
     };
   });
@@ -996,8 +1054,36 @@ onMounted(() => {
                 :scroll="{ y: 200 }"
               >
                 <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'score'">
-                    <span :style="{ color: record.scoreColor }">{{
+                  <template v-if="column.key === 'rating'">
+                    <Tooltip
+                      v-if="record.isFitnessNA"
+                      :title="record.fitnessNATipText"
+                      placement="top"
+                    >
+                      <Tag :color="record.ratingColor || 'default'" class="mr-0">
+                        {{ record.ratingText }}
+                      </Tag>
+                    </Tooltip>
+                    <Tag
+                      v-else-if="record.ratingColor"
+                      :color="record.ratingColor"
+                      class="mr-0"
+                    >
+                      {{ record.ratingText }}
+                    </Tag>
+                    <span v-else class="text-neutral-400">—</span>
+                  </template>
+                  <template v-else-if="column.key === 'score'">
+                    <Tooltip
+                      v-if="record.isFitnessNA"
+                      :title="record.fitnessNATipText"
+                      placement="top"
+                    >
+                      <span :style="{ color: record.scoreColor }">{{
+                        record.score
+                      }}</span>
+                    </Tooltip>
+                    <span v-else :style="{ color: record.scoreColor }">{{
                       record.score
                     }}</span>
                   </template>

@@ -33,6 +33,7 @@ function makeCtx(overrides: Partial<MonitorContext> = {}): MonitorContext {
     eventId: null,
     section: null,
     from: null,
+    fitnessLevels: [],
     ...overrides,
   };
 }

@@ -65,6 +65,7 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -214,7 +215,50 @@ interface LoopPerformanceRow extends KpiSnapshotItem {
   controlType?: string;
   /** 控制方式（来自 loopMeta.controlMode） */
   controlMode?: string;
+  /** P2 IA优化：适用性等级（L0/L1/L2/L3 等），L0/L1=不适用，走中性灰 */
+  fitnessLevel?: null | string;
+  /** P2 IA优化：适用性原因标签，不适用时 Tooltip 用 */
+  fitnessTags?: null | string[];
 }
+
+/** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
+const LP_NA_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const lpNATagToCn = (t: string) => LP_NA_TAG_CN[t] ?? t;
+/** 是否 fitness 不适用（L0/L1） */
+function isFitnessNA(row: Pick<LoopPerformanceRow, 'fitnessLevel'>) {
+  const lv = row?.fitnessLevel;
+  return lv === 'L0' || lv === 'L1';
+}
+/** 不适用 Tooltip 文案 */
+function lpFitnessNATip(
+  level: null | string | undefined,
+  tags: null | string[] | undefined,
+): string {
+  const lv = level ?? '';
+  const tagText =
+    tags && tags.length > 0 ? tags.map((t) => lpNATagToCn(t)).join('、') : '适用性不足';
+  return `不适用（${lv || 'NA'}）：${tagText}`;
+}
+const LP_NA_COLOR = 'var(--color-slate-500)';
 
 // ===== 列表状态 =====
 
@@ -1400,8 +1444,19 @@ onMounted(async () => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'grade'">
+            <template v-if="isFitnessNA(record as LoopPerformanceRow)">
+              <Tooltip
+                :title="lpFitnessNATip(
+                  (record as LoopPerformanceRow).fitnessLevel,
+                  (record as LoopPerformanceRow).fitnessTags,
+                )"
+                placement="top"
+              >
+                <Tag :color="LP_NA_COLOR" class="m-0">不适用</Tag>
+              </Tooltip>
+            </template>
             <Tag
-              v-if="getGrade((record as LoopPerformanceRow).score)"
+              v-else-if="getGrade((record as LoopPerformanceRow).score)"
               :color="
                 GRADE_COLOR_MAP[getGrade((record as LoopPerformanceRow).score)!]
               "
@@ -1414,7 +1469,24 @@ onMounted(async () => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'score'">
+            <template v-if="isFitnessNA(record as LoopPerformanceRow)">
+              <Tooltip
+                :title="lpFitnessNATip(
+                  (record as LoopPerformanceRow).fitnessLevel,
+                  (record as LoopPerformanceRow).fitnessTags,
+                )"
+                placement="top"
+              >
+                <span
+                  class="font-semibold"
+                  :style="{ color: LP_NA_COLOR }"
+                >
+                  —
+                </span>
+              </Tooltip>
+            </template>
             <span
+              v-else
               class="font-semibold"
               :style="{
                 color: scoreColor((record as LoopPerformanceRow).score),

@@ -48,6 +48,8 @@ from app.models.metric import (
 )
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.diagnosis_operators.gate import evaluate_gate
+from app.services.loop_fitness import compute_fitness
 from app.services.metric_calculator import get_calculator
 from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.tasks.celery_app import AsyncTask, celery_app
@@ -743,6 +745,7 @@ async def _run_batch_loop_calculations(
                         data_planner=data_planner,
                         type_weights=type_weights,
                         custom_task_id=custom_task_id,
+                        loop_cfg=loop_configs.get(str(loop.id)),
                     )
                     await worker_db.commit()
                     return result
@@ -1083,6 +1086,162 @@ async def _do_calculate_custom_batch(
         }
 
 
+def _extract_base_series(
+    bundles: list[MetricDataBundle],
+) -> tuple[list[float] | None, list[float] | None, list[float] | None, list[int] | None, int]:
+    """从 MetricDataBundle 列表中提取 BASE 块的 PV/SP/OP/MODE 时序.
+
+    Returns:
+        (op_series, sp_series, pv_series, mode_series, base_point_count)
+    """
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group != TagGroup.BASE.value:
+            continue
+        sigs = block.signals
+        op_raw = sigs.get("op") if isinstance(sigs, dict) else None
+        sp_raw = sigs.get("sp") if isinstance(sigs, dict) else None
+        pv_raw = sigs.get("pv") if isinstance(sigs, dict) else None
+        mode_raw = sigs.get("mode") if isinstance(sigs, dict) else None
+
+        def _clean_floats(raw: Any) -> list[float] | None:
+            if not raw:
+                return None
+            out: list[float] = []
+            for v in raw:
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    continue
+                out.append(f)
+            return out or None
+
+        def _clean_ints(raw: Any) -> list[int] | None:
+            if not raw:
+                return None
+            out: list[int] = []
+            for v in raw:
+                try:
+                    out.append(int(v))
+                except (TypeError, ValueError):
+                    continue
+            return out or None
+
+        return (
+            _clean_floats(op_raw),
+            _clean_floats(sp_raw),
+            _clean_floats(pv_raw),
+            _clean_ints(mode_raw),
+            block.point_count,
+        )
+    return None, None, None, None, 0
+
+
+def _resolve_op_pv_ranges(
+    loop: LoopLedger,
+    loop_cfg: dict | None,
+    pv_series: list[float] | None,
+    sp_series: list[float] | None,
+) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    """解析 OP 输出限位和 PV 量程 (P2 fitness 用).
+
+    OP 优先级：loop_cfg.op_lower/op_upper（_batch_load_loop_configs 结果，
+    已综合 LoopLedger.op_output_*_limit 与 OP Tag range_min/max 和兜底 0/100）
+    → 兜底 0.0~100.0。
+    PV 优先级：loop_cfg.range_min/range_max → PV/SP 实际数据范围兜底。
+    """
+    op_range: tuple[float, float] | None = None
+    pv_range: tuple[float, float] | None = None
+    if loop_cfg:
+        op_lower = loop_cfg.get("op_lower")
+        op_upper = loop_cfg.get("op_upper")
+        if isinstance(op_lower, (int, float)) and isinstance(op_upper, (int, float)):
+            op_range = (float(op_lower), float(op_upper))
+        pv_min = loop_cfg.get("range_min")
+        pv_max = loop_cfg.get("range_max")
+        if isinstance(pv_min, (int, float)) and isinstance(pv_max, (int, float)):
+            pv_range = (float(pv_min), float(pv_max))
+    # OP 兜底 0~100
+    if op_range is None:
+        if isinstance(loop.op_output_lower_limit, (int, float)) and isinstance(
+            loop.op_output_upper_limit, (int, float)
+        ):
+            op_range = (float(loop.op_output_lower_limit), float(loop.op_output_upper_limit))
+        else:
+            op_range = (0.0, 100.0)
+    # PV 兜底：从实际值范围推导
+    if pv_range is None:
+        values: list[float] = []
+        if pv_series:
+            values.extend(pv_series)
+        if sp_series:
+            values.extend(sp_series)
+        if values:
+            pv_range = (min(values), max(values))
+    return op_range, pv_range
+
+
+def _derive_expected_points(
+    bundles: list[MetricDataBundle], ts_start: datetime, ts_end: datetime
+) -> int:
+    """从 BASE 块采样频率 + 时间窗口长度估算 expected_points（门禁 evaluate_gate 用）."""
+    sampling_freq: str | None = None
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group == TagGroup.BASE.value:
+            sampling_freq = block.sampling_freq
+            break
+    if not sampling_freq:
+        # 回退：1 秒一条
+        return max(int((ts_end - ts_start).total_seconds()), 1)
+    try:
+        # sampling_freq 形如 "1s" / "5s" / "1m"
+        unit = sampling_freq[-1]
+        num = int(sampling_freq[:-1])
+        if unit == "s":
+            interval_sec = num
+        elif unit == "m":
+            interval_sec = num * 60
+        elif unit == "h":
+            interval_sec = num * 3600
+        else:
+            interval_sec = 1
+    except (ValueError, IndexError):
+        interval_sec = 1
+    window_sec = max(int((ts_end - ts_start).total_seconds()), 1)
+    return max(window_sec // max(interval_sec, 1), 1)
+
+
+def _build_fitness_kwargs_from_result(
+    result: Any,
+) -> dict[str, Any]:
+    """把 FitnessResult 转换为 _persist_snapshot 所需的 kwargs."""
+    if result is None:
+        return {"fitness_level": None, "fitness_tags": None, "fitness_detail": None}
+    return {
+        "fitness_level": result.level,
+        "fitness_tags": {"tags": result.tags} if isinstance(result.tags, list) else None,
+        "fitness_detail": result.detail if isinstance(result.detail, dict) else None,
+    }
+
+
+async def _load_fitness_sys_configs(db) -> dict[str, str] | None:
+    """一次性读取 sys_config 中 fitness.* 前缀的配置，None 表示全部用默认."""
+    try:
+        from sqlalchemy import select
+
+        from app.models.sys_config import SysConfig
+
+        result = await db.execute(select(SysConfig).where(SysConfig.key.like("fitness.%")))
+        rows = result.scalars().all()
+        if not rows:
+            return None
+        return {row.key: row.value for row in rows if row.value is not None}
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("加载 fitness sys_config 失败（使用默认阈值）: %s", exc)
+        return None
+
+
 async def _calculate_loop_kpi(
     db,
     loop: LoopLedger,
@@ -1092,6 +1251,7 @@ async def _calculate_loop_kpi(
     data_planner,
     type_weights: dict[str, dict] | None = None,
     custom_task_id: str | None = None,
+    loop_cfg: dict | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1099,6 +1259,9 @@ async def _calculate_loop_kpi(
     - 通过 data_planner.request_bundles 获取预处理后的 MetricDataBundle
     - _compute_kpis_three_layer 编排三层计算
     - _persist_snapshot 通过 UPSERT 写入快照（含 7 个数据血缘字段）
+
+    P2 IA优化：KPI 聚合完成后调用 compute_fitness，得到 fitness_level/tags/detail
+    并随快照 UPSERT 写入。fitness 失败不阻断主流程，fitness_level 置 NULL。
 
     Args:
         db: 异步数据库会话
@@ -1109,6 +1272,7 @@ async def _calculate_loop_kpi(
         data_planner: DataPlanner 实例（v4.0 统一取数）
         type_weights: 回路类型权重映射（LoopTypeWeight）
         custom_task_id: 自定义任务 ID（非 None 时写入 kpi_snapshot_custom）
+        loop_cfg: 预加载的回路配置（op_lower/op_upper/range_min/range_max）
 
     Returns:
         快照字典，包含 status 字段
@@ -1117,6 +1281,13 @@ async def _calculate_loop_kpi(
 
     control_type = _loop_type_to_control_type(loop.loop_type)
     time_window = TimeWindow(start=ts_start, end=ts_end)
+
+    # P2: 预加载 fitness 阈值配置（sys_config 中 fitness.* 前缀）
+    fitness_sys_configs: dict[str, str] | None = None
+    try:
+        fitness_sys_configs = await _load_fitness_sys_configs(db)
+    except Exception:  # noqa: BLE001
+        fitness_sys_configs = None  # 使用默认阈值
 
     # 通过 DataPlanner 获取所有指标的 MetricDataBundle
     try:
@@ -1128,6 +1299,7 @@ async def _calculate_loop_kpi(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc)
+        # P2: DataPlanner 失败 → 数据严重不足 → L0
         return await _persist_snapshot(
             db=db,
             loop_id=str(loop.id),
@@ -1135,10 +1307,14 @@ async def _calculate_loop_kpi(
             ts_end=ts_end,
             status="INCONCLUSIVE",
             custom_task_id=custom_task_id,
+            fitness_level="L0",
+            fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
+            fitness_detail={"reason": "DataPlanner取数失败", "error": str(exc)},
         )
 
     if not bundles:
         logger.info("回路 %s 无数据（空 Bundle），返回 INCONCLUSIVE", loop.tag_name)
+        # P2: 空 Bundle → 数据严重不足 → L0
         return await _persist_snapshot(
             db=db,
             loop_id=str(loop.id),
@@ -1146,7 +1322,18 @@ async def _calculate_loop_kpi(
             ts_end=ts_end,
             status="INCONCLUSIVE",
             custom_task_id=custom_task_id,
+            fitness_level="L0",
+            fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
+            fitness_detail={"reason": "空Bundle，无可用数据"},
         )
+
+    # P2: 提取 BASE 时序（fitness 的 OP_SATURATED / SP_PV_DEVIATION 逐点统计用）
+    op_series, sp_series, pv_series, mode_series, base_point_count = _extract_base_series(bundles)
+    op_range, pv_range = _resolve_op_pv_ranges(loop, loop_cfg, pv_series, sp_series)
+
+    # P2: 复用 gate.py 评估门禁 → L0 判定口径与诊断链路完全一致
+    expected_points = _derive_expected_points(bundles, ts_start, ts_end)
+    base_valid_rate = _compute_loop_valid_rate_from_bundles(bundles)
 
     # 构造虚拟 CONFIG bundle（提供 control_type / 手动理想稳态时间信号给计算器）
     config_bundle = _build_config_bundle(str(loop.id), control_type, loop.ideal_settling_time)
@@ -1161,9 +1348,45 @@ async def _calculate_loop_kpi(
     # 12 子指标值+可信度（随 loop_confidence_latest 存储）
     metrics_detail = _extract_metrics_detail(metric_results)
 
+    # P2: 基于门禁（gate.py evaluate_gate）构造 GateResult 供 compute_fitness L0 判定复用
+    conf_level_for_gate = (
+        composite_result.confidence_level if composite_result.confidence_level else "E"
+    )
+    valid_rate_for_gate = base_valid_rate if base_valid_rate is not None else 0.0
+    try:
+        gate_result = evaluate_gate(
+            point_count=base_point_count,
+            expected_points=expected_points,
+            valid_rate=float(valid_rate_for_gate),
+            confidence_level=conf_level_for_gate,
+        )
+    except Exception:  # noqa: BLE001
+        gate_result = None
+
     # 综合评分为 None（R 可信度 E 级）→ INCONCLUSIVE
     if composite_result.value is None:
         logger.info("回路 %s 综合评分为 None（E 级），返回 INCONCLUSIVE", loop.tag_name)
+        # P2: 可信度 E 级 + gate 构建 → compute_fitness 大概率 L0，但允许 L1 兜底
+        fitness_kwargs: dict[str, Any] = {
+            "fitness_level": None,
+            "fitness_tags": None,
+            "fitness_detail": None,
+        }
+        try:
+            fresult = compute_fitness(
+                kpi_values={},
+                gate_result=gate_result,
+                op_series=op_series,
+                sp_series=sp_series,
+                pv_series=pv_series,
+                mode_series=mode_series,
+                op_range=op_range,
+                pv_range=pv_range,
+                sys_configs=fitness_sys_configs,
+            )
+            fitness_kwargs = _build_fitness_kwargs_from_result(fresult)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("回路 %s fitness 计算失败（INCONCLUSIVE分支）: %s", loop.tag_name, exc)
         return await _persist_snapshot(
             db=db,
             loop_id=str(loop.id),
@@ -1173,6 +1396,7 @@ async def _calculate_loop_kpi(
             custom_task_id=custom_task_id,
             confidence_level=composite_result.confidence_level,
             metrics_detail=metrics_detail,
+            **fitness_kwargs,
         )
 
     # 提取 KPI 值（Calculator 代码 → DB 列名）
@@ -1185,10 +1409,42 @@ async def _calculate_loop_kpi(
     # 可信度统一 Phase 1（P1-5）：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
     # 与 confidence_level 同口径，消除 §2.2 字段错配。
     # 优先从 BASE 块（含 pv/sp/mode）计算回路级 valid_rate；缺失时回退到指标级 lineage。
-    loop_valid_rate = _compute_loop_valid_rate_from_bundles(bundles)
+    loop_valid_rate = base_valid_rate
     lineage_info = _extract_lineage_info(
         metric_results, composite_result, loop_valid_rate=loop_valid_rate
     )
+
+    # P2: 核心路径 — KPI 聚合完成后调用 compute_fitness
+    # 规则：fitness 计算失败不得阻断 KPI 主流程，catch 异常后 fitness_level=NULL
+    main_fitness_kwargs: dict[str, Any] = {
+        "fitness_level": None,
+        "fitness_tags": None,
+        "fitness_detail": None,
+    }
+    try:
+        # 把 Decimal KPI 转换为 float 归一化映射给 fitness
+        kpi_for_fitness: dict[str, Any] = {}
+        for k, v in kpi_values.items():
+            if v is None:
+                continue
+            try:
+                kpi_for_fitness[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+        fresult_main = compute_fitness(
+            kpi_values=kpi_for_fitness,
+            gate_result=gate_result,
+            op_series=op_series,
+            sp_series=sp_series,
+            pv_series=pv_series,
+            mode_series=mode_series,
+            op_range=op_range,
+            pv_range=pv_range,
+            sys_configs=fitness_sys_configs,
+        )
+        main_fitness_kwargs = _build_fitness_kwargs_from_result(fresult_main)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("回路 %s fitness 计算失败（主路径，已兜底NULL）: %s", loop.tag_name, exc)
 
     # 判定状态：必需指标缺失 → PARTIAL
     status = "SUCCESS"
@@ -1237,6 +1493,7 @@ async def _calculate_loop_kpi(
         oscillation_amplitude=kpi_values.get("oscillation_amplitude"),
         time_constant=kpi_values.get("time_constant"),
         **lineage_info,
+        **main_fitness_kwargs,
     )
 
 
@@ -2056,6 +2313,10 @@ async def _save_snapshot(
     setpoint_crossing_count: Decimal | None = None,
     oscillation_amplitude: Decimal | None = None,
     time_constant: Decimal | None = None,
+    # P2 IA优化：回路适用性分层（L0~L4）
+    fitness_level: str | None = None,
+    fitness_tags: dict | None = None,
+    fitness_detail: dict | None = None,
 ) -> dict:
     """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
 
@@ -2065,6 +2326,7 @@ async def _save_snapshot(
     quality_policy/valid_rate/confidence_level/data_lineage）随 UPSERT 写入。
     Phase 1 新增 15 个指标列随 UPSERT 写入；F5 起 time_constant 由计算器写入
     （激励不足窗口保持 NULL）。
+    P2 新增 3 个适用性分层字段随 UPSERT 写入。
     实际写入行的 id 通过 ``RETURNING id`` 随 UPSERT 一并取回（新增与
     UPDATE 分支均返回），不再单独 SELECT 回查。
     """
@@ -2112,6 +2374,10 @@ async def _save_snapshot(
         "setpoint_crossing_count": setpoint_crossing_count,
         "oscillation_amplitude": oscillation_amplitude,
         "time_constant": time_constant,
+        # P2 IA优化：回路适用性分层
+        "fitness_level": fitness_level,
+        "fitness_tags": fitness_tags,
+        "fitness_detail": fitness_detail,
     }
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
@@ -2233,11 +2499,16 @@ async def _save_custom_snapshot(
     setpoint_crossing_count: Decimal | None = None,
     oscillation_amplitude: Decimal | None = None,
     time_constant: Decimal | None = None,
+    # P2 IA优化：回路适用性分层（L0~L4）
+    fitness_level: str | None = None,
+    fitness_tags: dict | None = None,
+    fitness_detail: dict | None = None,
 ) -> dict:
     """幂等写入自定义任务快照（select-then-add 模式）.
 
     自定义任务快照使用 ``(task_id, loop_id)`` 作为唯一键，
     通过 select-then-add/update 模式写入（与 hourly 表的 UPSERT 不同）。
+    P2 新增 3 个适用性分层字段随写入。
     """
     existing_result = await db.execute(
         select(KpiSnapshotCustom).where(
@@ -2286,6 +2557,10 @@ async def _save_custom_snapshot(
         existing.setpoint_crossing_count = setpoint_crossing_count
         existing.oscillation_amplitude = oscillation_amplitude
         existing.time_constant = time_constant
+        # P2 IA优化：回路适用性分层
+        existing.fitness_level = fitness_level
+        existing.fitness_tags = fitness_tags
+        existing.fitness_detail = fitness_detail
         snapshot_id = str(existing.id)
     else:
         snapshot_id = str(uuid4())
@@ -2332,6 +2607,10 @@ async def _save_custom_snapshot(
             setpoint_crossing_count=setpoint_crossing_count,
             oscillation_amplitude=oscillation_amplitude,
             time_constant=time_constant,
+            # P2 IA优化：回路适用性分层
+            fitness_level=fitness_level,
+            fitness_tags=fitness_tags,
+            fitness_detail=fitness_detail,
         )
         db.add(snapshot)
 

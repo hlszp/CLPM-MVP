@@ -419,6 +419,10 @@ export namespace LoopApi {
      * 来自最新 KPI 快照 / 每日巡检快照，列表页不实时查 TDengine
      */
     dataHealth?: LoopDataHealth;
+    /** P2 IA优化：适用性等级 L0~L4；null 表示待评估 */
+    fitnessLevel?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null | string;
+    /** P2 IA优化：适用性原因标签枚举（DATA_INSUFFICIENT/OP_SATURATED 等） */
+    fitnessTags?: null | string[];
   }
 
   /** 回路数据健康度（预处理有效率 + 可信度 + 完整度） */

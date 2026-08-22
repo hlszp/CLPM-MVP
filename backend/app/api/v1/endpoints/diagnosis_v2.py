@@ -38,6 +38,7 @@ from app.schemas.task import TaskType
 from app.services.diagnosis_operators import list_operators
 from app.services.diagnosis_operators.classification import get_confidence_definitions
 from app.services.loop_action_templates import STANDARD_ACTION_TEMPLATES
+from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.task_tracker import create_task
 
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
@@ -237,6 +238,42 @@ async def trigger_diagnosis(
             status_code=400,
         )
 
+    # P2 IA优化：诊断发起门禁（fitness L0/L1 直接阻止，L2 允许但提示横幅）
+    fitness_map = await get_latest_fitness_per_loop(db, loop_ids)
+    blocked: list[dict[str, Any]] = []
+    condition_warning: list[dict[str, Any]] = []
+    for lid in loop_ids:
+        fit = fitness_map.get(lid)
+        if fit is None or fit.level is None:
+            continue  # 无 fitness 数据 → 暂放过（兼容首次计算前窗口）
+        if fit.level in ("L0", "L1"):
+            blocked.append(
+                {
+                    "loopId": lid,
+                    "fitnessLevel": fit.level,
+                    "reasons": fit.human_readable_tags or ["适用性不足"],
+                }
+            )
+        elif fit.level == "L2":
+            condition_warning.append(
+                {
+                    "loopId": lid,
+                    "fitnessLevel": fit.level,
+                    "warnings": fit.human_readable_tags or [],
+                }
+            )
+    if blocked:
+        raise BizError(
+            code="ERR_DIAGNOSIS_FITNESS_INSUFFICIENT",
+            message=(
+                f"{len(blocked)} 条回路适用性不足以诊断（L0/L1）："
+                f"原因包含手动主导/自控率极低/数据严重不足，"
+                f"请先处理控制状态后再发起诊断（示例回路 {blocked[0]['loopId']}）"
+            ),
+            status_code=400,
+            data={"blocked": blocked, "conditionWarning": condition_warning},
+        )
+
     task_id = await create_task(
         task_type=TaskType.DIAGNOSIS,
         created_by=user.username,
@@ -269,7 +306,10 @@ async def trigger_diagnosis(
 
     await set_celery_task_ids(task_id, [celery_result.id])
 
-    return success({"taskId": task_id, "accepted": len(loop_ids)})
+    resp: dict[str, Any] = {"taskId": task_id, "accepted": len(loop_ids)}
+    if condition_warning:
+        resp["conditionWarning"] = condition_warning
+    return success(resp)
 
 
 @router.get("/runs", response_model=ApiResponse[dict])

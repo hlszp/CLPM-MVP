@@ -22,6 +22,9 @@ const GradingTab = defineAsyncComponent(
 const ConfidenceTab = defineAsyncComponent(
   () => import('./confidence-threshold.vue'),
 );
+const FitnessTab = defineAsyncComponent(
+  () => import('./fitness-threshold.vue'),
+);
 const OutlierParamsTab = defineAsyncComponent(
   () => import('./outlier-params.vue'),
 );
@@ -38,6 +41,7 @@ const definitionRef = ref<null | TabRef>(null);
 const weightRef = ref<null | TabRef>(null);
 const gradingRef = ref<null | TabRef>(null);
 const confidenceRef = ref<null | TabRef>(null);
+const fitnessRef = ref<null | TabRef>(null);
 const outlierRef = ref<null | TabRef>(null);
 const algorithmRef = ref<null | TabRef>(null);
 
@@ -47,6 +51,7 @@ function getActiveTabRef(): null | TabRef {
     algorithm: algorithmRef,
     confidence: confidenceRef,
     definition: definitionRef,
+    fitness: fitnessRef,
     grading: gradingRef,
     outlier: outlierRef,
     weight: weightRef,
@@ -59,6 +64,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   algorithm: 'KPI 计算用算法参数（采样窗口、滤波系数等）',
   confidence: 'valid_rate 阈值 A/B/C/D/E 等级配置',
   definition: 'KPI 指标元数据、计算公式与单位定义',
+  fitness: '适用性分层阈值（L1/L2/L3 七项），用于 L0~L4 预诊断',
   grading: '性能等级分档阈值（优/良/中/差/劣）',
   outlier: '异常值检测算法参数（Z-Score/IQR/3σ 等）',
   weight: '综合评分各 KPI 指标权重配置',
@@ -85,7 +91,7 @@ function handleHelp() {
   showPageHelp({
     title: '指标配置 帮助',
     content:
-      '指标配置页：指标定义（KPI 指标元数据与公式，支持编辑指标名称/说明）、权重配置（4 种控制类型的指标权重矩阵，版本化管理）、定级阈值（性能等级分档，版本化管理）、数据可信度（valid_rate 阈值 A/B/C/D/E）、异常值检测参数、KPI 算法参数。各类配置保存后自动生成新版本并立即生效，版本查看在各 Tab 内进行。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
+      '指标配置页：指标定义（KPI 指标元数据与公式，支持编辑指标名称/说明）、权重配置（4 种控制类型的指标权重矩阵，版本化管理）、定级阈值（性能等级分档，版本化管理）、数据可信度（valid_rate 阈值 A/B/C/D/E）、适用性阈值（IA 优化 P2：L1/L2/L3 分层阈值，控制 L0~L4 预诊断判定）、异常值检测参数、KPI 算法参数。各类配置保存后自动生成新版本并立即生效，版本查看在各 Tab 内进行。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
   });
 }
 
@@ -100,7 +106,7 @@ const { toolbarItems } = usePageToolbar(() => ({
   <Page>
     <ClpmPageToolbar
       title="指标配置"
-      subtitle="指标定义 / 权重 / 定级阈值 / 可信度 / 异常值 / 算法参数"
+      subtitle="指标定义 / 权重 / 定级阈值 / 可信度 / 适用性阈值 / 异常值 / 算法参数"
       :loading="loading"
     >
       <template #actions>
@@ -141,6 +147,14 @@ const { toolbarItems } = usePageToolbar(() => ({
             </Tooltip>
           </template>
           <ConfidenceTab ref="confidenceRef" />
+        </TabPane>
+        <TabPane key="fitness">
+          <template #tab>
+            <Tooltip :title="TAB_DESCRIPTIONS.fitness" placement="top">
+              <span>适用性阈值</span>
+            </Tooltip>
+          </template>
+          <FitnessTab ref="fitnessRef" />
         </TabPane>
         <TabPane key="outlier">
           <template #tab>

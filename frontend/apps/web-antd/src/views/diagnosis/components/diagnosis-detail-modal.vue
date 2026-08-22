@@ -49,6 +49,7 @@ import {
 import { getLoopListApi } from '#/api/loop';
 import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { useModules } from '#/composables/use-modules';
 // v2.0 处置双实体：建议状态映射改用建议侧常量（原 HANDLING_STATUS_* 为 v1.x 工单旧口径）
 import {
   SUGGESTION_STATUS_COLOR,
@@ -74,6 +75,7 @@ const emit = defineEmits<{ reviewed: [] }>();
 const open = defineModel<boolean>('open', { default: false });
 
 const router = useRouter();
+const { moduleEnabled } = useModules();
 
 /** 「去处置」：携带 actionId 跳处置工作台，自动打开对应详情抽屉（§8.6 联动） */
 function gotoHandling(actionId: string): void {
@@ -780,7 +782,7 @@ watch(open, (v) => {
                       </div>
                       <div class="flex shrink-0 gap-1" @click.stop>
                         <Button
-                          v-if="a.category === 'TUNING'"
+                          v-if="a.category === 'TUNING' && moduleEnabled('tuning')"
                           size="small"
                           type="link"
                           @click="gotoTuning(a.loopId)"
@@ -788,6 +790,7 @@ watch(open, (v) => {
                           去整定
                         </Button>
                         <Button
+                          v-if="moduleEnabled('handling')"
                           size="small"
                           type="link"
                           @click="gotoHandling(a.id)"

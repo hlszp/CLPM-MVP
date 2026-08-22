@@ -169,9 +169,13 @@ async def _do_identify(
     与未携带该参数的旧队列任务行为一致。
 
     V62-P1-013: created_by_id 传入 init_progress 以桥接 TaskTracker。
+
+    P2 IA优化：异步任务开始前追加 fitness 门禁（L3 以下抛出
+    ERR_TUNING_FITNESS_INSUFFICIENT），避免任务跑一半才失败资源浪费。
     """
     from app.core.db import AsyncSessionLocal
     from app.models.tuning import TuningRecord
+    from app.services.loop_fitness import get_latest_fitness_per_loop
     from app.services.tuning import identify_model_from_history
     from app.services.tuning_progress import init_progress, update_progress
 
@@ -186,6 +190,31 @@ async def _do_identify(
     )
 
     async with AsyncSessionLocal() as db:
+        # P2: 异步任务兜底 — fitness L3 以下直接阻断（端点门禁以外的兜底场景）
+        try:
+            fit_map = await get_latest_fitness_per_loop(db, [loop_id])
+            fit = fit_map.get(str(loop_id))
+            if fit is not None and fit.level in {"L0", "L1", "L2"}:
+                reasons = fit.human_readable_tags or ["适用性分层不足"]
+                raise BizError(
+                    code="ERR_TUNING_FITNESS_INSUFFICIENT",
+                    message=(
+                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L3+）。"
+                        f"请先处理控制状态（{'；'.join(reasons)}）。"
+                    ),
+                    status_code=400,
+                    data={
+                        "loopId": str(loop_id),
+                        "fitnessLevel": fit.level,
+                        "reasons": reasons,
+                        "requiredMinimum": "L3",
+                    },
+                )
+        except BizError:
+            raise
+        except Exception:  # noqa: BLE001
+            pass  # 查询异常 → 放行
+
         # 创建占位 TuningRecord（status=RUNNING）
         record = TuningRecord(
             id=str(uuid4()),
@@ -400,9 +429,12 @@ async def _do_tune_and_simulate(
     """执行整定 + 仿真的 async 逻辑.
 
     V62-P1-013: created_by_id 传入 init_progress 以桥接 TaskTracker。
+
+    P2 IA优化：任务内异步兜底 fitness L3 以下阻断。
     """
     from app.core.db import AsyncSessionLocal
     from app.models.tuning import TuningRecord
+    from app.services.loop_fitness import get_latest_fitness_per_loop
     from app.services.tuning import (
         _simulate_multi_pid,
         authorize_tuning_model,
@@ -419,6 +451,31 @@ async def _do_tune_and_simulate(
     )
 
     async with AsyncSessionLocal() as db:
+        # P2: 异步任务兜底 — fitness L3 以下阻断
+        try:
+            fit_map = await get_latest_fitness_per_loop(db, [loop_id])
+            fit = fit_map.get(str(loop_id))
+            if fit is not None and fit.level in {"L0", "L1", "L2"}:
+                reasons = fit.human_readable_tags or ["适用性分层不足"]
+                raise BizError(
+                    code="ERR_TUNING_FITNESS_INSUFFICIENT",
+                    message=(
+                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L3+）。"
+                        f"请先处理控制状态（{'；'.join(reasons)}）。"
+                    ),
+                    status_code=400,
+                    data={
+                        "loopId": str(loop_id),
+                        "fitnessLevel": fit.level,
+                        "reasons": reasons,
+                        "requiredMinimum": "L3",
+                    },
+                )
+        except BizError:
+            raise
+        except Exception:  # noqa: BLE001
+            pass  # 查询异常 → 放行
+
         source_context = await authorize_tuning_model(
             db=db,
             requested_model_type=model_type,

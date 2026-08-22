@@ -7,7 +7,7 @@ import type { RouteRecordRaw } from 'vue-router';
  * 三页式：
  * - 处置工作台 /handling/workbench   执行闭环：统计卡 + 清单 + 流转抽屉
  * - 处置档案   /handling/archive     回路维度聚合 + 跨 run 处置全史
- * - 处置统计   /handling/statistics  管理报表：月度趋势 / 分布 / Top 回路
+ * - 处置统计已迁入「统计报告-处置报告」（/reports/handling），旧路径保留 redirect
  *
  * 旧路由兼容：/handling → /handling/workbench（透传 query，保护
  * 诊断侧「去处置」focus 深链接与既有书签，§8.1）。
@@ -26,6 +26,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:clipboard-check',
       order: 5,
       title: '处置',
+      module: 'handling',
     },
     children: [
       {
@@ -49,13 +50,14 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        // 处置统计已迁入统计报告-处置报告（IA 优化 P0，2026-08-22）
         name: 'HandlingStatistics',
         path: '/handling/statistics',
-        component: () => import('#/views/handling/statistics.vue'),
+        redirect: '/reports/handling',
         meta: {
           authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
-          icon: 'lucide:chart-column',
-          title: '处置统计',
+          hideInMenu: true,
+          title: '处置报告',
         },
       },
     ],

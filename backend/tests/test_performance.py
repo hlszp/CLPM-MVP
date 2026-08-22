@@ -99,6 +99,16 @@ def _make_snapshot(
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
     s.status = status
+    # P2 新增字段：显式 None，避免 MagicMock 透传到 Pydantic 字符串字段
+    s.effective_auto_rate = None
+    s.fast_rate = None
+    s.instrument_fault_rate = None
+    s.valid_rate = None
+    s.sampling_freq = None
+    s.quality_policy = None
+    s.confidence_level = None
+    s.fitness_level = None
+    s.fitness_tags = None
     return s
 
 

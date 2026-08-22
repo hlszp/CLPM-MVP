@@ -89,10 +89,148 @@ class ReportGenerateData(CamelModel):
     estimatedSeconds: int = 30
 
 
+# ---------------------------------------------------------------------------
+# 统计报告聚合 API（IA 优化 P0，2026-08-22）
+# S1 字段返回真实数据；S2/S3 字段恒为 None，待 P3 填充，保证固定骨架不跳动。
+# ---------------------------------------------------------------------------
+
+
+class ReportOverviewKpi(CamelModel):
+    """管理总览单个 KPI 格（S1~S3 统一结构，缺失值用 null 占位）。"""
+
+    key: str
+    label: str
+    value: float | int | None = None
+    unit: str | None = None
+    status: str | None = None
+    context: str | None = None
+
+
+class ReportOverviewTrendPoint(CamelModel):
+    date: str
+    score: float | None = None
+    loopCount: int | None = None
+
+
+class ReportOverviewTopLoop(CamelModel):
+    loopId: str
+    loopTagName: str
+    unitPath: str | None = None
+    latestScore: float | None = None
+    primaryCategory: str | None = None
+    primaryCategoryLabel: str | None = None
+    severity: str | None = None
+
+
+class ReportOverviewData(CamelModel):
+    """GET /reports/overview 响应。"""
+
+    stage: str = "S1"
+    kpis: list[ReportOverviewKpi] = []
+    healthTrend: list[ReportOverviewTrendPoint] = []
+    topProblemLoops: list[ReportOverviewTopLoop] = []
+    # S2/S3 占位（P3 填充，固定骨架不跳动）
+    closedLoopTrend: list[dict] | None = None
+    benefitTrend: list[dict] | None = None
+
+
+class ReportDiagnosisCategoryItem(CamelModel):
+    category: str
+    label: str
+    count: int
+    ratio: float
+
+
+class ReportDiagnosisConfidenceItem(CamelModel):
+    range: str
+    label: str
+    count: int
+    ratio: float
+
+
+class ReportDiagnosisTopLoop(CamelModel):
+    loopId: str
+    loopTagName: str
+    unitPath: str | None = None
+    runCount: int
+    highCount: int
+    latestCategory: str | None = None
+    latestCategoryLabel: str | None = None
+    latestSeverity: str | None = None
+    latestConfidence: float | None = None
+
+
+class ReportDiagnosisTrendPoint(CamelModel):
+    date: str
+    total: int
+    high: int
+
+
+class ReportDiagnosisStatisticsData(CamelModel):
+    """GET /reports/diagnosis-statistics 响应（基于 DiagnosisRun 表）。"""
+
+    total: int
+    successCount: int
+    reviewPendingCount: int
+    categoryDistribution: list[ReportDiagnosisCategoryItem] = []
+    confidenceDistribution: list[ReportDiagnosisConfidenceItem] = []
+    topAbnormalLoops: list[ReportDiagnosisTopLoop] = []
+    trend: list[ReportDiagnosisTrendPoint] = []
+
+
+class ReportBenefitKpiComparison(CamelModel):
+    """整定/处置前后 KPI 对比（技术指标聚合，均值口径）。"""
+
+    metric: str
+    label: str
+    before: float | None = None
+    after: float | None = None
+    delta: float | None = None
+    unit: str | None = None
+
+
+class ReportBenefitCurvePoint(CamelModel):
+    date: str
+    autoRate: float | None = None
+    score: float | None = None
+
+
+class ReportBenefitBenchmarkItem(CamelModel):
+    unitId: str | None = None
+    unitName: str
+    loopCount: int
+    avgScore: float | None = None
+    avgAutoRate: float | None = None
+    avgDelta: float | None = None
+
+
+class ReportBenefitData(CamelModel):
+    """GET /reports/benefit 响应（技术指标，不含经济收益）。"""
+
+    tuningCount: int
+    closedOrderCount: int
+    kpiComparison: list[ReportBenefitKpiComparison] = []
+    autoRateCurve: list[ReportBenefitCurvePoint] = []
+    benchmark: list[ReportBenefitBenchmarkItem] = []
+
+
 __all__ = [
     "ReportConfigCreateRequest",
     "ReportConfigItem",
     "ReportConfigUpdateRequest",
     "ReportGenerateData",
     "ReportGenerateRequest",
+    "ReportOverviewData",
+    "ReportOverviewKpi",
+    "ReportOverviewTopLoop",
+    "ReportOverviewTrendPoint",
+    "ReportDiagnosisStatisticsData",
+    "ReportDiagnosisCategoryItem",
+    "ReportDiagnosisConfidenceItem",
+    "ReportDiagnosisTopLoop",
+    "ReportDiagnosisTrendPoint",
+    "ReportBenefitData",
+    "ReportBenefitKpiComparison",
+    "ReportBenefitCurvePoint",
+    "ReportBenefitBenchmarkItem",
 ]

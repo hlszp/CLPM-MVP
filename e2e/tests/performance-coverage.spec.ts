@@ -2,7 +2,7 @@
  * E2E 性能评估补盲测试（性能-14）
  *
  * 覆盖用例（编号延续 E2E-PERF-006 之后）：
- * - E2E-PERF-007: KPI 报表页（/metric/kpi-report）
+ * - E2E-PERF-007: KPI 报表页（/reports/performance）
  *     · 页面加载、时间维度切换（日/周/月）、报表类型切换（综合/回路）
  *     · 工厂节点 Select、刷新/导出按钮存在
  *     · 评级分布 Tag + 表格/空状态容器存在
@@ -12,10 +12,10 @@
  *     · 开关 Switch 可见且可切换、保存按钮存在（ADMIN 可见）
  * - E2E-PERF-009: 理想稳态时间字段
  *     · /config/metric → "指标定义" Tab 表格含"理想稳态时间"指标行
- *     · /metric/kpi-report → "回路报表" 表头含"理想稳定时间"列
+ *     · /reports/performance → "回路报表" 表头含"理想稳定时间"列
  *
  * 页面源码依据：
- *   frontend/apps/web-antd/src/views/metric/kpi-report.vue
+ *   frontend/apps/web-antd/src/views/reports/performance.vue
  *     - 顶部 ClpmPageToolbar：日/周/月 RadioGroup + 综合/回路 RadioGroup
  *       + 工厂节点 Select + 刷新/导出 ClpmToolbarButton
  *     - ClpmDataCanvas：评级分布 Tag 区 + Table（comprehensiveColumns/loopColumns）
@@ -48,7 +48,7 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
 
   // E2E-PERF-007: KPI 报表页
   test('E2E-PERF-007: KPI 报表页加载与时间窗切换', async ({ page }) => {
-    await page.goto('/metric/kpi-report');
+    await page.goto('/reports/performance');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -142,7 +142,7 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
       expect(hasMonthPicker || hasAnyPicker).toBeTruthy();
     }
 
-    expect(page.url()).toContain('/metric/kpi-report');
+    expect(page.url()).toContain('/reports/performance');
   });
 
   // E2E-PERF-008: 参数配置 Tab 开关生效
@@ -312,8 +312,8 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     ).toContain('理想稳态时间');
     expect(definitionBodyText).toContain('IDEAL_SETTLING_TIME');
 
-    // ===== Part 2: /metric/kpi-report → "回路报表" 验证表头含"理想稳定时间"列 =====
-    await page.goto('/metric/kpi-report');
+    // ===== Part 2: /reports/performance → "回路报表" 验证表头含"理想稳定时间"列 =====
+    await page.goto('/reports/performance');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
@@ -348,6 +348,6 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     expect(headerText).toContain('输出跳变率');
     expect(headerText).toContain('阀门粘滞');
 
-    expect(page.url()).toContain('/metric/kpi-report');
+    expect(page.url()).toContain('/reports/performance');
   });
 });

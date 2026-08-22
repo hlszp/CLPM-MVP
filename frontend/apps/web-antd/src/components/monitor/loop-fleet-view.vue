@@ -30,7 +30,10 @@ import { Button, Card, message, Switch, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getLoopMonitorListApi, getLoopTypeStatsApi } from '#/api/loop';
-import { ClpmNumeric } from '#/components/clpm';
+import {
+  ClpmFitnessBadge,
+  ClpmNumeric,
+} from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
 import {
@@ -121,6 +124,8 @@ const columns: TableColumnsType = [
     align: 'center',
   },
   { title: '回路等级', key: 'grade', width: 80, align: 'center' },
+  // P2 IA优化：适用性等级列（位号等级列右侧）
+  { title: '适用性', key: 'fitnessLevel', width: 95, align: 'center' },
   {
     title: '性能评分',
     dataIndex: 'score',
@@ -742,6 +747,13 @@ defineExpose({
           >
             {{ getGradeTag((record as LoopApi.MonitorListItem).score).label }}
           </Tag>
+        </template>
+        <template v-else-if="column.key === 'fitnessLevel'">
+          <ClpmFitnessBadge
+            :level="(record as LoopApi.MonitorListItem).fitnessLevel"
+            :tags="(record as LoopApi.MonitorListItem).fitnessTags"
+            size="sm"
+          />
         </template>
         <template v-else-if="column.key === 'sp'">
           <ClpmNumeric

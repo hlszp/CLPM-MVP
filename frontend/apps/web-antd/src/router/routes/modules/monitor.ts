@@ -35,6 +35,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:activity',
       order: 1,
       title: '监控',
+      module: 'monitor',
     },
     children: [
       {

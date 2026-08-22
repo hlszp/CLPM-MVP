@@ -43,7 +43,7 @@ const PAGES = [
   ['loop-workbench', '/loop/workbench?loopId=[LOOP]'],
   ['metric-pid-dashboard', '/metric/pid-dashboard'],
   ['metric-loop-performance', '/metric/loop-performance'],
-  ['metric-kpi-report', '/metric/kpi-report'],
+  ['reports-performance', '/reports/performance'],
   ['metric-config', '/config/metric'],
   ['diagnosis-overview', '/diagnosis/overview'],
   ['diagnosis-tasks', '/diagnosis/tasks'],

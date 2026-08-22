@@ -30,8 +30,9 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.alert import AlertEvent
 from app.models.loop import LoopLedger
@@ -81,6 +82,7 @@ SOURCE_LABEL: dict[str, str] = {
     "ALERT": "活跃预警",
     "DEGRADATION": "评分恶化",
     "DATA_QUALITY": "数据质量",
+    "FITNESS_ABNORMAL": "适用性异常",  # P2 IA优化
 }
 
 # ---------------------------------------------------------------------------
@@ -465,6 +467,134 @@ async def _aggregate_alerts(
                 score_delta=None,
                 event_id=str(evt.id),
                 tracker_id=str(evt.tracker_id) if evt.tracker_id else None,
+                task_id=None,
+            )
+        )
+    return items, truncated
+
+
+# ---------------------------------------------------------------------------
+# 聚合：FITNESS_ABNORMAL（P2 IA优化，适用性异常）
+# ---------------------------------------------------------------------------
+
+
+async def _aggregate_fitness_items(
+    db: AsyncSession,
+    loop_ids: set[str] | None,
+) -> tuple[list[_RawItem], bool]:
+    """聚合适用性异常（L0/L1/L2）回路，生成 FITNESS_ABNORMAL 关注项。
+
+    规则：每回路取窗口内最新 fitness 快照，L0/L1/L2 生成关注项。
+    优先级：L0=URGENT, L1=HIGH, L2=MEDIUM
+    """
+    from app.models.loop import LoopLedger
+    from app.models.metric import KpiSnapshotHourly
+    from app.models.plant_node import PlantNode
+    from app.services.loop_fitness import TAG_HUMAN_REASON
+
+    unit_node = PlantNode.__table__.alias("unit_node_fitness")
+    area_node = PlantNode.__table__.alias("area_node_fitness")
+
+    # 每回路窗口内最新快照（DISTINCT ON）
+    subq_latest = (
+        select(KpiSnapshotHourly)
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    )
+    if loop_ids is not None:
+        subq_latest = subq_latest.where(KpiSnapshotHourly.loop_id.in_(list(loop_ids)))
+    subq = subq_latest.subquery()
+    snap_alias = aliased(KpiSnapshotHourly, subq)
+
+    stmt = (
+        select(
+            snap_alias.loop_id,
+            snap_alias.fitness_level,
+            snap_alias.fitness_tags,
+            snap_alias.fitness_detail,
+            snap_alias.ts_start,
+            LoopLedger,
+            unit_node.c.name.label("unit_name"),
+            area_node.c.name.label("area_name"),
+        )
+        .select_from(snap_alias)
+        .join(LoopLedger, snap_alias.loop_id == LoopLedger.id)
+        .outerjoin(unit_node, LoopLedger.unit_id == unit_node.c.id)
+        .outerjoin(area_node, unit_node.c.parent_id == area_node.c.id)
+        .where(
+            snap_alias.fitness_level.in_(["L0", "L1", "L2"]),
+            LoopLedger.is_active.is_(True),
+        )
+        .order_by(
+            case(
+                (snap_alias.fitness_level == "L0", 0),
+                (snap_alias.fitness_level == "L1", 1),
+                (snap_alias.fitness_level == "L2", 2),
+                else_=9,
+            ),
+            snap_alias.ts_start.desc(),
+        )
+        .limit(_MAX_ITEMS_PER_SOURCE + 1)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    truncated = len(rows) > _MAX_ITEMS_PER_SOURCE
+    rows = rows[:_MAX_ITEMS_PER_SOURCE]
+
+    LEVEL_PRIORITY = {"L0": "URGENT", "L1": "HIGH", "L2": "MEDIUM"}
+    LEVEL_TITLE = {
+        "L0": "数据不足（L0）— 不可评估",
+        "L1": "手动主导（L1）— 仅可监视",
+        "L2": "条件异常（L2）— 诊断/整定受限",
+    }
+
+    items: list[_RawItem] = []
+    now_dt = datetime.now(UTC).replace(tzinfo=None)
+    for (
+        loop_id,
+        lvl,
+        tags,
+        _detail,
+        ts_start,
+        loop,
+        unit_name,
+        area_name,
+    ) in rows:
+        lid = str(loop_id)
+        tag_list: list[str] = list(tags) if isinstance(tags, list) else []
+        reasons: list[str] = []
+        for t in tag_list:
+            reasons.append(TAG_HUMAN_REASON.get(t, t))
+        if not reasons:
+            reasons.append(f"适用性等级 {lvl}，不满足诊断/整定条件")
+
+        priority = LEVEL_PRIORITY.get(lvl or "L2", "MEDIUM")
+        title = LEVEL_TITLE.get(lvl or "L2", f"适用性异常（{lvl}）")
+        summary = f"{loop.tag_name} 适用性={lvl}，原因：{'；'.join(reasons)}"
+        source_id = f"fit:{lid}:{lvl}"
+        items.append(
+            _RawItem(
+                source="FITNESS_ABNORMAL",
+                source_id=source_id,
+                loop_id=lid,
+                tag_name=loop.tag_name,
+                unit_name=unit_name,
+                area_name=area_name,
+                title=title,
+                summary=summary,
+                priority=priority,
+                source_severity=None,
+                status="OPEN",
+                source_status="OPEN",
+                rank_reasons=reasons,
+                occurred_at=ts_start or now_dt,
+                updated_at=ts_start or now_dt,
+                confidence_level=None,
+                score=None,
+                score_delta=None,
+                event_id=None,
+                tracker_id=None,
                 task_id=None,
             )
         )
@@ -912,6 +1042,8 @@ async def list_attention(
     need_dq = (
         source_filter is None or "DEGRADATION" in source_filter or "DATA_QUALITY" in source_filter
     )
+    # P2 IA优化：适用性异常来源
+    need_fitness = source_filter is None or "FITNESS_ABNORMAL" in source_filter
 
     if need_alert:
         tasks.append(_aggregate_alerts(db, loop_ids))
@@ -919,6 +1051,9 @@ async def list_attention(
     if need_dq:
         tasks.append(_aggregate_degradation_and_data_quality(db, loop_ids))
         task_labels.append("DQ")
+    if need_fitness:
+        tasks.append(_aggregate_fitness_items(db, loop_ids))
+        task_labels.append("FITNESS")
 
     results = await asyncio.gather(*tasks) if tasks else []
     for label, res in zip(task_labels, results, strict=True):
@@ -927,7 +1062,8 @@ async def list_attention(
         if trunc:
             if label == "ALERT":
                 truncated["ALERT"] = True
-            # DQ 分支内部 DEGRADATION/DATA_QUALITY 不截断
+            elif label == "FITNESS":
+                truncated["FITNESS_ABNORMAL"] = True
 
     # 过滤
     filtered = raw_items

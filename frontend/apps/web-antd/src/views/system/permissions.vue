@@ -22,6 +22,7 @@ import {
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
+import { useModules } from '#/composables/use-modules';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'SystemPermissions' });
@@ -45,17 +46,29 @@ type PermissionLevel =
 interface ModuleDef {
   key: string;
   label: string;
+  /** 对应后端热插拔模块 key（diagnosis/tuning/handling 为可选模块） */
+  moduleKey?: string;
 }
 
-/** 6 大模块（label 对齐 IA 重构后顶级菜单标题） */
+const { moduleEnabled } = useModules();
+
+/** 模块列（label 对齐 IA 重构后顶级菜单标题；moduleKey 标记可选模块） */
 const MODULES: ModuleDef[] = [
-  { key: 'dashboard', label: '监控' },
+  { key: 'dashboard', label: '监控', moduleKey: 'monitor' },
   { key: 'loop', label: '回路' },
-  { key: 'performance', label: '评估' },
-  { key: 'diagnosis', label: '诊断' },
-  { key: 'tuning', label: '整定' },
-  { key: 'system', label: '系统' },
+  { key: 'performance', label: '评估', moduleKey: 'assess' },
+  { key: 'diagnosis', label: '诊断', moduleKey: 'diagnosis' },
+  { key: 'tuning', label: '整定', moduleKey: 'tuning' },
+  { key: 'handling', label: '处置', moduleKey: 'handling' },
+  { key: 'reports', label: '统计报告', moduleKey: 'reports' },
+  { key: 'config', label: '配置', moduleKey: 'config' },
+  { key: 'system', label: '系统', moduleKey: 'system' },
 ];
+
+/** 列是否因模块禁用而灰显 */
+function isColumnDisabled(m: ModuleDef): boolean {
+  return !!m.moduleKey && !moduleEnabled(m.moduleKey);
+}
 
 /** 权限级别标签映射 */
 const permissionLabelMap: Record<PermissionLevel, string> = {
@@ -95,14 +108,20 @@ const PERMISSION_MATRIX: Record<
     diagnosis: 'MANAGE',
     loop: 'MANAGE',
     performance: 'MANAGE',
+    handling: 'MANAGE',
+    reports: 'MANAGE',
+    config: 'MANAGE',
     system: 'SERVICE',
-    tuning: null,
+    tuning: 'MANAGE',
   },
   EXPERT: {
     dashboard: null,
     diagnosis: 'COLLABORATE',
     loop: null,
     performance: null,
+    handling: 'VIEW',
+    reports: null,
+    config: null,
     system: null,
     tuning: 'EXECUTE',
   },
@@ -111,6 +130,9 @@ const PERMISSION_MATRIX: Record<
     diagnosis: 'EXECUTE',
     loop: 'MANAGE',
     performance: 'VIEW',
+    handling: 'EXECUTE',
+    reports: null,
+    config: 'VIEW',
     system: null,
     tuning: 'EXECUTE',
   },
@@ -119,6 +141,9 @@ const PERMISSION_MATRIX: Record<
     diagnosis: 'VIEW',
     loop: null,
     performance: 'VIEW',
+    handling: 'VIEW',
+    reports: 'VIEW',
+    config: null,
     system: null,
     tuning: null,
   },
@@ -127,6 +152,9 @@ const PERMISSION_MATRIX: Record<
     diagnosis: null,
     loop: null,
     performance: 'VIEW',
+    handling: null,
+    reports: 'VIEW',
+    config: null,
     system: null,
     tuning: null,
   },
@@ -137,12 +165,6 @@ const dataSource: MatrixRow[] = CLPM_ROLES.map((role) => ({
   role,
   permissions: PERMISSION_MATRIX[role],
 }));
-
-/** 表头 */
-const headerCells = [
-  { title: '角色', width: '160px' },
-  ...MODULES.map((m) => ({ title: m.label, width: '120px' })),
-];
 
 function roleLabel(role: ClpmRole): string {
   return ROLE_LABELS[role] || role;
@@ -213,7 +235,7 @@ const { toolbarItems } = usePageToolbar(() => ({
   <Page>
     <ClpmPageToolbar
       title="权限矩阵"
-      subtitle="查看 5 种角色在 6 大模块中的系统预设权限级别。"
+      subtitle="查看 5 种角色在 9 大模块中的系统预设权限级别。"
       :loading="loading"
     >
       <template #actions>
@@ -223,7 +245,7 @@ const { toolbarItems } = usePageToolbar(() => ({
     <ClpmDataCanvas class="mt-4" title="权限矩阵">
       <div class="mb-4">
         <p class="text-sm text-gray-500">
-          5 种角色 × 6 大模块访问权限矩阵 · 权限级别：查看 / 协同 / 执行 / 管理
+          5 种角色 × 9 大模块访问权限矩阵 · 权限级别：查看 / 协同 / 执行 / 管理
           / 服务 · 系统预设，不可自定义修改
         </p>
       </div>
@@ -234,12 +256,23 @@ const { toolbarItems } = usePageToolbar(() => ({
           <thead>
             <tr class="bg-gray-50">
               <th
-                v-for="(cell, idx) in headerCells"
-                :key="idx"
                 class="border border-gray-200 px-4 py-3 text-center font-medium"
-                :style="{ width: cell.width }"
+                style="width: 120px"
               >
-                {{ cell.title }}
+                角色
+              </th>
+              <th
+                v-for="m in MODULES"
+                :key="m.key"
+                class="border px-4 py-3 text-center font-medium"
+                :class="
+                  isColumnDisabled(m)
+                    ? 'border-dashed border-gray-200 text-gray-300'
+                    : 'border-gray-200'
+                "
+                style="width: 100px"
+              >
+                {{ m.label }}
               </th>
             </tr>
           </thead>
@@ -255,10 +288,15 @@ const { toolbarItems } = usePageToolbar(() => ({
               <td
                 v-for="m in MODULES"
                 :key="m.key"
-                class="border border-gray-200 px-4 py-3 text-center"
+                class="border px-4 py-3 text-center"
+                :class="
+                  isColumnDisabled(m)
+                    ? 'border-dashed border-gray-200 bg-gray-50/50'
+                    : 'border-gray-200'
+                "
               >
                 <Tag
-                  v-if="getCellPermission(row, m.key)"
+                  v-if="getCellPermission(row, m.key) && !isColumnDisabled(m)"
                   :color="
                     permissionColorMap[
                       getCellPermission(row, m.key) as PermissionLevel

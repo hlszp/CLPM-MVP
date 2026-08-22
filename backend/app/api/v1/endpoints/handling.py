@@ -45,6 +45,7 @@ from app.api.deps import get_current_user, require_roles
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS
 from app.core.db import get_db
 from app.core.exceptions import BizError
+from app.core.modules import is_module_enabled
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.handling_order import ACTION_TYPES, HandlingOrder
 from app.models.loop import LoopLedger
@@ -362,8 +363,13 @@ async def _pull_kpi_windows(
 
 
 async def _writeback_tuning_record(db: AsyncSession, order: HandlingOrder, status: str) -> None:
-    """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的工单。"""
+    """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的工单。
+
+    模块热插拔：整定模块禁用时跳过回写（软依赖，handling 不硬依赖 tuning）。
+    """
     if order.action_type != "TUNING" or not order.tuning_record_id:
+        return
+    if not is_module_enabled("tuning"):
         return
     rec = await db.get(TuningRecord, order.tuning_record_id)
     if rec is not None:

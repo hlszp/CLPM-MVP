@@ -21,6 +21,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:stethoscope',
       order: 3,
       title: '诊断',
+      module: 'diagnosis',
     },
     children: [
       {

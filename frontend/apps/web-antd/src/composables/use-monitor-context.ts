@@ -35,6 +35,8 @@ export type WorkbenchSection = 'assessment' | 'overview';
 export interface MonitorContext {
   attentionOnly: boolean;
   eventId: null | string;
+  /** P2 IA优化：适用性等级多选筛选（L0~L4），空数组表示不筛选 */
+  fitnessLevels: string[];
   from: null | string;
   keyword: string;
   loopId: null | string;
@@ -57,6 +59,7 @@ const CONTEXT_KEYS = [
   'eventId',
   'section',
   'from',
+  'fitnessLevels',
 ] as const;
 
 /** 合法时间窗集合 */
@@ -73,6 +76,15 @@ const VALID_VIEWS = new Set<MonitorView>(['table', 'workspace']);
 
 /** 合法区锚点集合 */
 const VALID_SECTIONS = new Set<WorkbenchSection>(['assessment', 'overview']);
+
+/** 合法适用性等级集合（P2 IA优化） */
+const VALID_FITNESS_LEVELS = new Set<string>([
+  'L0',
+  'L1',
+  'L2',
+  'L3',
+  'L4',
+]);
 
 /** 解析字符串 query 值，空/未定义返回 null */
 function parseStr(v: unknown): null | string {
@@ -120,6 +132,21 @@ function parseSection(v: unknown): null | WorkbenchSection {
 }
 
 /**
+ * 解析适用性等级多选（P2 IA优化）：
+ * URL query "L0,L1,L2" → 数组；非法元素过滤；空 / 未定义 → 空数组
+ */
+function parseFitnessLevels(v: unknown): string[] {
+  const parsed = parseStr(v);
+  if (!parsed) return [];
+  const out: string[] = [];
+  for (const raw of parsed.split(',')) {
+    const t = raw.trim();
+    if (t && VALID_FITNESS_LEVELS.has(t)) out.push(t);
+  }
+  return out;
+}
+
+/**
  * 读取当前路由的完整监控上下文。
  *
  * 用法：
@@ -136,6 +163,7 @@ export function useMonitorContext() {
   const context = computed<MonitorContext>(() => ({
     attentionOnly: parseBool(route.query.attentionOnly),
     eventId: parseStr(route.query.eventId),
+    fitnessLevels: parseFitnessLevels(route.query.fitnessLevels),
     from: parseStr(route.query.from),
     keyword: parseKeyword(route.query.keyword),
     loopId: parseStr(route.query.loopId),
@@ -157,6 +185,7 @@ export function useMonitorContext() {
   const eventId = computed(() => context.value.eventId);
   const section = computed(() => context.value.section);
   const from = computed(() => context.value.from);
+  const fitnessLevels = computed(() => context.value.fitnessLevels);
 
   /**
    * 增量更新上下文（合并到现有 query，未传字段保留原值）。
@@ -222,6 +251,7 @@ export function useMonitorContext() {
     // 便捷读取
     attentionOnly,
     eventId,
+    fitnessLevels,
     from,
     keyword,
     loopId,

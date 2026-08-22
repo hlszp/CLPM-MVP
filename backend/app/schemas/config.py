@@ -585,6 +585,74 @@ class AlgorithmParamsSaveRequest(CamelModel):
     resetControlTypes: list[ControlType] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# 回路适用性阈值配置（IA 优化 P2：L0~L4 预诊断）
+# ---------------------------------------------------------------------------
+
+
+class FitnessThresholdItem(CamelModel):
+    """适用性判定阈值单项.
+
+    Attributes:
+        key: sys_config 键名（省略 fitness. 前缀，展示 / 保存均省略）
+        label: 中文显示名（如「手动主导阈值」）
+        description: 阈值说明（Tooltip / 帮助文案）
+        level: 所属适用性等级（L1 / L2 / L3），用于前端分组
+        tag: 对应命中标签（如 MANUAL_DOMINANT、OP_SATURATED 等）
+        value: 当前生效值（float）
+        defaultValue: 默认兜底值（仅 GET 响应回传，用于“重置默认”按钮）
+        minValue: 最小值（前端 NumberInput 约束）
+        maxValue: 最大值（前端 NumberInput 约束）
+        unit: 单位文案（如 %、1、无量纲）
+    """
+
+    key: str
+    label: str
+    description: str | None = None
+    level: Literal["L1", "L2", "L3"]
+    tag: str
+    value: float
+    defaultValue: float | None = None
+    minValue: float | None = None
+    maxValue: float | None = None
+    unit: str | None = None
+
+
+class FitnessThresholdSchema(CamelModel):
+    """适用性阈值配置视图（GET 响应）.
+
+    Attributes:
+        items: 按 level→tag 顺序展示的阈值项列表（全部 7 项）
+        updatedAt: 最近更新时间（ISO 8601，None=从未保存，走默认）
+        updatedBy: 最近更新人
+    """
+
+    items: list[FitnessThresholdItem] = Field(default_factory=list)
+    updatedAt: str | None = None
+    updatedBy: str | None = None
+
+
+class FitnessThresholdSaveItem(CamelModel):
+    """单阈值保存项（PUT body 子结构）."""
+
+    key: str
+    value: float = Field(..., ge=0)
+
+
+class FitnessThresholdSaveRequest(CamelModel):
+    """适用性阈值保存请求（PUT，按 key 覆盖，未列出的键保持原值）.
+
+    Attributes:
+        items: 需要覆盖的阈值项（省略 key=value，其他字段均无需回传）
+        resetAll: True=全部重置为默认值（忽略 items）
+        remark: 变更备注（写入审计日志）
+    """
+
+    items: list[FitnessThresholdSaveItem] = Field(default_factory=list)
+    resetAll: bool = False
+    remark: str | None = Field(None, max_length=500)
+
+
 class VersionHistoryItem(CamelModel):
     """版本历史单项.
 
@@ -785,6 +853,10 @@ __all__ = [
     "DiagnosisLabel",
     "DiagnosisTriggerSaveRequest",
     "DiagnosisTriggerSchema",
+    "FitnessThresholdItem",
+    "FitnessThresholdSaveItem",
+    "FitnessThresholdSaveRequest",
+    "FitnessThresholdSchema",
     "GradingThresholdItem",
     "GradingThresholdSaveRequest",
     "GradingThresholdSchema",

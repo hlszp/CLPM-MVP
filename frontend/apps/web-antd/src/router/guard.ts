@@ -5,7 +5,8 @@ import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 import { startProgress, stopProgress } from '@vben/utils';
 
-import { accessRoutes, coreRouteNames } from '#/router/routes';
+import { fetchModules, getEnabledKeys } from '#/composables/use-modules';
+import { accessRoutes, applyModuleFilter, coreRouteNames } from '#/router/routes';
 import { useAuthStore } from '#/store';
 
 import { generateAccess } from './access';
@@ -108,6 +109,10 @@ function setupAccessGuard(router: Router) {
     // 生成路由表
     // 当前登录用户拥有的角色标识列表
     const userRoles = userInfo.roles ?? [];
+
+    // 拉取模块启用状态并过滤路由树（先模块过滤 → 再 authority 过滤）
+    await fetchModules();
+    applyModuleFilter(new Set(getEnabledKeys()));
 
     // 生成菜单和路由
     const { accessibleMenus, accessibleRoutes } = await generateAccess({

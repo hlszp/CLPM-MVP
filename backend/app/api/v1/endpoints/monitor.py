@@ -32,8 +32,8 @@ router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 #: 合法来源
 _VALID_SOURCES = frozenset(
-    ("ALERT", "DEGRADATION", "DATA_QUALITY")
-)  # MVP 精简：移除 TRACKER/VERIFICATION
+    ("ALERT", "DEGRADATION", "DATA_QUALITY", "FITNESS_ABNORMAL")
+)  # MVP 精简：移除 TRACKER/VERIFICATION；P2 新增 FITNESS_ABNORMAL（适用性异常）
 #: 合法优先级
 _VALID_PRIORITIES = frozenset(("URGENT", "HIGH", "MEDIUM", "LOW"))
 #: 合法状态

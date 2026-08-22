@@ -3,7 +3,8 @@ import type { RouteRecordRaw } from 'vue-router';
 /**
  * 评估路由模块（IA 重构 Phase A·职能轴）
  *
- * 子菜单：性能总览 / 回路性能 / 评估任务 / KPI报表
+ * 子菜单：性能总览 / 回路性能 / 评估任务
+ * KPI 报表已迁入「统计报告-绩效报告」（/reports/performance），旧路径保留 redirect。
  * 指标配置已迁入配置模块（/config/metric），见 config.ts
  *
  * 角色权限（PRD §3 + 实现契约 §5）：
@@ -24,6 +25,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:gauge',
       order: 2,
       title: '评估',
+      module: 'assess',
     },
     children: [
       {
@@ -56,16 +58,6 @@ const routes: RouteRecordRaw[] = [
           title: '评估任务',
         },
       },
-      {
-        name: 'AssessKpiReport',
-        path: '/metric/kpi-report',
-        component: () => import('#/views/metric/kpi-report.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
-          icon: 'lucide:file-bar-chart',
-          title: 'KPI报表',
-        },
-      },
     ],
   },
   // 旧 /metric 父路径兼容 redirect（保护书签/E2E，/metric/config 由 config.ts 接管）
@@ -77,6 +69,17 @@ const routes: RouteRecordRaw[] = [
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '性能评估',
+    },
+  },
+  // KPI 报表已迁入统计报告-绩效报告（IA 优化 P0，2026-08-22）
+  {
+    name: 'LegacyKpiReport',
+    path: '/metric/kpi-report',
+    redirect: '/reports/performance',
+    meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+      hideInMenu: true,
+      title: '绩效报告',
     },
   },
 ];

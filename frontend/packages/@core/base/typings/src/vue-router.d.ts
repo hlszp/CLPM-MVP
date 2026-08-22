@@ -118,6 +118,11 @@ interface RouteMeta {
    */
   order?: number;
   /**
+   * 模块热插拔 key（IA 优化 P1）：父路由声明所属模块，
+   * 未启用模块的路由树在登录后被过滤
+   */
+  module?: string;
+  /**
    * 菜单所携带的参数
    */
   query?: Recordable;

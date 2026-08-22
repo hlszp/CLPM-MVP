@@ -282,8 +282,15 @@ async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
     - 独立 TaskTracker 建单，任务失败不影响其他动作
 
     Returns:
-        诊断任务 ID；防抖跳过/失败返回 None。
+        诊断任务 ID；防抖跳过/失败/模块禁用返回 None。
     """
+    # 模块热插拔：诊断模块禁用时降级跳过（预警事件本身仍正常创建）
+    from app.core.modules import is_module_enabled
+
+    if not is_module_enabled("diagnosis"):
+        logger.info("诊断模块未启用，跳过 TRIGGER_DIAGNOSIS: loop=%s", loop_id)
+        return None
+
     from app.core.db import AsyncSessionLocal
     from app.schemas.task import TaskType
     from app.services.task_tracker import create_task

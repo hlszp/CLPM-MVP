@@ -133,6 +133,7 @@ class AsyncTask(Task):
 # import app.tasks.aas_sync  # noqa: E402, F401
 import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
+import app.tasks.beat_registry  # noqa: E402, F401  模块热插拔 beat 条件化
 import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
 

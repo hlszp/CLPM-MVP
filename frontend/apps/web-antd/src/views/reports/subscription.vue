@@ -51,7 +51,7 @@ import { usePolling } from '#/composables/use-polling';
 import { PROGRESS_POLLING_INTERVAL } from '#/constants/polling';
 import { formatTime } from '#/utils/format';
 
-defineOptions({ name: 'SystemReports' });
+defineOptions({ name: 'ReportsSubscription' });
 
 const loading = ref(false);
 const reportList = ref<SystemApi.ReportConfig[]>([]);

@@ -235,6 +235,9 @@ class LoopListItem(CamelModel):
     )
     complexLoopGroupId: str | None = Field(None, description="复杂回路分组 ID")
     complexRole: str | None = Field(None, description="复杂回路角色：MAIN / SUB")
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签（如 OP_SATURATED）")
 
 
 class LoopListData(CamelModel):

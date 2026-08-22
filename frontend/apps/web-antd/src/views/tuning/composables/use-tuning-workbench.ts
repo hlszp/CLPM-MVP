@@ -9,7 +9,9 @@ import type { TuningApi } from '#/api/tuning';
 
 import { computed, reactive, toRefs } from 'vue';
 
-import { getLoopDetailApi } from '#/api/loop';
+import { message } from 'ant-design-vue';
+
+import { getLoopDetailApi, getLoopMonitorListApi } from '#/api/loop';
 import {
   comparePidsApi,
   getTuningTaskStatusApi,
@@ -21,6 +23,30 @@ import {
 } from '#/api/tuning';
 
 import { tuningAlgoLabel } from '../constants';
+
+/** P2 IA优化：fitness tag 中文映射（与 fitness-badge/诊断 对齐） */
+const FITNESS_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const tagToCn = (t: string) => FITNESS_TAG_CN[t] ?? t;
+const tagsToText = (tags: string[]) => tags.map((t) => tagToCn(t)).join('、');
 
 /** 辨识结果（统一历史/阶跃双路径的输出形态；MANUAL=人工修改后的模型） */
 export interface IdentifyOutcome {
@@ -71,6 +97,10 @@ export function useTuningWorkbench() {
     loopId: '' as string,
     currentPid: null as null | TuningApi.PidParams,
     currentPidMissing: false,
+    /** P2 IA优化：回路适用性等级 L0/L1/L2/L3/L4/L5（空=未加载） */
+    fitnessLevel: null as null | string,
+    /** P2 IA优化：回路适用性原因标签列表 */
+    fitnessTags: [] as string[],
     // ① 辨识
     identifyPath: 'HISTORY' as 'HISTORY' | 'STEP',
     timeRange: null as [string, string] | null,
@@ -95,12 +125,90 @@ export function useTuningWorkbench() {
     savedRecordId: '' as string,
   });
 
+  // ===== P2 IA优化：fitness 门禁（锚点解锁 + 入口按钮 disabled/Tooltip/Toast）=====
+  const isFitnessL0L1 = computed(
+    () => state.fitnessLevel === 'L0' || state.fitnessLevel === 'L1',
+  );
+  const isFitnessL2 = computed(() => state.fitnessLevel === 'L2');
+  /** L0/L1 → 禁止进入下游按钮；L2/L3/L4/L5/null → 放行 */
+  const tuningDisabled = computed(() => isFitnessL0L1.value);
+  /** Tooltip 文案（L0/L1 禁用原因） */
+  const tuningDisabledReason = computed<string>(() => {
+    if (!isFitnessL0L1.value) return '';
+    const tags = state.fitnessTags?.length > 0
+      ? tagsToText(state.fitnessTags)
+      : '适用性不足';
+    return `不可整定（${state.fitnessLevel}）：${tags}。先消除异常来源后再做整定。`;
+  });
+  /** Tooltip 文案（L2 条件异常警告，不禁止，仅在按钮 hover 时提示） */
+  const tuningWarningReason = computed<string>(() => {
+    if (!isFitnessL2.value) return '';
+    const tags = state.fitnessTags?.length > 0
+      ? tagsToText(state.fitnessTags)
+      : '控制条件异常';
+    return `L2 条件异常：${tags}。当前控制状态可能影响整定结论，建议先修正再做整定。`;
+  });
+
+  /** 从 monitor/loops endpoint 精确拉取单回路 fitness（失败不阻塞，降级为 null） */
+  async function loadFitness(loopId: string): Promise<void> {
+    try {
+      const res = await getLoopMonitorListApi({
+        loopId,
+        page: 1,
+        pageSize: 1,
+      });
+      const item = res.items?.[0];
+      state.fitnessLevel = (item?.fitnessLevel as null | string) ?? null;
+      state.fitnessTags = Array.isArray(item?.fitnessTags)
+        ? (item.fitnessTags as string[])
+        : [];
+    } catch {
+      // 降级：fitness 取空（按 L3/L4/L5 放行，不阻塞已有业务）
+      state.fitnessLevel = null;
+      state.fitnessTags = [];
+    }
+  }
+
+  /** G3：整定入口按钮点击时弹 Toast 提示 fitness 状态（不阻止流程） */
+  function showFitnessToast(
+    kind: 'identify' | 'optimize' | 'simulate' = 'optimize',
+  ): void {
+    const stepMap = {
+      identify: '开始辨识',
+      simulate: '开始仿真',
+      optimize: '调参优化',
+    } as const;
+    const step = stepMap[kind];
+    const level = state.fitnessLevel ?? '未评定';
+    if (isFitnessL0L1.value) {
+      // L0/L1 正常被 disabled，用户无法点进来；如果到了这里，就是降级情况，依旧提示
+      const reason = state.fitnessTags.length > 0
+        ? tagsToText(state.fitnessTags)
+        : '适用性不足';
+      message.warning(`【${step}】回路适用性不足（${state.fitnessLevel}）：${reason}`);
+    } else if (isFitnessL2.value) {
+      const reason = state.fitnessTags.length > 0
+        ? tagsToText(state.fitnessTags)
+        : '控制条件异常';
+      message.warning({
+        content: `【${step}】L2 条件异常（${state.fitnessLevel}）：${reason}。整定结果可能受控制状态干扰，请优先消除异常后重做。`,
+        duration: 5,
+      });
+    } else if (level === 'L3' || level === 'L4' || level === 'L5') {
+      message.success(`【${step}】当前适用性等级 = ${level}，可正常整定。`);
+    } else {
+      // 未评定（接口不通或该回路尚未有评定）→ 仅提示
+      message.info(`【${step}】尚未评定适用性等级。`);
+    }
+  }
+
   // ===== 计算属性（锚点解锁门禁）=====
   const canTune = computed(
     () =>
       !!state.outcome &&
       state.outcome.confidenceLevel !== 'D' &&
-      state.outcome.confidenceLevel !== 'E',
+      state.outcome.confidenceLevel !== 'E' &&
+      !tuningDisabled.value, // P2 IA优化：L0/L1 禁入下游
   );
   const checkedRows = computed(() =>
     state.matrixRows.filter(
@@ -129,6 +237,8 @@ export function useTuningWorkbench() {
     state.loopId = '';
     state.currentPid = null;
     state.currentPidMissing = false;
+    state.fitnessLevel = null;
+    state.fitnessTags = [];
     resetDownstream();
   }
 
@@ -138,8 +248,14 @@ export function useTuningWorkbench() {
     // 当前 PID（回路详情 runtimeParams，优先 Redis 实时缓存口径由后端保证）
     state.currentPid = null;
     state.currentPidMissing = false;
+    state.fitnessLevel = null;
+    state.fitnessTags = [];
+    // PID 详情 + fitness 并行拉取
     try {
-      const detail = await getLoopDetailApi(loopId);
+      const [detail] = await Promise.all([
+        getLoopDetailApi(loopId),
+        loadFitness(loopId),
+      ]);
       const rp = detail.runtimeParams as {
         pidD?: null | number;
         pidI?: null | number;
@@ -174,6 +290,11 @@ export function useTuningWorkbench() {
   // ===== ① 过程辨识 =====
   async function runIdentify() {
     if (!state.loopId || !state.timeRange) return;
+    // P2 IA优化：L0/L1 硬拦截（防止 UI 绕过 disabled 直接调函数的场景）
+    if (tuningDisabled.value) {
+      message.error(tuningDisabledReason.value || '当前回路适用性不足，不允许辨识。');
+      return;
+    }
     state.identifyError = '';
     state.outcome = null;
     state.matrixRows = [];
@@ -355,6 +476,11 @@ export function useTuningWorkbench() {
   // ===== ③ 闭环仿真 =====
   async function runSimulate() {
     if (!canSimulate.value || !state.outcome) return;
+    // P2 IA优化：L0/L1 硬拦截（防 UI 绕过 disabled 直接调函数的场景）
+    if (tuningDisabled.value) {
+      message.error(tuningDisabledReason.value || '当前回路适用性不足，不允许仿真。');
+      return;
+    }
     state.simulating = true;
     state.simError = '';
     state.simResult = null;
@@ -461,6 +587,13 @@ export function useTuningWorkbench() {
     runSimulate,
     savePlan,
     resetDownstream,
+    // P2 IA优化：fitness 门禁（各 section 按钮 disabled/Tooltip/Toast）
+    isFitnessL0L1,
+    isFitnessL2,
+    tuningDisabled,
+    tuningDisabledReason,
+    tuningWarningReason,
+    showFitnessToast,
   };
 }
 

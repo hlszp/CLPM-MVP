@@ -9,7 +9,7 @@
  * - 回路报表：使用 getLoopSnapshotsApi 获取回路 KPI 快照数据
  * - 性能等级：使用 getGradingThresholdsApi 获取定级阈值并按评分映射
  *
- * 路由：/metric/kpi-report
+ * 路由：/reports/performance（原 /metric/kpi-report，IA 优化 P0 迁入）
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
@@ -54,7 +54,7 @@ import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
 
-defineOptions({ name: 'MetricKpiReport' });
+defineOptions({ name: 'ReportsPerformance' });
 
 // 注册 isoWeek 插件（周选择器内部调用 dayjs().isoWeek() 进行格式化）
 dayjs.extend(isoWeek);

@@ -1,14 +1,18 @@
 /**
  * 监控模块 API——关注队列与工作台摘要（整改方案 §8）
  *
- * 关注队列统一聚合 ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION 五类来源。
+ * 关注队列统一聚合 ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION/FITNESS_ABNORMAL 六类来源。
  * 动作由服务端按角色生成，前端不自行推断权限。
  */
 import { requestClient } from '#/api/request';
 
 export namespace MonitorApi {
   /** 关注来源 */
-  export type AttentionSource = 'ALERT' | 'DATA_QUALITY' | 'DEGRADATION';
+  export type AttentionSource =
+    | 'ALERT'
+    | 'DATA_QUALITY'
+    | 'DEGRADATION'
+    | 'FITNESS_ABNORMAL';
 
   /** 优先级 */
   export type AttentionPriority = 'HIGH' | 'LOW' | 'MEDIUM' | 'URGENT';
@@ -76,6 +80,10 @@ export namespace MonitorApi {
     primaryAction: AttentionAction;
     actions: AttentionAction[];
     isOverdue?: boolean;
+    /** P2 IA优化：适用性等级（仅 FITNESS_ABNORMAL 来源有） */
+    fitnessLevel?: null | string;
+    /** P2 IA优化：适用性原因标签（仅 FITNESS_ABNORMAL 来源有） */
+    fitnessTags?: null | string[];
   }
 
   /** 关注组（按回路合并，v1.1+） */
@@ -98,6 +106,10 @@ export namespace MonitorApi {
     primaryAction: AttentionAction;
     actions: AttentionAction[];
     children: AttentionItem[];
+    /** P2 IA优化：组内 FITNESS_ABNORMAL 对应的适用性等级（若有） */
+    fitnessLevel?: null | string;
+    /** P2 IA优化：组内 FITNESS_ABNORMAL 对应的适用性原因标签（若有） */
+    fitnessTags?: null | string[];
   }
 
   /** 聚合统计 */
@@ -357,6 +369,10 @@ export namespace MonitorApi {
     nextAction: NextAction;
     partial: boolean;
     unavailableSections: string[];
+    /** P2 IA优化：适用性等级 L0~L4；null 表示待评估 */
+    fitnessLevel?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null | string;
+    /** P2 IA优化：适用性原因标签枚举 */
+    fitnessTags?: null | string[];
   }
 }
 
