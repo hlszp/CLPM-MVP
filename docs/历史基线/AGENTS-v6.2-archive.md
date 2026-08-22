@@ -1,0 +1,100 @@
+# CLPM v6.2 历史基线（归档）
+
+> **本文件自 AGENTS.md 迁出（2026-08-22 瘦身）**，存放原 CLPM v6.2 的架构背景、文档基线与历史决策。
+>
+> **读取时机**：仅当任务涉及 v6.2 架构溯源、历史交付核对、基线文档版本核对、或需要理解某个模块的 v6.2 演进脉络时才读取，日常会话不加载。
+>
+> **修改纪律**：仅在用户显式指令或重大架构变更（如基线文档版本升级）时更新，日常不维护。CLPM-MVP 现行事实来源是 `docs/MVP设计/`，与本文冲突时以 `docs/MVP设计/` 与 AGENTS.md 顶部 MVP 覆盖说明为准。
+
+---
+
+本项目是危化企业控制回路性能评估与优化平台（CLPM v6.2），7 阶段系统重构已全部完成，文档体系已统一升级至 v6.2（含 ZL 工业设计规范对齐 + 页面标杆设计逐页落地）。
+
+**拆分文档索引**（按需阅读，不必全读）：
+
+| 场景 | 文档 |
+|---|---|
+| 排障与运维（网络模式切换、worker 挂死、回填性能、断点续传细节） | `docs/过程文档/ops-runbook.md` |
+| v6 交付历史追溯（Phase 0-6、各 PR 清单） | `docs/过程文档/v6-delivery-history.md` |
+| 引用旧文档前查是否已失效 | `docs/过程文档/stale-docs.md` |
+| **UX/IA审查与整改**（信息架构、交互设计、闭环流程评估） | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` |
+| **页面标杆设计**（逐页高保真线框图、布局规范、实施验收） | `docs/设计文档/页面标杆设计/`（01-回路工作台 / 02-回路列表 / 03-关注队列 / 04-系统概览） |
+| 数据质量评估报告（完整性/准确性/一致性/时效性四维定量分析） | `docs/过程文档/data-quality-assessment-report-2026-08-05.md` |
+| KPI计算方法系统性审查（26指标公式+国标准合度+10项缺陷） | `docs/过程文档/kpi-calculation-review-2026-08-05.md` |
+
+## v6.2 必读入口
+
+先读：`README.md`（当前共识与目录说明）、`docs/设计文档/00-BASELINE/implementation-contract.md`、`docs/设计文档/CLPM_v4.0_系统重构实施方案.md` 与 `docs/设计文档/01-PRD/PRD.md` v6.2。
+
+PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路由/API/权限/状态机/KPI 事实来源；UI/UX v6.2 是视觉与交互输入文件（已对齐 v6.2 代码，含 ZL 工业设计规范）；页面标杆设计是逐页高保真线框图与实施验收的事实来源；`CLPM_v4.0_系统重构实施方案.md` 是 7 阶段重构的实施蓝图。
+
+## v6.2 当前基线（2026-08-14 修订 — 页面标杆设计落地 + 系统概览页对标重写 + dashboard API 修复）
+
+| 类型 | 文件 | 版本 |
+|---|---|---|
+| 产品需求规范 PRD | `docs/设计文档/01-PRD/PRD.md` | v6.2（新增 §4.4.6 智能预警规则引擎 + §5.7 预警规则类型与 DSL 约束 + §7.1 预警求值性能要求） |
+| 重构后实现契约 | `docs/设计文档/00-BASELINE/implementation-contract.md` | **v2.11**（增量 changelog：P3-33 异步 PDF 导出（Celery `generate_diagnosis_pdf_task` + `GET /tasks/{taskId}/download` 安全下载）+ P2-22 风险统计（`riskSummary`/`pendingCount`）+ Celery Worker/Beat 三层清理加固（killpg+pgrep+SIGKILL）+ KPI 指标条紧凑化（minmax 128→92px）。原 v2.10：EXPERT 扩展 `loop:view` 只读 + `GET /configs/llm` 放开 EXPERT + workbench canUseTableView 守卫 + monitor_attention LIMIT 截断优化 + MW-P5-03/04/05 运行时验收。原 v2.9：监控—工作台 IA 再收敛 6 菜单。原 v2.8：monitor scoreDelta/dayTrend、aggregates verifyOverdueCount、algorithm-params paramMeta、快照 timeConstant、Action Tracker VERIFYING 闭环口径） |
+| **v4.0 重构实施方案** | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` | v1.0（Phase 0-6 全部完成） |
+| 功能设计规范 FDS | `docs/设计文档/02-FDS/FDS.md` | v6.0 |
+| 应用设计规范 ADS | `docs/设计文档/03-ADS/ADS.md` | v6.0 |
+| 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
+| API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v6.0 |
+| UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.2**（色彩约定与工业组件执行层整改版，配套《色彩约定表 v1.0》《文案与术语词表 v1.0》） |
+| 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.11） |
+| 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
+| 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
+| v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
+| 优化整改计划 | `docs/过程文档/clpm-optimization-review-plan-2026-07-28.md` | v1.0；**六阶段全部完成**（2026-07-28）。后续（07-29）：3 诊断标签误报修复、整定 Phase 2.1 合并+评审返工、生产部署实弹验证（R1-R6，ops-runbook）、诊断中心问题串修复（版本号竞态/散点回退/fusedConfidence 落库/任务时区迁移 `h8b9c0d1e2f3`/任务页已归档开关/刷新轮换幂等窗口/详情页 SPA 导航白屏）；白屏根因与修复见 ops-runbook §【已结】。后续（08-03）：种子数据 v1.4 整合（指标契约/诊断规则/DCS/回路精简，`02_seed_data.sql` 自动加载）、算法参数配置从系统管理迁移至性能评估-指标配置（KPI 算法参数 Tab）、lefthook pre-push 门禁修复（FakeRedis 增强 + conftest 全模块 patch，详见 ops-runbook §lefthook pre-push 门禁修复） |
+| **v6.2 可信辨识改造** | `docs/过程文档/clpm-v6.2-product-and-identification-optimization-plan-2026-07-29.md` | **Phase 0 Truth First 已完成**（分支 `codex/v6.2-phase0-truth-first`，2026-07-29）：P0-01~06 安全门禁（盲 fallback/固定 θ/IPDT 错配/低可信放行/闭环 IV 降级/伪 0 风险）+ P0-07/08/10 生产 bootstrap DDL 收敛至 37 表 + P0-039 DCS 下写安全静态门禁；契约基线见 `clpm-v6.2-phase0-contract-baseline-2026-07-29.md`，任务清单见 `clpm-v6.2-implementation-task-checklist-2026-07-29.md`。后端 3456 passed、前端 vitest 434 passed、ruff/alembic/typecheck 全绿。待收口：V62-P0-033 设计文档逐项同步（契约已升 v2.3）、V62-P0-034/037/038 OpenAPI/E2E 基线、Phase 1 数据同轴与 IA 减负 |
+| **回路整定 Phase 2 技术方案** | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **已执行**（分支 `feat/tuning-phase2`，2026-07-28）：历史数据过程对象辨识（ARX/ARMAX/IV 算法栈）+ 异步任务化 + 多 PID 对比仿真；pytest 2840 全绿、`alembic check` 退出码 0 |
+| **UX/IA 专业评估报告** | `docs/过程文档/clpm-ux-ia-audit-report-2026-08-05.md` | v1.0（2026-08-05）：以仪控工程师视角从认知负担/指导辅助/工作流程契合度/闭环管理4维度全面审查，识别P0-P3问题共21项，附分优先级整改路线图（P0:4项/P1:6项/P2:6项/P3:5项）；核心结论：技术闭环已通但用户操作闭环存在断点，重点补齐跨模块跳转、表格信息密度、流程向导、验证环节 |
+| **IA 重构与功能优化方案** | `docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md` | v1.0（2026-08-06）：7 模块菜单重组 + 双轴导航 + 工程/操作分离；**Phase A-D 全部完成**合入 main：A 菜单重组/配置集中化/AI 右抽屉/跨模块上下文 + B 回路工作台 6 Tab（后续已改为单页四区，commit 5e216ba8） + C 诊断三区重构 + 特征字典 + D 整定单页整合 4 锚点；后端零改动；门禁全绿 ruff✅/pytest 3881✅/check:type✅/alembic✅/vitest 147✅ |
+| 数据质量评估报告 | `docs/过程文档/data-quality-assessment-report-2026-08-05.md` | v1.0（2026-08-05）：27个种子回路33天数据四维定量分析，近7天valid_rate~97%达A级可信度，7/2-7/7全空行需清理，7/22-7/28过密写入需排查 |
+| KPI计算方法审查 | `docs/过程文档/kpi-calculation-review-2026-08-05.md` | v1.0（2026-08-05）：26指标+综合评分+节点聚合全公式审查，3核心+1折扣指标完全符合GB/T 44693.2-2024，识别OP量程、饱和度分母、可信度继承等10项关键缺陷 |
+| 智能预警规则引擎方案 | `docs/过程文档/clpm-smart-alert-rule-engine-plan-2026-08-06.md` | v1.1（2026-08-06）：独立梳理智能预警规则引擎需求与技术方案，作为 PRD v6.2 / 契约 v2.7 输入；覆盖 4 类规则（阈值/统计漂移/组合条件/可信度联动）+ 时效窗口通用字段、DSL 设计、双轨触发（SignalR+Celery）、5 张新表、6 类 API、4 阶段实施路线图；**Phase 1 已落地**（2026-08-07）：5 表 + DSL/求值/抑制/分发/审计/缓存核心服务 + 19 API 端点 + dry-run + WebSocket 推送 + Celery 周期巡检 + 前端规则配置页/事件列表页；233 单测全绿 |
+| **UI/UX 整改（2026-08-07~09）** | `docs/设计文档/06-UIUX/` | **Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 全部完成**：审查报告 `ui-ux-critical-review-2026-08-07.md`、实施方案 `ui-ux-rectification-plan-2026-08-07.md`、**工作清单（进度事实来源）`ui-ux-rectification-checklist-2026-08-08.md`、Phase 2 出口报告 `p2-exit-report-2026-08-09.md`（Nielsen 20/40→32/40）、色彩约定表 `color-convention.md`、文案词表 `copywriting-glossary.md`、回路工作台专项评估 `loop-workbench-uiux-evaluation-2026-08-09.md`；Backlog 遗留 BL-5~9 见清单 §4（hex 存量已清零、密度 14 页已迁移、暗色走查已过、F8 评价周期提案待评审） |
+| **监控工作台闭环（2026-08-09~10）** | `docs/设计文档/06-UIUX/monitor-workbench-rectification-checklist-2026-08-09.md` | **MW-P0~P5 全部完成**（分支 `codex/monitor-workbench-closed-loop`，已 `--no-ff` 合入 main `30fb933c`）：统一关注队列（五来源聚合+四级优先级+角色化动作）+ 回路工作台单页四区重构（LoopFleetView 抽取+workspace/table 双模式+useSavedView 共享上下文）+ 实施前后对比+区级延迟加载；MW-P5-03 五角色冒烟测试全绿（EXPERT 权限扩展 `loop:view`+`GET /configs/llm` 放开+canUseTableView 守卫）/ MW-P5-04 性能压测（summary p95=53ms ✅，attention 压测场景 p95≈600ms 已 LIMIT 优化，生产 27 回路预期 <100ms）/ MW-P5-05 视觉走查（12 亮色+4 暗色截图，WCAG AA 对比度 100% 达标）；门禁全绿 ruff✅/pytest 4241✅/check:type✅/hex✅；性能报告 `docs/过程文档/perf-report-MW-P5-04.md`、视觉报告 `visual-inspection-report-MW-P5-05.md` |
+| **页面标杆设计（2026-08-12~14）** | `docs/设计文档/页面标杆设计/` | **01 Phase 1 已实施 / 03+04 已对标落地 / 02 待评审**：逐页高保真线框图（HTML+PNG）+ 标杆设计规范文档；04 系统概览 v3.1（R1 页头 segmented 时间窗 + R2 全厂锚点 KPI 六指标五档 + R3 工厂模型树联动 + R4 帕累托三率柱+评分折线 + 微型扇形图本级+下一级）严格对标重写 `workbench.vue`；03 关注队列列宽优化 + G1/G2/G3 后端三大缺口全修复；01 回路工作台 Phase 1 三栏布局/R2评分/R5四区证据/R6验证/左脊柱（commit `552e3821` 已合入 main）；dashboard API AlertEvent 导入修复 + 时间窗北京时间对齐；门禁全绿 ruff✅/check:type✅/dashboard+monitor 57 tests passed；**新增 `00-Phase1-Gate2-检查清单-2026-08-14.md`**：四页验收清单逐条核查（52 项：12✅/24🟡/16❌）+ Phase 1 共享载体任务包（P1-A/B/C/D/E 五包约 11 天）+ Gate G2 八项条件自查检查表（12 项阻断项） |
+
+## v6.0 核心架构组件
+
+| 组件 | 路径 | 职责 |
+|---|---|---|
+| DataPlanner | `app/services/data_planner.py` | 统一历史数据读取，按控制类型自动降采样，分发 MetricDataBundle |
+| ConfidenceEvaluator | `app/services/confidence_evaluator.py` | 可信度评估 A/B/C/D/E（valid_rate 阈值 95/80/60/20%），INCONCLUSIVE 处理 |
+| TaskTracker | `app/services/task_tracker.py` | 任务全生命周期跟踪（create/update_status），Redis 状态存储 + 通知 |
+| 预处理 Pipeline | `app/services/preprocessing/` (quality_code/thresholds/outlier_detection/validity_mask/quality_summary/pipeline) | 8 步流水线 + 8 类异常值检测 |
+| MetricCalculator | `app/tasks/kpi_calc.py` | 12 个 KPI 指标计算器（3 核心 + 1 综合 + 8 辅助），通过 DataPlanner.request_bundles() 获取数据 |
+| 数据完整性检查 | `app/services/data_integrity.py` | 本地 TDengine 宽表完整性检查：按小时分桶对 7 列分别 `COUNT(col)` 统计列级缺失；缺失=无记录或列 NULL，质量码非 Good 但有值不算缺失；首尾不足整点桶按实际秒数算预期点数。API：`POST /loops/data-import/integrity-check` |
+| 过程对象辨识算法栈 | `app/services/tuning_identification/` (excitation/nonparametric/arx/armax/iv/order_selection/discrete_to_continuous/pipeline) | 回路整定 Phase 2：基于历史 OP/PV 时序辨识过程对象 G(s)=PV/OP；分层算法栈（激励检测→非参数粗估→ARX/ARMAX/IV 参数化辨识→阶次选择 AIC/BIC→离散→连续转换→可信度评估）；接入 DataPlanner 8 步预处理 + ConfidenceEvaluator A/B/C/D/E 等级 |
+| AI 洞察服务 | `app/services/ai_insight/` (context/base/service/scenes/diagnosis/performance/tuning/workbench) + `app/services/llm_provider.py` | P3-04 AI 洞察全局赋能：`SceneStrategy` 抽象基类 + 4 场景策略（诊断/性能/整定/工作台），`POST /ai-insight/{scene}` 统一入口，`mode=auto/llm/template`，LLM 失败自动 fallback 规则模板；`AiInsightContext.knowledgeContext` 为 RAG 扩展点（第一期恒 None）；LLM 配置 6 键存 sys_config（`llm.enabled/endpoint/api_key/model/timeout/max_tokens`），max_tokens 可配修复推理模型空输出；前端通用组件 `ClpmAiInsight`（LLM 未启用时按 hideWhenDisabled 隐藏或显示启用提示），4 场景嵌入 |
+| 智能预警规则引擎 | `app/services/alert_rule_engine/` (dsl/evaluator/suppressor/dispatcher/audit/cache/service) + `app/tasks/alert_patrol.py` + `app/api/v1/endpoints/alert.py` + `ws_alert.py` | PRD v6.2 §4.4.6 智能预警规则引擎 Phase 1：4 类规则 DSL（THRESHOLD/CONFIDENCE/COMPOSITE/DRIFT）+ 规则求值（时效窗口/可信度门禁/持续时长）+ Redis 抑制（冷却/去抖/去重/手动抑制）+ 动作分发（CREATE_EVENT/CREATE_TRACKER/NOTIFY）+ 规则缓存 30s TTL + 审计日志；5 张表（alert_rule/subscription/event/audit_log/suppression）；19 API 端点 + dry-run 试运行 + WebSocket `/api/v1/ws/alerts` 实时推送；Celery Beat `alert-patrol` 每分钟巡检 + `alert-suppression-cleanup` 每小时清理；前端规则配置页（表单+DSL JSON 双模式）+ 事件列表页 |
+| 异步报表生成 | `app/tasks/report_generator.py` | P3-33 诊断建议书 PDF 异步生成：Celery 任务 `generate_diagnosis_pdf_task`（bind+autoretry 2 次），分 5 段更新 TaskTracker progress（0.25/0.50/0.75/0.95/1.00），REPORT 类型任务写入导出目录；前端 `use-async-pdf-export` composable 轮询 + 4 次失败熔断 + SUCCESS 自动下载 + 异步失败降级同步 |
+| Celery 生命周期管理 | `app/main.py` (lifespan) | Worker/Beat 随后端自动启动（v6.1）；**退出三层清理加固**（v2.11）：① `killpg` 进程组终止（`start_new_session=True`）；② `pgrep -f "celery.*clpm"` 兜底 `SIGTERM`；③ 5s 后 `SIGKILL` 强杀；`CLPM_SKIP_EXIT_HOOKS=1` + argv token 双重防护 pytest 误杀宿主 Celery（`tests/conftest.py` 设置） |
+
+## v6.2 核心决策（历史口径）
+
+| 决策 | 当时口径 |
+|---|---|
+| 模块架构 | 6 模块 + 1 门户：工作台 / 回路管理 / 性能评估 / 诊断中心 / 回路整定 / 系统管理；各业务模块遵循"配置→运行→分析"三态自包含原则，减少跨模块依赖 |
+| Action Tracker | 诊断中心子模块（子菜单路由），P1a 闭环状态机 PENDING → IN_PROGRESS → VERIFYING → CLOSED（VERIFYING 可→REOPENED；存量 IMPLEMENTED 兼容映射 VERIFYING），中文显示为待处理/处理中/验证中/已闭环/重开/已忽略；VERIFYING 超 24h 计入"验证超期"待办（**注：MVP 处置 v2.0 已改为双实体口径，见 08 方案**） |
+| 统计分析 | 不设独立模块，分散到各业务模块的"分析"态；自动报表归入系统管理 |
+| 回路整定 | **Phase 2 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：基于历史数据自动辨识过程对象 G(s)=PV/OP（ARX/ARMAX/IV 算法栈 + DataPlanner + ConfidenceEvaluator）+ 异步任务化 + 多 PID 参数响应对比；保留阶跃实验为兜底路径；仍只输出建议、证据、风险和回退方案，不支持 DCS 参数下写 |
+| 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪"闭环 |
+| 文档权威性 | PRD v6.2 负责产品需求；实现契约 v2.11 负责重构后 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表/文案词表）；页面标杆设计负责逐页高保真线框图与实施验收；v4.0 重构实施方案负责 7 阶段实施蓝图 |
+
+## IA 重构分支策略（2026-08-06 起，已完成）
+
+本轮《IA 重构与功能优化方案》走 `IA` 集成分支（从 main `cb5c3b62` 创建）；每阶段从 IA 拉 `IA-PhaseA/B/C/D` 子分支开发，门禁（ruff+pytest+check:type+alembic check）+ E2E 全绿后 `--no-ff` 合并回 IA 并推送。实施蓝图：`docs/过程文档/clpm-ia-refactor-and-optimization-plan-2026-08-06.md`；任务提示词：`.trae/documents/ia-refactor-task-prompt.md`。**Phase A-D 全部完成并已合入 main**（2026-08-07）：A（路由重组 7 菜单 + 配置集中化 + AI 右抽屉 + 跨模块上下文基建 + E2E 同步）/ B（回路工作台 6 Tab 迁移，后续已改为单页四区 commit 5e216ba8）/ C（诊断三区重构 + 特征字典 + 列表置信度严重度）/ D（整定单页整合 4 锚点 + 嵌入式组件 + 旧路由重定向 + 方案确认留痕）；全部后端零改动；门禁全绿 ruff✅/pytest 3881✅/check:type✅/alembic✅/vitest 147✅；**契约已升 v2.7**
+
+## v6.2 下阶段规则（历史，多数已被 MVP 闭环重建取代）
+
+| 方向 | 先读 | 关注点 |
+|---|---|---|
+| **UI/UX 整改后续（Phase 3 候选）** | `docs/设计文档/06-UIUX/p2-exit-report-2026-08-09.md` §5 + 清单 §4 Backlog + `loop-workbench-uiux-evaluation-2026-08-09.md` | Phase 0-2 + Backlog 已完成（Nielsen 32/40）；候选：工作台 W-1~W-10 整改（三批方案已备）、SYS-P2-06 预警优先级三级语义化、F8 评价周期（清单 §6 提案待评审）、暗色正式开放前逐页走查收尾、hex `hsl(var(--status-*))` 非法写法存量排查 |
+| **页面标杆设计后续** | `docs/设计文档/页面标杆设计/` | 04-系统概览 + 03-关注队列已对标落地；01-回路工作台 Phase 1 已实施（Phase 2 待启动）；待落地：02-回路列表标杆设计对标（v1.5 待人评审拍板）；每页含 HTML 线框图 + PNG 效果图 + 标杆设计规范 md；**实施前置工作文档** `00-Phase1-Gate2-检查清单-2026-08-14.md` 含四页验收勾选表 + Phase 1 共享载体任务包 + Gate G2 自查检查表 |
+| 回路整定 Phase 2 后续 | `docs/过程文档/tuning-phase2-technical-plan-2026-07-28.md` | **Phase 2.0-2.5 已完成**（分支 `feat/tuning-phase2`，2026-07-28）：算法栈 + DataPlanner 接入 + 异步任务化 + 多 PID 对比 + 前端重构 + 全量门禁通过；待合并 main 后更新设计文档（PRD/FDS/ADS/IDS/契约 版本号升级）+ GB/T 44693.2 整定用例验证 |
+| 诊断整改 Phase C/D/E | `docs/过程文档/diagnosis-module-review-rectification-plan-2026-07-19.md` §5 | Phase A/B 已合并（2026-07-20）；**Batch 4-6 已完成**（F1-F7 回路分析+路径修复、D1-D6 管理闭环+入口整合，2026-07-27）；**Batch 5 页面优化（F8-F13）已完成**（含 P0-P2 专项治理 + E2E/单测修复，2026-07-28，commit `8fc3a2d1`）；E 规范符合性（GB/T 44693.2 用例验证 ≥90%）待启动 |
+| E2E 测试补充 | `e2e/` 目录 → UI/UX v6.2 → v6.2 新增页面 | **E2E 79 用例**（2026-08-06）：71 passed / 3 既有失败（D3-MOC/F4-F5/TUNE-009，非 Phase A 引入，均为 07-28 后新增测试）/ 2 flaky / 3 skipped；IA 重构 Phase A 路由已全量同步 |
+| 生产部署 | `docker-compose.prod.yml` → `.env.prod.example` → `deploy/deploy.sh` | Celery worker 容器需验证 include 参数生效 |
+| 网络模式切换后续改进 | ops-runbook §网络模式切换 | 仅余 ③ 公网模式 ping 延迟抖动优化（低优先级） |
