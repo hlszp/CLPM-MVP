@@ -1,10 +1,14 @@
 /**
- * 统计报告聚合 API（IA 优化 P0，2026-08-22）
+ * 统计报告聚合 API（IA 优化 P0+P3，2026-08-22）
  *
  * 后端：backend/app/api/v1/endpoints/reports.py
- * - GET /reports/overview              管理总览（S1 基础指标，S2/S3 字段 null）
+ * - GET /reports/overview              管理总览（P3 S1/S2/S3 自适应）
  * - GET /reports/diagnosis-statistics  诊断统计（基于 DiagnosisRun）
  * - GET /reports/benefit               收益报告（技术指标，不含经济收益）
+ * - GET/PUT /reports/stage-lock        读取 / 设置阶段锁定（ADMIN 写入）
+ * - POST /reports/export-pdf           触发 PDF 导出（异步）
+ * - GET  /reports/export-tasks/{id}    查询 PDF 导出任务状态
+ * - GET  /reports/export-download/{id} 下载 PDF
  */
 import { requestClient } from '#/api/request';
 
@@ -26,6 +30,29 @@ export namespace ReportsApi {
     loopCount: null | number;
   }
 
+  export interface ClosedLoopTrendPoint {
+    month: string;
+    total: number;
+    closed: number;
+    closedRate: null | number;
+  }
+
+  export interface AnomalyDistributionChangeItem {
+    category: string;
+    label: string;
+    currentCount: number;
+    previousCount: number;
+    currentRatio: number;
+    previousRatio: number;
+    deltaCount: number;
+  }
+
+  export interface BenefitTrendPoint {
+    date: string;
+    autoRate: null | number;
+    score: null | number;
+  }
+
   export interface OverviewTopLoop {
     loopId: string;
     loopTagName: string;
@@ -34,15 +61,54 @@ export namespace ReportsApi {
     primaryCategory?: null | string;
     primaryCategoryLabel?: null | string;
     severity?: null | string;
+    handlingStatus?: null | string; // S2 追加列
+    benefitEstimate?: null | number; // S3 追加列（评分改善，预留经济收益位）
+  }
+
+  export interface Availability {
+    s1Available: boolean;
+    s2Available: boolean;
+    s3Available: boolean;
+  }
+
+  export interface MaturityCounts {
+    diagnosisRuns: number;
+    handlingOrders: number;
+    tuningRecords: number;
+    closedVerifiedOrders: number;
   }
 
   export interface OverviewData {
     stage: Stage;
+    stageOrigin: 'AUTO' | 'LOCK';
+    isLocked: boolean;
+    availability: Availability;
+    maturityCounts: MaturityCounts;
     kpis: OverviewKpi[];
     healthTrend: OverviewTrendPoint[];
+    closedLoopTrend: ClosedLoopTrendPoint[] | null;
+    anomalyDistributionChange: AnomalyDistributionChangeItem[] | null;
+    benefitTrend: BenefitTrendPoint[] | null;
     topProblemLoops: OverviewTopLoop[];
-    closedLoopTrend: null | Record<string, unknown>[];
-    benefitTrend: null | Record<string, unknown>[];
+  }
+
+  export interface StageLockState {
+    locked: boolean;
+    lockedStage: null | Stage;
+    detectedStage: Stage;
+    availability: Availability;
+    counts: MaturityCounts;
+  }
+
+  export interface PdfExportTask {
+    taskId: string;
+    taskType: string;
+    status: 'COMPLETED' | 'FAILED' | 'PROCESSING';
+    fileUrl: null | string;
+    fileName: null | string;
+    fileSize: null | number;
+    error: null | string;
+    estimatedSeconds: number;
   }
 
   export interface CategoryItem {
@@ -147,4 +213,48 @@ export function getReportBenefitApi(params: ReportsApi.ReportQuery) {
   return requestClient.get<ReportsApi.BenefitData>('/reports/benefit', {
     params,
   });
+}
+
+// ---------- P3：阶段锁定 ----------
+
+export function getReportStageLockApi(params?: { plantNodeId?: string }) {
+  return requestClient.get<ReportsApi.StageLockState>('/reports/stage-lock', {
+    params,
+  });
+}
+
+export function setReportStageLockApi(
+  body: { stage: null | ReportsApi.Stage },
+  params?: { plantNodeId?: string },
+) {
+  return requestClient.put<ReportsApi.StageLockState>(
+    '/reports/stage-lock',
+    body,
+    { params },
+  );
+}
+
+// ---------- P3：PDF 异步导出 ----------
+
+export function triggerReportPdfExportApi(body: {
+  endDate?: string;
+  plantNodeId?: string;
+  stage?: ReportsApi.Stage;
+  startDate?: string;
+}) {
+  return requestClient.post<ReportsApi.PdfExportTask>(
+    '/reports/export-pdf',
+    body,
+  );
+}
+
+export function getReportPdfExportTaskApi(taskId: string) {
+  return requestClient.get<ReportsApi.PdfExportTask>(
+    `/reports/export-tasks/${taskId}`,
+  );
+}
+
+export function downloadReportPdfUrl(taskId: string) {
+  const base = requestClient.getBaseUrl?.() ?? '/api/v1';
+  return `${base}/reports/export-download/${taskId}`;
 }

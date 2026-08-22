@@ -120,18 +120,42 @@ class ReportOverviewTopLoop(CamelModel):
     primaryCategory: str | None = None
     primaryCategoryLabel: str | None = None
     severity: str | None = None
+    # S2 追加列（未达标阶段时为 None）
+    handlingStatus: str | None = None
+    # S3 追加列（未达标阶段时为 None，P3 经济收益预留）
+    benefitEstimate: float | None = None
+
+
+class ReportMaturityCounts(CamelModel):
+    diagnosisRuns: int = 0
+    handlingOrders: int = 0
+    tuningRecords: int = 0
+    closedVerifiedOrders: int = 0
+
+
+class ReportAvailability(CamelModel):
+    s1Available: bool = True
+    s2Available: bool = False
+    s3Available: bool = False
 
 
 class ReportOverviewData(CamelModel):
-    """GET /reports/overview 响应。"""
+    """GET /reports/overview 响应（P3：S1/S2/S3 自适应）。"""
 
     stage: str = "S1"
+    stageOrigin: str = "AUTO"  # 'AUTO' 自动判定 / 'LOCK' 管理员锁定
+    isLocked: bool = False
+    availability: ReportAvailability = ReportAvailability()
+    maturityCounts: ReportMaturityCounts = ReportMaturityCounts()
     kpis: list[ReportOverviewKpi] = []
     healthTrend: list[ReportOverviewTrendPoint] = []
-    topProblemLoops: list[ReportOverviewTopLoop] = []
-    # S2/S3 占位（P3 填充，固定骨架不跳动）
+    # S2
     closedLoopTrend: list[dict] | None = None
+    anomalyDistributionChange: list[dict] | None = None
+    # S3
     benefitTrend: list[dict] | None = None
+    # 共用
+    topProblemLoops: list[ReportOverviewTopLoop] = []
 
 
 class ReportDiagnosisCategoryItem(CamelModel):
