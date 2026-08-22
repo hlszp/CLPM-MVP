@@ -264,6 +264,12 @@ async def _write_audit(
     after_raw: dict[str, str],
     remark: str | None = None,
 ) -> None:
+    # P4 修复（2026-08-22）：SysAuditLog 无 remark 列，直接传 remark= 会抛
+    # TypeError → 500"服务异常"。备注并入 after_value 载荷（对齐其他配置
+    # 模块把 remark 存 JSON 的做法）。
+    after_payload: dict[str, str] = dict(after_raw)
+    if remark:
+        after_payload["_remark"] = remark
     log = SysAuditLog(
         id=str(uuid4()),
         operator=operator,
@@ -271,9 +277,8 @@ async def _write_audit(
         target_type="sys_config:fitness.*",
         target_id=str(uuid4()),
         before_value=json.dumps(before_raw, ensure_ascii=False),
-        after_value=json.dumps(after_raw, ensure_ascii=False),
+        after_value=json.dumps(after_payload, ensure_ascii=False),
         operated_at=_now_naive(),
-        remark=remark,
     )
     db.add(log)
 

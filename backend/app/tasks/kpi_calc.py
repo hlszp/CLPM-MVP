@@ -1145,40 +1145,14 @@ def _resolve_op_pv_ranges(
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
     """解析 OP 输出限位和 PV 量程 (P2 fitness 用).
 
-    OP 优先级：loop_cfg.op_lower/op_upper（_batch_load_loop_configs 结果，
-    已综合 LoopLedger.op_output_*_limit 与 OP Tag range_min/max 和兜底 0/100）
-    → 兜底 0.0~100.0。
-    PV 优先级：loop_cfg.range_min/range_max → PV/SP 实际数据范围兜底。
+    P4 修复（2026-08-22）：BASE 块的 PV/SP/OP 序列经 PreprocessingPipeline
+    _step3_normalize 已归一化为 0~100 百分比量纲（工程量程 ×100），因此
+    fitness 的判定量程必须与序列量纲一致，恒用归一化量程 (0, 100)。
+    此前传原始工程量程（如 0~1 kmol/s）导致 |SP-PV| 阈值被缩小 100 倍，
+    SP_PV_DEVIATION 大面积误报（P4 真实数据验证发现）。
     """
-    op_range: tuple[float, float] | None = None
-    pv_range: tuple[float, float] | None = None
-    if loop_cfg:
-        op_lower = loop_cfg.get("op_lower")
-        op_upper = loop_cfg.get("op_upper")
-        if isinstance(op_lower, (int, float)) and isinstance(op_upper, (int, float)):
-            op_range = (float(op_lower), float(op_upper))
-        pv_min = loop_cfg.get("range_min")
-        pv_max = loop_cfg.get("range_max")
-        if isinstance(pv_min, (int, float)) and isinstance(pv_max, (int, float)):
-            pv_range = (float(pv_min), float(pv_max))
-    # OP 兜底 0~100
-    if op_range is None:
-        if isinstance(loop.op_output_lower_limit, (int, float)) and isinstance(
-            loop.op_output_upper_limit, (int, float)
-        ):
-            op_range = (float(loop.op_output_lower_limit), float(loop.op_output_upper_limit))
-        else:
-            op_range = (0.0, 100.0)
-    # PV 兜底：从实际值范围推导
-    if pv_range is None:
-        values: list[float] = []
-        if pv_series:
-            values.extend(pv_series)
-        if sp_series:
-            values.extend(sp_series)
-        if values:
-            pv_range = (min(values), max(values))
-    return op_range, pv_range
+    del loop, loop_cfg, pv_series, sp_series  # 归一化语义下不再需要原始量程
+    return (0.0, 100.0), (0.0, 100.0)
 
 
 def _derive_expected_points(
