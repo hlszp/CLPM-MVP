@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: backend_service/loop_management/diagnosis_operators
+title: 诊断元算子库（无状态纯函数注册与族内融合）
+scope:
+    - backend/app/services/diagnosis_operators/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/loop_management/loop_core

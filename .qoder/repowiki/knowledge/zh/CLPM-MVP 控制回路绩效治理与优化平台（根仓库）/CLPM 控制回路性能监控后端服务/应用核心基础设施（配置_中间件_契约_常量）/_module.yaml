@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: backend_service/core_infrastructure
+title: 应用核心基础设施（配置/中间件/契约/常量）
+scope:
+    - backend/app/core/
+    - backend/app/middleware/
+    - backend/app/constants/
+    - backend/app/contracts/
+source_files: []
+depends_on: []
+related_to:
+    - path: root_scripts

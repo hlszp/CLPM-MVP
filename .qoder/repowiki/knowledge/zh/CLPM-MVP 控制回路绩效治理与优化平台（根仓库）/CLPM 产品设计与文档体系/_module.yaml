@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: docs_and_design
+title: CLPM 产品设计与文档体系
+scope:
+    - docs/
+    - diagrams/
+    - ZL-MES-UI-Design-Kit/
+source_files: []
+depends_on: []
+related_to: []

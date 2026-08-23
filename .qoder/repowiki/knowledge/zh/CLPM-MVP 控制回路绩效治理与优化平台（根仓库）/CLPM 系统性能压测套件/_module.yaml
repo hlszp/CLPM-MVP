@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: performance_tests
+title: CLPM 系统性能压测套件
+scope:
+    - perf/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service

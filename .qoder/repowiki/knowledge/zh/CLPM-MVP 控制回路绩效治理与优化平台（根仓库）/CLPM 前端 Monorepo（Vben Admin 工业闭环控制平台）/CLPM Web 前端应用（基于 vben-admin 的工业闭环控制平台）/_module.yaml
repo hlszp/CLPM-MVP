@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: frontend_app/web_app
+title: CLPM Web 前端应用（基于 vben-admin 的工业闭环控制平台）
+scope:
+    - frontend/apps/web-antd/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service
+    - path: e2e_tests
+    - path: frontend_app/shared_packages
+    - path: mock_data_server

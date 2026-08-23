@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: frontend_app/web_app/operations_features
+title: 回路监控、处置与诊断工作台（Loop/Handling/Diagnosis Views）
+scope:
+    - frontend/apps/web-antd/src/views/loop/
+    - frontend/apps/web-antd/src/views/handling/
+    - frontend/apps/web-antd/src/views/diagnosis/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/loop_management
+    - path: frontend_app/web_app/app_shell_and_infrastructure

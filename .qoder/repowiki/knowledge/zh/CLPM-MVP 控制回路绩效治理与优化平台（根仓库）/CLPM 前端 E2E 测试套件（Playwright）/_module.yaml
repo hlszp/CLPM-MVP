@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: e2e_tests
+title: CLPM 前端 E2E 测试套件（Playwright）
+scope:
+    - e2e/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend_app/web_app

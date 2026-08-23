@@ -64,3 +64,6 @@ logs/
 
 # CLPM-engine 引擎目录（独立管理，不入库）
 CLPM-engine/
+
+# Qoder IDE 本地产物（repowiki 知识文档除外）
+.qoder/better-harness/

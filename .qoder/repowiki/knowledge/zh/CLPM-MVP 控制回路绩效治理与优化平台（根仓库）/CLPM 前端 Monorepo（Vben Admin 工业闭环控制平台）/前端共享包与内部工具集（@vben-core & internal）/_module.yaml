@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: frontend_app/shared_packages
+title: 前端共享包与内部工具集（@vben-core & internal）
+scope:
+    - frontend/packages/
+    - frontend/internal/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend_app/docs_site
+    - path: frontend_app/playground
+    - path: frontend_app/web_app

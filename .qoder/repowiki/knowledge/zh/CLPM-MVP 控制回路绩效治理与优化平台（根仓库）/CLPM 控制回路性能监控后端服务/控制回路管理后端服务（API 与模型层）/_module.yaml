@@ -1,0 +1,31 @@
+schema_version: 1
+module_path: backend_service/loop_management
+title: 控制回路管理后端服务（API 与模型层）
+scope:
+    - backend/app/api/v1/endpoints/loops.py
+    - backend/app/api/v1/endpoints/loop_data.py
+    - backend/app/api/v1/endpoints/loop_level_weight.py
+    - backend/app/api/v1/endpoints/loop_type_weight.py
+    - backend/app/api/v1/endpoints/loop_mode_mapping.py
+    - backend/app/api/v1/endpoints/handling.py
+    - backend/app/api/v1/endpoints/tags.py
+    - backend/app/api/v1/endpoints/weight_config.py
+    - backend/app/api/v1/endpoints/outlier_config.py
+    - backend/app/api/v1/endpoints/fitness_threshold_config.py
+    - backend/app/api/v1/endpoints/grading_config.py
+    - backend/app/api/v1/endpoints/confidence_config.py
+    - backend/app/api/v1/endpoints/algorithms.py
+    - backend/app/api/v1/endpoints/algorithm_config.py
+    - backend/app/api/v1/endpoints/configs.py
+    - backend/app/api/v1/endpoints/dicts.py
+    - backend/app/api/v1/endpoints/system/modules.py
+    - backend/app/models/loop.py
+    - backend/app/models/loop_action_item.py
+    - backend/app/models/loop_config.py
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend_app/web_app/content_and_reports
+    - path: frontend_app/web_app/monitoring_features
+    - path: frontend_app/web_app/operations_features
+    - path: frontend_app/web_app/system_management

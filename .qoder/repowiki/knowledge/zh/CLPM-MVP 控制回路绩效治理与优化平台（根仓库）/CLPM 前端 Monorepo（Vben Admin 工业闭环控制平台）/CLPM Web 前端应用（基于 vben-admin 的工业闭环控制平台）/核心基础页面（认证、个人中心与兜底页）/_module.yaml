@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend_app/web_app/dashboard_and_core_pages
+title: 核心基础页面（认证、个人中心与兜底页）
+scope:
+    - frontend/apps/web-antd/src/views/_core/
+source_files: []
+depends_on: []
+related_to: []

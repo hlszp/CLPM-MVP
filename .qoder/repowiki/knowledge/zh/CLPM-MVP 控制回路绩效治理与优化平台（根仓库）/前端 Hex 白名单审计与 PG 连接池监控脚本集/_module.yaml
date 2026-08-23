@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: root_scripts
+title: 前端 Hex 白名单审计与 PG 连接池监控脚本集
+scope:
+    - scripts/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/core_infrastructure

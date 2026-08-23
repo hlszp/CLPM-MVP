@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend_app/web_app/system_management
+title: 系统管理、测点清单与任务视图
+scope:
+    - frontend/apps/web-antd/src/views/system/
+    - frontend/apps/web-antd/src/views/tag/
+    - frontend/apps/web-antd/src/views/task/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/loop_management
