@@ -155,6 +155,12 @@ SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次�
 
 celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）。
 
+同族陷阱（2026-08-24 实测）：**在 prefork 子进程（`worker_process_init`）内首次调用 `setup_logging()` 会在 macOS 上永久挂死**——子进程仅输出看门狗启动日志后静默，任务 received 但永不执行，无异常无栈。根因同为 fork 后惰性初始化慢路径（logging 首次写入触发 tzset/localtime 初始化）。正确姿势：结构化日志初始化挂在 `after_setup_logger` 信号（fork 前的 worker 主进程），子进程直接继承已就绪的 root handlers（落地位置：`app/tasks/celery_app.py`）。排查此类挂死可用 `faulthandler.register(signal.SIGUSR1)` + `kill -USR1 <pid>` 拓栈（注意与 billiard 的 soft-timeout SIGUSR1 处理器冲突，仅临时取证用）。
+
+## 异步链路请求关联（request_id → Celery headers，2026-08-24）
+
+API 触发的异步任务全链路可追踪：`before_task_publish` 信号把当前请求 contextvar 中的 request_id 写入 Celery 消息 headers，`task_prerun` 恢复到 worker 侧 contextvar（`task_postrun` 清理防泄漏），任务日志自动携带 request_id 与 task_id/celery_id，可由任一侧 grep 定位全链路。Beat 定时派发无请求上下文，任务日志自然不带 request_id。worker/beat 进程日志经 `after_setup_logger` 应用与 API 一致的 Formatter（生产 JSON 单行 / DEBUG 文本 + `[request_id]` 前缀，含脱敏）。
+
 ## 诊断调度细节（2026-07-20，PR #86-#96；2026-08-07 更新）
 
 **⚠️ 2026-08-07 起，自动诊断 Beat 已停用**（commit `5e216ba8`）：`diagnosis_engine.py` 中 `diagnosis-engine-hourly` 与 `diagnosis-engine-checkup-8h` 两个 Celery Beat 注册已注释（保留代码以便恢复），仅保留手动触发函数。系统现仅保留小时级自动性能评估，诊断与整定一律手动触发。恢复方法：取消 `backend/app/tasks/diagnosis_engine.py` 中 `_existing_beat["diagnosis-engine-hourly"]` 与 `_existing_beat["diagnosis-engine-checkup-8h"]` 两段注释并重启后端。
