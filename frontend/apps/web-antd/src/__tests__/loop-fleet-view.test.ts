@@ -252,6 +252,8 @@ describe('LoopFleetView 表格列增强', () => {
       'unitName',
       'loopType',
       'grade',
+      // P2 IA 优化（914179cb）：适用性等级列插入于回路等级与性能评分之间
+      'fitnessLevel',
       'score',
       'sp',
       'pv',

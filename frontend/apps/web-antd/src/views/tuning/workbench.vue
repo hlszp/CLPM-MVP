@@ -40,7 +40,7 @@ import {
 import dayjs from 'dayjs';
 
 import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
-import { getHandlingItemsApi } from '#/api/handling';
+import { getHandlingOrdersApi } from '#/api/handling';
 import {
   getLoopDetailApi,
   getLoopListApi,
@@ -223,15 +223,15 @@ async function loadLoops(): Promise<void> {
   }
 }
 
-// ===== 左脊柱：整定建议列表（TUNING 类开放处置建议，待处理优先） =====
-const openItems = ref<HandlingApi.ListItem[]>([]);
+// ===== 左脊柱：整定建议列表（TUNING 类在途处置工单，待排程优先） =====
+const openItems = ref<HandlingApi.OrderItem[]>([]);
 const openLoading = ref(false);
 
-/** 状态排序权重：待处理（未启动）→ 重开（验证失败需返工）→ 处理中 */
+/** 状态排序权重：待排程 → 重开（验证失败需返工）→ 执行中 */
 const SUGG_STATUS_ORDER: Record<string, number> = {
   PENDING: 0,
   REOPENED: 1,
-  HANDLING: 2,
+  EXECUTING: 2,
 };
 
 const tuningSuggestions = computed(() =>
@@ -240,21 +240,31 @@ const tuningSuggestions = computed(() =>
     .toSorted(
       (a, b) =>
         (SUGG_STATUS_ORDER[a.status] ?? 9) - (SUGG_STATUS_ORDER[b.status] ?? 9) ||
-        (a.priority ?? 9) - (b.priority ?? 9) ||
-        String(b.suggestedAt ?? '').localeCompare(String(a.suggestedAt ?? '')),
+        String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
     ),
 );
 
 async function loadOpenItems(): Promise<void> {
   openLoading.value = true;
   try {
-    const res = await getHandlingItemsApi({
-      page: 1,
-      pageSize: 100, // 后端 /handling/items pageSize 上限 le=100
-      status: 'PENDING,HANDLING,REOPENED',
-      plantNodeId: selectedPlantNodeId.value,
-    } as HandlingApi.ListQuery);
-    openItems.value = res.items;
+    // 工单口径状态映射（v1.x PENDING,HANDLING,REOPENED → PENDING,EXECUTING,REOPENED）；
+    // 后端 /orders status 为单值，按状态并行请求后合并
+    const statuses: HandlingApi.OrderStatus[] = [
+      'PENDING',
+      'EXECUTING',
+      'REOPENED',
+    ];
+    const results = await Promise.all(
+      statuses.map((status) =>
+        getHandlingOrdersApi({
+          page: 1,
+          pageSize: 100, // 后端 /handling/orders pageSize 上限 le=100
+          status,
+          plantNodeId: selectedPlantNodeId.value,
+        }),
+      ),
+    );
+    openItems.value = results.flatMap((r) => r.items);
   } catch {
     openItems.value = [];
   } finally {
@@ -308,8 +318,8 @@ async function loadOverview(): Promise<void> {
   overviewLoading.value = true;
   try {
     const latest = await getDiagnosisRunsLatestApi(selectedPlantNodeId.value);
-    // 开放处置建议按回路分组（最新在前）
-    const byLoop = new Map<string, HandlingApi.ListItem[]>();
+    // 开放处置工单按回路分组（最新在前）
+    const byLoop = new Map<string, HandlingApi.OrderItem[]>();
     for (const it of openItems.value) {
       const arr = byLoop.get(it.loopId) ?? [];
       arr.push(it);
@@ -317,7 +327,7 @@ async function loadOverview(): Promise<void> {
     }
     overviewRows.value = latest.items.map((l) => {
       const items = (byLoop.get(l.loopId) ?? []).toSorted((a, b) =>
-        String(b.suggestedAt ?? '').localeCompare(String(a.suggestedAt ?? '')),
+        String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
       );
       return {
         loopId: l.loopId,
@@ -327,7 +337,7 @@ async function loadOverview(): Promise<void> {
         latestScore: l.latestScore ?? null,
         primaryCategoryLabel: l.primaryCategoryLabel ?? null,
         suggCount: items.length,
-        suggFirst: items[0]?.content ?? null,
+        suggFirst: items[0]?.title ?? null,
         rawLatest: l,
         currentValues: {
           mode: null,
@@ -581,15 +591,12 @@ onBeforeUnmount(() => {
               }"
               role="button"
               tabindex="0"
-              :title="item.content"
+              :title="item.title"
               @click="ctx.selectLoop(item.loopId)"
               @keydown.enter="ctx.selectLoop(item.loopId)"
             >
               <span class="tuning-sugg-item__tag">{{ item.loopTagName }}</span>
               <span class="tuning-sugg-item__meta">
-                <span v-if="item.priority" class="tuning-sugg-item__prio">
-                  R{{ item.priority }}
-                </span>
                 <span
                   class="tuning-sugg-item__status"
                   :class="`is-${item.status.toLowerCase()}`"

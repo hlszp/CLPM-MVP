@@ -248,6 +248,17 @@ class TestAcceptEndpoint:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_NOT_FOUND"
 
+    def test_accept_malformed_id_rejected(self, client) -> None:
+        """畸形非 UUID suggestionId → ERR_PARAM 400（PG UUID 比较防 500 traceback）。"""
+        _override_db(client, [])
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post(
+                "/api/v1/handling/suggestions/not-a-uuid/accept",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
     @pytest.mark.parametrize("user_key", ["admin", "ic_engineer", "pe_engineer"])
     def test_accept_allowed_roles(self, client, user_key: str) -> None:
         sug = _make_suggestion(status="PENDING")
@@ -1386,6 +1397,17 @@ class TestOrderDetailEndpoint:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_NOT_FOUND"
 
+    def test_detail_malformed_id_rejected(self, client) -> None:
+        """畸形非 UUID orderId → ERR_PARAM 400（避免 asyncpg UUID 解析异常吐 500）。"""
+        _override_db(client, [])
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/handling/orders/not-a-uuid",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
 
 # ===========================================================================
 # 聚合与统计（§6.3，双实体口径）
@@ -1393,8 +1415,9 @@ class TestOrderDetailEndpoint:
 
 
 def _make_loop_agg_row(**over: Any) -> MagicMock:
-    """回路聚合行 mock（_LOOP_AGG_SQL 各列）。"""
+    """回路聚合行 mock（聚合 SQL 各列；_total 为窗口函数 COUNT(*) OVER() 携带的总数）。"""
     row = MagicMock()
+    row._total = 1
     row.loop_id = LOOP_ID
     row.loop_tag_name = "90PIC51212A_PIDA"
     row.loop_description = "辛醇罐TK521A顶部压力"
@@ -1438,10 +1461,10 @@ class TestLoopsEndpoint:
 
     def test_loops_ok_dual_entity_mapping(self, client) -> None:
         """聚合行映射：建议五态 + 工单六态 + closeRate + lastClosedKpiDelta。"""
+        # 窗口函数合并后：分页查询（携带 _total）→ 单位路径，无独立 COUNT 轮次
         _override_db(
             client,
             [
-                _count_result(1),
                 _all_result([_make_loop_agg_row()]),
                 _all_result(_plant_node_rows()),
             ],
@@ -1475,12 +1498,60 @@ class TestLoopsEndpoint:
         assert item["lastHandledBy"] == "mock-仪控班"
         assert item["lastSuggestedAt"].endswith("Z")
 
+    def test_loops_plant_node_filter_sql(self, client) -> None:
+        """plantNodeId 过滤：外层 WHERE 必须引用内层子查询别名 base。
+
+        回归（批次 D）：外层误引子查询内部别名 ll → missing FROM-clause 500。
+        """
+        captured: list = []
+        subtree_row = MagicMock()
+        subtree_row.id = PLANT_ID
+        _capture_override_db(
+            client,
+            [
+                _all_result([subtree_row]),  # 递归子树
+                _all_result([_make_loop_agg_row()]),  # 分页聚合（携带 _total）
+                _all_result(_plant_node_rows()),  # 单位路径
+            ],
+            captured,
+        )
+        resp = self._get(client, {"plantNodeId": PLANT_ID})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["loopId"] == LOOP_ID
+        sql = captured[1].text
+        assert "base.unit_id = ANY(CAST(:unit_ids AS uuid[]))" in sql
+        assert "ll.unit_id = ANY" not in sql
+
+    def test_loops_importance_level_filter_sql(self, client) -> None:
+        """importanceLevel 过滤：外层 WHERE 同样必须引用 base 别名（同批回归）。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [
+                _all_result([_make_loop_agg_row()]),
+                _all_result(_plant_node_rows()),
+            ],
+            captured,
+        )
+        resp = self._get(client, {"importanceLevel": 1})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+        assert data["items"][0]["importanceLevel"] == 1
+        sql = captured[0].text
+        assert "base.importance_level = :importance_level" in sql
+        assert "ll.importance_level =" not in sql
+
     def test_loops_status_distribution_filter_sql(self, client) -> None:
         """状态分布筛选：建议/工单该状态计数>0 任一命中（HAVING 语义）。"""
         captured: list = []
         _capture_override_db(
             client,
-            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            [_all_result([]), _all_result(_plant_node_rows())],
             captured,
         )
         resp = self._get(client, {"status": "PENDING,REOPENED"})
@@ -1504,7 +1575,7 @@ class TestLoopsEndpoint:
         captured: list = []
         _capture_override_db(
             client,
-            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            [_all_result([]), _all_result(_plant_node_rows())],
             captured,
         )
         resp = self._get(client, {"kpiDelta": kpi_delta})
@@ -1516,7 +1587,7 @@ class TestLoopsEndpoint:
         captured: list = []
         _capture_override_db(
             client,
-            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            [_all_result([]), _all_result(_plant_node_rows())],
             captured,
         )
         resp = self._get(client, {"activeOnly": "true"})
@@ -1530,12 +1601,12 @@ class TestLoopsEndpoint:
         captured: list = []
         _capture_override_db(
             client,
-            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            [_all_result([]), _all_result(_plant_node_rows())],
             captured,
         )
         resp = self._get(client, {"sort": "reopened"})
         assert resp.status_code == 200
-        sql = _pg_sql(captured[1])
+        sql = _pg_sql(captured[0])
         assert "ho_reopened DESC" in sql
         assert "ho_ineffective DESC" in sql
 
@@ -1544,12 +1615,12 @@ class TestLoopsEndpoint:
         captured: list = []
         _capture_override_db(
             client,
-            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            [_all_result([]), _all_result(_plant_node_rows())],
             captured,
         )
         resp = self._get(client)
         assert resp.status_code == 200
-        sql = _pg_sql(captured[1])
+        sql = _pg_sql(captured[0])
         assert "GREATEST" in sql
         assert "last_suggested_at" in sql
         assert "last_order_at" in sql
@@ -1567,7 +1638,7 @@ class TestLoopsEndpoint:
     def test_loops_all_roles_can_view(self, client) -> None:
         _override_db(
             client,
-            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            [_all_result([]), _all_result(_plant_node_rows())],
         )
         resp = self._get(client, user_key="sponsor")
         assert resp.status_code == 200

@@ -1,19 +1,22 @@
 """统一关注队列聚合服务（整改方案 §8.1）。
 
-聚合五类关注来源为统一关注队列：
+聚合五类关注来源为统一关注队列（A2 新口径，2026-08-23）：
 - ALERT：ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件
 - DEGRADATION：dayTrend=WORSENED 且 scoreDelta<=-2
 - DATA_QUALITY：完整性 WARNING/CRITICAL 或 可信度 D/E
-- TRACKER：PENDING/IN_PROGRESS 的 Action Tracker
-- VERIFICATION：VERIFYING 超过验证周期（24h）
+- FITNESS_ABNORMAL：适用性等级 L0/L1/L2（P2 IA优化）
+- HANDLING：处置工单（REOPENED/执行超期/验证超期/待执行超期，A2 新增）
+
+旧口径的 TRACKER/VERIFICATION 来源已移除（action_tracker 写入关停，
+工单收敛为 handling_order）；读路径不受影响。
 
 不新增数据库表；聚合现有 alert_event / kpi_snapshot_hourly /
-loop_integrity_snapshot / loop_confidence_latest / action_tracker 数据。
+loop_integrity_snapshot / loop_confidence_latest / handling_order 数据。
 
 优先级规则（透明可解释）：
-- URGENT：CRITICAL 活跃预警 或 CRITICAL 工单
-- HIGH：ERROR 活跃预警、验证超期、完整性 CRITICAL、scoreDelta <= -10
-- MEDIUM：WARN、开放 Tracker、完整性 WARNING、-10 < scoreDelta <= -5
+- URGENT：CRITICAL 活跃预警 或 重开的处置工单
+- HIGH：ERROR 活跃预警、执行/验证超期工单、完整性 CRITICAL、scoreDelta <= -10
+- MEDIUM：WARN、待执行超期工单、完整性 WARNING、-10 < scoreDelta <= -5
 - LOW：INFO、-5 < scoreDelta <= -2、可信度 D/E 但无安全预警
 
 v1.1/v1.2 更新：
@@ -30,11 +33,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, literal, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.alert import AlertEvent
+from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger
 from app.models.metric import (
     KpiSnapshotHourly,
@@ -83,6 +87,26 @@ SOURCE_LABEL: dict[str, str] = {
     "DEGRADATION": "评分恶化",
     "DATA_QUALITY": "数据质量",
     "FITNESS_ABNORMAL": "适用性异常",  # P2 IA优化
+    "HANDLING": "处置工单",  # A2 第 5 来源
+}
+
+#: A2 第④分支开关：PENDING 工单计划时间超期（待执行超期）是否纳入关注队列
+ATTENTION_INCLUDE_SCHEDULE_OVERDUE = True
+
+#: 处置工单状态中文标签（HANDLING 来源摘要用）
+HANDLING_STATUS_LABEL: dict[str, str] = {
+    "REOPENED": "已重开",
+    "EXECUTING": "执行中",
+    "VERIFYING": "验证中",
+    "PENDING": "待执行",
+}
+
+#: 处置工单状态 → 关注队列状态映射
+HANDLING_STATUS_MAP: dict[str, str] = {
+    "REOPENED": "OPEN",
+    "EXECUTING": "IN_PROGRESS",
+    "VERIFYING": "VERIFYING",
+    "PENDING": "OPEN",
 }
 
 # ---------------------------------------------------------------------------
@@ -165,7 +189,7 @@ def _sort_stage(item: _RawItem) -> int:
     """同级排序阶段：未确认 → 超期 → 处理中/验证中 → 已确认 → 已抑制。
 
     - OPEN（未确认）= 0
-    - 超期（VERIFICATION overdue）= 1
+    - 超期（HANDLING overdue）= 1
     - IN_PROGRESS / VERIFYING（处理中/验证中，未超期）= 2
     - ACKNOWLEDGED（已确认）= 3
     - SUPPRESSED（已抑制）= 4
@@ -208,10 +232,10 @@ def _upgrade_priority(current: str, target: str) -> str:
 def _is_overdue(item: _RawItem) -> bool:
     """判断是否超期。
 
-    VERIFICATION 来源时，若 updated_at 超过 24 小时则判定超期。
-    其他来源不判定超期。
+    HANDLING 来源（处置工单）时，若 updated_at 超过 24 小时则判定超期
+    （验证中工单 updated_at 取 submitted_at）。其他来源不判定超期。
     """
-    if item.source != "VERIFICATION":
+    if item.source != "HANDLING":
         return False
     if item.updated_at is None:
         return False
@@ -251,10 +275,12 @@ def _build_actions(
     event_id: str | None,
     tracker_id: str | None,
     role: str,
+    task_id: str | None = None,
 ) -> tuple[dict, list[dict]]:
     """按角色和来源生成 primaryAction 和 actions 列表。
 
     返回 (primary_action, actions_list)，均为 dict 便于后续构造。
+    task_id：HANDLING 来源时承载处置工单 orderId（用于深链接定位）。
     """
     workbench_target = {
         "route": "/monitor/loop-workbench",
@@ -349,18 +375,19 @@ def _build_actions(
             }
         )
 
-    # TRACKER/VERIFICATION 来源：查看工单
-    if source in ("TRACKER", "VERIFICATION") and tracker_id:
-        actions.append(
+    # HANDLING 来源：查看处置工单（主动作，深链接定位目标工单）
+    if source == "HANDLING" and task_id:
+        actions.insert(
+            0,
             {
                 "type": "VIEW_DETAIL",
-                "label": "查看工单",
+                "label": "查看处置工单",
                 "enabled": True,
                 "target": {
-                    "route": "/diagnosis/tracker",
-                    "query": {"trackerId": tracker_id},
+                    "route": "/handling/orders",
+                    "query": {"focus": task_id, "tab": "orders"},
                 },
-            }
+            },
         )
 
     # 主动作：优先 OPEN_WORKBENCH（工作台）
@@ -468,6 +495,152 @@ async def _aggregate_alerts(
                 event_id=str(evt.id),
                 tracker_id=str(evt.tracker_id) if evt.tracker_id else None,
                 task_id=None,
+            )
+        )
+    return items, truncated
+
+
+# ---------------------------------------------------------------------------
+# 聚合：HANDLING（A2 第 5 来源，处置工单）
+# ---------------------------------------------------------------------------
+
+
+async def _aggregate_handling_orders(
+    db: AsyncSession,
+    loop_ids: set[str] | None,
+) -> tuple[list[_RawItem], bool]:
+    """聚合处置工单（handling_order）关注项。
+
+    单条 SQL UNION ALL 四分支（时间比较全部在 SQL 层，禁 Python 逐行过滤）：
+    ① REOPENED → URGENT（重开工单需跟进）
+    ② EXECUTING 且 planned_at < now() → HIGH（执行超期）
+    ③ VERIFYING 且 submitted_at < now()-24h → HIGH（验证超期）
+    ④ PENDING 且 planned_at < now() → MEDIUM（待执行超期，
+       由 ATTENTION_INCLUDE_SCHEDULE_OVERDUE 控制是否纳入）
+
+    Returns:
+        (items, truncated) - truncated 表示是否达到 _MAX_ITEMS_PER_SOURCE 上限
+    """
+    unit_node = PlantNode.__table__.alias("unit_node_handling")
+    area_node = PlantNode.__table__.alias("area_node_handling")
+
+    def _branch(conditions: list, priority: str, reason: str):
+        stmt = (
+            select(
+                HandlingOrder.id.label("order_id"),
+                HandlingOrder.order_no,
+                HandlingOrder.title,
+                HandlingOrder.status,
+                HandlingOrder.loop_id,
+                HandlingOrder.planned_at,
+                HandlingOrder.submitted_at,
+                HandlingOrder.started_at,
+                HandlingOrder.created_at,
+                LoopLedger.tag_name,
+                unit_node.c.name.label("unit_name"),
+                area_node.c.name.label("area_name"),
+                literal(priority).label("priority"),
+                literal(reason).label("reason"),
+            )
+            .join(LoopLedger, HandlingOrder.loop_id == LoopLedger.id)
+            .outerjoin(unit_node, LoopLedger.unit_id == unit_node.c.id)
+            .outerjoin(area_node, unit_node.c.parent_id == area_node.c.id)
+            .where(LoopLedger.is_active.is_(True), *conditions)
+        )
+        if loop_ids is not None:
+            stmt = stmt.where(HandlingOrder.loop_id.in_(list(loop_ids)))
+        return stmt
+
+    branches = [
+        _branch(
+            [HandlingOrder.status == "REOPENED"],
+            "URGENT",
+            "处置工单已重开，需跟进处理",
+        ),
+        _branch(
+            [
+                HandlingOrder.status == "EXECUTING",
+                HandlingOrder.planned_at.isnot(None),
+                HandlingOrder.planned_at < func.now(),
+            ],
+            "HIGH",
+            "执行中处置工单已超过计划时间",
+        ),
+        _branch(
+            [
+                HandlingOrder.status == "VERIFYING",
+                HandlingOrder.submitted_at.isnot(None),
+                HandlingOrder.submitted_at < func.now() - timedelta(hours=24),
+            ],
+            "HIGH",
+            "处置工单验证已超过 24 小时",
+        ),
+    ]
+    if ATTENTION_INCLUDE_SCHEDULE_OVERDUE:
+        branches.append(
+            _branch(
+                [
+                    HandlingOrder.status == "PENDING",
+                    HandlingOrder.planned_at.isnot(None),
+                    HandlingOrder.planned_at < func.now(),
+                ],
+                "MEDIUM",
+                "处置工单待执行且已超过计划时间",
+            )
+        )
+
+    subq = union_all(*branches).subquery()
+    stmt = (
+        select(subq)
+        .order_by(
+            case(
+                (subq.c.priority == "URGENT", 0),
+                (subq.c.priority == "HIGH", 1),
+                else_=2,
+            ),
+            subq.c.created_at.desc(),
+        )
+        .limit(_MAX_ITEMS_PER_SOURCE + 1)  # +1 检测是否截断
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+    truncated = len(rows) > _MAX_ITEMS_PER_SOURCE
+    rows = rows[:_MAX_ITEMS_PER_SOURCE]
+
+    items: list[_RawItem] = []
+    now_dt = datetime.now(UTC).replace(tzinfo=None)
+    for row in rows:
+        order_id = str(row.order_id)
+        lid = str(row.loop_id)
+        status_label = HANDLING_STATUS_LABEL.get(row.status, row.status)
+        # 时间字段兑底：排序/展示用 occurred_at 不允许为 None
+        occurred_at = row.started_at or row.created_at or row.planned_at or now_dt
+        # VERIFYING 工单 updated_at 取 submitted_at（_is_overdue 24h 判定依据）
+        updated_at = row.submitted_at or row.started_at or row.planned_at
+        items.append(
+            _RawItem(
+                source="HANDLING",
+                source_id=order_id,
+                loop_id=lid,
+                tag_name=row.tag_name,
+                unit_name=row.unit_name,
+                area_name=row.area_name,
+                title=f"处置工单 {row.order_no}",
+                summary=f"{row.title}（{status_label}）",
+                priority=row.priority,
+                source_severity=None,
+                status=HANDLING_STATUS_MAP.get(row.status, "OPEN"),
+                source_status=row.status,
+                rank_reasons=[row.reason],
+                occurred_at=occurred_at,
+                updated_at=updated_at,
+                confidence_level=None,
+                score=None,
+                score_delta=None,
+                event_id=None,
+                tracker_id=None,
+                task_id=order_id,  # orderId 由 task_id 字段承载
             )
         )
     return items, truncated
@@ -830,10 +1003,11 @@ def _group_items_by_loop(
     - 时间=组内最新
     - 来源 chips 并列、rankReasons 合并去重
 
-    v1.3 性能优化：缓存 _build_actions 结果，避免同一(loop_id, event_id, tracker_id)重复计算。
+    v1.3 性能优化：缓存 _build_actions 结果，避免同一
+    (loop_id, event_id, tracker_id, task_id) 重复计算。
     """
     groups: dict[str, dict[str, Any]] = {}
-    # 动作缓存：key=(source, loop_id, event_id, tracker_id)
+    # 动作缓存：key=(source, loop_id, event_id, tracker_id, task_id)
     action_cache: dict[tuple, tuple[dict, list[dict]]] = {}
 
     def _get_cached_actions(
@@ -841,8 +1015,9 @@ def _group_items_by_loop(
         loop_id: str,
         event_id: str | None,
         tracker_id: str | None,
+        task_id: str | None,
     ):
-        key = (source, loop_id, event_id, tracker_id)
+        key = (source, loop_id, event_id, tracker_id, task_id)
         if key not in action_cache:
             action_cache[key] = _build_actions(
                 source=source,
@@ -850,6 +1025,7 @@ def _group_items_by_loop(
                 event_id=event_id,
                 tracker_id=tracker_id,
                 role=role,
+                task_id=task_id,
             )
         return action_cache[key]
 
@@ -899,14 +1075,14 @@ def _group_items_by_loop(
     for _idx, g in enumerate(group_list, 1):
         first = g["_first_item"]
         primary, actions = _get_cached_actions(
-            first.source, g["loopId"], first.event_id, first.tracker_id
+            first.source, g["loopId"], first.event_id, first.tracker_id, first.task_id
         )
 
         # 子项转换为响应格式
         children_resp = []
         for child in g["children"]:
             child_primary, child_actions = _get_cached_actions(
-                child.source, child.loop_id, child.event_id, child.tracker_id
+                child.source, child.loop_id, child.event_id, child.tracker_id, child.task_id
             )
             children_resp.append(_item_to_dict(child, child_primary, child_actions))
 
@@ -1044,6 +1220,12 @@ async def list_attention(
     )
     # P2 IA优化：适用性异常来源
     need_fitness = source_filter is None or "FITNESS_ABNORMAL" in source_filter
+    # A2 第 5 来源：处置工单（模块热插拔守卫：处置模块禁用时短路）
+    from app.core.modules import is_module_enabled
+
+    need_handling = (source_filter is None or "HANDLING" in source_filter) and is_module_enabled(
+        "handling"
+    )
 
     if need_alert:
         tasks.append(_aggregate_alerts(db, loop_ids))
@@ -1054,6 +1236,9 @@ async def list_attention(
     if need_fitness:
         tasks.append(_aggregate_fitness_items(db, loop_ids))
         task_labels.append("FITNESS")
+    if need_handling:
+        tasks.append(_aggregate_handling_orders(db, loop_ids))
+        task_labels.append("HANDLING")
 
     results = await asyncio.gather(*tasks) if tasks else []
     for label, res in zip(task_labels, results, strict=True):
@@ -1064,6 +1249,8 @@ async def list_attention(
                 truncated["ALERT"] = True
             elif label == "FITNESS":
                 truncated["FITNESS_ABNORMAL"] = True
+            elif label == "HANDLING":
+                truncated["HANDLING"] = True
 
     # 过滤
     filtered = raw_items
@@ -1098,10 +1285,8 @@ async def list_attention(
     aggregates["byGroupPriority"] = by_group_priority
     aggregates["groupCount"] = len(groups)
 
-    # 额外统计：验证超期数、数据质量数
-    verification_overdue = sum(1 for i in filtered if i.source == "VERIFICATION")
+    # 额外统计：数据质量数
     data_quality_count = sum(1 for i in filtered if i.source == "DATA_QUALITY")
-    aggregates["verificationOverdue"] = verification_overdue
     aggregates["dataQualityCount"] = data_quality_count
     open_count = aggregates["byStatus"].get("OPEN", 0)
     aggregates["openCount"] = open_count
@@ -1146,7 +1331,6 @@ def _empty_result(page: int, page_size: int) -> dict:
             "groupCount": 0,
             "openCount": 0,
             "urgentCount": 0,
-            "verificationOverdue": 0,
             "dataQualityCount": 0,
         },
         "truncated": {},

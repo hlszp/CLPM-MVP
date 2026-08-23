@@ -8,22 +8,25 @@
  * - E2E-ROLE-004: EXPERT 有整定权限
  * - E2E-ROLE-005: IC_ENGINEER 全业务权限
  *
- * 角色权限对齐（IA 重构 Phase A 后菜单结构）：
- *   frontend/apps/web-antd/src/router/routes/modules/*.ts
- *   顶级菜单：监控 / 回路 / 评估 / 诊断 / 整定 / 配置 / 系统
- *   - SPONSOR：监控 / 评估 / 诊断
- *   - PE_ENGINEER：监控 / 评估 / 诊断（无整定/配置/系统）
- *   - EXPERT：诊断 / 整定（无监控/配置/系统）
- *   - IC_ENGINEER：监控 / 评估 / 诊断 / 整定 / 系统（无配置）
+ * 角色菜单权限对齐（2026-08-23 按现行 routes/modules/*.ts authority 重写）：
+ *   - SPONSOR：监控 / 评估 / 诊断 / 整定(仅记录与效果验证) / 处置 / 统计报告；无配置 / 系统
+ *   - PE_ENGINEER：监控 / 评估 / 诊断 / 整定(仅记录与效果验证，无工作台) / 处置 /
+ *     统计报告 / 配置（无系统）
+ *   - EXPERT：监控(回路列表/工作台/关注/预警) / 诊断 / 整定(含工作台)；
+ *     无评估 / 配置 / 系统
+ *   - IC_ENGINEER：监控 / 评估 / 诊断 / 整定(含工作台) / 处置 / 统计报告 /
+ *     配置 / 系统(权限矩阵)
  *   - ADMIN：全部
- *   注：Phase A "回路"菜单组仅含 hideInMenu 的详情页，侧边栏不显示，
- *       Phase B 回路工作台上线后回归。
+ *   历史口径变更：旧断言"SPONSOR/PE 无整定菜单"、"IC 无配置菜单"基于 IA 重构前
+ *   的 authority，现行 tuning.ts 记录/效果验证对全角色可见、config.ts 父路由
+ *   authority 含 IC/PE（子页再按 ADMIN 收窄），故同步更新断言。
  */
 import { test, expect } from '../fixtures/auth.js';
 
-/** 等待菜单渲染完成 */
+/** 等待菜单渲染完成（SignalR 心跳使 networkidle 永不触发，
+ * 改用 domcontentloaded + 菜单元素等待） */
 async function waitForMenu(page: import('@playwright/test').Page) {
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   // Vben Admin 菜单容器：.vben-menu
   await page
     .locator('.vben-menu')
@@ -59,15 +62,20 @@ test.describe('多角色权限验证 E2E', () => {
 
     const menuTexts = await getMenuTexts(page);
 
-    // SPONSOR 应可见：监控、评估、诊断（数组精确匹配，避免子串误判）
+    // SPONSOR 应可见：监控、评估、诊断、整定（仅记录/验证）、处置、统计报告
     expect(menuTexts).toContain('监控');
     expect(menuTexts).toContain('评估');
     expect(menuTexts).toContain('诊断');
+    expect(menuTexts).toContain('整定');
+    expect(menuTexts).toContain('处置');
+    expect(menuTexts).toContain('统计报告');
 
-    // SPONSOR 不应可见：整定、配置、系统
-    expect(menuTexts).not.toContain('整定');
+    // SPONSOR 不应可见：配置、系统（ADMIN/IC/PE 范畴）
     expect(menuTexts).not.toContain('配置');
     expect(menuTexts).not.toContain('系统');
+
+    // SPONSOR 无整定工作台操作权限：菜单不应含"整定工作台"项
+    expect(menuTexts).not.toContain('整定工作台');
   });
 
   test('E2E-ROLE-002: SPONSOR 直接访问受限页 → 403/404 或重定向', async ({
@@ -105,7 +113,7 @@ test.describe('多角色权限验证 E2E', () => {
     expect(is403 || is404 || isRedirected).toBeTruthy();
   });
 
-  test('E2E-ROLE-003: PE_ENGINEER 无整定菜单', async ({ page, loginAs }) => {
+  test('E2E-ROLE-003: PE_ENGINEER 整定仅查看（无工作台入口）', async ({ page, loginAs }) => {
     await loginAs('PE_ENGINEER');
     await page.goto('/dashboard');
     await page.waitForURL(/\/dashboard/, { timeout: 30_000 });
@@ -113,13 +121,19 @@ test.describe('多角色权限验证 E2E', () => {
 
     const menuTexts = await getMenuTexts(page);
 
-    // PE_ENGINEER 应可见：监控、评估、诊断
+    // PE_ENGINEER 应可见：监控、评估、诊断、整定、配置
     expect(menuTexts).toContain('监控');
     expect(menuTexts).toContain('评估');
     expect(menuTexts).toContain('诊断');
+    expect(menuTexts).toContain('整定');
+    expect(menuTexts).toContain('配置');
 
-    // PE_ENGINEER 不应可见：整定
-    expect(menuTexts).not.toContain('整定');
+    // 现行口径（tuning.ts）：PE 可见整定记录/效果验证，但无整定工作台菜单项；
+    // 直接访问 /tuning/workbench 由路由 authority 拦截（roles-smoke 另行验证 403 页）
+    expect(menuTexts).not.toContain('整定工作台');
+
+    // PE_ENGINEER 不应可见：系统
+    expect(menuTexts).not.toContain('系统');
   });
 
   test('E2E-ROLE-004: EXPERT 有整定权限', async ({ page, loginAs }) => {
@@ -135,7 +149,7 @@ test.describe('多角色权限验证 E2E', () => {
 
     // 验证可访问整定工作台
     await page.goto('/tuning/workbench');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     // 不应跳转到 403
     expect(page.url()).not.toContain('/403');
     expect(page.url()).not.toContain('/auth/login');
@@ -149,13 +163,16 @@ test.describe('多角色权限验证 E2E', () => {
 
     const menuTexts = await getMenuTexts(page);
 
-    // IC_ENGINEER 应可见：监控、评估、诊断、整定、系统（不含配置：ADMIN 专属）
+    // IC_ENGINEER 应可见：监控、评估、诊断、整定（含工作台）、处置、统计报告、
+    // 配置（config.ts 父路由 authority 含 IC_ENGINEER）、系统（权限矩阵）
     expect(menuTexts).toContain('监控');
     expect(menuTexts).toContain('评估');
     expect(menuTexts).toContain('诊断');
     expect(menuTexts).toContain('整定');
+    expect(menuTexts).toContain('整定工作台');
+    expect(menuTexts).toContain('处置');
+    expect(menuTexts).toContain('统计报告');
+    expect(menuTexts).toContain('配置');
     expect(menuTexts).toContain('系统');
-    // IC_ENGINEER 不应可见：配置
-    expect(menuTexts).not.toContain('配置');
   });
 });

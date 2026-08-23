@@ -77,7 +77,7 @@ test.describe('登录流程 E2E', () => {
 
     // 2. 确保在 dashboard 页面
     await page.goto('/dashboard/workbench');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 3. 点击用户下拉菜单触发器（reka-ui 组件）

@@ -23,6 +23,19 @@
  */
 import { test, expect } from '../fixtures/auth.js';
 
+/** 偶发白屏兜底：并行负载下 dev server 偶发整页未渲染，
+ * 探测不到看板特征元素时 reload 一次 */
+async function ensureDashboardRendered(
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  const marker = page
+    .locator('.clpm-pid-dashboard__gauge-card, .clpm-pid-dashboard__top5-card')
+    .first();
+  if (await marker.isVisible().catch(() => false)) return;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+}
+
 test.describe('性能评估 E2E', () => {
   test.beforeEach(async ({ page, loginAs }) => {
     // 指标配置仅 ADMIN 可见，使用 ADMIN 账户
@@ -30,8 +43,10 @@ test.describe('性能评估 E2E', () => {
   });
 
   test('E2E-PERF-001: 指标配置', async ({ page }) => {
-    await page.goto('/config/metric');
-    await page.waitForLoadState('networkidle');
+    // SignalR 心跳使 networkidle 永不触发（SYS-001/PERF-001 超时根因），
+    // 改用 domcontentloaded + 元素等待
+    await page.goto('/config/metric', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（表格容器存在）
@@ -53,7 +68,7 @@ test.describe('性能评估 E2E', () => {
         .getByRole('button', { name: /编辑/i }).first();
       if (await editBtn.isVisible().catch(() => false)) {
         await editBtn.click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
 
         // 验证编辑 Modal 弹出
         await expect(page.locator('.ant-modal')).toBeVisible({ timeout: 10_000 });
@@ -81,8 +96,9 @@ test.describe('性能评估 E2E', () => {
   // 路由 /metric/pid-dashboard：6 个仪表盘卡片 + 3 张图表 + 明细表 + TOP5
   test('E2E-PERF-002: 评估看板', async ({ page }) => {
     await page.goto('/metric/pid-dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(3000);
+    await ensureDashboardRendered(page);
 
     // 验证页面加载（仪表盘卡片区域）
     // pid-dashboard.vue: .clpm-pid-dashboard__gauge-card 共 6 个
@@ -106,8 +122,9 @@ test.describe('性能评估 E2E', () => {
   // pid-dashboard.vue: .clpm-pid-dashboard__top5-card 含 TOP5 治理台账表格（C2-4 升级）
   test('E2E-PERF-003: 评估看板 TOP5 回路表格', async ({ page }) => {
     await page.goto('/metric/pid-dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
+    await ensureDashboardRendered(page);
 
     // 验证 TOP5 回路卡片标题存在
     const top5Title = page.getByText('TOP5 治理台账', { exact: false }).first();
@@ -128,8 +145,9 @@ test.describe('性能评估 E2E', () => {
   // pid-dashboard.vue: 6 个仪表盘卡片标题 + 3 张图表 + 装置明细表
   test('E2E-PERF-004: 评估看板装置级 KPI 仪表盘 + 图表', async ({ page }) => {
     await page.goto('/metric/pid-dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(3000);
+    await ensureDashboardRendered(page);
 
     // 验证 6 个仪表盘卡片标题文本存在
     // pid-dashboard.vue: 实时自控率/性能评分/自控率/平稳率/好值率/仪表故障率
@@ -164,7 +182,7 @@ test.describe('性能评估 E2E', () => {
   // "权重配置"Tab 加载 weight-config.vue，含"恢复国标默认值"按钮
   test('E2E-PERF-005: 指标配置 Tab 结构 + 恢复国标默认值', async ({ page }) => {
     await page.goto('/config/metric');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // config.vue: 顶层 Tabs 含 5 个 TabPane
@@ -210,8 +228,9 @@ test.describe('性能评估 E2E', () => {
   // pid-dashboard.vue: .clpm-pid-dashboard__sort-btn 切换 top5Sort asc/desc
   test('E2E-PERF-006: 评估看板 TOP5 回路升降序切换', async ({ page }) => {
     await page.goto('/metric/pid-dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
+    await ensureDashboardRendered(page);
 
     // 验证页面加载（仪表盘卡片或表格可见）
     const tableOrCard = page

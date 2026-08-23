@@ -162,24 +162,36 @@ export namespace HandlingApi {
     };
   }
 
-  /** 按回路聚合行（GET /loops，档案页主查询，§6.4） */
+  /** 按回路聚合行（GET /loops，档案页主查询，§6.3 双实体口径） */
   export interface LoopAggregateItem {
     loopId: string;
     loopTagName: string;
     loopDescription?: null | string;
     importanceLevel?: null | number;
     unitPath?: null | string;
-    /** 六状态计数（小写键） */
-    counts: {
-      closed: number;
-      handling: number;
+    /** 建议五态计数（小写键） */
+    suggestionCounts: {
+      accepted: number;
+      converted: number;
       ignored: number;
+      pending: number;
+      rejected: number;
+    };
+    /** 建议累计数 */
+    suggestionTotal: number;
+    /** 工单六态计数（小写键） */
+    orderCounts: {
+      cancelled: number;
+      closed: number;
+      executing: number;
       pending: number;
       reopened: number;
       verifying: number;
     };
-    /** 累计处置项数 */
-    totalCount: number;
+    /** 工单累计数 */
+    orderTotal: number;
+    /** 闭环率（closed / 已验证，无验证记录为 null） */
+    closeRate?: null | number;
     lastSuggestedAt?: null | string;
     lastHandledAt?: null | string;
     lastHandledBy?: null | string;
@@ -192,24 +204,32 @@ export namespace HandlingApi {
     plantNodeId?: string;
     importanceLevel?: number;
     keyword?: string;
-    /** 仅看有在途（pending+handling+verifying>0） */
+    /** 状态分布筛选（多值逗号分隔；建议/工单该状态计数>0 即命中） */
+    status?: string;
+    /** KPI 改善筛选：improved/degraded/closed/unclosed */
+    kpiDelta?: 'closed' | 'degraded' | 'improved' | 'unclosed';
+    /** 仅看有在途（待审核/已接受建议或非终态工单 >0） */
     activeOnly?: boolean;
-    /** recent=最近建议时间倒序（默认）/ reopened=重开次数倒序 */
+    /** recent=最近活动倒序（默认）/ reopened=工单重开次数倒序 */
     sort?: 'recent' | 'reopened';
   }
 
-  /** 统计页汇总指标（GET /statistics，§6.4；无 CLOSED 记录时为 null） */
+  /** 统计页汇总指标（GET /statistics，§6.3；无数据时相关项为 null） */
   export interface StatisticsSummary {
     /** 本月闭环数 */
     closedThisMonth: null | number;
     /** 闭环率（closed / 已验证，无验证记录为 null） */
     closeRate: null | number;
-    /** 平均处置时长（suggested_at → verified_at 均值，小时） */
+    /** 平均处置时长（创建 → 验证闭环均值，小时） */
     avgCycleHours: null | number;
     /** 无效重开率（INEFFECTIVE / 已验证） */
     ineffectiveRate: null | number;
-    /** 平均 KPI 改善分（闭环项 kpi delta 均值） */
+    /** 平均 KPI 改善分（闭环工单 kpi delta 均值） */
     avgKpiDelta: null | number;
+    /** 驳回率（建议侧 REJECTED / 已审核） */
+    rejectRate: null | number;
+    /** 平均排程周期（工单创建 → 开工均值，小时） */
+    avgScheduleHours: null | number;
   }
 
   /** 月度趋势行 */
@@ -233,12 +253,13 @@ export namespace HandlingApi {
     closed: number;
   }
 
-  /** Top 问题回路行（重开次数降序） */
+  /** Top 问题回路行（重开次数降序，工单口径） */
   export interface TopLoopItem {
     loopId: string;
     loopTagName: string;
     unitPath?: null | string;
-    totalCount: number;
+    /** 工单总数 */
+    orderTotal: number;
     reopened: number;
     lastClosedKpiDelta?: null | number;
   }
@@ -453,66 +474,12 @@ export namespace HandlingApi {
   }
 }
 
-/** 处置清单（分页/筛选；排序=状态分组优先级 + updatedAt DESC） */
-export function getHandlingItemsApi(params: HandlingApi.ListQuery) {
-  return requestClient.get<PaginatedResponse<HandlingApi.ListItem>>(
-    '/handling/items',
-    {
-      params,
-    },
-  );
-}
+// ===========================================================================
+// v1.x items 系列端点已废弃（后端无 /handling/items，批次 C 清理死函数）；
+// 双实体口径请走 suggestions / orders 系列
+// ===========================================================================
 
-/** 状态统计（清单页顶部卡片：各状态计数 + 本月闭环数） */
-export function getHandlingStatsApi() {
-  return requestClient.get<HandlingApi.Stats>('/handling/items/stats');
-}
-
-/** 处置详情（清单行全部字段 + action_detail/kpi 固化/ignore_reason/basis） */
-export function getHandlingItemApi(id: string) {
-  return requestClient.get<HandlingApi.Detail>(`/handling/items/${id}`);
-}
-
-/** 开始处置（PENDING/REOPENED → HANDLING） */
-export function startHandlingApi(id: string, data: HandlingApi.StartBody) {
-  return requestClient.post<HandlingApi.Detail>(
-    `/handling/items/${id}/start`,
-    data,
-  );
-}
-
-/** 提交验证（HANDLING → VERIFYING；TUNING 必填 pidAfter） */
-export function submitHandlingApi(id: string, data: HandlingApi.SubmitBody) {
-  return requestClient.post<HandlingApi.Detail>(
-    `/handling/items/${id}/submit`,
-    data,
-  );
-}
-
-/** 验证结论（VERIFYING → CLOSED/REOPENED；服务端固化 KPI 前后快照） */
-export function verifyHandlingApi(id: string, data: HandlingApi.VerifyBody) {
-  return requestClient.post<HandlingApi.Detail>(
-    `/handling/items/${id}/verify`,
-    data,
-  );
-}
-
-/** 忽略（PENDING → IGNORED 终态；ignoreReason 必填） */
-export function ignoreHandlingApi(id: string, data: HandlingApi.IgnoreBody) {
-  return requestClient.post<HandlingApi.Detail>(
-    `/handling/items/${id}/ignore`,
-    data,
-  );
-}
-
-/** KPI 前后对比预览（VERIFYING 阶段实时拉取，不落库） */
-export function getKpiComparisonApi(id: string) {
-  return requestClient.post<HandlingApi.KpiComparison>(
-    `/handling/items/${id}/kpi-comparison`,
-  );
-}
-
-/** 按回路聚合（档案页主查询，§6.4；Phase 1F 后端待交付） */
+/** 按回路聚合（档案页主查询，§6.3 双实体口径） */
 export function getHandlingLoopsApi(params: HandlingApi.LoopQuery) {
   return requestClient.get<PaginatedResponse<HandlingApi.LoopAggregateItem>>(
     '/handling/loops',
@@ -520,7 +487,7 @@ export function getHandlingLoopsApi(params: HandlingApi.LoopQuery) {
   );
 }
 
-/** 处置统计页数据（§6.4；Phase 1F 后端待交付） */
+/** 处置统计页数据（§6.3 工单维度 + 建议驳回率） */
 export function getHandlingStatisticsApi(months = 6) {
   return requestClient.get<HandlingApi.StatisticsData>('/handling/statistics', {
     params: { months },

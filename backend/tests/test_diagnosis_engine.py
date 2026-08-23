@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from app.constants.mode import StandardMode
 from app.contracts.data_types import RawTimeSeries
@@ -3884,16 +3883,15 @@ class TestB7VisualizationSlimming:
 
 
 class TestAutoCreateTrackers:
-    """测试 _auto_create_trackers() 自动建单逻辑。"""
+    """测试 _auto_create_trackers()（A1：自动建单已关停，改为记日志 no-op）。"""
 
     @pytest.mark.asyncio
-    async def test_creates_trackers_for_new_labels(self) -> None:
-        """新标签应创建对应的 ActionTracker（PENDING）。"""
+    async def test_no_trackers_created_for_labels(self) -> None:
+        """诊断产出标签不再自动建单：不产生任何 DB 读写。"""
         db = AsyncMock()
-        # 查询已有开放态 tracker → 返回空
-        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
+        db.execute = AsyncMock()
         db.add = MagicMock()
-        db.begin_nested = MagicMock(return_value=_BeginNestedCM())
+        db.begin_nested = MagicMock()
 
         labels = ["OSCILLATION", "VALVE_STICTION"]
         label_to_diag_id = {
@@ -3904,30 +3902,10 @@ class TestAutoCreateTrackers:
 
         await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
 
-        # 应创建 2 个 tracker
-        assert db.add.call_count == 2
-        added_labels = {call.args[0].diagnosis_label for call in db.add.call_args_list}
-        assert added_labels == {"OSCILLATION", "VALVE_STICTION"}
-
-    @pytest.mark.asyncio
-    async def test_skips_labels_with_existing_open_tracker(self) -> None:
-        """已有开放态 tracker 的标签应跳过建单。"""
-        db = AsyncMock()
-        # 查询 select(ActionTracker.diagnosis_label) 返回标签字符串列表
-        db.execute = AsyncMock(return_value=_make_scalars_all_mock(["OSCILLATION"]))
-        db.add = MagicMock()
-        db.begin_nested = MagicMock(return_value=_BeginNestedCM())
-
-        labels = ["OSCILLATION", "VALVE_STICTION"]
-        label_to_diag_id = {"OSCILLATION": "diag-1", "VALVE_STICTION": "diag-2"}
-        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
-
-        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
-
-        # 只创建 1 个新 tracker（VALVE_STICTION）
-        assert db.add.call_count == 1
-        added_label = db.add.call_args_list[0].args[0].diagnosis_label
-        assert added_label == "VALVE_STICTION"
+        # 关停后不查、不写、不开 SAVEPOINT
+        db.execute.assert_not_called()
+        db.add.assert_not_called()
+        db.begin_nested.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_empty_labels_does_nothing(self) -> None:
@@ -3935,105 +3913,27 @@ class TestAutoCreateTrackers:
         db = AsyncMock()
         db.execute = AsyncMock()
         db.add = MagicMock()
-        db.begin_nested = MagicMock(return_value=_BeginNestedCM())
 
         await _auto_create_trackers(db, "loop-001", [], {}, datetime(2026, 7, 22, 10, 0, 0))
 
         db.execute.assert_not_called()
         db.add.assert_not_called()
-        db.begin_nested.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_labels_with_none_filtered_out(self) -> None:
-        """None 或空字符串标签应被过滤。"""
+    async def test_labels_with_none_filtered_and_no_write(self) -> None:
+        """None/空字符串标签被过滤后仍不建单（关停后恒 no-op）。"""
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
+        db.execute = AsyncMock()
         db.add = MagicMock()
-        db.begin_nested = MagicMock(return_value=_BeginNestedCM())
 
         labels = ["OSCILLATION", None, "", "VALVE_STICTION"]
         label_to_diag_id = {"OSCILLATION": "diag-1", "VALVE_STICTION": "diag-2"}
-        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
 
-        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
-
-        assert db.add.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_new_tracker_has_correct_fields(self) -> None:
-        """新建 tracker 应有正确的字段值（PENDING、D1 来源字段、severity 等）。"""
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
-        db.add = MagicMock()
-        db.begin_nested = MagicMock(return_value=_BeginNestedCM())
-
-        labels = ["OSCILLATION"]
-        label_to_diag_id = {"OSCILLATION": "diag-result-id-123"}
-        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
-
-        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
-
-        assert db.add.call_count == 1
-        tracker = db.add.call_args_list[0].args[0]
-        assert tracker.loop_id == "loop-001"
-        assert tracker.diagnosis_label == "OSCILLATION"
-        assert tracker.action_status == "PENDING"
-        assert tracker.diagnosis_result_id == "diag-result-id-123"
-        # created_at 不显式设置：沿用 server_default=now()，与 manual tracker 口径一致
-        # （避免 UTC naive 与数据库本地时间混用导致 sortBy=created_at 排序错乱）
-        assert tracker.created_at is None
-        assert tracker.updated_at is None
-        # D1: 自动建单来源 + 严重等级（OSCILLATION → WARN）
-        assert tracker.trigger_type == "auto"
-        assert tracker.triggered_by == "system"
-        assert tracker.severity == "WARN"
-
-    @pytest.mark.asyncio
-    async def test_severity_mapped_per_label(self) -> None:
-        """不同标签应映射到不同严重等级（VALVE_STICTION→ERROR，EXTERNAL_DISTURBANCE→INFO）。"""
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
-        db.add = MagicMock()
-        db.begin_nested = MagicMock(return_value=_BeginNestedCM())
-
-        labels = ["VALVE_STICTION", "EXTERNAL_DISTURBANCE"]
-        label_to_diag_id = {
-            "VALVE_STICTION": "diag-1",
-            "EXTERNAL_DISTURBANCE": "diag-2",
-        }
-        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
-
-        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
-
-        severity_by_label = {
-            call.args[0].diagnosis_label: call.args[0].severity for call in db.add.call_args_list
-        }
-        assert severity_by_label["VALVE_STICTION"] == "ERROR"
-        assert severity_by_label["EXTERNAL_DISTURBANCE"] == "INFO"
-
-    @pytest.mark.asyncio
-    async def test_skips_on_integrity_error_and_continues(self) -> None:
-        """并发建单触发 IntegrityError 时跳过冲突标签，不影响后续标签建单。"""
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_scalars_all_mock([]))
-        db.add = MagicMock()
-        # OSCILLATION 的 SAVEPOINT flush 冲突，VALVE_STICTION 正常
-        conflict_exc = IntegrityError("INSERT ...", {}, Exception("unique constraint"))
-        db.begin_nested = MagicMock(
-            side_effect=[_BeginNestedCM(raise_on_exit=conflict_exc), _BeginNestedCM()]
+        await _auto_create_trackers(
+            db, "loop-001", labels, label_to_diag_id, datetime(2026, 7, 22, 10, 0, 0)
         )
 
-        labels = ["OSCILLATION", "VALVE_STICTION"]
-        label_to_diag_id = {"OSCILLATION": "diag-1", "VALVE_STICTION": "diag-2"}
-        diagnosed_at = datetime(2026, 7, 22, 10, 0, 0)
-
-        # 不应抛出异常
-        await _auto_create_trackers(db, "loop-001", labels, label_to_diag_id, diagnosed_at)
-
-        # 两个标签都进入 async with（db.add 各调一次），但 OSCILLATION 因冲突被跳过
-        assert db.add.call_count == 2
-        # 第二个 begin_nested 被调用（说明冲突后继续处理后续标签）
-        assert db.begin_nested.call_count == 2
+        db.add.assert_not_called()
 
 
 # ===========================================================================

@@ -30,6 +30,7 @@ from app.services.diagnosis_operators import OPERATOR_REGISTRY, OperatorInput, O
 from app.services.diagnosis_operators.classification import ClassificationResult, classify
 from app.services.diagnosis_operators.fusion import FamilyFusion, fuse_family
 from app.services.diagnosis_operators.gate import evaluate_gate
+from app.services.diagnosis_system_actions import generate_system_actions_best_effort
 from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.preprocessing.quality_code import map_quality_code
 from app.services.waveform import lttb_downsample_multi_series
@@ -777,6 +778,8 @@ async def run_diagnosis_for_loop(
     )
     db.add(run)
     await db.commit()
+    # A3：诊断落库即时生成 SYSTEM 处置建议（失败仅记日志，不阻塞主链路）
+    await generate_system_actions_best_effort(db, run)
 
     await _report(1.0, "完成")
     logger.info(

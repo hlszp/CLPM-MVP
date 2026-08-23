@@ -1,7 +1,8 @@
 /**
  * 监控模块 API——关注队列与工作台摘要（整改方案 §8）
  *
- * 关注队列统一聚合 ALERT/DEGRADATION/DATA_QUALITY/TRACKER/VERIFICATION/FITNESS_ABNORMAL 六类来源。
+ * 关注队列统一聚合 ALERT/DEGRADATION/DATA_QUALITY/FITNESS_ABNORMAL/HANDLING 等来源
+ * （批次 C：新增 HANDLING 处置工单来源；TRACKER/VERIFICATION 已随 tracker 关停下线）。
  * 动作由服务端按角色生成，前端不自行推断权限。
  */
 import { requestClient } from '#/api/request';
@@ -12,7 +13,8 @@ export namespace MonitorApi {
     | 'ALERT'
     | 'DATA_QUALITY'
     | 'DEGRADATION'
-    | 'FITNESS_ABNORMAL';
+    | 'FITNESS_ABNORMAL'
+    | 'HANDLING';
 
   /** 优先级 */
   export type AttentionPriority = 'HIGH' | 'LOW' | 'MEDIUM' | 'URGENT';

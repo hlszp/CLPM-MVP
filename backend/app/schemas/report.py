@@ -122,7 +122,7 @@ class ReportOverviewTopLoop(CamelModel):
     severity: str | None = None
     # S2 追加列（未达标阶段时为 None）
     handlingStatus: str | None = None
-    # S3 追加列（未达标阶段时为 None，P3 经济收益预留）
+    # S3 追加列（未达标阶段时为 None，取闭环处置前后评分差值 score_delta，纯技术口径）
     benefitEstimate: float | None = None
 
 
@@ -229,7 +229,7 @@ class ReportBenefitBenchmarkItem(CamelModel):
 
 
 class ReportBenefitData(CamelModel):
-    """GET /reports/benefit 响应（技术指标，不含经济收益）。"""
+    """GET /reports/benefit 响应（技术指标口径，不含任何经济换算）。"""
 
     tuningCount: int
     closedOrderCount: int

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * 处置档案页（/handling/archive，Phase 1F 骨架）
+ * 处置档案页（/handling/archive，批次 C 接真数据）
  *
- * 设计文档：docs/MVP设计/08-处置模块设计方案.md §8.3（v1.1）
- * 回路维度追溯：一行一回路（聚合状态分布/KPI 改善/重开数），
- * 行点击开档案抽屉看跨 run 处置全史。
- * 数据源：GET /handling/loops（Phase 1F 后端待交付，接口就绪前显示空态）。
+ * 设计文档：docs/MVP设计/08-处置模块设计方案.md §8.3
+ * 回路维度追溯：一行一回路（双实体状态分布/闭环率/KPI 改善），
+ * 行点击开档案抽屉看双段全史（建议段 + 工单段）。
+ * 数据源：GET /handling/loops（§6.3 双实体口径，字段以后端返回为准）。
  */
 import type { HandlingApi } from '#/api/handling';
 
@@ -13,7 +13,7 @@ import { onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Card, Input, Select, Table, Tag, TreeSelect } from 'ant-design-vue';
+import { Card, Input, message, Select, Table, Tag, TreeSelect } from 'ant-design-vue';
 
 import { getHandlingLoopsApi } from '#/api/handling';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
@@ -26,7 +26,12 @@ import { IMPORTANCE_LEVEL_LABEL } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 
 import HandlingArchiveDrawer from './components/handling-archive-drawer.vue';
-import { STATUS_COLOR, STATUS_TEXT } from './constants';
+import {
+  ORDER_STATUS_COLOR,
+  ORDER_STATUS_TEXT,
+  SUGGESTION_STATUS_COLOR,
+  SUGGESTION_STATUS_TEXT,
+} from './constants';
 
 const { tableSize, densityLabel, cycleDensity } = useTableDensity('handling-archive');
 
@@ -60,8 +65,9 @@ async function load() {
     });
     items.value = res.items;
     total.value = res.total;
-  } catch {
-    // /handling/loops 尚未交付（Phase 1F 后端）：骨架期空态
+  } catch (error: any) {
+    // 接口错误降级：空态 + 提示（不白屏）
+    message.error(error?.message ?? '回路档案加载失败');
     items.value = [];
     total.value = 0;
   } finally {
@@ -119,22 +125,43 @@ function handleHelp() {
 const columns = [
   { dataIndex: 'loopTagName', title: '回路', width: 150 },
   { dataIndex: 'unitPath', title: '装置.单元', width: 160 },
-  { dataIndex: 'totalCount', title: '累计处置', width: 80 },
-  { dataIndex: 'counts', title: '状态分布', width: 260 },
-  { dataIndex: 'lastClosedKpiDelta', title: 'KPI 改善', width: 100 },
+  { dataIndex: 'suggestionTotal', title: '建议数', width: 72 },
+  { dataIndex: 'orderTotal', title: '工单数', width: 72 },
+  { dataIndex: 'statusCounts', title: '状态分布', width: 300 },
+  { dataIndex: 'closeRate', title: '闭环率', width: 76 },
+  { dataIndex: 'lastClosedKpiDelta', title: 'KPI 改善', width: 90 },
   { dataIndex: 'lastHandledAt', title: '最近处置', width: 110 },
   { dataIndex: 'lastHandledBy', title: '最近处置人', width: 110 },
 ];
 
-type StatusKey = keyof HandlingApi.LoopAggregateItem['counts'];
-const STATUS_KEYS: Array<{ key: StatusKey; status: HandlingApi.Status }> = [
+/** 建议五态分布键（小写，对齐后端 suggestionCounts） */
+const SUG_KEYS: Array<{
+  key: keyof HandlingApi.LoopAggregateItem['suggestionCounts'];
+  status: HandlingApi.SuggestionStatus;
+}> = [
   { key: 'pending', status: 'PENDING' },
-  { key: 'handling', status: 'HANDLING' },
+  { key: 'accepted', status: 'ACCEPTED' },
+  { key: 'converted', status: 'CONVERTED' },
+  { key: 'rejected', status: 'REJECTED' },
+  { key: 'ignored', status: 'IGNORED' },
+];
+
+/** 工单六态分布键（小写，对齐后端 orderCounts） */
+const ORDER_KEYS: Array<{
+  key: keyof HandlingApi.LoopAggregateItem['orderCounts'];
+  status: HandlingApi.OrderStatus;
+}> = [
+  { key: 'pending', status: 'PENDING' },
+  { key: 'executing', status: 'EXECUTING' },
   { key: 'verifying', status: 'VERIFYING' },
   { key: 'closed', status: 'CLOSED' },
   { key: 'reopened', status: 'REOPENED' },
-  { key: 'ignored', status: 'IGNORED' },
+  { key: 'cancelled', status: 'CANCELLED' },
 ];
+
+function fmtCloseRate(v: null | number | undefined): string {
+  return typeof v === 'number' ? `${Math.round(v * 100)}%` : '—';
+}
 
 function fmtKpiDelta(v: null | number | undefined): string {
   return typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : '—';
@@ -154,7 +181,7 @@ onMounted(() => {
   <Page>
     <ClpmPageToolbar
       :loading="loading"
-      subtitle="回路维度处置追溯 · 累计处置 / 状态分布 / KPI 改善"
+      subtitle="回路维度处置追溯 · 建议/工单双实体分布 · 闭环率 / KPI 改善"
       title="处置档案"
     >
       <template #actions>
@@ -256,18 +283,41 @@ onMounted(() => {
             <template v-else-if="column.dataIndex === 'unitPath'">
               {{ record.unitPath ?? '—' }}
             </template>
-            <template v-else-if="column.dataIndex === 'counts'">
-              <!-- 状态分布：仅显示计数 > 0 的状态 tag -->
-              <span
-                v-for="s in STATUS_KEYS.filter((k) => record.counts?.[k.key] > 0)"
-                :key="s.key"
-                class="mr-1"
-              >
-                <Tag :color="STATUS_COLOR[s.status]">
-                  {{ STATUS_TEXT[s.status] }} {{ record.counts[s.key] }}
-                </Tag>
-              </span>
-              <span v-if="!record.counts || STATUS_KEYS.every((k) => !record.counts[k.key])">—</span>
+            <template v-else-if="column.dataIndex === 'statusCounts'">
+              <!-- 双实体状态分布：仅显示计数 > 0 的状态 tag（建议段/工单段） -->
+              <div class="flex flex-col gap-0.5">
+                <div>
+                  <span
+                    v-for="s in SUG_KEYS.filter(
+                      (k) => record.suggestionCounts?.[k.key] > 0,
+                    )"
+                    :key="`sug-${s.key}`"
+                    class="mr-1"
+                  >
+                    <Tag :color="SUGGESTION_STATUS_COLOR[s.status]">
+                      {{ SUGGESTION_STATUS_TEXT[s.status] }}
+                      {{ record.suggestionCounts[s.key] }}
+                    </Tag>
+                  </span>
+                </div>
+                <div>
+                  <span
+                    v-for="s in ORDER_KEYS.filter(
+                      (k) => record.orderCounts?.[k.key] > 0,
+                    )"
+                    :key="`ord-${s.key}`"
+                    class="mr-1"
+                  >
+                    <Tag :color="ORDER_STATUS_COLOR[s.status]">
+                      {{ ORDER_STATUS_TEXT[s.status] }}
+                      {{ record.orderCounts[s.key] }}
+                    </Tag>
+                  </span>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="column.dataIndex === 'closeRate'">
+              {{ fmtCloseRate(record.closeRate) }}
             </template>
             <template v-else-if="column.dataIndex === 'lastClosedKpiDelta'">
               <span

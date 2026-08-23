@@ -295,6 +295,22 @@ def _f(v: Any, digits: int = 1) -> float | None:
     return round(float(v), digits)
 
 
+def _percent_mean(vals: list[float], digits: int = 1) -> float | None:
+    """好值率均值（0~100 百分比口径，1 位小数）.
+
+    kpi_snapshot_hourly.good_value_rate 统一为 0~100 百分比值
+    （metric_calculator/good_value.py 输出即 ×100），此处不得再次放大；
+    兼容 0~1 比率量纲（最大值 ≤1.0 视为比率并 ×100），防止 9,942.6% 类
+    重复放大失真回归（Task #21）。
+    """
+    if not vals:
+        return None
+    avg = sum(vals) / len(vals)
+    if max(vals) <= 1.0:
+        avg *= 100.0
+    return round(avg, digits)
+
+
 # ---------------------------------------------------------------------------
 # 管理总览
 # ---------------------------------------------------------------------------
@@ -464,11 +480,7 @@ async def get_overview(
     eval_rate = _ratio(evaluated_count, evaluable_total)
     health_rate = _ratio(len(healthy), evaluated_count) if evaluated_count else None
     anomaly_count = len(anomaly)
-    data_health_rate = (
-        round(sum(data_health_vals) / len(data_health_vals) * 100.0, 1)
-        if data_health_vals
-        else None
-    )
+    data_health_rate = _percent_mean(data_health_vals)
 
     # 健康率状态：参评样本中健康占比 ≥80% 视为 ok
     _hr = len(healthy) / evaluated_count if evaluated_count else 0
@@ -751,8 +763,6 @@ async def get_overview(
     benefit_estimate_map: dict[str, float] = {}
     kpi_improvement_val: float | None = None
     auto_rate_improvement_val: float | None = None
-    benefit_estimate_val: float | int | None = None  # P3 预留 null
-    benchmark_gap_val: float | None = None
 
     if s3_enabled:
         # ---- S3 KPI：前后 KPI 改善均值（已闭环且有 kpi_before/after 工单）----
@@ -826,37 +836,7 @@ async def get_overview(
                     float(last_r.auto_rate) - float(first_r.auto_rate), 1
                 )
 
-        # ---- 标杆差距：TOP 装置均分 - 最差装置均分（窗口内）----
-        bg_where = ["ll.unit_id IS NOT NULL"]
-        if unit_ids is not None:
-            bg_where.append("ll.unit_id = ANY(:unit_ids)")
-        if start_date and end_date:
-            bg_where.append("k.ts_start >= :start AND k.ts_start < :end")
-            bg_params_bg = dict(params)
-        else:
-            bg_params_bg = dict(bm_params)
-        bg_rows = (
-            await db.execute(
-                text(
-                    f"""
-                    SELECT ll.unit_id, AVG(k.score) AS avg_score
-                    FROM loop_ledger ll
-                    JOIN kpi_snapshot_hourly k ON k.loop_id = ll.id
-                    WHERE {" AND ".join(bg_where)}
-                    GROUP BY ll.unit_id
-                    HAVING COUNT(DISTINCT ll.id) >= 3
-                    """
-                ),
-                bg_params_bg,
-            )
-        ).all()
-        bg_scores = [float(r.avg_score) for r in bg_rows if r.avg_score is not None]
-        if len(bg_scores) >= 2:
-            benchmark_gap_val = round(max(bg_scores) - min(bg_scores), 1)
-
-        benefit_estimate_val = None  # P3 预留：经济收益不做计算
-
-        # ---- S3 KPI 追加 ----
+        # ---- S3 KPI 追加（固定 12 格第 10-11 格：KPI 改善 / 自控提升）----
         kpis.extend(
             [
                 {
@@ -882,23 +862,6 @@ async def get_overview(
                         else "neutral"
                     ),
                     "context": "有效自控率百分点提升",
-                },
-                {
-                    "key": "benchmarkGap",
-                    "label": "标杆差",
-                    "value": benchmark_gap_val,
-                    "unit": "分",
-                    "status": "neutral",
-                    "context": "TOP 装置 vs 最差装置均分差",
-                },
-                # benefitEstimate 预留占位（固定 12 格，第 12 格=预估收益）
-                {
-                    "key": "benefitEstimate",
-                    "label": "预估收益",
-                    "value": benefit_estimate_val,
-                    "unit": "万元",
-                    "status": "neutral",
-                    "context": "经济收益口径待配置",
                 },
             ]
         )
@@ -931,6 +894,31 @@ async def get_overview(
                 seen.add(lid)
                 if r.score_delta is not None:
                     benefit_estimate_map[lid] = round(float(r.score_delta), 1)
+
+        # ---- 固定 12 格的第 12 格（最后一格）：平均评分改善（纯技术口径）----
+        # 取 TOP 闭环回路处置前后评分差值（score_delta）均值，不做任何经济换算
+        score_imp_vals = list(benefit_estimate_map.values())
+        score_improvement_val = (
+            round(sum(score_imp_vals) / len(score_imp_vals), 1) if score_imp_vals else None
+        )
+        kpis.append(
+            {
+                "key": "scoreImprovement",
+                "label": "平均评分改善",
+                "value": score_improvement_val,
+                "unit": "分",
+                "status": (
+                    "ok"
+                    if score_improvement_val is not None and score_improvement_val > 0
+                    else "neutral"
+                ),
+                "context": (
+                    f"{len(score_imp_vals)} 个闭环回路处置前后评分差值均值（技术口径）"
+                    if score_imp_vals
+                    else "技术口径：闭环处置前后评分差值，暂无闭环数据"
+                ),
+            }
+        )
 
     # ------------------------------------------------------------------
     # TOP 问题回路：追加处置状态（S2）、预估收益（S3）列

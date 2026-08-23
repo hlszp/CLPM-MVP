@@ -21,8 +21,9 @@ test.describe('系统管理 E2E', () => {
   });
 
   test('E2E-SYS-001: 用户 CRUD', async ({ page }) => {
-    await page.goto('/system/users');
-    await page.waitForLoadState('networkidle');
+    // SignalR 心跳使 networkidle 永不触发，改用 domcontentloaded + 元素等待
+    await page.goto('/system/users', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载
@@ -37,7 +38,7 @@ test.describe('系统管理 E2E', () => {
     const newUsername = `e2e_user_${uniqueSuffix}`;
 
     await page.getByRole('button', { name: /新增用户|新增|新建/i }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // 验证 Modal 弹出
     await expect(page.locator('.ant-modal')).toBeVisible({ timeout: 10_000 });
@@ -96,7 +97,7 @@ test.describe('系统管理 E2E', () => {
       const editBtn = userRow.getByRole('button', { name: /编辑/i }).first();
       if (await editBtn.isVisible().catch(() => false)) {
         await editBtn.click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await expect(page.locator('.ant-modal')).toBeVisible({ timeout: 10_000 });
 
         // 修改姓名
@@ -143,7 +144,7 @@ test.describe('系统管理 E2E', () => {
 
   test('E2E-SYS-002: 审计日志', async ({ page }) => {
     await page.goto('/system/audit');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // 验证页面加载
     await page.waitForTimeout(2000);
@@ -178,7 +179,7 @@ test.describe('系统管理 E2E', () => {
 
   test('E2E-SYS-003: 权限矩阵', async ({ page }) => {
     await page.goto('/system/permissions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // 验证页面加载
     await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 15_000 }).catch(async () => {

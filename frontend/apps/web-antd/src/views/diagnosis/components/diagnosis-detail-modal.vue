@@ -77,10 +77,11 @@ const open = defineModel<boolean>('open', { default: false });
 const router = useRouter();
 const { moduleEnabled } = useModules();
 
-/** 「去处置」：携带 actionId 跳处置工作台，自动打开对应详情抽屉（§8.6 联动） */
+/** 「去处置」：携带建议 actionId 跳诊断建议入口，自动打开建议详情抽屉
+ * （深链接契约：/handling/suggestions?focus={suggestionId}） */
 function gotoHandling(actionId: string): void {
   open.value = false;
-  router.push({ path: '/handling/workbench', query: { focus: actionId } });
+  router.push({ path: '/handling/suggestions', query: { focus: actionId } });
 }
 
 /** 「去整定」：TUNING 类建议跳整定工作台并预填回路（09 设计方案 §6.5 联动） */

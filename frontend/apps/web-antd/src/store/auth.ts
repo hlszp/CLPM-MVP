@@ -19,16 +19,16 @@ import { $t } from '#/locales';
  * FP-P0-08：后端 auth.py ROLE_DEFAULT_HOME 已对齐本表，事实源统一。
  * 角色映射优先于后端 defaultHome 返回值（双保险），二者口径一致。
  *
- * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis
- * - SPONSOR：仅汇总视图 → /metric（重定向至 /metric/pid-dashboard）
+ * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis/records（诊断记录）
+ * - SPONSOR：仅汇总视图 → /reports/overview（统计报告总览）
  * - 其余角色 → /dashboard
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
   ADMIN: '/dashboard',
-  EXPERT: '/diagnosis',
+  EXPERT: '/diagnosis/records',
   IC_ENGINEER: '/dashboard',
   PE_ENGINEER: '/dashboard',
-  SPONSOR: '/metric',
+  SPONSOR: '/reports/overview',
 };
 
 /**

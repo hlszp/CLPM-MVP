@@ -46,6 +46,8 @@ defineOptions({ name: 'ReportsOverview' });
 
 // ===== 固定 12 格骨架（S1~S3 槽位，禁止 v-if 动态增减卡片）=====
 interface KpiSlot {
+  // 后端 kpi 缺失时的兜底 context（标注口径）
+  hint?: string;
   key: string;
   label: string;
   unit: string;
@@ -64,10 +66,17 @@ const KPI_SLOTS: KpiSlot[] = [
   { key: 'avgCycleHours', label: '平均处置时长', unit: 'h', stage: 'S2', icon: 'lucide:timer' },
   { key: 'closedThisMonth', label: '本月整改', unit: '次', stage: 'S2', icon: 'lucide:check-circle-2' },
   { key: 'ineffectiveRate', label: '无效重开率', unit: '%', stage: 'S2', icon: 'lucide:undo-2' },
-  // S3（行 3）：3 个，仅持续优化阶段可用（位置固定，第 12 槽预留）
+  // S3（行 3）：3 个，仅持续优化阶段可用（位置固定，第 12 槽=平均评分改善，纯技术口径）
   { key: 'kpiImprovement', label: 'KPI 改善', unit: '分', stage: 'S3', icon: 'lucide:trending-up' },
   { key: 'autoRateImprovement', label: '自控提升', unit: 'pp', stage: 'S3', icon: 'lucide:gauge' },
-  { key: 'benchmarkGap', label: '标杆差', unit: '分', stage: 'S3', icon: 'lucide:flag' },
+  {
+    key: 'scoreImprovement',
+    label: '平均评分改善',
+    unit: '分',
+    stage: 'S3',
+    icon: 'lucide:medal',
+    hint: '技术口径：TOP 闭环回路处置前后评分差均值',
+  },
 ];
 
 const STAGE_ORDER: Record<ReportsApi.Stage, number> = { S1: 1, S2: 2, S3: 3 };
@@ -135,7 +144,7 @@ const kpiSlots = computed<MergedSlot[]>(() => {
         ...slot,
         value: k.value ?? '—',
         status: (k.status as KpiStatus) ?? 'neutral',
-        context: k.context ?? '',
+        context: k.context ?? slot.hint ?? '',
         locked: false,
       };
     }
@@ -144,7 +153,7 @@ const kpiSlots = computed<MergedSlot[]>(() => {
         ...slot,
         value: '—',
         status: 'neutral' as KpiStatus,
-        context: `${slot.stage} 指标暂无数据`,
+        context: slot.hint ?? `${slot.stage} 指标暂无数据`,
         locked: false,
       };
     }
@@ -590,7 +599,7 @@ function handleHelp() {
       <p><b>定位</b>：面向管理层的全局健康看板，固定 12 格骨架按成熟度 S1/S2/S3 自适应填充。</p>
       <p><b>S1 基础可视</b>：回路总数、健康率、参评率、异常数、数据健康率 + 健康趋势 + TOP 问题回路。</p>
       <p><b>S2 闭环管理</b>：闭环率、平均处置时长、本月整改、无效重开率 + 闭环趋势 + 异常分布变化 + 处置状态列。</p>
-      <p><b>S3 持续优化</b>：KPI 改善、自控提升、标杆差 + 收益趋势 + 评分改善列 + 装置标杆。</p>
+      <p><b>S3 持续优化</b>：KPI 改善、自控提升、平均评分改善（技术口径：TOP 闭环回路处置前后评分差均值） + 收益趋势 + 评分改善列 + 装置标杆。</p>
       <p><b>阶段判定</b>（系统自动，管理员可锁定）：</p>
       <ul>
         <li>S1：无诊断记录且无处置工单</li>

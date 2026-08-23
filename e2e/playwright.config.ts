@@ -3,11 +3,15 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * CLPM Playwright E2E 测试配置
  *
- * - baseURL: 前端开发服务器 http://localhost:5666
+ * - baseURL: 前端开发服务器，默认 http://localhost:5666，
+ *   可用 E2E_BASE_URL 覆盖（MVP 隔离端口为 http://localhost:15666）
  * - 仅启用 chromium 项目
- * - webServer 自动启动前端开发服务（pnpm dev）
- * - 后端 API（http://localhost:7101）需手动启动
+ * - webServer 自动启动前端开发服务（pnpm dev，已运行时复用）
+ * - 后端 API 需手动启动（默认 7101，MVP 隔离端口 17101，
+ *   fixtures/auth.ts 中可用 E2E_API_BASE_URL 覆盖）
  */
+const WEB_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5666';
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -24,7 +28,7 @@ export default defineConfig({
   },
   timeout: 60_000,
   use: {
-    baseURL: 'http://localhost:5666',
+    baseURL: WEB_BASE_URL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -44,7 +48,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'cd ../frontend/apps/web-antd && pnpm dev',
-    url: 'http://localhost:5666',
+    url: WEB_BASE_URL,
     reuseExistingServer: true,
     timeout: 120_000,
     cwd: process.cwd(),

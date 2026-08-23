@@ -647,6 +647,13 @@ class TestRunActionsEndpoint:
         r.scalars.return_value.all.return_value = items
         return r
 
+    @staticmethod
+    def _count_result(n: int = 0) -> MagicMock:
+        """A3 幂等守卫 count 查询结果。"""
+        r = MagicMock()
+        r.scalar.return_value = n
+        return r
+
     def test_list_generates_system_actions_when_empty(self, client) -> None:
         """首次拉取为空 → 按诊断结论自动生成标准建议（INSTRUMENT 2 条）。"""
         run = _make_run()
@@ -656,7 +663,13 @@ class TestRunActionsEndpoint:
         ]
         with mock_current_user(TEST_USERS["admin"]):
             mock_db = self._override_db(
-                client, run, [self._list_result([]), self._list_result(generated)]
+                client,
+                run,
+                [
+                    self._list_result([]),
+                    self._count_result(0),
+                    self._list_result(generated),
+                ],
             )
             resp = client.get(
                 f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
@@ -704,7 +717,15 @@ class TestRunActionsEndpoint:
             ),
         ]
         with mock_current_user(TEST_USERS["admin"]):
-            self._override_db(client, run, [self._list_result([]), self._list_result(generated)])
+            self._override_db(
+                client,
+                run,
+                [
+                    self._list_result([]),
+                    self._count_result(0),
+                    self._list_result(generated),
+                ],
+            )
             resp = client.get(
                 f"/api/v1/diagnosis/runs/{RUN_ID}/actions",
                 headers={"Authorization": "Bearer fake-token"},

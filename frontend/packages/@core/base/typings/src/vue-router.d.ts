@@ -127,6 +127,12 @@ interface RouteMeta {
    */
   query?: Recordable;
   /**
+   * 处置模块预设视图（批次 C 五段式入口）：
+   * suggestions=诊断建议（建议审核 Tab）；tasks=处置任务（工单 Tab + 排程态预设）；
+   * orders=处置工单（工单 Tab + 作业态预设）
+   */
+  handlingView?: 'orders' | 'suggestions' | 'tasks';
+  /**
    * 标题名称
    */
   title: string;

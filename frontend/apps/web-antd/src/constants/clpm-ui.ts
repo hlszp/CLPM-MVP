@@ -361,13 +361,14 @@ export const ALERT_LOGIC_LABEL: Record<
   SEQUENCE: '时序',
 };
 
-/** 动作类型 → 中文（DSL actions[].type） */
+/** 动作类型 → 中文（DSL actions[].type；CREATE_TRACKER 已关停，
+ * 保留类型仅为存量规则展示兼容，新建规则模板不再提供） */
 export const ALERT_ACTION_TYPE_LABEL: Record<
   'CREATE_EVENT' | 'CREATE_TRACKER' | 'NOTIFY',
   string
 > = {
   CREATE_EVENT: '生成事件',
-  CREATE_TRACKER: '创建工单',
+  CREATE_TRACKER: '创建工单（已停用）',
   NOTIFY: '通知',
 };
 

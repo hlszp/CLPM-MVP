@@ -94,6 +94,7 @@ const SOURCE_LABEL: Record<MonitorApi.AttentionSource, string> = {
   DEGRADATION: '评分恶化',
   DATA_QUALITY: '数据质量',
   FITNESS_ABNORMAL: '适用性异常',
+  HANDLING: '处置工单',
 };
 
 const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
@@ -101,6 +102,7 @@ const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   DEGRADATION: 'warning',
   DATA_QUALITY: 'default',
   FITNESS_ABNORMAL: 'purple',
+  HANDLING: 'processing',
 };
 
 const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
@@ -128,6 +130,7 @@ const SOURCE_ORDER: MonitorApi.AttentionSource[] = [
   'DEGRADATION',
   'DATA_QUALITY',
   'FITNESS_ABNORMAL',
+  'HANDLING',
 ];
 const SOURCE_SET = new Set<string>(SOURCE_ORDER);
 
@@ -505,7 +508,7 @@ function handleHelp() {
   showPageHelp({
     title: '关注队列 帮助',
     content: `
-      <p><b>三来源定义</b>：活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件）、评分恶化（日降≥2分）、数据质量（完整性告警或可信度 D/E）。</p>
+      <p><b>五来源定义</b>：活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件）、评分恶化（日降≥2分）、数据质量（完整性告警或可信度 D/E）、适用性异常（整定适用性等级 L0/L1/L2 及原因标签）、处置工单（重开/超期等在途工单待办）。</p>
       <p><b>优先级规则</b>：紧急=CRITICAL 活跃预警；高=ERROR 预警/完整性 CRITICAL/日降≥10分；中=WARN/完整性 WARNING/日降5-10分；低=INFO/日降2-5分/可信度 D/E。</p>
       <p><b>排序规则</b>：优先级从高到低 → 同级：未确认 → 超期 → 处理中 → 已确认 → 已抑制 → 时间倒序。</p>
       <p><b>合并规则</b>：同一回路的多个关注项合并为一行；组优先级=组内最高；展开可看子项明细。</p>

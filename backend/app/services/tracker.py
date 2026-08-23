@@ -150,34 +150,21 @@ async def update_tracker_status(
 
     is_new_tracker = False
     if tracker is None:
-        # 无开放态 tracker（全部已闭环或从未建单）：新建一条手工 tracker
-        # 取该回路最新的诊断标签作为建单依据
-        diag_result = await db.execute(
-            select(DiagnosisResult)
-            .where(DiagnosisResult.loop_id == loop_id)
-            .order_by(DiagnosisResult.diagnosed_at.desc())
-            .limit(1)
+        # [DEPRECATED - A1 已关停] 无开放态 tracker 时原在此新建一条手工 tracker
+        # （trigger_type=manual，取最新诊断标签为建单依据）。处置 v2.0 双实体
+        # 改造后建单收敛为 handling_order 处置工单，手工建单在此关停（no-op 化），
+        # 统一报 ERR_TRACKER_NOT_FOUND；函数体保留供历史追溯，勿再启用。
+        logger.warning(
+            "手工建单已关停（A1），回路无开放态 tracker: loop_id=%s operator=%s",
+            loop_id,
+            operator,
         )
-        diag = diag_result.scalar_one_or_none()
-        diagnosis_label = diag.diag_label if diag else None
-        # 取严重等级
-        severity = diag.severity if diag else None
-
-        tracker = ActionTracker(
-            id=str(uuid4()),
-            loop_id=loop_id,
-            diagnosis_label=diagnosis_label,
-            action_status="PENDING",
-            trigger_type="manual",
-            triggered_by=operator,
-            severity=severity,
+        raise BizError(
+            code="ERR_TRACKER_NOT_FOUND",
+            message="该回路无开放态跟踪单，且手工建单已关停（请走处置工单流程）",
+            status_code=404,
         )
-        db.add(tracker)
-        is_new_tracker = True
-        # 新建tracker初始为PENDING，从PENDING开始状态转换
-        before_status = "PENDING"
-    else:
-        before_status = tracker.action_status
+    before_status = tracker.action_status
 
     # ---------- 状态转换校验 ----------
     # 新建tracker也需要校验（从PENDING转换到目标状态）

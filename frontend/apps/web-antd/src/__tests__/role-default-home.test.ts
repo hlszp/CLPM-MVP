@@ -2,11 +2,11 @@
  * ROLE_DEFAULT_HOME 前端落地单元测试
  *
  * 对齐实现契约 §5 + UI/UX §4.2 三方权限基准：
- * - EXPERT → /diagnosis（仅诊断中心 + 回路整定）
- * - SPONSOR → /metric（仅汇总视图）
+ * - EXPERT → /diagnosis/records（仅诊断中心 + 回路整定，诊断记录页）
+ * - SPONSOR → /reports/overview（仅汇总视图，统计报告总览）
  * - 其余角色 → /dashboard
  *
- * 后端 auth.py ROLE_DEFAULT_HOME 当前全角色返回 /dashboard（后端归属另一波次），
+ * 后端 auth.py ROLE_DEFAULT_HOME 已同批对齐（SPONSOR → /reports/overview），
  * 前端 resolveHomePath 以角色映射优先于后端 defaultHome 返回值。
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -52,14 +52,14 @@ vi.mock('#/api', () => ({
 const { resolveHomePath, ROLE_DEFAULT_HOME } = await import('#/store/auth');
 
 describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
-  it('eXPERT 默认首页为 /diagnosis', () => {
-    expect(ROLE_DEFAULT_HOME.EXPERT).toBe('/diagnosis');
-    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/diagnosis');
+  it('EXPERT 默认首页为 /diagnosis/records', () => {
+    expect(ROLE_DEFAULT_HOME.EXPERT).toBe('/diagnosis/records');
+    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/diagnosis/records');
   });
 
-  it('sPONSOR 默认首页为 /metric', () => {
-    expect(ROLE_DEFAULT_HOME.SPONSOR).toBe('/metric');
-    expect(resolveHomePath('SPONSOR', '/dashboard')).toBe('/metric');
+  it('sPONSOR 默认首页为 /reports/overview', () => {
+    expect(ROLE_DEFAULT_HOME.SPONSOR).toBe('/reports/overview');
+    expect(resolveHomePath('SPONSOR', '/dashboard')).toBe('/reports/overview');
   });
 
   it('aDMIN / IC_ENGINEER / PE_ENGINEER 默认首页为 /dashboard', () => {
@@ -69,9 +69,9 @@ describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
   });
 
   it('角色映射优先于后端 defaultHome 返回值', () => {
-    // 后端当前全角色返回 /dashboard，前端映射必须覆盖之
-    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/diagnosis');
-    expect(resolveHomePath('SPONSOR', '/dashboard')).toBe('/metric');
+    // 后端 defaultHome 返回任意值，前端映射必须覆盖之
+    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/diagnosis/records');
+    expect(resolveHomePath('SPONSOR', '/dashboard')).toBe('/reports/overview');
   });
 
   it('未知角色回退后端 defaultHome，再兜底 /dashboard', () => {

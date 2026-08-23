@@ -26,7 +26,6 @@ from uuid import uuid4
 import numpy as np
 from celery.schedules import crontab  # noqa: F401  # 自动诊断 Beat 已停用，保留以便恢复
 from sqlalchemy import delete, or_, select
-from sqlalchemy.exc import IntegrityError
 
 from app.constants.mode import AUTO_MODES, MODE_LABELS_EN
 from app.contracts.data_types import ControlType, LoopPreprocessConfig, QualityStatus, RawTimeSeries
@@ -41,7 +40,6 @@ from app.models.diagnosis import (
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly
 from app.models.tag import TagRegistry
-from app.models.tracker import ActionTracker
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.diagnosis_rule import apply_rules as apply_db_rules
 from app.services.diagnosis_rule import get_active_rules
@@ -885,73 +883,27 @@ async def _auto_create_trackers(
     label_to_diag_id: dict[str, str],
     diagnosed_at: datetime,
 ) -> None:
-    """D1：诊断产出标签时自动创建 ActionTracker（PENDING）。
+    """[DEPRECATED - A1 已关停] D1：诊断产出标签时自动创建 ActionTracker。
 
-    同一回路同一标签在 PENDING/IN_PROGRESS 状态下不重复建单
-    （uk_action_tracker_open 部分唯一索引约束）。闭环后新诊断可再建新单，
-    历史记录保留。
-
-    并发防护：SELECT 预过滤 + INSERT 之间存在竞态窗口，唯一索引
-    uk_action_tracker_open 是最终防线；INSERT 触发 IntegrityError 时
-    回滚该单条并跳过（视为已被并发建单）。
+    处置 v2.0 双实体改造（08 处置方案）后，异常跟踪工单收敛为
+    handling_order 处置工单，诊断完成不再自动建单。函数签名与两处
+    调用点保留（函数已 no-op，仅记日志），便于后续追溯与回退。
 
     Args:
-        db: 异步数据库会话
+        db: 异步数据库会话（已不再使用）
         loop_id: 回路 ID
         labels: 诊断标签列表
-        label_to_diag_id: 标签到诊断结果 ID 的映射
-        diagnosed_at: 诊断时间
+        label_to_diag_id: 标签到诊断结果 ID 的映射（已不再使用）
+        diagnosed_at: 诊断时间（已不再使用）
     """
     labels = [lbl for lbl in labels if lbl]
     if not labels:
         return
-
-    # 查询该回路已有的开放态 tracker（PENDING/IN_PROGRESS），避免重复建单
-    existing_result = await db.execute(
-        select(ActionTracker.diagnosis_label)
-        .where(ActionTracker.loop_id == loop_id)
-        .where(ActionTracker.action_status.in_(["PENDING", "IN_PROGRESS"]))
-        .where(ActionTracker.diagnosis_label.in_(labels))
+    logger.info(
+        "D1 自动建单已关停（A1，处置 v2.0 收敛为 handling_order），跳过: loop_id=%s labels=%s",
+        loop_id,
+        labels,
     )
-    existing_labels = {str(r) for r in existing_result.scalars().all()}
-
-    for label in labels:
-        if label in existing_labels:
-            continue
-        severity = _TAG_SEVERITY_MAP.get(label, "INFO")
-        tracker = ActionTracker(
-            id=str(uuid4()),
-            loop_id=loop_id,
-            diagnosis_label=label,
-            action_status="PENDING",
-            trigger_type="auto",
-            triggered_by="system",
-            severity=severity,
-            diagnosis_result_id=label_to_diag_id.get(label),
-            # created_at 不显式设置：沿用 server_default=now()，与 manual tracker
-            # 口径一致（本地时间）。之前用 diagnosed_at(UTC naive) 会导致 auto/manual
-            # tracker 的 created_at 时区不一致，sortBy=created_at 排序错乱。
-            # updated_at 初始为 None（建单时尚无处理记录）。
-        )
-        # 用 SAVEPOINT 包裹单条插入：并发被抢先建单时仅回滚该条，
-        # 不影响外层事务中已写入的 diagnosis_result / diagnosis_tag。
-        try:
-            async with db.begin_nested():
-                db.add(tracker)
-        except IntegrityError:
-            logger.info(
-                "D1 自动建单跳过（并发已建单）: loop_id=%s label=%s",
-                loop_id,
-                label,
-            )
-            continue
-        logger.info(
-            "D1 自动建单: loop_id=%s label=%s severity=%s diag_result_id=%s",
-            loop_id,
-            label,
-            severity,
-            label_to_diag_id.get(label),
-        )
 
 
 async def _diagnose_loop(

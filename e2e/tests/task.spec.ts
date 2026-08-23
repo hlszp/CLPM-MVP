@@ -99,11 +99,16 @@ test.describe('任务管理页面 E2E', () => {
     expect(page.url()).toContain('/metric/tasks');
   });
 
-  // E2E-TASK-002: 默认「手动任务」Tab 内容
+  // E2E-TASK-002: 「手动任务」Tab 内容（需显式切换：现行 tasks.vue 中 ADMIN
+  // 默认激活 Tab 已改为「自动任务」，不再默认落在手动任务）
   test('E2E-TASK-002: 手动任务 Tab 表格与工具栏', async ({ page }) => {
     await page.goto('/metric/tasks');
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
+
+    // 显式切到「手动任务」Tab（已在则幂等）
+    await page.locator('.ant-tabs-tab').filter({ hasText: '手动任务' }).click();
+    await page.waitForTimeout(1500);
 
     // 表格或空态可见（BACKFILL 任务为 0 时 Phase 1 空态改造渲染 ClpmEmptyState，
     // 数据依赖：容忍 .ant-empty / 空态容器替代表格）
@@ -145,6 +150,11 @@ test.describe('任务管理页面 E2E', () => {
     await page.goto('/metric/tasks');
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
+
+    // 显式切到「手动任务」Tab：「新建任务」仅存在于手动任务工具栏
+    // （ADMIN 默认激活 Tab 已改为「自动任务」）
+    await page.locator('.ant-tabs-tab').filter({ hasText: '手动任务' }).click();
+    await page.waitForTimeout(1500);
 
     // 点击「新建任务」打开 Drawer
     await page.getByRole('button', { name: /新建任务/ }).click();

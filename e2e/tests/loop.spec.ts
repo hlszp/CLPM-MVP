@@ -33,7 +33,7 @@ test.describe('回路管理 E2E', () => {
 
   test('E2E-LOOP-001: 创建回路', async ({ page }) => {
     await page.goto('/config/loop');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（回路表格可见）
@@ -41,7 +41,7 @@ test.describe('回路管理 E2E', () => {
 
     // 点击「新建回路」按钮（ClpmToolbarButton 渲染为 Ant Design Button）
     await page.getByRole('button', { name: '新建回路' }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(500);
 
     // 验证 Drawer 弹出（manage.vue 使用 Drawer 而非 Modal）
@@ -65,7 +65,7 @@ test.describe('回路管理 E2E', () => {
 
   test('E2E-LOOP-002: 测点清单', async ({ page }) => {
     await page.goto('/config/tag');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（测点表格或筛选区可见）
@@ -88,7 +88,7 @@ test.describe('回路管理 E2E', () => {
 
   test('E2E-LOOP-003: 回路监控', async ({ page }) => {
     await page.goto('/loop/monitor');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // 验证页面加载（表格或空状态）
     await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 15_000 });
@@ -103,7 +103,7 @@ test.describe('回路管理 E2E', () => {
   test('E2E-LOOP-004: 回路详情', async ({ page }) => {
     // 1. 先访问监控列表
     await page.goto('/loop/monitor');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // 2. 等待表格数据行加载（最多 15s，E2E 环境后端可能较慢）
     await page
@@ -129,7 +129,7 @@ test.describe('回路管理 E2E', () => {
       // 注：工作台加载列表后会自动选中首个回路并修正 URL loopId，
       //     故此处仅验证 redirect 落点为 /monitor/loop-workbench，不限定具体 loopId。
       await page.goto('/loop/detail/00000000-0000-0000-0000-000000000201');
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForURL(/\/monitor\/loop-workbench/, { timeout: 10_000 }).catch(() => {});
       expect(page.url()).not.toContain('/auth/login');
       expect(page.url()).not.toContain('/403');
@@ -142,7 +142,7 @@ test.describe('回路管理 E2E', () => {
   // + 筛选栏 placeholder="参评状态" 过滤选项；编辑抽屉中存在"评估配置"区
   test('E2E-LOOP-005: 回路台账三字段编辑', async ({ page }) => {
     await page.goto('/config/loop');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 验证页面加载（回路表格可见）
@@ -185,7 +185,7 @@ test.describe('回路管理 E2E', () => {
       const editBtn = firstRow.getByRole('button', { name: /编辑/i }).first();
       if (await editBtn.isVisible().catch(() => false)) {
         await editBtn.click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(1000);
 
         // 验证 Drawer 弹出
@@ -222,7 +222,7 @@ test.describe('回路管理 E2E', () => {
   //   - DCS 型号映射 Tab：DCS 型号映射表格
   test('E2E-LOOP-006: 链路配置页', async ({ page }) => {
     await page.goto('/config/link');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 1. 验证页面加载（Tab 组件可见）
@@ -257,63 +257,38 @@ test.describe('回路管理 E2E', () => {
     expect(page.url()).toContain('/config/link');
   });
 
-  // E2E-LOOP-007: 回路监控诊断标签列跳转（D6 入口整合）
-  // 路由 /loop/monitor：表格新增"诊断标签"列（D6）
-  //   - 有诊断：显示彩色 Tag（.ant-tag），点击跳转 /diagnosis/detail/:loopId
-  //   - 无诊断：显示可点击 "—"，点击跳转 /diagnosis/detail/:loopId（触发新诊断）
-  // 数据源：loadList 后并行调用 getDiagnosisListApi({loopIds}) 建立 diagLabelMap
-  test('E2E-LOOP-007: 回路监控诊断标签列跳转', async ({ page }) => {
-    await page.goto('/loop/monitor');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+  // E2E-LOOP-007: /loop/monitor 面点分离重定向 + 回路列表行级下钻（2026-08-23 改写）
+  // 现行口径（monitor.ts）：旧 /loop/monitor 重定向到独立回路列表页 /monitor/loops
+  //   （LoopFleetView 复用组件），行内位号链接点击下钻回路工作台，
+  //   携带 loopId + from=/monitor/loops 上下文。
+  // 历史口径：旧版断言"诊断标签列 → /diagnosis/detail/:loopId 跳转"，该列随
+  //   旧 monitor.vue 诊断标签列方案下线（现行列表无此列），属旧 IA 遗物。
+  test('E2E-LOOP-007: /loop/monitor 重定向与行级下钻工作台', async ({ page }) => {
+    await page.goto('/loop/monitor', { waitUntil: 'domcontentloaded' });
 
-    // 1. 验证表头包含"诊断标签"列（D6 入口整合新增）
+    // 1. 面点分离：重定向到独立回路列表页（query 透传）
+    await expect(page).toHaveURL(/\/monitor\/loops/, { timeout: 15_000 });
+
+    // 2. 列表页渲染（表头含现行列：回路位号/性能评分等）
     const tableHeader = page.locator('.ant-table-thead').first();
-    await expect(tableHeader).toBeVisible({ timeout: 15_000 });
+    await expect(tableHeader).toBeVisible({ timeout: 20_000 });
     const headerText = await tableHeader.innerText();
-    expect(headerText).toContain('诊断标签');
+    expect(headerText).toContain('回路位号');
+    expect(headerText).toContain('性能评分');
 
-    // 2. 等待表格数据加载
-    const firstRow = page.locator('.ant-table-tbody tr').first();
-    const hasRow = await firstRow.isVisible({ timeout: 10_000 }).catch(() => false);
+    // 3. 等待数据行（防御性：无数据时仅验证重定向与列）
+    const firstRow = page.locator('.ant-table-tbody tr.ant-table-row').first();
+    const hasRow = await firstRow.isVisible({ timeout: 15_000 }).catch(() => false);
     if (!hasRow) {
-      // 无数据时仅验证列存在
       return;
     }
 
-    // 3. 定位"诊断标签"列索引（避免与操作列的 Tag 混淆）
-    const headers = page.locator('.ant-table-thead th');
-    const headerCount = await headers.count();
-    let diagColIndex = -1;
-    for (let i = 0; i < headerCount; i++) {
-      const text = await headers.nth(i).innerText();
-      if (text.includes('诊断标签')) {
-        diagColIndex = i;
-        break;
-      }
-    }
-    expect(diagColIndex).toBeGreaterThanOrEqual(0);
-
-    // 4. 在第一行诊断标签列中查找可点击元素
-    //    monitor.vue: 有诊断显示 .ant-tag，无诊断显示 "—"（均可点击跳转）
-    const diagCell = firstRow.locator('td').nth(diagColIndex);
-    const diagTag = diagCell.locator('.ant-tag').first();
-    const dashText = diagCell.getByText('—', { exact: true }).first();
-
-    const hasDiagTag = await diagTag.isVisible().catch(() => false);
-    const hasDash = await dashText.isVisible().catch(() => false);
-
-    if (hasDiagTag) {
-      // 有诊断标签：点击 Tag 跳转诊断详情页
-      await diagTag.click();
-      await page.waitForURL(/\/diagnosis\/detail\//, { timeout: 15_000 });
-      expect(page.url()).toMatch(/\/diagnosis\/detail\//);
-    } else if (hasDash) {
-      // 无诊断标签：点击 "—" 跳转诊断详情页（触发新诊断）
-      await dashText.click();
-      await page.waitForURL(/\/diagnosis\/detail\//, { timeout: 15_000 });
-      expect(page.url()).toMatch(/\/diagnosis\/detail\//);
-    }
-    // 两者都不可见时，仅验证列存在（容错：诊断 API 未返回或渲染异常）
+    // 4. 点击首行位号链接 → 下钻回路工作台（handleRowClick）
+    const tagLink = firstRow.locator('a[role="button"]').first();
+    await tagLink.click();
+    await page.waitForURL(/\/monitor\/loop-workbench/, { timeout: 15_000 });
+    expect(page.url()).toContain('loopId=');
+    // from 参数现行实现为未编码原样拼接（loops.vue），解码后比对兼容两种形态
+    expect(decodeURIComponent(page.url())).toContain('from=/monitor/loops');
   });
 });

@@ -3,9 +3,9 @@
  * 处置报告页（/reports/handling，IA 优化 P0 由 /handling/statistics 迁入）
  *
  * 设计文档：docs/MVP设计/08-处置模块设计方案.md §8.4（v1.1）
- * 汇总卡（本月闭环数/闭环率/平均处置时长/无效率/平均 KPI 改善）
+ * 汇总卡（本月闭环数/闭环率/平均处置时长/无效率/平均 KPI 改善/驳回率/平均排程周期）
  * + 月度趋势 / 类型分布 / 装置分布 + Top 问题回路表。
- * 数据源：GET /handling/statistics（接口未就绪时空态）。
+ * 数据源：GET /handling/statistics（§6.3 工单维度 + 建议驳回率，字段以后端返回为准）。
  *
  * 视觉规范（IA 优化 §6）：ClpmKpiCard 状态色驱动（禁硬编码 hex）、
  * 面板用 ClpmDataCanvas（禁 AntD Card）。
@@ -85,6 +85,20 @@ const summaryCards = computed(() => {
       status: 'neutral' as const,
       icon: 'lucide:trending-up',
     },
+    {
+      key: 'rejectRate',
+      title: '驳回率',
+      value: fmtPct(s?.rejectRate),
+      status: 'warning' as const,
+      icon: 'lucide:x-circle',
+    },
+    {
+      key: 'avgScheduleHours',
+      title: '平均排程周期',
+      value: fmtHours(s?.avgScheduleHours),
+      status: 'neutral' as const,
+      icon: 'lucide:calendar-clock',
+    },
   ];
 });
 
@@ -105,11 +119,11 @@ function fmtDelta(v: null | number | undefined): string {
   return typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : '—';
 }
 
-// ===== Top 问题回路 =====
+// ===== Top 问题回路（工单口径：orderTotal=工单总数） =====
 const topColumns = [
   { dataIndex: 'loopTagName', title: '回路', width: 150 },
   { dataIndex: 'unitPath', title: '装置.单元', width: 170 },
-  { dataIndex: 'totalCount', title: '累计处置', width: 90 },
+  { dataIndex: 'orderTotal', title: '工单总数', width: 90 },
   { dataIndex: 'reopened', title: '重开', width: 70 },
   { dataIndex: 'lastClosedKpiDelta', title: '最近 KPI 改善', width: 120 },
 ];
@@ -123,7 +137,7 @@ function handleHelp() {
     title: '处置报告 帮助',
     content: `
       <p><b>定位</b>：处置活动管理回顾——闭环了多少、效率如何、哪些回路反复出问题。</p>
-      <p><b>口径</b>：闭环率=已闭环/已验证；平均处置时长=建议产生到验证闭环的均值；无效重开率=验证无效/已验证。</p>
+      <p><b>口径</b>：闭环率=已闭环/已验证；平均处置时长=工单创建到验证闭环的均值；无效重开率=验证无效/已验证；驳回率=建议 REJECTED/已审核；平均排程周期=工单创建到开工的均值。</p>
       <p><b>月界</b>：北京时间自然月。数据不足（无闭环记录）时显示 —，不出误导性 0。</p>
     `,
   });
@@ -153,8 +167,8 @@ onMounted(load);
       </template>
     </ClpmPageToolbar>
 
-    <!-- 汇总指标卡（§8.4，状态色走 token） -->
-    <div class="mb-3 mt-2 grid grid-cols-5 gap-3">
+    <!-- 汇总指标卡（§8.4，状态色走 token；7 卡自适应换行） -->
+    <div class="mb-3 mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
       <ClpmKpiCard
         v-for="c in summaryCards"
         :key="c.key"

@@ -559,14 +559,28 @@ def _render_pdf(
             story.append(_p("暂无装置标杆对比数据。", s_caption))
         story.append(_sp(3))
 
-        # 5.4 收益摘要（P3 预留：经济收益不计算）
-        story.append(_p("5.4 收益摘要（经济收益预留）", s_h2))
-        story.append(
-            _p(
-                "预估收益：<b>待配置经济收益换算口径后启用</b>（当前仅展示技术指标量化结果）。",
-                s_body,
-            )
+        # 5.4 收益摘要（纯技术口径：闭环处置前后评分改善，不做经济换算）
+        story.append(_p("5.4 收益摘要（技术口径）", s_h2))
+        si = next(
+            (k for k in (overview.get("kpis") or []) if k.get("key") == "scoreImprovement"),
+            None,
         )
+        if si and si.get("value") is not None:
+            story.append(
+                _p(
+                    f"平均评分改善：<b>{float(si['value']):+.1f} 分</b>"
+                    "（闭环回路处置前后评分差值均值，纯技术口径）。",
+                    s_body,
+                )
+            )
+        else:
+            story.append(
+                _p(
+                    "平均评分改善：<b>—</b>（技术口径：闭环处置前后评分差值，"
+                    "当前时段暂无闭环数据）。",
+                    s_body,
+                )
+            )
 
     # ---- 页脚（所有阶段）----
     story.append(_sp(15))

@@ -1,7 +1,8 @@
 """监控模块 API schemas——关注队列与工作台摘要（整改方案 §8）。
 
-关注队列统一聚合 ALERT / DEGRADATION / DATA_QUALITY / TRACKER / VERIFICATION
-五类来源，不新增数据库主键，``attentionId`` 使用 ``${source}:${sourceId}``。
+关注队列统一聚合 ALERT / DEGRADATION / DATA_QUALITY / FITNESS_ABNORMAL /
+HANDLING 五类来源（A2 新口径：TRACKER/VERIFICATION 已移除，新增 HANDLING
+处置工单），不新增数据库主键，``attentionId`` 使用 ``${source}:${sourceId}``。
 
 所有 schema 继承 CamelModel（snake_case 字段 → camelCase JSON）。
 """
@@ -18,7 +19,7 @@ from app.schemas.base import CamelModel
 # 枚举
 # ---------------------------------------------------------------------------
 
-AttentionSource = Literal["ALERT", "DEGRADATION", "DATA_QUALITY", "TRACKER", "VERIFICATION"]
+AttentionSource = Literal["ALERT", "DEGRADATION", "DATA_QUALITY", "FITNESS_ABNORMAL", "HANDLING"]
 AttentionPriority = Literal["URGENT", "HIGH", "MEDIUM", "LOW"]
 AttentionStatus = Literal["OPEN", "ACKNOWLEDGED", "SUPPRESSED", "IN_PROGRESS", "VERIFYING"]
 ConfidenceLevel = Literal["A", "B", "C", "D", "E"]
@@ -29,7 +30,6 @@ AttentionActionType = Literal[
     "ACKNOWLEDGE",
     "RESOLVE",
     "MARK_FALSE_POSITIVE",
-    "CREATE_TRACKER",
     "VIEW_ALERT_HISTORY",
     "BACK_TO_OVERVIEW",
 ]
@@ -43,7 +43,12 @@ AttentionActionType = Literal[
 class AttentionActionTarget(CamelModel):
     """动作跳转目标。"""
 
-    route: Literal["/monitor/loop-workbench", "/monitor/alerts", "/dashboard/workbench"]
+    route: Literal[
+        "/monitor/loop-workbench",
+        "/monitor/alerts",
+        "/dashboard/workbench",
+        "/handling/orders",
+    ]
     query: dict[str, str] = Field(default_factory=dict, description="URL query 参数")
 
 

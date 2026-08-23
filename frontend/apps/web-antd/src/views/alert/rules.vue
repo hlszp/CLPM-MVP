@@ -271,7 +271,8 @@ const dslTemplates: Record<AlertApi.RuleType, Record<string, any>> = {
     durationSeconds: 300,
     cooldownSeconds: 3600,
     severity: 'ERROR',
-    actions: [{ type: 'CREATE_EVENT' }, { type: 'CREATE_TRACKER' }],
+    // tracker 已关停（批次 C）：默认模板不再含 CREATE_TRACKER
+    actions: [{ type: 'CREATE_EVENT' }],
     priority: 50,
   },
 };

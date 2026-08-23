@@ -19,6 +19,7 @@ from app.models.diagnosis_run import DiagnosisRun
 from app.models.loop import LoopLedger
 from app.schemas.task import TaskStatus
 from app.services.diagnosis_orchestrator import run_diagnosis_for_loop
+from app.services.diagnosis_system_actions import generate_system_actions_best_effort
 from app.services.task_tracker import update_status
 from app.tasks.celery_app import AsyncTask, celery_app
 
@@ -161,23 +162,24 @@ async def _record_failed_run(
             if exists is None:
                 return
             now = datetime.utcnow()
-            db.add(
-                DiagnosisRun(
-                    id=str(uuid4()),
-                    task_id=task_id,
-                    loop_id=loop_id,
-                    triggered_by=triggered_by,
-                    trigger_type=trigger_type,
-                    time_window_start=start_dt,
-                    time_window_end=end_dt,
-                    status="FAILED",
-                    data_gate={"passed": False, "reason": f"执行异常: {error[:500]}"},
-                    algorithm_version="MVP_DIAG_V2_v1.0",
-                    started_at=now,
-                    finished_at=now,
-                    duration_ms=0,
-                )
+            run = DiagnosisRun(
+                id=str(uuid4()),
+                task_id=task_id,
+                loop_id=loop_id,
+                triggered_by=triggered_by,
+                trigger_type=trigger_type,
+                time_window_start=start_dt,
+                time_window_end=end_dt,
+                status="FAILED",
+                data_gate={"passed": False, "reason": f"执行异常: {error[:500]}"},
+                algorithm_version="MVP_DIAG_V2_v1.0",
+                started_at=now,
+                finished_at=now,
+                duration_ms=0,
             )
+            db.add(run)
             await db.commit()
+            # A3：落库点统一即时生成 SYSTEM 建议（FAILED run 无分类时为空操作）
+            await generate_system_actions_best_effort(db, run)
     except Exception as exc:  # noqa: BLE001
         logger.warning("失败回路留痕写入失败（忽略）: %s", exc)

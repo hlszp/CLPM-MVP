@@ -69,6 +69,12 @@ vi.mock('ant-design-vue', () => ({
     props: ['spinning'],
     template: '<div data-testid="spin"><slot /></div>',
   },
+  // v4.3+ 适用性分段堆叠横条使用 Tooltip 包裹，打桩仅透传默认插槽
+  Tooltip: {
+    name: 'Tooltip',
+    props: ['placement', 'title'],
+    template: '<div data-testid="tooltip"><slot /></div>',
+  },
 }));
 
 vi.mock('vue-router', () => ({
@@ -76,6 +82,7 @@ vi.mock('vue-router', () => ({
 }));
 
 // ClpmBulletChart 打桩：渲染 label/value/meta/delta 便于断言行2 仪表盘带与环比
+// ClpmFitnessBadge 打桩：v4.3+ 适用性分段徽章，仅渲染等级避免引入真实组件依赖
 vi.mock('#/components/clpm', () => ({
   ClpmBulletChart: {
     name: 'ClpmBulletChart',
@@ -93,6 +100,11 @@ vi.mock('#/components/clpm', () => ({
     ],
     template:
       '<div class="bullet-stub">{{ label }}|{{ value }}|{{ meta }}|{{ delta }}</div>',
+  },
+  ClpmFitnessBadge: {
+    name: 'ClpmFitnessBadge',
+    props: ['level'],
+    template: '<span class="fitness-badge-stub" :data-level="level" />',
   },
 }));
 

@@ -37,7 +37,9 @@ from app.schemas.common import ApiResponse, success
 from app.schemas.task import TaskType
 from app.services.diagnosis_operators import list_operators
 from app.services.diagnosis_operators.classification import get_confidence_definitions
-from app.services.loop_action_templates import STANDARD_ACTION_TEMPLATES
+from app.services.diagnosis_system_actions import (
+    generate_system_actions as _generate_system_actions,
+)
 from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.task_tracker import create_task
 
@@ -433,46 +435,6 @@ def _action_to_item(row: LoopActionItem) -> dict[str, Any]:
         "suggestedBy": row.suggested_by,
         "suggestedAt": row.suggested_at.isoformat() + "Z" if row.suggested_at else None,
     }
-
-
-async def _generate_system_actions(db: AsyncSession, run: DiagnosisRun) -> None:
-    """按诊断结论/人工复核结论自动生成标准处置建议（§9.4）。
-
-    分类来源：已复核 → review_results（人工复核优先）；
-    未复核 → primary_category + secondary_categories（诊断结论）。
-    同一 run 已有记录时不重复生成（由调用方保证）。
-    """
-    if run.review_status == "REVIEWED" and run.review_results:
-        categories = [c for c in run.review_results if c in STANDARD_ACTION_TEMPLATES]
-        basis_prefix = "人工复核"
-    else:
-        categories = (
-            [run.primary_category] if run.primary_category in STANDARD_ACTION_TEMPLATES else []
-        )
-        for j in run.secondary_categories or []:
-            cat = j.get("category")
-            if cat in STANDARD_ACTION_TEMPLATES and cat not in categories:
-                categories.append(cat)
-        basis_prefix = "诊断结论"
-    now = _utcnow_naive()
-    for cat in categories:
-        label = _CATEGORY_LABELS.get(cat, cat)
-        for tpl in STANDARD_ACTION_TEMPLATES[cat]:
-            db.add(
-                LoopActionItem(
-                    run_id=run.id,
-                    loop_id=run.loop_id,
-                    source="SYSTEM",
-                    category=cat,
-                    content=f"{tpl['action']}：{tpl['description']}",
-                    basis=f"{basis_prefix}：{label}",
-                    priority=tpl["priority"],
-                    status="PENDING",
-                    suggested_by="系统",
-                    suggested_at=now,
-                )
-            )
-    await db.flush()
 
 
 @router.get("/runs/{run_id}/actions", response_model=ApiResponse[dict])

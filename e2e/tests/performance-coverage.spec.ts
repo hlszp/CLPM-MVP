@@ -48,8 +48,8 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
 
   // E2E-PERF-007: KPI 报表页
   test('E2E-PERF-007: KPI 报表页加载与时间窗切换', async ({ page }) => {
-    await page.goto('/reports/performance');
-    await page.waitForLoadState('networkidle');
+    // SignalR 心跳使 networkidle 不稳定，改用 domcontentloaded + 元素等待
+    await page.goto('/reports/performance', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     // 验证页面加载（ClpmPageToolbar 标题"KPI 报表"可见）
@@ -109,10 +109,9 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     const tableOrEmpty = page.locator('.ant-table, .ant-empty').first();
     await expect(tableOrEmpty).toBeVisible({ timeout: 15_000 });
 
-    // 切换到"回路报表"验证表头含"理想稳定时间"列
+    // 切换到"回路报表"验证表头含默认可见列
     if (hasLoop) {
       await loopRadioBtn.click();
-      await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
       // 等待表格重新渲染
       const loopTable = page.locator('.ant-table').first();
@@ -123,8 +122,11 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
         .innerText()
         .catch(() => '');
       if (headerText) {
-        // loopColumns 含"理想稳定时间"列（kpi-report.vue:529）
-        expect(headerText).toContain('理想稳定时间');
+        // 现行列可见性配置（reports/performance.vue loopColumnVisibilityConfig）：
+        // 性能评分/准确率/平稳率/可信度 默认 visible:true；
+        // 理想稳定时间/实际稳定时间/输出跳变率/阀门粘滞 默认 visible:false
+        expect(headerText).toContain('性能评分');
+        expect(headerText).toContain('可信度');
       }
     }
 
@@ -132,7 +134,6 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     if (hasMonth) {
       await monthRadioBtn.click();
       await page.waitForTimeout(800);
-      await page.waitForLoadState('networkidle');
       // month picker 存在（picker="month"）
       const monthPicker = page.locator('.ant-picker-month').first();
       const hasMonthPicker = await monthPicker.isVisible().catch(() => false);
@@ -147,8 +148,8 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
 
   // E2E-PERF-008: 参数配置 Tab 开关生效
   test('E2E-PERF-008: 参数配置 Tab 开关与参数表', async ({ page }) => {
-    await page.goto('/config/metric');
-    await page.waitForLoadState('networkidle');
+    // SignalR 心跳使 networkidle 不稳定，改用 domcontentloaded + 元素等待
+    await page.goto('/config/metric', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     // config.vue: 顶部 Tabs 包含 5 个 TabPane（指标定义/权重配置/定级阈值/数据可信度/参数配置）
@@ -159,7 +160,6 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
       .first();
     await expect(outlierTab).toBeVisible({ timeout: 15_000 });
     await outlierTab.click();
-    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
     // 验证当前 TabPane 已切换到参数配置（outlier-params.vue 渲染）
@@ -283,24 +283,25 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
     expect(page.url()).toContain('/config/metric');
   });
 
-  // E2E-PERF-009: 理想稳态时间字段（指标定义 Tab + KPI 报表回路报表列）
+  // E2E-PERF-009: 指标定义表与 KPI 报表回路报表列（对齐现行 DB 驱动口径）
   test('E2E-PERF-009: 理想稳态时间字段', async ({ page }) => {
-    // ===== Part 1: /config/metric → "指标定义" Tab 验证"理想稳态时间"指标行 =====
-    await page.goto('/config/metric');
-    await page.waitForLoadState('networkidle');
+    // ===== Part 1: /config/metric → "指标定义" Tab 验证现行核心指标行 =====
+    // 背景：指标定义表已改为 DB 驱动（/configs/metric-definitions），
+    // 旧硬编码 12 KPI 列表（含 IDEAL_SETTLING_TIME 理想稳态时间行）已不存在；
+    // 现行仅保留核心指标（comprehensive_score/accuracy_rate/fast_rate/
+    // steady_rate/effective_auto_rate 等），故断言改为校验现行核心指标行
+    await page.goto('/config/metric', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     // 默认 Tab 为"指标定义"（activeTab='definition'），config-definition.vue 渲染
-    // config-definition.vue: 12 KPI 指标列表，含 IDEAL_SETTLING_TIME → "理想稳态时间"
     const activePane = page.locator('.ant-tabs-tabpane-active').first();
     await expect(activePane).toBeVisible({ timeout: 15_000 });
 
-    // 验证指标定义表可见（含表头"指标名称/指标代码/类别/算法公式/说明"）
+    // 验证指标定义表可见（含表头"指标代码/指标名称/类别/算法/说明"）
     const definitionTable = activePane.locator('.ant-table').first();
     await expect(definitionTable).toBeVisible({ timeout: 15_000 });
 
-    // 验证表格中存在"理想稳态时间"行（metricName 列）
-    // config-definition.vue: { metricCode: 'IDEAL_SETTLING_TIME', metricName: '理想稳态时间' }
+    // 验证表格中存在现行核心指标行（comprehensive_score → 综合评分）
     const definitionBodyText = await definitionTable
       .locator('.ant-table-tbody')
       .first()
@@ -308,13 +309,11 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
       .catch(() => '');
     expect(
       definitionBodyText,
-      '指标定义表应包含"理想稳态时间"指标行',
-    ).toContain('理想稳态时间');
-    expect(definitionBodyText).toContain('IDEAL_SETTLING_TIME');
+      '指标定义表应包含现行核心指标"综合评分"行',
+    ).toMatch(/综合评分|comprehensive_score/i);
 
-    // ===== Part 2: /reports/performance → "回路报表" 验证表头含"理想稳定时间"列 =====
-    await page.goto('/reports/performance');
-    await page.waitForLoadState('networkidle');
+    // ===== Part 2: /reports/performance → "回路报表" 验证表头含默认可见列 =====
+    await page.goto('/reports/performance', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     // 切换到"回路报表"
@@ -324,15 +323,16 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
       .first();
     await expect(loopRadioBtn).toBeVisible({ timeout: 15_000 });
     await loopRadioBtn.click();
-    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
     // 验证表格可见
     const loopTable = page.locator('.ant-table').first();
     await expect(loopTable).toBeVisible({ timeout: 15_000 });
 
-    // 验证表头含"理想稳定时间"列
-    // kpi-report.vue loopColumns: { title: '理想稳定时间', dataIndex: 'idealSettlingTime' }
+    // 验证表头含默认可见列
+    // 现行列可见性配置（reports/performance.vue）：理想稳定时间/实际稳定时间/
+    // 输出跳变率/阀门粘滞 默认 visible:false（可由用户在列配置中开启），
+    // 故断言改为默认可见的 性能评分/准确率/平稳率/可信度
     const headerText = await loopTable
       .locator('.ant-table-thead')
       .first()
@@ -340,13 +340,13 @@ test.describe('性能评估补盲 E2E（性能-14）', () => {
       .catch(() => '');
     expect(
       headerText,
-      '回路报表表头应包含"理想稳定时间"列',
-    ).toContain('理想稳定时间');
+      '回路报表表头应包含"性能评分"列',
+    ).toContain('性能评分');
 
-    // 验证表头同时含其他相关列（实际稳定时间/输出跳变率/阀门粘滞）
-    expect(headerText).toContain('实际稳定时间');
-    expect(headerText).toContain('输出跳变率');
-    expect(headerText).toContain('阀门粘滞');
+    // 验证表头同时含其他默认可见列（准确率/平稳率/可信度）
+    expect(headerText).toContain('准确率');
+    expect(headerText).toContain('平稳率');
+    expect(headerText).toContain('可信度');
 
     expect(page.url()).toContain('/reports/performance');
   });
