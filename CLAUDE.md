@@ -17,6 +17,7 @@
 - `docs/过程文档/ops-runbook.md` — 运维手册（网络模式切换验证、worker 挂死处置、回填性能、断点续传细节）
 - `docs/过程文档/v6-delivery-history.md` — v6 交付历史追溯
 - `docs/过程文档/stale-docs.md` — 已失效文档清单
+- `docs/过程文档/agents-md-history-2026-08-24.md` — AGENTS.md 瘦身移出的历史背景（IA 演进、残留明细、事故叙述）
 
 ## 速查（以 AGENTS.md 对应章节为准）
 
