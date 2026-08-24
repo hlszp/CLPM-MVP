@@ -60,7 +60,7 @@ const MODULES: ModuleDef[] = [
   { key: 'diagnosis', label: '诊断', moduleKey: 'diagnosis' },
   { key: 'tuning', label: '整定', moduleKey: 'tuning' },
   { key: 'handling', label: '处置', moduleKey: 'handling' },
-  { key: 'reports', label: '统计报告', moduleKey: 'reports' },
+  { key: 'reports', label: '报告', moduleKey: 'reports' },
   { key: 'config', label: '配置', moduleKey: 'config' },
   { key: 'system', label: '系统', moduleKey: 'system' },
 ];

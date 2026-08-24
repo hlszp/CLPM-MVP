@@ -9,12 +9,12 @@
  * - E2E-ROLE-005: IC_ENGINEER 全业务权限
  *
  * 角色菜单权限对齐（2026-08-23 按现行 routes/modules/*.ts authority 重写）：
- *   - SPONSOR：监控 / 评估 / 诊断 / 整定(仅记录与效果验证) / 处置 / 统计报告；无配置 / 系统
+ *   - SPONSOR：监控 / 评估 / 诊断 / 整定(仅记录与效果验证) / 处置 / 报告；无配置 / 系统
  *   - PE_ENGINEER：监控 / 评估 / 诊断 / 整定(仅记录与效果验证，无工作台) / 处置 /
- *     统计报告 / 配置（无系统）
+ *     报告 / 配置（无系统）
  *   - EXPERT：监控(回路列表/工作台/关注/预警) / 诊断 / 整定(含工作台)；
  *     无评估 / 配置 / 系统
- *   - IC_ENGINEER：监控 / 评估 / 诊断 / 整定(含工作台) / 处置 / 统计报告 /
+ *   - IC_ENGINEER：监控 / 评估 / 诊断 / 整定(含工作台) / 处置 / 报告 /
  *     配置 / 系统(权限矩阵)
  *   - ADMIN：全部
  *   历史口径变更：旧断言"SPONSOR/PE 无整定菜单"、"IC 无配置菜单"基于 IA 重构前
@@ -62,13 +62,13 @@ test.describe('多角色权限验证 E2E', () => {
 
     const menuTexts = await getMenuTexts(page);
 
-    // SPONSOR 应可见：监控、评估、诊断、整定（仅记录/验证）、处置、统计报告
+    // SPONSOR 应可见：监控、评估、诊断、整定（仅记录/验证）、处置、报告
     expect(menuTexts).toContain('监控');
     expect(menuTexts).toContain('评估');
     expect(menuTexts).toContain('诊断');
     expect(menuTexts).toContain('整定');
     expect(menuTexts).toContain('处置');
-    expect(menuTexts).toContain('统计报告');
+    expect(menuTexts).toContain('报告');
 
     // SPONSOR 不应可见：配置、系统（ADMIN/IC/PE 范畴）
     expect(menuTexts).not.toContain('配置');
@@ -163,7 +163,7 @@ test.describe('多角色权限验证 E2E', () => {
 
     const menuTexts = await getMenuTexts(page);
 
-    // IC_ENGINEER 应可见：监控、评估、诊断、整定（含工作台）、处置、统计报告、
+    // IC_ENGINEER 应可见：监控、评估、诊断、整定（含工作台）、处置、报告、
     // 配置（config.ts 父路由 authority 含 IC_ENGINEER）、系统（权限矩阵）
     expect(menuTexts).toContain('监控');
     expect(menuTexts).toContain('评估');
@@ -171,7 +171,7 @@ test.describe('多角色权限验证 E2E', () => {
     expect(menuTexts).toContain('整定');
     expect(menuTexts).toContain('整定工作台');
     expect(menuTexts).toContain('处置');
-    expect(menuTexts).toContain('统计报告');
+    expect(menuTexts).toContain('报告');
     expect(menuTexts).toContain('配置');
     expect(menuTexts).toContain('系统');
   });

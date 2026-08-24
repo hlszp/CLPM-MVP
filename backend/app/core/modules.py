@@ -26,7 +26,7 @@ MODULES: dict[str, dict[str, Any]] = {
     "diagnosis": {"name": "诊断", "order": 3, "base": False, "deps": []},
     "tuning": {"name": "整定", "order": 4, "base": False, "deps": []},
     "handling": {"name": "处置", "order": 5, "base": False, "deps": ["diagnosis"]},
-    "reports": {"name": "统计报告", "order": 6, "base": True, "deps": []},
+    "reports": {"name": "报告", "order": 6, "base": True, "deps": []},
     "config": {"name": "配置", "order": 7, "base": True, "deps": []},
     "system": {"name": "系统", "order": 8, "base": True, "deps": []},
 }

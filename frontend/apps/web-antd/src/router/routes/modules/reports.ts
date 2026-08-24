@@ -26,7 +26,7 @@ const routes: RouteRecordRaw[] = [
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:file-bar-chart-2',
       order: 6,
-      title: '统计报告',
+      title: '报告',
       module: 'reports',
     },
     children: [
