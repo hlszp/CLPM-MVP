@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: macbook
 nodes_managed: true
-exported_at: "2026-08-23T11:52:13Z"
+exported_at: "2026-08-23T23:17:13Z"
 modules:
     "":
-        dir_name: CLPM-MVP 控制回路绩效治理与优化平台（根仓库）
-        title: CLPM-MVP 控制回路绩效治理与优化平台（根仓库）
+        dir_name: CLPM 控制回路绩效治理平台根仓库
+        title: CLPM 控制回路绩效治理平台根仓库
         scope:
             - README.md
             - AGENTS.md
@@ -38,8 +38,8 @@ modules:
         depends_on: []
         related_to: []
     backend_service:
-        dir_name: CLPM 控制回路性能监控后端服务
-        title: CLPM 控制回路性能监控后端服务
+        dir_name: CLPM 后端服务（FastAPI + Celery 控制回路诊断整定平台）
+        title: CLPM 后端服务（FastAPI + Celery 控制回路诊断整定平台）
         scope:
             - backend/
         source_files: []
@@ -50,9 +50,7 @@ modules:
         depends_on: []
         related_to:
             - path: deployment_infra
-            - path: frontend_app/backend_mock
-            - path: frontend_app/web_app
-            - path: performance_tests
+            - path: root_scripts
     backend_service/core_infrastructure:
         dir_name: 应用核心基础设施（配置_中间件_契约_常量）
         title: 应用核心基础设施（配置/中间件/契约/常量）
@@ -65,7 +63,7 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: root_scripts
+            - path: backend_service/loop_management/loop_core
     backend_service/data_sources:
         dir_name: 数据源抽象与三层缓存（TDengine_远端API + Redis L1_L2_L3）
         title: 数据源抽象与三层缓存（TDengine/远端API + Redis L1/L2/L3）
@@ -78,7 +76,9 @@ modules:
         children: []
         depends_on: []
         related_to:
+            - path: backend_service/loop_management/metric_calculator
             - path: demo_and_clpm_engine
+            - path: performance_tests
     backend_service/loop_management:
         dir_name: 控制回路管理后端服务（API 与模型层）
         title: 控制回路管理后端服务（API 与模型层）
@@ -112,10 +112,9 @@ modules:
             - backend_service/loop_management/tuning_identification
         depends_on: []
         related_to:
-            - path: frontend_app/web_app/content_and_reports
-            - path: frontend_app/web_app/monitoring_features
-            - path: frontend_app/web_app/operations_features
-            - path: frontend_app/web_app/system_management
+            - path: frontend_app/web_app/app_shell_and_infrastructure
+            - path: mock_data_server
+            - path: performance_tests
     backend_service/loop_management/diagnosis_operators:
         dir_name: 诊断元算子库（无状态纯函数注册与族内融合）
         title: 诊断元算子库（无状态纯函数注册与族内融合）
@@ -136,6 +135,7 @@ modules:
         children: []
         depends_on: []
         related_to:
+            - path: backend_service/core_infrastructure
             - path: backend_service/loop_management/diagnosis_operators
             - path: backend_service/loop_management/metric_calculator
             - path: backend_service/loop_management/preprocessing
@@ -149,6 +149,7 @@ modules:
         children: []
         depends_on: []
         related_to:
+            - path: backend_service/data_sources
             - path: backend_service/loop_management/loop_core
     backend_service/loop_management/preprocessing:
         dir_name: 回路时序数据预处理与异常值检测
@@ -191,9 +192,10 @@ modules:
         depends_on: []
         related_to:
             - path: backend_service
+            - path: frontend_app/web_app
     docs_and_design:
-        dir_name: CLPM 产品设计与文档体系
-        title: CLPM 产品设计与文档体系
+        dir_name: CLPM 产品设计与知识仓库
+        title: CLPM 产品设计与知识仓库
         scope:
             - docs/
             - diagrams/
@@ -234,8 +236,7 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to:
-            - path: backend_service
+        related_to: []
     frontend_app/docs_site:
         dir_name: Vben Admin 文档站点（VitePress）
         title: Vben Admin 文档站点（VitePress）
@@ -244,8 +245,7 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to:
-            - path: frontend_app/shared_packages
+        related_to: []
     frontend_app/playground:
         dir_name: Vben Admin 演示应用（Playground）
         title: Vben Admin 演示应用（Playground）
@@ -254,8 +254,7 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to:
-            - path: frontend_app/shared_packages
+        related_to: []
     frontend_app/shared_packages:
         dir_name: 前端共享包与内部工具集（@vben-core & internal）
         title: 前端共享包与内部工具集（@vben-core & internal）
@@ -265,10 +264,7 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to:
-            - path: frontend_app/docs_site
-            - path: frontend_app/playground
-            - path: frontend_app/web_app
+        related_to: []
     frontend_app/web_app:
         dir_name: CLPM Web 前端应用（基于 vben-admin 的工业闭环控制平台）
         title: CLPM Web 前端应用（基于 vben-admin 的工业闭环控制平台）
@@ -284,10 +280,10 @@ modules:
             - frontend_app/web_app/system_management
         depends_on: []
         related_to:
-            - path: backend_service
+            - path: deployment_infra
             - path: e2e_tests
-            - path: frontend_app/shared_packages
-            - path: mock_data_server
+            - path: performance_tests
+            - path: root_scripts
     frontend_app/web_app/app_shell_and_infrastructure:
         dir_name: Web 应用外壳与基础设施（Vue 3 + vben-admin 基座）
         title: Web 应用外壳与基础设施（Vue 3 + vben-admin 基座）
@@ -298,8 +294,7 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: frontend_app/web_app/monitoring_features
-            - path: frontend_app/web_app/operations_features
+            - path: backend_service/loop_management
     frontend_app/web_app/content_and_reports:
         dir_name: 内容报告与整定工作台（Reports & Tuning）
         title: 内容报告与整定工作台（Reports & Tuning）
@@ -311,7 +306,7 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: backend_service/loop_management
+            - path: frontend_app/web_app/monitoring_features
     frontend_app/web_app/dashboard_and_core_pages:
         dir_name: 核心基础页面（认证、个人中心与兜底页）
         title: 核心基础页面（认证、个人中心与兜底页）
@@ -332,8 +327,9 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: backend_service/loop_management
-            - path: frontend_app/web_app/app_shell_and_infrastructure
+            - path: frontend_app/web_app/content_and_reports
+            - path: frontend_app/web_app/operations_features
+            - path: frontend_app/web_app/system_management
     frontend_app/web_app/operations_features:
         dir_name: 回路监控、处置与诊断工作台（Loop_Handling_Diagnosis Views）
         title: 回路监控、处置与诊断工作台（Loop/Handling/Diagnosis Views）
@@ -345,8 +341,7 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: backend_service/loop_management
-            - path: frontend_app/web_app/app_shell_and_infrastructure
+            - path: frontend_app/web_app/monitoring_features
     frontend_app/web_app/system_management:
         dir_name: 系统管理、测点清单与任务视图
         title: 系统管理、测点清单与任务视图
@@ -358,7 +353,7 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: backend_service/loop_management
+            - path: frontend_app/web_app/monitoring_features
     mock_data_server:
         dir_name: CLPM 模拟远端数据服务（历史查询 + SignalR 实时推送）
         title: CLPM 模拟远端数据服务（历史查询 + SignalR 实时推送）
@@ -368,7 +363,7 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: frontend_app/web_app
+            - path: backend_service/loop_management
     performance_tests:
         dir_name: CLPM 系统性能压测套件
         title: CLPM 系统性能压测套件
@@ -378,14 +373,17 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: backend_service
+            - path: backend_service/data_sources
+            - path: backend_service/loop_management
+            - path: frontend_app/web_app
     root_scripts:
-        dir_name: 前端 Hex 白名单审计与 PG 连接池监控脚本集
-        title: 前端 Hex 白名单审计与 PG 连接池监控脚本集
+        dir_name: 前端 Hex 颜色基线守护与 PG 连接池监控脚本
+        title: 前端 Hex 颜色基线守护与 PG 连接池监控脚本
         scope:
             - scripts/
         source_files: []
         children: []
         depends_on: []
         related_to:
-            - path: backend_service/core_infrastructure
+            - path: backend_service
+            - path: frontend_app/web_app

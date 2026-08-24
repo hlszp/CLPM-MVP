@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend_app/docs_site
+title: Vben Admin 文档站点（VitePress）
+scope:
+    - frontend/docs/
+source_files: []
+depends_on: []
+related_to: []

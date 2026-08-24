@@ -1,0 +1,22 @@
+schema_version: 1
+module_path: ""
+title: CLPM 控制回路绩效治理平台根仓库
+scope:
+    - README.md
+    - AGENTS.md
+    - DESIGN.md
+    - TROUBLESHOOTING.md
+    - Makefile
+    - .gitignore
+    - Dockerfile.backend
+    - Dockerfile.frontend
+    - docker-compose.prod.yml
+    - lefthook.yml
+    - .pre-commit-config.yaml
+    - .dockerignore
+    - .env.prod.example
+    - CLAUDE.md
+    - LICENSE
+source_files: []
+depends_on: []
+related_to: []

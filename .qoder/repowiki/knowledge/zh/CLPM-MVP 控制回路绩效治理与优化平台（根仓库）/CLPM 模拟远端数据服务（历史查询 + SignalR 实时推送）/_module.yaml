@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: mock_data_server
-title: CLPM 模拟远端数据服务（历史查询 + SignalR 实时推送）
-scope:
-    - mock_data_server/
-source_files: []
-depends_on: []
-related_to:
-    - path: frontend_app/web_app

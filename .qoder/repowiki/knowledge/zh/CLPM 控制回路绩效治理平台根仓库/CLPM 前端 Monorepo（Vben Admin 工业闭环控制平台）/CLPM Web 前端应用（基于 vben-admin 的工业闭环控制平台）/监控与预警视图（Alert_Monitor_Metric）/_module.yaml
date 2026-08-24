@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: frontend_app/web_app/monitoring_features
+title: 监控与预警视图（Alert/Monitor/Metric）
+scope:
+    - frontend/apps/web-antd/src/views/alert/
+    - frontend/apps/web-antd/src/views/monitor/
+    - frontend/apps/web-antd/src/views/metric/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend_app/web_app/content_and_reports
+    - path: frontend_app/web_app/operations_features
+    - path: frontend_app/web_app/system_management
