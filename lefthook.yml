@@ -14,6 +14,12 @@ pre-push:
     - name: backend pytest
       run: cd backend && uv run pytest -x -q
 
+    # schema 漂移检查（AGENTS.md「CI 提交前本地检查」同口径）：
+    # 退出码非 0 即中止；本地数据库不可用时 alembic 同样非 0 退出，
+    # 钩子中止推送并直接显示连接错误，不静默跳过
+    - name: backend alembic schema drift
+      run: cd backend && uv run alembic check
+
     - name: frontend type check
       run: cd frontend && pnpm run check:type
 
