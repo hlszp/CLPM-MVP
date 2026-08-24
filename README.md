@@ -316,7 +316,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | IA 优化实施主方案（v1.2，P0~P4 已完成） | `docs/设计文档/IA 优化/CLPM-IA优化实施方案-0822.md`（统计报告一级化 / 模块热插拔 / 适用性 L0~L4） |
 | IA 评审文档索引 | `docs/设计文档/IA 优化/README.md`（5 视角评审体系 + 四批评分总览 A-） |
 | v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
-| 原型设计基线 | `DESIGN.md`（v3.0；视觉历史基线，现行路由以实现契约 v2.11 为准） |
+| 原型设计基线 | `DESIGN.md`（v3.1；设计基线，IA 与菜单口径以 `docs/MVP设计/00-信息架构.md` 为准） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 
 ## 推荐阅读顺序
@@ -377,7 +377,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | 当前可视化设计与用户体验规范 |
 | `docs/设计文档/00-BASELINE/implementation-contract.md` | 重构后实现契约：IA、路由、API、权限、状态机、KPI 与阶段口径 |
 | `docs/设计文档/页面标杆设计/` | 逐页高保真线框图与标杆设计规范（系统概览/关注队列/回路工作台/回路列表），含 HTML 线框图与 PNG 效果图 |
-| `DESIGN.md` | 设计基线 v3.0（视觉/布局/组件历史基线；现行路由与实现口径以实现契约 v2.11 为准） |
+| `DESIGN.md` | 设计基线 v3.1（视觉/布局/组件横切设计约束；IA 与菜单口径以 `docs/MVP设计/00-信息架构.md` 为准） |
 | `docs/设计文档/prototype/README.md` | 原型系统代码库入口说明 |
 | `backend/` | FastAPI 后端（API + Celery 任务 + 算法引擎） |
 | `frontend/` | Vue 3 前端 monorepo（web-antd 为生产应用） |

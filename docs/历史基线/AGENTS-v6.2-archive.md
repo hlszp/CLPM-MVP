@@ -40,7 +40,7 @@ PRD v6.2 是产品需求的事实来源；实现契约 v2.11 是重构后 IA/路
 | 数据模型设计 DDS | `docs/设计文档/04-DDS/DDS.md` | v6.0 |
 | API 接口设计 IDS | `docs/设计文档/05-IDS/IDS.md` | v6.0 |
 | UI/UX 设计规范 | `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md` | **v6.2**（色彩约定与工业组件执行层整改版，配套《色彩约定表 v1.0》《文案与术语词表 v1.0》） |
-| 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.11） |
+| 设计基线 | `DESIGN.md` | v3.0（对齐实现契约 v2.11；MVP 派生后已升 v3.1，IA 口径以 `docs/MVP设计/00-信息架构.md` 为准） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` | 已重置为干净基线 |
 | 文档索引 | `docs/过程文档/design-documents-index-2026-06-16.md` | v3.0（对齐 v6.0） |
 | v6 交付历史 | `docs/过程文档/v6-delivery-history.md` | Phase 0-6 + 后续全部 PR |
