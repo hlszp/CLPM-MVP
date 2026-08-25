@@ -267,13 +267,98 @@ export namespace WorkbenchApi {
     target: number;
   }
 
-  /** A-03 GET /diagnosis 响应骨架 */
+  /** disposition 四态（B-10：结论在处置-采纳链路中的位置） */
+  export type DispositionState =
+    | 'ACK_REVIEWED'
+    | 'CONVERTED'
+    | 'IGNORED'
+    | 'UNADDRESSED';
+
+  /** 关键异常表行（F-DG-01 · open_tags · Top6） */
+  export interface DiagnosisOpenTag {
+    category: null | string;
+    conclusion: null | string;
+    confidence: null | number;
+    fitness_level: null | string;
+    loop_id: string;
+    loop_name: null | string;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
+    sla_due_sec: null | number;
+    sla_stage: 'BREACH' | 'NONE' | 'WARN' | null;
+    spark: number[];
+    symptom: null | string;
+    tag_id: string;
+    triggered_at: null | string;
+  }
+
+  /** 诊断结论时间线行（F-DG-02 · concl_timeline · disposition 四态） */
+  export interface DiagnosisConclItem {
+    category: null | string;
+    confidence: null | number;
+    disposition: DispositionState | null;
+    evidence_summary: null | string;
+    id: null | string;
+    loop_id: string;
+    loop_name: null | string;
+    result_id: null | string;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
+    tag_code: null | string;
+    ts: null | string;
+  }
+
+  /** 适用性 L0~L4 门禁（F-DG-03 · fitness_gates · B-09 漏斗） */
+  export interface DiagnosisFitnessGates {
+    evaluated: number;
+    gate_desc: string[];
+    gates_passed: boolean[];
+    /** 最劣非空层级：L0 → 红横幅「诊断数据不足」；L1 黄徽章；L2 绿徽章 */
+    level: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null;
+    level_counts: { L0: number; L1: number; L2: number; L3: number; L4: number };
+    score: null | number;
+    total: number;
+  }
+
+  /** 诊断规则命中统计行（F-DG-04 前置数据，M3 展示） */
+  export interface DiagnosisRuleStat {
+    hits: number;
+    name: null | string;
+    resolved_rate: null | number;
+    rule_id: null | string;
+  }
+
+  /** 根因 TopN 行（rootcause_top · 与 RootRow 同构可复用 ParetoAndRoots） */
+  export interface RootCauseRow extends RootRow {
+    tag_type: null | string;
+  }
+
+  /** 诊断摘要带（Row1 c12 · 5 项横向指标） */
+  export interface DgSummaryBand {
+    avg_confidence: null | number;
+    avg_latency_ok: boolean;
+    avg_latency_sec: number;
+    avg_latency_target: number;
+    diag_count: number;
+    diag_count_delta: null | number;
+    engine_running_days: number;
+    engine_rulebase_updated_at: string;
+    engine_status: string;
+    engine_version: string;
+    high_confidence_count: number;
+    total_confidence_count: number;
+    worsening_delta: null | number;
+    worsening_loops: number;
+  }
+
+  /** A-03 GET /diagnosis 响应（G-诊断 · 聚合 + 部分失败容错） */
   export interface DiagnosisResult {
-    concl_timeline: unknown[];
-    fitness_gates: unknown[];
-    open_tags: unknown[];
-    rule_stats: unknown[];
+    concl_timeline: DiagnosisConclItem[];
+    fitness_gates: DiagnosisFitnessGates;
+    open_tags: DiagnosisOpenTag[];
+    pareto: ParetoRow[];
+    rootcause_top: RootCauseRow[];
+    rule_stats: DiagnosisRuleStat[];
     scope: { id: null | number; type: ScopeType };
+    summary_band: DgSummaryBand;
     window: TimeWindow;
   }
 

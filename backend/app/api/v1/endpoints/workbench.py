@@ -151,21 +151,22 @@ async def get_diagnosis(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
     window: str = Query("24h"),
+    onlyActive: bool = Query(False, description="仅看未处置（UNADDRESSED）活跃结论"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A-03 诊断：异常回路 + 诊断结论时间线 + 适用性门禁 + 规则统计。"""
-    # TODO: M2 填充 — open_tags + concl_timeline + fitness_gates + rule_stats
-    return success(
-        data={
-            "open_tags": [],
-            "concl_timeline": [],
-            "fitness_gates": [],
-            "rule_stats": [],
-            "scope": {"type": scopeType, "id": scopeId},
-            "window": window,
-        }
+    """A-03 诊断：关键异常表 + 结论时间线 + 适用性门禁 + 规则统计 + Pareto/根因。
+
+    G-诊断填充（F-DG-01~03）：open_tags Top6 + concl_timeline（disposition 四态）
+    + fitness_gates（L0~L4 门禁聚合）+ rule_stats + pareto/rootcause_top（复用 MV-02
+    与 DiagnosisTag 聚合，与 G-总览同源）。部分失败容错。
+    """
+    from app.services.workbench_diagnosis import build_diagnosis
+
+    data = await build_diagnosis(
+        db, scope_type=scopeType, scope_id=scopeId, window=window, only_active=onlyActive
     )
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
