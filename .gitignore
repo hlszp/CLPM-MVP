@@ -67,3 +67,8 @@ CLPM-engine/
 
 # Qoder IDE 本地产物（repowiki 知识文档除外）
 .qoder/better-harness/
+
+# E2E 截图与视觉检查产物（不入库，本地保留即可）
+e2e/screenshots/
+e2e/visual-inspection/
+e2e/verify-fixes-*.png
