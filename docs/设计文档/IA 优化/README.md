@@ -131,6 +131,14 @@ docs/设计文档/IA 优化/
 | F-LP-002 | 诊断 Modal 与诊断详情功能重叠 | 范式级 P2 | 回路性能页 |
 | F-ET-002 | 策略配置与配置模块功能交叉 | 范式级 P3 | 评估任务页 |
 
+> **评估模块专项闭环状态（2026-08-25，系统性反思 Quest）**：
+> - ✅ F-EVAL-001：回路性能页操作列增加「诊断」跳转（→ /diagnosis/workbench?loopId=）；性能总览 TOP5 位号接入 ClpmLoopLink（F-PID-002）
+> - ✅ F-LP-002：诊断 Modal 已随 MVP 精简删除，重叠清零
+> - ✅ F-EVAL-003：产品口径已固化（EXPERT 聚焦诊断/整定，评估不可见，见 assess.ts 路由注释）
+> - ✅ F-CTX-003/F-LP-003：回路性能页回路编号列接入 ClpmLoopLink；另修复组件 diagnosis 目标死链（/diagnosis/detail/:id → /diagnosis/workbench?loopId=）
+> - ⏸ F-EVAL-002：总览/回路性能边界交叉，涉及产品取舍（TOP5 是否改装置级排名），待人工决策
+> - ⏸ D-EVAL-005：KPI 报表（现 /reports/performance）前端聚合 → 后端聚合，列入 backlog
+
 ### 第二批核心建议优先级
 
 | 优先级 | 建议 | 工作量 | 来源 |

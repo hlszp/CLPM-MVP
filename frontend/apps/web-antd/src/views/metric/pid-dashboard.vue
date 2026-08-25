@@ -21,6 +21,7 @@ import dayjs from 'dayjs';
 import {
   ClpmBulletChart,
   ClpmEmptyState,
+  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
@@ -1054,7 +1055,16 @@ onMounted(() => {
                 :scroll="{ y: 200 }"
               >
                 <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'rating'">
+                  <template v-if="column.key === 'tagName'">
+                    <!-- F-PID-002：位号接 LoopLink，默认跳诊断（TOP5 用户任务=找最差回路去处置），
+                         下拉菜单可跳工作台/整定/评估 -->
+                    <ClpmLoopLink
+                      :loop-id="record.loopId"
+                      :tag-name="record.tagName"
+                      default-target="diagnosis"
+                    />
+                  </template>
+                  <template v-else-if="column.key === 'rating'">
                     <Tooltip
                       v-if="record.isFitnessNA"
                       :title="record.fitnessNATipText"

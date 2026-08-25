@@ -8,7 +8,7 @@ import type { Dayjs } from 'dayjs';
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 顶部工具栏：标题 + 刷新
  * - 筛选区：工厂模型节点 + 回路编号 + 控制类型 + 评估状态 + 可信度 + 时间范围
- * - 表格：回路编号 / 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分（服务端排序）/
+ * - 表格：回路编号（ClpmLoopLink 跨模块导航）/ 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分（服务端排序）/
  *   准确率 / 快速率 / 平稳率 / 有效自控率 / 可信度 / 时间窗口 / 评估时间 /
  *   评估状态 / 操作（详情、历史、诊断）；行点击打开详情抽屉
  * - 详情抽屉：回路基本信息 + 8 大 KPI + 5 项诊断/扩展指标（3+1+8 共 12 指标齐全）+
@@ -17,7 +17,8 @@ import type { Dayjs } from 'dayjs';
  *   时间区间 / 评估状态 / 综合评分 / 可信度 / 有效数据率 + 12 子指标值与各自
  *   可信度（GET /api/v1/loops/{loopId}/confidence-latest）
  * - 历史 Modal：时间维度切换（8/12/24/72/168h） + ECharts 趋势图
- * - 诊断 Modal（90% 宽）：4 个 Tab（频谱分析 / 时域分析 / 诊断概览 / 评估历史）
+ * - 诊断：操作列「诊断」跳转诊断工作台并携带 loopId 预选（F-EVAL-001，
+ *   原诊断 Modal 已随 MVP 精简下线，跨模块闭环改走页面跳转）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -42,7 +43,7 @@ import {
   shallowRef,
   watch,
 } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -82,6 +83,7 @@ import {
   ClpmAiDrawer,
   ClpmDataCanvas,
   ClpmInfoTip,
+  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmStandardActions,
   ClpmToolbarButton,
@@ -285,6 +287,7 @@ const query = reactive({
 const loopMap = shallowRef<Map<string, LoopApi.LoopListItem>>(new Map());
 
 const route = useRoute();
+const router = useRouter();
 const { canReadConfig } = useConfigAccess();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
 
@@ -432,7 +435,7 @@ const columns = computed<TableColumnsType>(() => [
   {
     title: '操作',
     key: 'action',
-    width: 184,
+    width: 232,
     fixed: 'right' as const,
     align: 'center' as const,
   },
@@ -1004,6 +1007,15 @@ async function openHistory(record: LoopPerformanceRow) {
   await loadHistoryData();
 }
 
+/** F-EVAL-001：跳转诊断工作台深挖（携带 loopId 预选，跨模块闭环） */
+function goDiagnosis(record: LoopPerformanceRow) {
+  if (!record.loopId) return;
+  router.push({
+    path: '/diagnosis/workbench',
+    query: { loopId: record.loopId },
+  });
+}
+
 async function loadHistoryData() {
   if (!historyRecord.value?.loopId) {
     message.warning('该记录缺少回路 ID，无法查询历史');
@@ -1418,7 +1430,18 @@ onMounted(async () => {
                完整 8 大 KPI 解释集中在详情抽屉「8 大性能评估 KPI 指标」区 -->
         </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'loopType'">
+          <template v-if="column.key === 'loopTagName'">
+            <ClpmLoopLink
+              v-if="(record as LoopPerformanceRow).loopId"
+              :loop-id="(record as LoopPerformanceRow).loopId!"
+              :tag-name="
+                (record as LoopPerformanceRow).loopTagName ?? undefined
+              "
+              default-target="detail"
+            />
+            <span v-else class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'loopType'">
             <span v-if="(record as LoopPerformanceRow).loopType">
               {{
                 LOOP_TYPE_LABEL_MAP[
@@ -1561,6 +1584,16 @@ onMounted(async () => {
                   <IconifyIcon icon="ant-design:history-outlined" />
                 </template>
                 历史
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click.stop="goDiagnosis(record as LoopPerformanceRow)"
+              >
+                <template #icon>
+                  <IconifyIcon icon="lucide:stethoscope" />
+                </template>
+                诊断
               </Button>
             </div>
           </template>
