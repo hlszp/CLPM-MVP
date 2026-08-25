@@ -364,9 +364,7 @@ async def _get_child_ids_for_plants(
     return child_type, ids
 
 
-async def _get_descendant_unit_ids(
-    db: AsyncSession, scope_type: str, scope_id: int
-) -> list[int]:
+async def _get_descendant_unit_ids(db: AsyncSession, scope_type: str, scope_id: int) -> list[int]:
     """递归查所有 UNIT 后代的 source_node_id（用于 units 热力图过滤）。
 
     - GLOBAL → []  意为查全部 UNIT 行
