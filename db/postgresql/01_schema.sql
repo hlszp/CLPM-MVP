@@ -1795,5 +1795,238 @@ COMMENT ON TABLE sys_dict_item IS '通用字典项（可配置枚举）';
 CREATE INDEX IF NOT EXISTS ix_sys_dict_item_dict_type ON sys_dict_item (dict_type);
 
 -- =============================================================================
+-- Workbench v2.0 工作台新增 8 表（2026-08-25）
+-- 对应 alembic 迁移 07c1efaad592
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS module_plugin (
+    id                BIGSERIAL    PRIMARY KEY,
+    module_key        VARCHAR(32)  NOT NULL,
+    display_name      VARCHAR(64)  NOT NULL,
+    status            VARCHAR(16)  NOT NULL,
+    version           VARCHAR(32),
+    is_core           BOOLEAN      NOT NULL DEFAULT FALSE,
+    order_index       INTEGER      NOT NULL,
+    dependencies      JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    maintenance_window JSONB,
+    installed_at      TIMESTAMP,
+    last_maintenance_at TIMESTAMP,
+    updated_by        BIGINT,
+    updated_at        TIMESTAMP     NOT NULL DEFAULT now(),
+    created_at        TIMESTAMP     NOT NULL DEFAULT now(),
+    CONSTRAINT uniq_module_plugin_key UNIQUE (module_key),
+    CONSTRAINT ck_module_plugin_status CHECK (status IN ('CORE','ENABLED','MAINTENANCE','UNINSTALLED'))
+);
+CREATE INDEX IF NOT EXISTS idx_module_plugin_order  ON module_plugin (order_index);
+CREATE INDEX IF NOT EXISTS idx_module_plugin_status ON module_plugin (status);
+
+CREATE TABLE IF NOT EXISTS sla_policy (
+    id            BIGSERIAL   PRIMARY KEY,
+    action_type   VARCHAR(32) NOT NULL,
+    priority      VARCHAR(8)  NOT NULL,
+    warn_minutes  INTEGER     NOT NULL,
+    breach_minutes INTEGER    NOT NULL,
+    is_default    BOOLEAN     NOT NULL DEFAULT FALSE,
+    scope_type    VARCHAR(16),
+    scope_id      INTEGER,
+    created_at    TIMESTAMP   NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sla_action_type CHECK (action_type IN ('TUNING','VALVE','INSTRUMENT','LINK','PROCESS','UTILIZATION','RECONFIG','OTHER')),
+    CONSTRAINT ck_sla_priority CHECK (priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+    CONSTRAINT ck_sla_warn_pos CHECK (warn_minutes > 0),
+    CONSTRAINT ck_sla_breach_gt_warn CHECK (breach_minutes > warn_minutes),
+    CONSTRAINT uniq_sla_policy_scope UNIQUE (action_type, priority, scope_type, scope_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sla_policy_default ON sla_policy (action_type, is_default);
+
+CREATE TABLE IF NOT EXISTS tuning_batch (
+    id                BIGSERIAL    PRIMARY KEY,
+    batch_no          VARCHAR(32)  NOT NULL,
+    title             VARCHAR(200) NOT NULL,
+    scope_type        VARCHAR(16)  NOT NULL,
+    scope_id          INTEGER      NOT NULL,
+    status            VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    prereq_order_ids   JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    block_reason      VARCHAR(500),
+    scatters_before   JSONB,
+    scatters_after    JSONB,
+    owner_id          BIGINT,
+    expected_start_at TIMESTAMP,
+    actual_start_at   TIMESTAMP,
+    completed_at      TIMESTAMP,
+    created_at        TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT uniq_tuning_batch_no UNIQUE (batch_no),
+    CONSTRAINT ck_tuning_batch_status CHECK (status IN ('BLOCKED','PENDING','READY','RUNNING','COMPLETED','CANCELLED')),
+    CONSTRAINT ck_tuning_batch_scope_type CHECK (scope_type IN ('FACTORY','AREA','UNIT','LOOP'))
+);
+CREATE INDEX IF NOT EXISTS idx_tuning_batch_scope  ON tuning_batch (scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_tuning_batch_status ON tuning_batch (status, created_at);
+
+CREATE TABLE IF NOT EXISTS tuning_batch_records (
+    batch_id         BIGINT  NOT NULL REFERENCES tuning_batch(id) ON DELETE CASCADE,
+    tuning_record_id VARCHAR(36) NOT NULL REFERENCES tuning_record(id) ON DELETE CASCADE,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (batch_id, tuning_record_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tbr_record_batch ON tuning_batch_records (tuning_record_id, batch_id);
+
+CREATE TABLE IF NOT EXISTS workbench_window_summary (
+    id                    BIGSERIAL    PRIMARY KEY,
+    scope_type            VARCHAR(16)  NOT NULL,
+    scope_id              INTEGER      NOT NULL,
+    "window"              VARCHAR(8)   NOT NULL,
+    window_start          TIMESTAMP    NOT NULL,
+    window_end            TIMESTAMP    NOT NULL,
+    score                 NUMERIC(6,3) NOT NULL,
+    status                VARCHAR(16)  NOT NULL,
+    loop_count            INTEGER      NOT NULL DEFAULT 0,
+    good_value_rate       NUMERIC(6,3),
+    auto_mode_rate        NUMERIC(6,3),
+    effective_auto_rate   NUMERIC(6,3),
+    steady_rate           NUMERIC(6,3),
+    accuracy_rate         NUMERIC(6,3),
+    fast_rate             NUMERIC(6,3),
+    oscillation_rate      NUMERIC(6,3),
+    saturation_rate       NUMERIC(6,3),
+    instrument_fault_rate NUMERIC(6,3),
+    score_trend           JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    flags                 JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    snapshot_at           TIMESTAMP   NOT NULL DEFAULT now(),
+    CONSTRAINT uniq_ws_scope_window_end UNIQUE (scope_type, scope_id, "window", window_end),
+    CONSTRAINT ck_ws_window CHECK ("window" IN ('24h','7d','30d')),
+    CONSTRAINT ck_ws_scope_type CHECK (scope_type IN ('GLOBAL','FACTORY','AREA','UNIT','LOOP')),
+    CONSTRAINT ck_ws_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','POOR','CRITICAL','INCONCLUSIVE')),
+    CONSTRAINT ck_ws_score_range CHECK (score >= 0 AND score <= 100)
+);
+CREATE INDEX IF NOT EXISTS idx_ws_scope_window ON workbench_window_summary (scope_type, scope_id, "window");
+CREATE INDEX IF NOT EXISTS idx_ws_snapshot ON workbench_window_summary (snapshot_at);
+
+CREATE TABLE IF NOT EXISTS trend_flags (
+    id            BIGSERIAL    PRIMARY KEY,
+    scope_type    VARCHAR(16)  NOT NULL,
+    scope_id      INTEGER      NOT NULL,
+    loop_id       VARCHAR(36) REFERENCES loop_ledger(id) ON DELETE SET NULL,
+    "window"      VARCHAR(8)   NOT NULL,
+    kind          VARCHAR(20)  NOT NULL,
+    severity      VARCHAR(8)   NOT NULL,
+    flagged_at    TIMESTAMP    NOT NULL,
+    metric_name   VARCHAR(32),
+    prev_value    NUMERIC(8,3),
+    curr_value    NUMERIC(8,3),
+    delta_pct     NUMERIC(7,2),
+    description   VARCHAR(500),
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT ck_tf_kind CHECK (kind IN ('dip','spike','deterioration','jump','oscillation_start','saturation_event')),
+    CONSTRAINT ck_tf_severity CHECK (severity IN ('INFO','WARN','ERROR','CRITICAL')),
+    CONSTRAINT ck_tf_window CHECK ("window" IN ('24h','7d','30d')),
+    CONSTRAINT ck_tf_scope_type CHECK (scope_type IN ('GLOBAL','FACTORY','AREA','UNIT','LOOP'))
+);
+CREATE INDEX IF NOT EXISTS idx_tf_scope_window_flagged_desc ON trend_flags (scope_type, scope_id, "window", flagged_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tf_loop ON trend_flags (loop_id, flagged_at);
+CREATE INDEX IF NOT EXISTS idx_tf_kind_severity ON trend_flags (kind, severity);
+
+CREATE TABLE IF NOT EXISTS wb_cache_log (
+    id          BIGSERIAL   PRIMARY KEY,
+    cache_key   VARCHAR(200) NOT NULL,
+    hit         BOOLEAN     NOT NULL,
+    build_ms    INTEGER     NOT NULL DEFAULT 0,
+    endpoint    VARCHAR(64) NOT NULL,
+    user_id     BIGINT,
+    created_at  TIMESTAMP   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wbcl_created_desc ON wb_cache_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbcl_key ON wb_cache_log (cache_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_wbcl_endpoint_hit ON wb_cache_log (endpoint, hit);
+
+CREATE TABLE IF NOT EXISTS event_bus (
+    id              BIGSERIAL   PRIMARY KEY,
+    source_module   VARCHAR(16) NOT NULL,
+    event_type      VARCHAR(32) NOT NULL,
+    severity        VARCHAR(8)  NOT NULL,
+    scope_type      VARCHAR(16),
+    scope_id        INTEGER,
+    loop_id         VARCHAR(36) REFERENCES loop_ledger(id) ON DELETE SET NULL,
+    order_id        VARCHAR(36) REFERENCES handling_order(id) ON DELETE SET NULL,
+    record_id       VARCHAR(36) REFERENCES tuning_record(id) ON DELETE SET NULL,
+    tag_id          VARCHAR(36) REFERENCES diagnosis_tag(id) ON DELETE SET NULL,
+    alert_event_id  VARCHAR(36) REFERENCES alert_event(id) ON DELETE SET NULL,
+    title           VARCHAR(200) NOT NULL,
+    body            TEXT,
+    metadata        JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at     TIMESTAMP   NOT NULL,
+    read_by_users   JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    created_at      TIMESTAMP   NOT NULL DEFAULT now(),
+    CONSTRAINT ck_eb_source_module CHECK (source_module IN ('monitor','assess','diagnosis','tuning','handling','alert','system')),
+    CONSTRAINT ck_eb_severity CHECK (severity IN ('INFO','WARN','ERROR','CRITICAL'))
+);
+CREATE INDEX IF NOT EXISTS idx_eb_scope ON event_bus (scope_type, scope_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_eb_occurred_desc ON event_bus (occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eb_read_users ON event_bus USING gin (read_by_users);
+CREATE INDEX IF NOT EXISTS idx_eb_unread_count ON event_bus (id) WHERE jsonb_array_length(read_by_users) = 0;
+CREATE INDEX IF NOT EXISTS idx_eb_source_type ON event_bus (source_module, event_type);
+
+-- Workbench v2.0 现有表 ALTER：handling_order 新增 SLA + 重开 + scope 列
+ALTER TABLE handling_order
+    ADD COLUMN IF NOT EXISTS sla_policy_id  BIGINT REFERENCES sla_policy(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS sla_deadline_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS sla_stage     VARCHAR(8) NOT NULL DEFAULT 'NONE'
+        CONSTRAINT ck_handling_order_sla_stage CHECK (sla_stage IN ('NONE','WARN','BREACH')),
+    ADD COLUMN IF NOT EXISTS reopen_count  INTEGER NOT NULL DEFAULT 0
+        CONSTRAINT ck_handling_order_reopen_nonneg CHECK (reopen_count >= 0),
+    ADD COLUMN IF NOT EXISTS reopen_reasons JSONB  NOT NULL DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS scope_type    VARCHAR(16),
+    ADD COLUMN IF NOT EXISTS scope_id      INTEGER,
+    ADD COLUMN IF NOT EXISTS handler_id    VARCHAR(36) REFERENCES sys_user(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_handling_order_scope      ON handling_order (scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_handling_order_handler_id ON handling_order (handler_id);
+CREATE INDEX IF NOT EXISTS idx_handling_order_active_sla ON handling_order (status, sla_deadline_at)
+    WHERE status IN ('PENDING','EXECUTING','VERIFYING') AND sla_deadline_at IS NOT NULL;
+
+-- Workbench v2.0 现有表 ALTER：diagnosis_tag 新增 disposition + SLA 列
+ALTER TABLE diagnosis_tag
+    ADD COLUMN IF NOT EXISTS disposition_state VARCHAR(16) NOT NULL DEFAULT 'UNADDRESSED'
+        CONSTRAINT ck_diag_tag_disposition CHECK (disposition_state IN ('UNADDRESSED','CONVERTED','ACK_REVIEWED','IGNORED')),
+    ADD COLUMN IF NOT EXISTS sla_deadline_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS sla_stage VARCHAR(8) NOT NULL DEFAULT 'NONE'
+        CONSTRAINT ck_diag_tag_sla_stage CHECK (sla_stage IN ('NONE','WARN','BREACH'));
+CREATE INDEX IF NOT EXISTS idx_diag_tag_disposition ON diagnosis_tag (disposition_state);
+CREATE INDEX IF NOT EXISTS idx_diag_tag_active_sla ON diagnosis_tag (status, sla_stage) WHERE status = 'ACTIVE';
+
+-- Workbench v2.0 现有表 ALTER：diagnosis_result 新增 recommended_category + evidence_summary
+ALTER TABLE diagnosis_result
+    ADD COLUMN IF NOT EXISTS recommended_category VARCHAR(32),
+    ADD COLUMN IF NOT EXISTS evidence_summary TEXT;
+
+-- Workbench v2.0 现有表 ALTER：sys_user 新增 lane_capacity
+ALTER TABLE sys_user
+    ADD COLUMN IF NOT EXISTS lane_capacity INTEGER NOT NULL DEFAULT 6;
+
+-- Workbench v2.0 现有表 ALTER：kpi_node_snapshot_daily 新增索引
+CREATE INDEX IF NOT EXISTS idx_kpi_daily_scope_date_desc
+    ON kpi_node_snapshot_daily (plant_node_id, stat_date DESC);
+
+-- Workbench v2.0 种子数据：module_plugin 8 条 + sla_policy 32 条
+INSERT INTO module_plugin (module_key, display_name, status, is_core, order_index)
+VALUES ('monitor','运行监控','CORE',true,1),
+       ('assess','绩效评估','CORE',true,2),
+       ('diagnosis','回路诊断','ENABLED',false,3),
+       ('tuning','参数整定','ENABLED',false,4),
+       ('handling','问题处置','ENABLED',false,5),
+       ('reports','统计报告','CORE',true,6),
+       ('config','系统配置','CORE',true,7),
+       ('system','系统管理','CORE',true,8)
+ON CONFLICT (module_key) DO NOTHING;
+
+INSERT INTO sla_policy (action_type, priority, warn_minutes, breach_minutes, is_default) VALUES
+    ('TUNING','LOW',1440,2880,false),('TUNING','MEDIUM',720,1440,true),('TUNING','HIGH',240,720,false),('TUNING','CRITICAL',60,180,false),
+    ('VALVE','LOW',1440,2880,false),('VALVE','MEDIUM',720,1440,true),('VALVE','HIGH',240,720,false),('VALVE','CRITICAL',60,180,false),
+    ('INSTRUMENT','LOW',1440,2880,false),('INSTRUMENT','MEDIUM',720,1440,true),('INSTRUMENT','HIGH',240,720,false),('INSTRUMENT','CRITICAL',60,180,false),
+    ('LINK','LOW',720,1440,false),('LINK','MEDIUM',360,720,true),('LINK','HIGH',120,360,false),('LINK','CRITICAL',30,90,false),
+    ('PROCESS','LOW',1440,2880,false),('PROCESS','MEDIUM',720,1440,true),('PROCESS','HIGH',240,720,false),('PROCESS','CRITICAL',60,180,false),
+    ('UTILIZATION','LOW',2880,5760,false),('UTILIZATION','MEDIUM',1440,2880,true),('UTILIZATION','HIGH',480,1440,false),('UTILIZATION','CRITICAL',120,360,false),
+    ('RECONFIG','LOW',2880,5760,false),('RECONFIG','MEDIUM',1440,2880,true),('RECONFIG','HIGH',480,1440,false),('RECONFIG','CRITICAL',120,360,false),
+    ('OTHER','LOW',2880,5760,false),('OTHER','MEDIUM',1440,2880,true),('OTHER','HIGH',480,1440,false),('OTHER','CRITICAL',240,720,false)
+ON CONFLICT DO NOTHING;
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================
