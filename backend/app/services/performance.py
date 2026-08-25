@@ -706,11 +706,16 @@ async def get_ranking(
             start = now - delta
 
     # 排序字段白名单（防止 SQL 注入：不直接拼接用户输入到 SQL）
+    # 指标分析页（M1）：扩展 accuracy_rate/auto_mode_rate/effective_auto_rate，
+    # 支持单指标横切排行（默认回退 score）
     sort_field_map = {
         "score": "score",
         "steady_rate": "steady_rate",
         "good_value_rate": "good_value_rate",
         "fast_rate": "fast_rate",
+        "accuracy_rate": "accuracy_rate",
+        "auto_mode_rate": "auto_mode_rate",
+        "effective_auto_rate": "effective_auto_rate",
     }
     sort_field_name = sort_field_map.get(sort_by, "score")
 
@@ -1689,7 +1694,8 @@ async def get_grade_distribution(
 
     Returns:
         {"EXCELLENT": n, "GOOD": n, "FAIR": n, "WARNING": n, "POOR": n,
-         "INCONCLUSIVE": n, "total": n}
+         "INCONCLUSIVE": n, "total": n,
+         "fitnessDistribution": {"L0": n, ..., "L4": n, "total": n}}
     """
     conditions, need_loop_join = await _build_snapshot_conditions(
         db,
@@ -1718,6 +1724,7 @@ async def get_grade_distribution(
     subq_stmt = select(
         KpiSnapshotHourly.id.label("snap_id"),
         KpiSnapshotHourly.score.label("score"),
+        KpiSnapshotHourly.fitness_level.label("fitness_level"),
         rn_col,
     )
     if need_loop_join:
@@ -1741,7 +1748,36 @@ async def get_grade_distribution(
         distribution[key] += row.cnt
         total += row.cnt
     distribution["total"] = total
+
+    # 适用性分层分布（L0~L4，P2 IA优化；同一"每回路最新快照"口径，
+    # 未分层快照不计入各等级，total 为全量回路数）
+    fitness_stmt = (
+        select(latest_subq.c.fitness_level, func.count().label("cnt"))
+        .where(latest_subq.c.rn == 1)
+        .group_by(latest_subq.c.fitness_level)
+    )
+    fitness_rows = (await db.execute(fitness_stmt)).all()
+    fitness_distribution: dict[str, int] = dict.fromkeys(("L0", "L1", "L2", "L3", "L4"), 0)
+    for row in fitness_rows:
+        if row.fitness_level in fitness_distribution:
+            fitness_distribution[row.fitness_level] += row.cnt
+    fitness_distribution["total"] = total
+    distribution["fitnessDistribution"] = fitness_distribution
     return distribution
+
+
+# loops/snapshots 服务端排序白名单（防 SQL 注入：只允许映射内列，非法值回退默认 ts_start DESC）。
+# 指标分析页 M3 联动（2026-08-25）：在 score 基础上扩展 6 个 KPI 列，
+# 供回路性能页排序下拉与横切分析场景使用（口径与 get_ranking sort_field_map 对齐）
+SNAPSHOT_SORT_COLUMNS = {
+    "score": KpiSnapshotHourly.score,
+    "accuracy_rate": KpiSnapshotHourly.accuracy_rate,
+    "auto_mode_rate": KpiSnapshotHourly.auto_mode_rate,
+    "effective_auto_rate": KpiSnapshotHourly.effective_auto_rate,
+    "fast_rate": KpiSnapshotHourly.fast_rate,
+    "steady_rate": KpiSnapshotHourly.steady_rate,
+    "good_value_rate": KpiSnapshotHourly.good_value_rate,
+}
 
 
 async def list_loop_snapshots(
@@ -1779,8 +1815,10 @@ async def list_loop_snapshots(
             False=返回所有快照（用于历史趋势/诊断历史）
         page: 页码（1-based）
         page_size: 每页条数
-        sort_by: 排序字段（"score"=按综合评分，None/"ts_start"=按时间窗起始；
-            score 排序时 NULL 恒置末位，次排序 ts_start DESC）
+        sort_by: 排序字段；None=按时间窗起始 DESC。白名单（M3 扩展，见
+            SNAPSHOT_SORT_COLUMNS）：score/accuracy_rate/auto_mode_rate/
+            effective_auto_rate/fast_rate/steady_rate/good_value_rate
+            （排序时 NULL 恒置末位，次排序 ts_start DESC）
         sort_order: 排序方向（"asc"/"desc"，默认 desc）
 
     Returns:
@@ -1831,14 +1869,11 @@ async def list_loop_snapshots(
         latest_subq = subq_stmt.subquery()
 
         # 主查询：只取 rn=1 的 snapshot
-        # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
-        if sort_by == "score":
-            score_order = (
-                KpiSnapshotHourly.score.asc()
-                if sort_order == "asc"
-                else KpiSnapshotHourly.score.desc()
-            )
-            latest_order = [nulls_last(score_order), KpiSnapshotHourly.ts_start.desc()]
+        # 可选排序：白名单列 / ts_start（默认 ts_start DESC）；指标列排序时 NULL 恒置末位
+        sort_col = SNAPSHOT_SORT_COLUMNS.get(sort_by or "")
+        if sort_col is not None:
+            col_order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+            latest_order = [nulls_last(col_order), KpiSnapshotHourly.ts_start.desc()]
         else:
             latest_order = [KpiSnapshotHourly.ts_start.desc()]
         stmt = (
@@ -1869,14 +1904,11 @@ async def list_loop_snapshots(
         # 全量时间序列（历史趋势/诊断历史用）：等级筛选按行应用
         if grade_cond is not None:
             base_conditions.append(grade_cond)
-        # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
-        if sort_by == "score":
-            score_order = (
-                KpiSnapshotHourly.score.asc()
-                if sort_order == "asc"
-                else KpiSnapshotHourly.score.desc()
-            )
-            order_clause = [nulls_last(score_order), KpiSnapshotHourly.ts_start.desc()]
+        # 可选排序：白名单列 / ts_start（默认 ts_start DESC）；指标列排序时 NULL 恒置末位
+        sort_col = SNAPSHOT_SORT_COLUMNS.get(sort_by or "")
+        if sort_col is not None:
+            col_order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+            order_clause = [nulls_last(col_order), KpiSnapshotHourly.ts_start.desc()]
         else:
             order_clause = [KpiSnapshotHourly.ts_start.desc()]
         stmt = (
@@ -1912,6 +1944,7 @@ __all__ = [
     "GRADE_NAMES",
     "KPI_METRIC_CODES",
     "KPI_NAME_MAP",
+    "SNAPSHOT_SORT_COLUMNS",
     "export_analytics_csv",
     "get_analytics",
     "get_board",

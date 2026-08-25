@@ -37,6 +37,7 @@ from app.schemas.performance import (
     RankingItem,
 )
 from app.services.performance import (
+    SNAPSHOT_SORT_COLUMNS,
     export_analytics_csv,
     get_analytics,
     get_board,
@@ -181,7 +182,11 @@ async def get_ranking_endpoint(
     endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     limit: int = Query(20, ge=1, le=100, description="返回条数（最多 100）"),
     offset: int = Query(0, ge=0, description="偏移量（配合 limit 实现分页拉全量）"),
-    sortBy: str = Query("score", description="排序字段：score/steady_rate/good_value_rate"),
+    sortBy: str = Query(
+        "score",
+        description="排序字段：score/accuracy_rate/auto_mode_rate/effective_auto_rate/"
+        "steady_rate/good_value_rate/fast_rate（非法值回退 score）",
+    ),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -423,7 +428,11 @@ async def list_loop_snapshots_endpoint(
         description="True=每个回路只返回最新一条评估记录（默认）；"
         "False=返回所有快照（历史趋势/诊断历史用）",
     ),
-    sortBy: str | None = Query(None, description="排序字段（score/tsStart，默认 tsStart）"),
+    sortBy: str | None = Query(
+        None,
+        description="排序字段（默认 tsStart；可选 score/accuracy_rate/auto_mode_rate/"
+        "effective_auto_rate/fast_rate/steady_rate/good_value_rate，非法值回退默认）",
+    ),
     sortOrder: str | None = Query(None, description="排序方向（asc/desc，默认 desc）"),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
@@ -434,8 +443,10 @@ async def list_loop_snapshots_endpoint(
 
     按回路 ID / 装置 / 时间范围 / 状态 / 可信度 / 回路编号 / 性能等级筛选，分页返回。
     默认 latestOnly=True：每个回路只返回最新一条评估记录。
-    默认排序按 tsStart DESC；sortBy=score&sortOrder=asc|desc 可按综合评分排序
-    （NULL 置末位，次排序 tsStart DESC）。每条记录包含完整的 24 个 KPI 字段 + loopTagName。
+    默认排序按 tsStart DESC；sortBy 可取 SNAPSHOT_SORT_COLUMNS 白名单内字段
+    （score/accuracy_rate/auto_mode_rate/effective_auto_rate/fast_rate/steady_rate/
+    good_value_rate；NULL 置末位，次排序 tsStart DESC，指标分析页 M3 联动扩展）。
+    每条记录包含完整的 24 个 KPI 字段 + loopTagName。
     grade 参数（Phase 4 性能项）：服务端按当前定级阈值过滤等级，
     替代前端"全量拉取→客户端过滤→客户端分页"。
     """
@@ -461,7 +472,7 @@ async def list_loop_snapshots_endpoint(
         latest_only=latestOnly,
         page=page,
         page_size=pageSize,
-        sort_by="score" if sortBy == "score" else None,
+        sort_by=sortBy if sortBy in SNAPSHOT_SORT_COLUMNS else None,
         sort_order=sortOrder if sortOrder in ("asc", "desc") else None,
     )
 

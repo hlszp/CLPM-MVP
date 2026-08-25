@@ -646,6 +646,68 @@ class TestListLoopSnapshotsGradeFilter:
         assert resp.json()["code"] == "ERR_INVALID_GRADE"
 
 
+class TestListLoopSnapshotsSortWhitelist:
+    """GET /api/v1/performance/loops/snapshots?sortBy=... 指标分析页 M3 排序白名单扩展"""
+
+    @pytest.mark.parametrize(
+        "sort_by",
+        [
+            "score",
+            "accuracy_rate",
+            "auto_mode_rate",
+            "effective_auto_rate",
+            "fast_rate",
+            "steady_rate",
+            "good_value_rate",
+        ],
+    )
+    def test_sort_by_whitelist(self, client, mock_db, fake_redis, sort_by) -> None:
+        """白名单内排序键：SQL 构建不报错，响应正常。"""
+        snap = _make_snapshot_full()
+        rows = [(snap, "41LIC20117_PIDA")]
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/loops/snapshots?sortBy={sort_by}&sortOrder=asc",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert len(body["data"]["items"]) == 1
+
+    def test_sort_by_invalid_fallback(self, client, mock_db, fake_redis) -> None:
+        """非法排序键回退默认 ts_start DESC（白名单外值不进入 SQL 列引用）。"""
+        snap = _make_snapshot_full()
+        rows = [(snap, "41LIC20117_PIDA")]
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots?sortBy=malicious_column",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert len(body["data"]["items"]) == 1
+
+
 @pytest.mark.asyncio
 async def test_list_loop_snapshots_grade_filter_sql() -> None:
     """grade 筛选应生成 score 区间 WHERE 条件（EXCELLENT → score >= 90）."""
@@ -830,9 +892,22 @@ async def test_get_grade_distribution_sql_group_by() -> None:
 
     distribution = await get_grade_distribution(db)
 
-    assert len(captured_stmts) == 2  # sys_config + 聚合查询（仅 2 条 SQL，无全量拉取）
+    assert (
+        len(captured_stmts) == 3
+    )  # sys_config + 等级聚合 + 适用性分层聚合（SQL 下推，无全量拉取）
     sql = str(captured_stmts[1].compile()).upper()
     assert "GROUP BY" in sql
     assert "CASE" in sql
     assert "ROW_NUMBER" in sql  # 每回路最新一条（口径同列表 latestOnly）
+    fitness_sql = str(captured_stmts[2].compile()).upper()
+    assert "GROUP BY" in fitness_sql
+    assert "FITNESS_LEVEL" in fitness_sql
     assert distribution["total"] == 0
+    assert distribution["fitnessDistribution"] == {
+        "L0": 0,
+        "L1": 0,
+        "L2": 0,
+        "L3": 0,
+        "L4": 0,
+        "total": 0,
+    }

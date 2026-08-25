@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 /**
- * 评估历史 — 回路小时指标快照列表（Tab 内嵌组件）
+ * 评估记录 — 回路小时指标快照列表（二级菜单独立页面，/metric/history）
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 筛选区：装置 TreeSelect + 回路 Select + 时间 RangePicker + 状态 + 可信度
@@ -8,8 +8,9 @@
  *   / 可信度徽章 / 状态 / 操作（详情按钮）
  * - 详情抽屉：点击"详情"按钮从右侧滑出，展示完整 24 字段（含数据血缘）
  *
- * 嵌入位置：评估任务模块 → "评估历史" Tab
- * 权限：所有角色可查看
+ * IA 重构二期：由「评估任务 → 评估历史 Tab」提升为二级菜单「评估记录」，
+ * 自带数据加载，可脱离 Tab 容器独立工作。
+ * 权限：ADMIN / IC_ENGINEER（路由 meta 控制）
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
@@ -17,7 +18,7 @@ import type { ConfidenceLevel, KpiSnapshotItem, KpiStatus } from '#/api/metric';
 
 import { computed, onMounted, ref } from 'vue';
 
-import { RotateCw } from '@vben/icons';
+import { Page } from '@vben/common-ui';
 
 import {
   Button,
@@ -41,10 +42,12 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 
@@ -465,7 +468,7 @@ function handleExport(format: 'csv' | 'excel') {
 }
 
 // ============ 生命周期 ============
-/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+/** P3-01：暴露 refresh()（原 Tab 容器协议遗留，独立页面下供外部按需调用） */
 async function refresh() {
   await loadPlantNodeTree();
   await loadLoops();
@@ -473,6 +476,19 @@ async function refresh() {
 }
 
 defineExpose({ refresh });
+
+/** 统一工具栏（标准 2 工具：刷新 / 帮助；导出为页面专属附加动作） */
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: refresh, loading: loading.value },
+  help: {
+    onClick: () =>
+      showPageHelp({
+        title: '评估记录 帮助',
+        content:
+          '本页展示 KPI 快照明细（评估结果），支持按装置/回路/时间/状态/可信度筛选与导出。任务执行记录见评估任务页。',
+      }),
+  },
+}));
 
 onMounted(() => {
   loadPlantNodeTree();
@@ -482,19 +498,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
+  <Page>
     <!-- 顶部工具栏 -->
     <ClpmPageToolbar
-      class="mb-4"
-      title="评估历史"
-      subtitle="按小时快照展示回路性能指标，支持多维度筛选和详情查看。"
+      title="评估记录"
+      subtitle="按小时快照展示回路性能指标（KPI 评估结果），支持多维度筛选、详情查看与导出。任务执行记录见评估任务页。"
       :loading="loading"
     >
       <template #actions>
-        <Button @click="loadList">
-          <template #icon><RotateCw /></template>
-          刷新
-        </Button>
+        <ClpmStandardActions :items="toolbarItems" />
         <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
         <Dropdown>
           <ClpmToolbarButton
@@ -513,7 +525,7 @@ onMounted(() => {
     </ClpmPageToolbar>
 
     <!-- 筛选区 -->
-    <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="mb-4 mt-4 flex flex-wrap items-center gap-3">
       <TreeSelect
         v-model:value="filterPlantNodeId"
         :tree-data="plantNodeTree"
@@ -574,7 +586,7 @@ onMounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && snapshotList.length === 0"
-      empty-reason="暂无 KPI 快照记录。快照由评估任务自动生成，也可通过「手动任务」页发起重算产生"
+      empty-reason="暂无 KPI 快照记录。快照由评估任务自动生成，也可通过「新建手动评估」按时间窗重算产生"
       @retry="loadList"
     >
       <Table
@@ -900,5 +912,5 @@ onMounted(() => {
         </div>
       </template>
     </Drawer>
-  </div>
+  </Page>
 </template>

@@ -268,6 +268,32 @@ const loading = ref(false);
 const loadError = ref(false);
 const rows = ref<LoopPerformanceRow[]>([]);
 const total = ref(0);
+
+/** M3 服务端排序白名单（对齐后端 SNAPSHOT_SORT_COLUMNS；指标分析页联动） */
+type SnapshotSortField =
+  | 'accuracy_rate'
+  | 'auto_mode_rate'
+  | 'effective_auto_rate'
+  | 'fast_rate'
+  | 'good_value_rate'
+  | 'score'
+  | 'steady_rate';
+
+const sortFieldOptions: { label: string; value: SnapshotSortField }[] = [
+  { label: '综合评分', value: 'score' },
+  { label: '准确率', value: 'accuracy_rate' },
+  { label: '平稳率', value: 'steady_rate' },
+  { label: '自控率', value: 'auto_mode_rate' },
+  { label: '有效自控率', value: 'effective_auto_rate' },
+  { label: '快速率', value: 'fast_rate' },
+  { label: '好值率', value: 'good_value_rate' },
+];
+
+const sortOrderOptions = [
+  { label: '降序', value: 'desc' },
+  { label: '升序', value: 'asc' },
+];
+
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as string | undefined,
@@ -278,8 +304,8 @@ const query = reactive({
   timeRange: undefined as [Dayjs, Dayjs] | undefined,
   page: 1,
   pageSize: 20,
-  /** 服务端排序（仅综合评分列；undefined = 默认 tsStart DESC） */
-  sortBy: undefined as 'score' | undefined,
+  /** 服务端排序（综合评分列三态 + M3 排序下拉；undefined = 默认 tsStart DESC） */
+  sortBy: undefined as SnapshotSortField | undefined,
   sortOrder: 'desc' as 'asc' | 'desc',
 });
 
@@ -738,6 +764,12 @@ function handleSearch() {
   query.loopTagName = query.loopTagName?.trim() || '';
   loadList();
   loadStats();
+}
+
+/** M3：排序下拉变更（字段/方向），重置到第 1 页重新加载 */
+function handleSortChange() {
+  query.page = 1;
+  loadList();
 }
 
 function handleTableChange(
@@ -1270,6 +1302,22 @@ onMounted(async () => {
         :placeholder="['开始时间', '结束时间']"
         style="width: 300px"
         @change="handleSearch"
+      />
+      <!-- M3：服务端排序下拉（指标分析页联动；与综合评分列头三态排序共存） -->
+      <Select
+        v-model:value="query.sortBy"
+        :options="sortFieldOptions"
+        placeholder="排序指标"
+        allow-clear
+        style="width: 130px"
+        @change="handleSortChange"
+      />
+      <Select
+        v-if="query.sortBy"
+        v-model:value="query.sortOrder"
+        :options="sortOrderOptions"
+        style="width: 88px"
+        @change="handleSortChange"
       />
       <Button type="primary" @click="handleSearch">查询</Button>
     </div>
