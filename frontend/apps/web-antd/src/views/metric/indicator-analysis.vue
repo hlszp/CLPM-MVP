@@ -832,8 +832,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
-    <div class="flex flex-col gap-3">
+  <Page auto-content-height>
+    <div class="flex h-full flex-col gap-3">
       <ClpmPageToolbar
         title="指标分析"
         subtitle="指标维度横切 · TOP 排行 · 装置对比 · 行动清单"
@@ -890,6 +890,7 @@ onMounted(() => {
       </Card>
 
       <ClpmDataCanvas
+        class="flex-1 min-h-0"
         :loading="loading"
         :loading-variant="rankingItems.length > 0 ? 'opacity' : 'skeleton'"
         :error="loadError"
@@ -897,6 +898,7 @@ onMounted(() => {
         empty-reason="当前时间窗内暂无参评回路快照；可先在「评估任务」页发起评估"
         @retry="loadAll"
       >
+        <div class="flex h-full flex-col gap-3">
         <!-- A：指标概览卡（均值/中位数/满分/参评数带环比，恶化最多，最薄弱装置） -->
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <Card :body-style="{ padding: '12px 16px' }">
@@ -996,9 +998,9 @@ onMounted(() => {
           </Card>
         </div>
 
-        <!-- B + C + E：一行三图（按 5:3:4 分配压缩各区宽度） -->
-        <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
-          <Card class="lg:col-span-5" :body-style="{ padding: '12px 16px' }">
+        <!-- B + C + E：一行三图（按 5:3:4 分配压缩各区宽度，中间区域 flex-1 自适应填满） -->
+        <div class="mt-3 grid min-h-[280px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12">
+          <Card class="lg:col-span-5 h-full" :body-style="{ padding: '12px 16px' }">
             <template #title>
               <span class="text-sm">TOP10 最差回路（{{ metricMeta.label }}）</span>
             </template>
@@ -1010,16 +1012,18 @@ onMounted(() => {
                 <span class="text-xs text-gray-400">指标无差异</span>
               </Tooltip>
             </template>
-            <EchartsUI
-              v-if="top10.length > 0"
-              ref="topChartRef"
-              height="240px"
-            />
-            <div v-else class="flex h-[240px] items-center justify-center text-xs text-gray-400">
-              暂无排行数据
+            <div class="h-full">
+              <EchartsUI
+                v-if="top10.length > 0"
+                ref="topChartRef"
+                height="100%"
+              />
+              <div v-else class="flex h-full items-center justify-center text-xs text-gray-400">
+                暂无排行数据
+              </div>
             </div>
           </Card>
-          <Card class="lg:col-span-3" :body-style="{ padding: '12px 16px' }">
+          <Card class="lg:col-span-3 h-full" :body-style="{ padding: '12px 16px' }">
             <template #title>
               <span class="text-sm">装置对比</span>
             </template>
@@ -1039,17 +1043,19 @@ onMounted(() => {
                 清除下钻
               </Button>
             </template>
-            <EchartsUI
-              v-if="sortedNodes.length > 0"
-              ref="unitChartRef"
-              height="240px"
-            />
-            <div v-else class="flex h-[240px] items-center justify-center text-xs text-gray-400">
-              {{ unitChartEmptyText }}
+            <div class="h-full">
+              <EchartsUI
+                v-if="sortedNodes.length > 0"
+                ref="unitChartRef"
+                height="100%"
+              />
+              <div v-else class="flex h-full items-center justify-center text-xs text-gray-400">
+                {{ unitChartEmptyText }}
+              </div>
             </div>
           </Card>
           <!-- E：指标分布（grid 第三列，紧凑图例） -->
-          <Card class="lg:col-span-4" :body-style="{ padding: '12px 16px' }">
+          <Card class="lg:col-span-4 h-full" :body-style="{ padding: '12px 16px' }">
             <template #title>
               <span class="text-sm">{{ metricMeta.label }}分布</span>
             </template>
@@ -1069,22 +1075,25 @@ onMounted(() => {
                 </span>
               </span>
             </template>
-            <EchartsUI
-              v-if="curValues.length > 0"
-              ref="distChartRef"
-              height="240px"
-            />
-            <div v-else class="flex h-[240px] items-center justify-center text-xs text-gray-400">
-              暂无分布数据
+            <div class="h-full">
+              <EchartsUI
+                v-if="curValues.length > 0"
+                ref="distChartRef"
+                height="100%"
+              />
+              <div v-else class="flex h-full items-center justify-center text-xs text-gray-400">
+                暂无分布数据
+              </div>
             </div>
           </Card>
         </div>
 
         <!-- D：行动清单 -->
-        <Card class="mt-3" :body-style="{ padding: '12px 16px' }">
+        <Card class="mt-3 flex-1 min-h-[400px]" :body-style="{ padding: '12px 16px' }">
           <template #title>
             <span class="text-sm">行动清单（最差 TOP20）</span>
           </template>
+          <div class="h-full overflow-auto">
           <Spin :spinning="loading">
             <Table
               :columns="actionColumns"
@@ -1168,7 +1177,9 @@ onMounted(() => {
               </template>
             </Table>
           </Spin>
+          </div>
         </Card>
+        </div>
       </ClpmDataCanvas>
 
       <!-- 工厂节点树抽屉（与总览一致的下钻交互） -->
