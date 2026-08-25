@@ -18,7 +18,7 @@ import { useRouter } from 'vue-router';
 const props = defineProps<{
   evaluated?: number;
   total?: number;
-  trend?: WorkbenchApi.AssessmentTrend | null;
+  trend?: null | WorkbenchApi.AssessmentTrend;
 }>();
 
 const router = useRouter();
