@@ -1,15 +1,15 @@
 /**
- * 装置工作台（dashboard/workbench.vue v4.3）单元测试
+ * 装置总览（dashboard/workbench.vue 管理者版，2026-08-24 重排）单元测试
  *
- * 覆盖 2026-08-15 密度增强 + 树形排名版核心交互：
- * - 行1 标题行 + 行2 综合指标行：七仪表按序（实时自控率 → 好值率），
- *   且不含"实时在线"等已删除元素
- * - 中排：§2 全厂雷达（迁至中排左侧）/ §3 装置-单元树形排名
- *   （装置行折叠/展开单元行，工厂树 join 层级）/ §6 运行状态
- * - §7 装置指标对比：SVG 柱组渲染
- * - 排名即导航：点击 §3 单元行 → §5 趋势标题 + §4 范围联动；再次点击恢复全厂
- * - §3 表头点击排序：装置/单元按平稳率降序重排
- * - 页面级时间窗总开关：切换后 §3 排名接口带新 timeWindow 重新加载
+ * 覆盖方案 A 管理者版布局核心交互：
+ * - 行1 标题行 + 行2 全厂结论带：6 张结论卡（综合评分/参评回路/问题回路/
+ *   处置待办/本期闭环/实时自控率），原雷达/子弹图带/装置指标对比已删除
+ * - 行2 治理卡 + C 列治理漏斗：governance-summary 计数映射、转化率、时间窗联动
+ * - A 列全厂健康结构：等级分布饼图 + 适用性 L0~L4 + MODE 分布 5 行 + 阀门越限计数
+ * - B 列装置-单元树形排名：折叠/展开、未挂载兜底组、表头排序、排名即导航联动
+ * - D 列绩效趋势：默认图例收敛（评分主线+自控率）、悬浮十字线统一悬浮框
+ * - E 列重点关注回路：最低/最高 10 切换、点击跳回路工作台
+ * - 结论卡导航：问题回路 → /monitor/attention；处置待办 → /handling/tasks
  */
 import { mount } from '@vue/test-utils';
 
@@ -46,6 +46,14 @@ vi.mock('#/api/metric', () => ({
   getRankingApi: (...a: unknown[]) => getRankingApiMock(...a),
 }));
 
+// ===== Mock API（#/api/governance） =====
+const getGovernanceSummaryApiMock = vi.fn();
+
+vi.mock('#/api/governance', () => ({
+  getGovernanceSummaryApi: (...a: unknown[]) =>
+    getGovernanceSummaryApiMock(...a),
+}));
+
 // ===== Mock API（#/api/plant-node） =====
 const getPlantNodeTreeApiMock = vi.fn();
 
@@ -69,7 +77,7 @@ vi.mock('ant-design-vue', () => ({
     props: ['spinning'],
     template: '<div data-testid="spin"><slot /></div>',
   },
-  // v4.3+ 适用性分段堆叠横条使用 Tooltip 包裹，打桩仅透传默认插槽
+  // 适用性堆叠条/单元行工程指标等 Tooltip 打桩：仅透传默认插槽
   Tooltip: {
     name: 'Tooltip',
     props: ['placement', 'title'],
@@ -77,35 +85,9 @@ vi.mock('ant-design-vue', () => ({
   },
 }));
 
+const routerPushMock = vi.fn();
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
-}));
-
-// ClpmBulletChart 打桩：渲染 label/value/meta/delta 便于断言行2 仪表盘带与环比
-// ClpmFitnessBadge 打桩：v4.3+ 适用性分段徽章，仅渲染等级避免引入真实组件依赖
-vi.mock('#/components/clpm', () => ({
-  ClpmBulletChart: {
-    name: 'ClpmBulletChart',
-    props: [
-      'delta',
-      'fair',
-      'good',
-      'invert',
-      'label',
-      'max',
-      'meta',
-      'target',
-      'unit',
-      'value',
-    ],
-    template:
-      '<div class="bullet-stub">{{ label }}|{{ value }}|{{ meta }}|{{ delta }}</div>',
-  },
-  ClpmFitnessBadge: {
-    name: 'ClpmFitnessBadge',
-    props: ['level'],
-    template: '<span class="fitness-badge-stub" :data-level="level" />',
-  },
+  useRouter: () => ({ push: routerPushMock }),
 }));
 
 import Workbench from '#/views/dashboard/workbench.vue';
@@ -179,6 +161,28 @@ const unitRanking = [
   },
 ];
 
+const plantTree = [
+  {
+    id: 'area-1',
+    name: '常减压装置',
+    type: 'AREA',
+    parentId: null,
+    children: [
+      { id: 'unit-1', name: '脱甲烷单元', type: 'UNIT', parentId: 'area-1' },
+      { id: 'unit-2', name: '脱乙烷单元', type: 'UNIT', parentId: 'area-1' },
+    ],
+  },
+  {
+    id: 'area-2',
+    name: '催化裂化装置',
+    type: 'AREA',
+    parentId: null,
+    children: [
+      { id: 'unit-3', name: '脱丙烷单元', type: 'UNIT', parentId: 'area-2' },
+    ],
+  },
+];
+
 function setupMocks() {
   getBoardAggregateApiMock.mockResolvedValue({
     items: [],
@@ -217,6 +221,17 @@ function setupMocks() {
     INCONCLUSIVE: 0,
     total: 27,
   });
+  getGovernanceSummaryApiMock.mockResolvedValue({
+    timeWindow: 'last_24_hours',
+    handling: {
+      openItems: 5,
+      openOrders: 4,
+      overdueOrders: 2,
+      closedInWindow: 6,
+    },
+    funnel: { discovered: 5, diagnosed: 7, planned: 9, closed: 6 },
+    badLoops: { warning: 3, poor: 2 },
+  });
   getNodeRankingApiMock.mockImplementation((params: { nodeType: string }) =>
     Promise.resolve(
       params.nodeType === 'AREA' ? [...areaRanking] : [...unitRanking],
@@ -235,28 +250,8 @@ function setupMocks() {
   });
   getGradingThresholdsApiMock.mockResolvedValue({ thresholds: [] });
   // 工厂树：area-1 → unit-1/unit-2，area-2 → unit-3（供树形排名 join 层级）
-  getPlantNodeTreeApiMock.mockResolvedValue([
-    {
-      id: 'area-1',
-      name: '常减压装置',
-      type: 'AREA',
-      parentId: null,
-      children: [
-        { id: 'unit-1', name: '脱甲烷单元', type: 'UNIT', parentId: 'area-1' },
-        { id: 'unit-2', name: '脱乙烷单元', type: 'UNIT', parentId: 'area-1' },
-      ],
-    },
-    {
-      id: 'area-2',
-      name: '催化裂化装置',
-      type: 'AREA',
-      parentId: null,
-      children: [
-        { id: 'unit-3', name: '脱丙烷单元', type: 'UNIT', parentId: 'area-2' },
-      ],
-    },
-  ]);
-  // 快照：2 条越限（min≤5 / max≥95）+ 1 条正常
+  getPlantNodeTreeApiMock.mockResolvedValue(plantTree);
+  // 快照：2 条越限（min≤5 / max≥95）+ 1 条正常（仅计数展示，列表已删除）
   getLoopSnapshotsApiMock.mockResolvedValue({
     items: [
       {
@@ -287,42 +282,41 @@ function setupMocks() {
 async function mountWorkbench() {
   const w = mount(Workbench);
   await vi.dynamicImportSettled();
-  // onMounted 的五组加载 + 后续微任务全部落地
-  for (let i = 0; i < 6; i++) {
+  // onMounted 的七组加载 + 后续微任务全部落地
+  for (let i = 0; i < 8; i++) {
     await Promise.resolve();
   }
   return w;
 }
 
-/** 定位 §3 树形排名的数据行（按装置/单元名匹配） */
+/** 定位 B 列树形排名的数据行（按装置/单元名匹配） */
 function findUnitRow(wrapper: ReturnType<typeof mount>, name: string) {
   return wrapper
     .findAll('.cursor-pointer')
     .find((el) => el.text().includes(name));
 }
 
-describe('装置工作台 v4.3', () => {
+describe('装置总览（管理者版）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupMocks();
   });
 
-  it('行1 标题行 + 行2 综合指标行：标题/时间窗/七仪表按序，无"实时在线"等已删除元素', async () => {
+  it('行1 标题行 + 行2 结论带：标题/时间窗/六张结论卡，雷达与装置指标对比已删除', async () => {
     const w = await mountWorkbench();
     const text = w.text();
 
-    // 行1 标题在最前，时间窗组件选中项高亮（蓝色底样式）
-    expect(text.trim().startsWith('装置工作台')).toBe(true);
+    // 行1 标题在最前
+    expect(text.trim().startsWith('装置总览')).toBe(true);
 
-    // 行2 七个仪表按序（实时自控率 → 好值率，子弹图形态）
+    // 行2 六张结论卡标签按序
     const labels = [
+      '全厂综合评分',
+      '参评回路',
+      '问题回路',
+      '处置待办',
+      '本期闭环',
       '实时自控率',
-      '有效自控率',
-      '平稳率',
-      '快速率',
-      '准确率',
-      '平均自控率',
-      '好值率',
     ];
     let prev = -1;
     for (const label of labels) {
@@ -332,21 +326,24 @@ describe('装置工作台 v4.3', () => {
       prev = idx;
     }
 
-    // 行2 数字总览要素 + 中排雷达/树形排名标题
-    expect(text).toContain('全厂综合评分');
-    expect(text).toContain('总数');
-    expect(text).toContain('自控');
-    expect(text).toContain('手动');
-    expect(text).toContain('参评');
-    expect(text).toContain('等级分布');
-    expect(text).toContain('全厂雷达');
-    expect(text).toContain('装置-单元排名');
+    // 结论卡关键要素：等级徽章 / 参评口径 / 超期 / 实时角标
+    expect(text).toContain('参评回路 / 总回路');
+    expect(text).toContain('超期');
+    expect(text).toContain('实时 ·');
 
-    // 已删除的元素不再出现
+    // 行3/行4 卡片标题
+    expect(text).toContain('全厂健康结构');
+    expect(text).toContain('装置-单元排名');
+    expect(text).toContain('治理漏斗');
+    expect(text).toContain('绩效趋势');
+    expect(text).toContain('重点关注回路');
+
+    // 已删除的元素不再出现（§2 雷达 / §7 装置指标对比 / §6 独立运行状态卡）
+    expect(text).not.toContain('全厂雷达');
+    expect(text).not.toContain('装置指标对比');
     expect(text).not.toContain('实时在线');
     expect(text).not.toContain('统计时间窗');
     expect(text).not.toContain('B 类口径');
-    expect(text).not.toContain('快照');
 
     // 时间窗按钮组五档齐全（近 8/24/72/168 小时 + 自定义），默认选中"近 24 小时"
     const twItems = w
@@ -365,22 +362,51 @@ describe('装置工作台 v4.3', () => {
     expect(active?.classes()).toContain('bg-blue-700');
   });
 
-  it('§6 运行状态：MODE 分布 5 行 + 阀门 OP 越限 2 条（快照前端过滤）', async () => {
+  it('行2 治理卡 + C 列漏斗：governance-summary 计数映射与转化率', async () => {
     const w = await mountWorkbench();
     const text = w.text();
+
+    // 接口按当前时间窗调用
+    expect(getGovernanceSummaryApiMock).toHaveBeenCalledWith({
+      timeWindow: 'last_24_hours',
+    });
+
+    // 问题回路卡：警告 3 / 不合格 2（badLoops 双口径）
+    expect(text).toContain('警告 3 · 不合格 2');
+    // 处置待办卡：超期 2
+    expect(text).toContain('超期 2');
+    // C 列漏斗：四级标签齐全 + openItems 说明行
+    for (const label of ['发现', '诊断', '方案', '闭环']) {
+      expect(text).toContain(label);
+    }
+    expect(text).toContain('未闭环处置建议 5 条');
+    // 转化率（相对上一级）：诊断 7/5=140%、方案 9/7≈129%、闭环 6/9≈67%
+    expect(text).toContain('140%');
+    expect(text).toContain('129%');
+    expect(text).toContain('67%');
+  });
+
+  it('A 列健康结构：等级分布饼图 + 适用性 L0~L4 + MODE 5 行 + 阀门越限计数', async () => {
+    const w = await mountWorkbench();
+    const html = w.html();
+    const text = w.text();
+
+    // 等级分布饼图（5 档有计数 → path 渲染）+ 图例
+    expect(html).toContain('<path');
+    expect(text).toContain('适用性分层（L0~L4）');
 
     // MODE 分布五类齐全
     for (const label of ['自动', '串级', '远程', '先控', '手动']) {
       expect(text).toContain(label);
     }
 
-    // 越限回路：FIC-101（min 2≤5）与 FIC-202（max 98≥95），正常 FIC-303 不出现
-    expect(text).toContain('阀门运行区间异常');
-    expect(text).toContain('FIC-101');
-    expect(text).toContain('FIC-202');
+    // 阀门越限仅计数（2 条越限：FIC-101/FIC-202；越限列表已删除，位号不再展示）
+    expect(text).toContain('阀门越限 2 条');
+    expect(text).not.toContain('FIC-101');
+    expect(text).not.toContain('FIC-202');
     expect(text).not.toContain('FIC-303');
 
-    // 快照接口按 latestOnly 拉取 50 条
+    // 快照接口按 latestOnly 拉取 50 条（加载编排不变）
     expect(getLoopSnapshotsApiMock).toHaveBeenCalledWith({
       page: 1,
       pageSize: 50,
@@ -388,23 +414,7 @@ describe('装置工作台 v4.3', () => {
     });
   });
 
-  it('§7 装置指标对比 + 中排全厂雷达：SVG 柱组与数据多边形渲染', async () => {
-    const w = await mountWorkbench();
-    const html = w.html();
-    const text = w.text();
-
-    // §7：两个装置柱组（data-id 委托点击）
-    expect(html).toContain('data-id="area-1"');
-    expect(html).toContain('data-id="area-2"');
-    expect(text).toContain('装置指标对比');
-
-    // 中排雷达（v4.3 自行2右端迁入中排左侧，替代原装置排名区）：
-    // 数据多边形（半透明填充）+ 标题
-    expect(text).toContain('全厂雷达');
-    expect(html).toContain('rgba(37,99,235,.16)');
-  });
-
-  it('§3 装置-单元树形排名：默认全展开，装置行折叠/展开单元行', async () => {
+  it('B 列树形排名：默认全展开，装置行折叠/展开单元行', async () => {
     const w = await mountWorkbench();
 
     // 工厂树接口被调用（join 单元层级）
@@ -443,7 +453,7 @@ describe('装置工作台 v4.3', () => {
     expect(w.text()).toContain('脱乙烷单元');
   });
 
-  it('§3 树形排名：单元未挂载装置时归入"未挂载装置"兜底组', async () => {
+  it('B 列树形排名：单元未挂载装置时归入"未挂载装置"兜底组', async () => {
     // 工厂树中不包含 unit-3 → 脱丙烷单元应落入兜底组
     getPlantNodeTreeApiMock.mockResolvedValue([
       {
@@ -478,7 +488,7 @@ describe('装置工作台 v4.3', () => {
     );
   });
 
-  it('排名即导航：点击 §3 单元行联动 §5 趋势标题与 §4 范围，再次点击恢复全厂', async () => {
+  it('排名即导航：点击 B 列单元行联动 D 列趋势范围与 E 列范围，再次点击恢复全厂', async () => {
     const w = await mountWorkbench();
 
     // 默认全厂（默认窗口近 24 小时 → 短标签"近 24h"）
@@ -492,7 +502,7 @@ describe('装置工作台 v4.3', () => {
       await Promise.resolve();
     }
 
-    // §5 标题 + §2/§3/§4 范围行联动为单元名
+    // D 列底部状态行 + E 列范围行联动为单元名
     expect(w.text()).toContain('脱甲烷单元 · 近 24h');
     expect(w.text()).toContain('范围: 脱甲烷单元');
 
@@ -505,14 +515,14 @@ describe('装置工作台 v4.3', () => {
     expect(w.text()).toContain('全厂 · 近 24h');
   });
 
-  it('§3 表头排序：点击"平稳率"后装置/单元按平稳率降序重排', async () => {
+  it('B 列表头排序：点击"平稳率"后装置/单元按平稳率降序重排', async () => {
     const w = await mountWorkbench();
 
     // 默认评分降序：area-1 组内 脱乙烷(92) 在 脱甲烷(88) 前
     let text = w.text();
     expect(text.indexOf('脱乙烷单元')).toBeLessThan(text.indexOf('脱甲烷单元'));
 
-    // 点击表头"平稳率"按钮（§3 树形面板内的排序按钮）
+    // 点击表头"平稳率"按钮（B 列排名表头，DOM 序先于 D 列图例同名按钮）
     const steadyBtn = w
       .findAll('button')
       .find((b) => b.text().startsWith('平稳率'));
@@ -526,9 +536,10 @@ describe('装置工作台 v4.3', () => {
     expect(text.indexOf('脱乙烷单元')).toBeLessThan(text.indexOf('脱丙烷单元'));
   });
 
-  it('页面级时间窗总开关：切换"近 72 小时"后排名接口按新 timeWindow 重新加载', async () => {
+  it('页面级时间窗总开关：切换"近 72 小时"后排名与治理接口按新 timeWindow 重新加载', async () => {
     const w = await mountWorkbench();
     expect(getNodeRankingApiMock).toHaveBeenCalledTimes(2); // AREA + UNIT
+    expect(getGovernanceSummaryApiMock).toHaveBeenCalledTimes(1);
 
     const item72h = w.findAll('button').find((b) => b.text() === '近 72 小时');
     await item72h!.trigger('click');
@@ -540,7 +551,12 @@ describe('装置工作台 v4.3', () => {
     const lastCalls = getNodeRankingApiMock.mock.calls.map((c) => c[0]);
     expect(lastCalls.at(-1)).toMatchObject({ timeWindow: 'last_72_hours' });
     expect(lastCalls.at(-2)).toMatchObject({ timeWindow: 'last_72_hours' });
-    // §5 标题时间窗标签同步
+    // 治理接口同步切换时间窗
+    expect(getGovernanceSummaryApiMock).toHaveBeenCalledTimes(2);
+    expect(getGovernanceSummaryApiMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      timeWindow: 'last_72_hours',
+    });
+    // D 列底部时间窗标签同步
     expect(w.text()).toContain('全厂 · 近 72h');
   });
 
@@ -579,11 +595,15 @@ describe('装置工作台 v4.3', () => {
     const lastCalls = getNodeRankingApiMock.mock.calls.map((c) => c[0]);
     expect(lastCalls.at(-1)).toMatchObject(expected);
     expect(lastCalls.at(-2)).toMatchObject(expected);
+    // 治理接口同样带 custom 起止
+    expect(getGovernanceSummaryApiMock.mock.calls.at(-1)?.[0]).toMatchObject(
+      expected,
+    );
     // 标题旁显示实际时间范围（本地时间）
     expect(w.text()).toContain('08-14 08:00 ~ 08-15 08:00');
   });
 
-  it('行2 环比：并行请求上一窗口基线，评分与仪表显示方向数值', async () => {
+  it('行2 环比：并行请求上一窗口基线，综合评分卡显示方向数值', async () => {
     // 当前窗口（默认近 24 小时）与上一窗口（custom 起止）返回不同基线
     const cur = {
       items: [],
@@ -642,17 +662,13 @@ describe('装置工作台 v4.3', () => {
       timeWindow: 'custom',
     });
 
-    // 评分环比：88.5 - 87.5 = ↑ 1.00（绿色上行角标）
+    // 评分环比：88.5 - 87.5 = ↑ 1.00（绿色上行角标）+ "较上一窗口"说明
     expect(w.text()).toContain('↑ 1.00');
-    // 平稳率环比：90 - 92 = -2（下行，传给子弹图 delta）
-    const steadyStub = w
-      .findAll('.bullet-stub')
-      .find((b) => b.text().startsWith('平稳率|'));
-    expect(steadyStub?.text()).toContain('|-2');
+    expect(w.text()).toContain('较上一窗口');
   });
 
-  it('§5 趋势交互：悬浮十字线统一悬浮框 + 图例五项切换', async () => {
-    // jsdom 布局矩形为 0：按 viewBox 尺寸（960×240 等比缩放到 384 宽）mock 图区容器
+  it('D 列趋势交互：默认图例收敛（评分+自控率）+ 悬浮十字线统一悬浮框', async () => {
+    // jsdom 布局矩形为 0：按 viewBox 尺寸（960×310 等比缩放到 384 宽）mock 图区容器
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockReturnValue({
@@ -668,8 +684,7 @@ describe('装置工作台 v4.3', () => {
       } as DOMRect);
     const w = await mountWorkbench();
 
-    // 图例五项全部可点击（综合评分 / 四率；限定 §5 图例容器，
-    // 排除 §3 树形排名表头的同名排序按钮）
+    // 图例五项全部可点击（综合评分 / 四率）
     const legendWrap = w.find('[data-testid="trend-legend"]');
     expect(legendWrap.exists()).toBe(true);
     const legendBtns = legendWrap.findAll('button');
@@ -680,15 +695,31 @@ describe('装置工作台 v4.3', () => {
       '准确率',
       '自控率',
     ]);
+    // 管理者版默认：仅综合评分 + 自控率开启，平稳/快速/准确默认关闭
+    const enabledCls = (b: (typeof legendBtns)[number]) =>
+      b.classes().includes('text-gray-600');
+    expect(enabledCls(legendBtns[0]!)).toBe(true); // 综合评分
+    expect(enabledCls(legendBtns[1]!)).toBe(false); // 平稳率
+    expect(enabledCls(legendBtns[2]!)).toBe(false); // 快速率
+    expect(enabledCls(legendBtns[3]!)).toBe(false); // 准确率
+    expect(enabledCls(legendBtns[4]!)).toBe(true); // 自控率
 
-    // 悬浮：mousemove 图区内 → 十字线 + 悬浮框（时间 + 全序列值）
+    // 悬浮：mousemove 图区内 → 十字线 + 悬浮框（默认仅评分+自控率行）
     const chart = w.find('[data-testid="trend-chart"]');
     expect(chart.exists()).toBe(true);
     await chart.trigger('mousemove', { clientX: 200 });
     await Promise.resolve();
     expect(w.text()).toContain('00:00');
     expect(w.text()).toContain('88.0%'); // 综合评分（mock avgScore 88）
-    expect(w.text()).toContain('92.0%'); // 平稳率
+    expect(w.text()).toContain('78.0%'); // 自控率（默认开启）
+    expect(w.text()).not.toContain('92.0%'); // 平稳率默认关闭不入悬浮框
+
+    // 开启"平稳率"图例 → 再次悬浮时显示该行
+    await legendBtns[1]!.trigger('click');
+    await Promise.resolve();
+    await chart.trigger('mousemove', { clientX: 200 });
+    await Promise.resolve();
+    expect(w.text()).toContain('92.0%');
 
     // mouseleave → 悬浮框消失
     await chart.trigger('mouseleave');
@@ -706,5 +737,72 @@ describe('装置工作台 v4.3', () => {
     expect(tipRows[0]!.text()).not.toContain('综合评分');
 
     rectSpy.mockRestore();
+  });
+
+  it('E 列重点关注回路：最低/最高 10 切换 + 点击跳回路工作台', async () => {
+    getRankingApiMock.mockResolvedValue([
+      {
+        rank: 1,
+        loopId: 'loop-9',
+        tagName: 'FIC-901',
+        loopName: null,
+        unitName: '脱甲烷单元',
+        score: 55.5,
+        status: 'SUCCESS',
+      },
+    ]);
+    const w = await mountWorkbench();
+
+    // 默认"评分最低 10"（asc）
+    expect(getRankingApiMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 10, sortBy: 'score', sortOrder: 'asc' }),
+    );
+    expect(w.text()).toContain('FIC-901');
+
+    // 切换"评分最高 10" → desc 重新加载
+    const descBtn = w
+      .findAll('button')
+      .find((b) => b.text() === '评分最高 10');
+    expect(descBtn).toBeDefined();
+    await descBtn!.trigger('click');
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+    expect(getRankingApiMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sortOrder: 'desc' }),
+    );
+
+    // 点击回路行 → 跳转 /monitor/loop-workbench（from=overview）
+    const loopRow = w
+      .findAll('.cursor-pointer')
+      .find((el) => el.text().includes('FIC-901'));
+    expect(loopRow).toBeDefined();
+    await loopRow!.trigger('click');
+    expect(routerPushMock).toHaveBeenCalledWith({
+      path: '/monitor/loop-workbench',
+      query: { from: 'overview', loopId: 'loop-9' },
+    });
+  });
+
+  it('结论卡导航：问题回路 → 关注队列；处置待办 → 处置任务', async () => {
+    const w = await mountWorkbench();
+
+    // 问题回路卡（title 定位）→ /monitor/attention
+    const badCard = w.find('[title="点击查看关注队列"]');
+    expect(badCard.exists()).toBe(true);
+    await badCard.trigger('click');
+    expect(routerPushMock).toHaveBeenCalledWith({
+      path: '/monitor/attention',
+      query: { from: 'overview' },
+    });
+
+    // 处置待办卡 → /handling/tasks
+    const handlingCard = w.find('[title="点击查看处置任务"]');
+    expect(handlingCard.exists()).toBe(true);
+    await handlingCard.trigger('click');
+    expect(routerPushMock).toHaveBeenCalledWith({
+      path: '/handling/tasks',
+      query: { from: 'overview' },
+    });
   });
 });

@@ -125,9 +125,59 @@ class DashboardOverview(CamelModel):
     )
 
 
+# ---------------------------------------------------------------------------
+# 装置总览管理者版：治理聚合（GET /dashboard/governance-summary）
+# ---------------------------------------------------------------------------
+
+
+class GovernanceHandlingSummary(CamelModel):
+    """处置闭环计数（双实体：loop_action_item 建议 + handling_order 工单）。
+
+    Attributes:
+        open_items: 未闭环处置建议数（status ∈ PENDING/ACCEPTED）
+        open_orders: 未闭环处置工单数（status ∈ PENDING/EXECUTING/VERIFYING/REOPENED）
+        overdue_orders: 超期未闭环工单数（口径同 monitor_attention HANDLING 来源）
+        closed_in_window: 时间窗内闭环的工单数（status=CLOSED 且 verified_at ∈ 窗口）
+    """
+
+    open_items: int = 0
+    open_orders: int = 0
+    overdue_orders: int = 0
+    closed_in_window: int = 0
+
+
+class GovernanceFunnel(CamelModel):
+    """治理漏斗：发现 → 诊断 → 方案 → 闭环。"""
+
+    discovered: int = 0
+    diagnosed: int = 0
+    planned: int = 0
+    closed: int = 0
+
+
+class GovernanceBadLoops(CamelModel):
+    """最新等级分布中的问题回路计数（WARNING/POOR 档）。"""
+
+    warning: int = 0
+    poor: int = 0
+
+
+class GovernanceSummary(CamelModel):
+    """GET /dashboard/governance-summary 响应 data 块。"""
+
+    time_window: str
+    handling: GovernanceHandlingSummary
+    funnel: GovernanceFunnel
+    bad_loops: GovernanceBadLoops
+
+
 __all__ = [
     "DashboardFilterScope",
     "DashboardOverview",
+    "GovernanceBadLoops",
+    "GovernanceFunnel",
+    "GovernanceHandlingSummary",
+    "GovernanceSummary",
     "InefficientLoopItem",
     "KpiCardData",
     "KpiCards",
