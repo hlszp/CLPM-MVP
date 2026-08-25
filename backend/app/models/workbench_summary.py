@@ -73,6 +73,12 @@ class WorkbenchWindowSummary(Base):
     flags: Mapped[list[dict]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+    # distribution: G-评估 trend 块预计算分布数据（precalc / seed 写入）：
+    #   {level_dist:[{label,count,color,stripe?}], mode_dist:[{label,count,color}],
+    #    data_quality:[{label,count,level}], metric_slopes:[{metric,delta,direction}]}
+    distribution: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
     snapshot_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), nullable=False

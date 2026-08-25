@@ -251,6 +251,52 @@ def _make_flags(count: int = 2) -> list[dict[str, Any]]:
     return flags
 
 
+def _make_distribution(loop_count: int, score: float) -> dict[str, Any]:
+    """生成 G-评估 trend 块分布数据（level_dist / mode_dist / data_quality / metric_slopes）。
+
+    对齐原型 #tab-eval Row3 右侧甜甜圈 + 数据质量条 + 分项斜率口径；
+    按 loop_count 等比缩放，保证子 scope 汇总 ≈ GLOBAL。
+    """
+    n = max(loop_count, 1)
+    # 等级分布：优≥90 / 良 75–90 / 中 60–75 / 差<60 / 不可评（对齐原型 9/16/5/2/2 = 34）
+    level_dist = [
+        {"label": "优（≥90）", "count": round(n * 0.265), "color": "#2E7D32", "stripe": False},
+        {"label": "良（75–90）", "count": round(n * 0.470), "color": "#7CB342", "stripe": False},
+        {"label": "中（60–75）", "count": round(n * 0.147), "color": "#F59E0B", "stripe": False},
+        {"label": "差（<60）", "count": round(n * 0.059), "color": "#D93025", "stripe": False},
+        {"label": "不可评", "count": round(n * 0.059), "color": "#C9D6E8", "stripe": True},
+    ]
+    # 控制模式分布：自动/串级/远程/手动（对齐原型 29/1/1/3 = 34）
+    mode_dist = [
+        {"label": "自动", "count": round(n * 0.853), "color": "#2563EB"},
+        {"label": "串级", "count": round(n * 0.029), "color": "#7C3AED"},
+        {"label": "远程", "count": round(n * 0.029), "color": "#94A3B8"},
+        {"label": "手动", "count": round(n * 0.088), "color": "#F59E0B"},
+    ]
+    # 数据质量（对齐原型 33/1/0/0 = 34）
+    data_quality = [
+        {"label": "数据完整", "count": max(n - 1, 0), "level": "green"},
+        {"label": "采样异常", "count": 1 if n >= 2 else 0, "level": "orange"},
+        {"label": "通讯中断", "count": 0, "level": "gray"},
+        {"label": "组态未同步", "count": 0, "level": "gray"},
+    ]
+    # 分项近 24h 变化量（对齐原型 slope-row：恶化居上红、改善居下绿、零轴居中）
+    metric_slopes = [
+        {"metric": "仪表故障率", "delta": 0.9, "direction": "bad"},
+        {"metric": "准确率", "delta": -0.3, "direction": "bad"},
+        {"metric": "快速率", "delta": 2.0, "direction": "good"},
+        {"metric": "平稳率", "delta": 1.4, "direction": "good"},
+        {"metric": "有效自控", "delta": 0.6, "direction": "good"},
+        {"metric": "好值率", "delta": 0.5, "direction": "good"},
+    ]
+    return {
+        "level_dist": level_dist,
+        "mode_dist": mode_dist,
+        "data_quality": data_quality,
+        "metric_slopes": metric_slopes,
+    }
+
+
 async def seed_source_node_ids(db) -> None:
     """为现有 plant_node 填充 source_node_id。"""
     for node_id, source_id in SOURCE_ID_MAP.items():
@@ -315,6 +361,7 @@ async def seed_workbench_window_summary(db) -> None:
             }
             score_trend = _make_score_trend(score, win_cfg["pts"])
             flags = _make_flags(1 if win_key == "24h" else 0)
+            distribution = _make_distribution(loop_count, score)
 
             rows.append(
                 {
@@ -332,6 +379,7 @@ async def seed_workbench_window_summary(db) -> None:
                     "instrument_fault_rate": 0.01,
                     "score_trend": json.dumps(score_trend),
                     "flags": json.dumps(flags),
+                    "distribution": json.dumps(distribution),
                     "snapshot_at": now,
                 }
             )
@@ -343,13 +391,14 @@ async def seed_workbench_window_summary(db) -> None:
          loop_count, good_value_rate, auto_mode_rate, effective_auto_rate,
          steady_rate, accuracy_rate, fast_rate, oscillation_rate,
          saturation_rate, instrument_fault_rate, score_trend, flags,
-         snapshot_at)
+         distribution, snapshot_at)
         VALUES
         (:scope_type, :scope_id, :window, :window_start, :window_end, :score,
          :status, :loop_count, :good_value_rate, :auto_mode_rate,
          :effective_auto_rate, :steady_rate, :accuracy_rate, :fast_rate,
          :oscillation_rate, :saturation_rate, :instrument_fault_rate,
-         CAST(:score_trend AS jsonb), CAST(:flags AS jsonb), :snapshot_at)
+         CAST(:score_trend AS jsonb), CAST(:flags AS jsonb),
+         CAST(:distribution AS jsonb), :snapshot_at)
     """)
     for row in rows:
         await db.execute(batch_sql, row)

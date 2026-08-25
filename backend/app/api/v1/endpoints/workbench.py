@@ -123,20 +123,22 @@ async def get_assessment(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
     window: str = Query("24h"),
+    view: str = Query("plant", description="排名视图：plant|unit"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A-02 评估：6 项 KPI 卡片 + 单元热力 + 回路排名。"""
-    # TODO: M2 填充 — kpi_cards + unit_heatmap + loops_ranked
-    return success(
-        data={
-            "kpi_cards": [],
-            "unit_heatmap": [],
-            "loops_ranked": [],
-            "scope": {"type": scopeType, "id": scopeId},
-            "window": window,
-        }
+    """A-02 评估：摘要带 + 装置/单元排名 + 单元×指标热力 + 综合趋势。
+
+    G-评估填充（F-EV-01~03）：四块聚合 summary/ranking/heatmap/trend，
+    复用 G-总览的递归 CTE 与 alarm/overdue 聚合；distribution JSONB
+    提供 trend 块的等级/模式/数据质量分布。部分失败容错。
+    """
+    from app.services.workbench_assessment import build_assessment
+
+    data = await build_assessment(
+        db, scope_type=scopeType, scope_id=scopeId, window=window, view=view
     )
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------

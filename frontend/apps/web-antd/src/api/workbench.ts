@@ -189,13 +189,82 @@ export namespace WorkbenchApi {
     windows: Partial<Record<TimeWindow, null | WindowBlock>>;
   }
 
-  /** A-02 GET /assessment 响应骨架 */
+  /** A-02 GET /assessment 响应（G-评估 · 四块聚合 + 部分失败容错） */
   export interface AssessmentResult {
-    kpi_cards: unknown[];
-    loops_ranked: unknown[];
+    heatmap: AssessmentHeatmap;
+    ranking: AssessmentRankRow[];
     scope: { id: null | number; type: ScopeType };
-    unit_heatmap: unknown[];
+    summary: AssessmentSummary | null;
+    trend: AssessmentTrend | null;
+    view: 'plant' | 'unit';
     window: TimeWindow;
+  }
+
+  /** 评估排名视图 */
+  export type AssessmentView = 'plant' | 'unit';
+
+  /** 评估摘要带（Row1 c12） */
+  export interface AssessmentSummary {
+    conclusion: string;
+    conclusion_links: { action: string; text: string }[];
+    delta: null | number;
+    distance_to_target: null | number;
+    grade: string;
+    participation: { evaluated: number; total: number };
+    risks: {
+      alarm_count: number;
+      delta: null | number;
+      lose_factors: string[];
+      name: string;
+      overdue_tasks: number;
+      score: null | number;
+    }[];
+    score: null | number;
+    target: number;
+  }
+
+  /** 评估排名行（Row2 c7 · 装置/单元视图通用） */
+  export interface AssessmentRankRow {
+    alarm_count: number;
+    delta: null | number;
+    id: null | number;
+    join: null | string;
+    loop_count: number;
+    lose_factors: string[];
+    name: string;
+    overdue_tasks: number;
+    parent_name: null | string;
+    rank: number;
+    score: null | number;
+    sparkline: ScoreTrendPoint[];
+  }
+
+  /** 评估热力矩阵（Row2 c5） */
+  export interface AssessmentHeatmap {
+    metrics: { key: string; label: string; reverse: boolean }[];
+    units: {
+      id: null | number;
+      name: string;
+      plant: string;
+      score: null | number;
+      values: (null | number)[];
+    }[];
+  }
+
+  /** 评估趋势块（Row3 c7 + c5 共用） */
+  export interface AssessmentTrend {
+    data_quality: { count: number; label: string; level: string }[];
+    level_dist: {
+      color: string;
+      count: number;
+      label: string;
+      stripe?: boolean;
+    }[];
+    mode_dist: { color: string; count: number; label: string }[];
+    series: { current: ScoreTrendPoint[]; previous: ScoreTrendPoint[] };
+    snapshot_at: null | string;
+    slopes: { delta: number; direction: 'bad' | 'good'; metric: string }[];
+    target: number;
   }
 
   /** A-03 GET /diagnosis 响应骨架 */
@@ -282,9 +351,11 @@ export function getWorkbenchOverviewApi(params?: WorkbenchApi.ScopeParams) {
 }
 
 // ---------------------------------------------------------------------------
-// A-02 评估（6 项 KPI 卡片 + 单元热力 + 回路排名）
+// A-02 评估（摘要带 + 装置/单元排名 + 单元×指标热力 + 综合趋势）
 // ---------------------------------------------------------------------------
-export function getWorkbenchAssessmentApi(params?: WorkbenchApi.ScopeParams) {
+export function getWorkbenchAssessmentApi(
+  params?: WorkbenchApi.ScopeParams & { view?: WorkbenchApi.AssessmentView },
+) {
   return requestClient.get<WorkbenchApi.AssessmentResult>(
     '/workbench/assessment',
     { params },
