@@ -23,7 +23,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -36,6 +36,43 @@ from app.schemas.common import ApiResponse, success
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workbench", tags=["workbench"])
+
+
+# ---------------------------------------------------------------------------
+# A-00 GET /scope-tree — 范围选择器数据
+# ---------------------------------------------------------------------------
+
+
+@router.get("/scope-tree", response_model=ApiResponse[list[dict]])
+async def get_scope_tree(
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """返回可选范围列表：全厂 + 工厂 + 装置。
+
+    每条记录：{id, name, type, parent_id, parent_source_id}
+    - id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）
+    - type = FACTORY / AREA（不返回 UNIT，选择器只到装置级）
+    - parent_source_id = 父节点的 source_node_id（用于层级分组）
+    """
+    result = await db.execute(
+        text(
+            """
+            SELECT n.source_node_id AS id,
+                   n.name,
+                   n.type,
+                   n.parent_id::text AS parent_id,
+                   p.source_node_id AS parent_source_id
+            FROM plant_node n
+            LEFT JOIN plant_node p ON n.parent_id = p.id
+            WHERE n.source_node_id IS NOT NULL
+              AND n.type IN ('FACTORY', 'AREA')
+            ORDER BY n.type, n.name
+            """
+        )
+    )
+    nodes = [dict(row._mapping) for row in result.all()]
+    return success(data=nodes)
 
 
 # ---------------------------------------------------------------------------
@@ -65,19 +102,15 @@ async def get_overview(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A-01 工作台总览：三窗口 KPI + 装置/单元排名 + Pareto/根因。"""
-    # TODO: M2 填充 — 三窗口 KPI 预计算 + plants/units 排名 + pareto/roots
-    return success(
-        data={
-            "windows": {"24h": None, "7d": None, "30d": None},
-            "plants": [],
-            "units": [],
-            "pareto": [],
-            "roots": [],
-            "scope": {"type": scopeType, "id": scopeId},
-            "window": window,
-        }
-    )
+    """A-01 工作台总览：三窗口 KPI + 装置/单元排名 + Pareto/根因 + 处置漏斗。
+
+    G-总览填充：读 workbench_window_summary 预计算表 + MV-02/MV-03 + DiagnosisTag 聚合。
+    部分失败容错：单块异常返回空/None，不阻断其余块。
+    """
+    from app.services.workbench_overview import build_overview
+
+    data = await build_overview(db, scope_type=scopeType, scope_id=scopeId, window=window)
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
