@@ -65,8 +65,12 @@ logs/
 # CLPM-engine 引擎目录（独立管理，不入库）
 CLPM-engine/
 
-# Qoder IDE 本地产物（repowiki 知识文档除外）
+# Qoder IDE 本地产物（repowiki 知识文档 .md/.yaml 除外；仅索引/缓存/元数据不入库）
 .qoder/better-harness/
+# IDE 自动索引：_index.yaml / metadata.json 每次打开自动变化，不入库
+.qoder/repowiki/**/_index.yaml
+.qoder/repowiki/**/repowiki-metadata.json
+.qoder/repowiki/**/.cache/
 
 # E2E 截图与视觉检查产物（不入库，本地保留即可）
 e2e/screenshots/
