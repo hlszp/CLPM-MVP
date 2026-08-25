@@ -1,9 +1,12 @@
 """模块注册中心 — 热插拔启用/禁用（IA 优化 P1）。
 
 模块启用状态持久化在 ``sys_config``（key=``enabled_modules``，JSON 数组）。
+Workbench v2.0 新增 ``module_plugin`` 表承载 4 态状态机
+（CORE/ENABLED/MAINTENANCE/UNINSTALLED），优先级高于 sys_config。
 
 - 基础模块（``base=True``）不可禁用
 - ``is_module_enabled()`` 供路由守卫、跨模块守卫调用
+- ``get_module_status()`` 返回 4 态字面量（供工作台 BFF Tab 三色 dot）
 - 状态在进程内缓存；``create_app()`` 路由注册时若缓存未初始化则同步从 DB 加载
   （失败回退默认全开，兼容已有部署）
 - ``lifespan`` 启动时异步加载刷新缓存
@@ -33,8 +36,15 @@ MODULES: dict[str, dict[str, Any]] = {
 
 _CONFIG_KEY = "enabled_modules"
 
+#: 模块 4 态（Workbench v2.0，与 module_plugin.status CK 对齐）
+MODULE_STATUSES = ("CORE", "ENABLED", "MAINTENANCE", "UNINSTALLED")
+#: 视为"已启用"的状态（is_module_enabled 返回 True）
+_ENABLED_STATUSES = frozenset({"CORE", "ENABLED"})
+
 #: 进程内缓存：None=未加载，set=已启用模块 key 集合
 _cache: set[str] | None = None
+#: 4 态状态缓存：None=未加载，dict[str,str]=key→status
+_status_cache: dict[str, str] | None = None
 
 
 def _default_enabled() -> set[str]:
@@ -65,12 +75,51 @@ def _normalize(raw: str | None) -> set[str]:
     return enabled
 
 
+def _load_from_module_plugin_sync() -> dict[str, str] | None:
+    """同步从 module_plugin 表加载 4 态状态。
+
+    返回 None 表示表不存在或查询失败（应回退 sys_config）。
+    在临时事件循环中执行异步查询。
+    """
+    try:
+        from sqlalchemy import select
+
+        from app.core.db import AsyncSessionLocal
+        from app.models.module_plugin import ModulePlugin
+
+        async def _read() -> dict[str, str]:
+            async with AsyncSessionLocal() as db:
+                rows = await db.execute(select(ModulePlugin.module_key, ModulePlugin.status))
+                return dict(rows.all())
+
+        return asyncio.run(_read())
+    except RuntimeError:
+        logger.debug("同步加载 module_plugin 时检测到运行中事件循环，回退 sys_config")
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("module_plugin 表读取失败，回退 sys_config: %s", exc)
+        return None
+
+
 def _load_sync() -> set[str]:
     """同步从 DB 加载启用状态（仅供 create_app 路由注册期使用）。
 
+    v2.0 优先查 module_plugin 表（4 态），失败/表空则回退 sys_config。
     在临时事件循环中执行异步查询；任何异常（DB 不可用/已有运行循环等）
     均回退默认全开，不阻塞应用启动。
     """
+    global _status_cache
+    # 优先尝试 module_plugin 表
+    status_map = _load_from_module_plugin_sync()
+    if status_map is not None and status_map:
+        _status_cache = dict(status_map)
+        enabled = {key for key, status in status_map.items() if status in _ENABLED_STATUSES}
+        # base 模块强制启用
+        for key, meta in MODULES.items():
+            if meta.get("base"):
+                enabled.add(key)
+        return enabled
+    # 回退 sys_config
     try:
         from sqlalchemy import select
 
@@ -94,13 +143,41 @@ def _load_sync() -> set[str]:
 
 
 def is_module_enabled(key: str) -> bool:
-    """判断模块是否启用（进程内缓存，未加载时同步从 DB 读取）。"""
+    """判断模块是否启用（进程内缓存，未加载时同步从 DB 读取）。
+
+    v2.0：若 _status_cache 已从 module_plugin 表加载，则按 4 态判断
+    (CORE/ENABLED → True，其他 → False)；否则回退旧 _cache 集合判断。
+    """
     global _cache
     if key not in MODULES:
         return False
+    # 优先用 module_plugin 4 态缓存
+    if _status_cache is not None:
+        status = _status_cache.get(key)
+        if status is None:
+            # module_plugin 表无此 key，回退 base 模块默认启用
+            return MODULES[key].get("base", False)
+        return status in _ENABLED_STATUSES
+    # 回退旧 sys_config 集合缓存
     if _cache is None:
         _cache = _load_sync()
     return key in _cache
+
+
+def get_module_status(key: str) -> str:
+    """返回模块 4 态字面量（CORE/ENABLED/MAINTENANCE/UNINSTALLED）。
+
+    v2.0 新增，供工作台 BFF Tab 三色 dot / veil / 维护横幅。
+    未加载时同步从 DB 读取；未知 key 返回 UNINSTALLED。
+    """
+    if key not in MODULES:
+        return "UNINSTALLED"
+    if _status_cache is None:
+        _load_sync()
+    if _status_cache is not None:
+        return _status_cache.get(key, "CORE" if MODULES[key].get("base") else "ENABLED")
+    # 回退：sys_config 判断
+    return "ENABLED" if is_module_enabled(key) else "UNINSTALLED"
 
 
 def get_enabled_modules() -> set[str]:
@@ -131,17 +208,24 @@ def list_modules() -> list[dict[str, Any]]:
 
 def set_cache(enabled: set[str]) -> None:
     """直接设置进程内缓存（供 lifespan 预载/测试/API 写入后刷新使用）。"""
-    global _cache
+    global _cache, _status_cache
     _cache = set(enabled)
     for key, meta in MODULES.items():
         if meta.get("base"):
             _cache.add(key)
+    # 同步重建 _status_cache：enabled → ENABLED，未 enabled → UNINSTALLED
+    # （仅用于兼容旧 set_cache 路径；真正 4 态由 module_plugin 表驱动）
+    _status_cache = {key: ("ENABLED" if key in _cache else "UNINSTALLED") for key in MODULES}
+    for key, meta in MODULES.items():
+        if meta.get("base"):
+            _status_cache[key] = "CORE"
 
 
 def reset_cache() -> None:
     """重置缓存（仅供测试）。"""
-    global _cache
+    global _cache, _status_cache
     _cache = None
+    _status_cache = None
 
 
 def require_module(key: str):
@@ -181,9 +265,31 @@ def validate_dependencies(
 
 
 async def load_enabled_modules(db) -> set[str]:
-    """异步从 DB 加载并刷新缓存（lifespan 启动时调用）。"""
+    """异步从 DB 加载并刷新缓存（lifespan 启动时调用）。
+
+    v2.0 优先查 module_plugin 表（4 态），表空则回退 sys_config。
+    """
+    global _cache, _status_cache
     from sqlalchemy import select
 
+    from app.models.module_plugin import ModulePlugin
+
+    # 优先尝试 module_plugin 表
+    try:
+        rows = await db.execute(select(ModulePlugin.module_key, ModulePlugin.status))
+        status_map = dict(rows.all())
+        if status_map:
+            _status_cache = dict(status_map)
+            enabled = {key for key, status in status_map.items() if status in _ENABLED_STATUSES}
+            for key, meta in MODULES.items():
+                if meta.get("base"):
+                    enabled.add(key)
+            _cache = set(enabled)
+            return enabled
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("module_plugin 表读取失败，回退 sys_config: %s", exc)
+
+    # 回退 sys_config
     from app.models.sys_config import SysConfig
 
     row = await db.execute(select(SysConfig).where(SysConfig.key == _CONFIG_KEY))
