@@ -83,6 +83,8 @@ from app.api.v1.endpoints import (
     tuning,  # 整定模块（09 设计方案恢复为一级模块）
     users,
     weight_config,
+    # 工作台 v2.0 BFF 聚合层（A-01~A-13）
+    workbench,
     ws_alert,
     ws_realtime,
 )
@@ -687,6 +689,19 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("预载指标算法参数失败（将使用算法默认值）: %s", exc)
 
+    # 幂等确保评估/诊断指标预制预警规则存在（PRESET_* 12 条；
+    # 用户仅可调阈值与启停，不允许新增；失败不阻塞启动）
+    from app.services.alert_rule_engine import service as alert_rule_service
+
+    try:
+        async with AsyncSessionLocal() as db:
+            created = await alert_rule_service.ensure_preset_rules(db)
+            await db.commit()
+        if created:
+            logger.info("预警预制规则已初始化（新建 %s 条）", created)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预警预制规则初始化失败（不影响启动）: %s", exc)
+
     # 从 sys_config 预载诊断触发条件到进程内缓存（整改计划 C6，
     # 预载失败回落默认值 score_threshold=60/concurrency=5/min_data_points=32，不阻塞启动）
     # MVP 精简：已屏蔽诊断模块 → 跳过诊断触发条件预载
@@ -956,6 +971,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(node_performance.router)
     # S6 工作台门户：BFF 聚合层
     v1_router.include_router(dashboard.router)
+    # 工作台 v2.0 BFF（A-01~A-13 端点）
+    v1_router.include_router(workbench.router)
     # S4 诊断中心：诊断、波形、Tracker、诊断标签
     # v4.0: tags_router 须在 diagnosis.router 之前注册，避免 GET /{loop_id} 拦截 /diagnosis/tags
     # MVP 精简：已屏蔽旧诊断模块 → 不挂载所有 diagnosis.*_router
