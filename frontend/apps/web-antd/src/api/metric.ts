@@ -1492,8 +1492,20 @@ export interface KpiSnapshotQueryParams {
   grade?: GradeName;
   /** True=每个回路只返回最新一条评估记录（默认）；False=返回所有快照 */
   latestOnly?: boolean;
-  /** 排序字段（score/tsStart，默认 tsStart） */
-  sortBy?: 'score' | 'tsStart';
+  /**
+   * 排序字段（默认 tsStart）；白名单（指标分析页 M3 扩展，对齐后端
+   * SNAPSHOT_SORT_COLUMNS）：score/accuracy_rate/auto_mode_rate/effective_auto_rate/
+   * fast_rate/steady_rate/good_value_rate，非法值服务端回退默认
+   */
+  sortBy?:
+    | 'accuracy_rate'
+    | 'auto_mode_rate'
+    | 'effective_auto_rate'
+    | 'fast_rate'
+    | 'good_value_rate'
+    | 'score'
+    | 'steady_rate'
+    | 'tsStart';
   /** 排序方向（asc/desc，默认 desc） */
   sortOrder?: 'asc' | 'desc';
   /** 页码 */

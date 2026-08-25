@@ -61,7 +61,7 @@ withDefaults(
 );
 
 const emit = defineEmits<{
-  (e: 'loopClick', loopId: string): void;
+  (e: 'loopClick', loopId: string, record: LoopApi.MonitorListItem): void;
 }>();
 
 const { modeLabelColor } = useLoopPalettes();
@@ -123,7 +123,7 @@ const columns: TableColumnsType = [
     width: 100,
     align: 'center',
   },
-  { title: '回路等级', key: 'grade', width: 80, align: 'center' },
+  { title: '性能等级', key: 'grade', width: 80, align: 'center' },
   // P2 IA优化：适用性等级列（位号等级列右侧）
   { title: '适用性', key: 'fitnessLevel', width: 95, align: 'center' },
   {
@@ -441,7 +441,7 @@ function exportCsv() {
 
 // ===== 行点击 → 切换到该回路详情 =====
 function handleRowClick(record: LoopApi.MonitorListItem) {
-  emit('loopClick', record.loopId);
+  emit('loopClick', record.loopId, record);
 }
 
 // ===== 工具函数 =====

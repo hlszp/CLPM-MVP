@@ -856,6 +856,16 @@ async def list_loop_monitor(
         if pv_unit_val is not None:
             current_values["unit"] = pv_unit_val
 
+        # P2 IA优化：适用性分层（L0~L4）与原因标签，直接取自最新 KPI 快照
+        fitness_level = snap.fitness_level if snap else None
+        fitness_tags: list[str] | None = None
+        if snap is not None and snap.fitness_tags is not None:
+            raw_tags = snap.fitness_tags
+            if isinstance(raw_tags, dict) and isinstance(raw_tags.get("tags"), list):
+                fitness_tags = [str(x) for x in raw_tags["tags"]]
+            elif isinstance(raw_tags, list):
+                fitness_tags = [str(x) for x in raw_tags]
+
         items.append(
             {
                 "loopId": str(loop.id),
@@ -898,6 +908,9 @@ async def list_loop_monitor(
                     ),
                 },
                 "loopType": loop.loop_type,
+                # P2 IA优化：适用性等级/原因标签（回路监视列表 + 详情抽屉）
+                "fitnessLevel": fitness_level,
+                "fitnessTags": fitness_tags,
                 "isActive": bool(loop.is_active),
                 "readAt": read_at,
             }

@@ -10,6 +10,8 @@
  *   /monitor/alerts         : 全五角色
  *   /tuning/workbench       : ADMIN, IC, EXPERT
  *   /diagnosis/records      : 全五角色（MVP 两页式；原 /diagnosis/tasks 已不存在）
+ *   /metric/indicator-analysis : ADMIN, IC, PE, SPONSOR（EXPERT 无评估模块，
+ *                                2026-08-25 指标分析页 M3 联动新增）
  *
  * MW-P5-03 特别验证项：
  *   - EXPERT 进入回路工作台无阻断性 403 内容页（已知例外：后端
@@ -162,7 +164,13 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await assertPageHealthy(page);
     await assertNoForbiddenToast(page);
 
-    // 3. 回路工作台（EXPERT 在 authority 内）：页面健康、无 403 内容页。
+    // 3. EXPERT 无评估模块：直接访问指标分析页应渲染 403 内容页（指标分析页 M3）
+    await page.goto('/metric/indicator-analysis');
+    await waitForRender(page);
+    const deniedMetric = await assertAccessDenied(page);
+    expect(deniedMetric, 'EXPERT 访问指标分析应显示 403 内容页').toBeTruthy();
+
+    // 4. 回路工作台（EXPERT 在 authority 内）：页面健康、无 403 内容页。
     // 已知例外：后端 /configs/grading-thresholds 拒绝 EXPERT（require_roles
     // ADMIN/IC/PE），前端全局拦截器会弹一次"无权限访问" toast，但页面本身
     // 已 .catch 降级不影响渲染——此为现行代码预期行为，仅断言无预期外 403。
@@ -196,7 +204,13 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await assertPageHealthy(page);
     await assertNoForbiddenToast(page);
 
-    // 3. SPONSOR 无工作台权限：直接访问 /monitor/loop-workbench 应显示 403 内容页
+    // 3. 指标分析页（SPONSOR 在 authority 内，指标分析页 M3）：页面健康
+    await page.goto('/metric/indicator-analysis');
+    await waitForRender(page);
+    await assertPageHealthy(page);
+    await assertNoForbiddenToast(page);
+
+    // 4. SPONSOR 无工作台权限：直接访问 /monitor/loop-workbench 应显示 403 内容页
     await page.goto('/monitor/loop-workbench');
     await waitForRender(page);
     const denied = await assertAccessDenied(page);

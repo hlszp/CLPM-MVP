@@ -11,3 +11,4 @@ export * from './metric';
 export * from './system';
 export * from './task';
 export * from './types';
+export * from './workbench';

@@ -10,6 +10,7 @@ import type {
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -35,6 +36,7 @@ import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'PidDashboard' });
 
+const router = useRouter();
 const { isDark, themeColors, chartColors } = useClpmTheme();
 const { canReadConfig } = useConfigAccess();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
@@ -109,6 +111,14 @@ function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
 
 function handleTimeWindowChange() {
   loadAll();
+}
+
+/** M3 联动（指标分析页）：携指标与当前时间窗深链跳转，回答"该指标弱在哪套装置" */
+function goIndicatorAnalysis(metric: string) {
+  router.push({
+    path: '/metric/indicator-analysis',
+    query: { metric, window: timeWindow.value },
+  });
 }
 
 const boardAggregate = ref<DashboardApi.BoardAggregateResult | null>(null);
@@ -856,6 +866,12 @@ onMounted(() => {
                 :value="aggregateData?.autoModeRate ?? null"
                 :meta="`统计窗口：${timeWindowLabel}`"
               />
+              <a
+                class="clpm-pid-dashboard__gauge-analysis"
+                @click="goIndicatorAnalysis('auto_mode_rate')"
+              >
+                单指标分析 →
+              </a>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -864,6 +880,12 @@ onMounted(() => {
                 :value="aggregateData?.stabilityRate ?? null"
                 :meta="`统计窗口：${timeWindowLabel}`"
               />
+              <a
+                class="clpm-pid-dashboard__gauge-analysis"
+                @click="goIndicatorAnalysis('steady_rate')"
+              >
+                单指标分析 →
+              </a>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -872,6 +894,12 @@ onMounted(() => {
                 :value="aggregateData?.goodValueRate ?? null"
                 :meta="`统计窗口：${timeWindowLabel}`"
               />
+              <a
+                class="clpm-pid-dashboard__gauge-analysis"
+                @click="goIndicatorAnalysis('good_value_rate')"
+              >
+                单指标分析 →
+              </a>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -987,6 +1015,27 @@ onMounted(() => {
                 :pagination="false"
                 :scroll="{ y: 200 }"
               >
+                <template #headerCell="{ column }">
+                  <!-- M3 联动：列头“分析”深链指标分析页（按该指标找最差装置/回路） -->
+                  <template v-if="column.key === 'smoothRate'">
+                    平稳率
+                    <a
+                      class="clpm-pid-dashboard__gauge-analysis"
+                      @click="goIndicatorAnalysis('steady_rate')"
+                    >
+                      分析
+                    </a>
+                  </template>
+                  <template v-else-if="column.key === 'autoRate'">
+                    自控率
+                    <a
+                      class="clpm-pid-dashboard__gauge-analysis"
+                      @click="goIndicatorAnalysis('auto_mode_rate')"
+                    >
+                      分析
+                    </a>
+                  </template>
+                </template>
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'rating'">
                     <span
@@ -1242,6 +1291,18 @@ onMounted(() => {
     font-size: 16px;
     font-weight: 600;
     color: hsl(var(--foreground));
+  }
+}
+
+/* M3 联动：仪表盘卡/装置表列头的“单指标分析”深链入口（低噪小字，hover 主色） */
+.clpm-pid-dashboard__gauge-analysis {
+  font-size: 11px;
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+
+  &:hover {
+    color: hsl(var(--primary));
   }
 }
 
