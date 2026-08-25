@@ -16,7 +16,7 @@ from app.schemas.base import CamelModel
 # 枚举
 # ---------------------------------------------------------------------------
 
-RuleType = Literal["THRESHOLD", "DRIFT", "COMPOSITE", "CONFIDENCE"]
+RuleType = Literal["METRIC_THRESHOLD", "THRESHOLD", "DRIFT", "COMPOSITE", "CONFIDENCE"]
 ScopeType = Literal["ALL", "LOOP", "PLANT", "CONTROL_TYPE"]
 Severity = Literal["INFO", "WARN", "ERROR", "CRITICAL"]
 EventStatus = Literal["ACTIVE", "ACKNOWLEDGED", "RESOLVED", "SUPPRESSED", "ARCHIVED"]

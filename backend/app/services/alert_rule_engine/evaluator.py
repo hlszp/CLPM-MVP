@@ -474,6 +474,7 @@ async def _evaluate_metric_threshold_rule(
     metric_code = condition.get("metricCode")
     operator = condition.get("operator")
     threshold_value = condition.get("value")
+    levels = condition.get("levels") or []
     interval_minutes = condition.get("checkIntervalMinutes", 60)
     duration_count = condition.get("durationCount", 1)
 
@@ -481,13 +482,18 @@ async def _evaluate_metric_threshold_rule(
     dedup_template = dsl.get("dedupKey", "${loop_id}+${rule_id}")
     dedup_key = render_dedup_key(dedup_template, loop_id=loop_id, rule_id=rule_id)
 
-    def _result(triggered: bool, snapshot: dict[str, Any], value: float | None = None):
+    def _result(
+        triggered: bool,
+        snapshot: dict[str, Any],
+        value: float | None = None,
+        severity_override: str | None = None,
+    ):
         return EvaluationResult(
             triggered=triggered,
             triggered_value=value,
             condition_snapshot=snapshot,
             confidence_level=confidence_level,
-            severity=severity,
+            severity=severity_override or severity,
             dedup_key=dedup_key,
         )
 
@@ -526,16 +532,39 @@ async def _evaluate_metric_threshold_rule(
                 {"reason": "stale_data", "metric": metric_code, "ageSeconds": age_seconds},
             )
 
-    # 4. 比较
-    triggered = _compare(actual, operator, float(threshold_value))
-    snapshot = {
-        "metricSource": metric_source,
-        "metric": metric_code,
-        "operator": operator,
-        "threshold": threshold_value,
-        "actualValue": actual,
-        "dataTime": data_time.isoformat() if data_time else None,
-    }
+    # 4. 比较（三级阈值：取满足条件的最严重等级；单级向后兼容）
+    matched_level: dict[str, Any] | None = None
+    if levels:
+        level_order = {"WARN": 1, "ERROR": 2, "CRITICAL": 3}
+        matched_list = [
+            lv
+            for lv in levels
+            if isinstance(lv, dict)
+            and isinstance(lv.get("value"), int | float)
+            and _compare(actual, operator, float(lv["value"]))
+        ]
+        triggered = bool(matched_list)
+        if matched_list:
+            matched_level = max(matched_list, key=lambda lv: level_order.get(lv.get("severity"), 0))
+        snapshot = {
+            "metricSource": metric_source,
+            "metric": metric_code,
+            "operator": operator,
+            "levels": levels,
+            "matchedLevel": matched_level,
+            "actualValue": actual,
+            "dataTime": data_time.isoformat() if data_time else None,
+        }
+    else:
+        triggered = _compare(actual, operator, float(threshold_value))
+        snapshot = {
+            "metricSource": metric_source,
+            "metric": metric_code,
+            "operator": operator,
+            "threshold": threshold_value,
+            "actualValue": actual,
+            "dataTime": data_time.isoformat() if data_time else None,
+        }
 
     # 5. 连续超限计数（Redis 异常时按 durationCount=1 直接判定）
     if duration_count > 1:
@@ -553,7 +582,8 @@ async def _evaluate_metric_threshold_rule(
         except Exception:  # noqa: BLE001
             logger.debug("指标预警连续计数失败（Redis 异常，直接判定）", exc_info=True)
 
-    return _result(triggered, snapshot, actual)
+    sev_override = matched_level.get("severity") if triggered and matched_level else None
+    return _result(triggered, snapshot, actual, severity_override=sev_override)
 
 
 async def _get_latest_kpi_metric(

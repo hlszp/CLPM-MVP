@@ -200,24 +200,15 @@ class TestListRules:
 class TestCreateRule:
     """POST /alert/rules 创建规则（仅 ADMIN）。"""
 
-    def test_create_rule_success(self, client, mock_db, fake_redis) -> None:
-        with (
-            patch(
-                "app.api.v1.endpoints.alert.alert_service.create_rule",
-                new_callable=AsyncMock,
-                return_value=_make_rule_dict(rule_code="R_NEW"),
-            ) as m,
-            mock_current_user(TEST_USERS["admin"]),
-        ):
+    def test_create_rule_disabled_preset_mode(self, client, fake_redis) -> None:
+        """预制规则模式：不允许新增规则（403，2026-08-24）。"""
+        with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/alert/rules",
                 json=_VALID_RULE_PAYLOAD,
                 headers={"Authorization": "Bearer fake"},
             )
-        assert resp.status_code == 200
-        assert resp.json()["data"]["ruleCode"] == "R_NEW"
-        m.assert_awaited_once()
-        mock_db.commit.assert_awaited_once()
+        assert resp.status_code == 403
 
     def test_create_rule_rejects_ic_engineer(self, client, mock_db, fake_redis) -> None:
         """IC_ENGINEER 无权创建规则（仅 ADMIN）。"""

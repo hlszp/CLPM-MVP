@@ -62,6 +62,9 @@ KPI_METRIC_CODES = frozenset(
 DIAGNOSIS_METRIC_CODES = frozenset({"severity", "primary_confidence"})
 #: METRIC_THRESHOLD 比较符
 METRIC_OPERATORS = frozenset({">", ">=", "<", "<="})
+#: 三级预警阈值允许的等级（一般/重要/紧急；INFO 不参与分级）
+LEVEL_SEVERITIES = frozenset({"WARN", "ERROR", "CRITICAL"})
+MAX_LEVEL_COUNT = 3
 
 MIN_CHECK_INTERVAL_MINUTES = 5
 MAX_CHECK_INTERVAL_MINUTES = 1440
@@ -333,10 +336,14 @@ def _validate_metric_threshold_condition(
           "metricSource": "KPI" | "DIAGNOSIS",
           "metricCode": "score" | "severity" | ...,
           "operator": ">" | ">=" | "<" | "<=",
-          "value": <数值阈值>,
+          "value": <数值阈值（单级模式必填；levels 存在时可省）>,
+          "levels": [{"severity": "WARN"|"ERROR"|"CRITICAL", "value": <数值>}],
           "checkIntervalMinutes": <监测周期 5-1440>,
           "durationCount": <连续超限次数 1-10>
         }
+
+    levels 为可选三级预警阈值（一般/重要/紧急）：同一 operator 下取满足
+    条件的最严重等级；与单级 value 向后兼容（旧规则无 levels 时行为不变）。
     """
     metric_source = condition.get("metricSource")
     if metric_source not in METRIC_SOURCES:
@@ -376,8 +383,58 @@ def _validate_metric_threshold_condition(
         )
 
     value = condition.get("value")
-    if not isinstance(value, int | float) or isinstance(value, bool):
-        errors.append({"field": "condition.value", "message": "必须为数值"})
+    levels = condition.get("levels")
+    if levels is None:
+        # 单级模式：value 必填
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            errors.append({"field": "condition.value", "message": "必须为数值"})
+    else:
+        # 三级模式：levels 非空数组，每项 {severity, value}，等级不重复
+        if not isinstance(levels, list) or not levels:
+            errors.append({"field": "condition.levels", "message": "必须为非空数组"})
+        elif len(levels) > MAX_LEVEL_COUNT:
+            errors.append(
+                {
+                    "field": "condition.levels",
+                    "message": f"最多 {MAX_LEVEL_COUNT} 级（一般/重要/紧急）",
+                }
+            )
+        else:
+            seen: set[str] = set()
+            for idx, lv in enumerate(levels):
+                if not isinstance(lv, dict):
+                    errors.append(
+                        {
+                            "field": f"condition.levels[{idx}]",
+                            "message": "必须为对象 {severity, value}",
+                        }
+                    )
+                    continue
+                sev = lv.get("severity")
+                if sev not in LEVEL_SEVERITIES:
+                    errors.append(
+                        {
+                            "field": f"condition.levels[{idx}].severity",
+                            "message": f"必须为 {sorted(LEVEL_SEVERITIES)} 之一",
+                        }
+                    )
+                elif sev in seen:
+                    errors.append(
+                        {
+                            "field": f"condition.levels[{idx}].severity",
+                            "message": f"等级 {sev} 重复",
+                        }
+                    )
+                else:
+                    seen.add(sev)
+                lv_value = lv.get("value")
+                if not isinstance(lv_value, int | float) or isinstance(lv_value, bool):
+                    errors.append(
+                        {
+                            "field": f"condition.levels[{idx}].value",
+                            "message": "必须为数值",
+                        }
+                    )
 
     interval = condition.get("checkIntervalMinutes", 60)
     if (

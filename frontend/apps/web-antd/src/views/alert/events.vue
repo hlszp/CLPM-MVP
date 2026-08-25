@@ -52,15 +52,15 @@ import {
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
-import { SEVERITY_LABEL } from '#/constants/clpm-ui';
+import { ALERT_LEVEL_LABEL } from '#/constants/clpm-ui';
 import { BADGE_REFRESH_INTERVAL } from '#/constants/polling';
 import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'AlertEvents' });
 
-// 严重度中文标签（对齐 clpm-ui.ts 统一映射，与诊断/跟踪模块共用）
-const severityLabel = SEVERITY_LABEL;
+// 预警等级中文标签（一般/重要/紧急/提示；预警事件专用，不与诊断模块共用）
+const severityLabel = ALERT_LEVEL_LABEL;
 
 const userStore = useUserStore();
 const router = useRouter();
@@ -174,7 +174,7 @@ const columns: TableColumnsType = [
     ellipsis: true,
   },
   {
-    title: '严重度',
+    title: '预警等级',
     dataIndex: 'severity',
     key: 'severity',
     width: 90,
@@ -432,7 +432,7 @@ function handleExport(format: 'csv' | 'excel') {
   const headers = [
     '回路',
     '规则代码',
-    '严重度',
+    '预警等级',
     '状态',
     '触发值',
     '触发时间',
@@ -461,7 +461,7 @@ function handleHelp() {
   showPageHelp({
     title: '预警事件 帮助',
     content:
-      '预警事件由规则引擎实时求值产生。可按状态、严重度、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
+      '预警事件由规则引擎实时求值产生。可按状态、预警等级、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
@@ -553,7 +553,7 @@ onMounted(() => {
           "
         />
       </FormItem>
-      <FormItem label="严重度" class="!mb-0">
+      <FormItem label="预警等级" class="!mb-0">
         <Select
           v-model:value="query.severity"
           allow-clear
@@ -616,7 +616,7 @@ onMounted(() => {
       class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-dashed border-gray-200 bg-gray-50/50 px-3 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800/30"
     >
       <span class="font-medium text-gray-500 dark:text-gray-400">图例：</span>
-      <span class="text-gray-400 dark:text-gray-500">严重度</span>
+      <span class="text-gray-400 dark:text-gray-500">预警等级</span>
       <span
         v-for="(color, key) in severityColor"
         :key="`sev-${key}`"
@@ -751,7 +751,7 @@ onMounted(() => {
       <template #emptyText>
         <ClpmEmptyState
           title="暂无预警事件"
-          description="当前筛选条件（状态/严重度/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
+          description="当前筛选条件（状态/预警等级/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
         />
       </template>
     </Table>
@@ -776,7 +776,7 @@ onMounted(() => {
         <DescriptionsItem label="规则版本">{{
           currentEvent.ruleVersion
         }}</DescriptionsItem>
-        <DescriptionsItem label="严重度">
+        <DescriptionsItem label="预警等级">
           <Tag :color="severityColor[currentEvent.severity]">{{
             severityLabel[currentEvent.severity] ?? currentEvent.severity
           }}</Tag>

@@ -63,7 +63,7 @@ class AlertRule(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE')",
+            "rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE', 'METRIC_THRESHOLD')",
             name="ck_alert_rule_type",
         ),
         Index("idx_alert_rule_type", "rule_type"),
