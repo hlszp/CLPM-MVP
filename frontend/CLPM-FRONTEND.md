@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | `.env` | `VITE_APP_TITLE` | `CLPM 控制回路性能管理系统` | 应用标题 |
 | `.env` | `VITE_APP_NAMESPACE` | `clpm-web-antd` | 应用命名空间（缓存前缀） |
-| `.env.development` | `VITE_GLOB_API_URL` | `http://localhost:7101/api/v1` | 后端开发服务器地址 |
+| `.env.development` | `VITE_GLOB_API_URL` | `http://localhost:17101/api/v1` | 后端开发服务器地址（MVP 隔离端口） |
 | `.env.development` | `VITE_NITRO_MOCK` | `false` | 关闭内置 Mock 服务 |
 | `.env.production` | `VITE_GLOB_API_URL` | `/api/v1` | 生产环境通过反向代理转发 |
 
@@ -26,7 +26,7 @@
 
 ### 2. Vite 代理配置
 
-`apps/web-antd/vite.config.ts` 中的 `/api` 代理目标已改为 `http://localhost:7101`（CLPM 后端）。
+`apps/web-antd/vite.config.ts` 中的 `/api` 代理目标已改为 `http://127.0.0.1:17101`（CLPM-MVP 后端，强制 IPv4 直连避免 IDE 端口转发抢占）。
 
 ### 3. Demo 内容清理
 
