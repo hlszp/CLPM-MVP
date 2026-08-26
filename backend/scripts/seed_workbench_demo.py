@@ -5,7 +5,8 @@
 2. workbench_window_summary 三窗口 KPI 预计算行（GLOBAL + FACTORY × 2 + UNIT × 4 × 24h/7d/30d）
 3. diagnosis_tag + diagnosis_result（触发 mv_diagnosis_pareto 刷新）
 4. handling_order（触发 mv_handling_funnel 刷新）
-5. 刷新 3 个 MV（CONCURRENTLY）
+5. tuning_batch + tuning_record + 前置工单（G-整定 W11/W12/W13：批次/队列/散点）
+6. 刷新 3 个 MV（CONCURRENTLY）
 
 对齐设计文档 §0.2 演示数据 W1/W3/W4/W7/W8/W14 口径：
 - 综合评分 ~84 · 自控率 ~91% · 好值率 ~96% · 平稳率 ~88% · 准确率 ~93% · 快速率 ~82%
@@ -13,6 +14,13 @@
 - 异常类型：仪表故障 / 控制策略 / 工艺扰动 / 设备故障 / 标定漂移
 - 根因：振荡 / 过饱和 / 响应滞后 / 非线性 / 传感器故障
 - 处置漏斗：pending 6 / executing 4 / verifying 3 / closed 11 / breached 1
+
+G-整定演示（原型 BATCHES/PENDING_TUNE/SCATTER 口径）：
+- 批次：ZD-2026-0142（COMPLETED，6 回路 71→88）/ 0143（COMPLETED，3 回路 74→82）
+  / 0144（PENDING 排队）/ 0145（前置 CL-2026-0819 未闭合 → 动态 BLOCKED）
+  / 0141（CANCELLED 回退，66→62 负 Δ 点）
+- 待整定队列 6 条：1 条同回路前置工单阻塞（红·高优先）+ 2 条批次阻塞 + 3 条可操作
+- 散点 11 点：批次固化快照 10 点（含 1 负 Δ）+ TUNING 工单 kpi 前后 2 点
 
 用法：
     cd backend && uv run python scripts/seed_workbench_demo.py
@@ -195,7 +203,7 @@ UNIT_SCORES: dict[int, dict[str, Any]] = {
 GLOBAL_SCORE: dict[str, Any] = {
     "score": 84.2,
     "status": "FAIR",
-    "loop_count": 34,
+    "loop_count": 27,  # 对齐 loop_ledger 实际回路数
     "good_value_rate": 0.968,
     "auto_mode_rate": 0.912,
     "effective_auto_rate": 0.895,
@@ -308,6 +316,41 @@ async def seed_source_node_ids(db) -> None:
     print(f"✅ 已更新 {len(SOURCE_ID_MAP)} 个 plant_node source_node_id")
 
 
+async def _fetch_actual_loop_counts(db) -> dict[int, int]:
+    """从 loop_ledger JOIN plant_node 查各层级实际回路数。
+
+    返回 {source_node_id: count} 字典，key=0 表示全厂总计。
+    """
+    sql = text("""
+        WITH loop_tree AS (
+            SELECT l.is_active,
+                   u.source_node_id AS unit_src,
+                   a.source_node_id AS area_src,
+                   f.source_node_id AS factory_src
+            FROM loop_ledger l
+            LEFT JOIN plant_node u ON l.unit_id = u.id
+            LEFT JOIN plant_node a ON u.parent_id = a.id
+            LEFT JOIN plant_node f ON a.parent_id = f.id
+            WHERE l.is_active = true
+        )
+        SELECT 0 AS scope_id, count(*) AS cnt FROM loop_tree
+        UNION ALL
+        SELECT factory_src, count(*) FROM loop_tree
+            WHERE factory_src IS NOT NULL GROUP BY factory_src
+        UNION ALL
+        SELECT area_src, count(*) FROM loop_tree
+            WHERE area_src IS NOT NULL GROUP BY area_src
+        UNION ALL
+        SELECT unit_src, count(*) FROM loop_tree
+            WHERE unit_src IS NOT NULL GROUP BY unit_src
+    """)
+    result = await db.execute(sql)
+    counts: dict[int, int] = {}
+    for row in result:
+        counts[row.scope_id or 0] = row.cnt
+    return counts
+
+
 async def seed_workbench_window_summary(db) -> None:
     """填充 workbench_window_summary 三窗口数据。"""
     now = datetime.now(UTC)
@@ -317,26 +360,36 @@ async def seed_workbench_window_summary(db) -> None:
         "30d": {"start": now - timedelta(days=30), "pts": 15, "offset": 1.0},
     }
 
+    # 动态查询 loop_ledger 各层级的实际回路数（对齐真实数据，不用写死值）
+    actual_counts = await _fetch_actual_loop_counts(db)
+    print(
+        f"  实际回路数：GLOBAL={actual_counts.get(0, 0)}, "
+        f"FACTORY 100={actual_counts.get(100, 0)}, "
+        f"AREA 1000={actual_counts.get(1000, 0)}"
+    )
+
     # 清除旧数据
     await db.execute(text("DELETE FROM workbench_window_summary"))
 
     rows = []
     for win_key, win_cfg in windows.items():
         # GLOBAL
-        for scope_type, scope_id, score_data, loop_count in [
-            ("GLOBAL", 0, GLOBAL_SCORE, GLOBAL_SCORE["loop_count"]),
-            ("FACTORY", 100, FACTORY_SCORES[100], 18),
-            ("FACTORY", 200, FACTORY_SCORES[200], 16),
-            ("AREA", 1000, AREA_SCORES[1000], AREA_SCORES[1000]["loop_count"]),
-            ("AREA", 2000, AREA_SCORES[2000], AREA_SCORES[2000]["loop_count"]),
-            ("AREA", 3000, AREA_SCORES[3000], AREA_SCORES[3000]["loop_count"]),
-            ("UNIT", 10000, UNIT_SCORES[10000], 8),
-            ("UNIT", 10001, UNIT_SCORES[10001], 6),
-            ("UNIT", 10002, UNIT_SCORES[10002], 5),
-            ("UNIT", 10003, UNIT_SCORES[10003], 7),
-            ("UNIT", 10004, UNIT_SCORES[10004], 4),
-            ("UNIT", 10005, UNIT_SCORES[10005], 4),
+        for scope_type, scope_id, score_data in [
+            ("GLOBAL", 0, GLOBAL_SCORE),
+            ("FACTORY", 100, FACTORY_SCORES[100]),
+            ("FACTORY", 200, FACTORY_SCORES[200]),
+            ("AREA", 1000, AREA_SCORES[1000]),
+            ("AREA", 2000, AREA_SCORES[2000]),
+            ("AREA", 3000, AREA_SCORES[3000]),
+            ("UNIT", 10000, UNIT_SCORES[10000]),
+            ("UNIT", 10001, UNIT_SCORES[10001]),
+            ("UNIT", 10002, UNIT_SCORES[10002]),
+            ("UNIT", 10003, UNIT_SCORES[10003]),
+            ("UNIT", 10004, UNIT_SCORES[10004]),
+            ("UNIT", 10005, UNIT_SCORES[10005]),
         ]:
+            # 优先使用 loop_ledger 实际回路数；无回路节点保留演示评分但 loop_count=0
+            loop_count = actual_counts.get(scope_id, score_data.get("loop_count", 0))
             win_start = win_cfg["start"]
             win_end = now
             # 窗口级评分偏移（7d 略低、30d 略高，使切换窗口可见变化）
@@ -590,6 +643,286 @@ async def refresh_mv(db) -> None:
     await db.commit()
 
 
+# ---------------------------------------------------------------------------
+# 6. G-整定演示数据（W11 批次 / W12 待整定队列 / W13 散点）
+# ---------------------------------------------------------------------------
+
+
+def _scatter_pts(loop_ids: list, pairs: list[tuple[int, float, float]]) -> tuple[str, str]:
+    """构造 scatters_before/after JSON 字符串（[{loop_id, score}]）。"""
+    before = [{"loop_id": str(loop_ids[i]), "score": b} for i, b, _ in pairs]
+    after = [{"loop_id": str(loop_ids[i]), "score": a} for i, _, a in pairs]
+    return json.dumps(before), json.dumps(after)
+
+
+async def seed_tuning_demo(db) -> None:
+    """填充整定批次 + 待整定记录 + 前置工单 + 散点数据源（幂等）。"""
+    # 幂等清理（本脚本创建的演示数据）
+    await db.execute(
+        text("""
+            DELETE FROM tuning_batch_records WHERE batch_id IN
+            (SELECT id FROM tuning_batch WHERE batch_no LIKE 'ZD-2026-%')
+        """)
+    )
+    await db.execute(text("DELETE FROM tuning_batch WHERE batch_no LIKE 'ZD-2026-%'"))
+    await db.execute(
+        text("DELETE FROM tuning_record WHERE id::text LIKE '00000000-0000-0000-0000-%'")
+    )
+    await db.execute(text("DELETE FROM handling_order WHERE order_no LIKE 'CL-2026-%'"))
+
+    loops = await db.execute(
+        text("SELECT id, tag_name FROM loop_ledger ORDER BY created_at LIMIT 20")
+    )
+    loop_rows = [(r[0], r[1]) for r in loops]
+    if len(loop_rows) < 10:
+        print("⚠️  loop_ledger 不足 10 条，跳过 tuning 演示数据")
+        return
+    loop_ids = [r[0] for r in loop_rows]
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    # --- 前置工单 CL-2026-0819（VALVE · EXECUTING 未闭合 → 阻塞 ZD-2026-0145）---
+    prereq_order_id = UUID("00000000-0000-0000-0000-000000003001")
+    await db.execute(
+        text("""
+            INSERT INTO handling_order
+            (id, order_no, loop_id, source, title, action_type, status,
+             created_at, updated_at, sla_deadline_at, sla_stage,
+             scope_type, scope_id, reopen_count, handler)
+            VALUES
+            (:id, 'CL-2026-0819', :loop_id, 'DIAGNOSIS',
+             '振荡治理·更换阀门定位器（先换阀后整定）', 'VALVE', 'EXECUTING',
+             :created, :updated, :sla_deadline, 'WARN',
+             'GLOBAL', 0, 0, '张工')
+        """),
+        {
+            "id": prereq_order_id,
+            "loop_id": loop_ids[12] if len(loop_ids) > 12 else loop_ids[0],
+            "created": now - timedelta(hours=20),
+            "updated": now,
+            "sla_deadline": now + timedelta(hours=3),
+        },
+    )
+
+    # --- TUNING 类工单 ×2（散点来源 2：kpi_before/after，CLOSED/VERIFYING）---
+    tuning_orders = [
+        # (seq, loop_idx, before, after, status)
+        (1, 10, 67.0, 76.0, "CLOSED"),
+        (2, 11, 65.0, 72.0, "VERIFYING"),
+    ]
+    for seq, loop_idx, b, a, status in tuning_orders:
+        if len(loop_ids) <= loop_idx:
+            continue
+        await db.execute(
+            text("""
+                INSERT INTO handling_order
+                (id, order_no, loop_id, source, title, action_type, status,
+                 created_at, updated_at, verified_at, sla_stage,
+                 scope_type, scope_id, reopen_count, handler,
+                 kpi_before, kpi_after)
+                VALUES
+                (:id, :order_no, :loop_id, 'DIAGNOSIS',
+                 :title, 'TUNING', :status,
+                 :created, :updated, :verified, 'NONE',
+                 'GLOBAL', 0, 0, '王工',
+                 CAST(:kpi_before AS jsonb), CAST(:kpi_after AS jsonb))
+            """),
+            {
+                "id": UUID(f"00000000-0000-0000-0000-0000000031{seq:02d}"),
+                "order_no": f"CL-2026-08{30 + seq}",
+                "loop_id": loop_ids[loop_idx],
+                "title": f"回路整定实施与效果验证 #{seq}",
+                "status": status,
+                "created": now - timedelta(days=2),
+                "updated": now - timedelta(hours=6),
+                "verified": now - timedelta(hours=6) if status == "CLOSED" else None,
+                "kpi_before": json.dumps({"score": b}),
+                "kpi_after": json.dumps({"score": a}),
+            },
+        )
+
+    # --- 整定批次 ×5（W11，对齐原型 BATCHES）---
+    # (batch_no, title, scope, status, prereq_ids, scatter 配对[(loop_idx,b,a)], 记录算法)
+    sc_0142, sa_0142 = _scatter_pts(
+        loop_ids,
+        [
+            (0, 69.0, 88.0),
+            (1, 72.0, 85.0),
+            (2, 68.0, 83.0),
+            (3, 71.0, 86.0),
+            (4, 74.0, 82.0),
+            (5, 66.0, 79.0),
+        ],
+    )
+    sc_0143, sa_0143 = _scatter_pts(loop_ids, [(6, 74.0, 82.0), (7, 72.0, 81.0), (8, 76.0, 83.0)])
+    sc_0141, sa_0141 = _scatter_pts(loop_ids, [(9, 66.0, 62.0)])
+    batches = [
+        {
+            "batch_no": "ZD-2026-0142",
+            "title": "常减压 PID 批次整定",
+            "scope_type": "FACTORY",
+            "scope_id": 100,
+            "status": "COMPLETED",
+            "prereq": [],
+            "block_reason": None,
+            "sc_before": sc_0142,
+            "sc_after": sa_0142,
+            "actual_start": now - timedelta(days=1, hours=12),
+            "completed": now - timedelta(hours=20),
+            "created": now - timedelta(days=2),
+        },
+        {
+            "batch_no": "ZD-2026-0143",
+            "title": "乙烯裂解温度组整定",
+            "scope_type": "FACTORY",
+            "scope_id": 200,
+            "status": "COMPLETED",
+            "prereq": [],
+            "block_reason": None,
+            "sc_before": sc_0143,
+            "sc_after": sa_0143,
+            "actual_start": now - timedelta(days=1, hours=2),
+            "completed": now - timedelta(hours=8),
+            "created": now - timedelta(days=1, hours=12),
+        },
+        {
+            "batch_no": "ZD-2026-0144",
+            "title": "LIC 液位组继电器反馈辨识",
+            "scope_type": "FACTORY",
+            "scope_id": 100,
+            "status": "PENDING",
+            "prereq": [],
+            "block_reason": None,
+            "sc_before": None,
+            "sc_after": None,
+            "actual_start": None,
+            "completed": None,
+            "created": now - timedelta(hours=10),
+        },
+        {
+            "batch_no": "ZD-2026-0145",
+            "title": "催化反再振荡组整定（先换阀后整定）",
+            "scope_type": "FACTORY",
+            "scope_id": 100,
+            # 库存储 PENDING；prereq CL-2026-0819 EXECUTING → 服务端动态判定 BLOCKED（B-06）
+            "status": "PENDING",
+            "prereq": [str(prereq_order_id)],
+            "block_reason": None,
+            "sc_before": None,
+            "sc_after": None,
+            "actual_start": None,
+            "completed": None,
+            "created": now - timedelta(hours=6),
+        },
+        {
+            "batch_no": "ZD-2026-0141",
+            "title": "FIC 稀释蒸汽流量阶跃辨识（验证失败已回退）",
+            "scope_type": "FACTORY",
+            "scope_id": 200,
+            "status": "CANCELLED",
+            "prereq": [],
+            "block_reason": None,
+            "sc_before": sc_0141,
+            "sc_after": sa_0141,
+            "actual_start": now - timedelta(days=3),
+            "completed": now - timedelta(days=2, hours=12),
+            "created": now - timedelta(days=3, hours=6),
+        },
+    ]
+    for bt in batches:
+        await db.execute(
+            text("""
+                INSERT INTO tuning_batch
+                (batch_no, title, scope_type, scope_id, status,
+                 prereq_order_ids, block_reason, scatters_before, scatters_after,
+                 actual_start_at, completed_at, created_at)
+                VALUES
+                (:batch_no, :title, :scope_type, :scope_id, :status,
+                 CAST(:prereq AS jsonb), :block_reason,
+                 CAST(:sc_before AS jsonb), CAST(:sc_after AS jsonb),
+                 :actual_start, :completed, :created)
+            """),
+            {
+                "batch_no": bt["batch_no"],
+                "title": bt["title"],
+                "scope_type": bt["scope_type"],
+                "scope_id": bt["scope_id"],
+                "status": bt["status"],
+                "prereq": json.dumps(bt["prereq"]),
+                "block_reason": bt["block_reason"],
+                "sc_before": bt["sc_before"],
+                "sc_after": bt["sc_after"],
+                "actual_start": bt["actual_start"],
+                "completed": bt["completed"],
+                "created": bt["created"],
+            },
+        )
+
+    # --- 整定记录（W12 队列 + 批次成员；id 前缀 00000000-...-004xxx）---
+    # (seq, loop_idx, status, algorithm, created_by, batch_no, sort_order)
+    records = [
+        # ZD-2026-0142 成员（COMPLETED → VERIFIED）
+        (1, 0, "VERIFIED", "IMC", "王工", "ZD-2026-0142", 1),
+        (2, 1, "VERIFIED", "IMC", "王工", "ZD-2026-0142", 2),
+        (3, 2, "VERIFIED", "IMC", "王工", "ZD-2026-0142", 3),
+        (4, 3, "VERIFIED", "LAMBDA", "王工", "ZD-2026-0142", 4),
+        (5, 4, "VERIFIED", "IMC", "王工", "ZD-2026-0142", 5),
+        (6, 5, "VERIFIED", "SIMC", "王工", "ZD-2026-0142", 6),
+        # ZD-2026-0143 成员
+        (7, 6, "VERIFIED", "LAMBDA", "王工", "ZD-2026-0143", 1),
+        (8, 7, "VERIFIED", "LAMBDA", "王工", "ZD-2026-0143", 2),
+        (9, 8, "VERIFIED", "ZN", "王工", "ZD-2026-0143", 3),
+        # ZD-2026-0141 成员（回退）
+        (10, 9, "ROLLED_BACK", "IDENTIFICATION_ONLY", "赵工", "ZD-2026-0141", 1),
+        # ZD-2026-0145 成员（待整定，随批次动态 BLOCKED）
+        (11, 13, "DRAFT", "IMC", "张工", "ZD-2026-0145", 1),
+        (12, 14, "DRAFT", "LAMBDA", "张工", "ZD-2026-0145", 2),
+        # ZD-2026-0144 成员（排队中，不阻塞）
+        (13, 18, "DRAFT", "IDENTIFICATION_ONLY", None, "ZD-2026-0144", 1),
+        (14, 19, "DRAFT", "IDENTIFICATION_ONLY", None, "ZD-2026-0144", 2),
+        # 独立待整定（不入批次；loop12 被 CL-2026-0819 同回路阻塞）
+        (15, 12, "DRAFT", "IMC", None, None, 0),
+        (16, 15, "DRAFT", "LAMBDA", "刘工", None, 0),
+        (17, 16, "PENDING", "SIMC", "陈工", None, 0),
+    ]
+    for seq, loop_idx, status, algo, created_by, batch_no, sort_order in records:
+        if len(loop_ids) <= loop_idx:
+            continue
+        rid = UUID(f"00000000-0000-0000-0000-000000004{seq:03d}")
+        await db.execute(
+            text("""
+                INSERT INTO tuning_record
+                (id, loop_id, model_type, algorithm, status, created_by, created_at,
+                 fitting_score)
+                VALUES (:id, :loop_id, 'FOPDT', :algo, :status, :created_by, :created,
+                        :fitting)
+            """),
+            {
+                "id": rid,
+                "loop_id": loop_ids[loop_idx],
+                "algo": algo,
+                "status": status,
+                "created_by": created_by,
+                "created": now - timedelta(hours=seq * 2),
+                "fitting": 82.5 if status in ("VERIFIED", "ROLLED_BACK") else None,
+            },
+        )
+        if batch_no:
+            await db.execute(
+                text("""
+                    INSERT INTO tuning_batch_records (batch_id, tuning_record_id, sort_order)
+                    SELECT b.id, :rid, :ord FROM tuning_batch b WHERE b.batch_no = :bno
+                """),
+                {"rid": rid, "ord": sort_order, "bno": batch_no},
+            )
+
+    await db.commit()
+    print(
+        f"✅ 已插入 {len(batches)} 个 tuning_batch + {len(records)} 条 tuning_record "
+        "+ 前置工单 CL-2026-0819 + 2 条 TUNING kpi 工单"
+    )
+
+
 async def main() -> None:
     print("🌱 开始填充工作台 v2.0 演示数据...")
     async with AsyncSessionLocal() as db:
@@ -597,6 +930,7 @@ async def main() -> None:
         await seed_workbench_window_summary(db)
         await seed_diagnosis_tags(db)
         await seed_handling_orders(db)
+        await seed_tuning_demo(db)
         await refresh_mv(db)
     print("✅ 演示数据填充完成！可刷新总览 Tab 查看。")
 

@@ -5438,7 +5438,7 @@
           "workbench"
         ],
         "summary": "Get Scope Tree",
-        "description": "返回可选范围列表：全厂 + 工厂 + 装置。\n\n每条记录：{id, name, type, parent_id}\n- id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）\n- type = FACTORY / UNIT",
+        "description": "返回可选范围列表：全厂 + 工厂 + 装置。\n\n每条记录：{id, name, type, parent_id, parent_source_id}\n- id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）\n- type = FACTORY / AREA（不返回 UNIT，选择器只到装置级）\n- parent_source_id = 父节点的 source_node_id（用于层级分组）",
         "operationId": "get_scope_tree_api_v1_workbench_scope_tree_get",
         "responses": {
           "200": {
@@ -5546,7 +5546,7 @@
           "workbench"
         ],
         "summary": "Get Assessment",
-        "description": "A-02 评估：6 项 KPI 卡片 + 单元热力 + 回路排名。",
+        "description": "A-02 评估：摘要带 + 装置/单元排名 + 单元×指标热力 + 综合趋势。\n\nG-评估填充（F-EV-01~03）：四块聚合 summary/ranking/heatmap/trend，\n复用 G-总览的递归 CTE 与 alarm/overdue 聚合；distribution JSONB\n提供 trend 块的等级/模式/数据质量分布。部分失败容错。",
         "operationId": "get_assessment_api_v1_workbench_assessment_get",
         "security": [
           {
@@ -5589,6 +5589,18 @@
               "default": "24h",
               "title": "Window"
             }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "排名视图：plant|unit",
+              "default": "plant",
+              "title": "View"
+            },
+            "description": "排名视图：plant|unit"
           }
         ],
         "responses": {
@@ -5621,7 +5633,7 @@
           "workbench"
         ],
         "summary": "Get Diagnosis",
-        "description": "A-03 诊断：异常回路 + 诊断结论时间线 + 适用性门禁 + 规则统计。",
+        "description": "A-03 诊断：关键异常表 + 结论时间线 + 适用性门禁 + 规则统计 + Pareto/根因。\n\nG-诊断填充（F-DG-01~03）：open_tags Top6 + concl_timeline（disposition 四态）\n+ fitness_gates（L0~L4 门禁聚合）+ rule_stats + pareto/rootcause_top（复用 MV-02\n与 DiagnosisTag 聚合，与 G-总览同源）。部分失败容错。",
         "operationId": "get_diagnosis_api_v1_workbench_diagnosis_get",
         "security": [
           {
@@ -5664,6 +5676,18 @@
               "default": "24h",
               "title": "Window"
             }
+          },
+          {
+            "name": "onlyActive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "仅看未处置（UNADDRESSED）活跃结论",
+              "default": false,
+              "title": "Onlyactive"
+            },
+            "description": "仅看未处置（UNADDRESSED）活跃结论"
           }
         ],
         "responses": {
@@ -5696,7 +5720,7 @@
           "workbench"
         ],
         "summary": "Get Tuning",
-        "description": "A-04 整定：批次列表（含 BLOCKED/READY/RUNNING）+ 待整定队列。",
+        "description": "A-04 整定：批次列表（含 BLOCKED/READY/RUNNING）+ 待整定队列 + 散点 + 门禁。\n\nG-整定填充（F-TN-01~03）：batches（B-06 前置阻塞动态判定 + block_reason）\n+ pending_queue（阻塞灰化语义）+ scatters（B-12 固化快照优先，30d 口径）\n+ fitness_gates（L0~L4，整定关注 L3 门禁）。部分失败容错。",
         "operationId": "get_tuning_api_v1_workbench_tuning_get",
         "security": [
           {
@@ -6274,7 +6298,7 @@
           "workbench"
         ],
         "summary": "Get Tuning Scatters",
-        "description": "A-13 整定前后散点（11 点 Δ 区分色：正绿负红）。",
+        "description": "A-13 整定前后散点（11 点 Δ 区分色：正绿负红）。\n\nG-整定填充（F-TN-03，B-12）：批次 COMPLETED 固化 scatters_before/after 优先，\n其次 TUNING 类工单 kpi_before/after；Δ=after-before，significance=Δ≥5。",
         "operationId": "get_tuning_scatters_api_v1_workbench_tuning_scatters_get",
         "security": [
           {
@@ -6319,6 +6343,24 @@
               "title": "Window"
             },
             "description": "散点默认 30d 窗口"
+          },
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按批次过滤（仅返回该批次固化快照点）",
+              "title": "Batchid"
+            },
+            "description": "按批次过滤（仅返回该批次固化快照点）"
           }
         ],
         "responses": {

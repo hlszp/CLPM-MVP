@@ -23,6 +23,7 @@ import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TextIO
 
 from fastapi import FastAPI
@@ -79,6 +80,7 @@ from app.api.v1.endpoints import (
     plant_nodes,
     realtime,
     reports,
+    site,
     tags,
     tuning,  # 整定模块（09 设计方案恢复为一级模块）
     users,
@@ -1028,6 +1030,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(reports.router)
     # 系统-模块管理（基础模块，始终可用）
     v1_router.include_router(system_modules.router)
+    # 站点基础信息（公开 + ADMIN 配置 + LOGO 上传）
+    v1_router.include_router(site.router)
     # S7 回路整定：模型辨识、PID 整定、闭环仿真（09 设计方案恢复为一级模块）
     if is_module_enabled("tuning"):
         v1_router.include_router(tuning.router)
@@ -1042,6 +1046,13 @@ def create_app() -> FastAPI:
     v1_router.include_router(ws_realtime.router)
     v1_router.include_router(ws_alert.router)  # 预警实时推送
     app.include_router(v1_router)
+
+    # 站点静态资源（LOGO 等上传文件，经 /static 对外暴露）
+    from fastapi.staticfiles import StaticFiles
+
+    static_dir = Path(__file__).resolve().parent / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=str(static_dir), html=False), name="static")
 
     return app
 

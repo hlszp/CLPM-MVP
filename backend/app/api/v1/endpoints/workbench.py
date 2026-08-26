@@ -182,16 +182,16 @@ async def get_tuning(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A-04 整定：批次列表（含 BLOCKED/READY/RUNNING）+ 待整定队列。"""
-    # TODO: M2 填充 — batches + pending_queue + block_reason
-    return success(
-        data={
-            "batches": [],
-            "pending_queue": [],
-            "scope": {"type": scopeType, "id": scopeId},
-            "window": window,
-        }
-    )
+    """A-04 整定：批次列表（含 BLOCKED/READY/RUNNING）+ 待整定队列 + 散点 + 门禁。
+
+    G-整定填充（F-TN-01~03）：batches（B-06 前置阻塞动态判定 + block_reason）
+    + pending_queue（阻塞灰化语义）+ scatters（B-12 固化快照优先，30d 口径）
+    + fitness_gates（L0~L4，整定关注 L3 门禁）。部分失败容错。
+    """
+    from app.services.workbench_tuning import build_tuning
+
+    data = await build_tuning(db, scope_type=scopeType, scope_id=scopeId, window=window)
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
@@ -370,11 +370,18 @@ async def get_tuning_scatters(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
     window: str = Query("30d", description="散点默认 30d 窗口"),
+    batchId: int | None = Query(None, description="按批次过滤（仅返回该批次固化快照点）"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
-    """A-13 整定前后散点（11 点 Δ 区分色：正绿负红）。"""
-    # TODO: M2 填充 — 查询 tuning_record 前后 KPI 对比
-    return success(
-        data={"scatters": [], "scope": {"type": scopeType, "id": scopeId}, "window": window}
+    """A-13 整定前后散点（11 点 Δ 区分色：正绿负红）。
+
+    G-整定填充（F-TN-03，B-12）：批次 COMPLETED 固化 scatters_before/after 优先，
+    其次 TUNING 类工单 kpi_before/after；Δ=after-before，significance=Δ≥5。
+    """
+    from app.services.workbench_tuning import build_tuning_scatters
+
+    data = await build_tuning_scatters(
+        db, scope_type=scopeType, scope_id=scopeId, window=window, batch_id=batchId
     )
+    return success(data=data)
