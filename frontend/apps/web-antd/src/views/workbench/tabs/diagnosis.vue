@@ -11,8 +11,8 @@
  *   │ Row2 c5：ParetoBarLine       │ Row2 c7：诊断队列 Top6 + diagSeg   │
  *   │   柱+累计%折线 + 前2类占比标   │   风险优先 / 恶化最快 / 长期手动     │
  *   ├──────────────────────────────┼───────────────────────────────────┤
- *   │ Row3 c5：DgDiagTimeDist      │ Row3 c7：DgUnitStackedBar × Pareto  │
- *   │   诊断频次时间分布堆叠柱       │   装置Top8 × 全局Top5类别水平堆叠   │
+ *   │ Row3 c5：DgRuleStats         │ Row3 c7：DgUnitStackedBar × Pareto  │
+ *   │   规则命中×解决率横向条        │   装置Top8 × 全局Top5类别水平堆叠   │
  *   └──────────────────────────────┴───────────────────────────────────┘
  *
  * 数据流：
@@ -28,7 +28,7 @@ import { getWorkbenchDiagnosisApi } from '#/api/workbench';
 import { useWorkbenchStore } from '#/store/workbench';
 
 import AbnormalLoopsTable from '../components/AbnormalLoopsTable.vue';
-import DgDiagTimeDist from '../components/DgDiagTimeDist.vue';
+import DgRuleStats from '../components/DgRuleStats.vue';
 import DgSummaryBand from '../components/DgSummaryBand.vue';
 import DgUnitStackedBar from '../components/DgUnitStackedBar.vue';
 import GateBanner from '../components/GateBanner.vue';
@@ -47,6 +47,7 @@ const openTags = computed(() => diagnosis.value?.open_tags ?? []);
 const conclTimeline = computed(() => diagnosis.value?.concl_timeline ?? []);
 const fitnessGates = computed(() => diagnosis.value?.fitness_gates ?? null);
 const pareto = computed(() => diagnosis.value?.pareto ?? []);
+const ruleStats = computed(() => diagnosis.value?.rule_stats ?? []);
 
 async function loadDiagnosis() {
   loading.value = true;
@@ -117,14 +118,10 @@ function onRowClick(row: WorkbenchApi.DiagnosisOpenTag) {
         </div>
       </div>
 
-      <!-- Row3 grid c5/c7：诊断频次×时间堆叠柱 / 装置Top8×ParetoTop5 水平堆叠（固定 302px，与 Row2 等高，900p 下不再撑出外层滚动） -->
+      <!-- Row3 grid c5/c7：诊断规则命中×解决率 / 装置Top8×ParetoTop5 水平堆叠（固定 302px，与 Row2 等高，900p 下不再撑出外层滚动） -->
       <div class="grid flex-none min-h-0 h-[302px] grid-cols-12 gap-2">
         <div class="col-span-5 min-h-0 h-full overflow-hidden rounded border border-[#E4E7ED]">
-          <DgDiagTimeDist
-            :concl-items="conclTimeline"
-            :open-tags="openTags"
-            :window="store.timeWindow"
-          />
+          <DgRuleStats :rule-stats="ruleStats" />
         </div>
         <div class="col-span-7 min-h-0 h-full overflow-hidden rounded border border-[#E4E7ED]">
           <DgUnitStackedBar

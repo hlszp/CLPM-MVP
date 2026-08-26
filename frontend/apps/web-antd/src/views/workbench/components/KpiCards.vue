@@ -125,12 +125,8 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
       <div class="text-[10px] text-gray-400">
         24h 内标注点
       </div>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-gray-100">
-        <div
-          class="h-full rounded-full bg-[#FA8C16] transition-none"
-          :style="{ width: `${Math.min(100, degradedCount * 10)}%` }"
-        ></div>
-      </div>
+      <!-- 计数指标无进度条（避免伪完成度误导，保留高度占位对齐比率卡） -->
+      <div class="h-1 w-full"></div>
     </div>
 
     <!-- 处置待办 -->
@@ -149,12 +145,8 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
       <div class="text-[10px] text-gray-400">
         待处理 {{ pendingCount }} · 执行中 {{ executingCount }}
       </div>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-gray-100">
-        <div
-          class="h-full rounded-full bg-[#1F4E79] transition-none"
-          :style="{ width: `${Math.min(100, (pendingCount + executingCount) * 10)}%` }"
-        ></div>
-      </div>
+      <!-- 计数指标无进度条（避免伪完成度误导，保留高度占位对齐比率卡） -->
+      <div class="h-1 w-full"></div>
     </div>
 
     <!-- 预警事件 -->
@@ -173,12 +165,8 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
       <div class="text-[10px] text-gray-400">
         SLA 超期
       </div>
-      <div class="h-1 w-full overflow-hidden rounded-full bg-gray-100">
-        <div
-          class="h-full rounded-full bg-[#FF4D4F] transition-none"
-          :style="{ width: `${Math.min(100, alertCount * 15)}%` }"
-        ></div>
-      </div>
+      <!-- 计数指标无进度条（避免伪完成度误导，保留高度占位对齐比率卡） -->
+      <div class="h-1 w-full"></div>
     </div>
 
     <!-- 数据可信 -->

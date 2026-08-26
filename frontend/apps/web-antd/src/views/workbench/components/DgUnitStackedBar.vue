@@ -6,14 +6,19 @@
  *  · FaultDeviceMatrix 矩阵稀疏（90% 单元 count≤1）且类别维度与 Pareto 重复、信息增量低
  *  · 水平堆叠柱更适合 10 字左右中文装置名，直观看出「哪个装置问题多、每装置受哪几类困扰」
  *
+ * 单元归属（2026-08-26 改版）：
+ *  · 优先用后端返回的工厂模型单元节点 unit_name（loop_ledger.unit_id → plant_node），
+ *    不再按回路位号前缀/名称启发式拆解；unit_name 缺失时回退 extractUnit(loop_name)，
+ *    仍无则归入「未关联单元」
+ *
  * 设计：
- *  · 行 = Top8 装置（从 open_tags/ concl_items 的 loop_name 末尾中文提取，逻辑复用 extractUnit）
- *  · 每装置一条水平堆叠柱：按「全局 Pareto Top5 类别」配色（全局一致色板，跨装置可肉眼对比）
+ *  · 行 = Top8 单元（工厂模型节点）
+ *  · 每单元一条水平堆叠柱：按「全局 Pareto Top5 类别」配色（全局一致色板，跨单元可肉眼对比）
  *    + 第 6 档 "其他" = 灰。
- *  · 每行右侧 = 合计 count 数字 + 严重度色点（若该装置任一单元格 severity≥2 则红，≥1 橙，其余蓝）
+ *  · 每行右侧 = 合计 count 数字 + 严重度色点（若该单元任一单元格 severity≥2 则红，≥1 橙，其余蓝）
  *  · 右上角图例 = 全局 Pareto Top5 色块 + 其他（灰）
- *  · hover title = "装置名 · 总 N · A:3 B:5 … · Top3 回路"
- *  · 底部说明行：共多少装置 · 覆盖多少回路 · 合计异常 N 条
+ *  · hover title = "单元（装置）· 总 N · A:3 B:5 … · Top3 回路"
+ *  · 底部说明行：共多少单元 · 覆盖多少回路 · 合计异常 N 条
  */
 import type { WorkbenchApi } from '#/api/workbench';
 
@@ -25,9 +30,10 @@ const props = defineProps<{
   pareto?: WorkbenchApi.ParetoRow[];
 }>();
 
-// ---------- 装置名提取（与 FaultDeviceMatrix 保持一致）----------
+// ---------- 单元名解析：工厂模型节点优先，启发式仅作兜底 ----------
+/** 兜底：从 loop_name 末尾中文提取（仅当后端 unit_name 缺失时使用） */
 function extractUnit(loopName: null | string | undefined): string {
-  if (!loopName) return '未分组';
+  if (!loopName) return '未关联单元';
   const s = String(loopName).trim();
   const toks = s.split(/\s+/).filter(Boolean);
   if (toks.length >= 2) {
@@ -44,6 +50,14 @@ function extractUnit(loopName: null | string | undefined): string {
   );
   if (zh && zh[0]) return zh[0];
   return s.slice(0, 3);
+}
+
+/** 单元归属：unit_name（工厂模型节点）> loop_name 启发式 > 未关联单元 */
+function resolveUnit(it: {
+  loop_name?: null | string;
+  unit_name?: null | string;
+}): string {
+  return it.unit_name || extractUnit(it.loop_name);
 }
 
 function pickCategory(it: {
@@ -105,7 +119,8 @@ type UnitCell = {
 type UnitRow = {
   cells: Map<string, UnitCell>; // category -> cell
   count: number; // 合计
-  name: string; // 装置
+  factory: null | string; // 所属装置（工厂模型父节点）
+  name: string; // 单元（工厂模型节点）
   severity: number;
 };
 
@@ -116,6 +131,7 @@ const unitsMap = computed<Map<string, UnitRow>>(() => {
     cat: string,
     loopName: null | string | undefined,
     sev: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null | undefined,
+    factory: null | string | undefined,
   ) {
     let sevRank = 0;
     switch (sev) {
@@ -138,8 +154,10 @@ const unitsMap = computed<Map<string, UnitRow>>(() => {
     const c = CATEGORIES.value.includes(cat) ? cat : OTHERS;
     let row = m.get(unit);
     if (!row) {
-      row = { cells: new Map(), count: 0, name: unit, severity: 0 };
+      row = { cells: new Map(), count: 0, factory: factory ?? null, name: unit, severity: 0 };
       m.set(unit, row);
+    } else if (!row.factory && factory) {
+      row.factory = factory;
     }
     let cell = row.cells.get(c);
     if (!cell) {
@@ -156,18 +174,20 @@ const unitsMap = computed<Map<string, UnitRow>>(() => {
   }
   for (const t of props.openTags ?? []) {
     bump(
-      extractUnit(t.loop_name),
+      resolveUnit(t),
       pickCategory({ category: t.category, symptom: t.symptom }),
       t.loop_name,
       t.severity,
+      t.factory_name,
     );
   }
   for (const it of props.conclItems ?? []) {
     bump(
-      extractUnit(it.loop_name),
+      resolveUnit(it),
       pickCategory({ category: it.category, tag_code: it.tag_code }),
       it.loop_name,
       it.severity,
+      it.factory_name,
     );
   }
   return m;
@@ -213,7 +233,8 @@ function segCount(u: UnitRow, cat: string): number {
 
 // hover title 工具
 function rowTitle(u: UnitRow): string {
-  const parts: string[] = [ `${u.name} · 共 ${u.count} 条`];
+  const head = u.factory ? `${u.name}（${u.factory}）` : u.name;
+  const parts: string[] = [ `${head} · 共 ${u.count} 条`];
   const segs: string[] = [];
   // 按 Pareto Top5 顺序 + 其他
   const catsInOrder = [...CATEGORIES.value, OTHERS];
@@ -239,7 +260,7 @@ function rowTitle(u: UnitRow): string {
         <span class="inline-block h-1 w-3 rounded-sm bg-[#1F4E79]"></span>
         故障装置 / 单元 Top 累积
         <span class="text-[10px] font-normal text-gray-400">
-          装置 {{ units.length }} · 覆盖 {{ coveredLoops }} 回路 · 累计 {{ totalBad }} 条
+          单元 {{ units.length }} · 覆盖 {{ coveredLoops }} 回路 · 累计 {{ totalBad }} 条
         </span>
       </span>
       <div class="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
@@ -288,10 +309,10 @@ function rowTitle(u: UnitRow): string {
             class="inline-block h-2 w-2 flex-none rounded-full"
             :style="{ backgroundColor: severityColor(u.severity) }"
           ></span>
-          <!-- 装置名（截断 10 字） -->
+          <!-- 单元名（截断 10 字；title 含所属装置） -->
           <div
             class="w-[92px] flex-none min-w-0 truncate text-gray-700"
-            :title="u.name"
+            :title="u.factory ? `${u.name}（${u.factory}）` : u.name"
           >
             {{ u.name.length > 10 ? `${u.name.slice(0, 10)}…` : u.name }}
           </div>
@@ -337,8 +358,9 @@ function rowTitle(u: UnitRow): string {
       class="flex-none border-t border-dashed border-[#E4E7ED] px-3 py-1.5 text-[10.5px] text-gray-500"
     >
       <template v-if="units[0]">
-        头号风险装置：
+        头号风险单元：
         <span class="font-semibold text-[#FF4D4F]">{{ units[0].name }}</span>
+        <template v-if="units[0].factory">（{{ units[0].factory }}）</template>
         &nbsp;共 {{ units[0].count }} 条 · 建议优先按
         <span class="text-[#1F4E79] font-medium">{{ CATEGORIES[0] ?? '—' }}</span>
         类别集中治理

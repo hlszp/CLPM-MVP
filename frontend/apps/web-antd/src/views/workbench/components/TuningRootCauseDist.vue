@@ -46,7 +46,21 @@ const causeOf = (r: WorkbenchApi.TuneQueueItem): Cause => {
   return 'model_mismatch';
 };
 
-const C = 2 * Math.PI * 42; // 周长 ≈ 263.89
+// 极坐标转笛卡尔（0°=12 点，顺时针）
+function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+}
+// 扇形 path（顺时针，0°=12 点）；整圆特殊处理避免起止重合
+function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
+  if (endDeg - startDeg >= 359.99) {
+    return `M${cx} ${cy - r} A${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r} Z`;
+  }
+  const start = polarToCartesian(cx, cy, r, startDeg);
+  const end = polarToCartesian(cx, cy, r, endDeg);
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return `M${cx} ${cy} L${start.x.toFixed(2)} ${start.y.toFixed(2)} A${r} ${r} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`;
+}
 
 const counts = computed<Record<Cause, number>>(() => {
   const m: Record<Cause, number> = {
@@ -59,20 +73,18 @@ const total = computed(() =>
   Object.values(counts.value).reduce((s, n) => s + n, 0),
 );
 
-type Seg = { color: string; count: number; key: Cause; label: string; len: number; offset: number; pct: number };
+type Seg = { color: string; count: number; key: Cause; label: string; path: string; pct: number };
 const segments = computed<Seg[]>(() => {
   const t = total.value > 0 ? total.value : 1;
   let acc = 0;
   return CAUSE_META.map((meta) => {
     const count = counts.value[meta.key];
     const pct = count > 0 ? (count / t) * 100 : 0;
-    const len = (count / t) * C;
-    const seg: Seg = {
-      color: meta.color, key: meta.key, label: meta.label,
-      count, len, offset: acc, pct,
-    };
-    acc += len;
-    return seg;
+    const startAngle = (acc / t) * 360;
+    acc += count;
+    const endAngle = (acc / t) * 360;
+    const path = count > 0 ? arcPath(50, 50, 42, startAngle, endAngle) : '';
+    return { color: meta.color, key: meta.key, label: meta.label, count, pct, path };
   });
 });
 const hasData = computed(() => total.value > 0);
@@ -91,29 +103,19 @@ const hasData = computed(() => total.value > 0);
         <!-- 饼图 -->
         <div class="relative flex h-full max-h-[150px] w-[150px] flex-none items-center justify-center">
           <svg v-if="hasData" viewBox="0 0 100 100" class="h-full w-full">
-            <circle
-              cx="50" cy="50" r="42" fill="none"
-              stroke="#F5F5F5" stroke-width="14"
-            />
-            <circle
+            <path
               v-for="seg in segments"
               v-show="seg.count > 0"
               :key="seg.key"
-              cx="50" cy="50" r="42" fill="none"
-              :stroke="seg.color" stroke-width="14"
-              :stroke-dasharray="`${seg.len} ${C - seg.len}`"
-              :stroke-dashoffset="`-${seg.offset}`"
-              transform="rotate(-90 50 50)"
+              :d="seg.path"
+              :fill="seg.color"
+              stroke="#fff"
+              stroke-width="0.5"
             />
           </svg>
           <div v-else class="flex flex-col items-center justify-center text-[10px] text-[#8C8C8C]">
             <span>暂无劣化</span>
             <span>根因数据</span>
-          </div>
-          <!-- 中心总数 -->
-          <div v-if="hasData" class="absolute inset-0 flex flex-col items-center justify-center">
-            <span class="text-[15px] font-bold tabular-nums text-[#1F4E79]">{{ total }}</span>
-            <span class="text-[9px] text-[#8C8C8C]">回路</span>
           </div>
         </div>
         <!-- 图例 -->

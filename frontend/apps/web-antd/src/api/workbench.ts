@@ -6,6 +6,8 @@
  * - A-01~A-05 / A-07~A-09 / A-11 / A-13 为 M1 skeleton，返回空结构
  * - A-E5 unread 为 M1 桩（后端端点待 M2，前端 unreadCount 桩 0，WS 留 M2）
  */
+import type { HandlingApi } from '#/api/handling';
+
 import { requestClient } from '#/api/request';
 
 export namespace WorkbenchApi {
@@ -279,6 +281,8 @@ export namespace WorkbenchApi {
     category: null | string;
     conclusion: null | string;
     confidence: null | number;
+    /** 工厂模型装置名（plant_node：unit 的父节点，未关联时为 null） */
+    factory_name: null | string;
     fitness_level: null | string;
     loop_id: string;
     loop_name: null | string;
@@ -289,6 +293,8 @@ export namespace WorkbenchApi {
     symptom: null | string;
     tag_id: string;
     triggered_at: null | string;
+    /** 工厂模型单元名（plant_node：loop_ledger.unit_id 对应节点，未关联时为 null） */
+    unit_name: null | string;
   }
 
   /** 诊断结论时间线行（F-DG-02 · concl_timeline · disposition 四态） */
@@ -297,6 +303,8 @@ export namespace WorkbenchApi {
     confidence: null | number;
     disposition: DispositionState | null;
     evidence_summary: null | string;
+    /** 工厂模型装置名（plant_node：unit 的父节点，未关联时为 null） */
+    factory_name: null | string;
     id: null | string;
     loop_id: string;
     loop_name: null | string;
@@ -304,6 +312,8 @@ export namespace WorkbenchApi {
     severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
     tag_code: null | string;
     ts: null | string;
+    /** 工厂模型单元名（plant_node：loop_ledger.unit_id 对应节点，未关联时为 null） */
+    unit_name: null | string;
   }
 
   /** 适用性 L0~L4 门禁（F-DG-03 · fitness_gates · B-09 漏斗） */
@@ -460,14 +470,32 @@ export namespace WorkbenchApi {
     window: string;
   }
 
-  /** A-05 GET /handling 响应骨架 */
+  /** A-05 GET /handling 响应（G-处置 · 类型契约；容器实际调 handling.ts 6 函数，A-05 落地即换） */
   export interface HandlingResult {
-    funnel: unknown[];
-    kanban: unknown[];
-    reopen_list: unknown[];
+    /** 4 泳道工单（待办道含 PENDING+REOPENED 合并） */
+    kanban: {
+      closed: HandlingApi.OrderItem[];
+      executing: HandlingApi.OrderItem[];
+      pending: HandlingApi.OrderItem[];
+      verifying: HandlingApi.OrderItem[];
+    };
+    /** 重开 Top 列表（按 reopened 降序） */
+    reopen_list: HandlingApi.LoopAggregateItem[];
     scope: { id: null | number; type: ScopeType };
-    staff_load: unknown[];
+    /** SLA 分布（前端由在办 orders plannedAt 派生；A-05 落地后后端汇总） */
+    sla: { near: number; none: number; normal: number; overdue: number };
+    /** 人员负载（前端由在办 orders 按 handler 聚合派生；A-08 落地后后端汇总） */
+    staff_load: HandlingStaffLoad[];
     window: TimeWindow;
+  }
+
+  /** 人员负载行（staff_load 派生口径：在办 orders 按 handler 聚合） */
+  export interface HandlingStaffLoad {
+    executing: number;
+    handler: string;
+    overdue: number;
+    pending: number;
+    verifying: number;
   }
 
   /** A-11 GET /aggregate 响应骨架（首屏批量预取 8 块合并 + 30s 缓存） */

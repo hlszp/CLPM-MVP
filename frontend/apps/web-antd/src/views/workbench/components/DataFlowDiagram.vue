@@ -6,8 +6,7 @@
  * - 5 个水平节点：实时数据库 → 性能评估 → 回路诊断 → 参数整定 → 问题处置
  * - 正向箭头（节点间连线 + 箭头）
  * - 反馈曲线：问题处置 → 性能评估（绿色虚线下凸曲线，箭头向上指入性能评估）
- *   标注「验证回流 · 已闭环 N 项 · 闭环流转率 X%」
- *   流光动效：亮色短虚线沿曲线方向重复流动（CSS @keyframes + drop-shadow）
+ *   标注「验证回流 · 已闭环 N 项 · 闭环流转率 X%」（静态虚线，无流光动效）
  * - 维护中节点：橙色边框 + 虚线 + 维护暂停标签
  * - 底部摘要：评估→诊断 / 诊断→整定 / 整定→处置 / 闭环流转率
  *
@@ -276,34 +275,13 @@ const feedbackTextY = computed(() => cy + nh / 2 + 44 + 22);
           >{{ NODES[3]!.maintLabel }}</text>
         </g>
 
-        <!-- 反馈曲线：问题处置 → 性能评估 -->
+        <!-- 反馈曲线：问题处置 → 性能评估（静态虚线，无流光动效） -->
         <path
           :d="feedbackPath"
           fill="none"
           stroke="#10b981"
           stroke-width="1.6"
           stroke-dasharray="6 4"
-        />
-        <!-- 流光层：亮色短虚线沿曲线方向重复流动 -->
-        <path
-          :d="feedbackPath"
-          fill="none"
-          stroke="#6ee7b7"
-          stroke-width="3"
-          stroke-dasharray="12 420"
-          stroke-linecap="round"
-          class="flow-light"
-        />
-        <!-- 流光尾迹（暗，滞后主体） -->
-        <path
-          :d="feedbackPath"
-          fill="none"
-          stroke="#6ee7b7"
-          stroke-width="2"
-          stroke-dasharray="8 424"
-          stroke-linecap="round"
-          opacity="0.35"
-          class="flow-trail"
         />
         <!-- 反馈曲线箭头（向上指入性能评估） -->
         <path
@@ -332,33 +310,4 @@ const feedbackTextY = computed(() => cy + nh / 2 + 44 + 22);
   </div>
 </template>
 
-<style scoped>
-/* 流光主体：12px 亮虚线沿曲线方向重复流动，带 glow 阴影 */
-.flow-light {
-  animation: flow-dash 2.5s linear infinite;
-  filter: drop-shadow(0 0 4px #6ee7b7);
-}
 
-/* 流光尾迹：8px 暗虚线滞后 28px 跟随 */
-.flow-trail {
-  animation: flow-dash-trail 2.5s linear infinite;
-}
-
-@keyframes flow-dash {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: -432;
-  }
-}
-
-@keyframes flow-dash-trail {
-  from {
-    stroke-dashoffset: 28;
-  }
-  to {
-    stroke-dashoffset: -404;
-  }
-}
-</style>

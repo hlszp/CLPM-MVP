@@ -143,6 +143,7 @@ function onBellClick() {
         </div>
       </div>
     </div>
+    <span class="h-4 w-px bg-[#E4E7ED]" aria-hidden="true"></span>
 
     <!-- 时间胶囊（24h/7d/30d） -->
     <div class="flex items-center overflow-hidden rounded border border-[#E4E7ED] text-xs">
@@ -161,6 +162,7 @@ function onBellClick() {
         {{ w.label }}
       </button>
     </div>
+    <span class="h-4 w-px bg-[#E4E7ED]" aria-hidden="true"></span>
 
     <!-- 可信徽章 -->
     <span
@@ -170,6 +172,7 @@ function onBellClick() {
       <span class="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>
       数据可信
     </span>
+    <span class="h-4 w-px bg-[#E4E7ED]" aria-hidden="true"></span>
 
     <!-- 通知铃铛（A-E5 未读红点，M1 桩） -->
     <button

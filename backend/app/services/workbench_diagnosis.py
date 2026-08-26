@@ -118,6 +118,8 @@ def shape_open_tags(
                 "tag_id": str(r.get("tag_id")),
                 "loop_id": loop_id,
                 "loop_name": r.get("loop_name"),
+                "unit_name": r.get("unit_name"),
+                "factory_name": r.get("factory_name"),
                 "symptom": r.get("tag_name") or r.get("tag_code"),
                 "category": r.get("category"),
                 "severity": r.get("severity"),
@@ -159,6 +161,8 @@ def shape_concl_timeline(
                 "tag_code": r.get("diag_label"),
                 "loop_id": str(r.get("loop_id")),
                 "loop_name": r.get("loop_name"),
+                "unit_name": r.get("unit_name"),
+                "factory_name": r.get("factory_name"),
                 "category": r.get("category") or r.get("diag_label"),
                 "disposition": disp,
                 "evidence_summary": r.get("evidence_summary"),
@@ -345,7 +349,7 @@ async def _get_scope_unit_ids(db: AsyncSession, scope_type: str, scope_id: int) 
 async def _query_open_tag_rows(
     db: AsyncSession, since: datetime, unit_ids: list[str] | None
 ) -> list[dict[str, Any]]:
-    """近窗口未处置 ACTIVE 标签（联查回路名 + 最新结论 LATERAL）。"""
+    """近窗口未处置 ACTIVE 标签（联查回路名 + 最新结论 LATERAL + 工厂模型单元/装置归属）。"""
     unit_filter = "AND l.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
     result = await db.execute(
         text(
@@ -353,11 +357,14 @@ async def _query_open_tag_rows(
             SELECT t.id AS tag_id, t.loop_id, t.tag_code, t.tag_name, t.severity,
                    t.triggered_at, t.sla_deadline_at, t.sla_stage,
                    l.tag_name AS loop_name,
+                   un.name AS unit_name, fa.name AS factory_name,
                    r.recommended_category AS category,
                    r.evidence_summary AS conclusion,
                    r.confidence
             FROM diagnosis_tag t
             JOIN loop_ledger l ON l.id = t.loop_id
+            LEFT JOIN plant_node un ON un.id = l.unit_id
+            LEFT JOIN plant_node fa ON fa.id = un.parent_id
             LEFT JOIN LATERAL (
                 SELECT rr.recommended_category, rr.evidence_summary, rr.confidence
                 FROM diagnosis_result rr
@@ -381,7 +388,10 @@ async def _query_open_tag_rows(
 async def _query_concl_rows(
     db: AsyncSession, since: datetime, unit_ids: list[str] | None, limit: int
 ) -> list[dict[str, Any]]:
-    """近窗口诊断结论（diagnosis_result 主线，LATERAL 取同回路同症状最新标签的 disposition）。"""
+    """近窗口诊断结论（diagnosis_result 主线 + 工厂模型单元/装置归属）。
+
+    LATERAL 取同回路同症状最新标签的 disposition。
+    """
     unit_filter = "AND l.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
     result = await db.execute(
         text(
@@ -390,9 +400,12 @@ async def _query_concl_rows(
                    r.recommended_category AS category, r.evidence_summary,
                    r.diagnosed_at AS ts,
                    l.tag_name AS loop_name,
+                   un.name AS unit_name, fa.name AS factory_name,
                    t.id AS tag_id, t.disposition_state AS disposition, t.severity
             FROM diagnosis_result r
             JOIN loop_ledger l ON l.id = r.loop_id
+            LEFT JOIN plant_node un ON un.id = l.unit_id
+            LEFT JOIN plant_node fa ON fa.id = un.parent_id
             LEFT JOIN LATERAL (
                 SELECT tt.id, tt.disposition_state, tt.severity
                 FROM diagnosis_tag tt

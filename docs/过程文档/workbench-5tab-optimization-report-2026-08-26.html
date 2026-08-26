@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLPM-MVP 工作台 5 Tab 优化方案 · 2026-08-26</title>
+<style>
+  :root{
+    /* 深色（默认） */
+    --bg:#0f1115; --surface:#1a1d23; --surface-2:#22262f; --border:#2a2e37; --border-soft:#1f232b;
+    --text:#e4e6eb; --text-dim:#8b919e; --text-mute:#5b616e;
+    --accent:#4a9eff; --accent-soft:rgba(74,159,255,.12);
+    --green:#22c55e; --blue:#3b82f6; --orange:#f97316; --yellow:#eab308; --red:#ef4444; --gray:#6b7280; --cyan:#06b6d4;
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,monospace;
+    --sans:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  /* 亮色：跟随系统 */
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f7f8fa; --surface:#ffffff; --surface-2:#f1f3f6; --border:#e1e4ea; --border-soft:#eef0f4;
+      --text:#1a1d23; --text-dim:#4a5160; --text-mute:#7a818f;
+      --accent:#2563eb; --accent-soft:rgba(37,99,235,.10);
+      --green:#16a34a; --blue:#2563eb; --orange:#ea580c; --yellow:#ca8a04; --red:#dc2626; --gray:#6b7280; --cyan:#0891b2;
+    }
+  }
+  /* 亮色：手动 */
+  :root[data-theme="light"]{
+    --bg:#f7f8fa; --surface:#ffffff; --surface-2:#f1f3f6; --border:#e1e4ea; --border-soft:#eef0f4;
+    --text:#1a1d23; --text-dim:#4a5160; --text-mute:#7a818f;
+    --accent:#2563eb; --accent-soft:rgba(37,99,235,.10);
+    --green:#16a34a; --blue:#2563eb; --orange:#ea580c; --yellow:#ca8a04; --red:#dc2626; --gray:#6b7280; --cyan:#0891b2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.55;font-size:14px;transition:background .2s,color .2s}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}body{transition:none}}
+
+  .wrap{max-width:1320px;margin:0 auto;padding:0 28px}
+
+  /* sticky header */
+  header.top{position:sticky;top:0;z-index:10;background:rgba(15,17,21,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);padding:14px 0}
+  header.top .wrap{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  header.top h1{font-size:18px;font-weight:600;letter-spacing:.2px}
+  header.top .meta{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+  header.top .meta span{margin-right:14px}
+
+  /* layout: toc + content */
+  .layout{display:grid;grid-template-columns:200px 1fr;gap:32px;padding:28px 0 80px}
+  nav.toc{position:sticky;top:80px;align-self:start;font-size:12px}
+  nav.toc a{display:block;color:var(--text-mute);text-decoration:none;padding:5px 10px;border-left:1px solid var(--border-soft)}
+  nav.toc a:hover,nav.toc a.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft)}
+  nav.toc .group{color:var(--text-dim);font-weight:600;padding:10px 10px 4px;border-left:1px solid transparent;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+
+  /* sections */
+  section{margin-bottom:48px;scroll-margin-top:80px}
+  h2{font-size:20px;font-weight:600;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+  h2 .id{font-family:var(--mono);color:var(--accent);font-size:13px;margin-right:10px}
+  .lead{color:var(--text-dim);font-size:13px;margin-bottom:20px}
+
+  /* audit item card */
+  .item{border:1px solid var(--border);background:var(--surface);margin-bottom:14px}
+  .item-head{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border-soft);background:var(--surface-2)}
+  .item-head .num{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:3px}
+  .item-head .title{font-weight:600;font-size:14px}
+  .item-head .where{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text-mute)}
+  .item-body{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:0}
+  .cell{padding:12px 14px;border-right:1px solid var(--border-soft)}
+  .cell:last-child{border-right:none}
+  .cell .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-mute);margin-bottom:6px;font-family:var(--mono)}
+  .cell.now{color:var(--text-dim)}
+  .cell.prob{color:#fbbf2466}
+  .cell.prob .lbl{color:var(--yellow)}
+  .cell.dir{color:var(--text)}
+  .cell.dir .lbl{color:var(--green)}
+  .cell p{font-size:13px}
+
+  /* wireframes */
+  .wf{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  .wf-box{border:1px dashed var(--border);padding:8px;font-family:var(--mono);font-size:10px;line-height:1.5;color:var(--text-dim);background:var(--bg)}
+  .wf-box .wf-label{display:block;font-family:var(--sans);font-size:10px;color:var(--text-mute);margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase}
+  .wf-box .wf-label.bad{color:var(--red)} .wf-box .wf-label.good{color:var(--green)}
+
+  /* status dot legend */
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--text-dim)}
+  .legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+  /* framework diagram */
+  .frame-diagram{border:1px solid var(--border);background:var(--surface);padding:18px;font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--text-dim);overflow-x:auto}
+  .frame-diagram .hi{color:var(--accent)}
+  .frame-diagram .hi-y{color:var(--yellow)} .frame-diagram .hi-g{color:var(--green)}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-mute);font-weight:600;background:var(--surface)}
+  td.mono{font-family:var(--mono);font-size:12px;color:var(--text-dim)}
+  tr:hover td{background:var(--surface)}
+
+  /* priority matrix */
+  .prio{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+  .prio .col{border:1px solid var(--border);padding:12px;background:var(--surface)}
+  .prio .col h4{font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border-soft)}
+  .prio .col.p1 h4{color:var(--red)} .prio .col.p2 h4{color:var(--yellow)} .prio .col.p3 h4{color:var(--green)}
+  .prio .col ul{list-style:none}
+  .prio .col li{font-size:12px;padding:4px 0;color:var(--text-dim);border-bottom:1px solid var(--border-soft)}
+  .prio .col li:last-child{border-bottom:none}
+  .prio .col li code{font-family:var(--mono);color:var(--accent);font-size:11px}
+
+  /* constraint source */
+  .src{font-family:var(--mono);font-size:10px;color:var(--text-mute);margin-top:6px}
+  .src:before{content:"约束依据 ▸ "}
+
+  /* tab bar mini demo */
+  .tabbar-demo{display:flex;align-items:center;gap:0;border:1px solid var(--border);margin-top:8px;background:var(--surface)}
+  .tabbar-demo .t{padding:7px 14px;font-size:11px;border-right:1px solid var(--border-soft);color:var(--text-dim);display:flex;align-items:center;gap:6px}
+  .tabbar-demo .t.active{color:var(--text);background:var(--bg);border-bottom:2px solid var(--accent)}
+  .tabbar-demo .t i{width:6px;height:6px;border-radius:50%}
+  .tabbar-demo .head{margin-left:auto;padding:7px 14px;font-family:var(--mono);font-size:10px;color:var(--text-mute)}
+
+  footer{border-top:1px solid var(--border);padding:20px 0;color:var(--text-mute);font-size:11px;font-family:var(--mono)}
+
+  /* theme toggle */
+  .theme-toggle{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:3px}
+  .theme-toggle:hover{color:var(--accent);border-color:var(--accent)}
+  .theme-toggle .ico{font-size:13px;line-height:1;display:none}
+  /* 深色主题显示 🌙 */
+  :root[data-theme="dark"] .theme-toggle .ico-dark{display:inline}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .theme-toggle .ico-dark{display:inline}}
+  /* 亮色主题显示 ☀️ */
+  :root[data-theme="light"] .theme-toggle .ico-light{display:inline}
+  @media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .theme-toggle .ico-light{display:inline}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <h1>CLPM-MVP 工作台 5 Tab 优化方案</h1>
+    <div class="meta">
+      <span>📅 2026-08-26</span><span>📍 /workbench</span><span>🎯 方案层 · 不改代码</span><span>📐 html skill 产出</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" title="切换深/亮主题" aria-label="切换主题">
+      <span class="ico ico-light">☀️</span><span class="ico ico-dark">🌙</span><span>主题</span>
+    </button>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="layout">
+
+<nav class="toc">
+  <div class="group">现状</div>
+  <a href="#status">工作台盘点</a>
+  <div class="group">优化方案</div>
+  <a href="#a">A 框架层</a>
+  <a href="#b">B Tab1 总览</a>
+  <a href="#c">C Tab2-5</a>
+  <a href="#d">D 横切</a>
+  <div class="group">决策</div>
+  <a href="#prio">优先级矩阵</a>
+  <a href="#src">约束依据</a>
+</nav>
+
+<main>
+
+<!-- STATUS -->
+<section id="status">
+  <h2><span class="id">§0</span>工作台现状盘点</h2>
+  <p class="lead">单路由 <code>/workbench</code> + <code>v-show</code> 组件切换；5 Tab 内容组件各自 watch <code>store.scopeParams</code> 联动刷新；跨 Tab 跳转走 <code>store.setActiveTab</code>。</p>
+
+  <div class="frame-diagram">
+┌─────────────────────────────────────────────────────────────────────────┐
+│ <span class="hi">[48px tabbar]</span> 系统总览●  性能评估●  回路诊断●  参数整定●  问题处置●        <span class="hi-y">[HeaderBar→]</span> │
+│                    范围选择 · 24h/7d/30d 时间胶囊 · 数据可信徽章 · 通知铃铛           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ <span class="hi">[≈816px content]</span> 按 <code>activeTab</code> <code>v-show</code> 渲染 5 选 1                         │
+│                                                                          │
+│   Tab1 系统总览   │   Tab2 性能评估    │   Tab3 回路诊断  │  Tab4 参数整定 │  Tab5 问题处置 │
+│   12列网格3行9区块 │   L0~L4 适用性     │   两页式         │  三页式        │  双实体v2.0    │
+│                                                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│ <span class="hi">[28px statusbar]</span> 底部固定                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+  </div>
+
+  <table>
+    <thead><tr><th>Tab</th><th>标题</th><th>模块映射</th><th>形态</th><th>关键区块</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">overview</td><td>系统总览</td><td class="mono">overview</td><td>12列网格 3行</td><td>KPI · 模块健康 · 数据流 · 装置风险 · 评分趋势 · 预警事件 · 处置漏斗</td></tr>
+      <tr><td class="mono">assessment</td><td>性能评估</td><td class="mono">assess</td><td>L0~L4 适用性</td><td>等级横幅 · 评估结果表</td></tr>
+      <tr><td class="mono">diagnosis</td><td>回路诊断</td><td class="mono">diagnosis</td><td>两页式</td><td>列表页 + 详情页</td></tr>
+      <tr><td class="mono">tuning</td><td>参数整定</td><td class="mono">tuning</td><td>三页式</td><td>列表 / 整定 / 验证</td></tr>
+      <tr><td class="mono">handling</td><td>问题处置</td><td class="mono">handling</td><td>v2.0 双实体</td><td>loop_action_item + handling_order</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- A -->
+<section id="a">
+  <h2><span class="id">§A</span>框架层 · index.vue + HeaderBar</h2>
+  <p class="lead">工作台外框与跨 Tab 全局组件。优化目标：腾出垂直空间、统一状态色语义、工具栏分组。</p>
+
+  <div class="item">
+    <div class="item-head"><span class="num">A1</span><span class="title">tabbar 48px 偏高</span><span class="where">index.vue</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>tabbar 高度 48px，5 个 tab 按钮单行排列</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>工业 SCADA 单行 tab 通常 32-36px；48px 浪费 12px 垂直空间，挤压 816px 内容区</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>压到 36px，腾出的 12px 给内容区；tab 按钮内边距同步收紧</p></div>
+    </div>
+    <div class="src">AGENTS.md 视觉偏好：空间紧凑、去冗余</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">A2</span><span class="title">ModuleStatusDot 状态点语义未对齐</span><span class="where">index.vue + ModuleStatusDot.vue</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>5 tab 各带状态点，颜色含义未明确，无图例</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>用户不知道圆点颜色指什么（运行？告警？数据缺失？），Glanceability 不足</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>状态点统一映射 7 色约定；statusbar 右侧加固定图例；hover 显文字 tooltip</p></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--green)"></i>绿 运行</span>
+      <span><i style="background:var(--blue)"></i>蓝 启动</span>
+      <span><i style="background:var(--orange)"></i>橙 停止</span>
+      <span><i style="background:var(--yellow)"></i>黄 待命</span>
+      <span><i style="background:var(--red)"></i>红 维护</span>
+      <span><i style="background:var(--gray)"></i>灰 禁用</span>
+      <span><i style="background:var(--cyan)"></i>青 检查中</span>
+    </div>
+    <div class="src">AGENTS.md 状态色约定</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">A3</span><span class="title">HeaderBar 工具未分组</span><span class="where">HeaderBar.vue L78-181</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>范围选择器、时间胶囊、可信徽章、铃铛 <code>flex gap-3</code> 混排</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>四类语义混排，视觉无分组；时间胶囊 24h/7d/30d 三按钮占位宽</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>按"范围 / 时间 / 质量 / 通知"四组分隔符竖线区隔；时间胶囊改 segmented control 更紧凑</p></div>
+    </div>
+    <div class="wf">
+      <div class="wf-box">
+        <span class="wf-label bad">现状</span>
+        [范围▾] [24h][7d][30d] [✓可信] [🔔]
+      </div>
+      <div class="wf-box">
+        <span class="wf-label good">优化后</span>
+        [范围▾]│[24h|7d|30d]│[✓可信]│[🔔]
+      </div>
+    </div>
+    <div class="src">AGENTS.md 视觉偏好：工具栏右对齐、空间紧凑</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">A4</span><span class="title">StatusBar 28px 底部固定</span><span class="where">index.vue</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>底部固定 28px，符合工业 SCADA 习惯</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>当前可能仅摆设，未承载关键运行时信息</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>承载：数据源（SignalR/TDengine）+ 当前范围 + 时间窗 + 最后刷新时间戳（细粒度进度反馈）</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：进度细粒度（按小时窗口）、计算类全本地 TDengine</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">A5</span><span class="title">v-show 常驻 5 路 WS 风险</span><span class="where">index.vue</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>5 tab 组件 <code>v-show</code> 不卸载，常驻内存</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>监控类实时连接可能并存 5 路 WebSocket，浪费带宽、易重复消费</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>非活跃 tab 暂停 WS 节流；仅监控 PV/SP/OP 走 WS，其余手动刷新</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：PV/SP/OP/MODE/P/I/D 走 WS，其余手动刷新；禁止多 Worker 并存</div>
+  </div>
+</section>
+
+<!-- B -->
+<section id="b">
+  <h2><span class="id">§B</span>Tab1 系统总览 · overview.vue（重点）</h2>
+  <p class="lead">12 列非等宽网格 3 行 9 区块。优化目标：data-ink 最大化、Glanceability 优先级、统一图表语言。</p>
+
+  <div class="item">
+    <div class="item-head"><span class="num">B1</span><span class="title">KPI 卡片 chartjunk</span><span class="where">overview.vue Row1</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>Row1 KPI 卡片行，可能有边框/阴影/大图标</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>装饰元素降低 data-ink 比例，违背工业 Calm UI 原则</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>去边框去阴影，1px 细分隔线；数字优先大号、标签次号字、单位灰显</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：1px 细分隔线、去冗余标签符号、data-ink 最大化</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">B2</span><span class="title">KPI 时间窗未跟随全局</span><span class="where">overview.vue Row1</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>KPI 可能各自为政，与 HeaderBar 全局 24h/7d/30d 不联动</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>同一页面时间窗不一致，认知负担大</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>KPI 全部跟随 HeaderBar 全局时间窗；每张卡角标微型柱状趋势（无动画）</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：微型柱状图不要动画、时间窗统一</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">B3</span><span class="title">Row2 三维度图表语言不统一</span><span class="where">overview.vue Row2</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>模块健康/数据流/装置风险 并排，图表类型各异</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>环图/表格/矩阵三种异构，视觉跳跃</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>统一"微型条形+状态色"语言；模块健康改饼图（无引线只 hover 框）</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：饼图优于环图、饼图无引线只显示悬浮框</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">B4</span><span class="title">Row3 趋势/事件/漏斗异构</span><span class="where">overview.vue Row3</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>评分趋势折线 + 预警事件列表 + 处置漏斗</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>垂直漏斗 data-ink 低；事件列表行高可能不紧凑</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>趋势保留折线；事件列表紧凑单行 28px；漏斗改横向条形</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：树/列表 28px 单行、data-ink 最大化</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">B5</span><span class="title">缺全局健康带（Glanceability）</span><span class="where">overview.vue 顶部</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>9 区块平铺，无优先级层级</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>用户无法"一眼可知系统是否正常"，违背 Glanceability 原则</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>顶部加"全局健康带"：5 模块状态色 + 在线/告警计数，下方再展开细节</p></div>
+    </div>
+    <div class="wf">
+      <div class="wf-box">
+        <span class="wf-label bad">现状（无健康带）</span>
+        ┌─ KPI 卡片行 ─────────────┐<br>
+        │ 模块健康 │ 数据流 │ 装置风险│<br>
+        │ 评分趋势 │ 预警事件 │ 处置漏斗│
+      </div>
+      <div class="wf-box">
+        <span class="wf-label good">优化后（顶部健康带）</span>
+        ┌─ <span style="color:var(--green)">●</span>监控 <span style="color:var(--green)">●</span>评估 <span style="color:var(--yellow)">●</span>诊断 <span style="color:var(--green)">●</span>整定 <span style="color:var(--red)">●</span>处置 · 在线 4/告警 1 ─┐<br>
+        │ KPI 卡片行 │<br>
+        │ 模块健康 │ 数据流 │ 装置风险│<br>
+        │ 评分趋势 │ 预警事件 │ 处置漏斗│
+      </div>
+    </div>
+    <div class="src">AGENTS.md 偏好：Glanceability、状态色约定</div>
+  </div>
+</section>
+
+<!-- C -->
+<section id="c">
+  <h2><span class="id">§C</span>Tab2-5 · 评估 / 诊断 / 整定 / 处置</h2>
+  <p class="lead">未逐个读源码（方案层）。基于已知模块形态给方向。</p>
+
+  <div class="item">
+    <div class="item-head"><span class="num">C1</span><span class="title">性能评估 L0~L4 适用性</span><span class="where">tabs/assessment</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>L0~L4 适用性评估，等级横幅</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>等级横幅 Glanceability 可能不足；L0/L1 阻止 L2 是否显式阻断</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>等级横幅强化色：L0/L1 红、L2~L3 黄、L4 绿；Poka-Yoke 阻断动作显式禁用而非隐藏</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：Poka-Yoke、状态色、工具栏灰显不隐藏</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">C2</span><span class="title">回路诊断两页式</span><span class="where">tabs/diagnosis</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>两页式（列表页 + 详情页）</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>详情页布局可能未用左右分栏；筛选区与页内 tab 可能重复</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>详情页左右分栏（左回路树 8px/级 28px 行高，右诊断证据）；筛选区与页内 tab 合并同行右侧</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：树结构 8px/级 28px 单行 flex 防换行、筛选区与 Tab 同行右侧</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">C3</span><span class="title">参数整定三页式</span><span class="where">tabs/tuning</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>三页式（列表 / 整定 / 验证）</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>各页工具栏可能不统一；PID 参数是否只读未明确</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>各页统一符号栏、上下文灰显；整定页 PID 参数只读（AAS 模型决策：平台不直接改 DCS）</p></div>
+    </div>
+    <div class="src">AGENTS.md 决策：安全边界——平台只输出建议/证据/风险/回退，参数由授权人员人工实施</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">C4</span><span class="title">问题处置 v2.0 双实体</span><span class="where">tabs/handling</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>loop_action_item + handling_order 双实体</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>双实体关系可能未用左右分栏呈现；处置动作缺证据链</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>左右分栏列表+详情；处置走"建议+证据+风险+回退"四段式</p></div>
+    </div>
+    <div class="src">AGENTS.md 决策：安全边界——建议/证据/风险/回退方案</div>
+  </div>
+</section>
+
+<!-- D -->
+<section id="d">
+  <h2><span class="id">§D</span>横切问题 · 5 Tab 共性</h2>
+  <p class="lead">跨 Tab 的统一性约束。</p>
+
+  <div class="item">
+    <div class="item-head"><span class="num">D1</span><span class="title">工具栏层级重复</span><span class="where">index.vue + 各 tab</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>每个 tab 内可能还有自己的工具栏/筛选区，与 HeaderBar 重复</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>跨 tab 全局筛选 vs tab 专属动作边界不清</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>HeaderBar 承载全局（范围/时间）；tab 内只放专属动作，工具栏统一在页面标题栏右侧</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：工具栏固定标题栏右侧、筛选区与 Tab 同行右侧</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">D2</span><span class="title">中英文混用</span><span class="where">全工作台</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>PV/SP/OP/MODE 等英文指标名散落</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>大量英文指标名降低中文用户可读性</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>PV/SP/OP 保留（行业术语）；栏目标题、操作按钮、状态提示一律中文</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：大量英文指标名时用中文描述/提示</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">D3</span><span class="title">工具栏图标彩色约定</span><span class="where">全工作台</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>各 tab 工具栏图标样式可能不统一</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>无统一符号库；无权限项可能直接隐藏</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>统一符号库；默认原色、无权限灰显但占位保留</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：工具栏图标彩色、原色默认/灰显不隐藏</div>
+  </div>
+
+  <div class="item">
+    <div class="item-head"><span class="num">D4</span><span class="title">实时 vs 统计刷新策略</span><span class="where">全工作台</span></div>
+    <div class="item-body">
+      <div class="cell now"><div class="lbl">现状</div><p>监控类实时数据刷新策略未明确区分</p></div>
+      <div class="cell prob"><div class="lbl">问题</div><p>统计数据可能误用 WS 实时推送，浪费带宽</p></div>
+      <div class="cell dir"><div class="lbl">方向</div><p>PV/SP/OP/MODE/P/I/D 走 WS；评估/诊断/整定/处置统计指标手动刷新；非活跃 tab 暂停 WS</p></div>
+    </div>
+    <div class="src">AGENTS.md 偏好：PV/SP/OP/MODE/P/I/D 走 WS、其余手动刷新</div>
+  </div>
+</section>
+
+<!-- PRIORITY -->
+<section id="prio">
+  <h2><span class="id">§E</span>优先级矩阵</h2>
+  <p class="lead">按"投入 / 收益 / 风险"三档建议实施顺序。</p>
+  <div class="prio">
+    <div class="col p1">
+      <h4>P1 立即做 · 低投入高收益</h4>
+      <ul>
+        <li><code>A1</code> tabbar 48→36px</li>
+        <li><code>A2</code> 状态点 7 色图例</li>
+        <li><code>B1</code> KPI 卡片去 chartjunk</li>
+        <li><code>D2</code> 中英文混用规范化</li>
+      </ul>
+    </div>
+    <div class="col p2">
+      <h4>P2 短期做 · 中投入中收益</h4>
+      <ul>
+        <li><code>A3</code> HeaderBar 四组分隔</li>
+        <li><code>B3</code> Row2 图表语言统一</li>
+        <li><code>B4</code> 漏斗改横向条形</li>
+        <li><code>D3</code> 统一符号库</li>
+      </ul>
+    </div>
+    <div class="col p3">
+      <h4>P3 中期做 · 高投入高收益</h4>
+      <ul>
+        <li><code>B5</code> 全局健康带</li>
+        <li><code>A4</code> StatusBar 承载运行时信息</li>
+        <li><code>C1</code> 评估等级横幅强化</li>
+        <li><code>D1</code> 工具栏层级分离</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- SOURCE -->
+<section id="src">
+  <h2><span class="id">§F</span>约束依据</h2>
+  <table>
+    <thead><tr><th>来源</th><th>条目</th><th>用于</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">AGENTS.md</td><td>视觉偏好：Calm UI / Poka-Yoke / Glanceability / data-ink 最大化</td><td>A1 B1 B5 C1</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>1px 细分隔线、空间紧凑、去冗余标签符号</td><td>A1 B1 D2</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>状态色：绿运行/蓝启动/橙停止/黄待命/红维护/灰禁用/青检查中</td><td>A2 B5</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>饼图优于环图、无引线只显示悬浮框</td><td>B3</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>微型柱状图不要动画</td><td>B2</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>树结构 8px/级 28px 单行 flex 防换行</td><td>C2</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>工具栏固定标题栏右侧、图标彩色/灰显不隐藏</td><td>A3 D1 D3</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>筛选区与 Tab 标签页合并在同一行右侧</td><td>D1</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>实时数据 WS（PV/SP/OP/MODE/P/I/D）、其余手动刷新</td><td>A5 D4</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>进度细粒度（按小时窗口）</td><td>A4</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>中文描述优先于英文指标名</td><td>D2</td></tr>
+      <tr><td class="mono">AGENTS.md</td><td>安全边界：建议/证据/风险/回退，参数人工实施</td><td>C3 C4</td></tr>
+      <tr><td class="mono">DESIGN.md</td><td>工作台页典型布局：左列表 + 中主区 + 右上下文</td><td>C2 C4</td></tr>
+      <tr><td class="mono">MVP设计</td><td>诊断两页式 / 整定三页式 / 处置 v2.0 双实体</td><td>C2 C3 C4</td></tr>
+      <tr><td class="mono">MVP设计</td><td>适用性评估 L0~L4（L0/L1 阻止 L2 横幅）</td><td>C1</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+</div>
+</div>
+
+<footer>
+  <div class="wrap">
+    产出工具：Trae · html skill (plannotator/effective-html) · 视觉方向：工业 SCADA 风（深/亮双主题，跟随系统或手动切换）· 约束来源：AGENTS.md / DESIGN.md / docs/MVP设计 · 不含前端源码改动
+  </div>
+</footer>
+
+<script>
+(function(){
+  var KEY='wb-report-theme';
+  var root=document.documentElement;
+  // 启动时恢复记忆主题
+  var saved=localStorage.getItem(KEY);
+  if(saved==='light'||saved==='dark') root.setAttribute('data-theme',saved);
+
+  function currentTheme(){
+    if(root.getAttribute('data-theme')) return root.getAttribute('data-theme');
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.getElementById('themeToggle').addEventListener('click',function(){
+    var next=currentTheme()==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next);
+    localStorage.setItem(KEY,next);
+    this.title='当前 '+next+' 主题，点击切换';
+  });
+})();
+</script>
+
+</body>
+</html>

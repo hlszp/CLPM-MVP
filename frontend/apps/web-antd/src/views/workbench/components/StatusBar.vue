@@ -30,7 +30,12 @@ const onlinePluginCount = computed(
       (p) => p.status === 'CORE' || p.status === 'ENABLED',
     ).length,
 );
-const totalPluginCount = computed(() => store.plugins.length);
+const maintenancePluginCount = computed(
+  () => store.plugins.filter((p) => p.status === 'MAINTENANCE').length,
+);
+const uninstalledPluginCount = computed(
+  () => store.plugins.filter((p) => p.status === 'UNINSTALLED').length,
+);
 </script>
 
 <template>
@@ -42,9 +47,26 @@ const totalPluginCount = computed(() => store.plugins.length);
     <span>评估周期：<span class="text-gray-700">5min</span></span>
     <span class="text-gray-300">|</span>
     <span>数据流时延：<span class="text-gray-700">—</span></span>
-    <span class="ml-auto">
-      插件在线：<span class="text-gray-700">{{ onlinePluginCount }}</span
-      >/{{ totalPluginCount }}
+    <!-- A2 状态色图例 + 计数（全局参考，与 tabbar 状态点/系统健康带同色系） -->
+    <span class="ml-auto flex items-center gap-2">
+      <span class="flex items-center gap-0.5" title="在线（CORE/ENABLED）">
+        <span
+          class="inline-block h-1.5 w-1.5 rounded-full"
+          style="background: #52c41a"
+        ></span>在线 {{ onlinePluginCount }}
+      </span>
+      <span class="flex items-center gap-0.5" title="维护中（MAINTENANCE）">
+        <span
+          class="inline-block h-1.5 w-1.5 rounded-full"
+          style="background: #fa8c16"
+        ></span>维护 {{ maintenancePluginCount }}
+      </span>
+      <span class="flex items-center gap-0.5" title="未安装（UNINSTALLED）">
+        <span
+          class="inline-block h-1.5 w-1.5 rounded-full"
+          style="background: #bfbfbf"
+        ></span>未装 {{ uninstalledPluginCount }}
+      </span>
     </span>
   </footer>
 </template>

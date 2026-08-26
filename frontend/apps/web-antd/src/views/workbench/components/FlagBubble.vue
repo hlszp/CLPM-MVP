@@ -54,7 +54,7 @@ const count = computed(() => props.flags?.length ?? 0);
       >
       <!-- 气泡：hover 显示，绝对定位 -->
       <span
-        class="pointer-events-none absolute left-1/2 top-full z-30 mt-1 w-56 -translate-x-1/2 scale-95 rounded border border-[#E4E7ED] bg-white p-2 text-left opacity-0 shadow-lg transition-opacity group-hover:scale-100 group-hover:opacity-100"
+        class="pointer-events-none absolute left-1/2 top-full z-30 mt-1 w-56 -translate-x-1/2 rounded border border-[#E4E7ED] bg-white p-2 text-left opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
       >
         <div class="mb-1 border-b border-[#F0F0F0] pb-1 text-[11px] font-medium text-[#1F4E79]">
           趋势标注（{{ count }}）

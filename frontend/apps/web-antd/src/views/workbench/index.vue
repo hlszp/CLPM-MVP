@@ -7,7 +7,7 @@
  * 5 Tab 内容组件各自 watch store.scopeParams 联动刷新（v-show 保活，已 mounted）。
  * 跨 Tab 跳转（如评估→诊断）用 store.setActiveTab，非路由。
  *
- * 高度规范（@1600×900）：48 tabbar(含筛选) + ≈816 content + 28 statusbar
+ * 高度规范（@1600×900）：36 tabbar(含筛选) + ≈828 content + 28 statusbar
  */
 import type { WorkbenchApi } from '#/api/workbench';
 
@@ -61,9 +61,9 @@ const currentPlugin = computed<undefined | WorkbenchApi.Plugin>(() => {
       <!-- 维护横幅（MAINTENANCE 模块提示，自适应高度；无维护时不渲染） -->
       <ModuleBanner />
 
-      <!-- Tab 栏 48px：左侧 5 Tab + 4 态 dot，右侧筛选区 + 铃铛（button 切换 activeTab，非路由） -->
+      <!-- Tab 栏 36px：左侧 5 Tab + 4 态 dot，右侧筛选区 + 铃铛（button 切换 activeTab，非路由） -->
       <nav
-        class="flex h-12 flex-none items-center justify-between border-b border-[#E4E7ED] bg-white px-4"
+        class="flex h-9 flex-none items-center justify-between border-b border-[#E4E7ED] bg-white px-4"
       >
         <div class="flex h-full items-center gap-1">
           <button
