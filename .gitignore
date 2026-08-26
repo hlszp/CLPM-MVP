@@ -76,3 +76,6 @@ CLPM-engine/
 e2e/screenshots/
 e2e/visual-inspection/
 e2e/verify-fixes-*.png
+
+# superpowers brainstorm 可视化线框（临时设计产物，不入库）
+.superpowers/
