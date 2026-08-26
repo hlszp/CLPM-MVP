@@ -35,7 +35,7 @@
   "views/tuning/workbench.vue": 1,
   "views/workbench/components/AbnormalLoopsTable.vue": 32,
   "views/workbench/components/ConclTimeline.vue": 27,
-  "views/workbench/components/DataFlowDiagram.vue": 19,
+  "views/workbench/components/DataFlowDiagram.vue": 22,
   "views/workbench/components/DeltaScatter.vue": 15,
   "views/workbench/components/DepsPillList.vue": 6,
   "views/workbench/components/DeviceRiskList.vue": 24,
@@ -78,5 +78,9 @@
   "views/workbench/index.vue": 6,
   "views/workbench/tabs/diagnosis.vue": 4,
   "views/workbench/tabs/handling.vue": 1,
-  "views/workbench/tabs/tuning.vue": 68
+  "views/workbench/tabs/tuning.vue": 68,
+  "views/_core/authentication/login.vue": 3,
+  "views/workbench/components/DgDiagTimeDist.vue": 20,
+  "views/workbench/components/DgUnitStackedBar.vue": 20,
+  "views/workbench/components/FaultDeviceMatrix.vue": 29
 }
