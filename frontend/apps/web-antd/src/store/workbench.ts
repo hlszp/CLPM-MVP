@@ -5,6 +5,8 @@
  * 最近刷新时间 + 模块 4 态 plugins + 铃铛未读 unread。
  * 所有 Tab 通过本 store 联动：范围/窗口切换 → 5 Tab 自动刷新（M2 接入）。
  */
+import type { HandlingApi } from '#/api/handling';
+
 import { computed, ref } from 'vue';
 
 import { defineStore } from 'pinia';
@@ -34,6 +36,9 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   /** 当前激活 Tab（统一框架 v-show 切换；跨 Tab 跳转如评估→诊断用 setActiveTab） */
   const activeTab = ref('overview');
   const loading = ref(false);
+  // ============ 处置漏斗联动（F-OV-05） ============
+  /** 总览漏斗点击 → 切处置 Tab + 高亮对应泳道；切 tab / 选任务卡时清空 */
+  const handlingLaneFilter = ref<HandlingApi.OrderStatus | null>(null);
 
   // ============ 计算属性 ============
   /** 已启用模块 key 集合（CORE + ENABLED；用于 Tab 可点击判断） */
@@ -110,9 +115,15 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
-  /** 切换激活 Tab（统一框架 v-show 切换，非路由跳转） */
+  /** 切换激活 Tab（统一框架 v-show 切换，非路由跳转）；切离处置 Tab 时清空泳道过滤 */
   function setActiveTab(key: string) {
     activeTab.value = key;
+    if (key !== 'handling') handlingLaneFilter.value = null;
+  }
+
+  /** F-OV-05 漏斗联动：设置处置泳道过滤（null=清除） */
+  function setHandlingLaneFilter(lane: HandlingApi.OrderStatus | null) {
+    handlingLaneFilter.value = lane;
   }
 
   /** A-12 批量标记已读（M2 铃铛抽屉"全部已读"按钮接入） */
@@ -127,6 +138,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     activeTab,
     customEnd,
     customStart,
+    handlingLaneFilter,
     lastRefreshAt,
     loading,
     plugins,
@@ -147,6 +159,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     markRefreshed,
     setCustomRange,
     setActiveTab,
+    setHandlingLaneFilter,
     setScope,
     setWindow,
   };

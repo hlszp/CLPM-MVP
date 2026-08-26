@@ -10,12 +10,17 @@
  *
  * 注：近 6 周每周闭环数暂用演示数据（后端无周聚合端点，待 A-0x 扩展）
  */
+import type { HandlingApi } from '#/api/handling';
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
 const props = defineProps<{
   funnel?: null | WorkbenchApi.FunnelStat;
+}>();
+
+const emit = defineEmits<{
+  (e: 'laneClick', status: HandlingApi.OrderStatus): void;
 }>();
 
 const lanes = computed(() => {
@@ -29,6 +34,7 @@ const lanes = computed(() => {
       value: f.pending,
       color: '#f59e0b', // warn
       pct: Math.round((f.pending / maxLane) * 100),
+      status: 'PENDING' as HandlingApi.OrderStatus,
     },
     {
       key: 'executing',
@@ -36,6 +42,7 @@ const lanes = computed(() => {
       value: f.executing,
       color: '#0d9488', // accent
       pct: Math.round((f.executing / maxLane) * 100),
+      status: 'EXECUTING' as HandlingApi.OrderStatus,
     },
     {
       key: 'verifying',
@@ -43,6 +50,7 @@ const lanes = computed(() => {
       value: f.verifying,
       color: '#3b82f6', // info
       pct: Math.round((f.verifying / maxLane) * 100),
+      status: 'VERIFYING' as HandlingApi.OrderStatus,
     },
   ];
 });
@@ -92,7 +100,9 @@ const weeklyMax = Math.max(...weeklyClosed, 1);
         <div
           v-for="lane in lanes"
           :key="lane.key"
-          class="flex items-center gap-1.5"
+          class="flex cursor-pointer items-center gap-1.5 transition-opacity hover:opacity-80"
+          :title="`点击查看${lane.label}工单 → 处置 Tab`"
+          @click="emit('laneClick', lane.status)"
         >
           <span class="w-10 flex-none text-[10px] text-gray-500">{{ lane.label }}</span>
           <div class="relative flex h-4 flex-1 items-center overflow-hidden rounded-full bg-gray-100">
