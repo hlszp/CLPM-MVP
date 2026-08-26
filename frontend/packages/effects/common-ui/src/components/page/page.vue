@@ -29,7 +29,11 @@ const contentStyle = computed<StyleValue>(() => {
   if (autoContentHeight) {
     return {
       height: `calc(var(${CSS_VARIABLE_LAYOUT_CONTENT_HEIGHT}) - ${headerHeight.value}px - ${footerHeight.value}px - ${typeof heightOffset === 'number' ? `${heightOffset}px` : heightOffset})`,
-      overflowY: shouldAutoHeight.value ? 'auto' : 'unset',
+      // 单屏布局（工作端子 Tab 等）内部自行决定滚动层：在外层统一收敛 overflow，避免 Page content 再次滚动形成双层滚动条。
+      // 当 shouldAutoHeight=false 时用 overflow:hidden 作为“计算进行中”的占位；当 shouldAutoHeight=true 时也保持 hidden，
+      // 滚动责任下沉到业务页面（单屏设计的业务通常会在其内部容器声明 overflow-auto / overflow-hidden）。
+      overflowY: 'hidden',
+      overflowX: 'hidden',
     };
   }
   return {};
@@ -56,7 +60,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative flex min-h-full flex-col">
+  <div class="relative flex h-full min-h-0 flex-col overflow-hidden">
     <div
       v-if="
         description ||

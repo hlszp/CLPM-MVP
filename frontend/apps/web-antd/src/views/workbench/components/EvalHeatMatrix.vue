@@ -69,7 +69,7 @@ function tipText(unitName: string, metricLabel: string, v: null | number): strin
     <!-- 热力网格 -->
     <div
       class="flex-1 overflow-auto"
-      style="display: grid; grid-template-columns: 86px repeat(6, minmax(0, 1fr)); gap: 2px; padding: 8px 12px; align-content: start"
+      style="display: grid; grid-template-columns: 86px repeat(6, minmax(0, 1fr)); gap: 2px; align-content: start; padding: 8px 12px"
     >
       <!-- 表头行 -->
       <div class="flex items-center justify-center text-[10.5px] text-gray-400"></div>

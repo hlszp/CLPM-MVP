@@ -1077,8 +1077,8 @@ onBeforeUnmount(() => {
   margin-left: auto;
   font-size: 11px;
   color: hsl(var(--primary));
-  cursor: pointer;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .diag-baseline__link:hover {

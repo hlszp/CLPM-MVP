@@ -20,7 +20,6 @@
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { getWorkbenchAssessmentApi } from '#/api/workbench';
 import { useWorkbenchStore } from '#/store/workbench';
@@ -30,10 +29,8 @@ import EvalHeatMatrix from '../components/EvalHeatMatrix.vue';
 import EvalRankTable from '../components/EvalRankTable.vue';
 import EvalSummary from '../components/EvalSummary.vue';
 import EvalTrendChart from '../components/EvalTrendChart.vue';
-import WorkbenchShell from '../components/WorkbenchShell.vue';
 
 const store = useWorkbenchStore();
-const router = useRouter();
 
 const assessment = ref<null | WorkbenchApi.AssessmentResult>(null);
 const view = ref<WorkbenchApi.AssessmentView>('plant');
@@ -80,14 +77,13 @@ watch(
 watch(view, () => loadAssessment());
 
 function onLoseClick(_tag: string) {
-  // 失分 tag → 跨 Tab 切诊断
-  router.push('/workbench/diagnosis');
+  // 失分 tag → 跨 Tab 切诊断（统一框架 v-show 切换，非路由）
+  store.setActiveTab('diagnosis');
 }
 </script>
 
 <template>
-  <WorkbenchShell>
-    <div class="flex h-full flex-col gap-2 p-2">
+  <div class="flex h-full flex-col gap-2 p-2">
       <!-- 加载/错误提示 -->
       <div
         v-if="loading"
@@ -138,5 +134,4 @@ function onLoseClick(_tag: string) {
         </div>
       </div>
     </div>
-  </WorkbenchShell>
 </template>

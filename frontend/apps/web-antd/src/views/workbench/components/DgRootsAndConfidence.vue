@@ -32,7 +32,7 @@ const props = defineProps<{
 }>();
 
 const rootList = computed(() =>
-  (props.roots ?? []).slice(0, 6).map((r) => ({
+  (props.roots ?? []).slice(0, 8).map((r) => ({
     name: r.tag_name || r.tag_code || '—',
     count: r.count ?? 0,
   })),
@@ -65,7 +65,7 @@ function barPct(v: number, max: number): string {
 </script>
 
 <template>
-  <div class="flex h-[300px] w-full flex-col overflow-hidden bg-white">
+  <div class="flex h-full w-full flex-col overflow-hidden bg-white">
     <!-- 标题栏 -->
     <div class="flex flex-none items-center justify-between border-b border-[#E4E7ED] px-3 py-1.5">
       <span class="flex items-center gap-1.5 text-xs font-medium text-[#1F4E79]">
@@ -84,11 +84,11 @@ function barPct(v: number, max: number): string {
         <div class="flex-none border-b border-[#F0F0F0] px-3 py-0.5 text-[10.5px] font-medium text-gray-500">
           根因 Top {{ rootList.length }}
         </div>
-        <div class="flex-1 space-y-1.5 overflow-auto px-2.5 py-1.5">
+        <div class="flex flex-1 flex-col justify-between overflow-auto px-2.5 py-1">
           <div
             v-for="(r, i) in rootList"
             :key="`rc-${i}-${r.name}`"
-            class="flex items-center gap-1.5"
+            class="flex flex-none items-center gap-1.5 py-0.5"
           >
             <span
               class="w-16 flex-none truncate text-right text-[11px] text-gray-600"
@@ -96,7 +96,7 @@ function barPct(v: number, max: number): string {
             >
               {{ r.name }}
             </span>
-            <div class="relative h-4 flex-1 rounded-sm bg-gray-50">
+            <div class="relative h-3.5 flex-1 rounded-sm bg-gray-50">
               <div
                 class="h-full rounded-sm"
                 :style="{
@@ -105,7 +105,7 @@ function barPct(v: number, max: number): string {
                 }"
               ></div>
               <span
-                class="absolute right-1 top-0 text-[10px] leading-4 text-gray-500 tabular-nums"
+                class="absolute right-1 -top-0.5 text-[10px] leading-4 text-gray-500 tabular-nums"
               >
                 {{ r.count }}
               </span>

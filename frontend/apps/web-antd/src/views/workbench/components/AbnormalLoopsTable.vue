@@ -151,7 +151,7 @@ const visibleRows = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-[300px] w-full flex-col overflow-hidden bg-white">
+  <div class="flex h-full w-full flex-col overflow-hidden bg-white">
     <!-- 标题栏：左 标题 + 分段规则；右 分段选项卡 -->
     <div class="flex flex-none items-center justify-between border-b border-[#E4E7ED] px-3 py-1.5">
       <span class="flex items-center gap-1.5 text-xs font-medium text-[#FF4D4F]">

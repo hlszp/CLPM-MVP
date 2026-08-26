@@ -890,7 +890,7 @@ onMounted(() => {
       </Card>
 
       <ClpmDataCanvas
-        class="flex-1 min-h-0"
+        class="indicator-canvas flex-1 min-h-0"
         :loading="loading"
         :loading-variant="rankingItems.length > 0 ? 'opacity' : 'skeleton'"
         :error="loadError"
@@ -1000,7 +1000,16 @@ onMounted(() => {
 
         <!-- B + C + E：一行三图（按 5:3:4 分配压缩各区宽度，中间区域 flex-1 自适应填满） -->
         <div class="mt-3 grid min-h-[280px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12">
-          <Card class="lg:col-span-5 h-full" :body-style="{ padding: '12px 16px' }">
+          <Card
+            class="lg:col-span-5 h-full"
+            :body-style="{
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: '1 1 auto',
+              minHeight: 0,
+            }"
+          >
             <template #title>
               <span class="text-sm">TOP10 最差回路（{{ metricMeta.label }}）</span>
             </template>
@@ -1012,7 +1021,7 @@ onMounted(() => {
                 <span class="text-xs text-gray-400">指标无差异</span>
               </Tooltip>
             </template>
-            <div class="h-full">
+            <div class="flex-1 min-h-0">
               <EchartsUI
                 v-if="top10.length > 0"
                 ref="topChartRef"
@@ -1023,7 +1032,16 @@ onMounted(() => {
               </div>
             </div>
           </Card>
-          <Card class="lg:col-span-3 h-full" :body-style="{ padding: '12px 16px' }">
+          <Card
+            class="lg:col-span-3 h-full"
+            :body-style="{
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: '1 1 auto',
+              minHeight: 0,
+            }"
+          >
             <template #title>
               <span class="text-sm">装置对比</span>
             </template>
@@ -1043,7 +1061,7 @@ onMounted(() => {
                 清除下钻
               </Button>
             </template>
-            <div class="h-full">
+            <div class="flex-1 min-h-0">
               <EchartsUI
                 v-if="sortedNodes.length > 0"
                 ref="unitChartRef"
@@ -1055,7 +1073,16 @@ onMounted(() => {
             </div>
           </Card>
           <!-- E：指标分布（grid 第三列，紧凑图例） -->
-          <Card class="lg:col-span-4 h-full" :body-style="{ padding: '12px 16px' }">
+          <Card
+            class="lg:col-span-4 h-full"
+            :body-style="{
+              padding: '12px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              flex: '1 1 auto',
+              minHeight: 0,
+            }"
+          >
             <template #title>
               <span class="text-sm">{{ metricMeta.label }}分布</span>
             </template>
@@ -1075,7 +1102,7 @@ onMounted(() => {
                 </span>
               </span>
             </template>
-            <div class="h-full">
+            <div class="flex-1 min-h-0">
               <EchartsUI
                 v-if="curValues.length > 0"
                 ref="distChartRef"
@@ -1195,3 +1222,12 @@ onMounted(() => {
     </div>
   </Page>
 </template>
+
+<style scoped>
+/* 仅本页面：让 ClpmDataCanvas body 成为 flex 容器，使内部 A/B+C+E/D
+   的 flex-1 能正确分配高度（原始公共组件 body 是 block 容器） */
+.indicator-canvas :deep(.clpm-data-canvas__body) {
+  display: flex;
+  flex-direction: column;
+}
+</style>

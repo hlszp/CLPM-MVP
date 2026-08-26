@@ -31,6 +31,8 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   const plugins = ref<WorkbenchApi.Plugin[]>([]);
   /** A-E5 铃铛未读计数（M1 桩为 0；M2 接 WS 推送 < 200ms） */
   const unreadCount = ref(0);
+  /** 当前激活 Tab（统一框架 v-show 切换；跨 Tab 跳转如评估→诊断用 setActiveTab） */
+  const activeTab = ref('overview');
   const loading = ref(false);
 
   // ============ 计算属性 ============
@@ -108,6 +110,11 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
+  /** 切换激活 Tab（统一框架 v-show 切换，非路由跳转） */
+  function setActiveTab(key: string) {
+    activeTab.value = key;
+  }
+
   /** A-12 批量标记已读（M2 铃铛抽屉"全部已读"按钮接入） */
   async function markAllRead(eventIds: number[]) {
     // TODO: M2 调 markWorkbenchEventsReadApi({ event_ids: eventIds })
@@ -117,6 +124,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
 
   return {
     // 状态
+    activeTab,
     customEnd,
     customStart,
     lastRefreshAt,
@@ -138,6 +146,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     markAllRead,
     markRefreshed,
     setCustomRange,
+    setActiveTab,
     setScope,
     setWindow,
   };

@@ -37,7 +37,6 @@ import TuneQueueRow from '../components/TuneQueueRow.vue';
 import TuningFitnessCard from '../components/TuningFitnessCard.vue';
 import TuningLoopDetail from '../components/TuningLoopDetail.vue';
 import TuningRootCauseDist from '../components/TuningRootCauseDist.vue';
-import WorkbenchShell from '../components/WorkbenchShell.vue';
 
 const store = useWorkbenchStore();
 
@@ -253,8 +252,7 @@ watch(
 </script>
 
 <template>
-  <WorkbenchShell>
-    <!-- 严格 overflow-hidden 链：外壳不滚动，仅分区内滚动 -->
+  <!-- 严格 overflow-hidden 链：外壳不滚动，仅分区内滚动 -->
     <div class="flex h-full min-h-0 flex-col overflow-hidden p-2" style="gap: 4px">
       <!-- 加载/错误提示（flex-none，不参与 flex 分配） -->
       <div
@@ -382,5 +380,4 @@ watch(
         </div>
       </div>
     </div>
-  </WorkbenchShell>
 </template>

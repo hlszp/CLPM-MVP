@@ -310,8 +310,8 @@ onMounted(loadModules);
 }
 
 .module-card--checked {
-  border-color: hsl(var(--primary) / 50%);
   background: hsl(var(--primary) / 3%);
+  border-color: hsl(var(--primary) / 50%);
 }
 
 .module-card--base {
@@ -378,7 +378,7 @@ onMounted(loadModules);
 .modules-pending__dot {
   width: 8px;
   height: 8px;
-  background: hsl(38 92% 50%);
+  background: hsl(38deg 92% 50%);
   border-radius: 50%;
 }
 

@@ -7,21 +7,31 @@
  * - 正向箭头（节点间连线 + 箭头）
  * - 反馈曲线：问题处置 → 性能评估（绿色虚线下凸曲线，箭头向上指入性能评估）
  *   标注「验证回流 · 已闭环 N 项 · 闭环流转率 X%」
+ *   流光动效：亮色短虚线沿曲线方向重复流动（CSS @keyframes + drop-shadow）
  * - 维护中节点：橙色边框 + 虚线 + 维护暂停标签
  * - 底部摘要：评估→诊断 / 诊断→整定 / 整定→处置 / 闭环流转率
  *
- * 静态工业 UI：无动画（原型 animateMotion 已移除）。
+ * 数据来源：A-01 overview 返回的 funnel / roots / windows + plugins
  */
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
 const props = defineProps<{
-  // 闭环回流摘要（可选；缺省用演示数值）
+  /** 闭环流转分子（已闭环数，缺省用 funnel.closed） */
   closedCount?: number;
+  /** 闭环流转率（0~1，缺省用 closed/total 推导） */
   flowRate?: number;
+  /** 闭环流转分母（应闭环总数，缺省用 funnel 各态之和） */
+  flowTotal?: number;
+  /** 闭环漏斗数据（待处理/处理中/验证中/已闭环/超期/重开） */
+  funnel?: null | WorkbenchApi.FunnelStat;
+  /** 回路总数（实时数据库节点用） */
   loopCount?: number;
+  /** 模块插件状态（参数整定维护态用） */
   plugins: WorkbenchApi.Plugin[];
+  /** 诊断确诊条次（roots sum count） */
+  rootsCount?: number;
 }>();
 
 interface FlowNode {
@@ -33,24 +43,101 @@ interface FlowNode {
   maintLabel?: string;
 }
 
+// ============ 从 props 推导动态数值 ============
+
+/** 回路总数（实时数据库节点） */
+const loopN = computed(() => props.loopCount ?? 0);
+
+/** 诊断确诊条次（回路诊断节点） */
+const diagN = computed(() => props.rootsCount ?? 0);
+
+/** 处置待办合计（问题处置节点：待处理 + 处理中 + 验证中） */
+const pendingTotal = computed(() => {
+  const f = props.funnel;
+  if (!f) return 0;
+  return f.pending + f.executing + f.verifying;
+});
+
+/** 已闭环数 */
+const closedN = computed(() => props.closedCount ?? props.funnel?.closed ?? 0);
+
+/** 应闭环总数（已闭环 + 待处理 + 处理中 + 验证中） */
+const flowDenominator = computed(() => {
+  if (props.flowTotal != null) return props.flowTotal;
+  const f = props.funnel;
+  if (!f) return 0;
+  return f.closed + f.pending + f.executing + f.verifying;
+});
+
+/** 闭环流转率（百分比文本） */
+const flowPct = computed(() => {
+  if (props.flowRate != null) return `${(props.flowRate * 100).toFixed(1)}%`;
+  const denom = flowDenominator.value;
+  if (denom <= 0) return '—';
+  return `${((closedN.value / denom) * 100).toFixed(1)}%`;
+});
+
+/** 反馈标注文本 */
+const flowText = computed(
+  () =>
+    `验证回流 · 已闭环 ${closedN.value} 项 · 闭环流转率 ${flowPct.value}（${closedN.value}/${flowDenominator.value}）`,
+);
+
+// TODO：以下流转率需后端补充跨模块流转 API 后改为动态
+// 评估→诊断流转率（确诊条次 / 参评回路数）
+const evalToDiagPct = computed(() => {
+  const loops = loopN.value;
+  if (loops <= 0) return '—';
+  return `${((diagN.value / loops) * 100).toFixed(1)}%`;
+});
+// 诊断→整定流转率（暂无整定数据，留桩）
+const diagToTunePct = '—';
+// 整定→处置流转率（暂无整定数据，留桩）
+const tuneToOpsPct = '—';
+
 const NODES = computed<FlowNode[]>(() => {
   const tuning = props.plugins.find((p) => p.module_key === 'tuning');
   const maint = tuning?.status === 'MAINTENANCE';
-  const ringOn = '#10b981'; // var(--plug-on)
-  const ringMaint = '#f59e0b'; // var(--plug-maint)
+  const ringOn = '#10b981';
+  const ringMaint = '#f59e0b';
   return [
-    { x: 16, n: '实时数据库', s: `${props.loopCount ?? 34} 回路采集`, ring: '#94a3b8', dash: false },
-    { x: 132, n: '性能评估', s: '32 回路/5min', ring: ringOn, dash: false },
-    { x: 248, n: '回路诊断', s: '确诊 17 条次', ring: ringOn, dash: false },
+    {
+      x: 16,
+      n: '实时数据库',
+      s: `${loopN.value} 回路采集`,
+      ring: '#94a3b8',
+      dash: false,
+    },
+    {
+      x: 132,
+      n: '性能评估',
+      s: `${loopN.value} 回路/5min`,
+      ring: ringOn,
+      dash: false,
+    },
+    {
+      x: 248,
+      n: '回路诊断',
+      s: `确诊 ${diagN.value} 条次`,
+      ring: ringOn,
+      dash: false,
+    },
     {
       x: 364,
       n: '参数整定',
-      s: maint ? '6 批次 · 排队 2' : '6 批次',
+      // TODO: 批次数需接 A-04 tuning API
+      s: maint ? '批次 · 排队中' : '批次运行中',
       ring: maint ? ringMaint : ringOn,
       dash: maint,
-      maintLabel: maint ? '维护暂停 · 排队 2 批次' : undefined,
+      maintLabel: maint ? '维护暂停' : undefined,
     },
-    { x: 480, n: '问题处置', s: '待办 13', ring: ringOn, dash: false },
+    {
+      x: 480,
+      n: '问题处置',
+      s: `待办 ${pendingTotal.value}`,
+      ring: ringOn,
+      dash: false,
+    },
   ];
 });
 
@@ -100,15 +187,6 @@ const feedbackPath = computed(() => {
 // 反馈箭头位置
 const feedbackArrowX = computed(() => NODES.value[1]!.x + nw / 2);
 const feedbackTextY = computed(() => cy + nh / 2 + 44 + 22);
-
-const closedN = computed(() => props.closedCount ?? 18);
-const flowPct = computed(() => {
-  if (props.flowRate != null) return `${(props.flowRate * 100).toFixed(1)}%`;
-  return '84.6%';
-});
-const flowText = computed(
-  () => `验证回流 · 已闭环 ${closedN.value} 项 · 闭环流转率 ${flowPct.value}（22/26）`,
-);
 </script>
 
 <template>
@@ -119,7 +197,8 @@ const flowText = computed(
         <span class="inline-block h-3 w-1 rounded-sm bg-[#1F4E79]"></span>
         数据流与治理闭环
       </span>
-      <span class="text-[10px] text-gray-400">近 24h 吞吐 · 全链路时延 38s</span>
+      <!-- TODO: 全链路时延需接后端指标 API -->
+      <span class="text-[10px] text-gray-400">近 24h 吞吐</span>
     </div>
 
     <!-- SVG 流程图 -->
@@ -205,6 +284,27 @@ const flowText = computed(
           stroke-width="1.6"
           stroke-dasharray="6 4"
         />
+        <!-- 流光层：亮色短虚线沿曲线方向重复流动 -->
+        <path
+          :d="feedbackPath"
+          fill="none"
+          stroke="#6ee7b7"
+          stroke-width="3"
+          stroke-dasharray="12 420"
+          stroke-linecap="round"
+          class="flow-light"
+        />
+        <!-- 流光尾迹（暗，滞后主体） -->
+        <path
+          :d="feedbackPath"
+          fill="none"
+          stroke="#6ee7b7"
+          stroke-width="2"
+          stroke-dasharray="8 424"
+          stroke-linecap="round"
+          opacity="0.35"
+          class="flow-trail"
+        />
         <!-- 反馈曲线箭头（向上指入性能评估） -->
         <path
           :d="`M${feedbackArrowX} ${cy + nh / 2 + 2} l-4 8 h8 Z`"
@@ -223,10 +323,42 @@ const flowText = computed(
 
     <!-- 底部流转率摘要 -->
     <div class="flex flex-none flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#E4E7ED] px-3 py-1.5 text-[10.5px] text-gray-500">
-      <span>评估→诊断 <b class="text-gray-700">53.1%</b>（17/32）</span>
-      <span>诊断→整定 <b class="text-gray-700">35.3%</b>（6/17）</span>
-      <span>整定→处置 <b class="text-gray-700">100%</b></span>
-      <span class="text-[#1F4E79]">闭环流转率 <b>{{ flowPct }}</b>（22/26）</span>
+      <span>评估→诊断 <b class="text-gray-700">{{ evalToDiagPct }}</b>（{{ diagN }}/{{ loopN }}）</span>
+      <!-- TODO: 诊断→整定 / 整定→处置 流转率需后端跨模块流转 API -->
+      <span>诊断→整定 <b class="text-gray-700">{{ diagToTunePct }}</b></span>
+      <span>整定→处置 <b class="text-gray-700">{{ tuneToOpsPct }}</b></span>
+      <span class="text-[#1F4E79]">闭环流转率 <b>{{ flowPct }}</b>（{{ closedN }}/{{ flowDenominator }}）</span>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 流光主体：12px 亮虚线沿曲线方向重复流动，带 glow 阴影 */
+.flow-light {
+  animation: flow-dash 2.5s linear infinite;
+  filter: drop-shadow(0 0 4px #6ee7b7);
+}
+
+/* 流光尾迹：8px 暗虚线滞后 28px 跟随 */
+.flow-trail {
+  animation: flow-dash-trail 2.5s linear infinite;
+}
+
+@keyframes flow-dash {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -432;
+  }
+}
+
+@keyframes flow-dash-trail {
+  from {
+    stroke-dashoffset: 28;
+  }
+  to {
+    stroke-dashoffset: -404;
+  }
+}
+</style>

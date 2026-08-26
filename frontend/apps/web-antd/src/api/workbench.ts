@@ -362,12 +362,102 @@ export namespace WorkbenchApi {
     window: TimeWindow;
   }
 
-  /** A-04 GET /tuning 响应骨架 */
-  export interface TuningResult {
-    batches: unknown[];
-    pending_queue: unknown[];
+  // ---------------------------------------------------------------------------
+  // A-04 /tuning + A-13 /tuning-scatters 强类型（G-整定 · 对齐 workbench_tuning.py）
+  // ---------------------------------------------------------------------------
+
+  /** 批次状态 6 态（tuning_batch.status CK；BLOCKED 为服务端动态判定结果） */
+  export type TuningBatchStatus =
+    | 'BLOCKED'
+    | 'CANCELLED'
+    | 'COMPLETED'
+    | 'PENDING'
+    | 'READY'
+    | 'RUNNING';
+
+  /** 前置工单 pill（B-06 依赖解析结果；closed=false 即阻塞源） */
+  export interface TuningPrereqOrder {
+    closed: boolean;
+    order_id: string;
+    order_no: null | string;
+    status: null | string;
+    title: null | string;
+  }
+
+  /** 整定批次卡片（F-TN-01 · W11） */
+  export interface TuningBatch {
+    actual_start_at: null | string;
+    algorithms: string[];
+    batch_no: string;
+    block_reason: null | string;
+    completed_at: null | string;
+    created_at: null | string;
+    expected_start_at: null | string;
+    id: number;
+    loop_count: number;
+    owner: null | string;
+    prereq_orders: TuningPrereqOrder[];
+    scope_id: number;
+    scope_type: string;
+    score_after: null | number;
+    score_before: null | number;
+    score_delta: null | number;
+    /** 动态判定后的有效状态（BLOCKED 由 prereq 工单状态推导） */
+    status: TuningBatchStatus;
+    /** 库存储状态（调试/展示用） */
+    stored_status: TuningBatchStatus;
+    strategy: null | string;
+    title: string;
+  }
+
+  /** 待整定队列行（F-TN-02 · W12；blocked=true → 灰化禁用） */
+  export interface TuneQueueItem {
+    algorithm: null | string;
+    batch_no: null | string;
+    block_reason: null | string;
+    blocked: boolean;
+    created_at: null | string;
+    fitting_score: null | number;
+    loop_desc: null | string;
+    loop_id: string;
+    loop_name: null | string;
+    /** 优先级（评分越低越优先：<65 高 / <73 中 / ≥73 低） */
+    priority: 'HIGH' | 'LOW' | 'MEDIUM';
+    record_id: string;
+    score: null | number;
+    source: string;
+    unit_name: null | string;
+  }
+
+  /** 整定前后散点（F-TN-03 · W13；Δ=after-before，正绿负红） */
+  export interface TuningScatterPoint {
+    after: number;
+    batch_no: null | string;
+    before: number;
+    delta: number;
+    loop_id: string;
+    loop_name: null | string;
+    order_no: null | string;
+    /** 有效提升口径：Δ ≥ 5 分 */
+    significance: boolean;
+  }
+
+  /** A-04 GET /tuning 响应（G-整定 · 四块聚合 + 部分失败容错） */
+  export interface TuningFullResult {
+    batches: TuningBatch[];
+    fitness_gates: DiagnosisFitnessGates;
+    pending_queue: TuneQueueItem[];
+    scatters: TuningScatterPoint[];
     scope: { id: null | number; type: ScopeType };
     window: TimeWindow;
+  }
+
+  /** A-13 GET /tuning-scatters 响应 */
+  export interface TuningScattersResult {
+    batch_id: null | number;
+    points: TuningScatterPoint[];
+    scope: { id: null | number; type: ScopeType };
+    window: string;
   }
 
   /** A-05 GET /handling 响应骨架 */
@@ -457,12 +547,24 @@ export function getWorkbenchDiagnosisApi(params?: WorkbenchApi.ScopeParams) {
 }
 
 // ---------------------------------------------------------------------------
-// A-04 整定（整定批次 + 待整定队列）
+// A-04 整定（批次 + 待整定队列 + 散点 + 适用性门禁）
 // ---------------------------------------------------------------------------
 export function getWorkbenchTuningApi(params?: WorkbenchApi.ScopeParams) {
-  return requestClient.get<WorkbenchApi.TuningResult>('/workbench/tuning', {
+  return requestClient.get<WorkbenchApi.TuningFullResult>('/workbench/tuning', {
     params,
   });
+}
+
+// ---------------------------------------------------------------------------
+// A-13 整定前后散点（支持 batchId / scope / window 过滤）
+// ---------------------------------------------------------------------------
+export function getWorkbenchTuningScattersApi(
+  params?: WorkbenchApi.ScopeParams & { batchId?: number },
+) {
+  return requestClient.get<WorkbenchApi.TuningScattersResult>(
+    '/workbench/tuning-scatters',
+    { params },
+  );
 }
 
 // ---------------------------------------------------------------------------

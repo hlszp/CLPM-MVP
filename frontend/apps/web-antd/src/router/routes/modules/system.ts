@@ -25,6 +25,17 @@ const routes: RouteRecordRaw[] = [
     path: '/system',
     children: [
       {
+        // 站点基础信息（公司全称/简称/LOGO/联系人/授权回路数等），登录页公开读取
+        name: 'SystemBasicInfo',
+        path: '/system/basic-info',
+        component: () => import('#/views/system/basic-info.vue'),
+        meta: {
+          authority: ['ADMIN'],
+          icon: 'lucide:building-2',
+          title: '基础信息',
+        },
+      },
+      {
         name: 'SystemUsers',
         path: '/system/users',
         component: () => import('#/views/system/users.vue'),

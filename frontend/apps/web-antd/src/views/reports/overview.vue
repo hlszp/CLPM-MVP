@@ -814,9 +814,9 @@ onMounted(() => {
 <style scoped>
 .reports-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
   padding: 8px 12px;
   margin: 8px 0;
   background: hsl(var(--card));

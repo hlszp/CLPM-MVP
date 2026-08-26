@@ -16,19 +16,19 @@ import { computed } from 'vue';
 import { Button, Drawer, Tag, Tooltip } from 'ant-design-vue';
 
 import { ClpmFitnessBadge } from '#/components/clpm';
-import { fitnessTagToLabel } from '#/constants/clpm-ui';
 import {
   LOOP_TYPE_LABEL_MAP,
   MODE_LABEL_MAP,
 } from '#/composables/use-loop-palettes';
+import { fitnessTagToLabel } from '#/constants/clpm-ui';
 
 defineOptions({ name: 'LoopDetailDrawer' });
 
 const props = defineProps<{
-  /** 抽屉开关 */
-  open: boolean;
   /** 当前回路（列表行记录；null 时抽屉内容留白） */
   loop: LoopApi.MonitorListItem | null;
+  /** 抽屉开关 */
+  open: boolean;
 }>();
 
 const emit = defineEmits<{

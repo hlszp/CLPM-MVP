@@ -293,14 +293,14 @@ onMounted(() => {
         margin-bottom: 12px;
       "
     >
-      <div style="display: flex; align-items: center; gap: 12px">
+      <div style="display: flex; gap: 12px; align-items: center">
         <Tooltip
           title="适用性分层规则：L0=数据不足复用数据门禁；L1=仅可监视（手动主导/自控率低）；L2=条件异常（OP饱和/SP-PV偏离）；L3=待激励（无激励/弱响应）；L4=可优化。阈值调整后下轮 KPI 计算立即生效，无需重启。"
           placement="right"
         >
           <IconifyIcon icon="ant-design:question-circle-outlined" :width="16" :height="16" />
         </Tooltip>
-        <span style="color: var(--color-neutral-500); font-size: 13px">
+        <span style=" font-size: 13px;color: var(--color-neutral-500)">
           {{ formatUpdatedInfo() }}
         </span>
       </div>
@@ -365,12 +365,12 @@ onMounted(() => {
           </Tag>
           <div
             style="
-              margin-top: 8px;
               padding: 8px;
+              margin-top: 8px;
+              overflow: auto;
               background: var(--color-neutral-100);
               borderRadius: 6px;
               maxHeight: 180px;
-              overflow: auto;
             "
           >
             <div

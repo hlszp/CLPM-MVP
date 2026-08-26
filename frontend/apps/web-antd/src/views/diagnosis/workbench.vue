@@ -1557,36 +1557,40 @@ onMounted(() => {
 /* ===== P2 IA优化：L2 条件异常横幅（琥珀色） ===== */
 .diag-condition-warning {
   display: flex;
-  align-items: flex-start;
   gap: 10px;
+  align-items: flex-start;
   padding: 10px 12px;
   margin-bottom: 10px;
-  border-radius: 4px;
+  color: var(--color-amber-800);
   background: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-amber-500) 40%, transparent);
-  color: var(--color-amber-800);
+  border-radius: 4px;
 }
+
 .diag-condition-warning__icon {
+  display: inline-block;
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
   margin-top: 1px;
-  display: inline-block;
   color: var(--color-amber-600);
 }
+
 .diag-condition-warning__body {
-  min-width: 0;
   flex: 1;
+  min-width: 0;
 }
+
 .diag-condition-warning__title {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
 }
+
 .diag-condition-warning__subtitle {
-  font-size: 11px;
   margin-top: 3px;
-  opacity: 0.9;
+  font-size: 11px;
   line-height: 1.4;
+  opacity: 0.9;
 }
 </style>

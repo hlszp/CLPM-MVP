@@ -32,7 +32,6 @@ import FunnelStats from '../components/FunnelStats.vue';
 import KpiCards from '../components/KpiCards.vue';
 import ModuleHealth from '../components/ModuleHealth.vue';
 import ScoreTrendChart from '../components/ScoreTrendChart.vue';
-import WorkbenchShell from '../components/WorkbenchShell.vue';
 
 const store = useWorkbenchStore();
 
@@ -80,8 +79,7 @@ watch(
 </script>
 
 <template>
-  <WorkbenchShell>
-    <div class="flex h-full flex-col gap-2 p-2">
+  <div class="flex h-full flex-col gap-2 p-2">
     <!-- 加载/错误提示 -->
     <div
       v-if="loading"
@@ -113,7 +111,14 @@ watch(
         <ModuleHealth :plugins="plugins" />
       </div>
       <div class="col-span-5 min-h-0">
-        <DataFlowDiagram :plugins="plugins" :loop-count="loopCount" />
+        <DataFlowDiagram
+          :plugins="plugins"
+          :loop-count="loopCount"
+          :funnel="overview?.funnel"
+          :roots-count="
+            (overview?.roots ?? []).reduce((s, r) => s + (r.count ?? 0), 0)
+          "
+        />
       </div>
       <div class="col-span-3 min-h-0">
         <DeviceRiskList :plants="overview?.plants" :total-loops="loopCount" />
@@ -133,5 +138,4 @@ watch(
       </div>
     </div>
     </div>
-  </WorkbenchShell>
 </template>

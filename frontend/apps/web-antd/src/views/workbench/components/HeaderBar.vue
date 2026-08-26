@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 工作台顶栏（方案 §5.1 F-GL-02：56px）
+ * 工作台 TabBar 右侧工具片段（原 §5.1 F-GL-02 顶栏，合并至 TabBar 行节省 56px）
  *
- * 左：范围选择器 + 时间胶囊（24h/7d/30d）+ 可信徽章
- * 右：通知铃铛（A-E5 未读红点，M1 桩）+ 当前人员
+ * 内容：范围选择器 + 时间胶囊（24h/7d/30d）+ 可信徽章 + 通知铃铛
+ * 删除：用户名（外壳 layout 已显示，工作台不重复）
  *
  * - 范围选择器：层级下拉（全厂 → 工厂 → 装置），接 store.setScope 联动
  * - 时间胶囊：接 store.setWindow，跨 Tab 联动
@@ -12,12 +12,9 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { useUserStore } from '@vben/stores';
-
 import { useWorkbenchStore } from '#/store/workbench';
 
 const store = useWorkbenchStore();
-const userStore = useUserStore();
 
 const WINDOWS: { label: string; value: '7d' | '24h' | '30d' }[] = [
   { label: '近 24h', value: '24h' },
@@ -73,20 +70,13 @@ function onDocumentClick(e: MouseEvent) {
 onMounted(() => document.addEventListener('click', onDocumentClick));
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
 
-// ============ 其他 ============
-const userName = computed(
-  () => userStore.userInfo?.username ?? userStore.userInfo?.realName ?? '—',
-);
-
 function onBellClick() {
   // TODO: M2 打开铃铛抽屉
 }
 </script>
 
 <template>
-  <header
-    class="flex h-14 flex-none items-center gap-4 border-b border-[#E4E7ED] bg-white px-4"
-  >
+  <div class="flex items-center gap-3">
     <!-- 范围选择器（层级下拉：全厂 → 工厂 → 装置） -->
     <div ref="scopeRef" class="relative">
       <button
@@ -99,10 +89,10 @@ function onBellClick() {
         <span class="text-[10px] text-gray-400">▼</span>
       </button>
 
-      <!-- 层级下拉面板 -->
+      <!-- 层级下拉面板（右对齐，避免右侧溢出视口） -->
       <div
         v-if="scopeOpen"
-        class="absolute top-full left-0 z-50 mt-1 max-h-[70vh] w-52 overflow-auto rounded border border-[#E4E7ED] bg-white shadow-lg"
+        class="absolute top-full right-0 z-50 mt-1 max-h-[70vh] w-52 overflow-auto rounded border border-[#E4E7ED] bg-white shadow-lg"
       >
         <!-- 全厂 -->
         <button
@@ -181,22 +171,19 @@ function onBellClick() {
       数据可信
     </span>
 
-    <!-- 右侧：铃铛 + 人员 -->
-    <div class="ml-auto flex items-center gap-3">
-      <button
-        class="relative flex h-7 w-7 items-center justify-center rounded text-gray-600 hover:bg-gray-100"
-        title="通知"
-        @click="onBellClick"
+    <!-- 通知铃铛（A-E5 未读红点，M1 桩） -->
+    <button
+      class="relative flex h-7 w-7 items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+      title="通知"
+      @click="onBellClick"
+    >
+      <span class="text-base">🔔</span>
+      <span
+        v-if="store.unreadCount > 0"
+        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
       >
-        <span class="text-base">🔔</span>
-        <span
-          v-if="store.unreadCount > 0"
-          class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
-        >
-          {{ store.unreadCount > 99 ? '99+' : store.unreadCount }}
-        </span>
-      </button>
-      <span class="text-sm text-gray-700">{{ userName }}</span>
-    </div>
-  </header>
+        {{ store.unreadCount > 99 ? '99+' : store.unreadCount }}
+      </span>
+    </button>
+  </div>
 </template>

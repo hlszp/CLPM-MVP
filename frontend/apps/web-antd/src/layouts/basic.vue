@@ -19,6 +19,7 @@ import { useAccessStore, useUserStore } from '@vben/stores';
 import { Alert, Button, Popover } from 'ant-design-vue';
 
 import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';
+import { applySiteLogoToPreferences } from '#/composables/use-site-branding';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import { alertWs } from '#/utils/alert-ws';
@@ -149,6 +150,8 @@ onMounted(() => {
   });
   // E4：预警铃铛——初始拉取 + WS 实时推送
   loadAlertNotifications();
+  // 站点品牌：读取企业 LOGO 写入 preferences.logo.source，使左上角 VbenLogo 展示
+  applySiteLogoToPreferences();
   if (accessStore.accessToken) {
     // P2-05：实时数据 WS 全局建连（顶栏在线徽章在任意页面真实反映连接状态；
     // connect 幂等，monitor/tag 页面级建连复用同一连接，不产生重复 WebSocket）
@@ -213,7 +216,15 @@ const avatar = computed(() => {
 });
 
 async function handleLogout() {
-  await authStore.logout(false);
+  // 加 try/catch 兜底：即使 authStore.logout 抛出未捕获错误，也不阻塞 UI 线程
+  try {
+    await authStore.logout(false);
+  } catch (error) {
+    // 极端兜底：store logout 失败（例如持久化/路由异常），强制硬跳登录页
+    console.error('[CLPM] logout failed, force redirect:', error);
+    const { LOGIN_PATH } = await import('@vben/constants');
+    window.location.replace(LOGIN_PATH);
+  }
 }
 
 function handleNoticeClear() {

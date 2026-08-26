@@ -2955,61 +2955,68 @@ const stageLabelMap: Record<string, string> = {
 /* ===== P2 IA优化：适用性横幅（L2 amber / L0L1 slate） ===== */
 .wb-fitness-banner {
   display: flex;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
   padding: 8px 12px;
-  border-radius: 4px;
   margin-top: 4px;
   margin-bottom: 4px;
   border: 1px solid;
+  border-radius: 4px;
 }
+
 .wb-fitness-banner__left {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
   flex: 1;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
 }
+
 .wb-fitness-banner__icon {
+  display: inline-block;
   flex: 0 0 auto;
   width: 16px;
   height: 16px;
   margin-top: 2px;
-  display: inline-block;
 }
+
 .wb-fitness-banner__body {
-  min-width: 0;
   flex: 1;
+  min-width: 0;
 }
+
 .wb-fitness-banner__title {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
 }
+
 .wb-fitness-banner__subtitle {
-  font-size: 11px;
   margin-top: 2px;
-  opacity: 0.9;
+  font-size: 11px;
   line-height: 1.4;
+  opacity: 0.9;
 }
 
 /* L2 琥珀警告横幅 */
 .wb-fitness-banner--l2 {
+  color: var(--color-amber-800);
   background: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
   border-color: color-mix(in srgb, var(--color-amber-500) 40%, transparent);
-  color: var(--color-amber-800);
 }
+
 .wb-fitness-banner--l2 .wb-fitness-banner__icon {
   color: var(--color-amber-600);
 }
 
 /* L0/L1 中性灰（不红不警告） */
 .wb-fitness-banner--l0l1 {
+  color: var(--color-slate-700);
   background: color-mix(in srgb, var(--color-slate-500) 8%, transparent);
   border-color: color-mix(in srgb, var(--color-slate-500) 30%, transparent);
-  color: var(--color-slate-700);
 }
+
 .wb-fitness-banner--l0l1 .wb-fitness-banner__icon {
   color: var(--color-slate-500);
 }
