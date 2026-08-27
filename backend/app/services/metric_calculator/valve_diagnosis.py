@@ -116,7 +116,14 @@ class ValveNonlinearityCalculator(MetricCalculatorBase):
 
     nonlinearity = 1 - |r|，与 ValveLinearity 互补。
     r=1 → nonlinearity=0（完全线性），r=0 → nonlinearity=1（完全非线性）。
+
+    依赖复用：编排层注入 valve_linearity 结果后直接取补值，
+    避免对同一 PV-OP 数据重复计算皮尔逊 r（2026-08-27 去重）；
+    依赖缺失（独立调用/单测）时回退自行计算。
     """
+
+    #: 复用 valve_linearity 的 |r|，nonlinearity = 1 - |r|
+    depends_on = ["valve_linearity"]
 
     @property
     def metric_code(self) -> str:
@@ -132,6 +139,24 @@ class ValveNonlinearityCalculator(MetricCalculatorBase):
             MetricResult：value 为 1-|r| ∈ [0, 1]；
             details 含 nonlinearity（4 位精度）和 n
         """
+        # 依赖注入路径：nonlinearity 与 linearity 严格互补，
+        # 零方差（r=None）时 linearity=0 → nonlinearity=1，口径一致
+        lin_result = self.dependencies.get("valve_linearity")
+        if lin_result is not None and lin_result.value is not None:
+            nonlinearity = 1.0 - float(lin_result.value)
+            n = lin_result.details.get("n") if lin_result.details else None
+            logger.debug(
+                "[阀门非线性度] 复用 valve_linearity: linearity=%.4f, nonlinearity=%.4f",
+                lin_result.value,
+                nonlinearity,
+            )
+            return self._make_result(
+                bundle,
+                nonlinearity,
+                {"nonlinearity": round(nonlinearity, 4), "n": n},
+            )
+
+        # 独立调用回退路径：自行计算皮尔逊 r
         pairs = self._get_masked_pair(bundle, "pv", "op")
         xs, ys = _filter_pairs(pairs)  # P0 fix
         n = len(xs)

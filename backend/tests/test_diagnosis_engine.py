@@ -2236,15 +2236,13 @@ class TestDetectOscillationIae:
         assert result["confidence"] == 0.0
 
     def test_random_noise_similarity_consistent_with_kpi(self) -> None:
-        """随机噪声：相似率与 KPI 侧一致；判定经半周期门控剔除（任务①）。
+        """随机噪声：相似率与 KPI 侧一致；两侧判定经半周期门控一致剔除。
 
-        设计文档 §4.6.2 已知特性：高频噪声下短段 IAE 相似率可能达 1.0，
-        KPI 侧 is_oscillating 可为 True（见 test_metric_calculator/
-        test_oscillation.py::test_random_noise_output_format）。
+        设计文档 §4.6.2 已知特性：高频噪声下短段 IAE 相似率可达 1.0。
         P2 统一保持相似率算法一致（min(S_A, S_B) 两侧相等）；
-        任务①在诊断侧判定环节增加平均半周期门控（min_half_period_samples=8），
-        纯白噪声（平均半周期 ~2 采样点）不再误判振荡——此为诊断侧有意增强，
-        KPI 指标口径不变，两侧 detected/is_oscillating 结论在噪声场景可有差异。
+        任务①在诊断侧判定环节增加平均半周期门控（min_half_period_samples=8）；
+        P1 将同一门控下沉到 KPI 侧（metric_calculator/oscillation.py），
+        纯白噪声（平均半周期 ~2 采样点）两侧一致判非振荡，口径完全统一。
         """
         rng = np.random.RandomState(42)
         n = 200
@@ -2261,8 +2259,8 @@ class TestDetectOscillationIae:
         # 相似率算法两侧一致（P2 统一的核心断言，details 保留 4 位小数）
         kpi_similarity = min(kpi.details["s_a"], kpi.details["s_b"])
         assert diag["similarity"] == pytest.approx(kpi_similarity, abs=1e-3)
-        # KPI 侧无门控仍可判振荡（§4.6.2 已知特性）；诊断侧门控后不误判
-        assert kpi.details["is_oscillating"] is True
+        # P1 门控下沉后两侧结论一致：白噪声均不判振荡
+        assert kpi.details["is_oscillating"] is False
         assert diag["detected"] is False
 
     def test_white_noise_rejected_by_half_period_gate(self) -> None:

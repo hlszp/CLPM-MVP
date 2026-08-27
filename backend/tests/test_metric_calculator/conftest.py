@@ -86,6 +86,7 @@ def make_data_block(
     data_block_id: str = "db_test_BASE_1s",
     loop_id: str = "L001",
     loop_confidence_level: str = "E",
+    interval_s: float = 1.0,
 ) -> DataBlock:
     """构造测试用 DataBlock.
 
@@ -102,6 +103,7 @@ def make_data_block(
         data_block_id: 数据块 ID
         loop_id: 回路 ID
         loop_confidence_level: 回路级可信度等级（v6.2 P2-2，默认 "E"）
+        interval_s: 时间戳间隔（秒，默认 1.0；周期类指标单位换算测试用）
     """
     if n is None:
         n = len(next(iter(signals.values()))) if signals else 0
@@ -115,7 +117,7 @@ def make_data_block(
             valid_rate=1.0,
             bad_rate=0.0,
         )
-    timestamps = make_timestamps(n)
+    timestamps = make_timestamps(n, interval_s)
     return DataBlock(
         data_block_id=data_block_id,
         loop_id=loop_id,
@@ -144,6 +146,7 @@ def make_bundle(
     outlier_reasons: dict[str, list[list[str]]] | None = None,
     n: int | None = None,
     loop_confidence_level: str = "E",
+    interval_s: float = 1.0,
 ) -> MetricDataBundle:
     """构造测试用 MetricDataBundle.
 
@@ -159,6 +162,7 @@ def make_bundle(
         quality_summary=quality_summary,
         outlier_reasons=outlier_reasons,
         loop_confidence_level=loop_confidence_level,
+        interval_s=interval_s,
     )
     # 简化 mask：空表达式 → 全部索引；否则取所有 valid 为 True 的索引交集
     if not mask_expression or not mask_expression.strip():

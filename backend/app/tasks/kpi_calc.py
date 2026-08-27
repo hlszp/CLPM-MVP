@@ -117,6 +117,8 @@ _ALL_METRIC_CODES_DB: list[str] = list(_DB_TO_CALCULATOR_METRIC_CODE.keys())
 _LAYER2_DEPENDENCIES: dict[str, list[str]] = {
     "stability_rate": ["oscillation_rate"],
     "fast_rate": ["settling_time", "ideal_settling_time"],
+    # nonlinearity = 1 - |r|，复用 valve_linearity 的 r，避免重复计算皮尔逊相关系数
+    "valve_nonlinearity": ["valve_linearity"],
 }
 
 
@@ -1623,12 +1625,15 @@ def _compute_kpis_three_layer(
             原有 9 个（accuracy_rate, effective_auto_rate, good_value_rate,
             oscillation_rate, saturation_rate, stiction_index, output_trip_index,
             auto_mode_rate, settling_time）+ ideal_settling_time（从 config_bundle 计算）
-            Phase 1 新增 14 个（instrument_fault_rate, pv/sp/op_mean, pv/sp/op_std,
-            error_mean, error_std, valve_linearity, valve_nonlinearity,
-            valve_operating_range, setpoint_crossing_count, oscillation_amplitude）
-    Layer2: 2 个有依赖指标
+            Phase 1 新增 13 个（instrument_fault_rate, pv/sp/op_mean, pv/sp/op_std,
+            error_mean, error_std, valve_linearity, valve_operating_range,
+            setpoint_crossing_count, oscillation_amplitude）
+            + time_constant（F5）
+            （valve_nonlinearity 依赖 valve_linearity，移至 Layer2）
+    Layer2: 3 个有依赖指标
             - stability_rate ← oscillation_rate
             - fast_rate ← settling_time + ideal_settling_time
+            - valve_nonlinearity ← valve_linearity（1-|r| 互补复用）
     Layer3: ConfidenceEvaluator.compute_composite_score(metric_results, weights)
 
     Args:
@@ -1658,7 +1663,8 @@ def _compute_kpis_three_layer(
         "output_trip_index",
         "auto_mode_rate",
         "settling_time",
-        # Phase 1 新增 14 个（HiaMonitor 借鉴，2026-07-23）
+        # Phase 1 新增 13 个（HiaMonitor 借鉴，2026-07-23；
+        # valve_nonlinearity 依赖 valve_linearity，移至 Layer2）
         "instrument_fault_rate",
         "pv_mean",
         "pv_std",
@@ -1669,7 +1675,6 @@ def _compute_kpis_three_layer(
         "error_mean",
         "error_std",
         "valve_linearity",
-        "valve_nonlinearity",
         "valve_operating_range",
         "setpoint_crossing_count",
         "oscillation_amplitude",

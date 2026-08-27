@@ -6,7 +6,10 @@
 - 偏差过大导致降级
 - 手动模式
 - 空数据
-- auto_mode_rate 同时计算
+
+注：auto_mode_rate 指标由 AutoModeRateCalculator 单独计算（2026-08-27 起
+EffectiveAutoRateCalculator 不再副产出该值，历史副产出口径与自控率指标
+掩码不一致）；本文件用 details.auto_duration_s 断言自控时长上下文。
 
 设计依据：算法说明 §4.2；GB/T 44693.2-2024 附录 B.2
 """
@@ -35,7 +38,7 @@ class TestEffectiveAutoRate:
         calc = EffectiveAutoRateCalculator()
         result = calc.calculate(bundle)
         assert result.value == 100.0
-        assert result.details["auto_mode_rate"] == 100.0
+        assert result.details["auto_duration_s"] == result.details["total_duration_s"]
 
     def test_op_saturation_reduces_rate(self):
         """OP 饱和 → 有效自控率 < 自控率。"""
@@ -50,8 +53,8 @@ class TestEffectiveAutoRate:
         )
         calc = EffectiveAutoRateCalculator()
         result = calc.calculate(bundle)
-        # auto_mode_rate=100, effective=0（全饱和）
-        assert result.details["auto_mode_rate"] == 100.0
+        # 自控时长全覆盖（mode 全 Auto），但 OP 全饱和 → effective=0
+        assert result.details["auto_duration_s"] == result.details["total_duration_s"]
         assert result.value == 0.0
 
     def test_large_deviation_reduces_rate(self):
@@ -70,7 +73,7 @@ class TestEffectiveAutoRate:
         assert result.value == 0.0
 
     def test_manual_mode_zero_rate(self):
-        """全手动 → auto_mode_rate=0, effective=0。"""
+        """全手动 → 自控时长=0, effective=0。"""
         n = 100
         mode = [0] * n
         op = [50.0] * n
@@ -83,7 +86,7 @@ class TestEffectiveAutoRate:
         calc = EffectiveAutoRateCalculator()
         result = calc.calculate(bundle)
         assert result.value == 0.0
-        assert result.details["auto_mode_rate"] == 0.0
+        assert result.details["auto_duration_s"] == 0.0
 
     def test_empty_data_inconclusive(self):
         """空数据 → INCONCLUSIVE。"""
@@ -120,7 +123,8 @@ class TestEffectiveAutoRate:
         )
         calc = EffectiveAutoRateCalculator()
         result = calc.calculate(bundle)
-        assert result.details["auto_mode_rate"] == 100.0
+        assert result.value == 100.0
+        assert result.details["auto_duration_s"] == result.details["total_duration_s"]
 
     def test_mismatched_lengths_no_index_error(self):
         """信号/时间戳长度不齐时按最短数组截断，不抛 IndexError。"""
@@ -157,7 +161,7 @@ class TestMissingOptionalSignals:
         )
         result = EffectiveAutoRateCalculator().calculate(bundle)
         assert result.value == 100.0
-        assert result.details["auto_mode_rate"] == 100.0
+        assert result.details["auto_duration_s"] == result.details["total_duration_s"]
 
     def test_missing_op_treated_as_unsaturated(self):
         """缺 op 信号 → 不判饱和，mode 全自动 → R=100。"""
