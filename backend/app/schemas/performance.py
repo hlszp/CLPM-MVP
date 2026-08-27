@@ -154,6 +154,8 @@ class BoardData(CamelModel):
     kpiSummary: KpiSummary
     steadyRateTrend: TrendSeries
     partialWarning: PartialWarning
+    # P2 IA优化：L0~L4 适用性分布（键为 L0/L1/L2/L3/L4，值为计数）
+    fitnessDistribution: dict[str, int] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +194,9 @@ class RankingItem(CamelModel):
     validRate: float | None = None
     samplingFreq: str | None = None
     qualityPolicy: str | None = None
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +434,9 @@ class KpiSnapshotSchema(CamelModel):
     setpointCrossingCount: int | None = None
     # F5：时间常数（秒，L1 DISPLAY_ONLY，激励不足窗口为 None）
     timeConstant: float | None = None
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
 
 
 class KpiSnapshotListItem(CamelModel):
@@ -473,10 +481,14 @@ class KpiSnapshotListItem(CamelModel):
     valveNonlinearity: float | None = None
     valveOpMin: float | None = None
     valveOpMax: float | None = None
+    # 振荡/穿越指标
     oscillationAmplitude: float | None = None
     setpointCrossingCount: int | None = None
     # F5：时间常数（秒，L1 DISPLAY_ONLY）
     timeConstant: float | None = None
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
 
 
 class KpiSnapshotListData(CamelModel):
@@ -486,6 +498,28 @@ class KpiSnapshotListData(CamelModel):
     total: int
     page: int
     pageSize: int
+
+
+class MetricSeriesPoint(CamelModel):
+    """批量指标序列数据点（指标矩阵页列头趋势对比）."""
+
+    ts: str | None = None
+    value: float | None = None
+
+
+class MetricSeriesItem(CamelModel):
+    """单回路的指标时间序列."""
+
+    loopId: str | None = None
+    loopTagName: str | None = None
+    points: list[MetricSeriesPoint] = Field(default_factory=list)
+
+
+class MetricSeriesData(CamelModel):
+    """批量回路指标序列响应 data 块."""
+
+    metricKey: str
+    series: list[MetricSeriesItem] = Field(default_factory=list)
 
 
 __all__ = [
@@ -507,6 +541,9 @@ __all__ = [
     "KpiTrendSeries",
     "MetricConfigItem",
     "MetricConfigUpdate",
+    "MetricSeriesData",
+    "MetricSeriesItem",
+    "MetricSeriesPoint",
     "MetricThreshold",
     "PartialWarning",
     "RankingItem",

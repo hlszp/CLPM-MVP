@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: backend_service/loop_management/tuning_identification
+title: 过程对象辨识算法栈（历史数据自动辨识）
+scope:
+    - backend/app/services/tuning_identification/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/loop_management/loop_core

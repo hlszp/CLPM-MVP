@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,6 +41,165 @@ _suppressor = Suppressor()
 _KEY_GLOBAL_SWITCH = "alert.global_enabled"
 _KEY_GLOBAL_SWITCH_DESC = "预警引擎全局开关（true/false）"
 
+# ---------------------------------------------------------------------------
+# 预制规则（评估/诊断指标，2026-08-24 预警规则产品化）
+# 用户仅可调阈值（含一般/重要/紧急三级）与启停，不允许新增/删除/改结构
+# ---------------------------------------------------------------------------
+
+PRESET_RULE_CODE_PREFIX = "PRESET_"
+
+_LEVEL_SEVERITY_ORDER = ("WARN", "ERROR", "CRITICAL")
+
+
+def _preset_levels(*values: float) -> list[dict[str, Any]]:
+    """按 一般(WARN)→重要(ERROR)→紧急(CRITICAL) 顺序生成三级阈值（可只给前 N 级）。"""
+    return [
+        {"severity": sev, "value": val}
+        for sev, val in zip(_LEVEL_SEVERITY_ORDER, values, strict=False)
+    ]
+
+
+def _build_preset_dsl(
+    metric_source: str,
+    metric_code: str,
+    operator: str,
+    levels: list[dict[str, Any]],
+    check_interval_minutes: int = 60,
+    duration_count: int = 1,
+) -> dict[str, Any]:
+    """生成预制规则 DSL（condition.value 取 WARN 级阈值，向后兼容单级链路）。"""
+    warn_value = next(
+        (lv["value"] for lv in levels if lv["severity"] == "WARN"), levels[0]["value"]
+    )
+    return {
+        "ruleType": "METRIC_THRESHOLD",
+        "scope": {"loopSelector": {"type": "ALL"}},
+        "condition": {
+            "metricSource": metric_source,
+            "metricCode": metric_code,
+            "operator": operator,
+            "value": warn_value,
+            "levels": levels,
+            "checkIntervalMinutes": check_interval_minutes,
+            "durationCount": duration_count,
+        },
+        "severity": "WARN",
+        "actions": [{"type": "CREATE_EVENT"}, {"type": "NOTIFY"}],
+    }
+
+
+#: 12 条预制规则：10 性能评估指标（KPI，0-100 百分制）+ 2 故障诊断指标
+PRESET_RULES: list[dict[str, Any]] = [
+    {
+        "rule_code": "PRESET_KPI_SCORE",
+        "rule_name": "综合评分过低",
+        "description": "回路综合评分低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "score", "<", _preset_levels(60, 40, 20)),
+    },
+    {
+        "rule_code": "PRESET_KPI_EFFECTIVE_AUTO_RATE",
+        "rule_name": "有效自控率偏低",
+        "description": "有效自控率低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "effective_auto_rate", "<", _preset_levels(85, 70, 50)),
+    },
+    {
+        "rule_code": "PRESET_KPI_STEADY_RATE",
+        "rule_name": "平稳率偏低",
+        "description": "平稳率低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "steady_rate", "<", _preset_levels(85, 70, 50)),
+    },
+    {
+        "rule_code": "PRESET_KPI_FAST_RATE",
+        "rule_name": "快速率偏低",
+        "description": "快速率低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "fast_rate", "<", _preset_levels(85, 70, 50)),
+    },
+    {
+        "rule_code": "PRESET_KPI_ACCURACY_RATE",
+        "rule_name": "准确率偏低",
+        "description": "准确率低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "accuracy_rate", "<", _preset_levels(85, 70, 50)),
+    },
+    {
+        "rule_code": "PRESET_KPI_AUTO_MODE_RATE",
+        "rule_name": "平均自控率偏低",
+        "description": "平均自控率（自动模式占比）低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "auto_mode_rate", "<", _preset_levels(85, 70, 50)),
+    },
+    {
+        "rule_code": "PRESET_KPI_GOOD_VALUE_RATE",
+        "rule_name": "好值率偏低",
+        "description": "PV 好值率低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "good_value_rate", "<", _preset_levels(95, 90, 80)),
+    },
+    {
+        "rule_code": "PRESET_KPI_VALID_RATE",
+        "rule_name": "有效率偏低",
+        "description": "评估有效率低于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "valid_rate", "<", _preset_levels(90, 80, 60)),
+    },
+    {
+        "rule_code": "PRESET_KPI_OSCILLATION_RATE",
+        "rule_name": "振荡率偏高",
+        "description": "振荡回路占比高于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "oscillation_rate", ">", _preset_levels(10, 20, 40)),
+    },
+    {
+        "rule_code": "PRESET_KPI_SATURATION_RATE",
+        "rule_name": "饱和率偏高",
+        "description": "输出饱和回路占比高于阈值（百分制）",
+        "dsl": _build_preset_dsl("KPI", "saturation_rate", ">", _preset_levels(10, 20, 40)),
+    },
+    {
+        "rule_code": "PRESET_DIAG_SEVERITY",
+        "rule_name": "诊断故障等级过高",
+        "description": "最新诊断故障等级达阈（LOW=1/MEDIUM=2/HIGH=3）",
+        "dsl": _build_preset_dsl("DIAGNOSIS", "severity", ">=", _preset_levels(2, 3)),
+    },
+    {
+        "rule_code": "PRESET_DIAG_CONFIDENCE",
+        "rule_name": "诊断置信度过低",
+        "description": "最新诊断主因置信度低于阈值（0-1）",
+        "dsl": _build_preset_dsl(
+            "DIAGNOSIS", "primary_confidence", "<=", _preset_levels(0.6, 0.4, 0.2)
+        ),
+    },
+]
+
+
+def _is_preset_rule(rule: AlertRule) -> bool:
+    return rule.rule_code.startswith(PRESET_RULE_CODE_PREFIX)
+
+
+def _merge_preset_dsl(base_dsl: dict[str, Any], incoming_dsl: dict[str, Any]) -> dict[str, Any]:
+    """预制规则 DSL 合并：仅允许覆盖 condition.value / condition.levels。
+
+    指标维度（metricSource/metricCode/operator）与其余结构一律锁定，
+    传入不一致时拒绝（ERR_ALERT_RULE_PRESET_LOCKED）。
+    """
+    if not isinstance(incoming_dsl, dict):
+        raise BizError(
+            code="ERR_ALERT_RULE_PRESET_LOCKED",
+            message="预制规则更新必须携带完整 DSL 对象",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    base_cond = base_dsl.get("condition") or {}
+    in_cond = incoming_dsl.get("condition") or {}
+    for key in ("metricSource", "metricCode", "operator"):
+        if in_cond.get(key) is not None and in_cond[key] != base_cond.get(key):
+            raise BizError(
+                code="ERR_ALERT_RULE_PRESET_LOCKED",
+                message=f"预制规则不允许修改 {key}，仅可调整阈值与启停",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+    merged = copy.deepcopy(base_dsl)
+    cond = merged.setdefault("condition", {})
+    if "value" in in_cond:
+        cond["value"] = in_cond["value"]
+    if "levels" in in_cond:
+        cond["levels"] = in_cond["levels"]
+    return merged
+
 
 def _now_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
@@ -64,12 +224,17 @@ def _rule_to_dict(rule: AlertRule) -> dict[str, Any]:
     }
 
 
-def _event_to_dict(event: AlertEvent, loop_name: str | None = None) -> dict[str, Any]:
+def _event_to_dict(
+    event: AlertEvent,
+    loop_name: str | None = None,
+    rule_name: str | None = None,
+) -> dict[str, Any]:
     """ORM → 响应字典。"""
     return {
         "event_id": event.id,
         "rule_id": event.rule_id,
         "rule_code": event.rule_code,
+        "rule_name": rule_name,
         "rule_version": event.rule_version,
         "loop_id": event.loop_id,
         "severity": event.severity,
@@ -140,62 +305,50 @@ def _audit_to_dict(log: AlertRuleAuditLog) -> dict[str, Any]:
 
 
 async def create_rule(db: AsyncSession, operator: str, rule_data: dict[str, Any]) -> dict[str, Any]:
-    """创建预警规则。"""
-    # DSL 校验（可能抛 ValidationError）
-    validate_dsl(rule_data["dsl"])
+    """创建预警规则。
 
-    # rule_code 唯一性检查
-    existing = await db.execute(
-        select(AlertRule).where(AlertRule.rule_code == rule_data["rule_code"])
+    预制规则模式（2026-08-24）：评估/诊断指标预警规则全部预制下发，
+    用户仅可修改阈值与启停，不允许新增规则；预制种子由
+    ``ensure_preset_rules`` 直接写库，不走本函数。
+    """
+    raise BizError(
+        code="ERR_ALERT_RULE_CREATE_DISABLED",
+        message="预制规则模式：不允许新增预警规则，仅可调整预制规则的阈值与启停",
+        status_code=status.HTTP_403_FORBIDDEN,
     )
-    if existing.scalar_one_or_none():
-        raise BizError(
-            code="ERR_ALERT_RULE_CODE_EXISTS",
-            message=f"规则代码 {rule_data['rule_code']} 已存在",
-            status_code=status.HTTP_409_CONFLICT,
-        )
-
-    rule = AlertRule(
-        rule_code=rule_data["rule_code"],
-        rule_name=rule_data["rule_name"],
-        rule_type=rule_data["rule_type"],
-        dsl=rule_data["dsl"],
-        description=rule_data.get("description"),
-        priority=rule_data.get("priority", 100),
-        is_enabled=rule_data.get("is_enabled", True),
-        version=1,
-        created_by=operator,
-    )
-    db.add(rule)
-    await db.flush()
-
-    await write_audit(
-        db,
-        rule_id=rule.id,
-        rule_code=rule.rule_code,
-        operation_type="CREATE",
-        operator=operator,
-        after_value=_rule_to_dict(rule),
-    )
-    return _rule_to_dict(rule)
 
 
 async def update_rule(
     db: AsyncSession, rule_id: str, operator: str, rule_data: dict[str, Any]
 ) -> dict[str, Any]:
-    """更新预警规则。"""
+    """更新预警规则（预制规则仅允许改阈值/启停）。"""
     rule = await _get_rule_or_404(db, rule_id)
     before_snapshot = _rule_to_dict(rule)
 
-    if rule_data.get("dsl") is not None:
-        validate_dsl(rule_data["dsl"])
-        rule.dsl = rule_data["dsl"]
-    if rule_data.get("rule_name") is not None:
-        rule.rule_name = rule_data["rule_name"]
-    if rule_data.get("description") is not None:
-        rule.description = rule_data["description"]
-    if rule_data.get("priority") is not None:
-        rule.priority = rule_data["priority"]
+    if _is_preset_rule(rule):
+        locked = [
+            f for f in ("rule_name", "description", "priority") if rule_data.get(f) is not None
+        ]
+        if locked:
+            raise BizError(
+                code="ERR_ALERT_RULE_PRESET_LOCKED",
+                message=f"预制规则不允许修改 {'/'.join(locked)}，仅可调整阈值与启停",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        if rule_data.get("dsl") is not None:
+            merged = _merge_preset_dsl(rule.dsl, rule_data["dsl"])
+            validate_dsl(merged)
+            rule.dsl = merged
+    else:
+        if rule_data.get("dsl") is not None:
+            validate_dsl(rule_data["dsl"])
+            rule.dsl = rule_data["dsl"]
+        if rule_data.get("rule_name") is not None:
+            rule.rule_name = rule_data["rule_name"]
+        if rule_data.get("description") is not None:
+            rule.description = rule_data["description"]
+        if rule_data.get("priority") is not None:
+            rule.priority = rule_data["priority"]
     if rule_data.get("is_enabled") is not None:
         rule.is_enabled = rule_data["is_enabled"]
     rule.version += 1
@@ -241,8 +394,14 @@ async def toggle_rule(
 
 
 async def delete_rule(db: AsyncSession, rule_id: str, operator: str) -> None:
-    """删除规则（级联删除订阅，事件 rule_id SET NULL）。"""
+    """删除规则（级联删除订阅，事件 rule_id SET NULL；预制规则禁删）。"""
     rule = await _get_rule_or_404(db, rule_id)
+    if _is_preset_rule(rule):
+        raise BizError(
+            code="ERR_ALERT_RULE_PRESET_LOCKED",
+            message="预制规则不允许删除，如不需要请停用",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
     before_snapshot = _rule_to_dict(rule)
     rule_code = rule.rule_code
 
@@ -301,6 +460,101 @@ async def _get_rule_or_404(db: AsyncSession, rule_id: str) -> AlertRule:
             status_code=status.HTTP_404_NOT_FOUND,
         )
     return rule
+
+
+# ---------------------------------------------------------------------------
+# 预制规则种子（启动时幂等保证，lifespan 调用）
+# ---------------------------------------------------------------------------
+
+
+async def ensure_preset_rules(db: AsyncSession, operator: str = "system") -> int:
+    """幂等确保 12 条评估/诊断指标预制规则存在（按 rule_code 去重）。
+
+    同时为每条预制规则幂等补建 scope=ALL 全局订阅：周期巡检
+    （alert_patrol）以订阅记录为遍历依据，无订阅则规则永不求值；
+    预制规则模式下用户无手工订阅入口，故随种子自动下发。
+
+    Returns:
+        本次新建的规则数（0 = 已全部存在）。调用方负责 commit。
+    """
+    existing = set(
+        (
+            await db.execute(
+                select(AlertRule.rule_code).where(
+                    AlertRule.rule_code.like(f"{PRESET_RULE_CODE_PREFIX}%")
+                )
+            )
+        ).scalars()
+    )
+    created = 0
+    for preset in PRESET_RULES:
+        if preset["rule_code"] in existing:
+            continue
+        db.add(
+            AlertRule(
+                rule_code=preset["rule_code"],
+                rule_name=preset["rule_name"],
+                rule_type="METRIC_THRESHOLD",
+                dsl=preset["dsl"],
+                description=preset.get("description"),
+                priority=100,
+                is_enabled=True,
+                version=1,
+                created_by=operator,
+            )
+        )
+        created += 1
+    if created:
+        await db.flush()
+
+    # 幂等补建 ALL 订阅（占位回路取第一个活跃回路，口径同 create_subscription）
+    placeholder_loop_id = (
+        await db.execute(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)).limit(1))
+    ).scalar_one_or_none()
+    if placeholder_loop_id is not None:
+        preset_rule_ids = (
+            (
+                await db.execute(
+                    select(AlertRule.id).where(
+                        AlertRule.rule_code.like(f"{PRESET_RULE_CODE_PREFIX}%")
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        subscribed_rule_ids = set(
+            (
+                await db.execute(
+                    select(AlertRuleSubscription.rule_id).where(
+                        AlertRuleSubscription.scope_type == "ALL",
+                        AlertRuleSubscription.is_active.is_(True),
+                    )
+                )
+            ).scalars()
+        )
+        subs_created = 0
+        for rule_id in preset_rule_ids:
+            if rule_id in subscribed_rule_ids:
+                continue
+            db.add(
+                AlertRuleSubscription(
+                    rule_id=rule_id,
+                    loop_id=placeholder_loop_id,
+                    scope_type="ALL",
+                    is_active=True,
+                    created_by=operator,
+                )
+            )
+            subs_created += 1
+        if subs_created:
+            await db.flush()
+            logger.info("预制预警规则已补建 ALL 订阅 %s 条", subs_created)
+
+    if created:
+        await invalidate_all_cache()
+        logger.info("预制预警规则已创建 %s 条", created)
+    return created
 
 
 # ---------------------------------------------------------------------------
@@ -408,8 +662,10 @@ async def list_events(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    stmt = select(AlertEvent, LoopLedger.tag_name).outerjoin(
-        LoopLedger, LoopLedger.id == AlertEvent.loop_id
+    stmt = (
+        select(AlertEvent, LoopLedger.tag_name, AlertRule.rule_name)
+        .outerjoin(LoopLedger, LoopLedger.id == AlertEvent.loop_id)
+        .outerjoin(AlertRule, AlertRule.id == AlertEvent.rule_id)
     )
     count_stmt = select(func.count()).select_from(AlertEvent)
 
@@ -435,14 +691,15 @@ async def list_events(
     stmt = stmt.order_by(AlertEvent.triggered_at.desc()).limit(limit).offset(offset)
     total = (await db.execute(count_stmt)).scalar() or 0
     result = await db.execute(stmt)
-    items = [_event_to_dict(e, name) for e, name in result.all()]
+    items = [_event_to_dict(e, loop_name, rule_name) for e, loop_name, rule_name in result.all()]
     return {"total": total, "items": items}
 
 
 async def get_event(db: AsyncSession, event_id: str) -> dict[str, Any]:
     result = await db.execute(
-        select(AlertEvent, LoopLedger.tag_name)
+        select(AlertEvent, LoopLedger.tag_name, AlertRule.rule_name)
         .outerjoin(LoopLedger, LoopLedger.id == AlertEvent.loop_id)
+        .outerjoin(AlertRule, AlertRule.id == AlertEvent.rule_id)
         .where(AlertEvent.id == event_id)
     )
     row = result.first()
@@ -452,7 +709,7 @@ async def get_event(db: AsyncSession, event_id: str) -> dict[str, Any]:
             message=f"事件 {event_id} 不存在",
             status_code=status.HTTP_404_NOT_FOUND,
         )
-    return _event_to_dict(row[0], row[1])
+    return _event_to_dict(row[0], row[1], row[2])
 
 
 async def acknowledge_event(

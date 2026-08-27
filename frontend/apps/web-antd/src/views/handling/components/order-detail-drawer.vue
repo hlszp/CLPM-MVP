@@ -39,6 +39,7 @@ import {
   submitOrderApi,
   verifyOrderApi,
 } from '#/api/handling';
+import { useModules } from '#/composables/use-modules';
 import { formatLocalTime } from '#/utils/format';
 
 import {
@@ -62,6 +63,7 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const { moduleEnabled } = useModules();
 const userStore = useUserStore();
 
 const loading = ref(false);
@@ -326,6 +328,7 @@ function fmtKpi(
 /** 复诊入口：跳诊断工作台对该回路复诊（§8.1） */
 function goRevisit() {
   if (!detail.value) return;
+  if (!moduleEnabled('diagnosis')) return;
   router.push({
     path: '/diagnosis/workbench',
     query: { loopId: detail.value.loopId },

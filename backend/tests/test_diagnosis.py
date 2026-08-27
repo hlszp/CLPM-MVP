@@ -1603,40 +1603,31 @@ class TestTrackerService:
         assert exc_info.value.code == "ERR_VALIDATION"
 
     async def test_creates_new_when_latest_tracker_closed(self) -> None:
-        """最新 tracker 已闭环（IMPLEMENTED/IGNORED）时新建而非覆盖历史。
+        """A1：无开放态 tracker 时手工建单已关停，报 ERR_TRACKER_NOT_FOUND。
 
-        D1 整改：开放态查询返回 None → 新建手工 tracker，
-        trigger_type='manual'、triggered_by=operator。
+        处置 v2.0 双实体改造后建单收敛为 handling_order，
+        update_tracker_status 不再新建手工 tracker。
         """
+        from app.core.exceptions import BizError
         from app.services.tracker import update_tracker_status
 
         db = AsyncMock()
         loop = _make_loop()
-        diag = MagicMock()
-        diag.diag_label = "OSCILLATION"
-        # execute 顺序：loop → 开放态 tracker(None) → 最新诊断结果
+        # execute 顺序：loop → 开放态 tracker(None)
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalar_one_or_none_mock(None),
-                _make_scalar_one_or_none_mock(diag),
             ]
         )
         db.add = MagicMock()
 
-        result = await update_tracker_status(db, loop.id, "ic_engineer", status="IN_PROGRESS")
+        with pytest.raises(BizError) as exc_info:
+            await update_tracker_status(db, loop.id, "ic_engineer", status="IN_PROGRESS")
 
-        # db.add 调用 2 次：新 tracker + 审计日志
-        assert db.add.call_count == 2
-        new_tracker = db.add.call_args_list[0].args[0]
-        assert new_tracker.action_status == "IN_PROGRESS"
-        assert new_tracker.diagnosis_label == "OSCILLATION"
-        # D1: 手工建单来源
-        assert new_tracker.trigger_type == "manual"
-        assert new_tracker.triggered_by == "ic_engineer"
-        # 响应包含 D1 字段
-        assert result["triggerType"] == "manual"
-        assert result["triggeredBy"] == "ic_engineer"
+        assert exc_info.value.code == "ERR_TRACKER_NOT_FOUND"
+        # 不再新建 tracker（仅可能写审计日志，此处未到达）
+        assert db.add.call_count == 0
 
     async def test_updates_existing_open_tracker(self) -> None:
         """存在开放态 tracker 时原地更新，不新建。"""
@@ -1671,45 +1662,36 @@ class TestTrackerService:
     # ------------------------------------------------------------------
 
     async def test_implemented_writes_moc_ref_to_new_tracker(self) -> None:
-        """闭环后新建 tracker 并标记 IMPLEMENTED，moc_ref 被正确写入。
+        """A1：无开放态 tracker 时手工建单已关停，IMPLEMENTED 请求报 ERR_TRACKER_NOT_FOUND。
 
-        D3：开放态查询返回 None → 新建手工 tracker，
-        IMPLEMENTED + mocRef 时新 tracker 的 moc_ref 字段被设置。
+        处置 v2.0 双实体改造后建单收敛为 handling_order，
+        不再新建手工 tracker，MOC 写入路径随之关停。
         """
+        from app.core.exceptions import BizError
         from app.services.tracker import update_tracker_status
 
         db = AsyncMock()
         loop = _make_loop()
-        diag = MagicMock()
-        diag.diag_label = "OSCILLATION"
-        # execute 顺序：loop → 开放态 tracker(None) → 最新诊断结果 → IMPLEMENTED 后查 diag(A/B 对比)
+        # execute 顺序：loop → 开放态 tracker(None)
         db.execute = AsyncMock(
             side_effect=[
                 _make_scalar_one_or_none_mock(loop),
                 _make_scalar_one_or_none_mock(None),
-                _make_scalar_one_or_none_mock(diag),
-                _make_scalar_one_or_none_mock(diag),
             ]
         )
         db.add = MagicMock()
 
-        result = await update_tracker_status(
-            db,
-            loop.id,
-            "ic_engineer",
-            status="IMPLEMENTED",
-            moc_ref="MOC-2026-0725-001",
-        )
+        with pytest.raises(BizError) as exc_info:
+            await update_tracker_status(
+                db,
+                loop.id,
+                "ic_engineer",
+                status="IMPLEMENTED",
+                moc_ref="MOC-2026-0725-001",
+            )
 
-        # 新 tracker 的 moc_ref 被写入
-        new_tracker = db.add.call_args_list[0].args[0]
-        assert new_tracker.action_status == "IMPLEMENTED"
-        assert new_tracker.moc_ref == "MOC-2026-0725-001"
-        assert new_tracker.trigger_type == "manual"
-        # 响应包含 MOC 字段
-        assert result["mocRef"] == "MOC-2026-0725-001"
-        assert result["actionStatus"] == "IMPLEMENTED"
-        assert result["abComparison"] is not None
+        assert exc_info.value.code == "ERR_TRACKER_NOT_FOUND"
+        assert db.add.call_count == 0
 
     async def test_implemented_moc_na_writes_reason_to_tracker(self) -> None:
         """IMPLEMENTED + MOC 不适用 + 依据说明，字段被正确写入 tracker。"""

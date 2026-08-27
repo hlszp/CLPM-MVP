@@ -34,7 +34,11 @@ export type WorkbenchSection = 'assessment' | 'overview';
 /** 监控上下文完整状态 */
 export interface MonitorContext {
   attentionOnly: boolean;
+  /** 实时控制模式筛选（Auto/Cascade/Manual），null 表示不筛选 */
+  controlMode: null | string;
   eventId: null | string;
+  /** P2 IA优化：适用性等级多选筛选（L0~L4），空数组表示不筛选 */
+  fitnessLevels: string[];
   from: null | string;
   keyword: string;
   loopId: null | string;
@@ -52,11 +56,13 @@ const CONTEXT_KEYS = [
   'plantNodeId',
   'loopType',
   'keyword',
+  'controlMode',
   'attentionOnly',
   'timeWindow',
   'eventId',
   'section',
   'from',
+  'fitnessLevels',
 ] as const;
 
 /** 合法时间窗集合 */
@@ -74,6 +80,18 @@ const VALID_VIEWS = new Set<MonitorView>(['table', 'workspace']);
 /** 合法区锚点集合 */
 const VALID_SECTIONS = new Set<WorkbenchSection>(['assessment', 'overview']);
 
+/** 合法控制模式集合（与列表 modeLabel 口径一致） */
+const VALID_CONTROL_MODES = new Set<string>(['Auto', 'Cascade', 'Manual']);
+
+/** 合法适用性等级集合（P2 IA优化） */
+const VALID_FITNESS_LEVELS = new Set<string>([
+  'L0',
+  'L1',
+  'L2',
+  'L3',
+  'L4',
+]);
+
 /** 解析字符串 query 值，空/未定义返回 null */
 function parseStr(v: unknown): null | string {
   if (typeof v !== 'string') return null;
@@ -90,6 +108,13 @@ function parseKeyword(v: unknown): string {
 /** 解析布尔值（attentionOnly=1/true → true） */
 function parseBool(v: unknown): boolean {
   return v === '1' || v === 'true';
+}
+
+/** 解析控制模式，非法值返回 null */
+function parseControlMode(v: unknown): null | string {
+  const parsed = parseStr(v);
+  if (parsed && VALID_CONTROL_MODES.has(parsed)) return parsed;
+  return null;
 }
 
 /** 解析时间窗，非法值回退到默认 24h */
@@ -120,6 +145,21 @@ function parseSection(v: unknown): null | WorkbenchSection {
 }
 
 /**
+ * 解析适用性等级多选（P2 IA优化）：
+ * URL query "L0,L1,L2" → 数组；非法元素过滤；空 / 未定义 → 空数组
+ */
+function parseFitnessLevels(v: unknown): string[] {
+  const parsed = parseStr(v);
+  if (!parsed) return [];
+  const out: string[] = [];
+  for (const raw of parsed.split(',')) {
+    const t = raw.trim();
+    if (t && VALID_FITNESS_LEVELS.has(t)) out.push(t);
+  }
+  return out;
+}
+
+/**
  * 读取当前路由的完整监控上下文。
  *
  * 用法：
@@ -135,7 +175,9 @@ export function useMonitorContext() {
 
   const context = computed<MonitorContext>(() => ({
     attentionOnly: parseBool(route.query.attentionOnly),
+    controlMode: parseControlMode(route.query.controlMode),
     eventId: parseStr(route.query.eventId),
+    fitnessLevels: parseFitnessLevels(route.query.fitnessLevels),
     from: parseStr(route.query.from),
     keyword: parseKeyword(route.query.keyword),
     loopId: parseStr(route.query.loopId),
@@ -152,11 +194,13 @@ export function useMonitorContext() {
   const plantNodeId = computed(() => context.value.plantNodeId);
   const loopType = computed(() => context.value.loopType);
   const keyword = computed(() => context.value.keyword);
+  const controlMode = computed(() => context.value.controlMode);
   const attentionOnly = computed(() => context.value.attentionOnly);
   const timeWindow = computed(() => context.value.timeWindow);
   const eventId = computed(() => context.value.eventId);
   const section = computed(() => context.value.section);
   const from = computed(() => context.value.from);
+  const fitnessLevels = computed(() => context.value.fitnessLevels);
 
   /**
    * 增量更新上下文（合并到现有 query，未传字段保留原值）。
@@ -221,7 +265,9 @@ export function useMonitorContext() {
     context,
     // 便捷读取
     attentionOnly,
+    controlMode,
     eventId,
+    fitnessLevels,
     from,
     keyword,
     loopId,

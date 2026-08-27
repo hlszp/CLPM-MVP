@@ -2,7 +2,8 @@
 
 根据规则 actions 列表执行：
 - CREATE_EVENT  写入 alert_event 表 + 设置冷却期 + 严重度升级
-- CREATE_TRACKER 写入 action_tracker 表（诊断中心异常跟踪）
+- CREATE_TRACKER 已关停（A1，处置 v2.0 工单收敛为 handling_order）：
+  枚举保留（存量规则 DSL 校验不报错），执行时降级为跳过不写
 - NOTIFY        发布 Redis pub/sub 通知 + 徽章计数
 - TRIGGER_DIAGNOSIS 发起事件驱动诊断（自动诊断层②，设计文档 §12.4）
 
@@ -72,11 +73,15 @@ async def dispatch(
                 )
                 outcomes["CREATE_EVENT"] = created_event_id
             elif act_type == "CREATE_TRACKER":
-                tracker_id = await _create_tracker(db, rule, loop_id, result, final_severity)
-                outcomes["CREATE_TRACKER"] = tracker_id
-                # 若同时建了事件，回填 tracker_id
-                if created_event_id and tracker_id:
-                    await _link_event_to_tracker(db, created_event_id, tracker_id)
+                # A1：CREATE_TRACKER 写入已关停（处置 v2.0 工单收敛为 handling_order）。
+                # 枚举保留以兼容存量规则校验，执行降级为跳过不写。
+                logger.warning(
+                    "CREATE_TRACKER 动作已关停，跳过建单: ruleId=%s ruleCode=%s loop=%s",
+                    rule.get("id"),
+                    rule.get("ruleCode"),
+                    loop_id,
+                )
+                outcomes["CREATE_TRACKER"] = None
             elif act_type == "NOTIFY":
                 await _notify(rule, loop_id, result, final_severity, created_event_id)
                 outcomes["NOTIFY"] = "published"
@@ -150,7 +155,10 @@ async def _create_tracker(
     result: EvaluationResult,
     final_severity: str,
 ) -> str | None:
-    """创建异常跟踪工单（action_tracker）。
+    """[DEPRECATED - A1 已关停] 创建异常跟踪工单（action_tracker）。
+
+    处置 v2.0 双实体改造后工单收敛为 handling_order，本函数不再被
+    dispatch 调用（函数体保留供历史追溯，勿再启用）。
 
     diagnosis_label 使用规则代码，便于按规则维度筛选工单。
     trigger_type=auto 标识系统自动建单。
@@ -202,7 +210,10 @@ async def _create_tracker(
 
 
 async def _link_event_to_tracker(db: AsyncSession, event_id: str, tracker_id: str) -> None:
-    """回填事件的 tracker_id 关联。"""
+    """[DEPRECATED - A1 已关停] 回填事件的 tracker_id 关联。
+
+    随 CREATE_TRACKER 一并关停，不再被 dispatch 调用（函数体保留）。
+    """
     from sqlalchemy import update
 
     from app.models.alert import AlertEvent
@@ -282,8 +293,15 @@ async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
     - 独立 TaskTracker 建单，任务失败不影响其他动作
 
     Returns:
-        诊断任务 ID；防抖跳过/失败返回 None。
+        诊断任务 ID；防抖跳过/失败/模块禁用返回 None。
     """
+    # 模块热插拔：诊断模块禁用时降级跳过（预警事件本身仍正常创建）
+    from app.core.modules import is_module_enabled
+
+    if not is_module_enabled("diagnosis"):
+        logger.info("诊断模块未启用，跳过 TRIGGER_DIAGNOSIS: loop=%s", loop_id)
+        return None
+
     from app.core.db import AsyncSessionLocal
     from app.schemas.task import TaskType
     from app.services.task_tracker import create_task

@@ -646,6 +646,68 @@ class TestListLoopSnapshotsGradeFilter:
         assert resp.json()["code"] == "ERR_INVALID_GRADE"
 
 
+class TestListLoopSnapshotsSortWhitelist:
+    """GET /api/v1/performance/loops/snapshots?sortBy=... 指标分析页 M3 排序白名单扩展"""
+
+    @pytest.mark.parametrize(
+        "sort_by",
+        [
+            "score",
+            "accuracy_rate",
+            "auto_mode_rate",
+            "effective_auto_rate",
+            "fast_rate",
+            "steady_rate",
+            "good_value_rate",
+        ],
+    )
+    def test_sort_by_whitelist(self, client, mock_db, fake_redis, sort_by) -> None:
+        """白名单内排序键：SQL 构建不报错，响应正常。"""
+        snap = _make_snapshot_full()
+        rows = [(snap, "41LIC20117_PIDA")]
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/loops/snapshots?sortBy={sort_by}&sortOrder=asc",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert len(body["data"]["items"]) == 1
+
+    def test_sort_by_invalid_fallback(self, client, mock_db, fake_redis) -> None:
+        """非法排序键回退默认 ts_start DESC（白名单外值不进入 SQL 列引用）。"""
+        snap = _make_snapshot_full()
+        rows = [(snap, "41LIC20117_PIDA")]
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots?sortBy=malicious_column",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        assert len(body["data"]["items"]) == 1
+
+
 @pytest.mark.asyncio
 async def test_list_loop_snapshots_grade_filter_sql() -> None:
     """grade 筛选应生成 score 区间 WHERE 条件（EXCELLENT → score >= 90）."""
@@ -830,9 +892,188 @@ async def test_get_grade_distribution_sql_group_by() -> None:
 
     distribution = await get_grade_distribution(db)
 
-    assert len(captured_stmts) == 2  # sys_config + 聚合查询（仅 2 条 SQL，无全量拉取）
+    assert (
+        len(captured_stmts) == 3
+    )  # sys_config + 等级聚合 + 适用性分层聚合（SQL 下推，无全量拉取）
     sql = str(captured_stmts[1].compile()).upper()
     assert "GROUP BY" in sql
     assert "CASE" in sql
     assert "ROW_NUMBER" in sql  # 每回路最新一条（口径同列表 latestOnly）
+    fitness_sql = str(captured_stmts[2].compile()).upper()
+    assert "GROUP BY" in fitness_sql
+    assert "FITNESS_LEVEL" in fitness_sql
     assert distribution["total"] == 0
+    assert distribution["fitnessDistribution"] == {
+        "L0": 0,
+        "L1": 0,
+        "L2": 0,
+        "L3": 0,
+        "L4": 0,
+        "total": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# status 逗号分隔多值（追溯矩阵小缺口：/loops/snapshots status 扩多值）
+# ---------------------------------------------------------------------------
+
+
+def _pg_sql(stmt) -> str:
+    from sqlalchemy.dialects import postgresql
+
+    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+async def _capture_snapshot_sql(**kwargs) -> list:
+    """调用 list_loop_snapshots 并捕获 SQL（无 plantNodeId/grade → 列表 + count 两条）。"""
+    from app.services.performance import list_loop_snapshots
+
+    db = AsyncMock()
+    captured: list = []
+
+    async def execute_side_effect(stmt, *args, **kw):
+        captured.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        result.scalar.return_value = 0
+        return result
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+    await list_loop_snapshots(db, **kwargs)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_snapshots_status_multi_value_sql() -> None:
+    """status_filter 逗号多值 → status IN 多值过滤。"""
+    captured = await _capture_snapshot_sql(status_filter="SUCCESS,PARTIAL")
+    for stmt in captured:
+        assert "kpi_snapshot_hourly.status IN ('SUCCESS', 'PARTIAL')" in _pg_sql(stmt)
+
+
+@pytest.mark.asyncio
+async def test_snapshots_status_single_value_backward_compatible() -> None:
+    """单值 status 向后兼容：走 IN 单元素，语义等同原等值过滤。"""
+    captured = await _capture_snapshot_sql(status_filter="INCONCLUSIVE")
+    for stmt in captured:
+        assert "kpi_snapshot_hourly.status IN ('INCONCLUSIVE')" in _pg_sql(stmt)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/performance/loops/metric-series — 指标矩阵页批量序列接口
+# 设计依据：docs/MVP设计/15-回路指标矩阵页设计方案.md §4.1
+# ---------------------------------------------------------------------------
+
+
+def _make_series_result(rows: list[tuple]) -> MagicMock:
+    """构造 select(loop_id, tag_name, ts_start, col).execute() 结果."""
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
+class TestGetLoopMetricSeries:
+    """GET /api/v1/performance/loops/metric-series"""
+
+    def test_metric_series_success(self, client, mock_db, fake_redis) -> None:
+        """认证用户批量查询单指标多回路时间序列."""
+        from decimal import Decimal as D
+
+        ts1 = datetime(2026, 8, 26, 10, 0, 0)
+        ts2 = datetime(2026, 8, 26, 11, 0, 0)
+        rows = [
+            (LOOP_ID_1, "L101", ts1, D("85.50")),
+            (LOOP_ID_1, "L101", ts2, D("86.20")),
+            (LOOP_ID_2, "L102", ts1, D("70.10")),
+        ]
+        mock_db.execute = AsyncMock(return_value=_make_series_result(rows))
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/loops/metric-series"
+                f"?loopIds={LOOP_ID_1},{LOOP_ID_2}&metricKey=steady_rate",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert data["metricKey"] == "steady_rate"
+        assert len(data["series"]) == 2
+        s1 = next(s for s in data["series"] if s["loopId"] == LOOP_ID_1)
+        assert s1["loopTagName"] == "L101"
+        assert [p["value"] for p in s1["points"]] == [85.5, 86.2]
+        assert s1["points"][0]["ts"] == ts1.isoformat()
+
+    def test_metric_series_invalid_metric_key(self, client, mock_db, fake_redis) -> None:
+        """白名单外指标键 → 400 ERR_METRIC_SERIES_INVALID。"""
+        mock_db.execute = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/loops/metric-series"
+                f"?loopIds={LOOP_ID_1}&metricKey=evil_column",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_METRIC_SERIES_INVALID"
+        mock_db.execute.assert_not_awaited()
+
+    def test_metric_series_too_many_loops(self, client, mock_db, fake_redis) -> None:
+        """回路数超过 10 → 400 ERR_METRIC_SERIES_LOOPS。"""
+        loop_ids = ",".join(f"00000000-0000-0000-0000-{i:012d}" for i in range(11))
+        mock_db.execute = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/loops/metric-series?loopIds={loop_ids}&metricKey=score",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_METRIC_SERIES_LOOPS"
+
+    def test_metric_series_empty_loops(self, client, mock_db, fake_redis) -> None:
+        """loopIds 为空（仅逗号）→ 400 ERR_METRIC_SERIES_LOOPS。"""
+        mock_db.execute = AsyncMock()
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/metric-series?loopIds=,&metricKey=score",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_METRIC_SERIES_LOOPS"
+
+    def test_metric_series_unauthenticated_401(self, client, mock_db, fake_redis) -> None:
+        """未认证 → 401。"""
+        resp = client.get(
+            f"/api/v1/performance/loops/metric-series?loopIds={LOOP_ID_1}&metricKey=score"
+        )
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_metric_series_sql_shape() -> None:
+    """服务层 SQL：loop_id IN + 指标列 IS NOT NULL + 双键升序排序."""
+    from app.services.performance import get_loop_metric_series
+
+    db = AsyncMock()
+    captured: list = []
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        captured.append(stmt)
+        return _make_series_result([])
+
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+    await get_loop_metric_series(
+        db,
+        [LOOP_ID_1, LOOP_ID_2],
+        "oscillation_rate",
+        start=datetime(2026, 8, 20),
+        end=datetime(2026, 8, 27),
+    )
+
+    assert len(captured) == 1
+    sql = str(captured[0].compile(compile_kwargs={"literal_binds": False})).upper()
+    assert "KPI_SNAPSHOT_HOURLY.LOOP_ID IN" in sql
+    assert "OSCILLATION_RATE IS NOT NULL" in sql
+    assert "ORDER BY" in sql
+    assert "TS_START ASC" in sql

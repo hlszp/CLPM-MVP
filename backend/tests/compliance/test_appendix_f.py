@@ -107,7 +107,7 @@ class TestF1OscillationConsistency:
 
         assert abs(kpi.details["oscillation_period"] - period) <= period * 0.1
         assert abs(diag["mean_period"] - period) <= period * 0.1
-        # dt=1s 时诊断侧 mean_period（秒）与 KPI 侧 period（采样点）数值相等
+        # 两侧周期均为秒口径（P1 修复后 KPI 侧按时间戳换算，dt=1s 时数值相等）
         assert diag["mean_period"] == pytest.approx(kpi.details["oscillation_period"], abs=0.01)
 
     def test_f1_monotonic_ramp_not_oscillating(self):

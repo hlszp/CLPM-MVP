@@ -5,8 +5,10 @@
  * - E2E-CONF-001: /metric/loop-performance 表格含「可信度」列，单元格为 A~E Badge 或 —
  * - E2E-CONF-002: /metric/loop-performance 评估状态筛选含「不确定」（INCONCLUSIVE）
  * - E2E-CONF-003: /metric/tasks → 评估历史 Tab：可信度/状态筛选与可信度 Tag
- * - E2E-CONF-004: /loop/monitor 行内「性能」Modal：KPI 状态（良好/未确定/部分）
+ * - E2E-CONF-004: /loop/monitor/legacy 行内「性能」Modal：KPI 状态（良好/未确定/部分）
  *   与 INCONCLUSIVE 灰化展示（Alert + opacity-60）
+ *   （面点分离：/loop/monitor 已重定向到 /monitor/loops 舰队视图，
+ *   行内 详情/趋势/性能 入口仅保留在 /loop/monitor/legacy 旧 monitor.vue）
  *
  * 页面源码依据：
  *   frontend/apps/web-antd/src/views/metric/loop-performance.vue
@@ -28,7 +30,7 @@
  * 路由（router/routes/modules/metric.ts、loop.ts）：
  *   - /metric/loop-performance → 回路性能（含 ADMIN 在内多角色可见）
  *   - /metric/tasks → 评估任务（ADMIN/IC_ENGINEER）
- *   - /loop/monitor → 回路监控（含 ADMIN 在内多角色可见）
+ *   - /loop/monitor/legacy → 回路监控（旧版行内操作页，含 ADMIN 在内多角色可见）
  *
  * 边界：只读操作 + Modal 开关；数据相关断言防御式（无数据行则跳过）。
  */
@@ -39,11 +41,12 @@ import { test, expect } from '../fixtures/auth.js';
  *
  * 两种渲染模式需分别匹配：
  * - CONFIDENCE_BADGE_RE：loop-performance 表格用 ConfidenceBadge 组件，渲染缩写
- *   （A/B/C/D/INCONCLUSIVE），E 级标记为 INCONCLUSIVE（评分留空）
+ *   （A/B/C/D/E/INCONCLUSIVE），实测 E 级存在直接渲染为 E 的形态，
+ *   故同时容忍 E 与 INCONCLUSIVE 两种展示
  * - CONFIDENCE_TAG_RE：history-snapshots 表格用 Tag + CONFIDENCE_LABEL_MAP，渲染全称
  *   （A 优秀/B 良好/C 一般/D 较差/E 不足）
  */
-const CONFIDENCE_BADGE_RE = /^(A|B|C|D|INCONCLUSIVE|—)$/;
+const CONFIDENCE_BADGE_RE = /^(A|B|C|D|E|INCONCLUSIVE|—)$/;
 const CONFIDENCE_TAG_RE = /^([A-E]\s*(优秀|良好|一般|较差|不足)|—)$/;
 
 test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
@@ -54,7 +57,7 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
   // E2E-CONF-001: 回路性能页可信度列
   test('E2E-CONF-001: 回路性能表格可信度列', async ({ page }) => {
     await page.goto('/metric/loop-performance');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 表格可见且表头含「可信度」列（loop-performance.vue columns）
@@ -66,8 +69,8 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
     const headerText = await table.locator('.ant-table-thead').innerText();
     expect(headerText).toContain('可信度');
 
-    // 若有数据行（防御性）：首行可信度单元格 ∈ {A, B, C, D, INCONCLUSIVE, —}
-    // ConfidenceBadge 渲染缩写，E 级显示 INCONCLUSIVE
+    // 若有数据行（防御性）：首行可信度单元格 ∈ {A, B, C, D, E, INCONCLUSIVE, —}
+    // ConfidenceBadge 渲染缩写，E 级存在直接渲染为 E 的形态
     const firstRow = table.locator('.ant-table-tbody tr.ant-table-row').first();
     const hasRow = await firstRow.isVisible().catch(() => false);
     if (hasRow) {
@@ -79,7 +82,7 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
       ).trim();
       expect(
         CONFIDENCE_BADGE_RE.test(cellText),
-        `可信度单元格应为 A/B/C/D/INCONCLUSIVE 徽章或 —，实际为「${cellText}」`,
+        `可信度单元格应为 A/B/C/D/E/INCONCLUSIVE 徽章或 —，实际为「${cellText}」`,
       ).toBeTruthy();
     }
   });
@@ -87,7 +90,7 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
   // E2E-CONF-002: 回路性能页评估状态筛选含「不确定」
   test('E2E-CONF-002: 评估状态筛选含不确定选项', async ({ page }) => {
     await page.goto('/metric/loop-performance');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 状态筛选 Select（loop-performance.vue placeholder 评估状态）
@@ -119,7 +122,7 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
   // E2E-CONF-003: 评估历史 Tab 可信度/状态筛选与可信度 Tag
   test('E2E-CONF-003: 评估历史可信度与状态筛选', async ({ page }) => {
     await page.goto('/metric/tasks');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 切换到「评估历史」Tab（tasks.vue 切换时强制重载）
@@ -192,8 +195,10 @@ test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {
 
   // E2E-CONF-004: 回路监控页性能 Modal 的 INCONCLUSIVE 展示
   test('E2E-CONF-004: 监控页性能 Modal KPI 状态', async ({ page }) => {
-    await page.goto('/loop/monitor');
-    await page.waitForLoadState('networkidle');
+    // /loop/monitor 已重定向到 /monitor/loops（面点分离），
+    // 行内「性能」Modal 仅存在于 legacy 旧版监控页
+    await page.goto('/loop/monitor/legacy');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(2000);
 
     // 页面表格渲染

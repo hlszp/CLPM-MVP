@@ -27,6 +27,10 @@
 - `docs/设计文档/prototype-interaction-detail-v0.1-2026-06-16.md`
 - `docs/设计文档/prototype-page-wireframes-v0.1-2026-06-16.md`
 
+## 历史背景收纳（按需读取，不是现行需求输入）
+
+- `docs/过程文档/agents-md-history-2026-08-24.md`（AGENTS.md 2026-08-24 瘦身移出的历史背景：IA 演进日期、已知残留明细、v6.2 归档说明全文、红线背后的事故/加固叙述等；现行规则仍以 AGENTS.md 为准）
+
 ## 整批被取代的旧版本
 
 **v2.x 文档已全部被 v3.0 取代**（2026-06-20 修订）：PRD v2.2、FDS v2.0、ADS v2.0、DDS v2.0、IDS v2.0、UI/UX v3.0 不再作为有效输入；如需追溯历史版本，请使用 git 历史。

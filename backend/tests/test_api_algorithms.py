@@ -2,7 +2,7 @@
 
 测试覆盖：
 - POST /api/v1/algorithms/kpi/calculate       — 同步 KPI 计算
-- POST /api/v1/algorithms/diagnosis/analyze    — 同步诊断分析
+- POST /api/v1/algorithms/diagnosis/analyze    — 已退役（14 号文 A4，断言 404 守护退役状态）
 - POST /api/v1/algorithms/tuning/calculate     — 同步整定计算
 - GET  /api/v1/algorithms/tasks/{task_id}      — 算法任务状态查询
 
@@ -336,174 +336,32 @@ class TestKpiCalculate:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/v1/algorithms/diagnosis/analyze
+# POST /api/v1/algorithms/diagnosis/analyze — 已退役（14 号文 A4）
 # ---------------------------------------------------------------------------
 
 
-class TestDiagnosisAnalyze:
-    """POST /api/v1/algorithms/diagnosis/analyze tests."""
+class TestDiagnosisAnalyzeRetired:
+    """POST /api/v1/algorithms/diagnosis/analyze 已于 2026-08-27 退役.
 
-    def test_success(self, client, mock_db, fake_redis) -> None:
-        """ADMIN 可以同步分析单回路诊断."""
-        diag_result = {
-            "tag_name": "FIC-101",
-            "algorithm_version": "DIAG_ENGINE_v1.0",
-            "diagnosis_labels": [
-                {
-                    "label": "OSCILLATION",
-                    "confidence": 85.0,  # 0-100，需归一化到 0-1
-                    "evidence_chain": {"freq": 0.1, "amp": 0.5},
-                    "algorithm": "FFT_v1.0",
-                    "fused_confidence": 80.0,
-                },
-                {
-                    "label": "VALVE_STICTION",
-                    "confidence": 0.65,  # 已经是 0-1
-                    "evidence_chain": {"pv_op_corr": 0.3},
-                    "algorithm": "STICTION_CH_v1.0",
-                },
-            ],
-        }
-        with (
-            patch(
-                "app.tasks.diagnosis_engine._do_diagnose_single_loop",
-                AsyncMock(return_value=diag_result),
-            ),
-            mock_current_user(TEST_USERS["admin"]),
-        ):
-            resp = client.post(
-                "/api/v1/algorithms/diagnosis/analyze",
-                json=_DIAG_BODY,
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["code"] == "0"
-        data = body["data"]
-        assert data["loopId"] == _LOOP_ID
-        assert data["tagName"] == "FIC-101"
-        assert data["algorithmVersion"] == "DIAG_ENGINE_v1.0"
-        labels = data["diagnosisLabels"]
-        assert len(labels) == 2
-        # 第一个标签：confidence=85.0 → 0.85；fused=80.0 → 0.80
-        assert labels[0]["label"] == "OSCILLATION"
-        assert labels[0]["confidence"] == 0.85
-        assert labels[0]["fusedConfidence"] == 0.8
-        assert labels[0]["algorithm"] == "FFT_v1.0"
-        assert labels[0]["evidence"]["freq"] == 0.1
-        # 第二个标签：confidence=0.65（未归一化）
-        assert labels[1]["label"] == "VALVE_STICTION"
-        assert labels[1]["confidence"] == 0.65
-        assert labels[1]["fusedConfidence"] is None  # 未提供 fused_confidence
+    旧诊断引擎唯一活跃写入口，路由已解除注册（endpoints/algorithms.py
+    归档注释），替代入口为 POST /diagnosis/run（诊断 v2）。
+    详见 docs/MVP设计/14-诊断引擎统一方案.md §4 阶段 A4。
+    """
 
-    def test_filter_by_labels(self, client, mock_db, fake_redis) -> None:
-        """labels 参数过滤：只返回请求的标签."""
-        diag_result = {
-            "diagnosis_labels": [
-                {"label": "OSCILLATION", "confidence": 0.9},
-                {"label": "VALVE_STICTION", "confidence": 0.8},
-                {"label": "OUTPUT_SATURATION", "confidence": 0.7},
-            ],
-        }
-        body = {**_DIAG_BODY, "labels": ["OSCILLATION"]}
-        with (
-            patch(
-                "app.tasks.diagnosis_engine._do_diagnose_single_loop",
-                AsyncMock(return_value=diag_result),
-            ),
-            mock_current_user(TEST_USERS["admin"]),
-        ):
-            resp = client.post(
-                "/api/v1/algorithms/diagnosis/analyze",
-                json=body,
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 200
-        labels = resp.json()["data"]["diagnosisLabels"]
-        assert len(labels) == 1
-        assert labels[0]["label"] == "OSCILLATION"
-
-    def test_empty_labels_returns_all(self, client, mock_db, fake_redis) -> None:
-        """空 labels 列表返回全部诊断标签."""
-        diag_result = {
-            "diagnosis_labels": [
-                {"label": "OSCILLATION", "confidence": 0.9},
-                {"label": "VALVE_STICTION", "confidence": 0.8},
-            ],
-        }
-        body = {**_DIAG_BODY, "labels": []}
-        with (
-            patch(
-                "app.tasks.diagnosis_engine._do_diagnose_single_loop",
-                AsyncMock(return_value=diag_result),
-            ),
-            mock_current_user(TEST_USERS["admin"]),
-        ):
-            resp = client.post(
-                "/api/v1/algorithms/diagnosis/analyze",
-                json=body,
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 200
-        labels = resp.json()["data"]["diagnosisLabels"]
-        assert len(labels) == 2
-
-    def test_invalid_label(self, client, mock_db, fake_redis) -> None:
-        """无效诊断标签返回 400 ERR_LABEL_INVALID."""
-        body = {**_DIAG_BODY, "labels": ["INVALID_LABEL"]}
+    def test_endpoint_retired_returns_404(self, client, mock_db, fake_redis) -> None:
+        """端点已解除注册，认证后请求返回 404（守护退役状态防误恢复）."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/algorithms/diagnosis/analyze",
-                json=body,
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "ERR_LABEL_INVALID"
-
-    def test_invalid_time_format(self, client, mock_db, fake_redis) -> None:
-        """无效时间格式返回 400."""
-        body = {**_DIAG_BODY, "startTime": "not-a-time"}
-        with mock_current_user(TEST_USERS["admin"]):
-            resp = client.post(
-                "/api/v1/algorithms/diagnosis/analyze",
-                json=body,
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "ERR_ALGORITHM_INVALID_PARAMS"
-
-    def test_engine_exception(self, client, mock_db, fake_redis) -> None:
-        """诊断引擎异常返回 422 ERR_ALGORITHM_DATA_INSUFFICIENT."""
-        with (
-            patch(
-                "app.tasks.diagnosis_engine._do_diagnose_single_loop",
-                AsyncMock(side_effect=RuntimeError("diag failed")),
-            ),
-            mock_current_user(TEST_USERS["admin"]),
-        ):
-            resp = client.post(
-                "/api/v1/algorithms/diagnosis/analyze",
                 json=_DIAG_BODY,
                 headers={"Authorization": "Bearer fake-token"},
             )
-        assert resp.status_code == 422
-        assert resp.json()["code"] == "ERR_ALGORITHM_DATA_INSUFFICIENT"
+        assert resp.status_code == 404
 
-    def test_non_admin_forbidden(self, client, mock_db, fake_redis) -> None:
-        """IC_ENGINEER 不能调用诊断分析（403）."""
-        with mock_current_user(TEST_USERS["ic_engineer"]):
-            resp = client.post(
-                "/api/v1/algorithms/diagnosis/analyze",
-                json=_DIAG_BODY,
-                headers={"Authorization": "Bearer fake-token"},
-            )
-        assert resp.status_code == 403
-        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
-
-    def test_no_token(self, client) -> None:
-        """未认证请求返回 401."""
+    def test_endpoint_retired_no_token_returns_404(self, client) -> None:
+        """未认证请求同样 404（路由未注册，不进入认证依赖）."""
         resp = client.post("/api/v1/algorithms/diagnosis/analyze", json=_DIAG_BODY)
-        assert resp.status_code == 401
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

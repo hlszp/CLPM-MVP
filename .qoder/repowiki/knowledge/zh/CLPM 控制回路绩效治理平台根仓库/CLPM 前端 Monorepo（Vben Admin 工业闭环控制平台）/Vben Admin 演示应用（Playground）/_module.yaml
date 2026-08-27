@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend_app/playground
+title: Vben Admin 演示应用（Playground）
+scope:
+    - frontend/playground/
+source_files: []
+depends_on: []
+related_to: []

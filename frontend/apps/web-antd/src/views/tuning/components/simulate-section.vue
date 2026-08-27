@@ -14,7 +14,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Alert, Button, Card, Table } from 'ant-design-vue';
+import { Alert, Button, Card, Table, Tooltip } from 'ant-design-vue';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
@@ -99,6 +99,19 @@ const metricRows = computed(() =>
     itae: c.metrics.itae ?? '—',
   })),
 );
+
+/** P2 IA优化：入口按钮 Tooltip 文案（L0/L1 禁用原因优先；L2 警告；空=无 tooltip） */
+const simulateBtnTooltip = computed(() => {
+  if (ctx.tuningDisabledReason.value) return ctx.tuningDisabledReason.value;
+  if (ctx.tuningWarningReason.value) return ctx.tuningWarningReason.value;
+  return '';
+});
+
+/** P2 IA优化：Toast + 仿真运行封装（G3：点按钮弹 fitness Toast） */
+function handleSimulate() {
+  ctx.showFitnessToast('simulate');
+  ctx.runSimulate();
+}
 </script>
 
 <template>
@@ -110,12 +123,28 @@ const metricRows = computed(() =>
       </span>
     </template>
     <template #extra>
+      <Tooltip
+        v-if="simulateBtnTooltip"
+        :title="simulateBtnTooltip"
+        placement="bottomRight"
+      >
+        <Button
+          type="primary"
+          size="small"
+          :loading="ctx.simulating.value"
+          :disabled="!ctx.canSimulate.value"
+          @click="handleSimulate"
+        >
+          开始仿真
+        </Button>
+      </Tooltip>
       <Button
+        v-else
         type="primary"
         size="small"
         :loading="ctx.simulating.value"
         :disabled="!ctx.canSimulate.value"
-        @click="ctx.runSimulate()"
+        @click="handleSimulate"
       >
         开始仿真
       </Button>

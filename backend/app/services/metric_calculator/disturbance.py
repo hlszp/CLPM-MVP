@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics as stats
 from dataclasses import dataclass, field
 
@@ -149,7 +150,7 @@ def detect_disturbances(
     band = disturbance_band_sigma * error_std
 
     # 2. SP 阶跃检测 → 跟踪窗口掩码（排除设定值跟踪段）
-    tracking = _detect_sp_tracking_windows(sp, n, ideal_t, sample_interval, sp_step_sigma)
+    tracking = detect_sp_tracking_windows(sp, n, ideal_t, sample_interval, sp_step_sigma)
 
     # 3. 扰动点：|error| > band 且不在跟踪窗口内
     disturbed = [i for i in range(n) if not tracking[i] and abs(errors[i]) > band]
@@ -196,29 +197,41 @@ def detect_disturbances(
     return DisturbanceAnalysis(events=events)
 
 
-def _detect_sp_tracking_windows(
+def detect_sp_tracking_windows(
     sp: list[float],
     n: int,
     ideal_t: float,
     sample_interval: float,
     sp_step_sigma: float,
+    window_points: int | None = None,
 ) -> list[bool]:
-    """检测 SP 阶跃并标记跟踪窗口。
+    """检测 SP 阶跃并标记跟踪窗口（公共接口，fast_rate 扰动分析与稳定率剔除共用）。
 
     阶跃判定：|sp[i+1]-sp[i]| > sp_step_sigma × pstdev(sp_diffs)。
-    跟踪窗口从阶跃点（新 SP 首个点）起持续约 ideal_t 时长。
+    跟踪窗口从阶跃点（新 SP 首个点）起持续：
+    - window_points 显式给定时取该值（无 ideal_t 上下文的调用方，如稳定率）
+    - 否则按约 ideal_t 时长换算（ideal_t<=0 时回退 60 点）
+
+    Returns:
+        布尔数组（长度 n），True 表示该点处于 SP 阶跃后的跟踪窗口内
     """
     tracking = [False] * n
     if n < 2:
         return tracking
 
     sp_diffs = [sp[i + 1] - sp[i] for i in range(n - 1)]
+    # NaN/Inf 防护：statistics.pstdev 遇 NaN 抛 AttributeError（CPython 已知行为），
+    # 含非有限值时阶跃检测不可信，直接返回无剔除（全 False）
+    if any(not math.isfinite(d) for d in sp_diffs):
+        return tracking
     sp_diff_std = stats.pstdev(sp_diffs) if len(sp_diffs) >= 2 else 0.0
     if sp_diff_std <= 0:
         return tracking
 
     step_threshold = sp_step_sigma * sp_diff_std
-    if ideal_t > 0 and sample_interval > 0:
+    if window_points is not None:
+        window_size = max(1, window_points)
+    elif ideal_t > 0 and sample_interval > 0:
         window_size = max(5, int(ideal_t / sample_interval))
     else:
         window_size = 60
@@ -296,4 +309,9 @@ def _find_recovery(
     return None
 
 
-__all__ = ["DisturbanceEvent", "DisturbanceAnalysis", "detect_disturbances"]
+__all__ = [
+    "DisturbanceEvent",
+    "DisturbanceAnalysis",
+    "detect_disturbances",
+    "detect_sp_tracking_windows",
+]

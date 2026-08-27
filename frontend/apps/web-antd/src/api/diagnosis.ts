@@ -113,6 +113,11 @@ export namespace DiagnosisApi {
     reviewComment?: null | string;
     reviewedBy?: null | string;
     reviewedAt?: null | string;
+    /** P2 IA优化：诊断运行时若触发回路 fitnessLevel=L2 置 true，前端据此渲染条件异常横幅 */
+    conditionWarning?: boolean | null;
+    /** P2 IA优化：诊断时回路 fitness 快照（L0/L1 时后端会拒绝；L2 时仍跑诊断但标警告） */
+    fitnessLevel?: null | string;
+    fitnessTags?: null | string[];
     createdAt: string;
   }
 

@@ -80,8 +80,8 @@ export const overridesPreferences = defineOverridesPreferences({
     enableRefreshToken: true,
     // 默认首页路径
     defaultHomePath: '/dashboard',
-    // 应用名称
-    name: import.meta.env.VITE_APP_TITLE,
+    // 应用名称（显示在主布局左上角 LOGO 旁；浏览器标题仍由 index.html <title> 控制）
+    name: 'iCLPM 系统',
     // 登录过期模式：页面跳转
     loginExpiredMode: 'page',
   },

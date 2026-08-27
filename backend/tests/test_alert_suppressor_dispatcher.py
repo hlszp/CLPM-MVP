@@ -509,16 +509,12 @@ class TestDispatchCreateEvent:
 
 
 class TestDispatchCreateTracker:
-    """dispatch CREATE_TRACKER 动作。"""
+    """dispatch CREATE_TRACKER 动作（A1：写入已关停，降级为跳过不写）。"""
 
     @pytest.mark.asyncio
-    async def test_create_tracker_no_existing(self, fake_redis) -> None:
+    async def test_create_tracker_skipped_no_write(self, fake_redis) -> None:
+        """CREATE_TRACKER 不再建单：outcomes 为 None，仅写入 event。"""
         db = AsyncMock()
-        # 查询无开放工单
-        existing_result = MagicMock()
-        existing_result.scalar_one_or_none.return_value = None
-        db.execute = AsyncMock(return_value=existing_result)
-
         rule = _make_rule_dict(
             actions=[
                 {"type": "CREATE_EVENT"},
@@ -530,26 +526,27 @@ class TestDispatchCreateTracker:
         with (
             patch.object(dispatcher, "redis_client", fake_redis),
             patch.object(dispatcher, "_suppressor") as m_supp,
+            patch.object(dispatcher, "_create_tracker", new_callable=AsyncMock) as m_create,
+            patch.object(dispatcher, "_link_event_to_tracker", new_callable=AsyncMock) as m_link,
         ):
             m_supp.get_trigger_count = AsyncMock(return_value=1)
             m_supp.set_cooldown = AsyncMock()
             m_supp.clear_duration = AsyncMock()
             outcomes = await dispatch(db, rule, "loop-1", result)
 
+        # 枚举保留但执行降级：跳过不写
         assert "CREATE_TRACKER" in outcomes
-        assert outcomes["CREATE_TRACKER"] is not None
-        # db.add 被调用 2 次（event + tracker）
-        assert db.add.call_count == 2
+        assert outcomes["CREATE_TRACKER"] is None
+        # 不再调用建单/回填函数；db.add 仅 1 次（event）
+        m_create.assert_not_awaited()
+        m_link.assert_not_awaited()
+        assert db.add.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_create_tracker_existing_returns_existing_id(self, fake_redis) -> None:
-        """已有开放工单时返回已存在的 ID，不新建。"""
+    async def test_create_tracker_only_action_no_db_write(self, fake_redis) -> None:
+        """仅含 CREATE_TRACKER 的规则：不产生任何 DB 写入。"""
         db = AsyncMock()
-        existing_result = MagicMock()
-        existing_result.scalar_one_or_none.return_value = "existing-tracker-id"
-        db.execute = AsyncMock(return_value=existing_result)
-
-        rule = _make_rule_dict(actions=[{"type": "CREATE_EVENT"}, {"type": "CREATE_TRACKER"}])
+        rule = _make_rule_dict(actions=[{"type": "CREATE_TRACKER"}])
         result = _make_evaluation_result()
 
         with (
@@ -561,9 +558,9 @@ class TestDispatchCreateTracker:
             m_supp.clear_duration = AsyncMock()
             outcomes = await dispatch(db, rule, "loop-1", result)
 
-        assert outcomes["CREATE_TRACKER"] == "existing-tracker-id"
-        # 仍执行 event link 更新（db.execute 被调用）
-        assert db.execute.await_count >= 2  # 查询 + link 更新
+        assert outcomes["CREATE_TRACKER"] is None
+        db.add.assert_not_called()
+        db.execute.assert_not_called()
 
 
 class TestDispatchNotify:

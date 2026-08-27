@@ -19,16 +19,16 @@ import { $t } from '#/locales';
  * FP-P0-08：后端 auth.py ROLE_DEFAULT_HOME 已对齐本表，事实源统一。
  * 角色映射优先于后端 defaultHome 返回值（双保险），二者口径一致。
  *
- * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis
- * - SPONSOR：仅汇总视图 → /metric（重定向至 /metric/pid-dashboard）
+ * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis/records（诊断记录）
+ * - SPONSOR：仅汇总视图 → /reports/overview（统计报告总览）
  * - 其余角色 → /dashboard
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
   ADMIN: '/dashboard',
-  EXPERT: '/diagnosis',
+  EXPERT: '/diagnosis/records',
   IC_ENGINEER: '/dashboard',
   PE_ENGINEER: '/dashboard',
-  SPONSOR: '/metric',
+  SPONSOR: '/reports/overview',
 };
 
 /**
@@ -141,33 +141,62 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /**
+    /**
    * 登出（对齐 IDS v3.2 §5.3）
    * 清空 Store + localStorage，跳转登录页
    *
-   * 仅在 accessToken 有效时调用后端 logout（黑名单 token）。
-   * doReAuthenticate 触发登出时 token 已被清空，跳过后端调用避免 401 循环。
+   * - 仅在 accessToken 有效时调用后端 logout（黑名单 token）
+   * - doReAuthenticate 触发登出时 token 已被清空，跳过后端调用避免 401 循环
+   * - 增加 isLoggingOut CAS 锁，防止手动登出与 401 拦截器登出并发执行
+   * - 状态清理与路由跳转统一放在 finally，失败场景下跳转必达（fail-safe）
    */
   async function logout(redirect: boolean = true) {
-    if (accessStore.accessToken) {
+    const accessStore = useAccessStore();
+    // CAS：已在登出流程中则直接返回，避免 resetAllStores / router.replace 竞争
+    if (accessStore.isLoggingOut) {
+      return;
+    }
+    accessStore.setIsLoggingOut(true);
+    // 快照当前 token 与当前页面 fullPath，避免清理动作之后的读值不一致
+    const hasToken = Boolean(accessStore.accessToken);
+    const currentFullPath = router.currentRoute.value.fullPath;
+    try {
+      if (hasToken) {
+        try {
+          await logoutApi();
+        } catch {
+          // logout 接口失败（401 / 403 / 断网）不阻断本地登出
+        }
+      }
+    } finally {
       try {
-        await logoutApi();
+        resetAllStores();
       } catch {
-        // 不做任何处理
+        // 兜底：resetAllStores 若抛错，手动清 token，避免守卫反弹回首页
+        accessStore.setAccessToken(null);
+        accessStore.setRefreshToken(null);
+        accessStore.setAccessCodes([]);
+        try {
+          useUserStore().setUserInfo(null);
+        } catch {
+          /* noop */
+        }
+      }
+      accessStore.setLoginExpired(false);
+      accessStore.setIsLoggingOut(false);
+      const targetQuery = redirect
+        ? { redirect: encodeURIComponent(currentFullPath) }
+        : {};
+      try {
+        await router.replace({ path: LOGIN_PATH, query: targetQuery });
+      } catch {
+        // Vue Router 中断或守卫抛错时兜底硬跳转，保证登出必达
+        const qs = redirect && currentFullPath
+          ? `?redirect=${encodeURIComponent(currentFullPath)}`
+          : '';
+        window.location.replace(`${LOGIN_PATH}${qs}`);
       }
     }
-    resetAllStores();
-    accessStore.setLoginExpired(false);
-
-    // 回登录页带上当前路由地址
-    await router.replace({
-      path: LOGIN_PATH,
-      query: redirect
-        ? {
-            redirect: encodeURIComponent(router.currentRoute.value.fullPath),
-          }
-        : {},
-    });
   }
 
   /**

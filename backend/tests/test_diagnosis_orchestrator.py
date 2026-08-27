@@ -45,7 +45,19 @@ def _mock_db(loop: MagicMock) -> AsyncMock:
     kpi_result = MagicMock()
     kpi_result.one_or_none.return_value = (0.95, 75.0)
 
-    db.execute.side_effect = [loop_result, mapping_result, kpi_result]
+    # A3：落库后即时生成 SYSTEM 建议会追加一次幂等守卫 count 查询（返回 0）
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+
+    results = [loop_result, mapping_result, kpi_result]
+    calls: list[int] = []
+
+    def _exec(stmt, *args, **kwargs):  # noqa: ARG001
+        idx = len(calls)
+        calls.append(1)
+        return results[idx] if idx < len(results) else count_result
+
+    db.execute = AsyncMock(side_effect=_exec)
     db.add = MagicMock()  # sync 方法，避免 AsyncMock 未 await 告警
     return db
 
@@ -97,8 +109,15 @@ async def test_normal_run_classifies_instrument() -> None:
     # 波形快照自包含且 ≤2000 点
     assert 0 < len(run.evidence_charts["trend"]["ts"]) <= 2000
     assert len(run.evidence_charts["scatter"]["pv"]) <= 2000
-    db.add.assert_called_once()
-    db.commit.assert_awaited_once()
+    # A3：run 落库 + 即时生成 SYSTEM 建议（add = 1 run + N 建议；commit 两次）
+    from app.models.loop_action_item import LoopActionItem
+    from app.services.loop_action_templates import STANDARD_ACTION_TEMPLATES
+
+    added = [c.args[0] for c in db.add.call_args_list]
+    assert added[0] is run
+    items = [o for o in added if isinstance(o, LoopActionItem)]
+    assert len(items) == len(STANDARD_ACTION_TEMPLATES["INSTRUMENT"])
+    assert db.commit.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -235,3 +254,75 @@ async def test_run_persists_metric_summary() -> None:
     assert set(ms.keys()) == {"negative", "positive", "source"}
     assert "badValueRate" in ms["negative"]
     assert "score" in ms["positive"]
+
+
+# ---------------------------------------------------------------------------
+# A3：诊断落库即时生成 SYSTEM 建议（断链根治）
+# ---------------------------------------------------------------------------
+
+
+class TestSystemActionsOnPersist:
+    """两个落库点：诊断完成即存在 SYSTEM 建议（不等 GET actions 懒生成）。"""
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_落库点即时生成SYSTEM建议(self) -> None:
+        """落库点 1：orchestrator commit 后即写入 source=SYSTEM 建议。"""
+        from app.models.loop_action_item import LoopActionItem
+
+        run, db = await _run(_frozen_series())
+        assert run is not None
+        added = [c.args[0] for c in db.add.call_args_list]
+        items = [o for o in added if isinstance(o, LoopActionItem)]
+        assert items, "诊断完成后未即时生成 SYSTEM 建议（断链）"
+        assert all(o.source == "SYSTEM" for o in items)
+        assert all(o.run_id == run.id and o.loop_id == run.loop_id for o in items)
+        assert {o.category for o in items} == {run.primary_category}
+        assert all(o.status == "PENDING" and o.suggested_by == "系统" for o in items)
+        # 建议与 run 同事务链落库（第二次 commit）
+        assert db.commit.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_failed_run_留痕落库点接入即时生成(self) -> None:
+        """落库点 2：_record_failed_run commit 后调用即时生成（FAILED 无分类时为空操作）。"""
+        from app.tasks import diagnosis_v2 as dv2
+
+        session = AsyncMock()
+        session.add = MagicMock()  # sync 方法
+        exists_result = MagicMock()
+        exists_result.scalar_one_or_none.return_value = "loop-1"
+        count_result = MagicMock()
+        count_result.scalar.return_value = 0
+        session.execute = AsyncMock(side_effect=[exists_result, count_result])
+
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=session)
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(dv2, "AsyncSessionLocal", return_value=cm):
+            await dv2._record_failed_run("loop-1", START, END, "task-1", "tester", "boom", "MANUAL")
+
+        # 落库 commit 一次；幂等守卫查询执行（真实生成链路被调用，FAILED 无分类→ 0 条）
+        assert session.commit.await_count == 1
+        assert session.execute.await_count == 2
+        added_run = session.add.call_args_list[0].args[0]
+        assert added_run.status == "FAILED"
+
+    @pytest.mark.asyncio
+    async def test_幂等守卫_已有建议则跳过(self) -> None:
+        """run 已有建议记录时不重复生成（落库点与懒生成路径共用守卫）。"""
+        from app.services.diagnosis_system_actions import generate_system_actions
+
+        run = MagicMock()
+        run.id = "run-1"
+        run.review_status = None
+        run.primary_category = "INSTRUMENT"
+        run.secondary_categories = []
+
+        db = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 3  # 已存在建议
+        db.execute = AsyncMock(return_value=count_result)
+
+        n = await generate_system_actions(db, run)
+        assert n == 0
+        db.add.assert_not_called()

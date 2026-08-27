@@ -117,6 +117,10 @@ class KpiSnapshotHourly(Base):
     # Numeric(10,0) 对齐全 Decimal 管道（_extract_kpi_values），非 Integer
     setpoint_crossing_count: Mapped[Decimal | None] = mapped_column(Numeric(10, 0), nullable=True)
     time_constant: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    # --- P2 IA优化：回路适用性分层（L0~L4），KPI聚合完成后同频写入 ---
+    fitness_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    fitness_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    fitness_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -128,14 +132,19 @@ class KpiSnapshotHourly(Base):
             "confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E')",
             name="ck_kpi_snapshot_confidence",
         ),
+        CheckConstraint(
+            "fitness_level IS NULL OR fitness_level IN ('L0', 'L1', 'L2', 'L3', 'L4')",
+            name="ck_kpi_snapshot_fitness_level",
+        ),
         Index("idx_kpi_snapshot_loop_id", "loop_id"),
         Index("idx_kpi_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_snapshot_status", "status"),
+        Index("idx_kpi_snapshot_fitness_level", "fitness_level"),
         # 库中已有（x4c5d6e7f8a9 迁移创建），补入元数据避免 autogen 误 DROP
         Index("idx_kpi_snapshot_ts_loop", "ts_start", "loop_id"),
         # UNIQUE 约束：每个回路每小时仅允许一条快照（q1a2b3c4d5e6 迁移）
         UniqueConstraint("loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"),
-        {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计）"},
+        {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计，含P2适用性分层字段）"},
     )
 
 
@@ -203,6 +212,10 @@ class KpiSnapshotCustom(Base):
     oscillation_amplitude: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     setpoint_crossing_count: Mapped[Decimal | None] = mapped_column(Numeric(10, 0), nullable=True)
     time_constant: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    # --- P2 IA优化：回路适用性分层（L0~L4），与hourly同频字段 ---
+    fitness_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    fitness_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    fitness_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -210,10 +223,15 @@ class KpiSnapshotCustom(Base):
             name="ck_kpi_custom_status",
         ),
         CheckConstraint("ts_end > ts_start", name="ck_kpi_custom_window"),
+        CheckConstraint(
+            "fitness_level IS NULL OR fitness_level IN ('L0', 'L1', 'L2', 'L3', 'L4')",
+            name="ck_kpi_custom_fitness_level",
+        ),
         UniqueConstraint("task_id", "loop_id", name="uq_kpi_custom_task_loop"),
         Index("ix_kpi_snapshot_custom_task", "task_id"),
         Index("ix_kpi_snapshot_custom_loop_ts", "loop_id", "ts_start"),
-        {"comment": "自定义评估任务快照（按需触发，不参与装置级聚合）"},
+        Index("ix_kpi_snapshot_custom_fitness_level", "fitness_level"),
+        {"comment": "自定义评估任务快照（按需触发，不参与装置级聚合，含P2适用性分层字段）"},
     )
 
 

@@ -96,19 +96,11 @@ class TestB5StabilityRate:
         assert result.value == expected
         assert result.details["pv_range"] == pytest.approx(200.0)
 
-    @pytest.mark.xfail(
-        reason=(
-            "实现不一致：stability._read_pv_range 未按 _read_config_scalar 契约解包"
-            "列表形式 CONFIG 标量（float([200.0]) TypeError → 静默回退 U=100），"
-            "accuracy._read_pv_range 则正确解包。生产无实害（DataPlanner 不注入 "
-            "pv_range 且数据已归一化 U=100），记录为偏差 D-2，待 G 阶段后修复。"
-        ),
-        strict=True,
-    )
     def test_pv_range_list_form_unwrapped(self):
         """附录 B.5：CONFIG 列表形式 pv_range=[200.0] 应被解包（契约：signals 值统一为列表）.
 
-        期望与标量注入一致 S≈79.38；当前实现回退 U=100 得 63.01 → xfail 记录。
+        偏差 D-2 已修复：stability._read_pv_range 改用 _read_config_scalar 解包，
+        列表形式与标量注入一致，S≈79.38。
         """
         result = _calc(
             [52.0, 48.0, 52.0, 48.0],

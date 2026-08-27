@@ -32,6 +32,10 @@ interface AccessState {
    */
   isLockScreen: boolean;
   /**
+   * 是否已进入登出流程（CAS 锁），用于避免手动登出与 401 拦截器并发清理/跳转
+   */
+  isLoggingOut: boolean;
+  /**
    * 锁屏密码
    */
   lockScreenPassword?: string;
@@ -88,6 +92,9 @@ export const useAccessStore = defineStore('core-access', {
     setIsAccessChecked(isAccessChecked: boolean) {
       this.isAccessChecked = isAccessChecked;
     },
+    setIsLoggingOut(isLoggingOut: boolean) {
+      this.isLoggingOut = isLoggingOut;
+    },
     setLoginExpired(loginExpired: boolean) {
       this.loginExpired = loginExpired;
     },
@@ -115,6 +122,7 @@ export const useAccessStore = defineStore('core-access', {
     accessRoutes: [],
     accessToken: null,
     isAccessChecked: false,
+    isLoggingOut: false,
     isLockScreen: false,
     lockScreenPassword: undefined,
     loginExpired: false,

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend_app
+title: CLPM 前端 Monorepo（Vben Admin 工业闭环控制平台）
+scope:
+    - frontend/
+source_files: []
+depends_on: []
+related_to: []

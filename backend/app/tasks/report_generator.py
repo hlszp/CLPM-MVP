@@ -26,12 +26,10 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 
-from app.models.diagnosis import DiagnosisResult
 from app.models.loop import LoopLedger
 from app.models.plant_node import PlantNode
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
-from app.services.diagnosis import DIAG_LABEL_NAMES
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -361,8 +359,16 @@ async def _do_export_diagnosis_statistics(
 
     Returns:
         导出结果字典
+
+    .. deprecated::
+        使用旧版 ``diagnosis_result`` 表；v2 诊断使用 ``diagnosis_run`` 表，
+        诊断报告 API 需基于 DiagnosisRun 重新实现。
     """
+    # lazy import：旧版诊断表仅在执行导出时加载（DIAG_LABEL_NAMES 由 helper 自行 lazy import）
     from app.core.db import AsyncSessionLocal
+    from app.models.diagnosis import DiagnosisResult
+
+    logger.warning("export_diagnosis_statistics 已废弃（查询旧版 diagnosis_result 表）")
 
     start_dt = _parse_iso_dt(start_time)
     end_dt = _parse_iso_dt(end_time)
@@ -513,6 +519,8 @@ def _generate_excel_bytes(
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
+    from app.services.diagnosis import DIAG_LABEL_NAMES
+
     wb = Workbook()
 
     # 样式定义
@@ -621,6 +629,8 @@ def _generate_csv_bytes(
 ) -> bytes:
     """生成 CSV 格式报表（UTF-8 with BOM）。"""
     import csv
+
+    from app.services.diagnosis import DIAG_LABEL_NAMES
 
     buffer = io.StringIO()
     buffer.write("\ufeff")

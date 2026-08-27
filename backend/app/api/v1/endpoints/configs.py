@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
+from app.core.modules import require_module
 from app.models.audit import SysAuditLog
 from app.models.diagnosis import DiagnosisConfig
 from app.models.metric import MetricConfig
@@ -575,6 +576,7 @@ async def batch_update_metric_configs(
 async def batch_get_diagnosis_configs(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """批量获取诊断配置（全部 8 类诊断标签）.
 
@@ -599,6 +601,7 @@ async def batch_update_diagnosis_configs(
     body: DiagnosisConfigBatchUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """批量更新诊断配置（事务性，任一项失败全部回滚）.
 
@@ -682,6 +685,7 @@ async def create_diagnosis_config(
     body: DiagnosisConfigCreateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """新增单条诊断配置（diag_code 唯一，重复返回 409）.
 
@@ -780,6 +784,7 @@ async def delete_diagnosis_config(
     diag_id: str,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """删除单条诊断配置（写审计日志）.
 
@@ -843,6 +848,7 @@ async def delete_diagnosis_config(
 async def get_diagnosis_config_history(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """查询诊断配置版本历史（仅 ADMIN，快照含生效/失效时间）."""
     current = await _load_diag_version(db)
@@ -876,6 +882,7 @@ async def rollback_diagnosis_config(
     version: int,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """回滚诊断配置到指定历史版本（仅 ADMIN）.
 

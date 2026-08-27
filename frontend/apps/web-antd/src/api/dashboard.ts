@@ -356,6 +356,8 @@ export namespace DashboardApi {
     timeWindow: string;
     windowStart: string;
     windowEnd: string;
+    /** P2 IA优化：适用性分布 L0~L4 → 数量 */
+    fitnessDistribution?: Record<string, number>;
   }
 }
 

@@ -598,6 +598,84 @@ class TestTuningAPI:
 
 
 # ---------------------------------------------------------------------------
+# GAP-1：GET /api/v1/tuning/tasks 时间窗口 + status 多值筛选
+# ---------------------------------------------------------------------------
+
+
+def _pg_sql(stmt) -> str:
+    from sqlalchemy.dialects import postgresql
+
+    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+class TestListTasksWindowFilters:
+    """GAP-1（docs/MVP设计/13 追溯矩阵）：list 端点 startTime/endTime +
+    status 逗号分隔多值；SQL 口径经 PG 方言编译断言。"""
+
+    def _get(self, client, mock_db, params: dict | None = None) -> tuple:
+        """发起 GET 并捕获传给 db.execute 的语句（count → list 两轮）。"""
+        count_result = MagicMock()
+        count_result.scalar = MagicMock(return_value=0)
+        list_result = MagicMock()
+        list_result.all = MagicMock(return_value=[])
+        results = iter([count_result, list_result])
+        captured: list = []
+
+        async def _execute(stmt, *args, **kwargs):  # noqa: ARG001
+            captured.append(stmt)
+            return next(results)
+
+        mock_db.execute = _execute
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tuning/tasks",
+                params=params or {},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        return resp, captured
+
+    def test_time_window_filter_sql(self, client, mock_db) -> None:
+        """startTime/endTime 按 created_at 闭区间过滤（aware Z 归一化 naive UTC）。"""
+        resp, captured = self._get(
+            client,
+            mock_db,
+            {"startTime": "2026-08-01T00:00:00Z", "endTime": "2026-08-25T00:00:00Z"},
+        )
+        assert resp.status_code == 200
+        # count 与 list 两条 SQL 均带 created_at 范围条件
+        for stmt in captured:
+            sql = _pg_sql(stmt)
+            assert "tuning_record.created_at >= '2026-08-01 00:00:00'" in sql
+            assert "tuning_record.created_at <= '2026-08-25 00:00:00'" in sql
+
+    def test_status_multi_value_sql(self, client, mock_db) -> None:
+        """status=DRAFT,PENDING → IN 多值过滤。"""
+        resp, captured = self._get(client, mock_db, {"status": "DRAFT,PENDING"})
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[0])
+        assert "tuning_record.status IN ('DRAFT', 'PENDING')" in sql
+
+    def test_status_single_value_backward_compatible(self, client, mock_db) -> None:
+        """单值 status 向后兼容：走 IN 单元素，语义等同原等值过滤。"""
+        resp, captured = self._get(client, mock_db, {"status": "DRAFT"})
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[0])
+        assert "tuning_record.status IN ('DRAFT')" in sql
+
+    def test_no_params_behavior_unchanged(self, client, mock_db) -> None:
+        """不传新参数：SQL 不含 created_at 范围条件与 status 过滤，行为不变。"""
+        resp, captured = self._get(client, mock_db)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["data"]["total"] == 0
+        for stmt in captured:
+            sql = _pg_sql(stmt)
+            assert "created_at >=" not in sql
+            assert "created_at <=" not in sql
+            assert "tuning_record.status IN" not in sql
+
+
+# ---------------------------------------------------------------------------
 # 边界条件与异常场景测试
 # ---------------------------------------------------------------------------
 

@@ -37,7 +37,9 @@ export namespace LoopApi {
     | 'last_2_hours'
     | 'last_4_hours'
     | 'last_8_hours'
+    | 'last_10_minutes'
     | 'last_24_hours'
+    | 'last_30_minutes'
     | 'last_72_hours';
 
   /** KPI 状态（IDS v3.2 §2.2.14） */
@@ -419,6 +421,10 @@ export namespace LoopApi {
      * 来自最新 KPI 快照 / 每日巡检快照，列表页不实时查 TDengine
      */
     dataHealth?: LoopDataHealth;
+    /** P2 IA优化：适用性等级 L0~L4；null 表示待评估 */
+    fitnessLevel?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null | string;
+    /** P2 IA优化：适用性原因标签枚举（DATA_INSUFFICIENT/OP_SATURATED 等） */
+    fitnessTags?: null | string[];
   }
 
   /** 回路数据健康度（预处理有效率 + 可信度 + 完整度） */
@@ -450,6 +456,12 @@ export namespace LoopApi {
      * 未命中返回空，不回退其他回路。
      */
     loopId?: string;
+    /** 按实时控制模式筛选（与列表 modeLabel 口径一致） */
+    controlMode?: 'Auto' | 'Cascade' | 'Manual';
+    /** 排序字段（默认 score：评分升序，最差在前） */
+    sortBy?: 'score' | 'tagName';
+    /** 排序方向（默认 asc） */
+    sortOrder?: 'asc' | 'desc';
   }
 
   /** 回路监控列表聚合统计（E-1，服务端返回，不分页全量范围） */
@@ -726,9 +738,10 @@ export function updateLoopTagMappingApi(
 export function getLoopMonitorDetailApi(
   loopId: string,
   trendWindow: LoopApi.TrendWindow = 'last_24_hours',
+  customRange?: { tsEnd: string; tsStart: string },
 ) {
   return requestClient.get<LoopApi.MonitorDetail>(`/loops/${loopId}/monitor`, {
-    params: { trendWindow },
+    params: { trendWindow, ...customRange },
   });
 }
 

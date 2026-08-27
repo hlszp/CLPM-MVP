@@ -1,33 +1,62 @@
 <script lang="ts" setup>
 /**
- * 回路列表独立页面（页型 B：对象表 / 面点分离）
+ * 回路监视独立页面（页型 B：对象表 / 面点分离）
  *
  * 路由：/monitor/loops（canonical）
  * 角色：全角色可见（ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT）
  *
- * MVP v1（2026-08-16）：
- * - 复用 LoopFleetView 组件（统计卡/类型筛选/等级分布/自控率/表格/导出/WS实时）
- * - 关键词搜索（写入 URL keyword 参数，与工作台共享筛选上下文）
- * - 行点击/位号链接 → 跳转回路工作台，携带 from=/monitor/loops 及筛选上下文
- *
- * 后续按标杆设计迭代：
- * - R2.5 等级速览卡（服务端 aggregate E-1）
- * - 左脊柱装置树（从 workbench.vue 抽取为共享组件）
- * - 卡片视图（view=card 后端已支持，前端接通）
- * - 服务端排序（评分升序/日Δ E-2）
- * - 等级/状态筛选（E-3）
+ * 菜单重构 Phase1（2026-08-24）：
+ * - 列表只呈现干净结论（评分/性能等级/适用性），佐证走右侧抽屉
+ * - 行点击/位号链接 → 打开回路详情抽屉（基本信息/最新指标/等级/适用性原因）
+ * - 抽屉内"进入回路工作台"携带 from=/monitor/loops 及筛选上下文
  */
-import { ref, watch } from 'vue';
+import type { LoopApi } from '#/api/loop';
+import type { PlantNodeApi } from '#/api/plant-node';
 
-import { Input, Tooltip } from 'ant-design-vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
+import { Input, Select, Tooltip, TreeSelect } from 'ant-design-vue';
+
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
+import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
+import LoopDetailDrawer from '#/components/monitor/loop-detail-drawer.vue';
 import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 
 defineOptions({ name: 'MonitorLoops' });
 
 const monitorCtx = useMonitorContext();
+
+// ===== 装置筛选（工厂层级树，URL 真相源） =====
+const plantTree = ref<PlantNodeApi.PlantNode[]>([]);
+
+onMounted(async () => {
+  try {
+    plantTree.value = await getPlantNodeTreeApi();
+  } catch {
+    plantTree.value = [];
+  }
+});
+
+const plantNodeId = computed<string | undefined>({
+  get: () => monitorCtx.plantNodeId.value ?? undefined,
+  set: (val) => monitorCtx.update({ plantNodeId: val ?? null }),
+});
+
+// ===== 模式筛选（实时控制模式，与列表 modeLabel 口径一致） =====
+const controlModeOptions = [
+  { label: '自动（Auto）', value: 'Auto' },
+  { label: '串级（Cascade）', value: 'Cascade' },
+  { label: '手动（Manual）', value: 'Manual' },
+];
+
+const controlMode = computed<'Auto' | 'Cascade' | 'Manual' | undefined>({
+  get: () =>
+    (monitorCtx.controlMode.value as 'Auto' | 'Cascade' | 'Manual' | null) ??
+    undefined,
+  set: (val) => monitorCtx.update({ controlMode: val ?? null }),
+});
 
 // ===== 关键词搜索（防抖 300ms）=====
 const keyword = ref(monitorCtx.keyword.value);
@@ -48,8 +77,27 @@ watch(
   },
 );
 
-// ===== 行点击 → 下钻工作台 =====
-function handleLoopClick(loopId: string) {
+// ===== 行点击 → 打开右侧详情抽屉 =====
+const drawerOpen = ref(false);
+const drawerLoop = ref<LoopApi.MonitorListItem | null>(null);
+
+function handleLoopClick(_loopId: string, record: LoopApi.MonitorListItem) {
+  drawerLoop.value = record;
+  drawerOpen.value = true;
+}
+
+// ===== 操作列"趋势" → 趋势图弹窗 =====
+const trendOpen = ref(false);
+const trendLoop = ref<LoopApi.MonitorListItem | null>(null);
+
+function handleTrendClick(record: LoopApi.MonitorListItem) {
+  trendLoop.value = record;
+  trendOpen.value = true;
+}
+
+// ===== 抽屉内进入回路工作台（携带监控上下文）=====
+function handleGotoWorkbench(loopId: string) {
+  drawerOpen.value = false;
   monitorCtx.navigateWithMonitorContext('/monitor/loop-workbench', {
     loopId,
     from: '/monitor/loops',
@@ -61,11 +109,27 @@ function handleLoopClick(loopId: string) {
   <div class="monitor-loops-page flex h-full flex-col">
     <!-- R1 页头工具栏 -->
     <ClpmPageToolbar
-      title="回路列表"
-      subtitle="全厂回路绩效扫视，锁定例外后进入工作台处置"
+      title="回路监视"
+      subtitle="全厂回路绩效扫视，点击位号查看详情，锁定例外后进入工作台处置"
     >
       <template #actions>
         <div class="flex items-center gap-2">
+          <TreeSelect
+            v-model:value="plantNodeId"
+            :tree-data="plantTree"
+            :field-names="{ label: 'name', value: 'id', children: 'children' }"
+            allow-clear
+            placeholder="全部装置"
+            class="!w-48"
+            tree-default-expand-all
+          />
+          <Select
+            v-model:value="controlMode"
+            :options="controlModeOptions"
+            allow-clear
+            placeholder="模式"
+            class="!w-36"
+          />
           <Input
             v-model:value="keyword"
             allow-clear
@@ -88,9 +152,25 @@ function handleLoopClick(loopId: string) {
       <LoopFleetView
         :show-stats="true"
         :show-auto-refresh="true"
+        :show-toolbar="false"
         @loop-click="handleLoopClick"
+        @trend-click="handleTrendClick"
       />
     </div>
+
+    <!-- 回路详情抽屉（右侧；列表结论的佐证承载） -->
+    <LoopDetailDrawer
+      v-model:open="drawerOpen"
+      :loop="drawerLoop"
+      @goto-workbench="handleGotoWorkbench"
+    />
+
+    <!-- 回路趋势弹窗（历史/实时，PV/SP/OP/MODE） -->
+    <LoopTrendModal
+      v-model:open="trendOpen"
+      :loop-id="trendLoop?.loopId ?? null"
+      :tag-name="trendLoop?.tagName ?? ''"
+    />
   </div>
 </template>
 

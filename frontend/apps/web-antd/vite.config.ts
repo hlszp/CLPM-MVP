@@ -16,6 +16,11 @@ export default defineConfig(async () => {
             target: 'http://127.0.0.1:17101',
             ws: true,
           },
+          // 站点 LOGO 等静态资源（后端 StaticFiles 挂载于 /static）
+          '/static': {
+            changeOrigin: true,
+            target: 'http://127.0.0.1:17101',
+          },
         },
       },
     },

@@ -20,7 +20,7 @@ import {
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
-import { getHandlingItemsApi } from '#/api/handling';
+import { getHandlingOrdersApi } from '#/api/handling';
 import { getLoopListApi } from '#/api/loop';
 import { getTuningTaskDetailApi } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
@@ -78,17 +78,19 @@ function runCompare() {
   };
 }
 
-/** 记录带出时点：整定记录 → 关联 TUNING 处置项 submittedAt（决策 #5） */
+/** 记录带出时点：整定记录 → 关联 TUNING 处置工单 submittedAt（决策 #5；
+ * v2.0 工单口径，无 tuningRecordId 回链时退化取最近提交的 TUNING 工单） */
 async function derivePointTime(recordId: string, loop: string) {
   try {
     const record = await getTuningTaskDetailApi(recordId);
-    const handling = await getHandlingItemsApi({
+    const handling = await getHandlingOrdersApi({
       loopId: loop,
       actionType: 'TUNING',
+      page: 1,
       pageSize: 50,
-    } as any);
+    });
     const withSubmit = (handling.items as any[])
-      .filter((it) => it.tuningRecordId === recordId && it.submittedAt)
+      .filter((it) => it.submittedAt)
       .toSorted((a, b) =>
         String(b.submittedAt).localeCompare(String(a.submittedAt)),
       );

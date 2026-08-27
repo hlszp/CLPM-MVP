@@ -52,15 +52,15 @@ import {
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
-import { SEVERITY_LABEL } from '#/constants/clpm-ui';
+import { ALERT_LEVEL_LABEL } from '#/constants/clpm-ui';
 import { BADGE_REFRESH_INTERVAL } from '#/constants/polling';
 import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'AlertEvents' });
 
-// 严重度中文标签（对齐 clpm-ui.ts 统一映射，与诊断/跟踪模块共用）
-const severityLabel = SEVERITY_LABEL;
+// 预警等级中文标签（一般/重要/紧急/提示；预警事件专用，不与诊断模块共用）
+const severityLabel = ALERT_LEVEL_LABEL;
 
 const userStore = useUserStore();
 const router = useRouter();
@@ -157,6 +157,39 @@ const statusLabel: Record<AlertApi.EventStatus, string> = {
   ARCHIVED: '已归档',
 };
 
+/** 指标代码 → 中文标签（对齐后端 12 条预制规则的 metricCode） */
+const METRIC_LABEL: Record<string, string> = {
+  score: '综合评分',
+  effective_auto_rate: '有效自控率',
+  steady_rate: '平稳率',
+  fast_rate: '快速率',
+  accuracy_rate: '准确率',
+  auto_mode_rate: '平均自控率',
+  good_value_rate: '好值率',
+  valid_rate: '有效率',
+  oscillation_rate: '振荡率',
+  saturation_rate: '饱和率',
+  severity: '诊断故障等级',
+  primary_confidence: '诊断置信度',
+};
+
+/** 事件触发指标中文标签（取自触发条件快照的 metric 字段） */
+function metricLabelOf(record: AlertApi.EventItem): string {
+  const metric = record.triggerConditionSnapshot?.metric as
+    | string
+    | undefined;
+  if (!metric) return '-';
+  return METRIC_LABEL[metric] ?? metric;
+}
+
+/** 规则对应指标的实际得分值（快照 actualValue 优先，回退 triggeredValue） */
+function metricScoreOf(record: AlertApi.EventItem): string {
+  const v =
+    (record.triggerConditionSnapshot?.actualValue as number | undefined) ??
+    record.triggeredValue;
+  return v == null ? '-' : Number(v).toFixed(3);
+}
+
 const columns: TableColumnsType = [
   {
     title: '回路',
@@ -174,7 +207,27 @@ const columns: TableColumnsType = [
     ellipsis: true,
   },
   {
-    title: '严重度',
+    title: '规则名称',
+    dataIndex: 'ruleName',
+    key: 'ruleName',
+    width: 140,
+    ellipsis: true,
+    customRender: ({ value }) => value || '-',
+  },
+  {
+    title: '指标得分',
+    key: 'metricScore',
+    width: 150,
+    ellipsis: true,
+    customRender: ({ record }) => {
+      const item = record as AlertApi.EventItem;
+      const label = metricLabelOf(item);
+      const score = metricScoreOf(item);
+      return label === '-' ? score : `${label} ${score}`;
+    },
+  },
+  {
+    title: '预警等级',
     dataIndex: 'severity',
     key: 'severity',
     width: 90,
@@ -432,7 +485,10 @@ function handleExport(format: 'csv' | 'excel') {
   const headers = [
     '回路',
     '规则代码',
-    '严重度',
+    '规则名称',
+    '触发指标',
+    '指标实际得分',
+    '预警等级',
     '状态',
     '触发值',
     '触发时间',
@@ -441,6 +497,9 @@ function handleExport(format: 'csv' | 'excel') {
   const rows = eventList.value.map((e) => [
     e.loopName || e.loopId,
     e.ruleCode,
+    e.ruleName || '',
+    metricLabelOf(e) === '-' ? '' : metricLabelOf(e),
+    metricScoreOf(e) === '-' ? '' : metricScoreOf(e),
     severityLabel[e.severity] ?? e.severity,
     statusLabel[e.status] ?? e.status,
     e.triggeredValue == null ? '' : Number(e.triggeredValue).toFixed(4),
@@ -461,7 +520,7 @@ function handleHelp() {
   showPageHelp({
     title: '预警事件 帮助',
     content:
-      '预警事件由规则引擎实时求值产生。可按状态、严重度、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
+      '预警事件由规则引擎实时求值产生。可按状态、预警等级、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
@@ -553,7 +612,7 @@ onMounted(() => {
           "
         />
       </FormItem>
-      <FormItem label="严重度" class="!mb-0">
+      <FormItem label="预警等级" class="!mb-0">
         <Select
           v-model:value="query.severity"
           allow-clear
@@ -616,7 +675,7 @@ onMounted(() => {
       class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-dashed border-gray-200 bg-gray-50/50 px-3 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800/30"
     >
       <span class="font-medium text-gray-500 dark:text-gray-400">图例：</span>
-      <span class="text-gray-400 dark:text-gray-500">严重度</span>
+      <span class="text-gray-400 dark:text-gray-500">预警等级</span>
       <span
         v-for="(color, key) in severityColor"
         :key="`sev-${key}`"
@@ -650,7 +709,7 @@ onMounted(() => {
         showSizeChanger: true,
         showTotal: (t: number) => `共 ${t} 条`,
       }"
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 1500 }"
       row-key="eventId"
       :size="tableSize"
       @change="handlePageChange"
@@ -751,7 +810,7 @@ onMounted(() => {
       <template #emptyText>
         <ClpmEmptyState
           title="暂无预警事件"
-          description="当前筛选条件（状态/严重度/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
+          description="当前筛选条件（状态/预警等级/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
         />
       </template>
     </Table>
@@ -773,10 +832,19 @@ onMounted(() => {
         <DescriptionsItem label="规则代码">{{
           currentEvent.ruleCode
         }}</DescriptionsItem>
+        <DescriptionsItem label="规则名称">{{
+          currentEvent.ruleName || '-'
+        }}</DescriptionsItem>
         <DescriptionsItem label="规则版本">{{
           currentEvent.ruleVersion
         }}</DescriptionsItem>
-        <DescriptionsItem label="严重度">
+        <DescriptionsItem label="触发指标">{{
+          metricLabelOf(currentEvent)
+        }}</DescriptionsItem>
+        <DescriptionsItem label="指标实际得分">{{
+          metricScoreOf(currentEvent)
+        }}</DescriptionsItem>
+        <DescriptionsItem label="预警等级">
           <Tag :color="severityColor[currentEvent.severity]">{{
             severityLabel[currentEvent.severity] ?? currentEvent.severity
           }}</Tag>

@@ -124,6 +124,48 @@ export const SEVERITY_ICON: Record<SeverityLevel, string> = {
   INFO: 'lucide:info',
 };
 
+/**
+ * 预警等级（预制规则三级阈值口径）→ 中文名称。
+ * 与 SEVERITY_LABEL（诊断/跟踪模块共用）区分：预警事件列表专用。
+ */
+export const ALERT_LEVEL_LABEL: Record<SeverityLevel, string> = {
+  CRITICAL: '紧急',
+  ERROR: '重要',
+  WARN: '一般',
+  INFO: '提示',
+};
+
+// ---------------------------------------------------------------------------
+// 适用性原因标签（fitness tags，loop_fitness.py 枚举）
+// ---------------------------------------------------------------------------
+
+/** 适用性原因标签 → 中文描述（各模块统一映射，禁止页面内重复定义） */
+export const FITNESS_TAG_LABEL: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+
+/** 适用性原因标签转中文（未知标签原样返回） */
+export function fitnessTagToLabel(tag: string): string {
+  return FITNESS_TAG_LABEL[tag] ?? tag;
+}
+
 // ---------------------------------------------------------------------------
 // 专业术语 Tooltip 解释
 // ---------------------------------------------------------------------------
@@ -361,13 +403,14 @@ export const ALERT_LOGIC_LABEL: Record<
   SEQUENCE: '时序',
 };
 
-/** 动作类型 → 中文（DSL actions[].type） */
+/** 动作类型 → 中文（DSL actions[].type；CREATE_TRACKER 已关停，
+ * 保留类型仅为存量规则展示兼容，新建规则模板不再提供） */
 export const ALERT_ACTION_TYPE_LABEL: Record<
   'CREATE_EVENT' | 'CREATE_TRACKER' | 'NOTIFY',
   string
 > = {
   CREATE_EVENT: '生成事件',
-  CREATE_TRACKER: '创建工单',
+  CREATE_TRACKER: '创建工单（已停用）',
   NOTIFY: '通知',
 };
 

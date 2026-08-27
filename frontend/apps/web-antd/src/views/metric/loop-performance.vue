@@ -8,7 +8,7 @@ import type { Dayjs } from 'dayjs';
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 顶部工具栏：标题 + 刷新
  * - 筛选区：工厂模型节点 + 回路编号 + 控制类型 + 评估状态 + 可信度 + 时间范围
- * - 表格：回路编号 / 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分（服务端排序）/
+ * - 表格：回路编号（ClpmLoopLink 跨模块导航）/ 名称 / 类型 / 控制类型 / 控制方式 / 评估等级 / 综合评分（服务端排序）/
  *   准确率 / 快速率 / 平稳率 / 有效自控率 / 可信度 / 时间窗口 / 评估时间 /
  *   评估状态 / 操作（详情、历史、诊断）；行点击打开详情抽屉
  * - 详情抽屉：回路基本信息 + 8 大 KPI + 5 项诊断/扩展指标（3+1+8 共 12 指标齐全）+
@@ -17,7 +17,8 @@ import type { Dayjs } from 'dayjs';
  *   时间区间 / 评估状态 / 综合评分 / 可信度 / 有效数据率 + 12 子指标值与各自
  *   可信度（GET /api/v1/loops/{loopId}/confidence-latest）
  * - 历史 Modal：时间维度切换（8/12/24/72/168h） + ECharts 趋势图
- * - 诊断 Modal（90% 宽）：4 个 Tab（频谱分析 / 时域分析 / 诊断概览 / 评估历史）
+ * - 诊断：操作列「诊断」跳转诊断工作台并携带 loopId 预选（F-EVAL-001，
+ *   原诊断 Modal 已随 MVP 精简下线，跨模块闭环改走页面跳转）
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -42,7 +43,7 @@ import {
   shallowRef,
   watch,
 } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
@@ -65,6 +66,7 @@ import {
   Spin,
   Table,
   Tag,
+  Tooltip,
   TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -81,6 +83,7 @@ import {
   ClpmAiDrawer,
   ClpmDataCanvas,
   ClpmInfoTip,
+  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmStandardActions,
   ClpmToolbarButton,
@@ -214,7 +217,50 @@ interface LoopPerformanceRow extends KpiSnapshotItem {
   controlType?: string;
   /** 控制方式（来自 loopMeta.controlMode） */
   controlMode?: string;
+  /** P2 IA优化：适用性等级（L0/L1/L2/L3 等），L0/L1=不适用，走中性灰 */
+  fitnessLevel?: null | string;
+  /** P2 IA优化：适用性原因标签，不适用时 Tooltip 用 */
+  fitnessTags?: null | string[];
 }
+
+/** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
+const LP_NA_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const lpNATagToCn = (t: string) => LP_NA_TAG_CN[t] ?? t;
+/** 是否 fitness 不适用（L0/L1） */
+function isFitnessNA(row: Pick<LoopPerformanceRow, 'fitnessLevel'>) {
+  const lv = row?.fitnessLevel;
+  return lv === 'L0' || lv === 'L1';
+}
+/** 不适用 Tooltip 文案 */
+function lpFitnessNATip(
+  level: null | string | undefined,
+  tags: null | string[] | undefined,
+): string {
+  const lv = level ?? '';
+  const tagText =
+    tags && tags.length > 0 ? tags.map((t) => lpNATagToCn(t)).join('、') : '适用性不足';
+  return `不适用（${lv || 'NA'}）：${tagText}`;
+}
+const LP_NA_COLOR = 'var(--color-slate-500)';
 
 // ===== 列表状态 =====
 
@@ -222,6 +268,32 @@ const loading = ref(false);
 const loadError = ref(false);
 const rows = ref<LoopPerformanceRow[]>([]);
 const total = ref(0);
+
+/** M3 服务端排序白名单（对齐后端 SNAPSHOT_SORT_COLUMNS；指标分析页联动） */
+type SnapshotSortField =
+  | 'accuracy_rate'
+  | 'auto_mode_rate'
+  | 'effective_auto_rate'
+  | 'fast_rate'
+  | 'good_value_rate'
+  | 'score'
+  | 'steady_rate';
+
+const sortFieldOptions: { label: string; value: SnapshotSortField }[] = [
+  { label: '综合评分', value: 'score' },
+  { label: '准确率', value: 'accuracy_rate' },
+  { label: '平稳率', value: 'steady_rate' },
+  { label: '自控率', value: 'auto_mode_rate' },
+  { label: '有效自控率', value: 'effective_auto_rate' },
+  { label: '快速率', value: 'fast_rate' },
+  { label: '好值率', value: 'good_value_rate' },
+];
+
+const sortOrderOptions = [
+  { label: '降序', value: 'desc' },
+  { label: '升序', value: 'asc' },
+];
+
 const query = reactive({
   plantNodeId: undefined as string | undefined,
   controlType: undefined as string | undefined,
@@ -232,8 +304,8 @@ const query = reactive({
   timeRange: undefined as [Dayjs, Dayjs] | undefined,
   page: 1,
   pageSize: 20,
-  /** 服务端排序（仅综合评分列；undefined = 默认 tsStart DESC） */
-  sortBy: undefined as 'score' | undefined,
+  /** 服务端排序（综合评分列三态 + M3 排序下拉；undefined = 默认 tsStart DESC） */
+  sortBy: undefined as SnapshotSortField | undefined,
   sortOrder: 'desc' as 'asc' | 'desc',
 });
 
@@ -241,6 +313,7 @@ const query = reactive({
 const loopMap = shallowRef<Map<string, LoopApi.LoopListItem>>(new Map());
 
 const route = useRoute();
+const router = useRouter();
 const { canReadConfig } = useConfigAccess();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
 
@@ -388,7 +461,7 @@ const columns = computed<TableColumnsType>(() => [
   {
     title: '操作',
     key: 'action',
-    width: 184,
+    width: 232,
     fixed: 'right' as const,
     align: 'center' as const,
   },
@@ -693,6 +766,12 @@ function handleSearch() {
   loadStats();
 }
 
+/** M3：排序下拉变更（字段/方向），重置到第 1 页重新加载 */
+function handleSortChange() {
+  query.page = 1;
+  loadList();
+}
+
 function handleTableChange(
   pagination: TablePaginationConfig,
   _filters: unknown,
@@ -960,6 +1039,15 @@ async function openHistory(record: LoopPerformanceRow) {
   await loadHistoryData();
 }
 
+/** F-EVAL-001：跳转诊断工作台深挖（携带 loopId 预选，跨模块闭环） */
+function goDiagnosis(record: LoopPerformanceRow) {
+  if (!record.loopId) return;
+  router.push({
+    path: '/diagnosis/workbench',
+    query: { loopId: record.loopId },
+  });
+}
+
 async function loadHistoryData() {
   if (!historyRecord.value?.loopId) {
     message.warning('该记录缺少回路 ID，无法查询历史');
@@ -1135,6 +1223,22 @@ onMounted(async () => {
     const tagName = loopMap.value.get(loopIdQuery)?.tagName;
     if (tagName) query.loopTagName = tagName;
   }
+  // 深链支持（追溯矩阵 G6，仅挂载时读取一次）：
+  // ?plantNodeId=xxx → 装置筛选初值；?grade=xxx → 等级卡片筛选初值
+  // （数字 1~5 按档位直取；等级名按当前定级阈值映射，无法识别时忽略）
+  const plantNodeQuery = route.query.plantNodeId;
+  if (typeof plantNodeQuery === 'string' && plantNodeQuery) {
+    query.plantNodeId = plantNodeQuery;
+  }
+  const gradeQuery = route.query.grade;
+  if (typeof gradeQuery === 'string' && gradeQuery) {
+    const level = /^\d+$/.test(gradeQuery)
+      ? Number(gradeQuery)
+      : gradeLevelByName(gradeQuery);
+    if (level !== null && level >= 1 && level <= 5) {
+      selectedGrade.value = level;
+    }
+  }
   loadList();
   loadStats();
 });
@@ -1214,6 +1318,22 @@ onMounted(async () => {
         :placeholder="['开始时间', '结束时间']"
         style="width: 300px"
         @change="handleSearch"
+      />
+      <!-- M3：服务端排序下拉（指标分析页联动；与综合评分列头三态排序共存） -->
+      <Select
+        v-model:value="query.sortBy"
+        :options="sortFieldOptions"
+        placeholder="排序指标"
+        allow-clear
+        style="width: 130px"
+        @change="handleSortChange"
+      />
+      <Select
+        v-if="query.sortBy"
+        v-model:value="query.sortOrder"
+        :options="sortOrderOptions"
+        style="width: 88px"
+        @change="handleSortChange"
       />
       <Button type="primary" @click="handleSearch">查询</Button>
     </div>
@@ -1374,7 +1494,18 @@ onMounted(async () => {
                完整 8 大 KPI 解释集中在详情抽屉「8 大性能评估 KPI 指标」区 -->
         </template>
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'loopType'">
+          <template v-if="column.key === 'loopTagName'">
+            <ClpmLoopLink
+              v-if="(record as LoopPerformanceRow).loopId"
+              :loop-id="(record as LoopPerformanceRow).loopId!"
+              :tag-name="
+                (record as LoopPerformanceRow).loopTagName ?? undefined
+              "
+              default-target="detail"
+            />
+            <span v-else class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'loopType'">
             <span v-if="(record as LoopPerformanceRow).loopType">
               {{
                 LOOP_TYPE_LABEL_MAP[
@@ -1400,8 +1531,19 @@ onMounted(async () => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'grade'">
+            <template v-if="isFitnessNA(record as LoopPerformanceRow)">
+              <Tooltip
+                :title="lpFitnessNATip(
+                  (record as LoopPerformanceRow).fitnessLevel,
+                  (record as LoopPerformanceRow).fitnessTags,
+                )"
+                placement="top"
+              >
+                <Tag :color="LP_NA_COLOR" class="m-0">不适用</Tag>
+              </Tooltip>
+            </template>
             <Tag
-              v-if="getGrade((record as LoopPerformanceRow).score)"
+              v-else-if="getGrade((record as LoopPerformanceRow).score)"
               :color="
                 GRADE_COLOR_MAP[getGrade((record as LoopPerformanceRow).score)!]
               "
@@ -1414,7 +1556,24 @@ onMounted(async () => {
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'score'">
+            <template v-if="isFitnessNA(record as LoopPerformanceRow)">
+              <Tooltip
+                :title="lpFitnessNATip(
+                  (record as LoopPerformanceRow).fitnessLevel,
+                  (record as LoopPerformanceRow).fitnessTags,
+                )"
+                placement="top"
+              >
+                <span
+                  class="font-semibold"
+                  :style="{ color: LP_NA_COLOR }"
+                >
+                  —
+                </span>
+              </Tooltip>
+            </template>
             <span
+              v-else
               class="font-semibold"
               :style="{
                 color: scoreColor((record as LoopPerformanceRow).score),
@@ -1489,6 +1648,16 @@ onMounted(async () => {
                   <IconifyIcon icon="ant-design:history-outlined" />
                 </template>
                 历史
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click.stop="goDiagnosis(record as LoopPerformanceRow)"
+              >
+                <template #icon>
+                  <IconifyIcon icon="lucide:stethoscope" />
+                </template>
+                诊断
               </Button>
             </div>
           </template>

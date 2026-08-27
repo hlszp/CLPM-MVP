@@ -36,7 +36,7 @@ import {
 import dayjs from 'dayjs';
 
 import { getDiagnosisOperatorsApi } from '#/api/diagnosis';
-import { getLoopListApi } from '#/api/loop';
+import { getLoopListApi, getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
@@ -61,6 +61,60 @@ import {
   TRIGGER_TYPE_COLOR,
   TRIGGER_TYPE_TEXT,
 } from './constants';
+
+/** P2 IA优化：fitness tag 中文映射（与 fitness-badge 组件约定一致） */
+const FITNESS_TAG_CN: Record<string, string> = {
+  T_UNKNOWN: '未知',
+  T_LOCAL_DATA_MISSING: '本地无历史数据',
+  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
+  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
+  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
+  T_MODE_NOT_AUTO: '当前处于手动控制模式',
+  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
+  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
+  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
+  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
+  T_OOS_PV: 'PV 量程外点比例过高',
+  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
+  T_DAMPED_OSC: '存在阻尼振荡趋势',
+  T_SUSTAINED_OSC: '存在持续振荡趋势',
+  T_VALVE_STICTION: '阀门疑似粘滞',
+  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
+  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
+  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
+};
+const tagToCn = (t: string) => FITNESS_TAG_CN[t] ?? t;
+const tagsText = (tags: string[]) => tags.map((t) => tagToCn(t)).join('、');
+
+/** 按回路 ID 精确查询 MonitorList，拿到 fitnessLevel 和 fitnessTags（逐 ID 精确查） */
+async function fetchFitnessByLoopIds(
+  ids: string[],
+): Promise<Map<string, { level: null | string; tags: string[] }>> {
+  const result = new Map<string, { level: null | string; tags: string[] }>();
+  const settled = await Promise.allSettled(
+    ids.map(async (id) => {
+      const res = await getLoopMonitorListApi({
+        loopId: id,
+        page: 1,
+        pageSize: 1,
+      });
+      const item = res.items?.[0];
+      return [
+        id,
+        {
+          level: item?.fitnessLevel ?? null,
+          tags: Array.isArray(item?.fitnessTags) ? (item.fitnessTags as string[]) : [],
+        },
+      ] as const;
+    }),
+  );
+  for (const s of settled) {
+    if (s.status === 'fulfilled') {
+      result.set(s.value[0], s.value[1]);
+    }
+  }
+  return result;
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -263,6 +317,35 @@ const runner = useDiagnosisRunner({
   },
 });
 
+/** P2 IA优化：批量诊断时触发前检查到的 L2 条件异常回路集合（用于横幅） */
+const l2WarningLoopIds = ref(new Set<string>());
+/** 当前 runner 返回的 resultItems 中是否有 L2 条件警告 */
+const resultHasConditionWarning = computed(
+  () =>
+    runner.resultItems.value.some((r) => r.conditionWarning) ||
+    runner.resultItems.value.some((r) => r.fitnessLevel === 'L2') ||
+    l2WarningLoopIds.value.size > 0,
+);
+/** L2 警告横幅中需提示的受影响回路 tagName 列表 */
+const l2WarningLoopNames = computed(() => {
+  const names: string[] = [];
+  for (const id of l2WarningLoopIds.value) {
+    const c = loopCache.value.get(id);
+    if (c) names.push(c.tagName);
+  }
+  // 再合并 resultItems 中标 L2 的
+  for (const r of runner.resultItems.value) {
+    if (
+      (r.conditionWarning || r.fitnessLevel === 'L2') &&
+      r.loopTagName &&
+      !names.includes(r.loopTagName)
+    ) {
+      names.push(r.loopTagName);
+    }
+  }
+  return names;
+});
+
 const canTrigger = computed(
   () =>
     selectedLoopIds.value.length > 0 &&
@@ -275,6 +358,36 @@ async function handleTrigger() {
   if (!customRangeValid.value) {
     message.warning(`自定义时间范围无效：需起<止且跨度 ≤${MAX_CUSTOM_DAYS} 天`);
     return;
+  }
+  // ===== P2 IA优化：触发前批量检查 fitness =====
+  // 重置 L2 缓存
+  l2WarningLoopIds.value = new Set<string>();
+  try {
+    const fitnessMap = await fetchFitnessByLoopIds(selectedLoopIds.value);
+    const l0l1Lines: string[] = [];
+    for (const id of selectedLoopIds.value) {
+      const info = fitnessMap.get(id);
+      const level = info?.level ?? 'L3';
+      const tags = info?.tags ?? [];
+      const tag = loopCache.value.get(id);
+      const tagName = tag?.tagName ?? id;
+      if (level === 'L0' || level === 'L1') {
+        const reason = tags.length > 0 ? tagsText(tags) : '适用性不足';
+        l0l1Lines.push(`· ${tagName}（${level}）：${reason}`);
+      } else if (level === 'L2') {
+        l2WarningLoopIds.value.add(id);
+      }
+    }
+    if (l0l1Lines.length > 0) {
+      const header = `${l0l1Lines.length} 个回路适用性不足（L0/L1），已阻止发起诊断：`;
+      const body = l0l1Lines.join('\n');
+      message.error({ content: `${header}\n${body}`, duration: 8 });
+      return;
+    }
+  } catch (error) {
+    // fitness 检查接口失败 -> 降级放行（不阻止业务），仅打日志
+     
+    console.warn('[diagnosis][fitness] 触发前检查失败，降级直接发起', error);
   }
   // 预设窗口 → preset；自定义 → start/end（起点整点化；终点取所选时刻原值，
   // 超当前时刻截断为当前——不再 endOf('hour') 扩到整点末尾，避免窗口被加长）
@@ -299,7 +412,11 @@ async function handleTrigger() {
         ? {}
         : { operators: checkedOperators.value }),
     });
-    message.info('诊断任务已提交');
+    message.info(
+      l2WarningLoopIds.value.size > 0
+        ? `诊断任务已提交（含 ${l2WarningLoopIds.value.size} 个 L2 条件异常回路）`
+        : '诊断任务已提交',
+    );
   } catch (error) {
     message.error(`发起诊断失败：${(error as Error).message}`);
   }
@@ -772,6 +889,31 @@ onMounted(() => {
             class="mb-4"
           >
             <Card size="small" title="诊断结果">
+              <!-- P2 IA优化：L2 条件异常横幅 -->
+              <div
+                v-if="
+                  resultHasConditionWarning &&
+                  runner.resultItems.value.length > 0
+                "
+                class="diag-condition-warning"
+              >
+                <span
+                  class="i-lucide:triangle-alert diag-condition-warning__icon"
+                ></span>
+                <div class="diag-condition-warning__body">
+                  <div class="diag-condition-warning__title">
+                    L2 条件异常，诊断结论可能受控制状态干扰
+                  </div>
+                  <div class="diag-condition-warning__subtitle">
+                    建议先消除控制侧异常再跑诊断；受影响回路：
+                    {{
+                      l2WarningLoopNames.length > 0
+                        ? l2WarningLoopNames.join('、')
+                        : '详见下方结果行'
+                    }}
+                  </div>
+                </div>
+              </div>
               <Table
                 :columns="resultColumns"
                 :custom-row="
@@ -1410,5 +1552,45 @@ onMounted(() => {
   margin-left: auto;
   font-size: 11px;
   color: hsl(var(--muted-foreground));
+}
+
+/* ===== P2 IA优化：L2 条件异常横幅（琥珀色） ===== */
+.diag-condition-warning {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  color: var(--color-amber-800);
+  background: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-amber-500) 40%, transparent);
+  border-radius: 4px;
+}
+
+.diag-condition-warning__icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--color-amber-600);
+}
+
+.diag-condition-warning__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.diag-condition-warning__title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.diag-condition-warning__subtitle {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.9;
 }
 </style>

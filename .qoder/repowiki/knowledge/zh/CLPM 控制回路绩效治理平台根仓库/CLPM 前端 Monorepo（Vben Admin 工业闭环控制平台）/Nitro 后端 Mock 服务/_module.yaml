@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend_app/backend_mock
+title: Nitro 后端 Mock 服务
+scope:
+    - frontend/apps/backend-mock/
+source_files: []
+depends_on: []
+related_to: []

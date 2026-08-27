@@ -10,20 +10,19 @@ function monitorHome() {
 }
 
 /**
- * 监控路由模块（IA 重构 Phase A）
+ * 监控路由模块（菜单重构：装置总览/回路监视/预警事件/关注队列/回路工作台）
  *
  * 定位：运行驾驶舱与单回路处置入口。
- * 对齐 IA 收敛方案：监控负责跨回路扫视、预警结果与单回路闭环处置。
+ * 菜单顺序：装置总览 → 回路监视 → 预警事件 → 关注队列 → 回路工作台。
  *
  * 角色权限（实现契约 §5）：
- * - 装置工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR
- * - 关注队列：全部角色（Sponsor 只读，无 OPEN_WORKBENCH）
+ * - 装置总览：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR
+ * - 回路监视/预警事件/关注队列：全部角色（Sponsor 只读）
  * - 回路工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / EXPERT
- * - 预警事件：全部角色
  *
  * 注：高密度回路实时表仍保留为隐藏视图，服务于批量巡检/导出与旧书签；
- *     用户主入口统一为回路工作台。关注队列聚合五类当前行动项，
- *     预警记录（/monitor/alerts）承载历史/审计/导出，二者互补不替代。
+ *     关注队列聚合五类当前行动项，预警记录（/monitor/alerts）承载
+ *     历史/审计/导出，二者互补不替代。
  */
 const routes: RouteRecordRaw[] = [
   {
@@ -35,6 +34,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:activity',
       order: 1,
       title: '监控',
+      module: 'monitor',
     },
     children: [
       {
@@ -45,7 +45,7 @@ const routes: RouteRecordRaw[] = [
           affixTab: true,
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
-          title: '装置工作台',
+          title: '装置总览',
         },
       },
       {
@@ -63,7 +63,50 @@ const routes: RouteRecordRaw[] = [
             'EXPERT',
           ],
           icon: 'lucide:list',
-          title: '回路列表',
+          title: '回路监视',
+        },
+      },
+      {
+        name: 'MonitorAlerts',
+        path: '/monitor/alerts',
+        component: () => import('#/views/alert/events.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+            'EXPERT',
+          ],
+          icon: 'lucide:bell-ring',
+          title: '预警事件',
+        },
+      },
+      {
+        name: 'MonitorAttention',
+        path: '/monitor/attention',
+        component: () => import('#/views/monitor/attention.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+            'EXPERT',
+          ],
+          icon: 'lucide:list-checks',
+          title: '关注队列',
+        },
+      },
+      {
+        name: 'MonitorLoopWorkbench',
+        path: '/monitor/loop-workbench',
+        component: () => import('#/views/loop/workbench.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
+          fullPathKey: false,
+          icon: 'lucide:layout-panel-top',
+          title: '回路工作台',
         },
       },
       {
@@ -90,49 +133,6 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '回路实时表格（旧版）',
-        },
-      },
-      {
-        name: 'MonitorLoopWorkbench',
-        path: '/monitor/loop-workbench',
-        component: () => import('#/views/loop/workbench.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-          fullPathKey: false,
-          icon: 'lucide:layout-panel-top',
-          title: '回路工作台',
-        },
-      },
-      {
-        name: 'MonitorAttention',
-        path: '/monitor/attention',
-        component: () => import('#/views/monitor/attention.vue'),
-        meta: {
-          authority: [
-            'ADMIN',
-            'IC_ENGINEER',
-            'PE_ENGINEER',
-            'SPONSOR',
-            'EXPERT',
-          ],
-          icon: 'lucide:list-checks',
-          title: '关注队列',
-        },
-      },
-      {
-        name: 'MonitorAlerts',
-        path: '/monitor/alerts',
-        component: () => import('#/views/alert/events.vue'),
-        meta: {
-          authority: [
-            'ADMIN',
-            'IC_ENGINEER',
-            'PE_ENGINEER',
-            'SPONSOR',
-            'EXPERT',
-          ],
-          icon: 'lucide:bell-ring',
-          title: '预警事件',
         },
       },
     ],

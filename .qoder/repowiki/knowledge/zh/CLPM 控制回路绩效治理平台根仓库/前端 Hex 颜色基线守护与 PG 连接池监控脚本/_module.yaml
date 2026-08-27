@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: root_scripts
+title: 前端 Hex 颜色基线守护与 PG 连接池监控脚本
+scope:
+    - scripts/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service
+    - path: frontend_app/web_app

@@ -11,6 +11,7 @@ export { default as ClpmDataHealthBadges } from './data-health-badges.vue';
 export { default as ClpmDecisionDock } from './decision-dock.vue';
 export { default as ClpmEmptyState } from './empty-state.vue';
 export { default as ClpmEvidenceCanvas } from './evidence-canvas.vue';
+export { default as ClpmFitnessBadge } from './fitness-badge.vue';
 export { default as ClpmHelpIcon } from './help-icon.vue';
 export { default as ClpmInfoTip } from './info-tip.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
@@ -23,9 +24,11 @@ export type { SummaryAction, SummaryItem } from './object-summary-bar.vue';
 export { default as ClpmOnboardingTour } from './onboarding-tour.vue';
 export { default as ClpmOperationalContextProvider } from './operational-context-provider.vue';
 export { default as ClpmPageToolbar } from './page-toolbar.vue';
+export { default as ClpmPlantNodeTreeSelect } from './plant-node-tree-select.vue';
 export { default as ClpmPredictionCard } from './prediction-card.vue';
 export { default as ClpmRealtimeStatus } from './realtime-status.vue';
 export { default as ClpmSeverityBadge } from './severity-badge.vue';
+export { default as ClpmStageIndicator } from './stage-indicator.vue';
 export { default as ClpmStandardActions } from './standard-actions.vue';
 export { default as ClpmStateFace } from './state-face.vue';
 export { default as ClpmStateOverlay } from './state-overlay.vue';
@@ -41,6 +44,7 @@ export {
 } from './toolbar-config';
 export { default as ClpmToolbarDivider } from './toolbar-divider.vue';
 
+export { default as ClpmUpgradePrompt } from './upgrade-prompt.vue';
 export { default as ClpmVersionHistoryModal } from './version-history-modal.vue';
 
 /**

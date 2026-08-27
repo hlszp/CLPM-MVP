@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 /**
- * 评估历史 — 回路小时指标快照列表（Tab 内嵌组件）
+ * 评估记录 — 回路小时指标快照列表（二级菜单独立页面，/metric/history）
  *
  * 对齐后端 GET /api/v1/performance/loops/snapshots
  * - 筛选区：装置 TreeSelect + 回路 Select + 时间 RangePicker + 状态 + 可信度
@@ -8,16 +8,18 @@
  *   / 可信度徽章 / 状态 / 操作（详情按钮）
  * - 详情抽屉：点击"详情"按钮从右侧滑出，展示完整 24 字段（含数据血缘）
  *
- * 嵌入位置：评估任务模块 → "评估历史" Tab
- * 权限：所有角色可查看
+ * IA 重构二期：由「评估任务 → 评估历史 Tab」提升为二级菜单「评估记录」，
+ * 自带数据加载，可脱离 Tab 容器独立工作。
+ * 权限：ADMIN / IC_ENGINEER（路由 meta 控制）
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { ConfidenceLevel, KpiSnapshotItem, KpiStatus } from '#/api/metric';
 
 import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
-import { RotateCw } from '@vben/icons';
+import { Page } from '@vben/common-ui';
 
 import {
   Button,
@@ -41,10 +43,12 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import ScoreSparkline from '#/components/metric/score-sparkline.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 
@@ -63,9 +67,12 @@ const pageSize = ref(20);
 // 筛选状态
 const filterLoopId = ref<string | undefined>();
 const filterPlantNodeId = ref<string | undefined>();
-const filterStatus = ref<KpiStatus | undefined>();
+// 状态筛选为多值（工作台下钻可携 INCONCLUSIVE,PARTIAL 逗号多值口径）
+const filterStatus = ref<KpiStatus[]>([]);
 const filterConfidence = ref<ConfidenceLevel | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
+// 快照粒度：false=全部快照（历史明细默认）；深链 latestOnly=true 切回路粒度
+const filterLatestOnly = ref(false);
 
 // 服务端排序状态（综合评分列，其余列按 tsStart DESC 默认序）
 const sortBy = ref<'score' | undefined>();
@@ -256,11 +263,15 @@ async function loadList() {
     const params: any = {
       page: currentPage.value,
       pageSize: pageSize.value,
-      latestOnly: false,
+      latestOnly: filterLatestOnly.value,
     };
     if (filterLoopId.value) params.loopId = filterLoopId.value;
     if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
-    if (filterStatus.value) params.status = filterStatus.value;
+    // 多值状态逗号拼接直传（后端 status 目前单值精确匹配，
+    // 多值口径待后端扩展后自动生效，与整定 GAP-1 同类）
+    if (filterStatus.value.length > 0) {
+      params.status = filterStatus.value.join(',');
+    }
     if (filterConfidence.value) params.confidenceLevel = filterConfidence.value;
     if (filterDateRange.value) {
       params.startTime = filterDateRange.value[0].startOf('day').toISOString();
@@ -464,8 +475,44 @@ function handleExport(format: 'csv' | 'excel') {
   message.success(`已导出 ${snapshotList.value.length} 条记录`);
 }
 
+// ============ 路由 query 初值（追溯矩阵 G6：工作台统计下钻接参） ============
+const route = useRoute();
+
+const KPI_STATUS_VALUES = new Set<string>([
+  'INCONCLUSIVE',
+  'PARTIAL',
+  'SUCCESS',
+]);
+
+/**
+ * 挂载时从 route.query 读取一次筛选初值（不做 watch 同步，之后用户可自由修改）。
+ * 支持：startTime/endTime（ISO8601）、status（逗号多值）、plantNodeId、latestOnly。
+ */
+function applyRouteQuery() {
+  const q = route.query;
+  if (typeof q.plantNodeId === 'string' && q.plantNodeId) {
+    filterPlantNodeId.value = q.plantNodeId;
+  }
+  if (typeof q.status === 'string' && q.status) {
+    // 逗号多值（如 INCONCLUSIVE,PARTIAL），非法值丢弃
+    filterStatus.value = q.status
+      .split(',')
+      .filter((s): s is KpiStatus => KPI_STATUS_VALUES.has(s));
+  }
+  if (typeof q.startTime === 'string' && typeof q.endTime === 'string') {
+    const start = dayjs(q.startTime);
+    const end = dayjs(q.endTime);
+    if (start.isValid() && end.isValid()) {
+      filterDateRange.value = [start, end];
+    }
+  }
+  if (typeof q.latestOnly === 'string') {
+    filterLatestOnly.value = q.latestOnly === 'true';
+  }
+}
+
 // ============ 生命周期 ============
-/** P3-01：暴露 refresh() 给 metric/tasks.vue 调用 */
+/** P3-01：暴露 refresh()（原 Tab 容器协议遗留，独立页面下供外部按需调用） */
 async function refresh() {
   await loadPlantNodeTree();
   await loadLoops();
@@ -474,27 +521,38 @@ async function refresh() {
 
 defineExpose({ refresh });
 
+/** 统一工具栏（标准 2 工具：刷新 / 帮助；导出为页面专属附加动作） */
+const { toolbarItems } = usePageToolbar(() => ({
+  refresh: { onClick: refresh, loading: loading.value },
+  help: {
+    onClick: () =>
+      showPageHelp({
+        title: '评估记录 帮助',
+        content:
+          '本页展示 KPI 快照明细（评估结果），支持按装置/回路/时间/状态/可信度筛选与导出。任务执行记录见评估任务页。',
+      }),
+  },
+}));
+
 onMounted(() => {
+  applyRouteQuery();
   loadPlantNodeTree();
-  loadLoops();
+  // 深链带入装置初值时按装置加载回路选项（与手动选择装置行为一致）
+  loadLoops(filterPlantNodeId.value);
   loadList();
 });
 </script>
 
 <template>
-  <div>
+  <Page>
     <!-- 顶部工具栏 -->
     <ClpmPageToolbar
-      class="mb-4"
-      title="评估历史"
-      subtitle="按小时快照展示回路性能指标，支持多维度筛选和详情查看。"
+      title="评估记录"
+      subtitle="按小时快照展示回路性能指标（KPI 评估结果），支持多维度筛选、详情查看与导出。任务执行记录见评估任务页。"
       :loading="loading"
     >
       <template #actions>
-        <Button @click="loadList">
-          <template #icon><RotateCw /></template>
-          刷新
-        </Button>
+        <ClpmStandardActions :items="toolbarItems" />
         <!-- P3-05：导出 CSV/Excel 双格式（Dropdown 选择） -->
         <Dropdown>
           <ClpmToolbarButton
@@ -513,7 +571,7 @@ onMounted(() => {
     </ClpmPageToolbar>
 
     <!-- 筛选区 -->
-    <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="mb-4 mt-4 flex flex-wrap items-center gap-3">
       <TreeSelect
         v-model:value="filterPlantNodeId"
         :tree-data="plantNodeTree"
@@ -539,9 +597,11 @@ onMounted(() => {
       />
       <Select
         v-model:value="filterStatus"
+        mode="multiple"
         placeholder="状态"
         allow-clear
-        style="width: 130px"
+        :max-tag-count="2"
+        style="width: 180px"
         @change="loadList"
       >
         <Select.Option value="SUCCESS">成功</Select.Option>
@@ -574,7 +634,7 @@ onMounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && snapshotList.length === 0"
-      empty-reason="暂无 KPI 快照记录。快照由评估任务自动生成，也可通过「手动任务」页发起重算产生"
+      empty-reason="暂无 KPI 快照记录。快照由评估任务自动生成，也可通过「新建手动评估」按时间窗重算产生"
       @retry="loadList"
     >
       <Table
@@ -900,5 +960,5 @@ onMounted(() => {
         </div>
       </template>
     </Drawer>
-  </div>
+  </Page>
 </template>

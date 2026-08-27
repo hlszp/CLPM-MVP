@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BizError
+from app.core.modules import is_module_enabled
 from app.core.redis import redis_client
 from app.models.audit import SysAuditLog
 from app.models.engine import EngineRule
@@ -389,6 +390,45 @@ async def get_board(
         "message": (f"存在 {inconclusive_count} 个不确定结果" if inconclusive_count > 0 else None),
     }
 
+    # P2 IA优化：L0~L4 适用性分布（从窗口内每回路最新快照 fitness_level 汇总）
+    fitness_distribution: dict[str, int] = {
+        "L0": 0,
+        "L1": 0,
+        "L2": 0,
+        "L3": 0,
+        "L4": 0,
+    }
+    try:
+        from app.models.metric import KpiSnapshotHourly as _KpiHourly
+
+        subq_latest = (
+            select(_KpiHourly.loop_id, _KpiHourly.fitness_level)
+            .distinct(_KpiHourly.loop_id)
+            .order_by(_KpiHourly.loop_id, _KpiHourly.ts_start.desc())
+        )
+        if plant_node_id:
+            from app.services.node_performance import collect_descendant_loop_ids
+
+            scope_ids = await collect_descendant_loop_ids(db, plant_node_id)
+            if scope_ids:
+                subq_latest = subq_latest.where(_KpiHourly.loop_id.in_(scope_ids))
+        subq_latest = subq_latest.where(
+            _KpiHourly.ts_start >= start,
+            _KpiHourly.ts_start <= now,
+        )
+        subquery = subq_latest.subquery()
+        stmt_lvl = (
+            select(subquery.c.fitness_level, func.count())
+            .select_from(subquery)
+            .group_by(subquery.c.fitness_level)
+        )
+        rows = (await db.execute(stmt_lvl)).all()
+        for lvl, cnt in rows:
+            if lvl in fitness_distribution:
+                fitness_distribution[lvl] = int(cnt or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_board fitness 分布计算失败，已忽略: %s", exc)
+
     data = {
         "filterScope": {
             "plantNodeId": plant_node_id,
@@ -399,6 +439,7 @@ async def get_board(
         "kpiSummary": kpi_summary,
         "steadyRateTrend": steady_trend,
         "partialWarning": partial_warning,
+        "fitnessDistribution": fitness_distribution,
     }
 
     # 写入缓存
@@ -665,11 +706,16 @@ async def get_ranking(
             start = now - delta
 
     # 排序字段白名单（防止 SQL 注入：不直接拼接用户输入到 SQL）
+    # 指标分析页（M1）：扩展 accuracy_rate/auto_mode_rate/effective_auto_rate，
+    # 支持单指标横切排行（默认回退 score）
     sort_field_map = {
         "score": "score",
         "steady_rate": "steady_rate",
         "good_value_rate": "good_value_rate",
         "fast_rate": "fast_rate",
+        "accuracy_rate": "accuracy_rate",
+        "auto_mode_rate": "auto_mode_rate",
+        "effective_auto_rate": "effective_auto_rate",
     }
     sort_field_name = sort_field_map.get(sort_by, "score")
 
@@ -729,9 +775,10 @@ async def get_ranking(
     # 查询预诊断（从 action_tracker 取最新开放态诊断标签）
     # D1/D2 整改：仅取 PENDING/IN_PROGRESS 的 tracker，避免已闭环的历史记录
     # 干扰预诊断展示；同一回路可能有多个标签的 tracker，取最新一条
+    # 模块热插拔：诊断模块禁用时跳过 tracker 查询
     diagnosis_map: dict[str, str] = {}
     action_status_map: dict[str, str] = {}
-    if loop_ids:
+    if loop_ids and is_module_enabled("diagnosis"):
         t_result = await db.execute(
             select(ActionTracker)
             .where(ActionTracker.loop_id.in_(loop_ids))
@@ -774,6 +821,18 @@ async def get_ranking(
                 "algorithmVersion": ALGORITHM_VERSION,
                 "preDiagnosis": diagnosis_map.get(loop_id),
                 "actionStatus": action_status_map.get(loop_id, "PENDING"),
+                "includeInEvaluation": (loop.include_in_evaluation if loop is not None else None),
+                "validRate": _to_float(snap.valid_rate),
+                "samplingFreq": snap.sampling_freq,
+                "qualityPolicy": snap.quality_policy,
+                "confidenceLevel": snap.confidence_level,
+                # P2 IA优化：适用性评估字段（从快照直接取）
+                "fitnessLevel": snap.fitness_level,
+                "fitnessTags": (
+                    list(snap.fitness_tags)
+                    if isinstance(snap.fitness_tags, list)
+                    else (None if snap.fitness_tags is None else list(snap.fitness_tags))
+                ),
             }
         )
 
@@ -1452,7 +1511,10 @@ async def _aggregate_bad_actor_distribution(
     # 查询 action_tracker 中开放态诊断标签
     # D1 整改：补 created_at DESC 排序，确保同一回路多条记录时取到最新一条
     # （与 L717 回路排行榜预诊断标签查询口径一致）
+    # 模块热插拔：诊断模块禁用时跳过 tracker 查询，返回空分布
     unique_loop_ids = list(set(loop_ids))
+    if not is_module_enabled("diagnosis"):
+        return []
     t_result = await db.execute(
         select(ActionTracker)
         .where(ActionTracker.loop_id.in_(unique_loop_ids))
@@ -1581,7 +1643,10 @@ async def _build_snapshot_conditions(
     if expanded_node_ids:
         conditions.append(LoopLedger.unit_id.in_(expanded_node_ids))
     if status_filter:
-        conditions.append(KpiSnapshotHourly.status == status_filter)
+        # 逗号分隔多值 → IN 查询；单值为 IN 的特例，向后兼容
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if statuses:
+            conditions.append(KpiSnapshotHourly.status.in_(statuses))
     if confidence_level:
         conditions.append(KpiSnapshotHourly.confidence_level == confidence_level)
     if loop_tag_name:
@@ -1632,7 +1697,8 @@ async def get_grade_distribution(
 
     Returns:
         {"EXCELLENT": n, "GOOD": n, "FAIR": n, "WARNING": n, "POOR": n,
-         "INCONCLUSIVE": n, "total": n}
+         "INCONCLUSIVE": n, "total": n,
+         "fitnessDistribution": {"L0": n, ..., "L4": n, "total": n}}
     """
     conditions, need_loop_join = await _build_snapshot_conditions(
         db,
@@ -1661,6 +1727,7 @@ async def get_grade_distribution(
     subq_stmt = select(
         KpiSnapshotHourly.id.label("snap_id"),
         KpiSnapshotHourly.score.label("score"),
+        KpiSnapshotHourly.fitness_level.label("fitness_level"),
         rn_col,
     )
     if need_loop_join:
@@ -1684,7 +1751,126 @@ async def get_grade_distribution(
         distribution[key] += row.cnt
         total += row.cnt
     distribution["total"] = total
+
+    # 适用性分层分布（L0~L4，P2 IA优化；同一"每回路最新快照"口径，
+    # 未分层快照不计入各等级，total 为全量回路数）
+    fitness_stmt = (
+        select(latest_subq.c.fitness_level, func.count().label("cnt"))
+        .where(latest_subq.c.rn == 1)
+        .group_by(latest_subq.c.fitness_level)
+    )
+    fitness_rows = (await db.execute(fitness_stmt)).all()
+    fitness_distribution: dict[str, int] = dict.fromkeys(("L0", "L1", "L2", "L3", "L4"), 0)
+    for row in fitness_rows:
+        if row.fitness_level in fitness_distribution:
+            fitness_distribution[row.fitness_level] += row.cnt
+    fitness_distribution["total"] = total
+    distribution["fitnessDistribution"] = fitness_distribution
     return distribution
+
+
+# loops/snapshots 服务端排序白名单（防 SQL 注入：只允许映射内列，非法值回退默认 ts_start DESC）。
+# 指标分析页 M3 联动（2026-08-25）：在 score 基础上扩展 6 个 KPI 列，
+# 供回路性能页排序下拉与横切分析场景使用（口径与 get_ranking sort_field_map 对齐）
+SNAPSHOT_SORT_COLUMNS = {
+    "score": KpiSnapshotHourly.score,
+    "accuracy_rate": KpiSnapshotHourly.accuracy_rate,
+    "auto_mode_rate": KpiSnapshotHourly.auto_mode_rate,
+    "effective_auto_rate": KpiSnapshotHourly.effective_auto_rate,
+    "fast_rate": KpiSnapshotHourly.fast_rate,
+    "steady_rate": KpiSnapshotHourly.steady_rate,
+    "good_value_rate": KpiSnapshotHourly.good_value_rate,
+}
+
+# 指标矩阵页批量序列接口白名单（docs/MVP设计/15-回路指标矩阵页设计方案.md §4.1）：
+# SNAPSHOT_SORT_COLUMNS 7 项 + 诊断扩展数值列（snake_case，camelCase 由 endpoint 层
+# 统一转换）。DISPLAY_ONLY 统计/阀门指标暂不进白名单（语义非"单值时间序列"）。
+METRIC_SERIES_COLUMNS: dict[str, object] = {
+    **SNAPSHOT_SORT_COLUMNS,
+    "oscillation_rate": KpiSnapshotHourly.oscillation_rate,
+    "saturation_rate": KpiSnapshotHourly.saturation_rate,
+    "instrument_fault_rate": KpiSnapshotHourly.instrument_fault_rate,
+    "stiction_index": KpiSnapshotHourly.stiction_index,
+    "settling_time": KpiSnapshotHourly.settling_time,
+    "output_trip_index": KpiSnapshotHourly.output_trip_index,
+}
+
+# 批量序列单次最大回路数（性能护栏：10 回路 × 168h ≈ 1680 行无分页压力）
+METRIC_SERIES_MAX_LOOPS = 10
+
+
+async def get_loop_metric_series(
+    db: AsyncSession,
+    loop_ids: list[str],
+    metric_key: str,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[dict]:
+    """批量查询单指标 × 多回路时间序列（指标矩阵页列头趋势对比）.
+
+    数据源为 kpi_snapshot_hourly（小时粒度），按 loop_id + ts_start 升序返回；
+    NULL 值快照剔除（该小时无有效计算值不产生数据点）。
+
+    Args:
+        db: 异步 DB 会话
+        loop_ids: 回路 ID 列表（1~METRIC_SERIES_MAX_LOOPS 个）
+        metric_key: 指标键（snake_case，METRIC_SERIES_COLUMNS 白名单）
+        start: 起始时间（按 ts_start 过滤）；None=默认近 7 天
+        end: 结束时间（按 ts_start 过滤）；None=当前时间
+
+    Returns:
+        ``[{"loop_id", "tag_name", "points": [{"ts", "value"}]}, ...]``，
+        按入参 loop_ids 中实际有数据的回路返回
+
+    Raises:
+        BizError: ERR_METRIC_SERIES_INVALID（白名单外指标键）/
+            ERR_METRIC_SERIES_LOOPS（回路数超限或为空）
+    """
+    col = METRIC_SERIES_COLUMNS.get(metric_key)
+    if col is None:
+        raise BizError(
+            code="ERR_METRIC_SERIES_INVALID",
+            message=f"无效的指标键: {metric_key}（可选：{sorted(METRIC_SERIES_COLUMNS)}）",
+            status_code=400,
+        )
+    if not loop_ids:
+        raise BizError(
+            code="ERR_METRIC_SERIES_LOOPS",
+            message="loopIds 不能为空",
+            status_code=400,
+        )
+    if len(loop_ids) > METRIC_SERIES_MAX_LOOPS:
+        raise BizError(
+            code="ERR_METRIC_SERIES_LOOPS",
+            message=f"回路数超过上限 {METRIC_SERIES_MAX_LOOPS}（当前 {len(loop_ids)}）",
+            status_code=400,
+        )
+
+    conditions = [
+        KpiSnapshotHourly.loop_id.in_(loop_ids),
+        col.is_not(None),
+    ]
+    if start is not None:
+        conditions.append(KpiSnapshotHourly.ts_start >= start)
+    if end is not None:
+        conditions.append(KpiSnapshotHourly.ts_start <= end)
+
+    stmt = (
+        select(KpiSnapshotHourly.loop_id, LoopLedger.tag_name, KpiSnapshotHourly.ts_start, col)
+        .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+        .where(*conditions)
+        .order_by(KpiSnapshotHourly.loop_id.asc(), KpiSnapshotHourly.ts_start.asc())
+    )
+    result = await db.execute(stmt)
+
+    # 按回路聚合（保持 SQL 升序，ts 单调递增）
+    series_map: dict[str, dict] = {}
+    for loop_id, tag_name, ts, value in result.all():
+        entry = series_map.setdefault(
+            str(loop_id), {"loop_id": str(loop_id), "tag_name": tag_name, "points": []}
+        )
+        entry["points"].append({"ts": ts.isoformat() if ts else None, "value": float(value)})
+    return list(series_map.values())
 
 
 async def list_loop_snapshots(
@@ -1711,7 +1897,7 @@ async def list_loop_snapshots(
         plant_node_ids: 装置 ID 列表过滤（LoopLedger.unit_id）；None=不按装置过滤
         start: 起始时间（按 ts_start 过滤）；None=默认近 30 天
         end: 结束时间（按 ts_start 过滤）；None=当前时间
-        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL）
+        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL，逗号分隔多值）
         confidence_level: 可信度等级过滤（A/B/C/D/E）
         loop_tag_name: 回路编号模糊匹配（ILIKE %keyword%）
         grade: 性能等级筛选（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE），
@@ -1722,8 +1908,10 @@ async def list_loop_snapshots(
             False=返回所有快照（用于历史趋势/诊断历史）
         page: 页码（1-based）
         page_size: 每页条数
-        sort_by: 排序字段（"score"=按综合评分，None/"ts_start"=按时间窗起始；
-            score 排序时 NULL 恒置末位，次排序 ts_start DESC）
+        sort_by: 排序字段；None=按时间窗起始 DESC。白名单（M3 扩展，见
+            SNAPSHOT_SORT_COLUMNS）：score/accuracy_rate/auto_mode_rate/
+            effective_auto_rate/fast_rate/steady_rate/good_value_rate
+            （排序时 NULL 恒置末位，次排序 ts_start DESC）
         sort_order: 排序方向（"asc"/"desc"，默认 desc）
 
     Returns:
@@ -1774,14 +1962,11 @@ async def list_loop_snapshots(
         latest_subq = subq_stmt.subquery()
 
         # 主查询：只取 rn=1 的 snapshot
-        # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
-        if sort_by == "score":
-            score_order = (
-                KpiSnapshotHourly.score.asc()
-                if sort_order == "asc"
-                else KpiSnapshotHourly.score.desc()
-            )
-            latest_order = [nulls_last(score_order), KpiSnapshotHourly.ts_start.desc()]
+        # 可选排序：白名单列 / ts_start（默认 ts_start DESC）；指标列排序时 NULL 恒置末位
+        sort_col = SNAPSHOT_SORT_COLUMNS.get(sort_by or "")
+        if sort_col is not None:
+            col_order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+            latest_order = [nulls_last(col_order), KpiSnapshotHourly.ts_start.desc()]
         else:
             latest_order = [KpiSnapshotHourly.ts_start.desc()]
         stmt = (
@@ -1812,14 +1997,11 @@ async def list_loop_snapshots(
         # 全量时间序列（历史趋势/诊断历史用）：等级筛选按行应用
         if grade_cond is not None:
             base_conditions.append(grade_cond)
-        # 可选排序：score / ts_start（默认 ts_start DESC）；score 排序时 NULL 恒置末位
-        if sort_by == "score":
-            score_order = (
-                KpiSnapshotHourly.score.asc()
-                if sort_order == "asc"
-                else KpiSnapshotHourly.score.desc()
-            )
-            order_clause = [nulls_last(score_order), KpiSnapshotHourly.ts_start.desc()]
+        # 可选排序：白名单列 / ts_start（默认 ts_start DESC）；指标列排序时 NULL 恒置末位
+        sort_col = SNAPSHOT_SORT_COLUMNS.get(sort_by or "")
+        if sort_col is not None:
+            col_order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+            order_clause = [nulls_last(col_order), KpiSnapshotHourly.ts_start.desc()]
         else:
             order_clause = [KpiSnapshotHourly.ts_start.desc()]
         stmt = (
@@ -1855,6 +2037,7 @@ __all__ = [
     "GRADE_NAMES",
     "KPI_METRIC_CODES",
     "KPI_NAME_MAP",
+    "SNAPSHOT_SORT_COLUMNS",
     "export_analytics_csv",
     "get_analytics",
     "get_board",

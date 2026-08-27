@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -135,6 +136,12 @@ class KpiNodeSnapshotDaily(Base):
         Index("idx_kpi_node_snapshot_daily_stat_date", "stat_date"),
         Index("idx_kpi_node_snapshot_daily_status", "status"),
         Index("idx_kpi_node_snapshot_daily_node_date", "plant_node_id", "stat_date"),
+        # Workbench v2.0: PLANTS 排名 / UNITS 热力高频查询加速 (方案 M-F)
+        Index(
+            "idx_kpi_daily_scope_date_desc",
+            "plant_node_id",
+            text("stat_date DESC"),
+        ),
     )
 
 

@@ -4,6 +4,7 @@
 - GET /api/v1/dashboard/overview      — 工作台聚合数据（6 大 KPI + 低效回路 Top 10 + 趋势 + 异常）
 - GET /api/v1/dashboard/board         — 装置级三大 KPI 看板（综合性能/平均自控率/稳定率）
 - GET /api/v1/dashboard/auto-rate-rt  — 实时自控率（每分钟刷新，来自 TDengine 最新 MODE 值）
+- GET /api/v1/dashboard/governance-summary — 管理者版治理聚合（处置闭环 + 治理漏斗 + 问题回路）
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -20,13 +21,24 @@ from app.core.db import get_db
 
 # MVP 精简：已屏蔽诊断模块 → 不再导入 DiagnosisResult
 # from app.models.diagnosis import DiagnosisResult
+from app.models.diagnosis_run import DiagnosisRun
+from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger
+from app.models.loop_action_item import LoopActionItem
 from app.models.metric import KpiSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.sys_user import SysUser
+from app.models.tuning import TuningRecord
 from app.models.unit_kpi_summary import UnitKpiSummary
 from app.schemas.common import ApiResponse, success
+from app.schemas.dashboard import (
+    GovernanceBadLoops,
+    GovernanceFunnel,
+    GovernanceHandlingSummary,
+    GovernanceSummary,
+)
 from app.services.dashboard import get_dashboard_overview
+from app.services.performance import get_grade_distribution
 
 logger = logging.getLogger(__name__)
 
@@ -1379,10 +1391,43 @@ async def get_system_overview_endpoint(
         "pendingTrackerCount": tracker_count,
     }
 
+    # P2 IA优化：L0~L4 适用性分布
+    fitness_distribution: dict[str, int] = {
+        "L0": 0,
+        "L1": 0,
+        "L2": 0,
+        "L3": 0,
+        "L4": 0,
+    }
+    if loop_ids:
+        try:
+            subq_latest = (
+                select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.fitness_level)
+                .distinct(KpiSnapshotHourly.loop_id)
+                .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+            ).where(
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= start,
+                KpiSnapshotHourly.ts_start <= end,
+            )
+            subquery = subq_latest.subquery()
+            stmt = (
+                select(subquery.c.fitness_level, func.count())
+                .select_from(subquery)
+                .group_by(subquery.c.fitness_level)
+            )
+            rows = (await db.execute(stmt)).all()
+            for lvl, cnt in rows:
+                if lvl in fitness_distribution:
+                    fitness_distribution[lvl] = int(cnt or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("system-overview fitness 分布计算失败，已忽略: %s", exc)
+
     return success(
         data={
             "summary": summary,
             "scoreDistribution": score_distribution,
+            "fitnessDistribution": fitness_distribution,
             "attentionSummary": attention_summary,
             "autoRate": auto_rate,
             "diagnosisDistribution": diagnosis_distribution,
@@ -1393,4 +1438,178 @@ async def get_system_overview_endpoint(
             "windowStart": start.isoformat(),
             "windowEnd": end.isoformat(),
         }
+    )
+
+
+# ---------------------------------------------------------------------------
+# 装置总览管理者版：治理聚合（governance-summary）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/governance-summary", response_model=ApiResponse[GovernanceSummary])
+async def get_governance_summary_endpoint(
+    timeWindow: str = Query(
+        "last_24_hours",
+        description="时间窗：last_8_hours/last_24_hours/last_72_hours/last_168_hours/custom",
+    ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """治理聚合（装置总览管理者版）：处置闭环计数 + 治理漏斗 + 问题回路分布.
+
+    时间窗与 board/aggregate 同口径（复用 ``_resolve_aggregate_window``，
+    naive UTC）；全部为本地 PostgreSQL 查询，无远端 API。
+
+    各项指标口径（拿不准处取最保守可实现口径）：
+    - handling.openItems：``loop_action_item`` 未闭环建议数
+      （status ∈ PENDING/ACCEPTED；CONVERTED/REJECTED/IGNORED 为终态，处置 v2.0 状态机）
+    - handling.openOrders：``handling_order`` 未闭环工单数
+      （status ∈ PENDING/EXECUTING/VERIFYING/REOPENED；CLOSED/CANCELLED 为终态）
+    - handling.overdueOrders：未闭环且超期的工单数，超期口径与关注队列
+      ``monitor_attention`` HANDLING 来源一致：REOPENED 全部计入；
+      EXECUTING/PENDING 且 planned_at < now；VERIFYING 且 submitted_at < now-24h
+    - handling.closedInWindow：时间窗内闭环的工单数
+      （status=CLOSED 且 verified_at ∈ 窗口；CLOSED 为终态，verified_at 即闭环时间）
+    - funnel.discovered：时间窗内每回路最新快照定级为 WARNING/POOR 的去重回路数
+      （= badLoops.warning + badLoops.poor，复用 grade-distribution 定级口径。
+      未采用 monitor_attention：关注队列为"当前状态"聚合，无时间窗语义，
+      快照定级口径确定性更强且与 badLoops 自洽）
+    - funnel.diagnosed：时间窗内完成诊断的运行数
+      （diagnosis_run.status ∈ SUCCESS/PARTIAL 且 finished_at ∈ 窗口）
+    - funnel.planned：时间窗内生成的处置/整定方案数
+      （handling_order.created_at ∈ 窗口 ＋ tuning_record.created_at ∈ 窗口
+      且 recommended_pid 非空，两者求和）
+    - funnel.closed：= handling.closedInWindow
+    - badLoops：窗口内每回路最新快照定级分布的 WARNING/POOR 档计数
+      （复用 ``app.services.performance.get_grade_distribution``，
+      与 GET /api/v1/performance/grade-distribution 同口径，阈值取 sys_config 当前生效值）
+    """
+
+    def _parse_dt(s: datetime | str | None) -> datetime | None:
+        # isinstance 守卫：直接调用端点函数时（单测场景），未传参数的默认值是
+        # FastAPI Query 对象而非 None，非字符串输入一律视为未指定
+        if isinstance(s, datetime):
+            return s.replace(tzinfo=None)
+        if not isinstance(s, str):
+            return None
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return datetime.fromisoformat(s)
+
+    resolved_window = timeWindow if isinstance(timeWindow, str) and timeWindow else "last_24_hours"
+    window = _resolve_aggregate_window(
+        resolved_window,
+        start_dt=_parse_dt(startTime),
+        end_dt=_parse_dt(endTime),
+    )
+    if window is None:
+        # custom 缺起止时间等非法输入：回退 last_24_hours（与 system-overview 同策略）
+        resolved_window = "last_24_hours"
+        window = _resolve_aggregate_window(resolved_window)
+    start, end = window  # type: ignore[misc]
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    async def _count(stmt) -> int:
+        return int((await db.execute(stmt)).scalar() or 0)
+
+    # ---- handling：处置闭环计数（双实体） ----
+    open_items = await _count(
+        select(func.count())
+        .select_from(LoopActionItem)
+        .where(LoopActionItem.status.in_(["PENDING", "ACCEPTED"]))
+    )
+    open_orders = await _count(
+        select(func.count())
+        .select_from(HandlingOrder)
+        .where(HandlingOrder.status.in_(["PENDING", "EXECUTING", "VERIFYING", "REOPENED"]))
+    )
+    overdue_orders = await _count(
+        select(func.count())
+        .select_from(HandlingOrder)
+        .where(
+            or_(
+                HandlingOrder.status == "REOPENED",
+                and_(
+                    HandlingOrder.status == "EXECUTING",
+                    HandlingOrder.planned_at.isnot(None),
+                    HandlingOrder.planned_at < now,
+                ),
+                and_(
+                    HandlingOrder.status == "VERIFYING",
+                    HandlingOrder.submitted_at.isnot(None),
+                    HandlingOrder.submitted_at < now - timedelta(hours=24),
+                ),
+                and_(
+                    HandlingOrder.status == "PENDING",
+                    HandlingOrder.planned_at.isnot(None),
+                    HandlingOrder.planned_at < now,
+                ),
+            )
+        )
+    )
+    closed_in_window = await _count(
+        select(func.count())
+        .select_from(HandlingOrder)
+        .where(
+            HandlingOrder.status == "CLOSED",
+            HandlingOrder.verified_at.isnot(None),
+            HandlingOrder.verified_at >= start,
+            HandlingOrder.verified_at <= end,
+        )
+    )
+
+    # ---- funnel：诊断 / 方案 ----
+    diagnosed = await _count(
+        select(func.count())
+        .select_from(DiagnosisRun)
+        .where(
+            DiagnosisRun.status.in_(["SUCCESS", "PARTIAL"]),
+            DiagnosisRun.finished_at.isnot(None),
+            DiagnosisRun.finished_at >= start,
+            DiagnosisRun.finished_at <= end,
+        )
+    )
+    planned_orders = await _count(
+        select(func.count())
+        .select_from(HandlingOrder)
+        .where(
+            HandlingOrder.created_at >= start,
+            HandlingOrder.created_at <= end,
+        )
+    )
+    planned_tunings = await _count(
+        select(func.count())
+        .select_from(TuningRecord)
+        .where(
+            TuningRecord.created_at >= start,
+            TuningRecord.created_at <= end,
+            TuningRecord.recommended_pid.isnot(None),
+        )
+    )
+
+    # ---- badLoops + funnel.discovered：窗口内每回路最新快照定级（复用 grade-distribution） ----
+    dist = await get_grade_distribution(db, start=start, end=end)
+    warning_loops = int(dist.get("WARNING", 0) or 0)
+    poor_loops = int(dist.get("POOR", 0) or 0)
+
+    return success(
+        data=GovernanceSummary(
+            time_window=resolved_window,
+            handling=GovernanceHandlingSummary(
+                open_items=open_items,
+                open_orders=open_orders,
+                overdue_orders=overdue_orders,
+                closed_in_window=closed_in_window,
+            ),
+            funnel=GovernanceFunnel(
+                discovered=warning_loops + poor_loops,
+                diagnosed=diagnosed,
+                planned=planned_orders + planned_tunings,
+                closed=closed_in_window,
+            ),
+            bad_loops=GovernanceBadLoops(warning=warning_loops, poor=poor_loops),
+        )
     )

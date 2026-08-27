@@ -37,7 +37,10 @@ from app.schemas.common import ApiResponse, success
 from app.schemas.task import TaskType
 from app.services.diagnosis_operators import list_operators
 from app.services.diagnosis_operators.classification import get_confidence_definitions
-from app.services.loop_action_templates import STANDARD_ACTION_TEMPLATES
+from app.services.diagnosis_system_actions import (
+    generate_system_actions as _generate_system_actions,
+)
+from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.task_tracker import create_task
 
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
@@ -237,6 +240,42 @@ async def trigger_diagnosis(
             status_code=400,
         )
 
+    # P2 IA优化：诊断发起门禁（fitness L0/L1 直接阻止，L2 允许但提示横幅）
+    fitness_map = await get_latest_fitness_per_loop(db, loop_ids)
+    blocked: list[dict[str, Any]] = []
+    condition_warning: list[dict[str, Any]] = []
+    for lid in loop_ids:
+        fit = fitness_map.get(lid)
+        if fit is None or fit.level is None:
+            continue  # 无 fitness 数据 → 暂放过（兼容首次计算前窗口）
+        if fit.level in ("L0", "L1"):
+            blocked.append(
+                {
+                    "loopId": lid,
+                    "fitnessLevel": fit.level,
+                    "reasons": fit.human_readable_tags or ["适用性不足"],
+                }
+            )
+        elif fit.level == "L2":
+            condition_warning.append(
+                {
+                    "loopId": lid,
+                    "fitnessLevel": fit.level,
+                    "warnings": fit.human_readable_tags or [],
+                }
+            )
+    if blocked:
+        raise BizError(
+            code="ERR_DIAGNOSIS_FITNESS_INSUFFICIENT",
+            message=(
+                f"{len(blocked)} 条回路适用性不足以诊断（L0/L1）："
+                f"原因包含手动主导/自控率极低/数据严重不足，"
+                f"请先处理控制状态后再发起诊断（示例回路 {blocked[0]['loopId']}）"
+            ),
+            status_code=400,
+            data={"blocked": blocked, "conditionWarning": condition_warning},
+        )
+
     task_id = await create_task(
         task_type=TaskType.DIAGNOSIS,
         created_by=user.username,
@@ -269,7 +308,10 @@ async def trigger_diagnosis(
 
     await set_celery_task_ids(task_id, [celery_result.id])
 
-    return success({"taskId": task_id, "accepted": len(loop_ids)})
+    resp: dict[str, Any] = {"taskId": task_id, "accepted": len(loop_ids)}
+    if condition_warning:
+        resp["conditionWarning"] = condition_warning
+    return success(resp)
 
 
 @router.get("/runs", response_model=ApiResponse[dict])
@@ -393,46 +435,6 @@ def _action_to_item(row: LoopActionItem) -> dict[str, Any]:
         "suggestedBy": row.suggested_by,
         "suggestedAt": row.suggested_at.isoformat() + "Z" if row.suggested_at else None,
     }
-
-
-async def _generate_system_actions(db: AsyncSession, run: DiagnosisRun) -> None:
-    """按诊断结论/人工复核结论自动生成标准处置建议（§9.4）。
-
-    分类来源：已复核 → review_results（人工复核优先）；
-    未复核 → primary_category + secondary_categories（诊断结论）。
-    同一 run 已有记录时不重复生成（由调用方保证）。
-    """
-    if run.review_status == "REVIEWED" and run.review_results:
-        categories = [c for c in run.review_results if c in STANDARD_ACTION_TEMPLATES]
-        basis_prefix = "人工复核"
-    else:
-        categories = (
-            [run.primary_category] if run.primary_category in STANDARD_ACTION_TEMPLATES else []
-        )
-        for j in run.secondary_categories or []:
-            cat = j.get("category")
-            if cat in STANDARD_ACTION_TEMPLATES and cat not in categories:
-                categories.append(cat)
-        basis_prefix = "诊断结论"
-    now = _utcnow_naive()
-    for cat in categories:
-        label = _CATEGORY_LABELS.get(cat, cat)
-        for tpl in STANDARD_ACTION_TEMPLATES[cat]:
-            db.add(
-                LoopActionItem(
-                    run_id=run.id,
-                    loop_id=run.loop_id,
-                    source="SYSTEM",
-                    category=cat,
-                    content=f"{tpl['action']}：{tpl['description']}",
-                    basis=f"{basis_prefix}：{label}",
-                    priority=tpl["priority"],
-                    status="PENDING",
-                    suggested_by="系统",
-                    suggested_at=now,
-                )
-            )
-    await db.flush()
 
 
 @router.get("/runs/{run_id}/actions", response_model=ApiResponse[dict])

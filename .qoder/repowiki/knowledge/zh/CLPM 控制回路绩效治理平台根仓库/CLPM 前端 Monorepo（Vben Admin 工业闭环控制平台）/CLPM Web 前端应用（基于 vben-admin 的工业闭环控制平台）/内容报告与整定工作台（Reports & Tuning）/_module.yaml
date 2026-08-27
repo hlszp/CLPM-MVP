@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend_app/web_app/content_and_reports
+title: 内容报告与整定工作台（Reports & Tuning）
+scope:
+    - frontend/apps/web-antd/src/views/reports/
+    - frontend/apps/web-antd/src/views/tuning/
+    - frontend/apps/web-antd/src/views/factory/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend_app/web_app/monitoring_features

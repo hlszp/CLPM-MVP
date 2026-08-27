@@ -11,6 +11,7 @@
 - POST /suggestions/convert        转工单（多建议合一单，order_no=HD-YYYYMMDD-NNN）
 工单侧（§6.2，handling_order 执行对象）：
 - GET  /orders                     工单清单（分页/筛选/状态分组排序）
+- GET  /orders/export              工单 CSV 导出（筛选同 /orders，上限 5000 行）
 - GET  /orders/{id}                工单详情（+ 来源建议摘要数组）
 - POST /orders                     手动新建工单（source=MANUAL）
 - POST /orders/{id}/start          开工（PENDING/REOPENED → EXECUTING）
@@ -31,11 +32,14 @@ commit 后过期属性懒加载会 500，v1.x 已踩坑）。
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -45,6 +49,7 @@ from app.api.deps import get_current_user, require_roles
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS
 from app.core.db import get_db
 from app.core.exceptions import BizError
+from app.core.modules import is_module_enabled
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.handling_order import ACTION_TYPES, HandlingOrder
 from app.models.loop import LoopLedger
@@ -107,6 +112,15 @@ def _iso(dt: datetime | None) -> str | None:
 
 def _err_param(message: str) -> BizError:
     return BizError(code="ERR_PARAM", message=message, status_code=400)
+
+
+def _ensure_uuid(value: str, field: str) -> None:
+    """路径 id UUID 格式防御：畸形串直接 ERR_PARAM 400（否则 PG UUID 列比较抛 500，
+    同 loops.list_loops / diagnosis_v2 既有口径）。"""
+    try:
+        UUID(value)
+    except (AttributeError, ValueError):
+        raise _err_param(f"{field} 格式非法（应为 UUID）") from None
 
 
 def _err_state(status: str, action: str, labels: dict[str, str]) -> BizError:
@@ -277,6 +291,7 @@ def _order_to_dict(row: HandlingOrder) -> dict[str, Any]:
 
 
 async def _get_suggestion_or_404(db: AsyncSession, suggestion_id: str) -> LoopActionItem:
+    _ensure_uuid(suggestion_id, "suggestionId")
     row = (
         await db.execute(select(LoopActionItem).where(LoopActionItem.id == suggestion_id))
     ).scalar_one_or_none()
@@ -288,6 +303,7 @@ async def _get_suggestion_or_404(db: AsyncSession, suggestion_id: str) -> LoopAc
 
 
 async def _get_order_or_404(db: AsyncSession, order_id: str) -> HandlingOrder:
+    _ensure_uuid(order_id, "orderId")
     row = (
         await db.execute(select(HandlingOrder).where(HandlingOrder.id == order_id))
     ).scalar_one_or_none()
@@ -362,8 +378,13 @@ async def _pull_kpi_windows(
 
 
 async def _writeback_tuning_record(db: AsyncSession, order: HandlingOrder, status: str) -> None:
-    """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的工单。"""
+    """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的工单。
+
+    模块热插拔：整定模块禁用时跳过回写（软依赖，handling 不硬依赖 tuning）。
+    """
     if order.action_type != "TUNING" or not order.tuning_record_id:
+        return
+    if not is_module_enabled("tuning"):
         return
     rec = await db.get(TuningRecord, order.tuning_record_id)
     if rec is not None:
@@ -851,6 +872,18 @@ def _build_order_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
     if args.get("planned_after"):
         conds.append("ho.planned_at >= :planned_after")
         params["planned_after"] = args["planned_after"]
+    if args.get("created_before"):
+        conds.append("ho.created_at <= :created_before")
+        params["created_before"] = args["created_before"]
+    if args.get("created_after"):
+        conds.append("ho.created_at >= :created_after")
+        params["created_after"] = args["created_after"]
+    if args.get("verified_before"):
+        conds.append("ho.verified_at <= :verified_before")
+        params["verified_before"] = args["verified_before"]
+    if args.get("verified_after"):
+        conds.append("ho.verified_at >= :verified_after")
+        params["verified_after"] = args["verified_after"]
     if args.get("unit_ids") is not None:
         conds.append("ll.unit_id = ANY(CAST(:unit_ids AS uuid[]))")
         params["unit_ids"] = args["unit_ids"]
@@ -870,11 +903,18 @@ async def list_orders(
     keyword: str | None = Query(None, description="处置编号/回路位号/标题模糊"),
     plannedBefore: datetime | None = Query(None, description="计划时间止（ISO）"),
     plannedAfter: datetime | None = Query(None, description="计划时间起（ISO）"),
+    createdBefore: datetime | None = Query(None, description="创建时间止（ISO，按 created_at）"),
+    createdAfter: datetime | None = Query(None, description="创建时间起（ISO，按 created_at）"),
+    verifiedBefore: datetime | None = Query(None, description="验证时间止（ISO，按 verified_at）"),
+    verifiedAfter: datetime | None = Query(None, description="验证时间起（ISO，按 verified_at）"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
 ) -> dict:
     """工单清单（分页）。排序：状态分组（PENDING→REOPENED→EXECUTING→VERIFYING→其他）
-    + updated_at DESC（§6.2）。"""
+    + updated_at DESC（§6.2）。
+
+    时间窗口筛选：plannedBefore/plannedAfter 按 planned_at；createdBefore/createdAfter
+    按 created_at；verifiedBefore/verifiedAfter 按 verified_at；均为闭区间。"""
     args: dict[str, Any] = {
         "status": status,
         "action_type": actionType,
@@ -884,6 +924,10 @@ async def list_orders(
         "keyword": keyword,
         "planned_before": _to_naive_utc(plannedBefore) if plannedBefore else None,
         "planned_after": _to_naive_utc(plannedAfter) if plannedAfter else None,
+        "created_before": _to_naive_utc(createdBefore) if createdBefore else None,
+        "created_after": _to_naive_utc(createdAfter) if createdAfter else None,
+        "verified_before": _to_naive_utc(verifiedBefore) if verifiedBefore else None,
+        "verified_after": _to_naive_utc(verifiedAfter) if verifiedAfter else None,
     }
     if plantNodeId is not None:
         args["unit_ids"] = await _load_subtree_unit_ids(db, plantNodeId)
@@ -928,6 +972,137 @@ async def list_orders(
             "page": page,
             "pageSize": pageSize,
         }
+    )
+
+
+#: 工单来源中文名（CSV 导出展示口径）
+_ORDER_SOURCE_LABELS = {
+    "DIAGNOSIS": "诊断",
+    "MANUAL": "手动",
+}
+
+#: 工单 CSV 导出行数上限（GAP-4：与诊断 /diagnosis/export 同口径）
+_ORDER_EXPORT_LIMIT = 5000
+
+
+def _fmt_csv_ts(iso: str | None) -> str:
+    """ISO+Z → 可读时间（CSV 展示口径，空值落空串）。"""
+    return iso[:19].replace("T", " ") if iso else ""
+
+
+@router.get("/orders/export")
+async def export_handling_orders(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    status: str | None = Query(None, description="工单状态（单值）"),
+    actionType: str | None = Query(None),
+    source: str | None = Query(None, pattern="^(DIAGNOSIS|MANUAL)$"),
+    plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
+    loopId: str | None = Query(None),
+    handler: str | None = Query(None, description="处置人模糊"),
+    keyword: str | None = Query(None, description="处置编号/回路位号/标题模糊"),
+    plannedBefore: datetime | None = Query(None, description="计划时间止（ISO）"),
+    plannedAfter: datetime | None = Query(None, description="计划时间起（ISO）"),
+    createdBefore: datetime | None = Query(None, description="创建时间止（ISO，按 created_at）"),
+    createdAfter: datetime | None = Query(None, description="创建时间起（ISO，按 created_at）"),
+    verifiedBefore: datetime | None = Query(None, description="验证时间止（ISO，按 verified_at）"),
+    verifiedAfter: datetime | None = Query(None, description="验证时间起（ISO，按 verified_at）"),
+) -> StreamingResponse:
+    """工单 CSV 导出（GAP-4）：筛选参数与 GET /orders 完全一致，上限 5000 行。
+
+    排序同清单口径（状态分组 + updated_at DESC）；表头为字段中文名，
+    UTF-8 with BOM 便于 Excel 直接打开（同诊断模块导出模式）。
+    """
+    args: dict[str, Any] = {
+        "status": status,
+        "action_type": actionType,
+        "source": source,
+        "loop_id": loopId,
+        "handler": handler,
+        "keyword": keyword,
+        "planned_before": _to_naive_utc(plannedBefore) if plannedBefore else None,
+        "planned_after": _to_naive_utc(plannedAfter) if plannedAfter else None,
+        "created_before": _to_naive_utc(createdBefore) if createdBefore else None,
+        "created_after": _to_naive_utc(createdAfter) if createdAfter else None,
+        "verified_before": _to_naive_utc(verifiedBefore) if verifiedBefore else None,
+        "verified_after": _to_naive_utc(verifiedAfter) if verifiedAfter else None,
+    }
+    if plantNodeId is not None:
+        args["unit_ids"] = await _load_subtree_unit_ids(db, plantNodeId)
+
+    params: dict[str, Any] = {}
+    where = _build_order_filters(params, args)
+
+    rows = list(
+        (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT ho.*, ll.tag_name AS loop_tag_name,
+                           ll.description AS loop_description,
+                           ll.importance_level, ll.unit_id
+                    FROM handling_order ho
+                    JOIN loop_ledger ll ON ll.id = ho.loop_id
+                    WHERE {where}
+                    ORDER BY {_ORDER_STATUS_RANK_SQL}, ho.updated_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {**params, "limit": _ORDER_EXPORT_LIMIT},
+            )
+        ).all()
+    )
+    unit_paths = await _load_unit_paths(db)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "处置编号",
+            "回路",
+            "装置",
+            "标题",
+            "处置类型",
+            "来源",
+            "处置人",
+            "计划时间",
+            "状态",
+            "创建时间",
+            "开工时间",
+            "提交验证时间",
+            "验证结论",
+            "验证人",
+            "验证时间",
+            "最近更新",
+        ]
+    )
+    for r in rows:
+        row = _order_list_row_to_dict(r, unit_paths)
+        writer.writerow(
+            [
+                row["orderNo"],
+                row["loopTagName"] or "",
+                row["unitPath"] or "",
+                row["title"] or "",
+                row["actionTypeLabel"] or "",
+                _ORDER_SOURCE_LABELS.get(row["source"] or "", row["source"] or ""),
+                row["handler"] or "",
+                _fmt_csv_ts(row["plannedAt"]),
+                row["statusLabel"] or "",
+                _fmt_csv_ts(_iso(r.created_at)),
+                _fmt_csv_ts(row["startedAt"]),
+                _fmt_csv_ts(row["submittedAt"]),
+                row["verifyResultLabel"] or "",
+                row["verifiedBy"] or "",
+                _fmt_csv_ts(row["verifiedAt"]),
+                _fmt_csv_ts(row["updatedAt"]),
+            ]
+        )
+    # UTF-8 BOM 头与正文分块流式返回（Excel 直接打开中文不乱码）
+    return StreamingResponse(
+        iter([b"\xef\xbb\xbf", buf.getvalue().encode("utf-8")]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=handling_orders.csv"},
     )
 
 
@@ -1226,6 +1401,8 @@ async def order_kpi_comparison(
 # ===========================================================================
 
 #: 建议侧按回路聚合子查询（loop_action_item，五态分布）
+#: {lf} 为回路范围 WHERE 注入点（plantNodeId/importanceLevel 过滤下推，
+#: 避免全表 GROUP BY 后外层过滤；无过滤时为空串）
 _SU_AGG_SQL = """
     SELECT loop_id,
            COUNT(*) FILTER (WHERE status = 'PENDING')   AS su_pending,
@@ -1235,10 +1412,10 @@ _SU_AGG_SQL = """
            COUNT(*) FILTER (WHERE status = 'IGNORED')   AS su_ignored,
            COUNT(*) AS suggestion_total,
            MAX(suggested_at) AS last_suggested_at
-    FROM loop_action_item GROUP BY loop_id
+    FROM loop_action_item{lf} GROUP BY loop_id
 """
 
-#: 工单侧按回路聚合子查询（handling_order，六态分布 + 闭环率 + 最近处置）
+#: 工单侧按回路聚合子查询（handling_order，六态分布 + 闭环率 + 最近处置；{lf} 同上）
 _HO_AGG_SQL = """
     SELECT loop_id,
            COUNT(*) FILTER (WHERE status = 'PENDING')   AS ho_pending,
@@ -1260,11 +1437,17 @@ _HO_AGG_SQL = """
                FILTER (WHERE status = 'CLOSED'
                        AND kpi_before ->> 'score' IS NOT NULL
                        AND kpi_after  ->> 'score' IS NOT NULL))[1] AS last_closed_kpi_delta
-    FROM handling_order GROUP BY loop_id
+    FROM handling_order{lf} GROUP BY loop_id
 """
 
+
 #: 双实体聚合行模板（loops 主查询与 topLoops 共用口径）
-_LOOP_AGG_SQL = f"""
+def _build_loop_agg_sql(loop_filter: str = "") -> str:
+    """组装双实体聚合 SQL；loop_filter 为建议/工单内层聚合的回路范围 WHERE。"""
+    lf = f" WHERE {loop_filter}" if loop_filter else ""
+    su = _SU_AGG_SQL.format(lf=lf)
+    ho = _HO_AGG_SQL.format(lf=lf)
+    return f"""
     SELECT ll.id AS loop_id, ll.tag_name AS loop_tag_name,
            ll.description AS loop_description, ll.importance_level, ll.unit_id,
            su.su_pending, su.su_accepted, su.su_converted, su.su_rejected,
@@ -1274,9 +1457,10 @@ _LOOP_AGG_SQL = f"""
            ho.ho_ineffective, ho.last_handled_at, ho.last_order_at,
            ho.last_handled_by, ho.last_closed_kpi_delta
     FROM loop_ledger ll
-    LEFT JOIN ({_SU_AGG_SQL}) su ON su.loop_id = ll.id
-    LEFT JOIN ({_HO_AGG_SQL}) ho ON ho.loop_id = ll.id
+    LEFT JOIN ({su}) su ON su.loop_id = ll.id
+    LEFT JOIN ({ho}) ho ON ho.loop_id = ll.id
 """
+
 
 #: KPI 改善筛选（§6.3：按最近闭环 KPI delta 情况筛回路，工单口径）
 _KPI_DELTA_FILTERS = {
@@ -1374,21 +1558,37 @@ async def list_handling_loops(
         if s not in _STATUS_FILTER_COLUMNS:
             raise _err_param(f"status 非法: {s}（合法值: {', '.join(_STATUS_FILTER_COLUMNS)}）")
 
+    # 外层可见别名为内层子查询别名 base（聚合 SQL 已透出 unit_id/
+    # importance_level 等列），过滤条件必须引用 base 而非子查询内部的 ll
     where: list[str] = ["1=1"]
     params: dict[str, Any] = {}
     if importanceLevel:
-        where.append("ll.importance_level = :importance_level")
+        where.append("base.importance_level = :importance_level")
         params["importance_level"] = importanceLevel
     if keyword:
-        where.append("(ll.tag_name ILIKE :kw OR ll.description ILIKE :kw)")
+        where.append("(base.loop_tag_name ILIKE :kw OR base.loop_description ILIKE :kw)")
         params["kw"] = f"%{keyword}%"
     if plantNodeId is not None:
         subtree_ids = await _load_subtree_unit_ids(db, plantNodeId)
-        where.append("ll.unit_id = ANY(CAST(:unit_ids AS uuid[]))")
+        where.append("base.unit_id = ANY(CAST(:unit_ids AS uuid[]))")
         params["unit_ids"] = subtree_ids
 
+    # plantNodeId/importanceLevel 过滤下推到内层聚合（loop_id IN 子查询），
+    # 避免建议/工单全表 GROUP BY 后再外层过滤；外层 where 保留同条件作冗余防护
+    loop_scope: list[str] = []
+    if importanceLevel:
+        loop_scope.append("importance_level = :importance_level")
+    if plantNodeId is not None:
+        loop_scope.append("unit_id = ANY(CAST(:unit_ids AS uuid[]))")
+    loop_filter = (
+        f"loop_id IN (SELECT id FROM loop_ledger WHERE {' AND '.join(loop_scope)})"
+        if loop_scope
+        else ""
+    )
+
     agg_inner = (
-        f"SELECT * FROM ({_LOOP_AGG_SQL}) base WHERE {' AND '.join(where)} "
+        f"SELECT * FROM ({_build_loop_agg_sql(loop_filter)}) base "
+        f"WHERE {' AND '.join(where)} "
         f"AND (COALESCE(base.suggestion_total, 0) + COALESCE(base.order_total, 0)) > 0"
     )
 
@@ -1418,20 +1618,28 @@ async def list_handling_loops(
         )
     )
 
-    total = (
-        await db.execute(text(f"SELECT COUNT(*) FROM ({agg_inner}) agg{post_where}"), params)
-    ).scalar() or 0
+    # COUNT 与分页合并：窗口函数 COUNT(*) OVER() 随分页结果带出总数，
+    # 消除原先整轮重复聚合的 COUNT 查询
     rows = list(
         (
             await db.execute(
                 text(
-                    f"SELECT * FROM ({agg_inner}) agg{post_where} "
+                    f"SELECT *, COUNT(*) OVER() AS _total FROM ({agg_inner}) agg{post_where} "
                     f"ORDER BY {order} LIMIT :limit OFFSET :offset"
                 ),
                 {**params, "limit": pageSize, "offset": (page - 1) * pageSize},
             )
         ).all()
     )
+    if rows:
+        total = rows[0]._total or 0
+    elif page == 1:
+        total = 0
+    else:
+        # 页码超出末页时窗口函数无行可携带总数，补一次 COUNT（仅该冷路径）
+        total = (
+            await db.execute(text(f"SELECT COUNT(*) FROM ({agg_inner}) agg{post_where}"), params)
+        ).scalar() or 0
     unit_paths = await _load_unit_paths(db)
     return success(
         {
@@ -1608,7 +1816,7 @@ async def get_handling_statistics(
                                COALESCE(ho.ho_ineffective, 0) AS ho_ineffective,
                                ho.last_closed_kpi_delta
                         FROM loop_ledger ll
-                        LEFT JOIN ({_HO_AGG_SQL}) ho ON ho.loop_id = ll.id
+                        LEFT JOIN ({_HO_AGG_SQL.format(lf="")}) ho ON ho.loop_id = ll.id
                     ) agg
                     WHERE agg.order_total > 0
                     ORDER BY agg.ho_reopened DESC, agg.ho_ineffective DESC,

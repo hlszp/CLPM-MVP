@@ -5,7 +5,17 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,6 +36,10 @@ class SysUser(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool | None] = mapped_column(Boolean, default=True, nullable=True)
+    # Workbench v2.0: 泳道容量上限（看板拖拽时 UI 过载提示）
+    lane_capacity: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("6"), default=6
+    )
     # 首次登录强制改密标志（S5-AUTH P1）：种子用户由迁移置 True，
     # 改密成功后在 change_password 中清除
     must_change_password: Mapped[bool] = mapped_column(

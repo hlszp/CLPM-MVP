@@ -18,6 +18,7 @@ from celery import Celery, Task
 from kombu import Queue
 
 from app.core.config import settings
+from app.core.logging import _request_id_ctx, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ celery_app = Celery(
         # 整定模块（09 设计方案恢复：历史辨识异步任务）
         "app.tasks.tuning",
         "app.tasks.alert_patrol",
+        # 工作台 v2.0（预计算 / SLA 巡检 / 事件归档 / 缓存清理 / MV 刷新）
+        "app.tasks.workbench",
     ],
 )
 
@@ -133,6 +136,7 @@ class AsyncTask(Task):
 # import app.tasks.aas_sync  # noqa: E402, F401
 import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
+import app.tasks.beat_registry  # noqa: E402, F401  模块热插拔 beat 条件化
 import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
 
@@ -145,6 +149,7 @@ import app.tasks.report_generator  # noqa: E402, F401
 
 # import app.tasks.tracker_verification  # noqa: E402, F401
 import app.tasks.tuning  # noqa: E402, F401  # 整定模块（09 设计方案恢复）
+import app.tasks.workbench  # noqa: E402, F401  # 工作台 v2.0（5 beat）
 
 
 def _preload_datasource_config_sync() -> None:
@@ -213,7 +218,11 @@ def _preload_datasource_config_sync() -> None:
 # 任务会报 "HISTORY_DATA_API_URL 未配置"。子进程每次重建都会重新预载，
 # 因此 worker 生命周期内的配置变更最多在子进程回收后生效。
 from celery.signals import (  # noqa: E402
+    after_setup_logger,
     beat_init,
+    before_task_publish,
+    task_postrun,
+    task_prerun,
     worker_process_init,
     worker_ready,
 )
@@ -238,9 +247,61 @@ def _on_worker_ready(**kwargs: object) -> None:
     install_from_env("worker")
 
 
+# ---------------------------------------------------------------------------
+# 异步链路请求关联（S3-B4 延伸）：request_id 经 Celery headers 跨进程传递，
+# 任务侧日志（JsonFormatter）同时输出 request_id 与 task_id，可由任一侧定位全链路。
+# Beat 定时派发无请求上下文 → 不注入，任务日志自然不带 request_id。
+# ---------------------------------------------------------------------------
+
+
+@before_task_publish.connect
+def _inject_request_id_on_publish(headers: dict | None = None, **kwargs: object) -> None:
+    """任务投递时把当前请求上下文的 request_id 写入消息 headers。
+
+    信号覆盖 delay / apply_async / send_task / chord / group 全部投递路径
+    （含 worker 内级联投递，链路上下文自动延续），无需逐个修改投递点。
+    """
+    request_id = _request_id_ctx.get()
+    if request_id and isinstance(headers, dict):
+        headers.setdefault("request_id", request_id)
+
+
+@task_prerun.connect
+def _restore_request_id_on_prerun(task: Task, **kwargs: object) -> None:
+    """任务执行前从消息 headers 恢复 request_id 到 contextvar。
+
+    JsonFormatter 读取同一 contextvar，任务侧日志自动携带 request_id；
+    无 headers（旧队列消息 / Beat 任务）时不设置。
+    """
+    headers = getattr(task.request, "headers", None) or {}
+    request_id = headers.get("request_id")
+    if request_id:
+        _request_id_ctx.set(request_id)
+
+
+@task_postrun.connect
+def _clear_request_id_on_postrun(**kwargs: object) -> None:
+    """任务结束后清空 contextvar，防止 prefork 子进程串行执行时泄漏到下一任务。"""
+    _request_id_ctx.set(None)
+
+
+@after_setup_logger.connect
+def _on_after_setup_logger(**kwargs: object) -> None:
+    """celery 完成自身日志配置后，在 fork 前应用结构化日志。
+
+    必须在 fork 前（worker 主进程）完成：在 prefork 子进程的
+    worker_process_init 中首次初始化日志会在 macOS 上挂死（fork 后
+    logging 初始化陷阱）；fork 前就绪后子进程直接继承 root handlers。
+    覆盖 worker 与 beat 两种进程（各自的日志初始化后均触发）。
+    """
+    setup_logging()
+
+
 @worker_process_init.connect
 def _on_worker_process_init(**kwargs: object) -> None:
     install_direct_parent("worker-pool")
+    # 结构化日志已在 fork 前 after_setup_logger 完成（见上方注释），
+    # 子进程继承 root handlers，此处不再初始化
     try:
         _preload_datasource_config_sync()
         logger.info("worker 子进程已从 sys_config 预载数据源配置")

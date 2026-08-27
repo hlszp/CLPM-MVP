@@ -99,6 +99,16 @@ def _make_snapshot(
     s.oscillation_rate = oscillation_rate
     s.saturation_rate = saturation_rate
     s.status = status
+    # P2 新增字段：显式 None，避免 MagicMock 透传到 Pydantic 字符串字段
+    s.effective_auto_rate = None
+    s.fast_rate = None
+    s.instrument_fault_rate = None
+    s.valid_rate = None
+    s.sampling_freq = None
+    s.quality_policy = None
+    s.confidence_level = None
+    s.fitness_level = None
+    s.fitness_tags = None
     return s
 
 
@@ -534,6 +544,68 @@ class TestRanking:
         """未认证请求返回 401。"""
         resp = client.get("/api/v1/performance/ranking")
         assert resp.status_code == 401
+
+    @pytest.mark.parametrize(
+        "sort_by",
+        ["accuracy_rate", "auto_mode_rate", "effective_auto_rate"],
+    )
+    def test_get_ranking_sort_by_metric_whitelist(
+        self, client, mock_db, fake_redis, sort_by
+    ) -> None:
+        """指标分析页（M1）：新排序键在白名单内，SQL 构建不报错且返回指标字段。"""
+        snapshot = _make_snapshot(
+            score=Decimal("45.20"),
+            auto_mode_rate=Decimal("62.50"),
+            accuracy_rate=Decimal("70.10"),
+        )
+        loop = MagicMock()
+        loop.id = snapshot.loop_id
+        loop.tag_name = "101-FC-1023"
+        loop.description = "101-FC-1023 进料流量控制"
+        loop.unit_id = "00000000-0000-0000-0000-000000000111"
+        loop.include_in_evaluation = True
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_scalars_mock([snapshot])
+            if call_count[0] == 2:
+                return _make_scalars_mock([loop])
+            if call_count[0] == 3:
+                node = MagicMock()
+                node.id = loop.unit_id
+                node.name = "常减压装置-单元A"
+                return _make_scalars_mock([node])
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/ranking?sortBy={sort_by}&sortOrder=asc&limit=10",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "0"
+        data = body["data"]
+        assert isinstance(data, list) and len(data) == 1
+        # 返回体携带横切分析所需指标字段（驼峰对齐 RankingItem schema）
+        assert "accuracyRate" in data[0]
+        assert "autoModeRate" in data[0]
+        assert "effectiveAutoRate" in data[0]
+
+    def test_get_ranking_sort_by_invalid_fallback(self, client, mock_db, fake_redis) -> None:
+        """非法 sortBy 回退 score，不 500（白名单防注入现有行为不破坏）。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/ranking?sortBy=malicious_column",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
 
 
 # ---------------------------------------------------------------------------

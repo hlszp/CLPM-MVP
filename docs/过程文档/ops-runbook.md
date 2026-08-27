@@ -67,6 +67,20 @@ worker 主进程可能静默挂死（进程在、池进程全灭、`celery inspe
 - 诊断：`docker exec clpm-redis redis-cli -n 1 LLEN default`（队列长度）+ `pgrep -P <worker_pid>`（池子进程数）
 - 处置：`kill <主进程pid>`（必要时 -9）后重启 worker；积压消息会在重启后全部追平（导入/回填类重任务注意耗时）
 
+### 工作台 v2.0 beat 与物化视图（2026-08-25 新增）
+
+工作台 v2.0（`/workbench`）引入 5 条 beat（`app/tasks/workbench.py`，随 lifespan 自动启动，严禁手工再启动）：
+
+| 任务 | 周期 | 作用 |
+|---|---|---|
+| `workbench_precalc` | 5min | 三窗口 KPI upsert workbench_window_summary |
+| `sla_sweep` | 1min | 扫描 sla_deadline_at 过期 → warn/breach + event_bus ORDER_SLA_BREACH |
+| `event_archive` | daily 03:30 | event_bus 归档（保留 30d） |
+| `wb_cache_cleanup` | 1min | 清理 wb_cache_log 过期记录 |
+| `refresh_workbench_mv` | 5min 错峰 2min（2,7,12,...） | REFRESH 3 个物化视图（mv_staff_workload / mv_diagnosis_pareto / mv_handling_funnel，CONCURRENTLY） |
+
+排障要点：工作台数据不刷新先查 worker 是否存活（见上节）→ 再查 beat 是否注册（后端启动日志）→ MV 数据异常可手工 `REFRESH MATERIALIZED VIEW CONCURRENTLY <name>` 验证；precalc 单次耗时应 <4min（超限见实施计划 R1 拆 group 限并发）。
+
 ### 【已结】诊断详情页 SPA 导航白屏（2026-07-29）
 
 **现象**：从「异常跟踪」页（/diagnosis/tracker）点击行内「详情」（或在该页内 `router.push`）跳转 `/diagnosis/detail/:loopId` → 路由正确匹配、标签页已创建、组件 chunk 正常 200 加载，但**组件不挂载**（一个 API 请求都不发）、内容区空白。初始常规 console/pageerror 监听未捕获输出；此后**所有页面均空白**，需硬刷新恢复。直接访问 URL、`/diagnosis/records` 行点击、`/dashboard` pushState 跳转均正常。
@@ -154,6 +168,12 @@ SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次�
 ### macOS fork 时区陷阱
 
 celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）会陷入时区慢路径（单次 ~0.5ms，多线程下有全局 tzlock 竞争），逐点调用会放大 3 个数量级。热路径禁止对 naive datetime 逐点调 `.timestamp()`；重复检测等场景直接用 datetime 对象比较（修复实例：`preprocessing/outlier_detection.py` `detect_ts_anomaly`）。
+
+同族陷阱（2026-08-24 实测）：**在 prefork 子进程（`worker_process_init`）内首次调用 `setup_logging()` 会在 macOS 上永久挂死**——子进程仅输出看门狗启动日志后静默，任务 received 但永不执行，无异常无栈。根因同为 fork 后惰性初始化慢路径（logging 首次写入触发 tzset/localtime 初始化）。正确姿势：结构化日志初始化挂在 `after_setup_logger` 信号（fork 前的 worker 主进程），子进程直接继承已就绪的 root handlers（落地位置：`app/tasks/celery_app.py`）。排查此类挂死可用 `faulthandler.register(signal.SIGUSR1)` + `kill -USR1 <pid>` 拓栈（注意与 billiard 的 soft-timeout SIGUSR1 处理器冲突，仅临时取证用）。
+
+## 异步链路请求关联（request_id → Celery headers，2026-08-24）
+
+API 触发的异步任务全链路可追踪：`before_task_publish` 信号把当前请求 contextvar 中的 request_id 写入 Celery 消息 headers，`task_prerun` 恢复到 worker 侧 contextvar（`task_postrun` 清理防泄漏），任务日志自动携带 request_id 与 task_id/celery_id，可由任一侧 grep 定位全链路。Beat 定时派发无请求上下文，任务日志自然不带 request_id。worker/beat 进程日志经 `after_setup_logger` 应用与 API 一致的 Formatter（生产 JSON 单行 / DEBUG 文本 + `[request_id]` 前缀，含脱敏）。
 
 ## 诊断调度细节（2026-07-20，PR #86-#96；2026-08-07 更新）
 

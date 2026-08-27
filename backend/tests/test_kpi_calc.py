@@ -3100,6 +3100,52 @@ class TestExtractValveOpRange:
         assert op_max is None
 
 
+class TestResolveOpPvRanges:
+    """P4 回归：fitness 判定量程必须为归一化量纲 (0, 100)。
+
+    背景：BASE 块 PV/SP/OP 序列经 PreprocessingPipeline._step3_normalize
+    归一化为 0~100 百分比。2026-08-22 P4 真实数据验证发现传入原始工程
+    量程（如 0~1）导致 SP_PV_DEVIATION 阈值缩小 100 倍大面积误报，
+    修复后恒返回 (0, 100)/(0, 100)。
+    """
+
+    def test_returns_normalized_ranges(self) -> None:
+        """无论传入何种 loop_cfg / loop 限位，恒返回归一化量程。"""
+        from types import SimpleNamespace
+
+        from app.tasks.kpi_calc import _resolve_op_pv_ranges
+
+        loop = SimpleNamespace(op_output_lower_limit=0.0, op_output_upper_limit=100.0)
+        # 小量程工程单位（0~1 kmol/s），历史上会导致误报
+        loop_cfg = {"range_min": 0.0, "range_max": 1.0, "op_lower": 0.0, "op_upper": 100.0}
+        op_range, pv_range = _resolve_op_pv_ranges(
+            loop, loop_cfg, pv_series=[0.7, 0.71], sp_series=[0.7, 0.7]
+        )
+        assert op_range == (0.0, 100.0)
+        assert pv_range == (0.0, 100.0)
+
+    def test_normalized_series_threshold_semantics(self) -> None:
+        """归一化序列 + 归一化量程：正常跟踪回路的 SP_PV_DEVIATION 占比为 0。"""
+        from app.services.loop_fitness import compute_time_ratio_counters
+
+        # 模拟归一化序列：SP=70 恒定，PV 在 69.5~70.5 完美跟踪（0~100 量纲）
+        n = 1000
+        sp = [70.0] * n
+        pv = [70.0 + (i % 10 - 5) * 0.05 for i in range(n)]
+        op = [50.0 + (i % 7) * 0.3 for i in range(n)]
+        mode = [1] * n
+        counters = compute_time_ratio_counters(
+            op_series=op,
+            sp_series=sp,
+            pv_series=pv,
+            mode_series=mode,
+            op_range=(0.0, 100.0),
+            pv_range=(0.0, 100.0),
+        )
+        assert counters["sp_pv_deviation_ratio"] == 0.0
+        assert counters["auto_valid_count"] == n
+
+
 class TestSaveSnapshotPhase1Columns:
     """测试 _save_snapshot() 接受并持久化 Phase 1 新增 15 列。"""
 

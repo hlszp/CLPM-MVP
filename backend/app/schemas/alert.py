@@ -16,7 +16,7 @@ from app.schemas.base import CamelModel
 # 枚举
 # ---------------------------------------------------------------------------
 
-RuleType = Literal["THRESHOLD", "DRIFT", "COMPOSITE", "CONFIDENCE"]
+RuleType = Literal["METRIC_THRESHOLD", "THRESHOLD", "DRIFT", "COMPOSITE", "CONFIDENCE"]
 ScopeType = Literal["ALL", "LOOP", "PLANT", "CONTROL_TYPE"]
 Severity = Literal["INFO", "WARN", "ERROR", "CRITICAL"]
 EventStatus = Literal["ACTIVE", "ACKNOWLEDGED", "RESOLVED", "SUPPRESSED", "ARCHIVED"]
@@ -112,6 +112,7 @@ class AlertEventItem(CamelModel):
     event_id: str
     rule_id: str | None = None
     rule_code: str
+    rule_name: str | None = None
     rule_version: int
     loop_id: str
     severity: Severity

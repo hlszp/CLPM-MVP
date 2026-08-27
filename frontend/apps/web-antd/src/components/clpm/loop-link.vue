@@ -18,8 +18,6 @@ interface Props {
   showLink?: boolean;
   /** 是否显示下拉快捷菜单（默认 true） */
   showMenu?: boolean;
-  /** 是否显示"加入跟踪"菜单项（默认 false） */
-  showTracker?: boolean;
   /** 默认跳转目标：detail | diagnosis | tuning | performance */
   defaultTarget?: 'detail' | 'diagnosis' | 'performance' | 'tuning';
 }
@@ -29,7 +27,6 @@ const props = withDefaults(defineProps<Props>(), {
   unitName: '',
   showLink: true,
   showMenu: true,
-  showTracker: false,
   defaultTarget: 'detail',
 });
 
@@ -43,7 +40,6 @@ const TARGET_AUTHORITY: Record<string, string[]> = {
   tuning: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
   performance: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
   trend: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-  tracker: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
 };
 
 const userStore = useUserStore();
@@ -58,7 +54,9 @@ function canAccess(target: string): boolean {
 const detailPath = computed(() => {
   const paths = {
     detail: `/monitor/loop-workbench?loopId=${props.loopId}`,
-    diagnosis: `/diagnosis/detail/${props.loopId}`,
+    // 诊断两页式重构（2026-08-16）：原 /diagnosis/detail/:id 已下线，
+    // 跳诊断工作台并携带 loopId 预选（workbench.vue onMounted 支持）
+    diagnosis: `/diagnosis/workbench?loopId=${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
   };
@@ -71,21 +69,17 @@ const linkClickable = computed(() => canAccess(props.defaultTarget));
 /** 下拉菜单是否有至少一个可见项（全不可见时隐藏触发器） */
 const hasVisibleMenuItem = computed(() => {
   const items = ['detail', 'diagnosis', 'tuning', 'performance', 'trend'];
-  return (
-    items.some((k) => canAccess(k)) ||
-    (props.showTracker && canAccess('tracker'))
-  );
+  return items.some((k) => canAccess(k));
 });
 
 const handleMenuClick = ({ key }: { key: number | string }) => {
   const keyStr = String(key);
   const routes: Record<string, string> = {
     detail: `/monitor/loop-workbench?loopId=${props.loopId}`,
-    diagnosis: `/diagnosis/detail/${props.loopId}`,
+    diagnosis: `/diagnosis/workbench?loopId=${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
     trend: `/monitor/loop-workbench?loopId=${props.loopId}`,
-    tracker: `/diagnosis/tracker?loopId=${props.loopId}`,
   };
   const path = routes[keyStr];
   if (path) {
@@ -160,9 +154,7 @@ const handleMenuClick = ({ key }: { key: number | string }) => {
             />
             性能评估
           </Menu.Item>
-          <Menu.Divider
-            v-if="canAccess('trend') || (showTracker && canAccess('tracker'))"
-          />
+          <Menu.Divider v-if="canAccess('trend')" />
           <Menu.Item v-if="canAccess('trend')" key="trend">
             <IconifyIcon
               icon="lucide:activity"
@@ -170,14 +162,6 @@ const handleMenuClick = ({ key }: { key: number | string }) => {
               style="margin-right: 6px"
             />
             查看趋势
-          </Menu.Item>
-          <Menu.Item v-if="showTracker && canAccess('tracker')" key="tracker">
-            <IconifyIcon
-              icon="lucide:clipboard-check"
-              :size="14"
-              style="margin-right: 6px"
-            />
-            异常跟踪
           </Menu.Item>
         </Menu>
       </template>

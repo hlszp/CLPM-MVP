@@ -22,6 +22,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:sliders-horizontal',
       order: 4,
       title: '整定',
+      module: 'tuning',
     },
     children: [
       {

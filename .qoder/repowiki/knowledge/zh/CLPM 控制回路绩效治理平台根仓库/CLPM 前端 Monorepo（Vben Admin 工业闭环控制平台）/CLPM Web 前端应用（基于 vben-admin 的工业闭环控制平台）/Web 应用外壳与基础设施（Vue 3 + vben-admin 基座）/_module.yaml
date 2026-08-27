@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: frontend_app/web_app/app_shell_and_infrastructure
+title: Web 应用外壳与基础设施（Vue 3 + vben-admin 基座）
+scope:
+    - frontend/apps/web-antd/src/
+    - frontend/apps/web-antd/__tests__/e2e/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/loop_management

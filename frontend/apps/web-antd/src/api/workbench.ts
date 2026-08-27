@@ -1,0 +1,605 @@
+/**
+ * 工作台 v2.0 BFF API 封装（方案 §3.1 A-01~A-13 + A-E5/A-E6 增强）
+ *
+ * 对应后端：`app/api/v1/endpoints/workbench.py`，前缀 `/workbench`。
+ * - A-10 plugins / A-12 events/read 已实现，M1 真实调用
+ * - A-01~A-05 / A-07~A-09 / A-11 / A-13 为 M1 skeleton，返回空结构
+ * - A-E5 unread 为 M1 桩（后端端点待 M2，前端 unreadCount 桩 0，WS 留 M2）
+ */
+import type { HandlingApi } from '#/api/handling';
+
+import { requestClient } from '#/api/request';
+
+export namespace WorkbenchApi {
+  /** 范围层级（与后端 scopeType Query 对齐） */
+  export type ScopeType = 'AREA' | 'FACTORY' | 'GLOBAL' | 'LOOP' | 'UNIT';
+
+  /** 范围选择器节点（A-00 scope-tree 返回） */
+  export interface ScopeNode {
+    id: number;
+    name: string;
+    /** plant_node.id（下钻映射 plantNodeId 用，追溯矩阵 G2） */
+    node_id: string;
+    parent_id: null | string;
+    parent_source_id: null | number;
+    type: 'AREA' | 'FACTORY';
+  }
+
+  /** 时间窗口（24h/7d/30d；自定义窗口通过 customStart/customEnd 下发） */
+  export type TimeWindow = '7d' | '24h' | '30d';
+
+  /** 模块 4 态状态机（方案 §0.1：CORE 内置 · ENABLED 在线 · MAINTENANCE 维护 · UNINSTALLED 未安装） */
+  export type ModuleStatus = 'CORE' | 'ENABLED' | 'MAINTENANCE' | 'UNINSTALLED';
+
+  /** 维护窗口信息（MAINTENANCE 态携带，面纱/横幅展示进度） */
+  export interface MaintenanceWindow {
+    end_at?: string;
+    message?: string;
+    progress_pct?: number;
+    start_at?: string;
+  }
+
+  /** 模块插件（A-10 返回项，对应 module_plugin 表序列化字段） */
+  export interface Plugin {
+    display_name: string;
+    is_core: boolean;
+    maintenance_window: MaintenanceWindow | null;
+    module_key: string;
+    order_index: number;
+    status: ModuleStatus;
+    version: null | string;
+  }
+
+  /** A-10 GET /plugins 响应 */
+  export interface PluginsResult {
+    plugins: Plugin[];
+  }
+
+  /** A-12 批量标记已读请求体 */
+  export interface EventReadRequest {
+    event_ids: number[];
+  }
+
+  /** A-12 POST /events/read 响应 */
+  export interface EventReadResult {
+    marked: number;
+  }
+
+  /** 共享请求参数（scope + window + 自定义窗口） */
+  export interface ScopeParams {
+    customEnd?: string;
+    customStart?: string;
+    scopeId?: number;
+    scopeType?: ScopeType;
+    window?: TimeWindow;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A-01 /overview 强类型（G-总览 · 对齐 backend workbench_overview.py）
+  // ---------------------------------------------------------------------------
+
+  /** 6 项 KPI 键（越高越好；与后端 KPI_METRICS 对齐） */
+  export type KpiMetricKey =
+    | 'accuracy_rate'
+    | 'auto_mode_rate'
+    | 'effective_auto_rate'
+    | 'fast_rate'
+    | 'good_value_rate'
+    | 'steady_rate';
+
+  /** 6 项 KPI 数值（0~1 或百分比，缺失为 null → 前端 N/A 斜纹） */
+  export type KpiMetrics = Partial<Record<KpiMetricKey, null | number>>;
+
+  /** 评估状态 6 态（M-02 STATUSES） */
+  export type WindowStatus =
+    | 'CRITICAL'
+    | 'EXCELLENT'
+    | 'FAIR'
+    | 'GOOD'
+    | 'INCONCLUSIVE'
+    | 'POOR';
+
+  /** score_trend 点：{t: ISO, v: 0~100}（24h=24pts / 7d=7pts / 30d=15pts） */
+  export interface ScoreTrendPoint {
+    t: string;
+    v: number;
+  }
+
+  /** M-02 内嵌 flags 简化版（完整 M-06 走 A-07 单独取） */
+  export interface WindowFlag {
+    desc?: string;
+    kind: string;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN';
+    t: string;
+  }
+
+  /** 三窗口 KPI 块（24h/7d/30d 之一；缺失数据为 null） */
+  export interface WindowBlock {
+    flags: WindowFlag[];
+    loop_count: number;
+    metrics: KpiMetrics;
+    score: null | number;
+    score_trend: ScoreTrendPoint[];
+    snapshot_at: null | string;
+    status: null | WindowStatus;
+  }
+
+  /** 装置排名行（FACTORY 行 + sparkline + lose_factors + alarm + overdue） */
+  export interface PlantRow {
+    alarm_count: number;
+    id: null | number;
+    lose_factors: string[]; // 低于阈值的 KPI 中文标签列表
+    loop_count: number;
+    name: string;
+    overdue_tasks: number;
+    rank: number;
+    score: null | number;
+    sparkline: ScoreTrendPoint[]; // 与 score_trend 同构，无动画渲染
+    status: null | WindowStatus;
+  }
+
+  /** 单元热力行（UNIT 行 ×6 指标，缺数据 metrics[key]=null → CSS 斜纹） */
+  export interface UnitRow {
+    id: null | number;
+    metrics: KpiMetrics;
+    name: string;
+    score: null | number;
+    status: null | WindowStatus;
+  }
+
+  /** 异常类型分布行（diagnosis_run 按 primary_category 聚合 · 14 号方案 A2） */
+  export interface ParetoRow {
+    converted_count: number;
+    ignored_count: number;
+    /** 中文标签（展示域） */
+    root_cause: string;
+    /** 8 类代码域（下钻 /diagnosis/records?category= 用） */
+    root_cause_code?: null | string;
+    sla_warned_count: number;
+    tag_count: number;
+  }
+
+  /** 根因 Top N 行（diagnosis_run symptom_tags 聚合，A3 迁 v2；旧 DiagnosisTag 读方已退役） */
+  export interface RootRow {
+    active_count: number;
+    count: number;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
+    tag_code: string;
+    tag_name: string;
+  }
+
+  /** 处置漏斗（MV-03，4 泳道计数 + 超期 + 平均周期；缺失为 null） */
+  export interface FunnelStat {
+    avg_cycle_hours: null | number;
+    breached: number; // 超期红底
+    closed: number;
+    executing: number;
+    pending: number;
+    reopened: number;
+    verifying: number;
+  }
+
+  /** A-01 GET /overview 响应（G-总览 · 六块聚合 + 部分失败容错） */
+  export interface OverviewResult {
+    funnel: FunnelStat | null;
+    pareto: ParetoRow[];
+    plants: PlantRow[];
+    roots: RootRow[];
+    scope: { id: null | number; type: ScopeType };
+    units: UnitRow[];
+    window: TimeWindow;
+    windows: Partial<Record<TimeWindow, null | WindowBlock>>;
+  }
+
+  /** A-02 GET /assessment 响应（G-评估 · 四块聚合 + 部分失败容错） */
+  export interface AssessmentResult {
+    heatmap: AssessmentHeatmap;
+    ranking: AssessmentRankRow[];
+    scope: { id: null | number; type: ScopeType };
+    summary: AssessmentSummary | null;
+    trend: AssessmentTrend | null;
+    view: 'plant' | 'unit';
+    window: TimeWindow;
+  }
+
+  /** 评估排名视图 */
+  export type AssessmentView = 'plant' | 'unit';
+
+  /** 评估摘要带（Row1 c12） */
+  export interface AssessmentSummary {
+    conclusion: string;
+    conclusion_links: { action: string; text: string }[];
+    delta: null | number;
+    distance_to_target: null | number;
+    grade: string;
+    participation: { evaluated: number; total: number };
+    risks: {
+      alarm_count: number;
+      delta: null | number;
+      lose_factors: string[];
+      name: string;
+      overdue_tasks: number;
+      score: null | number;
+    }[];
+    score: null | number;
+    target: number;
+  }
+
+  /** 评估排名行（Row2 c7 · 装置/单元视图通用） */
+  export interface AssessmentRankRow {
+    alarm_count: number;
+    delta: null | number;
+    id: null | number;
+    join: null | string;
+    loop_count: number;
+    lose_factors: string[];
+    name: string;
+    overdue_tasks: number;
+    parent_name: null | string;
+    rank: number;
+    score: null | number;
+    sparkline: ScoreTrendPoint[];
+  }
+
+  /** 评估热力矩阵（Row2 c5） */
+  export interface AssessmentHeatmap {
+    metrics: { key: string; label: string; reverse: boolean }[];
+    units: {
+      id: null | number;
+      name: string;
+      plant: string;
+      score: null | number;
+      values: (null | number)[];
+    }[];
+  }
+
+  /** 评估趋势块（Row3 c7 + c5 共用） */
+  export interface AssessmentTrend {
+    data_quality: { count: number; label: string; level: string }[];
+    level_dist: {
+      color: string;
+      count: number;
+      label: string;
+      stripe?: boolean;
+    }[];
+    mode_dist: { color: string; count: number; label: string }[];
+    series: { current: ScoreTrendPoint[]; previous: ScoreTrendPoint[] };
+    snapshot_at: null | string;
+    slopes: { delta: number; direction: 'bad' | 'good'; metric: string }[];
+    target: number;
+  }
+
+  /** disposition 四态（B-10：结论在处置-采纳链路中的位置） */
+  export type DispositionState =
+    | 'ACK_REVIEWED'
+    | 'CONVERTED'
+    | 'IGNORED'
+    | 'UNADDRESSED';
+
+  /** 关键异常表行（F-DG-01 · open_tags · Top6 · 14 号方案 A2 迁 diagnosis_run，SLA 已下线） */
+  export interface DiagnosisOpenTag {
+    category: null | string;
+    conclusion: null | string;
+    confidence: null | number;
+    /** 工厂模型装置名（plant_node：unit 的父节点，未关联时为 null） */
+    factory_name: null | string;
+    fitness_level: null | string;
+    loop_id: string;
+    loop_name: null | string;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
+    spark: number[];
+    symptom: null | string;
+    tag_id: string;
+    triggered_at: null | string;
+    /** 工厂模型单元名（plant_node：loop_ledger.unit_id 对应节点，未关联时为 null） */
+    unit_name: null | string;
+  }
+
+  /** 诊断结论时间线行（F-DG-02 · concl_timeline · disposition 四态） */
+  export interface DiagnosisConclItem {
+    category: null | string;
+    confidence: null | number;
+    disposition: DispositionState | null;
+    evidence_summary: null | string;
+    /** 工厂模型装置名（plant_node：unit 的父节点，未关联时为 null） */
+    factory_name: null | string;
+    id: null | string;
+    loop_id: string;
+    loop_name: null | string;
+    result_id: null | string;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
+    tag_code: null | string;
+    ts: null | string;
+    /** 工厂模型单元名（plant_node：loop_ledger.unit_id 对应节点，未关联时为 null） */
+    unit_name: null | string;
+  }
+
+  /** 适用性 L0~L4 门禁（F-DG-03 · fitness_gates · B-09 漏斗） */
+  export interface DiagnosisFitnessGates {
+    evaluated: number;
+    gate_desc: string[];
+    gates_passed: boolean[];
+    /** 最劣非空层级：L0 → 红横幅「诊断数据不足」；L1 黄徽章；L2 绿徽章 */
+    level: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null;
+    level_counts: { L0: number; L1: number; L2: number; L3: number; L4: number };
+    score: null | number;
+    total: number;
+  }
+
+  /** 诊断规则命中统计行（F-DG-04 前置数据，M3 展示） */
+  export interface DiagnosisRuleStat {
+    hits: number;
+    name: null | string;
+    resolved_rate: null | number;
+    rule_id: null | string;
+  }
+
+  /** 根因 TopN 行（rootcause_top · 与 RootRow 同构可复用 ParetoAndRoots） */
+  export interface RootCauseRow extends RootRow {
+    tag_type: null | string;
+  }
+
+  /** 诊断摘要带（Row1 c12 · 5 项横向指标） */
+  export interface DgSummaryBand {
+    avg_confidence: null | number;
+    avg_latency_ok: boolean;
+    avg_latency_sec: number;
+    avg_latency_target: number;
+    diag_count: number;
+    diag_count_delta: null | number;
+    engine_running_days: number;
+    engine_rulebase_updated_at: string;
+    engine_status: string;
+    engine_version: string;
+    high_confidence_count: number;
+    total_confidence_count: number;
+    worsening_delta: null | number;
+    worsening_loops: number;
+  }
+
+  /** A-03 GET /diagnosis 响应（G-诊断 · 聚合 + 部分失败容错） */
+  export interface DiagnosisResult {
+    concl_timeline: DiagnosisConclItem[];
+    fitness_gates: DiagnosisFitnessGates;
+    open_tags: DiagnosisOpenTag[];
+    pareto: ParetoRow[];
+    rootcause_top: RootCauseRow[];
+    rule_stats: DiagnosisRuleStat[];
+    scope: { id: null | number; type: ScopeType };
+    summary_band: DgSummaryBand;
+    window: TimeWindow;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A-04 /tuning + A-13 /tuning-scatters 强类型（G-整定 · 对齐 workbench_tuning.py）
+  // ---------------------------------------------------------------------------
+
+  /** 批次状态 6 态（tuning_batch.status CK；BLOCKED 为服务端动态判定结果） */
+  export type TuningBatchStatus =
+    | 'BLOCKED'
+    | 'CANCELLED'
+    | 'COMPLETED'
+    | 'PENDING'
+    | 'READY'
+    | 'RUNNING';
+
+  /** 前置工单 pill（B-06 依赖解析结果；closed=false 即阻塞源） */
+  export interface TuningPrereqOrder {
+    closed: boolean;
+    order_id: string;
+    order_no: null | string;
+    status: null | string;
+    title: null | string;
+  }
+
+  /** 整定批次卡片（F-TN-01 · W11） */
+  export interface TuningBatch {
+    actual_start_at: null | string;
+    algorithms: string[];
+    batch_no: string;
+    block_reason: null | string;
+    completed_at: null | string;
+    created_at: null | string;
+    expected_start_at: null | string;
+    id: number;
+    loop_count: number;
+    owner: null | string;
+    prereq_orders: TuningPrereqOrder[];
+    scope_id: number;
+    scope_type: string;
+    score_after: null | number;
+    score_before: null | number;
+    score_delta: null | number;
+    /** 动态判定后的有效状态（BLOCKED 由 prereq 工单状态推导） */
+    status: TuningBatchStatus;
+    /** 库存储状态（调试/展示用） */
+    stored_status: TuningBatchStatus;
+    strategy: null | string;
+    title: string;
+  }
+
+  /** 待整定队列行（F-TN-02 · W12；blocked=true → 灰化禁用） */
+  export interface TuneQueueItem {
+    algorithm: null | string;
+    batch_no: null | string;
+    block_reason: null | string;
+    blocked: boolean;
+    created_at: null | string;
+    fitting_score: null | number;
+    loop_desc: null | string;
+    loop_id: string;
+    loop_name: null | string;
+    /** 优先级（评分越低越优先：<65 高 / <73 中 / ≥73 低） */
+    priority: 'HIGH' | 'LOW' | 'MEDIUM';
+    record_id: string;
+    score: null | number;
+    source: string;
+    unit_name: null | string;
+  }
+
+  /** 整定前后散点（F-TN-03 · W13；Δ=after-before，正绿负红） */
+  export interface TuningScatterPoint {
+    after: number;
+    batch_no: null | string;
+    before: number;
+    delta: number;
+    loop_id: string;
+    loop_name: null | string;
+    order_no: null | string;
+    /** 有效提升口径：Δ ≥ 5 分 */
+    significance: boolean;
+  }
+
+  /** A-04 GET /tuning 响应（G-整定 · 四块聚合 + 部分失败容错） */
+  export interface TuningFullResult {
+    batches: TuningBatch[];
+    fitness_gates: DiagnosisFitnessGates;
+    pending_queue: TuneQueueItem[];
+    scatters: TuningScatterPoint[];
+    scope: { id: null | number; type: ScopeType };
+    window: TimeWindow;
+  }
+
+  /** A-13 GET /tuning-scatters 响应 */
+  export interface TuningScattersResult {
+    batch_id: null | number;
+    points: TuningScatterPoint[];
+    scope: { id: null | number; type: ScopeType };
+    window: string;
+  }
+
+  /** A-05 GET /handling 响应（G-处置 · 类型契约；容器实际调 handling.ts 6 函数，A-05 落地即换） */
+  export interface HandlingResult {
+    /** 4 泳道工单（待办道含 PENDING+REOPENED 合并） */
+    kanban: {
+      closed: HandlingApi.OrderItem[];
+      executing: HandlingApi.OrderItem[];
+      pending: HandlingApi.OrderItem[];
+      verifying: HandlingApi.OrderItem[];
+    };
+    /** 重开 Top 列表（按 reopened 降序） */
+    reopen_list: HandlingApi.LoopAggregateItem[];
+    scope: { id: null | number; type: ScopeType };
+    /** SLA 分布（前端由在办 orders plannedAt 派生；A-05 落地后后端汇总） */
+    sla: { near: number; none: number; normal: number; overdue: number };
+    /** 人员负载（前端由在办 orders 按 handler 聚合派生；A-08 落地后后端汇总） */
+    staff_load: HandlingStaffLoad[];
+    window: TimeWindow;
+  }
+
+  /** 人员负载行（staff_load 派生口径：在办 orders 按 handler 聚合） */
+  export interface HandlingStaffLoad {
+    executing: number;
+    handler: string;
+    overdue: number;
+    pending: number;
+    verifying: number;
+  }
+
+  /** A-11 GET /aggregate 响应骨架（首屏批量预取 8 块合并 + 30s 缓存） */
+  export interface AggregateResult {
+    meta: {
+      cache_hit: boolean;
+      custom_end: null | string;
+      custom_start: null | string;
+      elapsed_ms: number;
+      scope: { id: null | number; type: ScopeType };
+      window: TimeWindow;
+    };
+    results: Record<string, unknown>;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A-10 模块 4 态列表（已实现：读 module_plugin 表）— 4 态 dot/pill 真实数据源
+// ---------------------------------------------------------------------------
+export function getWorkbenchPluginsApi() {
+  return requestClient.get<WorkbenchApi.PluginsResult>('/workbench/plugins');
+}
+
+// ---------------------------------------------------------------------------
+// A-00 范围选择器数据（工厂 + 装置列表，带 source_node_id）
+// ---------------------------------------------------------------------------
+export function getWorkbenchScopeTreeApi() {
+  return requestClient.get<WorkbenchApi.ScopeNode[]>('/workbench/scope-tree');
+}
+
+// ---------------------------------------------------------------------------
+// A-12 批量标记事件已读（已实现：调 event_bus.mark_read）
+// ---------------------------------------------------------------------------
+export function markWorkbenchEventsReadApi(data: WorkbenchApi.EventReadRequest) {
+  return requestClient.post<WorkbenchApi.EventReadResult>(
+    '/workbench/events/read',
+    data,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A-01 工作台总览（三窗口 KPI + 装置/单元排名 + Pareto/根因）
+// ---------------------------------------------------------------------------
+export function getWorkbenchOverviewApi(params?: WorkbenchApi.ScopeParams) {
+  return requestClient.get<WorkbenchApi.OverviewResult>('/workbench/overview', {
+    params,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A-02 评估（摘要带 + 装置/单元排名 + 单元×指标热力 + 综合趋势）
+// ---------------------------------------------------------------------------
+export function getWorkbenchAssessmentApi(
+  params?: WorkbenchApi.ScopeParams & { view?: WorkbenchApi.AssessmentView },
+) {
+  return requestClient.get<WorkbenchApi.AssessmentResult>(
+    '/workbench/assessment',
+    { params },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A-03 诊断（异常回路 + 诊断结论时间线 + 适用性门禁）
+// ---------------------------------------------------------------------------
+export function getWorkbenchDiagnosisApi(params?: WorkbenchApi.ScopeParams) {
+  return requestClient.get<WorkbenchApi.DiagnosisResult>('/workbench/diagnosis', {
+    params,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A-04 整定（批次 + 待整定队列 + 散点 + 适用性门禁）
+// ---------------------------------------------------------------------------
+export function getWorkbenchTuningApi(params?: WorkbenchApi.ScopeParams) {
+  return requestClient.get<WorkbenchApi.TuningFullResult>('/workbench/tuning', {
+    params,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A-13 整定前后散点（支持 batchId / scope / window 过滤）
+// ---------------------------------------------------------------------------
+export function getWorkbenchTuningScattersApi(
+  params?: WorkbenchApi.ScopeParams & { batchId?: number },
+) {
+  return requestClient.get<WorkbenchApi.TuningScattersResult>(
+    '/workbench/tuning-scatters',
+    { params },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A-05 处置（看板 + 漏斗 + 人员负载 + 重开列表）
+// ---------------------------------------------------------------------------
+export function getWorkbenchHandlingApi(params?: WorkbenchApi.ScopeParams) {
+  return requestClient.get<WorkbenchApi.HandlingResult>('/workbench/handling', {
+    params,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A-11 首屏批量预取（8 块合并 + WBFF_CACHE 30s TTL）
+// ---------------------------------------------------------------------------
+export function getWorkbenchAggregateApi(params?: WorkbenchApi.ScopeParams) {
+  return requestClient.get<WorkbenchApi.AggregateResult>(
+    '/workbench/aggregate',
+    { params },
+  );
+}

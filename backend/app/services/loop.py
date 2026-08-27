@@ -13,6 +13,7 @@ import json
 import logging
 import random
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import openpyxl
@@ -632,10 +633,27 @@ async def list_loops(
             }
             range_map[loop_idx][f"{role_key}_unit"] = tag.unit
 
+    # P2 IA优化：批量查询每回路最新 fitness
+    fitness_map: dict[str, Any] = {}
+    if loop_ids:
+        try:
+            from app.services.loop_fitness import get_latest_fitness_per_loop
+
+            fitness_map = await get_latest_fitness_per_loop(db, loop_ids)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("list_loops fitness 批量查询失败，已忽略: %s", exc)
+
     items = []
     for loop in loops:
         mappings = mappings_map.get(str(loop.id), {})
         loop_range = range_map.get(str(loop.id), {})
+        fit = fitness_map.get(str(loop.id))
+        if fit is not None:
+            fitness_level = getattr(fit, "level", None)
+            fitness_tags = getattr(fit, "tags", None) or getattr(fit, "human_readable_tags", None)
+        else:
+            fitness_level = None
+            fitness_tags = None
         items.append(
             {
                 "loopId": str(loop.id),
@@ -680,6 +698,8 @@ async def list_loops(
                     str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
                 ),
                 "complexRole": loop.complex_role,
+                "fitnessLevel": fitness_level,
+                "fitnessTags": fitness_tags,
             }
         )
 

@@ -25,6 +25,7 @@ import {
   RangePicker,
   Select,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -81,8 +82,17 @@ function handleRun() {
     rangeValue.value[0].utc().format('YYYY-MM-DDTHH:mm:ss[Z]'),
     rangeValue.value[1].utc().format('YYYY-MM-DDTHH:mm:ss[Z]'),
   ];
+  // P2 IA优化：弹 Toast 提示 fitness 状态
+  ctx.showFitnessToast('identify');
   ctx.runIdentify();
 }
+
+/** P2 IA优化：入口按钮 Tooltip 文案（L0/L1 禁用原因优先；L2 条件异常警告；空即无 tooltip） */
+const identifyBtnTooltip = computed(() => {
+  if (ctx.tuningDisabledReason.value) return ctx.tuningDisabledReason.value;
+  if (ctx.tuningWarningReason.value) return ctx.tuningWarningReason.value;
+  return '';
+});
 
 const paramItems = computed(() => {
   const o = outcome.value;
@@ -154,7 +164,25 @@ async function applyEdit() {
         format="YYYY-MM-DD HH:mm"
         :placeholder="['开始时间', '结束时间']"
       />
+      <Tooltip
+        v-if="identifyBtnTooltip"
+        :title="identifyBtnTooltip"
+        placement="top"
+      >
+        <Button
+          type="primary"
+          size="small"
+          :loading="ctx.identifying.value"
+          :disabled="
+            !ctx.loopId.value || !rangeValue || ctx.tuningDisabled.value
+          "
+          @click="handleRun"
+        >
+          开始辨识
+        </Button>
+      </Tooltip>
       <Button
+        v-else
         type="primary"
         size="small"
         :loading="ctx.identifying.value"

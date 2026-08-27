@@ -3,6 +3,9 @@
  */
 import type { RequestClientOptions } from '@vben/request';
 
+import { useRouter } from 'vue-router';
+
+import { LOGIN_PATH } from '@vben/constants';
 import { useAppConfig } from '@vben/hooks';
 import { preferences } from '@vben/preferences';
 import {
@@ -11,7 +14,7 @@ import {
   errorMessageResponseInterceptor,
   RequestClient,
 } from '@vben/request';
-import { useAccessStore } from '@vben/stores';
+import { resetAllStores, useAccessStore } from '@vben/stores';
 
 import { message } from 'ant-design-vue';
 
@@ -34,6 +37,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     console.warn('Access token or refresh token is invalid or expired. ');
     const accessStore = useAccessStore();
     const authStore = useAuthStore();
+    // 先清 token，避免 guard 反弹与后续 logout 再调 logoutApi 导致 401 嵌套
     accessStore.setAccessToken(null);
     accessStore.setRefreshToken(null);
     if (
@@ -41,8 +45,33 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       accessStore.isAccessChecked
     ) {
       accessStore.setLoginExpired(true);
-    } else {
-      await authStore.logout();
+      return;
+    }
+    // CAS：若用户已手动触发登出（isLoggingOut=true）或已被别处清空登录态，
+    // 直接跳转到登录页，不再走 authStore.logout，避免并发 resetAllStores 与 router.replace
+    if (accessStore.isLoggingOut) {
+      return;
+    }
+    accessStore.setIsLoggingOut(true);
+    try {
+      try {
+        resetAllStores();
+      } catch {
+        accessStore.setAccessToken(null);
+        accessStore.setRefreshToken(null);
+        accessStore.setAccessCodes([]);
+      }
+      accessStore.setLoginExpired(false);
+      const router = useRouter();
+      try {
+        await router.replace({ path: LOGIN_PATH });
+      } catch {
+        window.location.replace(LOGIN_PATH);
+      }
+    } finally {
+      accessStore.setIsLoggingOut(false);
+      // 保留 authStore 引用避免 TS 未使用告警；page 模式下登出流程已在上面完成
+      void authStore;
     }
   }
 

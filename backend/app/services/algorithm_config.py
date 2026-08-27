@@ -36,29 +36,53 @@ logger = logging.getLogger(__name__)
 #: 注意：默认值与计算器内硬编码常量一致，确保未配置时行为不变（behavior-preserving）。
 _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
     "oscillation_rate": {
+        # min_half_period_samples：P1 抗噪门控（与诊断侧 _iae_kernel/stiction 同值 8）；
+        # min_amplitude_ratio：P2 幅度门控（特征幅度占量程比例，0.2%）；
+        # sp_step_*：P2 SP 阶跃剔除（默认关闭零回归，与 stability 同款）。
+        # DB 种子行不含新键时由本默认层兜底，无需迁移
         "STABLE": {
             "similarity_threshold": 0.4,
             "min_ratio": 0.05,
             "max_ratio": 15.0,
             "min_zero_crossings": 4,
+            "min_half_period_samples": 8,
+            "min_amplitude_ratio": 0.002,
+            "sp_step_exclusion_enabled": False,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
         },
         "SLOW": {
             "similarity_threshold": 0.4,
             "min_ratio": 0.05,
             "max_ratio": 15.0,
             "min_zero_crossings": 4,
+            "min_half_period_samples": 8,
+            "min_amplitude_ratio": 0.002,
+            "sp_step_exclusion_enabled": False,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
         },
         "FAST": {
             "similarity_threshold": 0.4,
             "min_ratio": 0.05,
             "max_ratio": 15.0,
             "min_zero_crossings": 4,
+            "min_half_period_samples": 8,
+            "min_amplitude_ratio": 0.002,
+            "sp_step_exclusion_enabled": False,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
         },
         "LOGIC": {
             "similarity_threshold": 0.4,
             "min_ratio": 0.05,
             "max_ratio": 15.0,
             "min_zero_crossings": 4,
+            "min_half_period_samples": 8,
+            "min_amplitude_ratio": 0.002,
+            "sp_step_exclusion_enabled": False,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
         },
     },
     # 整改 F2（2026-08-08）：原硬编码参数配置化，默认值与计算器常量一致（行为不变）
@@ -129,6 +153,46 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
         "FAST": {"e_max_percentile": 100},
         "LOGIC": {"e_max_percentile": 100},
     },
+    "stability_rate": {
+        # decay_ratio=0.05（量程 5% 为指数衰减基准）与原硬编码一致，行为不变；
+        # band_in_score_enabled=False → 默认仍为 GB/T 指数公式，石化惯例带内率
+        # 仅作为 details.band_in_rate 辅助输出，开启后才替代分值；
+        # sp_step_exclusion_enabled=True → SP 阶跃剔除默认开启（2026-08-27 起，
+        # 此前默认关闭零回归）：剔除阶跃后 sp_tracking_window 个跟踪点再计算
+        # σ 与带内率，避免操作员正常改设定值的跟踪暂态被误判为不平稳。
+        "STABLE": {
+            "decay_ratio": 0.05,
+            "band_ratio": 0.01,
+            "band_in_score_enabled": False,
+            "sp_step_exclusion_enabled": True,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
+        },
+        "SLOW": {
+            "decay_ratio": 0.05,
+            "band_ratio": 0.01,
+            "band_in_score_enabled": False,
+            "sp_step_exclusion_enabled": True,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
+        },
+        "FAST": {
+            "decay_ratio": 0.05,
+            "band_ratio": 0.01,
+            "band_in_score_enabled": False,
+            "sp_step_exclusion_enabled": True,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
+        },
+        "LOGIC": {
+            "decay_ratio": 0.05,
+            "band_ratio": 0.01,
+            "band_in_score_enabled": False,
+            "sp_step_exclusion_enabled": True,
+            "sp_step_sigma": 3.0,
+            "sp_tracking_window": 60,
+        },
+    },
 }
 
 #: 支持的控制类型
@@ -152,6 +216,12 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "max": 20,
             "unit": "个",
             "description": "振荡判定最少零交叉数",
+        },
+        "min_half_period_samples": {
+            "min": 1,
+            "max": 100,
+            "unit": "采样点",
+            "description": "抗噪最小平均半周期（低于此值判非振荡，剔除白噪声伪穿越）",
         },
     },
     "fast_rate": {
@@ -186,6 +256,42 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "description": "数据驱动 e_max 百分位截断",
         },
     },
+    "stability_rate": {
+        "decay_ratio": {
+            "min": 0.01,
+            "max": 0.2,
+            "unit": "",
+            "description": "指数衰减基准（量程比例，σ 达 decay_ratio×U 时 S≈36.8）",
+        },
+        "band_ratio": {
+            "min": 0.001,
+            "max": 0.1,
+            "unit": "",
+            "description": "石化惯例平稳带（量程比例，|PV-SP|≤band_ratio×U 记平稳）",
+        },
+        "band_in_score_enabled": {
+            "type": "bool",
+            "unit": "",
+            "description": "以带内时间占比作为平稳率分值（石化惯例口径）",
+        },
+        "sp_step_exclusion_enabled": {
+            "type": "bool",
+            "unit": "",
+            "description": "SP 阶跃剔除开关（剔除设定值阶跃后的跟踪暂态）",
+        },
+        "sp_step_sigma": {
+            "min": 0.5,
+            "max": 10.0,
+            "unit": "σ",
+            "description": "SP 阶跃检测阈值",
+        },
+        "sp_tracking_window": {
+            "min": 5,
+            "max": 3600,
+            "unit": "点",
+            "description": "SP 阶跃后剔除的跟踪窗点数",
+        },
+    },
     "settling_time": {
         "settling_threshold": {
             "min": 0.01,
@@ -218,6 +324,11 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "min_ratio": "判定阈值",
         "max_ratio": "判定阈值",
         "min_zero_crossings": "判定阈值",
+        "min_half_period_samples": "判定阈值",
+        "min_amplitude_ratio": "判定阈值",
+        "sp_step_exclusion_enabled": "SP阶跃剔除",
+        "sp_step_sigma": "SP阶跃剔除",
+        "sp_tracking_window": "SP阶跃剔除",
     },
     "fast_rate": {
         "ideal_settling_ratio": "稳定判定",
@@ -229,6 +340,14 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "sp_step_sigma": "扰动分析",
     },
     "accuracy_rate": {"e_max_percentile": "判定阈值"},
+    "stability_rate": {
+        "decay_ratio": "判定阈值",
+        "band_ratio": "石化惯例",
+        "band_in_score_enabled": "石化惯例",
+        "sp_step_exclusion_enabled": "SP阶跃剔除",
+        "sp_step_sigma": "SP阶跃剔除",
+        "sp_tracking_window": "SP阶跃剔除",
+    },
     "settling_time": {"settling_threshold": "判定阈值"},
     "effective_auto_rate": {"default_e_max_ratio": "判定阈值"},
     "output_trip_index": {

@@ -156,6 +156,42 @@ export namespace SystemApi {
     message?: null | string;
     downloadUrl?: null | string;
   }
+
+  /** 模块信息（对齐后端 ModuleItem） */
+  export interface ModuleItem {
+    key: string;
+    name: string;
+    order: number;
+    base: boolean;
+    deps: string[];
+    enabled: boolean;
+  }
+
+  /** 模块管理响应 */
+  export interface ModulesResult {
+    modules: ModuleItem[];
+    enabledKeys: string[];
+    restartRequired: boolean;
+  }
+
+  /** 更新模块请求 */
+  export interface UpdateModulesParams {
+    enabledKeys: string[];
+  }
+}
+
+/**
+ * 查询模块启用状态 — GET /api/v1/system/modules
+ */
+export function getModulesApi() {
+  return requestClient.get<SystemApi.ModulesResult>('/system/modules');
+}
+
+/**
+ * 更新模块启用状态 — PUT /api/v1/system/modules（ADMIN）
+ */
+export function updateModulesApi(data: SystemApi.UpdateModulesParams) {
+  return requestClient.put<SystemApi.ModulesResult>('/system/modules', data);
 }
 
 /**

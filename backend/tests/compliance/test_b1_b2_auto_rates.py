@@ -107,7 +107,7 @@ class TestB2EffectiveAutoRate:
         - i=1：op=99 ≥ 100-2=98 → 高饱和，剔除 40 s
         - i=3：op=1.5 ≤ 0+2 → 低饱和，剔除 200 s
         T_effective = 60 + 100 + 200 = 360 s → R = 360/600 × 100 = 60.0
-        纯自控率（details.auto_mode_rate）= 100.0
+        自控时长全覆盖（auto_duration_s = total_duration_s = 600）
         """
         ts = ts_from_offsets(OFFSETS)
         bundle = make_ts_bundle(
@@ -119,7 +119,7 @@ class TestB2EffectiveAutoRate:
         result = EffectiveAutoRateCalculator().calculate(bundle)
 
         assert result.value == pytest.approx(60.0, abs=1e-9)
-        assert result.details["auto_mode_rate"] == pytest.approx(100.0, abs=1e-9)
+        assert result.details["auto_duration_s"] == pytest.approx(600.0)
         assert result.details["effective_duration_s"] == pytest.approx(360.0)
 
     def test_deviation_beyond_e_max_excludes_segments(self):
@@ -173,7 +173,7 @@ class TestB2EffectiveAutoRate:
 
         modes=[AUTO, MANUAL, AUTO, AUTO, AUTO]，op 全部未饱和，无偏差：
         T_auto = T_effective = 60 + 100 + 200 + 200 = 560 s
-        R = 560/600 × 100 = 93.33；auto_mode_rate 同为 93.33
+        R = 560/600 × 100 = 93.33；auto_duration_s = 560（自控时长同口径）
         """
         ts = ts_from_offsets(OFFSETS)
         bundle = make_ts_bundle(
@@ -190,4 +190,4 @@ class TestB2EffectiveAutoRate:
         result = EffectiveAutoRateCalculator().calculate(bundle)
 
         assert result.value == pytest.approx(93.33, abs=1e-9)
-        assert result.details["auto_mode_rate"] == pytest.approx(93.33, abs=1e-9)
+        assert result.details["auto_duration_s"] == pytest.approx(560.0)

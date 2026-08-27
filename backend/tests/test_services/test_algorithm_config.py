@@ -75,6 +75,11 @@ def test_get_default_params_returns_known_defaults(reset_cache):
         "min_ratio": 0.05,
         "max_ratio": 15.0,
         "min_zero_crossings": 4,
+        "min_half_period_samples": 8,
+        "min_amplitude_ratio": 0.002,
+        "sp_step_exclusion_enabled": False,
+        "sp_step_sigma": 3.0,
+        "sp_tracking_window": 60,
     }
 
 
@@ -101,6 +106,11 @@ def test_get_algorithm_params_unknown_control_type_falls_back_stable(reset_cache
         "min_ratio": 0.05,
         "max_ratio": 15.0,
         "min_zero_crossings": 4,
+        "min_half_period_samples": 8,
+        "min_amplitude_ratio": 0.002,
+        "sp_step_exclusion_enabled": False,
+        "sp_step_sigma": 3.0,
+        "sp_tracking_window": 60,
     }
 
 
@@ -125,9 +135,14 @@ def test_rebuild_merged_defaults_only(reset_cache):
         "min_ratio": 0.05,
         "max_ratio": 15.0,
         "min_zero_crossings": 4,
+        "min_half_period_samples": 8,
+        "min_amplitude_ratio": 0.002,
+        "sp_step_exclusion_enabled": False,
+        "sp_step_sigma": 3.0,
+        "sp_tracking_window": 60,
     }
-    # 6 指标 × 4 控制类型 = 24 组合（F2 新增 settling_time/effective_auto_rate/output_trip_index）
-    assert len(merged) == 24
+    # 7 指标 × 4 控制类型 = 28 组合（2026-08-27 新增 stability_rate 配置化）
+    assert len(merged) == 28
 
 
 def test_rebuild_merged_table_override(reset_cache):
@@ -214,6 +229,7 @@ def test_build_merged_view_covers_all_metrics(reset_cache):
         "settling_time",
         "effective_auto_rate",
         "output_trip_index",
+        "stability_rate",
     }
     for metric in view.values():
         assert set(metric.keys()) == {"STABLE", "SLOW", "FAST", "LOGIC"}
@@ -257,4 +273,9 @@ async def test_preload_algorithm_params_empty_db_uses_defaults(reset_cache):
         "min_ratio": 0.05,
         "max_ratio": 15.0,
         "min_zero_crossings": 4,
+        "min_half_period_samples": 8,
+        "min_amplitude_ratio": 0.002,
+        "sp_step_exclusion_enabled": False,
+        "sp_step_sigma": 3.0,
+        "sp_tracking_window": 60,
     }

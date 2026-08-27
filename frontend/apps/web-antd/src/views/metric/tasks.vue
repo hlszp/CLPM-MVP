@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { TaskApi } from '#/api/task';
+
 import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -12,52 +14,49 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'MetricTasks' });
 
-type TabKey = 'auto' | 'history' | 'manual' | 'strategy';
+type TabKey = 'list' | 'strategy';
 
 /**
- * P3-21：默认 Tab 按角色选择
- * - ADMIN：默认「自动任务」（关注定时评估计划与运行状态）
- * - IC_ENGINEER / 其他：默认「手动任务」（日常按回路/时间窗触发重算）
+ * IA 重构二期：手动/自动任务合并为统一任务列表，评估记录提升为二级菜单。
+ * 收敛为「任务列表 + 策略配置」双 Tab。
+ *
+ * 角色默认筛选（原 P3-21 简化版）：
+ * - ADMIN：默认看自动评估（STANDARD，关注定时评估计划与运行状态）
+ * - 其他：默认看手动评估（BACKFILL，日常按回路/时间窗触发重算）
+ * 均可通过列表内「任务类型」筛选切换为全部。
  */
 const userStore = useUserStore();
 const userRoles = computed(() => userStore.userInfo?.roles ?? []);
-const defaultTab: TabKey = userRoles.value.includes('ADMIN')
-  ? 'auto'
-  : 'manual';
-const activeTab = ref<TabKey>(defaultTab);
+const defaultTaskType: TaskApi.TaskType = userRoles.value.includes('ADMIN')
+  ? 'STANDARD'
+  : 'BACKFILL';
+
+const activeTab = ref<TabKey>('list');
 
 /** P3-01：子组件 ref，替代 tabKeys 自增强制重建 */
 interface TabRef {
   refresh?: () => Promise<void> | void;
 }
 
-const manualRef = ref<null | TabRef>(null);
-const autoRef = ref<null | TabRef>(null);
-const historyRef = ref<null | TabRef>(null);
+const listRef = ref<null | TabRef>(null);
 const strategyRef = ref<null | TabRef>(null);
 
 /** 按 activeTab 获取对应子组件 ref */
 function getActiveTabRef(): null | TabRef {
-  const refMap: Record<TabKey, typeof manualRef> = {
-    manual: manualRef,
-    auto: autoRef,
-    history: historyRef,
+  const refMap: Record<TabKey, typeof listRef> = {
+    list: listRef,
     strategy: strategyRef,
   };
   return refMap[activeTab.value]?.value ?? null;
 }
 
-const ManualTab = defineAsyncComponent(() => import('./recompute.vue'));
-const AutoTab = defineAsyncComponent(() => import('#/views/task/list.vue'));
-const HistoryTab = defineAsyncComponent(
-  () => import('./history-snapshots.vue'),
-);
+const TaskListTab = defineAsyncComponent(() => import('#/views/task/list.vue'));
 const StrategyTab = defineAsyncComponent(() => import('./task-strategy.vue'));
 
 /** 工具栏刷新态（刷新时短暂保持供工具栏反馈） */
 const loading = ref(false);
 
-/** P2-14：自动任务 Tab 活跃任务计数 */
+/** P2-14：任务列表活跃任务计数（RUNNING） */
 const activeTaskCount = ref(0);
 
 async function loadActiveTaskCount() {
@@ -95,7 +94,7 @@ function handleHelp() {
   showPageHelp({
     title: '评估任务 帮助',
     content:
-      '评估任务管理页：手动任务（按回路/时间窗口触发重算）、自动任务（定时评估计划）、评估历史（KPI 快照查询）、策略配置（评估参数与权重策略）。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
+      '评估任务管理页：任务列表（统一展示自动评估与手动评估任务，可触发标准评估、新建手动评估、取消/删除任务）、策略配置（评估参数与权重策略）。KPI 快照明细（评估结果）请见「评估记录」页。刷新按钮调用当前 Tab 的 refresh() 方法重新拉取数据。',
   });
 }
 
@@ -114,7 +113,7 @@ onMounted(() => {
   <Page>
     <ClpmPageToolbar
       title="评估任务"
-      subtitle="管理手动重算任务、自动评估任务、评估历史与策略配置"
+      subtitle="统一管理自动评估与手动评估任务，配置评估策略"
       :loading="loading"
     >
       <template #actions>
@@ -124,19 +123,13 @@ onMounted(() => {
     <!-- P3-01：所有 Tab 用 ref 绑定替代 :key 强制重建 -->
     <div class="mt-4">
       <Tabs v-model:active-key="activeTab" @change="handleTabChange">
-        <TabPane key="manual" tab="手动任务">
-          <ManualTab ref="manualRef" />
-        </TabPane>
-        <TabPane key="auto">
+        <TabPane key="list">
           <template #tab>
             <Badge :count="activeTaskCount" :offset="[6, 0]" size="small">
-              <span>自动任务</span>
+              <span>任务列表</span>
             </Badge>
           </template>
-          <AutoTab ref="autoRef" />
-        </TabPane>
-        <TabPane key="history" tab="评估历史">
-          <HistoryTab ref="historyRef" />
+          <TaskListTab ref="listRef" :default-task-type="defaultTaskType" />
         </TabPane>
         <TabPane key="strategy" tab="策略配置">
           <StrategyTab ref="strategyRef" />

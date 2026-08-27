@@ -17,9 +17,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.constants.mode import AUTO_MODES
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.algorithm_config import get_algorithm_params
-from app.services.metric_calculator.auto_mode import AUTO_MODES
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -56,8 +56,15 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
             bundle: 指标数据包（需含 mode/op/pv/sp 信号）
 
         Returns:
-            MetricResult：value 为有效自控率 0~100，
-            details 中含 auto_mode_rate（纯自控率）
+            MetricResult：value 为有效自控率 0~100；
+            details 含 auto_duration_s / effective_duration_s / total_duration_s
+            等时长上下文。
+
+        Note:
+            自控率指标（auto_mode_rate）由 AutoModeRateCalculator 单独计算，
+            本计算器不再副产出该值——历史副产出口径为 ``mode_valid && op_valid``
+            掩码下的自控时长占比，与自控率指标（``mode_valid`` 掩码）不一致，
+            同名不同值易造成口径混淆（2026-08-27 移除重复实现）。
         """
         masked_mode = self._get_masked_values(bundle, "mode")
         masked_op = self._get_masked_values(bundle, "op")
@@ -118,25 +125,21 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
             if not is_saturated and is_deviation_ok:
                 effective_duration += segment
 
-        auto_mode_rate = (auto_duration / total_duration) * 100.0
         effective_rate = (effective_duration / total_duration) * 100.0
         effective_rate = self._clamp(effective_rate)
-        auto_mode_rate = self._clamp(auto_mode_rate)
 
         logger.debug(
-            "[有效自控率] auto=%.1f, effective=%.1f, total=%.1f, R=%.2f%%, auto_mode=%.2f%%",
+            "[有效自控率] auto=%.1f, effective=%.1f, total=%.1f, R=%.2f%%",
             auto_duration,
             effective_duration,
             total_duration,
             effective_rate,
-            auto_mode_rate,
         )
 
         return self._make_result(
             bundle,
             effective_rate,
             {
-                "auto_mode_rate": round(auto_mode_rate, 2),
                 "auto_duration_s": round(auto_duration, 2),
                 "effective_duration_s": round(effective_duration, 2),
                 "total_duration_s": round(total_duration, 2),

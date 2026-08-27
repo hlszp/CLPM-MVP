@@ -14,6 +14,8 @@
 - POST   /api/v1/tuning/simulate               — 闭环仿真（支持多 PID 对比）
 - POST   /api/v1/tuning/compare                — 多 PID 对比仿真（Phase 2）
 - GET    /api/v1/tuning/history                — 整定历史统计
+- GET    /api/v1/tuning/batches                — 整定批次列表（分页 + 筛选，GAP-2a）
+- GET    /api/v1/tuning/batches/{batchId}      — 整定批次详情（GAP-2a）
 """
 
 from __future__ import annotations
@@ -63,6 +65,7 @@ from app.services.kpi_snapshot import (
     kpi_summary,
     latest_snapshot_in_window,
 )
+from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.tuning import (
     authorize_tuning_model,
     create_tuning_task,
@@ -76,6 +79,10 @@ from app.services.tuning import (
     run_simulation,
     tune_pid,
 )
+from app.services.tuning_batch import (
+    get_tuning_batch_detail,
+    list_tuning_batches,
+)
 from app.services.tuning_knowledge import (
     get_knowledge_entry,
     list_knowledge_entries,
@@ -86,6 +93,45 @@ from app.services.waveform import get_waveform
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tuning", tags=["tuning"])
+
+
+# ---------------------------------------------------------------------------
+# P2 IA优化：整定 fitness 门禁辅助
+# ---------------------------------------------------------------------------
+
+
+async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
+    """整定写端点 fitness 门禁：L3 以下（L0/L1/L2）→ 阻断并抛出错误码.
+
+    区别于 ERR_TUNING_DATA_INSUFFICIENT（波形不足），本错误码语义为
+    "回路适用性分层不足"（手动主导/OP严重饱和/无激励等）。
+    fitness=None（首次尚未计算快照）→ 放行不阻断。
+    """
+    try:
+        fitness_map = await get_latest_fitness_per_loop(db, [loop_id])
+    except Exception:  # noqa: BLE001
+        return  # 查询异常 → 放行
+    fit = fitness_map.get(str(loop_id))
+    if fit is None or fit.level is None:
+        return  # 无 fitness 数据 → 暂放过
+    # L3 以下：L0（数据不足）、L1（手动/低自控）、L2（OP饱和/SP-PV偏离严重）
+    BLOCK_LEVELS = {"L0", "L1", "L2"}
+    if fit.level in BLOCK_LEVELS:
+        reasons = fit.human_readable_tags or ["适用性分层不足"]
+        raise BizError(
+            code="ERR_TUNING_FITNESS_INSUFFICIENT",
+            message=(
+                f"回路适用性等级为 {fit.level}，不满足整定要求（需要 L3+）。"
+                f"请先处理控制状态（{'；'.join(reasons)}），或在诊断后再尝试整定。"
+            ),
+            status_code=400,
+            data={
+                "loopId": str(loop_id),
+                "fitnessLevel": fit.level,
+                "reasons": reasons,
+                "requiredMinimum": "L3",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +163,8 @@ async def identify_model_endpoint(
 
     从 TDengine 拉取波形数据，执行 FOPDT/SOPDT/IPDT 模型辨识。
     """
+    # P2: fitness 门禁（L3 以下阻断）
+    await _ensure_tuning_fitness(db, body.loopId)
     data = await identify_model(
         db=db,
         loop_id=body.loopId,
@@ -153,6 +201,9 @@ async def identify_history_endpoint(
     - AUTO/HISTORY_ONLY → ``IdentifyHistoryAsyncResponse``（异步任务提交）
     """
     from app.tasks.tuning import identify_model_task
+
+    # P2: fitness 门禁（L3 以下阻断；作用于 STEP_ONLY 同步分支和 AUTO/HISTORY_ONLY 异步分支前）
+    await _ensure_tuning_fitness(db, body.loopId)
 
     # STEP_ONLY 策略走同步阶跃路径（向后兼容）
     if body.identifyStrategy == "STEP_ONLY":
@@ -231,6 +282,8 @@ async def tune_pid_endpoint(
 
     基于模型参数，使用 IMC/Lambda/ZN/Cohen-Coon/SIMC 算法计算推荐 PID 参数。
     """
+    # P2: fitness 门禁（L3 以下阻断）
+    await _ensure_tuning_fitness(db, body.loopId)
     source_context = await authorize_tuning_model(
         db=db,
         requested_model_type=body.modelType,
@@ -421,6 +474,13 @@ def _parse_point_time(s: str) -> datetime:
     return dt
 
 
+def _to_naive_utc(dt: datetime) -> datetime:
+    """aware datetime（Query 参数带 Z/+08:00）→ naive UTC（同处置模块口径）。"""
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
 @router.get("/verification/data", response_model=ApiResponse[dict])
 async def verification_data_endpoint(
     loopId: str = Query(..., description="回路 ID"),
@@ -471,18 +531,27 @@ async def verification_data_endpoint(
 async def list_tasks_endpoint(
     loopId: uuid.UUID | None = Query(None, description="回路 ID 筛选"),
     algorithm: str | None = Query(None, description="算法筛选"),
-    status: str | None = Query(None, description="状态筛选"),
+    status: str | None = Query(None, description="状态筛选（支持逗号分隔多值，如 DRAFT,PENDING）"),
+    startTime: datetime | None = Query(None, description="创建时间起（ISO，按 created_at 过滤）"),
+    endTime: datetime | None = Query(None, description="创建时间止（ISO，按 created_at 过滤）"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
-    """整定任务列表（分页 + 筛选）。"""
+    """整定任务列表（分页 + 筛选）。
+
+    筛选口径：loopId/algorithm 精确匹配；status 支持逗号分隔多值（单值向后兼容）；
+    startTime/endTime 按 created_at 闭区间过滤（startTime <= created_at <= endTime，
+    aware 输入归一化为 naive UTC）。
+    """
     data = await list_tuning_tasks(
         db=db,
         loop_id=str(loopId) if loopId else None,
         algorithm=algorithm,
         status=status,
+        start_time=_to_naive_utc(startTime) if startTime else None,
+        end_time=_to_naive_utc(endTime) if endTime else None,
         page=page,
         page_size=pageSize,
     )
@@ -593,6 +662,51 @@ async def create_task_endpoint(
     )
     db.add(log)
     await db.commit()
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 整定批次（追溯矩阵 docs/MVP设计/13 §6.2 GAP-2a）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/batches", response_model=ApiResponse[dict])
+async def list_batches_endpoint(
+    status: str | None = Query(
+        None,
+        description="批次状态筛选（BLOCKED/PENDING/READY/RUNNING/COMPLETED/CANCELLED）",
+    ),
+    startTime: datetime | None = Query(None, description="创建时间起（ISO，按 created_at 过滤）"),
+    endTime: datetime | None = Query(None, description="创建时间止（ISO，按 created_at 过滤）"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定批次列表（分页 + 筛选）。
+
+    返回批次摘要：batchNo/title/scope/status（B-06 动态阻塞判定后的有效状态）
+    /记录数/前置工单阻塞状态/创建时间。status 过滤按库存储状态精确匹配。
+    """
+    data = await list_tuning_batches(
+        db=db,
+        status=status,
+        start_time=_to_naive_utc(startTime) if startTime else None,
+        end_time=_to_naive_utc(endTime) if endTime else None,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
+@router.get("/batches/{batch_id}", response_model=ApiResponse[dict])
+async def get_batch_detail_endpoint(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定批次详情：全字段 + 关联整定记录（N:M）+ 前置工单摘要 + scatters 原样返回。"""
+    data = await get_tuning_batch_detail(db=db, batch_id=batch_id)
     return success(data=data)
 
 

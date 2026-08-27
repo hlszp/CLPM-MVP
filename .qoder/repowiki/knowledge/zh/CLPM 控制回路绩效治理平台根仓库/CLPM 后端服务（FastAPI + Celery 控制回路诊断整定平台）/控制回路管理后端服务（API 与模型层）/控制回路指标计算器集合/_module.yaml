@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend_service/loop_management/metric_calculator
+title: 控制回路指标计算器集合
+scope:
+    - backend/app/services/metric_calculator/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/data_sources
+    - path: backend_service/loop_management/loop_core

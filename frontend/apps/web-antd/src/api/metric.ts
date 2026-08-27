@@ -235,6 +235,9 @@ export namespace MetricApi {
     dataLineage?: DataLineage | null;
     /** 历史评分趋势（用于行内 sparkline 展示） */
     scoreHistory?: number[];
+    /** P2 IA优化：回路适用性等级快照（L0/L1=不适用；L2=警告；L3~L5=正常） */
+    fitnessLevel?: null | string;
+    fitnessTags?: null | string[];
   }
 
   /** 排行查询参数 */
@@ -477,6 +480,50 @@ export namespace MetricApi {
   /** 可信度阈值更新请求（保存为新版本） */
   export interface ConfidenceThresholdSaveRequest {
     thresholds: ConfidenceThresholdItem[];
+    remark?: string;
+  }
+
+  /** 适用性阈值单项（L1/L2/L3 分层） */
+  export interface FitnessThresholdItem {
+    /** 短键名（省略 fitness. 前缀，如 manual_dominant_pct） */
+    key: string;
+    /** 中文显示名 */
+    label: string;
+    /** 说明文案（Tooltip 用） */
+    description?: null | string;
+    /** 所属分层：L1 仅可监视 / L2 条件异常 / L3 待激励 */
+    level: 'L1' | 'L2' | 'L3';
+    /** 对应命中标签：如 MANUAL_DOMINANT / OP_SATURATED */
+    tag: string;
+    /** 当前生效值 */
+    value: number;
+    /** 默认兜底值（仅 GET 回传） */
+    defaultValue?: null | number;
+    /** 最小值约束 */
+    minValue?: null | number;
+    /** 最大值约束 */
+    maxValue?: null | number;
+    /** 单位文案：% / 无量纲 */
+    unit?: null | string;
+  }
+
+  /** 适用性阈值配置视图（GET 返回） */
+  export interface FitnessThresholdSchema {
+    items: FitnessThresholdItem[];
+    updatedAt?: null | string;
+    updatedBy?: null | string;
+  }
+
+  /** 适用性阈值保存项（仅需要 key + value） */
+  export interface FitnessThresholdSaveItem {
+    key: string;
+    value: number;
+  }
+
+  /** 适用性阈值保存请求（PUT body） */
+  export interface FitnessThresholdSaveRequest {
+    items?: FitnessThresholdSaveItem[];
+    resetAll?: boolean;
     remark?: string;
   }
 
@@ -1240,6 +1287,33 @@ export function rollbackConfidenceThresholdApi(version: number) {
 }
 
 // ===========================================================================
+// 回路适用性阈值配置 API（IA 优化 P2：L0~L4 预诊断）
+// ===========================================================================
+
+const FITNESS_THRESHOLD_BASE = '/configs/fitness-thresholds';
+
+/**
+ * 获取适用性阈值合并视图（默认值 + sys_config 覆盖）
+ */
+export function getFitnessThresholdsApi() {
+  return requestClient.get<MetricApi.FitnessThresholdSchema>(
+    FITNESS_THRESHOLD_BASE,
+  );
+}
+
+/**
+ * 更新适用性阈值（部分覆盖或一键重置默认）— 仅 ADMIN
+ */
+export function saveFitnessThresholdsApi(
+  data: MetricApi.FitnessThresholdSaveRequest,
+) {
+  return requestClient.put<MetricApi.FitnessThresholdSchema>(
+    FITNESS_THRESHOLD_BASE,
+    data,
+  );
+}
+
+// ===========================================================================
 // 指标定义管理 API（指标配置-指标定义 Tab：CRUD + 版本化）
 // ===========================================================================
 
@@ -1418,8 +1492,20 @@ export interface KpiSnapshotQueryParams {
   grade?: GradeName;
   /** True=每个回路只返回最新一条评估记录（默认）；False=返回所有快照 */
   latestOnly?: boolean;
-  /** 排序字段（score/tsStart，默认 tsStart） */
-  sortBy?: 'score' | 'tsStart';
+  /**
+   * 排序字段（默认 tsStart）；白名单（指标分析页 M3 扩展，对齐后端
+   * SNAPSHOT_SORT_COLUMNS）：score/accuracy_rate/auto_mode_rate/effective_auto_rate/
+   * fast_rate/steady_rate/good_value_rate，非法值服务端回退默认
+   */
+  sortBy?:
+    | 'accuracy_rate'
+    | 'auto_mode_rate'
+    | 'effective_auto_rate'
+    | 'fast_rate'
+    | 'good_value_rate'
+    | 'score'
+    | 'steady_rate'
+    | 'tsStart';
   /** 排序方向（asc/desc，默认 desc） */
   sortOrder?: 'asc' | 'desc';
   /** 页码 */
@@ -1439,6 +1525,74 @@ export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
 }
 
 // ===========================================================================
+// 批量回路指标序列 — GET /performance/loops/metric-series
+// 指标矩阵页列头趋势对比（docs/MVP设计/15-回路指标矩阵页设计方案.md §4.1）
+// ===========================================================================
+
+/** 批量指标序列数据点 */
+export interface MetricSeriesPoint {
+  ts: null | string;
+  value: null | number;
+}
+
+/** 单回路的指标时间序列 */
+export interface MetricSeriesItem {
+  loopId: null | string;
+  loopTagName: null | string;
+  points: MetricSeriesPoint[];
+}
+
+/** 批量回路指标序列响应 */
+export interface MetricSeriesResult {
+  metricKey: string;
+  series: MetricSeriesItem[];
+}
+
+/**
+ * metric-series 指标键白名单（对齐后端 METRIC_SERIES_COLUMNS）
+ *
+ * snake_case 直传后端；矩阵页指标定义的 seriesKey 取值于此
+ */
+export type MetricSeriesKey =
+  | 'accuracy_rate'
+  | 'auto_mode_rate'
+  | 'effective_auto_rate'
+  | 'fast_rate'
+  | 'good_value_rate'
+  | 'instrument_fault_rate'
+  | 'oscillation_rate'
+  | 'output_trip_index'
+  | 'saturation_rate'
+  | 'score'
+  | 'settling_time'
+  | 'steady_rate'
+  | 'stiction_index';
+
+/** 批量序列查询参数 */
+export interface MetricSeriesQueryParams {
+  /** 回路 ID 列表（逗号分隔，≤10 个） */
+  loopIds: string;
+  /** 指标键（snake_case 白名单） */
+  metricKey: MetricSeriesKey;
+  /** 起始时间（ISO 8601） */
+  startTime?: string;
+  /** 结束时间（ISO 8601） */
+  endTime?: string;
+}
+
+/**
+ * 批量查询单指标 × 多回路时间序列（小时粒度）
+ *
+ * 列头趋势弹层：单指标 TOP N 薄弱回路历史折线叠加，避免 N 次分页拉取。
+ */
+export function getLoopMetricSeriesApi(params: MetricSeriesQueryParams) {
+  return requestClient.get<MetricSeriesResult>(
+    '/performance/loops/metric-series',
+    { params },
+  );
+}
+
+// ===========================================================================
 // 各性能等级回路数分布 — GET /performance/grade-distribution
 // ===========================================================================
 
@@ -1453,6 +1607,8 @@ export interface GradeDistributionResult {
   INCONCLUSIVE: number;
   /** 全部回路数（各等级计数之和，含 INCONCLUSIVE） */
   total: number;
+  /** P2 IA优化：适用性分布 L0~L4 → 数量；后端未就绪时为 undefined */
+  fitnessDistribution?: Record<string, number>;
 }
 
 /** 等级分布查询参数（同快照列表筛选口径，无分页/排序/grade） */

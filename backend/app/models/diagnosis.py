@@ -25,6 +25,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
+# ---------- Workbench v2.0 新增 disposition / SLA 枚举 ----------
+DISPOSITION_STATES = ("UNADDRESSED", "CONVERTED", "ACK_REVIEWED", "IGNORED")
+SLA_STAGES = ("NONE", "WARN", "BREACH")
+
 
 class DiagnosisConfig(Base):
     """Diagnosis metric configuration (DDL §7)."""
@@ -69,6 +73,10 @@ class DiagnosisResult(Base):
     # C4: 阈值版本号（记录诊断时使用的配置版本，可追溯当时阈值）
     threshold_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     diagnosed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Workbench v2.0: 推荐处置类别（与 DiagnosisTag.category 对齐，用于 CONCL 因果链）
+    recommended_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Workbench v2.0: 证据摘要文本（首屏 CONCL 时间线用，避免再读 evidence_chain）
+    evidence_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 关联诊断任务（可选，向后兼容：旧记录 task_id 为 NULL）
     task_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
@@ -153,6 +161,10 @@ class DiagnosisTag(Base):
     ``DiagnosisResult`` 存储完整诊断证据链，``DiagnosisTag`` 存储可枚举、
     可查询、可状态流转的标签实例，支撑告警面板与标签筛选。
 
+    Workbench v2.0 扩展：
+    - disposition_state 四态：诊断结论在"处置-采纳链路"中的当前位置
+    - sla_deadline_at / sla_stage：关键 Tag 自身的 SLA 闭环（超期红 dot）
+
     设计依据：DDS §2.16, PRD §5.6, IDS §2.4.10-2.4.12
     """
 
@@ -185,6 +197,21 @@ class DiagnosisTag(Base):
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 标签状态：ACTIVE（生效中）/ RESOLVED（已解除）/ SUPPRESSED（已抑制）
     status: Mapped[str] = mapped_column(String(20), server_default=text("'ACTIVE'"), nullable=False)
+    # --- Workbench v2.0 新增：disposition 三态（+ IGNORED）  ---
+    disposition_state: Mapped[str] = mapped_column(
+        String(16),
+        server_default=text("'UNADDRESSED'"),
+        default="UNADDRESSED",
+        nullable=False,
+    )
+    # --- Workbench v2.0 新增：Tag 自身 SLA（关键异常气泡） ---
+    sla_deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sla_stage: Mapped[str] = mapped_column(
+        String(8),
+        server_default=text("'NONE'"),
+        default="NONE",
+        nullable=False,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -195,8 +222,23 @@ class DiagnosisTag(Base):
             "status IN ('ACTIVE', 'RESOLVED', 'SUPPRESSED')",
             name="ck_diag_tag_status",
         ),
+        CheckConstraint(
+            "disposition_state IN ('UNADDRESSED','CONVERTED','ACK_REVIEWED','IGNORED')",
+            name="ck_diag_tag_disposition",
+        ),
+        CheckConstraint(
+            "sla_stage IN ('NONE','WARN','BREACH')",
+            name="ck_diag_tag_sla_stage",
+        ),
         Index("ix_diagnosis_tag_loop_status", "loop_id", "status"),
         Index("ix_diagnosis_tag_severity", "severity", "triggered_at"),
+        Index("idx_diag_tag_disposition", "disposition_state"),
+        Index(
+            "idx_diag_tag_active_sla",
+            "status",
+            "sla_stage",
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
         {"comment": "诊断标签表：用于故障定位和告警（振荡/阀门粘滞/输出饱和/PV质量异常等）"},
     )
 

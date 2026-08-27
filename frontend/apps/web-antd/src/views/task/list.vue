@@ -1,10 +1,12 @@
 <script lang="ts" setup>
 /**
- * 自动任务页面（评估任务 → 自动任务 Tab）
+ * 统一评估任务列表（评估任务 → 任务列表 Tab）
  *
- * 参照手动任务布局：
- * - 列表上部左侧：刷新、触发标准评估；右侧：筛选查询
- * - 列表列：任务标题、任务类型、评估回路、小时窗口、时间窗口、评估状态、评估进度、创建时间、评估时长、创建人、操作
+ * IA 重构二期：手动（BACKFILL）/ 自动（STANDARD）任务合并为统一列表，
+ * 任务类型为可选筛选（default-task-type 由宿主按角色传入，缺省查全部）。
+ *
+ * - 列表上部左侧：触发标准评估、新建手动评估、批量删除、刷新；右侧：类型/状态/时间筛选
+ * - 列表列：任务标题、任务类型、评估回路、小时窗口、时间窗口、评估状态、结果摘要、评估进度、创建时间、评估时长、创建人、操作
  * - 自动轮询：有活跃任务时每 5s 刷新
  */
 import type { TableColumnsType } from 'ant-design-vue';
@@ -13,7 +15,7 @@ import type { TaskApi } from '#/api/task';
 
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
-import { RotateCw } from '@vben/icons';
+import { Plus, RotateCw } from '@vben/icons';
 
 import {
   Button,
@@ -47,7 +49,14 @@ import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
+import BackfillTaskDrawer from './backfill-task-drawer.vue';
+
 defineOptions({ name: 'TaskList' });
+
+/** 默认任务类型筛选（宿主按角色传入；缺省 undefined = 全部） */
+const props = defineProps<{
+  defaultTaskType?: TaskApi.TaskType;
+}>();
 
 const { themeColors } = useClpmTheme();
 
@@ -60,8 +69,12 @@ const currentPage = ref(1);
 const pageSize = ref(20);
 
 // 筛选状态
+const filterTaskType = ref<TaskApi.TaskType | undefined>(props.defaultTaskType);
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
+
+// 新建手动评估抽屉（收编自原 metric/recompute.vue）
+const backfillDrawerOpen = ref(false);
 
 // ============ 状态映射（P2-01：收敛至 constants/clpm-ui.ts）============
 const statusColorMap = (status: string) =>
@@ -285,10 +298,10 @@ const columns = computed<TableColumnsType>(() => [
 /** 组装列表查询参数（日期型 RangePicker 结束值需扩展到当日 23:59:59） */
 function buildQueryParams(): TaskApi.TaskListQueryParams {
   const params: TaskApi.TaskListQueryParams = {
-    taskType: 'STANDARD',
     page: currentPage.value,
     pageSize: pageSize.value,
   };
+  if (filterTaskType.value) params.taskType = filterTaskType.value;
   if (filterStatus.value) params.status = filterStatus.value;
   if (filterDateRange.value) {
     params.startTime = filterDateRange.value[0].startOf('day').toISOString();
@@ -317,6 +330,20 @@ async function loadList() {
 function hasActiveTask(): boolean {
   return taskList.value.some(
     (t) => t.status === 'RUNNING' || t.status === 'PENDING',
+  );
+}
+
+/** 判断任务是否处于活跃状态（PENDING/RUNNING） */
+function isTaskActive(task: { status: string }): boolean {
+  return task.status === 'PENDING' || task.status === 'RUNNING';
+}
+
+/** 判断任务是否处于终态（SUCCESS/FAILED/CANCELLED） */
+function isTaskTerminal(task: { status: string }): boolean {
+  return (
+    task.status === 'SUCCESS' ||
+    task.status === 'FAILED' ||
+    task.status === 'CANCELLED'
   );
 }
 
@@ -401,7 +428,18 @@ function refresh() {
   return loadList();
 }
 
-defineExpose({ refresh });
+// 暴露给父组件 + 单元测试的接口（<script setup> 默认私有，需 defineExpose 才能被 vm 访问）
+defineExpose({
+  refresh,
+  columns,
+  formatProgress,
+  formatTime,
+  handleCancel,
+  handleDangerConfirm,
+  handleDelete,
+  isTaskActive,
+  isTaskTerminal,
+});
 
 onMounted(() => {
   loadList();
@@ -425,6 +463,14 @@ onUnmounted(() => {
           <template #icon><RotateCw /></template>
           触发标准评估
         </Button>
+        <!-- 新建手动评估（后端 /tasks/backfill require_roles(ADMIN, IC_ENGINEER)） -->
+        <Button
+          v-permission="['ADMIN', 'IC_ENGINEER']"
+          @click="backfillDrawerOpen = true"
+        >
+          <template #icon><Plus /></template>
+          新建手动评估
+        </Button>
         <Button
           danger
           :disabled="selectedRowKeys.length === 0"
@@ -439,6 +485,16 @@ onUnmounted(() => {
         </Button>
       </Space>
       <Space>
+        <Select
+          v-model:value="filterTaskType"
+          placeholder="任务类型：全部"
+          allow-clear
+          style="width: 150px"
+          @change="loadList"
+        >
+          <Select.Option value="STANDARD">自动评估</Select.Option>
+          <Select.Option value="BACKFILL">手动评估</Select.Option>
+        </Select>
         <Select
           v-model:value="filterStatus"
           placeholder="状态筛选"
@@ -466,7 +522,7 @@ onUnmounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && taskList.length === 0"
-      empty-reason="暂无自动评估任务记录。点击「触发标准评估」可对全部回路执行标准 KPI 评估"
+      empty-reason="暂无评估任务记录。点击「触发标准评估」可对全部回路执行标准 KPI 评估，或点击「新建手动评估」按时间窗重算"
       empty-action-text="触发标准评估"
       @retry="loadList"
       @empty-action="handleTriggerStandard"
@@ -622,6 +678,9 @@ onUnmounted(() => {
         </template>
       </Table>
     </ClpmDataCanvas>
+
+    <!-- 新建手动评估抽屉（收编自原 metric/recompute.vue） -->
+    <BackfillTaskDrawer v-model:open="backfillDrawerOpen" @success="loadList" />
 
     <!-- 任务详情抽屉 -->
     <Drawer

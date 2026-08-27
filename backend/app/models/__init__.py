@@ -23,6 +23,7 @@ from app.models.dcs_vendor import DcsVendor
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.engine import EngineRule
+from app.models.event_bus import EventBus  # Workbench v2.0
 from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_action_item import LoopActionItem
@@ -35,6 +36,7 @@ from app.models.metric import (
 )
 from app.models.metric_data_requirement import ClpmMetricDataRequirement
 from app.models.mode_definition import ModeDefinition
+from app.models.module_plugin import ModulePlugin  # Workbench v2.0
 from app.models.node_kpi import (
     KpiNodeSnapshotDaily,
     KpiNodeSnapshotHourly,
@@ -44,14 +46,19 @@ from app.models.plant_node import PlantNode
 from app.models.process_model_version import ProcessModelVersion
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
+from app.models.sla_policy import SlaPolicy  # Workbench v2.0
 from app.models.sys_config import SysConfig
 from app.models.sys_dict_item import SysDictItem
 from app.models.sys_user import SysUser
 from app.models.tag import TagRegistry
 from app.models.tracker import ActionTracker
+from app.models.trend_flags import TrendFlag  # Workbench v2.0
 from app.models.tuning import TuningRecord
+from app.models.tuning_batch import TuningBatch, TuningBatchRecords  # Workbench v2.0
 from app.models.tuning_knowledge import TuningKnowledgeEntry
 from app.models.unit_kpi_summary import UnitKpiSummary
+from app.models.wb_cache_log import WbCacheLog  # Workbench v2.0
+from app.models.workbench_summary import WorkbenchWindowSummary  # Workbench v2.0
 
 __all__ = [
     "Base",
@@ -102,4 +109,13 @@ __all__ = [
     "AlertEvent",
     "AlertRuleAuditLog",
     "AlertSuppression",
+    # ---------- Workbench v2.0 工作台新增实体 ----------
+    "ModulePlugin",  # M-01 模块插件4态注册表
+    "WorkbenchWindowSummary",  # M-02 三窗口KPI预计算
+    "EventBus",  # M-03 跨模块事件归一总线
+    "SlaPolicy",  # M-04 SLA模板策略
+    "TuningBatch",  # M-05 整定批次
+    "TuningBatchRecords",  # M-05 批次-整定记录 N:M
+    "TrendFlag",  # M-06 趋势flags标注
+    "WbCacheLog",  # M-08 BFF缓存命中日志
 ]

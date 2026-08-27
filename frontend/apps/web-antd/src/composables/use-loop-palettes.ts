@@ -61,6 +61,23 @@ export const MODE_LABEL_MAP: Record<string, string> = {
 };
 
 /**
+ * 多序列分类色板（10 色可辨，指标矩阵页趋势对比等 N 线叠加场景）
+ * 与 LOOP_TYPE/MODE 同口径：类别标识色沉淀于本文件，视图层禁止重复定义
+ */
+export const MULTI_SERIES_PALETTE: string[] = [
+  '#0d6efd',
+  '#dc3545',
+  '#198754',
+  '#b45309',
+  '#6f42c1',
+  '#0dcaf0',
+  '#d63384',
+  '#fd7e14',
+  '#20c997',
+  '#495057',
+];
+
+/**
  * 回路色板 composable：提供依赖主题语义色的派生函数
  */
 export function useLoopPalettes() {

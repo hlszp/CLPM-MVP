@@ -1,368 +1,222 @@
 <script lang="ts" setup>
-import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
+import type { TableColumnsType } from 'ant-design-vue';
 
 import type { AlertApi } from '#/api/alert';
-import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
-import { computed, h, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Form,
-  FormItem,
-  Input,
   InputNumber,
   message,
-  Modal,
   Popconfirm,
-  Select,
-  Space,
   Switch,
   Table,
   Tag,
-  Textarea,
   Tooltip,
 } from 'ant-design-vue';
 
 import {
-  createAlertRuleApi,
-  deleteAlertRuleApi,
   getAlertRulesApi,
   getGlobalSwitchApi,
   setGlobalSwitchApi,
   toggleAlertRuleApi,
   updateAlertRuleApi,
 } from '#/api/alert';
-import {
-  ClpmAlertDslEditor,
-  ClpmDangerConfirmModal,
-  ClpmPageToolbar,
-  ClpmStandardActions,
-  ClpmToolbarButton,
-} from '#/components/clpm';
-import { ClpmEmptyState } from '#/components/clpm';
-import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
-import { useTableDensity } from '#/composables/use-table-density';
-import { ALERT_RULE_TYPE_LABEL } from '#/constants/clpm-ui';
-import { formatTime } from '#/utils/format';
+import { ClpmEmptyState, ClpmPageToolbar, ClpmToolbarButton } from '#/components/clpm';
+import { showPageHelp } from '#/composables/use-page-toolbar';
+import { ALERT_LEVEL_LABEL } from '#/constants/clpm-ui';
 
 defineOptions({ name: 'AlertRules' });
 
-// 规则类型中文标签（对齐 clpm-ui.ts 统一映射）
-const ruleTypeLabel = ALERT_RULE_TYPE_LABEL;
+// ===== 预制规则模式（2026-08-24）：评估/诊断指标规则全部预制下发，
+// 用户仅可修改三级阈值（一般/重要/紧急）与启停，不允许新增/删除 =====
 
-// ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
-const { tableSize, densityLabel, cycleDensity } =
-  useTableDensity('alert-rules');
+type LevelSeverity = 'CRITICAL' | 'ERROR' | 'WARN';
+const LEVEL_ORDER: LevelSeverity[] = ['WARN', 'ERROR', 'CRITICAL'];
 
-// 列表
+interface LevelValues {
+  CRITICAL: null | number;
+  ERROR: null | number;
+  WARN: null | number;
+}
+
 const loading = ref(false);
 const ruleList = ref<AlertApi.RuleItem[]>([]);
-const total = ref(0);
-const query = reactive({
-  ruleType: undefined as AlertApi.RuleType | undefined,
-  isEnabled: undefined as string | undefined,
-  page: 1,
-  pageSize: 20,
-});
+const lastRefresh = ref('');
 
 // 全局开关
 const globalEnabled = ref(true);
 const switchLoading = ref(false);
 
-// 筛选区折叠态
-const filterVisible = ref(true);
+/** 编辑中的三级阈值（ruleId → 三级值）与加载基线（脏检查） */
+const editLevels = ref<Record<string, LevelValues>>({});
+const baseLevels = ref<Record<string, LevelValues>>({});
+/** 保存中的规则 id */
+const savingRuleId = ref('');
 
-// 最近刷新时间
-const lastRefresh = ref('');
-
-// 编辑弹窗
-const editVisible = ref(false);
-const editMode = ref<'create' | 'edit'>('create');
-const editForm = reactive({
-  ruleId: '',
-  ruleCode: '',
-  ruleName: '',
-  ruleType: 'THRESHOLD' as AlertApi.RuleType,
-  description: '',
-  priority: 100,
-  isEnabled: true,
-  /** #8: DSL 对象（由可视化编辑器维护，替代原 dslText JSON 字符串） */
-  dsl: {} as Record<string, any>,
-});
-const editLoading = ref(false);
-
-const ruleTypeColor: Record<AlertApi.RuleType, string> = {
-  // 整改 A-02 类别中性化：规则类型为中性分类，antd default 灰阶
-  METRIC_THRESHOLD: 'blue',
-  THRESHOLD: 'default',
-  DRIFT: 'default',
-  COMPOSITE: 'default',
-  CONFIDENCE: 'default',
+/** KPI 指标中文标签（预制规则 metricCode → 展示名） */
+const KPI_METRIC_LABEL: Record<string, string> = {
+  score: '综合评分（0-100）',
+  accuracy_rate: '准确率',
+  fast_rate: '快速率',
+  steady_rate: '平稳率',
+  effective_auto_rate: '有效自控率',
+  auto_mode_rate: '平均自控率',
+  oscillation_rate: '振荡率',
+  saturation_rate: '饱和率',
+  good_value_rate: '好值率',
+  valid_rate: '有效率',
 };
 
-// ===== 指标阈值预警（METRIC_THRESHOLD）表单状态 =====
-
-const metricForm = reactive({
-  metricSource: 'KPI' as 'DIAGNOSIS' | 'KPI',
-  metricCode: 'score',
-  operator: '<' as '<' | '<=' | '>' | '>=',
-  value: 60,
-  checkIntervalMinutes: 60,
-  durationCount: 1,
-});
-
-/** KPI 来源可监测指标（loop_confidence_latest 载体） */
-const KPI_METRIC_OPTIONS = [
-  { value: 'score', label: '综合评分（score，0-100）' },
-  { value: 'accuracy_rate', label: '准确率（accuracy_rate）' },
-  { value: 'fast_rate', label: '快速率（fast_rate）' },
-  { value: 'steady_rate', label: '稳定率（steady_rate）' },
-  { value: 'effective_auto_rate', label: '有效自控率（effective_auto_rate）' },
-  { value: 'auto_mode_rate', label: '自控率（auto_mode_rate）' },
-  { value: 'oscillation_rate', label: '振荡率（oscillation_rate）' },
-  { value: 'saturation_rate', label: '饱和率（saturation_rate）' },
-  { value: 'good_value_rate', label: '好值率（good_value_rate）' },
-  { value: 'valid_rate', label: '有效数据率（valid_rate，0-1）' },
-];
-
-/** DIAGNOSIS 来源可监测指标（diagnosis_run 最新一条载体） */
-const DIAGNOSIS_METRIC_OPTIONS = [
-  { value: 'severity', label: '诊断严重度（severity，低=1/中=2/高=3）' },
-  { value: 'primary_confidence', label: '主因置信度（primary_confidence，0-1）' },
-];
-
-const METRIC_OPERATOR_OPTIONS = [
-  { value: '<', label: '低于（<）' },
-  { value: '<=', label: '低于等于（≤）' },
-  { value: '>', label: '高于（>）' },
-  { value: '>=', label: '高于等于（≥）' },
-];
-
-const CHECK_INTERVAL_OPTIONS = [
-  { value: 10, label: '每 10 分钟' },
-  { value: 30, label: '每 30 分钟' },
-  { value: 60, label: '每 1 小时' },
-  { value: 360, label: '每 6 小时' },
-  { value: 720, label: '每 12 小时' },
-  { value: 1440, label: '每 24 小时' },
-];
-
-/** 指标来源切换时重置指标代码 */
-function handleMetricSourceChange() {
-  metricForm.metricCode =
-    metricForm.metricSource === 'KPI' ? 'score' : 'severity';
-}
-
-/** 从 DSL condition 恢复指标表单（编辑存量指标阈值规则） */
-function loadMetricFormFromDsl(dsl: Record<string, any>) {
-  const c = dsl?.condition ?? {};
-  metricForm.metricSource = c.metricSource === 'DIAGNOSIS' ? 'DIAGNOSIS' : 'KPI';
-  metricForm.metricCode = c.metricCode ?? 'score';
-  metricForm.operator = (['<', '<=', '>', '>='] as const).includes(c.operator)
-    ? c.operator
-    : '<';
-  metricForm.value = typeof c.value === 'number' ? c.value : 60;
-  metricForm.checkIntervalMinutes =
-    typeof c.checkIntervalMinutes === 'number' ? c.checkIntervalMinutes : 60;
-  metricForm.durationCount =
-    typeof c.durationCount === 'number' ? c.durationCount : 1;
-}
-
-/** 由指标表单构建 METRIC_THRESHOLD DSL */
-function buildMetricDsl(): Record<string, any> {
-  return {
-    ruleType: 'METRIC_THRESHOLD',
-    scope: { loopSelector: { type: 'ALL' } },
-    condition: {
-      metricSource: metricForm.metricSource,
-      metricCode: metricForm.metricCode,
-      operator: metricForm.operator,
-      value: metricForm.value,
-      checkIntervalMinutes: metricForm.checkIntervalMinutes,
-      durationCount: metricForm.durationCount,
-    },
-    durationSeconds: 0,
-    cooldownSeconds: metricForm.checkIntervalMinutes * 60,
-    severity: 'WARN',
-    actions: [{ type: 'CREATE_EVENT' }, { type: 'NOTIFY' }],
-    priority: editForm.priority,
-    dedupKey: '${loop_id}+${rule_id}',
-  };
-}
-
-/** 当前编辑的是否为指标阈值规则 */
-const isMetricRule = computed(() => editForm.ruleType === 'METRIC_THRESHOLD');
-
-// DSL 模板
-const dslTemplates: Record<AlertApi.RuleType, Record<string, any>> = {
-  METRIC_THRESHOLD: {
-    ruleType: 'METRIC_THRESHOLD',
-    scope: { loopSelector: { type: 'ALL' } },
-    condition: {
-      metricSource: 'KPI',
-      metricCode: 'score',
-      operator: '<',
-      value: 60,
-      checkIntervalMinutes: 60,
-      durationCount: 1,
-    },
-    durationSeconds: 0,
-    cooldownSeconds: 3600,
-    severity: 'WARN',
-    actions: [
-      { type: 'CREATE_EVENT' },
-      { type: 'NOTIFY' },
-    ],
-    priority: 100,
-    dedupKey: '${loop_id}+${rule_id}',
-  },
-  THRESHOLD: {
-    ruleType: 'THRESHOLD',
-    scope: { loopSelector: { type: 'ALL' } },
-    condition: { metric: 'PV', operator: '>', value: 90 },
-    durationSeconds: 0,
-    cooldownSeconds: 1800,
-    severity: 'WARN',
-    actions: [{ type: 'CREATE_EVENT' }],
-    priority: 100,
-    dedupKey: '${loop_id}+${rule_id}',
-  },
-  CONFIDENCE: {
-    ruleType: 'CONFIDENCE',
-    scope: { loopSelector: { type: 'ALL' } },
-    condition: { maxLevel: 'D' },
-    durationSeconds: 300,
-    cooldownSeconds: 3600,
-    severity: 'WARN',
-    actions: [{ type: 'CREATE_EVENT' }],
-    priority: 100,
-    dedupKey: '${loop_id}+${rule_id}',
-  },
-  DRIFT: {
-    ruleType: 'DRIFT',
-    scope: { loopSelector: { type: 'ALL' } },
-    condition: {
-      metric: 'PV',
-      statistic: 'MEAN',
-      windowSeconds: 1800,
-      baseline: { type: 'STATIC', value: 50 },
-      deviationThreshold: 10,
-      deviationType: 'ABSOLUTE',
-    },
-    durationSeconds: 600,
-    cooldownSeconds: 3600,
-    severity: 'WARN',
-    actions: [{ type: 'CREATE_EVENT' }],
-    priority: 100,
-  },
-  COMPOSITE: {
-    ruleType: 'COMPOSITE',
-    scope: { loopSelector: { type: 'ALL' } },
-    condition: {
-      logic: 'AND',
-      operands: [
-        { type: 'THRESHOLD', metric: 'PV', operator: '>', value: 90 },
-        { type: 'CONFIDENCE', maxLevel: 'C' },
-      ],
-    },
-    durationSeconds: 300,
-    cooldownSeconds: 3600,
-    severity: 'ERROR',
-    actions: [{ type: 'CREATE_EVENT' }, { type: 'CREATE_TRACKER' }],
-    priority: 50,
-  },
+/** DIAGNOSIS 指标中文标签 */
+const DIAGNOSIS_METRIC_LABEL: Record<string, string> = {
+  severity: '诊断故障等级（低=1/中=2/高=3）',
+  primary_confidence: '诊断主因置信度（0-1）',
 };
 
-const columns: TableColumnsType = [
-  { title: '规则代码', dataIndex: 'ruleCode', key: 'ruleCode', width: 160 },
-  { title: '规则名称', dataIndex: 'ruleName', key: 'ruleName', width: 180 },
-  {
-    title: '类型',
-    dataIndex: 'ruleType',
-    key: 'ruleType',
-    width: 110,
-    customRender: ({ value }) =>
-      h(
-        Tag,
-        { color: ruleTypeColor[value as AlertApi.RuleType] },
-        () => ruleTypeLabel[value as AlertApi.RuleType] ?? value,
-      ),
-  },
-  { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
-  {
-    title: '版本',
-    dataIndex: 'version',
-    key: 'version',
-    width: 70,
-  },
-  {
-    title: '状态',
-    dataIndex: 'isEnabled',
-    key: 'isEnabled',
-    width: 80,
-    customRender: ({ value }) =>
-      h(Tag, { color: value ? 'green' : 'default' }, () =>
-        value ? '启用' : '停用',
-      ),
-  },
-  {
-    title: '更新时间',
-    dataIndex: 'updatedAt',
-    key: 'updatedAt',
-    width: 160,
-    customRender: ({ value }) => (value ? formatTime(value) : '-'),
-  },
-  { title: '操作', key: 'action', width: 220, fixed: 'right' },
-];
+const OPERATOR_LABEL: Record<string, string> = {
+  '<': '低于',
+  '<=': '低于等于',
+  '>': '高于',
+  '>=': '高于等于',
+};
 
-// ===== 列设置（排除「操作」列） =====
-function buildDefaultColumnConfigs(): ColumnConfig[] {
-  return columns
-    .filter((c: any) => c.key !== 'action')
-    .map((c: any, i: number) => ({
-      key: String(c.key),
-      label: String(c.title ?? ''),
-      visible: true,
-      order: i,
-    }));
+function conditionOf(rule: AlertApi.RuleItem): Record<string, any> {
+  return (rule.dsl?.condition ?? {}) as Record<string, any>;
 }
-const columnConfigs = ref<ColumnConfig[]>(buildDefaultColumnConfigs());
-const visibleColumns = computed<TableColumnsType>(() =>
-  columns.filter((c: any) => {
-    if (c.key === 'action') return true;
-    const cfg = columnConfigs.value.find((cc) => cc.key === c.key);
-    return cfg ? cfg.visible : true;
-  }),
+
+function metricSourceOf(rule: AlertApi.RuleItem): 'DIAGNOSIS' | 'KPI' {
+  return conditionOf(rule).metricSource === 'DIAGNOSIS' ? 'DIAGNOSIS' : 'KPI';
+}
+
+function metricLabel(rule: AlertApi.RuleItem): string {
+  const code = conditionOf(rule).metricCode ?? '';
+  const map =
+    metricSourceOf(rule) === 'KPI' ? KPI_METRIC_LABEL : DIAGNOSIS_METRIC_LABEL;
+  return map[code] ?? code;
+}
+
+function intervalLabel(rule: AlertApi.RuleItem): string {
+  const m = conditionOf(rule).checkIntervalMinutes ?? 60;
+  return m >= 60 && m % 60 === 0 ? `每 ${m / 60} 小时` : `每 ${m} 分钟`;
+}
+
+/** 阈值输入步长/上限：置信度 0-1、故障等级 1-3、其余百分制 0-100 */
+function thresholdRange(rule: AlertApi.RuleItem): { max: number; step: number } {
+  const code = conditionOf(rule).metricCode;
+  if (code === 'primary_confidence') return { max: 1, step: 0.05 };
+  if (code === 'severity') return { max: 3, step: 1 };
+  return { max: 100, step: 1 };
+}
+
+/** 预制规则（PRESET_ 前缀） */
+const presetRules = computed(() =>
+  ruleList.value.filter((r) => r.ruleCode.startsWith('PRESET_')),
 );
-function handleUpdateColumns(cols: ColumnConfig[]) {
-  columnConfigs.value = cols;
-}
-function handleResetColumns() {
-  columnConfigs.value = buildDefaultColumnConfigs();
+const kpiRules = computed(() =>
+  presetRules.value.filter((r) => metricSourceOf(r) === 'KPI'),
+);
+const diagRules = computed(() =>
+  presetRules.value.filter((r) => metricSourceOf(r) === 'DIAGNOSIS'),
+);
+/** 存量非预制规则（只读展示 + 启停） */
+const legacyRules = computed(() =>
+  ruleList.value.filter((r) => !r.ruleCode.startsWith('PRESET_')),
+);
+
+function parseLevels(rule: AlertApi.RuleItem): LevelValues {
+  const cond = conditionOf(rule);
+  const values: LevelValues = { WARN: null, ERROR: null, CRITICAL: null };
+  const lv = Array.isArray(cond.levels) ? cond.levels : [];
+  for (const item of lv) {
+    if (
+      item &&
+      LEVEL_ORDER.includes(item.severity) &&
+      typeof item.value === 'number'
+    ) {
+      values[item.severity as LevelSeverity] = item.value;
+    }
+  }
+  // 无 levels 的单级存量数据：value 回落为一般级
+  if (values.WARN === null && typeof cond.value === 'number') {
+    values.WARN = cond.value;
+  }
+  return values;
 }
 
 async function loadRules() {
   loading.value = true;
   try {
-    const res = await getAlertRulesApi({
-      ruleType: query.ruleType,
-      isEnabled:
-        query.isEnabled === undefined ? undefined : query.isEnabled === 'true',
-      limit: query.pageSize,
-      offset: (query.page - 1) * query.pageSize,
-    });
+    const res = await getAlertRulesApi({ limit: 200, offset: 0 });
     ruleList.value = res.items;
-    total.value = res.total;
+    const edit: Record<string, LevelValues> = {};
+    const base: Record<string, LevelValues> = {};
+    for (const r of presetRulesFromItems(res.items)) {
+      const lv = parseLevels(r);
+      edit[r.ruleId] = { ...lv };
+      base[r.ruleId] = { ...lv };
+    }
+    editLevels.value = edit;
+    baseLevels.value = base;
     lastRefresh.value = new Date().toLocaleTimeString('zh-CN', {
       hour12: false,
     });
   } catch {
-    message.error('加载规则失败');
+    message.error('加载预警规则失败');
   } finally {
     loading.value = false;
+  }
+}
+
+function presetRulesFromItems(items: AlertApi.RuleItem[]) {
+  return items.filter((r) => r.ruleCode.startsWith('PRESET_'));
+}
+
+function isDirty(rule: AlertApi.RuleItem): boolean {
+  const edit = editLevels.value[rule.ruleId];
+  const base = baseLevels.value[rule.ruleId];
+  if (!edit || !base) return false;
+  return LEVEL_ORDER.some((s) => edit[s] !== base[s]);
+}
+
+async function handleSave(rule: AlertApi.RuleItem) {
+  const edit = editLevels.value[rule.ruleId];
+  if (!edit) return;
+  const levels = LEVEL_ORDER.filter((s) => edit[s] !== null).map((s) => ({
+    severity: s,
+    value: edit[s] as number,
+  }));
+  if (levels.length === 0) {
+    message.warning('请至少填写一级预警阈值');
+    return;
+  }
+  savingRuleId.value = rule.ruleId;
+  try {
+    const dsl = structuredClone(rule.dsl ?? {});
+    const cond = (dsl.condition ?? {}) as Record<string, any>;
+    cond.value = levels[0]?.value;
+    cond.levels = levels;
+    dsl.condition = cond;
+    await updateAlertRuleApi(rule.ruleId, { dsl });
+    baseLevels.value[rule.ruleId] = { ...edit };
+    message.success(`「${rule.ruleName}」阈值已保存`);
+  } catch (error: any) {
+    message.error(error?.response?.data?.message || '保存失败');
+  } finally {
+    savingRuleId.value = '';
+  }
+}
+
+async function handleToggle(record: AlertApi.RuleItem) {
+  try {
+    await toggleAlertRuleApi(record.ruleId, !record.isEnabled);
+    message.success(record.isEnabled ? '已停用' : '已启用');
+    await loadRules();
+  } catch {
+    message.error('操作失败');
   }
 }
 
@@ -390,201 +244,53 @@ async function handleSwitchChange(checked: any) {
   }
 }
 
-function openCreateModal() {
-  editMode.value = 'create';
-  editForm.ruleId = '';
-  editForm.ruleCode = '';
-  editForm.ruleName = '';
-  editForm.ruleType = 'METRIC_THRESHOLD';
-  editForm.description = '';
-  editForm.priority = 100;
-  editForm.isEnabled = true;
-  // #8: 深拷贝模板 DSL 对象，避免引用污染
-  editForm.dsl = structuredClone(dslTemplates.METRIC_THRESHOLD);
-  // 同步指标表单默认值
-  loadMetricFormFromDsl(editForm.dsl);
-  editVisible.value = true;
-}
-
-function openEditModal(record: AlertApi.RuleItem) {
-  editMode.value = 'edit';
-  editForm.ruleId = record.ruleId;
-  editForm.ruleCode = record.ruleCode;
-  editForm.ruleName = record.ruleName;
-  editForm.ruleType = record.ruleType;
-  editForm.description = record.description || '';
-  editForm.priority = record.priority;
-  editForm.isEnabled = record.isEnabled;
-  editForm.dsl = record.dsl ? structuredClone(record.dsl) : {};
-  if (record.ruleType === 'METRIC_THRESHOLD') {
-    loadMetricFormFromDsl(editForm.dsl);
-  }
-  editVisible.value = true;
-}
-
-async function handleSave() {
-  if (!editForm.ruleCode.trim() || !editForm.ruleName.trim()) {
-    message.warning('规则代码和名称不可为空');
-    return;
-  }
-  // 指标阈值规则：由表单构建 DSL；其余存量类型：由可视化编辑器维护
-  const dsl = isMetricRule.value ? buildMetricDsl() : editForm.dsl;
-  if (isMetricRule.value && metricForm.value === undefined) {
-    message.warning('请填写阈值');
-    return;
-  }
-  if (!dsl || !dsl.ruleType) {
-    message.warning('规则 DSL 未配置完整');
-    return;
-  }
-  editLoading.value = true;
-  try {
-    if (editMode.value === 'create') {
-      await createAlertRuleApi({
-        ruleCode: editForm.ruleCode,
-        ruleName: editForm.ruleName,
-        ruleType: editForm.ruleType,
-        dsl,
-        description: editForm.description || undefined,
-        priority: editForm.priority,
-        isEnabled: editForm.isEnabled,
-      });
-      message.success('规则已创建');
-    } else {
-      await updateAlertRuleApi(editForm.ruleId, {
-        ruleName: editForm.ruleName,
-        dsl,
-        description: editForm.description || undefined,
-        priority: editForm.priority,
-        isEnabled: editForm.isEnabled,
-      });
-      message.success('规则已更新');
-    }
-    editVisible.value = false;
-    await loadRules();
-  } catch (error: any) {
-    const msg = error?.response?.data?.message || '保存失败';
-    message.error(msg);
-  } finally {
-    editLoading.value = false;
-  }
-}
-
-async function handleToggle(record: AlertApi.RuleItem) {
-  try {
-    await toggleAlertRuleApi(record.ruleId, !record.isEnabled);
-    message.success(record.isEnabled ? '已停用' : '已启用');
-    await loadRules();
-  } catch {
-    message.error('操作失败');
-  }
-}
-
-/** 删除规则：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01），删除后不可恢复 */
-const deleteOpen = ref(false);
-const deleteTarget = ref<AlertApi.RuleItem | null>(null);
-const deleteLoading = ref(false);
-
-function handleDelete(record: AlertApi.RuleItem) {
-  deleteTarget.value = record;
-  deleteOpen.value = true;
-}
-
-async function handleDeleteConfirm() {
-  if (!deleteTarget.value) return;
-  deleteLoading.value = true;
-  try {
-    await deleteAlertRuleApi(deleteTarget.value.ruleId);
-    message.success('规则已删除');
-    deleteOpen.value = false;
-    await loadRules();
-  } catch {
-    message.error('删除失败');
-  } finally {
-    deleteLoading.value = false;
-  }
-}
-
-function handleSearch() {
-  query.page = 1;
-  loadRules();
-}
-
-function handlePageChange(pag: TablePaginationConfig) {
-  query.page = pag.current ?? 1;
-  query.pageSize = pag.pageSize ?? 20;
-  loadRules();
-}
-
-/** 导出当前规则列表为 CSV */
-function exportRulesCsv() {
-  if (ruleList.value.length === 0) {
-    message.warning('当前无可导出的规则');
-    return;
-  }
-  const header = [
-    '规则代码',
-    '规则名称',
-    '类型',
-    '优先级',
-    '版本',
-    '状态',
-    '更新时间',
-  ];
-  const rows = ruleList.value.map((r) => [
-    r.ruleCode,
-    r.ruleName,
-    ruleTypeLabel[r.ruleType] ?? r.ruleType,
-    String(r.priority ?? ''),
-    String(r.version ?? ''),
-    r.isEnabled ? '启用' : '停用',
-    r.updatedAt ? formatTime(r.updatedAt) : '',
-  ]);
-  const csv = [header, ...rows]
-    .map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `alert-rules-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  message.success(`已导出 ${ruleList.value.length} 条规则`);
-}
-
 function handleHelp() {
   showPageHelp({
     title: '预警规则 帮助',
     content: [
-      '预警规则（指标阈值预警）：基于评估指标（KPI）或诊断结果设定阈值与监测周期，按周期定期检查回路最新结果，超阈值生成预警记录并通知（铃铛/预警记录页）。预警后的响应动作（工单/诊断联动）不再自动触发，由人工在处置/诊断模块处理。',
-      '· 指标来源：KPI（综合评分/准确率/快速率/稳定率/自控率等评估指标，来自每回路最新评估结果）或 DIAGNOSIS（诊断严重度/主因置信度，来自最新一次诊断）。',
-      '· 监测周期：巡检任务每分钟运行，每条规则按自己的周期到期才检查（5 分钟-24 小时）。',
-      '· 连续超限次数：需连续 N 个周期检查均超限才触发（防瞬时抖动，默认 1）。',
-      '· 数据新鲜度：评估/诊断结果超过 2× 监测周期未更新时跳过检查（任务停摆不误报）。',
-      '· 冷却期：触发后默认冷却一个监测周期，避免重复告警。',
-      '· 存量规则：阈值/漂移/组合/可信度 4 类实时值规则为存量兼容（仅可编辑/停用/删除，不再支持新建），建议以指标阈值规则替代。',
+      '预制规则模式：性能评估（10 项 KPI 指标）与故障诊断（2 项诊断指标）的预警规则由系统预制，仅可调整阈值与启停，不支持新增/删除。',
+      '· 三级阈值：每个指标可设置 一般（WARN）/ 重要（ERROR）/ 紧急（CRITICAL） 三级预警阈值；触发时按满足条件的最严重等级生成预警事件。',
+      '· 留空的等级不参与预警；如某级阈值不再需要，清空后保存即可。',
+      '· 监测周期与触发口径（比较符/指标）为预制锁定，如需调整请联系管理员。',
       '· 全局开关暂停后所有规则停止求值，但保留已产生的事件。',
     ].join('\n'),
   });
 }
 
-// ===== 统一工具栏（标准 5 工具：刷新/筛选/导出/列设置/帮助） =====
-const { toolbarItems } = usePageToolbar(() => ({
-  refresh: { onClick: loadRules, loading: loading.value },
-  filter: { onClick: () => toggleFilter(), active: filterVisible.value },
-  export: {
-    onClick: exportRulesCsv,
-    permission: ['ADMIN', 'IC_ENGINEER'],
-    disabledReason: '仅工程师/管理员可导出',
+// ===== 表格列（两组预制规则共用） =====
+const columns: TableColumnsType = [
+  { title: '规则名称', dataIndex: 'ruleName', key: 'ruleName', width: 170 },
+  { title: '监测指标', key: 'metric', width: 200 },
+  { title: '触发条件', key: 'operator', width: 90 },
+  {
+    title: `${ALERT_LEVEL_LABEL.WARN}阈值`,
+    key: 'WARN',
+    width: 130,
+    align: 'center',
   },
-  setting: {},
-  help: { onClick: handleHelp },
-}));
+  {
+    title: `${ALERT_LEVEL_LABEL.ERROR}阈值`,
+    key: 'ERROR',
+    width: 130,
+    align: 'center',
+  },
+  {
+    title: `${ALERT_LEVEL_LABEL.CRITICAL}阈值`,
+    key: 'CRITICAL',
+    width: 130,
+    align: 'center',
+  },
+  { title: '监测周期', key: 'interval', width: 100 },
+  { title: '状态', key: 'enabled', width: 90, align: 'center' },
+  { title: '操作', key: 'action', width: 90, fixed: 'right' },
+];
 
-function toggleFilter() {
-  filterVisible.value = !filterVisible.value;
-}
+const legacyColumns: TableColumnsType = [
+  { title: '规则代码', dataIndex: 'ruleCode', key: 'ruleCode', width: 200 },
+  { title: '规则名称', dataIndex: 'ruleName', key: 'ruleName', width: 220 },
+  { title: '描述', dataIndex: 'description', key: 'description' },
+  { title: '状态', key: 'enabled', width: 90, align: 'center' },
+];
 
 onMounted(() => {
   loadRules();
@@ -594,69 +300,35 @@ onMounted(() => {
 
 <template>
   <Page>
-    <!-- 统一工具栏 -->
     <ClpmPageToolbar
       title="预警规则"
-      subtitle="基于评估/诊断指标的阈值预警（定期检查，仅记录与通知）"
+      subtitle="预制规则：仅可调整三级阈值（一般/重要/紧急）与启停"
       :loading="loading"
       :last-refresh="lastRefresh"
     >
       <template #actions>
-        <ClpmStandardActions
-          :items="toolbarItems"
-          :column-configs="columnConfigs"
-          @update:columns="handleUpdateColumns"
-          @reset-columns="handleResetColumns"
-        />
-        <!-- A-07：密度三档切换（紧凑/标准/宽松，点击循环） -->
         <ClpmToolbarButton
-          icon="ant-design:column-height-outlined"
-          :label="`密度：${densityLabel}`"
-          :tooltip="`密度：${densityLabel}（点击切换）`"
-          @click="cycleDensity"
+          icon="lucide:refresh-cw"
+          label="刷新"
+          :loading="loading"
+          tooltip="刷新预警规则列表"
+          @click="loadRules"
+        />
+        <ClpmToolbarButton
+          icon="lucide:help-circle"
+          label="帮助"
+          tooltip="查看预警规则使用说明"
+          @click="handleHelp"
         />
       </template>
     </ClpmPageToolbar>
 
-    <!-- 筛选 + 全局开关 + 新建 -->
-    <div
-      class="clpm-filter-bar"
-      :class="{ 'clpm-filter-bar--collapsed': !filterVisible }"
-    >
-      <FormItem label="类型" class="!mb-0">
-        <Select
-          v-model:value="query.ruleType"
-          allow-clear
-          placeholder="全部"
-          style="width: 180px"
-          :options="
-            (
-              [
-                'METRIC_THRESHOLD',
-                'THRESHOLD',
-                'DRIFT',
-                'COMPOSITE',
-                'CONFIDENCE',
-              ] as AlertApi.RuleType[]
-            ).map((v) => ({ value: v, label: `${ruleTypeLabel[v]}（${v}）` }))
-          "
-        />
-      </FormItem>
-      <FormItem label="状态" class="!mb-0">
-        <Select
-          v-model:value="query.isEnabled"
-          allow-clear
-          placeholder="全部"
-          style="width: 110px"
-          :options="[
-            { value: 'true', label: '启用' },
-            { value: 'false', label: '停用' },
-          ]"
-        />
-      </FormItem>
-      <Button type="primary" @click="handleSearch">查询</Button>
-      <div class="!ml-auto flex items-center gap-3">
-        <span class="text-sm text-gray-500">全局开关</span>
+    <div class="flex h-full flex-col gap-3 overflow-auto p-3">
+      <!-- 全局开关条 -->
+      <div
+        class="flex items-center gap-3 rounded-lg border border-gray-100 bg-white px-4 py-2.5"
+      >
+        <span class="text-sm font-medium text-gray-700">预警全局开关</span>
         <Switch
           :checked="globalEnabled"
           :loading="switchLoading"
@@ -664,261 +336,238 @@ onMounted(() => {
           un-checked-children="关"
           @change="handleSwitchChange"
         />
-        <Button type="primary" @click="openCreateModal">新建规则</Button>
+        <span class="text-xs text-gray-400">
+          关闭后所有规则暂停求值，已产生的事件不受影响
+        </span>
       </div>
-    </div>
 
-    <!-- 规则表格 -->
-    <Table
-      :columns="visibleColumns"
-      :data-source="ruleList"
-      :loading="loading"
-      :pagination="{
-        current: query.page,
-        pageSize: query.pageSize,
-        total,
-        showSizeChanger: true,
-        showTotal: (t: number) => `共 ${t} 条`,
-      }"
-      :scroll="{ x: 1100 }"
-      row-key="ruleId"
-      :size="tableSize"
-      @change="handlePageChange"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'action'">
-          <Space :size="4">
-            <Button
-              type="link"
-              size="small"
-              @click="openEditModal(record as AlertApi.RuleItem)"
-            >
-              编辑
-            </Button>
-            <Popconfirm
-              :title="
-                record.isEnabled ? '确认停用此规则？' : '确认启用此规则？'
-              "
-              @confirm="handleToggle(record as AlertApi.RuleItem)"
-            >
-              <Button type="link" size="small">
-                {{ record.isEnabled ? '停用' : '启用' }}
-              </Button>
-            </Popconfirm>
-            <Button
-              type="link"
-              size="small"
-              danger
-              @click="handleDelete(record as AlertApi.RuleItem)"
-            >
-              删除
-            </Button>
-          </Space>
-        </template>
-      </template>
-      <template #emptyText>
+      <template v-if="presetRules.length === 0 && !loading">
         <ClpmEmptyState
-          title="暂无预警规则"
-          description="点击右上角「新建规则」创建指标阈值预警（基于评估/诊断指标，定期检查超阈值生成预警记录与通知）。"
-          :actions="[
-            { label: '新建规则', primary: true, onClick: openCreateModal },
-          ]"
+          title="暂无预制预警规则"
+          description="系统将在后端启动时自动初始化评估/诊断指标预制规则，请稍后刷新。"
+          :actions="[{ label: '刷新', primary: true, onClick: loadRules }]"
         />
       </template>
-    </Table>
 
-    <!-- 编辑弹窗 -->
-    <Modal
-      v-model:open="editVisible"
-      :title="editMode === 'create' ? '新建规则' : '编辑规则'"
-      width="720px"
-      ok-text="保存"
-      cancel-text="取消"
-      :confirm-loading="editLoading"
-      @ok="handleSave"
-    >
-      <Form layout="vertical">
-        <Space style="display: flex" :size="16">
-          <FormItem label="规则代码" style="flex: 1" required>
-            <Tooltip
-              v-if="editMode === 'edit'"
-              title="编辑模式下不可修改，请新建规则"
+      <!-- 性能评估指标（KPI） -->
+      <div
+        v-if="kpiRules.length > 0"
+        class="rounded-lg border border-gray-100 bg-white"
+      >
+        <div
+          class="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm font-bold text-gray-700"
+        >
+          性能评估指标
+          <Tag color="blue">KPI</Tag>
+          <span class="font-normal text-xs text-gray-400">
+            来自每回路最新性能评估结果 · 共 {{ kpiRules.length }} 条
+          </span>
+        </div>
+        <Table
+          :columns="columns"
+          :data-source="kpiRules"
+          :loading="loading"
+          :pagination="false"
+          :scroll="{ x: 1200 }"
+          row-key="ruleId"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'metric'">
+              <Tooltip :title="record.description || ''">
+                <span class="cursor-help text-gray-700">
+                  {{ metricLabel(record as AlertApi.RuleItem) }}
+                </span>
+              </Tooltip>
+            </template>
+            <template v-else-if="column.key === 'operator'">
+              <span class="text-gray-500">
+                {{ OPERATOR_LABEL[conditionOf(record as AlertApi.RuleItem).operator] || conditionOf(record as AlertApi.RuleItem).operator }}
+              </span>
+            </template>
+            <template
+              v-else-if="['WARN', 'ERROR', 'CRITICAL'].includes(String(column.key))"
             >
-              <Input
-                v-model:value="editForm.ruleCode"
-                disabled
-                placeholder="如 PV_HIGH_ALARM"
-                :maxlength="50"
-              />
-            </Tooltip>
-            <Input
-              v-else
-              v-model:value="editForm.ruleCode"
-              placeholder="如 PV_HIGH_ALARM"
-              :maxlength="50"
-            />
-          </FormItem>
-          <FormItem label="规则名称" style="flex: 1" required>
-            <Input
-              v-model:value="editForm.ruleName"
-              placeholder="规则中文名称"
-              :maxlength="100"
-            />
-          </FormItem>
-        </Space>
-        <Space style="display: flex" :size="16">
-          <FormItem label="规则类型" style="width: 220px">
-            <Tooltip
-              v-if="editMode === 'edit'"
-              title="编辑模式下不可修改，请新建规则"
-            >
-              <Select
-                v-model:value="editForm.ruleType"
-                disabled
-                :options="
-                  (
-                    [
-                      'METRIC_THRESHOLD',
-                      'THRESHOLD',
-                      'DRIFT',
-                      'COMPOSITE',
-                      'CONFIDENCE',
-                    ] as AlertApi.RuleType[]
-                  ).map((v) => ({
-                    value: v,
-                    label: `${ruleTypeLabel[v]}（${v}）`,
-                  }))
+              <InputNumber
+                v-if="editLevels[(record as AlertApi.RuleItem).ruleId]"
+                v-model:value="
+                  (editLevels[(record as AlertApi.RuleItem).ruleId] as any)[
+                    column.key as LevelSeverity
+                  ]
                 "
-                placeholder="选择规则类型"
+                :min="0"
+                :max="thresholdRange(record as AlertApi.RuleItem).max"
+                :step="thresholdRange(record as AlertApi.RuleItem).step"
+                size="small"
+                style="width: 100px"
+                placeholder="不启用"
               />
-            </Tooltip>
-            <!-- 新建仅支持指标阈值规则（4 类实时值规则为存量兼容，不再新建） -->
-            <Select
-              v-else
-              v-model:value="editForm.ruleType"
-              :options="[
-                {
-                  value: 'METRIC_THRESHOLD',
-                  label: `${ruleTypeLabel.METRIC_THRESHOLD}（METRIC_THRESHOLD）`,
-                },
-              ]"
-              placeholder="选择规则类型"
-            />
-          </FormItem>
-          <FormItem label="优先级" style="width: 140px">
-            <InputNumber
-              v-model:value="editForm.priority"
-              :min="1"
-              :max="9999"
-              style="width: 100%"
-            />
-          </FormItem>
-          <FormItem label="启用" style="width: 100px">
-            <Switch v-model:checked="editForm.isEnabled" />
-          </FormItem>
-        </Space>
-        <FormItem label="描述">
-          <Textarea
-            v-model:value="editForm.description"
-            :rows="2"
-            :maxlength="500"
-            placeholder="规则描述（可选）"
-          />
-        </FormItem>
-        <!-- 指标阈值规则：简化表单（来源/指标/操作符/阈值/周期/连续次数） -->
-        <template v-if="isMetricRule">
-          <FormItem label="指标来源" required>
-            <Select
-              v-model:value="metricForm.metricSource"
-              :options="[
-                { value: 'KPI', label: '评估指标（KPI，来自最新评估结果）' },
-                {
-                  value: 'DIAGNOSIS',
-                  label: '诊断结果（来自最新一次诊断）',
-                },
-              ]"
-              @change="handleMetricSourceChange"
-            />
-          </FormItem>
-          <FormItem label="监测指标" required>
-            <Select
-              v-model:value="metricForm.metricCode"
-              :options="
-                metricForm.metricSource === 'KPI'
-                  ? KPI_METRIC_OPTIONS
-                  : DIAGNOSIS_METRIC_OPTIONS
-              "
-              placeholder="选择监测指标"
-            />
-          </FormItem>
-          <Space style="display: flex" :size="16">
-            <FormItem label="触发条件" required style="flex: 1">
-              <div class="flex items-center gap-2">
-                <Select
-                  v-model:value="metricForm.operator"
-                  :options="METRIC_OPERATOR_OPTIONS"
-                  style="width: 140px"
+            </template>
+            <template v-else-if="column.key === 'interval'">
+              <span class="text-xs text-gray-500">
+                {{ intervalLabel(record as AlertApi.RuleItem) }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'enabled'">
+              <Popconfirm
+                :title="
+                  (record as AlertApi.RuleItem).isEnabled
+                    ? '确认停用此规则？'
+                    : '确认启用此规则？'
+                "
+                @confirm="handleToggle(record as AlertApi.RuleItem)"
+              >
+                <Switch
+                  :checked="(record as AlertApi.RuleItem).isEnabled"
+                  size="small"
                 />
-                <InputNumber
-                  v-model:value="metricForm.value"
-                  :min="0"
-                  :max="1000"
-                  :step="1"
-                  style="flex: 1"
-                  placeholder="阈值"
-                />
-              </div>
-            </FormItem>
-            <FormItem label="监测周期" required style="width: 180px">
-              <Select
-                v-model:value="metricForm.checkIntervalMinutes"
-                :options="CHECK_INTERVAL_OPTIONS"
+              </Popconfirm>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <Button
+                type="link"
+                size="small"
+                :disabled="!isDirty(record as AlertApi.RuleItem)"
+                :loading="savingRuleId === (record as AlertApi.RuleItem).ruleId"
+                @click="handleSave(record as AlertApi.RuleItem)"
+              >
+                保存
+              </Button>
+            </template>
+          </template>
+        </Table>
+      </div>
+
+      <!-- 故障诊断指标（DIAGNOSIS） -->
+      <div
+        v-if="diagRules.length > 0"
+        class="rounded-lg border border-gray-100 bg-white"
+      >
+        <div
+          class="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm font-bold text-gray-700"
+        >
+          故障诊断指标
+          <Tag color="purple">DIAGNOSIS</Tag>
+          <span class="font-normal text-xs text-gray-400">
+            来自每回路最新一次诊断结果 · 共 {{ diagRules.length }} 条
+          </span>
+        </div>
+        <Table
+          :columns="columns"
+          :data-source="diagRules"
+          :loading="loading"
+          :pagination="false"
+          :scroll="{ x: 1200 }"
+          row-key="ruleId"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'metric'">
+              <Tooltip :title="record.description || ''">
+                <span class="cursor-help text-gray-700">
+                  {{ metricLabel(record as AlertApi.RuleItem) }}
+                </span>
+              </Tooltip>
+            </template>
+            <template v-else-if="column.key === 'operator'">
+              <span class="text-gray-500">
+                {{ OPERATOR_LABEL[conditionOf(record as AlertApi.RuleItem).operator] || conditionOf(record as AlertApi.RuleItem).operator }}
+              </span>
+            </template>
+            <template
+              v-else-if="['WARN', 'ERROR', 'CRITICAL'].includes(String(column.key))"
+            >
+              <InputNumber
+                v-if="editLevels[(record as AlertApi.RuleItem).ruleId]"
+                v-model:value="
+                  (editLevels[(record as AlertApi.RuleItem).ruleId] as any)[
+                    column.key as LevelSeverity
+                  ]
+                "
+                :min="0"
+                :max="thresholdRange(record as AlertApi.RuleItem).max"
+                :step="thresholdRange(record as AlertApi.RuleItem).step"
+                size="small"
+                style="width: 100px"
+                placeholder="不启用"
               />
-            </FormItem>
-          </Space>
-          <FormItem label="连续超限次数（防抖）">
-            <InputNumber
-              v-model:value="metricForm.durationCount"
-              :min="1"
-              :max="10"
-              style="width: 180px"
-            />
-            <span class="ml-2 text-xs text-gray-500">
-              需连续 N 个周期检查均超限才触发
-            </span>
-          </FormItem>
-          <div class="mb-2 rounded p-2 text-xs text-gray-500" style="background: hsl(var(--muted) / 42%)">
-            触发动作：生成预警记录 + 站内通知（不自动创建工单/触发诊断，由人工在处置/诊断模块处理）。
-          </div>
-        </template>
+            </template>
+            <template v-else-if="column.key === 'interval'">
+              <span class="text-xs text-gray-500">
+                {{ intervalLabel(record as AlertApi.RuleItem) }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'enabled'">
+              <Popconfirm
+                :title="
+                  (record as AlertApi.RuleItem).isEnabled
+                    ? '确认停用此规则？'
+                    : '确认启用此规则？'
+                "
+                @confirm="handleToggle(record as AlertApi.RuleItem)"
+              >
+                <Switch
+                  :checked="(record as AlertApi.RuleItem).isEnabled"
+                  size="small"
+                />
+              </Popconfirm>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <Button
+                type="link"
+                size="small"
+                :disabled="!isDirty(record as AlertApi.RuleItem)"
+                :loading="savingRuleId === (record as AlertApi.RuleItem).ruleId"
+                @click="handleSave(record as AlertApi.RuleItem)"
+              >
+                保存
+              </Button>
+            </template>
+          </template>
+        </Table>
+      </div>
 
-        <!-- 存量 4 类实时值规则：保留可视化 DSL 编辑器（兼容编辑） -->
-        <template v-else>
-          <div class="mb-2 rounded p-2 text-xs" style="background: hsl(var(--status-warning) / 0.08); color: hsl(var(--status-warning))">
-            存量实时值规则（{{ ruleTypeLabel[editForm.ruleType] }}）为兼容保留，建议以指标阈值规则替代后删除。
-          </div>
-          <FormItem label="规则配置" required>
-            <ClpmAlertDslEditor
-              v-model="editForm.dsl"
-              :rule-type="editForm.ruleType"
-            />
-          </FormItem>
-        </template>
-      </Form>
-    </Modal>
-
-    <!-- 删除规则：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
-    <ClpmDangerConfirmModal
-      v-model:open="deleteOpen"
-      title="删除预警规则"
-      action="删除"
-      :target="deleteTarget?.ruleName ?? ''"
-      impact-scope="删除后不可恢复，该规则将不再参与巡检"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      require-confirm-code
-      confirm-code-placeholder="请输入规则名称以确认"
-      :loading="deleteLoading"
-      @confirm="handleDeleteConfirm"
-    />
+      <!-- 存量非预制规则（只读 + 启停） -->
+      <div
+        v-if="legacyRules.length > 0"
+        class="rounded-lg border border-gray-100 bg-white"
+      >
+        <div
+          class="flex h-9 items-center gap-2 border-b border-gray-100 px-4 text-sm font-bold text-gray-700"
+        >
+          存量实时值规则
+          <Tag>历史兼容</Tag>
+          <span class="font-normal text-xs text-gray-400">
+            早期创建的实时值规则，仅可启停 · 共 {{ legacyRules.length }} 条
+          </span>
+        </div>
+        <Table
+          :columns="legacyColumns"
+          :data-source="legacyRules"
+          :loading="loading"
+          :pagination="false"
+          row-key="ruleId"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'enabled'">
+              <Popconfirm
+                :title="
+                  (record as AlertApi.RuleItem).isEnabled
+                    ? '确认停用此规则？'
+                    : '确认启用此规则？'
+                "
+                @confirm="handleToggle(record as AlertApi.RuleItem)"
+              >
+                <Switch
+                  :checked="(record as AlertApi.RuleItem).isEnabled"
+                  size="small"
+                />
+              </Popconfirm>
+            </template>
+          </template>
+        </Table>
+      </div>
+    </div>
   </Page>
 </template>

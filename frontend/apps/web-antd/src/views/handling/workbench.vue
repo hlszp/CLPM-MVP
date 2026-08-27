@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
- * 处置工作台（/handling/workbench，v2.0 双 Tab，§8.1）
+ * 处置工作台（批次 C 五段式，§8.1）
  *
- * Tab1 建议审核（默认）：统计卡 + 筛选 + 建议表格（接受/驳回/忽略）
+ * 同组件承接三个路由入口（meta.handlingView 预设，views 不物理拆页）：
+ * - /handling/suggestions 诊断建议（Tab=建议审核）
+ * - /handling/tasks       处置任务（Tab=工单 + status 预设 PENDING,REOPENED）
+ * - /handling/orders      处置工单（Tab=工单 + status 预设 EXECUTING,VERIFYING）
+ * Tab1 建议审核：统计卡 + 筛选 + 建议表格（接受/驳回/忽略/MANUAL 编辑）
  *   + 多选已接受建议批量转工单 + 手动新增建议。
  * Tab2 工单执行：统计卡 + 筛选 + 工单表格，行点击开工单详情抽屉。
- * 深链接：?tab=orders 切 Tab2；?focus={orderId} 切 Tab2 并尝试开抽屉
- *   （旧 v1.x focus=建议 id 的链接在 v2.0 下抽屉加载失败显示降级空态）。
- * H1 后端并行开发中：接口失败按空态/错误提示降级，不白屏。
+ * 深链接契约：orders 路由 focus=工单id 开工单抽屉（404 时回落按同 id 试建议抽屉，
+ * 兼容旧 focus=建议id 存量链接）；suggestions 路由 focus=建议id 开建议详情抽屉。
+ * 接口失败按错误提示/空态降级，不白屏。
  */
 import type { TableColumnsType } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
@@ -37,10 +41,13 @@ import {
   TreeSelect,
 } from 'ant-design-vue';
 
+import { updateRunActionApi } from '#/api/diagnosis';
 import {
   acceptSuggestionApi,
   convertSuggestionsApi,
   createSuggestionApi,
+  exportHandlingOrdersApi,
+  getHandlingOrderApi,
   getHandlingOrdersApi,
   getHandlingSuggestionsApi,
   ignoreSuggestionApi,
@@ -56,6 +63,7 @@ import { useTableDensity } from '#/composables/use-table-density';
 import { IMPORTANCE_LEVEL_LABEL } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 
+import HandlingDetailDrawer from './components/handling-detail-drawer.vue';
 import OrderDetailDrawer from './components/order-detail-drawer.vue';
 import {
   ACTION_TYPE_OPTIONS,
@@ -69,6 +77,46 @@ import {
 
 const route = useRoute();
 const userStore = useUserStore();
+
+// ===========================================================================
+// 五段式路由预设（批次 C：读 route.meta.handlingView；预设只是初始值，
+// 用户进入页面后可自由改筛选）
+// ===========================================================================
+
+const VIEW_PRESETS: Record<
+  string,
+  {
+    hint: string;
+    statuses: HandlingApi.OrderStatus[];
+    tab: 'orders' | 'suggestions';
+  }
+> = {
+  suggestions: { tab: 'suggestions', statuses: [], hint: '' },
+  tasks: {
+    tab: 'orders',
+    statuses: ['PENDING', 'REOPENED'],
+    hint: '处置任务视图：覆盖“排程/下达/作废”三段——默认展示排程/下达阶段工单（待执行、重开待排程），已作废工单需手动勾选状态筛选查看，可自由调整筛选。',
+  },
+  orders: {
+    tab: 'orders',
+    statuses: ['EXECUTING', 'VERIFYING'],
+    hint: '处置工单视图：默认展示“作业/验证”阶段工单（执行中、验证待闭环），可自由调整筛选。',
+  },
+};
+
+const handlingView = computed(
+  () => (route.meta.handlingView as string | undefined) ?? '',
+);
+const viewPreset = computed(() => VIEW_PRESETS[handlingView.value]);
+const viewHint = computed(() => viewPreset.value?.hint ?? '');
+const pageTitle = computed(() => {
+  const titles: Record<string, string> = {
+    orders: '处置工单',
+    suggestions: '诊断建议',
+    tasks: '处置任务',
+  };
+  return titles[handlingView.value] ?? '处置工作台';
+});
 
 /** 流转操作角色（§7：IC_ENGINEER/PE_ENGINEER/ADMIN；SPONSOR/EXPERT 只读） */
 const canOperate = computed(() => {
@@ -103,6 +151,8 @@ watch(activeTab, (tab) => {
 const sugLoading = ref(false);
 const sugItems = ref<HandlingApi.SuggestionItem[]>([]);
 const sugTotal = ref(0);
+/** 区分“接口错误”（提示加载失败可重试）与“真空态”（暂无数据） */
+const sugLoadError = ref(false);
 
 const sugQuery = reactive({
   page: 1,
@@ -116,6 +166,7 @@ const sugQuery = reactive({
 
 async function loadSuggestions() {
   sugLoading.value = true;
+  sugLoadError.value = false;
   try {
     const res = await getHandlingSuggestionsApi({
       page: sugQuery.page,
@@ -129,7 +180,9 @@ async function loadSuggestions() {
     sugItems.value = res.items;
     sugTotal.value = res.total;
   } catch (error: any) {
-    message.error(error?.message ?? '建议清单加载失败');
+    // 接口错误（含模块未启用 404）：提示可重试，不吞成空态
+    sugLoadError.value = true;
+    message.error(error?.message ?? '建议清单加载失败，请重试');
     sugItems.value = [];
     sugTotal.value = 0;
   } finally {
@@ -448,6 +501,21 @@ const orderLoading = ref(false);
 const orderItems = ref<HandlingApi.OrderItem[]>([]);
 const orderTotal = ref(0);
 
+/** 入口多值状态预设（tasks/orders）；后端 /orders status 为单值匹配，
+ * 预设激活时按状态并行请求后合并；用户一旦改状态筛选即退出预设 */
+const orderStatusPreset = ref<HandlingApi.OrderStatus[]>([]);
+const presetActive = ref(false);
+
+/** 合并排序口径（与后端 §6.2 状态分组排序一致） */
+const ORDER_STATUS_RANK: Record<string, number> = {
+  PENDING: 0,
+  REOPENED: 1,
+  EXECUTING: 2,
+  VERIFYING: 3,
+  CLOSED: 4,
+  CANCELLED: 5,
+};
+
 const orderQuery = reactive({
   page: 1,
   pageSize: 20,
@@ -461,17 +529,42 @@ const orderQuery = reactive({
 async function loadOrders() {
   orderLoading.value = true;
   try {
-    const res = await getHandlingOrdersApi({
+    const base = {
       page: orderQuery.page,
       pageSize: orderQuery.pageSize,
-      status: orderQuery.statusTab || undefined,
       actionType: orderQuery.actionType,
       source: orderQuery.source,
       handler: orderQuery.handler.trim() || undefined,
       keyword: orderQuery.keyword.trim() || undefined,
-    });
-    orderItems.value = res.items;
-    orderTotal.value = res.total;
+    };
+    if (
+      presetActive.value &&
+      orderStatusPreset.value.length > 1 &&
+      !orderQuery.statusTab
+    ) {
+      // 多值预设：按状态并行请求合并（分页为各状态同页码近似合并）
+      const results = await Promise.all(
+        orderStatusPreset.value.map((status) =>
+          getHandlingOrdersApi({ ...base, status }),
+        ),
+      );
+      orderItems.value = results
+        .flatMap((r) => r.items)
+        .toSorted(
+          (a, b) =>
+            (ORDER_STATUS_RANK[a.status] ?? 9) -
+              (ORDER_STATUS_RANK[b.status] ?? 9) ||
+            (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''),
+        );
+      orderTotal.value = results.reduce((sum, r) => sum + r.total, 0);
+    } else {
+      const res = await getHandlingOrdersApi({
+        ...base,
+        status: orderQuery.statusTab || undefined,
+      });
+      orderItems.value = res.items;
+      orderTotal.value = res.total;
+    }
   } catch (error: any) {
     message.error(error?.message ?? '工单清单加载失败');
     orderItems.value = [];
@@ -541,7 +634,15 @@ const orderStatCards = computed(() => [
 ]);
 
 function clickOrderStatCard(key: string) {
+  presetActive.value = false;
   orderQuery.statusTab = key as HandlingApi.OrderStatus;
+  orderQuery.page = 1;
+  loadOrders();
+}
+
+/** 用户主动改状态筛选：退出预设（预设只是初始值） */
+function handleOrderStatusChange() {
+  presetActive.value = false;
   orderQuery.page = 1;
   loadOrders();
 }
@@ -557,6 +658,37 @@ function handleOrderTableChange(pag: { current?: number; pageSize?: number }) {
   loadOrders();
 }
 
+// ----- 工单 CSV 导出（GAP-4：带当前筛选参数，浏览器下载） -----
+
+const orderExporting = ref(false);
+
+async function handleOrderExport() {
+  orderExporting.value = true;
+  try {
+    const blob = await exportHandlingOrdersApi({
+      status: orderQuery.statusTab || undefined,
+      actionType: orderQuery.actionType,
+      source: orderQuery.source,
+      handler: orderQuery.handler.trim() || undefined,
+      keyword: orderQuery.keyword.trim() || undefined,
+    });
+    const url = URL.createObjectURL(
+      new Blob([blob as unknown as BlobPart], {
+        type: 'text/csv;charset=utf-8',
+      }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `handling_orders_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    message.error('导出失败');
+  } finally {
+    orderExporting.value = false;
+  }
+}
+
 // ----- 工单详情抽屉 -----
 
 const orderDrawerOpen = ref(false);
@@ -565,6 +697,52 @@ const focusOrderId = ref<null | string>(null);
 function openOrderDetail(record: HandlingApi.OrderItem) {
   focusOrderId.value = record.id;
   orderDrawerOpen.value = true;
+}
+
+// ----- 建议详情抽屉（suggestions 深链接 focus=建议id） -----
+
+const suggestionDrawerOpen = ref(false);
+const focusSuggestionId = ref<null | string>(null);
+
+function openSuggestionDetail(id: string) {
+  focusSuggestionId.value = id;
+  suggestionDrawerOpen.value = true;
+}
+
+// ----- MANUAL 建议编辑（D2 决策：仅 MANUAL+PENDING 可编辑，SYSTEM 仅保留驳回） -----
+
+const editOpen = ref(false);
+const editSaving = ref(false);
+const editTarget = ref<HandlingApi.SuggestionItem | null>(null);
+const editForm = reactive({ basis: '', content: '' });
+
+function openEditSuggestion(record: HandlingApi.SuggestionItem) {
+  editTarget.value = record;
+  editForm.content = record.content;
+  editForm.basis = record.basis ?? '';
+  editOpen.value = true;
+}
+
+async function handleEditSuggestion() {
+  if (!editTarget.value) return;
+  if (!editForm.content.trim()) {
+    message.warning('请填写建议内容');
+    return;
+  }
+  editSaving.value = true;
+  try {
+    await updateRunActionApi(editTarget.value.id, {
+      content: editForm.content.trim(),
+      basis: editForm.basis.trim() || null,
+    });
+    message.success('建议已更新');
+    editOpen.value = false;
+    refreshSugAll();
+  } catch (error: any) {
+    message.error(error?.message ?? '保存失败');
+  } finally {
+    editSaving.value = false;
+  }
 }
 
 // ----- Tab2 表格列 -----
@@ -603,14 +781,45 @@ async function loadPlantTree() {
   }
 }
 
-/** 深链接：?focus={orderId} 切 Tab2 并尝试开抽屉；?tab=orders 切 Tab2 */
-function applyUrlContext() {
+/** 深链接分流（批次 C 契约）：
+ * - suggestions 路由：focus=建议id → 开建议详情抽屉
+ * - orders/tasks 路由：focus=工单id → 开工单抽屉；GET 404 时回落按同 id
+ *   切建议 Tab 尝试建议抽屉（智能识别旧 focus=建议id 存量链接） */
+async function applyUrlContext() {
+  const preset = viewPreset.value;
+  if (preset) {
+    orderStatusPreset.value = preset.statuses;
+    presetActive.value = preset.statuses.length > 1;
+    if (preset.tab === 'orders') ordersLoaded.value = true;
+    activeTab.value = preset.tab;
+  }
   const focus = route.query.focus as string | undefined;
   if (focus) {
+    if (handlingView.value === 'suggestions') {
+      openSuggestionDetail(focus);
+      return;
+    }
     activeTab.value = 'orders';
     ordersLoaded.value = true;
-    focusOrderId.value = focus;
-    orderDrawerOpen.value = true;
+    try {
+      await getHandlingOrderApi(focus);
+      focusOrderId.value = focus;
+      orderDrawerOpen.value = true;
+    } catch (error: any) {
+      // 请求封装（RequestClient.request）对 HTTP 错误抛出的是响应体
+      // {code, message, data}（非 axios 错误，error.response 不可用），
+      // 故以业务码 ERR_NOT_FOUND（后端 404 稳定契约）判定工单不存在；
+      // 5xx / 网络错误 / ERR_PARAM（畸形 id 400）均不触发回落，走错误提示。
+      if (error?.code === 'ERR_NOT_FOUND') {
+        // 该 id 不是工单 → 按建议 id 回落尝试（抽屉内分页扫描定位，
+        // 未命中会展示“未找到该处置建议”友好提示）
+        message.info('该链接指向处置建议，已自动切换到建议视图');
+        activeTab.value = 'suggestions';
+        openSuggestionDetail(focus);
+      } else {
+        message.error(error?.message ?? '工单详情加载失败');
+      }
+    }
     return;
   }
   if ((route.query.tab as string | undefined) === 'orders') {
@@ -640,8 +849,8 @@ function handleHelp() {
   });
 }
 
-onMounted(() => {
-  applyUrlContext();
+onMounted(async () => {
+  await applyUrlContext();
   if (activeTab.value === 'suggestions') {
     refreshSugAll();
   } else {
@@ -649,6 +858,18 @@ onMounted(() => {
   }
   loadPlantTree();
 });
+
+// 同组件不同路由间跳转（suggestions/tasks/orders）：重新应用预设与 query
+watch(
+  () => route.fullPath,
+  (path, oldPath) => {
+    if (path === oldPath) return;
+    // 跳转前关闭抽屉，避免旧 focus 残留
+    orderDrawerOpen.value = false;
+    suggestionDrawerOpen.value = false;
+    applyUrlContext().then(() => refreshAll());
+  },
+);
 </script>
 
 <template>
@@ -656,7 +877,7 @@ onMounted(() => {
     <ClpmPageToolbar
       :loading="sugLoading || orderLoading"
       subtitle="建议审核 → 转工单 → 执行反馈 → 效果验证 → 闭环"
-      title="处置工作台"
+      :title="pageTitle"
     >
       <template #actions>
         <ClpmToolbarButton
@@ -677,6 +898,11 @@ onMounted(() => {
         />
       </template>
     </ClpmPageToolbar>
+
+    <!-- 入口预设提示（tasks/orders，轻量文案） -->
+    <div v-if="viewHint" class="mb-2 text-xs text-neutral-500">
+      {{ viewHint }}
+    </div>
 
     <Tabs v-model:active-key="activeTab" size="small">
       <!-- ============ Tab1 建议审核 ============ -->
@@ -761,10 +987,20 @@ onMounted(() => {
 
         <Card :body-style="{ padding: '0' }" size="small">
           <ClpmDataCanvas
-            :empty="!sugLoading && sugItems.length === 0"
+            :empty="!sugLoading && !sugLoadError && sugItems.length === 0"
             empty-text="暂无处置建议"
           >
+            <div
+              v-if="sugLoadError"
+              class="p-8 text-center text-sm text-neutral-500"
+            >
+              建议清单加载失败（接口异常或模块未启用），请
+              <Button size="small" type="link" @click="loadSuggestions"
+                >重试</Button
+              >
+            </div>
             <Table
+              v-else
               :columns="sugColumns"
               :data-source="sugItems"
               :loading="sugLoading"
@@ -827,6 +1063,16 @@ onMounted(() => {
                 </template>
                 <template v-else-if="column.key === 'actions'">
                   <div v-if="record.status === 'PENDING'" class="flex gap-1">
+                    <Button
+                      v-if="record.source === 'MANUAL' && canOperate"
+                      size="small"
+                      type="link"
+                      @click="
+                        openEditSuggestion(record as HandlingApi.SuggestionItem)
+                      "
+                    >
+                      编辑
+                    </Button>
                     <Popconfirm
                       title="确认接受该建议？接受后可勾选转工单"
                       @confirm="
@@ -884,7 +1130,7 @@ onMounted(() => {
             v-model:value="orderQuery.statusTab"
             :options="ORDER_TAB_OPTIONS"
             style="width: 110px"
-            @change="((orderQuery.page = 1), loadOrders())"
+            @change="handleOrderStatusChange"
           />
           <Select
             v-model:value="orderQuery.actionType"
@@ -918,6 +1164,13 @@ onMounted(() => {
             placeholder="编号/回路/标题"
             style="width: 180px"
             @press-enter="((orderQuery.page = 1), loadOrders())"
+          />
+          <!-- 导出 CSV（GAP-4：带当前筛选参数，上限 5000 行） -->
+          <ClpmToolbarButton
+            :loading="orderExporting"
+            icon="ant-design:download-outlined"
+            label="导出 CSV"
+            @click="handleOrderExport"
           />
         </div>
 
@@ -999,6 +1252,14 @@ onMounted(() => {
       :can-operate="canOperate"
       :order-id="focusOrderId"
       @updated="refreshOrderAll"
+    />
+
+    <!-- 建议详情抽屉（suggestions 深链接 focus / orders 404 回落） -->
+    <HandlingDetailDrawer
+      v-model:open="suggestionDrawerOpen"
+      :can-operate="canOperate"
+      :suggestion-id="focusSuggestionId"
+      @updated="refreshSugAll"
     />
 
     <!-- 驳回 Modal（原因必填） -->
@@ -1089,6 +1350,39 @@ onMounted(() => {
             :maxlength="200"
             class="flex-1"
             placeholder="工单标题（可选，缺省取首条建议内容前 50 字）"
+          />
+        </div>
+      </div>
+    </Modal>
+
+    <!-- MANUAL 建议编辑 Modal（D2：仅 MANUAL+PENDING；SYSTEM 不可编辑） -->
+    <Modal
+      v-model:open="editOpen"
+      :confirm-loading="editSaving"
+      cancel-text="取消"
+      ok-text="保存"
+      title="编辑建议（人工新增）"
+      @ok="handleEditSuggestion"
+    >
+      <div class="flex flex-col gap-3 py-2">
+        <div class="flex items-start gap-2">
+          <span class="w-16 shrink-0 pt-1 text-xs text-neutral-500">内容</span>
+          <Textarea
+            v-model:value="editForm.content"
+            :maxlength="500"
+            :rows="3"
+            class="flex-1"
+            placeholder="建议内容（必填）"
+            show-count
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="w-16 shrink-0 text-xs text-neutral-500">依据</span>
+          <Input
+            v-model:value="editForm.basis"
+            :maxlength="500"
+            class="flex-1"
+            placeholder="建议依据（可选）"
           />
         </div>
       </div>
