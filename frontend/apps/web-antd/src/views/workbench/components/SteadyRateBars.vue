@@ -116,7 +116,7 @@ function onRowClick(r: Row) {
       <div
         v-for="r in rows"
         :key="r.key"
-        class="flex cursor-pointer items-center gap-2 rounded-sm hover:bg-[#FAFBFC]"
+        class="flex cursor-pointer items-center gap-2 rounded-sm hover:bg-gray-50"
         :title="`${r.name} · 平稳率：${fmt(r.value)}%（目标 ≥${TARGET}）· 点击查看指标分析`"
         @click="onRowClick(r)"
       >

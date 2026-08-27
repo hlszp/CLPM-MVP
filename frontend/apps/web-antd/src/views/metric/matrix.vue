@@ -55,6 +55,7 @@ import {
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
+import { MULTI_SERIES_PALETTE } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 
 defineOptions({ name: 'MetricMatrix' });
@@ -729,19 +730,8 @@ const trendModalDef = ref<MetricDef | null>(null);
 const trendChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrendChart } = useEcharts(trendChartRef);
 
-/** TOP N 趋势折线调色板（10 色可辨） */
-const TREND_PALETTE = [
-  '#0d6efd',
-  '#dc3545',
-  '#198754',
-  '#b45309',
-  '#6f42c1',
-  '#0dcaf0',
-  '#d63384',
-  '#fd7e14',
-  '#20c997',
-  '#495057',
-];
+/** TOP N 趋势折线调色板（共享分类色板，见 use-loop-palettes） */
+const TREND_PALETTE = MULTI_SERIES_PALETTE;
 
 /** 取当前页该指标最差的 N 个回路（正向=最低，反向=最高；NULL 不参与） */
 function topWeakLoops(def: MetricDef, n: number): KpiSnapshotItem[] {
@@ -1179,7 +1169,7 @@ onMounted(() => {
 
 .matrix-legend {
   align-items: center;
-  color: var(--ant-color-text-tertiary, #6c757d);
+  color: var(--ant-color-text-tertiary);
   display: flex;
   flex-wrap: wrap;
   font-size: 12px;

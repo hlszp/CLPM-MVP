@@ -29,7 +29,7 @@ const win = computed(
 const { drill } = useWorkbenchDrill();
 
 /** 卡片可点击通用样式（工业风：无动画，仅 hover 边框加深） */
-const CARD_CLICK_CLASS = 'cursor-pointer hover:border-[#B9C6D6]';
+const CARD_CLICK_CLASS = 'cursor-pointer hover:border-gray-400';
 
 // 追溯矩阵 §2 下钻接线（窗口+scope 口径由 drill 自动携带）
 /** 综合评分 → 回路绩效明细（回路粒度对账，latestOnly 默认 true） */

@@ -123,7 +123,7 @@ const totalReopen = computed(() =>
         <div
           v-for="(r, i) in rows"
           :key="r.loop.loopId"
-          class="flex cursor-pointer items-center gap-[4px] rounded-[1px] px-[2px] py-[1px] transition-colors hover:bg-[#FAFBFC]"
+          class="flex cursor-pointer items-center gap-[4px] rounded-[1px] px-[2px] py-[1px] transition-colors hover:bg-gray-50"
           title="点击查看该回路处置档案"
           @click="onRowClick(r.loop)"
         >

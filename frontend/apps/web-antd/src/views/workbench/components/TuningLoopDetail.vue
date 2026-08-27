@@ -218,7 +218,7 @@ function fmtKpi(v: null | number | string | undefined, percent?: boolean): strin
           @click="toRecords"
         >查看整定记录 →</a>
         <button
-          class="flex-none rounded-[2px] bg-[#52C41A] px-[12px] py-[3px] text-[10.5px] font-semibold text-white shadow-[0_1px_0_#389E0D]"
+          class="flex-none rounded-[2px] bg-green-500 px-[12px] py-[3px] text-[10.5px] font-semibold text-white shadow-[0_1px_0_green-700]"
           title="整定仿真配置弹窗"
           @click="emit('openWorkbench', row)"
         >▶ 整定仿真</button>

@@ -66,7 +66,7 @@ function confColor(v: null | number | undefined): string {
     <div class="grid h-full grid-cols-6 divide-x divide-[#E4E7ED]">
       <!-- Col1：确诊异常 -->
       <div
-        class="flex cursor-pointer flex-col justify-center gap-0.5 px-4 py-2.5 hover:bg-[#FAFBFC]"
+        class="flex cursor-pointer flex-col justify-center gap-0.5 px-4 py-2.5 hover:bg-gray-50"
         title="点击查看诊断记录明细"
         @click="drillDiagnosed"
       >
@@ -170,7 +170,7 @@ function confColor(v: null | number | undefined): string {
 
       <!-- Col6：复核待办入口（A-03 无复核统计，仅链接不带数字） -->
       <div
-        class="flex cursor-pointer flex-col justify-center gap-0.5 px-4 py-2.5 hover:bg-[#FAFBFC]"
+        class="flex cursor-pointer flex-col justify-center gap-0.5 px-4 py-2.5 hover:bg-gray-50"
         title="点击查看待复核诊断记录"
         @click="drillReviewPending"
       >

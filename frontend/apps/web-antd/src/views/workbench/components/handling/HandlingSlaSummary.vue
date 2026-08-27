@@ -154,7 +154,7 @@ function fmtHours(n: null | number | undefined): string {
 
 <template>
   <div
-    class="flex h-full min-h-0 cursor-pointer flex-col hover:bg-[#FAFBFC]"
+    class="flex h-full min-h-0 cursor-pointer flex-col hover:bg-gray-50"
     title="点击查看处置统计报告"
     @click="onCardClick"
   >

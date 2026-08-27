@@ -46,7 +46,7 @@ function onClick() {
     :class="[
       selected
         ? 'border-[#1F4E79] bg-[#E6F7FF] ring-1 ring-[#1F4E79]'
-        : 'border-[#E4E7ED] hover:border-[#1F4E79] hover:bg-[#FAFBFC]',
+        : 'border-[#E4E7ED] hover:border-[#1F4E79] hover:bg-gray-50',
       dimmed && 'opacity-40',
     ]"
     :style="{ borderLeft: `3px solid ${slaColor}` }"

@@ -140,7 +140,7 @@ function riskColor(risk: WorkbenchApi.AssessmentSummary['risks'][number]): strin
           class="mt-0.5"
         >
           <a
-            class="cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
+            class="cursor-pointer text-[11.5px] text-blue-800 hover:underline"
             @click="onLink(link.action)"
             >{{ link.text }} →</a
           >

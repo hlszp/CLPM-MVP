@@ -163,7 +163,7 @@ function inProgress(s: StaffLoadItem): number {
           >{{ s.overdue }}</span>
           <!-- 下钻链接：该处理人在办工单列表（不影响行点击过滤联动） -->
           <a
-            class="flex-none cursor-pointer px-[2px] text-[11px] leading-none text-[#1F4E79] hover:opacity-70"
+            class="flex-none cursor-pointer px-[2px] text-[11px] leading-none text-blue-800 hover:opacity-70"
             :title="`查看 ${s.handler || '未指派'} 的在办工单`"
             @click.stop="onDrillHandler(s.handler)"
           >↗</a>

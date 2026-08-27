@@ -100,7 +100,7 @@ const notEvaluated = computed(() => Math.max(0, totalAll.value - totalLoop.value
       <div
         v-for="pl in sorted"
         :key="pl.id ?? pl.name"
-        class="flex cursor-pointer items-center gap-1.5 rounded border border-[#EBEEF5] px-1.5 py-1.5 hover:border-[#B9C6D6]"
+        class="flex cursor-pointer items-center gap-1.5 rounded border border-gray-200 px-1.5 py-1.5 hover:border-gray-400"
         title="点击查看该装置指标分析"
         @click="onRowClick(pl)"
       >

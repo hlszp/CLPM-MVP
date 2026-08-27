@@ -124,7 +124,7 @@ function tipText(unitName: string, metricLabel: string, v: null | number): strin
         <div
           v-for="(v, ci) in u.values"
           :key="ci"
-          class="flex h-6 cursor-pointer items-center justify-center rounded text-[11px] font-mono tabular-nums text-gray-700 transition-none hover:ring-1 hover:ring-[#1F4E79]"
+          class="flex h-6 cursor-pointer items-center justify-center rounded text-[11px] font-mono tabular-nums text-gray-700 transition-none hover:ring-1 hover:ring-blue-800"
           :style="
             v === null || v === undefined
               ? NA_STYLE
