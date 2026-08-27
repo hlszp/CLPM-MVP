@@ -37,7 +37,9 @@ export namespace LoopApi {
     | 'last_2_hours'
     | 'last_4_hours'
     | 'last_8_hours'
+    | 'last_10_minutes'
     | 'last_24_hours'
+    | 'last_30_minutes'
     | 'last_72_hours';
 
   /** KPI 状态（IDS v3.2 §2.2.14） */
@@ -454,6 +456,12 @@ export namespace LoopApi {
      * 未命中返回空，不回退其他回路。
      */
     loopId?: string;
+    /** 按实时控制模式筛选（与列表 modeLabel 口径一致） */
+    controlMode?: 'Auto' | 'Cascade' | 'Manual';
+    /** 排序字段（默认 score：评分升序，最差在前） */
+    sortBy?: 'score' | 'tagName';
+    /** 排序方向（默认 asc） */
+    sortOrder?: 'asc' | 'desc';
   }
 
   /** 回路监控列表聚合统计（E-1，服务端返回，不分页全量范围） */
@@ -730,9 +738,10 @@ export function updateLoopTagMappingApi(
 export function getLoopMonitorDetailApi(
   loopId: string,
   trendWindow: LoopApi.TrendWindow = 'last_24_hours',
+  customRange?: { tsEnd: string; tsStart: string },
 ) {
   return requestClient.get<LoopApi.MonitorDetail>(`/loops/${loopId}/monitor`, {
-    params: { trendWindow },
+    params: { trendWindow, ...customRange },
   });
 }
 

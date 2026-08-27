@@ -18,6 +18,7 @@ import type { HandlingApi } from '#/api/handling';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../../utils/drill';
 import HelpBubble from '../HelpBubble.vue';
 
 interface SlaBreakdown {
@@ -37,6 +38,13 @@ const props = withDefaults(
     monthly: () => [],
   },
 );
+
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §6 下钻：卡片点击 → 统计报告·处置报告（无额外参数） */
+function onCardClick() {
+  drill('handling', '/reports/handling', {});
+}
 
 const helpItems = [
   { label: '环形图', text: 'SLA 及时率=正常档占比（超期红/临期橙/正常绿）；无排程不计入分母。' },
@@ -145,7 +153,11 @@ function fmtHours(n: null | number | undefined): string {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <div
+    class="flex h-full min-h-0 cursor-pointer flex-col hover:bg-[#FAFBFC]"
+    title="点击查看处置统计报告"
+    @click="onCardClick"
+  >
     <div
       class="flex h-[22px] flex-none items-center border-b border-[#E4E7ED] px-[7px] text-[10.5px] font-semibold text-[#1F4E79]"
     >
@@ -153,13 +165,15 @@ function fmtHours(n: null | number | undefined): string {
         class="mr-[5px] inline-block h-[11px] w-[3px] rounded-[2px] bg-[#52C41A]"
       ></span>
       SLA 汇总 · 及时率
-      <HelpBubble
-        :size="12"
-        theme="blue"
-        title="SLA 汇总说明"
-        :items="helpItems"
-        class="ml-1"
-      />
+      <span @click.stop>
+        <HelpBubble
+          :size="12"
+          theme="blue"
+          title="SLA 汇总说明"
+          :items="helpItems"
+          class="ml-1"
+        />
+      </span>
     </div>
     <div class="flex min-h-0 flex-1 flex-col items-center overflow-hidden p-[4px_6px]">
       <!-- 环形图 + 中心及时率 -->

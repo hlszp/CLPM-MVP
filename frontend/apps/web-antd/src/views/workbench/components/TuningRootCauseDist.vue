@@ -14,17 +14,44 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
 import HelpBubble from './HelpBubble.vue';
 
 interface Props { rows: WorkbenchApi.TuneQueueItem[]; }
 const props = defineProps<Props>();
 
+const { drill } = useWorkbenchDrill();
+
+type Cause = 'excitation' | 'model_mismatch' | 'oscillation' | 'valve_bias';
+
+/**
+ * 前端 4 类根因 → 诊断 category 字典（8 类，classification.py）映射（已核验）：
+ * - 振荡类 → TUNING：整定域语境的振荡即控制器过激/过保守（诊断分类级 5 归 TUNING；
+ *   仅无外扰证据的纯振荡才归 PROCESS），下钻意图是找参数问题记录；
+ * - 阀位偏差 → VALVE（阀门/执行机构问题，精确对应）；
+ * - 激励不足 → DATA_INSUFFICIENT：激励不足属数据/适用性问题（fitness L3 待激励），
+ *   诊断 8 类中最近邻为「数据不足/无法判定」，非参数问题；
+ * - 模型失配 → TUNING：处置方向为重新辨识+整定参数（TUNING direction），
+ *   原映射 PROCESS（工艺/外扰）语义不符，已修正。
+ */
+const CAUSE_CATEGORY_MAP: Record<Cause, string> = {
+  excitation: 'DATA_INSUFFICIENT',
+  model_mismatch: 'TUNING',
+  oscillation: 'TUNING',
+  valve_bias: 'VALVE',
+};
+
+/** 追溯矩阵 §5 下钻：饼图分段点击 → 诊断记录（category 口径） */
+function onSegClick(cause: Cause) {
+  drill('diagnosis', '/diagnosis/records', {
+    category: CAUSE_CATEGORY_MAP[cause],
+  });
+}
+
 const helpItems = [
   { label: '饼图', text: '4 类劣化根因占比：振荡类 / 阀位偏差 / 激励不足 / 模型失配。' },
   { label: '分类规则', text: '按建议来源关键词识别；无法识别时按评分阈值 fallback：<65 振荡 / <68 阀位 / <73 激励 / ≥73 模型失配。' },
 ];
-
-type Cause = 'excitation' | 'model_mismatch' | 'oscillation' | 'valve_bias';
 
 const CAUSE_META: { color: string; key: Cause; label: string }[] = [
   { key: 'oscillation',    color: '#FF4D4F', label: '振荡类' },
@@ -111,7 +138,11 @@ const hasData = computed(() => total.value > 0);
               :fill="seg.color"
               stroke="#fff"
               stroke-width="0.5"
-            />
+              class="cursor-pointer"
+              @click="onSegClick(seg.key)"
+            >
+              <title>{{ seg.label }} · {{ seg.count }} 条 · 点击查看诊断记录</title>
+            </path>
           </svg>
           <div v-else class="flex flex-col items-center justify-center text-[10px] text-[#8C8C8C]">
             <span>暂无劣化</span>

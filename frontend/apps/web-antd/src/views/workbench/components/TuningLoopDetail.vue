@@ -25,6 +25,7 @@ import { getVerificationDataApi } from '#/api/tuning';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
+import { useWorkbenchDrill } from '../utils/drill';
 import HelpBubble from './HelpBubble.vue';
 
 interface Props { row: null | WorkbenchApi.TuneQueueItem; }
@@ -32,6 +33,14 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'openWorkbench', row: WorkbenchApi.TuneQueueItem): void;
 }>();
+
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §5 下钻：详情区"查看整定记录" → 整定记录页（loopId 口径） */
+function toRecords() {
+  if (!props.row?.loop_id) return;
+  drill('tuning', '/tuning/records', { loopId: props.row.loop_id });
+}
 
 const trendHelpItems = [
   { label: '数据源', text: '调 /tuning/verification/data 接口，pointTime=当前时刻，windowHours=24，取 before 窗口（now-24h~now）的 PV/SP/OP 序列。' },
@@ -203,8 +212,13 @@ function fmtKpi(v: null | number | string | undefined, percent?: boolean): strin
         <span class="overflow-hidden text-[9.5px] text-[#8C8C8C] truncate">
           {{ row.algorithm ?? '—' }} · 来源：{{ row.source }}
         </span>
+        <a
+          class="ml-auto flex-none cursor-pointer text-[10px] text-[#1F4E79] hover:underline"
+          title="查看该回路的整定记录"
+          @click="toRecords"
+        >查看整定记录 →</a>
         <button
-          class="ml-auto flex-none rounded-[2px] bg-[#52C41A] px-[12px] py-[3px] text-[10.5px] font-semibold text-white shadow-[0_1px_0_#389E0D]"
+          class="flex-none rounded-[2px] bg-[#52C41A] px-[12px] py-[3px] text-[10.5px] font-semibold text-white shadow-[0_1px_0_#389E0D]"
           title="整定仿真配置弹窗"
           @click="emit('openWorkbench', row)"
         >▶ 整定仿真</button>

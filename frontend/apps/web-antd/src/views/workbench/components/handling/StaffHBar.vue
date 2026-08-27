@@ -15,6 +15,7 @@ import type { StaffLoadItem } from './types';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../../utils/drill';
 import HelpBubble from '../HelpBubble.vue';
 
 const props = defineProps<{
@@ -25,6 +26,16 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', handler: string): void;
 }>();
+
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §6 下钻：行尾 ↗ → 工单列表（该处理人在办集合口径） */
+function onDrillHandler(handler: string) {
+  drill('handling', '/handling/orders', {
+    handler,
+    status: 'PENDING,REOPENED,EXECUTING,VERIFYING',
+  });
+}
 
 const helpItems = [
   { label: '堆叠条', text: '在办数=条宽（待办橙/处理中蓝/验证中紫），按处理人聚合，跨人员可比。' },
@@ -150,6 +161,12 @@ function inProgress(s: StaffLoadItem): number {
             v-if="s.overdue > 0"
             class="flex-none rounded-[8px] bg-[#FF4D4F] px-[4px] text-[8.5px] font-bold text-white"
           >{{ s.overdue }}</span>
+          <!-- 下钻链接：该处理人在办工单列表（不影响行点击过滤联动） -->
+          <a
+            class="flex-none cursor-pointer px-[2px] text-[11px] leading-none text-[#1F4E79] hover:opacity-70"
+            :title="`查看 ${s.handler || '未指派'} 的在办工单`"
+            @click.stop="onDrillHandler(s.handler)"
+          >↗</a>
         </div>
       </template>
       <div

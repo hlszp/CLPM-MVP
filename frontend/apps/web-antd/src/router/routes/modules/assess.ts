@@ -3,16 +3,17 @@ import type { RouteRecordRaw } from 'vue-router';
 /**
  * 评估路由模块（IA 重构 Phase A·职能轴）
  *
- * 子菜单：性能总览 / 指标分析 / 回路性能 / 评估记录 / 评估任务
+ * 子菜单：性能总览 / 指标分析 / 回路性能 / 指标矩阵 / 评估记录 / 评估任务
  * KPI 报表已迁入「统计报告-绩效报告」（/reports/performance），旧路径保留 redirect。
  * 指标配置已迁入配置模块（/config/metric），见 config.ts
  * 评估记录（KPI 快照明细）由 Tab 提升为二级菜单（/metric/history，IA 重构二期）。
  * 指标分析（指标维度横切，docs/MVP设计/12-指标分析页设计方案.md，2026-08-25）。
+ * 指标矩阵（全回路 × 全指标集中查看，docs/MVP设计/15-回路指标矩阵页设计方案.md，2026-08-27）。
  *
  * 角色权限（PRD §3 + 实现契约 §5）：
  * - ADMIN：全部
  * - IC_ENGINEER：全部（含评估记录/评估任务）
- * - PE_ENGINEER / SPONSOR：查看（性能总览/指标分析/回路性能）
+ * - PE_ENGINEER / SPONSOR：查看（性能总览/指标分析/回路性能/指标矩阵）
  * - EXPERT：不可见
  *
  * leaf 路径保留 /metric/* 绝对路径（路径稳定策略，仅重命名高价值配置项）。
@@ -62,6 +63,18 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:git-branch',
           title: '回路性能',
+        },
+      },
+      {
+        name: 'AssessMatrix',
+        path: '/metric/matrix',
+        component: () => import('#/views/metric/matrix.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          // URL query 为真相源（tab/window/plantNodeId/loopId），控件切换 replace query
+          fullPathKey: false,
+          icon: 'lucide:table-2',
+          title: '指标矩阵',
         },
       },
       {

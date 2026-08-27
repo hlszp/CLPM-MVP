@@ -11,12 +11,15 @@
  * - 抽屉内"进入回路工作台"携带 from=/monitor/loops 及筛选上下文
  */
 import type { LoopApi } from '#/api/loop';
+import type { PlantNodeApi } from '#/api/plant-node';
 
-import { ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
-import { Input, Tooltip } from 'ant-design-vue';
+import { Input, Select, Tooltip, TreeSelect } from 'ant-design-vue';
 
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
+import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import LoopDetailDrawer from '#/components/monitor/loop-detail-drawer.vue';
 import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import { useMonitorContext } from '#/composables/use-monitor-context';
@@ -24,6 +27,36 @@ import { useMonitorContext } from '#/composables/use-monitor-context';
 defineOptions({ name: 'MonitorLoops' });
 
 const monitorCtx = useMonitorContext();
+
+// ===== 装置筛选（工厂层级树，URL 真相源） =====
+const plantTree = ref<PlantNodeApi.PlantNode[]>([]);
+
+onMounted(async () => {
+  try {
+    plantTree.value = await getPlantNodeTreeApi();
+  } catch {
+    plantTree.value = [];
+  }
+});
+
+const plantNodeId = computed<string | undefined>({
+  get: () => monitorCtx.plantNodeId.value ?? undefined,
+  set: (val) => monitorCtx.update({ plantNodeId: val ?? null }),
+});
+
+// ===== 模式筛选（实时控制模式，与列表 modeLabel 口径一致） =====
+const controlModeOptions = [
+  { label: '自动（Auto）', value: 'Auto' },
+  { label: '串级（Cascade）', value: 'Cascade' },
+  { label: '手动（Manual）', value: 'Manual' },
+];
+
+const controlMode = computed<'Auto' | 'Cascade' | 'Manual' | undefined>({
+  get: () =>
+    (monitorCtx.controlMode.value as 'Auto' | 'Cascade' | 'Manual' | null) ??
+    undefined,
+  set: (val) => monitorCtx.update({ controlMode: val ?? null }),
+});
 
 // ===== 关键词搜索（防抖 300ms）=====
 const keyword = ref(monitorCtx.keyword.value);
@@ -53,6 +86,15 @@ function handleLoopClick(_loopId: string, record: LoopApi.MonitorListItem) {
   drawerOpen.value = true;
 }
 
+// ===== 操作列"趋势" → 趋势图弹窗 =====
+const trendOpen = ref(false);
+const trendLoop = ref<LoopApi.MonitorListItem | null>(null);
+
+function handleTrendClick(record: LoopApi.MonitorListItem) {
+  trendLoop.value = record;
+  trendOpen.value = true;
+}
+
 // ===== 抽屉内进入回路工作台（携带监控上下文）=====
 function handleGotoWorkbench(loopId: string) {
   drawerOpen.value = false;
@@ -72,6 +114,22 @@ function handleGotoWorkbench(loopId: string) {
     >
       <template #actions>
         <div class="flex items-center gap-2">
+          <TreeSelect
+            v-model:value="plantNodeId"
+            :tree-data="plantTree"
+            :field-names="{ label: 'name', value: 'id', children: 'children' }"
+            allow-clear
+            placeholder="全部装置"
+            class="!w-48"
+            tree-default-expand-all
+          />
+          <Select
+            v-model:value="controlMode"
+            :options="controlModeOptions"
+            allow-clear
+            placeholder="模式"
+            class="!w-36"
+          />
           <Input
             v-model:value="keyword"
             allow-clear
@@ -94,7 +152,9 @@ function handleGotoWorkbench(loopId: string) {
       <LoopFleetView
         :show-stats="true"
         :show-auto-refresh="true"
+        :show-toolbar="false"
         @loop-click="handleLoopClick"
+        @trend-click="handleTrendClick"
       />
     </div>
 
@@ -103,6 +163,13 @@ function handleGotoWorkbench(loopId: string) {
       v-model:open="drawerOpen"
       :loop="drawerLoop"
       @goto-workbench="handleGotoWorkbench"
+    />
+
+    <!-- 回路趋势弹窗（历史/实时，PV/SP/OP/MODE） -->
+    <LoopTrendModal
+      v-model:open="trendOpen"
+      :loop-id="trendLoop?.loopId ?? null"
+      :tag-name="trendLoop?.tagName ?? ''"
     />
   </div>
 </template>

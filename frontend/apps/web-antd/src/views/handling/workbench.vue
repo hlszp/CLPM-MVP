@@ -46,6 +46,7 @@ import {
   acceptSuggestionApi,
   convertSuggestionsApi,
   createSuggestionApi,
+  exportHandlingOrdersApi,
   getHandlingOrderApi,
   getHandlingOrdersApi,
   getHandlingSuggestionsApi,
@@ -657,6 +658,37 @@ function handleOrderTableChange(pag: { current?: number; pageSize?: number }) {
   loadOrders();
 }
 
+// ----- 工单 CSV 导出（GAP-4：带当前筛选参数，浏览器下载） -----
+
+const orderExporting = ref(false);
+
+async function handleOrderExport() {
+  orderExporting.value = true;
+  try {
+    const blob = await exportHandlingOrdersApi({
+      status: orderQuery.statusTab || undefined,
+      actionType: orderQuery.actionType,
+      source: orderQuery.source,
+      handler: orderQuery.handler.trim() || undefined,
+      keyword: orderQuery.keyword.trim() || undefined,
+    });
+    const url = URL.createObjectURL(
+      new Blob([blob as unknown as BlobPart], {
+        type: 'text/csv;charset=utf-8',
+      }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `handling_orders_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    message.error('导出失败');
+  } finally {
+    orderExporting.value = false;
+  }
+}
+
 // ----- 工单详情抽屉 -----
 
 const orderDrawerOpen = ref(false);
@@ -1132,6 +1164,13 @@ watch(
             placeholder="编号/回路/标题"
             style="width: 180px"
             @press-enter="((orderQuery.page = 1), loadOrders())"
+          />
+          <!-- 导出 CSV（GAP-4：带当前筛选参数，上限 5000 行） -->
+          <ClpmToolbarButton
+            :loading="orderExporting"
+            icon="ant-design:download-outlined"
+            label="导出 CSV"
+            @click="handleOrderExport"
           />
         </div>
 

@@ -562,6 +562,16 @@ export function getHandlingOrdersApi(params: HandlingApi.OrderQuery) {
   );
 }
 
+/** 工单 CSV 导出（GAP-4：筛选同 /orders，上限 5000 行；返回文本，页面侧构造 Blob 下载） */
+export function exportHandlingOrdersApi(
+  params: Omit<HandlingApi.OrderQuery, 'page' | 'pageSize'>,
+) {
+  return requestClient.get<string>('/handling/orders/export', {
+    params,
+    responseType: 'blob',
+  });
+}
+
 /** 工单详情（清单行 + action_detail/feedback_log/KPI 固化/来源建议摘要，§6.2） */
 export function getHandlingOrderApi(id: string) {
   return requestClient.get<HandlingApi.OrderDetail>(`/handling/orders/${id}`);

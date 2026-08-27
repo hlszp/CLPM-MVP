@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 诊断摘要带（原型 #tab-diag Row1 c12 · 5 项横向并排）
+ * 诊断摘要带（原型 #tab-diag Row1 c12 · 5 项横向并排 + 复核待办入口）
  *
  * 字段顺序对齐原型截图：
  *   Col1 确诊异常（近 24h · 条次 · 环比▼减少3）
@@ -8,16 +8,33 @@
  *   Col3 平均诊断时延（秒 · 目标≤60s → 达标 / 未达标）
  *   Col4 诊断置信度均值（0~1 · ≥0.8 高置信 · 高置信N/总数M）
  *   Col5 诊断引擎版本（v3.2.1 · 已启用 · 连续运行 N 天 · 规则库 YYYY-MM-DD 更新）
+ *   Col6 复核待办入口（A-03 无复核统计属正常，仅链接不带数字，
+ *       下钻诊断记录 reviewStatus=PENDING）
  *
- * 视觉：纯卡片 header 外嵌 5 格 flex-1，主数字 20px semi，副文 11px 灰，
+ * 视觉：纯卡片 header 外嵌格 flex-1，主数字 20px semi，副文 11px 灰，
  *       ▼用绿色（减少=好）▲用红色（增加=坏），delta=null 不显示。
  */
 import type { WorkbenchApi } from '#/api/workbench';
+
+import { useWorkbenchDrill } from '../utils/drill';
 
 defineProps<{
   band: null | undefined | WorkbenchApi.DgSummaryBand;
   window?: string;
 }>();
+
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §4 下钻：确诊异常 → 诊断记录（SUCCESS 口径，窗口由 drill 携带） */
+function drillDiagnosed() {
+  drill('diagnosis', '/diagnosis/records', { status: 'SUCCESS' });
+}
+
+/** 复核待办入口：下钻诊断记录（reviewStatus=PENDING 深链；
+ * A-03 无复核统计属正常，入口不带数字，仅链接样式） */
+function drillReviewPending() {
+  drill('diagnosis', '/diagnosis/records', { reviewStatus: 'PENDING' });
+}
 
 /** 环比文案与色（▼减少 = 绿 = 工业惯例下降 = 改善） */
 function deltaText(delta: null | number | undefined): null | { color: string; text: string } {
@@ -46,9 +63,13 @@ function confColor(v: null | number | undefined): string {
       <!-- 预留：原型摘要带无标题栏，直接平铺 5 项 -->
     </div>
 
-    <div class="grid h-full grid-cols-5 divide-x divide-[#E4E7ED]">
+    <div class="grid h-full grid-cols-6 divide-x divide-[#E4E7ED]">
       <!-- Col1：确诊异常 -->
-      <div class="flex flex-col justify-center gap-0.5 px-4 py-2.5">
+      <div
+        class="flex cursor-pointer flex-col justify-center gap-0.5 px-4 py-2.5 hover:bg-[#FAFBFC]"
+        title="点击查看诊断记录明细"
+        @click="drillDiagnosed"
+      >
         <div class="flex items-baseline gap-1.5">
           <span class="text-[22px] font-semibold tabular-nums text-gray-800">
             {{ band?.diag_count ?? 0 }}
@@ -145,6 +166,19 @@ function confColor(v: null | number | undefined): string {
           连续运行 {{ band?.engine_running_days ?? 0 }} 天 · 规则库
           {{ band?.engine_rulebase_updated_at ?? '—' }} 更新
         </div>
+      </div>
+
+      <!-- Col6：复核待办入口（A-03 无复核统计，仅链接不带数字） -->
+      <div
+        class="flex cursor-pointer flex-col justify-center gap-0.5 px-4 py-2.5 hover:bg-[#FAFBFC]"
+        title="点击查看待复核诊断记录"
+        @click="drillReviewPending"
+      >
+        <div class="flex items-center gap-1">
+          <span class="text-[13px] font-semibold text-gray-700">复核待办</span>
+          <span class="text-[11px] text-gray-400">→</span>
+        </div>
+        <div class="text-[11px] text-gray-500">诊断结论人工复核</div>
       </div>
     </div>
   </div>

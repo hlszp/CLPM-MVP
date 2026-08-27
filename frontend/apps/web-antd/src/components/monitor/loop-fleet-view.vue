@@ -53,15 +53,20 @@ withDefaults(
     showAutoRefresh?: boolean;
     /** 是否显示统计卡片区域 */
     showStats?: boolean;
+    /** 是否显示表格工具条（标题 + 导出 + WS 开关） */
+    showToolbar?: boolean;
   }>(),
   {
     showStats: true,
     showAutoRefresh: true,
+    showToolbar: true,
   },
 );
 
 const emit = defineEmits<{
   (e: 'loopClick', loopId: string, record: LoopApi.MonitorListItem): void;
+  /** 操作列"趋势"点击：弹出该回路趋势图 */
+  (e: 'trendClick', record: LoopApi.MonitorListItem): void;
 }>();
 
 const { modeLabelColor } = useLoopPalettes();
@@ -90,9 +95,10 @@ const modeStats = ref<Record<string, number>>({});
 /** E-1 服务端聚合统计（全量不分页，五档计数/平均分/WORSENED/MODE分布） */
 const aggregate = ref<LoopApi.MonitorAggregate | null>(null);
 
-// ===== 表格列定义（对齐 02 回路列表标杆 v1.4：12 默认列 + 组态字段收起）=====
-// 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 回路等级 / 性能评分 / SP / PV / OP / MODE / 可信度 / 操作
-// 量程/单位为组态字段，默认收起（buildDefaultColumnConfigs 中设 visible=false）
+// ===== 表格列定义 =====
+// 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 量程 / 模式 / SP / PV / OP / 回路等级 / 性能评分 / 适用性 / 操作
+// 量程列合并"量程+单位"（形如 0-100℃）；可信度不在列表展示（详情抽屉保留）
+// 位号/评分列支持服务端排序（sorter 在 visibleColumns 中注入受控 sortOrder）
 const columns: TableColumnsType = [
   {
     title: '回路位号',
@@ -123,23 +129,22 @@ const columns: TableColumnsType = [
     width: 100,
     align: 'center',
   },
+  { title: '量程', key: 'range', width: 110, align: 'center' },
+  { title: '模式', key: 'mode', width: 110, align: 'center' },
+  { title: '设定值 SP', key: 'sp', width: 90, align: 'center' },
+  { title: '测量值 PV', key: 'pv', width: 90, align: 'center' },
+  { title: '输出值 OP(%)', key: 'op', width: 110, align: 'center' },
   { title: '性能等级', key: 'grade', width: 80, align: 'center' },
-  // P2 IA优化：适用性等级列（位号等级列右侧）
-  { title: '适用性', key: 'fitnessLevel', width: 95, align: 'center' },
   {
     title: '性能评分',
     dataIndex: 'score',
     key: 'score',
-    width: 110,
-    align: 'right',
+    width: 95,
+    align: 'center',
   },
-  { title: '设定值 SP', key: 'sp', width: 90, align: 'right' },
-  { title: '测量值 PV', key: 'pv', width: 90, align: 'right' },
-  { title: '输出值 OP(%)', key: 'op', width: 90, align: 'right' },
-  { title: 'MODE', key: 'mode', width: 110, align: 'center' },
-  { title: '可信度', key: 'dataHealth', width: 100, align: 'center' },
-  { title: '测量量程', key: 'pvRange', width: 100, align: 'center' },
-  { title: '单位', key: 'pvUnit', width: 55, align: 'center' },
+  // P2 IA优化：适用性等级列
+  { title: '适用性', key: 'fitnessLevel', width: 95, align: 'center' },
+  { title: '操作', key: 'action', width: 120, align: 'center', fixed: 'right' },
 ];
 
 function getColumnKey(col: any): string {
@@ -153,12 +158,10 @@ function getColumnKey(col: any): string {
 }
 
 function buildDefaultColumnConfigs(): ColumnConfig[] {
-  // 组态字段（量程/单位）默认收起，进列配置可手动开启
-  const hiddenKeys = new Set(['pvRange', 'pvUnit']);
   return columns.map((c: any, i: number) => ({
     key: getColumnKey(c),
     label: String(c.title ?? ''),
-    visible: !hiddenKeys.has(getColumnKey(c)),
+    visible: true,
     order: i,
   }));
 }
@@ -168,6 +171,12 @@ const columnConfigs = ref<ColumnConfig[]>(
     ? preferences.value.columns
     : buildDefaultColumnConfigs(),
 );
+
+/** 服务端排序状态（默认：评分升序，最差在前，对齐 C1-1 增量巡检口径） */
+const sortState = reactive<{
+  field: 'score' | 'tagName';
+  order: 'ascend' | 'descend';
+}>({ field: 'score', order: 'ascend' });
 
 const visibleColumns = computed<TableColumnsType>(() => {
   const configMap = new Map(
@@ -185,6 +194,22 @@ const visibleColumns = computed<TableColumnsType>(() => {
       const aOrder = configMap.get(getColumnKey(a))?.order ?? 99;
       const bOrder = configMap.get(getColumnKey(b))?.order ?? 99;
       return aOrder - bOrder;
+    })
+    .map((c: any) => {
+      // 位号/评分列：注入受控服务端排序（升/降两档切换）
+      const key = getColumnKey(c);
+      if (key === 'tagName' || key === 'score') {
+        return {
+          ...c,
+          sorter: true,
+          sortDirections: ['ascend', 'descend'],
+          sortOrder:
+            sortState.field === (key === 'tagName' ? 'tagName' : 'score')
+              ? sortState.order
+              : false,
+        };
+      }
+      return c;
     });
 });
 
@@ -354,15 +379,20 @@ async function loadList() {
       plantNodeId: monitorCtx.plantNodeId.value ?? undefined,
       loopType: (monitorCtx.loopType.value as LoopApi.LoopType) || undefined,
       keyword: monitorCtx.keyword.value || undefined,
+      controlMode:
+        (monitorCtx.controlMode.value as LoopApi.MonitorQueryParams['controlMode']) ??
+        undefined,
+      sortBy: sortState.field,
+      sortOrder: sortState.order === 'ascend' ? 'asc' : 'desc',
       page: query.page,
       pageSize: query.pageSize,
     });
-    // 标杆 v1.4：默认按评分升序（最差在前）；服务端 C1-1 已排序，前端作为双保险
-    monitorList.value = data.items.toSorted((a, b) => {
-      const sa = a.score ?? 999;
-      const sb = b.score ?? 999;
-      return sa - sb;
-    });
+    // 默认（评分升序）时前端再按评分升序兜底（与服务端 C1-1 口径一致的双保险）；
+    // 用户切换排序后以服务端返回顺序为准
+    monitorList.value =
+      sortState.field === 'score' && sortState.order === 'ascend'
+        ? data.items.toSorted((a, b) => (a.score ?? 999) - (b.score ?? 999))
+        : data.items;
     total.value = data.total;
     aggregate.value = data.aggregate ?? null;
   } catch (error: any) {
@@ -389,7 +419,21 @@ async function loadLoopTypeStats() {
   }
 }
 
-function handleTableChange(pagination: TablePaginationConfig) {
+function handleTableChange(
+  pagination: TablePaginationConfig,
+  _filters: any,
+  sorter: any,
+) {
+  // 排序切换（升/降两档；取消排序回到默认评分升序）
+  const s = Array.isArray(sorter) ? sorter[0] : sorter;
+  const key = s?.columnKey ?? s?.column?.key;
+  if (s?.order && (key === 'tagName' || key === 'score')) {
+    sortState.field = key;
+    sortState.order = s.order;
+  } else {
+    sortState.field = 'score';
+    sortState.order = 'ascend';
+  }
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize ?? query.pageSize;
   loadList();
@@ -409,7 +453,7 @@ function exportCsv() {
     'SP',
     'PV',
     'OP',
-    'MODE',
+    '模式',
     '性能评分',
   ];
   const rows = monitorList.value.map((m) => [
@@ -444,6 +488,11 @@ function handleRowClick(record: LoopApi.MonitorListItem) {
   emit('loopClick', record.loopId, record);
 }
 
+/** 操作列"趋势"：弹出该回路趋势图弹窗 */
+function handleTrendClick(record: LoopApi.MonitorListItem) {
+  emit('trendClick', record);
+}
+
 // ===== 工具函数 =====
 function modeColor(modeLabel: null | string | undefined): string {
   return modeLabelColor(modeLabel);
@@ -451,6 +500,14 @@ function modeColor(modeLabel: null | string | undefined): string {
 
 function modeText(record: LoopApi.MonitorListItem): string {
   return record.currentValues?.modeLabel || '—';
+}
+
+/** 量程格式化：min-max + 单位（形如 0-100℃），任一端缺失返回 null */
+function formatRange(record: LoopApi.MonitorListItem): null | string {
+  const min = record.pvRange?.min;
+  const max = record.pvRange?.max;
+  if (min == null || max == null) return null;
+  return `${min}-${max}${record.pvUnit ?? ''}`;
 }
 
 // ===== 回路等级（对齐 GRADE_CONFIG / useScoreColor GB/T 44693.2-2024 §6.3 默认阈值）=====
@@ -508,6 +565,7 @@ watch(
     monitorCtx.plantNodeId.value,
     monitorCtx.loopType.value,
     monitorCtx.keyword.value,
+    monitorCtx.controlMode.value,
     monitorCtx.attentionOnly.value,
   ],
   () => {
@@ -533,7 +591,7 @@ defineExpose({
 <template>
   <div class="loop-fleet-view">
     <!-- 表格工具条：左侧标题 + 右侧操作（导出/密度/自动刷新） -->
-    <div class="loop-fleet-view__toolbar">
+    <div v-if="showToolbar" class="loop-fleet-view__toolbar">
       <div class="loop-fleet-view__title">
         <span class="text-[15px] font-semibold text-gray-800">回路清单</span>
       </div>
@@ -697,7 +755,7 @@ defineExpose({
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'tagName'">
           <a
-            class="cursor-pointer font-medium text-blue-600 hover:underline"
+            class="cursor-pointer text-blue-600 hover:underline"
             role="button"
             tabindex="0"
             @click="handleRowClick(record as LoopApi.MonitorListItem)"
@@ -706,26 +764,34 @@ defineExpose({
             {{ (record as LoopApi.MonitorListItem).tagName }}
           </a>
         </template>
-        <template v-else-if="column.key === 'pvRange'">
+        <template v-else-if="column.key === 'action'">
+          <div class="flex items-center justify-center gap-3">
+            <a
+              class="cursor-pointer text-blue-600 hover:underline"
+              role="button"
+              tabindex="0"
+              @click="handleTrendClick(record as LoopApi.MonitorListItem)"
+              @keydown.enter="handleTrendClick(record as LoopApi.MonitorListItem)"
+            >
+              趋势
+            </a>
+            <a
+              class="cursor-pointer text-blue-600 hover:underline"
+              role="button"
+              tabindex="0"
+              @click="handleRowClick(record as LoopApi.MonitorListItem)"
+              @keydown.enter="handleRowClick(record as LoopApi.MonitorListItem)"
+            >
+              详情
+            </a>
+          </div>
+        </template>
+        <template v-else-if="column.key === 'range'">
           <span
-            v-if="
-              (record as LoopApi.MonitorListItem).pvRange?.min != null ||
-              (record as LoopApi.MonitorListItem).pvRange?.max != null
-            "
+            v-if="formatRange(record as LoopApi.MonitorListItem)"
             class="font-mono text-xs text-slate-600"
           >
-            {{ (record as LoopApi.MonitorListItem).pvRange?.min ?? '—' }}
-            ~
-            {{ (record as LoopApi.MonitorListItem).pvRange?.max ?? '—' }}
-          </span>
-          <span v-else class="text-slate-300">—</span>
-        </template>
-        <template v-else-if="column.key === 'pvUnit'">
-          <span
-            v-if="(record as LoopApi.MonitorListItem).pvUnit"
-            class="text-xs text-slate-600"
-          >
-            {{ (record as LoopApi.MonitorListItem).pvUnit }}
+            {{ formatRange(record as LoopApi.MonitorListItem) }}
           </span>
           <span v-else class="text-slate-300">—</span>
         </template>
@@ -762,6 +828,7 @@ defineExpose({
             :precision="2"
             mono
             size="sm"
+            :weight="400"
           />
           <span v-else class="text-gray-400">—</span>
         </template>
@@ -772,6 +839,7 @@ defineExpose({
             :precision="2"
             mono
             size="sm"
+            :weight="400"
           />
           <span v-else class="text-gray-400">—</span>
         </template>
@@ -782,6 +850,7 @@ defineExpose({
             :precision="2"
             mono
             size="sm"
+            :weight="400"
           />
           <span v-else class="text-gray-400">—</span>
         </template>
@@ -821,6 +890,7 @@ defineExpose({
               :precision="2"
               mono
               size="sm"
+              :weight="400"
             />
             <DayDeltaBadge
               :delta="(record as LoopApi.MonitorListItem).scoreDelta"
@@ -828,11 +898,6 @@ defineExpose({
             />
           </span>
           <span v-else class="text-gray-400">—</span>
-        </template>
-        <template v-else-if="column.key === 'dataHealth'">
-          <span class="text-xs text-gray-500">
-            {{ (record as LoopApi.MonitorListItem).confidenceLevel ?? '—' }}
-          </span>
         </template>
       </template>
 
@@ -891,6 +956,13 @@ defineExpose({
 .loop-fleet-view__table {
   flex: 1;
   min-height: 0;
+}
+
+/* 列表字体全部取消加粗：覆盖共享组件（DayDeltaBadge 等）的 medium/semibold 字重 */
+.loop-fleet-view__table :deep(td .font-medium),
+.loop-fleet-view__table :deep(td .font-semibold),
+.loop-fleet-view__table :deep(td .font-bold) {
+  font-weight: 400;
 }
 
 .loop-fleet-view__footer {

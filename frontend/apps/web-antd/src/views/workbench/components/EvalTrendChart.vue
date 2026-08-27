@@ -16,9 +16,18 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, ref } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   trend?: null | WorkbenchApi.AssessmentTrend;
 }>();
+
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §3 下钻：趋势图点击 → 评估历史明细（快照粒度，显式 latestOnly=false） */
+function onChartClick() {
+  drill('assess', '/metric/history', { latestOnly: 'false' });
+}
 
 // 图表几何（对齐原型 lineChart w:430 h:236）
 const W = 430;
@@ -163,7 +172,11 @@ function slopeWidth(delta: number): number {
     <div class="flex min-h-0 flex-1">
       <!-- 左：折线图 + 图例 -->
       <div class="flex min-w-0 flex-col" style="flex: 4">
-        <div class="min-h-0 flex-1 px-1 pt-1">
+        <div
+          class="min-h-0 flex-1 cursor-pointer px-1 pt-1"
+          title="点击查看评估历史明细"
+          @click="onChartClick"
+        >
           <svg
             :viewBox="`0 0 ${W} ${H}`"
             class="h-full w-full"

@@ -104,6 +104,7 @@ export namespace AlertApi {
     eventId: string;
     ruleId?: string;
     ruleCode: string;
+    ruleName?: string;
     ruleVersion: number;
     loopId: string;
     severity: Severity;

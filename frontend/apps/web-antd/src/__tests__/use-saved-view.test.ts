@@ -28,6 +28,7 @@ function makeCtx(overrides: Partial<MonitorContext> = {}): MonitorContext {
     plantNodeId: null,
     loopType: null,
     keyword: '',
+    controlMode: null,
     attentionOnly: false,
     timeWindow: '24h',
     eventId: null,

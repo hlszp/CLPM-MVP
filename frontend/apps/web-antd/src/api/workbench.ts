@@ -18,6 +18,8 @@ export namespace WorkbenchApi {
   export interface ScopeNode {
     id: number;
     name: string;
+    /** plant_node.id（下钻映射 plantNodeId 用，追溯矩阵 G2） */
+    node_id: string;
     parent_id: null | string;
     parent_source_id: null | number;
     type: 'AREA' | 'FACTORY';
@@ -61,11 +63,6 @@ export namespace WorkbenchApi {
   /** A-12 POST /events/read 响应 */
   export interface EventReadResult {
     marked: number;
-  }
-
-  /** A-E5 未读计数响应（M1 桩：后端端点待 M2） */
-  export interface UnreadResult {
-    count: number;
   }
 
   /** 共享请求参数（scope + window + 自定义窗口） */
@@ -150,16 +147,19 @@ export namespace WorkbenchApi {
     status: null | WindowStatus;
   }
 
-  /** 异常类型分布行（MV-02 mv_diagnosis_pareto） */
+  /** 异常类型分布行（diagnosis_run 按 primary_category 聚合 · 14 号方案 A2） */
   export interface ParetoRow {
     converted_count: number;
     ignored_count: number;
+    /** 中文标签（展示域） */
     root_cause: string;
+    /** 8 类代码域（下钻 /diagnosis/records?category= 用） */
+    root_cause_code?: null | string;
     sla_warned_count: number;
     tag_count: number;
   }
 
-  /** 根因 Top N 行（DiagnosisTag 按 tag_code 聚合，active 优先） */
+  /** 根因 Top N 行（diagnosis_run symptom_tags 聚合，A3 迁 v2；旧 DiagnosisTag 读方已退役） */
   export interface RootRow {
     active_count: number;
     count: number;
@@ -276,7 +276,7 @@ export namespace WorkbenchApi {
     | 'IGNORED'
     | 'UNADDRESSED';
 
-  /** 关键异常表行（F-DG-01 · open_tags · Top6） */
+  /** 关键异常表行（F-DG-01 · open_tags · Top6 · 14 号方案 A2 迁 diagnosis_run，SLA 已下线） */
   export interface DiagnosisOpenTag {
     category: null | string;
     conclusion: null | string;
@@ -287,8 +287,6 @@ export namespace WorkbenchApi {
     loop_id: string;
     loop_name: null | string;
     severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
-    sla_due_sec: null | number;
-    sla_stage: 'BREACH' | 'NONE' | 'WARN' | null;
     spark: number[];
     symptom: null | string;
     tag_id: string;
@@ -534,14 +532,6 @@ export function markWorkbenchEventsReadApi(data: WorkbenchApi.EventReadRequest) 
     '/workbench/events/read',
     data,
   );
-}
-
-// ---------------------------------------------------------------------------
-// A-E5 铃铛未读计数（M1 桩：后端端点待 M2，WS 推送 < 200ms 留 M2）
-// ---------------------------------------------------------------------------
-export function getWorkbenchUnreadApi() {
-  // TODO: M2 接 WS 未读计数端点 GET /workbench/unread
-  return requestClient.get<WorkbenchApi.UnreadResult>('/workbench/unread');
 }
 
 // ---------------------------------------------------------------------------

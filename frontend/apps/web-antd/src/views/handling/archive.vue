@@ -10,12 +10,14 @@
 import type { HandlingApi } from '#/api/handling';
 
 import { onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import { Card, Input, message, Select, Table, Tag, TreeSelect } from 'ant-design-vue';
 
 import { getHandlingLoopsApi } from '#/api/handling';
+import { getLoopDetailApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
@@ -169,11 +171,53 @@ function fmtKpiDelta(v: null | number | undefined): string {
 
 const fmt = (ts: null | string | undefined) => formatLocalTime(ts, 'MM-DD HH:mm');
 
-onMounted(() => {
-  // TODO(Phase 1F): 消费 route.query.loopId（统计页 Top 回路跳转定位，
-  // /loops 聚合接口交付后按 loopId 精确定位并自动开档案抽屉）
-  load();
-  loadPlantTree();
+// ===== 路由 query 深链（追溯矩阵 G6：?loopId=xxx 定位该回路档案） =====
+const route = useRoute();
+
+/**
+ * 挂载时读取一次 route.query.loopId（不做 watch 同步）：
+ * 先在当前页聚合结果中命中该回路并自动打开档案抽屉；未命中时按最小聚合行
+ * 兜底开抽屉（抽屉内建议/工单双段全史由 loopId 独立拉取，不依赖聚合行字段）。
+ */
+async function applyRouteQuery() {
+  const loopId = route.query.loopId;
+  if (typeof loopId !== 'string' || !loopId) return;
+  const hit = items.value.find((it) => it.loopId === loopId);
+  if (hit) {
+    openArchive(hit);
+    return;
+  }
+  try {
+    const detail = await getLoopDetailApi(loopId);
+    openArchive({
+      loopId,
+      loopTagName: detail.basicInfo?.tagName ?? loopId,
+      suggestionCounts: {
+        accepted: 0,
+        converted: 0,
+        ignored: 0,
+        pending: 0,
+        rejected: 0,
+      },
+      suggestionTotal: 0,
+      orderCounts: {
+        cancelled: 0,
+        closed: 0,
+        executing: 0,
+        pending: 0,
+        reopened: 0,
+        verifying: 0,
+      },
+      orderTotal: 0,
+    });
+  } catch {
+    message.warning('未找到该回路的处置档案');
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([load(), loadPlantTree()]);
+  await applyRouteQuery();
 });
 </script>
 

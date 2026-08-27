@@ -431,14 +431,14 @@ onMounted(loadConfig);
   font-size: 12px;
   line-height: 1.6;
   color: hsl(var(--foreground) / 60%);
-  background: hsl(var(--accent) / 0.4);
+  background: hsl(var(--accent) / 40%);
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1px);
 }
 
 .logo-tip b {
-  color: hsl(var(--primary));
   font-weight: 600;
+  color: hsl(var(--primary));
 }
 
 .logo-row {

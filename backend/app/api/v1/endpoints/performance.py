@@ -34,6 +34,9 @@ from app.schemas.performance import (
     KpiSnapshotListItem,
     MetricConfigItem,
     MetricConfigUpdate,
+    MetricSeriesData,
+    MetricSeriesItem,
+    MetricSeriesPoint,
     RankingItem,
 )
 from app.services.performance import (
@@ -42,6 +45,7 @@ from app.services.performance import (
     get_analytics,
     get_board,
     get_grade_distribution,
+    get_loop_metric_series,
     get_ranking,
     list_engine_rules,
     list_loop_snapshots,
@@ -378,7 +382,10 @@ async def get_grade_distribution_endpoint(
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
     startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
-    status: str | None = Query(None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"),
+    status: str | None = Query(
+        None,
+        description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）",
+    ),
     confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
     loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
     db: AsyncSession = Depends(get_db),
@@ -415,7 +422,10 @@ async def list_loop_snapshots_endpoint(
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
     startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
-    status: str | None = Query(None, description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"),
+    status: str | None = Query(
+        None,
+        description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）",
+    ),
     confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
     loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
     grade: str | None = Query(
@@ -546,6 +556,50 @@ async def list_loop_snapshots_endpoint(
         page=page,
         pageSize=pageSize,
     )
+    return success(data=data)
+
+
+@router.get("/loops/metric-series", response_model=ApiResponse[MetricSeriesData])
+async def get_loop_metric_series_endpoint(
+    loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤10 个）"),
+    metricKey: str = Query(..., description="指标键（snake_case，服务端白名单校验）"),
+    startTime: str | None = Query(None, description="起始时间（ISO 8601）"),
+    endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """批量查询单指标 × 多回路时间序列（指标矩阵页列头趋势对比）.
+
+    数据源为 kpi_snapshot_hourly（小时粒度）。metricKey 白名单：
+    score/accuracy_rate/auto_mode_rate/effective_auto_rate/fast_rate/steady_rate/
+    good_value_rate/oscillation_rate/saturation_rate/instrument_fault_rate/
+    stiction_index/settling_time/output_trip_index。
+
+    Raises:
+        BizError: ERR_METRIC_SERIES_INVALID（白名单外指标键）/
+            ERR_METRIC_SERIES_LOOPS（回路数超限或为空）
+    """
+    loop_ids = [s.strip() for s in loopIds.split(",") if s.strip()]
+    start_dt = _parse_dt(startTime)
+    end_dt = _parse_dt(endTime)
+
+    rows = await get_loop_metric_series(
+        db=db,
+        loop_ids=loop_ids,
+        metric_key=metricKey,
+        start=start_dt,
+        end=end_dt,
+    )
+
+    series = [
+        MetricSeriesItem(
+            loopId=row["loop_id"],
+            loopTagName=row["tag_name"],
+            points=[MetricSeriesPoint(**p) for p in row["points"]],
+        )
+        for row in rows
+    ]
+    data = MetricSeriesData(metricKey=metricKey, series=series)
     return success(data=data)
 
 

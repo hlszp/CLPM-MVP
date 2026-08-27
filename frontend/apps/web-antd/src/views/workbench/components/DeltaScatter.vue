@@ -28,6 +28,8 @@ import { getWorkbenchTuningScattersApi } from '#/api/workbench';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 interface Props {
   /** 散点数据（父级 A-04 聚合一次下传，优先使用） */
   points?: WorkbenchApi.TuningScatterPoint[];
@@ -45,6 +47,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { chartTextColor, chartSplitLineColor } = useClpmTheme();
 const { getTooltipPreset } = useEchartsPreset();
+const { drill } = useWorkbenchDrill();
 
 const OK = '#52C41A';
 const CRIT = '#FF4D4F';
@@ -244,6 +247,21 @@ function buildAndRender() {
     }
     renderEcharts(buildOption());
     resize();
+    bindPointClick();
+  });
+}
+
+/** 追溯矩阵 §5 下钻：散点点击 → 整定记录（loopId 口径） */
+function bindPointClick() {
+  const chart = (chartRef.value as any)?.getInstance?.();
+  if (!chart) return;
+  chart.off('click');
+  chart.on('click', (params: any) => {
+    const raw = params?.data?.[2] as
+      | undefined
+      | WorkbenchApi.TuningScatterPoint;
+    if (!raw?.loop_id) return;
+    drill('tuning', '/tuning/records', { loopId: raw.loop_id });
   });
 }
 

@@ -9,6 +9,7 @@ import type { Dayjs } from 'dayjs';
 import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -20,6 +21,7 @@ import {
   Select,
   Table,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import {
   exportDiagnosisRunsApi,
@@ -57,6 +59,8 @@ const query = reactive({
   status: undefined as DiagnosisApi.RunStatus | undefined,
   reviewStatus: undefined as DiagnosisApi.ReviewStatus | undefined,
   range: undefined as [Dayjs, Dayjs] | undefined,
+  // 回路筛选（仅深链带入，页面无对应控件）
+  loopId: undefined as string | undefined,
 });
 
 async function load() {
@@ -69,6 +73,7 @@ async function load() {
       severity: query.severity,
       status: query.status,
       reviewStatus: query.reviewStatus,
+      loopId: query.loopId,
     };
     if (query.range) {
       params.startTime = `${query.range[0].format('YYYY-MM-DD')}T00:00:00`;
@@ -166,7 +171,64 @@ function secondaryText(record: DiagnosisApi.RunListItem) {
     .join('、');
 }
 
-onMounted(load);
+// ---- 路由 query 初值（追溯矩阵 G6：工作台统计下钻接参） ----
+const route = useRoute();
+
+const SEVERITY_VALUES = new Set<string>(['HIGH', 'LOW', 'MEDIUM']);
+const RUN_STATUS_VALUES = new Set<string>([
+  'FAILED',
+  'PARTIAL',
+  'RUNNING',
+  'SUCCESS',
+]);
+const REVIEW_STATUS_VALUES = new Set<string>(['PENDING', 'REVIEWED']);
+
+/**
+ * 挂载时从 route.query 读取一次筛选初值（不做 watch 同步，之后用户可自由修改）。
+ * 支持：startTime/endTime（ISO8601）、category、status、severity、reviewStatus、
+ * loopId、focus（focus=runId 时自动打开该记录详情抽屉，契约对齐处置工作台 ?focus=）。
+ */
+function applyRouteQuery() {
+  const q = route.query;
+  if (
+    typeof q.category === 'string' &&
+    CATEGORY_OPTIONS.some((o) => o.value === q.category)
+  ) {
+    query.category = q.category as DiagnosisApi.Category;
+  }
+  if (typeof q.severity === 'string' && SEVERITY_VALUES.has(q.severity)) {
+    query.severity = q.severity as DiagnosisApi.Severity;
+  }
+  if (typeof q.status === 'string' && RUN_STATUS_VALUES.has(q.status)) {
+    query.status = q.status as DiagnosisApi.RunStatus;
+  }
+  if (
+    typeof q.reviewStatus === 'string' &&
+    REVIEW_STATUS_VALUES.has(q.reviewStatus)
+  ) {
+    query.reviewStatus = q.reviewStatus as DiagnosisApi.ReviewStatus;
+  }
+  if (typeof q.loopId === 'string' && q.loopId) {
+    query.loopId = q.loopId;
+  }
+  if (typeof q.startTime === 'string' && typeof q.endTime === 'string') {
+    const start = dayjs(q.startTime);
+    const end = dayjs(q.endTime);
+    if (start.isValid() && end.isValid()) {
+      query.range = [start, end];
+    }
+  }
+  // focus=runId 深链：直接打开该记录详情抽屉（详情接口按 id 拉取，
+  // 失败时拦截器统一弹错误，抽屉落“无详情”空态）
+  if (typeof q.focus === 'string' && q.focus) {
+    openDetail({ id: q.focus } as DiagnosisApi.RunListItem);
+  }
+}
+
+onMounted(() => {
+  applyRouteQuery();
+  load();
+});
 </script>
 
 <template>

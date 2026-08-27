@@ -1,10 +1,12 @@
-"""A-03 工作台诊断聚合 service 单测（M2 批次 G-诊断）.
+"""A-03 工作台诊断聚合 service 单测（M2 批次 G-诊断 · 14 号方案 A2 迁 diagnosis_run）.
 
 覆盖：
-- 纯 shaper：shape_open_tags（Top6 筛选/排序/fitness 分级/SLA 倒计时/置信度归一）、
-  shape_concl_timeline（时间倒序/四态透传/only_active 过滤/空分类容错）、
+- 纯 shaper：shape_open_tags（Top6 筛选/v2 severity 排序与四档映射/fitness 分级/
+  置信度归一/SLA 字段下线）、filter_open_tag_rows（未处置语义：终态处置 run 被排除）、
+  synth_disposition + shape_concl_timeline（四态合成/时间倒序/only_active 过滤/中文标签）、
   shape_fitness_gates（L0 横幅触发/L4 徽章/进度条计算/空数据）、
-  shape_rule_stats（聚合统计）
+  shape_rule_stats（JSONB 聚合行 × 中文规则名）、shape_pareto（中文标签 + 代码域）、
+  shape_rootcause_top（症状标签中文映射）
 - build_diagnosis 编排：patch 各 _query_* helper 返回种子数据，断言六块组装正确
   （对齐 test_workbench_assessment 的 patch 范式，不依赖真实 PG）
 """
@@ -23,121 +25,217 @@ from app.services.workbench_diagnosis import (
     GATE_DESCS,
     OPEN_TAGS_TOP_N,
     build_diagnosis,
+    filter_open_tag_rows,
     shape_concl_timeline,
     shape_fitness_gates,
     shape_open_tags,
+    shape_pareto,
     shape_rootcause_top,
     shape_rule_stats,
     shape_summary_band,
+    synth_disposition,
 )
 
 NOW = datetime(2026, 8, 25, 12, 0, 0)
 
 
 # ---------------------------------------------------------------------------
-# 合成行构造
+# 合成行构造（diagnosis_run 联查行域）
 # ---------------------------------------------------------------------------
 
 
-def _tag_row(
-    tag_id: str = "t-1",
+def _run_row(
+    run_id: str = "run-1",
     loop_id: str = "loop-1",
     loop_name: str = "TIC-408",
-    tag_code: str = "OSC",
-    tag_name: str = "回路振荡",
-    severity: str = "CRITICAL",
-    triggered_at: datetime | None = None,
-    sla_deadline_at: datetime | None = None,
-    sla_stage: str = "WARN",
-    category: str | None = "INSTRUMENT",
-    conclusion: str | None = "检测到主导振荡周期 ≈ 38s",
-    confidence: Any = 0.91,
+    severity: str | None = "HIGH",
+    created_at: datetime | None = None,
+    primary_category: str | None = "VALVE",
+    confidence: Any = 0.96,
+    conclusion: str | None = "主分类 阀门/执行机构问题（置信 0.96）：粘滞算子命中",
+    top_symptom: str | None = "VALVE_STICTION",
+    terminal_action_cnt: int = 0,
+    unit_name: str | None = "裂解单元",
+    factory_name: str | None = "乙烯装置",
 ) -> dict[str, Any]:
     return {
-        "tag_id": tag_id,
+        "run_id": run_id,
         "loop_id": loop_id,
         "loop_name": loop_name,
-        "tag_code": tag_code,
-        "tag_name": tag_name,
         "severity": severity,
-        "triggered_at": triggered_at or NOW - timedelta(hours=1),
-        "sla_deadline_at": sla_deadline_at,
-        "sla_stage": sla_stage,
-        "category": category,
-        "conclusion": conclusion,
+        "created_at": created_at or NOW - timedelta(hours=1),
+        "primary_category": primary_category,
         "confidence": confidence,
+        "conclusion": conclusion,
+        "top_symptom": top_symptom,
+        "terminal_action_cnt": terminal_action_cnt,
+        "unit_name": unit_name,
+        "factory_name": factory_name,
     }
 
 
 def _concl_row(
-    result_id: str = "r-1",
+    run_id: str = "run-1",
     loop_id: str = "loop-1",
     loop_name: str = "TIC-408",
-    diag_label: str = "OSC",
-    disposition: str | None = "UNADDRESSED",
+    review_status: str = "PENDING",
+    converted_cnt: int = 0,
+    ignored_cnt: int = 0,
     ts: datetime | None = None,
-    category: str | None = "INSTRUMENT",
-    evidence_summary: str | None = "振荡周期 ≈ 38s，Stiction 0.62",
-    confidence: Any = 0.91,
-    severity: str | None = "ERROR",
-    tag_id: str | None = "t-1",
+    primary_category: str | None = "VALVE",
+    evidence_summary: str | None = "粘滞算子命中：椭圆拟合（融合置信 0.96）",
+    confidence: Any = 0.96,
+    severity: str | None = "HIGH",
 ) -> dict[str, Any]:
     return {
-        "result_id": result_id,
+        "run_id": run_id,
         "loop_id": loop_id,
         "loop_name": loop_name,
-        "diag_label": diag_label,
-        "disposition": disposition,
+        "review_status": review_status,
+        "converted_cnt": converted_cnt,
+        "ignored_cnt": ignored_cnt,
         "ts": ts or NOW - timedelta(hours=1),
-        "category": category,
+        "primary_category": primary_category,
         "evidence_summary": evidence_summary,
         "confidence": confidence,
         "severity": severity,
-        "tag_id": tag_id,
     }
 
 
 # ===========================================================================
-# shape_open_tags（F-DG-01）
+# filter_open_tag_rows（未处置语义 · A2-1）
+# ===========================================================================
+
+
+class TestFilterOpenTagRows:
+    def test_终态处置run被排除(self):
+        """关联建议达终态（CONVERTED/REJECTED/IGNORED）的 run 出队；无关联/非终态保留。"""
+        rows = [
+            _run_row(run_id="r-none", terminal_action_cnt=0),
+            _run_row(run_id="r-conv", terminal_action_cnt=1),  # CONVERTED
+            _run_row(run_id="r-rej", terminal_action_cnt=1),  # REJECTED
+            _run_row(run_id="r-ign", terminal_action_cnt=1),  # IGNORED
+            _run_row(run_id="r-pending", terminal_action_cnt=0),  # PENDING/ACCEPTED 建议
+        ]
+        out = filter_open_tag_rows(rows)
+        assert [r["run_id"] for r in out] == ["r-none", "r-pending"]
+
+    def test_空数据容错(self):
+        assert filter_open_tag_rows([]) == []
+
+
+# ===========================================================================
+# synth_disposition + shape_concl_timeline（四态合成 · A2-2）
+# ===========================================================================
+
+
+class TestSynthDisposition:
+    def test_四态优先级(self):
+        """CONVERTED > ACK_REVIEWED > IGNORED > UNADDRESSED。"""
+        assert synth_disposition("REVIEWED", 1, 1) == "CONVERTED"
+        assert synth_disposition("REVIEWED", 0, 1) == "ACK_REVIEWED"
+        assert synth_disposition("PENDING", 0, 1) == "IGNORED"
+        assert synth_disposition("PENDING", 0, 0) == "UNADDRESSED"
+        assert synth_disposition(None, 0, 0) == "UNADDRESSED"
+
+
+class TestShapeConclTimeline:
+    def test_四态合成与时间倒序(self):
+        rows = [
+            _concl_row(run_id="r-old", ts=NOW - timedelta(hours=5), converted_cnt=1),
+            _concl_row(run_id="r-new", ts=NOW - timedelta(hours=1), ignored_cnt=1),
+            _concl_row(run_id="r-mid", ts=NOW - timedelta(hours=3), review_status="REVIEWED"),
+        ]
+        out = shape_concl_timeline(rows)
+        assert [r["result_id"] for r in out] == ["r-new", "r-mid", "r-old"]
+        dispositions = {r["result_id"]: r["disposition"] for r in out}
+        assert dispositions == {"r-new": "IGNORED", "r-mid": "ACK_REVIEWED", "r-old": "CONVERTED"}
+
+    def test_默认态UNADDRESSED与id回退run_id(self):
+        out = shape_concl_timeline([_concl_row()])
+        assert out[0]["disposition"] == "UNADDRESSED"
+        assert out[0]["id"] == "run-1"
+        assert out[0]["result_id"] == "run-1"
+
+    def test_中文category与代码域tag_code(self):
+        out = shape_concl_timeline([_concl_row(primary_category="VALVE")])
+        assert out[0]["category"] == "阀门/执行机构问题"
+        assert out[0]["tag_code"] == "VALVE"
+
+    def test_severity映射四档(self):
+        out = shape_concl_timeline(
+            [
+                _concl_row(run_id="r-h", severity="HIGH"),
+                _concl_row(run_id="r-m", severity="MEDIUM"),
+                _concl_row(run_id="r-l", severity="LOW"),
+            ]
+        )
+        sev = {r["result_id"]: r["severity"] for r in out}
+        assert sev == {"r-h": "CRITICAL", "r-m": "WARN", "r-l": "INFO"}
+
+    def test_only_active过滤未处置(self):
+        rows = [
+            _concl_row(run_id="r-un"),
+            _concl_row(run_id="r-cv", converted_cnt=1),
+            _concl_row(run_id="r-ig", ignored_cnt=1),
+            _concl_row(run_id="r-ack", review_status="REVIEWED"),
+        ]
+        out = shape_concl_timeline(rows, only_active=True)
+        assert [r["result_id"] for r in out] == ["r-un"]
+        # 默认不过滤
+        assert len(shape_concl_timeline(rows)) == 4
+
+    def test_空数据容错(self):
+        assert shape_concl_timeline([]) == []
+        assert shape_concl_timeline([], only_active=True) == []
+
+
+# ===========================================================================
+# shape_open_tags（F-DG-01 · v2 run 域）
 # ===========================================================================
 
 
 class TestShapeOpenTags:
-    def test_top6筛选与严重度排序(self):
-        """8 条候选 → Top6；CRITICAL 优先于 WARN/INFO。"""
+    def test_top6筛选与severity排序(self):
+        """8 条候选 → Top6；HIGH 优先于 MEDIUM/LOW（v2 三档原生域排序）。"""
         rows = [
-            _tag_row(tag_id=f"t-{i}", severity=sev)
+            _run_row(run_id=f"r-{i}", severity=sev)
             for i, sev in enumerate(
-                ["WARN", "CRITICAL", "INFO", "ERROR", "WARN", "CRITICAL", "ERROR", "WARN"]
+                ["MEDIUM", "HIGH", "LOW", "MEDIUM", "MEDIUM", "HIGH", "LOW", "MEDIUM"]
             )
         ]
-        out = shape_open_tags(rows, {}, {}, NOW)
+        out = shape_open_tags(rows, {}, {})
         assert len(out) == OPEN_TAGS_TOP_N
-        # 前 2 条为 CRITICAL，第 3~4 条 ERROR，末 2 条 WARN；INFO 被裁掉
+        # 前 2 条 HIGH（→CRITICAL），第 3~6 条 MEDIUM（→WARN）；LOW 被裁掉
         assert [r["severity"] for r in out[:2]] == ["CRITICAL", "CRITICAL"]
-        assert [r["severity"] for r in out[2:4]] == ["ERROR", "ERROR"]
-        assert [r["severity"] for r in out[4:]] == ["WARN", "WARN"]
+        assert [r["severity"] for r in out[2:6]] == ["WARN", "WARN", "WARN", "WARN"]
         assert "INFO" not in [r["severity"] for r in out]
 
-    def test_sla到期优先与倒计时计算(self):
-        """同严重度下 SLA 最近到期者先；sla_due_sec = 截止 − 当前；负值 = 已超期。"""
+    def test_同severity按时间降序(self):
         rows = [
-            _tag_row(tag_id="t-far", sla_deadline_at=NOW + timedelta(hours=8)),
-            _tag_row(tag_id="t-none", sla_deadline_at=None),
-            _tag_row(tag_id="t-near", sla_deadline_at=NOW + timedelta(hours=2)),
-            _tag_row(tag_id="t-over", sla_deadline_at=NOW - timedelta(hours=26)),
+            _run_row(run_id="r-old", created_at=NOW - timedelta(hours=8)),
+            _run_row(run_id="r-new", created_at=NOW - timedelta(hours=1)),
         ]
-        out = shape_open_tags(rows, {}, {}, NOW)
-        assert [r["tag_id"] for r in out] == ["t-over", "t-near", "t-far", "t-none"]
-        assert out[0]["sla_due_sec"] == -(26 * 3600)  # 已超期 26h
-        assert out[1]["sla_due_sec"] == 2 * 3600
-        assert out[3]["sla_due_sec"] is None
+        out = shape_open_tags(rows, {}, {})
+        assert [r["tag_id"] for r in out] == ["r-new", "r-old"]
+
+    def test_SLA字段下线(self):
+        """D1=a：返回结构不再含 sla_due_sec / sla_stage。"""
+        out = shape_open_tags([_run_row()], {}, {})
+        assert "sla_due_sec" not in out[0]
+        assert "sla_stage" not in out[0]
+
+    def test_category中文与symptom中文标签(self):
+        row = _run_row(primary_category="VALVE", top_symptom="VALVE_STICTION")
+        out = shape_open_tags([row], {}, {})
+        assert out[0]["category"] == "阀门/执行机构问题"
+        assert out[0]["symptom"] == "阀门粘滞"
 
     def test_fitness分级与spark注入(self):
-        rows = [_tag_row(loop_id="loop-1"), _tag_row(tag_id="t-2", loop_id="loop-2")]
+        rows = [_run_row(loop_id="loop-1"), _run_row(run_id="r-2", loop_id="loop-2")]
         spark_map = {"loop-1": [66.6, 65.2, 63.4]}
         fitness_map = {"loop-1": "L2", "loop-2": "L0"}
-        out = shape_open_tags(rows, spark_map, fitness_map, NOW)
+        out = shape_open_tags(rows, spark_map, fitness_map)
         by_loop = {r["loop_id"]: r for r in out}
         assert by_loop["loop-1"]["spark"] == [66.6, 65.2, 63.4]
         assert by_loop["loop-1"]["fitness_level"] == "L2"
@@ -145,64 +243,20 @@ class TestShapeOpenTags:
         assert by_loop["loop-2"]["spark"] == []
 
     def test_confidence归一化(self):
-        """0~100 口径（85）→ 0.85；0~1 口径透传；None 透传。"""
+        """0~1 口径（primary_confidence）透传；>1 兜底归一；None 透传。"""
         rows = [
-            _tag_row(tag_id="t-a", confidence=85),
-            _tag_row(tag_id="t-b", confidence=0.62),
-            _tag_row(tag_id="t-c", confidence=None),
+            _run_row(run_id="r-a", confidence=0.96),
+            _run_row(run_id="r-b", confidence=85),
+            _run_row(run_id="r-c", confidence=None),
         ]
-        out = shape_open_tags(rows, {}, {}, NOW)
+        out = shape_open_tags(rows, {}, {})
         by_id = {r["tag_id"]: r for r in out}
-        assert by_id["t-a"]["confidence"] == 0.85
-        assert by_id["t-b"]["confidence"] == 0.62
-        assert by_id["t-c"]["confidence"] is None
+        assert by_id["r-a"]["confidence"] == 0.96
+        assert by_id["r-b"]["confidence"] == 0.85
+        assert by_id["r-c"]["confidence"] is None
 
     def test_空数据容错(self):
-        assert shape_open_tags([], {}, {}, NOW) == []
-
-
-# ===========================================================================
-# shape_concl_timeline（F-DG-02）
-# ===========================================================================
-
-
-class TestShapeConclTimeline:
-    def test_时间倒序与四态透传(self):
-        rows = [
-            _concl_row(result_id="r-old", ts=NOW - timedelta(hours=5), disposition="CONVERTED"),
-            _concl_row(result_id="r-new", ts=NOW - timedelta(hours=1), disposition="IGNORED"),
-            _concl_row(result_id="r-mid", ts=NOW - timedelta(hours=3), disposition="ACK_REVIEWED"),
-        ]
-        out = shape_concl_timeline(rows)
-        assert [r["result_id"] for r in out] == ["r-new", "r-mid", "r-old"]
-        dispositions = {r["result_id"]: r["disposition"] for r in out}
-        assert dispositions == {"r-new": "IGNORED", "r-mid": "ACK_REVIEWED", "r-old": "CONVERTED"}
-
-    def test_only_active过滤未处置(self):
-        rows = [
-            _concl_row(result_id="r-un", disposition="UNADDRESSED"),
-            _concl_row(result_id="r-cv", disposition="CONVERTED"),
-            _concl_row(result_id="r-ig", disposition="IGNORED"),
-        ]
-        out = shape_concl_timeline(rows, only_active=True)
-        assert [r["result_id"] for r in out] == ["r-un"]
-        # 默认不过滤
-        assert len(shape_concl_timeline(rows)) == 3
-
-    def test_空分类回退diag_label(self):
-        rows = [_concl_row(category=None, diag_label="OSC")]
-        out = shape_concl_timeline(rows)
-        assert out[0]["category"] == "OSC"
-
-    def test_无标签关联时disposition为None(self):
-        rows = [_concl_row(tag_id=None, disposition=None)]
-        out = shape_concl_timeline(rows)
-        assert out[0]["disposition"] is None
-        assert out[0]["id"] == "r-1"  # 无 tag_id 时回退 result_id 作主键
-
-    def test_空数据容错(self):
-        assert shape_concl_timeline([]) == []
-        assert shape_concl_timeline([], only_active=True) == []
+        assert shape_open_tags([], {}, {}) == []
 
 
 # ===========================================================================
@@ -247,30 +301,30 @@ class TestShapeFitnessGates:
 
 
 # ===========================================================================
-# shape_rule_stats + shape_rootcause_top
+# shape_rule_stats + shape_pareto + shape_rootcause_top（D2=a / A2-3 / A2-4）
 # ===========================================================================
 
 
 class TestShapeRuleStats:
-    def test_聚合统计与解决率(self):
+    def test_标签域名与中文规则名(self):
+        """rule_id 保标签域名（OSCILLATION），name 为中文标签（D2=a 口径）。"""
         rows = [
-            {"tag_code": "OSC", "tag_name": "回路振荡", "hits": 4, "resolved": 1},
-            {"tag_code": "SAT", "tag_name": "阀位饱和", "hits": 3, "resolved": 3},
+            {"tag_code": "OSCILLATION", "hits": 4, "resolved": 1},
+            {"tag_code": "VALVE_STICTION", "hits": 3, "resolved": 3},
         ]
         out = shape_rule_stats(rows)
         assert out[0] == {
-            "rule_id": "OSC",
+            "rule_id": "OSCILLATION",
             "name": "回路振荡",
             "hits": 4,
             "resolved_rate": 0.25,
         }
+        assert out[1]["name"] == "阀门粘滞"
         assert out[1]["resolved_rate"] == 1.0
 
     def test_零命中解决率为None(self):
         assert (
-            shape_rule_stats([{"tag_code": "X", "tag_name": None, "hits": 0, "resolved": 0}])[0][
-                "resolved_rate"
-            ]
+            shape_rule_stats([{"tag_code": "X", "hits": 0, "resolved": 0}])[0]["resolved_rate"]
             is None
         )
 
@@ -278,13 +332,52 @@ class TestShapeRuleStats:
         assert shape_rule_stats([]) == []
 
 
+class TestShapePareto:
+    def test_中文标签与代码域并存(self):
+        rows = [
+            {"category_code": "VALVE", "tag_count": 5, "converted_count": 1, "ignored_count": 0},
+            {"category_code": "TUNING", "tag_count": 2, "converted_count": 0, "ignored_count": 1},
+        ]
+        out = shape_pareto(rows)
+        assert out[0]["root_cause"] == "阀门/执行机构问题"
+        assert out[0]["root_cause_code"] == "VALVE"
+        assert out[0]["tag_count"] == 5
+        assert out[1]["root_cause"] == "参数问题（PID 整定）"
+        assert all(r["sla_warned_count"] == 0 for r in out)  # D1=a SLA 下线恒 0
+
+    def test_按tag_count降序(self):
+        rows = [
+            {"category_code": "TUNING", "tag_count": 1},
+            {"category_code": "VALVE", "tag_count": 9},
+        ]
+        assert shape_pareto(rows)[0]["root_cause_code"] == "VALVE"
+
+
 class TestShapeRootcauseTop:
-    def test_tag_type别名对齐方案(self):
-        rows = [{"tag_code": "OSC", "tag_name": "回路振荡", "count": 5, "active_count": 3}]
+    def test_症状标签中文映射与tag_type别名(self):
+        rows = [
+            {
+                "tag_code": "OSCILLATION",
+                "count": 5,
+                "active_count": 3,
+                "severity_rank": 4,
+            }
+        ]
         out = shape_rootcause_top(rows)
-        assert out[0]["tag_type"] == "OSC"
-        assert out[0]["tag_code"] == "OSC"
+        assert out[0]["tag_type"] == "OSCILLATION"
+        assert out[0]["tag_code"] == "OSCILLATION"
+        assert out[0]["tag_name"] == "回路振荡"
         assert out[0]["count"] == 5
+        assert out[0]["severity"] == "CRITICAL"  # HIGH→rank4→CRITICAL
+
+    def test_severity_rank映射四档域(self):
+        rows = [
+            {"tag_code": "X", "count": 1, "active_count": 1, "severity_rank": 2},
+            {"tag_code": "Y", "count": 1, "active_count": 1, "severity_rank": 1},
+        ]
+        out = shape_rootcause_top(rows)
+        sev = {r["tag_code"]: r["severity"] for r in out}
+        assert sev == {"X": "WARN", "Y": "INFO"}
 
 
 # ===========================================================================
@@ -361,7 +454,7 @@ class TestShapeSummaryBand:
 class TestBuildDiagnosis:
     @pytest.mark.asyncio
     async def test_组装六块与scope字段(self):
-        tag_rows = [_tag_row(loop_id="loop-1")]
+        run_rows = [_run_row(loop_id="loop-1")]
         concl_rows = [_concl_row(loop_id="loop-1")]
         fitness = {"loop-1": LoopFitnessLatest(loop_id="loop-1", level="L2", tags=[], detail={})}
         with (
@@ -371,7 +464,7 @@ class TestBuildDiagnosis:
             ),
             patch(
                 "app.services.workbench_diagnosis._query_open_tag_rows",
-                new=AsyncMock(return_value=tag_rows),
+                new=AsyncMock(return_value=run_rows),
             ),
             patch(
                 "app.services.workbench_diagnosis._query_spark_map",
@@ -391,20 +484,32 @@ class TestBuildDiagnosis:
             ),
             patch(
                 "app.services.workbench_diagnosis._query_rule_stat_rows",
+                new=AsyncMock(return_value=[{"tag_code": "OSCILLATION", "hits": 2, "resolved": 1}]),
+            ),
+            patch(
+                "app.services.workbench_diagnosis._query_pareto_rows",
                 new=AsyncMock(
                     return_value=[
-                        {"tag_code": "OSC", "tag_name": "回路振荡", "hits": 2, "resolved": 0}
+                        {
+                            "category_code": "VALVE",
+                            "tag_count": 5,
+                            "converted_count": 0,
+                            "ignored_count": 0,
+                        }
                     ]
                 ),
             ),
             patch(
-                "app.services.workbench_diagnosis._query_pareto",
-                new=AsyncMock(return_value=[{"root_cause": "仪表故障", "tag_count": 5}]),
-            ),
-            patch(
-                "app.services.workbench_diagnosis._query_roots",
+                "app.services.workbench_diagnosis._query_rootcause_rows",
                 new=AsyncMock(
-                    return_value=[{"tag_code": "OSC", "tag_name": "回路振荡", "count": 5}]
+                    return_value=[
+                        {
+                            "tag_code": "OSCILLATION",
+                            "count": 5,
+                            "active_count": 3,
+                            "severity_rank": 4,
+                        }
+                    ]
                 ),
             ),
         ):
@@ -415,14 +520,17 @@ class TestBuildDiagnosis:
         # summary_band
         assert "summary_band" in out
         assert out["summary_band"]["worsening_loops"] == 1  # open_tags=1
-        assert out["summary_band"]["diag_count"] == 1  # concl=1 (置信度0.91→归一)
+        assert out["summary_band"]["diag_count"] == 1  # concl=1 (置信度0.96→归一)
         assert out["summary_band"]["high_confidence_count"] == 1
         assert out["summary_band"]["avg_latency_ok"] is True
         assert out["summary_band"]["engine_version"] == "v3.2.1"
-        # open_tags
+        # open_tags（severity 映射 + 中文 + SLA 下线）
         assert len(out["open_tags"]) == 1
         assert out["open_tags"][0]["spark"] == [70.0, 68.0]
         assert out["open_tags"][0]["fitness_level"] == "L2"
+        assert out["open_tags"][0]["severity"] == "CRITICAL"
+        assert out["open_tags"][0]["category"] == "阀门/执行机构问题"
+        assert "sla_due_sec" not in out["open_tags"][0]
         # concl_timeline
         assert len(out["concl_timeline"]) == 1
         assert out["concl_timeline"][0]["disposition"] == "UNADDRESSED"
@@ -431,9 +539,11 @@ class TestBuildDiagnosis:
         assert out["fitness_gates"]["level_counts"]["L2"] == 1
         assert out["fitness_gates"]["total"] == 1
         # rule_stats / pareto / rootcause_top
-        assert out["rule_stats"][0]["rule_id"] == "OSC"
-        assert out["pareto"][0]["root_cause"] == "仪表故障"
-        assert out["rootcause_top"][0]["tag_type"] == "OSC"
+        assert out["rule_stats"][0]["rule_id"] == "OSCILLATION"
+        assert out["rule_stats"][0]["name"] == "回路振荡"
+        assert out["pareto"][0]["root_cause"] == "阀门/执行机构问题"
+        assert out["pareto"][0]["root_cause_code"] == "VALVE"
+        assert out["rootcause_top"][0]["tag_type"] == "OSCILLATION"
 
     @pytest.mark.asyncio
     async def test_单块失败不阻断其余块(self):
@@ -464,11 +574,11 @@ class TestBuildDiagnosis:
                 new=AsyncMock(return_value=[]),
             ),
             patch(
-                "app.services.workbench_diagnosis._query_pareto",
-                new=AsyncMock(side_effect=RuntimeError("mv missing")),
+                "app.services.workbench_diagnosis._query_pareto_rows",
+                new=AsyncMock(side_effect=RuntimeError("db down")),
             ),
             patch(
-                "app.services.workbench_diagnosis._query_roots",
+                "app.services.workbench_diagnosis._query_rootcause_rows",
                 new=AsyncMock(return_value=[]),
             ),
         ):
@@ -482,7 +592,7 @@ class TestBuildDiagnosis:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("window,expected_hours", [("24h", 24), ("7d", 168), ("30d", 720)])
     async def test_窗口换算下发到查询(self, window: str, expected_hours: int):
-        """近窗口 since = now − 窗口时长（24h/7d/30d）。"""
+        """近窗口 since = now − 窗口时长（24h/7d/30d）；rule_stats 固定近 30d。"""
         import app.services.workbench_diagnosis as svc
 
         with (
@@ -494,12 +604,14 @@ class TestBuildDiagnosis:
             patch.object(svc, "_query_concl_rows", new=AsyncMock(return_value=[])),
             patch.object(svc, "_query_scope_loop_ids", new=AsyncMock(return_value=[])),
             patch.object(svc, "get_latest_fitness_per_loop", new=AsyncMock(return_value={})),
-            patch.object(svc, "_query_rule_stat_rows", new=AsyncMock(return_value=[])),
-            patch.object(svc, "_query_pareto", new=AsyncMock(return_value=[])),
-            patch.object(svc, "_query_roots", new=AsyncMock(return_value=[])),
+            patch.object(svc, "_query_rule_stat_rows", new=AsyncMock(return_value=[])) as mock_rule,
+            patch.object(svc, "_query_pareto_rows", new=AsyncMock(return_value=[])),
+            patch.object(svc, "_query_rootcause_rows", new=AsyncMock(return_value=[])),
         ):
             await build_diagnosis(object(), window=window)
 
-        since = mock_open.call_args[0][1]
         now_utc = datetime.now(UTC).replace(tzinfo=None)
+        since = mock_open.call_args[0][1]
         assert (now_utc - since).total_seconds() / 3600 == pytest.approx(expected_hours, abs=1)
+        since_30d = mock_rule.call_args[0][1]
+        assert (now_utc - since_30d).total_seconds() / 3600 == pytest.approx(720, abs=1)

@@ -30,6 +30,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.diagnosis_v2_compat import category_label
 from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.workbench_diagnosis import (
     _get_scope_unit_ids,
@@ -226,7 +227,7 @@ def shape_pending_queue(
     - block_map: {loop_id: {order_no, status}}（同回路未闭合非 TUNING 工单）
     - batch_map: {record_id: {batch_no, status, block_reason}}（所属批次，已解析阻塞）
     - score_map: {loop_id: 最新评分}（kpi_snapshot_hourly 快照）
-    - diag_src_map: {loop_id: tag_name}（ACTIVE 诊断标签 → 建议来源"诊断：xxx"）
+    - diag_src_map: {loop_id: 类别中文}（diagnosis_run 最新 primary_category → 建议来源"诊断：xxx"）
     阻塞优先级：批次 BLOCKED > 同回路前置工单未闭合。
     """
     items: list[dict[str, Any]] = []
@@ -519,21 +520,29 @@ async def _query_latest_scores(db: AsyncSession, loop_ids: Sequence[str]) -> dic
 
 
 async def _query_diag_src_map(db: AsyncSession, loop_ids: Sequence[str]) -> dict[str, str]:
-    """每回路最新 ACTIVE 诊断标签名（建议来源"诊断：xxx"）。"""
+    """每回路最新一条 primary_category 非 NULL 诊断 run 的中文类别（建议来源"诊断：xxx"）。
+
+    口径（14 号方案阶段 A3）：改读 diagnosis_run（v2 引擎）；此前为 ACTIVE
+    diagnosis_tag 的标签名。类别中文映射复用 diagnosis_v2_compat.category_label。
+    """
     if not loop_ids:
         return {}
     result = await db.execute(
         text(
             """
-            SELECT DISTINCT ON (loop_id) loop_id::text AS loop_id, tag_name
-            FROM diagnosis_tag
-            WHERE loop_id::text = ANY(:loop_ids) AND status = 'ACTIVE'
-            ORDER BY loop_id, triggered_at DESC
+            SELECT DISTINCT ON (loop_id) loop_id::text AS loop_id, primary_category
+            FROM diagnosis_run
+            WHERE loop_id::text = ANY(:loop_ids)
+              AND primary_category IS NOT NULL
+            ORDER BY loop_id, created_at DESC
             """
         ),
         {"loop_ids": [str(lid) for lid in loop_ids]},
     )
-    return {str(r.loop_id): str(r.tag_name) for r in result.all() if r.tag_name}
+    return {
+        str(r.loop_id): str(category_label(r.primary_category) or r.primary_category)
+        for r in result.all()
+    }
 
 
 async def _query_loop_names(db: AsyncSession, loop_ids: Sequence[str]) -> dict[str, str]:

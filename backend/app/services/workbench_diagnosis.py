@@ -1,19 +1,24 @@
 """A-03 工作台诊断聚合 service（M2 批次 G-诊断 · F-DG-01~03）.
 
 组装 Tab3「回路诊断」六块数据（对齐原型 renderDiag() #tab-diag）：
-- open_tags      关键异常表 Top6（diagnosis_tag 近窗口未处置 + spark + SLA 倒计时 + 结论摘要）
-- concl_timeline 诊断结论时间线（diagnosis_result JOIN diagnosis_tag，disposition 四态色点）
+- open_tags      关键异常表 Top6（diagnosis_run 近窗口每回路最新未处置异常 + spark，SLA 已下线）
+- concl_timeline 诊断结论时间线（diagnosis_run 主线，disposition 四态由复核/处置关联合成）
 - fitness_gates  适用性 L0~L4 门禁（聚合 kpi_snapshot_hourly.fitness_level，B-09 漏斗）
-- rule_stats     诊断规则命中统计（diagnosis_tag 按 tag_code 聚合，F-DG-04 前置数据）
-- pareto         异常类型 Pareto（复用 MV-02，与 G-总览同源）
-- rootcause_top  根因 TopN（DiagnosisTag 聚合，与 G-总览 roots 同源）
+- rule_stats     诊断规则命中统计（symptom_tags JSONB 展开聚合 × 复核确认率，14 号方案 D2=a）
+- pareto         异常类型 Pareto（diagnosis_run 按 primary_category 聚合，与 A-01 结构同构）
+- rootcause_top  根因 TopN（symptom_tags 标签聚合，保"症状"语义）
 
-数据架构：与 G-总览/G-评估一致，不直接查 TDengine；fitness 复用
-loop_fitness.get_latest_fitness_per_loop（kpi_snapshot_hourly 固化结果，
-阈值由 precalc 侧 loop_fitness 统一控制——用户决策：复用现有阈值）。
+数据源（14 号方案阶段 A2，2026-08-27）：全部迁诊断 v2 引擎表 ``diagnosis_run``
+（旧引擎表 diagnosis_tag/diagnosis_result 停读不删，D4=a）；severity 经
+``diagnosis_v2_compat.severity_to_legacy`` 映射回旧四档颜色域（前端不动），
+category 经 ``category_label`` 输出中文标签；SLA 倒计时列下线（D1=a，处置域概念）。
+窗口口径：与 G-总览/G-评估一致用参数化 naive UTC（PG 会话时区 +8，勿裸用 now()）。
 
-disposition 四态（B-10）：UNADDRESSED 未处置 / CONVERTED 已转任务 /
-ACK_REVIEWED 已确认复核 / IGNORED 已忽略。
+disposition 四态（B-10，v2 合成口径，优先级自上而下）：
+- CONVERTED    run 关联 loop_action_item 且 converted_order_id 非空（已转工单）
+- ACK_REVIEWED review_status=REVIEWED（已复核确认）
+- IGNORED      关联 loop_action_item 且 status=IGNORED（已忽略）
+- UNADDRESSED  其余（未处置）
 
 部分失败容错：每块独立 try/except，失败返回空/None 并 log.warning，不阻断其余块。
 """
@@ -28,14 +33,16 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.diagnosis_v2_compat import (
+    category_label,
+    severity_to_legacy,
+    symptom_label,
+)
 from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.workbench_overview import (
     _iso,
-    _query_pareto,
-    _query_roots,
     _scope_id_int,
     _to_float,
-    shape_pareto,
     shape_roots,
 )
 
@@ -48,9 +55,8 @@ CONCL_TIMELINE_LIMIT = 50
 # sparkline 取点数（与原型 6 点对齐）
 SPARK_POINTS = 6
 
-# 严重度排序权重（高 → 低）
+# 严重度排序权重（高 → 低；v2 severity 经 severity_to_legacy 映射后落入此域）
 SEVERITY_RANK: dict[str, int] = {"CRITICAL": 4, "ERROR": 3, "WARN": 2, "INFO": 1}
-
 # 适用性层级与得分权重（进度条 0~100 口径，B-09 (d)）
 FITNESS_LEVELS = ("L0", "L1", "L2", "L3", "L4")
 FITNESS_WEIGHTS: dict[str, float] = {"L0": 0.0, "L1": 25.0, "L2": 50.0, "L3": 75.0, "L4": 100.0}
@@ -63,10 +69,12 @@ GATE_DESCS: tuple[str, str, str, str] = (
     "激励充分，响应正常（无 L3 待激励）",
 )
 
-# 窗口 → 小时数（近窗口过滤口径）
+# 窗口 → 小时数（近窗口过滤口径；rule_stats/rootcause_top 固定近 30d）
 WINDOW_HOURS: dict[str, int] = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
+RULE_STATS_WINDOW = "30d"
 
-# 近窗口"未处置"口径：仅 UNADDRESSED（CONVERTED 已转任务 / ACK_REVIEWED 已确认 / IGNORED 已忽略）
+# 近窗口"未处置"口径：run 无关联 loop_action_item，或其建议均未达终态
+# （终态 = CONVERTED / REJECTED / IGNORED；A2 语义：处置建议一旦走完审核终态即出队）
 OPEN_DISPOSITION = "UNADDRESSED"
 
 
@@ -76,7 +84,7 @@ OPEN_DISPOSITION = "UNADDRESSED"
 
 
 def _norm_confidence(val: Any) -> float | None:
-    """置信度归一为 0~1（diagnosis_result.confidence 约束 0~100，历史数据两种口径并存）。"""
+    """置信度归一为 0~1（primary_confidence 约束 0~1，历史数据两种口径并存兜底）。"""
     conf = _to_float(val)
     if conf is None:
         return None
@@ -85,51 +93,68 @@ def _norm_confidence(val: Any) -> float | None:
     return round(min(conf, 1.0), 2)
 
 
+def synth_disposition(
+    review_status: str | None, converted_cnt: int | None, ignored_cnt: int | None
+) -> str:
+    """v2 复核/处置关联 → disposition 四态合成（优先级见下，自上而下）。
+
+    CONVERTED > ACK_REVIEWED > IGNORED > UNADDRESSED
+    """
+    if converted_cnt:
+        return "CONVERTED"
+    if review_status == "REVIEWED":
+        return "ACK_REVIEWED"
+    if ignored_cnt:
+        return "IGNORED"
+    return "UNADDRESSED"
+
+
+def filter_open_tag_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """open_tags"未处置"过滤：排除关联处置建议已达终态（CONVERTED/REJECTED/IGNORED）的 run。"""
+    return [r for r in rows if not (r.get("terminal_action_cnt") or 0)]
+
+
 def shape_open_tags(
     rows: list[dict[str, Any]],
     spark_map: Mapping[str, list[float]],
     fitness_map: Mapping[str, str | None],
-    now: datetime,
     top_n: int = OPEN_TAGS_TOP_N,
 ) -> list[dict[str, Any]]:
-    """关键异常表 Top N（F-DG-01）。
+    """关键异常表 Top N（F-DG-01，diagnosis_run 每回路最新未处置异常 run）。
 
-    - rows: diagnosis_tag × loop_ledger × diagnosis_result(LATERAL) 联查行
+    - rows: diagnosis_run × loop_ledger × 工厂模型联查行（已过滤未处置，v2 severity 域）
     - spark_map: {loop_id: [score...]}（kpi_snapshot_hourly 近 N 点，旧 → 新）
     - fitness_map: {loop_id: fitness_level}（loop_fitness 最新快照）
-    - 排序：严重度降序 → SLA 到期升序（最近到期优先，无 SLA 最后）→ 触发时间降序
+    - 排序：严重度降序（HIGH>MEDIUM>LOW）→ 诊断时间降序
+    - SLA 字段已下线（D1=a：SLA 归处置域，诊断域不再输出 sla_due_sec/sla_stage）
     """
+    # 排序：时间降序打底，再按 severity 降序稳定排序（同 severity 保持时间倒序；
+    # 避开 toordinal 天粒度塌陷——同日多条时序不丢）
     ranked = sorted(
         rows,
-        key=lambda r: (
-            -SEVERITY_RANK.get(r.get("severity"), 0),
-            r.get("sla_deadline_at") is None,
-            r.get("sla_deadline_at") or now,
-            -(r.get("triggered_at") or now).toordinal(),
-        ),
+        key=lambda r: r.get("created_at") or datetime.min.replace(tzinfo=None),
+        reverse=True,
     )
+    v2_rank = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+    ranked.sort(key=lambda r: -v2_rank.get(r.get("severity") or "", 0))
     items: list[dict[str, Any]] = []
     for r in ranked[:top_n]:
         loop_id = str(r.get("loop_id"))
-        sla = r.get("sla_deadline_at")
-        sla_due = int((sla - now).total_seconds()) if sla is not None else None
         items.append(
             {
-                "tag_id": str(r.get("tag_id")),
+                "tag_id": str(r.get("run_id")),
                 "loop_id": loop_id,
                 "loop_name": r.get("loop_name"),
                 "unit_name": r.get("unit_name"),
                 "factory_name": r.get("factory_name"),
-                "symptom": r.get("tag_name") or r.get("tag_code"),
-                "category": r.get("category"),
-                "severity": r.get("severity"),
+                "symptom": symptom_label(r.get("top_symptom")),
+                "category": category_label(r.get("primary_category")),
+                "severity": severity_to_legacy(r.get("severity")),
                 "spark": list(spark_map.get(loop_id, [])),
-                "sla_due_sec": sla_due,
-                "sla_stage": r.get("sla_stage"),
                 "conclusion": r.get("conclusion"),
                 "fitness_level": fitness_map.get(loop_id),
                 "confidence": _norm_confidence(r.get("confidence")),
-                "triggered_at": _iso(r.get("triggered_at")),
+                "triggered_at": _iso(r.get("created_at")),
             }
         )
     return items
@@ -139,35 +164,36 @@ def shape_concl_timeline(
     rows: list[dict[str, Any]],
     only_active: bool = False,
 ) -> list[dict[str, Any]]:
-    """诊断结论时间线（F-DG-02）。
+    """诊断结论时间线（F-DG-02，diagnosis_run 主线）。
 
-    - rows: diagnosis_result × loop_ledger × diagnosis_tag(LATERAL) 联查行
-    - only_active=True → 仅保留未处置（UNADDRESSED）活跃结论
-    - 空分类容错：category 缺失回退 diag_label（症状代码）
+    - rows: diagnosis_run × loop_ledger × 工厂模型联查行（含 review_status/处置关联计数）
+    - disposition 由 synth_disposition 四态合成；only_active=True → 仅保留 UNADDRESSED
+    - category 输出中文标签（category_label），tag_code 保 8 类代码域（前端兜底/下钻用）
     - 按时间倒序（新 → 旧）
     """
     items: list[dict[str, Any]] = []
     for r in rows:
-        disp = r.get("disposition")
+        disp = synth_disposition(
+            r.get("review_status"), r.get("converted_cnt"), r.get("ignored_cnt")
+        )
         if only_active and disp != OPEN_DISPOSITION:
             continue
-        result_id = str(r.get("result_id")) if r.get("result_id") else None
-        tag_id = str(r.get("tag_id")) if r.get("tag_id") else None
+        run_id = str(r.get("run_id")) if r.get("run_id") else None
         items.append(
             {
-                "id": tag_id or result_id,
-                "tag_id": tag_id,
-                "result_id": result_id,
-                "tag_code": r.get("diag_label"),
+                "id": run_id,
+                "tag_id": run_id,
+                "result_id": run_id,
+                "tag_code": r.get("primary_category"),
                 "loop_id": str(r.get("loop_id")),
                 "loop_name": r.get("loop_name"),
                 "unit_name": r.get("unit_name"),
                 "factory_name": r.get("factory_name"),
-                "category": r.get("category") or r.get("diag_label"),
+                "category": category_label(r.get("primary_category")),
                 "disposition": disp,
                 "evidence_summary": r.get("evidence_summary"),
                 "confidence": _norm_confidence(r.get("confidence")),
-                "severity": r.get("severity"),
+                "severity": severity_to_legacy(r.get("severity")),
                 "ts": _iso(r.get("ts")),
             }
         )
@@ -213,18 +239,20 @@ def shape_fitness_gates(
 
 
 def shape_rule_stats(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """诊断规则命中统计（F-DG-04 前置数据，按 tag_code 聚合）。
+    """诊断规则命中统计（F-DG-04 前置数据，symptom_tags 标签聚合，D2=a 重定义）。
 
-    - hits: 总命中数；resolved_rate: 已解除占比（0~1，无命中 → None）
+    - hits: 近 30d 检出该症状标签的 run 数；resolved_rate: 其中已复核确认（REVIEWED）占比
+    - rule_id: 标签域名（如 OSCILLATION）；name: 中文标签名（symptom_label）
     """
     items: list[dict[str, Any]] = []
     for r in rows:
         hits = int(r.get("hits") or 0)
         resolved = int(r.get("resolved") or 0)
+        rule_id = r.get("tag_code")
         items.append(
             {
-                "rule_id": r.get("tag_code"),
-                "name": r.get("tag_name"),
+                "rule_id": rule_id,
+                "name": symptom_label(rule_id),
                 "hits": hits,
                 "resolved_rate": round(resolved / hits, 3) if hits > 0 else None,
             }
@@ -232,8 +260,33 @@ def shape_rule_stats(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return items
 
 
+def shape_pareto(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """diagnosis_run primary_category 聚合行 → Pareto 列表（与 A-01 overview 结构同构）。
+
+    root_cause 输出中文标签（展示域），root_cause_code 保 8 类代码（下钻域）；
+    sla_warned_count 恒 0（D1=a SLA 下线，保字段结构稳前端）。
+    """
+    items = [
+        {
+            "root_cause": category_label(r.get("category_code")),
+            "root_cause_code": r.get("category_code"),
+            "tag_count": r.get("tag_count", 0) or 0,
+            "converted_count": r.get("converted_count", 0) or 0,
+            "ignored_count": r.get("ignored_count", 0) or 0,
+            "sla_warned_count": 0,
+        }
+        for r in rows
+    ]
+    items.sort(key=lambda x: -x["tag_count"])
+    return items
+
+
 def shape_rootcause_top(rows: list[dict[str, Any]], top_n: int = 10) -> list[dict[str, Any]]:
-    """根因 TopN（复用 G-总览 roots 聚合行，补 tag_type 别名字段对齐方案 A-03）。"""
+    """根因 TopN（symptom_tags 标签聚合，保"症状"语义；与 G-总览 roots 结构同源）。
+
+    severity_rank 按映射后旧四档域给值（HIGH→4=CRITICAL / MEDIUM→2=WARN / LOW→1=INFO）。
+    """
+    enriched = [{**r, "tag_name": symptom_label(r.get("tag_code"))} for r in rows]
     return [
         {
             "tag_type": r.get("tag_code"),
@@ -243,7 +296,7 @@ def shape_rootcause_top(rows: list[dict[str, Any]], top_n: int = 10) -> list[dic
             "active_count": r.get("active_count", 0) or 0,
             "severity": r.get("severity"),
         }
-        for r in shape_roots(rows, top_n)
+        for r in shape_roots(enriched, top_n)
     ]
 
 
@@ -253,7 +306,7 @@ def shape_rootcause_top(rows: list[dict[str, Any]], top_n: int = 10) -> list[dic
 
 
 # 诊断引擎元信息（原型截图：v3.2.1 · 连续运行 126 天 · 规则库 2026-08-18 更新）
-# 无 diagnosis_result 表 algorithm_version 字段时回退此常量，避免 DDL
+# 无实时引擎元信息来源时回退此常量，避免 DDL
 _ENGINE_VERSION_FALLBACK: dict[str, Any] = {
     "version": "v3.2.1",
     "running_days": 126,
@@ -346,41 +399,70 @@ async def _get_scope_unit_ids(db: AsyncSession, scope_type: str, scope_id: int) 
     return [str(row[0]) for row in result.all()]
 
 
+# 处置建议终态关联 LATERAL（open_tags 未处置过滤 + concl disposition 合成共用）：
+# terminal_cnt = 已达终态（CONVERTED/REJECTED/IGNORED）的建议数；
+# converted_cnt = 已转工单（converted_order_id 非空）；ignored_cnt = 已忽略
+_ACTION_LATERAL = """
+    LEFT JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE a.status IN ('CONVERTED', 'REJECTED', 'IGNORED'))
+               AS terminal_cnt,
+               count(*) FILTER (WHERE a.converted_order_id IS NOT NULL) AS converted_cnt,
+               count(*) FILTER (WHERE a.status = 'IGNORED') AS ignored_cnt
+        FROM loop_action_item a
+        WHERE a.run_id = r.id
+    ) act ON true
+"""
+
+# 主症状标签 LATERAL：symptom_tags JSONB 中 detected=true 且融合置信最高的标签域名
+_TOP_SYMPTOM_LATERAL = """
+    LEFT JOIN LATERAL (
+        SELECT kv.key AS top_symptom
+        FROM jsonb_each(r.symptom_tags) kv
+        WHERE kv.value->>'detected' = 'true'
+        ORDER BY (kv.value->>'confidence')::numeric DESC
+        LIMIT 1
+    ) sym ON true
+"""
+
+
 async def _query_open_tag_rows(
     db: AsyncSession, since: datetime, unit_ids: list[str] | None
 ) -> list[dict[str, Any]]:
-    """近窗口未处置 ACTIVE 标签（联查回路名 + 最新结论 LATERAL + 工厂模型单元/装置归属）。"""
+    """近窗口每回路最新一条异常 run（primary_category 非空 + 工厂模型归属 + 处置终态计数）。
+
+    "未处置"过滤（terminal_action_cnt=0）在 filter_open_tag_rows 纯函数层完成（可单测）。
+    """
     unit_filter = "AND l.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
     result = await db.execute(
         text(
             f"""
-            SELECT t.id AS tag_id, t.loop_id, t.tag_code, t.tag_name, t.severity,
-                   t.triggered_at, t.sla_deadline_at, t.sla_stage,
-                   l.tag_name AS loop_name,
-                   un.name AS unit_name, fa.name AS factory_name,
-                   r.recommended_category AS category,
-                   r.evidence_summary AS conclusion,
-                   r.confidence
-            FROM diagnosis_tag t
-            JOIN loop_ledger l ON l.id = t.loop_id
-            LEFT JOIN plant_node un ON un.id = l.unit_id
-            LEFT JOIN plant_node fa ON fa.id = un.parent_id
-            LEFT JOIN LATERAL (
-                SELECT rr.recommended_category, rr.evidence_summary, rr.confidence
-                FROM diagnosis_result rr
-                WHERE rr.loop_id = t.loop_id AND rr.diag_label = t.tag_code
-                ORDER BY rr.diagnosed_at DESC
-                LIMIT 1
-            ) r ON true
-            WHERE t.status = 'ACTIVE'
-              AND t.disposition_state = :disposition
-              AND t.triggered_at >= :since
-              {unit_filter}
-            ORDER BY t.triggered_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (r.loop_id)
+                       r.id AS run_id, r.loop_id, r.severity, r.created_at,
+                       r.primary_category, r.primary_confidence AS confidence,
+                       r.rationale->>0 AS conclusion,
+                       sym.top_symptom,
+                       act.terminal_cnt,
+                       l.tag_name AS loop_name,
+                       un.name AS unit_name, fa.name AS factory_name
+                FROM diagnosis_run r
+                JOIN loop_ledger l ON l.id = r.loop_id
+                LEFT JOIN plant_node un ON un.id = l.unit_id
+                LEFT JOIN plant_node fa ON fa.id = un.parent_id
+                {_ACTION_LATERAL}
+                {_TOP_SYMPTOM_LATERAL}
+                WHERE r.status = 'SUCCESS'
+                  AND r.primary_category IS NOT NULL
+                  AND r.created_at >= :since
+                  {unit_filter}
+                ORDER BY r.loop_id, r.created_at DESC
+            ) t
+            ORDER BY CASE t.severity WHEN 'HIGH' THEN 3 WHEN 'MEDIUM' THEN 2 ELSE 1 END DESC,
+                     t.created_at DESC
             LIMIT 50
             """
         ),
-        {"disposition": OPEN_DISPOSITION, "since": since, "unit_ids": unit_ids},
+        {"since": since, "unit_ids": unit_ids},
     )
     return [dict(row._mapping) for row in result.all()]
 
@@ -388,34 +470,27 @@ async def _query_open_tag_rows(
 async def _query_concl_rows(
     db: AsyncSession, since: datetime, unit_ids: list[str] | None, limit: int
 ) -> list[dict[str, Any]]:
-    """近窗口诊断结论（diagnosis_result 主线 + 工厂模型单元/装置归属）。
-
-    LATERAL 取同回路同症状最新标签的 disposition。
-    """
+    """近窗口诊断结论 run（diagnosis_run 主线 + 工厂模型归属 + 复核/处置关联计数）。"""
     unit_filter = "AND l.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
     result = await db.execute(
         text(
             f"""
-            SELECT r.id AS result_id, r.loop_id, r.diag_label, r.confidence,
-                   r.recommended_category AS category, r.evidence_summary,
-                   r.diagnosed_at AS ts,
+            SELECT r.id AS run_id, r.loop_id, r.primary_category,
+                   r.primary_confidence AS confidence, r.severity,
+                   r.review_status, r.rationale->>0 AS evidence_summary,
+                   r.created_at AS ts,
                    l.tag_name AS loop_name,
                    un.name AS unit_name, fa.name AS factory_name,
-                   t.id AS tag_id, t.disposition_state AS disposition, t.severity
-            FROM diagnosis_result r
+                   act.converted_cnt, act.ignored_cnt
+            FROM diagnosis_run r
             JOIN loop_ledger l ON l.id = r.loop_id
             LEFT JOIN plant_node un ON un.id = l.unit_id
             LEFT JOIN plant_node fa ON fa.id = un.parent_id
-            LEFT JOIN LATERAL (
-                SELECT tt.id, tt.disposition_state, tt.severity
-                FROM diagnosis_tag tt
-                WHERE tt.loop_id = r.loop_id AND tt.tag_code = r.diag_label
-                ORDER BY tt.triggered_at DESC
-                LIMIT 1
-            ) t ON true
-            WHERE r.diagnosed_at >= :since
+            {_ACTION_LATERAL}
+            WHERE r.status = 'SUCCESS'
+              AND r.created_at >= :since
               {unit_filter}
-            ORDER BY r.diagnosed_at DESC
+            ORDER BY r.created_at DESC
             LIMIT :limit
             """
         ),
@@ -463,18 +538,95 @@ async def _query_scope_loop_ids(db: AsyncSession, unit_ids: list[str] | None) ->
     return [str(row[0]) for row in result.all()]
 
 
-async def _query_rule_stat_rows(db: AsyncSession) -> list[dict[str, Any]]:
-    """diagnosis_tag 按 tag_code 聚合（命中数 + 已解除数）。"""
+async def _query_rule_stat_rows(db: AsyncSession, since: datetime) -> list[dict[str, Any]]:
+    """symptom_tags JSONB 展开聚合（近 30d 检出数 × 复核确认数，D2=a 口径）。"""
     result = await db.execute(
         text(
             """
-            SELECT tag_code, max(tag_name) AS tag_name, count(*) AS hits,
-                   count(*) FILTER (WHERE status = 'RESOLVED') AS resolved
-            FROM diagnosis_tag
-            GROUP BY tag_code
+            SELECT kv.key AS tag_code,
+                   count(*) AS hits,
+                   count(*) FILTER (WHERE r.review_status = 'REVIEWED') AS resolved
+            FROM diagnosis_run r
+            CROSS JOIN LATERAL jsonb_each(r.symptom_tags) kv
+            WHERE r.status = 'SUCCESS'
+              AND r.created_at >= :since
+              AND kv.value->>'detected' = 'true'
+            GROUP BY kv.key
             ORDER BY hits DESC
             """
-        )
+        ),
+        {"since": since},
+    )
+    return [dict(row._mapping) for row in result.all()]
+
+
+async def _query_pareto_rows(
+    db: AsyncSession, since: datetime, unit_ids: list[str] | None
+) -> list[dict[str, Any]]:
+    """diagnosis_run 按 primary_category 聚合（近窗口，与旧 MV-02 结构同构）。
+
+    converted/ignored 为该类 run 中已转工单/已忽略的计数；SLA 计数已下线（恒 0）。
+    """
+    unit_filter = "AND l.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
+    result = await db.execute(
+        text(
+            f"""
+            SELECT r.primary_category AS category_code,
+                   count(*) AS tag_count,
+                   count(*) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM loop_action_item a
+                       WHERE a.run_id = r.id AND a.converted_order_id IS NOT NULL
+                   )) AS converted_count,
+                   count(*) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM loop_action_item a
+                       WHERE a.run_id = r.id AND a.status = 'IGNORED'
+                   )) AS ignored_count
+            FROM diagnosis_run r
+            JOIN loop_ledger l ON l.id = r.loop_id
+            WHERE r.status = 'SUCCESS'
+              AND r.primary_category IS NOT NULL
+              AND r.created_at >= :since
+              {unit_filter}
+            GROUP BY r.primary_category
+            ORDER BY tag_count DESC
+            """
+        ),
+        {"since": since, "unit_ids": unit_ids},
+    )
+    return [dict(row._mapping) for row in result.all()]
+
+
+async def _query_rootcause_rows(
+    db: AsyncSession, since: datetime, top_n: int = 10
+) -> list[dict[str, Any]]:
+    """symptom_tags 标签聚合 TopN（近 30d，保"症状"语义与旧 tag_code 同域）。
+
+    active_cnt = 该标签所在 run 无终态处置建议（未处置口径与 open_tags 一致）；
+    severity_rank 按映射后四档域（HIGH→4 / MEDIUM→2 / LOW→1）。
+    """
+    result = await db.execute(
+        text(
+            """
+            SELECT kv.key AS tag_code,
+                   count(*) AS count,
+                   count(*) FILTER (WHERE NOT EXISTS (
+                       SELECT 1 FROM loop_action_item a
+                       WHERE a.run_id = r.id
+                         AND a.status IN ('CONVERTED', 'REJECTED', 'IGNORED')
+                   )) AS active_count,
+                   MAX(CASE r.severity WHEN 'HIGH' THEN 4 WHEN 'MEDIUM' THEN 2 ELSE 1 END)
+                       AS severity_rank
+            FROM diagnosis_run r
+            CROSS JOIN LATERAL jsonb_each(r.symptom_tags) kv
+            WHERE r.status = 'SUCCESS'
+              AND r.created_at >= :since
+              AND kv.value->>'detected' = 'true'
+            GROUP BY kv.key
+            ORDER BY count DESC
+            LIMIT :top_n
+            """
+        ),
+        {"since": since, "top_n": top_n},
     )
     return [dict(row._mapping) for row in result.all()]
 
@@ -495,10 +647,14 @@ async def build_diagnosis(
     window: str = "24h",
     only_active: bool = False,
 ) -> dict[str, Any]:
-    """组装 A-03 诊断六块。部分失败容错：单块异常不阻断其余块。"""
+    """组装 A-03 诊断六块。部分失败容错：单块异常不阻断其余块。
+
+    only_active=True → concl_timeline 仅保留未处置（UNADDRESSED）run。
+    """
     sid = _scope_id_int(scope_type, scope_id)
     now = datetime.now(UTC).replace(tzinfo=None)
     since = now - timedelta(hours=WINDOW_HOURS.get(window, 24))
+    since_30d = now - timedelta(hours=WINDOW_HOURS[RULE_STATS_WINDOW])
     diagnosis: dict[str, Any] = {
         "scope": {"type": scope_type, "id": scope_id},
         "window": window,
@@ -521,18 +677,18 @@ async def build_diagnosis(
         logger.warning("诊断 scope 子树查询失败，回退全量", exc_info=True)
         unit_ids = None
 
-    # --- open_tags：关键异常表 Top6（F-DG-01）---
+    # --- open_tags：关键异常表 Top6（F-DG-01，每回路最新未处置异常 run）---
     try:
-        rows = await _query_open_tag_rows(db, since, unit_ids)
+        rows = filter_open_tag_rows(await _query_open_tag_rows(db, since, unit_ids))
         loop_ids = [str(r["loop_id"]) for r in rows]
         spark_map = await _query_spark_map(db, loop_ids)
         fitness_latest = await get_latest_fitness_per_loop(db, loop_ids)
         fitness_map = {lid: fl.level for lid, fl in fitness_latest.items()}
-        diagnosis["open_tags"] = shape_open_tags(rows, spark_map, fitness_map, now)
+        diagnosis["open_tags"] = shape_open_tags(rows, spark_map, fitness_map)
     except Exception:  # noqa: BLE001
         logger.warning("诊断 open_tags 块构建失败", exc_info=True)
 
-    # --- concl_timeline：诊断结论时间线（F-DG-02）---
+    # --- concl_timeline：诊断结论时间线（F-DG-02，disposition 四态合成）---
     try:
         rows = await _query_concl_rows(db, since, unit_ids, CONCL_TIMELINE_LIMIT)
         diagnosis["concl_timeline"] = shape_concl_timeline(rows, only_active=only_active)
@@ -553,21 +709,21 @@ async def build_diagnosis(
     except Exception:  # noqa: BLE001
         logger.warning("诊断 fitness_gates 块构建失败", exc_info=True)
 
-    # --- rule_stats：诊断规则命中统计（F-DG-04 前置）---
+    # --- rule_stats：诊断规则命中统计（F-DG-04 前置，D2=a 近 30d 固定窗口）---
     try:
-        diagnosis["rule_stats"] = shape_rule_stats(await _query_rule_stat_rows(db))
+        diagnosis["rule_stats"] = shape_rule_stats(await _query_rule_stat_rows(db, since_30d))
     except Exception:  # noqa: BLE001
         logger.warning("诊断 rule_stats 块构建失败", exc_info=True)
 
-    # --- pareto：异常类型 Pareto（MV-02，与 G-总览同源复用）---
+    # --- pareto：异常类型 Pareto（diagnosis_run primary_category 聚合，与 A-01 结构同构）---
     try:
-        diagnosis["pareto"] = shape_pareto(await _query_pareto(db))
+        diagnosis["pareto"] = shape_pareto(await _query_pareto_rows(db, since, unit_ids))
     except Exception:  # noqa: BLE001
         logger.warning("诊断 pareto 块构建失败", exc_info=True)
 
-    # --- rootcause_top：根因 TopN（DiagnosisTag 聚合，与 G-总览 roots 同源）---
+    # --- rootcause_top：根因 TopN（symptom_tags 标签聚合，与 G-总览 roots 同构）---
     try:
-        diagnosis["rootcause_top"] = shape_rootcause_top(await _query_roots(db))
+        diagnosis["rootcause_top"] = shape_rootcause_top(await _query_rootcause_rows(db, since_30d))
     except Exception:  # noqa: BLE001
         logger.warning("诊断 rootcause_top 块构建失败", exc_info=True)
 

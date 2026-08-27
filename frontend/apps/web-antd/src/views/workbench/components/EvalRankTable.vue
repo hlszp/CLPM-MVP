@@ -16,6 +16,7 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
 import Spark from './Spark.vue';
 
 const props = defineProps<{
@@ -28,6 +29,20 @@ const emit = defineEmits<{
   loseClick: [tag: string];
   'update:view': [view: WorkbenchApi.AssessmentView];
 }>();
+
+const { drill, resolvePlantNodeId } = useWorkbenchDrill();
+
+/**
+ * 追溯矩阵 §3 下钻：行点击 → 回路绩效明细（装置口径）。
+ * 行 id 为 source_node_id；FACTORY/AREA 可经 scopeTree 解析 plantNodeId，
+ * UNIT 视图行解析不到则不带（避免错口径）。
+ */
+function onRowClick(r: WorkbenchApi.AssessmentRankRow) {
+  const plantNodeId = resolvePlantNodeId(r.id);
+  drill('assess', '/metric/loop-performance', {
+    ...(plantNodeId ? { plantNodeId } : {}),
+  });
+}
 
 const rows = computed(() => props.ranking ?? []);
 
@@ -133,7 +148,9 @@ function onLose(tag: string) {
           <tr
             v-for="r in rows"
             :key="r.id ?? r.name"
-            class="border-b border-[#F0F0F0] last:border-0 hover:bg-[#FAFAFA]"
+            class="cursor-pointer border-b border-[#F0F0F0] last:border-0 hover:bg-[#FAFAFA]"
+            title="点击查看该装置回路绩效明细"
+            @click="onRowClick(r)"
           >
             <!-- # -->
             <td class="py-1.5 text-center">
@@ -199,7 +216,7 @@ function onLose(tag: string) {
                   v-for="t in r.lose_factors"
                   :key="t"
                   class="mr-1 cursor-pointer rounded bg-[#FDECEA] px-1.5 text-[10.5px] text-[#C5221F] hover:bg-[#F9D9D6]"
-                  @click="onLose(t)"
+                  @click.stop="onLose(t)"
                   >{{ t }}</span
                 >
                 <span v-if="r.lose_factors.length === 0" class="text-gray-300">—</span>

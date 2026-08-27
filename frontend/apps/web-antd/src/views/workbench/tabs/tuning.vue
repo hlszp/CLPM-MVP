@@ -37,8 +37,20 @@ import TuneQueueRow from '../components/TuneQueueRow.vue';
 import TuningFitnessCard from '../components/TuningFitnessCard.vue';
 import TuningLoopDetail from '../components/TuningLoopDetail.vue';
 import TuningRootCauseDist from '../components/TuningRootCauseDist.vue';
+import { useWorkbenchDrill } from '../utils/drill';
 
 const store = useWorkbenchStore();
+const { drill } = useWorkbenchDrill();
+
+// 追溯矩阵 §5 下钻接线（U1 断言数字 → 整定记录列表）
+/** 待整定数字 → 整定记录（DRAFT+PENDING 口径；窗口+scope 由 drill 携带） */
+function drillPendingTuning() {
+  drill('tuning', '/tuning/records', { status: 'DRAFT,PENDING' });
+}
+/** 回退数 → 整定记录（ROLLED_BACK 口径） */
+function drillRolledBack() {
+  drill('tuning', '/tuning/records', { status: 'ROLLED_BACK' });
+}
 
 const tuning = ref<null | WorkbenchApi.TuningFullResult>(null);
 const loading = ref(false);
@@ -278,10 +290,18 @@ watch(
         >
           <div class="min-w-0 flex-1 text-[#593A00]">
             <b class="text-[#8C4A00] mr-1">⚠</b>
-            <b class="text-[#FF4D4F]">{{ assertion.pending }} 条</b> 待整定
+            <b
+              class="cursor-pointer text-[#FF4D4F] hover:underline"
+              title="点击查看待整定记录（DRAFT+PENDING）"
+              @click="drillPendingTuning"
+            >{{ assertion.pending }} 条</b> 待整定
             （<b class="text-[#FF4D4F]">高 {{ assertion.hi }}</b> / 中 {{ assertion.mi }} / 低 {{ assertion.lo }}）
             <template v-if="assertion.fallbackTag">
-              ，含 <b class="text-[#FF4D4F]">{{ assertion.fallbackTag }} 回退</b>
+              ，含 <b
+                class="cursor-pointer text-[#FF4D4F] hover:underline"
+                title="点击查看回退整定记录（ROLLED_BACK）"
+                @click="drillRolledBack"
+              >{{ assertion.fallbackTag }} 回退</b>
             </template>
             ；适用性 <b>{{ assertion.level }} {{ assertion.levelLabel }}</b>，主因
             <b class="text-[#FF4D4F]">{{ assertion.mainReason }}</b>

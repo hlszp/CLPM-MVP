@@ -5,7 +5,7 @@
 - plants    装置排名（FACTORY 行 + sparkline + lose_factors + alarm + overdue）
 - units     单元 ×6 指标热力（UNIT 行，缺数据 → None，前端 CSS 斜纹）
 - pareto    异常类型分布（MV-02 mv_diagnosis_pareto）
-- roots     根因 Top N（DiagnosisTag 按 tag_code 聚合，active 优先）
+- roots     根因 Top N（diagnosis_run symptom_tags 标签聚合，14 号方案 A3 迁 v2）
 - funnel    处置漏斗（MV-03 mv_handling_funnel，4 泳道计数 + 超期）
 
 数据架构：本 service **不直接查 TDengine**；计算类历史数据由 workbench_precalc
@@ -23,16 +23,17 @@ scope_id 约定（G-总览定义，precalc 任务须遵守）：
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.diagnosis import DiagnosisTag
 from app.models.handling_order import HandlingOrder
 from app.models.plant_node import PlantNode
 from app.models.sys_config import SysConfig
 from app.models.workbench_summary import WorkbenchWindowSummary
+from app.services.diagnosis_v2_compat import symptom_label
 
 logger = logging.getLogger(__name__)
 
@@ -207,9 +208,12 @@ _SEVERITY_RANK_TO_LABEL = {4: "CRITICAL", 3: "ERROR", 2: "WARN", 1: "INFO"}
 
 
 def shape_roots(rows: list[Any], top_n: int = ROOTS_TOP_N) -> list[dict[str, Any]]:
-    """DiagnosisTag 聚合行 → 根因 Top N（tag_code/count/active/severity）。
+    """diagnosis_run 症状标签聚合行 → 根因 Top N（tag_code/count/active/severity）。
 
-    severity 取该 tag_code 下最严重一档（CRITICAL>ERROR>WARN>INFO），由 SQL MAX(rank) 映射。
+    口径（14 号方案阶段 A3）：tag_code = 症状标签英文域（如 OSCILLATION）、
+    tag_name = symptom_label 中文标签；severity 取该标签所在 run 的最高
+    severity 经 severity_to_legacy 四档（CRITICAL/WARN/INFO，SQL MAX(rank) 映射，
+    v2 无 ERROR 档）。
     """
     items: list[dict[str, Any]] = []
     for r in rows:
@@ -217,12 +221,13 @@ def shape_roots(rows: list[Any], top_n: int = ROOTS_TOP_N) -> list[dict[str, Any
         if isinstance(r, dict):
             rank = r.get("severity_rank")
         severity = _SEVERITY_RANK_TO_LABEL.get(int(rank)) if rank is not None else None
+        tag_code = getattr(r, "tag_code", None) or (
+            r.get("tag_code") if isinstance(r, dict) else None
+        )
         items.append(
             {
-                "tag_code": getattr(r, "tag_code", None)
-                or (r.get("tag_code") if isinstance(r, dict) else None),
-                "tag_name": getattr(r, "tag_name", None)
-                or (r.get("tag_name") if isinstance(r, dict) else None),
+                "tag_code": tag_code,
+                "tag_name": symptom_label(tag_code),
                 "count": getattr(r, "count", None)
                 or (r.get("count") if isinstance(r, dict) else 0)
                 or 0,
@@ -394,14 +399,27 @@ async def _get_descendant_unit_ids(db: AsyncSession, scope_type: str, scope_id: 
 
 
 async def _query_alarm_per_unit(db: AsyncSession) -> dict[str, int]:
-    """ACTIVE diagnosis_tag 按 loop.unit_id 聚合计数（→ 再映射到 factory）。"""
-    from app.models.loop import LoopLedger
+    """近 24h 诊断检出异常回路数按 loop.unit_id 聚合（→ 再映射到 factory）。
 
+    口径（14 号方案阶段 A3 · D3=a 流量态）：diagnosis_run 近 24h 窗口内
+    primary_category 非 NULL 的**去重回路数**（一个回路 24h 内多次 run 计 1）；
+    此前为存量 ACTIVE diagnosis_tag 态。窗口起点用参数化 naive UTC
+    （PG 会话时区 +8，勿裸用 now()）。
+    """
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
     result = await db.execute(
-        select(LoopLedger.unit_id, func.count(DiagnosisTag.id))
-        .join(DiagnosisTag, DiagnosisTag.loop_id == LoopLedger.id)
-        .where(DiagnosisTag.status == "ACTIVE")
-        .group_by(LoopLedger.unit_id)
+        text(
+            """
+            SELECT l.unit_id::text, count(DISTINCT r.loop_id)
+            FROM diagnosis_run r
+            JOIN loop_ledger l ON l.id = r.loop_id
+            WHERE r.status = 'SUCCESS'
+              AND r.primary_category IS NOT NULL
+              AND r.created_at >= :since
+            GROUP BY l.unit_id
+            """
+        ),
+        {"since": since},
     )
     return {row[0]: int(row[1]) for row in result.all() if row[0]}
 
@@ -432,31 +450,35 @@ async def _query_pareto(db: AsyncSession) -> list[dict[str, Any]]:
 
 
 async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
-    """DiagnosisTag 按 tag_code 聚合 Top N（总数 + active 子计数 + 最高严重度 rank）。
+    """diagnosis_run symptom_tags 标签聚合 Top N（近 30d 检出 + PENDING 子计数）。
 
-    使用 text() 直接写 SQL 以规避 SQLAlchemy func.case + GROUP BY 在 asyncpg 下
-    的列引用歧义问题。
+    口径（14 号方案阶段 A3）：旧 diagnosis_tag 按 tag_code 聚合迁 v2 引擎——
+    count = 检出次数（symptom_tags 中 detected=true 的 run 数）、
+    active_count = 其中 review_status='PENDING' 的 run 数、
+    severity_rank = 该标签所在 run 的最高 severity（HIGH→4 / MEDIUM→2 / LOW→1，
+    即 severity_to_legacy 四档色域 CRITICAL/WARN/INFO）。
+    窗口起点用参数化 naive UTC（PG 会话时区 +8，勿裸用 now()）。
     """
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
     result = await db.execute(
         text(
             """
-            SELECT tag_code,
-                   max(tag_name) AS tag_name,
+            SELECT kv.key AS tag_code,
                    count(*) AS count,
-                   count(*) FILTER (WHERE status = 'ACTIVE') AS active_count,
-                   MAX(CASE
-                       WHEN severity = 'CRITICAL' THEN 4
-                       WHEN severity = 'ERROR' THEN 3
-                       WHEN severity = 'WARN' THEN 2
-                       ELSE 1
-                   END) AS severity_rank
-            FROM diagnosis_tag
-            GROUP BY tag_code
+                   count(*) FILTER (WHERE r.review_status = 'PENDING') AS active_count,
+                   MAX(CASE r.severity WHEN 'HIGH' THEN 4 WHEN 'MEDIUM' THEN 2 ELSE 1 END)
+                       AS severity_rank
+            FROM diagnosis_run r
+            CROSS JOIN LATERAL jsonb_each(r.symptom_tags) kv
+            WHERE r.status = 'SUCCESS'
+              AND r.created_at >= :since
+              AND kv.value->>'detected' = 'true'
+            GROUP BY kv.key
             ORDER BY count DESC
             LIMIT :top_n
             """
         ),
-        {"top_n": top_n},
+        {"since": since, "top_n": top_n},
     )
     return [dict(r._mapping) for r in result.all()]
 
@@ -565,7 +587,7 @@ async def build_overview(
     except Exception:  # noqa: BLE001
         logger.warning("总览 pareto 块构建失败", exc_info=True)
 
-    # --- roots：根因 Top N（DiagnosisTag 聚合）---
+    # --- roots：根因 Top N（diagnosis_run symptom_tags 标签聚合，A3 迁 v2）---
     try:
         root_rows = await _query_roots(db, ROOTS_TOP_N)
         overview["roots"] = shape_roots(root_rows, ROOTS_TOP_N)

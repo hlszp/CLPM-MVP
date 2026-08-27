@@ -13,13 +13,14 @@
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
+
+import { useWorkbenchDrill } from '../utils/drill';
 
 const props = defineProps<{
   summary?: null | WorkbenchApi.AssessmentSummary;
 }>();
 
-const router = useRouter();
+const { drill } = useWorkbenchDrill();
 
 // gauge 几何（对齐原型 gaugeSVG w:120 h:66 r:52 cx:60 cy:60）
 const W = 120;
@@ -50,9 +51,10 @@ const distance = computed(() => props.summary?.distance_to_target);
 const delta = computed(() => props.summary?.delta);
 
 function onLink(action: string) {
-  // 跨 Tab 联动：tab:diag → 路由切诊断 Tab；alerts → 预警抽屉（G-全局，本批次桩）
+  // 追溯矩阵：tab:diag → 诊断记录明细页（携带窗口+scope 口径）；
+  // alerts → 监控域预警（Q5 本次不接线，保持桩）
   if (action === 'tab:diag') {
-    router.push('/workbench/diagnosis');
+    drill('diagnosis', '/diagnosis/records');
   }
 }
 
@@ -129,10 +131,21 @@ function riskColor(risk: WorkbenchApi.AssessmentSummary['risks'][number]): strin
     <div
       class="flex flex-1 min-w-0 items-center px-4 py-2 text-[13px] leading-[1.75] text-gray-700"
     >
-      <div
-        class="min-w-0"
-        v-html="summary?.conclusion ?? '暂无评估数据'"
-      ></div>
+      <div class="min-w-0">
+        <div v-html="summary?.conclusion ?? '暂无评估数据'"></div>
+        <!-- 结论链接（conclusion_links，'alerts' 由右侧风险速览承接，此处不重复渲染） -->
+        <div
+          v-for="link in (summary?.conclusion_links ?? []).filter((l) => l.action !== 'alerts')"
+          :key="link.action"
+          class="mt-0.5"
+        >
+          <a
+            class="cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
+            @click="onLink(link.action)"
+            >{{ link.text }} →</a
+          >
+        </div>
+      </div>
     </div>
 
     <!-- 右：风险速览 -->

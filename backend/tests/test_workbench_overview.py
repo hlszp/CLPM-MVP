@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -204,27 +204,43 @@ class TestShapePareto:
 
 
 class TestShapeRoots:
-    def test_severity_rank映射标签(self):
-        row = MagicMock()
-        row.tag_code = "OSCILLATION"
-        row.tag_name = "振荡"
-        row.count = 10
-        row.active_count = 5
-        row.severity_rank = 4
+    """A3 迁 v2：symptom_tags 标签聚合行 → 中文 tag_name + 四档 severity。"""
+
+    def test_中文tag_name与severity四档(self):
+        row = {
+            "tag_code": "OSCILLATION",
+            "count": 10,
+            "active_count": 5,
+            "severity_rank": 4,
+        }
         out = shape_roots([row], top_n=10)
-        assert out[0]["severity"] == "CRITICAL"
+        assert out[0]["tag_code"] == "OSCILLATION"
+        assert out[0]["tag_name"] == "回路振荡"  # symptom_label 中文映射
+        assert out[0]["severity"] == "CRITICAL"  # HIGH→rank4
         assert out[0]["count"] == 10
         assert out[0]["active_count"] == 5
 
+    def test_severity_rank域为v2三档(self):
+        """v2 经 severity_to_legacy 无 ERROR 档：rank 2→WARN、1→INFO。"""
+        rows = [
+            {"tag_code": "VALVE_STICTION", "count": 3, "active_count": 1, "severity_rank": 2},
+            {"tag_code": "OUTPUT_SATURATION", "count": 2, "active_count": 2, "severity_rank": 1},
+        ]
+        out = shape_roots(rows, top_n=10)
+        sev = {r["tag_code"]: r["severity"] for r in out}
+        assert sev == {"VALVE_STICTION": "WARN", "OUTPUT_SATURATION": "INFO"}
+        # PENDING 子计数 ≤ 检出总数
+        assert all(r["active_count"] <= r["count"] for r in out)
+
     def test_active优先排序(self):
-        r1 = MagicMock(tag_code="A", tag_name="A", count=8, active_count=1, severity_rank=2)
-        r2 = MagicMock(tag_code="B", tag_name="B", count=5, active_count=4, severity_rank=3)
+        r1 = {"tag_code": "A", "count": 8, "active_count": 1, "severity_rank": 2}
+        r2 = {"tag_code": "B", "count": 5, "active_count": 4, "severity_rank": 3}
         out = shape_roots([r1, r2], top_n=10)
         assert out[0]["tag_code"] == "B"  # active 多的优先
 
     def test_topN截断(self):
         rows = [
-            MagicMock(tag_code=f"T{i}", tag_name=f"T{i}", count=i, active_count=0, severity_rank=1)
+            {"tag_code": f"T{i}", "count": i, "active_count": 0, "severity_rank": 1}
             for i in range(15)
         ]
         out = shape_roots(rows, top_n=10)
@@ -394,3 +410,76 @@ class TestBuildOverview:
             await build_overview(db, scope_type="GLOBAL", scope_id=None, window="24h")
         assert captured["scope_type"] == "GLOBAL"
         assert captured["scope_id"] == 0
+
+
+# ===========================================================================
+# v2 查询 helper（A3：alarm_count 流量口径 + roots symptom_tags 聚合）
+# ===========================================================================
+
+
+def _mock_db(rows: list) -> AsyncMock:
+    """AsyncSession mock：execute 返回 rows（支持 tuple 或带 _mapping 的 row 对象）。"""
+    db = AsyncMock()
+    db.execute.return_value = MagicMock()
+    db.execute.return_value.all.return_value = rows
+    return db
+
+
+class TestQueryAlarmPerUnit:
+    @pytest.mark.asyncio
+    async def test_近24h去重回路数按unit聚合(self):
+        """D3=a 流量口径：count(DISTINCT loop_id)、primary_category 非 NULL、since ≈ now-24h。"""
+        from app.services.workbench_overview import _query_alarm_per_unit
+
+        db = _mock_db([("u1", 3), ("u2", 1)])
+        out = await _query_alarm_per_unit(db)
+        assert out == {"u1": 3, "u2": 1}
+
+        sql = str(db.execute.call_args[0][0])
+        assert "count(DISTINCT r.loop_id)" in sql  # 去重回路数（多次 run 计 1）
+        assert "primary_category IS NOT NULL" in sql
+        assert "diagnosis_run" in sql
+        assert "diagnosis_tag" not in sql  # 旧引擎表停读
+
+        since = db.execute.call_args[0][1]["since"]
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
+        assert (now_utc - since).total_seconds() / 3600 == pytest.approx(24, abs=1)
+        assert since.tzinfo is None  # naive UTC（PG 会话时区 +8）
+
+    @pytest.mark.asyncio
+    async def test_空unit跳过(self):
+        from app.services.workbench_overview import _query_alarm_per_unit
+
+        db = _mock_db([(None, 2)])
+        assert await _query_alarm_per_unit(db) == {}
+
+
+class TestQueryRoots:
+    @pytest.mark.asyncio
+    async def test_symptom_tags展开与PENDING子计数(self):
+        """近 30d detected=true 聚合；active_count = review_status='PENDING' 的 run 数。"""
+        from app.services.workbench_overview import _query_roots
+
+        row = MagicMock()
+        row._mapping = {
+            "tag_code": "OSCILLATION",
+            "count": 5,
+            "active_count": 2,
+            "severity_rank": 4,
+        }
+        db = _mock_db([row])
+        out = await _query_roots(db, top_n=10)
+        assert out == [row._mapping]
+
+        sql = str(db.execute.call_args[0][0])
+        assert "jsonb_each" in sql  # symptom_tags JSONB 展开
+        assert "kv.value->>'detected' = 'true'" in sql
+        assert "r.review_status = 'PENDING'" in sql  # active_count 口径
+        assert "diagnosis_tag" not in sql
+        assert "LIMIT :top_n" in sql
+
+        params = db.execute.call_args[0][1]
+        now_utc = datetime.now(UTC).replace(tzinfo=None)
+        assert (now_utc - params["since"]).total_seconds() / 3600 == pytest.approx(720, abs=1)
+        assert params["since"].tzinfo is None
+        assert params["top_n"] == 10

@@ -328,9 +328,12 @@ const filterSummary = computed(() => {
 });
 
 // --- 导入参数 ---
+// 默认时间窗右缘 = 当前时刻 − 5min：后端 overwrite 红线要求 tsEnd ≤ now−5min
+// （防覆盖远端尚未归档的实时行），右缘减 5min 后默认参数即可直接导入，
+// 避免"默认配置提交即 422"的 Poka-Yoke 陷阱（与 schemas/loop_data.py 口径一致）。
 const timeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
   dayjs().subtract(7, 'day'),
-  dayjs(),
+  dayjs().subtract(5, 'minute'),
 ]);
 const interval = ref(1);
 const conflictStrategy = ref<LoopDataApi.ConflictStrategy>('overwrite');

@@ -500,6 +500,28 @@ class KpiSnapshotListData(CamelModel):
     pageSize: int
 
 
+class MetricSeriesPoint(CamelModel):
+    """批量指标序列数据点（指标矩阵页列头趋势对比）."""
+
+    ts: str | None = None
+    value: float | None = None
+
+
+class MetricSeriesItem(CamelModel):
+    """单回路的指标时间序列."""
+
+    loopId: str | None = None
+    loopTagName: str | None = None
+    points: list[MetricSeriesPoint] = Field(default_factory=list)
+
+
+class MetricSeriesData(CamelModel):
+    """批量回路指标序列响应 data 块."""
+
+    metricKey: str
+    series: list[MetricSeriesItem] = Field(default_factory=list)
+
+
 __all__ = [
     "AnalyticsData",
     "AnalyticsFilterScope",
@@ -519,6 +541,9 @@ __all__ = [
     "KpiTrendSeries",
     "MetricConfigItem",
     "MetricConfigUpdate",
+    "MetricSeriesData",
+    "MetricSeriesItem",
+    "MetricSeriesPoint",
     "MetricThreshold",
     "PartialWarning",
     "RankingItem",

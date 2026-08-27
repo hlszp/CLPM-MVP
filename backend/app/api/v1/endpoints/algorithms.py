@@ -6,7 +6,7 @@ tuning_algorithms），为外部系统提供同步计算接口；并提供算法
 
 路由清单：
 - POST /api/v1/algorithms/kpi/calculate       — 同步 KPI 计算（单回路单指标）
-- POST /api/v1/algorithms/diagnosis/analyze    — 同步诊断分析（单回路）
+- POST /api/v1/algorithms/diagnosis/analyze    — 【已退役 2026-08-27】（A4，见下方归档注释）
 - POST /api/v1/algorithms/tuning/calculate     — 同步整定计算（PID 参数）
 - GET  /api/v1/algorithms/tasks/{task_id}      — 查询算法任务状态（Celery）
 
@@ -267,22 +267,30 @@ async def calculate_kpi(
 
 
 # ---------------------------------------------------------------------------
-# §2.7.2 POST /algorithms/diagnosis/analyze — 同步诊断分析
+# §2.7.2 POST /algorithms/diagnosis/analyze — 已退役（2026-08-27，A4 收口）
+#
+# 退役原因（docs/MVP设计/14-诊断引擎统一方案.md §4 阶段 A4 / §3 裁决 D4=a）：
+# 本端点是旧诊断引擎（app/tasks/diagnosis_engine.py）的唯一活跃写入口，
+# 同步调 _do_diagnose_single_loop 写 diagnosis_result + diagnosis_tag 旧表。
+# 诊断统计源已统一迁移 diagnosis_run（v2 引擎），旧引擎写入链路退役。
+# 全仓检索确认 frontend/ 与 e2e/ 均无本端点调用方，故按 main.py
+# "解除注册 + 归档注释"先例注释路由（退役=解除注册，函数体归档保留）。
+# 替代入口：POST /diagnosis/run（诊断 v2 编排器）。
 # ---------------------------------------------------------------------------
 
 
-@router.post("/diagnosis/analyze", response_model=ApiResponse[DiagnosisAnalyzeResponse])
+# @router.post("/diagnosis/analyze", response_model=ApiResponse[DiagnosisAnalyzeResponse])
 async def analyze_diagnosis(
     body: DiagnosisAnalyzeRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles(*_KPI_DIAG_ROLES)),
 ) -> dict:
-    """同步诊断分析（单回路，不走 Celery）.
+    """【已退役 2026-08-27】同步诊断分析（单回路，不走 Celery）.
 
-    调用 ``app.tasks.diagnosis_engine._do_diagnose_single_loop`` 执行单回路
-    诊断，返回 8 类诊断标签结果（含置信度与证据）。
-
-    设计依据：IDS §2.7.2
+    归档保留（不删除）：原实现调 ``app.tasks.diagnosis_engine._do_diagnose_single_loop``
+    执行单回路诊断并返回 8 类诊断标签结果（含置信度与证据）。
+    路由已解除注册，替代入口为 POST /diagnosis/run（诊断 v2）。
+    详见 docs/MVP设计/14-诊断引擎统一方案.md §4 阶段 A4。
     """
     _parse_time(body.startTime, body.endTime)
     _validate_labels(body.labels)

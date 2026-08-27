@@ -17,6 +17,7 @@ import type { TableColumnsType } from 'ant-design-vue';
 import type { ConfidenceLevel, KpiSnapshotItem, KpiStatus } from '#/api/metric';
 
 import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -66,9 +67,12 @@ const pageSize = ref(20);
 // 筛选状态
 const filterLoopId = ref<string | undefined>();
 const filterPlantNodeId = ref<string | undefined>();
-const filterStatus = ref<KpiStatus | undefined>();
+// 状态筛选为多值（工作台下钻可携 INCONCLUSIVE,PARTIAL 逗号多值口径）
+const filterStatus = ref<KpiStatus[]>([]);
 const filterConfidence = ref<ConfidenceLevel | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
+// 快照粒度：false=全部快照（历史明细默认）；深链 latestOnly=true 切回路粒度
+const filterLatestOnly = ref(false);
 
 // 服务端排序状态（综合评分列，其余列按 tsStart DESC 默认序）
 const sortBy = ref<'score' | undefined>();
@@ -259,11 +263,15 @@ async function loadList() {
     const params: any = {
       page: currentPage.value,
       pageSize: pageSize.value,
-      latestOnly: false,
+      latestOnly: filterLatestOnly.value,
     };
     if (filterLoopId.value) params.loopId = filterLoopId.value;
     if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
-    if (filterStatus.value) params.status = filterStatus.value;
+    // 多值状态逗号拼接直传（后端 status 目前单值精确匹配，
+    // 多值口径待后端扩展后自动生效，与整定 GAP-1 同类）
+    if (filterStatus.value.length > 0) {
+      params.status = filterStatus.value.join(',');
+    }
     if (filterConfidence.value) params.confidenceLevel = filterConfidence.value;
     if (filterDateRange.value) {
       params.startTime = filterDateRange.value[0].startOf('day').toISOString();
@@ -467,6 +475,42 @@ function handleExport(format: 'csv' | 'excel') {
   message.success(`已导出 ${snapshotList.value.length} 条记录`);
 }
 
+// ============ 路由 query 初值（追溯矩阵 G6：工作台统计下钻接参） ============
+const route = useRoute();
+
+const KPI_STATUS_VALUES = new Set<string>([
+  'INCONCLUSIVE',
+  'PARTIAL',
+  'SUCCESS',
+]);
+
+/**
+ * 挂载时从 route.query 读取一次筛选初值（不做 watch 同步，之后用户可自由修改）。
+ * 支持：startTime/endTime（ISO8601）、status（逗号多值）、plantNodeId、latestOnly。
+ */
+function applyRouteQuery() {
+  const q = route.query;
+  if (typeof q.plantNodeId === 'string' && q.plantNodeId) {
+    filterPlantNodeId.value = q.plantNodeId;
+  }
+  if (typeof q.status === 'string' && q.status) {
+    // 逗号多值（如 INCONCLUSIVE,PARTIAL），非法值丢弃
+    filterStatus.value = q.status
+      .split(',')
+      .filter((s): s is KpiStatus => KPI_STATUS_VALUES.has(s));
+  }
+  if (typeof q.startTime === 'string' && typeof q.endTime === 'string') {
+    const start = dayjs(q.startTime);
+    const end = dayjs(q.endTime);
+    if (start.isValid() && end.isValid()) {
+      filterDateRange.value = [start, end];
+    }
+  }
+  if (typeof q.latestOnly === 'string') {
+    filterLatestOnly.value = q.latestOnly === 'true';
+  }
+}
+
 // ============ 生命周期 ============
 /** P3-01：暴露 refresh()（原 Tab 容器协议遗留，独立页面下供外部按需调用） */
 async function refresh() {
@@ -491,8 +535,10 @@ const { toolbarItems } = usePageToolbar(() => ({
 }));
 
 onMounted(() => {
+  applyRouteQuery();
   loadPlantNodeTree();
-  loadLoops();
+  // 深链带入装置初值时按装置加载回路选项（与手动选择装置行为一致）
+  loadLoops(filterPlantNodeId.value);
   loadList();
 });
 </script>
@@ -551,9 +597,11 @@ onMounted(() => {
       />
       <Select
         v-model:value="filterStatus"
+        mode="multiple"
         placeholder="状态"
         allow-clear
-        style="width: 130px"
+        :max-tag-count="2"
+        style="width: 180px"
         @change="loadList"
       >
         <Select.Option value="SUCCESS">成功</Select.Option>

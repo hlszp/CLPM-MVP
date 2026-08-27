@@ -3,7 +3,7 @@
  * 异常 Pareto + 根因 TopN（方案 §5.1 F-OV-04 · 双柱并排）
  *
  * - 左：异常类型 Pareto（MV-02 mv_diagnosis_pareto，水平柱 root_cause × tag_count）
- * - 右：根因 TopN（DiagnosisTag 聚合，水平柱 tag_name × count，active 优先）
+ * - 右：根因 TopN（diagnosis_run symptom_tags 聚合，A3 迁 v2，水平柱 tag_name × count，active 优先）
  * - 并排对比：左侧"异常类型分布"，右侧"根因排行"
  * - active_count 高亮：在总数柱上叠加深色 active 段（双段柱）
  * - severity 色点：CRITICAL 红 · ERROR 红 · WARN 橙 · INFO 蓝

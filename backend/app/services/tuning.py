@@ -1551,10 +1551,19 @@ async def list_tuning_tasks(
     loop_id: str | None = None,
     algorithm: str | None = None,
     status: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
-    """查询整定任务列表（分页）。"""
+    """查询整定任务列表（分页）。
+
+    status 支持逗号分隔多值（单值向后兼容）；start_time/end_time 按
+    created_at 闭区间过滤（naive UTC）。
+    """
+    # status 逗号分隔多值 → IN 查询；单值为 IN 的特例，行为不变
+    statuses = [s.strip() for s in status.split(",") if s.strip()] if status else []
+
     query = select(TuningRecord, LoopLedger.tag_name).outerjoin(
         LoopLedger, TuningRecord.loop_id == LoopLedger.id
     )
@@ -1563,8 +1572,12 @@ async def list_tuning_tasks(
         query = query.where(TuningRecord.loop_id == loop_id)
     if algorithm:
         query = query.where(TuningRecord.algorithm == algorithm)
-    if status:
-        query = query.where(TuningRecord.status == status)
+    if statuses:
+        query = query.where(TuningRecord.status.in_(statuses))
+    if start_time:
+        query = query.where(TuningRecord.created_at >= start_time)
+    if end_time:
+        query = query.where(TuningRecord.created_at <= end_time)
 
     # 总数
     count_query = select(func.count()).select_from(TuningRecord)
@@ -1572,8 +1585,12 @@ async def list_tuning_tasks(
         count_query = count_query.where(TuningRecord.loop_id == loop_id)
     if algorithm:
         count_query = count_query.where(TuningRecord.algorithm == algorithm)
-    if status:
-        count_query = count_query.where(TuningRecord.status == status)
+    if statuses:
+        count_query = count_query.where(TuningRecord.status.in_(statuses))
+    if start_time:
+        count_query = count_query.where(TuningRecord.created_at >= start_time)
+    if end_time:
+        count_query = count_query.where(TuningRecord.created_at <= end_time)
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 

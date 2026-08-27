@@ -19,10 +19,26 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   pareto?: WorkbenchApi.ParetoRow[];
   window?: string;
 }>();
+
+const { drill } = useWorkbenchDrill();
+
+/**
+ * 追溯矩阵 §4 下钻：柱点击 → 诊断记录（category 口径，窗口由 drill 携带）。
+ * 已核验：root_cause = mv_diagnosis_pareto.root_cause（A2 重建 MV-02 迁移 e3f4a5b6c7d8，
+ * 改基于 diagnosis_run，旧 diagnosis_result 读方已退役），即诊断 8 类代码（classification.py：
+ * TUNING/VALVE/INSTRUMENT/COMMUNICATION/PROCESS/UTILIZATION/DESIGN/DATA_INSUFFICIENT）；
+ * records.vue 以 CATEGORY_OPTIONS 值（同为 8 类代码）校验入参，直接透传即可正确落地。
+ */
+function onBarClick(p: WorkbenchApi.ParetoRow) {
+  if (!p.root_cause) return;
+  drill('diagnosis', '/diagnosis/records', { category: p.root_cause });
+}
 
 // ---------- 唯一坐标常量（边距基线收敛，经验 100011295 抽常量）----------
 const PLOT_W = 470; // 绘图区内部宽（不含左右轴标签。SVG 宽包含轴）
@@ -221,7 +237,7 @@ const top2 = computed(() => {
           <template v-for="(p, i) in data" :key="`bar-${p.root_cause}-${i}`">
             <!-- 柱体：bottom: 0 严格对齐 X 基线 -->
             <div
-              class="absolute bottom-0 rounded-t-sm"
+              class="absolute bottom-0 cursor-pointer rounded-t-sm hover:brightness-125"
               :style="{
                 left: slotLeft(i),
                 width: `${BAR_W}px`,
@@ -229,6 +245,8 @@ const top2 = computed(() => {
                 backgroundColor: '#1F4E79',
                 opacity: 1 - Math.min(i, 5) * 0.12,
               }"
+              :title="`${p.root_cause ?? '未分类'}：${p.tag_count ?? 0} 条 · 点击查看诊断记录`"
+              @click="onBarClick(p)"
             ></div>
             <!-- 柱顶数字 -->
             <div

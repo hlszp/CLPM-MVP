@@ -112,6 +112,7 @@ class AlertEventItem(CamelModel):
     event_id: str
     rule_id: str | None = None
     rule_code: str
+    rule_name: str | None = None
     rule_version: int
     loop_id: str
     severity: Severity

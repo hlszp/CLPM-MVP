@@ -15,6 +15,7 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
 import HelpBubble from './HelpBubble.vue';
 
 interface Props {
@@ -24,6 +25,20 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   queue: () => [],
 });
+
+const { drill } = useWorkbenchDrill();
+
+/**
+ * 追溯矩阵 §5 下钻：环图分段点击 → 指标分析（fitness 等级口径，已核验页面签名）。
+ * indicator-analysis applyQuery 仅对 fitness=L0/L1 生效：关闭默认「排除 L0/L1」
+ * 适用性过滤（否则下钻落地看不到目标回路）；L2~L4 回路默认即在结果集内，
+ * 带 fitness 参数无任何效果，故仅 L0/L1 携带。
+ */
+function onSegClick(level: string) {
+  drill('assess', '/metric/indicator-analysis', {
+    ...(level === 'L0' || level === 'L1' ? { fitness: level } : {}),
+  });
+}
 
 const helpItems = [
   { label: '饼图', text: 'L0~L4 五档分级占比（按 KpiSnapshotHourly.score 分桶）。' },
@@ -119,7 +134,11 @@ const evaluated = computed(() => props.gates?.evaluated ?? total.value);
               :fill="seg.color"
               stroke="#fff"
               stroke-width="0.5"
-            />
+              class="cursor-pointer"
+              @click="onSegClick(seg.key)"
+            >
+              <title>{{ seg.key }} · {{ seg.count }} 条 · 点击查看指标分析</title>
+            </path>
           </svg>
         </div>
         <!-- 图例 + 数字刻度 -->

@@ -1326,6 +1326,54 @@ class TestOrderListEndpoint:
         resp = self._get(client, user_key="expert")
         assert resp.status_code == 200
 
+    def test_list_created_window_filter(self, client) -> None:
+        """GAP-3：createdAfter/createdBefore 按 created_at 闭区间过滤。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(
+            client,
+            {"createdAfter": "2026-08-20T00:00:00Z", "createdBefore": "2026-08-30T00:00:00Z"},
+        )
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[0])
+        assert "ho.created_at >= " in sql
+        assert "ho.created_at <= " in sql
+
+    def test_list_verified_window_filter(self, client) -> None:
+        """GAP-3：verifiedAfter/verifiedBefore 按 verified_at 闭区间过滤。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(
+            client,
+            {"verifiedAfter": "2026-08-20T00:00:00Z", "verifiedBefore": "2026-08-30T00:00:00Z"},
+        )
+        assert resp.status_code == 200
+        sql = _pg_sql(captured[0])
+        assert "ho.verified_at >= " in sql
+        assert "ho.verified_at <= " in sql
+
+    def test_list_no_window_params_behavior_unchanged(self, client) -> None:
+        """不传时间窗口参数：WHERE 不含 created_at/verified_at 条件，行为不变。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_count_result(0), _all_result([]), _all_result(_plant_node_rows())],
+            captured,
+        )
+        resp = self._get(client)
+        assert resp.status_code == 200
+        count_sql = _pg_sql(captured[0])
+        assert "created_at" not in count_sql
+        assert "verified_at" not in count_sql
+
 
 class TestOrderDetailEndpoint:
     """GET /api/v1/handling/orders/{id}（§6.2 工单详情）。"""
@@ -1798,3 +1846,105 @@ class TestStatisticsEndpoint:
         )
         resp = self._get(client, user_key="expert")
         assert resp.status_code == 200
+
+
+# ===========================================================================
+# 工单 CSV 导出（GAP-4：GET /orders/export）
+# ===========================================================================
+
+
+class TestExportOrdersEndpoint:
+    """GET /api/v1/handling/orders/export（筛选同 /orders，上限 5000 行）。
+
+    无 plantNodeId 时 mock 执行序：主查询 → plant_node 全路径（_load_unit_paths）；
+    带 plantNodeId 时：递归子树 CTE → 主查询 → plant_node 全路径。
+    """
+
+    def _get(
+        self,
+        client,
+        params: dict | None = None,
+        user_key: str = "ic_engineer",
+    ):
+        with mock_current_user(TEST_USERS[user_key]):
+            return client.get(
+                "/api/v1/handling/orders/export",
+                headers={"Authorization": "Bearer fake-token"},
+                params=params,
+            )
+
+    def test_export_csv_ok(self, client) -> None:
+        """200 + BOM + 中文表头 + 数据行中文名 + attachment 文件名。"""
+        rows_r = _all_result([_make_order_list_row(created_at=datetime(2026, 8, 10, 6, 0, 0))])
+        _override_db(client, [rows_r, _all_result(_plant_node_rows())])
+        resp = self._get(client)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        assert "handling_orders.csv" in resp.headers["content-disposition"]
+        # UTF-8 BOM（Excel 直接打开中文不乱码）
+        assert resp.content.startswith(b"\xef\xbb\xbf")
+        # 字段中文名表头
+        text = resp.text
+        for header in ("处置编号", "回路", "处置类型", "状态", "验证结论", "最近更新"):
+            assert header in text
+        # 数据行：编号/位号/装置路径/类型与状态中文/来源中文/时间可读格式
+        assert "HD-20260820-001" in text
+        assert "90PIC51212A" in text
+        assert "一联合装置.常减压单元" in text
+        assert "参数整定" in text
+        assert "执行中" in text
+        assert "诊断" in text
+        assert "2026-08-10 08:00:00" in text  # startedAt（STARTED_AT）
+
+    def test_export_csv_empty_rows(self, client) -> None:
+        """空结果：仅表头行，不报错（BOM 解码为 \ufeff，先剥离再断言）。"""
+        _override_db(client, [_all_result([]), _all_result([])])
+        resp = self._get(client)
+        assert resp.status_code == 200
+        lines = resp.text.lstrip("\ufeff").strip().splitlines()
+        assert len(lines) == 1
+        assert lines[0].startswith("处置编号")
+
+    def test_export_csv_no_token(self, client) -> None:
+        """未登录 → 401（鉴权同 /orders：get_current_user）。"""
+        resp = client.get("/api/v1/handling/orders/export")
+        assert resp.status_code == 401
+
+    @pytest.mark.parametrize("user_key", ["admin", "sponsor", "expert"])
+    def test_export_readable_by_all_roles(self, client, user_key: str) -> None:
+        """权限与 /orders 一致：登录即可读，只读角色（SPONSOR/EXPERT）不 403。"""
+        _override_db(client, [_all_result([]), _all_result([])])
+        resp = self._get(client, user_key=user_key)
+        assert resp.status_code == 200
+
+    def test_export_filters_applied(self, client) -> None:
+        """筛选下推：status/handler/createdAfter 命中 WHERE 子句。"""
+        captured: list = []
+        _capture_override_db(client, [_all_result([]), _all_result([])], captured)
+        resp = self._get(
+            client,
+            {
+                "status": "PENDING",
+                "handler": "张工",
+                "createdAfter": "2026-08-01T00:00:00Z",
+            },
+        )
+        assert resp.status_code == 200
+        sql = str(captured[0])
+        assert "ho.status = :status" in sql
+        assert "ho.handler ILIKE :handler" in sql
+        assert "ho.created_at >= :created_after" in sql
+        assert "LIMIT :limit" in sql
+
+    def test_export_plant_node_filter(self, client) -> None:
+        """plantNodeId 下钻：递归子树 CTE 前置，主查询按 unit_ids 过滤。"""
+        captured: list = []
+        _capture_override_db(
+            client,
+            [_all_result([]), _all_result([]), _all_result([])],
+            captured,
+        )
+        resp = self._get(client, {"plantNodeId": PLANT_ID})
+        assert resp.status_code == 200
+        assert "WITH RECURSIVE" in str(captured[0])
+        assert "ll.unit_id = ANY" in str(captured[1])

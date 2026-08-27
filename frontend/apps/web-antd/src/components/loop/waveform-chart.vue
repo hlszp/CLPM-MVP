@@ -19,8 +19,12 @@ const props = withDefaults(
     height?: string;
     /** Phase 5：逐点异常原因码（如 'FROZEN,JUMP'） */
     outlierReasons?: string[];
+    /** 增量追加渲染时保留当前 dataZoom 缩放状态（实时模式逐秒追加用，默认 false=重置为全量） */
+    preserveZoom?: boolean;
     /** 外部设置的选中时间点（timestamp 字符串）。传入后在图表上以 markLine 标记 */
     selectedTimestamp?: null | string;
+    /** 是否显示图例（默认 true） */
+    showLegend?: boolean;
     /** 是否显示 MODE 阶梯线 + 切换标记（默认 true） */
     showMode?: boolean;
     trend: LoopApi.MonitorTrend;
@@ -31,7 +35,9 @@ const props = withDefaults(
     enableTimeSelect: false,
     height: '360px',
     outlierReasons: () => [],
+    preserveZoom: false,
     selectedTimestamp: null,
+    showLegend: true,
     showMode: true,
     validMask: () => [],
   },
@@ -571,6 +577,22 @@ function render() {
     });
   }
 
+  // 实时增量追加时保留用户当前缩放状态（避免每秒重渲染重置 dataZoom）
+  let zoomX = { end: 100, start: 0 };
+  let zoomY = { end: 100, start: 0 };
+  if (props.preserveZoom) {
+    const opt: any = getChartInstance()?.getOption?.();
+    const dz = opt?.dataZoom;
+    if (Array.isArray(dz)) {
+      for (const d of dz) {
+        if (!d || typeof d.start !== 'number') continue;
+        if (d.xAxisIndex !== undefined) zoomX = { end: d.end, start: d.start };
+        else if (d.yAxisIndex !== undefined)
+          zoomY = { end: d.end, start: d.start };
+      }
+    }
+  }
+
   // 采样间隔提示（sampleInterval > 1 或触发降采样时显示）
   const sampleInterval = props.trend.sampleInterval;
   const downsampled = props.trend.downsampled;
@@ -603,10 +625,9 @@ function render() {
     dataZoom: showMode
       ? [
           // X 轴：滚轮 + 滑块
-          { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
+          { ...zoomX, type: 'inside', xAxisIndex: 0 },
           {
-            end: 100,
-            start: 0,
+            ...zoomX,
             type: 'slider',
             xAxisIndex: 0,
             bottom: 8,
@@ -614,10 +635,9 @@ function render() {
             labelFormatter: (val: number) => fmtTimeShort(val),
           },
           // Y 轴：滚轮 + 滑块（量程缩放）
-          { end: 100, start: 0, type: 'inside', yAxisIndex: 0 },
+          { ...zoomY, type: 'inside', yAxisIndex: 0 },
           {
-            end: 100,
-            start: 0,
+            ...zoomY,
             type: 'slider',
             yAxisIndex: 0,
             right: 8,
@@ -625,10 +645,9 @@ function render() {
           },
         ]
       : [
-          { end: 100, start: 0, type: 'inside', xAxisIndex: 0 },
+          { ...zoomX, type: 'inside', xAxisIndex: 0 },
           {
-            end: 100,
-            start: 0,
+            ...zoomX,
             type: 'slider',
             xAxisIndex: 0,
             bottom: 8,
@@ -646,6 +665,7 @@ function render() {
     legend: {
       data: showMode ? ['PV', 'SP', 'OP', 'MODE'] : ['PV', 'SP', 'OP'],
       right: 10,
+      show: props.showLegend,
       textStyle: { color: chartTextColor.value },
       top: 5,
     },
@@ -689,7 +709,9 @@ watch(
     props.trend,
     props.validMask,
     props.outlierReasons,
+    props.preserveZoom,
     props.showMode,
+    props.showLegend,
     props.selectedTimestamp,
     props.enableTimeSelect,
   ],

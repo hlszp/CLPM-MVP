@@ -14,11 +14,15 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   /** 全厂平稳率（当前窗口 GLOBAL metrics.steady_rate，0~1） */
   globalSteady?: null | number;
   units?: WorkbenchApi.UnitRow[];
 }>();
+
+const { drill, resolvePlantNodeId } = useWorkbenchDrill();
 
 const TARGET = 92;
 
@@ -32,6 +36,8 @@ const globalSteadyPct = computed(() => toPct(props.globalSteady));
 interface Row {
   key: string;
   name: string;
+  /** 单元 source_node_id（用于行级 plantNodeId 解析） */
+  sourceId: null | number;
   value: null | number;
 }
 
@@ -40,6 +46,7 @@ const rows = computed<Row[]>(() =>
     .map((u) => ({
       key: `${u.id ?? u.name}`,
       name: u.name,
+      sourceId: u.id ?? null,
       value: toPct(u.metrics?.steady_rate),
     }))
     .toSorted((a, b) => {
@@ -78,6 +85,19 @@ const NA_STYLE = {
 function fmt(v: null | number): string {
   return v === null || v === undefined ? '—' : v.toFixed(1);
 }
+
+/**
+ * 追溯矩阵 §2 下钻：行点击 → 指标分析·平稳率。
+ * 行数据带单元 source_node_id 时尝试解析 plantNodeId（scopeTree 仅含
+ * FACTORY/AREA，UNIT 通常解析不到 → 只带 metric，避免错口径）。
+ */
+function onRowClick(r: Row) {
+  const plantNodeId = resolvePlantNodeId(r.sourceId);
+  drill('assess', '/metric/indicator-analysis', {
+    metric: 'steady_rate',
+    ...(plantNodeId ? { plantNodeId } : {}),
+  });
+}
 </script>
 
 <template>
@@ -96,8 +116,9 @@ function fmt(v: null | number): string {
       <div
         v-for="r in rows"
         :key="r.key"
-        class="flex items-center gap-2"
-        :title="`${r.name} · 平稳率：${fmt(r.value)}%（目标 ≥${TARGET}）`"
+        class="flex cursor-pointer items-center gap-2 rounded-sm hover:bg-[#FAFBFC]"
+        :title="`${r.name} · 平稳率：${fmt(r.value)}%（目标 ≥${TARGET}）· 点击查看指标分析`"
+        @click="onRowClick(r)"
       >
         <!-- 单元名 -->
         <span class="w-[76px] flex-none truncate text-[11px] text-gray-700">{{ r.name }}</span>

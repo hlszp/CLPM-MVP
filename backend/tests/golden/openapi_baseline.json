@@ -1542,6 +1542,48 @@
             "description": "精确查询指定回路（供深链接解析；不回退其他回路）"
           },
           {
+            "name": "controlMode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按实时控制模式筛选：Auto/Cascade/Manual（大小写不敏感）",
+              "title": "Controlmode"
+            },
+            "description": "按实时控制模式筛选：Auto/Cascade/Manual（大小写不敏感）"
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "排序字段：score/tagName",
+              "default": "score",
+              "title": "Sortby"
+            },
+            "description": "排序字段：score/tagName"
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "排序方向：asc/desc",
+              "default": "asc",
+              "title": "Sortorder"
+            },
+            "description": "排序方向：asc/desc"
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -2141,11 +2183,49 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "趋势数据时间窗：last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours",
+              "description": "趋势数据时间窗：last_10_minutes/last_30_minutes/last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours",
               "default": "last_24_hours",
               "title": "Trendwindow"
             },
-            "description": "趋势数据时间窗：last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours"
+            "description": "趋势数据时间窗：last_10_minutes/last_30_minutes/last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours"
+          },
+          {
+            "name": "tsStart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "自定义趋势起始时间（ISO 8601），与 tsEnd 同时提供时优先生效，上限 30 天",
+              "title": "Tsstart"
+            },
+            "description": "自定义趋势起始时间（ISO 8601），与 tsEnd 同时提供时优先生效，上限 30 天"
+          },
+          {
+            "name": "tsEnd",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "自定义趋势结束时间（ISO 8601），须晚于 tsStart",
+              "title": "Tsend"
+            },
+            "description": "自定义趋势结束时间（ISO 8601），须晚于 tsStart"
           }
         ],
         "responses": {
@@ -4080,10 +4160,10 @@
                   "type": "null"
                 }
               ],
-              "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）",
+              "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）",
               "title": "Status"
             },
-            "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"
+            "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）"
           },
           {
             "name": "confidenceLevel",
@@ -4245,10 +4325,10 @@
                   "type": "null"
                 }
               ],
-              "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）",
+              "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）",
               "title": "Status"
             },
-            "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）"
+            "description": "快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）"
           },
           {
             "name": "confidenceLevel",
@@ -5438,7 +5518,7 @@
           "workbench"
         ],
         "summary": "Get Scope Tree",
-        "description": "返回可选范围列表：全厂 + 工厂 + 装置。\n\n每条记录：{id, name, type, parent_id, parent_source_id}\n- id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）\n- type = FACTORY / AREA（不返回 UNIT，选择器只到装置级）\n- parent_source_id = 父节点的 source_node_id（用于层级分组）",
+        "description": "返回可选范围列表：全厂 + 工厂 + 装置。\n\n每条记录：{id, node_id, name, type, parent_id, parent_source_id}\n- id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）\n- node_id = plant_node.id（字符串；下钻映射 plantNodeId 用，追溯矩阵 G2）\n- type = FACTORY / AREA（不返回 UNIT，选择器只到装置级）\n- parent_source_id = 父节点的 source_node_id（用于层级分组）",
         "operationId": "get_scope_tree_api_v1_workbench_scope_tree_get",
         "responses": {
           "200": {
@@ -7825,7 +7905,7 @@
           "handling"
         ],
         "summary": "List Orders",
-        "description": "工单清单（分页）。排序：状态分组（PENDING→REOPENED→EXECUTING→VERIFYING→其他）\n+ updated_at DESC（§6.2）。",
+        "description": "工单清单（分页）。排序：状态分组（PENDING→REOPENED→EXECUTING→VERIFYING→其他）\n+ updated_at DESC（§6.2）。\n\n时间窗口筛选：plannedBefore/plannedAfter 按 planned_at；createdBefore/createdAfter\n按 created_at；verifiedBefore/verifiedAfter 按 verified_at；均为闭区间。",
         "operationId": "list_orders_api_v1_handling_orders_get",
         "security": [
           {
@@ -7991,6 +8071,82 @@
               "title": "Plannedafter"
             },
             "description": "计划时间起（ISO）"
+          },
+          {
+            "name": "createdBefore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间止（ISO，按 created_at）",
+              "title": "Createdbefore"
+            },
+            "description": "创建时间止（ISO，按 created_at）"
+          },
+          {
+            "name": "createdAfter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间起（ISO，按 created_at）",
+              "title": "Createdafter"
+            },
+            "description": "创建时间起（ISO，按 created_at）"
+          },
+          {
+            "name": "verifiedBefore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "验证时间止（ISO，按 verified_at）",
+              "title": "Verifiedbefore"
+            },
+            "description": "验证时间止（ISO，按 verified_at）"
+          },
+          {
+            "name": "verifiedAfter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "验证时间起（ISO，按 verified_at）",
+              "title": "Verifiedafter"
+            },
+            "description": "验证时间起（ISO，按 verified_at）"
           },
           {
             "name": "page",
@@ -14475,6 +14631,161 @@
         ]
       }
     },
+    "/api/v1/site/basic-info": {
+      "get": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Get Site Basic Info Public",
+        "description": "公开基础信息（免登录，仅返回登录页所需字段）.\n\n登录页 auth.vue 在 onMounted 调用，失败时各字段返回空字符串，\n由前端用兜底默认值渲染，不阻塞登录页加载。",
+        "operationId": "get_site_basic_info_public_api_v1_site_basic_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SiteBasicInfoPublic_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configs/site": {
+      "get": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Get Site Config",
+        "description": "完整基础信息（登录可读，供基础信息配置页加载）.",
+        "operationId": "get_site_config_api_v1_configs_site_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SiteConfigResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Update Site Config",
+        "description": "更新基础信息（仅 ADMIN，事务性 + 写审计）.",
+        "operationId": "update_site_config_api_v1_configs_site_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SiteConfigResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/site/logo": {
+      "post": {
+        "tags": [
+          "site"
+        ],
+        "summary": "Upload Logo",
+        "description": "上传 LOGO 图片，返回静态访问 URL.\n\n文件落地到 ``app/static/logo/``，经 /static 挂载对外暴露。\n文件名用 uuid 防冲突，保留原扩展名。\n\n``type`` 参数仅用于日志记录和前端提示，实际写入哪个字段由前端\n在调用 PUT /configs/site 时指定（logoUrl 或 coverLogoUrl）。",
+        "operationId": "upload_logo_api_v1_site_logo_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "LOGO 类型：cover=封面页（横向布局）/ content=内容页（方形）",
+              "default": "content",
+              "title": "Type"
+            },
+            "description": "LOGO 类型：cover=封面页（横向布局）/ content=内容页（方形）"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_logo_api_v1_site_logo_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LogoUploadResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tuning/methods": {
       "get": {
         "tags": [
@@ -14909,7 +15220,7 @@
           "tuning"
         ],
         "summary": "List Tasks Endpoint",
-        "description": "整定任务列表（分页 + 筛选）。",
+        "description": "整定任务列表（分页 + 筛选）。\n\n筛选口径：loopId/algorithm 精确匹配；status 支持逗号分隔多值（单值向后兼容）；\nstartTime/endTime 按 created_at 闭区间过滤（startTime <= created_at <= endTime，\naware 输入归一化为 naive UTC）。",
         "operationId": "list_tasks_endpoint_api_v1_tuning_tasks_get",
         "security": [
           {
@@ -14967,10 +15278,48 @@
                   "type": "null"
                 }
               ],
-              "description": "状态筛选",
+              "description": "状态筛选（支持逗号分隔多值，如 DRAFT,PENDING）",
               "title": "Status"
             },
-            "description": "状态筛选"
+            "description": "状态筛选（支持逗号分隔多值，如 DRAFT,PENDING）"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间起（ISO，按 created_at 过滤）",
+              "title": "Starttime"
+            },
+            "description": "创建时间起（ISO，按 created_at 过滤）"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间止（ISO，按 created_at 过滤）",
+              "title": "Endtime"
+            },
+            "description": "创建时间止（ISO，按 created_at 过滤）"
           },
           {
             "name": "page",
@@ -15183,6 +15532,172 @@
             "schema": {
               "type": "string",
               "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tuning/batches": {
+      "get": {
+        "tags": [
+          "tuning"
+        ],
+        "summary": "List Batches Endpoint",
+        "description": "整定批次列表（分页 + 筛选）。\n\n返回批次摘要：batchNo/title/scope/status（B-06 动态阻塞判定后的有效状态）\n/记录数/前置工单阻塞状态/创建时间。status 过滤按库存储状态精确匹配。",
+        "operationId": "list_batches_endpoint_api_v1_tuning_batches_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "批次状态筛选（BLOCKED/PENDING/READY/RUNNING/COMPLETED/CANCELLED）",
+              "title": "Status"
+            },
+            "description": "批次状态筛选（BLOCKED/PENDING/READY/RUNNING/COMPLETED/CANCELLED）"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间起（ISO，按 created_at 过滤）",
+              "title": "Starttime"
+            },
+            "description": "创建时间起（ISO，按 created_at 过滤）"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间止（ISO，按 created_at 过滤）",
+              "title": "Endtime"
+            },
+            "description": "创建时间止（ISO，按 created_at 过滤）"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Pagesize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tuning/batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "tuning"
+        ],
+        "summary": "Get Batch Detail Endpoint",
+        "description": "整定批次详情：全字段 + 关联整定记录（N:M）+ 前置工单摘要 + scatters 原样返回。",
+        "operationId": "get_batch_detail_endpoint_api_v1_tuning_batches__batch_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Batch Id"
             }
           }
         ],
@@ -19187,6 +19702,32 @@
         "type": "object",
         "title": "ApiResponse[LoginData]"
       },
+      "ApiResponse_LogoUploadResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogoUploadResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[LogoUploadResponse]"
+      },
       "ApiResponse_LoopBatchConfigResult_": {
         "properties": {
           "code": {
@@ -20122,6 +20663,58 @@
         },
         "type": "object",
         "title": "ApiResponse[SimulationResult]"
+      },
+      "ApiResponse_SiteBasicInfoPublic_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteBasicInfoPublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[SiteBasicInfoPublic]"
+      },
+      "ApiResponse_SiteConfigResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SiteConfigResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[SiteConfigResponse]"
       },
       "ApiResponse_TagBatchDeleteResult_": {
         "properties": {
@@ -21670,6 +22263,21 @@
           "file"
         ],
         "title": "Body_import_vendors_endpoint_api_v1_dcs_vendors_import_post"
+      },
+      "Body_upload_logo_api_v1_site_logo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "LOGO 图片 (png/jpg/svg/webp, ≤2MB)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_logo_api_v1_site_logo_post"
       },
       "BundleRequest": {
         "properties": {
@@ -26634,6 +27242,21 @@
         ],
         "title": "LoginRequest",
         "description": "POST /api/v1/auth/login request body."
+      },
+      "LogoUploadResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "LOGO 访问 URL（相对路径，前端拼 API base）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "LogoUploadResponse",
+        "description": "LOGO 上传响应."
       },
       "LoopBatchConfigRequest": {
         "properties": {
@@ -33497,6 +34120,301 @@
         "type": "object",
         "title": "SimulationResultSchema",
         "description": "仿真性能指标."
+      },
+      "SiteBasicInfoPublic": {
+        "properties": {
+          "companyFullName": {
+            "type": "string",
+            "title": "Companyfullname",
+            "description": "公司全称",
+            "default": ""
+          },
+          "companyShortName": {
+            "type": "string",
+            "title": "Companyshortname",
+            "description": "公司简称",
+            "default": ""
+          },
+          "coverLogoUrl": {
+            "type": "string",
+            "title": "Coverlogourl",
+            "description": "封面页 LOGO URL（横向布局，登录页用）",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SiteBasicInfoPublic",
+        "description": "公开基础信息（免登录，登录页渲染所需）."
+      },
+      "SiteConfigResponse": {
+        "properties": {
+          "companyFullName": {
+            "type": "string",
+            "title": "Companyfullname",
+            "description": "公司全称",
+            "default": ""
+          },
+          "companyShortName": {
+            "type": "string",
+            "title": "Companyshortname",
+            "description": "公司简称",
+            "default": ""
+          },
+          "logoUrl": {
+            "type": "string",
+            "title": "Logourl",
+            "description": "内容页 LOGO URL（方形，主布局左上角）",
+            "default": ""
+          },
+          "coverLogoUrl": {
+            "type": "string",
+            "title": "Coverlogourl",
+            "description": "封面页 LOGO URL（横向布局，登录页用）",
+            "default": ""
+          },
+          "contactPerson": {
+            "type": "string",
+            "title": "Contactperson",
+            "description": "联系人",
+            "default": ""
+          },
+          "contactPhone": {
+            "type": "string",
+            "title": "Contactphone",
+            "description": "联系电话",
+            "default": ""
+          },
+          "contactEmail": {
+            "type": "string",
+            "title": "Contactemail",
+            "description": "联系邮箱",
+            "default": ""
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "公司地址",
+            "default": ""
+          },
+          "authorizedLoopCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorizedloopcount",
+            "description": "授权回路数量"
+          },
+          "licenseExpireDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Licenseexpiredate",
+            "description": "授权到期日期"
+          },
+          "systemDeployId": {
+            "type": "string",
+            "title": "Systemdeployid",
+            "description": "系统部署编号",
+            "default": ""
+          },
+          "systemDeployDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Systemdeploydate",
+            "description": "系统部署日期"
+          },
+          "serviceProvider": {
+            "type": "string",
+            "title": "Serviceprovider",
+            "description": "服务提供方",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "SiteConfigResponse",
+        "description": "完整基础信息（登录后 ADMIN 可读）."
+      },
+      "SiteConfigUpdateRequest": {
+        "properties": {
+          "companyFullName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companyfullname",
+            "description": "公司全称"
+          },
+          "companyShortName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companyshortname",
+            "description": "公司简称"
+          },
+          "logoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logourl",
+            "description": "内容页 LOGO URL（方形）"
+          },
+          "coverLogoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverlogourl",
+            "description": "封面页 LOGO URL（横向）"
+          },
+          "contactPerson": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contactperson",
+            "description": "联系人"
+          },
+          "contactPhone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contactphone",
+            "description": "联系电话"
+          },
+          "contactEmail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contactemail",
+            "description": "联系邮箱"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address",
+            "description": "公司地址"
+          },
+          "authorizedLoopCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorizedloopcount",
+            "description": "授权回路数量"
+          },
+          "licenseExpireDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Licenseexpiredate",
+            "description": "授权到期日期"
+          },
+          "systemDeployId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Systemdeployid",
+            "description": "系统部署编号"
+          },
+          "systemDeployDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Systemdeploydate",
+            "description": "系统部署日期"
+          },
+          "serviceProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serviceprovider",
+            "description": "服务提供方"
+          }
+        },
+        "type": "object",
+        "title": "SiteConfigUpdateRequest",
+        "description": "基础信息更新请求（全字段可选，ADMIN 提交）."
       },
       "StandardTaskCreate": {
         "properties": {

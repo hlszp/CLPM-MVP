@@ -4,9 +4,10 @@
 1. plant_node.source_node_id（给现有节点分配整数 ID，供 workbench_window_summary 对齐）
 2. workbench_window_summary 三窗口 KPI 预计算行（GLOBAL + FACTORY × 2 + UNIT × 4 × 24h/7d/30d）
 3. diagnosis_tag + diagnosis_result（触发 mv_diagnosis_pareto 刷新）
-4. handling_order（触发 mv_handling_funnel 刷新）
-5. tuning_batch + tuning_record + 前置工单（G-整定 W11/W12/W13：批次/队列/散点）
-6. 刷新 3 个 MV（CONCURRENTLY）
+4. diagnosis_run（14 号方案阶段 A1：工作台诊断迁 v2 引擎数据源；独立 00000000-0000-0001- 清理段）
+5. handling_order（触发 mv_handling_funnel 刷新）
+6. tuning_batch + tuning_record + 前置工单（G-整定 W11/W12/W13：批次/队列/散点）
+7. 刷新 3 个 MV（CONCURRENTLY）
 
 对齐设计文档 §0.2 演示数据 W1/W3/W4/W7/W8/W14 口径：
 - 综合评分 ~84 · 自控率 ~91% · 好值率 ~96% · 平稳率 ~88% · 准确率 ~93% · 快速率 ~82%
@@ -30,6 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
+import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -37,6 +40,7 @@ from uuid import UUID
 from sqlalchemy import text
 
 from app.core.db import AsyncSessionLocal
+from app.services.diagnosis_v2_compat import CATEGORY_LABELS_V2
 
 # ---------------------------------------------------------------------------
 # 1. plant_node source_node_id 映射（给现有节点分配稳定整数 ID）
@@ -544,6 +548,652 @@ async def seed_diagnosis_tags(db) -> list[UUID]:
     return tag_ids
 
 
+# ---------------------------------------------------------------------------
+# 3.5 diagnosis_run 种子（14 号方案阶段 A1：工作台诊断迁 v2 引擎数据源）
+# ---------------------------------------------------------------------------
+
+#: 与编排器 diagnosis_orchestrator.MVP_DIAG_VERSION 同值（algorithm_version 口径一致）
+_DIAG_ALGO_VERSION = "MVP_DIAG_V2_v1.0"
+
+#: 症状标签 → 算子族（fusion_results.family 值域，取自 OPERATOR_REGISTRY）
+_SYMPTOM_FAMILY: dict[str, str] = {
+    "OSCILLATION": "oscillation",
+    "VALVE_STICTION": "stiction",
+    "QUALITY_ABNORMAL": "sensor",
+    "LINK_ABNORMAL": "link",
+    "OVERAGGRESSIVE": "tuning",
+    "OVERCONSERVATIVE": "tuning",
+    "EXTERNAL_DISTURBANCE": "disturbance",
+    "OUTPUT_SATURATION": "saturation",
+}
+
+#: 症状标签 → 族内算子名（operator_results 键域，取自 OPERATOR_REGISTRY）
+_SYMPTOM_OPS: dict[str, tuple[str, ...]] = {
+    "OSCILLATION": ("oscillation_fft", "oscillation_iae"),
+    "VALVE_STICTION": ("stiction_ellipse", "stiction_choudhury"),
+    "QUALITY_ABNORMAL": ("sensor_fault",),
+    "LINK_ABNORMAL": ("quality_code_rules",),
+    "OVERAGGRESSIVE": ("step_response_overshoot",),
+    "OVERCONSERVATIVE": ("slow_response",),
+    "EXTERNAL_DISTURBANCE": ("disturbance_burst",),
+    "OUTPUT_SATURATION": ("output_saturation",),
+}
+
+#: 算子特征模板：算子名 → [(特征名, 检出值, 阈值, 判定文案)]
+#: （特征键名对齐各算子 outputs_schema；未命中时取低值版本）
+_OP_FEATS: dict[str, list[tuple[str, float, float, str]]] = {
+    "oscillation_fft": [
+        ("peak_energy_ratio", 0.58, 0.35, "主峰能量占比 58% 超阈值 35%"),
+        ("snr", 3.2, 2.0, "主峰信噪比 3.2 超阈值 2.0"),
+    ],
+    "oscillation_iae": [
+        ("half_period_regularity", 0.82, 0.7, "半周期相似率 82% 超阈值 70%"),
+        ("osc_count", 42.0, 6.0, "完整振荡周期数 42 超门槛 6"),
+    ],
+    "stiction_ellipse": [
+        ("stiction_index", 0.62, 0.4, "椭圆拟合粘滞指数 0.62 超阈值 0.4"),
+    ],
+    "stiction_choudhury": [
+        ("ngi", 0.55, 0.3, "非高斯指数 NGI 0.55 超阈值 0.3"),
+        ("nli", 0.61, 0.5, "非线性指数 NLI 0.61 超阈值 0.5"),
+    ],
+    "step_response_overshoot": [
+        ("overshoot", 0.38, 0.2, "阶跃超调 38% 超阈值 20%"),
+        ("decay_ratio", 0.32, 0.25, "衰减比 0.32 超阈值 0.25"),
+    ],
+    "slow_response": [
+        ("tau_ratio", 2.4, 2.0, "实际/期望时间常数比 2.4 超阈值 2.0"),
+    ],
+    "disturbance_burst": [
+        ("shift_frequency", 3.2, 2.0, "偏差确认突变 3.2 次/h 超阈值 2 次/h"),
+    ],
+    "sensor_fault": [
+        ("frozen_segment_ratio", 0.083, 0.05, "冻结段占比 8.3% 超阈值 5%"),
+    ],
+    "quality_code_rules": [
+        ("max_consecutive_bad", 1420.0, 600.0, "最长连续 Bad 1420 点超阈值 600"),
+        ("bad_rate", 0.312, 0.2, "Bad 质量码占比 31.2% 超阈值 20%"),
+    ],
+    "output_saturation": [
+        ("saturation_rate", 0.86, 0.2, "OP 贴限占比 86% 超阈值 20%"),
+    ],
+}
+
+#: 12 条种子 run 规格（覆盖矩阵：11 回路 × 窗口终点近 24h/7d/30d × 窗长 24h/7d
+#: × 6 类 primary_category × severity 三档 × review 两态 × trigger 两类）
+#: hits = 症状标签 → 族内命中算子置信度列表（D-S 融合后即 symptom_tags 置信度）
+_DIAG_RUN_SPECS: list[dict[str, Any]] = [
+    # 近 24h 检出（D3 流量态口径：总览 alarm_count 数据源）
+    {
+        "loop_idx": 0,
+        "win_end_ago_h": 2,
+        "win_h": 24,
+        "trigger": "MANUAL",
+        "category": "VALVE",
+        "severity": "HIGH",
+        "primary_conf": 0.963,
+        "score_avg": 36.8,
+        "hits": {"VALVE_STICTION": [0.88, 0.78], "OSCILLATION": [0.72], "OVERAGGRESSIVE": [0.58]},
+        "basis": ["粘滞算子命中：椭圆拟合、Choudhury（融合置信 0.96）", "椭圆拟合粘滞指数 0.62"],
+        "rec": "检查阀门执行机构，清洁或更换阀门填料",
+        "direction": "检修/更换配件",
+        # 阀门污染链（VALVE→TUNING）：过激候选降级待复核
+        "pending": [
+            {
+                "category": "TUNING",
+                "confidence": 0.58,
+                "basis": ["阶跃响应过激：超调 38%、衰减比 0.32"],
+            }
+        ],
+        "secondary": [],
+    },
+    {
+        "loop_idx": 1,
+        "win_end_ago_h": 6,
+        "win_h": 24,
+        "trigger": "MANUAL",
+        "category": "TUNING",
+        "severity": "MEDIUM",
+        "primary_conf": 0.75,
+        "score_avg": 58.2,
+        "hits": {"OVERAGGRESSIVE": [0.75], "OSCILLATION": [0.52]},
+        "basis": ["阶跃响应过激：超调 38%、衰减比 0.32"],
+        "rec": "按证据方向重新整定：过激减小 Kp/增大 Ti，保守增大 Kp/减小 Ti（参考 IMC）",
+        "direction": "重新整定参数",
+        "pending": [],
+        "secondary": [],
+    },
+    {
+        "loop_idx": 4,
+        "win_end_ago_h": 12,
+        "win_h": 24,
+        "trigger": "SCHEDULED",
+        "category": "INSTRUMENT",
+        "severity": "MEDIUM",
+        "primary_conf": 0.85,
+        "score_avg": 72.4,
+        "hits": {"QUALITY_ABNORMAL": [0.85], "OSCILLATION": [0.51]},
+        "basis": ["传感器故障子类型 drift", "冻结段占比 8.3%"],
+        "rec": "检查校验变送器/仪表（修复后复诊确认下游结论）",
+        "direction": "校验/维护",
+        # 仪表污染链（INSTRUMENT→PROCESS）：纯振荡推断候选降级待复核
+        "pending": [
+            {
+                "category": "PROCESS",
+                "confidence": 0.5,
+                "basis": ["存在振荡且无粘滞/过激证据，疑外部传入或回路耦合"],
+            }
+        ],
+        "secondary": [],
+        "review": {
+            "results": ["INSTRUMENT"],
+            "comment": "现场校验确认变送器零点漂移，已安排校验",
+            "by": "admin",
+            "after_h": 1,
+        },
+    },
+    {
+        "loop_idx": 7,
+        "win_end_ago_h": 20,
+        "win_h": 24,
+        "trigger": "SCHEDULED",
+        "category": "PROCESS",
+        "severity": "LOW",
+        "primary_conf": 0.58,
+        "score_avg": 76.5,
+        "hits": {"EXTERNAL_DISTURBANCE": [0.58], "OSCILLATION": [0.55]},
+        "basis": [
+            "偏差确认突变 3.2 次/h 且与 SP 变更无关",
+            "存在振荡且无粘滞/过激证据，疑外部传入或回路耦合",
+        ],
+        "rec": "排查上游工艺扰动与相邻回路耦合，考虑前馈控制/解耦",
+        "direction": "工艺分析/前馈/解耦",
+        "pending": [],
+        "secondary": [],
+    },
+    {
+        "loop_idx": 2,
+        "win_end_ago_h": 22,
+        "win_h": 24,
+        "trigger": "SCHEDULED",
+        "category": "COMMUNICATION",
+        "severity": "HIGH",
+        "primary_conf": 0.9,
+        "score_avg": 38.6,
+        "hits": {"LINK_ABNORMAL": [0.9]},
+        "basis": [
+            "质量码模式 CONSECUTIVE_BAD（连续 Bad 断流）",
+            "最长连续 Bad 1420 点",
+            "Bad 质量码占比 31.2%",
+        ],
+        "rec": "检查通信链路：OPC 服务器/网络/采集卡（修复断流后复诊确认下游结论）",
+        "direction": "检查通信链路",
+        "pending": [],
+        "secondary": [],
+        "review": {
+            "results": ["COMMUNICATION"],
+            "comment": "确认 OPC 采集卡间歇断流，更换后复诊",
+            "by": "admin",
+            "after_h": 2,
+        },
+    },
+    # 近 7d 窗口
+    {
+        "loop_idx": 0,
+        "win_end_ago_h": 40,
+        "win_h": 24,
+        "trigger": "SCHEDULED",
+        "category": "VALVE",
+        "severity": "MEDIUM",
+        "primary_conf": 0.74,
+        "score_avg": 55.1,
+        "hits": {"VALVE_STICTION": [0.74], "OSCILLATION": [0.52]},
+        "basis": ["粘滞算子命中：椭圆拟合（融合置信 0.74）", "椭圆拟合粘滞指数 0.48"],
+        "rec": "检查阀门执行机构，清洁或更换阀门填料",
+        "direction": "检修/更换配件",
+        "pending": [],
+        "secondary": [],
+    },
+    {
+        "loop_idx": 5,
+        "win_end_ago_h": 72,
+        "win_h": 168,
+        "trigger": "SCHEDULED",
+        "category": "TUNING",
+        "severity": "LOW",
+        "primary_conf": 0.58,
+        "score_avg": 81.3,
+        "hits": {"OVERCONSERVATIVE": [0.58]},
+        "basis": ["响应迟缓：实际/期望时间常数比 2.4"],
+        "rec": "按证据方向重新整定：过激减小 Kp/增大 Ti，保守增大 Kp/减小 Ti（参考 IMC）",
+        "direction": "重新整定参数",
+        "pending": [],
+        # 投用独立维度（不参与污染链）：自动投用率 32% 命中级 6 → 次分类
+        "secondary": [
+            {
+                "category": "UTILIZATION",
+                "confidence": 0.68,
+                "basis": ["时间窗内自动投用率 32%，长期手动"],
+                "rec": "排查长期手动原因，恢复自动投用后再复诊（其余诊断结论在手动模式下意义有限）",
+                "direction": "恢复自动投用",
+            }
+        ],
+        "review": {
+            "results": ["TUNING"],
+            "comment": "确认过保守，已列入待整定批次",
+            "by": "admin",
+            "after_h": 4,
+        },
+    },
+    {
+        "loop_idx": 8,
+        "win_end_ago_h": 120,
+        "win_h": 24,
+        "trigger": "MANUAL",
+        "category": "PROCESS",
+        "severity": "MEDIUM",
+        "primary_conf": 0.72,
+        "score_avg": 57.0,
+        "hits": {"EXTERNAL_DISTURBANCE": [0.72], "OSCILLATION": [0.58]},
+        "basis": [
+            "偏差确认突变 3.6 次/h 且与 SP 变更无关",
+            "存在振荡且无粘滞/过激证据，疑外部传入或回路耦合",
+        ],
+        "rec": "排查上游工艺扰动与相邻回路耦合，考虑前馈控制/解耦",
+        "direction": "工艺分析/前馈/解耦",
+        "pending": [],
+        "secondary": [],
+    },
+    # 近 30d 窗口
+    {
+        "loop_idx": 3,
+        "win_end_ago_h": 240,
+        "win_h": 24,
+        "trigger": "MANUAL",
+        "category": "INSTRUMENT",
+        "severity": "LOW",
+        "primary_conf": 0.52,
+        "score_avg": 83.9,
+        "hits": {"QUALITY_ABNORMAL": [0.52]},
+        "basis": ["传感器故障子类型 noise", "噪声突增 2.1 倍"],
+        "rec": "检查校验变送器/仪表（修复后复诊确认下游结论）",
+        "direction": "校验/维护",
+        "pending": [],
+        "secondary": [],
+        "review": {
+            "results": ["INSTRUMENT", "PROCESS"],
+            "comment": "初判仪表噪声，复核确认叠加进料波动影响",
+            "by": "admin",
+            "after_h": 3,
+        },
+    },
+    {
+        "loop_idx": 6,
+        "win_end_ago_h": 384,
+        "win_h": 24,
+        "trigger": "SCHEDULED",
+        "category": "VALVE",
+        "severity": "MEDIUM",
+        "primary_conf": 0.86,
+        "score_avg": 61.7,
+        # 级 3：OP 长期贴限（>80%）→ VALVE（阀容量方向）
+        "hits": {"OUTPUT_SATURATION": [0.86]},
+        "basis": ["OP 86% 时间贴工程限位，疑阀容量不足或积分饱和"],
+        "rec": "检查阀门容量/选型，排查积分饱和",
+        "direction": "检修/更换配件",
+        "pending": [],
+        "secondary": [],
+    },
+    {
+        "loop_idx": 9,
+        "win_end_ago_h": 528,
+        "win_h": 168,
+        "trigger": "MANUAL",
+        "category": "PROCESS",
+        "severity": "MEDIUM",
+        "primary_conf": 0.5,
+        "score_avg": 45.2,
+        # 级 4 纯振荡推断（无粘滞/过激证据）：候选置信固定 0.50
+        "hits": {"OSCILLATION": [0.83]},
+        "basis": ["存在振荡且无粘滞/过激证据，疑外部传入或回路耦合"],
+        "rec": "排查上游工艺扰动与相邻回路耦合，考虑前馈控制/解耦",
+        "direction": "工艺分析/前馈/解耦",
+        "pending": [],
+        "secondary": [],
+    },
+    # 门禁短路：数据不足（operator/fusion/symptom 全空，severity=NULL）
+    {
+        "loop_idx": 10,
+        "win_end_ago_h": 648,
+        "win_h": 24,
+        "trigger": "SCHEDULED",
+        "category": "DATA_INSUFFICIENT",
+        "severity": None,
+        "primary_conf": 0.0,
+        "score_avg": None,
+        "gate_failed": True,
+        "hits": {},
+        "basis": ["有效数据点 18 不足（门槛 32 点）"],
+        "rec": "先通过数据管理→历史数据导入补齐该时间窗数据，再重新发起诊断",
+        "direction": "先补齐数据",
+        "pending": [],
+        "secondary": [],
+    },
+]
+
+
+def _ds_fuse(confidences: list[float]) -> float:
+    """D-S 族内融合（公式同 diagnosis_operators.fusion.dempster_shafer，保证种子数值自洽）。"""
+    if not confidences:
+        return 0.0
+    if len(confidences) == 1:
+        return float(confidences[0])
+    prod_c = 1.0
+    prod_n = 1.0
+    for c in confidences:
+        c = max(1e-9, min(1.0 - 1e-9, c))
+        prod_c *= c
+        prod_n *= 1.0 - c
+    return prod_c / (prod_c + prod_n)
+
+
+def _diag_operator_results(hits: dict[str, list[float]]) -> dict[str, Any]:
+    """构造 operator_results（结构同 orchestrator._operator_result_to_dict 输出）。"""
+    out: dict[str, Any] = {}
+    for tag, ops in _SYMPTOM_OPS.items():
+        hit_confs = hits.get(tag) or []
+        for i, op_name in enumerate(ops):
+            detected = i < len(hit_confs)
+            features: dict[str, Any] = {}
+            evidence: list[dict[str, Any]] = []
+            for fname, val, thr, judg in _OP_FEATS[op_name]:
+                if detected:
+                    features[fname] = val
+                    evidence.append(
+                        {"feature": fname, "value": val, "threshold": thr, "judgment": judg}
+                    )
+                else:
+                    features[fname] = round(val * 0.3, 4)
+            out[op_name] = {
+                "operator": op_name,
+                "executed": True,
+                "skipReason": None,
+                "detected": detected,
+                "confidence": round(hit_confs[i], 4) if detected else 0.12,
+                "features": features,
+                "evidence": evidence,
+                "error": None,
+            }
+    return out
+
+
+def _diag_fusion_results(hits: dict[str, list[float]]) -> dict[str, Any]:
+    """构造 fusion_results（结构同 FamilyFusion.to_dict）。"""
+    out: dict[str, Any] = {}
+    for tag, family in _SYMPTOM_FAMILY.items():
+        confs = hits.get(tag) or []
+        ops = _SYMPTOM_OPS[tag]
+        contributors = [
+            {"operator": ops[i], "confidence": round(c, 4)} for i, c in enumerate(confs)
+        ]
+        detected = bool(contributors)
+        out[tag] = {
+            "family": family,
+            "symptomTag": tag,
+            "detected": detected,
+            "confidence": round(_ds_fuse(confs), 4) if detected else 0.0,
+            "contributors": contributors,
+            "fused": len(confs) >= 2,
+        }
+    return out
+
+
+def _diag_symptom_tags(hits: dict[str, list[float]]) -> dict[str, Any]:
+    """构造 symptom_tags（{tag: {detected, confidence}}，置信度=族内融合值）。"""
+    return {
+        tag: {
+            "detected": bool(hits.get(tag)),
+            "confidence": round(_ds_fuse(hits.get(tag) or []), 4),
+        }
+        for tag in _SYMPTOM_FAMILY
+    }
+
+
+def _diag_metric_summary(spec: dict[str, Any]) -> dict[str, Any]:
+    """构造 metric_summary（结构同 orchestrator._build_metric_summary：0~100 统一口径）。"""
+    neg_keys = (
+        "badValueRate",
+        "saturationRate",
+        "oscillationRate",
+        "stictionIndex",
+        "settlingTime",
+        "outputTravelIndex",
+    )
+    pos_keys = (
+        "score",
+        "effectiveAutoRate",
+        "autoModeRate",
+        "goodValueRate",
+        "steadyRate",
+        "accuracyRate",
+        "fastRate",
+    )
+    score = spec.get("score_avg")
+    if score is None:  # 门禁短路：无 KPI 快照
+        return {
+            "negative": dict.fromkeys(neg_keys),
+            "positive": dict.fromkeys(pos_keys),
+            "source": dict.fromkeys(neg_keys, "none"),
+        }
+    hits = spec["hits"]
+    return {
+        "negative": {
+            "badValueRate": 18.5 if hits.get("QUALITY_ABNORMAL") else 3.6,
+            "saturationRate": 86.0 if hits.get("OUTPUT_SATURATION") else 6.2,
+            "oscillationRate": 41.0 if hits.get("OSCILLATION") else 3.1,
+            "stictionIndex": 62.0 if hits.get("VALVE_STICTION") else 12.0,
+            "settlingTime": 850.0,
+            "outputTravelIndex": 38.0,
+        },
+        "positive": {
+            "score": score,
+            "effectiveAutoRate": 84.2,
+            "autoModeRate": 88.5,
+            "goodValueRate": 96.4,
+            "steadyRate": round(score * 0.9, 1),
+            "accuracyRate": round(score * 0.95, 1),
+            "fastRate": round(score * 0.82, 1),
+        },
+        "source": dict.fromkeys(neg_keys, "kpi"),
+    }
+
+
+def _diag_charts(spec: dict[str, Any], points: int = 24) -> dict[str, Any]:
+    """构造 evidence_charts（结构同 _build_chart_snapshots：trend + PV-OP 散点）。"""
+    if spec.get("gate_failed"):
+        return {"trend": {"ts": [], "pv": [], "sp": [], "op": []}, "scatter": {"pv": [], "op": []}}
+    rng = random.Random(20260827)
+    osc = bool(spec["hits"].get("OSCILLATION"))
+    ts: list[int] = []
+    pv: list[float] = []
+    op: list[float] = []
+    for i in range(points):
+        ts.append(i * 3_600_000)  # 1h 采样（演示快照，非全量波形）
+        if osc:
+            pv.append(round(52.0 + 3.0 * math.sin(i * 1.05) + rng.uniform(-0.4, 0.4), 2))
+            op.append(round(48.0 + 4.5 * math.sin(i * 1.05 + 0.6) + rng.uniform(-0.5, 0.5), 2))
+        else:
+            pv.append(round(52.0 + rng.uniform(-0.6, 0.6), 2))
+            op.append(round(48.0 + rng.uniform(-0.8, 0.8), 2))
+    sp = [52.0] * points
+    return {"trend": {"ts": ts, "pv": pv, "sp": sp, "op": op}, "scatter": {"pv": pv, "op": op}}
+
+
+def _diag_gate(spec: dict[str, Any], win_hours: int) -> dict[str, Any]:
+    """构造 data_gate（结构同 GateResult.to_dict）。"""
+    if spec.get("gate_failed"):
+        return {
+            "passed": False,
+            "pointCount": 18,
+            "expectedPoints": win_hours * 3600,
+            "validRate": 0.21,
+            "confidenceLevel": "E",
+            "gapRatio": 0.9979,
+            "reason": "有效数据点 18 不足（门槛 32 点）",
+        }
+    expected = win_hours * 3600
+    point = round(expected * 0.984)
+    return {
+        "passed": True,
+        "pointCount": point,
+        "expectedPoints": expected,
+        "validRate": 0.983,
+        "confidenceLevel": "A",
+        "gapRatio": 0.016,
+        "reason": None,
+    }
+
+
+async def seed_diagnosis_runs(db) -> None:
+    """填充 diagnosis_run（幂等：独立前缀 00000000-0000-0001- 清理段，不触碰真实引擎 run）。"""
+    await db.execute(text("DELETE FROM diagnosis_run WHERE id::text LIKE '00000000-0000-0001-%'"))
+    loops = await db.execute(text("SELECT id FROM loop_ledger ORDER BY created_at LIMIT 12"))
+    loop_ids = [r[0] for r in loops]
+    if len(loop_ids) < 11:
+        print(f"⚠️  loop_ledger 仅 {len(loop_ids)} 条（<11），跳过 diagnosis_run 种子")
+        return
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    insert_sql = text("""
+        INSERT INTO diagnosis_run
+        (id, loop_id, triggered_by, trigger_type, time_window_start, time_window_end,
+         operator_group, status, data_gate, operator_results, fusion_results, symptom_tags,
+         primary_category, primary_confidence, secondary_categories, pending_review,
+         severity, rationale, recommendations, evidence_charts, metric_summary,
+         threshold_version, algorithm_version, started_at, finished_at, duration_ms,
+         review_status, review_results, review_comment, reviewed_by, reviewed_at,
+         created_at, updated_at)
+        VALUES
+        (:id, :loop_id, :triggered_by, :trigger_type, :win_start, :win_end,
+         'full', 'SUCCESS', CAST(:data_gate AS jsonb), CAST(:operator_results AS jsonb),
+         CAST(:fusion_results AS jsonb), CAST(:symptom_tags AS jsonb),
+         :primary_category, :primary_conf, CAST(:secondary AS jsonb), CAST(:pending AS jsonb),
+         :severity, CAST(:rationale AS jsonb), CAST(:recommendations AS jsonb),
+         CAST(:charts AS jsonb), CAST(:metric_summary AS jsonb),
+         'default', :algo_version, :started_at, :win_end, :duration_ms,
+         :review_status, CAST(:review_results AS jsonb), :review_comment, :reviewed_by,
+         :reviewed_at, :win_end, :win_end)
+    """)
+
+    for i, spec in enumerate(_DIAG_RUN_SPECS):
+        win_end = now - timedelta(hours=spec["win_end_ago_h"])
+        win_start = win_end - timedelta(hours=spec["win_h"])
+        gate_failed = bool(spec.get("gate_failed"))
+        hits = spec["hits"]
+        category = spec["category"]
+        label = CATEGORY_LABELS_V2[category]
+        primary_conf = spec["primary_conf"]
+
+        # 分类判定文书（rationale / 次分类 / 待复核，语义对齐 classification.classify）
+        rationale = [f"主分类 {label}（置信 {primary_conf:.2f}）：{'；'.join(spec['basis'])}"]
+        secondary: list[dict[str, Any]] = []
+        for s in spec["secondary"]:
+            s_label = CATEGORY_LABELS_V2[s["category"]]
+            rationale.append(
+                f"次分类 {s_label}（置信 {s['confidence']:.2f}）：{'；'.join(s['basis'])}"
+            )
+            secondary.append(
+                {
+                    "category": s["category"],
+                    "categoryLabel": s_label,
+                    "confidence": s["confidence"],
+                    "basis": s["basis"],
+                    "status": "secondary",
+                    "contaminationNote": None,
+                }
+            )
+        pending: list[dict[str, Any]] = []
+        for p in spec["pending"]:
+            p_label = CATEGORY_LABELS_V2[p["category"]]
+            rationale.append(f"疑似{p_label}——被主因证据污染，转待复核")
+            pending.append(
+                {
+                    "category": p["category"],
+                    "categoryLabel": p_label,
+                    "confidence": p["confidence"],
+                    "basis": p["basis"],
+                    "status": "pending_review",
+                    "contaminationNote": (
+                        f"主因{label}的证据链污染了{p_label}判定，修复主因后复诊确认"
+                    ),
+                }
+            )
+        if gate_failed:
+            rationale.insert(0, "数据门禁未通过：" + spec["basis"][0])
+            recommendations = [
+                {
+                    "content": spec["rec"],
+                    "basis": spec["basis"][0],
+                    "direction": spec["direction"],
+                    "priority": 1,
+                }
+            ]
+        else:
+            recommendations = [
+                {
+                    "content": spec["rec"],
+                    "basis": "；".join(spec["basis"]),
+                    "direction": spec["direction"],
+                    "priority": 1,
+                }
+            ]
+        for j, s in enumerate(spec["secondary"]):
+            recommendations.append(
+                {
+                    "content": s["rec"],
+                    "basis": "；".join(s["basis"]),
+                    "direction": s["direction"],
+                    "priority": j + 2,
+                }
+            )
+
+        review = spec.get("review")
+        duration_ms = 4200 + i * 350
+        params = {
+            "id": str(UUID(f"00000000-0000-0001-0000-{6000 + i:012d}")),
+            "loop_id": loop_ids[spec["loop_idx"] % len(loop_ids)],
+            "triggered_by": "admin" if spec["trigger"] == "MANUAL" else "system",
+            "trigger_type": spec["trigger"],
+            "win_start": win_start,
+            "win_end": win_end,
+            "data_gate": json.dumps(_diag_gate(spec, spec["win_h"])),
+            "operator_results": json.dumps({} if gate_failed else _diag_operator_results(hits)),
+            "fusion_results": json.dumps({} if gate_failed else _diag_fusion_results(hits)),
+            "symptom_tags": json.dumps({} if gate_failed else _diag_symptom_tags(hits)),
+            "primary_category": category,
+            "primary_conf": primary_conf,
+            "secondary": json.dumps(secondary),
+            "pending": json.dumps(pending),
+            "severity": spec["severity"],
+            "rationale": json.dumps(rationale),
+            "recommendations": json.dumps(recommendations),
+            "charts": json.dumps(_diag_charts(spec)),
+            "metric_summary": json.dumps(_diag_metric_summary(spec)),
+            "algo_version": _DIAG_ALGO_VERSION,
+            "started_at": win_end - timedelta(milliseconds=duration_ms),
+            "duration_ms": duration_ms,
+            "review_status": "REVIEWED" if review else "PENDING",
+            "review_results": json.dumps(review["results"]) if review else None,
+            "review_comment": review["comment"] if review else None,
+            "reviewed_by": review["by"] if review else None,
+            "reviewed_at": (win_end + timedelta(hours=review["after_h"])) if review else None,
+        }
+        await db.execute(insert_sql, params)
+
+    await db.commit()
+    print(f"✅ 已插入 {len(_DIAG_RUN_SPECS)} 条 diagnosis_run 种子（前缀 00000000-0000-0001-）")
+
+
 async def seed_handling_orders(db) -> None:
     """填充 handling_order（触发 mv_handling_funnel）。"""
     # 清理旧数据（幂等）
@@ -929,6 +1579,7 @@ async def main() -> None:
         await seed_source_node_ids(db)
         await seed_workbench_window_summary(db)
         await seed_diagnosis_tags(db)
+        await seed_diagnosis_runs(db)
         await seed_handling_orders(db)
         await seed_tuning_demo(db)
         await refresh_mv(db)

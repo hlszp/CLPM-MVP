@@ -157,6 +157,39 @@ const statusLabel: Record<AlertApi.EventStatus, string> = {
   ARCHIVED: '已归档',
 };
 
+/** 指标代码 → 中文标签（对齐后端 12 条预制规则的 metricCode） */
+const METRIC_LABEL: Record<string, string> = {
+  score: '综合评分',
+  effective_auto_rate: '有效自控率',
+  steady_rate: '平稳率',
+  fast_rate: '快速率',
+  accuracy_rate: '准确率',
+  auto_mode_rate: '平均自控率',
+  good_value_rate: '好值率',
+  valid_rate: '有效率',
+  oscillation_rate: '振荡率',
+  saturation_rate: '饱和率',
+  severity: '诊断故障等级',
+  primary_confidence: '诊断置信度',
+};
+
+/** 事件触发指标中文标签（取自触发条件快照的 metric 字段） */
+function metricLabelOf(record: AlertApi.EventItem): string {
+  const metric = record.triggerConditionSnapshot?.metric as
+    | string
+    | undefined;
+  if (!metric) return '-';
+  return METRIC_LABEL[metric] ?? metric;
+}
+
+/** 规则对应指标的实际得分值（快照 actualValue 优先，回退 triggeredValue） */
+function metricScoreOf(record: AlertApi.EventItem): string {
+  const v =
+    (record.triggerConditionSnapshot?.actualValue as number | undefined) ??
+    record.triggeredValue;
+  return v == null ? '-' : Number(v).toFixed(3);
+}
+
 const columns: TableColumnsType = [
   {
     title: '回路',
@@ -172,6 +205,26 @@ const columns: TableColumnsType = [
     key: 'ruleCode',
     width: 160,
     ellipsis: true,
+  },
+  {
+    title: '规则名称',
+    dataIndex: 'ruleName',
+    key: 'ruleName',
+    width: 140,
+    ellipsis: true,
+    customRender: ({ value }) => value || '-',
+  },
+  {
+    title: '指标得分',
+    key: 'metricScore',
+    width: 150,
+    ellipsis: true,
+    customRender: ({ record }) => {
+      const item = record as AlertApi.EventItem;
+      const label = metricLabelOf(item);
+      const score = metricScoreOf(item);
+      return label === '-' ? score : `${label} ${score}`;
+    },
   },
   {
     title: '预警等级',
@@ -432,6 +485,9 @@ function handleExport(format: 'csv' | 'excel') {
   const headers = [
     '回路',
     '规则代码',
+    '规则名称',
+    '触发指标',
+    '指标实际得分',
     '预警等级',
     '状态',
     '触发值',
@@ -441,6 +497,9 @@ function handleExport(format: 'csv' | 'excel') {
   const rows = eventList.value.map((e) => [
     e.loopName || e.loopId,
     e.ruleCode,
+    e.ruleName || '',
+    metricLabelOf(e) === '-' ? '' : metricLabelOf(e),
+    metricScoreOf(e) === '-' ? '' : metricScoreOf(e),
     severityLabel[e.severity] ?? e.severity,
     statusLabel[e.status] ?? e.status,
     e.triggeredValue == null ? '' : Number(e.triggeredValue).toFixed(4),
@@ -650,7 +709,7 @@ onMounted(() => {
         showSizeChanger: true,
         showTotal: (t: number) => `共 ${t} 条`,
       }"
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 1500 }"
       row-key="eventId"
       :size="tableSize"
       @change="handlePageChange"
@@ -773,8 +832,17 @@ onMounted(() => {
         <DescriptionsItem label="规则代码">{{
           currentEvent.ruleCode
         }}</DescriptionsItem>
+        <DescriptionsItem label="规则名称">{{
+          currentEvent.ruleName || '-'
+        }}</DescriptionsItem>
         <DescriptionsItem label="规则版本">{{
           currentEvent.ruleVersion
+        }}</DescriptionsItem>
+        <DescriptionsItem label="触发指标">{{
+          metricLabelOf(currentEvent)
+        }}</DescriptionsItem>
+        <DescriptionsItem label="指标实际得分">{{
+          metricScoreOf(currentEvent)
         }}</DescriptionsItem>
         <DescriptionsItem label="预警等级">
           <Tag :color="severityColor[currentEvent.severity]">{{

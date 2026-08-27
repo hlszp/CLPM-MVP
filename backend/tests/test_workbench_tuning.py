@@ -14,7 +14,7 @@ from __future__ import annotations
 import contextlib
 from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -279,10 +279,10 @@ class TestShapePendingQueue:
             _pending_row(record_id="r-2", loop_id="loop-2", created_by="刘工"),
             _pending_row(record_id="r-3", loop_id="loop-3"),
         ]
-        diag_src = {"loop-1": "回路振荡"}
+        diag_src = {"loop-1": "参数问题（PID 整定）"}
         out = shape_pending_queue(rows, {}, {}, {}, diag_src)
         src = {r["loop_id"]: r["source"] for r in out}
-        assert src["loop-1"] == "诊断：回路振荡"
+        assert src["loop-1"] == "诊断：参数问题（PID 整定）"
         assert src["loop-2"] == "人工登记 · 刘工"
         assert src["loop-3"] == "人工登记"
 
@@ -377,7 +377,9 @@ def _patchers(svc: Any) -> dict[str, Any]:
             svc, "_query_latest_scores", new=AsyncMock(return_value={"loop-1": 58.4})
         ),
         "_query_diag_src_map": patch.object(
-            svc, "_query_diag_src_map", new=AsyncMock(return_value={"loop-1": "回路振荡"})
+            svc,
+            "_query_diag_src_map",
+            new=AsyncMock(return_value={"loop-1": "参数问题（PID 整定）"}),
         ),
         "_query_scope_loop_ids": patch.object(
             svc, "_query_scope_loop_ids", new=AsyncMock(return_value=["loop-1"])
@@ -412,6 +414,45 @@ def patched_common(svc: Any, **overrides: Any):
         yield
 
 
+# ===========================================================================
+# v2 查询 helper（A3：建议来源改读 diagnosis_run primary_category）
+# ===========================================================================
+
+
+class TestQueryDiagSrcMap:
+    @pytest.mark.asyncio
+    async def test_最新run类别中文映射(self):
+        """每回路最新一条 primary_category 非 NULL run → category_label 中文。"""
+        from app.services.workbench_tuning import _query_diag_src_map
+
+        db = AsyncMock()
+        db.execute.return_value = MagicMock()
+        db.execute.return_value.all.return_value = [
+            MagicMock(loop_id="loop-1", primary_category="TUNING"),
+            MagicMock(loop_id="loop-2", primary_category="INSTRUMENT"),
+        ]
+
+        out = await _query_diag_src_map(db, ["loop-1", "loop-2"])
+        assert out == {"loop-1": "参数问题（PID 整定）", "loop-2": "仪表/测量问题"}
+
+        sql = str(db.execute.call_args[0][0])
+        assert "diagnosis_run" in sql
+        assert "primary_category IS NOT NULL" in sql
+        assert "diagnosis_tag" not in sql  # 旧引擎表停读
+        # DISTINCT ON 取每回路最新一条
+        assert "DISTINCT ON (loop_id)" in sql
+        assert "ORDER BY loop_id, created_at DESC" in sql
+        assert db.execute.call_args[0][1]["loop_ids"] == ["loop-1", "loop-2"]
+
+    @pytest.mark.asyncio
+    async def test_空loop_ids短路(self):
+        from app.services.workbench_tuning import _query_diag_src_map
+
+        db = AsyncMock()
+        assert await _query_diag_src_map(db, []) == {}
+        db.execute.assert_not_awaited()
+
+
 class TestBuildTuning:
     @pytest.mark.asyncio
     async def test_组装四块与阻塞语义(self):
@@ -431,7 +472,7 @@ class TestBuildTuning:
         assert len(out["pending_queue"]) == 1
         assert out["pending_queue"][0]["blocked"] is True
         assert out["pending_queue"][0]["priority"] == "HIGH"  # 58.4 < 65
-        assert out["pending_queue"][0]["source"] == "诊断：回路振荡"
+        assert out["pending_queue"][0]["source"] == "诊断：参数问题（PID 整定）"
         # fitness_gates
         assert out["fitness_gates"]["level"] == "L2"
         assert out["fitness_gates"]["level_counts"]["L2"] == 1

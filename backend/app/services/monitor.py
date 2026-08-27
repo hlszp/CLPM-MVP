@@ -47,6 +47,8 @@ LTTB_TARGET_POINTS = 2000
 
 # 趋势时间窗映射
 TREND_WINDOWS: dict[str, timedelta] = {
+    "last_10_minutes": timedelta(minutes=10),
+    "last_30_minutes": timedelta(minutes=30),
     "last_1_hour": timedelta(hours=1),
     "last_2_hours": timedelta(hours=2),
     "last_4_hours": timedelta(hours=4),
@@ -558,6 +560,68 @@ async def _build_loop_monitor_aggregate(
     }
 
 
+async def _filter_loop_ids_by_control_mode(
+    db: AsyncSession,
+    loop_ids: list[str],
+    control_mode: str,
+) -> list[str]:
+    """按实时控制模式（modeLabel：Auto/Cascade/Manual）过滤回路 ID。
+
+    modeLabel 推导与列表 items 构建逻辑一致：Redis 实时值优先，回退 PG current_value；
+    映射配置优先 loop_mode_mapping，回退默认映射。
+    """
+    if not loop_ids:
+        return []
+    m_result = await db.execute(
+        select(
+            LoopTagMapping.loop_id,
+            TagRegistry.tag_name,
+            TagRegistry.current_value,
+        )
+        .join(TagRegistry, TagRegistry.id == LoopTagMapping.tag_id)
+        .where(LoopTagMapping.loop_id.in_(loop_ids))
+        .where(LoopTagMapping.tag_role == "MODE")
+    )
+    tag_info: dict[str, dict[str, Any]] = {}
+    tag_name_to_loop: dict[str, str] = {}
+    for m_loop_id, tag_name, current_value in m_result.all():
+        lid = str(m_loop_id)
+        tag_info[lid] = {"tag_name": tag_name or "", "current_value": current_value}
+        if tag_name:
+            tag_name_to_loop[tag_name] = lid
+
+    redis_values: dict[str, float | None] = {}
+    try:
+        tag_names = [i["tag_name"] for i in tag_info.values() if i["tag_name"]]
+        if tag_names:
+            cached_list = await get_subscriber().get_cached_values(tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc and tc in tag_name_to_loop:
+                    try:
+                        redis_values[tag_name_to_loop[tc]] = float(item.get("value"))
+                    except (TypeError, ValueError):
+                        redis_values[tag_name_to_loop[tc]] = None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("MODE 筛选: 从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
+    mode_mapping_map = await _load_mode_mappings(db, loop_ids)
+    target = control_mode.strip().lower()
+    matched: list[str] = []
+    for lid in loop_ids:
+        info = tag_info.get(lid)
+        if not info:
+            continue
+        value = redis_values.get(lid)
+        if value is None:
+            cv = info["current_value"]
+            value = float(cv) if cv is not None else None
+        label = _mode_value_to_label(value, mode_mapping_map.get(lid))
+        if label and label.lower() == target:
+            matched.append(lid)
+    return matched
+
+
 async def list_loop_monitor(
     db: AsyncSession,
     plant_node_id: str | None = None,
@@ -565,6 +629,9 @@ async def list_loop_monitor(
     keyword: str | None = None,
     loop_type: str | None = None,
     loop_id: str | None = None,
+    control_mode: str | None = None,
+    sort_by: str = "score",
+    sort_order: str = "asc",
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
@@ -572,7 +639,31 @@ async def list_loop_monitor(
 
     ``loop_id`` 提供精确查询：当传入时按主键过滤，命中则只返回目标回路，
     未命中（不存在/已停用/无权限）则返回空列表，不回退其他回路——供深链接解析。
+    ``control_mode`` 按实时控制模式（Auto/Cascade/Manual，大小写不敏感）过滤。
+    ``sort_by`` 支持 score / tagName，``sort_order`` 支持 asc / desc。
     """
+    if sort_by not in {"score", "tagName"}:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的排序字段: {sort_by}，支持: score、tagName",
+            status_code=400,
+        )
+    if sort_order not in {"asc", "desc"}:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的排序方向: {sort_order}，支持: asc、desc",
+            status_code=400,
+        )
+    if control_mode is not None and control_mode.lower() not in {
+        "auto",
+        "cascade",
+        "manual",
+    }:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的控制模式: {control_mode}，支持: Auto、Cascade、Manual",
+            status_code=400,
+        )
     conditions = []
     # 与统计卡片口径统一：仅统计/展示 is_active=True 的回路（WS-D 阶段5）
     conditions.append(LoopLedger.is_active.is_(True))
@@ -603,6 +694,24 @@ async def list_loop_monitor(
                 "pageSize": page_size,
             }
         conditions.append(LoopLedger.id == loop_id)
+    if control_mode:
+        # 实时控制模式过滤：modeLabel 依赖 Redis 实时值 + 映射配置，无法下推 SQL，
+        # 先在候选集合上解析 modeLabel，命中后作为 ID 条件并入（统计/分页口径一致）
+        id_stmt = select(LoopLedger.id)
+        for cond in conditions:
+            id_stmt = id_stmt.where(cond)
+        candidate_ids = [str(r[0]) for r in (await db.execute(id_stmt)).all()]
+        matched_ids = await _filter_loop_ids_by_control_mode(db, candidate_ids, control_mode)
+        if not matched_ids:
+            return {
+                "view": view,
+                "items": [],
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+                "aggregate": None,
+            }
+        conditions.append(LoopLedger.id.in_(matched_ids))
 
     count_stmt = select(func.count()).select_from(LoopLedger)
     for cond in conditions:
@@ -625,10 +734,19 @@ async def list_loop_monitor(
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         .subquery("latest_snap")
     )
+    if sort_by == "tagName":
+        primary_order = (
+            LoopLedger.tag_name.asc() if sort_order == "asc" else LoopLedger.tag_name.desc()
+        )
+    else:
+        score_col = latest_snap_sq.c.score
+        primary_order = (
+            score_col.asc().nulls_last() if sort_order == "asc" else score_col.desc().nulls_last()
+        )
     stmt = (
         select(LoopLedger)
         .outerjoin(latest_snap_sq, latest_snap_sq.c.loop_id == LoopLedger.id)
-        .order_by(latest_snap_sq.c.score.asc().nulls_last(), LoopLedger.created_at.desc())
+        .order_by(primary_order, LoopLedger.created_at.desc())
     )
     for cond in conditions:
         stmt = stmt.where(cond)
@@ -930,11 +1048,15 @@ async def get_loop_monitor_detail(
     db: AsyncSession,
     loop_id: str,
     trend_window: str = "last_24_hours",
+    ts_start: datetime | None = None,
+    ts_end: datetime | None = None,
 ) -> dict:
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。
 
+    ts_start/ts_end 同时提供时优先于 trend_window（自定义趋势范围，上限 30 天）。
+
     Raises:
-        BizError: ERR_LOOP_NOT_FOUND / ERR_VALIDATION（非法 trendWindow）
+        BizError: ERR_LOOP_NOT_FOUND / ERR_VALIDATION（非法 trendWindow 或时间范围）
     """
     # WS-D 阶段5：非法 trendWindow 返回 400（原先静默回退到 24h）
     if trend_window not in TREND_WINDOWS:
@@ -1066,12 +1188,33 @@ async def get_loop_monitor_detail(
     }
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
 
-    # 计算时间范围
-    delta = TREND_WINDOWS.get(trend_window, timedelta(hours=24))
+    # 计算时间范围：自定义起止时间（ts_start/ts_end）优先于预置时间窗
     now = datetime.now(UTC)
-    start_dt = now - delta
+    if ts_start is not None and ts_end is not None:
+        start_dt = ts_start if ts_start.tzinfo else ts_start.replace(tzinfo=UTC)
+        end_dt = ts_end if ts_end.tzinfo else ts_end.replace(tzinfo=UTC)
+        start_dt = start_dt.astimezone(UTC)
+        end_dt = end_dt.astimezone(UTC)
+        if end_dt <= start_dt:
+            raise BizError(
+                code="ERR_VALIDATION",
+                message="趋势结束时间必须晚于开始时间",
+                status_code=400,
+            )
+        # 对齐 AGENTS.md §性能边界：时间窗口上限 30 天
+        if end_dt - start_dt > timedelta(days=30):
+            raise BizError(
+                code="ERR_VALIDATION",
+                message="自定义趋势时间范围不能超过 30 天",
+                status_code=400,
+            )
+        delta = end_dt - start_dt
+    else:
+        delta = TREND_WINDOWS.get(trend_window, timedelta(hours=24))
+        start_dt = now - delta
+        end_dt = now
     start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{start_dt.microsecond // 1000:03d}Z"
-    end_time = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
+    end_time = end_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{end_dt.microsecond // 1000:03d}Z"
 
     # 调用封装的趋势查询服务（并行查询 4 个 tag + 动态采样间隔）
     # 传入已加载的 tags_map / mappings，避免重复查询数据库
@@ -1103,7 +1246,7 @@ async def get_loop_monitor_detail(
 
     # KPI 摘要：按 trend_window 时间范围聚合小时快照
     # last_1_hour → 取最新 1 条快照；last_N_hours → 聚合 N 小时内所有快照
-    kpi_start = (now - delta).replace(tzinfo=None)
+    kpi_start = start_dt.replace(tzinfo=None)
     snapshot = await db.execute(
         select(KpiSnapshotHourly)
         .where(

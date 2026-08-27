@@ -34,6 +34,8 @@ export type WorkbenchSection = 'assessment' | 'overview';
 /** 监控上下文完整状态 */
 export interface MonitorContext {
   attentionOnly: boolean;
+  /** 实时控制模式筛选（Auto/Cascade/Manual），null 表示不筛选 */
+  controlMode: null | string;
   eventId: null | string;
   /** P2 IA优化：适用性等级多选筛选（L0~L4），空数组表示不筛选 */
   fitnessLevels: string[];
@@ -54,6 +56,7 @@ const CONTEXT_KEYS = [
   'plantNodeId',
   'loopType',
   'keyword',
+  'controlMode',
   'attentionOnly',
   'timeWindow',
   'eventId',
@@ -76,6 +79,9 @@ const VALID_VIEWS = new Set<MonitorView>(['table', 'workspace']);
 
 /** 合法区锚点集合 */
 const VALID_SECTIONS = new Set<WorkbenchSection>(['assessment', 'overview']);
+
+/** 合法控制模式集合（与列表 modeLabel 口径一致） */
+const VALID_CONTROL_MODES = new Set<string>(['Auto', 'Cascade', 'Manual']);
 
 /** 合法适用性等级集合（P2 IA优化） */
 const VALID_FITNESS_LEVELS = new Set<string>([
@@ -102,6 +108,13 @@ function parseKeyword(v: unknown): string {
 /** 解析布尔值（attentionOnly=1/true → true） */
 function parseBool(v: unknown): boolean {
   return v === '1' || v === 'true';
+}
+
+/** 解析控制模式，非法值返回 null */
+function parseControlMode(v: unknown): null | string {
+  const parsed = parseStr(v);
+  if (parsed && VALID_CONTROL_MODES.has(parsed)) return parsed;
+  return null;
 }
 
 /** 解析时间窗，非法值回退到默认 24h */
@@ -162,6 +175,7 @@ export function useMonitorContext() {
 
   const context = computed<MonitorContext>(() => ({
     attentionOnly: parseBool(route.query.attentionOnly),
+    controlMode: parseControlMode(route.query.controlMode),
     eventId: parseStr(route.query.eventId),
     fitnessLevels: parseFitnessLevels(route.query.fitnessLevels),
     from: parseStr(route.query.from),
@@ -180,6 +194,7 @@ export function useMonitorContext() {
   const plantNodeId = computed(() => context.value.plantNodeId);
   const loopType = computed(() => context.value.loopType);
   const keyword = computed(() => context.value.keyword);
+  const controlMode = computed(() => context.value.controlMode);
   const attentionOnly = computed(() => context.value.attentionOnly);
   const timeWindow = computed(() => context.value.timeWindow);
   const eventId = computed(() => context.value.eventId);
@@ -250,6 +265,7 @@ export function useMonitorContext() {
     context,
     // 便捷读取
     attentionOnly,
+    controlMode,
     eventId,
     fitnessLevels,
     from,

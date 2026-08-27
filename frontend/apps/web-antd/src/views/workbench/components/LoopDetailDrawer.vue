@@ -3,7 +3,7 @@
  * 回路详情抽屉（F-DG-01 行点击 · 用户决策：抽屉而非路由整定 Tab）
  *
  * 对齐原型 openLoopDrawer 只读信息结构（本批次无写操作）：
- * - 概览：当前评分 + sparkline + SLA 倒计时 + 触发时间
+ * - 概览：当前评分 + sparkline + 触发时间（SLA 倒计时已下线 D1=a，归处置域）
  * - 诊断结论：置信度 + 结论摘要 + 异常类别
  * - 适用性：L0~L4 徽章 + 说明
  * - 底部：前往参数整定 Tab（诊断 → 整定闭环动线，携带回路上下文）
@@ -11,8 +11,8 @@
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 
+import { useWorkbenchDrill } from '../utils/drill';
 import Spark from './Spark.vue';
 
 const props = defineProps<{
@@ -23,7 +23,7 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
-const router = useRouter();
+const { drill } = useWorkbenchDrill();
 
 const FITNESS_LABEL: Record<string, string> = {
   L0: '不可评估（数据严重不足）',
@@ -57,17 +57,23 @@ const sparkPoints = computed(() =>
   (props.row?.spark ?? []).map((v) => ({ t: '', v })),
 );
 
-const sla = computed(() => {
-  const sec = props.row?.sla_due_sec ?? null;
-  if (sec === null) return { color: '#909399', text: '无 SLA 要求' };
-  if (sec < 0) return { color: '#FF4D4F', text: `已超期 ${Math.ceil(-sec / 3600)}h` };
-  if (sec < 3600) return { color: '#FA8C16', text: `剩 ${Math.ceil(sec / 60)}min` };
-  return { color: '#606266', text: `剩 ${(sec / 3600).toFixed(1)}h` };
-});
-
 function toTuning() {
   emit('close');
-  router.push('/workbench/tuning');
+  // 追溯矩阵：→ 整定向导页（携带回路上下文；不带窗口/scope）
+  if (!props.row) return;
+  drill(
+    'tuning',
+    '/tuning/workbench',
+    { loopId: props.row.loop_id },
+    { withScope: false, withWindow: false },
+  );
+}
+
+/** 追溯矩阵 §4 下钻：抽屉内"查看完整诊断记录" → 诊断记录页（loopId 口径） */
+function toRecords() {
+  emit('close');
+  if (!props.row) return;
+  drill('diagnosis', '/diagnosis/records', { loopId: props.row.loop_id });
 }
 </script>
 
@@ -109,7 +115,7 @@ function toTuning() {
 
         <!-- 内容 -->
         <div class="flex-1 space-y-4 overflow-auto px-4 py-3">
-          <!-- 概览 -->
+          <!-- 概览（SLA 倒计时已下线 D1=a） -->
           <section>
             <div class="mb-1.5 text-[11px] font-semibold text-[#1F4E79]">概览</div>
             <div class="flex items-center gap-3">
@@ -122,14 +128,6 @@ function toTuning() {
               <div class="min-w-0 flex-1">
                 <Spark :points="sparkPoints" :width="220" :height="36" color="#FF4D4F" />
                 <div class="text-center text-[10px] text-gray-400">评分趋势（近 6 小时）</div>
-              </div>
-              <div class="flex-none text-right">
-                <div
-                  class="text-[13px] font-semibold tabular-nums"
-                  :style="{ color: sla.color }"
-                  >{{ sla.text }}</div
-                >
-                <div class="text-[10px] text-gray-400">SLA 倒计时</div>
               </div>
             </div>
           </section>
@@ -170,6 +168,15 @@ function toTuning() {
                 row.fitness_level ? FITNESS_LABEL[row.fitness_level] : '暂无适用性评估结果'
               }}</span>
             </div>
+          </section>
+
+          <!-- 完整诊断记录链接（追溯矩阵 §4：抽屉 → 诊断记录页下钻） -->
+          <section>
+            <a
+              class="cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
+              @click="toRecords"
+              >查看完整诊断记录 →</a
+            >
           </section>
 
           <!-- 处置动线提示 -->

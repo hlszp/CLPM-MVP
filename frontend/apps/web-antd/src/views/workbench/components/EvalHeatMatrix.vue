@@ -14,14 +14,47 @@
  */
 import type { WorkbenchApi } from '#/api/workbench';
 
+import { computed } from 'vue';
+
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   heatmap?: WorkbenchApi.AssessmentHeatmap;
 }>();
 
+const { drill, resolvePlantNodeId } = useWorkbenchDrill();
+
 const metrics = computed(() => props.heatmap?.metrics ?? []);
 const units = computed(() => props.heatmap?.units ?? []);
 
-import { computed } from 'vue';
+/**
+ * 热力指标 key → indicator-analysis 页面支持的 metric 参数（已核验）。
+ * 页面 METRIC_OPTIONS sortKey 全集：auto_mode_rate / accuracy_rate / fast_rate /
+ * steady_rate / good_value_rate / score（applyQuery 仅接受这些值，其余丢弃）。
+ * 热力 effective_auto_rate（有效自控）页面无同名指标，取最接近的 auto_mode_rate（自控率）；
+ * instrument_fault_rate（故障率）页面无对应指标 → undefined 不带 metric。
+ */
+const METRIC_KEY_MAP: Record<string, string | undefined> = {
+  accuracy_rate: 'accuracy_rate',
+  effective_auto_rate: 'auto_mode_rate',
+  fast_rate: 'fast_rate',
+  good_value_rate: 'good_value_rate',
+  instrument_fault_rate: undefined,
+  steady_rate: 'steady_rate',
+};
+
+/**
+ * 追溯矩阵 §3 下钻：单元格点击 → 指标分析（metric + 单元 plantNodeId）。
+ * 单元 source_node_id 通常不在 scopeTree（仅 FACTORY/AREA）→ 解析不到则只带 metric。
+ */
+function onCellClick(unitId: null | number, metricKey: string | undefined) {
+  const metric = metricKey ? METRIC_KEY_MAP[metricKey] : undefined;
+  const plantNodeId = resolvePlantNodeId(unitId);
+  drill('assess', '/metric/indicator-analysis', {
+    ...(metric ? { metric } : {}),
+    ...(plantNodeId ? { plantNodeId } : {}),
+  });
+}
 
 function cellColor(v: null | number, reverse: boolean): string {
   if (v === null || v === undefined) return 'transparent';
@@ -91,13 +124,14 @@ function tipText(unitName: string, metricLabel: string, v: null | number): strin
         <div
           v-for="(v, ci) in u.values"
           :key="ci"
-          class="flex h-6 cursor-pointer items-center justify-center rounded text-[11px] font-mono tabular-nums text-gray-700 transition-none"
+          class="flex h-6 cursor-pointer items-center justify-center rounded text-[11px] font-mono tabular-nums text-gray-700 transition-none hover:ring-1 hover:ring-[#1F4E79]"
           :style="
             v === null || v === undefined
               ? NA_STYLE
               : { backgroundColor: cellColor(v, metrics[ci]?.reverse ?? false) }
           "
-          :title="tipText(u.name, metrics[ci]?.label ?? '', v)"
+          :title="`${tipText(u.name, metrics[ci]?.label ?? '', v)} · 点击查看指标分析`"
+          @click="onCellClick(u.id, metrics[ci]?.key)"
         >
           {{ fmt(v) }}
         </div>

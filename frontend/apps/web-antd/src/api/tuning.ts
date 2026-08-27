@@ -232,6 +232,74 @@ export namespace TuningApi {
     /** 后窗超出当前时刻（数据截至当前时刻） */
     afterTruncated: boolean;
   }
+
+  /** 整定批次状态（status 为 B-06 动态阻塞判定后的有效状态） */
+  export type TuningBatchStatus =
+    | 'BLOCKED'
+    | 'CANCELLED'
+    | 'COMPLETED'
+    | 'PENDING'
+    | 'READY'
+    | 'RUNNING';
+
+  /** 整定批次列表摘要（追溯矩阵 GAP-2a） */
+  export interface TuningBatchSummary {
+    id: number;
+    batchNo: string;
+    title: string;
+    scopeType: string;
+    scopeId: number;
+    status: TuningBatchStatus;
+    storedStatus: string;
+    blocked: boolean;
+    blockReason?: null | string;
+    recordCount: number;
+    createdAt?: null | string;
+  }
+
+  export interface TuningBatchListData {
+    items: TuningBatchSummary[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }
+
+  /** 批次前置工单摘要 */
+  export interface TuningBatchPrereqOrder {
+    orderId: string;
+    orderNo?: null | string;
+    title?: null | string;
+    status?: null | string;
+    closed: boolean;
+  }
+
+  /** 批次关联整定记录（tuning_batch_records N:M） */
+  export interface TuningBatchRecordItem {
+    recordId: string;
+    sortOrder: number;
+    loopId: string;
+    tagName?: null | string;
+    modelType?: null | string;
+    algorithm?: null | string;
+    status?: null | string;
+    fittingScore?: null | number;
+    createdBy?: null | string;
+    createdAt?: null | string;
+  }
+
+  /** 整定批次详情 */
+  export interface TuningBatchDetail extends TuningBatchSummary {
+    prereqOrderIds: string[];
+    prereqOrders: TuningBatchPrereqOrder[];
+    /** scatters JSONB 原样返回（[{loop_id, score, ...}]） */
+    scattersBefore?: null | Record<string, any>[];
+    scattersAfter?: null | Record<string, any>[];
+    ownerId?: null | number;
+    expectedStartAt?: null | string;
+    actualStartAt?: null | string;
+    completedAt?: null | string;
+    records: TuningBatchRecordItem[];
+  }
 }
 
 /** 整定方法信息 */
@@ -349,12 +417,14 @@ export function saveTuningTaskApi(data: {
   return requestClient.post<{ id: string }>('/tuning/tasks', data);
 }
 
-/** 整定任务列表（分页 + 筛选） */
+/** 整定任务列表（分页 + 筛选；status 支持逗号多值，startTime/endTime 按创建时间过滤） */
 export function getTuningTasksApi(params: {
   algorithm?: string;
+  endTime?: string;
   loopId?: string;
   page?: number;
   pageSize?: number;
+  startTime?: string;
   status?: string;
 }) {
   return requestClient.get<TuningApi.TuningTaskListData>('/tuning/tasks', {
@@ -372,6 +442,26 @@ export function getTuningTaskDetailApi(taskId: string) {
 /** 整定历史统计 */
 export function getTuningHistoryApi() {
   return requestClient.get<TuningApi.TuningHistoryStats>('/tuning/history');
+}
+
+/** 整定批次列表（分页 + status/创建时间窗筛选，追溯矩阵 GAP-2a） */
+export function getTuningBatchesApi(params: {
+  endTime?: string;
+  page?: number;
+  pageSize?: number;
+  startTime?: string;
+  status?: string;
+}) {
+  return requestClient.get<TuningApi.TuningBatchListData>('/tuning/batches', {
+    params,
+  });
+}
+
+/** 整定批次详情（关联整定记录 + 前置工单摘要 + scatters） */
+export function getTuningBatchDetailApi(batchId: number | string) {
+  return requestClient.get<TuningApi.TuningBatchDetail>(
+    `/tuning/batches/${batchId}`,
+  );
 }
 
 /** 效果验证前后窗曲线数据（09 §4.5，实时拉取不落库） */

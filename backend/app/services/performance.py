@@ -1643,7 +1643,10 @@ async def _build_snapshot_conditions(
     if expanded_node_ids:
         conditions.append(LoopLedger.unit_id.in_(expanded_node_ids))
     if status_filter:
-        conditions.append(KpiSnapshotHourly.status == status_filter)
+        # 逗号分隔多值 → IN 查询；单值为 IN 的特例，向后兼容
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if statuses:
+            conditions.append(KpiSnapshotHourly.status.in_(statuses))
     if confidence_level:
         conditions.append(KpiSnapshotHourly.confidence_level == confidence_level)
     if loop_tag_name:
@@ -1779,6 +1782,96 @@ SNAPSHOT_SORT_COLUMNS = {
     "good_value_rate": KpiSnapshotHourly.good_value_rate,
 }
 
+# 指标矩阵页批量序列接口白名单（docs/MVP设计/15-回路指标矩阵页设计方案.md §4.1）：
+# SNAPSHOT_SORT_COLUMNS 7 项 + 诊断扩展数值列（snake_case，camelCase 由 endpoint 层
+# 统一转换）。DISPLAY_ONLY 统计/阀门指标暂不进白名单（语义非"单值时间序列"）。
+METRIC_SERIES_COLUMNS: dict[str, object] = {
+    **SNAPSHOT_SORT_COLUMNS,
+    "oscillation_rate": KpiSnapshotHourly.oscillation_rate,
+    "saturation_rate": KpiSnapshotHourly.saturation_rate,
+    "instrument_fault_rate": KpiSnapshotHourly.instrument_fault_rate,
+    "stiction_index": KpiSnapshotHourly.stiction_index,
+    "settling_time": KpiSnapshotHourly.settling_time,
+    "output_trip_index": KpiSnapshotHourly.output_trip_index,
+}
+
+# 批量序列单次最大回路数（性能护栏：10 回路 × 168h ≈ 1680 行无分页压力）
+METRIC_SERIES_MAX_LOOPS = 10
+
+
+async def get_loop_metric_series(
+    db: AsyncSession,
+    loop_ids: list[str],
+    metric_key: str,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[dict]:
+    """批量查询单指标 × 多回路时间序列（指标矩阵页列头趋势对比）.
+
+    数据源为 kpi_snapshot_hourly（小时粒度），按 loop_id + ts_start 升序返回；
+    NULL 值快照剔除（该小时无有效计算值不产生数据点）。
+
+    Args:
+        db: 异步 DB 会话
+        loop_ids: 回路 ID 列表（1~METRIC_SERIES_MAX_LOOPS 个）
+        metric_key: 指标键（snake_case，METRIC_SERIES_COLUMNS 白名单）
+        start: 起始时间（按 ts_start 过滤）；None=默认近 7 天
+        end: 结束时间（按 ts_start 过滤）；None=当前时间
+
+    Returns:
+        ``[{"loop_id", "tag_name", "points": [{"ts", "value"}]}, ...]``，
+        按入参 loop_ids 中实际有数据的回路返回
+
+    Raises:
+        BizError: ERR_METRIC_SERIES_INVALID（白名单外指标键）/
+            ERR_METRIC_SERIES_LOOPS（回路数超限或为空）
+    """
+    col = METRIC_SERIES_COLUMNS.get(metric_key)
+    if col is None:
+        raise BizError(
+            code="ERR_METRIC_SERIES_INVALID",
+            message=f"无效的指标键: {metric_key}（可选：{sorted(METRIC_SERIES_COLUMNS)}）",
+            status_code=400,
+        )
+    if not loop_ids:
+        raise BizError(
+            code="ERR_METRIC_SERIES_LOOPS",
+            message="loopIds 不能为空",
+            status_code=400,
+        )
+    if len(loop_ids) > METRIC_SERIES_MAX_LOOPS:
+        raise BizError(
+            code="ERR_METRIC_SERIES_LOOPS",
+            message=f"回路数超过上限 {METRIC_SERIES_MAX_LOOPS}（当前 {len(loop_ids)}）",
+            status_code=400,
+        )
+
+    conditions = [
+        KpiSnapshotHourly.loop_id.in_(loop_ids),
+        col.is_not(None),
+    ]
+    if start is not None:
+        conditions.append(KpiSnapshotHourly.ts_start >= start)
+    if end is not None:
+        conditions.append(KpiSnapshotHourly.ts_start <= end)
+
+    stmt = (
+        select(KpiSnapshotHourly.loop_id, LoopLedger.tag_name, KpiSnapshotHourly.ts_start, col)
+        .outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+        .where(*conditions)
+        .order_by(KpiSnapshotHourly.loop_id.asc(), KpiSnapshotHourly.ts_start.asc())
+    )
+    result = await db.execute(stmt)
+
+    # 按回路聚合（保持 SQL 升序，ts 单调递增）
+    series_map: dict[str, dict] = {}
+    for loop_id, tag_name, ts, value in result.all():
+        entry = series_map.setdefault(
+            str(loop_id), {"loop_id": str(loop_id), "tag_name": tag_name, "points": []}
+        )
+        entry["points"].append({"ts": ts.isoformat() if ts else None, "value": float(value)})
+    return list(series_map.values())
+
 
 async def list_loop_snapshots(
     db: AsyncSession,
@@ -1804,7 +1897,7 @@ async def list_loop_snapshots(
         plant_node_ids: 装置 ID 列表过滤（LoopLedger.unit_id）；None=不按装置过滤
         start: 起始时间（按 ts_start 过滤）；None=默认近 30 天
         end: 结束时间（按 ts_start 过滤）；None=当前时间
-        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL）
+        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL，逗号分隔多值）
         confidence_level: 可信度等级过滤（A/B/C/D/E）
         loop_tag_name: 回路编号模糊匹配（ILIKE %keyword%）
         grade: 性能等级筛选（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE），

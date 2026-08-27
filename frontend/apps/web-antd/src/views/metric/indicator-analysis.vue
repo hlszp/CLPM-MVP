@@ -481,6 +481,13 @@ function applyQuery(q: RouteLocationNormalizedLoaded['query']): boolean {
     timeWindow.value = win;
     changed = true;
   }
+  // 追溯矩阵 G6：fitness=L0/L1 深链（整定 Tab 适用性环形图下钻）时关闭适用性
+  // 过滤，否则 L0/L1 目标回路会被默认过滤排除，下钻落地看不到任何数据
+  const fitness = typeof q.fitness === 'string' ? q.fitness : '';
+  if ((fitness === 'L0' || fitness === 'L1') && fitnessFilter.value) {
+    fitnessFilter.value = false;
+    changed = true;
+  }
   const qNodeId =
     typeof q.plantNodeId === 'string' && q.plantNodeId ? q.plantNodeId : undefined;
   if (qNodeId !== selectedPlantNodeId.value) {
@@ -1001,7 +1008,7 @@ onMounted(() => {
         <!-- B + C + E：一行三图（按 5:3:4 分配压缩各区宽度，中间区域 flex-1 自适应填满） -->
         <div class="mt-3 grid min-h-[280px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12">
           <Card
-            class="lg:col-span-5 h-full"
+            class="lg:col-span-5 h-full flex flex-col"
             :body-style="{
               padding: '12px 16px',
               display: 'flex',
@@ -1033,7 +1040,7 @@ onMounted(() => {
             </div>
           </Card>
           <Card
-            class="lg:col-span-3 h-full"
+            class="lg:col-span-3 h-full flex flex-col"
             :body-style="{
               padding: '12px 16px',
               display: 'flex',
@@ -1074,7 +1081,7 @@ onMounted(() => {
           </Card>
           <!-- E：指标分布（grid 第三列，紧凑图例） -->
           <Card
-            class="lg:col-span-4 h-full"
+            class="lg:col-span-4 h-full flex flex-col"
             :body-style="{
               padding: '12px 16px',
               display: 'flex',

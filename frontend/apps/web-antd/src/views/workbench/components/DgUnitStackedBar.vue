@@ -24,11 +24,15 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   conclItems?: WorkbenchApi.DiagnosisConclItem[];
   openTags?: WorkbenchApi.DiagnosisOpenTag[];
   pareto?: WorkbenchApi.ParetoRow[];
 }>();
+
+const { drill, resolvePlantNodeIdByName } = useWorkbenchDrill();
 
 // ---------- 单元名解析：工厂模型节点优先，启发式仅作兜底 ----------
 /** 兜底：从 loop_name 末尾中文提取（仅当后端 unit_name 缺失时使用） */
@@ -219,6 +223,19 @@ function severityColor(s: number): string {
   return '#1890FF';
 }
 
+/**
+ * 追溯矩阵 §4 下钻：条段点击 → 诊断记录（装置 plantNodeId + category）。
+ * - plantNodeId：行数据只有装置名（factory），经 scopeTree 按名解析，解析不到则不带；
+ * - category：OTHERS（"其他"聚合段）无对应类别，不带 category（下钻参数不带中文）。
+ */
+function onSegClick(u: UnitRow, cat: string) {
+  const plantNodeId = resolvePlantNodeIdByName(u.factory);
+  drill('diagnosis', '/diagnosis/records', {
+    ...(plantNodeId ? { plantNodeId } : {}),
+    ...(cat === OTHERS ? {} : { category: cat }),
+  });
+}
+
 // ---------- 堆叠段宽度（百分比，相对单装置总）----------
 function segWidth(u: UnitRow, cat: string): string {
   const c = u.cells.get(cat)?.count ?? 0;
@@ -326,13 +343,14 @@ function rowTitle(u: UnitRow): string {
             >
               <div
                 v-if="segCount(u, c) > 0"
-                class="h-full"
+                class="h-full cursor-pointer hover:brightness-110"
                 :style="{
                   width: segWidth(u, c),
                   backgroundColor: catColor(c),
                   minWidth: '2px',
                 }"
-                :title="`${c}: ${segCount(u, c)}`"
+                :title="`${c}: ${segCount(u, c)} · 点击查看诊断记录`"
+                @click.stop="onSegClick(u, c)"
               ></div>
             </template>
           </div>

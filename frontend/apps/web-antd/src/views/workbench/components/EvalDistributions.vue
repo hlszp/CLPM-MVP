@@ -13,7 +13,8 @@
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
+
+import { useWorkbenchDrill } from '../utils/drill';
 
 const props = defineProps<{
   evaluated?: number;
@@ -21,7 +22,7 @@ const props = defineProps<{
   trend?: null | WorkbenchApi.AssessmentTrend;
 }>();
 
-const router = useRouter();
+const { drill } = useWorkbenchDrill();
 
 // 饼图几何（实心扇形，0°=12 点顺时针；对齐原型尺寸 118）
 const SIZE = 118;
@@ -113,11 +114,35 @@ const DQ_STYLE: Record<string, { bg: string; color: string }> = {
 const dataQuality = computed(() => props.trend?.data_quality ?? []);
 
 function onManual() {
-  // 跨 Tab 联动：长期手动 → 诊断 Tab
-  router.push('/workbench/diagnosis');
+  // 追溯矩阵：长期手动 → 诊断记录（UTILIZATION 投用/操作类，携带窗口+scope 口径）
+  drill('diagnosis', '/diagnosis/records', { category: 'UTILIZATION' });
 }
 function onDq() {
-  // 数据问题清单 → G-全局数据质量弹窗（本批次桩，留 G-全局）
+  // 追溯矩阵：数据问题清单 → 评估快照明细（异常/部分状态口径）
+  drill('assess', '/metric/history', { status: 'INCONCLUSIVE,PARTIAL' });
+}
+
+/**
+ * 追溯矩阵 §3 下钻：等级分布图例点击 → 回路绩效明细（grade 筛选）。
+ * 等级中文 → 后端快照 grade 枚举（已核验）：
+ * 后端 5 级阈值（performance.py _score_to_status）：EXCELLENT≥90 / GOOD 80–90 /
+ * FAIR 70–80 / WARNING 60–70 / POOR<60；loop-performance 的 gradeLevelByName 接等级名。
+ * 工作台 4 档口径（workbench_assessment.py LEVEL_TIERS）：优≥90→EXCELLENT（精确）、
+ * 差<60→POOR（精确）；良75–90 跨 GOOD+FAIR 上段、中60–75 跨 WARNING+FAIR 下段，
+ * 按区间主体重心取最邻近档 GOOD / WARNING。
+ */
+const LEVEL_GRADE_MAP: Record<string, string> = {
+  优: 'EXCELLENT',
+  良: 'GOOD',
+  中: 'WARNING',
+  差: 'POOR',
+};
+
+function onLevelLegend(label: string) {
+  // label 形如 "优（≥90）"，取首字映射
+  const grade = LEVEL_GRADE_MAP[label.charAt(0)];
+  if (!grade) return;
+  drill('assess', '/metric/loop-performance', { grade, latestOnly: 'true' });
 }
 </script>
 
@@ -163,7 +188,13 @@ function onDq() {
           参评 <span class="tabular-nums">{{ evaluatedNum }}/{{ totalNum }}</span>
         </div>
         <div class="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[10px] text-gray-500">
-          <span v-for="s in levelLegend" :key="s.label" class="flex items-center gap-1">
+          <span
+            v-for="s in levelLegend"
+            :key="s.label"
+            class="flex cursor-pointer items-center gap-1 hover:text-gray-700"
+            :title="`点击查看「${s.label.replace(/（.*$/, '')}」等级回路明细`"
+            @click="onLevelLegend(s.label)"
+          >
             <span class="inline-block h-2 w-2 rounded-full" :style="{ backgroundColor: s.color }"></span>
             {{ s.label.replace(/（.*$/, '') }} {{ s.count }}
           </span>

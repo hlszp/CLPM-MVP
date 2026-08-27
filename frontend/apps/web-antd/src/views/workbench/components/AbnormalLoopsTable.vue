@@ -1,20 +1,21 @@
 <script setup lang="ts">
 /**
- * 诊断队列 Top6（方案 §5.1 F-DG-01 · 原型 loopRow 1:1 复刻 · 右上分段选项卡）
+ * 诊断队列 Top6（方案 §5.1 F-DG-01 · 原型 loopRow 复刻 · 右上分段选项卡）
+ *
+ * 数据源（14 号方案 A2）：open_tags = diagnosis_run 每回路最新未处置异常 run
+ * （severity 已由后端映射回四档颜色域；SLA 倒计时列已下线 D1=a——SLA 归处置域）
  *
  * 分段选项卡（原型 #diagSeg，右上 3 段）：
- *   · 风险优先（默认）—— 按严重度 × SLA 到期排序（后端口径）
+ *   · 风险优先（默认）—— 后端按 severity × 时间排好
  *   · 恶化最快 —— 按 spark.slope 降序前端模拟重排
- *   · 长期手动 —— 前端筛选 category=OP_MANUAL 或 symptom 含"手动"
+ *   · 长期手动 —— 前端筛选 category 含"投用/操作"或 symptom 含"手动"
  *
- * 每行 8 列（对齐原型）：
+ * 每行主要信息（对齐原型复合块）：
  *   [1] 严重度色点（小dot，≈8px）
- *   [2] 回路名 + 症状chip + 状态chip（处理中/验证中/…）
+ *   [2] 回路名 + 症状chip + 状态chip（处理中/验证中）
  *   [3] 评分▼dd（数字 + ▼delta，红/绿着色 + spark 柱线小图旁）
  *   [4] sparkline（Mini 柱+线，≈72px 宽，无动画）
- *   [5] SLA 倒计时 + 超期红警示（原型 TIC-408 "剩 3.2h"、LIC-112 "已超期 26h" 红）
- *   [6] 置信度 ●0.91（绿/橙）
- *   [注] 原型每行显示 3 列主要信息（复合块内 8 列视觉拆开）
+ *   [5] 置信度 ●0.91（绿/橙）
  *
  * - 点击行 → emit('rowClick', row) → 父级打开回路详情抽屉（用户决策）
  */
@@ -51,16 +52,11 @@ const SEVERITY_COLOR: Record<string, string> = {
 };
 
 /** 状态 chip 映射（原型截图：振荡/处理中；振荡/验证中）
- *  当前没独立 status 字段，从 severity + sla_stage 模拟：
- *  - sla_stage === BREACH → 红底"已超期"
- *  - CRITICAL/ERROR 且 sla_warn 未 breach → 橙底"处理中"
- *  - WARN → 蓝底"验证中"
- *  若后续 diagnosis_tag.status 枚举丰富，可直接用真实字段替换
+ *  SLA 已下线（D1=a），从 severity 模拟：
+ *  - CRITICAL/ERROR → 橙底"处理中"
+ *  - WARN/INFO → 蓝底"验证中"
  */
 function statusPill(row: WorkbenchApi.DiagnosisOpenTag): { bg: string; color: string; text: string; } {
-  if (row.sla_stage === 'BREACH' || (row.sla_due_sec !== null && row.sla_due_sec < 0)) {
-    return { bg: '#FFF1F0', color: '#FF4D4F', text: '处理中' };
-  }
   const sev = row.severity ?? '';
   if (sev === 'CRITICAL' || sev === 'ERROR') {
     return { bg: '#FFF7E6', color: '#FA8C16', text: '处理中' };
@@ -102,17 +98,6 @@ function sparkSlope(spark: number[]): number {
   return (last - first) / spark.length;
 }
 
-/** SLA 文案 + 颜色（对齐原型：剩 3.2h；已超期 26h 红字） */
-function slaText(sec: null | number | undefined): { color: string; text: string } {
-  if (sec === null || sec === undefined) return { color: '#909399', text: '—' };
-  if (sec < 0) {
-    const hours = Math.ceil(-sec / 3600);
-    return { color: '#FF4D4F', text: `已超期 ${hours}h` };
-  }
-  if (sec < 3600) return { color: '#FA8C16', text: `剩 ${Math.ceil(sec / 60)}min` };
-  return { color: '#606266', text: `剩 ${(sec / 3600).toFixed(1)}h` };
-}
-
 function confColor(conf: null | number | undefined): string {
   return conf !== null && conf !== undefined && conf >= 0.8 ? '#52C41A' : '#FA8C16';
 }
@@ -121,7 +106,7 @@ function confColor(conf: null | number | undefined): string {
 const visibleRows = computed(() => {
   const raw = props.rows ?? [];
   if (seg.value === 'risk') {
-    // 默认端口序（按原始顺序——后端已按严重度×SLA 排好）
+    // 默认端口序（按原始顺序——后端已按严重度×时间排好）
     return raw.slice(0, 6);
   }
   if (seg.value === 'worsening') {
@@ -132,18 +117,17 @@ const visibleRows = computed(() => {
       .map((x) => x.r)
       .slice(0, 6);
   }
-  // 长期手动：category=PROCESS/UTILIZATION 或 symptom 含「手动」/「长期」
+  // 长期手动：symptom 含「手动」/「长期」/「manual」或 category 为投用/操作类（中文标签域）
   return raw
     .filter((r) => {
       const sym = (r.symptom ?? '').toLowerCase();
-      const cat = (r.category ?? '').toUpperCase();
+      const cat = r.category ?? '';
       return (
         sym.includes('手动') ||
         sym.includes('长期') ||
         sym.includes('manual') ||
-        cat === 'MANUAL' ||
-        cat === 'OP_MANUAL' ||
-        cat === 'UTILIZATION'
+        cat.includes('投用') ||
+        cat.includes('操作')
       );
     })
     .slice(0, 6);
@@ -250,15 +234,7 @@ const visibleRows = computed(() => {
           />
         </div>
 
-        <!-- [5] SLA 倒计时（原型：剩 3.2h；已超期 26h 红） -->
-        <span
-          class="w-20 flex-none text-right text-[11px] font-medium tabular-nums"
-          :style="{ color: slaText(row.sla_due_sec).color }"
-        >
-          {{ slaText(row.sla_due_sec).text }}
-        </span>
-
-        <!-- [6] 置信度 ●0.91 -->
+        <!-- [5] 置信度 ●0.91 -->
         <span
           class="w-12 flex-none text-right text-[11px] font-semibold tabular-nums"
           :style="{ color: confColor(row.confidence) }"
@@ -285,7 +261,7 @@ const visibleRows = computed(() => {
       <span class="text-gray-500">
         {{ seg === 'risk' ? '风险优先级' : seg === 'worsening' ? '恶化速度' : '长期手动标签' }}
       </span>
-      排序 · SLA 口径：确诊后 24h 内认领
+      排序 · 未处置 = 无处置建议或建议未达终态
     </div>
   </div>
 </template>

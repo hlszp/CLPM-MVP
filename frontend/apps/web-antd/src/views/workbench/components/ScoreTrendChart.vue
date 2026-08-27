@@ -17,11 +17,20 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, ref } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   flags?: WorkbenchApi.WindowFlag[];
   target?: number; // 默认 90
   trend?: WorkbenchApi.ScoreTrendPoint[];
 }>();
+
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §2 下钻：图表点击 → 评估历史明细（快照粒度，显式 latestOnly=false） */
+function onChartClick() {
+  drill('assess', '/metric/history', { latestOnly: 'false' });
+}
 
 // 图表几何（对齐原型 w:560 h:225）
 const W = 560;
@@ -181,7 +190,11 @@ const mainCurrent = computed(() => {
     </div>
 
     <!-- 图表 -->
-    <div class="flex-1 overflow-hidden p-1">
+    <div
+      class="flex-1 cursor-pointer overflow-hidden p-1"
+      title="点击查看评估历史明细"
+      @click="onChartClick"
+    >
       <svg :viewBox="`0 0 ${W} ${H}`" class="h-full w-full" preserveAspectRatio="none">
         <!-- 网格线 + Y 轴标签 -->
         <template v-for="tick in yTicks" :key="`grid-${tick.v}`">

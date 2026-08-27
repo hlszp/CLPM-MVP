@@ -11,6 +11,8 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   /** 当前选中窗口（跟随 HeaderBar 时间胶囊联动） */
   currentWindow?: WorkbenchApi.TimeWindow;
@@ -23,6 +25,45 @@ const props = defineProps<{
 const win = computed(
   () => props.windows?.[props.currentWindow ?? '24h'] ?? null,
 );
+
+const { drill } = useWorkbenchDrill();
+
+/** 卡片可点击通用样式（工业风：无动画，仅 hover 边框加深） */
+const CARD_CLICK_CLASS = 'cursor-pointer hover:border-[#B9C6D6]';
+
+// 追溯矩阵 §2 下钻接线（窗口+scope 口径由 drill 自动携带）
+/** 综合评分 → 回路绩效明细（回路粒度对账，latestOnly 默认 true） */
+function drillScore() {
+  drill('assess', '/metric/loop-performance');
+}
+/** 有效自控率 → 指标分析（metric key 以 indicator-analysis 页面支持项为准：auto_mode_rate） */
+function drillAutoRate() {
+  drill('assess', '/metric/indicator-analysis', { metric: 'auto_mode_rate' });
+}
+/** 劣化回路 → 回路绩效明细（grade=POOR「劣」档。已核验：后端 5 级定级
+ * EXCELLENT/GOOD/FAIR/WARNING/POOR（performance.py _score_to_status，POOR=score<60）；
+ * loop-performance 的 gradeLevelByName 接等级名（动态阈值配置优先、国标默认名兜底），
+ * POOR 可正确落地为 5 级筛选） */
+function drillDegraded() {
+  drill('assess', '/metric/loop-performance', { grade: 'POOR' });
+}
+/** 处置待办 → 工单列表（待办+重开+执行中，口径=funnel.pending+executing） */
+function drillPending() {
+  drill('handling', '/handling/orders', {
+    status: 'PENDING,REOPENED,EXECUTING',
+  });
+}
+/** 预警事件 → 工单列表（SLA 超期口径：plannedBefore=now + 非终态） */
+function drillAlerts() {
+  drill('handling', '/handling/orders', {
+    plannedBefore: new Date().toISOString(),
+    status: 'PENDING,REOPENED,EXECUTING,VERIFYING',
+  });
+}
+/** 数据可信 → 指标分析（好值率，metric key 以页面支持项为准：good_value_rate） */
+function drillGoodValue() {
+  drill('assess', '/metric/indicator-analysis', { metric: 'good_value_rate' });
+}
 
 // 综合评分
 const score = computed(() => win.value?.score ?? null);
@@ -64,6 +105,9 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
     <!-- 综合评分 -->
     <div
       class="flex flex-1 flex-col gap-1 rounded border border-[#E4E7ED] bg-white px-3 py-2"
+      :class="CARD_CLICK_CLASS"
+      title="点击查看回路绩效明细"
+      @click="drillScore"
     >
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">综合评分</span>
@@ -89,6 +133,9 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
     <!-- 有效自控率 -->
     <div
       class="flex flex-1 flex-col gap-1 rounded border border-[#E4E7ED] bg-white px-3 py-2"
+      :class="CARD_CLICK_CLASS"
+      title="点击查看自控率指标分析"
+      @click="drillAutoRate"
     >
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">有效自控率</span>
@@ -112,6 +159,9 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
     <!-- 劣化回路 -->
     <div
       class="flex flex-1 flex-col gap-1 rounded border border-[#E4E7ED] bg-white px-3 py-2"
+      :class="CARD_CLICK_CLASS"
+      title="点击查看劣化回路口径明细"
+      @click="drillDegraded"
     >
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">劣化回路</span>
@@ -132,6 +182,9 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
     <!-- 处置待办 -->
     <div
       class="flex flex-1 flex-col gap-1 rounded border border-[#E4E7ED] bg-white px-3 py-2"
+      :class="CARD_CLICK_CLASS"
+      title="点击查看在办工单列表"
+      @click="drillPending"
     >
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">处置待办</span>
@@ -152,6 +205,9 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
     <!-- 预警事件 -->
     <div
       class="flex flex-1 flex-col gap-1 rounded border border-[#E4E7ED] bg-white px-3 py-2"
+      :class="CARD_CLICK_CLASS"
+      title="点击查看 SLA 超期工单"
+      @click="drillAlerts"
     >
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">预警事件</span>
@@ -172,6 +228,9 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
     <!-- 数据可信 -->
     <div
       class="flex flex-1 flex-col gap-1 rounded border border-[#E4E7ED] bg-white px-3 py-2"
+      :class="CARD_CLICK_CLASS"
+      title="点击查看好值率指标分析"
+      @click="drillGoodValue"
     >
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">数据可信</span>

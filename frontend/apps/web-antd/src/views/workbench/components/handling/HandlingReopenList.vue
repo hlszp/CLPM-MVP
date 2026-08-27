@@ -8,12 +8,13 @@
  * 视觉：
  *   每行：排名 + 回路名 + 色阶条（宽=reopened/max，色=反向色阶）+ 重开数 + KPI delta
  *   反向色阶：reopened/max ≥0.75 红 / ≥0.5 橙 / ≥0.25 黄 / else 蓝
- *   点击 → emit select(loop)（容器可联动 TaskDetailCard 或定位看板）
+ *   点击 → 下钻回路档案页 /handling/archive?loopId（追溯矩阵 §6，不再联动定位在办工单）
  */
 import type { HandlingApi } from '#/api/handling';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../../utils/drill';
 import HelpBubble from '../HelpBubble.vue';
 
 interface Props {
@@ -26,14 +27,17 @@ const props = withDefaults(defineProps<Props>(), {
   topN: 8,
 });
 
-const emit = defineEmits<{
-  (e: 'select', loop: HandlingApi.LoopAggregateItem): void;
-}>();
+const { drill } = useWorkbenchDrill();
+
+/** 追溯矩阵 §6 下钻：行点击 → 回路档案（loopId 口径；archive 页 loopId 接参属 GAP-5） */
+function onRowClick(loop: HandlingApi.LoopAggregateItem) {
+  drill('handling', '/handling/archive', { loopId: loop.loopId });
+}
 
 const helpItems = [
   { label: '色阶条', text: '重开次数降序 Top 8；宽=reopened/max，反向色阶（多=红/少=蓝）。' },
   { label: 'KPI delta', text: '最近一次闭环 kpi_after.score − kpi_before.score（绿改善/红恶化/— 无闭环）。' },
-  { label: '联动', text: '点击行 → emit select(loop)，容器可联动任务详情或定位看板工单。' },
+  { label: '下钻', text: '点击行 → 跳转该回路的处置档案页（/handling/archive?loopId）。' },
 ];
 
 interface ReopenRow {
@@ -120,7 +124,8 @@ const totalReopen = computed(() =>
           v-for="(r, i) in rows"
           :key="r.loop.loopId"
           class="flex cursor-pointer items-center gap-[4px] rounded-[1px] px-[2px] py-[1px] transition-colors hover:bg-[#FAFBFC]"
-          @click="emit('select', r.loop)"
+          title="点击查看该回路处置档案"
+          @click="onRowClick(r.loop)"
         >
           <span
             class="w-[14px] flex-none text-center text-[9px] font-bold tabular-nums"

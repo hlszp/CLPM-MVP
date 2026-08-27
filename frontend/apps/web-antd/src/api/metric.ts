@@ -1525,6 +1525,74 @@ export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
 }
 
 // ===========================================================================
+// 批量回路指标序列 — GET /performance/loops/metric-series
+// 指标矩阵页列头趋势对比（docs/MVP设计/15-回路指标矩阵页设计方案.md §4.1）
+// ===========================================================================
+
+/** 批量指标序列数据点 */
+export interface MetricSeriesPoint {
+  ts: null | string;
+  value: null | number;
+}
+
+/** 单回路的指标时间序列 */
+export interface MetricSeriesItem {
+  loopId: null | string;
+  loopTagName: null | string;
+  points: MetricSeriesPoint[];
+}
+
+/** 批量回路指标序列响应 */
+export interface MetricSeriesResult {
+  metricKey: string;
+  series: MetricSeriesItem[];
+}
+
+/**
+ * metric-series 指标键白名单（对齐后端 METRIC_SERIES_COLUMNS）
+ *
+ * snake_case 直传后端；矩阵页指标定义的 seriesKey 取值于此
+ */
+export type MetricSeriesKey =
+  | 'accuracy_rate'
+  | 'auto_mode_rate'
+  | 'effective_auto_rate'
+  | 'fast_rate'
+  | 'good_value_rate'
+  | 'instrument_fault_rate'
+  | 'oscillation_rate'
+  | 'output_trip_index'
+  | 'saturation_rate'
+  | 'score'
+  | 'settling_time'
+  | 'steady_rate'
+  | 'stiction_index';
+
+/** 批量序列查询参数 */
+export interface MetricSeriesQueryParams {
+  /** 回路 ID 列表（逗号分隔，≤10 个） */
+  loopIds: string;
+  /** 指标键（snake_case 白名单） */
+  metricKey: MetricSeriesKey;
+  /** 起始时间（ISO 8601） */
+  startTime?: string;
+  /** 结束时间（ISO 8601） */
+  endTime?: string;
+}
+
+/**
+ * 批量查询单指标 × 多回路时间序列（小时粒度）
+ *
+ * 列头趋势弹层：单指标 TOP N 薄弱回路历史折线叠加，避免 N 次分页拉取。
+ */
+export function getLoopMetricSeriesApi(params: MetricSeriesQueryParams) {
+  return requestClient.get<MetricSeriesResult>(
+    '/performance/loops/metric-series',
+    { params },
+  );
+}
+
+// ===========================================================================
 // 各性能等级回路数分布 — GET /performance/grade-distribution
 // ===========================================================================
 

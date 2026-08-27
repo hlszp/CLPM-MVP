@@ -224,12 +224,17 @@ def _rule_to_dict(rule: AlertRule) -> dict[str, Any]:
     }
 
 
-def _event_to_dict(event: AlertEvent, loop_name: str | None = None) -> dict[str, Any]:
+def _event_to_dict(
+    event: AlertEvent,
+    loop_name: str | None = None,
+    rule_name: str | None = None,
+) -> dict[str, Any]:
     """ORM → 响应字典。"""
     return {
         "event_id": event.id,
         "rule_id": event.rule_id,
         "rule_code": event.rule_code,
+        "rule_name": rule_name,
         "rule_version": event.rule_version,
         "loop_id": event.loop_id,
         "severity": event.severity,
@@ -657,8 +662,10 @@ async def list_events(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    stmt = select(AlertEvent, LoopLedger.tag_name).outerjoin(
-        LoopLedger, LoopLedger.id == AlertEvent.loop_id
+    stmt = (
+        select(AlertEvent, LoopLedger.tag_name, AlertRule.rule_name)
+        .outerjoin(LoopLedger, LoopLedger.id == AlertEvent.loop_id)
+        .outerjoin(AlertRule, AlertRule.id == AlertEvent.rule_id)
     )
     count_stmt = select(func.count()).select_from(AlertEvent)
 
@@ -684,14 +691,15 @@ async def list_events(
     stmt = stmt.order_by(AlertEvent.triggered_at.desc()).limit(limit).offset(offset)
     total = (await db.execute(count_stmt)).scalar() or 0
     result = await db.execute(stmt)
-    items = [_event_to_dict(e, name) for e, name in result.all()]
+    items = [_event_to_dict(e, loop_name, rule_name) for e, loop_name, rule_name in result.all()]
     return {"total": total, "items": items}
 
 
 async def get_event(db: AsyncSession, event_id: str) -> dict[str, Any]:
     result = await db.execute(
-        select(AlertEvent, LoopLedger.tag_name)
+        select(AlertEvent, LoopLedger.tag_name, AlertRule.rule_name)
         .outerjoin(LoopLedger, LoopLedger.id == AlertEvent.loop_id)
+        .outerjoin(AlertRule, AlertRule.id == AlertEvent.rule_id)
         .where(AlertEvent.id == event_id)
     )
     row = result.first()
@@ -701,7 +709,7 @@ async def get_event(db: AsyncSession, event_id: str) -> dict[str, Any]:
             message=f"事件 {event_id} 不存在",
             status_code=status.HTTP_404_NOT_FOUND,
         )
-    return _event_to_dict(row[0], row[1])
+    return _event_to_dict(row[0], row[1], row[2])
 
 
 async def acknowledge_event(

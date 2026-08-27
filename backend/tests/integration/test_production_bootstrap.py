@@ -93,6 +93,9 @@ async def test_production_bootstrap_creates_complete_disposable_schema() -> None
             "SELECT tablename FROM pg_catalog.pg_tables "
             "WHERE schemaname = 'public' AND tablename <> 'alembic_version'"
         )
+        # 诊断引擎统一方案（14 号文）D4=a：diagnosis_tag/diagnosis_result 旧表
+        # 连同数据保留归档（event_bus.tag_id FK 依赖），退役的是读写方而非表——
+        # 故表清单断言继续含旧表，与 ORM metadata 保持一致。
         assert {row["tablename"] for row in rows} == set(Base.metadata.tables)
         assert await target.fetchval("SELECT COUNT(*) FROM sys_user") >= 5
 

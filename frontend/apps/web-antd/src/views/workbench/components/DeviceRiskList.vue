@@ -13,10 +13,28 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { useWorkbenchDrill } from '../utils/drill';
+
 const props = defineProps<{
   plants?: WorkbenchApi.PlantRow[];
   totalLoops?: number; // 全厂回路总数（来自 GLOBAL 窗口 loop_count）
 }>();
+
+const { drill, resolvePlantNodeId } = useWorkbenchDrill();
+
+/**
+ * 追溯矩阵 §2 下钻：行点击 → 指标分析（装置对比）。
+ * 行 id 为装置 source_node_id，可经 scopeTree 解析 plantNodeId；
+ * 解析不到（无 id）时降级跳 PID 看板。
+ */
+function onRowClick(pl: WorkbenchApi.PlantRow) {
+  const plantNodeId = resolvePlantNodeId(pl.id);
+  if (plantNodeId) {
+    drill('assess', '/metric/indicator-analysis', { plantNodeId });
+  } else {
+    drill('assess', '/metric/pid-dashboard');
+  }
+}
 
 interface RankedPlant extends WorkbenchApi.PlantRow {
   delta: null | number;
@@ -82,7 +100,9 @@ const notEvaluated = computed(() => Math.max(0, totalAll.value - totalLoop.value
       <div
         v-for="pl in sorted"
         :key="pl.id ?? pl.name"
-        class="flex items-center gap-1.5 rounded border border-[#EBEEF5] px-1.5 py-1.5"
+        class="flex cursor-pointer items-center gap-1.5 rounded border border-[#EBEEF5] px-1.5 py-1.5 hover:border-[#B9C6D6]"
+        title="点击查看该装置指标分析"
+        @click="onRowClick(pl)"
       >
         <!-- 排名徽章 -->
         <span

@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -290,6 +291,12 @@ async def list_loop_monitor_endpoint(
         None,
         description="精确查询指定回路（供深链接解析；不回退其他回路）",
     ),
+    controlMode: str | None = Query(
+        None,
+        description="按实时控制模式筛选：Auto/Cascade/Manual（大小写不敏感）",
+    ),
+    sortBy: str = Query("score", description="排序字段：score/tagName"),
+    sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -303,6 +310,9 @@ async def list_loop_monitor_endpoint(
         keyword=keyword,
         loop_type=loopType,
         loop_id=loopId,
+        control_mode=controlMode,
+        sort_by=sortBy,
+        sort_order=sortOrder,
         page=page,
         page_size=pageSize,
     )
@@ -522,14 +532,28 @@ async def get_loop_monitor_detail_endpoint(
     loop_id: str,
     trendWindow: str = Query(
         "last_24_hours",
-        description="趋势数据时间窗：last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours",
+        description="趋势数据时间窗：last_10_minutes/last_30_minutes/last_1_hour/last_2_hours/last_4_hours/last_8_hours/last_24_hours/last_72_hours",
+    ),
+    tsStart: datetime | None = Query(
+        None,
+        description="自定义趋势起始时间（ISO 8601），与 tsEnd 同时提供时优先生效，上限 30 天",
+    ),
+    tsEnd: datetime | None = Query(
+        None,
+        description="自定义趋势结束时间（ISO 8601），须晚于 tsStart",
     ),
     db: AsyncSession = Depends(get_db),
     # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻回路监控详情（趋势/性能）
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
 ) -> dict:
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。"""
-    data = await get_loop_monitor_detail(db=db, loop_id=loop_id, trend_window=trendWindow)
+    data = await get_loop_monitor_detail(
+        db=db,
+        loop_id=loop_id,
+        trend_window=trendWindow,
+        ts_start=tsStart,
+        ts_end=tsEnd,
+    )
     return success(data=data)
 
 

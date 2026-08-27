@@ -3,9 +3,9 @@
  *
  * 覆盖：
  * - 默认排序：评分升序（最差在前）
- * - 列顺序符合 02 标杆 v1.4 的 12 列清单（无操作列）
- * - 量程/单位列默认收起
- * - 列标题使用标杆命名
+ * - 列顺序符合现行清单（量程合并单位、移除可信度、操作列收尾）
+ * - 量程列默认显示
+ * - 列标题使用标杆命名（模式/量程）
  */
 import { mount } from '@vue/test-utils';
 
@@ -97,6 +97,7 @@ vi.mock('#/composables/use-monitor-context', () => ({
     plantNodeId: { value: null },
     loopType: { value: null },
     keyword: { value: '' },
+    controlMode: { value: null },
     attentionOnly: { value: false },
     view: { value: 'table' },
     update: vi.fn(),
@@ -239,7 +240,7 @@ describe('LoopFleetView 表格列增强', () => {
     });
   });
 
-  it('列顺序符合 02 标杆 v1.4 的 12 列清单（MVP 移除诊断标签列）', async () => {
+  it('列顺序符合现行清单（量程合并单位，可信度移除，操作列收尾）', async () => {
     const w = mountFleetView();
     await vi.dynamicImportSettled();
 
@@ -251,26 +252,29 @@ describe('LoopFleetView 表格列增强', () => {
       'description',
       'unitName',
       'loopType',
-      'grade',
-      // P2 IA 优化（914179cb）：适用性等级列插入于回路等级与性能评分之间
-      'fitnessLevel',
-      'score',
+      // 量程列（min-max+单位，形如 0-100℃）
+      'range',
+      'mode',
       'sp',
       'pv',
       'op',
-      'mode',
-      'dataHealth',
+      'grade',
+      'score',
+      'fitnessLevel',
+      // 操作列（趋势/详情）
+      'action',
     ];
     expect(keys).toEqual(expectedKeys);
   });
 
-  it('量程/单位列默认收起（不在可见列中）', async () => {
+  it('量程列默认显示，原量程/单位独立列已合并移除', async () => {
     const w = mountFleetView();
     await vi.dynamicImportSettled();
 
     const headers = w.findAll('.table-headers span');
     const keys = headers.map((h) => h.attributes('data-col-key'));
 
+    expect(keys).toContain('range');
     expect(keys).not.toContain('pvRange');
     expect(keys).not.toContain('pvUnit');
   });
@@ -300,9 +304,10 @@ describe('LoopFleetView 表格列增强', () => {
     expect(headerTexts).toContain('描述');
     expect(headerTexts).toContain('装置·单元');
     expect(headerTexts).toContain('回路类型');
-    expect(headerTexts).toContain('回路等级');
+    expect(headerTexts).toContain('性能等级');
     expect(headerTexts).toContain('性能评分');
-    expect(headerTexts).toContain('MODE');
-    expect(headerTexts).toContain('可信度');
+    expect(headerTexts).toContain('模式');
+    expect(headerTexts).toContain('量程');
+    expect(headerTexts).not.toContain('可信度');
   });
 });

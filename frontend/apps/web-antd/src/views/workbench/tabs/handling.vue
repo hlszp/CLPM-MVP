@@ -25,8 +25,14 @@ import type { StaffLoadItem } from '../components/handling/types';
  * - StaffHBar 点人 → handlerFilter 降透明非匹配卡片
  * - TaskDetailCard「完整工单」→ 既有 order-detail-drawer.vue 兜底
  *
- * 已知限制：workbench scope（scopeType/scopeId 数值）不映射 handling plantNodeId（字符串），
- *   处置 Tab 取全局口径；待 A-05 后端对齐 scope 后按作用域过滤。
+ * scope 口径（追溯矩阵 §6.1 整 tab 对齐 · G2 映射，2026-08-26 落地）：
+ * - /handling/orders ×5 与 /handling/loops 跟随工作台 scope：scopeQuery()
+ *   （utils/drill.ts）将 scopeId（plant_node.source_node_id）经 scopeTree.node_id
+ *   解析为 plantNodeId（plant_node.id，递归子树语义）；GLOBAL 或未解析到时不带参
+ *   → 全局口径。
+ * - /handling/statistics 仅支持 months 参数（不支持 plantNodeId），SLA 侧栏
+ *   summary/monthly 与「本月闭环」统计保持全局口径（已知口径差异，见 U2 侧栏注释）。
+ * - scope 切换经 watch store.scopeParams 触发整 tab 重载。
  */
 import type { HandlingApi } from '#/api/handling';
 
@@ -50,9 +56,41 @@ import { computeSlaBreakdown } from '../components/handling/sla-util';
 import StaffHBar from '../components/handling/StaffHBar.vue';
 import TaskDetailCard from '../components/handling/TaskDetailCard.vue';
 import HelpBubble from '../components/HelpBubble.vue';
+import { useWorkbenchDrill } from '../utils/drill';
 
 const store = useWorkbenchStore();
 const userStore = useUserStore();
+const { drill, scopeQuery } = useWorkbenchDrill();
+
+// 追溯矩阵 §6 下钻接线（U1 断言数字 → 工单列表；窗口+scope 由 drill 携带）
+/** 在办数 → 工单列表（非终态：PENDING/REOPENED/EXECUTING/VERIFYING） */
+function drillInProgress() {
+  drill('handling', '/handling/orders', {
+    status: 'PENDING,REOPENED,EXECUTING,VERIFYING',
+  });
+}
+/** 本月已闭环 → 工单列表（CLOSED；created/verified 时间筛选属 GAP-3 待补，暂只带 status） */
+function drillClosed() {
+  drill('handling', '/handling/orders', { status: 'CLOSED' });
+}
+/** 超期数 → 工单列表（plannedBefore=now + 非终态） */
+function drillOverdue() {
+  drill('handling', '/handling/orders', {
+    plannedBefore: new Date().toISOString(),
+    status: 'PENDING,REOPENED,EXECUTING,VERIFYING',
+  });
+}
+/**
+ * 临期数 → 工单列表（plannedBefore=now+24h + 非终态）。
+ * 口径说明：plannedBefore 为上限筛选，会一并含已超期工单（临期⊂≤24h 到期集合），
+ * 与断言黄框"临期=24h 内到期未超期"的展示口径存在包含关系，待 GAP-3 补 plannedAfter 后精确化。
+ */
+function drillNear() {
+  drill('handling', '/handling/orders', {
+    plannedBefore: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    status: 'PENDING,REOPENED,EXECUTING,VERIFYING',
+  });
+}
 
 // ============ 数据 refs ============
 const pending = ref<HandlingApi.OrderItem[]>([]);
@@ -136,7 +174,9 @@ const reopenList = computed(() =>
     .slice(0, 8),
 );
 
-/** 徽章计数：闭环道用 statistics 真实总数（而非 fetched cap 50） */
+/** 徽章计数：闭环道用 statistics 真实总数（而非 fetched cap 50）。
+ * 注意：statistics 为全局口径（不支持 plantNodeId），scope 非全局时该总数与
+ * 泳道内 scope 过滤后的列表存在口径差（已知差异，待 A-05 后端对齐）。 */
 const laneCounts = computed(() => ({
   closed: statistics.value?.summary.closedThisMonth ?? closed.value.length,
 }));
@@ -158,16 +198,18 @@ async function loadHandling() {
   selectedTask.value = null;
   kpiCompare.value = null;
   try {
-    // plantNodeId：workbench scope 不映射 handling plantNodeId（字符串），取全局口径
+    // G2 scope 映射：orders/loops 跟随工作台 scope（scopeQuery 解析 plantNodeId，
+    // GLOBAL/未解析到时为空对象即全局口径）；statistics 不支持 plantNodeId，保持全局。
     // pageSize 上限 100（后端 le=100，超限 422）；orders 排序后端固定（状态分组+updated_at DESC），不传 sort
+    const scope = scopeQuery();
     const results = await Promise.allSettled([
-      getHandlingOrdersApi({ status: 'PENDING', pageSize: 100 }),
-      getHandlingOrdersApi({ status: 'REOPENED', pageSize: 100 }),
-      getHandlingOrdersApi({ status: 'EXECUTING', pageSize: 100 }),
-      getHandlingOrdersApi({ status: 'VERIFYING', pageSize: 100 }),
-      getHandlingOrdersApi({ status: 'CLOSED', pageSize: 50 }),
+      getHandlingOrdersApi({ status: 'PENDING', pageSize: 100, ...scope }),
+      getHandlingOrdersApi({ status: 'REOPENED', pageSize: 100, ...scope }),
+      getHandlingOrdersApi({ status: 'EXECUTING', pageSize: 100, ...scope }),
+      getHandlingOrdersApi({ status: 'VERIFYING', pageSize: 100, ...scope }),
+      getHandlingOrdersApi({ status: 'CLOSED', pageSize: 50, ...scope }),
       getHandlingStatisticsApi(6),
-      getHandlingLoopsApi({ sort: 'reopened', pageSize: 50 }),
+      getHandlingLoopsApi({ sort: 'reopened', pageSize: 50, ...scope }),
     ]);
     const [r0, r1, r2, r3, r4, r5, r6] = results;
     pending.value = r0.status === 'fulfilled' ? r0.value.items : [];
@@ -201,12 +243,6 @@ function onSelectTask(task: HandlingApi.OrderItem) {
 function onSelectHandler(handler: string) {
   // 再次点击同一人 → 清除过滤
   selectedHandler.value = selectedHandler.value === handler ? null : handler;
-}
-
-function onReopenSelect(loop: HandlingApi.LoopAggregateItem) {
-  // 重开列表点击 → 定位该回路首个在办工单（联动 TaskDetailCard）
-  const t = inProgress.value.find((x) => x.loopId === loop.loopId);
-  if (t) onSelectTask(t);
 }
 
 function onOpenDrawer(orderId: string) {
@@ -260,14 +296,14 @@ watch(
 // 行动区 ? 帮助
 const actionHelpItems = [
   { label: '人员负载', text: '横向堆叠条按处理人聚合在办数（待办/处理中/验证中分色段）；点人过滤看板。' },
-  { label: '重开列表', text: '重开次数降序 Top 8；反向色阶（多=红/少=蓝）；点击定位该回路在办工单。' },
+  { label: '重开列表', text: '重开次数降序 Top 8；反向色阶（多=红/少=蓝）；点击下钻该回路档案页。' },
   { label: '任务详情', text: '单源 selectedTask 联动；「📦 查看完整工单」开既有工单详情抽屉做全量字段+流转操作。' },
 ];
 // 断言 ? 帮助
 const assertionHelpItems = [
   { label: '断言', text: '当前范围在办/闭环/超期/临期/SLA 及时率一句话摘要。' },
   { label: 'SLA 警示色', text: '超期红（due<now）/ 临期橙（<now+24h）/ 正常绿 / 无排程灰；due 代理=plannedAt。' },
-  { label: '数据缺口', text: '处置 Tab 取全局口径（workbench scope 不映射 handling plantNodeId）；待 A-05 后端对齐。' },
+  { label: '数据口径', text: '工单/回路列表跟随工作台 scope（G2 映射 plantNodeId）；SLA 侧栏的月度统计与「本月闭环」为全局口径（/handling/statistics 暂不支持 scope 筛选）。' },
 ];
 </script>
 
@@ -298,13 +334,29 @@ const assertionHelpItems = [
       >
         <div class="min-w-0 flex-1 text-[#593A00]">
           <b class="mr-1 text-[#8C4A00]">⚠</b>
-          <b class="text-[#FA8C16]">{{ assertText.inProg }}</b> 在办
-          ｜ 已闭环 <b class="text-[#52C41A]">{{ assertText.closedCount }}</b>
+          <b
+            class="cursor-pointer text-[#FA8C16] hover:underline"
+            title="点击查看在办工单（非终态）"
+            @click="drillInProgress"
+          >{{ assertText.inProg }}</b> 在办
+          ｜ 已闭环 <b
+            class="cursor-pointer text-[#52C41A] hover:underline"
+            title="点击查看已闭环工单"
+            @click="drillClosed"
+          >{{ assertText.closedCount }}</b>
           <template v-if="assertText.overdueN > 0">
-            ｜ 超期 <b class="text-[#FF4D4F]">{{ assertText.overdueN }}</b>
+            ｜ 超期 <b
+              class="cursor-pointer text-[#FF4D4F] hover:underline"
+              title="点击查看超期工单（plannedBefore=now + 非终态）"
+              @click="drillOverdue"
+            >{{ assertText.overdueN }}</b>
           </template>
           <template v-if="assertText.nearN > 0">
-            ｜ 临期 <b class="text-[#FA8C16]">{{ assertText.nearN }}</b>
+            ｜ 临期 <b
+              class="cursor-pointer text-[#FA8C16] hover:underline"
+              title="点击查看 24h 内到期工单（plannedBefore=now+24h + 非终态，含已超期）"
+              @click="drillNear"
+            >{{ assertText.nearN }}</b>
           </template>
           <template v-if="assertText.timelyRate !== null">
             ｜ SLA 及时率 <b :class="assertText.timelyRate >= 80 ? 'text-[#52C41A]' : 'text-[#FA8C16]'">{{ assertText.timelyRate }}%</b>
@@ -318,7 +370,8 @@ const assertionHelpItems = [
 
       <!-- U2 SLA 窄边栏 + 4 泳道看板 -->
       <div class="flex min-h-0 flex-1 overflow-hidden" style="gap: 4px">
-        <!-- SLA 窄边栏 -->
+        <!-- SLA 窄边栏：sla 派生自 scope 过滤后的在办工单；statistics（summary/monthly）
+             来自 /handling/statistics，该端点不支持 plantNodeId，保持全局口径（已知差异） -->
         <div class="flex min-h-0 w-[150px] flex-none flex-col overflow-hidden rounded-[2px] border border-[#E4E7ED] bg-white">
           <HandlingSlaSummary
             :sla="sla"
@@ -380,7 +433,8 @@ const assertionHelpItems = [
         </div>
         <!-- 重开列表 -->
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2px] border border-[#E4E7ED] bg-white">
-          <HandlingReopenList :loops="reopenList" @select="onReopenSelect" />
+          <!-- 重开列表（行点击已改为下钻回路档案页，不再联动定位在办工单） -->
+          <HandlingReopenList :loops="reopenList" />
         </div>
         <!-- 任务详情 -->
         <div class="flex min-h-0 flex-[1.4] flex-col overflow-hidden rounded-[2px] border border-[#E4E7ED] bg-[#F7F9FC]">

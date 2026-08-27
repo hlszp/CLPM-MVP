@@ -50,8 +50,9 @@ async def get_scope_tree(
 ) -> dict:
     """返回可选范围列表：全厂 + 工厂 + 装置。
 
-    每条记录：{id, name, type, parent_id, parent_source_id}
+    每条记录：{id, node_id, name, type, parent_id, parent_source_id}
     - id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）
+    - node_id = plant_node.id（字符串；下钻映射 plantNodeId 用，追溯矩阵 G2）
     - type = FACTORY / AREA（不返回 UNIT，选择器只到装置级）
     - parent_source_id = 父节点的 source_node_id（用于层级分组）
     """
@@ -59,6 +60,7 @@ async def get_scope_tree(
         text(
             """
             SELECT n.source_node_id AS id,
+                   n.id::text AS node_id,
                    n.name,
                    n.type,
                    n.parent_id::text AS parent_id,
@@ -104,7 +106,8 @@ async def get_overview(
 ) -> dict:
     """A-01 工作台总览：三窗口 KPI + 装置/单元排名 + Pareto/根因 + 处置漏斗。
 
-    G-总览填充：读 workbench_window_summary 预计算表 + MV-02/MV-03 + DiagnosisTag 聚合。
+    G-总览填充：读 workbench_window_summary 预计算表 + MV-02/MV-03 + diagnosis_run
+    聚合（A3 迁 v2，旧 DiagnosisTag 读方已退役，见 14 号方案）。
     部分失败容错：单块异常返回空/None，不阻断其余块。
     """
     from app.services.workbench_overview import build_overview
@@ -151,15 +154,19 @@ async def get_diagnosis(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
     window: str = Query("24h"),
-    onlyActive: bool = Query(False, description="仅看未处置（UNADDRESSED）活跃结论"),
+    onlyActive: bool = Query(False, description="仅看未处置（UNADDRESSED）的 run"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
     """A-03 诊断：关键异常表 + 结论时间线 + 适用性门禁 + 规则统计 + Pareto/根因。
 
-    G-诊断填充（F-DG-01~03）：open_tags Top6 + concl_timeline（disposition 四态）
-    + fitness_gates（L0~L4 门禁聚合）+ rule_stats + pareto/rootcause_top（复用 MV-02
-    与 DiagnosisTag 聚合，与 G-总览同源）。部分失败容错。
+    G-诊断填充（F-DG-01~03，14 号方案 A2 迁诊断 v2 引擎 diagnosis_run）：
+    open_tags Top6（每回路最新未处置异常 run，SLA 已下线 D1=a）+ concl_timeline
+    （disposition 四态由 review_status/loop_action_item 合成）+ fitness_gates
+    （L0~L4 门禁聚合）+ rule_stats（symptom_tags 聚合 × 复核确认率，D2=a）
+    + pareto/rootcause_top（primary_category / symptom_tags 聚合）。
+    onlyActive=True → concl_timeline 仅保留未处置 run（默认 False 不动行为）。
+    部分失败容错。
     """
     from app.services.workbench_diagnosis import build_diagnosis
 

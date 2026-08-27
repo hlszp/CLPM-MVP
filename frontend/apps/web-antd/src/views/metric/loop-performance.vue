@@ -1223,6 +1223,22 @@ onMounted(async () => {
     const tagName = loopMap.value.get(loopIdQuery)?.tagName;
     if (tagName) query.loopTagName = tagName;
   }
+  // 深链支持（追溯矩阵 G6，仅挂载时读取一次）：
+  // ?plantNodeId=xxx → 装置筛选初值；?grade=xxx → 等级卡片筛选初值
+  // （数字 1~5 按档位直取；等级名按当前定级阈值映射，无法识别时忽略）
+  const plantNodeQuery = route.query.plantNodeId;
+  if (typeof plantNodeQuery === 'string' && plantNodeQuery) {
+    query.plantNodeId = plantNodeQuery;
+  }
+  const gradeQuery = route.query.grade;
+  if (typeof gradeQuery === 'string' && gradeQuery) {
+    const level = /^\d+$/.test(gradeQuery)
+      ? Number(gradeQuery)
+      : gradeLevelByName(gradeQuery);
+    if (level !== null && level >= 1 && level <= 5) {
+      selectedGrade.value = level;
+    }
+  }
   loadList();
   loadStats();
 });
