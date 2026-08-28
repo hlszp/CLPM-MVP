@@ -1706,7 +1706,7 @@ class TestStatisticsEndpoint:
     @staticmethod
     def _summary_row(**over: Any) -> MagicMock:
         row = MagicMock()
-        row.closed_this_month = 3
+        row.closed_period = 3
         row.closed_total = 6
         row.verified_total = 8
         row.ineffective_total = 2
@@ -1793,7 +1793,7 @@ class TestStatisticsEndpoint:
             client,
             self._full_results(
                 self._summary_row(
-                    closed_this_month=0,
+                    closed_period=0,
                     closed_total=0,
                     verified_total=0,
                     ineffective_total=0,
