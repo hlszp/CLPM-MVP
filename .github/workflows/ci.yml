@@ -46,6 +46,10 @@ jobs:
       - name: Lint
         run: pnpm exec eslint apps/web-antd --cache
 
+      # vitest 单元测试（workspace 全量，阻塞门禁）
+      - name: Unit tests (vitest)
+        run: pnpm run test:unit
+
       - name: Typecheck
         run: pnpm -F @vben/web-antd run typecheck
 

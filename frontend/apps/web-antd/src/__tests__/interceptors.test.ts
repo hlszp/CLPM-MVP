@@ -161,10 +161,13 @@ describe('axios 拦截器测试', () => {
   });
 
   // UT-HTTP-005: 响应拦截-刷新失败跳登录（refreshToken 也过期时清空 store 跳转）
-  it('uT-HTTP-005: refreshToken 刷新失败时触发登出', async () => {
+  it('uT-HTTP-005: refreshToken 刷新失败时触发登录过期（modal 模式）', async () => {
     const accessStore = useAccessStore();
     accessStore.setAccessToken('expired-token');
     accessStore.setRefreshToken('expired-refresh-token');
+    // 访问检查已完成 → doReAuthenticate 走 modal 分支（setLoginExpired），
+    // 不再直接调用 authStore.logout（现行语义，request.ts doReAuthenticate）
+    accessStore.setIsAccessChecked(true);
 
     // refreshTokenApi 抛出错误（refreshToken 也过期了）
     refreshTokenApiMock.mockRejectedValue(new Error('refresh token expired'));
@@ -181,8 +184,10 @@ describe('axios 拦截器测试', () => {
     expect(refreshTokenApiMock).toHaveBeenCalledWith('expired-refresh-token', {
       __isRetryRequest: true,
     });
-    // 应触发登出流程
-    expect(logoutSpy).toHaveBeenCalled();
+    // 应触发登录过期弹窗状态，且 token 已被清空
+    expect(accessStore.loginExpired).toBe(true);
+    expect(accessStore.accessToken).toBeFalsy();
+    expect(accessStore.refreshToken).toBeFalsy();
   });
 
   // UT-HTTP-006: 响应拦截-400业务错误（message.error 显示错误）
