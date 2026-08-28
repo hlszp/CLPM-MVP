@@ -77,7 +77,7 @@ def test_get_default_params_returns_known_defaults(reset_cache):
         "min_zero_crossings": 4,
         "min_half_period_samples": 8,
         "min_amplitude_ratio": 0.002,
-        "sp_step_exclusion_enabled": False,
+        "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
     }
@@ -108,7 +108,7 @@ def test_get_algorithm_params_unknown_control_type_falls_back_stable(reset_cache
         "min_zero_crossings": 4,
         "min_half_period_samples": 8,
         "min_amplitude_ratio": 0.002,
-        "sp_step_exclusion_enabled": False,
+        "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
     }
@@ -137,7 +137,7 @@ def test_rebuild_merged_defaults_only(reset_cache):
         "min_zero_crossings": 4,
         "min_half_period_samples": 8,
         "min_amplitude_ratio": 0.002,
-        "sp_step_exclusion_enabled": False,
+        "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
     }
@@ -275,7 +275,7 @@ async def test_preload_algorithm_params_empty_db_uses_defaults(reset_cache):
         "min_zero_crossings": 4,
         "min_half_period_samples": 8,
         "min_amplitude_ratio": 0.002,
-        "sp_step_exclusion_enabled": False,
+        "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
     }

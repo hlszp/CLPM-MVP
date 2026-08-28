@@ -4,16 +4,20 @@
  *
  * 对齐 IDS v3.2 §2.6 + PRD §4.6 + UI/UX v4.1 §6.6.3
  * - 表格展示报表配置列表（名称/周期/接收人/状态）
- * - 新增/编辑配置弹窗
- * - "立即生成"按钮触发异步任务
- * - 任务进度查询（轮询 taskId）
+ * - 新增/编辑配置弹窗（配置 CRUD 保留，语义为"预配置"）
  * - 仅 ADMIN 可见（路由与后端 reports.py 全端点均已收紧 ADMIN）
+ *
+ * 报告模块优化 P0-1（2026-08-28）：订阅页诚实化
+ * - 自动生成为占位实现（极简 PDF、无真实文件落盘），Beat 调度已摘除
+ *   （backend/app/tasks/report_generator.py），「立即生成」置灰 +
+ *   「批量生成」入口移除 + 生成进度列隐藏；P3 做实后恢复
+ *   （见 docs/设计文档/CLPM报告模块优化实施方案-2026-08-28.md §3.1，D1 已决）
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { SystemApi } from '#/api/system';
 
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -25,7 +29,6 @@ import {
   Input,
   message,
   Modal,
-  Progress,
   Select,
   Switch,
   Table,
@@ -35,9 +38,7 @@ import {
 
 import {
   createReportConfigApi,
-  generateReportApi,
   getReportConfigListApi,
-  getReportTaskStatusApi,
   updateReportConfigApi,
 } from '#/api/system';
 import {
@@ -47,8 +48,6 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
-import { usePolling } from '#/composables/use-polling';
-import { PROGRESS_POLLING_INTERVAL } from '#/constants/polling';
 import { formatTime } from '#/utils/format';
 
 defineOptions({ name: 'ReportsSubscription' });
@@ -56,7 +55,7 @@ defineOptions({ name: 'ReportsSubscription' });
 const loading = ref(false);
 const reportList = ref<SystemApi.ReportConfig[]>([]);
 
-// ===== P2-07：批量操作（行多选 + 批量启用/停用/生成）=====
+// ===== P2-07：批量操作（行多选 + 批量启用/停用；批量生成已随 P0-1 移除）=====
 const selectedRowKeys = ref<string[]>([]);
 const batchLoading = ref(false);
 
@@ -79,16 +78,6 @@ const selectedDisableCount = computed(
   () =>
     reportList.value.filter(
       (r) => selectedRowKeys.value.includes(r.id) && r.isEnabled,
-    ).length,
-);
-/** 已选报表中可生成的（启用且未在生成中）数量 */
-const selectedGenerateCount = computed(
-  () =>
-    reportList.value.filter(
-      (r) =>
-        selectedRowKeys.value.includes(r.id) &&
-        r.isEnabled &&
-        !taskProgressMap.value.has(r.id),
     ).length,
 );
 
@@ -133,11 +122,6 @@ const columns: TableColumnsType = [
     key: 'updatedAt',
     width: 170,
   },
-  {
-    title: '生成进度',
-    key: 'task_progress',
-    width: 180,
-  },
   { title: '操作', key: 'action', width: 200, fixed: 'right' },
 ];
 
@@ -152,57 +136,6 @@ const formState = reactive({
   recipients_text: '',
   isEnabled: true,
 });
-
-// 任务进度跟踪
-interface TaskProgress {
-  taskId: string;
-  configId: string;
-  status: SystemApi.ReportTaskStatus;
-  progress: number;
-  message: string;
-}
-
-const taskProgressMap = ref<Map<string, TaskProgress>>(new Map());
-
-/** 轮询一次全部进行中的生成任务（单任务失败跳过本次，不中断其余任务） */
-async function pollTaskProgress() {
-  if (taskProgressMap.value.size === 0) {
-    stopPolling();
-    return;
-  }
-  const entries = [...taskProgressMap.value.entries()];
-  for (const [configId, progress] of entries) {
-    try {
-      const taskResult = await getReportTaskStatusApi(progress.taskId);
-      taskProgressMap.value.set(configId, {
-        ...progress,
-        status: taskResult.status,
-        progress: taskResult.progress ?? 0,
-        message: taskResult.message || '',
-      });
-      if (taskResult.status === 'COMPLETED' || taskResult.status === 'FAILED') {
-        if (taskResult.status === 'COMPLETED') {
-          message.success(`报表「${recordName(configId)}」生成完成`);
-        } else {
-          message.error(`报表「${recordName(configId)}」生成失败`);
-        }
-        taskProgressMap.value.delete(configId);
-        await loadList();
-      }
-    } catch {
-      // 轮询失败，跳过本次
-    }
-  }
-  if (taskProgressMap.value.size === 0) {
-    stopPolling();
-  }
-}
-
-/** 任务进度轮询（PROGRESS_POLLING_INTERVAL，usePolling 防堆积 + 页面隐藏自动暂停） */
-const { start: startPolling, stop: stopPolling } = usePolling(
-  pollTaskProgress,
-  { interval: PROGRESS_POLLING_INTERVAL },
-);
 
 /** 加载报表配置列表 */
 async function loadList() {
@@ -298,25 +231,7 @@ async function handleToggleEnabled(record: SystemApi.ReportConfig) {
   }
 }
 
-/** 立即生成报表 */
-async function handleGenerate(record: SystemApi.ReportConfig) {
-  try {
-    const result = await generateReportApi(record.id);
-    message.success(`生成任务已提交，任务 ID：${result.taskId}`);
-    taskProgressMap.value.set(record.id, {
-      taskId: result.taskId,
-      configId: record.id,
-      status: 'PROCESSING',
-      progress: 0,
-      message: '任务已提交，等待执行...',
-    });
-    startPolling();
-  } catch {
-    // 错误已由拦截器处理
-  }
-}
-
-// ===== P2-07：批量启用/停用/生成 =====
+// ===== P2-07：批量启用/停用 =====
 
 /** 批量启用报表配置 */
 async function handleBatchEnable() {
@@ -372,95 +287,12 @@ async function handleBatchDisable() {
   }
 }
 
-/** 批量生成报表 */
-async function handleBatchGenerate() {
-  if (selectedGenerateCount.value === 0) {
-    message.warning('所选报表中没有可生成的启用报表（或正在生成中）');
-    return;
-  }
-  const targets = reportList.value.filter(
-    (r) =>
-      selectedRowKeys.value.includes(r.id) &&
-      r.isEnabled &&
-      !taskProgressMap.value.has(r.id),
-  );
-  batchLoading.value = true;
-  try {
-    const results = await Promise.allSettled(
-      targets.map((r) => generateReportApi(r.id)),
-    );
-    const succeeded = results.filter((r) => r.status === 'fulfilled')
-      .length as number;
-    const failed = results.length - succeeded;
-    // 为成功提交的任务设置进度跟踪
-    for (const [i, target] of targets.entries()) {
-      if (results[i]!.status === 'fulfilled') {
-        const result = (
-          results[i] as PromiseFulfilledResult<SystemApi.ReportGenerateResult>
-        ).value;
-        taskProgressMap.value.set(target!.id, {
-          taskId: result.taskId,
-          configId: target!.id,
-          status: 'PROCESSING',
-          progress: 0,
-          message: '任务已提交，等待执行...',
-        });
-      }
-    }
-    if (succeeded > 0) {
-      message.success(`已提交 ${succeeded} 个报表生成任务`);
-      startPolling();
-    }
-    if (failed > 0) message.warning(`${failed} 个报表生成提交失败`);
-    selectedRowKeys.value = [];
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    batchLoading.value = false;
-  }
-}
-
-/** 根据 configId 获取报表名称 */
-function recordName(configId: string): string {
-  const report = reportList.value.find((r) => r.id === configId);
-  return report?.name || configId;
-}
-
-/** 获取任务进度 */
-function getTaskProgress(configId: string): TaskProgress | undefined {
-  return taskProgressMap.value.get(configId);
-}
-
-/** 任务状态颜色 */
-function taskStatusColor(status: SystemApi.ReportTaskStatus): string {
-  const map: Record<SystemApi.ReportTaskStatus, string> = {
-    PROCESSING: 'blue',
-    COMPLETED: 'green',
-    FAILED: 'red',
-  };
-  return map[status] || 'default';
-}
-
-/** 任务状态标签 */
-function taskStatusLabel(status: SystemApi.ReportTaskStatus): string {
-  const map: Record<SystemApi.ReportTaskStatus, string> = {
-    PROCESSING: '生成中',
-    COMPLETED: '完成',
-    FAILED: '失败',
-  };
-  return map[status] || status;
-}
-
 function periodLabel(period: string): string {
   return periodOptions.find((t) => t.value === period)?.label || period;
 }
 
 onMounted(() => {
   loadList();
-});
-
-onUnmounted(() => {
-  stopPolling();
 });
 
 /** 工具栏刷新：重新加载报表配置列表 */
@@ -473,7 +305,7 @@ function handleHelp() {
   showPageHelp({
     title: '自动报表管理 帮助',
     content:
-      '自动报表管理页：配置班报 / 日报 / 周报 / 月报，支持手动触发生成并跟踪执行进度。可新增/编辑报表配置（名称、周期、收件人列表、启用状态），「立即生成」异步触发报表生成任务并轮询进度。仅 ADMIN 可访问。刷新按钮重新拉取报表配置列表。',
+      '自动报表管理页：预配置班报 / 日报 / 周报 / 月报（名称、周期、收件人列表、启用状态），当前为预配置语义，配置数据不会删除。自动生成功能暂未开放（开放后按周期推送报表），「立即生成」按钮置灰；统计查询类报告请使用各报告页的导出功能。仅 ADMIN 可访问。刷新按钮重新拉取报表配置列表。',
   });
 }
 
@@ -488,7 +320,7 @@ const { toolbarItems } = usePageToolbar(() => ({
   <Page>
     <ClpmPageToolbar
       title="自动报表管理"
-      subtitle="配置日报/周报/月报，手动触发生成并跟踪执行进度。"
+      subtitle="预配置报表订阅（名称/周期/收件人），自动生成暂未开放，开放后按周期推送。"
       :loading="loading"
     >
       <template #actions>
@@ -498,12 +330,13 @@ const { toolbarItems } = usePageToolbar(() => ({
     <ClpmDataCanvas class="mt-4" title="报表配置列表" :loading="loading">
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-gray-500">
-          管理班报/日报/周报/月报配置 · 支持手动触发生成与进度查询
+          管理班报/日报/周报/月报配置 ·
+          自动生成暂未开放，当前为预配置；统计报告请使用各报告页导出
         </p>
         <Button type="primary" @click="handleOpenAdd">新建报表</Button>
       </div>
 
-      <!-- P2-07：批量操作工具栏（选中行时显示） -->
+      <!-- P2-07：批量操作工具栏（选中行时显示；批量生成已随 P0-1 移除） -->
       <div
         v-if="selectedRowKeys.length > 0"
         class="mb-3 flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-4 py-2"
@@ -543,23 +376,6 @@ const { toolbarItems } = usePageToolbar(() => ({
             批量停用
           </Button>
         </Tooltip>
-        <Tooltip
-          :title="
-            selectedGenerateCount === 0
-              ? '所选报表中没有可生成的启用报表（或正在生成中）'
-              : ''
-          "
-        >
-          <Button
-            size="small"
-            type="primary"
-            :disabled="selectedGenerateCount === 0"
-            :loading="batchLoading"
-            @click="handleBatchGenerate"
-          >
-            批量生成
-          </Button>
-        </Tooltip>
         <Button size="small" type="text" @click="selectedRowKeys = []">
           取消选择
         </Button>
@@ -572,7 +388,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         :pagination="false"
         :row-key="(record: SystemApi.ReportConfig) => record.id"
         :row-selection="rowSelection"
-        :scroll="{ x: 1400 }"
+        :scroll="{ x: 1200 }"
         size="middle"
       >
         <template #emptyText>
@@ -616,19 +432,6 @@ const { toolbarItems } = usePageToolbar(() => ({
           <template v-else-if="column.key === 'updatedAt'">
             {{ formatTime(record.updatedAt) }}
           </template>
-          <template v-else-if="column.key === 'task_progress'">
-            <div v-if="getTaskProgress(record.id)">
-              <Tag :color="taskStatusColor(getTaskProgress(record.id)!.status)">
-                {{ taskStatusLabel(getTaskProgress(record.id)!.status) }}
-              </Tag>
-              <Progress
-                v-if="getTaskProgress(record.id)!.status === 'PROCESSING'"
-                :percent="getTaskProgress(record.id)!.progress"
-                size="small"
-              />
-            </div>
-            <span v-else class="text-gray-300">—</span>
-          </template>
           <template v-else-if="column.key === 'action'">
             <div class="flex gap-1">
               <Button
@@ -638,24 +441,9 @@ const { toolbarItems } = usePageToolbar(() => ({
               >
                 编辑
               </Button>
-              <!-- P3-07：disabled 时增加 Tooltip 说明原因 -->
-              <Tooltip
-                :title="
-                  !record.isEnabled
-                    ? '报表已停用，请先启用后再生成'
-                    : getTaskProgress(record.id)
-                      ? '该报表正在生成中，请等待完成'
-                      : ''
-                "
-              >
-                <Button
-                  type="link"
-                  size="small"
-                  :disabled="!record.isEnabled || !!getTaskProgress(record.id)"
-                  @click="handleGenerate(record as SystemApi.ReportConfig)"
-                >
-                  立即生成
-                </Button>
+              <!-- P0-1 诚实化：自动生成暂未开放，按钮置灰 + 说明 -->
+              <Tooltip title="自动生成暂未开放，敬请期待">
+                <Button type="link" size="small" disabled> 立即生成 </Button>
               </Tooltip>
               <Button
                 type="link"

@@ -28,9 +28,10 @@ P1 修正（对齐设计文档的工程加固）：
 P2 修正（可选门控，经配置链启用/调参）：
 - 幅度门控：特征幅度（段 IAE/段时长秒的均值）< min_amplitude_ratio×U
   （默认量程 0.2%）判非振荡，剔除噪声带内规则微振荡；
-- SP 阶跃剔除：sp_step_exclusion_enabled=True 时剔除 SP 阶跃跟踪窗内
-  的点（与 stability 同款 detect_sp_tracking_windows），避免阶跃暂态
-  同型段被误判为振荡（默认关闭，零回归）。
+- SP 阶跃剔除：sp_step_exclusion_enabled（默认开启，2026-08-28 起与
+  stability 同步默认打开）剔除 SP 阶跃跟踪窗内的点（同款
+  detect_sp_tracking_windows），避免阶跃暂态同型段被误判为振荡；
+  需计入阶跃暂态考核时可经配置链显式关闭。
 
 P3 修正：IAE = Σ|E_i|·Δt_i（对齐设计文档 ∫|E|dt），非均匀采样下
 短/长采样段按真实时长计权；均匀 1s 采样与旧实现逐位一致。
@@ -126,8 +127,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
         )
         # P2：幅度门控下限（特征幅度占量程比例）
         min_amplitude_ratio = float(params.get("min_amplitude_ratio", _DEFAULT_MIN_AMPLITUDE_RATIO))
-        # P2：SP 阶跃剔除（默认关闭零回归，与 stability 同款参数）
-        sp_exclusion = bool(params.get("sp_step_exclusion_enabled", False))
+        # P2：SP 阶跃剔除（默认开启，与 stability 同步；口径见模块 docstring）
+        sp_exclusion = bool(params.get("sp_step_exclusion_enabled", True))
         sp_step_sigma = float(params.get("sp_step_sigma", _DEFAULT_SP_STEP_SIGMA))
         sp_window = int(params.get("sp_tracking_window", _DEFAULT_SP_TRACKING_WINDOW))
 

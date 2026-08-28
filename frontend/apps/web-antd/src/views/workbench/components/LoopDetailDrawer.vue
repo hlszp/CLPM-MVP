@@ -7,10 +7,15 @@
  * - 诊断结论：置信度 + 结论摘要 + 异常类别
  * - 适用性：L0~L4 徽章 + 说明
  * - 底部：前往参数整定 Tab（诊断 → 整定闭环动线，携带回路上下文）
+ * - 16 号文 F1 入口 3："查看完整诊断记录"旁"诊断档案"入口（回路诊断档案抽屉）
  */
+import type { DiagnosisApi } from '#/api/diagnosis';
 import type { WorkbenchApi } from '#/api/workbench';
 
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+
+// 16 号文 F1 入口 3：回路详情抽屉"诊断档案"入口（跨模块复用诊断域档案抽屉）
+import DiagnosisLoopArchiveDrawer from '#/views/diagnosis/components/loop-archive-drawer.vue';
 
 import { useWorkbenchDrill } from '../utils/drill';
 import Spark from './Spark.vue';
@@ -74,6 +79,37 @@ function toRecords() {
   emit('close');
   if (!props.row) return;
   drill('diagnosis', '/diagnosis/records', { loopId: props.row.loop_id });
+}
+
+// ---- 诊断档案抽屉（16 号文 F1 入口 3：本抽屉内打开，不跳页） ----
+const archiveOpen = ref(false);
+
+function openArchive() {
+  if (!props.row) return;
+  archiveOpen.value = true;
+}
+
+/** 档案内 run 点击 → 降级跳诊断记录页 focus 深链（/diagnosis/records?loopId=&focus=） */
+function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
+  emit('close');
+  archiveOpen.value = false;
+  if (!item.runId) return;
+  drill('diagnosis', '/diagnosis/records', {
+    focus: item.runId,
+    loopId: item.loopId,
+  });
+}
+
+/** 档案空态引导发起诊断 → 无快捷诊断上下文，跳诊断工作台并预选该回路 */
+function onArchiveTriggerDiagnosis(loopId: string) {
+  emit('close');
+  archiveOpen.value = false;
+  drill(
+    'diagnosis',
+    '/diagnosis/workbench',
+    { loopId },
+    { withScope: false, withWindow: false },
+  );
 }
 </script>
 
@@ -170,12 +206,17 @@ function toRecords() {
             </div>
           </section>
 
-          <!-- 完整诊断记录链接（追溯矩阵 §4：抽屉 → 诊断记录页下钻） -->
+          <!-- 完整诊断记录链接（追溯矩阵 §4：抽屉 → 诊断记录页下钻）+ 诊断档案入口（16 号文 F1） -->
           <section>
             <a
               class="cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
               @click="toRecords"
               >查看完整诊断记录 →</a
+            >
+            <a
+              class="ml-4 cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
+              @click="openArchive"
+              >诊断档案 →</a
             >
           </section>
 
@@ -206,6 +247,15 @@ function toRecords() {
           </button>
         </div>
       </div>
+
+      <!-- 16 号文 F1 入口 3：回路诊断档案抽屉（portal 到 body，叠于本抽屉之上） -->
+      <DiagnosisLoopArchiveDrawer
+        v-model:open="archiveOpen"
+        :loop-id="row.loop_id"
+        :loop-tag-name="row.loop_name ?? row.loop_id"
+        @open-run="onArchiveOpenRun"
+        @trigger-diagnosis="onArchiveTriggerDiagnosis"
+      />
     </div>
   </Teleport>
 </template>

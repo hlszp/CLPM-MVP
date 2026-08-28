@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -58,23 +58,25 @@ from app.models.metric import KpiSnapshotHourly
 from app.models.sys_user import SysUser
 from app.models.tuning import TuningRecord
 from app.schemas.common import ApiResponse, success
+from app.services.handling_stats import (
+    ACTION_TYPE_LABELS as _ACTION_TYPE_LABELS,
+)
+from app.services.handling_stats import (
+    _build_loop_agg_sql,
+    _load_subtree_unit_ids,
+    _load_unit_paths,
+)
+from app.services.handling_stats import (
+    build_handling_statistics as _collect_handling_statistics,
+)
 
 router = APIRouter(prefix="/handling", tags=["handling"])
 
 #: 允许建议审核与工单流转的角色（§7）
 _HANDLING_ROLES = ("IC_ENGINEER", "PE_ENGINEER", "ADMIN")
 
-#: 处置类型中文名（§5）
-_ACTION_TYPE_LABELS = {
-    "TUNING": "参数整定",
-    "VALVE": "阀门检修",
-    "INSTRUMENT": "仪表校验",
-    "LINK": "链路修复",
-    "PROCESS": "工艺调整",
-    "UTILIZATION": "恢复投用",
-    "RECONFIG": "组态改造",
-    "OTHER": "其他",
-}
+# 处置统计聚合逻辑已下沉 app/services/handling_stats.py（报告模块优化 P0-2，
+# 与 /reports/handling-statistics 共用单一实现），此处回导保持原引用点不变。
 
 #: 建议状态中文名（§4.1，4 态）
 _SUGGESTION_STATUS_LABELS = {
@@ -97,8 +99,6 @@ _ORDER_STATUS_LABELS = {
 
 #: KPI 验证窗口时长（§4.3：前后各 24h）
 _KPI_WINDOW = timedelta(hours=24)
-
-_BJ_TZ = timezone(timedelta(hours=8))
 
 
 def _utcnow_naive() -> datetime:
@@ -436,55 +436,6 @@ def _to_naive_utc(dt: datetime) -> datetime:
     if dt.tzinfo is not None:
         return dt.astimezone(UTC).replace(tzinfo=None)
     return dt
-
-
-def _build_unit_paths(rows: list[Any]) -> dict[str, str]:
-    """plant_node 平铺行 → 节点全路径映射（"装置.单元" 树回溯）。"""
-    nodes = {
-        str(r.id): (r.name, str(r.parent_id) if r.parent_id else None)
-        for r in rows
-        if r.id is not None
-    }
-    paths: dict[str, str] = {}
-    for nid in nodes:
-        parts: list[str] = []
-        cur: str | None = nid
-        seen: set[str] = set()
-        while cur and cur not in seen:
-            seen.add(cur)
-            node = nodes.get(cur)
-            if node is None:
-                break
-            parts.append(node[0])
-            cur = node[1]
-        paths[nid] = ".".join(reversed(parts))
-    return paths
-
-
-async def _load_unit_paths(db: AsyncSession) -> dict[str, str]:
-    rows = list((await db.execute(text("SELECT id, name, parent_id FROM plant_node"))).all())
-    return _build_unit_paths(rows)
-
-
-async def _load_subtree_unit_ids(db: AsyncSession, plant_node_id: str) -> list[str]:
-    """plant_node 递归子树（含自身）→ unit id 列表（装置下钻筛选）。"""
-    rows = (
-        await db.execute(
-            text(
-                """
-                WITH RECURSIVE node_tree AS (
-                    SELECT id FROM plant_node WHERE id = :root_id
-                    UNION ALL
-                    SELECT child.id FROM plant_node child
-                    JOIN node_tree nt ON child.parent_id = nt.id
-                )
-                SELECT id FROM node_tree
-                """
-            ),
-            {"root_id": plant_node_id},
-        )
-    ).all()
-    return [str(r.id) for r in rows]
 
 
 # ===========================================================================
@@ -1400,66 +1351,7 @@ async def order_kpi_comparison(
 # 档案聚合与统计（§6.3，双实体口径）
 # ===========================================================================
 
-#: 建议侧按回路聚合子查询（loop_action_item，五态分布）
-#: {lf} 为回路范围 WHERE 注入点（plantNodeId/importanceLevel 过滤下推，
-#: 避免全表 GROUP BY 后外层过滤；无过滤时为空串）
-_SU_AGG_SQL = """
-    SELECT loop_id,
-           COUNT(*) FILTER (WHERE status = 'PENDING')   AS su_pending,
-           COUNT(*) FILTER (WHERE status = 'ACCEPTED')  AS su_accepted,
-           COUNT(*) FILTER (WHERE status = 'CONVERTED') AS su_converted,
-           COUNT(*) FILTER (WHERE status = 'REJECTED')  AS su_rejected,
-           COUNT(*) FILTER (WHERE status = 'IGNORED')   AS su_ignored,
-           COUNT(*) AS suggestion_total,
-           MAX(suggested_at) AS last_suggested_at
-    FROM loop_action_item{lf} GROUP BY loop_id
-"""
-
-#: 工单侧按回路聚合子查询（handling_order，六态分布 + 闭环率 + 最近处置；{lf} 同上）
-_HO_AGG_SQL = """
-    SELECT loop_id,
-           COUNT(*) FILTER (WHERE status = 'PENDING')   AS ho_pending,
-           COUNT(*) FILTER (WHERE status = 'EXECUTING') AS ho_executing,
-           COUNT(*) FILTER (WHERE status = 'VERIFYING') AS ho_verifying,
-           COUNT(*) FILTER (WHERE status = 'CLOSED')    AS ho_closed,
-           COUNT(*) FILTER (WHERE status = 'REOPENED')  AS ho_reopened,
-           COUNT(*) FILTER (WHERE status = 'CANCELLED') AS ho_cancelled,
-           COUNT(*) AS order_total,
-           COUNT(*) FILTER (WHERE verify_result IS NOT NULL) AS ho_verified,
-           COUNT(*) FILTER (WHERE verify_result = 'INEFFECTIVE') AS ho_ineffective,
-           MAX(started_at) AS last_handled_at,
-           MAX(updated_at) AS last_order_at,
-           (ARRAY_AGG(handler ORDER BY started_at DESC NULLS LAST)
-               FILTER (WHERE handler IS NOT NULL))[1] AS last_handled_by,
-           (ARRAY_AGG(
-               (kpi_after ->> 'score')::float8 - (kpi_before ->> 'score')::float8
-               ORDER BY verified_at DESC NULLS LAST)
-               FILTER (WHERE status = 'CLOSED'
-                       AND kpi_before ->> 'score' IS NOT NULL
-                       AND kpi_after  ->> 'score' IS NOT NULL))[1] AS last_closed_kpi_delta
-    FROM handling_order{lf} GROUP BY loop_id
-"""
-
-
-#: 双实体聚合行模板（loops 主查询与 topLoops 共用口径）
-def _build_loop_agg_sql(loop_filter: str = "") -> str:
-    """组装双实体聚合 SQL；loop_filter 为建议/工单内层聚合的回路范围 WHERE。"""
-    lf = f" WHERE {loop_filter}" if loop_filter else ""
-    su = _SU_AGG_SQL.format(lf=lf)
-    ho = _HO_AGG_SQL.format(lf=lf)
-    return f"""
-    SELECT ll.id AS loop_id, ll.tag_name AS loop_tag_name,
-           ll.description AS loop_description, ll.importance_level, ll.unit_id,
-           su.su_pending, su.su_accepted, su.su_converted, su.su_rejected,
-           su.su_ignored, su.suggestion_total, su.last_suggested_at,
-           ho.ho_pending, ho.ho_executing, ho.ho_verifying, ho.ho_closed,
-           ho.ho_reopened, ho.ho_cancelled, ho.order_total, ho.ho_verified,
-           ho.ho_ineffective, ho.last_handled_at, ho.last_order_at,
-           ho.last_handled_by, ho.last_closed_kpi_delta
-    FROM loop_ledger ll
-    LEFT JOIN ({su}) su ON su.loop_id = ll.id
-    LEFT JOIN ({ho}) ho ON ho.loop_id = ll.id
-"""
+# 双实体聚合 SQL 已下沉 app/services/handling_stats.py（P0-2 单一实现）
 
 
 #: KPI 改善筛选（§6.3：按最近闭环 KPI delta 情况筛回路，工单口径）
@@ -1659,200 +1551,18 @@ async def get_handling_statistics(
 ) -> dict:
     """处置统计页数据（§6.3，工单维度 + 建议驳回率）。
 
+    聚合逻辑已下沉 app/services/handling_stats.build_handling_statistics
+    （报告模块优化 P0-2，与 /reports/handling-statistics 共用单一实现；
+    本端点不传时间窗/装置过滤，行为契约不变）：
+
     - summary：本月（北京时间月界）闭环数 / 闭环率 / 平均处置时长（创建→验证闭环）/
       无效重开率 / 平均 KPI 改善分 / 驳回率（建议侧 REJECTED/已审核）/
       平均排程周期（工单创建→开工均值）；无数据时相关项为 null（空态显 —）
     - monthly：近 N 月（北京时间月界，按 verified_at 归月）闭环数与闭环率，空月补零
     - byType / byUnit / topLoops：类型分布、装置闭环分布、重开次数 Top 10（工单口径）
     """
-    # 北京月界：本月 1 号 0 点（北京时间）→ naive UTC
-    now_bj = datetime.now(_BJ_TZ)
-    month_start_bj = now_bj.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    month_start_utc = month_start_bj.astimezone(UTC).replace(tzinfo=None)
-
-    s = (
-        await db.execute(
-            text(
-                """
-                SELECT
-                  COUNT(*) FILTER (WHERE status = 'CLOSED' AND verified_at >= :month_start)
-                    AS closed_this_month,
-                  COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed_total,
-                  COUNT(*) FILTER (WHERE verify_result IS NOT NULL) AS verified_total,
-                  COUNT(*) FILTER (WHERE verify_result = 'INEFFECTIVE') AS ineffective_total,
-                  AVG(EXTRACT(EPOCH FROM (verified_at - created_at)) / 3600.0)
-                    FILTER (WHERE status = 'CLOSED' AND verified_at IS NOT NULL)
-                    AS avg_cycle_hours,
-                  AVG(EXTRACT(EPOCH FROM (started_at - created_at)) / 3600.0)
-                    FILTER (WHERE started_at IS NOT NULL)
-                    AS avg_schedule_hours,
-                  AVG((kpi_after ->> 'score')::float8 - (kpi_before ->> 'score')::float8)
-                    FILTER (WHERE status = 'CLOSED'
-                            AND kpi_before ->> 'score' IS NOT NULL
-                            AND kpi_after  ->> 'score' IS NOT NULL)
-                    AS avg_kpi_delta
-                FROM handling_order
-                """
-            ),
-            {"month_start": month_start_utc},
-        )
-    ).one()
-
-    # 建议驳回率（§6.3 新增：REJECTED / 已审核（ACCEPTED+CONVERTED+REJECTED））
-    rej = (
-        await db.execute(
-            text(
-                """
-                SELECT
-                  COUNT(*) FILTER (WHERE status IN
-                    ('ACCEPTED', 'CONVERTED', 'REJECTED')) AS reviewed_total,
-                  COUNT(*) FILTER (WHERE status = 'REJECTED') AS rejected_total
-                FROM loop_action_item
-                """
-            )
-        )
-    ).one()
-
-    def _rate(num: Any, den: Any) -> float | None:
-        return round(float(num) / float(den), 4) if den else None
-
-    def _hours(v: Any) -> float | None:
-        return round(float(v), 1) if v else None
-
-    summary = {
-        "closedThisMonth": int(s.closed_this_month),
-        "closeRate": _rate(s.closed_total, s.verified_total),
-        "avgCycleHours": _hours(s.avg_cycle_hours),
-        "ineffectiveRate": _rate(s.ineffective_total, s.verified_total),
-        "avgKpiDelta": _hours(s.avg_kpi_delta),
-        "rejectRate": _rate(rej.rejected_total, rej.reviewed_total),
-        "avgScheduleHours": _hours(s.avg_schedule_hours),
-    }
-
-    # 月度趋势：verified_at 归月（北京时间），空月补零
-    def _shift_months_bj(dt_bj: datetime, back: int) -> datetime:
-        """北京时间 naive 月份回退（无 dateutil 依赖的手写实现）。"""
-        total = dt_bj.year * 12 + (dt_bj.month - 1) - back
-        return dt_bj.replace(year=total // 12, month=total % 12 + 1)
-
-    range_start_bj = _shift_months_bj(month_start_bj, months - 1)
-    range_start_utc = range_start_bj.astimezone(UTC).replace(tzinfo=None)
-    monthly_rows = (
-        await db.execute(
-            text(
-                """
-                SELECT to_char(
-                         (verified_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai'),
-                         'YYYY-MM') AS month,
-                       COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed,
-                       COUNT(*) AS verified
-                FROM handling_order
-                WHERE verify_result IS NOT NULL AND verified_at >= :range_start
-                GROUP BY 1
-                """
-            ),
-            {"range_start": range_start_utc},
-        )
-    ).all()
-    monthly_map = {r.month: (int(r.closed), int(r.verified)) for r in monthly_rows}
-    monthly: list[dict[str, Any]] = []
-    cur = range_start_bj
-    while cur <= month_start_bj:
-        key = cur.strftime("%Y-%m")
-        closed, verified = monthly_map.get(key, (0, 0))
-        monthly.append(
-            {
-                "month": key,
-                "closed": closed,
-                "closeRate": round(closed / verified, 4) if verified else None,
-            }
-        )
-        cur = cur.replace(day=28) + timedelta(days=4)  # 跨月进位：28 号 +4 天必到下月
-        cur = cur.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-    by_type_rows = (
-        await db.execute(
-            text(
-                "SELECT action_type, COUNT(*) AS cnt FROM handling_order "
-                "GROUP BY action_type ORDER BY cnt DESC"
-            ),
-        )
-    ).all()
-    by_type = [
-        {
-            "type": r.action_type,
-            "label": _ACTION_TYPE_LABELS.get(r.action_type, r.action_type),
-            "count": int(r.cnt),
-        }
-        for r in by_type_rows
-    ]
-
-    by_unit_rows = (
-        await db.execute(
-            text(
-                """
-                SELECT COALESCE(pn.name, '未分配装置') AS unit,
-                       COUNT(*) FILTER (WHERE ho.status = 'CLOSED') AS closed
-                FROM handling_order ho
-                JOIN loop_ledger ll ON ll.id = ho.loop_id
-                LEFT JOIN plant_node pn ON pn.id = ll.unit_id
-                GROUP BY 1 ORDER BY closed DESC
-                """
-            ),
-        )
-    ).all()
-    by_unit = [{"unit": r.unit, "closed": int(r.closed)} for r in by_unit_rows]
-
-    top_rows = list(
-        (
-            await db.execute(
-                text(
-                    f"""
-                    SELECT * FROM (
-                        SELECT ll.id AS loop_id, ll.tag_name AS loop_tag_name,
-                               ll.importance_level, ll.unit_id,
-                               COALESCE(ho.order_total, 0) AS order_total,
-                               COALESCE(ho.ho_reopened, 0) AS ho_reopened,
-                               COALESCE(ho.ho_ineffective, 0) AS ho_ineffective,
-                               ho.last_closed_kpi_delta
-                        FROM loop_ledger ll
-                        LEFT JOIN ({_HO_AGG_SQL.format(lf="")}) ho ON ho.loop_id = ll.id
-                    ) agg
-                    WHERE agg.order_total > 0
-                    ORDER BY agg.ho_reopened DESC, agg.ho_ineffective DESC,
-                             agg.order_total DESC
-                    LIMIT 10
-                    """
-                ),
-            )
-        ).all()
-    )
-    unit_paths = await _load_unit_paths(db)
-    top_loops = [
-        {
-            "loopId": str(r.loop_id),
-            "loopTagName": r.loop_tag_name,
-            "unitPath": unit_paths.get(str(r.unit_id)) if r.unit_id else None,
-            "orderTotal": int(r.order_total),
-            "reopened": int(r.ho_reopened),
-            "lastClosedKpiDelta": (
-                round(float(r.last_closed_kpi_delta), 2)
-                if r.last_closed_kpi_delta is not None
-                else None
-            ),
-        }
-        for r in top_rows
-    ]
-
-    return success(
-        {
-            "summary": summary,
-            "monthly": monthly,
-            "byType": by_type,
-            "byUnit": by_unit,
-            "topLoops": top_loops,
-        }
-    )
+    data = await _collect_handling_statistics(db, months=months)
+    return success(data)
 
 
 __all__ = ["router"]

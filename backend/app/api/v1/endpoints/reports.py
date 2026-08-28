@@ -9,6 +9,9 @@ Routes:
 - GET  /reports/overview  — Management overview (S1/S2/S3 adaptive, P3)
 - GET  /reports/diagnosis-statistics — Diagnosis stats (P0)
 - GET  /reports/benefit   — Benefit report (P0)
+- GET  /reports/handling-statistics — Handling stats (R1 自持，报告模块优化 P0-2)
+- GET  /reports/diagnosis-runs — Diagnosis run list (R1 自持，P0-4)
+- GET  /reports/diagnosis-runs/export — Diagnosis run CSV export (≤5000, D4)
 - GET/PUT /reports/stage-lock — Read/set maturity stage lock (ADMIN for PUT, P3)
 - POST /reports/export-pdf — Trigger overview PDF export (async, P3)
 - GET  /reports/export-tasks/{task_id} — PDF export task status
@@ -16,15 +19,22 @@ Routes:
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
+from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS, _run_to_summary
 from app.core.db import get_db
+from app.models.diagnosis_run import DiagnosisRun
+from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
 from app.schemas.base import CamelModel
 from app.schemas.common import ApiResponse, success
@@ -37,6 +47,12 @@ from app.schemas.report import (
     ReportGenerateData,
     ReportGenerateRequest,
     ReportOverviewData,
+)
+from app.services.alert_stats import build_alert_statistics
+from app.services.data_quality_stats import build_data_quality_stats
+from app.services.handling_stats import (
+    _load_subtree_unit_ids,
+    build_handling_statistics,
 )
 from app.services.report import (
     create_config,
@@ -249,6 +265,228 @@ async def get_report_benefit(
     start, end = _parse_date_range(startDate, endDate)
     data = await get_benefit(db, start_date=start, end_date=end, plant_node_id=plantNodeId)
     return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# R1 自持端点（报告模块优化 P0-2/P0-4，2026-08-28）
+#
+# 报告页取数不再穿透可插拔模块门禁 API（/handling/statistics、/diagnosis/runs、
+# /diagnosis/export），改为 reports 自有聚合直读表；模块禁用时报告页仍可用
+# （历史归档口径）。诊断/处置统计聚合分别与模块端点共用单一实现（R1）。
+# ---------------------------------------------------------------------------
+
+#: 诊断明细导出行数上限（D4 决策：与 /diagnosis/export 对齐）
+_REPORT_RUN_EXPORT_LIMIT = 5000
+
+#: 诊断报告明细统计口径（与 get_diagnosis_statistics 一致：仅已完成诊断）
+_REPORT_RUN_STATUSES = ("SUCCESS", "PARTIAL")
+
+
+def _report_run_conditions(
+    start: datetime | None,
+    end: datetime | None,
+    category: str | None,
+    severity: str | None,
+) -> list:
+    """诊断明细（列表/导出共用）筛选条件组装（装置下钻条件异步追加）。"""
+    conditions = [DiagnosisRun.status.in_(_REPORT_RUN_STATUSES)]
+    if category:
+        conditions.append(DiagnosisRun.primary_category == category)
+    if severity:
+        conditions.append(DiagnosisRun.severity == severity)
+    if start:
+        conditions.append(DiagnosisRun.created_at >= start)
+    if end:
+        conditions.append(DiagnosisRun.created_at < end)
+    return conditions
+
+
+async def _report_run_plant_condition(db: AsyncSession, plant_node_id: str | None) -> list:
+    """装置下钻条件（异步解析子树，独立封装便于两个端点共用）。"""
+    if not plant_node_id:
+        return []
+    unit_ids = await _load_subtree_unit_ids(db, plant_node_id)
+    return [LoopLedger.unit_id.in_(unit_ids)]
+
+
+@router.get("/data-quality", response_model=ApiResponse[dict])
+async def get_report_data_quality(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    startDate: str | None = Query(None, description="起始日期 YYYY-MM-DD"),
+    endDate: str | None = Query(None, description="结束日期 YYYY-MM-DD"),
+    plantNodeId: str | None = Query(None),
+) -> dict:
+    """数据质量报告聚合（P1-1，方案 §4.1）。
+
+    只依赖基础模块数据（loop_ledger / kpi_snapshot_hourly /
+    loop_integrity_snapshot / loop_confidence_latest），可插拔模块全拔时
+    仍完整可用；未传时间窗默认近 30 天。
+    """
+    start, end = _parse_date_range(startDate, endDate)
+    data = await build_data_quality_stats(db, start=start, end=end, plant_node_id=plantNodeId)
+    return success(data=data)
+
+
+@router.get("/alert-statistics", response_model=ApiResponse[dict])
+async def get_report_alert_statistics(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    startDate: str | None = Query(None, description="起始日期 YYYY-MM-DD"),
+    endDate: str | None = Query(None, description="结束日期 YYYY-MM-DD"),
+    plantNodeId: str | None = Query(None),
+    severity: str | None = Query(None, description="INFO/WARN/ERROR/CRITICAL"),
+    status: str | None = Query(
+        None, description="ACTIVE/ACKNOWLEDGED/RESOLVED/SUPPRESSED/ARCHIVED"
+    ),
+) -> dict:
+    """预警统计报告聚合（P1-3，方案 §4.2）。
+
+    监控为基础模块数据（alert_event/alert_rule/alert_suppression），任何
+    模块组合下完整可用；未传时间窗默认近 30 天（triggered_at 半开区间）。
+    """
+    start, end = _parse_date_range(startDate, endDate)
+    data = await build_alert_statistics(
+        db,
+        start=start,
+        end=end,
+        plant_node_id=plantNodeId,
+        severity=severity,
+        status=status,
+    )
+    return success(data=data)
+
+
+@router.get("/handling-statistics", response_model=ApiResponse[dict])
+async def get_report_handling_statistics(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    months: int = Query(6, ge=1, le=12, description="默认月度趋势窗口（未传时间窗时生效）"),
+    startDate: str | None = Query(None),
+    endDate: str | None = Query(None),
+    plantNodeId: str | None = Query(None),
+) -> dict:
+    """处置报告统计（R1 自持：直读 handling_order/loop_action_item）。
+
+    与 /handling/statistics 共用 handling_stats.build_handling_statistics
+    单一实现；支持时间范围（工单 created_at 半开区间，闭环数按 verified_at
+    归窗，驳回率按 suggested_at 归窗）与装置下钻（WITH RECURSIVE 子树）。
+    处置模块禁用时本端点不受影响（历史归档口径）。
+    """
+    start, end = _parse_date_range(startDate, endDate)
+    data = await build_handling_statistics(
+        db, months=months, start=start, end=end, plant_node_id=plantNodeId
+    )
+    return success(data=data)
+
+
+@router.get("/diagnosis-runs", response_model=ApiResponse[dict])
+async def get_report_diagnosis_runs(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(10, ge=1, le=100),
+    startDate: str | None = Query(None),
+    endDate: str | None = Query(None),
+    plantNodeId: str | None = Query(None),
+    category: str | None = Query(None),
+    severity: str | None = Query(None),
+) -> dict:
+    """诊断报告明细（R1 自持：直读 diagnosis_run，统计口径 SUCCESS/PARTIAL）。
+
+    行结构复用 diagnosis_v2._run_to_summary 契约（前端零改动渲染）；
+    支持时间范围、装置下钻（plantNodeId，修复报告页明细装置筛选失效 P-07）、
+    分类与严重度筛选。诊断模块禁用时本端点不受影响（历史归档口径）。
+    """
+    start, end = _parse_date_range(startDate, endDate)
+    conditions = _report_run_conditions(start, end, category, severity)
+    conditions += await _report_run_plant_condition(db, plantNodeId)
+
+    total = (
+        await db.execute(
+            select(func.count())
+            .select_from(DiagnosisRun)
+            .outerjoin(LoopLedger, DiagnosisRun.loop_id == LoopLedger.id)
+            .where(*conditions)
+        )
+    ).scalar_one()
+    rows = (
+        await db.execute(
+            select(DiagnosisRun, LoopLedger.tag_name)
+            .outerjoin(LoopLedger, DiagnosisRun.loop_id == LoopLedger.id)
+            .where(*conditions)
+            .order_by(DiagnosisRun.created_at.desc())
+            .offset((page - 1) * pageSize)
+            .limit(pageSize)
+        )
+    ).all()
+    items = [_run_to_summary(row, tag_name) for row, tag_name in rows]
+    return success({"items": items, "total": total, "page": page, "pageSize": pageSize})
+
+
+@router.get(
+    "/diagnosis-runs/export",
+    response_class=PlainTextResponse,
+)
+async def export_report_diagnosis_runs(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    startDate: str | None = Query(None),
+    endDate: str | None = Query(None),
+    plantNodeId: str | None = Query(None),
+    category: str | None = Query(None),
+    severity: str | None = Query(None),
+) -> PlainTextResponse:
+    """诊断报告明细 CSV 导出（列定义与 /diagnosis/export 对齐，≤5000 行）。"""
+    start, end = _parse_date_range(startDate, endDate)
+    conditions = _report_run_conditions(start, end, category, severity)
+    conditions += await _report_run_plant_condition(db, plantNodeId)
+
+    rows = (
+        await db.execute(
+            select(DiagnosisRun, LoopLedger.tag_name)
+            .outerjoin(LoopLedger, DiagnosisRun.loop_id == LoopLedger.id)
+            .where(*conditions)
+            .order_by(DiagnosisRun.created_at.desc())
+            .limit(_REPORT_RUN_EXPORT_LIMIT)
+        )
+    ).all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        ["时间", "回路", "主分类", "次分类", "置信度", "严重度", "时间窗", "发起人", "状态"]
+    )
+    for run, tag_name in rows:
+        secondary = "、".join(
+            _CATEGORY_LABELS.get(j.get("category", ""), j.get("category", ""))
+            for j in (run.secondary_categories or [])
+        )
+        window = (
+            f"{run.time_window_start:%Y-%m-%d %H:%M}~{run.time_window_end:%Y-%m-%d %H:%M}"
+            if run.time_window_start and run.time_window_end
+            else ""
+        )
+        writer.writerow(
+            [
+                run.created_at.strftime("%Y-%m-%d %H:%M:%S") if run.created_at else "",
+                tag_name or "",
+                _CATEGORY_LABELS.get(run.primary_category or "", run.primary_category or ""),
+                secondary,
+                f"{float(run.primary_confidence):.0%}"
+                if run.primary_confidence is not None
+                else "",
+                run.severity or "",
+                window,
+                run.triggered_by,
+                run.status,
+            ]
+        )
+    return PlainTextResponse(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=diagnosis_runs.csv"},
+    )
 
 
 # ---------------------------------------------------------------------------

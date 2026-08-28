@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { EchartsUIType } from '@vben/plugins/echarts';
+
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type { KpiSnapshotItem } from '#/api/metric';
@@ -14,20 +16,28 @@ import type { PlantNodeApi } from '#/api/plant-node';
  * - Tab1 诊断结论：AI 结论卡 + 人工复核表单（复核时间/复核人自动填入）
  * - Tab2 诊断证据：数据质量 / 波形快照 / 特征值（默认全展开）
  * - Tab3 处置建议：系统按诊断/复核结论自动带出 + 人工新增处置措施
+ * - Tab4 前后对比（16 号文 F2）：相邻对比（上一条 SUCCESS）恒可用；
+ *   验证对比（处置工单关联前后）按响应 verifyPair 能力显隐；
+ *   底部"证据波形"折叠块左右并排渲染 base/target 证据波形（懒加载，
+ *   超期清理显示保留策略占位）
  */
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 import { useUserStore } from '@vben/stores';
 
 import {
   Button,
+  Collapse,
+  CollapsePanel,
   Empty,
   Form,
   FormItem,
   Input,
   message,
   Modal,
+  Segmented,
   Select,
   Skeleton,
   Spin,
@@ -41,6 +51,7 @@ import dayjs from 'dayjs';
 import {
   createRunActionApi,
   deleteRunActionApi,
+  getDiagnosisCompareApi,
   getDiagnosisRunDetailApi,
   getRunActionsApi,
   reviewDiagnosisRunApi,
@@ -49,6 +60,7 @@ import {
 import { getLoopListApi } from '#/api/loop';
 import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useModules } from '#/composables/use-modules';
 // v2.0 处置双实体：建议状态映射改用建议侧常量（原 HANDLING_STATUS_* 为 v1.x 工单旧口径）
 import {
@@ -57,10 +69,12 @@ import {
 } from '#/views/handling/constants';
 
 import {
+  CATEGORY_META,
   CATEGORY_OPTIONS,
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
   scoreGrade,
+  SEVERITY_TEXT,
   TRIGGER_TYPE_COLOR,
   TRIGGER_TYPE_TEXT,
 } from '../constants';
@@ -365,8 +379,353 @@ async function removeAction(a: DiagnosisApi.ActionItem): Promise<void> {
   });
 }
 
+// ===== Tab4：前后对比（16 号文 F2 · D3 双模式） =====
+// 相邻对比=与上一条 SUCCESS run（纯诊断域恒可用）；验证对比=处置工单关联前后
+// （响应 verifyPair 能力声明可用才显示，隐藏而非置灰）
+const compareMode = ref<DiagnosisApi.CompareMode>('adjacent');
+const compareLoading = ref(false);
+const adjacentData = ref<DiagnosisApi.CompareResult | null>(null);
+/** 相邻前序不存在（首条 run） */
+const compareAdjacentMissing = ref(false);
+const verifyAvailable = ref(false);
+const verifyData = ref<DiagnosisApi.CompareResult | null>(null);
+
+/** 方向着色：恶化红 / 改善绿 / 持平灰（工业状态色） */
+const DIR_COLOR = { better: '#16a34a', flat: '#6c757d', worse: '#dc2626' } as
+  const;
+const DIR_TEXT = { better: '改善', flat: '持平', worse: '恶化' } as const;
+type Dir = keyof typeof DIR_TEXT;
+
+/** 后端 direction 归一（未知取值按持平处理） */
+function normDir(d?: null | string): Dir {
+  const s = (d ?? '').toLowerCase();
+  if (s === 'better' || s === 'improved') return 'better';
+  if (s === 'worse' || s === 'degraded') return 'worse';
+  return 'flat';
+}
+
+/** KPI 对照指标中文名（metric key → label；未知 key 原样展示） */
+const METRIC_LABEL: Record<string, string> = {
+  accuracyRate: '准确率',
+  autoModeRate: '自动模式率',
+  badValueRate: '坏值率',
+  effectiveAutoRate: '有效自控率',
+  fastRate: '快速率',
+  goodValueRate: '好值率',
+  oscillationRate: '振荡率',
+  outputTravelIndex: '行程指数',
+  saturationRate: '饱和率',
+  score: '综合评分',
+  settlingTime: '稳定时间',
+  steadyRate: '平稳率',
+  stictionIndex: '粘滞指数',
+};
+
+const SEV_RANK: Record<string, number> = { HIGH: 3, LOW: 1, MEDIUM: 2 };
+
+function fmtNum(v?: null | number): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return String(Number.parseFloat(v.toFixed(3)));
+}
+
+function fmtDelta(v?: null | number): string {
+  if (v == null || Number.isNaN(v)) return '—';
+  return `${v > 0 ? '+' : ''}${fmtNum(v)}`;
+}
+
+function fmtConf(v?: null | number): string {
+  return v == null ? '—' : `${Math.round(v * 100)}%`;
+}
+
+function catLabelOf(cat?: DiagnosisApi.Category | null): string {
+  return cat ? (CATEGORY_META[cat]?.label ?? cat) : '无结论';
+}
+
+function catColorOf(cat?: DiagnosisApi.Category | null): string {
+  return cat ? (CATEGORY_META[cat]?.color ?? '#6c757d') : '#6c757d';
+}
+
+function sevLabelOf(sev?: DiagnosisApi.Severity | null): string {
+  return sev ? (SEVERITY_TEXT[sev] ?? sev) : '—';
+}
+
+const modeOptions = computed(() => {
+  const opts: Array<{ label: string; value: DiagnosisApi.CompareMode }> = [
+    { label: '相邻对比', value: 'adjacent' },
+  ];
+  // 验证对比仅能力可用时显示（隐藏而非置灰）
+  if (verifyAvailable.value) opts.push({ label: '验证对比', value: 'verify' });
+  return opts;
+});
+
+const modeHint = computed(() =>
+  compareMode.value === 'adjacent'
+    ? '与上一条成功诊断（SUCCESS）对比，纯诊断域数据'
+    : '处置工单关联的处置前 ↔ 处置后两次诊断对比',
+);
+
+const currentCompare = computed(() =>
+  compareMode.value === 'adjacent' ? adjacentData.value : verifyData.value,
+);
+
+/** 结论变化方向（前端判定：分类消除=改善、新增问题=恶化、迁移=持平） */
+const catDir = computed<Dir>(() => {
+  const c = currentCompare.value?.conclusion.primaryCategory;
+  if (!c || c.base === c.target) return 'flat';
+  if (c.base && !c.target) return 'better';
+  if (!c.base && c.target) return 'worse';
+  return 'flat';
+});
+
+const sevDir = computed<Dir>(() => {
+  const c = currentCompare.value?.conclusion.severity;
+  if (!c || !c.base || !c.target) return 'flat';
+  const d = (SEV_RANK[c.target] ?? 0) - (SEV_RANK[c.base] ?? 0);
+  return d < 0 ? 'better' : (d > 0 ? 'worse' : 'flat');
+});
+
+const confDir = computed<Dir>(() => {
+  const d = currentCompare.value?.conclusion.confidence.delta;
+  if (d == null) return 'flat';
+  return d > 0.005 ? 'better' : (d < -0.005 ? 'worse' : 'flat');
+});
+
+const confDeltaText = computed(() => {
+  const d = currentCompare.value?.conclusion.confidence.delta;
+  if (d == null) return '—';
+  const pp = Math.round(d * 100);
+  return `${pp > 0 ? '+' : ''}${pp}pp`;
+});
+
+/** 静默拉取对比（无前序/无验证对时 404 属预期分支，不弹全局错误） */
+async function fetchCompare(
+  runId: string,
+  mode: DiagnosisApi.CompareMode,
+): Promise<DiagnosisApi.CompareResult | null> {
+  try {
+    return await getDiagnosisCompareApi(runId, mode, {
+      skipErrorMessage: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function loadCompare(): Promise<void> {
+  const runId = props.item?.runId;
+  if (!runId || compareLoading.value) return;
+  compareLoading.value = true;
+  try {
+    const adj = await fetchCompare(runId, 'adjacent');
+    if (adj) {
+      adjacentData.value = adj;
+      compareAdjacentMissing.value = !adj.base;
+      if (adj.verifyPair) {
+        // 响应已声明验证对能力：直接拉取 verify 数据供模式切换
+        verifyData.value = await fetchCompare(runId, 'verify');
+        verifyAvailable.value = verifyData.value !== null;
+      }
+    } else {
+      adjacentData.value = null;
+      compareAdjacentMissing.value = true;
+      // 契约兜底：响应未声明能力时以 verify 404 探测
+      const ver = await fetchCompare(runId, 'verify');
+      verifyAvailable.value = ver?.verifyPair === true;
+      verifyData.value = ver;
+    }
+  } finally {
+    compareLoading.value = false;
+  }
+}
+
+// 切到验证模式但数据缺失（能力边界）时兜底拉取一次
+watch(compareMode, (mode) => {
+  if (mode === 'verify' && props.item?.runId && !verifyData.value) {
+    fetchCompare(props.item.runId, 'verify').then((res) => {
+      if (res) verifyData.value = res;
+    });
+  }
+});
+
+// ===== Tab4：证据波形并排（16 号文 F2 功能点 2-4） =====
+// 懒加载：展开"证据波形"折叠块才复用 run 详情接口分别拉 base/target 的
+// evidenceCharts；超期清理（后端返回空/缺省）时按保留策略占位（对齐
+// evidence-drawer 文案）；对比模式切换后 base/target 变化需重置重拉
+const evidenceActiveKeys = ref<string[]>([]);
+const evidenceLoading = ref(false);
+const evidenceLoaded = ref(false);
+const baseCharts = ref<DiagnosisApi.ChartSnapshot | null>(null);
+const targetCharts = ref<DiagnosisApi.ChartSnapshot | null>(null);
+
+function resetEvidence(): void {
+  evidenceActiveKeys.value = [];
+  evidenceLoading.value = false;
+  evidenceLoaded.value = false;
+  baseCharts.value = null;
+  targetCharts.value = null;
+}
+
+async function loadEvidence(): Promise<void> {
+  const cmp = currentCompare.value;
+  if (!cmp || evidenceLoading.value || evidenceLoaded.value) return;
+  const fetchCharts = async (
+    runId: null | string | undefined,
+  ): Promise<DiagnosisApi.ChartSnapshot | null> => {
+    if (!runId) return null;
+    try {
+      const d = await getDiagnosisRunDetailApi(runId);
+      return d.evidenceCharts ?? null;
+    } catch {
+      return null; // 请求失败按无证据处理（错误提示由请求拦截器统一弹出）
+    }
+  };
+  evidenceLoading.value = true;
+  try {
+    [baseCharts.value, targetCharts.value] = await Promise.all([
+      fetchCharts(cmp.base?.runId),
+      fetchCharts(cmp.target.runId),
+    ]);
+    evidenceLoaded.value = true;
+  } finally {
+    evidenceLoading.value = false;
+    nextTick(renderEvidenceCharts);
+  }
+}
+
+watch(evidenceActiveKeys, (keys) => {
+  if (keys.includes('evidence')) loadEvidence();
+});
+
+// 相邻 ↔ 验证切换后 base/target runId 变化：重置折叠块，重新懒加载
+watch(compareMode, () => {
+  resetEvidence();
+});
+
+const baseTrendRef = ref<EchartsUIType>();
+const baseScatterRef = ref<EchartsUIType>();
+const targetTrendRef = ref<EchartsUIType>();
+const targetScatterRef = ref<EchartsUIType>();
+const { renderEcharts: renderBaseTrend } = useEcharts(baseTrendRef);
+const { renderEcharts: renderBaseScatter } = useEcharts(baseScatterRef);
+const { renderEcharts: renderTargetTrend } = useEcharts(targetTrendRef);
+const { renderEcharts: renderTargetScatter } = useEcharts(targetScatterRef);
+
+/** 波形 option 复用 DiagnosisResultPanel 口径（双 Y 轴 + PV/OP 量程定标） */
+function buildCmpTrendOption(chart?: DiagnosisApi.ChartSnapshot['trend']) {
+  const ts = chart?.ts ?? [];
+  const toPoints = (arr?: (null | number)[]) =>
+    (arr ?? []).map((v, i) => [ts[i], v ?? null]);
+  const pvRange = chart?.pvRange;
+  const opRange = chart?.opRange;
+  return {
+    animation: false,
+    color: ['#1d4ed8', '#6b7280', '#b45309'],
+    grid: { bottom: 44, left: 44, right: 20, top: 32 },
+    legend: { data: ['PV', 'SP', 'OP'], top: 0 },
+    series: [
+      {
+        connectNulls: false,
+        data: toPoints(chart?.pv),
+        name: 'PV',
+        showSymbol: false,
+        type: 'line',
+        yAxisIndex: 0,
+      },
+      {
+        lineStyle: { type: 'dashed' },
+        data: toPoints(chart?.sp),
+        name: 'SP',
+        showSymbol: false,
+        type: 'line',
+        yAxisIndex: 0,
+      },
+      {
+        data: toPoints(chart?.op),
+        name: 'OP',
+        showSymbol: false,
+        type: 'line',
+        yAxisIndex: 1,
+      },
+    ],
+    tooltip: { trigger: 'axis' },
+    xAxis: {
+      axisLabel: { formatter: (v: number) => `${Math.round(v / 60_000)}m` },
+      type: 'time',
+    },
+    yAxis: [
+      {
+        name: 'PV/SP',
+        scale: !pvRange,
+        type: 'value',
+        ...(pvRange ? { max: pvRange.max, min: pvRange.min } : {}),
+      },
+      {
+        name: 'OP',
+        scale: !opRange,
+        splitLine: false,
+        type: 'value',
+        ...(opRange ? { max: opRange.max, min: opRange.min } : {}),
+      },
+    ],
+  };
+}
+
+function buildCmpScatterOption(chart?: DiagnosisApi.ChartSnapshot['scatter']) {
+  return {
+    animation: false,
+    color: ['#b45309'],
+    grid: { bottom: 36, left: 44, right: 16, top: 24 },
+    series: [
+      {
+        data: (chart?.pv ?? []).map((pv, i) => [chart?.op?.[i], pv]),
+        itemStyle: { opacity: 0.35 },
+        name: 'PV-OP',
+        symbolSize: 3,
+        type: 'scatter',
+      },
+    ],
+    tooltip: { trigger: 'item' },
+    xAxis: { name: 'OP', scale: true, type: 'value' },
+    yAxis: { name: 'PV', scale: true, type: 'value' },
+  };
+}
+
+function renderEvidenceCharts(): void {
+  if (!evidenceActiveKeys.value.includes('evidence')) return;
+  if (baseCharts.value) {
+    renderBaseTrend(buildCmpTrendOption(baseCharts.value.trend) as any);
+    renderBaseScatter(buildCmpScatterOption(baseCharts.value.scatter) as any);
+  }
+  if (targetCharts.value) {
+    renderTargetTrend(buildCmpTrendOption(targetCharts.value.trend) as any);
+    renderTargetScatter(
+      buildCmpScatterOption(targetCharts.value.scatter) as any,
+    );
+  }
+}
+
+const { isDark } = useClpmTheme();
+// 暗色切换时重渲（与 DiagnosisResultPanel 波形快照同纪律）
+watch(isDark, () => {
+  if (evidenceActiveKeys.value.includes('evidence')) {
+    nextTick(renderEvidenceCharts);
+  }
+});
+
 // ===== Tabs =====
 const activeTab = ref('conclusion');
+
+// 首次切到"前后对比"页签时懒加载对比数据
+watch(activeTab, (tab) => {
+  if (
+    tab === 'compare' &&
+    props.item?.runId &&
+    !adjacentData.value &&
+    !compareLoading.value
+  ) {
+    loadCompare();
+  }
+});
 
 // ===== 拖动 + 调整宽高 =====
 /** 默认 860：KPI 单行（评分+等级+6率 ≈795px）+ body padding 32px */
@@ -472,6 +831,14 @@ watch(open, (v) => {
     reviewForm.value.reviewComment = '';
     actionItems.value = [];
     newActionContent.value = '';
+    // 前后对比状态重置（每次打开按当前 run 重新懒加载）
+    compareMode.value = 'adjacent';
+    adjacentData.value = null;
+    compareAdjacentMissing.value = false;
+    verifyAvailable.value = false;
+    verifyData.value = null;
+    // 证据波形并排状态重置（展开折叠才重新拉取）
+    resetEvidence();
     load(props.item);
     loadActions();
     nextTick(bindDragOnce);
@@ -848,6 +1215,265 @@ watch(open, (v) => {
             </template>
           </template>
         </TabPane>
+
+        <!-- Tab4 前后对比（16 号文 F2：相邻对比恒可用；验证对比按 verifyPair 能力显隐） -->
+        <TabPane key="compare" tab="前后对比">
+          <Empty v-if="!item.runId" class="py-4" description="该回路尚未诊断" />
+          <template v-else>
+            <div class="diag-cmp-bar">
+              <Segmented
+                v-model:value="compareMode"
+                :options="modeOptions"
+                size="small"
+              />
+              <span class="diag-cmp-hint">{{ modeHint }}</span>
+            </div>
+            <Spin v-if="compareLoading" class="block py-4" />
+            <template v-else>
+              <!-- 无相邻前序（首条 run）占位说明 -->
+              <Empty
+                v-if="compareMode === 'adjacent' && compareAdjacentMissing"
+                class="py-4"
+                description="该 run 之前没有可对比的诊断记录（首条诊断）"
+              />
+              <Empty
+                v-else-if="!currentCompare"
+                class="py-4"
+                description="暂无对比数据"
+              />
+              <template v-else>
+                <!-- 两次 run 概要（左=基准，右=对比；时间窗不同不归一化，各自明示） -->
+                <div class="diag-cmp-runs">
+                  <div class="diag-cmp-run">
+                    <div class="diag-cmp-run__tag">基准 run</div>
+                    <div class="diag-cmp-run__row tabular-nums">
+                      {{ fmtLocal(currentCompare.base?.diagnosedAt) }}
+                      <span class="diag-cmp-run__win">
+                        窗口 {{ fmtLocal(currentCompare.base?.windowStart) }}~{{
+                          fmtLocal(currentCompare.base?.windowEnd)
+                        }}
+                      </span>
+                    </div>
+                  </div>
+                  <span class="diag-cmp-arrow">→</span>
+                  <div class="diag-cmp-run diag-cmp-run--target">
+                    <div class="diag-cmp-run__tag">对比 run</div>
+                    <div class="diag-cmp-run__row tabular-nums">
+                      {{ fmtLocal(currentCompare.target?.diagnosedAt) }}
+                      <span class="diag-cmp-run__win">
+                        窗口 {{ fmtLocal(currentCompare.target?.windowStart) }}~{{
+                          fmtLocal(currentCompare.target?.windowEnd)
+                        }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 结论变化卡：方向着色（恶化红/改善绿/持平灰） -->
+                <div class="diag-cmp-cards">
+                  <div class="diag-cmp-card">
+                    <div class="diag-cmp-card__k">主分类</div>
+                    <div class="diag-cmp-card__v">
+                      <span
+                        :style="{
+                          color: catColorOf(
+                            currentCompare.conclusion.primaryCategory.base,
+                          ),
+                        }"
+                      >
+                        {{
+                          catLabelOf(
+                            currentCompare.conclusion.primaryCategory.base,
+                          )
+                        }}
+                      </span>
+                      <span class="diag-cmp-sep">→</span>
+                      <span
+                        :style="{
+                          color: catColorOf(
+                            currentCompare.conclusion.primaryCategory.target,
+                          ),
+                        }"
+                      >
+                        {{
+                          catLabelOf(
+                            currentCompare.conclusion.primaryCategory.target,
+                          )
+                        }}
+                      </span>
+                      <span
+                        class="diag-cmp-dir"
+                        :style="{ color: DIR_COLOR[catDir] }"
+                      >
+                        {{ DIR_TEXT[catDir] }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="diag-cmp-card">
+                    <div class="diag-cmp-card__k">严重度</div>
+                    <div class="diag-cmp-card__v">
+                      <span>{{
+                        sevLabelOf(currentCompare.conclusion.severity.base)
+                      }}</span>
+                      <span class="diag-cmp-sep">→</span>
+                      <span>{{
+                        sevLabelOf(currentCompare.conclusion.severity.target)
+                      }}</span>
+                      <span
+                        class="diag-cmp-dir"
+                        :style="{ color: DIR_COLOR[sevDir] }"
+                      >
+                        {{ DIR_TEXT[sevDir] }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="diag-cmp-card">
+                    <div class="diag-cmp-card__k">置信度</div>
+                    <div class="diag-cmp-card__v">
+                      <span>{{
+                        fmtConf(currentCompare.conclusion.confidence.base)
+                      }}</span>
+                      <span class="diag-cmp-sep">→</span>
+                      <span>{{
+                        fmtConf(currentCompare.conclusion.confidence.target)
+                      }}</span>
+                      <span
+                        class="diag-cmp-dir"
+                        :style="{ color: DIR_COLOR[confDir] }"
+                      >
+                        {{ confDeltaText }} · {{ DIR_TEXT[confDir] }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 特征值对照（同算子同特征逐行对照） -->
+                <div class="diag-cmp-sec">特征值对照</div>
+                <table
+                  v-if="currentCompare.features?.length"
+                  class="diag-cmp-table"
+                >
+                  <thead>
+                    <tr>
+                      <th>算子</th>
+                      <th>特征</th>
+                      <th class="num">基准</th>
+                      <th class="num">对比</th>
+                      <th class="num">变化</th>
+                      <th>方向</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(f, i) in currentCompare.features"
+                      :key="`f${i}`"
+                    >
+                      <td>{{ f.operator }}</td>
+                      <td>{{ f.feature }}</td>
+                      <td class="num">{{ fmtNum(f.baseValue) }}</td>
+                      <td class="num">{{ fmtNum(f.targetValue) }}</td>
+                      <td class="num">{{ fmtDelta(f.delta) }}</td>
+                      <td
+                        :style="{ color: DIR_COLOR[normDir(f.direction)] }"
+                      >
+                        {{ DIR_TEXT[normDir(f.direction)] }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="diag-cmp-empty">
+                  两次 run 无同名特征值可对照
+                </div>
+
+                <!-- KPI 对照（验证模式下与处置域 kpi_before/after 同源） -->
+                <div class="diag-cmp-sec">KPI 对照</div>
+                <table v-if="currentCompare.kpi?.length" class="diag-cmp-table">
+                  <thead>
+                    <tr>
+                      <th>指标</th>
+                      <th class="num">基准</th>
+                      <th class="num">对比</th>
+                      <th class="num">变化</th>
+                      <th>方向</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(k, i) in currentCompare.kpi" :key="`k${i}`">
+                      <td>{{ METRIC_LABEL[k.metric] ?? k.metric }}</td>
+                      <td class="num">{{ fmtNum(k.base) }}</td>
+                      <td class="num">{{ fmtNum(k.target) }}</td>
+                      <td class="num">{{ fmtDelta(k.delta) }}</td>
+                      <td :style="{ color: DIR_COLOR[normDir(k.direction)] }">
+                        {{ DIR_TEXT[normDir(k.direction)] }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="diag-cmp-empty">
+                  两次 run 均无 KPI 汇总数据可对照
+                </div>
+
+                <!-- 证据波形并排（16 号文 F2：懒加载，展开才拉两次 run 详情；
+                     超期清理显示保留策略占位） -->
+                <Collapse
+                  v-model:active-key="evidenceActiveKeys"
+                  class="diag-cmp-evidence"
+                >
+                  <CollapsePanel
+                    key="evidence"
+                    header="证据波形（左=基准 run，右=对比 run）"
+                  >
+                    <Spin v-if="evidenceLoading" class="block py-4" />
+                    <div v-else class="diag-cmp-charts">
+                      <div class="diag-cmp-chart-col">
+                        <div class="diag-cmp-chart-title">
+                          基准 run ·
+                          {{ fmtLocal(currentCompare.base?.diagnosedAt) }}
+                        </div>
+                        <template v-if="baseCharts">
+                          <div class="diag-cmp-chart-label">
+                            PV/SP/OP 趋势（诊断时间窗）
+                          </div>
+                          <EchartsUI ref="baseTrendRef" height="200px" />
+                          <div class="diag-cmp-chart-label">
+                            PV-OP 散点（回环/粘滞形态）
+                          </div>
+                          <EchartsUI ref="baseScatterRef" height="180px" />
+                        </template>
+                        <Empty
+                          v-else
+                          class="py-4"
+                          description="该记录超过证据保留期（1 个月），证据已按保留策略清理；结论字段仍完整保留"
+                        />
+                      </div>
+                      <div class="diag-cmp-chart-col">
+                        <div class="diag-cmp-chart-title">
+                          对比 run ·
+                          {{ fmtLocal(currentCompare.target?.diagnosedAt) }}
+                        </div>
+                        <template v-if="targetCharts">
+                          <div class="diag-cmp-chart-label">
+                            PV/SP/OP 趋势（诊断时间窗）
+                          </div>
+                          <EchartsUI ref="targetTrendRef" height="200px" />
+                          <div class="diag-cmp-chart-label">
+                            PV-OP 散点（回环/粘滞形态）
+                          </div>
+                          <EchartsUI ref="targetScatterRef" height="180px" />
+                        </template>
+                        <Empty
+                          v-else
+                          class="py-4"
+                          description="该记录超过证据保留期（1 个月），证据已按保留策略清理；结论字段仍完整保留"
+                        />
+                      </div>
+                    </div>
+                  </CollapsePanel>
+                </Collapse>
+              </template>
+            </template>
+          </template>
+        </TabPane>
       </Tabs>
 
       <!-- 右下角宽高手柄 -->
@@ -1063,6 +1689,163 @@ watch(open, (v) => {
   align-items: center;
   justify-content: space-between;
   margin-top: 6px;
+}
+
+/* Tab4 前后对比（16 号文 F2） */
+.diag-detail-modal .diag-cmp-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.diag-detail-modal .diag-cmp-hint {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-cmp-runs {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.diag-detail-modal .diag-cmp-run {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: hsl(var(--accent) / 20%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-detail-modal .diag-cmp-run--target {
+  border-color: hsl(var(--primary) / 45%);
+}
+
+.diag-detail-modal .diag-cmp-run__tag {
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-cmp-run__win {
+  margin-left: 8px;
+  font-size: 11px;
+  color: hsl(var(--accent-foreground) / 55%);
+  white-space: nowrap;
+}
+
+.diag-detail-modal .diag-cmp-arrow {
+  align-self: center;
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-cmp-cards {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.diag-detail-modal .diag-cmp-card {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-detail-modal .diag-cmp-card__k {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-cmp-card__v {
+  margin-top: 2px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.diag-detail-modal .diag-cmp-sep {
+  margin: 0 6px;
+  color: hsl(var(--muted-foreground));
+}
+
+.diag-detail-modal .diag-cmp-dir {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.diag-detail-modal .diag-cmp-sec {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 85%);
+}
+
+.diag-detail-modal .diag-cmp-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+
+.diag-detail-modal .diag-cmp-table th,
+.diag-detail-modal .diag-cmp-table td {
+  padding: 3px 8px;
+  text-align: left;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.diag-detail-modal .diag-cmp-table th {
+  font-size: 11px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.diag-detail-modal .diag-cmp-table td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.diag-detail-modal .diag-cmp-empty {
+  padding: 6px 0;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+/* 证据波形并排（16 号文 F2） */
+.diag-detail-modal .diag-cmp-evidence {
+  margin-top: 10px;
+}
+
+.diag-detail-modal .diag-cmp-charts {
+  display: flex;
+  gap: 12px;
+}
+
+.diag-detail-modal .diag-cmp-chart-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.diag-detail-modal .diag-cmp-chart-title {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--foreground) / 85%);
+}
+
+.diag-detail-modal .diag-cmp-chart-label {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* 右下角宽高手柄 */

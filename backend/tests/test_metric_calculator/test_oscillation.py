@@ -473,15 +473,30 @@ def _sp_step_tracking_data(seg_len: int = 100, decay_pts: int = 30, tau: float =
 
 
 class TestSpStepExclusion:
-    """SP 阶跃窗口剔除（P2 修复，默认关闭零回归）。
+    """SP 阶跃窗口剔除（2026-08-28 起默认开启，与 stability 同步）。
 
     SP 多次阶跃的跟踪暂态产生同型 IAE 半周期段，相似率可达 1.0，
-    被误判为振荡；开启 sp_step_exclusion_enabled 后剔除阶跃跟踪窗
-    （复用 stability 同款 detect_sp_tracking_windows），暂态不入判定。
+    会被误判为振荡；sp_step_exclusion_enabled（默认 True）剔除阶跃
+    跟踪窗（复用 stability 同款 detect_sp_tracking_windows），暂态
+    不入判定；显式关闭后恢复计入（阶跃密集场景可能再误判）。
     """
 
-    def test_tracking_transient_false_positive_by_default(self):
-        """默认关闭：6 次阶跃暂态被误判为振荡（修复前基线，登记用）。"""
+    def test_default_enabled_excludes_transient(self):
+        """默认开启：6 次阶跃暂态全部剔除，全零偏差无零交叉 → 非振荡。"""
+        pv, sp = _sp_step_tracking_data()
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="oscillation_rate")
+        calc = OscillationRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.details["sp_steps_detected"] == 6
+        assert result.details["sp_excluded_points"] == 360  # 6 步 × 60 点窗
+        assert result.details["zero_crossings"] == 0
+        assert result.details["is_oscillating"] is False
+
+    def test_explicit_disable_counts_transient(self, _oscillation_overrides):
+        """显式关闭：阶跃暂态计入判定（历史基线行为，同型段相似率 1.0 → 误判振荡）。"""
+        from app.services.algorithm_config import apply_runtime
+
+        apply_runtime({"oscillation_rate": {"STABLE": {"sp_step_exclusion_enabled": False}}})
         pv, sp = _sp_step_tracking_data()
         bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="oscillation_rate")
         calc = OscillationRateCalculator()

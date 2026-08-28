@@ -363,44 +363,25 @@ class TestGenerateReportTask:
 
 
 class TestBeatSchedule:
-    """验证 Beat 调度配置正确注册了 4 个周期任务。"""
+    """验证 Beat 调度配置（报告模块优化 P0-1 后的收敛口径）。
 
-    def test_beat_schedule_has_four_entries(self) -> None:
-        """beat_schedule 应包含 4 个报表周期任务。"""
+    自动周期生成已摘除（占位实现空转写无效 record，P3 做实后恢复调度，
+    见 docs/设计文档/CLPM报告模块优化实施方案-2026-08-28.md §3.1 D1）。
+    """
+
+    def test_beat_schedule_has_no_report_entries(self) -> None:
+        """beat_schedule 不得再注册报表周期任务（P0-1 摘除守护）。"""
         schedule = celery_app.conf.beat_schedule
         report_entries = {
             k: v
             for k, v in schedule.items()
             if v.get("task") == "app.tasks.report_generator.generate_report_task"
         }
-        assert len(report_entries) == 4
-
-    def test_beat_schedule_contains_all_periods(self) -> None:
-        """beat_schedule 应包含 SHIFT/DAILY/WEEKLY/MONTHLY 4 个周期。"""
-        schedule = celery_app.conf.beat_schedule
-        periods = set()
-        for entry in schedule.values():
-            if entry.get("task") == "app.tasks.report_generator.generate_report_task":
-                periods.add(entry["kwargs"]["report_period"])
-
-        assert periods == {"SHIFT", "DAILY", "WEEKLY", "MONTHLY"}
+        assert report_entries == {}
 
     def test_beat_schedule_timezone_is_shanghai(self) -> None:
         """Beat 调度时区应为 Asia/Shanghai。"""
         assert celery_app.conf.timezone == "Asia/Shanghai"
-
-    def test_beat_schedule_intervals_reasonable(self) -> None:
-        """Beat 调度间隔应合理（SHIFT=8h, DAILY=24h, WEEKLY=7d, MONTHLY=30d）。"""
-        schedule = celery_app.conf.beat_schedule
-        expected = {
-            "report-shift": 28800.0,
-            "report-daily": 86400.0,
-            "report-weekly": 604800.0,
-            "report-monthly": 2592000.0,
-        }
-        for key, expected_schedule in expected.items():
-            assert key in schedule
-            assert schedule[key]["schedule"] == expected_schedule
 
 
 # ===========================================================================

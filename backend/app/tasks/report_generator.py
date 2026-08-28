@@ -84,36 +84,14 @@ def generate_report_task(
 
 
 # ---------------------------------------------------------------------------
-# Beat schedule: auto-generate per period
+# Beat schedule: 自动周期生成已摘除（报告模块优化 P0-1，2026-08-28）
+#
+# 背景：自动生成尚为占位实现（极简 PDF、无真实文件落盘），四周期调度
+# 空转写入无效 report_record。P0 先收敛止血，P3 做实后再恢复调度
+# （见 docs/设计文档/CLPM报告模块优化实施方案-2026-08-28.md §3.1，D1 已决）。
+# 手动触发生成（/reports/generate）保留，generate_report_task 任务函数不动。
 # ---------------------------------------------------------------------------
 
-
-_beat_entries = {
-    "report-shift": {
-        "task": "app.tasks.report_generator.generate_report_task",
-        "schedule": 28800.0,  # 8 hours
-        "kwargs": {"report_period": "SHIFT"},
-    },
-    "report-daily": {
-        "task": "app.tasks.report_generator.generate_report_task",
-        "schedule": 86400.0,  # 24 hours
-        "kwargs": {"report_period": "DAILY"},
-    },
-    "report-weekly": {
-        "task": "app.tasks.report_generator.generate_report_task",
-        "schedule": 604800.0,  # 7 days
-        "kwargs": {"report_period": "WEEKLY"},
-    },
-    "report-monthly": {
-        "task": "app.tasks.report_generator.generate_report_task",
-        "schedule": 2592000.0,  # 30 days
-        "kwargs": {"report_period": "MONTHLY"},
-    },
-}
-
-_existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
-_existing_beat.update(_beat_entries)
-celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
 
 

@@ -296,7 +296,8 @@ describe('store 测试', () => {
     expect(userInfo.username).toBe('engineer');
     expect(userInfo.realName).toBe('工程师');
     expect(userInfo.roles).toEqual(['IC_ENGINEER']);
-    expect(userInfo.homePath).toBe('/dashboard');
+    // IC_ENGINEER 默认落地驾驶舱（方案 11 §3.1，前端角色映射优先于后端 defaultHome）
+    expect(userInfo.homePath).toBe('/cockpit');
     // 验证 store 已更新
     expect(userStore.userInfo?.username).toBe('engineer');
     expect(accessStore.accessCodes).toEqual([

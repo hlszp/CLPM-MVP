@@ -41,6 +41,8 @@ from app.api.v1.endpoints import (
     algorithms,
     audit_logs,
     auth,
+    # 驾驶舱聚合端点（11 号设计方案 §10）
+    cockpit,
     # v6.1: 数据可信度阈值配置
     confidence_config,
     configs,
@@ -975,6 +977,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(dashboard.router)
     # 工作台 v2.0 BFF（A-01~A-13 端点）
     v1_router.include_router(workbench.router)
+    # 驾驶舱聚合端点（11 号设计方案 §10：overview/backend-access-roles/node-tree）
+    v1_router.include_router(cockpit.router)
     # S4 诊断中心：诊断、波形、Tracker、诊断标签
     # v4.0: tags_router 须在 diagnosis.router 之前注册，避免 GET /{loop_id} 拦截 /diagnosis/tags
     # MVP 精简：已屏蔽旧诊断模块 → 不挂载所有 diagnosis.*_router

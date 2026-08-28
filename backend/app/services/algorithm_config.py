@@ -38,7 +38,8 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
     "oscillation_rate": {
         # min_half_period_samples：P1 抗噪门控（与诊断侧 _iae_kernel/stiction 同值 8）；
         # min_amplitude_ratio：P2 幅度门控（特征幅度占量程比例，0.2%）；
-        # sp_step_*：P2 SP 阶跃剔除（默认关闭零回归，与 stability 同款）。
+        # sp_step_*：P2 SP 阶跃剔除（2026-08-28 起默认开启，与 stability 同步：
+        # 阶跃跟踪暂态同型段 IAE 相似率可达 1.0 会被误判振荡）。
         # DB 种子行不含新键时由本默认层兜底，无需迁移
         "STABLE": {
             "similarity_threshold": 0.4,
@@ -47,7 +48,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "min_zero_crossings": 4,
             "min_half_period_samples": 8,
             "min_amplitude_ratio": 0.002,
-            "sp_step_exclusion_enabled": False,
+            "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
         },
@@ -58,7 +59,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "min_zero_crossings": 4,
             "min_half_period_samples": 8,
             "min_amplitude_ratio": 0.002,
-            "sp_step_exclusion_enabled": False,
+            "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
         },
@@ -69,7 +70,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "min_zero_crossings": 4,
             "min_half_period_samples": 8,
             "min_amplitude_ratio": 0.002,
-            "sp_step_exclusion_enabled": False,
+            "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
         },
@@ -80,7 +81,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "min_zero_crossings": 4,
             "min_half_period_samples": 8,
             "min_amplitude_ratio": 0.002,
-            "sp_step_exclusion_enabled": False,
+            "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
         },
@@ -223,6 +224,29 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "unit": "采样点",
             "description": "抗噪最小平均半周期（低于此值判非振荡，剔除白噪声伪穿越）",
         },
+        "min_amplitude_ratio": {
+            "min": 0.0005,
+            "max": 0.01,
+            "unit": "",
+            "description": "幅度门控下限（特征幅度占量程比例，低于此值判非振荡）",
+        },
+        "sp_step_exclusion_enabled": {
+            "type": "bool",
+            "unit": "",
+            "description": "SP 阶跃剔除开关（剔除设定值阶跃后的跟踪暂态，默认开启）",
+        },
+        "sp_step_sigma": {
+            "min": 0.5,
+            "max": 10.0,
+            "unit": "σ",
+            "description": "SP 阶跃检测阈值",
+        },
+        "sp_tracking_window": {
+            "min": 5,
+            "max": 3600,
+            "unit": "点",
+            "description": "SP 阶跃后剔除的跟踪窗点数（实际时长=点数×采样间隔）",
+        },
     },
     "fast_rate": {
         "ideal_settling_ratio": {
@@ -272,7 +296,7 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
         "band_in_score_enabled": {
             "type": "bool",
             "unit": "",
-            "description": "以带内时间占比作为平稳率分值（石化惯例口径）",
+            "description": "以带内时间占比作为平稳率分值（石化惯例口径，不乘振荡修正）",
         },
         "sp_step_exclusion_enabled": {
             "type": "bool",
@@ -289,7 +313,7 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "min": 5,
             "max": 3600,
             "unit": "点",
-            "description": "SP 阶跃后剔除的跟踪窗点数",
+            "description": "SP 阶跃后剔除的跟踪窗点数（实际时长=点数×采样间隔）",
         },
     },
     "settling_time": {

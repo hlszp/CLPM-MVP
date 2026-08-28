@@ -22,6 +22,8 @@ const WHITELIST = new Set([
   'composables/use-clpm-theme.ts',
   'composables/use-loop-palettes.ts',
   'composables/use-echarts-preset.ts',
+  'views/cockpit/styles/theme.css',
+  'views/cockpit/composables/use-cockpit-theme.ts',
 ]);
 
 /** 颜色定义型目录（constants 下全部为语义常量表） */

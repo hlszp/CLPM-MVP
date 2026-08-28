@@ -45,6 +45,7 @@
 | [13-工作台统计追溯矩阵.md](13-工作台统计追溯矩阵.md) | 工作台"有据可查"梳理纲领（2026-08-27 **v1.0 已实施**）：5 Tab 全部统计组件 → 数据源 → 目标明细页 → 跳转参数的逐项映射；含 7 条通用口径约定（G1~G7）、5 项缺口新建（GAP-1~5 全部落地，含整定批次端点/时间筛选）、6 项待裁决（Q1~Q6 已裁决并登记落地）、3 指标验收对账（已验证）；3 处死链已修复；诊断统计源已统一迁 `diagnosis_run`（14 号文） |
 | [14-诊断引擎统一方案.md](14-诊断引擎统一方案.md) | 方案 A：A-03/总览诊断统计迁 `diagnosis_run`（v2）+ 旧引擎退役归档（2026-08-27 **已实施完毕**，D1~D4 裁决全 a）；4 阶段（A1 种子+映射层 → A2 六块聚合迁 v2+MV 重建 → A3 总览/残留读方 → A4 退役收口）全部落地；旧引擎唯一活跃写入口 `/algorithms/diagnosis/analyze` 已退役（解除注册+归档注释），`diagnosis_tag`/`diagnosis_result` 表按 D4=a 保留归档；含可行性核对（旧 MV 重复计数/SLA 演示态两既有瑕疵顺带消除）与用户可感知数字变化落地登记 |
 | [15-回路指标矩阵页设计方案.md](15-回路指标矩阵页设计方案.md) | 评估模块第 6 页设计（2026-08-27 v1.1，**已实施**）：全回路 × 全指标集中查看 `/metric/matrix` 独立菜单；4 指标组分组列（核心/诊断/统计/阀门，Phase 1 新指标首次有列表出口）+ 率类指标分档着色（反向指标取反）+ NULL 斜纹；单元格下钻单指标趋势、列头 TOP N 多回路对比；后端仅新增 1 个批量序列接口（metric-series），主体数据复用现有快照接口零改动；E2E 用例待补 |
+| [16-诊断模块功能扩展方案.md](16-诊断模块功能扩展方案.md) | 诊断模块功能扩展设计（2026-08-28 v1.1，**Phase A 已实施（F1/F2）**，Phase B/C 待实施）：三方向六功能补强——纵向闭环（F1 回路诊断档案 + F2 双模式复诊对比）/ 群体管理（F3 覆盖台账 + F4 共性问题回路组对比）/ 诊断质量（F5 发起前数据预检 + F6 复核反馈统计）；全部基于 `diagnosis_run`/`kpi_snapshot_hourly`/`handling_order.verify_run_id` 等既有数据，零新采集、零 schema 迁移；D1~D6 已裁决；含 §1.4 执行原则（遵守 7 号精简策略/完整设计推进/热插拔自包含）与 §5.4 联动降级矩阵（其他模块禁用时隐藏而非置灰）；A→B→C 三阶段排期 |
 
 ## 改造原则
 
@@ -55,7 +56,9 @@
 
 ## 已知残留（待处理）
 
-精简阶段曾将 5 个聚合 service 的诊断/整定/Tracker 引用 stub 化（monitor_attention.py 移除 TRACKER/VERIFICATION 来源、workbench_summary.py 诊断/整定/tracker 摘要恒 None、dashboard.py 与 anomaly_prediction.py 计数恒零）。闭环重建后部分 stub 已被新 API 路径绕过（如回路工作台诊断卡改走 `getDiagnosisRunsLatestApi`），但 **monitor_attention.py 的关注队列来源与 workbench_summary.py 的摘要聚合尚未恢复**，是否恢复由人工评估决策（评估结论：关注队列缺处置工单来源属真实闭环断点；dashboard/anomaly_prediction 无前端消费者属架空）。
+精简阶段曾将 5 个聚合 service 的诊断/整定/Tracker 引用 stub 化（monitor_attention.py 移除 TRACKER/VERIFICATION 来源、workbench_summary.py 诊断/整定/tracker 摘要恒 None、dashboard.py 与 anomaly_prediction.py 计数恒零）。闭环重建后部分 stub 已被新 API 路径绕过（如回路工作台诊断卡改走 `getDiagnosisRunsLatestApi`）。**monitor_attention.py 的关注队列来源已收口（2026-08-28）**：HANDLING 来源（处置工单四分支聚合）已于 2026-08-23 落地，原评估的"关注队列缺处置工单来源属真实闭环断点"已修复；旧 TRACKER/VERIFICATION 来源在架构上被 handling_order 功能性取代，不再按原样恢复。**workbench_summary.py 的诊断/整定/tracker 摘要聚合尚未恢复**，是否恢复由人工评估决策；dashboard/anomaly_prediction 无前端消费者属架空。
+
+**报告订阅自动生成暂为占位实现**（2026-08-28，报告模块优化 P0-1）：自动生成的 PDF 为极简占位且无真实文件落盘，四周期 Beat 调度（report-shift/daily/weekly/monthly）已摘除止血，订阅页「立即生成」置灰、「批量生成」移除、进度列隐藏；配置 CRUD 保留（语义为"预配置"）。P3 报告做实后恢复调度与生成入口（见 `docs/设计文档/CLPM报告模块优化实施方案-2026-08-28.md` §3.1，D1 已决）。
 
 ## 使用场景
 

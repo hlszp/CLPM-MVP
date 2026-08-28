@@ -8,7 +8,7 @@
  * TOP 问题回路表固定列，S2 追加「处置状态」、S3 追加「评分改善」；
  * 标题旁 ClpmStageIndicator 显示当前阶段（管理员可锁定/预览）；
  * 底部 ClpmUpgradePrompt 自适应显示下一阶段能力引导；
- * 工具栏支持 PDF 导出（异步轮询）+ Excel 导出 + 刷新 + 帮助。
+ * 工具栏支持 PDF 导出（异步轮询）+ CSV 导出（TOP 问题回路）+ 刷新 + 帮助。
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
@@ -528,8 +528,8 @@ async function handleExportPdf() {
   }
 }
 
-function handleExportExcel() {
-  // 复用 utils/export：按阶段导出 TOP 回路 CSV（MVP：exportData 单 sheet 签名，用 CSV 兼容导出）
+function handleExportCsv() {
+  // P0-9 诚实化：MVP 实际为 exportData CSV 单表导出（TOP 问题回路），按钮/文案对齐实态
   if (!data.value) {
     message.warning('暂无数据可导出');
     return;
@@ -559,7 +559,7 @@ function handleExportExcel() {
       });
     });
   } catch {
-    message.error('Excel 导出失败');
+    message.error('CSV 导出失败');
   }
 }
 
@@ -606,7 +606,7 @@ function handleHelp() {
         <li>S2：诊断记录 ≥1 或 处置工单 ≥1</li>
         <li>S3：整定记录 ≥1 且「闭环且验证通过」处置工单 ≥5</li>
       </ul>
-      <p><b>导出</b>：PDF 异步生成（按阶段自适应章节）；Excel 多 sheet。</p>
+      <p><b>导出</b>：PDF 异步生成（按阶段自适应章节）；CSV 导出 TOP 问题回路明细。</p>
     `,
   });
 }
@@ -647,9 +647,10 @@ onMounted(() => {
         />
         <ClpmToolbarButton
           :disabled="!data"
-          icon="ant-design:file-excel-outlined"
-          label="导出 Excel"
-          @click="handleExportExcel"
+          icon="ant-design:download-outlined"
+          label="导出 CSV"
+          tooltip="导出 TOP 问题回路（CSV）"
+          @click="handleExportCsv"
         />
         <ClpmToolbarButton
           icon="ant-design:sync-outlined"

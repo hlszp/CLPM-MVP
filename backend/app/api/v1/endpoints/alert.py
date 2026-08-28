@@ -37,7 +37,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -258,7 +258,15 @@ async def list_events_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("alert:view")),
 ) -> dict:
-    """获取预警事件列表（分页+筛选）。"""
+    """获取预警事件列表（分页+筛选）。
+
+    startTime/endTime 归一为 naive UTC（alert_event 时间戳列为 timestamp
+    without time zone；asyncpg 不接受 aware 与 naive 混比）。
+    """
+    if startTime is not None and startTime.tzinfo is not None:
+        startTime = startTime.astimezone(UTC).replace(tzinfo=None)
+    if endTime is not None and endTime.tzinfo is not None:
+        endTime = endTime.astimezone(UTC).replace(tzinfo=None)
     data = await alert_service.list_events(
         db,
         loop_id=loopId,
