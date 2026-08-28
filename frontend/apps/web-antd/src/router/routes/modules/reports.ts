@@ -6,9 +6,11 @@ import type { RouteRecordRaw } from 'vue-router';
  * 设计文档：docs/设计文档/IA 优化/CLPM-IA优化实施方案-0822.md §二
  * 跨域报表与管理决策中心，统一承载绩效/诊断/处置/收益报告的查看、导出与订阅。
  *
- * 二级菜单（6 个）：
+ * 二级菜单（8 个，P1 基座补域 2026-08-28：基座在前、闭环在后，与成熟度分层一致）：
  * - 管理总览 /reports/overview     全角色，S1~S3 自适应
  * - 绩效报告 /reports/performance   ADMIN/IC/PE/SPONSOR（由 /metric/kpi-report 迁入）
+ * - 数据质量 /reports/data-quality  全角色（P1 新增，基础模块数据自持）
+ * - 预警统计 /reports/alert-statistics 全角色（P1 新增，基础模块数据自持）
  * - 诊断报告 /reports/diagnosis     ADMIN/IC/PE/EXPERT/SPONSOR（新建）
  * - 处置报告 /reports/handling      全角色（由 /handling/statistics 迁入）
  * - 收益报告 /reports/benefit       ADMIN/IC/PE/SPONSOR（新建，仅技术指标）
@@ -49,6 +51,28 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:gauge',
           title: '绩效报告',
+          module: 'reports',
+        },
+      },
+      {
+        name: 'ReportsDataQuality',
+        path: '/reports/data-quality',
+        component: () => import('#/views/reports/data-quality.vue'),
+        meta: {
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          icon: 'lucide:heart-pulse',
+          title: '数据质量',
+          module: 'reports',
+        },
+      },
+      {
+        name: 'ReportsAlertStatistics',
+        path: '/reports/alert-statistics',
+        component: () => import('#/views/reports/alert-statistics.vue'),
+        meta: {
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          icon: 'lucide:bell-ring',
+          title: '预警统计',
           module: 'reports',
         },
       },

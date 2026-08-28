@@ -5,11 +5,18 @@
  * - GET /reports/overview              管理总览（P3 S1/S2/S3 自适应）
  * - GET /reports/diagnosis-statistics  诊断统计（基于 DiagnosisRun）
  * - GET /reports/benefit               收益报告（技术指标，不含经济收益）
+ * - GET /reports/handling-statistics   处置报告统计（R1 自持，P0-2）
+ * - GET /reports/diagnosis-runs        诊断报告明细（R1 自持，P0-4）
+ * - GET /reports/diagnosis-runs/export 诊断明细 CSV 导出（≤5000 行，D4）
  * - GET/PUT /reports/stage-lock        读取 / 设置阶段锁定（ADMIN 写入）
  * - POST /reports/export-pdf           触发 PDF 导出（异步）
  * - GET  /reports/export-tasks/{id}    查询 PDF 导出任务状态
  * - GET  /reports/export-download/{id} 下载 PDF
  */
+import type { DiagnosisApi } from '#/api/diagnosis';
+import type { HandlingApi } from '#/api/handling';
+import type { PaginatedResponse } from '#/api/types';
+
 import { requestClient } from '#/api/request';
 
 export namespace ReportsApi {
@@ -190,6 +197,93 @@ export namespace ReportsApi {
     endDate?: string;
     plantNodeId?: string;
   }
+
+  // ---------- 基座补域（报告模块优化 P1，2026-08-28） ----------
+
+  export interface DataQualityTrendPoint {
+    date: string;
+    healthRate: null | number;
+    inconclusiveRate: null | number;
+  }
+
+  export interface ConfidenceDistItem {
+    level: string;
+    count: number;
+  }
+
+  export interface DataQualityItem {
+    loopId: string;
+    loopTagName: string;
+    loopDescription: null | string;
+    unitPath: string;
+    includeInEvaluation: boolean;
+    pvCompleteness: null | number;
+    overallCompleteness: null | number;
+    integrityStatus: null | string;
+    checkedAt: null | string;
+    goodValueRate: null | number;
+    confidenceLevel: null | string;
+    evalStatus: null | string;
+    evalTime: null | string;
+    fitnessLevel: null | string;
+    nonEvalReason: null | string;
+  }
+
+  export interface DataQualityData {
+    summary: {
+      confidenceDistribution: ConfidenceDistItem[];
+      dataHealthRate: null | number;
+      evaluableLoops: number;
+      evaluateRate: null | number;
+      inconclusiveRate: null | number;
+      totalLoops: number;
+    };
+    trend: DataQualityTrendPoint[];
+    items: DataQualityItem[];
+  }
+
+  export interface AlertTrendPoint {
+    date: string;
+    CRITICAL: number;
+    ERROR: number;
+    INFO: number;
+    WARN: number;
+  }
+
+  export interface AlertDistItem {
+    key: string;
+    count: number;
+  }
+
+  export interface AlertTopRule {
+    ruleCode: string;
+    ruleName: null | string;
+    count: number;
+    falsePositives: number;
+  }
+
+  export interface AlertTopLoop {
+    loopId: string;
+    loopTagName: string;
+    count: number;
+    falsePositives: number;
+  }
+
+  export interface AlertStatisticsData {
+    summary: {
+      active: number;
+      activeSuppressions: number;
+      falsePositiveRate: null | number;
+      mttaHours: null | number;
+      mttrHours: null | number;
+      total: number;
+    };
+    trend: AlertTrendPoint[];
+    statusDistribution: AlertDistItem[];
+    severityDistribution: AlertDistItem[];
+    topRules: AlertTopRule[];
+    topLoops: AlertTopLoop[];
+  }
 }
 
 export function getReportOverviewApi(
@@ -213,6 +307,62 @@ export function getReportBenefitApi(params: ReportsApi.ReportQuery) {
   return requestClient.get<ReportsApi.BenefitData>('/reports/benefit', {
     params,
   });
+}
+
+// ---------- R1 自持端点（报告模块优化 P0-3/P0-4，2026-08-28） ----------
+
+/** 处置报告统计（直读 handling_order/loop_action_item，模块禁用不受影响） */
+export function getReportHandlingStatisticsApi(
+  params: ReportsApi.ReportQuery & { months?: number },
+) {
+  return requestClient.get<HandlingApi.StatisticsData>(
+    '/reports/handling-statistics',
+    { params },
+  );
+}
+
+/** 诊断报告明细（直读 diagnosis_run，支持 plantNodeId 透传，修复 P-07） */
+export function getReportDiagnosisRunsApi(
+  params: ReportsApi.ReportQuery & {
+    category?: string;
+    page?: number;
+    pageSize?: number;
+    severity?: string;
+  },
+) {
+  return requestClient.get<PaginatedResponse<DiagnosisApi.RunListItem>>(
+    '/reports/diagnosis-runs',
+    { params },
+  );
+}
+
+/** 诊断报告明细 CSV 导出（≤5000 行，D4 上限） */
+export function exportReportDiagnosisRunsApi(
+  params: ReportsApi.ReportQuery & { category?: string; severity?: string },
+) {
+  return requestClient.get<string>('/reports/diagnosis-runs/export', {
+    params,
+    responseType: 'blob',
+  });
+}
+
+// ---------- 基座补域（报告模块优化 P1，2026-08-28） ----------
+
+/** 数据质量报告聚合（基础模块数据，模块禁用不受影响） */
+export function getReportDataQualityApi(params: ReportsApi.ReportQuery) {
+  return requestClient.get<ReportsApi.DataQualityData>('/reports/data-quality', {
+    params,
+  });
+}
+
+/** 预警统计报告聚合（基础模块数据，模块禁用不受影响） */
+export function getReportAlertStatisticsApi(
+  params: ReportsApi.ReportQuery & { severity?: string; status?: string },
+) {
+  return requestClient.get<ReportsApi.AlertStatisticsData>(
+    '/reports/alert-statistics',
+    { params },
+  );
 }
 
 // ---------- P3：阶段锁定 ----------

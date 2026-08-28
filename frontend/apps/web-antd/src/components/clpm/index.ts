@@ -18,6 +18,7 @@ export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export type { KpiStripItem } from './kpi-strip.vue';
 export { default as ClpmLoopLink } from './loop-link.vue';
+export { default as ClpmModuleArchivedBanner } from './module-archived-banner.vue';
 export { default as ClpmNumeric } from './numeric.vue';
 export { default as ClpmObjectSummaryBar } from './object-summary-bar.vue';
 export type { SummaryAction, SummaryItem } from './object-summary-bar.vue';

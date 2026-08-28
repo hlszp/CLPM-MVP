@@ -8,10 +8,14 @@
  *   - 置信度分布（柱图）
  *   - 分类趋势（近 30 天折线：总数 vs 高严重度）
  *   - TOP 异常回路表
- * 下半部分：诊断记录列表（复用 /diagnosis/runs），支持导出 CSV。
+ * 下半部分：诊断记录列表（R1 自持：/reports/diagnosis-runs，支持装置下钻
+ * plantNodeId 透传，修复报告页明细装置筛选失效 P-07），支持导出 CSV。
  * 统计数据来自 GET /reports/diagnosis-statistics（基于 DiagnosisRun 表）。
+ * 诊断模块停用时本页照常可用（历史归档口径，灰色横幅提示）。
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
+
+import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { nextTick, onMounted, ref, watch } from 'vue';
 
@@ -27,18 +31,16 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import {
-  type DiagnosisApi,
-  exportDiagnosisRunsApi,
-  getDiagnosisRunsApi,
-} from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
+  exportReportDiagnosisRunsApi,
+  getReportDiagnosisRunsApi,
   getReportDiagnosisStatisticsApi,
   type ReportsApi,
 } from '#/api/reports';
 import {
   ClpmDataCanvas,
+  ClpmModuleArchivedBanner,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
@@ -132,11 +134,13 @@ async function loadStats() {
 async function loadRecords() {
   const [start, end] = dateRange.value ?? [];
   try {
-    const res = await getDiagnosisRunsApi({
+    // R1 自持端点（P0-7）：plantNodeId 透传，修复装置筛选对明细不生效（P-07）
+    const res = await getReportDiagnosisRunsApi({
       page: page.value,
       pageSize: pageSize.value,
-      startTime: start?.startOf('day').toISOString(),
-      endTime: end?.endOf('day').toISOString(),
+      startDate: start?.format('YYYY-MM-DD'),
+      endDate: end?.format('YYYY-MM-DD'),
+      plantNodeId: plantNodeId.value,
     });
     records.value = res.items;
     total.value = res.total;
@@ -160,9 +164,11 @@ async function handleExport() {
   exporting.value = true;
   try {
     const [start, end] = dateRange.value ?? [];
-    const blob = await exportDiagnosisRunsApi({
-      startTime: start?.startOf('day').toISOString(),
-      endTime: end?.endOf('day').toISOString(),
+    // R1 自持导出（P0-7）：筛选口径与明细列表一致（含装置下钻）
+    const blob = await exportReportDiagnosisRunsApi({
+      startDate: start?.format('YYYY-MM-DD'),
+      endDate: end?.format('YYYY-MM-DD'),
+      plantNodeId: plantNodeId.value,
     });
     const url = URL.createObjectURL(
       new Blob([blob as unknown as BlobPart], {
@@ -324,7 +330,8 @@ function handleHelp() {
           <li>TOP 异常回路：诊断出现次数最多 / 严重度最高的回路</li>
         </ul>
       </p>
-      <p><b>下半区</b>：诊断记录明细，可按时间窗导出 CSV。统计基于 DiagnosisRun 表。</p>
+      <p><b>下半区</b>：诊断记录明细，时间/装置/分类筛选联动，可导出 CSV（上限 5000 行）。统计基于 DiagnosisRun 表。</p>
+      <p><b>模块停用</b>：诊断模块停用时本页照常可用，展示历史数据归档，查询与导出不受影响。</p>
     `,
   });
 }
@@ -372,6 +379,9 @@ onMounted(() => {
         />
       </template>
     </ClpmPageToolbar>
+
+    <!-- P0-5：诊断模块停用时灰色归档横幅（历史数据可查询导出） -->
+    <ClpmModuleArchivedBanner :modules="['diagnosis']" />
 
     <!-- 统一筛选条 -->
     <div class="reports-filter-bar">
