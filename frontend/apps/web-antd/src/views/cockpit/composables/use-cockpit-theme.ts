@@ -55,6 +55,8 @@ export const GRADE_ORDER: GradeName[] = [
 
 /** ECharts 图表通用色（对齐 theme.css 文本/边框变量） */
 const DARK_CHART = {
+  panel: '#13203a',
+  radar: '#60a5fa',
   splitLine: 'rgba(148, 176, 220, 0.16)',
   text: '#93a7c4',
   textStrong: '#e8effa',
@@ -62,11 +64,16 @@ const DARK_CHART = {
 } as const;
 
 const LIGHT_CHART = {
+  panel: '#ffffff',
+  radar: '#1d4ed8',
   splitLine: '#e3e8f0',
   text: '#5a6b80',
   textStrong: '#1c2b3a',
   track: '#eef2f8',
 } as const;
+
+/** getComputedStyle 解析失败时的中性兜底色（= --ck-text-2 深色值） */
+export const CHART_COLOR_FALLBACK = '#93a7c4';
 
 /** 预警级别色（CRITICAL/ERROR 红系、WARN 琥珀、INFO 蓝，深/浅两组） */
 const DARK_SEVERITY = {

@@ -327,7 +327,7 @@ onUnmounted(() => {
 
 .ck-winpill.active {
   font-weight: 600;
-  color: #fff;
+  color: var(--ck-on-accent);
   background: var(--ck-accent);
 }
 
@@ -398,10 +398,10 @@ onUnmounted(() => {
   padding: 0 18px;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: var(--ck-on-accent);
   letter-spacing: 0.5px;
   cursor: pointer;
-  background: linear-gradient(135deg, var(--ck-accent), #2563eb);
+  background: linear-gradient(135deg, var(--ck-accent), var(--ck-accent-2));
   border: 1px solid var(--ck-border-2);
   border-radius: 8px;
 }

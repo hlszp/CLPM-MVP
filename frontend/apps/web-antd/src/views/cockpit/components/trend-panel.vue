@@ -64,7 +64,7 @@ function buildOption() {
   const cc = chartColors.value;
   if (!t || t.timestamps.length === 0) return {};
   const xData = t.timestamps.map((ts) => fmtTick(ts));
-  const scoreColor = isLight.value ? '#2563eb' : '#60a5fa';
+  const scoreColor = gradeColors.value.GOOD;
   const autoColor = gradeColors.value.EXCELLENT;
   return {
     animation: false,
@@ -98,7 +98,7 @@ function buildOption() {
     ],
     textStyle: { color: cc.textStrong },
     tooltip: {
-      backgroundColor: isLight.value ? '#ffffff' : '#13203a',
+      backgroundColor: cc.panel,
       borderColor: cc.splitLine,
       borderWidth: 1,
       textStyle: { color: cc.textStrong, fontSize: 12 },

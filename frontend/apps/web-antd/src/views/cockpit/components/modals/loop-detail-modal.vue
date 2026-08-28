@@ -168,8 +168,8 @@ function buildTrendOption() {
   const t = monitor.value?.trend;
   const cc = chartColors.value;
   if (!t || t.timestamps.length === 0) return {};
-  const pvColor = isLight.value ? '#2563eb' : '#60a5fa';
-  const spColor = isLight.value ? '#b45309' : '#f5a623';
+  const pvColor = gradeColors.value.GOOD;
+  const spColor = gradeColors.value.FAIR;
   const opColor = gradeColors.value.EXCELLENT;
   const line = (
     name: string,
@@ -201,7 +201,7 @@ function buildTrendOption() {
     ],
     textStyle: { color: cc.textStrong },
     tooltip: {
-      backgroundColor: isLight.value ? '#ffffff' : '#13203a',
+      backgroundColor: cc.panel,
       borderColor: cc.splitLine,
       borderWidth: 1,
       textStyle: { color: cc.textStrong, fontSize: 12 },
@@ -247,7 +247,7 @@ function axisValue(key: (typeof AXIS_META)[number]['key']): number {
 
 function buildRadarOption() {
   const cc = chartColors.value;
-  const poly = isLight.value ? '#1d4ed8' : '#60a5fa';
+  const poly = cc.radar;
   const scoreText =
     score.value === null ? '—' : Number(score.value).toFixed(1);
   return {

@@ -163,18 +163,18 @@ function rankClass(rank: number): string {
 }
 
 .rank__badge.gold {
-  color: #7c5a00;
-  background: #ffd75e;
+  color: var(--ck-medal-gold-text);
+  background: var(--ck-medal-gold);
 }
 
 .rank__badge.silver {
-  color: #4b5563;
-  background: #d7dee8;
+  color: var(--ck-medal-silver-text);
+  background: var(--ck-medal-silver);
 }
 
 .rank__badge.bronze {
-  color: #6b3f1d;
-  background: #e0a56f;
+  color: var(--ck-medal-bronze-text);
+  background: var(--ck-medal-bronze);
 }
 
 .rank__meta {

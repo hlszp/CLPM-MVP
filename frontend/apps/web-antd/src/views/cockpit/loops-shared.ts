@@ -12,6 +12,8 @@ import type { LoopApi } from '#/api/loop';
 import type { MetricApi } from '#/api/metric';
 import type { CockpitModeKey } from '#/store/cockpit';
 
+import { CHART_COLOR_FALLBACK } from './composables/use-cockpit-theme';
+
 // ---------------------------------------------------------------------------
 // 五档等级
 // ---------------------------------------------------------------------------
@@ -281,7 +283,7 @@ export function readCockpitColors(el?: HTMLElement | null): CockpitChartColors {
   const out = {} as CockpitChartColors;
   for (const [key, varName] of Object.entries(CHART_VAR_MAP)) {
     out[key as keyof CockpitChartColors] =
-      styles?.getPropertyValue(varName).trim() || '#93a7c4';
+      styles?.getPropertyValue(varName).trim() || CHART_COLOR_FALLBACK;
   }
   return out;
 }
@@ -290,7 +292,7 @@ export function readCockpitColors(el?: HTMLElement | null): CockpitChartColors {
 export function resolveCssVar(
   el: HTMLElement | null | undefined,
   varName: string,
-  fallback = '#93a7c4',
+  fallback = CHART_COLOR_FALLBACK,
 ): string {
   const root = el?.closest('.cockpit-root') ?? document.querySelector('.cockpit-root');
   if (!root) return fallback;

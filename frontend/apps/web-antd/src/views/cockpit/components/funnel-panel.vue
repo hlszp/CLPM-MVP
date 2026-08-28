@@ -187,7 +187,7 @@ const backlogTotal = computed(
   min-width: 46%;
   max-height: 44px;
   padding: 0 14px;
-  color: #fff;
+  color: var(--ck-on-accent);
   cursor: pointer;
   border-radius: 7px;
   transition: filter 0.15s;
@@ -198,19 +198,35 @@ const backlogTotal = computed(
 }
 
 .funnel__stage.lv-0 {
-  background: linear-gradient(90deg, #1d4ed8, #2563eb);
+  background: linear-gradient(
+    90deg,
+    var(--ck-funnel-1-from),
+    var(--ck-funnel-1-to)
+  );
 }
 
 .funnel__stage.lv-1 {
-  background: linear-gradient(90deg, #0369a1, #0ea5e9);
+  background: linear-gradient(
+    90deg,
+    var(--ck-funnel-2-from),
+    var(--ck-funnel-2-to)
+  );
 }
 
 .funnel__stage.lv-2 {
-  background: linear-gradient(90deg, #0f766e, #14b8a6);
+  background: linear-gradient(
+    90deg,
+    var(--ck-funnel-3-from),
+    var(--ck-funnel-3-to)
+  );
 }
 
 .funnel__stage.lv-3 {
-  background: linear-gradient(90deg, #15803d, #22c55e);
+  background: linear-gradient(
+    90deg,
+    var(--ck-funnel-4-from),
+    var(--ck-funnel-4-to)
+  );
 }
 
 .funnel__stage-label {
