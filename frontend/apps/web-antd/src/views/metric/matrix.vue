@@ -1132,20 +1132,20 @@ onMounted(() => {
 <style scoped>
 .matrix-header {
   display: flex;
+  gap: 4px;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
 }
 
 .matrix-header-actions {
   display: inline-flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
 }
 
 .matrix-header-icon {
-  cursor: pointer;
   font-size: 13px;
+  cursor: pointer;
   opacity: 0.45;
   transition: opacity 0.15s;
 }
@@ -1159,35 +1159,35 @@ onMounted(() => {
 }
 
 .matrix-cell {
-  border-radius: 3px;
-  cursor: pointer;
+  padding: 0 6px;
   font-variant-numeric: tabular-nums;
   line-height: 22px;
-  padding: 0 6px;
   text-align: right;
+  cursor: pointer;
+  border-radius: 3px;
 }
 
 .matrix-legend {
-  align-items: center;
-  color: var(--ant-color-text-tertiary);
   display: flex;
   flex-wrap: wrap;
-  font-size: 12px;
   gap: 12px;
+  align-items: center;
   padding: 8px 4px 0;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
 }
 
 .matrix-legend-item {
-  align-items: center;
   display: inline-flex;
   gap: 4px;
+  align-items: center;
 }
 
 .matrix-legend-item i {
-  border-radius: 2px;
   display: inline-block;
-  height: 12px;
   width: 12px;
+  height: 12px;
+  border-radius: 2px;
 }
 
 .matrix-legend-note {
