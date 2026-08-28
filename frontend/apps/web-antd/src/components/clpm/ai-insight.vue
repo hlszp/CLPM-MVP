@@ -24,7 +24,6 @@
 import type { AiInsightApi } from '#/api/ai-insight';
 
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
@@ -65,8 +64,6 @@ interface Props {
   /** LLM 未启用时是否整体隐藏：true=隐藏（默认），false=显示"需启用"提示 */
   hideWhenDisabled?: boolean;
 }
-
-const router = useRouter();
 
 /** 场景元信息（标题 / 图标 / 提示 / 空状态文案） */
 const SCENE_META: Record<
@@ -258,11 +255,6 @@ async function loadLlmStatus() {
   }
 }
 
-/** 跳转 LLM 配置页 */
-function goLlmConfig() {
-  router.push('/system/llm-config');
-}
-
 onMounted(() => {
   loadLlmStatus().then(() => {
     if (llmEnabled.value && props.autoLoad) {
@@ -290,11 +282,8 @@ onMounted(() => {
       <div class="clpm-ai-insight__hint">
         <IconifyIcon icon="ant-design:lock-outlined" :size="22" />
         <div class="mt-2 text-sm">
-          AI 洞察需在
-          <Button type="link" size="small" class="px-1" @click="goLlmConfig">
-            系统管理 — LLM 配置
-          </Button>
-          中启用 LLM 服务后可用
+          AI 洞察需管理员在系统管理「LLM 配置」中启用 LLM 服务后可用
+          <!-- LLM 配置页已随 MVP 精简屏蔽（system.ts），不再提供跳转入口 -->
         </div>
       </div>
     </div>
