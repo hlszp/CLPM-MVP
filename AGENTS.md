@@ -10,8 +10,9 @@
 - **纪律**：**不删除诊断/整定专属前后端文件**；构建闭环而非屏蔽闭环
 - **端口**：后端 API **17101**、前端 **15666**、mock 数据服务 **17106**（原端口 +10000 隔离）；开发容器 `clpm-mvp-*`；生产 compose 仍为原项目口径（隔离改造未执行）
 - **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
-- **CI**：GitHub Actions 已启用且通过（Backend：ruff/format/pytest+coverage；Frontend：eslint apps/web-antd/typecheck/build/E2E）。注意 `@vben/web-antd` 包无 lint 脚本，Lint 用 `pnpm exec eslint apps/web-antd --cache`
-- **已知残留**：存在已知残留（部分聚合 service stub 化等），详见 `docs/MVP设计/README.md` §已知残留；是否恢复 monitor_attention 的 TRACKER/VERIFICATION 来源待人工决策；诊断双引擎分裂已收口（2026-08-27，14 号文 A1~A4 全落地：工作台 A-03/总览统计迁 `diagnosis_run`，旧引擎唯一活跃写入口 `/algorithms/diagnosis/analyze` 已解除注册退役，旧读方全部为死代码链登记不删，`diagnosis_tag`/`diagnosis_result` 表按 D4=a 保留归档）
+- **CI**：GitHub Actions 已启用且通过（Backend：ruff/format/pytest+coverage；Frontend：eslint apps/web-antd/**vitest 全量**/typecheck/build/E2E）。注意 `@vben/web-antd` 包无 lint 脚本，Lint 用 `pnpm exec eslint apps/web-antd --cache`；前端单测本地跑 `cd frontend && pnpm run test:unit`（workspace 全量，2026-08-28 起为 CI 阻塞门禁）
+- **已知残留**：存在已知残留（部分聚合 service stub 化等），详见 `docs/MVP设计/README.md` §已知残留；monitor_attention 的 TRACKER/VERIFICATION 来源**已收口**（2026-08-28：HANDLING 来源功能性替代，不再按原样恢复）；诊断双引擎分裂已收口（2026-08-27，14 号文 A1~A4 全落地：工作台 A-03/总览统计迁 `diagnosis_run`，旧引擎唯一活跃写入口 `/algorithms/diagnosis/analyze` 已解除注册退役，旧读方全部为死代码链登记不删，`diagnosis_tag`/`diagnosis_result` 表按 D4=a 保留归档）
+- **版本锁定**：当前 **v7.0.0**（2026-08-28 部署前锁定，annotated tag）；已知残留/冗余代码登记/技术基线见根 `CHANGELOG.md`；冗余代码保留待下周期集中清理
 - **CLPM-engine/ 目录**：已加入 .gitignore，独立管理不入库
 
 ## 历史基线（v6.2 归档，按需读取）
