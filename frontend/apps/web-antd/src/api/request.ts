@@ -143,6 +143,10 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   // - 业务错误：优先展示后端返回的 message
   client.addResponseInterceptor(
     errorMessageResponseInterceptor((msg: string, error) => {
+      // 请求级静默标记：预期失败场景（如 F2 验证对比能力探测 404）由调用方自行处理，不弹全局提示
+      if ((error as any)?.config?.skipErrorMessage === true) {
+        return;
+      }
       const responseData = error?.response?.data ?? {};
       const status = error?.response?.status;
       const bizMessage = responseData?.message ?? '';

@@ -301,6 +301,113 @@ export namespace DiagnosisApi {
     startTime?: string;
     endTime?: string;
   }
+
+  // ===== 16 号文 F1/F2（诊断扩展 Phase A：回路档案 + 复诊对比） =====
+
+  /** F1 档案时间窗（'all' 后端截断到 90d，前端提示） */
+  export type ArchiveWindow = '30d' | '90d' | 'all';
+
+  /** F1 档案 run 摘要行（升序，旧→新） */
+  export interface ArchiveRunItem {
+    runId: string;
+    diagnosedAt: string;
+    primaryCategory: Category | null;
+    secondaryCategories: CategoryJudgement[];
+    severity: null | Severity;
+    confidence: null | number;
+    triggerType: null | TriggerType;
+    status: RunStatus;
+    reviewStatus: null | ReviewStatus;
+  }
+
+  /** F1 关联干预事件（处置/整定；模块禁用时后端跳过查询段并置 enabled=false） */
+  export interface ArchiveEventItem {
+    type: 'handling' | 'tuning';
+    subtype?: null | string;
+    at: string;
+    title: string;
+    refId?: null | string;
+  }
+
+  /** F1 回路诊断档案聚合响应（GET /runs/loop-archive） */
+  export interface LoopArchive {
+    loop: {
+      loopId: string;
+      loopName: string;
+      loopType: null | string;
+      /** 回路等级（1 关键 / 2 重要 / 3 一般） */
+      level: null | number;
+    };
+    summary: {
+      totalRuns: number;
+      firstDiagnosedAt: null | string;
+      lastDiagnosedAt: null | string;
+      latestCategory: Category | null;
+      latestConfidence: null | number;
+    };
+    runs: ArchiveRunItem[];
+    /** KPI 趋势（kpi_snapshot_hourly，LTTB）；评估模块禁用/无快照时 available=false */
+    kpiTrend: {
+      available: boolean;
+      series: {
+        score: Array<{ t: string; v: null | number }>;
+        oscillationRate: Array<{ t: string; v: null | number }>;
+      };
+    };
+    /** 事件图层能力（禁用模块对应图层前端隐藏而非置灰） */
+    events: {
+      handlingEnabled: boolean;
+      tuningEnabled: boolean;
+      items: ArchiveEventItem[];
+    };
+  }
+
+  /** F2 对比模式：adjacent=与上一条 SUCCESS run（纯诊断域恒可用）/ verify=处置工单关联前后 */
+  export type CompareMode = 'adjacent' | 'verify';
+
+  /** F2 对比单侧 run 概要 */
+  export interface CompareRunRef {
+    runId: string;
+    diagnosedAt: string;
+    primaryCategory: Category | null;
+    severity: null | Severity;
+    confidence: null | number;
+    windowStart: null | string;
+    windowEnd: null | string;
+  }
+
+  /** F2 对比响应（base=基准/处置前，target=对比/处置后；base=null 表示无前序） */
+  export interface CompareResult {
+    mode: CompareMode;
+    base: CompareRunRef | null;
+    target: CompareRunRef;
+    conclusion: {
+      primaryCategory: { base: Category | null; target: Category | null };
+      severity: { base: null | Severity; target: null | Severity };
+      confidence: {
+        base: null | number;
+        target: null | number;
+        delta: null | number;
+      };
+    };
+    features: Array<{
+      operator: string;
+      feature: string;
+      baseValue: null | number;
+      targetValue: null | number;
+      delta: null | number;
+      direction: null | string;
+    }>;
+    kpi: Array<{
+      metric: string;
+      base: null | number;
+      target: null | number;
+      delta: null | number;
+      direction: null | string;
+    }>;
+    /** 验证对比能力（处置启用且存在 verify_run_id 关联时 true；前端据此显隐该模式） */
+    verifyPair: boolean;
+  }
 }
 
 /**
@@ -407,6 +514,43 @@ export function deleteRunActionApi(actionId: string) {
  */
 export function getDiagnosisOperatorsApi() {
   return requestClient.get<DiagnosisApi.OperatorInfo[]>('/diagnosis/operators');
+}
+
+// ---------------------------------------------------------------------------
+// 16 号文 F1/F2（诊断扩展 Phase A）：回路诊断档案 + 复诊对比
+// 设计文档：docs/MVP设计/16-诊断模块功能扩展方案.md §5.1
+// ---------------------------------------------------------------------------
+
+/**
+ * F1 回路诊断档案聚合（run 时间轴 + KPI 趋势 + 处置/整定关联事件）
+ *
+ * @param window 时间窗（'all' 后端截断到 90d，UI 需提示）
+ */
+export function getLoopArchiveApi(
+  loopId: string,
+  window: DiagnosisApi.ArchiveWindow = '90d',
+) {
+  return requestClient.get<DiagnosisApi.LoopArchive>(
+    '/diagnosis/runs/loop-archive',
+    { params: { loopId, window } },
+  );
+}
+
+/**
+ * F2 复诊对比（结论/特征值/KPI 结构化对照，后端组装 delta）
+ *
+ * @param mode adjacent=与上一条 SUCCESS run；verify=处置工单关联前后（404=能力不可用）
+ * @param config 附加请求 config（能力探测场景传 { skipErrorMessage: true } 静默 404）
+ */
+export function getDiagnosisCompareApi(
+  runId: string,
+  mode: DiagnosisApi.CompareMode,
+  config?: Record<string, any>,
+) {
+  return requestClient.get<DiagnosisApi.CompareResult>(
+    `/diagnosis/runs/${runId}/compare`,
+    { params: { mode }, ...config },
+  );
 }
 
 // ---------------------------------------------------------------------------

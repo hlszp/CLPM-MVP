@@ -45,7 +45,8 @@ import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
-import DiagnosisHistoryDrawer from './components/history-drawer.vue';
+// 16 号文 F1：概览"历史"入口升级为回路诊断档案抽屉（history-drawer 列表逻辑已迁移入内，文件保留不删）
+import DiagnosisLoopArchiveDrawer from './components/loop-archive-drawer.vue';
 import DiagnosisReviewDrawer from './components/review-drawer.vue';
 import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 import {
@@ -582,6 +583,18 @@ function openReview(record: DiagnosisApi.LatestRunItem): void {
 function openHistory(record: DiagnosisApi.LatestRunItem): void {
   historyItem.value = record;
   historyOpen.value = true;
+}
+
+/** 档案抽屉：run 色块/列表行点击 → 复用诊断详情弹窗打开该次 run（16 号文 F1） */
+function openArchiveRun(item: DiagnosisApi.LatestRunItem): void {
+  detailItem.value = item;
+  detailModalOpen.value = true;
+}
+
+/** 档案抽屉空态引导 → 关闭抽屉并发起该回路诊断（复用快捷诊断链路） */
+function onArchiveTriggerDiagnosis(loopId: string): void {
+  historyOpen.value = false;
+  quickDiagnose(loopId);
 }
 
 /** 复核完成 → 刷新概览（复核状态/结论即时回显） */
@@ -1252,10 +1265,12 @@ onMounted(() => {
       :item="reviewItem"
       @done="onReviewDone"
     />
-    <DiagnosisHistoryDrawer
+    <DiagnosisLoopArchiveDrawer
       v-model:open="historyOpen"
       :loop-id="historyItem?.loopId ?? null"
       :loop-tag-name="historyItem?.loopTagName"
+      @open-run="openArchiveRun"
+      @trigger-diagnosis="onArchiveTriggerDiagnosis"
     />
     <DiagnosisDetailModal
       v-model:open="detailModalOpen"

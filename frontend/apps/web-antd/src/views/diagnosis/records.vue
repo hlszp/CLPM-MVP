@@ -3,17 +3,19 @@
  * 诊断记录 —— 历史列表 + 筛选 + 导出 + 抽屉详情。
  *
  * 设计文档：docs/MVP设计/07-诊断模块设计方案.md §9.2
+ * 16 号文 F1 入口 2：详情抽屉头部"诊断档案"按钮 → 回路诊断档案抽屉。
  */
 import type { Dayjs } from 'dayjs';
 
 import type { DiagnosisApi } from '#/api/diagnosis';
 
 import { onMounted, reactive, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Button,
   Card,
   DatePicker,
   Drawer,
@@ -33,6 +35,8 @@ import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
+// 16 号文 F1 入口 2：详情抽屉头部"诊断档案"按钮 → 回路诊断档案抽屉
+import DiagnosisLoopArchiveDrawer from './components/loop-archive-drawer.vue';
 import {
   CATEGORY_META,
   CATEGORY_OPTIONS,
@@ -97,8 +101,11 @@ function handleTableChange(pag: { current?: number; pageSize?: number }) {
 const drawerOpen = ref(false);
 const detail = ref<DiagnosisApi.RunDetail | null>(null);
 const detailLoading = ref(false);
+/** 当前行（详情抽屉 + 档案入口取 loopId/loopTagName） */
+const currentRow = ref<DiagnosisApi.RunListItem | null>(null);
 
 async function openDetail(record: DiagnosisApi.RunListItem) {
+  currentRow.value = record;
   drawerOpen.value = true;
   detailLoading.value = true;
   detail.value = null;
@@ -107,6 +114,41 @@ async function openDetail(record: DiagnosisApi.RunListItem) {
   } finally {
     detailLoading.value = false;
   }
+}
+
+// ---- 诊断档案抽屉（16 号文 F1 入口 2：详情抽屉头部按钮） ----
+const archiveOpen = ref(false);
+const archiveLoopId = ref<null | string>(null);
+const archiveLoopTagName = ref<null | string | undefined>(undefined);
+const router = useRouter();
+
+function openArchive() {
+  const row = currentRow.value;
+  if (!row?.loopId) return;
+  archiveLoopId.value = row.loopId;
+  archiveLoopTagName.value = row.loopTagName ?? undefined;
+  archiveOpen.value = true;
+}
+
+/**
+ * 档案内 run 点击 → 刷新 focus 深链参数并直接打开该次详情
+ * （等价跳转 /diagnosis/records?loopId=&focus={runId} 的页内降级）
+ */
+function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
+  archiveOpen.value = false;
+  if (item.runId) {
+    router.replace({
+      query: { ...route.query, loopId: item.loopId, focus: item.runId },
+    });
+    openDetail({ id: item.runId } as DiagnosisApi.RunListItem);
+  }
+}
+
+/** 档案空态引导发起诊断 → 无快捷诊断上下文，跳诊断工作台并预选该回路 */
+function onArchiveTriggerDiagnosis(loopId: string) {
+  archiveOpen.value = false;
+  drawerOpen.value = false;
+  router.push({ path: '/diagnosis/workbench', query: { loopId } });
 }
 
 // ---- 导出 ----
@@ -410,6 +452,16 @@ onMounted(() => {
       width="720"
       :destroy-on-close="true"
     >
+      <!-- 16 号文 F1 入口 2：头部工具区"诊断档案"（当前行回路） -->
+      <template #extra>
+        <Button
+          v-if="currentRow?.loopId"
+          size="small"
+          @click="openArchive"
+        >
+          诊断档案
+        </Button>
+      </template>
       <ClpmDataCanvas
         :empty="!detail"
         :loading="detailLoading"
@@ -418,5 +470,14 @@ onMounted(() => {
         <DiagnosisResultPanel v-if="detail" :detail="detail" />
       </ClpmDataCanvas>
     </Drawer>
+
+    <!-- 16 号文 F1：回路诊断档案抽屉（open-run 页内降级为刷新 focus 参数） -->
+    <DiagnosisLoopArchiveDrawer
+      v-model:open="archiveOpen"
+      :loop-id="archiveLoopId"
+      :loop-tag-name="archiveLoopTagName"
+      @open-run="onArchiveOpenRun"
+      @trigger-diagnosis="onArchiveTriggerDiagnosis"
+    />
   </Page>
 </template>
