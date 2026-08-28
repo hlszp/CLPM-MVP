@@ -14,21 +14,21 @@ import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
 
 /**
- * 角色默认首页（实现契约 §5 + UI/UX §4.2 三方对齐基准）
+ * 角色默认首页（实现契约 §5 + UI/UX §4.2 三方对齐基准 + 方案 11 §3.1）
  *
  * FP-P0-08：后端 auth.py ROLE_DEFAULT_HOME 已对齐本表，事实源统一。
  * 角色映射优先于后端 defaultHome 返回值（双保险），二者口径一致。
  *
+ * - 驾驶舱方案 §3.1（C2）：SPONSOR / IC_ENGINEER / PE_ENGINEER 默认落地 /cockpit
  * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis/records（诊断记录）
- * - SPONSOR：仅汇总视图 → /reports/overview（统计报告总览）
- * - 其余角色 → /dashboard
+ * - ADMIN：保持现行为 → /dashboard
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
   ADMIN: '/dashboard',
   EXPERT: '/diagnosis/records',
-  IC_ENGINEER: '/dashboard',
-  PE_ENGINEER: '/dashboard',
-  SPONSOR: '/reports/overview',
+  IC_ENGINEER: '/cockpit',
+  PE_ENGINEER: '/cockpit',
+  SPONSOR: '/cockpit',
 };
 
 /**

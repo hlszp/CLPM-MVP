@@ -1,0 +1,97 @@
+/**
+ * 驾驶舱局部主题变量（方案 11 §8）
+ *
+ * 作用域限定 .cockpit-root 容器，不污染 vben 全局主题；色值对齐
+ * 线框图 11-驾驶舱线框图.html，五档色语义对齐 use-score-color.ts
+ * （优秀绿 / 良好蓝 / 合格橙 / 警告红 / 不合格深红；深色主题用提亮变体）。
+ */
+
+.cockpit-root {
+  --ck-bg: #0a1220;
+  --ck-panel: #0f1a2e;
+  --ck-panel-2: #13203a;
+  --ck-panel-3: #182847;
+  --ck-border: rgb(148 176 220 / 16%);
+  --ck-border-2: rgb(148 176 220 / 26%);
+  --ck-text: #e8effa;
+  --ck-text-2: #93a7c4;
+  --ck-text-3: #5e7396;
+  --ck-accent: #38bdf8;
+  --ck-hover: rgb(96 165 250 / 8%);
+  --ck-shadow: 0 8px 32px rgb(0 0 0 / 45%);
+  --ck-grade-excellent: #34d399;
+  --ck-grade-good: #60a5fa;
+  --ck-grade-fair: #f5a623;
+  --ck-grade-warning: #f87171;
+  --ck-grade-poor: #ef4444;
+}
+
+.cockpit-root[data-theme='light'] {
+  --ck-bg: #f3f5f9;
+  --ck-panel: #fff;
+  --ck-panel-2: #f7f9fc;
+  --ck-panel-3: #eef2f8;
+  --ck-border: #e3e8f0;
+  --ck-border-2: #cbd5e4;
+  --ck-text: #1c2b3a;
+  --ck-text-2: #5a6b80;
+  --ck-text-3: #8c9aad;
+  --ck-accent: #0369a1;
+  --ck-hover: rgb(37 99 235 / 6%);
+  --ck-shadow: 0 8px 28px rgb(28 43 58 / 12%);
+  --ck-grade-excellent: #1a7f4b;
+  --ck-grade-good: #2563eb;
+  --ck-grade-fair: #b45309;
+  --ck-grade-warning: #c23434;
+  --ck-grade-poor: #a12222;
+}
+
+.cockpit-root {
+  display: flex;
+  flex-direction: column;
+  min-width: 1180px;
+  height: 100vh;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--ck-text);
+  background: var(--ck-bg);
+}
+
+/* 区块壳：面板 + 标题栏（页1/页2 共用） */
+.cockpit-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ck-panel);
+  border: 1px solid var(--ck-border);
+  border-radius: 10px;
+}
+
+.cockpit-panel__hd {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  height: 40px;
+  padding: 0 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--ck-border);
+}
+
+.cockpit-panel__hd .sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ck-text-3);
+}
+
+.cockpit-panel__bd {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--ck-text-3);
+}
