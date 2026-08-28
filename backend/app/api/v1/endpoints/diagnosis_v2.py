@@ -7,6 +7,8 @@
 - GET  /diagnosis/runs/{id}  诊断详情（算子结果+证据链+波形快照）
 - GET  /diagnosis/operators  算子注册表元数据（前端+AI 共用）
 - GET  /diagnosis/export     记录 CSV 导出
+- GET  /diagnosis/runs/loop-archive        回路诊断档案（16 号文 F1）
+- GET  /diagnosis/runs/{id}/compare        复诊对比（16 号文 F2）
 
 旧 endpoints/diagnosis.py 按 MVP 屏蔽策略保留不动（未注册）。
 """
@@ -35,6 +37,7 @@ from app.models.loop_action_item import LoopActionItem
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.task import TaskType
+from app.services import diagnosis_insights
 from app.services.diagnosis_operators import list_operators
 from app.services.diagnosis_operators.classification import get_confidence_definitions
 from app.services.diagnosis_system_actions import (
@@ -702,6 +705,36 @@ async def get_latest_runs_per_loop(
             }
         )
     return success({"items": items, "total": len(items)})
+
+
+@router.get("/runs/loop-archive", response_model=ApiResponse[dict])
+async def get_loop_archive(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    loopId: str = Query(..., description="回路 ID"),
+    window: str = Query("90d", description="时间窗 30d/90d/all（all 截断 90d）"),
+) -> dict:
+    """回路诊断档案（16 号文 F1）。
+
+    run 时间轴（窗口内升序）+ KPI 趋势（LTTB ≤2000 点）+
+    处置/整定事件（模块禁用时跳过查询，响应标记 handlingEnabled/tuningEnabled）。
+    """
+    return success(await diagnosis_insights.loop_archive(db, loopId, window))
+
+
+@router.get("/runs/{run_id}/compare", response_model=ApiResponse[dict])
+async def compare_diagnosis_runs(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    mode: str = Query("adjacent", description="adjacent 相邻对比 / verify 验证对比"),
+) -> dict:
+    """复诊对比（16 号文 F2，D3 双模式）。
+
+    - adjacent：与同回路该 run 之前最近一条 SUCCESS/PARTIAL run 对比（纯诊断域恒可用）
+    - verify：handling_order.verify_run_id 关联的处置前后 run 对（处置启用才查）
+    """
+    return success(await diagnosis_insights.compare_runs(db, run_id, mode))
 
 
 @router.get("/runs/{run_id}", response_model=ApiResponse[dict])
