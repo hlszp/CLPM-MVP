@@ -1751,6 +1751,16 @@ class TestStatisticsEndpoint:
         now_month = datetime.now(dt_timezone(timedelta(hours=8))).strftime("%Y-%m")
         if monthly_rows is None:
             monthly_rows = [MRow(now_month, 3, 4)]
+        # P2-1 闭环增强追加查询（SLA+verify 合一 / 建议漏斗 / 人员工作量 MV）
+        SlaRow = MagicMock()
+        SlaRow.sla_warn_count = 1
+        SlaRow.sla_breach_count = 0
+        SlaRow.sla_closed_total = 4
+        SlaRow.sla_on_time = 3
+        SlaRow.effective_count = 4
+        SlaRow.ineffective_count = 2
+        FRow = namedtuple("FRow", ["status", "cnt"])
+        WRow = namedtuple("WRow", ["user_name", "active_count", "closed_count", "sla_warned_count"])
         return [
             _one_result(summary),
             _one_result(reject),
@@ -1759,6 +1769,9 @@ class TestStatisticsEndpoint:
             _all_result([URow("一联合装置", 4)]),
             _all_result([TopRow]),
             _all_result(_plant_node_rows()),
+            _one_result(SlaRow),
+            _all_result([FRow("PENDING", 3), FRow("CONVERTED", 5)]),
+            _all_result([WRow("张三", 2, 4, 1)]),
         ]
 
     def test_statistics_full(self, client) -> None:

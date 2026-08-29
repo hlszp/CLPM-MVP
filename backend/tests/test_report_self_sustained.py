@@ -1,10 +1,15 @@
-"""报告自持端点测试（报告模块优化 P0-10，2026-08-28）。
+"""报告自持端点测试（报告模块优化 P0-10 / P2-5，2026-08）。
 
 覆盖 R1 自持链路（方案 §3.2，模块禁用组合下报告页完整可用）：
 - services/handling_stats.build_handling_statistics：聚合结构（默认月度口径 /
-  空数据归档态 / 时间窗+装置筛选下钻）；
+  空数据归档态 / 时间窗+装置筛选下钻）；P2-1 闭环增强字段（SLA 达成率 /
+  建议漏斗 / 整改有效率 / 人员工作量 MV 降级）；
+- services/report_stats.get_benefit：P2-3 整定执行区块（算法/状态分布 /
+  回滚率 / 加权平均拟合度 / 拟合度四桶 / 最近批次散点归一化）；
+- services/report_stats.get_benefit_orders：P2-4 逐工单前后对比明细；
 - GET /reports/handling-statistics：参数透传（months/startDate/endDate/plantNodeId）；
 - GET /reports/diagnosis-runs 分页明细 + /export CSV（≤5000 行，D4）；
+- GET /reports/benefit/orders：分页与筛选透传；
 - 结构性断言：自持端点不引用 is_module_enabled（可插拔门禁不穿透报告域）。
 
 实现方式：SQL 文本分发打桩，无需真实 PG（CI 单测即覆盖）。
@@ -22,6 +27,7 @@ from app.api.v1.endpoints import reports as rp
 from app.services import alert_stats as als
 from app.services import data_quality_stats as dqs
 from app.services import handling_stats as hs
+from app.services import report_stats as rs
 from tests.conftest import TEST_USERS, mock_current_user
 
 START = datetime(2026, 6, 1)
@@ -42,10 +48,16 @@ class _FakeResult:
     def one(self) -> Any:
         return self._one
 
+    def one_or_none(self) -> Any:
+        return self._one
+
     def all(self) -> list[Any]:
         return self._rows
 
     def scalar_one(self) -> Any:
+        return self._scalar_one
+
+    def scalar(self) -> Any:
         return self._scalar_one
 
 
@@ -64,6 +76,10 @@ def _make_stats_db(
     top_rows: list[Any] | None = None,
     plant_rows: list[Any] | None = None,
     subtree_rows: list[Any] | None = None,
+    sla_row: Any = None,
+    funnel_rows: list[Any] | None = None,
+    workload_rows: list[Any] | None = None,
+    mv_error: bool = False,
     captured: list[str] | None = None,
 ) -> AsyncMock:
     """按 SQL 文本特征分发预制查询结果（与聚合内部查询顺序无关）。"""
@@ -119,6 +135,44 @@ def _make_stats_db(
                         ho_reopened=2,
                         ho_ineffective=1,
                         last_closed_kpi_delta=5.5,
+                    )
+                ]
+            )
+        # --- P2-1 闭环增强查询 ---
+        if "sla_on_time" in sql:
+            return _FakeResult(
+                one_row=sla_row
+                or SimpleNamespace(
+                    sla_warn_count=1,
+                    sla_breach_count=2,
+                    sla_closed_total=4,
+                    sla_on_time=3,
+                    effective_count=5,
+                    ineffective_count=1,
+                )
+            )
+        if "GROUP BY su.status" in sql:
+            return _FakeResult(
+                rows=funnel_rows
+                if funnel_rows is not None
+                else [
+                    SimpleNamespace(status="PENDING", cnt=3),
+                    SimpleNamespace(status="CONVERTED", cnt=5),
+                    SimpleNamespace(status="REJECTED", cnt=2),
+                ]
+            )
+        if "FROM mv_staff_workload" in sql:
+            if mv_error:
+                raise RuntimeError("relation mv_staff_workload does not exist")
+            return _FakeResult(
+                rows=workload_rows
+                if workload_rows is not None
+                else [
+                    SimpleNamespace(
+                        user_name="张三",
+                        active_count=2,
+                        closed_count=4,
+                        sla_warned_count=1,
                     )
                 ]
             )
@@ -220,6 +274,96 @@ class TestBuildHandlingStatistics:
         assert any(":win_start" in sql and "closed_period" in sql for sql in captured)
         # 窗口逐月展开：2026-06 ~ 2026-08（3 桶）
         assert [m["month"] for m in data["monthly"]] == ["2026-06", "2026-07", "2026-08"]
+
+
+class TestHandlingStatsP2Enhanced:
+    """P2-1 闭环增强字段（方案 §5.1）：SLA / 建议漏斗 / 整改有效率 / 人员工作量。"""
+
+    async def test_p2_fields_structure(self) -> None:
+        """向后兼容增字段：sla/suggestionFunnel/verifyResult/staffWorkload 口径正确。"""
+        db = _make_stats_db()
+
+        data = await hs.build_handling_statistics(db, months=6)
+
+        sla = data["sla"]
+        assert sla["onTimeRate"] == 0.75  # 3/4 按时闭环
+        assert sla["onTimeClosed"] == 3
+        assert sla["slaClosedTotal"] == 4
+        assert sla["warnCount"] == 1
+        assert sla["breachCount"] == 2
+
+        funnel = {f["status"]: f for f in data["suggestionFunnel"]}
+        # 五态固定顺序全量返回，未出现的态补 0
+        assert [f["status"] for f in data["suggestionFunnel"]] == [
+            "PENDING",
+            "ACCEPTED",
+            "CONVERTED",
+            "REJECTED",
+            "IGNORED",
+        ]
+        assert funnel["PENDING"]["count"] == 3
+        assert funnel["CONVERTED"]["count"] == 5
+        assert funnel["REJECTED"]["count"] == 2
+        assert funnel["ACCEPTED"]["count"] == 0
+        assert funnel["PENDING"]["label"] == "待审核"
+
+        vr = data["verifyResult"]
+        assert vr["effective"] == 5
+        assert vr["ineffective"] == 1
+        assert vr["effectiveRate"] == round(5 / 6, 4)
+
+        assert data["staffWorkload"] == [
+            {"userName": "张三", "activeCount": 2, "closedCount": 4, "slaWarnedCount": 1}
+        ]
+
+    async def test_p2_empty_data_archived_state(self) -> None:
+        """空数据归档态：SLA/整改有效率为 null，漏斗补零，工作量空列表。"""
+        db = _make_stats_db(
+            sla_row=SimpleNamespace(
+                sla_warn_count=0,
+                sla_breach_count=0,
+                sla_closed_total=0,
+                sla_on_time=0,
+                effective_count=0,
+                ineffective_count=0,
+            ),
+            funnel_rows=[],
+            workload_rows=[],
+        )
+
+        data = await hs.build_handling_statistics(db, months=3)
+
+        assert data["sla"]["onTimeRate"] is None
+        assert data["sla"]["warnCount"] == 0
+        assert data["verifyResult"]["effectiveRate"] is None
+        assert all(f["count"] == 0 for f in data["suggestionFunnel"])
+        assert data["staffWorkload"] == []
+
+    async def test_p2_mv_unavailable_degrades_to_empty(self) -> None:
+        """mv_staff_workload 不可用（缺失/未刷新）时降级为空列表，不影响其余聚合。"""
+        db = _make_stats_db(mv_error=True)
+
+        data = await hs.build_handling_statistics(db, months=3)
+
+        assert data["staffWorkload"] == []
+        # 其余区块不受影响
+        assert data["sla"]["onTimeRate"] == 0.75
+        assert data["summary"]["closedThisMonth"] == 2
+
+    async def test_p2_filters_propagate_to_new_queries(self) -> None:
+        """时间窗+装置过滤下推到 SLA/漏斗聚合（人员工作量 MV 为全量口径除外）。"""
+        captured: list[str] = []
+        db = _make_stats_db(
+            subtree_rows=[SimpleNamespace(id="u1")],
+            captured=captured,
+        )
+
+        await hs.build_handling_statistics(db, months=6, start=START, end=END, plant_node_id="pn-1")
+
+        sla_sql = next(s for s in captured if "sla_on_time" in s)
+        assert ":win_start" in sla_sql and ":unit_ids" in sla_sql
+        funnel_sql = next(s for s in captured if "GROUP BY su.status" in s)
+        assert ":win_start" in funnel_sql and ":unit_ids" in funnel_sql
 
 
 # ---------------------------------------------------------------------------
@@ -768,20 +912,334 @@ class TestReportAlertStatisticsEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# 收益报告 P2-3 整定执行区块 + P2-4 逐工单明细（方案 §5.2/§5.3）
+# ---------------------------------------------------------------------------
+
+
+def _make_benefit_db(
+    *,
+    tuning_count: int = 3,
+    cmp_row: Any = None,
+    curve_rows: list[Any] | None = None,
+    bench_rows: list[Any] | None = None,
+    delta_rows: list[Any] | None = None,
+    unit_path_rows: list[Any] | None = None,
+    exec_rows: list[Any] | None = None,
+    fit_rows: list[Any] | None = None,
+    batch_row: Any = None,
+    tag_rows: list[Any] | None = None,
+    subtree_rows: list[Any] | None = None,
+    captured: list[tuple[str, Any]] | None = None,
+) -> AsyncMock:
+    """get_benefit 打桩：按 SQL 文本特征分发预制结果。"""
+
+    async def _execute(stmt: Any, _params: Any = None) -> _FakeResult:
+        sql = str(stmt)
+        if captured is not None:
+            captured.append((sql, _params))
+        if "WITH RECURSIVE node_tree" in sql:
+            return _FakeResult(rows=subtree_rows or [])
+        if "WHERE tr.status = 'COMPLETED'" in sql:
+            return _FakeResult(scalar_one=tuning_count)
+        if "before_score" in sql:
+            return _FakeResult(
+                one_row=cmp_row
+                or SimpleNamespace(
+                    before_score=70.0,
+                    after_score=82.0,
+                    before_auto=75.0,
+                    after_auto=88.0,
+                    before_good=95.0,
+                    after_good=97.0,
+                    before_osc=15.0,
+                    after_osc=8.0,
+                    closed_cnt=4,
+                )
+            )
+        if "date_trunc('month', k.ts_start)" in sql:
+            return _FakeResult(rows=curve_rows or [])
+        if "COUNT(DISTINCT ll.id)" in sql:
+            return _FakeResult(rows=bench_rows or [])
+        if "avg_delta" in sql:
+            return _FakeResult(rows=delta_rows or [])
+        # --- P2-3 整定执行区块 ---
+        if "GROUP BY tr.algorithm, tr.status" in sql:
+            return _FakeResult(
+                rows=exec_rows
+                if exec_rows is not None
+                else [
+                    SimpleNamespace(algorithm="IMC", status="COMPLETED", cnt=4, avg_fit=82.5),
+                    SimpleNamespace(algorithm="IMC", status="ROLLED_BACK", cnt=1, avg_fit=None),
+                    SimpleNamespace(algorithm="LAMBDA", status="COMPLETED", cnt=2, avg_fit=90.0),
+                ]
+            )
+        if "WHEN tr.fitting_score < 60" in sql:
+            return _FakeResult(
+                rows=fit_rows
+                if fit_rows is not None
+                else [
+                    SimpleNamespace(bucket="b60_75", cnt=2),
+                    SimpleNamespace(bucket="ge90", cnt=1),
+                ]
+            )
+        if "FROM tuning_batch" in sql:
+            return _FakeResult(one_row=batch_row)
+        if "SELECT id, tag_name FROM loop_ledger" in sql:
+            return _FakeResult(rows=tag_rows or [])
+        if "SELECT n.id AS id, n.name AS name, p.name AS parent_name" in sql:
+            return _FakeResult(rows=unit_path_rows or [])
+        raise AssertionError(f"未预期的 SQL: {sql[:120]}")
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+class TestGetBenefitP2TuningExecution:
+    async def test_tuning_execution_aggregation(self) -> None:
+        """算法/状态分布 + 回滚率 + 加权平均拟合度 + 拟合度四桶口径。"""
+        db = _make_benefit_db()
+
+        data = await rs.get_benefit(db, start_date=START, end_date=END, plant_node_id=None)
+
+        te = data["tuningExecution"]
+        assert te["totalRecords"] == 7
+        assert te["byAlgorithm"] == [
+            {"algorithm": "IMC", "count": 5},
+            {"algorithm": "LAMBDA", "count": 2},
+        ]
+        assert te["byStatus"] == [
+            {"status": "COMPLETED", "count": 6},
+            {"status": "ROLLED_BACK", "count": 1},
+        ]
+        assert te["rollbackRate"] == round(1 / 7, 4)
+        # 加权平均拟合度：(82.5*4 + 90.0*2) / 6 = 85.0
+        assert te["avgFittingScore"] == 85.0
+
+        assert data["fittingDistribution"] == [
+            {"bucket": "lt60", "label": "<60", "count": 0},
+            {"bucket": "b60_75", "label": "60~75", "count": 2},
+            {"bucket": "b75_90", "label": "75~90", "count": 0},
+            {"bucket": "ge90", "label": "≥90", "count": 1},
+        ]
+        # 无批次数据时 latestBatchScatter 为 None
+        assert data["latestBatchScatter"] is None
+
+    async def test_empty_window_records(self) -> None:
+        """窗口内零整定记录：回滚率/平均拟合度为 null，四桶补零，不误导为 0 率。"""
+        db = _make_benefit_db(exec_rows=[], fit_rows=[])
+
+        data = await rs.get_benefit(db, start_date=START, end_date=END, plant_node_id=None)
+
+        te = data["tuningExecution"]
+        assert te["totalRecords"] == 0
+        assert te["rollbackRate"] is None
+        assert te["avgFittingScore"] is None
+        assert all(b["count"] == 0 for b in data["fittingDistribution"])
+
+    async def test_latest_batch_scatter_normalization(self) -> None:
+        """最近批次散点：snake_case JSONB 归一化为 loopId/score + 位号补全。"""
+        batch_row = SimpleNamespace(
+            batch_no="TB-20260820-001",
+            title="常减压批次整定",
+            completed_at=datetime(2026, 8, 20, 10, 0),
+            scatters_before=[{"loop_id": "l1", "score": 62.34}, {"loop_id": "l2"}],
+            scatters_after=[{"loop_id": "l1", "score": 85.12}],
+        )
+        db = _make_benefit_db(
+            batch_row=batch_row,
+            tag_rows=[SimpleNamespace(id="l1", tag_name="TIC-101")],
+        )
+
+        data = await rs.get_benefit(db, start_date=None, end_date=None, plant_node_id=None)
+
+        bs = data["latestBatchScatter"]
+        assert bs["batchNo"] == "TB-20260820-001"
+        assert bs["completedAt"] == "2026-08-20T10:00:00"
+        # score 缺失的点保留（score=None 由前端配对时跳过），位号补全
+        assert bs["before"] == [
+            {"loopId": "l1", "score": 62.3, "loopTagName": "TIC-101"},
+            {"loopId": "l2", "score": None, "loopTagName": None},
+        ]
+        assert bs["after"] == [
+            {"loopId": "l1", "score": 85.1, "loopTagName": "TIC-101"},
+        ]
+
+    async def test_plant_filter_propagates_to_tuning_queries(self) -> None:
+        """装置下钻：整定执行/拟合度聚合带 :unit_ids 过滤（批次散点全局口径除外）。"""
+        captured: list[tuple[str, Any]] = []
+        db = _make_benefit_db(
+            subtree_rows=[SimpleNamespace(id="u1")],
+            captured=captured,
+        )
+
+        await rs.get_benefit(db, start_date=START, end_date=END, plant_node_id="pn-1")
+
+        exec_sql = next(s for s, _ in captured if "GROUP BY tr.algorithm, tr.status" in s)
+        assert ":unit_ids" in exec_sql and ":start" in exec_sql
+        fit_sql = next(s for s, _ in captured if "WHEN tr.fitting_score < 60" in s)
+        assert ":unit_ids" in fit_sql
+
+
+def _make_benefit_orders_db(
+    *,
+    total: int = 1,
+    rows: list[Any] | None = None,
+    subtree_rows: list[Any] | None = None,
+    captured: list[tuple[str, Any]] | None = None,
+) -> AsyncMock:
+    """get_benefit_orders 打桩。"""
+
+    async def _execute(stmt: Any, _params: Any = None) -> _FakeResult:
+        sql = str(stmt)
+        if captured is not None:
+            captured.append((sql, _params))
+        if "WITH RECURSIVE node_tree" in sql:
+            return _FakeResult(rows=subtree_rows or [])
+        if "SELECT COUNT(*)" in sql:
+            return _FakeResult(scalar_one=total)
+        if "ORDER BY ho.verified_at DESC" in sql:
+            return _FakeResult(
+                rows=rows
+                if rows is not None
+                else [
+                    SimpleNamespace(
+                        order_no="HD-20260820-001",
+                        loop_id="l1",
+                        loop_tag_name="TIC-101",
+                        action_type="TUNING",
+                        handler="张三",
+                        kpi_before={"score": 62.3, "oscillationRate": 15.0},
+                        kpi_after={"score": 85.1, "oscillationRate": 8.0},
+                        verify_result="EFFECTIVE",
+                        verified_at=datetime(2026, 8, 20, 12, 0),
+                    )
+                ]
+            )
+        raise AssertionError(f"未预期的 SQL: {sql[:120]}")
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+class TestGetBenefitOrders:
+    async def test_items_mapping_and_pagination(self) -> None:
+        """行结构（orderNo/回路/类型标签/kpi 前后快照/verify_result）+ 分页参数。"""
+        captured: list[tuple[str, Any]] = []
+        db = _make_benefit_orders_db(total=23, captured=captured)
+
+        data = await rs.get_benefit_orders(db, START, END, None, page=2, page_size=10)
+
+        assert data["total"] == 23
+        assert data["page"] == 2
+        assert data["pageSize"] == 10
+        item = data["items"][0]
+        assert item["orderNo"] == "HD-20260820-001"
+        assert item["loopTagName"] == "TIC-101"
+        assert item["actionTypeLabel"] == "参数整定"
+        assert item["kpiBefore"] == {"score": 62.3, "oscillationRate": 15.0}
+        assert item["verifyResult"] == "EFFECTIVE"
+        assert item["verifiedAt"] == "2026-08-20T12:00:00"
+        # 分页参数（OFFSET 半开）与 verified_at 归窗
+        list_params = next(p for s, p in captured if "ORDER BY ho.verified_at DESC" in s)
+        assert list_params["limit"] == 10
+        assert list_params["offset"] == 10
+        assert list_params["start"] == START
+        assert list_params["end"] == END
+
+    async def test_plant_filter_propagates(self) -> None:
+        """装置下钻：子树解析 + :unit_ids 过滤下推计数与明细查询。"""
+        captured: list[tuple[str, Any]] = []
+        db = _make_benefit_orders_db(
+            subtree_rows=[SimpleNamespace(id="u1")],
+            captured=captured,
+        )
+
+        await rs.get_benefit_orders(db, None, None, "pn-1", page=1, page_size=10)
+
+        assert any("WITH RECURSIVE node_tree" in s for s, _ in captured)
+        assert all(":unit_ids" in s for s, _ in captured if "FROM handling_order ho" in s)
+
+
+class TestReportBenefitOrdersEndpoint:
+    def test_params_passthrough(self, client, mock_db, monkeypatch) -> None:
+        """page/pageSize/startDate/endDate/plantNodeId 全量透传到 service。"""
+        captured: dict[str, Any] = {}
+
+        async def _fake_orders(db, start_date, end_date, plant_node_id, *, page, page_size):
+            captured.update(
+                start=start_date,
+                end=end_date,
+                plant_node_id=plant_node_id,
+                page=page,
+                page_size=page_size,
+            )
+            return {"items": [], "total": 0, "page": page, "pageSize": page_size}
+
+        monkeypatch.setattr(rp, "get_benefit_orders", _fake_orders)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/reports/benefit/orders",
+                params={
+                    "page": 3,
+                    "pageSize": 20,
+                    "startDate": "2026-07-01",
+                    "endDate": "2026-08-01",
+                    "plantNodeId": "pn-1",
+                },
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"
+        assert captured["page"] == 3
+        assert captured["page_size"] == 20
+        assert captured["start"] == datetime(2026, 7, 1)
+        assert captured["end"] == datetime(2026, 8, 2)
+        assert captured["plant_node_id"] == "pn-1"
+
+    def test_default_pagination(self, client, mock_db, monkeypatch) -> None:
+        """默认 page=1/pageSize=10；不传时间窗为 None（全量归档口径）。"""
+        captured: dict[str, Any] = {}
+
+        async def _fake_orders(db, start_date, end_date, plant_node_id, *, page, page_size):
+            captured.update(start=start_date, page=page, page_size=page_size)
+            return {"items": [], "total": 0, "page": page, "pageSize": page_size}
+
+        monkeypatch.setattr(rp, "get_benefit_orders", _fake_orders)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/reports/benefit/orders",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        assert resp.status_code == 200
+        assert captured == {"start": None, "page": 1, "page_size": 10}
+
+
+# ---------------------------------------------------------------------------
 # 结构性断言：可插拔门禁不穿透报告域（模块禁用组合下报告完整可用）
 # ---------------------------------------------------------------------------
 
 
 class TestModuleIndependenceStructure:
     def test_self_sustained_endpoints_do_not_check_module_gate(self) -> None:
-        """R1 自持端点源码不得引用 is_module_enabled（处置/诊断直读表）。"""
+        """R1 自持端点源码不得引用 is_module_enabled（处置/诊断/收益直读表）。"""
         for func in (
             rp.get_report_handling_statistics,
             rp.get_report_diagnosis_runs,
             rp.export_report_diagnosis_runs,
+            rp.get_report_benefit,
+            rp.get_report_benefit_orders,
         ):
             src = inspect.getsource(func)
             assert "is_module_enabled" not in src, f"{func.__name__} 穿透了模块门禁"
+
+    def test_benefit_stats_service_does_not_check_module_gate(self) -> None:
+        """收益聚合 service 同样不感知模块启停（P2-3/P2-4 含整定执行/逐单明细）。"""
+        src = inspect.getsource(rs)
+        assert "is_module_enabled" not in src
 
     def test_handling_stats_service_does_not_check_module_gate(self) -> None:
         """聚合 service 同样不感知模块启停（单一实现双端点共用）。"""

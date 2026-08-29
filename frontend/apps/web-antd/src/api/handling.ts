@@ -264,13 +264,51 @@ export namespace HandlingApi {
     lastClosedKpiDelta?: null | number;
   }
 
-  /** 统计页数据（GET /statistics） */
+  /** SLA 达成率（P2-1，§5.1；同窗同装置过滤的工单口径） */
+  export interface SlaStats {
+    /** 按时闭环率（按时闭环 / 有 SLA 期限的闭环单，无为 null） */
+    onTimeRate: null | number;
+    onTimeClosed: number;
+    slaClosedTotal: number;
+    warnCount: number;
+    breachCount: number;
+  }
+
+  /** 建议漏斗行（P2-1；五态流转量，suggested_at 归窗） */
+  export interface SuggestionFunnelItem {
+    status: SuggestionStatus;
+    label: string;
+    count: number;
+  }
+
+  /** 整改有效率（P2-1；verify_result 维度） */
+  export interface VerifyResultStats {
+    effective: number;
+    ineffective: number;
+    /** EFFECTIVE / 已验证（无验证记录为 null） */
+    effectiveRate: null | number;
+  }
+
+  /** 人员工作量行（P2-1；直读 mv_staff_workload，全量口径不随筛选） */
+  export interface StaffWorkloadItem {
+    userName: string;
+    activeCount: number;
+    closedCount: number;
+    slaWarnedCount: number;
+  }
+
+  /** 统计页数据（GET /statistics；P2-1 向后兼容增字段） */
   export interface StatisticsData {
     summary: StatisticsSummary;
     monthly: MonthlyTrendItem[];
     byType: TypeDistItem[];
     byUnit: UnitDistItem[];
     topLoops: TopLoopItem[];
+    /** P2-1 闭环增强（方案 §5.1，向后兼容可选字段） */
+    sla?: SlaStats;
+    suggestionFunnel?: SuggestionFunnelItem[];
+    verifyResult?: VerifyResultStats;
+    staffWorkload?: StaffWorkloadItem[];
   }
 
   // =========================================================================

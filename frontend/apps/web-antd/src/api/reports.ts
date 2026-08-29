@@ -4,8 +4,9 @@
  * 后端：backend/app/api/v1/endpoints/reports.py
  * - GET /reports/overview              管理总览（P3 S1/S2/S3 自适应）
  * - GET /reports/diagnosis-statistics  诊断统计（基于 DiagnosisRun）
- * - GET /reports/benefit               收益报告（技术指标，不含经济收益）
- * - GET /reports/handling-statistics   处置报告统计（R1 自持，P0-2）
+ * - GET /reports/benefit               收益报告（技术指标，不含经济收益；P2-3 增整定执行区块）
+ * - GET /reports/benefit/orders        逐工单前后对比明细（R1 自持，P2-4）
+ * - GET /reports/handling-statistics   处置报告统计（R1 自持，P0-2；P2-1 增 SLA/漏斗/工作量）
  * - GET /reports/diagnosis-runs        诊断报告明细（R1 自持，P0-4）
  * - GET /reports/diagnosis-runs/export 诊断明细 CSV 导出（≤5000 行，D4）
  * - GET/PUT /reports/stage-lock        读取 / 设置阶段锁定（ADMIN 写入）
@@ -190,6 +191,68 @@ export namespace ReportsApi {
     kpiComparison: BenefitKpiComparison[];
     autoRateCurve: BenefitCurvePoint[];
     benchmark: BenefitBenchmarkItem[];
+    /** P2-3 整定执行区块（方案 §5.2，向后兼容可选字段） */
+    tuningExecution?: BenefitTuningExecution | null;
+    fittingDistribution?: BenefitFittingBucket[];
+    latestBatchScatter?: BenefitBatchScatter | null;
+  }
+
+  // ---------- P2-3 整定执行区块（报告模块优化 P2，方案 §5.2） ----------
+
+  export interface BenefitTuningAlgoItem {
+    algorithm: string;
+    count: number;
+  }
+
+  export interface BenefitTuningStatusItem {
+    status: string;
+    count: number;
+  }
+
+  export interface BenefitTuningExecution {
+    totalRecords: number;
+    byAlgorithm: BenefitTuningAlgoItem[];
+    byStatus: BenefitTuningStatusItem[];
+    /** 回滚率（ROLLED_BACK / 窗口内全部整定记录，无记录为 null） */
+    rollbackRate: null | number;
+    /** 平均拟合度（0~100，无拟合度记录为 null） */
+    avgFittingScore: null | number;
+  }
+
+  export interface BenefitFittingBucket {
+    bucket: string;
+    label: string;
+    count: number;
+  }
+
+  export interface BenefitScatterPoint {
+    loopId: string;
+    score: null | number;
+    loopTagName?: null | string;
+  }
+
+  export interface BenefitBatchScatter {
+    batchNo: string;
+    title: string;
+    completedAt: null | string;
+    before: BenefitScatterPoint[];
+    after: BenefitScatterPoint[];
+  }
+
+  // ---------- P2-4 逐工单前后对比明细（方案 §5.3） ----------
+
+  export interface BenefitOrderItem {
+    orderNo: string;
+    loopId: string;
+    loopTagName: string;
+    actionType: string;
+    actionTypeLabel: string;
+    handler: null | string;
+    /** 四指标快照：score/effectiveAutoRate/goodValueRate/oscillationRate */
+    kpiBefore: Record<string, any>;
+    kpiAfter: Record<string, any>;
+    verifyResult: null | string;
+    verifiedAt: null | string;
   }
 
   export interface ReportQuery {
@@ -361,6 +424,18 @@ export function getReportAlertStatisticsApi(
 ) {
   return requestClient.get<ReportsApi.AlertStatisticsData>(
     '/reports/alert-statistics',
+    { params },
+  );
+}
+
+// ---------- 闭环增强（报告模块优化 P2-4，方案 §5.3） ----------
+
+/** 逐工单前后对比明细（直读 handling_order，模块禁用不受影响） */
+export function getReportBenefitOrdersApi(
+  params: ReportsApi.ReportQuery & { page?: number; pageSize?: number },
+) {
+  return requestClient.get<PaginatedResponse<ReportsApi.BenefitOrderItem>>(
+    '/reports/benefit/orders',
     { params },
   );
 }
