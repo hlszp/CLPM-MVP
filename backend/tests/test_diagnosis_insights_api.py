@@ -1,4 +1,4 @@
-"""诊断洞察 API 测试（16 号文 Phase A：F1 loop-archive + F2 compare）。
+"""诊断洞察 API 测试（16 号文：F1 loop-archive + F2 compare + F3 coverage + F4 category-cohort）。
 
 模式参照 test_diagnosis_v2_api.py：mock db（_seq_execute）+ mock_current_user；
 模块热插拔门控通过 patch app.services.diagnosis_insights.is_module_enabled
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -20,6 +21,7 @@ from app.services.diagnosis_insights import (
     _build_kpi_trend,
     _direction,
     _dt_to_epoch_ms,
+    _freshness_bucket,
 )
 from tests.conftest import TEST_USERS, mock_current_user
 
@@ -599,3 +601,731 @@ class TestInsightsHelpers:
         assert result["series"]["score"][0]["v"] == 80.0
         assert result["series"]["score"][1]["v"] is None
         assert result["series"]["oscillationRate"][0]["v"] is None
+
+
+# ---------------------------------------------------------------------------
+# Phase B：F3 诊断覆盖台账 + F4 共性问题回路组
+# ---------------------------------------------------------------------------
+
+LOOP_L1_OK = str(uuid4())  # 1 级 READY，调度 2h 前跑过
+LOOP_L1_LAG = str(uuid4())  # 1 级 READY，调度 30h 前 → 滞后
+LOOP_L2_NEVER = str(uuid4())  # 2 级 READY，从未排程 → 滞后
+LOOP_L3 = str(uuid4())  # 3 级 READY，不排程
+LOOP_PARTIAL = str(uuid4())  # 1 级但 status=PARTIAL → 不计入调度应跑
+
+
+def _loop_row(loop_id: str, tag: str, level: int, status: str = "READY") -> Any:
+    return SimpleNamespace(id=loop_id, tag_name=tag, importance_level=level, status=status)
+
+
+def _coverage_loop_rows() -> list[Any]:
+    return [
+        _loop_row(LOOP_L1_OK, "FIC-101", 1),
+        _loop_row(LOOP_L1_LAG, "FIC-102", 1),
+        _loop_row(LOOP_L2_NEVER, "LIC-201", 2),
+        _loop_row(LOOP_L3, "TIC-301", 3),
+        _loop_row(LOOP_PARTIAL, "PIC-401", 1, status="PARTIAL"),
+    ]
+
+
+class TestCoverageEndpoint:
+    """GET /api/v1/diagnosis/coverage（16 号文 F3）。"""
+
+    def _override_db(self, client, results) -> None:
+        from app.core.db import get_db
+
+        mock_db = MagicMock()
+        mock_db.execute = _seq_execute(results)
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+
+    @staticmethod
+    def _results(now: datetime) -> list[MagicMock]:
+        """默认数据：5 活跃回路覆盖全部 5 个新鲜度档。"""
+        r_loops = MagicMock()
+        r_loops.all.return_value = _coverage_loop_rows()
+        r_success = MagicMock()
+        r_success.all.return_value = [
+            (LOOP_L1_OK, now - timedelta(hours=2)),  # within24h
+            (LOOP_L1_LAG, now - timedelta(days=3)),  # within7d
+            (LOOP_L2_NEVER, now - timedelta(days=20)),  # within30d
+            (LOOP_L3, now - timedelta(days=40)),  # stale
+            # LOOP_PARTIAL 无 SUCCESS run → never
+        ]
+        r_sched = MagicMock()
+        r_sched.all.return_value = [
+            (LOOP_L1_OK, now - timedelta(hours=2)),  # 1 级 2h 前 → 不滞后
+            (LOOP_L1_LAG, now - timedelta(hours=30)),  # 1 级 30h 前 → 超 25h 滞后
+        ]
+        r_di = MagicMock()
+        r_di.all.return_value = [
+            (LOOP_L1_OK, 4, 3),  # 75%
+            (LOOP_L1_LAG, 2, 2),  # 100%
+            (LOOP_L3, 5, 0),  # 无 DI → 不入榜
+        ]
+        return [r_loops, r_success, r_sched, r_di]
+
+    def test_coverage_full_admin(self, client) -> None:
+        """ADMIN：新鲜度 5 档 + 调度执行（1/2 级滞后、3 级手动）+ DI Top5。"""
+        now = _now()
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, self._results(now))
+            resp = client.get(
+                "/api/v1/diagnosis/coverage",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+
+        buckets = {b["key"]: b for b in data["freshness"]["buckets"]}
+        assert data["freshness"]["totalLoops"] == 5
+        assert [b["key"] for b in data["freshness"]["buckets"]] == [
+            "within24h",
+            "within7d",
+            "within30d",
+            "stale",
+            "never",
+        ]
+        assert buckets["within24h"]["count"] == 1
+        assert buckets["within24h"]["loops"][0]["loopTagName"] == "FIC-101"
+        assert buckets["within7d"]["count"] == 1
+        assert buckets["within30d"]["count"] == 1
+        assert buckets["stale"]["count"] == 1
+        assert buckets["never"]["count"] == 1
+        assert buckets["never"]["loops"][0]["loopId"] == LOOP_PARTIAL
+        assert buckets["never"]["loops"][0]["lastDiagnosedAt"] is None
+
+        # 调度执行（S3 口径：1 级超 25h 无 SCHEDULED run 计入滞后）
+        schedule = data["schedule"]
+        assert schedule is not None
+        levels = {lv["level"]: lv for lv in schedule["levels"]}
+        lv1 = levels[1]
+        assert lv1["cadence"] == "daily"
+        assert lv1["expectedLoops"] == 2  # LOOP_PARTIAL（PARTIAL 状态）不计入应跑
+        assert lv1["lagThresholdHours"] == 25
+        assert lv1["laggingCount"] == 1
+        assert lv1["lagging"][0]["loopId"] == LOOP_L1_LAG
+        assert lv1["lastScheduledAt"] is not None
+        lv2 = levels[2]
+        assert lv2["cadence"] == "weekly"
+        assert lv2["lagThresholdHours"] == 169
+        assert lv2["expectedLoops"] == 1
+        assert lv2["laggingCount"] == 1  # 从未排程 → 滞后
+        assert lv2["lagging"][0]["lastScheduledAt"] is None
+        lv3 = levels[3]
+        assert lv3["cadence"] == "manual"
+        assert lv3["expectedLoops"] == 1
+        assert "不排程" in lv3["note"]
+        assert "laggingCount" not in lv3
+
+        # 数据不足 Top5：占比降序（100% 在 75% 前），无 DI 回路不入榜
+        top = data["dataInsufficient"]["top"]
+        assert data["dataInsufficient"]["windowDays"] == 30
+        assert [t["loopId"] for t in top] == [LOOP_L1_LAG, LOOP_L1_OK]
+        assert top[0]["ratio"] == 1.0
+        assert top[1]["ratio"] == 0.75
+        assert top[1]["loopTagName"] == "FIC-101"
+
+    def test_coverage_non_admin_hides_schedule(self, client) -> None:
+        """非 ADMIN：schedule 整段 None（前端隐藏），且不发调度查询（少一次 execute）。"""
+        now = _now()
+        results = self._results(now)[:2] + [self._results(now)[3]]  # 跳过 r_sched
+        with mock_current_user(TEST_USERS["sponsor"]):
+            self._override_db(client, results)
+            resp = client.get(
+                "/api/v1/diagnosis/coverage",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["schedule"] is None
+        assert data["freshness"]["totalLoops"] == 5
+        assert len(data["dataInsufficient"]["top"]) == 2
+
+    def test_coverage_empty(self, client) -> None:
+        """空态：无回路/无 run → 各档 0，调度应跑 0，DI 榜空。"""
+        r_loops = MagicMock()
+        r_loops.all.return_value = []
+        r_success = MagicMock()
+        r_success.all.return_value = []
+        r_sched = MagicMock()
+        r_sched.all.return_value = []
+        r_di = MagicMock()
+        r_di.all.return_value = []
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, [r_loops, r_success, r_sched, r_di])
+            resp = client.get(
+                "/api/v1/diagnosis/coverage",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["freshness"]["totalLoops"] == 0
+        assert all(b["count"] == 0 for b in data["freshness"]["buckets"])
+        levels = {lv["level"]: lv for lv in data["schedule"]["levels"]}
+        assert levels[1]["expectedLoops"] == 0
+        assert levels[1]["laggingCount"] == 0
+        assert levels[1]["lastScheduledAt"] is None
+        assert data["dataInsufficient"]["top"] == []
+
+    def test_coverage_bucket_boundaries(self) -> None:
+        """纯函数：24h/7d/30d 边界与 never。"""
+        now = _now()
+        assert _freshness_bucket(None, now) == "never"
+        assert _freshness_bucket(now - timedelta(hours=24), now) == "within24h"
+        assert _freshness_bucket(now - timedelta(hours=25), now) == "within7d"
+        assert _freshness_bucket(now - timedelta(days=7), now) == "within7d"
+        assert _freshness_bucket(now - timedelta(days=30), now) == "within30d"
+        assert _freshness_bucket(now - timedelta(days=31), now) == "stale"
+
+
+class TestCategoryCohortEndpoint:
+    """GET /api/v1/diagnosis/category-cohort（16 号文 F4）。"""
+
+    def _override_db(self, client, results) -> None:
+        from app.core.db import get_db
+
+        mock_db = MagicMock()
+        mock_db.execute = _seq_execute(results)
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+
+    @staticmethod
+    def _cohort_row(
+        loop_id: str,
+        tag: str,
+        *,
+        confidence: float | None = 0.8,
+        metric_summary: dict | None = None,
+    ) -> Any:
+        now = _now()
+        return SimpleNamespace(
+            loop_id=loop_id,
+            tag_name=tag,
+            loop_description=f"{tag} 描述",
+            importance_level=2,
+            run_id=str(uuid4()),
+            primary_confidence=Decimal(str(confidence)) if confidence is not None else None,
+            severity="MEDIUM",
+            last_diagnosed_at=now,
+            metric_summary=metric_summary
+            or {"positive": {"score": 61.5}, "negative": {"stictionIndex": 40.0}},
+        )
+
+    def test_cohort_basic(self, client) -> None:
+        r = MagicMock()
+        r.all.return_value = [
+            self._cohort_row(LOOP_ID, "FIC-101"),
+            self._cohort_row(LOOP_L1_LAG, "FIC-102", confidence=None),
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/category-cohort",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"category": "VALVE"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["category"] == "VALVE"
+        assert data["plantNodeId"] is None
+        assert data["total"] == 2
+        first, second = data["items"]
+        assert first["loopId"] == LOOP_ID
+        assert first["loopTagName"] == "FIC-101"
+        assert first["importanceLevel"] == 2
+        assert first["primaryConfidence"] == 0.8
+        assert first["metricSummary"]["positive"]["score"] == 61.5
+        assert first["lastDiagnosedAt"] is not None
+        assert second["primaryConfidence"] is None
+
+    def test_cohort_with_plant_node(self, client) -> None:
+        """plantNodeId 合法 UUID → 递归过滤（参数透传），S4 链路口径。"""
+        plant_id = str(uuid4())
+        r = MagicMock()
+        r.all.return_value = [self._cohort_row(LOOP_ID, "FIC-101")]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/category-cohort",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"category": "VALVE", "plantNodeId": plant_id},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["plantNodeId"] == plant_id
+        assert data["total"] == 1
+
+    def test_cohort_empty(self, client) -> None:
+        """空态：该分类×装置下无回路 → items=[]。"""
+        r = MagicMock()
+        r.all.return_value = []
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/category-cohort",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"category": "DESIGN"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["items"] == []
+        assert data["total"] == 0
+
+    def test_cohort_invalid_category(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/category-cohort",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"category": "UNKNOWN"},
+            )
+        assert resp.status_code == 400
+
+    def test_cohort_invalid_plant_node_id(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/category-cohort",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"category": "VALVE", "plantNodeId": "not-a-uuid"},
+            )
+        assert resp.status_code == 400
+
+    def test_cohort_accessible_by_sponsor(self, client) -> None:
+        """权限全员（§5.1：F4 与记录页一致）。"""
+        r = MagicMock()
+        r.all.return_value = []
+        with mock_current_user(TEST_USERS["sponsor"]):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/category-cohort",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"category": "TUNING"},
+            )
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Phase C：F5 发起前数据预检徽标 + F6 复核反馈统计
+# ---------------------------------------------------------------------------
+
+LOOP_PC_FULL = str(uuid4())  # 24/24 → sufficient
+LOOP_PC_MARGINAL = str(uuid4())  # 15/24 ≈ 0.625 → marginal
+LOOP_PC_LOW = str(uuid4())  # 5/24 ≈ 0.208 → insufficient
+LOOP_PC_NONE = str(uuid4())  # 无任何快照 → unknown（中性态，不误报）
+
+
+class TestPrecheckEndpoint:
+    """GET /api/v1/diagnosis/precheck（16 号文 F5，D1=a 廉价代理密度徽标）。"""
+
+    def _override_db(self, client, results) -> None:
+        from app.core.db import get_db
+
+        mock_db = MagicMock()
+        mock_db.execute = _seq_execute(results)
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+
+    @staticmethod
+    def _density_rows() -> list[tuple]:
+        """(loop_id, 窗口内行数, 全量行数)。"""
+        return [
+            (LOOP_PC_FULL, 24, 500),
+            (LOOP_PC_MARGINAL, 15, 500),
+            (LOOP_PC_LOW, 5, 500),
+            # LOOP_PC_NONE 不出现在聚合结果中（全量 0 行）
+        ]
+
+    def test_precheck_levels_and_unknown(self, client) -> None:
+        """三态分级 + 无快照回路 unknown（中性态，不误报"不足"）。"""
+        r = MagicMock()
+        r.all.return_value = self._density_rows()
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            _modules("assess"),
+        ):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={
+                    "loopIds": ",".join([LOOP_PC_FULL, LOOP_PC_MARGINAL, LOOP_PC_LOW, LOOP_PC_NONE])
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["assessEnabled"] is True
+        assert data["window"] == "24h"
+        assert data["expectedRows"] == 24
+        items = {i["loopId"]: i for i in data["items"]}
+        assert items[LOOP_PC_FULL]["level"] == "sufficient"
+        assert items[LOOP_PC_FULL]["ratio"] == 1.0
+        assert items[LOOP_PC_MARGINAL]["level"] == "marginal"
+        assert items[LOOP_PC_MARGINAL]["rowCount"] == 15
+        assert items[LOOP_PC_LOW]["level"] == "insufficient"
+        assert items[LOOP_PC_LOW]["ratio"] == round(5 / 24, 4)
+        # 无任何快照 → unknown，rowCount=0，ratio=null
+        none_item = items[LOOP_PC_NONE]
+        assert none_item["level"] == "unknown"
+        assert none_item["ratio"] is None
+
+    def test_precheck_window_7d(self, client) -> None:
+        """7d 窗口预期 168 行，分级随窗口缩放。"""
+        r = MagicMock()
+        r.all.return_value = [(LOOP_PC_FULL, 168, 500)]
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            _modules("assess"),
+        ):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": LOOP_PC_FULL, "window": "7d"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["expectedRows"] == 168
+        assert data["items"][0]["level"] == "sufficient"
+
+    def test_precheck_assess_disabled_skips_query(self, client) -> None:
+        """评估模块禁用 → assessEnabled=false、items 空，且不发密度查询（P3 降级）。"""
+        mock_db = MagicMock()
+
+        async def _boom(*args, **kwargs):  # noqa: ARG001
+            raise AssertionError("评估禁用时不应发起密度查询")
+
+        mock_db.execute = _boom
+        from app.core.db import get_db
+
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            _modules(),  # assess 禁用
+        ):
+            client.app.dependency_overrides[get_db] = lambda: mock_db
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": LOOP_PC_FULL},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["assessEnabled"] is False
+        assert data["items"] == []
+
+    def test_precheck_accessible_by_sponsor(self, client) -> None:
+        """权限全员（§5.1：F5 与记录页一致）。"""
+        r = MagicMock()
+        r.all.return_value = []
+        with (
+            mock_current_user(TEST_USERS["sponsor"]),
+            _modules("assess"),
+        ):
+            self._override_db(client, [r])
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": LOOP_PC_FULL},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["items"][0]["level"] == "unknown"
+
+    def test_precheck_invalid_window(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": LOOP_PC_FULL, "window": "1h"},
+            )
+        assert resp.status_code == 400
+
+    def test_precheck_empty_loop_ids(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": " , ,"},
+            )
+        assert resp.status_code == 400
+
+    def test_precheck_over_limit(self, client) -> None:
+        """批量上限 10（§5.3，与发起上限一致）。"""
+        ids = ",".join(str(uuid4()) for _ in range(11))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": ids},
+            )
+        assert resp.status_code == 400
+
+    def test_precheck_invalid_loop_id(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/diagnosis/precheck",
+                headers={"Authorization": "Bearer fake-token"},
+                params={"loopIds": "not-a-uuid"},
+            )
+        assert resp.status_code == 400
+
+    def test_precheck_level_boundaries(self) -> None:
+        """纯函数：红档 0.5 与调度密度门禁同口径；琥珀带 0.5~0.9。"""
+        from app.services.diagnosis_insights import _precheck_level
+
+        assert _precheck_level(0.0) == "insufficient"
+        assert _precheck_level(0.4999) == "insufficient"
+        assert _precheck_level(0.5) == "marginal"
+        assert _precheck_level(0.8999) == "marginal"
+        assert _precheck_level(0.9) == "sufficient"
+        assert _precheck_level(1.0) == "sufficient"
+
+
+def _fb_row(
+    *,
+    primary: str | None = "VALVE",
+    secondary: list | None = None,
+    pending: list | None = None,
+    reviewed: bool = True,
+    review_results: list | None = None,
+    operator_results: dict | None = None,
+) -> tuple:
+    """F6 全量扫描行：(primary, secondary, pending, review_status, review_results, ops)。"""
+    return (
+        primary,
+        secondary if secondary is not None else [],
+        pending if pending is not None else [],
+        "REVIEWED" if reviewed else "PENDING",
+        review_results if review_results is not None else ["VALVE"],
+        operator_results if operator_results is not None else {},
+    )
+
+
+def _stiction_detected() -> dict:
+    return {"stiction_ellipse": {"executed": True, "detected": True, "features": {}}}
+
+
+class TestReviewFeedbackEndpoint:
+    """GET /api/v1/diagnosis/review-feedback（16 号文 F6，D4 样本门槛 ≥10，仅 ADMIN）。"""
+
+    def _override_db(self, client, rows: list[tuple]) -> None:
+        from app.core.db import get_db
+
+        r = MagicMock()
+        r.all.return_value = rows
+        mock_db = MagicMock()
+        mock_db.execute = _seq_execute([r])
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+
+    @staticmethod
+    def _op(data: dict, name: str) -> dict:
+        return next(o for o in data["operators"] if o["operator"] == name)
+
+    def test_feedback_operator_overturn_hint(self, client) -> None:
+        """12 样本 6 确认 6 改判 → 改判率 0.5 > 0.4 → tuningHint=true + 去向 Top3。"""
+        rows = [
+            # 6 条确认（复核含 VALVE）
+            *[_fb_row(operator_results=_stiction_detected()) for _ in range(6)],
+            # 6 条改判（复核改判为 TUNING）
+            *[
+                _fb_row(review_results=["TUNING"], operator_results=_stiction_detected())
+                for _ in range(6)
+            ],
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["sampleMin"] == 10
+        assert data["overturnHintThreshold"] == 0.4
+        assert data["totalRuns"] == 12
+        assert data["reviewedRuns"] == 12
+
+        op = self._op(data, "stiction_ellipse")
+        assert op["displayName"]
+        assert op["category"] == "VALVE"  # VALVE_STICTION 症状 → VALVE 归因
+        assert op["detectedCount"] == 12
+        assert op["reviewedCount"] == 12
+        assert op["reviewRate"] == 1.0
+        assert op["sampleSize"] == 12
+        assert op["insufficientSample"] is False
+        assert op["confirmRate"] == 0.5
+        assert op["overturnRate"] == 0.5
+        assert op["tuningHint"] is True  # > 40% 琥珀提示
+        assert op["overturnTop"] == [{"category": "TUNING", "count": 6}]
+
+        # 分类维度：VALVE 检出 12、复核 12、改判 6
+        cat = next(c for c in data["categories"] if c["category"] == "VALVE")
+        assert cat["detectedCount"] == 12
+        assert cat["reviewedCount"] == 12
+        assert cat["confirmRate"] == 0.5
+        assert cat["overturnRate"] == 0.5
+        assert cat["overturnTop"] == [{"category": "TUNING", "count": 6}]
+
+    def test_feedback_sample_gate(self, client) -> None:
+        """D4：样本 <10 → insufficientSample=true，比例/去向/提示全置空。"""
+        rows = [
+            _fb_row(review_results=["TUNING"], operator_results=_stiction_detected())
+            for _ in range(9)  # 9 条全改判，但 < 10
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        data = resp.json()["data"]
+        op = self._op(data, "stiction_ellipse")
+        assert op["sampleSize"] == 9
+        assert op["insufficientSample"] is True
+        assert op["confirmRate"] is None
+        assert op["overturnRate"] is None
+        assert op["overturnTop"] == []
+        assert op["tuningHint"] is False  # 小样本不误导
+
+    def test_feedback_pending_review_excluded(self, client) -> None:
+        """pending_review 命中不计入改判分母（§5.1）：sample 不增，记 pendingExcludedCount。"""
+        rows = [
+            _fb_row(
+                primary="TUNING",
+                pending=[{"category": "VALVE", "confidence": 0.5}],
+                review_results=["TUNING"],
+                operator_results=_stiction_detected(),
+            )
+            for _ in range(12)
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        data = resp.json()["data"]
+        op = self._op(data, "stiction_ellipse")
+        assert op["detectedCount"] == 12
+        assert op["reviewedCount"] == 12
+        assert op["pendingExcludedCount"] == 12
+        assert op["sampleSize"] == 0  # 全部 pending 排除，不入改判分母
+        assert op["insufficientSample"] is True
+        assert op["tuningHint"] is False
+
+    def test_feedback_only_executed_detected_counted(self, client) -> None:
+        """只统计 executed=true 且 detected=true 的算子；未执行/未命中不计。"""
+        rows = [
+            _fb_row(
+                operator_results={
+                    "stiction_ellipse": {"executed": True, "detected": True},
+                    "stiction_kano": {"executed": False, "skipReason": "信号缺失"},
+                    "oscillation_iae": {"executed": True, "detected": False},
+                }
+            )
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        data = resp.json()["data"]
+        assert self._op(data, "stiction_ellipse")["detectedCount"] == 1
+        assert self._op(data, "stiction_kano")["detectedCount"] == 0
+        assert self._op(data, "oscillation_iae")["detectedCount"] == 0
+
+    def test_feedback_not_adopted_excluded(self, client) -> None:
+        """算子检出但机器未采纳其映射分类（非主/次分类）→ 无从改判，不入分母。"""
+        rows = [
+            _fb_row(
+                primary="TUNING",
+                review_results=["PROCESS"],  # 复核改判 TUNING，但与 stiction 无关
+                operator_results=_stiction_detected(),
+            )
+            for _ in range(12)
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        data = resp.json()["data"]
+        op = self._op(data, "stiction_ellipse")
+        assert op["detectedCount"] == 12
+        assert op["reviewedCount"] == 12
+        assert op["sampleSize"] == 0  # 机器未采纳 VALVE → 不入分母
+        assert op["pendingExcludedCount"] == 0
+        # 分类维度 TUNING 全改判 → PROCESS
+        cat = next(c for c in data["categories"] if c["category"] == "TUNING")
+        assert cat["detectedCount"] == 12
+        assert cat["overturnRate"] == 1.0
+        assert cat["overturnTop"] == [{"category": "PROCESS", "count": 12}]
+
+    def test_feedback_secondary_affirmed(self, client) -> None:
+        """映射分类为次分类也算机器采纳（入改判分母）。"""
+        rows = [
+            _fb_row(
+                primary="TUNING",
+                secondary=[{"category": "VALVE", "confidence": 0.6}],
+                review_results=["TUNING"],  # 复核不含 VALVE → 改判
+                operator_results=_stiction_detected(),
+            )
+            for _ in range(11)
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        op = self._op(resp.json()["data"], "stiction_ellipse")
+        assert op["sampleSize"] == 11
+        assert op["overturnRate"] == 1.0
+        assert op["tuningHint"] is True
+
+    def test_feedback_unreviewed_not_in_sample(self, client) -> None:
+        """未复核 run 计入检出/复核率分母，但不入改判分母。"""
+        rows = [
+            *[_fb_row(operator_results=_stiction_detected()) for _ in range(10)],
+            *[
+                _fb_row(reviewed=False, review_results=[], operator_results=_stiction_detected())
+                for _ in range(5)
+            ],
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, rows)
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        op = self._op(resp.json()["data"], "stiction_ellipse")
+        assert op["detectedCount"] == 15
+        assert op["reviewedCount"] == 10
+        assert op["reviewRate"] == round(10 / 15, 4)
+        assert op["sampleSize"] == 10
+
+    def test_feedback_empty(self, client) -> None:
+        """空态：无 run → 各维度 0，全部样本不足，reviewRate=null。"""
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, [])
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["totalRuns"] == 0
+        assert data["reviewedRuns"] == 0
+        assert len(data["operators"]) == 11  # 注册表 11 元算子全列出
+        assert len(data["categories"]) == 8
+        assert all(o["detectedCount"] == 0 for o in data["operators"])
+        assert all(o["reviewRate"] is None for o in data["operators"])
+        assert all(o["insufficientSample"] is True for o in data["operators"])
+        assert all(c["insufficientSample"] is True for c in data["categories"])
+
+    def test_feedback_admin_only(self, client) -> None:
+        """权限：F6 仅 ADMIN（§5.1，与诊断配置页口径一致）。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            self._override_db(client, [])
+            resp = client.get(
+                "/api/v1/diagnosis/review-feedback",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403

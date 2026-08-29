@@ -9,6 +9,10 @@
 - GET  /diagnosis/export     记录 CSV 导出
 - GET  /diagnosis/runs/loop-archive        回路诊断档案（16 号文 F1）
 - GET  /diagnosis/runs/{id}/compare        复诊对比（16 号文 F2）
+- GET  /diagnosis/coverage                 诊断覆盖台账（16 号文 F3；调度执行块仅 ADMIN）
+- GET  /diagnosis/category-cohort          共性问题回路组（16 号文 F4）
+- GET  /diagnosis/precheck                 发起前数据充足性预检徽标（16 号文 F5）
+- GET  /diagnosis/review-feedback          复核反馈统计与阈值调优提示（16 号文 F6；仅 ADMIN）
 
 旧 endpoints/diagnosis.py 按 MVP 屏蔽策略保留不动（未注册）。
 """
@@ -735,6 +739,65 @@ async def compare_diagnosis_runs(
     - verify：handling_order.verify_run_id 关联的处置前后 run 对（处置启用才查）
     """
     return success(await diagnosis_insights.compare_runs(db, run_id, mode))
+
+
+@router.get("/coverage", response_model=ApiResponse[dict])
+async def get_diagnosis_coverage(
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """诊断覆盖台账与新鲜度（16 号文 F3，D6 工作台概览区折叠块数据源）。
+
+    新鲜度分档（全员）+ 调度执行（仅 ADMIN，非管理员 schedule=null，前端整块隐藏）
+    + 近 30d DATA_INSUFFICIENT Top5（全员）。
+    """
+    return success(await diagnosis_insights.coverage(db, include_schedule=user.role == "ADMIN"))
+
+
+@router.get("/category-cohort", response_model=ApiResponse[dict])
+async def get_category_cohort(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    category: str = Query(..., description="原因分类代码（8 类）"),
+    plantNodeId: str | None = Query(None, description="装置节点 ID（递归含子单元，可选）"),
+) -> dict:
+    """共性问题回路组（16 号文 F4）：分类×装置下每回路最新 run 摘要。
+
+    latest-per-loop 泛化自 runs/latest（同一口径），供前端勾选 2~3 回路雷达对比。
+    """
+    return success(await diagnosis_insights.category_cohort(db, category, plantNodeId))
+
+
+@router.get("/precheck", response_model=ApiResponse[dict])
+async def get_diagnosis_precheck(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤10 个）"),
+    window: str = Query("24h", description="预检窗口 24h/7d/30d"),
+) -> dict:
+    """发起前数据充足性预检徽标（16 号文 F5，D1=a 廉价代理）。
+
+    kpi_snapshot_hourly 近 24h 行数密度分级（充足/疑似不足/不足/无评估数据），
+    单次 PostgreSQL 聚合查询，零 TDengine；红档阈值与调度侧密度门禁同口径。
+    评估模块禁用时 assessEnabled=false 且 items 为空（前端整列隐藏徽标）。
+    事前提示定位：不替代发起时 fitness 门禁（L0/L1 阻止、L2 警告行为不变）。
+    """
+    loop_ids = [x.strip() for x in loopIds.split(",") if x.strip()]
+    return success(await diagnosis_insights.precheck(db, loop_ids, window))
+
+
+@router.get("/review-feedback", response_model=ApiResponse[dict])
+async def get_review_feedback(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """复核反馈统计与阈值调优提示（16 号文 F6；仅 ADMIN，与诊断配置页口径一致）。
+
+    只统计 executed=true 的算子，pending_review 命中不计入改判分母；
+    D4：样本 <10 时 insufficientSample=true，不给误导性比例。
+    tuningHint 仅为提示（安全边界红线：平台不自动调参）。
+    """
+    return success(await diagnosis_insights.review_feedback(db))
 
 
 @router.get("/runs/{run_id}", response_model=ApiResponse[dict])
