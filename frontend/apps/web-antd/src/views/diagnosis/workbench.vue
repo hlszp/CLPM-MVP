@@ -35,18 +35,22 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisOperatorsApi } from '#/api/diagnosis';
+import { getDiagnosisOperatorsApi, getDiagnosisPrecheckApi } from '#/api/diagnosis';
 import { getLoopListApi, getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 
+// 16 号文 F3：诊断健康度折叠块（D6 概览区默认展开）
+import DiagnosisCoveragePanel from './components/coverage-panel.vue';
 import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
 // 16 号文 F1：概览"历史"入口升级为回路诊断档案抽屉（history-drawer 列表逻辑已迁移入内，文件保留不删）
 import DiagnosisLoopArchiveDrawer from './components/loop-archive-drawer.vue';
+// 16 号文 F5：左脊柱回路行内数据充足性预检徽标（D1 廉价代理：快照密度）
+import DiagnosisPrecheckBadge from './components/precheck-badge.vue';
 import DiagnosisReviewDrawer from './components/review-drawer.vue';
 import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
 import {
@@ -54,6 +58,7 @@ import {
   CATEGORY_OPTIONS,
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
+  PRECHECK_META,
   REVIEW_STATUS_COLOR,
   REVIEW_STATUS_TEXT,
   SCORE_GRADES,
@@ -194,8 +199,11 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
     const res = await getLoopListApi(params);
     loopItems.value = res.items;
     for (const l of res.items) loopCache.value.set(l.loopId, l);
+    // 16 号文 F5：清单刷新后异步拉取预检徽标（不阻塞清单渲染）
+    void loadPrecheck();
   } catch (error) {
     loopItems.value = [];
+    precheckItems.value = new Map();
     const resp = (error as { response?: { data?: unknown; status?: number } })
       .response;
     console.error('[诊断工作台/回路清单] 加载失败:', {
@@ -207,6 +215,43 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
     loopLoading.value = false;
   }
 }
+
+// ===== 16 号文 F5：发起前数据充足性预检徽标（左脊柱行内，D1 廉价代理） =====
+/** 后端单次预检上限（§5.3，与发起上限一致；超出分批调用） */
+const PRECHECK_BATCH = 10;
+/** 回路 ID → 预检徽标项 */
+const precheckItems = ref(new Map<string, DiagnosisApi.PrecheckItem>());
+/** 评估模块启用能力字段（false → 徽标整列隐藏，§5.4 隐藏而非置灰/误报） */
+const precheckAssessEnabled = ref(true);
+
+async function loadPrecheck(): Promise<void> {
+  const ids = loopItems.value.map((l) => l.loopId);
+  if (ids.length === 0) {
+    precheckItems.value = new Map();
+    return;
+  }
+  try {
+    const next = new Map<string, DiagnosisApi.PrecheckItem>();
+    for (let i = 0; i < ids.length; i += PRECHECK_BATCH) {
+      const res = await getDiagnosisPrecheckApi(ids.slice(i, i + PRECHECK_BATCH));
+      precheckAssessEnabled.value = res.assessEnabled;
+      if (!res.assessEnabled) return; // 评估禁用：整列隐藏徽标
+      for (const item of res.items) next.set(item.loopId, item);
+    }
+    precheckItems.value = next;
+  } catch {
+    // 预检失败降级：不显示徽标（事前提示不可用不影响发起流程，§4 F5.3）
+    precheckItems.value = new Map();
+  }
+}
+
+/** F5：已勾选回路中预检红态（不足）计数 → 发起按钮旁汇总提示（不阻止勾选） */
+const precheckInsufficientSelected = computed(
+  () =>
+    selectedLoopIds.value.filter(
+      (id) => precheckItems.value.get(id)?.level === 'insufficient',
+    ).length,
+);
 
 function toggleLoop(loopId: string): void {
   const idx = selectedLoopIds.value.indexOf(loopId);
@@ -733,6 +778,11 @@ onMounted(() => {
               <span class="diag-loop-item__tag" :title="item.description">
                 {{ item.tagName }}
               </span>
+              <!-- F5 数据充足性预检徽标（评估禁用时整列隐藏；红态不阻止勾选） -->
+              <DiagnosisPrecheckBadge
+                v-if="precheckAssessEnabled"
+                :item="precheckItems.get(item.loopId)"
+              />
               <span class="diag-loop-item__unit">{{ item.unitName }}</span>
             </div>
             <Empty
@@ -873,6 +923,16 @@ onMounted(() => {
               >
                 发起诊断
               </Button>
+              <!-- F5 汇总提示：红态回路不阻止发起，仅提示（§4 F5.3） -->
+              <span
+                v-if="
+                  precheckAssessEnabled && precheckInsufficientSelected > 0
+                "
+                class="text-xs font-medium"
+                :style="{ color: PRECHECK_META.insufficient.color }"
+              >
+                {{ precheckInsufficientSelected }} 个回路数据可能不足
+              </span>
             </div>
             <div
               v-if="runner.running.value || runner.progress.value > 0"
@@ -986,7 +1046,10 @@ onMounted(() => {
         </template>
 
         <!-- ===== 最新诊断概览（未勾选回路时显示；按诊断时间降序、未诊断垫底） ===== -->
-        <Card v-else class="mb-4" size="small">
+        <template v-else>
+          <!-- 16 号文 F3：诊断健康度折叠块（D6 默认展开，Calm UI 单行摘要+明细） -->
+          <DiagnosisCoveragePanel class="mb-3" />
+          <Card class="mb-4" size="small">
           <template #title>
             最新诊断概览
             <span class="text-xs font-normal text-neutral-400">
@@ -1233,7 +1296,8 @@ onMounted(() => {
               </template>
             </template>
           </Table>
-        </Card>
+          </Card>
+        </template>
 
         <!-- 结论详情（结果表/概览表点击行加载） -->
         <Card

@@ -19,13 +19,18 @@
  * - A-03 getWorkbenchDiagnosisApi → 聚合（summary_band + 6 块）
  * - 范围/窗口切换自动联动刷新（watch store.scopeParams）
  * - 异常行点击 / 结论行点击 → 打开回路详情抽屉（用户决策）
+ * - 16 号文 F4 第二层下钻：Pareto 柱 / 堆叠条分类段点击 → 回路组对比抽屉
+ *   （分类 × 装置回路组列表，勾选 2~3 回路 6 指标雷达对比）
  */
+import type { DiagnosisApi } from '#/api/diagnosis';
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { getWorkbenchDiagnosisApi } from '#/api/workbench';
 import { useWorkbenchStore } from '#/store/workbench';
+import CohortCompareDrawer from '#/views/diagnosis/components/cohort-compare-drawer.vue';
+import { CATEGORY_META } from '#/views/diagnosis/constants';
 
 import AbnormalLoopsTable from '../components/AbnormalLoopsTable.vue';
 import DgRuleStats from '../components/DgRuleStats.vue';
@@ -34,6 +39,7 @@ import DgUnitStackedBar from '../components/DgUnitStackedBar.vue';
 import GateBanner from '../components/GateBanner.vue';
 import LoopDetailDrawer from '../components/LoopDetailDrawer.vue';
 import ParetoBarLine from '../components/ParetoBarLine.vue';
+import { useWorkbenchDrill } from '../utils/drill';
 
 const store = useWorkbenchStore();
 
@@ -77,6 +83,35 @@ watch(
 function onRowClick(row: WorkbenchApi.DiagnosisOpenTag) {
   selectedTag.value = row;
 }
+
+// ===== 16 号文 F4：共性问题回路组对比抽屉（Pareto 柱 / 堆叠条段第二层下钻） =====
+const { scopeQuery } = useWorkbenchDrill();
+const cohortOpen = ref(false);
+const cohortCategory = ref<DiagnosisApi.Category | null>(null);
+const cohortPlantNodeId = ref<string | undefined>(undefined);
+const cohortPlantName = ref<string | undefined>(undefined);
+
+/** Pareto 柱点击：分类已知、装置取当前工作台 scope（G2 映射） */
+function onParetoCohort(category: string) {
+  if (!(category in CATEGORY_META)) return; // 非 8 类代码不打开（防御脏数据）
+  cohortCategory.value = category as DiagnosisApi.Category;
+  cohortPlantNodeId.value = scopeQuery().plantNodeId;
+  cohortPlantName.value = undefined;
+  cohortOpen.value = true;
+}
+
+/** 堆叠条分类段点击：分类 + 装置（行内 factory 已按名解析 plantNodeId） */
+function onUnitCohort(payload: {
+  category: string;
+  plantNodeId?: string;
+  plantNodeName?: string;
+}) {
+  if (!(payload.category in CATEGORY_META)) return;
+  cohortCategory.value = payload.category as DiagnosisApi.Category;
+  cohortPlantNodeId.value = payload.plantNodeId ?? scopeQuery().plantNodeId;
+  cohortPlantName.value = payload.plantNodeName;
+  cohortOpen.value = true;
+}
 </script>
 
 <template>
@@ -107,7 +142,11 @@ function onRowClick(row: WorkbenchApi.DiagnosisOpenTag) {
       <!-- Row2 grid c5/c7：Pareto 柱+折线 / 诊断队列 + diagSeg（固定 302px，与 Row3 保持等高，避免 1080p 下高度失衡 & 900p 下外溢） -->
       <div class="grid flex-none min-h-0 h-[302px] grid-cols-12 gap-2">
         <div class="col-span-5 min-h-0 h-full overflow-hidden rounded border border-[#E4E7ED]">
-          <ParetoBarLine :pareto="pareto" :window="store.timeWindow" />
+          <ParetoBarLine
+            :pareto="pareto"
+            :window="store.timeWindow"
+            @cohort="onParetoCohort"
+          />
         </div>
         <div class="col-span-7 min-h-0 h-full overflow-hidden rounded border border-[#E4E7ED]">
           <AbnormalLoopsTable
@@ -128,11 +167,20 @@ function onRowClick(row: WorkbenchApi.DiagnosisOpenTag) {
             :concl-items="conclTimeline"
             :open-tags="openTags"
             :pareto="pareto"
+            @cohort="onUnitCohort"
           />
         </div>
       </div>
 
       <!-- 回路详情抽屉（用户决策：点击行打开，不再路由到整定 Tab） -->
       <LoopDetailDrawer :row="selectedTag" @close="selectedTag = null" />
+
+      <!-- 16 号文 F4：共性问题回路组对比抽屉（Pareto/堆叠条第二层下钻） -->
+      <CohortCompareDrawer
+        v-model:open="cohortOpen"
+        :category="cohortCategory"
+        :plant-node-id="cohortPlantNodeId"
+        :plant-node-name="cohortPlantName"
+      />
     </div>
 </template>

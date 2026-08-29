@@ -32,6 +32,13 @@ const props = defineProps<{
   pareto?: WorkbenchApi.ParetoRow[];
 }>();
 
+const emit = defineEmits<{
+  /** 16 号文 F4 第二层下钻：分类段点击 → 回路组对比抽屉（分类 × 装置） */
+  cohort: [
+    payload: { category: string; plantNodeId?: string; plantNodeName?: string },
+  ];
+}>();
+
 const { drill, resolvePlantNodeIdByName } = useWorkbenchDrill();
 
 // ---------- 单元名解析：工厂模型节点优先，启发式仅作兜底 ----------
@@ -224,15 +231,24 @@ function severityColor(s: number): string {
 }
 
 /**
- * 追溯矩阵 §4 下钻：条段点击 → 诊断记录（装置 plantNodeId + category）。
+ * 追溯矩阵 §4 下钻（16 号文 F4 升级为第二层）：条段点击 → 回路组对比抽屉
+ * （分类 × 装置维度，勾选 2~3 回路雷达对比；抽屉内"查看诊断记录"承接原
+ * records 下钻）。
  * - plantNodeId：行数据只有装置名（factory），经 scopeTree 按名解析，解析不到则不带；
- * - category：OTHERS（"其他"聚合段）无对应类别，不带 category（下钻参数不带中文）。
+ * - category：OTHERS（"其他"聚合段）无对应类别，保持原行为下钻诊断记录（不带 category）。
  */
 function onSegClick(u: UnitRow, cat: string) {
   const plantNodeId = resolvePlantNodeIdByName(u.factory);
-  drill('diagnosis', '/diagnosis/records', {
+  if (cat === OTHERS) {
+    drill('diagnosis', '/diagnosis/records', {
+      ...(plantNodeId ? { plantNodeId } : {}),
+    });
+    return;
+  }
+  emit('cohort', {
+    category: cat,
     ...(plantNodeId ? { plantNodeId } : {}),
-    ...(cat === OTHERS ? {} : { category: cat }),
+    ...(u.factory ? { plantNodeName: u.factory } : {}),
   });
 }
 
@@ -349,7 +365,7 @@ function rowTitle(u: UnitRow): string {
                   backgroundColor: catColor(c),
                   minWidth: '2px',
                 }"
-                :title="`${c}: ${segCount(u, c)} · 点击查看诊断记录`"
+                :title="`${c}: ${segCount(u, c)} · 点击查看回路组对比`"
                 @click.stop="onSegClick(u, c)"
               ></div>
             </template>

@@ -135,3 +135,65 @@ export function scoreGrade(score: null | number | undefined) {
   if (score == null || Number.isNaN(score)) return null;
   return SCORE_GRADES.find((g) => score >= g.min) ?? null;
 }
+
+/**
+ * F3 诊断健康度：新鲜度分档展示元数据（16 号文 F3，按最新 SUCCESS 诊断时间分档）
+ * 配色语义：越新鲜越绿 → 超期红 → 从未诊断中性灰
+ * 色值全部引用本文件既有常量（评分档/分类中性色），零新增 hex 债务。
+ */
+export const FRESHNESS_META: Record<
+  DiagnosisApi.FreshnessBucketKey,
+  { color: string; label: string }
+> = {
+  within24h: { label: '24h 内', color: SCORE_GRADES[0].color },
+  within7d: { label: '7 天内', color: SCORE_GRADES[1].color },
+  within30d: { label: '30 天内', color: SCORE_GRADES[3].color },
+  stale: { label: '超期 >30 天', color: SCORE_GRADES[4].color },
+  never: { label: '从未诊断', color: CATEGORY_META.DATA_INSUFFICIENT.color },
+};
+
+/**
+ * F5 发起前数据充足性预检徽标元数据（16 号文 F5，复用 FitnessBadge 视觉模式）
+ * 三态：充足绿 / 疑似不足琥珀 / 不足红；unknown=无评估数据中性灰
+ * （数据源缺失，非数据质量结论，不得误报"不足"）。
+ * 色值全部引用本文件既有常量（评分档/分类中性色），零新增 hex 债务。
+ */
+export const PRECHECK_META: Record<
+  DiagnosisApi.PrecheckLevel,
+  { color: string; icon: string; label: string }
+> = {
+  sufficient: {
+    label: '数据充足',
+    color: SCORE_GRADES[0].color,
+    icon: 'lucide:check',
+  },
+  marginal: {
+    label: '疑似不足',
+    color: SCORE_GRADES[3].color,
+    icon: 'lucide:triangle-alert',
+  },
+  insufficient: {
+    label: '数据不足',
+    color: SCORE_GRADES[4].color,
+    icon: 'lucide:database-off',
+  },
+  unknown: {
+    label: '无评估数据',
+    color: CATEGORY_META.DATA_INSUFFICIENT.color,
+    icon: 'lucide:help-circle',
+  },
+};
+
+/**
+ * F6 复核反馈：确认率色阶（复用 DgRuleStats 解决率色阶语义：
+ * ≥80% 绿 / ≥50% 橙 / <50% 红 / null → 中性灰；色值引用既有常量零新增 hex）
+ */
+export function confirmRateColor(rate: null | number): string {
+  if (rate === null) return CATEGORY_META.DATA_INSUFFICIENT.color;
+  if (rate >= 0.8) return SCORE_GRADES[0].color;
+  if (rate >= 0.5) return SCORE_GRADES[3].color;
+  return SCORE_GRADES[4].color;
+}
+
+/** F6 阈值调优提示琥珀色（改判率 >40% 行标色；引用评分档色，零新增 hex） */
+export const REVIEW_HINT_COLOR = SCORE_GRADES[3].color;
