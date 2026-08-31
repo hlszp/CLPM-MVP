@@ -5,7 +5,8 @@
 2. 5 个 task 已注册到 celery_app（name 断言）
 3. EventBus.publish 双阶段：DB add+flush + WS 存根（mock session）
 4. EventBus.count_unread / mark_read 调用路径（mock session）
-5. task skeleton 可执行：asyncio.run 调用内部协程（连真实 DB）
+5. task skeleton 可执行：asyncio.run 调用内部协程（连真实 DB，integration 标记，
+   PG 不可达时 skip）
 
 M1 验收口径："4 beat 注册 + 单测触发 OK"。
 """
@@ -13,7 +14,10 @@ M1 验收口径："4 beat 注册 + 单测触发 OK"。
 from __future__ import annotations
 
 import asyncio
+import socket
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.core.event_bus import count_unread, mark_read, publish
 from app.tasks.celery_app import celery_app
@@ -162,12 +166,29 @@ class TestEventBusReadOps:
 
 
 # ---------------------------------------------------------------------------
-# task skeleton 可执行性（连真实 DB；DB 不可用时暴露环境问题）
+# task skeleton 可执行性（连真实 DB；DB 不可达时 skip，与 tests/integration/ 同模式）
 # ---------------------------------------------------------------------------
 
 
+def _pg_reachable() -> bool:
+    """检查 PG 端口是否可达（socket 探测，不依赖额外驱动）。"""
+    try:
+        from app.core.config import settings
+
+        with socket.create_connection((settings.POSTGRES_HOST, settings.POSTGRES_PORT), timeout=3):
+            return True
+    except Exception:
+        return False
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _pg_reachable(), reason="本地开发 PG 不可达，跳过 task skeleton 执行测试")
 class TestTaskSkeletonExecution:
-    """task 内部协程可被 asyncio.run 调用且返回 dict（验证 DB 连通 + 表存在）。"""
+    """task 内部协程可被 asyncio.run 调用且返回 dict（验证 DB 连通 + 表存在）。
+
+    需真实 PG：CI 经 pyproject addopts ``-m 'not integration'`` 排除；
+    本地 PG 不可达时按 skipif 跳过而非报错。
+    """
 
     def test_workbench_precalc_executable(self) -> None:
         from app.tasks.workbench import _workbench_precalc_async

@@ -43,9 +43,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   /** 泳道色块/列表行点击 → 宿主页复用诊断详情弹窗打开该 run */
-  'open-run': [item: DiagnosisApi.LatestRunItem];
+  openRun: [item: DiagnosisApi.LatestRunItem];
   /** 空态引导发起诊断 → 宿主页复用快捷诊断链路 */
-  'trigger-diagnosis': [loopId: string];
+  triggerDiagnosis: [loopId: string];
 }>();
 
 const open = defineModel<boolean>('open', { default: false });
@@ -138,13 +138,11 @@ const EVENT_META: Record<string, { color: string; label: string }> = {
 const visibleEvents = computed(() => {
   const ev = archive.value?.events;
   if (!ev) return [];
-  return ev.items.filter((e) =>
-    e.type === 'handling'
-      ? ev.handlingEnabled
-      : e.type === 'tuning'
-        ? ev.tuningEnabled
-        : false,
-  );
+  return ev.items.filter((e) => {
+    if (e.type === 'handling') return ev.handlingEnabled;
+    if (e.type === 'tuning') return ev.tuningEnabled;
+    return false;
+  });
 });
 
 const kpiAvailable = computed(
@@ -199,16 +197,16 @@ const rows = computed<Row[]>(() => {
   return list;
 });
 
-const laneRow = computed<Row | null>(
+const laneRow = computed<null | Row>(
   () => rows.value.find((r) => r.key === 'lane') ?? null,
 );
-const confRow = computed<Row | null>(
+const confRow = computed<null | Row>(
   () => rows.value.find((r) => r.key === 'conf') ?? null,
 );
-const scoreRow = computed<Row | null>(
+const scoreRow = computed<null | Row>(
   () => rows.value.find((r) => r.key === 'score') ?? null,
 );
-const oscRow = computed<Row | null>(
+const oscRow = computed<null | Row>(
   () => rows.value.find((r) => r.key === 'osc') ?? null,
 );
 
@@ -224,7 +222,7 @@ function xOf(t: number, d: { max: number; min: number }): number {
 }
 
 /** 时间域：runs + 可见事件 + KPI 点取并集（同一 window 过滤口径） */
-const domain = computed<{ max: number; min: number } | null>(() => {
+const domain = computed<null | { max: number; min: number }>(() => {
   const a = archive.value;
   if (!a || a.runs.length === 0) return null;
   const times: number[] = [];
@@ -431,7 +429,7 @@ interface Tip {
   y: number;
 }
 
-const tip = ref<Tip | null>(null);
+const tip = ref<null | Tip>(null);
 const svgBoxEl = ref<HTMLDivElement | null>(null);
 
 function locate(evt: MouseEvent): { x: number; y: number } {
@@ -487,7 +485,7 @@ function openRun(run: DiagnosisApi.ArchiveRunItem): void {
   const a = archive.value;
   if (!a) return;
   tip.value = null;
-  emit('open-run', {
+  emit('openRun', {
     importanceLevel: a.loop.level ?? null,
     lastDiagnosedAt: run.diagnosedAt,
     loopDescription: a.loop.loopName || null,
@@ -505,12 +503,12 @@ function openRun(run: DiagnosisApi.ArchiveRunItem): void {
 }
 
 function triggerDiagnosis(): void {
-  if (props.loopId) emit('trigger-diagnosis', props.loopId);
+  if (props.loopId) emit('triggerDiagnosis', props.loopId);
 }
 
 /** 倒序列表（最新在顶部；迁移自 history-drawer） */
 const runsDesc = computed(() =>
-  [...(archive.value?.runs ?? [])].reverse(),
+  [...(archive.value?.runs ?? [])].toReversed(),
 );
 </script>
 

@@ -19,25 +19,27 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
-import { useWorkbenchDrill } from '../utils/drill';
-
 const props = defineProps<{
   pareto?: WorkbenchApi.ParetoRow[];
   window?: string;
 }>();
 
-const { drill } = useWorkbenchDrill();
+const emit = defineEmits<{
+  /** 16 号文 F4 第二层下钻：柱点击 → 该分类回路组对比抽屉 */
+  cohort: [category: string];
+}>();
 
 /**
- * 追溯矩阵 §4 下钻：柱点击 → 诊断记录（category 口径，窗口由 drill 携带）。
+ * 追溯矩阵 §4 下钻（16 号文 F4 升级为第二层）：
+ * 柱点击 → 共性问题回路组对比抽屉（分类 × 装置维度回路组列表，可勾选 2~3
+ * 回路雷达对比；抽屉内"查看诊断记录"链接承接原 records 下钻）。
  * 已核验：root_cause = mv_diagnosis_pareto.root_cause（A2 重建 MV-02 迁移 e3f4a5b6c7d8，
  * 改基于 diagnosis_run，旧 diagnosis_result 读方已退役），即诊断 8 类代码（classification.py：
- * TUNING/VALVE/INSTRUMENT/COMMUNICATION/PROCESS/UTILIZATION/DESIGN/DATA_INSUFFICIENT）；
- * records.vue 以 CATEGORY_OPTIONS 值（同为 8 类代码）校验入参，直接透传即可正确落地。
+ * TUNING/VALVE/INSTRUMENT/COMMUNICATION/PROCESS/UTILIZATION/DESIGN/DATA_INSUFFICIENT）。
  */
 function onBarClick(p: WorkbenchApi.ParetoRow) {
   if (!p.root_cause) return;
-  drill('diagnosis', '/diagnosis/records', { category: p.root_cause });
+  emit('cohort', p.root_cause);
 }
 
 // ---------- 唯一坐标常量（边距基线收敛，经验 100011295 抽常量）----------
@@ -245,7 +247,7 @@ const top2 = computed(() => {
                 backgroundColor: '#1F4E79',
                 opacity: 1 - Math.min(i, 5) * 0.12,
               }"
-              :title="`${p.root_cause ?? '未分类'}：${p.tag_count ?? 0} 条 · 点击查看诊断记录`"
+              :title="`${p.root_cause ?? '未分类'}：${p.tag_count ?? 0} 条 · 点击查看回路组对比`"
               @click="onBarClick(p)"
             ></div>
             <!-- 柱顶数字 -->

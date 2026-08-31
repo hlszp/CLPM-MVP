@@ -1,4 +1,4 @@
-"""处置统计聚合 service（报告模块优化 P0-2，2026-08-28）。
+"""处置统计聚合 service（报告模块优化 P0-2 下沉 / P2-1 闭环增强，2026-08）。
 
 从 endpoints/handling.py 内联聚合逻辑下沉为单一实现（方案 R1）：
 - /handling/statistics（模块端点，契约不变）与
@@ -6,6 +6,9 @@
 - 模块端点仅传 months → 行为与历史完全一致（全量聚合、北京时间月界）。
 - 报告端点可附加 start/end/plant_node_id 筛选（时间窗按 created_at 过滤，
   闭环数指标按 verified_at 归窗；装置过滤经 WITH RECURSIVE 子树下钻 unit_id）。
+- P2-1（方案 §5.1）：响应向后兼容只增字段——sla（按时闭环率 + WARN/BREACH）/
+  suggestionFunnel（建议五态漏斗）/ verifyResult（整改有效率）/
+  staffWorkload（直读 mv_staff_workload，全量口径）。
 """
 
 from __future__ import annotations
@@ -27,6 +30,16 @@ ACTION_TYPE_LABELS = {
     "RECONFIG": "组态改造",
     "OTHER": "其他",
 }
+
+#: 建议状态中文名 + 漏斗展示顺序（P2-1 建议漏斗，§5.1）
+SUGGESTION_STATUS_LABELS = {
+    "PENDING": "待审核",
+    "ACCEPTED": "已接受",
+    "CONVERTED": "已转工单",
+    "REJECTED": "已驳回",
+    "IGNORED": "已忽略",
+}
+_FUNNEL_ORDER = ("PENDING", "ACCEPTED", "CONVERTED", "REJECTED", "IGNORED")
 
 _BJ_TZ = timezone(timedelta(hours=8))
 
@@ -51,28 +64,30 @@ _SU_AGG_SQL = """
 """
 
 #: 工单侧按回路聚合子查询（handling_order，六态分布 + 闭环率 + 最近处置；{lf} 同上）
+#: 列一律以别名 t 限定——{lf} 可能注入 JOIN loop_ledger（topLoops 下推），
+#: loop_ledger 也有 status 列，裸列名会触发 AmbiguousColumnError
 _HO_AGG_SQL = """
-    SELECT loop_id,
-           COUNT(*) FILTER (WHERE status = 'PENDING')   AS ho_pending,
-           COUNT(*) FILTER (WHERE status = 'EXECUTING') AS ho_executing,
-           COUNT(*) FILTER (WHERE status = 'VERIFYING') AS ho_verifying,
-           COUNT(*) FILTER (WHERE status = 'CLOSED')    AS ho_closed,
-           COUNT(*) FILTER (WHERE status = 'REOPENED')  AS ho_reopened,
-           COUNT(*) FILTER (WHERE status = 'CANCELLED') AS ho_cancelled,
+    SELECT t.loop_id,
+           COUNT(*) FILTER (WHERE t.status = 'PENDING')   AS ho_pending,
+           COUNT(*) FILTER (WHERE t.status = 'EXECUTING') AS ho_executing,
+           COUNT(*) FILTER (WHERE t.status = 'VERIFYING') AS ho_verifying,
+           COUNT(*) FILTER (WHERE t.status = 'CLOSED')    AS ho_closed,
+           COUNT(*) FILTER (WHERE t.status = 'REOPENED')  AS ho_reopened,
+           COUNT(*) FILTER (WHERE t.status = 'CANCELLED') AS ho_cancelled,
            COUNT(*) AS order_total,
-           COUNT(*) FILTER (WHERE verify_result IS NOT NULL) AS ho_verified,
-           COUNT(*) FILTER (WHERE verify_result = 'INEFFECTIVE') AS ho_ineffective,
-           MAX(started_at) AS last_handled_at,
-           MAX(updated_at) AS last_order_at,
-           (ARRAY_AGG(handler ORDER BY started_at DESC NULLS LAST)
-               FILTER (WHERE handler IS NOT NULL))[1] AS last_handled_by,
+           COUNT(*) FILTER (WHERE t.verify_result IS NOT NULL) AS ho_verified,
+           COUNT(*) FILTER (WHERE t.verify_result = 'INEFFECTIVE') AS ho_ineffective,
+           MAX(t.started_at) AS last_handled_at,
+           MAX(t.updated_at) AS last_order_at,
+           (ARRAY_AGG(t.handler ORDER BY t.started_at DESC NULLS LAST)
+               FILTER (WHERE t.handler IS NOT NULL))[1] AS last_handled_by,
            (ARRAY_AGG(
-               (kpi_after ->> 'score')::float8 - (kpi_before ->> 'score')::float8
-               ORDER BY verified_at DESC NULLS LAST)
-               FILTER (WHERE status = 'CLOSED'
-                       AND kpi_before ->> 'score' IS NOT NULL
-                       AND kpi_after  ->> 'score' IS NOT NULL))[1] AS last_closed_kpi_delta
-    FROM handling_order{lf} GROUP BY loop_id
+               (t.kpi_after ->> 'score')::float8 - (t.kpi_before ->> 'score')::float8
+               ORDER BY t.verified_at DESC NULLS LAST)
+               FILTER (WHERE t.status = 'CLOSED'
+                       AND t.kpi_before ->> 'score' IS NOT NULL
+                       AND t.kpi_after  ->> 'score' IS NOT NULL))[1] AS last_closed_kpi_delta
+    FROM handling_order t{lf} GROUP BY t.loop_id
 """
 
 
@@ -178,6 +193,10 @@ async def build_handling_statistics(
     - monthly：近 N 月（默认，北京时间月界按 verified_at 归月，空月补零）；
       传时间窗则按窗口逐月展开（上限 24 桶）
     - byType / byUnit / topLoops：类型分布、装置闭环分布、重开次数 Top 10（工单口径）
+    - sla / suggestionFunnel / verifyResult / staffWorkload：P2-1 闭环增强
+      （方案 §5.1，向后兼容只增字段）——按时闭环率 + WARN/BREACH 计数、
+      建议五态漏斗、整改有效率、人员工作量（直读 mv_staff_workload，
+      全量口径不随筛选；MV 不可用时降级为空列表）
 
     筛选语义（仅报告端点使用；模块端点不传，行为与历史一致）：
     - start/end：工单按 created_at 半开区间过滤（闭环数按 verified_at 归窗）；
@@ -230,7 +249,7 @@ async def build_handling_statistics(
                 SELECT
                   COUNT(*) FILTER (WHERE ho.status = 'CLOSED'
                                    AND ho.verified_at >= :closed_from
-                                   AND (:closed_to::timestamp IS NULL
+                                   AND (CAST(:closed_to AS timestamp) IS NULL
                                         OR ho.verified_at < :closed_to))
                     AS closed_period,
                   COUNT(*) FILTER (WHERE ho.status = 'CLOSED') AS closed_total,
@@ -399,13 +418,18 @@ async def build_handling_statistics(
     # --- topLoops（重开 Top 10；有筛选时注入内层聚合，避免全表 GROUP BY 后过滤） ---
     has_filters = start is not None or end is not None or unit_ids is not None
     if has_filters:
-        top_filter = " AND ".join(f for f in ho_where if f != "1=1").replace("ho.", "t_ho_.")
+        top_filter = " AND ".join(f for f in ho_where if f != "1=1").replace("ho.", "t.")
         inner_ho = _HO_AGG_SQL.format(
-            lf=f" AS t_ho_ JOIN loop_ledger t_ll ON t_ll.id = t_ho_.loop_id WHERE {top_filter}"
+            lf=f" JOIN loop_ledger t_ll ON t_ll.id = t.loop_id WHERE {top_filter}"
         )
     else:
         inner_ho = _HO_AGG_SQL.format(lf="")
     top_params: dict[str, Any] = {"unit_ids": params["unit_ids"]} if unit_ids is not None else {}
+    # 时间窗筛选下推内层聚合时，:win_start/:win_end 绑定值必须随参（P2 修复）
+    if "win_start" in params:
+        top_params["win_start"] = params["win_start"]
+    if "win_end" in params:
+        top_params["win_end"] = params["win_end"]
     top_rows = list(
         (
             await db.execute(
@@ -449,10 +473,111 @@ async def build_handling_statistics(
         for r in top_rows
     ]
 
+    # ------------------------------------------------------------------
+    # P2-1 闭环增强（方案 §5.1）：SLA 达成率 / 建议漏斗 / 整改有效率 /
+    # 人员工作量（向后兼容只增字段，/handling/statistics 契约不破）
+    # ------------------------------------------------------------------
+
+    # --- SLA 达成率 + 整改有效率（同窗同装置过滤的工单口径） ---
+    sla_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                  COUNT(*) FILTER (WHERE ho.sla_stage = 'WARN')  AS sla_warn_count,
+                  COUNT(*) FILTER (WHERE ho.sla_stage = 'BREACH') AS sla_breach_count,
+                  COUNT(*) FILTER (WHERE ho.status = 'CLOSED'
+                                   AND ho.sla_deadline_at IS NOT NULL) AS sla_closed_total,
+                  COUNT(*) FILTER (WHERE ho.status = 'CLOSED'
+                                   AND ho.sla_deadline_at IS NOT NULL
+                                   AND ho.verified_at <= ho.sla_deadline_at) AS sla_on_time,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'EFFECTIVE') AS effective_count,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'INEFFECTIVE') AS ineffective_count
+                FROM handling_order ho
+                {ho_join}
+                WHERE {" AND ".join(ho_where)}
+                """
+            ),
+            params,
+        )
+    ).one()
+    sla = {
+        "onTimeRate": _rate(sla_row.sla_on_time, sla_row.sla_closed_total),
+        "onTimeClosed": int(sla_row.sla_on_time),
+        "slaClosedTotal": int(sla_row.sla_closed_total),
+        "warnCount": int(sla_row.sla_warn_count),
+        "breachCount": int(sla_row.sla_breach_count),
+    }
+    verify_result = {
+        "effective": int(sla_row.effective_count),
+        "ineffective": int(sla_row.ineffective_count),
+        "effectiveRate": _rate(
+            sla_row.effective_count,
+            sla_row.effective_count + sla_row.ineffective_count,
+        ),
+    }
+
+    # --- 建议漏斗（五态流转量，suggested_at 归窗同驳回率口径） ---
+    funnel_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT su.status, COUNT(*) AS cnt
+                FROM loop_action_item su
+                {su_join}
+                WHERE {su_where_sql}
+                GROUP BY su.status
+                """
+            ),
+            params,
+        )
+    ).all()
+    funnel_map = {r.status: int(r.cnt) for r in funnel_rows}
+    suggestion_funnel = [
+        {
+            "status": st,
+            "label": SUGGESTION_STATUS_LABELS[st],
+            "count": funnel_map.get(st, 0),
+        }
+        for st in _FUNNEL_ORDER
+    ]
+
+    # --- 人员工作量（直读 mv_staff_workload 物化视图，零聚合成本） ---
+    # 全量口径（MV 由 refresh-workbench-mv@5min 刷新），不随时间窗/装置筛选
+    staff_workload: list[dict[str, Any]] = []
+    try:
+        mv_rows = (
+            await db.execute(
+                text(
+                    """
+                    SELECT user_name, active_count, closed_count, sla_warned_count
+                    FROM mv_staff_workload
+                    ORDER BY active_count DESC, closed_count DESC
+                    LIMIT 20
+                    """
+                )
+            )
+        ).all()
+        staff_workload = [
+            {
+                "userName": r.user_name or "未分配",
+                "activeCount": int(r.active_count),
+                "closedCount": int(r.closed_count),
+                "slaWarnedCount": int(r.sla_warned_count),
+            }
+            for r in mv_rows
+        ]
+    except Exception:  # MV 缺失/未刷新等场景降级为空（报告域不因此 500）
+        staff_workload = []
+
     return {
         "summary": summary,
         "monthly": monthly,
         "byType": by_type,
         "byUnit": by_unit,
         "topLoops": top_loops,
+        "sla": sla,
+        "suggestionFunnel": suggestion_funnel,
+        "verifyResult": verify_result,
+        "staffWorkload": staff_workload,
     }

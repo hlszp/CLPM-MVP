@@ -22,10 +22,12 @@ import {
   Card,
   Descriptions,
   DescriptionsItem,
+  Empty,
   Input,
   Modal,
   Popconfirm,
   Select,
+  Spin,
   Switch,
   Table,
   Tag,
@@ -40,6 +42,7 @@ import {
   getDiagnosisConfigHistoryApi,
   getDiagnosisConfigsApi,
   getDiagnosisOperatorsApi,
+  getDiagnosisReviewFeedbackApi,
   rollbackDiagnosisConfigApi,
   updateDiagnosisConfigsApi,
 } from '#/api/diagnosis';
@@ -52,6 +55,13 @@ import {
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { usePageToolbar } from '#/composables/use-page-toolbar';
 import { formatTime } from '#/utils/format';
+
+// 16 号文 F6：复核反馈统计（色阶/分类元数据复用诊断常量表，零新增 hex）
+import {
+  CATEGORY_META,
+  confirmRateColor,
+  REVIEW_HINT_COLOR,
+} from './constants';
 
 defineOptions({ name: 'DiagnosisConfig' });
 
@@ -419,6 +429,96 @@ async function handleRollback(version: number) {
 }
 
 // ---------------------------------------------------------------------------
+// 16 号文 F6：算子表现（复核反馈统计与阈值调优提示，仅 ADMIN）
+// 安全边界红线：仅"建议复核阈值"提示，调参走现有四级阈值覆盖人工操作，
+// 本区块不提供任何自动调参入口。
+// ---------------------------------------------------------------------------
+
+const feedbackLoading = ref(false);
+const feedback = ref<DiagnosisApi.ReviewFeedbackResult | null>(null);
+
+async function loadFeedback() {
+  if (!isAdmin.value) return; // 非管理员不请求（后端亦 403 收口）
+  feedbackLoading.value = true;
+  try {
+    feedback.value = await getDiagnosisReviewFeedbackApi();
+  } catch {
+    feedback.value = null; // 错误提示由请求拦截器统一弹出
+  } finally {
+    feedbackLoading.value = false;
+  }
+}
+
+const feedbackOperators = computed(() => feedback.value?.operators ?? []);
+const feedbackCategories = computed(() => feedback.value?.categories ?? []);
+
+function fmtPct(v: null | number): string {
+  return v === null ? '—' : `${Math.round(v * 100)}%`;
+}
+
+function categoryLabel(code: null | string): string {
+  return code ? (CATEGORY_META[code as DiagnosisApi.Category]?.label ?? code) : '—';
+}
+
+/** 分类色（antd bodyCell record 为 any，此处集中收口类型断言） */
+function categoryColor(code: null | string): string | undefined {
+  return code
+    ? CATEGORY_META[code as DiagnosisApi.Category]?.color
+    : undefined;
+}
+
+function overturnTopText(items: DiagnosisApi.ReviewOverturnTopItem[]): string {
+  if (items.length === 0) return '—';
+  return items.map((t) => `${categoryLabel(t.category)} ×${t.count}`).join('；');
+}
+
+/** D4 样本不足占位文案（"样本不足（N<10），暂不统计"） */
+function insufficientText(row: any): string {
+  return `样本不足（N=${row.sampleSize}<${feedback.value?.sampleMin ?? 10}），暂不统计`;
+}
+
+/** 改判率 >40% 行标琥珀（rowClassName 用） */
+function feedbackRowClass(row: any): string {
+  return row.tuningHint ? 'fb-row-hint' : '';
+}
+
+/**
+ * 阈值调优入口：链接到该算子的阈值配置区——复用本页现有编辑交互
+ * （全局默认层阈值 + 生效优先级说明），不新建交互、不自动调参。
+ */
+function openThresholdForOperator(row: any) {
+  const cfg = configs.value.find((c) => c.diagKey === row.diagCode);
+  if (!cfg) {
+    Modal.info({
+      title: '无对应全局默认配置',
+      content: `算子「${row.displayName}」（${row.diagCode}）暂无全局默认配置，可先在上方「新增配置」创建后再调整阈值。`,
+    });
+    return;
+  }
+  openEditModal(cfg);
+}
+
+const feedbackColumns = [
+  { title: '算子', key: 'operator', width: 200 },
+  { title: '归因分类', key: 'category', width: 110 },
+  { title: '检出次数', key: 'detectedCount', width: 80 },
+  { title: '复核率', key: 'reviewRate', width: 80 },
+  { title: '确认率', key: 'confirmRate', width: 90 },
+  { title: '改判率', key: 'overturnRate', width: 90 },
+  { title: '改判去向 Top3', key: 'overturnTop', width: 220, ellipsis: true },
+  { title: '操作', key: 'actions', width: 110, fixed: 'right' as const },
+];
+
+const feedbackCategoryColumns = [
+  { title: '分类', key: 'category', width: 200 },
+  { title: '检出次数', key: 'detectedCount', width: 90 },
+  { title: '复核率', key: 'reviewRate', width: 90 },
+  { title: '确认率', key: 'confirmRate', width: 100 },
+  { title: '改判率', key: 'overturnRate', width: 100 },
+  { title: '改判去向 Top3', key: 'overturnTop', ellipsis: true },
+];
+
+// ---------------------------------------------------------------------------
 // 工具栏（刷新 / 帮助）
 // ---------------------------------------------------------------------------
 
@@ -427,7 +527,7 @@ const loading = computed(
 );
 
 async function handleRefresh() {
-  await Promise.all([loadOperators(), loadConfigs()]);
+  await Promise.all([loadOperators(), loadConfigs(), loadFeedback()]);
 }
 
 const { toolbarItems } = usePageToolbar(() => ({
@@ -437,6 +537,7 @@ const { toolbarItems } = usePageToolbar(() => ({
 onMounted(() => {
   void loadOperators();
   void loadConfigs();
+  void loadFeedback();
 });
 
 defineExpose({
@@ -566,6 +667,177 @@ defineExpose({
             </template>
           </template>
         </Table>
+      </Card>
+
+      <!-- 16 号文 F6：算子表现（复核反馈统计与阈值调优提示，仅 ADMIN 可见） -->
+      <Card v-if="isAdmin" size="small" class="mt-3">
+        <template #title>
+          算子表现（复核反馈）
+          <span class="text-xs font-normal text-muted-foreground">
+            已复核 {{ feedback?.reviewedRuns ?? 0 }}/{{ feedback?.totalRuns ?? 0 }}
+            次诊断
+          </span>
+        </template>
+        <!-- 常驻口径说明（§4 F6.4） -->
+        <div class="mb-2 text-xs text-muted-foreground">
+          统计范围为全部历史已复核 run，改判=复核结论不含机器主分类；样本
+          &lt;{{ feedback?.sampleMin ?? 10 }} 显示占位不给出比例；算子按症状标签映射分类归因，pending_review
+          命中不计入改判分母。阈值调整走四级覆盖人工操作（回路&gt;装置&gt;类型&gt;全局），平台不自动调参。
+        </div>
+        <Spin :spinning="feedbackLoading" size="small">
+          <Empty
+            v-if="!feedbackLoading && !feedback"
+            :image="Empty.PRESENTED_IMAGE_SIMPLE"
+            description="复核反馈统计加载失败"
+          >
+            <Button size="small" @click="loadFeedback">重试</Button>
+          </Empty>
+          <div
+            v-else-if="!feedbackLoading && feedback && feedback.reviewedRuns === 0"
+            class="py-3 text-xs text-muted-foreground"
+          >
+            尚无已复核诊断记录，统计随人工复核积累生成
+          </div>
+          <template v-else-if="feedback">
+            <!-- 按算子 -->
+            <div class="fb-sec-title">按算子（{{ feedbackOperators.length }} 个）</div>
+            <Table
+              :columns="feedbackColumns"
+              :data-source="feedbackOperators"
+              :pagination="false"
+              :row-class-name="feedbackRowClass"
+              row-key="operator"
+              size="small"
+              :scroll="{ x: 1020 }"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'operator'">
+                  <div class="text-xs font-medium">{{ record.displayName }}</div>
+                  <div class="font-mono text-xs text-muted-foreground">
+                    {{ record.operator }}
+                  </div>
+                </template>
+                <template v-else-if="column.key === 'category'">
+                  <span
+                    v-if="record.category"
+                    :style="{ color: categoryColor(record.category) }"
+                  >
+                    {{ categoryLabel(record.category) }}
+                  </span>
+                  <span v-else class="text-muted-foreground">—</span>
+                </template>
+                <template v-else-if="column.key === 'detectedCount'">
+                  <span class="tabular-nums">{{ record.detectedCount }}</span>
+                  <span
+                    v-if="record.pendingExcludedCount > 0"
+                    class="ml-1 text-xs text-muted-foreground"
+                    :title="`其中 ${record.pendingExcludedCount} 次命中 pending_review（机器已降级待复核），不计入改判分母`"
+                  >
+                    （排除待复核 {{ record.pendingExcludedCount }}）
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'reviewRate'">
+                  <span class="tabular-nums">{{ fmtPct(record.reviewRate) }}</span>
+                </template>
+                <template v-else-if="column.key === 'confirmRate'">
+                  <span
+                    v-if="!record.insufficientSample"
+                    class="tabular-nums"
+                    :style="{ color: confirmRateColor(record.confirmRate) }"
+                  >
+                    {{ fmtPct(record.confirmRate) }}
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">
+                    {{ insufficientText(record) }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'overturnRate'">
+                  <span
+                    v-if="!record.insufficientSample"
+                    class="tabular-nums"
+                    :style="{
+                      color: record.tuningHint ? REVIEW_HINT_COLOR : undefined,
+                      fontWeight: record.tuningHint ? 600 : undefined,
+                    }"
+                  >
+                    {{ fmtPct(record.overturnRate) }}
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">—</span>
+                </template>
+                <template v-else-if="column.key === 'overturnTop'">
+                  <span v-if="!record.insufficientSample" class="text-xs">
+                    {{ overturnTopText(record.overturnTop) }}
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">—</span>
+                </template>
+                <template v-else-if="column.key === 'actions'">
+                  <Button
+                    v-if="record.tuningHint"
+                    type="link"
+                    size="small"
+                    :style="{ color: REVIEW_HINT_COLOR }"
+                    title="建议复核阈值（当前四级覆盖：回路>装置>类型>全局）；点击打开该算子的阈值配置"
+                    @click="openThresholdForOperator(record)"
+                  >
+                    建议复核阈值
+                  </Button>
+                  <span v-else class="text-xs text-muted-foreground">—</span>
+                </template>
+              </template>
+            </Table>
+
+            <!-- 按分类（8 类） -->
+            <div class="fb-sec-title mt-3">按分类（8 类）</div>
+            <Table
+              :columns="feedbackCategoryColumns"
+              :data-source="feedbackCategories"
+              :pagination="false"
+              row-key="category"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'category'">
+                  <span :style="{ color: categoryColor(record.category) }">
+                    {{ categoryLabel(record.category) }}
+                  </span>
+                  <span class="ml-1 font-mono text-xs text-muted-foreground">
+                    {{ record.category }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'detectedCount'">
+                  <span class="tabular-nums">{{ record.detectedCount }}</span>
+                </template>
+                <template v-else-if="column.key === 'reviewRate'">
+                  <span class="tabular-nums">{{ fmtPct(record.reviewRate) }}</span>
+                </template>
+                <template v-else-if="column.key === 'confirmRate'">
+                  <span
+                    v-if="!record.insufficientSample"
+                    class="tabular-nums"
+                    :style="{ color: confirmRateColor(record.confirmRate) }"
+                  >
+                    {{ fmtPct(record.confirmRate) }}
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">
+                    {{ insufficientText(record) }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'overturnRate'">
+                  <span v-if="!record.insufficientSample" class="tabular-nums">
+                    {{ fmtPct(record.overturnRate) }}
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">—</span>
+                </template>
+                <template v-else-if="column.key === 'overturnTop'">
+                  <span v-if="!record.insufficientSample" class="text-xs">
+                    {{ overturnTopText(record.overturnTop) }}
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">—</span>
+                </template>
+              </template>
+            </Table>
+          </template>
+        </Spin>
       </Card>
     </div>
 
@@ -741,3 +1013,18 @@ defineExpose({
     />
   </Page>
 </template>
+
+<style scoped>
+/* 16 号文 F6：算子表现区块（琥珀提示色走 CSS 变量，零新增 hex） */
+.fb-sec-title {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+/* 改判率 >40% 行标琥珀（§4 F6.3） */
+:deep(.fb-row-hint) td {
+  background: color-mix(in srgb, var(--color-amber-500) 8%, transparent);
+}
+</style>

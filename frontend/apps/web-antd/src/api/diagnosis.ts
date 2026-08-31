@@ -332,33 +332,33 @@ export namespace DiagnosisApi {
   /** F1 回路诊断档案聚合响应（GET /runs/loop-archive） */
   export interface LoopArchive {
     loop: {
+      /** 回路等级（1 关键 / 2 重要 / 3 一般） */
+      level: null | number;
       loopId: string;
       loopName: string;
       loopType: null | string;
-      /** 回路等级（1 关键 / 2 重要 / 3 一般） */
-      level: null | number;
     };
     summary: {
-      totalRuns: number;
       firstDiagnosedAt: null | string;
       lastDiagnosedAt: null | string;
       latestCategory: Category | null;
       latestConfidence: null | number;
+      totalRuns: number;
     };
     runs: ArchiveRunItem[];
     /** KPI 趋势（kpi_snapshot_hourly，LTTB）；评估模块禁用/无快照时 available=false */
     kpiTrend: {
       available: boolean;
       series: {
-        score: Array<{ t: string; v: null | number }>;
         oscillationRate: Array<{ t: string; v: null | number }>;
+        score: Array<{ t: string; v: null | number }>;
       };
     };
     /** 事件图层能力（禁用模块对应图层前端隐藏而非置灰） */
     events: {
       handlingEnabled: boolean;
-      tuningEnabled: boolean;
       items: ArchiveEventItem[];
+      tuningEnabled: boolean;
     };
   }
 
@@ -382,31 +382,213 @@ export namespace DiagnosisApi {
     base: CompareRunRef | null;
     target: CompareRunRef;
     conclusion: {
-      primaryCategory: { base: Category | null; target: Category | null };
-      severity: { base: null | Severity; target: null | Severity };
       confidence: {
         base: null | number;
-        target: null | number;
         delta: null | number;
+        target: null | number;
       };
+      primaryCategory: { base: Category | null; target: Category | null };
+      severity: { base: null | Severity; target: null | Severity };
     };
     features: Array<{
-      operator: string;
-      feature: string;
       baseValue: null | number;
-      targetValue: null | number;
       delta: null | number;
       direction: null | string;
+      feature: string;
+      operator: string;
+      targetValue: null | number;
     }>;
     kpi: Array<{
-      metric: string;
       base: null | number;
-      target: null | number;
       delta: null | number;
       direction: null | string;
+      metric: string;
+      target: null | number;
     }>;
     /** 验证对比能力（处置启用且存在 verify_run_id 关联时 true；前端据此显隐该模式） */
     verifyPair: boolean;
+  }
+
+  // ===== 16 号文 F3/F4（诊断扩展 Phase B：覆盖台账 + 共性问题回路组对比） =====
+
+  /** F3 新鲜度分档键（按回路最新 SUCCESS 诊断时间） */
+  export type FreshnessBucketKey =
+    | 'never'
+    | 'stale'
+    | 'within7d'
+    | 'within24h'
+    | 'within30d';
+
+  /** F3 分档内回路条目（悬浮/下钻用） */
+  export interface CoverageBucketLoop {
+    lastDiagnosedAt: null | string;
+    loopId: string;
+    loopTagName: string;
+  }
+
+  /** F3 新鲜度分档桶 */
+  export interface CoverageBucket {
+    count: number;
+    key: FreshnessBucketKey;
+    loops: CoverageBucketLoop[];
+  }
+
+  /** F3 调度滞后回路（1/2 级；lastScheduledAt=null 表示从未排程） */
+  export interface CoverageScheduleLaggingLoop {
+    lastScheduledAt: null | string;
+    loopId: string;
+    loopTagName: string;
+  }
+
+  /** F3 调度执行分级行（3 级仅 note，无滞后字段） */
+  export interface CoverageScheduleLevel {
+    cadence: 'daily' | 'manual' | 'weekly';
+    cadenceLabel: string;
+    expectedLoops: number;
+    lagThresholdHours?: null | number;
+    lagging?: CoverageScheduleLaggingLoop[];
+    laggingCount?: number;
+    lastScheduledAt?: null | string;
+    level: number;
+    note?: null | string;
+  }
+
+  /** F3 数据不足榜条目（近 30d DATA_INSUFFICIENT 占比） */
+  export interface CoverageDataInsufficientItem {
+    insufficientRuns: number;
+    loopId: string;
+    loopTagName: null | string;
+    ratio: number;
+    totalRuns: number;
+  }
+
+  /** F3 诊断覆盖台账响应（GET /coverage）；schedule 仅 ADMIN 返回，非管理员为 null */
+  export interface CoverageResult {
+    dataInsufficient: {
+      top: CoverageDataInsufficientItem[];
+      windowDays: number;
+    };
+    freshness: {
+      buckets: CoverageBucket[];
+      generatedAt: string;
+      totalLoops: number;
+    };
+    /** 调度执行块（仅 ADMIN；null 时前端整块隐藏而非置灰） */
+    schedule: null | { levels: CoverageScheduleLevel[] };
+  }
+
+  /** F4 回路组条目：该分类×装置下最新一条 run 摘要（latest-per-loop 口径） */
+  export interface CategoryCohortItem {
+    importanceLevel: null | number;
+    lastDiagnosedAt: null | string;
+    loopDescription: null | string;
+    loopId: string;
+    loopTagName: string;
+    /** 最新 run 指标汇总（雷达 6 指标数据源；无指标时为 null） */
+    metricSummary: MetricSummary | null;
+    primaryConfidence: null | number;
+    runId: string;
+    severity: null | Severity;
+  }
+
+  /** F4 共性问题回路组响应（GET /category-cohort） */
+  export interface CategoryCohortResult {
+    category: Category;
+    items: CategoryCohortItem[];
+    plantNodeId: null | string;
+    total: number;
+  }
+
+  // ===== 16 号文 F5/F6（诊断扩展 Phase C：发起前预检徽标 + 复核反馈统计） =====
+
+  /** F5 预检窗口（默认 24h，预期快照行数=窗口小时数） */
+  export type PrecheckWindow = '7d' | '24h' | '30d';
+
+  /** F5 密度分级：充足 / 疑似不足 / 不足 / 无评估数据（unknown=数据源缺失中性态，非质量结论） */
+  export type PrecheckLevel =
+    | 'insufficient'
+    | 'marginal'
+    | 'sufficient'
+    | 'unknown';
+
+  /** F5 单回路预检徽标项 */
+  export interface PrecheckItem {
+    loopId: string;
+    level: PrecheckLevel;
+    /** 窗口内快照行数 */
+    rowCount: number;
+    /** 预期行数（窗口小时数 × 1 行/小时） */
+    expectedRows: number;
+    /** 密度比 rowCount/expectedRows（unknown 时为 null） */
+    ratio: null | number;
+  }
+
+  /** F5 预检响应（GET /precheck）；assessEnabled=false 时前端整列隐藏徽标 */
+  export interface PrecheckResult {
+    window: string;
+    expectedRows: number;
+    /** 评估模块启用能力字段（false=徽标中性隐藏，不误报不足） */
+    assessEnabled: boolean;
+    generatedAt: string;
+    items: PrecheckItem[];
+  }
+
+  /** F6 改判去向条目（Top3） */
+  export interface ReviewOverturnTopItem {
+    category: Category;
+    count: number;
+  }
+
+  /** F6 统计行公共字段（算子/分类两维度共用；D4：样本 <10 时比例为 null） */
+  export interface ReviewFeedbackRow {
+    /** 检出次数（算子=executed+detected；分类=机器主分类命中） */
+    detectedCount: number;
+    /** 其中已复核次数 */
+    reviewedCount: number;
+    /** 复核率（已复核/已检出；检出 0 时为 null） */
+    reviewRate: null | number;
+    /** 改判分母（已复核且机器结论可确认/改判；pending_review 命中已排除） */
+    sampleSize: number;
+    /** D4 样本门槛：sampleSize < sampleMin 时为 true，比例字段为 null 不误导 */
+    insufficientSample: boolean;
+    /** 确认率（复核维持机器分类比例） */
+    confirmRate: null | number;
+    /** 改判率（复核结论不含机器分类比例） */
+    overturnRate: null | number;
+    /** 改判去向分布 Top3 */
+    overturnTop: ReviewOverturnTopItem[];
+    /** 阈值调优提示（改判率 > 40% 且样本充足；仅提示，不自动调参） */
+    tuningHint: boolean;
+  }
+
+  /** F6 算子维度行 */
+  export interface ReviewFeedbackOperatorRow extends ReviewFeedbackRow {
+    operator: string;
+    displayName: string;
+    family: string;
+    diagCode: string;
+    /** 症状标签映射的归因分类（阈值提示按此定位配置区） */
+    category: Category | null;
+    /** pending_review 命中排除次数（不计入改判分母） */
+    pendingExcludedCount: number;
+  }
+
+  /** F6 分类维度行（8 类） */
+  export interface ReviewFeedbackCategoryRow extends ReviewFeedbackRow {
+    category: Category;
+  }
+
+  /** F6 复核反馈统计响应（GET /review-feedback，仅 ADMIN） */
+  export interface ReviewFeedbackResult {
+    generatedAt: string;
+    /** D4 最小样本门槛（10） */
+    sampleMin: number;
+    /** 阈值调优提示线（0.4） */
+    overturnHintThreshold: number;
+    totalRuns: number;
+    reviewedRuns: number;
+    operators: ReviewFeedbackOperatorRow[];
+    categories: ReviewFeedbackCategoryRow[];
   }
 }
 
@@ -550,6 +732,60 @@ export function getDiagnosisCompareApi(
   return requestClient.get<DiagnosisApi.CompareResult>(
     `/diagnosis/runs/${runId}/compare`,
     { params: { mode }, ...config },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 16 号文 F3/F4（诊断扩展 Phase B）：覆盖台账 + 共性问题回路组
+// 设计文档：docs/MVP设计/16-诊断模块功能扩展方案.md §5.1
+// ---------------------------------------------------------------------------
+
+/**
+ * F3 诊断覆盖台账（新鲜度分档 + 数据不足 Top5 全员；调度执行块仅 ADMIN 返回）
+ */
+export function getDiagnosisCoverageApi() {
+  return requestClient.get<DiagnosisApi.CoverageResult>('/diagnosis/coverage');
+}
+
+/**
+ * F4 共性问题回路组（分类×装置下每回路最新 run 摘要；plantNodeId 递归含子单元）
+ */
+export function getDiagnosisCategoryCohortApi(
+  category: DiagnosisApi.Category,
+  plantNodeId?: string,
+) {
+  return requestClient.get<DiagnosisApi.CategoryCohortResult>(
+    '/diagnosis/category-cohort',
+    { params: plantNodeId ? { category, plantNodeId } : { category } },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 16 号文 F5/F6（诊断扩展 Phase C）：发起前预检徽标 + 复核反馈统计
+// 设计文档：docs/MVP设计/16-诊断模块功能扩展方案.md §5.1
+// ---------------------------------------------------------------------------
+
+/**
+ * F5 发起前数据充足性预检（kpi_snapshot_hourly 近 24h 行数密度徽标，零 TDengine）
+ *
+ * @param loopIds 回路 ID 列表（后端单次 ≤10，超出由调用方分批）
+ * @param window 预检窗口（默认 24h；预期行数=窗口小时数）
+ */
+export function getDiagnosisPrecheckApi(
+  loopIds: string[],
+  window: DiagnosisApi.PrecheckWindow = '24h',
+) {
+  return requestClient.get<DiagnosisApi.PrecheckResult>('/diagnosis/precheck', {
+    params: { loopIds: loopIds.join(','), window },
+  });
+}
+
+/**
+ * F6 复核反馈统计与阈值调优提示（仅 ADMIN；只读提示，不含任何自动调参入口）
+ */
+export function getDiagnosisReviewFeedbackApi() {
+  return requestClient.get<DiagnosisApi.ReviewFeedbackResult>(
+    '/diagnosis/review-feedback',
   );
 }
 

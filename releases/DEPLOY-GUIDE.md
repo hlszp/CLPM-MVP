@@ -7,7 +7,7 @@
 > - 镜像同时打 `latest` + git SHA + 版本号 tag，回滚可用；构建注入 `APP_VERSION`
 > - 部署后强制 celery `inspect ping`/`scheduled` 断言；`.env.prod` 必须含 `ENV=production`
 > - 可选监控：`--profile monitoring`（Prometheus + Grafana + 告警规则）
-> - **首次登录强制改密**：种子用户登录后须先改密才能进行写操作
+> - **默认密码必须人工修改**：种子用户统一 `admin123` 且 `must_change_password=FALSE`（2026-08-03 起无技术强制），部署验收时须人工修改全部 5 个账号密码（见 §7.3）
 
 ---
 
@@ -310,9 +310,10 @@ curl http://<服务器IP>:7141/api/v1/health
 
 1. 浏览器访问 `http://<服务器IP>:7141`
 2. 使用默认账号登录：`admin / admin123`
-3. 检查工作台是否显示回路数据
-4. 检查回路监控页面是否有实时数据更新
-5. 检查回路性能页面是否有 KPI 评估结果
+3. **修改全部默认密码（验收必做）**：系统管理 → 用户管理，逐一修改 `admin` / `ic_engineer` / `pe_engineer` / `sponsor` / `expert` 共 5 个种子账号的密码（系统无技术强制，此步为交付验收项，完成后在交付记录中勾选确认）
+4. 检查工作台是否显示回路数据
+5. 检查回路监控页面是否有实时数据更新
+6. 检查回路性能页面是否有 KPI 评估结果
 
 ### 7.4 日志检查
 

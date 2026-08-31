@@ -20,6 +20,7 @@ import pytest
 from app.services.data_source.realtime_subscriber import (
     _GAP_BACKFILL_LOCK_KEY,
     _REDIS_KEY_PREFIX,
+    _SUBSCRIBER_LEADER_LOCK_KEY,
     RealtimeSubscriber,
     _normalize_ts,
     get_subscriber,
@@ -65,11 +66,15 @@ class _FakeRedis:
         return 0
 
     async def eval(self, script: str, numkeys: int, *args: str) -> Any:
-        """简化 Lua 脚本执行：仅支持 SETNX 锁释放（CAS DEL）."""
+        """简化 Lua 脚本执行：支持 SETNX 锁释放（CAS DEL）与续期（CAS EXPIRE）."""
         key = args[0]
         token = args[1] if len(args) > 1 else ""
-        if "DEL" in script and self._data.get(key) == token:
+        if self._data.get(key) != token:
+            return 0
+        if "DEL" in script:
             del self._data[key]
+            return 1
+        if "EXPIRE" in script:
             return 1
         return 0
 
@@ -143,10 +148,15 @@ async def test_stop_is_safe_when_not_started():
 @pytest.mark.asyncio
 async def test_stop_cancels_running_task():
     """stop 应取消正在运行的任务."""
-    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+    fake_redis = _FakeRedis()
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
         mock_settings.SIGNALR_ENABLED = True
         mock_settings.SIGNALR_HUB_URL = "ws://localhost:7106/signalr/realValueForClpmHub"
         mock_settings.SIGNALR_RECONNECT_INTERVAL = 1
+        mock_settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS = 30
 
         sub = RealtimeSubscriber()
 
@@ -1190,6 +1200,222 @@ class TestBackfillLock:
             mock_redis.eval = AsyncMock(side_effect=Exception("Redis down"))
             # 不应抛出异常
             await sub._release_backfill_lock("token-abc")
+
+
+# ---------------------------------------------------------------------------
+# 多 worker 进程订阅单例（Leader 锁）测试
+# ---------------------------------------------------------------------------
+
+
+def _leader_settings(mock_s) -> None:
+    """为 mock settings 补齐 Leader 锁/start 路径所需配置项."""
+    mock_s.SIGNALR_ENABLED = True
+    mock_s.SIGNALR_HUB_URL = "ws://localhost:7106/signalr/realValueForClpmHub"
+    mock_s.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS = 1
+    mock_s.TDENGINE_FLUSH_INTERVAL = 60
+    mock_s.SIGNALR_STALL_TIMEOUT_SECONDS = 300
+
+
+async def _idle_loop():
+    """空转协程：替代 _run/_flush_loop/_refresh_loop，避免真实 WS 连接."""
+    import asyncio
+
+    try:
+        await asyncio.sleep(100)
+    except asyncio.CancelledError:
+        raise
+
+
+def _stub_sub_tasks(sub: RealtimeSubscriber) -> None:
+    """将订阅三任务替换为空转协程."""
+    sub._run = _idle_loop
+    sub._flush_loop = _idle_loop
+    sub._refresh_loop = _idle_loop
+
+
+class TestLeaderLock:
+    """_acquire/_renew/_release_leader_lock 与 start/stop Leader 选举测试。"""
+
+    @pytest.mark.asyncio
+    async def test_acquire_leader_lock_succeeds_when_free(self):
+        """锁未被持有时 SETNX 应成功。"""
+        fake_redis = _FakeRedis()
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)
+            ok = await sub._acquire_leader_lock()
+
+        assert ok is True
+        assert fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] == "host:1:1"
+
+    @pytest.mark.asyncio
+    async def test_acquire_leader_lock_fails_when_held(self):
+        """锁已被其他 worker 持有时 SETNX 应失败，且不覆盖原锁。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] = "other:2:2"
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)
+            ok = await sub._acquire_leader_lock()
+
+        assert ok is False
+        assert fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] == "other:2:2"
+
+    @pytest.mark.asyncio
+    async def test_acquire_leader_lock_degrades_on_redis_error(self):
+        """Redis 异常时降级为无锁运行（返回 True，不劣于引入锁之前）。"""
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        with patch("app.services.data_source.realtime_subscriber.redis_client") as mock_redis:
+            mock_redis.set = AsyncMock(side_effect=Exception("Redis down"))
+            with patch("app.services.data_source.realtime_subscriber.settings") as mock_s:
+                _leader_settings(mock_s)
+                ok = await sub._acquire_leader_lock()
+
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_renew_leader_lock_succeeds_with_correct_token(self):
+        """token 匹配时 CAS EXPIRE 续期应成功。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] = "host:1:1"
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)
+            ok = await sub._renew_leader_lock()
+
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_renew_leader_lock_fails_when_lock_lost(self):
+        """锁已易主（token 不匹配）时续期应失败，调用方据此转待命。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] = "other:2:2"
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)
+            ok = await sub._renew_leader_lock()
+
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_renew_leader_lock_keeps_leadership_on_redis_error(self):
+        """Redis 异常时续期返回 True 保持现状（避免闪断导致全员停订）。"""
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        with patch("app.services.data_source.realtime_subscriber.redis_client") as mock_redis:
+            mock_redis.eval = AsyncMock(side_effect=Exception("Redis down"))
+            with patch("app.services.data_source.realtime_subscriber.settings") as mock_s:
+                _leader_settings(mock_s)
+                ok = await sub._renew_leader_lock()
+
+        assert ok is True
+
+    @pytest.mark.asyncio
+    async def test_release_leader_lock_cas(self):
+        """token 匹配时释放成功；不匹配时不误释放。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] = "host:1:1"
+        sub = RealtimeSubscriber()
+        with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+            sub._leader_token = "wrong"
+            await sub._release_leader_lock()
+            assert _SUBSCRIBER_LEADER_LOCK_KEY in fake_redis._data
+
+            sub._leader_token = "host:1:1"
+            await sub._release_leader_lock()
+            assert _SUBSCRIBER_LEADER_LOCK_KEY not in fake_redis._data
+
+    @pytest.mark.asyncio
+    async def test_start_acquires_lock_and_becomes_leader(self):
+        """锁空闲时 start 应抢锁成功并启动订阅三任务。"""
+        fake_redis = _FakeRedis()
+        sub = RealtimeSubscriber()
+        _stub_sub_tasks(sub)
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)
+            await sub.start()
+            assert sub._is_leader is True
+            assert sub._task is not None
+            assert sub._flush_task is not None
+            assert sub._refresh_task is not None
+            assert sub._leader_task is not None
+            assert fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] == sub._leader_token
+            await sub.stop()
+
+        # stop 后 Leader 锁已释放，其他进程可接管
+        assert _SUBSCRIBER_LEADER_LOCK_KEY not in fake_redis._data
+        assert sub._task is None
+        assert sub._leader_task is None
+
+    @pytest.mark.asyncio
+    async def test_start_standby_when_lock_held_by_other(self):
+        """锁被其他 worker 持有时 start 应进入待命（不启动订阅任务）。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] = "other:2:2"
+        sub = RealtimeSubscriber()
+        _stub_sub_tasks(sub)
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)
+            await sub.start()
+            assert sub._running is True
+            assert sub._is_leader is False
+            assert sub._task is None
+            assert sub._leader_task is not None  # 抢锁循环仍在运行
+            await sub.stop()
+
+        # 待命进程 stop 不应误释放他人锁
+        assert fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] == "other:2:2"
+
+    @pytest.mark.asyncio
+    async def test_standby_takes_over_after_lock_released(self):
+        """持锁进程退出（锁释放/过期）后，待命进程应在下个周期抢锁接管。"""
+        import asyncio
+
+        fake_redis = _FakeRedis()
+        fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] = "other:2:2"
+        sub = RealtimeSubscriber()
+        _stub_sub_tasks(sub)
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            _leader_settings(mock_s)  # TTL=1s → 抢锁周期 1s
+            await sub.start()
+            assert sub._is_leader is False
+
+            # 模拟持锁进程退出：锁释放
+            del fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY]
+            await asyncio.sleep(1.5)
+
+            assert sub._is_leader is True
+            assert sub._task is not None
+            assert fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] == sub._leader_token
+            await sub.stop()
+
+        assert _SUBSCRIBER_LEADER_LOCK_KEY not in fake_redis._data
 
 
 # ---------------------------------------------------------------------------

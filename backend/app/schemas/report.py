@@ -228,6 +228,56 @@ class ReportBenefitBenchmarkItem(CamelModel):
     avgDelta: float | None = None
 
 
+class ReportBenefitTuningAlgoItem(CamelModel):
+    """整定执行统计：按算法分布（P2-3，方案 §5.2）。"""
+
+    algorithm: str
+    count: int
+
+
+class ReportBenefitTuningStatusItem(CamelModel):
+    """整定执行统计：按状态分布（P2-3，方案 §5.2）。"""
+
+    status: str
+    count: int
+
+
+class ReportBenefitTuningExecution(CamelModel):
+    """整定执行统计（算法/状态分布 + 回滚率 + 平均拟合度）。"""
+
+    totalRecords: int = 0
+    byAlgorithm: list[ReportBenefitTuningAlgoItem] = []
+    byStatus: list[ReportBenefitTuningStatusItem] = []
+    rollbackRate: float | None = None
+    avgFittingScore: float | None = None
+
+
+class ReportBenefitFittingBucket(CamelModel):
+    """拟合度分布桶（<60 / 60~75 / 75~90 / ≥90）。"""
+
+    bucket: str
+    label: str
+    count: int
+
+
+class ReportBenefitScatterPoint(CamelModel):
+    """批次前后散点点位（loopTagName 可空，未匹配回路位号时缺省）。"""
+
+    loopId: str
+    score: float | None = None
+    loopTagName: str | None = None
+
+
+class ReportBenefitBatchScatter(CamelModel):
+    """最近已完成批次的前后散点对比（有批次数据时返回）。"""
+
+    batchNo: str
+    title: str
+    completedAt: str | None = None
+    before: list[ReportBenefitScatterPoint] = []
+    after: list[ReportBenefitScatterPoint] = []
+
+
 class ReportBenefitData(CamelModel):
     """GET /reports/benefit 响应（技术指标口径，不含任何经济换算）。"""
 
@@ -236,6 +286,10 @@ class ReportBenefitData(CamelModel):
     kpiComparison: list[ReportBenefitKpiComparison] = []
     autoRateCurve: list[ReportBenefitCurvePoint] = []
     benchmark: list[ReportBenefitBenchmarkItem] = []
+    # P2-3 整定执行区块（方案 §5.2，向后兼容只增可选字段）
+    tuningExecution: ReportBenefitTuningExecution | None = None
+    fittingDistribution: list[ReportBenefitFittingBucket] = []
+    latestBatchScatter: ReportBenefitBatchScatter | None = None
 
 
 __all__ = [
@@ -257,4 +311,10 @@ __all__ = [
     "ReportBenefitKpiComparison",
     "ReportBenefitCurvePoint",
     "ReportBenefitBenchmarkItem",
+    "ReportBenefitTuningAlgoItem",
+    "ReportBenefitTuningStatusItem",
+    "ReportBenefitTuningExecution",
+    "ReportBenefitFittingBucket",
+    "ReportBenefitScatterPoint",
+    "ReportBenefitBatchScatter",
 ]

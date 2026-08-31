@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     SIGNALR_STALL_TIMEOUT_SECONDS: int = 300  # 默认 5 分钟
     # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
     REALTIME_WRITEBACK_ENABLED: bool = True
+    # 多 worker 进程订阅单例：Leader 锁 TTL（秒），持锁进程每 TTL/3 续期；
+    # 持锁进程崩溃/退出后其他 worker 在 TTL 内接管（uvicorn --workers 4 防护）
+    SUBSCRIBER_LEADER_LOCK_TTL_SECONDS: int = 30
 
     # ---- 断点续传（实时数据缺口自动补全）----
     # SignalR 断线/进程重启导致的数据缺口，重连成功后自动调用远端历史数据接口补全

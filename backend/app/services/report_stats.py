@@ -20,6 +20,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sys_config import SysConfig
+from app.services.handling_stats import ACTION_TYPE_LABELS as _ACTION_TYPE_LABELS
 
 #: 阶段锁定 sys_config key
 STAGE_LOCK_KEY = "report_stage_lock"
@@ -1339,13 +1340,251 @@ async def get_benefit(
         for r in bench_rows
     ]
 
+    # ------------------------------------------------------------------
+    # P2-3 整定执行区块（报告模块优化方案 §5.2，向后兼容只增字段）
+    # ------------------------------------------------------------------
+    # 整定记录窗口/装置过滤（tr.created_at 归窗；装置经 loop_ledger 子树下钻）
+    tr_where = ["1=1"]
+    tr_params: dict[str, Any] = {}
+    if start_date:
+        tr_where.append("tr.created_at >= :start")
+        tr_params["start"] = start_date
+    if end_date:
+        tr_where.append("tr.created_at < :end")
+        tr_params["end"] = end_date
+    if unit_ids is not None:
+        tr_where.append("ll.unit_id = ANY(:unit_ids)")
+        tr_params["unit_ids"] = unit_ids
+    tr_join = "JOIN loop_ledger ll ON ll.id = tr.loop_id" if unit_ids is not None else ""
+    tr_where_sql = " AND ".join(tr_where)
+
+    # 算法 × 状态分布（单查询分组，Python 侧二次聚合；拟合度按组计数加权）
+    exec_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT tr.algorithm, tr.status, COUNT(*) AS cnt,
+                       AVG(tr.fitting_score) AS avg_fit
+                FROM tuning_record tr
+                {tr_join}
+                WHERE {tr_where_sql}
+                GROUP BY tr.algorithm, tr.status
+                """
+            ),
+            tr_params,
+        )
+    ).all()
+    algo_map: dict[str, int] = {}
+    status_map: dict[str, int] = {}
+    total_records = 0
+    rolled_back = 0
+    fit_weighted = 0.0
+    fit_count = 0
+    for r in exec_rows:
+        cnt = int(r.cnt)
+        total_records += cnt
+        algo_map[r.algorithm] = algo_map.get(r.algorithm, 0) + cnt
+        status_map[r.status] = status_map.get(r.status, 0) + cnt
+        if r.status == "ROLLED_BACK":
+            rolled_back += cnt
+        if r.avg_fit is not None:
+            fit_weighted += float(r.avg_fit) * cnt
+            fit_count += cnt
+    tuning_execution = {
+        "totalRecords": total_records,
+        "byAlgorithm": [
+            {"algorithm": a, "count": c} for a, c in sorted(algo_map.items(), key=lambda kv: -kv[1])
+        ],
+        "byStatus": [
+            {"status": s, "count": c} for s, c in sorted(status_map.items(), key=lambda kv: -kv[1])
+        ],
+        # 回滚率口径：ROLLED_BACK / 窗口内全部整定记录（页面 tooltip 注明）
+        "rollbackRate": round(rolled_back / total_records, 4) if total_records else None,
+        "avgFittingScore": round(fit_weighted / fit_count, 1) if fit_count else None,
+    }
+
+    # 拟合度四桶分布（<60 / 60~75 / 75~90 / ≥90）
+    fit_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT CASE
+                         WHEN tr.fitting_score < 60 THEN 'lt60'
+                         WHEN tr.fitting_score < 75 THEN 'b60_75'
+                         WHEN tr.fitting_score < 90 THEN 'b75_90'
+                         ELSE 'ge90' END AS bucket,
+                       COUNT(*) AS cnt
+                FROM tuning_record tr
+                {tr_join}
+                WHERE {tr_where_sql} AND tr.fitting_score IS NOT NULL
+                GROUP BY 1
+                """
+            ),
+            tr_params,
+        )
+    ).all()
+    fit_map = {r.bucket: int(r.cnt) for r in fit_rows}
+    fitting_distribution = [
+        {"bucket": "lt60", "label": "<60", "count": fit_map.get("lt60", 0)},
+        {"bucket": "b60_75", "label": "60~75", "count": fit_map.get("b60_75", 0)},
+        {"bucket": "b75_90", "label": "75~90", "count": fit_map.get("b75_90", 0)},
+        {"bucket": "ge90", "label": "≥90", "count": fit_map.get("ge90", 0)},
+    ]
+
+    # 最近已完成批次的前后散点（有批次数据时展示；全局口径不随窗口过滤）
+    batch_row = (
+        await db.execute(
+            text(
+                """
+                SELECT batch_no, title, completed_at, scatters_before, scatters_after
+                FROM tuning_batch
+                WHERE status = 'COMPLETED'
+                  AND scatters_before IS NOT NULL
+                  AND scatters_after IS NOT NULL
+                ORDER BY completed_at DESC NULLS LAST, created_at DESC
+                LIMIT 1
+                """
+            )
+        )
+    ).one_or_none()
+    latest_batch_scatter: dict[str, Any] | None = None
+    if batch_row is not None:
+
+        def _points(items: Any) -> list[dict[str, Any]]:
+            pts: list[dict[str, Any]] = []
+            for p in items or []:
+                if not isinstance(p, dict) or p.get("loop_id") is None:
+                    continue
+                score = p.get("score")
+                pts.append(
+                    {
+                        "loopId": str(p["loop_id"]),
+                        "score": round(float(score), 1) if score is not None else None,
+                    }
+                )
+            return pts
+
+        before_pts = _points(batch_row.scatters_before)
+        after_pts = _points(batch_row.scatters_after)
+        # 回路位号补全（散点 tooltip 可读性）
+        scatter_loop_ids = sorted({p["loopId"] for p in before_pts + after_pts})
+        tag_map: dict[str, str] = {}
+        if scatter_loop_ids:
+            tag_rows = (
+                await db.execute(
+                    text("SELECT id, tag_name FROM loop_ledger WHERE id = ANY(:ids)"),
+                    {"ids": scatter_loop_ids},
+                )
+            ).all()
+            tag_map = {str(r.id): r.tag_name for r in tag_rows}
+        for p in before_pts + after_pts:
+            p["loopTagName"] = tag_map.get(p["loopId"])
+        latest_batch_scatter = {
+            "batchNo": batch_row.batch_no,
+            "title": batch_row.title,
+            "completedAt": (batch_row.completed_at.isoformat() if batch_row.completed_at else None),
+            "before": before_pts,
+            "after": after_pts,
+        }
+
     return {
         "tuningCount": tuning_count,
         "closedOrderCount": int(cmp_row.closed_cnt or 0),
         "kpiComparison": kpi_comparison,
         "autoRateCurve": curve,
         "benchmark": benchmark,
+        "tuningExecution": tuning_execution,
+        "fittingDistribution": fitting_distribution,
+        "latestBatchScatter": latest_batch_scatter,
     }
+
+
+# ---------------------------------------------------------------------------
+# 逐工单前后对比明细（报告模块优化 P2-4，方案 §5.3）
+# ---------------------------------------------------------------------------
+async def get_benefit_orders(
+    db: AsyncSession,
+    start_date: datetime | None,
+    end_date: datetime | None,
+    plant_node_id: str | None,
+    *,
+    page: int = 1,
+    page_size: int = 10,
+) -> dict[str, Any]:
+    """逐工单 KPI 前后对比明细（仅 CLOSED 且前后快照非空，verified_at 归窗）。
+
+    让工程师能逐单举证"这一单到底有没有效"，支撑管理总览 S3 平均评分
+    改善的下钻。返回 kpi_before/kpi_after 原始 JSONB（前端按四指标渲染，
+    振荡率为反向指标）。
+    """
+    unit_ids = await _resolve_subtree_unit_ids(db, plant_node_id)
+
+    where = [
+        "ho.status = 'CLOSED'",
+        "ho.kpi_before IS NOT NULL",
+        "ho.kpi_after IS NOT NULL",
+    ]
+    params: dict[str, Any] = {}
+    if start_date:
+        where.append("ho.verified_at >= :start")
+        params["start"] = start_date
+    if end_date:
+        where.append("ho.verified_at < :end")
+        params["end"] = end_date
+    if unit_ids is not None:
+        where.append("ll.unit_id = ANY(:unit_ids)")
+        params["unit_ids"] = unit_ids
+    where_sql = " AND ".join(where)
+
+    total = int(
+        (
+            await db.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM handling_order ho
+                    JOIN loop_ledger ll ON ll.id = ho.loop_id
+                    WHERE {where_sql}
+                    """
+                ),
+                params,
+            )
+        ).scalar()
+        or 0
+    )
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT ho.order_no, ho.loop_id, ll.tag_name AS loop_tag_name,
+                       ho.action_type, ho.handler, ho.kpi_before, ho.kpi_after,
+                       ho.verify_result, ho.verified_at
+                FROM handling_order ho
+                JOIN loop_ledger ll ON ll.id = ho.loop_id
+                WHERE {where_sql}
+                ORDER BY ho.verified_at DESC NULLS LAST
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {**params, "limit": page_size, "offset": (page - 1) * page_size},
+        )
+    ).all()
+    items = [
+        {
+            "orderNo": r.order_no,
+            "loopId": str(r.loop_id),
+            "loopTagName": r.loop_tag_name,
+            "actionType": r.action_type,
+            "actionTypeLabel": _ACTION_TYPE_LABELS.get(r.action_type, r.action_type),
+            "handler": r.handler,
+            "kpiBefore": r.kpi_before,
+            "kpiAfter": r.kpi_after,
+            "verifyResult": r.verify_result,
+            "verifiedAt": r.verified_at.isoformat() if r.verified_at else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": total, "page": page, "pageSize": page_size}
 
 
 def default_report_window() -> tuple[datetime, datetime]:
@@ -1359,6 +1598,7 @@ __all__ = [
     "default_report_window",
     "determine_maturity_stage",
     "get_benefit",
+    "get_benefit_orders",
     "get_diagnosis_statistics",
     "get_overview",
     "get_stage_lock",

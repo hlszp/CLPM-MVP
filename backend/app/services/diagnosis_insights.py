@@ -1,19 +1,25 @@
-"""诊断洞察只读聚合服务（16 号文 Phase A：F1 回路诊断档案 + F2 复诊对比）。
+"""诊断洞察只读聚合服务（16 号文：F1 回路诊断档案 + F2 复诊对比 + F3 覆盖台账 + F4 回路组对比
++ F5 发起前数据预检 + F6 复核反馈统计）。
 
-设计文档：docs/MVP设计/16-诊断模块功能扩展方案.md §4 F1/F2、§5.1、§5.4
+设计文档：docs/MVP设计/16-诊断模块功能扩展方案.md §4、§5.1、§5.4
 - 零迁移纯查询：不新增 ORM 模型，不修改 diagnosis_orchestrator.py 主链路
 - import 纪律（§1.4 P3）：允许 import 处置/整定域 ORM 模型（物理表恒在），
   禁止 import 其他模块 service 层；跨模块查询段前必须先判
-  ``is_module_enabled("handling"/"tuning")``，禁用时跳过查询并在响应标记
+  ``is_module_enabled("handling"/"tuning"/"assess")``，禁用时跳过查询并在响应标记
   能力字段（前端据此隐藏图层/入口，而非置灰）
+- F3/F4/F5/F6 数据全部来自 PG 表（diagnosis_run/loop_ledger/kpi_snapshot_hourly），
+  不触 TDengine（F5 为 D1 裁决的廉价代理口径：快照行数密度，零 TDengine 查询）
+- 安全边界（§3.2）：F6 只输出"建议复核阈值"提示，不提供任何自动调参入口
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -24,6 +30,7 @@ from app.models.loop import LoopLedger
 from app.models.loop_action_item import LoopActionItem
 from app.models.metric import KpiSnapshotHourly
 from app.models.tuning import TuningRecord
+from app.services.diagnosis_operators import list_operators
 from app.services.waveform import lttb_downsample_multi_series
 
 #: F1 时间窗预设 → 天数（"all" 截断 90d，§5.3 性能边界）
@@ -599,4 +606,649 @@ async def compare_runs(
         "features": _build_feature_rows(base, target),
         "kpi": _build_kpi_rows(base, target),
         "verifyPair": verify_pair,
+    }
+
+
+# ---------------------------------------------------------------------------
+# F3 诊断覆盖台账与新鲜度
+# ---------------------------------------------------------------------------
+
+#: 新鲜度分档（按回路最新 SUCCESS 诊断时间，口径 COALESCE(finished_at, created_at)，
+#: 与 runs/latest 一致）。bucket 顺序即展示顺序；never=无任何 SUCCESS run。
+_FRESHNESS_BUCKET_KEYS = ("within24h", "within7d", "within30d", "stale", "never")
+
+#: 调度滞后阈值（小时）：与 tasks/diagnosis_schedule.py 排程节奏同一口径——
+#: 1 级每日 01:10（24h+1h 宽限）；2 级每周日 02:10（7d+1h 宽限）；3 级不排程。
+_SCHEDULE_LAG_THRESHOLD_HOURS: dict[int, int] = {1: 25, 2: 7 * 24 + 1}
+_SCHEDULED_LEVELS = (1, 2)
+_SCHEDULE_CADENCE = {
+    1: ("daily", "每日"),
+    2: ("weekly", "每周"),
+    3: ("manual", "不排程，仅手动"),
+}
+
+#: 数据不足 TopN：近 30d DATA_INSUFFICIENT 占比最高的回路
+_DI_WINDOW_DAYS = 30
+_DI_TOP_N = 5
+
+#: 8 类原因分类代码（F4 入参校验域）
+_VALID_CATEGORIES = frozenset(
+    {
+        "TUNING",
+        "VALVE",
+        "INSTRUMENT",
+        "COMMUNICATION",
+        "PROCESS",
+        "UTILIZATION",
+        "DESIGN",
+        "DATA_INSUFFICIENT",
+    }
+)
+
+
+def _freshness_bucket(ts: datetime | None, now: datetime) -> str:
+    if ts is None:
+        return "never"
+    age = (now - ts).total_seconds()
+    if age <= 24 * 3600:
+        return "within24h"
+    if age <= 7 * 24 * 3600:
+        return "within7d"
+    if age <= 30 * 24 * 3600:
+        return "within30d"
+    return "stale"
+
+
+async def coverage(db: AsyncSession, *, include_schedule: bool) -> dict[str, Any]:
+    """F3 诊断覆盖台账（16 号文 §4 F3 / §5.1）。
+
+    - 新鲜度分档：活跃回路（is_active，与 runs/latest 台账口径一致）按最新
+      SUCCESS 诊断时间分 5 档，附回路清单供悬浮/下钻
+    - 调度执行（仅 ADMIN，include_schedule=False 时整段为 None，前端隐藏）：
+      1/2 级应跑回路（importance_level + status=READY + is_active，与
+      diagnosis_schedule._loops_by_importance 同一判定）vs 最近一次
+      SCHEDULED run；超阈值或从未排程计入滞后；3 级标注"不排程，仅手动"
+    - 数据不足 Top5：近 30d DATA_INSUFFICIENT 占比最高（提示先补数据）
+    """
+    now = _utcnow_naive()
+
+    # 活跃回路全集（台账口径）
+    loops = list(
+        (
+            await db.execute(
+                select(
+                    LoopLedger.id,
+                    LoopLedger.tag_name,
+                    LoopLedger.importance_level,
+                    LoopLedger.status,
+                ).where(LoopLedger.is_active.is_(True))
+            )
+        ).all()
+    )
+    tag_of = {row.id: row.tag_name for row in loops}
+
+    # 每回路最新 SUCCESS 诊断时间
+    latest_success = dict(
+        (
+            await db.execute(
+                select(
+                    DiagnosisRun.loop_id,
+                    func.max(func.coalesce(DiagnosisRun.finished_at, DiagnosisRun.created_at)),
+                )
+                .where(DiagnosisRun.status == "SUCCESS")
+                .group_by(DiagnosisRun.loop_id)
+            )
+        ).all()
+    )
+
+    bucket_loops: dict[str, list[dict[str, Any]]] = {k: [] for k in _FRESHNESS_BUCKET_KEYS}
+    for row in loops:
+        last = latest_success.get(row.id)
+        bucket_loops[_freshness_bucket(last, now)].append(
+            {"loopId": row.id, "loopTagName": row.tag_name, "lastDiagnosedAt": _iso(last)}
+        )
+    for items in bucket_loops.values():
+        items.sort(key=lambda x: x["loopTagName"] or "")
+    freshness = {
+        "totalLoops": len(loops),
+        "generatedAt": _iso(now),
+        "buckets": [
+            {"key": k, "count": len(bucket_loops[k]), "loops": bucket_loops[k]}
+            for k in _FRESHNESS_BUCKET_KEYS
+        ],
+    }
+
+    # 调度执行（仅 ADMIN；非管理员整段 None，前端隐藏而非置灰）
+    schedule: dict[str, Any] | None = None
+    if include_schedule:
+        latest_scheduled = dict(
+            (
+                await db.execute(
+                    select(DiagnosisRun.loop_id, func.max(DiagnosisRun.created_at))
+                    .where(DiagnosisRun.trigger_type == "SCHEDULED")
+                    .group_by(DiagnosisRun.loop_id)
+                )
+            ).all()
+        )
+        levels: list[dict[str, Any]] = []
+        for level in (1, 2, 3):
+            cadence, cadence_label = _SCHEDULE_CADENCE[level]
+            # 与 diagnosis_schedule._loops_by_importance 同一判定：READY + active
+            expected = [
+                row for row in loops if row.importance_level == level and row.status == "READY"
+            ]
+            item: dict[str, Any] = {
+                "level": level,
+                "cadence": cadence,
+                "cadenceLabel": cadence_label,
+                "expectedLoops": len(expected),
+            }
+            if level in _SCHEDULED_LEVELS:
+                threshold_h = _SCHEDULE_LAG_THRESHOLD_HOURS[level]
+                lagging: list[dict[str, Any]] = []
+                last_any: datetime | None = None
+                for row in expected:
+                    last = latest_scheduled.get(row.id)
+                    if last is not None and (last_any is None or last > last_any):
+                        last_any = last
+                    if last is None or (now - last).total_seconds() > threshold_h * 3600:
+                        lagging.append(
+                            {
+                                "loopId": row.id,
+                                "loopTagName": row.tag_name,
+                                "lastScheduledAt": _iso(last),
+                            }
+                        )
+                lagging.sort(key=lambda x: x["loopTagName"] or "")
+                item.update(
+                    {
+                        "lagThresholdHours": threshold_h,
+                        "lastScheduledAt": _iso(last_any),
+                        "laggingCount": len(lagging),
+                        "lagging": lagging,
+                    }
+                )
+            else:
+                item["note"] = "3 级回路不排程，仅手动/事件触发"
+            levels.append(item)
+        schedule = {"levels": levels}
+
+    # 数据不足 Top5（近 30d，DATA_INSUFFICIENT 占比降序）
+    di_rows = list(
+        (
+            await db.execute(
+                select(
+                    DiagnosisRun.loop_id,
+                    func.count(DiagnosisRun.id),
+                    func.count(DiagnosisRun.id).filter(
+                        DiagnosisRun.primary_category == "DATA_INSUFFICIENT"
+                    ),
+                )
+                .where(DiagnosisRun.created_at >= now - timedelta(days=_DI_WINDOW_DAYS))
+                .group_by(DiagnosisRun.loop_id)
+            )
+        ).all()
+    )
+    di_items = [
+        {
+            "loopId": loop_id,
+            "loopTagName": tag_of.get(loop_id),
+            "totalRuns": int(total),
+            "insufficientRuns": int(di_count),
+            "ratio": round(int(di_count) / int(total), 4) if total else 0.0,
+        }
+        for loop_id, total, di_count in di_rows
+        if di_count and total
+    ]
+    di_items.sort(key=lambda x: (-x["ratio"], -x["insufficientRuns"], x["loopTagName"] or ""))
+
+    return {
+        "freshness": freshness,
+        "schedule": schedule,
+        "dataInsufficient": {
+            "windowDays": _DI_WINDOW_DAYS,
+            "top": di_items[:_DI_TOP_N],
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# F4 共性问题回路组对比
+# ---------------------------------------------------------------------------
+
+
+async def category_cohort(
+    db: AsyncSession,
+    category: str,
+    plant_node_id: str | None = None,
+) -> dict[str, Any]:
+    """F4 共性问题回路组（16 号文 §4 F4 / §5.1）。
+
+    该分类×装置下"最新一条 run 主分类 = category"的活跃回路清单（每回路
+    最新结论/置信度/严重度/metric_summary/最近诊断时间），供前端勾选
+    2~3 回路并排雷达对比。
+    latest-per-loop 查询泛化自 runs/latest（同一 LATERAL 取数、同一时间
+    口径 COALESCE(finished_at, created_at)、同一 is_active 台账范围），
+    避免两套"最新 run"口径。
+    """
+    if category not in _VALID_CATEGORIES:
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"未知原因分类: {category}（可用: {sorted(_VALID_CATEGORIES)}）",
+            status_code=400,
+        )
+    if plant_node_id is not None:
+        try:
+            UUID(plant_node_id)
+        except ValueError:
+            raise BizError(
+                code="ERR_PARAM",
+                message="plantNodeId 格式非法（应为 UUID）",
+                status_code=400,
+            ) from None
+
+    # 装置节点递归下钻到单元（与 runs/latest 同一 node_tree 口径）
+    cte = (
+        "WITH RECURSIVE node_tree AS ("
+        "SELECT id FROM plant_node WHERE id = :root_id "
+        "UNION ALL "
+        "SELECT child.id FROM plant_node child "
+        "JOIN node_tree nt ON child.parent_id = nt.id) "
+        if plant_node_id
+        else ""
+    )
+    conditions = ["ll.is_active = true", "r.primary_category = :category"]
+    if plant_node_id:
+        conditions.append("ll.unit_id IN (SELECT id FROM node_tree)")
+
+    sql = text(
+        f"""
+        {cte}
+        SELECT ll.id AS loop_id, ll.tag_name, ll.description AS loop_description,
+               ll.importance_level,
+               r.id AS run_id, r.primary_confidence, r.severity,
+               COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
+               r.metric_summary
+        FROM loop_ledger ll
+        JOIN LATERAL (
+                SELECT * FROM diagnosis_run dr
+                WHERE dr.loop_id = ll.id
+                ORDER BY dr.created_at DESC LIMIT 1
+            ) r ON true
+            WHERE {" AND ".join(conditions)}
+            ORDER BY last_diagnosed_at DESC
+            """
+    )
+    params: dict[str, str] = {"category": category}
+    if plant_node_id:
+        params["root_id"] = plant_node_id
+
+    rows = list((await db.execute(sql, params)).all())
+    items = [
+        {
+            "loopId": str(r.loop_id),
+            "loopTagName": r.tag_name,
+            "loopDescription": r.loop_description,
+            "importanceLevel": int(r.importance_level) if r.importance_level else None,
+            "runId": str(r.run_id),
+            "primaryConfidence": float(r.primary_confidence)
+            if r.primary_confidence is not None
+            else None,
+            "severity": r.severity,
+            "lastDiagnosedAt": r.last_diagnosed_at.isoformat() if r.last_diagnosed_at else None,
+            "metricSummary": r.metric_summary,
+        }
+        for r in rows
+    ]
+    return {
+        "category": category,
+        "plantNodeId": plant_node_id,
+        "items": items,
+        "total": len(items),
+    }
+
+
+# ---------------------------------------------------------------------------
+# F5 发起前数据充足性预检徽标
+# ---------------------------------------------------------------------------
+
+#: 预检时间窗 → 预期快照行数（kpi_snapshot_hourly 每小时 1 行）
+_PRECHECK_WINDOWS: dict[str, int] = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
+
+#: 密度分级阈值（§4 F5 / D1=a 廉价代理）：
+#: 红档下限与调度侧密度门禁 tasks/diagnosis_schedule._DENSITY_THRESHOLD=0.5 同口径
+#: （低于 50% 预期的窗口跑诊断大概率 DATA_INSUFFICIENT）；
+#: 琥珀档（50%~90%）为徽标特有的"刚过门禁但余量不足"提示带。
+_PRECHECK_INSUFFICIENT_RATIO = 0.5
+_PRECHECK_MARGINAL_RATIO = 0.9
+
+#: 批量上限（§5.3：与工作台单次勾选对齐，单次 PostgreSQL 聚合查询）
+_PRECHECK_MAX_LOOPS = 10
+
+
+def _precheck_level(ratio: float) -> str:
+    if ratio < _PRECHECK_INSUFFICIENT_RATIO:
+        return "insufficient"
+    if ratio < _PRECHECK_MARGINAL_RATIO:
+        return "marginal"
+    return "sufficient"
+
+
+async def precheck(
+    db: AsyncSession,
+    loop_ids: list[str],
+    window: str = "24h",
+) -> dict[str, Any]:
+    """F5 发起前数据充足性预检（16 号文 §4 F5 / §5.1，D1=a 廉价代理）。
+
+    - 数据源：kpi_snapshot_hourly 行数密度（PostgreSQL 单次聚合，零 TDengine）
+    - 分级：充足 sufficient / 疑似不足 marginal / 不足 insufficient / 无评估数据 unknown
+    - 降级（§5.4）：评估模块禁用 → assessEnabled=false 且不发查询（前端整列隐藏徽标）；
+      回路无任何快照 → unknown 中性态（数据源缺失，非数据质量结论，不得误报"不足"）
+    - 事前提示定位：不替代发起时 fitness 门禁（L0/L1 阻止、L2 警告，行为不变）
+    """
+    hours = _PRECHECK_WINDOWS.get(window)
+    if hours is None:
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"window 仅支持 {sorted(_PRECHECK_WINDOWS)}: {window}",
+            status_code=400,
+        )
+    if not loop_ids:
+        raise BizError(code="ERR_PARAM", message="loopIds 不能为空", status_code=400)
+    if len(loop_ids) > _PRECHECK_MAX_LOOPS:
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"单次预检回路数不超过 {_PRECHECK_MAX_LOOPS}（与发起上限一致）",
+            status_code=400,
+        )
+    for lid in loop_ids:
+        try:
+            UUID(lid)
+        except ValueError:
+            raise BizError(
+                code="ERR_PARAM", message=f"loopId 格式非法（应为 UUID）: {lid}", status_code=400
+            ) from None
+
+    now = _utcnow_naive()
+    resp: dict[str, Any] = {
+        "window": window,
+        "expectedRows": hours,
+        "assessEnabled": is_module_enabled("assess"),
+        "generatedAt": _iso(now),
+        "items": [],
+    }
+    if not resp["assessEnabled"]:
+        return resp  # 评估禁用：跳过查询段，前端整列隐藏徽标（隐藏而非置灰）
+
+    window_start = now - timedelta(hours=hours)
+    rows = list(
+        (
+            await db.execute(
+                select(
+                    KpiSnapshotHourly.loop_id,
+                    func.count(KpiSnapshotHourly.ts_start).filter(
+                        KpiSnapshotHourly.ts_start >= window_start
+                    ),
+                    func.count(KpiSnapshotHourly.ts_start),
+                )
+                .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+                .group_by(KpiSnapshotHourly.loop_id)
+            )
+        ).all()
+    )
+    stats = {str(lid): (int(window_rows), int(total_rows)) for lid, window_rows, total_rows in rows}
+
+    items: list[dict[str, Any]] = []
+    for lid in loop_ids:
+        window_rows, total_rows = stats.get(lid, (0, 0))
+        if total_rows == 0:
+            # 数据源缺失（评估从未产出该回路快照）→ 中性态，不误报"不足"
+            items.append(
+                {
+                    "loopId": lid,
+                    "level": "unknown",
+                    "rowCount": 0,
+                    "expectedRows": hours,
+                    "ratio": None,
+                }
+            )
+            continue
+        ratio = round(window_rows / hours, 4)
+        items.append(
+            {
+                "loopId": lid,
+                "level": _precheck_level(ratio),
+                "rowCount": window_rows,
+                "expectedRows": hours,
+                "ratio": ratio,
+            }
+        )
+    resp["items"] = items
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# F6 复核反馈统计与阈值调优提示
+# ---------------------------------------------------------------------------
+
+#: D4：最小样本 ≥10 次（不足显示"样本不足"占位，不给出误导性比例）
+_REVIEW_SAMPLE_MIN = 10
+
+#: 阈值调优提示线（§4 F6.3：算子改判率 > 40% 标琥珀 + "建议复核阈值"入口；
+#: 仅提示，调参走现有四级阈值覆盖人工操作——平台安全边界红线，不自动调参）
+_REVIEW_OVERTURN_HINT = 0.4
+
+#: 改判去向分布 TopN
+_OVERTURN_TOP_N = 3
+
+#: 症状标签 → 原因分类（与 classification 决策表同一映射口径；
+#: OSCILLATION 在决策表中条件性归 PROCESS，此处取静态主映射）
+_SYMPTOM_TO_CATEGORY: dict[str, str] = {
+    "LINK_ABNORMAL": "COMMUNICATION",
+    "QUALITY_ABNORMAL": "INSTRUMENT",
+    "VALVE_STICTION": "VALVE",
+    "OUTPUT_SATURATION": "VALVE",
+    "EXTERNAL_DISTURBANCE": "PROCESS",
+    "OSCILLATION": "PROCESS",
+    "OVERAGGRESSIVE": "TUNING",
+    "OVERCONSERVATIVE": "TUNING",
+}
+
+#: 分类展示顺序（与 ck_diagnosis_run_category 约束顺序一致）
+_CATEGORY_ORDER = (
+    "TUNING",
+    "VALVE",
+    "INSTRUMENT",
+    "COMMUNICATION",
+    "PROCESS",
+    "UTILIZATION",
+    "DESIGN",
+    "DATA_INSUFFICIENT",
+)
+
+
+def _judgement_categories(judgements: Any) -> set[str]:
+    """secondary_categories / pending_review（list[dict]）→ 分类代码集合。"""
+    out: set[str] = set()
+    for j in judgements or []:
+        if isinstance(j, dict):
+            c = j.get("category")
+            if isinstance(c, str):
+                out.add(c)
+    return out
+
+
+def _review_categories(review_results: Any) -> set[str]:
+    """review_results（list[str] 分类代码）→ 集合。"""
+    return {c for c in (review_results or []) if isinstance(c, str)}
+
+
+def _overturn_top(counter: Counter) -> list[dict[str, Any]]:
+    return [{"category": c, "count": int(n)} for c, n in counter.most_common(_OVERTURN_TOP_N)]
+
+
+def _finalize_feedback_row(
+    detected: int,
+    reviewed: int,
+    sample: int,
+    confirmed: int,
+    overturned: int,
+    overturn_counter: Counter,
+) -> dict[str, Any]:
+    """D4 样本门槛收口：sample < 10 → insufficientSample=true，比例/去向置空不误导。"""
+    insufficient = sample < _REVIEW_SAMPLE_MIN
+    return {
+        "detectedCount": detected,
+        "reviewedCount": reviewed,
+        "reviewRate": round(reviewed / detected, 4) if detected else None,
+        "sampleSize": sample,
+        "insufficientSample": insufficient,
+        "confirmRate": None if insufficient else round(confirmed / sample, 4),
+        "overturnRate": None if insufficient else round(overturned / sample, 4),
+        "overturnTop": [] if insufficient else _overturn_top(overturn_counter),
+        "tuningHint": (not insufficient) and (overturned / sample) > _REVIEW_OVERTURN_HINT,
+    }
+
+
+async def review_feedback(db: AsyncSession) -> dict[str, Any]:
+    """F6 复核反馈统计（16 号文 §4 F6 / §5.1，D4 样本门槛 ≥10）。
+
+    口径（§5.1 实现要点 + §4 F6.4 常驻小字）：
+    - 统计范围：全量 diagnosis_run（MVP 量级可控，§5.3）；改判 = 复核结论不含机器分类
+    - 分类维度：检出 = 机器主分类命中（primary_category == C）；样本 = 其中已复核数
+    - 算子维度：只统计 executed=true 且 detected=true 的算子；按症状标签映射分类 C(O)
+      归因——机器采纳 C(O)（主/次分类含 C(O)）且已复核才计入改判分母；
+      pending_review 命中 C(O) 的 run 不计入改判分母（机器已主动降级为待复核，
+      人工不确认不算误报）；机器未采纳 C(O) 的检出无从改判，同样不入分母
+    - 阈值调优提示：tuningHint=true 仅表示"建议复核阈值"，不含任何自动调参动作
+    """
+    rows = list(
+        (
+            await db.execute(
+                select(
+                    DiagnosisRun.primary_category,
+                    DiagnosisRun.secondary_categories,
+                    DiagnosisRun.pending_review,
+                    DiagnosisRun.review_status,
+                    DiagnosisRun.review_results,
+                    DiagnosisRun.operator_results,
+                )
+            )
+        ).all()
+    )
+
+    operators = list_operators()
+    op_meta: list[dict[str, Any]] = []
+    for meta in operators:
+        symptoms = meta.get("symptomTags") or []
+        op_meta.append(
+            {
+                "operator": meta["name"],
+                "displayName": meta["displayName"],
+                "family": meta["family"],
+                "diagCode": meta["diagCode"],
+                "category": _SYMPTOM_TO_CATEGORY.get(symptoms[0]) if symptoms else None,
+            }
+        )
+
+    cat_agg: dict[str, dict[str, Any]] = {
+        c: {"detected": 0, "reviewed": 0, "confirmed": 0, "overturned": 0, "top": Counter()}
+        for c in _CATEGORY_ORDER
+    }
+    op_agg: dict[str, dict[str, Any]] = {
+        m["operator"]: {
+            "detected": 0,
+            "reviewed": 0,
+            "pending_excluded": 0,
+            "sample": 0,
+            "confirmed": 0,
+            "overturned": 0,
+            "top": Counter(),
+        }
+        for m in op_meta
+    }
+
+    reviewed_runs = 0
+    for primary, secondary, pending, review_status, review_results, operator_results in rows:
+        reviewed = review_status == "REVIEWED"
+        if reviewed:
+            reviewed_runs += 1
+        review_cats = _review_categories(review_results)
+        secondary_cats = _judgement_categories(secondary)
+        pending_cats = _judgement_categories(pending)
+
+        # ---- 分类维度（机器主分类） ----
+        if primary in cat_agg:
+            agg = cat_agg[primary]
+            agg["detected"] += 1
+            if reviewed:
+                agg["reviewed"] += 1
+                if primary in review_cats:
+                    agg["confirmed"] += 1
+                else:
+                    agg["overturned"] += 1
+                    agg["top"].update(review_cats)
+
+        # ---- 算子维度（executed + detected，按映射分类归因） ----
+        op_results = operator_results or {}
+        for m in op_meta:
+            res = op_results.get(m["operator"])
+            if not isinstance(res, dict) or not res.get("executed") or not res.get("detected"):
+                continue
+            agg = op_agg[m["operator"]]
+            agg["detected"] += 1
+            if not reviewed:
+                continue
+            agg["reviewed"] += 1
+            category = m["category"]
+            if category is None:
+                continue
+            if category in pending_cats:
+                agg["pending_excluded"] += 1  # pending_review 命中不计入改判分母
+                continue
+            if category != primary and category not in secondary_cats:
+                continue  # 机器未采纳该分类，无可改判的结论
+            agg["sample"] += 1
+            if category in review_cats:
+                agg["confirmed"] += 1
+            else:
+                agg["overturned"] += 1
+                agg["top"].update(review_cats)
+
+    return {
+        "generatedAt": _iso(_utcnow_naive()),
+        "sampleMin": _REVIEW_SAMPLE_MIN,
+        "overturnHintThreshold": _REVIEW_OVERTURN_HINT,
+        "totalRuns": len(rows),
+        "reviewedRuns": reviewed_runs,
+        "operators": [
+            {
+                **{k: m[k] for k in ("operator", "displayName", "family", "diagCode", "category")},
+                "pendingExcludedCount": op_agg[m["operator"]]["pending_excluded"],
+                **_finalize_feedback_row(
+                    op_agg[m["operator"]]["detected"],
+                    op_agg[m["operator"]]["reviewed"],
+                    op_agg[m["operator"]]["sample"],
+                    op_agg[m["operator"]]["confirmed"],
+                    op_agg[m["operator"]]["overturned"],
+                    op_agg[m["operator"]]["top"],
+                ),
+            }
+            for m in op_meta
+        ],
+        "categories": [
+            {
+                "category": c,
+                **_finalize_feedback_row(
+                    cat_agg[c]["detected"],
+                    cat_agg[c]["reviewed"],
+                    cat_agg[c]["reviewed"],
+                    cat_agg[c]["confirmed"],
+                    cat_agg[c]["overturned"],
+                    cat_agg[c]["top"],
+                ),
+            }
+            for c in _CATEGORY_ORDER
+        ],
     }

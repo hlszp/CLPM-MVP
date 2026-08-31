@@ -9,9 +9,10 @@ Routes:
 - GET  /reports/overview  — Management overview (S1/S2/S3 adaptive, P3)
 - GET  /reports/diagnosis-statistics — Diagnosis stats (P0)
 - GET  /reports/benefit   — Benefit report (P0)
-- GET  /reports/handling-statistics — Handling stats (R1 自持，报告模块优化 P0-2)
+- GET  /reports/handling-statistics — Handling stats (R1 自持，报告模块优化 P0-2；P2-1 增字段)
 - GET  /reports/diagnosis-runs — Diagnosis run list (R1 自持，P0-4)
 - GET  /reports/diagnosis-runs/export — Diagnosis run CSV export (≤5000, D4)
+- GET  /reports/benefit/orders — 逐工单前后对比明细（R1 自持，P2-4）
 - GET/PUT /reports/stage-lock — Read/set maturity stage lock (ADMIN for PUT, P3)
 - POST /reports/export-pdf — Trigger overview PDF export (async, P3)
 - GET  /reports/export-tasks/{task_id} — PDF export task status
@@ -65,6 +66,7 @@ from app.services.report_stats import (
     default_report_window,
     determine_maturity_stage,
     get_benefit,
+    get_benefit_orders,
     get_diagnosis_statistics,
     get_overview,
     get_stage_lock,
@@ -261,9 +263,44 @@ async def get_report_benefit(
     endDate: str | None = Query(None),
     plantNodeId: str | None = Query(None),
 ) -> dict:
-    """收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标）。"""
+    """收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标）。
+
+    P2-3（方案 §5.2）：响应向后兼容增加整定执行区块字段——tuningExecution
+    （算法/状态分布 + 回滚率 + 平均拟合度）/ fittingDistribution（四桶）/
+    latestBatchScatter（最近已完成批次前后散点）。整定模块禁用时本端点
+    不受影响（历史归档口径）。
+    """
     start, end = _parse_date_range(startDate, endDate)
     data = await get_benefit(db, start_date=start, end_date=end, plant_node_id=plantNodeId)
+    return success(data=data)
+
+
+@router.get("/benefit/orders", response_model=ApiResponse[dict])
+async def get_report_benefit_orders(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(10, ge=1, le=100),
+    startDate: str | None = Query(None),
+    endDate: str | None = Query(None),
+    plantNodeId: str | None = Query(None),
+) -> dict:
+    """逐工单前后对比明细（P2-4，方案 §5.3；R1 自持直读 handling_order）。
+
+    仅返回 CLOSED 且 kpi_before/kpi_after 快照非空的工单（verified_at 归窗，
+    装置下钻），行内含 orderNo/回路/actionType/kpiBefore/kpiAfter/
+    verifyResult/verifiedAt——逐单举证"这一单到底有没有效"。处置/整定模块
+    禁用时本端点不受影响（历史归档口径）。
+    """
+    start, end = _parse_date_range(startDate, endDate)
+    data = await get_benefit_orders(
+        db,
+        start_date=start,
+        end_date=end,
+        plant_node_id=plantNodeId,
+        page=page,
+        page_size=pageSize,
+    )
     return success(data=data)
 
 

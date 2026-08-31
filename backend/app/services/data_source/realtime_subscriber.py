@@ -43,6 +43,15 @@ SETNX 分布式锁（WS-B2）:
 - 多副本部署时，gap backfill 经 Redis SETNX 抢锁（TTL =
   ``GAP_BACKFILL_LOCK_TTL_SECONDS``），未抢到锁的副本跳过，避免重复补数。
 
+多 worker 进程订阅单例（Leader 锁）:
+- 生产 ``uvicorn --workers 4`` 下每个 worker 进程都会执行 lifespan 调用
+  ``start_subscriber()``；进程内单例无法跨进程去重，故引入 Redis Leader 锁
+  （``realtime:subscriber:leader:lock``，SETNX + TTL =
+  ``SUBSCRIBER_LEADER_LOCK_TTL_SECONDS``）：仅持锁进程真正连接 Hub 并回写
+  TDengine，其余进程待命并周期抢锁；持锁进程每 TTL/3 续期（CAS 校验 token），
+  崩溃/退出后其他进程在 TTL 内接管；Redis 异常时降级为无锁运行（不劣于
+  无锁现状）。
+
 时区显式转换（WS-B2）:
 - ``_build_row`` 对 collectTime 显式 astimezone 到目标时区（Asia/Shanghai），
   消除 naive datetime 在 TDengine 侧的 8h 偏移风险。
@@ -53,6 +62,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import socket
 import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
@@ -83,6 +94,9 @@ _GAP_BACKFILL_END_MARGIN = 2.0  # 补数窗口末端留 2s 余量，避免与实
 
 # gap backfill SETNX 分布式锁 key（多副本防重复补数）
 _GAP_BACKFILL_LOCK_KEY = "realtime:gap:backfill:lock"
+
+# 多 worker 进程订阅单例 Leader 锁 key（仅持锁进程连接 Hub 并回写 TDengine）
+_SUBSCRIBER_LEADER_LOCK_KEY = "realtime:subscriber:leader:lock"
 
 # 看门狗 recv 超时（秒）—— 周期性检查消息停滞，超时即断开重连
 _WATCHDOG_RECV_TIMEOUT = 30.0
@@ -211,6 +225,10 @@ class RealtimeSubscriber:
         self._loop_meta_cache_at: float = 0.0  # 上次缓存刷新（含失败尝试）的 monotonic 时间
         # 测点 tag_name → (loop_part=回路 tag_name, role)，与 _loop_meta_cache 同源刷新
         self._tag_role_cache: dict[str, tuple[str, str]] = {}
+        # 多 worker 进程订阅单例（Leader 锁）状态
+        self._leader_task: asyncio.Task | None = None  # Leader 锁维护循环（抢锁/续期）
+        self._leader_token: str = ""  # 本进程锁 token（hostname:pid:monotonic_ns）
+        self._is_leader = False  # 当前是否持有 Leader 锁（仅持锁进程真正订阅）
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -232,42 +250,37 @@ class RealtimeSubscriber:
         # 进程重启场景：从 Redis checkpoint 恢复最后数据时间，
         # 使首次连接成功即可感知进程停机期间的数据缺口
         await self._load_checkpoint()
-        self._task = asyncio.create_task(self._run())
-        # 主任务意外退出观测（2026-08-21 事故：远端引擎重启掐断连接后
-        # 主任务静默死亡，看门狗随之失效，无任何日志可查）
-        self._task.add_done_callback(self._on_main_task_done)
-        self._flush_task = asyncio.create_task(self._flush_loop())
-        self._refresh_task = asyncio.create_task(self._refresh_loop())
+        # 多 worker 进程防护：Redis Leader 锁保证同一时刻仅一个进程真正订阅。
+        # 抢到锁立即启动订阅任务；未抢到进入待命，由 _leader_loop 周期抢锁接管
+        self._leader_token = f"{socket.gethostname()}:{os.getpid()}:{time.monotonic_ns()}"
+        if await self._acquire_leader_lock():
+            self._become_leader()
+        else:
+            logger.info("实时数据订阅待命：Leader 锁被其他 worker 进程持有，周期抢锁中")
+        self._leader_task = asyncio.create_task(self._leader_loop())
         logger.info(
-            "实时数据订阅任务已启动 (hub=%s, writeback=%s)",
+            "实时数据订阅任务已启动 (hub=%s, writeback=%s, leader=%s)",
             settings.SIGNALR_HUB_URL,
             self._writeback_enabled,
+            self._is_leader,
         )
 
     async def stop(self) -> None:
         """停止订阅."""
         self._running = False
-        if self._task is not None:
-            self._task.cancel()
+        # 停止 Leader 锁维护循环（停止续期/抢锁）
+        if self._leader_task is not None:
+            self._leader_task.cancel()
             try:
-                await self._task
+                await self._leader_task
             except asyncio.CancelledError:
                 pass
-            self._task = None
-        if self._flush_task is not None:
-            self._flush_task.cancel()
-            try:
-                await self._flush_task
-            except asyncio.CancelledError:
-                pass
-            self._flush_task = None
-        if self._refresh_task is not None:
-            self._refresh_task.cancel()
-            try:
-                await self._refresh_task
-            except asyncio.CancelledError:
-                pass
-            self._refresh_task = None
+            self._leader_task = None
+        # 停止订阅任务并释放 Leader 锁（先停任务再放锁，避免接管进程与本进程并行写）
+        was_leader = self._is_leader
+        await self._resign_leader()
+        if was_leader:
+            await self._release_leader_lock()
         if self._backfill_task is not None:
             self._backfill_task.cancel()
             try:
@@ -309,6 +322,116 @@ class RealtimeSubscriber:
             logger.error("实时订阅主任务意外退出（无异常，疑似被 GC/外部取消）")
         else:
             logger.error("实时订阅主任务异常退出: %s", exc, exc_info=exc)
+
+    # ------------------------------------------------------------------
+    # 多 worker 进程订阅单例（Redis Leader 锁）
+    # ------------------------------------------------------------------
+
+    def _become_leader(self) -> None:
+        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新任务."""
+        self._is_leader = True
+        self._task = asyncio.create_task(self._run())
+        # 主任务意外退出观测（2026-08-21 事故：远端引擎重启掐断连接后
+        # 主任务静默死亡，看门狗随之失效，无任何日志可查）
+        self._task.add_done_callback(self._on_main_task_done)
+        self._flush_task = asyncio.create_task(self._flush_loop())
+        self._refresh_task = asyncio.create_task(self._refresh_loop())
+        logger.warning("本进程已接管实时数据订阅（Leader）: token=%s", self._leader_token)
+
+    async def _resign_leader(self) -> None:
+        """失去/释放 Leader 锁：取消订阅主任务 / flush / 周期刷新任务（幂等）."""
+        self._is_leader = False
+        for attr in ("_task", "_flush_task", "_refresh_task"):
+            task = getattr(self, attr)
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                setattr(self, attr, None)
+
+    async def _leader_loop(self) -> None:
+        """Leader 锁维护循环：持锁时周期续期（CAS），未持锁时周期抢锁接管.
+
+        - 续期失败（锁被其他进程持有或已过期被抢走）→ 停任务转待命，继续抢锁；
+        - Redis 异常时按既定降级策略处理（见 _acquire/_renew），不中断循环。
+        """
+        while self._running:
+            try:
+                ttl = int(settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS)
+            except Exception:  # noqa: BLE001
+                ttl = 30  # 配置异常兜底（正常路径 settings 为 int，不会走到）
+            try:
+                await asyncio.sleep(max(ttl / 3.0, 1.0))
+                if not self._running:
+                    break
+                if self._is_leader:
+                    if not await self._renew_leader_lock():
+                        logger.warning("实时订阅 Leader 锁已丢失，本进程停止订阅转待命")
+                        await self._resign_leader()
+                elif await self._acquire_leader_lock():
+                    self._become_leader()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Leader 锁维护循环异常（下周期重试）: %s", exc)
+
+    async def _acquire_leader_lock(self) -> bool:
+        """SETNX 抢占订阅 Leader 锁（多 worker 进程防重复订阅）.
+
+        Returns:
+            True 抢到锁；False 锁已被其他进程持有。
+            Redis 异常时降级返回 True（无锁运行，不劣于引入锁之前的现状）。
+        """
+        try:
+            ok = await redis_client.set(
+                _SUBSCRIBER_LEADER_LOCK_KEY,
+                self._leader_token,
+                nx=True,
+                ex=int(settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS),
+            )
+            return bool(ok)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("订阅 Leader 锁抢占异常（降级为无锁运行）: %s", exc)
+            return True
+
+    async def _renew_leader_lock(self) -> bool:
+        """续期订阅 Leader 锁（CAS 校验 token，防给别人的锁续期）.
+
+        Returns:
+            True 仍持有锁；False 锁已丢失（被抢或过期后易主）。
+            Redis 异常时返回 True 保持现状（下周期重试，避免闪断导致全员停订）。
+        """
+        _RENEW_LUA = (
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then "
+            "return redis.call('EXPIRE', KEYS[1], ARGV[2]) else return 0 end"
+        )
+        try:
+            ok = await redis_client.eval(
+                _RENEW_LUA,
+                1,
+                _SUBSCRIBER_LEADER_LOCK_KEY,
+                self._leader_token,
+                str(int(settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS)),
+            )
+            return bool(ok)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("订阅 Leader 锁续期异常（保持现状，下周期重试）: %s", exc)
+            return True
+
+    async def _release_leader_lock(self) -> None:
+        """释放订阅 Leader 锁（CAS 校验 token，防误释放）。"""
+        _RELEASE_LUA = (
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then "
+            "return redis.call('DEL', KEYS[1]) else return 0 end"
+        )
+        try:
+            await redis_client.eval(
+                _RELEASE_LUA, 1, _SUBSCRIBER_LEADER_LOCK_KEY, self._leader_token
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("订阅 Leader 锁释放失败（可忽略，TTL 兜底）: %s", exc)
 
     def _spawn_bg(self, coro) -> None:
         """启动 fire-and-forget 后台任务并保持引用（防 GC 中途回收）.
