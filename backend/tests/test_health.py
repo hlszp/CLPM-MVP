@@ -21,7 +21,9 @@ def test_health_returns_ok() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["version"] == "1.0.0"
+    # 版本权威来源为 settings.APP_VERSION（FastAPI app 初始化时同源注入），
+    # 断言三者一致而非写死字面量，避免版本升级后测试漂移。
+    assert body["version"] == app.version == settings.APP_VERSION
 
 
 def test_openapi_docs_available() -> None:
