@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 数据库名: clpm
--- 脚本版本: v1.7
+-- 脚本版本: v2.0
 -- 创建日期: 2026-06-20
 -- 对应 DDS 版本: DDS v3.0 (产品化架构重构版)
 -- 设计依据: PRD v3.0, FDS v3.0, ADS v3.0, 关键算法设计说明 v1.0
@@ -20,6 +20,17 @@
 --                    V62-P3-007 tuning_record 加 current_pid/risk_assessment/rollback_pid 人工实施清单字段；
 --                    V62-P3-008 action_tracker 加 assignee/planned_at 负责人与计划执行时间
 --   v1.9 2026-08-31: sys_user 移除 must_change_password 字段（首次登录强制改密功能下线）
+--   v2.0 2026-08-31: 生产首次部署 initdb 修复（ON_ERROR_STOP 下中途中止导致尾部对象全缺）：
+--                    ① 修 initdb 致命错误：Workbench v2.0 段 5 处外键列类型 VARCHAR(36) 与被引用 UUID 主键不兼容
+--                       （tuning_batch_records.tuning_record_id / trend_flags.loop_id / event_bus 5 个引用列 /
+--                       handling_order.handler_id），统一改 UUID；
+--                    ② 补齐与 alembic head（g7b8c9d0e1f2）的全量漂移：
+--                       kpi_snapshot_hourly/kpi_snapshot_custom +fitness_level/fitness_tags/fitness_detail（迁移 c3bee6758850）、
+--                       workbench_window_summary +distribution（迁移 b7e8f9a0c1d2）、
+--                       alert_rule.ck_alert_rule_type 增加 METRIC_THRESHOLD（迁移 z2b3c4d5e6f7）、
+--                       新增 3 个物化视图 mv_staff_workload/mv_diagnosis_pareto/mv_handling_funnel
+--                       （迁移 a9229d815d0d + e3f4a5b6c7d8 重建口径）及唯一索引；
+--                    ③ Workbench v2.0 各表时间列对齐迁移为 TIMESTAMPTZ，外键约束名对齐迁移链命名
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -354,11 +365,18 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     oscillation_amplitude DECIMAL(8,2),
     setpoint_crossing_count DECIMAL(10,0),
     time_constant       DECIMAL(8,2),
+    -- 适用性评估 L0~L4（迁移 c3bee6758850）
+    fitness_level       VARCHAR(2),
+    fitness_tags        JSONB,
+    fitness_detail      JSONB,
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start),
     CONSTRAINT ck_kpi_snapshot_confidence CHECK (
         confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E')
+    ),
+    CONSTRAINT ck_kpi_snapshot_fitness_level CHECK (
+        fitness_level IS NULL OR fitness_level IN ('L0', 'L1', 'L2', 'L3', 'L4')
     ),
     CONSTRAINT uq_kpi_snapshot_hourly_loop_ts UNIQUE (loop_id, ts_start)
 );
@@ -981,10 +999,17 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_custom (
     oscillation_amplitude   DECIMAL(8,2),
     setpoint_crossing_count DECIMAL(10,0),
     time_constant           DECIMAL(8,2),
+    -- 适用性评估 L0~L4（迁移 c3bee6758850）
+    fitness_level           VARCHAR(2),
+    fitness_tags            JSONB,
+    fitness_detail          JSONB,
     CONSTRAINT uq_kpi_custom_task_loop UNIQUE (task_id, loop_id),
     CONSTRAINT fk_kpi_custom_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_custom_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
-    CONSTRAINT ck_kpi_custom_window CHECK (ts_end > ts_start)
+    CONSTRAINT ck_kpi_custom_window CHECK (ts_end > ts_start),
+    CONSTRAINT ck_kpi_custom_fitness_level CHECK (
+        fitness_level IS NULL OR fitness_level IN ('L0', 'L1', 'L2', 'L3', 'L4')
+    )
 );
 
 -- =============================================================================
@@ -1409,6 +1434,7 @@ CREATE INDEX IF NOT EXISTS idx_loop_tag_mapping_tag_id  ON loop_tag_mapping (tag
 -- v4.0+ / v6.1 新增表索引
 CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_task ON kpi_snapshot_custom (task_id);
 CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_loop_ts ON kpi_snapshot_custom (loop_id, ts_start);
+CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_fitness_level ON kpi_snapshot_custom (fitness_level);
 CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_loop_status ON diagnosis_tag (loop_id, status);
 CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_severity ON diagnosis_tag (severity, triggered_at);
 CREATE INDEX IF NOT EXISTS ix_unit_kpi_summary_node_time ON unit_kpi_summary (node_id, snapshot_time);
@@ -1451,6 +1477,7 @@ CREATE INDEX IF NOT EXISTS idx_loop_integrity_loop_id
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_id  ON kpi_snapshot_hourly (loop_id);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_start ON kpi_snapshot_hourly (ts_start);
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_status   ON kpi_snapshot_hourly (status);
+CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_fitness_level ON kpi_snapshot_hourly (fitness_level);
 -- 复合索引（S1-C2）：优化常见查询模式
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_loop ON kpi_snapshot_hourly (ts_start, loop_id);
 
@@ -1556,7 +1583,7 @@ CREATE TABLE IF NOT EXISTS alert_rule (
     created_at      TIMESTAMP    NOT NULL DEFAULT now(),
     updated_by      VARCHAR(50),
     updated_at      TIMESTAMP,
-    CONSTRAINT ck_alert_rule_type CHECK (rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE'))
+    CONSTRAINT ck_alert_rule_type CHECK (rule_type IN ('THRESHOLD', 'DRIFT', 'COMPOSITE', 'CONFIDENCE', 'METRIC_THRESHOLD'))
 );
 CREATE INDEX IF NOT EXISTS idx_alert_rule_type              ON alert_rule (rule_type);
 CREATE INDEX IF NOT EXISTS idx_alert_rule_enabled_priority  ON alert_rule (is_enabled, priority);
@@ -1746,7 +1773,7 @@ CREATE INDEX IF NOT EXISTS idx_handling_order_planned ON handling_order (planned
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS loop_action_item (
     id            UUID PRIMARY KEY,
-    run_id        UUID REFERENCES diagnosis_run(id) ON DELETE SET NULL,
+    run_id        UUID CONSTRAINT fk_loop_action_item_run REFERENCES diagnosis_run(id) ON DELETE SET NULL,
     loop_id       UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
     source        VARCHAR(8)   NOT NULL DEFAULT 'SYSTEM',
     category      VARCHAR(32),
@@ -1760,7 +1787,7 @@ CREATE TABLE IF NOT EXISTS loop_action_item (
     reviewed_by       VARCHAR(64),
     reviewed_at       TIMESTAMP,
     rejected_reason   VARCHAR(200),
-    converted_order_id UUID REFERENCES handling_order(id) ON DELETE SET NULL,
+    converted_order_id UUID CONSTRAINT fk_loop_action_item_converted_order REFERENCES handling_order(id) ON DELETE SET NULL,
     ignore_reason     VARCHAR(200),
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
@@ -1808,11 +1835,11 @@ CREATE TABLE IF NOT EXISTS module_plugin (
     order_index       INTEGER      NOT NULL,
     dependencies      JSONB        NOT NULL DEFAULT '[]'::jsonb,
     maintenance_window JSONB,
-    installed_at      TIMESTAMP,
-    last_maintenance_at TIMESTAMP,
+    installed_at      TIMESTAMPTZ,
+    last_maintenance_at TIMESTAMPTZ,
     updated_by        BIGINT,
-    updated_at        TIMESTAMP     NOT NULL DEFAULT now(),
-    created_at        TIMESTAMP     NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
     CONSTRAINT uniq_module_plugin_key UNIQUE (module_key),
     CONSTRAINT ck_module_plugin_status CHECK (status IN ('CORE','ENABLED','MAINTENANCE','UNINSTALLED'))
 );
@@ -1828,7 +1855,7 @@ CREATE TABLE IF NOT EXISTS sla_policy (
     is_default    BOOLEAN     NOT NULL DEFAULT FALSE,
     scope_type    VARCHAR(16),
     scope_id      INTEGER,
-    created_at    TIMESTAMP   NOT NULL DEFAULT now(),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_sla_action_type CHECK (action_type IN ('TUNING','VALVE','INSTRUMENT','LINK','PROCESS','UTILIZATION','RECONFIG','OTHER')),
     CONSTRAINT ck_sla_priority CHECK (priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
     CONSTRAINT ck_sla_warn_pos CHECK (warn_minutes > 0),
@@ -1849,10 +1876,10 @@ CREATE TABLE IF NOT EXISTS tuning_batch (
     scatters_before   JSONB,
     scatters_after    JSONB,
     owner_id          BIGINT,
-    expected_start_at TIMESTAMP,
-    actual_start_at   TIMESTAMP,
-    completed_at      TIMESTAMP,
-    created_at        TIMESTAMP    NOT NULL DEFAULT now(),
+    expected_start_at TIMESTAMPTZ,
+    actual_start_at   TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT uniq_tuning_batch_no UNIQUE (batch_no),
     CONSTRAINT ck_tuning_batch_status CHECK (status IN ('BLOCKED','PENDING','READY','RUNNING','COMPLETED','CANCELLED')),
     CONSTRAINT ck_tuning_batch_scope_type CHECK (scope_type IN ('FACTORY','AREA','UNIT','LOOP'))
@@ -1862,7 +1889,7 @@ CREATE INDEX IF NOT EXISTS idx_tuning_batch_status ON tuning_batch (status, crea
 
 CREATE TABLE IF NOT EXISTS tuning_batch_records (
     batch_id         BIGINT  NOT NULL REFERENCES tuning_batch(id) ON DELETE CASCADE,
-    tuning_record_id VARCHAR(36) NOT NULL REFERENCES tuning_record(id) ON DELETE CASCADE,
+    tuning_record_id UUID    NOT NULL REFERENCES tuning_record(id) ON DELETE CASCADE,
     sort_order        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (batch_id, tuning_record_id)
 );
@@ -1873,8 +1900,8 @@ CREATE TABLE IF NOT EXISTS workbench_window_summary (
     scope_type            VARCHAR(16)  NOT NULL,
     scope_id              INTEGER      NOT NULL,
     "window"              VARCHAR(8)   NOT NULL,
-    window_start          TIMESTAMP    NOT NULL,
-    window_end            TIMESTAMP    NOT NULL,
+    window_start          TIMESTAMPTZ  NOT NULL,
+    window_end            TIMESTAMPTZ  NOT NULL,
     score                 NUMERIC(6,3) NOT NULL,
     status                VARCHAR(16)  NOT NULL,
     loop_count            INTEGER      NOT NULL DEFAULT 0,
@@ -1889,7 +1916,9 @@ CREATE TABLE IF NOT EXISTS workbench_window_summary (
     instrument_fault_rate NUMERIC(6,3),
     score_trend           JSONB        NOT NULL DEFAULT '[]'::jsonb,
     flags                 JSONB       NOT NULL DEFAULT '[]'::jsonb,
-    snapshot_at           TIMESTAMP   NOT NULL DEFAULT now(),
+    snapshot_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- 数据质量/分项斜率分布预计算（迁移 b7e8f9a0c1d2）
+    distribution          JSONB       NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT uniq_ws_scope_window_end UNIQUE (scope_type, scope_id, "window", window_end),
     CONSTRAINT ck_ws_window CHECK ("window" IN ('24h','7d','30d')),
     CONSTRAINT ck_ws_scope_type CHECK (scope_type IN ('GLOBAL','FACTORY','AREA','UNIT','LOOP')),
@@ -1903,17 +1932,17 @@ CREATE TABLE IF NOT EXISTS trend_flags (
     id            BIGSERIAL    PRIMARY KEY,
     scope_type    VARCHAR(16)  NOT NULL,
     scope_id      INTEGER      NOT NULL,
-    loop_id       VARCHAR(36) REFERENCES loop_ledger(id) ON DELETE SET NULL,
+    loop_id       UUID CONSTRAINT tf_loop_fk REFERENCES loop_ledger(id) ON DELETE SET NULL,
     "window"      VARCHAR(8)   NOT NULL,
     kind          VARCHAR(20)  NOT NULL,
     severity      VARCHAR(8)   NOT NULL,
-    flagged_at    TIMESTAMP    NOT NULL,
+    flagged_at    TIMESTAMPTZ  NOT NULL,
     metric_name   VARCHAR(32),
     prev_value    NUMERIC(8,3),
     curr_value    NUMERIC(8,3),
     delta_pct     NUMERIC(7,2),
     description   VARCHAR(500),
-    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT ck_tf_kind CHECK (kind IN ('dip','spike','deterioration','jump','oscillation_start','saturation_event')),
     CONSTRAINT ck_tf_severity CHECK (severity IN ('INFO','WARN','ERROR','CRITICAL')),
     CONSTRAINT ck_tf_window CHECK ("window" IN ('24h','7d','30d')),
@@ -1930,7 +1959,7 @@ CREATE TABLE IF NOT EXISTS wb_cache_log (
     build_ms    INTEGER     NOT NULL DEFAULT 0,
     endpoint    VARCHAR(64) NOT NULL,
     user_id     BIGINT,
-    created_at  TIMESTAMP   NOT NULL DEFAULT now()
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_wbcl_created_desc ON wb_cache_log (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbcl_key ON wb_cache_log (cache_key, created_at);
@@ -1943,17 +1972,17 @@ CREATE TABLE IF NOT EXISTS event_bus (
     severity        VARCHAR(8)  NOT NULL,
     scope_type      VARCHAR(16),
     scope_id        INTEGER,
-    loop_id         VARCHAR(36) REFERENCES loop_ledger(id) ON DELETE SET NULL,
-    order_id        VARCHAR(36) REFERENCES handling_order(id) ON DELETE SET NULL,
-    record_id       VARCHAR(36) REFERENCES tuning_record(id) ON DELETE SET NULL,
-    tag_id          VARCHAR(36) REFERENCES diagnosis_tag(id) ON DELETE SET NULL,
-    alert_event_id  VARCHAR(36) REFERENCES alert_event(id) ON DELETE SET NULL,
+    loop_id         UUID REFERENCES loop_ledger(id) ON DELETE SET NULL,
+    order_id        UUID REFERENCES handling_order(id) ON DELETE SET NULL,
+    record_id       UUID REFERENCES tuning_record(id) ON DELETE SET NULL,
+    tag_id          UUID REFERENCES diagnosis_tag(id) ON DELETE SET NULL,
+    alert_event_id  UUID REFERENCES alert_event(id) ON DELETE SET NULL,
     title           VARCHAR(200) NOT NULL,
     body            TEXT,
     metadata        JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    occurred_at     TIMESTAMP   NOT NULL,
+    occurred_at     TIMESTAMPTZ NOT NULL,
     read_by_users   JSONB       NOT NULL DEFAULT '[]'::jsonb,
-    created_at      TIMESTAMP   NOT NULL DEFAULT now(),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT ck_eb_source_module CHECK (source_module IN ('monitor','assess','diagnosis','tuning','handling','alert','system')),
     CONSTRAINT ck_eb_severity CHECK (severity IN ('INFO','WARN','ERROR','CRITICAL'))
 );
@@ -1965,7 +1994,8 @@ CREATE INDEX IF NOT EXISTS idx_eb_source_type ON event_bus (source_module, event
 
 -- Workbench v2.0 现有表 ALTER：handling_order 新增 SLA + 重开 + scope 列
 ALTER TABLE handling_order
-    ADD COLUMN IF NOT EXISTS sla_policy_id  BIGINT REFERENCES sla_policy(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS sla_policy_id  BIGINT
+        CONSTRAINT fk_ho_sla_policy REFERENCES sla_policy(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS sla_deadline_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS sla_stage     VARCHAR(8) NOT NULL DEFAULT 'NONE'
         CONSTRAINT ck_handling_order_sla_stage CHECK (sla_stage IN ('NONE','WARN','BREACH')),
@@ -1974,7 +2004,8 @@ ALTER TABLE handling_order
     ADD COLUMN IF NOT EXISTS reopen_reasons JSONB  NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS scope_type    VARCHAR(16),
     ADD COLUMN IF NOT EXISTS scope_id      INTEGER,
-    ADD COLUMN IF NOT EXISTS handler_id    VARCHAR(36) REFERENCES sys_user(id) ON DELETE SET NULL;
+    ADD COLUMN IF NOT EXISTS handler_id    UUID
+        CONSTRAINT fk_ho_handler_user REFERENCES sys_user(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_handling_order_scope      ON handling_order (scope_type, scope_id);
 CREATE INDEX IF NOT EXISTS idx_handling_order_handler_id ON handling_order (handler_id);
 CREATE INDEX IF NOT EXISTS idx_handling_order_active_sla ON handling_order (status, sla_deadline_at)
@@ -2002,6 +2033,110 @@ ALTER TABLE sys_user
 -- Workbench v2.0 现有表 ALTER：kpi_node_snapshot_daily 新增索引
 CREATE INDEX IF NOT EXISTS idx_kpi_daily_scope_date_desc
     ON kpi_node_snapshot_daily (plant_node_id, stat_date DESC);
+
+-- =============================================================================
+-- Workbench v2.0 工作台物化视图（迁移 a9229d815d0d + e3f4a5b6c7d8 重建口径）
+-- 均含 UNIQUE INDEX 以支持 REFRESH MATERIALIZED VIEW CONCURRENTLY，
+-- 由 Celery beat refresh-workbench-mv@5min 任务刷新
+-- =============================================================================
+
+-- MV-01: mv_staff_workload — 人员负载看板（A-08），每用户一行聚合活跃工单数与 SLA 告警数
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_staff_workload AS
+SELECT
+    h.handler_id AS user_id,
+    u.display_name AS user_name,
+    COUNT(*) FILTER (
+        WHERE h.status IN ('PENDING','EXECUTING','VERIFYING')
+    ) AS active_count,
+    COUNT(*) FILTER (
+        WHERE h.status = 'PENDING'
+    ) AS pending_count,
+    COUNT(*) FILTER (
+        WHERE h.status = 'EXECUTING'
+    ) AS executing_count,
+    COUNT(*) FILTER (
+        WHERE h.status = 'VERIFYING'
+    ) AS verifying_count,
+    COUNT(*) FILTER (
+        WHERE h.sla_stage IN ('WARN','BREACH')
+    ) AS sla_warned_count,
+    COUNT(*) FILTER (
+        WHERE h.status = 'CLOSED'
+    ) AS closed_count,
+    MAX(h.updated_at) AS last_activity_at
+FROM handling_order h
+LEFT JOIN sys_user u ON u.id = h.handler_id
+WHERE h.handler_id IS NOT NULL
+GROUP BY h.handler_id, u.display_name
+WITH NO DATA;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_staff_workload_user ON mv_staff_workload (user_id);
+
+-- MV-02: mv_diagnosis_pareto — 诊断根因 Pareto 分布（A-01）
+-- 数据源为诊断 v2 引擎表 diagnosis_run（迁移 e3f4a5b6c7d8 重建口径）：
+-- 按 primary_category（8 类枚举 → 中文标签展示域）聚合近 30d SUCCESS run 数，
+-- converted/ignored 由 loop_action_item 关联计数，sla_warned_count 恒 0（保列稳消费方结构）
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_diagnosis_pareto AS
+SELECT
+    CASE r.primary_category
+        WHEN 'TUNING' THEN '参数问题（PID 整定）'
+        WHEN 'VALVE' THEN '阀门/执行机构问题'
+        WHEN 'INSTRUMENT' THEN '仪表/测量问题'
+        WHEN 'COMMUNICATION' THEN '通信链路问题'
+        WHEN 'PROCESS' THEN '工艺/外扰问题'
+        WHEN 'UTILIZATION' THEN '投用/操作问题'
+        WHEN 'DESIGN' THEN '组态/设计问题'
+        WHEN 'DATA_INSUFFICIENT' THEN '数据不足/无法判定'
+        ELSE r.primary_category
+    END AS root_cause,
+    COUNT(*) AS tag_count,
+    COUNT(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM loop_action_item a
+        WHERE a.run_id = r.id AND a.converted_order_id IS NOT NULL
+    )) AS converted_count,
+    COUNT(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM loop_action_item a
+        WHERE a.run_id = r.id AND a.status = 'IGNORED'
+    )) AS ignored_count,
+    0::bigint AS sla_warned_count
+FROM diagnosis_run r
+WHERE r.status = 'SUCCESS'
+  AND r.primary_category IS NOT NULL
+  AND r.created_at >= (now() AT TIME ZONE 'utc') - interval '30 days'
+GROUP BY r.primary_category
+WITH NO DATA;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_diagnosis_pareto_root ON mv_diagnosis_pareto (root_cause);
+
+-- MV-03: mv_handling_funnel — 处置漏斗（A-05），按 scope 聚合工单状态分布
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_handling_funnel AS
+SELECT
+    COALESCE(h.scope_type, 'GLOBAL') AS scope_type,
+    COALESCE(h.scope_id, 0) AS scope_id,
+    COUNT(*) AS total_count,
+    COUNT(*) FILTER (WHERE h.status = 'PENDING') AS pending_count,
+    COUNT(*) FILTER (WHERE h.status = 'EXECUTING') AS executing_count,
+    COUNT(*) FILTER (WHERE h.status = 'VERIFYING') AS verifying_count,
+    COUNT(*) FILTER (WHERE h.status = 'CLOSED') AS closed_count,
+    COUNT(*) FILTER (WHERE h.status = 'REOPENED') AS reopened_count,
+    COUNT(*) FILTER (WHERE h.status = 'CANCELLED') AS cancelled_count,
+    COUNT(*) FILTER (WHERE h.sla_stage = 'BREACH') AS breached_count,
+    AVG(
+        CASE
+            WHEN h.status = 'CLOSED'
+            THEN EXTRACT(EPOCH FROM (
+                COALESCE(h.verified_at, h.updated_at) - h.created_at
+            )) / 3600
+        END
+    ) AS avg_cycle_hours
+FROM handling_order h
+GROUP BY COALESCE(h.scope_type, 'GLOBAL'), COALESCE(h.scope_id, 0)
+WITH NO DATA;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_handling_funnel_scope
+    ON mv_handling_funnel (scope_type, scope_id);
+
+-- 首次刷新（WITH NO DATA 创建后需填充一次；不能用 CONCURRENTLY）
+REFRESH MATERIALIZED VIEW mv_staff_workload;
+REFRESH MATERIALIZED VIEW mv_diagnosis_pareto;
+REFRESH MATERIALIZED VIEW mv_handling_funnel;
 
 -- Workbench v2.0 种子数据：module_plugin 8 条 + sla_policy 32 条
 INSERT INTO module_plugin (module_key, display_name, status, is_core, order_index)
