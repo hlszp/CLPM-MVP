@@ -10,4 +10,16 @@
   ],
   "tarFile": "clpm-images-20260804-083726.tar.gz",
   "tarSize": "176M"
+},{
+  "version": "20260831-111954",
+  "buildTime": "2026-08-31 11:19:54",
+  "gitCommit": "b8525ee2",
+  "gitBranch": "main",
+  "appVersion": "v7.0.0-10-gb8525ee2",
+  "images": [
+    {"name": "clpm-backend:latest", "tags": ["latest", "b8525ee2", "20260831-111954"], "size": "180MB"},
+    {"name": "clpm-frontend:latest", "tags": ["latest", "b8525ee2", "20260831-111954"], "size": "34.8MB"}
+  ],
+  "tarFile": "clpm-images-20260831-111954.tar.gz",
+  "tarSize": "787M"
 }]
