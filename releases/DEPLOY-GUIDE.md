@@ -25,7 +25,7 @@
 │                      ▼              ▼             ▼      │
 │   ┌──────────┐   ┌─────────┐   ┌──────────┐           │
 │   │PostgreSQL│   │  Redis  │   │ TDengine │           │
-│   │  :7102   │   │  :7103  │   │  :7104   │           │
+│   │  :5432   │   │  :6379  │   │  :6030   │           │
 │   └──────────┘   └─────────┘   └──────────┘           │
 │                                                         │
 │   端口 7141 对外暴露，其余端口仅容器内网络可达            │
@@ -40,9 +40,9 @@
 |---|---|---|---|
 | Frontend (Nginx) | 7141 | **是** | 唯一对外端口，HTTP 直连 |
 | Backend (FastAPI) | 7101 | 否 | 容器内网络，通过 Nginx 反向代理 `/api/v1/` |
-| PostgreSQL | 7102 | 否 | 容器内网络 |
-| Redis | 7103 | 否 | 容器内网络 |
-| TDengine | 7104 | 否 | 容器内网络（如使用 tdengine 数据源模式） |
+| PostgreSQL | 5432 | 否 | 容器内网络 |
+| Redis | 6379 | 否 | 容器内网络 |
+| TDengine | 6030 | 否 | 容器内网络（如使用 tdengine 数据源模式） |
 
 ### 端口冲突检查
 
@@ -302,7 +302,7 @@ docker exec clpm-frontend curl -fsS http://localhost:7141/
 # 预期输出：HTML 页面内容
 
 # 外部访问
-curl http://<服务器IP>:7141/api/v1/health
+curl http://<服务器IP>:7141/health
 ```
 
 ### 7.3 功能验证
@@ -356,7 +356,7 @@ kill $(lsof -t -i:7141)
 **排查**：
 ```bash
 # 检查 PostgreSQL 容器状态
-docker exec clpm-postgres pg_isready -U clpm -p 7102
+docker exec clpm-postgres pg_isready -U clpm -p 5432
 
 # 检查 .env.prod 中的数据库配置
 grep POSTGRES /opt/clpm/.env.prod
@@ -364,7 +364,7 @@ grep POSTGRES /opt/clpm/.env.prod
 
 **解决**：
 - 确认 `POSTGRES_HOST=postgres`（容器名）
-- 确认 `POSTGRES_PORT=7102`（与 `postgres.command` 一致）
+- 确认 `POSTGRES_PORT=5432`（与 `postgres.command` 一致）
 - 确认 `POSTGRES_PASSWORD` 与 PostgreSQL 容器启动密码一致
 
 ### 8.3 Redis 连接失败
@@ -373,13 +373,13 @@ grep POSTGRES /opt/clpm/.env.prod
 
 **排查**：
 ```bash
-docker exec clpm-redis redis-cli -p 7103 -a <REDIS_PASSWORD> ping
+docker exec clpm-redis redis-cli -p 6379 -a <REDIS_PASSWORD> ping
 # 预期输出：PONG
 ```
 
 **解决**：
 - 确认 `REDIS_HOST=redis`（容器名）
-- 确认 `REDIS_PORT=7103`（与 `redis.command` 中的 `--port` 一致）
+- 确认 `REDIS_PORT=6379`（与 `redis.command` 中的 `--port` 一致）
 - 确认 `REDIS_PASSWORD` 与 `redis.command` 中的 `--requirepass` 一致
 
 ### 8.4 Celery Worker 不工作
@@ -392,7 +392,7 @@ docker exec clpm-redis redis-cli -p 7103 -a <REDIS_PASSWORD> ping
 docker exec clpm-celery-worker celery -A app.tasks.celery_app inspect ping
 
 # 查看任务队列
-docker exec clpm-redis redis-cli -p 7103 -a <REDIS_PASSWORD> llen default
+docker exec clpm-redis redis-cli -p 6379 -a <REDIS_PASSWORD> llen default
 ```
 
 **解决**：
@@ -477,13 +477,13 @@ docker compose -f docker-compose.prod.yml logs -f backend  # 后端日志
 docker compose -f docker-compose.prod.yml top          # 进程查看
 
 # 数据库
-docker exec clpm-postgres psql -U clpm -p 7102 -d clpm  # 进入 psql
+docker exec clpm-postgres psql -U clpm -p 5432 -d clpm  # 进入 psql
 docker exec clpm-backend alembic upgrade head            # 数据库迁移
 docker exec clpm-backend alembic current                  # 查看迁移版本
 
 # Redis
-docker exec clpm-redis redis-cli -p 7103 -a <PASSWORD>   # 进入 redis-cli
-docker exec clpm-redis redis-cli -p 7103 -a <PASSWORD> dbsize  # 查看键数量
+docker exec clpm-redis redis-cli -p 6379 -a <PASSWORD>   # 进入 redis-cli
+docker exec clpm-redis redis-cli -p 6379 -a <PASSWORD> dbsize  # 查看键数量
 
 # 镜像管理
 docker images | grep clpm                                # 查看镜像

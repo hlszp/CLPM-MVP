@@ -90,6 +90,12 @@ load_seed_data() {
 #
 # 本函数在部署时显式校验并补建，作为 entrypoint init 的兜底。
 #
+# 2026-08-31 生产演练修复：
+#   - 先等待 TDengine REST 服务就绪（带 60s 超时）：compose up 后容器
+#     仍处于 starting 时立即发 REST 请求会失败（演练实测）；
+#   - 无论 clpm_ts 库是否已存在，都执行幂等 DDL 补建 st_loop_data
+#     超级表：旧逻辑在库已存在时直接跳过，掩盖了"库在表不在"的残缺态。
+#
 # 前置条件：调用方须定义 tdengine_exec()，与 backend_exec() 同模式：
 #   tdengine_exec() { compose_prod exec -T tdengine "$@"; }
 #   tdengine_exec() { ssh "$SSH_HOST" "docker exec clpm-tdengine $*"; }
@@ -106,33 +112,40 @@ tdengine_ensure_schema() {
         return 0
     fi
 
-    echo "  检查 TDengine clpm_ts 数据库（REST :${td_rest_port}）..."
-
-    # 通过 REST API 检查数据库是否存在
-    local db_check
-    db_check=$(tdengine_exec curl -s -u "root:${td_pass}" \
-        "http://localhost:${td_rest_port}/rest/sql" -d 'SHOW DATABASES' 2>/dev/null || echo "")
-
-    if echo "$db_check" | grep -q '"clpm_ts"'; then
-        echo "  [OK] clpm_ts 数据库已存在"
-    else
-        echo "  [WARN] clpm_ts 数据库不存在，执行初始化 DDL..."
-        tdengine_exec curl -s -u "root:${td_pass}" \
-            "http://localhost:${td_rest_port}/rest/sql" \
-            -d "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'" >/dev/null 2>&1
-        tdengine_exec curl -s -u "root:${td_pass}" \
-            "http://localhost:${td_rest_port}/rest/sql/clpm_ts" \
-            -d "CREATE STABLE IF NOT EXISTS st_loop_data (ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT, pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT) TAGS (loop_id BINARY(36), unit_id BINARY(36))" >/dev/null 2>&1
-
-        # 复查超级表
-        local recheck
-        recheck=$(tdengine_exec curl -s -u "root:${td_pass}" \
-            "http://localhost:${td_rest_port}/rest/sql/clpm_ts" -d 'SHOW STABLES' 2>/dev/null || echo "")
-        if echo "$recheck" | grep -q '"st_loop_data"'; then
-            echo "  [OK] clpm_ts 数据库和 st_loop_data 超级表已创建"
-        else
-            echo "  [FAIL] TDengine schema 初始化失败"
+    # 等待 TDengine REST 服务就绪（最长 60s）：
+    # curl 任意 HTTP 响应（含 401）退出码即为 0，只有连接未建立
+    # （容器 starting / 端口未监听 / docker exec 失败）才返回非 0。
+    echo "  等待 TDengine REST 服务就绪（最长 60s）..."
+    local waited=0
+    until tdengine_exec curl -s -o /dev/null --max-time 2 \
+        "http://localhost:${td_rest_port}/rest/sql" -d 'SELECT SERVER_STATUS()' 2>/dev/null; do
+        if [ "$waited" -ge 60 ]; then
+            echo "  [FAIL] TDengine REST 服务 60s 内未就绪，schema 校验中止"
             return 1
         fi
+        sleep 3
+        waited=$((waited + 3))
+    done
+
+    echo "  校验 TDengine clpm_ts 数据库与 st_loop_data 超级表（REST :${td_rest_port}）..."
+
+    # CREATE DATABASE / CREATE STABLE 均为幂等 DDL（IF NOT EXISTS），
+    # 无论库是否已存在都执行，覆盖"库在表不在"的残缺场景
+    tdengine_exec curl -s -u "root:${td_pass}" \
+        "http://localhost:${td_rest_port}/rest/sql" \
+        -d "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'" >/dev/null 2>&1
+    tdengine_exec curl -s -u "root:${td_pass}" \
+        "http://localhost:${td_rest_port}/rest/sql/clpm_ts" \
+        -d "CREATE STABLE IF NOT EXISTS st_loop_data (ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT, pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT) TAGS (loop_id BINARY(36), unit_id BINARY(36))" >/dev/null 2>&1
+
+    # 复查超级表
+    local recheck
+    recheck=$(tdengine_exec curl -s -u "root:${td_pass}" \
+        "http://localhost:${td_rest_port}/rest/sql/clpm_ts" -d 'SHOW STABLES' 2>/dev/null || echo "")
+    if echo "$recheck" | grep -q '"st_loop_data"'; then
+        echo "  [OK] clpm_ts 数据库与 st_loop_data 超级表已就绪"
+    else
+        echo "  [FAIL] TDengine schema 校验失败（st_loop_data 超级表缺失）"
+        return 1
     fi
 }

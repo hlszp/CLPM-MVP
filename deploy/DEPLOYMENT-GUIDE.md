@@ -406,7 +406,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 # 所有服务应显示 "Up (healthy)"
 
 # 2. 后端 API 版本确认
-curl -s http://localhost:7141/api/v1/health | python3 -m json.tool
+curl -s http://localhost:7141/health | python3 -m json.tool
 # 期望: {"status": "ok", "version": "v6.2.0-xxx"}
 
 # 3. 前端页面可访问

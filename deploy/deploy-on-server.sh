@@ -501,9 +501,31 @@ check_no_placeholder() {
     fi
 }
 
+# TDengine 密码合规校验（2026-08-31 生产演练新增）
+# TDengine 密码规则：8-16 个字符，且至少包含大写字母/小写字母/数字/
+# 特殊字符中的三类。演练实测 32 位与 16 位纯 hex 密码均被 TDengine
+# ALTER USER 拒绝（错误码 0x80002648），部署后才发现会导致容器内 root
+# 密码与 .env.prod 不一致，必须部署前拦截。
+check_tdengine_password_policy() {
+    local var_name="$1"
+    local var_value
+    var_value=$(grep -E "^${var_name}=" "$ENV_FILE" | cut -d'=' -f2-)
+    local len=${#var_value}
+    local classes=0
+    if [[ "$var_value" =~ [a-z] ]]; then classes=$((classes + 1)); fi
+    if [[ "$var_value" =~ [A-Z] ]]; then classes=$((classes + 1)); fi
+    if [[ "$var_value" =~ [0-9] ]]; then classes=$((classes + 1)); fi
+    if [[ "$var_value" =~ [^a-zA-Z0-9] ]]; then classes=$((classes + 1)); fi
+    if [ "$len" -lt 8 ] || [ "$len" -gt 16 ] || [ "$classes" -lt 3 ]; then
+        log_error "${var_name} 不符合 TDengine 密码规则：8-16 个字符，且至少包含大写字母/小写字母/数字/特殊字符中的三类（不合规密码会被 TDengine ALTER USER 拒绝，错误码 0x80002648）"
+        exit 1
+    fi
+}
+
 check_required_no_placeholder "POSTGRES_PASSWORD"
 check_required_no_placeholder "REDIS_PASSWORD"
 check_required_no_placeholder "TDENGINE_PASSWORD"
+check_tdengine_password_policy "TDENGINE_PASSWORD"
 
 # ENV=production 强制校验
 ENV_VALUE=$(grep -E "^ENV=" "$ENV_FILE" | cut -d'=' -f2- | tr '[:upper:]' '[:lower:]' || true)
@@ -678,7 +700,7 @@ else
     ACCESS_URL="http://localhost:7141"
 fi
 echo "服务访问地址:  $ACCESS_URL"
-echo "默认账号:      admin / admin123（首次登录后请立即修改密码）"
+echo "默认账号:      admin / admin123"
 echo ""
 echo "常用运维命令:"
 echo "  查看日志:  docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f"
