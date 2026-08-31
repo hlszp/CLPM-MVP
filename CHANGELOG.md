@@ -2,6 +2,17 @@
 
 本文件记录 CLPM-MVP 的版本锁定基线。版本线自原 CLPM v6.2.0 派生精简重建后延续（v6.2.0 → v7.0.0），设计事实来源为 `docs/MVP设计/`。
 
+## [Unreleased] - 2026-08-31 生产部署就绪收口
+
+v7.0.0 锁定后、首次生产交付前的收口变更（main 自 `b8525ee2` 起）：
+
+- **CI 红灯修复**：`test_health` 版本断言与 `settings.APP_VERSION` 同源；`TestTaskSkeletonExecution` 5 用例纳入 integration 标记（CI 无 PG 自动排除）；vitest 根配置固定 `TZ=Asia/Shanghai`（修复 CI UTC 环境 2 用例）
+- **实时订阅 Leader 锁**：`uvicorn --workers 4` 下多进程重复 SignalR 订阅/回写 TDengine 风险收口——Redis Leader 锁（SETNX+TTL+Lua CAS 续期/释放），仅 Leader 订阅，故障自动接管
+- **强制改密功能移除**：`must_change_password` 全链路下线（列/deps 403 拦截/登录标志/测试），迁移 `g7b8c9d0e1f2` drop 列；个人中心自愿改密端点保留
+- **监控关注队列修复**：表格行数据剥离 children，避免 antd 误入树形模式渲染多余展开按钮
+- **交付包**：`releases/clpm-delivery-20260831-111954.tar.gz`（788M，9 镜像，`v7.0.0-10-gb8525ee2`），manifest 已登记
+- 已知残留增量：`tests/golden/openapi_baseline.json` 仍含 `mustChangePassword`（对应漂移测试已全文件 skip，基线刷新待后续）
+
 ## [7.0.0] - 2026-08-28
 
 CLPM-MVP 首个部署前锁定版本（tag `v7.0.0`，annotated）。
