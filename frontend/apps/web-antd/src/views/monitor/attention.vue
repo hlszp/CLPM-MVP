@@ -197,8 +197,18 @@ const filterVisible = ref(true);
 const groupDrawerOpen = ref(false);
 const currentGroup = ref<MonitorApi.AttentionGroup | null>(null);
 
-function openGroupDrawer(group: MonitorApi.AttentionGroup) {
-  currentGroup.value = group;
+/** 表格数据剥离 children：避免 antd 误入树形模式在首列渲染「+」展开按钮 */
+const tableData = computed(() =>
+  attentionGroups.value.map((g) => {
+    const { children: _children, ...rest } = g;
+    return rest;
+  }),
+);
+
+function openGroupDrawer(record: MonitorApi.AttentionGroup) {
+  // 表格行数据已剥离 children，按 groupId 回查完整回路组
+  currentGroup.value =
+    attentionGroups.value.find((g) => g.groupId === record.groupId) ?? record;
   groupDrawerOpen.value = true;
 }
 
@@ -806,7 +816,7 @@ watch(
           >
             <Table
               :columns="columns"
-              :data-source="attentionGroups"
+              :data-source="tableData"
               :loading="loading"
               :pagination="false"
               :size="tableSize"
