@@ -6,6 +6,10 @@ export default defineConfig({
   plugins: [Vue(), VueJsx()],
   test: {
     environment: 'happy-dom',
+    // 固定测试时区，避免 CI（UTC）与开发机（UTC+8）下时间断言不一致
+    env: {
+      TZ: 'Asia/Shanghai',
+    },
     environmentOptions: {
       happyDOM: {
         settings: {
