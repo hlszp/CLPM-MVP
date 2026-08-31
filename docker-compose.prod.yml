@@ -29,6 +29,10 @@ services:
     env_file: .env.prod
     environment:
       TZ: Asia/Shanghai
+    # AAS 与系统同机部署时，容器内经 host.docker.internal 访问宿主机服务
+    # （容器内 localhost 指容器自身；SignalR/历史数据/AAS 地址均可写 host.docker.internal）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -247,6 +251,9 @@ services:
     env_file: .env.prod
     environment:
       TZ: Asia/Shanghai
+    # 同 backend：容器内经 host.docker.internal 访问同机 AAS/历史数据接口
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
