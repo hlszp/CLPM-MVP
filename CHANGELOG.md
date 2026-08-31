@@ -10,7 +10,8 @@ v7.0.0 锁定后、首次生产交付前的收口变更（main 自 `b8525ee2` �
 - **实时订阅 Leader 锁**：`uvicorn --workers 4` 下多进程重复 SignalR 订阅/回写 TDengine 风险收口——Redis Leader 锁（SETNX+TTL+Lua CAS 续期/释放），仅 Leader 订阅，故障自动接管
 - **强制改密功能移除**：`must_change_password` 全链路下线（列/deps 403 拦截/登录标志/测试），迁移 `g7b8c9d0e1f2` drop 列；个人中心自愿改密端点保留
 - **监控关注队列修复**：表格行数据剥离 children，避免 antd 误入树形模式渲染多余展开按钮
-- **交付包**：`releases/clpm-delivery-20260831-111954.tar.gz`（788M，9 镜像，`v7.0.0-10-gb8525ee2`），manifest 已登记
+- **zpdev 演练实测修复（首装阻断级）**：`01_schema.sql` 外键 VARCHAR(36) 引用 UUID 主键导致 initdb 在 ON_ERROR_STOP 下中途中止、尾部对象永久缺失——已修复并与 alembic head 列级对齐（diff 为空）；`lib-migrate.sh` TDengine 校验补"库在表不在"盲区 + REST 就绪等待；deploy 脚本新增 TDengine 密码规则校验（8-16 字符、四类字符至少三类）
+- **交付包**：最终包 `releases/clpm-delivery-20260831-144618.tar.gz`（788M，9 镜像，`v7.0.0-17-g424c779f`），manifest 已登记；已在 zpdev（192.168.13.111）全新部署演练通过（登录/回路数据/TDengine 实时回写/Leader 锁/备份全链路）
 - 已知残留增量：`tests/golden/openapi_baseline.json` 仍含 `mustChangePassword`（对应漂移测试已全文件 skip，基线刷新待后续）
 
 ## [7.0.0] - 2026-08-28

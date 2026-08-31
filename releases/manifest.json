@@ -22,4 +22,17 @@
   ],
   "tarFile": "clpm-images-20260831-111954.tar.gz",
   "tarSize": "787M"
+},{
+  "version": "20260831-144618",
+  "buildTime": "2026-08-31 14:46:18",
+  "gitCommit": "424c779f",
+  "gitBranch": "main",
+  "appVersion": "v7.0.0-17-g424c779f",
+  "images": [
+    {"name": "clpm-backend:latest", "tags": ["latest", "424c779f", "20260831-144618"], "size": "180MB"},
+    {"name": "clpm-frontend:latest", "tags": ["latest", "424c779f", "20260831-144618"], "size": "34.8MB"}
+  ],
+  "tarFile": "clpm-images-20260831-144618.tar.gz",
+  "tarSize": "787M",
+  "note": "生产部署就绪收口最终包：含 initdb 漂移修复/TDengine 密码校验/Leader 锁；已在 zpdev(192.168.13.111) 全链路演练通过"
 }]
