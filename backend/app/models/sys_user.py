@@ -40,11 +40,6 @@ class SysUser(Base):
     lane_capacity: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("6"), default=6
     )
-    # 首次登录强制改密标志（S5-AUTH P1）：种子用户由迁移置 True，
-    # 改密成功后在 change_password 中清除
-    must_change_password: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false", nullable=False
-    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

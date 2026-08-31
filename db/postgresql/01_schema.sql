@@ -19,6 +19,7 @@
 --                    V62-P3-006 tuning_record.algorithm CHECK 新增 IDENTIFICATION_ONLY（纯辨识记录不再用 IMC 占位）；
 --                    V62-P3-007 tuning_record 加 current_pid/risk_assessment/rollback_pid 人工实施清单字段；
 --                    V62-P3-008 action_tracker 加 assignee/planned_at 负责人与计划执行时间
+--   v1.9 2026-08-31: sys_user 移除 must_change_password 字段（首次登录强制改密功能下线）
 -- =============================================================================
 
 -- 启用 UUID 生成扩展
@@ -35,7 +36,6 @@ CREATE TABLE IF NOT EXISTS sys_user (
     email           VARCHAR(255),
     role            VARCHAR(20)     NOT NULL,
     is_active       BOOLEAN         DEFAULT TRUE,
-    must_change_password BOOLEAN    NOT NULL DEFAULT FALSE,
     last_login_at   TIMESTAMP,
     created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
@@ -52,7 +52,6 @@ COMMENT ON COLUMN sys_user.display_name IS '显示名称';
 COMMENT ON COLUMN sys_user.email IS '邮箱（唯一）';
 COMMENT ON COLUMN sys_user.role IS '角色：ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT';
 COMMENT ON COLUMN sys_user.is_active IS '是否启用';
-COMMENT ON COLUMN sys_user.must_change_password IS '首次登录强制改密标志（S5-AUTH P1）：TRUE 时除改密/登出外的写操作端点拒绝，改密成功后清除';
 COMMENT ON COLUMN sys_user.last_login_at IS '最后登录时间';
 COMMENT ON COLUMN sys_user.created_at IS '创建时间';
 COMMENT ON COLUMN sys_user.updated_at IS '更新时间';

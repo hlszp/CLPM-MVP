@@ -528,8 +528,6 @@ async def change_password(
 ) -> None:
     """Change the current user's password and revoke all existing tokens.
 
-    同时清除 must_change_password 首次登录强制改密标志（S5-AUTH P1）。
-
     Raises ``BizError`` with ``ERR_INVALID_CREDENTIALS`` or ``ERR_PASSWORD_SAME``.
     """
     # Verify old password.
@@ -548,13 +546,11 @@ async def change_password(
             status_code=400,
         )
 
-    # Update password（同时清除首次登录强制改密标志 S5-AUTH P1）.
+    # Update password.
     new_hash = hash_password(new_password)
     user_id_str = str(user.id)
     await db.execute(
-        update(SysUser)
-        .where(SysUser.id == user_id_str)
-        .values(password_hash=new_hash, must_change_password=False)
+        update(SysUser).where(SysUser.id == user_id_str).values(password_hash=new_hash)
     )
     await db.commit()
 

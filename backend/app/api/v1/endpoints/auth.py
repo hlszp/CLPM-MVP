@@ -55,9 +55,6 @@ def _build_user_info(user: SysUser) -> dict:
         "permissions": get_permissions(user.role),
         "defaultHome": get_default_home(user.role),
         "lastLoginAt": last_login,
-        # ``is True`` 严格判断：真实列为 bool；测试中的 MagicMock 用户
-        # 未显式设置该属性时不会误判为 True
-        "mustChangePassword": getattr(user, "must_change_password", False) is True,
     }
 
 
