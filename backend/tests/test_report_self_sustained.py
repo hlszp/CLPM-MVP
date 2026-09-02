@@ -192,7 +192,12 @@ def _make_stats_db(
 class TestBuildHandlingStatistics:
     async def test_summary_structure_default_monthly_window(self) -> None:
         """默认口径：summary 7 指标 + 近 N 月空月补零 + topLoops 装置路径回溯。"""
-        db = _make_stats_db(monthly_rows=[SimpleNamespace(month="2026-08", closed=2, verified=3)])
+        # 服务按北京时间归月（handling_stats now_bj），期望值动态取当前北京时间月份，
+        # 避免硬编码月份随时间推移过期（2026-09 起硬编码 2026-08 即失败）
+        current_month_bj = datetime.now(hs._BJ_TZ).strftime("%Y-%m")
+        db = _make_stats_db(
+            monthly_rows=[SimpleNamespace(month=current_month_bj, closed=2, verified=3)]
+        )
 
         data = await hs.build_handling_statistics(db, months=6)
 
@@ -207,7 +212,11 @@ class TestBuildHandlingStatistics:
 
         monthly = data["monthly"]
         assert len(monthly) == 6
-        assert monthly[-1] == {"month": "2026-08", "closed": 2, "closeRate": round(2 / 3, 4)}
+        assert monthly[-1] == {
+            "month": current_month_bj,
+            "closed": 2,
+            "closeRate": round(2 / 3, 4),
+        }
         assert all(m["closed"] == 0 and m["closeRate"] is None for m in monthly[:-1])
 
         assert data["byType"][0]["label"] == "参数整定"
