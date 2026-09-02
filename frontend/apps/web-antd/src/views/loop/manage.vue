@@ -974,6 +974,9 @@ function handleImportBeforeUpload(file: File): boolean {
   requestClient
     .post<LoopApi.LoopImportResult>('/loops/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // 逐行 upsert 导入耗时与行数成正比（实测 1200 行 ≈ 11s，上限 5000 行），
+      // 默认 10s 超时会在后端正常完成前掐断请求（后端仍会提交，但前端误报超时）
+      timeout: 120_000,
     })
     .then((result) => {
       hide();
