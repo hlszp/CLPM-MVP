@@ -270,6 +270,12 @@ fi
 if [ -f "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" ]; then
     cp "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" "${DELIVERY_PATH}/DEPLOYMENT-GUIDE.md"
 fi
+# 现场部署手册与移交说明书（releases/ 下，随包交付部署运维团队）
+for doc in "客户现场部署手册.md" "部署运维移交说明书.md"; do
+    if [ -f "${RELEASES_DIR}/${doc}" ]; then
+        cp "${RELEASES_DIR}/${doc}" "${DELIVERY_PATH}/${doc}"
+    fi
+done
 # 如果 README-deploy.md 不存在，生成基本 README
 if [ ! -f "${DELIVERY_PATH}/README.md" ]; then
     # 生成基本 README
@@ -314,7 +320,9 @@ log_step "Phase 4: 打包交付包"
 
 DELIVERY_TAR="${RELEASES_DIR}/${DELIVERY_NAME}.tar.gz"
 log_info "打包: ${DELIVERY_TAR}"
-tar czf "${DELIVERY_TAR}" -C "${RELEASES_DIR}" "${DELIVERY_NAME}"
+# COPYFILE_DISABLE=1：避免 macOS tar 写入 ._ AppleDouble 元数据文件，
+# 防止 Linux 侧解压出现 ._* 噪音文件与 xattr 警告
+COPYFILE_DISABLE=1 tar czf "${DELIVERY_TAR}" -C "${RELEASES_DIR}" "${DELIVERY_NAME}"
 
 DELIVERY_TAR_SIZE=$(du -h "${DELIVERY_TAR}" | cut -f1)
 log_info "交付包大小: ${DELIVERY_TAR_SIZE}"
