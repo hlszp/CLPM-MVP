@@ -43,6 +43,7 @@ import {
 
 import {
   getDatasourceConfigApi,
+  refreshSubscriptionApi,
   testHistoryApiApi,
   testSignalrApi,
   updateDatasourceConfigApi,
@@ -127,6 +128,31 @@ const clearToken = ref(false);
 
 const historyTestResult = ref<DataSourceApi.TestResult | null>(null);
 const signalrTestResult = ref<DataSourceApi.TestResult | null>(null);
+
+// 实时订阅手工刷新（新建/修改回路、测点、绑定关系后免重启生效）
+const refreshingSubscription = ref(false);
+const subscriptionRefreshResult =
+  ref<DataSourceApi.SubscriptionRefreshResult | null>(null);
+
+/** 刷新结果摘要（总数/新增/移除/耗时/执行进程），经 Tag 展示在按钮旁 */
+const subscriptionRefreshSummary = computed(() => {
+  const r = subscriptionRefreshResult.value;
+  if (!r) return '';
+  if (r.error) return `刷新失败：${r.error}`;
+  const durationMs =
+    r.requestedAt && r.finishedAt
+      ? Math.max(
+          0,
+          Math.round(
+            new Date(r.finishedAt).getTime() -
+              new Date(r.requestedAt).getTime(),
+          ),
+        )
+      : null;
+  const durationText = durationMs === null ? '' : `，耗时 ${durationMs}ms`;
+  const pidText = r.leaderPid === null ? '' : `，进程 PID ${r.leaderPid}`;
+  return `已刷新：共 ${r.total} 个测点（+${r.added.length} / -${r.removed.length}）${durationText}${pidText}`;
+});
 
 const needRestart = computed(() => {
   if (!config.value) return false;
@@ -310,6 +336,25 @@ async function testSignalr() {
     // 错误提示由请求拦截器统一处理
   } finally {
     testingSignalr.value = false;
+  }
+}
+
+/** 手工刷新实时订阅：通知 Leader 重查活跃 Tag 并重发 SubscribeAsync（免重启生效） */
+async function refreshSubscription() {
+  refreshingSubscription.value = true;
+  subscriptionRefreshResult.value = null;
+  try {
+    const result = await refreshSubscriptionApi();
+    subscriptionRefreshResult.value = result;
+    if (result.error) {
+      message.error(`订阅刷新未完成：${result.error}`);
+    } else {
+      message.success('实时订阅已刷新，新绑定测点即时生效');
+    }
+  } catch {
+    // 错误提示由请求拦截器统一处理
+  } finally {
+    refreshingSubscription.value = false;
   }
 }
 
@@ -1164,6 +1209,14 @@ onMounted(loadConfig);
                 >
                   测试连接
                 </Button>
+                <Button
+                  v-if="form.signalrEnabled"
+                  v-permission="['ADMIN']"
+                  :loading="refreshingSubscription"
+                  @click="refreshSubscription"
+                >
+                  刷新实时订阅
+                </Button>
                 <Tag
                   v-if="signalrTestResult"
                   :color="signalrTestResult.success ? 'green' : 'red'"
@@ -1172,6 +1225,12 @@ onMounted(loadConfig);
                   }}<template v-if="signalrTestResult.latencyMs">
                     ({{ signalrTestResult.latencyMs }}ms)
                   </template>
+                </Tag>
+                <Tag
+                  v-if="subscriptionRefreshResult"
+                  :color="subscriptionRefreshResult.error ? 'red' : 'green'"
+                >
+                  {{ subscriptionRefreshSummary }}
                 </Tag>
               </div>
             </Form>

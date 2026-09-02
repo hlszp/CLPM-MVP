@@ -86,6 +86,30 @@ export namespace DataSourceApi {
     message: string;
   }
 
+  /** 实时订阅刷新结果（POST /datasource/refresh-subscription） */
+  export interface SubscriptionRefreshResult {
+    /** 本次请求 ID（API 触发时用于匹配结果） */
+    requestId: null | string;
+    /** 请求时间 ISO 8601 */
+    requestedAt: null | string;
+    /** 完成时间 ISO 8601 */
+    finishedAt: null | string;
+    /** 触发来源（manual-api/tag-mapping/loop-import/...） */
+    source: null | string;
+    /** 刷新后订阅的测点总数 */
+    total: number;
+    /** 本次新增订阅的测点 */
+    added: string[];
+    /** 本次移出订阅的测点（Hub 不支持可靠退订，仅不再使用其推送） */
+    removed: string[];
+    /** 重发 SubscribeAsync 的 invocationId */
+    invocationId: null | string;
+    /** 执行刷新的 Leader 进程 PID */
+    leaderPid: null | number;
+    /** 失败原因（非 Leader/WS 未连接等），成功时为 null */
+    error: null | string;
+  }
+
   /** 数据链路健康状态（P1-05：工作台常驻卡片，登录用户可查看） */
   export interface DataSourceHealth {
     /** 网络模式：lan 局域网直连 / wan 公网走 Tailscale */
@@ -133,6 +157,13 @@ export function testHistoryApiApi() {
 export function testSignalrApi() {
   return requestClient.post<DataSourceApi.TestResult>(
     '/datasource/test-signalr',
+  );
+}
+
+/** 手工刷新实时订阅（新建/修改回路、测点、绑定关系后免重启生效，最长等待 15s） */
+export function refreshSubscriptionApi() {
+  return requestClient.post<DataSourceApi.SubscriptionRefreshResult>(
+    '/datasource/refresh-subscription',
   );
 }
 

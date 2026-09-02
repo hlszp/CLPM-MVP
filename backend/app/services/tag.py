@@ -464,6 +464,11 @@ async def create_tag(
     )
     await db.commit()
 
+    # 通知实时订阅 Leader 刷新订阅集合（fire-and-forget，免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="tag-create")
+
     return _build_tag_dict(tag)
 
 
@@ -570,6 +575,11 @@ async def update_tag(
     )
     await db.commit()
 
+    # 通知实时订阅 Leader 刷新订阅集合（fire-and-forget，免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="tag-update")
+
     loop_map = await _get_tags_loop_info_map(db, [str(tag.id)])
     return _build_tag_dict(tag, loop_map.get(str(tag.id)))
 
@@ -616,6 +626,11 @@ async def delete_tag(db: AsyncSession, tag_id: str, operator: str) -> dict:
         before_value=before_json,
     )
     await db.commit()
+
+    # 通知实时订阅 Leader 刷新订阅集合（fire-and-forget，免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="tag-delete")
 
     return {
         "id": tag_id,
@@ -679,6 +694,11 @@ async def batch_delete_tags(db: AsyncSession, tag_ids: list[str], operator: str)
         deleted_count += 1
 
     await db.commit()
+
+    # 批量删除只发一次：通知实时订阅 Leader 刷新订阅集合（fire-and-forget）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="tag-batch-delete")
 
     return {
         "deleted": deleted_count,
@@ -921,6 +941,11 @@ async def import_tags(
         ),
     )
     await db.commit()
+
+    # 导入结束后统一通知实时订阅 Leader 刷新一次（fire-and-forget，不逐行发）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="tag-import")
 
     return {
         "total": total,

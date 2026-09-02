@@ -55,6 +55,19 @@ SETNX 分布式锁（WS-B2）:
 时区显式转换（WS-B2）:
 - ``_build_row`` 对 collectTime 显式 astimezone 到目标时区（Asia/Shanghai），
   消除 naive datetime 在 TDengine 侧的 8h 偏移风险。
+
+订阅手工/事件刷新（免重启生效）:
+- 订阅集合 = ``tag_registry WHERE is_linked=True``；回路/测点/绑定关系变更后，
+  变更写路径提交后调用 ``notify_subscription_changed`` 向 Redis 控制频道
+  （``realtime:control:subscription``）发布刷新指令（fire-and-forget）；
+- 仅 Leader 进程经 ``_control_loop`` 监听控制频道（Leadership 切换时启停），
+  收到指令后重查活跃 Tag、与 ``_subscribed_tags`` 做 diff，在**现有 WS 连接**上
+  以新 invocationId 全量重发 ``SubscribeAsync``（Completion 响应由接收循环统一
+  处理，新 Tag 即时获得当前值），并清空落库映射缓存（不等 300s TTL）；
+- removed 的 Tag 不向 Hub 退订（Hub 语义不支持可靠退订，多推的值进 Redis 无害），
+  结果中如实返回 removed 清单；
+- 每次刷新结果写入 Redis ``realtime:subscription:refresh_result``（TTL 60s），
+  供 ``POST /datasource/refresh-subscription`` 轮询读取（requestId 匹配）。
 """
 
 from __future__ import annotations
@@ -67,11 +80,13 @@ import socket
 import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 import websockets
 
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
+from app.core.exceptions import BizError
 from app.core.redis import redis_client
 from app.core.tdengine import make_subtable_name
 from app.core.tdengine_native import batch_insert_multi
@@ -97,6 +112,15 @@ _GAP_BACKFILL_LOCK_KEY = "realtime:gap:backfill:lock"
 
 # 多 worker 进程订阅单例 Leader 锁 key（仅持锁进程连接 Hub 并回写 TDengine）
 _SUBSCRIBER_LEADER_LOCK_KEY = "realtime:subscriber:leader:lock"
+
+# 订阅刷新控制频道（Pub/Sub）：测点/回路/绑定关系变更或 API 手工触发时发布
+# {"type": "refresh", "requestId", "source", "requestedAt"}，仅 Leader 进程监听
+_CONTROL_CHANNEL = "realtime:control:subscription"
+# 最近一次订阅刷新结果 key（TTL 60s），供 API 轮询读取（requestId 匹配）
+_REFRESH_RESULT_KEY = "realtime:subscription:refresh_result"
+_REFRESH_RESULT_TTL = 60  # 秒
+# 控制频道连接异常后的重建等待（秒）
+_CONTROL_RECONNECT_DELAY = 5.0
 
 # 看门狗 recv 超时（秒）—— 周期性检查消息停滞，超时即断开重连
 _WATCHDOG_RECV_TIMEOUT = 30.0
@@ -229,6 +253,8 @@ class RealtimeSubscriber:
         self._leader_task: asyncio.Task | None = None  # Leader 锁维护循环（抢锁/续期）
         self._leader_token: str = ""  # 本进程锁 token（hostname:pid:monotonic_ns）
         self._is_leader = False  # 当前是否持有 Leader 锁（仅持锁进程真正订阅）
+        # 订阅刷新控制频道监听任务（仅 Leader 进程运行，随 Leadership 切换启停）
+        self._control_task: asyncio.Task | None = None
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -328,7 +354,7 @@ class RealtimeSubscriber:
     # ------------------------------------------------------------------
 
     def _become_leader(self) -> None:
-        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新任务."""
+        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新 / 控制频道监听任务."""
         self._is_leader = True
         self._task = asyncio.create_task(self._run())
         # 主任务意外退出观测（2026-08-21 事故：远端引擎重启掐断连接后
@@ -336,12 +362,13 @@ class RealtimeSubscriber:
         self._task.add_done_callback(self._on_main_task_done)
         self._flush_task = asyncio.create_task(self._flush_loop())
         self._refresh_task = asyncio.create_task(self._refresh_loop())
+        self._control_task = asyncio.create_task(self._control_loop())
         logger.warning("本进程已接管实时数据订阅（Leader）: token=%s", self._leader_token)
 
     async def _resign_leader(self) -> None:
-        """失去/释放 Leader 锁：取消订阅主任务 / flush / 周期刷新任务（幂等）."""
+        """失去/释放 Leader 锁：取消订阅主任务 / flush / 周期刷新 / 控制监听任务（幂等）."""
         self._is_leader = False
-        for attr in ("_task", "_flush_task", "_refresh_task"):
+        for attr in ("_task", "_flush_task", "_refresh_task", "_control_task"):
             task = getattr(self, attr)
             if task is not None:
                 task.cancel()
@@ -704,6 +731,159 @@ class RealtimeSubscriber:
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.warning("周期刷新订阅请求失败（可忽略，下个周期重试）: %s", exc)
+
+    # ------------------------------------------------------------------
+    # 订阅手工/事件刷新（Redis Pub/Sub 控制频道，仅 Leader 监听）
+    # ------------------------------------------------------------------
+
+    async def _control_loop(self) -> None:
+        """Leader 进程监听订阅控制频道，收到刷新指令即执行 ``refresh_subscription``.
+
+        仅 Leader（持锁进程）运行本任务，由 ``_become_leader``/``_resign_leader``
+        随 Leadership 切换启停；Pub/Sub 连接异常时等待后重建订阅，不中断主订阅。
+        """
+        while self._running and self._is_leader:
+            pubsub = None
+            try:
+                pubsub = redis_client.pubsub()
+                await pubsub.subscribe(_CONTROL_CHANNEL)
+                logger.info("已监听订阅控制频道: %s", _CONTROL_CHANNEL)
+                while self._running and self._is_leader:
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if msg is None:
+                        continue
+                    await self._handle_control_message(msg)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "订阅控制频道监听异常（%.0fs 后重建）: %s", _CONTROL_RECONNECT_DELAY, exc
+                )
+                try:
+                    await asyncio.sleep(_CONTROL_RECONNECT_DELAY)
+                except asyncio.CancelledError:
+                    raise
+            finally:
+                if pubsub is not None:
+                    try:
+                        await pubsub.unsubscribe(_CONTROL_CHANNEL)
+                        await pubsub.aclose()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    async def _handle_control_message(self, msg: dict) -> None:
+        """处理控制频道消息：type=refresh 时执行订阅刷新（其余忽略）."""
+        data = msg.get("data")
+        if not isinstance(data, str):
+            return
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError:
+            logger.warning("控制频道收到非 JSON 消息: %s", data[:100])
+            return
+        if payload.get("type") != "refresh":
+            return
+        logger.info("收到订阅刷新指令: source=%s", payload.get("source"))
+        await self.refresh_subscription(
+            source=str(payload.get("source") or "unknown"),
+            request_id=payload.get("requestId"),
+            requested_at=payload.get("requestedAt"),
+        )
+
+    async def refresh_subscription(
+        self,
+        *,
+        source: str = "unknown",
+        request_id: str | None = None,
+        requested_at: str | None = None,
+    ) -> dict:
+        """刷新实时订阅：重查活跃 Tag → diff → 现有 WS 连接上全量重发 SubscribeAsync.
+
+        - 非 Leader / WS 未连接时不产生 WS 动作，写入带 error 的结果；
+        - 重发与 ``_refresh_loop`` 同路径（websockets 支持同 loop 不同 task 并发
+          send，Completion 响应由 ``_connect_and_subscribe`` 接收循环统一处理）；
+        - removed 的 Tag 不向 Hub 退订（Hub 语义不支持可靠退订，多推的值进 Redis
+          无害），结果中如实返回 removed 清单；
+        - 清空 ``_tag_role_cache``/``_loop_meta_cache``（落库映射随绑定关系变化，
+          不等 300s TTL，下个 flush 节拍重建）；
+        - 结果写入 Redis ``_REFRESH_RESULT_KEY``（TTL 60s），供 API 轮询读取。
+
+        Returns:
+            结果 dict（requestId/requestedAt/finishedAt/source/total/added/removed/
+            invocationId/leaderPid/error）。
+        """
+        result: dict[str, Any] = {
+            "requestId": request_id,
+            "requestedAt": requested_at or datetime.now(UTC).isoformat(),
+            "finishedAt": None,
+            "source": source,
+            "total": len(self._subscribed_tags),
+            "added": [],
+            "removed": [],
+            "invocationId": None,
+            "leaderPid": os.getpid(),
+            "error": None,
+        }
+        try:
+            if not self._is_leader:
+                raise RuntimeError("本进程非实时订阅 Leader，无法执行刷新")
+            if self._ws is None:
+                raise RuntimeError("WebSocket 未连接（订阅器等待重连中），请稍后重试")
+
+            new_set = set(await self._get_active_tags())
+            old_set = self._subscribed_tags
+            added = sorted(new_set - old_set)
+            removed = sorted(old_set - new_set)
+            result.update({"total": len(new_set), "added": added, "removed": removed})
+
+            if new_set:
+                # 全量重发（新 invocationId）：AAS 以最新 SubscribeAsync 为准
+                # 并回发 Completion（type=3）携带全部订阅 Tag 当前值
+                self._invocation_counter += 1
+                invocation_id = f"manual_refresh_{self._invocation_counter}"
+                subscribe_msg = (
+                    json.dumps(
+                        {
+                            "type": 1,
+                            "invocationId": invocation_id,
+                            "target": "SubscribeAsync",
+                            "arguments": [sorted(new_set)],
+                        }
+                    )
+                    + "\x1e"
+                )
+                await self._ws.send(subscribe_msg)
+                result["invocationId"] = invocation_id
+            else:
+                logger.info("订阅刷新后无活跃 Tag，跳过重发 SubscribeAsync")
+            self._subscribed_tags = new_set
+
+            # 落库映射缓存主动清空（不等 TTL），下个 flush 节拍重建
+            self._tag_role_cache = {}
+            self._loop_meta_cache = {}
+            self._loop_meta_cache_at = 0.0
+            logger.info(
+                "订阅刷新完成 (source=%s): total=%d added=%d removed=%d invocationId=%s",
+                source,
+                len(new_set),
+                len(added),
+                len(removed),
+                result["invocationId"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            result["error"] = str(exc)
+            logger.warning("订阅刷新失败 (source=%s): %s", source, exc)
+        finally:
+            result["finishedAt"] = datetime.now(UTC).isoformat()
+            try:
+                await redis_client.set(
+                    _REFRESH_RESULT_KEY,
+                    json.dumps(result, ensure_ascii=False),
+                    ex=_REFRESH_RESULT_TTL,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("订阅刷新结果写入 Redis 失败: %s", exc)
+        return result
 
     async def _get_active_tags(self) -> list[str]:
         """查询数据库获取全部活跃 Tag 的 tag_name."""
@@ -1470,6 +1650,99 @@ def get_subscriber() -> RealtimeSubscriber:
     if _subscriber is None:
         _subscriber = RealtimeSubscriber()
     return _subscriber
+
+
+def _build_refresh_payload(source: str, request_id: str | None) -> str:
+    """构造控制频道刷新指令 JSON."""
+    return json.dumps(
+        {
+            "type": "refresh",
+            "requestId": request_id,
+            "source": source,
+            "requestedAt": datetime.now(UTC).isoformat(),
+        },
+        ensure_ascii=False,
+    )
+
+
+async def notify_subscription_changed(source: str) -> None:
+    """发布订阅刷新通知（fire-and-forget，失败仅记日志不影响业务主流程）.
+
+    在测点/回路/绑定关系变更写路径提交后调用；Leader 进程监听控制频道，
+    收到后重查活跃 Tag 并在现有 WS 连接上重发 SubscribeAsync（免重启生效）。
+    """
+    try:
+        await redis_client.publish(_CONTROL_CHANNEL, _build_refresh_payload(source, None))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("发布订阅刷新通知失败（不影响业务，source=%s）: %s", source, exc)
+
+
+async def request_subscription_refresh(*, timeout: float = 15.0, interval: float = 0.5) -> dict:
+    """API 侧发起订阅刷新并轮询等待 Leader 执行结果.
+
+    流程：预检（订阅启用/订阅器运行）→ 清除上一轮结果 key → 发布带 requestId 的
+    刷新指令 → 每 interval 秒轮询结果 key，requestId 匹配即返回。
+
+    Returns:
+        Leader 写入的结果 dict（含 added/removed/invocationId/leaderPid，
+        Leader 侧执行失败时 error 字段非空）。
+
+    Raises:
+        BizError: ERR_SIGNALR_DISABLED（订阅已禁用）/
+                  ERR_SUBSCRIBER_NOT_RUNNING（订阅器未运行）/
+                  ERR_REDIS_UNAVAILABLE（Redis 不可用）/
+                  ERR_SUBSCRIPTION_REFRESH_TIMEOUT（超时无响应，Leader 可能在重连/选举）
+    """
+    if not settings.SIGNALR_ENABLED:
+        raise BizError(
+            code="ERR_SIGNALR_DISABLED",
+            message="实时订阅已禁用（SIGNALR_ENABLED=False），请在链路配置中启用并重启后端",
+            status_code=400,
+        )
+    if not get_subscriber()._running:
+        raise BizError(
+            code="ERR_SUBSCRIBER_NOT_RUNNING",
+            message="实时订阅器未运行（SIGNALR_HUB_URL 未配置或启动失败）",
+            status_code=400,
+        )
+
+    request_id = uuid4().hex
+    try:
+        # 先清掉上一轮结果，防止读到旧结果；再发布刷新指令
+        await redis_client.delete(_REFRESH_RESULT_KEY)
+        await redis_client.publish(
+            _CONTROL_CHANNEL, _build_refresh_payload("manual-api", request_id)
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise BizError(
+            code="ERR_REDIS_UNAVAILABLE",
+            message=f"Redis 不可用，无法发起订阅刷新: {exc}",
+            status_code=503,
+        ) from exc
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        await asyncio.sleep(interval)
+        try:
+            raw = await redis_client.get(_REFRESH_RESULT_KEY)
+        except Exception:  # noqa: BLE001
+            continue
+        if not raw:
+            continue
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        # requestId 匹配才是本次请求的结果（事件驱动的刷新结果 requestId=None，跳过）
+        if result.get("requestId") == request_id:
+            return result
+    raise BizError(
+        code="ERR_SUBSCRIPTION_REFRESH_TIMEOUT",
+        message=(
+            f"订阅刷新超时（{timeout:.0f}s 无响应）：订阅 Leader 可能正在重连或选举中，请稍后重试"
+        ),
+        status_code=504,
+    )
 
 
 async def start_subscriber() -> None:

@@ -1,10 +1,11 @@
 """数据源配置 endpoints — 对接外部历史数据 API + 实时 SignalR Hub.
 
-- GET   /api/v1/datasource/config           — 获取数据源配置（ADMIN）
-- PUT   /api/v1/datasource/config           — 更新数据源配置（ADMIN）
-- GET   /api/v1/datasource/health           — 数据链路健康状态（登录用户）
-- POST  /api/v1/datasource/test-history-api — 测试历史数据 API 连通性（ADMIN）
-- POST  /api/v1/datasource/test-signalr     — 测试 SignalR Hub 连通性（ADMIN）
+- GET   /api/v1/datasource/config              — 获取数据源配置（ADMIN）
+- PUT   /api/v1/datasource/config              — 更新数据源配置（ADMIN）
+- GET   /api/v1/datasource/health              — 数据链路健康状态（登录用户）
+- POST  /api/v1/datasource/test-history-api    — 测试历史数据 API 连通性（ADMIN）
+- POST  /api/v1/datasource/test-signalr        — 测试 SignalR Hub 连通性（ADMIN）
+- POST  /api/v1/datasource/refresh-subscription — 手工刷新实时订阅（ADMIN）
 
 对接文档：docs/设计文档/05-IDS/HisDATA_API.md、RealDATA_API.md
 """
@@ -23,7 +24,9 @@ from app.schemas.datasource import (
     DataSourceConfigUpdate,
     DataSourceHealthInfo,
     DataSourceTestResult,
+    SubscriptionRefreshResult,
 )
+from app.services.data_source.realtime_subscriber import request_subscription_refresh
 from app.services.datasource_config import (
     get_datasource_config,
     get_datasource_health,
@@ -150,6 +153,26 @@ async def test_signalr_endpoint(
 
     result = await test_signalr_hub_connection(hub_url=settings.SIGNALR_HUB_URL)
     return success(data=result)
+
+
+@router.post("/refresh-subscription", response_model=ApiResponse[SubscriptionRefreshResult])
+async def refresh_subscription_endpoint(
+    _: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """手工刷新实时订阅（仅 ADMIN）。
+
+    新建/修改回路、测点、绑定关系后，通知订阅 Leader 重新查询活跃 Tag 并在
+    现有 WebSocket 连接上重发 SubscribeAsync，新测点免重启即时生效。
+    发布刷新指令后轮询等待执行结果（最长 15s）；超时/订阅未启用返回明确错误。
+    Leader 侧执行失败（非 Leader/WS 未连接等）时仍返回 200，error 字段携带原因。
+    """
+    result = await request_subscription_refresh()
+    if result.get("error"):
+        return success(data=result, message=f"订阅刷新未完成：{result['error']}")
+    added = len(result.get("added") or [])
+    removed = len(result.get("removed") or [])
+    msg = f"订阅刷新成功：共 {result.get('total', 0)} 个测点（新增 {added} / 移除 {removed}）"
+    return success(data=result, message=msg)
 
 
 __all__ = ["router"]

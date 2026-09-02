@@ -19,12 +19,15 @@ import { permissionDirective } from '#/directives/permission';
 import Aas from '../views/loop/aas.vue';
 
 const getDatasourceConfigApiMock = vi.fn();
+const refreshSubscriptionApiMock = vi.fn();
 const getVendorsApiMock = vi.fn();
 const getModelsApiMock = vi.fn();
 
 vi.mock('#/api/datasource', () => ({
   getDatasourceConfigApi: (...args: unknown[]) =>
     getDatasourceConfigApiMock(...args),
+  refreshSubscriptionApi: (...args: unknown[]) =>
+    refreshSubscriptionApiMock(...args),
   testHistoryApiApi: vi.fn(),
   testSignalrApi: vi.fn(),
   updateDatasourceConfigApi: vi.fn(),
@@ -235,5 +238,41 @@ describe('loopAas（数据接入页）', () => {
         '删除 DCS 型号',
       ]),
     );
+  });
+
+  it('启用实时订阅时可点击刷新实时订阅并展示结果摘要', async () => {
+    getDatasourceConfigApiMock.mockResolvedValue({
+      ...configFixture,
+      signalrEnabled: true,
+      signalrSubscriberRunning: true,
+    });
+    refreshSubscriptionApiMock.mockResolvedValue({
+      added: ['LIC-103.PV'],
+      error: null,
+      finishedAt: '2026-09-02T00:00:01+00:00',
+      invocationId: 'manual_refresh_7',
+      leaderPid: 12_345,
+      removed: [],
+      requestId: 'req-1',
+      requestedAt: '2026-09-02T00:00:00+00:00',
+      source: 'manual-api',
+      total: 3,
+    });
+    const wrapper = mountAas();
+    await flushPromises();
+
+    const button = wrapper
+      .findAll('button')
+      .find((b) => b.text() === '刷新实时订阅');
+    expect(button).toBeTruthy();
+
+    await button!.trigger('click');
+    await flushPromises();
+
+    expect(refreshSubscriptionApiMock).toHaveBeenCalledTimes(1);
+    // 结果摘要：总数/新增/移除/耗时/执行进程（Tag 展示）
+    expect(wrapper.text()).toContain('共 3 个测点');
+    expect(wrapper.text()).toContain('+1 / -0');
+    expect(wrapper.text()).toContain('PID 12345');
   });
 });

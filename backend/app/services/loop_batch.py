@@ -277,6 +277,11 @@ async def batch_delete_loops(
         operator,
     )
 
+    # 级联解绑已清除 is_linked：通知实时订阅 Leader 刷新订阅集合（免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="loop-batch-delete")
+
     return {"deleted": len(loops), "skipped": skipped}
 
 

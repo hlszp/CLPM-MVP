@@ -257,6 +257,11 @@ async def update_loop_tags(
     )
     await db.commit()
 
+    # 绑定关系变更可能改变 is_linked 订阅集合：通知实时订阅 Leader 刷新（免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="tag-mapping")
+
     # 构建响应
     tags_list = []
     for role in ALL_ROLES:

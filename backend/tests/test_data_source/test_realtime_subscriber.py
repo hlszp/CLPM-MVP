@@ -12,18 +12,24 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.exceptions import BizError
 from app.services.data_source.realtime_subscriber import (
+    _CONTROL_CHANNEL,
     _GAP_BACKFILL_LOCK_KEY,
     _REDIS_KEY_PREFIX,
+    _REFRESH_RESULT_KEY,
     _SUBSCRIBER_LEADER_LOCK_KEY,
     RealtimeSubscriber,
     _normalize_ts,
     get_subscriber,
+    notify_subscription_changed,
+    request_subscription_refresh,
     start_subscriber,
     stop_subscriber,
 )
@@ -33,12 +39,49 @@ from app.services.data_source.realtime_subscriber import (
 # ---------------------------------------------------------------------------
 
 
+class _FakePubSub:
+    """轻量级 Pub/Sub mock：预置消息队列，get_message 逐条弹出，空时短睡眠返回 None."""
+
+    def __init__(self, messages: list[dict] | None = None) -> None:
+        self.messages: list[dict] = list(messages or [])
+        self.subscribed: list[str] = []
+        self.closed = False
+
+    async def subscribe(self, channel: str) -> None:
+        self.subscribed.append(channel)
+
+    async def unsubscribe(self, channel: str) -> None:
+        pass
+
+    async def get_message(
+        self, ignore_subscribe_messages: bool = True, timeout: float = 1.0
+    ) -> dict | None:
+        import asyncio as _asyncio
+
+        if self.messages:
+            return self.messages.pop(0)
+        await _asyncio.sleep(0.01)
+        return None
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
 class _FakeRedis:
-    """轻量级 Redis mock，支持 setex/mget/publish/set(nx)/eval/pipeline."""
+    """轻量级 Redis mock，支持 setex/mget/publish/set(nx)/eval/pipeline/pubsub."""
 
     def __init__(self) -> None:
         self._data: dict[str, str] = {}
         self.published: list[tuple[str, str]] = []
+        self.pubsub_instances: list[_FakePubSub] = []
+        # 测试可替换为返回预置消息的 _FakePubSub 的 callable
+        self.pubsub_factory = None
+
+    def pubsub(self) -> _FakePubSub:
+        """返回 fake PubSub（默认空消息队列，经 pubsub_factory 可预置消息）."""
+        ps = self.pubsub_factory() if self.pubsub_factory is not None else _FakePubSub()
+        self.pubsub_instances.append(ps)
+        return ps
 
     async def setex(self, key: str, ttl: int, value: str) -> None:
         self._data[key] = value
@@ -1882,3 +1925,414 @@ def test_build_row_ts_falls_back_when_pv_missing():
     assert "2026-07-15 18:00:00" in row[0]
     assert row[1] is None  # pv 为 NULL
     assert row[2] == 60.0  # sp
+
+
+# ---------------------------------------------------------------------------
+# 订阅手工/事件刷新（Redis Pub/Sub 控制频道）
+# ---------------------------------------------------------------------------
+
+
+def _make_leader_sub(fake_redis: _FakeRedis, tags: list[str]) -> RealtimeSubscriber:
+    """构造 Leader 态 + mock WS 的订阅器（_subscribed_tags 预置为 tags）."""
+    sub = RealtimeSubscriber()
+    sub._running = True
+    sub._is_leader = True
+    sub._ws = AsyncMock()
+    sub._ws.send = AsyncMock()
+    sub._subscribed_tags = set(tags)
+    return sub
+
+
+class TestSubscriptionRefresh:
+    """refresh_subscription：diff 计算 / 重发 SubscribeAsync / 结果 key 写入."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_resends_with_diff(self):
+        """重查活跃 Tag → diff → 现有 WS 上全量重发（新 invocationId），结果写 Redis."""
+        fake_redis = _FakeRedis()
+        sub = _make_leader_sub(fake_redis, ["LIC-101.PV", "LIC-101.SP", "LIC-102.PV"])
+        sub._invocation_counter = 5
+        # 预置落库映射缓存，验证刷新后主动清空（不等 300s TTL）
+        sub._tag_role_cache = {"LIC-101.PV": ("LIC-101", "PV")}
+        sub._loop_meta_cache = {"LIC-101": ("loop-1", "unit-1")}
+        sub._loop_meta_cache_at = 123.0
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            # LIC-102.PV 移除，LIC-103.PV/LIC-103.SP 新增
+            patch.object(
+                sub,
+                "_get_active_tags",
+                return_value=["LIC-101.PV", "LIC-101.SP", "LIC-103.PV", "LIC-103.SP"],
+            ),
+        ):
+            result = await sub.refresh_subscription(
+                source="tag-mapping", request_id="req-1", requested_at="2026-09-02T00:00:00+00:00"
+            )
+
+        assert result["error"] is None
+        assert result["total"] == 4
+        assert result["added"] == ["LIC-103.PV", "LIC-103.SP"]
+        assert result["removed"] == ["LIC-102.PV"]
+        assert result["invocationId"] == "manual_refresh_6"  # 计数器递增
+        assert result["leaderPid"] is not None
+        assert result["finishedAt"] is not None
+        assert result["requestId"] == "req-1"
+
+        # 全量新列表在现有 WS 连接上重发（SignalR Invocation type=1）
+        sent = sub._ws.send.call_args.args[0]
+        payload = json.loads(sent.rstrip("\x1e"))
+        assert payload["type"] == 1
+        assert payload["invocationId"] == "manual_refresh_6"
+        assert payload["target"] == "SubscribeAsync"
+        assert payload["arguments"] == [["LIC-101.PV", "LIC-101.SP", "LIC-103.PV", "LIC-103.SP"]]
+        assert sub._subscribed_tags == {
+            "LIC-101.PV",
+            "LIC-101.SP",
+            "LIC-103.PV",
+            "LIC-103.SP",
+        }
+
+        # 落库映射缓存已主动清空
+        assert sub._tag_role_cache == {}
+        assert sub._loop_meta_cache == {}
+        assert sub._loop_meta_cache_at == 0.0
+
+        # 结果写入 Redis key（TTL 60s）
+        raw = fake_redis._data[_REFRESH_RESULT_KEY]
+        stored = json.loads(raw)
+        assert stored["requestId"] == "req-1"
+        assert stored["added"] == ["LIC-103.PV", "LIC-103.SP"]
+        assert stored["removed"] == ["LIC-102.PV"]
+        assert stored["error"] is None
+
+    @pytest.mark.asyncio
+    async def test_refresh_writes_error_when_not_leader(self):
+        """非 Leader：不产生 WS 动作，写入带 error 的结果."""
+        fake_redis = _FakeRedis()
+        sub = RealtimeSubscriber()
+        sub._running = True
+        sub._is_leader = False
+        sub._ws = AsyncMock()
+
+        with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+            result = await sub.refresh_subscription(source="manual-api", request_id="req-2")
+
+        assert result["error"] is not None
+        assert "Leader" in result["error"]
+        sub._ws.send.assert_not_called()
+        stored = json.loads(fake_redis._data[_REFRESH_RESULT_KEY])
+        assert stored["error"] == result["error"]
+
+    @pytest.mark.asyncio
+    async def test_refresh_writes_error_when_ws_not_connected(self):
+        """Leader 但 WS 未连接：写入带 error 的结果."""
+        fake_redis = _FakeRedis()
+        sub = RealtimeSubscriber()
+        sub._running = True
+        sub._is_leader = True
+        sub._ws = None
+
+        with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+            result = await sub.refresh_subscription(source="manual-api", request_id="req-3")
+
+        assert result["error"] is not None
+        assert "WebSocket" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_refresh_empty_active_tags_skips_send(self):
+        """刷新后无活跃 Tag：跳过重发，订阅集合清空，invocationId 为 None."""
+        fake_redis = _FakeRedis()
+        sub = _make_leader_sub(fake_redis, ["LIC-101.PV"])
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch.object(sub, "_get_active_tags", return_value=[]),
+        ):
+            result = await sub.refresh_subscription(source="loop-delete")
+
+        assert result["error"] is None
+        assert result["total"] == 0
+        assert result["removed"] == ["LIC-101.PV"]
+        assert result["invocationId"] is None
+        sub._ws.send.assert_not_called()
+        assert sub._subscribed_tags == set()
+
+    @pytest.mark.asyncio
+    async def test_refresh_result_key_write_failure_swallowed(self):
+        """结果 key 写入失败仅记日志，不影响刷新本身."""
+        sub = _make_leader_sub(_FakeRedis(), ["LIC-101.PV"])
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client") as mock_redis,
+            patch.object(sub, "_get_active_tags", return_value=["LIC-101.PV"]),
+        ):
+            mock_redis.set = AsyncMock(side_effect=Exception("Redis down"))
+            result = await sub.refresh_subscription(source="manual-api")
+
+        assert result["error"] is None
+        sub._ws.send.assert_called_once()
+
+
+class TestControlLoop:
+    """_control_loop：控制频道消息的监听与分发."""
+
+    @pytest.mark.asyncio
+    async def test_control_message_triggers_refresh_resend(self):
+        """收到 refresh 消息后重发 SubscribeAsync（invocationId 递增、新列表）."""
+        import asyncio
+
+        fake_redis = _FakeRedis()
+        pubsub = _FakePubSub(
+            messages=[
+                {
+                    "type": "message",
+                    "channel": _CONTROL_CHANNEL,
+                    "data": json.dumps(
+                        {
+                            "type": "refresh",
+                            "requestId": "req-c1",
+                            "source": "loop-import",
+                            "requestedAt": "2026-09-02T00:00:00+00:00",
+                        }
+                    ),
+                }
+            ]
+        )
+        fake_redis.pubsub_factory = lambda: pubsub
+
+        sub = _make_leader_sub(fake_redis, ["OLD.PV"])
+        sub._invocation_counter = 1
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch.object(sub, "_get_active_tags", return_value=["OLD.PV", "NEW.PV"]),
+        ):
+            task = asyncio.create_task(sub._control_loop())
+            try:
+                # 等待消息被消费并完成刷新（结果 key 出现）
+                for _ in range(100):
+                    if _REFRESH_RESULT_KEY in fake_redis._data:
+                        break
+                    await asyncio.sleep(0.02)
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # 控制频道已订阅，连接已清理
+        assert pubsub.subscribed == [_CONTROL_CHANNEL]
+        assert pubsub.closed is True
+
+        # 重发新列表，invocationId 递增
+        sent = sub._ws.send.call_args.args[0]
+        payload = json.loads(sent.rstrip("\x1e"))
+        assert payload["invocationId"] == "manual_refresh_2"
+        assert payload["arguments"] == [["NEW.PV", "OLD.PV"]]
+
+        # 结果透传 requestId/source
+        stored = json.loads(fake_redis._data[_REFRESH_RESULT_KEY])
+        assert stored["requestId"] == "req-c1"
+        assert stored["source"] == "loop-import"
+        assert stored["added"] == ["NEW.PV"]
+        assert stored["removed"] == []
+
+    @pytest.mark.asyncio
+    async def test_control_loop_ignores_non_refresh_messages(self):
+        """非 JSON / 非 refresh 类型消息被忽略，不触发刷新."""
+        import asyncio
+
+        fake_redis = _FakeRedis()
+        pubsub = _FakePubSub(
+            messages=[
+                {"type": "message", "channel": _CONTROL_CHANNEL, "data": "not-json"},
+                {
+                    "type": "message",
+                    "channel": _CONTROL_CHANNEL,
+                    "data": json.dumps({"type": "other"}),
+                },
+                {"type": "subscribe", "channel": _CONTROL_CHANNEL, "data": 1},
+            ]
+        )
+        fake_redis.pubsub_factory = lambda: pubsub
+
+        sub = _make_leader_sub(fake_redis, [])
+        sub.refresh_subscription = AsyncMock()
+
+        with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+            task = asyncio.create_task(sub._control_loop())
+            try:
+                for _ in range(50):
+                    if not pubsub.messages:
+                        break
+                    await asyncio.sleep(0.02)
+                await asyncio.sleep(0.05)  # 等可能的误触发
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        sub.refresh_subscription.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_become_leader_starts_control_task_and_resign_stops(self):
+        """Leadership 切换启停控制监听：成为 Leader 启动，卸任取消；非 Leader 不监听."""
+        sub = RealtimeSubscriber()
+        sub._running = True
+        assert sub._control_task is None  # 待命进程不监听
+
+        sub._run = _idle_loop
+        sub._flush_loop = _idle_loop
+        sub._refresh_loop = _idle_loop
+        sub._control_loop = _idle_loop
+
+        sub._become_leader()
+        assert sub._control_task is not None
+
+        await sub._resign_leader()
+        assert sub._control_task is None
+        assert sub._is_leader is False
+
+
+class TestNotifyAndRequestRefresh:
+    """notify_subscription_changed / request_subscription_refresh helper 测试."""
+
+    @pytest.mark.asyncio
+    async def test_notify_publishes_refresh_message(self):
+        """变更写路径的通知发布到控制频道（fire-and-forget）."""
+        fake_redis = _FakeRedis()
+        with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
+            await notify_subscription_changed("tag-mapping")
+
+        assert len(fake_redis.published) == 1
+        channel, message = fake_redis.published[0]
+        assert channel == _CONTROL_CHANNEL
+        payload = json.loads(message)
+        assert payload["type"] == "refresh"
+        assert payload["source"] == "tag-mapping"
+        assert payload["requestId"] is None
+        assert payload["requestedAt"]
+
+    @pytest.mark.asyncio
+    async def test_notify_swallows_redis_error(self):
+        """publish 失败仅记日志，不影响业务主流程."""
+        with patch("app.services.data_source.realtime_subscriber.redis_client") as mock_redis:
+            mock_redis.publish = AsyncMock(side_effect=Exception("Redis down"))
+            await notify_subscription_changed("loop-import")  # 不应抛出
+
+    @pytest.mark.asyncio
+    async def test_request_refresh_success(self):
+        """发布带 requestId 的指令后轮询到匹配结果即返回."""
+        fake_redis = _FakeRedis()
+
+        async def _leader_answer(channel: str, message: str) -> int:
+            """模拟 Leader：按指令 requestId 写入结果 key."""
+            payload = json.loads(message)
+            result = {
+                "requestId": payload["requestId"],
+                "requestedAt": payload["requestedAt"],
+                "finishedAt": "2026-09-02T00:00:01+00:00",
+                "source": payload["source"],
+                "total": 3,
+                "added": ["NEW.PV"],
+                "removed": [],
+                "invocationId": "manual_refresh_1",
+                "leaderPid": 12345,
+                "error": None,
+            }
+            await fake_redis.set(_REFRESH_RESULT_KEY, json.dumps(result), ex=60)
+            return 1
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+            patch(
+                "app.services.data_source.realtime_subscriber.get_subscriber",
+                return_value=SimpleNamespace(_running=True),
+            ),
+        ):
+            mock_s.SIGNALR_ENABLED = True
+            fake_redis.publish = _leader_answer  # type: ignore[method-assign]
+            result = await request_subscription_refresh(timeout=2.0, interval=0.05)
+
+        assert result["total"] == 3
+        assert result["added"] == ["NEW.PV"]
+        assert result["invocationId"] == "manual_refresh_1"
+        assert result["error"] is None
+        # 结果 key 已被清除后再由 Leader 写入（非残留）
+        assert _REFRESH_RESULT_KEY in fake_redis._data
+
+    @pytest.mark.asyncio
+    async def test_request_refresh_ignores_foreign_result_and_times_out(self):
+        """requestId 不匹配的结果（如事件驱动刷新 requestId=None）不被误取."""
+        fake_redis = _FakeRedis()
+
+        async def _foreign_answer(channel: str, message: str) -> int:
+            result = {
+                "requestId": None,  # 事件驱动刷新结果
+                "requestedAt": "2026-09-02T00:00:00+00:00",
+                "finishedAt": "2026-09-02T00:00:01+00:00",
+                "source": "tag-mapping",
+                "total": 1,
+                "added": [],
+                "removed": [],
+                "invocationId": "manual_refresh_9",
+                "leaderPid": 12345,
+                "error": None,
+            }
+            await fake_redis.set(_REFRESH_RESULT_KEY, json.dumps(result), ex=60)
+            return 1
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+            patch(
+                "app.services.data_source.realtime_subscriber.get_subscriber",
+                return_value=SimpleNamespace(_running=True),
+            ),
+        ):
+            mock_s.SIGNALR_ENABLED = True
+            fake_redis.publish = _foreign_answer  # type: ignore[method-assign]
+            with pytest.raises(BizError) as exc_info:
+                await request_subscription_refresh(timeout=0.3, interval=0.05)
+
+        assert exc_info.value.code == "ERR_SUBSCRIPTION_REFRESH_TIMEOUT"
+        assert exc_info.value.status_code == 504
+
+    @pytest.mark.asyncio
+    async def test_request_refresh_rejected_when_signalr_disabled(self):
+        """SIGNALR_ENABLED=False：直接返回明确错误，不发布指令."""
+        fake_redis = _FakeRedis()
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            mock_s.SIGNALR_ENABLED = False
+            with pytest.raises(BizError) as exc_info:
+                await request_subscription_refresh(timeout=0.2, interval=0.05)
+
+        assert exc_info.value.code == "ERR_SIGNALR_DISABLED"
+        assert fake_redis.published == []
+
+    @pytest.mark.asyncio
+    async def test_request_refresh_rejected_when_subscriber_not_running(self):
+        """订阅器未运行（Hub URL 未配置等）：返回明确错误."""
+        fake_redis = _FakeRedis()
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+            patch(
+                "app.services.data_source.realtime_subscriber.get_subscriber",
+                return_value=SimpleNamespace(_running=False),
+            ),
+        ):
+            mock_s.SIGNALR_ENABLED = True
+            with pytest.raises(BizError) as exc_info:
+                await request_subscription_refresh(timeout=0.2, interval=0.05)
+
+        assert exc_info.value.code == "ERR_SUBSCRIBER_NOT_RUNNING"
+        assert fake_redis.published == []

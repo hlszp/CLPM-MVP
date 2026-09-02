@@ -1039,6 +1039,11 @@ async def create_loop(
     )
     await db.commit()
 
+    # 通知实时订阅 Leader 刷新订阅集合（fire-and-forget，免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="loop-create")
+
     return {
         "loopId": str(loop.id),
         "tagName": loop.tag_name,
@@ -1479,6 +1484,11 @@ async def update_loop(
     # 不能同步 lazy load，否则触发 MissingGreenlet）
     await db.refresh(loop)
 
+    # 通知实时订阅 Leader 刷新订阅集合（fire-and-forget，免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="loop-update")
+
     return {
         "loopId": str(loop.id),
         "description": loop.description,
@@ -1583,6 +1593,11 @@ async def delete_loop(
         after_value=after_json,
     )
     await db.commit()
+
+    # 级联解绑已清除 is_linked：通知实时订阅 Leader 刷新订阅集合（免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="loop-delete")
 
     return {
         "loopId": loop_id,
@@ -2186,6 +2201,12 @@ async def import_loops(
         warnings.append(
             await notify_tag_reassignment(reassigned_loop_id, reassigned_loop_tag, reassigned_roles)
         )
+
+    # 导入可能改变 is_linked 订阅集合：导入结束后统一通知实时订阅 Leader 刷新一次
+    # （fire-and-forget，不在逐行循环里发，免重启生效）
+    from app.services.data_source.realtime_subscriber import notify_subscription_changed
+
+    await notify_subscription_changed(source="loop-import")
 
     return {
         "total": total,

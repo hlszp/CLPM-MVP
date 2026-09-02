@@ -102,6 +102,29 @@ class DataSourceTestResult(CamelModel):
     message: str
 
 
+class SubscriptionRefreshResult(CamelModel):
+    """实时订阅刷新结果（POST /datasource/refresh-subscription）。
+
+    由订阅 Leader 进程写入 Redis 结果 key，API 轮询读取后透传。
+    """
+
+    requestId: str | None = Field(None, description="本次请求 ID（API 触发时用于匹配结果）")
+    requestedAt: str | None = Field(None, description="请求时间 ISO 8601")
+    finishedAt: str | None = Field(None, description="完成时间 ISO 8601")
+    source: str | None = Field(
+        None, description="触发来源（manual-api/tag-mapping/loop-import/...）"
+    )
+    total: int = Field(0, description="刷新后订阅的测点总数")
+    added: list[str] = Field(default_factory=list, description="本次新增订阅的测点")
+    removed: list[str] = Field(
+        default_factory=list,
+        description="本次移出订阅的测点（Hub 不支持可靠退订，仅不再使用其推送）",
+    )
+    invocationId: str | None = Field(None, description="重发 SubscribeAsync 的 invocationId")
+    leaderPid: int | None = Field(None, description="执行刷新的 Leader 进程 PID")
+    error: str | None = Field(None, description="失败原因（非 Leader/WS 未连接等），成功时为 null")
+
+
 class DataSourceHealthInfo(CamelModel):
     """数据链路健康状态（P1-05：工作台常驻卡片，IC_ENGINEER+ 可查看）。
 
@@ -128,4 +151,5 @@ __all__ = [
     "DataSourceConfigUpdate",
     "DataSourceHealthInfo",
     "DataSourceTestResult",
+    "SubscriptionRefreshResult",
 ]
