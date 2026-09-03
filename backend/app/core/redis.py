@@ -73,13 +73,33 @@ class _RedisProxy:
         return self._client
 
     async def _ensure_client(self) -> aioredis.Redis:
-        """获取当前 event loop 的 Redis 客户端，必要时重建（async 版本）."""
+        """获取当前 event loop 的 Redis 客户端，必要时重建（async 版本）.
+
+        重建时仅当旧客户端绑定在当前 loop 上才 await aclose；旧客户端绑定
+        其他/已关闭 loop 时直接丢弃（跨 loop await 其连接池清理回调会永久
+        挂起——pre-push 门禁中间歇性 pytest 超时的根因，2026-09-03），
+        由 GC 回收，与 _recreate_sync 的处置口径一致。
+        """
         if self._need_recreate():
             if self._client is not None:
+                old_loop_closed = getattr(self._loop, "is_closed", True)
+                current_loop: asyncio.AbstractEventLoop | None = None
                 try:
-                    await self._client.aclose()
-                except Exception:  # noqa: BLE001
+                    current_loop = asyncio.get_running_loop()
+                except RuntimeError:
                     pass
+                same_loop = (
+                    self._loop is not None
+                    and not old_loop_closed
+                    and current_loop is not None
+                    and self._loop is current_loop
+                )
+                if same_loop:
+                    try:
+                        await self._client.aclose()
+                    except Exception:  # noqa: BLE001
+                        pass
+                # else：旧客户端属于其他/已关闭 loop，直接丢弃由 GC 回收
             self._client = aioredis.Redis(**self._kwargs)
             try:
                 self._loop = asyncio.get_running_loop()
