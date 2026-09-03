@@ -25,6 +25,11 @@ class TagRegistry(Base):
 
     __tablename__ = "tag_registry"
 
+    # 回路 Excel 导入自动创建 tag 时的占位描述（机器写入，非人工维护值）；
+    # AAS 同步时视为"未人工维护"，允许被 AAS 真实描述覆盖
+    # （aas_sync WS-C 7-11 防回冲规则的例外放行，写入方：loop.py 导入）
+    IMPORT_PLACEHOLDER_DESC = "[Excel 导入自动创建，未通过 AAS 同步，元数据待补全]"
+
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
     )

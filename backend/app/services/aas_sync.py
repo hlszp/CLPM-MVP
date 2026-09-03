@@ -311,10 +311,15 @@ async def sync_tags_from_aas(db: AsyncSession) -> dict[str, Any]:
                 db.add(new_tag)
                 inserted += 1
             else:
-                # WS-C 7-11：手工编辑过的描述不被 AAS 回冲——仅当现有描述为空
-                # 或与 AAS 本次值一致（覆盖为无操作）时才写入
+                # WS-C 7-11：手工编辑过的描述不被 AAS 回冲——仅当现有描述为空、
+                # 与 AAS 本次值一致（覆盖为无操作）、或为 Excel 导入占位描述
+                # （机器写入非人工维护，同步时应让位给 AAS 真实描述）时才写入
                 new_desc = aas_tag.get("tag_description")
-                desc_writable = not existing.tag_description or existing.tag_description == new_desc
+                desc_writable = (
+                    not existing.tag_description
+                    or existing.tag_description == new_desc
+                    or existing.tag_description == TagRegistry.IMPORT_PLACEHOLDER_DESC
+                )
                 value_changed = existing.current_value != aas_tag.get(
                     "current_value"
                 ) or existing.quality != aas_tag.get("quality")

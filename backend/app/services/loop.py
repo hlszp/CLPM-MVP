@@ -2351,7 +2351,7 @@ async def _import_one_row(
                 tag = TagRegistry(
                     id=str(uuid4()),
                     tag_name=t_name,
-                    tag_description="[Excel 导入自动创建，未通过 AAS 同步，元数据待补全]",
+                    tag_description=TagRegistry.IMPORT_PLACEHOLDER_DESC,
                     tag_type=role,
                     last_sync_at=datetime.now(UTC).replace(tzinfo=None),
                     is_linked=True,
