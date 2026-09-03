@@ -13,10 +13,11 @@
  */
 import type { TableColumnsType, UploadProps } from 'ant-design-vue';
 
+import type { AasApi } from '#/api/aas';
 import type { DataSourceApi } from '#/api/datasource';
 import type { DcsApi } from '#/api/dcs';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -41,6 +42,7 @@ import {
   Upload,
 } from 'ant-design-vue';
 
+import { getAasConfigApi, triggerAasSyncApi } from '#/api/aas';
 import {
   getDatasourceConfigApi,
   refreshSubscriptionApi,
@@ -355,6 +357,114 @@ async function refreshSubscription() {
     // 错误提示由请求拦截器统一处理
   } finally {
     refreshingSubscription.value = false;
+  }
+}
+
+// =========================================================================
+// AAS 位号同步（POST /aas/sync 异步任务，经 GET /aas/config 轮询状态）
+// =========================================================================
+const aasConfig = ref<AasApi.AasConfig | null>(null);
+const syncingAas = ref(false);
+/** 轮询定时器（递归 setTimeout 防堆积，卸载时清理） */
+let aasSyncPollTimer: null | ReturnType<typeof setTimeout> = null;
+/** 轮询上限（3s × 100 = 最长 5 分钟，生产 8000+ 位号 OPC UA 全量读取可能较慢） */
+const AAS_SYNC_POLL_MAX = 99;
+
+const aasSyncStatusColor = computed(() => {
+  switch (aasConfig.value?.lastSyncStatus) {
+    case 'FAILED': {
+      return 'red';
+    }
+    case 'PROCESSING': {
+      return 'blue';
+    }
+    case 'SUCCESS': {
+      return 'green';
+    }
+    default: {
+      return 'default';
+    }
+  }
+});
+
+const aasSyncStatusText = computed(() => {
+  switch (aasConfig.value?.lastSyncStatus) {
+    case 'FAILED': {
+      return '同步失败';
+    }
+    case 'PROCESSING': {
+      return '同步中';
+    }
+    case 'SUCCESS': {
+      return '同步成功';
+    }
+    default: {
+      return '从未同步';
+    }
+  }
+});
+
+const aasLastSyncText = computed(() => {
+  const at = aasConfig.value?.lastSyncAt;
+  return at ? new Date(at).toLocaleString() : '';
+});
+
+async function loadAasConfig() {
+  try {
+    aasConfig.value = await getAasConfigApi();
+    // 他处（API/其他会话）触发的同步进行中：本页进入轮询直到完成
+    if (
+      aasConfig.value.lastSyncStatus === 'PROCESSING' &&
+      !syncingAas.value &&
+      aasSyncPollTimer === null
+    ) {
+      syncingAas.value = true;
+      scheduleAasSyncPoll(AAS_SYNC_POLL_MAX);
+    }
+  } catch {
+    // 错误提示由请求拦截器统一处理
+  }
+}
+
+function scheduleAasSyncPoll(remaining: number) {
+  aasSyncPollTimer = setTimeout(async () => {
+    aasSyncPollTimer = null;
+    await loadAasConfig();
+    const status = aasConfig.value?.lastSyncStatus;
+    if (status === 'PROCESSING' && remaining > 0) {
+      scheduleAasSyncPoll(remaining - 1);
+      return;
+    }
+    syncingAas.value = false;
+    switch (status) {
+    case 'FAILED': {
+      message.error('AAS 同步失败，请检查 AAS 端点配置与网络');
+    
+    break;
+    }
+    case 'PROCESSING': {
+      message.warning('同步仍在进行，请稍后刷新页面查看结果');
+    
+    break;
+    }
+    case 'SUCCESS': {
+      message.success('AAS 同步完成，测点元数据已更新');
+    
+    break;
+    }
+    // No default
+    }
+  }, 3000);
+}
+
+/** 触发 AAS 位号同步（补全测点描述/类型/当前值，对 AAS 只读） */
+async function triggerAasSync() {
+  syncingAas.value = true;
+  try {
+    await triggerAasSyncApi();
+    scheduleAasSyncPoll(AAS_SYNC_POLL_MAX);
+  } catch {
+    syncingAas.value = false;
   }
 }
 
@@ -922,7 +1032,17 @@ const { toolbarItems } = usePageToolbar(() => ({
 // ===== A-07：表格密度三档（紧凑/标准/宽松，持久化）=====
 const { tableSize, densityLabel, cycleDensity } = useTableDensity('loop-aas');
 
-onMounted(loadConfig);
+onMounted(() => {
+  loadConfig();
+  loadAasConfig();
+});
+
+onUnmounted(() => {
+  if (aasSyncPollTimer) {
+    clearTimeout(aasSyncPollTimer);
+    aasSyncPollTimer = null;
+  }
+});
 </script>
 
 <template>
@@ -1234,6 +1354,36 @@ onMounted(loadConfig);
                 </Tag>
               </div>
             </Form>
+          </Card>
+
+          <!-- AAS 位号同步 -->
+          <Card size="small" title="AAS 位号同步">
+            <div class="flex flex-wrap items-center gap-3">
+              <Button
+                v-permission="['ADMIN']"
+                type="primary"
+                :loading="syncingAas"
+                @click="triggerAasSync"
+              >
+                立即同步
+              </Button>
+              <Tag v-if="aasConfig" :color="aasSyncStatusColor">
+                {{ aasSyncStatusText }}
+              </Tag>
+              <span v-if="aasLastSyncText" class="text-gray-400 text-sm">
+                最近同步：{{ aasLastSyncText }}
+              </span>
+              <span
+                v-if="aasConfig?.mockMode"
+                class="text-orange-400 text-sm"
+              >
+                Mock 模式（无真实 AAS，仅同步模拟数据）
+              </span>
+            </div>
+            <p class="mt-2 mb-0 text-gray-400 text-sm">
+              从 AAS 拉取全部位号清单与元数据，补全测点描述/类型/当前值（对 AAS
+              只读）。回路 Excel 导入自动创建的测点会在此同步中获得真实描述。
+            </p>
           </Card>
         </ClpmDataCanvas>
       </TabPane>

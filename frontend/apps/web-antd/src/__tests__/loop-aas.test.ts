@@ -11,6 +11,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 
 import { useAccessStore, useUserStore } from '@vben/stores';
 
+import { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +23,13 @@ const getDatasourceConfigApiMock = vi.fn();
 const refreshSubscriptionApiMock = vi.fn();
 const getVendorsApiMock = vi.fn();
 const getModelsApiMock = vi.fn();
+const getAasConfigApiMock = vi.fn();
+const triggerAasSyncApiMock = vi.fn();
+
+vi.mock('#/api/aas', () => ({
+  getAasConfigApi: (...args: unknown[]) => getAasConfigApiMock(...args),
+  triggerAasSyncApi: (...args: unknown[]) => triggerAasSyncApiMock(...args),
+}));
 
 vi.mock('#/api/datasource', () => ({
   getDatasourceConfigApi: (...args: unknown[]) =>
@@ -129,6 +137,16 @@ const configFixture = {
   tailscaleAvailable: true,
 };
 
+const aasConfigFixture = {
+  enabled: false,
+  endpoint: 'opc.tcp://192.168.100.2:4840',
+  lastSyncAt: '2026-09-02T15:00:00+08:00',
+  lastSyncStatus: 'SUCCESS',
+  mockMode: false,
+  securityMode: 'None',
+  syncIntervalSeconds: 300,
+};
+
 function setRoles(roles: string[]) {
   const accessStore = useAccessStore();
   accessStore.setAccessCodes([]);
@@ -162,6 +180,12 @@ describe('loopAas（数据接入页）', () => {
     getDatasourceConfigApiMock.mockResolvedValue(configFixture);
     getVendorsApiMock.mockResolvedValue([]);
     getModelsApiMock.mockResolvedValue([]);
+    getAasConfigApiMock.mockResolvedValue(aasConfigFixture);
+    triggerAasSyncApiMock.mockResolvedValue({
+      checkUrl: '/api/v1/tasks/task-1',
+      status: 'PROCESSING',
+      taskId: 'task-1',
+    });
     setRoles(['ADMIN']);
   });
 
@@ -219,6 +243,7 @@ describe('loopAas（数据接入页）', () => {
     const buttonTexts = wrapper.findAll('button').map((b) => b.text());
     expect(buttonTexts).not.toContain('保存配置');
     expect(buttonTexts).not.toContain('新增品牌');
+    expect(buttonTexts).not.toContain('立即同步');
     expect(wrapper.html()).toContain('<!-- v-permission: ADMIN -->');
   });
 
@@ -274,5 +299,43 @@ describe('loopAas（数据接入页）', () => {
     expect(wrapper.text()).toContain('共 3 个测点');
     expect(wrapper.text()).toContain('+1 / -0');
     expect(wrapper.text()).toContain('PID 12345');
+  });
+
+  it('ADMIN 可点击立即同步并轮询至 SUCCESS', async () => {
+    vi.useFakeTimers();
+    try {
+      // 挂载时上次状态 SUCCESS（空闲）；触发后两次轮询：PROCESSING → SUCCESS
+      getAasConfigApiMock
+        .mockResolvedValueOnce(aasConfigFixture)
+        .mockResolvedValueOnce({
+          ...aasConfigFixture,
+          lastSyncStatus: 'PROCESSING',
+        })
+        .mockResolvedValueOnce(aasConfigFixture);
+      const wrapper = mountAas();
+      await flushPromises();
+
+      const button = wrapper
+        .findAll('button')
+        .find((b) => b.text() === '立即同步');
+      expect(button).toBeTruthy();
+      expect(wrapper.text()).toContain('同步成功');
+
+      await button!.trigger('click');
+      await flushPromises();
+      expect(triggerAasSyncApiMock).toHaveBeenCalledTimes(1);
+
+      // 第一次轮询：PROCESSING → 状态 Tag 变"同步中"并继续排程
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(wrapper.text()).toContain('同步中');
+
+      // 第二次轮询：SUCCESS → 完成提示
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(message.success).toHaveBeenCalledWith(
+        'AAS 同步完成，测点元数据已更新',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
