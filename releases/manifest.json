@@ -35,4 +35,17 @@
   "tarFile": "clpm-images-20260831-144618.tar.gz",
   "tarSize": "787M",
   "note": "生产部署就绪收口最终包：含 initdb 漂移修复/TDengine 密码校验/Leader 锁；已在 zpdev(192.168.13.111) 全链路演练通过"
+},{
+  "version": "20260903-080210",
+  "buildTime": "2026-09-03 08:02:10",
+  "gitCommit": "b912cebe",
+  "gitBranch": "main",
+  "appVersion": "v7.0.0-25-gb912cebe",
+  "images": [
+    {"name": "clpm-backend:latest", "tags": ["latest", "b912cebe", "20260903-080210"], "size": "180MB"},
+    {"name": "clpm-frontend:latest", "tags": ["latest", "b912cebe", "20260903-080210"], "size": "34.8MB"}
+  ],
+  "tarFile": "clpm-images-20260903-080210.tar.gz",
+  "tarSize": "787M",
+  "note": "客户交付候选包：订阅手工刷新（免重启生效）+ 链路配置页刷新按钮 + 同机 AAS host-gateway 映射 + 现场手册/移交说明书随包 + 消除 macOS 元数据噪音"
 }]
