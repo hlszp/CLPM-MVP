@@ -2074,6 +2074,70 @@ class TestSubscriptionRefresh:
         sub._ws.send.assert_called_once()
 
 
+class TestChunkedSubscription:
+    """分块订阅（2026-09-03 生产事故加固）。
+
+    8600+ 位号单条订阅消息约 200KB 会被远端 Hub 立即关闭连接（code 1000），
+    订阅必须按 _SUBSCRIBE_CHUNK_SIZE 分块发送；≤ 块大小时保持单条兼容旧行为。
+    """
+
+    @pytest.mark.asyncio
+    async def test_send_subscribe_invocations_chunks_large_list(self):
+        """1200 个位号 → 3 块（500/500/200），块间不重不漏、invocationId 唯一递增."""
+        sub = RealtimeSubscriber()
+        sub._ws = AsyncMock()
+        sub._invocation_counter = 0
+        tags = [f"T-{i:05d}" for i in range(1200)]
+
+        ids = await sub._send_subscribe_invocations(tags, "sub")
+
+        assert len(ids) == 3
+        assert len(set(ids)) == 3  # 唯一
+        payloads = [json.loads(c.args[0].rstrip("\x1e")) for c in sub._ws.send.call_args_list]
+        assert all(p["type"] == 1 and p["target"] == "SubscribeAsync" for p in payloads)
+        assert [len(p["arguments"][0]) for p in payloads] == [500, 500, 200]
+        # 块拼接后与原清单完全一致（不重不漏、保序）
+        assert [t for p in payloads for t in p["arguments"][0]] == tags
+        # invocationId 逐块递增
+        assert ids == [p["invocationId"] for p in payloads]
+
+    @pytest.mark.asyncio
+    async def test_send_subscribe_invocations_small_list_single_message(self):
+        """≤ 块大小时单条发送，格式与旧实现一致（兼容 Completion 初始值链路）."""
+        sub = RealtimeSubscriber()
+        sub._ws = AsyncMock()
+        sub._invocation_counter = 2
+        tags = ["LIC-101.PV", "LIC-101.SP"]
+
+        ids = await sub._send_subscribe_invocations(tags, "sub")
+
+        assert ids == ["sub_3"]
+        sub._ws.send.assert_called_once()
+        payload = json.loads(sub._ws.send.call_args.args[0].rstrip("\x1e"))
+        assert payload["type"] == 1
+        assert payload["invocationId"] == "sub_3"
+        assert payload["arguments"] == [["LIC-101.PV", "LIC-101.SP"]]
+
+    @pytest.mark.asyncio
+    async def test_refresh_subscription_chunks_when_over_limit(self):
+        """手工刷新 1200 个位号 → 3 条订阅消息，结果 invocationId 为首块."""
+        fake_redis = _FakeRedis()
+        sub = _make_leader_sub(fake_redis, [])
+        tags = [f"T-{i:05d}" for i in range(1200)]
+
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch.object(sub, "_get_active_tags", return_value=tags),
+        ):
+            result = await sub.refresh_subscription(source="manual-api")
+
+        assert result["error"] is None
+        assert result["total"] == 1200
+        assert result["invocationId"] == "manual_refresh_1"
+        assert sub._ws.send.call_count == 3
+        assert sub._subscribed_tags == set(tags)
+
+
 class TestControlLoop:
     """_control_loop：控制频道消息的监听与分发."""
 

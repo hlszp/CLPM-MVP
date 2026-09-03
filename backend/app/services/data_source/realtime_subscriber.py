@@ -130,6 +130,11 @@ _WATCHDOG_RECV_TIMEOUT = 30.0
 # 当前值，刷新 Redis 缓存（TTL 3600s），避免低频信号过期后前端显示空白。
 _SIGNALR_REFRESH_INTERVAL = 60.0  # 1 分钟
 
+# 订阅分块大小：单条 SubscribeAsync 携带的位号数上限（2026-09-03 生产事故加固）
+# 8600+ 位号单条订阅消息约 200KB，被远端 Hub 收到后立即关闭连接（code 1000，
+# 疑似超服务端单消息上限）；分块后单条约 10KB，Completion 响应由接收循环统一处理
+_SUBSCRIBE_CHUNK_SIZE = 500
+
 # loop_part → (loop_id, unit_id) 缓存 TTL（秒）：flush 热路径不每拍查库
 _LOOP_META_CACHE_TTL = 300.0
 # 缓存缺失 loop_part 时的最小刷新间隔（秒）：防止未配置映射的 loop_part
@@ -505,6 +510,39 @@ class RealtimeSubscriber:
             finally:
                 self._ws = None
 
+    async def _send_subscribe_invocations(self, tag_codes: list[str], prefix: str) -> list[str]:
+        """分块发送 SubscribeAsync（每块 ≤ ``_SUBSCRIBE_CHUNK_SIZE`` 个位号）。
+
+        单条全量订阅消息过大时会被远端 Hub 直接关闭连接（2026-09-03 实锤），
+        分块后每条约 10KB；各块 Completion (type=3) 响应携带该块位号当前值，
+        由 ``_connect_and_subscribe`` 的接收循环统一处理。
+
+        必须包含 invocationId，否则 AAS 将调用视为 fire-and-forget，不返回
+        Completion 响应（初始当前值会永远缺失）。
+
+        Returns:
+            各块 invocationId 列表（``{prefix}_{计数器}``，计数器逐块递增）。
+        """
+        invocation_ids: list[str] = []
+        for i in range(0, len(tag_codes), _SUBSCRIBE_CHUNK_SIZE):
+            chunk = tag_codes[i : i + _SUBSCRIBE_CHUNK_SIZE]
+            self._invocation_counter += 1
+            invocation_id = f"{prefix}_{self._invocation_counter}"
+            subscribe_msg = (
+                json.dumps(
+                    {
+                        "type": 1,
+                        "invocationId": invocation_id,
+                        "target": "SubscribeAsync",
+                        "arguments": [chunk],
+                    }
+                )
+                + "\x1e"
+            )
+            await self._ws.send(subscribe_msg)
+            invocation_ids.append(invocation_id)
+        return invocation_ids
+
     async def _connect_and_subscribe(self) -> None:
         """连接 Hub 并订阅数据.
 
@@ -545,21 +583,14 @@ class RealtimeSubscriber:
         # 必须包含 invocationId，否则 AAS 将调用视为 fire-and-forget，不返回
         # Completion (type=3) 响应——初始响应中包含所有订阅 Tag 的当前值
         # （含 SP/MODE/PID 等低频信号），缺少 invocationId 会导致这些值永远缺失。
-        self._invocation_counter += 1
-        invocation_id = f"sub_{self._invocation_counter}"
-        subscribe_msg = (
-            json.dumps(
-                {
-                    "type": 1,
-                    "invocationId": invocation_id,
-                    "target": "SubscribeAsync",
-                    "arguments": [tag_codes],
-                }
-            )
-            + "\x1e"
+        # 2026-09-03：分块订阅——单条大消息（8600+ 位号约 200KB）会被 Hub 关闭
+        invocation_ids = await self._send_subscribe_invocations(tag_codes, "sub")
+        logger.info(
+            "已订阅 %d 个 Tag（%d 块，invocationId=%s…）",
+            len(tag_codes),
+            len(invocation_ids),
+            invocation_ids[0] if invocation_ids else "-",
         )
-        await self._ws.send(subscribe_msg)
-        logger.info("已订阅 %d 个 Tag (invocationId=%s)", len(tag_codes), invocation_id)
         self._subscribed_tags = set(tag_codes)
 
         # 断点续传：连接成功（重连/进程重启后首连）即检测数据缺口并自动补数
@@ -708,24 +739,11 @@ class RealtimeSubscriber:
                     continue
                 # 重新发送 SubscribeAsync 获取所有订阅 Tag 的当前值
                 # AAS 会返回 Completion (type=3) 响应，由接收循环统一处理
-                self._invocation_counter += 1
-                invocation_id = f"refresh_{self._invocation_counter}"
-                refresh_msg = (
-                    json.dumps(
-                        {
-                            "type": 1,
-                            "invocationId": invocation_id,
-                            "target": "SubscribeAsync",
-                            "arguments": [list(self._subscribed_tags)],
-                        }
-                    )
-                    + "\x1e"
-                )
-                await self._ws.send(refresh_msg)
+                # （分块发送，与建连订阅同路径）
+                await self._send_subscribe_invocations(list(self._subscribed_tags), "refresh")
                 logger.debug(
-                    "已发送周期刷新订阅请求 (%d tags, invocationId=%s)",
+                    "已发送周期刷新订阅请求 (%d tags)",
                     len(self._subscribed_tags),
-                    invocation_id,
                 )
             except asyncio.CancelledError:
                 break
@@ -800,8 +818,9 @@ class RealtimeSubscriber:
         """刷新实时订阅：重查活跃 Tag → diff → 现有 WS 连接上全量重发 SubscribeAsync.
 
         - 非 Leader / WS 未连接时不产生 WS 动作，写入带 error 的结果；
-        - 重发与 ``_refresh_loop`` 同路径（websockets 支持同 loop 不同 task 并发
-          send，Completion 响应由 ``_connect_and_subscribe`` 接收循环统一处理）；
+        - 重发与 ``_refresh_loop`` 同路径（分块发送，websockets 支持同 loop 不同
+          task 并发 send，Completion 响应由 ``_connect_and_subscribe`` 接收循环
+          统一处理）；
         - removed 的 Tag 不向 Hub 退订（Hub 语义不支持可靠退订，多推的值进 Redis
           无害），结果中如实返回 removed 清单；
         - 清空 ``_tag_role_cache``/``_loop_meta_cache``（落库映射随绑定关系变化，
@@ -839,21 +858,11 @@ class RealtimeSubscriber:
             if new_set:
                 # 全量重发（新 invocationId）：AAS 以最新 SubscribeAsync 为准
                 # 并回发 Completion（type=3）携带全部订阅 Tag 当前值
-                self._invocation_counter += 1
-                invocation_id = f"manual_refresh_{self._invocation_counter}"
-                subscribe_msg = (
-                    json.dumps(
-                        {
-                            "type": 1,
-                            "invocationId": invocation_id,
-                            "target": "SubscribeAsync",
-                            "arguments": [sorted(new_set)],
-                        }
-                    )
-                    + "\x1e"
+                # （分块发送；invocationId 记录首块，完整块清单见日志）
+                invocation_ids = await self._send_subscribe_invocations(
+                    sorted(new_set), "manual_refresh"
                 )
-                await self._ws.send(subscribe_msg)
-                result["invocationId"] = invocation_id
+                result["invocationId"] = invocation_ids[0] if invocation_ids else None
             else:
                 logger.info("订阅刷新后无活跃 Tag，跳过重发 SubscribeAsync")
             self._subscribed_tags = new_set
