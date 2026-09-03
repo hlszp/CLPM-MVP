@@ -61,4 +61,19 @@
   "tarFile": "clpm-images-20260903-104205.tar.gz",
   "tarSize": "787M",
   "note": "在 080210 基础上增加：AAS 位号同步卡片（链路配置页立即同步）+ Excel 导入占位描述放行 AAS 回冲 + Redis 代理跨 loop 修复"
-}]
+},
+{
+  "version": "20260903-225704",
+  "buildTime": "2026-09-03 22:57:04",
+  "gitCommit": "e13ee406",
+  "gitBranch": "main",
+  "appVersion": "v7.0.0-32-ge13ee406",
+  "images": [
+    {"name": "clpm-backend:latest", "tags": ["latest", "e13ee406", "20260903-225704"], "size": "183MB"},
+    {"name": "clpm-frontend:latest", "tags": ["latest", "e13ee406", "20260903-225704"], "size": "37.3MB"}
+  ],
+  "tarFile": "clpm-images-20260903-225704.tar.gz",
+  "tarSize": "792M",
+  "note": "在 104205 基础上增加：实时订阅分块发送（修复 8600+ 位号单条大订阅消息被 Hub code 1000 掐断，27 回路实时数据恢复）+ aas 路由恢复注册（修复链路配置页 AAS 位号同步 404）"
+}
+]
