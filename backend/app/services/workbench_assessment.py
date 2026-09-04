@@ -365,12 +365,17 @@ def shape_trend(
 async def _query_scope_row(
     db: AsyncSession, scope_type: str, scope_id: int, window: str
 ) -> WorkbenchWindowSummary | None:
-    """查指定 scope × window 的单行（用于 summary/trend 主系列）。"""
+    """查指定 scope × window 的单行（用于 summary/trend 主系列）。
+
+    按窗口终点降序取最新行（precalc 每 5min 网格 upsert 新行，旧行保留
+    供趋势回看；无序时可能命中历史行）。
+    """
     result = await db.execute(
         select(WorkbenchWindowSummary)
         .where(WorkbenchWindowSummary.scope_type == scope_type)
         .where(WorkbenchWindowSummary.scope_id == scope_id)
         .where(WorkbenchWindowSummary.window_w == window)
+        .order_by(WorkbenchWindowSummary.window_end.desc())
         .limit(1)
     )
     return result.scalar_one_or_none()

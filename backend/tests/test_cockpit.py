@@ -154,6 +154,8 @@ class TestBuildOverview:
     @pytest.mark.asyncio
     async def test_kpi与漏斗组装完整(self):
         db = AsyncMock()
+        # loopTotal 自 2026-09-04 起改为 loop_ledger 活跃回路实时计数（db.scalar）
+        db.scalar = AsyncMock(return_value=120)
         dist = {"EXCELLENT": 10, "GOOD": 50, "FAIR": 40, "WARNING": 12, "POOR": 8, "total": 120}
         prev_dist = {"WARNING": 10, "POOR": 5}
         with (
@@ -195,6 +197,7 @@ class TestBuildOverview:
     @pytest.mark.asyncio
     async def test_窗口行缺失时KPI为None且计数兜底0(self):
         db = AsyncMock()
+        db.scalar = AsyncMock(return_value=0)  # 活跃回路计数 0
         with (
             patch.multiple(
                 "app.services.cockpit_overview",

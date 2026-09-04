@@ -367,13 +367,30 @@ async def build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any
     kpi = _default_kpi()
     funnel = _default_funnel()
 
-    # --- 全厂窗口 KPI 行：score / autoRate / loopTotal ---
+    # --- 回路总数：loop_ledger 活跃回路实时计数 ---
+    # 语义是"配置回路总数"（与回路配置页对齐），不依赖 KPI 评分链路是否
+    # 有数据；预计算行的 loop_count 是"窗口内参评回路数"，两者语义不同，
+    # 此前混用导致总数与实际配置对不上（2026-09-04 修复）。
+    try:
+        active_loops = await db.scalar(
+            select(func.count()).select_from(LoopLedger).where(LoopLedger.is_active.is_(True))
+        )
+        kpi["loopTotal"] = int(active_loops or 0)
+    except Exception:  # noqa: BLE001
+        logger.warning("驾驶舱回路总数查询失败", exc_info=True)
+
+    # --- 全厂窗口 KPI 行：score / autoRate ---
     try:
         row = await _query_global_summary_row(db, window)
         if row is not None:
-            kpi["score"] = _to_float(row.score)
-            kpi["autoRate"] = _rate_to_pct(row.auto_mode_rate)
-            kpi["loopTotal"] = int(row.loop_count or 0)
+            # INCONCLUSIVE = 窗口内无参评数据（precalc 写入 0 占位）：
+            # 显示 None（前端 "—"）而非误导性的 0.0
+            if row.status == "INCONCLUSIVE":
+                kpi["score"] = None
+                kpi["autoRate"] = None
+            else:
+                kpi["score"] = _to_float(row.score)
+                kpi["autoRate"] = _rate_to_pct(row.auto_mode_rate)
     except Exception:  # noqa: BLE001
         logger.warning("驾驶舱 KPI 窗口行查询失败", exc_info=True)
 

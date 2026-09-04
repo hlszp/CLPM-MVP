@@ -194,8 +194,10 @@ class TestTaskSkeletonExecution:
         from app.tasks.workbench import _workbench_precalc_async
 
         result = asyncio.run(_workbench_precalc_async())
-        assert result["status"] == "skeleton"
-        assert "existing_rows" in result
+        # M2：真实聚合 upsert（scope 数 × 3 窗口），不再返回 skeleton
+        assert result["status"] == "ok"
+        assert result["written"] > 0
+        assert result["errors"] == 0
 
     def test_sla_sweep_executable(self) -> None:
         from app.tasks.workbench import _sla_sweep_async

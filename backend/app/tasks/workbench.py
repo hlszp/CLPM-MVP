@@ -34,21 +34,18 @@ logger = logging.getLogger(__name__)
 def workbench_precalc(self: AsyncTask, *args: object, **kwargs: object) -> dict[str, Any]:
     """三窗口（24h/7d/30d）KPI 预计算 → upsert workbench_window_summary。
 
-    M1 skeleton：查询现有行数 + 日志。M2 填充：按 scope 聚合 KPI → UPSERT。
+    M2：以 unit_kpi_summary 为数据源，按 GLOBAL/FACTORY/AREA/UNIT × 三窗口
+    加权聚合 upsert（详见 app/services/workbench_precalc.py 口径注释）。
     """
     return self.run_async(_workbench_precalc_async())
 
 
 async def _workbench_precalc_async() -> dict[str, Any]:
-    from sqlalchemy import func, select
-
     from app.core.db import AsyncSessionLocal
-    from app.models.workbench_summary import WorkbenchWindowSummary
+    from app.services.workbench_precalc import build_and_upsert
 
     async with AsyncSessionLocal() as db:
-        total = await db.scalar(select(func.count()).select_from(WorkbenchWindowSummary))
-    logger.info("workbench_precalc skeleton: workbench_window_summary 现有 %s 行", total)
-    return {"status": "skeleton", "existing_rows": total, "todo": "M2 填充三窗口 KPI 预计算"}
+        return await build_and_upsert(db)
 
 
 # ---------------------------------------------------------------------------
