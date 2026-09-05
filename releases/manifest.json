@@ -75,5 +75,18 @@
   "tarFile": "clpm-images-20260903-225704.tar.gz",
   "tarSize": "792M",
   "note": "在 104205 基础上增加：实时订阅分块发送（修复 8600+ 位号单条大订阅消息被 Hub code 1000 掐断，27 回路实时数据恢复）+ aas 路由恢复注册（修复链路配置页 AAS 位号同步 404）"
+},{
+  "version": "20260905-092800",
+  "buildTime": "2026-09-05 09:28:00",
+  "gitCommit": "3311f314",
+  "gitBranch": "main",
+  "appVersion": "v7.0.0-36-g3311f314",
+  "images": [
+    {"name": "clpm-backend:latest", "tags": ["latest", "3311f314", "20260905-092800"], "size": "TBD"},
+    {"name": "clpm-frontend:latest", "tags": ["latest", "3311f314", "20260905-092800"], "size": "TBD"}
+  ],
+  "tarFile": "clpm-images-20260905-092800.tar.gz",
+  "tarSize": "792M",
+  "note": "在 0903-225704 基础上：workbench-precalc M2 真实聚合（驾驶舱/工作台 KPI 去演示化：loopTotal 961 真实值、评分与自控率取自 unit_kpi_summary）+ WS 重连修复（实时数据 + 预警推送 30min 后 403 死循环修复，_doConnect 实时读取 useAccessStore token）"
 }
 ]
