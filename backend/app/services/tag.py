@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -140,7 +141,17 @@ def _build_tag_dict(
 
     if rt:
         raw_val = rt.get("value")
-        current_value = float(raw_val) if raw_val not in (None, "") else tag.current_value
+        # 工业组态软件常推送 "-1.#QNAN0" / "nan" / "inf" 等 NaN/非数字字面量。
+        # float("-1.#QNAN0") 抛 ValueError；float("nan"/"inf") 不会抛但
+        # 进入 JSON 序列化时前端会显示 NaN。统一容错：解析失败或得到非有限数 → 回退到 DB 历史值。
+        current_value: float | int | str | None = tag.current_value
+        if raw_val not in (None, ""):
+            try:
+                parsed = float(raw_val)
+                if math.isfinite(parsed):
+                    current_value = parsed
+            except (TypeError, ValueError):
+                current_value = tag.current_value
         raw_quality = rt.get("quality")
         if isinstance(raw_quality, int | float):
             quality = "GOOD" if int(raw_quality) in (1, 2, 3, 192) else "BAD"
