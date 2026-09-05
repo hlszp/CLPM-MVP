@@ -62,7 +62,6 @@ import {
   updatePlantNodeApi,
 } from '#/api/plant-node';
 import {
-  ClpmDangerConfirmModal,
   ClpmHelpIcon,
   ClpmPageToolbar,
   ClpmStandardActions,
@@ -234,7 +233,6 @@ function handleSearch() {
 
 // ===== 批量删除（串行逐节点，后删父级原则由服务端保护兜底） =====
 
-const batchDeleteOpen = ref(false);
 const batchDeleteLoading = ref(false);
 
 function openBatchDelete() {
@@ -242,7 +240,18 @@ function openBatchDelete() {
     message.warning('请先勾选要删除的节点');
     return;
   }
-  batchDeleteOpen.value = true;
+  Modal.confirm({
+    title: '批量删除工厂节点',
+    content: `将删除选中的 ${selectedRowKeys.value.length} 个节点${
+      selectedWithChildren.value > 0
+        ? '（父子同选时先删子后删父，自动两轮处理）'
+        : ''
+    }；存在子节点或关联回路的节点将被跳过并在结果中提示。此操作不可逆，确认删除？`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleBatchDeleteConfirm(),
+  });
 }
 
 /** 选中项中含子节点的父节点（提示将被跳过） */
@@ -290,7 +299,6 @@ async function handleBatchDeleteConfirm() {
       message.success(`批量删除成功，共删除 ${deleted} 个节点`);
     }
     selectedRowKeys.value = [];
-    batchDeleteOpen.value = false;
     await Promise.all([loadTree(), loadList()]);
   } catch {
     hide();
@@ -1050,19 +1058,5 @@ onMounted(() => {
       </Table>
     </Modal>
 
-    <!-- 批量删除节点：危险确认弹窗 -->
-    <ClpmDangerConfirmModal
-      v-model:open="batchDeleteOpen"
-      title="批量删除工厂节点"
-      action="删除"
-      :target="`选中的 ${selectedRowKeys.length} 个节点`"
-      :impact-scope="`将删除选中的 ${selectedRowKeys.length} 个节点${selectedWithChildren > 0 ? '（父子同选时先删子后删父，自动两轮处理）' : ''}；存在子节点或关联回路的节点将被跳过并在结果中提示`"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      require-confirm-code
-      :confirm-code="`删除 ${selectedRowKeys.length} 个节点`"
-      confirm-code-placeholder="请输入「删除 N 个节点」以确认"
-      :loading="batchDeleteLoading"
-      @confirm="handleBatchDeleteConfirm"
-    />
   </Page>
 </template>

@@ -62,7 +62,6 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { requestClient } from '#/api/request';
 import {
-  ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmEmptyState,
   ClpmInfoTip,
@@ -813,40 +812,50 @@ async function doBatchConfigSubmit() {
   }
 }
 
-// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
-// 单个删除回路
-const dangerOpen = ref(false);
-const dangerTarget = ref<LoopApi.LoopListItem | null>(null);
-const dangerLoading = ref(false);
-// 批量删除回路
-const batchDangerOpen = ref(false);
-const batchDangerLoading = ref(false);
+// ===== 删除确认（简易确认框）=====
 
-/** 打开单个删除危险确认弹窗 */
-function openDanger(record: LoopApi.LoopListItem) {
-  dangerTarget.value = record;
-  dangerOpen.value = true;
+/** 单个删除回路确认 */
+function confirmDelete(record: LoopApi.LoopListItem) {
+  Modal.confirm({
+    title: '删除回路',
+    content: `确认删除回路「${record.tagName}」？将级联解绑 7 个 Tag、影响历史快照，此操作不可恢复。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        await deleteLoopApi(record.loopId);
+        message.success('回路删除成功');
+        drawerRef.value?.closeIfLoop(record.loopId);
+        await refreshAfterMutation();
+      } catch (error) {
+        console.error('操作失败:', error);
+        message.error('回路删除失败，请重试或联系管理员');
+      }
+    },
+  });
 }
 
-/** 打开批量删除危险确认弹窗 */
-function openBatchDanger() {
+/** 批量删除回路确认入口（由 ClpmToolbarButton 触发） */
+function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先勾选要批量删除的回路');
     return;
   }
-  batchDangerOpen.value = true;
+  Modal.confirm({
+    title: '批量删除回路',
+    content: `将批量删除选中的 ${selectedRowKeys.value.length} 个回路，级联解绑每个回路的 7 个 Tag 映射、级联清理 KPI 快照/诊断/处置/整定等关联数据，删除后不可恢复（Tag 测点本体保留）。确认删除？`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => executeBatchDelete(),
+  });
 }
 
-/** 批量删除入口（由 ClpmToolbarButton 触发，打开危险确认弹窗） */
-function handleBatchDelete() {
-  openBatchDanger();
-}
-
-/** 批量删除危险确认回调（ClpmDangerConfirmModal @confirm） */
-async function handleBatchDangerConfirm() {
+/** 执行批量删除回路 */
+async function executeBatchDelete() {
   if (selectedRowKeys.value.length === 0) return;
   const loopCount = selectedRowKeys.value.length;
-  batchDangerLoading.value = true;
   const hide = message.loading(
     `正在删除 ${loopCount} 个回路（级联清理关联数据）…`,
     0,
@@ -861,13 +870,10 @@ async function handleBatchDangerConfirm() {
       `批量删除成功，共删除 ${result.affected} 个回路（Tag 映射已解绑，关联数据已级联清理）`,
     );
     selectedRowKeys.value = [];
-    batchDangerOpen.value = false;
     await refreshAfterMutation();
   } catch (error) {
     hide();
     console.error('操作失败:', error);
-  } finally {
-    batchDangerLoading.value = false;
   }
 }
 
@@ -1161,25 +1167,6 @@ const { toolbarItems } = usePageToolbar(() => ({
   setting: {},
   help: { onClick: handleHelp },
 }));
-
-/** 删除回路危险确认回调（ClpmDangerConfirmModal @confirm） */
-async function handleDangerConfirm() {
-  if (!dangerTarget.value) return;
-  const record = dangerTarget.value;
-  dangerLoading.value = true;
-  try {
-    await deleteLoopApi(record.loopId);
-    message.success('回路删除成功');
-    drawerRef.value?.closeIfLoop(record.loopId);
-    dangerOpen.value = false;
-    await refreshAfterMutation();
-  } catch (error) {
-    console.error('操作失败:', error);
-    message.error('回路删除失败，请重试或联系管理员');
-  } finally {
-    dangerLoading.value = false;
-  }
-}
 
 /** 加载工厂节点（用于下拉选项） */
 async function loadPlantNodes() {
@@ -1746,7 +1733,7 @@ watch(
                       size="small"
                       danger
                       class="loop-action-btn"
-                      @click="openDanger(record as LoopApi.LoopListItem)"
+                      @click="confirmDelete(record as LoopApi.LoopListItem)"
                     >
                       <template #icon>
                         <IconifyIcon icon="ant-design:delete-outlined" />
@@ -1929,34 +1916,6 @@ watch(
       </div>
     </Modal>
 
-    <!-- 单个删除回路：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
-    <ClpmDangerConfirmModal
-      v-model:open="dangerOpen"
-      title="删除回路"
-      action="删除"
-      :target="dangerTarget?.tagName ?? ''"
-      impact-scope="将级联解绑 7 个 Tag、影响历史快照、不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      require-confirm-code
-      confirm-code-placeholder="请输入回路 tag 以确认"
-      :loading="dangerLoading"
-      @confirm="handleDangerConfirm"
-    />
-
-    <!-- 批量删除回路：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
-    <ClpmDangerConfirmModal
-      v-model:open="batchDangerOpen"
-      title="批量删除回路"
-      action="删除"
-      :target="`选中的 ${selectedRowKeys.length} 个回路`"
-      impact-scope="将级联解绑每个回路的 7 个 Tag 映射、级联清理 KPI 快照/诊断/处置/整定等关联数据，不可恢复"
-      rollback-tip="此操作不可逆，删除后无法恢复（Tag 测点本体保留，解除关联后可在测点配置中删除）"
-      require-confirm-code
-      :confirm-code="`删除 ${selectedRowKeys.length} 个回路`"
-      confirm-code-placeholder="请输入「删除 N 个回路」以确认"
-      :loading="batchDangerLoading"
-      @confirm="handleBatchDangerConfirm"
-    />
   </Page>
 </template>
 

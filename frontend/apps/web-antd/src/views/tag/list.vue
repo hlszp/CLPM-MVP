@@ -61,7 +61,6 @@ import {
   updateTagApi,
 } from '#/api/tag';
 import {
-  ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmDataHealthBadges,
   ClpmNumeric,
@@ -101,26 +100,46 @@ const query = reactive({
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleting = ref(false);
 
-// ===== 危险确认弹窗（ClpmDangerConfirmModal）=====
-// 单个删除
-const dangerOpen = ref(false);
-const dangerTarget = ref<null | TagApi.TagItem>(null);
-const dangerLoading = ref(false);
-// 批量删除
-const batchDangerOpen = ref(false);
+// ===== 删除确认（简易确认框）=====
 
-function openDanger(record: TagApi.TagItem) {
+/** 单个删除确认 */
+function confirmDelete(record: TagApi.TagItem) {
   if (record.isLinked) {
     message.warning('该测点已关联回路，不允许删除');
     return;
   }
-  dangerTarget.value = record;
-  dangerOpen.value = true;
+  Modal.confirm({
+    title: '删除测点',
+    content: `确认删除测点「${record.tagName}」？将解除该测点与回路的关联，此操作不可恢复。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        await deleteTagApi(record.id);
+        message.success('测点删除成功');
+        await loadList();
+      } catch {
+        // 错误已由拦截器处理
+      }
+    },
+  });
 }
 
-function openBatchDanger() {
+/** 批量删除确认 */
+function confirmBatchDelete() {
   if (selectedRowKeys.value.length === 0) return;
-  batchDangerOpen.value = true;
+  Modal.confirm({
+    title: '批量删除测点',
+    content:
+      selectedLinkedCount.value > 0
+        ? `选中 ${selectedRowKeys.value.length} 项，其中 ${selectedLinkedCount.value} 个已关联回路（自动跳过），将删除 ${selectedDeletableCount.value} 个未关联测点，删除后不可恢复。确认删除？`
+        : `将批量删除选中的 ${selectedRowKeys.value.length} 个测点，删除后不可恢复。确认删除？`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleBatchDelete(),
+  });
 }
 
 /** 表格行选择配置 */
@@ -460,33 +479,6 @@ async function handleBatchDelete() {
   }
 }
 
-/** 单个删除危险确认回调（ClpmDangerConfirmModal @confirm） */
-async function handleDangerConfirm() {
-  if (!dangerTarget.value) return;
-  const record = dangerTarget.value;
-  if (record.isLinked) {
-    message.warning('该测点已关联回路，不允许删除');
-    return;
-  }
-  dangerLoading.value = true;
-  try {
-    await deleteTagApi(record.id);
-    message.success('测点删除成功');
-    dangerOpen.value = false;
-    await loadList();
-  } catch {
-    // 错误已由拦截器处理
-  } finally {
-    dangerLoading.value = false;
-  }
-}
-
-/** 批量删除危险确认回调（ClpmDangerConfirmModal @confirm） */
-async function handleBatchDangerConfirm() {
-  await handleBatchDelete();
-  batchDangerOpen.value = false;
-}
-
 /** 打开详情 Drawer */
 async function handleViewDetail(record: TagApi.TagItem) {
   detailVisible.value = true;
@@ -768,7 +760,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           :disabled="selectedRowKeys.length === 0"
           disabled-reason="请先选择测点"
           :loading="batchDeleting"
-          @click="openBatchDanger"
+          @click="confirmBatchDelete"
         />
         <ClpmToolbarButton
           icon="ant-design:close-outlined"
@@ -964,7 +956,7 @@ const { toolbarItems } = usePageToolbar(() => ({
                     size="small"
                     danger
                     :disabled="(record as TagApi.TagItem).isLinked"
-                    @click="openDanger(record as TagApi.TagItem)"
+                    @click="confirmDelete(record as TagApi.TagItem)"
                   >
                     删除
                   </Button>
@@ -1128,33 +1120,6 @@ const { toolbarItems } = usePageToolbar(() => ({
       </Descriptions>
     </Drawer>
 
-    <!-- 单个删除 Tag：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
-    <ClpmDangerConfirmModal
-      v-model:open="dangerOpen"
-      title="删除 Tag"
-      action="删除"
-      :target="dangerTarget?.tagName ?? ''"
-      impact-scope="将解除该 Tag 与回路的关联、影响历史数据查询"
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :loading="dangerLoading"
-      @confirm="handleDangerConfirm"
-    />
-
-    <!-- 批量删除 Tag：危险确认弹窗（UIUX v6.1 §9.8 / §14 P-01） -->
-    <ClpmDangerConfirmModal
-      v-model:open="batchDangerOpen"
-      title="批量删除 Tag"
-      action="删除"
-      :target="`选中的 ${selectedRowKeys.length} 个测点`"
-      :impact-scope="
-        selectedLinkedCount > 0
-          ? `选中 ${selectedRowKeys.length} 项，其中 ${selectedLinkedCount} 个已关联回路（自动跳过），将删除 ${selectedDeletableCount} 个未关联测点、不可恢复`
-          : `将批量删除选中的 ${selectedRowKeys.length} 个测点、不可恢复`
-      "
-      rollback-tip="此操作不可逆，删除后无法恢复"
-      :loading="batchDeleting"
-      @confirm="handleBatchDangerConfirm"
-    />
   </Page>
 </template>
 
