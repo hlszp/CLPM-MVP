@@ -99,6 +99,7 @@ const query = reactive({
 // 批量选中
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleting = ref(false);
+const selectingAll = ref(false);
 
 // ===== 删除确认（简易确认框）=====
 
@@ -149,6 +150,36 @@ const rowSelection = computed(() => ({
     selectedRowKeys.value = keys.map(String);
   },
 }));
+
+/** 全选：拉取当前筛选条件下所有未关联回路的测点 id 并选中 */
+async function selectAllDeletable() {
+  if (total.value === 0) return;
+  selectingAll.value = true;
+  try {
+    const data = await getTagListApi({
+      plantNodeId: query.plantNodeId,
+      measureType: query.measureType,
+      tagType: query.tagType,
+      isLinked: false,
+      keyword: query.keyword || undefined,
+      page: 1,
+      pageSize: 10000,
+    });
+    const ids = data.items.filter((t) => !t.isLinked).map((t) => t.id);
+    if (ids.length === 0) {
+      message.info('当前筛选条件下没有可全选的未关联测点');
+      return;
+    }
+    selectedRowKeys.value = ids.map(String);
+    message.success(
+      `已选中 ${ids.length} 个未关联测点${data.total > ids.length ? `（已自动跳过 ${data.total - ids.length} 个已关联回路的测点）` : ''}`,
+    );
+  } catch {
+    // 错误已由拦截器处理
+  } finally {
+    selectingAll.value = false;
+  }
+}
 
 /** 选中项中可删除的数量（未关联回路） */
 const selectedDeletableCount = computed(() => {
@@ -751,6 +782,15 @@ const { toolbarItems } = usePageToolbar(() => ({
           icon="create"
           label="新建测点"
           @click="handleAdd"
+        />
+        <ClpmToolbarButton
+          v-permission="['ADMIN']"
+          icon="ant-design:check-square"
+          label="全选"
+          :loading="selectingAll"
+          :disabled="total === 0"
+          disabled-reason="当前筛选条件下没有可全选的测点"
+          @click="selectAllDeletable"
         />
         <ClpmToolbarButton
           v-permission="['ADMIN']"
