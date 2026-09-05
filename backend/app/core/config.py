@@ -104,7 +104,13 @@ class Settings(BaseSettings):
     SIGNALR_RECONNECT_INTERVAL: int = 5  # 断线重连基础间隔（秒，指数退避起点）
     SIGNALR_RECONNECT_MAX_INTERVAL: int = 30  # 断线重连最大间隔（秒，指数退避上限）
     # WS 客户端参数（放宽默认值，适配过载边缘服务器）
-    SIGNALR_PING_INTERVAL: int = 30  # 心跳间隔（秒），默认 30
+    # 协议级 ping 默认禁用（0）：生产 AAS（.NET SignalR）不应答 WebSocket 协议级
+    # ping，启用后每 ping_interval+ping_timeout 周期误判"keepalive ping timeout"
+    # 断线重连，造成周期数据缺口（2026-09-05 zpdev 实锤，~105s 一次）。
+    # 连接活性由 SignalR 应用层 ping（type=6，自动回 pong）+ 30s recv 看门狗
+    # + SIGNALR_STALL_TIMEOUT_SECONDS 停滞阈值覆盖；仅对明确应答协议 ping 的
+    # Hub（如本地仿真器）才建议设 >0。
+    SIGNALR_PING_INTERVAL: int = 0  # 心跳间隔（秒），0=禁用协议级 ping
     SIGNALR_PING_TIMEOUT: int = 60  # 心跳超时（秒），默认 60
     SIGNALR_OPEN_TIMEOUT: int = 15  # 连接建立超时（秒），默认 15
     # 数据停滞看门狗：N 秒无消息主动断开重连（覆盖"WS 活着但上游停推"盲区）

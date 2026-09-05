@@ -67,6 +67,35 @@ class _FakePubSub:
         self.closed = True
 
 
+class _FakePipeline:
+    """模拟 redis-py pipeline：调用仅缓冲命令，execute 时顺序应用到 _FakeRedis."""
+
+    def __init__(self, redis: _FakeRedis) -> None:
+        self._redis = redis
+        self._ops: list[tuple] = []
+
+    def setex(self, key: str, ttl: int, value: str) -> None:
+        self._ops.append(("setex", key, ttl, value))
+
+    def publish(self, channel: str, message: str) -> None:
+        self._ops.append(("publish", channel, message))
+
+    def lpush(self, key: str, value: str) -> None:
+        self._ops.append(("lpush", key, value))
+
+    def ltrim(self, key: str, start: int, stop: int) -> None:
+        self._ops.append(("ltrim", key, start, stop))
+
+    def expire(self, key: str, ttl: int) -> None:
+        self._ops.append(("expire", key, ttl))
+
+    async def execute(self) -> list:
+        for op in self._ops:
+            name, *args = op
+            await getattr(self._redis, name)(*args)
+        return []
+
+
 class _FakeRedis:
     """轻量级 Redis mock，支持 setex/mget/publish/set(nx)/eval/pipeline/pubsub."""
 
@@ -121,13 +150,9 @@ class _FakeRedis:
             return 1
         return 0
 
-    def pipeline(self):
-        """返回 self（pipeline 操作直接在本地执行）."""
-        return self
-
-    async def execute(self):
-        """pipeline execute（no-op，操作已即时执行）."""
-        return []
+    def pipeline(self) -> _FakePipeline:
+        """返回缓冲型 pipeline（对齐 redis-py 语义：调用缓冲，execute 时应用）."""
+        return _FakePipeline(self)
 
     async def lpush(self, key: str, value: str) -> int:
         return 1

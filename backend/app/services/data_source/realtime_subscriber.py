@@ -557,7 +557,8 @@ class RealtimeSubscriber:
 
         self._ws = await websockets.connect(
             settings.SIGNALR_HUB_URL,
-            ping_interval=settings.SIGNALR_PING_INTERVAL,
+            # 0/None → 禁用协议级 ping（生产 AAS 不应答，会周期性误判断连）
+            ping_interval=settings.SIGNALR_PING_INTERVAL or None,
             ping_timeout=settings.SIGNALR_PING_TIMEOUT,
             open_timeout=settings.SIGNALR_OPEN_TIMEOUT,
         )
@@ -917,7 +918,8 @@ class RealtimeSubscriber:
         # 断点续传：记录最后收到数据时间（wall clock）
         self._last_data_at = time.time()
 
-        # 写入 Redis
+        # 写入 Redis + Pub/Sub 广播（pipeline 合并为单次往返：
+        # 万点秒级推送下每消息 2 次串行 RT 会成为吞吐瓶颈）
         key = f"{_REDIS_KEY_PREFIX}{tag_code}"
         payload = {
             "tagCode": tag_code,
@@ -926,10 +928,10 @@ class RealtimeSubscriber:
             "collectTime": item.get("collectTime", ""),
         }
         value = json.dumps(payload)
-        await redis_client.setex(key, _REDIS_TTL, value)
-
-        # Pub/Sub 广播给 WebSocket 端点
-        await redis_client.publish(_PUBSUB_CHANNEL, value)
+        pipe = redis_client.pipeline()
+        pipe.setex(key, _REDIS_TTL, value)
+        pipe.publish(_PUBSUB_CHANNEL, value)
+        await pipe.execute()
 
         # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
         loop_part, role = await self._parse_tag_code(tag_code)
