@@ -14,7 +14,7 @@ import type { PlantNodeApi } from '#/api/plant-node';
  * - 测点类型彩色 Tag 展示
  * - 质量戳：GOOD 绿 / BAD 红 / UNCERTAIN 黄
  * - 支持按装置/单元、测点类型、参数类型、位号、关联状态筛选
- * - 图标化工具栏：新建测点 / 批量删除 / 清除选择 | 导入 / 导出（对齐回路配置页风格）
+ * - 图标化工具栏：新建测点 / 全选（跨全部页面）/ 批量删除 / 清除选择 | 导入 / 导出（对齐回路配置页风格）
  * - 新建/编辑双用 Modal（新建时位号必填唯一；编辑时位号只读）
  * - 删除二次确认，已关联测点不允许删除
  * - 详情 Drawer 展示完整信息
@@ -100,6 +100,14 @@ const query = reactive({
 const selectedRowKeys = ref<string[]>([]);
 const batchDeleting = ref(false);
 const selectingAll = ref(false);
+/** 全选时的跨页统计（手动改动选择后失效，回退到当前页统计） */
+const selectAllMeta = ref<null | { linked: number; total: number }>(null);
+
+/** 清除选择（同时使全选统计失效） */
+function clearSelection() {
+  selectedRowKeys.value = [];
+  selectAllMeta.value = null;
+}
 
 // ===== 删除确认（简易确认框）=====
 
@@ -130,11 +138,16 @@ function confirmDelete(record: TagApi.TagItem) {
 /** 批量删除确认 */
 function confirmBatchDelete() {
   if (selectedRowKeys.value.length === 0) return;
+  // 全选场景用跨页统计（selectAllMeta）；手动选择回退到当前页统计
+  const linkedCount = selectAllMeta.value
+    ? selectAllMeta.value.linked
+    : selectedLinkedCount.value;
+  const deletableCount = selectedRowKeys.value.length - linkedCount;
   Modal.confirm({
     title: '批量删除测点',
     content:
-      selectedLinkedCount.value > 0
-        ? `选中 ${selectedRowKeys.value.length} 项，其中 ${selectedLinkedCount.value} 个已关联回路（自动跳过），将删除 ${selectedDeletableCount.value} 个未关联测点，删除后不可恢复。确认删除？`
+      linkedCount > 0
+        ? `选中 ${selectedRowKeys.value.length} 项，其中 ${linkedCount} 个已关联回路（自动跳过），将删除 ${deletableCount} 个未关联测点，删除后不可恢复。确认删除？`
         : `将批量删除选中的 ${selectedRowKeys.value.length} 个测点，删除后不可恢复。确认删除？`,
     okText: '删除',
     okType: 'danger',
@@ -148,10 +161,14 @@ const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
   onChange: (keys: (number | string)[]) => {
     selectedRowKeys.value = keys.map(String);
+    // 用户手动改动选择后，全选跨页统计不再准确，失效回退
+    selectAllMeta.value = null;
   },
+  // 跨页保留已选中的行（全选跨页场景必需）
+  preserveSelectedRowKeys: true,
 }));
 
-/** 全选：拉取当前筛选条件下所有未关联回路的测点 id 并选中 */
+/** 全选：拉取当前筛选条件下所有测点 id 并选中（跨全部页面，不限当前页） */
 async function selectAllDeletable() {
   if (total.value === 0) return;
   selectingAll.value = true;
@@ -160,19 +177,24 @@ async function selectAllDeletable() {
       plantNodeId: query.plantNodeId,
       measureType: query.measureType,
       tagType: query.tagType,
-      isLinked: false,
+      isLinked:
+        query.isLinked === undefined ? undefined : query.isLinked === 'true',
       keyword: query.keyword || undefined,
       page: 1,
-      pageSize: 10000,
+      pageSize: 10_000,
     });
-    const ids = data.items.filter((t) => !t.isLinked).map((t) => t.id);
+    const ids = data.items.map((t) => t.id);
     if (ids.length === 0) {
-      message.info('当前筛选条件下没有可全选的未关联测点');
+      message.info('当前筛选条件下没有可全选的测点');
       return;
     }
+    const linked = data.items.filter((t) => t.isLinked).length;
     selectedRowKeys.value = ids.map(String);
+    selectAllMeta.value = { total: ids.length, linked };
     message.success(
-      `已选中 ${ids.length} 个未关联测点${data.total > ids.length ? `（已自动跳过 ${data.total - ids.length} 个已关联回路的测点）` : ''}`,
+      linked > 0
+        ? `已选中全部 ${ids.length} 个测点（含 ${linked} 个已关联回路，批量删除时将自动跳过）`
+        : `已选中全部 ${ids.length} 个测点`,
     );
   } catch {
     // 错误已由拦截器处理
@@ -181,14 +203,7 @@ async function selectAllDeletable() {
   }
 }
 
-/** 选中项中可删除的数量（未关联回路） */
-const selectedDeletableCount = computed(() => {
-  const selectedSet = new Set(selectedRowKeys.value);
-  return tagList.value.filter((t) => selectedSet.has(t.id) && !t.isLinked)
-    .length;
-});
-
-/** 选中项中已关联（不可删除）的数量 */
+/** 选中项中已关联（不可删除）的数量（仅当前页统计，供手动选择场景使用） */
 const selectedLinkedCount = computed(() => {
   const selectedSet = new Set(selectedRowKeys.value);
   return tagList.value.filter((t) => selectedSet.has(t.id) && t.isLinked)
@@ -397,14 +412,14 @@ async function loadList() {
 
 function handleSearch() {
   query.page = 1;
-  selectedRowKeys.value = [];
+  clearSelection();
   loadList();
 }
 
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
-  selectedRowKeys.value = [];
+  clearSelection();
   loadList();
 }
 
@@ -490,18 +505,28 @@ async function handleSubmit() {
   }
 }
 
-/** 批量删除测点 */
+/** 批量删除测点（后端单次上限 500 条，超出自动分批顺序提交） */
+const BATCH_DELETE_CHUNK_SIZE = 500;
+
 async function handleBatchDelete() {
   if (selectedRowKeys.value.length === 0) return;
   batchDeleting.value = true;
   try {
-    const result = await batchDeleteTagsApi(selectedRowKeys.value);
-    const parts: string[] = [`成功删除 ${result.deleted} 个测点`];
-    if (result.failed > 0) {
-      parts.push(`${result.failed} 个因已关联回路跳过`);
+    const ids = [...selectedRowKeys.value];
+    let deleted = 0;
+    let failed = 0;
+    for (let i = 0; i < ids.length; i += BATCH_DELETE_CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + BATCH_DELETE_CHUNK_SIZE);
+      const result = await batchDeleteTagsApi(chunk);
+      deleted += result.deleted;
+      failed += result.failed;
+    }
+    const parts: string[] = [`成功删除 ${deleted} 个测点`];
+    if (failed > 0) {
+      parts.push(`${failed} 个因已关联回路跳过`);
     }
     message.success(parts.join('，'));
-    selectedRowKeys.value = [];
+    clearSelection();
     await loadList();
   } catch {
     // 错误已由拦截器处理
@@ -790,6 +815,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           :loading="selectingAll"
           :disabled="total === 0"
           disabled-reason="当前筛选条件下没有可全选的测点"
+          tooltip="选中当前筛选条件下的全部测点（跨所有页面）"
           @click="selectAllDeletable"
         />
         <ClpmToolbarButton
@@ -807,7 +833,7 @@ const { toolbarItems } = usePageToolbar(() => ({
           label="清除选择"
           :disabled="selectedRowKeys.length === 0"
           disabled-reason="尚未选择测点"
-          @click="selectedRowKeys = []"
+          @click="clearSelection"
         />
 
         <!-- 右侧：数据交互工具 -->
