@@ -32,7 +32,7 @@ import {
   getGradingThresholdsApi,
   getLoopMetricSeriesApi,
 } from '#/api/metric';
-import { useLoopRealtime } from '#/composables/use-loop-realtime';
+import { parseTagCode, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useCockpitStore } from '#/store/cockpit';
 import { mapQualityToLabel } from '#/utils/quality-code';
 
@@ -265,16 +265,14 @@ function handleRealtimeMessage(msg: {
   tagCode: string;
   value: string;
 }) {
-  const dotIdx = msg.tagCode.lastIndexOf('.');
-  if (dotIdx === -1) return;
-  const tagName = msg.tagCode.slice(0, Math.max(0, dotIdx));
-  const role = msg.tagCode.slice(Math.max(0, dotIdx + 1)).toUpperCase();
-  const item = allLoops.value.find((l) => l.tagName === tagName);
+  const parsed = parseTagCode(msg.tagCode);
+  if (!parsed) return;
+  const item = allLoops.value.find((l) => l.tagName === parsed.tagName);
   if (!item) return;
   const cv = item.currentValues;
   const numValue = Number.parseFloat(msg.value);
   if (Number.isNaN(numValue)) return;
-  switch (role) {
+  switch (parsed.role) {
     case 'MODE': {
       cv.mode = numValue;
       // 与后端默认映射一致的安全映射；自定义 loop_mode_mapping 以 REST 为权威

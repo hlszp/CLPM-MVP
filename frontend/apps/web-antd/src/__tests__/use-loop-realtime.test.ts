@@ -78,6 +78,41 @@ describe('parseTagCode', () => {
     const result = parseTagCode('TAG.pv');
     expect(result).toEqual({ role: 'PV', tagName: 'TAG' });
   });
+
+  it('生产下划线风格：90TIC60004_PIDA_PV → tagName=90TIC60004_PIDA, role=PV', () => {
+    const result = parseTagCode('90TIC60004_PIDA_PV');
+    expect(result).toEqual({
+      role: 'PV',
+      tagName: '90TIC60004_PIDA',
+    });
+  });
+
+  it('生产下划线风格：KP/TI/TD 后缀归一为 PID_P/PID_I/PID_D', () => {
+    expect(parseTagCode('90TIC60004_PIDA_KP')).toEqual({
+      role: 'PID_P',
+      tagName: '90TIC60004_PIDA',
+    });
+    expect(parseTagCode('90TIC60004_PIDA_TI')).toEqual({
+      role: 'PID_I',
+      tagName: '90TIC60004_PIDA',
+    });
+    expect(parseTagCode('90TIC60004_PIDA_TD')).toEqual({
+      role: 'PID_D',
+      tagName: '90TIC60004_PIDA',
+    });
+  });
+
+  it('下划线风格：非角色后缀（如 _OUT）返回 null', () => {
+    expect(parseTagCode('01TV_06003_PID_OUT')).toBeNull();
+  });
+
+  it('下划线风格：PID_P 完整后缀可解析', () => {
+    const result = parseTagCode('41LIC30044_PIDA_PID_P');
+    expect(result).toEqual({
+      role: 'PID_P',
+      tagName: '41LIC30044_PIDA',
+    });
+  });
 });
 
 describe('useLoopRealtime applyMessage 逻辑', () => {

@@ -84,6 +84,7 @@ import {
   MODE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
+import { parseTagCode } from '#/composables/use-loop-realtime';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
@@ -565,21 +566,19 @@ function handleRealtimeMessage(msg: {
   tagCode: string;
   value: string;
 }) {
-  // 解析 tagCode: "80FIC11906_PIDA.PV" → tagName="80FIC11906_PIDA", role="PV"
-  const dotIdx = msg.tagCode.lastIndexOf('.');
-  if (dotIdx === -1) return;
-  const tagName = msg.tagCode.slice(0, Math.max(0, dotIdx));
-  const role = msg.tagCode.slice(Math.max(0, dotIdx + 1)).toUpperCase();
+  // 解析 tagCode（兼容仿真点号 `LOOP.PV` 与生产下划线 `LOOP_PV` 命名）
+  const parsed = parseTagCode(msg.tagCode);
+  if (!parsed) return;
 
   // 在当前列表中找到对应回路并局部更新
-  const item = monitorList.value.find((l) => l.tagName === tagName);
+  const item = monitorList.value.find((l) => l.tagName === parsed.tagName);
   if (!item) return;
 
   const cv = item.currentValues;
   const numValue = Number.parseFloat(msg.value);
   if (Number.isNaN(numValue)) return;
 
-  switch (role) {
+  switch (parsed.role) {
     case 'MODE': {
       // 本地重算 modeLabel/controlMode（与后端 _mode_value_to_label 默认映射一致），
       // 使监控列表"控制方式"列实时反映 MODE 变化；若有 loop_mode_mapping 自定义配置，

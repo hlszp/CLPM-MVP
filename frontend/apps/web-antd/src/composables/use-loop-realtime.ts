@@ -81,15 +81,51 @@ export interface UseLoopRealtimeReturn {
 const DEFAULT_FALLBACK_INTERVAL = 30_000;
 
 /**
- * 解析 tagCode：`80FIC11906_PIDA.PV` → { tagName: '80FIC11906_PIDA', role: 'PV' }
+ * 位号角色后缀 → 语义角色映射（下划线风格解析用）。
+ * 生产命名中 PID 参数后缀为 KP/TI/TD（如 `90TIC60004_PIDA_KP`），
+ * 归一到后端角色模型 PID_P/PID_I/PID_D（对齐 loop_tag_mapping.tag_role）。
+ */
+const ROLE_SUFFIX_MAP: Record<string, string> = {
+  KP: 'PID_P',
+  MODE: 'MODE',
+  OP: 'OP',
+  PID_D: 'PID_D',
+  PID_I: 'PID_I',
+  PID_P: 'PID_P',
+  PV: 'PV',
+  SP: 'SP',
+  TD: 'PID_D',
+  TI: 'PID_I',
+};
+
+// 下划线风格角色后缀白名单（用于 tagCode 尾段匹配；PID_* 含下划线，靠正则回溯兼容）
+const UNDERSCORE_ROLE_RE =
+  /^(.*)_(PV|SP|OP|MODE|KP|TI|TD|PID_P|PID_I|PID_D)$/i;
+
+/**
+ * 解析 tagCode 为 { tagName, role }，兼容两种命名风格：
+ * - 仿真点号风格：`80FIC11906_PIDA.PV` → { tagName: '80FIC11906_PIDA', role: 'PV' }
+ * - 生产下划线风格：`90TIC60004_PIDA_PV` → 同上；`..._KP` → role 'PID_P'
+ *
+ * 2026-09-05 修复：此前仅支持点号风格，接入生产 AAS（下划线命名）后
+ * 所有 WS 实时消息解析失败被丢弃，监控/总览页实时值冻结。
  */
 export function parseTagCode(
   tagCode: string,
 ): null | { role: string; tagName: string } {
+  // 点号风格（仿真 signal_sim 命名）
   const dotIdx = tagCode.lastIndexOf('.');
-  if (dotIdx === -1) return null;
-  const tagName = tagCode.slice(0, Math.max(0, dotIdx));
-  const role = tagCode.slice(Math.max(0, dotIdx + 1)).toUpperCase();
+  if (dotIdx !== -1) {
+    const tagName = tagCode.slice(0, Math.max(0, dotIdx));
+    const role = tagCode.slice(Math.max(0, dotIdx + 1)).toUpperCase();
+    if (!tagName || !role) return null;
+    return { role, tagName };
+  }
+  // 下划线风格（生产 AAS 命名）：尾段角色白名单匹配
+  const m = UNDERSCORE_ROLE_RE.exec(tagCode);
+  if (!m) return null;
+  const tagName = m[1] ?? '';
+  const role = ROLE_SUFFIX_MAP[(m[2] ?? '').toUpperCase()];
   if (!tagName || !role) return null;
   return { role, tagName };
 }
