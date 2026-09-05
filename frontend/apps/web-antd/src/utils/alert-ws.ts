@@ -6,6 +6,8 @@
  * 模式与 utils/realtime-ws.ts 对齐：自动重连、心跳、消息回调。
  */
 
+import { useAccessStore } from '@vben/stores';
+
 /** 后端推送消息格式（见 ws_alert.py  docstring） */
 export type AlertWsMessage = {
   eventId?: string;
@@ -69,6 +71,10 @@ class AlertWebSocket {
   }
 
   private _doConnect() {
+    // 重连前实时读取 store token：accessToken 30min 过期后由 REST 401
+    // → doRefreshToken 静默换新，若仍用构造时固化的旧 token 会陷入
+    // 403 重连死循环（预警推送从此静默断流）
+    this.token = useAccessStore().accessToken || this.token;
     if (!this.token) return;
     try {
       this.ws = new WebSocket(`${this.baseUrl}?token=${this.token}`);

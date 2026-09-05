@@ -5,6 +5,8 @@
  * 支持自动重连、心跳检测、消息回调。
  */
 
+import { useAccessStore } from '@vben/stores';
+
 type RealtimeMessage = {
   collectTime: string;
   quality: number;
@@ -139,6 +141,10 @@ class RealtimeWebSocket {
   }
 
   private _doConnect() {
+    // 重连前实时读取 store token：accessToken 30min 过期后由 REST 401
+    // → doRefreshToken 静默换新，若仍用固化的旧 token 会陷入 403 重连
+    // 死循环（实时数据推送从此断流）。store 取不到时回退上次 token。
+    this.token = useAccessStore().accessToken || this.token;
     if (!this.token) return;
 
     try {
