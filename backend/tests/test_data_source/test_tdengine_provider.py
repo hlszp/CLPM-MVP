@@ -329,13 +329,17 @@ async def test_redis_cache_hit_with_plus8_wallclock_rows() -> None:
     修复前用窗口字符串（UTC 口径）直接与缓存行 ts（+8 墙钟）比较，恒假，
     缓存永不命中；修复后两侧统一解析为 UTC 时刻比较，缓存真正命中，
     且返回的 timestamps 与宽表路径一致（naive UTC）。
+
+    R13（2026-09-06）：命中还需通过覆盖完整性校验——去重后点数 ≥
+    期望点数×(1-10%)。本用例缓存行按 1s 间隔铺满窗口（20 分钟 →
+    1201 点，期望 1201×0.9=1080.9），完整性成立才允许命中。
     """
     provider_module._subtable_cache.clear()
 
     # 微秒清零：缓存行 ts 仅毫秒精度，避免比较时微秒级误差
     end = datetime.now(UTC).replace(microsecond=0, tzinfo=None) - timedelta(minutes=5)
     start = end - timedelta(minutes=20)
-    redis_rows = _redis_history_rows(start, end)
+    redis_rows = _redis_history_rows(start, end, step_s=1)
 
     subscriber = MagicMock()
     subscriber.get_history_values = AsyncMock(return_value=redis_rows)
@@ -371,6 +375,154 @@ async def test_redis_cache_hit_with_plus8_wallclock_rows() -> None:
     assert result.timestamps[0] == start.replace(microsecond=0)
     assert result.timestamps[-1] == end.replace(microsecond=0)
     assert result.signals["pv"] == [50.0] * len(redis_rows)
+
+
+@pytest.mark.asyncio
+async def test_redis_cache_only_first_last_points_falls_back_to_wide_query() -> None:
+    """R13 核心回归：缓存仅首尾两点（首尾容差内）而 fake TD 完整 → 必须查 TD.
+
+    旧逻辑只校验首尾 60s 容差即命中，窗口中间整段缺失的残缺缓存会
+    遮蔽本地 TDengine 完整数据（复现：1 小时窗仅 2 点命中、TD 有 3601 点
+    实际返回 2 点且 wide_table_queried=False）。
+    """
+    provider_module._subtable_cache.clear()
+
+    end = datetime.now(UTC).replace(microsecond=0, tzinfo=None) - timedelta(minutes=5)
+    start = end - timedelta(minutes=20)
+    # 仅首尾两点（均在 60s 边界容差内）
+    redis_rows = _redis_history_rows(start, end, step_s=int((end - start).total_seconds()))
+
+    subscriber = MagicMock()
+    subscriber.get_history_values = AsyncMock(return_value=redis_rows)
+
+    with (
+        patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=subscriber,
+        ),
+        patch(
+            "app.core.tdengine_native.query_wide_table_native",
+            new=AsyncMock(return_value=_wide_rows()),
+        ) as mock_wide,
+        patch(
+            "app.core.tdengine_native.query_last_values_before",
+            new=AsyncMock(return_value={}),
+        ),
+    ):
+        query_fn = TDengineProvider().make_query_fn(_make_db_with_mapping())
+        result = await query_fn(
+            loop_id="loop-cache-sparse",
+            tag_roles=["pv"],
+            start=start,
+            end=end,
+            interval_s=1,
+        )
+
+    # 完整性校验未过 → 回源宽表查询
+    mock_wide.assert_awaited_once()
+    assert len(result.timestamps) == 3  # 宽表路径的数据
+
+
+@pytest.mark.asyncio
+async def test_redis_cache_middle_gap_falls_back_to_wide_query() -> None:
+    """R13：首尾齐全但中间缺 10 分钟（>10% 容差）→ 未命中，查 TD."""
+    provider_module._subtable_cache.clear()
+
+    end = datetime.now(UTC).replace(microsecond=0, tzinfo=None) - timedelta(minutes=5)
+    start = end - timedelta(minutes=20)
+    # 首尾各 5 分钟 1s 铺满，中间 10 分钟空洞 → 去重 601 点 < 1201×0.9
+    head = _redis_history_rows(start, start + timedelta(minutes=5), step_s=1)
+    tail = _redis_history_rows(end - timedelta(minutes=5), end, step_s=1)
+    redis_rows = head + tail
+
+    subscriber = MagicMock()
+    subscriber.get_history_values = AsyncMock(return_value=redis_rows)
+
+    with (
+        patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=subscriber,
+        ),
+        patch(
+            "app.core.tdengine_native.query_wide_table_native",
+            new=AsyncMock(return_value=_wide_rows()),
+        ) as mock_wide,
+        patch(
+            "app.core.tdengine_native.query_last_values_before",
+            new=AsyncMock(return_value={}),
+        ),
+    ):
+        query_fn = TDengineProvider().make_query_fn(_make_db_with_mapping())
+        await query_fn(
+            loop_id="loop-cache-midgap",
+            tag_roles=["pv"],
+            start=start,
+            end=end,
+            interval_s=1,
+        )
+
+    mock_wide.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_redis_cache_duplicate_unsorted_ts_deduped() -> None:
+    """R13：重复/乱序 ts 先排序去重再做完整性判定（重复行不得撑点数）.
+
+    场景 A（乱序 + 重复）：缓存行乱序返回且含重复 ts —— 去重后点数不足
+    期望 → 未命中查 TD（重复行不能冒充覆盖率）。
+    """
+    provider_module._subtable_cache.clear()
+
+    end = datetime.now(UTC).replace(microsecond=0, tzinfo=None) - timedelta(minutes=5)
+    start = end - timedelta(minutes=20)
+    # 601 个唯一点（10 分钟 1s）+ 大量重复行 → 去重后仍 601 < 1080.9
+    unique_rows = _redis_history_rows(start, start + timedelta(minutes=10), step_s=1)
+    redis_rows = unique_rows + list(reversed(unique_rows)) + unique_rows[:100]
+
+    subscriber = MagicMock()
+    subscriber.get_history_values = AsyncMock(return_value=redis_rows)
+
+    with (
+        patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=subscriber,
+        ),
+        patch(
+            "app.core.tdengine_native.query_wide_table_native",
+            new=AsyncMock(return_value=_wide_rows()),
+        ) as mock_wide,
+        patch(
+            "app.core.tdengine_native.query_last_values_before",
+            new=AsyncMock(return_value={}),
+        ),
+    ):
+        query_fn = TDengineProvider().make_query_fn(_make_db_with_mapping())
+        await query_fn(
+            loop_id="loop-cache-dup",
+            tag_roles=["pv"],
+            start=start,
+            end=end,
+            interval_s=1,
+        )
+
+    mock_wide.assert_awaited_once()
+
+
+def test_dedupe_sort_redis_rows_keeps_last_write_for_duplicate_ts() -> None:
+    """重复 ts 去重保留后写入的行（写入顺序靠后者 = 更新状态）."""
+    rows = [
+        {"ts": "2026-07-28 02:00:02.000", "pv": 3.0},
+        {"ts": "2026-07-28 02:00:00.000", "pv": 1.0},
+        {"ts": "2026-07-28 02:00:00.000", "pv": 1.5},  # 同 ts 后写
+        {"ts": "2026-07-28 02:00:01.000", "pv": 2.0},
+    ]
+    deduped = provider_module._dedupe_sort_redis_rows(rows)
+    assert [r["ts"] for r in deduped] == [
+        "2026-07-28 02:00:00.000",
+        "2026-07-28 02:00:01.000",
+        "2026-07-28 02:00:02.000",
+    ]
+    assert deduped[0]["pv"] == 1.5  # 后写覆盖先写
 
 
 @pytest.mark.asyncio

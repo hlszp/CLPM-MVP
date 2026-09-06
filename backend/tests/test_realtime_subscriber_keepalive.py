@@ -153,9 +153,10 @@ async def test_process_shard_message_routes_ping_and_data() -> None:
     )
     assert st.last_data_at is None
 
-    # 带数据项的推送 → _cache_value 推进全局接收点 → 片级接收点对齐
+    # 带数据项的推送 → _cache_value 接纳（返回 True）→ 片级接收点推进
     async def fake_cache(item):
         sub._last_data_at = time.time()
+        return True  # R09：片级接收点由 _handle_signalr_message 的接纳计数推进
 
     with patch.object(sub, "_cache_value", new=AsyncMock(side_effect=fake_cache)):
         await sub._process_shard_message(

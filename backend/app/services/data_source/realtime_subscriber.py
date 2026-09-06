@@ -10,21 +10,36 @@
 
 Redis 缓存:
 - key: ``realtime:{tagCode}``
-- value: JSON ``{"value": "12.5", "quality": 0, "collectTime": "..."}``
+- value: JSON ``{"value": "12.5", "quality": 0, "collectTime": "...",
+  "valueValid": true, "recvAt": "...", "stale": false}``（后三字段为
+  2026-09-06 整改增量可选字段，消费侧容错缺省）
 - TTL: 60 秒（超时自动清除过期数据）
+
+采集路径重排（R03/R06，2026-09-06 整改）:
+- ``_cache_value`` 不再逐点 await Redis——①轻量校验（app/core/numeric 共享
+  契约，无效值计 points_invalid、value 置 None 但质量/时间照常记录）→
+  ②同步段写入历史缓冲/last_known → ③显示快照（SETEX+PUBLISH）进入有界
+  "每 tag 最新值"待发字典，由 ``_display_flush_loop`` 按 ≤200ms 或 ≤256
+  命令组批 pipeline 发送（逐项异常隔离+计 cache_write_failed）；
+- Redis 故障只损失显示新鲜度，绝不阻断 TDengine 历史缓冲。
 
 断点续传（Gap Backfill）:
 - 每次收到数据更新内存 ``_last_data_at``，并由 ``_flush_buffer`` 节流持久化到
   Redis checkpoint（``realtime:gap:last_data_ts``，epoch 秒）；
-- 重连成功（含进程重启后首次连接）时检测缺口，超过
-  ``GAP_BACKFILL_MIN_GAP_SECONDS`` 即触发后台补数任务，调用
-  ``data_import.import_history_data``（skip 策略，依赖 TDengine 同 ts 覆盖语义）
-  补全缺口窗口，并触发受影响小时的 KPI 回算；
+- R08（2026-09-06 整改）：**每次分片建连成功**都按回路核对缺口——per-loop
+  已确认落库水位（``realtime:gap:loop_wm`` hash，loop_part → 行 ts epoch，
+  该回路行进入成功批的最大行 ts，30s 节流持久化）优先，尚无水位的回路以
+  全局 checkpoint 兜底（进程重启首连防漏检）；稳定来源身份 = loop_part
+  （不按分片物理编号，reshard 不串位）。超 ``GAP_BACKFILL_MIN_GAP_SECONDS``
+  的回路集合登记到持久待补列表（``realtime:gap:pending``，重叠合并去重）；
+  开关开启时仅经 ``data_import.import_history_data``（skip 策略）消费补全并
+  触发受影响小时的 KPI 回算，成功才出队+推进水位；开关关闭只登记不调远端；
 - 单次补数窗口上限 ``GAP_BACKFILL_MAX_HOURS``，超出部分截断并告警，需手工导入；
 - checkpoint 条件推进：仅补数全部成功（failed==0）才推进 checkpoint，
   部分失败/异常时缺口保留，并启动延迟重试定时器
   （``GAP_BACKFILL_RETRY_BASE_SECONDS`` 起步指数退避，
-  上限 ``GAP_BACKFILL_RETRY_MAX_SECONDS``，连接在线也生效）；
+  上限 ``GAP_BACKFILL_RETRY_MAX_SECONDS``，连接在线也生效；重试优先消费
+  持久待补列表）；空返回≠完整——failed==0 即推进但计 ``backfill_empty_windows``；
 - 补数执行经 ``task_tracker`` 登记任务记录（triggered_by=auto-backfill），
   任务列表可见；失败接 ``alerting`` 告警。
 
@@ -49,8 +64,11 @@ SETNX 分布式锁（WS-B2）:
   （``realtime:subscriber:leader:lock``，SETNX + TTL =
   ``SUBSCRIBER_LEADER_LOCK_TTL_SECONDS``）：仅持锁进程真正连接 Hub 并回写
   TDengine，其余进程待命并周期抢锁；持锁进程每 TTL/3 续期（CAS 校验 token），
-  崩溃/退出后其他进程在 TTL 内接管；Redis 异常时降级为无锁运行（不劣于
-  无锁现状）。
+  崩溃/退出后其他进程在 TTL 内接管。
+- Redis 异常三态语义（R04，2026-09-06 整改）：待命者抢锁异常 → 保持待命，
+  **绝不因异常成为 Leader**；现任者续租异常 → 保持现状但租约期限
+  （``lease_expires_at`` = 最近一次确认成功时刻 + TTL）不延长，超出租约仍
+  无法确认持有 → 退位停止接收/写回并登记控制面故障窗口（lease_lost_windows）。
 
 时区显式转换（WS-B2）:
 - ``_build_row`` 对 collectTime 显式 astimezone 到目标时区（Asia/Shanghai），
@@ -99,6 +117,7 @@ import websockets
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.core.exceptions import BizError
+from app.core.numeric import finite_or_none, parse_finite_float, parse_mode_int
 from app.core.redis import redis_client
 from app.core.tdengine import make_subtable_name
 from app.core.tdengine_native import batch_insert_multi
@@ -165,6 +184,50 @@ _POOL_TAG_CHECK_INTERVAL = 60.0
 # 疑似超服务端单消息上限）；分块后单条约 10KB，Completion 响应由接收循环统一处理
 _SUBSCRIBE_CHUNK_SIZE = 500
 
+# ---------------------------------------------------------------------------
+# 数据链路整改 S1 常量（R03/R04/R07/R09/R10，契约见
+# docs/过程文档/2026-09-06-data-pipeline-remediation-s0-contract.md）
+# ---------------------------------------------------------------------------
+
+# R03：显示快照（SETEX+PUBLISH）批量发送参数——接收路径绝不 await Redis，
+# 快照进入有界"每 tag 最新值"待发字典，由独立任务按 ≤200ms 节拍或 ≤256 命令
+# （每项 2 命令 × 128 项）组批 pipeline 发送；Redis 故障只损失显示新鲜度
+_DISPLAY_FLUSH_INTERVAL = 0.2
+_DISPLAY_BATCH_MAX_ITEMS = 128  # 每项 SETEX+PUBLISH 共 2 命令 → 单批 ≤256 命令
+_DISPLAY_FLUSH_MAX_BACKOFF = 2.0  # 连续失败时的发送退避上限（秒）
+
+# R07：TDengine 批次行数上限（分块成功独立记录）；未确认窗口重试缓冲上限
+_TD_BATCH_MAX_ROWS = 500
+_MAX_UNCONFIRMED_WINDOWS = 10  # 进程内登记的未确认窗口数上限（超出仅记录不重试）
+_MAX_RETRY_ROWS_PER_WINDOW = 2000  # 单窗口进入重试缓冲的 TD 行数上限
+
+# R10：订阅 invocation 发出后首个响应（Completion 初始快照）的等待超时（秒）。
+# 需覆盖大订阅量（每片 1000 位号、分块订阅）下服务端生成与回发快照的时延，
+# 过短会在健康分片上误触发重连风暴；超时走既有片级退避重连
+_FIRST_RESPONSE_TIMEOUT = 30.0
+
+# ---------------------------------------------------------------------------
+# 数据链路整改 S2 常量（R02/R05/R08，契约见
+# docs/过程文档/2026-09-06-data-pipeline-remediation-s0-contract.md §4/§5）
+# ---------------------------------------------------------------------------
+
+# R02：Redis 历史缓存 key 前缀与整键 TTL（秒）。TTL 为"最后一次写入后 2 小时
+# 删除整键"，非逐点时间窗；点数上限由 REALTIME_HISTORY_MAX_POINTS_PER_LOOP
+# （LTRIM）约束，全局字节预算由 REALTIME_HISTORY_GLOBAL_BUDGET_BYTES 约束
+_HISTORY_KEY_PREFIX = f"{_REDIS_KEY_PREFIX}history:"
+_HISTORY_TTL_SECONDS = 7200
+# R02：预算跟踪的内建 TTL 模型清扫节拍（秒）——按内存记录的 key 过期时刻
+# 近似扣减字节（与 Redis EXPIRE 语义一致：每次写入刷新整键 TTL）
+_HISTORY_SWEEP_INTERVAL = 60.0
+
+# R08：per-loop 已确认落库水位（hash：loop_part → 行 ts epoch 秒字符串）。
+# 稳定来源身份 = loop_part（**不按分片物理编号**——reshard 重建分片后身份
+# 不串位）；节流持久化与既有 checkpoint 同风格（30s）
+_GAP_LOOP_WM_KEY = "realtime:gap:loop_wm"
+# R08：持久待补缺口列表（list of JSON：{loops, start, end, registeredAt}）。
+# 补数成功才出队；失败/崩溃条目保留，重启后仍可见（消费侧按水位覆盖检查收敛）
+_GAP_PENDING_KEY = "realtime:gap:pending"
+
 
 @dataclass
 class _ShardState:
@@ -203,6 +266,55 @@ _ROLE_COLUMN_MAP: dict[str, str] = {
 }
 
 
+def _json_safe_value(raw: Any) -> Any:
+    """显示载荷 value 字段 JSON 安全化（R06 出口守卫）.
+
+    非有限数值（NaN/Infinity/溢出）折算 None——配合 ``json.dumps(allow_nan=False)``
+    保证 SETEX/PUBLISH 载荷恒为合法 JSON；字符串字面量（含 "-1.#QNAN0"）原样
+    保留，由消费侧按 valueValid 判定有效性。
+    """
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int | float):
+        return finite_or_none(raw)
+    return raw
+
+
+def _parse_known_ts(ts_str: Any) -> datetime | None:
+    """解析时间戳为 _TARGET_TZ 感知时刻；空/不可解析返回 None（不伪造 now）.
+
+    R05（S0 契约 §4.1）：行时间与角色状态只使用**确有输入且可解析**的
+    sourceTime——``_normalize_ts`` 的 now() 回退仅保留给"解析失败但确有输入"
+    的显式登记场景，行构建/迟到判定一律走本函数（None = 未知）。
+    """
+    if not ts_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=_TARGET_TZ)
+    return dt.astimezone(_TARGET_TZ)
+
+
+def _format_target_ts(dt: datetime) -> str:
+    """格式化为目标时区 naive 字符串（毫秒精度，TDengine 兼容）."""
+    return dt.astimezone(_TARGET_TZ).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+
+def _collect_role_source_times(roles_data: dict[str, Any]) -> dict[str, datetime]:
+    """收集行内各角色的已知 sourceTime（空/不可解析 → 不参与，绝不伪造 now）."""
+    known: dict[str, datetime] = {}
+    for role, entry in roles_data.items():
+        if not isinstance(entry, dict):
+            continue
+        dt = _parse_known_ts(entry.get("ts"))
+        if dt is not None:
+            known[role] = dt
+    return known
+
+
 def _normalize_ts(ts_str: str) -> str:
     """将时间戳字符串显式转换到目标时区（Asia/Shanghai），返回 naive 格式字符串.
 
@@ -211,18 +323,13 @@ def _normalize_ts(ts_str: str) -> str:
     - 空或解析失败：取当前 _TARGET_TZ 时间
 
     返回格式 ``YYYY-MM-DD HH:MM:SS.fff``（毫秒精度，TDengine 兼容）。
+    R05 后该 now() 回退仅用于显式登记场景；行构建/迟到判定/去重改用
+    ``_parse_known_ts``（未知即 None，不伪造时间）。
     """
-    if ts_str:
-        try:
-            dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=_TARGET_TZ)
-            else:
-                dt = dt.astimezone(_TARGET_TZ)
-            return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        except (ValueError, TypeError):
-            pass
-    return datetime.now(_TARGET_TZ).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    dt = _parse_known_ts(ts_str)
+    if dt is None:
+        dt = datetime.now(_TARGET_TZ)
+    return _format_target_ts(dt)
 
 
 def next_reconnect_delay(current: float, *, cap: float) -> float:
@@ -251,6 +358,30 @@ _QUALITY_COLUMN_MAP: dict[str, str | None] = {
     "PID_I": None,
     "PID_D": None,
 }
+
+# 数据链路统一计数器键（S0 契约 §8，S4 对账口径）。leader_epoch/buffer_rows_pending
+# 为 Gauge（当前值），其余为累计值；history_dup_dropped/history_budget_exceeded/
+# late_rejected/rows_dropped_no_ts 由 S2/A 落地；backfill_empty_windows/
+# gap_windows_registered 为 R08 补充观测计数（映射在 S2 报告登记）。
+_METRIC_KEYS: tuple[str, ...] = (
+    "msgs_received",
+    "points_received",
+    "points_invalid",
+    "late_rejected",
+    "unbound_tag_msgs",
+    "rows_dropped_no_ts",
+    "cache_write_failed",
+    "history_dup_dropped",
+    "history_budget_exceeded",
+    "buffer_rows_pending",
+    "rows_written",
+    "rows_failed",
+    "unconfirmed_windows",
+    "leader_epoch",
+    "lease_lost_windows",
+    "backfill_empty_windows",
+    "gap_windows_registered",
+)
 
 
 class RealtimeSubscriber:
@@ -303,17 +434,89 @@ class RealtimeSubscriber:
         self._loop_meta_cache_at: float = 0.0  # 上次缓存刷新（含失败尝试）的 monotonic 时间
         # 测点 tag_name → (loop_part=回路 tag_name, role)，与 _loop_meta_cache 同源刷新
         self._tag_role_cache: dict[str, tuple[str, str]] = {}
+        # R11 绑定代次：loop_part → {role → 绑定源 tag} 反查（ingest 双向校验用）
+        self._loop_role_tags: dict[str, dict[str, str]] = {}
+        # R11 绑定代次：loop_part → 绑定版本号（绑定变化 epoch+1，旧代次状态清理）
+        self._loop_epochs: dict[str, int] = {}
         # 多 worker 进程订阅单例（Leader 锁）状态
         self._leader_task: asyncio.Task | None = None  # Leader 锁维护循环（抢锁/续期）
         self._leader_token: str = ""  # 本进程锁 token（hostname:pid:monotonic_ns）
         self._is_leader = False  # 当前是否持有 Leader 锁（仅持锁进程真正订阅）
+        # R04 租约：最近一次确认持有（抢锁/续租成功）时刻 + TTL；续租异常不续期，
+        # 超出该期限仍无法确认持有 → 退位停止接收/写回并登记控制面故障窗口
+        self._lease_expires_at: float | None = None
+        self._leader_epoch: int = 0  # Leader 代次（每次接管 +1，计数器 leader_epoch）
         # 订阅刷新控制频道监听任务（仅 Leader 进程运行，随 Leadership 切换启停）
         self._control_task: asyncio.Task | None = None
         # 连接池共享状态：当前分片列表（refresh_subscription 用）与重建信号
         self._shard_states: list[_ShardState] = []
         self._rebuild_event: asyncio.Event = asyncio.Event()
-        # 每代连接池只触发一次缺口补数检查（9 条分片建连各触发一次无意义）
-        self._pool_backfill_done = False
+        # R03 显示快照待发字典：tag → (redis_key, payload_json)，仅存每 tag 最新值
+        # （有界 ≤ 活跃 tag 数），由 _display_flush_loop 批量发送
+        self._display_pending: dict[str, tuple[str, str]] = {}
+        self._display_pending_lock = asyncio.Lock()
+        self._display_flush_task: asyncio.Task | None = None
+        self._display_flush_backoff = 0.0  # 连续失败时的发送退避（秒）
+        # R07 未确认窗口（失败批次有界重试缓冲）：
+        # [{"start", "end", "td_tables": [...], "history": [(key, row_json, row_ts), ...]}]
+        self._unconfirmed_windows: list[dict[str, Any]] = []
+        self._confirmed_boundary: float | None = None  # 已确认成功批的最大接收边界
+        # R08 per-loop 已确认落库水位：loop_part → 行 ts epoch 秒（行进入成功批的
+        # 最大行 ts；内存推进 + Redis hash 节流持久化，缺口检测优先于全局 checkpoint）
+        self._loop_watermarks: dict[str, float] = {}
+        self._loop_wm_loaded = False  # 是否已从 Redis 加载过水位（懒加载一次）
+        self._last_wm_write = 0.0  # 上次水位持久化的 monotonic 时间（30s 节流）
+        # R08 持久待补缺口：Redis list `realtime:gap:pending`；_inflight_gap_entry
+        # 记录当前消费中的条目快照（注册侧不与在途窗口合并，避免执行中窗口被扩展）
+        self._inflight_gap_entry: dict[str, Any] | None = None
+        # R08：缺口检测前绑定映射刷新的节流（monotonic，DB 故障时防每次重连打库）
+        self._gap_meta_refresh_at = 0.0
+        # R02 历史缓存三重限制的跟踪状态（Leader 单写者，进程内有效）：
+        # - 写入前去重水位：loop_part → 最近已推送行 ts（规范化字符串，字典序即时间序）；
+        #   重启后首次 flush 经 LINDEX 0 懒加载回填
+        self._last_pushed_row_ts_map: dict[str, str | None] = {}
+        self._last_pushed_loaded: set[str] = set()
+        # - 全局字节预算近似跟踪：全部 history 键 JSON 载荷字节的近似值
+        #   （写入累加、LTRIM 按均值扣减、TTL 过期按内存模型清扫；误差登记于 S2 报告）
+        self._history_bytes_total = 0
+        self._history_key_bytes: dict[str, int] = {}
+        self._history_key_rows: dict[str, int] = {}
+        self._history_key_expire_at: dict[str, float] = {}
+        self._last_history_sweep = 0.0
+        # 数据链路统一计数器（S0 契约 §8）
+        self._metrics: dict[str, int] = dict.fromkeys(_METRIC_KEYS, 0)
+
+    def _incr(self, name: str, n: int = 1) -> None:
+        """递增内存计数器（周期日志输出，见 _flush_loop；不引入新依赖）."""
+        self._metrics[name] = self._metrics.get(name, 0) + n
+
+    @staticmethod
+    def _update_is_newer(existing: dict[str, Any], new: dict[str, Any]) -> bool:
+        """R05 逐角色确定性接受规则（S0 契约 §4.1）.
+
+        新到更新当且仅当 ``sourceTime > 已存 sourceTime``，或
+        ``sourceTime == 已存 sourceTime 且 recvAt ≥ 已存 recvAt`` 时接受；
+        否则拒绝（不回退已存状态）。推论：
+
+        - 新 sourceTime 未知而已存已知 → 拒绝（未知不得回退已知时间）；
+        - 两者均未知 → 按 recvAt ≥ 接受（同 ts 同值幂等口径）；
+        - 已存未知而新已知 → 接受（状态从未知改善为已知）。
+        """
+        new_dt = _parse_known_ts(new.get("ts"))
+        old_dt = _parse_known_ts(existing.get("ts"))
+        new_recv = float(new.get("recvAt") or 0.0)
+        old_recv = float(existing.get("recvAt") or 0.0)
+        if new_dt is None:
+            if old_dt is not None:
+                return False
+            return new_recv >= old_recv
+        if old_dt is None:
+            return True
+        if new_dt > old_dt:
+            return True
+        if new_dt == old_dt:
+            return new_recv >= old_recv
+        return False
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -382,6 +585,11 @@ class RealtimeSubscriber:
             self._backfill_retry_task = None
         self._retry_window_start = None
         self._backfill_retry_count = 0
+        # 显示快照尽力发送一次（best-effort，失败不影响停止流程）
+        try:
+            await self._flush_display_pending()
+        except Exception:  # noqa: BLE001
+            pass
         # 停止前 flush 剩余数据（分片连接由 _run_pool 的 finally 统一收尾）
         await self._flush_buffer()
         logger.info("实时数据订阅已停止")
@@ -410,8 +618,19 @@ class RealtimeSubscriber:
     # ------------------------------------------------------------------
 
     def _become_leader(self) -> None:
-        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新 / 控制频道监听任务."""
+        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新 / 控制频道监听 / 显示批量发送任务."""
         self._is_leader = True
+        # R04：接管即建立租约（正常路径 acquire 成功时已设；此处兜底防直接调用
+        # 造成无租约 Leader——过期检查依赖该值）
+        if self._lease_expires_at is None:
+            try:
+                self._lease_expires_at = time.time() + float(
+                    settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS
+                )
+            except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底
+                self._lease_expires_at = time.time() + 30.0
+        self._leader_epoch += 1
+        self._metrics["leader_epoch"] = self._leader_epoch
         self._task = asyncio.create_task(self._run())
         # 主任务意外退出观测（2026-08-21 事故：远端引擎重启掐断连接后
         # 主任务静默死亡，看门狗随之失效，无任何日志可查）
@@ -419,12 +638,20 @@ class RealtimeSubscriber:
         self._flush_task = asyncio.create_task(self._flush_loop())
         self._refresh_task = asyncio.create_task(self._refresh_loop())
         self._control_task = asyncio.create_task(self._control_loop())
+        # R03：显示快照批量发送任务（接收路径不再 await Redis）
+        self._display_flush_task = asyncio.create_task(self._display_flush_loop())
         logger.warning("本进程已接管实时数据订阅（Leader）: token=%s", self._leader_token)
 
     async def _resign_leader(self) -> None:
-        """失去/释放 Leader 锁：取消订阅主任务 / flush / 周期刷新 / 控制监听任务（幂等）."""
+        """失去/释放 Leader 锁：取消订阅主任务/flush/周期刷新/控制监听/显示批量发送任务（幂等）."""
         self._is_leader = False
-        for attr in ("_task", "_flush_task", "_refresh_task", "_control_task"):
+        for attr in (
+            "_task",
+            "_flush_task",
+            "_refresh_task",
+            "_control_task",
+            "_display_flush_task",
+        ):
             task = getattr(self, attr)
             if task is not None:
                 task.cancel()
@@ -438,7 +665,7 @@ class RealtimeSubscriber:
         """Leader 锁维护循环：持锁时周期续期（CAS），未持锁时周期抢锁接管.
 
         - 续期失败（锁被其他进程持有或已过期被抢走）→ 停任务转待命，继续抢锁；
-        - Redis 异常时按既定降级策略处理（见 _acquire/_renew），不中断循环。
+        - Redis 异常时按 R04 三态语义处理（见 _maintain_leadership），不中断循环。
         """
         while self._running:
             try:
@@ -449,23 +676,47 @@ class RealtimeSubscriber:
                 await asyncio.sleep(max(ttl / 3.0, 1.0))
                 if not self._running:
                     break
-                if self._is_leader:
-                    if not await self._renew_leader_lock():
-                        logger.warning("实时订阅 Leader 锁已丢失，本进程停止订阅转待命")
-                        await self._resign_leader()
-                elif await self._acquire_leader_lock():
-                    self._become_leader()
+                await self._maintain_leadership()
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Leader 锁维护循环异常（下周期重试）: %s", exc)
 
+    async def _maintain_leadership(self) -> None:
+        """单个维护周期（R04 三态语义）.
+
+        - 待命者：抢锁异常 → 返回 False，**不成为 Leader**（杜绝 Redis 断网时
+          多 worker 全部 fail-open 重复采集）；
+        - 现任者：续租成功 → 续期租约；续租明确失败（锁易主）→ 退位；
+          续租异常（状态未知）→ 保持现状但**不续期** lease_expires_at，
+          超出租约期限仍无法确认持有 → 退位停止接收/写回并登记
+          控制面故障窗口（计数 lease_lost_windows）。
+        """
+        if self._is_leader:
+            renewed = await self._renew_leader_lock()
+            if not renewed:
+                logger.warning("实时订阅 Leader 锁已丢失，本进程停止订阅转待命")
+                await self._resign_leader()
+                return
+            if self._lease_expires_at is not None and time.time() > self._lease_expires_at:
+                self._incr("lease_lost_windows")
+                logger.warning(
+                    "实时订阅 Leader 租约过期仍无法确认持有（Redis 控制面故障，epoch=%d），"
+                    "本进程停止订阅转待命",
+                    self._leader_epoch,
+                )
+                await self._resign_leader()
+                return
+        elif await self._acquire_leader_lock():
+            self._become_leader()
+
     async def _acquire_leader_lock(self) -> bool:
         """SETNX 抢占订阅 Leader 锁（多 worker 进程防重复订阅）.
 
         Returns:
-            True 抢到锁；False 锁已被其他进程持有。
-            Redis 异常时降级返回 True（无锁运行，不劣于引入锁之前的现状）。
+            True 抢到锁；False 锁已被其他进程持有，或**抢锁异常（待命）**——
+            R04：Redis 断网时待命者绝不能因异常成为 Leader（原 fail-open 会
+            使 4 worker 全部启动订阅、重复采集写回）。
         """
         try:
             ok = await redis_client.set(
@@ -474,17 +725,23 @@ class RealtimeSubscriber:
                 nx=True,
                 ex=int(settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS),
             )
-            return bool(ok)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("订阅 Leader 锁抢占异常（降级为无锁运行）: %s", exc)
-            return True
+            logger.warning("订阅 Leader 锁抢占异常（保持待命，不成为 Leader）: %s", exc)
+            return False
+        if ok:
+            self._lease_expires_at = time.time() + float(
+                settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS
+            )
+        return bool(ok)
 
     async def _renew_leader_lock(self) -> bool:
         """续期订阅 Leader 锁（CAS 校验 token，防给别人的锁续期）.
 
         Returns:
-            True 仍持有锁；False 锁已丢失（被抢或过期后易主）。
-            Redis 异常时返回 True 保持现状（下周期重试，避免闪断导致全员停订）。
+            True 仍持有锁（含续租异常时"保持现状"——但租约期限不延长）；
+            False 锁已丢失（被抢或过期后易主）。
+            R04：续租成功才推进 ``lease_expires_at``（最近一次确认成功时刻 + TTL）；
+            异常时保持现状由调用方按租约到期判定退位，不再无条件视为持有。
         """
         _RENEW_LUA = (
             "if redis.call('GET', KEYS[1]) == ARGV[1] then "
@@ -498,10 +755,14 @@ class RealtimeSubscriber:
                 self._leader_token,
                 str(int(settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS)),
             )
-            return bool(ok)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("订阅 Leader 锁续期异常（保持现状，下周期重试）: %s", exc)
+            logger.warning("订阅 Leader 锁续期异常（保持现状，租约到期未确认将退位）: %s", exc)
             return True
+        if ok:
+            self._lease_expires_at = time.time() + float(
+                settings.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS
+            )
+        return bool(ok)
 
     async def _release_leader_lock(self) -> None:
         """释放订阅 Leader 锁（CAS 校验 token，防误释放）。"""
@@ -541,7 +802,6 @@ class RealtimeSubscriber:
                 continue
             shards = _split_shards(tag_codes, _SHARD_SIZE)
             self._subscribed_tags = set(tag_codes)
-            self._pool_backfill_done = False
             logger.info(
                 "订阅连接池启动：%d 个 Tag 切分为 %d 条分片连接（每片 ≤%d）",
                 len(tag_codes),
@@ -688,6 +948,11 @@ class RealtimeSubscriber:
         2. 发送握手 {"protocol":"json","version":1}\\x1e
         3. 接收握手响应 {}\\x1e（成功）或 {"error":"..."}\\x1e（失败）
         4. 之后所有消息以 \\x1e (Record Separator) 分帧
+
+        R10（2026-09-06 整改）：握手 recv 与首响应 recv 分别限时——此前两处
+        ``recv()`` 无超时，服务端不回握手/首响应时任务停在应用心跳与看门狗
+        启动之前，永久等待。超时抛 TimeoutError，走 ``_shard_loop`` 既有片级
+        退避重连。同帧多消息（握手+Pong、Completion+首批推送）一并分发处理。
         """
         # 先关闭残留的旧连接，防止泄漏
         await self._close_shard_ws(state)
@@ -707,13 +972,21 @@ class RealtimeSubscriber:
             len(state.tags),
         )
 
-        # SignalR 协议握手
+        # SignalR 协议握手（限时：复用 SIGNALR_OPEN_TIMEOUT）
         handshake_msg = json.dumps({"protocol": "json", "version": 1}) + "\x1e"
         await state.ws.send(handshake_msg)
-        raw = await state.ws.recv()
-        handshake = json.loads(raw.rstrip("\x1e"))
+        raw = await asyncio.wait_for(
+            state.ws.recv(), timeout=float(settings.SIGNALR_OPEN_TIMEOUT or 15)
+        )
+        handshake_parts = [p for p in raw.split("\x1e") if p]
+        try:
+            handshake = json.loads(handshake_parts[0])
+        except json.JSONDecodeError as exc:
+            raise ConnectionError(f"SignalR 握手响应非 JSON: {handshake_parts[0][:100]}") from exc
         if "error" in handshake:
             raise ConnectionError(f"SignalR 握手失败: {handshake['error']}")
+        # 同帧多消息（R10）：握手帧可能紧随 Pong/推送，订阅发出后统一分发
+        deferred_parts = handshake_parts[1:]
 
         # 新连接重置心跳与重订阅节流状态；片级接收点（last_data_at）
         # 跨片内重连保留——停滞看门狗语义与单连接时期一致（最近一次
@@ -737,14 +1010,24 @@ class RealtimeSubscriber:
             invocation_ids[0] if invocation_ids else "-",
         )
 
-        # 断点续传：每代连接池首个分片建连成功即检测数据缺口并自动补数
-        if not self._pool_backfill_done:
-            self._pool_backfill_done = True
-            await self._maybe_trigger_gap_backfill()
+        # R08：**每次**分片建连成功都核对缺口水位（同代池内重连、reshard 重建后
+        # 同样适用——原"每代一次"标记会漏检故障片的第二/三次重连）。稳定来源
+        # 身份 = loop_part（按回路核对，不按分片物理编号，重建分片不串位）
+        await self._maybe_trigger_gap_backfill(state)
 
-        # 接收初始响应（Completion: type=3, result 包含 {code, data}）
+        # 握手帧内携带的其余消息（如 Pong/无关 Completion）分发处理
+        for part in deferred_parts:
+            try:
+                await self._process_shard_message(state, json.loads(part))
+            except json.JSONDecodeError:
+                logger.warning("握手帧内非 JSON 消息: %s", part[:100])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("处理握手帧内消息失败: %s", exc)
+
+        # 接收初始响应（Completion: type=3, result 包含 {code, data}），限时
+        # _FIRST_RESPONSE_TIMEOUT（需覆盖快照时延，见常量注释）；
         # 一帧可能包含多条 \x1e 分隔的消息（Completion + 首批 push）
-        raw = await state.ws.recv()
+        raw = await asyncio.wait_for(state.ws.recv(), timeout=_FIRST_RESPONSE_TIMEOUT)
         for part in raw.split("\x1e"):
             if not part:
                 continue
@@ -755,67 +1038,111 @@ class RealtimeSubscriber:
             await self._process_shard_message(state, initial)
 
         # 持续接收推送（一条 WebSocket 帧可能包含多条 \x1e 分隔的消息）
-        # 数据停滞看门狗：以 _WATCHDOG_RECV_TIMEOUT 超时 recv 代替 async for，
-        # 超时后检查本分片距上次数据是否超过 SIGNALR_STALL_TIMEOUT_SECONDS，
-        # 超过则主动断开重连（覆盖"WS 活着但上游停推"盲区）
+        # R09（2026-09-06 整改）：保鲜/心跳/停滞检查改为单调时钟 deadline 驱动，
+        # 每轮循环到点执行，不再依赖 recv 超时分支（持续流量下也必须执行）；
+        # recv 等待上限取 min(看门狗 30s, 距下一维护 deadline)，取消时无计时器残留。
+        # 数据停滞看门狗：以片级 last_data_at（仅由本片接纳的数据推进）为准，
+        # 超过 SIGNALR_STALL_TIMEOUT_SECONDS 主动断开重连（覆盖"WS 活着但上游
+        # 停推"盲区）
         stall_timeout = float(settings.SIGNALR_STALL_TIMEOUT_SECONDS)
         while self._running and state.ws is not None:
+            recv_timeout = self._recv_maintenance_timeout(state, stall_timeout)
             try:
-                raw_message = await asyncio.wait_for(
-                    state.ws.recv(), timeout=_WATCHDOG_RECV_TIMEOUT
-                )
+                raw_message = await asyncio.wait_for(state.ws.recv(), timeout=recv_timeout)
             except TimeoutError:
-                # recv 超时：先做应用层心跳保活/探活与低频信号重订阅，再查停滞
-                await self._keepalive_tick(state)
-                if self._is_ping_dead(state):
-                    logger.warning(
-                        "分片 %d/%d 应用层心跳 %.0fs 无 Pong（期间无数据），判定连接死亡，主动重连",
-                        state.index + 1,
-                        state.total,
-                        time.time() - (state.ping_pending_since or 0.0),
-                    )
-                    await self._close_shard_ws(state)
-                    return
-                await self._resubscribe_tick(state)
-                if state.last_data_at is not None:
-                    idle = time.time() - state.last_data_at
-                    if idle >= stall_timeout:
-                        logger.warning(
-                            "分片 %d/%d 数据停滞看门狗触发：%.0fs 无数据（阈值 %.0fs），"
-                            "主动断开重连",
-                            state.index + 1,
-                            state.total,
-                            idle,
-                            stall_timeout,
-                        )
-                        await self._close_shard_ws(state)
-                        return
-                continue
-            for part in raw_message.split("\x1e"):
-                if not part:
-                    continue
-                try:
-                    msg = json.loads(part)
-                    await self._process_shard_message(state, msg)
-                except json.JSONDecodeError:
-                    logger.warning("收到非 JSON 消息: %s", part[:100])
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("处理实时数据消息失败: %s", exc)
+                raw_message = None
+            if raw_message is not None:
+                for part in raw_message.split("\x1e"):
+                    if not part:
+                        continue
+                    try:
+                        msg = json.loads(part)
+                        await self._process_shard_message(state, msg)
+                    except json.JSONDecodeError:
+                        logger.warning("收到非 JSON 消息: %s", part[:100])
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("处理实时数据消息失败: %s", exc)
+            # 周期维护（deadline 驱动，各检查内部自带节流，不风暴）：
+            # 心跳保活 → 探活判死 → 低频信号保鲜 → 数据停滞检查
+            if await self._maintenance_tick(state, stall_timeout):
+                return
+
+    def _recv_maintenance_timeout(self, state: _ShardState, stall_timeout: float) -> float:
+        """计算 recv 等待上限：min(看门狗 30s, 距下一维护 deadline)（R09）.
+
+        保证即便持续有流量（recv 一直立即返回）也不会跳过维护——每轮循环都
+        执行维护检查；而空闲时不会睡过头错过 deadline（探活判死/保鲜/停滞）。
+        """
+        now = time.time()
+        deadline = now + _WATCHDOG_RECV_TIMEOUT
+        if state.ping_pending_since is not None:
+            deadline = min(deadline, state.ping_pending_since + _PING_DEATH_TIMEOUT)
+        else:
+            deadline = min(deadline, state.last_ping_sent_at + _PING_KEEPALIVE_INTERVAL)
+        try:
+            resub_interval = float(settings.SIGNALR_RESUBSCRIBE_INTERVAL)
+        except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底
+            resub_interval = 1800.0
+        deadline = min(deadline, state.last_resubscribe_at + resub_interval)
+        if state.last_data_at is not None:
+            deadline = min(deadline, state.last_data_at + stall_timeout)
+        return max(min(_WATCHDOG_RECV_TIMEOUT, deadline - now), 0.05)
+
+    async def _maintenance_tick(self, state: _ShardState, stall_timeout: float) -> bool:
+        """到点执行周期维护（R09 单调时钟 deadline 驱动）.
+
+        各检查内部自带节流（心跳按 _PING_KEEPALIVE_INTERVAL、保鲜按
+        SIGNALR_RESUBSCRIBE_INTERVAL 保持 30 分钟节流防风暴），持续流量与
+        空闲两种形态下均按 deadline 到点执行。
+
+        Returns:
+            True 表示看门狗已触发（连接已关闭，调用方应退出接收循环）。
+        """
+        # 应用层心跳：到期发送（有数据流动的连接也照发——数据到达同样清 pending）
+        await self._keepalive_tick(state)
+        # 探活：待应答 Ping 超过判死阈值且期间无数据 → 连接死亡，立即重连
+        if self._is_ping_dead(state):
+            logger.warning(
+                "分片 %d/%d 应用层心跳 %.0fs 无 Pong（期间无数据），判定连接死亡，主动重连",
+                state.index + 1,
+                state.total,
+                time.time() - (state.ping_pending_since or 0.0),
+            )
+            await self._close_shard_ws(state)
+            return True
+        # 低频信号（SP/MODE/PID）保鲜：周期重订阅
+        await self._resubscribe_tick(state)
+        # 数据停滞看门狗：片级接收点只由本片接纳的数据推进（R09），
+        # 仅 Pong/空推送不能解除业务停滞
+        if state.last_data_at is not None:
+            idle = time.time() - state.last_data_at
+            if idle >= stall_timeout:
+                logger.warning(
+                    "分片 %d/%d 数据停滞看门狗触发：%.0fs 无数据（阈值 %.0fs），主动断开重连",
+                    state.index + 1,
+                    state.total,
+                    idle,
+                    stall_timeout,
+                )
+                await self._close_shard_ws(state)
+                return True
+        return False
 
     async def _process_shard_message(self, state: _ShardState, msg: dict) -> None:
-        """分片消息统一入口：type=6 心跳在片内处理，其余交共享处理器."""
+        """分片消息统一入口：type=6 心跳在片内处理，其余交共享处理器.
+
+        R09：片级接收点（``state.last_data_at``）只由**本片实际接纳的数据消息**
+        推进（``_handle_signalr_message`` 返回接纳点数，>0 才推进）——空
+        Completion/空推送/Pong 不算业务数据，也**不借用其他片的全局接收点**
+        （原实现把全局 ``_last_data_at`` 复制到本片，健康片会掩盖故障片停滞）。
+        """
         if msg.get("type") == 6:
             await self._handle_ping_frame(state)
             # 数据未到但 Pong 已到：pending 已清，无碍后续心跳
             return
-        await self._handle_signalr_message(msg)
-        # 片级接收点对齐全局接收点（仅真正缓存了值才推进——空 Completion /
-        # 空推送不算数据，停滞语义与单连接时期一致；全局点由 _cache_value
-        # 维护，补数/checkpoint 语义不变）
-        if self._last_data_at is not None and (
-            state.last_data_at is None or self._last_data_at > state.last_data_at
-        ):
-            state.last_data_at = self._last_data_at
+        accepted = await self._handle_signalr_message(msg)
+        if accepted > 0:
+            state.last_data_at = time.time()
         # 数据已到（含 Completion/Push），待应答的心跳视为已答——
         # 连接显然存活，避免 pending 卡住后续心跳发送
         if (
@@ -840,10 +1167,11 @@ class RealtimeSubscriber:
                 logger.debug("回复服务端 Ping 失败（连接可能已死）: %s", exc)
 
     async def _keepalive_tick(self, state: _ShardState) -> None:
-        """连接空闲时的应用层心跳：到期发送 SignalR type=6 Ping.
+        """应用层心跳：到期发送 SignalR type=6 Ping（内部按间隔节流）.
 
-        仅在 recv 空闲超时（连接无下行流量）时调用——有数据流动的连接
-        无需额外保活。上一发 Ping 未获 Pong 前不重复发送。
+        R09：由 ``_maintenance_tick`` 每轮到点调用——持续流量的连接也照常保活
+        （数据到达同样清 pending，不影响判活）；空闲连接语义不变。
+        上一发 Ping 未获 Pong 前不重复发送。
         """
         if state.ws is None or state.ping_pending_since is not None:
             return
@@ -871,14 +1199,17 @@ class RealtimeSubscriber:
             return False
         return time.time() - state.ping_pending_since > _PING_DEATH_TIMEOUT
 
-    async def _handle_signalr_message(self, msg: dict) -> None:
-        """统一处理 SignalR JSON 协议消息.
+    async def _handle_signalr_message(self, msg: dict) -> int:
+        """统一处理 SignalR JSON 协议消息，返回本消息接纳的数据点数（R09）.
 
         支持的消息类型：
         - type=3 Completion: SubscribeAsync 的返回值，result 包含 {code, data}，
           data 为所有订阅 Tag 的当前值（含 SP/MODE/PID 等低频信号）
         - type=1 Invocation (target=updateRealValues): 服务端推送的实时值变化
         - 自定义格式 {code:200, data:[...]}: 兼容非标准 SignalR 响应
+
+        R03：消息内 item 循环逐项 try/except——单项失败不中断后续项；
+        返回值供片级接收点判断"本片是否实际接纳了业务数据"（>0 才推进）。
 
         type=6 Ping/Pong 在分片接收循环（``_process_shard_message``）片内处理，
         不进入本处理器——Pong 应答关系是每条连接私有的。
@@ -891,29 +1222,45 @@ class RealtimeSubscriber:
             result = msg.get("result") or {}
             data = result.get("data") or []
             if result.get("code") == 200 and data:
-                for item in data:
-                    await self._cache_value(item)
-                logger.debug(
-                    "Completion 响应: %d 个 Tag 当前值已缓存（含 SP/MODE/PID）",
-                    len(data),
-                )
-            return
+                self._incr("msgs_received")
+                accepted = await self._process_items(data)
+                if accepted:
+                    logger.debug(
+                        "Completion 响应: %d 个 Tag 当前值已缓存（含 SP/MODE/PID）",
+                        accepted,
+                    )
+                return accepted
+            return 0
 
         # type=1 Invocation — updateRealValues 推送
         if target == "updateRealValues":
             data = msg.get("data") or msg.get("arguments", [[]])[0]
             if isinstance(data, list):
-                for item in data:
-                    await self._cache_value(item)
-            return
+                self._incr("msgs_received")
+                return await self._process_items(data)
+            return 0
 
         # 兼容自定义格式（非标准 SignalR: 顶层 code=200）
         if msg.get("code") == 200:
             data = msg.get("data") or []
             if isinstance(data, list):
-                for item in data:
-                    await self._cache_value(item)
-            return
+                self._incr("msgs_received")
+                return await self._process_items(data)
+            return 0
+        return 0
+
+    async def _process_items(self, data: list) -> int:
+        """逐项处理消息内的数据点（R03：单项失败隔离，不中断后续项）."""
+        accepted = 0
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                if await self._cache_value(item):
+                    accepted += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("处理实时数据项失败（跳过该项，不影响后续项）: %s", exc)
+        return accepted
 
     async def _refresh_loop(self) -> None:
         """订阅池自愈监护（独立于主任务存活）.
@@ -1109,7 +1456,9 @@ class RealtimeSubscriber:
                 self._rebuild_event.set()
             self._subscribed_tags = new_set
 
-            # 落库映射缓存主动清空（不等 TTL），下个 flush 节拍重建
+            # 落库映射缓存主动清空（不等 TTL），下个 flush 节拍重建；
+            # R11：重建（_refresh_loop_meta_cache）时按新绑定比对 epoch 推进并
+            # 清除 last_known/buffer 中旧来源条目（见 _apply_binding_generations）
             self._tag_role_cache = {}
             self._loop_meta_cache = {}
             self._loop_meta_cache_at = 0.0
@@ -1150,47 +1499,96 @@ class RealtimeSubscriber:
             logger.warning("查询活跃 Tag 失败: %s", exc)
             return []
 
-    async def _cache_value(self, item: dict) -> None:
-        """将实时值缓存到 Redis + Pub/Sub 广播 + 可选写回 TDengine."""
-        tag_code = item.get("tagCode", "")
+    async def _cache_value(self, item: dict) -> bool:
+        """处理单条实时值：① 轻量校验 → ② 历史/写回缓冲（同步段）→ ③ 显示快照待发.
+
+        R03/R06（2026-09-06 整改）重排——原实现先逐点 await Redis（SETEX+PUBLISH）
+        成功后才进内存缓冲，Redis 故障会阻断采集落库；现改为：
+
+        1. 轻量校验（``app.core.numeric`` 共享契约）：无效值不丢消息——计
+           ``points_invalid``，value 置 None，但 quality/collectTime 照常记录
+           （数值有效性与质量相互独立）；
+        2. 同步段（不 await Redis）写入 ``_buffer``/``_last_known``；
+        3. 显示快照（SETEX+PUBLISH）仅进入有界"每 tag 最新值"待发字典，由
+           ``_display_flush_loop`` 批量发送——Redis 故障只影响显示新鲜度。
+
+        Returns:
+            该条是否被接纳（tagCode 非空且处理完成；被解绑/改绑丢弃的历史缓冲
+            也算接纳——消息本身已处理、片级活性应推进）。
+        """
+        tag_code = str(item.get("tagCode", "") or "")
         if not tag_code:
-            return
+            return False
+        self._incr("points_received")
+        recv_at = time.time()
+        self._last_data_at = recv_at
 
-        # 断点续传：记录最后收到数据时间（wall clock）
-        self._last_data_at = time.time()
+        raw_value = item.get("value", "")
+        raw_quality = item.get("quality")
+        collect_time = item.get("collectTime", "")
+        # ① 轻量校验（R06）：非法/非有限字面量（"-1.#QNAN0"/"nan"/"Infinity"/"1e999"）
+        # → value 置 None（绝不折算 0），不丢消息、质量与时间照常记录
+        value_valid = parse_finite_float(raw_value) is not None
+        if value_valid:
+            stored_value: Any = raw_value
+        else:
+            self._incr("points_invalid")
+            stored_value = None
+        quality = parse_mode_int(raw_quality)
 
-        # 写入 Redis + Pub/Sub 广播（pipeline 合并为单次往返：
-        # 万点秒级推送下每消息 2 次串行 RT 会成为吞吐瓶颈）
-        key = f"{_REDIS_KEY_PREFIX}{tag_code}"
+        # ③ 显示快照进入待发字典（同步段；有界 ≤ 活跃 tag 数，每 tag 仅存最新值）。
+        # 载荷在既有 4 字段基础上增量加入可选 valueValid/recvAt/stale（S3 消费侧
+        # 对缺省字段容错）；JSON 序列化 allow_nan=False + 出口守卫杜绝非有限数
         payload = {
             "tagCode": tag_code,
-            "value": item.get("value", ""),
-            "quality": item.get("quality", 0),
-            "collectTime": item.get("collectTime", ""),
+            "value": _json_safe_value(raw_value),
+            "quality": raw_quality,
+            "collectTime": collect_time,
+            "valueValid": value_valid,
+            "recvAt": datetime.fromtimestamp(recv_at, UTC).isoformat(),
+            "stale": False,
         }
-        value = json.dumps(payload)
-        pipe = redis_client.pipeline()
-        pipe.setex(key, _REDIS_TTL, value)
-        pipe.publish(_PUBSUB_CHANNEL, value)
-        await pipe.execute()
+        payload_json = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+        async with self._display_pending_lock:
+            self._display_pending[tag_code] = (f"{_REDIS_KEY_PREFIX}{tag_code}", payload_json)
 
-        # 放入内部缓冲区（供 _flush_buffer 写入 Redis 1 小时缓存及可选的 TDengine）
+        # ② 历史/写回缓冲（同步段，不 await Redis）
         loop_part, role = await self._parse_tag_code(tag_code)
         if loop_part:
-            role_payload = {
-                "value": item.get("value"),
-                "quality": item.get("quality"),
-                "ts": item.get("collectTime", ""),
-            }
-            async with self._buffer_lock:
-                if loop_part not in self._buffer:
-                    self._buffer[loop_part] = {}
-                self._buffer[loop_part][role] = role_payload
+            # R11 双向校验：消息来源 tag 必须就是该 (loop, role) 的当前绑定源
+            if tag_code in self._tag_role_cache and (
+                self._loop_role_tags.get(loop_part, {}).get(role) != tag_code
+            ):
+                self._incr("unbound_tag_msgs")
+                loop_part = ""
+        elif self._tag_role_cache:
+            # R11：映射权威存在但 tag 未命中（已解绑/改名/旧代次在途消息）→
+            # 丢弃不入历史缓冲（Redis 显示缓存不受影响，多推无害）
+            self._incr("unbound_tag_msgs")
+        if not loop_part:
+            return True
+
+        role_payload = {
+            "value": stored_value,
+            "quality": quality,
+            "ts": collect_time,
+            "recvAt": recv_at,
+            "tag": tag_code,
+            "epoch": self._loop_epochs.get(loop_part, 0),
+        }
+        async with self._buffer_lock:
+            # R05 乱序/迟到拒绝（S0 契约 §4.1，逐角色确定性规则）：仅
+            # sourceTime > 已存，或 == 且 recvAt ≥ 已存 才接受；否则拒绝计数
+            # （late_rejected）、不回退已存状态（显示快照不受历史状态门控）。
+            # 未知新 sourceTime 不得回退已知 sourceTime（回退即状态损失）
+            existing = self._last_known.get(loop_part, {}).get(role)
+            if existing is not None and not self._update_is_newer(existing, role_payload):
+                self._incr("late_rejected")
+            else:
+                self._buffer.setdefault(loop_part, {})[role] = role_payload
                 # 同步更新跨flush持久缓存：保留每个角色最近已知值，
                 # 供 flush 时合并进完整行，避免低频角色（SP/MODE/PID_*）写NULL
-                if loop_part not in self._last_known:
-                    self._last_known[loop_part] = {}
-                self._last_known[loop_part][role] = role_payload
+                self._last_known.setdefault(loop_part, {})[role] = role_payload
 
         # MODE 变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
         # 自动/手动/自控率卡片下次查询拿到最新值，而非等 60s TTL 自然过期。
@@ -1198,6 +1596,77 @@ class RealtimeSubscriber:
         # 注意：经 _spawn_bg 保持引用，防 GC 中途回收（asyncio 任务弱引用陷阱）。
         if role == "MODE":
             self._spawn_bg(self._invalidate_loop_stats_cache())
+        return True
+
+    async def _display_flush_loop(self) -> None:
+        """显示快照批量发送循环（R03）：独立任务，接收路径绝不因 Redis 阻塞.
+
+        ≤200ms 节拍（连续失败时按退避延长），把待发字典按 ≤256 命令组批
+        pipeline 发送，逐项异常隔离并计数 ``cache_write_failed``。
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(max(_DISPLAY_FLUSH_INTERVAL, self._display_flush_backoff))
+                await self._flush_display_pending()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("显示快照批量发送异常: %s", exc)
+
+    async def _flush_display_pending(self) -> None:
+        """把待发显示快照按批 pipeline 发送（R03）.
+
+        - 单批 ≤ ``_DISPLAY_BATCH_MAX_ITEMS`` 项（每项 SETEX+PUBLISH 共 2 命令）；
+        - pipeline 整体失败时逐项隔离重试：失败项计 ``cache_write_failed`` 并
+          回并待发字典（有界 ≤ 活跃 tag 数，恢复后由更新值自然收敛），
+          健康项照常送达；
+        - 连续失败按指数退避延长节拍（上限 2s），避免 Redis 故障期打连接风暴。
+        """
+        async with self._display_pending_lock:
+            if not self._display_pending:
+                return
+            pending = self._display_pending
+            self._display_pending = {}
+        items = list(pending.items())
+        any_failed = False
+        for i in range(0, len(items), _DISPLAY_BATCH_MAX_ITEMS):
+            chunk = items[i : i + _DISPLAY_BATCH_MAX_ITEMS]
+            try:
+                pipe = redis_client.pipeline()
+                for _tag, (key, payload_json) in chunk:
+                    pipe.setex(key, _REDIS_TTL, payload_json)
+                    pipe.publish(_PUBSUB_CHANNEL, payload_json)
+                await pipe.execute()
+                continue
+            except Exception:  # noqa: BLE001
+                pass
+            # pipeline 失败（多为连接级）：逐项隔离重试，定位并放过健康项
+            for tag, (key, payload_json) in chunk:
+                try:
+                    pipe = redis_client.pipeline()
+                    pipe.setex(key, _REDIS_TTL, payload_json)
+                    pipe.publish(_PUBSUB_CHANNEL, payload_json)
+                    await pipe.execute()
+                except Exception as exc:  # noqa: BLE001
+                    any_failed = True
+                    self._incr("cache_write_failed")
+                    logger.debug(
+                        "显示快照写入失败（待发回并，恢复后收敛）: tag=%s error=%s",
+                        tag,
+                        exc,
+                    )
+                    async with self._display_pending_lock:
+                        # setdefault：不覆盖期间新到的更新值
+                        self._display_pending.setdefault(tag, (key, payload_json))
+        if any_failed:
+            backoff = (
+                _DISPLAY_FLUSH_INTERVAL
+                if not self._display_flush_backoff
+                else (self._display_flush_backoff * 2)
+            )
+            self._display_flush_backoff = min(backoff, _DISPLAY_FLUSH_MAX_BACKOFF)
+        else:
+            self._display_flush_backoff = 0.0
 
     async def _invalidate_loop_stats_cache(self) -> None:
         """MODE 变化时失效回路统计缓存，确保监控卡片下次查询拿到最新值."""
@@ -1216,10 +1685,12 @@ class RealtimeSubscriber:
         本项目测点名 `41LIC30044_PIDA_SP` 无点号 → 整名当 loop_part +
         角色恒 PV，导致子表名带角色后缀、角色列错置。
 
-        兜底：映射未命中时按点号风格解析（兼容 signal_sim 仿真 tag）；
-        仍无法识别返回 ("", "")，调用方跳过缓冲（Redis 实时值缓存不受影响）。
+        R11（2026-09-06 整改）：映射权威（``_tag_role_cache`` 非空）存在但本 tag
+        未命中（已解绑/改名/删除 tag 的旧代次在途消息）→ 返回 ("", "")，
+        **不再按点号兜底进历史缓冲**（原行为会让解绑后的旧来源值继续入库）；
+        无映射权威（仿真/未配置场景，缓存为空）时保留点号风格兜底。
         """
-        # 缓存过期时刷新（miss 且距上次刷新超过最小间隔，防 DB 故障时每条消息打库）
+        # 缓存过期时刷新（miss 且距上次刷新超过最小间隔，防止 DB 故障时每条消息打库）
         now = time.monotonic()
         miss_due = now - self._loop_meta_cache_at > _LOOP_META_MISS_REFRESH_MIN_INTERVAL
         if (not self._tag_role_cache) or (tag_code not in self._tag_role_cache and miss_due):
@@ -1231,6 +1702,9 @@ class RealtimeSubscriber:
         hit = self._tag_role_cache.get(tag_code)
         if hit:
             return hit
+        if self._tag_role_cache:
+            # 映射权威存在但未命中：已解绑/改名/旧代次在途消息，不入历史缓冲
+            return "", ""
         if "." in tag_code:
             loop_part, role = tag_code.rsplit(".", 1)
             return loop_part, role.upper()
@@ -1241,10 +1715,12 @@ class RealtimeSubscriber:
     # ------------------------------------------------------------------
 
     async def _load_checkpoint(self) -> None:
-        """启动时从 Redis 恢复最后落库时间 checkpoint（进程重启场景）.
+        """启动时从 Redis 恢复最后落库时间 checkpoint 与 per-loop 水位（进程重启场景）.
 
         落库点（``_last_flushed_at``）从 Redis 恢复；接收点（``_last_data_at``）
-        初始化为落库点（进程刚重启，尚未收到新消息）。
+        初始化为落库点（进程刚重启，尚未收到新消息）。R08：同时恢复 per-loop
+        已确认落库水位——缺口检测优先使用 per-loop 水位，未覆盖回路（从未收到
+        数据/水位尚未写入）以全局 checkpoint 起点做兜底窗口，避免漏检。
         """
         try:
             raw = await redis_client.get(_GAP_CHECKPOINT_KEY)
@@ -1260,6 +1736,53 @@ class RealtimeSubscriber:
             logger.warning("断点续传 checkpoint 格式无效，忽略: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.warning("读取断点续传 checkpoint 失败（可忽略）: %s", exc)
+        await self._load_loop_watermarks()
+
+    async def _load_loop_watermarks(self) -> None:
+        """从 Redis 恢复 per-loop 已确认落库水位（loop_part → 行 ts epoch 秒）."""
+        self._loop_wm_loaded = True
+        try:
+            raw = await redis_client.hgetall(_GAP_LOOP_WM_KEY)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("读取回路水位失败（忽略，缺口检测回退全局 checkpoint）: %s", exc)
+            return
+        for loop_part, val in (raw or {}).items():
+            try:
+                self._loop_watermarks[str(loop_part)] = max(
+                    self._loop_watermarks.get(str(loop_part), 0.0), float(val)
+                )
+            except (TypeError, ValueError):
+                continue
+
+    async def _ensure_loop_watermarks(self) -> None:
+        """确保 per-loop 水位已加载（懒加载一次，缺口检测前调用）."""
+        if not self._loop_wm_loaded:
+            await self._load_loop_watermarks()
+
+    def _advance_loop_watermark(self, loop_part: str, row_ts_epoch: float) -> None:
+        """推进回路已确认落库水位（只增不减：该回路行进入成功批的最大行 ts）."""
+        try:
+            ts = float(row_ts_epoch)
+        except (TypeError, ValueError):
+            return
+        if ts > self._loop_watermarks.get(loop_part, float("-inf")):
+            self._loop_watermarks[loop_part] = ts
+
+    async def _maybe_save_loop_watermarks(self, *, force: bool = False) -> None:
+        """将 per-loop 水位持久化到 Redis hash（节流 30s，与 checkpoint 同风格）."""
+        if not self._loop_watermarks:
+            return
+        now = time.monotonic()
+        if not force and now - self._last_wm_write < _GAP_CHECKPOINT_WRITE_INTERVAL:
+            return
+        try:
+            await redis_client.hset(
+                _GAP_LOOP_WM_KEY,
+                mapping={lp: f"{ts:.3f}" for lp, ts in self._loop_watermarks.items()},
+            )
+            self._last_wm_write = now
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("写回路水位失败（可忽略，下个节拍重试）: %s", exc)
 
     async def _maybe_save_checkpoint(self, *, force: bool = False) -> None:
         """将最后落库时间持久化到 Redis（节流 30s，供进程重启后恢复缺口起点）.
@@ -1278,51 +1801,251 @@ class RealtimeSubscriber:
         except Exception as exc:  # noqa: BLE001
             logger.debug("写入断点续传 checkpoint 失败（可忽略）: %s", exc)
 
-    async def _maybe_trigger_gap_backfill(self) -> None:
-        """检测数据缺口并触发断点续传（连接/重连成功后调用）。
+    async def _maybe_trigger_gap_backfill(self, state: _ShardState | None = None) -> None:
+        """检测数据缺口并登记/触发断点续传（R08：每次分片建连成功后调用）.
 
-        以落库点 ``_last_flushed_at`` 为窗口起点（而非接收点），
-        避免 flush 失败时 checkpoint 已超前导致缺口遗漏。
+        - **每次重连都核对**（含同代池内重连、reshard 重建后）——原"每代一次"
+          标记会让健康片推进全局接收点、掩盖故障片缺口；
+        - 稳定来源身份 = **loop_part**（不按分片物理编号存进度，重建分片不串位）；
+          对本分片覆盖的回路逐个核对 per-loop 水位，``now - 水位 > MIN_GAP`` 的
+          回路集合产生缺口窗口（起点 = 最小水位，终点 = now - 余量）；
+        - per-loop 水位优先，尚无水位的回路以全局落库点 checkpoint 兜底；分片
+          映射未加载（进程重启首连）时回退全局兜底窗口，避免水位尚未加载时漏检；
+        - 缺口窗口登记到持久待补列表（Redis list，重叠合并去重）；gap 开关
+          **关闭 → 仅登记不调用远端**（计数+日志），开启 → 经 ``_run_gap_backfill``
+          （skip 策略，SETNX 锁/任务登记/失败重试定时器复用）消费。
         """
-        if not settings.GAP_BACKFILL_ENABLED:
-            return
-        if self._last_flushed_at is None:
-            return
-        if self._backfill_task is not None and not self._backfill_task.done():
-            logger.info("断点续传任务仍在执行中，跳过本次触发")
-            return
-
         now = time.time()
-        gap_seconds = now - self._last_flushed_at
-        if gap_seconds < float(settings.GAP_BACKFILL_MIN_GAP_SECONDS):
+        try:
+            min_gap = float(settings.GAP_BACKFILL_MIN_GAP_SECONDS)
+        except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底
+            min_gap = 600.0
+        loops: list[str] | None
+        baseline: float | None
+        if state is not None:
+            shard_loops = self._shard_loop_parts(state)
+            if not shard_loops and state.tags and not self._tag_role_cache:
+                # 首连场景：绑定映射尚未加载，无法按回路核对 → 加载后重取
+                # （按 _LOOP_META_MISS_REFRESH_MIN_INTERVAL 节流，DB 故障时
+                # 不会每次重连都打库）
+                if (
+                    time.monotonic() - self._gap_meta_refresh_at
+                    >= _LOOP_META_MISS_REFRESH_MIN_INTERVAL
+                ):
+                    self._gap_meta_refresh_at = time.monotonic()
+                    try:
+                        await self._refresh_loop_meta_cache()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("缺口检测前刷新绑定映射失败（回退全局兜底）: %s", exc)
+                    shard_loops = self._shard_loop_parts(state)
+            if shard_loops:
+                await self._ensure_loop_watermarks()
+                stale: dict[str, float] = {}
+                for loop_part in shard_loops:
+                    wm = self._loop_watermarks.get(loop_part, self._last_flushed_at)
+                    if wm is not None and now - wm > min_gap:
+                        stale[loop_part] = wm
+                if not stale:
+                    await self._try_consume_pending_gaps()
+                    return
+                loops, baseline = sorted(stale), min(stale.values())
+            else:
+                # 无回路身份可得（未配置映射）：全局 checkpoint 兜底
+                loops, baseline = None, self._last_flushed_at
+        else:
+            # 全局兜底口径（兼容直接调用/无分片上下文）
+            loops, baseline = None, self._last_flushed_at
+        if baseline is None or now - baseline < min_gap:
+            # 无缺口也尝试消费在途待补（进程重启后未完成的持久缺口由此恢复）
+            await self._try_consume_pending_gaps()
             return
+        await self._register_gap_window(loops, baseline, now)
+        if settings.GAP_BACKFILL_ENABLED:
+            await self._try_consume_pending_gaps()
 
-        max_seconds = float(settings.GAP_BACKFILL_MAX_HOURS) * 3600
-        gap_start = self._last_flushed_at
-        if gap_seconds > max_seconds:
+    def _shard_loop_parts(self, state: _ShardState) -> set[str]:
+        """解析分片覆盖的回路集合（loop_part 身份，与分片物理编号无关）.
+
+        优先走 ``_tag_role_cache``（绑定映射权威）；映射未命中的点号风格 tag
+        （仿真/未配置场景）按 ``rsplit('.', 1)`` 兜底，与 ``_parse_tag_code``
+        口径一致。
+        """
+        loops: set[str] = set()
+        for tag in state.tags:
+            hit = self._tag_role_cache.get(tag)
+            if hit:
+                loops.add(hit[0])
+            elif "." in tag:
+                loops.add(tag.rsplit(".", 1)[0])
+        return loops
+
+    # ------------------------------------------------------------------
+    # R08：持久待补缺口列表（Redis list realtime:gap:pending）
+    # ------------------------------------------------------------------
+
+    async def _load_pending_gaps(self) -> list[dict[str, Any]]:
+        """读取持久待补缺口列表（JSON 损坏条目跳过）."""
+        try:
+            raw_list = await redis_client.lrange(_GAP_PENDING_KEY, 0, -1)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("读取持久待补缺口列表失败（按空处理）: %s", exc)
+            return []
+        entries: list[dict[str, Any]] = []
+        for raw in raw_list or []:
+            try:
+                entry = json.loads(raw)
+                if isinstance(entry, dict) and "start" in entry and "end" in entry:
+                    entries.append(entry)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return entries
+
+    async def _save_pending_gaps(self, entries: list[dict[str, Any]]) -> None:
+        """整体重写持久待补缺口列表（Leader 单写者；pipeline 失败整体保留旧值）."""
+        try:
+            pipe = redis_client.pipeline()
+            pipe.delete(_GAP_PENDING_KEY)
+            for entry in entries:
+                pipe.lpush(_GAP_PENDING_KEY, json.dumps(entry))
+            await pipe.execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("写持久待补缺口列表失败（保留旧值）: %s", exc)
+
+    @staticmethod
+    def _same_gap_entry(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        """待补条目身份判定（registeredAt + start + loops，合并保序可追溯）."""
+        return (
+            a.get("registeredAt") == b.get("registeredAt")
+            and a.get("start") == b.get("start")
+            and a.get("loops") == b.get("loops")
+        )
+
+    @staticmethod
+    def _merge_gap_loops(a: list[str] | None, b: list[str] | None) -> list[str] | None:
+        """合并条目回路集合：None 表示全量口径（吞并任何子集）."""
+        if a is None or b is None:
+            return None
+        return sorted(set(a) | set(b))
+
+    @staticmethod
+    def _gap_windows_overlap(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        """两待补窗口是否重叠：回路集合相交 且 时间区间相交."""
+        la, lb = a.get("loops"), b.get("loops")
+        loops_overlap = la is None or lb is None or bool(set(la) & set(lb))
+        ranges_overlap = float(a.get("start") or 0) <= float(b.get("end") or 0) and float(
+            b.get("start") or 0
+        ) <= float(a.get("end") or 0)
+        return loops_overlap and ranges_overlap
+
+    async def _register_gap_window(self, loops: list[str] | None, start: float, now: float) -> None:
+        """登记缺口窗口到持久待补列表（复用截断/余量规则；重叠合并去重）."""
+        try:
+            max_seconds = float(settings.GAP_BACKFILL_MAX_HOURS) * 3600
+        except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底
+            max_seconds = 24.0 * 3600
+        if now - start > max_seconds:
             logger.warning(
-                "数据缺口 %.1fh 超过单次补数上限（%dh），仅补最近 %dh；"
+                "数据缺口 %.1fh 超过单次补数上限（%dh），仅登记最近 %dh；"
                 "更早数据请通过「数据管理→历史数据导入」手工补齐",
-                gap_seconds / 3600,
+                (now - start) / 3600,
                 settings.GAP_BACKFILL_MAX_HOURS,
                 settings.GAP_BACKFILL_MAX_HOURS,
             )
-            gap_start = now - max_seconds
-
+            start = now - max_seconds
         # 末端留余量，避免与正在写入的实时行撞时间戳
-        gap_end = now - _GAP_BACKFILL_END_MARGIN
-        if gap_end <= gap_start:
+        end = now - _GAP_BACKFILL_END_MARGIN
+        if end <= start:
             return
+        entry: dict[str, Any] = {
+            "loops": loops,
+            "start": start,
+            "end": end,
+            "registeredAt": time.time(),
+        }
+        entries = await self._load_pending_gaps()
+        inflight = self._inflight_gap_entry
+        merged = False
+        for existing in entries:
+            if inflight is not None and self._same_gap_entry(existing, inflight):
+                # 在途消费中的窗口不合并（执行快照不可变；扩展范围由水位
+                # 覆盖检查在后续消费时收敛，重复补数经 skip 幂等无害）
+                continue
+            if self._gap_windows_overlap(existing, entry):
+                existing["start"] = min(float(existing["start"]), start)
+                existing["end"] = max(float(existing["end"]), end)
+                existing["loops"] = self._merge_gap_loops(existing.get("loops"), loops)
+                merged = True
+        if not merged:
+            entries.append(entry)
+        await self._save_pending_gaps(entries)
+        self._incr("gap_windows_registered")
+        if not settings.GAP_BACKFILL_ENABLED:
+            logger.warning(
+                "GAP_BACKFILL_ENABLED=False：缺口仅登记不调用远端（当前待补窗口 %d 条，"
+                "loops=%s, range=%s~%s）",
+                len(entries),
+                "ALL" if loops is None else loops,
+                datetime.fromtimestamp(start, UTC).isoformat(),
+                datetime.fromtimestamp(end, UTC).isoformat(),
+            )
 
-        logger.warning(
-            "检测到实时数据缺口 %.0fs（%s ~ %s），启动断点续传自动补数",
-            gap_seconds,
-            datetime.fromtimestamp(gap_start, UTC).isoformat(),
-            datetime.fromtimestamp(gap_end, UTC).isoformat(),
+    async def _remove_pending_gap(self, entry: dict[str, Any]) -> None:
+        """补数成功后移除对应待补条目（按身份匹配）."""
+        entries = await self._load_pending_gaps()
+        remaining = [e for e in entries if not self._same_gap_entry(e, entry)]
+        if len(remaining) != len(entries):
+            await self._save_pending_gaps(remaining)
+
+    async def _try_consume_pending_gaps(self) -> None:
+        """消费持久待补缺口（单实例守卫；仅 gap 开关开启时由调用方触达）.
+
+        - 先丢弃已被当前水位完全覆盖的条目（在途补数成功后残留的合并条目
+          由此收敛，不重复调远端）；
+        - 选最早登记的条目执行 ``_run_gap_backfill``（skip 策略，SETNX 锁/
+          任务登记/失败重试定时器复用）；失败条目保留在列表中，由重试定时器
+          或下次重连再消费——补数失败后重启仍可见。
+        """
+        if self._backfill_task is not None and not self._backfill_task.done():
+            return
+        entries = await self._load_pending_gaps()
+        if not entries:
+            return
+        kept: list[dict[str, Any]] = []
+        changed = False
+        for entry in entries:
+            loops = entry.get("loops")
+            if loops is not None and all(
+                self._loop_watermarks.get(lp, 0.0) >= float(entry.get("end") or 0.0) for lp in loops
+            ):
+                changed = True  # 水位已越过窗口末端：已补齐（或实时已覆盖）
+                continue
+            kept.append(entry)
+        if changed:
+            await self._save_pending_gaps(kept)
+        if not kept:
+            return
+        entry = min(
+            kept,
+            key=lambda e: (float(e.get("registeredAt") or 0.0), float(e.get("start") or 0.0)),
         )
-        self._backfill_task = asyncio.create_task(self._run_gap_backfill(gap_start, gap_end))
+        self._inflight_gap_entry = entry
+        self._backfill_task = asyncio.create_task(
+            self._run_gap_backfill(
+                float(entry["start"]),
+                float(entry["end"]),
+                loop_parts=entry.get("loops"),
+                pending_entry=entry,
+            )
+        )
 
-    async def _run_gap_backfill(self, gap_start: float, gap_end: float) -> None:
+    async def _run_gap_backfill(
+        self,
+        gap_start: float,
+        gap_end: float,
+        *,
+        loop_parts: list[str] | None = None,
+        pending_entry: dict[str, Any] | None = None,
+    ) -> None:
         """执行断点续传：经远端历史数据接口补全缺口窗口，并触发 KPI 回算.
 
         - SETNX 分布式锁：多副本部署时防重复补数（TTL =
@@ -1330,6 +2053,11 @@ class RealtimeSubscriber:
         - checkpoint 条件推进：仅全部回路成功（failed==0）才推进落库点
           ``_last_flushed_at``；部分失败/异常时缺口保留，启动延迟重试定时器
           （指数退避，连接在线也生效）
+        - R08：``loop_parts`` 限定本次补数只覆盖指定回路（per-loop 缺口窗口，
+          不因一片故障触发无边界全量补数）；成功后推进这些回路的 per-loop
+          水位并移除持久待补条目（全局落库点不受 per-loop 窗口影响）。
+          空返回≠完整：failed==0 即推进（远端确无数据的窗口推进口径已登记），
+          但全窗口 0 行时计数 ``backfill_empty_windows`` 供观测
         - 任务可观测：执行前经 task_tracker 登记任务记录（triggered_by=auto-backfill），
           终态更新 SUCCESS/FAILED；失败接 alerting 告警
         - 异常仅记日志不抛出（不影响实时订阅主循环）
@@ -1357,9 +2085,14 @@ class RealtimeSubscriber:
 
             async with AsyncSessionLocal() as db:
                 result = await db.execute(
-                    select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+                    select(LoopLedger.id, LoopLedger.tag_name).where(LoopLedger.is_active.is_(True))
                 )
-                loop_ids = [str(row[0]) for row in result.all()]
+                rows = result.all()
+                loop_ids = [str(row[0]) for row in rows]
+                if loop_parts is not None:
+                    # R08：限定 per-loop 缺口窗口覆盖的回路（tag_name = loop_part）
+                    wanted = set(loop_parts)
+                    loop_ids = [str(row[0]) for row in rows if str(row[1] or "") in wanted]
                 # 过滤无有效 tag 映射的回路：它们在 import_history_data 内必然失败，
                 # 计入 failed 会导致 checkpoint 不推进 + 每次重试 send_alert，
                 # 一个未配置映射的回路即可造成无限重试告警风暴
@@ -1378,10 +2111,14 @@ class RealtimeSubscriber:
             loop_ids = mapped_loop_ids
             if not loop_ids:
                 logger.warning("断点续传跳过：无有效 tag 映射的活跃回路")
+                if pending_entry is not None:
+                    # 无可补回路：条目出队，避免每次重连空转重试
+                    await self._remove_pending_gap(pending_entry)
                 return
 
             # 任务登记：补数进任务列表（来源标记 auto-backfill，系统任务不通知个人）
             _SHANGHAI = timezone(timedelta(hours=8))
+            scope = "全部回路" if loop_parts is None else f"{len(loop_parts)} 个回路"
             title = f"断点续传补数-{datetime.now(_SHANGHAI).strftime('%m%d%H%M')}"
             task_id = await task_tracker.create_task(
                 task_type=TaskType.BACKFILL,
@@ -1417,9 +2154,25 @@ class RealtimeSubscriber:
             failed = import_result["failed"]
 
             if failed == 0:
-                # 补数全部成功：落库点推进到窗口末端，避免下次重连重复补
-                # （接收点 _last_data_at 不推进——补数不等于收到新实时数据）
-                self._last_flushed_at = max(self._last_flushed_at or 0.0, gap_end)
+                # R08 空返回≠完整：failed==0 即推进（最简口径，已登记）；
+                # 全窗口 0 行计数 backfill_empty_windows 供观测（远端确无数据）
+                coverage = import_result.get("loopCoverage") or []
+                if coverage and all(not int(c.get("importedPoints") or 0) for c in coverage):
+                    self._incr("backfill_empty_windows")
+                if loop_parts is not None:
+                    # per-loop 窗口：只推进覆盖回路的 per-loop 水位；
+                    # 全局落库点/已确认边界不受影响（其他回路口径不变）
+                    for loop_part in loop_parts:
+                        self._advance_loop_watermark(loop_part, gap_end)
+                    await self._maybe_save_loop_watermarks(force=True)
+                else:
+                    # 全量窗口：落库点推进到窗口末端，避免下次重连重复补
+                    # （接收点 _last_data_at 不推进——补数不等于收到新实时数据）
+                    self._last_flushed_at = max(self._last_flushed_at or 0.0, gap_end)
+                    # R07：同步推进已确认边界，防止后续 flush 用旧边界回退落库点
+                    self._confirmed_boundary = max(self._confirmed_boundary or 0.0, gap_end)
+                if pending_entry is not None:
+                    await self._remove_pending_gap(pending_entry)
                 await self._maybe_save_checkpoint(force=True)
                 # 本次成功窗口覆盖待重试缺口时，清除重试状态
                 if self._retry_window_start is not None and gap_start <= self._retry_window_start:
@@ -1433,16 +2186,17 @@ class RealtimeSubscriber:
                     finished_at=datetime.now(UTC).isoformat(),
                 )
                 logger.warning(
-                    "断点续传完成: range=%s~%s, loops=%d/%d, 耗时=%.1fs",
+                    "断点续传完成: range=%s~%s, %s, loops=%d/%d, 耗时=%.1fs",
                     ts_start,
                     ts_end,
+                    scope,
                     succeeded,
                     total,
                     time.monotonic() - started,
                 )
                 return
 
-            # 部分失败：checkpoint 不推进，缺口保留待重试
+            # 部分失败：checkpoint 不推进，缺口保留待重试（持久待补条目同样保留）
             errors = "; ".join(import_result.get("errors", [])[:3])
             await task_tracker.update_status(
                 task_id,
@@ -1499,6 +2253,9 @@ class RealtimeSubscriber:
             )
             self._schedule_backfill_retry(gap_start)
         finally:
+            # 消费中的待补条目快照释放（条目本身按成败已移除/保留）
+            if pending_entry is not None and self._inflight_gap_entry is pending_entry:
+                self._inflight_gap_entry = None
             if lock_acquired:
                 await self._release_backfill_lock(lock_token)
 
@@ -1576,6 +2333,8 @@ class RealtimeSubscriber:
     async def _retry_gap_backfill(self, delay: float) -> None:
         """重试定时器：延迟后对失败缺口重新执行补数.
 
+        R08：先消费持久待补列表（per-loop 缺口窗口优先——失败条目仍在列表中，
+        重启后同样由此路径恢复）；无待补条目时回落到全局重试窗口。
         重试窗口末端取触发时刻（而非原窗口末端），覆盖等待期间新产生的缺口；
         定时器触发时若已有补数在执行（如重连触发），按同延迟原地重排兜底——
         执行中的补数失败时会自行重排定时器，成功且覆盖本窗口时会清除重试状态。
@@ -1584,6 +2343,7 @@ class RealtimeSubscriber:
             await asyncio.sleep(delay)
             if not self._running:
                 return
+            await self._try_consume_pending_gaps()
             if self._backfill_task is not None and not self._backfill_task.done():
                 logger.info("断点续传重试触发时已有补数在执行，按同延迟 %.0fs 重排", delay)
                 self._backfill_retry_task = asyncio.create_task(self._retry_gap_backfill(delay))
@@ -1631,21 +2391,33 @@ class RealtimeSubscriber:
         return result
 
     async def get_history_values(self, loop_part: str) -> list[dict]:
-        """从 Redis 获取过去 1 小时的缓存数据（按时间升序返回）。"""
+        """从 Redis 获取过去 1 小时的缓存数据（按时间升序返回）.
+
+        R05（审查 §3.3）：不再只 reverse 到达顺序——乱序上游/重连旧快照会
+        破坏时间序，返回前按 ts **排序 + 同 ts 去重（保留后写值）**。Redis
+        LPUSH 序即写入时间降序（index 0 最新），同 ts 先见者为后写值。
+        """
         key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
         raw_list = await redis_client.lrange(key, 0, -1)
         if not raw_list:
             return []
 
-        result = []
+        dedup: dict[str, dict] = {}
         for raw in raw_list:
             try:
-                result.append(json.loads(raw))
+                row = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-        # Redis lpush 导致最新数据在前面，因此需要反转列表以满足时间升序
-        result.reverse()
-        return result
+            if isinstance(row, dict):
+                # setdefault：同 ts 保留先见者（= 后写值，LPUSH 序最新在前）
+                dedup.setdefault(str(row.get("ts") or ""), row)
+
+        def _sort_key(ts: str) -> tuple[int, datetime]:
+            dt = _parse_known_ts(ts)
+            # 不可解析 ts 排末尾（稳定，不与可解析时刻比较）
+            return (0, dt) if dt is not None else (1, datetime.min.replace(tzinfo=_TARGET_TZ))
+
+        return [dedup[ts] for ts in sorted(dedup, key=_sort_key)]
 
     async def _get_loop_meta_map(self, loop_parts: list[str]) -> dict[str, tuple[str, str]]:
         """获取 loop_part → (loop_id, unit_id) 映射（带 TTL 缓存，flush 热路径不每拍查库）.
@@ -1666,10 +2438,14 @@ class RealtimeSubscriber:
         return {lp: self._loop_meta_cache.get(lp, ("", "")) for lp in loop_parts}
 
     async def _refresh_loop_meta_cache(self) -> None:
-        """从数据库重建两个缓存（仅含活跃且有 tag 映射的回路）.
+        """从数据库重建绑定映射缓存（仅含活跃且有 tag 映射的回路）.
 
         - ``_loop_meta_cache``: loop_part(=回路台账 tag_name) → (loop_id, unit_id)
         - ``_tag_role_cache``: 测点 tag_name → (loop_part, role)
+        - ``_loop_role_tags`` / ``_loop_epochs``: R11 绑定代次——loop_part →
+          {role → 绑定源 tag} 反查与绑定版本号；绑定变化的 loop epoch+1 并清除
+          last_known/buffer 中来自旧绑定的条目（新绑定无值 → 角色 NULL，
+          不得写 0、不得沿用旧来源值）。
 
         历史 bug（2026-08-20 修复）：此前 loop_part 从「第一个测点名」rsplit('.')
         反推，但测点名用下划线分隔角色（xx_PV）→ 剥离失败且顺序不稳定，
@@ -1707,23 +2483,67 @@ class RealtimeSubscriber:
             lid_to_loop_name[str(lid)] = tag_name
             meta_cache.setdefault(tag_name, (str(lid), str(unit_id) if unit_id else ""))
 
-        # 测点 tag_name → (loop_part, role)
+        # 测点 tag_name → (loop_part, role)；loop_part → {role → 绑定源 tag}（R11 反查）
         tag_role_cache: dict[str, tuple[str, str]] = {}
+        loop_role_tags: dict[str, dict[str, str]] = {}
         for lid, tag_role, tag_name in role_rows:
             loop_name = lid_to_loop_name.get(str(lid))
             if loop_name and tag_name:
-                tag_role_cache[tag_name] = (loop_name, str(tag_role).upper())
+                role_upper = str(tag_role).upper()
+                tag_role_cache[tag_name] = (loop_name, role_upper)
+                loop_role_tags.setdefault(loop_name, {})[role_upper] = tag_name
+
+        # R11：比对新旧绑定 → epoch 推进 + 清除旧代次状态（在缓存整体换血前执行）
+        self._apply_binding_generations(loop_role_tags, set(meta_cache))
 
         self._loop_meta_cache = meta_cache
         self._tag_role_cache = tag_role_cache
+        self._loop_role_tags = loop_role_tags
         self._loop_meta_cache_at = time.monotonic()
 
+    def _apply_binding_generations(
+        self, new_role_tags: dict[str, dict[str, str]], active_loop_parts: set[str]
+    ) -> None:
+        """绑定代次维护（R11，S0 契约 §4.3）.
+
+        - 新旧 ``loop_part → {role → tag}`` 不一致的 loop：epoch+1；
+        - 清除 ``_last_known``/``_buffer`` 中来源 tag 已不再绑定该角色的条目
+          （改绑/解绑/角色删除/整回路删除停用——不在活跃集合的 loop 全清）；
+        - ``_loop_epochs`` 随活跃集合收敛（已删除回路移出，防内存无界增长）；
+        - 新绑定无值 → 角色自然为 NULL（不写 0、不沿用旧来源值）。
+        """
+        changed: list[str] = []
+        for loop_part, new_roles in new_role_tags.items():
+            if self._loop_role_tags.get(loop_part) != new_roles:
+                self._loop_epochs[loop_part] = self._loop_epochs.get(loop_part, 0) + 1
+                changed.append(loop_part)
+        # 清理 last_known/buffer 中已失效的来源条目（按条目 tag 与新绑定比对）
+        for store in (self._last_known, self._buffer):
+            for loop_part in list(store):
+                roles_map = store[loop_part]
+                new_roles = new_role_tags.get(loop_part, {})
+                for role in list(roles_map):
+                    entry = roles_map[role]
+                    if not isinstance(entry, dict) or new_roles.get(role) != entry.get("tag"):
+                        del roles_map[role]
+                if not roles_map:
+                    del store[loop_part]
+        # epoch 表收敛：已删除/停用回路移出
+        for loop_part in [lp for lp in self._loop_epochs if lp not in active_loop_parts]:
+            self._loop_epochs.pop(loop_part, None)
+        if changed:
+            logger.info("绑定代次推进（epoch+1，旧来源条目已清除）: %s", changed)
+
     async def _flush_loop(self) -> None:
-        """按配置间隔 flush 缓冲区到 TDengine（默认 1 秒）。"""
+        """按配置间隔 flush 缓冲区到 TDengine（默认 1 秒）+ 周期输出链路计数."""
+        next_metrics_log = time.monotonic() + 300.0
         while self._running:
             try:
                 await asyncio.sleep(settings.TDENGINE_FLUSH_INTERVAL)
                 await self._flush_buffer()
+                if time.monotonic() >= next_metrics_log:
+                    next_metrics_log = time.monotonic() + 300.0
+                    logger.info("实时采集链路计数（S0 契约 §8）: %s", dict(self._metrics))
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
@@ -1732,33 +2552,80 @@ class RealtimeSubscriber:
     async def _flush_buffer(self) -> None:
         """将缓冲区数据批量写入 Redis 1 小时缓存（及可选的 TDengine）.
 
-        落库点 ``_last_flushed_at`` 仅在成功写入后推进：
-        - writeback 启用时：TDengine 批量写入成功后才推进（重试耗尽则不推进，
-          缺口保留，由 gap backfill 补全）；
-        - writeback 禁用时：Redis 历史缓存写入成功后即推进。
+        R07（2026-09-06 整改，S0 契约 §4.2）：
+        - 先重写上一拍失败窗口（有界重试缓冲，优先于新批）；
+        - ``_buffer_lock`` 内**原子截取** batch + ``_last_known`` 深拷贝快照 +
+          接收边界（batch_boundary = max(批内 recvAt)）；await 期间新数据进下一批，
+          不混入本批、也不被本批的成功水位覆盖；
+        - checkpoint（``_last_flushed_at``）只推进到已确认成功批的
+          batch_boundary（不再取 ``_last_data_at``），且不越过未确认窗口；
+        - TD 批次按 ≤ ``_TD_BATCH_MAX_ROWS`` 行拆分，分块成功独立记录；
+          失败行进入有界重试缓冲并登记未确认窗口（后续实时批成功不得擦掉
+          旧失败窗口，仅该窗口自身重写成功才确认移除）；
+        - ``_build_row`` 在 try 保护内，单行构造失败不影响其他行。
         """
+        # 1) 上一拍失败窗口优先重写（有界重试缓冲）
+        await self._retry_unconfirmed_windows()
+
+        # 2) 原子截取新批（await 期间的新数据进入下一批）
         async with self._buffer_lock:
             if not self._buffer:
+                self._metrics["buffer_rows_pending"] = 0
                 return
-            buffer_copy = dict(self._buffer)
-            self._buffer.clear()
+            batch = self._buffer
+            self._buffer = {}
+            last_known_snapshot = {
+                lp: {role: dict(entry) for role, entry in roles.items()}
+                for lp, roles in self._last_known.items()
+            }
+            recv_ats = [
+                float(entry.get("recvAt") or 0.0)
+                for roles in batch.values()
+                for entry in roles.values()
+            ]
+            batch_boundary = max(recv_ats) if recv_ats else None
+            boundary_prev = self._last_flushed_at
 
         # 实时写回需携带真实 loop_id/unit_id（TDengine USING TAGS 仅子表首次创建
         # 生效，实时先行创建的子表 TAG 必须正确，否则永远为空且无法后续补写）
         loop_meta: dict[str, tuple[str, str]] = {}
         if self._writeback_enabled:
-            loop_meta = await self._get_loop_meta_map(list(buffer_copy))
+            loop_meta = await self._get_loop_meta_map(list(batch))
 
-        # 1. 写入 Redis 1 小时缓存 (pipeline)
-        pipe = redis_client.pipeline()
-        tables_rows: list[dict[str, Any]] = []
-
-        for loop_part, roles_data in buffer_copy.items():
-            # 合并跨flush持久缓存：本tick buffer优先（新值覆盖旧值），
+        # 3) 构造行（单行失败隔离，R07）——历史缓存条目 + TD 表数据
+        history_entries: list[tuple[str, str, str]] = []  # (key, row_json, row_ts)
+        td_tables: list[dict[str, Any]] = []
+        loop_row_ts: dict[str, float] = {}  # loop_part → 行 ts epoch（R08 水位推进用）
+        for loop_part, roles_data in batch.items():
+            # 合并跨flush持久缓存快照：本tick buffer优先（新值覆盖旧值），
             # 未出现在本tick中的低频角色（SP/MODE/PID_*）取最近已知值，避免写NULL
-            merged_roles: dict[str, Any] = dict(self._last_known.get(loop_part, {}))
+            merged_roles: dict[str, Any] = dict(last_known_snapshot.get(loop_part, {}))
             merged_roles.update(roles_data)
-            row = self._build_row(merged_roles)
+            try:
+                row = self._build_row(merged_roles)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "构造回路行失败（跳过该行，不影响其他行）: loop_part=%s error=%s",
+                    loop_part,
+                    exc,
+                )
+                continue
+            if row is None:
+                # R05：整行无任何已知 sourceTime → 不落 TD/历史缓存（不伪造 now()）
+                self._incr("rows_dropped_no_ts")
+                continue
+            # R05 自描述行：roleTs（各角色 sourceTime，与行 ts 同口径归一）+
+            # roleQuality——下游可区分"新测量"（roleTs == 行 ts）与"携带的
+            # last-known"（roleTs < 行 ts）；TD 宽表不加列（S0 决策 1，边界登记）
+            role_ts = {
+                role: _format_target_ts(dt)
+                for role, dt in _collect_role_source_times(merged_roles).items()
+            }
+            role_quality = {
+                role: entry.get("quality")
+                for role, entry in merged_roles.items()
+                if isinstance(entry, dict) and entry.get("quality") is not None
+            }
             row_dict = {
                 "ts": row[0],
                 "pv": row[1],
@@ -1769,19 +2636,18 @@ class RealtimeSubscriber:
                 "pid_i": row[6],
                 "pid_d": row[7],
                 "pv_quality": row[8],
+                "roleTs": role_ts,
+                "roleQuality": role_quality,
             }
-            key = f"{_REDIS_KEY_PREFIX}history:{loop_part}"
-            pipe.lpush(key, json.dumps(row_dict))
-            # 保留 75 分钟（1Hz×4500 点）：整点 KPI 任务计算"上一完整小时"，
-            # 需覆盖 [H-1, H)，恰 3600 点只有 ~60s 迟到余量，4500 点给出 ~15 分钟余量
-            pipe.ltrim(key, 0, 4499)
-            pipe.expire(key, 7200)
-
-            # 为 TDengine 准备数据
+            row_dt = _parse_known_ts(row[0])
+            if row_dt is not None:  # pragma: no branch - 行 ts 恒可解析（_build_row 保证）
+                loop_row_ts[loop_part] = row_dt.timestamp()
+            key = f"{_HISTORY_KEY_PREFIX}{loop_part}"
+            history_entries.append((key, json.dumps(row_dict, allow_nan=False), row[0]))
             if self._writeback_enabled:
                 subtable = make_subtable_name(loop_part)
                 loop_id, unit_id = loop_meta.get(loop_part, ("", ""))
-                tables_rows.append(
+                td_tables.append(
                     {
                         "subtable": subtable,
                         "loop_id": loop_id,
@@ -1790,74 +2656,361 @@ class RealtimeSubscriber:
                     }
                 )
 
+        # 4) 写入 Redis 1 小时缓存（R02 三重限制；pipeline 事务性：失败即整批
+        #    未写、可整批重试）
         redis_ok = True
-        try:
-            await pipe.execute()
-        except Exception as exc:  # noqa: BLE001
-            redis_ok = False
-            logger.warning("Redis 历史数据写入失败: %s", exc)
+        if history_entries:
+            try:
+                await self._push_history_entries(history_entries)
+            except Exception as exc:  # noqa: BLE001
+                redis_ok = False
+                logger.warning("Redis 历史数据写入失败: %s", exc)
 
-        # 2. 批量写入 TDengine (如果启用)
-        tdengine_ok = True
-        if tables_rows:
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    count = await batch_insert_multi(tables_rows)
-                    logger.debug("批量写入 %d 行到 %d 个子表", count, len(tables_rows))
-                    break
-                except Exception as exc:  # noqa: BLE001
-                    if attempt < max_retries - 1:
-                        wait = 0.5 * (2**attempt)  # 0.5s, 1s, 2s
-                        logger.warning(
-                            "批量写入失败 (尝试 %d/%d): %s，%gs 后重试",
-                            attempt + 1,
-                            max_retries,
-                            exc,
-                            wait,
-                        )
-                        await asyncio.sleep(wait)
-                    else:
-                        tdengine_ok = False
-                        logger.error("批量写入最终失败 (%d 个子表): %s", len(tables_rows), exc)
+        # 5) 批量写入 TDengine（分块 ≤500 行，分块成功独立记录）
+        failed_td_tables = await self._write_td_chunks(td_tables)
 
-        # 落库点推进：writeback 启用时需 TDengine 成功；禁用时需 Redis 成功
-        flush_succeeded = tdengine_ok if self._writeback_enabled else redis_ok
-        if flush_succeeded and self._last_data_at is not None:
-            self._last_flushed_at = self._last_data_at
+        self._metrics["buffer_rows_pending"] = len(self._buffer)
+
+        # 6) 水位推进 / 失败窗口登记
+        if redis_ok and not failed_td_tables:
+            # 成功批：推进已确认边界；仅当无未确认窗口挂起时才推进持久化 checkpoint
+            # （不越过旧失败数据，实时批成功不得擦掉旧失败窗口）
+            if batch_boundary is not None:
+                self._confirmed_boundary = max(self._confirmed_boundary or 0.0, batch_boundary)
+            if not self._unconfirmed_windows and self._confirmed_boundary is not None:
+                self._last_flushed_at = max(self._last_flushed_at or 0.0, self._confirmed_boundary)
+            # R08：成功批内各回路推进 per-loop 已确认落库水位（最大行 ts）
+            for loop_part, row_ts in loop_row_ts.items():
+                self._advance_loop_watermark(loop_part, row_ts)
+        else:
+            failed_history = [] if redis_ok else history_entries
+            # R08：部分成功批中，持久化成功的回路照常推进水位——写回开启时以
+            # TD 写入结果为准（历史缓存缺失由 R13 完整性校验回源 TD 兜底）；
+            # 写回关闭时历史缓存是唯一落库形态，以 redis_ok 为准
+            failed_subtables = {t["subtable"] for t in failed_td_tables}
+            failed_loop_row_ts: dict[str, float] = {}
+            for loop_part, row_ts in loop_row_ts.items():
+                persisted = (
+                    (make_subtable_name(loop_part) not in failed_subtables)
+                    if self._writeback_enabled
+                    else redis_ok
+                )
+                if persisted:
+                    self._advance_loop_watermark(loop_part, row_ts)
+                else:
+                    failed_loop_row_ts[loop_part] = row_ts
+            self._register_unconfirmed_window(
+                boundary_prev,
+                batch_boundary,
+                failed_td_tables,
+                failed_history,
+                failed_loop_row_ts,
+            )
 
         # 断点续传 checkpoint 持久化（节流，进程重启后据此恢复缺口起点）
         await self._maybe_save_checkpoint()
+        # R08：per-loop 水位持久化（节流 30s，与 checkpoint 同风格）
+        await self._maybe_save_loop_watermarks()
 
-    def _build_row(self, roles_data: dict[str, dict]) -> tuple:
-        """构造单行数据。
+    async def _push_history_entries(self, history_entries: list[tuple[str, str, str]]) -> None:
+        """把 (key, row_json, row_ts) 列表写入 Redis 历史缓存（R02 三重限制）.
+
+        - **每回路上限**：``LTRIM(0, REALTIME_HISTORY_MAX_POINTS_PER_LOOP-1)``。
+          与 R13 完整性命中（10% 容差）的配合：1Hz 写入节奏下 1200 点 ≈ 20 分钟，
+          超过 ~20 分钟的窗口缓存天然未命中回源本地 TD 宽表——这是整改计划
+          允许的压力退化路径（"压力下允许 history 缓存退化为未命中"），换取
+          961 回路满载 JSON 载荷 ≤ 全局预算（64MiB）而非 585MiB+；
+        - **写入前去重**：行 ts ≤ 该回路最近已推送行 ts → 跳过 LPUSH +
+          计 ``history_dup_dropped``（Leader 单写者内存水位，重启后首次 flush
+          经 LINDEX 0 懒加载回填；R05 修复后同 ts 重复行已大幅减少，此为兜底）；
+        - **全局字节预算**：近似跟踪全部 history 键 JSON 载荷字节（写入累加、
+          LTRIM 裁剪按均值扣减、TTL 过期按内存过期模型清扫——误差登记于 S2
+          报告），超 ``REALTIME_HISTORY_GLOBAL_BUDGET_BYTES`` → 停止为"尚无
+          history 键的回路"新建历史缓存 + 计 ``history_budget_exceeded``；
+          已活跃键继续正常 LTRIM 收敛；最新值缓存（realtime:{tag}）与 TD
+          写回不受影响；
+        - pipeline 整体失败 → 去重水位/预算跟踪不推进（失败批进入未确认窗口
+          重试，重写幂等）。
+        """
+        max_points, budget = self._history_limits()
+        self._sweep_expired_history_keys()
+        push_plan: list[tuple[str, str, str]] = []
+        for key, row_json, row_ts in history_entries:
+            loop_part = key[len(_HISTORY_KEY_PREFIX) :]
+            last_ts = await self._last_pushed_row_ts(key, loop_part)
+            if row_ts and last_ts and row_ts <= last_ts:
+                self._incr("history_dup_dropped")
+                continue
+            if (
+                loop_part not in self._history_key_bytes
+                and self._history_bytes_total + len(row_json) > budget
+            ):
+                self._incr("history_budget_exceeded")
+                continue
+            push_plan.append((key, row_json, row_ts))
+        if not push_plan:
+            return
+        pipe = redis_client.pipeline()
+        for key, row_json, _ts in push_plan:
+            pipe.lpush(key, row_json)
+            pipe.ltrim(key, 0, max_points - 1)
+            pipe.expire(key, _HISTORY_TTL_SECONDS)
+        await pipe.execute()
+        # 成功后才推进去重水位与预算跟踪（失败批进未确认窗口重试，状态不冒进）
+        for key, row_json, row_ts in push_plan:
+            loop_part = key[len(_HISTORY_KEY_PREFIX) :]
+            self._track_history_push(loop_part, len(row_json), max_points)
+            self._last_pushed_row_ts_map[loop_part] = row_ts
+
+    def _history_limits(self) -> tuple[int, int]:
+        """读取历史缓存限制配置（每回路上限, 全局字节预算）.
+
+        对 MagicMock 型 settings（部分单测仅 patch 个别属性）回退到
+        config.py 的默认值（1200 点 / 64MiB），避免 int(MagicMock)=1 的假值。
+        """
+        raw_points = getattr(settings, "REALTIME_HISTORY_MAX_POINTS_PER_LOOP", None)
+        raw_budget = getattr(settings, "REALTIME_HISTORY_GLOBAL_BUDGET_BYTES", None)
+        max_points = raw_points if isinstance(raw_points, int) and raw_points > 0 else 1200
+        budget = raw_budget if isinstance(raw_budget, int) and raw_budget >= 0 else 64 * 1024 * 1024
+        return max_points, budget
+
+    async def _last_pushed_row_ts(self, key: str, loop_part: str) -> str | None:
+        """该回路最近已推送历史行 ts（规范化字符串，字典序即时间序）.
+
+        重启后首次 flush 经 ``LINDEX key 0``（最新行）懒加载回填；键不存在
+        → None（无历史，任意 ts 可写）。
+        """
+        if loop_part not in self._last_pushed_loaded:
+            self._last_pushed_loaded.add(loop_part)
+            try:
+                raw = await redis_client.lindex(key, 0)
+            except Exception as exc:  # noqa: BLE001
+                raw = None
+                logger.debug("LINDEX 历史缓存最新行失败（按无历史处理）: %s", exc)
+            if raw:
+                try:
+                    self._last_pushed_row_ts_map[loop_part] = json.loads(raw).get("ts") or None
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
+        return self._last_pushed_row_ts_map.get(loop_part)
+
+    def _track_history_push(self, loop_part: str, nbytes: int, max_points: int) -> None:
+        """成功推送后推进全局字节预算近似跟踪（Leader 单写者，进程内有效）.
+
+        LTRIM 裁剪按"该键当前平均行字节"近似扣减一条（不实际读回被裁行，
+        误差登记）；整键 TTL 过期由 ``_sweep_expired_history_keys`` 按内存
+        过期模型扣减。
+        """
+        self._history_bytes_total += nbytes
+        if loop_part not in self._history_key_bytes:
+            self._history_key_bytes[loop_part] = nbytes
+            self._history_key_rows[loop_part] = 1
+        else:
+            rows = self._history_key_rows[loop_part]
+            if rows >= max_points:
+                # 已达每回路上限：本次 LPUSH 会裁掉最老一行 → 按均值近似扣减
+                avg = self._history_key_bytes[loop_part] / rows
+                self._history_key_bytes[loop_part] += nbytes - avg
+                self._history_bytes_total -= int(avg)
+            else:
+                self._history_key_bytes[loop_part] += nbytes
+                self._history_key_rows[loop_part] = rows + 1
+        # 与 Redis EXPIRE 语义一致：每次写入刷新整键 TTL
+        self._history_key_expire_at[loop_part] = time.time() + _HISTORY_TTL_SECONDS
+
+    def _sweep_expired_history_keys(self) -> None:
+        """按内存过期模型清扫已过 TTL 的 history 键跟踪（节流 60s）.
+
+        键过期后该回路回到"尚无 history 键"状态：预算门重新适用、去重水位
+        重置（键已不存在，下次推送重建）。
+        """
+        now = time.time()
+        if now - self._last_history_sweep < _HISTORY_SWEEP_INTERVAL:
+            return
+        self._last_history_sweep = now
+        expired = [lp for lp, exp in self._history_key_expire_at.items() if exp <= now]
+        for loop_part in expired:
+            self._history_bytes_total -= self._history_key_bytes.pop(loop_part, 0)
+            self._history_key_rows.pop(loop_part, None)
+            self._history_key_expire_at.pop(loop_part, None)
+            self._last_pushed_loaded.discard(loop_part)
+            self._last_pushed_row_ts_map.pop(loop_part, None)
+        # 近似扣减的舍入误差可能累积为负 → 钳回 0
+        self._history_bytes_total = max(self._history_bytes_total, 0)
+
+    async def _write_td_chunks(self, tables_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """TDengine 分块写入（R07：≤ ``_TD_BATCH_MAX_ROWS`` 行/批，分块独立重试）.
+
+        Returns:
+          成功写入的行计入 ``rows_written``；最终失败的分块原样返回，由调用方
+          登记进未确认窗口重试缓冲（``rows_failed``）。
+        """
+        if not tables_rows:
+            return []
+        chunks: list[list[dict[str, Any]]] = []
+        chunk: list[dict[str, Any]] = []
+        chunk_rows = 0
+        for table in tables_rows:
+            rows = len(table.get("rows", []))
+            if chunk and chunk_rows + rows > _TD_BATCH_MAX_ROWS:
+                chunks.append(chunk)
+                chunk, chunk_rows = [], 0
+            chunk.append(table)
+            chunk_rows += rows
+        if chunk:
+            chunks.append(chunk)
+
+        failed: list[dict[str, Any]] = []
+        for chunk in chunks:
+            ok = False
+            for attempt in range(3):
+                try:
+                    count = await batch_insert_multi(chunk)
+                    self._incr("rows_written", count)
+                    logger.debug("批量写入 %d 行到 %d 个子表", count, len(chunk))
+                    ok = True
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    if attempt < 2:
+                        wait = 0.5 * (2**attempt)  # 0.5s, 1s
+                        logger.warning(
+                            "批量写入失败 (尝试 %d/3): %s，%gs 后重试", attempt + 1, exc, wait
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        logger.error(
+                            "批量写入最终失败（%d 个子表进入重试缓冲）: %s", len(chunk), exc
+                        )
+            if not ok:
+                failed.extend(chunk)
+        if failed:
+            self._incr("rows_failed", sum(len(t.get("rows", [])) for t in failed))
+        return failed
+
+    def _register_unconfirmed_window(
+        self,
+        boundary_prev: float | None,
+        batch_boundary: float | None,
+        failed_td_tables: list[dict[str, Any]],
+        failed_history: list[tuple[str, str, str]],
+        failed_loop_row_ts: dict[str, float] | None = None,
+    ) -> None:
+        """登记未确认窗口（R07）：失败批行进入有界重试缓冲，窗口记录进程内保留.
+
+        后续实时批次成功不得擦掉旧失败窗口；仅该窗口自身重写成功
+        （``_retry_unconfirmed_windows``）才确认移除并允许水位推进。
+        缓冲有界：窗口数或行数超限时保留窗口记录、丢弃重试载荷（数据损失
+        显式告警，不静默、不无限占用内存）。
+        R08：``failed_loop_row_ts`` 登记该窗口内**持久化失败**回路的行 ts，
+        窗口确认成功后据此推进 per-loop 水位。
+        """
+        window: dict[str, Any] = {
+            "start": boundary_prev if boundary_prev is not None else batch_boundary,
+            "end": batch_boundary,
+            "td_tables": failed_td_tables,
+            "history": failed_history,
+            "loop_row_ts": dict(failed_loop_row_ts or {}),
+        }
+        total_td_rows = sum(len(t.get("rows", [])) for t in failed_td_tables)
+        if (
+            len(self._unconfirmed_windows) >= _MAX_UNCONFIRMED_WINDOWS
+            or total_td_rows > _MAX_RETRY_ROWS_PER_WINDOW
+        ):
+            logger.error(
+                "未确认窗口重试缓冲已满（%d 窗口/单窗口 %d 行上限），新失败批仅登记"
+                "窗口不再重试（数据缺口以 gap backfill 兜底）: window=[%s, %s] rows=%d",
+                _MAX_UNCONFIRMED_WINDOWS,
+                _MAX_RETRY_ROWS_PER_WINDOW,
+                window["start"],
+                window["end"],
+                total_td_rows,
+            )
+            window["td_tables"] = []
+            window["history"] = []
+        self._unconfirmed_windows.append(window)
+        self._incr("unconfirmed_windows")
+
+    async def _retry_unconfirmed_windows(self) -> None:
+        """重写历史失败窗口（R07：优先于新批；窗口确认成功才移除）.
+
+        窗口内 Redis 历史与 TD 行独立重试；全部成功 → 窗口确认移除并推进
+        已确认边界，随后（若不再有挂起窗口）推进落库点；部分失败 → 窗口保留，
+        失败载荷留待下一拍。同 ts 重写幂等（TDengine 覆盖语义 / 事务性 pipeline）。
+        R08：窗口确认成功后推进其登记回路的 per-loop 水位（行 ts 口径）。
+        """
+        if not self._unconfirmed_windows:
+            return
+        remaining: list[dict[str, Any]] = []
+        for window in self._unconfirmed_windows:
+            confirmed = True
+            history = window.get("history") or []
+            if history:
+                try:
+                    await self._push_history_entries(history)
+                except Exception as exc:  # noqa: BLE001
+                    confirmed = False
+                    logger.warning("失败窗口 Redis 历史重写仍失败: %s", exc)
+            td_tables = window.get("td_tables") or []
+            if td_tables:
+                failed = await self._write_td_chunks(td_tables)
+                if failed:
+                    confirmed = False
+                    window["td_tables"] = failed
+            if confirmed:
+                end = window.get("end")
+                if end is not None:
+                    self._confirmed_boundary = max(self._confirmed_boundary or 0.0, end)
+                for loop_part, row_ts in (window.get("loop_row_ts") or {}).items():
+                    self._advance_loop_watermark(loop_part, float(row_ts))
+                logger.info(
+                    "未确认窗口 [%s, %s] 重写成功，已确认", window.get("start"), window.get("end")
+                )
+            else:
+                remaining.append(window)
+        self._unconfirmed_windows = remaining
+        if not remaining and self._confirmed_boundary is not None:
+            self._last_flushed_at = max(self._last_flushed_at or 0.0, self._confirmed_boundary)
+
+    def _build_row(self, roles_data: dict[str, dict]) -> tuple | None:
+        """构造单行数据；整行无任何已知 sourceTime 时返回 None.
 
         列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality
         对应 st_loop_data 超级表 schema。
 
         时间戳经显式 astimezone 到目标时区（Asia/Shanghai），
         消除 naive datetime 在 TDengine 侧的 8h 偏移风险。
-        """
-        # 行时间戳统一取 PV 角色的 collectTime（PV 为高频基准，保证行 ts 与 PV 值
-        # 同源，避免取到低频角色（如 PID 参数）的滞后时间戳）；PV 缺失时回退到任一角色
-        ts_str = roles_data.get("PV", {}).get("ts", "")
-        if not ts_str:
-            for role_data in roles_data.values():
-                ts_str = role_data.get("ts", "")
-                if ts_str:
-                    break
-        # 显式时区转换：统一到 _TARGET_TZ（Asia/Shanghai），格式化为 naive 字符串
-        ts_str = _normalize_ts(ts_str)
 
-        # 提取各角色值（缺失值用 None，_format_row 会转为 NULL）
-        pv_val = self._parse_float(roles_data.get("PV", {}).get("value"))
-        sp_val = self._parse_float(roles_data.get("SP", {}).get("value"))
-        op_val = self._parse_float(roles_data.get("OP", {}).get("value"))
-        mode_val = self._parse_int(roles_data.get("MODE", {}).get("value"))
-        pid_p_val = self._parse_float(roles_data.get("PID_P", {}).get("value"))
-        pid_i_val = self._parse_float(roles_data.get("PID_I", {}).get("value"))
-        pid_d_val = self._parse_float(roles_data.get("PID_D", {}).get("value"))
-        pv_quality_val = self._parse_int(roles_data.get("PV", {}).get("quality"))
+        R06（2026-09-06 整改）：数值解析统一走 ``app.core.numeric`` 共享契约——
+        无效/非有限字面量（NaN/Infinity/1e999/工业异常串）→ None（NULL），
+        绝不折算为 0；MODE 经 ``parse_mode_int``（"Infinity" 不再 OverflowError，
+        不会炸掉整个批次）；出口经 ``finite_or_none`` 守卫，行值不含非有限数。
+
+        R05（2026-09-06 整改，S0 契约 §4.1）：行 ts = 合并进该行的**所有角色
+        sourceTime 的最大值**（经归一化）——10:00:00 PV=5/SP=6 已落行后，
+        10:00:10 仅 SP=9 → 新行 ts=10:00:10（PV 取 last-known 5），旧时刻行
+        SP 仍为 6，不再用旧 PV 时间承载新角色事件改写旧行。整行无任何已知
+        sourceTime → 返回 None（不落 TD/历史缓存，调用方计 ``rows_dropped_no_ts``），
+        **不伪造 now()**。
+        """
+        known_source_ts = _collect_role_source_times(roles_data)
+        if not known_source_ts:
+            return None
+        ts_str = _format_target_ts(max(known_source_ts.values()))
+
+        def _role_float(role: str) -> float | None:
+            return finite_or_none(parse_finite_float(roles_data.get(role, {}).get("value")))
+
+        # 提取各角色值（缺失/无效值用 None，_format_row 会转为 NULL）
+        pv_val = _role_float("PV")
+        sp_val = _role_float("SP")
+        op_val = _role_float("OP")
+        mode_val = parse_mode_int(roles_data.get("MODE", {}).get("value"))
+        pid_p_val = _role_float("PID_P")
+        pid_i_val = _role_float("PID_I")
+        pid_d_val = _role_float("PID_D")
+        pv_quality_val = parse_mode_int(roles_data.get("PV", {}).get("quality"))
 
         return (
             ts_str,
@@ -1870,26 +3023,6 @@ class RealtimeSubscriber:
             pid_d_val,
             pv_quality_val,
         )
-
-    @staticmethod
-    def _parse_float(v: Any) -> float | None:
-        """安全解析 float，无效值返回 None。"""
-        if v is None or v == "":
-            return None
-        try:
-            return float(v)
-        except (ValueError, TypeError):
-            return None
-
-    @staticmethod
-    def _parse_int(v: Any) -> int | None:
-        """安全解析 int，无效值返回 None。"""
-        if v is None or v == "":
-            return None
-        try:
-            return int(float(v))
-        except (ValueError, TypeError):
-            return None
 
 
 # 全局单例

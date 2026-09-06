@@ -51,7 +51,10 @@ class _RedisProxy:
             return True
         if self._loop is None:
             return True
-        if getattr(self._loop, "is_closed", False):
+        # R01 修复（2026-09-06）：此前 ``getattr(self._loop, "is_closed", False)``
+        # 取到的是方法对象（恒为真），导致同一 loop 内每次操作都重建客户端、
+        # 连接池复用完全失效。必须实际调用 ``is_closed()``。
+        if self._loop.is_closed():
             return True
         try:
             current_loop = asyncio.get_running_loop()
@@ -82,7 +85,9 @@ class _RedisProxy:
         """
         if self._need_recreate():
             if self._client is not None:
-                old_loop_closed = getattr(self._loop, "is_closed", True)
+                # R01：正确调用 is_closed()（此前方法对象被当布尔，恒为"未关闭"，
+                # 导致旧客户端关闭分支永不执行）
+                old_loop_closed = self._loop.is_closed() if self._loop is not None else True
                 current_loop: asyncio.AbstractEventLoop | None = None
                 try:
                     current_loop = asyncio.get_running_loop()
