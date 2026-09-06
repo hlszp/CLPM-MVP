@@ -56,14 +56,25 @@ SETNX 分布式锁（WS-B2）:
 - ``_build_row`` 对 collectTime 显式 astimezone 到目标时区（Asia/Shanghai），
   消除 naive datetime 在 TDengine 侧的 8h 偏移风险。
 
+订阅连接池化 + 扇入（2026-09-06）:
+- 探针实测：AAS 服务端在单连接大订阅量（8649 位号）下推送扇出停摆
+  （快照后 updateRealValues 归零、Pong 仍应答）且连接 ~200s 被强制回收；
+  ≤1000 位号则推送连续且连接稳定。故活跃 Tag 按每片 ≤``_SHARD_SIZE``（1000）
+  切分为 N 条独立分片连接（``_shard_loop`` 各自连接/订阅/心跳/重连），
+  数据统一经 ``_cache_value`` 扇入 Redis 缓存/PubSub/写回，对前端透明；
+- 每片独立应用层心跳（type=6）与片级停滞看门狗；分片建连错峰
+  （``_SHARD_CONNECT_STAGGER``）；监督循环（``_run_pool``）每分钟比对
+  活跃 Tag 集合，变化即整池重建（新增位号纳入新分片）。
+
 订阅手工/事件刷新（免重启生效）:
 - 订阅集合 = ``tag_registry WHERE is_linked=True``；回路/测点/绑定关系变更后，
   变更写路径提交后调用 ``notify_subscription_changed`` 向 Redis 控制频道
   （``realtime:control:subscription``）发布刷新指令（fire-and-forget）；
 - 仅 Leader 进程经 ``_control_loop`` 监听控制频道（Leadership 切换时启停），
-  收到指令后重查活跃 Tag、与 ``_subscribed_tags`` 做 diff，在**现有 WS 连接**上
-  以新 invocationId 全量重发 ``SubscribeAsync``（Completion 响应由接收循环统一
-  处理，新 Tag 即时获得当前值），并清空落库映射缓存（不等 300s TTL）；
+  收到指令后重查活跃 Tag、与 ``_subscribed_tags`` 做 diff，各**分片连接**在
+  现有连接上以新 invocationId 重发自身位号的 ``SubscribeAsync``（Completion
+  响应由所在分片接收循环统一处理），并清空落库映射缓存（不等 300s TTL）；
+  新增位号触发连接池重建（监督循环下一拍以新 Tag 集合重建分片）；
 - removed 的 Tag 不向 Hub 退订（Hub 语义不支持可靠退订，多推的值进 Redis 无害），
   结果中如实返回 removed 清单；
 - 每次刷新结果写入 Redis ``realtime:subscription:refresh_result``（TTL 60s），
@@ -78,6 +89,7 @@ import logging
 import os
 import socket
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -125,15 +137,53 @@ _CONTROL_RECONNECT_DELAY = 5.0
 # 看门狗 recv 超时（秒）—— 周期性检查消息停滞，超时即断开重连
 _WATCHDOG_RECV_TIMEOUT = 30.0
 
-# SP/MODE 等低频信号刷新间隔（秒）—— AAS 仅在值变化时推送 updateRealValues，
-# SP/MODE/PID 变化频率低，需定期重新调用 SubscribeAsync 获取 Completion 响应中的
-# 当前值，刷新 Redis 缓存（TTL 3600s），避免低频信号过期后前端显示空白。
+# SP/MODE 等低频信号刷新间隔（秒）—— 自愈/存活检查循环的节拍；全量重订阅
+# （重新调用 SubscribeAsync）另按 SIGNALR_RESUBSCRIBE_INTERVAL（默认 30 分钟）
+# 节流，见 _refresh_loop。
 _SIGNALR_REFRESH_INTERVAL = 60.0  # 1 分钟
+
+# 应用层心跳（SignalR type=6 Ping）：连接空闲时周期发送，服务端 Pong 即存活。
+# 背景（2026-09-06 探针实测）：AAS 网关会在无下行流量数分钟后回收 WebSocket
+# 会话（静默冻结或 RST），协议级 ping 已因 AAS 不应答而禁用（见 config.py）；
+# type=6 应用层 ping 双方均应答，既作保活流量也作快速探活。
+_PING_KEEPALIVE_INTERVAL = 25.0
+# Ping 发出后超过该时长未获 Pong 且期间无任何数据 → 判定连接死亡，立即重连
+_PING_DEATH_TIMEOUT = 60.0
+
+# 订阅连接池化（2026-09-06，探针实测驱动）：
+# AAS 服务端在单连接大订阅量（8649 位号）下推送扇出停摆（快照后增量推送归零，
+# Pong 仍应答）且连接 ~200s 被回收；≤1000 位号则推送连续（427 条/5min）且连接
+# 稳定。故将活跃 Tag 切分为多条分片连接（每片 ≤_SHARD_SIZE 个位号）并行订阅，
+# 数据统一扇入 _cache_value（Redis 缓存/PubSub/写回），对前端透明。
+_SHARD_SIZE = 1000
+_SHARD_CONNECT_STAGGER = 0.5  # 分片建连错峰间隔（秒），避免池启动瞬间 N 连并发
+# 连接池监督循环检查 Tag 集合变化的周期（秒）
+_POOL_TAG_CHECK_INTERVAL = 60.0
 
 # 订阅分块大小：单条 SubscribeAsync 携带的位号数上限（2026-09-03 生产事故加固）
 # 8600+ 位号单条订阅消息约 200KB，被远端 Hub 收到后立即关闭连接（code 1000，
 # 疑似超服务端单消息上限）；分块后单条约 10KB，Completion 响应由接收循环统一处理
 _SUBSCRIBE_CHUNK_SIZE = 500
+
+
+@dataclass
+class _ShardState:
+    """单条分片连接的独立状态（连接池化：每条 WS 连接互不共享）."""
+
+    index: int  # 分片序号（0 起）
+    total: int  # 分片总数
+    tags: list[str] = field(default_factory=list)  # 本分片订阅的位号（有序）
+    ws: Any = None
+    ping_pending_since: float | None = None  # 待应答心跳的发送时刻（epoch 秒）
+    last_ping_sent_at: float = 0.0
+    last_resubscribe_at: float = 0.0  # 上次全量重订阅时刻（低频信号保鲜）
+    last_data_at: float | None = None  # 本分片最后收到数据消息时间（停滞看门狗用）
+
+
+def _split_shards(tag_codes: list[str], shard_size: int) -> list[list[str]]:
+    """把位号列表按 ``shard_size`` 切分为分片（保序，末片可不满）."""
+    return [tag_codes[i : i + shard_size] for i in range(0, len(tag_codes), shard_size)]
+
 
 # loop_part → (loop_id, unit_id) 缓存 TTL（秒）：flush 热路径不每拍查库
 _LOOP_META_CACHE_TTL = 300.0
@@ -223,7 +273,6 @@ class RealtimeSubscriber:
         self._task: asyncio.Task | None = None
         self._flush_task: asyncio.Task | None = None
         self._refresh_task: asyncio.Task | None = None
-        self._ws: Any = None
         self._running = False
         self._subscribed_tags: set[str] = set()
         self._invocation_counter: int = 0  # SignalR invocationId 计数器
@@ -260,6 +309,11 @@ class RealtimeSubscriber:
         self._is_leader = False  # 当前是否持有 Leader 锁（仅持锁进程真正订阅）
         # 订阅刷新控制频道监听任务（仅 Leader 进程运行，随 Leadership 切换启停）
         self._control_task: asyncio.Task | None = None
+        # 连接池共享状态：当前分片列表（refresh_subscription 用）与重建信号
+        self._shard_states: list[_ShardState] = []
+        self._rebuild_event: asyncio.Event = asyncio.Event()
+        # 每代连接池只触发一次缺口补数检查（9 条分片建连各触发一次无意义）
+        self._pool_backfill_done = False
 
     @property
     def _writeback_enabled(self) -> bool:
@@ -328,10 +382,7 @@ class RealtimeSubscriber:
             self._backfill_retry_task = None
         self._retry_window_start = None
         self._backfill_retry_count = 0
-        if self._ws is not None:
-            await self._ws.close()
-            self._ws = None
-        # 停止前 flush 剩余数据
+        # 停止前 flush 剩余数据（分片连接由 _run_pool 的 finally 统一收尾）
         await self._flush_buffer()
         logger.info("实时数据订阅已停止")
 
@@ -476,46 +527,132 @@ class RealtimeSubscriber:
         t.add_done_callback(self._bg_tasks.discard)
 
     async def _run(self) -> None:
-        """主循环：连接 → 订阅 → 接收 → 重连（指数退避）."""
+        """主循环：订阅连接池监督（连接池化 + 扇入）.
+
+        活跃 Tag 按每片 ≤``_SHARD_SIZE`` 个切分为 N 条独立 WS 连接，各自
+        连接/订阅/接收/保活/重连（``_shard_loop``），数据统一经 ``_cache_value``
+        扇入 Redis 缓存/PubSub/写回。Tag 集合变化或重建信号触发时整池重建。
+        """
+        while self._running:
+            tag_codes = sorted(await self._get_active_tags())
+            if not tag_codes:
+                logger.info("无活跃 Tag，等待数据...")
+                await asyncio.sleep(30)
+                continue
+            shards = _split_shards(tag_codes, _SHARD_SIZE)
+            self._subscribed_tags = set(tag_codes)
+            self._pool_backfill_done = False
+            logger.info(
+                "订阅连接池启动：%d 个 Tag 切分为 %d 条分片连接（每片 ≤%d）",
+                len(tag_codes),
+                len(shards),
+                _SHARD_SIZE,
+            )
+            await self._run_pool(shards)
+            if not self._running:
+                break
+            # 池退出（Tag 集合变化 / 重建信号 / 全体分片异常退出）→ 重建
+            await asyncio.sleep(float(settings.SIGNALR_RECONNECT_INTERVAL))
+
+    async def _run_pool(self, shards: list[list[str]]) -> None:
+        """运行一代连接池：N 条分片并行，Tag 集合变化或全体退出时返回."""
+        states = [
+            _ShardState(index=i, total=len(shards), tags=chunk) for i, chunk in enumerate(shards)
+        ]
+        self._shard_states = states
+        self._rebuild_event.clear()
+        tasks = [asyncio.create_task(self._shard_loop(st)) for st in states]
+        try:
+            while self._running and tasks:
+                done, _pending = await asyncio.wait(tasks, timeout=_POOL_TAG_CHECK_INTERVAL)
+                if done:
+                    for t in done:
+                        exc = t.exception() if not t.cancelled() else None
+                        st = states[tasks.index(t)]
+                        logger.error(
+                            "分片 %d/%d 任务意外退出（应由片内重连自愈）: %s",
+                            st.index + 1,
+                            st.total,
+                            exc or "cancelled/无异常",
+                        )
+                    tasks = [t for t in tasks if not t.done()]
+                    if not tasks:
+                        logger.error("全部分片任务退出，交由监督循环重建连接池")
+                        return
+                if self._rebuild_event.is_set():
+                    logger.info("收到重建信号，重建订阅连接池")
+                    return
+                current = sorted(await self._get_active_tags())
+                if current and set(current) != self._subscribed_tags:
+                    logger.info(
+                        "活跃 Tag 集合变化（%d → %d），重建订阅连接池",
+                        len(self._subscribed_tags),
+                        len(current),
+                    )
+                    return
+        finally:
+            self._shard_states = []
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True), timeout=5.0
+                    )
+                except TimeoutError:
+                    logger.warning("分片任务收尾超时（5s），放弃等待")
+
+    async def _shard_loop(self, state: _ShardState) -> None:
+        """单分片主循环：连接 → 订阅 → 接收 → 重连（指数退避）."""
         base_delay = float(settings.SIGNALR_RECONNECT_INTERVAL)
         max_delay = float(settings.SIGNALR_RECONNECT_MAX_INTERVAL)
         delay = base_delay
         connected_at = 0.0
+        # 分片建连错峰：避免池启动/重建瞬间 N 条连接同时打向 Hub
+        await asyncio.sleep(state.index * _SHARD_CONNECT_STAGGER)
         while self._running:
             try:
                 connected_at = time.monotonic()
-                await self._connect_and_subscribe()
+                await self._connect_and_subscribe(state)
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as exc:  # noqa: BLE001
                 # 连接健康存活超过 60s 才视为稳定连接，重置退避到 base；
                 # 否则先按当前退避等待，再翻倍（base → ×2 → … → max 封顶），
                 # 避免远端 Hub 不可用时固定小间隔重连持续施压
                 if time.monotonic() - connected_at > 60:
                     delay = base_delay
-                logger.warning("实时数据订阅异常: %s，%.0fs 后重连", exc, delay)
+                logger.warning(
+                    "分片 %d/%d 订阅异常: %s，%.0fs 后重连",
+                    state.index + 1,
+                    state.total,
+                    exc,
+                    delay,
+                )
                 await asyncio.sleep(delay)
                 delay = next_reconnect_delay(delay, cap=max_delay)
             finally:
                 # 确保旧连接在任何情况下都被关闭，防止服务器侧 CLOSE_WAIT 堆积
-                await self._close_ws_safely()
+                await self._close_shard_ws(state)
 
-    async def _close_ws_safely(self) -> None:
-        """安全关闭 WebSocket 连接（幂等）。"""
-        if self._ws is not None:
+    async def _close_shard_ws(self, state: _ShardState) -> None:
+        """安全关闭分片 WebSocket 连接（幂等）。"""
+        if state.ws is not None:
             try:
-                await self._ws.close()
+                await state.ws.close()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("关闭旧 WebSocket 连接时异常（可忽略）: %s", exc)
             finally:
-                self._ws = None
+                state.ws = None
 
-    async def _send_subscribe_invocations(self, tag_codes: list[str], prefix: str) -> list[str]:
+    async def _send_subscribe_invocations(
+        self, ws: Any, tag_codes: list[str], prefix: str
+    ) -> list[str]:
         """分块发送 SubscribeAsync（每块 ≤ ``_SUBSCRIBE_CHUNK_SIZE`` 个位号）。
 
         单条全量订阅消息过大时会被远端 Hub 直接关闭连接（2026-09-03 实锤），
         分块后每条约 10KB；各块 Completion (type=3) 响应携带该块位号当前值，
-        由 ``_connect_and_subscribe`` 的接收循环统一处理。
+        由所在分片的接收循环统一处理。
 
         必须包含 invocationId，否则 AAS 将调用视为 fire-and-forget，不返回
         Completion 响应（初始当前值会永远缺失）。
@@ -539,12 +676,12 @@ class RealtimeSubscriber:
                 )
                 + "\x1e"
             )
-            await self._ws.send(subscribe_msg)
+            await ws.send(subscribe_msg)
             invocation_ids.append(invocation_id)
         return invocation_ids
 
-    async def _connect_and_subscribe(self) -> None:
-        """连接 Hub 并订阅数据.
+    async def _connect_and_subscribe(self, state: _ShardState) -> None:
+        """分片连接 Hub 并订阅本分片位号.
 
         SignalR JSON Hub Protocol 流程：
         1. WebSocket 连接
@@ -553,53 +690,61 @@ class RealtimeSubscriber:
         4. 之后所有消息以 \\x1e (Record Separator) 分帧
         """
         # 先关闭残留的旧连接，防止泄漏
-        await self._close_ws_safely()
+        await self._close_shard_ws(state)
 
-        self._ws = await websockets.connect(
+        state.ws = await websockets.connect(
             settings.SIGNALR_HUB_URL,
             # 0/None → 禁用协议级 ping（生产 AAS 不应答，会周期性误判断连）
             ping_interval=settings.SIGNALR_PING_INTERVAL or None,
             ping_timeout=settings.SIGNALR_PING_TIMEOUT,
             open_timeout=settings.SIGNALR_OPEN_TIMEOUT,
         )
-        logger.info("已连接实时数据 Hub: %s", settings.SIGNALR_HUB_URL)
+        logger.info(
+            "分片 %d/%d 已连接实时数据 Hub: %s（%d 位号）",
+            state.index + 1,
+            state.total,
+            settings.SIGNALR_HUB_URL,
+            len(state.tags),
+        )
 
         # SignalR 协议握手
         handshake_msg = json.dumps({"protocol": "json", "version": 1}) + "\x1e"
-        await self._ws.send(handshake_msg)
-        raw = await self._ws.recv()
+        await state.ws.send(handshake_msg)
+        raw = await state.ws.recv()
         handshake = json.loads(raw.rstrip("\x1e"))
         if "error" in handshake:
             raise ConnectionError(f"SignalR 握手失败: {handshake['error']}")
-        logger.info("SignalR 握手成功")
 
-        # 查询全部活跃 Tag 并订阅
-        tag_codes = await self._get_active_tags()
-        if not tag_codes:
-            logger.info("无活跃 Tag，等待数据...")
-            await asyncio.sleep(30)
-            return
+        # 新连接重置心跳与重订阅节流状态；片级接收点（last_data_at）
+        # 跨片内重连保留——停滞看门狗语义与单连接时期一致（最近一次
+        # 真正缓存值的时间，即使发生在上一条连接上）
+        state.ping_pending_since = None
+        state.last_ping_sent_at = 0.0
+        state.last_resubscribe_at = time.time()
 
         # 发送订阅请求（标准 SignalR JSON Hub Protocol: type=1 Invocation）
         # 必须包含 invocationId，否则 AAS 将调用视为 fire-and-forget，不返回
         # Completion (type=3) 响应——初始响应中包含所有订阅 Tag 的当前值
         # （含 SP/MODE/PID 等低频信号），缺少 invocationId 会导致这些值永远缺失。
         # 2026-09-03：分块订阅——单条大消息（8600+ 位号约 200KB）会被 Hub 关闭
-        invocation_ids = await self._send_subscribe_invocations(tag_codes, "sub")
+        invocation_ids = await self._send_subscribe_invocations(state.ws, state.tags, "sub")
         logger.info(
-            "已订阅 %d 个 Tag（%d 块，invocationId=%s…）",
-            len(tag_codes),
+            "分片 %d/%d 已订阅 %d 个 Tag（%d 块，invocationId=%s…）",
+            state.index + 1,
+            state.total,
+            len(state.tags),
             len(invocation_ids),
             invocation_ids[0] if invocation_ids else "-",
         )
-        self._subscribed_tags = set(tag_codes)
 
-        # 断点续传：连接成功（重连/进程重启后首连）即检测数据缺口并自动补数
-        await self._maybe_trigger_gap_backfill()
+        # 断点续传：每代连接池首个分片建连成功即检测数据缺口并自动补数
+        if not self._pool_backfill_done:
+            self._pool_backfill_done = True
+            await self._maybe_trigger_gap_backfill()
 
         # 接收初始响应（Completion: type=3, result 包含 {code, data}）
         # 一帧可能包含多条 \x1e 分隔的消息（Completion + 首批 push）
-        raw = await self._ws.recv()
+        raw = await state.ws.recv()
         for part in raw.split("\x1e"):
             if not part:
                 continue
@@ -607,29 +752,43 @@ class RealtimeSubscriber:
                 initial = json.loads(part)
             except json.JSONDecodeError:
                 continue
-            await self._handle_signalr_message(initial)
+            await self._process_shard_message(state, initial)
 
         # 持续接收推送（一条 WebSocket 帧可能包含多条 \x1e 分隔的消息）
         # 数据停滞看门狗：以 _WATCHDOG_RECV_TIMEOUT 超时 recv 代替 async for，
-        # 超时后检查距上次消息是否超过 SIGNALR_STALL_TIMEOUT_SECONDS，
+        # 超时后检查本分片距上次数据是否超过 SIGNALR_STALL_TIMEOUT_SECONDS，
         # 超过则主动断开重连（覆盖"WS 活着但上游停推"盲区）
         stall_timeout = float(settings.SIGNALR_STALL_TIMEOUT_SECONDS)
-        while self._running and self._ws is not None:
+        while self._running and state.ws is not None:
             try:
                 raw_message = await asyncio.wait_for(
-                    self._ws.recv(), timeout=_WATCHDOG_RECV_TIMEOUT
+                    state.ws.recv(), timeout=_WATCHDOG_RECV_TIMEOUT
                 )
             except TimeoutError:
-                # recv 超时：检查数据停滞
-                if self._last_data_at is not None:
-                    idle = time.time() - self._last_data_at
+                # recv 超时：先做应用层心跳保活/探活与低频信号重订阅，再查停滞
+                await self._keepalive_tick(state)
+                if self._is_ping_dead(state):
+                    logger.warning(
+                        "分片 %d/%d 应用层心跳 %.0fs 无 Pong（期间无数据），判定连接死亡，主动重连",
+                        state.index + 1,
+                        state.total,
+                        time.time() - (state.ping_pending_since or 0.0),
+                    )
+                    await self._close_shard_ws(state)
+                    return
+                await self._resubscribe_tick(state)
+                if state.last_data_at is not None:
+                    idle = time.time() - state.last_data_at
                     if idle >= stall_timeout:
                         logger.warning(
-                            "数据停滞看门狗触发：%.0fs 无消息（阈值 %.0fs），主动断开重连",
+                            "分片 %d/%d 数据停滞看门狗触发：%.0fs 无数据（阈值 %.0fs），"
+                            "主动断开重连",
+                            state.index + 1,
+                            state.total,
                             idle,
                             stall_timeout,
                         )
-                        await self._close_ws_safely()
+                        await self._close_shard_ws(state)
                         return
                 continue
             for part in raw_message.split("\x1e"):
@@ -637,11 +796,80 @@ class RealtimeSubscriber:
                     continue
                 try:
                     msg = json.loads(part)
-                    await self._handle_signalr_message(msg)
+                    await self._process_shard_message(state, msg)
                 except json.JSONDecodeError:
                     logger.warning("收到非 JSON 消息: %s", part[:100])
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("处理实时数据消息失败: %s", exc)
+
+    async def _process_shard_message(self, state: _ShardState, msg: dict) -> None:
+        """分片消息统一入口：type=6 心跳在片内处理，其余交共享处理器."""
+        if msg.get("type") == 6:
+            await self._handle_ping_frame(state)
+            # 数据未到但 Pong 已到：pending 已清，无碍后续心跳
+            return
+        await self._handle_signalr_message(msg)
+        # 片级接收点对齐全局接收点（仅真正缓存了值才推进——空 Completion /
+        # 空推送不算数据，停滞语义与单连接时期一致；全局点由 _cache_value
+        # 维护，补数/checkpoint 语义不变）
+        if self._last_data_at is not None and (
+            state.last_data_at is None or self._last_data_at > state.last_data_at
+        ):
+            state.last_data_at = self._last_data_at
+        # 数据已到（含 Completion/Push），待应答的心跳视为已答——
+        # 连接显然存活，避免 pending 卡住后续心跳发送
+        if (
+            state.ping_pending_since is not None
+            and state.last_data_at is not None
+            and state.last_data_at >= state.ping_pending_since
+        ):
+            state.ping_pending_since = None
+
+    async def _handle_ping_frame(self, state: _ShardState) -> None:
+        """type=6 帧：我方心跳的 Pong 仅清 pending；服务端主动 Ping 回 Pong.
+
+        不可对 Pong 再回应答，否则双方互相触发形成 ping 风暴。
+        """
+        if state.ping_pending_since is not None:
+            state.ping_pending_since = None
+            return
+        if state.ws is not None:
+            try:
+                await state.ws.send(json.dumps({"type": 6}) + "\x1e")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("回复服务端 Ping 失败（连接可能已死）: %s", exc)
+
+    async def _keepalive_tick(self, state: _ShardState) -> None:
+        """连接空闲时的应用层心跳：到期发送 SignalR type=6 Ping.
+
+        仅在 recv 空闲超时（连接无下行流量）时调用——有数据流动的连接
+        无需额外保活。上一发 Ping 未获 Pong 前不重复发送。
+        """
+        if state.ws is None or state.ping_pending_since is not None:
+            return
+        now = time.time()
+        if now - state.last_ping_sent_at < _PING_KEEPALIVE_INTERVAL:
+            return
+        try:
+            await state.ws.send(json.dumps({"type": 6}) + "\x1e")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("发送应用层心跳失败（连接可能已死）: %s", exc)
+            return
+        state.last_ping_sent_at = now
+        state.ping_pending_since = now
+
+    def _is_ping_dead(self, state: _ShardState) -> bool:
+        """待应答 Ping 超过 _PING_DEATH_TIMEOUT 且期间无任何数据 → 连接判死.
+
+        有数据流动的连接不判死（个别实现可能不回 Pong 但仍在推送有效数据）；
+        纯僵尸连接（发收皆无响应）由该探活覆盖，检测时长
+        _PING_DEATH_TIMEOUT ~ +_WATCHDOG_RECV_TIMEOUT。
+        """
+        if state.ping_pending_since is None:
+            return False
+        if state.last_data_at is not None and state.last_data_at >= state.ping_pending_since:
+            return False
+        return time.time() - state.ping_pending_since > _PING_DEATH_TIMEOUT
 
     async def _handle_signalr_message(self, msg: dict) -> None:
         """统一处理 SignalR JSON 协议消息.
@@ -650,8 +878,10 @@ class RealtimeSubscriber:
         - type=3 Completion: SubscribeAsync 的返回值，result 包含 {code, data}，
           data 为所有订阅 Tag 的当前值（含 SP/MODE/PID 等低频信号）
         - type=1 Invocation (target=updateRealValues): 服务端推送的实时值变化
-        - type=6 Ping: 心跳，需回复 type=6 Pong
         - 自定义格式 {code:200, data:[...]}: 兼容非标准 SignalR 响应
+
+        type=6 Ping/Pong 在分片接收循环（``_process_shard_message``）片内处理，
+        不进入本处理器——Pong 应答关系是每条连接私有的。
         """
         msg_type = msg.get("type")
         target = msg.get("target") or msg.get("event")
@@ -667,12 +897,6 @@ class RealtimeSubscriber:
                     "Completion 响应: %d 个 Tag 当前值已缓存（含 SP/MODE/PID）",
                     len(data),
                 )
-            return
-
-        # type=6 Ping — 回复 Pong
-        if msg_type == 6:
-            if self._ws is not None:
-                await self._ws.send(json.dumps({"type": 6}) + "\x1e")
             return
 
         # type=1 Invocation — updateRealValues 推送
@@ -692,16 +916,11 @@ class RealtimeSubscriber:
             return
 
     async def _refresh_loop(self) -> None:
-        """周期刷新低频信号（SP/MODE/PID）当前值.
+        """订阅池自愈监护（独立于主任务存活）.
 
-        AAS 仅在值变化时推送 updateRealValues，SP/MODE/PID 等低频信号变化少，
-        需定期重新调用 SubscribeAsync 获取 Completion 响应中的当前值，
-        刷新 Redis 缓存（TTL 3600s），避免低频信号过期后前端显示空白。
-
-        刷新通过同一 WebSocket 连接发送 invocation，Completion 响应由
-        ``_connect_and_subscribe`` 的接收循环经 ``_handle_signalr_message`` 处理。
-
-        自愈（2026-08-21 事故修复）：本循环独立于主任务存活，每周期检查——
+        低频信号（SP/MODE/PID）保鲜的重订阅已下沉到各分片
+        （``_resubscribe_tick``，按 ``SIGNALR_RESUBSCRIBE_INTERVAL`` 节流），
+        本循环只负责自愈（2026-08-21 事故修复）：每周期检查——
         - 主任务已退出（远端重启掐断连接后静默死亡）→ 重建主任务；
         - 数据停滞超过看门狗阈值 + 60s 余量但看门狗未生效（主任务卡死）→
           取消并重建主任务。
@@ -714,7 +933,7 @@ class RealtimeSubscriber:
                     continue
                 # --- 自愈 1：主任务已死 → 重建 ---
                 if self._task is None or self._task.done():
-                    logger.warning("自愈：实时订阅主任务已退出，重建连接循环")
+                    logger.warning("自愈：实时订阅主任务已退出，重建连接池")
                     self._task = asyncio.create_task(self._run())
                     self._task.add_done_callback(self._on_main_task_done)
                     continue
@@ -723,7 +942,7 @@ class RealtimeSubscriber:
                     idle = time.time() - self._last_data_at
                     if idle > stall_timeout + 60:
                         logger.warning(
-                            "自愈：数据停滞 %.0fs（阈值 %.0fs）且看门狗未生效，强制重建主任务",
+                            "自愈：数据停滞 %.0fs（阈值 %.0fs）且看门狗未生效，强制重建连接池",
                             idle,
                             stall_timeout,
                         )
@@ -732,24 +951,33 @@ class RealtimeSubscriber:
                             await self._task
                         except (asyncio.CancelledError, Exception):  # noqa: BLE001
                             pass
-                        await self._close_ws_safely()
                         self._task = asyncio.create_task(self._run())
                         self._task.add_done_callback(self._on_main_task_done)
                         continue
-                if self._ws is None or not self._subscribed_tags:
-                    continue
-                # 重新发送 SubscribeAsync 获取所有订阅 Tag 的当前值
-                # AAS 会返回 Completion (type=3) 响应，由接收循环统一处理
-                # （分块发送，与建连订阅同路径）
-                await self._send_subscribe_invocations(list(self._subscribed_tags), "refresh")
-                logger.debug(
-                    "已发送周期刷新订阅请求 (%d tags)",
-                    len(self._subscribed_tags),
-                )
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.warning("周期刷新订阅请求失败（可忽略，下个周期重试）: %s", exc)
+                logger.warning("订阅池自愈检查异常（可忽略，下个周期重试）: %s", exc)
+
+    async def _resubscribe_tick(self, state: _ShardState) -> None:
+        """分片低频信号保鲜：按 ``SIGNALR_RESUBSCRIBE_INTERVAL`` 节流重发订阅.
+
+        AAS 口径"同一点位只订阅一次"，重订阅仅用于 SP/MODE/PID 保鲜；
+        Completion (type=3) 响应由本分片接收循环统一处理。
+        """
+        if state.ws is None or not state.tags:
+            return
+        now = time.time()
+        if now - state.last_resubscribe_at < settings.SIGNALR_RESUBSCRIBE_INTERVAL:
+            return
+        state.last_resubscribe_at = now
+        await self._send_subscribe_invocations(state.ws, state.tags, "refresh")
+        logger.debug(
+            "分片 %d/%d 已发送周期刷新订阅请求 (%d tags)",
+            state.index + 1,
+            state.total,
+            len(state.tags),
+        )
 
     # ------------------------------------------------------------------
     # 订阅手工/事件刷新（Redis Pub/Sub 控制频道，仅 Leader 监听）
@@ -816,7 +1044,7 @@ class RealtimeSubscriber:
         request_id: str | None = None,
         requested_at: str | None = None,
     ) -> dict:
-        """刷新实时订阅：重查活跃 Tag → diff → 现有 WS 连接上全量重发 SubscribeAsync.
+        """刷新实时订阅：重查活跃 Tag → diff → 各分片现有连接上重发自身位号订阅.
 
         - 非 Leader / WS 未连接时不产生 WS 动作，写入带 error 的结果；
         - 重发与 ``_refresh_loop`` 同路径（分块发送，websockets 支持同 loop 不同
@@ -847,7 +1075,8 @@ class RealtimeSubscriber:
         try:
             if not self._is_leader:
                 raise RuntimeError("本进程非实时订阅 Leader，无法执行刷新")
-            if self._ws is None:
+            connected_shards = [st for st in self._shard_states if st.ws is not None]
+            if not connected_shards:
                 raise RuntimeError("WebSocket 未连接（订阅器等待重连中），请稍后重试")
 
             new_set = set(await self._get_active_tags())
@@ -857,15 +1086,27 @@ class RealtimeSubscriber:
             result.update({"total": len(new_set), "added": added, "removed": removed})
 
             if new_set:
-                # 全量重发（新 invocationId）：AAS 以最新 SubscribeAsync 为准
-                # 并回发 Completion（type=3）携带全部订阅 Tag 当前值
-                # （分块发送；invocationId 记录首块，完整块清单见日志）
-                invocation_ids = await self._send_subscribe_invocations(
-                    sorted(new_set), "manual_refresh"
-                )
-                result["invocationId"] = invocation_ids[0] if invocation_ids else None
+                # 各分片在其现有连接上全量重发自身位号（新 invocationId）：
+                # AAS 以最新 SubscribeAsync 为准并回发 Completion (type=3)
+                # 携带全部订阅 Tag 当前值。新增位号尚未属于任何分片 →
+                # 触发连接池重建（监督循环在下一拍用新 Tag 集合重建分片）。
+                first_ids: list[str] = []
+                for st in connected_shards:
+                    invocation_ids = await self._send_subscribe_invocations(
+                        st.ws, st.tags, "manual_refresh"
+                    )
+                    if invocation_ids and not first_ids:
+                        first_ids = invocation_ids
+                result["invocationId"] = first_ids[0] if first_ids else None
+                if added:
+                    logger.info(
+                        "订阅刷新发现新增位号 %d 个，触发连接池重建以纳入新分片",
+                        len(added),
+                    )
+                    self._rebuild_event.set()
             else:
                 logger.info("订阅刷新后无活跃 Tag，跳过重发 SubscribeAsync")
+                self._rebuild_event.set()
             self._subscribed_tags = new_set
 
             # 落库映射缓存主动清空（不等 TTL），下个 flush 节拍重建
@@ -1680,7 +1921,7 @@ async def notify_subscription_changed(source: str) -> None:
     """发布订阅刷新通知（fire-and-forget，失败仅记日志不影响业务主流程）.
 
     在测点/回路/绑定关系变更写路径提交后调用；Leader 进程监听控制频道，
-    收到后重查活跃 Tag 并在现有 WS 连接上重发 SubscribeAsync（免重启生效）。
+    收到后重查活跃 Tag 并在各分片现有连接上重发自身位号订阅（免重启生效）。
     """
     try:
         await redis_client.publish(_CONTROL_CHANNEL, _build_refresh_payload(source, None))

@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     SIGNALR_OPEN_TIMEOUT: int = 15  # 连接建立超时（秒），默认 15
     # 数据停滞看门狗：N 秒无消息主动断开重连（覆盖"WS 活着但上游停推"盲区）
     SIGNALR_STALL_TIMEOUT_SECONDS: int = 300  # 默认 5 分钟
+    # 全量重订阅间隔（秒）：AAS 口径"同一点位只订阅一次"，重订阅仅用于低频信号
+    # （SP/MODE/PID）保鲜，禁止高频重发（2026-09-05 曾为 60s 全量 8649 点重发，
+    # 疑诱发 AAS 网关会话回收）。刷新自愈检查不受此间隔影响，仍每分钟执行。
+    SIGNALR_RESUBSCRIBE_INTERVAL: int = 1800  # 默认 30 分钟
     # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
     REALTIME_WRITEBACK_ENABLED: bool = True
     # 多 worker 进程订阅单例：Leader 锁 TTL（秒），持锁进程每 TTL/3 续期；
