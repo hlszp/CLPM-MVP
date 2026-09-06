@@ -5,7 +5,9 @@
  *   颜色统一引用 theme.css 的 --ck-grade-* 变量名（HTML 直接 var()，ECharts 经
  *   readCockpitColors 解析为具体色值）；
  * - 六维口径（§5.4）：自控率/平稳率/准确率/快速率/好值率/有效率；
- * - 控制模式：MODE 标准值 0~4 → 五档中文标签/筛选键（对齐 backend constants/mode.py）。
+ * - 控制模式：MODE 标准值 0~4 → 中文标签/筛选键（中文标签口径对齐 backend
+ *   services/monitor.py 权威默认映射 {0:Manual,1:Auto,2:Cascade,3:Auto,4:Auto}，
+ *   R17 数据链路整改；筛选键仍按 DCS 原始值 0~4 分桶）。
  */
 import type { CockpitApi } from '#/api/cockpit';
 import type { LoopApi } from '#/api/loop';
@@ -135,16 +137,30 @@ export function worstDim(dims: null | SixDimValues): null | string {
 // 控制模式（MODE 标准值 0~4）
 // ---------------------------------------------------------------------------
 
-/** MODE 数值 → 五档中文标签（默认映射口径） */
+/**
+ * MODE 数值 → 中文标签（默认映射口径）
+ *
+ * R17（数据链路整改 S0 契约 §6）：与后端权威默认映射对齐——
+ * backend services/monitor.py `_DEFAULT_MODE_LABELS` =
+ * {0: Manual, 1: Auto, 2: Cascade, 3: Auto, 4: Auto}，REMOTE(3)/APC(4)
+ * 在控制语义上归并为 Auto（非手动，与 node_performance.py DEFAULT_AUTO_MODES
+ * 及 constants/mode.py AUTO_MODES={1,2,3,4} 一致）。故 3/4 译作"自动"，
+ * 括注保留 DCS 原始值语义（远程/先控），与下方筛选键 REMOTE/APC 呼应。
+ */
 export const MODE_ZH_BY_VALUE: Record<number, string> = {
   0: '手动',
   1: '自动',
   2: '串级',
-  3: '远程',
-  4: '先控',
+  3: '自动（远程）',
+  4: '自动（先控）',
 };
 
-/** MODE 数值 → 筛选键 */
+/**
+ * MODE 数值 → 筛选键（按 DCS 原始 MODE 值分桶，与上方控制语义中文标签是两个口径：
+ * 3/4 控制语义归并"自动"（见 MODE_ZH_BY_VALUE），但作为原始值仍单独成桶，
+ * 便于驾驶舱按远程/先控精确筛选；键名与后端 aggregate.modeDistribution 的
+ * 原始值分布键一致）
+ */
 export const MODE_KEY_BY_VALUE: Record<number, CockpitModeKey> = {
   0: 'MANUAL',
   1: 'AUTO',
@@ -177,7 +193,10 @@ export function modeBucket(mode: null | number | undefined): CockpitModeKey | nu
   return MODE_KEY_BY_VALUE[Math.trunc(mode)] ?? null;
 }
 
-/** 回路实时值 → 中文模式标签（优先数值映射；回退 modeLabel） */
+/**
+ * 回路实时值 → 中文模式标签（优先数值映射 MODE_ZH_BY_VALUE——已对齐后端
+ * monitor.py 权威默认映射（R17），3/4 归并"自动"并括注原始语义；回退 modeLabel）
+ */
 export function modeZhLabel(
   mode: null | number | undefined,
   modeLabel?: null | string,

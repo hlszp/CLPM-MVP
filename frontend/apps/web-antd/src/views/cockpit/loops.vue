@@ -32,8 +32,13 @@ import {
   getGradingThresholdsApi,
   getLoopMetricSeriesApi,
 } from '#/api/metric';
-import { parseTagCode, useLoopRealtime } from '#/composables/use-loop-realtime';
+import {
+  parseTagCode,
+  resolveModeLabel,
+  useLoopRealtime,
+} from '#/composables/use-loop-realtime';
 import { useCockpitStore } from '#/store/cockpit';
+import { parseFiniteNumber } from '#/utils/numeric';
 import { mapQualityToLabel } from '#/utils/quality-code';
 
 import CockpitHeader from './components/cockpit-header.vue';
@@ -270,19 +275,16 @@ function handleRealtimeMessage(msg: {
   const item = allLoops.value.find((l) => l.tagName === parsed.tagName);
   if (!item) return;
   const cv = item.currentValues;
-  const numValue = Number.parseFloat(msg.value);
-  if (Number.isNaN(numValue)) return;
+  // R06：共享数值契约——无效字面量（-1.#QNAN0/nan/Infinity/空串）→ null
+  const numValue = parseFiniteNumber(msg.value);
   switch (parsed.role) {
     case 'MODE': {
+      // R17：按「回路 modeMapping（REST 下发）→ 默认映射 → Unknown」解析，
+      // 删除"所有正数=Auto"硬编码；未知值显式 Unknown，不保留旧标签冒充
+      const label = resolveModeLabel(numValue, item.modeMapping);
       cv.mode = numValue;
-      // 与后端默认映射一致的安全映射；自定义 loop_mode_mapping 以 REST 为权威
-      if (numValue === 0) {
-        cv.modeLabel = 'Manual';
-        item.controlMode = 'Manual';
-      } else if (numValue >= 1) {
-        cv.modeLabel = 'Auto';
-        item.controlMode = 'Auto';
-      }
+      cv.modeLabel = label;
+      item.controlMode = label as LoopApi.ControlMode;
       break;
     }
     case 'OP': {

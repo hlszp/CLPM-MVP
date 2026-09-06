@@ -72,6 +72,7 @@ import QualityTag from '#/components/loop/quality-tag.vue';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
+import { parseFiniteNumber } from '#/utils/numeric';
 import { flattenNodes } from '#/utils/plant-node';
 import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
@@ -400,7 +401,9 @@ async function loadList() {
       page: query.page,
       pageSize: query.pageSize,
     });
-    tagList.value = data.items;
+    // R20：REST 快照与 WS 推送按 lastSyncAt（collectTime）新旧仲裁——
+    // 晚到的旧 REST（重连前发起、重连后才返回）不得覆盖已收到的新 WS 值
+    tagList.value = mergeSnapshot(tagList.value, data.items);
     total.value = data.total;
   } catch {
     // 错误 toast 已由拦截器处理，此处仅更新本地错误态
@@ -408,6 +411,42 @@ async function loadList() {
   } finally {
     loading.value = false;
   }
+}
+
+/** ISO 时间戳解析（无效/空返回 0，用于新旧仲裁） */
+function tsOf(iso?: null | string): number {
+  if (!iso) return 0;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/**
+ * R20：REST 当前页快照与现有（WS 更新过的）条目按 id 合并。
+ *
+ * - REST 条目不比现有条目新（现有 lastSyncAt 更晚，说明 WS 已推过更新值）
+ *   → 保留现有 currentValue/quality/lastSyncAt/stale；
+ * - REST 更新（含相等）→ 采用 REST（含后端 R06 下发的 stale 标记）。
+ */
+function mergeSnapshot(
+  existing: TagApi.TagItem[],
+  incoming: TagApi.TagItem[],
+): TagApi.TagItem[] {
+  if (existing.length === 0) return incoming;
+  const prevById = new Map(existing.map((t) => [t.id, t]));
+  return incoming.map((item) => {
+    const prev = prevById.get(item.id);
+    if (!prev) return item;
+    if (tsOf(prev.lastSyncAt) > tsOf(item.lastSyncAt)) {
+      return {
+        ...item,
+        currentValue: prev.currentValue,
+        lastSyncAt: prev.lastSyncAt,
+        quality: prev.quality,
+        stale: prev.stale,
+      };
+    }
+    return item;
+  });
 }
 
 function handleSearch() {
@@ -655,8 +694,12 @@ const uploadProps: UploadProps = {
   beforeUpload: handleImportBeforeUpload as UploadProps['beforeUpload'],
 };
 
-// ===== WebSocket 实时更新 =====
+// ===== WebSocket 实时更新（R06 容错 + R20 重连补快照/失联标旧） =====
 let wsUnsubscribe: (() => void) | null = null;
+let wsConnectionUnsubscribe: (() => void) | null = null;
+let reconnectSnapshotTimer: null | ReturnType<typeof setTimeout> = null;
+/** R20：是否经历过一次 online（首次加载不算"重连恢复"） */
+let hasConnectedOnce = false;
 
 /**
  * Phase 10 UX 包：质量码统一映射（与后端 _GOOD_CODES={1,2,3,192} 对齐）
@@ -667,21 +710,56 @@ function mapRealtimeQuality(quality: number): TagApi.Quality {
   return mapQualityToLabel(quality) as TagApi.Quality;
 }
 
-/** 处理 WebSocket 实时消息，更新匹配 tag 的 currentValue/quality/lastSyncAt */
+/**
+ * 处理 WebSocket 实时消息，更新匹配 tag 的 currentValue/quality/lastSyncAt。
+ *
+ * R06（数据链路整改）：无效数值（"-1.#QNAN0"/"nan"/"Infinity"/"1e999"/空串）
+ * 不再整条丢弃——数值置 null、quality 按消息更新、显式标旧（stale=true）；
+ * 原 42/GOOD 收到 nan/BAD 后页面必须显示不可用 + BAD，不得停留 42/GOOD。
+ */
 function handleRealtimeMessage(msg: {
   collectTime: string;
   quality: number;
   tagCode: string;
   value: string;
+  /** S0 契约 §6 增量字段（发布侧添加，可能尚未就绪）：值是否有效 */
+  valueValid?: boolean;
 }) {
   // tagCode 即 tag_registry.tag_name（含角色后缀，如 41FIC20021_PIDA.PV）
   const item = tagList.value.find((t) => t.tagName === msg.tagCode);
   if (!item) return;
-  const numValue = Number.parseFloat(msg.value);
-  if (Number.isNaN(numValue)) return;
-  item.currentValue = numValue;
+  const value =
+    msg.valueValid === false ? null : parseFiniteNumber(msg.value);
+  if (value === null) {
+    item.currentValue = null;
+    item.quality = mapRealtimeQuality(msg.quality);
+    item.lastSyncAt = msg.collectTime;
+    item.stale = true;
+    return;
+  }
+  item.currentValue = value;
   item.quality = mapRealtimeQuality(msg.quality);
   item.lastSyncAt = msg.collectTime;
+  item.stale = false;
+}
+
+/** R20：失联（offline/reconnecting）期间当前页值显式标旧 */
+function markAllStale() {
+  for (const item of tagList.value) {
+    item.stale = true;
+  }
+}
+
+/** R20：重连转 online（非首次）后防抖 ~1s 补当前页快照（随机错峰，避免恢复风暴） */
+function scheduleReconnectSnapshot() {
+  if (reconnectSnapshotTimer) {
+    clearTimeout(reconnectSnapshotTimer);
+  }
+  const delay = 1000 + Math.random() * 1500;
+  reconnectSnapshotTimer = setTimeout(() => {
+    reconnectSnapshotTimer = null;
+    loadList();
+  }, delay);
 }
 
 onMounted(() => {
@@ -696,6 +774,18 @@ onMounted(() => {
       realtimeWs.connect(token);
     }
     wsUnsubscribe = realtimeWs.onMessage(handleRealtimeMessage);
+    // R20：监听连接状态——失联标旧、恢复后补当前页快照（R19 注册即回调当前状态）
+    wsConnectionUnsubscribe = realtimeWs.onConnectionChange(() => {
+      const status = realtimeWs.status;
+      if (status === 'online') {
+        if (hasConnectedOnce) {
+          scheduleReconnectSnapshot();
+        }
+        hasConnectedOnce = true;
+      } else {
+        markAllStale();
+      }
+    });
   }
 });
 
@@ -703,6 +793,14 @@ onUnmounted(() => {
   if (wsUnsubscribe) {
     wsUnsubscribe();
     wsUnsubscribe = null;
+  }
+  if (wsConnectionUnsubscribe) {
+    wsConnectionUnsubscribe();
+    wsConnectionUnsubscribe = null;
+  }
+  if (reconnectSnapshotTimer) {
+    clearTimeout(reconnectSnapshotTimer);
+    reconnectSnapshotTimer = null;
   }
 });
 
@@ -956,7 +1054,18 @@ const { toolbarItems } = usePageToolbar(() => ({
             <span v-else class="text-gray-400">—</span>
           </template>
           <template v-else-if="column.key === 'quality'">
-            <QualityTag :quality="record.quality" />
+            <div class="flex items-center gap-1">
+              <QualityTag :quality="record.quality" />
+              <!-- R20：失联期间值显式标旧（WS 断开/重连中或后端 R06 标旧） -->
+              <Tooltip
+                v-if="record.stale"
+                title="实时连接失联或新值无效，显示为最后一次同步的状态"
+              >
+                <span class="text-xs text-amber-500 whitespace-nowrap">
+                  失联
+                </span>
+              </Tooltip>
+            </div>
           </template>
           <template v-else-if="column.key === 'tagType'">
             <Tag :style="CATEGORY_TAG_STYLE" class="m-0 border-0">

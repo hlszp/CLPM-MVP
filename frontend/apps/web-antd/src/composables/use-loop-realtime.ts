@@ -8,9 +8,12 @@
  * - applyMessage：解析 WS 消息，局部更新匹配回路的 currentValues
  * - connectionStatus：响应式三态（online/reconnecting/offline）
  * - startFallback / stopFallback：WS 断连时的 30 秒轮询降级
- * - MODE 自定义映射以 REST 返回为权威，WS 只做安全的默认映射
+ * - MODE 解析链（R17）：回路 modeMapping（REST 下发）→ 默认映射 → Unknown，
+ *   删除旧"所有正数=Auto"硬编码；权威映射见 services/monitor.py
+ * - 数值解析（R06）：utils/numeric.parseFiniteNumber，全字符串校验，
+ *   无效值不整条丢弃——数值置 null、质量按消息独立更新
  *
- * 对齐整改方案 §9.2。
+ * 对齐整改方案 §9.2 与数据链路整改 S0 契约 §3/§6。
  */
 import type { Ref } from 'vue';
 
@@ -18,6 +21,7 @@ import { onBeforeUnmount, ref } from 'vue';
 
 import { useAccessStore } from '@vben/stores';
 
+import { parseFiniteNumber } from '#/utils/numeric';
 import { mapQualityToLabel } from '#/utils/quality-code';
 import { type ConnectionStatus, realtimeWs } from '#/utils/realtime-ws';
 
@@ -27,6 +31,12 @@ export interface RealtimeMessage {
   quality: number;
   tagCode: string;
   value: string;
+  /** S0 契约 §6 增量字段（发布侧 S1/A 添加，可能尚未就绪）：值经共享契约解析是否有效 */
+  valueValid?: boolean;
+  /** S0 契约 §6 增量字段：接收时刻（消费侧容错缺省） */
+  recvAt?: string;
+  /** S0 契约 §6 增量字段：该值是否 last-known 标旧（消费侧容错缺省） */
+  stale?: boolean;
 }
 
 /** 回路实时值（7 个：PV/SP/OP/MODE/P/I/D，全量 WS 实时推送） */
@@ -43,11 +53,16 @@ export interface LoopRealtimeValues {
   sp: null | number;
 }
 
+/** MODE 数值 → 控制模式标签映射（REST 下发，键为字符串） */
+export type ModeMapping = Record<string, string>;
+
 /** 可被 applyMessage 更新的回路项（鸭子类型，兼容 MonitorListItem） */
 export interface RealtimeUpdatable {
   controlMode?: string;
   currentValues: LoopRealtimeValues;
   loopId: string;
+  /** R17：该回路的 MODE 数值映射（REST 列表/详情下发；缺省用默认映射） */
+  modeMapping?: ModeMapping | null;
   tagName: string;
 }
 
@@ -61,7 +76,8 @@ export interface UseLoopRealtimeReturn {
    * 将 WS 消息应用到匹配回路。
    * - 按 tagName 匹配；不匹配则跳过
    * - 7 个实时值全部支持：PV/SP/OP/MODE + PID_P/PID_I/PID_D
-   * - MODE 只做安全默认映射（0→Manual / ≥1→Auto），自定义映射以 REST 为权威
+   * - MODE 按「modeMapping → 默认映射 → Unknown」解析（R17），未知值显式 Unknown
+   * - 无效数值不整条丢弃：字段置 null，质量按消息独立更新（R06）
    * - PV 质量码统一走 mapQualityToLabel
    */
   applyMessage: (msg: RealtimeMessage, items: RealtimeUpdatable[]) => boolean;
@@ -79,6 +95,36 @@ export interface UseLoopRealtimeReturn {
 
 /** 默认轮询间隔（30 秒，对齐整改方案 §3.2 指标） */
 const DEFAULT_FALLBACK_INTERVAL = 30_000;
+
+/**
+ * 默认 MODE 值 → 控制模式映射（R17；与后端 services/monitor.py
+ * _DEFAULT_MODE_LABELS 一致：0=Manual，1=Auto，2=Cascade，3/4 归并 Auto）
+ */
+export const DEFAULT_MODE_LABELS: ModeMapping = {
+  '0': 'Manual',
+  '1': 'Auto',
+  '2': 'Cascade',
+  '3': 'Auto',
+  '4': 'Auto',
+};
+
+/**
+ * MODE 数值 → 控制模式标签（R17 解析链）。
+ *
+ * 优先该回路 REST 下发的 modeMapping（自定义 loop_mode_mapping 的生效结果），
+ * 未命中回退默认映射，仍未命中显式返回 'Unknown'（不得保留旧标签冒充）。
+ */
+export function resolveModeLabel(
+  mode: null | number | undefined,
+  mapping?: ModeMapping | null,
+): string {
+  if (mode === null || mode === undefined || !Number.isFinite(mode)) {
+    return 'Unknown';
+  }
+  const key = String(Math.trunc(mode));
+  const label = mapping?.[key] ?? DEFAULT_MODE_LABELS[key];
+  return label ?? 'Unknown';
+}
 
 /**
  * 位号角色后缀 → 语义角色映射（下划线风格解析用）。
@@ -160,46 +206,46 @@ export function useLoopRealtime(): UseLoopRealtimeReturn {
     if (!item) return false;
 
     const cv = item.currentValues;
-    const numValue = Number.parseFloat(msg.value);
-    if (Number.isNaN(numValue)) return false;
+
+    // R06：共享数值契约解析——"-1.#QNAN0"/"nan"/"Infinity"/"1e999"/空串 → null；
+    // 发布侧增量字段 valueValid=false 同样视为无效（字段可能尚未就绪，容错缺省）
+    const value =
+      msg.valueValid === false ? null : parseFiniteNumber(msg.value);
 
     switch (parsed.role) {
       case 'MODE': {
-        cv.mode = numValue;
-        // WS 只做安全默认映射；自定义 loop_mode_mapping 以 REST 返回为权威
-        if (numValue === 0) {
-          cv.modeLabel = 'Manual';
-          if (item.controlMode !== undefined) item.controlMode = 'Manual';
-        } else if (numValue >= 1) {
-          cv.modeLabel = 'Auto';
-          if (item.controlMode !== undefined) item.controlMode = 'Auto';
-        }
-        // 未知 MODE 值不覆盖 modeLabel（保持后端权威值）
+        // R17：modeMapping → 默认映射 → Unknown；未知值显式 Unknown
+        const label = resolveModeLabel(value, item.modeMapping);
+        cv.mode = value;
+        cv.modeLabel = label;
+        if (item.controlMode !== undefined) item.controlMode = label;
         break;
       }
       case 'OP': {
-        cv.op = numValue;
+        cv.op = value;
         break;
       }
       case 'PID_D': {
-        cv.pidD = numValue;
+        cv.pidD = value;
         break;
       }
       case 'PID_I': {
-        cv.pidI = numValue;
+        cv.pidI = value;
         break;
       }
       case 'PID_P': {
-        cv.pidP = numValue;
+        cv.pidP = value;
         break;
       }
       case 'PV': {
-        cv.pv = numValue;
+        // R06：数值无效 → 置 null（页面显示不可用），质量仍按本条消息更新，
+        // 不得保留旧值 + 旧 GOOD 标签冒充有效读数
+        cv.pv = value;
         cv.pvQuality = mapQualityToLabel(msg.quality);
         break;
       }
       case 'SP': {
-        cv.sp = numValue;
+        cv.sp = value;
         break;
       }
       default: {
@@ -236,7 +282,7 @@ export function useLoopRealtime(): UseLoopRealtimeReturn {
       realtimeWs.connect(token);
     }
 
-    // 注册连接状态变化回调（同步三态到响应式 ref）
+    // 注册连接状态变化回调（同步三态到响应式 ref；R19 注册即回调当前状态）
     if (!connectionUnsub) {
       connectionUnsub = realtimeWs.onConnectionChange(() => {
         connectionStatus.value = realtimeWs.status;
