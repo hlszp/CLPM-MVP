@@ -1190,6 +1190,12 @@ const { toolbarItems } = usePageToolbar(() => ({
 </template>
 
 <style scoped>
+/* 列表字体统一不加粗（含表头，覆盖 antd 默认 600 字重） */
+.tag-config-table :deep(th),
+.tag-config-table :deep(td) {
+  font-weight: 400;
+}
+
 .tag-config-table :deep(.ant-table-tbody > tr.ant-table-row-selected > td) {
   border-inline-end: none !important;
   box-shadow: none !important;
