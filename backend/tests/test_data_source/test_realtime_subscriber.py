@@ -27,6 +27,7 @@ from app.services.data_source.realtime_subscriber import (
     _SUBSCRIBER_LEADER_LOCK_KEY,
     RealtimeSubscriber,
     _normalize_ts,
+    _ShardState,
     get_subscriber,
     notify_subscription_changed,
     request_subscription_refresh,
@@ -487,6 +488,7 @@ def _gap_settings(mock_settings) -> None:
     mock_settings.GAP_BACKFILL_RETRY_MAX_SECONDS = 1800
     mock_settings.GAP_BACKFILL_LOCK_TTL_SECONDS = 7200
     mock_settings.SIGNALR_STALL_TIMEOUT_SECONDS = 300
+    mock_settings.SIGNALR_RESUBSCRIBE_INTERVAL = 1800
     mock_settings.SIGNALR_PING_INTERVAL = 30
     mock_settings.SIGNALR_PING_TIMEOUT = 60
     mock_settings.SIGNALR_OPEN_TIMEOUT = 15
@@ -1533,14 +1535,15 @@ class TestBuildRowTimezone:
 
 @pytest.mark.asyncio
 async def test_watchdog_triggers_disconnect_on_stall():
-    """数据停滞看门狗：超过 stall_timeout 无消息时应主动断开。"""
+    """数据停滞看门狗：分片超过 stall_timeout 无数据时应主动断开。"""
     import time as _time
 
     sub = RealtimeSubscriber()
     sub._running = True
+    state = _ShardState(index=0, total=1, tags=["LIC-101.PV"])
 
-    # 模拟上次收到数据是 10 分钟前（超过 stall_timeout=1s）
-    sub._last_data_at = _time.time() - 600
+    # 模拟本分片上次收到数据是 10 分钟前（超过 stall_timeout=1s）
+    state.last_data_at = _time.time() - 600
 
     # 构造 mock WebSocket
     mock_ws = AsyncMock()
@@ -1561,7 +1564,6 @@ async def test_watchdog_triggers_disconnect_on_stall():
             new=AsyncMock(return_value=mock_ws),
         ),
         patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
-        patch.object(sub, "_get_active_tags", return_value=["LIC-101.PV"]),
         patch.object(sub, "_maybe_trigger_gap_backfill", return_value=None),
     ):
         _gap_settings(mock_s)
@@ -1571,24 +1573,25 @@ async def test_watchdog_triggers_disconnect_on_stall():
         mock_s.SIGNALR_PING_TIMEOUT = 60
         mock_s.SIGNALR_OPEN_TIMEOUT = 15
 
-        await sub._connect_and_subscribe()
+        await sub._connect_and_subscribe(state)
 
-    # 看门狗触发后 _ws 应被置 None（_close_ws_safely 调用）
-    assert sub._ws is None
-    # mock_ws.close 应被调用（_close_ws_safely 内部）
+    # 看门狗触发后分片 ws 应被置 None（_close_shard_ws 调用）
+    assert state.ws is None
+    # mock_ws.close 应被调用（_close_shard_ws 内部）
     mock_ws.close.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_watchdog_no_disconnect_when_data_recent():
-    """数据停滞看门狗：数据在 stall_timeout 内时不断开，继续接收。"""
+    """数据停滞看门狗：分片数据在 stall_timeout 内时不断开，继续接收。"""
     import time as _time
 
     sub = RealtimeSubscriber()
     sub._running = True
+    state = _ShardState(index=0, total=1, tags=["LIC-101.PV"])
 
-    # 模拟上次收到数据是刚刚（未超时）
-    sub._last_data_at = _time.time()
+    # 模拟本分片上次收到数据是刚刚（未超时）
+    state.last_data_at = _time.time()
 
     # 构造 mock WebSocket
     mock_ws = AsyncMock()
@@ -1631,18 +1634,19 @@ async def test_watchdog_no_disconnect_when_data_recent():
         mock_s.SIGNALR_PING_TIMEOUT = 60
         mock_s.SIGNALR_OPEN_TIMEOUT = 15
 
-        await sub._connect_and_subscribe()
+        await sub._connect_and_subscribe(state)
 
-    # 未触发断开：_ws 仍非 None（或因 running=False 退出，但非看门狗触发）
-    # close 不应被 _close_ws_safely 调用（看门狗未触发）
+    # 未触发断开：分片 ws 仍非 None（running=False 自然退出，非看门狗触发）
+    mock_ws.close.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_watchdog_no_disconnect_when_no_last_data():
-    """看门狗：_last_data_at 为 None（从未收到数据）时不触发断开。"""
+    """看门狗：分片无停滞时不触发断开（初始帧即更新片级接收点）。"""
     sub = RealtimeSubscriber()
     sub._running = True
-    sub._last_data_at = None  # 从未收到数据
+    state = _ShardState(index=0, total=1, tags=["LIC-101.PV"])
+    state.last_data_at = None  # 从未收到数据
 
     mock_ws = AsyncMock()
     call_count = 0
@@ -1680,10 +1684,10 @@ async def test_watchdog_no_disconnect_when_no_last_data():
         mock_s.SIGNALR_PING_TIMEOUT = 60
         mock_s.SIGNALR_OPEN_TIMEOUT = 15
 
-        await sub._connect_and_subscribe()
+        await sub._connect_and_subscribe(state)
 
-    # _last_data_at 为 None 时不应触发断开（close 不被看门狗调用）
-    # ws.close 可能在循环退出后由外部 stop() 调用，但 _close_ws_safely 未被看门狗触发
+    # 片级接收点由初始帧更新后未停滞，不应触发断开（close 不被看门狗调用）
+    mock_ws.close.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -1958,12 +1962,17 @@ def test_build_row_ts_falls_back_when_pv_missing():
 
 
 def _make_leader_sub(fake_redis: _FakeRedis, tags: list[str]) -> RealtimeSubscriber:
-    """构造 Leader 态 + mock WS 的订阅器（_subscribed_tags 预置为 tags）."""
+    """构造 Leader 态 + 单分片 mock WS 的订阅器（连接池化适配）.
+
+    分片 tags 预置为入参 tags（排序后），``sub._shard_states[0].ws`` 为 mock WS。
+    """
     sub = RealtimeSubscriber()
     sub._running = True
     sub._is_leader = True
-    sub._ws = AsyncMock()
-    sub._ws.send = AsyncMock()
+    st = _ShardState(index=0, total=1, tags=sorted(tags))
+    st.ws = AsyncMock()
+    st.ws.send = AsyncMock()
+    sub._shard_states = [st]
     sub._subscribed_tags = set(tags)
     return sub
 
@@ -2004,13 +2013,16 @@ class TestSubscriptionRefresh:
         assert result["finishedAt"] is not None
         assert result["requestId"] == "req-1"
 
-        # 全量新列表在现有 WS 连接上重发（SignalR Invocation type=1）
-        sent = sub._ws.send.call_args.args[0]
+        # 分片在其现有连接上重发自身位号（连接池化：新增位号走池重建）
+        st = sub._shard_states[0]
+        sent = st.ws.send.call_args.args[0]
         payload = json.loads(sent.rstrip("\x1e"))
         assert payload["type"] == 1
         assert payload["invocationId"] == "manual_refresh_6"
         assert payload["target"] == "SubscribeAsync"
-        assert payload["arguments"] == [["LIC-101.PV", "LIC-101.SP", "LIC-103.PV", "LIC-103.SP"]]
+        assert payload["arguments"] == [["LIC-101.PV", "LIC-101.SP", "LIC-102.PV"]]
+        # 新增位号触发连接池重建信号
+        assert sub._rebuild_event.is_set()
         assert sub._subscribed_tags == {
             "LIC-101.PV",
             "LIC-101.SP",
@@ -2038,14 +2050,16 @@ class TestSubscriptionRefresh:
         sub = RealtimeSubscriber()
         sub._running = True
         sub._is_leader = False
-        sub._ws = AsyncMock()
+        st = _ShardState(index=0, total=1, tags=["LIC-101.PV"])
+        st.ws = AsyncMock()
+        sub._shard_states = [st]
 
         with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
             result = await sub.refresh_subscription(source="manual-api", request_id="req-2")
 
         assert result["error"] is not None
         assert "Leader" in result["error"]
-        sub._ws.send.assert_not_called()
+        st.ws.send.assert_not_called()
         stored = json.loads(fake_redis._data[_REFRESH_RESULT_KEY])
         assert stored["error"] == result["error"]
 
@@ -2056,7 +2070,7 @@ class TestSubscriptionRefresh:
         sub = RealtimeSubscriber()
         sub._running = True
         sub._is_leader = True
-        sub._ws = None
+        sub._shard_states = []  # 无任何已连接分片
 
         with patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis):
             result = await sub.refresh_subscription(source="manual-api", request_id="req-3")
@@ -2080,7 +2094,8 @@ class TestSubscriptionRefresh:
         assert result["total"] == 0
         assert result["removed"] == ["LIC-101.PV"]
         assert result["invocationId"] is None
-        sub._ws.send.assert_not_called()
+        sub._shard_states[0].ws.send.assert_not_called()
+        assert sub._rebuild_event.is_set()  # 空集合触发池重建
         assert sub._subscribed_tags == set()
 
     @pytest.mark.asyncio
@@ -2096,7 +2111,7 @@ class TestSubscriptionRefresh:
             result = await sub.refresh_subscription(source="manual-api")
 
         assert result["error"] is None
-        sub._ws.send.assert_called_once()
+        sub._shard_states[0].ws.send.assert_called_once()
 
 
 class TestChunkedSubscription:
@@ -2110,15 +2125,15 @@ class TestChunkedSubscription:
     async def test_send_subscribe_invocations_chunks_large_list(self):
         """1200 个位号 → 3 块（500/500/200），块间不重不漏、invocationId 唯一递增."""
         sub = RealtimeSubscriber()
-        sub._ws = AsyncMock()
+        ws = AsyncMock()
         sub._invocation_counter = 0
         tags = [f"T-{i:05d}" for i in range(1200)]
 
-        ids = await sub._send_subscribe_invocations(tags, "sub")
+        ids = await sub._send_subscribe_invocations(ws, tags, "sub")
 
         assert len(ids) == 3
         assert len(set(ids)) == 3  # 唯一
-        payloads = [json.loads(c.args[0].rstrip("\x1e")) for c in sub._ws.send.call_args_list]
+        payloads = [json.loads(c.args[0].rstrip("\x1e")) for c in ws.send.call_args_list]
         assert all(p["type"] == 1 and p["target"] == "SubscribeAsync" for p in payloads)
         assert [len(p["arguments"][0]) for p in payloads] == [500, 500, 200]
         # 块拼接后与原清单完全一致（不重不漏、保序）
@@ -2130,37 +2145,40 @@ class TestChunkedSubscription:
     async def test_send_subscribe_invocations_small_list_single_message(self):
         """≤ 块大小时单条发送，格式与旧实现一致（兼容 Completion 初始值链路）."""
         sub = RealtimeSubscriber()
-        sub._ws = AsyncMock()
+        ws = AsyncMock()
         sub._invocation_counter = 2
         tags = ["LIC-101.PV", "LIC-101.SP"]
 
-        ids = await sub._send_subscribe_invocations(tags, "sub")
+        ids = await sub._send_subscribe_invocations(ws, tags, "sub")
 
         assert ids == ["sub_3"]
-        sub._ws.send.assert_called_once()
-        payload = json.loads(sub._ws.send.call_args.args[0].rstrip("\x1e"))
+        ws.send.assert_called_once()
+        payload = json.loads(ws.send.call_args.args[0].rstrip("\x1e"))
         assert payload["type"] == 1
         assert payload["invocationId"] == "sub_3"
         assert payload["arguments"] == [["LIC-101.PV", "LIC-101.SP"]]
 
     @pytest.mark.asyncio
     async def test_refresh_subscription_chunks_when_over_limit(self):
-        """手工刷新 1200 个位号 → 3 条订阅消息，结果 invocationId 为首块."""
+        """手工刷新：分片按块重发自身 1200 位号（3 条消息）；新增位号触发池重建."""
         fake_redis = _FakeRedis()
-        sub = _make_leader_sub(fake_redis, [])
-        tags = [f"T-{i:05d}" for i in range(1200)]
+        shard_tags = [f"T-{i:05d}" for i in range(1200)]
+        sub = _make_leader_sub(fake_redis, shard_tags)
+        new_tags = shard_tags + ["T-NEW"]
 
         with (
             patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
-            patch.object(sub, "_get_active_tags", return_value=tags),
+            patch.object(sub, "_get_active_tags", return_value=new_tags),
         ):
             result = await sub.refresh_subscription(source="manual-api")
 
         assert result["error"] is None
-        assert result["total"] == 1200
+        assert result["total"] == 1201
+        assert result["added"] == ["T-NEW"]
         assert result["invocationId"] == "manual_refresh_1"
-        assert sub._ws.send.call_count == 3
-        assert sub._subscribed_tags == set(tags)
+        assert sub._shard_states[0].ws.send.call_count == 3  # 1200/500 → 3 块
+        assert sub._rebuild_event.is_set()
+        assert sub._subscribed_tags == set(new_tags)
 
 
 class TestControlLoop:
@@ -2215,11 +2233,12 @@ class TestControlLoop:
         assert pubsub.subscribed == [_CONTROL_CHANNEL]
         assert pubsub.closed is True
 
-        # 重发新列表，invocationId 递增
-        sent = sub._ws.send.call_args.args[0]
+        # 分片重发自身位号（新增位号 NEW.PV 触发池重建），invocationId 递增
+        sent = sub._shard_states[0].ws.send.call_args.args[0]
         payload = json.loads(sent.rstrip("\x1e"))
         assert payload["invocationId"] == "manual_refresh_2"
-        assert payload["arguments"] == [["NEW.PV", "OLD.PV"]]
+        assert payload["arguments"] == [["OLD.PV"]]
+        assert sub._rebuild_event.is_set()
 
         # 结果透传 requestId/source
         stored = json.loads(fake_redis._data[_REFRESH_RESULT_KEY])
