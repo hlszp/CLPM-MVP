@@ -152,18 +152,37 @@ SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次�
 
 **运行时可调（2026-08-06）**：总开关与缺口阈值已纳入 `sys_config` 运行时配置（键 `datasource.gap_backfill_enabled` / `datasource.gap_backfill_min_gap_seconds`），经 UI 链路配置页（`/loop/aas` 数据源 Tab）修改，即时生效（订阅器每次触发都读 settings，无需重启）；前端阈值以分钟为单位（1-1440），后端存秒。`.env` 中的 `GAP_BACKFILL_*` 仅作启动兜底默认值，`preload_datasource_config` 启动时以 sys_config 覆盖之。默认关闭 + 10 分钟阈值的考量：避免短暂网络抖动（<10 分钟）触发远端拉取，减少远端 API 压力。
 
-### SignalR 订阅 invocationId 机制（2026-08-01 修复）
+### SignalR 订阅 invocationId 机制（2026-08-01 修复；2026-09-06 按 AAS 口径改造）
 
 **问题**：AAS SignalR Hub 仅流式推送 PV/OP 类型 tag 的变化值，不主动推送 SP/MODE/PID 等非变化频繁的 tag；导致 Redis 缓存中 SP/MODE 恒为空，前端实时数据页 SP/MODE 列空白。
 
 **根因**：SignalR `SubscribeAsync` 调用若不携带 `invocationId`，AAS Hub 不返回 Completion 响应（包含所有订阅 tag 的当前快照值），仅推送后续变化值。SP/MODE 变化频率极低，长时间不触发推送。
 
 **修复**（`app/services/data_source/realtime_subscriber.py`）：
-- 订阅消息携带 `invocationId`（如 `sub_1`），AAS Hub 返回 Completion 响应包含全部订阅 tag（189 个）的当前值（PV/SP/OP/MODE/PID_P/PID_I/PID_D）
-- 新增周期刷新任务：每 5 分钟自动重发订阅请求（`invocationId` 递增 `sub_2`/`sub_3`...），确保 SP/MODE 值不会因长时间无变化而过期
+- 订阅消息携带 `invocationId`（如 `sub_1`），AAS Hub 返回 Completion 响应包含全部订阅 tag 的当前值（PV/SP/OP/MODE/PID_P/PID_I/PID_D）
 - Completion 响应解析逻辑：`_handle_signalr_message` 中识别 `type=3`（Completion）消息，提取 result 数组中的 tagCode/value/quality/collectTime
 
-**验证**：后端日志 `已订阅 189 个 Tag (invocationId=sub_1)` + Redis 缓存 `realtime:*.SP` / `realtime:*.MODE` 键值非空 + `GET /api/v1/realtime` 接口返回 SP/MODE 值。
+**2026-09-06 改造（AAS 侧口径："连接建立一次保持长活，同一点位只订阅一次"）**：
+
+zpdev 实时刷新慢/冻结的根因诊断（探针实测）：AAS 网关（内外网实例均复现）会在连接无流量/会话异常后每约 2~3 分钟强制回收 WebSocket（RST 或静默僵尸），而 CLPM 此前每 60s 全量重发 8649 位号订阅（18 块）+ 每次死亡后靠 300s 看门狗才发现，形成"快照突发→冻结数分钟→重连"循环，且高频重订阅疑似进一步诱发服务端回收。改造：
+
+- **全量重订阅节流**：`_refresh_loop` 自愈/存活检查仍每分钟执行，但重发订阅请求改为按 `SIGNALR_RESUBSCRIBE_INTERVAL`（默认 1800s=30 分钟）节流，仅用于低频信号（SP/MODE/PID）保鲜；
+- **应用层心跳保活+快速探活**：连接空闲（recv 30s 超时）时发送 SignalR type=6 Ping（间隔 `_PING_KEEPALIVE_INTERVAL`=25s，`_keepalive_tick`）；Ping 超过 `_PING_DEATH_TIMEOUT`=60s 无 Pong 且期间无数据 → 判死立即重连（`_is_ping_dead`），僵尸连接检测从最长 300s 降到约 60~90s；
+- **Pong 互答风暴修复**：type=6 处理器对"我方 Ping 的应答"仅清 pending 不回显，只对服务端主动 Ping 回 Pong；
+- 数据停滞看门狗（`SIGNALR_STALL_TIMEOUT_SECONDS`=300s）保留作最后兜底，语义不变（只统计数据消息，Pong 不计入）。
+
+**2026-09-06 二次改造：订阅连接池化 + 扇入（治本推送停摆）**：
+
+按 AAS 口径收敛客户端行为后，进一步探针分级实测定位到推送停摆阈值：单连接订阅 8649 位号时快照后 `updateRealValues` 增量推送归零（Pong 仍应答，推送扇出死亡）且连接 ~200s 被回收；≤1000 位号则推送连续。据此将订阅器重构为分片连接池：
+
+- 活跃 Tag 按每片 ≤`_SHARD_SIZE`（1000）切分为 N 条独立分片连接（`_ShardState` + `_shard_loop`），各片独立连接/订阅/心跳/停滞看门狗/指数退避重连，建连错峰 0.5s；
+- 数据统一经 `_cache_value` 扇入 Redis 缓存/PubSub/TDengine 写回，前端与下游零感知；`_run_pool` 监督循环每分钟比对活跃 Tag 集合，变化（或 `refresh_subscription` 发现新增位号）整池重建；
+- 心跳/重订阅状态全部下沉到分片（`state.ping_pending_since` / `state.last_resubscribe_at`），Pong 应答关系片内闭环（`_process_shard_message`）；
+- 片级接收点（`state.last_data_at`）跨片内重连保留，停滞语义与单连接时期一致。
+
+**验证**（zpdev，8649 位号 → 9 分片）：Pub/Sub 实测从 0 条/分钟恢复到 1072 → 5526 条/分钟（稳态持续）；PV collectTime 连续分布（300 样本 263 个在 6 分钟内）。AAS 网关仍周期回收连接（各片约 3 分钟一次），每片 5s 自愈——连接存活期间零重订阅，属网关侧行为的客户端最优解。
+
+**验证**：后端日志 `已订阅 N 个 Tag (invocationId=sub_1)` + 连接寿命显著变长（无"实时数据订阅异常 no close frame"周期刷屏）+ Redis 缓存 `realtime:*.SP` / `realtime:*.MODE` 键值非空 + `GET /api/v1/realtime` 接口返回 SP/MODE 值。探针复现脚本留存于 zpdev `clpm-backend:/tmp/probe_signalr.py`（小订阅）、`/tmp/probe_scale.py`（全量复刻）。
 
 ### macOS fork 时区陷阱
 
