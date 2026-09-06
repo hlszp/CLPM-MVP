@@ -66,7 +66,8 @@ _BATCH_BODY = {
     "endTime": "2026-06-22T08:00:10Z",
     "tagGroup": "BASE",
     "includeValidMask": True,
-    "maxPoints": 5000,
+    # R21：maxPoints 契约收紧为 100~2000（默认 2000，对齐 LTTB 2000 点契约）
+    "maxPoints": 2000,
 }
 
 
@@ -194,6 +195,48 @@ class TestBatchWaveform:
                 "/api/v1/timeseries/batch/waveform",
                 headers={"Authorization": "Bearer fake-token"},
                 json=body,
+            )
+        assert resp.status_code == 422
+
+    def test_batch_waveform_max_points_over_2000_rejected(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """R21：maxPoints 超过 2000 上限返回 422（不静默截断）."""
+        body = {**_BATCH_BODY, "maxPoints": 2001}
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/timeseries/batch/waveform",
+                headers={"Authorization": "Bearer fake-token"},
+                json=body,
+            )
+        assert resp.status_code == 422
+
+    def test_batch_waveform_max_points_legacy_5000_rejected(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """R21：旧默认值 5000 同样被拒绝（契约收紧回归）."""
+        body = {**_BATCH_BODY, "maxPoints": 5000}
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/timeseries/batch/waveform",
+                headers={"Authorization": "Bearer fake-token"},
+                json=body,
+            )
+        assert resp.status_code == 422
+
+    def test_single_waveform_max_points_over_2000_rejected(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """R21：单回路波形 maxPoints 超上限返回 422."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/timeseries/00000000-0000-0000-0000-000000000201/waveform",
+                headers={"Authorization": "Bearer fake-token"},
+                params={
+                    "startTime": "2026-06-22T08:00:00Z",
+                    "endTime": "2026-06-22T08:00:10Z",
+                    "maxPoints": 50000,
+                },
             )
         assert resp.status_code == 422
 

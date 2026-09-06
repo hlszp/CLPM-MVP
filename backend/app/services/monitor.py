@@ -19,6 +19,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
+from app.core.numeric import parse_finite_float
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import KpiSnapshotHourly, LoopIntegritySnapshot
 from app.models.plant_node import PlantNode
@@ -101,6 +102,17 @@ def _mode_value_to_label(
         return None
     active_mapping = mapping if mapping is not None else _DEFAULT_MODE_LABELS
     return active_mapping.get(int(value), "Unknown")
+
+
+def effective_mode_mapping(mapping: dict[int, str] | None) -> dict[str, str]:
+    """回路 MODE 数值映射 → JSON 安全的 ``{value(str): label}``（R17）.
+
+    无自定义配置时返回默认映射。REST 列表/详情携带该映射，前端 WS 收到
+    MODE 数值后按「此映射 → 默认映射 → Unknown」解析，与 REST 权威口径一致，
+    消除"所有正数=Auto"的硬编码误判。
+    """
+    active = mapping if mapping is not None else _DEFAULT_MODE_LABELS
+    return {str(k): v for k, v in active.items()}
 
 
 async def _load_mode_mappings(db: AsyncSession, loop_ids: list[str]) -> dict[str, dict[int, str]]:
@@ -873,10 +885,10 @@ async def list_loop_monitor(
                 # 优先从 Redis 实时缓存读取
                 cached = redis_cache.get(tag.tag_name)
                 if cached:
-                    try:
-                        current_values[field] = float(cached.get("value"))
-                    except (TypeError, ValueError):
-                        current_values[field] = tag.current_value
+                    # R06：共享数值契约（core/numeric.parse_finite_float）——
+                    # 新值无效（NaN/Infinity/工业异常字面量/空值）→ None，
+                    # 不把 DB 旧值与新质量/collectTime 拼接成最新有效读数
+                    current_values[field] = parse_finite_float(cached.get("value"))
                     if role == "PV":
                         current_values["pvQuality"] = _quality_code_to_label(
                             cached.get("quality", tag.quality)
@@ -996,6 +1008,9 @@ async def list_loop_monitor(
                 "opUnit": op_unit_val,
                 "currentValues": current_values,
                 "controlMode": control_mode,
+                # R17：携带该回路 MODE 数值映射（无配置给默认），供前端 WS
+                # MODE 推送解析（前端删除"所有正数=Auto"硬编码后依赖此映射）
+                "modeMapping": effective_mode_mapping(mode_mapping_map.get(str(loop.id))),
                 "score": list_score,
                 # C1-1 增量巡检："较昨日"评分增量与趋势（新增/恶化/好转/持平）
                 "scoreDelta": score_delta,
@@ -1122,16 +1137,11 @@ async def get_loop_monitor_detail(
             # 优先从 Redis 实时缓存读取
             cached = redis_cache.get(tag.tag_name)
             if cached:
-                try:
-                    if role in ("PV", "SP", "OP", "MODE"):
-                        current_values[role.lower()] = float(cached.get("value"))
-                    elif role in ("PID_P", "PID_I", "PID_D"):
-                        runtime_params[role.lower()] = float(cached.get("value"))
-                except (TypeError, ValueError):
-                    if role in ("PV", "SP", "OP", "MODE"):
-                        current_values[role.lower()] = tag.current_value
-                    elif role in ("PID_P", "PID_I", "PID_D"):
-                        runtime_params[role.lower()] = tag.current_value
+                # R06：共享数值契约——新值无效 → None（不回退 DB 旧值伪装新读数）
+                if role in ("PV", "SP", "OP", "MODE"):
+                    current_values[role.lower()] = parse_finite_float(cached.get("value"))
+                elif role in ("PID_P", "PID_I", "PID_D"):
+                    runtime_params[role.lower()] = parse_finite_float(cached.get("value"))
                 if role == "PV":
                     current_values["pvQuality"] = _quality_code_to_label(
                         cached.get("quality", tag.quality)
@@ -1174,6 +1184,8 @@ async def get_loop_monitor_detail(
                     if read_at is None or ts > read_at:
                         read_at = ts
     current_values["readAt"] = read_at
+    # R17：详情同样携带 MODE 数值映射（前端 WS 推送解析口径与列表一致）
+    current_values["modeMapping"] = effective_mode_mapping(loop_mode_mapping)
 
     # 查询趋势数据（并行 + 动态采样间隔，封装在 trend_service 中复用）
     trend_data: dict[str, Any] = {

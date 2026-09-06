@@ -48,6 +48,10 @@ class TagListItem(CamelModel):
     tagType: str
     currentValue: float | None = None
     quality: str | None = None
+    # R06（数据链路整改）：实时缓存新值无效（"-1.#QNAN0"/"nan"/"Infinity"/空值等）
+    # 时，currentValue=null 且 stale=true（新值无效，不以 DB 旧值伪装最新有效
+    # 读数；旧客户端可忽略该增量字段）
+    stale: bool = False
     lastSyncAt: str | None = None
     isLinked: bool | None = None
     rangeMin: float | None = None
@@ -73,7 +77,7 @@ class TagListData(CamelModel):
 
 
 class TagDetail(CamelModel):
-    """测点详情。"""
+    """测点详情."""
 
     id: str
     tagName: str = Field(pattern=TAG_NAME_PATTERN)
@@ -81,6 +85,8 @@ class TagDetail(CamelModel):
     tagType: str
     currentValue: float | None = None
     quality: str | None = None
+    # R06：同 TagListItem.stale（实时新值无效时置 true，旧客户端可忽略）
+    stale: bool = False
     lastSyncAt: str | None = None
     isLinked: bool | None = None
     rangeMin: float | None = None
@@ -246,7 +252,8 @@ class BatchWaveformRequest(CamelModel):
         endTime: 结束时间（ISO 8601）
         tagGroup: 按标签组筛选（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF），默认 BASE
         includeValidMask: 是否返回 valid_mask（默认 True）
-        maxPoints: 每个回路最大数据点数（100~50000，默认 5000）
+        maxPoints: 每个回路最大数据点数（100~2000，默认 2000；R21 对齐 LTTB
+            2000 点契约，批量总预算 ≤50 回路×2000 点）
     """
 
     loopIds: list[str] = Field(..., min_length=1, max_length=50)
@@ -256,7 +263,7 @@ class BatchWaveformRequest(CamelModel):
         None, description="按标签组筛选: BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF"
     )
     includeValidMask: bool = True
-    maxPoints: int = Field(5000, ge=100, le=50000)
+    maxPoints: int = Field(2000, ge=100, le=2000)
 
 
 class BatchWaveformFailure(CamelModel):
