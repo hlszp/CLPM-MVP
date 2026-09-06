@@ -658,3 +658,123 @@ class TestLifecycleRecovery:
         assert ws.close_calls[0][0] == 1011
         assert pubsub.closed is True
         assert ws_module._shared is None
+
+
+class TestSubscribeLoops:
+    """订阅过滤协议 loops 扩展（2026-09-06 接通：按回路名经权威映射解析位号）."""
+
+    async def test_subscribe_loops_resolved_and_filtered(
+        self, isolated_ws_state, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """loops 订阅经映射解析生效：未知回路进 rejected，仅解析出的位号被转发."""
+        ws = FakeWebSocket()
+        task = await _start_endpoint(ws, monkeypatch)
+        try:
+            await _wait_until(lambda: len(ws_module._clients) == 1)
+
+            async def _fake_resolve(loop_names: list[str]):
+                resolved = {
+                    "LOOP_A": ["LOOP_A_PV", "LOOP_A_SP"],
+                }
+                return resolved, [n for n in loop_names if n not in resolved]
+
+            async def _fake_validate(tags: list[str]):
+                return tags, []
+
+            with (
+                patch.object(ws_module, "_resolve_loop_tags", _fake_resolve),
+                patch.object(ws_module, "_validate_subscribe_tags", _fake_validate),
+            ):
+                await ws.client_says(
+                    json.dumps({"type": "subscribe", "tags": [], "loops": ["LOOP_A", "LOOP_X"]})
+                )
+                await _wait_until(
+                    lambda: any(
+                        isinstance(f, dict) and f.get("type") == "subscribed"
+                        for f in ws.parsed_frames()
+                    )
+                )
+            ack = next(f for f in ws.parsed_frames() if f.get("type") == "subscribed")
+            assert set(ack["tags"]) == {"LOOP_A_PV", "LOOP_A_SP"}
+            assert ack["loops"] == {"LOOP_A": ["LOOP_A_PV", "LOOP_A_SP"]}
+            assert "LOOP_X" in ack["rejected"]
+
+            pubsub = ScriptablePubSub.instances[0]
+            await pubsub.push(_make_tag_payload("LOOP_A_PV"))
+            await _wait_until(
+                lambda: len([f for f in ws.parsed_frames() if f.get("type") != "subscribed"]) >= 1
+            )
+            await pubsub.push(_make_tag_payload("LOOP_OTHER"))
+            await asyncio.sleep(0.15)
+            data_frames = [f for f in ws.parsed_frames() if isinstance(f, dict) and "tagCode" in f]
+            assert len(data_frames) == 1
+        finally:
+            await ws.client_disconnect()
+            await _finish(task)
+
+    async def test_empty_subscribe_silences_stream(
+        self, isolated_ws_state, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """空 tags+loops 的显式订阅 = 静默（路由离开实时页清空兴趣集合）."""
+        ws = FakeWebSocket()
+        task = await _start_endpoint(ws, monkeypatch)
+        try:
+            await _wait_until(lambda: len(ws_module._clients) == 1)
+
+            async def _fake_resolve(loop_names: list[str]):
+                return {}, []
+
+            async def _fake_validate(tags: list[str]):
+                return tags, []
+
+            with (
+                patch.object(ws_module, "_resolve_loop_tags", _fake_resolve),
+                patch.object(ws_module, "_validate_subscribe_tags", _fake_validate),
+            ):
+                await ws.client_says(json.dumps({"type": "subscribe", "tags": [], "loops": []}))
+                await _wait_until(
+                    lambda: any(
+                        isinstance(f, dict) and f.get("type") == "subscribed"
+                        for f in ws.parsed_frames()
+                    )
+                )
+            pubsub = ScriptablePubSub.instances[0]
+            await pubsub.push(_make_tag_payload("ANY_TAG"))
+            await asyncio.sleep(0.15)
+            data_frames = [f for f in ws.parsed_frames() if isinstance(f, dict) and "tagCode" in f]
+            assert data_frames == []
+        finally:
+            await ws.client_disconnect()
+            await _finish(task)
+
+    async def test_resolve_loop_tags_grouping(self) -> None:
+        """_resolve_loop_tags 按回路分组、未知回路名如实返回."""
+
+        class _FakeResult:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def all(self):
+                return self._rows
+
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def execute(self, _stmt):
+                return _FakeResult(
+                    [
+                        ("LOOP_A", "LOOP_A_PV"),
+                        ("LOOP_A", "LOOP_A_MODE"),
+                        ("LOOP_B", "LOOP_B_PV"),
+                    ]
+                )
+
+        with patch.object(ws_module, "AsyncSessionLocal", lambda: _FakeSession()):
+            resolved, unknown = await ws_module._resolve_loop_tags(["LOOP_A", "LOOP_B", "LOOP_X"])
+        assert set(resolved["LOOP_A"]) == {"LOOP_A_PV", "LOOP_A_MODE"}
+        assert resolved["LOOP_B"] == ["LOOP_B_PV"]
+        assert unknown == ["LOOP_X"]

@@ -58,6 +58,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.core.redis import redis_client
+from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 from app.services.auth import is_token_blacklisted
 from app.services.data_source.realtime_subscriber import _PUBSUB_CHANNEL
@@ -313,6 +314,34 @@ async def _validate_subscribe_tags(tags: list[str]) -> tuple[list[str], list[str
     return valid, rejected
 
 
+async def _resolve_loop_tags(
+    loop_names: list[str],
+) -> tuple[dict[str, list[str]], list[str]]:
+    """回路名 → 该回路全部角色绑定位号（经 loop_tag_mapping 权威映射解析）.
+
+    前端无需猜测位号命名（点号/下划线风格差异），由服务端按绑定关系解析；
+    回路自己的角色 tag 天然存在于 tag_registry，无需二次校验。
+
+    Returns:
+        ({回路名: [tag_name...]}, 未知回路名列表)
+    """
+    if not loop_names:
+        return {}, []
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(LoopLedger.tag_name, TagRegistry.tag_name)
+            .join(LoopTagMapping, LoopTagMapping.loop_id == LoopLedger.id)
+            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+            .where(LoopLedger.tag_name.in_(loop_names))
+        )
+        rows = result.all()
+    resolved: dict[str, list[str]] = {}
+    for loop_name, tag_name in rows:
+        resolved.setdefault(loop_name, []).append(tag_name)
+    unknown = [name for name in loop_names if name not in resolved]
+    return resolved, unknown
+
+
 async def _client_receiver(client: _ClientState) -> None:
     """断连监听 + 客户端控制消息处理（subscribe 过滤协议）."""
     ws = client.ws
@@ -333,17 +362,29 @@ async def _client_receiver(client: _ClientState) -> None:
             continue
         wanted = msg.get("tags")
         if not isinstance(wanted, list):
-            continue
+            wanted = []
+        wanted_loops = msg.get("loops")
+        if not isinstance(wanted_loops, list):
+            wanted_loops = []
         tags = [t for t in wanted if isinstance(t, str) and t]
+        loop_names = [n for n in wanted_loops if isinstance(n, str) and n]
+        loop_map: dict[str, list[str]] = {}
         try:
+            loop_map, unknown_loops = await _resolve_loop_tags(loop_names)
+            # 回路解析出的位号并入待校验集合（去重后与显式 tag 一起校验存在性）
+            tags = tags + [t for ts_ in loop_map.values() for t in ts_]
             valid, rejected = await _validate_subscribe_tags(tags)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("订阅 tag 校验失败: %s", exc)
+            logger.warning("订阅校验失败: %s", exc)
             valid, rejected = [], tags
+            unknown_loops = loop_names
+            loop_map = {}
         client.filter_tags = set(valid)
         ack: dict[str, Any] = {"type": "subscribed", "tags": valid}
-        if rejected:
-            ack["rejected"] = rejected
+        if rejected or unknown_loops:
+            ack["rejected"] = rejected + unknown_loops
+        if loop_map:
+            ack["loops"] = loop_map
         try:
             await asyncio.wait_for(ws.send_json(ack), timeout=_ACK_SEND_TIMEOUT_SECONDS)
         except asyncio.CancelledError:
@@ -351,7 +392,12 @@ async def _client_receiver(client: _ClientState) -> None:
         except Exception as exc:  # noqa: BLE001
             logger.debug("订阅 ack 发送失败: %s", exc)
             return
-        logger.info("客户端订阅生效: %d 个 tag（拒绝 %d 个）", len(valid), len(rejected))
+        logger.info(
+            "客户端订阅生效: %d 个 tag / %d 个回路（拒绝 %d 项）",
+            len(valid),
+            len(loop_map),
+            len(rejected) + len(unknown_loops),
+        )
 
 
 async def _client_sender(client: _ClientState) -> None:
