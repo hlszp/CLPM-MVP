@@ -711,7 +711,12 @@ async def get_waveform_v2_endpoint(
         description="按标签组筛选: BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF（默认 BASE）",
     ),
     includeValidMask: bool = Query(True, description="是否返回 valid_mask（默认 true）"),
-    maxPoints: int = Query(5000, ge=100, le=50000, description="最大数据点数"),
+    maxPoints: int = Query(
+        2000,
+        ge=100,
+        le=2000,
+        description="最大数据点数（R21：对齐 LTTB 2000 点契约，上限 2000）",
+    ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:

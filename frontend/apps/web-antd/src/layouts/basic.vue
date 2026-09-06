@@ -122,6 +122,42 @@ function handleWsReconnect() {
   realtimeWs.reconnect();
 }
 
+// ---------------------------------------------------------------------------
+// R19（数据链路整改）：降级轮询——watch immediate 覆盖初始非 online 状态；
+// online 后停止；同一时刻至多一个轮询定时器。
+// 实时 WS 失联期间布局级数据（预警铃铛）退化为 REST 轮询刷新。
+// ---------------------------------------------------------------------------
+const WS_FALLBACK_POLL_INTERVAL = 60_000;
+let wsFallbackPollTimer: null | ReturnType<typeof setInterval> = null;
+
+function startWsFallbackPolling() {
+  if (wsFallbackPollTimer) return; // 幂等：同一时刻至多一个轮询定时器
+  wsFallbackPollTimer = setInterval(() => {
+    void loadAlertNotifications();
+  }, WS_FALLBACK_POLL_INTERVAL);
+}
+
+function stopWsFallbackPolling() {
+  if (wsFallbackPollTimer) {
+    clearInterval(wsFallbackPollTimer);
+    wsFallbackPollTimer = null;
+  }
+}
+
+watch(
+  wsStatus,
+  (status) => {
+    if (status === 'online') {
+      stopWsFallbackPolling();
+    } else {
+      // offline / reconnecting：启动（或保持）降级轮询
+      startWsFallbackPolling();
+    }
+  },
+  // R19：immediate 覆盖初始即非 online 的场景（挂载时 WS 尚未建连）
+  { immediate: true },
+);
+
 let wsConnectionUnsubscribe: (() => void) | null = null;
 let wsMessageUnsubscribe: (() => void) | null = null;
 
@@ -183,6 +219,8 @@ onUnmounted(() => {
   wsMessageUnsubscribe?.();
   alertWsUnsubscribe?.();
   alertWs.disconnect();
+  // R19：布局卸载时停止降级轮询（不留悬挂定时器）
+  stopWsFallbackPolling();
   // 全局布局卸载时断开 WebSocket（用户登出/关闭页面）
   realtimeWs.disconnect();
 });

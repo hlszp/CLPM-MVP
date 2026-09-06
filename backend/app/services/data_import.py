@@ -3,18 +3,20 @@
 流程：
 1. 查询回路信息 + tag 映射
 2. 对每个回路：
-   a. (overwrite 策略) DELETE 目标时段旧数据
-   b. 按小时分块从远端 HTTP API 拉取历史数据
-   c. 转换为宽表格式 (ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
-   d. 批量写入 TDengine
+   a. 按小时分块从远端 HTTP API 拉取历史数据
+   b. 转换为宽表格式 (ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
+   c. 批量写入 TDengine（overwrite 策略先写入暂存表，暂存齐全后替换主表）
 3. 更新导入进度（Redis）
 4. (可选) 触发 KPI 回算
 
 冲突处理策略：
-- overwrite: 先 DELETE 目标时段旧数据，再 INSERT（手工优先）
-- skip: 直接 INSERT，依赖 TDengine UPSERT 自动覆盖
+- overwrite: 先取数暂存（``stg__{subtable}``，同超级表），暂存齐全后
+  DELETE 主窗口 → 从暂存表搬回主表 → 清理暂存（R12 安全替换协议）；
+  暂存未齐全前不删除任何主表数据，空返回不授权清空
+- skip: 直接 INSERT，依赖 TDengine UPSERT 自动覆盖（gap backfill 恒用此策略）
 
-设计依据：data-architecture-optimization-spec §5.3.2
+设计依据：data-architecture-optimization-spec §5.3.2；
+R12 整改（2026-09-06）：docs/过程文档/2026-09-06-data-pipeline-remediation-s0-contract.md §7
 """
 
 from __future__ import annotations
@@ -32,7 +34,11 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.redis import redis_client
 from app.core.tdengine import make_subtable_name
-from app.core.tdengine_native import batch_insert, execute_native_effective
+from app.core.tdengine_native import (
+    batch_insert,
+    execute_native_effective,
+    query_wide_table_native,
+)
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 from app.schemas.loop_data import ConflictStrategy, ImportStatus
@@ -133,6 +139,37 @@ _ROLE_COLUMNS: dict[str, str] = {
     "PID_I": "pid_i",
     "PID_D": "pid_d",
 }
+
+# ---------------------------------------------------------------------------
+# overwrite 安全替换协议（R12，2026-09-06）：先取数暂存、后替换、可恢复
+#
+# 暂存子表 ``stg__{subtable}`` 与主子表同超级表（st_loop_data），由
+# batch_insert 的 ``INSERT ... USING st_loop_data TAGS(...)`` 运行时自动
+# 创建（无 DDL 迁移、无 schema 变更）。协议三阶段：
+#   1) 暂存：分块拉取远端数据 → 写入暂存表，此阶段不触碰主表；
+#      任一分块失败/任务取消 → 主表旧数据保留，任务如实 FAILED/CANCELLED。
+#   2) 替换（仅当暂存齐全）：DELETE 主窗口（失败必须抛出进入任务失败，
+#      不得只记日志）→ 按分块粒度从暂存表搬回主表（同 ts UPSERT 幂等，
+#      可安全重试）→ DROP 暂存表。
+#   3) 空返回不授权清空：远端整个窗口无数据时保留本地旧数据并显式告警。
+# 进程重启恢复口径：遗留的 ``stg__`` 表即"上次未完成替换"的可核查记录
+# （任务 result 字段亦登记 stagingTablesLeftover）；下次同回路 overwrite
+# 会先 DROP 旧暂存再重新暂存，无需人工恢复介入。
+# ---------------------------------------------------------------------------
+_STAGING_TABLE_PREFIX = "stg__"
+
+# 宽表列序（搬移暂存数据时的 SELECT 列，与 st_loop_data schema 一致）
+_WIDE_COLUMNS: tuple[str, ...] = (
+    "ts",
+    "pv",
+    "sp",
+    "op",
+    "mode",
+    "pid_p",
+    "pid_i",
+    "pid_d",
+    "pv_quality",
+)
 
 
 class HistoryDataSourceError(RuntimeError):
@@ -540,7 +577,7 @@ async def import_history_data(
                     return (i, 0, error)
 
                 try:
-                    count, failed_windows = await _import_single_loop(
+                    count, failed_windows, loop_cancelled = await _import_single_loop(
                         loop_id=lid,
                         start_dt=start_dt,
                         end_dt=end_dt,
@@ -553,12 +590,19 @@ async def import_history_data(
                         task_id=task_id,
                         on_chunk_complete=_on_chunk_complete,
                     )
+                    if loop_cancelled:
+                        # 取消中断：不计成功也不计失败（最终状态由任务级取消
+                        # 检查置 CANCELLED）；主表数据保留（R12）
+                        async with progress_lock:
+                            shared_completed_units += max(chunks_per_loop - loop_done, 0)
+                        await _record_progress()
+                        return (i, 0, "")
                     if count <= 0 and not failed_windows:
                         raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
                     if failed_windows:
                         # 分块级容错后仍存在失败窗口：已写入的部分数据保留，
                         # 回路计为失败（覆盖率按实际写入点数反馈），
-                        # 缺口可用 skip 策略再导入补齐（overwrite 会先 DELETE 误删实时行，禁止）
+                        # 缺口可用 skip 策略再导入补齐（overwrite 会误删实时行，禁止）
                         first = failed_windows[0]
                         error = (
                             f"loop {lid}: {len(failed_windows)} 个分块导入失败"
@@ -603,6 +647,7 @@ async def import_history_data(
         # "任务成功"≠"数据补齐"：远端部分时段无数据时缺口仍在，此处量化暴露。
         expected_per_loop = (end_dt - start_dt).total_seconds() / max(interval, 1)
         loop_coverage: list[dict[str, Any]] = []
+        staging_leftover: list[str] = []
         for task_result in task_results:
             if isinstance(task_result, BaseException):
                 errors.append(f"导入协程异常: {task_result}")
@@ -622,6 +667,18 @@ async def import_history_data(
                     "coverage": coverage,
                 }
             )
+            if count > 0:
+                # R13：本地 TD 已写入新数据 → 失效 realtime:history 与 L1/L2/L3
+                # 计算缓存，避免残缺/陈旧缓存遮蔽新数据（失效失败只记日志）
+                await _invalidate_loop_caches(lid, loop_data_map.get(lid, {}).get("loop_part", ""))
+            elif (
+                conflict_strategy == ConflictStrategy.OVERWRITE.value
+                and error
+                and loop_data_map.get(lid, {}).get("subtable")
+            ):
+                # R12：失败/取消的 overwrite 回路可能遗留 stg__ 暂存表，
+                # 登记到任务 result 供重启后人工判定恢复动作
+                staging_leftover.append(_staging_subtable(loop_data_map[lid]["subtable"]))
         loop_coverage.sort(key=lambda c: c["coverage"])
         low_coverage = [c["loopId"] for c in loop_coverage if c["coverage"] < 0.9]
         if low_coverage:
@@ -643,6 +700,9 @@ async def import_history_data(
             "loopCoverage": loop_coverage,
             "lowCoverageLoopIds": low_coverage,
         }
+        if staging_leftover:
+            # R12：overwrite 失败/取消回路的暂存表登记（正常成功路径已 DROP）
+            result["stagingTablesLeftover"] = sorted(set(staging_leftover))
 
         # 更新任务终态
         if task_id:
@@ -724,7 +784,7 @@ async def _import_single_loop(
     chunk_hours: int = 1,
     task_id: str | None = None,
     on_chunk_complete: callable | None = None,
-) -> tuple[int, list[dict[str, str]]]:
+) -> tuple[int, list[dict[str, str]], bool]:
     """导入单个回路的历史数据.
 
     分块级容错：单个分块拉取/写入失败时记录失败窗口并继续后续分块，
@@ -732,6 +792,11 @@ async def _import_single_loop(
     504 导致整回路剩余窗口全部放弃"的数据缺口放大。失败窗口由调用方
     汇总上报（回路计失败、覆盖率按实际写入点数反馈），缺口可用 skip
     策略再导入补齐。
+
+    overwrite 策略（R12 安全替换协议）：分块数据先写入暂存表
+    ``stg__{subtable}``，全部 chunk 暂存成功后才执行
+    ``_replace_window_from_staging``（DELETE 主窗口 → 搬回 → 清理暂存）；
+    任一失败/取消路径都不删除主表旧数据。
 
     Args:
         subtable: 已构造好的 TDengine 子表名
@@ -742,25 +807,34 @@ async def _import_single_loop(
         on_chunk_complete: 每完成一个小时分块时的回调函数
 
     Returns:
-        (导入的数据点数, 失败分块窗口列表[{start, end, error}])
+        (写入主链路的点数, 失败分块窗口列表[{start, end, error}], 是否因取消中断)
     """
     if not role_tag_map:
         logger.warning("回路 %s 无有效 tag 映射，跳过", loop_id)
-        return 0, []
+        return 0, [], False
 
-    # 冲突处理：删除旧数据（overwrite 策略）
-    if conflict_strategy == ConflictStrategy.OVERWRITE.value:
-        await _delete_range(subtable, start_dt, end_dt)
+    is_overwrite = conflict_strategy == ConflictStrategy.OVERWRITE.value
+    target_subtable = subtable
+    staging_table = ""
+    if is_overwrite:
+        staging_table = _staging_subtable(subtable)
+        # 清理上次运行遗留的暂存（进程崩溃/重启恢复口径：stg__ 表可核查）
+        await _drop_table(staging_table)
+        target_subtable = staging_table
 
     # 按动态分块拉取 + 写入（每 chunk 前检查任务是否被取消）
-    total_count = 0
+    total_count = 0  # 写入目标表的点数（skip：主表；overwrite：暂存表）
+    staged_rows = 0  # overwrite：成功暂存的行数（按构造行数计，不受 affected 口径影响）
     failed_windows: list[dict[str, str]] = []
+    was_cancelled = False
     chunk_start = start_dt
     while chunk_start < end_dt:
-        # chunk 级取消检查：任务被取消时立即停止拉取，已写入的数据保留
+        # chunk 级取消检查：任务被取消时立即停止拉取（overwrite 暂存阶段
+        # 主表未被触碰，旧数据天然保留；skip 已写入数据保留）
         if task_id and await _is_task_cancelled(task_id):
+            was_cancelled = True
             logger.info("回路 %s 导入被取消（已写入 %d 点），跳过剩余分块", loop_id, total_count)
-            return total_count, failed_windows
+            break
 
         chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
 
@@ -788,9 +862,12 @@ async def _import_single_loop(
                 # 转换为宽表行
                 rows = _convert_to_wide_rows(raw_data, role_tag_map)
                 if rows:
-                    # 批量写入 TDengine
-                    count = await batch_insert(subtable, rows, loop_id=loop_id, unit_id=unit_id)
+                    # 批量写入目标表（overwrite=暂存表；skip=主表）
+                    count = await batch_insert(
+                        target_subtable, rows, loop_id=loop_id, unit_id=unit_id
+                    )
                     total_count += count
+                    staged_rows += len(rows)
         except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
             failed_windows.append(
                 {
@@ -813,7 +890,143 @@ async def _import_single_loop(
         if on_chunk_complete:
             await on_chunk_complete()
 
-    return total_count, failed_windows
+    if not is_overwrite:
+        return total_count, failed_windows, was_cancelled
+
+    # ---- overwrite：暂存阶段结束，决定是否进入替换阶段（R12）----
+    if was_cancelled:
+        # 取消：主表旧数据保留；暂存表保留供人工核查/续跑（下次同回路
+        # overwrite 会先 DROP 重建，不会混入旧数据）
+        logger.warning(
+            "overwrite 导入取消（loop=%s，暂存 %d 行）：主表旧数据保留，暂存表 %s 保留",
+            loop_id,
+            staged_rows,
+            staging_table,
+        )
+        return 0, failed_windows, True
+
+    if failed_windows:
+        # 分块失败：主表旧数据保留（与取消同口径），暂存表保留
+        logger.warning(
+            "overwrite 暂存不完整（loop=%s，%d 个分块失败）：主表旧数据保留",
+            loop_id,
+            len(failed_windows),
+        )
+        return 0, failed_windows, False
+
+    if staged_rows <= 0:
+        # 空返回不授权清空（R12）：远端窗口无数据时保留本地旧数据并显式告警
+        logger.warning(
+            "overwrite 拒绝清空：远端窗口无数据（loop=%s, 窗口=%s ~ %s），保留本地旧数据",
+            loop_id,
+            start_dt.isoformat(),
+            end_dt.isoformat(),
+        )
+        raise HistoryDataSourceError(
+            "远端历史数据 API 在目标窗口未返回任何数据，overwrite 拒绝清空本地旧数据"
+        )
+
+    # 暂存齐全 → 替换（DELETE 主窗口 → 从暂存搬回 → 清理暂存；失败抛出）
+    moved = await _replace_window_from_staging(
+        subtable=subtable,
+        staging_table=staging_table,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        chunk_hours=chunk_hours,
+        loop_id=loop_id,
+        unit_id=unit_id,
+    )
+    return moved, failed_windows, False
+
+
+def _staging_subtable(subtable: str) -> str:
+    """主子表名 → 对应暂存子表名（``stg__{subtable}``，R12）."""
+    return f"{_STAGING_TABLE_PREFIX}{subtable}"
+
+
+async def _drop_table(table: str) -> None:
+    """DROP TABLE IF EXISTS（暂存表清理；失败抛出，由调用方决定兜底口径）."""
+    if not table:
+        return
+    await execute_native_effective(f"DROP TABLE IF EXISTS {settings.TDENGINE_DB}.{table}")
+
+
+def _fmt_window_ts(dt: datetime) -> str:
+    """naive datetime（已换算到 _TARGET_TZ 口径）→ TDengine 本地墙钟串（毫秒）."""
+    return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+
+def _queried_ts_to_stored_str(ts_val: Any) -> str | None:
+    """查询返回的 ts → +8 墙钟存储串（与写入侧 _parse_ts_str 口径一致）.
+
+    生产 taosrest 连接固定 timezone=UTC，TIMESTAMP 列返回 aware UTC
+    datetime（见 tdengine_provider._parse_ts）；naive 值（测试 fake/历史
+    兼容）视作已是存储侧墙钟。
+    """
+    if not isinstance(ts_val, datetime):
+        return None
+    dt = ts_val.astimezone(_TARGET_TZ) if ts_val.tzinfo is not None else ts_val
+    return _fmt_window_ts(dt)
+
+
+async def _replace_window_from_staging(
+    subtable: str,
+    staging_table: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    chunk_hours: int,
+    loop_id: str,
+    unit_id: str,
+) -> int:
+    """暂存齐全后的替换：DELETE 主窗口 → 从暂存表搬回主表 → 清理暂存（R12）.
+
+    - DELETE 失败抛出（任务 FAILED，不得只记日志）；
+    - 搬移按导入分块粒度分片执行（控制单次内存），同 ts 行重写覆盖
+      （TDengine UPSERT 语义），搬移中途失败可安全重跑；
+    - 搬移 0 行视为异常（主窗口已清空但无数据搬入）抛出；
+    - 暂存清理失败仅记日志（数据已在主表，遗留 stg__ 表可人工/下次导入清理）。
+
+    Returns:
+        搬回主表的行数
+    """
+    # 1) DELETE 主窗口（失败抛出 → 调用方计入任务失败）
+    await _delete_range(subtable, start_dt, end_dt)
+
+    # 2) 从暂存表搬回主表（分片控制内存，幂等可重试）
+    moved = 0
+    chunk_start = start_dt
+    while chunk_start < end_dt:
+        chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
+        rows = await query_wide_table_native(
+            staging_table, _fmt_window_ts(chunk_start), _fmt_window_ts(chunk_end)
+        )
+        tuples: list[tuple] = []
+        for row in rows or []:
+            ts_str = _queried_ts_to_stored_str(row.get("ts"))
+            if ts_str is None:
+                continue
+            tuples.append((ts_str, *(row.get(c) for c in _WIDE_COLUMNS[1:])))
+        if tuples:
+            moved += await batch_insert(subtable, tuples, loop_id=loop_id, unit_id=unit_id)
+        chunk_start = chunk_end
+
+    if moved <= 0:
+        raise HistoryDataSourceError(
+            f"暂存表搬移回主表 0 行（staging={staging_table}），主窗口已清空，"
+            f"请核查暂存数据后重试同窗口导入"
+        )
+
+    # 3) 清理暂存（数据已在主表；失败不阻断任务成功，登记遗留）
+    try:
+        await _drop_table(staging_table)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "清理暂存表失败（数据已写入主表，可稍后人工 DROP）: table=%s, err=%s",
+            staging_table,
+            exc,
+        )
+    logger.info("overwrite 替换完成: loop=%s, subtable=%s, moved=%d", loop_id, subtable, moved)
+    return moved
 
 
 async def _get_loop_tag_mapping(db: Any, loop_id: str) -> dict[str, str]:
@@ -847,7 +1060,7 @@ async def _batch_get_loop_data(
     现在合并为 3 次总 SQL。
 
     Returns:
-        {loop_id: {role_tag_map, unit_id, subtable}}
+        {loop_id: {role_tag_map, unit_id, subtable, loop_part}}
     """
     if not loop_ids:
         return {}
@@ -864,7 +1077,10 @@ async def _batch_get_loop_data(
         all_tag_ids.append(str(m.tag_id))
 
     if not all_tag_ids:
-        return {lid: {"role_tag_map": {}, "unit_id": "", "subtable": ""} for lid in loop_ids}
+        return {
+            lid: {"role_tag_map": {}, "unit_id": "", "subtable": "", "loop_part": ""}
+            for lid in loop_ids
+        }
 
     # 2. 一次性加载所有 tag 名称
     from uuid import UUID
@@ -908,15 +1124,22 @@ async def _batch_get_loop_data(
             "role_tag_map": role_tag_map,
             "unit_id": unit_id,
             "subtable": subtable,
+            # loop_part = 回路台账 tag_name（缓存失效时定位 realtime:history 键，R13）
+            "loop_part": loop_tag_name,
         }
 
     return result
 
 
 async def _delete_range(subtable: str, start_dt: datetime, end_dt: datetime) -> None:
-    """删除指定时间范围的数据（overwrite 策略）."""
-    start_str = start_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    """删除指定时间范围的数据（overwrite 替换阶段）.
+
+    R12：删除失败必须抛出（由调用方计入任务 FAILED），不得只记日志——
+    "覆盖已执行"但主表内容未按预期变化会让任务结果不可信，且掩盖
+    旧数据是否仍存在的状态。
+    """
+    start_str = _fmt_window_ts(start_dt)
+    end_str = _fmt_window_ts(end_dt)
     sql = (
         f"DELETE FROM {settings.TDENGINE_DB}.{subtable} "
         f"WHERE ts >= '{start_str}' AND ts <= '{end_str}'"
@@ -925,7 +1148,10 @@ async def _delete_range(subtable: str, start_dt: datetime, end_dt: datetime) -> 
         await execute_native_effective(sql)
         logger.debug("已删除 %s 范围 %s~%s 的数据", subtable, start_str, end_str)
     except Exception as exc:
-        logger.warning("删除范围数据失败 (subtable=%s): %s", subtable, exc)
+        logger.error(
+            "删除范围数据失败 (subtable=%s, range=%s~%s): %s", subtable, start_str, end_str, exc
+        )
+        raise
 
 
 async def _fetch_remote_history(
@@ -1206,6 +1432,36 @@ def _parse_dt(ts_str: str) -> datetime:
     else:
         dt = dt.astimezone(_TARGET_TZ)
     return dt.replace(tzinfo=None)
+
+
+async def _invalidate_loop_caches(loop_id: str, loop_part: str) -> None:
+    """导入/补数写入本地 TD 后失效相关缓存（R13）.
+
+    - ``realtime:history:{loop_part}``：近 1 小时实时缓存。导入补齐/覆盖
+      更正本地 TD 后必须 DEL，否则残缺或陈旧的缓存行会在完整性校验通过时
+      遮蔽 TDengine 权威数据（key 前缀 lazy import 自 realtime_subscriber，
+      与其 ``_REDIS_KEY_PREFIX`` 常量保持一致，避免循环依赖与字面量漂移）。
+    - L1/L2/L3 计算缓存（``pdb*:{loop_id}:*``）：接入既有 CacheInvalidator
+      .invalidate_loop（覆盖 DataBlock / Bundle / 聚合三层）。
+
+    失效失败只记日志（不阻断导入结果上报），但必须显式暴露——缓存残留
+    的后果是"已补齐仍读旧数据"，需要运维可见。
+    """
+    try:
+        if loop_part:
+            from app.services.data_source.realtime_subscriber import _REDIS_KEY_PREFIX
+
+            await redis_client.delete(f"{_REDIS_KEY_PREFIX}history:{loop_part}")
+        from app.services.cache.invalidation import CacheInvalidator
+
+        await CacheInvalidator(redis_client).invalidate_loop(loop_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "导入后缓存失效失败（loop=%s, loop_part=%s，存在旧缓存遮蔽新数据风险）: %s",
+            loop_id,
+            loop_part,
+            exc,
+        )
 
 
 async def _trigger_kpi_backfill(loop_ids: list[str], ts_start: str, ts_end: str) -> None:

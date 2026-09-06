@@ -374,15 +374,21 @@ export namespace LoopApi {
 
   /** 监控列表项 - 当前值（IDS v3.2 §2.2.15） */
   export interface MonitorCurrentValues {
-    pv: number;
-    sp: number;
-    op: number;
-    mode: number;
-    modeLabel: string;
-    pvQuality: Quality;
-    readAt?: string;
+    /** R06（数据链路整改）：后端新值无效时为 null（共享数值契约） */
+    pv: null | number;
+    sp: null | number;
+    op: null | number;
+    mode: null | number;
+    modeLabel: null | string;
+    pvQuality: null | string;
+    readAt?: null | string;
     /** 工程单位（从 Tag 关联获取，如 °C、MPa、% 等） */
-    unit?: string;
+    unit?: null | string;
+    /**
+     * R17（数据链路整改）：MODE 数值映射（详情接口下发，键为字符串），
+     * WS 收到 MODE 推送时按「此映射 → 默认映射 → Unknown」解析
+     */
+    modeMapping?: Record<string, string>;
   }
 
   /** 回路监控列表项（IDS v3.2 §2.2.15） */
@@ -401,6 +407,12 @@ export namespace LoopApi {
     opUnit?: null | string;
     currentValues: MonitorCurrentValues;
     controlMode: ControlMode;
+    /**
+     * R17（数据链路整改）：该回路 MODE 数值映射（列表接口下发，键为字符串；
+     * 无自定义配置时为默认 {0:Manual,1:Auto,2:Cascade,3:Auto,4:Auto}），
+     * 供 WS MODE 推送解析，消除前端"所有正数=Auto"硬编码
+     */
+    modeMapping?: Record<string, string>;
     loopType?: LoopType;
     score: number;
     /** C1-1 增量巡检："较昨日"评分增量（无基线/无当前评分时为 null） */

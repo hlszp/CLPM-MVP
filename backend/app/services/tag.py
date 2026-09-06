@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import io
 import json
-import math
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -18,6 +17,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
+from app.core.numeric import parse_finite_float
 from app.models.audit import SysAuditLog
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
@@ -141,17 +141,17 @@ def _build_tag_dict(
 
     if rt:
         raw_val = rt.get("value")
-        # 工业组态软件常推送 "-1.#QNAN0" / "nan" / "inf" 等 NaN/非数字字面量。
-        # float("-1.#QNAN0") 抛 ValueError；float("nan"/"inf") 不会抛但
-        # 进入 JSON 序列化时前端会显示 NaN。统一容错：解析失败或得到非有限数 → 回退到 DB 历史值。
-        current_value: float | int | str | None = tag.current_value
-        if raw_val not in (None, ""):
-            try:
-                parsed = float(raw_val)
-                if math.isfinite(parsed):
-                    current_value = parsed
-            except (TypeError, ValueError):
-                current_value = tag.current_value
+        # R06（数据链路整改）：共享数值契约（app/core/numeric.py）——
+        # 新值无效（"-1.#QNAN0"/"nan"/"Infinity"/"1e999"/空值等）时返回
+        # currentValue=null + stale=true，不得把 DB 旧值与新 quality/collectTime
+        # 拼接成"最新有效读数"；quality 仍按本条消息更新（数值有效性与质量独立）。
+        parsed_val = parse_finite_float(raw_val)
+        if parsed_val is not None:
+            current_value: float | int | str | None = parsed_val
+            stale = False
+        else:
+            current_value = None
+            stale = True
         raw_quality = rt.get("quality")
         if isinstance(raw_quality, int | float):
             quality = "GOOD" if int(raw_quality) in (1, 2, 3, 192) else "BAD"
@@ -165,6 +165,7 @@ def _build_tag_dict(
     else:
         current_value = tag.current_value
         quality = tag.quality
+        stale = False
         last_sync_at = tag.last_sync_at.isoformat() if tag.last_sync_at else None
 
     return {
@@ -174,6 +175,8 @@ def _build_tag_dict(
         "tagType": tag.tag_type,
         "currentValue": current_value,
         "quality": quality,
+        # R06 增量字段：实时新值无效时置 true（旧客户端可忽略）
+        "stale": stale,
         "lastSyncAt": last_sync_at,
         "isLinked": bool(tag.is_linked) if tag.is_linked is not None else False,
         "rangeMin": tag.range_min,

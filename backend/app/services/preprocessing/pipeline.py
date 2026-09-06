@@ -34,7 +34,9 @@ from app.services.preprocessing.quality_code import (
 )
 from app.services.preprocessing.quality_summary import (
     compute_consecutive_segments,
+    compute_median_interval,
     compute_quality_summary,
+    compute_time_coverage,
 )
 from app.services.preprocessing.thresholds import get_threshold
 from app.services.preprocessing.validity_mask import apply_mask
@@ -53,6 +55,10 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
 
 PREPROCESS_VERSION = "pre_v1"
+
+# R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
+# 日志用于定位"数据窗口缺口"型低可信度的根因）
+_LOW_COVERAGE_WARN_THRESHOLD = 0.9
 
 
 class PreprocessingPipeline:
@@ -79,21 +85,34 @@ class PreprocessingPipeline:
         self,
         raw: RawTimeSeries,
         tag_group: TagGroup,
+        window: tuple[Any, Any] | None = None,
     ) -> DataBlock:
         """执行 8 步预处理 Pipeline，生成 DataBlock.
 
         Args:
             raw: 原始时序数据（来自 TDengine）
             tag_group: 数据所属的 tagGroup
+            window: 查询窗口 ``(start, end)``，用于 R14 时间覆盖率计算
+                （可感知窗口头尾整段缺失）；None 时退化为数据首尾跨度
 
         Returns:
             预处理后的 DataBlock（含 valid 标记 + 异常原因码 + 质量摘要）
 
-        设计依据：算法说明 §3.4.2
+        设计依据：算法说明 §3.4.2；R14（2026-09-06）：sampling_freq 反映
+        实际中位间隔、时间覆盖率折入可信度判定
         """
         n = len(raw.timestamps)
         loop_id = self.config.loop_id
-        freq_label = self.threshold.sampling_freq_label
+
+        # R14-1：sampling_freq 反映**实际**采样（相邻 ts 中位间隔），
+        # 不得沿用控制类型名义标签——稀疏 COV 数据（如 30s 间隔）标签为
+        # "1s" 会让 ARMA 类算法按错误时间尺度计算。中位间隔不可得
+        # （点数 < 2 / 不可比较）时回落名义标签。
+        median_interval = compute_median_interval(raw.timestamps)
+        if median_interval is not None and median_interval > 0:
+            freq_label = f"{max(1, round(median_interval))}s"
+        else:
+            freq_label = self.threshold.sampling_freq_label
         data_block_id = f"db_{loop_id}_{tag_group.value}_{freq_label}"
 
         logger.debug(
@@ -152,8 +171,39 @@ class PreprocessingPipeline:
         # loop_valid_rate = 核心 tag（pv/sp/op/mode）交集 / point_count，
         # 由共享内核 compute_loop_valid_rate 统一计算（缺失 tag 跳过）。
         # loop_confidence_level 一次算出，所有指标经 _make_result 直接读取。
-        loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
+        #
+        # R14-2（2026-09-06）：时间覆盖率（去重点数 / 窗口期望点数，期望按
+        # 契约采样间隔 threshold.base_sampling_freq 计）折入可信度判定：
+        # 有效可信度 = 回路级 valid_rate × 时间覆盖率（语义 = 有效点数/期望点数）。
+        # 120 个 Good 点 / 30s 间隔 / 跨 1 小时（coverage≈3.3%）不再获得
+        # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
+        # （INCONCLUSIVE 兼容口径）处理。
+        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
+        window_start = window[0] if window else None
+        window_end = window[1] if window else None
+        time_coverage = compute_time_coverage(
+            raw.timestamps,
+            expected_interval_s=float(self.threshold.base_sampling_freq),
+            window_start=window_start,
+            window_end=window_end,
+        )
+        loop_valid_rate = raw_loop_valid_rate * time_coverage
         loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
+
+        if time_coverage < _LOW_COVERAGE_WARN_THRESHOLD:
+            logger.warning(
+                "[Pipeline] 时间覆盖率低（已折入可信度）: loop=%s, tagGroup=%s, "
+                "points=%d, coverage=%.4f, contract_interval_s=%s, "
+                "raw_loop_valid_rate=%.4f → effective=%.4f（level=%s）",
+                loop_id,
+                tag_group.value,
+                n,
+                time_coverage,
+                self.threshold.base_sampling_freq,
+                raw_loop_valid_rate,
+                loop_valid_rate,
+                loop_confidence_level,
+            )
 
         # 诊断日志：loop_confidence 为 E 时打印 validity 详情（定位全回路 E 不足根因）
         if loop_confidence_level == "E":

@@ -52,6 +52,12 @@ export namespace TagApi {
     loopDescription?: string;
     unitName?: string;
     /**
+     * R06（数据链路整改）：实时新值无效（"-1.#QNAN0"/"nan"/"Infinity"/空值）时
+     * 后端返回 currentValue=null 且 stale=true（不以 DB 旧值伪装最新有效读数）；
+     * 前端 WS 失联期间也本地置位标旧
+     */
+    stale?: boolean;
+    /**
      * 数据健康度（方案 C 轻量版）：实时质量码 + 同步新鲜度 + 所属回路 PV 完整度
      * 来自每日巡检快照，不在列表页逐 tag 实时查 TDengine
      */

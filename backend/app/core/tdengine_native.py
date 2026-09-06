@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -252,6 +253,10 @@ def _format_row(row: tuple) -> str:
     """格式化单行为 SQL VALUES 子句。
 
     行格式: (ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
+
+    R06（2026-09-06 整改）：数值列非有限（NaN/±Infinity 等浮点）一律输出
+    NULL——裸 ``nan``/``inf`` 字面量进入 SQL 会炸掉整个批次（含健康回路行）；
+    无效值折算 NULL（绝不折算 0）。int 恒有限，无需守卫。
     """
     # ts: 字符串，加引号
     # 数值: NULL 或 float/int
@@ -264,6 +269,9 @@ def _format_row(row: tuple) -> str:
         elif i == 0:
             # ts 列：字符串，加引号
             values.append(f"'{val}'")
+        elif isinstance(val, float) and not math.isfinite(val):
+            # 非有限浮点不能进 SQL：折算 NULL（R06）
+            values.append("NULL")
         else:
             # 数值列：直接输出
             values.append(str(val))

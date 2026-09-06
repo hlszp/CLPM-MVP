@@ -559,18 +559,40 @@ class TestPipelineControlTypes:
             (ControlType.COMPOSITION, "10s"),
         ],
     )
-    def test_sampling_freq_by_control_type(self, control_type, expected_freq):
-        """不同控制类型的 Pipeline 使用对应采样率。"""
+    def test_sampling_freq_reflects_actual_interval(self, control_type, expected_freq):
+        """R14-1：sampling_freq 反映**实际**采样（相邻 ts 中位间隔）。
+
+        数据按契约间隔（expected_freq）等间隔铺排时，标签与名义一致。
+        修复前标签恒为控制类型名义值，稀疏数据（如 30s 间隔）被标 "1s"
+        会让 ARMA 类算法按错误时间尺度计算。
+        """
         config = _make_config(control_type, range_min=0.0, range_max=100.0)
         pipeline = PreprocessingPipeline(config)
         # 使用足够多的点避免 FROZEN（值要有变化）
         n = 12
+        interval = float(expected_freq.rstrip("s"))
         raw = RawTimeSeries(
-            timestamps=_make_timestamps(n, float(config.control_type.value != "CC" and 1 or 1)),
+            timestamps=_make_timestamps(n, interval),
             signals={"pv": [50.0 + i * 0.2 for i in range(n)]},
         )
         block = pipeline.process(raw, TagGroup.BASE)
         assert block.sampling_freq == expected_freq
+
+    def test_sampling_freq_sparse_data_labelled_with_actual_interval(self):
+        """R14-1 核心场景：名义 1s（FLOW）契约下实际 30s 稀疏采样 → 标 "30s"。
+
+        修复前标签沿用名义 "1s"（缺陷行为），settling_time 等按 1s 计算
+        时间尺度错误 30 倍。
+        """
+        config = _make_config(ControlType.FLOW)
+        pipeline = PreprocessingPipeline(config)
+        n = 120
+        raw = RawTimeSeries(
+            timestamps=_make_timestamps(n, 30.0),
+            signals={"pv": [50.0 + i * 0.2 for i in range(n)]},
+        )
+        block = pipeline.process(raw, TagGroup.BASE)
+        assert block.sampling_freq == "30s"
 
 
 # ---------------------------------------------------------------------------

@@ -1,39 +1,76 @@
 /**
- * useLoopRealtime 单元测试（MW-P1-04 实时数据 composable）
+ * useLoopRealtime 单元测试（MW-P1-04 + 数据链路整改 R06/R17）
  *
- * 覆盖：
- * - parseTagCode：tagCode 解析（正常/无点号/空 role）
- * - applyMessage：PV/SP/OP/MODE 局部更新 + 质量码映射 + 未知 tag 跳过
- * - MODE 安全默认映射（0→Manual, ≥1→Auto, 未知值不覆盖）
- * - 非法 value（NaN）跳过
- * - PID_P/PID_I/PID_D 忽略
+ * 与旧版的关键差异（审查 §7"前端业务应用"行整改）：
+ * - **直接调用真实 composable**（mount 一个宿主组件执行 setup），不再在测试体
+ *   复制赋值逻辑，避免测试副本与实现分别演进；
+ * - MODE 断言改为 R17 契约：modeMapping → 默认映射 → Unknown
+ *   （默认 MODE=2 持续 Cascade；自定义正数映射 MANUAL 与 REST 一致）；
+ * - R06：无效数值不整条丢弃——数值置 null、质量按消息更新
+ *   （42/GOOD → nan/BAD 后必须不可用 + BAD，不得停留 42/GOOD）；
+ * - PID_P/PID_I/PID_D 实现已支持（旧测试断言"忽略 PID"是过时副本）。
  */
+import type { Mock } from 'vitest';
+
 import type { RealtimeUpdatable } from '#/composables/use-loop-realtime';
+
+import { mount } from '@vue/test-utils';
+import { defineComponent, h } from 'vue';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { parseTagCode } from '#/composables/use-loop-realtime';
-import { mapQualityToLabel } from '#/utils/quality-code';
+import {
+  parseTagCode,
+  useLoopRealtime,
+} from '#/composables/use-loop-realtime';
+import { realtimeWs } from '#/utils/realtime-ws';
 
-// mock realtimeWs 单例（避免真实 WS 连接）
+// mock realtimeWs 单例（避免真实 WS 连接；断言经导入的 mocked 实例进行）
 vi.mock('#/utils/realtime-ws', () => ({
   realtimeWs: {
     connect: vi.fn(),
     isConnected: false,
     onConnectionChange: vi.fn(() => () => {}),
     onMessage: vi.fn(() => () => {}),
-    status: 'offline' as const,
+    status: 'offline',
   },
 }));
 
 // mock @vben/stores useAccessStore（避免 pinia 依赖）
 vi.mock('@vben/stores', () => ({
-  useAccessStore: () => ({
-    accessToken: 'test-token',
-  }),
+  useAccessStore: () => ({ accessToken: 'test-token' }),
 }));
 
-function makeItem(tagName: string, loopId = 'loop-001'): RealtimeUpdatable {
+const wsMock = realtimeWs as unknown as {
+  connect: Mock;
+  isConnected: boolean;
+  onConnectionChange: Mock;
+  onMessage: Mock;
+  status: string;
+};
+
+/** mount 宿主组件执行 setup，取回真实 composable 返回值 */
+function setupComposable() {
+  let composable!: ReturnType<typeof useLoopRealtime>;
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        composable = useLoopRealtime();
+        return () => h('div');
+      },
+    }),
+  );
+  return {
+    composable,
+    unmount: () => wrapper.unmount(),
+  };
+}
+
+function makeItem(
+  tagName: string,
+  loopId = 'loop-001',
+  overrides: Partial<RealtimeUpdatable> = {},
+): RealtimeUpdatable {
   return {
     controlMode: 'Auto',
     currentValues: {
@@ -50,19 +87,25 @@ function makeItem(tagName: string, loopId = 'loop-001'): RealtimeUpdatable {
     },
     loopId,
     tagName,
+    ...overrides,
   };
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  wsMock.isConnected = false;
+  wsMock.status = 'offline';
+});
+
 describe('parseTagCode', () => {
   it('正常解析：80FIC11906_PIDA.PV → tagName=80FIC11906_PIDA, role=PV', () => {
-    const result = parseTagCode('80FIC11906_PIDA.PV');
-    expect(result).toEqual({
+    expect(parseTagCode('80FIC11906_PIDA.PV')).toEqual({
       role: 'PV',
       tagName: '80FIC11906_PIDA',
     });
   });
 
-  it('无点号：返回 null', () => {
+  it('无点号且非白名单后缀：返回 null', () => {
     expect(parseTagCode('INVALID')).toBeNull();
   });
 
@@ -75,13 +118,11 @@ describe('parseTagCode', () => {
   });
 
   it('role 转大写：pv → PV', () => {
-    const result = parseTagCode('TAG.pv');
-    expect(result).toEqual({ role: 'PV', tagName: 'TAG' });
+    expect(parseTagCode('TAG.pv')).toEqual({ role: 'PV', tagName: 'TAG' });
   });
 
   it('生产下划线风格：90TIC60004_PIDA_PV → tagName=90TIC60004_PIDA, role=PV', () => {
-    const result = parseTagCode('90TIC60004_PIDA_PV');
-    expect(result).toEqual({
+    expect(parseTagCode('90TIC60004_PIDA_PV')).toEqual({
       role: 'PV',
       tagName: '90TIC60004_PIDA',
     });
@@ -107,160 +148,262 @@ describe('parseTagCode', () => {
   });
 
   it('下划线风格：PID_P 完整后缀可解析', () => {
-    const result = parseTagCode('41LIC30044_PIDA_PID_P');
-    expect(result).toEqual({
+    expect(parseTagCode('41LIC30044_PIDA_PID_P')).toEqual({
       role: 'PID_P',
       tagName: '41LIC30044_PIDA',
     });
   });
 });
 
-describe('useLoopRealtime applyMessage 逻辑', () => {
-  /**
-   * 直接测试 applyMessage 的核心逻辑，不依赖 composable 的 WS 连接。
-   * applyMessage 是纯函数（对 items 数组做局部更新），可独立验证。
-   */
-
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('useLoopRealtime（真实 composable）', () => {
+  it('PV 更新：数值、质量、readAt 同时更新', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101');
+    const updated = composable.applyMessage(
+      {
+        collectTime: '2026-09-06T10:00:00Z',
+        quality: 1,
+        tagCode: 'LIC-101.PV',
+        value: '120.5',
+      },
+      [item],
+    );
+    expect(updated).toBe(true);
+    expect(item.currentValues.pv).toBe(120.5);
+    expect(item.currentValues.pvQuality).toBe('GOOD');
+    expect(item.currentValues.readAt).toBe('2026-09-06T10:00:00Z');
+    expect(composable.lastMessageAt.value).not.toBeNull();
   });
 
-  it('PV 更新：数值和 readAt 同时更新，质量码映射', () => {
+  it('R17：默认 MODE=2 持续显示 Cascade（不再被硬编码覆盖成 Auto）', () => {
+    const { composable } = setupComposable();
+    // REST 初始：mode=2, modeLabel='Cascade'（后端权威）
     const item = makeItem('LIC-101');
-    // 模拟 applyMessage 的核心逻辑
-    const msg = {
-      collectTime: '2026-08-09T10:00:00Z',
-      quality: 1,
-      tagCode: 'LIC-101.PV',
-      value: '120.5',
-    };
-
-    // 调用 parseTagCode + applyMessage 逻辑
-    const parsed = parseTagCode(msg.tagCode)!;
-    expect(parsed.role).toBe('PV');
-
-    const cv = item.currentValues;
-    const numValue = Number.parseFloat(msg.value);
-    cv.pv = numValue;
-    cv.pvQuality = mapQualityToLabel(msg.quality);
-    cv.readAt = msg.collectTime;
-
-    expect(cv.pv).toBe(120.5);
-    expect(cv.pvQuality).toBe('GOOD');
-    expect(cv.readAt).toBe('2026-08-09T10:00:00Z');
+    item.currentValues.mode = 2;
+    item.currentValues.modeLabel = 'Cascade';
+    item.controlMode = 'Cascade';
+    composable.applyMessage(
+      {
+        collectTime: '2026-09-06T10:00:01Z',
+        quality: 1,
+        tagCode: 'LIC-101.MODE',
+        value: '2',
+      },
+      [item],
+    );
+    expect(item.currentValues.mode).toBe(2);
+    expect(item.currentValues.modeLabel).toBe('Cascade');
+    expect(item.controlMode).toBe('Cascade');
   });
 
-  it('MODE=0：映射 Manual，controlMode 同步', () => {
-    const item = makeItem('LIC-101');
-    const msg = {
-      collectTime: '2026-08-09T10:00:00Z',
-      quality: 1,
-      tagCode: 'LIC-101.MODE',
-      value: '0',
-    };
-
-    const parsed = parseTagCode(msg.tagCode)!;
-    const cv = item.currentValues;
-    const numValue = Number.parseFloat(msg.value);
-
-    expect(parsed.role).toBe('MODE');
-    cv.mode = numValue;
-    if (numValue === 0) {
-      cv.modeLabel = 'Manual';
-      item.controlMode = 'Manual';
-    }
-
-    expect(cv.mode).toBe(0);
-    expect(cv.modeLabel).toBe('Manual');
+  it('R17：自定义正数映射 MANUAL 时 WS 解析与 REST 一致', () => {
+    const { composable } = setupComposable();
+    // 该回路自定义 loop_mode_mapping：2 → MANUAL（REST modeLabel='Manual'）
+    const item = makeItem('LIC-101', 'loop-001', {
+      modeMapping: { '1': 'Auto', '2': 'Manual' },
+    });
+    item.currentValues.mode = 2;
+    item.currentValues.modeLabel = 'Manual';
+    item.controlMode = 'Manual';
+    composable.applyMessage(
+      {
+        collectTime: '2026-09-06T10:00:01Z',
+        quality: 1,
+        tagCode: 'LIC-101.MODE',
+        value: '2',
+      },
+      [item],
+    );
+    expect(item.currentValues.modeLabel).toBe('Manual');
     expect(item.controlMode).toBe('Manual');
   });
 
-  it('MODE≥1：映射 Auto，controlMode 同步', () => {
-    const item = makeItem('LIC-101');
-    item.currentValues.mode = 0;
-    item.currentValues.modeLabel = 'Manual';
-    item.controlMode = 'Manual';
-
-    const numValue = 1;
-    item.currentValues.mode = numValue;
-    if (numValue >= 1) {
-      item.currentValues.modeLabel = 'Auto';
-      item.controlMode = 'Auto';
-    }
-
-    expect(item.currentValues.mode).toBe(1);
-    expect(item.currentValues.modeLabel).toBe('Auto');
-    expect(item.controlMode).toBe('Auto');
+  it('R17：自定义映射未命中回退默认映射', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101', 'loop-001', {
+      modeMapping: { '5': 'Manual' },
+    });
+    composable.applyMessage(
+      {
+        collectTime: 't',
+        quality: 1,
+        tagCode: 'LIC-101.MODE',
+        value: '2',
+      },
+      [item],
+    );
+    // 2 不在自定义映射 → 默认映射 → Cascade
+    expect(item.currentValues.modeLabel).toBe('Cascade');
   });
 
-  it('未知 MODE 值（如 -1）：不覆盖 modeLabel（保持后端权威值）', () => {
+  it('R17：未知 MODE 值显式 Unknown（不保留旧标签冒充）', () => {
+    const { composable } = setupComposable();
     const item = makeItem('LIC-101');
-    item.currentValues.modeLabel = 'Cascade'; // 后端自定义映射
-    const originalLabel = item.currentValues.modeLabel;
-
-    const numValue = Number.parseFloat('-1'); // 未知值（模拟 WS 解析）
-    item.currentValues.mode = numValue;
-    // 未知值不覆盖 modeLabel（WS 只做 0→Manual / ≥1→Auto 安全默认映射）
-    if (numValue === 0) {
-      item.currentValues.modeLabel = 'Manual';
-    } else if (numValue >= 1) {
-      item.currentValues.modeLabel = 'Auto';
-    }
-    // modeLabel 应保持不变
-    expect(item.currentValues.modeLabel).toBe(originalLabel);
-    expect(item.currentValues.mode).toBe(-1);
+    item.currentValues.modeLabel = 'Cascade';
+    composable.applyMessage(
+      {
+        collectTime: '2026-09-06T10:00:01Z',
+        quality: 1,
+        tagCode: 'LIC-101.MODE',
+        value: '99',
+      },
+      [item],
+    );
+    expect(item.currentValues.mode).toBe(99);
+    expect(item.currentValues.modeLabel).toBe('Unknown');
+    expect(item.controlMode).toBe('Unknown');
   });
 
-  it('SP 更新：数值正确', () => {
+  it('R06：42/GOOD → nan/BAD 后不可用 + BAD（不整条丢弃、不停留 42/GOOD）', () => {
+    const { composable } = setupComposable();
     const item = makeItem('LIC-101');
-    const numValue = 98.7;
-    item.currentValues.sp = numValue;
+    item.currentValues.pv = 42;
+    item.currentValues.pvQuality = 'GOOD';
+    const updated = composable.applyMessage(
+      {
+        collectTime: '2026-09-06T10:00:05Z',
+        quality: 0,
+        tagCode: 'LIC-101.PV',
+        value: 'nan',
+      },
+      [item],
+    );
+    expect(updated).toBe(true);
+    expect(item.currentValues.pv).toBeNull();
+    expect(item.currentValues.pvQuality).toBe('BAD');
+    expect(item.currentValues.readAt).toBe('2026-09-06T10:00:05Z');
+  });
+
+  it('R06："-1.#QNAN0" 置 null（不得解析为 -1），质量按消息更新', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101');
+    composable.applyMessage(
+      {
+        collectTime: 't',
+        quality: 1,
+        tagCode: 'LIC-101.PV',
+        value: '-1.#QNAN0',
+      },
+      [item],
+    );
+    expect(item.currentValues.pv).toBeNull();
+    expect(item.currentValues.pvQuality).toBe('GOOD');
+  });
+
+  it('R06：Infinity/1e999/空串 → null；合法科学计数法 1.5E3 → 1500', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101');
+    for (const bad of ['Infinity', '1e999', '']) {
+      composable.applyMessage(
+        { collectTime: 't', quality: 0, tagCode: 'LIC-101.SP', value: bad },
+        [item],
+      );
+      expect(item.currentValues.sp).toBeNull();
+    }
+    composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'LIC-101.SP', value: '1.5E3' },
+      [item],
+    );
+    expect(item.currentValues.sp).toBe(1500);
+  });
+
+  it('R06：发布侧增量字段 valueValid=false → 数值置 null（容错缺省）', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101');
+    composable.applyMessage(
+      {
+        collectTime: 't',
+        quality: 1,
+        tagCode: 'LIC-101.PV',
+        value: '42.5',
+        valueValid: false,
+      },
+      [item],
+    );
+    expect(item.currentValues.pv).toBeNull();
+    expect(item.currentValues.pvQuality).toBe('GOOD');
+  });
+
+  it('MODE 无效值 → mode=null + Unknown', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101');
+    composable.applyMessage(
+      {
+        collectTime: 't',
+        quality: 1,
+        tagCode: 'LIC-101.MODE',
+        value: 'Infinity',
+      },
+      [item],
+    );
+    expect(item.currentValues.mode).toBeNull();
+    expect(item.currentValues.modeLabel).toBe('Unknown');
+  });
+
+  it('SP/OP 更新：数值正确', () => {
+    const { composable } = setupComposable();
+    const item = makeItem('LIC-101');
+    composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'LIC-101.SP', value: '98.7' },
+      [item],
+    );
     expect(item.currentValues.sp).toBe(98.7);
-  });
-
-  it('OP 更新：数值正确', () => {
-    const item = makeItem('LIC-101');
-    const numValue = 45.3;
-    item.currentValues.op = numValue;
+    composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'LIC-101.OP', value: '45.3' },
+      [item],
+    );
     expect(item.currentValues.op).toBe(45.3);
   });
 
-  it('PID_P/PID_I/PID_D 忽略（不在展示范围）', () => {
-    const parsed = parseTagCode('LIC-101.PID_P');
-    expect(parsed).toEqual({ role: 'PID_P', tagName: 'LIC-101' });
-    // role 不在 PV/SP/OP/MODE 中，应被忽略
-    const validRoles = new Set(['MODE', 'OP', 'PV', 'SP']);
-    expect(validRoles.has(parsed!.role)).toBe(false);
-  });
-
-  it('非法 value（NaN）跳过', () => {
-    const numValue = Number.parseFloat('invalid');
-    expect(Number.isNaN(numValue)).toBe(true);
-    // applyMessage 在 NaN 时应 return false
-  });
-
-  it('质量码映射：1→GOOD, 0→BAD, 99→UNCERTAIN', () => {
-    expect(mapQualityToLabel(1)).toBe('GOOD');
-    expect(mapQualityToLabel(0)).toBe('BAD');
-    expect(mapQualityToLabel(99)).toBe('UNCERTAIN');
-    // OPC UA Good
-    expect(mapQualityToLabel(2)).toBe('GOOD');
-    expect(mapQualityToLabel(3)).toBe('GOOD');
-    // OPC DA Good
-    expect(mapQualityToLabel(192)).toBe('GOOD');
-  });
-
-  it('未知 tagCode（不在 items 列表）：跳过不报错', () => {
-    const items = [makeItem('LIC-101')];
-    const parsed = parseTagCode('UNKNOWN_TAG.PV');
-    const matched = items.find((l) => l.tagName === parsed!.tagName);
-    expect(matched).toBeUndefined();
-  });
-
-  it('readAt 每次更新同步设置', () => {
+  it('PID_P/PID_I/PID_D 更新（实现已支持，旧测试断言忽略是过时副本）', () => {
+    const { composable } = setupComposable();
     const item = makeItem('LIC-101');
-    const collectTime = '2026-08-09T10:30:00Z';
-    item.currentValues.readAt = collectTime;
-    expect(item.currentValues.readAt).toBe(collectTime);
+    composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'LIC-101.PID_P', value: '1.2' },
+      [item],
+    );
+    composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'LIC-101.PID_I', value: '0.3' },
+      [item],
+    );
+    composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'LIC-101.PID_D', value: '0.05' },
+      [item],
+    );
+    expect(item.currentValues.pidP).toBe(1.2);
+    expect(item.currentValues.pidI).toBe(0.3);
+    expect(item.currentValues.pidD).toBe(0.05);
+  });
+
+  it('未知 tagCode（不在 items 列表）返回 false 不报错', () => {
+    const { composable } = setupComposable();
+    const items = [makeItem('LIC-101')];
+    const updated = composable.applyMessage(
+      { collectTime: 't', quality: 1, tagCode: 'UNKNOWN_TAG.PV', value: '1' },
+      items,
+    );
+    expect(updated).toBe(false);
+  });
+
+  it('start() 连接全局单例；unmount 后退订回调', () => {
+    const { composable, unmount } = setupComposable();
+    composable.start();
+    expect(wsMock.connect).toHaveBeenCalledWith('test-token');
+    expect(wsMock.onConnectionChange).toHaveBeenCalled();
+    unmount();
+    // onBeforeUnmount → stop()（清理路径执行无异常即通过）
+  });
+
+  it('startFallback 幂等且 stopFallback 停止轮询', () => {
+    const { composable } = setupComposable();
+    let pollCount = 0;
+    const poll = vi.fn(async () => {
+      pollCount++;
+    });
+    composable.startFallback(poll, 10);
+    composable.startFallback(poll, 10); // 幂等：不重复
+    expect(pollCount).toBe(1);
+    composable.stopFallback();
+    expect(pollCount).toBe(1);
   });
 });

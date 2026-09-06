@@ -1,3 +1,104 @@
+<script lang="ts">
+/**
+ * R06/R17 实时消息应用逻辑（纯函数，模块级导出供本页 setup 与单元测试共用）
+ *
+ * - R06（数据链路整改 S0 契约 §3）：数值解析复用 utils/numeric.parseFiniteNumber
+ *   共享契约，"-1.#QNAN0"/"nan"/"Infinity"/"1e999"/空串 → null；无效值不整条
+ *   丢弃——数值置 null、质量按消息独立更新（对齐 use-loop-realtime / tag/list.vue）
+ * - R17（S0 契约 §6）：MODE 按「回路 modeMapping（REST 列表下发）→ 默认映射 →
+ *   Unknown」解析（use-loop-realtime.resolveModeLabel），删除旧"0=Manual/正数=Auto"
+ *   硬编码；权威映射见 backend services/monitor.py
+ */
+// 说明：LoopApi 类型复用下方 <script setup> 块的导入（两块编译为同一虚拟模块，
+// 各自重复 import 会产生 duplicate identifier）
+import {
+  parseTagCode,
+  resolveModeLabel,
+} from '#/composables/use-loop-realtime';
+import { parseFiniteNumber } from '#/utils/numeric';
+import { mapQualityToLabel } from '#/utils/quality-code';
+
+/** WS 实时消息载荷（对齐 realtime-ws RealtimeMessage；valueValid 为 S0 契约 §6 增量字段） */
+export interface MonitorRealtimeMessage {
+  collectTime: string;
+  quality: number;
+  tagCode: string;
+  value: string;
+  /** S0 契约 §6 增量字段（发布侧添加，可能尚未就绪）：值经共享契约解析是否有效 */
+  valueValid?: boolean;
+}
+
+/** 可被实时消息更新的回路列表项（MonitorListItem 的最小鸭子面） */
+export interface MonitorRealtimeItem {
+  controlMode?: LoopApi.ControlMode;
+  currentValues: LoopApi.MonitorCurrentValues;
+  /** R17：该回路的 MODE 数值映射（REST 列表下发；缺省用默认映射） */
+  modeMapping?: Record<string, string>;
+  tagName: string;
+}
+
+/** 监控列表展示的实时角色（PID_P/PID_I/PID_D 不在列表展示） */
+export type MonitorRealtimeRole = 'MODE' | 'OP' | 'PV' | 'SP';
+
+/**
+ * 将 WS 实时消息应用到匹配回路（按 tagName 局部更新 currentValues）。
+ *
+ * @returns 实际应用的角色；tagCode 无法解析 / 回路不在列表 / PID 角色返回 null
+ */
+export function applyRealtimeMessage(
+  msg: MonitorRealtimeMessage,
+  items: MonitorRealtimeItem[],
+): MonitorRealtimeRole | null {
+  // 解析 tagCode（兼容仿真点号 `LOOP.PV` 与生产下划线 `LOOP_PV` 命名）
+  const parsed = parseTagCode(msg.tagCode);
+  if (!parsed) return null;
+
+  const item = items.find((l) => l.tagName === parsed.tagName);
+  if (!item) return null;
+
+  const cv = item.currentValues;
+  // R06：共享数值契约解析——无效字面量 → null（绝不为 0、不整条丢弃）；
+  // 发布侧增量字段 valueValid=false 同样视为无效（字段可能尚未就绪，容错缺省）
+  const numValue =
+    msg.valueValid === false ? null : parseFiniteNumber(msg.value);
+
+  switch (parsed.role) {
+    case 'MODE': {
+      // R17：modeMapping → 默认映射（DEFAULT_MODE_LABELS）→ Unknown；
+      // 未知/无效值显式 Unknown，不保留旧标签冒充
+      const label = resolveModeLabel(numValue, item.modeMapping);
+      cv.mode = numValue;
+      cv.modeLabel = label;
+      if (item.controlMode !== undefined) {
+        item.controlMode = label as LoopApi.ControlMode;
+      }
+      break;
+    }
+    case 'OP': {
+      cv.op = numValue;
+      break;
+    }
+    case 'PV': {
+      // R06：数值无效 → 置 null（表格显示 —），质量仍按本条消息独立更新，
+      // 不得保留旧值 + 旧 GOOD 标签冒充有效读数
+      cv.pv = numValue;
+      cv.pvQuality = mapQualityToLabel(msg.quality);
+      break;
+    }
+    case 'SP': {
+      cv.sp = numValue;
+      break;
+    }
+    default: {
+      return null; // PID_P/PID_I/PID_D 不在监控列表展示
+    }
+  }
+  cv.readAt = msg.collectTime;
+  // 仅 MODE/OP/PV/SP 四个 case 能到达此处，收窄安全
+  return parsed.role as MonitorRealtimeRole;
+}
+</script>
+
 <script lang="ts" setup>
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
@@ -84,13 +185,11 @@ import {
   MODE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
-import { parseTagCode } from '#/composables/use-loop-realtime';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
-import { mapQualityToLabel } from '#/utils/quality-code';
 import { realtimeWs } from '#/utils/realtime-ws';
 
 defineOptions({ name: 'LoopMonitor' });
@@ -559,62 +658,19 @@ const wsConnectionStatus = ref<'offline' | 'online' | 'reconnecting'>(
   realtimeWs.status,
 );
 
-/** WebSocket 实时数据：局部更新单条回路的 currentValues */
-function handleRealtimeMessage(msg: {
-  collectTime: string;
-  quality: number;
-  tagCode: string;
-  value: string;
-}) {
-  // 解析 tagCode（兼容仿真点号 `LOOP.PV` 与生产下划线 `LOOP_PV` 命名）
-  const parsed = parseTagCode(msg.tagCode);
-  if (!parsed) return;
-
-  // 在当前列表中找到对应回路并局部更新
-  const item = monitorList.value.find((l) => l.tagName === parsed.tagName);
-  if (!item) return;
-
-  const cv = item.currentValues;
-  const numValue = Number.parseFloat(msg.value);
-  if (Number.isNaN(numValue)) return;
-
-  switch (parsed.role) {
-    case 'MODE': {
-      // 本地重算 modeLabel/controlMode（与后端 _mode_value_to_label 默认映射一致），
-      // 使监控列表"控制方式"列实时反映 MODE 变化；若有 loop_mode_mapping 自定义配置，
-      // 下次列表刷新会对齐。同时节流触发统计卡片刷新。
-      cv.mode = numValue;
-      if (numValue === 0) {
-        cv.modeLabel = 'Manual';
-        if (item.controlMode !== undefined) item.controlMode = 'Manual';
-      } else if (numValue >= 1) {
-        cv.modeLabel = 'Auto';
-        if (item.controlMode !== undefined) item.controlMode = 'Auto';
-      }
-      // 未知 MODE 值不覆盖 modeLabel（保持后端权威值）
-      scheduleStatsRefresh();
-      break;
-    }
-    case 'OP': {
-      cv.op = numValue;
-      break;
-    }
-    case 'PV': {
-      cv.pv = numValue;
-      // Phase 10 UX 包：WS 质量码统一映射（与后端 _GOOD_CODES={1,2,3,192} 对齐），
-      // 不再直接透传数字；原 `as any` 会把 2 当成 UNCERTAIN 与 REST 路径冲突
-      cv.pvQuality = mapQualityToLabel(msg.quality) as any;
-      break;
-    }
-    case 'SP': {
-      cv.sp = numValue;
-      break;
-    }
-    default: {
-      return; // PID_P/PID_I/PID_D 不在监控列表展示
-    }
+/**
+ * WebSocket 实时数据：局部更新单条回路的 currentValues。
+ *
+ * R06/R17 契约逻辑在模块级导出的 applyRealtimeMessage（本文件普通 script 块），
+ * 便于单元测试直接调用；此处只挂接页面级副作用（统计卡片节流刷新 + 最近刷新时间）。
+ */
+function handleRealtimeMessage(msg: MonitorRealtimeMessage) {
+  const applied = applyRealtimeMessage(msg, monitorList.value);
+  if (!applied) return;
+  // MODE 变化联动"控制方式"统计卡片（1s 节流重载，避免打爆 API）
+  if (applied === 'MODE') {
+    scheduleStatsRefresh();
   }
-  cv.readAt = msg.collectTime;
   lastRefreshAt.value = new Date();
 }
 

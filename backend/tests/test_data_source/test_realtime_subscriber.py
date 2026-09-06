@@ -22,6 +22,7 @@ from app.core.exceptions import BizError
 from app.services.data_source.realtime_subscriber import (
     _CONTROL_CHANNEL,
     _GAP_BACKFILL_LOCK_KEY,
+    _PUBSUB_CHANNEL,
     _REDIS_KEY_PREFIX,
     _REFRESH_RESULT_KEY,
     _SUBSCRIBER_LEADER_LOCK_KEY,
@@ -90,6 +91,9 @@ class _FakePipeline:
     def expire(self, key: str, ttl: int) -> None:
         self._ops.append(("expire", key, ttl))
 
+    def delete(self, key: str) -> None:
+        self._ops.append(("delete", key))
+
     async def execute(self) -> list:
         for op in self._ops:
             name, *args = op
@@ -98,10 +102,17 @@ class _FakePipeline:
 
 
 class _FakeRedis:
-    """轻量级 Redis mock，支持 setex/mget/publish/set(nx)/eval/pipeline/pubsub."""
+    """轻量级 Redis mock.
+
+    支持 setex/mget/publish/set(nx)/eval/pipeline/pubsub；S2 起补齐 list/hash
+    真实存储（lpush/lrange/ltrim/lindex/delete/hset/hgetall），供 R02/R08 的
+    历史缓存三重限制与持久待补缺口列表测试使用。
+    """
 
     def __init__(self) -> None:
         self._data: dict[str, str] = {}
+        self._lists: dict[str, list[str]] = {}
+        self._hashes: dict[str, dict[str, str]] = {}
         self.published: list[tuple[str, str]] = []
         self.pubsub_instances: list[_FakePubSub] = []
         # 测试可替换为返回预置消息的 _FakePubSub 的 callable
@@ -133,10 +144,17 @@ class _FakeRedis:
         return True
 
     async def delete(self, key: str) -> int:
+        deleted = 0
         if key in self._data:
             del self._data[key]
-            return 1
-        return 0
+            deleted += 1
+        if key in self._lists:
+            del self._lists[key]
+            deleted += 1
+        if key in self._hashes:
+            del self._hashes[key]
+            deleted += 1
+        return deleted
 
     async def eval(self, script: str, numkeys: int, *args: str) -> Any:
         """简化 Lua 脚本执行：支持 SETNX 锁释放（CAS DEL）与续期（CAS EXPIRE）."""
@@ -156,19 +174,42 @@ class _FakeRedis:
         return _FakePipeline(self)
 
     async def lpush(self, key: str, value: str) -> int:
-        return 1
+        lst = self._lists.setdefault(key, [])
+        lst.insert(0, value)
+        return len(lst)
+
+    async def lrange(self, key: str, start: int, stop: int) -> list[str]:
+        lst = self._lists.get(key, [])
+        if stop < 0:
+            stop = len(lst) + stop
+        return lst[start : stop + 1]
 
     async def ltrim(self, key: str, start: int, stop: int) -> None:
-        pass
+        lst = self._lists.get(key, [])
+        if stop < 0:
+            stop = len(lst) + stop
+        self._lists[key] = lst[start : stop + 1]
+
+    async def lindex(self, key: str, index: int) -> str | None:
+        lst = self._lists.get(key, [])
+        if index < 0:
+            index = len(lst) + index
+        if 0 <= index < len(lst):
+            return lst[index]
+        return None
 
     async def expire(self, key: str, ttl: int) -> bool:
         return True
 
-    async def hset(self, key: str, *, mapping: dict | None = None) -> int:
-        return 1
+    async def hset(self, key: str, *, mapping: dict | None = None, **kwargs) -> int:
+        h = self._hashes.setdefault(key, {})
+        fields = {**(mapping or {}), **kwargs}
+        for field, value in fields.items():
+            h[field] = value if isinstance(value, str) else str(value)
+        return len(fields)
 
     async def hgetall(self, key: str) -> dict:
-        return {}
+        return dict(self._hashes.get(key, {}))
 
     async def zadd(self, key: str, mapping: dict) -> int:
         return 1
@@ -255,9 +296,15 @@ async def test_stop_cancels_running_task():
 
 @pytest.mark.asyncio
 async def test_cache_value_writes_to_redis():
-    """_cache_value 应以正确 key 格式和 TTL 写入 Redis."""
+    """_cache_value 经显示批量发送路径以正确 key/TTL 写入 Redis + Pub/Sub.
+
+    R03 重排：接收路径不 await Redis——先入待发字典，_flush_display_pending
+    批量发送；载荷在既有 4 字段上增量携带 valueValid/recvAt/stale。
+    """
     fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
+    # 映射缓存保持空（点号兜底口径，仿真场景）；避免测试依赖真实 DB
+    sub._refresh_loop_meta_cache = AsyncMock()
 
     item = {
         "tagCode": "LIC-101.PV",
@@ -272,22 +319,36 @@ async def test_cache_value_writes_to_redis():
     ):
         mock_settings.REALTIME_WRITEBACK_ENABLED = False
         mock_settings.DATA_SOURCE_TYPE = "remote_api"
-        await sub._cache_value(item)
+        accepted = await sub._cache_value(item)
+        assert accepted is True
+        # R03：_cache_value 本身不写 Redis（不 await），快照进待发字典
+        expected_key = f"{_REDIS_KEY_PREFIX}LIC-101.PV"
+        assert expected_key not in fake_redis._data
+        assert "LIC-101.PV" in sub._display_pending
+        # 历史缓冲在同步段已就绪（不依赖 Redis）
+        assert "LIC-101" in sub._buffer
+        await sub._flush_display_pending()
 
-    expected_key = f"{_REDIS_KEY_PREFIX}LIC-101.PV"
     assert expected_key in fake_redis._data
     cached = json.loads(fake_redis._data[expected_key])
     assert cached["tagCode"] == "LIC-101.PV"
     assert cached["value"] == "50.5"
     assert cached["quality"] == 0
-    assert "LIC-101" in sub._buffer
+    assert cached["collectTime"] == "2026-06-28T08:00:00Z"
+    # 增量可选字段（S3 消费侧容错缺省）
+    assert cached["valueValid"] is True
+    assert cached["stale"] is False
+    assert "recvAt" in cached
+    # Pub/Sub 频道广播同一载荷
+    assert any(ch == _PUBSUB_CHANNEL for ch, _m in fake_redis.published)
 
 
 @pytest.mark.asyncio
 async def test_cache_value_buffers_writeback_when_enabled():
-    """开启写回且数据源为 tdengine 时，保留旧宽表缓冲逻辑。"""
+    """开启写回且数据源为 tdengine 时，保留旧宽表缓冲逻辑（条目结构含 R11 元数据）."""
     fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
+    sub._refresh_loop_meta_cache = AsyncMock()
 
     item = {
         "tagCode": "LIC-101.PV",
@@ -304,11 +365,14 @@ async def test_cache_value_buffers_writeback_when_enabled():
         mock_settings.DATA_SOURCE_TYPE = "tdengine"
         await sub._cache_value(item)
 
-    assert sub._buffer["LIC-101"]["PV"] == {
-        "value": "50.5",
-        "quality": 1,
-        "ts": "2026-06-28T08:00:00Z",
-    }
+    entry = sub._buffer["LIC-101"]["PV"]
+    assert entry["value"] == "50.5"
+    assert entry["quality"] == 1
+    assert entry["ts"] == "2026-06-28T08:00:00Z"
+    # R11 绑定代次元数据（S0 契约 §4.1/§4.3）
+    assert entry["tag"] == "LIC-101.PV"
+    assert entry["recvAt"] > 0
+    assert entry["epoch"] == 0
 
 
 @pytest.mark.asyncio
@@ -610,13 +674,17 @@ async def test_maybe_save_checkpoint_throttled():
 
 @pytest.mark.asyncio
 async def test_gap_backfill_skipped_when_gap_too_small():
-    """缺口小于 MIN_GAP 时不触发补数."""
+    """缺口小于 MIN_GAP 时不触发补数（R08：无缺口也尝试消费在途待补，需 fake Redis）."""
     import time as _time
 
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     sub._last_flushed_at = _time.time() - 10  # 10s < 60s
 
-    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
         _gap_settings(mock_settings)
         await sub._maybe_trigger_gap_backfill()
 
@@ -725,18 +793,27 @@ async def test_refresh_loop_recycles_stuck_main_task():
 
 @pytest.mark.asyncio
 async def test_gap_backfill_skipped_when_disabled():
-    """GAP_BACKFILL_ENABLED=False 时不触发补数."""
+    """GAP_BACKFILL_ENABLED=False 时只登记缺口不调用远端（R08），不创建补数任务."""
     import time as _time
 
+    from app.services.data_source.realtime_subscriber import _GAP_PENDING_KEY
+
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     sub._last_flushed_at = _time.time() - 3600
 
-    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
         _gap_settings(mock_settings)
         mock_settings.GAP_BACKFILL_ENABLED = False
         await sub._maybe_trigger_gap_backfill()
 
     assert sub._backfill_task is None
+    # 缺口已登记到持久待补列表（开关关闭不调远端，但登记可见）
+    assert len(fake_redis._lists.get(_GAP_PENDING_KEY, [])) == 1
+    assert sub._metrics["gap_windows_registered"] == 1
 
 
 @pytest.mark.asyncio
@@ -744,11 +821,13 @@ async def test_gap_backfill_triggered_on_reconnect():
     """缺口 ≥ MIN_GAP 时创建补数任务，窗口为 [last_flushed_at, now-2s]."""
     import time as _time
 
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     last_flushed_at = _time.time() - 300  # 5 分钟缺口
     sub._last_flushed_at = last_flushed_at
 
     with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
         patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
         patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill,
     ):
@@ -771,10 +850,12 @@ async def test_gap_backfill_window_truncated_to_max_hours():
     """缺口超过 MAX_HOURS 时窗口截断为最近 MAX_HOURS."""
     import time as _time
 
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     sub._last_flushed_at = _time.time() - 48 * 3600  # 48h 缺口，上限 24h
 
     with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
         patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
         patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill,
     ):
@@ -795,6 +876,7 @@ async def test_gap_backfill_dedup_while_running():
     import asyncio
     import time as _time
 
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     sub._last_flushed_at = _time.time() - 3600
 
@@ -804,7 +886,10 @@ async def test_gap_backfill_dedup_while_running():
     running_task = asyncio.create_task(_pending())
     sub._backfill_task = running_task
 
-    with patch("app.services.data_source.realtime_subscriber.settings") as mock_settings:
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_settings,
+    ):
         _gap_settings(mock_settings)
         await sub._maybe_trigger_gap_backfill()
 
@@ -1041,13 +1126,17 @@ async def test_retry_gap_backfill_triggers_backfill_after_delay():
     """重试定时器到期后对失败缺口重新执行补数（窗口末端取触发时刻）."""
     import time as _time
 
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     sub._running = True
     gap_start = _time.time() - 900
     sub._retry_window_start = gap_start
     sub._backfill_retry_count = 1
 
-    with patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill:
+    with (
+        patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+        patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill,
+    ):
         await sub._retry_gap_backfill(0.01)
         assert sub._backfill_task is not None
         await sub._backfill_task
@@ -1064,6 +1153,7 @@ async def test_retry_gap_backfill_reschedules_when_backfill_running():
     import asyncio
     import time as _time
 
+    fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
     sub._running = True
     sub._retry_window_start = _time.time() - 900
@@ -1075,7 +1165,10 @@ async def test_retry_gap_backfill_reschedules_when_backfill_running():
     running_task = asyncio.create_task(_pending())
     sub._backfill_task = running_task
     try:
-        with patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill:
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch.object(sub, "_run_gap_backfill", new=AsyncMock()) as mock_backfill,
+        ):
             await sub._retry_gap_backfill(0.01)
             # 未触发新补数，而是重排了定时器
             mock_backfill.assert_not_awaited()
@@ -1340,8 +1433,12 @@ class TestLeaderLock:
         assert fake_redis._data[_SUBSCRIBER_LEADER_LOCK_KEY] == "other:2:2"
 
     @pytest.mark.asyncio
-    async def test_acquire_leader_lock_degrades_on_redis_error(self):
-        """Redis 异常时降级为无锁运行（返回 True，不劣于引入锁之前）。"""
+    async def test_acquire_leader_lock_returns_false_on_redis_error(self):
+        """R04：Redis 异常时保持待命（返回 False），不得因异常成为 Leader.
+
+        原 fail-open 行为（异常返回 True）会使 Redis 断网期间 4 个 worker
+        全部启动订阅重复采集，已按 S0 契约 §5 改写为正确行为断言。
+        """
         sub = RealtimeSubscriber()
         sub._leader_token = "host:1:1"
         with patch("app.services.data_source.realtime_subscriber.redis_client") as mock_redis:
@@ -1350,7 +1447,7 @@ class TestLeaderLock:
                 _leader_settings(mock_s)
                 ok = await sub._acquire_leader_lock()
 
-        assert ok is True
+        assert ok is False
 
     @pytest.mark.asyncio
     async def test_renew_leader_lock_succeeds_with_correct_token(self):
@@ -1386,9 +1483,14 @@ class TestLeaderLock:
 
     @pytest.mark.asyncio
     async def test_renew_leader_lock_keeps_leadership_on_redis_error(self):
-        """Redis 异常时续期返回 True 保持现状（避免闪断导致全员停订）。"""
+        """R04：Redis 异常时续期返回 True 保持现状，但租约期限不延长.
+
+        租约（lease_expires_at）只由确认成功推进；超出租约仍无法确认时由
+        _maintain_leadership 退位（见 test_realtime_subscriber_s1.py）。
+        """
         sub = RealtimeSubscriber()
         sub._leader_token = "host:1:1"
+        sub._lease_expires_at = 1000.0
         with patch("app.services.data_source.realtime_subscriber.redis_client") as mock_redis:
             mock_redis.eval = AsyncMock(side_effect=Exception("Redis down"))
             with patch("app.services.data_source.realtime_subscriber.settings") as mock_s:
@@ -1396,6 +1498,7 @@ class TestLeaderLock:
                 ok = await sub._renew_leader_lock()
 
         assert ok is True
+        assert sub._lease_expires_at == 1000.0, "续租异常不得延长租约期限"
 
     @pytest.mark.asyncio
     async def test_release_leader_lock_cas(self):
@@ -1518,14 +1621,26 @@ class TestBuildRowTimezone:
         row = sub._build_row(roles_data)
         assert "2026-07-15 10:00:00" in row[0]
 
-    def test_build_row_empty_ts_uses_now(self):
-        """空时间戳应使用当前目标时区时间。"""
+    def test_build_row_empty_ts_returns_none(self):
+        """R05：整行无任何已知 sourceTime → 不落行（返回 None），不伪造 now()."""
         sub = RealtimeSubscriber()
         roles_data = {
             "PV": {"value": "50.5", "quality": 1, "ts": ""},
+            "SP": {"value": "60.0", "quality": 1, "ts": None},
+        }
+        assert sub._build_row(roles_data) is None
+
+    def test_build_row_partial_missing_ts_uses_known_only(self):
+        """R05：部分角色无 ts 时行 ts 只用已知 sourceTime（不伪造未知角色时间）."""
+        sub = RealtimeSubscriber()
+        roles_data = {
+            "PV": {"value": "50.5", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
+            "SP": {"value": "60.0", "quality": 1, "ts": ""},
         }
         row = sub._build_row(roles_data)
-        assert len(row[0]) > 0
+        # 行 ts = PV 的 sourceTime（SP 无 ts 不参与，也不挡行）
+        assert row[0] == "2026-07-15 18:00:00.000"
+        assert row[2] == 60.0  # SP 值照常携带（last-known 合并口径）
 
 
 # ---------------------------------------------------------------------------
@@ -1930,22 +2045,26 @@ async def test_get_loop_meta_map_builds_cache_from_db():
     }
 
 
-def test_build_row_ts_prefers_pv_collect_time():
-    """行 ts 统一取 PV 角色 collectTime（PV 高频基准），而非任意角色."""
+def test_build_row_ts_is_max_of_role_source_times():
+    """R05：行 ts = 合并进该行的所有角色 sourceTime 的最大值（不再 PV 优先）.
+
+    PV 恰为最新角色时行为与旧口径一致；低频角色更新（如 PID 参数晚于 PV）
+    时行 ts 取该角色时间——新事件不得沿用旧 PV 时间改写旧行。
+    """
     sub = RealtimeSubscriber()
     roles_data = {
-        # PID_P 先出现且 ts 滞后；PV ts 才是高频基准
-        "PID_P": {"value": "1.2", "quality": 1, "ts": "2026-07-15T09:58:00Z"},
+        # PID_P 晚于 PV → 行 ts 必须取 PID_P 的 sourceTime
+        "PID_P": {"value": "1.2", "quality": 1, "ts": "2026-07-15T10:02:00Z"},
         "PV": {"value": "50.5", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
         "SP": {"value": "60.0", "quality": 1, "ts": "2026-07-15T09:59:00Z"},
     }
     row = sub._build_row(roles_data)
-    # PV collectTime 10:00:00Z → Asia/Shanghai 18:00:00
-    assert "2026-07-15 18:00:00" in row[0]
+    # PID_P collectTime 10:02:00Z → Asia/Shanghai 18:02:00（max 口径）
+    assert "2026-07-15 18:02:00" in row[0]
 
 
 def test_build_row_ts_falls_back_when_pv_missing():
-    """PV 缺失（或无 ts）时回退到任一角色的时间戳."""
+    """PV 缺失（或无 ts）时行 ts 取其余角色 sourceTime 的最大值."""
     sub = RealtimeSubscriber()
     roles_data = {
         "SP": {"value": "60.0", "quality": 1, "ts": "2026-07-15T10:00:00Z"},
