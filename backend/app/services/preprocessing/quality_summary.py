@@ -131,7 +131,7 @@ def compute_consecutive_segments(
     all_valid: list[bool],
     min_consecutive_points: int,
 ) -> list[tuple[int, int]]:
-    """计算连续有效段（算法说明 §3.4.2 步骤⑥）.
+    """计算连续有效段（算法说明 §3.4.2 步骤⑥）。
 
     标记连续 valid=True 的段，当缺口（valid=False）出现时切断。
     长度不足 min_consecutive_points 的段被丢弃。
@@ -157,3 +157,93 @@ def compute_consecutive_segments(
         else:
             i += 1
     return segments
+
+
+# ---------------------------------------------------------------------------
+# R14 稀疏数据准入（2026-09-06）：实际采样间隔与时间覆盖率
+# ---------------------------------------------------------------------------
+
+
+def compute_median_interval(timestamps: list[datetime]) -> float | None:
+    """相邻时间戳的中位间隔（秒）。
+
+    作为"实际采样间隔"的稳健估计（中位数不受个别缺口/重复影响），
+    供 ``DataBlock.sampling_freq`` 标签与 ARMA 等间隔准入使用。
+
+    热路径口径：仅做 datetime 排序 + 减法 + ``timedelta.total_seconds()``，
+    不对 naive datetime 逐点调 ``.timestamp()``（AGENTS.md 红线）。
+
+    Args:
+        timestamps: 时间戳序列（无需预排序）
+
+    Returns:
+        中位间隔（秒）；点数 < 2 或元素不可比较时返回 None
+    """
+    if len(timestamps) < 2:
+        return None
+    try:
+        ts_sorted = sorted(timestamps)
+        deltas = sorted(
+            (b - a).total_seconds() for a, b in zip(ts_sorted, ts_sorted[1:], strict=False)
+        )
+    except TypeError:
+        return None
+    if not deltas:
+        return None
+    n = len(deltas)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(deltas[mid])
+    return (deltas[mid - 1] + deltas[mid]) / 2.0
+
+
+def compute_time_coverage(
+    timestamps: list[datetime],
+    expected_interval_s: float,
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
+) -> float:
+    """时间覆盖率 = 去重后实际点数 / 窗口期望点数（R14 可信度准入输入）。
+
+    期望点数 = 窗口时长 / ``expected_interval_s`` + 1（含首尾）。
+    ``expected_interval_s`` 必须是**契约采样间隔**（如 FLOW=1s），不能用
+    实际中位间隔——否则稀疏 COV 数据（120 点/30s/1h）会被洗白成
+    coverage=100%，失去缺口检出能力。
+
+    窗口来源：
+    - 优先用查询窗口 ``[window_start, window_end]``（可感知窗口头部/尾部
+      整段缺失，如 TD 只返回了 1 小时窗的后 30 分钟）；
+    - 缺失时退化为首尾时间戳跨度（无法感知头尾截断，由 kpi_calc 门禁的
+      窗口口径兜底）。
+
+    Args:
+        timestamps: 时间戳序列
+        expected_interval_s: 契约期望采样间隔（秒），≤0 按 1s
+        window_start / window_end: 查询窗口边界（None 时用数据跨度）
+
+    Returns:
+        覆盖率 ∈ [0, 1]；无时间戳返回 0
+    """
+    if not timestamps:
+        return 0.0
+    if expected_interval_s <= 0:
+        expected_interval_s = 1.0
+
+    if window_start is not None and window_end is not None and window_end > window_start:
+        duration_s = (window_end - window_start).total_seconds()
+        expected = duration_s / expected_interval_s + 1.0
+    else:
+        try:
+            ts_sorted = sorted(timestamps)
+            duration_s = (ts_sorted[-1] - ts_sorted[0]).total_seconds()
+        except TypeError:
+            return 0.0
+        expected = (
+            duration_s / expected_interval_s + 1.0 if duration_s > 0 else float(len(timestamps))
+        )
+
+    if expected <= 0:
+        return 0.0
+    # 去重后点数（重复 ts 不重复计数）
+    unique_count = len(set(timestamps))
+    return max(0.0, min(1.0, unique_count / expected))

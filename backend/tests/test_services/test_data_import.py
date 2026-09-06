@@ -1128,14 +1128,14 @@ class TestImportProgressPerLoop:
                     await asyncio.sleep(0)  # 让出事件循环，制造并发交错
                     if on_chunk_complete:
                         await on_chunk_complete()
-                return 100, []
+                return 100, [], False
             if loop_id == "loop-B":
                 for _ in range(2):
                     await asyncio.sleep(0)
                     if on_chunk_complete:
                         await on_chunk_complete()
                 raise HistoryDataSourceError("远端历史数据 API 504")
-            return 0, []
+            return 0, [], False
 
         progress_updates: list[float] = []
         orig_update_task = di._update_task
@@ -1220,7 +1220,7 @@ class TestImportProgressPerLoop:
                 await b_failed.wait()  # 等 B 失败后再完成最后 1 窗口
                 if on_chunk_complete:
                     await on_chunk_complete()
-                return 100, []
+                return 100, [], False
             if loop_id == "loop-B":
                 await a_part_done.wait()  # 确保失败时 A 已计入 5 窗口
                 for _ in range(2):
@@ -1228,7 +1228,7 @@ class TestImportProgressPerLoop:
                         await on_chunk_complete()
                 b_failed.set()
                 raise HistoryDataSourceError("远端历史数据 API 504")
-            return 0, []
+            return 0, [], False
 
         progress_updates: list[float] = []
         orig_update_task = di._update_task
@@ -1299,7 +1299,7 @@ class TestImportProgressChunkUnits:
                 await asyncio.sleep(0)
                 if on_chunk_complete:
                     await on_chunk_complete()
-            return 100, []
+            return 100, [], False
 
         progress_updates: list[float] = []
         orig_update_task = di._update_task
@@ -1388,7 +1388,7 @@ class TestImportSingleLoopChunkFaultTolerance:
                 new=AsyncMock(return_value=2),
             ),
         ):
-            count, failed_windows = await di._import_single_loop(
+            count, failed_windows, cancelled = await di._import_single_loop(
                 loop_id="loop-1",
                 start_dt=start,
                 end_dt=end,
@@ -1404,6 +1404,7 @@ class TestImportSingleLoopChunkFaultTolerance:
 
         assert len(fetch_calls) == 3  # 失败分块不中断后续分块
         assert count == 4  # 2 个成功分块 × 2 点
+        assert cancelled is False
         assert len(failed_windows) == 1
         assert failed_windows[0]["start"].startswith("2026-07-15T01")
         assert "504" in failed_windows[0]["error"]

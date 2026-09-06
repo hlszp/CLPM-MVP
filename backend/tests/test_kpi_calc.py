@@ -228,6 +228,10 @@ def _make_bundle(
 
     v6.2 可信度统一 Phase 2：DataBlock 设置 loop_confidence_level="A"，
     所有指标经 _make_result 读取回路级可信度。
+
+    R14-3（2026-09-06）：point_count 需 ≥ 数据门禁 MIN_DATA_POINTS(32)
+    且与窗口期望点数（1 小时 / 契约 1s = 3600）匹配，否则门禁不通过，
+    快照会被置 INCONCLUSIVE（gate 结论贯穿快照的新行为）。
     """
     ts = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)
     data_block = DataBlock(
@@ -239,7 +243,7 @@ def _make_bundle(
         signals={"pv": [50.0], "sp": [50.0]},
         validity={"pv_valid": [True]},
         quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
-        point_count=1,
+        point_count=3600,
         loop_confidence_level="A",
         loop_valid_rate=1.0,
     )

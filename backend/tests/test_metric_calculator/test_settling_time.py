@@ -99,7 +99,12 @@ class TestSettlingTime:
         assert result.details["sample_count"] == 100
 
     def test_custom_sample_interval(self):
-        """自定义采样周期（5s）。"""
+        """自定义采样周期（5s）：时间戳与标签同口径时按 5s 计算。
+
+        R14-4（2026-09-06）等间隔准入：实际间隔与声明一致才计算——
+        声明 5s 但时间戳 1s 间隔（旧测试形态，即"声明失真"缺陷场景）
+        现在会跳过计算（sampling_interval_mismatch）。
+        """
         n = 100
         sp = [50.0] * n
         pv = [50.0 + 20.0 * math.exp(-i / 30) * math.sin(i * 0.2) for i in range(n)]
@@ -107,6 +112,7 @@ class TestSettlingTime:
             {"pv": pv, "sp": sp},
             metric_code="settling_time",
             sampling_freq="5s",
+            interval_s=5.0,
         )
         calc = SettlingTimeCalculator()
         result = calc.calculate(bundle)

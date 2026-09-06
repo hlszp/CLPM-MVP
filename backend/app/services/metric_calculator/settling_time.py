@@ -24,6 +24,7 @@ P0-1：通过 details.reason 区分三种边界语义，不再统一返回 0：
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
 
@@ -43,6 +44,21 @@ DEFAULT_SAMPLE_INTERVAL = 1.0
 
 #: Green 函数衰减阈值（5%）
 SETTLING_THRESHOLD = 0.05
+
+# ---------------------------------------------------------------------------
+# R14-4（2026-09-06）：ARMA 等间隔准入容差
+#
+# settling_time 基于 AR 模型辨识 + Green 函数递推，前提是输入为**等间隔**
+# 采样序列（时间尺度 = 采样周期 × 步数）。两类不满足即跳过该指标并记录
+# 原因，不得按声明间隔（尤其伪 1s）计算：
+#   - 间隔失真：实际中位间隔与声明（sampling_freq，现为实际中位间隔标签）
+#     偏差 > 20%，且 > 0.5s 绝对余量（容纳亚秒数据的标签取整）；
+#   - 非均匀：偏离中位 ±20% 的间隔占比 > 10%（COV 事件流天然不规则）。
+# ---------------------------------------------------------------------------
+_INTERVAL_DEVIATION_TOLERANCE = 0.20
+_INTERVAL_DEVIATION_ABS_S = 0.5
+_INTERVAL_JITTER_TOLERANCE = 0.20
+_INTERVAL_JITTER_RATIO_LIMIT = 0.10
 
 
 class SettlingTimeCalculator(MetricCalculatorBase):
@@ -83,6 +99,20 @@ class SettlingTimeCalculator(MetricCalculatorBase):
                 {"sample_count": n, "min_required": MIN_POINTS},
             )
 
+        # R14-4：等间隔准入——实际间隔与声明偏差超容差或间隔抖动超阈值时
+        # 跳过该指标（INCONCLUSIVE + 原因），不得按声明间隔计算时间尺度
+        sample_interval = self._read_sample_interval(bundle)
+        uniform_ok, uniform_reason, uniform_details = self._check_uniform_sampling(
+            bundle, sample_interval
+        )
+        if not uniform_ok:
+            logger.info(
+                "[稳态时间] 等间隔前提不满足，跳过计算: reason=%s, details=%s",
+                uniform_reason,
+                uniform_details,
+            )
+            return self._make_inconclusive(bundle, uniform_reason, uniform_details)
+
         # 控制偏差序列（PV - SP），去均值
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
         errors = errors - np.mean(errors)
@@ -94,9 +124,6 @@ class SettlingTimeCalculator(MetricCalculatorBase):
                 0.0,
                 {"reason": "already_stable", "actual_settling_time": 0.0, "std": 0.0},
             )
-
-        # 采样周期（秒）
-        sample_interval = self._read_sample_interval(bundle)
 
         # 整改 F2：衰减阈值从配置链读取（默认与常量一致）
         params = get_algorithm_params("settling_time", bundle.data_block.control_type)
@@ -167,6 +194,7 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         """读取采样周期（秒）.
 
         从 sampling_freq 标签解析（如 "1s" → 1.0, "5s" → 5.0）。
+        R14-1 后该标签反映实际中位间隔（稀疏数据为 "30s" 等）。
         """
         freq = bundle.data_block.sampling_freq
         if not freq:
@@ -177,6 +205,90 @@ class SettlingTimeCalculator(MetricCalculatorBase):
             return float(s) if s else DEFAULT_SAMPLE_INTERVAL
         except ValueError:
             return DEFAULT_SAMPLE_INTERVAL
+
+    @staticmethod
+    def _check_uniform_sampling(
+        bundle: MetricDataBundle,
+        declared_interval_s: float,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """校验序列等间隔性（R14-4 ARMA 准入前提）.
+
+        Args:
+            bundle: 指标数据包（取掩码后时间戳）
+            declared_interval_s: 声明采样周期（秒，来自 sampling_freq 标签）
+
+        Returns:
+            (ok, reason, details)：ok=False 时 reason 为跳过原因码
+            （"insufficient_timestamps" / "timestamps_not_comparable" /
+            "non_positive_median_interval" / "sampling_interval_mismatch" /
+            "non_uniform_sampling"）
+        """
+        timestamps = MetricCalculatorBase._get_masked_timestamps(bundle)
+        if len(timestamps) < 2:
+            return False, "insufficient_timestamps", {"sample_count": len(timestamps)}
+        try:
+            ts_sorted = sorted(timestamps)
+            deltas = [
+                (b - a).total_seconds() for a, b in zip(ts_sorted, ts_sorted[1:], strict=False)
+            ]
+        except (TypeError, AttributeError):
+            return False, "timestamps_not_comparable", {}
+        if not deltas:
+            return False, "insufficient_timestamps", {"sample_count": len(timestamps)}
+
+        deltas_sorted = sorted(deltas)
+        m = len(deltas_sorted)
+        mid = m // 2
+        median_interval = (
+            float(deltas_sorted[mid])
+            if m % 2 == 1
+            else (deltas_sorted[mid - 1] + deltas_sorted[mid]) / 2.0
+        )
+        if median_interval <= 0:
+            return (
+                False,
+                "non_positive_median_interval",
+                {"median_interval_s": median_interval, "declared_interval_s": declared_interval_s},
+            )
+
+        # 间隔失真：实际中位间隔 vs 声明（20% 相对 + 0.5s 绝对余量）
+        deviation = abs(median_interval - declared_interval_s)
+        deviation_limit = max(
+            _INTERVAL_DEVIATION_TOLERANCE * max(median_interval, declared_interval_s),
+            _INTERVAL_DEVIATION_ABS_S,
+        )
+        if deviation > deviation_limit:
+            return (
+                False,
+                "sampling_interval_mismatch",
+                {
+                    "median_interval_s": round(median_interval, 4),
+                    "declared_interval_s": declared_interval_s,
+                    "deviation_s": round(deviation, 4),
+                    "deviation_limit_s": round(deviation_limit, 4),
+                },
+            )
+
+        # 非均匀：偏离中位 ±20% 的间隔占比 > 10%
+        jitter_count = sum(
+            1
+            for d in deltas
+            if abs(d - median_interval) > _INTERVAL_JITTER_TOLERANCE * median_interval
+        )
+        jitter_ratio = jitter_count / len(deltas)
+        if jitter_ratio > _INTERVAL_JITTER_RATIO_LIMIT:
+            return (
+                False,
+                "non_uniform_sampling",
+                {
+                    "median_interval_s": round(median_interval, 4),
+                    "declared_interval_s": declared_interval_s,
+                    "jitter_ratio": round(jitter_ratio, 4),
+                    "jitter_ratio_limit": _INTERVAL_JITTER_RATIO_LIMIT,
+                },
+            )
+
+        return True, "", {"median_interval_s": round(median_interval, 4)}
 
 
 __all__ = ["SettlingTimeCalculator"]

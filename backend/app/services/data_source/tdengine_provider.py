@@ -62,6 +62,23 @@ _REDIS_REALTIME_SKIP_S = 65 * 60
 # 与 UTC 查询窗口比较前必须显式按此时区解析，不能直接字符串比较。
 _STORED_TZ = timezone(timedelta(hours=8))
 
+# ---------------------------------------------------------------------------
+# Redis 实时缓存完整性命中条件（R13，2026-09-06）
+#
+# 旧逻辑仅校验"首尾距窗口边界 ≤60s"即命中——缓存只有首尾两点、中间整段
+# 缺失时仍会遮蔽本地 TDengine 完整数据。新逻辑双条件：
+#   1) 排序去重后窗口内点数 ≥ 期望点数 × (1 - 10%)；
+#      期望点数 = 窗口时长 / interval_s + 1（含首尾）。
+#   2) 首尾仍在 60s 边界容差内（保留：写入节奏与查询边界天然不对齐）。
+#
+# 10% 容差依据：实时链路按秒级节奏写入，正常缺口（单条丢失/秒级抖动）
+# 占比 <1%；断线/重启类中间缺口通常分钟级起步（10 分钟即 ~17%）。10%
+# 阈值可有效区分"正常抖动"（命中，省一次本地查询）与"中间缺口"
+# （未命中，回源本地 TD 宽表核查），不以扩大容差换取命中率。
+# ---------------------------------------------------------------------------
+_REDIS_CACHE_COVERAGE_TOLERANCE = 0.10
+_REDIS_CACHE_EDGE_TOLERANCE_S = 60.0
+
 
 class TDengineProvider:
     """TDengine 数据源提供者（宽表 + taosrest）.
@@ -177,20 +194,18 @@ class TDengineProvider:
                             else:
                                 filtered_rows = []
                             if filtered_rows:
-                                first_ts = _parse_ts(filtered_rows[0]["ts"])
-                                last_ts = _parse_ts(filtered_rows[-1]["ts"])
-
-                                # 检查缓存是否覆盖了请求的时间范围（容差 60 秒）
-                                if isinstance(first_ts, datetime) and isinstance(last_ts, datetime):
-                                    if (first_ts - start_dt).total_seconds() <= 60 and (
-                                        end_dt - last_ts
-                                    ).total_seconds() <= 60:
-                                        rows = filtered_rows
-                                        logger.debug(
-                                            "命中 Redis 1 小时缓存: loop=%s, points=%d",
-                                            loop_id,
-                                            len(rows),
-                                        )
+                                # R13：排序去重 + 覆盖完整性校验通过才允许命中，
+                                # 否则回源本地 TD 宽表（本地 TD 是计算唯一权威源）
+                                filtered_rows = _dedupe_sort_redis_rows(filtered_rows)
+                                if _redis_cache_meets_completeness(
+                                    filtered_rows, start_dt, end_dt, interval_s
+                                ):
+                                    rows = filtered_rows
+                                    logger.debug(
+                                        "命中 Redis 1 小时缓存: loop=%s, points=%d",
+                                        loop_id,
+                                        len(rows),
+                                    )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("读取 Redis 缓存失败 (loop=%s): %s", loop_id, exc)
 
@@ -333,6 +348,71 @@ def _is_historical_window(end: Any) -> bool:
         return False
     cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=_REDIS_REALTIME_SKIP_S)
     return end_dt < cutoff
+
+
+def _dedupe_sort_redis_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 ts 升序排序并去重（R13 缓存完整性前置）.
+
+    入参行已在探测阶段把 ts 改写为 naive UTC 字符串（均可解析）。
+    重复 ts 保留**后出现**的行——Redis list 已按写入时间升序还原，
+    同 ts 的后写值代表更新的状态。
+
+    Args:
+        rows: 探测过滤后的缓存行（ts 为 naive UTC 字符串）
+
+    Returns:
+        排序去重后的行列表（稳定排序，同 ts 保留最后出现的行）
+    """
+    keyed = [(_parse_ts(row.get("ts", "")), row) for row in rows]
+    keyed.sort(key=lambda item: item[0])
+    deduped: list[dict[str, Any]] = []
+    last_key: Any = None
+    for key, row in keyed:
+        if deduped and key == last_key:
+            deduped[-1] = row
+        else:
+            deduped.append(row)
+        last_key = key
+    return deduped
+
+
+def _redis_cache_meets_completeness(
+    rows: list[dict[str, Any]],
+    start_dt: datetime,
+    end_dt: datetime,
+    interval_s: int,
+) -> bool:
+    """Redis 实时缓存完整性命中判定（R13）.
+
+    双条件（见模块头 _REDIS_CACHE_COVERAGE_TOLERANCE 登记依据）：
+    1) 去重后点数 ≥ 期望点数 × (1 - 容差)，期望点数 = 窗口时长 / interval_s + 1；
+    2) 首尾仍在边界容差（60s）内。
+
+    Args:
+        rows: 排序去重后的缓存行（ts 为 naive UTC 字符串）
+        start_dt / end_dt: 查询窗口（naive UTC）
+        interval_s: 请求采样间隔（秒），非法值按 1s 处理
+
+    Returns:
+        True 表示缓存可作为该窗口的完整数据源
+    """
+    if not rows:
+        return False
+    first_ts = _parse_ts(rows[0].get("ts", ""))
+    last_ts = _parse_ts(rows[-1].get("ts", ""))
+    if not isinstance(first_ts, datetime) or not isinstance(last_ts, datetime):
+        return False
+    if (first_ts - start_dt).total_seconds() > _REDIS_CACHE_EDGE_TOLERANCE_S:
+        return False
+    if (end_dt - last_ts).total_seconds() > _REDIS_CACHE_EDGE_TOLERANCE_S:
+        return False
+
+    window_s = (end_dt - start_dt).total_seconds()
+    if window_s <= 0:
+        return True
+    effective_interval = float(interval_s) if interval_s and interval_s > 0 else 1.0
+    expected_points = window_s / effective_interval + 1.0  # 含首尾两点
+    return len(rows) >= expected_points * (1.0 - _REDIS_CACHE_COVERAGE_TOLERANCE)
 
 
 def _rows_to_raw_series(

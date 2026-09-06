@@ -1158,32 +1158,46 @@ def _resolve_op_pv_ranges(
 
 
 def _derive_expected_points(
-    bundles: list[MetricDataBundle], ts_start: datetime, ts_end: datetime
+    bundles: list[MetricDataBundle],
+    ts_start: datetime,
+    ts_end: datetime,
+    expected_interval_s: int | None = None,
 ) -> int:
-    """从 BASE 块采样频率 + 时间窗口长度估算 expected_points（门禁 evaluate_gate 用）."""
-    sampling_freq: str | None = None
-    for bundle in bundles:
-        block = bundle.data_block
-        if block.tag_group == TagGroup.BASE.value:
-            sampling_freq = block.sampling_freq
-            break
-    if not sampling_freq:
-        # 回退：1 秒一条
-        return max(int((ts_end - ts_start).total_seconds()), 1)
-    try:
-        # sampling_freq 形如 "1s" / "5s" / "1m"
-        unit = sampling_freq[-1]
-        num = int(sampling_freq[:-1])
-        if unit == "s":
-            interval_sec = num
-        elif unit == "m":
-            interval_sec = num * 60
-        elif unit == "h":
-            interval_sec = num * 3600
-        else:
+    """从契约采样间隔 + 时间窗口长度估算 expected_points（门禁 evaluate_gate 用）.
+
+    R14-1（2026-09-06）后 ``DataBlock.sampling_freq`` 反映**实际**中位间隔
+    （稀疏 COV 数据会是 "30s" 等），直接用采样标签反推期望点数会把缺口
+    洗白（120 点/30s/1h → 期望 120 → gap_ratio=0 → 门禁恒通过）。
+    因此期望点数必须基于**契约采样间隔**（``thresholds.base_sampling_freq``，
+    即 DataPlanner 决定 BASE 查询 interval_s 的同一口径）：
+    调用方应传入 ``expected_interval_s``；仅当未提供时回退采样标签解析
+    （向后兼容旧调用方）。
+    """
+    interval_sec = expected_interval_s if expected_interval_s and expected_interval_s > 0 else None
+    if interval_sec is None:
+        sampling_freq: str | None = None
+        for bundle in bundles:
+            block = bundle.data_block
+            if block.tag_group == TagGroup.BASE.value:
+                sampling_freq = block.sampling_freq
+                break
+        if not sampling_freq:
+            # 回退：1 秒一条
+            return max(int((ts_end - ts_start).total_seconds()), 1)
+        try:
+            # sampling_freq 形如 "1s" / "5s" / "1m"
+            unit = sampling_freq[-1]
+            num = int(sampling_freq[:-1])
+            if unit == "s":
+                interval_sec = num
+            elif unit == "m":
+                interval_sec = num * 60
+            elif unit == "h":
+                interval_sec = num * 3600
+            else:
+                interval_sec = 1
+        except (ValueError, IndexError):
             interval_sec = 1
-    except (ValueError, IndexError):
-        interval_sec = 1
     window_sec = max(int((ts_end - ts_start).total_seconds()), 1)
     return max(window_sec // max(interval_sec, 1), 1)
 
@@ -1308,7 +1322,17 @@ async def _calculate_loop_kpi(
     op_range, pv_range = _resolve_op_pv_ranges(loop, loop_cfg, pv_series, sp_series)
 
     # P2: 复用 gate.py 评估门禁 → L0 判定口径与诊断链路完全一致
-    expected_points = _derive_expected_points(bundles, ts_start, ts_end)
+    # R14-3（2026-09-06）：期望点数基于契约采样间隔（thresholds.base_sampling_freq）
+    # 而非 DataBlock.sampling_freq（后者现已反映实际中位间隔，稀疏数据下
+    # 用它反推期望会把缺口洗白）
+    from app.services.preprocessing.thresholds import get_threshold as _get_threshold
+
+    expected_points = _derive_expected_points(
+        bundles,
+        ts_start,
+        ts_end,
+        expected_interval_s=_get_threshold(control_type).base_sampling_freq,
+    )
     base_valid_rate = _compute_loop_valid_rate_from_bundles(bundles)
 
     # 构造虚拟 CONFIG bundle（提供 control_type / 手动理想稳态时间信号给计算器）
@@ -1428,6 +1452,33 @@ async def _calculate_loop_kpi(
     if any(kpi_values.get(k) is None for k in required_kpis):
         status = "PARTIAL"
 
+    # R14-3（2026-09-06）：缺口 gate 结论贯穿快照——gate 不通过时最终快照
+    # 不得 SUCCESS+高分。现有状态枚举已含 INCONCLUSIVE，此处直接采用；
+    # 评分置 None、可信度按最低等级 E + 原因字符串兼容表达（无 DB 迁移）。
+    # 指标值仍随快照落库（供诊断明细参考），但页面级评分/状态不可用。
+    final_score = (
+        _quantize(Decimal(str(composite_result.value)))
+        if composite_result.value is not None
+        else None
+    )
+    gate_failed = gate_result is not None and not gate_result.passed
+    if gate_failed:
+        status = "INCONCLUSIVE"
+        final_score = None
+        lineage_info = dict(lineage_info)
+        lineage_info["confidence_level"] = "E"
+        fitness_detail = main_fitness_kwargs.get("fitness_detail")
+        merged_detail = dict(fitness_detail) if isinstance(fitness_detail, dict) else {}
+        merged_detail["gate_failed_reason"] = gate_result.reason
+        merged_detail["gate"] = gate_result.to_dict()
+        main_fitness_kwargs = dict(main_fitness_kwargs)
+        main_fitness_kwargs["fitness_detail"] = merged_detail
+        logger.info(
+            "回路 %s 数据门禁不通过，快照置 INCONCLUSIVE（score=None）: %s",
+            loop.tag_name,
+            gate_result.reason,
+        )
+
     return await _persist_snapshot(
         db=db,
         loop_id=str(loop.id),
@@ -1436,9 +1487,7 @@ async def _calculate_loop_kpi(
         status=status,
         custom_task_id=custom_task_id,
         metrics_detail=metrics_detail,
-        score=_quantize(Decimal(str(composite_result.value)))
-        if composite_result.value is not None
-        else None,
+        score=final_score,
         good_value_rate=kpi_values.get("good_value_rate"),
         auto_mode_rate=kpi_values.get("auto_mode_rate"),
         effective_auto_rate=kpi_values.get("effective_auto_rate"),

@@ -649,9 +649,12 @@ class DataPlanner:
             return self._empty_data_block(loop_id, task.tag_group, task.interval_s)
 
         # Phase 6: 8 步预处理（移至线程池释放事件循环，纯 Python CPU 密集型）
+        # R14：传入查询窗口（时间覆盖率计算用，可感知窗口头尾整段缺失）
         t_pre_start = time.perf_counter()
         pipeline = PreprocessingPipeline(preprocess_config)
-        data_block = await asyncio.to_thread(pipeline.process, raw, task.tag_group)
+        data_block = await asyncio.to_thread(
+            pipeline.process, raw, task.tag_group, (time_window.start, time_window.end)
+        )
         t_pre_elapsed = time.perf_counter() - t_pre_start
 
         logger.info(
