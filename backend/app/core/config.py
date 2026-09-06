@@ -125,6 +125,20 @@ class Settings(BaseSettings):
     # 持锁进程崩溃/退出后其他 worker 在 TTL 内接管（uvicorn --workers 4 防护）
     SUBSCRIBER_LEADER_LOCK_TTL_SECONDS: int = 30
 
+    # ---- 实时历史缓存与 WS 扇出预算（数据链路整改 R02/R15，S0 固定默认值）----
+    # 每回路 Redis 历史缓存（realtime:history:*）最大行数：LPUSH 后 LTRIM 截断，
+    # 超出部分由读取方回源本地 TDengine（原 4500 行在 ~961 回路满载下可超
+    # 512MiB 容器预算，见审查报告 R02）
+    REALTIME_HISTORY_MAX_POINTS_PER_LOOP: int = 1200
+    # 全部 realtime:history:* 键的近似 JSON 载荷预算（字节）：超预算时新回路
+    # 停止写入历史缓存（最新值缓存与 TDengine 写回不受影响），并计入丢弃计数
+    REALTIME_HISTORY_GLOBAL_BUDGET_BYTES: int = 64 * 1024 * 1024
+    # WS 每客户端有界队列上限（按 tag 合并后的条目数；溢出判定慢消费者，
+    # 断开连接要求客户端恢复快照）
+    WS_CLIENT_QUEUE_MAX: int = 500
+    # WS 单帧发送期限（秒）：超期限定该客户端为慢消费者并断开
+    WS_SEND_TIMEOUT_SECONDS: float = 5.0
+
     # ---- 断点续传（实时数据缺口自动补全）----
     # SignalR 断线/进程重启导致的数据缺口，重连成功后自动调用远端历史数据接口补全
     GAP_BACKFILL_ENABLED: bool = False  # 默认关闭，运行时经 sys_config（UI 链路配置页）调整
