@@ -49,7 +49,7 @@ import {
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
-import { useLoopRealtime } from '#/composables/use-loop-realtime';
+import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 
 import { SEVERITY_COLOR } from '../diagnosis/constants';
 import ConfirmSection from './components/confirm-section.vue';
@@ -466,6 +466,9 @@ function goDiagnose(): void {
 
 // ===== 实时更新（P/I/D 由全局 WS 推送，初值来自回路详情） =====
 const { applyMessage, onMessage, start, stop } = useLoopRealtime();
+
+// 服务端订阅过滤：仅接收当前概览行回路的位号
+bindLoopInterest(() => overviewRows.value.map((r: any) => r.tagName));
 
 onMessage((msg) => {
   applyMessage(msg, overviewRows.value as any[]);

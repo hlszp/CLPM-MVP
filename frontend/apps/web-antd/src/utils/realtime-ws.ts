@@ -18,6 +18,8 @@
 
 import { useAccessStore } from '@vben/stores';
 
+import { ensureFreshToken, isTokenStale } from '#/utils/token-freshness';
+
 type RealtimeMessage = {
   collectTime: string;
   quality: number;
@@ -55,8 +57,16 @@ class RealtimeWebSocket {
   private baseUrl: string;
   private connectionHandlers = new Set<() => void>();
   private handlers = new Set<MessageHandler>();
+  private interestLoops: string[] = [];
+  /**
+   * 页面兴趣集合（服务端订阅过滤，2026-09-06 慢链路防冲垮）。
+   * null = 从未声明 → 保持旧版全量转发（兼容未接线的消费方）；
+   * 一旦声明（含空数组）→ 连接建立后发送 subscribe 帧，仅接收所订阅位号。
+   */
+  private interestTags: null | string[] = null;
   private isManualClose = false;
   private reconnectAttempts = 0;
+
   private reconnectTimer: null | ReturnType<typeof setTimeout> = null;
   private token: string = '';
 
@@ -71,6 +81,13 @@ class RealtimeWebSocket {
       .replace(/^https:/, 'wss:')
       .replace(/\/api\/v1$/, '');
     this.baseUrl = `${wsBaseUrl}/api/v1/ws/realtime`;
+  }
+
+  /** 清空兴趣集合（路由离开实时页时调用：非实时页面零流量） */
+  clearInterest() {
+    this.interestTags = [];
+    this.interestLoops = [];
+    this._sendSubscribe();
   }
 
   /**
@@ -144,9 +161,16 @@ class RealtimeWebSocket {
     this._startConnection(this.token);
   }
 
-  // -------------------------------------------------------------------------
-  // 内部状态机（R18：所有建连路径收敛到 _startConnection）
-  // -------------------------------------------------------------------------
+  /**
+   * 声明页面兴趣集合（替换语义）：服务端按回路名（loops，经权威 tag 映射解析）
+   * 或精确位号（tags）过滤实时流。连接未建立时先记住，open 时自动发送；
+   * 重连后自动重发（服务端订阅状态随连接生命周期）。
+   */
+  subscribe(tags: string[] = [], loops: string[] = []) {
+    this.interestTags = [...new Set(tags.filter(Boolean))];
+    this.interestLoops = [...new Set(loops.filter(Boolean))];
+    this._sendSubscribe();
+  }
 
   private _clearReconnectTimer() {
     if (this.reconnectTimer !== null) {
@@ -154,6 +178,10 @@ class RealtimeWebSocket {
       this.reconnectTimer = null;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // 内部状态机（R18：所有建连路径收敛到 _startConnection）
+  // -------------------------------------------------------------------------
 
   private _doConnect() {
     // R18：timer 触发 / 手动重连等路径同样幂等——已存在活跃连接时不重建
@@ -164,11 +192,29 @@ class RealtimeWebSocket {
     ) {
       return;
     }
-    // 重连前实时读取 store token：accessToken 30min 过期后由 REST 401
-    // → doRefreshToken 静默换新，若仍用固化的旧 token 会陷入 403 重连
-    // 死循环（实时数据推送从此断流）。store 取不到时回退上次 token。
-    this.token = useAccessStore().accessToken || this.token;
-    if (!this.token) return;
+    // token 新鲜度双路径（2026-09-06 修复：闲置 30min 过期后 403 重连死循环）：
+    // 非"可判定陈旧"（含非 JWT 格式）走原同步路径，行为不变；
+    // 可解析出 exp 且临期/过期 → 异步刷新后再建连。
+    const storeToken = useAccessStore().accessToken || this.token;
+    if (!isTokenStale(storeToken, 15)) {
+      if (storeToken) this.token = storeToken;
+      if (!this.token) {
+        if (useAccessStore().refreshToken) {
+          this._scheduleReconnect();
+        }
+        return;
+      }
+      this._openSocket();
+      return;
+    }
+    void this._refreshThenConnect();
+  }
+
+  private _notifyConnectionChange() {
+    this.connectionHandlers.forEach((h) => h());
+  }
+
+  private _openSocket() {
 
     try {
       this.ws = new WebSocket(
@@ -185,6 +231,8 @@ class RealtimeWebSocket {
     activeWs.addEventListener('open', () => {
       if (this.ws !== activeWs) return;
       this.reconnectAttempts = 0;
+      // 页面已声明兴趣集合 → 连接建立即（重）发送订阅（服务端状态随连接重置）
+      this._sendSubscribe();
       // P3 #57: 控制台日志环境守卫，生产环境不输出
       if (import.meta.env.DEV) {
         console.warn('[RealtimeWS] 已连接');
@@ -238,8 +286,26 @@ class RealtimeWebSocket {
     });
   }
 
-  private _notifyConnectionChange() {
-    this.connectionHandlers.forEach((h) => h());
+  private async _refreshThenConnect() {
+    const fresh = await ensureFreshToken(15);
+    if (this.isManualClose) return;
+    if (fresh) this.token = fresh;
+    if (!this.token) {
+      if (useAccessStore().refreshToken) {
+        this._scheduleReconnect();
+      }
+      return;
+    }
+    // await 期间可能已有新连接（connect/reconnect 并发）或已手动断开
+    if (
+      this.isManualClose ||
+      (this.ws &&
+        (this.ws.readyState === WebSocket.OPEN ||
+          this.ws.readyState === WebSocket.CONNECTING))
+    ) {
+      return;
+    }
+    this._openSocket();
   }
 
   private _scheduleReconnect() {
@@ -258,8 +324,28 @@ class RealtimeWebSocket {
     }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this._doConnect();
+      void this._doConnect();
     }, delay);
+  }
+
+  private _sendSubscribe() {
+    if (
+      this.interestTags === null ||
+      this.ws?.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+    try {
+      this.ws.send(
+        JSON.stringify({
+          loops: this.interestLoops,
+          tags: this.interestTags,
+          type: 'subscribe',
+        }),
+      );
+    } catch {
+      // 发送失败（连接正在关闭）：open/重连后会重发
+    }
   }
 
   private _startConnection(token: string) {

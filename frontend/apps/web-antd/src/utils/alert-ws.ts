@@ -8,6 +8,8 @@
 
 import { useAccessStore } from '@vben/stores';
 
+import { ensureFreshToken, isTokenStale } from '#/utils/token-freshness';
+
 /** 后端推送消息格式（见 ws_alert.py  docstring） */
 export type AlertWsMessage = {
   eventId?: string;
@@ -71,11 +73,25 @@ class AlertWebSocket {
   }
 
   private _doConnect() {
-    // 重连前实时读取 store token：accessToken 30min 过期后由 REST 401
-    // → doRefreshToken 静默换新，若仍用构造时固化的旧 token 会陷入
-    // 403 重连死循环（预警推送从此静默断流）
-    this.token = useAccessStore().accessToken || this.token;
-    if (!this.token) return;
+    // token 新鲜度双路径（2026-09-06 修复：闲置 30min 过期后 403 重连死循环
+    // ——原"实时读取 store token"只解决固化旧 token，解决不了 store 里的
+    // token 本身过期且无人触发刷新）。非陈旧走原同步路径，行为不变。
+    const storeToken = useAccessStore().accessToken || this.token;
+    if (!isTokenStale(storeToken, 15)) {
+      if (storeToken) this.token = storeToken;
+      if (!this.token) {
+        if (useAccessStore().refreshToken) {
+          this._scheduleReconnect();
+        }
+        return;
+      }
+      this._openSocket();
+      return;
+    }
+    void this._refreshThenConnect();
+  }
+
+  private _openSocket() {
     try {
       this.ws = new WebSocket(`${this.baseUrl}?token=${this.token}`);
     } catch {
@@ -110,6 +126,19 @@ class AlertWebSocket {
     });
   }
 
+  private async _refreshThenConnect() {
+    const fresh = await ensureFreshToken(15);
+    if (this.isManualClose) return;
+    if (fresh) this.token = fresh;
+    if (!this.token) {
+      if (useAccessStore().refreshToken) {
+        this._scheduleReconnect();
+      }
+      return;
+    }
+    this._openSocket();
+  }
+
   private _scheduleReconnect() {
     if (this.reconnectTimer || this.isManualClose) return;
     const delay = Math.min(
@@ -119,7 +148,7 @@ class AlertWebSocket {
     this.reconnectAttempts += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this._doConnect();
+      void this._doConnect();
     }, delay);
   }
 }

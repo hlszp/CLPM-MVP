@@ -33,6 +33,7 @@ import {
   getLoopMetricSeriesApi,
 } from '#/api/metric';
 import {
+  bindLoopInterest,
   parseTagCode,
   resolveModeLabel,
   useLoopRealtime,
@@ -263,6 +264,9 @@ watch(
 // WebSocket 实时刷新（PV/SP/OP/MODE 局部更新；断连 30s 轮询降级）
 // ---------------------------------------------------------------------------
 const realtime = useLoopRealtime();
+
+// 服务端订阅过滤：仅接收当前回路清单绑定的位号（慢链路防全量流冲垮）
+bindLoopInterest(() => allLoops.value.map((l) => l.tagName));
 
 function handleRealtimeMessage(msg: {
   collectTime: string;

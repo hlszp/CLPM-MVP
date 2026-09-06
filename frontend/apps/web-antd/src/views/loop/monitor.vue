@@ -12,6 +12,7 @@
 // 说明：LoopApi 类型复用下方 <script setup> 块的导入（两块编译为同一虚拟模块，
 // 各自重复 import 会产生 duplicate identifier）
 import {
+  bindLoopInterest,
   parseTagCode,
   resolveModeLabel,
 } from '#/composables/use-loop-realtime';
@@ -999,6 +1000,8 @@ function startAutoRefresh() {
       realtimeWs.connect(token);
     }
     wsUnsubscribe = realtimeWs.onMessage(handleRealtimeMessage);
+    // 服务端订阅过滤：仅接收当前页回路的位号（R15 后续接通）
+    bindLoopInterest(() => monitorList.value.map((l) => l.tagName));
     // P2 #38 UX14: WS 连接状态变化时切换轮询策略
     // - WS 在线 → 停止轮询（实时推送已覆盖）
     // - WS 断连 → 启动轮询 fallback

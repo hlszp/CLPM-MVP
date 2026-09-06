@@ -12,9 +12,30 @@ import type { ConnectionStatus } from '#/utils/realtime-ws';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// mock @vben/stores（_doConnect 重连前读取 accessToken）
+// mock @vben/stores（_doConnect 重连前读取 accessToken；可变以覆盖 token 陈旧场景）
+const storeMock = vi.hoisted(() => ({
+  store: {
+    accessToken: 'test-token',
+    refreshToken: null as null | string,
+    setAccessToken(t: string) {
+      this.accessToken = t;
+    },
+    setRefreshToken(t: string) {
+      this.refreshToken = t;
+    },
+  },
+}));
 vi.mock('@vben/stores', () => ({
-  useAccessStore: () => ({ accessToken: 'test-token' }),
+  useAccessStore: () => storeMock.store,
+}));
+
+// mock 刷新 API（token-freshness 真实逻辑 + 假 refresh 响应）
+const refreshMock = vi.hoisted(() => ({ calls: 0 }));
+vi.mock('#/api/core', () => ({
+  refreshTokenApi: async () => {
+    refreshMock.calls += 1;
+    return { accessToken: 'fresh-token', refreshToken: 'fresh-refresh' };
+  },
 }));
 
 type Listener = (event: any) => void;
@@ -28,6 +49,7 @@ class FakeWebSocket {
 
   closeCalled = 0;
   readyState = FakeWebSocket.CONNECTING;
+  sent: string[] = [];
   url: string;
   get live() {
     return (
@@ -59,6 +81,10 @@ class FakeWebSocket {
     this.listeners.get(type)?.delete(cb);
   }
 
+  send(data: string) {
+    this.sent.push(data);
+  }
+
   simulateCloseEvent(code = 1006) {
     this.readyState = FakeWebSocket.CLOSED;
     this.emit('close', { code });
@@ -84,6 +110,9 @@ let realtimeWs: RealtimeWsModule['realtimeWs'];
 
 beforeEach(async () => {
   FakeWebSocket.instances = [];
+  storeMock.store.accessToken = 'test-token';
+  storeMock.store.refreshToken = null;
+  refreshMock.calls = 0;
   vi.useFakeTimers();
   vi.resetModules();
   vi.stubGlobal('WebSocket', FakeWebSocket);
@@ -257,5 +286,69 @@ describe('R19 状态通知', () => {
     s2.simulateOpen();
     s2.simulateCloseEvent();
     expect(vi.getTimerCount()).toBe(1);
+  });
+});
+
+
+describe('token 陈旧主动刷新（2026-09-06 修复）', () => {
+  function makeJwt(expSecFromNow: number): string {
+    const b64 = (obj: unknown) =>
+      btoa(JSON.stringify(obj)).replaceAll('+', '-').replaceAll('/', '_');
+    return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ exp: Math.floor(Date.now() / 1000) + expSecFromNow })}.sig`;
+  }
+
+  it('store 中 token 已过期：建连前主动刷新并使用新 token', async () => {
+    storeMock.store.accessToken = makeJwt(-60);
+    storeMock.store.refreshToken = 'r-old';
+    realtimeWs.connect('whatever');
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    expect(lastSocket().url).toContain('token=fresh-token');
+    expect(refreshMock.calls).toBe(1);
+  });
+
+  it('刷新期间手动断开：不再建连', async () => {
+    storeMock.store.accessToken = makeJwt(-60);
+    storeMock.store.refreshToken = 'r-old';
+    realtimeWs.connect('whatever');
+    realtimeWs.disconnect();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeWebSocket.instances.length).toBe(0);
+  });
+});
+
+describe('订阅过滤协议（2026-09-06 接通）', () => {
+  it('未声明兴趣的连接不发送 subscribe（旧版全量转发语义）', () => {
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    expect(s.sent).toEqual([]);
+  });
+
+  it('声明兴趣后 open 自动发送订阅帧，重连后自动重发', async () => {
+    realtimeWs.subscribe(['T1', 'T2'], ['LOOP_A']);
+    realtimeWs.connect('test-token');
+    let s = lastSocket();
+    s.simulateOpen();
+    let frame = JSON.parse(s.sent.at(-1)!);
+    expect(frame).toEqual({ loops: ['LOOP_A'], tags: ['T1', 'T2'], type: 'subscribe' });
+
+    // 断线重连：新连接 open 后重发（服务端订阅状态随连接重置）
+    s.simulateCloseEvent(1006);
+    await vi.advanceTimersByTimeAsync(3000);
+    s = lastSocket();
+    s.simulateOpen();
+    frame = JSON.parse(s.sent.at(-1)!);
+    expect(frame.type).toBe('subscribe');
+    expect(frame.loops).toEqual(['LOOP_A']);
+  });
+
+  it('clearInterest 发送空订阅（非实时页零流量）且替换语义生效', () => {
+    realtimeWs.subscribe(['T1'], []);
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    realtimeWs.clearInterest();
+    const frame = JSON.parse(s.sent.at(-1)!);
+    expect(frame).toEqual({ loops: [], tags: [], type: 'subscribe' });
   });
 });

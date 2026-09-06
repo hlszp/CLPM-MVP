@@ -2,7 +2,7 @@
 import type { NotificationItem } from '@vben/layouts';
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
 import { useWatermark } from '@vben/hooks';
@@ -156,6 +156,16 @@ watch(
   },
   // R19：immediate 覆盖初始即非 online 的场景（挂载时 WS 尚未建连）
   { immediate: true },
+);
+
+// 路由离开实时页面时清空兴趣集合：非实时页面零推送流量（服务端订阅过滤，
+// 2026-09-06 接通）。新页面挂载后由 bindLoopInterest/bindTagInterest 重订。
+const route = useRoute();
+watch(
+  () => route.path,
+  () => {
+    realtimeWs.clearInterest();
+  },
 );
 
 let wsConnectionUnsubscribe: (() => void) | null = null;

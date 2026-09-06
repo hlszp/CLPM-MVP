@@ -17,7 +17,7 @@
  */
 import type { Ref } from 'vue';
 
-import { onBeforeUnmount, ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 import { useAccessStore } from '@vben/stores';
 
@@ -182,6 +182,41 @@ export function parseTagCode(
  * 注意：本 composable 只注册页面级消息回调和轮询定时器，
  * WS 全局连接由 layouts/basic.vue 管理生命周期，页面卸载只退订 handler。
  */
+/**
+ * 声明页面回路兴趣集合（服务端订阅过滤，2026-09-06 接通）。
+ *
+ * 页面把"当前关心的回路名列表"以 getter 传入：列表变化（分页/筛选/选中切换）
+ * 自动重新订阅，服务端仅推送这些回路绑定的位号（经权威 tag 映射解析，前端
+ * 无需猜测位号命名风格）。在 setup 中调用，组件卸载自动停止监听。
+ */
+export function bindLoopInterest(source: () => string[]) {
+  watch(
+    () => dedupeJoin(source()),
+    (joined) => {
+      realtimeWs.subscribe([], joined ? joined.split('\u0000') : []);
+    },
+    { immediate: true },
+  );
+}
+
+/**
+ * 声明页面位号兴趣集合（测点清单页用：直接按 tag_name 精确订阅）。
+ */
+export function bindTagInterest(source: () => string[]) {
+  watch(
+    () => dedupeJoin(source()),
+    (joined) => {
+      realtimeWs.subscribe(joined ? joined.split('\u0000') : []);
+    },
+    { immediate: true },
+  );
+}
+
+/** 去重排序后拼接为稳定 key（内容不变不重发订阅帧） */
+function dedupeJoin(names: string[]): string {
+  return [...new Set(names.filter(Boolean))].toSorted().join('\u0000');
+}
+
 export function useLoopRealtime(): UseLoopRealtimeReturn {
   const connectionStatus = ref<ConnectionStatus>(realtimeWs.status);
   const lastMessageAt = ref<Date | null>(null);

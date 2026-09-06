@@ -74,7 +74,7 @@ import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
 import WorkbenchActiveAttention from '#/components/monitor/workbench-active-attention.vue';
 import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useLatestRequest } from '#/composables/use-latest-request';
-import { useLoopRealtime } from '#/composables/use-loop-realtime';
+import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useModules } from '#/composables/use-modules';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
@@ -140,6 +140,12 @@ const {
   stop: stopRealtime,
   stopFallback: stopRealtimeFallback,
 } = useLoopRealtime();
+
+// 服务端订阅过滤：仅接收当前选中回路的位号
+bindLoopInterest(() => {
+  const name = selectedLoop.value?.tagName;
+  return name ? [name] : [];
+});
 
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);

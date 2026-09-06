@@ -28,6 +28,7 @@ import { getHandlingOrdersApi } from '#/api/handling';
 import { getLoopMonitorDetailApi } from '#/api/loop';
 import { getNodeSnapshotApi } from '#/api/metric';
 import {
+  bindLoopInterest,
   type LoopRealtimeValues,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
@@ -362,6 +363,9 @@ watch(
 // WebSocket 实时刷新（复用全局单例；断连 30s 轮询降级）
 // ---------------------------------------------------------------------------
 const realtime = useLoopRealtime();
+
+// 服务端订阅过滤：仅接收当前面板回路的位号
+bindLoopInterest(() => realtimeItem.value.map((i) => i.tagName));
 
 /** applyMessage 按 tagName 匹配，选中回路切换时同步最新 tagName */
 const realtimeItem = computed(() =>
