@@ -2161,6 +2161,117 @@ INSERT INTO sla_policy (action_type, priority, warn_minutes, breach_minutes, is_
     ('OTHER','LOW',2880,5760,false),('OTHER','MEDIUM',1440,2880,true),('OTHER','HIGH',480,1440,false),('OTHER','CRITICAL',240,720,false)
 ON CONFLICT DO NOTHING;
 
+
+-- =============================================================================
+-- 测点子表重构（codex/tag-timeseries-refactor P1，2026-09-06）
+-- 迁移 r1p0int00001 的 bootstrap 对应段；测试表明该段与 alembic 等价
+-- =============================================================================
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+CREATE TABLE IF NOT EXISTS loop_tag_binding_history (
+    id              UUID PRIMARY KEY,
+    loop_id         UUID NOT NULL REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    tag_role        VARCHAR(20) NOT NULL,
+    tag_id          UUID NOT NULL REFERENCES tag_registry(id) ON DELETE RESTRICT,
+    valid_from      TIMESTAMPTZ NOT NULL,
+    valid_to        TIMESTAMPTZ,
+    mapping_version INTEGER NOT NULL DEFAULT 1,
+    basis           VARCHAR(32) NOT NULL DEFAULT 'MVP_INIT',
+    created_at      TIMESTAMPTZ NOT NULL,
+    CONSTRAINT ck_ltbh_valid_range CHECK (valid_to IS NULL OR valid_to > valid_from),
+    CONSTRAINT uq_ltbh_from UNIQUE (loop_id, tag_role, valid_from)
+);
+CREATE INDEX IF NOT EXISTS ix_ltbh_loop_role ON loop_tag_binding_history (loop_id, tag_role);
+CREATE INDEX IF NOT EXISTS ix_ltbh_tag ON loop_tag_binding_history (tag_id);
+ALTER TABLE loop_tag_binding_history DROP CONSTRAINT IF EXISTS ex_ltbh_no_overlap;
+ALTER TABLE loop_tag_binding_history
+    ADD CONSTRAINT ex_ltbh_no_overlap EXCLUDE USING gist (
+        loop_id WITH =, tag_role WITH =,
+        tstzrange(valid_from, COALESCE(valid_to, 'infinity'), '[)') WITH &&
+    );
+
+CREATE TABLE IF NOT EXISTS history_write_batch (
+    batch_id       UUID PRIMARY KEY,
+    source_task    VARCHAR(64),
+    target_kind    VARCHAR(16) NOT NULL DEFAULT 'point_events',
+    window_start   TIMESTAMPTZ NOT NULL,
+    window_end     TIMESTAMPTZ NOT NULL,
+    status         VARCHAR(16) NOT NULL DEFAULT 'pending',
+    input_digest   VARCHAR(64),
+    stats          JSONB NOT NULL DEFAULT '{}',
+    failure_reason TEXT,
+    recovery_info  JSONB NOT NULL DEFAULT '{}',
+    created_at     TIMESTAMPTZ NOT NULL,
+    updated_at     TIMESTAMPTZ NOT NULL,
+    CONSTRAINT ck_hwb_status CHECK (status IN ('pending', 'confirmed', 'partial', 'failed', 'cancelled'))
+);
+
+CREATE TABLE IF NOT EXISTS history_coverage_segment (
+    id              UUID PRIMARY KEY,
+    point_id        UUID REFERENCES tag_registry(id) ON DELETE CASCADE,
+    session_id      VARCHAR(64),
+    seg_start       TIMESTAMPTZ NOT NULL,
+    seg_end         TIMESTAMPTZ NOT NULL,
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    binding_version VARCHAR(64),
+    batch_id        UUID REFERENCES history_write_batch(batch_id) ON DELETE SET NULL,
+    source_task     VARCHAR(64),
+    created_at      TIMESTAMPTZ NOT NULL,
+    CONSTRAINT ck_hcs_half_open CHECK (seg_end > seg_start),
+    CONSTRAINT ck_hcs_scope CHECK ((point_id IS NULL) <> (session_id IS NULL)),
+    CONSTRAINT ck_hcs_status CHECK (status IN ('pending', 'confirmed', 'gap'))
+);
+CREATE INDEX IF NOT EXISTS ix_hcs_point_window ON history_coverage_segment (point_id, seg_start);
+CREATE INDEX IF NOT EXISTS ix_hcs_session ON history_coverage_segment (session_id, seg_start);
+
+CREATE TABLE IF NOT EXISTS history_layout_manifest (
+    id           UUID PRIMARY KEY,
+    scope_type   VARCHAR(16) NOT NULL DEFAULT 'global',
+    scope_id     VARCHAR(64),
+    valid_from   TIMESTAMPTZ NOT NULL,
+    valid_to     TIMESTAMPTZ,
+    layout       VARCHAR(16) NOT NULL DEFAULT 'legacy',
+    data_version VARCHAR(64) NOT NULL DEFAULT 'v1',
+    basis        TEXT,
+    is_active    BOOLEAN NOT NULL DEFAULT true,
+    created_at   TIMESTAMPTZ NOT NULL,
+    CONSTRAINT ck_hlm_range CHECK (valid_to IS NULL OR valid_to > valid_from),
+    CONSTRAINT ck_hlm_layout CHECK (layout IN ('legacy', 'shadow', 'point')),
+    CONSTRAINT ck_hlm_scope CHECK (scope_type IN ('global', 'loop', 'source'))
+);
+CREATE INDEX IF NOT EXISTS ix_hlm_scope ON history_layout_manifest (scope_type, scope_id);
+
+CREATE TABLE IF NOT EXISTS history_point_conflict (
+    id               UUID PRIMARY KEY,
+    point_id         UUID NOT NULL REFERENCES tag_registry(id) ON DELETE CASCADE,
+    ts_ms            BIGINT NOT NULL,
+    existing_hash    VARCHAR(64) NOT NULL,
+    existing_payload JSONB NOT NULL,
+    new_payload      JSONB NOT NULL,
+    source_task      VARCHAR(64),
+    status           VARCHAR(16) NOT NULL DEFAULT 'pending',
+    detected_at      TIMESTAMPTZ NOT NULL,
+    resolved_at      TIMESTAMPTZ,
+    CONSTRAINT ck_hpc_status CHECK (status IN ('pending', 'resolved_skip', 'resolved_overwrite')),
+    CONSTRAINT uq_hpc_point_ts UNIQUE (point_id, ts_ms, existing_hash)
+);
+CREATE INDEX IF NOT EXISTS ix_hpc_status ON history_point_conflict (status);
+
+CREATE TABLE IF NOT EXISTS point_state_anchor (
+    point_id        UUID NOT NULL REFERENCES tag_registry(id) ON DELETE CASCADE,
+    anchor_ts       TIMESTAMPTZ NOT NULL,
+    value           DOUBLE PRECISION,
+    quality_raw     INTEGER,
+    quality_class   INTEGER NOT NULL,
+    quality_schema  INTEGER,
+    confirmed_at    TIMESTAMPTZ NOT NULL,
+    coverage_until  TIMESTAMPTZ,
+    data_version    VARCHAR(64) NOT NULL DEFAULT 'v1',
+    CONSTRAINT ck_psa_quality CHECK (quality_class IN (1, 0, -1)),
+    PRIMARY KEY (point_id, anchor_ts)
+);
+CREATE INDEX IF NOT EXISTS ix_psa_point_ts ON point_state_anchor (point_id, anchor_ts);
+
 -- =============================================================================
 -- 脚本结束
 -- =============================================================================
