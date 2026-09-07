@@ -1650,53 +1650,59 @@ class TestBuildRowTimezone:
 
 @pytest.mark.asyncio
 async def test_watchdog_triggers_disconnect_on_stall():
-    """数据停滞看门狗：分片超过 stall_timeout 无数据时应主动断开。"""
+    """连接停滞看门狗：分片超过 stall_timeout 无任何消息时应主动断开。
+
+    2026-09-07 语义修正：看门狗由 last_activity_at（任何收到的消息）驱动，
+    覆盖"unbound 空转仍判活、真正静默才判死"。本测试聚焦验证核心判定——
+    直接调用 _maintenance_tick，不经过 _connect_and_subscribe 的首响应
+    （首响应会刷新 activity，无法构造真停滞场景）。
+    """
     import time as _time
 
     sub = RealtimeSubscriber()
-    sub._running = True
     state = _ShardState(index=0, total=1, tags=["LIC-101.PV"])
-
-    # 模拟本分片上次收到数据是 10 分钟前（超过 stall_timeout=1s）
+    # 模拟本分片上次收到任何消息是 600 秒前（远超 stall_timeout=1s）
+    state.last_activity_at = _time.time() - 600
     state.last_data_at = _time.time() - 600
+    state.last_resubscribe_at = _time.time()  # 刚订阅过，resubscribe 不触发
 
-    # 构造 mock WebSocket
     mock_ws = AsyncMock()
-    # 握手响应
-    mock_ws.recv = AsyncMock(
-        side_effect=[
-            "{}\x1e",  # 握手响应
-            '{"code": 200, "data": []}\x1e',  # 初始响应（空数据）
-            TimeoutError("recv timeout"),  # 触发看门狗检查
-        ]
-    )
-    mock_ws.send = AsyncMock()
-    mock_ws.close = AsyncMock()
+    state.ws = mock_ws
 
-    with (
-        patch(
-            "app.services.data_source.realtime_subscriber.websockets.connect",
-            new=AsyncMock(return_value=mock_ws),
-        ),
-        patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
-        patch.object(sub, "_maybe_trigger_gap_backfill", return_value=None),
-    ):
-        _gap_settings(mock_s)
-        mock_s.SIGNALR_HUB_URL = "ws://localhost:7106/signalr/realValueForClpmHub"
-        mock_s.SIGNALR_STALL_TIMEOUT_SECONDS = 1  # 1 秒超时
-        mock_s.SIGNALR_PING_INTERVAL = 30
-        mock_s.SIGNALR_PING_TIMEOUT = 60
-        mock_s.SIGNALR_OPEN_TIMEOUT = 15
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_s:
+        mock_s.SIGNALR_RESUBSCRIBE_INTERVAL = 1800
+        mock_s.SIGNALR_STALL_TIMEOUT_SECONDS = 1
 
-        await sub._connect_and_subscribe(state)
+        triggered = await sub._maintenance_tick(state, stall_timeout=1.0)
 
-    # 看门狗触发后分片 ws 应被置 None（_close_shard_ws 调用）
-    assert state.ws is None
-    # mock_ws.close 应被调用（_close_shard_ws 内部）
+    assert triggered is True
+    assert state.ws is None  # _close_shard_ws 置 None
     mock_ws.close.assert_called()
 
 
-@pytest.mark.asyncio
+async def test_watchdog_no_disconnect_on_recent_activity():
+    """最近收到过消息（含空消息）→ 连接存活，不触发停滞看门狗。"""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    state = _ShardState(index=0, total=1, tags=["LIC-101.PV"])
+    state.last_activity_at = _time.time()  # 刚刚有活动
+    state.last_resubscribe_at = _time.time()
+
+    mock_ws = AsyncMock()
+    state.ws = mock_ws
+
+    with patch("app.services.data_source.realtime_subscriber.settings") as mock_s:
+        mock_s.SIGNALR_RESUBSCRIBE_INTERVAL = 1800
+        mock_s.SIGNALR_STALL_TIMEOUT_SECONDS = 1
+
+        triggered = await sub._maintenance_tick(state, stall_timeout=1.0)
+
+    assert triggered is False
+    assert state.ws is not None
+    mock_ws.close.assert_not_called()
+
+
 async def test_watchdog_no_disconnect_when_data_recent():
     """数据停滞看门狗：分片数据在 stall_timeout 内时不断开，继续接收。"""
     import time as _time

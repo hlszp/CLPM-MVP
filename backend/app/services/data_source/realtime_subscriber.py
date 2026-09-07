@@ -246,6 +246,7 @@ class _ShardState:
     last_ping_sent_at: float = 0.0
     last_resubscribe_at: float = 0.0  # 上次全量重订阅时刻（低频信号保鲜）
     last_data_at: float | None = None  # 本分片最后收到数据消息时间（停滞看门狗用）
+    last_activity_at: float | None = None  # 本分片最后收到任何消息时间（连接活性）
 
 
 def _split_shards(tag_codes: list[str], shard_size: int) -> list[list[str]]:
@@ -1177,8 +1178,8 @@ class RealtimeSubscriber:
         except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底
             resub_interval = 1800.0
         deadline = min(deadline, state.last_resubscribe_at + resub_interval)
-        if state.last_data_at is not None:
-            deadline = min(deadline, state.last_data_at + stall_timeout)
+        if state.last_activity_at is not None:
+            deadline = min(deadline, state.last_activity_at + stall_timeout)
         return max(min(_WATCHDOG_RECV_TIMEOUT, deadline - now), 0.05)
 
     async def _maintenance_tick(self, state: _ShardState, stall_timeout: float) -> bool:
@@ -1205,13 +1206,15 @@ class RealtimeSubscriber:
             return True
         # 低频信号（SP/MODE/PID）保鲜：周期重订阅
         await self._resubscribe_tick(state)
-        # 数据停滞看门狗：片级接收点只由本片接纳的数据推进（R09），
-        # 仅 Pong/空推送不能解除业务停滞
-        if state.last_data_at is not None:
-            idle = time.time() - state.last_data_at
+        # 连接停滞看门狗：片级活性由**任何收到消息**推进（last_activity_at）——
+        # 2026-09-07 修正：分片持续收到 unbound/空推送时连接是活的，只看有效
+        # 业务数据（last_data_at）会在 unbound 空转下误判"停滞"；仅当连接层面
+        # 真正静默（连 unbound 消息都没有）才断开重连。
+        if state.last_activity_at is not None:
+            idle = time.time() - state.last_activity_at
             if idle >= stall_timeout:
                 logger.warning(
-                    "分片 %d/%d 数据停滞看门狗触发：%.0fs 无数据（阈值 %.0fs），主动断开重连",
+                    "分片 %d/%d 连接停滞看门狗触发：%.0fs 无任何消息（阈值 %.0fs），主动断开重连",
                     state.index + 1,
                     state.total,
                     idle,
@@ -1233,6 +1236,10 @@ class RealtimeSubscriber:
             await self._handle_ping_frame(state)
             # 数据未到但 Pong 已到：pending 已清，无碍后续心跳
             return
+        # 连接活性：收到任何非空消息即推进（含 unbound/空推送——分片还在
+        # 收到网关消息，连接就是活的；2026-09-07 修正：unbound_tag_msgs 大量
+        # 空转时 accepted=0，只看 last_data_at 会误判"停滞"触发 300s 看门狗）
+        state.last_activity_at = time.time()
         accepted = await self._handle_signalr_message(msg)
         if accepted > 0:
             state.last_data_at = time.time()
