@@ -135,6 +135,8 @@ vi.mock('#/composables/use-loop-palettes', () => ({
 }));
 
 vi.mock('#/composables/use-loop-realtime', () => ({
+  bindLoopInterest: vi.fn(),
+  bindTagInterest: vi.fn(),
   useLoopRealtime: () => ({
     applyMessage: vi.fn(),
     connectionStatus: { value: 'online' },

@@ -41,7 +41,7 @@ import {
   MODE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
-import { useLoopRealtime } from '#/composables/use-loop-realtime';
+import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { useTableDensity } from '#/composables/use-table-density';
 
@@ -233,6 +233,13 @@ const {
   stop,
   stopFallback,
 } = useLoopRealtime();
+
+// 声明当前页回路的实时兴趣集合（服务端订阅过滤）。
+// 修复 2026-09-07：本组件此前只消费消息不声明兴趣，而 layouts/basic.vue
+// 在路由切换时清空兴趣——切到回路监视页后订阅恒为空集，服务端过滤掉
+// 全部推送，实时值长期冻结（仅刷新页面的 REST 首屏会更新一次）。
+// 列表加载/翻页/筛选变化时 watch 自动重订当前页回路。
+bindLoopInterest(() => monitorList.value.map((l) => l.tagName));
 
 const autoRefresh = ref(true);
 const isFallbackPolling = computed(
