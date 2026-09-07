@@ -1559,7 +1559,6 @@ onUnmounted(() => {
                   :precision="2"
                   mono
                   size="sm"
-                  :weight="600"
                 />
               </span>
               <span v-else class="text-gray-400">—</span>
@@ -1619,7 +1618,6 @@ onUnmounted(() => {
                   :precision="1"
                   mono
                   size="sm"
-                  :weight="600"
                 />
                 <DayDeltaBadge
                   :delta="(record as LoopApi.MonitorListItem).scoreDelta"

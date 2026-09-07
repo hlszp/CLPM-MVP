@@ -28,7 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
   empty: false,
   size: 'inherit',
   groupSeparator: false,
-  weight: 600,
+  weight: 400,
 });
 
 interface Props {
@@ -50,7 +50,7 @@ interface Props {
   size?: 'inherit' | 'lg' | 'md' | 'sm' | 'xl' | 'xs';
   /** 千分位分隔，默认 false */
   groupSeparator?: boolean;
-  /** 字重，默认 600 */
+  /** 字重，默认 400（常规）。列表记录字段统一不加粗；需要强调处显式传 600 */
   weight?: number;
 }
 

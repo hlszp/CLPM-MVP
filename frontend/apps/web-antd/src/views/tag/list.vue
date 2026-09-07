@@ -1026,7 +1026,6 @@ const { toolbarItems } = usePageToolbar(() => ({
                 :precision="2"
                 mono
                 size="sm"
-                :weight="600"
               />
               <div
                 v-if="
@@ -1303,8 +1302,8 @@ const { toolbarItems } = usePageToolbar(() => ({
 </template>
 
 <style scoped>
-/* 列表字体统一不加粗（含表头，覆盖 antd 默认 600 字重） */
-.tag-config-table :deep(th),
+/* 列表记录字段不加粗（ClpmNumeric 默认 weight 400 已覆盖数字列；此处兜底普通文本列。
+   表头保留全局 600 加粗，不在此覆盖。） */
 .tag-config-table :deep(td) {
   font-weight: 400;
 }

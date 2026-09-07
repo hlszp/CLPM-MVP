@@ -157,6 +157,7 @@ const tooltipText = computed(() => {
         v-if="latencyDisplay"
         :value="latencyDisplay"
         size="xs"
+        :weight="600"
         class="clpm-realtime-status__latency"
       />
       <span v-if="lastRefreshDisplay" class="clpm-realtime-status__time">
