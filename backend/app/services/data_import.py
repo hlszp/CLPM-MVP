@@ -1415,7 +1415,8 @@ async def _write_point_events(
     ts_parsed: list[datetime | None] = []
     for ts_str in timestamps:
         # 点事件 ts = 真实源时刻（UTC）——不用 _parse_dt（那是 +8 墙钟落库口径）；
-        # Z/带偏移串按原时区换算，naive 视为 UTC
+        # Z/带偏移串按原时区换算，naive 按 +8 墙钟解释（与宽表行时间同口径，
+        # 见 parse_source_ts 的 2026-09-07 时区修复说明）
         ts_parsed.append(parse_source_ts(ts_str))
     slots_with_value = 0
     for _role, entry in role_point_map.items():

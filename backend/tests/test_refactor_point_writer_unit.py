@@ -139,13 +139,27 @@ class TestDecodeQuality:
 
 
 class TestParseSourceTs:
-    def test_naive_treated_as_utc(self):
+    """naive 源时间按 +8 墙钟解释（2026-09-07 时区修复：AAS collectTime 为
+    Asia/Shanghai 墙钟，naive 当 UTC 会使点表超前宽表 8 小时）。"""
+
+    def test_naive_treated_as_wallclock_plus8(self):
+        # 墙钟 08:00 (+8) = UTC 00:00
         dt = pw.parse_source_ts("2026-09-06T08:00:00")
-        assert dt == datetime(2026, 9, 6, 8, tzinfo=UTC)
+        assert dt == datetime(2026, 9, 6, 0, tzinfo=UTC)
+
+    def test_wallclock_roundtrip_with_reference_form(self):
+        # 与 reference_data 的 collectTime 形态一致（+8 墙钟串）：真值 UTC
+        # 13:30 的点，墙钟串为 21:30，解析必须还原 13:30 UTC
+        dt = pw.parse_source_ts("2026-09-06 21:30:00.000")
+        assert dt == datetime(2026, 9, 6, 13, 30, tzinfo=UTC)
 
     def test_z_suffix(self):
         dt = pw.parse_source_ts("2026-09-06T00:00:00Z")
         assert dt == datetime(2026, 9, 6, tzinfo=UTC)
+
+    def test_explicit_offset(self):
+        dt = pw.parse_source_ts("2026-09-06T08:00:00+08:00")
+        assert dt == datetime(2026, 9, 6, 0, tzinfo=UTC)
 
     def test_bad(self):
         assert pw.parse_source_ts("") is None

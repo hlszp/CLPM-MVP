@@ -29,10 +29,14 @@ import asyncio
 import logging
 import time
 from collections import deque
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+#: 源时间墙钟时区（AAS collectTime 为 Asia/Shanghai 墙钟字符串）——与宽表
+#: 落库口径同源（data_import._TARGET_TZ / tdengine_provider._STORED_TZ）
+_SOURCE_TZ = timezone(timedelta(hours=8))
 
 #: 队列上限（事件数）：8649 点 × COV 突发余量
 DEFAULT_MAX_QUEUE = 200_000
@@ -117,7 +121,14 @@ def decode_history_quality(raw: Any) -> tuple[int, int | None]:
 
 
 def parse_source_ts(ts_val: Any) -> datetime | None:
-    """源时间（collectTime 等）→ aware UTC；空/不可解析 → None（不伪造 now）。"""
+    """源时间（collectTime 等）→ aware UTC；空/不可解析 → None（不伪造 now）。
+
+    naive（无时区）按 Asia/Shanghai(+8) 墙钟解释——与宽表落库口径一致
+    （data_import._parse_dt / tdengine_provider._stored_ts_to_utc_naive 的
+    _STORED_TZ 同源约定）。zpdev 2026-09-07 实测教训：AAS collectTime 为
+    +8 墙钟字符串，naive 当 UTC 直接存会使点表 ts 系统性超前宽表 8 小时。
+    带时区（含 Z）的输入按其实际时区换算。
+    """
     if not ts_val:
         return None
     try:
@@ -125,7 +136,7 @@ def parse_source_ts(ts_val: Any) -> datetime | None:
     except (ValueError, TypeError):
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=_SOURCE_TZ)
     return dt.astimezone(UTC)
 
 
