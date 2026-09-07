@@ -150,3 +150,59 @@ class TestParseSourceTs:
     def test_bad(self):
         assert pw.parse_source_ts("") is None
         assert pw.parse_source_ts(None) is None
+
+
+class TestEnsureSchemaWiring:
+    """zpdev 2026-09-07 实测缺口回归：全新环境 st_point_data_v1 不存在时
+    flush 持续 0x2603——_flush_loop 启动须先幂等建表，表缺失异常须自愈。"""
+
+    async def test_flush_loop_ensures_schema_on_start(self, writer, monkeypatch):
+        w, _ = writer
+        calls: list[int] = []
+
+        async def fake_ensure():
+            calls.append(1)
+
+        async def fake_refresh(force=False):  # noqa: ARG001
+            pass
+
+        monkeypatch.setattr(
+            "app.services.data_source.point_history_repository.ensure_schema", fake_ensure
+        )
+        monkeypatch.setattr(w, "refresh_tag_points", fake_refresh)
+        w._running = False  # 立即退出主循环（启动段已执行）
+        await w._flush_loop()
+        assert len(calls) == 1
+
+    async def test_table_missing_error_triggers_self_heal(self, writer, monkeypatch):
+        w, _ = writer
+        ensures: list[int] = []
+
+        async def fake_ensure():
+            ensures.append(1)
+
+        async def failing_flush(*a, **kw):  # noqa: ARG001
+            raise RuntimeError("[0x2603]: Fail to get table info, error: Table does not exist")
+
+        async def ok_flush(*a, **kw):  # noqa: ARG001
+            return None
+
+        monkeypatch.setattr(
+            "app.services.data_source.point_history_repository.ensure_schema", fake_ensure
+        )
+        monkeypatch.setattr(w, "_flush_once", failing_flush)
+        # 模拟循环两拍：第 1 拍表缺失异常（触发自愈），第 2 拍成功退出
+        monkeypatch.setattr(pw.asyncio, "sleep", self._sleep_once_then_stop(w))
+        await w._flush_loop()
+        assert len(ensures) == 1  # 启动 1 次 + 异常自愈 1 次
+
+    @staticmethod
+    def _sleep_once_then_stop(w):
+        state = {"n": 0}
+
+        async def _sleep(_interval):
+            state["n"] += 1
+            if state["n"] >= 2:
+                w._running = False
+
+        return _sleep

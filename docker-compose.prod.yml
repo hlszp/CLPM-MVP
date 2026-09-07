@@ -219,10 +219,12 @@ services:
       retries: 5
       start_period: 10s
     # S2-B1: 资源限制
+    # 2026-09-07：512M→2G——zpdev 实测数据集 556MB 已超 512M cgroup 限制，
+    # bgsave fork（每分钟 10000 changes 触发）即崩溃循环（RestartCount 4~5 分钟 +1）
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2G
           cpus: "1.0"
     # S2-B2: 日志轮转
     logging:

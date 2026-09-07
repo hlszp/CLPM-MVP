@@ -328,6 +328,15 @@ class PointHistoryWriter:
     # ------------------------------------------------------------------
 
     async def _flush_loop(self) -> None:
+        # 幂等建表（st_point_data_v1，zpdev 2026-09-07 实测缺口：全新环境
+        # 首次启动该表不存在，flush 持续 0x2603）——启动先 ensure 一次；
+        # 失败不阻断循环（下方异常分支含表缺失自愈）。
+        try:
+            from app.services.data_source.point_history_repository import ensure_schema
+
+            await ensure_schema()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("PointHistoryWriter schema 初始化失败（异常分支自愈兜底）: %s", exc)
         await self.refresh_tag_points(force=True)
         while self._running:
             try:
@@ -337,6 +346,17 @@ class PointHistoryWriter:
                 raise
             except Exception as exc:  # noqa: BLE001
                 logger.warning("PointHistoryWriter flush 异常: %s", exc)
+                # 表缺失自愈（0x2603：TD 重建/误删表后重新幂等建表，
+                # 下一拍 flush 恢复；其他异常不触发）
+                if "not exist" in str(exc) or "0x2603" in str(exc):
+                    try:
+                        from app.services.data_source.point_history_repository import (
+                            ensure_schema,
+                        )
+
+                        await ensure_schema()
+                    except Exception as ensure_exc:  # noqa: BLE001
+                        logger.warning("PointHistoryWriter schema 自愈失败: %s", ensure_exc)
 
     async def _flush_once(self, *, final: bool = False) -> None:
         from app.services.data_source.point_history_repository import (
