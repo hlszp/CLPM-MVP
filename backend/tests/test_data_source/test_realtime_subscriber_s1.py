@@ -105,6 +105,13 @@ def _shard_settings(mock_s, **overrides) -> None:
         setattr(mock_s, k, v)
 
 
+class _NegotiateUnavailable:
+    """negotiate HTTP 客户端桩：构造即抛连接错误（走回退裸连路径，零等待）."""
+
+    def __init__(self, **_kw):
+        raise ConnectionError("negotiate unreachable (test stub)")
+
+
 async def _idle() -> None:
     await asyncio.sleep(100)
 
@@ -621,6 +628,7 @@ async def test_r09_resubscribe_executes_under_continuous_traffic():
 
     with (
         patch(f"{_SUB}.websockets.connect", new=AsyncMock(return_value=ws)),
+        patch(f"{_SUB}.httpx.AsyncClient", new=_NegotiateUnavailable),
         patch(f"{_SUB}.settings") as mock_s,
         patch.object(sub, "_cache_value", new=AsyncMock(return_value=True)),
         patch.object(sub, "_maybe_trigger_gap_backfill", new=AsyncMock()),
@@ -732,6 +740,7 @@ async def test_r10_handshake_timeout_goes_through_shard_backoff_reconnect():
 
     with (
         patch(f"{_SUB}.websockets.connect", new=AsyncMock(return_value=ws)),
+        patch(f"{_SUB}.httpx.AsyncClient", new=_NegotiateUnavailable),
         patch(f"{_SUB}.settings") as mock_s,
     ):
         _shard_settings(
@@ -809,6 +818,7 @@ async def test_r10_same_frame_handshake_pong_and_completion_push():
 
     with (
         patch(f"{_SUB}.websockets.connect", new=AsyncMock(return_value=ws)),
+        patch(f"{_SUB}.httpx.AsyncClient", new=_NegotiateUnavailable),
         patch(f"{_SUB}.settings") as mock_s,
         patch.object(sub, "_cache_value", new=AsyncMock(return_value=True)) as mock_cache,
         patch.object(sub, "_maybe_trigger_gap_backfill", new=AsyncMock()),

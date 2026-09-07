@@ -105,13 +105,16 @@ import asyncio
 import json
 import logging
 import os
+import re
 import socket
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 from uuid import uuid4
 
+import httpx
 import websockets
 
 from app.core.config import settings
@@ -165,7 +168,9 @@ _SIGNALR_REFRESH_INTERVAL = 60.0  # 1 分钟
 # 背景（2026-09-06 探针实测）：AAS 网关会在无下行流量数分钟后回收 WebSocket
 # 会话（静默冻结或 RST），协议级 ping 已因 AAS 不应答而禁用（见 config.py）；
 # type=6 应用层 ping 双方均应答，既作保活流量也作快速探活。
-_PING_KEEPALIVE_INTERVAL = 25.0
+# 2026-09-07 调整：25s→15s，对齐官方 signalr.js 客户端默认 keepAliveInterval
+# （服务端 clientTimeout 通常 30s，客户端 ping 间隔须 < 其一半）。
+_PING_KEEPALIVE_INTERVAL = 15.0
 # Ping 发出后超过该时长未获 Pong 且期间无任何数据 → 判定连接死亡，立即重连
 _PING_DEATH_TIMEOUT = 60.0
 
@@ -993,14 +998,42 @@ class RealtimeSubscriber:
             invocation_ids.append(invocation_id)
         return invocation_ids
 
+    async def _negotiate_connection_token(self) -> str | None:
+        """POST negotiate 获取 connectionToken（官方客户端标准流程）.
+
+        背景（2026-09-07 TestSignalR.html 对照实测定性）：官方 signalr.js 客户端
+        先 negotiate 拿 connectionToken，再连 ``?id={token}`` 的 WebSocket，
+        连接长寿命稳定；本实现原为免 negotiate 直连裸 URL，被网关周期性
+        整批回收（静默无 close 帧、流量保活无效，每 10~40 分钟一波全分片
+        "心跳 60s 无 Pong"判死重连）。negotiate 不可达时回退裸连并告警
+        （保持既有可用性）。
+        """
+        hub_url = settings.SIGNALR_HUB_URL
+        http_base = re.sub(r"^ws", "http", hub_url)
+        url = f"{http_base.rstrip('/')}/negotiate?negotiateVersion=1"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(url)
+                resp.raise_for_status()
+                payload = resp.json()
+            token = payload.get("connectionToken")
+            if token:
+                return str(token)
+            logger.warning("negotiate 响应无 connectionToken，回退裸连接: %s", payload)
+            return None
+        except Exception as exc:  # noqa: BLE001 — negotiate 失败不阻断连接（回退裸连）
+            logger.warning("negotiate 失败（回退裸连接，可能被网关周期回收）: %s", exc)
+            return None
+
     async def _connect_and_subscribe(self, state: _ShardState) -> None:
         """分片连接 Hub 并订阅本分片位号.
 
         SignalR JSON Hub Protocol 流程：
-        1. WebSocket 连接
-        2. 发送握手 {"protocol":"json","version":1}\\x1e
-        3. 接收握手响应 {}\\x1e（成功）或 {"error":"..."}\\x1e（失败）
-        4. 之后所有消息以 \\x1e (Record Separator) 分帧
+        1. negotiate 拿 connectionToken（官方流程；失败回退裸 URL）
+        2. WebSocket 连接（带 ``?id={token}``）
+        3. 发送握手 {"protocol":"json","version":1}\\x1e
+        4. 接收握手响应 {}\\x1e（成功）或 {"error":"..."}\\x1e（失败）
+        5. 之后所有消息以 \\x1e (Record Separator) 分帧
 
         R10（2026-09-06 整改）：握手 recv 与首响应 recv 分别限时——此前两处
         ``recv()`` 无超时，服务端不回握手/首响应时任务停在应用心跳与看门狗
@@ -1010,19 +1043,26 @@ class RealtimeSubscriber:
         # 先关闭残留的旧连接，防止泄漏
         await self._close_shard_ws(state)
 
+        token = await self._negotiate_connection_token()
+        ws_url = (
+            f"{settings.SIGNALR_HUB_URL}?id={quote(str(token))}"
+            if token
+            else settings.SIGNALR_HUB_URL
+        )
         state.ws = await websockets.connect(
-            settings.SIGNALR_HUB_URL,
+            ws_url,
             # 0/None → 禁用协议级 ping（生产 AAS 不应答，会周期性误判断连）
             ping_interval=settings.SIGNALR_PING_INTERVAL or None,
             ping_timeout=settings.SIGNALR_PING_TIMEOUT,
             open_timeout=settings.SIGNALR_OPEN_TIMEOUT,
         )
         logger.info(
-            "分片 %d/%d 已连接实时数据 Hub: %s（%d 位号）",
+            "分片 %d/%d 已连接实时数据 Hub: %s（%d 位号%s）",
             state.index + 1,
             state.total,
             settings.SIGNALR_HUB_URL,
             len(state.tags),
+            "，negotiate token" if token else "，裸连接（negotiate 失败回退）",
         )
 
         # SignalR 协议握手（限时：复用 SIGNALR_OPEN_TIMEOUT）

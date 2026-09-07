@@ -2563,3 +2563,143 @@ class TestNotifyAndRequestRefresh:
 
         assert exc_info.value.code == "ERR_SUBSCRIBER_NOT_RUNNING"
         assert fake_redis.published == []
+
+
+# ===========================================================================
+# negotiate 连接令牌（2026-09-07：官方客户端流程对齐，修复网关周期回收）
+# ===========================================================================
+
+
+class _StubWS:
+    """websockets.connect 的最小桩（记录 URL，握手交互走 AsyncMock）。"""
+
+    def __init__(self) -> None:
+        self.connected_url: str | None = None
+        self.sent: list[str] = []
+        self.recv_queue: list[str] = []
+        self.closed = False
+
+    async def send(self, data: str) -> None:
+        self.sent.append(data)
+
+    async def recv(self) -> str:
+        if self.recv_queue:
+            return self.recv_queue.pop(0)
+        raise TimeoutError("no more messages")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _shard_state() -> _ShardState:
+    return _ShardState(index=0, total=1, tags=["LIC-101.PV"])
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_negotiated_token_in_url():
+    """negotiate 成功：WS URL 携带 ?id={connectionToken}（官方客户端形态）。"""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    state = _shard_state()
+
+    stub_ws = _StubWS()
+    stub_ws.recv_queue = ['{"connectionId":"x"}\x1e', '{"type":3}\x1e']
+
+    async def fake_connect(url, **_kw):  # noqa: ARG001
+        stub_ws.connected_url = url
+        return stub_ws
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"connectionToken": "tok-abc", "negotiateVersion": 1}
+
+    class _Client:
+        def __init__(self, **_kw): ...
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def post(self, _url):
+            return _Resp()
+
+    with (
+        patch(
+            "app.services.data_source.realtime_subscriber.websockets.connect",
+            new=fake_connect,
+        ),
+        patch(
+            "app.services.data_source.realtime_subscriber.httpx.AsyncClient",
+            new=_Client,
+        ),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        patch.object(sub, "_maybe_trigger_gap_backfill", return_value=None),
+    ):
+        _gap_settings(mock_s)
+        mock_s.SIGNALR_HUB_URL = "ws://aas:82/signalr/realValueForClpmHub"
+        mock_s.SIGNALR_PING_INTERVAL = 0
+        mock_s.SIGNALR_PING_TIMEOUT = 60
+        mock_s.SIGNALR_OPEN_TIMEOUT = 15
+        mock_s.SIGNALR_STALL_TIMEOUT_SECONDS = 1
+        # 防接收循环跑真实看门狗逻辑
+        state.last_data_at = _time.time()
+        await sub._connect_and_subscribe(state)
+
+    assert stub_ws.connected_url == "ws://aas:82/signalr/realValueForClpmHub?id=tok-abc"
+
+
+@pytest.mark.asyncio
+async def test_connect_falls_back_to_bare_url_when_negotiate_fails():
+    """negotiate 不可达：回退裸 URL 连接（既有可用性保持）。"""
+    import time as _time
+
+    sub = RealtimeSubscriber()
+    state = _shard_state()
+
+    stub_ws = _StubWS()
+    stub_ws.recv_queue = ['{"connectionId":"x"}\x1e', '{"type":3}\x1e']
+
+    async def fake_connect(url, **_kw):  # noqa: ARG001
+        stub_ws.connected_url = url
+        return stub_ws
+
+    class _Client:
+        def __init__(self, **_kw): ...
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def post(self, _url):
+            raise ConnectionError("negotiate unreachable")
+
+    with (
+        patch(
+            "app.services.data_source.realtime_subscriber.websockets.connect",
+            new=fake_connect,
+        ),
+        patch(
+            "app.services.data_source.realtime_subscriber.httpx.AsyncClient",
+            new=_Client,
+        ),
+        patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        patch.object(sub, "_maybe_trigger_gap_backfill", return_value=None),
+    ):
+        _gap_settings(mock_s)
+        mock_s.SIGNALR_HUB_URL = "ws://aas:82/signalr/realValueForClpmHub"
+        mock_s.SIGNALR_PING_INTERVAL = 0
+        mock_s.SIGNALR_PING_TIMEOUT = 60
+        mock_s.SIGNALR_OPEN_TIMEOUT = 15
+        mock_s.SIGNALR_STALL_TIMEOUT_SECONDS = 1
+        state.last_data_at = _time.time()
+        await sub._connect_and_subscribe(state)
+
+    assert stub_ws.connected_url == "ws://aas:82/signalr/realValueForClpmHub"
