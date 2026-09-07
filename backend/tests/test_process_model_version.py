@@ -72,9 +72,13 @@ def test_orm_has_38_tables() -> None:
     + handling_order（处置模块 v2.0 双实体工单，2026-08-20）= 49
     + Workbench v2.0 新增 8 表（module_plugin / workbench_window_summary /
     event_bus / sla_policy / tuning_batch / tuning_batch_records /
-    trend_flags / wb_cache_log，2026-08-25）= 57。
+    trend_flags / wb_cache_log，2026-08-25）= 57
+    + 测点子表重构 P1 六表（loop_tag_binding_history /
+    history_coverage_segment / history_layout_manifest / history_write_batch /
+    history_point_conflict / point_state_anchor，2026-09-06 迁移
+    r1p0int00001）= 63。
     """
-    assert len(Base.metadata.tables) == 57
+    assert len(Base.metadata.tables) == 63
 
 
 def test_partial_unique_index_current_exists() -> None:

@@ -147,6 +147,8 @@ class TestDataLineageGeneration:
         import json
 
         json.dumps(d)  # 不应抛异常
+        # AD07：dataset_ref 为可选新增键（补充方案 §4.1 允许兼容扩展；
+        # 默认 None 序列化，旧读者零感知）
         assert set(d.keys()) == {
             "sampling_freq",
             "aggregation_policy",
@@ -156,6 +158,7 @@ class TestDataLineageGeneration:
             "valid_rate",
             "data_policy_version",
             "algorithm_version",
+            "dataset_ref",
         }
 
 

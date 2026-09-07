@@ -153,6 +153,63 @@ def _compute_sample_interval(aligned: list[dict[str, Any]]) -> float:
     return float(np.mean(positive))
 
 
+def _mark_outlier_preprocessing_point(
+    aligned: list[dict[str, Any]],
+    src_indices: list[int],
+    raw_series: RawTimeSeries,
+    loop: LoopLedger,
+    mappings: dict[str, LoopTagMapping],
+    tags_map: dict[str, TagRegistry],
+) -> tuple[list[dict[str, Any]], float]:
+    """point 路径 B4：异常点**标记**不删行（AD04/I03——网格对齐保持）.
+
+    与 _apply_outlier_preprocessing 同一评估器/阈值；差异仅在处置：
+    invalid 行置 row_valid=False（保留轴位），valid_rate 为全窗回路级口径。
+    """
+    n_raw = len(raw_series.timestamps)
+    try:
+        loop_type = loop.loop_type if isinstance(loop.loop_type, str) else ""
+        control_type = _LOOP_TYPE_TO_CONTROL_TYPE.get(loop_type.upper(), ControlType.FLOW)
+        range_min, range_max = _resolve_pv_range(mappings, tags_map)
+        config = LoopPreprocessConfig(
+            loop_id=loop.tag_name,
+            control_type=control_type,
+            range_min=range_min,
+            range_max=range_max,
+        )
+        assessor = DataQualityAssessor(config)
+        assessment = assessor.assess(raw_series)
+        pv_valid_raw = assessment.validity.get("pv_valid", [True] * n_raw)
+        op_valid_raw = assessment.validity.get("op_valid", [True] * n_raw)
+        op_values_raw = raw_series.signals.get("op")
+        marked = 0
+        for aligned_i, src_i in enumerate(src_indices):
+            if src_i >= n_raw or aligned_i >= len(aligned):
+                continue
+            invalid = False
+            if not pv_valid_raw[src_i]:
+                invalid = True
+            elif op_values_raw and op_values_raw[src_i] is not None and not op_valid_raw[src_i]:
+                invalid = True
+            if invalid:
+                aligned[aligned_i]["row_valid"] = False
+                marked += 1
+        if marked:
+            logger.info(
+                "回路 %s point 异常点标记 %d/%d（行保留，轴对齐）",
+                loop.tag_name,
+                marked,
+                len(aligned),
+            )
+        return aligned, assessment.loop_valid_rate
+    except Exception as exc:  # noqa: BLE001 — 评估失败按未标记继续（显式告警）
+        logger.warning("回路 %s point B4 预处理失败，按未标记继续: %s", loop.tag_name, exc)
+        fallback_rate = (
+            sum(1 for d in aligned if d.get("row_valid")) / len(aligned) if aligned else 0.0
+        )
+        return aligned, round(fallback_rate, 4)
+
+
 def _apply_outlier_preprocessing(
     aligned: list[dict[str, Any]],
     src_indices: list[int],
@@ -214,13 +271,21 @@ def _apply_outlier_preprocessing(
 # ---------------------------------------------------------------------------
 
 
-async def _kpi_context(db: Any, loop_id: str, start: datetime, end: datetime) -> dict[str, Any]:
+async def _kpi_context(
+    db: Any,
+    loop_id: str,
+    start: datetime,
+    end: datetime,
+    expected_dataset_ref: str | None = None,
+) -> dict[str, Any]:
     """时间窗内 KPI 快照均值（投用率/评分），供分类映射层消费。
 
     附带 ``_window_averages``（camelCase 全指标均值）供 metricSummary 聚合复用
     （下划线键为编排器内部约定，分类层不消费）。
     """
-    kpi_avgs = await _kpi_window_averages(db, loop_id, start, end)
+    kpi_avgs = await _kpi_window_averages(
+        db, loop_id, start, end, expected_dataset_ref=expected_dataset_ref
+    )
     return {
         "auto_rate_avg": kpi_avgs.get("effectiveAutoRate"),
         "score_avg": kpi_avgs.get("score"),
@@ -246,25 +311,45 @@ _KPI_AVG_COLUMNS = (
 
 
 async def _kpi_window_averages(
-    db: Any, loop_id: str, start: datetime, end: datetime
+    db: Any,
+    loop_id: str,
+    start: datetime,
+    end: datetime,
+    expected_dataset_ref: str | None = None,
 ) -> dict[str, Any]:
     """诊断时间窗内 KPI 快照各指标均值（camelCase 键；窗口无快照返回空 dict）。
 
     与 _kpi_context 同口径：ts_start 落在 [start, end] 的 SUCCESS 快照。
+    AD07/I06：``expected_dataset_ref`` 非空（point 诊断）时按快照血缘的
+    dataset_ref 过滤——不兼容版本（旧布局/无引用）不混入均值；全部不兼容
+    返回空 dict（走既有"无可用 KPI 上下文"路径；旧结果保留不重算）。
     """
     from app.models.metric import KpiSnapshotHourly as _K
 
-    cols = [func.avg(getattr(_K, c)) for c in _KPI_AVG_COLUMNS]
-    row = (
-        await db.execute(
-            select(*cols).where(
-                _K.loop_id == loop_id,
-                _K.ts_start >= start,
-                _K.ts_start <= end,
-                _K.status == "SUCCESS",
-            )
-        )
-    ).one_or_none()
+    _snapshot_filter = (
+        _K.loop_id == loop_id,
+        _K.ts_start >= start,
+        _K.ts_start <= end,
+        _K.status == "SUCCESS",
+    )
+    if expected_dataset_ref is not None:
+        rows = (await db.execute(select(_K.id, _K.data_lineage).where(*_snapshot_filter))).all()
+        compatible = []
+        for _sid, _lineage in rows:
+            ref = None
+            if isinstance(_lineage, dict):
+                ref = _lineage.get("dataset_ref")
+            if ref == expected_dataset_ref:
+                compatible.append(_sid)
+        if not compatible:
+            return {}
+        cols = [func.avg(getattr(_K, c)) for c in _KPI_AVG_COLUMNS]
+        row = (
+            await db.execute(select(*cols).where(*_snapshot_filter, _K.id.in_(compatible)))
+        ).one_or_none()
+    else:
+        cols = [func.avg(getattr(_K, c)) for c in _KPI_AVG_COLUMNS]
+        row = (await db.execute(select(*cols).where(*_snapshot_filter))).one_or_none()
     if not row or all(v is None for v in row):
         return {}
 
@@ -494,6 +579,56 @@ def _operator_result_to_dict(r: OperatorResult) -> dict[str, Any]:
     }
 
 
+def _scoped_operator_input(op_input: OperatorInput, meta: Any) -> tuple[OperatorInput, str | None]:
+    """point 同轴算子输入（AD04/I03）：按 required_signals 公共有效掩码切片.
+
+    - 参与切片信号：required_signals 中的数值信号（pv/sp/op/mode）；
+    - 公共掩码 = 各信号"非 None 且（有掩码时）valid"交集——所有列与时间
+      戳**同一索引集**切片，禁止各列独立 compact 或 min 截齐；
+    - 质量轴（pv_quality/pv_quality_ts）不参与掩码：required 含质量的算子
+      消费**完整质量轴**（I03：质量码算子全轴）；
+    - 掩码后样本不足（<2）→ 返回 skip 原因（不虚构输入）。
+    """
+    numeric = [
+        sig
+        for sig in meta.required_signals
+        if sig in ("pv", "sp", "op", "mode") and sig in op_input.signals
+    ]
+    signals_valid = op_input.meta.get("signals_valid") or {}
+    n = len(op_input.timestamps)
+    common = np.ones(n, dtype=bool)
+    for sig in numeric:
+        arr = op_input.signals[sig]
+        present = np.array([arr[i] is not None for i in range(min(len(arr), n))])
+        present = np.pad(present, (0, max(0, n - len(present))), constant_values=False)
+        mask = present.copy()
+        sv = signals_valid.get(sig)
+        if sv is not None and len(sv) >= n:
+            mask = mask & np.asarray(sv[:n], dtype=bool)
+        common = common & mask
+    idx = np.nonzero(common)[0]
+    if len(idx) < 2:
+        return op_input, "point 同轴切片后有效样本不足（<2）"
+    sliced_signals = dict(op_input.signals)
+    for sig in numeric:
+        sliced_signals[sig] = np.asarray(op_input.signals[sig])[idx]
+    sliced_signals["pv_quality"] = op_input.signals["pv_quality"]  # 全轴
+    if "pv_quality_ts" in op_input.signals:
+        sliced_signals["pv_quality_ts"] = op_input.signals["pv_quality_ts"]  # 全轴
+    scoped = OperatorInput(
+        loop_id=op_input.loop_id,
+        signals=sliced_signals,
+        timestamps=np.asarray(op_input.timestamps)[idx],
+        meta={
+            **{k: v for k, v in op_input.meta.items() if k != "signals_valid"},
+            "sample_interval": op_input.meta.get("sample_interval", 1.0),
+            "total_points": int(len(idx)),
+        },
+        kpi_context=op_input.kpi_context,
+    )
+    return scoped, None
+
+
 def _run_operators(
     op_input: OperatorInput,
     effective_thresholds: dict[str, dict[str, Any]],
@@ -527,7 +662,13 @@ def _run_operators(
             thresholds = _thresholds_for(
                 dict(meta.threshold_schema), effective_thresholds, meta.diag_code
             )
-            results[name] = fn(op_input, thresholds)
+            fn_input = op_input
+            if op_input.meta.get("point_axis"):
+                fn_input, scope_skip = _scoped_operator_input(op_input, meta)
+                if scope_skip is not None:
+                    results[name] = OperatorResult(name, executed=False, skip_reason=scope_skip)
+                    continue
+            results[name] = fn(fn_input, thresholds)
         except Exception as exc:  # noqa: BLE001
             logger.warning("算子 %s 执行异常: %s", name, exc)
             results[name] = OperatorResult(name, executed=False, error=str(exc))
@@ -608,7 +749,9 @@ async def run_diagnosis_for_loop(
 
     raw_series = raw_series if isinstance(raw_series, RawTimeSeries) else None
 
-    # ---- 对齐 + 质量码过滤（复制引擎 L1053-1092）----
+    # ---- 对齐 + 质量码过滤（复制引擎 L1053-1092；point 分支 AD04/I03）----
+    point_ctx = getattr(raw_series, "series_context", None) if raw_series is not None else None
+    is_point = point_ctx is not None and getattr(point_ctx, "is_point", False)
     pv_quality_codes: list[int] = []
     aligned: list[dict[str, Any]] = []
     aligned_src_indices: list[int] = []
@@ -622,15 +765,31 @@ async def run_diagnosis_for_loop(
             )
             quality_label = "UNCERTAIN" if status == QualityStatus.UNKNOWN else status.value.upper()
             pv_quality_codes.append(_QUALITY_CODE_MAP.get(quality_label, 0))
-            if status == QualityStatus.BAD:
-                continue
             pv_list = raw_series.signals.get("pv")
             pv_val = pv_list[i] if pv_list and i < len(pv_list) else None
-            if pv_val is None:
-                continue
             sp_list = raw_series.signals.get("sp")
             op_list = raw_series.signals.get("op")
             mode_list = raw_series.signals.get("mode")
+            row_bad = status == QualityStatus.BAD or pv_val is None
+            if is_point:
+                # AD04/I03：point 全网格保留（含未知/BAD 行），行有效性标记；
+                # 各列不再独立删点——同轴由算子输入的公共掩码切片保证
+                aligned.append(
+                    {
+                        "ts": raw_series.timestamps[i],
+                        "pv": pv_val,
+                        "sp": sp_list[i] if sp_list and i < len(sp_list) else None,
+                        "op": op_list[i] if op_list and i < len(op_list) else None,
+                        "mode": mode_list[i] if mode_list and i < len(mode_list) else None,
+                        "row_valid": not row_bad,
+                    }
+                )
+                aligned_src_indices.append(i)
+                continue
+            if status == QualityStatus.BAD:
+                continue
+            if pv_val is None:
+                continue
             aligned.append(
                 {
                     "ts": raw_series.timestamps[i],
@@ -642,62 +801,120 @@ async def run_diagnosis_for_loop(
             )
             aligned_src_indices.append(i)
 
-    # ---- B4 异常点剔除 + 可信度分级 ----
+    # ---- B4 异常点剔除 + 可信度分级（point：标记不删行）----
     if raw_series is not None and aligned:
         await _report(0.15, "数据质量预处理")
-        aligned, valid_rate = _apply_outlier_preprocessing(
-            aligned, aligned_src_indices, raw_series, loop, mappings, tags_map
-        )
+        if is_point:
+            aligned, valid_rate = _mark_outlier_preprocessing_point(
+                aligned, aligned_src_indices, raw_series, loop, mappings, tags_map
+            )
+        else:
+            aligned, valid_rate = _apply_outlier_preprocessing(
+                aligned, aligned_src_indices, raw_series, loop, mappings, tags_map
+            )
     else:
         valid_rate = 0.0
     confidence_level = ConfidenceEvaluator.evaluate(valid_rate).value
 
-    # ---- 数据门禁（消费质量结论）----
+    # ---- 数据门禁（消费质量结论；point 口径 AD04/I03 §4.2）----
     await _report(0.2, "数据门禁")
     window_seconds = max(1.0, (end - start).total_seconds())
-    # 应有点数按实测中位采样间隔推算（中位数对缺失段稳健）：
-    # 数据源可能是 1s 或 1min 采样，按 1s 硬编码会把稀疏采样恒判为断点超限
-    if len(aligned) >= 2:
-        ts_sec = _ts_list_to_seconds([d["ts"] for d in aligned])
-        diffs = np.diff(ts_sec)
-        positive = diffs[diffs > 0]
-        median_interval = float(np.median(positive)) if len(positive) else 1.0
+    if is_point:
+        # point：expected=网格期望格点数 N（上下文，不从删点后的轴猜测）；
+        # point_count=可用有效样本（行有效 ∩ 异常标记后），占位行不计
+        expected_points = int(point_ctx.expected_slots)
+        usable = sum(1 for d in aligned if d.get("row_valid"))
     else:
-        median_interval = 1.0
-    expected_points = int(window_seconds / max(median_interval, 1e-3))
+        # 应有点数按实测中位采样间隔推算（中位数对缺失段稳健）：
+        # 数据源可能是 1s 或 1min 采样，按 1s 硬编码会把稀疏采样恒判为断点超限
+        if len(aligned) >= 2:
+            ts_sec = _ts_list_to_seconds([d["ts"] for d in aligned])
+            diffs = np.diff(ts_sec)
+            positive = diffs[diffs > 0]
+            median_interval = float(np.median(positive)) if len(positive) else 1.0
+        else:
+            median_interval = 1.0
+        expected_points = int(window_seconds / max(median_interval, 1e-3))
+        usable = len(aligned)
     gate = evaluate_gate(
-        point_count=len(aligned),
+        point_count=usable,
         expected_points=expected_points,
         valid_rate=valid_rate,
         confidence_level=confidence_level,
     )
+    if is_point and not point_ctx.interpretation_consistent:
+        # AD06/I07：跨改绑/解释配置边界的窗口——无依据用当前量程/单位解释
+        # 旧值，动态诊断拒绝（证据保留：gate 失败原因显式，不虚构正常）
+        gate.passed = False
+        gate.reason = (
+            "窗口跨改绑/解释配置边界（interpretation_consistent=False），"
+            "不能用当前配置解释旧值；请按边界分段诊断"
+        )
 
-    kpi_ctx = await _kpi_context(db, loop_id, start, end)
+    # AD07/I06：point 诊断的 KPI 上下文按数据版本兼容过滤（不兼容版本不混
+    # 入均值——旧结果保留为历史事实，不自动重算）
+    kpi_ctx = await _kpi_context(
+        db,
+        loop_id,
+        start,
+        end,
+        expected_dataset_ref=(
+            point_ctx.dataset_ref if is_point and point_ctx is not None else None
+        ),
+    )
     # 方案 A：窗口 KPI 均值随上下文带回（同一次查询），供 metricSummary 聚合
     kpi_avgs: dict[str, Any] = kpi_ctx.get("_window_averages") or {}
-    sample_interval = _compute_sample_interval(aligned) if aligned else 1.0
+    if is_point:
+        sample_interval = float(point_ctx.grid_period_s)
+    else:
+        sample_interval = _compute_sample_interval(aligned) if aligned else 1.0
 
     # ---- 算子执行 + 融合 + 分类 ----
     if gate.passed:
-        op_rows = [d for d in aligned if d.get("op") is not None]
-        # 原始序列相对秒（与 pv_quality 同长度/同基准）：供质量码算子把
-        # Bad 段索引映射为窗口内偏移秒（前端结合 timeWindowStart 展示
-        # 本地钟点）；对齐轴 timestamps 长度不含 BAD 行，无法直接复用
-        if raw_series is not None and len(raw_series.timestamps) > 0:
-            raw_ts_sec = _ts_list_to_seconds(list(raw_series.timestamps))
-            pv_quality_ts = raw_ts_sec - float(np.nanmin(raw_ts_sec))
+        if is_point:
+            # AD04/I03：point 全轴组装——各信号等长（None 保位），逐信号有效
+            # 掩码随行；同轴切片由 _run_operators 按算子 required_signals 公共
+            # 掩码执行（禁止各列独立 compact/min 截齐）。质量码算子消费完整轴。
+            signals = {
+                "pv": np.array([d.get("pv") for d in aligned], dtype=object),
+                "sp": np.array([d.get("sp") for d in aligned], dtype=object),
+                "op": np.array([d.get("op") for d in aligned], dtype=object),
+                "mode": np.array([d.get("mode") for d in aligned], dtype=object),
+                "pv_quality": np.array(pv_quality_codes, dtype=int),
+            }
+            if raw_series is not None and len(raw_series.timestamps) > 0:
+                raw_ts_sec = _ts_list_to_seconds(list(raw_series.timestamps))
+                pv_quality_ts = raw_ts_sec - float(np.nanmin(raw_ts_sec))
+            else:
+                pv_quality_ts = np.array([], dtype=float)
+            signals["pv_quality_ts"] = pv_quality_ts
+            signals_valid = {
+                "pv": np.array([d.get("pv") is not None and d.get("row_valid") for d in aligned]),
+                "sp": np.array([d.get("sp") is not None for d in aligned]),
+                "op": np.array([d.get("op") is not None for d in aligned]),
+                "mode": np.array([d.get("mode") is not None for d in aligned]),
+            }
         else:
-            pv_quality_ts = np.array([], dtype=float)
-        signals: dict[str, np.ndarray] = {
-            "pv": np.array([d["pv"] for d in aligned if d.get("pv") is not None], dtype=float),
-            "sp": np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float),
-            "op": np.array([d["op"] for d in op_rows], dtype=float),
-            # 与 op 同行取 mode（可为 None：_is_auto_mode(None)=False，
-            # 与引擎"仅自控模式计分子"语义一致且保证索引对齐）
-            "mode": np.array([d.get("mode") for d in op_rows], dtype=object),
-            "pv_quality": np.array(pv_quality_codes, dtype=int),
-            "pv_quality_ts": pv_quality_ts,
-        }
+            op_rows = [d for d in aligned if d.get("op") is not None]
+            # 原始序列相对秒（与 pv_quality 同长度/同基准）：供质量码算子把
+            # Bad 段索引映射为窗口内偏移秒（前端结合 timeWindowStart 展示
+            # 本地钟点）；对齐轴 timestamps 长度不含 BAD 行，无法直接复用
+            if raw_series is not None and len(raw_series.timestamps) > 0:
+                raw_ts_sec = _ts_list_to_seconds(list(raw_series.timestamps))
+                pv_quality_ts = raw_ts_sec - float(np.nanmin(raw_ts_sec))
+            else:
+                pv_quality_ts = np.array([], dtype=float)
+            signals: dict[str, np.ndarray] = {
+                "pv": np.array([d["pv"] for d in aligned if d.get("pv") is not None], dtype=float),
+                "sp": np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float),
+                "op": np.array([d["op"] for d in op_rows], dtype=float),
+                # 与 op 同行取 mode（可为 None：_is_auto_mode(None)=False，
+                # 与引擎"仅自控模式计分子"语义一致且保证索引对齐）
+                "mode": np.array([d.get("mode") for d in op_rows], dtype=object),
+                "pv_quality": np.array(pv_quality_codes, dtype=int),
+                "pv_quality_ts": pv_quality_ts,
+            }
+            signals_valid = None  # legacy：无逐信号掩码（组装即已对齐）
 
         ts_seconds = _ts_list_to_seconds([d["ts"] for d in aligned])
         ts_seconds = ts_seconds - (np.nanmin(ts_seconds) if len(ts_seconds) else 0.0)
@@ -710,6 +927,13 @@ async def run_diagnosis_for_loop(
                 "total_points": len(aligned),
                 "loop_type": loop.loop_type,
                 "pv_range": _resolve_pv_range(mappings, tags_map),
+                # AD04：point 同轴模式——_run_operators 按各算子 required_signals
+                # 公共有效掩码切片（信号/时间同轴）；legacy 无此标记（原行为）
+                **(
+                    {"point_axis": True, "signals_valid": signals_valid}
+                    if is_point and signals_valid is not None
+                    else {}
+                ),
             },
             kpi_context=kpi_ctx,
         )
@@ -726,8 +950,9 @@ async def run_diagnosis_for_loop(
 
     # ---- 波形快照 + 指标汇总 + 落库 ----
     await _report(0.95, "证据快照与落库")
+    chart_rows = [d for d in aligned if d.get("pv") is not None] if is_point else aligned
     charts = _build_chart_snapshots(
-        aligned,
+        chart_rows,
         pv_range=_resolve_pv_range(mappings, tags_map),
         op_range=_resolve_op_range(mappings, tags_map),
     )

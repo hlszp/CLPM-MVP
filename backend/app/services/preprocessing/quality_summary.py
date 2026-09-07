@@ -28,6 +28,7 @@ def compute_quality_summary(
     point_count: int,
     quality_codes: list[int] | None = None,
     expected_interval_s: float = 1.0,
+    unknown_slot_count: int | None = None,
 ) -> QualitySummary:
     """生成数据质量摘要（算法说明 §3.4.2 步骤⑧）.
 
@@ -72,9 +73,15 @@ def compute_quality_summary(
     valid_count = sum(1 for v in all_valid if v)
     bad_count = total - valid_count
 
-    # 缺失检测：期望点数 vs 实际点数
-    expected_count = _compute_expected_count(timestamps, expected_interval_s)
-    missing_count = max(0, expected_count - total)
+    # 缺失检测（AD03/I05 §4.2）：point 网格行数恒满，缺失**不能**按
+    # "期望-实际行数"推断（恒 0 会把未知占位洗白）——point 路径由调用方
+    # 传入上下文统计的未知槽数（覆盖依据）；legacy 保留原行数差口径
+    if unknown_slot_count is not None:
+        missing_count = max(0, min(int(unknown_slot_count), total))
+        expected_count = total
+    else:
+        expected_count = _compute_expected_count(timestamps, expected_interval_s)
+        missing_count = max(0, expected_count - total)
 
     valid_rate = valid_count / total if total else 0.0
     bad_rate = bad_count / total if total else 0.0

@@ -159,12 +159,18 @@ class PreprocessingPipeline:
 
         # Step ⑧ QualitySummary 生成（算法说明 §3.4.2 步骤⑧）
         pv_quality_codes = raw.quality_codes.get("pv_quality")
+        # AD03/I05：point 上下文的 PV 未知槽数（覆盖依据）传给缺失统计；
+        # legacy（无上下文）传 None 保持原行数差口径
+        _ctx = getattr(raw, "series_context", None)
         quality_summary = compute_quality_summary(
             validity=validity,
             timestamps=raw.timestamps,
             point_count=n,
             quality_codes=pv_quality_codes,
             expected_interval_s=float(self.threshold.base_sampling_freq),
+            unknown_slot_count=(
+                _ctx.unknown_slots("pv") if _ctx is not None and _ctx.is_point else None
+            ),
         )
 
         # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
@@ -263,6 +269,9 @@ class PreprocessingPipeline:
             control_type=self.config.response_category,
             # P2-1: 回路级可信度（所有指标共享）
             loop_confidence_level=loop_confidence_level,
+            # AD02：数据上下文透传（point 路径的网格/覆盖/分段边界随块传递；
+            # legacy 输入 series_context=None，行为不变）
+            series_context=getattr(raw, "series_context", None),
             loop_valid_rate=loop_valid_rate,
         )
 

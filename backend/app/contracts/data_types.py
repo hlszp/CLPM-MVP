@@ -122,11 +122,17 @@ class RawTimeSeries:
         signals: 信号值字典，如 ``{"pv": [...], "sp": [...], "op": [...]}``
         quality_codes: 质量码字典，如 ``{"pv_quality": [1, 1, 0, ...]}``，
             缺省时视为全部 Good
+        series_context: 可选数据上下文（AD01，默认 None=legacy 兼容；
+            point 逻辑宽表路径必须提供完整上下文，缺失即不得作为 point
+            数据消费——见 docs/设计文档/2026-09-06-algorithm-data-interface-amendment.md §4.1）
     """
 
     timestamps: list[datetime]
     signals: dict[str, list[Any]]
     quality_codes: dict[str, list[int]] = field(default_factory=dict)
+    # 类型注解用 Any 避免契约层对具体上下文实现的硬依赖（循环导入防护）；
+    # 运行时为 app.contracts.series_context.SeriesContext | None
+    series_context: Any = None
 
 
 @dataclass
@@ -231,6 +237,9 @@ class DataBlock:
     # 消除"每个指标各打一档 A/B/C/D/E"的细粒度浪费，回归回路级单一可信度。
     loop_confidence_level: str = "E"
     loop_valid_rate: float = 0.0
+    # AD02：数据上下文透传（默认 None=legacy；point 路径携带网格/覆盖/分段
+    # 边界，L1/L2 序列化与 BASE 派生一并保留）
+    series_context: Any = None
 
     def __post_init__(self) -> None:
         if not self.point_count and self.timestamps:
@@ -262,6 +271,9 @@ class DataLineage:
     valid_rate: float = 0.0
     data_policy_version: str = "pre_v1"
     algorithm_version: str = "KPI_CALC_v2.0"
+    # AD07：数据身份引用（布局/绑定/解释配置/revision 摘要；与算法版本分开，
+    # 序列化缺省 None 兼容旧值与旧读者）
+    dataset_ref: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为 JSON 可存储的字典（写入 kpi_snapshot_hourly.data_lineage）。"""
@@ -274,6 +286,7 @@ class DataLineage:
             "valid_rate": self.valid_rate,
             "data_policy_version": self.data_policy_version,
             "algorithm_version": self.algorithm_version,
+            "dataset_ref": self.dataset_ref,
         }
 
 

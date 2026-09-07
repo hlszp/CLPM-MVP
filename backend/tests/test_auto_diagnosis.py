@@ -102,7 +102,7 @@ class TestScheduleDensityGate:
         rows = [{"count(*)": 100}]  # 仅 100 行 → 不足
         with patch("app.tasks.diagnosis_schedule.execute_sql", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = rows
-            assert await _density_ok(meta, start, end) is False
+            assert await _density_ok("loop-x", meta, start, end) is False
 
     @pytest.mark.asyncio
     async def test_dense_window_passes(self) -> None:
@@ -113,7 +113,7 @@ class TestScheduleDensityGate:
         end = datetime(2026, 8, 18, 1, 0)
         with patch("app.tasks.diagnosis_schedule.execute_sql", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = [{"count(*)": 3000}]
-            assert await _density_ok(meta, start, end) is True
+            assert await _density_ok("loop-x", meta, start, end) is True
 
 
 class TestTriggerTypePassthrough:
