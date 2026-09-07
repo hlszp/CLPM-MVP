@@ -50,11 +50,24 @@ async def _loops_by_importance(level: int) -> list[str]:
         return [str(r) for r in rows.scalars().all()]
 
 
-async def _density_ok(loop_meta: dict, start: datetime, end: datetime) -> bool:
-    """密度门禁：窗口行数 ≥ 预期点数 × 阈值（1s 采样）。
+async def _density_ok(loop_id: str, loop_meta: dict, start: datetime, end: datetime) -> bool:
+    """密度门禁：legacy=窗口行数 ≥ 预期 × 阈值；point=逻辑时间覆盖 ≥ 阈值。
 
+    point 布局下行数是 COV 物理事件数（常值回路稀疏不判缺失，V02/T03），
+    改按该回路当前绑定点的 confirmed 覆盖段计算逻辑时间覆盖率。
     查询失败视为不通过（数据源不可用时不盲跑）。
     """
+    layout = "legacy"
+    if loop_id:
+        try:
+            from app.services.data_source import point_history_metadata as _phm
+
+            async with AsyncSessionLocal() as _db:
+                layout = await _phm.resolve_layout(_db, loop_id=loop_id, at=end)
+        except Exception:  # noqa: BLE001 — 布局读取失败按 legacy 口径
+            layout = "legacy"
+    if layout == "point":
+        return await _logical_coverage_ok(loop_id, start, end)
     subtable = loop_meta.get("subtable", "")
     if not subtable:
         return False
@@ -69,6 +82,18 @@ async def _density_ok(loop_meta: dict, start: datetime, end: datetime) -> bool:
         return count >= expected * _DENSITY_THRESHOLD
     except Exception:  # noqa: BLE001
         logger.warning("调度密度门禁查询失败（跳过该回路）: subtable=%s", subtable)
+        return False
+
+
+async def _logical_coverage_ok(loop_id: str, start: datetime, end: datetime) -> bool:
+    """point 布局密度门禁：回路当前绑定点的 confirmed 覆盖时长占比 ≥ 阈值."""
+    try:
+        from app.services.data_source.logical_coverage import loop_window_coverage_ratio
+
+        ratio = await loop_window_coverage_ratio(loop_id, start, end)
+        return ratio >= _DENSITY_THRESHOLD
+    except Exception:  # noqa: BLE001
+        logger.warning("调度密度门禁（point 覆盖）查询失败（跳过该回路）: loop=%s", loop_id)
         return False
 
 
@@ -92,7 +117,7 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
         if not meta.get("role_tag_map"):
             skipped.append(lid)
             continue
-        if await _density_ok(meta, start, end):
+        if await _density_ok(lid, meta, start, end):
             eligible.append(lid)
         else:
             skipped.append(lid)

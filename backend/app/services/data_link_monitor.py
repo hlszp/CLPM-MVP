@@ -61,9 +61,22 @@ async def check_tdengine_freshness(threshold_minutes: int = 30) -> dict[str, Any
     threshold = int(threshold_minutes)
 
     try:
+        # 布局感知（测点子表重构 §6.3）：全局布局为 point 时物理写入在
+        # 测点子表——按 st_point_data_v1 计新鲜度（物理写入量口径不变），
+        # 否则按宽表超表。表名固定常量，安全拼接。
+        stable = "st_loop_data"
+        try:
+            from app.core.db import AsyncSessionLocal
+            from app.services.data_source.history_layout import get_storage_mode
+
+            async with AsyncSessionLocal() as _db:
+                if await get_storage_mode(_db) == "point":
+                    stable = "st_point_data_v1"
+        except Exception:  # noqa: BLE001 — 布局读取失败按宽表口径（行为兜底）
+            pass
         # threshold 已校验为整数，db 来自可信配置，安全拼接
         sql = (
-            f"SELECT COUNT(*) as cnt FROM {settings.TDENGINE_DB}.st_loop_data "
+            f"SELECT COUNT(*) as cnt FROM {settings.TDENGINE_DB}.{stable} "
             f"WHERE ts >= NOW - {threshold}m"
         )
         rows = await execute_sql(sql)

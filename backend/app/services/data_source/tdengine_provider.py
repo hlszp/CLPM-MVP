@@ -147,7 +147,35 @@ class TDengineProvider:
             end: Any,
             interval_s: int,
         ) -> RawTimeSeries:
-            """宽表查询闭包：一次查 7 列，替代 7 次窄表查询。"""
+            """宽表查询闭包：一次查 7 列，替代 7 次窄表查询。
+
+            布局路由（测点子表重构 P3-2）：按 history_layout_manifest 解析本窗口
+            读取布局——point 段走 LogicalWideBuilder（唯一测点子表组装实现），
+            legacy 段保持原宽表路径；跨切换边界窗口按秒二分拆分拼接
+            （T 归 point，legacy 仅承担 t<T；边界去重不多不漏）。
+            """
+            from app.services.data_source.history_layout_router import resolve_window_layouts
+
+            start_dt = _parse_ts(start)
+            end_dt = _parse_ts(end)
+            if isinstance(start_dt, datetime) and isinstance(end_dt, datetime):
+                # db=None：布局解析用独立短会话，绝不触碰共享 AsyncSession
+                # （并发 query_fn 共享 session 是既有红线）
+                layouts = await resolve_window_layouts(None, loop_id, start_dt, end_dt)
+                if layouts and any(part.layout == "point" for part in layouts):
+                    return await _point_or_mixed_query(
+                        db, loop_id, tag_roles, start_dt, end_dt, interval_s, layouts
+                    )
+            return await _legacy_query(loop_id, tag_roles, start, end, interval_s)
+
+        async def _legacy_query(
+            loop_id: str,
+            tag_roles: list[str],
+            start: Any,
+            end: Any,
+            interval_s: int,
+            _resolve_subtable=_resolve_subtable,
+        ) -> RawTimeSeries:
             # 1-3. 串行解析并缓存 loop_id → 宽表名，避免共享 session 并发查询。
             resolved_subtable = await _resolve_subtable(loop_id)
             if resolved_subtable is None:
@@ -271,6 +299,125 @@ class TDengineProvider:
         await close_client()
         TDengineConnectionPool.close_all()
         logger.info("TDengineProvider 已关闭")
+
+
+async def _point_or_mixed_query(
+    db: Any,
+    loop_id: str,
+    tag_roles: list[str],
+    start_dt: datetime,
+    end_dt: datetime,
+    interval_s: int,
+    layouts: list,
+) -> Any:
+    """point / 混合窗口查询：point 段 LogicalWideBuilder，legacy 段宽表路径.
+
+    layouts 为按时间升序的窗口分片（history_layout_router.resolve_window_layouts）。
+    拼接规则（设计 §5.3/§7-4）：切换边界 T 归 point（legacy 仅承担 t<T）；
+    输出 RawTimeSeries 时间轴 = legacy 段原时间戳（COV 稀疏行）+ point 段
+    整秒网格，按 ts 排序去重。异常不静默回退 legacy（防旧值/默认 Good 污染）。
+
+    AD01：point 片的完整 SeriesContext 随结果透传；混合窗上下文 layout 改标
+    mixed（网格/覆盖口径以 point 片为基准）。
+    """
+    from app.contracts.data_types import RawTimeSeries
+    from app.services.data_source.logical_wide_builder import build_logical_wide
+
+    merged_ts: list[datetime] = []
+    merged_signals: dict[str, list[Any]] = {r.lower(): [] for r in tag_roles}
+    merged_pv_q: list[int] = []
+    roles_lower = [r.lower() for r in tag_roles]
+    point_context = None
+
+    for part in layouts:
+        if part.layout == "point":
+            raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+            if raw.series_context is not None:
+                point_context = raw.series_context
+        else:
+            raw = await _legacy_wide_rows_query(db, loop_id, tag_roles, part.start, part.end)
+        for i, ts in enumerate(raw.timestamps):
+            merged_ts.append(ts)
+            for role in roles_lower:
+                sig = raw.signals.get(role) or [None] * len(raw.timestamps)
+                merged_signals[role].append(sig[i])
+            if "pv" in roles_lower:
+                qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
+                merged_pv_q.append(qc[i])
+
+    # 排序 + 边界去重（同 ts 保留后段——边界 T 处 point 覆盖 legacy）
+    order = sorted(range(len(merged_ts)), key=lambda i: merged_ts[i])
+    out_ts: list[datetime] = []
+    out_signals: dict[str, list[Any]] = {r: [] for r in roles_lower}
+    out_q: list[int] = []
+    last_ts: datetime | None = None
+    for i in order:
+        if last_ts is not None and merged_ts[i] == last_ts:
+            for role in roles_lower:
+                out_signals[role][-1] = merged_signals[role][i]
+            if "pv" in roles_lower:
+                out_q[-1] = merged_pv_q[i]
+            continue
+        out_ts.append(merged_ts[i])
+        for role in roles_lower:
+            out_signals[role].append(merged_signals[role][i])
+        if "pv" in roles_lower:
+            out_q.append(merged_pv_q[i])
+        last_ts = merged_ts[i]
+
+    if point_context is not None and len(layouts) > 1:
+        from app.contracts import series_context as sc
+
+        point_context.layout = sc.LAYOUT_MIXED
+
+    quality_codes: dict[str, list[int]] = {}
+    if "pv" in roles_lower:
+        quality_codes["pv_quality"] = out_q
+    return RawTimeSeries(
+        timestamps=out_ts,
+        signals=out_signals,
+        quality_codes=quality_codes,
+        series_context=point_context,
+    )
+
+
+async def _legacy_wide_rows_query(
+    db: Any,
+    loop_id: str,
+    tag_roles: list[str],
+    start_dt: datetime,
+    end_dt: datetime,
+) -> Any:
+    """legacy 布局段查询（无 Redis 探测——探测行属 legacy 实时缓存语义，
+    混合窗口里 legacy 段恒为已切换前的历史段）。"""
+    import asyncio as _aio
+
+    from sqlalchemy import select
+
+    from app.contracts.data_types import RawTimeSeries
+    from app.core.tdengine import make_subtable_name
+    from app.core.tdengine_native import query_last_values_before, query_wide_table_native
+    from app.models.loop import LoopLedger
+
+    empty = RawTimeSeries(
+        timestamps=[], signals={r.lower(): [] for r in tag_roles}, quality_codes={}
+    )
+    result = await db.execute(select(LoopLedger.tag_name).where(LoopLedger.id == loop_id))
+    loop_tag_name = result.scalar_one_or_none()
+    if not loop_tag_name:
+        return empty
+    subtable = make_subtable_name(loop_tag_name)
+    start_str = _format_ts(start_dt)
+    end_str = _format_ts(end_dt)
+    try:
+        rows = await query_wide_table_native(subtable, start_str, end_str)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("legacy 段宽表查询失败 loop=%s: %s", loop_id, exc)
+        return empty
+    if not rows:
+        return empty
+    initial = await query_last_values_before(subtable, start_str)
+    return await _aio.to_thread(_rows_to_raw_series, rows, initial, tag_roles)
 
 
 def _format_ts(dt: Any) -> str:
