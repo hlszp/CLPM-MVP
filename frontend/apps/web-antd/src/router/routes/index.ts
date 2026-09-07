@@ -15,6 +15,32 @@ const dynamicRouteFiles = import.meta.glob('./modules/**/*.ts', {
 /** 全部动态路由（模块过滤前） */
 const allDynamicRoutes: RouteRecordRaw[] = mergeRouteModules(dynamicRouteFiles);
 
+/**
+ * 业务路由默认以 path（而非 fullPath）作为标签栏 key。
+ *
+ * vben 默认 fullPathKey=true：标签 key 取 fullPath（含 query）。CLPM 以 URL
+ * query 承载筛选/定位（useMonitorContext、?loopId= 等），同一菜单页从不同
+ * 入口带不同 query 进入时 fullPath 不同 → 被当作“另一页”重复开同名标签；
+ * 页内换筛选（router.replace 更新 query）同样会克隆标签。
+ *
+ * 统一默认 fullPathKey=false → key 退化为 path：同 path 页面无论 query 如何
+ * 都合并为同一标签，点击左侧菜单即导航到已打开的页面，不再重复新开。
+ * 个别路由如需“同 path 多开”，显式设置 meta.fullPathKey = true 即可。
+ */
+function setDefaultFullPathKey(tree: RouteRecordRaw[]): void {
+  for (const route of tree) {
+    const meta = route.meta as undefined | { fullPathKey?: boolean };
+    // 未显式声明时默认以 path 作为标签 key；个别需多开的路由可显式 true
+    if (meta && !('fullPathKey' in meta)) {
+      meta.fullPathKey = false;
+    }
+    if (route.children && route.children.length > 0) {
+      setDefaultFullPathKey(route.children as RouteRecordRaw[]);
+    }
+  }
+}
+setDefaultFullPathKey(allDynamicRoutes);
+
 // const externalRoutes: RouteRecordRaw[] = mergeRouteModules(externalRouteFiles);
 // const staticRoutes: RouteRecordRaw[] = mergeRouteModules(staticRoutes);
 const staticRoutes: RouteRecordRaw[] = [];
