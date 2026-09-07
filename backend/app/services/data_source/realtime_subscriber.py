@@ -180,17 +180,19 @@ _PING_DEATH_TIMEOUT = 60.0
 # Pong 仍应答）且连接 ~200s 被回收；≤1000 位号则推送连续（427 条/5min）且连接
 # 稳定。故将活跃 Tag 切分为多条分片连接（每片 ≤_SHARD_SIZE 个位号）并行订阅，
 # 数据统一扇入 _cache_value（Redis 缓存/PubSub/写回），对前端透明。
-# 2026-09-07：改为环境变量可调（SIGNALR_SHARD_SIZE），默认**单连接全量**。
-# zpdev 对照实验结论：9 连接并发被网关主动关闭（received 1000 OK）而单连接
-# 全量稳定（数据流速一致、网关不再频繁关连接）——此前"单连接大订阅停摆"
-# 的结论被当时的 type=6 ping bug 污染。默认 9000（单连接覆盖 8649 点），
-# 仍可通过 SIGNALR_SHARD_SIZE 退回分片（如 <1000 恢复多连接）排查时用。
+# 2026-09-07 边界扫描（signalrcore 探针，全量 8649 点，多组分片对照）：
+# 每连接 2200+ 点 → 扇出停摆（静默不推 0 点）；1450 点 → 正常收数据（66364
+# 点/90s）；6 连接并发不被网关关。AAS 单连接订阅上限约 1500~2200 点。
+# 故默认每片 ≤1450（8649 点 → 6 片），环境变量 SIGNALR_SHARD_SIZE 可调。
+# 注：此前"单连接全量 9000"（ad533993）已被此扫描推翻——单连接 8649 点
+# 触发扇出停摆；而 9 片×1000 则被网关主动关（received 1000 OK）。1450 是
+# 两者之间的安全带。
 def _shard_size() -> int:
-    raw = os.getenv("SIGNALR_SHARD_SIZE", "9000")
+    raw = os.getenv("SIGNALR_SHARD_SIZE", "1450")
     try:
         n = int(raw)
     except ValueError:
-        return 9000
+        return 1450
     return max(1, n)
 
 
