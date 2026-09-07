@@ -459,6 +459,17 @@ async def import_history_data(
     start_dt = _parse_dt(ts_start)
     end_dt = _parse_dt(ts_end)
 
+    # 写入布局（P2-3：legacy 宽表照旧 / shadow 双写 / point 只写点事件）；
+    # sys_config 为真相源，读取失败按 legacy 兜底（不因配置不可达阻塞导入）
+    storage_mode = "legacy"
+    try:
+        from app.services.data_source.history_layout import get_storage_mode
+
+        async with AsyncSessionLocal() as _ms:
+            storage_mode = await get_storage_mode(_ms)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("读取历史写入布局失败（按 legacy 导入）: %s", exc)
+
     if task_id:
         cas_code, old_status = await _update_task_cas(
             task_id,
@@ -589,6 +600,8 @@ async def import_history_data(
                         chunk_hours=chunk_hours,
                         task_id=task_id,
                         on_chunk_complete=_on_chunk_complete,
+                        role_point_map=loop_meta.get("role_point_map", {}),
+                        storage_mode=storage_mode,
                     )
                     if loop_cancelled:
                         # 取消中断：不计成功也不计失败（最终状态由任务级取消
@@ -784,6 +797,8 @@ async def _import_single_loop(
     chunk_hours: int = 1,
     task_id: str | None = None,
     on_chunk_complete: callable | None = None,
+    role_point_map: dict[str, tuple[str, str]] | None = None,
+    storage_mode: str = "legacy",
 ) -> tuple[int, list[dict[str, str]], bool]:
     """导入单个回路的历史数据.
 
@@ -814,6 +829,13 @@ async def _import_single_loop(
         return 0, [], False
 
     is_overwrite = conflict_strategy == ConflictStrategy.OVERWRITE.value
+    if is_overwrite and storage_mode == "point":
+        # 点级 overwrite 需"暂存/验证/备份后替换"协议（设计 §6.1），本阶段未实现：
+        # 显式拒绝而非静默 skip/半替换。shadow 模式下宽表层仍按 R12 协议执行。
+        raise HistoryDataSourceError(
+            "point 布局暂不支持 overwrite 导入（点级替换协议未实现）；"
+            "请保持 legacy/shadow 布局执行 overwrite"
+        )
     target_subtable = subtable
     staging_table = ""
     if is_overwrite:
@@ -828,6 +850,8 @@ async def _import_single_loop(
     failed_windows: list[dict[str, str]] = []
     was_cancelled = False
     chunk_start = start_dt
+    point_ok_chunks: list[tuple[datetime, datetime]] = []  # 远端有数据的分块（点级覆盖）
+    point_import_batch_id: str | None = None
     while chunk_start < end_dt:
         # chunk 级取消检查：任务被取消时立即停止拉取（overwrite 暂存阶段
         # 主表未被触碰，旧数据天然保留；skip 已写入数据保留）
@@ -858,16 +882,47 @@ async def _import_single_loop(
                     chunk_end.isoformat(),
                 )
 
+            if raw_data and storage_mode != "legacy":
+                # 点级批次（pending）：全部分块处理完统一 confirm/partial
+                if point_import_batch_id is None:
+                    try:
+                        from app.core.db import AsyncSessionLocal as _ASL
+                        from app.services.data_source import point_history_metadata as _phm
+
+                        async with _ASL() as _bs:
+                            _batch = await _phm.create_batch(
+                                _bs,
+                                window_start=start_dt.replace(tzinfo=UTC),
+                                window_end=end_dt.replace(tzinfo=UTC),
+                                source_task=f"import:{task_id or loop_id[:8]}",
+                            )
+                            await _bs.commit()
+                            point_import_batch_id = _batch.batch_id
+                    except Exception as exc:  # noqa: BLE001 — 元数据失败不阻塞导入数据面
+                        logger.warning("点级批次创建失败（覆盖登记缺失）: %s", exc)
+                point_ok_chunks.append((chunk_start, chunk_end))
             if raw_data:
-                # 转换为宽表行
-                rows = _convert_to_wide_rows(raw_data, role_tag_map)
-                if rows:
-                    # 批量写入目标表（overwrite=暂存表；skip=主表）
-                    count = await batch_insert(
-                        target_subtable, rows, loop_id=loop_id, unit_id=unit_id
+                if storage_mode == "point":
+                    # point-only：宽表不写；点事件即落库形态。计数单位保持
+                    # 对外口径（时间槽），以 timestamps 数计（见 _write_point_events）
+                    slots, _stats = await _write_point_events(
+                        role_point_map or {}, raw_data, source_task=task_id or ""
                     )
-                    total_count += count
-                    staged_rows += len(rows)
+                    total_count += slots
+                else:
+                    # legacy / shadow：宽表照旧；shadow 额外同流写点事件
+                    rows = _convert_to_wide_rows(raw_data, role_tag_map)
+                    if rows:
+                        # 批量写入目标表（overwrite=暂存表；skip=主表）
+                        count = await batch_insert(
+                            target_subtable, rows, loop_id=loop_id, unit_id=unit_id
+                        )
+                        total_count += count
+                        staged_rows += len(rows)
+                    if storage_mode == "shadow":
+                        await _write_point_events(
+                            role_point_map or {}, raw_data, source_task=task_id or ""
+                        )
         except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
             failed_windows.append(
                 {
@@ -889,6 +944,37 @@ async def _import_single_loop(
         # 小时分块完成时触发进度回调（含失败分块——进度语义是"已处理"，不是"已成功"）
         if on_chunk_complete:
             await on_chunk_complete()
+
+    # 点级覆盖登记（shadow/point）：远端有数据的分块 → confirmed 段；
+    # 空响应分块不登记（远端"无数据"≠覆盖证明，设计 §6.1）
+    if point_import_batch_id is not None and point_ok_chunks:
+        try:
+            from app.core.db import AsyncSessionLocal as _ASL
+            from app.services.data_source import point_history_metadata as _phm
+
+            async with _ASL() as _cs:
+                unique_points = sorted({pid for _n, pid in role_point_map.values() if pid})
+                for cs, ce in point_ok_chunks:
+                    for pid in unique_points:
+                        await _phm.register_coverage(
+                            _cs,
+                            seg_start=cs.replace(tzinfo=UTC),
+                            seg_end=ce.replace(tzinfo=UTC),
+                            point_id=pid,
+                            batch_id=point_import_batch_id,
+                            source_task=f"import:{task_id or ''}",
+                        )
+                await _phm.confirm_batch(
+                    _cs,
+                    point_import_batch_id,
+                    stats={"slots": total_count, "failed_chunks": len(failed_windows)},
+                    partial_reason=(
+                        f"{len(failed_windows)} 个分块失败" if failed_windows else None
+                    ),
+                )
+                await _cs.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("点级覆盖登记失败（数据已写，登记缺失）: %s", exc)
 
     if not is_overwrite:
         return total_count, failed_windows, was_cancelled
@@ -1090,6 +1176,7 @@ async def _batch_get_loop_data(
         select(TagRegistry).where(TagRegistry.id.in_([UUID(tid) for tid in unique_tag_ids]))
     )
     tag_name_map = {str(t.id): t.tag_name for t in t_result.scalars().all()}
+    name_to_id_map = {name: tid for tid, name in tag_name_map.items()}
 
     # 3. 一次性加载所有回路的 unit_id + tag_name（子表名唯一权威来源）
     l_result = await db.execute(
@@ -1126,6 +1213,10 @@ async def _batch_get_loop_data(
             "subtable": subtable,
             # loop_part = 回路台账 tag_name（缓存失效时定位 realtime:history 键，R13）
             "loop_part": loop_tag_name,
+            # 测点子表写入用：role → (tag_name, point_id=tag_registry.id)
+            "role_point_map": {
+                role: (name, name_to_id_map.get(name, "")) for role, name in role_tag_map.items()
+            },
         }
 
     return result
@@ -1290,6 +1381,84 @@ async def _fetch_remote_history(
     raise HistoryDataSourceError(
         f"远端历史数据 API 重试失败（{last_status_code}）: {last_resp_text}"
     ) from last_exc
+
+
+async def _write_point_events(
+    role_point_map: dict[str, tuple[str, str]],
+    raw_data: tuple[list[str], dict[str, dict]],
+    *,
+    source_task: str,
+) -> tuple[int, dict[str, int]]:
+    """远端历史样本 → 测点子表点事件（P2-3/P2-4）.
+
+    - source_kind=REMOTE_GRID（4）：sampleInterval 重建样本，**不宣称原始事件**
+      （设计 §6.1；HistoryData/Get 是否原始 COV 未确认——P0-5 U2）；
+    - 质量经 ``decode_history_quality`` 解码（暂定 AAS 历史枚举；未知 → UNKNOWN
+      绝不 Good）；
+    - 返回 (时间槽计数, 内部物理计数)。**对外 imported_count 单位保持时间槽**
+      （与宽表行口径一致，frontend/任务响应不感知布局）；
+    - 幂等/冲突由仓储层分流（同 ts 同 payload skip；不同 payload 登记冲突）。
+    """
+    from app.services.data_source.point_history_repository import (
+        QSCHEMA_AAS,
+        SOURCE_KIND_REMOTE_GRID,
+        PointEvent,
+        write_events,
+    )
+    from app.services.data_source.point_history_writer import (
+        decode_history_quality,
+        parse_source_ts,
+    )
+
+    timestamps, series_map = raw_data
+    events: list[PointEvent] = []
+    ts_parsed: list[datetime | None] = []
+    for ts_str in timestamps:
+        # 点事件 ts = 真实源时刻（UTC）——不用 _parse_dt（那是 +8 墙钟落库口径）；
+        # Z/带偏移串按原时区换算，naive 视为 UTC
+        ts_parsed.append(parse_source_ts(ts_str))
+    slots_with_value = 0
+    for _role, entry in role_point_map.items():
+        tag_name, point_id = entry
+        if not point_id:
+            continue  # 无点身份的角色不入点表（原宽表 NULL 语义不变）
+        series = series_map.get(tag_name) or series_map.get(tag_name.lower())
+        if not series:
+            continue
+        values = series.get("values", [])
+        qualities = series.get("qualities", [])
+        for i, ts in enumerate(ts_parsed):
+            if ts is None:
+                continue
+            v = _parse_float_val(values[i]) if i < len(values) else None
+            qclass, qraw = decode_history_quality(qualities[i] if i < len(qualities) else None)
+            events.append(
+                PointEvent(
+                    point_id=point_id,
+                    ts=ts,
+                    value=v,
+                    quality_class=qclass,
+                    quality_raw=qraw,
+                    quality_schema=QSCHEMA_AAS,
+                    source_kind=SOURCE_KIND_REMOTE_GRID,
+                    received_at=datetime.now(UTC),
+                    source_id=f"import:{source_task[:32]}",
+                )
+            )
+    if not events:
+        return 0, {"physical": 0, "identical": 0, "conflicts": 0}
+    result = await write_events(events, source_task=source_task or None)
+    # 时间槽计数：任一角色在某槽有事件即计一槽（与宽表行口径对齐）
+    slot_ts = {e.ts for e in events}
+    slots_with_value = len(slot_ts)
+    stats = {
+        "physical": result.inserted,
+        "identical": result.identical_skipped,
+        "conflicts": len(result.conflicts),
+    }
+    if result.failed:
+        raise HistoryDataSourceError(f"点事件写入失败: {result.error}")
+    return slots_with_value, stats
 
 
 def _convert_to_wide_rows(

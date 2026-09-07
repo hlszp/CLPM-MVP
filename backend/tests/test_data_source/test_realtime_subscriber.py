@@ -2417,7 +2417,7 @@ class TestControlLoop:
         sub._refresh_loop = _idle_loop
         sub._control_loop = _idle_loop
 
-        sub._become_leader()
+        await sub._become_leader()
         assert sub._control_task is not None
 
         await sub._resign_leader()
