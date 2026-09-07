@@ -1,14 +1,14 @@
-"""实时订阅器应用层心跳（type=6 Ping/Pong）与连接池分片单元测试.
+"""实时订阅器活性管理单元测试（2026-09-07 修正后语义）.
 
-背景（2026-09-06）：AAS 网关会在无流量数分钟后回收 WebSocket 会话，
-协议级 ping 已禁用（AAS 不应答）；订阅器以 SignalR 应用层 ping 作
-保活流量与快速探活。连接池化后每条分片连接独立持有心跳状态
-（``_ShardState``）。本文件覆盖：
+背景（2026-09-07 对照实测）：AAS 网关收到客户端 type=6 Ping 即优雅关闭
+连接（close 1000 OK），而非返回 Pong——原"应用层 ping 作保活流量"的假设
+被证伪（对照 signalrcore 官方客户端与独立 ping 探针，官方客户端不发此
+ping 且同网关零断连）。修复：停发 type=6、判死恒 False，活性改由数据
+停滞看门狗（SIGNALR_STALL_TIMEOUT_SECONDS）兜底。本文件覆盖：
 - _split_shards：位号切分（保序、覆盖、末片不满）
-- _keepalive_tick：空闲到期发送 Ping / pending 未清不重复发 / 间隔节流
-- _handle_ping_frame：我方 Ping 的 Pong 仅清 pending 不回显，
-  服务端主动 Ping 才回 Pong（防 Pong 互答风暴）
-- _is_ping_dead：pending 超时且期间无数据才判死；有数据流动不判死
+- _keepalive_tick：**恒不发 type=6 Ping**（修复后语义）
+- _handle_ping_frame：服务端主动 Ping 仍回 Pong（被动应答保留，防互答风暴）
+- _is_ping_dead：恒 False（停用主动 ping 后不再误杀）
 """
 
 from __future__ import annotations
@@ -17,8 +17,6 @@ import time
 from unittest.mock import AsyncMock, patch
 
 from app.services.data_source.realtime_subscriber import (
-    _PING_DEATH_TIMEOUT,
-    _PING_KEEPALIVE_INTERVAL,
     RealtimeSubscriber,
     _ShardState,
     _split_shards,
@@ -36,7 +34,7 @@ class _FakeWs:
 
 
 def _make_subscriber() -> RealtimeSubscriber:
-    """构造仅用于心跳/分片纯逻辑的订阅器实例（不启动后台任务）."""
+    """构造仅用于分片/活性纯逻辑的订阅器实例（不启动后台任务）."""
     return RealtimeSubscriber()
 
 
@@ -72,26 +70,14 @@ def test_split_shards_full_coverage_and_order() -> None:
     assert [t for s in shards for t in s] == tags  # 保序且全覆盖、无重复
 
 
-# ---- _keepalive_tick ----
+# ---- _keepalive_tick：2026-09-07 停发 type=6 ----
 
 
-async def test_keepalive_tick_sends_ping_when_due() -> None:
+async def test_keepalive_tick_never_sends_type6_ping() -> None:
+    """修复后语义：即使到期也不发 type=6（AAS 收 ping 即关连接）."""
     sub = _make_subscriber()
     st = _make_state()
-    st.last_ping_sent_at = time.time() - (_PING_KEEPALIVE_INTERVAL + 5)
-
-    await sub._keepalive_tick(st)
-
-    assert len(st.ws.sent) == 1
-    assert '"type"' in st.ws.sent[0]
-    assert st.ping_pending_since is not None
-    assert st.last_ping_sent_at <= time.time()
-
-
-async def test_keepalive_tick_skips_within_interval() -> None:
-    sub = _make_subscriber()
-    st = _make_state()
-    st.last_ping_sent_at = time.time() - 5  # 间隔内
+    st.last_ping_sent_at = time.time() - 3600  # 远超任何间隔
 
     await sub._keepalive_tick(st)
 
@@ -99,34 +85,23 @@ async def test_keepalive_tick_skips_within_interval() -> None:
     assert st.ping_pending_since is None
 
 
-async def test_keepalive_tick_skips_when_pending() -> None:
+async def test_keepalive_tick_idempotent_under_pending() -> None:
+    """即使存在历史 pending（旧状态残留）也保持不发、不误置新 pending."""
     sub = _make_subscriber()
     st = _make_state()
     st.last_ping_sent_at = 0.0
-    st.ping_pending_since = time.time() - 100  # 上一发 Ping 未获应答
+    st.ping_pending_since = time.time() - 100
 
     await sub._keepalive_tick(st)
 
     assert st.ws.sent == []
 
 
-# ---- _handle_ping_frame ----
+# ---- _handle_ping_frame：服务端主动 Ping 仍回 Pong ----
 
 
-async def test_pong_clears_pending_without_echo() -> None:
-    """我方 Ping 的 Pong：仅清 pending，不再回发 type=6（防互答风暴）."""
-    sub = _make_subscriber()
-    st = _make_state()
-    st.ping_pending_since = time.time() - 5
-
-    await sub._handle_ping_frame(st)
-
-    assert st.ping_pending_since is None
-    assert st.ws.sent == []  # 不回显 Pong
-
-
-async def test_server_ping_gets_pong_reply() -> None:
-    """无 pending 时收到 type=6 视为服务端主动 Ping，回复 Pong."""
+async def test_server_initiated_ping_gets_pong_reply() -> None:
+    """服务端主动发 type=6 → 客户端回 Pong（被动应答保留）."""
     sub = _make_subscriber()
     st = _make_state()
 
@@ -137,14 +112,13 @@ async def test_server_ping_gets_pong_reply() -> None:
 
 
 async def test_process_shard_message_routes_ping_and_data() -> None:
-    """片内消息入口：type=6 走心跳处理，真正缓存了值才推进片级接收点."""
+    """片内消息入口：type=6 走被动应答；真正缓存了值才推进片级接收点."""
     sub = _make_subscriber()
     st = _make_state()
-    st.ping_pending_since = time.time() - 3
 
-    # Pong → 清 pending，不进共享处理器
+    # 服务端主动 Ping → 回 Pong（被动应答），不影响片级接收点
     await sub._process_shard_message(st, {"type": 6})
-    assert st.ping_pending_since is None
+    assert len(st.ws.sent) == 1
 
     # 空推送（无数据项）不推进片级接收点
     await sub._process_shard_message(
@@ -153,10 +127,10 @@ async def test_process_shard_message_routes_ping_and_data() -> None:
     )
     assert st.last_data_at is None
 
-    # 带数据项的推送 → _cache_value 接纳（返回 True）→ 片级接收点推进
-    async def fake_cache(item):
+    # 带数据项的推送 → _cache_value 接纳 → 片级接收点推进
+    async def fake_cache(item):  # noqa: ARG001
         sub._last_data_at = time.time()
-        return True  # R09：片级接收点由 _handle_signalr_message 的接纳计数推进
+        return True
 
     with patch.object(sub, "_cache_value", new=AsyncMock(side_effect=fake_cache)):
         await sub._process_shard_message(
@@ -170,44 +144,19 @@ async def test_process_shard_message_routes_ping_and_data() -> None:
     assert st.last_data_at is not None
 
 
-# ---- _is_ping_dead ----
+# ---- _is_ping_dead：停用主动 ping 后恒 False ----
 
 
-async def test_ping_dead_no_pending() -> None:
+async def test_ping_dead_always_false_no_pending() -> None:
     sub = _make_subscriber()
     st = _make_state()
     assert sub._is_ping_dead(st) is False
 
 
-async def test_ping_dead_pending_within_timeout() -> None:
+async def test_ping_dead_always_false_even_stale_pending() -> None:
+    """即使有远超阈值的陈旧 pending 也不再判死（活性交停滞看门狗）."""
     sub = _make_subscriber()
     st = _make_state()
-    st.ping_pending_since = time.time() - 30  # < 判死阈值
-    assert sub._is_ping_dead(st) is False
-
-
-async def test_ping_dead_timeout_without_data() -> None:
-    sub = _make_subscriber()
-    st = _make_state()
-    st.ping_pending_since = time.time() - (_PING_DEATH_TIMEOUT + 1)
-    st.last_data_at = None  # 从未收到数据
-    assert sub._is_ping_dead(st) is True
-
-
-async def test_ping_dead_timeout_with_stale_data_only() -> None:
-    sub = _make_subscriber()
-    pending_at = time.time() - (_PING_DEATH_TIMEOUT + 1)
-    st = _make_state()
-    st.ping_pending_since = pending_at
-    st.last_data_at = pending_at - 100  # 数据早于 Ping，Ping 后无数据
-    assert sub._is_ping_dead(st) is True
-
-
-async def test_ping_alive_when_data_flows_after_ping() -> None:
-    """Ping 后仍有数据到达 → 连接存活，即使服务端不回 Pong."""
-    sub = _make_subscriber()
-    pending_at = time.time() - (_PING_DEATH_TIMEOUT + 1)
-    st = _make_state()
-    st.ping_pending_since = pending_at
-    st.last_data_at = pending_at + 10  # Ping 之后有数据
+    st.ping_pending_since = time.time() - 3600
+    st.last_data_at = None
     assert sub._is_ping_dead(st) is False

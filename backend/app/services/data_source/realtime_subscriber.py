@@ -1260,37 +1260,29 @@ class RealtimeSubscriber:
                 logger.debug("回复服务端 Ping 失败（连接可能已死）: %s", exc)
 
     async def _keepalive_tick(self, state: _ShardState) -> None:
-        """应用层心跳：到期发送 SignalR type=6 Ping（内部按间隔节流）.
+        """应用层保活：**不再主动发送 type=6 Ping**（2026-09-07 修正）.
 
-        R09：由 ``_maintenance_tick`` 每轮到点调用——持续流量的连接也照常保活
-        （数据到达同样清 pending，不影响判活）；空闲连接语义不变。
-        上一发 Ping 未获 Pong 前不重复发送。
+        2026-09-07 对照实测（signalrcore 官方客户端 + 独立 ping 探针）：
+        AAS 网关**收到客户端 type=6 Ping 即优雅关闭连接（close 1000 OK）**，
+        而非返回 Pong——之前"type=6 自动回 pong"的注释假设是错的。这就是
+        "每分钟一波、全分片先后判死重连"的真凶：每 15s 主动发 ping → 网关
+        收 ping 即关 → 60s 无 Pong 判死 → 重连。
+
+        修复：彻底停发 type=6。连接活性改由纯被动判活覆盖——数据停滞
+        看门狗（SIGNALR_STALL_TIMEOUT_SECONDS，300s）在"WS 活着但上游
+        停推"时兜底断开；正常数据流/重订阅快照本身即保活。官方客户端
+        （signalr.js 6.0.1 / signalrcore）均不发此 ping，且同网关下实测
+        零断连。协议级 ping 仍禁用（SIGNALR_PING_INTERVAL=0）。
         """
-        if state.ws is None or state.ping_pending_since is not None:
-            return
-        now = time.time()
-        if now - state.last_ping_sent_at < _PING_KEEPALIVE_INTERVAL:
-            return
-        try:
-            await state.ws.send(json.dumps({"type": 6}) + "\x1e")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("发送应用层心跳失败（连接可能已死）: %s", exc)
-            return
-        state.last_ping_sent_at = now
-        state.ping_pending_since = now
+        return
 
     def _is_ping_dead(self, state: _ShardState) -> bool:
-        """待应答 Ping 超过 _PING_DEATH_TIMEOUT 且期间无任何数据 → 连接判死.
+        """待应答 Ping 判死——2026-09-07 停用主动 ping 后恒 False.
 
-        有数据流动的连接不判死（个别实现可能不回 Pong 但仍在推送有效数据）；
-        纯僵尸连接（发收皆无响应）由该探活覆盖，检测时长
-        _PING_DEATH_TIMEOUT ~ +_WATCHDOG_RECV_TIMEOUT。
+        活性改由数据停滞看门狗（SIGNALR_STALL_TIMEOUT_SECONDS）兜底；
+        此方法保留为兼容入口（`_maintenance_tick` 仍调用，但不再触发误杀）。
         """
-        if state.ping_pending_since is None:
-            return False
-        if state.last_data_at is not None and state.last_data_at >= state.ping_pending_since:
-            return False
-        return time.time() - state.ping_pending_since > _PING_DEATH_TIMEOUT
+        return False
 
     async def _handle_signalr_message(self, msg: dict) -> int:
         """统一处理 SignalR JSON 协议消息，返回本消息接纳的数据点数（R09）.
