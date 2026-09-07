@@ -73,31 +73,28 @@ def test_split_shards_full_coverage_and_order() -> None:
 # ---- _keepalive_tick：2026-09-07 停发 type=6 ----
 
 
-async def test_keepalive_tick_never_sends_type6_ping() -> None:
-    """修复后语义：即使到期也不发 type=6（AAS 收 ping 即关连接）."""
+async def test_keepalive_tick_sends_ping_when_due() -> None:
+    """恢复 ping 保活后语义：到期发 type=6（防网关空闲超时，对齐 signalrcore）."""
     sub = _make_subscriber()
     st = _make_state()
-    st.last_ping_sent_at = time.time() - 3600  # 远超任何间隔
+    st.last_ping_sent_at = time.time() - 3600  # 远超间隔
+
+    await sub._keepalive_tick(st)
+
+    assert len(st.ws.sent) == 1
+    assert '"type": 6' in st.ws.sent[0]
+    assert st.last_ping_sent_at > time.time() - 60  # 已更新
+
+
+async def test_keepalive_tick_skips_within_interval() -> None:
+    """间隔内不重复发 ping."""
+    sub = _make_subscriber()
+    st = _make_state()
+    st.last_ping_sent_at = time.time() - 5  # 间隔内
 
     await sub._keepalive_tick(st)
 
     assert st.ws.sent == []
-    assert st.ping_pending_since is None
-
-
-async def test_keepalive_tick_idempotent_under_pending() -> None:
-    """即使存在历史 pending（旧状态残留）也保持不发、不误置新 pending."""
-    sub = _make_subscriber()
-    st = _make_state()
-    st.last_ping_sent_at = 0.0
-    st.ping_pending_since = time.time() - 100
-
-    await sub._keepalive_tick(st)
-
-    assert st.ws.sent == []
-
-
-# ---- _handle_ping_frame：服务端主动 Ping 仍回 Pong ----
 
 
 async def test_server_initiated_ping_gets_pong_reply() -> None:

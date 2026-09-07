@@ -180,19 +180,18 @@ _PING_DEATH_TIMEOUT = 60.0
 # Pong 仍应答）且连接 ~200s 被回收；≤1000 位号则推送连续（427 条/5min）且连接
 # 稳定。故将活跃 Tag 切分为多条分片连接（每片 ≤_SHARD_SIZE 个位号）并行订阅，
 # 数据统一扇入 _cache_value（Redis 缓存/PubSub/写回），对前端透明。
-# 2026-09-07 边界扫描（signalrcore 探针，全量 8649 点，多组分片对照）：
-# 每连接 2200+ 点 → 扇出停摆（静默不推 0 点）；1450 点 → 正常收数据（66364
-# 点/90s）；6 连接并发不被网关关。AAS 单连接订阅上限约 1500~2200 点。
-# 故默认每片 ≤1450（8649 点 → 6 片），环境变量 SIGNALR_SHARD_SIZE 可调。
-# 注：此前"单连接全量 9000"（ad533993）已被此扫描推翻——单连接 8649 点
-# 触发扇出停摆；而 9 片×1000 则被网关主动关（received 1000 OK）。1450 是
-# 两者之间的安全带。
+# 2026-09-07 最终结论（signalrcore 单连接 8649 点 7 分钟零断连实测）：
+# 单连接订全量没问题——此前"边界扫描"的多组分片结论被并发竞争污染
+# （5 组 16 连接同时打网关），"1450/片"与"9000 停摆"均不可靠。真凶是
+# 停发 type=6 ping 后低频分片触发 Nginx 空闲超时（received 1000）。
+# 故默认单连接全量（9000），配合恢复的 15s type=6 ping 保活。
+# 仍可通过 SIGNALR_SHARD_SIZE 退回分片排查。
 def _shard_size() -> int:
-    raw = os.getenv("SIGNALR_SHARD_SIZE", "1450")
+    raw = os.getenv("SIGNALR_SHARD_SIZE", "9000")
     try:
         n = int(raw)
     except ValueError:
-        return 1450
+        return 9000
     return max(1, n)
 
 
@@ -1299,27 +1298,36 @@ class RealtimeSubscriber:
                 logger.debug("回复服务端 Ping 失败（连接可能已死）: %s", exc)
 
     async def _keepalive_tick(self, state: _ShardState) -> None:
-        """应用层保活：**不再主动发送 type=6 Ping**（2026-09-07 修正）.
+        """应用层保活：每 15s 发 type=6 Ping，防止网关空闲超时关连接.
 
-        2026-09-07 对照实测（signalrcore 官方客户端 + 独立 ping 探针）：
-        AAS 网关**收到客户端 type=6 Ping 即优雅关闭连接（close 1000 OK）**，
-        而非返回 Pong——之前"type=6 自动回 pong"的注释假设是错的。这就是
-        "每分钟一波、全分片先后判死重连"的真凶：每 15s 主动发 ping → 网关
-        收 ping 即关 → 60s 无 Pong 判死 → 重连。
+        2026-09-07 二次修正（推翻"停发 ping"的错误结论）：signalrcore 官方
+        客户端用 ConnectionStateChecker 每 15s 发 PingMessage，单连接订 8649
+        点 7 分钟零断连——证明 type=6 ping 是标准保活，AAS 正常处理。之前
+        "发 ping 即被 close 1000"是独立 ping 探针的时序误判（只订 100 点、
+        发一次 ping 后观察）。真正导致 received 1000 的是停发 ping 后低频
+        分片（SP/MODE/PID 变化少）触发 Nginx 空闲超时。
 
-        修复：彻底停发 type=6。连接活性改由纯被动判活覆盖——数据停滞
-        看门狗（SIGNALR_STALL_TIMEOUT_SECONDS，300s）在"WS 活着但上游
-        停推"时兜底断开；正常数据流/重订阅快照本身即保活。官方客户端
-        （signalr.js 6.0.1 / signalrcore）均不发此 ping，且同网关下实测
-        零断连。协议级 ping 仍禁用（SIGNALR_PING_INTERVAL=0）。
+        关键：只发 ping 产生下行流量防空闲，**不因"没收到 Pong"判死**
+        （AAS 可能不回 Pong，回不回都不影响保活效果）；连接死活交由数据
+        停滞看门狗（SIGNALR_STALL_TIMEOUT_SECONDS）判定。
         """
-        return
+        if state.ws is None:
+            return
+        now = time.time()
+        if now - state.last_ping_sent_at < _PING_KEEPALIVE_INTERVAL:
+            return
+        try:
+            await state.ws.send(json.dumps({"type": 6}) + "\x1e")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("发送应用层心跳失败（连接可能已死）: %s", exc)
+            return
+        state.last_ping_sent_at = now
 
     def _is_ping_dead(self, state: _ShardState) -> bool:
-        """待应答 Ping 判死——2026-09-07 停用主动 ping 后恒 False.
+        """判死恒 False——2026-09-07 二次修正：ping 只保活不判死.
 
-        活性改由数据停滞看门狗（SIGNALR_STALL_TIMEOUT_SECONDS）兜底；
-        此方法保留为兼容入口（`_maintenance_tick` 仍调用，但不再触发误杀）。
+        连接死活交由数据停滞看门狗（last_activity_at + stall_timeout）判定，
+        不再用"ping 无 Pong"误杀连接（AAS 可能不回 Pong）。
         """
         return False
 
