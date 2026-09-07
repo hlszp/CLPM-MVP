@@ -300,3 +300,98 @@ class TestBatchWaveform:
         assert data["total"] == 0
         assert len(data["failed"]) == 1
         assert "Unexpected internal error" in data["failed"][0]["error"]
+
+
+# ===========================================================================
+# 2026-09-07 历史接口回归：两个 zpdev 实测 500 的根因
+# ===========================================================================
+
+
+class TestLttbConstantSeries:
+    """Bug1：DataPlanner 注入的 OP 限位常量（op_low/op_high，长度 1）混入
+    signals，LTTB 按时间轴索引采样 IndexError（n>maxPoints 时触发）。"""
+
+    def test_lttb_passes_through_constant_series(self):
+        from datetime import UTC, datetime, timedelta
+
+        from app.api.v1.endpoints.tags import _lttb_downsample_datablock
+
+        t0 = datetime(2026, 9, 7, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
+        n = 300
+        timestamps = [t0 + timedelta(seconds=i) for i in range(n)]
+        signals = {
+            "pv": [50.0 + i * 0.1 for i in range(n)],
+            "op_low": [0.0],  # 常量伪信号（长度 1）
+            "op_high": [100.0],
+        }
+        validity = {"pv_valid": [True] * n}
+        outlier_reasons = {"pv": [[] for _ in range(n)]}
+
+        new_ts, new_signals, new_validity, _ = _lttb_downsample_datablock(
+            timestamps, signals, validity, outlier_reasons, 100
+        )
+
+        assert len(new_ts) == 100
+        # 常量序列原样透传，不被降采样索引
+        assert new_signals["op_low"] == [0.0]
+        assert new_signals["op_high"] == [100.0]
+        assert len(new_signals["pv"]) == 100
+        assert len(new_validity["pv_valid"]) == 100
+
+
+class TestRequirementCacheSnapshot:
+    """Bug2：契约缓存持有 ORM 实例 → session 关闭后 detached，
+    TTL 内其他请求访问 req.tag_group 报 DetachedInstanceError。
+    修复后缓存必须是纯快照。"""
+
+    async def test_cache_stores_plain_snapshot_not_orm(self, monkeypatch):
+        from types import SimpleNamespace as _NS
+
+        import app.services.data_planner as dp
+
+        # 按真实模型列集构造假行（快照会读取全部列）
+        from app.models.metric_data_requirement import ClpmMetricDataRequirement
+        from app.services.data_planner import DataPlanner
+
+        _defaults = {
+            "id": "r1",
+            "metric_code": "accuracy_rate",
+            "metric_name": "准确率",
+            "tag_group": "BASE",
+            "tags": ["pv"],
+            "mask_expression": "pv_valid",
+        }
+        _row_obj = _NS(
+            **{
+                c.key: _defaults.get(c.key, None)
+                for c in ClpmMetricDataRequirement.__table__.columns
+            }
+        )
+
+        class _FakeResult:
+            def scalars(self):
+                return self
+
+            def all(self):
+                return [_row_obj]
+
+        class _FakeDB:
+            async def execute(self, _q):
+                return _FakeResult()
+
+        monkeypatch.setattr(dp, "_REQUIREMENTS_CACHE", {})
+        monkeypatch.setattr(dp, "_REQUIREMENTS_CACHE_TS", 0.0)
+
+        planner = DataPlanner.__new__(DataPlanner)
+        planner._db = _FakeDB()
+
+        reqs = await planner._load_requirements(["accuracy_rate"])
+
+        req = reqs["accuracy_rate"]
+        assert req.tag_group == "BASE"
+        assert req.tags == ["pv"]
+        # 全局缓存里存的是纯快照，不是 ORM 行实例本身
+        cached = dp._REQUIREMENTS_CACHE["accuracy_rate"]
+        assert cached is not _row_obj
+        assert cached.mask_expression == "pv_valid"
+        assert cached.metric_code == "accuracy_rate"

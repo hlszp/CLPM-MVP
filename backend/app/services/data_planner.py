@@ -397,13 +397,25 @@ class DataPlanner:
             return _filter_requirements(metrics)
 
         # 缓存未命中或过期 → 查询全量并缓存
+        from types import SimpleNamespace
+
         from sqlalchemy import select
 
         from app.models.metric_data_requirement import ClpmMetricDataRequirement
 
         result = await self._db.execute(select(ClpmMetricDataRequirement))
         rows = result.scalars().all()
-        _REQUIREMENTS_CACHE = {row.metric_code: row for row in rows}
+        # 缓存纯快照而非 ORM 实例（2026-09-07 修复）：模块级缓存持有 ORM 实例
+        # 时，绑定其上的请求 session 关闭后实例 detached，TTL 内其他请求访问
+        # 任意属性（如 req.tag_group）触发懒加载 → DetachedInstanceError
+        # （zpdev 实测：首个请求刷新缓存成功，紧随的批量波形请求 500）。
+        # SimpleNamespace 拷贝全部列属性，对 req.tag_group/tags/mask_expression
+        # 等鸭子类型消费方透明。
+        columns = [c.key for c in ClpmMetricDataRequirement.__table__.columns]
+        _REQUIREMENTS_CACHE = {
+            row.metric_code: SimpleNamespace(**{c: getattr(row, c) for c in columns})
+            for row in rows
+        }
         _REQUIREMENTS_CACHE_TS = now
         logger.info("DataPlanner 指标契约缓存已刷新: %d 条", len(_REQUIREMENTS_CACHE))
 

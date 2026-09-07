@@ -574,9 +574,19 @@ def _lttb_downsample_datablock(
     for k, v in outlier_reasons.items():
         series_map[f"{k}_reasons"] = v
 
-    new_ts_millis, new_series_map = lttb_downsample_multi_series(
-        ts_millis, series_map, target_points
+    # 常量伪信号分流（2026-09-07 修复）：DataPlanner 会把 OP 限位常量
+    # （op_low/op_high，长度 1 的标量数组，v6.2 起注入）塞进 signals 供计算器
+    # 读取——它们不是时间序列，长度 ≠ n，LTTB 按时间轴索引采样会 IndexError
+    # （zpdev 实测：n=3600 > maxPoints 触发降采样即 500）。仅对与时间轴等长的
+    # 序列降采样，常量原样透传。
+    n_ts = len(ts_millis)
+    aligned_map = {k: v for k, v in series_map.items() if len(v) == n_ts}
+    constant_map = {k: v for k, v in series_map.items() if len(v) != n_ts}
+
+    new_ts_millis, new_aligned_map = lttb_downsample_multi_series(
+        ts_millis, aligned_map, target_points
     )
+    new_series_map = {**new_aligned_map, **constant_map}
 
     # 还原 datetime
     new_timestamps: list[datetime] = []
