@@ -483,6 +483,12 @@ if [ "$DO_DEPLOY" = true ]; then
     log_info "镜像加载完成"
 
     # --- 2.55 部署前自动备份（升级场景，失败即中止） ---
+    # SKIP_BACKUP=1：跳过备份（开发/验证环境如 zpdev；TDengine 数据可重建）
+    # ——点表上线后 8450 子表触发 taosdump OOM（exit 137），验证环境无需
+    # 为此阻塞部署；生产环境保持默认备份。
+    if [ "${SKIP_BACKUP:-0}" = "1" ]; then
+        log_info "SKIP_BACKUP=1，跳过部署前备份（验证环境）"
+    else
     log_step "部署前自动备份"
     BACKUP_OUTPUT=$($SSH_PREFIX "
         if docker ps --format '{{.Names}}' | grep -q '^clpm-postgres$'; then
@@ -504,6 +510,7 @@ if [ "$DO_DEPLOY" = true ]; then
         exit 1
     fi
     log_info "部署前备份完成 ✓"
+    fi
 
     # --- 2.6 重启服务（含错误捕获和自动处理） ---
     log_step "重启 Docker Compose 服务"
