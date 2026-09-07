@@ -13,9 +13,9 @@
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 
-import { Input, Select, Tooltip, TreeSelect } from 'ant-design-vue';
+import { Button, Input, Select, Tooltip, TreeSelect } from 'ant-design-vue';
 
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { ClpmPageToolbar } from '#/components/clpm';
@@ -28,7 +28,7 @@ defineOptions({ name: 'MonitorLoops' });
 
 const monitorCtx = useMonitorContext();
 
-// ===== 装置筛选（工厂层级树，URL 真相源） =====
+// ===== 筛选草稿态：本地编辑，点“查询”一次性提交到 context 触发列表刷新 =====
 const plantTree = ref<PlantNodeApi.PlantNode[]>([]);
 
 onMounted(async () => {
@@ -39,41 +39,51 @@ onMounted(async () => {
   }
 });
 
-const plantNodeId = computed<string | undefined>({
-  get: () => monitorCtx.plantNodeId.value ?? undefined,
-  set: (val) => monitorCtx.update({ plantNodeId: val ?? null }),
-});
+// 装置筛选（工厂层级树草稿，初始从 URL 上下文同步）
+const plantNodeDraft = ref<string | undefined>(
+  monitorCtx.plantNodeId.value ?? undefined,
+);
 
-// ===== 模式筛选（实时控制模式，与列表 modeLabel 口径一致） =====
+// ===== 模式筛选（实时控制模式草稿，与列表 modeLabel 口径一致） =====
 const controlModeOptions = [
   { label: '自动（Auto）', value: 'Auto' },
   { label: '串级（Cascade）', value: 'Cascade' },
   { label: '手动（Manual）', value: 'Manual' },
 ];
 
-const controlMode = computed<'Auto' | 'Cascade' | 'Manual' | undefined>({
-  get: () =>
-    (monitorCtx.controlMode.value as 'Auto' | 'Cascade' | 'Manual' | null) ??
+const controlModeDraft = ref<
+  'Auto' | 'Cascade' | 'Manual' | undefined
+>(
+  (monitorCtx.controlMode.value as 'Auto' | 'Cascade' | 'Manual' | null) ??
     undefined,
-  set: (val) => monitorCtx.update({ controlMode: val ?? null }),
-});
+);
 
-// ===== 关键词搜索（防抖 300ms）=====
-const keyword = ref(monitorCtx.keyword.value);
-let keywordTimer: null | ReturnType<typeof setTimeout> = null;
+// ===== 关键词搜索草稿（初始从 URL 同步；不再即时/防抖提交） =====
+const keywordDraft = ref(monitorCtx.keyword.value);
 
-watch(keyword, (val) => {
-  if (keywordTimer) clearTimeout(keywordTimer);
-  keywordTimer = setTimeout(() => {
-    monitorCtx.update({ keyword: val });
-  }, 300);
-});
+/** 点“查询”才把草稿筛选写入 context（URL），列表 watch 到变化后统一刷新 */
+function applyFilters() {
+  monitorCtx.update({
+    plantNodeId: plantNodeDraft.value ?? null,
+    controlMode: controlModeDraft.value ?? null,
+    keyword: keywordDraft.value,
+  });
+}
 
-// 从 URL 同步（浏览器前进/后退）
+// 浏览器前进/后退时 URL 变化 → 草稿态跟随（不重复触发列表刷新）
 watch(
-  () => monitorCtx.keyword.value,
-  (val) => {
-    if (val !== keyword.value) keyword.value = val;
+  () => [
+    monitorCtx.plantNodeId.value,
+    monitorCtx.controlMode.value,
+    monitorCtx.keyword.value,
+  ],
+  ([plantNodeId, controlMode, keyword]) => {
+    if (plantNodeId !== plantNodeDraft.value) {
+      plantNodeDraft.value = plantNodeId ?? undefined;
+    }
+    const mode = controlMode as 'Auto' | 'Cascade' | 'Manual' | null;
+    if (mode !== controlModeDraft.value) controlModeDraft.value = mode ?? undefined;
+    if (keyword !== keywordDraft.value) keywordDraft.value = keyword ?? '';
   },
 );
 
@@ -115,7 +125,7 @@ function handleGotoWorkbench(loopId: string) {
       <template #actions>
         <div class="flex items-center gap-2">
           <TreeSelect
-            v-model:value="plantNodeId"
+            v-model:value="plantNodeDraft"
             :tree-data="plantTree"
             :field-names="{ label: 'name', value: 'id', children: 'children' }"
             allow-clear
@@ -124,17 +134,18 @@ function handleGotoWorkbench(loopId: string) {
             tree-default-expand-all
           />
           <Select
-            v-model:value="controlMode"
+            v-model:value="controlModeDraft"
             :options="controlModeOptions"
             allow-clear
             placeholder="模式"
             class="!w-36"
           />
           <Input
-            v-model:value="keyword"
+            v-model:value="keywordDraft"
             allow-clear
             placeholder="搜索位号、描述、装置"
             class="!w-64"
+            @press-enter="applyFilters"
           >
             <template #prefix>
               <div class="i-lucide:search w-4 h-4 text-gray-400"></div>
@@ -143,6 +154,7 @@ function handleGotoWorkbench(loopId: string) {
           <Tooltip title="支持位号、回路描述、装置名称模糊匹配">
             <span class="cursor-help text-xs text-gray-400">?</span>
           </Tooltip>
+          <Button type="primary" @click="applyFilters">查询</Button>
         </div>
       </template>
     </ClpmPageToolbar>
