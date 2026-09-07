@@ -32,7 +32,6 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import (
     KpiSnapshotHourly,
     LoopConfidenceLatest,
-    LoopIntegritySnapshot,
 )
 from app.models.plant_node import PlantNode
 from app.models.tag import TagRegistry
@@ -1140,7 +1139,7 @@ async def get_workbench_summary(
 
 
 async def _build_data_health(db: AsyncSession, loop_id: str) -> dict:
-    """数据健康度（validRate + 可信度 + 完整度）。"""
+    """数据健康度（validRate + 可信度）。"""
     # 最新快照 validRate + confidenceLevel
     snap_result = await db.execute(
         select(
@@ -1159,19 +1158,7 @@ async def _build_data_health(db: AsyncSession, loop_id: str) -> dict:
     )
     conf_level = conf_result.scalar_one_or_none()
 
-    # 最新完整性
-    integrity_result = await db.execute(
-        select(LoopIntegritySnapshot)
-        .where(LoopIntegritySnapshot.loop_id == loop_id)
-        .order_by(LoopIntegritySnapshot.check_date.desc())
-        .limit(1)
-    )
-    integrity = integrity_result.scalar_one_or_none()
-
     return {
         "validRate": _to_float(snap_row[0]) if snap_row else None,
         "confidenceLevel": (snap_row[1] if snap_row and snap_row[1] else conf_level),
-        "pvCompleteness": integrity.pv_completeness if integrity else None,
-        "overallCompleteness": integrity.overall_completeness if integrity else None,
-        "integrityStatus": integrity.status if integrity else None,
     }

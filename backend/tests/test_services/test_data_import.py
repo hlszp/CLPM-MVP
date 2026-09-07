@@ -248,7 +248,6 @@ class TestTaskResponse:
             "finished_at": "",
             "error_message": "",
             "created_by": "admin",
-            "conflict_strategy": "overwrite",
             "trigger_backfill": "false",
         }
         resp = _task_to_response(data)
@@ -1164,7 +1163,6 @@ class TestImportProgressPerLoop:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 trigger_backfill=False,
                 created_by="tester",
                 celery_task_id="celery-1",
@@ -1173,7 +1171,6 @@ class TestImportProgressPerLoop:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 task_id=task_id,
             )
 
@@ -1257,7 +1254,6 @@ class TestImportProgressPerLoop:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 task_id="t-progress",
             )
 
@@ -1328,7 +1324,6 @@ class TestImportProgressChunkUnits:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 trigger_backfill=False,
                 created_by="tester",
                 celery_task_id="celery-chunk-units",
@@ -1337,7 +1332,6 @@ class TestImportProgressChunkUnits:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 task_id=task_id,
             )
 
@@ -1393,7 +1387,6 @@ class TestImportSingleLoopChunkFaultTolerance:
                 start_dt=start,
                 end_dt=end,
                 interval=1,
-                conflict_strategy="skip",
                 subtable="t_a",
                 unit_id="u1",
                 role_tag_map={"PV": "A.PV"},
@@ -1455,7 +1448,6 @@ class TestImportSingleLoopChunkFaultTolerance:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 trigger_backfill=False,
                 created_by="tester",
                 celery_task_id="celery-partial",
@@ -1464,7 +1456,6 @@ class TestImportSingleLoopChunkFaultTolerance:
                 loop_ids=loop_ids,
                 ts_start=ts_start,
                 ts_end=ts_end,
-                conflict_strategy="skip",
                 task_id=task_id,
             )
 

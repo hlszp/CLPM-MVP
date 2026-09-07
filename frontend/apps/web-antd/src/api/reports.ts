@@ -280,10 +280,6 @@ export namespace ReportsApi {
     loopDescription: null | string;
     unitPath: string;
     includeInEvaluation: boolean;
-    pvCompleteness: null | number;
-    overallCompleteness: null | number;
-    integrityStatus: null | string;
-    checkedAt: null | string;
     goodValueRate: null | number;
     confidenceLevel: null | string;
     evalStatus: null | string;

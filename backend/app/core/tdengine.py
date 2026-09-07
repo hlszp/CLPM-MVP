@@ -3,7 +3,7 @@
 使用 TDengine REST API（httpx）查询波形数据。
 开发环境 TDengine 可能无数据，返回空数组 + 明确状态标识，不报错。
 调用方传 ``raise_on_error=True`` 时，连接/查询失败抛 ``TDengineError``，
-用于区分"数据源不可用"与"该时段真无数据"（如数据完整性检查）。
+用于区分"数据源不可用"与"该时段真无数据"。
 
 安全：tag_name 白名单校验 + start_time/end_time ISO 格式校验，防止 SQL 注入；
 make_subtable_name() 白名单归一化非法字符，防宽表 SQL 拼接注入。

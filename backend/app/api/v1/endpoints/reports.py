@@ -357,7 +357,7 @@ async def get_report_data_quality(
     """数据质量报告聚合（P1-1，方案 §4.1）。
 
     只依赖基础模块数据（loop_ledger / kpi_snapshot_hourly /
-    loop_integrity_snapshot / loop_confidence_latest），可插拔模块全拔时
+    loop_confidence_latest），可插拔模块全拔时
     仍完整可用；未传时间窗默认近 30 天。
     """
     start, end = _parse_date_range(startDate, endDate)

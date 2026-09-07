@@ -39,7 +39,6 @@ celery_app = Celery(
         "app.tasks.audit_archive",
         "app.tasks.dead_letter",
         "app.tasks.data_link_monitor",
-        "app.tasks.data_integrity_check",
         # 整定模块（09 设计方案恢复：历史辨识异步任务）
         "app.tasks.tuning",
         "app.tasks.alert_patrol",
@@ -137,7 +136,6 @@ class AsyncTask(Task):
 import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
 import app.tasks.beat_registry  # noqa: E402, F401  模块热插拔 beat 条件化
-import app.tasks.data_integrity_check  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
 
 # import app.tasks.diagnosis_engine  # noqa: E402, F401

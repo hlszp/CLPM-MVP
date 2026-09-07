@@ -57,9 +57,6 @@ export function createMockWorkbenchSummary(
     dataHealth: {
       validRate: 0.982,
       confidenceLevel: 'A',
-      pvCompleteness: 0.991,
-      overallCompleteness: 0.975,
-      integrityStatus: 'OK',
     },
     scoreTrend: {
       score: 72.5,

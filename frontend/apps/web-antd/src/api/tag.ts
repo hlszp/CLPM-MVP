@@ -70,12 +70,6 @@ export namespace TagApi {
     quality?: null | Quality;
     /** 同步新鲜度（最近落库时间 ISO 串） */
     lastSyncAt?: null | string;
-    /** 所属回路 PV 完整度（0~1，来自每日巡检快照） */
-    loopPvCompleteness?: null | number;
-    /** 所属回路完整性状态：OK/WARNING/CRITICAL/DATA_UNAVAILABLE */
-    loopIntegrityStatus?: null | string;
-    /** 最近巡检日期 */
-    lastIntegrityCheck?: null | string;
   }
 
   /** 测点列表查询参数 */

@@ -62,23 +62,25 @@ def test_process_model_version_table_registered() -> None:
 def test_orm_has_38_tables() -> None:
     """ORM 表集合数量守恒断言。
 
-    38（基线 37 + process_model_version）+ loop_integrity_snapshot（数据完整性巡检
-    快照，2026-08-05 数据质量增强）= 39 + tuning_knowledge_entry（P3-01 整定
-    知识库，2026-08-05）= 40 + 智能预警规则引擎 5 表（alert_rule /
+    38（基线 37 + process_model_version）+ tuning_knowledge_entry（P3-01 整定
+    知识库，2026-08-05）= 39 + 智能预警规则引擎 5 表（alert_rule /
     alert_rule_subscription / alert_event / alert_rule_audit_log /
-    alert_suppression，2026-08-07）= 45 + diagnosis_run（MVP v2 诊断模块，
-    2026-08-16）= 46 + loop_action_item（§9.4 回路处置建议，2026-08-18）= 47
-    + sys_dict_item（通用字典项，2026-08-20 并行会话）= 48
-    + handling_order（处置模块 v2.0 双实体工单，2026-08-20）= 49
+    alert_suppression，2026-08-07）= 44 + diagnosis_run（MVP v2 诊断模块，
+    2026-08-16）= 45 + loop_action_item（§9.4 回路处置建议，2026-08-18）= 46
+    + sys_dict_item（通用字典项，2026-08-20 并行会话）= 47
+    + handling_order（处置模块 v2.0 双实体工单，2026-08-20）= 48
     + Workbench v2.0 新增 8 表（module_plugin / workbench_window_summary /
     event_bus / sla_policy / tuning_batch / tuning_batch_records /
-    trend_flags / wb_cache_log，2026-08-25）= 57
+    trend_flags / wb_cache_log，2026-08-25）= 56
     + 测点子表重构 P1 六表（loop_tag_binding_history /
     history_coverage_segment / history_layout_manifest / history_write_batch /
     history_point_conflict / point_state_anchor，2026-09-06 迁移
-    r1p0int00001）= 63。
+    r1p0int00001）= 62。
+
+    注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
+    整体下线时移除，表计数从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 63
+    assert len(Base.metadata.tables) == 62
 
 
 def test_partial_unique_index_current_exists() -> None:

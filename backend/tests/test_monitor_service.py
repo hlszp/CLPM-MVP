@@ -344,7 +344,6 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
@@ -372,8 +371,6 @@ class TestListLoopMonitor:
         # 数据健康度块存在（无快照时各字段为 None）
         assert item["dataHealth"]["validRate"] is None
         assert item["dataHealth"]["confidenceLevel"] is None
-        assert item["dataHealth"]["pvCompleteness"] is None
-        assert item["dataHealth"]["integrityStatus"] is None
 
     def _make_snap(self, score: str) -> MagicMock:
         """C1-1 测试用 KPI 快照（仅 score/ts_end/status 有效，其余速率字段 None）。"""
@@ -524,13 +521,12 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db, plant_node_id="unit-001")
         assert result["total"] == 1
         assert len(result["items"]) == 1
-        assert db.execute.await_count == 9
+        assert db.execute.await_count == 8
 
     async def test_with_keyword_filter(self) -> None:
         """带 keyword 过滤时正确返回空列表。"""
@@ -671,15 +667,14 @@ class TestListLoopMonitor:
                 _make_scalars_mock([]),  # KPI 快照查询（空）
                 _make_scalars_mock([]),  # 昨日基线快照查询（空）
                 _make_scalars_mock([]),  # mode mapping 查询（空，回退默认）
-                _make_scalars_mock([]),  # 完整性巡检快照查询（空）
             ]
         )
         result = await list_loop_monitor(db)
         item = result["items"][0]
         assert item["unitName"] is None
-        # count + loops + mappings + kpi_snapshot + prev_snapshot + mode_mapping + integrity = 7 次
+        # count + loops + mappings + kpi_snapshot + prev_snapshot + mode_mapping = 6 次
         # （跳过 plant node 查询；无 tags 因 mappings 为空）
-        assert db.execute.await_count == 7
+        assert db.execute.await_count == 6
 
     async def test_no_score_weight(self) -> None:
         """无 KPI 快照时 score 为 None（score 来自 KpiSnapshotHourly，非 loop.score_weight）。"""

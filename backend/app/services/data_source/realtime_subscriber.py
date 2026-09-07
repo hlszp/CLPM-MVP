@@ -32,7 +32,7 @@ Redis 缓存:
   全局 checkpoint 兜底（进程重启首连防漏检）；稳定来源身份 = loop_part
   （不按分片物理编号，reshard 不串位）。超 ``GAP_BACKFILL_MIN_GAP_SECONDS``
   的回路集合登记到持久待补列表（``realtime:gap:pending``，重叠合并去重）；
-  开关开启时仅经 ``data_import.import_history_data``（skip 策略）消费补全并
+  开关开启时仅经 ``data_import.import_history_data``（同 ts 幂等覆盖）消费补全并
   触发受影响小时的 KPI 回算，成功才出队+推进水位；开关关闭只登记不调远端；
 - 单次补数窗口上限 ``GAP_BACKFILL_MAX_HOURS``，超出部分截断并告警，需手工导入；
 - checkpoint 条件推进：仅补数全部成功（failed==0）才推进 checkpoint，
@@ -2290,9 +2290,8 @@ class RealtimeSubscriber:
                 ts_start,
                 ts_end,
                 interval=1,
-                # skip：依赖 TDengine 同 ts 覆盖语义；不可用 overwrite
-                # （overwrite 会先 DELETE 窗口，误删窗口边界内的实时行）
-                conflict_strategy="skip",
+                # 统一幂等：依赖 TDengine 同子表同 ts 覆盖语义（UPSERT），
+                # 无 DELETE 前置步骤，不会误删窗口边界内的实时行
                 # 缺口跨整点边界时重算受影响小时的 KPI
                 trigger_backfill=True,
             )

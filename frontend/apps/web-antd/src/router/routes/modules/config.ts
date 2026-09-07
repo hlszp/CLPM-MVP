@@ -96,7 +96,7 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:database',
           order: 7,
-          title: '数据检查',
+          title: '数据导入',
         },
       },
       {

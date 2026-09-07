@@ -904,7 +904,7 @@ async def test_gap_backfill_dedup_while_running():
 
 @pytest.mark.asyncio
 async def test_run_gap_backfill_calls_import_with_skip_strategy():
-    """补数成功：import(skip+trigger_backfill)、任务登记 auto-backfill、落库点推进."""
+    """补数成功：import(trigger_backfill)、任务登记 auto-backfill、落库点推进."""
     import time as _time
 
     from app.schemas.task import TaskStatus, TaskType
@@ -939,7 +939,6 @@ async def test_run_gap_backfill_calls_import_with_skip_strategy():
 
     mock_import.assert_awaited_once()
     kwargs = mock_import.await_args.kwargs
-    assert kwargs["conflict_strategy"] == "skip"
     assert kwargs["trigger_backfill"] is True
     loop_ids = mock_import.await_args.args[0]
     assert loop_ids == ["loop-1", "loop-2"]

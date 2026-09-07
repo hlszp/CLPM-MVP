@@ -3,7 +3,7 @@
 聚合五类关注来源为统一关注队列（A2 新口径，2026-08-23）：
 - ALERT：ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件
 - DEGRADATION：dayTrend=WORSENED 且 scoreDelta<=-2
-- DATA_QUALITY：完整性 WARNING/CRITICAL 或 可信度 D/E
+- DATA_QUALITY：可信度 D/E
 - FITNESS_ABNORMAL：适用性等级 L0/L1/L2（P2 IA优化）
 - HANDLING：处置工单（REOPENED/执行超期/验证超期/待执行超期，A2 新增）
 
@@ -11,12 +11,12 @@
 工单收敛为 handling_order）；读路径不受影响。
 
 不新增数据库表；聚合现有 alert_event / kpi_snapshot_hourly /
-loop_integrity_snapshot / loop_confidence_latest / handling_order 数据。
+loop_confidence_latest / handling_order 数据。
 
 优先级规则（透明可解释）：
 - URGENT：CRITICAL 活跃预警 或 重开的处置工单
-- HIGH：ERROR 活跃预警、执行/验证超期工单、完整性 CRITICAL、scoreDelta <= -10
-- MEDIUM：WARN、待执行超期工单、完整性 WARNING、-10 < scoreDelta <= -5
+- HIGH：ERROR 活跃预警、执行/验证超期工单、scoreDelta <= -10
+- MEDIUM：WARN、待执行超期工单、-10 < scoreDelta <= -5
 - LOW：INFO、-5 < scoreDelta <= -2、可信度 D/E 但无安全预警
 
 v1.1/v1.2 更新：
@@ -43,7 +43,6 @@ from app.models.loop import LoopLedger
 from app.models.metric import (
     KpiSnapshotHourly,
     LoopConfidenceLatest,
-    LoopIntegritySnapshot,
 )
 from app.models.plant_node import PlantNode
 
@@ -844,28 +843,15 @@ async def _aggregate_degradation_and_data_quality(
         )
         return {str(s.loop_id): s for s in (await db.execute(p_stmt)).scalars().all()}
 
-    async def _fetch_integrity():
-        i_stmt = (
-            select(LoopIntegritySnapshot)
-            .where(LoopIntegritySnapshot.loop_id.in_(active_loop_ids))
-            .distinct(LoopIntegritySnapshot.loop_id)
-            .order_by(
-                LoopIntegritySnapshot.loop_id,
-                LoopIntegritySnapshot.check_date.desc(),
-            )
-        )
-        return {str(s.loop_id): s for s in (await db.execute(i_stmt)).scalars().all()}
-
     async def _fetch_confidence():
         c_stmt = select(LoopConfidenceLatest).where(
             LoopConfidenceLatest.loop_id.in_(active_loop_ids)
         )
         return {str(s.loop_id): s for s in (await db.execute(c_stmt)).scalars().all()}
 
-    snap_map, prev_map, integrity_map, confidence_map = await asyncio.gather(
+    snap_map, prev_map, confidence_map = await asyncio.gather(
         _fetch_latest_snap(),
         _fetch_prev_snap(),
-        _fetch_integrity(),
         _fetch_confidence(),
     )
 
@@ -932,20 +918,7 @@ async def _aggregate_degradation_and_data_quality(
         dq_reasons: list[str] = []
         dq_priority = "LOW"
         dq_time: datetime | None = None
-        integrity = integrity_map.get(lid)
         confidence = confidence_map.get(lid)
-
-        if integrity and integrity.status in ("WARNING", "CRITICAL"):
-            if integrity.status == "CRITICAL":
-                dq_priority = "HIGH"
-                dq_reasons.append("数据完整性严重不足")
-            else:
-                dq_priority = _upgrade_priority(dq_priority, "MEDIUM")
-                dq_reasons.append("数据完整性告警")
-            pv_comp = integrity.pv_completeness
-            if pv_comp is not None:
-                dq_reasons.append(f"PV 完整度 {pv_comp:.0%}")
-            dq_time = integrity.ts_end
 
         if confidence and confidence.confidence_level in ("D", "E"):
             dq_priority = _upgrade_priority(dq_priority, "MEDIUM")

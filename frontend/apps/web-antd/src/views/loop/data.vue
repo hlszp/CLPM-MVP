@@ -1,11 +1,11 @@
 <script lang="ts" setup>
 /**
- * 回路数据管理页 — 历史数据导入（Phase 3）
+ * 回路数据导入页 — 历史数据导入（Phase 3）
  *
  * 对齐 data-architecture-optimization-spec §5.2
  * 功能：
  * - 选择回路 + 时间范围，从远端 HTTP API 导入历史数据到本地 TDengine
- * - 冲突策略：overwrite（覆盖）/ skip（跳过）
+ * - 统一按"回路号 + 时间戳"幂等覆盖导入（同 ts 行 UPSERT，落库唯一）
  * - 导入完成后可选触发 KPI 回算
  * - 查看导入任务列表，支持取消和回算
  */
@@ -31,8 +31,6 @@ import {
   Modal,
   Popconfirm,
   Progress,
-  Radio,
-  RadioGroup,
   Select,
   Table,
   Tag,
@@ -44,7 +42,6 @@ import dayjs from 'dayjs';
 import { getLoopListApi } from '#/api/loop';
 import {
   cancelImportApi,
-  checkIntegrityApi,
   deleteImportApi,
   getImportTasksApi,
   startImportApi,
@@ -63,15 +60,13 @@ import { useTableDensity } from '#/composables/use-table-density';
 import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 
-import IntegrityReportDrawer from './components/integrity-report-drawer.vue';
-
 defineOptions({ name: 'LoopData' });
 
 const { RangePicker } = DatePicker;
 
 /**
  * 导入功能角色（与后端 loop_data.py `_IMPORT_ROLES` 对齐：
- * 导入/完整性检查/任务管理端点均 require_roles(ADMIN, IC_ENGINEER, PE_ENGINEER)）
+ * 导入/任务管理端点均 require_roles(ADMIN, IC_ENGINEER, PE_ENGINEER)）
  */
 const IMPORT_ROLES = new Set(['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']);
 
@@ -328,22 +323,14 @@ const filterSummary = computed(() => {
 });
 
 // --- 导入参数 ---
-// 默认时间窗右缘 = 当前时刻 − 5min：后端 overwrite 红线要求 tsEnd ≤ now−5min
-// （防覆盖远端尚未归档的实时行），右缘减 5min 后默认参数即可直接导入，
-// 避免"默认配置提交即 422"的 Poka-Yoke 陷阱（与 schemas/loop_data.py 口径一致）。
+// 默认时间窗 = 近 7 天：系统上线后导入历史数据、快速投入指标计算
 const timeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
   dayjs().subtract(7, 'day'),
-  dayjs().subtract(5, 'minute'),
+  dayjs(),
 ]);
 const interval = ref(1);
-const conflictStrategy = ref<LoopDataApi.ConflictStrategy>('overwrite');
 const triggerBackfill = ref(false);
 const importing = ref(false);
-
-// --- 数据完整性检查 ---
-const integrityChecking = ref(false);
-const integrityDrawerVisible = ref(false);
-const integrityResult = ref<LoopDataApi.IntegrityCheckResult | null>(null);
 
 // --- 任务列表 ---
 const tasks = ref<LoopDataApi.ImportTask[]>([]);
@@ -630,64 +617,7 @@ function handleTaskPageChange(pag: TablePaginationConfig) {
   loadTasks();
 }
 
-// --- 数据完整性检查 ---
-
-/** 检查完整性：loopIds 优先用已选回路，未选则传 undefined 查全部 READY */
-async function handleCheckIntegrity() {
-  if (!timeRange.value || timeRange.value.length !== 2) return;
-  const [rangeStart, rangeEnd] = timeRange.value;
-  if (!rangeStart || !rangeEnd) return;
-
-  const loopIds =
-    selectedLoopIds.value.length > 0 ? selectedLoopIds.value : undefined;
-
-  integrityChecking.value = true;
-  // 先打开 Drawer 显示 loading 占位
-  integrityDrawerVisible.value = true;
-  try {
-    const result = await checkIntegrityApi({
-      loopIds,
-      tsStart: rangeStart.toISOString(),
-      tsEnd: rangeEnd.toISOString(),
-      expectedInterval: interval.value,
-    });
-    integrityResult.value = result;
-  } catch {
-    // 错误已由拦截器透传
-    integrityDrawerVisible.value = false;
-  } finally {
-    integrityChecking.value = false;
-  }
-}
-
-/** 基于完整性检查结果一键补齐（强制 skip 策略，AGENTS.md 红线）
- * skip 策略仅补缺口、不覆盖已有数据，属可逆轻操作：
- * 确认动作由 IntegrityReportDrawer 内 Popconfirm 承载，此处直接执行 */
-async function handleBackfillFromIntegrity(
-  loopIds: string[],
-  tsStart: string,
-  tsEnd: string,
-) {
-  importing.value = true;
-  try {
-    await startImportApi({
-      loopIds,
-      tsStart,
-      tsEnd,
-      interval: interval.value,
-      conflictStrategy: 'skip',
-      triggerBackfill: triggerBackfill.value,
-    });
-    message.success('补齐任务已启动');
-    integrityDrawerVisible.value = false;
-    await loadTasks();
-    syncTaskPolling();
-  } catch {
-    // 错误已由拦截器透传
-  } finally {
-    importing.value = false;
-  }
-}
+// --- 导入执行 ---
 
 /** 开始导入按钮的 Popconfirm 文案（导入为可取消的异步任务，属可逆轻操作） */
 const importConfirmTitle = computed(() => {
@@ -696,7 +626,7 @@ const importConfirmTitle = computed(() => {
     rangeStart && rangeEnd
       ? `，时间范围 ${dayjs(rangeStart).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(rangeEnd).format('YYYY-MM-DD HH:mm')}`
       : '';
-  return `将导入 ${selectedLoopIds.value.length} 个回路的历史数据${rangeText}，冲突策略：${conflictStrategy.value === 'overwrite' ? '覆盖（将覆盖本地已有数据，可从远端重新导入）' : '跳过'}。确认导入？`;
+  return `将导入 ${selectedLoopIds.value.length} 个回路的历史数据${rangeText}，按回路号 + 时间戳幂等覆盖导入（同一时间点仅保留一份数据）。确认导入？`;
 });
 
 async function handleStartImport() {
@@ -721,7 +651,6 @@ async function handleStartImport() {
       tsStart,
       tsEnd,
       interval: interval.value,
-      conflictStrategy: conflictStrategy.value,
       triggerBackfill: triggerBackfill.value,
     });
     message.success('导入任务已启动');
@@ -827,9 +756,9 @@ async function handleRefresh() {
 /** 工具栏帮助 */
 function handleHelp() {
   showPageHelp({
-    title: '数据检查 帮助',
+    title: '数据导入 帮助',
     content:
-      '数据检查页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页；"全选"覆盖当前筛选条件下全部回路，含未显示分页），右侧选择时间范围/采样间隔/冲突策略后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。支持数据完整性检查（按小时分桶列级缺失统计）与一键补齐缺口（skip 策略）。任务列表展示进度/状态，活跃任务自动轮询。',
+      '数据导入页：左侧选择回路（支持按装置/单元树筛选 + 关键字搜索 + 服务端分页；"全选"覆盖当前筛选条件下全部回路，含未显示分页），右侧选择时间范围/采样间隔后从远端 API 导入到本地 TDengine；导入完成后可选触发 KPI 回算。导入按"回路号 + 时间戳"幂等覆盖（同一时间点仅保留一份数据），支持分片、整块覆盖导入。任务列表展示进度/状态，活跃任务自动轮询。',
   });
 }
 
@@ -859,8 +788,8 @@ onMounted(async () => {
 <template>
   <Page>
     <ClpmPageToolbar
-      title="数据检查"
-      subtitle="从远端 API 导入历史数据到本地 TDengine，支持冲突处理与 KPI 回算"
+      title="数据导入"
+      subtitle="从远端 API 导入历史数据到本地 TDengine，幂等覆盖导入与 KPI 回算"
       compact
       :loading="taskLoading"
     >
@@ -1051,24 +980,9 @@ onMounted(async () => {
                 <Select.Option :value="60">1m</Select.Option>
               </Select>
             </Tooltip>
-            <Tooltip title="冲突策略：覆盖（手工优先）/ 跳过（保留已有）">
-              <RadioGroup v-model:value="conflictStrategy">
-                <Radio value="overwrite">覆盖</Radio>
-                <Radio value="skip">跳过</Radio>
-              </RadioGroup>
-            </Tooltip>
             <Tooltip title="导入完成后自动触发KPI回算">
               <Checkbox v-model:checked="triggerBackfill"> 触发KPI </Checkbox>
             </Tooltip>
-            <Button
-              v-permission="IMPORT_ROLES"
-              size="small"
-              :loading="integrityChecking"
-              :disabled="!timeRange || timeRange.length !== 2"
-              @click="handleCheckIntegrity"
-            >
-              检查完整性
-            </Button>
             <Popconfirm
               :title="importConfirmTitle"
               ok-text="开始导入"
@@ -1135,17 +1049,6 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-
-    <!-- 数据完整性检查报告抽屉 -->
-    <IntegrityReportDrawer
-      v-model:visible="integrityDrawerVisible"
-      :result="integrityResult"
-      :loading="integrityChecking"
-      :ts-start="timeRange?.[0]?.toISOString() ?? ''"
-      :ts-end="timeRange?.[1]?.toISOString() ?? ''"
-      :expected-interval="interval"
-      @backfill="handleBackfillFromIntegrity"
-    />
   </Page>
 </template>
 

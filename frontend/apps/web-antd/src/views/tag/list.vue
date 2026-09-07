@@ -62,7 +62,6 @@ import {
 } from '#/api/tag';
 import {
   ClpmDataCanvas,
-  ClpmDataHealthBadges,
   ClpmNumeric,
   ClpmPageToolbar,
   ClpmStandardActions,
@@ -347,8 +346,6 @@ const columns: TableColumnsType = [
   { title: '参数类型', dataIndex: 'tagType', key: 'tagType', width: 100 },
   { title: '所属单元', dataIndex: 'unitName', key: 'unitName', width: 160 },
   { title: '同步时间', dataIndex: 'lastSyncAt', key: 'lastSyncAt', width: 160 },
-  // 数据健康度（方案 C 轻量版）：所属回路 PV 完整度（来自每日巡检快照）
-  { title: '数据健康度', key: 'dataHealth', width: 130, align: 'center' },
   { title: '操作', key: 'action', width: 160, fixed: 'right' },
 ];
 
@@ -1087,21 +1084,6 @@ const { toolbarItems } = usePageToolbar(() => ({
               {{ formatTime(record.lastSyncAt) }}
             </span>
             <span v-else class="text-gray-400">—</span>
-          </template>
-          <!-- 数据健康度（方案 C）：所属回路 PV 完整度 + 完整性状态 -->
-          <template v-else-if="column.key === 'dataHealth'">
-            <ClpmDataHealthBadges
-              compact
-              :health="
-                record.dataHealth
-                  ? {
-                      pvCompleteness: record.dataHealth.loopPvCompleteness,
-                      integrityStatus: record.dataHealth.loopIntegrityStatus,
-                      lastIntegrityCheck: record.dataHealth.lastIntegrityCheck,
-                    }
-                  : null
-              "
-            />
           </template>
           <template v-else-if="column.key === 'action'">
             <div class="flex items-center gap-1">

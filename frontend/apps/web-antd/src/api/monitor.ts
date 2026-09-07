@@ -227,9 +227,6 @@ export namespace MonitorApi {
   export interface DataHealth {
     validRate?: null | number;
     confidenceLevel?: null | string;
-    pvCompleteness?: null | number;
-    overallCompleteness?: null | number;
-    integrityStatus?: null | string;
   }
 
   /** 评分趋势 */

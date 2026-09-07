@@ -23,15 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.handling_stats import _load_subtree_unit_ids, _load_unit_paths
 from app.services.report_stats import _percent_mean
 
-#: 每回路最新完整性巡检（DISTINCT ON，check_date 降序）
-_LATEST_INTEGRITY_SQL = """
-    SELECT DISTINCT ON (lis.loop_id)
-           lis.loop_id, lis.pv_completeness, lis.overall_completeness,
-           lis.status AS integrity_status, lis.check_date
-    FROM loop_integrity_snapshot lis
-    ORDER BY lis.loop_id, lis.check_date DESC
-"""
-
 #: 每回路最新适用性分层（fitness_level 非空的最新快照）
 _LATEST_FITNESS_SQL = """
     SELECT DISTINCT ON (k.loop_id)
@@ -47,13 +38,6 @@ _CONFIDENCE_SQL = """
            lcl.status AS eval_status, lcl.eval_time
     FROM loop_confidence_latest lcl
 """
-
-
-def _percent(v: Any, digits: int = 1) -> float | None:
-    """0~1 完整度比率 → 百分比（None 透传）。"""
-    if v is None:
-        return None
-    return round(float(v) * 100.0, digits)
 
 
 def _good_value(v: Any) -> float | None:
@@ -190,10 +174,7 @@ async def build_data_quality_stats(
             for r in trend_rows
         ]
 
-    # 4) 最新完整性 / fitness / 可信度（全量最新态，与窗口无关）
-    integrity_by_loop = {
-        str(r.loop_id): r for r in (await db.execute(text(_LATEST_INTEGRITY_SQL))).all()
-    }
+    # 4) 最新 fitness / 可信度（全量最新态，与窗口无关）
     fitness_by_loop = {
         str(r.loop_id): r.fitness_level for r in (await db.execute(text(_LATEST_FITNESS_SQL))).all()
     }
@@ -212,7 +193,6 @@ async def build_data_quality_stats(
     for r in loop_rows:
         loop_id = str(r.id)
         kpi = kpi_by_loop.get(loop_id)
-        integ = integrity_by_loop.get(loop_id)
         conf = conf_by_loop.get(loop_id)
         fitness = fitness_by_loop.get(loop_id)
         items.append(
@@ -222,10 +202,6 @@ async def build_data_quality_stats(
                 "loopDescription": r.description,
                 "unitPath": unit_paths.get(r.unit_id, "") if r.unit_id else "",
                 "includeInEvaluation": bool(r.include_in_evaluation),
-                "pvCompleteness": _percent(integ.pv_completeness) if integ else None,
-                "overallCompleteness": _percent(integ.overall_completeness) if integ else None,
-                "integrityStatus": integ.integrity_status if integ else None,
-                "checkedAt": integ.check_date.strftime("%Y-%m-%d") if integ else None,
                 "goodValueRate": _good_value(kpi.avg_good_value) if kpi else None,
                 "confidenceLevel": conf.confidence_level if conf else None,
                 "evalStatus": conf.eval_status if conf else None,

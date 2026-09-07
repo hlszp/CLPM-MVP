@@ -4,7 +4,7 @@
  *
  * 定位（方案 §4.1）：回答 S1 阶段最关键问题——"数据可信吗？哪些回路该补
  * 数据/修 tag？"。只依赖基础模块数据（kpi_snapshot_hourly /
- * loop_integrity_snapshot / loop_confidence_latest），可插拔模块全拔时仍完整。
+ * loop_confidence_latest），可插拔模块全拔时仍完整。
  *
  * 区块：KPI 卡（参评率/数据健康率/INCONCLUSIVE 率）+ 按天双折线（健康率/
  * INCONCLUSIVE 率）+ 可信度 A~E 分布 + 回路明细表（含未参评原因归因）+ 导出。
@@ -172,21 +172,11 @@ const CONF_LABELS: Record<string, string> = {
 const itemColumns = [
   { dataIndex: 'loopTagName', title: '回路', width: 140 },
   { dataIndex: 'unitPath', title: '装置.单元', width: 150 },
-  { key: 'completeness', title: '数据完整性', width: 150 },
   { dataIndex: 'goodValueRate', title: 'PV 好值率', width: 100 },
   { dataIndex: 'confidenceLevel', title: '可信度', width: 80 },
   { dataIndex: 'fitnessLevel', title: '适用性', width: 80 },
   { dataIndex: 'nonEvalReason', title: '未参评原因', width: 130 },
 ];
-
-function fmtCompleteness(record: ReportsApi.DataQualityItem): string {
-  if (record.pvCompleteness == null && record.overallCompleteness == null) {
-    return '—';
-  }
-  return `${record.pvCompleteness?.toFixed(1) ?? '—'}% / ${
-    record.overallCompleteness?.toFixed(1) ?? '—'
-  }%`;
-}
 
 // ===== 导出（明细表 CSV/Excel，对齐报告模块交互） =====
 function handleExport(format: 'csv' | 'excel' = 'csv') {
@@ -202,9 +192,6 @@ function handleExport(format: 'csv' | 'excel' = 'csv') {
     headers: [
       '回路',
       '装置.单元',
-      'PV 完整度',
-      '整体完整度',
-      '巡检状态',
       'PV 好值率',
       '可信度',
       '适用性',
@@ -213,9 +200,6 @@ function handleExport(format: 'csv' | 'excel' = 'csv') {
     rows: items.map((i) => [
       i.loopTagName,
       i.unitPath,
-      i.pvCompleteness == null ? '' : `${i.pvCompleteness.toFixed(1)}%`,
-      i.overallCompleteness == null ? '' : `${i.overallCompleteness.toFixed(1)}%`,
-      i.integrityStatus ?? '',
       i.goodValueRate == null ? '' : `${i.goodValueRate.toFixed(1)}%`,
       i.confidenceLevel ?? '',
       i.fitnessLevel ?? '',
@@ -231,7 +215,7 @@ function handleHelp() {
       <p><b>定位</b>：数据可信度回顾——数据健康吗、哪些回路该补数据/修 tag。可信数据是平台技术护城河的基础。</p>
       <p><b>口径</b>：参评率=纳入评估回路/回路总数；数据健康率=窗口内各回路 PV 好值率的均值；INCONCLUSIVE 率=评估不确结论快照占比。</p>
       <p><b>未参评原因</b>：按优先级归因——未纳入参评 → L0 数据不足 → 评估 INCONCLUSIVE。</p>
-      <p><b>筛选</b>：时间范围影响 KPI 与趋势（默认近 30 天）；明细表的完整度/可信度/适用性为各回路最新状态。</p>
+      <p><b>筛选</b>：时间范围影响 KPI 与趋势（默认近 30 天）；明细表的可信度/适用性为各回路最新状态。</p>
       <p><b>模块停用</b>：本页只依赖基础模块数据，任何模块组合下均完整可用。</p>
     `,
   });
@@ -347,10 +331,7 @@ onMounted(() => {
         size="small"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'completeness'">
-            {{ fmtCompleteness(record as ReportsApi.DataQualityItem) }}
-          </template>
-          <template v-else-if="column.dataIndex === 'nonEvalReason'">
+          <template v-if="column.dataIndex === 'nonEvalReason'">
             <span
               :class="
                 record.nonEvalReason

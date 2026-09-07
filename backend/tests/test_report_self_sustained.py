@@ -514,7 +514,6 @@ def _make_dq_db(
     loop_rows: list[Any] | None = None,
     kpi_rows: list[Any] | None = None,
     trend_rows: list[Any] | None = None,
-    integrity_rows: list[Any] | None = None,
     fitness_rows: list[Any] | None = None,
     confidence_rows: list[Any] | None = None,
     plant_rows: list[Any] | None = None,
@@ -529,8 +528,6 @@ def _make_dq_db(
             captured.append(sql)
         if "WITH RECURSIVE node_tree" in sql:
             return _FakeResult(rows=subtree_rows or [])
-        if "DISTINCT ON (lis.loop_id)" in sql:
-            return _FakeResult(rows=integrity_rows or [])
         if "DISTINCT ON (k.loop_id)" in sql:
             return _FakeResult(rows=fitness_rows or [])
         if "FROM loop_confidence_latest" in sql:
@@ -598,15 +595,6 @@ class TestBuildDataQualityStats:
                     inconclusive_rate=8.0,
                 )
             ],
-            integrity_rows=[
-                SimpleNamespace(
-                    loop_id="l1",
-                    pv_completeness=0.97,
-                    overall_completeness=0.95,
-                    integrity_status="OK",
-                    check_date=datetime(2026, 8, 1),
-                )
-            ],
             fitness_rows=[
                 SimpleNamespace(loop_id="l2", fitness_level="L0"),
                 SimpleNamespace(loop_id="l3", fitness_level="L3"),
@@ -647,7 +635,6 @@ class TestBuildDataQualityStats:
         items = {i["loopTagName"]: i for i in data["items"]}
         # l1：参评 + 非 L0 + SUCCESS → 无未参评原因
         assert items["TIC-101"]["nonEvalReason"] is None
-        assert items["TIC-101"]["pvCompleteness"] == 97.0
         assert items["TIC-101"]["goodValueRate"] == 96.5
         assert items["TIC-101"]["confidenceLevel"] == "A"
         assert items["TIC-101"]["unitPath"] == "氧化装置"
