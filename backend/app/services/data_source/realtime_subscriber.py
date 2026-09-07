@@ -1115,7 +1115,9 @@ class RealtimeSubscriber:
         # 跨片内重连保留——停滞看门狗语义与单连接时期一致（最近一次
         # 真正缓存值的时间，即使发生在上一条连接上）
         state.ping_pending_since = None
-        state.last_ping_sent_at = 0.0
+        # 2026-09-07：初始化为 now（连接建立即视为"刚保活过"，15s 后发首个
+        # ping）——避免 epoch 0 让 recv deadline 算出 0.05s 极短等待抖动。
+        state.last_ping_sent_at = time.time()
         state.last_resubscribe_at = time.time()
 
         # 发送订阅请求（标准 SignalR JSON Hub Protocol: type=1 Invocation）
@@ -1194,16 +1196,19 @@ class RealtimeSubscriber:
         """计算 recv 等待上限：min(看门狗 30s, 距下一维护 deadline)（R09）.
 
         保证即便持续有流量（recv 一直立即返回）也不会跳过维护——每轮循环都
-        执行维护检查；而空闲时不会睡过头错过 deadline（保鲜/停滞）。
+        执行维护检查；而空闲时不会睡过头错过 deadline（心跳保活/保鲜/停滞）。
 
-        2026-09-07 修正：停发 type=6 ping 后，``last_ping_sent_at`` 恒为初始
-        epoch 0、``ping_pending_since`` 恒 None——此前仍用它们算心跳 deadline
-        会把 recv 等待压到 0.05s，每 0.05s cancel 一次 recv，在单连接大消息
-        组装中被 cancel 触发 websockets "cannot reset()" 竞态（反复重连）。
-        心跳 deadline 分支整体移除。
+        2026-09-07 二次修正：恢复 type=6 ping 保活后，重新把 ping deadline
+        （last_ping_sent_at + _PING_KEEPALIVE_INTERVAL）纳入——让 recv 在 15s
+        （而非 30s）就超时进入维护发 ping，真正对齐 signalrcore 的 15s 保活
+        节奏（此前 ping 被 30s recv 超时拖慢，导致 AAS 把连接判半空闲、
+        周期停推业务数据）。连接重置时 last_ping_sent_at 已初始化为 now，
+        无 epoch 0 极短等待问题。
         """
         now = time.time()
         deadline = now + _WATCHDOG_RECV_TIMEOUT
+        if state.last_ping_sent_at > 0:
+            deadline = min(deadline, state.last_ping_sent_at + _PING_KEEPALIVE_INTERVAL)
         try:
             resub_interval = float(settings.SIGNALR_RESUBSCRIBE_INTERVAL)
         except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底

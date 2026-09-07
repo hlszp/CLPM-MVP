@@ -114,7 +114,9 @@ class Settings(BaseSettings):
     SIGNALR_PING_TIMEOUT: int = 60  # 心跳超时（秒），默认 60
     SIGNALR_OPEN_TIMEOUT: int = 15  # 连接建立超时（秒），默认 15
     # 数据停滞看门狗：N 秒无消息主动断开重连（覆盖"WS 活着但上游停推"盲区）
-    SIGNALR_STALL_TIMEOUT_SECONDS: int = 300  # 默认 5 分钟
+    # 2026-09-07：300→60——AAS 单连接全量偶发停推 5 分钟，300s 太久导致
+    # 实时值长停顿；60s 快速重连恢复（配合 15s type=6 ping 保活从根上减少停推）
+    SIGNALR_STALL_TIMEOUT_SECONDS: int = 60  # 默认 60 秒
     # 全量重订阅间隔（秒）：AAS 口径"同一点位只订阅一次"，重订阅仅用于低频信号
     # （SP/MODE/PID）保鲜，禁止高频重发（2026-09-05 曾为 60s 全量 8649 点重发，
     # 疑诱发 AAS 网关会话回收）。刷新自愈检查不受此间隔影响，仍每分钟执行。

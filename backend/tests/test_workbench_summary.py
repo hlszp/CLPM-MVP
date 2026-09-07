@@ -465,8 +465,9 @@ class TestDataFreshness:
 
     def test_阈值复用实时链路配置(self):
         f = _build_data_freshness(None)
-        # 阈值应来自 settings.SIGNALR_STALL_TIMEOUT_SECONDS（默认 300）
-        assert f["thresholdSeconds"] == 300
+        # 阈值应来自 settings.SIGNALR_STALL_TIMEOUT_SECONDS（默认 60，
+        # 2026-09-07 由 300 调低，配合 15s ping 保活快速恢复 AAS 停推）
+        assert f["thresholdSeconds"] == 60
 
 
 # ===========================================================================
