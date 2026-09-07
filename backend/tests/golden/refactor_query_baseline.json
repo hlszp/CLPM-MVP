@@ -1,0 +1,37 @@
+{
+ "loops": {
+  "REF-FIC-101": {
+   "cold_ms": 178.3,
+   "hot_ms_median": 38.63,
+   "hot_ms_p95": 52.14,
+   "peak_mem_kb_1h_query": 2300.2
+  },
+  "REF-LIC-401": {
+   "cold_ms": 171.23,
+   "hot_ms_median": 33.26,
+   "hot_ms_p95": 35.4,
+   "peak_mem_kb_1h_query": 2116.8
+  },
+  "REF-PIC-201": {
+   "cold_ms": 209.26,
+   "hot_ms_median": 37.11,
+   "hot_ms_p95": 85.97,
+   "peak_mem_kb_1h_query": 2386.6
+  },
+  "REF-TIC-301": {
+   "cold_ms": 187.29,
+   "hot_ms_median": 39.9,
+   "hot_ms_p95": 43.26,
+   "peak_mem_kb_1h_query": 2293.3
+  }
+ },
+ "note": "cold=种入后首次读（页缓存可能已热）；hot=同窗重复 5 次取中位/最大",
+ "sql_per_loop_query": {
+  "last": 24,
+  "wide": 24
+ },
+ "window": [
+  "2026-09-06T00:10:00",
+  "2026-09-06T01:09:59"
+ ]
+}
