@@ -174,12 +174,25 @@ _PING_KEEPALIVE_INTERVAL = 15.0
 # Ping 发出后超过该时长未获 Pong 且期间无任何数据 → 判定连接死亡，立即重连
 _PING_DEATH_TIMEOUT = 60.0
 
+
 # 订阅连接池化（2026-09-06，探针实测驱动）：
 # AAS 服务端在单连接大订阅量（8649 位号）下推送扇出停摆（快照后增量推送归零，
 # Pong 仍应答）且连接 ~200s 被回收；≤1000 位号则推送连续（427 条/5min）且连接
 # 稳定。故将活跃 Tag 切分为多条分片连接（每片 ≤_SHARD_SIZE 个位号）并行订阅，
 # 数据统一扇入 _cache_value（Redis 缓存/PubSub/写回），对前端透明。
-_SHARD_SIZE = 1000
+# 2026-09-07：改为环境变量可调（SIGNALR_SHARD_SIZE），用于 zpdev 对照实验——
+# 官方测试页"单连接订 1000 点稳定"而本实现 9 连接并发被网关主动关闭
+# （received 1000 OK），需验证"减少分片数/单连接是否更稳"；此前"单连接大订阅
+# 停摆"的结论可能被当时的 type=6 ping bug 污染。默认维持 1000。
+def _shard_size() -> int:
+    raw = os.getenv("SIGNALR_SHARD_SIZE", "1000")
+    try:
+        n = int(raw)
+    except ValueError:
+        return 1000
+    return max(1, n)
+
+
 _SHARD_CONNECT_STAGGER = 0.5  # 分片建连错峰间隔（秒），避免池启动瞬间 N 连并发
 # 连接池监督循环检查 Tag 集合变化的周期（秒）
 _POOL_TAG_CHECK_INTERVAL = 60.0
@@ -859,13 +872,14 @@ class RealtimeSubscriber:
                 logger.info("无活跃 Tag，等待数据...")
                 await asyncio.sleep(30)
                 continue
-            shards = _split_shards(tag_codes, _SHARD_SIZE)
+            shard_size = _shard_size()
+            shards = _split_shards(tag_codes, shard_size)
             self._subscribed_tags = set(tag_codes)
             logger.info(
                 "订阅连接池启动：%d 个 Tag 切分为 %d 条分片连接（每片 ≤%d）",
                 len(tag_codes),
                 len(shards),
-                _SHARD_SIZE,
+                shard_size,
             )
             await self._run_pool(shards)
             if not self._running:
