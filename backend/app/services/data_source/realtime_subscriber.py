@@ -180,16 +180,17 @@ _PING_DEATH_TIMEOUT = 60.0
 # Pong 仍应答）且连接 ~200s 被回收；≤1000 位号则推送连续（427 条/5min）且连接
 # 稳定。故将活跃 Tag 切分为多条分片连接（每片 ≤_SHARD_SIZE 个位号）并行订阅，
 # 数据统一扇入 _cache_value（Redis 缓存/PubSub/写回），对前端透明。
-# 2026-09-07：改为环境变量可调（SIGNALR_SHARD_SIZE），用于 zpdev 对照实验——
-# 官方测试页"单连接订 1000 点稳定"而本实现 9 连接并发被网关主动关闭
-# （received 1000 OK），需验证"减少分片数/单连接是否更稳"；此前"单连接大订阅
-# 停摆"的结论可能被当时的 type=6 ping bug 污染。默认维持 1000。
+# 2026-09-07：改为环境变量可调（SIGNALR_SHARD_SIZE），默认**单连接全量**。
+# zpdev 对照实验结论：9 连接并发被网关主动关闭（received 1000 OK）而单连接
+# 全量稳定（数据流速一致、网关不再频繁关连接）——此前"单连接大订阅停摆"
+# 的结论被当时的 type=6 ping bug 污染。默认 9000（单连接覆盖 8649 点），
+# 仍可通过 SIGNALR_SHARD_SIZE 退回分片（如 <1000 恢复多连接）排查时用。
 def _shard_size() -> int:
-    raw = os.getenv("SIGNALR_SHARD_SIZE", "1000")
+    raw = os.getenv("SIGNALR_SHARD_SIZE", "9000")
     try:
         n = int(raw)
     except ValueError:
-        return 1000
+        return 9000
     return max(1, n)
 
 
@@ -950,6 +951,19 @@ class RealtimeSubscriber:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
+                # 启动竞态（单连接全量订阅快照洪峰涌入时，recv 循环被 cancel、
+                # websockets 队列非空触发 assert "cannot reset()"）：非连接故障，
+                # 快速重连即可，不指数退避、不按 WARNING 告警（避免噪音放大）。
+                if "cannot reset()" in str(exc):
+                    delay = base_delay
+                    logger.info(
+                        "分片 %d/%d 快照洪峰竞态（cannot reset），%.0fs 后快速重连",
+                        state.index + 1,
+                        state.total,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                 # 连接健康存活超过 60s 才视为稳定连接，重置退避到 base；
                 # 否则先按当前退避等待，再翻倍（base → ×2 → … → max 封顶），
                 # 避免远端 Hub 不可用时固定小间隔重连持续施压
