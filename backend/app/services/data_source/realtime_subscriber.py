@@ -1193,14 +1193,16 @@ class RealtimeSubscriber:
         """计算 recv 等待上限：min(看门狗 30s, 距下一维护 deadline)（R09）.
 
         保证即便持续有流量（recv 一直立即返回）也不会跳过维护——每轮循环都
-        执行维护检查；而空闲时不会睡过头错过 deadline（探活判死/保鲜/停滞）。
+        执行维护检查；而空闲时不会睡过头错过 deadline（保鲜/停滞）。
+
+        2026-09-07 修正：停发 type=6 ping 后，``last_ping_sent_at`` 恒为初始
+        epoch 0、``ping_pending_since`` 恒 None——此前仍用它们算心跳 deadline
+        会把 recv 等待压到 0.05s，每 0.05s cancel 一次 recv，在单连接大消息
+        组装中被 cancel 触发 websockets "cannot reset()" 竞态（反复重连）。
+        心跳 deadline 分支整体移除。
         """
         now = time.time()
         deadline = now + _WATCHDOG_RECV_TIMEOUT
-        if state.ping_pending_since is not None:
-            deadline = min(deadline, state.ping_pending_since + _PING_DEATH_TIMEOUT)
-        else:
-            deadline = min(deadline, state.last_ping_sent_at + _PING_KEEPALIVE_INTERVAL)
         try:
             resub_interval = float(settings.SIGNALR_RESUBSCRIBE_INTERVAL)
         except (TypeError, ValueError):  # pragma: no cover - 配置异常兜底
