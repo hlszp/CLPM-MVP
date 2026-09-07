@@ -200,6 +200,24 @@ class DataPlanner:
         self._pending_l2_key: str | None = None
         # 预加载的 OP 限位 {loop_id: (lower, upper)}，批量计算时注入避免逐回路查 DB
         self._preloaded_op_limits: dict[str, tuple[float | None, float | None]] | None = None
+        # AD02：本请求数据版本（缓存键分量；request-bundles 入口解析一次）
+        self._data_version: str = "legacy-v1"
+
+    async def _resolve_data_version(self) -> str:
+        """解析当前布局/manifest 的数据版本（独立短会话；失败=legacy-v1）.
+
+        版本口径：活跃 manifest 行（布局+时段+scope）摘要——manifest 任何
+        变更（切换/回退）都产生新键；无 manifest 恒 "legacy-v1"（与旧缓存
+        键逐字节一致，legacy 路径零失效）。
+        """
+        try:
+            from app.services.data_source.history_layout_router import (
+                current_layout_version,
+            )
+
+            return await current_layout_version()
+        except Exception:  # noqa: BLE001 — 版本解析失败按 legacy（键保守回退）
+            return "legacy-v1"
 
     # ------------------------------------------------------------------
     # 核心入口
@@ -277,6 +295,10 @@ class DataPlanner:
                     op_lower = float(op_row[0]) if op_row[0] is not None else None
                     op_upper = float(op_row[1]) if op_row[1] is not None else None
 
+        # AD02/I06：数据版本在缓存命中前解析（布局/manifest 变更 → 新键，
+        # 旧布局缓存不再命中；legacy 无 manifest → "legacy-v1" 与旧键一致）
+        self._data_version = await self._resolve_data_version()
+
         if self._bundle_cache is not None and metrics:
             l2_key = L2BundleCache.build_key(
                 loop_id=loop_id,
@@ -287,6 +309,7 @@ class DataPlanner:
                 op_output_lower_limit=op_lower,
                 op_output_upper_limit=op_upper,
                 cfg_version=preprocess_config.config_version,
+                data_version=self._data_version,
             )
             cached_bundles = await self._bundle_cache.get(l2_key)
             if cached_bundles is not None:
@@ -542,6 +565,7 @@ class DataPlanner:
                 quality_policy=self._quality_policy_for(task.tag_group),
                 pre_version=PREPROCESS_VERSION,
                 cfg_version=preprocess_config.config_version,
+                data_version=getattr(self, "_data_version", "legacy-v1"),
             )
             cached = await self._cache.get(cache_key) if self._cache else None
             if cached is not None:
@@ -728,6 +752,8 @@ class DataPlanner:
             # 导致 effective_auto_rate 等子 tagGroup 指标全部 E → 综合评分 INCONCLUSIVE
             loop_confidence_level=base_block.loop_confidence_level,
             loop_valid_rate=base_block.loop_valid_rate,
+            # AD02：派生组继承 BASE 的数据上下文（同一网格/覆盖语义）
+            series_context=getattr(base_block, "series_context", None),
         )
 
     # ------------------------------------------------------------------

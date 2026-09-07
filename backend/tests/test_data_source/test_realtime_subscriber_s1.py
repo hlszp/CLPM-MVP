@@ -256,7 +256,7 @@ async def test_r04_renew_exception_keeps_leadership_until_lease_expiry():
         patch(f"{_SUB}.settings") as mock_s,
     ):
         _leader_settings(mock_s)  # TTL=1s
-        sub._become_leader()
+        await sub._become_leader()
         assert sub._is_leader is True
         assert sub._lease_expires_at is not None and sub._lease_expires_at > time.time()
 
@@ -302,7 +302,7 @@ async def test_r04_four_worker_outage_single_leader_and_unique_takeover():
         # 正常启动：恰一个 Leader
         for w in workers:
             if await w._acquire_leader_lock():
-                w._become_leader()
+                await w._become_leader()
         assert sum(w._is_leader for w in workers) == 1
         leader = next(w for w in workers if w._is_leader)
 

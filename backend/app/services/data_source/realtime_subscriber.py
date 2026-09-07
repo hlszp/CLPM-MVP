@@ -405,6 +405,8 @@ class RealtimeSubscriber:
         self._flush_task: asyncio.Task | None = None
         self._refresh_task: asyncio.Task | None = None
         self._running = False
+        # 测点子表写器（P2-5：storage_mode=shadow/point 时启用，同一事件流）
+        self._point_writer = None
         self._subscribed_tags: set[str] = set()
         self._invocation_counter: int = 0  # SignalR invocationId 计数器
         self._buffer: dict[
@@ -523,6 +525,42 @@ class RealtimeSubscriber:
         """是否启用实时数据写回本地 TDengine 宽表。"""
         return settings.REALTIME_WRITEBACK_ENABLED
 
+    async def _sync_point_writer(self) -> None:
+        """按 sys_config 写入布局启停 PointHistoryWriter（P2-5 同流双写）.
+
+        - legacy：不启动（零开销）；
+        - shadow/point：writer 消费**同一** ``_cache_value`` 事件流
+          （不新建第二订阅者），宽表路径是否继续由 mode 决定（point 停旧写
+          属迁移终态，需先确认回退覆盖——本阶段 shadow 为主）。
+        周期重评：由 ``_refresh_loop`` 每分钟节拍调用，sys_config 改动即时生效。
+        """
+        from app.services.data_source.history_layout import get_storage_mode
+
+        mode = "legacy"
+        try:
+            from app.core.db import AsyncSessionLocal
+
+            async def _read_mode() -> str:
+                async with AsyncSessionLocal() as db:
+                    return await get_storage_mode(db)
+
+            # 无 DB 环境（单测/PG 不可达）不得挂起：短超时后按现状保留
+            mode = await asyncio.wait_for(_read_mode(), timeout=5.0)
+        except Exception as exc:  # noqa: BLE001 — DB 不可达沿用当前状态
+            logger.warning("读取历史写入布局失败（沿用现状）: %s", exc)
+            return
+        want_writer = mode in ("shadow", "point")
+        if want_writer and self._point_writer is None:
+            from app.services.data_source.point_history_writer import PointHistoryWriter
+
+            self._point_writer = PointHistoryWriter()
+            await self._point_writer.start()
+            logger.info("PointHistoryWriter 已启动（storage_mode=%s）", mode)
+        elif not want_writer and self._point_writer is not None:
+            await self._point_writer.stop()
+            self._point_writer = None
+            logger.info("PointHistoryWriter 已停止（storage_mode=%s）", mode)
+
     async def start(self) -> None:
         """启动订阅后台任务."""
         if self._running:
@@ -542,7 +580,7 @@ class RealtimeSubscriber:
         # 抢到锁立即启动订阅任务；未抢到进入待命，由 _leader_loop 周期抢锁接管
         self._leader_token = f"{socket.gethostname()}:{os.getpid()}:{time.monotonic_ns()}"
         if await self._acquire_leader_lock():
-            self._become_leader()
+            await self._become_leader()
         else:
             logger.info("实时数据订阅待命：Leader 锁被其他 worker 进程持有，周期抢锁中")
         self._leader_task = asyncio.create_task(self._leader_loop())
@@ -592,6 +630,10 @@ class RealtimeSubscriber:
             pass
         # 停止前 flush 剩余数据（分片连接由 _run_pool 的 finally 统一收尾）
         await self._flush_buffer()
+        # 点历史写器优雅停机（终态 flush + 覆盖登记；writer 停止不影响宽表路径）
+        if self._point_writer is not None:
+            await self._point_writer.stop()
+            self._point_writer = None
         logger.info("实时数据订阅已停止")
 
     def _on_main_task_done(self, task: asyncio.Task) -> None:
@@ -617,9 +659,14 @@ class RealtimeSubscriber:
     # 多 worker 进程订阅单例（Redis Leader 锁）
     # ------------------------------------------------------------------
 
-    def _become_leader(self) -> None:
-        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新 / 控制频道监听 / 显示批量发送任务."""
+    async def _become_leader(self) -> None:
+        """持有 Leader 锁：启动订阅主任务 / flush / 周期刷新 / 控制频道监听 / 显示批量发送任务
+        及点历史写器（storage_mode=shadow/point 时；写者跟随 Leader，非 Leader 进程不写）."""
         self._is_leader = True
+        try:
+            await self._sync_point_writer()
+        except Exception as exc:  # noqa: BLE001 — writer 启动失败不影响订阅主链路
+            logger.warning("PointHistoryWriter 启动失败（legacy 行为不受影响）: %s", exc)
         # R04：接管即建立租约（正常路径 acquire 成功时已设；此处兜底防直接调用
         # 造成无租约 Leader——过期检查依赖该值）
         if self._lease_expires_at is None:
@@ -643,8 +690,14 @@ class RealtimeSubscriber:
         logger.warning("本进程已接管实时数据订阅（Leader）: token=%s", self._leader_token)
 
     async def _resign_leader(self) -> None:
-        """失去/释放 Leader 锁：取消订阅主任务/flush/周期刷新/控制监听/显示批量发送任务（幂等）."""
+        """失去/释放 Leader 锁：取消各后台任务及点历史写器（幂等）."""
         self._is_leader = False
+        if self._point_writer is not None:
+            try:
+                await self._point_writer.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("PointHistoryWriter 停止异常: %s", exc)
+            self._point_writer = None
         for attr in (
             "_task",
             "_flush_task",
@@ -708,7 +761,7 @@ class RealtimeSubscriber:
                 await self._resign_leader()
                 return
         elif await self._acquire_leader_lock():
-            self._become_leader()
+            await self._become_leader()
 
     async def _acquire_leader_lock(self) -> bool:
         """SETNX 抢占订阅 Leader 锁（多 worker 进程防重复订阅）.
@@ -1278,6 +1331,10 @@ class RealtimeSubscriber:
                 await asyncio.sleep(_SIGNALR_REFRESH_INTERVAL)
                 if not self._running:
                     continue
+                # 写入布局周期重评（sys_config 改动 → PointHistoryWriter 启停）；
+                # 仅 Leader 评估（非 Leader 由接管路径启动 writer）
+                if self._is_leader:
+                    await self._sync_point_writer()
                 # --- 自愈 1：主任务已死 → 重建 ---
                 if self._task is None or self._task.done():
                     logger.warning("自愈：实时订阅主任务已退出，重建连接池")
@@ -1535,6 +1592,12 @@ class RealtimeSubscriber:
             self._incr("points_invalid")
             stored_value = None
         quality = parse_mode_int(raw_quality)
+
+        # 测点子表事件流（P2-5）：同一消息同步转投 writer（shadow/point 启用时）。
+        # 注意转投用**原始** value/quality/collectTime（未经角色合并/last-known
+        # 覆盖）——同 tick 多事件、纯质量变化、合法迟到都在此保留（T02/V05/V07）。
+        if self._point_writer is not None:
+            self._point_writer.submit_raw(tag_code, raw_value, raw_quality, collect_time)
 
         # ③ 显示快照进入待发字典（同步段；有界 ≤ 活跃 tag 数，每 tag 仅存最新值）。
         # 载荷在既有 4 字段基础上增量加入可选 valueValid/recvAt/stale（S3 消费侧

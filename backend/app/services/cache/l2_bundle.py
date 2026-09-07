@@ -86,6 +86,7 @@ class L2BundleCache:
         op_output_lower_limit: float | None = None,
         op_output_upper_limit: float | None = None,
         cfg_version: str = "v1",
+        data_version: str = "legacy-v1",
     ) -> str:
         """生成 L2 缓存 Key.
 
@@ -106,9 +107,12 @@ class L2BundleCache:
         metrics_hash = _metrics_hash(metrics)
         window_hash = _time_window_hash(time_window_start, time_window_end)
         op_limits_hash = _op_limits_hash(op_output_lower_limit, op_output_upper_limit)
+        # AD02：仅非 legacy 追加数据版本分量——legacy 键与历史缓存逐字节一致
+        # （部署零失效）；point/mixed 布局携带版本，不命中旧无上下文缓存
+        version_part = "" if data_version == "legacy-v1" else f":{data_version}"
         return (
             f"{_KEY_PREFIX}:{loop_id}:{metrics_hash}:{window_hash}:"
-            f"{control_type}:{op_limits_hash}:{cfg_version}"
+            f"{control_type}:{op_limits_hash}:{cfg_version}{version_part}"
         )
 
     # ------------------------------------------------------------------
@@ -312,6 +316,12 @@ def _data_block_to_dict(block: DataBlock) -> dict[str, Any]:
         # 可信度统一 Phase 2：回路级可信度字段必须纳入序列化（与 L1 一致）
         "loop_confidence_level": block.loop_confidence_level,
         "loop_valid_rate": block.loop_valid_rate,
+        # I06 修复：control_type 原本未序列化（L1/L2 往返 FAST→None，计算器
+        # 据此选响应类别参数）；AD02：series_context 上下文一并往返
+        "control_type": block.control_type,
+        "series_context": (
+            block.series_context.to_dict() if block.series_context is not None else None
+        ),
     }
 
 
@@ -358,6 +368,8 @@ def _data_block_from_dict(data: dict[str, Any]) -> DataBlock:
         point_count=data.get("point_count", len(timestamps)),
         loop_confidence_level=loop_confidence_level,
         loop_valid_rate=loop_valid_rate,
+        control_type=data.get("control_type"),
+        series_context=_series_context_from_dict(data.get("series_context")),
     )
 
 
@@ -396,6 +408,7 @@ def _lineage_to_dict(lineage: DataLineage) -> dict[str, Any]:
         "aggregation_policy": lineage.aggregation_policy,
         "quality_policy": lineage.quality_policy,
         "tag_group": lineage.tag_group,
+        "dataset_ref": getattr(lineage, "dataset_ref", None),
         "data_block_ids": list(lineage.data_block_ids),
         "valid_rate": lineage.valid_rate,
         "data_policy_version": lineage.data_policy_version,
@@ -414,6 +427,7 @@ def _lineage_from_dict(data: dict[str, Any]) -> DataLineage:
         valid_rate=data.get("valid_rate", 0.0),
         data_policy_version=data.get("data_policy_version", "pre_v1"),
         algorithm_version=data.get("algorithm_version", "KPI_CALC_v2.0"),
+        dataset_ref=data.get("dataset_ref"),
     )
 
 
@@ -449,3 +463,15 @@ def _op_limits_hash(lower: float | None, upper: float | None) -> str:
 
 
 __all__ = ["L2BundleCache"]
+
+
+def _series_context_from_dict(data):
+    """AD02：series_context 反序列化（None/旧缓存 → None=legacy 兼容）。"""
+    if not data:
+        return None
+    try:
+        from app.contracts.series_context import SeriesContext
+
+        return SeriesContext.from_dict(data)
+    except Exception:  # noqa: BLE001 — 旧/坏上下文按缺失处理（point 路径拒绝）
+        return None

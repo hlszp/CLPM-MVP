@@ -1157,6 +1157,18 @@ def _resolve_op_pv_ranges(
     return (0.0, 100.0), (0.0, 100.0)
 
 
+def _point_context_from_bundles(bundles: list[MetricDataBundle]) -> Any:
+    """AD03：从 BASE bundle 提取 point 上下文（无/legacy → None）。"""
+    for bundle in bundles:
+        block = bundle.data_block
+        if block is not None and block.tag_group == TagGroup.BASE.value:
+            ctx = getattr(block, "series_context", None)
+            if ctx is not None and getattr(ctx, "is_point", False):
+                return ctx
+            return None
+    return None
+
+
 def _derive_expected_points(
     bundles: list[MetricDataBundle],
     ts_start: datetime,
@@ -1334,6 +1346,15 @@ async def _calculate_loop_kpi(
         expected_interval_s=_get_threshold(control_type).base_sampling_freq,
     )
     base_valid_rate = _compute_loop_valid_rate_from_bundles(bundles)
+
+    # AD03/I05（§4.2）：point 网格门禁口径——expected=N（上下文期望格点数，
+    # 不用名义间隔推算）；point_count 投影为"可用有效样本"（核心角色交集
+    # 有效数），不得传 N 个含未知占位的行数；gapRatio 由此代表不可用样本
+    # 比例。legacy 路径实参完全不变。
+    _point_ctx = _point_context_from_bundles(bundles)
+    if _point_ctx is not None:
+        expected_points = int(_point_ctx.expected_slots)
+        base_point_count = int(round(base_valid_rate * expected_points)) if base_valid_rate else 0
 
     # 构造虚拟 CONFIG bundle（提供 control_type / 手动理想稳态时间信号给计算器）
     config_bundle = _build_config_bundle(str(loop.id), control_type, loop.ideal_settling_time)
@@ -1737,6 +1758,18 @@ def _compute_kpis_three_layer(
             continue
         calc_code = _DB_TO_CALCULATOR_METRIC_CODE.get(db_code, db_code)
         try:
+            # AD03/I04：缺口敏感动态指标守卫（point 非连续 mask → INCONCLUSIVE，
+            # 不把相隔 N 秒的样本当作相邻一步；legacy 不受影响）
+            from app.services.preprocessing.input_guards import (
+                gap_guard_verdict,
+                make_gap_guard_result,
+            )
+
+            allowed, max_gap = gap_guard_verdict(calc_code, bundle)
+            if not allowed:
+                metric_results[calc_code] = make_gap_guard_result(bundle, max_gap)
+                logger.info("Layer1 指标 %s 缺口守卫拦截（最大索引跳变 %d）", calc_code, max_gap)
+                continue
             calculator = get_calculator(calc_code)
             result = calculator.calculate(bundle)
             metric_results[calc_code] = result
@@ -1771,6 +1804,16 @@ def _compute_kpis_three_layer(
             continue
 
         try:
+            from app.services.preprocessing.input_guards import (
+                gap_guard_verdict,
+                make_gap_guard_result,
+            )
+
+            allowed, max_gap = gap_guard_verdict(calc_code, bundle)
+            if not allowed:
+                metric_results[calc_code] = make_gap_guard_result(bundle, max_gap)
+                logger.info("Layer2 指标 %s 缺口守卫拦截（最大索引跳变 %d）", calc_code, max_gap)
+                continue
             calculator = get_calculator(calc_code)
             calculator = calculator.with_dependencies(deps)
             result = calculator.calculate(bundle)

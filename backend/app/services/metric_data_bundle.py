@@ -114,6 +114,7 @@ class MetricDataBundleAssembler:
         aggregation_policy = _safe_get(requirement, "aggregation_policy") or "LAST"
         quality_policy = _safe_get(requirement, "quality_policy") or "KEEP_ALL_WITH_VALIDITY"
 
+        _ctx = getattr(data_block, "series_context", None)
         lineage = DataLineage(
             sampling_freq=data_block.sampling_freq,
             aggregation_policy=aggregation_policy,
@@ -123,6 +124,8 @@ class MetricDataBundleAssembler:
             valid_rate=data_block.quality_summary.valid_rate,
             data_policy_version=data_block.preprocess_version,
             algorithm_version=_ALGORITHM_VERSION,
+            # AD07：数据身份引用随血缘落盘（与算法版本分开；legacy=None 兼容）
+            dataset_ref=(getattr(_ctx, "dataset_ref", None) if _ctx is not None else None),
         )
         return lineage
 

@@ -1,0 +1,444 @@
+{
+ "metric_codes": [
+  "accuracy_rate",
+  "auto_mode_rate",
+  "effective_auto_rate",
+  "error_mean",
+  "error_std",
+  "fast_rate",
+  "good_value_rate",
+  "ideal_settling_time",
+  "instrument_fault_rate",
+  "op_mean",
+  "op_std",
+  "oscillation_amplitude",
+  "oscillation_rate",
+  "output_trip_index",
+  "pv_mean",
+  "pv_std",
+  "saturation_rate",
+  "setpoint_crossing_count",
+  "settling_time",
+  "sp_mean",
+  "sp_std",
+  "stability_rate",
+  "stiction_index",
+  "valve_linearity",
+  "valve_nonlinearity",
+  "valve_operating_range"
+ ],
+ "results": {
+  "REF-FIC-101": {
+   "accuracy_rate": {
+    "confidence": "A",
+    "value": 75.31
+   },
+   "auto_mode_rate": {
+    "confidence": "A",
+    "value": 83.33
+   },
+   "effective_auto_rate": {
+    "confidence": "A",
+    "value": 83.33
+   },
+   "error_mean": {
+    "confidence": "A",
+    "value": -4.97
+   },
+   "error_std": {
+    "confidence": "A",
+    "value": 5.57
+   },
+   "fast_rate": {
+    "confidence": "E",
+    "value": null
+   },
+   "good_value_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "instrument_fault_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "op_mean": {
+    "confidence": "A",
+    "value": 59.93
+   },
+   "op_std": {
+    "confidence": "A",
+    "value": 11.14
+   },
+   "oscillation_amplitude": {
+    "confidence": "A",
+    "value": 5.88
+   },
+   "oscillation_rate": {
+    "confidence": "A",
+    "value": 12.69
+   },
+   "output_trip_index": {
+    "confidence": "A",
+    "value": 0.007436
+   },
+   "pv_mean": {
+    "confidence": "A",
+    "value": 50.03
+   },
+   "pv_std": {
+    "confidence": "A",
+    "value": 1.8
+   },
+   "saturation_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "setpoint_crossing_count": {
+    "confidence": "A",
+    "value": 130.0
+   },
+   "settling_time": {
+    "confidence": "A",
+    "value": 927.0
+   },
+   "sp_mean": {
+    "confidence": "A",
+    "value": 55.0
+   },
+   "sp_std": {
+    "confidence": "A",
+    "value": 5.0
+   },
+   "stability_rate": {
+    "confidence": "A",
+    "value": 32.83
+   },
+   "stiction_index": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "valve_linearity": {
+    "confidence": "A",
+    "value": 0.46
+   },
+   "valve_nonlinearity": {
+    "confidence": "A",
+    "value": 0.54
+   },
+   "valve_operating_range": {
+    "confidence": "A",
+    "value": 43.27
+   }
+  },
+  "REF-LIC-401": {
+   "accuracy_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "auto_mode_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "effective_auto_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "error_mean": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "error_std": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "fast_rate": {
+    "confidence": "E",
+    "value": null
+   },
+   "good_value_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "instrument_fault_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "op_mean": {
+    "confidence": "A",
+    "value": 40.0
+   },
+   "op_std": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "oscillation_amplitude": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "oscillation_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "output_trip_index": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "pv_mean": {
+    "confidence": "A",
+    "value": 50.0
+   },
+   "pv_std": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "saturation_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "setpoint_crossing_count": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "settling_time": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "sp_mean": {
+    "confidence": "A",
+    "value": 50.0
+   },
+   "sp_std": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "stability_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "stiction_index": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "valve_linearity": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "valve_nonlinearity": {
+    "confidence": "A",
+    "value": 1.0
+   },
+   "valve_operating_range": {
+    "confidence": "A",
+    "value": 0.0
+   }
+  },
+  "REF-PIC-201": {
+   "accuracy_rate": {
+    "confidence": "A",
+    "value": 69.22
+   },
+   "auto_mode_rate": {
+    "confidence": "A",
+    "value": 83.33
+   },
+   "effective_auto_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "error_mean": {
+    "confidence": "A",
+    "value": -4.95
+   },
+   "error_std": {
+    "confidence": "A",
+    "value": 5.69
+   },
+   "fast_rate": {
+    "confidence": "E",
+    "value": null
+   },
+   "good_value_rate": {
+    "confidence": "A",
+    "value": 100.0
+   },
+   "instrument_fault_rate": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "op_mean": {
+    "confidence": "A",
+    "value": 1.5
+   },
+   "op_std": {
+    "confidence": "A",
+    "value": 0.28
+   },
+   "oscillation_amplitude": {
+    "confidence": "A",
+    "value": 5.86
+   },
+   "oscillation_rate": {
+    "confidence": "A",
+    "value": 47.63
+   },
+   "output_trip_index": {
+    "confidence": "A",
+    "value": 0.000183
+   },
+   "pv_mean": {
+    "confidence": "A",
+    "value": 50.05
+   },
+   "pv_std": {
+    "confidence": "A",
+    "value": 1.79
+   },
+   "saturation_rate": {
+    "confidence": "A",
+    "value": 83.33
+   },
+   "setpoint_crossing_count": {
+    "confidence": "A",
+    "value": 139.0
+   },
+   "settling_time": {
+    "confidence": "A",
+    "value": 942.0
+   },
+   "sp_mean": {
+    "confidence": "A",
+    "value": 55.0
+   },
+   "sp_std": {
+    "confidence": "A",
+    "value": 5.0
+   },
+   "stability_rate": {
+    "confidence": "A",
+    "value": 32.16
+   },
+   "stiction_index": {
+    "confidence": "A",
+    "value": 0.0
+   },
+   "valve_linearity": {
+    "confidence": "A",
+    "value": 0.52
+   },
+   "valve_nonlinearity": {
+    "confidence": "A",
+    "value": 0.48
+   },
+   "valve_operating_range": {
+    "confidence": "A",
+    "value": 0.97
+   }
+  },
+  "REF-TIC-301": {
+   "accuracy_rate": {
+    "confidence": "E",
+    "value": 66.65
+   },
+   "auto_mode_rate": {
+    "confidence": "E",
+    "value": 83.33
+   },
+   "effective_auto_rate": {
+    "confidence": "E",
+    "value": null
+   },
+   "error_mean": {
+    "confidence": "E",
+    "value": -5.27
+   },
+   "error_std": {
+    "confidence": "E",
+    "value": 5.14
+   },
+   "fast_rate": {
+    "confidence": "E",
+    "value": null
+   },
+   "good_value_rate": {
+    "confidence": "E",
+    "value": 100.0
+   },
+   "instrument_fault_rate": {
+    "confidence": "E",
+    "value": 0.0
+   },
+   "op_mean": {
+    "confidence": "E",
+    "value": null
+   },
+   "op_std": {
+    "confidence": "E",
+    "value": null
+   },
+   "oscillation_amplitude": {
+    "confidence": "E",
+    "value": 5.78
+   },
+   "oscillation_rate": {
+    "confidence": "E",
+    "value": 23.3
+   },
+   "output_trip_index": {
+    "confidence": "E",
+    "value": null
+   },
+   "pv_mean": {
+    "confidence": "E",
+    "value": 49.73
+   },
+   "pv_std": {
+    "confidence": "E",
+    "value": 1.75
+   },
+   "saturation_rate": {
+    "confidence": "E",
+    "value": null
+   },
+   "setpoint_crossing_count": {
+    "confidence": "E",
+    "value": 114.0
+   },
+   "settling_time": {
+    "confidence": "E",
+    "value": 727.0
+   },
+   "sp_mean": {
+    "confidence": "E",
+    "value": 55.0
+   },
+   "sp_std": {
+    "confidence": "E",
+    "value": 5.0
+   },
+   "stability_rate": {
+    "confidence": "E",
+    "value": 35.77
+   },
+   "stiction_index": {
+    "confidence": "E",
+    "value": null
+   },
+   "valve_linearity": {
+    "confidence": "E",
+    "value": null
+   },
+   "valve_nonlinearity": {
+    "confidence": "E",
+    "value": null
+   },
+   "valve_operating_range": {
+    "confidence": "E",
+    "value": null
+   }
+  }
+ },
+ "window": [
+  "2026-09-06T00:10:00",
+  "2026-09-06T01:09:59"
+ ]
+}

@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     SIGNALR_RESUBSCRIBE_INTERVAL: int = 1800  # 默认 30 分钟
     # 是否将实时数据写回本地 TDengine 宽表（数据架构优化 Phase 1）
     REALTIME_WRITEBACK_ENABLED: bool = True
+    # 本地历史写入布局（测点子表重构）：legacy=只写宽表（默认，现状）/
+    # shadow=宽表+点表双写/point=只写点表。sys_config history.storage_mode
+    # 为真相源，本项仅启动兜底；读取路由由 history_layout_manifest 决定
+    HISTORY_STORAGE_MODE: str = "legacy"
     # 多 worker 进程订阅单例：Leader 锁 TTL（秒），持锁进程每 TTL/3 续期；
     # 持锁进程崩溃/退出后其他 worker 在 TTL 内接管（uvicorn --workers 4 防护）
     SUBSCRIBER_LEADER_LOCK_TTL_SECONDS: int = 30

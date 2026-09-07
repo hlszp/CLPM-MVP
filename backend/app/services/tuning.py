@@ -424,6 +424,14 @@ async def _fetch_preprocessed_signals(
                 mode_raw, ts_mode, dst_timestamps=pvop_block.timestamps
             )
 
+    # ---- AD05（I01/I02）：point 逻辑宽表路径——同轴直通 + 有效连续段 ----
+    # point 数据已是 1s 对齐网格：SP/MODE **不再二次重采样**（重采样会把
+    # 未知保持/外推成合法值，I02）；辨识输入按逐点有效性选取实际连续片段，
+    # PV/OP/SP/MODE/时间**同一索引范围**切片（I01），不拼接两段。
+    point_ctx = getattr(pvop_block, "series_context", None) if pvop_block is not None else None
+    if point_ctx is not None and getattr(point_ctx, "is_point", False):
+        return _point_axis_signals(pvop_block, base_block, mode_block)
+
     return {
         "pv": pv,
         "op": op,
@@ -435,6 +443,116 @@ async def _fetch_preprocessed_signals(
         "resample_quality": resample_quality,
         "mode_resample_quality": mode_resample_quality,
     }
+
+
+def _point_axis_signals(
+    pvop_block,
+    base_block,
+    mode_block,
+) -> dict[str, Any]:
+    """point 路径取数桥接（AD05）：同轴直通 + 最长有效连续段选取.
+
+    规则（补充方案 §4.3 整定链）：
+    - PV/OP 取 PVOP_HF；SP/MODE 取 BASE/MODE_HF（point 各组共享同一 1s
+      网格，直接复制，不插值/不零阶保持）；
+    - 逐槽有效性 = 核心角色（pv∧op∧sp[有则]∧mode[有则]）validity 交集 ∧
+      数值有限（无效有限值不进辨识，I01）；
+    - 选**最长连续有效段**（沿用既有最长有效段规则；硬缺口/坏质量/未知
+      切断段，不跨段拼接）；全窗有效率与选段有效率分开记录，对外可信度
+      口径=全窗有效率（不以选段 100% 覆盖原窗口，I01）；
+    - MODE 未知（None）切断段（不得当合法手动状态）；
+    - 无可用段 → 返回空序列（上层既有 ERR_TUNING_DATA_INSUFFICIENT 路径）。
+    """
+    pv = list(pvop_block.signals.get("pv", []))
+    op = list(pvop_block.signals.get("op", []))
+    n = min(len(pv), len(op), len(pvop_block.timestamps))
+
+    # 同轴判定：BASE 与 PVOP 时间戳一致（point 网格共享；不一致则该窗口
+    # 不是纯 point 数据——保守按 legacy 已处理结果返回空由上层判定不足）
+    sp: list[Any] = []
+    mode: list[Any] = []
+    if base_block is not None and len(base_block.timestamps) == n:
+        sp = list(base_block.signals.get("sp", []))
+    if mode_block is not None and len(mode_block.timestamps) == n:
+        mode = list(mode_block.signals.get("mode", []))
+
+    # 逐槽有效性：PVOP validity（pv/op）∧ BASE validity（sp/mode 有则）
+    def _valid_arr(block, key):
+        if block is None:
+            return None
+        arr = block.validity.get(key)
+        return arr if arr is not None and len(arr) >= n else None
+
+    pv_v = _valid_arr(pvop_block, "pv_valid")
+    op_v = _valid_arr(pvop_block, "op_valid")
+    sp_v = _valid_arr(base_block, "sp_valid") if sp else None
+    mode_v = _valid_arr(mode_block, "mode_valid") if mode else None
+
+    ok = [False] * n
+    for i in range(n):
+        pv_val, op_val = pv[i], op[i]
+        if pv_val is None or op_val is None:
+            continue
+        if pv_v is not None and not pv_v[i]:
+            continue
+        if op_v is not None and not op_v[i]:
+            continue
+        if sp:
+            sv = sp[i] if i < len(sp) else None
+            if sv is None or (sp_v is not None and not sp_v[i]):
+                continue
+        if mode:
+            mv = mode[i] if i < len(mode) else None
+            if mv is None or (mode_v is not None and not mode_v[i]):
+                continue
+        ok[i] = True
+
+    # 最长连续有效段（等间隔 1s；不拼接）
+    best_start, best_len = 0, 0
+    i = 0
+    while i < n:
+        if ok[i]:
+            j = i
+            while j < n and ok[j]:
+                j += 1
+            if j - i > best_len:
+                best_start, best_len = i, j - i
+            i = j
+        else:
+            i += 1
+
+    full_valid_count = sum(1 for v in ok if v)
+    full_valid_rate = (full_valid_count / n) if n else 0.0
+    segment_rate = (best_len / n) if n else 0.0
+
+    ts_full = _to_rel_seconds(list(pvop_block.timestamps), pvop_block.timestamps[0]) if n else []
+    ctx = pvop_block.series_context
+    seg = {
+        "pv": pv[best_start : best_start + best_len],
+        "op": op[best_start : best_start + best_len],
+        "sp": ([float(v) for v in sp[best_start : best_start + best_len]] if sp else []),
+        "mode": ([int(v) for v in mode[best_start : best_start + best_len]] if mode else []),
+        "timestamps": ts_full[best_start : best_start + best_len],
+        # 对外可信度口径=全窗有效率（选段比例另行记录，不覆盖原窗口）
+        "valid_rate": full_valid_rate,
+        "sampling_freq": 1.0,
+        "resample_quality": {},
+        "mode_resample_quality": {},
+        # AD05 证据字段（响应/日志可审计；不改变既有消费键）
+        "point_axis": {
+            "full_window_valid_rate": full_valid_rate,
+            "segment_valid_rate": segment_rate,
+            "segment_index_start": best_start,
+            "segment_length": best_len,
+            "grid_slots": n,
+            "unknown_reasons": dict(ctx.unknown_reasons) if ctx is not None else {},
+            "source_coverage_ratio": (ctx.source_coverage_ratio("pv") if ctx is not None else None),
+            "interpretation_consistent": (
+                ctx.interpretation_consistent if ctx is not None else None
+            ),
+        },
+    }
+    return seg
 
 
 def _infer_ts_from_grid(timestamps: list[float], sampling_freq: float) -> float:
@@ -674,6 +792,19 @@ async def identify_model_from_history(
 
     # 通过 DataPlanner 获取预处理后时序
     signals = await _fetch_preprocessed_signals(db, loop_id, start_time, end_time, control_type_str)
+
+    # AD06/I07：跨解释配置边界（改绑/量程单位候选变化）的窗口——无依据用
+    # 当前量程解释旧值，动态辨识拒绝（沿用既有数据不足出口，原因显式）
+    _pctx = signals.get("point_axis") or {}
+    if _pctx and _pctx.get("interpretation_consistent") is False:
+        raise BizError(
+            code="ERR_TUNING_DATA_INSUFFICIENT",
+            message=(
+                "窗口跨改绑/解释配置边界（point 上下文 interpretation_consistent="
+                "False），不能用当前量程/单位解释旧值；请按边界分段发起辨识"
+            ),
+            status_code=400,
+        )
 
     pv = signals["pv"]
     op = signals["op"]

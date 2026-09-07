@@ -43,6 +43,14 @@ from app.models.node_kpi import (
     KpiNodeSnapshotMonthly,
 )
 from app.models.plant_node import PlantNode
+from app.models.point_history import (  # tag-timeseries-refactor P1
+    HistoryCoverageSegment,
+    HistoryLayoutManifest,
+    HistoryPointConflict,
+    HistoryWriteBatch,
+    LoopTagBindingHistory,
+    PointStateAnchor,
+)
 from app.models.process_model_version import ProcessModelVersion
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
@@ -67,6 +75,12 @@ __all__ = [
     "SysDictItem",
     "SysUser",
     "PlantNode",
+    "HistoryCoverageSegment",  # tag-timeseries-refactor P1 覆盖区间
+    "HistoryLayoutManifest",  # 布局清单
+    "HistoryPointConflict",  # 同 ts 冲突登记
+    "HistoryWriteBatch",  # 写入批次生命周期
+    "LoopTagBindingHistory",  # 绑定历史
+    "PointStateAnchor",  # 状态锚点
     "ProcessModelVersion",
     "LoopLedger",
     "LoopActionItem",

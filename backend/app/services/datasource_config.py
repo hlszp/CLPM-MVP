@@ -381,6 +381,16 @@ async def preload_datasource_config(db: AsyncSession) -> None:
         if value is not None:
             setattr(settings, attr, value)
 
+    # 本地历史写入布局（测点子表重构）：sys_config 真相源同步到 settings 内存，
+    # 使 Excel 导入等非 lifespan 直连路径（含 Celery worker 预载）按同一开关
+    # 决定是否推进绑定历史
+    try:
+        from app.services.data_source.history_layout import get_storage_mode
+
+        settings.HISTORY_STORAGE_MODE = await get_storage_mode(db)
+    except Exception:  # noqa: BLE001 — 布局预载失败保持 settings 兜底值
+        pass
+
 
 async def get_datasource_health(db: AsyncSession) -> dict[str, Any]:
     """获取数据链路健康状态（P1-05：工作台常驻卡片，IC_ENGINEER+ 可查看）。

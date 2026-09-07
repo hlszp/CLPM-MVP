@@ -1,0 +1,90 @@
+# =============================================================================
+# 测点子表重构（codex/tag-timeseries-refactor）隔离测试环境
+#
+# 与主开发实例 clpm-mvp-*（17102/17103/17104/17106）完全隔离：
+#   - clpm-ref-postgres : 17202（空库，schema 由 backend alembic 迁移构建）
+#   - clpm-ref-redis    : 17203（Celery broker=/1、result=/2，与主实例分开）
+#   - clpm-ref-td360    : 17204/17215（TDengine 3.3.6.0，开发环境目标版本）
+#   - clpm-ref-td366    : 17214/17225（TDengine 3.3.6.6，生产 compose 目标版本）
+#
+# TDengine 容器**不挂载** db/tdengine/01_supertable.sql（其库名硬编码 clpm_ts）：
+# 本环境按 TDENGINE_DB=clpm_ts_ref 由测试夹具/迁移脚本显式建库建表，
+# 以同时覆盖 legacy（st_loop_data）与新测点子表两种布局。
+#
+# 启动：docker compose -f deploy/docker/docker-compose.refactor.yml up -d
+# =============================================================================
+services:
+  postgres:
+    image: postgres:16
+    container_name: clpm-ref-postgres
+    environment:
+      POSTGRES_USER: clpm
+      POSTGRES_PASSWORD: clpm_refactor_2026
+      POSTGRES_DB: clpm_refactor
+      TZ: Asia/Shanghai
+    ports:
+      - "17202:5432"
+    volumes:
+      - ref_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clpm -d clpm_refactor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tdengine-360:
+    image: tdengine/tdengine:3.3.6.0
+    container_name: clpm-ref-td360
+    environment:
+      TAOS_FQDN: clpm-ref-td360
+      TZ: Asia/Shanghai
+    ports:
+      - "17204:6030"
+      - "17215:6041"
+    volumes:
+      - ref_td360_data:/var/lib/taos
+      - ./tdengine/taos.cfg:/etc/taos/taos.cfg:ro
+    healthcheck:
+      test: ["CMD", "taos", "-s", "SELECT SERVER_VERSION();"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tdengine-366:
+    image: tdengine/tdengine:3.3.6.6
+    container_name: clpm-ref-td366
+    environment:
+      TAOS_FQDN: clpm-ref-td366
+      TZ: Asia/Shanghai
+    ports:
+      - "17214:6030"
+      - "17225:6041"
+    volumes:
+      - ref_td366_data:/var/lib/taos
+      - ./tdengine/taos.cfg:/etc/taos/taos.cfg:ro
+    healthcheck:
+      test: ["CMD", "taos", "-s", "SELECT SERVER_VERSION();"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: clpm-ref-redis
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "17203:6379"
+    volumes:
+      - ref_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ref_pg_data:
+  ref_td360_data:
+  ref_td366_data:
+  ref_redis_data:

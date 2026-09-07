@@ -94,23 +94,28 @@ class L1DataBlockCache:
         quality_policy: str,
         pre_version: str,
         cfg_version: str,
+        data_version: str = "legacy-v1",
     ) -> str:
         """生成 L1 缓存 Key.
 
-        Key 格式（ADS §10.7.1）::
+        Key 格式（ADS §10.7.1 + AD02 数据版本分量）::
 
-            pdb:{loopId}:{tagGroup}:{startEpoch}:{endEpoch}:{freq}:{qualityPolicy}:{preVer}:{cfgVer}
+            pdb:{loopId}:{tagGroup}:{startEpoch}:{endEpoch}:{freq}:{qualityPolicy}:{preVer}:{cfgVer}:{dataVer}
 
         时间窗口通过 epoch 整数纳入 Key，确保相同窗口的请求命中同一 Key。
+        ``data_version``（AD02/I06）：布局/数据策略版本——point 数据与 legacy
+        数据、manifest 变更前后互不命中；默认 "legacy-v1" 与旧缓存键完全一致。
 
         设计依据：ADS §10.7.1
         """
         start_epoch = int(time_window_start.timestamp())
         end_epoch = int(time_window_end.timestamp())
+        # AD02：仅非 legacy 追加数据版本分量（legacy 键与历史缓存逐字节一致）
+        version_part = "" if data_version == "legacy-v1" else f":{data_version}"
         return (
             f"{_KEY_PREFIX}:{loop_id}:{tag_group}:"
             f"{start_epoch}:{end_epoch}:"
-            f"{sampling_freq}:{quality_policy}:{pre_version}:{cfg_version}"
+            f"{sampling_freq}:{quality_policy}:{pre_version}:{cfg_version}{version_part}"
         )
 
     @staticmethod
@@ -315,6 +320,8 @@ class L1DataBlockCache:
         else:
             # 无时间戳时用 epoch 0 占位（理论上不会发生）
             start = end = datetime.fromtimestamp(0)
+        from app.contracts.series_context import data_version_for_cache
+
         return cls.build_key(
             loop_id=data_block.loop_id,
             tag_group=data_block.tag_group,
@@ -324,6 +331,7 @@ class L1DataBlockCache:
             quality_policy=_infer_quality_policy(data_block),
             pre_version=data_block.preprocess_version,
             cfg_version=data_block.config_version,
+            data_version=data_version_for_cache(getattr(data_block, "series_context", None)),
         )
 
 
@@ -403,6 +411,12 @@ def _data_block_to_dict(block: DataBlock) -> dict[str, Any]:
         # 否则 L1 缓存命中后反序列化使用默认值 "E"/0.0，导致全回路 E 不足。
         "loop_confidence_level": block.loop_confidence_level,
         "loop_valid_rate": block.loop_valid_rate,
+        # I06 修复：control_type 原本未序列化（L1/L2 往返 FAST→None，计算器
+        # 据此选响应类别参数）；AD02：series_context 上下文一并往返
+        "control_type": block.control_type,
+        "series_context": (
+            block.series_context.to_dict() if block.series_context is not None else None
+        ),
     }
 
 
@@ -464,6 +478,8 @@ def _data_block_from_dict(data: dict[str, Any]) -> DataBlock:
         point_count=data.get("point_count", len(timestamps)),
         loop_confidence_level=loop_confidence_level,
         loop_valid_rate=loop_valid_rate,
+        control_type=data.get("control_type"),
+        series_context=_series_context_from_dict(data.get("series_context")),
     )
 
 
@@ -520,3 +536,15 @@ __all__ = [
     "compute_compression_ratio",
     "time_window_hash",
 ]
+
+
+def _series_context_from_dict(data):
+    """AD02：series_context 反序列化（None/旧缓存 → None=legacy 兼容）。"""
+    if not data:
+        return None
+    try:
+        from app.contracts.series_context import SeriesContext
+
+        return SeriesContext.from_dict(data)
+    except Exception:  # noqa: BLE001 — 旧/坏上下文按缺失处理（point 路径拒绝）
+        return None

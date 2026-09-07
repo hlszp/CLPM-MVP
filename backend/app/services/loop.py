@@ -20,6 +20,7 @@ import openpyxl
 from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import BizError
 from app.core.redis import redis_client
 from app.core.tdengine import _TAG_NAME_PATTERN
@@ -2299,10 +2300,27 @@ async def _import_one_row(
         loop.updated_by = operator
         # P2：删除旧映射前记录各角色 tag 名，用于检测 tag 重关联（历史数据孤儿化风险）
         old_role_tag_names = await get_loop_role_tag_names(db, str(loop.id))
+        # 绑定历史（测点子表重构 P1-2）：删除前捕获旧 role→tag_id，供映射
+        # 重建后同事务推进 loop_tag_binding_history。**仅非 legacy 布局记录**
+        # （legacy 下绑定历史无人消费，零查询跳过）；查询失败按无旧映射处理
+        _binding_history_on = settings.HISTORY_STORAGE_MODE != "legacy"
+        old_role_tag_ids: dict[str, str] = {}
+        if _binding_history_on:
+            try:
+                _old_mapping_rows = await db.execute(
+                    select(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id))
+                )
+                old_role_tag_ids = {
+                    m.tag_role: str(m.tag_id) for m in _old_mapping_rows.scalars().all()
+                }
+            except Exception:  # noqa: BLE001
+                old_role_tag_ids = {}
         # 删除现有关联 Tag
         await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == str(loop.id)))
     else:
         old_role_tag_names: dict[str, str] = {}
+        old_role_tag_ids: dict[str, str] = {}
+        _binding_history_on = settings.HISTORY_STORAGE_MODE != "legacy"
         loop = LoopLedger(
             id=str(uuid4()),
             tag_name=tag_name,
@@ -2372,6 +2390,34 @@ async def _import_one_row(
         )
         db.add(mapping)
         new_mappings[role] = mapping
+
+    # 绑定历史同事务推进（P1-2 契约）：本次导入造成的变化（改绑/解绑/新绑）
+    # 逐角色登记 loop_tag_binding_history；失败不阻塞导入主流程（历史可由
+    # initialize_binding_history 的防漂移检查补齐），但显式告警暴露。
+    # 仅非 legacy 布局记录（与上方捕获同一门控）
+    if _binding_history_on:
+        try:
+            from app.services.data_source.point_history_metadata import (
+                record_binding_change,
+            )
+
+            _now = datetime.now(UTC)
+            _all_roles = set(old_role_tag_ids) | set(new_mappings)
+            for _role in _all_roles:
+                _old_tid = old_role_tag_ids.get(_role)
+                _new_tid = str(new_mappings[_role].tag_id) if _role in new_mappings else None
+                if _old_tid == _new_tid:
+                    continue  # 未变化（含同为 None）
+                await record_binding_change(
+                    db,
+                    loop_id=str(loop.id),
+                    tag_role=_role,
+                    new_tag_id=_new_tid,
+                    effective_at=_now,
+                    basis="REBIND" if _old_tid else "MVP_INIT",
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("绑定历史登记失败（loop=%s，可由基线初始化补齐）: %s", loop.id, exc)
 
     # 推导 status
     new_status = await derive_loop_status(db, loop, mappings=new_mappings)
