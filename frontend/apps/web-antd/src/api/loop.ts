@@ -483,6 +483,8 @@ export namespace LoopApi {
     modeDistribution: Record<string, number>;
     /** 实时自控率（is_auto=true 的 MODE 占比，配置驱动，百分比，1位小数） */
     autoControlRate: number;
+    /** 回路类型分布（分面口径：排除类型筛选自身，装置/关键词/控制模式均生效） */
+    typeCounts: Record<string, number>;
   }
 
   /** 回路监控列表响应（IDS v3.2 §2.2.15） */

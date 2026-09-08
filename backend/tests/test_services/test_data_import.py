@@ -1112,7 +1112,9 @@ class TestImportProgressPerLoop:
 
         fake = _FakeRedisImport()
         ts_start = "2026-07-15T00:00:00+00:00"
-        ts_end = "2026-07-15T06:00:00+00:00"  # 6 小时 → total_hours=6，3 回路 → total_units=18
+        ts_end = "2026-07-15T06:00:00+00:00"
+        # 6h → 高频块 6（chunk_hours=1）+ 低频块 1（24h 大块）= 每回路 7；
+        # 3 回路 → total_units=21（算法 v2 计量）
         loop_ids = ["loop-A", "loop-B", "loop-C"]
         loop_data_map = {
             "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
@@ -1121,9 +1123,9 @@ class TestImportProgressPerLoop:
         }
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
-            """loop-A 完成全部 6 分块；loop-B 完成 2 分块后失败（交错执行）."""
+            """loop-A 完成全部 7 分块；loop-B 完成 2 分块后失败（交错执行）."""
             if loop_id == "loop-A":
-                for _ in range(6):
+                for _ in range(7):
                     await asyncio.sleep(0)  # 让出事件循环，制造并发交错
                     if on_chunk_complete:
                         await on_chunk_complete()
@@ -1177,7 +1179,7 @@ class TestImportProgressPerLoop:
         assert result["succeeded"] == 1
         assert result["failed"] == 2  # loop-B 失败 + loop-C 无映射跳过
         # 进度序列：单调递增、不越界，且全部回路结束后恰好到达 1.0
-        # （A 6 + B 2+补4 + C 跳过6 = 18 = total_units）
+        # （A 7 + B 2+补5 + C 跳过7 = 21 = total_units）
         assert progress_updates
         assert all(0.0 <= p <= 1.0 for p in progress_updates)
         assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
@@ -1188,9 +1190,9 @@ class TestImportProgressPerLoop:
         """失败补偿只补本回路剩余窗口（确定时序验证 per-loop 口径）.
 
         确定时序：loop-A 先完成 5 窗口并等待，loop-B 完成 2 窗口后失败，
-        随后 loop-A 完成最后 1 窗口。B 失败时共享计数器=7（A 5 + B 2）：
-        - 旧逻辑补 6 - 7 % 6 = 5（错误，总量 13 > total_units=12，progress 越界 >1.0）
-        - 新逻辑补 6 - 2 = 4（正确，总量 12 = total_units，progress 恰好到 1.0）
+        随后 loop-A 完成最后 1 分块。B 失败时共享计数器=8（A 6 + B 2）：
+        - 取模补偿会按共享计数器推算（≠本回路已完成数），总量 > total_units 越界
+        - per-loop 补 7 - 2 = 5（正确，总量 14 = total_units，progress 恰好到 1.0）
         """
         import asyncio
 
@@ -1198,7 +1200,8 @@ class TestImportProgressPerLoop:
 
         fake = _FakeRedisImport()
         ts_start = "2026-07-15T00:00:00+00:00"
-        ts_end = "2026-07-15T06:00:00+00:00"  # total_hours=6，2 回路 → total_units=12
+        ts_end = "2026-07-15T06:00:00+00:00"
+        # 6h → 高频 6 块 + 低频 1 块 = 每回路 7（算法 v2），2 回路 → total_units=14
         loop_ids = ["loop-A", "loop-B"]
         loop_data_map = {
             "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
@@ -1210,16 +1213,16 @@ class TestImportProgressPerLoop:
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
             if loop_id == "loop-A":
-                for _ in range(5):
+                for _ in range(6):
                     if on_chunk_complete:
                         await on_chunk_complete()
                 a_part_done.set()
-                await b_failed.wait()  # 等 B 失败后再完成最后 1 窗口
+                await b_failed.wait()  # 等 B 失败后再完成最后 1 分块
                 if on_chunk_complete:
                     await on_chunk_complete()
                 return 100, [], False
             if loop_id == "loop-B":
-                await a_part_done.wait()  # 确保失败时 A 已计入 5 窗口
+                await a_part_done.wait()  # 确保失败时 A 已计入 6 分块
                 for _ in range(2):
                     if on_chunk_complete:
                         await on_chunk_complete()
@@ -1276,14 +1279,15 @@ class TestImportProgressChunkUnits:
 
     @pytest.mark.asyncio
     async def test_progress_reaches_100_with_multi_hour_chunks(self):
-        """72h 窗口 → chunk_hours=3 → 每回路 24 分块；进度单调且末次 _update_task 即 1.0."""
+        """72h 窗口 → 高频 24 块 + 低频 3 块 = 每回路 27；进度单调且末次 _update_task 即 1.0."""
         import asyncio
 
         from app.services import data_import as di
 
         fake = _FakeRedisImport()
         ts_start = "2026-07-15T00:00:00+00:00"
-        ts_end = "2026-07-18T00:00:00+00:00"  # 72h → chunk_hours=3 → chunks_per_loop=24
+        ts_end = "2026-07-18T00:00:00+00:00"
+        # 72h → chunk_hours=3 → 高频 24 块 + 低频 3 块（24h 大块）= 每回路 27（算法 v2）
         loop_ids = ["loop-A", "loop-B"]
         loop_data_map = {
             "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
@@ -1291,7 +1295,7 @@ class TestImportProgressChunkUnits:
         }
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
-            for _ in range(24):  # 与 chunks_per_loop=24 对齐
+            for _ in range(27):  # 与 chunks_per_loop=27 对齐（24 高频 + 3 低频）
                 await asyncio.sleep(0)
                 if on_chunk_complete:
                     await on_chunk_complete()
@@ -1462,10 +1466,8 @@ class TestImportSingleLoopChunkFaultTolerance:
         assert result["succeeded"] == 0
         assert result["failed"] == 1
         assert "分块导入失败" in result["errors"][0]
-        # 覆盖率按实际写入点数反馈（4 点 / 预期 10800 点），不谎报为 0
-        coverage = result["loopCoverage"][0]
-        assert coverage["importedPoints"] == 4
-        assert coverage["coverage"] > 0
+        # 覆盖率已取消：结果只含 total/succeeded/failed/errors，无 loopCoverage
+        assert "loopCoverage" not in result
 
 
 class TestSweepStaleRunningTasksHeartbeat:

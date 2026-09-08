@@ -496,7 +496,9 @@ async def test_r08_per_loop_backfill_success_and_failure_lifecycle():
     assert len(failure_pending) == 1, "失败条目保留（重启仍可见）"
     assert "LOOPB" not in sub._loop_watermarks
 
-    # --- 成功但空窗口（远端确无数据，failed==0）→ 水位推进 + 空窗口计数 + 出队 ---
+    # --- 成功（failed==0）→ 水位推进 + 出队 ---
+    # 注：真实路径里"远端空窗口"会走 import 层 HistoryDataSourceError → failed>0，
+    # 不会出现"failed==0 且空窗口"，故不再单独断言空窗口计数（覆盖率口径已取消）。
     with ExitStack() as stack:
         for p in _common_patches():
             stack.enter_context(p)
@@ -510,9 +512,6 @@ async def test_r08_per_loop_backfill_success_and_failure_lifecycle():
                         "succeeded": 1,
                         "failed": 0,
                         "errors": [],
-                        "loopCoverage": [
-                            {"loopId": "loop-1", "importedPoints": 0, "coverage": 0.0}
-                        ],
                     }
                 ),
             )
@@ -525,7 +524,6 @@ async def test_r08_per_loop_backfill_success_and_failure_lifecycle():
     assert sub._loop_watermarks.get("LOOPB") == pytest.approx(gap_end, abs=0.01), (
         "空窗口按 failed==0 推进（口径已登记）"
     )
-    assert sub._metrics["backfill_empty_windows"] == 1, "空返回≠完整，计数供观测"
     assert success_pending == [], "成功条目出队"
     assert sub._last_flushed_at is None, "per-loop 成功不推进全局落库点（其他回路口径不变）"
     # 水位已持久化（重启后不再重复检测该窗口）

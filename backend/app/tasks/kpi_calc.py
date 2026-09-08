@@ -4104,6 +4104,7 @@ def import_history_data(
     ts_end: str,
     interval: int = 1,
     trigger_backfill: bool = False,
+    point_only: bool = False,
     task_id: str | None = None,
 ) -> dict:
     """历史数据导入 Celery 任务.
@@ -4111,15 +4112,13 @@ def import_history_data(
     从远端 HTTP API 拉取历史数据，写入本地 TDengine 宽表。
     统一按"回路号（子表） + 时间戳（ts）"幂等覆盖导入（同 ts 行 UPSERT）。
 
-    幂等防护：入口预检查 + _do_import 内 CAS 双重保护，防止 worker 崩溃后
-    broker 重投导致重复执行（task_acks_late + task_reject_on_worker_lost）。
-
     Args:
         loop_ids: 回路 ID 列表
         ts_start: 开始时间 (ISO 8601)
         ts_end: 结束时间 (ISO 8601)
         interval: 采样间隔（秒），默认 1
         trigger_backfill: 是否在导入完成后触发 KPI 回算
+        point_only: 仅写入位号点表、跳过宽表（历史回填独立表场景）
         task_id: Redis 任务跟踪 ID（API 触发时传入）
     """
     logger.info(
@@ -4149,6 +4148,7 @@ def import_history_data(
             ts_end=ts_end,
             interval=interval,
             trigger_backfill=trigger_backfill,
+            point_only=point_only,
             task_id=task_id,
         )
     )

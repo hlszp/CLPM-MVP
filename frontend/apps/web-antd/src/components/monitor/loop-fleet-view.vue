@@ -257,8 +257,16 @@ const lastRefreshText = computed(() => {
 });
 
 // ===== 统计卡片 =====
+/** 类型分布（分面口径）：优先列表响应 aggregate.typeCounts——装置/关键词/控制
+ * 模式筛选全部联动，仅排除类型筛选自身（点击类型卡片后其余卡片仍可见）；
+ * 响应无聚合（深链接/旧后端）时回退 /monitor/stats 旧口径（仅装置维度） */
+const facetTypeCounts = ref<null | Record<string, number>>(null);
+const typeStatsView = computed<Record<string, number>>(() => {
+  if (facetTypeCounts.value !== null) return facetTypeCounts.value;
+  return typeStats.value;
+});
 const totalLoops = computed(() =>
-  Object.values(typeStats.value).reduce((sum, count) => sum + count, 0),
+  Object.values(typeStatsView.value).reduce((sum, count) => sum + count, 0),
 );
 
 /** 当前回路类型（从 monitorCtx 读取，用于统计卡片高亮） */
@@ -402,11 +410,15 @@ async function loadList() {
         : data.items;
     total.value = data.total;
     aggregate.value = data.aggregate ?? null;
+    // 类型卡片跟随筛选：分面计数来自列表聚合；空结果或加载失败时清空防陈旧
+    facetTypeCounts.value =
+      data.aggregate?.typeCounts ?? (data.total === 0 ? {} : null);
   } catch (error: any) {
     errorMessage.value = error?.message ?? '加载失败';
     monitorList.value = [];
     total.value = 0;
     aggregate.value = null;
+    facetTypeCounts.value = {};
   } finally {
     loading.value = false;
     lastRefreshAt.value = new Date();
@@ -639,7 +651,7 @@ defineExpose({
             }}</span>
           </div>
           <div
-            v-for="(count, key) in typeStats"
+            v-for="(count, key) in typeStatsView"
             v-show="count > 0"
             :key="key"
             class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 transition-opacity hover:opacity-80"

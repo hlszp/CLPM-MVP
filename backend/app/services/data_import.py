@@ -126,6 +126,204 @@ _RETRY_BACKOFF_BASE = 1.0  # 指数退避基数（秒），重试间隔：1, 2, 
 _RETRYABLE_STATUS_CODES = frozenset({502, 503, 504, 429})  # 可重试的 HTTP 状态码
 _RETRYABLE_HTTPX_EXCS = (httpx.TimeoutException, httpx.NetworkError)  # 可重试的网络异常
 
+# ---------------------------------------------------------------------------
+# 导入算法 v2（2026-09-09）：按角色信号频率分层拉取/写入
+#
+# 信号特征（zpdev 生产实测）：PV/OP 随工况连续变化（回路级 0.3~0.8Hz COV），
+# SP/MODE/PID_P/I/D 为阶跃信号（分钟~小时级才变化一次）。旧算法 7 角色按同一
+# interval 全量拉取+落库，低频角色被高频网格放大数倍冗余（PID 一周 60 万行里
+# 99%+ 是重复值），是 shadow 双写下点表暴涨与导入缓慢的主因之一。
+#
+# 分层策略：
+# - 高频流（PV/OP）：按用户 interval 分块拉取（沿用 1~3h 动态分块），逐点落库；
+# - 低频流（SP/MODE/PID_*）：按粗粒度（默认 60s）大块（24h）拉取，本地 COV
+#   去重（变化点 + 周期锚点 + 窗口末点）后稀疏写入点表——与实时 COV 写入口径
+#   一致；宽表行由阶跃前向填充还原（读取侧本就按 COV 前向填充展开低频列，
+#   见 tdengine_provider._legacy_query §6.5 与 LogicalWideBuilder，稀疏存储
+#   天然兼容）。
+# ---------------------------------------------------------------------------
+_HIGH_FREQ_ROLES = frozenset({"PV", "OP"})
+_LOW_FREQ_FETCH_INTERVAL = 60  # 低频拉取粒度（秒）；变化时刻定位精度与此对齐
+_LOW_FREQ_CHUNK_HOURS = 24  # 低频分块（载荷小，用大块减少请求次数）
+_LOW_FREQ_ANCHOR_SECONDS = 600.0  # 锚点间隔：值未变也周期落点，前向填充有界
+
+_SENTINEL = object()  # COV 变性判定哨兵：与任何值（含 None）比较均不等
+
+
+def _split_role_frequencies(
+    role_tag_map: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """角色按信号频率分层：返回 (高频, 低频)。未知角色按高频处理."""
+    high = {r: t for r, t in role_tag_map.items() if r in _HIGH_FREQ_ROLES}
+    low = {r: t for r, t in role_tag_map.items() if r not in _HIGH_FREQ_ROLES}
+    return high, low
+
+
+def _cov_dedup_points(
+    samples: list[tuple],
+    anchor_seconds: float = _LOW_FREQ_ANCHOR_SECONDS,
+) -> list[tuple]:
+    """COV 去重：保留 值/质量变化点 + 周期锚点.
+
+    samples: 升序 (ts_utc, value, quality_class, quality_raw)。
+    变化判定用精确相等（阶跃信号经远端网格采样后稳定段逐点重复，精确匹配）；
+    None（无效值）与任何数值视为变化；NaN 已在上游折 None。
+    锚点保证稳定段也有周期落点——读取侧前向填充的扫描跨度有界，
+    窗口末态由"末次变化/锚点"前向承载，无需额外末点封口。
+    """
+    out: list[tuple] = []
+    last_v: object = _SENTINEL
+    last_q: object = _SENTINEL
+    last_emit: datetime | None = None
+    for item in samples:
+        ts, v, qc, _qr = item
+        changed = v != last_v or qc != last_q
+        anchored = last_emit is None or (ts - last_emit).total_seconds() >= anchor_seconds
+        if changed or anchored:
+            out.append(item)
+            last_emit = ts
+        last_v, last_q = v, qc
+    return out
+
+
+class _StepFill:
+    """低频阶跃样本的前向取值器（游标随升序查询推进，均摊 O(1)）."""
+
+    __slots__ = ("_samples", "_i")
+
+    def __init__(self, samples: list[tuple]) -> None:
+        self._samples = samples
+        self._i = 0
+
+    def value_at(self, ts: datetime) -> float | None:
+        """取 ≤ ts 的最新样本值；窗口起点之前无样本返回 None."""
+        s = self._samples
+        if not s or ts < s[0][0]:
+            return None
+        while self._i + 1 < len(s) and s[self._i + 1][0] <= ts:
+            self._i += 1
+        return s[self._i][1]
+
+
+async def _fetch_low_freq_points(
+    role_tag_map_low: dict[str, str],
+    start_dt: datetime,
+    end_dt: datetime,
+    base_interval: int,
+    task_id: str | None,
+    on_chunk_complete: callable | None,
+) -> tuple[dict[str, list[tuple]], list[dict[str, str]], list[tuple[datetime, datetime]], bool]:
+    """低频角色 COV 扫描（算法 v2 Phase A）.
+
+    按 24h 大块、粗粒度（max(interval, 60s)）拉取，逐角色 COV 去重为
+    变化/锚点样本。请求经共享守卫（限流/熔断/重试与高频流一致）。
+
+    Returns:
+        (samples_by_role, failed_windows, ok_windows, was_cancelled)
+        samples 升序、已去重；(ts 为 aware UTC datetime)
+    """
+    from app.services.data_source.point_history_writer import (
+        decode_history_quality,
+        parse_source_ts,
+    )
+
+    interval = max(base_interval, _LOW_FREQ_FETCH_INTERVAL)
+    samples_by_role: dict[str, list[tuple]] = {role: [] for role in role_tag_map_low}
+    failed_windows: list[dict[str, str]] = []
+    ok_windows: list[tuple[datetime, datetime]] = []
+    cur = start_dt
+    while cur < end_dt:
+        if task_id and await _is_task_cancelled(task_id):
+            return samples_by_role, failed_windows, ok_windows, True
+        chunk_end = min(cur + timedelta(hours=_LOW_FREQ_CHUNK_HOURS), end_dt)
+        try:
+            raw = await _fetch_remote_history(
+                list(role_tag_map_low.values()),
+                cur.isoformat(),
+                chunk_end.isoformat(),
+                interval,
+            )
+            if raw and raw[0]:
+                ts_list, series_map = raw
+                ts_parsed = [parse_source_ts(t) for t in ts_list]
+                for role, tag in role_tag_map_low.items():
+                    series = series_map.get(tag) or series_map.get(tag.lower())
+                    if not series:
+                        continue
+                    values = series.get("values", [])
+                    qualities = series.get("qualities", [])
+                    pts: list[tuple] = []
+                    for i, ts in enumerate(ts_parsed):
+                        if ts is None:
+                            continue
+                        v = _parse_float_val(values[i]) if i < len(values) else None
+                        qc, qr = decode_history_quality(
+                            qualities[i] if i < len(qualities) else None
+                        )
+                        pts.append((ts, v, qc, qr))
+                    samples_by_role[role].extend(_cov_dedup_points(pts))
+                ok_windows.append((cur, chunk_end))
+        except Exception as exc:  # noqa: BLE001 — 分块级容错，与高频流口径一致
+            failed_windows.append(
+                {"start": cur.isoformat(), "end": chunk_end.isoformat(), "error": str(exc)[:200]}
+            )
+            logger.warning(
+                "低频分块拉取失败（继续后续分块）: 窗口=%s ~ %s, err=%s",
+                cur.isoformat(),
+                chunk_end.isoformat(),
+                exc,
+            )
+        if on_chunk_complete:
+            await on_chunk_complete()
+        cur = chunk_end
+    return samples_by_role, failed_windows, ok_windows, False
+
+
+async def _write_sparse_point_events(
+    role_point_map_low: dict[str, tuple[str, str]],
+    samples_by_role: dict[str, list[tuple]],
+    *,
+    source_task: str,
+) -> int:
+    """低频 COV 样本 → 点表稀疏点事件（shadow/point 布局）.
+
+    与实时 COV 写入口径一致（阶跃信号只落变化点+锚点）；计数按去重后
+    时间槽数（各角色 ts 并集），与 _write_point_events 的槽口径对齐。
+    """
+    from app.services.data_source.point_history_repository import (
+        QSCHEMA_AAS,
+        SOURCE_KIND_REMOTE_GRID,
+        PointEvent,
+        write_events,
+    )
+
+    events: list[PointEvent] = []
+    for role, entry in role_point_map_low.items():
+        _tag_name, point_id = entry
+        if not point_id:
+            continue
+        for ts, v, qc, qr in samples_by_role.get(role) or []:
+            events.append(
+                PointEvent(
+                    point_id=point_id,
+                    ts=ts,
+                    value=v,
+                    quality_class=qc,
+                    quality_raw=qr,
+                    quality_schema=QSCHEMA_AAS,
+                    source_kind=SOURCE_KIND_REMOTE_GRID,
+                    received_at=datetime.now(UTC),
+                    source_id=f"import:{source_task[:32]}",
+                )
+            )
+    if not events:
+        return 0
+    result = await write_events(events, source_task=source_task or None)
+    if result.failed:
+        raise HistoryDataSourceError(f"点事件写入失败: {result.error}")
+    return len({e.ts for e in events})
+
+
 # 角色列名映射（与 tdengine.py 保持一致）
 _ROLE_COLUMNS: dict[str, str] = {
     "PV": "pv",
@@ -307,7 +505,7 @@ def _to_str_or_none(value: Any) -> str | None:
 
 def _task_to_response(data: dict[str, Any]) -> dict[str, Any]:
     """将 Redis Hash 转换为响应字典."""
-    # result 为 JSON 串（含 loopCoverage 覆盖率明细），解析后透出供 UI 展示
+    # result 为 JSON 串（total/succeeded/failed/errors），解析后透出供 UI 展示
     result_raw = data.get("result", "")
     try:
         result = json.loads(result_raw) if result_raw else None
@@ -398,6 +596,7 @@ async def import_history_data(
     ts_end: str,
     interval: int = 1,
     trigger_backfill: bool = False,
+    point_only: bool = False,
     task_id: str | None = None,
 ) -> dict:
     """执行历史数据导入.
@@ -408,6 +607,8 @@ async def import_history_data(
         ts_end: 结束时间 (ISO 8601)
         interval: 采样间隔（秒），默认 1
         trigger_backfill: 是否在导入完成后触发 KPI 回算
+        point_only: 仅写入位号点表、跳过宽表（历史回填独立表场景，复用
+            storage_mode=point 语义）；False 时按 sys_config 的 storage_mode
         task_id: Redis 任务跟踪 ID
 
     Returns:
@@ -420,15 +621,20 @@ async def import_history_data(
     end_dt = _parse_dt(ts_end)
 
     # 写入布局（P2-3：legacy 宽表照旧 / shadow 双写 / point 只写点事件）；
-    # sys_config 为真相源，读取失败按 legacy 兜底（不因配置不可达阻塞导入）
-    storage_mode = "legacy"
-    try:
-        from app.services.data_source.history_layout import get_storage_mode
+    # sys_config 为真相源，读取失败按 legacy 兜底（不因配置不可达阻塞导入）。
+    # point_only 为一次性回填开关：强制 point（只写点表、跳过宽表），
+    # 供"放开时间窗后把 38 天历史补进独立表"场景使用，不触碰 sys_config。
+    if point_only:
+        storage_mode = "point"
+    else:
+        storage_mode = "legacy"
+        try:
+            from app.services.data_source.history_layout import get_storage_mode
 
-        async with AsyncSessionLocal() as _ms:
-            storage_mode = await get_storage_mode(_ms)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("读取历史写入布局失败（按 legacy 导入）: %s", exc)
+            async with AsyncSessionLocal() as _ms:
+                storage_mode = await get_storage_mode(_ms)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("读取历史写入布局失败（按 legacy 导入）: %s", exc)
 
     if task_id:
         cas_code, old_status = await _update_task_cas(
@@ -485,7 +691,10 @@ async def import_history_data(
         # 按小时计量会导致进度只能爬到 1/chunk_hours（如 33%）后长期"停滞"，
         # 直到任务结束才跳变 100%。
         total_hours = math.ceil((end_dt - start_dt).total_seconds() / 3600)
-        chunks_per_loop = max(1, math.ceil(total_hours / max(chunk_hours, 1)))
+        # 算法 v2：每回路分块 = 高频动态分块 + 低频 24h 大块（Phase A 先行）
+        high_chunks = max(1, math.ceil(total_hours / max(chunk_hours, 1)))
+        low_chunks = max(1, math.ceil(total_hours / _LOW_FREQ_CHUNK_HOURS))
+        chunks_per_loop = high_chunks + low_chunks
         total_units = total * chunks_per_loop  # 总进度单位 = 回路数 × 每回路分块数
 
         import asyncio as _asyncio_sem
@@ -541,8 +750,8 @@ async def import_history_data(
                     logger.warning("回路 %s 无有效 tag 映射，跳过", lid)
                     async with progress_lock:
                         shared_failed += 1
-                        # 无 tag 映射时，跳过所有小时窗口，直接计入进度
-                        shared_completed_units += total_hours
+                        # 无 tag 映射时按本回路全部分块数计入进度
+                        shared_completed_units += chunks_per_loop
                     error = f"loop {lid}: 无有效 tag 映射"
                     await _record_progress()
                     return (i, 0, error)
@@ -615,10 +824,8 @@ async def import_history_data(
         tasks = [_import_with_sem(i, lid) for i, lid in enumerate(loop_ids)]
         task_results = await _asyncio_sem.gather(*tasks, return_exceptions=True)
 
-        # 覆盖率反馈：每回路 导入点数 vs 预期点数（窗口秒数 / interval）。
-        # "任务成功"≠"数据补齐"：远端部分时段无数据时缺口仍在，此处量化暴露。
-        expected_per_loop = (end_dt - start_dt).total_seconds() / max(interval, 1)
-        loop_coverage: list[dict[str, Any]] = []
+        # 收敛结果：按指定时间窗 + 回路号取数即可，不再量化覆盖率
+        # （远端 COV 稀疏，按理想网格点数做分母会系统性误报"缺口"）
         for task_result in task_results:
             if isinstance(task_result, BaseException):
                 errors.append(f"导入协程异常: {task_result}")
@@ -627,29 +834,10 @@ async def import_history_data(
             lid = loop_ids[i]
             if error:
                 errors.append(error)
-            coverage = (
-                round(min(count / expected_per_loop, 1.0), 4) if expected_per_loop > 0 else 0.0
-            )
-            loop_coverage.append(
-                {
-                    "loopId": lid,
-                    "importedPoints": count,
-                    "expectedPoints": int(expected_per_loop),
-                    "coverage": coverage,
-                }
-            )
             if count > 0:
                 # R13：本地 TD 已写入新数据 → 失效 realtime:history 与 L1/L2/L3
                 # 计算缓存，避免残缺/陈旧缓存遮蔽新数据（失效失败只记日志）
                 await _invalidate_loop_caches(lid, loop_data_map.get(lid, {}).get("loop_part", ""))
-        loop_coverage.sort(key=lambda c: c["coverage"])
-        low_coverage = [c["loopId"] for c in loop_coverage if c["coverage"] < 0.9]
-        if low_coverage:
-            logger.warning(
-                "导入覆盖率低于 90%% 的回路 %d 个: %s",
-                len(low_coverage),
-                low_coverage[:10],
-            )
 
         succeeded = shared_succeeded
         failed = shared_failed
@@ -659,9 +847,6 @@ async def import_history_data(
             "succeeded": succeeded,
             "failed": failed,
             "errors": errors[:10],  # 只保留前 10 条错误
-            # 覆盖率明细（按覆盖率升序，缺口最大的排最前；存入任务 result 字段）
-            "loopCoverage": loop_coverage,
-            "lowCoverageLoopIds": low_coverage,
         }
 
         # 更新任务终态
@@ -746,25 +931,29 @@ async def _import_single_loop(
     role_point_map: dict[str, tuple[str, str]] | None = None,
     storage_mode: str = "legacy",
 ) -> tuple[int, list[dict[str, str]], bool]:
-    """导入单个回路的历史数据.
+    """导入单个回路的历史数据（算法 v2：高频/低频双相）.
+
+    Phase A（低频 COV 扫描）：SP/MODE/PID_* 按 60s 粒度、24h 大块拉取，
+    本地 COV 去重（变化+锚点）→ 点表稀疏写入 + 宽表阶跃填充源。
+    Phase B（高频流）：PV/OP 按用户 interval、动态分块拉取，逐点落库；
+    宽表行低频列由 Phase A 样本前向填充（与读取侧 COV 展开口径闭环）。
 
     分块级容错：单个分块拉取/写入失败时记录失败窗口并继续后续分块，
-    不再整回路中断——远端短时故障只影响故障期间的分块，避免"一个分块
-    504 导致整回路剩余窗口全部放弃"的数据缺口放大。失败窗口由调用方
-    汇总上报（回路计失败、覆盖率按实际写入点数反馈），缺口可再次导入
-    补齐（同 ts 行 UPSERT 幂等覆盖）。
+    不再整回路中断。失败窗口由调用方汇总上报，缺口可再次导入补齐
+    （同 ts 行 UPSERT 幂等覆盖）。
 
     统一幂等口径：不区分 overwrite/skip，直接写目标子表；同子表同 ts 行
-    UPSERT 覆盖，保证一个落库数据在时间点上唯一。legacy/shadow 写宽表，
-    point 写点事件（point 布局下宽表不写，点事件即落库形态）。
+    UPSERT 覆盖。legacy/shadow 写宽表，point 写点事件。
 
     Args:
         subtable: 已构造好的 TDengine 子表名
         unit_id: 回路所属工艺单元 ID
         role_tag_map: {role → tag_name} 预加载的 tag 映射
-        chunk_hours: 动态分块小时数
+        chunk_hours: 动态分块小时数（高频流）
         task_id: Redis 任务 ID（用于 chunk 级取消检查）
-        on_chunk_complete: 每完成一个小时分块时的回调函数
+        on_chunk_complete: 每完成一个分块（含低频分块）时的回调函数
+        role_point_map: {role → (tag_name, point_id)} 点表写入映射
+        storage_mode: legacy / shadow / point
 
     Returns:
         (写入的点数, 失败分块窗口列表[{start, end, error}], 是否因取消中断)
@@ -773,102 +962,142 @@ async def _import_single_loop(
         logger.warning("回路 %s 无有效 tag 映射，跳过", loop_id)
         return 0, [], False
 
-    # 按动态分块拉取 + 写入（每 chunk 前检查任务是否被取消）
-    total_count = 0  # 写入目标表的点数
+    role_point_map = role_point_map or {}
+    total_count = 0  # 写入目标表的点数（宽表行 / 点表时间槽）
     failed_windows: list[dict[str, str]] = []
     was_cancelled = False
-    chunk_start = start_dt
     point_ok_chunks: list[tuple[datetime, datetime]] = []  # 远端有数据的分块（点级覆盖）
     point_import_batch_id: str | None = None
-    while chunk_start < end_dt:
-        # chunk 级取消检查：任务被取消时立即停止拉取（overwrite 暂存阶段
-        # 主表未被触碰，旧数据天然保留；skip 已写入数据保留）
-        if task_id and await _is_task_cancelled(task_id):
-            was_cancelled = True
-            logger.info("回路 %s 导入被取消（已写入 %d 点），跳过剩余分块", loop_id, total_count)
-            break
 
-        chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
+    async def _ensure_point_batch() -> str | None:
+        """点级批次惰性创建（pending），覆盖登记用；失败不阻塞数据面."""
+        nonlocal point_import_batch_id
+        if point_import_batch_id is None and storage_mode != "legacy":
+            try:
+                from app.core.db import AsyncSessionLocal as _ASL
+                from app.services.data_source import point_history_metadata as _phm
 
-        try:
-            # 从远端 API 拉取数据（内含 3 次指数退避重试 + 熔断快速失败）
-            raw_data = await _fetch_remote_history(
-                list(role_tag_map.values()),
-                chunk_start.isoformat(),
-                chunk_end.isoformat(),
-                interval,
+                async with _ASL() as _bs:
+                    _batch = await _phm.create_batch(
+                        _bs,
+                        window_start=start_dt.replace(tzinfo=UTC),
+                        window_end=end_dt.replace(tzinfo=UTC),
+                        source_task=f"import:{task_id or loop_id[:8]}",
+                    )
+                    await _bs.commit()
+                    point_import_batch_id = _batch.batch_id
+            except Exception as exc:  # noqa: BLE001 — 元数据失败不阻塞导入数据面
+                logger.warning("点级批次创建失败（覆盖登记缺失）: %s", exc)
+        return point_import_batch_id
+
+    high_map, low_map = _split_role_frequencies(role_tag_map)
+
+    # ===== Phase A：低频角色 COV 扫描（拉取 + 去重 + 点表稀疏写入） =====
+    low_samples: dict[str, list[tuple]] = {}
+    if low_map:
+        low_samples, low_failed, low_ok_windows, low_cancelled = await _fetch_low_freq_points(
+            low_map, start_dt, end_dt, interval, task_id, on_chunk_complete
+        )
+        failed_windows.extend(low_failed)
+        was_cancelled = was_cancelled or low_cancelled
+        if low_cancelled:
+            logger.info(
+                "回路 %s 低频扫描被取消（已收集 %d 角色样本），跳过高频流",
+                loop_id,
+                sum(len(v) for v in low_samples.values()),
             )
+        if storage_mode != "legacy" and any(low_samples.values()):
+            await _ensure_point_batch()
+            total_count += await _write_sparse_point_events(
+                {r: role_point_map[r] for r in low_map if r in role_point_map},
+                low_samples,
+                source_task=task_id or "",
+            )
+            point_ok_chunks.extend(low_ok_windows)
 
-            # 覆盖率反馈：远端该分块无任何时间戳时显式告警（此前静默跳过，
-            # 任务仍报 SUCCESS，用户无从得知缺口来自远端而非本地链路）。
-            # 注意：远端无数据 ≠ 分块失败（该时段本就无记录），不计入 failed_windows。
-            if not raw_data or not raw_data[0]:
+    # ===== Phase B：高频流分块拉取 + 写入 =====
+    low_fills = {role: _StepFill(pts) for role, pts in low_samples.items() if pts}
+    # 高频拉取集合：PV/OP；回路未绑高频角色时退化为全角色单流（走旧口径）
+    fetch_map = high_map or role_tag_map
+    high_point_map = (
+        {r: v for r, v in role_point_map.items() if r in high_map} if high_map else role_point_map
+    )
+    if not was_cancelled:
+        chunk_start = start_dt
+        while chunk_start < end_dt:
+            # chunk 级取消检查：任务被取消时立即停止拉取（已写入数据保留）
+            if task_id and await _is_task_cancelled(task_id):
+                was_cancelled = True
+                logger.info(
+                    "回路 %s 导入被取消（已写入 %d 点），跳过剩余分块", loop_id, total_count
+                )
+                break
+
+            chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
+
+            try:
+                # 从远端 API 拉取高频数据（内含 3 次指数退避重试 + 熔断快速失败）
+                raw_data = await _fetch_remote_history(
+                    list(fetch_map.values()),
+                    chunk_start.isoformat(),
+                    chunk_end.isoformat(),
+                    interval,
+                )
+
+                # 覆盖率反馈：远端该分块无任何时间戳时显式告警。
+                # 注意：远端无数据 ≠ 分块失败（该时段本就无记录），不计入 failed_windows。
+                if not raw_data or not raw_data[0]:
+                    logger.warning(
+                        "远端该分块无数据: loop=%s, 窗口=%s ~ %s",
+                        loop_id,
+                        chunk_start.isoformat(),
+                        chunk_end.isoformat(),
+                    )
+
+                if raw_data and storage_mode != "legacy":
+                    await _ensure_point_batch()
+                    point_ok_chunks.append((chunk_start, chunk_end))
+                if raw_data:
+                    if storage_mode == "point":
+                        # point-only：宽表不写；点事件即落库形态（高频角色稠密）
+                        slots, _stats = await _write_point_events(
+                            high_point_map, raw_data, source_task=task_id or ""
+                        )
+                        total_count += slots
+                    else:
+                        # legacy / shadow：宽表照旧（低频列前向填充）；shadow 额外写点事件
+                        rows = _convert_to_wide_rows(raw_data, fetch_map, low_fills)
+                        if rows:
+                            # 批量写入目标子表（同 ts 行 UPSERT 幂等覆盖）
+                            count = await batch_insert(
+                                subtable, rows, loop_id=loop_id, unit_id=unit_id
+                            )
+                            total_count += count
+                        if storage_mode == "shadow":
+                            await _write_point_events(
+                                high_point_map, raw_data, source_task=task_id or ""
+                            )
+            except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
+                failed_windows.append(
+                    {
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "error": str(exc)[:200],
+                    }
+                )
                 logger.warning(
-                    "远端该分块无数据: loop=%s, 窗口=%s ~ %s",
+                    "分块导入失败（已重试仍失败，继续后续分块）: loop=%s, 窗口=%s ~ %s, err=%s",
                     loop_id,
                     chunk_start.isoformat(),
                     chunk_end.isoformat(),
+                    exc,
                 )
 
-            if raw_data and storage_mode != "legacy":
-                # 点级批次（pending）：全部分块处理完统一 confirm/partial
-                if point_import_batch_id is None:
-                    try:
-                        from app.core.db import AsyncSessionLocal as _ASL
-                        from app.services.data_source import point_history_metadata as _phm
+            chunk_start = chunk_end
 
-                        async with _ASL() as _bs:
-                            _batch = await _phm.create_batch(
-                                _bs,
-                                window_start=start_dt.replace(tzinfo=UTC),
-                                window_end=end_dt.replace(tzinfo=UTC),
-                                source_task=f"import:{task_id or loop_id[:8]}",
-                            )
-                            await _bs.commit()
-                            point_import_batch_id = _batch.batch_id
-                    except Exception as exc:  # noqa: BLE001 — 元数据失败不阻塞导入数据面
-                        logger.warning("点级批次创建失败（覆盖登记缺失）: %s", exc)
-                point_ok_chunks.append((chunk_start, chunk_end))
-            if raw_data:
-                if storage_mode == "point":
-                    # point-only：宽表不写；点事件即落库形态。计数单位保持
-                    # 对外口径（时间槽），以 timestamps 数计（见 _write_point_events）
-                    slots, _stats = await _write_point_events(
-                        role_point_map or {}, raw_data, source_task=task_id or ""
-                    )
-                    total_count += slots
-                else:
-                    # legacy / shadow：宽表照旧；shadow 额外同流写点事件
-                    rows = _convert_to_wide_rows(raw_data, role_tag_map)
-                    if rows:
-                        # 批量写入目标子表（同 ts 行 UPSERT 幂等覆盖）
-                        count = await batch_insert(subtable, rows, loop_id=loop_id, unit_id=unit_id)
-                        total_count += count
-                    if storage_mode == "shadow":
-                        await _write_point_events(
-                            role_point_map or {}, raw_data, source_task=task_id or ""
-                        )
-        except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
-            failed_windows.append(
-                {
-                    "start": chunk_start.isoformat(),
-                    "end": chunk_end.isoformat(),
-                    "error": str(exc)[:200],
-                }
-            )
-            logger.warning(
-                "分块导入失败（已重试仍失败，继续后续分块）: loop=%s, 窗口=%s ~ %s, err=%s",
-                loop_id,
-                chunk_start.isoformat(),
-                chunk_end.isoformat(),
-                exc,
-            )
-
-        chunk_start = chunk_end
-
-        # 小时分块完成时触发进度回调（含失败分块——进度语义是"已处理"，不是"已成功"）
-        if on_chunk_complete:
-            await on_chunk_complete()
+            # 分块完成时触发进度回调（含失败分块——进度语义是"已处理"，不是"已成功"）
+            if on_chunk_complete:
+                await on_chunk_complete()
 
     # 点级覆盖登记（shadow/point）：远端有数据的分块 → confirmed 段；
     # 空响应分块不登记（远端"无数据"≠覆盖证明，设计 §6.1）
@@ -1240,11 +1469,18 @@ async def _write_point_events(
 def _convert_to_wide_rows(
     raw_data: tuple[list[str], dict[str, dict]],
     role_tag_map: dict[str, str],
+    low_fills: dict[str, _StepFill] | None = None,
 ) -> list[tuple]:
-    """将远端 API 响应转换为宽表行格式.
+    """将远端 API 响应转换为宽表行格式（算法 v2：低频列阶跃前向填充）.
 
     行格式: (ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
+
+    low_fills 提供时，SP/MODE/PID_* 列从低频 COV 样本按 ts 前向取值
+    （与读取侧 COV 展开口径一致）；未提供时回退按 series 同索引取值
+    （v1 行为，兼容全角色单流退化路径与既有单测）。
     """
+    from app.services.data_source.point_history_writer import parse_source_ts
+
     timestamps, series_map = raw_data
     rows: list[tuple] = []
 
@@ -1256,30 +1492,46 @@ def _convert_to_wide_rows(
             role_series[role] = series
 
     for i, ts_str in enumerate(timestamps):
-        # 解析时间戳
+        # 解析时间戳：墙钟串落宽表行键；UTC 时刻供低频填充游标对齐
         ts = _parse_ts_str(ts_str)
         if ts is None:
             continue
-
+        ts_utc = parse_source_ts(ts_str)
         # 提取各角色值
-        row = _build_wide_row(i, role_series)
+        row = _build_wide_row(i, role_series, ts_utc=ts_utc, low_fills=low_fills)
         rows.append((ts, *row))
 
     return rows
 
 
-def _build_wide_row(index: int, role_series: dict[str, dict]) -> tuple:
+def _build_wide_row(
+    index: int,
+    role_series: dict[str, dict],
+    ts_utc: datetime | None = None,
+    low_fills: dict[str, _StepFill] | None = None,
+) -> tuple:
     """构造单行数据（不含 ts）.
 
     返回: (pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
+    低频角色（SP/MODE/PID_*）在 low_fills 提供时按阶跃前向取值，否则按
+    series 同索引取值（v1 行为）。
     """
-    pv = _parse_float_val(_get_series_value(role_series, "PV", index))
-    sp = _parse_float_val(_get_series_value(role_series, "SP", index))
-    op = _parse_float_val(_get_series_value(role_series, "OP", index))
-    mode = _parse_int_val(_get_series_value(role_series, "MODE", index))
-    pid_p = _parse_float_val(_get_series_value(role_series, "PID_P", index))
-    pid_i = _parse_float_val(_get_series_value(role_series, "PID_I", index))
-    pid_d = _parse_float_val(_get_series_value(role_series, "PID_D", index))
+
+    def _high_float(role: str) -> float | None:
+        return _parse_float_val(_get_series_value(role_series, role, index))
+
+    def _role_value(role: str) -> Any:
+        if low_fills is not None and role in low_fills and ts_utc is not None:
+            return low_fills[role].value_at(ts_utc)
+        return _get_series_value(role_series, role, index)
+
+    pv = _high_float("PV")
+    sp = _parse_float_val(_role_value("SP"))
+    op = _high_float("OP")
+    mode = _parse_int_val(_role_value("MODE"))
+    pid_p = _parse_float_val(_role_value("PID_P"))
+    pid_i = _parse_float_val(_role_value("PID_I"))
+    pid_d = _parse_float_val(_role_value("PID_D"))
 
     # PV 质量码
     pv_quality = _map_quality(_get_series_quality(role_series, "PV", index))
