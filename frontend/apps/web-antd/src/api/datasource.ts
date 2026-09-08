@@ -50,7 +50,7 @@ export namespace DataSourceApi {
     gapBackfillMinGapSeconds: number;
     /** 当前生效的历史数据 Provider（启动时初始化，UI 用于提示"需重启生效"） */
     historyProviderActive: string;
-    /** 实时订阅器真实运行状态（非配置镜像；启停变更需重启后端生效，UI 用于提示"需重启生效"） */
+    /** 实时订阅器真实运行状态（订阅开关保存即热生效；启停失败时以该值为准） */
     signalrSubscriberRunning: boolean;
     /** tailscale 客户端是否可用（容器内为 false） */
     tailscaleAvailable: boolean;

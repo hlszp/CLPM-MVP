@@ -59,13 +59,14 @@ interface Props {
 
 type ViewMode = 'history' | 'realtime';
 
-/** 趋势时间窗选项（10M/30M/1H/4H/8H/72H） */
+/** 趋势时间窗选项（10M/30M/1H/4H/8H/24H/72H） */
 const trendWindowOptions: { label: string; value: LoopApi.TrendWindow }[] = [
   { label: '10M', value: 'last_10_minutes' },
   { label: '30M', value: 'last_30_minutes' },
   { label: '1H', value: 'last_1_hour' },
   { label: '4H', value: 'last_4_hours' },
   { label: '8H', value: 'last_8_hours' },
+  { label: '24H', value: 'last_24_hours' },
   { label: '72H', value: 'last_72_hours' },
 ];
 
@@ -272,9 +273,14 @@ async function startRealtime() {
   liveTimer = setInterval(appendLivePoint, 1000);
 }
 
+/** 请求序列号：大时间窗（72H）查询慢，快速切档时旧响应可能晚于新响应返回，
+ * 不做保护会把已切换档位的图表回填成旧窗口数据（表现为"切了档图表起止不变"） */
+let trendReqSeq = 0;
+
 /** 加载趋势详情（历史模式：档位或自定义范围；实时模式：作为种子数据） */
 async function loadTrendDetail() {
   if (!props.loopId) return;
+  const seq = ++trendReqSeq;
   trendLoading.value = true;
   appendMode.value = false;
   try {
@@ -287,18 +293,23 @@ async function loadTrendDetail() {
             tsEnd: customRange.value[1].toISOString(),
           }
         : undefined;
-    trendDetail.value = await getLoopMonitorDetailApi(
+    const detail = await getLoopMonitorDetailApi(
       props.loopId,
       trendWindow.value,
       range,
     );
+    // 迟到的旧响应直接丢弃（最新请求的响应才允许覆盖图表）
+    if (seq !== trendReqSeq) return;
+    trendDetail.value = detail;
     // WaveformChart 内置 watch(trend) 自动渲染，DOM 更新后 resize 修正尺寸
     await nextTick();
+    if (seq !== trendReqSeq) return;
     waveformChartRef.value?.resize();
   } catch {
     // 错误已由拦截器处理
   } finally {
-    trendLoading.value = false;
+    // 仅最新一次请求有权解除 loading（旧请求迟到时不得熄灭新请求的 spinner）
+    if (seq === trendReqSeq) trendLoading.value = false;
   }
 }
 

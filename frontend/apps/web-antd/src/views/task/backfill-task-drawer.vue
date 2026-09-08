@@ -120,23 +120,35 @@ function transformTreeData(nodes: any[]): any[] {
 
 async function loadLoopOptions() {
   try {
+    // 后端 /loops 的 plantNodeId 为单值参数且自动展开后代节点；
+    // 多选装置时按节点分别拉取，再按 loopId 去重合并
+    const nodeIds =
+      form.value.plantNodeIds.length > 0
+        ? [...form.value.plantNodeIds]
+        : [undefined];
     const allLoops: any[] = [];
-    let page = 1;
+    const seen = new Set<string>();
     const loopPageSize = 100;
-    let total = 0;
-    do {
-      const params: any = { page, pageSize: loopPageSize };
-      if (form.value.plantNodeIds.length > 0) {
-        params.plantNodeIds = form.value.plantNodeIds.join(',');
-      }
-      const result = await getLoopListApi(params);
-      total = result.total;
-      allLoops.push(...(result.items || []));
-      page += 1;
-    } while ((page - 1) * loopPageSize < total);
+    for (const nodeId of nodeIds) {
+      let page = 1;
+      let total = 0;
+      do {
+        const params: any = { page, pageSize: loopPageSize };
+        if (nodeId) params.plantNodeId = nodeId;
+        const result = await getLoopListApi(params);
+        total = result.total;
+        for (const l of result.items || []) {
+          // 回路列表项主键是 loopId（无 id 字段），去重避免层级重叠重复选项
+          if (seen.has(l.loopId)) continue;
+          seen.add(l.loopId);
+          allLoops.push(l);
+        }
+        page += 1;
+      } while ((page - 1) * loopPageSize < total);
+    }
     loopOptions.value = allLoops.map((l: any) => ({
-      label: l.tagName || l.loopName || l.id,
-      value: l.id,
+      label: l.tagName || l.description || l.loopId,
+      value: l.loopId,
     }));
   } catch (error) {
     console.error('加载回路选项失败:', error);

@@ -1,11 +1,14 @@
 /**
  * 数据接入页（loop/aas.vue）单元测试
  *
- * 覆盖 2026-07-28 统一组件体系迁移：
+ * 覆盖统一组件体系迁移 + 2026-09-08 数据源 tab 重构：
  * - 挂载后加载数据源配置；加载失败进入 ClpmDataCanvas error 态，retry 后恢复
  * - Tab 切换到 DCS 系统时加载品牌/型号列表
  * - 写操作按钮 v-permission="['ADMIN']"（ADMIN 可见 / 非 ADMIN Comment 占位）
- * - 确认流全部由 ClpmDangerConfirmModal 承载（5 个实例，无 Popconfirm）
+ * - 确认流全部由 ClpmDangerConfirmModal 承载（3 个实例，无 Popconfirm）
+ * - 实时回写开关随保存载荷提交（保存即热生效，无"需重启"区块）
+ *
+ * 2026-09-08：删除「AAS 位号同步」相关用例（功能已随 /aas/* 端点下线）。
  */
 import { flushPromises, mount } from '@vue/test-utils';
 
@@ -21,15 +24,9 @@ import Aas from '../views/loop/aas.vue';
 
 const getDatasourceConfigApiMock = vi.fn();
 const refreshSubscriptionApiMock = vi.fn();
+const updateDatasourceConfigApiMock = vi.fn();
 const getVendorsApiMock = vi.fn();
 const getModelsApiMock = vi.fn();
-const getAasConfigApiMock = vi.fn();
-const triggerAasSyncApiMock = vi.fn();
-
-vi.mock('#/api/aas', () => ({
-  getAasConfigApi: (...args: unknown[]) => getAasConfigApiMock(...args),
-  triggerAasSyncApi: (...args: unknown[]) => triggerAasSyncApiMock(...args),
-}));
 
 vi.mock('#/api/datasource', () => ({
   getDatasourceConfigApi: (...args: unknown[]) =>
@@ -38,7 +35,8 @@ vi.mock('#/api/datasource', () => ({
     refreshSubscriptionApiMock(...args),
   testHistoryApiApi: vi.fn(),
   testSignalrApi: vi.fn(),
-  updateDatasourceConfigApi: vi.fn(),
+  updateDatasourceConfigApi: (...args: unknown[]) =>
+    updateDatasourceConfigApiMock(...args),
 }));
 
 vi.mock('#/api/dcs', () => ({
@@ -95,6 +93,7 @@ vi.mock('ant-design-vue', () => ({
   TabPane: { template: '<div><slot /></div>' },
   Tabs: { name: 'Tabs', template: '<div><slot /></div>' },
   Tag: { template: '<span><slot /></span>' },
+  Tooltip: { template: '<span><slot /></span>' },
   Upload: { template: '<div><slot /></div>' },
 }));
 
@@ -126,25 +125,18 @@ vi.mock('../views/loop/components/pid-structure-drawer.vue', () => ({
 }));
 
 const configFixture = {
+  gapBackfillEnabled: false,
+  gapBackfillMinGapSeconds: 600,
   historyApiTimeout: 30,
   historyApiToken: 'abcd****wxyz',
   historyApiUrl: 'http://192.168.100.2:81/api/services/v1/HistoryData/Get',
   networkMode: 'lan',
+  realtimeWritebackEnabled: false,
   signalrEnabled: false,
   signalrHubUrl: 'ws://192.168.100.2:81/signalr/realValueForClpmHub',
   signalrReconnectInterval: 5,
   signalrSubscriberRunning: false,
   tailscaleAvailable: true,
-};
-
-const aasConfigFixture = {
-  enabled: false,
-  endpoint: 'opc.tcp://192.168.100.2:4840',
-  lastSyncAt: '2026-09-02T15:00:00+08:00',
-  lastSyncStatus: 'SUCCESS',
-  mockMode: false,
-  securityMode: 'None',
-  syncIntervalSeconds: 300,
 };
 
 function setRoles(roles: string[]) {
@@ -178,14 +170,9 @@ describe('loopAas（数据接入页）', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     getDatasourceConfigApiMock.mockResolvedValue(configFixture);
+    updateDatasourceConfigApiMock.mockResolvedValue(configFixture);
     getVendorsApiMock.mockResolvedValue([]);
     getModelsApiMock.mockResolvedValue([]);
-    getAasConfigApiMock.mockResolvedValue(aasConfigFixture);
-    triggerAasSyncApiMock.mockResolvedValue({
-      checkUrl: '/api/v1/tasks/task-1',
-      status: 'PROCESSING',
-      taskId: 'task-1',
-    });
     setRoles(['ADMIN']);
   });
 
@@ -226,12 +213,13 @@ describe('loopAas（数据接入页）', () => {
     expect(getModelsApiMock).toHaveBeenCalledTimes(1);
   });
 
-  it('aDMIN 角色可见写操作按钮（保存配置 / 新增品牌）', async () => {
+  it('ADMIN 角色可见写操作按钮（保存配置 / 保存并即时生效 / 新增品牌）', async () => {
     const wrapper = mountAas();
     await flushPromises();
 
     const buttonTexts = wrapper.findAll('button').map((b) => b.text());
     expect(buttonTexts).toContain('保存配置');
+    expect(buttonTexts).toContain('保存并即时生效');
     expect(buttonTexts).toContain('新增品牌');
   });
 
@@ -242,8 +230,8 @@ describe('loopAas（数据接入页）', () => {
 
     const buttonTexts = wrapper.findAll('button').map((b) => b.text());
     expect(buttonTexts).not.toContain('保存配置');
+    expect(buttonTexts).not.toContain('保存并即时生效');
     expect(buttonTexts).not.toContain('新增品牌');
-    expect(buttonTexts).not.toContain('立即同步');
     expect(wrapper.html()).toContain('<!-- v-permission: ADMIN -->');
   });
 
@@ -301,41 +289,31 @@ describe('loopAas（数据接入页）', () => {
     expect(wrapper.text()).toContain('PID 12345');
   });
 
-  it('ADMIN 可点击立即同步并轮询至 SUCCESS', async () => {
-    vi.useFakeTimers();
-    try {
-      // 挂载时上次状态 SUCCESS（空闲）；触发后两次轮询：PROCESSING → SUCCESS
-      getAasConfigApiMock
-        .mockResolvedValueOnce(aasConfigFixture)
-        .mockResolvedValueOnce({
-          ...aasConfigFixture,
-          lastSyncStatus: 'PROCESSING',
-        })
-        .mockResolvedValueOnce(aasConfigFixture);
-      const wrapper = mountAas();
-      await flushPromises();
+  it('保存实时配置载荷包含订阅开关与实时回写开关', async () => {
+    getDatasourceConfigApiMock.mockResolvedValue({
+      ...configFixture,
+      realtimeWritebackEnabled: true,
+      signalrEnabled: true,
+      signalrSubscriberRunning: true,
+    });
+    const wrapper = mountAas();
+    await flushPromises();
 
-      const button = wrapper
-        .findAll('button')
-        .find((b) => b.text() === '立即同步');
-      expect(button).toBeTruthy();
-      expect(wrapper.text()).toContain('同步成功');
+    const button = wrapper
+      .findAll('button')
+      .find((b) => b.text() === '保存并即时生效');
+    expect(button).toBeTruthy();
 
-      await button!.trigger('click');
-      await flushPromises();
-      expect(triggerAasSyncApiMock).toHaveBeenCalledTimes(1);
+    await button!.trigger('click');
+    await flushPromises();
 
-      // 第一次轮询：PROCESSING → 状态 Tag 变"同步中"并继续排程
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(wrapper.text()).toContain('同步中');
-
-      // 第二次轮询：SUCCESS → 完成提示
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(message.success).toHaveBeenCalledWith(
-        'AAS 同步完成，测点元数据已更新',
-      );
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(updateDatasourceConfigApiMock).toHaveBeenCalledTimes(1);
+    const payload = updateDatasourceConfigApiMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.signalrEnabled).toBe(true);
+    expect(payload.realtimeWritebackEnabled).toBe(true);
+    expect(message.success).toHaveBeenCalledWith('实时数据源配置已保存并即时生效');
   });
 });

@@ -3,9 +3,12 @@
  * 数据接入页面 — 3 Tab 结构
  *
  * v6.1：DCS 品牌管理与 MODE 映射矩阵
- * - Tab 1: 数据源（历史 TDengine/API + 实时 SignalR）
+ * - Tab 1: 数据源（历史 TDengine/API + 实时 SignalR；订阅/回写开关保存即热生效）
  * - Tab 2: DCS 系统（品牌/型号 CRUD）
  * - Tab 3: MODE 矩阵（映射矩阵视图 + MODE 定义编辑）
+ *
+ * 2026-09-08：删除「AAS 位号同步」区块（后端 /aas/* 端点同步下线，beat 任务
+ * 此前已不注册）；新增实时回写开关；数据源 tab 重构为两栏布局（一屏显示）。
  *
  * 2026-07-28：迁移 CLPM 统一组件体系（ClpmPageToolbar + ClpmDataCanvas +
  * ClpmDangerConfirmModal），删除/切换/测试等确认流全部由危险确认模态承载；
@@ -13,11 +16,10 @@
  */
 import type { TableColumnsType, UploadProps } from 'ant-design-vue';
 
-import type { AasApi } from '#/api/aas';
 import type { DataSourceApi } from '#/api/datasource';
 import type { DcsApi } from '#/api/dcs';
 
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -39,10 +41,10 @@ import {
   TabPane,
   Tabs,
   Tag,
+  Tooltip,
   Upload,
 } from 'ant-design-vue';
 
-import { getAasConfigApi, triggerAasSyncApi } from '#/api/aas';
 import {
   getDatasourceConfigApi,
   refreshSubscriptionApi,
@@ -102,6 +104,8 @@ const form = reactive({
   historyApiTimeout: 30,
   signalrHubUrl: '',
   signalrEnabled: false,
+  // 实时数据回写本地 TDengine（订阅器每次写入实时读取，保存即生效）
+  realtimeWritebackEnabled: false,
   signalrReconnectInterval: 5,
   // 断点续传（阈值前端用分钟，后端存秒，提交时 ×60）
   gapBackfillEnabled: false,
@@ -154,11 +158,6 @@ const subscriptionRefreshSummary = computed(() => {
   const durationText = durationMs === null ? '' : `，耗时 ${durationMs}ms`;
   const pidText = r.leaderPid === null ? '' : `，进程 PID ${r.leaderPid}`;
   return `已刷新：共 ${r.total} 个测点（+${r.added.length} / -${r.removed.length}）${durationText}${pidText}`;
-});
-
-const needRestart = computed(() => {
-  if (!config.value) return false;
-  return form.signalrEnabled !== config.value.signalrSubscriberRunning;
 });
 
 // ===== 危险确认弹窗状态（ClpmDangerConfirmModal）=====
@@ -229,6 +228,7 @@ async function loadConfig() {
     form.historyApiTimeout = data.historyApiTimeout;
     form.signalrHubUrl = data.signalrHubUrl ?? '';
     form.signalrEnabled = data.signalrEnabled;
+    form.realtimeWritebackEnabled = data.realtimeWritebackEnabled;
     form.signalrReconnectInterval = data.signalrReconnectInterval;
     form.gapBackfillEnabled = data.gapBackfillEnabled;
     // 后端秒 → 前端分钟（Math.round 防御非 60 倍数脏数据）
@@ -291,12 +291,13 @@ async function saveSignalrConfig() {
     const data = await updateDatasourceConfigApi({
       signalrHubUrl: form.signalrHubUrl,
       signalrEnabled: form.signalrEnabled,
+      realtimeWritebackEnabled: form.realtimeWritebackEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
       gapBackfillEnabled: form.gapBackfillEnabled,
       gapBackfillMinGapSeconds: form.gapBackfillMinGapMinutes * 60,
     });
     config.value = data;
-    message.success('实时数据源配置已保存');
+    message.success('实时数据源配置已保存并即时生效');
   } catch {
     // 错误提示由请求拦截器统一处理
   } finally {
@@ -328,6 +329,7 @@ async function testSignalr() {
     const data = await updateDatasourceConfigApi({
       signalrHubUrl: form.signalrHubUrl,
       signalrEnabled: form.signalrEnabled,
+      realtimeWritebackEnabled: form.realtimeWritebackEnabled,
       signalrReconnectInterval: form.signalrReconnectInterval,
       gapBackfillEnabled: form.gapBackfillEnabled,
       gapBackfillMinGapSeconds: form.gapBackfillMinGapMinutes * 60,
@@ -357,114 +359,6 @@ async function refreshSubscription() {
     // 错误提示由请求拦截器统一处理
   } finally {
     refreshingSubscription.value = false;
-  }
-}
-
-// =========================================================================
-// AAS 位号同步（POST /aas/sync 异步任务，经 GET /aas/config 轮询状态）
-// =========================================================================
-const aasConfig = ref<AasApi.AasConfig | null>(null);
-const syncingAas = ref(false);
-/** 轮询定时器（递归 setTimeout 防堆积，卸载时清理） */
-let aasSyncPollTimer: null | ReturnType<typeof setTimeout> = null;
-/** 轮询上限（3s × 100 = 最长 5 分钟，生产 8000+ 位号 OPC UA 全量读取可能较慢） */
-const AAS_SYNC_POLL_MAX = 99;
-
-const aasSyncStatusColor = computed(() => {
-  switch (aasConfig.value?.lastSyncStatus) {
-    case 'FAILED': {
-      return 'red';
-    }
-    case 'PROCESSING': {
-      return 'blue';
-    }
-    case 'SUCCESS': {
-      return 'green';
-    }
-    default: {
-      return 'default';
-    }
-  }
-});
-
-const aasSyncStatusText = computed(() => {
-  switch (aasConfig.value?.lastSyncStatus) {
-    case 'FAILED': {
-      return '同步失败';
-    }
-    case 'PROCESSING': {
-      return '同步中';
-    }
-    case 'SUCCESS': {
-      return '同步成功';
-    }
-    default: {
-      return '从未同步';
-    }
-  }
-});
-
-const aasLastSyncText = computed(() => {
-  const at = aasConfig.value?.lastSyncAt;
-  return at ? new Date(at).toLocaleString() : '';
-});
-
-async function loadAasConfig() {
-  try {
-    aasConfig.value = await getAasConfigApi();
-    // 他处（API/其他会话）触发的同步进行中：本页进入轮询直到完成
-    if (
-      aasConfig.value.lastSyncStatus === 'PROCESSING' &&
-      !syncingAas.value &&
-      aasSyncPollTimer === null
-    ) {
-      syncingAas.value = true;
-      scheduleAasSyncPoll(AAS_SYNC_POLL_MAX);
-    }
-  } catch {
-    // 错误提示由请求拦截器统一处理
-  }
-}
-
-function scheduleAasSyncPoll(remaining: number) {
-  aasSyncPollTimer = setTimeout(async () => {
-    aasSyncPollTimer = null;
-    await loadAasConfig();
-    const status = aasConfig.value?.lastSyncStatus;
-    if (status === 'PROCESSING' && remaining > 0) {
-      scheduleAasSyncPoll(remaining - 1);
-      return;
-    }
-    syncingAas.value = false;
-    switch (status) {
-    case 'FAILED': {
-      message.error('AAS 同步失败，请检查 AAS 端点配置与网络');
-    
-    break;
-    }
-    case 'PROCESSING': {
-      message.warning('同步仍在进行，请稍后刷新页面查看结果');
-    
-    break;
-    }
-    case 'SUCCESS': {
-      message.success('AAS 同步完成，测点元数据已更新');
-    
-    break;
-    }
-    // No default
-    }
-  }, 3000);
-}
-
-/** 触发 AAS 位号同步（补全测点描述/类型/当前值，对 AAS 只读） */
-async function triggerAasSync() {
-  syncingAas.value = true;
-  try {
-    await triggerAasSyncApi();
-    scheduleAasSyncPoll(AAS_SYNC_POLL_MAX);
-  } catch {
-    syncingAas.value = false;
   }
 }
 
@@ -1019,7 +913,7 @@ function handleHelp() {
   showPageHelp({
     title: '数据接入 帮助',
     content:
-      '数据接入页 3 个 Tab：数据源（历史 API / 实时 SignalR 配置 + 网络模式切换 + 断点续传）、DCS 系统（品牌/型号 CRUD + Excel 导入导出）、DCS 型号映射（标准 MODE 与各 DCS 型号实际 MODE 值的映射矩阵）。网络模式仅切链路、不影响数据源选择；计算任务恒读本地 TDengine。',
+      '数据接入页 3 个 Tab：数据源（历史 API / 实时 SignalR 配置 + 网络模式切换 + 断点续传；订阅与回写开关保存即热生效，无需重启）、DCS 系统（品牌/型号 CRUD + Excel 导入导出）、DCS 型号映射（标准 MODE 与各 DCS 型号实际 MODE 值的映射矩阵）。网络模式仅切链路、不影响数据源选择；计算任务恒读本地 TDengine。',
   });
 }
 
@@ -1034,14 +928,6 @@ const { tableSize, densityLabel, cycleDensity } = useTableDensity('loop-aas');
 
 onMounted(() => {
   loadConfig();
-  loadAasConfig();
-});
-
-onUnmounted(() => {
-  if (aasSyncPollTimer) {
-    clearTimeout(aasSyncPollTimer);
-    aasSyncPollTimer = null;
-  }
 });
 </script>
 
@@ -1075,316 +961,309 @@ onUnmounted(() => {
           error-text="数据源配置加载失败，请重试"
           @retry="loadConfig"
         >
-          <!-- 顶部状态条 -->
-          <Card class="mb-4" :body-style="{ padding: '16px' }" size="small">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="flex flex-wrap items-center gap-6">
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-500">网络模式</span>
-                  <Tag :color="form.networkMode === 'wan' ? 'purple' : 'green'">
-                    {{
-                      form.networkMode === 'wan'
-                        ? '公网（Tailscale）'
-                        : '局域网直连'
-                    }}
-                  </Tag>
-                  <Tag
-                    v-if="config && !config.tailscaleAvailable"
-                    color="default"
-                  >
-                    Tailscale 未安装
-                  </Tag>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-500">实时订阅</span>
-                  <Tag
-                    :color="
-                      config?.signalrSubscriberRunning ? 'green' : 'default'
-                    "
-                  >
-                    {{ config?.signalrSubscriberRunning ? '运行中' : '未启动' }}
-                  </Tag>
-                </div>
+          <!-- 顶部状态条（单行，保存后随响应即时刷新） -->
+          <Card class="mb-3" :body-style="{ padding: '10px 16px' }" size="small">
+            <div class="flex flex-wrap items-center gap-x-8 gap-y-2">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500">网络模式</span>
+                <Tag :color="form.networkMode === 'wan' ? 'purple' : 'green'">
+                  {{
+                    form.networkMode === 'wan'
+                      ? '公网（Tailscale）'
+                      : '局域网直连'
+                  }}
+                </Tag>
+                <Tag
+                  v-if="config && !config.tailscaleAvailable"
+                  color="default"
+                >
+                  Tailscale 未安装
+                </Tag>
               </div>
-              <Button
-                v-if="needRestart"
-                type="primary"
-                ghost
-                size="small"
-                @click="loadConfig"
-              >
-                刷新状态
-              </Button>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500">实时订阅</span>
+                <Tag
+                  :color="
+                    config?.signalrSubscriberRunning ? 'green' : 'default'
+                  "
+                >
+                  {{ config?.signalrSubscriberRunning ? '运行中' : '未启动' }}
+                </Tag>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500">实时回写</span>
+                <Tag
+                  :color="config?.realtimeWritebackEnabled ? 'green' : 'default'"
+                >
+                  {{ config?.realtimeWritebackEnabled ? '开启' : '关闭' }}
+                </Tag>
+              </div>
             </div>
           </Card>
 
-          <!-- 重启提示 -->
-          <Alert
-            v-if="needRestart"
-            class="mb-4"
-            type="warning"
-            show-icon
-            message="实时订阅启停需重启后端生效"
-            description="实时订阅器在后端启动时初始化，修改后需重启后端服务才能完全生效。API 地址 / Token / 超时 / Hub URL / 重连间隔 / 网络模式可即时生效。"
-          />
-
-          <!-- 网络模式切换 -->
-          <Card class="mb-4" size="small" title="网络模式">
-            <Form layout="vertical" :model="form">
-              <FormItem label="链路路径">
-                <Radio.Group
-                  v-permission="['ADMIN']"
-                  :value="form.networkMode"
-                  :disabled="switchingNetwork"
-                  @change="handleNetworkModeChange"
-                >
-                  <Radio value="lan">局域网（直连，默认）</Radio>
-                  <Radio value="wan">公网（走 Tailscale 子网路由）</Radio>
-                </Radio.Group>
-              </FormItem>
-
-              <Alert
-                v-if="config && !config.tailscaleAvailable"
-                class="mb-2"
-                type="info"
-                show-icon
-                message="当前环境未检测到 tailscale 客户端（容器/未安装），切换将被静默跳过"
-              />
-
-              <Alert
-                v-if="tailscaleSwitchResult"
-                class="mb-2"
-                :type="
-                  tailscaleSwitchResult.status === 'success'
-                    ? 'success'
-                    : tailscaleSwitchResult.status === 'skipped'
-                      ? 'info'
-                      : 'error'
-                "
-                show-icon
-                :message="tailscaleSwitchResult.message"
-                :description="
-                  tailscaleSwitchResult.latencyMs !== null
-                    ? `耗时 ${tailscaleSwitchResult.latencyMs}ms`
-                    : undefined
-                "
-              />
-
-              <div class="text-gray-400 text-xs">
-                局域网模式移除 192.168.100.0/24 子网路由，直连
-                AAS；公网模式安装子网路由，通过 zpdev Tailscale 转发。两模式 URL
-                相同，由 Tailscale 透明路由。
-              </div>
-            </Form>
-          </Card>
-
-          <!-- 历史数据源配置（仅数据导入时调用） -->
-          <Card
-            class="mb-4"
-            size="small"
-            title="历史数据导入接口（仅「数据管理 → 历史数据导入」时调用）"
-          >
-            <Form layout="vertical" :model="form">
-              <FormItem label="API 地址">
-                <Input
-                  v-model:value="form.historyApiUrl"
-                  :placeholder="DEFAULT_HISTORY_API_URL"
-                  allow-clear
-                />
-              </FormItem>
-              <FormItem label="鉴权 Token">
-                <Input.Password
-                  v-model:value="form.historyApiToken"
-                  :disabled="clearToken"
-                  :placeholder="
-                    savedMaskedToken
-                      ? `已保存：${savedMaskedToken}（留空保持不变）`
-                      : '如需鉴权请填写'
-                  "
-                />
-                <div v-if="savedMaskedToken" class="mt-1">
-                  <Tooltip
-                    title="勾选后将清空已保存 Token，并禁用输入框，需重新填写"
+          <!-- 主体两栏：左=实时数据源，右=历史数据导入 + 网络模式 -->
+          <div class="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+            <!-- 实时数据源（订阅开关保存即热生效） -->
+            <Card size="small" title="实时数据源（SignalR）">
+              <Form layout="vertical" :model="form">
+                <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                  <FormItem
+                    label="实时数据订阅"
+                    :style="{ marginBottom: '8px' }"
                   >
-                    <Checkbox v-model:checked="clearToken">
-                      清空已保存 Token
-                    </Checkbox>
-                  </Tooltip>
+                    <div class="flex items-center gap-2">
+                      <Switch v-model:checked="form.signalrEnabled" />
+                      <span class="text-gray-400 text-xs">
+                        {{
+                          form.signalrEnabled
+                            ? '保存后立即连接 Hub'
+                            : '关闭后停止订阅'
+                        }}
+                      </span>
+                    </div>
+                  </FormItem>
+                  <FormItem
+                    label="实时回写 TDengine"
+                    :style="{ marginBottom: '8px' }"
+                  >
+                    <div class="flex items-center gap-2">
+                      <Switch
+                        v-model:checked="form.realtimeWritebackEnabled"
+                      />
+                      <span class="text-gray-400 text-xs">
+                        实时数据写入本地时序库
+                      </span>
+                    </div>
+                  </FormItem>
                 </div>
-                <div class="text-gray-400 mt-1 text-xs">
-                  Token 打码显示（保留前后各 4 位）；留空 = 不变，输入新值 =
-                  覆盖，勾选清空 = 清除
-                </div>
-              </FormItem>
-              <FormItem label="请求超时（秒）">
-                <InputNumber
-                  v-model:value="form.historyApiTimeout"
-                  :max="120"
-                  :min="5"
-                />
-              </FormItem>
 
-              <div class="text-gray-400 mb-3 text-xs">
-                性能评估、回路诊断等计算任务一律读取本地
-                TDengine，不调用此接口。地址清空后保存即清除配置。
-              </div>
-
-              <div class="flex items-center gap-3">
-                <Button
-                  v-permission="['ADMIN']"
-                  type="primary"
-                  :loading="savingHistory"
-                  @click="saveHistoryConfig"
-                >
-                  保存配置
-                </Button>
-                <Button
-                  v-permission="['ADMIN']"
-                  :loading="testingHistory"
-                  @click="testHistory"
-                >
-                  测试连接
-                </Button>
-                <Tag
-                  v-if="historyTestResult"
-                  :color="historyTestResult.success ? 'green' : 'red'"
-                >
-                  {{ historyTestResult.message
-                  }}<template v-if="historyTestResult.latencyMs">
-                    ({{ historyTestResult.latencyMs }}ms)
-                  </template>
-                </Tag>
-              </div>
-            </Form>
-          </Card>
-
-          <!-- 实时数据源配置 -->
-          <Card size="small" title="实时数据源">
-            <Form layout="vertical" :model="form">
-              <FormItem label="启用实时数据订阅">
-                <div class="flex items-center gap-2">
-                  <Switch v-model:checked="form.signalrEnabled" />
-                  <span class="text-gray-400 text-sm">
-                    关闭时使用本地模拟器（开发环境）
-                  </span>
-                </div>
-              </FormItem>
-
-              <template v-if="form.signalrEnabled">
-                <FormItem label="SignalR Hub URL">
-                  <Input
-                    v-model:value="form.signalrHubUrl"
-                    :placeholder="DEFAULT_SIGNALR_HUB_URL"
-                    allow-clear
-                  />
-                </FormItem>
-                <FormItem label="断线重连间隔（秒）">
-                  <InputNumber
-                    v-model:value="form.signalrReconnectInterval"
-                    :max="60"
-                    :min="1"
-                  />
-                </FormItem>
-
-                <!-- 断点续传（依赖订阅器运行，仅在启用实时订阅时显示） -->
-                <FormItem label="断点续传">
-                  <div class="flex items-center gap-2">
-                    <Switch v-model:checked="form.gapBackfillEnabled" />
-                    <span class="text-gray-400 text-sm">
-                      SignalR 断线重连后自动补齐缺口数据
-                    </span>
+                <template v-if="form.signalrEnabled">
+                  <FormItem
+                    label="SignalR Hub URL"
+                    :style="{ marginBottom: '8px' }"
+                  >
+                    <Input
+                      v-model:value="form.signalrHubUrl"
+                      :placeholder="DEFAULT_SIGNALR_HUB_URL"
+                      allow-clear
+                    />
+                  </FormItem>
+                  <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                    <FormItem
+                      label="断线重连间隔（秒）"
+                      :style="{ marginBottom: '8px' }"
+                    >
+                      <InputNumber
+                        v-model:value="form.signalrReconnectInterval"
+                        :max="60"
+                        :min="1"
+                      />
+                    </FormItem>
+                    <FormItem
+                      label="断点续传"
+                      :style="{ marginBottom: '8px' }"
+                    >
+                      <div class="flex items-center gap-2">
+                        <Switch v-model:checked="form.gapBackfillEnabled" />
+                        <span class="text-gray-400 text-xs">
+                          断线重连后自动补缺口
+                        </span>
+                      </div>
+                    </FormItem>
                   </div>
-                </FormItem>
-                <FormItem
-                  v-if="form.gapBackfillEnabled"
-                  label="缺口阈值（分钟）"
-                >
-                  <div class="flex items-center gap-2">
+                  <FormItem
+                    v-if="form.gapBackfillEnabled"
+                    label="缺口阈值（分钟，小于该缺口视为抖动不补数）"
+                    :style="{ marginBottom: '8px' }"
+                  >
                     <InputNumber
                       v-model:value="form.gapBackfillMinGapMinutes"
                       :max="1440"
                       :min="1"
                     />
-                    <span class="text-gray-400 text-sm">
-                      小于该缺口的断线视为正常抖动不补数（1-1440 分钟）
-                    </span>
+                  </FormItem>
+                </template>
+
+                <div class="flex flex-wrap items-center gap-3">
+                  <Button
+                    v-permission="['ADMIN']"
+                    type="primary"
+                    :loading="savingSignalr"
+                    @click="saveSignalrConfig"
+                  >
+                    保存并即时生效
+                  </Button>
+                  <Button
+                    v-if="form.signalrEnabled"
+                    v-permission="['ADMIN']"
+                    :loading="testingSignalr"
+                    @click="testSignalr"
+                  >
+                    测试连接
+                  </Button>
+                  <Button
+                    v-if="form.signalrEnabled"
+                    v-permission="['ADMIN']"
+                    :loading="refreshingSubscription"
+                    @click="refreshSubscription"
+                  >
+                    刷新实时订阅
+                  </Button>
+                  <Tag
+                    v-if="signalrTestResult"
+                    :color="signalrTestResult.success ? 'green' : 'red'"
+                  >
+                    {{ signalrTestResult.message
+                    }}<template v-if="signalrTestResult.latencyMs">
+                      ({{ signalrTestResult.latencyMs }}ms)
+                    </template>
+                  </Tag>
+                  <Tag
+                    v-if="subscriptionRefreshResult"
+                    :color="
+                      subscriptionRefreshResult.error ? 'red' : 'green'
+                    "
+                  >
+                    {{ subscriptionRefreshSummary }}
+                  </Tag>
+                </div>
+              </Form>
+            </Card>
+
+            <!-- 右列：历史数据导入 + 网络模式 -->
+            <div class="grid grid-cols-1 items-start gap-3">
+              <Card
+                size="small"
+                title="历史数据导入接口（仅「数据管理 → 历史数据导入」时调用）"
+              >
+                <Form layout="vertical" :model="form">
+                  <FormItem label="API 地址" :style="{ marginBottom: '8px' }">
+                    <Input
+                      v-model:value="form.historyApiUrl"
+                      :placeholder="DEFAULT_HISTORY_API_URL"
+                      allow-clear
+                    />
+                  </FormItem>
+                  <FormItem
+                    label="鉴权 Token"
+                    :style="{ marginBottom: '8px' }"
+                  >
+                    <Input.Password
+                      v-model:value="form.historyApiToken"
+                      :disabled="clearToken"
+                      :placeholder="
+                        savedMaskedToken
+                          ? `已保存：${savedMaskedToken}（留空保持不变）`
+                          : '如需鉴权请填写'
+                      "
+                    />
+                    <div v-if="savedMaskedToken" class="mt-1">
+                      <Tooltip
+                        title="勾选后将清空已保存 Token，并禁用输入框，需重新填写"
+                      >
+                        <Checkbox v-model:checked="clearToken">
+                          清空已保存 Token
+                        </Checkbox>
+                      </Tooltip>
+                    </div>
+                  </FormItem>
+                  <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                    <FormItem
+                      label="请求超时（秒）"
+                      :style="{ marginBottom: '8px' }"
+                    >
+                      <InputNumber
+                        v-model:value="form.historyApiTimeout"
+                        :max="120"
+                        :min="5"
+                      />
+                    </FormItem>
+                    <div
+                      class="text-gray-400 self-end pb-1 text-xs leading-5"
+                    >
+                      Token 打码显示（保留前后各 4 位）；留空 = 不变，输入新值 =
+                      覆盖。计算任务一律读本地 TDengine，不调用此接口。
+                    </div>
                   </div>
-                </FormItem>
-              </template>
 
-              <div class="flex items-center gap-3">
-                <Button
-                  v-permission="['ADMIN']"
-                  type="primary"
-                  :loading="savingSignalr"
-                  @click="saveSignalrConfig"
-                >
-                  保存配置
-                </Button>
-                <Button
-                  v-if="form.signalrEnabled"
-                  v-permission="['ADMIN']"
-                  :loading="testingSignalr"
-                  @click="testSignalr"
-                >
-                  测试连接
-                </Button>
-                <Button
-                  v-if="form.signalrEnabled"
-                  v-permission="['ADMIN']"
-                  :loading="refreshingSubscription"
-                  @click="refreshSubscription"
-                >
-                  刷新实时订阅
-                </Button>
-                <Tag
-                  v-if="signalrTestResult"
-                  :color="signalrTestResult.success ? 'green' : 'red'"
-                >
-                  {{ signalrTestResult.message
-                  }}<template v-if="signalrTestResult.latencyMs">
-                    ({{ signalrTestResult.latencyMs }}ms)
-                  </template>
-                </Tag>
-                <Tag
-                  v-if="subscriptionRefreshResult"
-                  :color="subscriptionRefreshResult.error ? 'red' : 'green'"
-                >
-                  {{ subscriptionRefreshSummary }}
-                </Tag>
-              </div>
-            </Form>
-          </Card>
+                  <div class="flex flex-wrap items-center gap-3">
+                    <Button
+                      v-permission="['ADMIN']"
+                      type="primary"
+                      :loading="savingHistory"
+                      @click="saveHistoryConfig"
+                    >
+                      保存配置
+                    </Button>
+                    <Button
+                      v-permission="['ADMIN']"
+                      :loading="testingHistory"
+                      @click="testHistory"
+                    >
+                      测试连接
+                    </Button>
+                    <Tag
+                      v-if="historyTestResult"
+                      :color="historyTestResult.success ? 'green' : 'red'"
+                    >
+                      {{ historyTestResult.message
+                      }}<template v-if="historyTestResult.latencyMs">
+                        ({{ historyTestResult.latencyMs }}ms)
+                      </template>
+                    </Tag>
+                  </div>
+                </Form>
+              </Card>
 
-          <!-- AAS 位号同步 -->
-          <Card size="small" title="AAS 位号同步">
-            <div class="flex flex-wrap items-center gap-3">
-              <Button
-                v-permission="['ADMIN']"
-                type="primary"
-                :loading="syncingAas"
-                @click="triggerAasSync"
-              >
-                立即同步
-              </Button>
-              <Tag v-if="aasConfig" :color="aasSyncStatusColor">
-                {{ aasSyncStatusText }}
-              </Tag>
-              <span v-if="aasLastSyncText" class="text-gray-400 text-sm">
-                最近同步：{{ aasLastSyncText }}
-              </span>
-              <span
-                v-if="aasConfig?.mockMode"
-                class="text-orange-400 text-sm"
-              >
-                Mock 模式（无真实 AAS，仅同步模拟数据）
-              </span>
+              <Card size="small" title="网络模式">
+                <Form layout="vertical" :model="form">
+                  <FormItem label="链路路径" :style="{ marginBottom: '8px' }">
+                    <Radio.Group
+                      v-permission="['ADMIN']"
+                      :value="form.networkMode"
+                      :disabled="switchingNetwork"
+                      @change="handleNetworkModeChange"
+                    >
+                      <Radio value="lan">局域网（直连，默认）</Radio>
+                      <Radio value="wan">公网（走 Tailscale 子网路由）</Radio>
+                    </Radio.Group>
+                  </FormItem>
+
+                  <Alert
+                    v-if="config && !config.tailscaleAvailable"
+                    class="mb-2"
+                    type="info"
+                    show-icon
+                    message="当前环境未检测到 tailscale 客户端（容器/未安装），切换将被静默跳过"
+                  />
+
+                  <Alert
+                    v-if="tailscaleSwitchResult"
+                    class="mb-2"
+                    :type="
+                      tailscaleSwitchResult.status === 'success'
+                        ? 'success'
+                        : tailscaleSwitchResult.status === 'skipped'
+                          ? 'info'
+                          : 'error'
+                    "
+                    show-icon
+                    :message="tailscaleSwitchResult.message"
+                    :description="
+                      tailscaleSwitchResult.latencyMs !== null
+                        ? `耗时 ${tailscaleSwitchResult.latencyMs}ms`
+                        : undefined
+                    "
+                  />
+
+                  <div class="text-gray-400 text-xs">
+                    局域网直连 AAS；公网经 zpdev Tailscale
+                    透明转发。两模式 URL 相同，仅切链路、不影响数据源选择。
+                  </div>
+                </Form>
+              </Card>
             </div>
-            <p class="mt-2 mb-0 text-gray-400 text-sm">
-              从 AAS 拉取全部位号清单与元数据，补全测点描述/类型/当前值（对 AAS
-              只读）。回路 Excel 导入自动创建的测点会在此同步中获得真实描述。
-            </p>
-          </Card>
+          </div>
         </ClpmDataCanvas>
       </TabPane>
 

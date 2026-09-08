@@ -468,7 +468,6 @@ class TestHealthAndInfra:
         required_modules = [
             "/api/v1/auth",
             "/api/v1/loops",
-            "/api/v1/aas",
             "/api/v1/performance",
             "/api/v1/diagnosis",
             "/api/v1/tuning",
