@@ -71,8 +71,9 @@ async def update_datasource_config_endpoint(
 
     即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
     / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
+    热生效：signalrEnabled（订阅器停止/启动）/ realtimeWritebackEnabled
     / gapBackfillEnabled / gapBackfillMinGapSeconds
-    重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
+    重启生效：dataSourceType（Provider 单例）
 
     注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。
     """
@@ -104,6 +105,15 @@ async def update_datasource_config_endpoint(
             msg = f"配置更新成功；Tailscale 跳过：{tailscale_switch['message']}"
         else:
             msg = f"配置已保存，但 Tailscale 切换失败：{tailscale_switch['message']}"
+
+    # 实时订阅热启停结果附加到消息（started/stopped 成功；failed 提示重启对齐）
+    subscriber_action = data.get("subscriberAction")
+    if subscriber_action == "started":
+        msg += "；实时订阅已启动"
+    elif subscriber_action == "stopped":
+        msg += "；实时订阅已停止"
+    elif subscriber_action == "failed":
+        msg += "；实时订阅启停失败，请重启后端对齐"
 
     return success(data=data, message=msg)
 

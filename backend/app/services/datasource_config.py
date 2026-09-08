@@ -6,7 +6,8 @@
 - historyApiUrl / historyApiToken / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
   可即时生效（下次请求读取 settings 时生效）。
 - dataSourceType 切换需重启后端（Provider 单例在首次调用时创建，见 factory.py）。
-- signalrEnabled 切换需重启后端（订阅器后台任务在 lifespan 启动时初始化）。
+- signalrEnabled 保存即热生效：变更后停止/启动订阅器（2026-09-08），无需重启后端。
+- realtimeWritebackEnabled 保存即热生效：订阅器每次写入实时读取 settings 属性。
 - gapBackfillEnabled / gapBackfillMinGapSeconds 即时生效（订阅器每次触发都读 settings，无需重启）。
 
 安全约定（2026-07-21 链路配置整改）：
@@ -191,8 +192,8 @@ def _mask_token(token: str | None) -> str | None:
 def _signalr_subscriber_running() -> bool:
     """查询 SignalR 订阅器真实运行状态（非 settings 配置镜像）。
 
-    订阅器在 lifespan 启动时初始化，signalrEnabled 配置变更需重启后端
-    才生效，因此运行状态必须读订阅器实例而非配置。
+    订阅器运行态由启停控制（lifespan 初始化 + 配置保存热生效），配置开关与
+    运行状态可能短暂不一致（如启停失败），因此运行状态必须读订阅器实例。
     """
     try:
         from app.services.data_source.realtime_subscriber import get_subscriber
@@ -265,7 +266,9 @@ async def update_datasource_config(
 
     即时生效项：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
     / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
-    重启生效项：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）
+    热生效项：signalrEnabled（保存后停止/启动订阅器，无需重启）
+    / realtimeWritebackEnabled（订阅器每次写入实时读取 settings）
+    重启生效项：dataSourceType（Provider 单例）
 
     更新语义（PR 约定）：
     - 字段不传（None）＝保持不变
@@ -355,6 +358,34 @@ async def update_datasource_config(
         after_value=after_json,
     )
     await db.commit()
+
+    # signalrEnabled 变化 → 订阅器热启停（DB 已落库为真相源，副作用失败不回滚，
+    # 状态以 signalrSubscriberRunning 为准；realtimeWritebackEnabled 为 property
+    # 实时读 settings，无需处理）
+    if before["signalrEnabled"] != after["signalrEnabled"]:
+        try:
+            from app.services.data_source.realtime_subscriber import (
+                start_subscriber,
+                stop_subscriber,
+            )
+
+            if after["signalrEnabled"]:
+                await start_subscriber()
+                after["subscriberAction"] = "started"
+            else:
+                await stop_subscriber()
+                after["subscriberAction"] = "stopped"
+            logger.info(
+                "signalrEnabled %s → %s，订阅器热%s完成",
+                before["signalrEnabled"],
+                after["signalrEnabled"],
+                "启" if after["signalrEnabled"] else "停",
+            )
+        except Exception:  # noqa: BLE001 — 热启停失败不阻塞配置保存
+            after["subscriberAction"] = "failed"
+            logger.exception("订阅器热启停失败（配置已保存；可重启后端对齐运行状态）")
+        # 动作后刷新运行态快照（after 中的值是动作前计算的，直接返回会误导前端）
+        after["signalrSubscriberRunning"] = _signalr_subscriber_running()
 
     # 若触发了 Tailscale 切换，在返回值中附加结果
     if tailscale_result is not None:
