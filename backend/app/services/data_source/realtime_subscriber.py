@@ -125,6 +125,10 @@ from app.core.redis import redis_client
 from app.core.tdengine import make_subtable_name
 from app.core.tdengine_native import batch_insert_multi
 from app.models.tag import TagRegistry
+from app.services.datasource_config import (
+    REALTIME_WRITEBACK_RUNTIME_KEY,
+    SIGNALR_ENABLED_RUNTIME_KEY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -756,6 +760,16 @@ class RealtimeSubscriber:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Leader 锁维护循环异常（下周期重试）: %s", exc)
 
+    async def _read_runtime_flag(self, key: str, fallback: bool) -> bool:
+        """读实时开关运行态镜像键（缺失/Redis 异常回退本进程 settings 快照）."""
+        try:
+            raw = await redis_client.get(key)
+            if raw is None:
+                return fallback
+            return raw in ("true", True)
+        except Exception:  # noqa: BLE001 — 控制面降级按本进程快照判定
+            return fallback
+
     async def _maintain_leadership(self) -> None:
         """单个维护周期（R04 三态语义）.
 
@@ -766,6 +780,21 @@ class RealtimeSubscriber:
           超出租约期限仍无法确认持有 → 退位停止接收/写回并登记
           控制面故障窗口（计数 lease_lost_windows）。
         """
+        # 多进程热生效：读运行态镜像键并同步本进程 settings。uvicorn --workers
+        # / Celery 下每个进程 settings 是启动快照，配置保存只更新处理请求进程；
+        # 不读镜像的话，热停后其他进程的待命实例会按旧值抢 Leader 继续采集
+        # （zpdev 2026-09-08 事故：--workers 4 下关闭后仍有一个待命 worker 接管）。
+        settings.SIGNALR_ENABLED = await self._read_runtime_flag(
+            SIGNALR_ENABLED_RUNTIME_KEY, settings.SIGNALR_ENABLED
+        )
+        settings.REALTIME_WRITEBACK_ENABLED = await self._read_runtime_flag(
+            REALTIME_WRITEBACK_RUNTIME_KEY, settings.REALTIME_WRITEBACK_ENABLED
+        )
+        if not settings.SIGNALR_ENABLED:
+            if self._is_leader:
+                logger.info("实时订阅已通过配置关闭（运行态镜像），Leader 退位停止订阅")
+                await self._resign_leader()
+            return
         if self._is_leader:
             renewed = await self._renew_leader_lock()
             if not renewed:
