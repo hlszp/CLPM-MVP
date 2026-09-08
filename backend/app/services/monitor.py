@@ -372,9 +372,33 @@ def _classify_grade(score: float | None, thresholds: list[dict]) -> str:
     return "INCONCLUSIVE"
 
 
+async def _count_loop_types(
+    db: AsyncSession,
+    conditions: list,
+    exclude_condition: Any,
+) -> dict[str, int]:
+    """回路类型分布（分面口径：排除类型筛选自身，其余筛选条件全生效）。
+
+    供监控列表 aggregate.typeCounts 使用——点击类型卡片后其余类型卡片
+    仍需可见（分面计数），而装置/关键词/控制模式筛选均需生效。
+    """
+    stmt = (
+        select(LoopLedger.loop_type, func.count())
+        .select_from(LoopLedger)
+        .group_by(LoopLedger.loop_type)
+    )
+    for cond in conditions:
+        if exclude_condition is not None and cond is exclude_condition:
+            continue
+        stmt = stmt.where(cond)
+    result = await db.execute(stmt)
+    return {str(loop_type): cnt for loop_type, cnt in result.all() if loop_type}
+
+
 async def _build_loop_monitor_aggregate(
     db: AsyncSession,
     conditions: list,
+    type_facet_exclude: Any = None,
 ) -> dict[str, Any]:
     """回路监控列表聚合统计（E-1）。
 
@@ -385,6 +409,11 @@ async def _build_loop_monitor_aggregate(
     - worsenedCount: 较昨日恶化（dayTrend=WORSENED，scoreDelta ≤ -2）回路数
     - modeDistribution: MODE 实时分布 {AUTO/CAS/MAN/REMOTE/ADVANCED/UNKNOWN: count}
     - autoControlRate: 实时自控率 (AUTO+CAS+REMOTE+ADVANCED) / total（百分比，1位小数）
+    - typeCounts: 回路类型分布（分面口径：type_facet_exclude 传入类型筛选条件时
+      其被排除，装置/关键词/控制模式筛选均生效；供前端类型卡片联动）
+
+    Args:
+        type_facet_exclude: 类型筛选条件本体（用于分面排除）；无类型筛选时传 None
     """
     # 1) 查符合条件的全部 loop_id
     id_stmt = select(LoopLedger.id)
@@ -400,6 +429,7 @@ async def _build_loop_monitor_aggregate(
             "worsenedCount": 0,
             "modeDistribution": {},
             "autoControlRate": 0.0,
+            "typeCounts": {},
         }
 
     # 2) 批量查最新快照 score
@@ -569,6 +599,8 @@ async def _build_loop_monitor_aggregate(
         "worsenedCount": worsened_count,
         "modeDistribution": mode_distribution,
         "autoControlRate": auto_control_rate,
+        # 回路类型分面分布（排除类型筛选自身，其余筛选全生效）
+        "typeCounts": await _count_loop_types(db, conditions, type_facet_exclude),
     }
 
 
@@ -684,8 +716,10 @@ async def list_loop_monitor(
         all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
         all_node_ids.append(plant_node_id)
         conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+    loop_type_condition = None
     if loop_type:
-        conditions.append(func.upper(LoopLedger.loop_type) == loop_type.upper())
+        loop_type_condition = func.upper(LoopLedger.loop_type) == loop_type.upper()
+        conditions.append(loop_type_condition)
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(
@@ -732,11 +766,14 @@ async def list_loop_monitor(
     total = total_result.scalar() or 0
 
     # ===== E-1 aggregate 聚合（范围内全量统计，不分页）=====
-    # 用于回路列表页 R2 摘要条 + R2.5 等级速览卡，与分页列表同一筛选口径
+    # 用于回路列表页 R2 摘要条 + R2.5 等级速览卡，与分页列表同一筛选口径；
+    # typeCounts 分面排除类型筛选自身（loop_type_condition），供前端类型卡片联动
     aggregate: dict[str, Any] | None = None
     if total > 0 and not loop_id:
         # 深链接精确查询（loop_id）场景下不计算 aggregate（前端不需要）
-        aggregate = await _build_loop_monitor_aggregate(db, conditions)
+        aggregate = await _build_loop_monitor_aggregate(
+            db, conditions, type_facet_exclude=loop_type_condition
+        )
 
     # C1-1 增量巡检：默认排序"最需关注"优先——最新快照评分升序（差回路在前），
     # 无快照回路排最后，次级按创建时间倒序保持确定性
