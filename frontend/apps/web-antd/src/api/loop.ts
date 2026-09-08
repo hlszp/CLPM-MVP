@@ -744,6 +744,8 @@ export function getLoopMonitorDetailApi(
 ) {
   return requestClient.get<LoopApi.MonitorDetail>(`/loops/${loopId}/monitor`, {
     params: { trendWindow, ...customRange },
+    // 大时间窗（72H/自定义）趋势扫描 TDengine 可超过默认 10s
+    timeout: 30_000,
   });
 }
 
@@ -753,6 +755,8 @@ export function getLoopMonitorDetailApi(
 export function getLoopMonitorListApi(params: LoopApi.MonitorQueryParams) {
   return requestClient.get<LoopApi.MonitorListResult>('/loops/monitor', {
     params,
+    // 列表携带各回路实时/统计字段，低配环境可超过默认 10s
+    timeout: 30_000,
   });
 }
 
