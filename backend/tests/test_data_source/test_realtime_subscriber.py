@@ -35,6 +35,10 @@ from app.services.data_source.realtime_subscriber import (
     start_subscriber,
     stop_subscriber,
 )
+from app.services.datasource_config import (
+    REALTIME_WRITEBACK_RUNTIME_KEY,
+    SIGNALR_ENABLED_RUNTIME_KEY,
+)
 
 # ---------------------------------------------------------------------------
 # Fake Redis（轻量级，仅支持 setex/mget）
@@ -1393,6 +1397,88 @@ def _stub_sub_tasks(sub: RealtimeSubscriber) -> None:
     sub._run = _idle_loop
     sub._flush_loop = _idle_loop
     sub._refresh_loop = _idle_loop
+
+
+class TestLeadershipRuntimeFlagMirror:
+    """_maintain_leadership 读取实时开关镜像键：禁用时任/待命都不采集。
+
+    zpdev 2026-09-08 事故回归：uvicorn --workers 4 下保存关闭只热停了处理
+    请求进程的订阅器，其余待命进程按各自启动时的 settings 快照抢 Leader
+    继续采集。修复后每个维护周期读 Redis 镜像键并同步本进程 settings，
+    禁用态下 Leader 退位、待命不抢锁。
+    """
+
+    def _make_sub(self) -> RealtimeSubscriber:
+        sub = RealtimeSubscriber()
+        sub._leader_token = "host:1:1"
+        return sub
+
+    @pytest.mark.asyncio
+    async def test_mirror_disabled_resigns_leader(self):
+        """镜像键为 false 时现任 Leader 应退位，且不续租。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[SIGNALR_ENABLED_RUNTIME_KEY] = "false"
+        fake_redis._data[REALTIME_WRITEBACK_RUNTIME_KEY] = "false"
+        sub = self._make_sub()
+        sub._is_leader = True
+        sub._renew_leader_lock = AsyncMock(return_value=True)
+        sub._resign_leader = AsyncMock()
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            mock_s.SIGNALR_ENABLED = True
+            mock_s.REALTIME_WRITEBACK_ENABLED = True
+            mock_s.SUBSCRIBER_LEADER_LOCK_TTL_SECONDS = 30
+            await sub._maintain_leadership()
+
+        sub._resign_leader.assert_awaited_once()
+        sub._renew_leader_lock.assert_not_awaited()
+        assert mock_s.SIGNALR_ENABLED is False
+        assert mock_s.REALTIME_WRITEBACK_ENABLED is False
+
+    @pytest.mark.asyncio
+    async def test_mirror_disabled_standby_does_not_acquire(self):
+        """镜像键为 false 时待命者不得抢锁（本进程 settings 快照仍是旧值 true）。"""
+        fake_redis = _FakeRedis()
+        fake_redis._data[SIGNALR_ENABLED_RUNTIME_KEY] = "false"
+        fake_redis._data[REALTIME_WRITEBACK_RUNTIME_KEY] = "true"
+        sub = self._make_sub()
+        sub._is_leader = False
+        sub._acquire_leader_lock = AsyncMock(return_value=True)
+        sub._become_leader = AsyncMock()
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            mock_s.SIGNALR_ENABLED = True
+            mock_s.REALTIME_WRITEBACK_ENABLED = True
+            await sub._maintain_leadership()
+
+        sub._acquire_leader_lock.assert_not_awaited()
+        sub._become_leader.assert_not_awaited()
+        assert mock_s.SIGNALR_ENABLED is False
+        assert mock_s.REALTIME_WRITEBACK_ENABLED is True
+
+    @pytest.mark.asyncio
+    async def test_mirror_missing_falls_back_to_settings_and_acquires(self):
+        """镜像键缺失（Redis 被清空）时回退本进程 settings，启用态正常抢锁。"""
+        fake_redis = _FakeRedis()
+        sub = self._make_sub()
+        sub._is_leader = False
+        sub._acquire_leader_lock = AsyncMock(return_value=True)
+        sub._become_leader = AsyncMock()
+        with (
+            patch("app.services.data_source.realtime_subscriber.redis_client", fake_redis),
+            patch("app.services.data_source.realtime_subscriber.settings") as mock_s,
+        ):
+            mock_s.SIGNALR_ENABLED = True
+            mock_s.REALTIME_WRITEBACK_ENABLED = True
+            await sub._maintain_leadership()
+
+        sub._acquire_leader_lock.assert_awaited_once()
+        sub._become_leader.assert_awaited_once()
+        assert mock_s.SIGNALR_ENABLED is True
 
 
 class TestLeaderLock:

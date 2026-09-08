@@ -99,6 +99,27 @@ _KEY_DESCRIPTIONS = {
 # 支持的网络模式
 _VALID_NETWORK_MODES = {"lan", "wan"}
 
+# 实时开关运行态镜像键（Redis）：uvicorn --workers / Celery 多进程下每个进程的
+# settings 都是各自启动时的快照，配置保存只更新处理请求进程的内存；把启用态
+# 镜像到 Redis 作为跨进程真相源，订阅器每个 Leader 维护周期读取并同步本进程
+# settings，避免热停后其他进程的待命实例按旧值抢 Leader 继续采集
+SIGNALR_ENABLED_RUNTIME_KEY = "datasource:rt:signalr_enabled"
+REALTIME_WRITEBACK_RUNTIME_KEY = "datasource:rt:realtime_writeback_enabled"
+
+
+async def _sync_runtime_flags_to_redis(signalr_enabled: bool, writeback_enabled: bool) -> None:
+    """把实时开关启用态镜像到 Redis（缺失/Redis 异常时订阅器回退本进程 settings）。"""
+    try:
+        from app.core.redis import redis_client
+
+        await redis_client.set(SIGNALR_ENABLED_RUNTIME_KEY, "true" if signalr_enabled else "false")
+        await redis_client.set(
+            REALTIME_WRITEBACK_RUNTIME_KEY,
+            "true" if writeback_enabled else "false",
+        )
+    except Exception:  # noqa: BLE001 — 镜像失败不阻塞配置保存/预载
+        logger.warning("实时开关镜像键写入失败（订阅器按本进程 settings 判定）", exc_info=True)
+
 
 async def _get_config_rows(db: AsyncSession, keys: Iterable[str]) -> dict[str, SysConfig]:
     """一次 IN 查询批量读取 sys_config 行，返回 {key: row}。"""
@@ -359,6 +380,10 @@ async def update_datasource_config(
     )
     await db.commit()
 
+    # 实时开关镜像到 Redis（跨进程热生效真相源），先写镜像再做本进程热启停，
+    # 确保其他进程的待命订阅器在抢 Leader 前就能读到最新启用态
+    await _sync_runtime_flags_to_redis(after["signalrEnabled"], after["realtimeWritebackEnabled"])
+
     # signalrEnabled 变化 → 订阅器热启停（DB 已落库为真相源，副作用失败不回滚，
     # 状态以 signalrSubscriberRunning 为准；realtimeWritebackEnabled 为 property
     # 实时读 settings，无需处理）
@@ -411,6 +436,12 @@ async def preload_datasource_config(db: AsyncSession) -> None:
         value = config.get(field)
         if value is not None:
             setattr(settings, attr, value)
+
+    # 刷新实时开关运行态镜像键（多进程热生效真相源，随各进程启动持续校准）
+    await _sync_runtime_flags_to_redis(
+        bool(config.get("signalrEnabled")),
+        bool(config.get("realtimeWritebackEnabled")),
+    )
 
     # 本地历史写入布局（测点子表重构）：sys_config 真相源同步到 settings 内存，
     # 使 Excel 导入等非 lifespan 直连路径（含 Celery worker 预载）按同一开关
