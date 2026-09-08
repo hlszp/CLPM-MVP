@@ -386,6 +386,8 @@ const BASE = '/monitor';
 export function getAttentionListApi(params: MonitorApi.AttentionQueryParams) {
   return requestClient.get<MonitorApi.AttentionListData>(`${BASE}/attention`, {
     params,
+    // 重查询可超过默认 10s（本机 TDengine 承受实时写入时实测 3~9s）
+    timeout: 30_000,
   });
 }
 
@@ -400,5 +402,7 @@ export function getAttentionListApi(params: MonitorApi.AttentionQueryParams) {
 export function getWorkbenchSummaryApi(loopId: string) {
   return requestClient.get<MonitorApi.WorkbenchSummary>(
     `${BASE}/loops/${loopId}/summary`,
+    // 汇总读 TDengine 多窗指标，可超过默认 10s
+    { timeout: 30_000 },
   );
 }
