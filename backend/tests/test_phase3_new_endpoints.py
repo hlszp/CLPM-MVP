@@ -5,8 +5,6 @@
 - GET/POST /configs/grading-thresholds（定级阈值 2 端点）
 - GET /dashboard/board（装置级 KPI 看板）
 - GET /dashboard/auto-rate-rt（实时自控率）
-- GET /aas/sync-status（AAS 同步状态）
-- GET /aas/sync-logs（AAS 同步日志）
 - GET /tasks/{task_id}/results（非标任务结果）
 
 设计依据：code-alignment-plan-v1.0.md Phase 3 验证闭环
@@ -332,71 +330,6 @@ class TestDashboardAutoRateRt:
         assert data["rate"] is None
         assert data["totalCount"] == 0
         assert "无活跃回路" in data["message"]
-
-
-# ===========================================================================
-# P3-T4: AAS sync-status + sync-logs
-# ===========================================================================
-
-
-class TestAasSyncStatus:
-    """AAS 同步状态端点测试."""
-
-    def test_get_sync_status(self, client, mock_db, fake_redis) -> None:
-        """获取 AAS 同步状态."""
-        # 多次查询：get_aas_config (6次 sys_config) + tag 统计 (3次)
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            compiled = str(stmt.compile()).lower()
-            if "count(*)" in compiled:
-                return _make_scalar_mock(10)
-            if "group_by" in compiled:
-                return _make_all_mock([])
-            # sys_config 查询
-            return _make_scalar_one_or_none_mock(None)
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
-
-        with mock_current_user(TEST_USERS["admin"]):
-            resp = client.get(
-                "/api/v1/aas/sync-status",
-                headers={"Authorization": "Bearer fake-token"},
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()["data"]
-        assert "tagStats" in data
-        assert data["tagStats"]["total"] == 10
-        assert "byQuality" in data["tagStats"]
-
-
-class TestAasSyncLogs:
-    """AAS 同步日志端点测试."""
-
-    def test_get_sync_logs_empty(self, client, mock_db, fake_redis) -> None:
-        """无同步日志时返回空列表."""
-        call_count = [0]
-
-        async def execute_side_effect(stmt, *args, **kwargs):
-            call_count[0] += 1
-            if "count" in str(stmt.compile()).lower():
-                return _make_scalar_mock(0)
-            return _make_scalars_all_mock([])
-
-        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
-
-        with mock_current_user(TEST_USERS["admin"]):
-            resp = client.get(
-                "/api/v1/aas/sync-logs",
-                headers={"Authorization": "Bearer fake-token"},
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()["data"]
-        assert data["total"] == 0
-        assert isinstance(data["items"], list)
 
 
 # ===========================================================================

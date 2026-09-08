@@ -30,9 +30,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.endpoints import (
-    # AAS/OPC UA 同步（位号元数据：链路配置页「AAS 位号同步」卡片触发；
-    # 2026-09-03 恢复注册——回路 Excel 导入自动创建 tag 后需靠它补全真实描述）
-    aas,
     # AI 洞察通用服务（4 场景统一入口：诊断/性能/整定/工作台）
     ai_insight,
     # 智能预警规则引擎（PRD v6.2 §4.4.6）
@@ -968,8 +965,6 @@ def create_app() -> FastAPI:
     # Phase 3: 回路数据管理（历史数据导入）
     v1_router.include_router(loop_data.router)
     v1_router.include_router(tags.router)
-    # AAS 位号元数据同步（/aas/config /aas/sync /aas/tags；2026-09-03 恢复挂载）
-    v1_router.include_router(aas.router)
     v1_router.include_router(datasource.router)
     v1_router.include_router(performance.router)
     # S3-METRIC 节点级性能评估（GB/T 44693.2-2024 §6.4 综合评估）

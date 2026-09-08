@@ -3,7 +3,6 @@
 覆盖：
 - schemas/tag.py：tagName 白名单 pattern（含单引号等非法字符 → ValidationError，
   FastAPI 请求模型命中即 422；合法名不受影响）
-- aas_sync.sync_tags_from_aas：非法 tag 名跳过并记录 warning，不中断整体同步
 - loop.import_loops（Excel）：非法 tag 名整行跳过计入 failed/errors；
   覆盖式删建映射导致各角色 tag 名变化时返回 warnings，
   并调用 CacheInvalidator.invalidate_loop + 清除 tdengine_provider._subtable_cache
@@ -13,7 +12,6 @@
 from __future__ import annotations
 
 import io
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import openpyxl
@@ -115,80 +113,6 @@ class TestTagNameSchemaValidation:
         from app.schemas.tag import TAG_NAME_PATTERN
 
         assert TAG_NAME_PATTERN == _TAG_NAME_PATTERN.pattern
-
-
-# ---------------------------------------------------------------------------
-# ① aas_sync：非法 tag 名跳过 + warning，不中断整体同步
-# ---------------------------------------------------------------------------
-
-
-class TestAasSyncTagNameValidation:
-    """sync_tags_from_aas 对非法 tag 名跳过并记录 warning。"""
-
-    async def test_invalid_tag_name_skipped(self, caplog) -> None:
-        from app.services.aas_sync import sync_tags_from_aas
-
-        aas_tags = [
-            {
-                "tag_name": "VALID-001.PV",
-                "tag_description": "合法 PV",
-                "tag_type": "PV",
-                "current_value": 1.0,
-                "quality": "GOOD",
-            },
-            {
-                "tag_name": "BAD';DROP TABLE--",
-                "tag_description": "注入尝试",
-                "tag_type": "PV",
-                "current_value": 2.0,
-                "quality": "GOOD",
-            },
-        ]
-        provider = MagicMock()
-        provider.read_all_tags = AsyncMock(return_value=aas_tags)
-
-        # 通用结果：select(TagRegistry) → 空；select(SysConfig) → None（走 insert 分支）
-        universal = MagicMock()
-        universal.scalars.return_value.all.return_value = []
-        universal.scalar_one_or_none.return_value = None
-        db = _make_service_db()
-        db.execute = AsyncMock(return_value=universal)
-
-        with (
-            patch("app.services.aas_sync.get_aas_provider", return_value=provider),
-            caplog.at_level(logging.WARNING, logger="app.services.aas_sync"),
-        ):
-            stats = await sync_tags_from_aas(db)
-
-        assert stats["total"] == 2
-        assert stats["inserted"] == 1
-        assert stats["skipped"] == 1
-        assert stats["skipped_tags"] == ["BAD';DROP TABLE--"]
-        assert any("非法 tag 名" in r.getMessage() for r in caplog.records)
-
-    async def test_all_valid_tag_names_unaffected(self) -> None:
-        """全部合法时不产生跳过（回归保护）。"""
-        from app.services.aas_sync import sync_tags_from_aas
-
-        aas_tags = [
-            {"tag_name": "A-1.PV", "tag_type": "PV", "current_value": None, "quality": None},
-            {"tag_name": "A-1.SP", "tag_type": "SP", "current_value": None, "quality": None},
-        ]
-        provider = MagicMock()
-        provider.read_all_tags = AsyncMock(return_value=aas_tags)
-
-        universal = MagicMock()
-        universal.scalars.return_value.all.return_value = []
-        universal.scalar_one_or_none.return_value = None
-        db = _make_service_db()
-        db.execute = AsyncMock(return_value=universal)
-
-        with patch("app.services.aas_sync.get_aas_provider", return_value=provider):
-            stats = await sync_tags_from_aas(db)
-
-        assert stats["inserted"] == 2
-        assert stats["skipped"] == 0
-        assert stats["skipped_tags"] == []
 
 
 # ---------------------------------------------------------------------------

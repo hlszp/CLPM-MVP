@@ -28,8 +28,6 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.tasks.kpi_calc",
-        # MVP 精简：已屏蔽 AAS/OPC UA 同步模块 → 不注册 aas_sync
-        # "app.tasks.aas_sync",
         # MVP 精简：已屏蔽诊断模块 → 不注册 diagnosis_engine / tracker_verification
         # "app.tasks.diagnosis_engine",
         # "app.tasks.tracker_verification",
@@ -132,7 +130,6 @@ class AsyncTask(Task):
 # 导致 beat_schedule 中的定时调度计划（kpi-calc-hourly 等）不会被注册。
 # 必须放在 AsyncTask 类定义之后，避免循环导入。
 # MVP 精简：已移除 AAS/诊断/整定 相关任务 → 不再 import，Beat 也不再注册相应调度
-# import app.tasks.aas_sync  # noqa: E402, F401
 import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
 import app.tasks.beat_registry  # noqa: E402, F401  模块热插拔 beat 条件化
