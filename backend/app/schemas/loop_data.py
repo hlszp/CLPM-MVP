@@ -43,6 +43,8 @@ class ImportRequest(CamelModel):
     tsEnd: str = Field(..., description="导入时间范围结束（ISO 8601）")
     interval: int = Field(1, ge=1, description="采样间隔（秒）")
     triggerBackfill: bool = Field(False, description="导入完成后触发 KPI 回算")
+    # 仅写入位号点表（跳过宽表），用于历史回填到独立表；复用 storage_mode=point 语义
+    pointOnly: bool = Field(False, description="仅写入位号点表，跳过宽表")
 
 
 class ImportTaskResponse(CamelModel):
@@ -79,8 +81,7 @@ class ImportTaskResponse(CamelModel):
     errorMessage: str | None = None
     createdBy: str | None = None
     triggerBackfill: bool = False
-    # 导入结果明细（JSON 解析后透出）：含 loopCoverage 每回路覆盖率
-    # （importedPoints/expectedPoints/coverage）与 lowCoverageLoopIds
+    # 导入结果明细（JSON 解析后透出）：total/succeeded/failed/errors
     result: dict | None = None
 
 

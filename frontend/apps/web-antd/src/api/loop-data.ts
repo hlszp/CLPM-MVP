@@ -27,6 +27,8 @@ export namespace LoopDataApi {
     interval?: number;
     /** 导入完成后是否触发 KPI 回算 */
     triggerBackfill?: boolean;
+    /** 仅写入位号点表、跳过宽表（历史回填独立表场景） */
+    pointOnly?: boolean;
   }
 
   /** 导入任务响应 */

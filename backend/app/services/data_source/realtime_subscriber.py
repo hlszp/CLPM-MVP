@@ -2329,11 +2329,9 @@ class RealtimeSubscriber:
             failed = import_result["failed"]
 
             if failed == 0:
-                # R08 空返回≠完整：failed==0 即推进（最简口径，已登记）；
-                # 全窗口 0 行计数 backfill_empty_windows 供观测（远端确无数据）
-                coverage = import_result.get("loopCoverage") or []
-                if coverage and all(not int(c.get("importedPoints") or 0) for c in coverage):
-                    self._incr("backfill_empty_windows")
+                # R08 空返回≠完整：failed==0 即推进（最简口径，已登记）。
+                # 空窗口（远端确无数据）走 import 内部 HistoryDataSourceError →
+                # failed>0 分支，不会误推进水位；故此处无需再按覆盖率判定空窗口。
                 if loop_parts is not None:
                     # per-loop 窗口：只推进覆盖回路的 per-loop 水位；
                     # 全局落库点/已确认边界不受影响（其他回路口径不变）

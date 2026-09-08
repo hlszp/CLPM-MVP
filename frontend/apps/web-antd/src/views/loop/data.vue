@@ -330,6 +330,7 @@ const timeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
 ]);
 const interval = ref(1);
 const triggerBackfill = ref(false);
+const pointOnly = ref(false);
 const importing = ref(false);
 
 // --- 任务列表 ---
@@ -652,6 +653,7 @@ async function handleStartImport() {
       tsEnd,
       interval: interval.value,
       triggerBackfill: triggerBackfill.value,
+      pointOnly: pointOnly.value,
     });
     message.success('导入任务已启动');
     await loadTasks();
@@ -982,6 +984,11 @@ onMounted(async () => {
             </Tooltip>
             <Tooltip title="导入完成后自动触发KPI回算">
               <Checkbox v-model:checked="triggerBackfill"> 触发KPI </Checkbox>
+            </Tooltip>
+            <Tooltip
+              title="仅写入位号独立表（st_point_data_v1），跳过宽表（st_loop_data）。用于把历史数据回填到独立表，不影响 sys_config 的全局写入布局。"
+            >
+              <Checkbox v-model:checked="pointOnly"> 仅写位号表 </Checkbox>
             </Tooltip>
             <Popconfirm
               :title="importConfirmTitle"

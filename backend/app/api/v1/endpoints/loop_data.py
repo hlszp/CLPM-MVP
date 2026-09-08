@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -27,9 +27,6 @@ from app.schemas.loop_data import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/loops/data-import", tags=["loop-data"])
-
-# 导入时间窗最大范围（30 天，防误操作）
-_MAX_IMPORT_WINDOW_DAYS = 30
 
 # 允许操作的角色
 _IMPORT_ROLES = ("ADMIN", "IC_ENGINEER", "PE_ENGINEER")
@@ -59,16 +56,6 @@ async def start_import(
         raise BizError(
             code="ERR_INVALID_TIME_RANGE",
             message="tsStart 必须早于 tsEnd",
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if (end_dt - start_dt) > timedelta(days=_MAX_IMPORT_WINDOW_DAYS):
-        raise BizError(
-            code="ERR_IMPORT_WINDOW_TOO_LARGE",
-            message=(
-                f"时间窗不能超过 {_MAX_IMPORT_WINDOW_DAYS} 天"
-                f"（当前: {(end_dt - start_dt).days} 天）"
-            ),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -129,6 +116,7 @@ async def start_import(
         ts_end=body.tsEnd,
         interval=body.interval,
         trigger_backfill=body.triggerBackfill,
+        point_only=body.pointOnly,
         task_id=task_id,
     )
 
