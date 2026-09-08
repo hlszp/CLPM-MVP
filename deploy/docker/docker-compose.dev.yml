@@ -44,7 +44,9 @@ services:
   # TDengine 3.x - 时序数据存储
   # ============================================================
   tdengine:
-    image: tdengine/tdengine:3.3.6.0
+    # 3.3.6.6：与 zpdev 生产对齐（3.3.6.0 在本机 3 亿行级数据下查询子系统
+    # 反复劣化/挂起，2026-09-09 升级）
+    image: tdengine/tdengine:3.3.6.6
     container_name: clpm-mvp-tdengine
     restart: unless-stopped
     ports:
