@@ -655,31 +655,35 @@ async def import_history_data(
     terminal_set = False  # 正常流程是否已置终态（finally 兜底依据）
 
     try:
-        # 前置探测（加固 0909）：实时订阅回路多了、高并发下远端易 RST。
-        # 批量导入启动前先发一次最小探测，远端熔断中/不可达时直接快速失败，
-        # 避免"7 万条失败日志雪崩"（0909 事故：熔断打开后 961 回路×78 分块
-        # 全部快失败，任务 70s 内结束、0 点写入、errors 超长）。
-        # 探测本身走共享守卫的限流/熔断，超时短路返回"稍后重试"。
+        # 前置探测（加固 0909）：批量导入启动前快检远端。
+        # 仅"熔断打开"（电路确认为远端持续不可用）才阻断任务——其余连接层
+        # 抖动（ConnectTimeout/ConnectError 等，0909 实测 httpx client 连接
+        # 221.226.3.250 偶发 10s ConnectTimeout 而 urllib 直连 0.12s 即通）
+        # 降级为警告放行：正式 _fetch_remote_history 自带 3 次指数退避重试
+        # + 熔断器，由它自行处理瞬时抖动，前置探测不做二次拦截。
         try:
             await _probe_remote_history_api()
         except HistoryDataSourceError as _probe_err:
             reason = str(_probe_err)
-            logger.warning("导入前置探测失败，任务快速失败: %s", reason)
-            errors.append(reason)
-            if task_id:
-                await _update_task_cas(
-                    task_id,
-                    new_status=ImportStatus.FAILED.value,
-                    finished_at=_now_iso(),
-                    error_message=reason,
-                    result={
-                        "total": total,
-                        "succeeded": 0,
-                        "failed": total,
-                        "errors": [f"前置探测失败，任务未启动: {reason}"],
-                    },
-                )
-            return {"total": total, "succeeded": 0, "failed": total, "errors": errors}
+            if "熔断" in reason:
+                logger.warning("远端历史 API 熔断中，任务快速失败: %s", reason)
+                errors.append(reason)
+                if task_id:
+                    await _update_task_cas(
+                        task_id,
+                        new_status=ImportStatus.FAILED.value,
+                        finished_at=_now_iso(),
+                        error_message=reason,
+                        result={
+                            "total": total,
+                            "succeeded": 0,
+                            "failed": total,
+                            "errors": [f"远端熔断，任务未启动: {reason}"],
+                        },
+                    )
+                return {"total": total, "succeeded": 0, "failed": total, "errors": errors}
+            # 连接层抖动：降级放行，交正式拉取重试
+            logger.warning("前置探测连接抖动（放行，交正式拉取重试）: %s", reason)
 
     except Exception:
         if task_id and not terminal_set:
