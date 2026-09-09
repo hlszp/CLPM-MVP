@@ -1160,6 +1160,7 @@ class TestImportProgressPerLoop:
             ),
             patch("app.services.data_import._update_task", side_effect=spy_update_task),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+            patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),
         ):
             task_id = await di.create_import_task(
                 loop_ids=loop_ids,
@@ -1252,6 +1253,7 @@ class TestImportProgressPerLoop:
             ),
             patch("app.services.data_import._update_task", side_effect=spy_update_task),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+            patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),
         ):
             result = await di.import_history_data(
                 loop_ids=loop_ids,
@@ -1323,6 +1325,8 @@ class TestImportProgressChunkUnits:
             ),
             patch("app.services.data_import._update_task", side_effect=spy_update_task),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+            # 前置探测默认放行（单测不依赖远端连通性；正式导入 mock 了 _import_single_loop）
+            patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),
         ):
             task_id = await di.create_import_task(
                 loop_ids=loop_ids,
@@ -1447,6 +1451,7 @@ class TestImportSingleLoopChunkFaultTolerance:
                 new=AsyncMock(return_value=2),
             ),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+            patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),
         ):
             task_id = await di.create_import_task(
                 loop_ids=loop_ids,

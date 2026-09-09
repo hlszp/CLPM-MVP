@@ -146,6 +146,7 @@ async def test_zero_point_import_marks_loop_and_task_failed() -> None:
         patch.object(data_import, "_is_task_cancelled", new=AsyncMock(return_value=False)),
         patch.object(data_import, "_update_task", new=update_task),
         patch.object(data_import, "_update_task_cas", new=update_task_cas),
+        patch.object(data_import, "_probe_remote_history_api", new=AsyncMock()),
     ):
         result = await data_import.import_history_data(
             loop_ids=["loop-1"],

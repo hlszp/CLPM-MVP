@@ -201,8 +201,17 @@ class RemoteApiProvider:
             async with self._get_semaphore():
                 resp = await client.get(settings.HISTORY_DATA_API_URL, params=request_body)
         except Exception as exc:  # noqa: BLE001
+            # RST/连接被掐断时 httpx 某些异常的 str() 为空（如 RemoteProtocolError/
+            # ReadError 被 RST 触发时），只记 %s 会得到空消息、无从定位。
+            # 显式记录异常类型 + repr + 是否连接级错误，暴露真实根因。
             self._cb_on_failure(f"{type(exc).__name__}: {exc}")
-            logger.warning("远程API请求失败: %s", exc)
+            logger.warning(
+                "远程API请求失败: type=%s repr=%r client_closed=%s",
+                type(exc).__name__,
+                exc,
+                getattr(self._client, "is_closed", "n/a"),
+                exc_info=bool(exc.__traceback__),
+            )
             raise
 
         if resp.status_code == 200:

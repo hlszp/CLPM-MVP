@@ -669,6 +669,57 @@ async def import_history_data(
     terminal_set = False  # 正常流程是否已置终态（finally 兜底依据）
 
     try:
+        # 前置探测（加固 0909）：实时订阅回路多了、高并发下远端易 RST。
+        # 批量导入启动前先发一次最小探测，远端熔断中/不可达时直接快速失败，
+        # 避免"7 万条失败日志雪崩"（0909 事故：熔断打开后 961 回路×78 分块
+        # 全部快失败，任务 70s 内结束、0 点写入、errors 超长）。
+        # 探测本身走共享守卫的限流/熔断，超时短路返回"稍后重试"。
+        try:
+            await _probe_remote_history_api()
+        except HistoryDataSourceError as _probe_err:
+            reason = str(_probe_err)
+            logger.warning("导入前置探测失败，任务快速失败: %s", reason)
+            errors.append(reason)
+            if task_id:
+                await _update_task_cas(
+                    task_id,
+                    new_status=ImportStatus.FAILED.value,
+                    finished_at=_now_iso(),
+                    error_message=reason,
+                    result={
+                        "total": total,
+                        "succeeded": 0,
+                        "failed": total,
+                        "errors": [f"前置探测失败，任务未启动: {reason}"],
+                    },
+                )
+            return {"total": total, "succeeded": 0, "failed": total, "errors": errors}
+
+    except Exception:
+        if task_id and not terminal_set:
+            try:
+                if await _is_task_cancelled(task_id):
+                    fallback_status = ImportStatus.CANCELLED.value
+                else:
+                    fallback_status = ImportStatus.FAILED.value
+                cas_code, _old = await _update_task_cas(
+                    task_id,
+                    new_status=fallback_status,
+                    finished_at=_now_iso(),
+                )
+                if cas_code == "BLOCKED":
+                    logger.info(
+                        "异常兜底终态 CAS 被拒: task_id=%s, existing=%s, target=%s",
+                        task_id,
+                        _old,
+                        fallback_status,
+                    )
+            except Exception:  # noqa: BLE001
+                logger.warning("异常中断兜底终态更新失败: task_id=%s", task_id)
+        raise
+
+    # ===== 正式导入 =====
+    try:
         # 批量预加载回路元数据（1 次 DB 会话，3 次 SQL 替代 3N 次）
         db_session = AsyncSessionLocal()
         try:
@@ -1247,6 +1298,45 @@ async def _batch_get_loop_data(
         }
 
     return result
+
+
+async def _probe_remote_history_api() -> None:
+    """批量导入前置探测：远端历史 API 连通性/熔断状态快检.
+
+    0909 加固：961 回路批次启动时若远端恰在熔断/不可达，旧逻辑会让
+    全部 78 分块走"熔断中快速失败"，任务 70s 内结束、0 点写入、errors
+    超长（7 万条日志雪崩）。前置探测用最小请求（1 位号 1 窗口）快速
+    判断——熔断打开/超时/网络错误时抛 HistoryDataSourceError，
+    调用方直接置 FAILED 并返回"稍后重试"，不给用户错误地狱。
+
+    - 探测走共享守卫（_get_remote_guard），复用熔断/限流，不会绕过；
+    - 探测失败不重试（短超时即可），避免把熔断从"近开"推向"打开"。
+    """
+    if not settings.HISTORY_DATA_API_URL:
+        raise HistoryDataSourceError("HISTORY_DATA_API_URL 未配置")
+
+    now = datetime.now(UTC)
+    probe_body = {
+        "tagCodes": ["__CONNECTIVITY_PROBE__"],
+        "startTime": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+        "endTime": now.isoformat().replace("+00:00", "Z"),
+        "sampleInterval": 1,
+    }
+    guard = _get_remote_guard()
+    try:
+        resp = await guard.fetch_history_guarded(probe_body)
+    except RemoteApiCircuitOpenError as exc:
+        raise HistoryDataSourceError(f"远端历史数据 API 熔断中，稍后重试: {exc}") from exc
+    except httpx.TimeoutException as exc:
+        raise HistoryDataSourceError("远端历史数据 API 探测超时，稍后重试") from exc
+    except Exception as exc:  # noqa: BLE001 — RST 等网络错误
+        raise HistoryDataSourceError(
+            f"远端历史数据 API 不可达: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    if resp.status_code != 200:
+        raise HistoryDataSourceError(f"远端历史数据 API 探测返回 HTTP {resp.status_code}，稍后重试")
+    logger.info("远端历史数据 API 前置探测通过（HTTP 200）")
 
 
 async def _fetch_remote_history(
