@@ -4094,8 +4094,12 @@ async def _check_import_idempotency(task_id: str | None) -> dict | None:
     name="app.tasks.kpi_calc.import_history_data",
     bind=True,
     base=AsyncTask,
-    time_limit=7200,  # 2 小时硬超时
-    soft_time_limit=6900,  # 115 分钟软超时（27 回路 × 14 小时数据量大）
+    # 不设 time_limit/soft_time_limit：本任务设计上是长批次（961 回路 × 周级
+    # 窗口按 v2 速度需 20+ 小时）。旧值 soft=6900s 按"27 回路 × 14h"小批量
+    # 定尺寸，连续两天在 115 分钟处 SoftTimeLimitExceeded 误杀大任务
+    #（0908 本机 / 0909 zpdev，事后均被清扫器误标"worker 卡死"）。
+    # 存活保护由三层既有机制承担：分块级进度心跳 + 1800s 停滞清扫器 +
+    # CAS 幂等预检（broker 因 visibility_timeout 重投的副本会被预检短路）。
 )
 def import_history_data(
     self: AsyncTask,
