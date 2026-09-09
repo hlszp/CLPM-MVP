@@ -1351,6 +1351,59 @@ class TestImportProgressChunkUnits:
         assert progress_updates[-1] == 1.0
 
 
+class TestImportProbeDegradation:
+    """前置探测失败降级语义：连接抖动放行、熔断才阻断（2026-09-10 修复）."""
+
+    async def _run_with_probe(self, probe_effect) -> dict:
+        from app.services import data_import as di
+
+        fake = _FakeRedisImport()
+        loop_data_map = {
+            "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
+        }
+        mock_session = AsyncMock()
+        with (
+            patch("app.services.data_import.redis_client", fake),
+            patch(
+                "app.services.data_import._batch_get_loop_data",
+                new=AsyncMock(return_value=loop_data_map),
+            ),
+            patch(
+                "app.services.data_import._import_single_loop",
+                new=AsyncMock(return_value=(100, [], False)),
+            ),
+            patch("app.services.data_import._probe_remote_history_api", side_effect=probe_effect),
+            patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
+        ):
+            return await di.import_history_data(
+                loop_ids=["loop-A"],
+                ts_start="2026-07-15T00:00:00+00:00",
+                ts_end="2026-07-15T01:00:00+00:00",
+                task_id=None,
+            )
+
+    @pytest.mark.asyncio
+    async def test_connect_jitter_probe_is_allowed(self):
+        """连接抖动（非熔断）探测失败 → 放行，正式导入继续执行."""
+        from app.services.data_import import HistoryDataSourceError
+
+        result = await self._run_with_probe(
+            AsyncMock(side_effect=HistoryDataSourceError("远端历史数据 API 探测超时，稍后重试"))
+        )
+        assert result["succeeded"] == 1  # 放行，正式导入成功
+
+    @pytest.mark.asyncio
+    async def test_circuit_open_probe_blocks(self):
+        """熔断打开探测失败 → 阻断，任务 0 成功."""
+        from app.services.data_import import HistoryDataSourceError
+
+        result = await self._run_with_probe(
+            AsyncMock(side_effect=HistoryDataSourceError("远端历史数据 API 熔断中，稍后重试"))
+        )
+        assert result["succeeded"] == 0
+        assert result["failed"] == 1
+
+
 class TestImportSingleLoopChunkFaultTolerance:
     """_import_single_loop 分块级容错：单分块失败记录窗口后继续，不整回路中断."""
 
