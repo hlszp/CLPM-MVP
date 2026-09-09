@@ -564,3 +564,38 @@ def mock_current_user(user: MagicMock):
         yield
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture(autouse=True)
+def _pin_legacy_layout_for_unit_tests(request):
+    """单测布局路由钉为空段（=legacy 宽表/无 manifest 语义）。
+
+    背景：退役宽表迁移后本机/CI 的 PG 若登记了 global point manifest，
+    ``resolve_window_layouts(None, ...)`` 会连真库命中 point 段，使
+    provider 单测误入 LogicalWideBuilder 路径（需要真 DB 会话而炸）。
+    单测的原语义就是"无 manifest → legacy"；integration 标记的测试
+    自行 set_layout + invalidate，不受此 fixture 影响（跳过钉住）。
+    """
+    if request.node.get_closest_marker("integration"):
+        yield
+        return
+    from unittest.mock import AsyncMock, patch
+
+    with (
+        patch(
+            "app.services.data_source.history_layout_router.resolve_window_layouts",
+            new=AsyncMock(return_value=[]),
+        ),
+        # 缓存键的布局版本分量同样钉住 legacy-v1（真 PG 有 manifest 时会
+        # 变为 mf-{digest}，导致单测预填的 L1/L2 缓存键命不中）
+        patch(
+            "app.services.data_source.history_layout_router.current_layout_version",
+            new=AsyncMock(return_value="legacy-v1"),
+        ),
+        # resolve_layout 同理（diagnosis_schedule._density_ok 等经它判定布局）
+        patch(
+            "app.services.data_source.point_history_metadata.resolve_layout",
+            new=AsyncMock(return_value="legacy"),
+        ),
+    ):
+        yield

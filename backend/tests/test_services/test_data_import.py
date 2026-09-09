@@ -1125,7 +1125,7 @@ class TestImportProgressPerLoop:
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
             """loop-A 完成全部 7 分块；loop-B 完成 2 分块后失败（交错执行）."""
             if loop_id == "loop-A":
-                for _ in range(7):
+                for _ in range(6):
                     await asyncio.sleep(0)  # 让出事件循环，制造并发交错
                     if on_chunk_complete:
                         await on_chunk_complete()
@@ -1180,7 +1180,7 @@ class TestImportProgressPerLoop:
         assert result["succeeded"] == 1
         assert result["failed"] == 2  # loop-B 失败 + loop-C 无映射跳过
         # 进度序列：单调递增、不越界，且全部回路结束后恰好到达 1.0
-        # （A 7 + B 2+补5 + C 跳过7 = 21 = total_units）
+        # （A 6 + B 2+补4 + C 跳过6 = 18 = total_units，v3 单相 6 块/回路）
         assert progress_updates
         assert all(0.0 <= p <= 1.0 for p in progress_updates)
         assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
@@ -1191,7 +1191,7 @@ class TestImportProgressPerLoop:
         """失败补偿只补本回路剩余窗口（确定时序验证 per-loop 口径）.
 
         确定时序：loop-A 先完成 5 窗口并等待，loop-B 完成 2 窗口后失败，
-        随后 loop-A 完成最后 1 分块。B 失败时共享计数器=8（A 6 + B 2）：
+        随后 loop-A 完成最后 1 分块。B 失败时共享计数器=8（A 5 + B 2... 不，A6 分块中 5 已计）：
         - 取模补偿会按共享计数器推算（≠本回路已完成数），总量 > total_units 越界
         - per-loop 补 7 - 2 = 5（正确，总量 14 = total_units，progress 恰好到 1.0）
         """
@@ -1202,7 +1202,7 @@ class TestImportProgressPerLoop:
         fake = _FakeRedisImport()
         ts_start = "2026-07-15T00:00:00+00:00"
         ts_end = "2026-07-15T06:00:00+00:00"
-        # 6h → 高频 6 块 + 低频 1 块 = 每回路 7（算法 v2），2 回路 → total_units=14
+        # 6h → chunk_hours=1 → 每回路 6 块（v3 单相），2 回路 → total_units=12
         loop_ids = ["loop-A", "loop-B"]
         loop_data_map = {
             "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
@@ -1214,7 +1214,7 @@ class TestImportProgressPerLoop:
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
             if loop_id == "loop-A":
-                for _ in range(6):
+                for _ in range(5):
                     if on_chunk_complete:
                         await on_chunk_complete()
                 a_part_done.set()
@@ -1289,7 +1289,7 @@ class TestImportProgressChunkUnits:
         fake = _FakeRedisImport()
         ts_start = "2026-07-15T00:00:00+00:00"
         ts_end = "2026-07-18T00:00:00+00:00"
-        # 72h → chunk_hours=3 → 高频 24 块 + 低频 3 块（24h 大块）= 每回路 27（算法 v2）
+        # 72h → chunk_hours=3 → 每回路 24 块（v3 单相）
         loop_ids = ["loop-A", "loop-B"]
         loop_data_map = {
             "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
@@ -1297,7 +1297,7 @@ class TestImportProgressChunkUnits:
         }
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
-            for _ in range(27):  # 与 chunks_per_loop=27 对齐（24 高频 + 3 低频）
+            for _ in range(24):  # 与 chunks_per_loop=24 对齐（v3 单相）
                 await asyncio.sleep(0)
                 if on_chunk_complete:
                     await on_chunk_complete()
@@ -1385,10 +1385,10 @@ class TestImportSingleLoopChunkFaultTolerance:
 
         with (
             patch("app.services.data_import._fetch_remote_history", side_effect=fake_fetch),
-            # 宽表已退役：point 写走 _write_point_events，mock 其返回点数（时间槽数）
+            # v3：直写走 _write_points_bulk，mock 其返回行数
             patch(
-                "app.services.data_import._write_point_events",
-                new=AsyncMock(return_value=(2, {"physical": 2, "identical": 0, "conflicts": 0})),
+                "app.services.data_import._write_points_bulk",
+                new=AsyncMock(return_value=2),
             ),
         ):
             count, failed_windows, cancelled = await di._import_single_loop(
@@ -1453,10 +1453,10 @@ class TestImportSingleLoopChunkFaultTolerance:
                 new=AsyncMock(return_value=loop_data_map),
             ),
             patch("app.services.data_import._fetch_remote_history", side_effect=fake_fetch),
-            # 宽表已退役：point 写走 _write_point_events
+            # v3：直写走 _write_points_bulk
             patch(
-                "app.services.data_import._write_point_events",
-                new=AsyncMock(return_value=(2, {"physical": 2, "identical": 0, "conflicts": 0})),
+                "app.services.data_import._write_points_bulk",
+                new=AsyncMock(return_value=2),
             ),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
             patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),

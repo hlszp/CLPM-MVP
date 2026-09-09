@@ -409,6 +409,38 @@ const taskColumns: TableColumnsType = [
       `${dayjs(record.tsStart).format('MM-DD HH:mm')} ~ ${dayjs(record.tsEnd).format('MM-DD HH:mm')}`,
   },
   {
+    title: '窗口小时数',
+    key: 'windowHours',
+    width: 88,
+    align: 'center',
+    customRender: ({ record }) => {
+      if (!record.tsStart || !record.tsEnd) return '-';
+      const h = Math.max(
+        0,
+        (dayjs(record.tsEnd).valueOf() - dayjs(record.tsStart).valueOf()) / 3_600_000,
+      );
+      return h.toFixed(1);
+    },
+  },
+  {
+    title: '导入时长',
+    key: 'duration',
+    width: 88,
+    align: 'center',
+    customRender: ({ record }) => {
+      if (!record.startedAt || !record.finishedAt) return '-';
+      const sec = Math.max(
+        0,
+        Math.round(
+          (dayjs(record.finishedAt).valueOf() - dayjs(record.startedAt).valueOf()) / 1000,
+        ),
+      );
+      const mm = Math.floor(sec / 60);
+      const ss = sec % 60;
+      return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+    },
+  },
+  {
     title: '进度',
     key: 'progress',
     width: 150,
