@@ -37,6 +37,13 @@ async def test_tdengine_query_fn_concurrent_wide_queries_share_session_safely() 
         wide_query = AsyncMock(return_value=[])
         with (
             patch("app.core.tdengine_native.query_wide_table_native", wide_query),
+            # 布局路由固定走 legacy 宽表路径：本测试 mock 仅适配宽表查询，
+            # 环境若登记了 global point manifest（如退役宽表迁移后）会误入
+            # point/builder 路径（builder 需要真 DB 会话）——显式钉住 legacy。
+            patch(
+                "app.services.data_source.history_layout_router.resolve_window_layouts",
+                new=AsyncMock(return_value=[]),
+            ),
             patch(
                 "app.services.data_source.realtime_subscriber.get_subscriber",
                 return_value=None,
