@@ -33,9 +33,6 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.redis import redis_client
 from app.core.tdengine import make_subtable_name
-from app.core.tdengine_native import (
-    batch_insert,
-)
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 from app.schemas.loop_data import ImportStatus
@@ -620,21 +617,10 @@ async def import_history_data(
     start_dt = _parse_dt(ts_start)
     end_dt = _parse_dt(ts_end)
 
-    # 写入布局（P2-3：legacy 宽表照旧 / shadow 双写 / point 只写点事件）；
-    # sys_config 为真相源，读取失败按 legacy 兜底（不因配置不可达阻塞导入）。
-    # point_only 为一次性回填开关：强制 point（只写点表、跳过宽表），
-    # 供"放开时间窗后把 38 天历史补进独立表"场景使用，不触碰 sys_config。
-    if point_only:
-        storage_mode = "point"
-    else:
-        storage_mode = "legacy"
-        try:
-            from app.services.data_source.history_layout import get_storage_mode
-
-            async with AsyncSessionLocal() as _ms:
-                storage_mode = await get_storage_mode(_ms)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("读取历史写入布局失败（按 legacy 导入）: %s", exc)
+    # 写入布局（2026-09-09 Phase 2：宽表已退役，历史导入恒只写点表）。
+    # 此前 legacy/shadow/point 三态；现锁定 point——点事件即落库形态，
+    # 与实时采集口径一致（COV 稀疏），读取侧由 LogicalWideBuilder 前向填充。
+    storage_mode = "point"
 
     if task_id:
         cas_code, old_status = await _update_task_cas(
@@ -1067,7 +1053,7 @@ async def _import_single_loop(
             point_ok_chunks.extend(low_ok_windows)
 
     # ===== Phase B：高频流分块拉取 + 写入 =====
-    low_fills = {role: _StepFill(pts) for role, pts in low_samples.items() if pts}
+    # 低频 COV 样本已在 Phase A 写入点表；宽表已退役，无需再前向填充宽表行。
     # 高频拉取集合：PV/OP；回路未绑高频角色时退化为全角色单流（走旧口径）
     fetch_map = high_map or role_tag_map
     high_point_map = (
@@ -1105,29 +1091,14 @@ async def _import_single_loop(
                         chunk_end.isoformat(),
                     )
 
-                if raw_data and storage_mode != "legacy":
+                if raw_data:
+                    # 仅写点表（宽表已退役，2026-09-09 Phase 2）：高频角色稠密事件即落库形态
                     await _ensure_point_batch()
                     point_ok_chunks.append((chunk_start, chunk_end))
-                if raw_data:
-                    if storage_mode == "point":
-                        # point-only：宽表不写；点事件即落库形态（高频角色稠密）
-                        slots, _stats = await _write_point_events(
-                            high_point_map, raw_data, source_task=task_id or ""
-                        )
-                        total_count += slots
-                    else:
-                        # legacy / shadow：宽表照旧（低频列前向填充）；shadow 额外写点事件
-                        rows = _convert_to_wide_rows(raw_data, fetch_map, low_fills)
-                        if rows:
-                            # 批量写入目标子表（同 ts 行 UPSERT 幂等覆盖）
-                            count = await batch_insert(
-                                subtable, rows, loop_id=loop_id, unit_id=unit_id
-                            )
-                            total_count += count
-                        if storage_mode == "shadow":
-                            await _write_point_events(
-                                high_point_map, raw_data, source_task=task_id or ""
-                            )
+                    slots, _stats = await _write_point_events(
+                        high_point_map, raw_data, source_task=task_id or ""
+                    )
+                    total_count += slots
             except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
                 failed_windows.append(
                     {

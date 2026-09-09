@@ -1385,9 +1385,10 @@ class TestImportSingleLoopChunkFaultTolerance:
 
         with (
             patch("app.services.data_import._fetch_remote_history", side_effect=fake_fetch),
+            # 宽表已退役：point 写走 _write_point_events，mock 其返回点数（时间槽数）
             patch(
-                "app.services.data_import.batch_insert",
-                new=AsyncMock(return_value=2),
+                "app.services.data_import._write_point_events",
+                new=AsyncMock(return_value=(2, {"physical": 2, "identical": 0, "conflicts": 0})),
             ),
         ):
             count, failed_windows, cancelled = await di._import_single_loop(
@@ -1398,13 +1399,14 @@ class TestImportSingleLoopChunkFaultTolerance:
                 subtable="t_a",
                 unit_id="u1",
                 role_tag_map={"PV": "A.PV"},
+                role_point_map={"PV": ("A.PV", "point-a")},
                 chunk_hours=1,
                 task_id=None,
                 on_chunk_complete=on_chunk,
             )
 
         assert len(fetch_calls) == 3  # 失败分块不中断后续分块
-        assert count == 4  # 2 个成功分块 × 2 点
+        assert count == 4  # 2 个成功分块 × 2 点（_write_point_events 返回槽数）
         assert cancelled is False
         assert len(failed_windows) == 1
         assert failed_windows[0]["start"].startswith("2026-07-15T01")
@@ -1422,7 +1424,12 @@ class TestImportSingleLoopChunkFaultTolerance:
         ts_end = "2026-07-15T03:00:00+00:00"  # 3h → chunk_hours=1 → 3 分块
         loop_ids = ["loop-A"]
         loop_data_map = {
-            "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
+            "loop-A": {
+                "role_tag_map": {"PV": "A.PV"},
+                "unit_id": "u1",
+                "subtable": "t_a",
+                "role_point_map": {"PV": ("A.PV", "point-a")},
+            },
         }
 
         def _payload() -> tuple[list[str], dict[str, dict]]:
@@ -1446,9 +1453,10 @@ class TestImportSingleLoopChunkFaultTolerance:
                 new=AsyncMock(return_value=loop_data_map),
             ),
             patch("app.services.data_import._fetch_remote_history", side_effect=fake_fetch),
+            # 宽表已退役：point 写走 _write_point_events
             patch(
-                "app.services.data_import.batch_insert",
-                new=AsyncMock(return_value=2),
+                "app.services.data_import._write_point_events",
+                new=AsyncMock(return_value=(2, {"physical": 2, "identical": 0, "conflicts": 0})),
             ),
             patch("app.core.db.AsyncSessionLocal", return_value=mock_session),
             patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),
