@@ -1151,64 +1151,113 @@ def _parse_remote_ts(ts_str: str):
     return parse_source_ts(ts_str)
 
 
+def _sql_num(v) -> str:
+    """数值 → SQL 字面量（非有限/None → NULL，防 nan/inf 炸批次）。"""
+    if v is None:
+        return "NULL"
+    try:
+        f = float(v)
+        if not math.isfinite(f):
+            return "NULL"
+        return repr(f) if not f.is_integer() else str(int(f))
+    except (TypeError, ValueError):
+        return "NULL"
+
+
 async def _write_points_bulk(
     role_point_map: dict[str, tuple[str, str]],
     raw_data: tuple[list[str], dict[str, dict]],
     *,
     source_task: str,
+    dense_roles: frozenset[str] = frozenset({"PV", "OP"}),
 ) -> int:
-    """远端响应 → 点表批量直写（无读回比对；分批多子表 INSERT）.
+    """远端响应 → 点表批量直写（v3.1：稀疏去重 + 轻量直拼 SQL + 大批次）.
 
-    返回写入行数（物理行，非时间槽——v3 口径简化，进度/结果用行数）。
+    性能要点（0909 961 回路实测单回路写入 25~90s 的瓶颈在此）：
+    - 不走 PointEvent 对象 / payload_hash（逐点 UUID 解析，60 万次纯 CPU
+      浪费）——导入行靠 ts UPSERT 幂等，hash 仅实时路径冲突登记用；
+    - 稀疏角色（SP/KP/TI/TD/MODE）COV 去重：只落值变化点（正常低频语义），
+      兼防 SP=PV 错接时被高频灌满（行数暴增即导入变慢）；
+    - 大批次 5000 行/条 SQL，HTTP POST 次数减为 1/5。
+
+    返回写入行数。
     """
     from app.core.tdengine_native import execute_native_effective
     from app.services.data_source.point_history_repository import (
-        QSCHEMA_AAS,
-        SOURCE_KIND_REMOTE_GRID,
-        PointEvent,
-        _build_insert_sql,
+        POINT_STABLE,
+        format_ts_utc,
+        point_subtable,
     )
+    from app.services.data_source.point_history_writer import decode_history_quality
 
+    db = settings.TDENGINE_DB
     timestamps, series_map = raw_data
     ts_parsed = [_parse_remote_ts(t) for t in timestamps]
-    events: list[PointEvent] = []
-    now = datetime.now(UTC)
+    recv = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    source_tag = f"'import:{source_task[:32].replace(chr(39), chr(39) * 2)}'"
+    BATCH = 5000
+    total = 0
+
     for _role, entry in role_point_map.items():
-        _tag_name, point_id = entry
+        _tag, point_id = entry
         if not point_id:
             continue
-        series = series_map.get(_tag_name) or series_map.get(_tag_name.lower())
+        series = series_map.get(_tag) or series_map.get(_tag.lower())
         if not series:
             continue
         values = series.get("values", [])
+        qualities = series.get("qualities", [])
+        sparse = _role not in dense_roles  # 稀疏角色做 COV 去重
+        sub = point_subtable(point_id)
+        head = (
+            f"INSERT INTO {db}.{sub} USING {POINT_STABLE} TAGS ('{point_id}', {source_tag}) VALUES"
+        )
+        buf: list[str] = []
+        n_buf = 0
+        prev = _SENTINEL
+        prev_q = _SENTINEL
+
+        async def _flush(head=head, buf=buf) -> None:
+            nonlocal n_buf, total
+            if not buf:
+                return
+            await execute_native_effective(" ".join([head] + buf))
+            total += n_buf
+            buf.clear()
+            n_buf = 0
+
         for i, ts in enumerate(ts_parsed):
             if ts is None:
                 continue
-            raw_v = values[i] if i < len(values) else None
-            v = _parse_float_val(raw_v)
+            v = _parse_float_val(values[i]) if i < len(values) else None
+            # 质量戳必存（后续诊断/可信度要消费）：远端 qualities 逐点解码，
+            # 缺失/未知 → class=-1（UNKNOWN），raw 原样保留，绝不臆造 Good
+            q_raw = qualities[i] if i < len(qualities) else None
+            q_class, q_raw_dec = decode_history_quality(q_raw)
             if v is None:
-                continue  # 非有限值/缺测跳过（质量与数值独立，但导入网格点无值不落）
-            events.append(
-                PointEvent(
-                    point_id=point_id,
-                    ts=ts,
-                    value=v,
-                    quality_class=1,
-                    quality_raw=None,
-                    quality_schema=QSCHEMA_AAS,
-                    source_kind=SOURCE_KIND_REMOTE_GRID,
-                    received_at=now,
-                    source_id=f"import:{source_task[:32]}",
-                )
+                # 值无效但质量可知：仍落点（ts+质量戳，value=NULL）——下游
+                # 按质量过滤，不丢这段「远端明确无有效值」的信息
+                v_sql = "NULL"
+            else:
+                v_sql = _sql_num(v)
+            if sparse and prev == v and q_class == prev_q:
+                continue  # 稀疏角色：值与质量均未变不落（COV 语义）
+            # 列序=表结构: quality_raw, quality_class, quality_schema,
+            # received_at, source_kind, payload_hash
+            buf.append(
+                f"('{format_ts_utc(ts)}', {v_sql}, "
+                f"{_sql_num(q_raw_dec)}, {_sql_num(q_class)}, 1, '{recv}', 4, '')"
             )
-    if not events:
-        return 0
-    total = 0
-    for i in range(0, len(events), 1000):
-        chunk = [(ev, ev.payload_hash()) for ev in events[i : i + 1000]]
-        sql = _build_insert_sql(chunk)
-        await execute_native_effective(sql)
-        total += len(chunk)
+            n_buf += 1
+            total += 1
+            prev = (v, q_class)
+            prev_q = q_class
+            if n_buf >= BATCH:
+                await _flush()
+        await _flush()  # 角色收尾残余批
+        prev = _SENTINEL
+        prev_q = _SENTINEL
+
     return total
 
 
