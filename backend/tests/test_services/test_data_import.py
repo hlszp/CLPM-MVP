@@ -1579,3 +1579,97 @@ class TestSweepStaleRunningTasksHeartbeat:
         assert result["swept"] == 1
         assert fake._hashes["import_task:stall-1"]["status"] == "FAILED"
         assert "停滞" in fake._hashes["import_task:stall-1"]["error_message"]
+
+
+class TestWritePointsBulkSparseCov:
+    """稀疏角色 COV 去重：值+质量均未变不落点.
+
+    回归防线：曾因 `prev` 被误赋为 (v, q_class) 元组，`prev == v` 恒 False，
+    导致 SP/MODE/KP/TI/TD 的 COV 去重完全失效、24h 网格全量落点，导入行数
+    暴涨数倍（50 分钟仅 20% 的量级回归）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_sparse_unchanged_value_and_quality_collapses_to_one_point(self):
+        """SP 5 个点值+质量均未变：只落第 1 个点（COV 语义）。"""
+        from app.services import data_import as di
+
+        timestamps = [
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:01+00:00",
+            "2026-07-15T00:00:02+00:00",
+            "2026-07-15T00:00:03+00:00",
+            "2026-07-15T00:00:04+00:00",
+        ]
+        raw_data = (
+            timestamps,
+            {"A.SP": {"values": [50.0, 50.0, 50.0, 50.0, 50.0], "qualities": [1, 1, 1, 1, 1]}},
+        )
+        role_point_map = {"SP": ("A.SP", "0e1e98bf-82ca-4e25-a5e6-56f9075661b6")}
+
+        executed: list[str] = []
+
+        async def fake_exec(sql: str) -> int:
+            executed.append(sql)
+            return 1
+
+        with patch("app.core.tdengine_native.execute_native_effective", side_effect=fake_exec):
+            written = await di._write_points_bulk(role_point_map, raw_data, source_task="task-1")
+
+        # 5 个点值+质量均未变 → 仅 1 个点
+        assert written == 1
+        assert len(executed) == 1
+        # 落点 SQL 只含 1 个 VALUES 元组
+        assert executed[0].count("VALUES") == 1
+        assert executed[0].count("(") == 1 + 1  # head 的 '(' + 单个值的 '('
+
+    @pytest.mark.asyncio
+    async def test_sparse_quality_change_is_kept_even_if_value_same(self):
+        """值不变但质量变化（退化）：必须落点，不能当作 COV 跳过。"""
+        from app.services import data_import as di
+
+        timestamps = [
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:01+00:00",
+        ]
+        raw_data = (
+            timestamps,
+            {"A.SP": {"values": [50.0, 50.0], "qualities": [1, 0]}},
+        )
+        role_point_map = {"SP": ("A.SP", "0e1e98bf-82ca-4e25-a5e6-56f9075661b6")}
+
+        executed: list[str] = []
+
+        async def fake_exec(sql: str) -> int:
+            executed.append(sql)
+            return 1
+
+        with patch("app.core.tdengine_native.execute_native_effective", side_effect=fake_exec):
+            written = await di._write_points_bulk(role_point_map, raw_data, source_task="task-1")
+
+        # 值同但质量 1→0：两个点都落
+        assert written == 2
+
+    @pytest.mark.asyncio
+    async def test_dense_role_pv_keeps_all_points(self):
+        """高频角色 PV 不做 COV 去重：值相同也全落。"""
+        from app.services import data_import as di
+
+        timestamps = [
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:01+00:00",
+            "2026-07-15T00:00:02+00:00",
+        ]
+        raw_data = (
+            timestamps,
+            {"A.PV": {"values": [1.0, 1.0, 1.0], "qualities": [1, 1, 1]}},
+        )
+        role_point_map = {"PV": ("A.PV", "1e2e98bf-82ca-4e25-a5e6-56f9075661b7")}
+
+        with patch(
+            "app.core.tdengine_native.execute_native_effective",
+            new=AsyncMock(return_value=1),
+        ):
+            written = await di._write_points_bulk(role_point_map, raw_data, source_task="task-1")
+
+        assert written == 3

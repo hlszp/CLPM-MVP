@@ -1249,8 +1249,7 @@ async def _write_points_bulk(
                 f"{_sql_num(q_raw_dec)}, {_sql_num(q_class)}, 1, '{recv}', 4, '')"
             )
             n_buf += 1
-            total += 1
-            prev = (v, q_class)
+            prev = v
             prev_q = q_class
             if n_buf >= BATCH:
                 await _flush()
