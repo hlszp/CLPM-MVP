@@ -1281,7 +1281,7 @@ class TestImportProgressChunkUnits:
 
     @pytest.mark.asyncio
     async def test_progress_reaches_100_with_multi_hour_chunks(self):
-        """72h 窗口 → 高频 24 块 + 低频 3 块 = 每回路 27；进度单调且末次 _update_task 即 1.0."""
+        """72h 窗口 → chunk_hours=9 → 每回路 8 块；进度单调且末次 _update_task 即 1.0."""
         import asyncio
 
         from app.services import data_import as di
@@ -1297,7 +1297,7 @@ class TestImportProgressChunkUnits:
         }
 
         async def fake_import_single_loop(loop_id, on_chunk_complete=None, **_kwargs):
-            for _ in range(24):  # 与 chunks_per_loop=24 对齐（v3 单相）
+            for _ in range(8):  # 与 chunks_per_loop=8 对齐（72h/9h，v3 单相）
                 await asyncio.sleep(0)
                 if on_chunk_complete:
                     await on_chunk_complete()

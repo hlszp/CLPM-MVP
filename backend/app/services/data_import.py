@@ -111,10 +111,12 @@ return {'UPDATED', old_status}
 _GOOD_QUALITY_CODES = frozenset({1, 192})
 
 # 动态分块参数
-_TARGET_CHUNKS = 30  # 目标分块数（每个回路最多发这么多 HTTP 请求）
-# 单次请求最大时间跨度（h）：远端 API 在长跨度 + 高并发下易 504，
-# 从 24h 降至 3h，单次请求数据量减小，瞬时压力降低。
-_MAX_CHUNK_HOURS = 3
+# 目标分块数（每个回路最多发这么多 HTTP 请求）
+_TARGET_CHUNKS = 8
+# 单次请求最大时间跨度（h）：2026-09-10 实测远端 24h 窗口 7 位号仅 0.5s
+# （168h 也只 5.1s），大窗口单请求远快于多次小请求往返（56×3h≈13s vs 1×24h≈0.5s），
+# 上限从 3h 放宽至 24h；请求次数从 56 次/回路降至 ~8 次/回路（7 天窗）。
+_MAX_CHUNK_HOURS = 24
 _MIN_CHUNK_HOURS = 1  # 单次请求最小时间跨度
 
 # Chunk 级重试配置（应对远端 API 瞬时 504/超时，DERP 链路虽稳定但远端仍可能短时过载）
@@ -738,7 +740,9 @@ async def import_history_data(
 
         import asyncio as _asyncio_sem
 
-        sem = _asyncio_sem.Semaphore(2)  # 远端 API 易在高并发下 504，限制最多 2 个回路并发
+        # 2026-09-10 实测：远端 24h 窗口 0.5s/请求很健康（见 _MAX_CHUNK_HOURS），
+        # 并发从 2 放宽至 4（总对外并发 = 4 回路 × 单请求，远端可承受）。
+        sem = _asyncio_sem.Semaphore(4)  # 限制最多 4 个回路并发拉取/写入
         progress_lock = _asyncio_sem.Lock()
         # 共享计数器（并发安全）
         shared_succeeded = 0
