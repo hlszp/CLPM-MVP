@@ -78,6 +78,26 @@ def test_kpi_concurrency_stays_within_database_budget() -> None:
     assert _PREWARM_CONCURRENCY <= 5
 
 
+def test_import_task_overrides_global_hard_timeout() -> None:
+    """长批次导入任务必须显式覆盖全局 1800s 硬超时。
+
+    历史：import_history_data 曾三度被误杀——0908/0909 因任务级 soft=6900s
+    在 115 分钟误杀；删除任务级超时后暴露 Celery 全局 task_time_limit=1800s
+    （30 分钟）兜底，24h 窗口 961 回路在 45.43% 进度（434/961）处被 SIGKILL，
+    事后又被停滞清扫器误标"worker 卡死"。本测试守护：任务级 time_limit 必须
+    存在且大于全局 1800s 硬超时，防止未来有人再删掉覆盖回到全局兜底。
+    """
+    from app.tasks.celery_app import celery_app
+    from app.tasks.kpi_calc import import_history_data as _task  # noqa: F401
+
+    # Celery 将 time_limit 归一化为 int 秒挂在任务实例上；未显式设置时回退
+    # 到 app.conf.task_time_limit（1800），此时任务会继承全局硬超时。
+    task = celery_app.tasks["app.tasks.kpi_calc.import_history_data"]
+    time_limit = task.time_limit
+    assert time_limit is not None, "导入任务必须显式设置 time_limit，不得继承全局 1800s"
+    assert time_limit > 1800, f"导入任务 time_limit={time_limit}s 未覆盖全局 1800s 硬超时"
+
+
 def test_stop_beat_keeps_pid_file_owned_by_existing_process(tmp_path, monkeypatch) -> None:
     """reload 实例未创建 Beat 时不得删除现有 Beat 的 PID 文件。"""
     from app import main

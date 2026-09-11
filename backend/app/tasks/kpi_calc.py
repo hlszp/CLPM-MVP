@@ -4094,12 +4094,16 @@ async def _check_import_idempotency(task_id: str | None) -> dict | None:
     name="app.tasks.kpi_calc.import_history_data",
     bind=True,
     base=AsyncTask,
-    # 不设 time_limit/soft_time_limit：本任务设计上是长批次（961 回路 × 周级
-    # 窗口按 v2 速度需 20+ 小时）。旧值 soft=6900s 按"27 回路 × 14h"小批量
-    # 定尺寸，连续两天在 115 分钟处 SoftTimeLimitExceeded 误杀大任务
-    # （0908 本机 / 0909 zpdev，事后均被清扫器误标"worker 卡死"）。
-    # 存活保护由三层既有机制承担：分块级进度心跳 + 1800s 停滞清扫器 +
-    # CAS 幂等预检（broker 因 visibility_timeout 重投的副本会被预检短路）。
+    # 长批次导入任务（961 回路 × 24h~周级窗口）设计上远超 30 分钟，必须显式
+    # 覆盖全局 task_time_limit=1800s 硬超时——否则 24h 窗口导入会在 ~45% 进度
+    # （434/961 回路）处被 SIGKILL 误杀，事后又被停滞清扫器误标"worker 卡死"
+    # （0908 本机 / 0909 zpdev 曾因 soft=6900s 在 115 分钟误杀；删除任务级
+    # 超时后暴露全局 1800s 硬超时，0910 zpdev 第三次误杀）。
+    # 存活保护由三层既有机制承担：分块级进度心跳 + 1800s 停滞清扫器 + CAS
+    # 幂等预检（broker 因 visibility_timeout 重投的副本被短路）。Celery 硬超时
+    # 对该任务冗余且有害，设 24h 大值兜底（正常远早于此完成）。
+    time_limit=86400,
+    soft_time_limit=86000,
 )
 def import_history_data(
     self: AsyncTask,
