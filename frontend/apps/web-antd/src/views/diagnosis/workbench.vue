@@ -1136,7 +1136,7 @@ onMounted(() => {
             :loading="latestLoading"
             :pagination="false"
             :row-key="(record: DiagnosisApi.LatestRunItem) => record.loopId"
-            :scroll="{ x: 1330 }"
+            :scroll="{ x: 1330, y: 560 }"
             size="small"
           >
             <template #bodyCell="{ column, record }">

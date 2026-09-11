@@ -65,9 +65,6 @@ function fmtUtc(naiveIso?: null | string): string {
 
 const buckets = computed(() => data.value?.freshness.buckets ?? []);
 const totalLoops = computed(() => data.value?.freshness.totalLoops ?? 0);
-const neverCount = computed(
-  () => buckets.value.find((b) => b.key === 'never')?.count ?? 0,
-);
 
 function bucketMeta(key: DiagnosisApi.FreshnessBucketKey) {
   return FRESHNESS_META[key];
@@ -95,7 +92,27 @@ function drillRecords(b: DiagnosisApi.CoverageBucket): void {
 
 const scheduleLevels = computed(() => data.value?.schedule?.levels ?? []);
 const diTop = computed(() => data.value?.dataInsufficient.top ?? []);
-const diWindowDays = computed(() => data.value?.dataInsufficient.windowDays ?? 30);
+const diWindowDays = computed(
+  () => data.value?.dataInsufficient.windowDays ?? 30,
+);
+
+/** 滞后回路列表默认仅预览前 N 个（避免上千条撑爆版面），展开后全量 */
+const LAGGING_PREVIEW = 12;
+const expandedLevels = ref<Set<number>>(new Set());
+
+function laggingShown(lv: DiagnosisApi.CoverageScheduleLevel) {
+  const all = lv.lagging ?? [];
+  return expandedLevels.value.has(lv.level)
+    ? all
+    : all.slice(0, LAGGING_PREVIEW);
+}
+
+function toggleLagging(level: number): void {
+  const next = new Set(expandedLevels.value);
+  if (next.has(level)) next.delete(level);
+  else next.add(level);
+  expandedLevels.value = next;
+}
 
 function pctText(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
@@ -125,13 +142,6 @@ function pctText(ratio: number): string {
           ></i>
           {{ bucketMeta(b.key).label }} {{ b.count }}
         </span>
-        <span
-          v-if="neverCount > 0"
-          class="coverage-panel__never-badge"
-          :style="{ color: COLOR_LAG }"
-        >
-          从未诊断 {{ neverCount }}
-        </span>
       </span>
       <span class="coverage-panel__toggle">
         {{ collapsed ? '展开 ▾' : '收起 ▴' }}
@@ -148,7 +158,10 @@ function pctText(ratio: number): string {
         >
           <Button size="small" @click="load">重试</Button>
         </Empty>
-        <div v-else-if="!loading && data && totalLoops === 0" class="coverage-empty">
+        <div
+          v-else-if="!loading && data && totalLoops === 0"
+          class="coverage-empty"
+        >
           暂无活跃回路，覆盖台账无统计数据
         </div>
 
@@ -185,7 +198,11 @@ function pctText(ratio: number): string {
                 ></i>
                 {{ bucketMeta(b.key).label }} {{ b.count }}
                 <span class="coverage-bar__pct">
-                  （{{ totalLoops > 0 ? Math.round((b.count / totalLoops) * 100) : 0 }}%）
+                  （{{
+                    totalLoops > 0
+                      ? Math.round((b.count / totalLoops) * 100)
+                      : 0
+                  }}%）
                 </span>
               </span>
             </div>
@@ -222,21 +239,33 @@ function pctText(ratio: number): string {
                 </span>
               </template>
               <span v-else class="coverage-level__last">{{ lv.note }}</span>
-              <!-- 滞后回路列表 -->
+              <!-- 滞后回路列表（默认预览前 N 个，可展开全量） -->
               <div
                 v-if="(lv.lagging?.length ?? 0) > 0"
                 class="coverage-level__lagging"
-                :style="{ color: COLOR_LAG }"
               >
                 <span
-                  v-for="l in lv.lagging"
+                  v-for="l in laggingShown(lv)"
                   :key="l.loopId"
                   class="coverage-level__lag-item"
+                  :style="{ color: COLOR_LAG }"
                 >
                   {{ l.loopTagName }}（{{
                     l.lastScheduledAt ? fmtUtc(l.lastScheduledAt) : '从未排程'
                   }}）
                 </span>
+                <button
+                  v-if="(lv.lagging?.length ?? 0) > LAGGING_PREVIEW"
+                  type="button"
+                  class="coverage-level__lag-toggle"
+                  @click.stop="toggleLagging(lv.level)"
+                >
+                  {{
+                    expandedLevels.has(lv.level)
+                      ? '收起'
+                      : `展开全部 ${lv.laggingCount ?? lv.lagging?.length} 个`
+                  }}
+                </button>
               </div>
             </div>
           </div>
@@ -251,7 +280,9 @@ function pctText(ratio: number): string {
             </div>
             <div v-else class="coverage-di">
               <div v-for="t in diTop" :key="t.loopId" class="coverage-di__row">
-                <span class="coverage-di__tag">{{ t.loopTagName ?? t.loopId }}</span>
+                <span class="coverage-di__tag">{{
+                  t.loopTagName ?? t.loopId
+                }}</span>
                 <span class="coverage-di__nums tabular-nums">
                   {{ t.insufficientRuns }}/{{ t.totalRuns }} 次
                 </span>
@@ -321,14 +352,6 @@ function pctText(ratio: number): string {
   width: 8px;
   height: 8px;
   border-radius: 2px;
-}
-
-.coverage-panel__never-badge {
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 500;
-  background: hsl(var(--accent));
-  border-radius: 8px;
 }
 
 .coverage-panel__toggle {
@@ -422,13 +445,32 @@ function pctText(ratio: number): string {
 }
 
 .coverage-level__lagging {
+  display: flex;
   flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  align-items: baseline;
+  max-height: 72px;
   padding-left: 8px;
+  overflow: auto;
   font-size: 11px;
 }
 
 .coverage-level__lag-item {
-  margin-right: 12px;
+  white-space: nowrap;
+}
+
+.coverage-level__lag-toggle {
+  padding: 0;
+  font-size: 11px;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.coverage-level__lag-toggle:hover {
+  text-decoration: underline;
 }
 
 /* 数据不足 Top5 */
