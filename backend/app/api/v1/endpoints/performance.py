@@ -192,6 +192,11 @@ async def get_ranking_endpoint(
         "steady_rate/good_value_rate/fast_rate（非法值回退 score）",
     ),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
+    fitnessFilter: bool = Query(
+        False,
+        description="适用性过滤：服务端先剔除最新快照为 L0/L1 的回路再排序截断"
+        "（客户端过滤在 L0/L1 回路数 ≥limit 时会把榜单滤空）",
+    ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -219,6 +224,7 @@ async def get_ranking_endpoint(
         sort_order=sortOrder,
         start_time=_parse_dt(startTime),
         end_time=_parse_dt(endTime),
+        exclude_unfit=fitnessFilter,
     )
     return success(data=data)
 

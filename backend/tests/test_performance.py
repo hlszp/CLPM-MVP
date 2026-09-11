@@ -607,6 +607,46 @@ class TestRanking:
         assert resp.status_code == 200
         assert resp.json()["data"] == []
 
+    @pytest.mark.parametrize(
+        ("query", "expect_filter"),
+        [
+            ("", False),  # 默认不过滤（其它调用方行为不变）
+            ("&fitnessFilter=true", True),
+            ("&fitnessFilter=false", False),
+        ],
+    )
+    def test_get_ranking_fitness_filter_pushdown(
+        self, client, mock_db, fake_redis, query: str, expect_filter: bool
+    ) -> None:
+        """适用性过滤下推服务端：fitnessFilter=true 时 SQL 先剔除 L0/L1 再排序截断。
+
+        回归背景（2026-09-11 zpdev 实弹）：指标分析页客户端过滤在 L0/L1 回路
+        ≥limit 时把最差 top-N 榜单整个滤空（961 回路中 898 个不参评，最差
+        100 条全为 L1），页面恒空态；过滤必须在排序截断之前完成。
+        """
+        captured: list[str] = []
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            captured.append(str(stmt))
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                f"/api/v1/performance/ranking?sortBy=auto_mode_rate{query}",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        # 第一条 stmt 是快照查询（DISTINCT ON 子查询 + 外层排序）
+        assert captured, "ranking 未发出快照查询"
+        ranking_sql = captured[0].lower()
+        if expect_filter:
+            assert "fitness_level not in" in ranking_sql, (
+                "fitnessFilter=true 时 SQL 必须包含 L0/L1 剔除条件"
+            )
+        else:
+            assert "fitness_level not in" not in ranking_sql, "默认不得改变既有查询行为"
+
 
 # ---------------------------------------------------------------------------
 # S3-METRIC-006: 统计报表

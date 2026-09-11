@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, case, func, nulls_last, select
+from sqlalchemy import Integer, case, func, nulls_last, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -682,6 +682,7 @@ async def get_ranking(
     sort_order: str = "asc",
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    exclude_unfit: bool = False,
 ) -> list[dict]:
     """低效回路排行。
 
@@ -691,6 +692,11 @@ async def get_ranking(
         sort_by: 排序字段 score/steady_rate/good_value_rate
         sort_order: asc/desc（默认 asc，分数最低的在前）
         start_time/end_time: ``time_window="custom"`` 时的自定义窗口
+        exclude_unfit: 服务端适用性过滤——先剔除最新快照为 L0/L1 的回路，
+            再排序截断。客户端过滤（先取最差 N 条再滤）在 L0/L1 回路
+            ≥limit 时会把整个榜单滤空（如全厂 961 回路中 898 个不参评），
+            故把过滤下推到排序前；NULL fitness（旧快照）不剔除，与前端
+            语义一致
     """
     if time_window == "custom" and start_time is not None and end_time is not None:
         start, now = start_time, end_time
@@ -751,6 +757,16 @@ async def get_ranking(
         order_expr = sort_column.asc().nulls_last()
 
     stmt = select(snapshot_alias).order_by(order_expr).limit(limit).offset(offset)
+    if exclude_unfit:
+        # 必须在外层（DISTINCT ON 子查询之后）过滤：按「最新快照」的 fitness
+        # 判定，若在 base 里过滤会让 L1 最新、更早 L2 的回路错误地以旧快照入选。
+        # NOT IN 对 NULL 判 NULL（即剔除），显式 OR is_(None) 保住旧快照。
+        stmt = stmt.where(
+            or_(
+                snapshot_alias.fitness_level.is_(None),
+                snapshot_alias.fitness_level.notin_(("L0", "L1")),
+            )
+        )
     result = await db.execute(stmt)
     snapshots = result.scalars().all()
 

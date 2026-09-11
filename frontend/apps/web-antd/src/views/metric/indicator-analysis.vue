@@ -223,9 +223,14 @@ async function loadAll() {
     sortBy: metricMeta.value.sortKey,
     sortOrder: 'asc',
     limit: 100,
+    // 适用性过滤下推服务端：先剔除 L0/L1 再排序取 top-N。客户端过滤在
+    // L0/L1 回路 ≥limit 时会把榜单整个滤空（如全厂 961 回路中 898 个不参评，
+    // 最差 100 条全为 L1），页面恒空态
+    fitnessFilter: fitnessFilter.value,
   };
   if (selectedPlantNodeId.value) params.plantNodeId = selectedPlantNodeId.value;
-  // 环比：上一等长滚动窗口（custom 窗口）；拉取失败不阻塞主数据（catch 内静默降级）
+  // 环比：上一等长滚动窗口（custom 窗口）；拉取失败不阻塞主数据（catch 内静默降级）；
+  // 过滤口径与当前窗口一致，保证环比双方回路集合可比
   const prevRange = prevWindowRange(timeWindow.value);
   const prevParams: MetricApi.RankingQueryParams | undefined = prevRange
     ? {
@@ -235,6 +240,7 @@ async function loadAll() {
         sortBy: metricMeta.value.sortKey,
         sortOrder: 'asc',
         limit: 100,
+        fitnessFilter: fitnessFilter.value,
         ...(selectedPlantNodeId.value
           ? { plantNodeId: selectedPlantNodeId.value }
           : {}),
@@ -243,10 +249,11 @@ async function loadAll() {
   try {
     const [ranking, nodes, prev] = await Promise.all([
       getRankingApi(params),
-      // C 区：score 排序拉全量节点（返回体含全部指标字段），前端按所选指标重排
+      // C 区：score 排序拉全量节点（返回体含全部指标字段），前端按所选指标重排。
+      // 不指定 nodeType——回路挂载层级随环境而异（zpdev 生产挂 AREA、种子环境
+      // 挂 UNIT），由 sortedNodes 按「有数据的最深层级」自适应取用
       getNodeRankingApi({
         timeWindow: timeWindow.value as TimeWindowParam,
-        nodeType: 'UNIT',
         sortBy: 'score',
         sortOrder: 'desc',
         limit: 200,
@@ -360,13 +367,14 @@ const medianDelta = computed(() =>
     : null,
 );
 const countDelta = computed(() =>
-  hasPrevData.value ? filteredItems.value.length - prevFilteredItems.value.length : null,
+  hasPrevData.value
+    ? filteredItems.value.length - prevFilteredItems.value.length
+    : null,
 );
 
 /** 满分回路（该指标达满值，如自控率 100%；治理健康度信号） */
 const fullScoreCount = computed(
-  () =>
-    curValues.value.filter((v) => v >= metricMeta.value.max - 1e-9).length,
+  () => curValues.value.filter((v) => v >= metricMeta.value.max - 1e-9).length,
 );
 const fullScorePct = computed(() =>
   curValues.value.length > 0
@@ -403,9 +411,7 @@ function formatDelta(d: number): string {
 
 /** 单回路环比（D 区表格列）；上窗无该回路或无值时 null */
 function deltaOf(it: MetricApi.RankingItem): null | number {
-  const prev = prevFilteredItems.value.find(
-    (p) => p.loopId === it.loopId,
-  );
+  const prev = prevFilteredItems.value.find((p) => p.loopId === it.loopId);
   if (!prev) return null;
   const pv = prev[metricMeta.value.field] as null | number;
   const cur = it[metricMeta.value.field] as null | number;
@@ -422,10 +428,13 @@ interface DistBucket {
 }
 
 const distBuckets = computed<DistBucket[]>(() => {
-  const buckets = Array.from({ length: 10 }, (_, i): DistBucket => ({
-    count: 0,
-    to: (i + 1) * 10,
-  }));
+  const buckets = Array.from(
+    { length: 10 },
+    (_, i): DistBucket => ({
+      count: 0,
+      to: (i + 1) * 10,
+    }),
+  );
   for (const v of curValues.value) {
     const idx = Math.min(9, Math.max(0, Math.floor(v / 10)));
     buckets[idx]!.count += 1;
@@ -440,10 +449,23 @@ function distBucketColor(to: number): string {
   return themeColors.value.INFO;
 }
 
-/** C 区：节点按所选指标升序（最差装置在前） */
+/** C 区：节点按所选指标升序（最差装置在前）。
+ *  层级自适应：节点快照按「有数据的最深层级」取用（EQUIPMENT>UNIT>AREA，
+ *  均无则回退非 FACTORY，最后兜底 FACTORY）——回路挂载层级随环境而异
+ *  （zpdev 生产挂 AREA、种子环境挂 UNIT），固定请求单一层级会在另一侧恒空 */
 const sortedNodes = computed(() => {
   const field = metricMeta.value.nodeField;
-  return [...nodeItems.value]
+  const typeRank = ['AREA', 'UNIT', 'EQUIPMENT'];
+  const present = new Set(
+    nodeItems.value.map((n) => n.plantNodeType ?? '').filter(Boolean),
+  );
+  const deepest = [...typeRank].toReversed().find((t) => present.has(t));
+  const pool = deepest
+    ? nodeItems.value.filter((n) => n.plantNodeType === deepest)
+    : nodeItems.value.filter(
+        (n) => n.plantNodeType !== 'FACTORY' || nodeItems.value.length === 1,
+      );
+  return [...pool]
     .map((n) => ({
       node: n,
       value: (n as Record<string, unknown>)[field] as null | number,
@@ -477,7 +499,10 @@ function applyQuery(q: RouteLocationNormalizedLoaded['query']): boolean {
     changed = true;
   }
   const win = typeof q.window === 'string' ? q.window : '';
-  if (timeWindowOptions.some((o) => o.value === win) && win !== timeWindow.value) {
+  if (
+    timeWindowOptions.some((o) => o.value === win) &&
+    win !== timeWindow.value
+  ) {
     timeWindow.value = win;
     changed = true;
   }
@@ -489,7 +514,9 @@ function applyQuery(q: RouteLocationNormalizedLoaded['query']): boolean {
     changed = true;
   }
   const qNodeId =
-    typeof q.plantNodeId === 'string' && q.plantNodeId ? q.plantNodeId : undefined;
+    typeof q.plantNodeId === 'string' && q.plantNodeId
+      ? q.plantNodeId
+      : undefined;
   if (qNodeId !== selectedPlantNodeId.value) {
     selectedPlantNodeId.value = qNodeId;
     changed = true;
@@ -593,7 +620,10 @@ async function renderCharts() {
           type: 'bar',
           barMaxWidth: 18,
           // 单蓝 accent 纪律：排行条形统一工业蓝（use-clpm-theme INFO）
-          itemStyle: { color: themeColors.value.INFO, borderRadius: [0, 2, 2, 0] },
+          itemStyle: {
+            color: themeColors.value.INFO,
+            borderRadius: [0, 2, 2, 0],
+          },
           data: top10.value.map((it) => ({
             value: it[metricMeta.value.field] as number,
             loopId: it.loopId,
@@ -633,7 +663,9 @@ async function renderCharts() {
       yAxis: {
         type: 'category',
         inverse: true,
-        data: sortedNodes.value.map((r) => r.node.plantNodeName ?? r.node.plantNodeId),
+        data: sortedNodes.value.map(
+          (r) => r.node.plantNodeName ?? r.node.plantNodeId,
+        ),
         ...axisBase.value,
       },
       series: [
@@ -678,9 +710,8 @@ async function renderCharts() {
     const avgBucketLabel =
       avgValue.value == null
         ? null
-        : (labels[
-            Math.min(9, Math.max(0, Math.floor(avgValue.value / 10)))
-          ] ?? null);
+        : (labels[Math.min(9, Math.max(0, Math.floor(avgValue.value / 10)))] ??
+          null);
     await renderDistChart({
       grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
       tooltip: {
@@ -690,7 +721,9 @@ async function renderCharts() {
           const p = Array.isArray(params) ? params[0] : params;
           const bucket = distBuckets.value[p?.dataIndex ?? 0];
           if (!bucket) return '';
-          const pct = ((bucket.count / curValues.value.length) * 100).toFixed(1);
+          const pct = ((bucket.count / curValues.value.length) * 100).toFixed(
+            1,
+          );
           return `${bucket.to - 10}-${bucket.to}：${bucket.count} 条（${pct}%）`;
         },
       },
@@ -755,7 +788,13 @@ const actionColumns: TableColumnsType = [
     ellipsis: true,
   },
   { title: '名称', key: 'loopName', dataIndex: 'loopName', ellipsis: true },
-  { title: '装置', key: 'unitName', dataIndex: 'unitName', width: 140, ellipsis: true },
+  {
+    title: '装置',
+    key: 'unitName',
+    dataIndex: 'unitName',
+    width: 140,
+    ellipsis: true,
+  },
   {
     title: () => metricMeta.value.label,
     key: 'metricValue',
@@ -906,313 +945,388 @@ onMounted(() => {
         @retry="loadAll"
       >
         <div class="flex h-full flex-col gap-3">
-        <!-- A：指标概览卡（均值/中位数/满分/参评数带环比，恶化最多，最薄弱装置） -->
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          <Card :body-style="{ padding: '12px 16px' }">
-            <div class="text-xs text-gray-500">
-              {{ selectedPlantNodeName }}{{ metricMeta.label }}均值
-            </div>
-            <div class="mt-1 text-2xl font-semibold">
-              {{ formatNumber(avgValue, metricMeta.max === 100 ? '%' : '') }}
-            </div>
-            <div
-              v-if="avgDelta != null"
-              class="mt-0.5 flex items-center gap-1 text-xs font-medium"
-              :class="avgDelta > 0 ? 'text-emerald-600' : avgDelta < 0 ? 'text-red-600' : 'text-gray-400'"
-            >
-              <IconifyIcon
-                :icon="avgDelta > 0 ? 'lucide:trending-up' : avgDelta < 0 ? 'lucide:trending-down' : 'lucide:minus'"
-                class="size-3.5"
-              />
-              {{ formatDelta(avgDelta) }}
-              <span class="font-normal text-gray-400">环比</span>
-            </div>
-            <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
-          </Card>
-          <Card :body-style="{ padding: '12px 16px' }">
-            <div class="text-xs text-gray-500">
-              {{ selectedPlantNodeName }}{{ metricMeta.label }}中位数
-            </div>
-            <div class="mt-1 text-2xl font-semibold">
-              {{ formatNumber(medianValue, metricMeta.max === 100 ? '%' : '') }}
-            </div>
-            <div
-              v-if="medianDelta != null"
-              class="mt-0.5 flex items-center gap-1 text-xs font-medium"
-              :class="medianDelta > 0 ? 'text-emerald-600' : medianDelta < 0 ? 'text-red-600' : 'text-gray-400'"
-            >
-              <IconifyIcon
-                :icon="medianDelta > 0 ? 'lucide:trending-up' : medianDelta < 0 ? 'lucide:trending-down' : 'lucide:minus'"
-                class="size-3.5"
-              />
-              {{ formatDelta(medianDelta) }}
-              <span class="font-normal text-gray-400">环比</span>
-            </div>
-            <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
-          </Card>
-          <Card :body-style="{ padding: '12px 16px' }">
-            <Tooltip
-              title="该指标达满值的回路（如自控率 100%）；满分占比越高，该指标治理健康度越好"
-            >
-              <div class="text-xs text-gray-500">满分回路</div>
-            </Tooltip>
-            <div class="mt-1 text-2xl font-semibold">
-              {{ fullScoreCount }}<span class="text-sm font-normal text-gray-400">条</span>
-            </div>
-            <div class="mt-0.5 text-xs text-gray-400">
-              {{ fullScorePct != null ? `占比 ${fullScorePct.toFixed(1)}%` : '—' }}
-            </div>
-          </Card>
-          <Card :body-style="{ padding: '12px 16px' }">
-            <div class="text-xs text-gray-500">参评回路数</div>
-            <div class="mt-1 text-2xl font-semibold">{{ filteredItems.length }}</div>
-            <div v-if="countDelta != null" class="mt-0.5 text-xs text-gray-400">
-              环比 {{ countDelta > 0 ? '+' : '' }}{{ countDelta }} 条
-            </div>
-            <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
-          </Card>
-          <Card :body-style="{ padding: '12px 16px' }">
-            <Tooltip
-              title="当前窗口 vs 上一等长窗口，该指标下降最多的回路；无下降或无上窗数据时显示其他状态"
-            >
-              <div class="text-xs text-gray-500">环比恶化最多</div>
-            </Tooltip>
-            <template v-if="worstDecline">
-              <div class="mt-1 truncate font-mono text-base font-semibold">
-                {{ worstDecline.item.tagName || worstDecline.item.loopId }}
+          <!-- A：指标概览卡（均值/中位数/满分/参评数带环比，恶化最多，最薄弱装置） -->
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            <Card :body-style="{ padding: '12px 16px' }">
+              <div class="text-xs text-gray-500">
+                {{ selectedPlantNodeName }}{{ metricMeta.label }}均值
               </div>
-              <div class="mt-0.5 text-xs font-medium text-red-600">
-                {{ formatDelta(worstDecline.delta) }}
+              <div class="mt-1 text-2xl font-semibold">
+                {{ formatNumber(avgValue, metricMeta.max === 100 ? '%' : '') }}
               </div>
-            </template>
-            <template v-else>
               <div
-                class="mt-1 text-base font-semibold"
-                :class="hasPrevData ? 'text-emerald-600' : 'text-gray-400'"
+                v-if="avgDelta != null"
+                class="mt-0.5 flex items-center gap-1 text-xs font-medium"
+                :class="
+                  avgDelta > 0
+                    ? 'text-emerald-600'
+                    : avgDelta < 0
+                      ? 'text-red-600'
+                      : 'text-gray-400'
+                "
               >
-                {{ hasPrevData ? '无恶化回路' : '—' }}
+                <IconifyIcon
+                  :icon="
+                    avgDelta > 0
+                      ? 'lucide:trending-up'
+                      : avgDelta < 0
+                        ? 'lucide:trending-down'
+                        : 'lucide:minus'
+                  "
+                  class="size-3.5"
+                />
+                {{ formatDelta(avgDelta) }}
+                <span class="font-normal text-gray-400">环比</span>
+              </div>
+              <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
+            </Card>
+            <Card :body-style="{ padding: '12px 16px' }">
+              <div class="text-xs text-gray-500">
+                {{ selectedPlantNodeName }}{{ metricMeta.label }}中位数
+              </div>
+              <div class="mt-1 text-2xl font-semibold">
+                {{
+                  formatNumber(medianValue, metricMeta.max === 100 ? '%' : '')
+                }}
+              </div>
+              <div
+                v-if="medianDelta != null"
+                class="mt-0.5 flex items-center gap-1 text-xs font-medium"
+                :class="
+                  medianDelta > 0
+                    ? 'text-emerald-600'
+                    : medianDelta < 0
+                      ? 'text-red-600'
+                      : 'text-gray-400'
+                "
+              >
+                <IconifyIcon
+                  :icon="
+                    medianDelta > 0
+                      ? 'lucide:trending-up'
+                      : medianDelta < 0
+                        ? 'lucide:trending-down'
+                        : 'lucide:minus'
+                  "
+                  class="size-3.5"
+                />
+                {{ formatDelta(medianDelta) }}
+                <span class="font-normal text-gray-400">环比</span>
+              </div>
+              <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
+            </Card>
+            <Card :body-style="{ padding: '12px 16px' }">
+              <Tooltip
+                title="该指标达满值的回路（如自控率 100%）；满分占比越高，该指标治理健康度越好"
+              >
+                <div class="text-xs text-gray-500">满分回路</div>
+              </Tooltip>
+              <div class="mt-1 text-2xl font-semibold">
+                {{ fullScoreCount
+                }}<span class="text-sm font-normal text-gray-400">条</span>
               </div>
               <div class="mt-0.5 text-xs text-gray-400">
-                {{ hasPrevData ? '较上一窗口' : '无上窗数据' }}
+                {{
+                  fullScorePct != null
+                    ? `占比 ${fullScorePct.toFixed(1)}%`
+                    : '—'
+                }}
               </div>
-            </template>
-          </Card>
-          <Card :body-style="{ padding: '12px 16px' }">
-            <div class="text-xs text-gray-500">最薄弱装置</div>
-            <div class="mt-1 truncate text-2xl font-semibold">
-              {{ worstUnitName }}
-            </div>
-          </Card>
-        </div>
-
-        <!-- B + C + E：一行三图（按 5:3:4 分配压缩各区宽度，中间区域 flex-1 自适应填满） -->
-        <div class="mt-3 grid min-h-[280px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12">
-          <Card
-            class="lg:col-span-5 h-full flex flex-col"
-            :body-style="{
-              padding: '12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              flex: '1 1 auto',
-              minHeight: 0,
-            }"
-          >
-            <template #title>
-              <span class="text-sm">TOP10 最差回路（{{ metricMeta.label }}）</span>
-            </template>
-            <template #extra>
+            </Card>
+            <Card :body-style="{ padding: '12px 16px' }">
+              <div class="text-xs text-gray-500">参评回路数</div>
+              <div class="mt-1 text-2xl font-semibold">
+                {{ filteredItems.length }}
+              </div>
+              <div
+                v-if="countDelta != null"
+                class="mt-0.5 text-xs text-gray-400"
+              >
+                环比 {{ countDelta > 0 ? '+' : '' }}{{ countDelta }} 条
+              </div>
+              <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
+            </Card>
+            <Card :body-style="{ padding: '12px 16px' }">
               <Tooltip
-                v-if="topValuesUniform"
-                title="当前窗口内适用回路的该指标全部同值，无薄弱回路可排行；可切换时间窗或关闭适用性过滤查看差异"
+                title="当前窗口 vs 上一等长窗口，该指标下降最多的回路；无下降或无上窗数据时显示其他状态"
               >
-                <span class="text-xs text-gray-400">指标无差异</span>
+                <div class="text-xs text-gray-500">环比恶化最多</div>
               </Tooltip>
-            </template>
-            <div class="flex-1 min-h-0">
-              <EchartsUI
-                v-if="top10.length > 0"
-                ref="topChartRef"
-                height="100%"
-              />
-              <div v-else class="flex h-full items-center justify-center text-xs text-gray-400">
-                暂无排行数据
-              </div>
-            </div>
-          </Card>
-          <Card
-            class="lg:col-span-3 h-full flex flex-col"
-            :body-style="{
-              padding: '12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              flex: '1 1 auto',
-              minHeight: 0,
-            }"
-          >
-            <template #title>
-              <span class="text-sm">装置对比</span>
-            </template>
-            <template #extra>
-              <span
-                v-if="selectedPlantNodeId"
-                class="text-xs text-gray-400"
-              >
-                当前：{{ selectedPlantNodeName }}
-              </span>
-              <Button
-                v-if="selectedPlantNodeId"
-                type="link"
-                size="small"
-                @click="clearPlantNode"
-              >
-                清除下钻
-              </Button>
-            </template>
-            <div class="flex-1 min-h-0">
-              <EchartsUI
-                v-if="sortedNodes.length > 0"
-                ref="unitChartRef"
-                height="100%"
-              />
-              <div v-else class="flex h-full items-center justify-center text-xs text-gray-400">
-                {{ unitChartEmptyText }}
-              </div>
-            </div>
-          </Card>
-          <!-- E：指标分布（grid 第三列，紧凑图例） -->
-          <Card
-            class="lg:col-span-4 h-full flex flex-col"
-            :body-style="{
-              padding: '12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              flex: '1 1 auto',
-              minHeight: 0,
-            }"
-          >
-            <template #title>
-              <span class="text-sm">{{ metricMeta.label }}分布</span>
-            </template>
-            <template #extra>
-              <span class="flex items-center gap-2 text-xs text-gray-400">
-                <span class="flex items-center gap-0.5">
-                  <span class="inline-block size-2 rounded-sm" :style="{ background: themeColors.DANGER }"></span>
-                  ≤60
-                </span>
-                <span class="flex items-center gap-0.5">
-                  <span class="inline-block size-2 rounded-sm" :style="{ background: themeColors.WARNING }"></span>
-                  60-80
-                </span>
-                <span class="flex items-center gap-0.5">
-                  <span class="inline-block size-2 rounded-sm" :style="{ background: themeColors.INFO }"></span>
-                  ≥80
-                </span>
-              </span>
-            </template>
-            <div class="flex-1 min-h-0">
-              <EchartsUI
-                v-if="curValues.length > 0"
-                ref="distChartRef"
-                height="100%"
-              />
-              <div v-else class="flex h-full items-center justify-center text-xs text-gray-400">
-                暂无分布数据
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <!-- D：行动清单 -->
-        <Card class="mt-3 flex-1 min-h-[400px]" :body-style="{ padding: '12px 16px' }">
-          <template #title>
-            <span class="text-sm">行动清单（最差 TOP20）</span>
-          </template>
-          <div class="h-full overflow-auto">
-          <Spin :spinning="loading">
-            <Table
-              :columns="actionColumns"
-              :data-source="actionRows"
-              :pagination="false"
-              row-key="loopId"
-              size="small"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'tagName'">
-                  <ClpmLoopLink
-                    :loop-id="(record as MetricApi.RankingItem).loopId"
-                    :tag-name="(record as MetricApi.RankingItem).tagName"
-                    default-target="detail"
-                  />
-                </template>
-                <template v-else-if="column.key === 'metricValue'">
-                  <span class="font-mono font-medium">
-                    {{
-                      formatNumber(
-                        metricValueOf(record as MetricApi.RankingItem),
-                        metricMeta.max === 100 ? '%' : '',
-                      )
-                    }}
-                  </span>
-                </template>
-                <template v-else-if="column.key === 'delta'">
-                  <template v-if="deltaOf(record as MetricApi.RankingItem) != null">
-                    <span
-                      class="flex items-center justify-end gap-0.5 font-mono text-xs font-medium"
-                      :class="
-                        deltaOf(record as MetricApi.RankingItem)! > 0
-                          ? 'text-emerald-600'
-                          : deltaOf(record as MetricApi.RankingItem)! < 0
-                            ? 'text-red-600'
-                            : 'text-gray-400'
-                      "
-                    >
-                      <IconifyIcon
-                        :icon="
-                          deltaOf(record as MetricApi.RankingItem)! > 0
-                            ? 'lucide:trending-up'
-                            : deltaOf(record as MetricApi.RankingItem)! < 0
-                              ? 'lucide:trending-down'
-                              : 'lucide:minus'
-                        "
-                        class="size-3"
-                      />
-                      {{ formatDelta(deltaOf(record as MetricApi.RankingItem)!) }}
-                    </span>
-                  </template>
-                  <span v-else class="text-gray-400">—</span>
-                </template>
-                <template v-else-if="column.key === 'score'">
-                  <span class="font-mono text-xs">
-                    {{ formatNumber((record as MetricApi.RankingItem).score) }}
-                  </span>
-                </template>
-                <template v-else-if="column.key === 'confidenceLevel'">
-                  <ConfidenceBadge
-                    v-if="(record as MetricApi.RankingItem).confidenceLevel"
-                    :level="(record as MetricApi.RankingItem).confidenceLevel!"
-                    :valid-rate="(record as MetricApi.RankingItem).validRate"
-                  />
-                  <span v-else class="text-gray-400">—</span>
-                </template>
-                <template v-else-if="column.key === 'fitness'">
-                  <Tooltip
-                    :title="
-                      fitnessNATip(
-                        (record as MetricApi.RankingItem).fitnessLevel ?? null,
-                        (record as MetricApi.RankingItem).fitnessTags ?? null,
-                      )
-                    "
-                  >
-                    <span class="font-mono text-xs text-slate-500">
-                      {{ (record as MetricApi.RankingItem).fitnessLevel ?? '—' }}
-                    </span>
-                  </Tooltip>
-                </template>
+              <template v-if="worstDecline">
+                <div class="mt-1 truncate font-mono text-base font-semibold">
+                  {{ worstDecline.item.tagName || worstDecline.item.loopId }}
+                </div>
+                <div class="mt-0.5 text-xs font-medium text-red-600">
+                  {{ formatDelta(worstDecline.delta) }}
+                </div>
               </template>
-            </Table>
-          </Spin>
+              <template v-else>
+                <div
+                  class="mt-1 text-base font-semibold"
+                  :class="hasPrevData ? 'text-emerald-600' : 'text-gray-400'"
+                >
+                  {{ hasPrevData ? '无恶化回路' : '—' }}
+                </div>
+                <div class="mt-0.5 text-xs text-gray-400">
+                  {{ hasPrevData ? '较上一窗口' : '无上窗数据' }}
+                </div>
+              </template>
+            </Card>
+            <Card :body-style="{ padding: '12px 16px' }">
+              <div class="text-xs text-gray-500">最薄弱装置</div>
+              <div class="mt-1 truncate text-2xl font-semibold">
+                {{ worstUnitName }}
+              </div>
+            </Card>
           </div>
-        </Card>
+
+          <!-- B + C + E：一行三图（按 5:3:4 分配压缩各区宽度，中间区域 flex-1 自适应填满） -->
+          <div
+            class="mt-3 grid min-h-[280px] flex-1 grid-cols-1 gap-3 lg:grid-cols-12"
+          >
+            <Card
+              class="lg:col-span-5 h-full flex flex-col"
+              :body-style="{
+                padding: '12px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 auto',
+                minHeight: 0,
+              }"
+            >
+              <template #title>
+                <span class="text-sm"
+                  >TOP10 最差回路（{{ metricMeta.label }}）</span
+                >
+              </template>
+              <template #extra>
+                <Tooltip
+                  v-if="topValuesUniform"
+                  title="当前窗口内适用回路的该指标全部同值，无薄弱回路可排行；可切换时间窗或关闭适用性过滤查看差异"
+                >
+                  <span class="text-xs text-gray-400">指标无差异</span>
+                </Tooltip>
+              </template>
+              <div class="flex-1 min-h-0">
+                <EchartsUI
+                  v-if="top10.length > 0"
+                  ref="topChartRef"
+                  height="100%"
+                />
+                <div
+                  v-else
+                  class="flex h-full items-center justify-center text-xs text-gray-400"
+                >
+                  暂无排行数据
+                </div>
+              </div>
+            </Card>
+            <Card
+              class="lg:col-span-3 h-full flex flex-col"
+              :body-style="{
+                padding: '12px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 auto',
+                minHeight: 0,
+              }"
+            >
+              <template #title>
+                <span class="text-sm">装置对比</span>
+              </template>
+              <template #extra>
+                <span v-if="selectedPlantNodeId" class="text-xs text-gray-400">
+                  当前：{{ selectedPlantNodeName }}
+                </span>
+                <Button
+                  v-if="selectedPlantNodeId"
+                  type="link"
+                  size="small"
+                  @click="clearPlantNode"
+                >
+                  清除下钻
+                </Button>
+              </template>
+              <div class="flex-1 min-h-0">
+                <EchartsUI
+                  v-if="sortedNodes.length > 0"
+                  ref="unitChartRef"
+                  height="100%"
+                />
+                <div
+                  v-else
+                  class="flex h-full items-center justify-center text-xs text-gray-400"
+                >
+                  {{ unitChartEmptyText }}
+                </div>
+              </div>
+            </Card>
+            <!-- E：指标分布（grid 第三列，紧凑图例） -->
+            <Card
+              class="lg:col-span-4 h-full flex flex-col"
+              :body-style="{
+                padding: '12px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                flex: '1 1 auto',
+                minHeight: 0,
+              }"
+            >
+              <template #title>
+                <span class="text-sm">{{ metricMeta.label }}分布</span>
+              </template>
+              <template #extra>
+                <span class="flex items-center gap-2 text-xs text-gray-400">
+                  <span class="flex items-center gap-0.5">
+                    <span
+                      class="inline-block size-2 rounded-sm"
+                      :style="{ background: themeColors.DANGER }"
+                    ></span>
+                    ≤60
+                  </span>
+                  <span class="flex items-center gap-0.5">
+                    <span
+                      class="inline-block size-2 rounded-sm"
+                      :style="{ background: themeColors.WARNING }"
+                    ></span>
+                    60-80
+                  </span>
+                  <span class="flex items-center gap-0.5">
+                    <span
+                      class="inline-block size-2 rounded-sm"
+                      :style="{ background: themeColors.INFO }"
+                    ></span>
+                    ≥80
+                  </span>
+                </span>
+              </template>
+              <div class="flex-1 min-h-0">
+                <EchartsUI
+                  v-if="curValues.length > 0"
+                  ref="distChartRef"
+                  height="100%"
+                />
+                <div
+                  v-else
+                  class="flex h-full items-center justify-center text-xs text-gray-400"
+                >
+                  暂无分布数据
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <!-- D：行动清单 -->
+          <Card
+            class="mt-3 flex-1 min-h-[400px]"
+            :body-style="{ padding: '12px 16px' }"
+          >
+            <template #title>
+              <span class="text-sm">行动清单（最差 TOP20）</span>
+            </template>
+            <div class="h-full overflow-auto">
+              <Spin :spinning="loading">
+                <Table
+                  :columns="actionColumns"
+                  :data-source="actionRows"
+                  :pagination="false"
+                  row-key="loopId"
+                  size="small"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'tagName'">
+                      <ClpmLoopLink
+                        :loop-id="(record as MetricApi.RankingItem).loopId"
+                        :tag-name="(record as MetricApi.RankingItem).tagName"
+                        default-target="detail"
+                      />
+                    </template>
+                    <template v-else-if="column.key === 'metricValue'">
+                      <span class="font-mono font-medium">
+                        {{
+                          formatNumber(
+                            metricValueOf(record as MetricApi.RankingItem),
+                            metricMeta.max === 100 ? '%' : '',
+                          )
+                        }}
+                      </span>
+                    </template>
+                    <template v-else-if="column.key === 'delta'">
+                      <template
+                        v-if="deltaOf(record as MetricApi.RankingItem) != null"
+                      >
+                        <span
+                          class="flex items-center justify-end gap-0.5 font-mono text-xs font-medium"
+                          :class="
+                            deltaOf(record as MetricApi.RankingItem)! > 0
+                              ? 'text-emerald-600'
+                              : deltaOf(record as MetricApi.RankingItem)! < 0
+                                ? 'text-red-600'
+                                : 'text-gray-400'
+                          "
+                        >
+                          <IconifyIcon
+                            :icon="
+                              deltaOf(record as MetricApi.RankingItem)! > 0
+                                ? 'lucide:trending-up'
+                                : deltaOf(record as MetricApi.RankingItem)! < 0
+                                  ? 'lucide:trending-down'
+                                  : 'lucide:minus'
+                            "
+                            class="size-3"
+                          />
+                          {{
+                            formatDelta(
+                              deltaOf(record as MetricApi.RankingItem)!,
+                            )
+                          }}
+                        </span>
+                      </template>
+                      <span v-else class="text-gray-400">—</span>
+                    </template>
+                    <template v-else-if="column.key === 'score'">
+                      <span class="font-mono text-xs">
+                        {{
+                          formatNumber((record as MetricApi.RankingItem).score)
+                        }}
+                      </span>
+                    </template>
+                    <template v-else-if="column.key === 'confidenceLevel'">
+                      <ConfidenceBadge
+                        v-if="(record as MetricApi.RankingItem).confidenceLevel"
+                        :level="
+                          (record as MetricApi.RankingItem).confidenceLevel!
+                        "
+                        :valid-rate="
+                          (record as MetricApi.RankingItem).validRate
+                        "
+                      />
+                      <span v-else class="text-gray-400">—</span>
+                    </template>
+                    <template v-else-if="column.key === 'fitness'">
+                      <Tooltip
+                        :title="
+                          fitnessNATip(
+                            (record as MetricApi.RankingItem).fitnessLevel ??
+                              null,
+                            (record as MetricApi.RankingItem).fitnessTags ??
+                              null,
+                          )
+                        "
+                      >
+                        <span class="font-mono text-xs text-slate-500">
+                          {{
+                            (record as MetricApi.RankingItem).fitnessLevel ??
+                            '—'
+                          }}
+                        </span>
+                      </Tooltip>
+                    </template>
+                  </template>
+                </Table>
+              </Spin>
+            </div>
+          </Card>
         </div>
       </ClpmDataCanvas>
 

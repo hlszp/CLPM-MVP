@@ -253,6 +253,8 @@ export namespace MetricApi {
     startTime?: string;
     /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
     endTime?: string;
+    /** 适用性过滤：服务端先剔除 L0/L1 再排序截断（避免客户端过滤把榜单滤空） */
+    fitnessFilter?: boolean;
   }
 
   /** 报表筛选范围 */
