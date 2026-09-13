@@ -22,6 +22,7 @@ const FORBIDDEN = [
   'p.v - 1.2',
   'p.v - 2.1',
   '催化裂化（82.1）',
+  '从 severity 模拟',
 ];
 
 function collectVueFiles(dir: string): string[] {

@@ -51,17 +51,34 @@ const SEVERITY_COLOR: Record<string, string> = {
   INFO: '#1890FF',
 };
 
-/** 状态 chip 映射（原型截图：振荡/处理中；振荡/验证中）
- *  SLA 已下线（D1=a），从 severity 模拟：
- *  - CRITICAL/ERROR → 橙底"处理中"
- *  - WARN/INFO → 蓝底"验证中"
+/** 严重度中文标签与底色（**真实字段**的如实展示）。
+ *
+ * 2026-09-13 整改 G40：此前把 severity 映射成"处理中"/"验证中"这类**并不
+ * 存在的工单流转状态**（原注释自述以 severity 推断工单状态），会让用户
+ * 以为工单已在流转并据此判断跟进优先级。severity 本身是真实字段，故如实展示
+ * 严重度；工单真实状态应由处置模块的数据源提供，不由本表推断。
  */
+const SEVERITY_TEXT: Record<string, string> = {
+  CRITICAL: '严重',
+  ERROR: '错误',
+  WARN: '警告',
+  INFO: '提示',
+};
+
+const SEVERITY_BG: Record<string, string> = {
+  CRITICAL: '#FFF1F0',
+  ERROR: '#FFF1F0',
+  WARN: '#FFF7E6',
+  INFO: '#EBF1F8',
+};
+
 function statusPill(row: WorkbenchApi.DiagnosisOpenTag): { bg: string; color: string; text: string; } {
   const sev = row.severity ?? '';
-  if (sev === 'CRITICAL' || sev === 'ERROR') {
-    return { bg: '#FFF7E6', color: '#FA8C16', text: '处理中' };
-  }
-  return { bg: '#EBF1F8', color: '#1F4E79', text: '验证中' };
+  return {
+    bg: SEVERITY_BG[sev] ?? '#F5F5F5',
+    color: SEVERITY_COLOR[sev] ?? '#BFBFBF',
+    text: SEVERITY_TEXT[sev] ?? '—',
+  };
 }
 
 function severityColor(sev: null | string | undefined): string {
