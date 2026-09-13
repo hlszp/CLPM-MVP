@@ -10,7 +10,7 @@
  * 同一反模式回归，但无法证明渲染结果正确；渲染级守护需挂载组件断言实际
  * path 数量，属后续补强项（已登记整改方案）。
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
