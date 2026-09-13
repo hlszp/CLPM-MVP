@@ -420,13 +420,23 @@ def assess_stiction_features(
     info.pop("reason", None)
     info["is_limit_cycle"] = True
 
-    # 量程：缺省用数据自身极差
-    pv_r = (
-        pv_range if pv_range and pv_range > 0 else (float(np.max(pv_vals) - np.min(pv_vals)) or 1.0)
-    )
-    op_r = (
-        op_range if op_range and op_range > 0 else (float(np.max(op_vals) - np.min(op_vals)) or 1.0)
-    )
+    # 量程：缺省取归一化满量程（与 KPI 侧 _read_range 的 default 一致）
+    #
+    # S3 修复（G19 续）：原缺省为"数据自身极差"，与 KPI 侧口径分叉。
+    # 算法说明 §4.8.3 把 pv_range/op_range 列为**必填**，§4.8.4 步骤 4-5 各自
+    # 除以**本轴量程**——目的是把两轴都映到 0~1 满量程；而 b/a 并非尺度不变量，
+    # 除以 PI 数据极差会按实际摆动幅度缩放两轴，扭曲椭圆形状、改变 St。
+    # 实测同信号下诊断侧 10.69% vs KPI 侧 10.80%（比值 101.01 而非 100）。
+    # 项目 P4 决策已统一 BASE 块 PV/SP/OP 为 0~100 归一化量纲，故缺省与
+    # KPI 侧 DEFAULT_PV_RANGE/DEFAULT_OP_RANGE 对齐，两链同判据。
+    if pv_range and pv_range > 0:
+        pv_r, pv_range_source = float(pv_range), "explicit"
+    else:
+        pv_r, pv_range_source = DEFAULT_PV_RANGE, "normalized_default"
+    if op_range and op_range > 0:
+        op_r, op_range_source = float(op_range), "explicit"
+    else:
+        op_r, op_range_source = DEFAULT_OP_RANGE, "normalized_default"
 
     # 纯滞后 θ 估计（互相关）；不显著时回退 lag=0 不补偿
     dt = sample_interval if sample_interval > 0 else 1.0
@@ -458,6 +468,10 @@ def assess_stiction_features(
             "theta_hat_seconds": round(theta_hat_seconds, 2),
             "theta_compensated": compensated,
             "corr_peak": round(float(corr_peak), 4),
+            "range_source": {
+                "pv": pv_range_source,
+                "op": op_range_source,
+            },
         }
     )
     return info
