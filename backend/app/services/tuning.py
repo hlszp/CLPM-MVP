@@ -398,9 +398,24 @@ async def _fetch_preprocessed_signals(
             timestamps = _to_rel_seconds(pvop_ts, pvop_ts[0])
         # 可信度统一 Phase 1：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
         # 与诊断/KPI 链路口径一致；替代 PVOP 块级全 tag 交集（含 pid 等非评估信号）
-        valid_rate = DataQualityAssessor.compute_loop_valid_rate(
+        #
+        # S3 修复（G23 续·整定链）：再折入**时间覆盖率**，与 KPI/诊断两链同口径。
+        # R14-2（2026-09-06）为"有效点比例 != 时间覆盖率"给 Pipeline 增加了
+        # time_coverage 因子，此前只落在 KPI 链；本轮起三链一致。
+        # expected_interval_s 必须是**契约**采样间隔（compute_time_coverage 文档：
+        # 用块级实际 sampling_freq 会把稀疏数据洗白成 coverage=100%），
+        # 故用 control_type 反查阈值而非 pvop_block.sampling_freq。
+        from app.services.preprocessing.quality_summary import compute_time_coverage
+        from app.services.preprocessing.thresholds import get_threshold
+
+        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(
             pvop_block.validity, pvop_block.point_count
         )
+        time_coverage = compute_time_coverage(
+            list(pvop_ts),
+            expected_interval_s=float(get_threshold(control_type).base_sampling_freq),
+        )
+        valid_rate = raw_loop_valid_rate * time_coverage
         sampling_freq = _parse_sampling_freq_hz(pvop_block.sampling_freq)
 
     # V62-P1-001: SP 重采样到 PVOP 网格（修复：目标网格传 PVOP timestamps，

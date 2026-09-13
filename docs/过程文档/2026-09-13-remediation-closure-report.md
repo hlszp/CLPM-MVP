@@ -1255,3 +1255,58 @@ Pipeline 一处**——诊断链仍取裸值。
 4. 改为"逐步打印 + 落盘后立即 grep 校验"后一次成功。
 5. **纪律结论**：今后做"修复前/后"对比一律用**文件副本**（`cp`）而非 `git stash`——
    stash 会与仓库中他人的 WIP 条目交互，风险不可控。
+
+---
+
+## 30. G23 收口：整定链折入时间覆盖率（**三链统一完成**）
+
+§20 修 KPI 链、§29 修诊断链，本轮补**整定链**——G23 的三链口径分裂至此收口。
+
+### 30.1 前置障碍的解除（§29 遗留）
+
+§29 我判断整定链"做不了"，理由是它需要**契约**采样间隔而该处只有块级**实际**
+`sampling_freq`（用实际值会把稀疏数据洗白）。本轮调研确认该判断过于保守：
+
+`_fetch_preprocessed_signals(db, loop_id, start_time, end_time, control_type_str)`
+在**函数级作用域**（346/348 行）已取得 `control_type` 枚举，故契约间隔经
+`get_threshold(control_type).base_sampling_freq` **完全可达**；`pvop_ts`
+也是 datetime 序列，可直接喂给 `compute_time_coverage`。**障碍不存在。**
+
+（这条本身值得记：上一轮我把"需要改动数据流向"当成了结论，实际只是一次读取。）
+
+### 30.2 修复
+
+`_fetch_preprocessed_signals` 内 valid_rate 计算改为：
+
+```
+raw_loop_valid_rate = compute_loop_valid_rate(pvop_block.validity, pvop_block.point_count)
+time_coverage       = compute_time_coverage(list(pvop_ts),
+                          expected_interval_s=get_threshold(control_type).base_sampling_freq)
+valid_rate          = raw_loop_valid_rate * time_coverage
+```
+
+**关键陷阱**：`expected_interval_s` 必须取自契约阈值，**不得**用
+`pvop_block.sampling_freq`（块级实测采样率）——后者会让覆盖率退化为 ~1.0，
+等于没修。测试中专门用一条**反证用例**把这个陷阱钉死
+（实测间隔下覆盖率 >0.9，契约间隔下 <0.1）。
+
+### 30.3 证据链
+
+| 环节 | 证据 |
+|---|---|
+| 修复前失败 | test_valid_rate_tuning_g23.py：**1 failed / 2 passed**（整定链未折入覆盖率） |
+| 修复 | `tuning.py` `_fetch_preprocessed_signals` 折入覆盖率（契约间隔） |
+| 行为测试 | 修复后 **3 passed**；含稀疏场景覆盖率量级、"用实测间隔会被洗白"的反证、整定链取间隔来源断言 |
+| 集成证据 | 整定域全域回归 **532 passed / 26 skipped / 0 failed**；该文件不在受保护清单内；全量门禁通过 |
+| 残余风险 | ① `_fetch_preprocessed_signals` 依赖 DB + DataPlanner，**本层无法做端到端数值断言**——整定链的数值一致性目前只有"来源断言"兜底，登记为待补集成测试；② 整定数据可信度将普遍下降（稀疏数据不再得 A），部分回路可能因可信度不足而拒绝整定，属**有意的收紧**，建议回归观察；③ R14-2 的口径仍应写入规格，避免第四次被单边改动劈开 |
+
+### 30.4 G23 收口状态
+
+| 链路 | 站点 | 状态 |
+|---|---|---|
+| KPI | `pipeline.py` → `loop_confidence_level` | 本来就是唯一含覆盖因子的 |
+| KPI | `kpi_calc.py` 门禁 + 落库 | **§20 已修** |
+| 诊断 | `assess()` → gate `confidence_level` | **§29 已修** |
+| 整定 | `_fetch_preprocessed_signals` | **§30 已修** |
+
+**G23 三链统一完成。** 剩余仅"把 R14-2 口径写进规格"（文档侧，非代码）。
