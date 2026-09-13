@@ -842,15 +842,29 @@ def _search_delay(
     Returns:
         (best_d, search_trace) — search_trace = [(d, bic), ...] 供证据输出
     """
+    # S3 修复（G27#1）：BIC 必须在**同一样本窗**上比较。
+    #
+    # BIC = n·ln(σ²) + k·ln(n) 的似然项随 n 线性缩放，只有 n 相同才可比。
+    # 原实现对每个候选 d 各用 res.n_samples（d 越大回归行越少），跨样本量比较无效：
+    # 实测（真值 d=8、1200 点、σ² 基本不变）"错误候选"的 BIC 随 d 单调变差
+    # （d=0 时 −6059 → d=12 时 −5991），artifact 约每单位 d 5.7，
+    # 与合法复杂度罚项 ln(n)≈7.1 量级相当——对大延迟的保守度约翻倍。
+    #
+    # 修法：取对所有候选都成立的公共窗 t0 = max(na, d_max+nb)，用各自拟合系数
+    # 在该窗上重算残差方差，并以同一 n_common 计罚。
+    n_total = len(y)
+    t0 = max(na, d_max + nb)
+    n_common = max(1, n_total - t0)
+    k = na + nb
+
     best_d = 0
     best_bic = float("inf")
     search_trace: list[tuple[int, float]] = []
     for d in range(d_max + 1):
         try:
             res = identify_arx(u, y, d, na=na, nb=nb)
-            n = res.n_samples
-            k = na + nb
-            bic = n * math.log(max(res.residual_var, 1e-12)) + k * math.log(n)
+            sigma2 = _residual_var_on_common_window(u, y, res.a_coeffs, res.b_coeffs, d, t0)
+            bic = n_common * math.log(max(sigma2, 1e-12)) + k * math.log(n_common)
             bic_rounded = round(bic, 2)
             search_trace.append((d, bic_rounded))
             if bic < best_bic:
@@ -860,6 +874,39 @@ def _search_delay(
             search_trace.append((d, float("inf")))
             continue
     return best_d, search_trace
+
+
+def _residual_var_on_common_window(
+    u: np.ndarray,
+    y: np.ndarray,
+    a_coeffs: list[float],
+    b_coeffs: list[float],
+    d: int,
+    t0: int,
+) -> float:
+    """在公共样本窗 [t0, N) 上重算方程误差残差方差（S3/G27#1）.
+
+    回归约定与 identify_arx / cross_validate **严格一致**（后者给出了权威索引形式）：
+        a[j]*y[t-1-j]、b[j]*u[t-d-j]，j 均从 0 起。
+
+    注：首版实现把 b 的索引写成 u[t-d-j] 而 j 从 1 起（多减一拍），验证时真值 d
+    落败；本版以 cross_validate 的写法为准。
+
+    调用方保证 t0 >= max(na, d + nb)，故窗内索引恒非负。
+    """
+    na, nb = len(a_coeffs), len(b_coeffs)
+    total = 0.0
+    count = 0
+    for t in range(t0, len(y)):
+        pred = 0.0
+        for j in range(na):
+            pred -= a_coeffs[j] * y[t - 1 - j]
+        for j in range(nb):
+            pred += b_coeffs[j] * u[t - d - j]
+        err = y[t] - pred
+        total += err * err
+        count += 1
+    return total / count if count else float("inf")
 
 
 def _free_run_simulation(

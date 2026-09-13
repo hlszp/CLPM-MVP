@@ -28,7 +28,6 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import pytest
 
 from app.services.tuning_identification.pipeline import _search_delay
 
@@ -47,17 +46,6 @@ def _bic_spread(d_max: int = 12) -> float:
 class TestDelaySearchBic:
     """BIC 必须在同一样本窗上比较。"""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="G27#1：_search_delay 对每个候选 d 各用 res.n_samples 计 BIC，"
-        "而 n 随 d 递减；BIC = n·ln(σ²)+k·ln(n) 的似然项随 n 线性缩放，"
-        "跨样本量比较无效。实测 artifact ≈ 每单位 d 5.7，与合法复杂度罚项 "
-        "ln(n)≈7.1 量级相当，延误搜索对大延迟的保守度约翻倍。"
-        "修复需在公共窗 t0=max(na, d_max+nb) 上以各自拟合系数重算残差方差、"
-        "并以同一 n_common 计罚；注意 u 的索引须与 identify_arx 的回归约定"
-        "严格一致（首版实现差一拍，导致真值 d 落败，已回退）。"
-        "修复后本用例应转为通过，届时删除 xfail 标记。",
-    )
     def test_bic_must_not_drift_with_sample_count(self) -> None:
         """σ² 近似恒定时，BIC 不应随 d 出现大幅单调漂移。"""
         spread = _bic_spread()
