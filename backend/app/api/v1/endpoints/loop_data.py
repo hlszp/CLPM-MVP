@@ -59,6 +59,24 @@ async def start_import(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    # 背压校验（整改 G13，对齐 AGENTS.md「手工导入 overwrite 强制 tsEnd ≤ now-5min」）：
+    # 导入以 UPSERT 语义直写点表；若窗口覆盖正在写入的最近时段，会与实时链路
+    # 竞争同一 (point, ts)——远端网格值覆盖实时值，且随后到达的同 ts 实时事件
+    # 会因 payload_hash 不一致被判冲突而静默丢弃（见整改方案 G11）。
+    # 任务重算侧已有同类防护（tasks.py 的 ERR_BACKFILL_WINDOW_IN_FUTURE），
+    # 导入侧此前缺失，导致最活跃的窗口反而无保护。
+    # 与 import_history_data 共用同一实现，避免端点/服务两套时区与阈值口径。
+    from app.services.data_import import assert_import_window_not_too_recent
+
+    try:
+        assert_import_window_not_too_recent(body.tsEnd)
+    except ValueError as exc:
+        raise BizError(
+            code="ERR_IMPORT_WINDOW_TOO_RECENT",
+            message=str(exc),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        ) from exc
+
     if not body.loopIds:
         raise BizError(
             code="ERR_INVALID_REQUEST",

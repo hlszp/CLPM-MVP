@@ -120,6 +120,40 @@ _MAX_CHUNK_HOURS = 24
 _MIN_CHUNK_HOURS = 1  # 单次请求最小时间跨度
 
 # Chunk 级重试配置（应对远端 API 瞬时 504/超时，DERP 链路虽稳定但远端仍可能短时过载）
+#: 导入窗口结束时间距当前时间的最小间隔（分钟）——背压保护（整改 G13）。
+#: 导入以 UPSERT 直写点表，若窗口压到正在写入的实时时段，会覆盖实时值并使
+#: 随后到达的同 ts 实时事件被判 payload 冲突而静默丢弃（见整改方案 G11）。
+#: 端点层与本节的服务层入口共用此常量，避免两处口径漂移。
+IMPORT_MIN_END_LAG_MINUTES = 5
+
+
+def assert_import_window_not_too_recent(ts_end: str) -> None:
+    """校验导入窗口结束时间不落在最近 IMPORT_MIN_END_LAG_MINUTES 分钟内。
+
+    整改 G13：AGENTS.md 早已要求「手工导入 overwrite 强制 tsEnd <= now-5min」，
+    但三层（端点/schema/服务）此前均无实现；任务重算侧却有同类防护
+    （tasks.py 的 ERR_BACKFILL_WINDOW_IN_FUTURE），唯独导入侧缺失。
+
+    本函数是唯一的实现，端点层与 import_history_data 共用，避免两处口径漂移。
+
+    时区语义（务必注意）：本模块 _parse_dt 返回的是目标时区（_TARGET_TZ）的
+    naive datetime，因此比较前必须按 _TARGET_TZ 赋 tzinfo，而不是按 UTC——
+    否则会把 8 小时前的窗口误判为「刚刚」而错误拒绝，端点与服务的 naive 语义
+    也会分歧（端点用 fromisoformat，服务用 _parse_dt）。
+
+    Raises:
+        ValueError: 窗口过新；消息面向用户，可直接展示。
+    """
+    end_dt = _parse_dt(ts_end)
+    end_aware = end_dt.replace(tzinfo=_TARGET_TZ)
+    if end_aware > datetime.now(UTC) - timedelta(minutes=IMPORT_MIN_END_LAG_MINUTES):
+        raise ValueError(
+            "导入窗口结束时间必须早于当前时间 "
+            f"{IMPORT_MIN_END_LAG_MINUTES} 分钟以上（避免覆盖正在写入的实时数据）；"
+            f"tsEnd={ts_end}"
+        )
+
+
 _MAX_RETRIES = 3  # 最大重试次数（不含首次请求）
 _RETRY_BACKOFF_BASE = 1.0  # 指数退避基数（秒），重试间隔：1, 2, 4
 _RETRYABLE_STATUS_CODES = frozenset({502, 503, 504, 429})  # 可重试的 HTTP 状态码
@@ -618,6 +652,10 @@ async def import_history_data(
     # 解析时间范围
     start_dt = _parse_dt(ts_start)
     end_dt = _parse_dt(ts_end)
+
+    # 背压兜底（整改 G13）：端点层已校验，此处再断言一次，防止绕过接口直接
+    # 投递 Celery 任务（脚本/重投）把导入窗口压到正在写入的实时时段上。
+    assert_import_window_not_too_recent(ts_end)
 
     # 写入布局（2026-09-09 Phase 2：宽表已退役，历史导入恒只写点表）。
     # 此前 legacy/shadow/point 三态；现锁定 point——点事件即落库形态，

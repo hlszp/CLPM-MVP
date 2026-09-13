@@ -201,6 +201,7 @@
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
 | **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
 | **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
+| **G13 导入缺 tsEnd 背压** | **S2** | **已落地** | 见 S2 提交 | 6 项回归（端点 4 + 服务 2）；含"足够旧窗口不得被误拒"边界用例 | 本机 `.env` 的 APP_VERSION 已同步；前端 RangePicker 禁选最近 5 分钟属 S6 |
 | **G48 数值金标准** | **S1-c** | **已落地（骨架）** | 见 S1-c 提交 | `test_golden_semantics.py`：5 项硬断言通过 + 2 项 strict xfail 实证缺陷 | 目前覆盖 accuracy/stability/oscillation/good_value/\_clamp 五项；stiction 闭合回环、SOPDT τ、fast_rate 阈值跳变待 S3 补 |
 | G11~G17 | S2 | 未开始 | — | — | — |
 | G18~G27 | S3 | 未开始 | — | — | — |
