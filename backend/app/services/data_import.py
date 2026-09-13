@@ -1223,6 +1223,7 @@ async def _write_points_bulk(
     from app.core.tdengine_native import execute_native_effective
     from app.services.data_source.point_history_repository import (
         POINT_STABLE,
+        compute_payload_hash,
         format_ts_utc,
         point_subtable,
     )
@@ -1264,6 +1265,8 @@ async def _write_points_bulk(
             buf.clear()
             n_buf = 0
 
+        # G11：ts_ms 按索引预算一次（避免每点重复 timestamp() 计算）
+        ts_ms_list = [None if t is None else int(t.timestamp() * 1000) for t in ts_parsed]
         for i, ts in enumerate(ts_parsed):
             if ts is None:
                 continue
@@ -1282,9 +1285,27 @@ async def _write_points_bulk(
                 continue  # 稀疏角色：值与质量均未变不落（COV 语义）
             # 列序=表结构: quality_raw, quality_class, quality_schema,
             # received_at, source_kind, payload_hash
+            #
+            # 整改 G11：payload_hash 此前硬编码为空串（原 docstring 的理由是
+            # "导入行靠 ts UPSERT 幂等，hash 仅实时路径冲突登记用"——该判断有误）。
+            # write_events 正是用 hash 决定同 ts 的实时事件是"幂等跳过"还是
+            # "冲突丢弃"：空串与实时 hash 永不相等 → 每个同 ts 实时事件都被判
+            # 冲突 → 按默认 conflict_policy=skip **静默丢弃实时值**。
+            # 现写入真实 hash，恢复设计 §4.1「同一事实经实时与历史重放不因来源
+            # 类别不同被判冲突」的不变量。公式与实时路径共用
+            # compute_payload_hash，保证逐字节一致。
+            # 性能：uuid hex 已按角色预算（见上方 point_hex），ts_ms 按索引预算，
+            # 每点仅一次短字符串 sha256（≈1µs），相对单回路 25~90s 的瓶颈可忽略。
+            ph = compute_payload_hash(
+                point_id=point_id,
+                ts_ms=ts_ms_list[i],
+                value=v,
+                quality_class=q_class,
+                quality_raw=q_raw_dec,
+            )
             buf.append(
                 f"('{format_ts_utc(ts)}', {v_sql}, "
-                f"{_sql_num(q_raw_dec)}, {_sql_num(q_class)}, 1, '{recv}', 4, '')"
+                f"{_sql_num(q_raw_dec)}, {_sql_num(q_class)}, 1, '{recv}', 4, '{ph}')"
             )
             n_buf += 1
             prev = v

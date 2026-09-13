@@ -82,6 +82,40 @@ def format_ts_utc(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def compute_payload_hash(
+    *,
+    point_id: str,
+    ts_ms: int,
+    value: float | int | None,
+    quality_class: int,
+    quality_raw: int | None,
+) -> str:
+    """归一化载荷摘要：sha256(pointIdHex|ts_ms|值|质量类|原码)。
+
+    设计 §4.1：语义去重——同一事实经实时与历史重放**不因来源类别不同**被判冲突，
+    因此 source_kind 刻意不参与 hash。
+
+    整改 G11：本函数是 hash 公式的**唯一实现**，实时路径（PointEvent.payload_hash）
+    与历史导入批量写点表（data_import._write_points_bulk）共用。此前导入侧把
+    payload_hash 硬编码为空串，导致该不变量完全失效：同 ts 的实时事件与导入行
+    hash 永不相等 → 被判"同 ts 不同 payload"的冲突 → 按默认 conflict_policy=skip
+    **静默丢弃实时值**。
+
+    value 的 NaN/Inf 已由 PointEvent.__post_init__ 归一为 None；调用方若绕过
+    PointEvent 直接调用，需自行保证同样的归一化（否则 hash 不一致）。
+    """
+    parts = "|".join(
+        [
+            str(_uuid.UUID(point_id).hex),
+            str(ts_ms),
+            "" if value is None else repr(float(value)),
+            str(quality_class),
+            "" if quality_raw is None else str(quality_raw),
+        ]
+    )
+    return hashlib.sha256(parts.encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class PointEvent:
     """一次待写入的测点状态事件（值或质量变化）。"""
@@ -111,23 +145,14 @@ class PointEvent:
                 object.__setattr__(self, "value", None)
 
     def payload_hash(self) -> str:
-        """归一化载荷摘要（点ID|ts_ms|值|质量类|原码|来源类别，设计 §4.1）.
-
-        语义去重：同一事实经实时与历史重放不因 source_kind 不同被判冲突——
-        因此 source_kind **不参与** hash（design §4.1 payload_hash 语义：
-        "同一事实经实时与历史重放不因来源类别不同被判冲突"）。
-        """
-        ts_ms = int(self.ts.timestamp() * 1000)
-        parts = "|".join(
-            [
-                str(_uuid.UUID(self.point_id).hex),
-                str(ts_ms),
-                "" if self.value is None else repr(float(self.value)),
-                str(self.quality_class),
-                "" if self.quality_raw is None else str(self.quality_raw),
-            ]
+        """归一化载荷摘要（见 compute_payload_hash）。"""
+        return compute_payload_hash(
+            point_id=self.point_id,
+            ts_ms=int(self.ts.timestamp() * 1000),
+            value=self.value,
+            quality_class=self.quality_class,
+            quality_raw=self.quality_raw,
         )
-        return hashlib.sha256(parts.encode()).hexdigest()
 
 
 @dataclass
@@ -362,8 +387,18 @@ async def write_events(
         if prior is None:
             to_insert.append((ev, ph))
             continue
-        if prior.get("payload_hash") == ph:
+        prior_hash = prior.get("payload_hash")
+        if prior_hash == ph:
             result.identical_skipped += 1
+            continue
+        if not prior_hash:
+            # 整改 G11：既有行的 payload_hash 为空（历史遗留的导入行硬编码 ''），
+            # 不构成"与本次载荷不同"的证据。此时若按冲突 skip，实时值会被静默
+            # 丢弃且无任何可见信号——宁可覆盖（实时值是更权威的当前状态）。
+            to_insert.append((ev, ph))
+            result.conflicts.append(
+                {"point_id": ev.point_id, "ts_ms": key[1], "resolution": "overwrite_no_hash"}
+            )
             continue
         # 同 ts 不同 payload
         if conflict_policy == "overwrite_authorized":
