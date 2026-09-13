@@ -201,6 +201,7 @@
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
 | **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
 | **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
+| **G29 批量失败记 SUCCESS** | **S4** | **已落地（熔断部分）** | 见 S4 提交 | 5 项回归 + 改写 1 个固化旧行为的既有用例（单回路批次全失败现抛错） | 端到端失败注入未覆盖（仅测判定函数）；`_summarize_batch_results` 结果未写入 TaskRecord.result，UI 仍看不到 failed 明细 |
 | **G28 beat 条件化不生效** | **S4** | **已落地** | 见 S4 提交 | **行为测试（真实 Scheduler）**：构造 Celery Scheduler 后触发 beat_init，断言禁用模块条目已从 `scheduler.schedule` 消失、`conf.beat_schedule` **未被改动**（反向证明）、`sync()` 被调用 | pub/sub 监听线程路径复用同一 `_live_scheduler` 绑定，未单测；`_start_beat_reload_listener` 的线程内调用未覆盖 |
 | **G14 并发 AsyncSession 红线** | **S2** | **已落地 / 守护待补** | 见 S2 提交 | `logical_wide_builder` 三处元数据查询改走独立短会话（`_metadata_execute`），全文件已无 `db.execute`；ruff 与既有测试全绿 | **point 布局无结构性守护**：既有 `test_runtime_regressions` 只覆盖 legacy 路径，建议补一份 point 布局的"缓存命中时不应触发并发 execute"断言 |
 | **G16 回路数口径** | **S2** | **已落地（performance.py）/ 守护待补** | 见 S2 提交 | 分母改 COUNT(DISTINCT loop_id)，与 docstring 一致；现有 performance 测试 37 项仍绿 | **无行为测试**：mock 会话验不了 DISTINCT 聚合效果，需真实 PG（S1-a 已引入）写集成断言；`workbench_precalc.loop_count` 同类问题**未修** |

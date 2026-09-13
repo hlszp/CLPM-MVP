@@ -956,7 +956,13 @@ class TestDoCalculate:
 
     @pytest.mark.asyncio
     async def test_with_loops_counts_failed_on_exception(self) -> None:
-        """回路计算抛异常时计入 failed。"""
+        """回路计算抛异常时计入 failed；单回路批次全失败触发熔断（G29）。
+
+        2026-09-13 整改 G29：单回路批次失败率 100% ≥ 阈值，_do_calculate 现抛
+        RuntimeError 使任务进入可观测的失败终态，而不是"正常返回 failed=1"后
+        被跟踪包装写成 SUCCESS。这也是正确语义——你要求重算的那一个回路失败了，
+        任务就该是 FAILED。断言的"计入 failed"意图保留在熔断消息里（summary）。
+        """
         loop = _make_loop()
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
@@ -985,10 +991,12 @@ class TestDoCalculate:
             mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
             mock_calc.side_effect = RuntimeError("calc failed")
 
-            result = await _do_calculate()
+            with pytest.raises(RuntimeError, match="系统性故障") as exc_info:
+                await _do_calculate()
 
-        assert result["total"] == 1
-        assert result["failed"] == 1
+        # failed 仍被正确计数（熔断消息携带 summary，保留原断言的意图）
+        assert "'failed': 1" in str(exc_info.value)
+        assert "'success': 0" in str(exc_info.value)
 
 
 # ===========================================================================

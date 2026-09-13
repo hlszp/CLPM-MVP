@@ -777,6 +777,31 @@ async def _run_batch_loop_calculations(
     return await asyncio.gather(*[_calculate_one(loop) for loop in loops], return_exceptions=True)
 
 
+_BATCH_FAILURE_ABORT_RATIO = 0.5
+
+
+def _assert_batch_health(summary: dict[str, int], total: int) -> None:
+    """批量失败熔断（整改 G29）。
+
+    asyncio.gather(return_exceptions=True) 把异常收集为返回值，
+    _summarize_batch_results 将其计入 failed，但批量入口仍**正常返回**，
+    跟踪包装随即无条件写 SUCCESS。于是 DB 断连、TDengine 全站不可达、表结构
+    漂移这类系统性故障在自动任务页表现为**成功**：autoretry_for 永不触发、
+    死信不产生、监控侧也无信号。
+
+    失败占比达到阈值即抛错，使任务进入可观测的失败终态。
+    """
+    if total <= 0:
+        return
+    failed = int(summary.get("failed", 0))
+    ratio = failed / total
+    if ratio >= _BATCH_FAILURE_ABORT_RATIO:
+        raise RuntimeError(
+            f"批量 KPI 计算失败率 {ratio:.0%}（{failed}/{total}）达到阈值 "
+            f"{_BATCH_FAILURE_ABORT_RATIO:.0%}，判定为系统性故障并中止；summary={summary}"
+        )
+
+
 def _summarize_batch_results(results: list[dict | None | Exception]) -> dict[str, int]:
     """Classify completed loop calculations consistently across batch entrypoints."""
     summary = {"success": 0, "inconclusive": 0, "failed": 0}
@@ -897,6 +922,8 @@ async def _do_calculate(
         t_calc_elapsed / max(loops_count, 1),
     )
     summary = _summarize_batch_results(results)
+    # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+    _assert_batch_health(summary, len(results))
 
     # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
     try:
@@ -1089,6 +1116,8 @@ async def _do_calculate_custom_batch(
             t_calc_elapsed / max(len(loops), 1),
         )
         summary = _summarize_batch_results(results)
+        # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+        _assert_batch_health(summary, len(results))
 
         return {
             "total": len(loops),
@@ -3080,6 +3109,8 @@ def _backfill_window_batch(
                     on_completed=_on_completed if task_id else None,
                 )
                 summary = _summarize_batch_results(results)
+                # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+                _assert_batch_health(summary, len(results))
                 agg["success"] += summary["success"]
                 agg["inconclusive"] += summary["inconclusive"]
                 agg["failed"] += summary["failed"]
@@ -3659,6 +3690,8 @@ def _process_windows_subprocess(
                     bundle_cache=False,
                 )
                 summary = _summarize_batch_results(results)
+                # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+                _assert_batch_health(summary, len(results))
                 agg["success"] += summary["success"]
                 agg["inconclusive"] += summary["inconclusive"]
                 agg["failed"] += summary["failed"]
