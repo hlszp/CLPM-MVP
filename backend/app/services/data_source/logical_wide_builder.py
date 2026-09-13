@@ -268,10 +268,17 @@ async def build_logical_wide(
     grid: list[datetime] = []
     signals: dict[str, list[Any]] = {r: [] for r in roles}
     pv_quality: list[int] = []
+    # 整改 G12（降采样部分）：网格步长改用调用方传入的 interval_s。
+    # 此前该参数标注 ARG001 恒被忽略，网格固定 1s —— 30 天窗口即 259 万槽
+    # × 7 角色，纯 Python 逐槽循环 + 线性扫段/扫 gap，内存与 CPU 都不可行，
+    # 与 AGENTS.md 的「LTTB maxPoints=2000，30 天窗口」性能边界直接冲突。
+    # 调用方 tdengine_provider 早已在传该参数（data_planner 的查询任务本就
+    # 带采样间隔），只是此处被丢弃。
+    step_s = max(1, int(interval_s))
     t = grid_start
     while t <= grid_end:
         grid.append(t)
-        t += timedelta(seconds=1)
+        t += timedelta(seconds=step_s)
     n = len(grid)
 
     # 槽状态记录（AD01 上下文）：role → [(known, reason)]；known 含
