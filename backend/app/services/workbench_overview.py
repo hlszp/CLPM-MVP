@@ -315,21 +315,42 @@ def _resolve_factory_id(node: Any, by_id: dict[str, Any]) -> str | None:
 
 
 async def _query_windows(db: AsyncSession, scope_type: str, scope_id: int) -> list[Any]:
-    """查三窗口 KPI 行（GLOBAL 取 scope_id=0）。"""
+    """查三窗口 KPI 行（GLOBAL 取 scope_id=0），每个窗口只取最新一行。
+
+    整改 G15：workbench_precalc 每个 (scope, window) 主动保留 _RETAIN_ROWS=64 行
+    历史（供 sparkline 用），而此前读侧无 ORDER BY / LIMIT —— 于是连续运行
+    >5.3h（5min × 64）后：装置排名出现最多 64 份同名重复项，头部 KPI 卡片
+    取到 64 行中任意一行（可能是 5 小时前的旧快照），同页自相矛盾且不可复现。
+    正确范式见 cockpit_overview 的 order_by(window_end.desc()).limit(1)。
+    """
     result = await db.execute(
         select(WorkbenchWindowSummary)
         .where(WorkbenchWindowSummary.scope_type == scope_type)
         .where(WorkbenchWindowSummary.scope_id == scope_id)
+        .distinct(WorkbenchWindowSummary.window_w)
+        .order_by(
+            WorkbenchWindowSummary.window_w,
+            WorkbenchWindowSummary.window_end.desc(),
+        )
     )
     return list(result.scalars().all())
 
 
 async def _query_scope_rows(db: AsyncSession, scope_type: str, window: str) -> list[Any]:
-    """查指定层级 + 窗口的预计算行（用于 plants=FACTORY / units=UNIT）。"""
+    """查指定层级 + 窗口的预计算行（用于 plants=FACTORY / units=UNIT）。
+
+    整改 G15：同 _query_windows —— 每个 scope_id 只取最新 window_end 的一行，
+    否则排名/热力图会把 64 份历史快照全部渲染成重复条目。
+    """
     result = await db.execute(
         select(WorkbenchWindowSummary)
         .where(WorkbenchWindowSummary.scope_type == scope_type)
         .where(WorkbenchWindowSummary.window_w == window)
+        .distinct(WorkbenchWindowSummary.scope_id)
+        .order_by(
+            WorkbenchWindowSummary.scope_id,
+            WorkbenchWindowSummary.window_end.desc(),
+        )
     )
     return list(result.scalars().all())
 

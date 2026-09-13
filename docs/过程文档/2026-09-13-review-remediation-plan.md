@@ -201,6 +201,7 @@
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
 | **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
 | **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
+| **G15 precalc 读侧取最新行** | **S2** | **已落地（实现）/ 守护待补** | 见 S2 提交 | 实现正确性经**直接编译验证**：PG 方言下输出 `DISTINCT ON (workbench_window_summary.scope_id)`；现有 workbench 测试 21 项仍绿 | **结构化守护用例未入库**：mock 会话无法验证 DISTINCT ON 去重效果，且我必须按 PG 方言编译才看得到真实 SQL（默认方言会退化成普通 DISTINCT）。断言用例在剩余预算内未调通，已删除以免失败用例入库；建议后续用**真实 PG**（S1-a 已引入）写集成断言 |
 | **G12 读路径静默截断** | **S2** | **已落地（截断部分）** | 见 S2 提交 | 5 项回归：满批翻页拼接、游标开区间、不足即停、游标不推进报错、翻页上限报错 | **降采样部分未做**：`logical_wide_builder` 仍恒 1s 网格，30 天窗口内存/CPU 问题未解（需 grid_period_s 透传） |
 | **G11 payload_hash 空串** | **S2** | **已落地** | 见 S2 提交 | 7 项回归：hash 单源一致、source_kind 不入 hash、空 hash 不再丢实时值、相同 hash 仍幂等 | `history_point_conflict` 仍因写路径未传 db_session 而不落库（见 G12 待办）；跨解码路径 quality_raw 的 hash 一致性需真实数据验证 |
 | **G13 导入缺 tsEnd 背压** | **S2** | **已落地** | 见 S2 提交 | 6 项回归（端点 4 + 服务 2）；含"足够旧窗口不得被误拒"边界用例 | 本机 `.env` 的 APP_VERSION 已同步；前端 RangePicker 禁选最近 5 分钟属 S6 |
