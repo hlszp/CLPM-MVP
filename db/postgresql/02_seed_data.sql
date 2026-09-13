@@ -673,7 +673,10 @@ INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
 ('datasource.signalr_hub_url', 'ws://192.168.100.2:81/signalr/realValueForClpmHub', '实时数据 SignalR Hub URL', 'system', NOW()),
 ('datasource.signalr_enabled', 'true', 'SignalR 实时订阅开关（后端重启生效）', 'system', NOW()),
 ('datasource.signalr_reconnect_interval', '5', 'SignalR 断线重连间隔（秒）', 'system', NOW()),
-('datasource.realtime_writeback_enabled', 'true', '实时数据写回 TDengine 开关（链路配置页面运行时切换）', 'system', NOW()),
+-- 点表唯一真相源（09-09 退役宽表）：实时只写点表（宽表写回关闭），历史导入恒写点表；
+-- 与生产 zpdev 口径一致（REALTIME_WRITEBACK_ENABLED=False + storage_mode=point）
+('datasource.realtime_writeback_enabled', 'false', '实时数据写回 TDengine 宽表开关（点表模式下关闭，宽表已退役）', 'system', NOW()),
+('history.storage_mode', 'point', '本地历史写入布局 legacy/shadow/point（读取路由由 history_layout_manifest 决定）', 'system', NOW()),
 -- P3-04: LLM 配置（自然语言诊断解读），默认关闭，管理员在系统管理→LLM 配置页启用
 ('llm.enabled', 'false', 'LLM 解读开关（系统管理→LLM 配置页修改）', 'system', NOW()),
 ('llm.endpoint', '', 'LLM BaseURL（API 根地址，不含 /v1，如 https://api.openai.com）', 'system', NOW()),
@@ -682,6 +685,20 @@ INSERT INTO sys_config (key, value, description, updated_by, updated_at) VALUES
 ('llm.timeout', '30', 'LLM 请求超时秒数', 'system', NOW()),
 ('llm.max_tokens', '4096', 'LLM 最大输出 token 数（推理模型建议 ≥4096）', 'system', NOW())
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================================
+-- 9b. 历史布局清单 (history_layout_manifest) — 点表唯一真相源 global/point
+-- =============================================================================
+-- 对齐生产 zpdev 口径（09-09 退役宽表）：global 段自 2000-01-01 起恒 point，
+-- 读取侧所有窗口走 LogicalWideBuilder 前向填充，永不回退 legacy 宽表。
+-- 缺此行则读取路由回退 legacy 查宽表（st_loop_data 已退役），历史数据查询空。
+-- =============================================================================
+INSERT INTO history_layout_manifest
+    (id, scope_type, scope_id, valid_from, valid_to, layout, data_version, basis, is_active, created_at)
+VALUES
+    ('00000000-0000-0000-0000-00000000c001', 'global', NULL,
+     '2000-01-01 00:00:00+08', NULL, 'point', 'v1', 'retire-wide-table-offset', true, NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
 -- 10. 指标数据需求契约 (clpm_metric_data_requirement) — 26 条

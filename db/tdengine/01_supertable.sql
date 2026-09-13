@@ -27,31 +27,10 @@ USE clpm_ts;
 -- 对齐 DDS v3.0 §3.1 超级表定义
 -- 字段覆盖 7 个 OPC Tag 的原始秒级数据及 PV 质量码
 -- =============================================================================
-CREATE STABLE IF NOT EXISTS st_loop_data (
-    -- ts: 采样时间戳，主键时间列，毫秒精度
-    ts          TIMESTAMP,
-    -- pv: 过程变量测量值（来自 PV Tag）
-    pv          FLOAT,
-    -- sp: 设定值（来自 SP Tag）
-    sp          FLOAT,
-    -- op: 控制器输出值 0-100（来自 OP Tag）
-    op          FLOAT,
-    -- mode: 控制模式（0=Manual 手动, 1=Auto 自动, 2=Cascade 串级，来自 MODE Tag）
-    mode        TINYINT,
-    -- pid_p: 比例参数（来自 PID_P Tag，只读）
-    pid_p       FLOAT,
-    -- pid_i: 积分参数（来自 PID_I Tag，只读）
-    pid_i       FLOAT,
-    -- pid_d: 微分参数（来自 PID_D Tag，只读）
-    pid_d       FLOAT,
-    -- pv_quality: PV 数据质量码（0=Bad 坏, 1=Good 好, 2=Uncertain 不确定），仅 PV Tag 携带质量码
-    pv_quality  TINYINT
-) TAGS (
-    -- loop_id: 关联关系库 loop_ledger.id（UUID 格式，36 字符）
-    loop_id     BINARY(36),
-    -- unit_id: 关联的工艺单元 ID（plant_node.id），用于按单元降采样聚合
-    unit_id     BINARY(36)
-);
+-- 注意：TDengine 3.3.x entrypoint 用 `taos -f` 逐行执行本文件，
+-- CREATE STABLE/TABLE 必须写成单行，多行会被拆开逐行提交报
+-- "Incomplete SQL statement"，导致 st_loop_data 超级表缺失（fresh 部署必现）。
+CREATE STABLE IF NOT EXISTS st_loop_data (ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT, pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT) TAGS (loop_id BINARY(36), unit_id BINARY(36));
 
 -- =============================================================================
 -- 3. 子表实例化示例
