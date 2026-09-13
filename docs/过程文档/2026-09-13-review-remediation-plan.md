@@ -218,7 +218,7 @@
 | **G48 数值金标准** | **S1-c** | **已落地（骨架）** | 见 S1-c 提交 | `test_golden_semantics.py`：5 项硬断言通过 + 2 项 strict xfail 实证缺陷 | 目前覆盖 accuracy/stability/oscillation/good_value/\_clamp 五项；stiction 闭合回环、SOPDT τ、fast_rate 阈值跳变待 S3 补 |
 | **G40 工作台造数** | **S6** | **已落地（主项 + 1 续项）** | 见 S6 提交 | 源码级守护用例 workbench-no-fabricated-data（扫描 views/workbench 全部 .vue 的已知造数表达式，含注释）；渲染级守护待补 | **仍有两处未清**：TuningFitnessCard 的 demo 占比兜底（已标「示例」）、DataFlowDiagram 的静态值与「—」占位；且守护为源码级，不能证明渲染结果正确 |
 | **G41 首屏请求风暴** | **S6** | **已落地（主项）** | 见 S6 提交 | Tab 改懒挂载（v-if 首次激活 + v-show 保活），首屏 12 并发降至 2~3 | **无自动化测试**（请求次数需挂载组件 + mock 请求方可断言）；5 处多余 deep: true 未改；A-11 /workbench/aggregate 空壳端点仍在（前端封装无调用方） |
-| G18~G27 | S3 | 进行中（第 10 轮） | `9a61f2f7` | G20/G21/G23主路径/G25/G26/G27#2 已修；G24、G27#1 确认待办；G18/G19/G22/G27#4 **误诊** | G27#1 延迟搜索 BIC 跨样本量比较**成立**：_search_delay 对每个候选 d 各用 res.n_samples，而 n 随 d 递减；实测 artifact ≈ 每单位 d 5.7，与合法罚项 ln(n)≈7.1 量级相当，保守度约翻倍。曾实现公共窗重算残差，因 u 索引与 identify_arx 回归约定差一拍导致真值 d 落败，已回退——延误选择影响 theta，不留未验证改动；已以 xfail(strict=True) 固化证据。G27 余项：#3 IV 病态降级、#5 Ljung-Box 尚未复核；#6 同 G24；#7 属预留结构。S3 累计 6 修 + 2 待办 + 4 误诊。详见收口报告 17~25 |
+| G18~G27 | S3 | 进行中（第 11 轮） | `f184c5f0` | G20/G21/G23主路径/G25/G26/G27#2/G27#5a 已修；G24、G27#1 待办；G27#5b(R²免检) 待裁决；G18/G19/G22/G27#4 **误诊** | G27#5：自由度未扣已估参数**成立并已修**（chi2(h) -> chi2(h-p)；实证 Q=15.5 时 chi2(10) p=0.115 判白 vs chi2(8) p=0.050 临界；select_order 签名里本有 n_params 却未传）；R²_train 超阈即跳过白噪声检验（pipeline.py:530-532）**确认存在、登记待裁决**（属判断口径）。G27 余项：#3 IV 病态降级尚未复核；#6 同 G24；#7 属预留结构。S3 累计 7 修 + 2 待办 + 1 部分待裁决 + 4 误诊。详见收口报告 17~26 |
 | G28~G32 | S4 | 未开始 | — | — | — |
 | G33~G38 | S5 | 未开始 | — | — | — |
 | G39~G50 | S1/S6 | 未开始 | — | — | — |
