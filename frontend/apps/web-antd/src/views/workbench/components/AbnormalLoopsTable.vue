@@ -206,8 +206,8 @@ const visibleRows = computed(() => {
             </span>
             <span
               class="flex-none rounded-sm px-1 py-px text-[10px]"
+              :class="statusPill(row).bgClass"
               :style="{
-                backgroundColor: statusPill(row).bg,
                 color: statusPill(row).color,
               }"
             >
