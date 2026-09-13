@@ -49,8 +49,21 @@ def compute_bic(n_samples: int, residual_var: float, n_params: int) -> float:
 def ljung_box_test(
     residuals: np.ndarray,
     max_lag: int = 10,
+    n_params: int = 0,
 ) -> tuple[float, float]:
     """Ljung-Box Q 检验：残差是否白噪声.
+
+    S3 修复（G27#5）：自由度须扣除已估参数个数。
+    对拟合了 p 个参数的模型，Q 渐近服从 chi2(h - p)（Box-Pierce/Ljung-Box 标准结论），
+    而原实现用 chi2(h)。自由度取大 → 临界值取大 → p 值偏大 → **残差被判得比实际更白**
+    （反保守方向：模型不充分时更容易通过"白噪声"检验）。
+    实测 h=10、p=2：Q=15.5 时 chi2(10) 的 p=0.116（判白），
+    chi2(8) 的 p=0.050（临界）——阈值附近结论相反。
+
+    Args:
+        residuals: 残差序列
+        max_lag: 最大滞后阶 h
+        n_params: 模型中已估计的参数个数 p（ARX 为 na+nb）；默认 0 保持旧行为
 
     Returns:
         (Q 统计量, p 值)；p > 0.05 则残差白噪声（模型充分）
@@ -69,8 +82,9 @@ def ljung_box_test(
         acf[k - 1] = np.mean(r[k:] * r[:-k]) / var
     # Q 统计量
     Q = n * (n + 2) * sum(acf[k - 1] ** 2 / (n - k) for k in range(1, max_lag + 1))
-    # p 值（卡方分布）
-    p_value = 1.0 - stats.chi2.cdf(Q, max_lag)
+    # p 值（卡方分布）：自由度 = h − p（扣除已估参数），下界取 1
+    dof = max(1, max_lag - max(0, n_params))
+    p_value = 1.0 - stats.chi2.cdf(Q, dof)
     return float(Q), float(p_value)
 
 
@@ -127,7 +141,7 @@ def select_order(
     """阶次选择综合判定."""
     aic = compute_aic(n_samples, residual_var, n_params)
     bic = compute_bic(n_samples, residual_var, n_params)
-    Q, p_value = ljung_box_test(residuals, max_lag)
+    Q, p_value = ljung_box_test(residuals, max_lag, n_params=n_params)
     return OrderSelectionResult(
         selected_na=1,  # 由调用方覆盖
         selected_nb=1,

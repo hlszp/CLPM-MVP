@@ -532,7 +532,7 @@ def identify_from_history(
                 test_note = f"residual_negligible(R²_train={r2_train:.4f})"
             elif rows > 0 and c_coeffs:
                 eps = _equation_error_to_prediction_error(residuals, c_coeffs)
-                _, lb_p = ljung_box_test(eps, max_lag=min(10, len(eps) // 3))
+                _, lb_p = ljung_box_test(eps, max_lag=min(10, len(eps) // 3), n_params=na + nb)
                 residual_white = lb_p > 0.05
                 test_note = f"LB_p={lb_p:.3f}"
             else:
