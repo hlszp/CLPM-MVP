@@ -105,6 +105,15 @@
 - G48 **核心指标无数值金标准测试**：本轮算法层 P1 问题（G18/G19/G20/G21/G26）全部在"单测通过"状态下存在
 - G49 测试夹具固化错误假设：`test_diagnosis_classification.py:208-213` 用 0.31/0.9；`tests/test_performance.py:798` 只断言内存 `beat_schedule` 字典
 - G50 死代码与冗余登记（`_do_backfill` 约 400 行无调用、`L3FeatureCache` 无生产调用、`writeback_enabled_for` 零调用、前端 38 个无调用 API 封装等）
+- **G51【S1-a 执行中新发现】迁移链不能从空库构建**：在全新空库上执行
+  `alembic upgrade head` 会以 `UndefinedTableError: relation "loop_ledger"
+  does not exist`（`ALTER TABLE loop_ledger ADD COLUMN score_weights JSONB`）失败——
+  早期迁移以 `01_schema.sql` 已建表为前提，是**增量而非全量**。
+  影响：(a) 无法仅凭迁移重建数据库（可复现性缺失）；(b) 任何「空库 + 迁移」
+  的环境初始化路径不可用；(c) 直接导致 CI 不能以 `upgrade head` 作为门禁
+  （已按「引导 SQL → stamp head → 漂移检查」的正确口径实现，见 S1-a）。
+  建议：补一个真正的 base 迁移（或 `alembic init` 基线），使两条路径等价；
+  在等价之前，**不得**把 `upgrade head` 用于空库初始化。
 
 ---
 

@@ -83,6 +83,22 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # 整改 S1-a：CI 此前只有 Redis，PG 相关门禁（迁移链、schema 漂移）
+      # 仅存在于 lefthook pre-push，CI 侧完全无守护——2026-08-31 首装阻断
+      # （01_schema.sql 外键类型不匹配致 initdb 中途中止）正是此类漏洞。
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: clpm
+          POSTGRES_PASSWORD: clpm_ci_only_2026
+          POSTGRES_DB: clpm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clpm -d clpm"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -112,6 +128,31 @@ jobs:
       - name: Mypy type check
         run: uv run mypy app/ --ignore-missing-imports --no-strict-optional
         continue-on-error: true
+
+      # 整改 S1-a：在真实 PostgreSQL 上验证「生产引导路径」。
+      # 此前 CI 无 PG、测试全用 mock DB session（tests/conftest.py 明示
+      # "无需 PostgreSQL/Redis"），且 addopts 默认 -m 'not integration'，
+      # 导致引导 SQL、迁移 stamp、模型-库对齐在 CI 侧零验证。
+      #
+      # 口径说明（新发现 G51，见整改方案）：本仓库迁移链**不能从空库构建**——
+      # 早期迁移以 01_schema.sql 已建表为前提（如 ALTER TABLE loop_ledger），
+      # 空库上跑 alembic upgrade head 会以 UndefinedTableError 失败。
+      # 故正确口径是「应用引导 SQL -> stamp head -> 漂移检查」，与生产
+      # deploy/lib-migrate.sh 的实际顺序一致。
+      # 该步骤可捕获：01_schema.sql 载入失败（08-31 首装阻断同类）、
+      # 引导 SQL 与 ORM 元数据漂移、种子数据回归。
+      - name: 引导 SQL + schema 漂移检查（真实 PG）
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: clpm
+          POSTGRES_PASSWORD: clpm_ci_only_2026
+          POSTGRES_DB: clpm
+          JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+        run: |
+          uv run python scripts/apply_bootstrap_sql.py
+          uv run alembic stamp head
+          uv run alembic check
 
       # S3-C7: Pytest with coverage（首次集成使用 60% 门槛）
       - name: Pytest with coverage
