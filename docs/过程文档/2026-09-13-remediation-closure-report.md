@@ -262,3 +262,44 @@ a4094bc8 perf(S6): 工作台 5 个 Tab 移除多余的 deep watch（G41 完成�
 - **G32 的 celery_task_total 埋点**：需 Prometheus multi-process 或 Pushgateway
   方案设计，非局部改动，未实施。
 - **S3 全部 10 项**：见 §3.1，需受保护清单解冻授权。
+
+---
+
+## 13. 末段增量（第 35~39 轮）
+
+| 项 | 状态 | 关键证据 |
+|---|---|---|
+| G16 源码级守护 | ✅ | 3 项：去重表达式存在、不得退回按行计数、docstring 口径一致 |
+| **G16 真实 PG 断言** | ✅ | 真实库断言数值：回路 A（3 小时投自动）+ 回路 B（1 小时未投自动）→ 去重口径 0.5、按行口径 0.75，断言排除 0.75；PG 不可达时 skip |
+| **G32 celery_task_total 埋点** | ✅ | 在既有 task_postrun 处理器打点（task_name + state 两标签，失败落独立 status），4 项回归 |
+
+### G16 真实 PG 断言的三次迭代（真实库才暴露得出）
+
+1. kpi_snapshot_hourly.loop_id 是**外键** —— 必须先建 loop_ledger 行；
+2. loop_ledger.created_at/updated_at 是 **naive timestamp** —— 传 aware 报
+   "can't subtract offset-naive and offset-aware datetimes"；
+3. **importance_level 是 INTEGER 而非字符串** —— 传 "MEDIUM" 报
+   "'str' object cannot be interpreted as an integer"。
+
+这三次全部只能由真实库暴露，恰好证明了该用例（而非源码级断言）的必要性。
+
+## 14. 最终状态
+
+- 全量 pytest **4856 passed / 340 skipped / 34 xfailed**；ruff check + format 全绿；
+  alembic check 无漂移；frontend check:type 通过；hex 棘轮收敛 6。
+- 本地与远端当前相差 1 个提交（github.com 网络间歇不可用）。
+- **S2 的集成欠账（G15、G16）至此全部补齐。**
+
+## 15. 唯一剩余的大块
+
+**S3 算法契约与量纲（10 项）** —— 需 tests/golden/refactor_protected_manifest.json
+的解冻授权。其余无授权可做的实质工作已耗尽（G32 的多进程指标聚合方案属基础设施
+变更，需 PROMETHEUS_MULTIPROC_DIR + MultiProcessCollector 改造，本地无法完整验证）。
+
+其中三项已有可执行证据（S1-c 中用 xfail(strict=True) 固化）：
+- **G18** accuracy 口径倒挂：加一个大偏差，准确率反而从 80 升到 99.96；
+- **G20** _clamp(nan) 静默返回上界：accuracy/stability 把 NaN 报成满分；
+- **G19** stiction 双门控方向相反：可检出带仅 |rho| 在 [0.707, 0.835)，正圆恒不检出。
+
+另有 G21（SOPDT 缺 tau 致推荐 Kp 差 2 个数量级）、G22（融合非 D-S 且只取正证据）、
+G23（输入契约与量纲单一事实层缺失）、G24~G27。
