@@ -218,7 +218,7 @@
 | **G48 数值金标准** | **S1-c** | **已落地（骨架）** | 见 S1-c 提交 | `test_golden_semantics.py`：5 项硬断言通过 + 2 项 strict xfail 实证缺陷 | 目前覆盖 accuracy/stability/oscillation/good_value/\_clamp 五项；stiction 闭合回环、SOPDT τ、fast_rate 阈值跳变待 S3 补 |
 | **G40 工作台造数** | **S6** | **已落地（主项 + 1 续项）** | 见 S6 提交 | 源码级守护用例 workbench-no-fabricated-data（扫描 views/workbench 全部 .vue 的已知造数表达式，含注释）；渲染级守护待补 | **仍有两处未清**：TuningFitnessCard 的 demo 占比兜底（已标「示例」）、DataFlowDiagram 的静态值与「—」占位；且守护为源码级，不能证明渲染结果正确 |
 | **G41 首屏请求风暴** | **S6** | **已落地（主项）** | 见 S6 提交 | Tab 改懒挂载（v-if 首次激活 + v-show 保活），首屏 12 并发降至 2~3 | **无自动化测试**（请求次数需挂载组件 + mock 请求方可断言）；5 处多余 deep: true 未改；A-11 /workbench/aggregate 空壳端点仍在（前端封装无调用方） |
-| G18~G27 | S3 | 进行中（第 9 轮） | `54a86d2d` | G20/G21/G23主路径/G25/G26/G27#2 已修复；G24 待裁决；G18/G19/G22/G27#4 **误诊** | G27#2：log(abs(p)) 伪装负实极点**属实并已修**（负实离散极点映射为复连续极点，SOPDT 不适用；实测 a1=0,a2=-0.25 真值 -0.6931+3.1416j 而实现输出 T1=T2=1.4427），ZOH 重复计拍**不成立**（tau/K 精确还原到 1e-12）；G27 余项：#1 BIC、#3 IV 病态降级、#5 Ljung-Box 尚未复核；#6 与 G24 同一问题；#7 unitConversion 属 V62-P3-007 预留结构。S3 累计 6 修 + 1 待裁决 + 4 误诊。详见收口报告 17~24 |
+| G18~G27 | S3 | 进行中（第 10 轮） | `9a61f2f7` | G20/G21/G23主路径/G25/G26/G27#2 已修；G24、G27#1 确认待办；G18/G19/G22/G27#4 **误诊** | G27#1 延迟搜索 BIC 跨样本量比较**成立**：_search_delay 对每个候选 d 各用 res.n_samples，而 n 随 d 递减；实测 artifact ≈ 每单位 d 5.7，与合法罚项 ln(n)≈7.1 量级相当，保守度约翻倍。曾实现公共窗重算残差，因 u 索引与 identify_arx 回归约定差一拍导致真值 d 落败，已回退——延误选择影响 theta，不留未验证改动；已以 xfail(strict=True) 固化证据。G27 余项：#3 IV 病态降级、#5 Ljung-Box 尚未复核；#6 同 G24；#7 属预留结构。S3 累计 6 修 + 2 待办 + 4 误诊。详见收口报告 17~25 |
 | G28~G32 | S4 | 未开始 | — | — | — |
 | G33~G38 | S5 | 未开始 | — | — | — |
 | G39~G50 | S1/S6 | 未开始 | — | — | — |
