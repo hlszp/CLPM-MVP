@@ -201,7 +201,7 @@
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
 | **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
 | **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
-| **G31 Beat pidfile/短路** | **S4** | **未落地（本轮尝试后回滚）** | — | 实现已完成并本地验证（两处 pidfile 路径统一为 `_beat_pidfile_path()`；启动检查改核对 PID 归属），但**测试未调通即回滚**，未提交 | **下一轮入口（已定位）**：`tests/test_celery_beat_singleton.py` 对 `app.main.subprocess.run` 打桩，导致新助手 `_pid_is_our_beat` 拿到 MagicMock 而非字符串 → 需在助手内加 `isinstance(raw, str)` 守卫；同时 `test_skip_when_pidfile_alive` 需显式打桩 `_pid_is_our_beat=True`（判定依据已由"PID 存在"改为"PID 归属"）。回滚保证了仓库绿 |
+| **G31 Beat pidfile/短路** | **S4** | **已落地** | 见 S4 提交 | 两处 pidfile 路径统一为 `_beat_pidfile_path()`；启动检查改核对 PID **归属**（复用既有 `_pgrep_pids(_BEAT_PGREP_PATTERN)`，不新增 subprocess 调用点）；新增"陈旧 pidfile + PID 被无关进程占用 → 仍须继续启动"回归用例 | Beat 单例的 pgrep 兜底路径未变；本项只修"该启动却被短路"，未处理"该停止却被漏杀" |
 | **G30 锁 TTL 与硬超时错配** | **S4** | **已落地** | 见 S4 提交 | 2 项不变量回归（TTL < task_time_limit；锁冲突必 raise 且无 skipped 形状）+ 改写 1 个固化旧行为的既有用例 | Beat 路径"连 TaskRecord 都不建"的问题未解决（现改为抛错进 FAILED 终态，但该小时仍无快照，需窗口完成标记才能对外可查） |
 | **G29 批量失败记 SUCCESS** | **S4** | **已落地（熔断部分）** | 见 S4 提交 | 5 项回归 + 改写 1 个固化旧行为的既有用例（单回路批次全失败现抛错） | 端到端失败注入未覆盖（仅测判定函数）；`_summarize_batch_results` 结果未写入 TaskRecord.result，UI 仍看不到 failed 明细 |
 | **G28 beat 条件化不生效** | **S4** | **已落地** | 见 S4 提交 | **行为测试（真实 Scheduler）**：构造 Celery Scheduler 后触发 beat_init，断言禁用模块条目已从 `scheduler.schedule` 消失、`conf.beat_schedule` **未被改动**（反向证明）、`sync()` 被调用 | pub/sub 监听线程路径复用同一 `_live_scheduler` 绑定，未单测；`_start_beat_reload_listener` 的线程内调用未覆盖 |

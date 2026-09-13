@@ -28,11 +28,32 @@ class TestBeatSingletonGuard:
         with (
             patch("app.main.subprocess.Popen") as mock_popen,
             patch("app.main._any_beat_process_running", return_value=True) as mock_any,
+            patch("app.main._pid_is_our_beat", return_value=True),
         ):
             _start_celery_beat()
             mock_popen.assert_not_called()
             # pidfile 命中活进程时短路，无需 pgrep 兜底
             mock_any.assert_not_called()
+
+    def test_stale_pidfile_with_foreign_pid_still_starts(self, tmp_path, monkeypatch):
+        """G31 回归：PID 存活但不属于本项目 beat（PID 复用）→ 必须继续启动。
+
+        原实现用裸 os.kill(pid, 0) 只判断进程存在：PID 复用时会误判"已在运行"
+        并直接 return，导致 Beat 永不启动；而看门狗走同一函数同样 return，于是
+        每 60s 打印"自动补拉起"却永远失败，定时链路整体停摆而日志显示"正在自愈"。
+        """
+        monkeypatch.chdir(tmp_path)
+        os.makedirs(tmp_path / "logs", exist_ok=True)
+        (tmp_path / "logs" / "celerybeat.pid").write_text(str(os.getpid()))
+
+        with (
+            patch("app.main.subprocess.Popen") as mock_popen,
+            patch("app.main._any_beat_process_running", return_value=False),
+            patch("app.main._pid_is_our_beat", return_value=False),
+        ):
+            _start_celery_beat()
+
+        mock_popen.assert_called()  # 陈旧 pidfile 不得阻止启动
 
     def test_start_when_pidfile_dead(self, tmp_path, monkeypatch):
         """pidfile 指向死进程时清理并启动新 beat。"""
@@ -44,6 +65,9 @@ class TestBeatSingletonGuard:
         with (
             patch("app.main.subprocess.Popen") as mock_popen,
             patch("app.main._any_beat_process_running", return_value=False),
+            # G31：判定依据已由"PID 存在"改为"PID 归属"，须一并打桩；
+            # 否则 _pgrep_pids 内部的 subprocess.run（即 Popen）会污染调用计数。
+            patch("app.main._pid_is_our_beat", return_value=False),
         ):
             _start_celery_beat()
             mock_popen.assert_called_once()

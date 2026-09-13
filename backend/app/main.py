@@ -321,6 +321,33 @@ def _is_test() -> bool:
     return os.environ.get("CLPM_TEST_MODE", "").strip() in {"1", "true", "yes", "on"}
 
 
+def _beat_pidfile_path() -> str:
+    """Beat pidfile 的唯一路径来源（整改 G31）。
+
+    此前启动侧写 logs/celerybeat.pid，停止侧却读 <cwd>/celerybeat.pid——两处
+    不一致，导致优雅退出后 logs/celerybeat.pid 永不清理、陈旧 pidfile 长期驻留。
+    """
+    return os.path.join(os.getcwd(), "logs", "celerybeat.pid")
+
+
+def _pid_is_our_beat(pid: int) -> bool:
+    """该 PID 是否确为本项目的 celery beat 进程（整改 G31）。
+
+    裸 os.kill(pid, 0) 只能判断进程存在，无法判断是不是我们的 beat。系统 PID
+    复用（macOS 回收很快、uvicorn --reload 每次改码都换 PID）时，陈旧 pidfile
+    里的 PID 会命中无关进程，于是判定"已在运行"直接 return → Beat 永不启动；
+    而看门狗走同一函数同样 return，每 60s 打印"自动补拉起"却永远失败——定时
+    链路整体停摆，日志却持续显示"正在自愈"。
+
+    实现复用 _pgrep_pids(_BEAT_PGREP_PATTERN)：该模式已编码本项目 celery 应用
+    入口与项目唯一标识，避免误匹配本机其他项目的 celery 进程。**不新增
+    subprocess 调用点**——此前版本用 subprocess.run(ps) 探测，而 subprocess.run
+    内部即 Popen，会污染既有测试对 app.main.subprocess.Popen 的调用计数
+    （test_start_when_pidfile_dead 断言 assert_called_once 因此失败）。
+    """
+    return pid in _pgrep_pids(_BEAT_PGREP_PATTERN)
+
+
 def _any_beat_process_running() -> bool:
     """pgrep 扫描是否已有 celery beat 进程在运行（Beat 单例兜底检查）.
 
@@ -348,21 +375,28 @@ def _start_celery_beat() -> None:
     # 将 pidfile 和 schedule 文件都放在 logs/ 目录下，避免在项目根目录写文件
     # 触发 uvicorn --reload 的文件监视导致循环重启
     os.makedirs("logs", exist_ok=True)
-    pid_file = os.path.join(os.getcwd(), "logs", "celerybeat.pid")
+    pid_file = _beat_pidfile_path()
     schedule_file = os.path.join(os.getcwd(), "logs", "celerybeat-schedule")
     if os.path.exists(pid_file):
+        # 整改 G31：必须核对 PID 归属，不能只看"进程存在"（裸 os.kill 在 PID
+        # 复用时会命中无关进程 → 判定"已在运行"直接 return → Beat 永不启动；
+        # 看门狗走同一函数同样 return，故"自动补拉起"永远失败）。
+        old_pid: int | None = None
         try:
             with open(pid_file) as f:
                 old_pid = int(f.read().strip())
-            os.kill(old_pid, 0)  # 检查进程是否存在
+        except (ValueError, OSError):
+            old_pid = None
+
+        if old_pid and _pid_is_our_beat(old_pid):
             logger.info("Celery Beat 已在运行 (PID=%s)，跳过启动", old_pid)
             return
-        except (ProcessLookupError, ValueError, OSError):
-            # 进程不存在，清理遗留的 PID 文件
-            try:
-                os.remove(pid_file)
-            except OSError:
-                pass
+
+        logger.warning("Celery Beat pidfile 陈旧或 PID 归属不符，清理后继续启动: pid=%s", old_pid)
+        try:
+            os.remove(pid_file)
+        except OSError:
+            pass
 
     # 兜底：pidfile 可能被手工启动的 beat 覆盖/失效（同一 pidfile 路径被
     # 两个 beat 共用时互相覆盖），用 pgrep 扫描确认无其他 celery beat
@@ -435,7 +469,9 @@ def _stop_celery_beat() -> None:
         # 只清理由当前 FastAPI 实例创建的 Beat PID 文件。
         # reload 子进程若只是检测到外部 Beat 并跳过启动，绝不能删除对方
         # 的 PID 文件，否则下一次 reload 会再启动一个重复 Beat。
-        pid_file = os.path.join(os.getcwd(), "celerybeat.pid")
+        # 整改 G31：与启动侧共用同一路径来源（此前为 <cwd>/celerybeat.pid，
+        # 与启动侧 <cwd>/logs/celerybeat.pid 不一致，导致 pidfile 永不清理）
+        pid_file = _beat_pidfile_path()
         try:
             with open(pid_file) as file:
                 pid_from_file = int(file.read().strip())
