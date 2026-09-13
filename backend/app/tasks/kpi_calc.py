@@ -497,7 +497,7 @@ from celery.signals import beat_init  # noqa: E402
 BEAT_RELOAD_CHANNEL = "clpm:beat:reload"
 
 
-def _apply_rules_to_schedule(rules: dict) -> None:
+def _apply_rules_to_schedule(rules: dict, sender: object = None) -> None:
     """将 EngineRule 配置应用到 celery_app.conf.beat_schedule。
 
     支持 EngineRule：
@@ -514,7 +514,11 @@ def _apply_rules_to_schedule(rules: dict) -> None:
     is_enabled = calc_cycle.get("is_enabled", True)
     cycle_minutes = calc_cycle.get("cycle_minutes", 60)
 
-    current_schedule = dict(celery_app.conf.beat_schedule or {})
+    # G28：改运行中的 scheduler.schedule（就地），而非 conf 副本。
+    # 惰性导入：beat_registry 与 kpi_calc 相互引用，模块级导入会循环。
+    from app.tasks.beat_registry import live_beat_schedule
+
+    current_schedule, _sched = live_beat_schedule(sender)
 
     if not is_enabled:
         current_schedule.pop("kpi-calc-hourly", None)
@@ -536,17 +540,22 @@ def _apply_rules_to_schedule(rules: dict) -> None:
             cycle_minutes,
         )
 
-    celery_app.conf.beat_schedule = current_schedule
+    if _sched is None:
+        celery_app.conf.beat_schedule = current_schedule
+    else:
+        from app.tasks.beat_registry import sync_live_schedule
+
+        sync_live_schedule(_sched)
 
 
-def _reload_beat_schedule_from_db() -> None:
+def _reload_beat_schedule_from_db(sender: object = None) -> None:
     """从 DB 读取 EngineRule 并更新 beat_schedule（同步包装，可在子线程调用）."""
     try:
         rules = asyncio.run(_load_engine_rules_from_db())
     except Exception as exc:
         logger.warning("reload_beat: 从 DB 读取 EngineRule 失败，保持当前调度周期: %s", exc)
         return
-    _apply_rules_to_schedule(rules)
+    _apply_rules_to_schedule(rules, sender=sender)
 
 
 def _start_beat_reload_listener() -> None:
@@ -585,7 +594,11 @@ def _apply_engine_rules(sender=None, **kwargs):
 
     同时启动 Redis pub/sub 监听线程，支持策略配置变更后即时生效（无需重启 Beat）。
     """
-    _reload_beat_schedule_from_db()
+    # G28：绑定运行中的 Scheduler，否则改的是 conf 副本（运行中的 Beat 读 scheduler.schedule）。
+    from app.tasks.beat_registry import bind_live_scheduler
+
+    bind_live_scheduler(sender)
+    _reload_beat_schedule_from_db(sender=sender)
     _start_beat_reload_listener()
 
 
