@@ -24,6 +24,8 @@ const FORBIDDEN = [
   '催化裂化（82.1）',
   '从 severity 模拟',
   'levelCountsDemo',
+  '批次运行中',
+  '近 24h 吞吐',
 ];
 
 function collectVueFiles(dir: string): string[] {

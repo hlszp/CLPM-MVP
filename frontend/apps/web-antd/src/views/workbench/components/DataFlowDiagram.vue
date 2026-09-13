@@ -125,7 +125,9 @@ const NODES = computed<FlowNode[]>(() => {
       x: 364,
       n: '参数整定',
       // TODO: 批次数需接 A-04 tuning API
-      s: maint ? '批次 · 排队中' : '批次运行中',
+      // G40：此前无条件断言一个"运行中"状态，但整定批次数并未接入
+      // （原 TODO: 批次数需接 A-04 tuning API）。不断言未知状态。
+      s: maint ? '维护暂停' : '批次数未接入',
       ring: maint ? ringMaint : ringOn,
       dash: maint,
       maintLabel: maint ? '维护暂停' : undefined,
@@ -196,8 +198,9 @@ const feedbackTextY = computed(() => cy + nh / 2 + 44 + 22);
         <span class="inline-block h-3 w-1 rounded-sm bg-[#1F4E79]"></span>
         数据流与治理闭环
       </span>
-      <!-- TODO: 全链路时延需接后端指标 API -->
-      <span class="text-[10px] text-gray-400">近 24h 吞吐</span>
+      <!-- G40：原标题声称有吞吐口径但无任何数据源（原 TODO 即自述需接后端指标
+           API 而未接）。展示一个没有出处的指标名会让读者以为存在该口径，故移除。 -->
+      <span class="text-[10px] text-gray-400">全链路时延：未接入</span>
     </div>
 
     <!-- SVG 流程图 -->
