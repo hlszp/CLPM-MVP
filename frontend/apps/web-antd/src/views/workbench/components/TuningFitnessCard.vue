@@ -3,7 +3,7 @@
  * 适用性分级概览 · V3.2 SVG 饼图（L0~L4 占比饼图 + 图例区顶部级别摘要）
  *
  * 数据来源：WorkbenchApi.DiagnosisFitnessGates.level / score / level_counts
- * 缺失 level_counts 时用 8/16/32/28/16 demo 占比并标「（示例）」
+ * 缺失 level_counts 时用 8/16/32/28/16 demo 占比并标「（后端未提供）」
  *
  * 视觉：
  *   实心扇形饼图（半径 42，0°=12 点顺时针）
@@ -70,18 +70,19 @@ function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: nu
   return `M${cx} ${cy} L${start.x.toFixed(2)} ${start.y.toFixed(2)} A${r} ${r} 0 ${largeArc} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`;
 }
 
-const levelCountsDemo: Record<string, number> = {
-  L0: 8, L1: 16, L2: 32, L3: 28, L4: 16,
-};
+/** 适用性等级计数：**仅使用后端数据**，缺失即返回空。
+ *
+ * 2026-09-13 整改 G40：此前缺失时返回 8/16/32/28/16 的 demo 占比。虽然调用处
+ * 标注了「示例」，但饼图/环图上的扇形仍会被用户当作真实分布读取——这与
+ * ScoreTrendChart 伪造序列属同一类问题：后端严守「不生成模拟数据」，前端不应
+ * 把数造回来。无数据时不渲染分布，由调用方展示空态。
+ */
 const levelCounts = computed<Record<string, number>>(() => {
   const lc = props.gates?.level_counts as unknown as Record<string, number> | undefined;
   if (lc && (lc.L0 || lc.L1 || lc.L2 || lc.L3 || lc.L4)) return lc as Record<string, number>;
-  return levelCountsDemo;
+  return {};
 });
-const usingFallback = computed(() => {
-  const lc = props.gates?.level_counts as unknown as Record<string, number> | undefined;
-  return !(lc && (lc.L0 || lc.L1 || lc.L2 || lc.L3 || lc.L4));
-});
+const usingFallback = computed(() => Object.keys(levelCounts.value).length === 0);
 const total = computed(() =>
   Object.values(levelCounts.value).reduce((s, n) => s + (Math.max(n, 0)), 0),
 );
