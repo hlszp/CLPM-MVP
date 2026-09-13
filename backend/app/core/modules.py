@@ -234,11 +234,15 @@ def require_module(key: str):
     用于基础模块路由（如 configs）中可选模块专属端点的守卫。
     未启用模块返回 404（而非 403），与前端路由过滤口径一致。
     """
-    from fastapi import HTTPException
+    from app.core.exceptions import BizError
 
     def _dep() -> None:
         if not is_module_enabled(key):
-            raise HTTPException(status_code=404, detail=f"模块「{MODULES[key]['name']}」未启用")
+            raise BizError(
+                code="ERR_MODULE_DISABLED",
+                message=f"模块「{MODULES[key]['name']}」未启用",
+                status_code=404,
+            )
 
     return _dep
 
