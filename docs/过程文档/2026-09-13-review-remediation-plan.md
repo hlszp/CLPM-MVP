@@ -201,6 +201,8 @@
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
 | **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
 | **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
+| **G32 visibility_timeout 错配** | **S4** | **已落地（超时部分）** | 见 S4 提交 | 9000→90000（= 24h 最大任务 + 1h 缓冲）；新增不变量测试 `visibility_timeout > max(任务 time_limit)`，今后调高任何任务超时未同步即失败 | **`celery_task_total` 仍无埋点**（只有定义）：需 `task_postrun/task_failure` 接线，且 worker 侧计数器须配 Prometheus multi-process 或 Pushgateway 才读得到——未做，故 G29/G30 修好的"失败可见性"目前只能从日志看 |
+| **G32 visibility_timeout 错配** | **S4** | **已落地（超时部分）** | 见 S4 提交 | 9000→90000（= 24h 最大任务 + 1h 缓冲）；新增不变量测试：visibility_timeout 必须大于 max(任务 time_limit)，今后调高任何任务超时未同步即失败 | **celery_task_total 仍无埋点**（只有定义）：需 task_postrun/task_failure 接线，且 worker 侧计数器须配 Prometheus multi-process 或 Pushgateway 才读得到——未做，故 G29/G30 修好的失败可见性目前只能从日志看 |
 | **G31 Beat pidfile/短路** | **S4** | **已落地** | 见 S4 提交 | 两处 pidfile 路径统一为 `_beat_pidfile_path()`；启动检查改核对 PID **归属**（复用既有 `_pgrep_pids(_BEAT_PGREP_PATTERN)`，不新增 subprocess 调用点）；新增"陈旧 pidfile + PID 被无关进程占用 → 仍须继续启动"回归用例 | Beat 单例的 pgrep 兜底路径未变；本项只修"该启动却被短路"，未处理"该停止却被漏杀" |
 | **G30 锁 TTL 与硬超时错配** | **S4** | **已落地** | 见 S4 提交 | 2 项不变量回归（TTL < task_time_limit；锁冲突必 raise 且无 skipped 形状）+ 改写 1 个固化旧行为的既有用例 | Beat 路径"连 TaskRecord 都不建"的问题未解决（现改为抛错进 FAILED 终态，但该小时仍无快照，需窗口完成标记才能对外可查） |
 | **G29 批量失败记 SUCCESS** | **S4** | **已落地（熔断部分）** | 见 S4 提交 | 5 项回归 + 改写 1 个固化旧行为的既有用例（单回路批次全失败现抛错） | 端到端失败注入未覆盖（仅测判定函数）；`_summarize_batch_results` 结果未写入 TaskRecord.result，UI 仍看不到 failed 明细 |

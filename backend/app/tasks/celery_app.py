@@ -69,11 +69,16 @@ celery_app.conf.update(
     ),
     task_default_queue="default",
     task_default_routing_key="default",
-    # Redis broker 默认 visibility_timeout=3600s（1h），而 import_history_data
-    # 的 time_limit=7200s（2h）。未配置时任务跑满 1h 即被 broker 自动重投给另一个
-    # worker，造成并发执行。设为 9000s（2.5h，> time_limit 留 0.5h 缓冲）。
-    broker_transport_options={"visibility_timeout": 9000},
-    result_backend_transport_options={"visibility_timeout": 9000},
+    # 整改 G32：visibility_timeout 必须**大于任何任务的 time_limit**，否则未 ack
+    # 的消息会被 broker 重投给另一个 worker，造成同一任务并发双跑。
+    # 原值 9000s（2.5h）的依据是"import_history_data 的 time_limit=7200s（2h）"，
+    # 但该任务现为 86400s（24h，见 kpi_calc.py 的 import_history_data 覆盖），
+    # 注释依据早已过时——任何超过 2.5h 的导入都必然触发重投。
+    # 取 90000s（25h）= 24h 最大任务 + 1h 缓冲，并由不变量测试守护。
+    broker_transport_options={"visibility_timeout": 90000},
+    # 注：result_backend_transport_options 的 visibility_timeout 对 Redis **结果后端**
+    # 无实际作用（该选项只对 broker 语义生效），保留仅为配置显式化。
+    result_backend_transport_options={"visibility_timeout": 90000},
     # 任务结果在 Redis 结果后端保留 7 天后过期，避免无限堆积
     # （与任务状态清扫周期配套，超时未清理的结果由 Redis 自动回收）
     result_expires=7 * 24 * 3600,
