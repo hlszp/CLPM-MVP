@@ -819,7 +819,15 @@ class TestPipelineEndToEnd:
         assert result.success
         model_types = {c.params.model_type for c in result.candidates}
         assert ModelType.FOPDT in model_types
-        assert ModelType.SOPDT in model_types
+        # S3（G27#2）复核后调整：SOPDT 仅在两个离散极点均为**正实**（过阻尼）时成立。
+        # 负实离散极点映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），
+        # SOPDT 无法表示，故 arx_to_sopdt 会拒绝；本数据（一阶过程 + 噪声）的
+        # 二阶拟合恰落在该情形，SOPDT 候选被正当剔除。
+        # 原断言"必须包含 SOPDT"实际编码了会产出无效模型的行为；改为不变式：
+        # 凡出现的 SOPDT 候选，其两级时间常数必为正且有限（确为过阻尼）。
+        for cand in result.candidates:
+            if cand.params.model_type is ModelType.SOPDT:
+                assert cand.params.T1 > 0 and cand.params.T2 > 0
 
     def test_explicit_zero_theta_is_preserved(self):
         """显式 theta=0 不得被缺省启发值覆盖."""

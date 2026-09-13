@@ -87,9 +87,28 @@ def arx_to_sopdt(
     if roots is None:
         raise ValueError("二阶系统极点求解失败")
     p1, p2 = roots
-    # 连续极点
-    s1 = math.log(abs(p1)) / ts if p1 != 0 else float("-inf")
-    s2 = math.log(abs(p2)) / ts if p2 != 0 else float("-inf")
+    # S3 修复（G27#2）：负实离散极点同样映射为**复**连续极点。
+    #
+    # 离散→连续的正确映射取自**复**对数：s = ln(p)/Ts。对负实极点 p < 0，
+    # ln(p) = ln|p| + jπ，故 s = (ln|p| + jπ)/Ts —— 虚部非零，属**振荡模态**，
+    # SOPDT（两个实极点）不适用，与上方 disc<0 的复极点情形同类。
+    # 原实现先取 abs 再取对数，丢掉 jπ，把振荡模态伪装成实极点。
+    # 实测：a1=0, a2=-0.25（离散极点 ±0.5）真值连续极点为 -0.6931 与
+    # -0.6931+3.1416j（Nyquist 振荡），而实现输出 T1=T2=1.4427 的良性
+    # 过阻尼模型——据此整定会得到与真实动态无关的 PID 参数。
+    # 先判不稳定（|p| >= 1 ⟹ 连续极点非负），保证不稳定系统拿到的是
+    # 具体的"不稳定"诊断，而不是被负实极点守卫提前盖掉。
+    if abs(p1) >= 1.0 or abs(p2) >= 1.0:
+        raise ValueError(f"离散极点 |p| >= 1（p1={p1:.6g}, p2={p2:.6g}）→ 连续极点非负，系统不稳定")
+    if p1 < 0 or p2 < 0:
+        raise ValueError(
+            f"负实离散极点（p1={p1:.6g}, p2={p2:.6g}）映射为复连续极点 "
+            "s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；"
+            "请改用 FOPDT 或振荡模型"
+        )
+    # 连续极点（此时 p >= 0；p=0 无连续对应，置 -inf 由下方非负检查拒绝）
+    s1 = math.log(p1) / ts if p1 > 0 else float("-inf")
+    s2 = math.log(p2) / ts if p2 > 0 else float("-inf")
     if s1 >= 0 or s2 >= 0:
         raise ValueError(f"连续极点 s1={s1}, s2={s2} 非负，系统不稳定")
     T1 = -1.0 / s1
