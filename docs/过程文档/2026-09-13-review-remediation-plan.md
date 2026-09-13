@@ -216,7 +216,8 @@
 | **G11 payload_hash 空串** | **S2** | **已落地** | 见 S2 提交 | 7 项回归：hash 单源一致、source_kind 不入 hash、空 hash 不再丢实时值、相同 hash 仍幂等 | `history_point_conflict` 仍因写路径未传 db_session 而不落库（见 G12 待办）；跨解码路径 quality_raw 的 hash 一致性需真实数据验证 |
 | **G13 导入缺 tsEnd 背压** | **S2** | **已落地** | 见 S2 提交 | 6 项回归（端点 4 + 服务 2）；含"足够旧窗口不得被误拒"边界用例 | 本机 `.env` 的 APP_VERSION 已同步；前端 RangePicker 禁选最近 5 分钟属 S6 |
 | **G48 数值金标准** | **S1-c** | **已落地（骨架）** | 见 S1-c 提交 | `test_golden_semantics.py`：5 项硬断言通过 + 2 项 strict xfail 实证缺陷 | 目前覆盖 accuracy/stability/oscillation/good_value/\_clamp 五项；stiction 闭合回环、SOPDT τ、fast_rate 阈值跳变待 S3 补 |
-| G11~G17 | S2 | 未开始 | — | — | — |
+| **G40 工作台造数** | **S6** | **已落地（主项 + 1 续项）** | 见 S6 提交 | 源码级守护用例 workbench-no-fabricated-data（扫描 views/workbench 全部 .vue 的已知造数表达式，含注释）；渲染级守护待补 | **仍有两处未清**：TuningFitnessCard 的 demo 占比兜底（已标「示例」）、DataFlowDiagram 的静态值与「—」占位；且守护为源码级，不能证明渲染结果正确 |
+| **G41 首屏请求风暴** | **S6** | **已落地（主项）** | 见 S6 提交 | Tab 改懒挂载（v-if 首次激活 + v-show 保活），首屏 12 并发降至 2~3 | **无自动化测试**（请求次数需挂载组件 + mock 请求方可断言）；5 处多余 deep: true 未改；A-11 /workbench/aggregate 空壳端点仍在（前端封装无调用方） |
 | G18~G27 | S3 | 未开始 | — | — | — |
 | G28~G32 | S4 | 未开始 | — | — | — |
 | G33~G38 | S5 | 未开始 | — | — | — |
