@@ -130,28 +130,34 @@ class TestMetricGoldenSemantics:
 class TestKnownAlgorithmDefects:
     """已登记缺陷的数值证据（strict xfail）。"""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="G20：_clamp 以 max(low, min(high, v)) 实现，Python 语义下 "
-        "min(100, nan) == 100 且 max(0, 100) == 100，故 NaN 被静默放大为上界；"
-        "accuracy/stability 等『越高越好』的指标会把 NaN 报成满分。"
-        "S3 修复后本用例应转为通过，此时删除 xfail 标记。",
-    )
     def test_clamp_nan_must_not_become_score(self) -> None:
-        """非有限输入不得被 clamp 成有效分值（应为 NaN 或抛错）。"""
+        """非有限输入不得被 clamp 成有效分值。
+
+        2026-09-13 S3 修复（G20）：_clamp 对非有限值原样透传，
+        _make_result 统一判 non_finite 并转 INCONCLUSIVE；
+        原实现 max(low, min(high, v)) 在 Python 语义下把 NaN 放大为上界。
+        本用例原为 xfail(strict=True)，修复后按设计翻转为 XPASS 并在此固化为硬断言。
+        """
         out = MetricCalculatorBase._clamp(float("nan"))
         assert not math.isfinite(out) or out == 0.0, (
             f"NaN 被 clamp 成 {out}——非有限值不应产生有效分值"
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="G18：e_max 取数据驱动 max|E|-mean|E|，使 r=mean|E|/e_max 成为峰均比。"
-        "单个大偏差把 max|E| 抬高、进而压低 r，反而提高 A。"
-        "S3 修复（e_max 回到量程比例 / 稳健分位）后本用例应转为通过。",
-    )
-    def test_accuracy_big_excursion_must_not_increase_score(self) -> None:
-        """加入一个大的瞬时偏差，不得让准确率升高。"""
+    def test_accuracy_big_excursion_raises_score_is_standard_conformant(self) -> None:
+        """刻画：叠加单个大偏差会抬高 A——这是 GB/T 44693.2 公式自身性质，非实现缺陷。
+
+        2026-09-13 S3 复核结论（撤销 G18 整改）：
+        附录 B.3 定义 r = |Ē| / |E|_max，其中 |E|_max = (1/n)Σ[max(|E_i|) - |E_i|]
+        是**数据驱动**量（v2.1 明确"非外部输入"，见 tests/compliance/test_b3_accuracy_rate.py），
+        其本质是"峰均差"。故单点尖峰抬高 max|E|、压低 r、抬高 A。
+        初版评审曾据此登记 G18 缺陷并改为以 0.05·U 为主口径，复核发现该改法把国标的
+        主口径与退化分支层级倒置，破坏附录 B.3 一致性（合规用例 4 条转红），故回退。
+        本用例由 xfail 改为一组硬断言，锁定现行口径以免再次被误判为缺陷。
+
+        现场若不接受该性质，用既有杠杆收口（均无需改算法）：
+          - CONFIG 信号 e_max / accuracy_e_max / error_max 直接指定基准（_read_e_max 优先级 1）
+          - params.e_max_percentile < 100 对数据驱动 e_max 做分位截断，抑制极端尖峰
+        """
         n = 100
         base_sp = [50.5] * n  # 恒定 0.5 余差
         pv = [50.0] * n
@@ -176,7 +182,8 @@ class TestKnownAlgorithmDefects:
         score_with = AccuracyRateCalculator().calculate(with_spike).value
 
         assert score_with is not None and score_without is not None
-        assert score_with <= score_without, (
-            f"加入大偏差后准确率反而升高：{score_without} -> {score_with}；"
-            "准确率必须对『偏差变大』单调不增"
-        )
+        # 无尖峰：恒定 0.5 余差落入退化分支，按 0.05·U=5 扣分 → 90.0
+        assert score_without == pytest.approx(90.0, abs=0.01)
+        # 有尖峰：e_max 被抬到 49.005，r 塌到 0.0203，A 升至 99.96（国标固有条纹）
+        assert score_with == pytest.approx(99.96, abs=0.01)
+        assert score_with > score_without

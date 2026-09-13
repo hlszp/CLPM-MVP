@@ -20,6 +20,7 @@ v6.2 变更（可信度统一 Phase 2）：
 from __future__ import annotations
 
 import logging
+import math
 from datetime import timedelta
 from typing import Any
 
@@ -168,6 +169,21 @@ class MetricCalculatorBase(MetricCalculator):
         Returns:
             MetricResult，含 metric_code/value/confidence_level/lineage/details
         """
+        # 整改 G20：非有限值（NaN/Inf）一律判 INCONCLUSIVE，绝不参与区间截断或落库。
+        # 此前 _clamp 用 max(low, min(high, value))，而 Python 语义下
+        # min(100.0, nan) == 100.0、max(0.0, 100.0) == 100.0 —— NaN 被静默放大为
+        # **上界**；对 accuracy/stability/good_value 等「越高越好」的指标即"报成
+        # 满分"，对 oscillation/stiction 则报成最差，两者都是错误结论且无任何信号。
+        # 另：round(nan, 2) 仍是 nan，若透传到响应会被 Starlette 的
+        # allow_nan=False 拒绝（500），写入 JSONB 亦非法——故必须在此收口。
+        try:
+            _finite = math.isfinite(float(value))
+        except (TypeError, ValueError):
+            _finite = False
+        if not _finite:
+            logger.warning("[%s] 非有限值（NaN/Inf）→ INCONCLUSIVE(non_finite)", self.metric_code)
+            return self._make_inconclusive(bundle, "non_finite")
+
         vr = valid_rate if valid_rate is not None else self._get_valid_rate(bundle)
 
         # 可计算性判定（D5）：指标 mask 有效点占比 < 0.20 → INCONCLUSIVE
@@ -335,7 +351,15 @@ class MetricCalculatorBase(MetricCalculator):
 
     @staticmethod
     def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
-        """将值限制在 [low, high] 区间."""
+        """将值限制在 [low, high] 区间；**非有限值原样返回**（整改 G20）。
+
+        原实现 max(low, min(high, value)) 在 Python 语义下会把 NaN 变成上界
+        （min(100.0, nan) == 100.0 → max(0.0, 100.0) == 100.0），即「越高越好」
+        的指标把 NaN 报成满分。现原样透传，交由 _make_result 统一判
+        non_finite 并转 INCONCLUSIVE。
+        """
+        if not math.isfinite(value):
+            return value
         return max(low, min(high, value))
 
     @staticmethod

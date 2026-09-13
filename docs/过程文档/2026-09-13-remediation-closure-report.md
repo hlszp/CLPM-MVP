@@ -84,8 +84,9 @@
 
 S3 算法契约与量纲**整段未启动**，涉及 10 项，其中两项已有可执行证据：
 
-- **G18** accuracy 的 e_max 口径倒挂：恒定余差走 0.05U 分支，而数据驱动分支使 r 成峰均比
-  ——单个大偏差抬高 max|E|、压低 r，反而**提高**准确率。*（S1-c 已用 xfail(strict=True) 固化实证）*
+- ~~**G18** accuracy 的 e_max 口径倒挂~~ → **2026-09-13 复核撤销（误诊）**：该性质属
+  GB/T 44693.2-2024 附录 B.3 公式自身定义（`|E|_max` 即数据驱动峰均差），实现忠实照搬，
+  改口径反而倒置国标主/退化分支层级。详见 §16。
 - **G20** _clamp(nan) 因 Python 的 min(100,nan)==100 / max(0,100)==100 被静默放大为上界，
   accuracy/stability 等「越高越好」指标会把 NaN 报成**满分**。*（同上，已实证）*
 - **G19** stiction 双门控方向相反：R² 取线性相关平方、b/a 取 PCA 轴比，可检出带仅
@@ -296,10 +297,61 @@ a4094bc8 perf(S6): 工作台 5 个 Tab 移除多余的 deep watch（G41 完成�
 的解冻授权。其余无授权可做的实质工作已耗尽（G32 的多进程指标聚合方案属基础设施
 变更，需 PROMETHEUS_MULTIPROC_DIR + MultiProcessCollector 改造，本地无法完整验证）。
 
-其中三项已有可执行证据（S1-c 中用 xfail(strict=True) 固化）：
-- **G18** accuracy 口径倒挂：加一个大偏差，准确率反而从 80 升到 99.96；
+其中两项已有可执行证据（S1-c 中用 xfail(strict=True) 固化）：
+- ~~**G18** accuracy 口径倒挂~~ → **已撤销（误诊）**，S3 中改为国标一致性刻画用例，见 §16；
 - **G20** _clamp(nan) 静默返回上界：accuracy/stability 把 NaN 报成满分；
 - **G19** stiction 双门控方向相反：可检出带仅 |rho| 在 [0.707, 0.835)，正圆恒不检出。
 
 另有 G21（SOPDT 缺 tau 致推荐 Kp 差 2 个数量级）、G22（融合非 D-S 且只取正证据）、
 G23（输入契约与量纲单一事实层缺失）、G24~G27。
+
+---
+
+## 16. 自纠错登记：G18 误诊与撤销（S3 首轮）
+
+**结论：G18 不是缺陷，初版评审误诊；本轮已撤销该整改项，实现与合规用例零改动。**
+
+### 16.1 误诊过程
+
+初版评审据 `accuracy.py` 的 `e_max = max|E| − mean|E|` 判定为"口径倒挂"，理由是
+`r = mean|E| / e_max` 成为**峰均比**：叠加单个大偏差会抬高 `max|E|`、压低 `r`，
+从而**提高** A（实测 0.5 恒定余差 + 一个 50 尖峰：90.0 → 99.96）。该现象本身经复现属实。
+
+据此实施了"e_max 改为量程比例 `0.05·U`（与退化分支同口径）"的整改，并在受保护清单
+解冻授权下改动了 `accuracy.py`。
+
+### 16.2 复核发现
+
+独立复核时读取 `backend/tests/compliance/test_b3_accuracy_rate.py`（任务 G2 产物），
+其头部载明**公式事实来源**并固化为国标一致性用例：
+
+> 算法说明 §4.4 v2.1（对齐 GB/T 44693.2-2024 附录 B.3）：
+> `|E|_max = (1/n) Σ[max(|E_i|) − |E_i|]`（v2.1：**数据驱动，非外部输入**）
+> 退化分支（Phase 1 P0 修复）：`|E|_max = 0 且 |Ē| > 0` → `A = max(0, 1 − |Ē|/(0.05·U)) × 100`
+
+即：**数据驱动峰均差是国标主口径**，而 `0.05·U` 只是 `|E|_max = 0`（恒定余差）
+时因公式不可归一化而设的**局部退化补丁**。我的整改把两者主次倒置。
+
+改后实测：合规用例 4 条转红（`test_r_equals_one`、`test_r_equals_four_thirds`、
+`test_constant_offset_not_full_score`、`test_constant_offset_at_tolerance_boundary_scores_zero`），
+另有 `test_accuracy.py` 2 条与 `test_scenarios.py` 1 条共 7 条下游转红。
+
+### 16.3 撤销动作（本轮实际落地）
+
+1. `git checkout` 还原 `accuracy.py` 与 `test_accuracy.py`（**零改动**）；
+2. 受保护清单重新冻结后 diff **仅 `base.py` 1 条**（原为 base.py + accuracy.py 2 条）；
+3. 将原 `xfail(strict=True)` 的 `test_accuracy_big_excursion_must_not_increase_score`
+   改写为**国标一致性刻画用例** `test_accuracy_big_excursion_raises_score_is_standard_conformant`，
+   以硬断言锁定 `90.0` / `99.96`，并在 docstring 中登记：该性质属国标公式固有、
+   非实现缺陷；现场若不接受，用既有杠杆收口（CONFIG 信号 `e_max`/`accuracy_e_max`/`error_max`
+   直接指定基准；`params.e_max_percentile < 100` 做分位截断）——**均无需改算法**。
+
+### 16.4 教训
+
+- **"反直觉的数值现象"≠"实现缺陷"**：判定算法缺陷前必须先定位该算法的**事实来源**
+  （国标/设计文档/合规用例），否则会把"忠实实现标准"改成"偏离标准"。
+- 合规用例头部的「禁止实现输出反推」注释正是为防此类事情——它同时挡住了两类人：
+  拿实现输出当期望值的实现者，以及拿"看起来不合理"当理由的评审者。
+- 项目自带的守卫（合规用例、受保护清单）在本轮**再次拦下了 Agent 的错误改动**，
+  与 §15 所述主题一致：守卫的价值在于它们不服从"看起来更合理"的直觉。
+- 本项撤销**没有**削弱 S3：G20 是正交的真实缺陷（NaN 被 clamp 成满分），已修复且保留。
