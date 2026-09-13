@@ -280,8 +280,30 @@ def _restore_request_id_on_prerun(task: Task, **kwargs: object) -> None:
 
 
 @task_postrun.connect
-def _clear_request_id_on_postrun(**kwargs: object) -> None:
-    """任务结束后清空 contextvar，防止 prefork 子进程串行执行时泄漏到下一任务。"""
+def _clear_request_id_on_postrun(task: object = None, **kwargs: object) -> None:
+    """任务结束：清空 request_id contextvar + 为 Prometheus 打点。
+
+    整改 G32：celery_task_total 此前**只有定义、没有任何埋点**，于是所有
+    「任务静默失败 / 静默跳过」在监控侧零信号——deploy/prometheus/alerts.yml
+    的 celery 失败率告警因无数据永不触发（该文件自述「无数据时不触发，属预期」）。
+    G29/G30 修好的失败可见性也因此只能从日志看。
+
+    **重要限制（未解决，如实标注）**：worker 为 prefork 多进程，每个子进程各持
+    一份 prometheus_client registry；此处 .inc() 计入子进程内存，父进程的
+    /metrics 读不到。要让该指标真正可采集，需二选一：
+      1) 设 PROMETHEUS_MULTIPROC_DIR 并用 MultiProcessCollector 聚合；
+      2) worker 侧走 Pushgateway / celery-exporter。
+    本处先完成打点，方案 (1)/(2) 落地后即可采集——避免继续「连计数都没有」。
+    """
+    try:
+        from app.core.metrics import celery_task_total
+
+        task_name = getattr(task, "name", None) or "unknown"
+        status = str(kwargs.get("state") or "UNKNOWN")
+        celery_task_total.labels(task_name=task_name, status=status).inc()
+    except Exception:  # noqa: BLE001 - 打点失败绝不影响任务流转
+        logger.debug("celery_task_total 打点失败", exc_info=True)
+    # 原行为保留：清空 contextvar，防 prefork 子进程串行执行时泄漏到下一任务
     _request_id_ctx.set(None)
 
 
