@@ -1976,6 +1976,22 @@ def _compute_loop_valid_rate_from_bundles(
     for bundle in bundles:
         block = bundle.data_block
         if block.tag_group == TagGroup.BASE.value:
+            # S3 修复（G23）：优先消费 DataBlock.loop_valid_rate —— 单一事实层。
+            #
+            # data_types.py 的契约写明 loop_valid_rate 由 Pipeline 以
+            # ConfidenceEvaluator.evaluate(loop_valid_rate) 一次算出供"所有指标读取"，
+            # 且其值已按 R14-2 口径折入时间覆盖率（有效可信度 = 回路级 valid_rate
+            # × 时间覆盖率）。原实现忽略该字段，改从 validity/point_count 重算**裸值**，
+            # 漏掉时间覆盖因子，导致同一小时快照出现
+            #   kpi_snapshot_hourly.valid_rate = 1.0000 而 confidence_level = 'E'
+            # 的内部矛盾 —— 正是可信度统一方案 P1-5 声称已消除的 §2.2 字段错配，
+            # 也是该方案 Phase 1「统一 valid_rate 口径」在 R14-2 之后被重新劈开的点。
+            #
+            # 0.0 是 DataBlock 的未设默认值（管线路径必设；手搓/legacy 块可能未设），
+            # 故 0.0 时回退重算以保持 legacy 行为。残余风险见收口报告 §20：
+            # 若某块"有效点比例 >0 但时间覆盖率恰为 0"，回退会重新引入上述矛盾。
+            if block.loop_valid_rate > 0:
+                return float(block.loop_valid_rate)
             return DataQualityAssessor.compute_loop_valid_rate(block.validity, block.point_count)
     return None
 

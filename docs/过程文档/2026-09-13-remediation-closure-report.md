@@ -553,3 +553,76 @@ b/a ≤ sqrt((1-|ρ|)/(1+|ρ|))，故 |ρ| ≥ 1/√2 时 St ≤ (√2−1)×100
 
 观察：三项误诊有共同模式——**把"规格/国标自身规定的行为"读成了"实现缺陷"**。
 故 S3 剩余条目（G23~G27）应一律先做事实来源比对再动手。
+
+---
+
+## 20. G23：valid_rate 口径在 R14-2 之后被重新劈开（**子claim 4 属实并已修复**）
+
+**结论：G23 四个子claim中，"valid_rate 三条链口径分裂"属实并已修复主路径；
+另三项经比对**不成立或仅部分成立**，逐项记录如下。**
+
+### 20.1 子claim 逐项判定
+
+| # | 原判 | 比对结果 |
+|---|---|---|
+| 1 | `is_normalized` 按 tag 名而非实际归一化 | **不成立**：`_NORMALIZABLE_SIGNALS` 确按 tag 名（pv/sp/op）决定归一化范围，但 `DataQualityAssessor` 在**归一化前**的原始工程值上检测并传 `is_normalized=False`（outlier_detection 据此取 tag 量程），语义正确 |
+| 2 | 量程 span 退化"静默跳过" | **部分不成立**：`pipeline.py:376-386` 对 pv_span/op_span 为 0 **有 logger.warning**，非静默；但"告警后仍以未归一化值继续，而下游按 0~100 消费"的**降级风险成立**（保留为残余风险） |
+| 3 | 采样率以"点"而非"秒"参数化 | **未完成核实**（`min_consecutive_points` 等），登记待验 |
+| 4 | `valid_rate` 三条链口径分裂 | **属实，已修复**（见下） |
+
+### 20.2 子claim 4：口径矩阵（修复前实测）
+
+| 站点 | 有效点数比 | 折入时间覆盖率 |
+|---|---|---|
+| `pipeline.py:196` → `loop_confidence_level` | `compute_loop_valid_rate` | **✓（唯一）** |
+| `kpi_calc.py:1430` 门禁 `valid_rate_for_gate` | 同上 | ✗ |
+| `kpi_calc.py:1487` → 落库 `kpi_snapshot_hourly.valid_rate` | 同上 | ✗ |
+| `diagnosis_orchestrator.py:823` → 诊断 gate `confidence_level` | 同上 | ✗ |
+| `tuning.py:401` 整定链路 | 同上 | ✗ |
+
+**五处只有一处乘了覆盖因子。**
+
+### 20.3 沿革：一次被结构性守卫漏掉的回归
+
+1. **可信度统一方案（2026-08-04）Phase 1** 的目标原文："消除诊断链路的自写预处理，
+   **统一 valid_rate 口径**"，状态"Phase 1/2/3 全部验收通过"；
+   其 §11 Phase 1 门禁落在 `tests/test_confidence_unification_structural.py`——
+   **结构性断言**（`inspect.getsource` 含 `DataQualityAssessor` / `compute_loop_valid_rate`
+   即通过），不校验数值。
+2. **R14-2（2026-09-06，一个月后）** 为"有效点比例 ≠ 时间覆盖率"给 Pipeline 增加
+   `时间覆盖率` 因子，使 120 点/30s/跨 1h 的稀疏数据不再获得 A 可信度——
+   但该因子只落在 Pipeline 一处。
+3. 其余消费点仍取裸值 → **Phase 1 刚统一的口径被重新劈开**，
+   而结构性守卫因为"仍调用共享内核"而**保持全绿**。
+
+后果（同小时快照自相矛盾）：
+
+```
+kpi_snapshot_hourly.valid_rate      = 1.0000   ← 裸值，来自 _compute_loop_valid_rate_from_bundles
+kpi_snapshot_hourly.confidence_level = 'E'      ← 含覆盖，来自 Pipeline
+```
+
+即 `ConfidenceEvaluator.evaluate(snapshot.valid_rate)` 得 A 而字段写着 E——
+**正是 P1-5 声称已消除的 §2.2 字段错配**。
+
+### 20.4 修复
+
+`data_types.py` 的契约写明：`loop_valid_rate` 由 Pipeline 用
+`ConfidenceEvaluator.evaluate(loop_valid_rate)` 一次算出供"所有指标读取"。
+故 `_compute_loop_valid_rate_from_bundles` 应**消费**该字段，而非从
+`validity/point_count` 重算裸值：
+
+- `block.loop_valid_rate > 0` → 直接返回（Pipeline 已设，权威值）；
+- 否则回退重算（legacy/手搓块保持原行为，含既有 P1-5 用例）。
+
+该文件**不在受保护清单内**，本次无需解冻授权。
+
+### 20.5 证据链
+
+| 环节 | 证据 |
+|---|---|
+| 修复前失败 | test_valid_rate_single_source_g23.py：**2 failed / 2 passed**（返回裸值 1.0 而非有效值 0.0333；落库口径不变式红） |
+| 修复 | `kpi_calc.py` `_compute_loop_valid_rate_from_bundles` 消费 `DataBlock.loop_valid_rate` |
+| 行为测试 | 修复后 **4 passed**；含 R14-2 稀疏场景（120点/30s/1h）有效值 ≈0.0333、P1-5 不变式、legacy 回退（2/4=0.5）、无 BASE 块返回 None |
+| 集成证据 | 既有 P1-5 用例 `test_kpi_calc.py::TestComputeLoopValidRateFromBundles` 未设 `loop_valid_rate`，走回退分支，行为不变 |
+| 残余风险 | ① `0.0` 既是 DataBlock 未设默认值也可能是真实有效值，本修复以 `>0` 判设置——若某块"有效点比例 >0 但时间覆盖率恰为 0"会回退成裸值，重新引入矛盾（建议后续给 `loop_valid_rate` 加显式 sentinel）；② **诊断链 `assess()` 与整定链仍用裸值**，本次只统一了 KPI 链（门禁+落库），三链统一尚差两步；③ point 路径 `base_point_count = round(base_valid_rate × expected)` 现改用有效值，稀疏数据下 point_count 变小、gap_ratio 上升——与 R14-2 意图一致但属行为变化，需在下一轮回归中观察 |
