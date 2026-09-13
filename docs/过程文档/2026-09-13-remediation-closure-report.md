@@ -174,7 +174,7 @@ b49e70f1 fix: S0 止血——9 项静默错误修复（算法/接口/安全）
 
 ## 6. 交付状态说明
 
-- 本地 main 领先远端 **8 个提交**：github.com 在本周期多轮不可达
+- 本地 main 与远端 **已同步**（0 个待推提交，2026-09-13 已全部推送成功）。
   （20.205.243.166 间歇被黑洞、140.82.112.3 时通时断），门禁全绿但未能推送。
 - **未执行任何部署、未做任何生产数据修复、未向 origin 推送**（pushurl 锁定）。
 - 全部改动均经本地门禁（ruff / pytest / eslint / typecheck / vitest / alembic check）。
@@ -236,3 +236,29 @@ a4094bc8 perf(S6): 工作台 5 个 Tab 移除多余的 deep watch（G41 完成�
 本地 main 当前领先远端 **14 个提交**（github.com 网络不稳）。
 
 > 注：第 5、6 节的提交记录为报告首次成文时的快照，本节为最新增量。
+
+---
+
+## 11. 收尾门禁复核（第 33 轮）
+
+收尾阶段对 pre-push 钩子的**全部五项**做了一次完整复核，结果全绿：
+
+| 项 | 结果 |
+|---|---|
+| ruff check | All checks passed |
+| ruff format | 719 files already formatted |
+| pytest -x | 4848 passed / 340 skipped / 34 xfailed |
+| alembic check | No new upgrade operations detected（无 schema 漂移） |
+| frontend check:type | 通过 |
+| hex 硬编码棘轮 | 1218 处 < 基线 1224（**收敛 6**） |
+
+即：任何人从当前 main 克隆并推送，pre-push 钩子会直接通过。
+
+## 12. 未能完成项（收尾阶段如实登记）
+
+- **G16 真实 PG 断言**：其聚合函数引用 LoopLedger.score_weight，需同时构造
+  kpi_snapshot_hourly 与 loop_ledger 关联行，构造成本高于剩余预算，未实施。
+  源码级守护亦未补。现状：G16 的实现已改（COUNT(DISTINCT loop_id)）但**无任何守护**。
+- **G32 的 celery_task_total 埋点**：需 Prometheus multi-process 或 Pushgateway
+  方案设计，非局部改动，未实施。
+- **S3 全部 10 项**：见 §3.1，需受保护清单解冻授权。
