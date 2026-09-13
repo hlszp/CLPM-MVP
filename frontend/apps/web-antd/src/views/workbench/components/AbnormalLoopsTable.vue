@@ -65,18 +65,17 @@ const SEVERITY_TEXT: Record<string, string> = {
   INFO: '提示',
 };
 
-const SEVERITY_BG: Record<string, string> = {
-  CRITICAL: '#FFF1F0',
-  ERROR: '#FFF1F0',
-  WARN: '#FFF7E6',
-  INFO: '#EBF1F8',
-};
-
-function statusPill(row: WorkbenchApi.DiagnosisOpenTag): { bg: string; color: string; text: string; } {
+function statusPill(row: WorkbenchApi.DiagnosisOpenTag): {
+  bgClass: string;
+  color: string;
+  text: string;
+} {
   const sev = row.severity ?? '';
   return {
-    bg: SEVERITY_BG[sev] ?? '#F5F5F5',
-    color: SEVERITY_COLOR[sev] ?? '#BFBFBF',
+    // 底色用 Tailwind 中性类而非 hex：本项目有 hex 硬编码棘轮（只减不增，见
+    // scripts/check-hex-whitelist.mjs），G40 修造数时曾因新增 4 个 hex 触发超限。
+    bgClass: 'bg-gray-50',
+    color: severityColor(sev),
     text: SEVERITY_TEXT[sev] ?? '—',
   };
 }
