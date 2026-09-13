@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Integer, case, func, nulls_last, or_, select
+from sqlalchemy import case, func, nulls_last, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -1265,17 +1265,16 @@ async def _aggregate_kpi_summary(
         # SUM(value * w) / NULLIF(SUM(w), 0)
         weighted_cols.append((func.sum(col * weight_col) / weight_sum_col).label(f))
 
-    # 投自动回路占比：COUNT(auto_mode_rate > 0) / COUNT(*)
-    auto_loop_count = func.sum(
-        func.coalesce(
-            func.cast(
-                KpiSnapshotHourly.auto_mode_rate > 0,
-                Integer,
-            ),
-            0,
-        )
+    # 投自动回路占比：按**去重回路**口径
+    # 整改 G16：原实现为 SUM(auto_mode_rate > 0) / COUNT(*)，分母是
+    # **回路×小时行数**而非回路数，但 docstring 写的是"统计 auto_mode_rate > 0
+    # 的回路数占比"。同一回路在窗口内有多行时被重复计权，各回路成功小时数不等
+    # 时结果与"回路数占比"系统性偏离。改为 COUNT(DISTINCT loop_id) 使口径与文档
+    # 一致（workbench_precalc 的 loop_count 有同类问题，另行处理）。
+    auto_loop_count = func.count(
+        func.distinct(case((KpiSnapshotHourly.auto_mode_rate > 0, KpiSnapshotHourly.loop_id)))
     ).label("auto_loop_count")
-    total_count = func.count().label("cnt")
+    total_count = func.count(func.distinct(KpiSnapshotHourly.loop_id)).label("cnt")
 
     stmt = _apply_snapshot_filters(
         select(total_count, auto_loop_count, weight_sum_col, *weighted_cols),
