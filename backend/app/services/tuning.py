@@ -1339,6 +1339,30 @@ async def tune_pid(
 
     # 防御性地只使用门禁解析后的模型参数，忽略调用方重复传入的裸参数。
     model_params = source_context.model_params
+    # 同上：模型类型同样以门禁解析结果为准，避免调用方用 model_type 与
+    # source_context 不一致来绕过下面的模型适用性校验。
+    model_type = source_context.model_type
+
+    # S3 修复（G21）：整定公式仅定义于 FOPDT。
+    #
+    # 算法说明 §6.3~§6.7（IMC/Lambda/Z-N/Cohen-Coon/SIMC）全部以
+    # G(s) = K·exp(-θs)/(τs+1) 为前提，规格**未定义** SOPDT 整定公式；
+    # 而 SOPDT 的参数契约是 (K, T1, T2, theta)，本就没有 tau（见本文件
+    # _model_params_match 与步骤辨识校验的 required 表）。
+    # 原实现对 SOPDT 静默取 tau=0，实测 SOPDT{K=2,T1=100,T2=30,θ=10} 经 IMC 得
+    # kp=0.1667 / ti=5.0 / td=0.0；同一对象按 τ_eff=T1+T2/2=115 折算应得
+    # kp≈1.7 / ti≈137.5。ti 缩小约 27 倍意味着积分作用被放大 27 倍，
+    # 属可直接引发振荡的整定建议（平台红线：只输出可靠建议）。
+    # 上游规格给出折算口径前 fail-closed，不自造公式。
+    if str(model_type).upper() != "FOPDT":
+        raise BizError(
+            code="ERR_MODEL_TYPE_NOT_TUNABLE",
+            message=(
+                f"整定公式仅定义于 FOPDT 模型（算法说明 §6.3~§6.7），"
+                f"当前模型类型 {model_type} 无对应整定公式"
+            ),
+            status_code=400,
+        )
 
     K = float(model_params.get("K") or 0)
     tau = float(model_params.get("tau") or 0)
@@ -1348,6 +1372,13 @@ async def tune_pid(
         raise BizError(
             code="ERR_MODEL_PARAMS_MISSING",
             message="模型参数 K（过程增益）缺失或为零",
+            status_code=400,
+        )
+
+    if not (tau > 0 or math.isinf(tau)):
+        raise BizError(
+            code="ERR_MODEL_PARAMS_MISSING",
+            message="模型参数 tau（时间常数）缺失或非正",
             status_code=400,
         )
 

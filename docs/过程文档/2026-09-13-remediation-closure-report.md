@@ -424,3 +424,66 @@ b/a ≤ sqrt((1-|ρ|)/(1+|ρ|))，故 |ρ| ≥ 1/√2 时 St ≤ (√2−1)×100
 
 受保护清单解冻理由（逐文件）：app/services/metric_calculator/stiction.py——修复
 上述量纲契约缺陷；重新冻结后清单 diff **仅 stiction.py 1 条**。
+
+---
+
+## 18. G21：SOPDT 模型被 FOPDT 公式静默整定（**确认为真实缺陷并已修复**）
+
+**结论：G21 属实，且比原判更严重（不只是 Kp 差两个数量级，ti 被压缩约 27 倍）。**
+
+### 18.1 事实来源比对
+
+比对 docs/设计文档/03-ADS/关键算法设计说明.md §6：
+
+| 项 | 规格原文 | 结论 |
+|---|---|---|
+| SOPDT 模型 | §6.2：G(s) = K·e^(−θs)/(T1·T2·s² + (T1+T2)·s + 1) | 已定义 |
+| IMC | §6.3.1："基于 **FOPDT** 模型 G(s) = K·e^(−θs)/(τs+1)" | 仅 FOPDT |
+| Lambda / Z-N / Cohen-Coon / SIMC | §6.4~§6.7 同族公式 | 仅 FOPDT |
+| SOPDT 整定公式 | **规格未定义** | 缺口 |
+
+即：规格定义了三类模型**辨识**，但五类**整定公式**全部以 FOPDT 为前提。
+
+### 18.2 缺陷链（修复前实测）
+
+1. ModelParams.to_dict() 对 SOPDT 只发 {K, T1, T2, theta}——**不含 tau**；
+   这与 tuning.py 自身 _model_params_match / 步骤辨识校验里
+   "SOPDT": ("K", "T1", "T2", "theta") 的必填表完全一致（代码知道 SOPDT 无 τ）。
+2. tune_pid 以 model_params.get("tau") or 0 取时间常数 → 对 SOPDT 恒为 **0**。
+3. tune_pid **没有 SOPDT 分支**，五种算法一律按 FOPDT 公式代入 τ=0。
+
+实测（SOPDT{K=2, T1=100, T2=30, θ=10}，IMC）：
+
+| | kp | ti | td |
+|---|---|---|---|
+| 修复前实际输出（τ=0） | 0.1667 | **5.0** | 0.0 |
+| 按 τ_eff = T1+T2/2 = 115 折算应为 | ≈1.7 | ≈137.5 | ≈10.5 |
+
+**ti 缩小约 27 倍 = 积分作用放大 27 倍**，是可直接引发振荡的整定建议，
+违反平台"只输出建议、且建议必须可靠"的红线。
+
+可达性：pipeline.py:252 默认候选含 SOPDT，规格 §6.2 规定
+"FOPDT 拟合度 R² < 0.85 时自动升级为 SOPDT"——即**拟合差的回路最容易走到该分支**。
+
+### 18.3 修复口径：fail-closed，不自造折算公式
+
+规格既未定义 SOPDT 整定公式，正确处置是**拒绝**而非自造折算。
+（此处刻意不采用 Skogestad 半规则 τ=T1+T2/2：那是规格外新增算法行为，
+正是 §16 中 G18 的错法；若需支持，应先修订规格。）
+
+- tune_pid 增加模型适用性守卫：非 FOPDT → ERR_MODEL_TYPE_NOT_TUNABLE（400）；
+- 模型类型改取 source_context.model_type（与已声明的"只使用门禁解析后的模型参数"
+  同源），堵住"调用方传 model_type=FOPDT 让 SOPDT 参数走 FOPDT 公式"的绕过路径；
+- 补 tau > 0 兜底校验（覆盖其余参数异常入口）。
+
+该文件**不在受保护清单内**，本次无需解冻授权。
+
+### 18.4 证据链
+
+| 环节 | 证据 |
+|---|---|
+| 修复前失败 | test_tuning_model_contract_g21.py：**7 failed / 3 passed**（五种算法的 SOPDT 用例、绕过用例、tau 兜底用例全红） |
+| 修复 | app/services/tuning.py 模型适用性守卫 + 模型类型同源 + tau 校验 |
+| 行为测试 | 修复后 **10 passed**；五种算法参数化覆盖；含合法 FOPDT 的 IMC 手算锚点（kp=3.5 / ti=105 / td=4.7619，4 位小数出口口径）防回归 |
+| 集成证据 | 整定相关全域回归 **532 passed / 26 skipped / 0 failed**——fail-closed 未破坏任何现存行为 |
+| 残余风险 | ① SOPDT 回路由"静默给出错误建议"变为"明确 400"，是安全方向的改变，但**前端错误码映射与提示文案尚未补齐**（ERR_MODEL_TYPE_NOT_TUNABLE 为新码）；② G21 原判的后半句"applicableModel 无校验"仍需在 API/前端层单独收口；③ 根治需规格决策：或补 SOPDT 整定公式，或正式采纳某折算规则 |
