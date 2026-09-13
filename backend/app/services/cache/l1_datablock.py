@@ -141,7 +141,14 @@ class L1DataBlockCache:
 
         设计依据：ADS §10.7.2
         """
-        raw: str | None = await self._redis.get(data_block_id)
+        # 整改 G17：Redis 读失败必须降级为"未命中"，不得让缓存反向拉低可用性
+        # ——本层只是加速，真实数据源是本地 TDengine，缓存抖动不应使 KPI 计算失败。
+        # 同仓合理口径对照：realtime_subscriber 的 best-effort + 日志。
+        try:
+            raw: str | None = await self._redis.get(data_block_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("L1 cache 读取失败，降级为未命中: key=%s", data_block_id, exc_info=True)
+            return None
         if raw is None:
             logger.debug("L1 cache MISS: key=%s", data_block_id)
             return None
@@ -181,7 +188,12 @@ class L1DataBlockCache:
         if ttl is None:
             ttl = self.get_ttl(data_block.tag_group)
         payload = await asyncio.to_thread(_serialize, data_block)
-        await self._redis.setex(cache_key, ttl, payload)
+        # 整改 G17：写失败同样只降级不抛出——本次计算照常返回，仅失去加速效果。
+        try:
+            await self._redis.setex(cache_key, ttl, payload)
+        except Exception:  # noqa: BLE001
+            logger.warning("L1 cache 写入失败，忽略本次缓存: key=%s", cache_key, exc_info=True)
+            return
         ratio = _compression_ratio(data_block, payload)
         logger.debug(
             "L1 cache SET: key=%s, ttl=%ds, compressed_bytes=%d, ratio=%.1f%%",

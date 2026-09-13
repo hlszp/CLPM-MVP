@@ -130,7 +130,12 @@ class L2BundleCache:
 
         设计依据：ADS §10.7.2
         """
-        raw: str | None = await self._redis.get(cache_key)
+        # 整改 G17：Redis 读失败降级为未命中（本层只是加速，真实源是本地 TDengine）
+        try:
+            raw: str | None = await self._redis.get(cache_key)
+        except Exception:  # noqa: BLE001
+            logger.warning("L2 cache 读取失败，降级为未命中: key=%s", cache_key, exc_info=True)
+            return None
         if raw is None:
             logger.debug("L2 cache MISS: key=%s", cache_key)
             return None
@@ -167,7 +172,12 @@ class L2BundleCache:
             ttl = DEFAULT_TTL
         # 序列化（JSON + zstd 压缩）移至线程池，避免 CPU 密集型操作阻塞事件循环
         payload = await asyncio.to_thread(_serialize, bundles)
-        await self._redis.setex(cache_key, ttl, payload)
+        # 整改 G17：写失败只降级不抛出，本次计算照常返回
+        try:
+            await self._redis.setex(cache_key, ttl, payload)
+        except Exception:  # noqa: BLE001
+            logger.warning("L2 cache 写入失败，忽略本次缓存: key=%s", cache_key, exc_info=True)
+            return
         logger.debug(
             "L2 cache SET: key=%s, ttl=%ds, bundles=%d, payload_bytes=%d",
             cache_key,
