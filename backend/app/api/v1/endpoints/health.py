@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.api.deps import require_roles
 from app.core.config import settings
 from app.core.db import engine
 from app.core.metrics import pg_active_connections
@@ -77,7 +78,9 @@ async def health_ready() -> JSONResponse:
 
 
 @router.get("/health/db-connections")
-async def health_db_connections() -> JSONResponse:
+async def health_db_connections(
+    _: object = Depends(require_roles("ADMIN")),
+) -> JSONResponse:
     """PG 连接池监控（P2-018）— 查询 pg_stat_activity 按 application_name 分组。
 
     返回当前数据库的活跃连接数、PG max_connections 配置、按 app 分组的连接明细，
@@ -134,5 +137,7 @@ async def health_db_connections() -> JSONResponse:
         logger.warning("连接池监控查询失败: %s", exc)
         return JSONResponse(
             status_code=503,
-            content={"error": f"{exc.__class__.__name__}: {exc}"},
+            # 整改 G38：不回显异常原文（asyncpg 报错常含主机名/库名），
+            # 细节只进日志。该端点已加 ADMIN 鉴权，此处为纵深防御。
+            content={"error": "database connection probe failed"},
         )
