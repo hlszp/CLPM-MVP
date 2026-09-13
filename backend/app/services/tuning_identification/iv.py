@@ -36,6 +36,15 @@ class IVResult:
     n_samples: int
     r_squared: float
     iterations: int
+    # S3 修复（G27#3）：把"求解是否在病态/退化路径上"变成**可观测信息**。
+    #
+    # 原实现对 Z^T·Phi 只做 try/except LinAlgError —— 而 np.linalg.solve 仅在矩阵
+    # **精确奇异**时抛错；**病态但非奇异**（真实场景：激励不足、工具变量与回归元
+    # 近共线）时 solve 会"成功"返回数值上无意义的 θ，连告警都没有。
+    # 且即便走了 lstsq 回退，调用方也无从得知（结果对象无相应字段）。
+    # 现记录条件数与实际求解路径，交由下游/证据链判断，不在此自造阈值。
+    condition_number: float = float("inf")
+    solve_mode: str = "solve"
 
 
 def identify_clivc(
@@ -95,11 +104,14 @@ def identify_clivc(
     # IV 解：θ = (Z^T Φ)^-1 Z^T y
     ZtPhi = Z.T @ Phi
     Zty = Z.T @ y_reg
+    cond_zp = float(np.linalg.cond(ZtPhi))
     try:
         theta = np.linalg.solve(ZtPhi, Zty)
+        solve_mode = "solve"
     except np.linalg.LinAlgError:
-        logger.warning("CLIVC 矩阵奇异，回退 lstsq")
+        logger.warning("CLIVC 矩阵奇异（cond=%.3e），回退 lstsq", cond_zp)
         theta, _, _, _ = np.linalg.lstsq(ZtPhi, Zty, rcond=None)
+        solve_mode = "lstsq_fallback"
 
     y_pred = Phi @ theta
     residuals = y_reg - y_pred
@@ -116,6 +128,8 @@ def identify_clivc(
         n_samples=rows,
         r_squared=r2,
         iterations=1,
+        condition_number=cond_zp,
+        solve_mode=solve_mode,
     )
 
 
@@ -295,11 +309,14 @@ def identify_iv(
     # IV 解：theta = (Z^T Phi)^-1 Z^T y
     ZtPhi = Z.T @ Phi
     Zty = Z.T @ y_reg
+    cond_zp = float(np.linalg.cond(ZtPhi))
     try:
         theta = np.linalg.solve(ZtPhi, Zty)
+        solve_mode = "solve"
     except np.linalg.LinAlgError:
-        logger.warning("IV 矩阵奇异，回退 lstsq")
+        logger.warning("IV 矩阵奇异（cond=%.3e），回退 lstsq", cond_zp)
         theta, _, _, _ = np.linalg.lstsq(ZtPhi, Zty, rcond=None)
+        solve_mode = "lstsq_fallback"
 
     y_pred = Phi @ theta
     residuals = y_reg - y_pred
@@ -316,6 +333,8 @@ def identify_iv(
         n_samples=rows,
         r_squared=r2,
         iterations=1,
+        condition_number=cond_zp,
+        solve_mode=solve_mode,
     )
 
 
