@@ -2,7 +2,7 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）— **MVP 精简 + 闭环重建版**（自 CLPM v6.2 派生，设计事实来源见 `docs/MVP设计/`）。
 
-产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。后端运行时版本由 `APP_VERSION` 管理（当前 `7.0.0`，与锁定 tag 对齐），发布版本由 Git tag 管理（当前 `v7.0.0`，2026-08-28 锁定），变更记录见 `CHANGELOG.md`。
+产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。后端运行时版本由 `APP_VERSION` 管理（当前 `7.1.0`，与锁定 tag 对齐），发布版本由 Git tag 管理（当前 `v7.1.0`，2026-09-13 锁定），变更记录见 `CHANGELOG.md`。
 
 ## 项目简介
 
@@ -319,7 +319,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
 | 原型设计基线 | `DESIGN.md`（v3.1；设计基线，IA 与菜单口径以 `docs/MVP设计/00-信息架构.md` 为准） |
 | 工作台 v2.0 方案/实施计划 | `docs/设计文档/CLPM工作台改进方案-v2.0.md` + `docs/过程文档/工作台v2实施计划-2026-08-25.md` |
-| 版本锁定基线 | `CHANGELOG.md`（v7.0.0 能力清单/已知残留/冗余登记/技术基线） |
+| 版本锁定基线 | `CHANGELOG.md`（v7.1.0 能力清单/已知残留/冗余登记/技术基线） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 
 ## 推荐阅读顺序
