@@ -911,12 +911,11 @@ class TestHourlyWindowMutex:
             patch("app.core.redis.redis_client", task_redis),
             patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
         ):
-            result = await _do_hourly_with_tracking(
-                ts_start="2026-06-22T08:00:00Z", task_id="task-B"
-            )
+            # 整改 G30：锁冲突现抛错而非返回成功形状——返回 dict 会被 Celery
+            # 记 SUCCESS，与下面已写入的 TaskRecord FAILED 自相矛盾。
+            with pytest.raises(RuntimeError, match="同一时间窗已有评估任务在执行"):
+                await _do_hourly_with_tracking(ts_start="2026-06-22T08:00:00Z", task_id="task-B")
 
-        assert result["skipped"] is True
-        assert result["reason"] == "window_locked"
         mock_calc.assert_not_called()
         data = task_redis._hashes["task:task-B"]
         assert data["status"] == "FAILED"

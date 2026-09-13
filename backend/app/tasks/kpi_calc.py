@@ -183,7 +183,12 @@ def _parse_ts_start(ts_start: str | None) -> datetime | None:
 
 # 小时窗计算互斥锁（手动触发与整点 Beat 对同一窗口互斥，SETNX + TTL）
 _HOURLY_CALC_LOCK_PREFIX = "task:hourly_calc_lock"
-_HOURLY_CALC_LOCK_TTL_SECONDS = 7200  # 与评估任务 RUNNING 超时清扫阈值对齐，兜底防死锁
+# 整改 G30：TTL 必须**小于** Celery 硬超时（celery_app.task_time_limit=1800），
+# 否则任务被硬超时 SIGKILL（进程级、不 ack）后 broker 重投副本到达时锁仍存活
+# （原值 7200 可残留约 5400s），副本静默走 skipped 分支并被 Celery 记 SUCCESS，
+# 而那一小时的 KPI 快照**永久缺失且无人知晓**。
+# 取 1740 = 1800 - 60s 缓冲；超时被杀后重投副本可正常取锁重跑。
+_HOURLY_CALC_LOCK_TTL_SECONDS = 1740
 
 
 def _hourly_window_lock_key(ts_start: str | None) -> str:
@@ -233,7 +238,14 @@ async def _do_hourly_with_tracking(
                 error_message="同一时间窗已有评估任务在执行，本次触发已跳过",
                 finished_at=datetime.now(UTC).isoformat(),
             )
-        return {"skipped": True, "reason": "window_locked", "lock": lock_key}
+        # 整改 G30：必须**抛错**而不是正常返回。
+        # 返回 dict 会让 Celery 把这次触发记成 SUCCESS——与已写入的 TaskRecord
+        # FAILED 自相矛盾，监控侧也看不到"有一小时没算"。
+        # Beat 自动触发路径更严重：它连 TaskRecord 都不创建，返回 dict 等于
+        # 静默丢失一小时快照。抛错后任务进入 FAILED 终态并触发 autoretry。
+        raise RuntimeError(
+            f"同一时间窗已有评估任务在执行，本次触发未执行: lock={lock_key}, task_id={task_id}"
+        )
 
     try:
         if task_id is None:
