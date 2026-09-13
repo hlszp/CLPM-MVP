@@ -11,7 +11,7 @@
  */
 import type { WorkbenchApi } from '#/api/workbench';
 
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, reactive } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -34,6 +34,24 @@ onMounted(async () => {
   await Promise.all([store.loadPlugins(), store.loadScopeTree()]);
   store.markRefreshed();
 });
+
+/**
+ * 已激活过的 Tab（懒挂载，整改 G41）。
+ *
+ * 5 个 Tab 此前全部 v-show 常驻挂载，各自的 onMounted 立即加载数据 → 首屏
+ * **12 个并发请求**（仅 handling 一个 Tab 就发 7 个，含 5 次整表拉取）。而为此
+ * 设计的批量端点 A-11 GET /workbench/aggregate 尚未实现（返回空壳 results:{}），
+ * 前端封装 getWorkbenchAggregateApi 亦无调用方——即首屏优化方案未落地。
+ *
+ * 改为首次激活才挂载，之后 v-show 保活，保持"切 Tab 不重载"的既有语义。
+ */
+const visited = reactive<Record<string, boolean>>({ [store.activeTab]: true });
+
+/** 切换 Tab：先标记已访问（触发挂载），再切换激活态。 */
+function selectTab(key: string) {
+  visited[key] = true;
+  store.setActiveTab(key);
+}
 
 /** 5 Tab 定义（moduleKey 映射 A-10 plugins 的 module_key，渲染 4 态 dot） */
 const TABS: { key: string; moduleKey: string; name: string }[] = [
@@ -75,7 +93,7 @@ const currentPlugin = computed<undefined | WorkbenchApi.Plugin>(() => {
                 ? 'border-[#1F4E79] font-medium text-[#1F4E79]'
                 : 'border-transparent text-gray-600 hover:text-[#1F4E79]'
             "
-            @click="store.setActiveTab(tab.key)"
+            @click="selectTab(tab.key)"
           >
             <ModuleStatusDot
               :size="6"
@@ -87,13 +105,13 @@ const currentPlugin = computed<undefined | WorkbenchApi.Plugin>(() => {
         <HeaderBar />
       </nav>
 
-      <!-- 内容区 flex-1：v-show 切换 5 Tab 内容组件（保活，切 Tab 不重载，scope 变 watch 联动刷新） -->
+      <!-- 内容区：首次激活才挂载（G41 懒挂载），之后 v-show 保活；scope 变由各 Tab 的 watch 联动刷新 -->
       <div class="relative flex-1 min-h-0 overflow-hidden bg-[#F5F7FA]">
-        <Overview v-show="store.activeTab === 'overview'" />
-        <Assessment v-show="store.activeTab === 'assessment'" />
-        <Diagnosis v-show="store.activeTab === 'diagnosis'" />
-        <Tuning v-show="store.activeTab === 'tuning'" />
-        <Handling v-show="store.activeTab === 'handling'" />
+        <Overview v-if="visited.overview" v-show="store.activeTab === 'overview'" />
+        <Assessment v-if="visited.assessment" v-show="store.activeTab === 'assessment'" />
+        <Diagnosis v-if="visited.diagnosis" v-show="store.activeTab === 'diagnosis'" />
+        <Tuning v-if="visited.tuning" v-show="store.activeTab === 'tuning'" />
+        <Handling v-if="visited.handling" v-show="store.activeTab === 'handling'" />
         <!-- 维护面纱覆盖当前 Tab（MAINTENANCE 模块时显示） -->
         <ModuleVeil v-if="currentPlugin" :plugin="currentPlugin" />
       </div>
