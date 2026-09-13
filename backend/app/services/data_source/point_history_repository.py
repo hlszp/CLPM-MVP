@@ -51,6 +51,10 @@ SOURCE_KIND_REMOTE_GRID = 4
 
 #: 单条 SELECT 最大行数（有界 SQL；超出由调用方按时间游标分页）
 READ_CHUNK_ROWS = 50_000
+
+#: 单分片最大翻页数（整改 G12 防死循环兜底）：
+#: 7 天分片 × 200 页 × 5 万行 = 1000 万行/分片，远超单点 7 天 1Hz 的 60 万行上限
+_READ_MAX_PAGES_PER_CHUNK = 200
 #: 单批 INSERT 最大行数（与 settings.TDENGINE_BATCH_SIZE 解耦的仓储内部上限）
 WRITE_CHUNK_ROWS = 500
 
@@ -237,20 +241,48 @@ async def read_events(
     end_op = "<=" if include_end else "<"
     columns = _EVENT_COLUMNS_FULL if full_columns else _EVENT_COLUMNS_MIN
     results: dict[str, list[dict[str, Any]]] = {pid: [] for pid in point_ids}
-    for chunk_start, chunk_end, _ in _time_chunks(start, end):
-        tags = ", ".join(f"'{_sql_quote(pid)}'" for pid in point_ids)
-        sql = (
-            f"SELECT {columns} FROM {settings.TDENGINE_DB}.{POINT_STABLE} "
-            f"WHERE point_id IN ({tags}) "
-            f"AND ts >= '{format_ts_utc(chunk_start)}' "
-            f"AND ts {end_op} '{format_ts_utc(chunk_end)}' "
-            f"ORDER BY ts ASC LIMIT {READ_CHUNK_ROWS}"
-        )
-        rows = await execute_native(sql)
-        for row in rows:
-            pid = row.get("point_id")
-            if pid in results:
-                results[pid].append(_row_to_event(row))
+    tags = ", ".join(f"'{_sql_quote(pid)}'" for pid in point_ids)
+    for chunk_start, chunk_end, chunk_inclusive in _time_chunks(start, end):
+        # 整改 G12：片内按 ts 游标翻页。
+        # 此前每片只发一条带 LIMIT READ_CHUNK_ROWS 的 SQL，返回行数等于上限时
+        # 尾部被**静默丢弃**（ORDER BY ts ASC 丢的正是后半段），KPI 会基于只有
+        # 前半段的"看似合理"数据得出结论——最伤可信度的一类缺陷。
+        # 现改为：满批则以最后一条 ts 为游标推进，直到某批不足上限。
+        chunk_op = end_op if chunk_inclusive else "<"
+        cursor = chunk_start
+        cursor_inclusive = True
+        for _page in range(_READ_MAX_PAGES_PER_CHUNK):
+            lower_op = ">=" if cursor_inclusive else ">"
+            sql = (
+                f"SELECT {columns} FROM {settings.TDENGINE_DB}.{POINT_STABLE} "
+                f"WHERE point_id IN ({tags}) "
+                f"AND ts {lower_op} '{format_ts_utc(cursor)}' "
+                f"AND ts {chunk_op} '{format_ts_utc(chunk_end)}' "
+                f"ORDER BY ts ASC LIMIT {READ_CHUNK_ROWS}"
+            )
+            rows = await execute_native(sql)
+            for row in rows:
+                pid = row.get("point_id")
+                if pid in results:
+                    results[pid].append(_row_to_event(row))
+            if len(rows) < READ_CHUNK_ROWS:
+                break
+            last_ts = rows[-1].get("ts")
+            if last_ts is None or last_ts == cursor:
+                # 游标无法推进（ts 解析失败或全为同一时刻）→ 继续翻页会死循环。
+                # 宁可显式失败也不静默返回不完整结果。
+                raise RuntimeError(
+                    "read_events 分页游标无法推进："
+                    f"chunk=[{chunk_start}, {chunk_end}] last_ts={last_ts!r}"
+                )
+            cursor = last_ts
+            cursor_inclusive = False
+        else:
+            raise RuntimeError(
+                "read_events 单分片翻页超过上限 "
+                f"({_READ_MAX_PAGES_PER_CHUNK} 页 × {READ_CHUNK_ROWS} 行)："
+                f"chunk=[{chunk_start}, {chunk_end}]，窗口过大，请缩小查询范围"
+            )
     return results
 
 
