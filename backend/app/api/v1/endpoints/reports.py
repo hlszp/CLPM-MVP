@@ -25,7 +25,7 @@ import io
 import uuid
 from datetime import datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import Field
 from sqlalchemy import func, select
@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS, _run_to_summary
 from app.core.db import get_db
+from app.core.exceptions import BizError
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
@@ -559,7 +560,11 @@ async def put_stage_lock_endpoint(
 ) -> dict:
     """设置/解除阶段锁定（仅 ADMIN）。传 stage=null 解除锁定。"""
     if body.stage is not None and body.stage not in ("S1", "S2", "S3"):
-        raise HTTPException(status_code=400, detail="非法阶段，允许：S1/S2/S3/None")
+        raise BizError(
+            code="ERR_REPORT_STAGE_INVALID",
+            message="非法阶段，允许：S1/S2/S3/None",
+            status_code=400,
+        )
     lock_info = await set_stage_lock(db, stage=body.stage, operator=user.username)
     maturity = await determine_maturity_stage(db, plant_node_id=plantNodeId)
     data = ReportStageLockState(
@@ -708,7 +713,9 @@ async def get_export_task_status_endpoint(
     with _pdf_tasks_lock:
         t = _pdf_tasks.get(task_id)
     if not t:
-        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+        raise BizError(
+            code="ERR_REPORT_TASK_NOT_FOUND", message="任务不存在或已过期", status_code=404
+        )
     resp = ReportPdfExportTask(
         taskId=task_id,
         status=t.get("status", "PROCESSING"),
@@ -732,16 +739,18 @@ async def download_export_pdf(
     with _pdf_tasks_lock:
         t = _pdf_tasks.get(task_id)
     if not t:
-        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+        raise BizError(
+            code="ERR_REPORT_TASK_NOT_FOUND", message="任务不存在或已过期", status_code=404
+        )
     if t.get("status") != "COMPLETED":
-        raise HTTPException(status_code=400, detail="PDF 尚未生成完成")
+        raise BizError(code="ERR_REPORT_PDF_NOT_READY", message="PDF 尚未生成完成", status_code=400)
     # 优先读内存缓存
     file_bytes = t.get("_bytes")
     fname = t.get("fileName") or f"overview-{task_id}.pdf"
     if file_bytes is None:
         fpath = PDF_EXPORT_DIR / fname
         if not fpath.exists():
-            raise HTTPException(status_code=404, detail="PDF 文件不存在")
+            raise BizError(code="ERR_REPORT_PDF_MISSING", message="PDF 文件不存在", status_code=404)
         file_bytes = fpath.read_bytes()
     headers = {"Content-Disposition": f'attachment; filename="{fname}"'}
     return _Response(

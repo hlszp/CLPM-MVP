@@ -164,6 +164,28 @@ def register_exception_handlers(app: FastAPI) -> None:
         _add_cors_headers(response, request)
         return response
 
+    # 整改 G33：告警 DSL 校验失败属**用户输入错误**，其 ValidationError 是
+    # 普通 Exception 子类，此前未被捕获 → 落到兜底 500 ERR_INTERNAL。
+    # 在全局注册而非逐个调用点 try/except：新增调用点自动覆盖，不会遗漏。
+    # 惰性导入 + 容错：注册不应因可选模块缺失而中断应用启动。
+    try:
+        from app.services.alert_rule_engine.dsl import ValidationError as AlertDslError
+
+        @app.exception_handler(AlertDslError)
+        async def _handle_alert_dsl_error(request: Request, exc: Exception) -> JSONResponse:
+            logger.warning("告警 DSL 校验失败: %s %s", request.method, request.url.path)
+            response = JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=jsonable_encoder(
+                    _error_body("ERR_ALERT_DSL_INVALID", str(exc), None)
+                ),
+            )
+            _add_cors_headers(response, request)
+            return response
+    except ImportError:  # pragma: no cover - 可选模块缺失时保持既有行为
+        logger.debug("告警 DSL 模块不可用，跳过其校验异常处理器注册")
+
+
     @app.exception_handler(StarletteHTTPException)
     async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = f"ERR_HTTP_{exc.status_code}"
