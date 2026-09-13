@@ -176,15 +176,12 @@ def register_exception_handlers(app: FastAPI) -> None:
             logger.warning("告警 DSL 校验失败: %s %s", request.method, request.url.path)
             response = JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                content=jsonable_encoder(
-                    _error_body("ERR_ALERT_DSL_INVALID", str(exc), None)
-                ),
+                content=jsonable_encoder(_error_body("ERR_ALERT_DSL_INVALID", str(exc), None)),
             )
             _add_cors_headers(response, request)
             return response
     except ImportError:  # pragma: no cover - 可选模块缺失时保持既有行为
         logger.debug("告警 DSL 模块不可用，跳过其校验异常处理器注册")
-
 
     @app.exception_handler(StarletteHTTPException)
     async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
