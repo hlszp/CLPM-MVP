@@ -108,6 +108,15 @@ async def save_outlier_params(
 
     try:
         await db.commit()
+
+        # 整改 G17：本组参数运行时可调（sys_config 覆盖 + 进程内缓存），但缓存键
+        # 的 pre_version 恒为常量 PREPROCESS_VERSION —— 改参数后旧口径结果仍会被
+        # 复用最长 1h，同一批 KPI 中新旧口径混合且不可复现。
+        # 参数变更即失效全部计算缓存（L1/L2/L3），与点表元数据变更同款处置。
+        from app.core.redis import redis_client
+        from app.services.cache.invalidation import CacheInvalidator
+
+        await CacheInvalidator(redis_client).invalidate_all()
     except Exception:
         await db.rollback()
         logger.exception("更新异常值检测参数配置事务提交失败")
