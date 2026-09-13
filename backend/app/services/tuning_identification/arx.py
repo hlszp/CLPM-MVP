@@ -31,11 +31,28 @@ class ARXResult:
 
     @property
     def is_stable(self) -> bool:
-        """稳定性：一阶时 a1 < 0 即稳定."""
-        if len(self.a_coeffs) == 1:
-            return self.a_coeffs[0] < 0
-        # 高阶：检查极点是否在单位圆内（简化判定）
-        return all(abs(a) < 1.0 for a in self.a_coeffs)
+        """稳定性：全部极点严格位于单位圆内（等价 Jury 判据，任意阶次成立）。
+
+        A(z) = 1 + a1·z⁻¹ + ... + an·z⁻ⁿ 的极点是
+        zⁿ + a1·zⁿ⁻¹ + ... + an = 0 的根；稳定 ⟺ 全部 |z| < 1。
+
+        S3 修复（G25）：原实现一阶判 a1 < 0、高阶判 all(|a_i| < 1)，两者皆错
+        （实测 4 例错 3 例）：
+          - 一阶 a1=+0.5 → 极点 −0.5（稳定），原判 False；
+          - 一阶 a1=−2.0 → 极点 2.0（不稳定），原判 True；
+          - 二阶 a1=−0.5, a2=−0.9 → 极点 1.2311（不稳定），原判 True。
+        根因：|a_i| < 1 只是稳定的**必要非充分**条件（2 阶 Jury 判据为
+        |a2| < 1 且 a1 < 1+a2 且 −a1 < 1+a2），且一阶把极点 z=−a1 误判为 a1 本身。
+        """
+        if not self.a_coeffs:
+            return True  # A(z)=1：无极点
+        try:
+            roots = np.roots([1.0, *self.a_coeffs])
+        except (np.linalg.LinAlgError, ValueError):
+            # 无法判定时保守判不稳定：宁可拒绝整定，不给出基于不稳定模型的建议
+            logger.warning("[ARX] 极点求解失败，保守判为不稳定: a=%s", self.a_coeffs)
+            return False
+        return bool(np.all(np.abs(roots) < 1.0))
 
 
 def identify_arx(
