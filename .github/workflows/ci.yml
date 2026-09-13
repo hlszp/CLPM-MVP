@@ -155,5 +155,15 @@ jobs:
           uv run alembic check
 
       # S3-C7: Pytest with coverage（首次集成使用 60% 门槛）
+      # S1-a 续：pytest 步骤也带上 POSTGRES_*，让真实库断言真正执行而非 skip。
+      # 否则 S1-a 引入的 postgres service 只服务 alembic 两步，测试侧仍看不到库。
+      # 实测（本地带该 env 跑全量）：4848 passed 无回归，G15 的 DISTINCT ON 去重
+      # 断言由 skip 转为实跑。
       - name: Pytest with coverage
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: clpm
+          POSTGRES_PASSWORD: clpm_ci_only_2026
+          POSTGRES_DB: clpm
         run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=60
