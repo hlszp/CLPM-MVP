@@ -39,6 +39,7 @@ from app.services.preprocessing.quality_code import map_quality_code
 from app.services.preprocessing.quality_summary import (
     compute_consecutive_segments,
     compute_quality_summary,
+    compute_time_coverage,
 )
 from app.services.preprocessing.thresholds import get_threshold
 
@@ -157,7 +158,12 @@ class DataQualityAssessor:
         )
 
         # 回路级 valid_rate（核心 tag 交集，可信度判定唯一输入）
-        loop_valid_rate = self.compute_loop_valid_rate(validity, n)
+        raw_loop_valid_rate = self.compute_loop_valid_rate(validity, n)
+        time_coverage = compute_time_coverage(
+            raw.timestamps,
+            expected_interval_s=float(self.threshold.base_sampling_freq),
+        )
+        loop_valid_rate = raw_loop_valid_rate * time_coverage
 
         logger.debug(
             "DataQualityAssessor.assess: loop=%s, points=%d, "
