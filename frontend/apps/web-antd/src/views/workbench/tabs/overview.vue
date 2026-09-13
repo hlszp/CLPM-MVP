@@ -117,7 +117,8 @@ onMounted(() => {
 watch(
   () => store.scopeParams,
   () => loadOverview(),
-  { deep: true },
+  // G41：scopeParams 是 computed 返回的新对象，身份变化即可触发；
+  // deep 遍历整个对象是多余开销（快照含多窗口多指标）。
 );
 
 /** F-OV-05 漏斗联动：点泳道条 → 切处置 Tab + 高亮对应泳道 */

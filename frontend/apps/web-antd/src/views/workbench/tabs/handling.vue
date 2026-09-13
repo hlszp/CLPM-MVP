@@ -290,7 +290,8 @@ onMounted(() => {
 watch(
   () => store.scopeParams,
   () => loadHandling(),
-  { deep: true },
+  // G41：scopeParams 是 computed 返回的新对象，身份变化即可触发；
+  // deep 遍历整个对象是多余开销（快照含多窗口多指标）。
 );
 
 // 行动区 ? 帮助
