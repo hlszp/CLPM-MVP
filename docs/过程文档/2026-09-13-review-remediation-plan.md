@@ -61,7 +61,7 @@
 - G17 L1/L2/L3 缓存读/写失败无降级；缓存键缺运行时算法参数版本 → 改阈值后最长 1h 脏命中 `l1_datablock.py:144/184/264`、`pipeline.py:57`
 
 **算法正确性**
-- G18 `accuracy_rate` 的 `e_max = max|E| − mean|E|` 使 `r` 成峰均比；恒定余差走 `0.05U` 分支、正常分支走数据驱动 `e_max`，两套量纲并存 `【验证·数值复现】`：`accuracy.py:70/112/133/141`
+- ~~G18 `accuracy_rate` 的 `e_max = max|E| − mean|E|` 使 `r` 成峰均比；恒定余差走 `0.05U` 分支、正常分支走数据驱动 `e_max`，两套量纲并存~~ **2026-09-13 复核撤销（误诊）** `【验证·国标比对】`：`|E|_max = (1/n)Σ[max(|E_i|) − |E_i|]` 即 GB/T 44693.2-2024 附录 B.3 的**主口径**（v2.1 明确「数据驱动，非外部输入」），`0.05U` 只是 `|E|_max = 0` 时不可归一化的**退化分支补丁**——两者并非「两套量纲并存」，而是标准自身的主/退化层级。据本条实施整改会倒置该层级并破坏 `tests/compliance/test_b3_accuracy_rate.py` 国标一致性（实测 7 条转红，已回退）。详见整改收口报告 §16
 - G19 stiction 双门控方向相反（`R²` 为线性相关平方、`b/a` 为 PCA 轴比，可检出带仅 `|ρ|∈[0.707,0.835)`，正圆即最严重粘滞恒不检出）`【验证·数学】`：`metric_calculator/stiction.py:292-338/48`、`diagnosis_operators/stiction.py:101`
 - G20 数值出口无 `isfinite` 守卫：`_clamp(nan)` 静默返回上界（accuracy/stability 变满分），三处裸 `except` 吞异常且不写 `metric_results` `【验证·实测】`：`base.py:336-339/195-201`、`kpi_calc.py:1776/1784/1821/1878`
 - G21 SOPDT 模型契约断裂：`to_dict()` 不发 `tau`，`tune_pid` 读 `tau or 0`，整定公式 `tau=1.0` 兜底 → 推荐 Kp 差 2 个数量级；`applicableModel` 无校验 `【验证】`：`types.py:84-90`、`tuning.py:1343-1345`、`tuning_algorithms.py:533/557`
@@ -218,7 +218,7 @@
 | **G48 数值金标准** | **S1-c** | **已落地（骨架）** | 见 S1-c 提交 | `test_golden_semantics.py`：5 项硬断言通过 + 2 项 strict xfail 实证缺陷 | 目前覆盖 accuracy/stability/oscillation/good_value/\_clamp 五项；stiction 闭合回环、SOPDT τ、fast_rate 阈值跳变待 S3 补 |
 | **G40 工作台造数** | **S6** | **已落地（主项 + 1 续项）** | 见 S6 提交 | 源码级守护用例 workbench-no-fabricated-data（扫描 views/workbench 全部 .vue 的已知造数表达式，含注释）；渲染级守护待补 | **仍有两处未清**：TuningFitnessCard 的 demo 占比兜底（已标「示例」）、DataFlowDiagram 的静态值与「—」占位；且守护为源码级，不能证明渲染结果正确 |
 | **G41 首屏请求风暴** | **S6** | **已落地（主项）** | 见 S6 提交 | Tab 改懒挂载（v-if 首次激活 + v-show 保活），首屏 12 并发降至 2~3 | **无自动化测试**（请求次数需挂载组件 + mock 请求方可断言）；5 处多余 deep: true 未改；A-11 /workbench/aggregate 空壳端点仍在（前端封装无调用方） |
-| G18~G27 | S3 | 未开始 | — | — | — |
+| G18~G27 | S3 | 进行中（首轮） | `7e15174d` | G20 已修复（NaN 出口守卫）；G18 **撤销（误诊）** | 余 G19/G21/G22/G23/G24~G27 待做；G18 的「尖峰抬高 A」已作为国标一致性刻画用例固化，避免再被误判 |
 | G28~G32 | S4 | 未开始 | — | — | — |
 | G33~G38 | S5 | 未开始 | — | — | — |
 | G39~G50 | S1/S6 | 未开始 | — | — | — |
