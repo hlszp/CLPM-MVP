@@ -257,9 +257,21 @@ def classify(
             }
         )
 
-    # 级 2：粘滞族融合置信 ≥0.7 或 ≥2 算子命中 → VALVE
+    # 级 2：粘滞族融合置信 ≥0.7 且 ≥2 算子命中 → VALVE
+    #
+    # S3 修复（G22 相邻）：原实现为 confidence >= 0.7 OR len(contributors) >= 2，
+    # 与设计文档 §7.2 级 2「粘滞族融合置信 ≥0.7（≥2 算子命中）」不符——
+    # 文档把"≥2 算子命中"写成**必要条件**（§7.1 理由：D-S 的价值在于多算子
+    # 交叉验证"是否粘滞"）；本文件 _confidence_basis 亦自述
+    # "VALVE 粘滞方向：族内 ≥2 算子命中经 D-S 交叉验证融合"。
+    # OR 的两个后果（实测）：
+    #   ① 单个算子命中（如 conf=0.8）即判 VALVE —— 无任何交叉验证；
+    #   ② 两个低置信命中（0.3+0.3 → 融合 0.1552）亦判 VALVE ——
+    #      15.5% 置信的"阀门问题"结论，且架空了级 7"各算子置信均 <0.5
+    #      → DATA_INSUFFICIENT"的兜底，可能把检修引向阀门。
+    # 改为 AND 后，仅"多算子交叉验证且融合置信达阈"才判级 2。
     if stiction is not None and stiction.detected:
-        if stiction.confidence >= 0.7 or len(stiction.contributors) >= 2:
+        if stiction.confidence >= 0.7 and len(stiction.contributors) >= 2:
             candidates.append(
                 {
                     "category": VALVE,
