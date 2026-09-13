@@ -710,3 +710,53 @@ kpi_snapshot_hourly.confidence_level = 'E'      ← 含覆盖，来自 Pipeline
 
 **4 项已修属实 + 1 项确认待裁决 + 3 项误诊**（两项误诊连带产出真实修复）。
 误诊模式仍为"把规格/标准自身规定的行为读成实现缺陷"。
+
+---
+
+## 22. G26：门禁三条件为规格一致（误诊），但"数据不足被渲染成未检出"属实并已修复
+
+### 22.1 三个子claim逐项判定
+
+| # | 原判 | 比对结果 |
+|---|---|---|
+| 1 | 门禁"只拒 E 级" | **不成立**：设计文档 §7.2 级 0 原文即"有效点数不足/可信度 E 级/断点 >30%"三条，`gate.py` 逐条实现 |
+| 2 | "无 MODE 门" | **不成立**：级 0 未列 MODE 条件；`CORE_TAGS` 含 mode 是用于 **valid_rate 交集**，非门禁条件 |
+| 3 | "点数门槛 32 与算子 MIN_POINTS=100 不一致 → 数据不足被渲染成未检出" | **结论成立**（原判引的 100 属 KPI 侧另一条链，但缝确实在此，见下） |
+
+### 22.2 子claim 3：缝的真实位置（修复前实测）
+
+门槛分布：编排层门禁 `MIN_DATA_POINTS = 32`；诊断算子自身门槛 8/16/32
+（`sensor.py` 注明"编排层数据门禁已先行校验"）；而算子内部调用的椭圆法内核
+`assess_stiction_features`（`metric_calculator/stiction.py`）要求 **`MIN_POINTS = 100`**。
+
+| n | 过编排层门禁 | 内核 reason | 修复前算子上报 |
+|---|---|---|---|
+| 40/50/80/99 | ✓ | `insufficient_data` | `detected=False` / `skip_reason=None` |
+| 100 | ✓ | `no_limit_cycle` | `detected=False`（**合法**"无粘滞"） |
+| 200 | ✓ | 正常 | — |
+
+即 **32~99 点窗口把「数据不足」上报成「未检出（无粘滞）」**，`reason` 被
+`_ellipse_kernel` 丢弃。同文件其实已有正确范式——`detect_choudhury`/`detect_kano`
+对 `no_limit_cycle` 会返回"前提不成立"证据分支，**只是漏了 `insufficient_data` 这一支**。
+
+后果：工程师看到"未检出粘滞"会认为阀门正常，而真实情况是**本窗口不足以判断**。
+
+### 22.3 修复
+
+- `_ellipse_kernel` / `_choudhury_kernel` 传播底层 `reason`（后者原本完全不传播，
+  故 `detect_choudhury` 的 `no_limit_cycle` 分支此前也进不去）；
+- `detect_ellipse` / `detect_choudhury` 对 `insufficient_data` 返回
+  `executed=False + skip_reason="pv/op 数据不足（椭圆拟合要求 >=100 点）"`；
+- `no_limit_cycle` 保持 `executed=True`（合法结论"无粘滞"），二者明确区分。
+
+该文件**不在受保护清单内**，本次无需解冻授权。
+
+### 22.4 证据链
+
+| 环节 | 证据 |
+|---|---|
+| 修复前失败 | test_diagnosis_insufficient_data_g26.py：**9 failed / 5 passed**（32/50/80/99 点椭圆、80/96/99 点 choudhury、no_limit_cycle 区分全红） |
+| 修复 | `diagnosis_operators/stiction.py` 内核传播 reason + 两算子 insufficient_data 分支 |
+| 行为测试 | 修复后 **14 passed**；含"缝"本身的三条固化断言（32<100、50 点过门禁但低于要求、内核 reason） |
+| 集成证据 | 断言 n>=100 恢复 `executed=True`；平稳信号仍 `executed=True/detected=False`（不误判为跳过） |
+| 残余风险 | ① `detect_kano` 未加同类分支——其内核自行计算特征、未确认存在 `insufficient_data` 路径，登记待验；② 门禁门槛（32）与内核要求（100）的**数值错配本身未消除**，本次只是让语义诚实（跳过而非未检出）；若要根治，应把内核最低点数上提到编排层门禁（会收紧门禁、影响更多窗口），属行为变更需单独裁决；③ 修复后此类窗口在 UI 上会显示为"跳过"而非"未检出"，**前端对 skip_reason 的呈现未验证** |

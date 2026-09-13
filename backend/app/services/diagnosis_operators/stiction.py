@@ -106,6 +106,12 @@ def _ellipse_kernel(
             "confidence": confidence,
             "stiction_index": stiction_index,
             "fitting_score": fitting_score,
+            # S3 修复（G26）：传播底层前提状态，供调用方区分"数据不足"与"未检出"。
+            # assess_stiction_features 要求 >=100 点（MIN_POINTS）；本内核门槛为 8，
+            # 而编排层数据门禁门槛为 32，故 32~99 点窗口会走到这里并得到
+            # reason="insufficient_data"。原实现丢弃该字段，算子一律上报
+            # detected=False，把"数据不足"渲染成"未检出"。
+            "reason": feat.get("reason"),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("阀门粘滞检测失败: %s", exc)
@@ -256,6 +262,8 @@ def _choudhury_kernel(
             "nli": nli,
             "stiction_index": stiction_index,
             "fitting_score": fitting_score,
+            # S3 修复（G26）：同 _ellipse_kernel，传播底层前提状态
+            "reason": stiction_fit.get("reason"),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("Choudhury 非线性检测失败: %s", exc)
@@ -360,6 +368,13 @@ def detect_ellipse(input: OperatorInput, threshold: dict[str, Any]) -> OperatorR
     if pv is None or op is None or min(len(pv), len(op)) < 16:
         return OperatorResult("stiction_ellipse", executed=False, skip_reason="pv/op 数据不足")
     res = _ellipse_kernel(pv, op, float(input.meta.get("sample_interval", 1.0)))
+    if res.get("reason") == "insufficient_data":
+        # 与 no_limit_cycle 同处置：前提不成立时不得渲染成"指标未超阈"
+        return OperatorResult(
+            "stiction_ellipse",
+            executed=False,
+            skip_reason="pv/op 数据不足（椭圆拟合要求 >=100 点）",
+        )
     return OperatorResult(
         "stiction_ellipse",
         executed=True,
@@ -421,6 +436,12 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
     if pv is None or op is None or min(len(pv), len(op)) < 32:
         return OperatorResult("stiction_choudhury", executed=False, skip_reason="pv/op 数据不足")
     res = _choudhury_kernel(pv, op, threshold)
+    if res.get("reason") == "insufficient_data":
+        return OperatorResult(
+            "stiction_choudhury",
+            executed=False,
+            skip_reason="pv/op 数据不足（椭圆拟合要求 >=100 点）",
+        )
     if res.get("reason") == "no_limit_cycle":
         # P3 门控命中：证据表报"前提不成立"，避免误导性的"指标未超阈"
         return OperatorResult(
