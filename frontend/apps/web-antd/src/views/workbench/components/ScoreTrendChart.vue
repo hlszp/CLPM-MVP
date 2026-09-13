@@ -67,27 +67,19 @@ const mainPoints = computed(() => {
   return t.map((p, i) => ({ x: sx(i, n), y: sy(p.v), v: p.v }));
 });
 
-// 上一周期（派生）
-const prevPoints = computed(() => {
-  const t = props.trend ?? [];
-  if (t.length === 0) return [] as { x: number; y: number }[];
-  const n = t.length;
-  return t.map((p, i) => {
-    const v = +(p.v - 1.2 + (((i % 3) - 1) * 0.15)).toFixed(2);
-    return { x: sx(i, n), y: sy(v) };
-  });
-});
+// 上一周期：**仅使用后端提供的真实序列**。
+//
+// 2026-09-13 整改 G40：此前当后端未提供 previous 时，这里用主序列做算术派生
+// （主序列减常数再叠加伪噪声）伪造出一条“上一周期”曲线，图例还硬编码了
+// 一个具体的装置评分数值。对一个以“可信数据”为护城河的产品，
+// 用编造数字支撑用户判断是不可接受的——后端在这一点上纪律严明
+// （monitor.py 明确“不再生成模拟数据”、workbench_summary.py 明确“不显示伪 0”），
+// 是前端把数造了回来。无数据即不渲染，由调用方展示空态。
+const prevPoints = computed(() => [] as { x: number; y: number }[]);
 
-// 催化裂化（派生）
-const catPoints = computed(() => {
-  const t = props.trend ?? [];
-  if (t.length === 0) return [] as { x: number; y: number }[];
-  const n = t.length;
-  return t.map((p, i) => {
-    const v = +(p.v - 2.1 - (n - 1 - i) * 0.045).toFixed(2);
-    return { x: sx(i, n), y: sy(v) };
-  });
-});
+// 催化裂化（装置维度）：后端未提供按装置拆分的序列，故不渲染。
+// 2026-09-13 整改 G40：此前用主序列减常数再叠加线性斜坡伪造该序列。
+const catPoints = computed(() => [] as { x: number; y: number }[]);
 
 function pathFrom(pts: { x: number; y: number }[]): string {
   if (pts.length === 0) return '';
@@ -305,14 +297,8 @@ const mainCurrent = computed(() => {
         <span class="inline-block h-2 w-2 rounded-full bg-[#2563EB]"></span>
         全厂（当前 {{ mainCurrent }}）
       </span>
-      <span class="flex items-center gap-1">
-        <span class="inline-block h-2 w-2 rounded-full bg-[#E8710A]"></span>
-        催化裂化（82.1）
-      </span>
-      <span class="flex items-center gap-1">
-        <span class="inline-block h-2 w-2 rounded-full bg-[#B9C6D6]"></span>
-        上一周期
-      </span>
+      <!-- G40：装置维度与上一周期序列后端未提供，如实标注而非编造数值 -->
+      <span class="text-gray-400">装置维度 / 上一周期：后端未提供</span>
       <span class="flex items-center gap-1">
         <span class="inline-block h-0.5 w-3" style="background-color: #10b981"></span>
         目标 {{ targetLine }}

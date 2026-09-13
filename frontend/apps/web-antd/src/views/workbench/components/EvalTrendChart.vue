@@ -67,19 +67,17 @@ const currentPts = computed(() => {
   return t.map((p, i) => ({ x: sx(i, n), y: sy(p.v), v: p.v }));
 });
 
-// 上一周期：优先取后端 previous；缺失则前端派生（对齐原型 prev 公式）
+// 上一周期：**仅使用后端提供的真实序列**；缺失则不渲染。
+//
+// 2026-09-13 整改 G40：此前 prev 长度不匹配时会前端派生，即用主序列伪造
+// “上一周期”曲线。与 ScoreTrendChart 同属一类问题——后端严守“不生成模拟
+// 数据”，前端不应把数造回来。
 const prevPts = computed(() => {
   const cur = toArr(props.trend?.series?.current);
   const prev = toArr(props.trend?.series?.previous);
   const n = cur.length;
-  if (!n) return [] as { x: number; y: number }[];
-  const useDerived = prev.length !== n;
-  return cur.map((p, i) => {
-    const v = useDerived
-      ? +(p.v - 1.2 + (((i % 3) - 1) * 0.15)).toFixed(2)
-      : (prev[i]?.v ?? p.v);
-    return { x: sx(i, n), y: sy(v) };
-  });
+  if (!n || prev.length !== n) return [] as { x: number; y: number }[];
+  return cur.map((p, i) => ({ x: sx(i, n), y: sy(prev[i]?.v ?? p.v) }));
 });
 
 function pathFrom(pts: { x: number; y: number }[]): string {
