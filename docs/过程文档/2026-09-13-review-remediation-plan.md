@@ -114,6 +114,17 @@
   （已按「引导 SQL → stamp head → 漂移检查」的正确口径实现，见 S1-a）。
   建议：补一个真正的 base 迁移（或 `alembic init` 基线），使两条路径等价；
   在等价之前，**不得**把 `upgrade head` 用于空库初始化。
+- **G52【S1-b 执行中新发现】OpenAPI 导出结果依赖本机 `.env`，导致基线不可移植**：
+  FastAPI 的 `info.title`/`info.version` 取自 `settings.APP_NAME`/`APP_VERSION`，
+  而 pydantic-settings 优先级为「环境变量 > `.env` > 默认值」。开发者本机
+  `backend/.env`（已 gitignore）会覆盖它们——实测本机导出为 `CLPM-MVP / 1.0.0`，
+  仓库口径却是 `CLPM / 7.1.0`。若直接提交本机导出的基线，会把个人配置固化进
+  仓库，且 CI（无 `.env`）与本地产生无意义差异。
+  已处置：基线固化时显式 `APP_NAME=CLPM APP_VERSION=7.1.0`；契约测试不再断言
+  `info` 具体值，只校验结构（比对只关心 `paths` 与 `components.schemas`）。
+  遗留建议：CI 增加「导出 schema 与已提交基线一致」的步骤，防止有人提交
+  本机口径的基线；并把本机 `.env` 的 `APP_VERSION=1.0.0` 与仓库 7.1.0 的
+  分裂纳入运维检查（本机已同步为 7.1.0）。
 
 ---
 
@@ -188,6 +199,9 @@
 | G08 非归一化信号套 PV 量程 | S0 | **延后至 S0.1** | — | — | 需改 `outlier_detection.detect_all` 契约（新增跳过 range 检测的门控）并回归 MODE/PID_* 四条信号链路，改动面大于其余九项，不宜与其他止血项同批 |
 | G09 pageSize=10000 | S0 | **已落地** | 同上 | 全量回归 | 若有前端页面依赖 >100 的 pageSize 需同步（`tags` 列表默认 20） |
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
+| **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
+| **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
+| G48 数值金标准 | S1-c | 未开始 | — | — | — |
 | G11~G17 | S2 | 未开始 | — | — | — |
 | G18~G27 | S3 | 未开始 | — | — | — |
 | G28~G32 | S4 | 未开始 | — | — | — |

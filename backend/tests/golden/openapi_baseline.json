@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "CLPM-MVP",
+    "title": "CLPM",
     "description": "Control Loop Performance Monitoring backend API",
-    "version": "1.0.0"
+    "version": "7.1.0"
   },
   "paths": {
     "/health": {
@@ -2347,53 +2347,6 @@
         ]
       }
     },
-    "/api/v1/loops/data-import/integrity-check": {
-      "post": {
-        "tags": [
-          "loop-data"
-        ],
-        "summary": "Check Integrity",
-        "description": "数据完整性检查.\n\n对本地 TDengine 宽表做完整性检查，输出：\n- 整体完整度（百分比）\n- 主要时间缺口（哪些时间段缺数据，小时粒度）\n- 主要回路缺口（哪些回路缺数据）\n\n仅查本地 TDengine，不调远端 API。",
-        "operationId": "check_integrity_api_v1_loops_data_import_integrity_check_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IntegrityCheckRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_dict_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/loops/data-import/tasks": {
       "get": {
         "tags": [
@@ -2683,7 +2636,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 10000,
+              "maximum": 100,
               "minimum": 1,
               "default": 20,
               "title": "Pagesize"
@@ -3301,7 +3254,7 @@
           "datasource"
         ],
         "summary": "Update Datasource Config Endpoint",
-        "description": "更新数据源配置（仅 ADMIN）。\n\n即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken\n/ historyApiTimeout / signalrHubUrl / signalrReconnectInterval\n/ gapBackfillEnabled / gapBackfillMinGapSeconds\n重启生效：dataSourceType（Provider 单例）/ signalrEnabled（订阅器后台任务）\n\n注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。",
+        "description": "更新数据源配置（仅 ADMIN）。\n\n即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken\n/ historyApiTimeout / signalrHubUrl / signalrReconnectInterval\n热生效：signalrEnabled（订阅器停止/启动）/ realtimeWritebackEnabled\n/ gapBackfillEnabled / gapBackfillMinGapSeconds\n重启生效：dataSourceType（Provider 单例）\n\n注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。",
         "operationId": "update_datasource_config_endpoint_api_v1_datasource_config_put",
         "requestBody": {
           "content": {
@@ -3411,6 +3364,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_DataSourceTestResult_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/datasource/refresh-subscription": {
+      "post": {
+        "tags": [
+          "datasource"
+        ],
+        "summary": "Refresh Subscription Endpoint",
+        "description": "手工刷新实时订阅（仅 ADMIN）。\n\n新建/修改回路、测点、绑定关系后，通知订阅 Leader 重新查询活跃 Tag 并在\n现有 WebSocket 连接上重发 SubscribeAsync，新测点免重启即时生效。\n发布刷新指令后轮询等待执行结果（最长 15s）；超时/订阅未启用返回明确错误。\nLeader 侧执行失败（非 Leader/WS 未连接等）时仍返回 200，error 字段携带原因。",
+        "operationId": "refresh_subscription_endpoint_api_v1_datasource_refresh_subscription_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SubscriptionRefreshResult_"
                 }
               }
             }
@@ -3828,6 +3808,18 @@
               "title": "Sortorder"
             },
             "description": "排序方向：asc/desc"
+          },
+          {
+            "name": "fitnessFilter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "适用性过滤：服务端先剔除最新快照为 L0/L1 的回路再排序截断（客户端过滤在 L0/L1 回路数 ≥limit 时会把榜单滤空）",
+              "default": false,
+              "title": "Fitnessfilter"
+            },
+            "description": "适用性过滤：服务端先剔除最新快照为 L0/L1 的回路再排序截断（客户端过滤在 L0/L1 回路数 ≥limit 时会把榜单滤空）"
           }
         ],
         "responses": {
@@ -4484,6 +4476,103 @@
         }
       }
     },
+    "/api/v1/performance/loops/metric-series": {
+      "get": {
+        "tags": [
+          "performance"
+        ],
+        "summary": "Get Loop Metric Series Endpoint",
+        "description": "批量查询单指标 × 多回路时间序列（指标矩阵页列头趋势对比）.\n\n数据源为 kpi_snapshot_hourly（小时粒度）。metricKey 白名单：\nscore/accuracy_rate/auto_mode_rate/effective_auto_rate/fast_rate/steady_rate/\ngood_value_rate/oscillation_rate/saturation_rate/instrument_fault_rate/\nstiction_index/settling_time/output_trip_index。\n\nRaises:\n    BizError: ERR_METRIC_SERIES_INVALID（白名单外指标键）/\n        ERR_METRIC_SERIES_LOOPS（回路数超限或为空）",
+        "operationId": "get_loop_metric_series_endpoint_api_v1_performance_loops_metric_series_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopIds",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "回路 ID 列表（逗号分隔，≤10 个）",
+              "title": "Loopids"
+            },
+            "description": "回路 ID 列表（逗号分隔，≤10 个）"
+          },
+          {
+            "name": "metricKey",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "指标键（snake_case，服务端白名单校验）",
+              "title": "Metrickey"
+            },
+            "description": "指标键（snake_case，服务端白名单校验）"
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "起始时间（ISO 8601）",
+              "title": "Starttime"
+            },
+            "description": "起始时间（ISO 8601）"
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "结束时间（ISO 8601）",
+              "title": "Endtime"
+            },
+            "description": "结束时间（ISO 8601）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MetricSeriesData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/performance/nodes/{node_id}/snapshot": {
       "get": {
         "tags": [
@@ -4751,7 +4840,7 @@
           "performance-node"
         ],
         "summary": "Calculate Node Endpoint",
-        "description": "手动触发节点级 KPI 聚合（仅 ADMIN/ENGINEER）。\n\n支持指定时间段计算，用于补算/回填历史数据。\n不传 tsStart/tsEnd 时默认计算上一个完整小时。",
+        "description": "手动触发节点级 KPI 聚合（仅 ADMIN）。\n\n注：原实现写作 require_roles(\"ADMIN\", \"ENGINEER\")，而 \"ENGINEER\" 不在\n合法角色集（ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT，见\napp/models/sys_user.py 的 ck_sys_user_role）中，永不匹配 —— 该端点实际\n仅 ADMIN 可用。此处收敛为显式 ADMIN，保持既有行为不变；是否放开给\nIC_ENGINEER 属权限决策，需人工确认后再改（见整改方案 G05 决策点）。\n\n支持指定时间段计算，用于补算/回填历史数据。\n不传 tsStart/tsEnd 时默认计算上一个完整小时。",
         "operationId": "calculate_node_endpoint_api_v1_performance_nodes__node_id__calculate_post",
         "security": [
           {
@@ -5545,7 +5634,7 @@
           "workbench"
         ],
         "summary": "Get Overview",
-        "description": "A-01 工作台总览：三窗口 KPI + 装置/单元排名 + Pareto/根因 + 处置漏斗。\n\nG-总览填充：读 workbench_window_summary 预计算表 + MV-02/MV-03 + DiagnosisTag 聚合。\n部分失败容错：单块异常返回空/None，不阻断其余块。",
+        "description": "A-01 工作台总览：三窗口 KPI + 装置/单元排名 + Pareto/根因 + 处置漏斗。\n\nG-总览填充：读 workbench_window_summary 预计算表 + MV-02/MV-03 + diagnosis_run\n聚合（A3 迁 v2，旧 DiagnosisTag 读方已退役，见 14 号方案）。\n部分失败容错：单块异常返回空/None，不阻断其余块。",
         "operationId": "get_overview_api_v1_workbench_overview_get",
         "security": [
           {
@@ -5713,7 +5802,7 @@
           "workbench"
         ],
         "summary": "Get Diagnosis",
-        "description": "A-03 诊断：关键异常表 + 结论时间线 + 适用性门禁 + 规则统计 + Pareto/根因。\n\nG-诊断填充（F-DG-01~03）：open_tags Top6 + concl_timeline（disposition 四态）\n+ fitness_gates（L0~L4 门禁聚合）+ rule_stats + pareto/rootcause_top（复用 MV-02\n与 DiagnosisTag 聚合，与 G-总览同源）。部分失败容错。",
+        "description": "A-03 诊断：关键异常表 + 结论时间线 + 适用性门禁 + 规则统计 + Pareto/根因。\n\nG-诊断填充（F-DG-01~03，14 号方案 A2 迁诊断 v2 引擎 diagnosis_run）：\nopen_tags Top6（每回路最新未处置异常 run，SLA 已下线 D1=a）+ concl_timeline\n（disposition 四态由 review_status/loop_action_item 合成）+ fitness_gates\n（L0~L4 门禁聚合）+ rule_stats（symptom_tags 聚合 × 复核确认率，D2=a）\n+ pareto/rootcause_top（primary_category / symptom_tags 聚合）。\nonlyActive=True → concl_timeline 仅保留未处置 run（默认 False 不动行为）。\n部分失败容错。",
         "operationId": "get_diagnosis_api_v1_workbench_diagnosis_get",
         "security": [
           {
@@ -5763,11 +5852,11 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "仅看未处置（UNADDRESSED）活跃结论",
+              "description": "仅看未处置（UNADDRESSED）的 run",
               "default": false,
               "title": "Onlyactive"
             },
-            "description": "仅看未处置（UNADDRESSED）活跃结论"
+            "description": "仅看未处置（UNADDRESSED）的 run"
           }
         ],
         "responses": {
@@ -6467,6 +6556,112 @@
         }
       }
     },
+    "/api/v1/cockpit/overview": {
+      "get": {
+        "tags": [
+          "cockpit"
+        ],
+        "summary": "Get Cockpit Overview",
+        "description": "驾驶舱总览：KPI 指标带（评分/自控率/回路数/劣化/待办/预警）+ 闭环治理漏斗。\n\n环比口径：当前窗口 vs 上一等长窗口（unit_kpi_summary 加权均值）。\n部分失败容错：单块异常返回空/None，不阻断其余块。",
+        "operationId": "get_cockpit_overview_api_v1_cockpit_overview_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(24h|7d|30d)$",
+              "description": "时间窗口：24h/7d/30d",
+              "default": "24h",
+              "title": "Window"
+            },
+            "description": "时间窗口：24h/7d/30d"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cockpit/backend-access-roles": {
+      "get": {
+        "tags": [
+          "cockpit"
+        ],
+        "summary": "Get Backend Access Roles",
+        "description": "\"管理后台\"入口允许角色清单（sys_config 键 cockpit.backend_access_roles）。\n\n逗号分隔角色列表；缺失/为空回退默认 IC_ENGINEER,PE_ENGINEER,ADMIN,EXPERT。",
+        "operationId": "get_backend_access_roles_api_v1_cockpit_backend_access_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/cockpit/node-tree": {
+      "get": {
+        "tags": [
+          "cockpit"
+        ],
+        "summary": "Get Node Tree",
+        "description": "工厂→装置→单元三层树 + 各节点回路计数。\n\n每节点：{id=source_node_id(int), nodeId=plant_node.id, name, type, loopCount,\nchildren}；loopCount 为 loop_ledger 活跃回路按 unit_id 计数后向上累加。",
+        "operationId": "get_node_tree_api_v1_cockpit_node_tree_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/timeseries/{loop_id}/waveform": {
       "get": {
         "tags": [
@@ -6548,13 +6743,13 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 50000,
+              "maximum": 2000,
               "minimum": 100,
-              "description": "最大数据点数",
-              "default": 5000,
+              "description": "最大数据点数（R21：对齐 LTTB 2000 点契约，上限 2000）",
+              "default": 2000,
               "title": "Maxpoints"
             },
-            "description": "最大数据点数"
+            "description": "最大数据点数（R21：对齐 LTTB 2000 点契约，上限 2000）"
           }
         ],
         "responses": {
@@ -7208,6 +7403,312 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/diagnosis/runs/loop-archive": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Get Loop Archive",
+        "description": "回路诊断档案（16 号文 F1）。\n\nrun 时间轴（窗口内升序）+ KPI 趋势（LTTB ≤2000 点）+\n处置/整定事件（模块禁用时跳过查询，响应标记 handlingEnabled/tuningEnabled）。",
+        "operationId": "get_loop_archive_api_v1_diagnosis_runs_loop_archive_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "回路 ID",
+              "title": "Loopid"
+            },
+            "description": "回路 ID"
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "时间窗 30d/90d/all（all 截断 90d）",
+              "default": "90d",
+              "title": "Window"
+            },
+            "description": "时间窗 30d/90d/all（all 截断 90d）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnosis/runs/{run_id}/compare": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Compare Diagnosis Runs",
+        "description": "复诊对比（16 号文 F2，D3 双模式）。\n\n- adjacent：与同回路该 run 之前最近一条 SUCCESS/PARTIAL run 对比（纯诊断域恒可用）\n- verify：handling_order.verify_run_id 关联的处置前后 run 对（处置启用才查）",
+        "operationId": "compare_diagnosis_runs_api_v1_diagnosis_runs__run_id__compare_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "adjacent 相邻对比 / verify 验证对比",
+              "default": "adjacent",
+              "title": "Mode"
+            },
+            "description": "adjacent 相邻对比 / verify 验证对比"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnosis/coverage": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Get Diagnosis Coverage",
+        "description": "诊断覆盖台账与新鲜度（16 号文 F3，D6 工作台概览区折叠块数据源）。\n\n新鲜度分档（全员）+ 调度执行（仅 ADMIN，非管理员 schedule=null，前端整块隐藏）\n+ 近 30d DATA_INSUFFICIENT Top5（全员）。",
+        "operationId": "get_diagnosis_coverage_api_v1_diagnosis_coverage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/diagnosis/category-cohort": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Get Category Cohort",
+        "description": "共性问题回路组（16 号文 F4）：分类×装置下每回路最新 run 摘要。\n\nlatest-per-loop 泛化自 runs/latest（同一口径），供前端勾选 2~3 回路雷达对比。",
+        "operationId": "get_category_cohort_api_v1_diagnosis_category_cohort_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "原因分类代码（8 类）",
+              "title": "Category"
+            },
+            "description": "原因分类代码（8 类）"
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "装置节点 ID（递归含子单元，可选）",
+              "title": "Plantnodeid"
+            },
+            "description": "装置节点 ID（递归含子单元，可选）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnosis/precheck": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Get Diagnosis Precheck",
+        "description": "发起前数据充足性预检徽标（16 号文 F5，D1=a 廉价代理）。\n\nkpi_snapshot_hourly 近 24h 行数密度分级（充足/疑似不足/不足/无评估数据），\n单次 PostgreSQL 聚合查询，零 TDengine；红档阈值与调度侧密度门禁同口径。\n评估模块禁用时 assessEnabled=false 且 items 为空（前端整列隐藏徽标）。\n事前提示定位：不替代发起时 fitness 门禁（L0/L1 阻止、L2 警告行为不变）。",
+        "operationId": "get_diagnosis_precheck_api_v1_diagnosis_precheck_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loopIds",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "回路 ID 列表（逗号分隔，≤10 个）",
+              "title": "Loopids"
+            },
+            "description": "回路 ID 列表（逗号分隔，≤10 个）"
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "预检窗口 24h/7d/30d",
+              "default": "24h",
+              "title": "Window"
+            },
+            "description": "预检窗口 24h/7d/30d"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnosis/review-feedback": {
+      "get": {
+        "tags": [
+          "diagnosis"
+        ],
+        "summary": "Get Review Feedback",
+        "description": "复核反馈统计与阈值调优提示（16 号文 F6；仅 ADMIN，与诊断配置页口径一致）。\n\n只统计 executed=true 的算子，pending_review 命中不计入改判分母；\nD4：样本 <10 时 insufficientSample=true，不给误导性比例。\ntuningHint 仅为提示（安全边界红线：平台不自动调参）。",
+        "operationId": "get_review_feedback_api_v1_diagnosis_review_feedback_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/v1/diagnosis/runs/{run_id}": {
@@ -8241,6 +8742,278 @@
         }
       }
     },
+    "/api/v1/handling/orders/export": {
+      "get": {
+        "tags": [
+          "handling"
+        ],
+        "summary": "Export Handling Orders",
+        "description": "工单 CSV 导出（GAP-4）：筛选参数与 GET /orders 完全一致，上限 5000 行。\n\n排序同清单口径（状态分组 + updated_at DESC）；表头为字段中文名，\nUTF-8 with BOM 便于 Excel 直接打开（同诊断模块导出模式）。",
+        "operationId": "export_handling_orders_api_v1_handling_orders_export_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "工单状态（单值）",
+              "title": "Status"
+            },
+            "description": "工单状态（单值）"
+          },
+          {
+            "name": "actionType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actiontype"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(DIAGNOSIS|MANUAL)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "装置节点（递归下钻到单元）",
+              "title": "Plantnodeid"
+            },
+            "description": "装置节点（递归下钻到单元）"
+          },
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Loopid"
+            }
+          },
+          {
+            "name": "handler",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "处置人模糊",
+              "title": "Handler"
+            },
+            "description": "处置人模糊"
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "处置编号/回路位号/标题模糊",
+              "title": "Keyword"
+            },
+            "description": "处置编号/回路位号/标题模糊"
+          },
+          {
+            "name": "plannedBefore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "计划时间止（ISO）",
+              "title": "Plannedbefore"
+            },
+            "description": "计划时间止（ISO）"
+          },
+          {
+            "name": "plannedAfter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "计划时间起（ISO）",
+              "title": "Plannedafter"
+            },
+            "description": "计划时间起（ISO）"
+          },
+          {
+            "name": "createdBefore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间止（ISO，按 created_at）",
+              "title": "Createdbefore"
+            },
+            "description": "创建时间止（ISO，按 created_at）"
+          },
+          {
+            "name": "createdAfter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "创建时间起（ISO，按 created_at）",
+              "title": "Createdafter"
+            },
+            "description": "创建时间起（ISO，按 created_at）"
+          },
+          {
+            "name": "verifiedBefore",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "验证时间止（ISO，按 verified_at）",
+              "title": "Verifiedbefore"
+            },
+            "description": "验证时间止（ISO，按 verified_at）"
+          },
+          {
+            "name": "verifiedAfter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "验证时间起（ISO，按 verified_at）",
+              "title": "Verifiedafter"
+            },
+            "description": "验证时间起（ISO，按 verified_at）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/handling/orders/{order_id}": {
       "get": {
         "tags": [
@@ -8809,7 +9582,7 @@
           "handling"
         ],
         "summary": "Get Handling Statistics",
-        "description": "处置统计页数据（§6.3，工单维度 + 建议驳回率）。\n\n- summary：本月（北京时间月界）闭环数 / 闭环率 / 平均处置时长（创建→验证闭环）/\n  无效重开率 / 平均 KPI 改善分 / 驳回率（建议侧 REJECTED/已审核）/\n  平均排程周期（工单创建→开工均值）；无数据时相关项为 null（空态显 —）\n- monthly：近 N 月（北京时间月界，按 verified_at 归月）闭环数与闭环率，空月补零\n- byType / byUnit / topLoops：类型分布、装置闭环分布、重开次数 Top 10（工单口径）",
+        "description": "处置统计页数据（§6.3，工单维度 + 建议驳回率）。\n\n聚合逻辑已下沉 app/services/handling_stats.build_handling_statistics\n（报告模块优化 P0-2，与 /reports/handling-statistics 共用单一实现；\n本端点不传时间窗/装置过滤，行为契约不变）：\n\n- summary：本月（北京时间月界）闭环数 / 闭环率 / 平均处置时长（创建→验证闭环）/\n  无效重开率 / 平均 KPI 改善分 / 驳回率（建议侧 REJECTED/已审核）/\n  平均排程周期（工单创建→开工均值）；无数据时相关项为 null（空态显 —）\n- monthly：近 N 月（北京时间月界，按 verified_at 归月）闭环数与闭环率，空月补零\n- byType / byUnit / topLoops：类型分布、装置闭环分布、重开次数 Top 10（工单口径）",
         "operationId": "get_handling_statistics_api_v1_handling_statistics_get",
         "security": [
           {
@@ -9050,53 +9823,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_KpiMetricResult_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/algorithms/diagnosis/analyze": {
-      "post": {
-        "tags": [
-          "algorithms"
-        ],
-        "summary": "Analyze Diagnosis",
-        "description": "同步诊断分析（单回路，不走 Celery）.\n\n调用 ``app.tasks.diagnosis_engine._do_diagnose_single_loop`` 执行单回路\n诊断，返回 8 类诊断标签结果（含置信度与证据）。\n\n设计依据：IDS §2.7.2",
-        "operationId": "analyze_diagnosis_api_v1_algorithms_diagnosis_analyze_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiagnosisAnalyzeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DiagnosisAnalyzeResponse_"
                 }
               }
             }
@@ -9832,7 +10558,7 @@
           "alert"
         ],
         "summary": "List Events Endpoint",
-        "description": "获取预警事件列表（分页+筛选）。",
+        "description": "获取预警事件列表（分页+筛选）。\n\nstartTime/endTime 归一为 naive UTC（alert_event 时间戳列为 timestamp\nwithout time zone；asyncpg 不接受 aware 与 naive 混比）。",
         "operationId": "list_events_endpoint_api_v1_alert_events_get",
         "security": [
           {
@@ -14219,7 +14945,7 @@
           "reports"
         ],
         "summary": "Get Report Benefit",
-        "description": "收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标）。",
+        "description": "收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标）。\n\nP2-3（方案 §5.2）：响应向后兼容增加整定执行区块字段——tuningExecution\n（算法/状态分布 + 回滚率 + 平均拟合度）/ fittingDistribution（四桶）/\nlatestBatchScatter（最近已完成批次前后散点）。整定模块禁用时本端点\n不受影响（历史归档口径）。",
         "operationId": "get_report_benefit_api_v1_reports_benefit_get",
         "security": [
           {
@@ -14283,6 +15009,696 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ReportBenefitData_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/benefit/orders": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Benefit Orders",
+        "description": "逐工单前后对比明细（P2-4，方案 §5.3；R1 自持直读 handling_order）。\n\n仅返回 CLOSED 且 kpi_before/kpi_after 快照非空的工单（verified_at 归窗，\n装置下钻），行内含 orderNo/回路/actionType/kpiBefore/kpiAfter/\nverifyResult/verifiedAt——逐单举证\"这一单到底有没有效\"。处置/整定模块\n禁用时本端点不受影响（历史归档口径）。",
+        "operationId": "get_report_benefit_orders_api_v1_reports_benefit_orders_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Startdate"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enddate"
+            }
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plantnodeid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/data-quality": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Data Quality",
+        "description": "数据质量报告聚合（P1-1，方案 §4.1）。\n\n只依赖基础模块数据（loop_ledger / kpi_snapshot_hourly /\nloop_confidence_latest），可插拔模块全拔时\n仍完整可用；未传时间窗默认近 30 天。",
+        "operationId": "get_report_data_quality_api_v1_reports_data_quality_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "起始日期 YYYY-MM-DD",
+              "title": "Startdate"
+            },
+            "description": "起始日期 YYYY-MM-DD"
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "结束日期 YYYY-MM-DD",
+              "title": "Enddate"
+            },
+            "description": "结束日期 YYYY-MM-DD"
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plantnodeid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/alert-statistics": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Alert Statistics",
+        "description": "预警统计报告聚合（P1-3，方案 §4.2）。\n\n监控为基础模块数据（alert_event/alert_rule/alert_suppression），任何\n模块组合下完整可用；未传时间窗默认近 30 天（triggered_at 半开区间）。",
+        "operationId": "get_report_alert_statistics_api_v1_reports_alert_statistics_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "起始日期 YYYY-MM-DD",
+              "title": "Startdate"
+            },
+            "description": "起始日期 YYYY-MM-DD"
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "结束日期 YYYY-MM-DD",
+              "title": "Enddate"
+            },
+            "description": "结束日期 YYYY-MM-DD"
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plantnodeid"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "INFO/WARN/ERROR/CRITICAL",
+              "title": "Severity"
+            },
+            "description": "INFO/WARN/ERROR/CRITICAL"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ACTIVE/ACKNOWLEDGED/RESOLVED/SUPPRESSED/ARCHIVED",
+              "title": "Status"
+            },
+            "description": "ACTIVE/ACKNOWLEDGED/RESOLVED/SUPPRESSED/ARCHIVED"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/handling-statistics": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Handling Statistics",
+        "description": "处置报告统计（R1 自持：直读 handling_order/loop_action_item）。\n\n与 /handling/statistics 共用 handling_stats.build_handling_statistics\n单一实现；支持时间范围（工单 created_at 半开区间，闭环数按 verified_at\n归窗，驳回率按 suggested_at 归窗）与装置下钻（WITH RECURSIVE 子树）。\n处置模块禁用时本端点不受影响（历史归档口径）。",
+        "operationId": "get_report_handling_statistics_api_v1_reports_handling_statistics_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 12,
+              "minimum": 1,
+              "description": "默认月度趋势窗口（未传时间窗时生效）",
+              "default": 6,
+              "title": "Months"
+            },
+            "description": "默认月度趋势窗口（未传时间窗时生效）"
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Startdate"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enddate"
+            }
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plantnodeid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/diagnosis-runs": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get Report Diagnosis Runs",
+        "description": "诊断报告明细（R1 自持：直读 diagnosis_run，统计口径 SUCCESS/PARTIAL）。\n\n行结构复用 diagnosis_v2._run_to_summary 契约（前端零改动渲染）；\n支持时间范围、装置下钻（plantNodeId，修复报告页明细装置筛选失效 P-07）、\n分类与严重度筛选。诊断模块禁用时本端点不受影响（历史归档口径）。",
+        "operationId": "get_report_diagnosis_runs_api_v1_reports_diagnosis_runs_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Pagesize"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Startdate"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enddate"
+            }
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plantnodeid"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/diagnosis-runs/export": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Export Report Diagnosis Runs",
+        "description": "诊断报告明细 CSV 导出（列定义与 /diagnosis/export 对齐，≤5000 行）。",
+        "operationId": "export_report_diagnosis_runs_api_v1_reports_diagnosis_runs_export_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Startdate"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enddate"
+            }
+          },
+          {
+            "name": "plantNodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plantnodeid"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -17557,6 +18973,17 @@
             "type": "string",
             "title": "Rulecode"
           },
+          "ruleName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rulename"
+          },
           "ruleVersion": {
             "type": "integer",
             "title": "Ruleversion"
@@ -19286,32 +20713,6 @@
         "type": "object",
         "title": "ApiResponse[DcsVendorItem]"
       },
-      "ApiResponse_DiagnosisAnalyzeResponse_": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code",
-            "default": "0"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message",
-            "default": "success"
-          },
-          "data": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DiagnosisAnalyzeResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "title": "ApiResponse[DiagnosisAnalyzeResponse]"
-      },
       "ApiResponse_DiagnosisConfigBatchResponse_": {
         "properties": {
           "code": {
@@ -20066,6 +21467,32 @@
         "type": "object",
         "title": "ApiResponse[MetricDefinitionListSchema]"
       },
+      "ApiResponse_MetricSeriesData_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricSeriesData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[MetricSeriesData]"
+      },
       "ApiResponse_ModeDefinitionItem_": {
         "properties": {
           "code": {
@@ -20715,6 +22142,32 @@
         },
         "type": "object",
         "title": "ApiResponse[SiteConfigResponse]"
+      },
+      "ApiResponse_SubscriptionRefreshResult_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubscriptionRefreshResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[SubscriptionRefreshResult]"
       },
       "ApiResponse_TagBatchDeleteResult_": {
         "properties": {
@@ -22148,10 +23601,10 @@
           },
           "maxPoints": {
             "type": "integer",
-            "maximum": 50000.0,
+            "maximum": 2000.0,
             "minimum": 100.0,
             "title": "Maxpoints",
-            "default": 5000
+            "default": 2000
           }
         },
         "type": "object",
@@ -22161,7 +23614,7 @@
           "endTime"
         ],
         "title": "BatchWaveformRequest",
-        "description": "POST /api/v1/timeseries/batch/waveform 请求体.\n\n批量查询多个回路的波形数据，使用 ``asyncio.gather`` 并行获取。\n\nAttributes:\n    loopIds: 回路 ID 列表（1~50 个）\n    startTime: 开始时间（ISO 8601）\n    endTime: 结束时间（ISO 8601）\n    tagGroup: 按标签组筛选（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF），默认 BASE\n    includeValidMask: 是否返回 valid_mask（默认 True）\n    maxPoints: 每个回路最大数据点数（100~50000，默认 5000）"
+        "description": "POST /api/v1/timeseries/batch/waveform 请求体.\n\n批量查询多个回路的波形数据，使用 ``asyncio.gather`` 并行获取。\n\nAttributes:\n    loopIds: 回路 ID 列表（1~50 个）\n    startTime: 开始时间（ISO 8601）\n    endTime: 结束时间（ISO 8601）\n    tagGroup: 按标签组筛选（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF），默认 BASE\n    includeValidMask: 是否返回 valid_mask（默认 True）\n    maxPoints: 每个回路最大数据点数（100~2000，默认 2000；R21 对齐 LTTB\n        2000 点契约，批量总预算 ≤50 回路×2000 点）"
       },
       "BatchWaveformResponse": {
         "properties": {
@@ -22755,15 +24208,6 @@
         "type": "object",
         "title": "ConfidenceThresholdSchema",
         "description": "可信度阈值配置（5 级 A/B/C/D/E，版本化存储）.\n\n对齐算法说明 §3.7.2：\n- A 级: valid_rate >= 0.95（数据充分）\n- B 级: 0.80 <= valid_rate < 0.95（数据较充分）\n- C 级: 0.60 <= valid_rate < 0.80（数据一般）\n- D 级: 0.20 <= valid_rate < 0.60（数据不足）\n- E 级: valid_rate < 0.20 → INCONCLUSIVE（可信度不足）\n\nversion=0 表示算法规范默认版本；每次保存自动 +1 并归档历史。"
-      },
-      "ConflictStrategy": {
-        "type": "string",
-        "enum": [
-          "overwrite",
-          "skip"
-        ],
-        "title": "ConflictStrategy",
-        "description": "冲突处理策略."
       },
       "ConvertBody": {
         "properties": {
@@ -24466,84 +25910,6 @@
         "title": "DcsVendorUpdate",
         "description": "品牌更新请求（code 不可改）。"
       },
-      "DiagnosisAnalyzeRequest": {
-        "properties": {
-          "loopId": {
-            "type": "string",
-            "title": "Loopid",
-            "description": "目标回路 ID"
-          },
-          "startTime": {
-            "type": "string",
-            "title": "Starttime",
-            "description": "时间窗起始（ISO 8601）"
-          },
-          "endTime": {
-            "type": "string",
-            "title": "Endtime",
-            "description": "时间窗结束（ISO 8601）"
-          },
-          "labels": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Labels",
-            "description": "诊断标签子集；空列表表示全部"
-          },
-          "enableFusion": {
-            "type": "boolean",
-            "title": "Enablefusion",
-            "description": "是否启用证据融合",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "loopId",
-          "startTime",
-          "endTime"
-        ],
-        "title": "DiagnosisAnalyzeRequest",
-        "description": "独立诊断分析请求（同步分析单回路）.\n\nAttributes:\n    loopId: 目标回路 ID\n    startTime: 时间窗起始（ISO 8601）\n    endTime: 时间窗结束（ISO 8601）\n    labels: 启用的诊断标签子集（空列表表示启用全部，MANUAL_REVIEW 除外）\n    enableFusion: 是否启用 DS 证据融合，默认 true"
-      },
-      "DiagnosisAnalyzeResponse": {
-        "properties": {
-          "loopId": {
-            "type": "string",
-            "title": "Loopid"
-          },
-          "tagName": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tagname"
-          },
-          "diagnosisLabels": {
-            "items": {
-              "$ref": "#/components/schemas/DiagnosisLabelResult"
-            },
-            "type": "array",
-            "title": "Diagnosislabels"
-          },
-          "algorithmVersion": {
-            "type": "string",
-            "title": "Algorithmversion",
-            "default": "DIAG_ENGINE_v1.0"
-          }
-        },
-        "type": "object",
-        "required": [
-          "loopId"
-        ],
-        "title": "DiagnosisAnalyzeResponse",
-        "description": "诊断分析响应.\n\nAttributes:\n    loopId: 回路 ID\n    tagName: 位号\n    diagnosisLabels: 诊断标签列表\n    algorithmVersion: 算法版本号"
-      },
       "DiagnosisConfigBatchResponse": {
         "properties": {
           "items": {
@@ -24899,52 +26265,6 @@
         ],
         "title": "DiagnosisConfigUpdateItem",
         "description": "诊断配置更新项（批量更新请求）.\n\nAttributes:\n    diagId: 诊断配置 ID\n    label: 诊断标签枚举（用于校验）\n    algorithmType: 算法类型\n    calcMethod: 计算方法\n    params: 算法参数\n    threshold: 阈值对象\n    isEnabled: 是否启用"
-      },
-      "DiagnosisLabelResult": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "confidence": {
-            "type": "number",
-            "title": "Confidence"
-          },
-          "evidence": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Evidence"
-          },
-          "algorithm": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Algorithm"
-          },
-          "fusedConfidence": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fusedconfidence"
-          }
-        },
-        "type": "object",
-        "required": [
-          "label",
-          "confidence"
-        ],
-        "title": "DiagnosisLabelResult",
-        "description": "诊断标签结果项.\n\nAttributes:\n    label: 诊断标签枚举\n    confidence: 置信度 0~1\n    evidence: 证据对象\n    algorithm: 算法标识\n    fusedConfidence: 融合后置信度（启用融合时返回）"
       },
       "DictItemCreate": {
         "properties": {
@@ -26025,15 +27345,16 @@
             "description": "采样间隔（秒）",
             "default": 1
           },
-          "conflictStrategy": {
-            "$ref": "#/components/schemas/ConflictStrategy",
-            "description": "冲突策略",
-            "default": "overwrite"
-          },
           "triggerBackfill": {
             "type": "boolean",
             "title": "Triggerbackfill",
             "description": "导入完成后触发 KPI 回算",
+            "default": false
+          },
+          "pointOnly": {
+            "type": "boolean",
+            "title": "Pointonly",
+            "description": "仅写入位号点表，跳过宽表",
             "default": false
           }
         },
@@ -26044,7 +27365,7 @@
           "tsEnd"
         ],
         "title": "ImportRequest",
-        "description": "历史数据导入请求.\n\nAttributes:\n    loopIds: 目标回路 ID 列表\n    tsStart: 导入时间范围起始（ISO 8601）\n    tsEnd: 导入时间范围结束（ISO 8601）\n    interval: 采样间隔（秒），默认 1\n    conflictStrategy: 冲突策略，overwrite 或 skip\n    triggerBackfill: 导入完成后是否触发 KPI 回算"
+        "description": "历史数据导入请求.\n\nAttributes:\n    loopIds: 目标回路 ID 列表\n    tsStart: 导入时间范围起始（ISO 8601）\n    tsEnd: 导入时间范围结束（ISO 8601）\n    interval: 采样间隔（秒），默认 1\n    triggerBackfill: 导入完成后是否触发 KPI 回算"
       },
       "ImportStatus": {
         "type": "string",
@@ -26165,11 +27486,6 @@
             ],
             "title": "Createdby"
           },
-          "conflictStrategy": {
-            "type": "string",
-            "title": "Conflictstrategy",
-            "default": "overwrite"
-          },
           "triggerBackfill": {
             "type": "boolean",
             "title": "Triggerbackfill",
@@ -26197,7 +27513,7 @@
           "createdAt"
         ],
         "title": "ImportTaskResponse",
-        "description": "导入任务响应.\n\nAttributes:\n    taskId: 任务 ID\n    status: 任务状态\n    progress: 进度 0~1\n    loopCount: 总回路数\n    importedCount: 已导入回路数\n    errorCount: 失败回路数\n    tsStart: 导入时间范围起始\n    tsEnd: 导入时间范围结束\n    createdAt: 创建时间\n    startedAt: 开始执行时间\n    finishedAt: 完成时间\n    errorMessage: 失败原因\n    createdBy: 创建人\n    conflictStrategy: 冲突策略\n    triggerBackfill: 是否触发回算"
+        "description": "导入任务响应.\n\nAttributes:\n    taskId: 任务 ID\n    status: 任务状态\n    progress: 进度 0~1\n    loopCount: 总回路数\n    importedCount: 已导入回路数\n    errorCount: 失败回路数\n    tsStart: 导入时间范围起始\n    tsEnd: 导入时间范围结束\n    createdAt: 创建时间\n    startedAt: 开始执行时间\n    finishedAt: 完成时间\n    errorMessage: 失败原因\n    createdBy: 创建人\n    triggerBackfill: 是否触发回算"
       },
       "InsightRequest": {
         "properties": {
@@ -26289,50 +27605,6 @@
         ],
         "title": "InsightResult",
         "description": "AI 洞察响应。"
-      },
-      "IntegrityCheckRequest": {
-        "properties": {
-          "loopIds": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Loopids",
-            "description": "目标回路 ID 列表，不传则查全部 READY 回路"
-          },
-          "tsStart": {
-            "type": "string",
-            "title": "Tsstart",
-            "description": "检查时间范围起始（ISO 8601）"
-          },
-          "tsEnd": {
-            "type": "string",
-            "title": "Tsend",
-            "description": "检查时间范围结束（ISO 8601）"
-          },
-          "expectedInterval": {
-            "type": "integer",
-            "maximum": 3600.0,
-            "minimum": 1.0,
-            "title": "Expectedinterval",
-            "description": "预期采样间隔（秒）",
-            "default": 1
-          }
-        },
-        "type": "object",
-        "required": [
-          "tsStart",
-          "tsEnd"
-        ],
-        "title": "IntegrityCheckRequest",
-        "description": "数据完整性检查请求.\n\nAttributes:\n    loopIds: 目标回路 ID 列表（不传则查全部 READY 回路）\n    tsStart: 检查时间范围起始（ISO 8601）\n    tsEnd: 检查时间范围结束（ISO 8601）\n    expectedInterval: 预期采样间隔（秒），默认 1"
       },
       "KpiCalculateRequest": {
         "properties": {
@@ -27265,6 +28537,7 @@
               "type": "string"
             },
             "type": "array",
+            "maxItems": 200,
             "minItems": 1,
             "title": "Loopids",
             "description": "回路 ID 列表"
@@ -29621,6 +30894,92 @@
         "type": "object",
         "title": "MetricDefinitionUpdateRequest",
         "description": "更新指标定义请求（名称/说明/单位/公式/启停）.\n\n内置指标的 metricCode 与 category 锁定不可改；formula 仅自定义指标可改。"
+      },
+      "MetricSeriesData": {
+        "properties": {
+          "metricKey": {
+            "type": "string",
+            "title": "Metrickey"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSeriesItem"
+            },
+            "type": "array",
+            "title": "Series"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metricKey"
+        ],
+        "title": "MetricSeriesData",
+        "description": "批量回路指标序列响应 data 块."
+      },
+      "MetricSeriesItem": {
+        "properties": {
+          "loopId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopid"
+          },
+          "loopTagName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Looptagname"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSeriesPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "title": "MetricSeriesItem",
+        "description": "单回路的指标时间序列."
+      },
+      "MetricSeriesPoint": {
+        "properties": {
+          "ts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "title": "MetricSeriesPoint",
+        "description": "批量指标序列数据点（指标矩阵页列头趋势对比）."
       },
       "ModeDefinitionItem": {
         "properties": {
@@ -32466,6 +33825,52 @@
         "type": "object",
         "title": "ReportAvailability"
       },
+      "ReportBenefitBatchScatter": {
+        "properties": {
+          "batchNo": {
+            "type": "string",
+            "title": "Batchno"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "before": {
+            "items": {
+              "$ref": "#/components/schemas/ReportBenefitScatterPoint"
+            },
+            "type": "array",
+            "title": "Before",
+            "default": []
+          },
+          "after": {
+            "items": {
+              "$ref": "#/components/schemas/ReportBenefitScatterPoint"
+            },
+            "type": "array",
+            "title": "After",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "batchNo",
+          "title"
+        ],
+        "title": "ReportBenefitBatchScatter",
+        "description": "最近已完成批次的前后散点对比（有批次数据时返回）。"
+      },
       "ReportBenefitBenchmarkItem": {
         "properties": {
           "unitId": {
@@ -32596,6 +34001,34 @@
             "type": "array",
             "title": "Benchmark",
             "default": []
+          },
+          "tuningExecution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportBenefitTuningExecution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fittingDistribution": {
+            "items": {
+              "$ref": "#/components/schemas/ReportBenefitFittingBucket"
+            },
+            "type": "array",
+            "title": "Fittingdistribution",
+            "default": []
+          },
+          "latestBatchScatter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportBenefitBatchScatter"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -32605,6 +34038,30 @@
         ],
         "title": "ReportBenefitData",
         "description": "GET /reports/benefit 响应（技术指标口径，不含任何经济换算）。"
+      },
+      "ReportBenefitFittingBucket": {
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket",
+          "label",
+          "count"
+        ],
+        "title": "ReportBenefitFittingBucket",
+        "description": "拟合度分布桶（<60 / 60~75 / 75~90 / ≥90）。"
       },
       "ReportBenefitKpiComparison": {
         "properties": {
@@ -32668,6 +34125,130 @@
         ],
         "title": "ReportBenefitKpiComparison",
         "description": "整定/处置前后 KPI 对比（技术指标聚合，均值口径）。"
+      },
+      "ReportBenefitScatterPoint": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "loopTagName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Looptagname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId"
+        ],
+        "title": "ReportBenefitScatterPoint",
+        "description": "批次前后散点点位（loopTagName 可空，未匹配回路位号时缺省）。"
+      },
+      "ReportBenefitTuningAlgoItem": {
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "algorithm",
+          "count"
+        ],
+        "title": "ReportBenefitTuningAlgoItem",
+        "description": "整定执行统计：按算法分布（P2-3，方案 §5.2）。"
+      },
+      "ReportBenefitTuningExecution": {
+        "properties": {
+          "totalRecords": {
+            "type": "integer",
+            "title": "Totalrecords",
+            "default": 0
+          },
+          "byAlgorithm": {
+            "items": {
+              "$ref": "#/components/schemas/ReportBenefitTuningAlgoItem"
+            },
+            "type": "array",
+            "title": "Byalgorithm",
+            "default": []
+          },
+          "byStatus": {
+            "items": {
+              "$ref": "#/components/schemas/ReportBenefitTuningStatusItem"
+            },
+            "type": "array",
+            "title": "Bystatus",
+            "default": []
+          },
+          "rollbackRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollbackrate"
+          },
+          "avgFittingScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avgfittingscore"
+          }
+        },
+        "type": "object",
+        "title": "ReportBenefitTuningExecution",
+        "description": "整定执行统计（算法/状态分布 + 回滚率 + 平均拟合度）。"
+      },
+      "ReportBenefitTuningStatusItem": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "count"
+        ],
+        "title": "ReportBenefitTuningStatusItem",
+        "description": "整定执行统计：按状态分布（P2-3，方案 §5.2）。"
       },
       "ReportConfigCreateRequest": {
         "properties": {
@@ -34454,6 +36035,119 @@
         "title": "SubmitBody",
         "description": "提交验证请求体（§6.2：actionDetail 必填，按类型校验子字段）。"
       },
+      "SubscriptionRefreshResult": {
+        "properties": {
+          "requestId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestid",
+            "description": "本次请求 ID（API 触发时用于匹配结果）"
+          },
+          "requestedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestedat",
+            "description": "请求时间 ISO 8601"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat",
+            "description": "完成时间 ISO 8601"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "触发来源（manual-api/tag-mapping/loop-import/...）"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "刷新后订阅的测点总数",
+            "default": 0
+          },
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Added",
+            "description": "本次新增订阅的测点"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Removed",
+            "description": "本次移出订阅的测点（Hub 不支持可靠退订，仅不再使用其推送）"
+          },
+          "invocationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invocationid",
+            "description": "重发 SubscribeAsync 的 invocationId"
+          },
+          "leaderPid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leaderpid",
+            "description": "执行刷新的 Leader 进程 PID"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "失败原因（非 Leader/WS 未连接等），成功时为 null"
+          }
+        },
+        "type": "object",
+        "title": "SubscriptionRefreshResult",
+        "description": "实时订阅刷新结果（POST /datasource/refresh-subscription）。\n\n由订阅 Leader 进程写入 Redis 结果 key，API 轮询读取后透传。"
+      },
       "TagBatchDeleteFailure": {
         "properties": {
           "tagId": {
@@ -34651,44 +36345,11 @@
               }
             ],
             "title": "Lastsyncat"
-          },
-          "loopPvCompleteness": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Looppvcompleteness"
-          },
-          "loopIntegrityStatus": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Loopintegritystatus"
-          },
-          "lastIntegrityCheck": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lastintegritycheck"
           }
         },
         "type": "object",
         "title": "TagDataHealth",
-        "description": "测点数据健康度（方案 C 轻量版）。\n\n实时质量码 + 同步新鲜度 + 所属回路 PV 完整度（来自每日巡检快照），\n不在列表页对每个 tag 实时查 TDengine（开销过大）。"
+        "description": "测点数据健康度（方案 C 轻量版）。\n\n实时质量码 + 同步新鲜度，不在列表页对每个 tag 实时查 TDengine（开销过大）。"
       },
       "TagDeleteResult": {
         "properties": {
@@ -34761,6 +36422,11 @@
               }
             ],
             "title": "Quality"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
           },
           "lastSyncAt": {
             "anyOf": [
@@ -34868,7 +36534,7 @@
           "tagType"
         ],
         "title": "TagDetail",
-        "description": "测点详情。"
+        "description": "测点详情."
       },
       "TagImportError": {
         "properties": {
@@ -35017,6 +36683,11 @@
               }
             ],
             "title": "Quality"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
           },
           "lastSyncAt": {
             "anyOf": [
@@ -37299,11 +38970,6 @@
               }
             ],
             "title": "Lastloginat"
-          },
-          "mustChangePassword": {
-            "type": "boolean",
-            "title": "Mustchangepassword",
-            "default": false
           }
         },
         "type": "object",
