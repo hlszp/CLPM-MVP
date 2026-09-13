@@ -140,7 +140,13 @@ async def list_loops_endpoint(
         )
     except ValueError as e:
         # P3 #42: isActive 与 monitorStatus 语义冲突
-        return {"code": "400", "message": str(e), "data": None}
+        # 原实现以 HTTP 200 + code="400" 返回失败，会让网关/监控/前端全局
+        # 拦截器全部失真（全仓唯一一处），改为统一 BizError。
+        raise BizError(
+            code="ERR_LOOP_FILTER_CONFLICT",
+            message=str(e),
+            status_code=400,
+        ) from e
     return success(data=data)
 
 

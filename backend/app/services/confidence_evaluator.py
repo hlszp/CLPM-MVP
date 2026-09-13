@@ -402,13 +402,17 @@ class ConfidenceEvaluator:
         total_weight = a + f + s
         logger.info("[综合评分] weighted_sum=%.4f, total_weight=%.3f", weighted_sum, total_weight)
         if total_weight <= 0:
-            logger.warning("[综合评分] 所有权重总和为 0，返回 0")
+            # 权重配置错误（如管理员把某类权重全置 0）时不得给出"0 分 + A 级
+            # 可信"——那等于用最高可信度宣告该回路最差。按本模块既有约定
+            # （valid_rate < 0.20 → INCONCLUSIVE）返回 value=None + E 级，
+            # 让配置问题以"不可计算"暴露，而不是伪装成业务结论。
+            logger.warning("[综合评分] 所有权重总和为 0，返回 INCONCLUSIVE")
             return MetricResult(
                 metric_code="composite_score",
-                value=0.0,
-                confidence_level=ConfidenceLevel.A.value,
+                value=None,
+                confidence_level=ConfidenceLevel.E.value,
                 lineage=DataLineage(algorithm_version=ALGORITHM_VERSION),
-                details={"reason": "zero total weight"},
+                details={"reason": "zero_total_weight"},
             )
 
         # 基础评分 = (A*a + F*f + S*s) / (a+f+s) * 100

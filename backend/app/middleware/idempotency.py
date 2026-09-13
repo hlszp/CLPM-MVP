@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
@@ -42,8 +43,15 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         if not idempotency_key:
             return await call_next(request)
 
-        # 构建 Redis key
-        redis_key = f"idempotency:{idempotency_key}"
+        # 构建 Redis key：必须按「调用方 + 方法 + 路径 + key」隔离。
+        # 仅用客户端提供的 key 会导致：(a) 不同用户撞 key 时回放对方的响应体
+        # （POST /auth/login 的回包含 access/refresh token）；(b) 同一 key 打
+        # 不同端点会返回上一个端点的响应。调用方以 Authorization 指纹标识
+        # ——中间件早于鉴权依赖执行，不解析 JWT 以保持无状态与零信任。
+        auth_fp = hashlib.sha256(
+            (request.headers.get("authorization") or "anonymous").encode("utf-8")
+        ).hexdigest()[:16]
+        redis_key = f"idempotency:{auth_fp}:{request.method}:{request.url.path}:{idempotency_key}"
 
         # 检查是否已有缓存响应
         try:
@@ -54,7 +62,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                     content=cached_data["body"],
                     status_code=cached_data["status_code"],
                     headers=cached_data.get("headers", {}),
-                    media_type="application/json",
+                    media_type=cached_data.get("media_type") or "application/json",
                 )
         except Exception as exc:
             logger.warning("幂等性缓存读取失败，降级为正常请求: %s", exc)
@@ -86,7 +94,10 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             cache_data = {
                 "status_code": response.status_code,
                 "body": response_body.decode("utf-8"),
-                "headers": {"content-type": "application/json"},
+                # 保留原始 content-type：CSV 导出（如
+                # /performance/analytics/export）命中缓存后不应被回放成 JSON。
+                "media_type": response.media_type or "application/json",
+                "headers": {"content-type": response.media_type or "application/json"},
             }
             await redis_client.setex(
                 redis_key,

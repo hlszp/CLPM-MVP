@@ -76,7 +76,7 @@ timeseries_router = APIRouter(prefix="/timeseries", tags=["timeseries"])
 @router.get("", response_model=ApiResponse[TagListData])
 async def list_tags_endpoint(
     page: int = Query(1, ge=1),
-    pageSize: int = Query(20, ge=1, le=10000),
+    pageSize: int = Query(20, ge=1, le=100),  # 全量导出走 /tags/export
     keyword: str | None = Query(None, description="按位号模糊搜索"),
     measureType: str | None = Query(
         None,

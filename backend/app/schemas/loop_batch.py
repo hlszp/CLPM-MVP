@@ -55,7 +55,9 @@ class LoopBatchConfigRequest(CamelModel):
     - updates 非 None 时至少包含一个待更新字段
     """
 
-    loop_ids: list[str] = Field(..., min_length=1, description="回路 ID 列表")
+    # max_length 与其他批量入参对齐（对照 schemas/tag.py 的 BatchWaveformRequest
+    # max_length=50）：无上限时单请求可产生 O(N×3) 次 DB 往返 + N 条审计插入。
+    loop_ids: list[str] = Field(..., min_length=1, max_length=200, description="回路 ID 列表")
     updates: LoopBatchUpdates | None = Field(None, description="批量更新字段")
     action: str | None = Field(None, pattern="^(delete)$", description="批量动作（delete=软删除）")
 

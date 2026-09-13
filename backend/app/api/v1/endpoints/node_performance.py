@@ -176,9 +176,15 @@ async def calculate_node_endpoint(
     node_id: str,
     body: NodeCalculateRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "ENGINEER")),
+    user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """手动触发节点级 KPI 聚合（仅 ADMIN/ENGINEER）。
+    """手动触发节点级 KPI 聚合（仅 ADMIN）。
+
+    注：原实现写作 require_roles("ADMIN", "ENGINEER")，而 "ENGINEER" 不在
+    合法角色集（ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT，见
+    app/models/sys_user.py 的 ck_sys_user_role）中，永不匹配 —— 该端点实际
+    仅 ADMIN 可用。此处收敛为显式 ADMIN，保持既有行为不变；是否放开给
+    IC_ENGINEER 属权限决策，需人工确认后再改（见整改方案 G05 决策点）。
 
     支持指定时间段计算，用于补算/回填历史数据。
     不传 tsStart/tsEnd 时默认计算上一个完整小时。

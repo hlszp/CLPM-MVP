@@ -966,9 +966,9 @@ async def dry_run(
     else:
         if not dsl:
             raise BizError(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error_code="ALERT_DRY_RUN_NO_DSL",
+                code="ERR_ALERT_DRY_RUN_NO_DSL",
                 message="ruleId 和 dsl 至少提供一个",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
         # 校验 DSL
         validate_dsl(dsl)

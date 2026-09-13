@@ -189,8 +189,12 @@ class FastRateCalculator(MetricCalculatorBase):
             )
 
         # T > 阈值 → F = 1/e^((T-T')/T') × 100
+        # 用 e^(-x) 等价形式：never_settles 时 actual_t 可达 Green 窗口上限
+        # （3600×采样间隔），ratio 可 >709，直接 math.exp(ratio) 会 OverflowError
+        # 被上游宽 except 吞掉 → fast_rate 缺失 → 整回路 composite=INCONCLUSIVE。
+        # 与 stability.py 同口径（该处已注明同一原因）。
         ratio = (actual_t - ideal_t) / ideal_t
-        fast_rate = (1.0 / math.exp(ratio)) * 100.0
+        fast_rate = math.exp(-ratio) * 100.0
         fast_rate = self._clamp(fast_rate)
 
         logger.debug(

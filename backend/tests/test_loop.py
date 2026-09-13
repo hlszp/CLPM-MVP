@@ -577,9 +577,13 @@ class TestLoopListIsActiveMonitorStatusMutex:
                 "/api/v1/loops?isActive=true&monitorStatus=false",
                 headers={"Authorization": "Bearer fake-token"},
             )
-        assert resp.status_code == 200  # HTTP 200，但业务 code=400
+        # 2026-09-13 整改 G04：原实现以 HTTP 200 + code="400" 返回失败
+        # （全仓唯一一处），会让网关/监控/前端全局拦截器全部失真。
+        # 现统一走 BizError → 真实 HTTP 400 + 稳定错误码，
+        # 这也正是本用例 docstring 原本声明的意图（"应返回 400 错误"）。
+        assert resp.status_code == 400
         body = resp.json()
-        assert body["code"] == "400"
+        assert body["code"] == "ERR_LOOP_FILTER_CONFLICT"
         assert "isActive" in body["message"] or "monitorStatus" in body["message"]
 
     def test_consistent_values_no_error(self, client, mock_db, fake_redis) -> None:

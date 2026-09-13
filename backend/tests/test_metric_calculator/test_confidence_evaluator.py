@@ -218,14 +218,21 @@ class TestComputeCompositeScore:
         assert score.value is None
         assert score.confidence_level == ConfidenceLevel.E.value
 
-    def test_zero_total_weight_returns_zero(self):
-        """所有权重为 0 → 评分为 0。"""
+    def test_zero_total_weight_inconclusive(self):
+        """所有权重为 0（配置错误）→ INCONCLUSIVE，不得给出"0 分 + A 级可信"。
+
+        2026-09-13 整改 G06：原实现返回 value=0.0 + confidence=A，等于用最高
+        可信度宣告该回路最差——权重配置错误被伪装成高可信业务结论。现按本
+        模块既有约定（valid_rate < 0.20 → INCONCLUSIVE）返回 value=None + E 级。
+        与 test_missing_core_metric_inconclusive 同属一类修正。
+        """
         results = _make_full_results()
         score = ConfidenceEvaluator.compute_composite_score(
             results, weights={"accuracy_rate": 0.0, "fast_rate": 0.0, "stability_rate": 0.0}
         )
-        assert score.value == 0.0
-        assert score.details["reason"] == "zero total weight"
+        assert score.value is None
+        assert score.confidence_level == ConfidenceLevel.E.value
+        assert score.details["reason"] == "zero_total_weight"
 
     def test_missing_core_metric_inconclusive(self):
         """核心指标缺失（value=None）→ 评分整体 INCONCLUSIVE（评审决策口径）。

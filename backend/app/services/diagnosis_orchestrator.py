@@ -286,8 +286,14 @@ async def _kpi_context(
     kpi_avgs = await _kpi_window_averages(
         db, loop_id, start, end, expected_dataset_ref=expected_dataset_ref
     )
+    # 量纲归一：快照列 effective_auto_rate 为 0~100（metric_calculator/
+    # effective_auto.py 以 *100 落库），而分类层的契约是 0~1
+    # （classification.py 的 UTILIZATION_DETECT_RATE=0.5 / UTILIZATION_PRIORITY_RATE=0.3、
+    #  min(0.95, 1.0-auto_rate)、f"{auto_rate:.0%}" 均按分数语义）。
+    # 此前未归一导致 UTILIZATION 分支仅在投用率 <0.5% 时触发，实质永不生效。
+    raw_auto_rate = kpi_avgs.get("effectiveAutoRate")
     return {
-        "auto_rate_avg": kpi_avgs.get("effectiveAutoRate"),
+        "auto_rate_avg": (float(raw_auto_rate) / 100.0) if raw_auto_rate is not None else None,
         "score_avg": kpi_avgs.get("score"),
         "_window_averages": kpi_avgs,
     }

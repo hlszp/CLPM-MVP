@@ -75,6 +75,30 @@ class TestFastRate:
         result = calc.calculate(bundle)
         assert result.value == 100.0
 
+    def test_never_settles_ratio_does_not_overflow(self):
+        """长窗/never_settles 使 ratio>709 时不得抛 OverflowError（整改 G01）。
+
+        修复前实现为 `(1.0 / math.exp(ratio)) * 100.0`：never_settles 时
+        actual_t 取 Green 窗口上限（3600×采样间隔），30s 采样即 ratio≈3599，
+        math.exp(3599) 抛 OverflowError，被 kpi_calc 的宽 except 吞掉 →
+        fast_rate 缺失 → confidence_evaluator 判核心指标缺失 →
+        整回路 composite=INCONCLUSIVE（整回路无评分）。
+        stability.py 早已改用 math.exp(-x) 并注明同一原因，fast_rate 漏改。
+        """
+        bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
+        calc = FastRateCalculator()
+        calc.with_dependencies(
+            {
+                # ratio = (108000-30)/30 = 3599 → exp(-3599) 下溢为 0.0
+                "settling_time": _make_settling_result(108_000.0),
+                "ideal_settling_time": _make_ideal_result(30.0),
+            }
+        )
+        result = calc.calculate(bundle)  # 修复前此处抛 OverflowError
+        assert result.value is not None, "不得因溢出而丢失核心指标"
+        assert math.isfinite(result.value)
+        assert result.value == 0.0
+
     def test_actual_above_ideal_exponential_decay(self):
         """T > T' → F = 1/e^((T-T')/T') × 100。"""
         bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")

@@ -63,6 +63,42 @@ class TestIdempotencyPost:
         assert mock_db.add.call_count == 2
         assert mock_db.commit.call_count == 1
 
+    def test_same_key_different_caller_not_shared(self, client, mock_db, fake_redis) -> None:
+        """相同 Idempotency-Key 但不同调用方 → 不得复用缓存（整改 G07）。
+
+        修复前 Redis key 仅由客户端提供的 key 构成（`idempotency:{key}`），
+        导致：(a) 不同用户撞 key 时回放对方的响应体——POST /auth/login 的
+        回包含 access/refresh token；(b) 同一 key 打不同端点会返回上一个
+        端点的响应。现 key 按 调用方指纹 + 方法 + 路径 + key 隔离。
+        """
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        body = {
+            "username": "idem_iso_user",
+            "password": "Pass@1234",
+            "displayName": "隔离用户",
+            "role": "IC_ENGINEER",
+        }
+        key = "shared-key-across-callers"
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp1 = client.post(
+                "/api/v1/users",
+                headers={"Authorization": "Bearer token-caller-a", "Idempotency-Key": key},
+                json=body,
+            )
+            assert resp1.status_code == 201
+
+            # 另一调用方使用同一 key → 必须重新执行，而不是回放 A 的响应
+            resp2 = client.post(
+                "/api/v1/users",
+                headers={"Authorization": "Bearer token-caller-b", "Idempotency-Key": key},
+                json=body,
+            )
+            assert resp2.status_code == 201
+
+        # 两次都真正落库（未被跨调用方缓存拦截）
+        assert mock_db.commit.call_count == 2
+
     def test_different_keys_execute_independently(self, client, mock_db, fake_redis) -> None:
         """不同 Idempotency-Key 的请求各自独立执行。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
