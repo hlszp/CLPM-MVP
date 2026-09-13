@@ -201,6 +201,7 @@
 | G10 批量入参无上限 | S0 | **已落地** | 同上 | 全量回归 | 上限取 200；若现场存在 >200 回路的一次性批量操作需分批 |
 | **G39 API 契约零守护** | **S1-b** | **已落地** | 见 S1-b 提交 | 契约测试由整文件 skip 转为 **18 项实跑通过**；新增 10 项检测器自检 | 基线已按当前 schema 重新固化（257 路径/433 schema）；今后 breaking change 必须显式重固化 |
 | **G47 CI 无 PG** | **S1-a** | **已落地** | 见 S1-a 提交 | 真实 PG 上「引导 SQL → stamp head → alembic check」零漂移 | 引导 SQL 路径已守护；**迁移自举能力仍缺失**（见 G51） |
+| **G14 并发 AsyncSession 红线** | **S2** | **已落地 / 守护待补** | 见 S2 提交 | `logical_wide_builder` 三处元数据查询改走独立短会话（`_metadata_execute`），全文件已无 `db.execute`；ruff 与既有测试全绿 | **point 布局无结构性守护**：既有 `test_runtime_regressions` 只覆盖 legacy 路径，建议补一份 point 布局的"缓存命中时不应触发并发 execute"断言 |
 | **G16 回路数口径** | **S2** | **已落地（performance.py）/ 守护待补** | 见 S2 提交 | 分母改 COUNT(DISTINCT loop_id)，与 docstring 一致；现有 performance 测试 37 项仍绿 | **无行为测试**：mock 会话验不了 DISTINCT 聚合效果，需真实 PG（S1-a 已引入）写集成断言；`workbench_precalc.loop_count` 同类问题**未修** |
 | **G17 缓存故障降级** | **S2** | **已落地（降级部分）** | 见 S2 提交 | 2 项回归：L1/L2 读失败降级为未命中不抛出 | **键版本维度未做**：缓存键仍缺运行时算法参数版本（改阈值后最长 1h 脏命中）；L1 set 降级分支未单测（需完整 DataBlock，成本高于收益，与 L2 set 同构） |
 | **G15 precalc 读侧取最新行** | **S2** | **已落地（实现）/ 守护待补** | 见 S2 提交 | 实现正确性经**直接编译验证**：PG 方言下输出 `DISTINCT ON (workbench_window_summary.scope_id)`；现有 workbench 测试 21 项仍绿 | **结构化守护用例未入库**：mock 会话无法验证 DISTINCT ON 去重效果，且我必须按 PG 方言编译才看得到真实 SQL（默认方言会退化成普通 DISTINCT）。断言用例在剩余预算内未调通，已删除以免失败用例入库；建议后续用**真实 PG**（S1-a 已引入）写集成断言 |

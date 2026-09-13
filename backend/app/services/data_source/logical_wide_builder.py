@@ -98,8 +98,27 @@ class _PointStream:
         return self._states[i - 1]
 
 
+async def _metadata_execute(stmt: Any) -> Any:
+    """用独立短会话执行元数据查询（整改 G14）。
+
+    红线（见 tdengine_provider.py 的说明）：DataPlanner 会并发执行多个
+    tagGroup 查询，这些查询共享同一个 AsyncSession，而 SQLAlchemy 明确不允许
+    同一 AsyncSession 并发 execute。legacy 路径已用"先串行解析并缓存"规避，
+    但 point 布局把这些元数据查询留在了共享 session 上，且仍处于
+    data_planner 的 asyncio.gather 之下——与 2026-07-20「全回路取数失败、
+    只能重启 worker」事故同一根因，且只在生产并发量下复现。
+
+    本函数为每次调用开**独立短会话**，彻底断开与调用方 session 的耦合；
+    与 resolve_window_layouts(None, ...) 的既有模式一致。
+    """
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        return await session.execute(stmt)
+
+
 async def _resolve_role_segments(
-    db: Any,
+    db: Any,  # noqa: ARG001 - 保留签名兼容；元数据查询改走独立短会话（G14）
     loop_id: str,
     roles: list[str],
     grid_start: datetime,
@@ -110,7 +129,7 @@ async def _resolve_role_segments(
     from app.models.point_history import LoopTagBindingHistory
 
     rows = (
-        await db.execute(
+        await _metadata_execute(
             select(
                 LoopTagBindingHistory.tag_role,
                 LoopTagBindingHistory.tag_id,
@@ -123,7 +142,7 @@ async def _resolve_role_segments(
     out: dict[str, list[_BindingSegment]] = {r.upper(): [] for r in roles}
     if not rows:
         mappings = (
-            await db.execute(
+            await _metadata_execute(
                 select(LoopTagMapping.tag_role, LoopTagMapping.tag_id).where(
                     LoopTagMapping.loop_id == loop_id
                 )
@@ -442,7 +461,7 @@ async def _load_gap_windows(db: Any) -> list[tuple[datetime, datetime]]:
     from app.models.point_history import HistoryCoverageSegment
 
     rows = (
-        await db.execute(
+        await _metadata_execute(
             select(HistoryCoverageSegment.seg_start, HistoryCoverageSegment.seg_end).where(
                 HistoryCoverageSegment.status == "gap"
             )
