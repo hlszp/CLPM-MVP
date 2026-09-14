@@ -210,7 +210,6 @@ def identify_from_history(
     op: list[float],
     pv: list[float],
     sp: list[float] | None = None,
-    mode: list[int] | None = None,
     ts: float = 1.0,
     theta_estimate: float | None = None,
     candidate_models: list[ModelType] | None = None,
@@ -225,7 +224,12 @@ def identify_from_history(
         op: OP 时序（过程对象输入）
         pv: PV 时序（过程对象输出）
         sp: SP 时序（保留用于后续经验证的闭环辨识方法；Phase 0 不参与生产选模）
-        mode: MODE 时序（可选，用于判断 AUTO/MANUAL）
+        # S3 修复（G24）：原签名含 mode: list[int] | None = None，并在文档中称
+        # "用于判断 AUTO/MANUAL"，但函数体从未使用——是**死参数**。
+        # 经裁决（2026-09-13）：**辨识不以控制模式为门控**——手动段的 OP 操作同样
+        # 产生 PV 阶跃，据 OP->PV 响应即可辨识（本函数正是这个口径，见首行
+        # "基于历史数据辨识过程对象 G_plant = PV/OP"）。故移除该死参数，
+        # 避免调用方误以为"不传 mode 就不辨识手动段"。
         ts: 采样周期（秒）
         theta_estimate: 纯滞后预估值（秒），None 时使用 2Ts 启发值并将可信度封顶 C
         candidate_models: 候选模型阶次列表，默认 [FOPDT, SOPDT]

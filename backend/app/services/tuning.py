@@ -840,12 +840,15 @@ async def identify_model_from_history(
     # 候选模型类型
     candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT"])]
 
-    # 调用算法栈（V62-P1-002: 传入同轴后的 MODE，供后续片段切分使用）
+    # 调用算法栈
+    # S3 修复（G24）：原注释称"传入同轴后的 MODE，供后续片段切分使用"，
+    # 但 identify_from_history 从未使用该参数（已核实为死参数并移除）。
+    # 经裁决：辨识不以控制模式为门控——手动段的 OP 操作同样产生 PV 阶跃，
+    # 据 OP->PV 响应即可辨识，故此处不再传 mode。
     result = identify_from_history(
         op=op,
         pv=pv,
         sp=sp if sp else None,
-        mode=signals.get("mode") or None,
         ts=ts,
         theta_estimate=theta_estimate,
         candidate_models=candidates,
