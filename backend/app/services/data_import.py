@@ -1271,16 +1271,17 @@ async def _write_points_bulk(
             if ts is None:
                 continue
             v = _parse_float_val(values[i]) if i < len(values) else None
+            if v is None:
+                # 值为空 = 远端无该时刻数据（如归档缺口返回的空壳网格），
+                # 不落行——写入 value=NULL 行会被读取侧 V04 语义当作"最近
+                # 状态"持有，把此前可前向补齐的真实旧值顶成 NULL（0919
+                # zpdev 事故：空壳行污染 OP/MODE 前向补齐）。缺数据 = 无
+                # 样本，交由读取侧前向补齐展示，而非落壳行
+                continue
             # 质量戳必存（后续诊断/可信度要消费）：远端 qualities 逐点解码，
             # 缺失/未知 → class=-1（UNKNOWN），raw 原样保留，绝不臆造 Good
             q_raw = qualities[i] if i < len(qualities) else None
             q_class, q_raw_dec = decode_history_quality(q_raw)
-            if v is None:
-                # 值无效但质量可知：仍落点（ts+质量戳，value=NULL）——下游
-                # 按质量过滤，不丢这段「远端明确无有效值」的信息
-                v_sql = "NULL"
-            else:
-                v_sql = _sql_num(v)
             if sparse and prev == v and q_class == prev_q:
                 continue  # 稀疏角色：值与质量均未变不落（COV 语义）
             # 列序=表结构: quality_raw, quality_class, quality_schema,
@@ -1304,7 +1305,7 @@ async def _write_points_bulk(
                 quality_raw=q_raw_dec,
             )
             buf.append(
-                f"('{format_ts_utc(ts)}', {v_sql}, "
+                f"('{format_ts_utc(ts)}', {_sql_num(v)}, "
                 f"{_sql_num(q_raw_dec)}, {_sql_num(q_class)}, 1, '{recv}', 4, '{ph}')"
             )
             n_buf += 1

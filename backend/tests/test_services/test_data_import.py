@@ -1651,6 +1651,44 @@ class TestWritePointsBulkSparseCov:
         assert written == 2
 
     @pytest.mark.asyncio
+    async def test_empty_value_grid_points_are_skipped_not_written_as_null(self):
+        """空值网格点必须跳过，不得落 value=NULL 行。
+
+        回归背景（2026-09-19 zpdev）：外网 AAS 历史归档无数据时返回整片
+        「时间戳网格 + 空值 + quality=0」，旧逻辑照写 value=NULL 行——读取侧
+        V04 语义把"最近状态"（含 NULL）前向持有，把这些空壳行当作最新状态，
+        把 OP/MODE 此前可前向补齐的真实旧值顶成 NULL，趋势大面积空白。
+        缺数据 = 无样本，交给读取侧前向补齐。
+        """
+        from app.services import data_import as di
+
+        timestamps = [
+            "2026-07-15T00:00:00+00:00",
+            "2026-07-15T00:00:01+00:00",
+            "2026-07-15T00:00:02+00:00",
+            "2026-07-15T00:00:03+00:00",
+        ]
+        # 空壳网格形态：仅首尾有真实值，中间两格为空串（远端无数据）
+        raw_data = (
+            timestamps,
+            {"A.PV": {"values": [10.0, "", "", 12.0], "qualities": [1, 0, 0, 1]}},
+        )
+        role_point_map = {"PV": ("A.PV", "1e2e98bf-82ca-4e25-a5e6-56f9075661b7")}
+
+        executed: list[str] = []
+
+        async def fake_exec(sql: str) -> int:
+            executed.append(sql)
+            return 1
+
+        with patch("app.core.tdengine_native.execute_native_effective", side_effect=fake_exec):
+            written = await di._write_points_bulk(role_point_map, raw_data, source_task="task-1")
+
+        # 仅 2 个真实值落点，空值网格点不落
+        assert written == 2
+        assert all("NULL" not in sql for sql in executed), "不得写入 value=NULL 行"
+
+    @pytest.mark.asyncio
     async def test_dense_role_pv_keeps_all_points(self):
         """高频角色 PV 不做 COV 去重：值相同也全落。"""
         from app.services import data_import as di
