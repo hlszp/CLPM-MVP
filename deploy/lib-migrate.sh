@@ -85,7 +85,7 @@ load_seed_data() {
 #
 # 背景：TDengine Docker 镜像 entrypoint 从 /docker-entrypoint-initdb.d/
 # 读取初始化 SQL。若挂载路径不对（曾经误挂到 /root/init/）或卷重置后
-# 容器未完全重建，init 脚本不会执行，导致 clpm_ts 数据库和 st_loop_data
+# 容器未完全重建，init 脚本不会执行，导致 clpm_ts 数据库和 st_point_data_v1
 # 超级表缺失，后端写入报 [0x0200]: db is not specified。
 #
 # 本函数在部署时显式校验并补建，作为 entrypoint init 的兜底。
@@ -93,7 +93,7 @@ load_seed_data() {
 # 2026-08-31 生产演练修复：
 #   - 先等待 TDengine REST 服务就绪（带 60s 超时）：compose up 后容器
 #     仍处于 starting 时立即发 REST 请求会失败（演练实测）；
-#   - 无论 clpm_ts 库是否已存在，都执行幂等 DDL 补建 st_loop_data
+#   - 无论 clpm_ts 库是否已存在，都执行幂等 DDL 补建 st_point_data_v1
 #     超级表：旧逻辑在库已存在时直接跳过，掩盖了"库在表不在"的残缺态。
 #
 # 前置条件：调用方须定义 tdengine_exec()，与 backend_exec() 同模式：
@@ -127,25 +127,27 @@ tdengine_ensure_schema() {
         waited=$((waited + 3))
     done
 
-    echo "  校验 TDengine clpm_ts 数据库与 st_loop_data 超级表（REST :${td_rest_port}）..."
+    echo "  校验 TDengine clpm_ts 数据库与 st_point_data_v1 超级表（REST :${td_rest_port}）..."
 
     # CREATE DATABASE / CREATE STABLE 均为幂等 DDL（IF NOT EXISTS），
-    # 无论库是否已存在都执行，覆盖"库在表不在"的残缺场景
+    # 无论库是否已存在都执行，覆盖"库在表不在"的残缺场景。
+    # 0919 修订：宽表退役（点表唯一真相源）——只确保点表超级表，
+    # 不再创建 st_loop_data（此前每次部署都会把已删除的宽表重建回来）
     tdengine_exec curl -s -u "root:${td_pass}" \
         "http://localhost:${td_rest_port}/rest/sql" \
         -d "CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms'" >/dev/null 2>&1
     tdengine_exec curl -s -u "root:${td_pass}" \
         "http://localhost:${td_rest_port}/rest/sql/clpm_ts" \
-        -d "CREATE STABLE IF NOT EXISTS st_loop_data (ts TIMESTAMP, pv FLOAT, sp FLOAT, op FLOAT, mode TINYINT, pid_p FLOAT, pid_i FLOAT, pid_d FLOAT, pv_quality TINYINT) TAGS (loop_id BINARY(36), unit_id BINARY(36))" >/dev/null 2>&1
+        -d "CREATE STABLE IF NOT EXISTS st_point_data_v1 (ts TIMESTAMP, \`value\` DOUBLE, quality_raw INT, quality_class TINYINT, quality_schema TINYINT, received_at TIMESTAMP, source_kind TINYINT, payload_hash BINARY(64)) TAGS (point_id BINARY(36), source_id BINARY(64))" >/dev/null 2>&1
 
     # 复查超级表
     local recheck
     recheck=$(tdengine_exec curl -s -u "root:${td_pass}" \
         "http://localhost:${td_rest_port}/rest/sql/clpm_ts" -d 'SHOW STABLES' 2>/dev/null || echo "")
-    if echo "$recheck" | grep -q '"st_loop_data"'; then
-        echo "  [OK] clpm_ts 数据库与 st_loop_data 超级表已就绪"
+    if echo "$recheck" | grep -q '"st_point_data_v1"'; then
+        echo "  [OK] clpm_ts 数据库与 st_point_data_v1 超级表已就绪"
     else
-        echo "  [FAIL] TDengine schema 校验失败（st_loop_data 超级表缺失）"
+        echo "  [FAIL] TDengine schema 校验失败（st_point_data_v1 超级表缺失）"
         return 1
     fi
 }
