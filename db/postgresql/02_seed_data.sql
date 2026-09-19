@@ -689,16 +689,19 @@ ON CONFLICT (key) DO NOTHING;
 -- =============================================================================
 -- 9b. 历史布局清单 (history_layout_manifest) — 点表唯一真相源 global/point
 -- =============================================================================
--- 对齐生产 zpdev 口径（09-09 退役宽表）：global 段自 2000-01-01 起恒 point，
+-- 对齐生产口径（09-09 退役宽表）：global 段自 2000-01-01 起恒 point，
 -- 读取侧所有窗口走 LogicalWideBuilder 前向填充，永不回退 legacy 宽表。
 -- 缺此行则读取路由回退 legacy 查宽表（st_loop_data 已退役），历史数据查询空。
+-- 条件插入：已有任何 global/point 行的环境（如生产）不加第二行重复段。
 -- =============================================================================
 INSERT INTO history_layout_manifest
     (id, scope_type, scope_id, valid_from, valid_to, layout, data_version, basis, is_active, created_at)
-VALUES
-    ('00000000-0000-0000-0000-00000000c001', 'global', NULL,
-     '2000-01-01 00:00:00+08', NULL, 'point', 'v1', 'retire-wide-table-offset', true, NOW())
-ON CONFLICT (id) DO NOTHING;
+SELECT '00000000-0000-0000-0000-00000000c001', 'global', NULL,
+       '2000-01-01 00:00:00+08', NULL, 'point', 'v1', 'retire-wide-table-offset', true, NOW()
+WHERE NOT EXISTS (
+    SELECT 1 FROM history_layout_manifest
+    WHERE scope_type = 'global' AND layout = 'point'
+);
 
 -- =============================================================================
 -- 10. 指标数据需求契约 (clpm_metric_data_requirement) — 26 条
