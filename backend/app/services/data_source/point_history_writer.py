@@ -49,10 +49,11 @@ DEFAULT_COVERAGE_FLUSH_INTERVAL = 30.0
 #: 单批最大事件数（分块写）
 DEFAULT_BATCH_EVENTS = 2_000
 #: flush 停摆看门狗：告警阈值（秒）与自愈重建阈值（秒）。
-# 0919 事故：flush 协程静默挂起（无异常日志）致点表断流 3h——挂起不可
-# 复现，靠看门狗周期性暴露协程栈 + 自愈重建恢复写入
-STALL_WARN_SECONDS = 120
-STALL_RESTART_SECONDS = 600
+# 0919 事故：flush 协程静默挂起（无异常日志）致点表断流 3h。自愈阈值
+# 必须短于 Leader 漂移周期（~4-5min，漂移会重置写入器连带看门狗计数），
+# 180s = 挂起后 3 分钟内自愈恢复写入并输出协程栈
+STALL_WARN_SECONDS = 60
+STALL_RESTART_SECONDS = 180
 
 #: 质量解码暂定口径（P0-5 U1：真实 AAS 枚举未确认；未知码恒 UNKNOWN）
 _AAS_RAW_TO_CLASS: dict[int, int] = {
