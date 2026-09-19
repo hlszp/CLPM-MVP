@@ -421,13 +421,30 @@ class PointHistoryWriter:
                 task = self._task
                 stack_txt = ""
                 if task is not None and not task.done():
-                    # task.get_stack() 返回裸 frame 列表（含挂起 await 帧），
-                    # 不能走 traceback.format_list（其要求 4 元组）——0919
-                    # 首次自愈即因 format_list TypeError 打断，自愈未生效
+                    # ① task.get_stack()：最外层帧（对挂起在 Future 上的任务
+                    #    只返回一帧，定位不到内层）
                     live = [f for f in task.get_stack() if f is not None]
-                    stack_txt = "\n".join(
+                    frames_txt = "\n".join(
                         f"  {f.f_code.co_filename}:{f.f_lineno} in {f.f_code.co_name}"
                         for f in live[-8:]
+                    )
+                    # ② 沿 cr_await 协程链下钻到最内层挂起 await——真正的
+                    #    挂起点（如某次 TD REST/PG 调用无超时永久等待）
+                    coro = task.get_coro()
+                    chain: list[str] = []
+                    depth = 0
+                    while coro is not None and depth < 15:
+                        fr = getattr(coro, "cr_frame", None)
+                        if fr is not None:
+                            chain.append(
+                                f"  ~ {fr.f_code.co_filename}:{fr.f_lineno} in {fr.f_code.co_name}"
+                            )
+                        coro = getattr(coro, "cr_await", None)
+                        depth += 1
+                    stack_txt = frames_txt + (
+                        "\n  --- await chain (outer→inner) ---\n" + "\n".join(chain)
+                        if chain
+                        else ""
                     )
                 logger.critical(
                     "PointHistoryWriter flush 停摆 %.0fs 超阈值，自愈重建 flush "
