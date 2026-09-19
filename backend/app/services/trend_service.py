@@ -16,7 +16,7 @@
         db, loop_id,
         start_time="2026-07-09T00:00:00Z",
         end_time="2026-07-12T00:00:00Z",
-        target_points=3600,
+        target_points=1800,
     )
     # result = {"timestamps": [...], "pv": [...], "sp": [...], ...}
 """
@@ -36,7 +36,9 @@ from app.models.tag import TagRegistry
 logger = logging.getLogger(__name__)
 
 # 默认目标点数（趋势图展示上限）
-DEFAULT_TARGET_POINTS = 3600
+#: 趋势显示网格上限（2026-09-19 用户口径：窗口最大 1800 点，超出按间隔取
+#: 数确保刷新及时；builder 网格步长 = 窗口/该值，72h → 144s 步长）
+DEFAULT_TARGET_POINTS = 1800
 
 
 def lttb_downsample_multi_series(
@@ -241,7 +243,7 @@ async def fetch_loop_trend(
         loop_id: 回路 ID
         start_time: 开始时间（ISO 8601 字符串）
         end_time: 结束时间（ISO 8601 字符串）
-        target_points: 目标数据点数（默认 3600）
+        target_points: 目标数据点数（默认 1800）
         roles: 要查询的角色列表
         tags_map: 预加载的 Tag 详情 ``{tag_id: TagRegistry}``，
             若为 None 则内部查询数据库。调用方已加载时传入可避免重复查询。

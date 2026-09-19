@@ -1249,7 +1249,7 @@ async def get_loop_monitor_detail(
         loop_id,
         start_time,
         end_time,
-        target_points=3600,
+        target_points=1800,  # 用户口径：趋势最大 1800 点（0919）
         tags_map=tags_map,
         mappings=mappings,
     )
