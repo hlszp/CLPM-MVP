@@ -441,6 +441,12 @@ class RealtimeSubscriber:
         # 后台 fire-and-forget 任务引用集合（防 GC 中途回收——事件循环对任务仅弱引用，
         # 2026-08-21 事故：MODE 缓存失效任务被 GC 出现 "Task was destroyed but it is pending"）
         self._bg_tasks: set[asyncio.Task] = set()
+        # 回路统计缓存失效单飞（2026-09-19 FD 泄漏根治）：至多 1 个在途失效任务，
+        # 运行期间的后续变更置脏、收尾补跑一轮。此前每条 MODE 消息 spawn 一个
+        # 并发 scan 任务，Redis 连接池只增不减，池水位棘轮至历史并发峰值
+        # （5.9 天打满 1024 FD → EMFILE → Leader 全面瘫痪，2026-09-17~09-19 事故）
+        self._stats_inval_task: asyncio.Task | None = None
+        self._stats_inval_pending = False
         # 低频角色（SP/MODE/PID_*）跨flush持久缓存：上次已知值。
         # 解决"低频角色没变化→buffer中缺失→flush写NULL"的问题——flush时合并_last_known，
         # 未在本tick出现的角色取最近已知值，保证TDengine宽表每行非PV字段完整。
@@ -880,7 +886,7 @@ class RealtimeSubscriber:
         except Exception as exc:  # noqa: BLE001
             logger.debug("订阅 Leader 锁释放失败（可忽略，TTL 兜底）: %s", exc)
 
-    def _spawn_bg(self, coro) -> None:
+    def _spawn_bg(self, coro) -> asyncio.Task:
         """启动 fire-and-forget 后台任务并保持引用（防 GC 中途回收）.
 
         事件循环对任务仅持弱引用，无引用的任务可能被 GC 出现
@@ -889,6 +895,7 @@ class RealtimeSubscriber:
         t = asyncio.create_task(coro)
         self._bg_tasks.add(t)
         t.add_done_callback(self._bg_tasks.discard)
+        return t
 
     async def _run(self) -> None:
         """主循环：订阅连接池监督（连接池化 + 扇入）.
@@ -1766,12 +1773,15 @@ class RealtimeSubscriber:
                 # 供 flush 时合并进完整行，避免低频角色（SP/MODE/PID_*）写NULL
                 self._last_known.setdefault(loop_part, {})[role] = role_payload
 
-        # MODE 变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
+        # MODE 值变化时主动失效回路统计缓存（loop:stats:type:*），确保监控页
         # 自动/手动/自控率卡片下次查询拿到最新值，而非等 60s TTL 自然过期。
-        # MODE 低频变化（小时级），失效代价低。
-        # 注意：经 _spawn_bg 保持引用，防 GC 中途回收（asyncio 任务弱引用陷阱）。
-        if role == "MODE":
-            self._spawn_bg(self._invalidate_loop_stats_cache())
+        # 2026-09-19 根治两处（FD 泄漏事故）：
+        # ① 仅在 MODE **值**变化（或首次出现）时失效——`existing` 是本消息
+        #   处理前的最近已知值；此前每条 MODE 消息都触发，一个推送批次数十条
+        #   MODE → 数十个并发 scan
+        # ② 单飞合并：并发度恒为 1（见 _request_stats_invalidation）
+        if role == "MODE" and self._mode_value_changed(existing, role_payload):
+            self._request_stats_invalidation()
         return True
 
     async def _display_flush_loop(self) -> None:
@@ -1843,6 +1853,39 @@ class RealtimeSubscriber:
             self._display_flush_backoff = min(backoff, _DISPLAY_FLUSH_MAX_BACKOFF)
         else:
             self._display_flush_backoff = 0.0
+
+    def _mode_value_changed(self, existing: dict[str, Any] | None, payload: dict[str, Any]) -> bool:
+        """MODE 值是否相对最近已知值变化（首次出现视为变化）.
+
+        仅比较 value/quality 语义变化；ts/recvAt 推进不算变化。
+        """
+        if existing is None:
+            return True
+        return (existing.get("value"), existing.get("quality")) != (
+            payload.get("value"),
+            payload.get("quality"),
+        )
+
+    def _request_stats_invalidation(self) -> None:
+        """请求失效回路统计缓存（单飞合并，2026-09-19 FD 泄漏根治）.
+
+        至多 1 个在途失效任务：运行期间的新变更只置脏标志，任务收尾时
+        补跑一轮。并发度恒为 1——此前每条 MODE 消息 spawn 一个并发 scan，
+        Redis 连接池只增不减，池水位棘轮至历史并发峰值直至打满 FD。
+        """
+        task = self._stats_inval_task
+        if task is not None and not task.done():
+            self._stats_inval_pending = True
+            return
+        self._stats_inval_task = self._spawn_bg(self._stats_inval_worker())
+
+    async def _stats_inval_worker(self) -> None:
+        """单飞失效执行体：运行期间有新变更则收尾补跑一轮."""
+        while True:
+            self._stats_inval_pending = False
+            await self._invalidate_loop_stats_cache()
+            if not self._stats_inval_pending:
+                return
 
     async def _invalidate_loop_stats_cache(self) -> None:
         """MODE 变化时失效回路统计缓存，确保监控卡片下次查询拿到最新值."""

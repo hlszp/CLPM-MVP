@@ -23,6 +23,13 @@ services:
         APP_VERSION: ${APP_VERSION:-dev}
     image: clpm-backend:latest
     container_name: clpm-backend
+    # FD 上限兜底（2026-09-19 FD 泄漏事故）：镜像默认软上限 1024，连接池
+    # 异常增长时打满导致 worker EMFILE 假死且 healthcheck 探不到；放宽到
+    # 65536 拉长"泄漏→瘫痪"恶化窗口，为告警与根治赢得时间
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # S2-B3: 端口不映射到宿主机，仅容器间网络可达
     expose:
       - "7101"

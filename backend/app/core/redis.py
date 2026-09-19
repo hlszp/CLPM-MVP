@@ -159,6 +159,11 @@ redis_client: _RedisProxy = _RedisProxy(
     db=settings.REDIS_DB,
     password=settings.REDIS_PASSWORD or None,
     decode_responses=True,
+    # 连接池上限（2026-09-19 FD 泄漏事故兜底）：redis-py 连接池只增不减，
+    # 无上限时池水位棘轮至历史并发峰值（ 曾 5.9 天打满容器 1024 FD 致实时
+    # Leader 全面瘫痪）。64 = 单进程合理并发峰值的多倍；触顶时单条命令报
+    # "Too many connections" 快速失败，而非耗尽进程全部文件描述符
+    max_connections=64,
 )
 
 
