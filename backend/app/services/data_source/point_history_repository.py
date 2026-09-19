@@ -290,15 +290,17 @@ async def read_last_states_before(
     point_ids: list[str],
     before: datetime,
 ) -> dict[str, dict[str, Any] | None]:
-    """窗口前每个点**最后一个状态事件**（不看未来；含 BAD/NULL 状态，V04）.
+    """窗口前每个点**最后一个有值的状态事件**（不看未来；含 BAD 值，V04）.
 
-    用 LAST_ROW（不忽略 NULL，区别于 LAST）：语义上"最近状态"=最后一行，
-    即便 value 为 NULL 或质量为 BAD（设计 §5.2-3：不能仅查最后一个非 NULL/Good
-    值）。真实 3.3.6.x 行为由 tests/integration/test_refactor_point_store.py
-    验证（若 per-column LAST_ROW 跨行取值则该测试会暴露）。
+    语义修订（2026-09-19，用户口径"慢变信号前向补齐显示"）：NULL 值行 =
+    无样本（空壳网格/无效字面量），**不作为**前向补齐的状态种子——否则
+    一条 NULL 行会把此前可补齐的真实旧值顶成 NULL（zpdev 0919 事故：空壳
+    导入行致 OP/MODE 趋势大面积空白）。有值但质量 BAD 的行仍是有效样本
+    （V04：坏值不被跳过沿用旧 Good）。真实 3.3.6.x 行为由
+    tests/integration/test_refactor_point_store.py 验证。
 
     Returns:
-        {point_id: 最后状态事件 dict 或 None}
+        {point_id: 最后有值状态事件 dict 或 None}
     """
     if not point_ids:
         return {}
@@ -310,6 +312,7 @@ async def read_last_states_before(
         f"LAST_ROW(payload_hash) AS payload_hash "
         f"FROM {settings.TDENGINE_DB}.{POINT_STABLE} "
         f"WHERE point_id IN ({tags}) AND ts < '{format_ts_utc(before)}' "
+        f"AND `value` IS NOT NULL "
         f"GROUP BY point_id"
     )
     rows = await execute_native(sql)

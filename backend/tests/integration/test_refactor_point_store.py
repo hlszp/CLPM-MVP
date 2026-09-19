@@ -11,7 +11,7 @@
 4. 同 ts 重复写（同 payload）：UPSERT 语义，行数不增；
 5. 同 ts 更正（不同 payload）：TDengine 默认覆盖——证实"静默覆盖"存在，
    仓储层必须先读后写分流（write_events 的冲突路径以本测试为依据）；
-6. LAST_ROW 不忽略 NULL（窗口前最后状态含 BAD/NULL，V04 关键前提）；
+6. LAST_ROW 窗口前种子跳过 NULL 值行（NULL=无样本；有值 BAD 仍保留，V04+0919 修订）；
 7. 稳定表 point_id IN (...) + GROUP BY 批量查询；
 8. 跨子表部分成功：一条多子表 INSERT 中第二子表语法错——验证第一条子表
    数据是否留存（TDengine 语句级原子性边界）；
@@ -157,24 +157,38 @@ class TestPointStoreBehavior:
         rows3 = await repo.read_events([pid], BASE, BASE + timedelta(seconds=30))
         assert rows3[pid][0]["value"] == 3.0
 
-    async def test_last_row_keeps_null_state(self, td_target):
-        """LAST_ROW 窗口前最后状态不忽略 NULL/BAD（V04 前提）."""
+    async def test_last_row_skips_null_state_returns_last_valued(self, td_target):
+        """窗口前种子状态跳过 NULL 值行，回退到最后一个有值状态（0919 修订）.
+
+        语义修订（用户口径"慢变信号前向补齐显示"）：NULL 值行 = 无样本，
+        不得作为前向补齐种子——否则空壳行（远端归档缺口）会把真实旧值
+        顶成 NULL（zpdev 0919 事故）。有值但 BAD 的行仍是有效样本（V04）。
+        """
         pid = _pid(f"lastrow-{td_target}")
         t1 = BASE + timedelta(seconds=100)
         t2 = BASE + timedelta(seconds=200)
+        t3 = BASE + timedelta(seconds=250)
         await repo.write_events(
             [
                 _ev(pid, t1, 7.0, repo.QC_GOOD, 1),
-                # 最后状态：值 NULL + BAD（不得被跳过沿用 t1 的 Good）
+                # NULL + BAD：无样本，跳过
                 _ev(pid, t2, None, repo.QC_BAD, 0),
+                # 有值 + BAD：有效样本（V04：坏值不被跳过）
+                _ev(pid, t3, 6.0, repo.QC_BAD, 0),
             ]
         )
         states = await repo.read_last_states_before([pid], BASE + timedelta(seconds=300))
         st = states[pid]
         assert st is not None
-        assert st["ts"] == t2
-        assert st["value"] is None
+        assert st["ts"] == t3
+        assert st["value"] == 6.0
         assert st["quality_class"] == repo.QC_BAD
+
+        # 仅 NULL 行的点：种子为 None（无可用状态）
+        pid2 = _pid(f"lastrow-nullonly-{td_target}")
+        await repo.write_events([_ev(pid2, t1, None, repo.QC_BAD, 0)])
+        states2 = await repo.read_last_states_before([pid2], BASE + timedelta(seconds=300))
+        assert states2[pid2] is None
 
     async def test_stable_query_batch_by_point_ids(self, td_target):
         pids = [_pid(f"batch-{td_target}-{i}") for i in range(5)]
