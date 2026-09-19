@@ -394,7 +394,6 @@ class PointHistoryWriter:
         - 停摆超 ``_STALL_RESTART_SECONDS`` → CRITICAL + 转储挂起协程栈 +
           取消并重建 flush 任务（自愈；挂起根因以栈为准事后追查）。
         """
-        import traceback
 
         while self._running:
             try:
@@ -421,8 +420,14 @@ class PointHistoryWriter:
                 task = self._task
                 stack_txt = ""
                 if task is not None and not task.done():
-                    frames = task.get_stack()
-                    stack_txt = "".join(traceback.format_list(frames[-6:]))[:1500]
+                    # task.get_stack() 返回裸 frame 列表（含挂起 await 帧），
+                    # 不能走 traceback.format_list（其要求 4 元组）——0919
+                    # 首次自愈即因 format_list TypeError 打断，自愈未生效
+                    live = [f for f in task.get_stack() if f is not None]
+                    stack_txt = "\n".join(
+                        f"  {f.f_code.co_filename}:{f.f_lineno} in {f.f_code.co_name}"
+                        for f in live[-8:]
+                    )
                 logger.critical(
                     "PointHistoryWriter flush 停摆 %.0fs 超阈值，自愈重建 flush "
                     "任务（挂起协程栈如下，根因以栈为准）:\n%s",
