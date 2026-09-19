@@ -48,6 +48,11 @@ DEFAULT_MAX_RETRY_BUFFER = 100_000
 DEFAULT_COVERAGE_FLUSH_INTERVAL = 30.0
 #: 单批最大事件数（分块写）
 DEFAULT_BATCH_EVENTS = 2_000
+#: flush 停摆看门狗：告警阈值（秒）与自愈重建阈值（秒）。
+# 0919 事故：flush 协程静默挂起（无异常日志）致点表断流 3h——挂起不可
+# 复现，靠看门狗周期性暴露协程栈 + 自愈重建恢复写入
+STALL_WARN_SECONDS = 120
+STALL_RESTART_SECONDS = 600
 
 #: 质量解码暂定口径（P0-5 U1：真实 AAS 枚举未确认；未知码恒 UNKNOWN）
 _AAS_RAW_TO_CLASS: dict[int, int] = {
@@ -204,6 +209,11 @@ class PointHistoryWriter:
         # tag_code → point_id 缓存（与 subscriber 映射同源 PG；TTL 300s）
         self._tag_points: dict[str, str] = {}
         self._tag_points_at = 0.0
+        # 停摆看门狗（2026-09-19 事故：flush 协程静默挂起致点表断流 3h，
+        # 无任何异常日志——挂起不可复现，靠看门狗暴露栈 + 自愈）
+        self._last_flush_ok: float = time.monotonic()
+        self._last_stall_log = 0.0
+        self._watchdog_task: asyncio.Task | None = None
         # 统计（S0 契约 §8 风格）
         self.metrics: dict[str, int] = {
             "events_received": 0,
@@ -226,9 +236,13 @@ class PointHistoryWriter:
             return
         self._running = True
         self._task = asyncio.create_task(self._flush_loop())
+        self._watchdog_task = asyncio.create_task(self._stall_watchdog())
 
     async def stop(self) -> None:
         self._running = False
+        if self._watchdog_task is not None:
+            self._watchdog_task.cancel()
+            self._watchdog_task = None
         if self._task is not None:
             self._task.cancel()
             try:
@@ -353,6 +367,9 @@ class PointHistoryWriter:
             try:
                 await asyncio.sleep(self._flush_interval)
                 await self._flush_once()
+                # 循环完整走完一圈（含空批）才视为健康——flush_once 内部
+                # 任一 await 静默挂起时，本行不再执行，看门狗据此发现
+                self._last_flush_ok = time.monotonic()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -368,6 +385,58 @@ class PointHistoryWriter:
                         await ensure_schema()
                     except Exception as ensure_exc:  # noqa: BLE001
                         logger.warning("PointHistoryWriter schema 自愈失败: %s", ensure_exc)
+
+    async def _stall_watchdog(self) -> None:
+        """flush 停摆看门狗（2026-09-19 事故）：暴露静默挂起 + 自愈重建.
+
+        - 每 30s 检查 flush 循环心跳（_last_flush_ok）；
+        - 心跳缺失且有在途数据 → WARNING（带队列深度与指标快照）；
+        - 停摆超 ``_STALL_RESTART_SECONDS`` → CRITICAL + 转储挂起协程栈 +
+          取消并重建 flush 任务（自愈；挂起根因以栈为准事后追查）。
+        """
+        import traceback
+
+        while self._running:
+            try:
+                await asyncio.sleep(30)
+                stall_s = time.monotonic() - self._last_flush_ok
+                received = self.metrics["events_received"]
+                written = self.metrics["events_written"]
+                if stall_s < STALL_WARN_SECONDS:
+                    continue
+                now_s = time.monotonic()
+                if now_s - self._last_stall_log >= 60:
+                    self._last_stall_log = now_s
+                    logger.warning(
+                        "PointHistoryWriter flush 停摆 %.0fs（received=%d "
+                        "written=%d queue=%d retry=%d）",
+                        stall_s,
+                        received,
+                        written,
+                        len(self._queue),
+                        len(self._retry_buffer),
+                    )
+                if stall_s < STALL_RESTART_SECONDS:
+                    continue
+                task = self._task
+                stack_txt = ""
+                if task is not None and not task.done():
+                    frames = task.get_stack()
+                    stack_txt = "".join(traceback.format_list(frames[-6:]))[:1500]
+                logger.critical(
+                    "PointHistoryWriter flush 停摆 %.0fs 超阈值，自愈重建 flush "
+                    "任务（挂起协程栈如下，根因以栈为准）:\n%s",
+                    stall_s,
+                    stack_txt,
+                )
+                if task is not None and not task.done():
+                    task.cancel()
+                self._task = asyncio.create_task(self._flush_loop())
+                self._last_flush_ok = time.monotonic()
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — 看门狗自身不得死亡
+                logger.exception("PointHistoryWriter 看门狗异常（忽略）")
 
     async def _flush_once(self, *, final: bool = False) -> None:
         from app.services.data_source.point_history_repository import (
