@@ -532,25 +532,44 @@ def _apply_rules_to_schedule(rules: dict, sender: object = None) -> None:
 
     current_schedule, _sched = live_beat_schedule(sender)
 
-    if not is_enabled:
-        current_schedule.pop("kpi-calc-hourly", None)
-        logger.info("beat_schedule: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
-    else:
-        if int(cycle_minutes) == 60:
-            schedule_expr = crontab(minute=0, hour="*")
-        elif int(cycle_minutes) > 0 and int(cycle_minutes) < 60:
-            schedule_expr = crontab(minute=f"*/{int(cycle_minutes)}")
+    # 0920 修复：live schedule 的值必须是 ScheduleEntry 对象——此前直接把
+    # 裸配置 dict 塞进 scheduler.schedule，populate_heap 调 entry.is_due()
+    # 时 AttributeError，Beat 崩溃循环（0920 zpdev 实测：EngineRule 保存
+    # 触发重载即崩，每 ~30s 重启一次）。与 celery Scheduler._maybe_entry
+    # 同法构造 Entry 再入表；应用失败保持原调度，绝不炸 Beat。
+    try:
+        if not is_enabled:
+            current_schedule.pop("kpi-calc-hourly", None)
+            logger.info("beat_schedule: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
         else:
-            schedule_expr = float(cycle_minutes) * 60.0
+            if int(cycle_minutes) == 60:
+                schedule_expr = crontab(minute=0, hour="*")
+            elif int(cycle_minutes) > 0 and int(cycle_minutes) < 60:
+                schedule_expr = crontab(minute=f"*/{int(cycle_minutes)}")
+            else:
+                schedule_expr = float(cycle_minutes) * 60.0
 
-        current_schedule["kpi-calc-hourly"] = {
-            "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
-            "schedule": schedule_expr,
-        }
-        logger.info(
-            "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
-            cycle_minutes,
-        )
+            entry_conf = {
+                "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
+                "schedule": schedule_expr,
+            }
+            if _sched is not None:
+                entry = _sched.Entry(
+                    _sched,
+                    name="kpi-calc-hourly",
+                    app=celery_app,
+                    **entry_conf,
+                )
+                current_schedule["kpi-calc-hourly"] = entry
+            else:
+                current_schedule["kpi-calc-hourly"] = entry_conf
+            logger.info(
+                "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
+                cycle_minutes,
+            )
+    except Exception:  # noqa: BLE001 — 调度应用失败不得炸 Beat
+        logger.exception("beat_schedule: EVAL_CALC_CYCLE 应用失败（保持原调度）")
+        return
 
     if _sched is None:
         celery_app.conf.beat_schedule = current_schedule
