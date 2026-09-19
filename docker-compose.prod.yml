@@ -51,11 +51,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    # S2-B1: 资源限制
+    # S2-B1: 资源限制（0919 OOM 循环事故：1G 下实时 Leader 缓冲 + 4 worker
+    # 常态贴近上限，OOM 杀 worker 致 Leader 每 ~5 分钟漂移、点表写入反复中断）
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: "2.0"
     # S2-B2: 日志轮转
     logging:
@@ -184,8 +185,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: "1.0"
+          # 0919：点表 +2.2 亿行后 875MB/1G（93%），查询与写入劣化，放宽到 3G
+          memory: 3G
+          cpus: "2.0"
     logging:
       driver: json-file
       options:
