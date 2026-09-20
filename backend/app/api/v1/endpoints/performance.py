@@ -39,6 +39,7 @@ from app.schemas.performance import (
     MetricSeriesPoint,
     RankingItem,
 )
+from app.services.gate_overview import get_gate_overview
 from app.services.performance import (
     SNAPSHOT_SORT_COLUMNS,
     export_analytics_csv,
@@ -55,6 +56,20 @@ from app.services.performance import (
 )
 
 router = APIRouter(prefix="/performance", tags=["performance"])
+
+
+@router.get("/gate-overview", response_model=ApiResponse[dict])
+async def get_gate_overview_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """评估数据门禁健康总览（0921 监控面板数据源）.
+
+    latest-per-loop 口径：断点比例分布（vs 30% 门槛）、门禁失败原因榜、
+    无快照回路数、断点比例 TOP 回路榜——回答"哪些回路为何没有评估得分"。
+    """
+    data = await get_gate_overview(db)
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------

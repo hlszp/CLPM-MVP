@@ -98,6 +98,22 @@ def test_import_task_overrides_global_hard_timeout() -> None:
     assert time_limit > 1800, f"导入任务 time_limit={time_limit}s 未覆盖全局 1800s 硬超时"
 
 
+def test_hourly_kpi_task_overrides_global_hard_timeout() -> None:
+    """小时 KPI 任务必须显式覆盖全局 1800s 硬超时。
+
+    历史：0921 实测 961 回路 × 2.3 亿行点表单轮需 >30 分钟，全局硬超时
+    每轮只算完前 ~222 个回路即被杀（连续 13+ 轮），后 739 回路永远
+    轮不到——"很多回路没有评估得分"的直接根因。守护任务级覆盖不被删。
+    """
+    from app.tasks.celery_app import celery_app
+    from app.tasks.kpi_calc import calculate_hourly_kpi as _task  # noqa: F401
+
+    task = celery_app.tasks["app.tasks.kpi_calc.calculate_hourly_kpi"]
+    time_limit = task.time_limit
+    assert time_limit is not None, "小时 KPI 任务必须显式设置 time_limit"
+    assert time_limit > 1800, f"KPI time_limit={time_limit}s 未覆盖全局 1800s 硬超时"
+
+
 def test_stop_beat_keeps_pid_file_owned_by_existing_process(tmp_path, monkeypatch) -> None:
     """reload 实例未创建 Beat 时不得删除现有 Beat 的 PID 文件。"""
     from app import main

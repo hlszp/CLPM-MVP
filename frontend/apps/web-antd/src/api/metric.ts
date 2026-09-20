@@ -257,6 +257,45 @@ export namespace MetricApi {
     fitnessFilter?: boolean;
   }
 
+  // ===== 评估门禁健康总览（0921 监控面板） =====
+
+  /** 门禁总览：断点比例分档 */
+  export interface GateGapBucket {
+    count: number;
+    from: number;
+    label: string;
+    to: number;
+  }
+
+  /** 门禁总览：断点比例 TOP 回路 */
+  export interface GateOffender {
+    fitnessLevel?: null | string;
+    gapRatio: number;
+    loopTagName: string;
+    reason?: null | string;
+    status?: null | string;
+    tsEnd?: null | string;
+  }
+
+  /** 门禁总览响应（latest-per-loop 口径） */
+  export interface GateOverview {
+    coverage: {
+      inconclusive: number;
+      noSnapshot: number;
+      scored: number;
+      totalLoops: number;
+      withSnapshot: number;
+    };
+    gapBuckets: GateGapBucket[];
+    gate: {
+      failed: number;
+      failReasons: Record<string, number>;
+      passed: number;
+    };
+    threshold: { maxGapRatio: number; minDataPoints: number };
+    topOffenders: GateOffender[];
+  }
+
   /** 报表筛选范围 */
   export interface AnalyticsFilterScope {
     endTime: string;
@@ -975,6 +1014,13 @@ export function getRankingApi(params: MetricApi.RankingQueryParams) {
   return requestClient.get<MetricApi.RankingItem[]>(`${BASE}/ranking`, {
     params,
   });
+}
+
+/**
+ * 评估门禁健康总览（0921 监控面板）— GET /performance/gate-overview
+ */
+export function getGateOverviewApi() {
+  return requestClient.get<MetricApi.GateOverview>(`${BASE}/gate-overview`);
 }
 
 /**

@@ -34,6 +34,8 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
+import GateHealthPanel from './components/gate-health-panel.vue';
+
 defineOptions({ name: 'PidDashboard' });
 
 const router = useRouter();
@@ -77,7 +79,9 @@ function fitnessNATip(
 ): string {
   const lv = level ?? '';
   const tagText =
-    tags && tags.length > 0 ? tags.map((t) => pidNATagToCn(t)).join('、') : '适用性不足';
+    tags && tags.length > 0
+      ? tags.map((t) => pidNATagToCn(t)).join('、')
+      : '适用性不足';
   return `不适用（${lv || 'NA'}）：${tagText}`;
 }
 /** 不适用时统一中性灰 slate（与其他模块一致，不红不警告） */
@@ -433,11 +437,13 @@ const top5Columns = [
 const top5TableData = computed(() => {
   return top5List.value.map((item, index) => {
     const fitnessLevel = item.fitnessLevel ?? null;
-    const fitnessTags = Array.isArray(item.fitnessTags) ? item.fitnessTags : null;
+    const fitnessTags = Array.isArray(item.fitnessTags)
+      ? item.fitnessTags
+      : null;
     const isFitnessNA = fitnessLevel === 'L0' || fitnessLevel === 'L1';
     const ratingLevel = getRatingLevel(item.score);
     const ratingLabel = ratingLevel
-      ? ratingLabels.value[ratingLevel] ?? `L${ratingLevel}`
+      ? (ratingLabels.value[ratingLevel] ?? `L${ratingLevel}`)
       : '—';
     return {
       key: item.loopId,
@@ -449,11 +455,13 @@ const top5TableData = computed(() => {
       ratingText: isFitnessNA ? '不适用' : ratingLabel,
       ratingColor: isFitnessNA
         ? FITNESS_NA_COLOR
-        : (ratingLevel
+        : ratingLevel
           ? gradeColor(Number(ratingLevel))
-          : ''),
+          : '',
       isFitnessNA,
-      fitnessNATipText: isFitnessNA ? fitnessNATip(fitnessLevel, fitnessTags) : '',
+      fitnessNATipText: isFitnessNA
+        ? fitnessNATip(fitnessLevel, fitnessTags)
+        : '',
       score: isFitnessNA ? '—' : formatNumber(item.score),
       scoreColor: isFitnessNA ? FITNESS_NA_COLOR : scoreColor(item.score),
       steadyRate: `${formatNumber(item.steadyRate)}%`,
@@ -841,6 +849,9 @@ onMounted(() => {
         </template>
       </ClpmPageToolbar>
 
+      <!-- 评估门禁健康（0921 监控面板）：断点比例 vs 门禁门槛 -->
+      <GateHealthPanel class="mb-3" />
+
       <div class="clpm-pid-dashboard__body">
         <div class="clpm-pid-dashboard__main">
           <div class="clpm-pid-dashboard__top-row">
@@ -1119,7 +1130,10 @@ onMounted(() => {
                       :title="record.fitnessNATipText"
                       placement="top"
                     >
-                      <Tag :color="record.ratingColor || 'default'" class="mr-0">
+                      <Tag
+                        :color="record.ratingColor || 'default'"
+                        class="mr-0"
+                      >
                         {{ record.ratingText }}
                       </Tag>
                     </Tooltip>

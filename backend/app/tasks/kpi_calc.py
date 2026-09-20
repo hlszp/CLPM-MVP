@@ -136,6 +136,14 @@ _LAYER2_DEPENDENCIES: dict[str, list[str]] = {
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
+    # 0921 修复：961 回路在 2.3 亿行点表上单回路 0.3~113s，全局硬超时
+    # 1800s 每轮只算完前 ~222 个回路即被杀（连续 13+ 轮，后 739 回路
+    # 永远轮不到→无评估得分）。显式放宽到 4h 保完整轮次；轮次堆积由
+    # Beat 小时节奏自然串行消化（worker 单任务串行，不并发）。后续
+    # TD 压缩回收墓碑行后单轮回落，可回调。守门同口径：import 任务
+    # 先例（time_limit=86400）。
+    time_limit=14400,
+    soft_time_limit=13800,
 )
 def calculate_hourly_kpi(
     self: AsyncTask, ts_start: str | None = None, task_id: str | None = None
