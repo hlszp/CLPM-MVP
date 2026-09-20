@@ -158,7 +158,10 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
             finally:
                 cursor.close()
 
-    return await asyncio.to_thread(_execute)
+    # 0920 加固：asyncio 层超时——to_thread 里的同步 REST 调用虽自带
+    # timeout=60s，但取消无法中断已阻塞线程；此处超时向上抛错，调用方
+    # （flush 循环）下一拍重试，避免写入协程被单条慢查询无限期钉死
+    return await asyncio.wait_for(asyncio.to_thread(_execute), timeout=90)
 
 
 async def execute_native_effective(sql: str) -> int:

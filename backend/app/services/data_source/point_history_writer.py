@@ -48,6 +48,9 @@ DEFAULT_MAX_RETRY_BUFFER = 100_000
 DEFAULT_COVERAGE_FLUSH_INTERVAL = 30.0
 #: 单批最大事件数（分块写）
 DEFAULT_BATCH_EVENTS = 2_000
+#: 单轮 flush 最大处理事件数（0920 事故：积压时一轮吞 20 万事件，
+#: 读回+写入数分钟被看门狗取消，永远写不完 → 断流循环）
+MAX_EVENTS_PER_ROUND = 20_000
 #: flush 停摆看门狗：告警阈值（秒）与自愈重建阈值（秒）。
 # 0919 事故：flush 协程静默挂起（无异常日志）致点表断流 3h。自愈阈值
 # 必须短于 Leader 漂移周期（~4-5min，漂移会重置写入器连带看门狗计数），
@@ -479,6 +482,14 @@ class PointHistoryWriter:
         if not batch:
             await self._maybe_flush_coverage()
             return
+
+        # 0920 修复：单轮批量上限——队列积压（写入器短暂停顿后恢复）时
+        # 一轮吞下 20 万事件，读回+写入耗时数分钟，看门狗 180s 即取消重建，
+        # 永远写不完 → 间歇断流。改为每轮只处理上限事件，余量留在队列
+        # 下一拍继续（flush_interval=1s，消化速率远高于生产入流）
+        if len(batch) > MAX_EVENTS_PER_ROUND:
+            self._queue.extend(batch[MAX_EVENTS_PER_ROUND:])
+            del batch[MAX_EVENTS_PER_ROUND:]
 
         # 周期性点身份保鲜（低成本：TTL 内 no-op）
         if not final:
