@@ -176,7 +176,9 @@ _SIGNALR_REFRESH_INTERVAL = 60.0  # 1 分钟
 # （服务端 clientTimeout 通常 30s，客户端 ping 间隔须 < 其一半）。
 _PING_KEEPALIVE_INTERVAL = 15.0
 # Ping 发出后超过该时长未获 Pong 且期间无任何数据 → 判定连接死亡，立即重连
-_PING_DEATH_TIMEOUT = 60.0
+# 2026-09-20：60→30——与停滞看门狗同口径（CGNAT 杀连接检测窗口减半）；
+# 分片后每片常态 ~30 msg/s，30s 无 Pong 且无数据必为死连接
+_PING_DEATH_TIMEOUT = 30.0
 
 
 # 订阅连接池化（2026-09-06，探针实测驱动）：
