@@ -225,6 +225,81 @@ def compute_sample_interval(
     return max(1, delta_seconds // target_points)
 
 
+async def _fetch_trend_fast(
+    db: AsyncSession,
+    loop_id: str,
+    start_dt: Any,
+    end_dt: Any,
+    sample_interval: int,
+) -> dict[str, Any]:
+    """显示快路径：点表布局下用 TD 服务端降采样组装趋势.
+
+    每角色位号一条 PARTITION BY point_id + INTERVAL + FILL(PREV) 聚合查询
+    （≤target_points 桶，空窗前向补齐），只回 ≤1800 桶而非全窗原始事件
+    （数万~数十万行）——查询负载与传输量降 1~2 个数量级（0920 性能优化）。
+    """
+    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
+    mappings = {m.tag_role: m for m in m_result.scalars().all()}
+
+    role_point: dict[str, str] = {}
+    for r in ("PV", "SP", "OP", "MODE"):
+        m = mappings.get(r)
+        if m is not None:
+            role_point[r] = str(m.tag_id)
+    if not role_point:
+        raise LookupError("loop 无角色位号绑定")
+
+    from app.services.data_source.point_history_repository import (
+        read_trend_buckets,
+    )
+
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+    step_ms = max(1, sample_interval) * 1000
+    buckets = await read_trend_buckets(list(role_point.values()), start_ms, end_ms, step_ms)
+
+    pv_point = role_point.get("PV")
+    pv_map = buckets.get(pv_point, {}) if pv_point else {}
+    starts = sorted({b for bm in buckets.values() for b in bm})
+
+    timestamps: list[int] = []
+    pv: list[float | None] = []
+    sp: list[float | None] = []
+    op: list[float | None] = []
+    mode: list[float | None] = []
+    ql: list[str] = []
+    for b in starts:
+        timestamps.append(b)
+        qe = pv_map.get(b)
+        q = int(qe[1]) if qe and qe[1] is not None else -1
+        ql.append(_quality_to_label(q))
+        # PV 质量码 BAD → null（对齐既有显示语义）
+        pv.append(None if (qe is None or q == 0) else qe[0])
+        for _dst, src in (("sp", "SP"), ("op", "OP"), ("mode", "MODE")):
+            smap = buckets.get(role_point.get(src, ""), {}) if src in role_point else {}
+            e = smap.get(b)
+            if e is not None and e[0] is not None:
+                v = e[0]
+                if src == "MODE":
+                    v = int(round(float(v)))
+                getattr_list = {"sp": sp, "op": op, "mode": mode}[src]
+                getattr_list.append(v)
+            else:
+                {"sp": sp, "op": op, "mode": mode}[src].append(None)
+
+    return {
+        "timestamps": timestamps,
+        "pv": pv,
+        "sp": sp,
+        "op": op,
+        "mode": mode,
+        "pvQuality": ql,
+        "sampleInterval": sample_interval,
+        "pointCount": len(timestamps),
+        "downsampled": True,
+    }
+
+
 async def fetch_loop_trend(
     db: AsyncSession,
     loop_id: str,
@@ -283,6 +358,18 @@ async def fetch_loop_trend(
         target_points,
         max(1, delta_seconds // target_points),
     )
+
+    # 1.5 显示快路径（0920 性能优化）：点表布局时用 TD 服务端降采样
+    # （PARTITION BY point_id + INTERVAL + FILL(PREV)），只回 ≤target_points
+    # 个聚合桶（慢变信号前向补齐），不再拉全窗原始事件在 Python 建网格。
+    # 布局非 point（legacy 兜底部署）或快路径异常时回退既有 Provider 路径。
+    try:
+        from app.services.data_source.point_history_metadata import resolve_layout
+
+        if await resolve_layout(db, loop_id=loop_id, at=end_dt) == "point":
+            return await _fetch_trend_fast(db, loop_id, start_dt, end_dt, sample_interval)
+    except Exception as exc:  # noqa: BLE001 — 快路径失败回退，不阻塞显示
+        logger.warning("趋势快路径失败，回退 Provider 查询: %s", exc)
 
     # 2. 查询回路 Tag 关联（若调用方已预加载则直接复用，避免重复查询）
     if mappings is None:

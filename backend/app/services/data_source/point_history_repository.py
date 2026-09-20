@@ -332,6 +332,57 @@ async def read_last_states_before(
     return results
 
 
+async def read_trend_buckets(
+    point_ids: list[str],
+    start: datetime,
+    end: datetime,
+    interval_s: int,
+) -> dict[str, dict[int, tuple[float | None, int]]]:
+    """显示趋势专用的服务端降采样读取（INTERVAL + FILL(PREV)）.
+
+    每点位号按采样窗聚合（窗内 LAST 值/质量），空窗 FILL(PREV) 用前一
+    有效值前向补齐——与趋势显示语义（慢变信号前向补齐，0920 用户口径）
+    一致。首个数据点之前无前值 → 该窗不产生数据（由调用方按缺处理）。
+
+    Args:
+        point_ids: 位号注册 ID（= 点身份 ID）列表
+        start/end: 半开时间窗 [start, end)
+        interval_s: 采样窗（秒），决定聚合桶宽
+
+    Returns:
+        {point_id: {bucket_start_ms: (value, quality_class)}}
+    """
+    if not point_ids or end <= start:
+        return {}
+    tags = ", ".join(f"'{_sql_quote(pid)}'" for pid in point_ids)
+    interval_ms = max(1, int(interval_s)) * 1000
+    start_ms = int(start.timestamp() * 1000)
+    end_ms = int(end.timestamp() * 1000)
+    sql = (
+        f"SELECT point_id, _wstart, LAST(`value`) AS `value`, "
+        f"LAST(quality_class) AS quality_class "
+        f"FROM {settings.TDENGINE_DB}.{POINT_STABLE} "
+        f"WHERE point_id IN ({tags}) AND ts >= {start_ms} AND ts < {end_ms} "
+        f"PARTITION BY point_id INTERVAL({interval_ms}a) FILL(PREV)"
+    )
+    rows = await execute_native(sql)
+    out: dict[str, dict[int, tuple[float | None, int]]] = {pid: {} for pid in point_ids}
+    for row in rows:
+        pid = row.get("point_id")
+        ws = _parse_td_ts(row.get("_wstart"))
+        if pid is None or pid not in out or ws is None:
+            continue
+        v = row.get("value")
+        q = row.get("quality_class")
+        if v is None and q is None:
+            continue  # FILL 无前值的首段：无数据
+        out[pid][int(ws.timestamp() * 1000)] = (
+            v,
+            int(q) if q is not None else -1,
+        )
+    return out
+
+
 def _parse_td_ts(ts_val: Any) -> datetime | None:
     """TDengine 返回时间戳 → aware UTC datetime."""
     if isinstance(ts_val, datetime):
