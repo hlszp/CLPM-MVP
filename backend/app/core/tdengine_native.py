@@ -26,6 +26,7 @@ import asyncio
 import logging
 import math
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -39,6 +40,12 @@ logger = logging.getLogger(__name__)
 
 # TDengine REST API 端口（原生端口 + 11，如 6030→6041, 7104→7115）
 _TD_REST_PORT = settings.TDENGINE_PORT + 11
+
+# TD 调用专用线程池（0920 间歇断流修复）：此前所有 TD REST 调用走
+# asyncio 默认线程池，与趋势/分析等长查询（单次 9~18s）共享少数线程——
+# 查询高峰期实时写入的 to_thread 排队饥饿，flush 挂起 → 队列满仓 →
+# 全回路间歇断流。独立线程池保证实时写入不再与重查询争抢
+_TDNATIVE_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="tdnative")
 
 
 class TDengineConnectionPool:
@@ -158,10 +165,12 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
             finally:
                 cursor.close()
 
-    # 0920 加固：asyncio 层超时——to_thread 里的同步 REST 调用虽自带
-    # timeout=60s，但取消无法中断已阻塞线程；此处超时向上抛错，调用方
-    # （flush 循环）下一拍重试，避免写入协程被单条慢查询无限期钉死
-    return await asyncio.wait_for(asyncio.to_thread(_execute), timeout=90)
+    # 0920 加固：asyncio 层超时——同步 REST 调用虽自带 timeout=60s，但
+    # 取消无法中断已阻塞线程；此处超时向上抛错，调用方（flush 循环）下一拍
+    # 重试，避免写入协程被单条慢查询无限期钉死。
+    # 专用线程池：与默认执行器隔离，实时写入不与趋势/分析长查询争抢
+    loop = asyncio.get_running_loop()
+    return await asyncio.wait_for(loop.run_in_executor(_TDNATIVE_EXECUTOR, _execute), timeout=90)
 
 
 async def execute_native_effective(sql: str) -> int:
@@ -188,7 +197,8 @@ async def execute_native_effective(sql: str) -> int:
             finally:
                 cursor.close()
 
-    return await asyncio.to_thread(_execute)
+    loop = asyncio.get_running_loop()
+    return await asyncio.wait_for(loop.run_in_executor(_TDNATIVE_EXECUTOR, _execute), timeout=90)
 
 
 async def batch_insert(
