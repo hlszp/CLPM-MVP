@@ -562,8 +562,10 @@ def _apply_rules_to_schedule(rules: dict, sender: object = None) -> None:
                 "schedule": schedule_expr,
             }
             if _sched is not None:
+                # Scheduler.Entry 即 ScheduleEntry 类（首参就是 name，无 self
+                # 绑定——0921 误传 _sched 作位置参数致每次启动 TypeError，
+                # EVAL 应用失败）
                 entry = _sched.Entry(
-                    _sched,
                     name="kpi-calc-hourly",
                     app=celery_app,
                     **entry_conf,
