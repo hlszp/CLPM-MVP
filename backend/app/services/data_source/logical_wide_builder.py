@@ -261,8 +261,21 @@ async def build_logical_wide(
                     stream.add(st["ts"], st)
             streams[pid] = stream
 
-    # 会话 gap 窗口（队列满/停机丢失登记 → 未知强制，禁止默填）
-    gap_windows = await _load_gap_windows(db)
+    # 会话 gap 窗口（队列满/停机丢失登记 → 未知强制，禁止默填）。
+    # 0921 性能修复：先按时间合并重叠/相邻段并预排序——停摆事故期登记的
+    # 13,000+ 碎片段曾使逐槽 _in_gap 线性扫描成为 KPI 取数主瓶颈
+    # （1s 网格 3601 槽 × N 角色 × 全量段数 ≈ 1.5 亿次比较/回路 ≈ 20s，
+    # 实测吻合；基线 200-300ms/回路是宽表路径无此扫描）。合并后二分查。
+    gap_windows_raw = await _load_gap_windows(db)
+    merged: list[list[datetime]] = []
+    for gs, ge in sorted(gap_windows_raw):
+        if merged and gs <= merged[-1][1]:
+            if ge > merged[-1][1]:
+                merged[-1][1] = ge
+        else:
+            merged.append([gs, ge])
+    gap_starts = [m[0] for m in merged]
+    gap_ends = [m[1] for m in merged]
 
     # 网格
     grid: list[datetime] = []
@@ -318,7 +331,9 @@ async def build_logical_wide(
                 if role == "pv":
                     pv_quality.append(-1)
                 continue
-            if _in_gap(ts, gap_windows):
+            # 二分查合并后的 gap 段（取代逐段线性扫 _in_gap）
+            _gi = bisect.bisect_right(gap_starts, ts) - 1
+            if _gi >= 0 and ts < gap_ends[_gi]:
                 status.append((False, sc.UNKNOWN_REASON_GAP))
                 col.append(None)
                 if role == "pv":
@@ -373,7 +388,7 @@ async def build_logical_wide(
         slot_status=slot_status,
         rebind_boundaries=rebind_boundaries,
         segments=segments,
-        gap_windows=gap_windows,
+        gap_windows=[(gs, ge) for gs, ge in merged],
     )
     return RawTimeSeries(
         timestamps=timestamps_naive,
