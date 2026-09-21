@@ -67,6 +67,7 @@ async def get_gate_overview(db: AsyncSession) -> dict[str, Any]:
             KpiSnapshotHourly.score,
             KpiSnapshotHourly.fitness_level,
             KpiSnapshotHourly.fitness_detail,
+            KpiSnapshotHourly.valid_rate,
         )
         .distinct(KpiSnapshotHourly.loop_id)
         .where(KpiSnapshotHourly.ts_end >= window_start)
@@ -82,6 +83,7 @@ async def get_gate_overview(db: AsyncSession) -> dict[str, Any]:
                 sub.c.score,
                 sub.c.fitness_level,
                 sub.c.fitness_detail,
+                sub.c.valid_rate,
             )
         )
     ).all()
@@ -94,44 +96,55 @@ async def get_gate_overview(db: AsyncSession) -> dict[str, Any]:
     bucket_counts = [0] * len(_GAP_BUCKETS)
     offenders: list[dict[str, Any]] = []
 
-    for loop_id, ts_end, status, score, fitness_level, detail in rows:
+    for row in rows:
+        loop_id, ts_end, status, score, fitness_level, detail, valid_rate = row
         lid = str(loop_id)
         if score is not None:
             scored += 1
+            gate_passed += 1
         else:
             inconclusive += 1
+            gate_failed += 1
 
         gate = None
         if isinstance(detail, dict):
             g = detail.get("gate")
             if isinstance(g, dict):
                 gate = g
-        if gate is None:
-            # 无 gate 结论（旧快照/新路径未写）：按有快照计，不入门禁统计
-            continue
 
-        if gate.get("passed"):
-            gate_passed += 1
-        else:
-            gate_failed += 1
+        # 断点比例：优先门禁精确值；成功快照不落 gate 详情（仅失败时写），
+        # 回退用 1-valid_rate 估算（口径接近：均以点数占比为基）
+        gap_f: float | None = None
+        if gate is not None and isinstance(gate.get("gapRatio"), (int, float)):
+            gap_f = float(gate["gapRatio"])
+        elif valid_rate is not None:
+            try:
+                gap_f = max(0.0, min(1.0, 1.0 - float(valid_rate)))
+            except (TypeError, ValueError):
+                gap_f = None
+
+        if gate is not None and not gate.get("passed"):
             reason = str(gate.get("reason") or "未知原因")
             fail_reasons[reason] = fail_reasons.get(reason, 0) + 1
+        elif score is None:
+            reason = "无 gate 详情（旧快照或评估中断）"
+        else:
+            reason = None
 
-        gap = gate.get("gapRatio")
-        gap_f = float(gap) if isinstance(gap, (int, float)) else 1.0
-        for i, (_label, lo, hi) in enumerate(_GAP_BUCKETS):
-            if lo <= gap_f < hi:
-                bucket_counts[i] += 1
-                break
+        if gap_f is not None:
+            for i, (_label, lo, hi) in enumerate(_GAP_BUCKETS):
+                if lo <= gap_f < hi:
+                    bucket_counts[i] += 1
+                    break
 
-        if not gate.get("passed"):
+        if score is None and gap_f is not None:
             offenders.append(
                 {
                     "loopTagName": tag_of.get(lid, lid[:8]),
                     "gapRatio": round(gap_f, 4),
                     "status": status,
                     "fitnessLevel": fitness_level,
-                    "reason": reason if not gate.get("passed") else None,
+                    "reason": reason,
                     "tsEnd": ts_end.isoformat() if ts_end else None,
                 }
             )

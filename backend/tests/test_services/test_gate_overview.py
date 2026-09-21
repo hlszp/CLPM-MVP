@@ -11,7 +11,7 @@ import pytest
 _SVC = "app.services.gate_overview"
 
 # 模拟 SQLAlchemy Row（可按位解包）
-_Row = namedtuple("_Row", "loop_id ts_end status score fitness_level fitness_detail")
+_Row = namedtuple("_Row", "loop_id ts_end status score fitness_level fitness_detail valid_rate")
 
 
 @pytest.mark.asyncio
@@ -30,6 +30,7 @@ async def test_gate_overview_buckets_and_offenders():
             90.0,
             "L4",
             {"gate": {"passed": True, "gapRatio": 0.05, "reason": None}},
+            0.99,
         ),
         # 回路1：断点 35% 超门槛（30-50% 桶 + offenders）
         _Row(
@@ -39,6 +40,7 @@ async def test_gate_overview_buckets_and_offenders():
             None,
             "L0",
             {"gate": {"passed": False, "gapRatio": 0.35, "reason": "断点比例 35% 超过 30% 门槛"}},
+            0.65,
         ),
         # 回路2：断点 70%（50%+ 桶 + offenders 榜首）
         _Row(
@@ -48,6 +50,7 @@ async def test_gate_overview_buckets_and_offenders():
             None,
             "L0",
             {"gate": {"passed": False, "gapRatio": 0.70, "reason": "断点比例 70% 超过 30% 门槛"}},
+            0.30,
         ),
         # 回路3：有点数不足类失败（同 35% 断点）
         _Row(
@@ -63,6 +66,7 @@ async def test_gate_overview_buckets_and_offenders():
                     "reason": "有效数据点 3 不足（门槛 32 点）",
                 }
             },
+            0.65,
         ),
         # 回路4：无快照（不在 rows 里）→ noSnapshot=1
     ]
