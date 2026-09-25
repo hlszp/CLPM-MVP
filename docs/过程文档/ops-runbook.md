@@ -380,3 +380,53 @@ curl -s http://localhost:7101/health/db-connections
 - 远端厂 API `HISTORY_DATA_API_TIMEOUT` 120s 建议降至 30s（长跨度回算走 Celery 路径另行放宽）——待评审。
 - Redis 连接风暴精确归因（Celery kombu churn / per-WS pubsub）待下次复现时挂监控留趋势。
 - 压测类工作（E2E 全量/pytest 全量）连续多轮后，建议主动重启一次后端再跑关键验收。
+
+---
+
+## TDengine 手工排查：时间字面量必须用 ISO-Z（2026-09-25 事故沉淀）
+
+### 现象
+
+TDengine 对**裸时间字面量**（无时区后缀）按**会话时区**解释；本环境容器 TZ=Asia/Shanghai（UTC+8）。
+而**产品代码统一使用** `format_ts_utc()`（输出 ISO-Z，UTC 口径），两者相差 8 小时且**不报错**——
+手工排查时会出现"SQL 查得到行、程序查不到"（或反之）的静默偏移，极易误判为"读取层丢段"。
+
+### 错误 / 正确示例
+
+```sql
+-- ❌ 错误：裸字面量按会话时区（CST）解释 → 实际查的是 8 小时前的 UTC 时段
+SELECT COUNT(*) FROM clpm_ts.st_point_data_v1
+WHERE point_id = '<point_id>'
+  AND ts >= '2026-09-25 08:10:00' AND ts <= '2026-09-25 08:51:00';
+
+-- ✅ 正确：ISO-Z（UTC）口径，与产品代码同口径
+SELECT COUNT(*) FROM clpm_ts.st_point_data_v1
+WHERE point_id = '<point_id>'
+  AND ts >= '2026-09-25T08:10:00.000Z' AND ts <= '2026-09-25T08:51:00.000Z';
+```
+
+### 四象限实测对照（2026-09-25，样本点 553d4827-…）
+
+同一物理时段（UTC 08:10–08:51），四种组合的返回行数：
+
+| 执行路径 | 字面量 | 返回行数 | 说明 |
+|---|---|---|---|
+| native（`execute_native`，产品读路径） | ISO-Z `'2026-09-25T08:10:00.000Z'` | **53** | 真实（该时段点表确实几乎无数据） |
+| REST（`execute_sql`） | ISO-Z | **53** | 同上 |
+| native | 裸 `'2026-09-25 08:10:00'` | **2126** | 实际查的是 UTC 00:10–00:51 |
+| REST | 裸 | **2126** | 同上 |
+
+佐证等价性：`'2026-09-25T00:10:00.000Z'`（真正的 UTC 00:10）与裸 `'2026-09-25 08:10:00'` 返回**完全相同**的 2126 行。
+
+> 本次事故中，该 8 小时偏移一度被误判为"读取层静默丢段"（`read_events` 返回 0 行）。
+> 实际真因是：**点表在该 UTC 时段本身没有数据**（上游/链路缺口），`read_events` 返回 0 行是正确行为。
+
+### 结论与纪律
+
+1. 产品代码统一走 `format_ts_utc()`（ISO-Z）是**正确**的，不要改；
+2. **手工排查必须同口径**：所有手写 SQL 的时间字面量一律用 ISO-Z（`YYYY-MM-DDTHH:MM:SS.sssZ`）；
+3. 若必须用裸字面量，请先确认**会话时区**——TDengine 的正确命令是
+   `SHOW VARIABLES LIKE 'timezone';`（2026-09-26 实测返回 `Asia/Shanghai (CST, +0800)`；
+   `SELECT @@timezone;` 是 MySQL 写法，TDengine 报 `unrecognized token`，别照抄），
+   或直接看容器 TZ（`docker exec clpm-tdengine printenv TZ`），然后显式换算；
+4. 排查"有没有数据"时，**同时**打印查到的 `MIN(ts)/MAX(ts)`：时段边界能立刻暴露 8 小时偏移。

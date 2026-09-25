@@ -348,7 +348,25 @@ async def build_logical_wide(
                 if role == "pv":
                     pv_quality.append(int(ev.get("quality_class", -1)))
                 col.append(value)
-                status.append((True, None))
+                # R2（2026-09-25）：HELD 超过阈值不得计入 known。
+                # state_at 返回"最近一次 <= ts 的事件"，事件很旧时该槽其实是
+                # 保持值而非新观测；数据缺口期间正是这种形态，却被当成观测数据
+                # （曾导致 sensor_fault 把缺口误报为"传感器冻结 33%"）。
+                # 阈值按【时间】而非点数（G12 起网格步长可变 interval_s）：
+                #   max(3 x 网格步长, 60s)
+                # 取值理由：3 倍步长容忍常规采样抖动/对齐误差；60s 下限覆盖
+                # 秒级网格下慢变角色（SP/MODE/PID_* 等 COV 稀疏信号）的正常
+                # 保持间隔，避免把它们大面积误标。
+                # 注意：只改"是否暴露为 unknown"，value 照旧保留（显示不变）。
+                ev_ts = ev.get("ts")
+                try:
+                    hold_s = (ts - ev_ts).total_seconds() if ev_ts is not None else 0.0
+                except TypeError:  # naive/aware 混用时不得因此丢槽
+                    hold_s = 0.0
+                if hold_s > max(3.0 * step_s, 60.0):
+                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG))
+                else:
+                    status.append((True, None))
                 first_event_seen = True
             else:
                 # 无状态归因：首事件前=无初值；改绑后新点无事件=rebind；

@@ -521,8 +521,87 @@ async def fetch_loop_trend(
     }
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """naive（按 UTC 解释）或 aware → aware UTC。
+
+    统一用 aware 比较：``history_coverage_segment`` 的 seg_start/seg_end 是
+    ``DateTime(timezone=True)``，把 naive 值传给 asyncpg 会抛"can't subtract
+    offset-naive and offset-aware datetimes"（本项目已多次踩到）。
+    """
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+async def attach_gap_info(db: AsyncSession, loop_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    """把「已登记缺口」附加到趋势结果上（1b，2026-09-26）。
+
+    为什么必须查 PG 而不能从时间戳判断：趋势的 point 快路径走 TD 端
+    ``PARTITION BY + FILL(PREV)``，缺口会被前向填充成平台线且时间戳均匀，
+    序列本身看不出缺口。缺口事实由 1a 落在 ``history_coverage_segment``
+    （``status='gap'``）。
+
+    作用域说明：缺口段是**采集会话级**的（``point_id`` 为 NULL、``session_id``
+    非空），因此这里**只按时间重叠过滤**，不按 ``loop_id`` / ``point_id`` 过滤；
+    参数 ``loop_id`` 仅用于日志定位。
+
+    失败语义：任何异常都返回 ``gaps=[]`` + ``observedRatio=None``，绝不抛错
+    （缺口信息是附加项，不得影响趋势主体）。
+    """
+    result["gaps"] = []
+    result["observedRatio"] = None
+    timestamps = result.get("timestamps") or []
+    if len(timestamps) < 2:
+        return result
+    try:
+        win_start = _as_utc(parse_iso_datetime(str(timestamps[0]), field="timestamps[0]"))
+        win_end = _as_utc(parse_iso_datetime(str(timestamps[-1]), field="timestamps[-1]"))
+        window_s = (win_end - win_start).total_seconds()
+        if window_s <= 0:
+            return result
+
+        from app.models.point_history import HistoryCoverageSegment
+
+        rows = (
+            await db.execute(
+                select(
+                    HistoryCoverageSegment.seg_start,
+                    HistoryCoverageSegment.seg_end,
+                ).where(
+                    HistoryCoverageSegment.status == "gap",
+                    HistoryCoverageSegment.seg_end >= win_start,
+                    HistoryCoverageSegment.seg_start <= win_end,
+                )
+            )
+        ).all()
+
+        gaps: list[dict[str, Any]] = []
+        total_gap_s = 0.0
+        for seg_start, seg_end in rows:
+            start = max(_as_utc(seg_start), win_start)
+            end = min(_as_utc(seg_end), win_end)
+            seconds = (end - start).total_seconds()
+            if seconds <= 0:
+                continue
+            total_gap_s += seconds
+            gaps.append(
+                {
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "seconds": round(seconds, 3),
+                }
+            )
+        gaps.sort(key=lambda g: str(g["start"]))
+        result["gaps"] = gaps
+        result["observedRatio"] = max(0.0, min(1.0, 1.0 - total_gap_s / window_s))
+    except Exception as exc:  # noqa: BLE001 — 缺口信息是附加项，绝不抛错
+        logger.warning("趋势缺口附加失败（loop=%s，返回空缺口）: %s", loop_id, exc)
+        result["gaps"] = []
+        result["observedRatio"] = None
+    return result
+
+
 __all__ = [
     "fetch_loop_trend",
     "compute_sample_interval",
+    "attach_gap_info",
     "DEFAULT_TARGET_POINTS",
 ]

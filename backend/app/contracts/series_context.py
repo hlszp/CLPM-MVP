@@ -37,6 +37,7 @@ UNKNOWN_REASON_NO_INITIAL = "no_initial"  # 窗口前无初值（首事件前）
 UNKNOWN_REASON_CONFLICT = "conflict"  # 同 ts 冲突按不确定处理
 UNKNOWN_REASON_UNBOUND = "unbound"  # 该时刻无绑定（未知过去/改绑空窗）
 UNKNOWN_REASON_REBIND = "rebind"  # 改绑后新点无锚点
+UNKNOWN_REASON_HELD_TOO_LONG = "held_too_long"  # R2：沿用旧值超过阈值（缺口被 HELD 掩盖）
 
 
 def _utc(dt: datetime) -> datetime:

@@ -1272,6 +1272,56 @@ def _point_context_from_bundles(bundles: list[MetricDataBundle]) -> Any:
     return None
 
 
+KPI_MIN_OBSERVED_RATIO_KEY = "kpi.min_observed_ratio"
+
+
+async def _load_kpi_min_observed_ratio(db) -> float | None:
+    """读取 KPI 观测覆盖率阈值（sys_config: kpi.min_observed_ratio）.
+
+    缺失 / 空 / 非法 → None = **不启用**（保持现行为）。开关默认不存在，
+    因此升级本身不改变任何既有结果（2026-09-25）。
+    """
+    try:
+        from app.models.sys_config import SysConfig
+
+        row = (
+            (await db.execute(select(SysConfig).where(SysConfig.key == KPI_MIN_OBSERVED_RATIO_KEY)))
+            .scalars()
+            .first()
+        )
+        raw = getattr(row, "value", None) if row is not None else None
+        if raw is None or str(raw).strip() == "":
+            return None
+        ratio = float(str(raw).strip())
+    except Exception as exc:  # noqa: BLE001 — 配置异常按不启用处理
+        logger.debug("读取 %s 失败（按不启用处理）: %s", KPI_MIN_OBSERVED_RATIO_KEY, exc)
+        return None
+    if ratio <= 0 or ratio > 1:
+        logger.warning(
+            "%s=%s 非法（应满足 0 < ratio <= 1），按不启用处理",
+            KPI_MIN_OBSERVED_RATIO_KEY,
+            ratio,
+        )
+        return None
+    return ratio
+
+
+def _observed_ratio_from_bundles(bundles: list[MetricDataBundle]) -> float | None:
+    """PV 观测覆盖率（known_slots / expected_slots）；非点表布局 → None.
+
+    复用 SeriesContext.source_coverage_ratio("pv")：R2 之后「保持过久」的槽位
+    已计入 unknown，故该比值≈真实观测率（缺口越多越低）。
+    """
+    ctx = _point_context_from_bundles(bundles)
+    if ctx is None:
+        return None
+    try:
+        return float(ctx.source_coverage_ratio("pv"))
+    except Exception as exc:  # noqa: BLE001 — 无法判定时返回 None（不改结论）
+        logger.debug("计算 PV 观测覆盖率失败（不判定）: %s", exc)
+        return None
+
+
 def _derive_expected_points(
     bundles: list[MetricDataBundle],
     ts_start: datetime,
@@ -1602,6 +1652,37 @@ async def _calculate_loop_kpi(
             loop.tag_name,
             gate_result.reason,
         )
+
+    # 3（2026-09-25）：KPI 观测覆盖率闸门（sys_config 开关，缺省不启用）。
+    # 现状：缺口小时被 HELD 填平后照常给分 = 拿填充值算 KPI；开关启用后
+    # 覆盖率不足即降级 INCONCLUSIVE（与 gate_failed 同一处置口径：score=None、
+    # 可信度 E、原因写进 fitness_detail）。
+    if status == "SUCCESS":
+        min_observed_ratio = await _load_kpi_min_observed_ratio(db)
+        if min_observed_ratio is not None:
+            observed_ratio = _observed_ratio_from_bundles(bundles)
+            if observed_ratio is not None and observed_ratio < min_observed_ratio:
+                status = "INCONCLUSIVE"
+                final_score = None
+                lineage_info = dict(lineage_info)
+                lineage_info["confidence_level"] = "E"
+                _coverage_detail = main_fitness_kwargs.get("fitness_detail")
+                _merged_coverage = (
+                    dict(_coverage_detail) if isinstance(_coverage_detail, dict) else {}
+                )
+                _merged_coverage["coverage_insufficient"] = {
+                    "observedRatio": round(observed_ratio, 4),
+                    "minObservedRatio": min_observed_ratio,
+                }
+                main_fitness_kwargs = dict(main_fitness_kwargs)
+                main_fitness_kwargs["fitness_detail"] = _merged_coverage
+                logger.info(
+                    "回路 %s 窗口 %s 观测覆盖率 %.3f < 阈值 %.3f，快照置 INCONCLUSIVE（数据不足）",
+                    loop.tag_name,
+                    ts_start,
+                    observed_ratio,
+                    min_observed_ratio,
+                )
 
     return await _persist_snapshot(
         db=db,

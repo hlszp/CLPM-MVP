@@ -82,3 +82,7 @@ e2e/verify-fixes-*.png
 
 # 交付包二进制不入库（2026-09-05）
 releases/*.tar.gz
+# 源码部署包与校验文件同样不入库（2026-09-25）：zip 约 70MB，
+# 校验文件随包生成，二者都只在本机/分发通道流转
+releases/*.zip
+releases/*.sha256
