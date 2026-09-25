@@ -290,6 +290,57 @@ async def register_coverage(
     return seg
 
 
+async def register_gap_segment(
+    db: Any,
+    *,
+    session_id: str,
+    seg_start: datetime,
+    seg_end: datetime,
+    binding_version: str | None = None,
+) -> bool:
+    """登记一段「已知未知」缺口（会话作用域；应用层幂等；不触发远端补数）.
+
+    背景（2026-09-25）：订阅器识别到缺口后只写 Redis 待补列表，PG
+    history_coverage_segment 里没有任何 gap 行，导致下游（趋势 / 诊断 / KPI）
+    无法把「缺口被 HELD 保持填平」与「真实观测」区分开——诊断据此误报仪表故障、
+    KPI 拿填充值算分。本函数把缺口落到 PG，供读取侧暴露与判定使用。
+
+    作用域：ck_hcs_scope 约束 (point_id IS NULL) <> (session_id IS NULL)，
+    故这里 point_id 恒为 None、session_id 必填（一段采集会话的缺口）。
+
+    幂等：表无唯一约束，故先按 (session_id, seg_start, seg_end, status="gap")
+    查重；命中返回 False，不新增行。调用方无需自行去重。
+    """
+    start = _aware(seg_start)
+    end = _aware(seg_end)
+    if end <= start:
+        return False
+    existing = (
+        await db.execute(
+            select(HistoryCoverageSegment.id).where(
+                HistoryCoverageSegment.session_id == session_id,
+                HistoryCoverageSegment.seg_start == start,
+                HistoryCoverageSegment.seg_end == end,
+                HistoryCoverageSegment.status == "gap",
+            )
+        )
+    ).first()
+    if existing is not None:
+        return False
+    db.add(
+        HistoryCoverageSegment(
+            point_id=None,
+            session_id=session_id,
+            seg_start=start,
+            seg_end=end,
+            status="gap",
+            binding_version=binding_version,
+        )
+    )
+    await db.flush()
+    return True
+
+
 async def merge_confirmed_coverage(
     session: Any,
     *,
@@ -583,7 +634,8 @@ async def resolve_layout(
 ) -> str:
     """解析某回路在某时刻的读取布局（loop 精确段优先于 global 兜底）.
 
-    无任何 manifest → 'legacy'（默认；建表不切读，设计 §7-1）。
+    无任何 manifest -> 'point'（2026-09-25 宽表退役后默认按测点点表读；
+    历史 legacy 段一并按 point 解释——宽表已不再写入）。
     同层多段重叠时取 valid_from 最新（后发布优先）。
     """
     tt = _aware(at)

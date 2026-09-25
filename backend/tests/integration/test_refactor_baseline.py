@@ -30,8 +30,18 @@ from pathlib import Path
 import pytest
 
 from app.core.config import settings
-from app.core.tdengine_native import batch_insert, execute_native
+from app.core.tdengine_native import execute_native
 from tests.refactor import reference_data as rd
+
+
+def batch_insert(*_args: object, **_kwargs: object) -> None:
+    """RETIRED：宽表写入已于 2026-09-25 删除。
+
+    本模块整体 pytest.mark.skip；此占位仅为模块可导入（宽表写函数已从
+    app.core.tdengine_native 移除）。
+    """
+    raise RuntimeError("宽表写入已退役（2026-09-25）")
+
 
 pytestmark = pytest.mark.integration
 
@@ -434,3 +444,7 @@ def _assert_algo_equal(baseline: dict, current: dict) -> None:
 
 def _write_golden(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
+
+
+# RETIRED: 宽表写入/读取路径已于 2026-09-25 删除，本基线模块整体跳过
+pytestmark = [pytest.mark.integration, pytest.mark.skip(reason="宽表已退役（2026-09-25）")]

@@ -52,7 +52,6 @@ import {
   testHistoryApiApi,
   testSignalrApi,
   updateDatasourceConfigApi,
-  updateStorageModeApi,
 } from '#/api/datasource';
 import {
   createModelApi,
@@ -217,7 +216,6 @@ function handleNetworkModeChange(e: { target: { value?: unknown } }) {
 
 /** 历史写入布局 + 读写一致性自检（2026-09-25）：与配置并行加载，失败不阻塞页面 */
 const layoutCheck = ref<DataSourceApi.StorageModeInfo | null>(null);
-const storageModeSaving = ref(false);
 
 async function loadLayoutCheck() {
   try {
@@ -225,26 +223,6 @@ async function loadLayoutCheck() {
   } catch {
     // 自检失败不阻塞配置页（后端 health 仍有同组字段）
     layoutCheck.value = null;
-  }
-}
-
-/** 切换写入布局：只改写入侧，读取路由需运维脚本显式登记（返回结论直接提示） */
-async function handleStorageModeChange(value: unknown) {
-  const mode = String(value ?? '');
-  if (!mode || mode === layoutCheck.value?.writeMode) return;
-  storageModeSaving.value = true;
-  try {
-    const info = await updateStorageModeApi(mode);
-    layoutCheck.value = info;
-    if (info.consistent === false) {
-      message.warning(`写入布局已改为 ${mode}，但读取路由仍为 ${info.readLayout}：${info.diagnosis}`, 8);
-    } else {
-      message.success(`写入布局已改为 ${mode}`);
-    }
-  } catch {
-    // 拦截器已提示
-  } finally {
-    storageModeSaving.value = false;
   }
 }
 
@@ -1026,32 +1004,16 @@ onMounted(() => {
                   {{ config?.signalrSubscriberRunning ? '运行中' : '未启动' }}
                 </Tag>
               </div>
+              <!-- 落库形态（2026-09-25 宽表退役）：写入与读取唯一形态是测点点表，
+                   此处只读展示供运维核对，不再提供改写控件 -->
               <div class="flex items-center gap-2">
-                <span class="text-gray-500">实时回写</span>
-                <Tag
-                  :color="config?.realtimeWritebackEnabled ? 'green' : 'default'"
-                >
-                  {{ config?.realtimeWritebackEnabled ? '开启' : '关闭' }}
-                </Tag>
-              </div>
-              <!-- 写入布局 + 读写一致性（2026-09-25）：写入侧与读取路由不一致时
-                   趋势图会读到空表，此前该状态在界面上完全不可见 -->
-              <div class="flex items-center gap-2">
-                <span class="text-gray-500">写入布局</span>
-                <Select
-                  :disabled="storageModeSaving"
-                  :options="[
-                    { label: 'legacy（只写宽表）', value: 'legacy' },
-                    { label: 'shadow（双写）', value: 'shadow' },
-                    { label: 'point（只写点表）', value: 'point' },
-                  ]"
-                  :value="layoutCheck?.writeMode"
-                  size="small"
-                  style="width: 170px"
-                  @change="handleStorageModeChange"
-                />
+                <span class="text-gray-500">落库形态</span>
+                <Tag color="green">测点点表</Tag>
                 <span class="text-gray-400 text-xs">
-                  读取侧：{{ layoutCheck?.readLayout ?? '—' }}
+                  读取侧：{{ layoutCheck?.readLayout ?? 'point' }}
+                  <template v-if="layoutCheck?.writeMode && layoutCheck.writeMode !== 'point'">
+                    （sys_config 历史值 {{ layoutCheck.writeMode }}，已不作数）
+                  </template>
                 </span>
               </div>
             </div>
@@ -1059,7 +1021,7 @@ onMounted(() => {
               v-if="layoutCheck && layoutCheck.severity !== 'ok'"
               :message="
                 layoutCheck.severity === 'error'
-                  ? '写入布局与读取路由不一致：趋势图会读到空表'
+                  ? '落库形态异常：趋势图可能读到空表'
                   : '落库自检需要关注'
               "
               :description="layoutCheck.diagnosis"
@@ -1099,7 +1061,7 @@ onMounted(() => {
                         v-model:checked="form.realtimeWritebackEnabled"
                       />
                       <span class="text-gray-400 text-xs">
-                        该开关不决定点表写入；点表落库由「写入布局」决定
+                        宽表已退役：实时数据恒写测点点表
                       </span>
                     </div>
                   </FormItem>

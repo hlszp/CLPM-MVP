@@ -113,7 +113,7 @@ async def _cancel_retry(sub: RealtimeSubscriber) -> None:
 
 async def test_r05_sp_change_gets_new_row_time_and_old_row_preserved():
     """验收用例：10:00:00 PV=5/SP=6 落行后，10:00:10 仅 SP=9 → 新行 ts=10:00:10
-    （PV 取 last-known 5），旧时刻行 SP 仍为 6——TD/Redis 两行独立存在。"""
+    （PV 取 last-known 5），旧时刻行 SP 仍为 6——Redis 历史两行独立存在。"""
     fake = _RecordingRedis()
     sub = RealtimeSubscriber()
     sub._refresh_loop_meta_cache = AsyncMock()
@@ -124,16 +124,8 @@ async def test_r05_sp_change_gets_new_row_time_and_old_row_preserved():
         )
         assert accepted is True
 
-    insert = AsyncMock(return_value=1)
-
     async def _flush():
-        with (
-            patch(f"{_SUB}.settings") as mock_s,
-            patch(f"{_SUB}.batch_insert_multi", new=insert),
-            patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
-        ):
-            mock_s.REALTIME_WRITEBACK_ENABLED = True
-            await sub._flush_buffer()
+        await sub._flush_buffer()
 
     with patch(f"{_SUB}.redis_client", fake):
         # tick1：PV/SP 同时刻到达
@@ -144,13 +136,6 @@ async def test_r05_sp_change_gets_new_row_time_and_old_row_preserved():
         # tick2：仅 SP 在 10:00:10 变化（PV 无新测量）
         await _feed("LIC.SP", "9", "2026-09-06 10:00:10")
         await _flush()
-
-    # TD 两行独立存在：旧行 ts=10:00:00（sp=6），新行 ts=10:00:10（sp=9, pv=5）
-    td_rows = [t["rows"][0] for call in insert.await_args_list for t in call.args[0]]
-    assert [r[0] for r in td_rows] == ["2026-09-06 10:00:00.000", "2026-09-06 10:00:10.000"]
-    assert td_rows[0][2] == 6.0 and td_rows[0][1] == 5.0
-    assert td_rows[1][2] == 9.0
-    assert td_rows[1][1] == 5.0, "PV 取 last-known 5，不因 SP 事件伪造新 PV"
 
     # Redis 历史：旧时刻行未被改写（sp 仍 6），两行独立存在
     hist = fake._lists[f"{_HISTORY_KEY_PREFIX}LIC"]
@@ -251,24 +236,20 @@ def test_r05_update_is_newer_rule_matrix():
 
 
 async def test_r05_row_without_any_ts_dropped_and_counted():
-    """整行无任何已知 sourceTime → 不落 TD/历史缓存，计 rows_dropped_no_ts."""
+    """整行无任何已知 sourceTime → 不入历史缓存，计 rows_dropped_no_ts.
+
+    落库（测点点表）由 PointHistoryWriter 独立承担，本用例只锁缓存侧口径。
+    """
     fake = _RecordingRedis()
     sub = RealtimeSubscriber()
     sub._refresh_loop_meta_cache = AsyncMock()
-    insert = AsyncMock(return_value=1)
 
     with patch(f"{_SUB}.redis_client", fake):
         await sub._cache_value({"tagCode": "LIC.PV", "value": "5", "collectTime": ""})
         await sub._cache_value({"tagCode": "LIC.SP", "value": "6", "collectTime": ""})
-        with (
-            patch(f"{_SUB}.settings") as mock_s,
-            patch(f"{_SUB}.batch_insert_multi", new=insert),
-        ):
-            mock_s.REALTIME_WRITEBACK_ENABLED = True
-            await sub._flush_buffer()
+        await sub._flush_buffer()
 
     assert sub._metrics["rows_dropped_no_ts"] == 1
-    insert.assert_not_awaited(), "无 ts 行不得写 TD"
     assert fake._lists.get(f"{_HISTORY_KEY_PREFIX}LIC") in (None, []), "无 ts 行不得入历史缓存"
 
 
@@ -531,7 +512,7 @@ async def test_r08_per_loop_backfill_success_and_failure_lifecycle():
 
 
 async def test_r08_watermark_advance_only_on_persisted_success():
-    """flush 部分失败（TD 失败）回路不推水位；窗口重试确认后才推进（行 ts 口径）."""
+    """flush 落缓存失败的回路不推水位；窗口重试确认后才推进（行 ts 口径）."""
     fake = _RecordingRedis()
     sub = RealtimeSubscriber()
     sub._last_flushed_at = 900.0
@@ -560,16 +541,17 @@ async def test_r08_watermark_advance_only_on_persisted_success():
     }
     ts_epoch = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_TZ8).timestamp()
 
-    calls = iter([Exception("TD down")] * 3 + [1, 1])  # A/B 首批失败；重试成功
-    insert = AsyncMock(side_effect=lambda tables: next(calls))
+    calls = iter([Exception("redis down"), None])  # 首批失败；窗口重试成功
+
+    async def _push(entries):
+        outcome = next(calls)
+        if isinstance(outcome, Exception):
+            raise outcome
 
     with (
         patch(f"{_SUB}.redis_client", fake),
-        patch(f"{_SUB}.settings") as mock_s,
-        patch(f"{_SUB}.batch_insert_multi", new=insert),
-        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
+        patch.object(sub, "_push_history_entries", side_effect=_push),
     ):
-        mock_s.REALTIME_WRITEBACK_ENABLED = True
         await sub._flush_buffer()
         assert sub._loop_watermarks == {}, "失败批不推 per-loop 水位"
 
@@ -645,17 +627,10 @@ async def test_r02_global_budget_blocks_new_loop_keys_only():
                 }
             },
         }
-        insert = AsyncMock(return_value=1)
-        with (
-            patch(f"{_SUB}.batch_insert_multi", new=insert),
-            patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
-        ):
-            await sub._flush_buffer()
+        await sub._flush_buffer()
 
         assert f"{_HISTORY_KEY_PREFIX}Y" not in fake._lists, "超预算的新回路不得建历史键"
         assert sub._metrics["history_budget_exceeded"] == 1
-        insert.assert_awaited_once(), "TD 写回不受历史缓存预算影响"
-        assert sub._metrics["rows_written"] == 1
 
         # 已活跃键 X 继续正常写入（预算门只挡新键）
         await sub._push_history_entries([_hist_entry("X", "2026-09-06 10:00:02.000")])

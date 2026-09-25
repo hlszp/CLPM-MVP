@@ -213,14 +213,11 @@ async def update_storage_mode_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """修改历史写入布局（仅 ADMIN）。
+    """修改历史写入布局（仅 ADMIN，2026-09-25 收敛为单态）。
 
-    - legacy：只写宽表 st_loop_data（传统口径）
-    - shadow：双写（宽表 + 点表），迁移期推荐
-    - point：只写点表 st_point_data_v1（迁移终态，须先完成读取路由切换）
-
-    只改写入侧；读取路由由运维脚本 register_layout_manifest.py 显式登记。
-    返回值含 consistent / diagnosis，前端据此提示当前读写是否自洽。
+    宽表超级表（已退役）：写入与读取的唯一形态都是测点点表
+    st_point_data_v1，因此仅接受 point；legacy / shadow 返回 ERR_PARAM。
+    sys_config 键继续写入（保留供展示/审计）。
     """
     try:
         data = await update_storage_mode(db, mode=body.mode, operator=user.username)

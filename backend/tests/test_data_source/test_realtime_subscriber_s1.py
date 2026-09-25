@@ -16,8 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import app.services.data_source.realtime_subscriber as rts_mod
-from app.core.tdengine import make_subtable_name
-from app.core.tdengine_native import _format_row
 from app.services.data_source.realtime_subscriber import (
     _REDIS_KEY_PREFIX,
     _SUBSCRIBER_LEADER_LOCK_KEY,
@@ -402,7 +400,11 @@ async def test_r06_invalid_value_keeps_quality_and_collect_time():
 
 
 async def test_r06_flush_batch_with_bad_loop_isolated():
-    """含 MODE=Infinity 回路的批次：健康回路照常写出，坏回路该列 NULL 不炸批."""
+    """含 MODE=Infinity 回路的批次：健康回路照常写出，坏回路该列 NULL 不炸批.
+
+    宽表退役（2026-09-25）后落库形态是测点点表，本用例改为验证：
+    ① 批次不被坏值炸掉（Redis 历史两回路都写出）；② MODE=Infinity → NULL 不折算 0。
+    """
     fake = _RecordingRedis()
     sub = RealtimeSubscriber()
     ts = "2026-07-15T10:00:00Z"
@@ -414,54 +416,22 @@ async def test_r06_flush_batch_with_bad_loop_isolated():
         },
     }
 
-    with (
-        patch(f"{_SUB}.redis_client", fake),
-        patch(f"{_SUB}.settings") as mock_s,
-        patch(
-            f"{_SUB}.batch_insert_multi",
-            new=AsyncMock(side_effect=lambda tables: sum(len(t["rows"]) for t in tables)),
-        ) as mock_insert,
-        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
-    ):
-        mock_s.REALTIME_WRITEBACK_ENABLED = True
+    with patch(f"{_SUB}.redis_client", fake):
         await sub._flush_buffer()
 
-    tables = [t for call in mock_insert.await_args_list for t in call.args[0]]
-    assert len(tables) == 2, "健康与坏回路均应进入 TD 批"
-    bad_table = next(t for t in tables if t["subtable"] == make_subtable_name("BAD"))
-    healthy_table = next(t for t in tables if t["subtable"] == make_subtable_name("HEALTHY"))
-    assert bad_table["rows"][0][4] is None  # MODE 列 NULL（原实现整批 OverflowError 丢失）
-    assert bad_table["rows"][0][1] == 12.3
-    assert healthy_table["rows"][0][1] == 50.5
-    assert sub._metrics["rows_written"] == 2
-    # 历史缓存行 JSON 同步落键（无裸 NaN）
-    assert fake.pipelines and fake.pipelines[0]._ops
+    assert fake.pipelines and fake.pipelines[0]._ops, "健康与坏回路的历史缓存行均应写入"
+    assert sub._metrics["rows_dropped_no_ts"] == 0, "坏值不得导致整批丢弃"
 
-
-def test_r06_format_row_nonfinite_floats_to_null():
-    """tdengine_native._format_row：非有限浮点 → NULL，绝不让裸 nan/inf 进 SQL."""
-    row = (
-        "2026-09-06 10:00:00.000",
-        float("nan"),
-        1.5,
-        float("inf"),
-        None,
-        2,
-        -1.0,
-        float("-inf"),
-        1,
+    # MODE=Infinity → NULL（不折算 0），PV 照常解析
+    bad_row = sub._build_row(
+        {
+            "PV": _entry("12.3", ts, "B.PV", 1000.0),
+            "MODE": _entry("Infinity", ts, "B.MODE", 1000.0),
+        }
     )
-    sql = _format_row(row)
-    parts = sql.strip("()").split(", ")
-    assert parts[0] == "'2026-09-06 10:00:00.000'"
-    assert parts[1] == "NULL"  # nan
-    assert parts[2] == "1.5"
-    assert parts[3] == "NULL"  # inf
-    assert parts[4] == "NULL"  # None
-    assert parts[5] == "2"
-    assert parts[6] == "-1.0"
-    assert parts[7] == "NULL"  # -inf
-    assert parts[8] == "1"
+    assert bad_row is not None
+    assert bad_row[4] is None
+    assert bad_row[1] == 12.3
 
 
 # ---------------------------------------------------------------------------
@@ -476,24 +446,24 @@ async def test_r07_flush_during_await_new_data_goes_to_next_batch():
     sub._last_flushed_at = 900.0
     sub._buffer = {"A": {"PV": _entry("50.5", "2026-07-15T10:00:00Z", "A.PV", recv_at=1000.0)}}
 
-    async def _meta_and_inject(loop_parts):
-        # 模拟 await 元数据期间并发接收 B（recvAt=1001 晚于 A）
+    pushed: list[list] = []
+
+    async def _push_and_inject(entries):
+        # 模拟 await 落缓存期间并发接收 B（recvAt=1001 晚于 A）
+        pushed.append(entries)
         sub._buffer["B"] = {"MODE": _entry("1", "2026-07-15T10:00:01Z", "B.MODE", recv_at=1001.0)}
-        return {}
 
     with (
         patch(f"{_SUB}.redis_client", fake),
-        patch(f"{_SUB}.settings") as mock_s,
-        patch(f"{_SUB}.batch_insert_multi", new=AsyncMock(return_value=1)) as mock_insert,
-        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(side_effect=_meta_and_inject)),
+        patch.object(sub, "_push_history_entries", side_effect=_push_and_inject),
     ):
-        mock_s.REALTIME_WRITEBACK_ENABLED = True
         await sub._flush_buffer()
 
-    # A 的行不含 B 的 MODE（last_known 快照原子截取，无跨批拼接）
-    tables = mock_insert.await_args.args[0]
-    assert len(tables) == 1
-    assert tables[0]["rows"][0][4] is None
+    # A 的批只含 A 一行（原子截取，B 不得混入本批）
+    assert len(pushed) == 1
+    rows = [json.loads(e[1]) for e in pushed[0]]
+    assert len(rows) == 1
+    assert rows[0]["mode"] is None
     # checkpoint 推进到 A 的 batch_boundary（max recvAt=1000），不含 B
     assert sub._last_flushed_at == 1000.0
     # B 留在下一批缓冲
@@ -508,33 +478,21 @@ async def test_r07_failed_batch_window_survives_later_success():
     ts = "2026-07-15T10:00:00Z"
     sub._buffer = {"A": {"PV": _entry("5.0", ts, "A.PV", recv_at=1000.0)}}
 
-    td_calls = iter(
-        [
-            Exception("TD down"),  # flush1: A 尝试 1
-            Exception("TD down"),  # flush1: A 尝试 2
-            Exception("TD down"),  # flush1: A 尝试 3 → A 批失败
-            Exception("TD down"),  # flush2: A 窗口重试 1
-            Exception("TD down"),  # flush2: A 窗口重试 2
-            Exception("TD down"),  # flush2: A 窗口重试 3 → 仍失败
-            1,  # flush2: 新批 B 成功
-            1,  # flush3: A 窗口重试成功
-        ]
-    )
-    insert = AsyncMock(side_effect=lambda tables: next(td_calls))
+    calls = iter([Exception("redis down"), Exception("redis down"), None, None])
+
+    async def _push(entries):
+        outcome = next(calls)
+        if isinstance(outcome, Exception):
+            raise outcome
 
     with (
         patch(f"{_SUB}.redis_client", fake),
-        patch(f"{_SUB}.settings") as mock_s,
-        patch(f"{_SUB}.batch_insert_multi", new=insert),
-        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
+        patch.object(sub, "_push_history_entries", side_effect=_push),
     ):
-        mock_s.REALTIME_WRITEBACK_ENABLED = True
-
-        # flush1：A 批失败 → 登记未确认窗口，checkpoint 不推进
+        # flush1：A 批落缓存失败 → 登记未确认窗口，checkpoint 不推进
         await sub._flush_buffer()
         assert len(sub._unconfirmed_windows) == 1
         assert sub._metrics["unconfirmed_windows"] == 1
-        assert sub._metrics["rows_failed"] == 1
         assert sub._last_flushed_at == 900.0
 
         # flush2：A 窗口重试仍失败 + 新批 B 成功 —— B 的成功不得确认/抹去 A
@@ -542,36 +500,11 @@ async def test_r07_failed_batch_window_survives_later_success():
         await sub._flush_buffer()
         assert len(sub._unconfirmed_windows) == 1, "后续批成功不得擦掉旧失败窗口"
         assert sub._last_flushed_at == 900.0, "checkpoint 不得越过未确认的 A"
-        assert insert.await_count == 7  # A×6 + B×1
 
         # flush3：A 窗口重试成功 → 窗口清除，水位推进到已确认边界（B=1001）
         await sub._flush_buffer()
         assert sub._unconfirmed_windows == []
         assert sub._last_flushed_at == 1001.0
-
-
-async def test_r07_td_write_chunked_at_500_rows():
-    """TD 批次按 ≤500 行拆分，分块成功独立记录（rows_written 累计）."""
-    fake = _RecordingRedis()
-    sub = RealtimeSubscriber()
-    ts = "2026-07-15T10:00:00Z"
-    sub._buffer = {
-        f"LOOP{i}": {"PV": _entry("1.0", ts, f"L{i}.PV", recv_at=1000.0)} for i in range(501)
-    }
-    insert = AsyncMock(side_effect=lambda tables: sum(len(t["rows"]) for t in tables))
-
-    with (
-        patch(f"{_SUB}.redis_client", fake),
-        patch(f"{_SUB}.settings") as mock_s,
-        patch(f"{_SUB}.batch_insert_multi", new=insert),
-        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
-    ):
-        mock_s.REALTIME_WRITEBACK_ENABLED = True
-        await sub._flush_buffer()
-
-    sizes = [sum(len(t["rows"]) for t in c.args[0]) for c in insert.await_args_list]
-    assert sizes == [500, 1]
-    assert sub._metrics["rows_written"] == 501
 
 
 async def test_r07_single_row_build_failure_isolated():
@@ -590,19 +523,23 @@ async def test_r07_single_row_build_failure_isolated():
             raise ValueError("bad row")
         return real_build(roles)
 
+    pushed: list[list] = []
+
+    async def _capture(entries):
+        pushed.append(entries)
+
     with (
         patch(f"{_SUB}.redis_client", fake),
-        patch(f"{_SUB}.settings") as mock_s,
-        patch(f"{_SUB}.batch_insert_multi", new=AsyncMock(return_value=1)) as mock_insert,
-        patch.object(sub, "_get_loop_meta_map", new=AsyncMock(return_value={})),
+        patch.object(sub, "_push_history_entries", side_effect=_capture),
         patch.object(sub, "_build_row", side_effect=_build),
     ):
-        mock_s.REALTIME_WRITEBACK_ENABLED = True
         await sub._flush_buffer()
 
-    tables = mock_insert.await_args.args[0]
-    assert len(tables) == 1
-    assert tables[0]["subtable"] == make_subtable_name("GOOD")
+    assert pushed, "GOOD 回路的历史缓存行应写出"
+    rows = [json.loads(entry[1]) for batch in pushed for entry in batch]
+    assert len(rows) == 1, "BAD 行被隔离，仅 GOOD 落缓存"
+    # 行 ts 经归一化到目标时区（Asia/Shanghai，UTC+8）
+    assert rows[0]["ts"] == "2026-07-15 18:00:00.000"
 
 
 # ---------------------------------------------------------------------------

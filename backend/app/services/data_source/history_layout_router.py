@@ -3,12 +3,12 @@
 设计依据：设计文档 §5（布局路由器）/§7-4（跨窗口分段路由）。
 
 语义：
-- 无 manifest → 单片 legacy（默认，建表不切读）；
+- 无 manifest → 恒单片 point（2026-09-25 宽表退役；无 manifest 亦按 point）；
 - shadow 布局的读取语义 = legacy（影子写阶段读旧路径；读切由显式 point 段
   完成，设计 §7）；
 - 跨切换边界窗口拆为两片：**T 归 point，legacy 仅承担 t<T**（设计 §5.3）；
 - 查询异常**不自动换源**（不吞错回退 legacy 旧值/默认 Good）；
-- manifest 进程内缓存（60s TTL，无锁——与 provider._subtable_cache 同模式：
+- manifest 进程内缓存（60s TTL，无锁——与已退役的宽表名解析缓存同模式：
   并发重复加载无害，避免 kpi 回填每回路-每窗打 PG）。
 """
 
@@ -42,14 +42,14 @@ def invalidate_manifest_cache() -> None:
 
 
 async def current_layout_version() -> str:
-    """当前布局数据版本（缓存键分量；无 manifest 恒 "legacy-v1"）.
+    """当前布局数据版本（缓存键分量；宽表退役后恒 "point-v1"）.
 
     口径：活跃 manifest 行（scope/时段/布局）摘要——任何切换/回退产生新键；
-    读取失败抛出（调用方决定回退），无 PG 环境由调用方兜底 legacy-v1。
+    读取失败抛出（调用方决定回退），无 PG 环境由调用方兜底 point-v1。
     """
     rows = await _load_manifest_rows(None, loop_id="*")
     if not rows:
-        return "legacy-v1"
+        return "point-v1"
     import hashlib
 
     parts = [f"{vf.isoformat()}~{vt.isoformat() if vt else ''}~{layout}" for vf, vt, layout in rows]
@@ -118,22 +118,15 @@ async def _load_manifest_rows(db, loop_id: str) -> list[tuple[datetime, datetime
     return normalized
 
 
-def _layout_at(
-    rows: list[tuple[datetime, datetime | None, str]],
-    at: datetime,
-) -> str:
-    """时刻布局：loop 精确段优先于 global 兜底（prio 已在排序键丢失，
-    这里按"后发布（valid_from 更大）优先"取覆盖该时刻的最新段）。"""
-    best: str | None = None
-    best_from: datetime | None = None
-    for vf, vt, layout in rows:
-        if vf <= at and (vt is None or at < vt):
-            if best_from is None or vf >= best_from:
-                best_from = vf
-                best = layout
-    if best is None:
-        return "legacy"
-    return "legacy" if best in ("legacy", "shadow") else "point"
+def _layout_at(rows: list[tuple[datetime, datetime | None, str]], t: datetime) -> str:
+    """窗口 t 处的读取布局（2026-09-25 宽表退役后恒 point）.
+
+    历史说明：此前按 manifest 段解析 legacy/point，无段恒 legacy；宽表
+    宽表退役后读取侧只有测点点表一条路径，因此恒返回 point。
+    rows 参数保留（调用方仍读取 manifest 以暴露 PG 异常），不再参与判定。
+    """
+    _ = rows, t
+    return "point"
 
 
 def _utc(dt: datetime) -> datetime:

@@ -59,22 +59,11 @@ ROLE_TO_FIELD = {
     "PID_D": "pid_d",
 }
 
-# P2：tag 重关联（改关联 / Excel 覆盖式删建映射）会使 TDengine subtable 名
-# 派生自新 tag 名，旧 subtable 中的历史数据立即不可达——检测到变更时在响应中
-# 返回此 warning，并失效该回路的 L1 DataBlock 缓存与 subtable 解析缓存
+# P2：tag 重关联（改关联 / Excel 覆盖式删建映射）会使测点点身份发生变化，
+# 该回路在新点身份下的历史曲线立即不可达——检测到变更时在响应中返回此
+# warning，并失效该回路的 L1 DataBlock 缓存。
+# （宽表名解析缓存随宽表退役一并删除，2026-09-25）
 TAG_REASSIGN_WARNING = "tag 变更将导致历史数据在新 subtable 下重新开始，旧数据不可达"
-
-
-def _clear_subtable_cache(loop_id: str) -> None:
-    """清除 tdengine_provider 模块级 subtable 解析缓存中该回路的条目。
-
-    tdengine_provider._subtable_cache 暂无公开清除函数，此处直接 pop 模块级 dict
-    （GIL 下 dict.pop 原子安全；该缓存为单进程 300s TTL 缓存，见 tdengine_provider
-    文件头设计说明）。
-    """
-    from app.services.data_source import tdengine_provider
-
-    tdengine_provider._subtable_cache.pop(loop_id, None)
 
 
 async def get_loop_role_tag_names(db: AsyncSession, loop_id: str) -> dict[str, str]:
@@ -119,7 +108,6 @@ async def notify_tag_reassignment(
         changed_roles,
         TAG_REASSIGN_WARNING,
     )
-    _clear_subtable_cache(loop_id)
     try:
         await CacheInvalidator(redis_client).invalidate_loop(loop_id)
     except Exception:  # noqa: BLE001

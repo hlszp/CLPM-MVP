@@ -1,27 +1,27 @@
-"""TDengine 数据源提供者 — 宽表查询 + taosrest.
+"""
+TDengine 数据源提供者 — 测点点表查询 + taosrest.
 
-数据架构优化 Phase 2：从窄表 7 次查询改为宽表 1 次查询。
-- make_query_fn: 使用 query_wide_table_native（宽表一次查 7 列）
+2026-09-25 宽表退役：读取侧唯一路径是测点点表 st_point_data_v1，由
+logical_wide_builder.build_logical_wide 组装算法数据（宽表超级表
+的查询实现 query_wide_table_native / query_last_values_before 已删除）。
+- make_query_fn: 按 manifest 窗口分片（恒 point）调用 LogicalWideBuilder
 - query_trend_data: 保留窄表查询（波形展示路径兼容）
 
-回填性能优化：
-- 回路 → 宽表名解析缓存为模块级 TTL 缓存（见下方设计说明），跨查询闭包共享
-- 历史窗口（end 早于 now-65min）跳过 Redis 实时 1 小时缓存探测（必然 miss）
-- COV 前向填充 + RawTimeSeries 转换移入 ``asyncio.to_thread``，
-  避免 3600 行 × dict 的纯 CPU 处理阻塞事件循环内其他并发回路
+性能与并发约束：
+- DataPlanner 会并发执行多个查询，共享同一 AsyncSession；SQLAlchemy 不允许
+  同一 AsyncSession 并发 execute，故本闭包内不做共享会话的并发取数
+- COV 前向填充由 LogicalWideBuilder 内部完成（测点点表稀疏存储）
+- 历史窗口的 Redis 实时缓存探测随宽表路径一并移除：实时缓存仅服务"最新值"
+  场景，趋势/评估一律回源本地 TDengine 点表
 
 时区口径（P0-3 修复）：
 - 写入侧将 ts 转 Asia/Shanghai 墙钟存储，服务器按 +8 解释 naive 字符串
-- 查询边界经 ``_format_ts`` 统一输出带 Z 的 UTC ISO 串（naive 视为 UTC）
-- Redis 1 小时缓存行 ts 为 +8 墙钟字符串，经 ``_stored_ts_to_utc_naive``
-  转 UTC 后再与窗口比较（直接字符串比较恒假，缓存永不命中）
+- 查询边界经 _format_ts 统一输出带 Z 的 UTC ISO 串（naive 视为 UTC）
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -47,9 +47,7 @@ logger = logging.getLogger(__name__)
 # 反复出现）。去掉锁的最坏后果是两个并发解析重复执行相同的 PG 查询并写入
 # 相同的缓存值，无害；正确性不依赖互斥。
 # ---------------------------------------------------------------------------
-_SUBTABLE_CACHE_TTL_S = 300.0
 # loop_id → (subtable, loop_part, expire_ts)，expire_ts 基于 time.monotonic()
-_subtable_cache: dict[str, tuple[str, str, float]] = {}
 
 # Redis 实时缓存只保存最近 1 小时数据；窗口 end 早于 (now - 65 分钟) 时
 # 判定为历史窗口并跳过探测（1 小时 + 5 分钟余量，容忍时钟偏差与边界窗口）
@@ -101,58 +99,23 @@ class TDengineProvider:
             DataPlanner 兼容的查询闭包
         """
         from app.contracts.data_types import RawTimeSeries
-        from app.core.tdengine import make_subtable_name
-        from app.core.tdengine_native import query_wide_table_native
 
         # DataPlanner 会并发执行多个 tagGroup 查询；这些查询共享同一个
         # AsyncSession。SQLAlchemy 明确不允许同一 AsyncSession 并发 execute，
         # 因此先串行解析并缓存回路宽表名，后续 TDengine 查询仍可并发执行。
         # 解析结果缓存于模块级 TTL 缓存（见文件头设计说明），跨闭包共享。
-        async def _resolve_subtable(loop_id: str) -> tuple[str, str] | None:
-            cached = _subtable_cache.get(loop_id)
-            if cached is not None and cached[2] > time.monotonic():
-                return cached[0], cached[1]
-
-            # 无锁解析（见文件头设计说明）：并发重复解析无害，禁止使用
-            # 模块级 asyncio.Lock（跨事件循环绑定会拖垮全部取数）。
-            from sqlalchemy import select
-
-            from app.models.loop import LoopLedger
-
-            # 子表名唯一权威来源：回路台账 tag_name（天然不含测点角色后缀）。
-            # 历史 bug（2026-08-20 修复）：此前取「第一个测点名」rsplit('.') 反推，
-            # 但测点名用下划线分隔角色（xx_PV）→ 剥离失败且顺序不稳定 → 子表名漂移
-            loop_result = await db.execute(
-                select(LoopLedger.tag_name).where(LoopLedger.id == loop_id)
-            )
-            loop_tag_name = loop_result.scalar_one_or_none()
-            if not loop_tag_name:
-                logger.debug("宽表查询: 回路 %s 不存在或无 tag_name", loop_id)
-                return None
-
-            loop_part = loop_tag_name
-            subtable = make_subtable_name(loop_part)
-            # 仅缓存成功解析的结果（None 不缓存，见文件头设计说明）
-            _subtable_cache[loop_id] = (
-                subtable,
-                loop_part,
-                time.monotonic() + _SUBTABLE_CACHE_TTL_S,
-            )
-            return subtable, loop_part
-
-        async def _query_fn_wide(
+        async def _query_fn_point(
             loop_id: str,
             tag_roles: list[str],
             start: Any,
             end: Any,
             interval_s: int,
         ) -> RawTimeSeries:
-            """宽表查询闭包：一次查 7 列，替代 7 次窄表查询。
+            """测点点表查询闭包（2026-09-25 宽表退役后唯一读取路径）.
 
-            布局路由（测点子表重构 P3-2）：按 history_layout_manifest 解析本窗口
-            读取布局——point 段走 LogicalWideBuilder（唯一测点子表组装实现），
-            legacy 段保持原宽表路径；跨切换边界窗口按秒二分拆分拼接
-            （T 归 point，legacy 仅承担 t<T；边界去重不多不漏）。
+            按 history_layout_manifest 解析窗口分片（恒 point）后统一走
+            LogicalWideBuilder —— 唯一从 st_point_data_v1 组装算法数据的实现。
+            无法解析时间边界时返回空序列（不静默换源）。
             """
             from app.services.data_source.history_layout_router import resolve_window_layouts
 
@@ -162,117 +125,15 @@ class TDengineProvider:
                 # db=None：布局解析用独立短会话，绝不触碰共享 AsyncSession
                 # （并发 query_fn 共享 session 是既有红线）
                 layouts = await resolve_window_layouts(None, loop_id, start_dt, end_dt)
-                if layouts and any(part.layout == "point" for part in layouts):
-                    return await _point_or_mixed_query(
-                        db, loop_id, tag_roles, start_dt, end_dt, interval_s, layouts
-                    )
-            return await _legacy_query(loop_id, tag_roles, start, end, interval_s)
-
-        async def _legacy_query(
-            loop_id: str,
-            tag_roles: list[str],
-            start: Any,
-            end: Any,
-            interval_s: int,
-            _resolve_subtable=_resolve_subtable,
-        ) -> RawTimeSeries:
-            # 1-3. 串行解析并缓存 loop_id → 宽表名，避免共享 session 并发查询。
-            resolved_subtable = await _resolve_subtable(loop_id)
-            if resolved_subtable is None:
-                return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
-            subtable, loop_part = resolved_subtable
-
-            # 4. 构造查询时间范围
-            start_str = _format_ts(start)
-            end_str = _format_ts(end)
-
-            rows = None
-
-            # 5. 尝试从 Redis 1 小时缓存获取数据。
-            # 该缓存只保存最近 1 小时数据；历史窗口（end 早于 now-65min）必然
-            # miss，直接跳过整个探测块（回填场景可省去每回路-窗口的 lrange +
-            # 逐行 json.loads）。近 1 小时窗口保持原有探测行为不变。
-            if _is_historical_window(end):
-                logger.debug(
-                    "跳过 Redis 实时缓存探测（历史窗口）: loop=%s, end=%s",
-                    loop_id,
-                    end_str,
+                return await _point_or_mixed_query(
+                    db, loop_id, tag_roles, start_dt, end_dt, interval_s, layouts
                 )
-            else:
-                from app.services.data_source.realtime_subscriber import get_subscriber
-
-                subscriber = get_subscriber()
-                if subscriber:
-                    try:
-                        redis_rows = await subscriber.get_history_values(loop_part)
-                        if redis_rows:
-                            start_dt = _parse_ts(start)
-                            end_dt = _parse_ts(end)
-                            if isinstance(start_dt, datetime) and isinstance(end_dt, datetime):
-                                # 缓存行 ts 为 +8 墙钟字符串（与落库口径一致），
-                                # 须逐行解析为 UTC 时刻再与窗口（naive UTC）比较；
-                                # 命中行的 ts 就地改写为 UTC naive 字符串，使
-                                # 下游 _rows_to_raw_series 输出与宽表路径一致。
-                                filtered_rows = []
-                                for row in redis_rows:
-                                    row_ts = _stored_ts_to_utc_naive(row.get("ts", ""))
-                                    if row_ts is not None and start_dt <= row_ts <= end_dt:
-                                        row["ts"] = row_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                                        filtered_rows.append(row)
-                            else:
-                                filtered_rows = []
-                            if filtered_rows:
-                                # R13：排序去重 + 覆盖完整性校验通过才允许命中，
-                                # 否则回源本地 TD 宽表（本地 TD 是计算唯一权威源）
-                                filtered_rows = _dedupe_sort_redis_rows(filtered_rows)
-                                if _redis_cache_meets_completeness(
-                                    filtered_rows, start_dt, end_dt, interval_s
-                                ):
-                                    rows = filtered_rows
-                                    logger.debug(
-                                        "命中 Redis 1 小时缓存: loop=%s, points=%d",
-                                        loop_id,
-                                        len(rows),
-                                    )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("读取 Redis 缓存失败 (loop=%s): %s", loop_id, exc)
-
-            # 6. 如果缓存未命中，回退到宽表查询（一次查 7 列 + 质量码）
-            if rows is None:
-                try:
-                    rows = await query_wide_table_native(subtable, start_str, end_str)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("宽表查询失败 loop=%s subtable=%s: %s", loop_id, subtable, exc)
-                    return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
-
-            if not rows:
-                logger.debug("宽表查询: 回路 %s 无数据 (subtable=%s)", loop_id, subtable)
-                return RawTimeSeries(timestamps=[], signals={}, quality_codes={})
-
-            # 6.5 前向填充 COV 列（sp/mode/pid_p/i/d）
-            # 这些角色采用变化时推送（COV），宽表中稀疏存储，需展开为完整曲线。
-            # 先查询窗口起点之前的最后有效值作为初始值（解决窗口开头为 NULL 的情况）。
-            # 异步 TDengine 调用，保持 await。
-            from app.core.tdengine_native import query_last_values_before
-
-            initial = await query_last_values_before(subtable, start_str)
-
-            # 7. COV 前向填充 + RawTimeSeries 转换是纯 CPU 处理
-            # （3600 行 × dict），移入线程池避免阻塞事件循环内其他并发回路。
-            # 线程内不触碰任何 asyncio 对象 / db session。
-            raw = await asyncio.to_thread(_rows_to_raw_series, rows, initial, tag_roles)
-
-            logger.debug(
-                "宽表查询: loop=%s, subtable=%s, points=%d, signals=%s",
-                loop_id,
-                subtable,
-                len(raw.timestamps),
-                {k: len(v) for k, v in raw.signals.items()},
+            logger.warning("查询时间边界非法（返回空序列）: loop=%s start=%r", loop_id, start)
+            return RawTimeSeries(
+                timestamps=[], signals={r.lower(): [] for r in tag_roles}, quality_codes={}
             )
 
-            return raw
-
-        return _query_fn_wide
+        return _query_fn_point
 
     async def query_trend_data(
         self,
@@ -310,14 +171,13 @@ async def _point_or_mixed_query(
     interval_s: int,
     layouts: list,
 ) -> Any:
-    """point / 混合窗口查询：point 段 LogicalWideBuilder，legacy 段宽表路径.
+    """测点点表查询：逐分片走 LogicalWideBuilder（2026-09-25 宽表退役）.
 
-    layouts 为按时间升序的窗口分片（history_layout_router.resolve_window_layouts）。
-    拼接规则（设计 §5.3/§7-4）：切换边界 T 归 point（legacy 仅承担 t<T）；
-    输出 RawTimeSeries 时间轴 = legacy 段原时间戳（COV 稀疏行）+ point 段
-    整秒网格，按 ts 排序去重。异常不静默回退 legacy（防旧值/默认 Good 污染）。
+    layouts 为按时间升序的窗口分片（history_layout_router.resolve_window_layouts，
+    宽表退役后恒为单片 point；保留分片合并逻辑以备将来"按窗口切源"）。
+    输出 RawTimeSeries 按 ts 排序去重（同 ts 保留后段）。异常不静默换源。
 
-    AD01：point 片的完整 SeriesContext 随结果透传；混合窗上下文 layout 改标
+    AD01：point 片的完整 SeriesContext 随结果透传；多片窗口上下文 layout 改标
     mixed（网格/覆盖口径以 point 片为基准）。
     """
     from app.contracts.data_types import RawTimeSeries
@@ -330,12 +190,9 @@ async def _point_or_mixed_query(
     point_context = None
 
     for part in layouts:
-        if part.layout == "point":
-            raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
-            if raw.series_context is not None:
-                point_context = raw.series_context
-        else:
-            raw = await _legacy_wide_rows_query(db, loop_id, tag_roles, part.start, part.end)
+        raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+        if raw.series_context is not None:
+            point_context = raw.series_context
         for i, ts in enumerate(raw.timestamps):
             merged_ts.append(ts)
             for role in roles_lower:
@@ -379,45 +236,6 @@ async def _point_or_mixed_query(
         quality_codes=quality_codes,
         series_context=point_context,
     )
-
-
-async def _legacy_wide_rows_query(
-    db: Any,
-    loop_id: str,
-    tag_roles: list[str],
-    start_dt: datetime,
-    end_dt: datetime,
-) -> Any:
-    """legacy 布局段查询（无 Redis 探测——探测行属 legacy 实时缓存语义，
-    混合窗口里 legacy 段恒为已切换前的历史段）。"""
-    import asyncio as _aio
-
-    from sqlalchemy import select
-
-    from app.contracts.data_types import RawTimeSeries
-    from app.core.tdengine import make_subtable_name
-    from app.core.tdengine_native import query_last_values_before, query_wide_table_native
-    from app.models.loop import LoopLedger
-
-    empty = RawTimeSeries(
-        timestamps=[], signals={r.lower(): [] for r in tag_roles}, quality_codes={}
-    )
-    result = await db.execute(select(LoopLedger.tag_name).where(LoopLedger.id == loop_id))
-    loop_tag_name = result.scalar_one_or_none()
-    if not loop_tag_name:
-        return empty
-    subtable = make_subtable_name(loop_tag_name)
-    start_str = _format_ts(start_dt)
-    end_str = _format_ts(end_dt)
-    try:
-        rows = await query_wide_table_native(subtable, start_str, end_str)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("legacy 段宽表查询失败 loop=%s: %s", loop_id, exc)
-        return empty
-    if not rows:
-        return empty
-    initial = await query_last_values_before(subtable, start_str)
-    return await _aio.to_thread(_rows_to_raw_series, rows, initial, tag_roles)
 
 
 def _format_ts(dt: Any) -> str:
@@ -478,136 +296,3 @@ def _parse_ts(ts_val: Any) -> Any:
         # _stored_ts_to_utc_naive 专门处理，不走这里）
         return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
     return ts_val
-
-
-def _is_historical_window(end: Any) -> bool:
-    """判断查询窗口是否为历史窗口（end 早于 now - 65 分钟）。
-
-    Redis 实时 1 小时缓存只保存最近 1 小时数据，历史窗口必然 miss，
-    调用方据此跳过整个 subscriber 探测块（回填场景的主要收益）。
-    end 无法解析为 datetime 时返回 False（保持探测，行为与之前一致）。
-
-    时区说明：``_parse_ts`` 统一返回 naive UTC datetime，阈值同样按
-    naive UTC 计算，避免 aware/naive 混比。
-    """
-    end_dt = _parse_ts(end)
-    if not isinstance(end_dt, datetime):
-        return False
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=_REDIS_REALTIME_SKIP_S)
-    return end_dt < cutoff
-
-
-def _dedupe_sort_redis_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """按 ts 升序排序并去重（R13 缓存完整性前置）.
-
-    入参行已在探测阶段把 ts 改写为 naive UTC 字符串（均可解析）。
-    重复 ts 保留**后出现**的行——Redis list 已按写入时间升序还原，
-    同 ts 的后写值代表更新的状态。
-
-    Args:
-        rows: 探测过滤后的缓存行（ts 为 naive UTC 字符串）
-
-    Returns:
-        排序去重后的行列表（稳定排序，同 ts 保留最后出现的行）
-    """
-    keyed = [(_parse_ts(row.get("ts", "")), row) for row in rows]
-    keyed.sort(key=lambda item: item[0])
-    deduped: list[dict[str, Any]] = []
-    last_key: Any = None
-    for key, row in keyed:
-        if deduped and key == last_key:
-            deduped[-1] = row
-        else:
-            deduped.append(row)
-        last_key = key
-    return deduped
-
-
-def _redis_cache_meets_completeness(
-    rows: list[dict[str, Any]],
-    start_dt: datetime,
-    end_dt: datetime,
-    interval_s: int,
-) -> bool:
-    """Redis 实时缓存完整性命中判定（R13）.
-
-    双条件（见模块头 _REDIS_CACHE_COVERAGE_TOLERANCE 登记依据）：
-    1) 去重后点数 ≥ 期望点数 × (1 - 容差)，期望点数 = 窗口时长 / interval_s + 1；
-    2) 首尾仍在边界容差（60s）内。
-
-    Args:
-        rows: 排序去重后的缓存行（ts 为 naive UTC 字符串）
-        start_dt / end_dt: 查询窗口（naive UTC）
-        interval_s: 请求采样间隔（秒），非法值按 1s 处理
-
-    Returns:
-        True 表示缓存可作为该窗口的完整数据源
-    """
-    if not rows:
-        return False
-    first_ts = _parse_ts(rows[0].get("ts", ""))
-    last_ts = _parse_ts(rows[-1].get("ts", ""))
-    if not isinstance(first_ts, datetime) or not isinstance(last_ts, datetime):
-        return False
-    if (first_ts - start_dt).total_seconds() > _REDIS_CACHE_EDGE_TOLERANCE_S:
-        return False
-    if (end_dt - last_ts).total_seconds() > _REDIS_CACHE_EDGE_TOLERANCE_S:
-        return False
-
-    window_s = (end_dt - start_dt).total_seconds()
-    if window_s <= 0:
-        return True
-    effective_interval = float(interval_s) if interval_s and interval_s > 0 else 1.0
-    expected_points = window_s / effective_interval + 1.0  # 含首尾两点
-    return len(rows) >= expected_points * (1.0 - _REDIS_CACHE_COVERAGE_TOLERANCE)
-
-
-def _rows_to_raw_series(
-    rows: list[dict[str, Any]],
-    initial: dict[str, Any],
-    tag_roles: list[str],
-) -> Any:
-    """COV 前向填充 + 行 → RawTimeSeries 转换（纯 CPU）。
-
-    经 ``asyncio.to_thread`` 在线程池执行，函数内不触碰任何 asyncio
-    对象 / db session。会就地修改 ``rows``（填充 COV 列的 None 值）。
-
-    Args:
-        rows: 宽表查询返回的行（按 ts 升序）
-        initial: 窗口起点之前每个 COV 列的最后有效值（前向填充初始值）
-        tag_roles: 需要提取的 tag 角色列表
-
-    Returns:
-        RawTimeSeries（timestamps / signals / pv_quality 质量码）
-    """
-    from app.contracts.data_types import RawTimeSeries
-    from app.core.tdengine_native import COV_FILL_COLUMNS
-
-    # 前向填充 COV 列（sp/mode/pid_p/i/d）：变化时推送的角色在宽表中
-    # 稀疏存储，用上一次有效值展开为完整曲线
-    last_vals: dict[str, Any] = {c: initial.get(c) for c in COV_FILL_COLUMNS}
-    for row in rows:
-        for c in COV_FILL_COLUMNS:
-            v = row.get(c)
-            if v is None:
-                row[c] = last_vals[c]
-            else:
-                last_vals[c] = v
-
-    # 转换为 RawTimeSeries
-    timestamps = [_parse_ts(row.get("ts")) for row in rows]
-    signals: dict[str, list[Any]] = {}
-    for role in tag_roles:
-        role_lower = role.lower()
-        signals[role_lower] = [row.get(role_lower) for row in rows]
-
-    # PV 质量码
-    quality_codes: dict[str, list[int]] = {}
-    if "pv" in [r.lower() for r in tag_roles]:
-        quality_codes["pv_quality"] = [int(row.get("pv_quality") or 0) for row in rows]
-
-    return RawTimeSeries(
-        timestamps=timestamps,
-        signals=signals,
-        quality_codes=quality_codes,
-    )

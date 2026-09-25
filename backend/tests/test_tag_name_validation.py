@@ -5,7 +5,7 @@
   FastAPI 请求模型命中即 422；合法名不受影响）
 - loop.import_loops（Excel）：非法 tag 名整行跳过计入 failed/errors；
   覆盖式删建映射导致各角色 tag 名变化时返回 warnings，
-  并调用 CacheInvalidator.invalidate_loop + 清除 tdengine_provider._subtable_cache
+  并调用 CacheInvalidator.invalidate_loop（宽表名缓存随宽表退役一并删除）
 - PUT /api/v1/loops/{id}/tags：tag 变更响应带 warnings 且缓存失效被调用
 """
 
@@ -164,7 +164,6 @@ class TestExcelImportTagReassignment:
 
     async def test_tag_change_returns_warning_and_invalidates_cache(self) -> None:
         from app.models.loop import LoopLedger
-        from app.services.data_source import tdengine_provider
         from app.services.loop import import_loops
 
         existing_loop = LoopLedger(
@@ -194,30 +193,19 @@ class TestExcelImportTagReassignment:
 
         file_bytes = _make_xlsx([["LOOP-1", "新描述", "", "LOOP-1.NEW_PV", "", ""]])
 
-        # 预置 subtable 解析缓存，验证被清除
-        tdengine_provider._subtable_cache["loop-reassign-1"] = (
-            "d_loop_loop_1",
-            "LOOP-1",
-            999999.0,
-        )
-        try:
-            with patch("app.services.loop.CacheInvalidator") as mock_invalidator_cls:
-                mock_invalidator = MagicMock()
-                mock_invalidator.invalidate_loop = AsyncMock(return_value=3)
-                mock_invalidator_cls.return_value = mock_invalidator
+        with patch("app.services.loop.CacheInvalidator") as mock_invalidator_cls:
+            mock_invalidator = MagicMock()
+            mock_invalidator.invalidate_loop = AsyncMock(return_value=3)
+            mock_invalidator_cls.return_value = mock_invalidator
 
-                result = await import_loops(db=db, file_bytes=file_bytes, operator="admin")
+            result = await import_loops(db=db, file_bytes=file_bytes, operator="admin")
 
-            assert result["updated"] == 1
-            assert len(result["warnings"]) == 1
-            assert "旧数据不可达" in result["warnings"][0]
-            assert "LOOP-1" in result["warnings"][0]
-            # L1 DataBlock 缓存失效被调用
-            mock_invalidator.invalidate_loop.assert_awaited_once_with("loop-reassign-1")
-            # subtable 解析缓存对应条目被清除
-            assert "loop-reassign-1" not in tdengine_provider._subtable_cache
-        finally:
-            tdengine_provider._subtable_cache.pop("loop-reassign-1", None)
+        assert result["updated"] == 1
+        assert len(result["warnings"]) == 1
+        assert "旧数据不可达" in result["warnings"][0]
+        assert "LOOP-1" in result["warnings"][0]
+        # L1 DataBlock 缓存失效被调用（宽表名缓存随宽表退役一并删除）
+        mock_invalidator.invalidate_loop.assert_awaited_once_with("loop-reassign-1")
 
     async def test_unchanged_tags_no_warning(self) -> None:
         """tag 名未变化时不产生 warning、不触发缓存失效。"""

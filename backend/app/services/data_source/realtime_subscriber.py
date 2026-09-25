@@ -122,8 +122,6 @@ from app.core.db import AsyncSessionLocal
 from app.core.exceptions import BizError
 from app.core.numeric import finite_or_none, parse_finite_float, parse_mode_int
 from app.core.redis import redis_client
-from app.core.tdengine import make_subtable_name
-from app.core.tdengine_native import batch_insert_multi
 from app.models.tag import TagRegistry
 from app.services.datasource_config import (
     REALTIME_WRITEBACK_RUNTIME_KEY,
@@ -231,9 +229,7 @@ _DISPLAY_BATCH_MAX_ITEMS = 128  # 每项 SETEX+PUBLISH 共 2 命令 → 单批 �
 _DISPLAY_FLUSH_MAX_BACKOFF = 2.0  # 连续失败时的发送退避上限（秒）
 
 # R07：TDengine 批次行数上限（分块成功独立记录）；未确认窗口重试缓冲上限
-_TD_BATCH_MAX_ROWS = 500
 _MAX_UNCONFIRMED_WINDOWS = 10  # 进程内登记的未确认窗口数上限（超出仅记录不重试）
-_MAX_RETRY_ROWS_PER_WINDOW = 2000  # 单窗口进入重试缓冲的 TD 行数上限
 
 # R10：订阅 invocation 发出后首个响应（Completion 初始快照）的等待超时（秒）。
 # 需覆盖大订阅量（每片 1000 位号、分块订阅）下服务端生成与回发快照的时延，
@@ -563,74 +559,42 @@ class RealtimeSubscriber:
             return new_recv >= old_recv
         return False
 
-    @property
-    def _writeback_enabled(self) -> bool:
-        """是否启用实时数据写回本地 TDengine 宽表。"""
-        return settings.REALTIME_WRITEBACK_ENABLED
-
     async def _sync_point_writer(self) -> None:
-        """按 sys_config 写入布局启停 PointHistoryWriter（P2-5 同流双写）.
+        """确保 PointHistoryWriter 运行（2026-09-25 宽表退役后恒启动）.
 
-        - legacy：不启动（零开销）；
-        - shadow/point：writer 消费**同一** ``_cache_value`` 事件流
-          （不新建第二订阅者），宽表路径是否继续由 mode 决定（point 停旧写
-          属迁移终态，需先确认回退覆盖——本阶段 shadow 为主）。
-        周期重评：由 ``_refresh_loop`` 每分钟节拍调用，sys_config 改动即时生效。
+        宽表超级表（已退役）：实时链路的唯一落库形态是测点点表
+        st_point_data_v1，因此写入器不再依赖 storage_mode 三态，恒启动并消费
+        同一事件流（submit_raw 由消息处理路径转投）。
+        周期调用（_refresh_loop 每分钟）保证异常退出后自愈重建。
         """
-        from app.services.data_source.history_layout import (
-            get_storage_mode,
-            writeback_trap_hint,
-        )
-
-        mode = "legacy"
-        check: dict[str, Any] | None = None
-        try:
-            from app.core.db import AsyncSessionLocal
-
-            async def _read_mode() -> tuple[str, dict[str, Any] | None]:
-                async with AsyncSessionLocal() as db:
-                    resolved = await get_storage_mode(db)
-                    try:
-                        from app.services.data_source.history_layout import (
-                            get_layout_selfcheck,
-                        )
-
-                        return resolved, await get_layout_selfcheck(db)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("布局自检失败（不影响写入启停）: %s", exc)
-                        return resolved, None
-
-            # 无 DB 环境（单测/PG 不可达）不得挂起：短超时后按现状保留
-            mode, check = await asyncio.wait_for(_read_mode(), timeout=5.0)
-        except Exception as exc:  # noqa: BLE001 — DB 不可达沿用当前状态
-            logger.warning("读取历史写入布局失败（沿用现状）: %s", exc)
-            return
-        want_writer = mode in ("shadow", "point")
-        if want_writer and self._point_writer is None:
+        if self._point_writer is None:
             from app.services.data_source.point_history_writer import PointHistoryWriter
 
             self._point_writer = PointHistoryWriter()
             await self._point_writer.start()
-            logger.info("PointHistoryWriter 已启动（storage_mode=%s）", mode)
-        elif not want_writer and self._point_writer is not None:
-            await self._point_writer.stop()
-            self._point_writer = None
-            logger.info("PointHistoryWriter 已停止（storage_mode=%s）", mode)
+            logger.info("PointHistoryWriter 已启动（实时唯一落库形态：测点点表）")
 
-        # 2026-09-25：写入布局与读取路由一致性的显性告警。
-        # 以前这两套开关不一致时日志一片安静，现场只能看到"数据没落库/趋势空"；
-        # 现在状态变化即告警（每分钟节拍调用，靠 _layout_alert_key 去重防刷屏）。
-        alert_parts: list[str] = []
-        if check is not None and check.get("severity") == "error":
-            alert_parts.append(str(check.get("diagnosis")))
-        trap = writeback_trap_hint(mode, bool(settings.REALTIME_WRITEBACK_ENABLED))
-        if trap:
-            alert_parts.append(trap)
-        alert_key = "|".join(alert_parts)
-        if alert_key != self._layout_alert_key:
-            self._layout_alert_key = alert_key
-            for text in alert_parts:
-                logger.error("实时落库自检：%s", text)
+        # 落库自检（2026-09-25）：读取路由异常时状态变化即告警，避免"数据在采、
+        # 趋势全空"再次静默发生；靠 _layout_alert_key 去重防刷屏。
+        try:
+            from app.core.db import AsyncSessionLocal
+            from app.services.data_source.history_layout import get_layout_selfcheck
+
+            async def _read_check() -> dict[str, Any] | None:
+                async with AsyncSessionLocal() as db:
+                    return await get_layout_selfcheck(db)
+
+            check = await asyncio.wait_for(_read_check(), timeout=5.0)
+        except Exception as exc:  # noqa: BLE001 — 自检失败不影响写入
+            logger.warning("落库自检失败（不影响写入）: %s", exc)
+            return
+        alert = ""
+        if check is not None and check.get("severity") != "ok":
+            alert = str(check.get("diagnosis") or "")
+        if alert != self._layout_alert_key:
+            self._layout_alert_key = alert
+            if alert:
+                logger.error("实时落库自检：%s", alert)
 
     async def start(self) -> None:
         """启动订阅后台任务."""
@@ -656,9 +620,8 @@ class RealtimeSubscriber:
             logger.info("实时数据订阅待命：Leader 锁被其他 worker 进程持有，周期抢锁中")
         self._leader_task = asyncio.create_task(self._leader_loop())
         logger.info(
-            "实时数据订阅任务已启动 (hub=%s, writeback=%s, leader=%s)",
+            "实时数据订阅任务已启动 (hub=%s, leader=%s)",
             settings.SIGNALR_HUB_URL,
-            self._writeback_enabled,
             self._is_leader,
         )
 
@@ -2215,6 +2178,27 @@ class RealtimeSubscriber:
         end = now - _GAP_BACKFILL_END_MARGIN
         if end <= start:
             return
+        # 1a（2026-09-25）：缺口同时落 PG（会话作用域 gap 段），使下游
+        # （趋势 / 诊断 / KPI）能把「缺口被 HELD 填平」与真实观测区分开。
+        # 失败只记 debug：登记是旁路，绝不能影响订阅主流程。
+        try:
+            from app.core.db import AsyncSessionLocal
+            from app.services.data_source.point_history_metadata import (
+                register_gap_segment,
+            )
+
+            _sid = f"realtime:{getattr(self, '_leader_token', None) or 'unknown'}"[:64]
+            async with AsyncSessionLocal() as _db:
+                added = await register_gap_segment(
+                    _db,
+                    session_id=_sid,
+                    seg_start=datetime.fromtimestamp(start, UTC),
+                    seg_end=datetime.fromtimestamp(end, UTC),
+                )
+                if added:
+                    await _db.commit()
+        except Exception as exc:  # noqa: BLE001 — 旁路登记失败不影响采集
+            logger.debug("缺口登记落 PG 失败（忽略，不影响订阅）: %s", exc)
         entry: dict[str, Any] = {
             "loops": loops,
             "start": start,
@@ -2675,24 +2659,6 @@ class RealtimeSubscriber:
 
         return [dedup[ts] for ts in sorted(dedup, key=_sort_key)]
 
-    async def _get_loop_meta_map(self, loop_parts: list[str]) -> dict[str, tuple[str, str]]:
-        """获取 loop_part → (loop_id, unit_id) 映射（带 TTL 缓存，flush 热路径不每拍查库）.
-
-        缓存过期或存在未知 loop_part（距上次刷新超过最小间隔）时刷新；
-        刷新失败时沿用旧缓存，缺失的 loop_part 回退为空串（不阻塞 flush）。
-        """
-        now = time.monotonic()
-        stale = now - self._loop_meta_cache_at > _LOOP_META_CACHE_TTL
-        has_missing = any(lp not in self._loop_meta_cache for lp in loop_parts)
-        miss_due = now - self._loop_meta_cache_at > _LOOP_META_MISS_REFRESH_MIN_INTERVAL
-        if stale or (has_missing and miss_due):
-            try:
-                await self._refresh_loop_meta_cache()
-            except Exception as exc:  # noqa: BLE001
-                self._loop_meta_cache_at = now  # 失败也记时间，避免每拍重试
-                logger.warning("刷新 loop_part→loop_id 映射缓存失败（沿用旧缓存）: %s", exc)
-        return {lp: self._loop_meta_cache.get(lp, ("", "")) for lp in loop_parts}
-
     async def _refresh_loop_meta_cache(self) -> None:
         """从数据库重建绑定映射缓存（仅含活跃且有 tag 映射的回路）.
 
@@ -2842,15 +2808,9 @@ class RealtimeSubscriber:
             batch_boundary = max(recv_ats) if recv_ats else None
             boundary_prev = self._last_flushed_at
 
-        # 实时写回需携带真实 loop_id/unit_id（TDengine USING TAGS 仅子表首次创建
-        # 生效，实时先行创建的子表 TAG 必须正确，否则永远为空且无法后续补写）
-        loop_meta: dict[str, tuple[str, str]] = {}
-        if self._writeback_enabled:
-            loop_meta = await self._get_loop_meta_map(list(batch))
-
-        # 3) 构造行（单行失败隔离，R07）——历史缓存条目 + TD 表数据
+        # 3) 构造行（单行失败隔离，R07）——Redis 实时显示缓存条目
+        # 宽表退役后本函数不再写 TDengine：落库由 PointHistoryWriter 走测点点表
         history_entries: list[tuple[str, str, str]] = []  # (key, row_json, row_ts)
-        td_tables: list[dict[str, Any]] = []
         loop_row_ts: dict[str, float] = {}  # loop_part → 行 ts epoch（R08 水位推进用）
         for loop_part, roles_data in batch.items():
             # 合并跨flush持久缓存快照：本tick buffer优先（新值覆盖旧值），
@@ -2900,17 +2860,6 @@ class RealtimeSubscriber:
                 loop_row_ts[loop_part] = row_dt.timestamp()
             key = f"{_HISTORY_KEY_PREFIX}{loop_part}"
             history_entries.append((key, json.dumps(row_dict, allow_nan=False), row[0]))
-            if self._writeback_enabled:
-                subtable = make_subtable_name(loop_part)
-                loop_id, unit_id = loop_meta.get(loop_part, ("", ""))
-                td_tables.append(
-                    {
-                        "subtable": subtable,
-                        "loop_id": loop_id,
-                        "unit_id": unit_id,
-                        "rows": [row],
-                    }
-                )
 
         # 4) 写入 Redis 1 小时缓存（R02 三重限制；pipeline 事务性：失败即整批
         #    未写、可整批重试）
@@ -2922,13 +2871,12 @@ class RealtimeSubscriber:
                 redis_ok = False
                 logger.warning("Redis 历史数据写入失败: %s", exc)
 
-        # 5) 批量写入 TDengine（分块 ≤500 行，分块成功独立记录）
-        failed_td_tables = await self._write_td_chunks(td_tables)
-
         self._metrics["buffer_rows_pending"] = len(self._buffer)
 
-        # 6) 水位推进 / 失败窗口登记
-        if redis_ok and not failed_td_tables:
+        # 5) 水位推进 / 失败窗口登记
+        # 宽表退役后本函数只对 Redis 实时显示缓存负责；测点点表由
+        # PointHistoryWriter 独立重试与缺口登记（在其内部 _flush_once 完成）。
+        if redis_ok:
             # 成功批：推进已确认边界；仅当无未确认窗口挂起时才推进持久化 checkpoint
             # （不越过旧失败数据，实时批成功不得擦掉旧失败窗口）
             if batch_boundary is not None:
@@ -2939,27 +2887,12 @@ class RealtimeSubscriber:
             for loop_part, row_ts in loop_row_ts.items():
                 self._advance_loop_watermark(loop_part, row_ts)
         else:
-            failed_history = [] if redis_ok else history_entries
-            # R08：部分成功批中，持久化成功的回路照常推进水位——写回开启时以
-            # TD 写入结果为准（历史缓存缺失由 R13 完整性校验回源 TD 兜底）；
-            # 写回关闭时历史缓存是唯一落库形态，以 redis_ok 为准
-            failed_subtables = {t["subtable"] for t in failed_td_tables}
-            failed_loop_row_ts: dict[str, float] = {}
-            for loop_part, row_ts in loop_row_ts.items():
-                persisted = (
-                    (make_subtable_name(loop_part) not in failed_subtables)
-                    if self._writeback_enabled
-                    else redis_ok
-                )
-                if persisted:
-                    self._advance_loop_watermark(loop_part, row_ts)
-                else:
-                    failed_loop_row_ts[loop_part] = row_ts
+            # Redis 缓存写失败：整批登记未确认窗口，水位不推进（重写幂等）
+            failed_loop_row_ts: dict[str, float] = dict(loop_row_ts)
             self._register_unconfirmed_window(
                 boundary_prev,
                 batch_boundary,
-                failed_td_tables,
-                failed_history,
+                history_entries,
                 failed_loop_row_ts,
             )
 
@@ -3094,62 +3027,10 @@ class RealtimeSubscriber:
         # 近似扣减的舍入误差可能累积为负 → 钳回 0
         self._history_bytes_total = max(self._history_bytes_total, 0)
 
-    async def _write_td_chunks(self, tables_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """TDengine 分块写入（R07：≤ ``_TD_BATCH_MAX_ROWS`` 行/批，分块独立重试）.
-
-        Returns:
-          成功写入的行计入 ``rows_written``；最终失败的分块原样返回，由调用方
-          登记进未确认窗口重试缓冲（``rows_failed``）。
-        """
-        if not tables_rows:
-            return []
-        chunks: list[list[dict[str, Any]]] = []
-        chunk: list[dict[str, Any]] = []
-        chunk_rows = 0
-        for table in tables_rows:
-            rows = len(table.get("rows", []))
-            if chunk and chunk_rows + rows > _TD_BATCH_MAX_ROWS:
-                chunks.append(chunk)
-                chunk, chunk_rows = [], 0
-            chunk.append(table)
-            chunk_rows += rows
-        if chunk:
-            chunks.append(chunk)
-
-        failed: list[dict[str, Any]] = []
-        for chunk in chunks:
-            ok = False
-            for attempt in range(3):
-                try:
-                    count = await batch_insert_multi(chunk)
-                    self._incr("rows_written", count)
-                    logger.debug("批量写入 %d 行到 %d 个子表", count, len(chunk))
-                    ok = True
-                    break
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    if attempt < 2:
-                        wait = 0.5 * (2**attempt)  # 0.5s, 1s
-                        logger.warning(
-                            "批量写入失败 (尝试 %d/3): %s，%gs 后重试", attempt + 1, exc, wait
-                        )
-                        await asyncio.sleep(wait)
-                    else:
-                        logger.error(
-                            "批量写入最终失败（%d 个子表进入重试缓冲）: %s", len(chunk), exc
-                        )
-            if not ok:
-                failed.extend(chunk)
-        if failed:
-            self._incr("rows_failed", sum(len(t.get("rows", [])) for t in failed))
-        return failed
-
     def _register_unconfirmed_window(
         self,
         boundary_prev: float | None,
         batch_boundary: float | None,
-        failed_td_tables: list[dict[str, Any]],
         failed_history: list[tuple[str, str, str]],
         failed_loop_row_ts: dict[str, float] | None = None,
     ) -> None:
@@ -3165,25 +3046,18 @@ class RealtimeSubscriber:
         window: dict[str, Any] = {
             "start": boundary_prev if boundary_prev is not None else batch_boundary,
             "end": batch_boundary,
-            "td_tables": failed_td_tables,
             "history": failed_history,
             "loop_row_ts": dict(failed_loop_row_ts or {}),
         }
-        total_td_rows = sum(len(t.get("rows", [])) for t in failed_td_tables)
-        if (
-            len(self._unconfirmed_windows) >= _MAX_UNCONFIRMED_WINDOWS
-            or total_td_rows > _MAX_RETRY_ROWS_PER_WINDOW
-        ):
+        if len(self._unconfirmed_windows) >= _MAX_UNCONFIRMED_WINDOWS:
             logger.error(
-                "未确认窗口重试缓冲已满（%d 窗口/单窗口 %d 行上限），新失败批仅登记"
-                "窗口不再重试（数据缺口以 gap backfill 兜底）: window=[%s, %s] rows=%d",
+                "未确认窗口重试缓冲已满（上限 %d 窗口），新失败批仅登记窗口不再重试"
+                "（数据缺口以 gap backfill 兜底）: window=[%s, %s] rows=%d",
                 _MAX_UNCONFIRMED_WINDOWS,
-                _MAX_RETRY_ROWS_PER_WINDOW,
                 window["start"],
                 window["end"],
-                total_td_rows,
+                len(failed_history),
             )
-            window["td_tables"] = []
             window["history"] = []
         self._unconfirmed_windows.append(window)
         self._incr("unconfirmed_windows")
@@ -3208,12 +3082,6 @@ class RealtimeSubscriber:
                 except Exception as exc:  # noqa: BLE001
                     confirmed = False
                     logger.warning("失败窗口 Redis 历史重写仍失败: %s", exc)
-            td_tables = window.get("td_tables") or []
-            if td_tables:
-                failed = await self._write_td_chunks(td_tables)
-                if failed:
-                    confirmed = False
-                    window["td_tables"] = failed
             if confirmed:
                 end = window.get("end")
                 if end is not None:
@@ -3233,7 +3101,7 @@ class RealtimeSubscriber:
         """构造单行数据；整行无任何已知 sourceTime 时返回 None.
 
         列顺序: ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality
-        对应 st_loop_data 超级表 schema。
+        （Redis 实时显示缓存的行结构；落库形态见 PointHistoryWriter）。
 
         时间戳经显式 astimezone 到目标时区（Asia/Shanghai），
         消除 naive datetime 在 TDengine 侧的 8h 偏移风险。

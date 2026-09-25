@@ -147,7 +147,6 @@ export namespace DataSourceApi {
   export interface StorageModeInfo {
     writeMode: string;
     readLayout: null | string;
-    writesWideTable: boolean;
     writesPointTable: boolean;
     consistent: boolean | null;
     severity: string;

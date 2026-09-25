@@ -498,7 +498,6 @@ async def get_datasource_health(db: AsyncSession) -> dict[str, Any]:
         "layoutSeverity": layout_check.get("severity"),
         "layoutDiagnosis": layout_check.get("diagnosis"),
         "pointTableWritten": layout_check.get("writesPointTable"),
-        "realtimeWritebackEnabled": bool(config.get("realtimeWritebackEnabled")),
     }
 
 
@@ -513,15 +512,12 @@ async def get_storage_mode_info(db: AsyncSession) -> dict[str, Any]:
 
 
 async def update_storage_mode(db: AsyncSession, *, mode: str, operator: str) -> dict[str, Any]:
-    """修改历史写入布局（ADMIN）。
+    """
+    修改历史写入布局（ADMIN，2026-09-25 收敛为单态）。
 
-    此前 set_storage_mode 是没有任何调用方的死代码，UI/API 都改不了这个开关，
-    生产上只能手工写库，直接导致"写入点表、读取路由还是宽表"这类不一致长期
-    无人发现。该函数把它变成可审计的自助配置入口。
-
-    - 只改写入侧（sys_config: history.storage_mode），不动读取路由（manifest）；
-    - 读取路由切换是一次性迁移操作，由运维脚本 register_layout_manifest.py 执行；
-    - 返回更新后的自检结论，前端可直接提示"当前读写是否一致"。
+    宽表超级表 退役后写入/读取唯一形态是测点点表，因此仅接受 point；
+    legacy / shadow 传入即拒绝并提示已退役（不再有对应写入分支）。sys_config
+    键继续写入（保留供展示/审计），返回落库形态自检结论。
     """
     from app.services.data_source.history_layout import (
         VALID_MODES,
@@ -529,8 +525,12 @@ async def update_storage_mode(db: AsyncSession, *, mode: str, operator: str) -> 
         set_storage_mode,
     )
 
-    if mode not in VALID_MODES:
-        raise ValueError(f"非法写入布局 {mode!r}，合法值：{sorted(VALID_MODES)}")
+    if mode != "point":
+        raise ValueError(
+            f"宽表已退役，history.storage_mode 仅支持 point（收到 {mode!r}；"
+            "legacy/shadow 的历史值不再驱动任何写入分支）"
+        )
+    _ = VALID_MODES  # 保留导入以解释历史值
 
     before = await get_storage_mode(db)
     if before != mode:

@@ -162,21 +162,17 @@ class DataSourceHealthInfo(CamelModel):
     pointTableWritten: bool | None = Field(
         None, description="当前写入布局是否写点表 st_point_data_v1"
     )
-    realtimeWritebackEnabled: bool | None = Field(
-        None, description="实时回写开关（注意：它不控制点表写入，由 storageMode 决定）"
-    )
 
 
 class StorageModeInfo(CamelModel):
     """历史写入布局 + 读写一致性自检（2026-09-25）。"""
 
-    writeMode: str = Field("legacy", description="写入侧布局：legacy / shadow / point")
-    readLayout: str | None = Field(None, description="读取路由（无 manifest 段恒 legacy）")
-    writesWideTable: bool = Field(True, description="当前写入侧是否写宽表 st_loop_data")
-    writesPointTable: bool = Field(False, description="当前写入侧是否写点表 st_point_data_v1")
-    consistent: bool | None = Field(
-        None, description="写入与读取是否自洽；false 表示趋势会读到空表"
+    writeMode: str = Field(
+        "point", description="sys_config 历史值（宽表退役后仅作展示/审计，恒按 point 执行）"
     )
+    readLayout: str | None = Field("point", description="读取路由（恒 point：测点点表）")
+    writesPointTable: bool = Field(True, description="唯一落库形态：测点点表 st_point_data_v1")
+    consistent: bool | None = Field(True, description="写入与读取形态是否自洽（恒 True）")
     severity: str = Field("ok", description="自检级别：ok / warning / error")
     diagnosis: str = Field("", description="自检结论与修复方向")
     manifest: dict[str, Any] | None = Field(None, description="当前生效的最新布局段")
@@ -187,7 +183,7 @@ class StorageModeInfo(CamelModel):
 class StorageModeUpdate(CamelModel):
     """修改历史写入布局的请求体（仅 ADMIN）。"""
 
-    mode: str = Field(..., description="目标写入布局：legacy / shadow / point")
+    mode: str = Field(..., description="目标布局：宽表已退役，仅接受 point")
 
 
 __all__ = [

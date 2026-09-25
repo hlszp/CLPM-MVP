@@ -2,72 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-
-
-@pytest.mark.asyncio
-async def test_tdengine_query_fn_concurrent_wide_queries_share_session_safely() -> None:
-    """并发 query_fn 调用共享同一 AsyncSession 时不得崩溃。
-
-    历史：2026-07-28 移除模块级 asyncio.Lock（跨事件循环绑定导致全回路取数
-    瘫痪，见 commit f45f498a）。此后并发安全性由 ``_subtable_cache`` 保障——
-    宽表名解析缓存命中后不再触碰 AsyncSession，并发查询直接走 TDengine。
-    本测试预填充缓存，验证并发 wide_table 查询路径不报错。
-    """
-    import time
-
-    from app.services.data_source import tdengine_provider as provider_module
-    from app.services.data_source.tdengine_provider import TDengineProvider
-
-    # 预填充宽表名缓存，使 _resolve_subtable 不触碰 DB（模拟热缓存场景）
-    provider_module._subtable_cache["loop-1"] = (
-        "d_loop_lic_101",
-        "LIC-101",
-        time.monotonic() + 3600.0,
-    )
-    try:
-        db = MagicMock()
-        db.execute = AsyncMock()
-
-        wide_query = AsyncMock(return_value=[])
-        with (
-            patch("app.core.tdengine_native.query_wide_table_native", wide_query),
-            # 布局路由固定走 legacy 宽表路径：本测试 mock 仅适配宽表查询，
-            # 环境若登记了 global point manifest（如退役宽表迁移后）会误入
-            # point/builder 路径（builder 需要真 DB 会话）——显式钉住 legacy。
-            patch(
-                "app.services.data_source.history_layout_router.resolve_window_layouts",
-                new=AsyncMock(return_value=[]),
-            ),
-            patch(
-                "app.services.data_source.realtime_subscriber.get_subscriber",
-                return_value=None,
-            ),
-        ):
-            query_fn = TDengineProvider().make_query_fn(db)
-            await asyncio.gather(
-                *[
-                    query_fn(
-                        loop_id="loop-1",
-                        tag_roles=["pv", "sp"],
-                        start="2026-07-17T00:00:00",
-                        end="2026-07-17T01:00:00",
-                        interval_s=1,
-                    )
-                    for _ in range(4)
-                ]
-            )
-
-        # 缓存命中时 DB 不应被调用；4 次并发查询各执行一次 wide_table 查询
-        db.execute.assert_not_called()
-        assert wide_query.await_count == 4
-    finally:
-        provider_module._subtable_cache.pop("loop-1", None)
 
 
 def test_kpi_concurrency_stays_within_database_budget() -> None:
