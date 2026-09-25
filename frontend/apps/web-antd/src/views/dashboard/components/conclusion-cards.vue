@@ -21,6 +21,8 @@ import { Tooltip } from 'ant-design-vue';
 import { fmt, getGrade } from '../use-grade';
 
 const props = defineProps<{
+  /** 实时自控率环比（pp；null 不显示） */
+  autoDelta?: null | number;
   /** 全厂综合评分（当前时间窗） */
   avgScore: null | number;
   /** 问题回路计数（WARNING/POOR 档） */
@@ -28,6 +30,8 @@ const props = defineProps<{
     poor: number;
     warning: number;
   };
+  /** 参评回路数环比（个；null 不显示） */
+  evaluatedDelta?: null | number;
   /** 参评回路数 */
   evaluatedLoops: number;
   /** 处置闭环计数（未闭环工单/超期/窗内闭环） */
@@ -46,6 +50,8 @@ const props = defineProps<{
   rtStale: boolean;
   /** 评分环比差值（当前窗口 − 上一窗口；null 不显示） */
   scoreDelta: null | number;
+  /** 稳定率环比（pp；null 不显示） */
+  stabilityDelta?: null | number;
   /** 总回路数 */
   totalLoops: number;
 }>();
@@ -73,6 +79,27 @@ const deltaView = computed(() => {
     text: fmt(Math.abs(d), 2),
   };
 });
+
+/**
+ * 通用环比小签（2026-09-24）：与评分卡同一视觉语言。
+ * reverse=true 表示指标越小越好（异常/超期类）→ 正值显示红色。
+ * 无基线（undefined/null）返回 null，调用方据此不渲染（不得用 0 兜底）。
+ */
+function deltaChip(d: null | number | undefined, digits = 2) {
+  if (d === undefined || d === null) return null;
+  const flat = Math.abs(d) < 0.005;
+  return {
+    cls: flat
+      ? 'bg-gray-100 text-gray-500'
+      : (d > 0
+        ? 'bg-green-50 text-green-700'
+        : 'bg-red-50 text-red-700'),
+    sign: d > 0 ? '+' : (d < 0 ? '-' : ''),
+    text: Math.abs(d).toFixed(digits),
+  };
+}
+
+const evaluatedChip = computed(() => deltaChip(props.evaluatedDelta, 0));
 
 /** 问题回路总数与语义色（不合格>0 红；警告>0 琥珀；否则常态） */
 const badTotal = computed(() => props.badLoops.warning + props.badLoops.poor);
@@ -134,7 +161,16 @@ const badTone = computed(() =>
           >/ {{ totalLoops }}</span
         >
       </div>
-      <span class="mt-1 text-[11px] text-gray-400">参评回路 / 总回路</span>
+      <!-- 环比基线（2026-09-24）：上一等长窗口的参评回路数对比；无基线不渲染 -->
+      <span class="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
+        <span
+          v-if="evaluatedChip"
+          class="rounded px-1 font-mono font-bold"
+          :class="evaluatedChip.cls"
+          >{{ evaluatedChip.sign }}{{ evaluatedChip.text }}</span
+        >
+        <span>{{ evaluatedChip ? '较上一窗口' : '参评回路 / 总回路' }}</span>
+      </span>
     </div>
 
     <!-- 3 问题回路（警告+不合格，点击 → 关注队列） -->

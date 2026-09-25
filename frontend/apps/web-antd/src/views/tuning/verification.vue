@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   DatePicker,
+  message,
   Select,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -36,6 +37,8 @@ const loopId = ref('');
 const loopOptions = ref<{ label: string; value: string }[]>([]);
 const loopsLoading = ref(false);
 const pointTime = ref<dayjs.Dayjs | undefined>();
+/** 对比时点来源说明（反查工单/记录/兜底当前时间；兜底时必须让用户看到） */
+const pointTimeSource = ref('');
 const windowHours = ref(24);
 
 /** 前后窗窗口选项（小时） */
@@ -51,8 +54,12 @@ const query = ref<null | {
   windowHours: number;
 }>(null);
 
+/** 回路清单加载失败标记（原实现只有 finally，失败后下拉静默为空） */
+const loopsLoadError = ref(false);
+
 async function loadLoops(keyword = '') {
   loopsLoading.value = true;
+  loopsLoadError.value = false;
   try {
     const res = await getLoopListApi({
       page: 1,
@@ -63,6 +70,10 @@ async function loadLoops(keyword = '') {
       value: l.loopId,
       label: `${l.tagName} ${l.description || ''}`.trim(),
     }));
+  } catch (error) {
+    loopOptions.value = [];
+    loopsLoadError.value = true;
+    console.error('[效果验证/回路清单] 加载失败:', error);
   } finally {
     loopsLoading.value = false;
   }
@@ -97,8 +108,18 @@ async function derivePointTime(recordId: string, loop: string) {
     const iso = withSubmit[0]?.submittedAt ?? record.createdAt;
     // 后端 naive UTC（Z 后缀）→ 本地展示
     pointTime.value = dayjs(iso);
-  } catch {
+    pointTimeSource.value = withSubmit[0]?.submittedAt
+      ? '处置工单提交时间'
+      : '整定记录创建时间';
+  } catch (error) {
+    // 2026-09-24 修复：原实现静默回退到"现在"，用户会以为对比窗口正常，
+    // 实际比错了时点（最危险的一类缺陷）。现显式告知来源并要求人工确认。
     pointTime.value = dayjs();
+    pointTimeSource.value = '反查失败，已默认当前时间（请手动确认）';
+    message.warning(
+      '未能反查该记录的处置时点，对比时点已默认当前时间，请手动确认后再对比',
+    );
+    console.error('[效果验证/时点反查] 失败:', error);
   }
 }
 
@@ -138,7 +159,20 @@ onMounted(async () => {
           size="small"
           format="YYYY-MM-DD HH:mm"
           placeholder="对比时点"
+          @change="pointTimeSource = '手动指定'"
         />
+        <!-- 时点来源必须可见：反查失败时会静默落到"现在"，对比窗口比错却看似正常 -->
+        <span
+          v-if="pointTimeSource"
+          class="text-xs"
+          :class="
+            pointTimeSource.includes('反查失败')
+              ? 'text-amber-600'
+              : 'text-neutral-400'
+          "
+        >
+          时点来源：{{ pointTimeSource }}
+        </span>
         <Select
           v-model:value="windowHours"
           :options="WINDOW_OPTIONS"

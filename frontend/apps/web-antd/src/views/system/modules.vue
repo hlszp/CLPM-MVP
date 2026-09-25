@@ -227,7 +227,7 @@ onMounted(loadModules);
         <div v-if="isDirty" class="modules-pending">
           <div class="modules-pending__info">
             <span class="modules-pending__dot"></span>
-            有未保存的更改，应用后需重启后端服务才能生效
+            有未保存的更改；点击「应用更改」后由后端热重载模块路由，约 1 分钟内生效（禁用的定时任务立即停止派发）
           </div>
           <div class="modules-pending__actions">
             <button class="modules-btn modules-btn--ghost" @click="resetChanges">
@@ -253,10 +253,10 @@ onMounted(loadModules);
       :impact-scope="
         `「${pendingDisable?.name}」模块的菜单、路由和定时任务将暂停；数据保留但不可访问`
       "
-      rollback-tip="重新启用并重启后端后可恢复全部功能和数据"
+      rollback-tip="重新启用并应用更改后可恢复全部功能和数据"
       :require-confirm-code="false"
-      :require-reason="false"
-      :show-audit-note="false"
+      :require-reason="true"
+      :show-audit-note="true"
       confirm-text="确认禁用"
       @confirm="confirmDisable"
       @cancel="cancelDisable"

@@ -352,6 +352,10 @@ async def read_trend_buckets(
     Returns:
         {point_id: {bucket_start_ms: (value, quality_class)}}
     """
+    # naive 输入按 UTC 解释（全仓时间口径：DB/TD 存 naive UTC），
+    # 否则 .timestamp() 会按宿主本地时区解释，非 UTC 部署下整窗偏移。
+    start = start.replace(tzinfo=UTC) if start.tzinfo is None else start
+    end = end.replace(tzinfo=UTC) if end.tzinfo is None else end
     if not point_ids or end <= start:
         return {}
     tags = ", ".join(f"'{_sql_quote(pid)}'" for pid in point_ids)

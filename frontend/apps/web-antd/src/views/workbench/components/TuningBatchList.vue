@@ -4,11 +4,15 @@
  *
  * 原型列：批次号 | 回路数 | 策略 | 状态 | 评分变化 | 执行人
  * 状态色点（B-06 动态判定）：
- *   COMPLETED 已验证（绿）· RUNNING 执行中（蓝）· READY 就绪（蓝绿）
- *   PENDING 排队中（灰）· BLOCKED 阻塞中（红 + block_reason）· CANCELLED 已回退（红灰）
+ *   COMPLETED 已完成（绿）· RUNNING 执行中（蓝）· READY 就绪（蓝绿）
+ *   PENDING 待启动（灰）· BLOCKED 阻塞（红 + block_reason）· CANCELLED 已取消（红灰）
+ * 中文标签统一取自 constants/clpm-ui.ts（2026-09-24 收敛，此前本卡叫
+ * "已验证/排队中/已回退"，与整定记录页的"已完成/待启动/已取消"矛盾）。
  * 前置依赖：标题行下方 DepsPillList pills（CL-xxxx + 状态色）
  */
 import type { WorkbenchApi } from '#/api/workbench';
+
+import { TUNING_BATCH_STATUS_LABEL } from '#/constants/clpm-ui';
 
 import DepsPillList from './DepsPillList.vue';
 
@@ -21,12 +25,36 @@ const STATUS_META: Record<
   WorkbenchApi.TuningBatchStatus,
   { bg: string; color: string; label: string }
 > = {
-  BLOCKED: { bg: '#FFF1F0', color: '#FF4D4F', label: '阻塞中' },
-  CANCELLED: { bg: '#FFF1F0', color: '#8C8C8C', label: '已回退' },
-  COMPLETED: { bg: '#F6FFED', color: '#52C41A', label: '已验证' },
-  PENDING: { bg: '#F5F5F5', color: '#8C8C8C', label: '排队中' },
-  READY: { bg: '#E6F7FF', color: '#1890FF', label: '就绪' },
-  RUNNING: { bg: '#EBF1F8', color: '#2563EB', label: '执行中' },
+  BLOCKED: {
+    bg: '#FFF1F0',
+    color: '#FF4D4F',
+    label: TUNING_BATCH_STATUS_LABEL.BLOCKED!,
+  },
+  CANCELLED: {
+    bg: '#FFF1F0',
+    color: '#8C8C8C',
+    label: TUNING_BATCH_STATUS_LABEL.CANCELLED!,
+  },
+  COMPLETED: {
+    bg: '#F6FFED',
+    color: '#52C41A',
+    label: TUNING_BATCH_STATUS_LABEL.COMPLETED!,
+  },
+  PENDING: {
+    bg: '#F5F5F5',
+    color: '#8C8C8C',
+    label: TUNING_BATCH_STATUS_LABEL.PENDING!,
+  },
+  READY: {
+    bg: '#E6F7FF',
+    color: '#1890FF',
+    label: TUNING_BATCH_STATUS_LABEL.READY!,
+  },
+  RUNNING: {
+    bg: '#EBF1F8',
+    color: '#2563EB',
+    label: TUNING_BATCH_STATUS_LABEL.RUNNING!,
+  },
 };
 
 /** 评分变化文案（原型：71 → 88（▲17）；负 Δ 红 ▼） */

@@ -149,6 +149,16 @@ export namespace MonitorApi {
     keyword?: string;
     page?: number;
     pageSize?: number;
+    /**
+     * 组级排序字段（2026-09-24 新增，服务端在分页前排序）。
+     *
+     * 关注队列按回路组服务端分页，客户端 sorter 只能排当前页 —— 会误导用户
+     * 以为全局有序，故排序必须走服务端参数。
+     * priority（默认，紧急在前）/ updatedAt / itemCount / overdue
+     */
+    sortBy?: 'itemCount' | 'overdue' | 'priority' | 'updatedAt';
+    /** 排序方向，默认 asc（priority/overdue 语义） */
+    sortOrder?: 'asc' | 'desc';
   }
 
   // ===== 工作台摘要 summary（MW-P3-01 ~ MW-P3-04）=====
@@ -388,6 +398,23 @@ export function getAttentionListApi(params: MonitorApi.AttentionQueryParams) {
     params,
     // 重查询可超过默认 10s（本机 TDengine 承受实时写入时实测 3~9s）
     timeout: 30_000,
+  });
+}
+
+/**
+ * 关注队列**全量**导出（CSV，服务端生成，含口径注释行）。
+ *
+ * 与页面内 exportData（只导当前页）不同：本接口不分页，导出当前筛选+排序下的
+ * 全部问题回路组，供班组交接/汇报/取证使用。
+ *
+ * 必须走 requestClient.download（responseReturn: 'body' + responseType: 'blob'）：
+ * 普通 get 会被统一响应拦截器按 code 字段校验，CSV 无该字段会报错。
+ */
+export function exportAttentionApi(params: MonitorApi.AttentionQueryParams) {
+  const { page: _page, pageSize: _pageSize, ...filters } = params;
+  return requestClient.download<Blob>(`${BASE}/attention/export`, {
+    params: filters,
+    timeout: 60_000,
   });
 }
 

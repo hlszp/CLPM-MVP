@@ -310,6 +310,18 @@ function buildQueryParams(): TaskApi.TaskListQueryParams {
   return params;
 }
 
+/**
+ * 筛选条件变化：必须先回到第 1 页再查.
+ *
+ * 此前筛选控件直接 @change="loadList"，沿用当前页码——在第 3 页切换筛选后，
+ * 若结果不足 3 页，后端返回 items=[] 且 total>0，页面会同时显示「共 N 条」
+ * 与「暂无评估任务记录」的空态，等于告诉工程师"没有数据"。
+ */
+function handleFilterChange() {
+  currentPage.value = 1;
+  void loadList();
+}
+
 async function loadList() {
   loading.value = true;
   loadError.value = false;
@@ -490,7 +502,7 @@ onUnmounted(() => {
           placeholder="任务类型：全部"
           allow-clear
           style="width: 150px"
-          @change="loadList"
+          @change="handleFilterChange"
         >
           <Select.Option value="STANDARD">自动评估</Select.Option>
           <Select.Option value="BACKFILL">手动评估</Select.Option>
@@ -500,7 +512,7 @@ onUnmounted(() => {
           placeholder="状态筛选"
           allow-clear
           style="width: 130px"
-          @change="loadList"
+          @change="handleFilterChange"
         >
           <Select.Option value="PENDING">待执行</Select.Option>
           <Select.Option value="RUNNING">执行中</Select.Option>
@@ -511,7 +523,7 @@ onUnmounted(() => {
         <DatePicker.RangePicker
           v-model:value="filterDateRange"
           :allow-clear="true"
-          @change="loadList"
+          @change="handleFilterChange"
         />
         <Button type="primary" @click="loadList">查询</Button>
       </Space>

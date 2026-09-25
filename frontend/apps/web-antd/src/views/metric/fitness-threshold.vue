@@ -164,11 +164,14 @@ async function handleConfirmSave() {
     for (const item of view.items ?? []) {
       editState[item.key] = item.value;
     }
+    // 先捕获本次提交的类型：下面会把 resetAll 清掉，清掉后再读会恒为 false，
+    // 导致「重置为默认值」成功后提示成「已保存 0 项阈值」（用户以为没生效）。
+    const wasResetAll = resetAll.value;
     resetAll.value = false;
     remark.value = '';
     showSaveModal.value = false;
     message.success(
-      resetAll.value ? '已重置为默认值' : `已保存 ${payload.items?.length ?? 0} 项阈值`,
+      wasResetAll ? '已重置为默认值' : `已保存 ${payload.items?.length ?? 0} 项阈值`,
     );
   } finally {
     saving.value = false;

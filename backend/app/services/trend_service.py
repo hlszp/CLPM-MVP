@@ -30,6 +30,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.loop import LoopTagMapping
 from app.models.tag import TagRegistry
 
@@ -133,11 +134,8 @@ LTTB_THRESHOLD = 5000
 
 
 def _parse_iso_datetime(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串。"""
-    try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
-        return datetime.fromisoformat(s)
+    """解析 ISO 8601 时间字符串（非法输入抛 400，不落到 500）。"""
+    return parse_iso_datetime(s, field="startTime/endTime")
 
 
 def _ts_to_millis(ts: Any) -> int | None:
@@ -217,8 +215,8 @@ def compute_sample_interval(
         24h → 24s (86400s / 3600 = 24)
         72h → 72s (259200s / 3600 = 72)
     """
-    start_dt = _parse_iso_datetime(start_time)
-    end_dt = _parse_iso_datetime(end_time)
+    start_dt = to_naive_utc(_parse_iso_datetime(start_time))
+    end_dt = to_naive_utc(_parse_iso_datetime(end_time))
     delta_seconds = int((end_dt - start_dt).total_seconds())
     if delta_seconds <= 0:
         return 1
@@ -253,14 +251,25 @@ async def _fetch_trend_fast(
         read_trend_buckets,
     )
 
-    start_ms = int(start_dt.timestamp() * 1000)
-    end_ms = int(end_dt.timestamp() * 1000)
-    step_ms = max(1, sample_interval) * 1000
-    buckets = await read_trend_buckets(list(role_point.values()), start_ms, end_ms, step_ms)
+    # 2026-09-24 修复：此处曾传 (start_ms, end_ms, step_ms) 三个毫秒整数，
+    # 与 read_trend_buckets(point_ids, start: datetime, end: datetime, interval_s: int)
+    # 签名不符 —— start/end 被当 datetime 调 .timestamp() 抛 AttributeError，
+    # 且 step_ms 会被当作"秒"再 ×1000，桶宽放大 1000 倍。
+    # 快路径因此自 0920 优化上线起从未生效（异常被下方 except 静默回退）。
+    buckets = await read_trend_buckets(list(role_point.values()), start_dt, end_dt, sample_interval)
 
     pv_point = role_point.get("PV")
     pv_map = buckets.get(pv_point, {}) if pv_point else {}
     starts = sorted({b for bm in buckets.values() for b in bm})
+
+    # 2026-09-24 修复：原实现用角色名（"SP"/"OP"/"MODE"）去索引以小写为键的
+    # 累加器字典，抛 KeyError —— 与上面的签名错位叠加，使快路径 100% 失败。
+    # 三个角色映射循环外预取，避免每个桶重复 dict 查询（快路径自身的目标即省开销）。
+    smap_by_dst = {
+        "sp": buckets.get(role_point.get("SP", ""), {}),
+        "op": buckets.get(role_point.get("OP", ""), {}),
+        "mode": buckets.get(role_point.get("MODE", ""), {}),
+    }
 
     timestamps: list[int] = []
     pv: list[float | None] = []
@@ -275,17 +284,15 @@ async def _fetch_trend_fast(
         ql.append(_quality_to_label(q))
         # PV 质量码 BAD → null（对齐既有显示语义）
         pv.append(None if (qe is None or q == 0) else qe[0])
-        for _dst, src in (("sp", "SP"), ("op", "OP"), ("mode", "MODE")):
-            smap = buckets.get(role_point.get(src, ""), {}) if src in role_point else {}
-            e = smap.get(b)
+        for dst, src in (("sp", "SP"), ("op", "OP"), ("mode", "MODE")):
+            e = smap_by_dst[dst].get(b)
             if e is not None and e[0] is not None:
                 v = e[0]
                 if src == "MODE":
                     v = int(round(float(v)))
-                getattr_list = {"sp": sp, "op": op, "mode": mode}[src]
-                getattr_list.append(v)
+                {"sp": sp, "op": op, "mode": mode}[dst].append(v)
             else:
-                {"sp": sp, "op": op, "mode": mode}[src].append(None)
+                {"sp": sp, "op": op, "mode": mode}[dst].append(None)
 
     return {
         "timestamps": timestamps,
@@ -340,9 +347,10 @@ async def fetch_loop_trend(
                 "downsampled": bool,           # 是否触发了 LTTB 降采样
             }
     """
-    # 1. 动态计算采样间隔
-    start_dt = _parse_iso_datetime(start_time)
-    end_dt = _parse_iso_datetime(end_time)
+    # 1. 动态计算采样间隔（统一归一为 naive UTC，避免 aware/naive 相减抛
+    # TypeError → 500；时间窗语义与 DB/TDengine 的 naive UTC 口径一致）
+    start_dt = to_naive_utc(_parse_iso_datetime(start_time))
+    end_dt = to_naive_utc(_parse_iso_datetime(end_time))
     delta_seconds = int((end_dt - start_dt).total_seconds())
     sample_interval = compute_sample_interval(start_time, end_time, target_points)
     logger.info(

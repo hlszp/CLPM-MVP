@@ -25,6 +25,7 @@ from sqlalchemy.orm import aliased
 from app.core.exceptions import BizError
 from app.core.modules import is_module_enabled
 from app.core.redis import redis_client
+from app.core.timeparse import parse_iso_datetime
 from app.models.audit import SysAuditLog
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger
@@ -873,14 +874,8 @@ async def get_analytics(
     granularity: str = "day",
 ) -> dict:
     """统计报表数据。"""
-    try:
-        start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-    except ValueError:
-        start_dt = datetime.fromisoformat(start_time)
-    try:
-        end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
-    except ValueError:
-        end_dt = datetime.fromisoformat(end_time)
+    start_dt = parse_iso_datetime(start_time, field="startTime")
+    end_dt = parse_iso_datetime(end_time, field="endTime")
 
     snapshots = await _query_snapshots(
         db=db,

@@ -15,7 +15,7 @@ import { ref, watch } from 'vue';
 
 import {
   Button,
-  Input,
+  InputNumber,
   message,
   Popconfirm,
   Select,
@@ -66,8 +66,8 @@ const columns: TableColumnsType = [
   { title: 'MODE 值', dataIndex: 'modeValue', key: 'modeValue', width: 140 },
   {
     title: '控制模式',
-    dataIndex: 'controlMode',
-    key: 'controlMode',
+    dataIndex: 'modeLabel',
+    key: 'modeLabel',
     width: 160,
   },
   {
@@ -78,13 +78,12 @@ const columns: TableColumnsType = [
     align: 'center',
   },
   {
-    title: '是否有效',
-    dataIndex: 'isEnabled',
-    key: 'isEnabled',
-    width: 100,
+    title: '是否有效自动',
+    dataIndex: 'isEffective',
+    key: 'isEffective',
+    width: 120,
     align: 'center',
   },
-  { title: '备注', dataIndex: 'remark', key: 'remark' },
   { title: '操作', key: 'action', width: 80, fixed: 'right', align: 'center' },
 ];
 
@@ -93,8 +92,9 @@ async function load() {
   if (!props.loopId) return;
   loading.value = true;
   try {
+    // 后端返回裸数组（契约见 api/loop.ts ModeMappingResult）
     const data = await getLoopModeMappingApi(props.loopId);
-    items.value = (data.items ?? []).map((it) => ({ ...it }));
+    items.value = (data ?? []).map((it) => ({ ...it }));
   } catch {
     // 错误已由拦截器处理
   } finally {
@@ -105,11 +105,10 @@ async function load() {
 /** 新增一行 */
 function handleAdd() {
   items.value.push({
-    modeValue: '',
-    controlMode: 'MANUAL',
+    modeValue: 0,
+    modeLabel: 'MANUAL',
     isAuto: false,
-    isEnabled: true,
-    remark: '',
+    isEffective: true,
   });
 }
 
@@ -120,12 +119,12 @@ function handleDelete(index: number) {
 
 /** 保存 */
 async function handleSave() {
-  // 校验：MODE 值不能为空且不能重复
-  const seen = new Set<string>();
+  // 校验：MODE 值为非负整数且不能重复（后端 modeValue 为 int 且作为唯一键）
+  const seen = new Set<number>();
   for (const it of items.value) {
-    const v = (it.modeValue ?? '').trim();
-    if (!v) {
-      message.warning('存在 MODE 值为空的行，请补全或删除');
+    const v = Number(it.modeValue);
+    if (!Number.isInteger(v) || v < 0) {
+      message.warning('MODE 值必须为非负整数，请检查');
       return;
     }
     if (seen.has(v)) {
@@ -138,12 +137,12 @@ async function handleSave() {
   saving.value = true;
   try {
     await updateLoopModeMappingApi(props.loopId, {
-      items: items.value.map((it) => ({
-        modeValue: it.modeValue.trim(),
-        controlMode: it.controlMode,
+      // 后端请求体字段名为 mappings（ModeMappingReplaceRequest）
+      mappings: items.value.map((it) => ({
+        modeValue: Number(it.modeValue),
+        modeLabel: it.modeLabel,
         isAuto: !!it.isAuto,
-        isEnabled: !!it.isEnabled,
-        remark: it.remark || undefined,
+        isEffective: !!it.isEffective,
       })),
     });
     message.success('投用定义保存成功');
@@ -200,17 +199,19 @@ watch(
     >
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'modeValue'">
-          <Input
+          <InputNumber
             v-model:value="record.modeValue"
-            placeholder="如 1、2、AUTO"
+            :min="0"
+            :precision="0"
+            placeholder="如 1、2、3"
             :disabled="readonly"
             size="small"
             style="width: 120px"
           />
         </template>
-        <template v-else-if="column.key === 'controlMode'">
+        <template v-else-if="column.key === 'modeLabel'">
           <Select
-            v-model:value="record.controlMode"
+            v-model:value="record.modeLabel"
             :options="controlModeOptions"
             :disabled="readonly"
             size="small"
@@ -230,17 +231,9 @@ watch(
             size="small"
           />
         </template>
-        <template v-else-if="column.key === 'isEnabled'">
+        <template v-else-if="column.key === 'isEffective'">
           <Switch
-            v-model:checked="record.isEnabled"
-            :disabled="readonly"
-            size="small"
-          />
-        </template>
-        <template v-else-if="column.key === 'remark'">
-          <Input
-            v-model:value="record.remark"
-            placeholder="备注"
+            v-model:checked="record.isEffective"
             :disabled="readonly"
             size="small"
           />
@@ -255,7 +248,7 @@ watch(
           </Popconfirm>
           <span v-else class="text-gray-400">{{
             controlModeLabel[
-              record.controlMode as LoopApi.ModeMappingControlMode
+              record.modeLabel as LoopApi.ModeMappingControlMode
             ]
           }}</span>
         </template>

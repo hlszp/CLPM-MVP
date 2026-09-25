@@ -11,6 +11,7 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.audit import SysAuditLog
 
 
@@ -68,6 +69,46 @@ async def list_audit_logs(
         "page": page,
         "pageSize": page_size,
     }
+
+
+#: 单次全量导出上限（审计取证场景；超出时在首行口径注释中注明截断）
+AUDIT_EXPORT_MAX_ROWS = 20_000
+
+
+async def export_audit_logs(
+    db: AsyncSession,
+    *,
+    operator: str | None = None,
+    operation_type: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    max_rows: int = AUDIT_EXPORT_MAX_ROWS,
+) -> tuple[list[dict], int]:
+    """按筛选条件**全量**导出审计日志（2026-09-24 新增）。
+
+    背景：页面内导出只导当前页（20 条）却提示"已导出 N 条"，审计取证时会被
+    误当全量。本函数与 list_audit_logs 共用完全相同的过滤语义，但不分页，
+    仅受 max_rows 上限保护（返回 (rows, total) 供调用方注明是否截断）。
+
+    过滤语义与列表接口一致：operator 精确匹配、operation_type 精确匹配、
+    时间按 operated_at 闭区间。
+    """
+    stmt = select(SysAuditLog)
+    if operator:
+        stmt = stmt.where(SysAuditLog.operator == operator)
+    if operation_type:
+        stmt = stmt.where(SysAuditLog.operation_type == operation_type)
+    if start_time:
+        start_dt = parse_iso_datetime(start_time, field="startTime")
+        stmt = stmt.where(SysAuditLog.operated_at >= to_naive_utc(start_dt))
+    if end_time:
+        end_dt = parse_iso_datetime(end_time, field="endTime")
+        stmt = stmt.where(SysAuditLog.operated_at <= to_naive_utc(end_dt))
+
+    total = int((await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0)
+    stmt = stmt.order_by(SysAuditLog.operated_at.desc()).limit(max_rows)
+    rows = (await db.execute(stmt)).scalars().all()
+    return [_audit_log_to_dict(row) for row in rows], total
 
 
 def _audit_log_to_dict(log: SysAuditLog) -> dict:

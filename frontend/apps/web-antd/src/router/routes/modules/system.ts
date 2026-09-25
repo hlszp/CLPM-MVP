@@ -15,7 +15,17 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     meta: {
-      authority: ['ADMIN', 'IC_ENGINEER'],
+      // FP-P0-05 同款修法：父路由 authority 必须取子路由并集。
+      // vben filterTree 在父节点不通过时整棵子树被裁掉（不递归），
+      // 父路由若漏角色，子页写了 authority 也永远进不去菜单/路由表
+      // （例：权限矩阵声明「所有角色可查看」却对 EXPERT/SPONSOR/PE 不可达）。
+      authority: [
+        'ADMIN',
+        'IC_ENGINEER',
+        'PE_ENGINEER',
+        'SPONSOR',
+        'EXPERT',
+      ],
       icon: 'lucide:settings',
       order: 8,
       title: '系统',

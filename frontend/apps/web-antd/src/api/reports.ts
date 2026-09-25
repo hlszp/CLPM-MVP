@@ -30,6 +30,15 @@ export namespace ReportsApi {
     unit?: null | string;
     status?: null | string;
     context?: null | string;
+    /**
+     * 上一等长窗口的同口径取值（环比基线，2026-09-24 新增）。
+     *
+     * null/缺省 = 无基线（无上一窗口数据），前端**不得**显示环比，
+     * 也不能用 0 兜底 —— 注意 0 是有效基线（如健康率 0%）。
+     */
+    prevValue?: null | number;
+    /** 环比差值（当前 − 上一窗口）；null 表示不显示 */
+    delta?: null | number;
   }
 
   export interface OverviewTrendPoint {

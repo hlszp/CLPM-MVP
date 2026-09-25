@@ -17,6 +17,7 @@ export { default as ClpmInfoTip } from './info-tip.vue';
 export { default as ClpmKpiCard } from './kpi-card.vue';
 export { default as ClpmKpiStrip } from './kpi-strip.vue';
 export type { KpiStripItem } from './kpi-strip.vue';
+export { default as ClpmLoadErrorAlert } from './load-error-alert.vue';
 export { default as ClpmLoopLink } from './loop-link.vue';
 export { default as ClpmModuleArchivedBanner } from './module-archived-banner.vue';
 export { default as ClpmNumeric } from './numeric.vue';

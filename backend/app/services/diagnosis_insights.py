@@ -133,7 +133,22 @@ def _direction(delta: float | None, reverse: bool) -> str | None:
     return "worsened" if worsened else "improved"
 
 
+def _ensure_uuid(value: str, field: str) -> None:
+    """UUID 格式防御：畸形串直接 ERR_PARAM 400.
+
+    否则非 UUID 串会被 asyncpg 直接送进 PG 的 uuid 比较，抛 DataError → 500
+    （同 handling._ensure_uuid / diagnosis_v2 precheck 既有口径）。
+    """
+    try:
+        UUID(value)
+    except (AttributeError, TypeError, ValueError):
+        raise BizError(
+            code="ERR_PARAM", message=f"{field} 格式非法（应为 UUID）: {value}", status_code=400
+        ) from None
+
+
 async def _load_loop(db: AsyncSession, loop_id: str) -> LoopLedger:
+    _ensure_uuid(loop_id, "loopId")
     loop = (
         await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     ).scalar_one_or_none()

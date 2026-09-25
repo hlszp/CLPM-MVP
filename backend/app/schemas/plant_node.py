@@ -19,6 +19,9 @@ class PlantNodeCreate(PlantNodeBase):
     """POST /api/v1/plant-nodes request body."""
 
     type: str = Field(..., description="节点类型：FACTORY/AREA/UNIT")
+    sortOrder: int | None = Field(
+        None, ge=0, le=999_999, description="同级展示排序（小值在前，同值按名称）"
+    )
 
 
 class PlantNodeUpdate(CamelModel):

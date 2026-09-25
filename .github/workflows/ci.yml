@@ -124,6 +124,13 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check .
 
+      # 2026-09-24 新增：前端调用 ↔ 后端路由 契约对账
+      # 阻塞项：前端调用了但后端不存在的接口（/menu/all 曾长期潜伏）；
+      # 非阻塞：后端已注册但前端未调用的端点（WARN 提示登记到
+      # scripts/api-contract-allowlist.json，策略见死代码登记表）。
+      - name: API 契约对账（前端调用 vs 后端路由）
+        run: uv run python ../scripts/check_api_contract.py
+
       # S3-C7: mypy 类型检查（首次集成，非阻塞）
       - name: Mypy type check
         run: uv run mypy app/ --ignore-missing-imports --no-strict-optional

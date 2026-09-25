@@ -78,6 +78,7 @@ import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realti
 import { useModules } from '#/composables/use-modules';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { useReturnNav } from '#/composables/use-return-nav';
 import { useScoreColor } from '#/composables/use-score-color';
 import { useVirtualList } from '#/composables/use-virtual-list';
 import { formatTime } from '#/utils/format';
@@ -100,9 +101,17 @@ const router = useRouter();
 /** 模块热插拔判断（诊断/整定模块禁用时卡片移除、按钮灰显） */
 const { moduleEnabled } = useModules();
 
-/** 返回系统概览（面包屑导航） */
+/**
+ * 返回来源页（2026-09-24：改用统一 from 映射）。
+ *
+ * 原实现只在 from === 'overview' 时渲染返回按钮且硬编码去装置总览，
+ * 而生产端实际会带 from=/monitor/attention、/monitor/loops（关注队列、
+ * 回路监视跳进来）——那两条路径**没有返回按钮**，工程师只能靠浏览器后退。
+ */
+const { goBack: goBackToSource, returnTarget: backTarget } = useReturnNav();
+
 function goBackToOverview() {
-  router.push({ path: '/dashboard/workbench' });
+  goBackToSource(selectedLoopId.value ?? undefined);
 }
 
 /** 初始化：从 URL query 消费 plantNodeId 上下文（从系统概览跳转时带过来） */
@@ -140,12 +149,6 @@ const {
   stop: stopRealtime,
   stopFallback: stopRealtimeFallback,
 } = useLoopRealtime();
-
-// 服务端订阅过滤：仅接收当前选中回路的位号
-bindLoopInterest(() => {
-  const name = selectedLoop.value?.tagName;
-  return name ? [name] : [];
-});
 
 // ===== 左侧回路列表 =====
 const loopList = ref<LoopApi.MonitorListItem[]>([]);
@@ -281,6 +284,15 @@ const selectedLoop = computed(
     loopList.value.find((l) => l.loopId === selectedLoopId.value) ??
     injectedLoop.value,
 );
+
+// 服务端订阅过滤：仅接收当前选中回路的位号。
+// 必须放在 selectedLoop 声明之后——bindLoopInterest 内部 watch 带 immediate，
+// 会在 setup 期间同步求值 getter，放在声明前会命中 const 的 TDZ，
+// 抛 ReferenceError 导致整页 setup 中断（2026-09-24 修复的页面白屏缺陷）。
+bindLoopInterest(() => {
+  const name = selectedLoop.value?.tagName;
+  return name ? [name] : [];
+});
 
 // ===== 回路详情（提供当前 PID 等运行态参数） =====
 const loopDetail = ref<LoopApi.LoopDetail | null>(null);
@@ -1231,14 +1243,14 @@ const stageLabelMap: Record<string, string> = {
 <template>
   <Page>
     <ClpmPageToolbar :loading="loopListLoading">
-      <!-- 从系统概览跳转过来时显示返回面包屑 -->
-      <template #context v-if="route.query.from === 'overview'">
+      <!-- 返回来源页（from 映射表见 composables/use-return-nav.ts） -->
+      <template #context v-if="backTarget">
         <button
           class="flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs text-blue-600 hover:border-blue-200 hover:bg-blue-50"
           @click="goBackToOverview"
         >
           <span>←</span>
-          <span>系统概览</span>
+          <span>{{ backTarget.label }}</span>
         </button>
       </template>
       <template #actions>

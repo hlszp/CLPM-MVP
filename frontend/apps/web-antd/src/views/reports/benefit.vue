@@ -39,17 +39,21 @@ import {
 import {
   ClpmDataCanvas,
   ClpmKpiCard,
+  ClpmLoadErrorAlert,
   ClpmModuleArchivedBanner,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp } from '#/composables/use-page-toolbar';
+import { TUNING_TASK_STATUS_LABEL } from '#/constants/clpm-ui';
 import { exportData } from '#/utils/export';
 
 defineOptions({ name: 'ReportsBenefit' });
 
 const loading = ref(false);
+/** 加载失败态（常驻错误提示 + 重试） */
+const loadError = ref(false);
 const data = ref<null | ReportsApi.BenefitData>(null);
 
 const dateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
@@ -157,10 +161,13 @@ async function loadPlants() {
 
 async function load() {
   loading.value = true;
+  loadError.value = false;
   try {
     data.value = await getReportBenefitApi(queryParams());
-  } catch {
+  } catch (error) {
     data.value = null;
+    loadError.value = true;
+    console.error('[收益报告] 加载失败:', error);
   } finally {
     loading.value = false;
     renderChart();
@@ -259,18 +266,10 @@ function metricOf(record: any, key: unknown) {
 }
 
 // ===== P2-3：整定执行区块（状态分布 chips + 拟合度/算法柱图 + 批次散点） =====
-const TUNING_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  RUNNING: '进行中',
-  IDENTIFIED: '已辨识',
-  SIMULATED: '已仿真',
-  COMPLETED: '已完成',
-  INCONCLUSIVE: '无法判定',
-  ROLLED_BACK: '已回滚',
-  PENDING: '待处理',
-  APPLIED: '已实施',
-  VERIFIED: '已验证',
-};
+// 标签取全站唯一字典（constants/clpm-ui.ts）。2026-09-24 收敛：此前本表
+// ROLLED_BACK 叫「已回滚」、PENDING 叫「待处理」，与整定模块的「已回退」
+// 「待实施」不一致，同一状态在管理层报告与工程师页面表述不同。
+const TUNING_STATUS_LABELS: Record<string, string> = TUNING_TASK_STATUS_LABEL;
 
 const tuningExec = computed(() => data.value?.tuningExecution ?? null);
 const fittingEmpty = computed(
@@ -515,6 +514,9 @@ onMounted(() => {
         />
       </template>
     </ClpmPageToolbar>
+
+    <!-- 2026-09-24：加载失败常驻提示（原空 catch 只留空图表，无法区分"没数据"与"服务异常"） -->
+    <ClpmLoadErrorAlert :error="loadError" @retry="load" />
 
     <!-- P0-5：处置/整定模块停用时灰色归档横幅（历史数据可查询导出） -->
     <ClpmModuleArchivedBanner :modules="['handling', 'tuning']" />

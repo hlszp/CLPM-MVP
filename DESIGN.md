@@ -1,7 +1,8 @@
 # CLPM Design Baseline
 
-日期：2026-08-24（对齐 CLPM-MVP 现行口径；历史对齐对象为 PRD v6.2、UI/UX v6.3 与重构后实现契约 v2.11）
+日期：2026-09-24（对齐 CLPM-MVP 现行口径；历史对齐对象为 PRD v6.2、UI/UX v6.3 与重构后实现契约 v2.11）
 状态：active-baseline
+版本：v3.2（2026-09-24：§8.2/§9 状态族按实现同步，见文末变更记录）
 适用范围：CLPM-MVP 前端与原型体验对齐
 
 ## 0. 权威来源声明
@@ -210,15 +211,35 @@ IA 细节（二级菜单、角色权限、隐藏项与 redirect）一律以 `doc
 
 ### 8.2 状态标签
 
-统一标签体系（对齐实现契约 v2.0 §6 与 DDS v6.0 字段）：
+> **2026-09-24 同步实现**：本节原列出的 `diag_label`（stiction/oscillation/…）与
+> `tuning_status` 四态均与实现不符（实现为 8 类原因分类与 10 态整定记录），
+> 且缺处置、处置工单、适用性等级等已在 UI 大面积使用的状态族。已按后端
+> CheckConstraint 与前端 `constants/clpm-ui.ts` 逐项对齐。
 
-- `loop_status`（回路状态：READY/PARTIAL/INACTIVE）
-- `pv_quality`（PV 质量码：GOOD/BAD/UNCERTAIN）
-- `kpi_status`（KPI 状态：SUCCESS/INCONCLUSIVE/PARTIAL）
-- `action_status`（异常跟踪状态：PENDING/IN_PROGRESS/IMPLEMENTED/IGNORED）
-- `diag_label`（诊断标签：stiction/oscillation/saturation/tuning_needed/normal）
-- `tuning_status`（整定状态：DRAFT/RUNNING/COMPLETED/ROLLED_BACK）
-- `risk_level`（风险等级：low/medium/high）
+统一标签体系（以**后端模型 CheckConstraint + 前端 `#/constants/clpm-ui.ts` 唯一字典**为准）：
+
+| 状态族 | 取值（英文枚举 = 代码值） | 中文标签 |
+|---|---|---|
+| `loop_status`（回路状态） | READY / PARTIAL / INACTIVE | 就绪 / 部分 / 未投用 |
+| `pv_quality`（PV 质量码） | GOOD / BAD / UNCERTAIN | 正常 / 坏值 / 不确定 |
+| `kpi_status`（KPI 快照状态） | SUCCESS / INCONCLUSIVE / PARTIAL | 成功 / 无法判定 / 部分 |
+| `confidence_level`（可信度） | A / B / C / D / E | 优秀 / 良好 / 一般 / 较差 / 不足 |
+| `action_status`（异常跟踪） | PENDING / IN_PROGRESS / IMPLEMENTED / IGNORED | 待处理 / 进行中 / 已完成 / 已忽略 |
+| `suggestion_status`（处置建议） | PENDING / ACCEPTED / CONVERTED / REJECTED / IGNORED | 待审核 / 已接受 / 已转工单 / 已驳回 / 已忽略 |
+| `order_status`（处置工单） | PENDING / EXECUTING / VERIFYING / CLOSED / REOPENED / CANCELLED | 待处理 / 执行中 / 验证中 / 已闭环 / 已重开 / 已取消 |
+| `diagnosis_category`（诊断原因分类） | TUNING / VALVE / INSTRUMENT / COMMUNICATION / PROCESS / UTILIZATION / DESIGN / DATA_INSUFFICIENT | 参数 / 阀门 / 仪表 / 通信 / 工艺 / 投用 / 组态 / 数据不足 |
+| `severity`（严重度） | HIGH / MEDIUM / LOW | 高 / 中 / 低 |
+| `diagnosis_run_status` | RUNNING / SUCCESS / PARTIAL / FAILED | 执行中 / 完成 / 部分完成 / 失败 |
+| `review_status`（复核状态） | PENDING / REVIEWED | 待复核 / 已复核 |
+| `fitness_level`（适用性） | L0 / L1 / L2 / L3 / L4 | 阻塞 / 待确认 / 待数据 / 待激励 / 就绪 |
+| `tuning_record_status` | DRAFT / PENDING / RUNNING / IDENTIFIED / SIMULATED / APPLIED / VERIFIED / COMPLETED / ROLLED_BACK / INCONCLUSIVE | 草稿 / 待实施 / 进行中 / 已辨识 / 已仿真 / 已实施 / 已验证 / 已完成 / 已回退 / 无法判定 |
+| `tuning_batch_status` | BLOCKED / PENDING / READY / RUNNING / COMPLETED / CANCELLED | 阻塞 / 待启动 / 就绪 / 执行中 / 已完成 / 已取消 |
+| `risk_level`（风险等级） | LOW / MEDIUM / HIGH | 低 / 中 / 高 |
+| `module_status`（模块热插拔） | CORE / ENABLED / MAINTENANCE / UNINSTALLED | 核心 / 已启用 / 维护中 / 未安装 |
+| `node_kpi_status`（装置评级） | EXCELLENT / GOOD / FAIR / WARNING / POOR / INCONCLUSIVE | 优秀 / 良好 / 一般 / 关注 / 差 / 无法判定 |
+
+> 同一状态族的中文标签**只能有一份定义**：前端统一从 `#/constants/clpm-ui.ts`
+> 引用，禁止在页面内再建本地映射（2026-09-24 已收敛整定状态 4 份分歧映射）。
 
 标签必须有：
 
@@ -290,14 +311,20 @@ IA 细节（二级菜单、角色权限、隐藏项与 redirect）一律以 `doc
 
 核心对象与状态（对齐实现契约 v2.0 §6、DDS v6.0 与 UI/UX v6.1）：
 
-| 对象 | 关键状态 |
+| 对象 | 关键状态（与后端 CheckConstraint 一致） |
 |---|---|
-| Loop（回路） | `READY` / `PARTIAL` / `INACTIVE` |
+| Loop（回路） | `READY` / `PARTIAL` / `INACTIVE`（注：**当前 UI 未渲染该状态**，仅 API 与台账字段存在） |
 | Action Tracker（异常跟踪） | `PENDING` → `IN_PROGRESS` → `IMPLEMENTED` / `IGNORED` |
 | KPI 快照 | `SUCCESS` / `INCONCLUSIVE` / `PARTIAL` |
-| 诊断结果 | `stiction` / `oscillation` / `saturation` / `tuning_needed` / `normal` |
-| 整定记录 | `DRAFT` → `RUNNING` → `COMPLETED` / `ROLLED_BACK` |
+| 诊断 run | `RUNNING` → `SUCCESS` / `PARTIAL` / `FAILED`；复核 `PENDING` → `REVIEWED` |
+| 诊断原因分类 | `TUNING` / `VALVE` / `INSTRUMENT` / `COMMUNICATION` / `PROCESS` / `UTILIZATION` / `DESIGN` / `DATA_INSUFFICIENT`（**旧 `stiction/oscillation/…` 标签口径已废弃**，属算子名而非分类） |
+| 适用性等级 | `L0`（阻塞）/ `L1`（待确认）/ `L2`（待数据）/ `L3`（待激励）/ `L4`（就绪）；诊断侧 L0/L1 阻止发起，整定侧 < L3 门禁 |
+| 处置建议（loop_action_item） | `PENDING` → `ACCEPTED` → `CONVERTED`；终态 `REJECTED` / `IGNORED` |
+| 处置工单（handling_order） | `PENDING` → `EXECUTING` → `VERIFYING` → `CLOSED`；可 `REOPENED`；终态 `CANCELLED` |
+| 整定记录 | `DRAFT` / `PENDING` → `RUNNING` → `IDENTIFIED` → `SIMULATED` → `APPLIED` → `VERIFIED` → `COMPLETED`；旁支 `ROLLED_BACK` / `INCONCLUSIVE` |
+| 整定批次 | `BLOCKED` / `PENDING` / `READY` / `RUNNING` / `COMPLETED` / `CANCELLED`（前置工单未闭合 → `BLOCKED`） |
 | PV 质量码 | `GOOD` / `BAD` / `UNCERTAIN` |
+| 模块热插拔 | `CORE` / `ENABLED` / `MAINTENANCE` / `UNINSTALLED`（禁用即移除路由，非 403） |
 
 规则：
 
@@ -352,3 +379,4 @@ Phase 1 可保留整定辨识、推荐、仿真的实验/辅助接口，但必�
 | 2026-07-06 | v3.0 | 对齐 UIUX v6.1 与实现契约 v2.0：所有版本号引用统一升级为 v6.0；角色集补充英文枚举（ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT/SPONSOR）；状态机枚举统一为大写（5 类状态机：Loop/Action Tracker/KPI 快照/整定记录/PV 质量码）；标注 RESOLVED 与 ACTIVE/PAUSED/DECOMMISSIONED 为旧命名；状态标签、PV 质量码渲染规则、页面结构模式与验收标准全部对齐 v6.0。 |
 | 2026-07-22 | v3.0 | D5 口径同步：PRD 引用统一为 v6.1、UI/UX 引用统一为 v6.1、实现契约引用统一为 v2.0（历史 v2.1 摘要已并入 v2.0）；DESIGN 自身版本保持 v3.0 不变。 |
 | 2026-08-24 | v3.1 | 对齐 CLPM-MVP 现行口径：一级模块结构由 6 模块更新为 8 模块（新增处置、统计报告升一级菜单 order=6），声明模块热插拔机制；IA 与菜单事实来源切换至 `docs/MVP设计/00-信息架构.md`，v6.2 系列文档引用降为历史基线；active-baseline 日期更新为 2026-08-24。 |
+| 2026-09-24 | v3.2 | **状态族同步实现（消除文档说谎）**：§8.2 与 §9 的状态机表原为 v6.2 旧口径 —— 诊断分类写成 `stiction/oscillation/saturation/tuning_needed/normal`（实现为 8 类原因分类，前者实为算子名）、整定记录写成 4 态（实现 10 态），且缺处置建议（5 态）/处置工单（6 态）/适用性 L0~L4/模块状态等已在界面大面积使用的状态族。现按后端 CheckConstraint 与前端 `#/constants/clpm-ui.ts` 逐项对齐，并确立「同一状态族中文标签只有一份定义」的约束。 |

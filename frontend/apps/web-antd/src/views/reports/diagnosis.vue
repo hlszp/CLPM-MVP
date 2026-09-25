@@ -40,6 +40,7 @@ import {
 } from '#/api/reports';
 import {
   ClpmDataCanvas,
+  ClpmLoadErrorAlert,
   ClpmModuleArchivedBanner,
   ClpmPageToolbar,
   ClpmToolbarButton,
@@ -51,6 +52,8 @@ defineOptions({ name: 'ReportsDiagnosis' });
 
 const loading = ref(false);
 const exporting = ref(false);
+/** 加载失败态：原实现两个子加载各自空 catch 静默置空，页面显示空图表 */
+const loadError = ref(false);
 const stats = ref<null | ReportsApi.DiagnosisStatisticsData>(null);
 
 const dateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
@@ -126,8 +129,10 @@ async function loadPlants() {
 async function loadStats() {
   try {
     stats.value = await getReportDiagnosisStatisticsApi(queryParams());
-  } catch {
+  } catch (error) {
     stats.value = null;
+    loadError.value = true;
+    console.error('[诊断报告/统计] 加载失败:', error);
   }
 }
 
@@ -144,14 +149,17 @@ async function loadRecords() {
     });
     records.value = res.items;
     total.value = res.total;
-  } catch {
+  } catch (error) {
     records.value = [];
     total.value = 0;
+    loadError.value = true;
+    console.error('[诊断报告/记录] 加载失败:', error);
   }
 }
 
 async function load() {
   loading.value = true;
+  loadError.value = false;
   await Promise.all([loadStats(), loadRecords()]);
   loading.value = false;
   await nextTick();
@@ -379,6 +387,9 @@ onMounted(() => {
         />
       </template>
     </ClpmPageToolbar>
+
+    <!-- 2026-09-24：加载失败常驻提示（原空 catch 只留空图表，无法区分"没数据"与"服务异常"） -->
+    <ClpmLoadErrorAlert :error="loadError" @retry="load" />
 
     <!-- P0-5：诊断模块停用时灰色归档横幅（历史数据可查询导出） -->
     <ClpmModuleArchivedBanner :modules="['diagnosis']" />

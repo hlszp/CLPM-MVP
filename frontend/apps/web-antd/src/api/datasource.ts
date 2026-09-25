@@ -126,6 +126,35 @@ export namespace DataSourceApi {
     tailscaleAvailable: boolean;
     /** AAS Tag 最近同步时间 ISO 8601 */
     lastSyncAt: null | string;
+    // ---- 落库自检（2026-09-25 生产排查新增）----
+    /** 历史写入布局：legacy 只写宽表 / shadow 双写 / point 只写点表 */
+    storageMode?: null | string;
+    /** 趋势与评估的读取路由（无 manifest 段恒 legacy） */
+    readLayout?: null | string;
+    /** 写入布局与读取路由是否自洽；false 表示趋势会读到空表 */
+    layoutConsistent?: boolean | null;
+    /** 自检级别：ok / warning / error */
+    layoutSeverity?: null | string;
+    /** 自检结论与修复方向（可直接展示） */
+    layoutDiagnosis?: null | string;
+    /** 当前写入布局是否写点表 st_point_data_v1 */
+    pointTableWritten?: boolean | null;
+    /** 实时回写开关（注意：它不控制点表写入，由 storageMode 决定） */
+    realtimeWritebackEnabled?: boolean | null;
+  }
+
+  /** 历史写入布局 + 读写一致性自检（2026-09-25） */
+  export interface StorageModeInfo {
+    writeMode: string;
+    readLayout: null | string;
+    writesWideTable: boolean;
+    writesPointTable: boolean;
+    consistent: boolean | null;
+    severity: string;
+    diagnosis: string;
+    changed?: boolean | null;
+    manifest?: null | Record<string, unknown>;
+    previousMode?: null | string;
   }
 }
 
@@ -171,5 +200,26 @@ export function refreshSubscriptionApi() {
 export function getDatasourceHealthApi() {
   return requestClient.get<DataSourceApi.DataSourceHealth>(
     '/datasource/health',
+  );
+}
+
+/**
+ * 读取历史写入布局 + 读写一致性自检（2026-09-25 新增）
+ *
+ * 排查背景：写入侧（sys_config: history.storage_mode）与读取路由
+ * （history_layout_manifest）是两套独立开关，不一致时表现为"实时数据在采、
+ * 趋势图全空"，而此前没有任何界面能看到这个状态。
+ */
+export function getStorageModeApi() {
+  return requestClient.get<DataSourceApi.StorageModeInfo>(
+    '/datasource/storage-mode',
+  );
+}
+
+/** 修改历史写入布局（仅 ADMIN；只改写入侧，读取路由由运维脚本显式登记） */
+export function updateStorageModeApi(mode: string) {
+  return requestClient.put<DataSourceApi.StorageModeInfo>(
+    '/datasource/storage-mode',
+    { mode },
   );
 }

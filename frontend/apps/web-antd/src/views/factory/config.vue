@@ -376,6 +376,9 @@ async function handleSave() {
         name: form.name.trim(),
         type: form.type,
         parentId: form.parentId || null,
+        // 新增弹窗同样提供「排序值」输入（同级小值在前），此前 create 分支漏传，
+        // 用户填的排序值被静默丢弃，必须再进编辑页改一次才生效。
+        sortOrder: form.sortOrder,
       });
       message.success('节点已创建');
     } else {

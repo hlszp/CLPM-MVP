@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.loop import LoopLedger
 
 logger = logging.getLogger(__name__)
@@ -166,9 +167,19 @@ async def get_waveform(
             status_code=404,
         )
 
-    # 解析时间
-    start_dt = _parse_iso_datetime(start_time)
-    end_dt = _parse_iso_datetime(end_time)
+    # 解析时间并统一归一为 naive UTC（2026-09-24 修复）：
+    # 原实现直接相减，一端带 Z / 带偏移、另一端不带时会抛
+    # "can't subtract offset-naive and offset-aware datetimes" → 500。
+    start_dt = to_naive_utc(_parse_iso_datetime(start_time))
+    end_dt = to_naive_utc(_parse_iso_datetime(end_time))
+
+    # 窗口方向校验（原实现只判上限，起止倒置会得到负窗口一路下传）
+    if end_dt <= start_dt:
+        raise BizError(
+            code="ERR_TS_001",
+            message="结束时间必须晚于开始时间",
+            status_code=400,
+        )
 
     # 校验时间窗不超过 30 天
     if end_dt - start_dt > timedelta(days=MAX_TIME_WINDOW_DAYS):
@@ -225,11 +236,8 @@ def _quality_normalize(quality: str) -> str:
 
 
 def _parse_iso_datetime(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串。"""
-    try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
-        return datetime.fromisoformat(s)
+    """解析 ISO 8601 时间字符串（非法输入抛 400，不落到 500）。"""
+    return parse_iso_datetime(s, field="startTime/endTime")
 
 
 __all__ = ["get_waveform", "lttb_downsample_multi_series"]

@@ -96,7 +96,11 @@ class ReportGenerateData(CamelModel):
 
 
 class ReportOverviewKpi(CamelModel):
-    """管理总览单个 KPI 格（S1~S3 统一结构，缺失值用 null 占位）。"""
+    """管理总览单个 KPI 格（S1~S3 统一结构，缺失值用 null 占位）。
+
+    2026-09-24：新增 prevValue / delta（环比基线）。**必须在此声明**——
+    response_model 会丢弃未声明字段，服务层返回的环比曾在序列化时被静默丢掉。
+    """
 
     key: str
     label: str
@@ -104,6 +108,10 @@ class ReportOverviewKpi(CamelModel):
     unit: str | None = None
     status: str | None = None
     context: str | None = None
+    #: 上一等长窗口同口径取值；null = 无基线（前端不显示环比，注意 0 是有效基线）
+    prevValue: float | int | None = None
+    #: 环比差值（当前 − 上一窗口）；null = 不显示
+    delta: float | None = None
 
 
 class ReportOverviewTrendPoint(CamelModel):

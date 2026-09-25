@@ -171,6 +171,23 @@ export namespace DashboardApi {
       stabilityRate: null | number;
       totalLoops: number;
     };
+    /**
+     * 上一等长窗口同口径聚合（环比基线；仅 compare=true 且指定 timeWindow 时返回）
+     *
+     * hasData=false 表示上一窗口无数据 → 前端必须隐藏环比，而不是显示 0 差值。
+     */
+    prevAggregate?: {
+      autoModeRate: null | number;
+      avgScore: null | number;
+      effectiveAutoRate: null | number;
+      evaluatedLoops: number;
+      goodValueRate: null | number;
+      hasData: boolean;
+      inconclusiveLoops: number;
+      stabilityRate: null | number;
+      windowEnd: string;
+      windowStart: string;
+    };
     /** 统计窗口回显（仅指定 timeWindow 时返回，v6.1.4） */
     timeWindow?: string;
     windowStart?: string;
@@ -388,6 +405,8 @@ export function getAutoRateRtApi(params?: { plantId?: string }) {
  * v6.1.4：可选 timeWindow——缺省为每节点最新快照，指定后 rate 字段按窗口加权
  */
 export function getBoardAggregateApi(params?: {
+  /** 同时返回上一等长窗口同口径聚合（环比基线，2026-09-24 新增） */
+  compare?: boolean;
   /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
   endTime?: string;
   plantId?: string;

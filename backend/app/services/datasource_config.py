@@ -474,6 +474,16 @@ async def get_datasource_health(db: AsyncSession) -> dict[str, Any]:
         last_sync_row.isoformat() if last_sync_row and hasattr(last_sync_row, "isoformat") else None
     )
 
+    # 落库自检（2026-09-25）：把"写入布局 与 读取路由"是否自洽一并返回，
+    # 让运维/部署团队不进容器就能判断"数据会不会落库、趋势读哪张表"。
+    layout_check: dict[str, Any] = {}
+    try:
+        from app.services.data_source.history_layout import get_layout_selfcheck
+
+        layout_check = await get_layout_selfcheck(db)
+    except Exception as exc:  # noqa: BLE001 — 自检失败不影响链路状态返回
+        logger.warning("落库自检失败（health 仅缺该组字段）: %s", exc)
+
     return {
         "networkMode": config["networkMode"],
         "signalrEnabled": config["signalrEnabled"],
@@ -482,7 +492,63 @@ async def get_datasource_health(db: AsyncSession) -> dict[str, Any]:
         "historyApiUrl": config["historyApiUrl"],
         "tailscaleAvailable": config["tailscaleAvailable"],
         "lastSyncAt": last_sync_at,
+        "storageMode": layout_check.get("writeMode"),
+        "readLayout": layout_check.get("readLayout"),
+        "layoutConsistent": layout_check.get("consistent"),
+        "layoutSeverity": layout_check.get("severity"),
+        "layoutDiagnosis": layout_check.get("diagnosis"),
+        "pointTableWritten": layout_check.get("writesPointTable"),
+        "realtimeWritebackEnabled": bool(config.get("realtimeWritebackEnabled")),
     }
+
+
+# ---------------------------------------------------------------------------
+# 历史写入布局（2026-09-25 生产排查新增）
+# ---------------------------------------------------------------------------
+async def get_storage_mode_info(db: AsyncSession) -> dict[str, Any]:
+    """读取写入布局 + 读写一致性自检（只读，供链路配置页与运维核对）。"""
+    from app.services.data_source.history_layout import get_layout_selfcheck
+
+    return await get_layout_selfcheck(db)
+
+
+async def update_storage_mode(db: AsyncSession, *, mode: str, operator: str) -> dict[str, Any]:
+    """修改历史写入布局（ADMIN）。
+
+    此前 set_storage_mode 是没有任何调用方的死代码，UI/API 都改不了这个开关，
+    生产上只能手工写库，直接导致"写入点表、读取路由还是宽表"这类不一致长期
+    无人发现。该函数把它变成可审计的自助配置入口。
+
+    - 只改写入侧（sys_config: history.storage_mode），不动读取路由（manifest）；
+    - 读取路由切换是一次性迁移操作，由运维脚本 register_layout_manifest.py 执行；
+    - 返回更新后的自检结论，前端可直接提示"当前读写是否一致"。
+    """
+    from app.services.data_source.history_layout import (
+        VALID_MODES,
+        get_storage_mode,
+        set_storage_mode,
+    )
+
+    if mode not in VALID_MODES:
+        raise ValueError(f"非法写入布局 {mode!r}，合法值：{sorted(VALID_MODES)}")
+
+    before = await get_storage_mode(db)
+    if before != mode:
+        await set_storage_mode(db, mode)
+        await _write_audit(
+            db=db,
+            operator=operator,
+            operation_type="STORAGE_MODE_UPDATE",
+            before_value=json.dumps({"storageMode": before}, ensure_ascii=False),
+            after_value=json.dumps({"storageMode": mode}, ensure_ascii=False),
+        )
+        await db.commit()
+        logger.info("历史写入布局已由 %s 从 %s 改为 %s", operator, before, mode)
+
+    info = await get_storage_mode_info(db)
+    info["changed"] = before != mode
+    info["previousMode"] = before
+    return info
 
 
 async def test_history_api_connection(

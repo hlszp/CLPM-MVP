@@ -221,6 +221,54 @@ def _group_sort_key(group: dict[str, Any]) -> tuple[int, int, float]:
     return _sort_key(group["_first_item"])
 
 
+#: 关注队列支持的组级排序字段（2026-09-24：服务端排序，替代"只能按默认顺序看"）
+ATTENTION_SORT_FIELDS = ("priority", "updatedAt", "itemCount", "overdue")
+
+
+def _group_updated_ts(group: dict[str, Any]) -> float | None:
+    """组更新时间（ISO 字符串，naive UTC）→ epoch 秒；缺失返回 None."""
+    raw = group.get("updatedAt")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw)).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def group_sort_key(group: dict[str, Any], sort_by: str, sort_order: str) -> tuple:
+    """组级排序键构造器（服务端排序，作用于分页之前）。
+
+    设计说明：关注队列是**按回路组服务端分页**的，客户端 sorter 只能对当前页
+    排序（更糟：会让用户误以为全局有序）。因此排序必须在服务端、分页之前完成。
+
+    入参 group 是组响应对象（见 _group_items_by_loop 的 result 构造）：
+    可用字段 priority / updatedAt / itemCount / isOverdue。
+
+    支持的 sortBy（sortOrder=asc/desc；每题都以默认键做次级排序，保证同值稳定）：
+    - priority（默认 asc = 紧急在前）：优先级 → 更新时间倒序
+    - updatedAt（默认 desc = 最近更新在前）
+    - itemCount（默认 desc = 问题项多在前）
+    - overdue（asc = 超期组优先）
+    """
+    rank = _PRIORITY_ORDER.get(str(group.get("priority") or ""), 9)
+    ts = _group_updated_ts(group) or 0.0
+    default_key: tuple = (rank, -ts)
+    desc = sort_order == "desc"
+    if sort_by == "updatedAt":
+        if _group_updated_ts(group) is None:
+            return (float("inf"), default_key)  # 无更新时间恒排最后
+        return (-ts if desc else ts, default_key)
+    if sort_by == "itemCount":
+        count = int(group.get("itemCount") or 0)
+        return (-count if desc else count, default_key)
+    if sort_by == "overdue":
+        primary = 0 if group.get("isOverdue") else 1
+        return (1 - primary if desc else primary, default_key)
+    # priority
+    return (-rank if desc else rank, -ts)
+
+
 def _upgrade_priority(current: str, target: str) -> str:
     """返回 current 和 target 中更高（数值更小）的优先级。"""
     if _PRIORITY_ORDER[target] < _PRIORITY_ORDER[current]:
@@ -1110,6 +1158,8 @@ async def list_attention(
     page: int = 1,
     page_size: int = 20,
     role: str = "ADMIN",
+    sort_by: str = "priority",
+    sort_order: str = "asc",
 ) -> dict:
     """查询统一关注队列（v1.3：性能优化版）。
 
@@ -1213,8 +1263,14 @@ async def list_attention(
         tasks.append(_aggregate_handling_orders(db, loop_ids))
         task_labels.append("HANDLING")
 
-    results = await asyncio.gather(*tasks) if tasks else []
+    # 四个来源（ALERT / DATA_QUALITY / FITNESS / HANDLING）相互独立，
+    # 单一来源异常（缺表、TDengine/Redis 抖动）不应让整个关注队列 500：
+    # 失败来源按空结果处理并留痕，其余来源照常返回。
+    results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
     for label, res in zip(task_labels, results, strict=True):
+        if isinstance(res, BaseException):
+            logger.warning("关注队列来源 %s 聚合失败，本次按空来源处理: %s", label, res)
+            continue
         items, trunc = res
         raw_items.extend(items)
         if trunc:
@@ -1246,6 +1302,10 @@ async def list_attention(
 
     # G3：分组（已含 actions 缓存）
     groups = _group_items_by_loop(filtered, role)
+
+    # 组级排序（分页之前）：客户端 sorter 对服务端分页表只能排当前页，必须在此处排
+    if sort_by != "priority" or sort_order != "asc":
+        groups.sort(key=lambda g: group_sort_key(g, sort_by, sort_order))
 
     # 聚合统计（项口径）
     aggregates = _build_aggregates(filtered)

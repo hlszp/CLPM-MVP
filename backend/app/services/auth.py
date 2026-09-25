@@ -103,15 +103,18 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     ],
 }
 
-# FP-P0-08：默认首页事实源统一——后端对齐前端 store/auth.ts ROLE_DEFAULT_HOME
-# EXPERT 仅诊断中心 + 回路整定 → /diagnosis/records（诊断记录，EXPERT 权限范围）
-# SPONSOR 仅汇总视图 → /reports/overview（统计报告-管理总览）
-# 其余角色 → /dashboard
+# FP-P0-08：默认首页事实源统一——前端 store/auth.ts 的 ROLE_DEFAULT_HOME 为准。
+#
+# 2026-09-24 修正：此前注释声称"已对齐前端"，实际两张表并不一致
+# （前端 IC_ENGINEER/PE_ENGINEER/SPONSOR → /cockpit，后端却给 /dashboard、
+# /reports/overview）。前端 resolveHomePath 以自身映射优先，故用户可见行为
+# 一直取自前端；后端这张表只在 API 响应 defaultHome 与其它消费方生效，
+# 长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）与前端表对齐。
 ROLE_DEFAULT_HOME: dict[str, str] = {
     "ADMIN": "/dashboard",
-    "IC_ENGINEER": "/dashboard",
-    "PE_ENGINEER": "/dashboard",
-    "SPONSOR": "/reports/overview",
+    "IC_ENGINEER": "/cockpit",
+    "PE_ENGINEER": "/cockpit",
+    "SPONSOR": "/cockpit",
     "EXPERT": "/diagnosis/records",
 }
 

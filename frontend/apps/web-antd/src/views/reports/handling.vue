@@ -40,12 +40,14 @@ import { getReportHandlingStatisticsApi } from '#/api/reports';
 import {
   ClpmDataCanvas,
   ClpmKpiCard,
+  ClpmLoadErrorAlert,
   ClpmModuleArchivedBanner,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp } from '#/composables/use-page-toolbar';
+import { CLOSURE_BREAKDOWN_COLORS } from '#/constants/clpm-ui';
 import { exportData } from '#/utils/export';
 
 defineOptions({ name: 'ReportsHandling' });
@@ -53,6 +55,8 @@ defineOptions({ name: 'ReportsHandling' });
 const router = useRouter();
 
 const loading = ref(false);
+/** 加载失败态（常驻错误提示 + 重试，替代原空 catch 的静默空图表） */
+const loadError = ref(false);
 const data = ref<HandlingApi.StatisticsData | null>(null);
 
 const { getBarSeriesPreset, getEchartsBase, getSeriesColor, getTooltipPreset } =
@@ -87,8 +91,10 @@ async function load() {
   loading.value = true;
   try {
     data.value = await getReportHandlingStatisticsApi(queryParams());
-  } catch {
+  } catch (error) {
     data.value = null;
+    loadError.value = true;
+    console.error('[处置报告] 加载失败:', error);
   } finally {
     loading.value = false;
     renderFunnelChart();
@@ -266,6 +272,68 @@ function gotoArchive(loopId: string) {
   router.push({ path: '/handling/archive', query: { loopId } });
 }
 
+// ===== 责任看板（2026-09-24 新增；随筛选口径，与上方 MV 全量卡互补） =====
+const handlerColumns = [
+  { dataIndex: 'handler', title: '处置人', width: 120 },
+  { dataIndex: 'activeCount', title: '在办', width: 70, align: 'right' as const },
+  {
+    dataIndex: 'overdueCount',
+    title: '超期',
+    width: 70,
+    align: 'right' as const,
+  },
+  {
+    dataIndex: 'closedInWindow',
+    title: '窗口内闭环',
+    width: 100,
+    align: 'right' as const,
+  },
+  { dataIndex: 'closeRate', title: '闭环率', width: 90, align: 'right' as const },
+  {
+    dataIndex: 'avgCycleHours',
+    title: '平均时长(h)',
+    width: 110,
+    align: 'right' as const,
+  },
+  {
+    dataIndex: 'everReopenedCount',
+    title: '重开',
+    width: 70,
+    align: 'right' as const,
+  },
+  {
+    dataIndex: 'ineffectiveCount',
+    title: '验证无效',
+    width: 90,
+    align: 'right' as const,
+  },
+];
+
+/** 行点击 → 处置工单列表按处置人过滤（责任追踪闭环） */
+function gotoHandlerOrders(handler: string) {
+  if (!handler || handler === '未分配') return;
+  router.push({ path: '/handling/orders', query: { handler } });
+}
+
+/** 闭环率构成分段（四段拆分 + 闭环/重开/取消；颜色走语义 token 常量） */
+const closureSegments = computed(() => {
+  const b = data.value?.closureBreakdown;
+  if (!b) return [];
+  return [
+    { key: 'notDispatched', label: '未派单', value: b.notDispatched, color: CLOSURE_BREAKDOWN_COLORS.notDispatched },
+    { key: 'dispatchedTodo', label: '已派未做', value: b.dispatchedTodo, color: CLOSURE_BREAKDOWN_COLORS.dispatchedTodo },
+    { key: 'executing', label: '执行中未验证', value: b.executing, color: CLOSURE_BREAKDOWN_COLORS.executing },
+    { key: 'verifying', label: '验证中', value: b.verifying, color: CLOSURE_BREAKDOWN_COLORS.verifying },
+    { key: 'closed', label: '已闭环', value: b.closed, color: CLOSURE_BREAKDOWN_COLORS.closed },
+    { key: 'reopened', label: '验证无效重开', value: b.reopened, color: CLOSURE_BREAKDOWN_COLORS.reopened },
+    { key: 'cancelled', label: '已取消', value: b.cancelled, color: CLOSURE_BREAKDOWN_COLORS.cancelled },
+  ].filter((s) => s.value > 0);
+});
+
+const closureTotal = computed(() =>
+  closureSegments.value.reduce((sum, s) => sum + s.value, 0),
+);
+
 // ===== 导出（P0-8：CSV/Excel 双格式，对齐绩效报告交互） =====
 const exporting = ref(false);
 
@@ -351,6 +419,9 @@ onMounted(() => {
       </template>
     </ClpmPageToolbar>
 
+    <!-- 2026-09-24：加载失败常驻提示（原空 catch 只留空图表，无法区分"没数据"与"服务异常"） -->
+    <ClpmLoadErrorAlert :error="loadError" @retry="load" />
+
     <!-- P0-5：处置模块停用时灰色归档横幅（历史数据可查询导出） -->
     <ClpmModuleArchivedBanner :modules="['handling']" />
 
@@ -421,10 +492,98 @@ onMounted(() => {
         <EchartsUI ref="funnelChartRef" height="260px" />
       </ClpmDataCanvas>
 
+      <!-- 闭环率构成（四段拆分 + 闭环/重开/取消；2026-09-24 新增） -->
+      <ClpmDataCanvas
+        title="闭环率构成"
+        description="按当前筛选口径拆分：未派单 → 已派未做 → 执行中未验证 → 验证中 → 已闭环（含验证无效重开）"
+        :empty="closureTotal === 0"
+        empty-text="当前筛选范围内暂无处置记录"
+      >
+        <div class="flex h-6 w-full overflow-hidden rounded">
+          <div
+            v-for="s in closureSegments"
+            :key="s.key"
+            :style="{
+              background: s.color,
+              width: `${(s.value / closureTotal) * 100}%`,
+            }"
+            :title="`${s.label}：${s.value}`"
+          ></div>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <span
+            v-for="s in closureSegments"
+            :key="s.key"
+            class="flex items-center gap-1.5"
+          >
+            <span
+              class="inline-block h-2.5 w-2.5 rounded-sm"
+              :style="{ background: s.color }"
+            ></span>
+            <span class="text-neutral-500">{{ s.label }}</span>
+            <span class="font-medium tabular-nums">{{ s.value }}</span>
+          </span>
+        </div>
+      </ClpmDataCanvas>
+
+      <!-- 责任看板（2026-09-24 新增：按处置人聚合，随筛选口径） -->
+      <ClpmDataCanvas
+        title="责任看板"
+        description="按处置人聚合（随上方时间/装置筛选）：在办 / 超期 / 窗口内闭环 / 闭环率 / 平均时长 / 重开 / 验证无效；点击行查看该处置人的工单"
+        :empty="!data?.byHandler?.length"
+        empty-text="当前筛选范围内暂无处置工单"
+      >
+        <Table
+          :columns="handlerColumns"
+          :custom-row="
+            (record: HandlingApi.HandlerWorkloadItem) => ({
+              onClick: () => gotoHandlerOrders(record.handler),
+              style: {
+                cursor: record.handler === '未分配' ? 'default' : 'pointer',
+              },
+            })
+          "
+          :data-source="data?.byHandler ?? []"
+          :pagination="false"
+          row-key="handler"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'closeRate'">
+              <span
+                :class="
+                  record.closeRate === null
+                    ? 'text-neutral-400'
+                    : record.closeRate >= 0.8
+                      ? 'text-emerald-600'
+                      : record.closeRate >= 0.5
+                        ? 'text-amber-600'
+                        : 'text-rose-600'
+                "
+              >
+                {{
+                  record.closeRate === null
+                    ? '—'
+                    : `${Math.round(record.closeRate * 100)}%`
+                }}
+              </span>
+            </template>
+            <template v-else-if="column.dataIndex === 'overdueCount'">
+              <span :class="record.overdueCount > 0 ? 'text-rose-600' : ''">
+                {{ record.overdueCount }}
+              </span>
+            </template>
+            <template v-else-if="column.dataIndex === 'avgCycleHours'">
+              {{ record.avgCycleHours === null ? '—' : record.avgCycleHours }}
+            </template>
+          </template>
+        </Table>
+      </ClpmDataCanvas>
+
       <!-- P2-1：人员工作量卡（置换原"装置分布"文本列表；MV 全量口径） -->
       <ClpmDataCanvas
-        title="人员工作量"
-        description="物化视图全量口径（5 分钟刷新），不随时间/装置筛选变化"
+        title="人员工作量（全量口径）"
+        description="物化视图全量口径（5 分钟刷新），不随时间/装置筛选变化；需要随筛选的口径请看上方「责任看板」"
         :empty="!data?.staffWorkload?.length"
         empty-text="暂无人员工作量数据"
       >

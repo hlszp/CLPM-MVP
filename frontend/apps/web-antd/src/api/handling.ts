@@ -297,6 +297,46 @@ export namespace HandlingApi {
     slaWarnedCount: number;
   }
 
+  /**
+   * 责任看板行（2026-09-24 管理视角增强；随筛选口径，非 MV 全量）
+   *
+   * closeRate = closedCount / (closedCount + activeCount)；无分母时为 null，
+   * 前端必须显「—」而不是 0%（0% 是"有在办但一件没闭环"的真实取值）。
+   */
+  export interface HandlerWorkloadItem {
+    handler: string;
+    activeCount: number;
+    closedCount: number;
+    /** 窗口内闭环（按 verified_at 归窗） */
+    closedInWindow: number;
+    /** 在办且已过 SLA 截止 */
+    overdueCount: number;
+    /** 当前状态为 REOPENED 的工单数 */
+    reopenedCount: number;
+    /** 曾重开过（reopen_count > 0）的工单数 */
+    everReopenedCount: number;
+    /** 验证结果为 INEFFECTIVE 的工单数 */
+    ineffectiveCount: number;
+    closeRate: null | number;
+    avgCycleHours: null | number;
+  }
+
+  /** 闭环率构成（四段拆分 + 闭环/重开/取消；2026-09-24 新增） */
+  export interface ClosureBreakdown {
+    /** 建议已接受但未转工单（未派单） */
+    notDispatched: number;
+    /** 工单待处理（已派未做） */
+    dispatchedTodo: number;
+    /** 工单执行中（已做未验证） */
+    executing: number;
+    /** 工单验证中（已提交待验证） */
+    verifying: number;
+    closed: number;
+    /** 闭环但发生过重开（验证无效重开） */
+    reopened: number;
+    cancelled: number;
+  }
+
   /** 统计页数据（GET /statistics；P2-1 向后兼容增字段） */
   export interface StatisticsData {
     summary: StatisticsSummary;
@@ -309,6 +349,10 @@ export namespace HandlingApi {
     suggestionFunnel?: SuggestionFunnelItem[];
     verifyResult?: VerifyResultStats;
     staffWorkload?: StaffWorkloadItem[];
+    /** 2026-09-24：责任看板（随筛选口径；与 staffWorkload 的全量 MV 口径互补） */
+    byHandler?: HandlerWorkloadItem[];
+    /** 2026-09-24：闭环率构成（管理总览/处置报告共用） */
+    closureBreakdown?: ClosureBreakdown;
   }
 
   // =========================================================================

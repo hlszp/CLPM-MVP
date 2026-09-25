@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.db import get_db
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 
 # MVP 精简：已屏蔽诊断模块 → 不再导入 DiagnosisResult
 # from app.models.diagnosis import DiagnosisResult
@@ -239,10 +240,7 @@ async def get_board_trend_endpoint(
     def _parse_dt(s: str | None) -> datetime | None:
         if not s:
             return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
+        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
     now = datetime.now(UTC).replace(tzinfo=None)
     if timeWindow == "custom" and startTime and endTime:
@@ -573,6 +571,10 @@ async def get_board_aggregate_endpoint(
     ),
     startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
     endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
+    compare: bool = Query(
+        False,
+        description="同时返回上一等长窗口的同口径聚合 prevAggregate（环比基线）",
+    ),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -611,13 +613,10 @@ async def get_board_aggregate_endpoint(
         # isinstance 守卫：直接调用端点函数时（单测场景），未传参数的默认值是
         # FastAPI Query 对象而非 None，非字符串输入一律视为未指定
         if isinstance(s, datetime):
-            return s.replace(tzinfo=None)
+            return to_naive_utc(s)
         if not isinstance(s, str):
             return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
+        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
     window = _resolve_aggregate_window(
         timeWindow,
@@ -785,7 +784,91 @@ async def get_board_aggregate_endpoint(
         "excludedLoops": excluded_loops,
     }
 
+    # ------------------------------------------------------------------
+    # 上一等长窗口同口径聚合（环比基线，2026-09-24）
+    # 前端原先要为此再发一次同样的重查询（prevWindowParams）；改为按需一次返回，
+    # 与 /reports/overview 的 prevValue 契约对齐：当前值与基线值一起给。
+    # 窗口定义与 report_stats.previous_window 一致：[start-(end-start), start)。
+    # ------------------------------------------------------------------
+    # 直接调用端点函数时（单测场景），未传的 compare 默认值是 FastAPI Query 对象
+    # 而非 False —— 必须用 is True 判定，否则会误开环比分支并对 DB 多发查询
+    # （同本文件 _parse_dt 的 isinstance 守卫口径）。
+    if compare is True and window is not None:
+        span = window[1] - window[0]
+        prev_win = (window[0] - span, window[0])
+        prev_items = await _load_window_items(db, item_node_ids, prev_win)
+        prev_self = (
+            next((it for it in prev_items if it.get("nodeId") == plantId), None)
+            if plantId
+            else None
+        )
+
+        def prev_weighted_avg(field: str) -> float | None:
+            if prev_self is not None and prev_self.get(field) is not None:
+                return round(float(prev_self[field]), 2)
+            total_w = 0.0
+            count_w = 0
+            for item in prev_items:
+                val = item.get(field)
+                weight = item.get("evaluatedLoops") or 0
+                if val is not None and weight > 0:
+                    total_w += float(val) * weight
+                    count_w += weight
+            return round(total_w / count_w, 2) if count_w > 0 else None
+
+        prev_evaluated = 0
+        prev_inconclusive = 0
+        if loop_ids:
+            ok_conds = [
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= prev_win[0],
+                KpiSnapshotHourly.ts_start <= prev_win[1],
+                KpiSnapshotHourly.status == "SUCCESS",
+                LoopLedger.include_in_evaluation.is_(True),
+            ]
+            ok_rows = await db.execute(
+                select(func.distinct(KpiSnapshotHourly.loop_id))
+                .select_from(KpiSnapshotHourly)
+                .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+                .where(*ok_conds)
+            )
+            prev_ok_ids = [str(row[0]) for row in ok_rows.all()]
+            prev_evaluated = len(prev_ok_ids)
+            ic_conds = [
+                KpiSnapshotHourly.loop_id.in_(loop_ids),
+                KpiSnapshotHourly.ts_start >= prev_win[0],
+                KpiSnapshotHourly.ts_start <= prev_win[1],
+                KpiSnapshotHourly.status == "INCONCLUSIVE",
+                LoopLedger.include_in_evaluation.is_(True),
+                (KpiSnapshotHourly.loop_id.not_in(prev_ok_ids) if prev_ok_ids else True),
+            ]
+            ic_rows = await db.execute(
+                select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
+                .select_from(KpiSnapshotHourly)
+                .join(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+                .where(*ic_conds)
+            )
+            prev_inconclusive = int(ic_rows.scalar() or 0)
+
+        data_prev: dict = {
+            "avgScore": prev_weighted_avg("avgScore"),
+            "autoModeRate": prev_weighted_avg("autoModeRate"),
+            "stabilityRate": prev_weighted_avg("stabilityRate"),
+            "effectiveAutoRate": prev_weighted_avg("effectiveAutoRate"),
+            "goodValueRate": prev_weighted_avg("goodValueRate"),
+            "evaluatedLoops": prev_evaluated,
+            "inconclusiveLoops": prev_inconclusive,
+            # 无上一窗口数据（prev_items 为空）时前端应隐藏环比而不是显示 0 差值
+            "hasData": bool(prev_items),
+        }
+        data_prev["windowStart"] = prev_win[0].isoformat()
+        data_prev["windowEnd"] = prev_win[1].isoformat()
+    else:
+        data_prev = None
+
     data: dict = {"items": items, "total": len(items), "aggregate": aggregate}
+    if data_prev is not None:
+        data["prevAggregate"] = data_prev
     if window is not None:
         # 回显统计窗口，供前端 gauges 卡片标注
         data["timeWindow"] = timeWindow
@@ -1491,13 +1574,10 @@ async def get_governance_summary_endpoint(
         # isinstance 守卫：直接调用端点函数时（单测场景），未传参数的默认值是
         # FastAPI Query 对象而非 None，非字符串输入一律视为未指定
         if isinstance(s, datetime):
-            return s.replace(tzinfo=None)
+            return to_naive_utc(s)
         if not isinstance(s, str):
             return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
+        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
     resolved_window = timeWindow if isinstance(timeWindow, str) and timeWindow else "last_24_hours"
     window = _resolve_aggregate_window(

@@ -23,6 +23,8 @@ export namespace PlantNodeApi {
     name: string;
     type: NodeType;
     parentId: null | string;
+    /** 同级展示排序（小值在前）；不传按 0 处理 */
+    sortOrder?: number;
   }
 
   /** 创建节点响应（IDS v3.2 §2.2.2） */

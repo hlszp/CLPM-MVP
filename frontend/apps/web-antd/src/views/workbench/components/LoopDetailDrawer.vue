@@ -14,6 +14,7 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, ref } from 'vue';
 
+import { CLPM_INDUSTRIAL } from '#/constants/clpm-ui';
 // 16 号文 F1 入口 3：回路详情抽屉"诊断档案"入口（跨模块复用诊断域档案抽屉）
 import DiagnosisLoopArchiveDrawer from '#/views/diagnosis/components/loop-archive-drawer.vue';
 
@@ -42,7 +43,7 @@ const FITNESS_COLOR: Record<string, string> = {
   L0: '#FF4D4F',
   L1: '#FA8C16',
   L2: '#52C41A',
-  L3: '#1F4E79',
+  L3: CLPM_INDUSTRIAL.navy,
   L4: '#52C41A',
 };
 
@@ -69,6 +70,18 @@ function toTuning() {
   drill(
     'tuning',
     '/tuning/workbench',
+    { loopId: props.row.loop_id },
+    { withScope: false, withWindow: false },
+  );
+}
+
+/** 「去处置」：按回路深链到处置建议列表（后端 GET /handling/suggestions 支持 loopId） */
+function toHandling() {
+  emit('close');
+  if (!props.row) return;
+  drill(
+    'handling',
+    '/handling/suggestions',
     { loopId: props.row.loop_id },
     { withScope: false, withWindow: false },
   );
@@ -123,7 +136,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
         class="absolute inset-y-0 right-0 flex w-[480px] flex-col bg-white shadow-xl"
       >
         <!-- 头部 -->
-        <div class="flex-none border-b border-[#E4E7ED] px-4 py-3">
+        <div class="flex-none border-b border-[var(--clpm-industrial-border)] px-4 py-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="text-[15px] font-semibold text-gray-800">{{
@@ -153,7 +166,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
         <div class="flex-1 space-y-4 overflow-auto px-4 py-3">
           <!-- 概览（SLA 倒计时已下线 D1=a） -->
           <section>
-            <div class="mb-1.5 text-[11px] font-semibold text-[#1F4E79]">概览</div>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--clpm-industrial-navy)]">概览</div>
             <div class="flex items-center gap-3">
               <div class="flex-none">
                 <div class="text-[24px] font-bold tabular-nums text-[#FF4D4F]">
@@ -170,7 +183,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
 
           <!-- 诊断结论 -->
           <section>
-            <div class="mb-1.5 text-[11px] font-semibold text-[#1F4E79]">
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--clpm-industrial-navy)]">
               诊断结论（置信度
               <span
                 class="tabular-nums"
@@ -181,7 +194,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
               >）
             </div>
             <div
-              class="rounded border border-[#E4E7ED] bg-[#F7F9FC] px-2.5 py-2 text-[12px] leading-5 text-gray-700"
+              class="rounded border border-[var(--clpm-industrial-border)] bg-[#F7F9FC] px-2.5 py-2 text-[12px] leading-5 text-gray-700"
             >
               {{ row.conclusion ?? '暂无结论摘要，可进入诊断模块查看完整证据链。' }}
             </div>
@@ -189,7 +202,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
 
           <!-- 适用性 -->
           <section>
-            <div class="mb-1.5 text-[11px] font-semibold text-[#1F4E79]">适用性（B-09 分级漏斗）</div>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--clpm-industrial-navy)]">适用性（B-09 分级漏斗）</div>
             <div class="flex items-center gap-2">
               <span
                 class="rounded px-1.5 py-0.5 text-[11px] font-semibold text-white"
@@ -209,12 +222,12 @@ function onArchiveTriggerDiagnosis(loopId: string) {
           <!-- 完整诊断记录链接（追溯矩阵 §4：抽屉 → 诊断记录页下钻）+ 诊断档案入口（16 号文 F1） -->
           <section>
             <a
-              class="cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
+              class="cursor-pointer text-[11.5px] text-[var(--clpm-industrial-navy)] hover:underline"
               @click="toRecords"
               >查看完整诊断记录 →</a
             >
             <a
-              class="ml-4 cursor-pointer text-[11.5px] text-[#1F4E79] hover:underline"
+              class="ml-4 cursor-pointer text-[11.5px] text-[var(--clpm-industrial-navy)] hover:underline"
               @click="openArchive"
               >诊断档案 →</a
             >
@@ -222,7 +235,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
 
           <!-- 处置动线提示 -->
           <section>
-            <div class="mb-1.5 text-[11px] font-semibold text-[#1F4E79]">处置动线</div>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--clpm-industrial-navy)]">处置动线</div>
             <ol class="list-decimal space-y-1 pl-4 text-[11px] leading-5 text-gray-500">
               <li>按诊断结论执行现场排查 / 参数调整</li>
               <li>完成后进入 24h 验证期，评分回升自动闭环</li>
@@ -232,7 +245,7 @@ function onArchiveTriggerDiagnosis(loopId: string) {
         </div>
 
         <!-- 底部操作 -->
-        <div class="flex flex-none items-center justify-end gap-2 border-t border-[#E4E7ED] px-4 py-2.5">
+        <div class="flex flex-none items-center justify-end gap-2 border-t border-[var(--clpm-industrial-border)] px-4 py-2.5">
           <button
             class="rounded border border-[#DCDFE6] px-3 py-1 text-xs text-gray-600 hover:bg-[#F5F7FA]"
             @click="emit('close')"
@@ -240,10 +253,19 @@ function onArchiveTriggerDiagnosis(loopId: string) {
             关闭
           </button>
           <button
-            class="rounded bg-[#1F4E79] px-3 py-1 text-xs text-white hover:opacity-90"
+            class="rounded bg-[var(--clpm-industrial-navy)] px-3 py-1 text-xs text-white hover:opacity-90"
             @click="toTuning"
           >
             前往参数整定 →
+          </button>
+          <!-- 2026-09-24：闭环动线在此断头——原抽屉只有"前往参数整定"，
+               工程师看完根因无法就地进入处置，必须离开工作台重找该回路。
+               处置在处置模块发起（含建议生成/转单/验证），此处按回路深链过去。 -->
+          <button
+            class="rounded border border-[var(--clpm-industrial-navy)] px-3 py-1 text-xs text-[var(--clpm-industrial-navy)] hover:bg-[var(--clpm-industrial-navy-soft)]"
+            @click="toHandling"
+          >
+            去处置 →
           </button>
         </div>
       </div>

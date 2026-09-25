@@ -542,6 +542,103 @@ async def build_handling_statistics(
         for st in _FUNNEL_ORDER
     ]
 
+    # --- 责任看板（2026-09-24 新增：按处置人聚合，随筛选口径） ---
+    # 与 staffWorkload（直读 MV、全量、仅 3 列）互补：本块按当前时间窗/装置筛选，
+    # 补齐管理层关心的 超期 / 窗口内闭环 / 闭环率 / 平均处置时长 / 重开 / 验证无效。
+    # handler 为空归入「未分配」，让"没人认领"的工单可见。
+    handler_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                  COALESCE(NULLIF(TRIM(ho.handler), ''), '未分配') AS handler,
+                  COUNT(*) FILTER (WHERE ho.status IN ('PENDING', 'EXECUTING', 'VERIFYING'))
+                    AS active_cnt,
+                  COUNT(*) FILTER (WHERE ho.status = 'CLOSED') AS closed_cnt,
+                  COUNT(*) FILTER (WHERE ho.status = 'CLOSED'
+                                   AND ho.verified_at >= :closed_from
+                                   AND (CAST(:closed_to AS timestamp) IS NULL
+                                        OR ho.verified_at < :closed_to)) AS closed_in_window,
+                  COUNT(*) FILTER (WHERE ho.status = 'REOPENED') AS reopened_cnt,
+                  COUNT(*) FILTER (WHERE ho.reopen_count > 0) AS ever_reopened_cnt,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'INEFFECTIVE') AS ineffective_cnt,
+                  COUNT(*) FILTER (WHERE ho.status IN ('PENDING', 'EXECUTING', 'VERIFYING')
+                                   AND ho.sla_deadline_at IS NOT NULL
+                                   AND ho.sla_deadline_at < NOW()) AS overdue_cnt,
+                  AVG(EXTRACT(EPOCH FROM (ho.verified_at - ho.created_at)) / 3600.0)
+                    FILTER (WHERE ho.status = 'CLOSED' AND ho.verified_at IS NOT NULL)
+                    AS avg_cycle_hours
+                FROM handling_order ho
+                {ho_join}
+                WHERE {" AND ".join(ho_where)}
+                GROUP BY 1
+                ORDER BY active_cnt DESC, closed_cnt DESC
+                LIMIT 50
+                """
+            ),
+            summary_params,
+        )
+    ).all()
+    by_handler: list[dict[str, Any]] = []
+    for r in handler_rows:
+        active_cnt = int(r.active_cnt)
+        closed_cnt = int(r.closed_cnt)
+        denom = active_cnt + closed_cnt
+        by_handler.append(
+            {
+                "handler": r.handler,
+                "activeCount": active_cnt,
+                "closedCount": closed_cnt,
+                "closedInWindow": int(r.closed_in_window),
+                "overdueCount": int(r.overdue_cnt),
+                "reopenedCount": int(r.reopened_cnt),
+                "everReopenedCount": int(r.ever_reopened_cnt),
+                "ineffectiveCount": int(r.ineffective_cnt),
+                # 闭环率 = 已闭环 /（已闭环 + 在办）；分母为 0 时 null（前端显 —）。
+                # 与 summary.closeRate 同口径保留 4 位小数。
+                "closeRate": round(closed_cnt / denom, 4) if denom > 0 else None,
+                "avgCycleHours": (
+                    round(float(r.avg_cycle_hours), 2) if r.avg_cycle_hours is not None else None
+                ),
+            }
+        )
+
+    # --- 闭环率构成（四段拆分：未派单 / 已派未做 / 已做未验证 / 验证无效重开） ---
+    # 口径：建议侧 ACCEPTED 且未转单 = 未派单；工单侧按状态分桶。
+    # 「已做未验证」含 EXECUTING + VERIFYING（后者已提交待验证），前端可展开。
+    funnel_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                  (SELECT COUNT(*) FROM loop_action_item su
+                    {su_join} WHERE {su_where_sql} AND su.status = 'ACCEPTED')
+                    AS not_dispatched,
+                  COUNT(*) FILTER (WHERE ho.status = 'PENDING') AS dispatched_todo,
+                  COUNT(*) FILTER (WHERE ho.status = 'EXECUTING') AS executing,
+                  COUNT(*) FILTER (WHERE ho.status = 'VERIFYING') AS verifying,
+                  COUNT(*) FILTER (WHERE ho.status = 'CLOSED') AS closed,
+                  COUNT(*) FILTER (WHERE ho.status IN ('CLOSED', 'REOPENED')
+                                   AND ho.reopen_count > 0) AS reopened,
+                  COUNT(*) FILTER (WHERE ho.status = 'CANCELLED') AS cancelled
+                FROM handling_order ho
+                {ho_join}
+                WHERE {" AND ".join(ho_where)}
+                """
+            ),
+            summary_params,
+        )
+    ).one()
+    closure_breakdown = {
+        "notDispatched": int(funnel_row.not_dispatched or 0),
+        "dispatchedTodo": int(funnel_row.dispatched_todo or 0),
+        "executing": int(funnel_row.executing or 0),
+        "verifying": int(funnel_row.verifying or 0),
+        "closed": int(funnel_row.closed or 0),
+        "reopened": int(funnel_row.reopened or 0),
+        "cancelled": int(funnel_row.cancelled or 0),
+    }
+
     # --- 人员工作量（直读 mv_staff_workload 物化视图，零聚合成本） ---
     # 全量口径（MV 由 refresh-workbench-mv@5min 刷新），不随时间窗/装置筛选
     staff_workload: list[dict[str, Any]] = []
@@ -580,4 +677,7 @@ async def build_handling_statistics(
         "suggestionFunnel": suggestion_funnel,
         "verifyResult": verify_result,
         "staffWorkload": staff_workload,
+        # 2026-09-24 管理视角增强（随筛选口径，向后兼容只增字段）
+        "byHandler": by_handler,
+        "closureBreakdown": closure_breakdown,
     }

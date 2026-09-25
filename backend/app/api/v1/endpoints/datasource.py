@@ -6,6 +6,8 @@
 - POST  /api/v1/datasource/test-history-api    — 测试历史数据 API 连通性（ADMIN）
 - POST  /api/v1/datasource/test-signalr        — 测试 SignalR Hub 连通性（ADMIN）
 - POST  /api/v1/datasource/refresh-subscription — 手工刷新实时订阅（ADMIN）
+- GET   /api/v1/datasource/storage-mode         — 写入布局 + 读写一致性自检（登录用户）
+- PUT   /api/v1/datasource/storage-mode         — 修改写入布局（ADMIN，2026-09-25 新增）
 
 对接文档：docs/设计文档/05-IDS/HisDATA_API.md、RealDATA_API.md
 """
@@ -17,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.core.exceptions import BizError
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.datasource import (
@@ -24,15 +27,19 @@ from app.schemas.datasource import (
     DataSourceConfigUpdate,
     DataSourceHealthInfo,
     DataSourceTestResult,
+    StorageModeInfo,
+    StorageModeUpdate,
     SubscriptionRefreshResult,
 )
 from app.services.data_source.realtime_subscriber import request_subscription_refresh
 from app.services.datasource_config import (
     get_datasource_config,
     get_datasource_health,
+    get_storage_mode_info,
     test_history_api_connection,
     test_signalr_hub_connection,
     update_datasource_config,
+    update_storage_mode,
 )
 
 router = APIRouter(prefix="/datasource", tags=["datasource"])
@@ -183,6 +190,43 @@ async def refresh_subscription_endpoint(
     removed = len(result.get("removed") or [])
     msg = f"订阅刷新成功：共 {result.get('total', 0)} 个测点（新增 {added} / 移除 {removed}）"
     return success(data=result, message=msg)
+
+
+@router.get("/storage-mode", response_model=ApiResponse[StorageModeInfo])
+async def get_storage_mode_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """历史写入布局与读写一致性自检（2026-09-25）。
+
+    排查背景：写入侧布局（sys_config: history.storage_mode）与读取路由
+    （history_layout_manifest）是两套独立开关，二者不一致时表现为"实时数据在采、
+    库里却没有 / 趋势图全空"，而此前该状态在任何界面都看不到。
+    """
+    data = await get_storage_mode_info(db)
+    return success(data=data)
+
+
+@router.put("/storage-mode", response_model=ApiResponse[StorageModeInfo])
+async def update_storage_mode_endpoint(
+    body: StorageModeUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """修改历史写入布局（仅 ADMIN）。
+
+    - legacy：只写宽表 st_loop_data（传统口径）
+    - shadow：双写（宽表 + 点表），迁移期推荐
+    - point：只写点表 st_point_data_v1（迁移终态，须先完成读取路由切换）
+
+    只改写入侧；读取路由由运维脚本 register_layout_manifest.py 显式登记。
+    返回值含 consistent / diagnosis，前端据此提示当前读写是否自洽。
+    """
+    try:
+        data = await update_storage_mode(db, mode=body.mode, operator=user.username)
+    except ValueError as exc:
+        raise BizError(code="ERR_PARAM", message=str(exc), status_code=400) from exc
+    return success(data=data)
 
 
 __all__ = ["router"]

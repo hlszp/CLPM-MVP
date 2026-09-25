@@ -455,9 +455,9 @@ const top5TableData = computed(() => {
       ratingText: isFitnessNA ? '不适用' : ratingLabel,
       ratingColor: isFitnessNA
         ? FITNESS_NA_COLOR
-        : ratingLevel
+        : (ratingLevel
           ? gradeColor(Number(ratingLevel))
-          : '',
+          : ''),
       isFitnessNA,
       fitnessNATipText: isFitnessNA
         ? fitnessNATip(fitnessLevel, fitnessTags)

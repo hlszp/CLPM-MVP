@@ -172,6 +172,12 @@ def calculate_hourly_kpi(
         result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start, task_id=task_id))
         logger.info("KPI 计算任务完成: %s", result)
         return result
+    except HourlyWindowBusy:
+        # 互斥锁抢占失败必须原样抛出（2026-09-24 修复）：
+        # 旧实现把它当普通异常吞掉并立刻"回退直接计算"，等于在同一窗口
+        # 无锁并发重跑全量批次，与持锁者互相覆盖 UPSERT 结果，
+        # 同时 TaskRecord=FAILED 而 Celery=SUCCESS，G30 的整改意图被绕过。
+        raise
     except Exception as exc:
         # task_tracker 不可用时回退到直接计算（无任务跟踪）
         logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
@@ -189,14 +195,28 @@ def _parse_ts_start(ts_start: str | None) -> datetime | None:
         return datetime.fromisoformat(ts_start)
 
 
+class HourlyWindowBusy(RuntimeError):
+    """同一小时窗已有计算在持锁执行（互斥锁抢占失败）.
+
+    必须与"跟踪器故障"区分：把它当作可回退的异常会让失败触发立刻在同一窗口
+    无锁重跑，破坏互斥语义（见 calculate_hourly_kpi 的 except 分支）。
+    """
+
+
 # 小时窗计算互斥锁（手动触发与整点 Beat 对同一窗口互斥，SETNX + TTL）
 _HOURLY_CALC_LOCK_PREFIX = "task:hourly_calc_lock"
-# 整改 G30：TTL 必须**小于** Celery 硬超时（celery_app.task_time_limit=1800），
-# 否则任务被硬超时 SIGKILL（进程级、不 ack）后 broker 重投副本到达时锁仍存活
-# （原值 7200 可残留约 5400s），副本静默走 skipped 分支并被 Celery 记 SUCCESS，
-# 而那一小时的 KPI 快照**永久缺失且无人知晓**。
-# 取 1740 = 1800 - 60s 缓冲；超时被杀后重投副本可正常取锁重跑。
-_HOURLY_CALC_LOCK_TTL_SECONDS = 1740
+# 整改 G30 + 2026-09-24 修正：TTL 必须覆盖**本任务自身的硬超时**，且只留小缓冲。
+#
+# 原注释的依据是全局 celery_app.task_time_limit=1800，但 0921 已把本任务显式
+# 放宽到 time_limit=14400（见上方装饰器注释），而 TTL 仍留 1740s —— 于是锁在
+# 计算进行到约 29 分钟时就过期，下一个触发（次小时 Beat 或手动）能取到锁并
+# 启动**第二个并发全量轮次**，与持锁者互相覆盖同一 (loop_id, ts_start) 的
+# UPSERT 结果。这正是互斥锁要防的事。
+#
+# 取 15000 = time_limit(14400) + 600s 缓冲：任务正常跑完锁仍有效；
+# 被硬超时 SIGKILL 时，锁最多残留 10 分钟即自动释放（对比原 7200 残留 5400s
+# 的老问题已是同量级收敛），重投副本随后可取锁重跑。
+_HOURLY_CALC_LOCK_TTL_SECONDS = 15000
 
 
 def _hourly_window_lock_key(ts_start: str | None) -> str:
@@ -251,7 +271,7 @@ async def _do_hourly_with_tracking(
         # FAILED 自相矛盾，监控侧也看不到"有一小时没算"。
         # Beat 自动触发路径更严重：它连 TaskRecord 都不创建，返回 dict 等于
         # 静默丢失一小时快照。抛错后任务进入 FAILED 终态并触发 autoretry。
-        raise RuntimeError(
+        raise HourlyWindowBusy(
             f"同一时间窗已有评估任务在执行，本次触发未执行: lock={lock_key}, task_id={task_id}"
         )
 

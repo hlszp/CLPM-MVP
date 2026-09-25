@@ -11,12 +11,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.core.exceptions import BizError
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.node_performance import (
@@ -91,6 +94,22 @@ async def get_node_snapshot_endpoint(
 # ---------------------------------------------------------------------------
 
 
+def _ensure_uuid(value: str, field: str) -> None:
+    """路径 id UUID 格式防御：畸形串直接 ERR_PARAM 400.
+
+    否则非 UUID 串会被 asyncpg 送进 PG 的 uuid 比较，抛 DataError → 500
+    （同 handling._ensure_uuid 既有口径）。
+    """
+    try:
+        UUID(value)
+    except (AttributeError, TypeError, ValueError):
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"{field} 格式非法（应为 UUID）: {value}",
+            status_code=400,
+        ) from None
+
+
 @router.get("/{node_id}/trend", response_model=ApiResponse[NodeTrendData])
 async def get_node_trend_endpoint(
     node_id: str,
@@ -100,14 +119,9 @@ async def get_node_trend_endpoint(
     _: SysUser = Depends(get_current_user),
 ) -> dict:
     """获取节点历史趋势（所有角色）。"""
-    try:
-        start_dt = datetime.fromisoformat(startTime.replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        start_dt = datetime.fromisoformat(startTime)
-    try:
-        end_dt = datetime.fromisoformat(endTime.replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        end_dt = datetime.fromisoformat(endTime)
+    _ensure_uuid(node_id, "nodeId")
+    start_dt = to_naive_utc(parse_iso_datetime(startTime, field="startTime"))
+    end_dt = to_naive_utc(parse_iso_datetime(endTime, field="endTime"))
 
     data = await get_node_trend(db, node_id, start_dt, end_dt)
     return success(data=data)
@@ -141,10 +155,7 @@ async def get_node_ranking_endpoint(
     def _parse_dt(s: str | None) -> datetime | None:
         if not s:
             return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
+        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
     start, end = _parse_time_window(
         timeWindow,
@@ -283,15 +294,10 @@ async def get_node_monitor_endpoint(
             message=f"不支持的维度: {dimension}，可选值: hour/day/month",
         )
 
-    # 解析时间参数（兼容带 Z 后缀的 ISO 8601 和纯日期）
-    def _parse_dt(s: str) -> datetime:
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
-
-    start_dt = _parse_dt(start)
-    end_dt = _parse_dt(end)
+    # 解析时间参数（兼容带 Z 后缀的 ISO 8601 和纯日期）；
+    # 非法输入抛 400，不再 500
+    start_dt = to_naive_utc(parse_iso_datetime(start, field="start"))
+    end_dt = to_naive_utc(parse_iso_datetime(end, field="end"))
 
     data = await get_node_monitor_data(
         db=db,

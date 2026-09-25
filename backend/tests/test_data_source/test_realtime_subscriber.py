@@ -822,12 +822,21 @@ async def test_gap_backfill_skipped_when_disabled():
 
 @pytest.mark.asyncio
 async def test_gap_backfill_triggered_on_reconnect():
-    """缺口 ≥ MIN_GAP 时创建补数任务，窗口为 [last_flushed_at, now-2s]."""
+    """缺口 ≥ MIN_GAP 时创建补数任务，窗口为 [last_flushed_at, now-END_MARGIN].
+
+    2026-09-24：末端余量由 2s 改为 300s（对齐 data_import 的 5 分钟导入背压门禁，
+    见 test_import_window_backpressure.TestGapBackfillMarginConsistency）。
+    因此本用例的缺口必须显著大于余量，否则窗口为空、不会登记补数。
+    """
     import time as _time
+
+    from app.services.data_source.realtime_subscriber import (
+        _GAP_BACKFILL_END_MARGIN,
+    )
 
     fake_redis = _FakeRedis()
     sub = RealtimeSubscriber()
-    last_flushed_at = _time.time() - 300  # 5 分钟缺口
+    last_flushed_at = _time.time() - 1800  # 30 分钟缺口（> 末端余量）
     sub._last_flushed_at = last_flushed_at
 
     with (
@@ -846,7 +855,7 @@ async def test_gap_backfill_triggered_on_reconnect():
     mock_backfill.assert_awaited_once()
     gap_start, gap_end = mock_backfill.await_args.args
     assert gap_start == last_flushed_at
-    assert before - 2 <= gap_end <= after - 2
+    assert before - _GAP_BACKFILL_END_MARGIN <= gap_end <= after - _GAP_BACKFILL_END_MARGIN
 
 
 @pytest.mark.asyncio

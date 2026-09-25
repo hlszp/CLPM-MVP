@@ -36,6 +36,7 @@ import { getReportAlertStatisticsApi } from '#/api/reports';
 import {
   ClpmDataCanvas,
   ClpmKpiCard,
+  ClpmLoadErrorAlert,
   ClpmPageToolbar,
   ClpmToolbarButton,
 } from '#/components/clpm';
@@ -45,6 +46,8 @@ import { exportData } from '#/utils/export';
 defineOptions({ name: 'ReportsAlertStatistics' });
 
 const loading = ref(false);
+/** 加载失败态（常驻错误提示 + 重试） */
+const loadError = ref(false);
 const data = ref<null | ReportsApi.AlertStatisticsData>(null);
 
 // 统一筛选条（时间 + 装置 + 严重度 + 状态，透传 /reports/alert-statistics）
@@ -102,8 +105,10 @@ async function load() {
   loading.value = true;
   try {
     data.value = await getReportAlertStatisticsApi(queryParams());
-  } catch {
+  } catch (error) {
     data.value = null;
+    loadError.value = true;
+    console.error('[预警统计] 加载失败:', error);
   } finally {
     loading.value = false;
   }
@@ -315,6 +320,9 @@ onMounted(() => {
         />
       </template>
     </ClpmPageToolbar>
+
+    <!-- 2026-09-24：加载失败常驻提示（原空 catch 只留空图表，无法区分"没数据"与"服务异常"） -->
+    <ClpmLoadErrorAlert :error="loadError" @retry="load" />
 
     <!-- 统一筛选条（时间 + 装置 + 严重度 + 状态） -->
     <div class="reports-filter-bar">

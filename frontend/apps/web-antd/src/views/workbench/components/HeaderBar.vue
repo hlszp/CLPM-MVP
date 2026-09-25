@@ -11,10 +11,12 @@
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { useWorkbenchStore } from '#/store/workbench';
 
 const store = useWorkbenchStore();
+const router = useRouter();
 
 const WINDOWS: { label: string; value: '7d' | '24h' | '30d' }[] = [
   { label: '近 24h', value: '24h' },
@@ -71,7 +73,10 @@ onMounted(() => document.addEventListener('click', onDocumentClick));
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
 
 function onBellClick() {
-  // TODO: M2 打开铃铛抽屉
+  // TODO: M2 接未读计数端点后改为打开铃铛抽屉。
+  // 在抽屉就绪前不允许空点击（DESIGN.md：任何主按钮必须有状态/上下文/路由变化）：
+  // 先跳到关注队列——它正是「待我处理」的权威来源。
+  router.push({ path: '/monitor/attention' });
 }
 </script>
 
@@ -80,26 +85,26 @@ function onBellClick() {
     <!-- 范围选择器（层级下拉：全厂 → 工厂 → 装置） -->
     <div ref="scopeRef" class="relative">
       <button
-        class="flex items-center gap-1.5 rounded border border-[#E4E7ED] px-2 py-1 text-sm hover:border-[#1F4E79]"
-        :class="scopeOpen ? 'border-[#1F4E79]' : ''"
+        class="flex items-center gap-1.5 rounded border border-[var(--clpm-industrial-border)] px-2 py-1 text-sm hover:border-[var(--clpm-industrial-navy)]"
+        :class="scopeOpen ? 'border-[var(--clpm-industrial-navy)]' : ''"
         @click="scopeOpen = !scopeOpen"
       >
         <span class="text-gray-400">范围</span>
-        <span class="font-medium text-[#1F4E79]">{{ scopeLabel }}</span>
+        <span class="font-medium text-[var(--clpm-industrial-navy)]">{{ scopeLabel }}</span>
         <span class="text-[10px] text-gray-400">▼</span>
       </button>
 
       <!-- 层级下拉面板（右对齐，避免右侧溢出视口） -->
       <div
         v-if="scopeOpen"
-        class="absolute top-full right-0 z-50 mt-1 max-h-[70vh] w-52 overflow-auto rounded border border-[#E4E7ED] bg-white shadow-lg"
+        class="absolute top-full right-0 z-50 mt-1 max-h-[70vh] w-52 overflow-auto rounded border border-[var(--clpm-industrial-border)] bg-white shadow-lg"
       >
         <!-- 全厂 -->
         <button
           class="flex w-full items-center px-3 py-1.5 text-left text-sm hover:bg-blue-50"
           :class="
             store.scopeType === 'GLOBAL'
-              ? 'bg-blue-50 font-medium text-[#1F4E79]'
+              ? 'bg-blue-50 font-medium text-[var(--clpm-industrial-navy)]'
               : 'text-gray-700'
           "
           @click="selectGlobal"
@@ -111,14 +116,14 @@ function onBellClick() {
         <div
           v-for="f in factories"
           :key="f.id"
-          class="border-t border-[#E4E7ED]"
+          class="border-t border-[var(--clpm-industrial-border)]"
         >
           <!-- 工厂行 -->
           <button
             class="flex w-full items-center px-3 py-1.5 text-left text-sm hover:bg-blue-50"
             :class="
               store.scopeType === 'FACTORY' && store.scopeId === f.id
-                ? 'bg-blue-50 font-medium text-[#1F4E79]'
+                ? 'bg-blue-50 font-medium text-[var(--clpm-industrial-navy)]'
                 : 'text-gray-700'
             "
             @click="selectNode(f)"
@@ -132,7 +137,7 @@ function onBellClick() {
             class="flex w-full items-center pl-6 pr-3 py-1.5 text-left text-sm hover:bg-blue-50"
             :class="
               store.scopeType === 'AREA' && store.scopeId === a.id
-                ? 'bg-blue-50 font-medium text-[#1F4E79]'
+                ? 'bg-blue-50 font-medium text-[var(--clpm-industrial-navy)]'
                 : 'text-gray-600'
             "
             @click="selectNode(a)"
@@ -143,26 +148,26 @@ function onBellClick() {
         </div>
       </div>
     </div>
-    <span class="h-4 w-px bg-[#E4E7ED]" aria-hidden="true"></span>
+    <span class="h-4 w-px bg-[var(--clpm-industrial-border)]" aria-hidden="true"></span>
 
     <!-- 时间胶囊（24h/7d/30d） -->
-    <div class="flex items-center overflow-hidden rounded border border-[#E4E7ED] text-xs">
+    <div class="flex items-center overflow-hidden rounded border border-[var(--clpm-industrial-border)] text-xs">
       <button
         v-for="(w, idx) in WINDOWS"
         :key="w.value"
         class="border-0 px-2.5 py-1"
         :class="[
-          idx > 0 ? 'border-l border-[#E4E7ED]' : '',
+          idx > 0 ? 'border-l border-[var(--clpm-industrial-border)]' : '',
           store.timeWindow === w.value
-            ? 'bg-[#1F4E79] text-white'
-            : 'bg-white text-gray-600 hover:text-[#1F4E79]',
+            ? 'bg-[var(--clpm-industrial-navy)] text-white'
+            : 'bg-white text-gray-600 hover:text-[var(--clpm-industrial-navy)]',
         ]"
         @click="store.setWindow(w.value)"
       >
         {{ w.label }}
       </button>
     </div>
-    <span class="h-4 w-px bg-[#E4E7ED]" aria-hidden="true"></span>
+    <span class="h-4 w-px bg-[var(--clpm-industrial-border)]" aria-hidden="true"></span>
 
     <!-- 可信徽章 -->
     <span
@@ -172,8 +177,20 @@ function onBellClick() {
       <span class="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>
       数据可信
     </span>
-    <span class="h-4 w-px bg-[#E4E7ED]" aria-hidden="true"></span>
+    <span class="h-4 w-px bg-[var(--clpm-industrial-border)]" aria-hidden="true"></span>
 
+    <!-- 驾驶舱入口（2026-09-24：驾驶舱与工作台 v2.0 都保留、互不替代——
+         驾驶舱是管理层只读总览，工作台是工程闭环任务台；此处提供双向互通，
+         驾驶舱顶栏已有「管理后台」回入口） -->
+    <button
+      class="flex items-center gap-1 rounded border border-[var(--clpm-industrial-border)] px-2 py-1 text-xs text-gray-600 hover:border-[var(--clpm-industrial-navy)] hover:text-[var(--clpm-industrial-navy)]"
+      title="打开满屏驾驶舱（管理视角只读总览）"
+      @click="router.push({ path: '/cockpit' })"
+    >
+      <span>🖥</span>
+      <span>驾驶舱</span>
+    </button>
+    <span class="h-4 w-px bg-[var(--clpm-industrial-border)]" aria-hidden="true"></span>
     <!-- 通知铃铛（A-E5 未读红点，M1 桩） -->
     <button
       class="relative flex h-7 w-7 items-center justify-center rounded text-gray-600 hover:bg-gray-100"

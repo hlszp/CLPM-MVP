@@ -498,9 +498,18 @@ def test_parse_dt_converts_offset_to_utc() -> None:
     dt_naive = _parse_dt("2026-07-19T07:00:00")
     assert dt_naive == datetime(2026, 7, 19, 7, 0, 0)
 
-    # 非法输入返回 None
-    assert _parse_dt("not-a-date") is None
+    # 非法输入抛 400（2026-09-24 变更：原实现静默返回 None，会让前端以为
+    # 筛选生效却拿到默认窗口的数据；现统一由 parse_iso_datetime 报 ERR_PARAM）
+    from app.core.exceptions import BizError
+
+    with pytest.raises(BizError) as exc_info:
+        _parse_dt("not-a-date")
+    assert exc_info.value.code == "ERR_PARAM"
+    assert exc_info.value.status_code == 400
+
+    # 空值仍表示"未指定"
     assert _parse_dt(None) is None
+    assert _parse_dt("") is None
 
 
 # ---------------------------------------------------------------------------

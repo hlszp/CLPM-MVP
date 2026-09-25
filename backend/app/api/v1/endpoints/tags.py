@@ -30,6 +30,7 @@ from app.api.deps import get_current_user, require_roles
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.core.exceptions import BizError
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.loop import LoopLedger
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -358,15 +359,12 @@ def _quality_policy_for(tag_group: str) -> str:
 
 
 def _parse_iso_datetime(s: str) -> datetime:
-    """解析 ISO 8601 时间字符串为 datetime 对象。"""
-    try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-        # 统一转为 naive UTC（与现有 waveform service 一致）
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(UTC).replace(tzinfo=None)
-        return dt
-    except ValueError:
-        return datetime.fromisoformat(s)
+    """解析 ISO 8601 时间字符串为 naive UTC datetime.
+
+    统一转为 naive UTC（与现有 waveform service 一致）；非法输入抛 400
+    （旧实现在 except 里重复同样的解析，必然再次抛错 → 500）。
+    """
+    return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
 
 def _build_data_planner(db: AsyncSession) -> Any:

@@ -20,6 +20,7 @@ import {
 } from 'ant-design-vue';
 
 import { getTuningBatchDetailApi } from '#/api/tuning';
+import { TUNING_BATCH_STATUS_LABEL } from '#/constants/clpm-ui';
 
 import { fmtNum2, tuningAlgoLabel } from '../constants';
 
@@ -30,13 +31,14 @@ const loading = ref(false);
 const detail = ref<null | TuningApi.TuningBatchDetail>(null);
 
 // 批次状态色点（与列表视图同口径）
+/** 批次状态：标签取全站唯一字典（constants/clpm-ui.ts），仅保留本抽屉色板 */
 const BATCH_STATUS_META: Record<string, { color: string; label: string }> = {
-  BLOCKED: { color: 'error', label: '阻塞' },
-  PENDING: { color: 'default', label: '待启动' },
-  READY: { color: 'processing', label: '就绪' },
-  RUNNING: { color: 'cyan', label: '执行中' },
-  COMPLETED: { color: 'success', label: '已完成' },
-  CANCELLED: { color: 'default', label: '已取消' },
+  BLOCKED: { color: 'error', label: TUNING_BATCH_STATUS_LABEL.BLOCKED! },
+  PENDING: { color: 'default', label: TUNING_BATCH_STATUS_LABEL.PENDING! },
+  READY: { color: 'processing', label: TUNING_BATCH_STATUS_LABEL.READY! },
+  RUNNING: { color: 'cyan', label: TUNING_BATCH_STATUS_LABEL.RUNNING! },
+  COMPLETED: { color: 'success', label: TUNING_BATCH_STATUS_LABEL.COMPLETED! },
+  CANCELLED: { color: 'default', label: TUNING_BATCH_STATUS_LABEL.CANCELLED! },
 };
 
 // 前置工单状态中文标签

@@ -315,6 +315,57 @@ def _percent_mean(vals: list[float], digits: int = 1) -> float | None:
 # ---------------------------------------------------------------------------
 # 管理总览
 # ---------------------------------------------------------------------------
+def summarize_window_metrics(rows: list[Any], evaluable_total: int) -> dict[str, Any]:
+    """由「每回路窗口内均分」行汇总 S1 四项可比指标（2026-09-24 新增）.
+
+    这是当前窗口与上一窗口**唯一**的汇总实现，避免两处口径漂移：
+    - evaluatedCount：有 avg_score 的回路数
+    - healthRate：avg_score ≥ 60 的占比（与 get_overview 的 healthy 判定同阈值）
+    - evaluationRate：evaluated / 可参评回路数
+    - anomalyCount：evaluated − healthy
+    - dataHealthRate：avg_good_value 均值（_percent_mean，与当前窗口同函数）
+
+    注意：get_overview 当前窗口的展示指标仍由其原有代码计算；本函数供
+    「上一窗口对比值」使用，两者的口径必须保持一致（阈值 60 / 同一 _percent_mean）。
+    """
+    evaluated = [r for r in rows if r.avg_score is not None]
+    healthy = sum(1 for r in evaluated if float(r.avg_score) >= 60.0)
+    data_health_vals = [float(r.avg_good_value) for r in evaluated if r.avg_good_value is not None]
+    evaluated_count = len(evaluated)
+    # 基线的「0%」与「无数据」必须区分：_ratio 对 num=0 返回 None（当前窗口的
+    # 历史口径，保持不变），但作为**环比基线**，0% 健康率是有效基线 ——
+    # 否则"从 0% 提升到 50%"会被当成"没有基线"，环比静默消失。
+    # 只有完全没有参评回路（evaluated_count = 0）才算无基线 → None。
+    health_rate = round(healthy / evaluated_count * 100.0, 1) if evaluated_count else None
+    eval_rate = round(evaluated_count / evaluable_total * 100.0, 1) if evaluable_total else None
+    return {
+        "evaluatedCount": evaluated_count,
+        "healthRate": health_rate,
+        "evaluationRate": eval_rate,
+        "anomalyCount": evaluated_count - healthy,
+        "dataHealthRate": _percent_mean(data_health_vals),
+    }
+
+
+def _delta_value(
+    cur: float | int | None, prev: float | int | None, digits: int = 1
+) -> float | None:
+    """环比差值（当前 − 上一窗口）；任一侧缺数据返回 None（前端不显示环比）。
+
+    与 /dashboard/board 的 delta 口径一致：**不**做百分比换算，
+    直接给绝对差（pp / 个 / 分），避免同一指标在不同页面出现两种语义。
+    """
+    if cur is None or prev is None:
+        return None
+    return round(float(cur) - float(prev), digits)
+
+
+def previous_window(start: datetime, end: datetime) -> tuple[datetime, datetime]:
+    """等长上一窗口 [start-(end-start), start)（环比基线）."""
+    span = end - start
+    return start - span, start
+
+
 async def get_overview(
     db: AsyncSession,
     stage: str,
@@ -397,6 +448,31 @@ async def get_overview(
     total = int(total_row.total)
     evaluable = int(total_row.evaluable)
     evaluated_count = len(evaluated)
+
+    # ------------------------------------------------------------------
+    # 上一窗口同口径指标（环比基线，2026-09-24）
+    # 只对 S1 四项可比指标做对比：健康率 / 参评率 / 异常数 / 数据健康率。
+    # 回路总数是静态基数、闭环类指标属 S2，均不参与环比。
+    # ------------------------------------------------------------------
+    prev_metrics: dict[str, Any] | None = None
+    if start_date and end_date:
+        prev_start, prev_end = previous_window(start_date, end_date)
+        prev_params = dict(params)
+        prev_params["start"] = prev_start
+        prev_params["end"] = prev_end
+        prev_avg_sql = f"""
+            SELECT ll.id AS loop_id,
+                   AVG(k.score) AS avg_score,
+                   AVG(k.good_value_rate) AS avg_good_value,
+                   AVG(k.effective_auto_rate) AS avg_auto
+            FROM loop_ledger ll
+            JOIN kpi_snapshot_hourly k ON k.loop_id = ll.id
+              AND k.ts_start >= :start AND k.ts_start < :end
+            {"WHERE ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""}
+            GROUP BY ll.id
+            """
+        prev_rows = (await db.execute(text(prev_avg_sql), prev_params)).all()
+        prev_metrics = summarize_window_metrics(list(prev_rows), evaluable)
 
     # 健康趋势：按天均分
     health_trend: list[dict[str, Any]] = []
@@ -516,6 +592,8 @@ async def get_overview(
                 f"参评回路 {evaluated_count} 中 ≥60 分 {len(healthy)} 条，"
                 f"<60 分异常 {anomaly_count} 条"
             ),
+            "prevValue": (prev_metrics or {}).get("healthRate"),
+            "delta": _delta_value(health_rate, (prev_metrics or {}).get("healthRate")),
         },
         {
             "key": "evaluationRate",
@@ -524,6 +602,8 @@ async def get_overview(
             "unit": "%",
             "status": eval_status,
             "context": f"时间窗内实际参与评估 {evaluated_count} / 可参评 {evaluable_total}",
+            "prevValue": (prev_metrics or {}).get("evaluationRate"),
+            "delta": _delta_value(eval_rate, (prev_metrics or {}).get("evaluationRate")),
         },
         {
             "key": "anomalyCount",
@@ -532,6 +612,12 @@ async def get_overview(
             "unit": "个",
             "status": "error" if anomaly_count > 0 else "ok",
             "context": "评分 < 60 分的回路数量",
+            "prevValue": (prev_metrics or {}).get("anomalyCount"),
+            "delta": _delta_value(
+                anomaly_count,
+                (prev_metrics or {}).get("anomalyCount"),
+                digits=0,
+            ),
         },
         {
             "key": "dataHealthRate",
@@ -540,6 +626,8 @@ async def get_overview(
             "unit": "%",
             "status": dh_status,
             "context": "参评回路 PV Good 值率均值（质量码）",
+            "prevValue": (prev_metrics or {}).get("dataHealthRate"),
+            "delta": _delta_value(data_health_rate, (prev_metrics or {}).get("dataHealthRate")),
         },
     ]
 

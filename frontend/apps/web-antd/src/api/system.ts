@@ -242,6 +242,25 @@ export function getAuditLogListApi(params: SystemApi.AuditLogListQueryParams) {
 }
 
 /**
+ * 审计日志**全量**导出（CSV，服务端生成，含口径注释行）— 2026-09-24 新增
+ *
+ * 与页面内 exportData（只导当前页）区分：本接口不分页，导出当前筛选条件下的
+ * 全部日志（上限 2 万条，超出在文件首行注明），供审计取证/上报使用。
+ *
+ * 必须走 requestClient.download：普通 get 会被统一响应拦截器按 code 字段校验，
+ * CSV 无该字段会报错。
+ */
+export function exportAuditLogsApi(
+  params: SystemApi.AuditLogListQueryParams,
+) {
+  const { page: _page, pageSize: _pageSize, ...filters } = params;
+  return requestClient.download<Blob>('/audit-logs/export', {
+    params: filters,
+    timeout: 60_000,
+  });
+}
+
+/**
  * 查询报表配置列表 — IDS v3.2 §2.6
  */
 export function getReportConfigListApi() {

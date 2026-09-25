@@ -28,7 +28,18 @@ engine = create_async_engine(
     echo=False,
     poolclass=NullPool,
     connect_args={
-        "server_settings": {"application_name": "clpm-api"},
+        "server_settings": {
+            "application_name": "clpm-api",
+            # 会话时区固定 UTC（2026-09-24 修复）：
+            # 应用写入的所有时间列都是 naive UTC（datetime.now(UTC).replace(tzinfo=None)），
+            # 而 PG 集群默认 TimeZone=Asia/Shanghai。裸 func.now() / date_trunc('day', now())
+            # 与被当作 +08 解释的 naive 列比较时整体偏移 8 小时（已实测）：
+            #   - planned_at 在未来 8 小时内的工单被判「已超过计划时间」；
+            #   - 24h 验证 SLA 实际 16h 即触发；
+            #   - date_trunc('day', now()) 的日界落在 08:00 +08，凌晨时段「昨日基线」取到当天快照。
+            # 会话时区设为 UTC 后，naive 列即按 UTC 解释，与写入口径一致。
+            "timezone": "UTC",
+        },
         "command_timeout": 60,
     },
 )

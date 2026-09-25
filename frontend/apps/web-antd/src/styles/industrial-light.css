@@ -41,6 +41,10 @@
   --status-info: #0d6efd; /* 信息/主操作（与 accent 同蓝） */
   --status-neutral: #6c757d; /* 中性/数据不足/零值/INCONCLUSIVE */
   --industrial-accent: #0d6efd; /* 工业蓝：主操作/当前态/链接/焦点 */
+  /* 工业深蓝体系（2026-09-25 从 HeaderBar/LoopDetailDrawer 上移，供 var() 引用，避免页面内硬编码 hex） */
+  --clpm-industrial-navy: #1f4e79; /* 深蓝：当前态/强调文字/边框 */
+  --clpm-industrial-navy-soft: #ebf1f8; /* 深蓝浅底：hover 背景 */
+  --clpm-industrial-border: #e4e7ed; /* 分隔线/常规边框 */
 
   /* 类别中性 tag（回路类型/规则类型/指标类别等中性分类，禁用语义色相） */
   --tag-neutral-bg: #f1f5f9; /* slate-100 底 */

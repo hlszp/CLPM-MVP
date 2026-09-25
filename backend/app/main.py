@@ -142,8 +142,99 @@ _CELERY_TERM_TIMEOUT_S = 10
 _CELERY_KILL_TIMEOUT_S = 5
 
 
-def _pgrep_pids(pattern: str) -> list[int]:
-    """pgrep -f pattern，返回匹配 PID 列表（空列表=无匹配或 pgrep 不可用）。"""
+#: Windows 平台判定（2026-09-25 Windows 部署排查）：
+#: - 无 pgrep → 探测恒失败 → 单例防护 fail-safe 误判"已有进程"，worker/beat 永不启动；
+#: - os.kill(pid, 0) 在 Windows 上等价 TerminateProcess（探活会真的把进程杀掉）；
+#: - 无 SIGKILL / 进程组语义，os.killpg 不存在。
+#: 因此以下三处统一做平台分支，Windows 走 tasklist/PowerShell + taskkill。
+_IS_WINDOWS = sys.platform == "win32"
+
+
+def _windows_process_lines() -> list[tuple[int, str]] | None:
+    """Windows：取 (PID, 命令行) 列表；取不到返回 None（探测失败）。"""
+    script = (
+        "Get-CimInstance Win32_Process | "
+        "ForEach-Object { [string]$_.ProcessId + '|' + [string]$_.CommandLine }"
+    )
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if result.returncode != 0:
+        return None
+    out: list[tuple[int, str]] = []
+    for line in result.stdout.splitlines():
+        pid_part, sep, cmdline = line.partition("|")
+        if not sep:
+            continue
+        try:
+            out.append((int(pid_part.strip()), cmdline))
+        except ValueError:
+            continue
+    return out
+
+
+def _windows_pgrep(pattern: str) -> tuple[bool, list[int]]:
+    """Windows 版 pgrep：拿全部命令行后用同一正则匹配。"""
+    rows = _windows_process_lines()
+    if rows is None:
+        return False, []
+    return True, [pid for pid, cmdline in rows if cmdline and re.search(pattern, cmdline)]
+
+
+def _windows_pid_alive(pid: int) -> bool:
+    """Windows 探活：OpenProcess + GetExitCodeProcess，只查询不终止。"""
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return int(code.value) == 259  # STILL_ACTIVE
+            return True  # 查不到退出码：保守视为存活
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:  # noqa: BLE001 — 探活失败保守返回 True，绝不误杀
+        return True
+
+
+def _force_kill(pid: int) -> None:
+    """强制结束进程（Windows 无 SIGKILL，退化 taskkill /T /F）。"""
+    if _IS_WINDOWS:
+        try:
+            subprocess.run(  # noqa: S603
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    os.kill(pid, signal.SIGKILL)
+
+
+def _pgrep_probe(pattern: str) -> tuple[bool, list[int]]:
+    """pgrep -f pattern，返回 (探测是否成功, PID 列表).
+
+    区分"确认没有匹配进程"（True, []）与"探测本身失败"（False, []，
+    例如 pgrep 超时/不可执行）。该区分对自愈路径是安全关键：
+    见 _any_worker_process_running 的 fail-safe 说明。
+    """
+    if _IS_WINDOWS:
+        return _windows_pgrep(pattern)
+
     try:
         result = subprocess.run(  # noqa: S603
             ["pgrep", "-f", pattern],
@@ -153,9 +244,12 @@ def _pgrep_pids(pattern: str) -> list[int]:
             check=False,
         )
     except Exception:  # noqa: BLE001
-        return []
-    if result.returncode != 0 or not result.stdout.strip():
-        return []
+        return False, []
+    # pgrep 退出码 1 = 无匹配（探测成功）；其它非 0 = 探测失败
+    if result.returncode not in (0, 1):
+        return False, []
+    if not result.stdout.strip():
+        return True, []
     pids: list[int] = []
     for line in result.stdout.splitlines():
         line = line.strip()
@@ -165,7 +259,12 @@ def _pgrep_pids(pattern: str) -> list[int]:
             pids.append(int(line))
         except ValueError:
             continue
-    return pids
+    return True, pids
+
+
+def _pgrep_pids(pattern: str) -> list[int]:
+    """pgrep -f pattern，返回匹配 PID 列表（空列表=无匹配或 pgrep 不可用）。"""
+    return _pgrep_probe(pattern)[1]
 
 
 def _pid_alive(pid: int) -> bool:
@@ -173,7 +272,11 @@ def _pid_alive(pid: int) -> bool:
 
     注意：已被 SIGKILL、但父进程尚未执行 wait() 回收的 zombie <defunct> 进
     程 kill(pid,0) 仍返回 True（macOS 实测）。调用方在自己发出 SIGKILL
-    后，应避免再用本函数作为"是否成功清理"的最终依据。"""
+    后，应避免再用本函数作为"是否成功清理"的最终依据。
+
+    Windows：os.kill(pid, 0) 会实际终止进程，必须走 OpenProcess 查询分支。"""
+    if _IS_WINDOWS:
+        return _windows_pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -235,7 +338,7 @@ def _terminate_pids_fallback(
         )
         for pid in survivors:
             try:
-                os.kill(pid, signal.SIGKILL)
+                _force_kill(pid)
             except (ProcessLookupError, PermissionError, OSError):
                 pass
         # 发过 SIGKILL 后不再轮询等待：SIGKILL 是不可屏蔽信号，进
@@ -275,9 +378,12 @@ def _kill_process_group(process: subprocess.Popen, label: str) -> None:
         while _pid_alive(process.pid) and time.monotonic() < deadline:
             time.sleep(0.25)
         if _pid_alive(process.pid):
-            # 仍有存活 → SIGKILL 组
+            # 仍有存活 → SIGKILL 组（Windows 无进程组信号，退化为单进程强杀）
             try:
-                os.killpg(pgid, signal.SIGKILL)
+                if _IS_WINDOWS:
+                    _force_kill(process.pid)
+                else:
+                    os.killpg(pgid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError, OSError):
                 pass
             deadline = time.monotonic() + _CELERY_KILL_TIMEOUT_S
@@ -300,6 +406,21 @@ def _kill_process_group(process: subprocess.Popen, label: str) -> None:
             except subprocess.TimeoutExpired:
                 pass
     logger.info("%s 已停止（进程组=%s，PID=%s）", label, pgid or "-", process.pid)
+
+
+def _celery_autostart_forced() -> bool:
+    """生产模式下是否强制自启 Celery（Windows 原生部署逃生阀，2026-09-25）。
+
+    生产口径的前提是"Linux + docker-compose 独立 celery-worker/beat 容器"。
+    Windows 原生部署（无容器）时没有任何东西接管异步任务，KPI 计算/历史导入/
+    诊断会静默不执行；此时设 CELERY_AUTOSTART=1 可让后端自启（并用 solo 池）。
+    """
+    return os.environ.get("CELERY_AUTOSTART", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _is_production() -> bool:
@@ -353,8 +474,15 @@ def _any_beat_process_running() -> bool:
 
     pidfile 检查无法覆盖"pidfile 被另一个 beat 进程覆盖/删除"的场景
     （如手工启动的 beat 与 lifespan 自动启动的 beat 共用同一路径）。
+
+    Fail-safe（2026-09-24）：探测失败时按"已存在"处理，理由同 worker；
+    两个 beat 并存会让每个定时任务双触发。
     """
-    return bool(_pgrep_pids(_BEAT_PGREP_PATTERN))
+    ok, pids = _pgrep_probe(_BEAT_PGREP_PATTERN)
+    if not ok:
+        logger.warning("Celery Beat 探活失败（pgrep 超时或不可用），本轮按已存在处理")
+        return True
+    return bool(pids)
 
 
 def _start_celery_beat() -> None:
@@ -499,8 +627,18 @@ def _any_worker_process_running() -> bool:
 
     避免 lifespan 自动启动的 worker 与手工启动的 worker 并存，导致任务
     被重复消费（多 worker 竞争同一队列）。
+
+    Fail-safe（2026-09-24）：探测失败（pgrep 超时/不可执行）时按"已存在"
+    处理，即放弃本轮自愈而不是再拉起一个。原实现把探测失败与"无匹配"一并
+    当作 false，使看门狗在系统繁忙/探测超时时不断 spawn 新 worker ——
+    观测到同一 uvicorn 下并存 5 个 worker（02:10/02:57/03:13/03:27 各一），
+    同一队列被重复消费。自愈失败的代价（暂时无人消费）远小于重复消费。
     """
-    return bool(_pgrep_pids(_WORKER_PGREP_PATTERN))
+    ok, pids = _pgrep_probe(_WORKER_PGREP_PATTERN)
+    if not ok:
+        logger.warning("Celery Worker 探活失败（pgrep 超时或不可用），本轮按已存在处理，不补拉起")
+        return True
+    return bool(pids)
 
 
 def _start_celery_worker() -> None:
@@ -537,8 +675,9 @@ def _start_celery_worker() -> None:
                     "worker",
                     "-l",
                     "info",
-                    "--concurrency",
-                    "4",
+                    # Windows 无法使用 prefork 池（billiard 语义缺失），必须 solo；
+                    # 其它平台保持 --concurrency 4 不变（2026-09-25 Windows 排查）
+                    *(("--pool", "solo") if _IS_WINDOWS else ("--concurrency", "4")),
                     "-Q",
                     "default,dead_letter",
                     "--hostname",
@@ -667,7 +806,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # 生产环境由 docker-compose 独立 celery-beat / celery-worker 容器接管，避免重复启动
     watchdog_stop: asyncio.Event | None = None
     watchdog_task: asyncio.Task[None] | None = None
-    if not _is_production():
+    if not _is_production() or _celery_autostart_forced():
+        if _is_production():
+            logger.warning(
+                "ENV=production 但 CELERY_AUTOSTART 已开启：本进程将自启 Celery Worker/Beat"
+                "（Windows 原生部署逃生阀，请勿在容器化部署上使用，会造成重复消费）"
+            )
         _start_celery_beat()
         _start_celery_worker()
         # 看门狗：定期探活 worker/beat 进程，崩溃缺失时 error 级告警
@@ -675,7 +819,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         watchdog_stop = asyncio.Event()
         watchdog_task = asyncio.create_task(_celery_watchdog_loop(watchdog_stop))
     else:
-        logger.info("生产环境：Celery Beat / Worker 由独立容器接管，跳过 lifespan 启动")
+        logger.warning(
+            "生产环境：Celery Beat/Worker 应由独立进程或容器接管，本进程未启动它们。"
+            "若为 Windows 原生部署（无 celery 容器），请设置环境变量 CELERY_AUTOSTART=1 后重启，"
+            "否则 KPI 小时计算、历史导入、诊断等异步任务不会执行。"
+        )
 
     # 从 sys_config 预载数据源配置到 settings（运行时真相源优先于 .env）
     # 方案 B：.env 仅保留基础设施配置 + 合理默认值，业务 URL/Token/SignalR Hub

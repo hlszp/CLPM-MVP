@@ -657,13 +657,19 @@ class TestRolePermissions:
         assert "tracker:review" in perms
 
     def test_default_home_all_roles(self) -> None:
+        """默认首页与前端 store/auth.ts 的 ROLE_DEFAULT_HOME 必须逐角色一致.
+
+        2026-09-24 修正：原期望值是后端旧口径（IC/PE→/dashboard、
+        SPONSOR→/reports/overview），而前端映射为 /cockpit 且前端优先，
+        两张表长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）对齐。
+        """
         from app.services.auth import get_default_home
 
         expected = {
             "ADMIN": "/dashboard",
-            "IC_ENGINEER": "/dashboard",
-            "PE_ENGINEER": "/dashboard",
-            "SPONSOR": "/reports/overview",
+            "IC_ENGINEER": "/cockpit",
+            "PE_ENGINEER": "/cockpit",
+            "SPONSOR": "/cockpit",
             "EXPERT": "/diagnosis/records",
         }
         for role, home in expected.items():

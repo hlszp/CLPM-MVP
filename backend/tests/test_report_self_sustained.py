@@ -79,6 +79,8 @@ def _make_stats_db(
     sla_row: Any = None,
     funnel_rows: list[Any] | None = None,
     workload_rows: list[Any] | None = None,
+    handler_rows: list[Any] | None = None,
+    breakdown_row: Any = None,
     mv_error: bool = False,
     captured: list[str] | None = None,
 ) -> AsyncMock:
@@ -160,6 +162,61 @@ def _make_stats_db(
                     SimpleNamespace(status="CONVERTED", cnt=5),
                     SimpleNamespace(status="REJECTED", cnt=2),
                 ]
+            )
+        # --- 2026-09-24 责任看板 / 闭环率构成 ---
+        if "AS handler" in sql:
+            return _FakeResult(
+                rows=handler_rows
+                if handler_rows is not None
+                else [
+                    SimpleNamespace(
+                        handler="张三",
+                        active_cnt=2,
+                        closed_cnt=4,
+                        closed_in_window=3,
+                        reopened_cnt=1,
+                        ever_reopened_cnt=1,
+                        ineffective_cnt=1,
+                        overdue_cnt=1,
+                        avg_cycle_hours=10.5,
+                    ),
+                    SimpleNamespace(
+                        handler="未分配",
+                        active_cnt=1,
+                        closed_cnt=0,
+                        closed_in_window=0,
+                        reopened_cnt=0,
+                        ever_reopened_cnt=0,
+                        ineffective_cnt=0,
+                        overdue_cnt=0,
+                        avg_cycle_hours=None,
+                    ),
+                    # 只有取消单：在办 0 / 闭环 0 → 分母为 0，闭环率必须为 None
+                    SimpleNamespace(
+                        handler="李四",
+                        active_cnt=0,
+                        closed_cnt=0,
+                        closed_in_window=0,
+                        reopened_cnt=0,
+                        ever_reopened_cnt=0,
+                        ineffective_cnt=0,
+                        overdue_cnt=0,
+                        avg_cycle_hours=None,
+                    ),
+                ]
+            )
+        if "AS not_dispatched" in sql:
+            return _FakeResult(
+                one_row=breakdown_row
+                or SimpleNamespace(
+                    not_dispatched=3,
+                    dispatched_todo=2,
+                    executing=1,
+                    verifying=1,
+                    closed=5,
+                    reopened=1,
+                    cancelled=0,
+                )
             )
         if "FROM mv_staff_workload" in sql:
             if mv_error:
@@ -283,6 +340,43 @@ class TestBuildHandlingStatistics:
         assert any(":win_start" in sql and "closed_period" in sql for sql in captured)
         # 窗口逐月展开：2026-06 ~ 2026-08（3 桶）
         assert [m["month"] for m in data["monthly"]] == ["2026-06", "2026-07", "2026-08"]
+
+    async def test_by_handler_and_closure_breakdown(self) -> None:
+        """责任看板与闭环率构成（2026-09-24 管理视角增强）.
+
+        - byHandler：闭环率 = 闭环/(闭环+在办)，分母为 0 时为 None（不误导为 0%）
+        - closureBreakdown：四段拆分 + 闭环/重开/取消，供"闭环率构成"图使用
+        """
+        db = _make_stats_db()
+
+        data = await hs.build_handling_statistics(db, months=6)
+
+        rows = data["byHandler"]
+        assert [r["handler"] for r in rows] == ["张三", "未分配", "李四"]
+        zhangsan = rows[0]
+        assert zhangsan["activeCount"] == 2
+        assert zhangsan["closedCount"] == 4
+        assert zhangsan["closedInWindow"] == 3
+        assert zhangsan["overdueCount"] == 1
+        assert zhangsan["reopenedCount"] == 1
+        assert zhangsan["ineffectiveCount"] == 1
+        assert zhangsan["closeRate"] == round(4 / 6, 4)
+        assert zhangsan["avgCycleHours"] == 10.5
+        # 在办 1 / 闭环 0：分母非 0，闭环率是真实的 0%（不是"未知"）
+        assert rows[1]["closeRate"] == 0.0
+        assert rows[1]["avgCycleHours"] is None
+        # 在办 0 / 闭环 0（只有取消单）：无分母 → None，前端显「—」而非 0%
+        assert rows[2]["closeRate"] is None
+
+        assert data["closureBreakdown"] == {
+            "notDispatched": 3,
+            "dispatchedTodo": 2,
+            "executing": 1,
+            "verifying": 1,
+            "closed": 5,
+            "reopened": 1,
+            "cancelled": 0,
+        }
 
 
 class TestHandlingStatsP2Enhanced:

@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.performance import (
@@ -167,12 +168,10 @@ async def get_board_endpoint(
     """全局看板（所有角色）。Redis 缓存 5 分钟。"""
 
     def _parse_dt(s: str | None) -> datetime | None:
+        # 空值视为未指定；非空但非法的时间串由 parse_iso_datetime 抛 400
         if not s:
             return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
+        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
     data = await get_board(
         db=db,
@@ -222,12 +221,10 @@ async def get_ranking_endpoint(
     """
 
     def _parse_dt(s: str | None) -> datetime | None:
+        # 空值视为未指定；非空但非法的时间串由 parse_iso_datetime 抛 400
         if not s:
             return None
-        try:
-            return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
-        except ValueError:
-            return datetime.fromisoformat(s)
+        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
     data = await get_ranking(
         db=db,
@@ -366,20 +363,17 @@ async def get_realtime_auto_rate_endpoint(
 
 
 def _parse_dt(s: str | None) -> datetime | None:
-    """解析 ISO 8601 时间字符串（兼容 Z 后缀），失败返回 None.
+    """解析 ISO 8601 时间字符串（兼容 Z 后缀）.
 
     带时区的输入先换算到 UTC 再去掉时区标记（DB 字段为 UTC naive）；
     无时区输入按 UTC 解释（历史行为）。
+
+    空值返回 None（未指定）；非空但非法的输入抛 400（旧实现静默返回 None，
+    会让前端以为"筛选生效了"却拿到默认窗口的数据）。
     """
     if not s:
         return None
-    try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is not None:
-        return dt.astimezone(UTC).replace(tzinfo=None)
-    return dt
+    return to_naive_utc(parse_iso_datetime(s, field="时间参数"))
 
 
 def _to_float(val) -> float | None:

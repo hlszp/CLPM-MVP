@@ -24,6 +24,7 @@ import {
   DescriptionsItem,
   Drawer,
   Dropdown,
+  Input,
   Menu,
   message,
   Select,
@@ -32,7 +33,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getAuditLogListApi } from '#/api/system';
+import { exportAuditLogsApi, getAuditLogListApi } from '#/api/system';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
@@ -56,6 +57,9 @@ const total = ref(0);
 
 const query = reactive({
   operationType: undefined as SystemApi.OperationType | undefined,
+  // 操作人筛选（后端早已支持 operator 参数，前端此前未暴露：
+  // 「谁改过参数」这一责任追踪场景只能全量翻页）
+  operator: undefined as string | undefined,
   date_range: undefined as [dayjs.Dayjs, dayjs.Dayjs] | undefined,
   page: 1,
   pageSize: 20,
@@ -283,6 +287,7 @@ async function loadList() {
       page: query.page,
       pageSize: query.pageSize,
       operationType: query.operationType,
+      operator: query.operator || undefined,
     };
     if (query.date_range && query.date_range.length === 2) {
       const [start, end] = query.date_range;
@@ -389,7 +394,41 @@ function handleExport(format: 'csv' | 'excel') {
     rows,
     sheetName: '审计日志',
   });
-  message.success(`已导出 ${auditList.value.length} 条记录`);
+  // 口径必须写明：rows 取自当前页数据，total 是筛选后的全量条数，
+  // 原提示"已导出 N 条记录"会让审计取证误以为导出了全量。
+  message.success(
+    `已导出当前页 ${auditList.value.length} 条（筛选结果共 ${total.value} 条）`,
+  );
+}
+
+/** 全量导出（服务端 CSV，含口径注释行；不受当前页限制） */
+const exportingAll = ref(false);
+
+async function handleExportAll() {
+  if (exportingAll.value) return;
+  exportingAll.value = true;
+  try {
+    const blob = await exportAuditLogsApi({
+      endTime: query.date_range?.[1]?.format('YYYY-MM-DD HH:mm:ss'),
+      operationType: query.operationType,
+      operator: query.operator || undefined,
+      page: 1,
+      pageSize: 20,
+      startTime: query.date_range?.[0]?.format('YYYY-MM-DD HH:mm:ss'),
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `审计日志_${new Date().toISOString().slice(0, 16).replaceAll(/[:T]/g, '')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('已按当前筛选导出全量审计日志');
+  } catch (error) {
+    console.error('[审计日志/全量导出] 失败:', error);
+    message.error('导出失败，请稍后重试');
+  } finally {
+    exportingAll.value = false;
+  }
 }
 
 // ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
@@ -416,9 +455,17 @@ const { toolbarItems } = usePageToolbar(() => ({
             tooltip="导出当前筛选结果"
           />
           <template #overlay>
-            <Menu @click="(e: any) => handleExport(e.key as 'csv' | 'excel')">
-              <Menu.Item key="csv">导出 CSV</Menu.Item>
-              <Menu.Item key="excel">导出 Excel</Menu.Item>
+            <Menu
+              @click="
+                (e: any) =>
+                  e.key === 'csv-all'
+                    ? handleExportAll()
+                    : handleExport(e.key as 'csv' | 'excel')
+              "
+            >
+              <Menu.Item key="csv">导出当前页 CSV</Menu.Item>
+              <Menu.Item key="excel">导出当前页 Excel</Menu.Item>
+              <Menu.Item key="csv-all">导出全量 CSV（当前筛选）</Menu.Item>
             </Menu>
           </template>
         </Dropdown>
@@ -449,6 +496,13 @@ const { toolbarItems } = usePageToolbar(() => ({
           "
           :options="operationOptions"
           @change="handleSearch"
+        />
+        <Input
+          v-model:value="query.operator"
+          placeholder="操作人（用户名）"
+          style="width: 180px"
+          allow-clear
+          @press-enter="handleSearch"
         />
         <DatePicker.RangePicker
           v-model:value="query.date_range"

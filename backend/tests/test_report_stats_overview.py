@@ -22,6 +22,9 @@ from app.services import report_stats as rs
 
 START = datetime(2026, 7, 1)
 END = datetime(2026, 8, 1)
+#: 环比基线窗口 = [START-(END-START), START)（与 report_stats.previous_window 同定义）
+PREV_START = datetime(2026, 5, 31)
+PREV_END = START
 
 
 class _FakeResult:
@@ -44,6 +47,18 @@ def _make_db(good_rows: list[Any] | None = None) -> AsyncMock:
         if "COUNT(*) AS total" in sql and "include_in_evaluation" in sql:
             return _FakeResult(one_row=SimpleNamespace(total=2, evaluable=2))
         if "AVG(k.good_value_rate)" in sql:
+            # 上一窗口（环比基线）与当前窗口同 SQL 形状，靠 :start 参数区分
+            is_prev = _params is not None and _params.get("start") == PREV_START
+            if is_prev:
+                rows = [
+                    SimpleNamespace(
+                        loop_id="l1", avg_score=50.0, avg_good_value=95.0, avg_auto=88.0
+                    ),
+                    SimpleNamespace(
+                        loop_id="l2", avg_score=40.0, avg_good_value=93.0, avg_auto=90.0
+                    ),
+                ]
+                return _FakeResult(rows=rows)
             rows = good_rows or [
                 SimpleNamespace(loop_id="l1", avg_score=55.0, avg_good_value=98.0, avg_auto=90.0),
                 SimpleNamespace(loop_id="l2", avg_score=70.0, avg_good_value=97.0, avg_auto=95.0),
@@ -202,6 +217,55 @@ class TestOverviewFixed12Slots:
             "anomalyCount",
             "dataHealthRate",
         ]
+
+    async def test_s1_kpis_carry_prev_window_baseline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """S1 四项可比指标带上一窗口基线（2026-09-24 环比基线）。
+
+        当前窗口（1 好 1 差）/ 上一窗口（2 差）→ 健康率 50% 环比 +50.0pp、
+        异常数 1 环比 −1、数据健康率 97.5% 环比 +3.5pp。
+        回路总数是静态基数，不带环比。
+        """
+        _patch_stage(monkeypatch, "S1", s3_available=False)
+        db = _make_db()
+
+        data = await rs.get_overview(
+            db, stage="S1", start_date=START, end_date=END, plant_node_id=None
+        )
+        by_key = {k["key"]: k for k in data["kpis"]}
+
+        assert by_key["healthRate"]["value"] == 50.0
+        assert by_key["healthRate"]["prevValue"] == 0.0
+        assert by_key["healthRate"]["delta"] == 50.0
+
+        assert by_key["anomalyCount"]["value"] == 1
+        assert by_key["anomalyCount"]["prevValue"] == 2
+        assert by_key["anomalyCount"]["delta"] == -1
+
+        assert by_key["dataHealthRate"]["value"] == 97.5
+        assert by_key["dataHealthRate"]["prevValue"] == 94.0
+        assert by_key["dataHealthRate"]["delta"] == 3.5
+
+        assert by_key["evaluationRate"]["value"] == 100.0
+        assert by_key["evaluationRate"]["delta"] == 0.0
+
+        # 静态基数不参与环比
+        assert by_key["totalLoops"].get("prevValue") is None
+        assert by_key["totalLoops"].get("delta") is None
+
+    async def test_prev_window_is_equal_length_and_adjacent(self) -> None:
+        """环比窗口定义：等长且紧邻当前窗口左端（不重叠、不留空）。"""
+        prev_start, prev_end = rs.previous_window(START, END)
+        assert prev_end == START
+        assert (prev_end - prev_start) == (END - START)
+
+    def test_delta_none_when_either_side_missing(self) -> None:
+        """任一侧缺数据不显示环比（None），不做 0 值兜底误导。"""
+        assert rs._delta_value(None, 5.0) is None
+        assert rs._delta_value(5.0, None) is None
+        assert rs._delta_value(None, None) is None
+        assert rs._delta_value(5.0, 3.0) == 2.0
 
 
 class TestDataHealthRateDimension:

@@ -256,6 +256,15 @@ const columns = computed<TableColumnsType>(() => [
 ]);
 
 // ============ 加载列表 ============
+/**
+ * 筛选条件变化：先回到第 1 页再查（否则沿用旧页码会命中空页，
+ * 出现「共 N 条」与空态文案并存的矛盾提示）。
+ */
+function handleFilterChange() {
+  currentPage.value = 1;
+  void loadList();
+}
+
 async function loadList() {
   loading.value = true;
   loadError.value = false;
@@ -593,7 +602,7 @@ onMounted(() => {
             option.label.toLowerCase().includes(input.toLowerCase())
         "
         style="width: 220px"
-        @change="loadList"
+        @change="handleFilterChange"
       />
       <Select
         v-model:value="filterStatus"
@@ -602,7 +611,7 @@ onMounted(() => {
         allow-clear
         :max-tag-count="2"
         style="width: 180px"
-        @change="loadList"
+        @change="handleFilterChange"
       >
         <Select.Option value="SUCCESS">成功</Select.Option>
         <Select.Option value="INCONCLUSIVE">不确定</Select.Option>
@@ -613,7 +622,7 @@ onMounted(() => {
         placeholder="可信度"
         allow-clear
         style="width: 130px"
-        @change="loadList"
+        @change="handleFilterChange"
       >
         <Select.Option value="A">A 优秀</Select.Option>
         <Select.Option value="B">B 良好</Select.Option>
@@ -624,7 +633,7 @@ onMounted(() => {
       <DatePicker.RangePicker
         v-model:value="filterDateRange"
         :allow-clear="true"
-        @change="loadList"
+        @change="handleFilterChange"
       />
       <Button type="primary" @click="loadList">查询</Button>
     </div>

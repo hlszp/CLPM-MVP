@@ -160,6 +160,9 @@ const sugQuery = reactive({
   statusTab: '' as '' | HandlingApi.SuggestionStatus,
   source: undefined as HandlingApi.Source | undefined,
   plantNodeId: undefined as string | undefined,
+  // 回路维度筛选（后端 GET /handling/suggestions 早已支持 loopId）：
+  // 供「诊断/工作台 → 去处置」深链带入，工程师不必再手动搜位号
+  loopId: undefined as string | undefined,
   importanceLevel: undefined as number | undefined,
   keyword: '',
 });
@@ -174,6 +177,7 @@ async function loadSuggestions() {
       status: sugQuery.statusTab || undefined,
       source: sugQuery.source,
       plantNodeId: sugQuery.plantNodeId,
+      loopId: sugQuery.loopId,
       importanceLevel: sugQuery.importanceLevel,
       keyword: sugQuery.keyword.trim() || undefined,
     });
@@ -269,9 +273,18 @@ function handleSugTableChange(pag: { current?: number; pageSize?: number }) {
 
 // ----- 审核操作（接受 Popconfirm / 驳回 Modal / 忽略 Modal） -----
 
+/**
+ * 终态操作进行中标志（2026-09-24 修复）.
+ *
+ * 此前只声明、只在 try/finally 里赋值，模板从未消费 → 既没有 confirm-loading，
+ * 也没有入口守卫：双击「确认驳回」会并发两次请求，第一次成功（绿色提示）、
+ * 第二次因已是终态失败（红色报错），用户无法判断是否生效。
+ * 现在模板绑定 :confirm-loading，函数首行做重入守卫。
+ */
 const acting = ref(false);
 
 async function handleAccept(record: HandlingApi.SuggestionItem) {
+  if (acting.value) return;
   acting.value = true;
   try {
     await acceptSuggestionApi(record.id);
@@ -295,7 +308,7 @@ function openReject(record: HandlingApi.SuggestionItem) {
 }
 
 async function handleReject() {
-  if (!rejectTarget.value) return;
+  if (!rejectTarget.value || acting.value) return;
   if (!rejectReason.value.trim()) {
     message.warning('请填写驳回原因');
     return;
@@ -326,7 +339,7 @@ function openIgnore(record: HandlingApi.SuggestionItem) {
 }
 
 async function handleIgnore() {
-  if (!ignoreTarget.value) return;
+  if (!ignoreTarget.value || acting.value) return;
   if (!ignoreReason.value.trim()) {
     message.warning('请填写忽略原因');
     return;
@@ -793,6 +806,21 @@ async function applyUrlContext() {
     if (preset.tab === 'orders') ordersLoaded.value = true;
     activeTab.value = preset.tab;
   }
+  // 回路深链：/handling/suggestions?loopId=xxx（工作台/诊断抽屉「去处置」入口）
+  const qLoopId = route.query.loopId as string | undefined;
+  if (qLoopId) {
+    sugQuery.loopId = qLoopId;
+    sugQuery.page = 1;
+    activeTab.value = 'suggestions';
+  }
+  // 处置人深链：/handling/orders?handler=张三（处置报告「责任看板」行点击入口）
+  const qHandler = route.query.handler as string | undefined;
+  if (qHandler) {
+    orderQuery.handler = qHandler;
+    orderQuery.page = 1;
+    activeTab.value = 'orders';
+    ordersLoaded.value = true;
+  }
   const focus = route.query.focus as string | undefined;
   if (focus) {
     if (handlingView.value === 'suggestions') {
@@ -1075,6 +1103,7 @@ watch(
                     </Button>
                     <Popconfirm
                       title="确认接受该建议？接受后可勾选转工单"
+                      :ok-button-props="{ loading: acting }"
                       @confirm="
                         handleAccept(record as HandlingApi.SuggestionItem)
                       "
@@ -1268,6 +1297,7 @@ watch(
       cancel-text="取消"
       ok-text="确认驳回"
       title="驳回建议"
+      :confirm-loading="acting"
       @ok="handleReject"
     >
       <div class="py-2">
@@ -1290,6 +1320,7 @@ watch(
       cancel-text="取消"
       ok-text="确认忽略"
       title="忽略建议"
+      :confirm-loading="acting"
       @ok="handleIgnore"
     >
       <div class="py-2">

@@ -603,8 +603,9 @@ describe('装置总览（管理者版）', () => {
     expect(w.text()).toContain('08-14 08:00 ~ 08-15 08:00');
   });
 
-  it('行2 环比：并行请求上一窗口基线，综合评分卡显示方向数值', async () => {
-    // 当前窗口（默认近 24 小时）与上一窗口（custom 起止）返回不同基线
+  it('行2 环比：主查询 compare=true 带回上一窗口基线，综合评分卡显示方向数值', async () => {
+    // 2026-09-24 契约变更：上一窗口基线不再单独发一次聚合查询，
+    // 而是由主查询 compare=true 一次性带回（prevAggregate）。
     const cur = {
       items: [],
       total: 0,
@@ -646,21 +647,28 @@ describe('装置总览（管理者版）', () => {
       },
     };
     getBoardAggregateApiMock.mockImplementation(
-      (params: { timeWindow?: string }) =>
-        Promise.resolve(params?.timeWindow === 'custom' ? prev : cur),
+      (params: { compare?: boolean }) =>
+        Promise.resolve(
+          params?.compare
+            ? {
+                ...cur,
+                prevAggregate: {
+                  ...prev.aggregate,
+                  hasData: true,
+                  windowEnd: '2026-08-14T08:00:00',
+                  windowStart: '2026-08-13T08:00:00',
+                },
+              }
+            : cur,
+        ),
     );
 
     const w = await mountWorkbench();
 
-    // loadCards 并行请求当前 + 上一窗口（custom 起止）
+    // 只发一次主查询，且带 compare=true（不再并行发第二次聚合查询）
     const aggCalls = getBoardAggregateApiMock.mock.calls.map((c) => c[0]);
-    expect(aggCalls).toHaveLength(2);
-    expect(aggCalls[0]).toMatchObject({ timeWindow: 'last_24_hours' });
-    expect(aggCalls[1]).toMatchObject({
-      endTime: expect.any(String),
-      startTime: expect.any(String),
-      timeWindow: 'custom',
-    });
+    expect(aggCalls).toHaveLength(1);
+    expect(aggCalls[0]).toMatchObject({ compare: true, timeWindow: 'last_24_hours' });
 
     // 评分环比：88.5 - 87.5 = ↑ 1.00（绿色上行角标）+ "较上一窗口"说明
     expect(w.text()).toContain('↑ 1.00');

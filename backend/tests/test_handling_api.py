@@ -1761,6 +1761,33 @@ class TestStatisticsEndpoint:
         SlaRow.ineffective_count = 2
         FRow = namedtuple("FRow", ["status", "cnt"])
         WRow = namedtuple("WRow", ["user_name", "active_count", "closed_count", "sla_warned_count"])
+        # 2026-09-24：责任看板 / 闭环率构成（插在 MV 查询之前，保持调用顺序）
+        HRow = namedtuple(
+            "HRow",
+            [
+                "handler",
+                "active_cnt",
+                "closed_cnt",
+                "closed_in_window",
+                "reopened_cnt",
+                "ever_reopened_cnt",
+                "ineffective_cnt",
+                "overdue_cnt",
+                "avg_cycle_hours",
+            ],
+        )
+        BRow = namedtuple(
+            "BRow",
+            [
+                "not_dispatched",
+                "dispatched_todo",
+                "executing",
+                "verifying",
+                "closed",
+                "reopened",
+                "cancelled",
+            ],
+        )
         return [
             _one_result(summary),
             _one_result(reject),
@@ -1771,6 +1798,8 @@ class TestStatisticsEndpoint:
             _all_result(_plant_node_rows()),
             _one_result(SlaRow),
             _all_result([FRow("PENDING", 3), FRow("CONVERTED", 5)]),
+            _all_result([HRow("张三", 2, 4, 3, 1, 1, 1, 1, 10.5)]),
+            _one_result(BRow(3, 2, 1, 1, 5, 1, 0)),
             _all_result([WRow("张三", 2, 4, 1)]),
         ]
 

@@ -612,3 +612,89 @@ export const QUALITY_STATUS_TO_STATUS: Record<string, StatusToken> = {
   UNCERTAIN: 'warning',
   UNKNOWN: 'neutral',
 };
+
+// ---------------------------------------------------------------------------
+// 整定状态字典（唯一事实源，2026-09-24 收敛）
+//
+// 背景：同一状态在 4 处各自维护中文标签且已实质分歧 ——
+//   COMPLETED  工作台批次卡「已验证」 / 记录页与批次抽屉「已完成」
+//   CANCELLED  记录页「已取消」 / 工作台批次卡「已回退」
+//   ROLLED_BACK 记录页「已回退」 / 收益报告「已回滚」
+// 工程师与管理者对同一件事表述不一致，且新增状态必然漏改某一份。
+// 全站（整定记录、批次列表、批次抽屉、收益报告）统一 import 本字典。
+// ---------------------------------------------------------------------------
+
+/** 整定任务/记录状态 → 中文标签（后端 tuning_record.status 全量枚举） */
+export const TUNING_TASK_STATUS_LABEL: Record<string, string> = {
+  APPLIED: '已实施',
+  COMPLETED: '已完成',
+  DRAFT: '草稿',
+  IDENTIFIED: '已辨识',
+  INCONCLUSIVE: '无法判定',
+  PENDING: '待实施',
+  ROLLED_BACK: '已回退',
+  RUNNING: '进行中',
+  SIMULATED: '已仿真',
+  VERIFIED: '已验证',
+};
+
+/** 整定任务/记录状态 → Ant Design Tag color（与标签同源，避免两处打架） */
+export const TUNING_TASK_STATUS_COLOR: Record<string, string> = {
+  APPLIED: 'cyan',
+  COMPLETED: 'success',
+  DRAFT: 'default',
+  IDENTIFIED: 'processing',
+  INCONCLUSIVE: 'default',
+  PENDING: 'gold',
+  ROLLED_BACK: 'warning',
+  RUNNING: 'processing',
+  SIMULATED: 'processing',
+  VERIFIED: 'success',
+};
+
+/** 整定批次状态 → 中文标签（后端 tuning_batch.status） */
+export const TUNING_BATCH_STATUS_LABEL: Record<string, string> = {
+  BLOCKED: '阻塞',
+  CANCELLED: '已取消',
+  COMPLETED: '已完成',
+  PENDING: '待启动',
+  READY: '就绪',
+  RUNNING: '执行中',
+};
+
+/** 状态中文标签查询（未知状态原样返回，避免显示空白） */
+export function tuningTaskStatusLabel(status?: null | string): string {
+  if (!status) return '—';
+  return TUNING_TASK_STATUS_LABEL[status] ?? status;
+}
+
+export function tuningBatchStatusLabel(status?: null | string): string {
+  if (!status) return '—';
+  return TUNING_BATCH_STATUS_LABEL[status] ?? status;
+}
+
+/**
+ * 处置闭环率构成分段色（2026-09-25 从 views/reports/handling.vue 上移）。
+ *
+ * 上移原因：scripts/check-hex-whitelist.mjs 的 hex 棘轮门禁不允许页面内新增
+ * 硬编码色值；constants/ 是颜色定义型目录（白名单），语义色集中在此维护。
+ */
+export const CLOSURE_BREAKDOWN_COLORS: Record<string, string> = {
+  notDispatched: '#8c8c8c',
+  dispatchedTodo: '#faad14',
+  executing: '#1890ff',
+  verifying: '#722ed1',
+  closed: '#52c41a',
+  reopened: '#ff4d4f',
+  cancelled: '#bfbfbf',
+};
+
+/**
+ * 工业深蓝体系（与 styles/industrial-light.css 的 --clpm-industrial-* 同值）。
+ * 需要以 JS 值参与计算/图表配置的场景用它，class 场景请用 CSS 变量。
+ */
+export const CLPM_INDUSTRIAL = {
+  navy: '#1F4E79',
+  navySoft: '#EBF1F8',
+  border: '#E4E7ED',
+} as const;

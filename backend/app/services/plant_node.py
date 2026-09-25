@@ -94,6 +94,7 @@ async def create_plant_node(
     node_type: str,
     parent_id: str | None,
     operator: str,
+    sort_order: int | None = None,
 ) -> dict:
     """创建工厂节点。
 
@@ -146,6 +147,9 @@ async def create_plant_node(
         type=node_type,
         parent_id=parent_id,
         updated_by=operator,
+        # 新增弹窗同样提供「排序值」；此前创建路径不接收该字段，
+        # 用户填写的排序值被静默丢弃（只能再进编辑页改一次）。
+        sort_order=sort_order or 0,
     )
     db.add(node)
     await db.flush()

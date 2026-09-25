@@ -110,6 +110,19 @@ class TestAnyBeatProcessRunning:
             mock_run.return_value = MagicMock(returncode=1, stdout="")
             assert _any_beat_process_running() is False
 
-    def test_false_when_pgrep_unavailable(self):
+    def test_true_when_pgrep_unavailable(self):
+        """探活失败必须按"已存在"处理（fail-safe，2026-09-24 变更）。
+
+        原断言为 False（fail-open）：pgrep 超时/不可用时判定"没有进程"，
+        看门狗随即补拉起一个 → 同一 uvicorn 下曾并存 5 个 worker、
+        同一队列被重复消费。自愈失败的代价远小于重复消费。
+        """
         with patch("app.main.subprocess.run", side_effect=OSError("no pgrep")):
-            assert _any_beat_process_running() is False
+            assert _any_beat_process_running() is True
+
+    def test_worker_probe_failure_is_fail_safe(self):
+        """worker 探活失败同样按"已存在"处理，不触发补拉起。"""
+        from app.main import _any_worker_process_running
+
+        with patch("app.main.subprocess.run", side_effect=OSError("no pgrep")):
+            assert _any_worker_process_running() is True

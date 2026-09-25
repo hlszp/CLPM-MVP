@@ -34,6 +34,7 @@ import {
 import {
   ClpmDataCanvas,
   ClpmKpiCard,
+  ClpmLoadErrorAlert,
   ClpmPageToolbar,
   ClpmStageIndicator,
   ClpmToolbarButton,
@@ -46,6 +47,10 @@ defineOptions({ name: 'ReportsOverview' });
 
 // ===== 固定 12 格骨架（S1~S3 槽位，禁止 v-if 动态增减卡片）=====
 interface KpiSlot {
+  /** 环比单位（如 pp / 个）；不传则不显示环比单位 */
+  deltaUnit?: string;
+  /** 反向指标（越小越好，如异常数）→ 正值显示红色 */
+  deltaReverse?: boolean;
   // 后端 kpi 缺失时的兜底 context（标注口径）
   hint?: string;
   key: string;
@@ -55,12 +60,43 @@ interface KpiSlot {
   icon: string;
 }
 const KPI_SLOTS: KpiSlot[] = [
-  // S1（行 1）：5 个，顺序固定
+  // S1（行 1）：5 个，顺序固定。
+  // deltaReverse：指标越小越好（异常数）→ 正值显示红色；其余越大越好。
+  // 环比基线由后端 prevValue/delta 提供（等长上一窗口），无基线时不显示。
   { key: 'totalLoops', label: '回路总数', unit: '个', stage: 'S1', icon: 'lucide:network' },
-  { key: 'healthRate', label: '健康率', unit: '%', stage: 'S1', icon: 'lucide:heart-pulse' },
-  { key: 'evaluationRate', label: '参评率', unit: '%', stage: 'S1', icon: 'lucide:clipboard-check' },
-  { key: 'anomalyCount', label: '异常数', unit: '个', stage: 'S1', icon: 'lucide:alert-triangle' },
-  { key: 'dataHealthRate', label: '数据健康率', unit: '%', stage: 'S1', icon: 'lucide:database-check' },
+  {
+    key: 'healthRate',
+    label: '健康率',
+    unit: '%',
+    stage: 'S1',
+    icon: 'lucide:heart-pulse',
+    deltaUnit: 'pp',
+  },
+  {
+    key: 'evaluationRate',
+    label: '参评率',
+    unit: '%',
+    stage: 'S1',
+    icon: 'lucide:clipboard-check',
+    deltaUnit: 'pp',
+  },
+  {
+    key: 'anomalyCount',
+    label: '异常数',
+    unit: '个',
+    stage: 'S1',
+    icon: 'lucide:alert-triangle',
+    deltaUnit: '个',
+    deltaReverse: true,
+  },
+  {
+    key: 'dataHealthRate',
+    label: '数据健康率',
+    unit: '%',
+    stage: 'S1',
+    icon: 'lucide:database-check',
+    deltaUnit: 'pp',
+  },
   // S2（行 2）：4 个，仅闭环阶段数据可用（位置固定）
   { key: 'closedLoopRate', label: '闭环率', unit: '%', stage: 'S2', icon: 'lucide:refresh-cw' },
   { key: 'avgCycleHours', label: '平均处置时长', unit: 'h', stage: 'S2', icon: 'lucide:timer' },
@@ -82,6 +118,8 @@ const KPI_SLOTS: KpiSlot[] = [
 const STAGE_ORDER: Record<ReportsApi.Stage, number> = { S1: 1, S2: 2, S3: 3 };
 
 const loading = ref(false);
+/** 加载失败态（常驻错误提示 + 重试，替代原空 catch 的静默空图表） */
+const loadError = ref(false);
 const data = ref<null | ReportsApi.OverviewData>(null);
 
 // 筛选条
@@ -131,6 +169,8 @@ interface MergedSlot extends KpiSlot {
   status: KpiStatus;
   value: number | string;
   locked: boolean;
+  /** 环比差值（无基线为 null；0 是有效值，不可用 falsy 判断） */
+  delta: null | number;
 }
 const kpiSlots = computed<MergedSlot[]>(() => {
   const effectiveStage = data.value?.stage ?? requestedStage.value;
@@ -146,6 +186,8 @@ const kpiSlots = computed<MergedSlot[]>(() => {
         status: (k.status as KpiStatus) ?? 'neutral',
         context: k.context ?? slot.hint ?? '',
         locked: false,
+        // 后端只在有上一窗口数据时给 delta；null 表示无基线（不显示环比）
+        delta: k.delta ?? null,
       };
     }
     if (slotAvailable) {
@@ -155,6 +197,7 @@ const kpiSlots = computed<MergedSlot[]>(() => {
         status: 'neutral' as KpiStatus,
         context: slot.hint ?? `${slot.stage} 指标暂无数据`,
         locked: false,
+        delta: null,
       };
     }
     return {
@@ -163,6 +206,7 @@ const kpiSlots = computed<MergedSlot[]>(() => {
       status: 'neutral' as KpiStatus,
       context: `${slot.stage} 能力待开通`,
       locked: true,
+      delta: null,
     };
   });
 });
@@ -267,8 +311,12 @@ async function load() {
     else if (effN >= 2) chartTab.value = 'closedLoop';
     await nextTick();
     renderChart();
-  } catch {
+  } catch (error) {
+    // 2026-09-24：原为空 catch，接口失败后页面渲染成"没有数据"的空图表，
+    // 管理员无法区分"确实没数据"与"服务挂了"。
     data.value = null;
+    loadError.value = true;
+    console.error('[管理总览] 加载失败:', error);
   } finally {
     loading.value = false;
   }
@@ -665,6 +713,9 @@ onMounted(() => {
       </template>
     </ClpmPageToolbar>
 
+    <!-- 2026-09-24：加载失败常驻提示（原空 catch 只留空图表，无法区分"没数据"与"服务异常"） -->
+    <ClpmLoadErrorAlert :error="loadError" @retry="load" />
+
     <!-- 统一筛选条：时间 + 装置 + 阶段 Segmented + 触发按钮 -->
     <div class="reports-filter-bar">
       <span class="reports-filter-bar__label">时间范围</span>
@@ -699,6 +750,9 @@ onMounted(() => {
           v-for="slot in kpiSlots"
           :key="slot.key"
           :context-text="slot.context"
+          :delta="slot.delta ?? undefined"
+          :delta-reverse="slot.deltaReverse"
+          :delta-unit="slot.deltaUnit"
           :icon="slot.icon"
           :status="slot.status"
           :title="slot.label"

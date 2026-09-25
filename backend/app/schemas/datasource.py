@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -144,6 +144,50 @@ class DataSourceHealthInfo(CamelModel):
         False, description="tailscale 客户端是否可用（容器内为 False）"
     )
     lastSyncAt: str | None = Field(None, description="AAS Tag 最近同步时间 ISO 8601")
+    # ---- 落库自检（2026-09-25 生产排查新增）----
+    # 写入布局（sys_config: history.storage_mode）与读取路由
+    # （history_layout_manifest）是两套独立开关，不一致时表现为
+    # "实时数据在采、库里却没有 / 趋势全空"，此前无任何提示。
+    storageMode: str | None = Field(
+        None, description="历史写入布局：legacy 只写宽表 / shadow 双写 / point 只写点表"
+    )
+    readLayout: str | None = Field(
+        None, description="趋势与评估的读取路由（无 manifest 段恒 legacy）"
+    )
+    layoutConsistent: bool | None = Field(
+        None, description="写入布局与读取路由是否自洽；false 表示趋势会读到空表"
+    )
+    layoutSeverity: str | None = Field(None, description="自检级别：ok / warning / error")
+    layoutDiagnosis: str | None = Field(None, description="自检结论与修复方向（可直接展示）")
+    pointTableWritten: bool | None = Field(
+        None, description="当前写入布局是否写点表 st_point_data_v1"
+    )
+    realtimeWritebackEnabled: bool | None = Field(
+        None, description="实时回写开关（注意：它不控制点表写入，由 storageMode 决定）"
+    )
+
+
+class StorageModeInfo(CamelModel):
+    """历史写入布局 + 读写一致性自检（2026-09-25）。"""
+
+    writeMode: str = Field("legacy", description="写入侧布局：legacy / shadow / point")
+    readLayout: str | None = Field(None, description="读取路由（无 manifest 段恒 legacy）")
+    writesWideTable: bool = Field(True, description="当前写入侧是否写宽表 st_loop_data")
+    writesPointTable: bool = Field(False, description="当前写入侧是否写点表 st_point_data_v1")
+    consistent: bool | None = Field(
+        None, description="写入与读取是否自洽；false 表示趋势会读到空表"
+    )
+    severity: str = Field("ok", description="自检级别：ok / warning / error")
+    diagnosis: str = Field("", description="自检结论与修复方向")
+    manifest: dict[str, Any] | None = Field(None, description="当前生效的最新布局段")
+    changed: bool | None = Field(None, description="本次调用是否真的改变了布局")
+    previousMode: str | None = Field(None, description="变更前的写入布局")
+
+
+class StorageModeUpdate(CamelModel):
+    """修改历史写入布局的请求体（仅 ADMIN）。"""
+
+    mode: str = Field(..., description="目标写入布局：legacy / shadow / point")
 
 
 __all__ = [
@@ -151,5 +195,7 @@ __all__ = [
     "DataSourceConfigUpdate",
     "DataSourceHealthInfo",
     "DataSourceTestResult",
+    "StorageModeInfo",
+    "StorageModeUpdate",
     "SubscriptionRefreshResult",
 ]

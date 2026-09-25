@@ -70,6 +70,11 @@ COPY --from=builder --chown=clpm:clpm /app/app /app/app
 COPY --from=builder --chown=clpm:clpm /app/alembic /app/alembic
 COPY --from=builder --chown=clpm:clpm /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=clpm:clpm /app/pyproject.toml /app/pyproject.toml
+# 运维/诊断脚本（2026-09-25）：此前镜像不含 scripts/，导致
+# 「docker compose exec backend python scripts/diag_realtime_pipeline.py」
+# 在生产上直接报文件不存在，现场排查被迫手工拼 SQL。运维脚本只读，
+# 随镜像分发不改变运行行为。
+COPY --from=builder --chown=clpm:clpm /app/scripts /app/scripts
 
 USER clpm
 

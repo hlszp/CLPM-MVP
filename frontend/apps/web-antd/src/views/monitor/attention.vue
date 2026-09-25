@@ -46,7 +46,7 @@ import {
   markFalsePositiveApi,
   resolveEventApi,
 } from '#/api/alert';
-import { getAttentionListApi } from '#/api/monitor';
+import { exportAttentionApi, getAttentionListApi } from '#/api/monitor';
 import {
   ClpmEmptyState,
   ClpmPageToolbar,
@@ -188,6 +188,34 @@ const query = reactive({
   keyword: '',
   page: 1,
   pageSize: 20,
+  // 组级排序（服务端在分页前排序；客户端 sorter 只能排当前页 → 会误导）
+  sortBy: 'priority' as NonNullable<MonitorApi.AttentionQueryParams['sortBy']>,
+  sortOrder: 'asc' as 'asc' | 'desc',
+});
+
+/** 排序下拉选项（与后端 ATTENTION_SORT_FIELDS 一一对应） */
+const SORT_OPTIONS: {
+  label: string;
+  sortBy: NonNullable<MonitorApi.AttentionQueryParams['sortBy']>;
+  sortOrder: 'asc' | 'desc';
+}[] = [
+  { label: '优先级（紧急在前）', sortBy: 'priority', sortOrder: 'asc' },
+  { label: '最近更新在前', sortBy: 'updatedAt', sortOrder: 'desc' },
+  { label: '问题项数（多在前）', sortBy: 'itemCount', sortOrder: 'desc' },
+  { label: '超期优先', sortBy: 'overdue', sortOrder: 'asc' },
+];
+/** 当前排序值（Select 双向绑定键） */
+const sortValue = computed({
+  get: () => `${query.sortBy}|${query.sortOrder}`,
+  set: (v: string) => {
+    const [by, order] = v.split('|');
+    query.sortBy = by as NonNullable<
+      MonitorApi.AttentionQueryParams['sortBy']
+    >;
+    query.sortOrder = (order as 'asc' | 'desc') ?? 'asc';
+    query.page = 1;
+    void loadData();
+  },
 });
 
 // 筛选区显隐（工具栏「筛选」工具切换）
@@ -284,6 +312,39 @@ const columns: TableColumnsType = [
   },
 ];
 
+// ===== 全量导出（服务端生成 CSV，含口径注释；与页面内"只导当前页"区分） =====
+const exporting = ref(false);
+
+async function handleExport() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    const blob = await exportAttentionApi({
+      plantNodeId: query.plantNodeId || undefined,
+      loopId: query.loopId || undefined,
+      source: query.source.length > 0 ? query.source : undefined,
+      priority: query.priority.length > 0 ? query.priority : undefined,
+      status: query.status.length > 0 ? query.status : undefined,
+      keyword: query.keyword || undefined,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 16).replaceAll(/[:T]/g, '');
+    a.download = `关注队列_${stamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success('已按当前筛选与排序导出全量关注队列');
+  } catch (error) {
+    console.error('[关注队列/导出] 失败:', error);
+    message.error('导出失败，请稍后重试');
+  } finally {
+    exporting.value = false;
+  }
+}
+
 // ===== 数据加载 =====
 async function loadData() {
   loading.value = true;
@@ -297,6 +358,8 @@ async function loadData() {
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
     });
 
     attentionGroups.value = res.items;
@@ -495,6 +558,8 @@ const statusOptions = STATUS_ORDER.map((s) => ({
 // ===== 工具栏（标准工具：刷新/筛选/帮助 + 密度自定义） =====
 const { toolbarItems } = usePageToolbar(() => ({
   refresh: { onClick: loadData, loading: loading.value },
+  // 全量导出（服务端 CSV，含口径注释行）——2026-09-24 新增
+  export: { onClick: handleExport, loading: exporting.value },
   filter: { onClick: toggleFilter, active: filterVisible.value },
   help: { onClick: handleHelp },
 }));
@@ -800,6 +865,19 @@ watch(
                 placeholder="回路位号 / 标题"
                 style="width: 200px"
                 @press-enter="handleKeywordSearch"
+              />
+            </FormItem>
+            <FormItem label="排序" class="!mb-0">
+              <!-- 服务端排序（分页前生效）：客户端 sorter 对分页表只能排当前页 -->
+              <Select
+                v-model:value="sortValue"
+                style="width: 200px"
+                :options="
+                  SORT_OPTIONS.map((o) => ({
+                    label: o.label,
+                    value: `${o.sortBy}|${o.sortOrder}`,
+                  }))
+                "
               />
             </FormItem>
             <Space class="!ml-auto">

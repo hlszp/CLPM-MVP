@@ -8,11 +8,11 @@ import { test as base, type Page, type APIRequestContext } from '@playwright/tes
 
 /** 后端 API 基础地址（可用 E2E_API_BASE_URL 覆盖；MVP 隔离端口为 17101） */
 export const API_BASE_URL =
-  process.env.E2E_API_BASE_URL ?? 'http://localhost:7101/api/v1';
+  process.env.E2E_API_BASE_URL ?? 'http://localhost:17101/api/v1';
 
 /** 前端 baseURL（可用 E2E_BASE_URL 覆盖；MVP 隔离端口为 15666） */
 export const WEB_BASE_URL =
-  process.env.E2E_BASE_URL ?? 'http://localhost:5666';
+  process.env.E2E_BASE_URL ?? 'http://localhost:15666';
 
 /** 登录页路径 */
 export const LOGIN_PATH = '/auth/login';

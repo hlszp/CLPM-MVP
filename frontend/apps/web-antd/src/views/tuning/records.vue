@@ -20,6 +20,11 @@ import {
   getTuningTasksApi,
 } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
+import {
+  TUNING_BATCH_STATUS_LABEL,
+  TUNING_TASK_STATUS_COLOR,
+  TUNING_TASK_STATUS_LABEL,
+} from '#/constants/clpm-ui';
 
 import BatchDetailDrawer from './components/batch-detail-drawer.vue';
 import RecordDetailDrawer from './components/record-detail-drawer.vue';
@@ -55,22 +60,37 @@ const loopIdFilter = ref<string | undefined>();
 const startTimeFilter = ref<string | undefined>();
 const endTimeFilter = ref<string | undefined>();
 
-const STATUS_META: Record<string, { color: string; label: string }> = {
-  DRAFT: { color: 'default', label: '草稿' },
-  PENDING: { color: 'gold', label: '待实施' },
-  SIMULATED: { color: 'processing', label: '已仿真' },
-  APPLIED: { color: 'cyan', label: '已实施' },
-  VERIFIED: { color: 'success', label: '已验证' },
-  COMPLETED: { color: 'success', label: '已完成' },
-  ROLLED_BACK: { color: 'warning', label: '已回退' },
-  INCONCLUSIVE: { color: 'default', label: '无法判定' },
-};
+/**
+ * 状态元数据取自全站唯一字典 constants/clpm-ui.ts（2026-09-24 收敛）。
+ * 此前 4 份本地映射已分歧：COMPLETED 在本页「已完成」、工作台批次卡「已验证」；
+ * CANCELLED 在本页/批次抽屉「已取消」、工作台「已回退」；ROLLED_BACK
+ * 在本页「已回退」、收益报告「已回滚」。
+ */
+const STATUS_META: Record<string, { color: string; label: string }> =
+  Object.fromEntries(
+    Object.keys(TUNING_TASK_STATUS_LABEL).map((k) => [
+      k,
+      {
+        color: TUNING_TASK_STATUS_COLOR[k] ?? 'default',
+        label: TUNING_TASK_STATUS_LABEL[k]!,
+      },
+    ]),
+  );
 
 function fittingClass(score: null | number | undefined): string {
   if (score == null) return '';
   if (score >= 80) return 'text-green-600';
   if (score >= 60) return 'text-amber-600';
   return 'text-red-600';
+}
+
+/**
+ * 筛选条件变化：先回到第 1 页再查（否则沿用旧页码会命中空页，
+ * 出现「总数 N」与空表并存的矛盾态）。
+ */
+function handleFilterChange() {
+  pagination.current = 1;
+  void loadList();
 }
 
 async function loadList() {
@@ -136,13 +156,14 @@ const batchRows = ref<TuningApi.TuningBatchSummary[]>([]);
 const batchPagination = reactive({ current: 1, pageSize: 20, total: 0 });
 const batchStatusFilter = ref<string | undefined>();
 
+/** 批次状态：标签取全站唯一字典，仅保留本页色板 */
 const BATCH_STATUS_META: Record<string, { color: string; label: string }> = {
-  BLOCKED: { color: 'error', label: '阻塞' },
-  PENDING: { color: 'default', label: '待启动' },
-  READY: { color: 'processing', label: '就绪' },
-  RUNNING: { color: 'cyan', label: '执行中' },
-  COMPLETED: { color: 'success', label: '已完成' },
-  CANCELLED: { color: 'default', label: '已取消' },
+  BLOCKED: { color: 'error', label: TUNING_BATCH_STATUS_LABEL.BLOCKED! },
+  PENDING: { color: 'default', label: TUNING_BATCH_STATUS_LABEL.PENDING! },
+  READY: { color: 'processing', label: TUNING_BATCH_STATUS_LABEL.READY! },
+  RUNNING: { color: 'cyan', label: TUNING_BATCH_STATUS_LABEL.RUNNING! },
+  COMPLETED: { color: 'success', label: TUNING_BATCH_STATUS_LABEL.COMPLETED! },
+  CANCELLED: { color: 'default', label: TUNING_BATCH_STATUS_LABEL.CANCELLED! },
 };
 
 const batchColumns = [
@@ -294,7 +315,7 @@ onMounted(() => {
             { label: '已验证', value: 'VERIFIED' },
             { label: '已回退', value: 'ROLLED_BACK' },
           ]"
-          @change="loadList"
+          @change="handleFilterChange"
         />
       </div>
       <Table

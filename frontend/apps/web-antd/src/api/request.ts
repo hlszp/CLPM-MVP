@@ -178,6 +178,11 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
 export const requestClient = createRequestClient(apiURL, {
   responseReturn: 'data',
+  // 数组型 query 参数必须序列化为重复键（?source=A&source=B）。
+  // axios 默认是 brackets 形态（?source[]=A&source[]=B），而 FastAPI 的
+  // list[str] = Query(...) 只认重复键 → 关注队列的来源/优先级/状态多选筛选
+  // 会被静默丢弃（参数名对不上不报错，只是筛选不生效）。
+  paramsSerializer: 'repeat',
 });
 
 export const baseRequestClient = new RequestClient({ baseURL: apiURL });

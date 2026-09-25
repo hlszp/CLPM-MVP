@@ -143,7 +143,15 @@ _PUBSUB_CHANNEL = "realtime:updates"  # Pub/Sub 频道，供 WebSocket 端点订
 # 断点续传 checkpoint（最后落库时间，epoch 秒字符串）
 _GAP_CHECKPOINT_KEY = "realtime:gap:last_data_ts"
 _GAP_CHECKPOINT_WRITE_INTERVAL = 30.0  # checkpoint 写 Redis 节流间隔（秒）
-_GAP_BACKFILL_END_MARGIN = 2.0  # 补数窗口末端留 2s 余量，避免与实时写入撞时间戳
+#: 补数窗口末端距当前时间的余量（秒）。
+#:
+#: 2026-09-24 修复：原值 2.0s 与 data_import.IMPORT_MIN_END_LAG_MINUTES=5min 的
+#: 导入背压门禁直接冲突——gap 路径把 ts_end = now-2s 传进 import_history_data，
+#: 入口断言要求 ts_end ≤ now-5min，必然抛 ValueError，使断点续传开启后 100%
+#: 失败（每次尝试新建 FAILED 任务 + 发告警 + 无限退避重试，缺口永不补齐）。
+#: 这里改为对齐 5 分钟安全边界（不设旁路：任何写路径都不得触碰最近 5 分钟），
+#: 缺口尾部由实时订阅继续覆盖，待其老于 5 分钟后由下一轮补数收敛。
+_GAP_BACKFILL_END_MARGIN = 300.0
 
 # gap backfill SETNX 分布式锁 key（多副本防重复补数）
 _GAP_BACKFILL_LOCK_KEY = "realtime:gap:backfill:lock"
@@ -434,6 +442,8 @@ class RealtimeSubscriber:
         self._running = False
         # 测点子表写器（P2-5：storage_mode=shadow/point 时启用，同一事件流）
         self._point_writer = None
+        # 布局自检告警去重键（2026-09-25）：仅状态变化时打日志，避免每分钟刷屏
+        self._layout_alert_key: str = ""
         self._subscribed_tags: set[str] = set()
         self._invocation_counter: int = 0  # SignalR invocationId 计数器
         self._buffer: dict[
@@ -567,18 +577,31 @@ class RealtimeSubscriber:
           属迁移终态，需先确认回退覆盖——本阶段 shadow 为主）。
         周期重评：由 ``_refresh_loop`` 每分钟节拍调用，sys_config 改动即时生效。
         """
-        from app.services.data_source.history_layout import get_storage_mode
+        from app.services.data_source.history_layout import (
+            get_storage_mode,
+            writeback_trap_hint,
+        )
 
         mode = "legacy"
+        check: dict[str, Any] | None = None
         try:
             from app.core.db import AsyncSessionLocal
 
-            async def _read_mode() -> str:
+            async def _read_mode() -> tuple[str, dict[str, Any] | None]:
                 async with AsyncSessionLocal() as db:
-                    return await get_storage_mode(db)
+                    resolved = await get_storage_mode(db)
+                    try:
+                        from app.services.data_source.history_layout import (
+                            get_layout_selfcheck,
+                        )
+
+                        return resolved, await get_layout_selfcheck(db)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("布局自检失败（不影响写入启停）: %s", exc)
+                        return resolved, None
 
             # 无 DB 环境（单测/PG 不可达）不得挂起：短超时后按现状保留
-            mode = await asyncio.wait_for(_read_mode(), timeout=5.0)
+            mode, check = await asyncio.wait_for(_read_mode(), timeout=5.0)
         except Exception as exc:  # noqa: BLE001 — DB 不可达沿用当前状态
             logger.warning("读取历史写入布局失败（沿用现状）: %s", exc)
             return
@@ -593,6 +616,21 @@ class RealtimeSubscriber:
             await self._point_writer.stop()
             self._point_writer = None
             logger.info("PointHistoryWriter 已停止（storage_mode=%s）", mode)
+
+        # 2026-09-25：写入布局与读取路由一致性的显性告警。
+        # 以前这两套开关不一致时日志一片安静，现场只能看到"数据没落库/趋势空"；
+        # 现在状态变化即告警（每分钟节拍调用，靠 _layout_alert_key 去重防刷屏）。
+        alert_parts: list[str] = []
+        if check is not None and check.get("severity") == "error":
+            alert_parts.append(str(check.get("diagnosis")))
+        trap = writeback_trap_hint(mode, bool(settings.REALTIME_WRITEBACK_ENABLED))
+        if trap:
+            alert_parts.append(trap)
+        alert_key = "|".join(alert_parts)
+        if alert_key != self._layout_alert_key:
+            self._layout_alert_key = alert_key
+            for text in alert_parts:
+                logger.error("实时落库自检：%s", text)
 
     async def start(self) -> None:
         """启动订阅后台任务."""

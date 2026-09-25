@@ -127,3 +127,40 @@ class TestImportWindowServiceGuard:
         except Exception:
             # 无远端配置/无 TDengine 等环境原因导致的失败与本规则无关
             pass
+
+
+# ---------------------------------------------------------------------------
+# 三、断点续传（gap backfill）与背压门禁的一致性
+# ---------------------------------------------------------------------------
+
+
+class TestGapBackfillMarginConsistency:
+    """断点续传窗口末端必须落在导入背压门禁之内。
+
+    回归背景（2026-09-24）：_GAP_BACKFILL_END_MARGIN 原为 2.0s，而
+    import_history_data 入口断言 ts_end ≤ now-5min —— 两条不变量互斥，
+    断点续传一旦开启必定失败（FAILED 任务 + 告警 + 无限退避），
+    缺口数据永不补齐。本测试守护「补数窗口末端不进入被门禁拒绝的区间」。
+    """
+
+    def test_margin_not_smaller_than_import_gate(self) -> None:
+        from app.services.data_source.realtime_subscriber import (
+            _GAP_BACKFILL_END_MARGIN,
+        )
+
+        assert _GAP_BACKFILL_END_MARGIN >= IMPORT_MIN_END_LAG_MINUTES * 60, (
+            "断点续传末端余量必须 ≥ 导入背压门禁（IMPORT_MIN_END_LAG_MINUTES 分钟），"
+            "否则 import_history_data 入口断言必然拒绝，补数永不成功"
+        )
+
+    def test_gap_window_end_passes_service_guard(self) -> None:
+        """按余量算出的 gap 末端时间必须能通过服务层窗口断言。"""
+        from app.services.data_import import assert_import_window_not_too_recent
+        from app.services.data_source.realtime_subscriber import (
+            _GAP_BACKFILL_END_MARGIN,
+        )
+
+        gap_end = datetime.now(UTC).timestamp() - _GAP_BACKFILL_END_MARGIN
+        ts_end = _iso(datetime.fromtimestamp(gap_end, UTC))
+        # 不抛异常即通过
+        assert_import_window_not_too_recent(ts_end)

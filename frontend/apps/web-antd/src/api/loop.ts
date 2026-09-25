@@ -560,31 +560,41 @@ export namespace LoopApi {
     | 'MANUAL'
     | 'REMOTE';
 
-  /** 投用定义条目（MODE 值 → 控制模式映射） */
+  /**
+   * 投用定义条目（MODE 值 → 控制模式映射）
+   *
+   * 字段口径与后端 ModeMappingItem 完全对齐（2026-09-24 修复契约断裂）：
+   * modeValue 为**非负整数**（后端 int，且作为唯一键判重），
+   * modeLabel 取值 AUTO/CAS/REMOTE/APC/MANUAL，isEffective 即原 isEnabled。
+   * 原前端多出的 remark 字段后端不存在，已移除（保存时不会静默丢字段）。
+   */
   export interface ModeMappingItem {
-    /** DCS 系统返回的 MODE 原始值（整数或字符串） */
-    modeValue: string;
-    /** 控制模式 */
-    controlMode: ModeMappingControlMode;
+    /** DCS 系统返回的 MODE 原始值（非负整数） */
+    modeValue: number;
+    /** 控制模式（后端枚举，大写） */
+    modeLabel: ModeMappingControlMode;
     /** 是否视为自动（参与自控率统计） */
     isAuto: boolean;
-    /** 是否有效（无效值将被忽略） */
-    isEnabled: boolean;
-    /** 备注 */
-    remark?: string;
+    /** 是否算有效自动（原 isEnabled 口径） */
+    isEffective: boolean;
+    /** 记录 ID（后端返回，只读） */
+    id?: string;
+    /** 创建时间（后端返回，只读） */
+    createdAt?: null | string;
   }
 
-  /** 投用定义列表响应 */
-  export interface ModeMappingResult {
-    loopId: string;
-    items: ModeMappingItem[];
-    updatedAt?: string;
-    updatedBy?: string;
-  }
+  /**
+   * 投用定义列表响应（后端返回裸数组 data:[...]，2026-09-24 对齐）
+   *
+   * 此前前端按 {loopId, items, updatedAt, updatedBy} 解包，而
+   * GET /loops/{id}/mode-mapping 返回的是数组，data.items 恒 undefined →
+   * 页面永远显示「暂无投用定义」。现统一按数组消费。
+   */
+  export type ModeMappingResult = ModeMappingItem[];
 
-  /** 投用定义更新参数 */
+  /** 投用定义更新参数（后端请求体字段名为 mappings） */
   export interface UpdateModeMappingParams {
-    items: ModeMappingItem[];
+    mappings: ModeMappingItem[];
   }
 
   /** 批量配置更新字段（至少一个非空） */

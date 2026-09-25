@@ -12,12 +12,13 @@ import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
+  Alert,
   Button,
   Card,
   Checkbox,
@@ -41,6 +42,8 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+import { useModules } from '#/composables/use-modules';
+import { useReturnNav } from '#/composables/use-return-nav';
 
 // 16 号文 F3：诊断健康度折叠块（D6 概览区默认展开）
 import DiagnosisCoveragePanel from './components/coverage-panel.vue';
@@ -173,6 +176,8 @@ function handlePlantTreeSelect(keys: (number | string)[]): void {
 // ===== 左脊柱：回路清单（勾选式多选） =====
 const loopItems = ref<LoopApi.LoopListItem[]>([]);
 const loopLoading = ref(false);
+/** 回路清单加载失败（可见错误态 + 重试） */
+const loopLoadError = ref(false);
 const loopKeyword = ref('');
 /** 批量诊断回路上限（行1 多选框展示约束） */
 const MAX_SELECTED_LOOPS = 10;
@@ -204,6 +209,9 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
   } catch (error) {
     loopItems.value = [];
     precheckItems.value = new Map();
+    // 2026-09-24：失败不再静默——此前只 console.error，左脊柱空白会被
+    // 误解为"本装置没有回路"，用户不知道该重试还是该去建回路。
+    loopLoadError.value = true;
     const resp = (error as { response?: { data?: unknown; status?: number } })
       .response;
     console.error('[诊断工作台/回路清单] 加载失败:', {
@@ -323,13 +331,21 @@ function checkFastGroup(): void {
     .map((o) => o.name);
 }
 
+/** 算子目录加载失败标记：为空时"发起诊断"会因 checkedOperators 为空而永久置灰 */
+const operatorLoadError = ref(false);
+
 async function loadOperators(): Promise<void> {
+  operatorLoadError.value = false;
   try {
     operatorCatalog.value = await getDiagnosisOperatorsApi();
     // 默认全量：全部勾选
     checkAllOperators();
-  } catch {
+  } catch (error) {
+    // 2026-09-24：原实现静默置空，导致唯一的「发起诊断」按钮永久灰显且
+    // 无任何原因说明。现记录错误态并渲染可重试的错误块。
     operatorCatalog.value = [];
+    operatorLoadError.value = true;
+    console.error('[诊断工作台/算子目录] 加载失败:', error);
   }
 }
 
@@ -400,41 +416,83 @@ const canTrigger = computed(
     checkedOperators.value.length > 0,
 );
 
-async function handleTrigger() {
-  if (!customRangeValid.value) {
-    message.warning(`自定义时间范围无效：需起<止且跨度 ≤${MAX_CUSTOM_DAYS} 天`);
-    return;
-  }
-  // ===== P2 IA优化：触发前批量检查 fitness =====
-  // 重置 L2 缓存
+/**
+ * L0/L1 适用性阻断清单（常驻告警，2026-09-24 修复）.
+ *
+ * 此前用 `message.error({duration: 8})` 提示：8 秒后自动消失，切走再回来
+ * 已无任何痕迹，且只给计数不给下一步入口 —— 工程师被拦下却不知道该去哪修
+ * 数据。现改为页面级常驻 Alert：列出位号 + 原因，并提供「前往数据导入」
+ * 与「查看阻断回路清单」两个可点动作。
+ */
+const fitnessBlocked = ref<
+  { level: string; reason: string; tagName: string }[]
+>([]);
+
+/** 触发前批量适用性检查；返回 true 表示放行 */
+async function passFitnessGate(loopIds: string[]): Promise<boolean> {
   l2WarningLoopIds.value = new Set<string>();
+  fitnessBlocked.value = [];
   try {
-    const fitnessMap = await fetchFitnessByLoopIds(selectedLoopIds.value);
-    const l0l1Lines: string[] = [];
-    for (const id of selectedLoopIds.value) {
+    const fitnessMap = await fetchFitnessByLoopIds(loopIds);
+    const blocked: { level: string; reason: string; tagName: string }[] = [];
+    for (const id of loopIds) {
       const info = fitnessMap.get(id);
       const level = info?.level ?? 'L3';
       const tags = info?.tags ?? [];
       const tag = loopCache.value.get(id);
       const tagName = tag?.tagName ?? id;
       if (level === 'L0' || level === 'L1') {
-        const reason = tags.length > 0 ? tagsText(tags) : '适用性不足';
-        l0l1Lines.push(`· ${tagName}（${level}）：${reason}`);
+        blocked.push({
+          level,
+          reason: tags.length > 0 ? tagsText(tags) : '适用性不足',
+          tagName,
+        });
       } else if (level === 'L2') {
         l2WarningLoopIds.value.add(id);
       }
     }
-    if (l0l1Lines.length > 0) {
-      const header = `${l0l1Lines.length} 个回路适用性不足（L0/L1），已阻止发起诊断：`;
-      const body = l0l1Lines.join('\n');
-      message.error({ content: `${header}\n${body}`, duration: 8 });
-      return;
+    if (blocked.length > 0) {
+      fitnessBlocked.value = blocked;
+      return false;
     }
+    return true;
   } catch (error) {
     // fitness 检查接口失败 -> 降级放行（不阻止业务），仅打日志
-     
     console.warn('[diagnosis][fitness] 触发前检查失败，降级直接发起', error);
+    return true;
   }
+}
+
+/** 提交诊断（唯一出口；快捷诊断与主按钮共用，避免各自改写全局状态） */
+async function submitDiagnosis(
+  loopIds: string[],
+  timeWindowBody: { end?: string; preset?: string; start?: string },
+  operators: string[] | undefined,
+): Promise<void> {
+  try {
+    await runner.trigger({
+      loopIds,
+      timeWindow: timeWindowBody as never,
+      operatorGroup: 'full',
+      ...(operators ? { operators } : {}),
+    });
+    message.info(
+      l2WarningLoopIds.value.size > 0
+        ? `诊断任务已提交（含 ${l2WarningLoopIds.value.size} 个 L2 条件异常回路）`
+        : '诊断任务已提交',
+    );
+  } catch (error) {
+    message.error(`发起诊断失败：${(error as Error).message}`);
+  }
+}
+
+async function handleTrigger() {
+  if (!customRangeValid.value) {
+    message.warning(`自定义时间范围无效：需起<止且跨度 ≤${MAX_CUSTOM_DAYS} 天`);
+    return;
+  }
+  // ===== P2 IA优化：触发前批量检查 fitness =====
+  if (!(await passFitnessGate(selectedLoopIds.value))) return;
   // 预设窗口 → preset；自定义 → start/end（起点整点化；终点取所选时刻原值，
   // 超当前时刻截断为当前——不再 endOf('hour') 扩到整点末尾，避免窗口被加长）
   const timeWindowBody =
@@ -449,23 +507,11 @@ async function handleTrigger() {
         })()
       : { preset: timeWindowMap[timeWindow.value] };
   // 全部勾选 = 全量（不传 operators）；部分勾选 = 细选提交
-  try {
-    await runner.trigger({
-      loopIds: selectedLoopIds.value,
-      timeWindow: timeWindowBody,
-      operatorGroup: 'full',
-      ...(allOperatorsChecked.value
-        ? {}
-        : { operators: checkedOperators.value }),
-    });
-    message.info(
-      l2WarningLoopIds.value.size > 0
-        ? `诊断任务已提交（含 ${l2WarningLoopIds.value.size} 个 L2 条件异常回路）`
-        : '诊断任务已提交',
-    );
-  } catch (error) {
-    message.error(`发起诊断失败：${(error as Error).message}`);
-  }
+  await submitDiagnosis(
+    selectedLoopIds.value,
+    timeWindowBody,
+    allOperatorsChecked.value ? undefined : checkedOperators.value,
+  );
 }
 
 // ===== 最新诊断概览（跟随装置树选择；每回路最新一条 + 未诊断回路） =====
@@ -581,25 +627,20 @@ const detailItem = ref<DiagnosisApi.LatestRunItem | null>(null);
 /** 正在快捷诊断的回路 ID（按钮 loading/防重复点击） */
 const quickDiagnosingId = ref('');
 
-/** 快捷诊断：对任意回路直接发起诊断（未诊断首诊 / 已诊断复评） */
+/**
+ * 快捷诊断：对单条回路直接发起（未诊断首诊 / 已诊断复评）。
+ *
+ * 2026-09-24 修复：原实现会**静默改写用户的全局配置** —— 把已勾选的回路集合
+ * 覆盖成 1 条、把时间窗改回 24h、把算子勾选改成全量。工程师精心选的 8 个回路
+ * 在一次行内点击后就被清空。现改为用局部参数直接发起（近 24h + 全量算子），
+ * 不触碰任何全局状态；适用性门禁与主按钮共用同一实现。
+ */
 async function quickDiagnose(loopId: string) {
   if (quickDiagnosingId.value || runner.running.value) return;
   quickDiagnosingId.value = loopId;
   try {
-    // 只选当前回路（清空其他已选，避免超限）
-    selectedLoopIds.value = [loopId];
-    // 确保配置为默认（24h + 全算子）
-    timeWindow.value = '24h';
-    if (!allOperatorsChecked.value) {
-      checkAllOperators();
-    }
-    // 等待 Vue 响应式更新后触发
-    await nextTick();
-    if (canTrigger.value) {
-      await handleTrigger();
-    } else {
-      message.warning('当前无法发起诊断，请检查配置');
-    }
+    if (!(await passFitnessGate([loopId]))) return;
+    await submitDiagnosis([loopId], { preset: timeWindowMap['24h'] }, undefined);
   } finally {
     quickDiagnosingId.value = '';
   }
@@ -654,7 +695,23 @@ const resultColumns = [
   { dataIndex: 'primaryCategoryLabel', title: '主分类', width: 160 },
   { dataIndex: 'primaryConfidence', title: '置信度', width: 90 },
   { dataIndex: 'severity', title: '严重度', width: 80 },
+  // 2026-09-24：结果表直出闭环动作，省掉点行进详情弹窗再找按钮两步
+  // （批量诊断完成后原先既不能排序也不能直接生成处置建议）。
+  { key: 'actions', title: '操作', width: 150 },
 ];
+
+/** 结果行 → 去处置（按回路深链到处置建议列表） */
+function gotoHandling(loopId: string): void {
+  router.push({ path: '/handling/suggestions', query: { loopId } });
+}
+
+/** 结果行 → 去整定（携带诊断来源，整定工作台据此显示返回） */
+function gotoTuning(loopId: string): void {
+  router.push({
+    path: '/tuning/workbench',
+    query: { from: 'diagnosis', loopId },
+  });
+}
 
 function confOf(record: DiagnosisApi.RunListItem) {
   return record.primaryConfidence == null
@@ -668,15 +725,16 @@ function catColor(record: DiagnosisApi.RunListItem) {
     : '#6c757d';
 }
 
-// ===== URL 上下文（回路工作台跳入） =====
-const fromWorkbench = computed(() => route.query.from === 'workbench');
+// ===== URL 上下文（统一 from 映射，见 composables/use-return-nav.ts） =====
+// 原实现只认 from === 'workbench'（回路工作台），而整定工作台的「去诊断」
+// 会带 from=tuning —— 那条路径同样没有返回按钮。
+const { goBack: goBackToSource, returnTarget: backTarget } = useReturnNav();
+
+/** 模块热插拔：处置/整定禁用时不渲染对应动作（避免点了 404） */
+const { moduleEnabled } = useModules();
 
 function goBackToWorkbench() {
-  const loopId = selectedLoopIds.value[0];
-  router.push({
-    path: '/monitor/loop-workbench',
-    query: loopId ? { loopId } : undefined,
-  });
+  goBackToSource(selectedLoopIds.value[0]);
 }
 
 onMounted(() => {
@@ -700,11 +758,11 @@ onMounted(() => {
     >
       <template #context>
         <button
-          v-if="fromWorkbench"
+          v-if="backTarget"
           class="flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs text-blue-600 hover:border-blue-200 hover:bg-blue-50"
           @click="goBackToWorkbench"
         >
-          <span>←</span><span>回路工作台</span>
+          <span>←</span><span>{{ backTarget.label }}</span>
         </button>
       </template>
       <template #actions>
@@ -785,8 +843,18 @@ onMounted(() => {
               />
               <span class="diag-loop-item__unit">{{ item.unitName }}</span>
             </div>
+            <!-- 加载失败可见化：此前只 console.error，空白脊柱被误解为"没有回路" -->
+            <div
+              v-if="loopLoadError"
+              class="diag-sidebar__empty px-3 text-center text-xs"
+            >
+              <div class="text-red-500">回路清单加载失败</div>
+              <Button class="mt-2" size="small" @click="loadLoops()">
+                重试
+              </Button>
+            </div>
             <Empty
-              v-if="!loopLoading && filteredLoops.length === 0"
+              v-else-if="!loopLoading && filteredLoops.length === 0"
               :image="Empty.PRESENTED_IMAGE_SIMPLE"
               class="diag-sidebar__empty"
               description="暂无回路"
@@ -832,6 +900,20 @@ onMounted(() => {
             </div>
           </Card>
 
+          <!-- 算子目录加载失败：可见错误 + 重试（否则「发起诊断」永久灰显且无原因） -->
+          <Alert
+            v-if="operatorLoadError"
+            class="mb-3"
+            show-icon
+            type="warning"
+          >
+            <template #message>诊断算子目录加载失败，「发起诊断」当前不可用</template>
+            <template #description>
+              <Button size="small" type="link" @click="loadOperators()">
+                重试加载算子 →
+              </Button>
+            </template>
+          </Alert>
           <!-- 行2：筛选条件（时间窗 + 算子下拉多选）+ 发起诊断 -->
           <Card class="mb-4" size="small">
             <div class="flex flex-wrap items-center gap-3">
@@ -923,17 +1005,51 @@ onMounted(() => {
               >
                 发起诊断
               </Button>
-              <!-- F5 汇总提示：红态回路不阻止发起，仅提示（§4 F5.3） -->
-              <span
-                v-if="
-                  precheckAssessEnabled && precheckInsufficientSelected > 0
-                "
-                class="text-xs font-medium"
-                :style="{ color: PRECHECK_META.insufficient.color }"
-              >
-                {{ precheckInsufficientSelected }} 个回路数据可能不足
-              </span>
             </div>
+            <!-- L0/L1 适用性阻断：常驻告警 + 可点下一步（替代原 8 秒消失的 toast） -->
+            <Alert
+              v-if="fitnessBlocked.length > 0"
+              class="mt-3"
+              closable
+              show-icon
+              type="error"
+              @close="fitnessBlocked = []"
+            >
+              <template #message>
+                {{ fitnessBlocked.length }} 个回路适用性不足（L0/L1），已阻止发起诊断
+              </template>
+              <template #description>
+                <ul class="m-0 pl-4">
+                  <li v-for="item in fitnessBlocked" :key="item.tagName">
+                    {{ item.tagName }}（{{ item.level }}）：{{ item.reason }}
+                  </li>
+                </ul>
+                <div class="mt-2 flex gap-2">
+                  <Button
+                    size="small"
+                    type="link"
+                    @click="router.push({ path: '/config/datasource' })"
+                  >
+                    前往数据导入 →
+                  </Button>
+                  <Button
+                    size="small"
+                    type="link"
+                    @click="router.push({ path: '/metric/fitness' })"
+                  >
+                    查看适用性规则 →
+                  </Button>
+                </div>
+              </template>
+            </Alert>
+            <!-- F5 汇总提示：红态回路不阻止发起，仅提示（§4 F5.3） -->
+            <span
+              v-if="precheckAssessEnabled && precheckInsufficientSelected > 0"
+              class="text-xs font-medium"
+              :style="{ color: PRECHECK_META.insufficient.color }"
+            >
+              {{ precheckInsufficientSelected }} 个回路数据可能不足
+            </span>
             <div
               v-if="runner.running.value || runner.progress.value > 0"
               class="mt-3"
@@ -1038,6 +1154,27 @@ onMounted(() => {
                         ? (SEVERITY_TEXT[record.severity] ?? record.severity)
                         : '—'
                     }}
+                  </template>
+                  <!-- 闭环动作列：不离开本页即可进入处置/整定（模块禁用时不做无效跳转） -->
+                  <template v-else-if="column.key === 'actions'">
+                    <div class="flex gap-1">
+                      <Button
+                        v-if="moduleEnabled('handling')"
+                        size="small"
+                        type="link"
+                        @click.stop="gotoHandling(record.loopId)"
+                      >
+                        去处置
+                      </Button>
+                      <Button
+                        v-if="moduleEnabled('tuning')"
+                        size="small"
+                        type="link"
+                        @click.stop="gotoTuning(record.loopId)"
+                      >
+                        去整定
+                      </Button>
+                    </div>
                   </template>
                 </template>
               </Table>

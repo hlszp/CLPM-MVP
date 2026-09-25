@@ -10,7 +10,10 @@ import { defineConfig, devices } from '@playwright/test';
  * - 后端 API 需手动启动（默认 7101，MVP 隔离端口 17101，
  *   fixtures/auth.ts 中可用 E2E_API_BASE_URL 覆盖）
  */
-const WEB_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5666';
+// MVP 隔离端口：前端 15666、后端 17101（原项目为 5666/7101）。
+// 默认值必须指向 MVP 端口，否则按 AGENTS.md 直接执行 pnpm exec playwright test
+// 会打到错误端口（旧口径残留）。
+const WEB_BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:15666';
 
 export default defineConfig({
   testDir: './tests',

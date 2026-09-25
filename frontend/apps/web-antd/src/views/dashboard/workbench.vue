@@ -180,29 +180,8 @@ const trendHours = computed(() => {
   return WINDOW_HOURS[pageTimeWindow.value];
 });
 
-/** 上一窗口请求参数（环比基线）：当前窗口向前平移一个窗口长度；custom 未选范围为 null */
-const prevWindowParams = computed<null | {
-  endTime: string;
-  startTime: string;
-  timeWindow: 'custom';
-}>(() => {
-  let startMs: number;
-  let endMs: number;
-  if (pageTimeWindow.value === 'custom') {
-    if (!customRange.value) return null;
-    startMs = customRange.value[0].valueOf();
-    endMs = customRange.value[1].valueOf();
-  } else {
-    endMs = Date.now();
-    startMs = endMs - WINDOW_HOURS[pageTimeWindow.value] * 3_600_000;
-  }
-  const lenMs = endMs - startMs;
-  return {
-    timeWindow: 'custom',
-    startTime: toUtcIso(dayjs(startMs - lenMs)),
-    endTime: toUtcIso(dayjs(startMs)),
-  };
-});
+// 2026-09-24：上一窗口的聚合改由后端 compare=true 随主查询返回（prevAggregate），
+// 前端不再自算 prevWindowParams 并发第二次同等重量的聚合查询。
 
 /** 标题旁实际统计时间范围（本地时间显示） */
 const rangeLabel = computed(() => {
@@ -233,18 +212,25 @@ function onCustomRangeChange(vals: [Dayjs, Dayjs] | [string, string]) {
 
 // ================ 数据加载 ================
 async function loadCards() {
-  const [a, r, g, p] = await Promise.allSettled([
-    getBoardAggregateApi({ ...windowParams.value }),
+  // 2026-09-24：环比基线随主查询一次返回（compare=true），
+  // 不再对上一窗口单独发一次同等重量的聚合查询（少一次重查询）。
+  const [a, r, g] = await Promise.allSettled([
+    getBoardAggregateApi({ ...windowParams.value, compare: true }),
     getAutoRateRtApi(),
     getGradeDistributionApi({}),
-    prevWindowParams.value
-      ? getBoardAggregateApi({ ...prevWindowParams.value })
-      : Promise.resolve(null),
   ]);
-  if (a.status === 'fulfilled') agg.value = a.value;
+  if (a.status === 'fulfilled') {
+    agg.value = a.value;
+    // 上一窗口聚合：hasData=false（上一窗口无数据）时置 null → 不显示环比
+    const prev = a.value?.prevAggregate;
+    prevAgg.value =
+      prev && prev.hasData
+        ? ({ ...a.value, aggregate: { ...a.value.aggregate, ...prev } } as
+            typeof agg.value)
+        : null;
+  }
   if (r.status === 'fulfilled') autoRate.value = r.value;
   if (g.status === 'fulfilled') gradeDist.value = g.value;
-  prevAgg.value = p.status === 'fulfilled' && p.value ? p.value : null;
 }
 
 /** 治理聚合（行2 卡3/4/5 + C 列漏斗；与 board/aggregate 同时间窗口径） */
@@ -512,14 +498,28 @@ const r1 = computed(() => {
   };
 });
 
-/** 评分环比差值（当前窗口 − 上一窗口；缺基线为 null 不显示） */
-const scoreDelta = computed(() => {
-  const cur = agg.value?.aggregate?.avgScore;
-  const prev = prevAgg.value?.aggregate?.avgScore;
-  return typeof cur === 'number' && typeof prev === 'number'
-    ? cur - prev
+/** 环比差值工具（当前窗口 − 上一窗口；任一侧缺值返回 null → 不显示） */
+function deltaOf(
+  pick: (a: NonNullable<typeof agg.value>['aggregate']) => null | number | undefined,
+): null | number {
+  const cur = agg.value?.aggregate;
+  const prev = prevAgg.value?.aggregate;
+  if (!cur || !prev) return null;
+  const c = pick(cur);
+  const p = pick(prev);
+  return typeof c === 'number' && typeof p === 'number'
+    ? Math.round((c - p) * 100) / 100
     : null;
-});
+}
+
+/** 评分环比差值（当前窗口 − 上一窗口；缺基线为 null 不显示） */
+const scoreDelta = computed(() => deltaOf((a) => a.avgScore));
+/** 参评回路数环比（个） */
+const evaluatedDelta = computed(() => deltaOf((a) => a.evaluatedLoops));
+/** 自控率环比（pp） */
+const autoDelta = computed(() => deltaOf((a) => a.autoModeRate));
+/** 稳定率环比（pp） */
+const stabilityDelta = computed(() => deltaOf((a) => a.stabilityRate));
 
 /** 治理聚合兜底（接口未就绪时各卡显示 0/—） */
 const badLoops = computed(() => ({
@@ -584,7 +584,9 @@ const modeRows = computed<ModeRow[]>(() => {
 <template>
   <Page auto-content-height>
     <Spin :spinning="pageLoading" class="h-full" wrapper-class-name="h-full">
-      <div class="flex h-full flex-col gap-1 overflow-hidden">
+      <!-- 2026-09-24：原为 overflow-hidden，1366×768/1600×900 下第 4 行被裁切且
+           无法滚动触达。改为纵向可滚（仍保持横向不滚）。 -->
+      <div class="flex h-full flex-col gap-1 overflow-x-hidden overflow-y-auto">
         <!-- ══════ 行1 标题行（页面标题深蓝加粗 + 实际时间范围 + 页面级时间窗总开关） ══════ -->
         <div class="flex h-8 flex-none items-center">
           <span class="text-[16px] font-bold tracking-wide text-[#1e40af]"
@@ -654,9 +656,12 @@ const modeRows = computed<ModeRow[]>(() => {
 
         <!-- ══════ 行2 全厂结论带（6 张结论卡，110px） ══════ -->
         <ConclusionCards
+          :auto-delta="autoDelta"
           :avg-score="r1.avgScore"
-          :score-delta="scoreDelta"
+          :evaluated-delta="evaluatedDelta"
           :evaluated-loops="r1.evaluatedLoops"
+          :score-delta="scoreDelta"
+          :stability-delta="stabilityDelta"
           :total-loops="r1.totalLoops"
           :bad-loops="badLoops"
           :handling="handlingSummary"
@@ -669,7 +674,8 @@ const modeRows = computed<ModeRow[]>(() => {
         />
 
         <!-- ══════ 行3 三列 2:5:3：A 全厂健康结构 / B 装置-单元排名 / C 治理漏斗 ══════ -->
-        <div class="flex h-[400px] flex-none gap-1">
+        <!-- min-h + flex-1：小屏可压缩到 320px，大屏按剩余空间伸展（原 fixed 400px 会顶出视口） -->
+        <div class="flex min-h-[320px] flex-1 gap-1">
           <HealthStructure
             class="flex-[2]"
             :grade-dist="gradeDist"
@@ -698,7 +704,7 @@ const modeRows = computed<ModeRow[]>(() => {
         </div>
 
         <!-- ══════ 行4 两列 3:2：D 绩效趋势 / E 重点关注回路 ══════ -->
-        <div class="flex h-[400px] flex-none gap-1">
+        <div class="flex min-h-[320px] flex-1 gap-1">
           <PerfTrend
             class="w-[calc(60%_-_2px)] flex-none"
             :trend="trend"
