@@ -11,6 +11,7 @@ from app.services.diagnosis_operators.base import OperatorResult
 from app.services.diagnosis_operators.classification import (
     DATA_INSUFFICIENT,
     INSTRUMENT,
+    NO_SYMPTOM,
     PROCESS,
     TUNING,
     UTILIZATION,
@@ -210,9 +211,13 @@ def test_level6_utilization_primary() -> None:
     assert r.primary.category == UTILIZATION
 
 
-def test_level7_fallback_data_insufficient() -> None:
+def test_level7_fallback_no_symptom() -> None:
+    """D3（2026-09-25）：门禁通过但无症状命中 → NO_SYMPTOM，不得报 DATA_INSUFFICIENT。"""
     r = classify({}, {}, {"auto_rate_avg": 0.9, "score_avg": 70}, _gate())
-    assert r.primary.category == DATA_INSUFFICIENT
+    assert r.primary.category == NO_SYMPTOM
+    assert r.primary.category != DATA_INSUFFICIENT
+    rec = " ".join(x.content for x in r.recommendations)
+    assert "补齐数据" not in rec
 
 
 def test_contamination_instrument_downgrades_tuning() -> None:

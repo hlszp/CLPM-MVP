@@ -27,7 +27,11 @@ from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.data_source.factory import get_provider
 from app.services.diagnosis_operators import OPERATOR_REGISTRY, OperatorInput, OperatorResult
-from app.services.diagnosis_operators.classification import ClassificationResult, classify
+from app.services.diagnosis_operators.classification import (
+    NO_SYMPTOM,
+    ClassificationResult,
+    classify,
+)
 from app.services.diagnosis_operators.fusion import FamilyFusion, fuse_family
 from app.services.diagnosis_operators.gate import evaluate_gate
 from app.services.diagnosis_system_actions import generate_system_actions_best_effort
@@ -617,7 +621,16 @@ def _scoped_operator_input(op_input: OperatorInput, meta: Any) -> tuple[Operator
         return op_input, "point 同轴切片后有效样本不足（<2）"
     sliced_signals = dict(op_input.signals)
     for sig in numeric:
-        sliced_signals[sig] = np.asarray(op_input.signals[sig])[idx]
+        # D1（2026-09-25）：点表全轴组装用 dtype=object 以保留 None 保位，
+        # 掩码切片后必须转回 float64 —— 否则算子里 numpy 数值 ufunc（FFT/sqrt 等）
+        # 遇 object dtype 直接抛错（oscillation_fft / sensor_fault 恒失败）。
+        # 掩码已保证切片内无 None；万一仍含非数值则保持原 dtype 并告警，不静默改口径。
+        col = np.asarray(op_input.signals[sig])[idx]
+        try:
+            col = col.astype(float)
+        except (TypeError, ValueError):
+            logger.warning("算子输入切片含非数值（%s，dtype=%s），保持原 dtype", sig, col.dtype)
+        sliced_signals[sig] = col
     sliced_signals["pv_quality"] = op_input.signals["pv_quality"]  # 全轴
     if "pv_quality_ts" in op_input.signals:
         sliced_signals["pv_quality_ts"] = op_input.signals["pv_quality_ts"]  # 全轴
@@ -900,6 +913,28 @@ async def run_diagnosis_for_loop(
                 "op": np.array([d.get("op") is not None for d in aligned]),
                 "mode": np.array([d.get("mode") is not None for d in aligned]),
             }
+            # R3（2026-09-25）：把组装层的 unknown 区间（含 R2 的 held_too_long）
+            # 映射成逐槽 observed_mask 透传给算子 —— 冻结等判据只能看 OBSERVED 槽，
+            # 否则数据缺口（HELD 保持）会被误报成"传感器冻结"。
+            # 质量码算子仍消费完整轴（本掩码只对声明需要的算子生效）。
+            observed_mask = np.ones(len(aligned), dtype=bool)
+            _ctx = getattr(raw_series, "series_context", None)
+            _cov = getattr(_ctx, "role_coverage", None) or {}
+            _pv_cov = _cov.get("pv") if isinstance(_cov, dict) else None
+            _runs = list(getattr(_pv_cov, "unknown", []) or []) if _pv_cov else []
+            if _runs:
+                for _i, _d in enumerate(aligned):
+                    _t = _d.get("ts")
+                    if _t is None:
+                        observed_mask[_i] = False
+                        continue
+                    _tn = _t.replace(tzinfo=None) if getattr(_t, "tzinfo", None) else _t
+                    for _run in _runs:
+                        _rs = _run.start.replace(tzinfo=None)
+                        _re = _run.end.replace(tzinfo=None)
+                        if _rs <= _tn < _re:
+                            observed_mask[_i] = False
+                            break
         else:
             op_rows = [d for d in aligned if d.get("op") is not None]
             # 原始序列相对秒（与 pv_quality 同长度/同基准）：供质量码算子把
@@ -936,7 +971,11 @@ async def run_diagnosis_for_loop(
                 # AD04：point 同轴模式——_run_operators 按各算子 required_signals
                 # 公共有效掩码切片（信号/时间同轴）；legacy 无此标记（原行为）
                 **(
-                    {"point_axis": True, "signals_valid": signals_valid}
+                    {
+                        "point_axis": True,
+                        "signals_valid": signals_valid,
+                        "observed_mask": observed_mask,
+                    }
                     if is_point and signals_valid is not None
                     else {}
                 ),
@@ -986,10 +1025,17 @@ async def run_diagnosis_for_loop(
             tag: {"detected": f.detected, "confidence": round(f.confidence, 4)}
             for tag, f in fusions.items()
         },
-        primary_category=classification.primary.category if classification.primary else None,
+        # D3（2026-09-25）：NO_SYMPTOM 是内部哨兵（"数据充足但全部症状未命中"）。
+        # ck_diagnosis_run_category 仅允许 8 类取值（或 NULL），故落库映射为 NULL，
+        # 避免把"未发现异常"谎报成 DATA_INSUFFICIENT（数据不足）。
+        primary_category=(
+            classification.primary.category
+            if classification.primary and classification.primary.category != NO_SYMPTOM
+            else None
+        ),
         primary_confidence=(
             Decimal(str(round(min(0.999, classification.primary.confidence), 3)))
-            if classification.primary
+            if classification.primary and classification.primary.category != NO_SYMPTOM
             else None
         ),
         secondary_categories=[j.to_dict() for j in classification.secondary],

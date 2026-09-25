@@ -1208,6 +1208,13 @@ async def get_loop_monitor_detail(
         "mode": [],
         "pvQuality": [],
         "sampleInterval": None,
+        # D4（2026-09-25）：服务层 fetch_loop_trend 已返回 pointCount，
+        # 此处重建 dict 时漏字段导致 HTTP 响应缺该项（前端无法显示点数）。
+        "pointCount": None,
+        # 1b（2026-09-26）：已登记缺口信息（PG gap 段 → gaps/observedRatio）。
+        # 缺口被 FILL(PREV) 填平后序列本身看不出，必须靠 1a 的落库登记。
+        "gaps": [],
+        "observedRatio": None,
         "downsampled": False,
     }
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
@@ -1264,6 +1271,16 @@ async def get_loop_monitor_detail(
         trend_data["pvQuality"] = trend_result["pvQuality"]
         trend_data["sampleInterval"] = trend_result["sampleInterval"]
         trend_data["downsampled"] = trend_result["downsampled"]
+        trend_data["pointCount"] = trend_result.get("pointCount")
+
+        # 1b（2026-09-26）：附加缺口信息（gaps / observedRatio）。
+        # 附加项失败只保持默认值，绝不影响趋势主体（attach_gap_info 内部已兜底）。
+        try:
+            from app.services.trend_service import attach_gap_info
+
+            await attach_gap_info(db, loop_id, trend_data)
+        except Exception:  # noqa: BLE001 — 附加项失败不影响趋势返回
+            logger.debug("附加趋势缺口信息失败（保持默认空值）", exc_info=True)
 
     # TDengine 无数据时保持 EMPTY 状态，返回空数组（不再生成模拟数据）
     # 仿真脚本已持续向 TDengine 推送实时数据，趋势图直接展示真实历史数据

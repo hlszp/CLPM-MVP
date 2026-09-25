@@ -33,6 +33,10 @@ PROCESS = "PROCESS"
 UTILIZATION = "UTILIZATION"
 DESIGN = "DESIGN"
 DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
+#: 内部哨兵（2026-09-25 D3）：数据门禁已通过但全部症状未命中。
+#: 不落库——ck_diagnosis_run_category 仅允许上面 8 类（或 NULL），
+#: orchestrator 在持久化边界把它映射为 NULL，避免把"未发现异常"谎报成"数据不足"。
+NO_SYMPTOM = "NO_SYMPTOM"
 
 CATEGORY_LABELS: dict[str, str] = {
     TUNING: "参数问题（PID 整定）",
@@ -43,6 +47,7 @@ CATEGORY_LABELS: dict[str, str] = {
     UTILIZATION: "投用/操作问题",
     DESIGN: "组态/设计问题",
     DATA_INSUFFICIENT: "数据不足/无法判定",
+    NO_SYMPTOM: "未发现异常症状",
 }
 
 CATEGORY_DIRECTIONS: dict[str, str] = {
@@ -54,6 +59,7 @@ CATEGORY_DIRECTIONS: dict[str, str] = {
     UTILIZATION: "恢复自动投用",
     DESIGN: "重新组态/改造",
     DATA_INSUFFICIENT: "先补齐数据",
+    NO_SYMPTOM: "保持运行，继续观察",
 }
 
 #: 证据污染链：主因 → 其证据所污染的下游分类
@@ -349,19 +355,21 @@ def classify(
             }
         )
 
-    # 级 7：兜底
+    # 级 7：兜底（2026-09-25 D3 拆两态）
+    #   门禁不过 → DATA_INSUFFICIENT（数据不足，如实报）；
+    #   门禁通过但无症状命中 → NO_SYMPTOM（未发现异常，不得推荐"先补齐数据"）。
     if not candidates:
         result.primary = CategoryJudgement(
-            category=DATA_INSUFFICIENT,
+            category=NO_SYMPTOM,
             confidence=0.0,
-            basis=["各算子置信度均低于判定门槛，无法归因"],
+            basis=["数据门禁通过、各算子置信度均低于判定门槛：未发现异常症状"],
         )
-        result.rationale.append("全部症状未命中，输出兜底分类")
+        result.rationale.append("数据充足（数据门禁通过）但全部症状未命中：未发现异常症状")
         result.recommendations = [
             Recommendation(
-                content="建议人工分析或更换时间窗后重新发起诊断",
-                basis="各算子置信度均低于判定门槛",
-                direction=CATEGORY_DIRECTIONS[DATA_INSUFFICIENT],
+                content="未发现异常症状：建议保持当前运行并继续观察；如需复核可更换时间窗后重跑",
+                basis="数据门禁通过，各算子置信度均低于判定门槛",
+                direction=CATEGORY_DIRECTIONS[NO_SYMPTOM],
                 priority=1,
             )
         ]
@@ -474,7 +482,7 @@ def classify(
 
 
 def _severity(score_avg: float | None, primary_conf: float, category: str) -> str:
-    if category == DATA_INSUFFICIENT:
+    if category in (DATA_INSUFFICIENT, NO_SYMPTOM):
         return "LOW"
     score = float(score_avg) if score_avg is not None else None
     if score is not None and score < 40 and primary_conf >= 0.8:
@@ -504,6 +512,7 @@ CATEGORY_CONFIDENCE_BASIS: dict[str, str] = {
     UTILIZATION: "min(0.95, 1 − 时间窗自动投用率)，来自 KPI 快照统计",
     DESIGN: "Phase 2 启用前不参与置信度评估",
     DATA_INSUFFICIENT: "门禁短路输出，不参与置信度评估（记 0）",
+    NO_SYMPTOM: "门禁通过但全部症状未命中：无归因结论（记 0）",
 }
 
 

@@ -508,6 +508,8 @@ export namespace LoopApi {
     pvQuality: Quality[];
     /** 采样间隔（秒），由后端根据时间范围动态计算（如 72h → 72s） */
     sampleInterval?: number;
+    /** 采样点数（D4：与 trend_service 返回的 pointCount 对齐） */
+    pointCount?: null | number;
     /** 是否触发了 LTTB 降采样 */
     downsampled?: boolean;
   }

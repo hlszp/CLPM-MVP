@@ -117,7 +117,11 @@ def _fft_kernel(
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("FFT 振荡检测失败: %s", exc)
-        return _empty_osc_result()
+        # D2（2026-09-25）：异常必须随结果落库，否则"已执行但失败"在前端与
+        # 落库结果里完全不可见（原来只写日志，operator_results.error 为 null）。
+        failed = _empty_osc_result()
+        failed["_error"] = f"{type(exc).__name__}: {exc}"
+        return failed
 
 
 def _iae_kernel(
@@ -247,6 +251,17 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
     pv = input.signals.get("pv")
     if pv is None or len(pv) < 16:
         return OperatorResult("oscillation_fft", executed=False, skip_reason="pv 数据不足")
+    # D1 兜底（2026-09-25）：点表同轴输入历史上可能仍是 object dtype，
+    # 数值 ufunc（rfft 等）遇 object 直接抛错；此处强制转 float64 并让异常可见。
+    try:
+        pv = np.asarray(pv, dtype=float)
+    except (TypeError, ValueError) as exc:
+        logger.warning("FFT 振荡检测输入非数值: %s", exc)
+        return OperatorResult(
+            "oscillation_fft",
+            executed=False,
+            error=f"{type(exc).__name__}: {exc}",
+        )
     res = _fft_kernel(pv, float(input.meta.get("sample_interval", 1.0)), threshold)
     return OperatorResult(
         "oscillation_fft",
@@ -258,6 +273,7 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
             "amplitude": res["amplitude"],
             "index": res["index"],
         },
+        error=res.get("_error"),
         evidence=[
             EvidenceItem(
                 # 特征名与 outputs_schema 键保持一致（"index"=振荡指数），

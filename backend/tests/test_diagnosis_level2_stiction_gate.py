@@ -22,7 +22,7 @@ import pytest
 
 from app.services.diagnosis_operators.base import OperatorResult
 from app.services.diagnosis_operators.classification import (
-    DATA_INSUFFICIENT,
+    NO_SYMPTOM,
     VALVE,
     classify,
 )
@@ -63,14 +63,15 @@ class TestLevel2StictionRequiresCrossValidation:
         """两个低置信命中（0.3+0.3 → 融合 0.1552）不得判 VALVE。
 
         修复前：len(contributors)==2 即命中 OR 分支 → VALVE @15.5%，
-        架空级 7"各算子置信均 <0.5 → DATA_INSUFFICIENT"。
+        架空级 7"各算子置信均 <0.5 → NO_SYMPTOM（原 DATA_INSUFFICIENT，D3 拆分）"。
         """
         fused = dempster_shafer([0.3, 0.3])
         assert fused == pytest.approx(0.1552, abs=1e-4)  # 确实远低于 0.7
 
         r = classify({"VALVE_STICTION": _fusion(True, fused, contributors=2)}, {}, _KPI, _gate())
         assert r.primary.category != VALVE, "低置信证据不得产出阀门结论"
-        assert r.primary.category == DATA_INSUFFICIENT
+        # D3（2026-09-25）：数据门禁通过且无症状命中 → NO_SYMPTOM（不再是 DATA_INSUFFICIENT）
+        assert r.primary.category == NO_SYMPTOM
 
     def test_single_high_confidence_hit_must_not_trigger_level2(self) -> None:
         """单算子高置信命中不得判 VALVE（无 D-S 交叉验证）。"""

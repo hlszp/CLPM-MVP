@@ -216,7 +216,10 @@ def _sensor_fault_kernel(
         return result
     except Exception as exc:  # noqa: BLE001
         logger.warning("传感器故障检测失败: %s", exc)
-        return _empty_sensor_fault_result()
+        # D2（2026-09-25）：异常必须随结果落库，否则"已执行但失败"不可见。
+        failed = _empty_sensor_fault_result()
+        failed["_error"] = f"{type(exc).__name__}: {exc}"
+        return failed
 
 
 def _quality_kernel(
@@ -363,10 +366,39 @@ def detect_sensor_fault(input: OperatorInput, threshold: dict[str, Any]) -> Oper
     pv = input.signals.get("pv")
     if pv is None or len(pv) < MIN_DATA_POINTS:
         return OperatorResult("sensor_fault", executed=False, skip_reason="pv 数据不足")
-    res = _sensor_fault_kernel(pv, input.signals.get("sp"), threshold)
+    # D1 兜底（2026-09-25）：点表同轴输入可能是 object dtype，numpy 数值 ufunc
+    # （sqrt 等）遇 object 直接抛错；此处强制转 float64 并让异常可见。
+    sp = input.signals.get("sp")
+    try:
+        pv = np.asarray(pv, dtype=float)
+        if sp is not None:
+            sp = np.asarray(sp, dtype=float)
+    except (TypeError, ValueError) as exc:
+        logger.warning("传感器故障检测输入非数值: %s", exc)
+        return OperatorResult(
+            "sensor_fault",
+            executed=False,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    # R3（2026-09-25）：冻结判定只对 OBSERVED 槽生效。
+    # HELD/gap 槽（缺口期间沿用旧值）不是观测数据，参与滚动 std 会把
+    # "数据缺口"误报成"传感器冻结"。只改"看哪些槽"，
+    # 不改 frozen_window / frozen_eps / frozen_ratio（判据强度不变）。
+    _mask = (input.meta or {}).get("observed_mask")
+    if _mask is not None:
+        try:
+            _m = np.asarray(_mask, dtype=bool)
+            if len(_m) == len(pv):
+                pv = np.asarray(pv)[_m]
+                if sp is not None and len(sp) == len(_m):
+                    sp = np.asarray(sp)[_m]
+        except (TypeError, ValueError):  # 掩码异常时退化为原行为
+            pass
+    res = _sensor_fault_kernel(pv, sp, threshold)
     return OperatorResult(
         "sensor_fault",
         executed=True,
+        error=res.get("_error"),
         detected=bool(res["detected"]),
         confidence=float(res["confidence"]),
         features={
