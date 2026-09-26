@@ -70,3 +70,13 @@ cd backend && uv run python ../scripts/check_api_contract.py --json # 机器可�
 2. **新增前端调用**：CI 会阻塞「前端调用但后端无实现」。确需预留（如框架后台模式）才登记到 `frontendCallsWithoutBackend`。
 3. **清理动作**：删除实现 → 从白名单移除 → 本表该行标注「已清理（日期）」。
 4. 本表与白名单**必须同批更新**，否则 CI 会以 WARN 提示「白名单中已不存在的条目」。
+
+## 6. 宽表退役连带清理（2026-09-26）
+
+宽表 st_loop_data 于 2026-09-26 从库中删除（应用代码 backend/app/ 已零引用）后，以下脚本/函数受连带影响，逐条登记：
+
+| 项 | 位置 | 状态 |
+|---|---|---|
+| **已删除**：KPI 测试数据导入脚本 | backend/scripts/import_kpi_test_data.py | 已删除（2026-09-26）。唯一用途是向宽表造测试数据，宽表退役后无消费者；且其 CREATE STABLE IF NOT EXISTS st_loop_data 会让已删除的宽表复活 |
+| **转死代码**：query_trend_data | backend/app/core/tdengine.py | 因上述脚本删除而**失去唯一活跃调用方**，转为死代码。建议下个清理周期评估：删除，或改为点表口径（注意契约基线 2026-09-06-tag-timeseries-contract-baseline.md 的 B2/B3 行） |
+| **待迁移**：仿真写入 | backend/scripts/data_simulator.py | TDengine 写入路径已停止（显式退出码 2 + 提示，防宽表复活）；待迁移到测点点表 st_point_data_v1，建议复用 app/services/data_source/point_history_repository.py 的 write_events，而非手写窄表 SQL |

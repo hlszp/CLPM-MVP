@@ -11,6 +11,18 @@
     cd backend && uv run python scripts/data_simulator.py --days 3 --clean
 
 注意：使用 httpx（项目已有依赖）替代 aiohttp 进行异步 HTTP 请求。
+
+退役说明（2026-09-26）
+--------------------
+宽表 st_loop_data 已于 2026-09-26 退役（并从库中删除）：本脚本的 TDengine
+写入路径已停止，避免「跑一次脚本就把宽表建回来」。
+
+仿真写入待迁移到测点点表 st_point_data_v1 —— 建议复用
+app/services/data_source/point_history_repository.py 的 write_events，
+而不是手写窄表 SQL（质量码/received_at/source_kind/payload_hash 与幂等
+由仓库侧统一处理）。
+
+PG 侧种子逻辑（loop_ledger / tag_registry / 绑定）保留在文件内，便于迁移。
 """
 
 from __future__ import annotations
@@ -852,41 +864,10 @@ async def setup_tdengine(client: httpx.AsyncClient, clean: bool = False) -> None
         use_db=False,
     )
 
-    # 2. 创建超级表
-    await td_execute(
-        client,
-        """
-        CREATE STABLE IF NOT EXISTS st_loop_data (
-            ts          TIMESTAMP,
-            pv          FLOAT,
-            sp          FLOAT,
-            op          FLOAT,
-            mode        TINYINT,
-            pid_p       FLOAT,
-            pid_i       FLOAT,
-            pid_d       FLOAT,
-            pv_quality  TINYINT
-        ) TAGS (
-            loop_id     BINARY(36),
-            unit_id     BINARY(36)
-        )
-    """,
-    )
-
-    # 3. 创建/重建子表
-    for cfg in LOOP_CONFIGS:
-        sub = subtable_name(cfg["tag_name"])
-        if clean:
-            await td_execute(client, f"DROP TABLE IF EXISTS {sub}")
-        await td_execute(
-            client,
-            (
-                f"CREATE TABLE IF NOT EXISTS {sub} "
-                f"USING st_loop_data TAGS ('{cfg['id']}', '{cfg['unit_id']}')"
-            ),
-        )
-
-    print(f"  ✓ TDengine 数据库/超级表/子表创建完成（{len(LOOP_CONFIGS)} 张子表）")
+    # 2. 宽表超级表与子表已不再创建（2026-09-26 退役）。
+    #    原先此处会建宽表超级表与 d_loop_* 子表（宽表口径），会让已删除的宽表复活；
+    #    测点点表由应用侧（point_history_writer / 02_point_history.sql）负责建表。
+    print("  ⚠ 宽表 st_loop_data 已退役：跳过超级表与子表创建（测点点表由应用侧维护）")
 
 
 # ============================================================================
@@ -917,31 +898,17 @@ async def write_loop_data(
     end: datetime,
     progress: ProgressTracker,
 ) -> int:
-    """为单个回路生成并写入时序数据，返回写入行数。"""
-    sub = subtable_name(cfg["tag_name"])
-    points = generate_timeseries(cfg, start, end)
-    total_written = 0
+    """TDengine 仿真写入已停止（宽表退役，2026-09-26）。
 
-    # 分批写入
-    for i in range(0, len(points), BATCH_SIZE):
-        batch = points[i : i + BATCH_SIZE]
-        # 构建 INSERT SQL
-        parts = [f"INSERT INTO {sub} VALUES"]
-        for pt in batch:
-            ts_str, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_q = pt
-            parts.append(
-                f"('{ts_str}', {fmt_float(pv)}, {fmt_float(sp)}, {fmt_float(op)}, "
-                f"{mode}, {fmt_float(pid_p)}, {fmt_float(pid_i)}, {fmt_float(pid_d)}, {pv_q})"
-            )
-        sql = " ".join(parts)
-
-        async with semaphore:
-            result = await td_execute(client, sql)
-            if result is not None:
-                total_written += len(batch)
-                await progress.add(len(batch))
-
-    return total_written
+    原实现按 9 列宽行写入 d_loop_* 子表（宽表口径）；宽表退役后该路径会重建
+    已删除的超级表，因此这里显式退出（非 0）而不是静默跳过，避免被误当作成功。
+    迁移到点表时请复用 point_history_repository.write_events。
+    """
+    raise SystemExit(
+        "宽表 st_loop_data 已退役（2026-09-26）：仿真写入待迁移到测点点表 "
+        "st_point_data_v1；建议复用 point_history_repository 的 write_events，"
+        "而不是手写窄表 SQL。"
+    )
 
 
 async def write_all_tdengine_data(client: httpx.AsyncClient, start: datetime, end: datetime) -> int:
@@ -1139,6 +1106,17 @@ async def main() -> None:
     print(f"  时间范围: {start_time} ~ {end_time} ({args.days} 天)")
     print(f"  清理旧数据: {'是' if args.clean else '否'}")
     print("=" * 60)
+
+    # TDengine 仿真写入已停止（宽表退役，2026-09-26）：在任何写入之前显式退出，
+    # 避免「跑一次脚本把宽表建回来」，也避免只写了一半（PG 种子已写、TD 未写）。
+    # 迁移到测点点表后，删除本段与 write_loop_data 的 SystemExit 即可恢复流程。
+    print(
+        "\n⚠ 宽表 st_loop_data 已退役（2026-09-26）：仿真写入待迁移到测点点表 "
+        "st_point_data_v1。\n"
+        "  建议复用 point_history_repository 的 write_events。\n"
+        "  本次未写入任何数据（PG/TD 均未改动）。"
+    )
+    raise SystemExit(2)
 
     # 1. PostgreSQL 数据填充
     print("\n📋 [1/5] 填充 PostgreSQL 配置数据...")

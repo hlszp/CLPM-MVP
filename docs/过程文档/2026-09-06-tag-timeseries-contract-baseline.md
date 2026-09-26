@@ -53,7 +53,7 @@ worktree `backend/.env`（gitignored）指向上述隔离实例；TDengine 容�
 |---|---|---|
 | B1 | `make_dataplanner_query_fn`（core/tdengine.py:376，内含 7 次窄表查询） | **死代码**：全仓零调用，已被 Provider 宽表路径取代 |
 | B2 | `TDengineProvider.query_trend_data`（tdengine_provider.py:249） | **死代码**：无调用方（trend/waveform 已改走 make_query_fn）；保留协议方法签名（契约） |
-| B3 | `scripts/import_kpi_test_data.py` | 手动脚本（唯一活跃 query_trend_data 调用方） |
+| B3 | ~~scripts/import_kpi_test_data.py~~ | **已于 2026-09-26 随宽表退役删除**（原状：手动脚本、唯一活跃 query_trend_data 调用方；唯一用途是向宽表 st_loop_data 造测试数据，宽表退役后无消费者且运行会重建宽表）。删除后 query_trend_data 不再有活跃调用方，见 dead-code-registry-2026-09-24.md |
 
 ### C. Redis 读路径
 
