@@ -69,7 +69,7 @@ worktree `backend/.env`（gitignored）指向上述隔离实例；TDengine 容�
 | W1 | RealtimeSubscriber `_flush_buffer` → `batch_insert_multi`（INSERT…USING st_loop_data TAGS） | 实时写回唯一路径；同 tick 同角色覆盖（T02）、九字段行（T01）为已知现状 |
 | W2 | `POST /loops/data-import/start` → Celery `import_history_data` → `_import_single_loop`：远端拉数→`batch_insert`（overwrite 走 stg__ 暂存表→DELETE 主窗→搬回→DROP） | 导入唯一路径；远端历史唯一调用方（红线） |
 | W3/W4 | `_delete_range`/`_drop_table`（execute_native_effective）；`ensure_subtable` | ensure_subtable **死代码**（零调用，USING TAGS 自动建表） |
-| W5-W8 | scripts/import_dcs_history_csv、import_history_csv、data_simulator、tuning_demo_*、clean_*/fix_*/benchmark/backfill_kpi 等 | 手动运维脚本，登记不改造 |
+| W5-W8 | scripts/import_dcs_history_csv、import_history_csv、data_simulator、tuning_demo_*、clean_*/fix_*/benchmark/backfill_kpi 等 | 手动运维脚本，登记不改造。**2026-09-26 更新**：import_dcs_history_csv、import_history_csv 依赖已随宽表退役删除的 tdengine_native.batch_insert（ImportError 不可运行），已删除；历史补数请改用应用内「数据管理 → 历史数据导入」（data_import.import_history_data，写测点点表）。data_simulator 已改为写入前显式退出（待迁移点表）；backfill_kpi 的空档检测已改点表口径。详见 dead-code-registry-2026-09-24.md 第 6 节 |
 
 ### E. 完整性/监控路径
 

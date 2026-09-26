@@ -273,10 +273,14 @@ async def detect_tdengine_gaps(lookback_hours: int) -> list[dict[str, Any]]:
 
         for w in hourly_windows:
             w_end = w + timedelta(hours=1)
-            # 查询该小时内每个子表的行数（一次查询所有子表）
+            # 查询该小时内每个测点子表的行数（2026-09-26：宽表 st_loop_data 已退役，
+            # 改查测点点表 st_point_data_v1）。
+            # 语义变化：点表是**稀疏存点**（仅在变化时写入），行数不再按 1Hz x 3600 衡量，
+            # 因此"该小时有没有数据"的判据是 COUNT(*) > 0，缺失子表见下方 missing_tables。
+            # 时间字面量必须 ISO-Z（fmt_utc 输出 ...Z）：裸字面量会按会话时区解释、静默偏移 8 小时。
             sql = (
                 f"SELECT TBNAME as tbl, COUNT(*) as cnt "
-                f"FROM st_loop_data "
+                f"FROM st_point_data_v1 "
                 f"WHERE ts >= '{fmt_utc(w)}' AND ts < '{fmt_utc(w_end)}' "
                 f"PARTITION BY TBNAME"
             )
@@ -293,44 +297,29 @@ async def detect_tdengine_gaps(lookback_hours: int) -> list[dict[str, Any]]:
             except Exception:
                 continue
 
-            expected = 3600  # 1Hz × 3600s
-            gap_count = 0
-            min_rows = expected
-            total_gap_ratio = 0.0
+            # 判据（点表口径，2026-09-26）：该小时内**没有出现在按 TBNAME 分组结果里的子表**
+            # 即为空档。不再用"行数 < 3600x0.9"判断——点表稀疏存点，行数不反映采样完整度，
+            # 沿用旧口径会把正常的稀疏信号全部误报成空档。
+            present = len(data)
+            min_rows = min((row[1] for row in data), default=0)
+            missing_tables = table_count - present
 
-            for row in data:
-                tbl_name, cnt = row[0], row[1]
-                if cnt < expected * 0.9:
-                    gap_ratio = 1.0 - (cnt / expected) if expected > 0 else 1.0
-                    gaps.append(
-                        {
-                            "tag_name": tbl_name,
-                            "hour_start": w,
-                            "row_count": cnt,
-                            "expected": expected,
-                            "gap_ratio": gap_ratio,
-                        }
-                    )
-                    gap_count += 1
-                    if cnt < min_rows:
-                        min_rows = cnt
-                    total_gap_ratio += gap_ratio
-
-            # 缺失子表（该小时完全无数据，不在结果中）
-            missing_tables = table_count - len(data)
             if missing_tables > 0:
-                gap_count += missing_tables
-                if 0 < min_rows:
-                    min_rows = 0
-                total_gap_ratio += missing_tables  # 完全丢失 = 100%
-
-            if gap_count > 0:
-                avg_gap = total_gap_ratio / gap_count if gap_count > 0 else 0
+                gap_ratio = missing_tables / table_count if table_count else 1.0
+                gaps.append(
+                    {
+                        # 缺失子表的名称不可知（未出现在统计结果中），故置 None
+                        "tag_name": None,
+                        "hour_start": w,
+                        "row_count": present,  # 该小时有数据的子表数（点表口径）
+                        "expected": table_count,  # 应参与统计的子表数
+                        "gap_ratio": gap_ratio,
+                    }
+                )
                 print(
                     f"  {fmt_utc(w)} ~ {fmt_utc(w_end)}  "
-                    f"受影响子表={gap_count}/{table_count}  "
-                    f"最少行数={min_rows}/3600  "
-                    f"平均丢失率={avg_gap:.1%}"
+                    f"无数据子表={missing_tables}/{table_count}  "
+                    f"（点表口径：COUNT(*)>0 视为有数据；该小时最少行数={min_rows}）"
                 )
 
         if gaps:

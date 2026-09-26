@@ -80,3 +80,14 @@ cd backend && uv run python ../scripts/check_api_contract.py --json # 机器可�
 | **已删除**：KPI 测试数据导入脚本 | backend/scripts/import_kpi_test_data.py | 已删除（2026-09-26）。唯一用途是向宽表造测试数据，宽表退役后无消费者；且其 CREATE STABLE IF NOT EXISTS st_loop_data 会让已删除的宽表复活 |
 | **转死代码**：query_trend_data | backend/app/core/tdengine.py | 因上述脚本删除而**失去唯一活跃调用方**，转为死代码。建议下个清理周期评估：删除，或改为点表口径（注意契约基线 2026-09-06-tag-timeseries-contract-baseline.md 的 B2/B3 行） |
 | **待迁移**：仿真写入 | backend/scripts/data_simulator.py | TDengine 写入路径已停止（显式退出码 2 + 提示，防宽表复活）；待迁移到测点点表 st_point_data_v1，建议复用 app/services/data_source/point_history_repository.py 的 write_events，而非手写窄表 SQL |
+
+
+### 6.2 已删除脚本（2026-09-26，用户决策 P2/P3）
+
+| 文件 | 删除理由 | 替代路径 |
+|---|---|---|
+| backend/scripts/import_dcs_history_csv.py | 依赖已删除的 tdengine_native.batch_insert → ImportError，无法运行；且属 2026-09-06「登记不改造」清单 | 应用内「数据管理 → 历史数据导入」（data_import.import_history_data，写点表） |
+| backend/scripts/import_history_csv.py | 同上（INSERT 9 列列序即宽表口径，SQL 由 batch_insert 内部拼接） | 同上 |
+| backend/scripts/td_quality_audit.py | 只读宽表的质量体检工具，宽表已删；检索无现役引用（仅文档提及） | 无替代实现（能力缺口）——见下方说明 |
+
+**能力缺口说明（td_quality_audit）**：该脚本提供「数据质量体检」——按回路统计断流位号与「有值但质量码坏」的情况。宽表退役后此能力目前没有替代实现。若将来需要，应按点表口径重写：点表是稀疏行 (point_id, ts, value, quality_class, quality_raw)，须按 point_id 关联 tag_registry 才能还原某回路的 PV 质量分布，不能只换表名。
