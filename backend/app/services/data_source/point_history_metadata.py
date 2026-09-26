@@ -308,25 +308,53 @@ async def register_gap_segment(
     作用域：ck_hcs_scope 约束 (point_id IS NULL) <> (session_id IS NULL)，
     故这里 point_id 恒为 None、session_id 必填（一段采集会话的缺口）。
 
-    幂等：表无唯一约束，故先按 (session_id, seg_start, seg_end, status="gap")
-    查重；命中返回 False，不新增行。调用方无需自行去重。
+    幂等/合并（2026-09-26 更新）：表无唯一约束，故在应用层保证——同一会话内与
+    既有 gap 行重叠或相邻的窗口会被合并进最早那行（扩展 seg_start/seg_end），
+    不新增行。返回值语义：True = 本次**写入了库**（新增行或扩展既有行，调用方需
+    commit）；False = 无需写入（新窗口已完全落在既有缺口内）。调用方无需自行去重。
     """
     start = _aware(seg_start)
     end = _aware(seg_end)
     if end <= start:
         return False
-    existing = (
-        await db.execute(
-            select(HistoryCoverageSegment.id).where(
-                HistoryCoverageSegment.session_id == session_id,
-                HistoryCoverageSegment.seg_start == start,
-                HistoryCoverageSegment.seg_end == end,
-                HistoryCoverageSegment.status == "gap",
+    # 合并/去重（2026-09-26 质量修复）：同一会话内与既有 gap 行**重叠或相邻**
+    # 的窗口不再新增行，而是把最早那行的范围扩展到并集。口径与 Redis 待补列表
+    # （_gap_windows_overlap：a.start <= b.end and b.start <= a.end，相邻即算重叠）
+    # 以及同表 confirmed 段的 merge_confirmed_coverage 一致。
+    # 语义选择：**只扩展不删除** —— 历史重叠行保留（删数据需运维授权），
+    # 本函数只保证"重复/重叠登记不再让表增长"。
+    rows = (
+        (
+            await db.execute(
+                select(HistoryCoverageSegment)
+                .where(
+                    HistoryCoverageSegment.session_id == session_id,
+                    HistoryCoverageSegment.status == "gap",
+                    HistoryCoverageSegment.seg_start <= end,
+                    HistoryCoverageSegment.seg_end >= start,
+                )
+                .order_by(HistoryCoverageSegment.seg_start)
             )
         )
-    ).first()
-    if existing is not None:
-        return False
+        .scalars()
+        .all()
+    )
+    if rows:
+        head = rows[0]
+        head_start = _aware(head.seg_start)
+        head_end = _aware(head.seg_end)
+        merged_start = min(head_start, start)
+        merged_end = max(head_end, end)
+        for row in rows[1:]:
+            merged_start = min(merged_start, _aware(row.seg_start))
+            merged_end = max(merged_end, _aware(row.seg_end))
+        if merged_start == head_start and merged_end == head_end:
+            # 新窗口完全落在既有缺口内（含"同窗口重复登记"）：无写入
+            return False
+        head.seg_start = merged_start
+        head.seg_end = merged_end
+        await db.flush()
+        return True
     db.add(
         HistoryCoverageSegment(
             point_id=None,

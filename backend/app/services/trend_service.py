@@ -573,22 +573,29 @@ async def attach_gap_info(db: AsyncSession, loop_id: str, result: dict[str, Any]
             )
         ).all()
 
-        gaps: list[dict[str, Any]] = []
-        total_gap_s = 0.0
-        for seg_start, seg_end in rows:
+        # 按**并集**计时长（2026-09-26 质量修复）：同表可能存在跨会话重叠的 gap 行
+        # （不同采集轮次各登记一段，时间上互相覆盖），朴素累加会重复计时长，
+        # 把 observedRatio 压低甚至归零。这里先合并重叠区间再求和。
+        intervals: list[tuple[Any, Any]] = []
+        for seg_start, seg_end in sorted(rows, key=lambda r: _as_utc(r[0])):
             start = max(_as_utc(seg_start), win_start)
             end = min(_as_utc(seg_end), win_end)
-            seconds = (end - start).total_seconds()
-            if seconds <= 0:
+            if end <= start:
                 continue
-            total_gap_s += seconds
-            gaps.append(
-                {
-                    "start": start.isoformat(),
-                    "end": end.isoformat(),
-                    "seconds": round(seconds, 3),
-                }
-            )
+            if intervals and start <= intervals[-1][1]:
+                prev_start, prev_end = intervals[-1]
+                intervals[-1] = (prev_start, max(prev_end, end))
+            else:
+                intervals.append((start, end))
+        gaps: list[dict[str, Any]] = [
+            {
+                "start": s.isoformat(),
+                "end": e.isoformat(),
+                "seconds": round((e - s).total_seconds(), 3),
+            }
+            for s, e in intervals
+        ]
+        total_gap_s = sum(float(g["seconds"]) for g in gaps)
         gaps.sort(key=lambda g: str(g["start"]))
         result["gaps"] = gaps
         result["observedRatio"] = max(0.0, min(1.0, 1.0 - total_gap_s / window_s))

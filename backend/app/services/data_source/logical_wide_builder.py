@@ -332,13 +332,17 @@ async def build_logical_wide(
                     pv_quality.append(-1)
                 continue
             # 二分查合并后的 gap 段（取代逐段线性扫 _in_gap）
+            #
+            # P0（2026-09-26）：gap 只用于**标记 unknown**，不得抹掉该槽的值。
+            # 原实现在 gap 段内直接 col.append(None) + quality=-1 并 continue，
+            # 于是只要窗口被登记过一次 gap，即便点表里该区间实有数据（缺口后来被
+            # 导入补齐 / 登记本身误判），KPI、诊断、整定也会整窗取不到数
+            # （实测：点表 6,213 行、quality 全 Good，builder 却给 pv 全 None、
+            #  valid_rate=0.0，整定直接 ERR_TUNING_DATA_INSUFFICIENT）。
+            # 现改为与 R2 的 held_too_long 同语义：标 unknown（下游据此不采信），
+            # 但保留 COV 值与质量码；真的没有任何事件时下方分支仍给 None。
             _gi = bisect.bisect_right(gap_starts, ts) - 1
-            if _gi >= 0 and ts < gap_ends[_gi]:
-                status.append((False, sc.UNKNOWN_REASON_GAP))
-                col.append(None)
-                if role == "pv":
-                    pv_quality.append(-1)
-                continue
+            in_gap = _gi >= 0 and ts < gap_ends[_gi]
             st = streams.get(seg.point_id)
             ev = st.state_at(ts) if st is not None else None
             if ev is not None:
@@ -363,11 +367,22 @@ async def build_logical_wide(
                     hold_s = (ts - ev_ts).total_seconds() if ev_ts is not None else 0.0
                 except TypeError:  # naive/aware 混用时不得因此丢槽
                     hold_s = 0.0
-                if hold_s > max(3.0 * step_s, 60.0):
+                if in_gap:
+                    # 已登记的缺口优先标记（比"保持过久"更明确的原因），
+                    # 但 value/quality 已在上面保留 —— 见 P0 说明。
+                    status.append((False, sc.UNKNOWN_REASON_GAP))
+                elif hold_s > max(3.0 * step_s, 60.0):
                     status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG))
                 else:
                     status.append((True, None))
                 first_event_seen = True
+            elif in_gap:
+                # 缺口段且确实没有任何事件可保持：值只能是 None（真无数据），
+                # 原因归为 gap 而不是 no_initial（对下游更准确）。
+                status.append((False, sc.UNKNOWN_REASON_GAP))
+                col.append(None)
+                if role == "pv":
+                    pv_quality.append(-1)
             else:
                 # 无状态归因：首事件前=无初值；改绑后新点无事件=rebind；
                 # 段内事件后状态耗尽（锚点 coverage_until 边界后）=no_initial

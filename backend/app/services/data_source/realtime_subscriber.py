@@ -154,6 +154,51 @@ _GAP_BACKFILL_END_MARGIN = 300.0
 # gap backfill SETNX 分布式锁 key（多副本防重复补数）
 _GAP_BACKFILL_LOCK_KEY = "realtime:gap:backfill:lock"
 
+
+def gap_session_id(leader_token: str | None) -> str:
+    """缺口登记用的会话身份（列宽 ≤64，历史 1a 收尾修复 2026-09-26）.
+
+    原实现 token 缺失时写死 "unknown"，后果有二：
+    1. **身份丢失**：所有进程/所有轮次的缺口都挤进同一个伪会话，无法追溯来源；
+    2. **绕过去重**：去重键含 session_id，而 session_id 恒等 + start/now 每次微差，
+       于是每次重连都新增一行近重复 gap，表随重启膨胀，observedRatio 与将来的
+       KPI 覆盖率被陈旧跨度压低。
+
+    现在 token 可用时保持原行为（token 本身即 hostname:pid:monotonic_ns，唯一标识
+    本次 Leader 接管）；不可用时退化为 hostname:pid —— 同一进程内稳定（重复登记
+    能被去重），跨重启天然区分（不同采集轮次本就是不同会话）。
+    """
+    source = leader_token or f"{socket.gethostname()}:{os.getpid()}"
+    return f"realtime:{source}"[:64]
+
+
+async def point_table_has_rows(start: datetime, end: datetime) -> bool | None:
+    """点表在 [start, end] 是否**实有数据**（ISO-Z 字面量；探测失败返回 None）.
+
+    P1（2026-09-26）：登记缺口前先与点表核对。实测出现过"点表该窗口有 6,213 行、
+    质量码全为 Good，却被登记成 gap"的情况，使 KPI/诊断/整定在该窗口整窗失明
+    （趋势走 TD 端 FILL(PREV) 不受影响，于是又出现"趋势有数、算法无数"的不一致）。
+
+    实现选择：**LIMIT 1 存在性探测**而不是 COUNT(*) —— 只需回答"有没有行"，
+    开销与窗口长度无关（一次索引扫描即返回），避免每次重连跑重型聚合。
+    时间字面量必须 ISO-Z（裸字面量会按会话时区解释，静默偏移 8 小时）。
+    """
+    try:
+        from app.core.config import settings
+        from app.core.tdengine import execute_sql
+        from app.services.data_source.point_history_repository import format_ts_utc
+
+        sql = (
+            f"SELECT ts FROM {settings.TDENGINE_DB}.st_point_data_v1 "
+            f"WHERE ts >= '{format_ts_utc(start)}' AND ts <= '{format_ts_utc(end)}' LIMIT 1"
+        )
+        rows = await execute_sql(sql, raise_on_error=True)
+    except Exception as exc:  # noqa: BLE001 — 探测失败按"未知"处理，不改变既有行为
+        logger.debug("缺口登记前的点表核对失败（按未知处理，仍按原逻辑登记）: %s", exc)
+        return None
+    return bool(rows)
+
+
 # 多 worker 进程订阅单例 Leader 锁 key（仅持锁进程连接 Hub 并回写 TDengine）
 _SUBSCRIBER_LEADER_LOCK_KEY = "realtime:subscriber:leader:lock"
 
@@ -2187,16 +2232,27 @@ class RealtimeSubscriber:
                 register_gap_segment,
             )
 
-            _sid = f"realtime:{getattr(self, '_leader_token', None) or 'unknown'}"[:64]
-            async with AsyncSessionLocal() as _db:
-                added = await register_gap_segment(
-                    _db,
-                    session_id=_sid,
-                    seg_start=datetime.fromtimestamp(start, UTC),
-                    seg_end=datetime.fromtimestamp(end, UTC),
+            _sid = gap_session_id(getattr(self, "_leader_token", None))
+            seg_start_dt = datetime.fromtimestamp(start, UTC)
+            seg_end_dt = datetime.fromtimestamp(end, UTC)
+            # P1（2026-09-26）：先与点表核对 —— 有数据就不登记（否则算法侧整窗失明）。
+            # 探测失败（None）保持原行为登记，不因探测故障改变语义。
+            if await point_table_has_rows(seg_start_dt, seg_end_dt):
+                logger.info(
+                    "缺口登记跳过：点表在 %s ~ %s 实有数据（登记会让算法侧误判为无数据）",
+                    seg_start_dt.isoformat(),
+                    seg_end_dt.isoformat(),
                 )
-                if added:
-                    await _db.commit()
+            else:
+                async with AsyncSessionLocal() as _db:
+                    added = await register_gap_segment(
+                        _db,
+                        session_id=_sid,
+                        seg_start=seg_start_dt,
+                        seg_end=seg_end_dt,
+                    )
+                    if added:
+                        await _db.commit()
         except Exception as exc:  # noqa: BLE001 — 旁路登记失败不影响采集
             logger.debug("缺口登记落 PG 失败（忽略，不影响订阅）: %s", exc)
         entry: dict[str, Any] = {
