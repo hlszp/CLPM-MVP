@@ -180,7 +180,8 @@ async def main() -> int:
         from app.core.tdengine import execute_sql
 
         db = settings.TDENGINE_DB
-        for stable in ("st_point_data_v1", "st_loop_data"):
+        # 宽表已退役并从库删除，不再探测（否则表不存在会误报 FAIL）
+        for stable in ("st_point_data_v1",):
             try:
                 rows = await execute_sql(
                     f"SELECT COUNT(*) AS c FROM {db}.{stable}", raise_on_error=True
