@@ -698,3 +698,24 @@ export const CLPM_INDUSTRIAL = {
   navySoft: '#EBF1F8',
   border: '#E4E7ED',
 } as const;
+
+/**
+ * 位号级数据质量体检：问题类型标签与语义色（2026-09-26）
+ *
+ * 与后端 app/services/data_quality_audit.py 的常量口径一致；
+ * 色值走 Ant Design 语义色名（不使用 hex，遵守 hex 棘轮门禁）。
+ */
+export const DQ_AUDIT_ISSUE_LABEL: Record<string, string> = {
+  no_data: '断流',
+  bad_quality: '质量码坏',
+  low_density: '密度不足',
+  held: '含 HELD 填平',
+};
+
+/** 问题类型 → Ant Design Tag 语义色 */
+export const DQ_AUDIT_ISSUE_COLOR: Record<string, string> = {
+  no_data: 'error',
+  bad_quality: 'warning',
+  low_density: 'processing',
+  held: 'default',
+};

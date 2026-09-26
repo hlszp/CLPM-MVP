@@ -22,16 +22,24 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
   Dropdown,
+  InputNumber,
   Menu,
   message,
+  Pagination,
   RangePicker,
+  Select,
+  Switch,
   Table,
+  Tag,
   TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import { getReportDataQualityApi } from '#/api/reports';
+import {
+  getReportDataQualityApi,
+  getReportDataQualityAuditApi,
+} from '#/api/reports';
 import {
   ClpmDataCanvas,
   ClpmKpiCard,
@@ -40,6 +48,10 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import { showPageHelp } from '#/composables/use-page-toolbar';
+import {
+  DQ_AUDIT_ISSUE_COLOR,
+  DQ_AUDIT_ISSUE_LABEL,
+} from '#/constants/clpm-ui';
 import { exportData } from '#/utils/export';
 
 defineOptions({ name: 'ReportsDataQuality' });
@@ -83,6 +95,112 @@ async function load() {
     loading.value = false;
   }
 }
+
+// ===== 位号级体检（2026-09-26 新增，点表口径，只读） =====
+//
+// 与上方回路级区块互补：回路级看"评估口径的健康率"（kpi_snapshot_hourly），
+// 位号级看"点表里到底有没有数、质量码好不好"，回答"哪些位号该修"。
+const auditLoading = ref(false);
+const auditError = ref(false);
+const auditData = ref<null | ReportsApi.DataQualityAuditData>(null);
+const auditIssueType = ref<string | undefined>();
+const auditPage = ref(1);
+const auditPageSize = ref(20);
+
+/**
+ * 本分区**独立**的时间窗（刻意不跟随页面 RangePicker），默认近 24 小时。
+ *
+ * 为什么解耦：窗口越长坏值累计越多，30 天窗口下会出现"断流 0 / 坏值 190"这类
+ * **语义正常但观感吓人**的数字；运维更关心"近期哪些位号该修"。
+ * 因此这里显式标注窗口（见 auditWindowLabel），避免用户误以为与页面其它分区同窗口。
+ */
+const auditWindowHours = ref(24);
+const AUDIT_WINDOW_OPTIONS = [
+  { label: '近 24 小时', value: 24 },
+  { label: '近 3 天', value: 72 },
+  { label: '近 7 天', value: 168 },
+  { label: '近 30 天', value: 720 },
+];
+/** 当前窗口文案（在分区标题旁显式标注） */
+const auditWindowLabel = computed(
+  () =>
+    AUDIT_WINDOW_OPTIONS.find((o) => o.value === auditWindowHours.value)?.label ??
+    `近 ${auditWindowHours.value} 小时`,
+);
+/** 事件密度比阈值：低于此值的位号判为"密度不足"（基线=等长前一窗口） */
+const auditMinDensityRatio = ref(0.5);
+/** 是否统计"含 HELD 填平"（缺口被保持值填充）的位号 */
+const auditIncludeHeld = ref(true);
+
+/** 问题类型选项（标签集中在 constants/clpm-ui.ts） */
+const AUDIT_ISSUE_OPTIONS = [
+  { label: '全部问题', value: undefined },
+  { label: DQ_AUDIT_ISSUE_LABEL.no_data, value: 'no_data' },
+  { label: DQ_AUDIT_ISSUE_LABEL.bad_quality, value: 'bad_quality' },
+  { label: DQ_AUDIT_ISSUE_LABEL.low_density, value: 'low_density' },
+  { label: DQ_AUDIT_ISSUE_LABEL.held, value: 'held' },
+];
+
+async function loadAudit() {
+  auditLoading.value = true;
+  try {
+    auditData.value = await getReportDataQualityAuditApi({
+      // 用 lastHours（而非 startDate/endDate）：与后端参数语义一致，
+      // 且**不受页面 RangePicker 影响**——本分区刻意使用独立时间窗（见上方注释）
+      lastHours: auditWindowHours.value,
+      minDensityRatio: auditMinDensityRatio.value,
+      includeHeld: auditIncludeHeld.value,
+      issueType: auditIssueType.value,
+      page: auditPage.value,
+      pageSize: auditPageSize.value,
+    });
+    auditError.value = false;
+  } catch (error) {
+    auditData.value = null;
+    auditError.value = true;
+    console.error('[数据质量报告] 位号级体检加载失败:', error);
+  } finally {
+    auditLoading.value = false;
+  }
+}
+
+function handleAuditFilterChange() {
+  // InputNumber 允许被清空：清空视为"回到默认阈值"，避免空值语义含混
+  // （axios 会丢弃 null 参数 → 后端按默认 0.5 处理，与控件显示不符）
+  if (auditMinDensityRatio.value === null || auditMinDensityRatio.value === undefined) {
+    auditMinDensityRatio.value = 0.5;
+  }
+  auditPage.value = 1;
+  loadAudit();
+}
+
+function handleAuditPageChange(page: number, pageSize: number) {
+  auditPage.value = page;
+  auditPageSize.value = pageSize;
+  loadAudit();
+}
+
+/** 位号问题标签（含 held：heldTooLong > 0） */
+function issueTags(record: Partial<ReportsApi.DataQualityAuditItem>): string[] {
+  const list = [...(record.issues ?? [])];
+  if ((record.heldTooLong ?? 0) > 0) list.push('held');
+  return list;
+}
+
+function fmtRatio(v: null | number | undefined): string {
+  return typeof v === 'number' ? v.toFixed(2) : '—';
+}
+
+const auditColumns = [
+  { dataIndex: 'tagName', title: '位号', width: 220 },
+  { dataIndex: 'loopName', title: '回路', width: 160 },
+  { dataIndex: 'role', title: '角色', width: 90 },
+  { dataIndex: 'rows', title: '行数', width: 90, align: 'right' as const },
+  { dataIndex: 'badRows', title: '坏值数', width: 90, align: 'right' as const },
+  { dataIndex: 'densityRatio', title: '密度比', width: 90, align: 'right' as const },
+  { dataIndex: 'heldTooLong', title: 'HELD 槽', width: 100, align: 'right' as const },
+  { dataIndex: 'issues', title: '问题类型', width: 220 },
+];
 
 // ===== KPI 卡（null → '—'） =====
 function fmtPct(v: null | number | undefined): string {
@@ -226,11 +344,16 @@ function handleHelp() {
   });
 }
 
-watch([dateRange, plantNodeId], () => load());
+watch([dateRange, plantNodeId], () => {
+  auditPage.value = 1;
+  load();
+  loadAudit();
+});
 
 onMounted(() => {
   loadPlants();
   load();
+  loadAudit();
 });
 </script>
 
@@ -352,6 +475,118 @@ onMounted(() => {
           </template>
         </template>
       </Table>
+    </ClpmDataCanvas>
+    <ClpmDataCanvas
+      title="位号级数据质量体检（点表口径，只读）"
+      :empty="!auditLoading && !auditError && !auditData?.items?.length"
+      empty-text="窗口内未发现位号级数据质量问题"
+    >
+      <template #extra>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <!-- 本分区时间窗独立于页面 RangePicker：显式标注，避免口径混淆 -->
+          <span class="text-xs text-neutral-500">
+            窗口：{{ auditWindowLabel }}（独立于页面时间范围）
+          </span>
+          <Select
+            v-model:value="auditWindowHours"
+            :options="AUDIT_WINDOW_OPTIONS"
+            class="w-32"
+            size="small"
+            title="本分区时间窗（不跟随页面时间范围）"
+            @change="handleAuditFilterChange"
+          />
+          <Select
+            v-model:value="auditIssueType"
+            :options="AUDIT_ISSUE_OPTIONS"
+            allow-clear
+            class="w-36"
+            placeholder="问题类型"
+            size="small"
+            @change="handleAuditFilterChange"
+          />
+          <span
+            class="flex items-center gap-1"
+            title="事件密度比低于此值的位号判为「密度不足」；基线为等长前一窗口"
+          >
+            <span class="text-xs text-neutral-500">密度比 ≥</span>
+            <InputNumber
+              v-model:value="auditMinDensityRatio"
+              :max="1"
+              :min="0"
+              :precision="2"
+              :step="0.05"
+              class="w-20"
+              size="small"
+              @change="handleAuditFilterChange"
+            />
+          </span>
+          <span
+            class="flex items-center gap-1"
+            title="是否统计「含 HELD 填平」（缺口被保持值填充）的位号"
+          >
+            <span class="text-xs text-neutral-500">含 HELD</span>
+            <Switch
+              v-model:checked="auditIncludeHeld"
+              size="small"
+              @change="handleAuditFilterChange"
+            />
+          </span>
+          <span
+            v-if="auditData"
+            class="text-xs text-neutral-500"
+          >
+            {{ auditData.summary.points }} 个位号：断流
+            {{ auditData.summary.noData }} · 质量码坏
+            {{ auditData.summary.badQuality }} · 密度不足
+            {{ auditData.summary.lowDensity }} · 含 HELD
+            {{ auditData.summary.heldFilled }}
+          </span>
+        </div>
+      </template>
+
+      <ClpmLoadErrorAlert :error="auditError" @retry="loadAudit" />
+
+      <Table
+        v-if="!auditError"
+        :columns="auditColumns"
+        :data-source="auditData?.items ?? []"
+        :loading="auditLoading"
+        :pagination="false"
+        :scroll="{ x: 1100 }"
+        row-key="pointId"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.dataIndex === 'issues'">
+            <span v-if="issueTags(record).length === 0" class="text-emerald-600">
+              正常
+            </span>
+            <Tag
+              v-for="issue in issueTags(record)"
+              :key="issue"
+              :color="DQ_AUDIT_ISSUE_COLOR[issue] ?? 'default'"
+              class="mr-1"
+            >
+              {{ DQ_AUDIT_ISSUE_LABEL[issue] ?? issue }}
+            </Tag>
+          </template>
+          <template v-else-if="column.dataIndex === 'densityRatio'">
+            {{ fmtRatio(record.densityRatio) }}
+          </template>
+        </template>
+      </Table>
+
+      <div v-if="(auditData?.total ?? 0) > 0" class="mt-3 flex justify-end">
+        <Pagination
+          :current="auditPage"
+          :page-size="auditPageSize"
+          :page-size-options="['20', '50', '100']"
+          :total="auditData?.total ?? 0"
+          show-size-changer
+          size="small"
+          @change="handleAuditPageChange"
+        />
+      </div>
     </ClpmDataCanvas>
   </Page>
 </template>

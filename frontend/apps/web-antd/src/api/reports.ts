@@ -310,6 +310,71 @@ export namespace ReportsApi {
     items: DataQualityItem[];
   }
 
+  /** 位号级质量体检查询参数（2026-09-26 新增） */
+  export interface DataQualityAuditQuery {
+    startDate?: string;
+    endDate?: string;
+    lastHours?: number;
+    loopId?: string;
+    minDensityRatio?: number;
+    includeHeld?: boolean;
+    issueType?: string;
+    page?: number;
+    pageSize?: number;
+  }
+
+  /** 位号级体检问题类型（与后端常量口径一致） */
+  export type DataQualityAuditIssueType =
+    | 'bad_quality'
+    | 'held'
+    | 'low_density'
+    | 'no_data';
+
+  /** 单个位号的体检结果 */
+  export interface DataQualityAuditItem {
+    pointId: string;
+    tagName: null | string;
+    loopId: null | string;
+    loopName: null | string;
+    role: null | string;
+    rows: number;
+    badRows: number;
+    densityRatio: null | number;
+    heldTooLong: number;
+    pvCoverage: null | number;
+    /** no_data / bad_quality / low_density（held 见 heldTooLong） */
+    issues: string[];
+  }
+
+  /** GET /reports/data-quality/audit 响应 */
+  export interface DataQualityAuditData {
+    items: DataQualityAuditItem[];
+    summary: {
+      badQuality: number;
+      heldFilled: number;
+      lowDensity: number;
+      noData: number;
+      points: number;
+    };
+    window: null | {
+      end: string;
+      referenceEnd: null | string;
+      referenceStart: null | string;
+      start: string;
+    };
+    thresholds: { minDensityRatio: number };
+    loops: {
+      gap: number;
+      heldTooLong: number;
+      loopId: string;
+      pvCoverage: null | number;
+    }[];
+    issueType: null | string;
+    page: number;
+    pageSize: number;
+    total: number;
+  }
+
   export interface AlertTrendPoint {
     date: string;
     CRITICAL: number;
@@ -421,6 +486,21 @@ export function getReportDataQualityApi(params: ReportsApi.ReportQuery) {
   return requestClient.get<ReportsApi.DataQualityData>('/reports/data-quality', {
     params,
   });
+}
+
+/**
+ * 位号级数据质量体检（点表口径，只读；2026-09-26 新增）
+ *
+ * 与 getReportDataQualityApi（回路级、KPI 快照口径）互补：直接查测点点表，
+ * 逐位号判定 断流 / 质量码坏 / 密度不足 / 含 HELD 填平。
+ */
+export function getReportDataQualityAuditApi(
+  params: ReportsApi.DataQualityAuditQuery,
+) {
+  return requestClient.get<ReportsApi.DataQualityAuditData>(
+    '/reports/data-quality/audit',
+    { params, timeout: 60_000 },
+  );
 }
 
 /** 预警统计报告聚合（基础模块数据，模块禁用不受影响） */

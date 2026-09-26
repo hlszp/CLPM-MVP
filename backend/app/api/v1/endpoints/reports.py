@@ -23,7 +23,7 @@ from __future__ import annotations
 import csv
 import io
 import uuid
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -41,6 +41,7 @@ from app.models.sys_user import SysUser
 from app.schemas.base import CamelModel
 from app.schemas.common import ApiResponse, success
 from app.schemas.report import (
+    DataQualityAuditData,
     ReportBenefitData,
     ReportConfigCreateRequest,
     ReportConfigItem,
@@ -363,6 +364,124 @@ async def get_report_data_quality(
     """
     start, end = _parse_date_range(startDate, endDate)
     data = await build_data_quality_stats(db, start=start, end=end, plant_node_id=plantNodeId)
+    return success(data=data)
+
+
+#: 位号级质量体检的合法问题类型（与 data_quality_audit 的常量口径一致）
+_DQ_AUDIT_ISSUE_TYPES = ("no_data", "bad_quality", "low_density", "held")
+
+
+@router.get("/data-quality/audit", response_model=ApiResponse[DataQualityAuditData])
+async def get_report_data_quality_audit(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+    startDate: str | None = Query(None, description="起始日期 YYYY-MM-DD（与 lastHours 二选一）"),
+    endDate: str | None = Query(None, description="结束日期 YYYY-MM-DD（含当日）"),
+    lastHours: int | None = Query(
+        None, ge=1, le=720, description="最近 N 小时；两者都缺省=近 24 小时"
+    ),
+    loopId: str | None = Query(None, description="仅体检某条回路；缺省=全部位号"),
+    minDensityRatio: float = Query(0.5, ge=0, le=1, description="事件密度比阈值（相对等长前窗）"),
+    includeHeld: bool = Query(True, description="是否统计 held_too_long（需按回路构建，稍慢）"),
+    issueType: str | None = Query(
+        None, description="按问题类型过滤：no_data/bad_quality/low_density/held"
+    ),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=200, description="每页条数"),
+) -> dict:
+    """位号级数据质量体检（只读，2026-09-26 新增）。
+
+    与 /reports/data-quality（回路级、KPI 快照口径）互补：本端点直接查**测点点表**
+    st_point_data_v1，逐位号判定：
+    - no_data：窗口内零行（断流位号）；
+    - bad_quality：quality_class 非 1 的占比超阈值；
+    - low_density：相对等长前窗的事件密度比低于 minDensityRatio；
+    - held：该回路存在 held_too_long（缺口被保持值填平，见 R2 语义）。
+    响应分页（222 位号量级），summary 按过滤后全集统计、不受分页影响。
+    """
+    from app.services.data_quality_audit import audit_data_quality
+
+    if issueType and issueType not in _DQ_AUDIT_ISSUE_TYPES:
+        raise BizError(
+            code="ERR_PARAM",
+            message="issueType 非法："
+            + issueType
+            + "（合法值 "
+            + "/".join(_DQ_AUDIT_ISSUE_TYPES)
+            + "）",
+            status_code=400,
+        )
+
+    if lastHours:
+        end = datetime.now(UTC).replace(tzinfo=None)
+        start = end - timedelta(hours=lastHours)
+    else:
+        start, end = _parse_date_range(startDate, endDate)
+        if start is None or end is None:
+            end = datetime.now(UTC).replace(tzinfo=None)
+            start = end - timedelta(hours=24)
+
+    raw = await audit_data_quality(
+        db,
+        start=start,
+        end=end,
+        loop_id=loopId,
+        min_density_ratio=minDensityRatio,
+        with_held=includeHeld,
+    )
+
+    items: list[dict] = list(raw.get("points") or [])
+    # 补回路名（明细列需要）：位号数量级 200+，回路数量少，一次查询即可
+    loop_ids = sorted({i.get("loopId") for i in items if i.get("loopId")})
+    name_map: dict[str, str] = {}
+    if loop_ids:
+        rows = (
+            await db.execute(
+                select(LoopLedger.id, LoopLedger.tag_name).where(LoopLedger.id.in_(loop_ids))
+            )
+        ).all()
+        name_map = {str(r[0]): (r[1] or "") for r in rows}
+    for it in items:
+        it["loopName"] = name_map.get(str(it.get("loopId") or "")) or None
+
+    if issueType == "held":
+        filtered = [i for i in items if int(i.get("heldTooLong") or 0) > 0]
+    elif issueType:
+        filtered = [i for i in items if issueType in (i.get("issues") or [])]
+    else:
+        filtered = items
+
+    total = len(filtered)
+    offset = (page - 1) * pageSize
+    page_items = filtered[offset : offset + pageSize]
+
+    def _has(item: dict, issue: str) -> bool:
+        return issue in (item.get("issues") or [])
+
+    win = raw.get("window") or {}
+    ref = win.get("reference") or {}
+    data = {
+        "items": page_items,
+        "summary": {
+            "points": total,
+            "noData": sum(1 for i in filtered if _has(i, "no_data")),
+            "badQuality": sum(1 for i in filtered if _has(i, "bad_quality")),
+            "lowDensity": sum(1 for i in filtered if _has(i, "low_density")),
+            "heldFilled": sum(1 for i in filtered if int(i.get("heldTooLong") or 0) > 0),
+        },
+        "window": {
+            "start": win.get("start"),
+            "end": win.get("end"),
+            "referenceStart": ref.get("start"),
+            "referenceEnd": ref.get("end"),
+        },
+        "thresholds": {"minDensityRatio": raw.get("minDensityRatio", minDensityRatio)},
+        "loops": raw.get("loops") or [],
+        "issueType": issueType,
+        "page": page,
+        "pageSize": pageSize,
+        "total": total,
+    }
     return success(data=data)
 
 

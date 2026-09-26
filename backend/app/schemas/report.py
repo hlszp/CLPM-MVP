@@ -326,3 +326,66 @@ __all__ = [
     "ReportBenefitScatterPoint",
     "ReportBenefitBatchScatter",
 ]
+
+
+class DataQualityAuditWindow(CamelModel):
+    """位号级体检窗口（含等长前窗基线，均 ISO-Z）。"""
+
+    start: str
+    end: str
+    referenceStart: str | None = None
+    referenceEnd: str | None = None
+
+
+class DataQualityAuditItem(CamelModel):
+    """单个位号的体检结果。"""
+
+    pointId: str
+    tagName: str | None = None
+    loopId: str | None = None
+    loopName: str | None = None
+    role: str | None = None
+    rows: int = 0
+    badRows: int = 0
+    densityRatio: float | None = None
+    heldTooLong: int = 0
+    pvCoverage: float | None = None
+    #: 问题类型列表：no_data / bad_quality / low_density（held 另见 heldTooLong）
+    issues: list[str] = Field(default_factory=list)
+
+
+class DataQualityAuditSummary(CamelModel):
+    """体检汇总（按当前过滤条件统计，不受分页影响）。"""
+
+    points: int = 0
+    noData: int = 0
+    badQuality: int = 0
+    lowDensity: int = 0
+    heldFilled: int = 0
+
+
+class DataQualityAuditLoop(CamelModel):
+    """回路级 held_too_long 汇总（同回路位号共享）。"""
+
+    loopId: str
+    heldTooLong: int = 0
+    pvCoverage: float | None = None
+    gap: int = 0
+
+
+class DataQualityAuditThresholds(CamelModel):
+    minDensityRatio: float = 0.5
+
+
+class DataQualityAuditData(CamelModel):
+    """GET /reports/data-quality/audit 响应（位号级，点表口径）。"""
+
+    items: list[DataQualityAuditItem] = Field(default_factory=list)
+    summary: DataQualityAuditSummary = Field(default_factory=DataQualityAuditSummary)
+    window: DataQualityAuditWindow | None = None
+    thresholds: DataQualityAuditThresholds = Field(default_factory=DataQualityAuditThresholds)
+    loops: list[DataQualityAuditLoop] = Field(default_factory=list)
+    issueType: str | None = None
+    page: int = 1
+    pageSize: int = 20
+    total: int = 0
