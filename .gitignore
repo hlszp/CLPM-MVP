@@ -86,3 +86,6 @@ releases/*.tar.gz
 # 校验文件随包生成，二者都只在本机/分发通道流转
 releases/*.zip
 releases/*.sha256
+
+# .qoder 自动生成 wiki：生成物不入库（2026-09-26）
+.qoder/repowiki/
