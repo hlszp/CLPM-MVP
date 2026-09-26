@@ -430,3 +430,28 @@ WHERE point_id = '<point_id>'
    `SELECT @@timezone;` 是 MySQL 写法，TDengine 报 `unrecognized token`，别照抄），
    或直接看容器 TZ（`docker exec clpm-tdengine printenv TZ`），然后显式换算；
 4. 排查"有没有数据"时，**同时**打印查到的 `MIN(ts)/MAX(ts)`：时段边界能立刻暴露 8 小时偏移。
+
+---
+
+## TDengine 手工排查两个坑（2026-09-26 实测沉淀）
+
+### 坑 1：分组聚合里对 TIMESTAMP 用 MIN/MAX 会返回「空错误信息」
+
+现象：`SELECT TBNAME, MIN(ts) … GROUP BY TBNAME` 报 `TDengine 执行错误: `（**message 为空**），
+看起来像客户端封装坏了，实际是**函数选择**问题。
+
+正确写法：用 `FIRST(ts)` / `LAST(ts)`。实测 `MIN/MAX(ts)` FAIL、`FIRST/LAST(ts)` OK，
+native 与 REST 两个客户端表现一致。
+
+> 这条曾误导过一次排查：一度被判断为"`execute_sql` 封装缺陷"，实际与封装无关。
+> **手工排查时间范围一律用 FIRST/LAST。**
+
+### 坑 2：窗口内零行的分组，SUM(CASE WHEN quality_class …) 仍返回 1
+
+现象：`n=0, bad=1` —— 断流位号（窗口内没有任何行）会被**同时误报**"质量码坏"。
+
+正确写法：零行时必须强制 `badRows = 0`，例如
+`CASE WHEN COUNT(*) = 0 THEN 0 ELSE SUM(CASE WHEN quality_class IS NULL OR quality_class <> 1 THEN 1 ELSE 0 END) END`，
+或在应用层按 `n == 0` 归零。
+
+> `app/services/data_quality_audit.py` 已在代码注释里写明该处理；手工写 SQL 时同样要注意。
