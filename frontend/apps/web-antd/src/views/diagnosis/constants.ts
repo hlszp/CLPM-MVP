@@ -58,6 +58,46 @@ export const CATEGORY_OPTIONS: Array<{
   Object.entries(CATEGORY_META) as Array<[DiagnosisApi.Category, CategoryMeta]>
 ).map(([value, meta]) => ({ label: meta.label, value }));
 
+/**
+ * 分类归一化：把任意来源的分类文本统一成 8 类**英文代码**（单一事实源收口）。
+ *
+ * 背景（2026-09-27，阻断级缺陷修复）：工作台 Pareto / 装置堆叠条的数据来自库内物化视图
+ * `mv_diagnosis_pareto.root_cause`，该列返回的是**中文标签**（如「仪表/测量问题」），
+ * 而下游（回路组对比抽屉、分类筛选）以 8 类英文代码为键，导致点击恒被守卫拒绝——
+ * 无请求、无抽屉（F4 入口不可用）。MV 定义属 DDL 且被多处消费，不宜改；故在前端收口：
+ * **一律先经本函数归一，显示仍由 CATEGORY_META[code].label 负责**，避免"label 一改逻辑就坏"。
+ *
+ * 规则：① 已是 8 类代码 → 原样返回；② 精确匹配 label → 对应代码；
+ * ③ 已知变体（如「数据不足/无法判定」）→ 对应代码；④ 「x/y」形态取前缀再试；
+ * ⑤ 其余 → null（守卫按脏数据丢弃，不误开抽屉）。
+ */
+const CATEGORY_LABEL_ALIASES: Record<string, DiagnosisApi.Category> = {
+  '数据不足/无法判定': 'DATA_INSUFFICIENT',
+};
+
+const CATEGORY_LABEL_TO_CODE: Record<string, DiagnosisApi.Category> =
+  Object.fromEntries(
+    (
+      Object.entries(CATEGORY_META) as Array<[DiagnosisApi.Category, CategoryMeta]>
+    ).map(([code, meta]) => [meta.label, code]),
+  );
+
+export function normalizeCategory(raw: unknown): DiagnosisApi.Category | null {
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim();
+  if (!text) return null;
+  if (text in CATEGORY_META) return text as DiagnosisApi.Category;
+  const exact = CATEGORY_LABEL_TO_CODE[text] ?? CATEGORY_LABEL_ALIASES[text];
+  if (exact) return exact;
+  const prefix = text.split('/')[0]?.trim() ?? '';
+  if (prefix && prefix !== text) {
+    return (
+      CATEGORY_LABEL_TO_CODE[prefix] ?? CATEGORY_LABEL_ALIASES[prefix] ?? null
+    );
+  }
+  return null;
+}
+
 export const SEVERITY_TEXT: Record<string, string> = {
   HIGH: '高',
   LOW: '低',

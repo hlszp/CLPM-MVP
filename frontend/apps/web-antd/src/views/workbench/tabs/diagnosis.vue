@@ -30,7 +30,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { getWorkbenchDiagnosisApi } from '#/api/workbench';
 import { useWorkbenchStore } from '#/store/workbench';
 import CohortCompareDrawer from '#/views/diagnosis/components/cohort-compare-drawer.vue';
-import { CATEGORY_META } from '#/views/diagnosis/constants';
+import { normalizeCategory } from '#/views/diagnosis/constants';
 
 import AbnormalLoopsTable from '../components/AbnormalLoopsTable.vue';
 import DgRuleStats from '../components/DgRuleStats.vue';
@@ -94,8 +94,10 @@ const cohortPlantName = ref<string | undefined>(undefined);
 
 /** Pareto 柱点击：分类已知、装置取当前工作台 scope（G2 映射） */
 function onParetoCohort(category: string) {
-  if (!(category in CATEGORY_META)) return; // 非 8 类代码不打开（防御脏数据）
-  cohortCategory.value = category as DiagnosisApi.Category;
+  // MV root_cause 返回中文标签，先归一为 8 类代码（2026-09-27 修复 F4 入口不可用）
+  const code = normalizeCategory(category);
+  if (!code) return; // 非 8 类（脏数据）不打开
+  cohortCategory.value = code;
   cohortPlantNodeId.value = scopeQuery().plantNodeId;
   cohortPlantName.value = undefined;
   cohortOpen.value = true;
@@ -107,8 +109,9 @@ function onUnitCohort(payload: {
   plantNodeId?: string;
   plantNodeName?: string;
 }) {
-  if (!(payload.category in CATEGORY_META)) return;
-  cohortCategory.value = payload.category as DiagnosisApi.Category;
+  const code = normalizeCategory(payload.category);
+  if (!code) return;
+  cohortCategory.value = code;
   cohortPlantNodeId.value = payload.plantNodeId ?? scopeQuery().plantNodeId;
   cohortPlantName.value = payload.plantNodeName;
   cohortOpen.value = true;
@@ -142,12 +145,16 @@ function onUnitCohort(payload: {
 
       <!-- Row2 grid c5/c7：Pareto 柱+折线 / 诊断队列 + diagSeg（固定 302px，与 Row3 保持等高，避免 1080p 下高度失衡 & 900p 下外溢） -->
       <div class="grid flex-none min-h-0 h-[302px] grid-cols-12 gap-2">
-        <div class="col-span-5 min-h-0 h-full overflow-hidden rounded border border-[#E4E7ED]">
+        <div class="col-span-5 flex h-full min-h-0 flex-col overflow-hidden rounded border border-[#E4E7ED]">
           <ParetoBarLine
             :pareto="pareto"
             :window="store.timeWindow"
             @cohort="onParetoCohort"
           />
+          <div class="flex-none px-2 pb-1 text-[10px] leading-tight text-gray-400">
+            点击柱子查看「分类 × 装置」回路组对比。本图按历史诊断次数计数，
+            对比列表按每回路最新结论筛选，二者口径不同、条数可能不一致。
+          </div>
         </div>
         <div class="col-span-7 min-h-0 h-full overflow-hidden rounded border border-[#E4E7ED]">
           <AbnormalLoopsTable
