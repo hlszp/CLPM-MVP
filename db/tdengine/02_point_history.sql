@@ -7,7 +7,8 @@
 --      backend/app/services/data_source/point_history_repository.ensure_schema()
 --      完成（库名从 settings.TDENGINE_DB 注入，隔离环境为 clpm_ts_ref，
 --      开发/生产为 clpm_ts——两种环境下该脚本均可重复执行，幂等）。
---   2. 旧宽表 st_loop_data 保留不动（legacy 读取路径继续使用）。
+--   2. 旧宽表 st_loop_data 已退役（2026-09-25/26：写入与读取路径删除、DDL 占位化）；
+      本文件不再涉及宽表，仅定义测点点表。
 --   3. 子表命名固定 p_<tag_registry.id 去连字符小写>，由应用层生成，
 --      不从用户可编辑位号拼接（设计 §4.1）。
 --   4. P1 已在真实 TDengine 3.3.6.0 / 3.3.6.6（arm64）验证：
@@ -15,6 +16,12 @@
 --      跨子表部分成功语义——证据见
 --      backend/tests/integration/test_refactor_point_store.py。
 -- =============================================================================
+
+-- 建库：属性与 backend/app/services/data_source/point_history_repository.ensure_schema()
+-- 保持一致（KEEP 365 / DURATION 10 / PRECISION 'ms'）。
+-- 首次部署时本文件由 TDengine 容器 entrypoint 执行（挂载见 docker-compose.prod.yml）；
+-- 应用侧 ensure_schema() 亦会幂等自建，两者互为兜底。
+CREATE DATABASE IF NOT EXISTS clpm_ts KEEP 365 DURATION 10 PRECISION 'ms';
 
 CREATE STABLE IF NOT EXISTS clpm_ts.st_point_data_v1 (
     -- ts: 该条来源记录的时间（源 collectTime/历史样本时间），非 flush/接收时间

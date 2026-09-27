@@ -34,6 +34,50 @@ WARN = "WARN"
 results: list[tuple[str, str, str]] = []
 
 
+# 错误分类：连接 / 认证 / 库表不存在 / 其它（纯函数，可单测）
+_AUTH_MARKERS = ("authentication failure", "0x357", "invalid pass", "auth fail")
+_MISSING_MARKERS = (
+    "database not exist",
+    "table does not exist",
+    "database does not exist",
+    "invalid database",
+)
+_CONN_MARKERS = (
+    "all connection attempts failed",
+    "connecterror",
+    "connection refused",
+    "connection reset",
+    "timed out",
+    "timeout",
+    "unreachable",
+    "failed to connect",
+)
+
+
+def classify_td_error(exc_or_text: object) -> tuple[str, str]:
+    """按错误类型给出（类别标签, 下一步建议）；提示准确，避免误导排查方向。"""
+    text = str(exc_or_text).lower()
+    if any(m in text for m in _AUTH_MARKERS):
+        return (
+            "认证失败",
+            "；建议：核对口令三处一致——.env.prod 的 TDENGINE_PASSWORD / 容器 TAOS_ROOT_PASSWORD"
+            "（须用 --env-file .env.prod 传入，否则插值为空）/ 库内 root 实际口令",
+        )
+    if any(m in text for m in _MISSING_MARKERS):
+        return (
+            "库或表不存在",
+            "；建议：确认 clpm_ts 与 st_point_data_v1 是否已建——DDL 见 "
+            "db/tdengine/02_point_history.sql，应用侧 ensure_schema() 亦会幂等自建",
+        )
+    if any(m in text for m in _CONN_MARKERS):
+        return (
+            "连接失败",
+            "；建议：① 容器是否在跑（TDengine 是 profile 门控服务，需 --profile tdengine）"
+            "② 网络可达性 ③ 端口语义（REST = TDENGINE_PORT + 11）",
+        )
+    return ("其它错误", "")
+
+
 def record(gate: str, status: str, detail: str) -> None:
     results.append((gate, status, detail))
     print(f"[{status}] {gate}: {detail}")
@@ -187,10 +231,11 @@ async def main() -> int:
                     f"SELECT COUNT(*) AS c FROM {db}.{stable}", raise_on_error=True
                 )
             except Exception as exc:  # noqa: BLE001
+                kind, advice = classify_td_error(exc)
                 record(
                     f"TDengine {stable}",
                     FAIL,
-                    f"查询失败：{exc}（表不存在→writer 建表失败或从未写入）",
+                    f"查询失败（{kind}）：{exc}{advice}",
                 )
                 continue
             count = (rows[0].get("c") if rows else 0) or 0
