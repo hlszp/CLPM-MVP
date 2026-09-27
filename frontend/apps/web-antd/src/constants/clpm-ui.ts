@@ -719,3 +719,19 @@ export const DQ_AUDIT_ISSUE_COLOR: Record<string, string> = {
   low_density: 'processing',
   held: 'default',
 };
+
+/** C（2026-09-28）：排名空态文案的单一事实源（装置排名 / 单元排名 共用；{subject} 由调用方注入） */
+export const RANKING_EMPTY_TEMPLATES: Record<string, string> = {
+  NO_ORG_NODES: '组织树未配置工厂/装置节点，{subject}不可用（请先在系统管理配置组织）',
+  NO_PRECALC_ROWS: '{subject}暂无数据：预计算尚未产出，请稍候或检查预计算任务',
+};
+
+/** 按 emptyReason 生成排名空态文案；未命中原因时用 fallback */
+export function rankingEmptyText(
+  reason: null | string | undefined,
+  subject: string,
+  fallback?: string,
+): string {
+  const tpl = reason ? RANKING_EMPTY_TEMPLATES[reason] : undefined;
+  return tpl ? tpl.replace('{subject}', subject) : (fallback ?? '暂无' + subject);
+}

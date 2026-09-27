@@ -13,12 +13,21 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { rankingEmptyText } from '#/constants/clpm-ui';
+
 import { useWorkbenchDrill } from '../utils/drill';
 
 const props = defineProps<{
+  /** C（2026-09-28）：排名为空的判定原因（NO_ORG_NODES / NO_PRECALC_ROWS） */
+  emptyReason?: null | string;
   plants?: WorkbenchApi.PlantRow[];
   totalLoops?: number; // 全厂回路总数（来自 GLOBAL 窗口 loop_count）
 }>();
+
+/** 空态文案与单元排名同源（constants/clpm-ui.rankingEmptyText） */
+const emptyText = computed(() =>
+  rankingEmptyText(props.emptyReason, '装置排名', '暂无装置数据'),
+);
 
 const { drill, resolvePlantNodeId } = useWorkbenchDrill();
 
@@ -167,7 +176,7 @@ const notEvaluated = computed(() => Math.max(0, totalAll.value - totalLoop.value
         v-if="sorted.length === 0"
         class="flex flex-1 items-center justify-center text-xs text-gray-400"
       >
-        暂无装置数据
+        {{ emptyText }}
       </div>
     </div>
 

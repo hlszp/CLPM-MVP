@@ -14,6 +14,8 @@ import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { rankingEmptyText } from '#/constants/clpm-ui';
+
 import { useWorkbenchDrill } from '../utils/drill';
 
 const props = defineProps<{
@@ -24,15 +26,9 @@ const props = defineProps<{
   units?: WorkbenchApi.UnitRow[];
 }>();
 
-const emptyText = computed(() => {
-  if (props.emptyReason === 'NO_ORG_NODES') {
-    return '组织树未配置工厂/装置节点，单元排名不可用（请先在系统管理配置组织）';
-  }
-  if (props.emptyReason === 'NO_PRECALC_ROWS') {
-    return '单元排名暂无数据：预计算尚未产出，请稍候或检查预计算任务';
-  }
-  return '暂无单元数据';
-});
+const emptyText = computed(() =>
+  rankingEmptyText(props.emptyReason, '单元排名', '暂无单元数据'),
+);
 
 const { drill, resolvePlantNodeId } = useWorkbenchDrill();
 

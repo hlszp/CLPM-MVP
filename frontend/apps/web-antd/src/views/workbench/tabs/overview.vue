@@ -204,7 +204,11 @@ function onFunnelLaneClick(status: HandlingApi.OrderStatus) {
         />
       </div>
       <div class="col-span-3 min-h-0">
-        <DeviceRiskList :plants="overview?.plants" :total-loops="loopCount" />
+        <DeviceRiskList
+          :plants="overview?.plants"
+          :empty-reason="overview?.plantsEmptyReason"
+          :total-loops="loopCount"
+        />
       </div>
     </div>
 
