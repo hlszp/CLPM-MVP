@@ -455,3 +455,83 @@ native 与 REST 两个客户端表现一致。
 或在应用层按 `n == 0` 归零。
 
 > `app/services/data_quality_audit.py` 已在代码注释里写明该处理；手工写 SQL 时同样要注意。
+
+---
+
+## 生产部署与 TDengine 口令/初始化（2026-09-27 现场事故沉淀）
+
+### 一、compose 命令必须带 `--env-file .env.prod` 与 `--profile tdengine`
+
+**故障链（现场实测）**：手敲 `docker compose -f docker-compose.prod.yml ...`（不带这两个参数）时，compose 层插值 `${TDENGINE_PASSWORD}` 取不到值（只读同目录 `.env`，不读 `.env.prod`）→ 容器内 `TAOS_ROOT_PASSWORD` 为空、而后端经 `env_file` 拿到的是非空口令 → **两边不一致**：
+
+```
+clpm-tdengine | C MND ERROR user:root, failed to login ... since invalid pass
+clpm-tdengine | RST ERROR connect server error, ip:172.18.0.6, err:[0x357] Authentication failure
+```
+
+后果：应用建不出 `clpm_ts` → 点表不存在 → **趋势 / 评估 / 诊断全部无数据**（页面表现为"没历史数据"）。
+
+**正确做法（二选一，推荐第一种）**：
+
+```bash
+# ① 统一用部署脚本：deploy/deploy.sh:174/177 恒带 --profile tdengine 与 --env-file .env.prod
+./deploy.sh up -d --force-recreate backend celery-worker celery-beat frontend
+
+# ② 若必须手敲 compose，参数一个都不能少
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d --force-recreate tdengine backend celery-worker celery-beat frontend
+```
+
+**口令三处必须一致**：`.env.prod` 的 `TDENGINE_PASSWORD`、容器环境 `TAOS_ROOT_PASSWORD`（由 `--env-file` 传入）、TDengine 实例内 root 的实际口令。任何一处为空或不同，都会复现上面的认证失败。
+
+### 二、`.td-password-changed` 标记文件的首次/非首次差异
+
+`docker-compose.prod.yml` 把宿主 `./.td-password-changed` 挂到容器的 `/.docker-entrypoint-root-password-changed`。TDengine entrypoint 每次启动会用**默认口令 `taosdata`** 去 `ALTER USER` 改密；但卷 `tdengine_data` 持久化后口令已改，默认口令登录失败 → `exit 255` **崩溃循环**，现象是容器反复 `Up N seconds`（而其它容器是 `Up N hours`）。
+
+| 场景 | 标记文件 | 说明 |
+|---|---|---|
+| **首次部署（全新卷）** | **必须删除**（`rm -f .td-password-changed`） | 让 entrypoint 用 `TAOS_ROOT_PASSWORD` 把口令设好 |
+| **非首次部署（卷已存在且改过密码）** | **必须存在**（`touch .td-password-changed`） | 跳过 `ALTER USER`，避免崩溃循环 |
+
+### 三、五闸门诊断的判读顺序（`scripts/diag_realtime_pipeline.py`）
+
+该脚本的 FAIL 文案"表不存在→writer 建表失败或从未写入"在**连接层/认证层失败**时同样会出现，**属误导**（待修）。判读请按四层由外向内：
+
+```bash
+# ① 连接层：容器在不在、健康不健康（TDengine 是 profile 门控服务，ps 要带 profile）
+docker compose -f docker-compose.prod.yml --profile tdengine ps
+
+# ② 认证层：日志有无 Authentication failure；CLI 能否登录
+docker compose -f docker-compose.prod.yml --profile tdengine logs --tail=60 tdengine
+docker exec -i clpm-tdengine taos -u root -p"<口令>" -s "SHOW DATABASES;"
+
+# ③ 库表存在性：应看到 clpm_ts（缺失原因见下节 DDL 现状）
+docker exec -i clpm-tdengine taos -s "SHOW DATABASES;"
+
+# ④ 数据新鲜度：行数与首末时间（★必须 FIRST/LAST，MIN/MAX(ts) 会返回空错误信息）
+docker exec -i clpm-tdengine taos -s "SELECT COUNT(*) AS rows_total, FIRST(ts) AS first_ts, LAST(ts) AS last_ts FROM clpm_ts.st_point_data_v1;"
+```
+
+### 四、TDengine 建表 DDL 现状（**待修缺陷**）
+
+- `docker-compose.prod.yml:174` **只挂载** `db/tdengine/01_supertable.sql` 到 entrypoint 初始化目录；
+- 而该文件随宽表退役（2026-09-25）已清空为**无 DDL 的占位文件**；
+- 真正的建表 DDL 在 `db/tdengine/02_point_history.sql`（`CREATE STABLE IF NOT EXISTS clpm_ts.st_point_data_v1 ...`）**未被挂载**；
+- 当前**依赖应用自建**：`app/services/data_source/point_history_repository.py:176-178` 会执行 `CREATE DATABASE IF NOT EXISTS` + `CREATE STABLE IF NOT EXISTS`。
+
+结论：**全新卷 + 应用连不上 TDengine** 时，点表永远不会被创建——这正是 2026-09-27 现场的表现。待修：把 `02_point_history.sql` 也挂进 `/docker-entrypoint-initdb.d/`（改 compose，需授权）。
+
+## 新增能力（2026-09-26/27）
+
+### KPI 覆盖率开关（`sys_config`，默认关闭）
+
+- 键名 `kpi.min_observed_ratio`（取值 0~1）；**键不存在 / 空 / 非法 = 不启用**（保持现行为，故升级本身不改变既有结果）；
+- 启用后：某小时 PV 观测覆盖率低于阈值 → 该小时 KPI 快照判 `INCONCLUSIVE`（单回路与批量两条路径同时生效）；
+- 覆盖率口径 = `SeriesContext.source_coverage_ratio("pv")`（R2 之后"保持过久"的槽位已计入 unknown，≈真实观测率）；
+- **现状**：24h/7d 的影响量化未完成，**启用前需先评估**（见《部署移交说明-20260926.md》第六节）。
+
+### 位号级数据质量体检（2026-09-26 新增）
+
+- 只读 CLI：`scripts/audit_data_quality.py --last-hours 24 --format table|json|csv`；
+- 只读接口：`GET /api/v1/reports/data-quality/audit`（分页 + issueType 过滤）→ 报告页「数据质量」新增分区；
+- 四类判定：**断流**（窗口零行）/ **质量码坏**（quality_class<>1 占比）/ **密度不足**（相对等长前窗的事件密度比）/ **含 HELD 填平**（R2 的 held_too_long）；
+- ⚠️ 生产位号数远超开发机（开发 222 / 生产数千），**先在服务器用 CLI 试 24h**，确认耗时再开页面；720h 档若明显卡顿需加接口保护。
