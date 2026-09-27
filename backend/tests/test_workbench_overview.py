@@ -343,7 +343,7 @@ class TestBuildOverview:
             "window",
             "windows",
             "plants",
-        "plantsEmptyReason",  # C（2026-09-28）：排名为空的判定原因
+            "plantsEmptyReason",  # C（2026-09-28）：排名为空的判定原因
             "units",
             "pareto",
             "roots",
