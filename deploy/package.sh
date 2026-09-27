@@ -258,6 +258,7 @@ mkdir -p "${DELIVERY_PATH}/db/postgresql" "${DELIVERY_PATH}/db/tdengine"
 cp "${PROJECT_ROOT}/db/postgresql/01_schema.sql"     "${DELIVERY_PATH}/db/postgresql/"
 cp "${PROJECT_ROOT}/db/postgresql/02_seed_data.sql"  "${DELIVERY_PATH}/db/postgresql/"
 cp "${PROJECT_ROOT}/db/tdengine/01_supertable.sql"   "${DELIVERY_PATH}/db/tdengine/"
+cp "${PROJECT_ROOT}/db/tdengine/02_point_history.sql" "${DELIVERY_PATH}/db/tdengine/"
 
 # 6. 镜像 tarball
 mkdir -p "${DELIVERY_PATH}/images"
@@ -269,6 +270,7 @@ if [ -f "${SCRIPT_DIR}/README-deploy.md" ]; then
 fi
 if [ -f "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" ]; then
     cp "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" "${DELIVERY_PATH}/DEPLOYMENT-GUIDE.md"
+    cp "${PROJECT_ROOT}/releases/部署移交说明-20260926.md" "${DELIVERY_PATH}/部署移交说明-20260926.md"
 fi
 # 现场部署手册与移交说明书（releases/ 下，随包交付部署运维团队）
 for doc in "客户现场部署手册.md" "部署运维移交说明书.md"; do
@@ -361,6 +363,7 @@ if [ "$PUSH_DEPLOY_REPO" = true ]; then
     cp "${PROJECT_ROOT}/db/postgresql/01_schema.sql"    "${DEPLOY_REPO_DIR}/db/postgresql/"
     cp "${PROJECT_ROOT}/db/postgresql/02_seed_data.sql" "${DEPLOY_REPO_DIR}/db/postgresql/"
     cp "${PROJECT_ROOT}/db/tdengine/01_supertable.sql"  "${DEPLOY_REPO_DIR}/db/tdengine/"
+    cp "${PROJECT_ROOT}/db/tdengine/02_point_history.sql" "${DEPLOY_REPO_DIR}/db/tdengine/"
 
     if [ -d "${SCRIPT_DIR}/prometheus" ]; then
         cp -r "${SCRIPT_DIR}/prometheus" "${DEPLOY_REPO_DIR}/deploy/prometheus"
@@ -372,6 +375,7 @@ if [ "$PUSH_DEPLOY_REPO" = true ]; then
     # README.md 由 clpm-deploy 独立维护（registry 拉取模式专用文档）
     if [ -f "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" ]; then
         cp "${SCRIPT_DIR}/DEPLOYMENT-GUIDE.md" "${DEPLOY_REPO_DIR}/DEPLOYMENT-GUIDE.md"
+        cp "${PROJECT_ROOT}/releases/部署移交说明-20260926.md" "${DEPLOY_REPO_DIR}/部署移交说明-20260926.md"
     fi
 
     # 提交并推送
