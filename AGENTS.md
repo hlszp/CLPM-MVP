@@ -1,5 +1,7 @@
 # CLPM Agent Guidance
 
+> **⚠️ 已归档（2026-09-27）**：本仓库（CLPM-MVP）保留为历史归档，**后续开发请到 iCLPM**（`/Users/zhangping/DEV/iCLPM`，远端 `https://github.com/hlszp/iCLPM`）。本文件仅供在归档仓做缺陷修复/历史溯源时使用；iCLPM 的现行约定以该仓 `AGENTS.md` 为准（口径已继承，远端改为仅 GitHub）。
+
 ## ⚠️ MVP 覆盖说明（优先级最高）
 
 本仓库是 **CLPM-MVP**（自原 CLPM v6.2 派生的精简 + 闭环重建版），不是原 CLPM 项目。

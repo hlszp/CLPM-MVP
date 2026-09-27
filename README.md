@@ -1,4 +1,6 @@
-# CLPM-MVP
+# CLPM-MVP（已归档）
+
+> **⚠️ 项目已迁移（2026-09-27）**：后续开发在 **iCLPM** 进行——本地 `/Users/zhangping/DEV/iCLPM`，远端 `https://github.com/hlszp/iCLPM`。本仓库保留为历史归档（只读），不再接受功能开发；仅必要时做缺陷修复与文档勘误。
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）— **MVP 精简 + 闭环重建版**（自 CLPM v6.2 派生，设计事实来源见 `docs/MVP设计/`）。
 
