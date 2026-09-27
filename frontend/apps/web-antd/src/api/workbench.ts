@@ -184,6 +184,8 @@ export namespace WorkbenchApi {
     funnel: FunnelStat | null;
     pareto: ParetoRow[];
     plants: PlantRow[];
+    /** C（2026-09-28）：装置/单元排名为空的判定原因（NO_ORG_NODES / NO_PRECALC_ROWS） */
+    plantsEmptyReason?: 'NO_ORG_NODES' | 'NO_PRECALC_ROWS' | null;
     roots: RootRow[];
     scope: { id: null | number; type: ScopeType };
     units: UnitRow[];

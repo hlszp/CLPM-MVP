@@ -34,6 +34,7 @@ from app.models.plant_node import PlantNode
 from app.models.sys_config import SysConfig
 from app.models.workbench_summary import WorkbenchWindowSummary
 from app.services.diagnosis_v2_compat import symptom_label
+from app.services.workbench_scope import node_scope_id
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,21 @@ def _lose_factors(row: Any, threshold: float) -> list[str]:
     return factors
 
 
+def _plants_empty_reason(hierarchy: dict[str, Any], plants: list[Any] | None) -> str | None:
+    """装置/单元排名为空的**可判定原因**（C，2026-09-28）。
+
+    - None：有排名行，无需提示；
+    - NO_ORG_NODES：组织树里没有 FACTORY/AREA 节点（未配置组织）；
+    - NO_PRECALC_ROWS：组织节点存在但预计算表无对应行（预计算任务未跑/缓存空）。
+    """
+    if plants:
+        return None
+    factories = hierarchy.get("factories") or []
+    if not factories:
+        return "NO_ORG_NODES"
+    return "NO_PRECALC_ROWS"
+
+
 def shape_plants(
     kpi_rows: list[Any],
     hierarchy: dict[str, Any],
@@ -136,9 +152,7 @@ def shape_plants(
     name_by_source_id: dict[int, str] = hierarchy["name_by_source_id"]
     factories = hierarchy["factories"]
     # source_node_id → factory_id（UUID）映射
-    factory_id_by_source = {
-        f.source_node_id: f.id for f in factories if f.source_node_id is not None
-    }
+    factory_id_by_source = {node_scope_id(f.source_node_id, f.id): f.id for f in factories}
     # 倒置：factory_id → [unit_id]
     units_per_factory: dict[str, list[str]] = {}
     for unit_id, factory_id in unit_to_factory.items():
@@ -292,7 +306,7 @@ async def _load_plant_hierarchy(db: AsyncSession) -> dict[str, Any]:
             fid = _resolve_factory_id(n, by_id)
             if fid:
                 unit_to_factory[n.id] = fid
-    name_by_source_id = {n.source_node_id: n.name for n in nodes if n.source_node_id is not None}
+    name_by_source_id = {node_scope_id(n.source_node_id, n.id): n.name for n in nodes}
     return {
         "by_id": by_id,
         "unit_to_factory": unit_to_factory,
@@ -543,6 +557,9 @@ async def build_overview(
         "window": window,
         "windows": dict.fromkeys(WINDOWS_ALL),
         "plants": [],
+        # C（2026-09-28）：排名为空时给出**可判定的原因**，前端据此显示明确空态，
+        # 而不是静默空白。
+        "plantsEmptyReason": None,
         "units": [],
         "pareto": [],
         "roots": [],
@@ -623,4 +640,8 @@ async def build_overview(
     except Exception:  # noqa: BLE001
         logger.warning("总览 funnel 块构建失败", exc_info=True)
 
+    overview.setdefault(
+        "plantsEmptyReason",
+        _plants_empty_reason(hierarchy, overview.get("plants")),
+    )
     return overview

@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.plant_node import PlantNode
 from app.models.unit_kpi_summary import UnitKpiSummary
 from app.models.workbench_summary import WorkbenchWindowSummary
+from app.services.workbench_scope import node_scope_id
 
 logger = logging.getLogger(__name__)
 
@@ -275,13 +276,14 @@ async def _load_scope_map(db: AsyncSession) -> dict[str, Any]:
     units_all = [n for n in nodes if n.type == "UNIT"]
     scopes["GLOBAL:0"] = (0, [n.id for n in units_all])
     for n in nodes:
-        if n.type not in ("FACTORY", "AREA", "UNIT") or n.source_node_id is None:
+        if n.type not in ("FACTORY", "AREA", "UNIT"):
             continue
+        sid = node_scope_id(n.source_node_id, n.id)
         if n.type == "UNIT":
             unit_ids = [n.id]
         else:
             unit_ids = [d.id for d in descendants_of(n) if d.type == "UNIT"]
-        scopes[f"{n.type}:{n.source_node_id}"] = (int(n.source_node_id), unit_ids)
+        scopes[f"{n.type}:{sid}"] = (sid, unit_ids)
     return scopes
 
 

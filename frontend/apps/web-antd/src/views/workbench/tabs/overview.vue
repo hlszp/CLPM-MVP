@@ -189,6 +189,7 @@ function onFunnelLaneClick(status: HandlingApi.OrderStatus) {
       <div class="col-span-4 min-h-0">
         <SteadyRateBars
           :units="overview?.units"
+          :empty-reason="overview?.plantsEmptyReason"
           :global-steady="currentWindowBlock?.metrics?.steady_rate ?? null"
         />
       </div>

@@ -17,10 +17,22 @@ import { computed } from 'vue';
 import { useWorkbenchDrill } from '../utils/drill';
 
 const props = defineProps<{
+  /** C（2026-09-28）：排名为空的判定原因（NO_ORG_NODES / NO_PRECALC_ROWS） */
+  emptyReason?: null | string;
   /** 全厂平稳率（当前窗口 GLOBAL metrics.steady_rate，0~1） */
   globalSteady?: null | number;
   units?: WorkbenchApi.UnitRow[];
 }>();
+
+const emptyText = computed(() => {
+  if (props.emptyReason === 'NO_ORG_NODES') {
+    return '组织树未配置工厂/装置节点，单元排名不可用（请先在系统管理配置组织）';
+  }
+  if (props.emptyReason === 'NO_PRECALC_ROWS') {
+    return '单元排名暂无数据：预计算尚未产出，请稍候或检查预计算任务';
+  }
+  return '暂无单元数据';
+});
 
 const { drill, resolvePlantNodeId } = useWorkbenchDrill();
 
@@ -152,7 +164,7 @@ function onRowClick(r: Row) {
         v-if="rows.length === 0"
         class="flex flex-1 items-center justify-center text-xs text-gray-400"
       >
-        暂无单元数据
+        {{ emptyText }}
       </div>
     </div>
 
