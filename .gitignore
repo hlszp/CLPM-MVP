@@ -89,3 +89,6 @@ releases/*.sha256
 
 # .qoder 自动生成 wiki：生成物不入库（2026-09-26）
 .qoder/repowiki/
+
+# 项目级运维 skill：含生产拓扑等敏感信息，仅本机使用不入库（2026-09-27）
+.agents/
