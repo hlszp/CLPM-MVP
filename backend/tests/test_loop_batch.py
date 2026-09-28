@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -106,17 +106,22 @@ class TestBatchUpdateLoopsMonitored:
         db.add = MagicMock()
         db.commit = AsyncMock()
 
-        result = await batch_update_loops(
-            db=db,
-            loop_ids=["loop-001", "loop-002"],
-            updates={"is_monitored": True},
-            operator="admin",
-        )
+        # 整改 0928：批量路径现在会按 Tag 关联重算派生状态，单测 mock 掉推导
+        with patch("app.services.loop.derive_loop_status", new=AsyncMock(return_value="READY")):
+            result = await batch_update_loops(
+                db=db,
+                loop_ids=["loop-001", "loop-002"],
+                updates={"is_monitored": True},
+                operator="admin",
+            )
 
         assert result == 2
         # 验证 is_active 被置为 True
         assert loop1.is_active is True
         assert loop2.is_active is True
+        # 验证派生状态同步为 READY
+        assert loop1.status == "READY"
+        assert loop2.status == "READY"
         # 验证审计日志写入（每回路一条）
         assert db.add.call_count == 2
         db.commit.assert_called_once()

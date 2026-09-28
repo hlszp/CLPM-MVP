@@ -141,6 +141,14 @@ async def batch_update_loops(
             loop.importance_level = updates["importance_level"]
         if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
             loop.include_in_evaluation = bool(updates["include_in_evaluation"])
+        # 整改 0928：is_active 变化后必须重算派生状态（READY/PARTIAL/INACTIVE），
+        # 否则监控状态列/筛选与 is_active 脱节（生产实锤：数百行
+        # (true, INACTIVE)/(false, READY) 不一致组合，排名/筛选全乱）。
+        # 放在所有字段应用之后：derive 只依赖 is_active 与 Tag 关联。
+        if "is_monitored" in updates or "is_stat_enabled" in updates:
+            from app.services.loop import derive_loop_status
+
+            loop.status = await derive_loop_status(db, loop)
         loop.updated_by = operator
 
         after = {
