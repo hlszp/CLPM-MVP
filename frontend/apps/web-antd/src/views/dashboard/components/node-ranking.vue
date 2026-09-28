@@ -243,7 +243,7 @@ function onRowClick(row: TreeRow) {
       class="min-h-0 flex-1"
       :class="
         stretchRows
-          ? 'rank-rows-stretch flex flex-col overflow-hidden'
+          ? 'rank-rows-stretch flex flex-col overflow-y-auto'
           : 'overflow-y-auto'
       "
     >
@@ -392,6 +392,9 @@ function onRowClick(row: TreeRow) {
 /* ≤10 行时，data-row 均分列表区高度，等间距填满 */
 .rank-rows-stretch > .data-row {
   flex: 1 1 0;
-  min-height: 0;
+  /* 生产实测（2026-09-28）：外层高度链塌陷时 flex-basis:0 会把行压成 1px
+     （容器 5px + overflow-hidden 全部隐形，页脚计数却显示 5）——行保底
+     高度 + 容器改 overflow-y-auto 双保险，拉伸语义保留（有空间时均分） */
+  min-height: 30px;
 }
 </style>
