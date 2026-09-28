@@ -105,10 +105,20 @@ _VALID_NETWORK_MODES = {"lan", "wan"}
 # settings，避免热停后其他进程的待命实例按旧值抢 Leader 继续采集
 SIGNALR_ENABLED_RUNTIME_KEY = "datasource:rt:signalr_enabled"
 REALTIME_WRITEBACK_RUNTIME_KEY = "datasource:rt:realtime_writeback_enabled"
+# gap_backfill 同样需要运行态镜像：订阅器 Leader 进程可能不是处理配置保存请求的
+# 进程，仅 setattr 本进程 settings 时 Leader 仍按启动预载的旧值排水缺口
+# （2026-09-28 生产：UI 关闭后断点续传补数任务仍持续创建）
+GAP_BACKFILL_RUNTIME_KEY = "datasource:rt:gap_backfill_enabled"
 
 
-async def _sync_runtime_flags_to_redis(signalr_enabled: bool, writeback_enabled: bool) -> None:
-    """把实时开关启用态镜像到 Redis（缺失/Redis 异常时订阅器回退本进程 settings）。"""
+async def _sync_runtime_flags_to_redis(
+    signalr_enabled: bool, writeback_enabled: bool, gap_backfill_enabled: bool | None = None
+) -> None:
+    """把实时开关启用态镜像到 Redis（缺失/Redis 异常时订阅器回退本进程 settings）。
+
+    gap_backfill_enabled 传 None 时跳过镜像（兼容旧调用方）；配置保存/预载路径
+    必须传值，否则订阅器 Leader 会按启动快照的旧值继续排水缺口。
+    """
     try:
         from app.core.redis import redis_client
 
@@ -117,6 +127,11 @@ async def _sync_runtime_flags_to_redis(signalr_enabled: bool, writeback_enabled:
             REALTIME_WRITEBACK_RUNTIME_KEY,
             "true" if writeback_enabled else "false",
         )
+        if gap_backfill_enabled is not None:
+            await redis_client.set(
+                GAP_BACKFILL_RUNTIME_KEY,
+                "true" if gap_backfill_enabled else "false",
+            )
     except Exception:  # noqa: BLE001 — 镜像失败不阻塞配置保存/预载
         logger.warning("实时开关镜像键写入失败（订阅器按本进程 settings 判定）", exc_info=True)
 
@@ -382,7 +397,11 @@ async def update_datasource_config(
 
     # 实时开关镜像到 Redis（跨进程热生效真相源），先写镜像再做本进程热启停，
     # 确保其他进程的待命订阅器在抢 Leader 前就能读到最新启用态
-    await _sync_runtime_flags_to_redis(after["signalrEnabled"], after["realtimeWritebackEnabled"])
+    await _sync_runtime_flags_to_redis(
+        after["signalrEnabled"],
+        after["realtimeWritebackEnabled"],
+        after["gapBackfillEnabled"],
+    )
 
     # signalrEnabled 变化 → 订阅器热启停（DB 已落库为真相源，副作用失败不回滚，
     # 状态以 signalrSubscriberRunning 为准；realtimeWritebackEnabled 为 property
@@ -441,6 +460,7 @@ async def preload_datasource_config(db: AsyncSession) -> None:
     await _sync_runtime_flags_to_redis(
         bool(config.get("signalrEnabled")),
         bool(config.get("realtimeWritebackEnabled")),
+        bool(config.get("gapBackfillEnabled")),
     )
 
     # 本地历史写入布局（测点子表重构）：sys_config 真相源同步到 settings 内存，

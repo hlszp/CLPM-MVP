@@ -124,6 +124,7 @@ from app.core.numeric import finite_or_none, parse_finite_float, parse_mode_int
 from app.core.redis import redis_client
 from app.models.tag import TagRegistry
 from app.services.datasource_config import (
+    GAP_BACKFILL_RUNTIME_KEY,
     REALTIME_WRITEBACK_RUNTIME_KEY,
     SIGNALR_ENABLED_RUNTIME_KEY,
 )
@@ -843,6 +844,11 @@ class RealtimeSubscriber:
         )
         settings.REALTIME_WRITEBACK_ENABLED = await self._read_runtime_flag(
             REALTIME_WRITEBACK_RUNTIME_KEY, settings.REALTIME_WRITEBACK_ENABLED
+        )
+        # gap_backfill 同样走镜像：Leader 可能不是处理配置保存的进程，不读镜像
+        # 的话 UI 关闭后仍按启动快照的旧值排水缺口（2026-09-28 生产事故）
+        settings.GAP_BACKFILL_ENABLED = await self._read_runtime_flag(
+            GAP_BACKFILL_RUNTIME_KEY, settings.GAP_BACKFILL_ENABLED
         )
         if not settings.SIGNALR_ENABLED:
             if self._is_leader:
