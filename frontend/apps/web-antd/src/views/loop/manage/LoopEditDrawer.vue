@@ -1444,7 +1444,7 @@ defineExpose({
                 <Input :value="pidParams.pidD" disabled />
               </FormItem>
             </div>
-            <FormItem name="isActive" label="启用状态">
+            <FormItem name="isActive" label="监控状态">
               <Switch
                 v-model:checked="formState.isActive"
                 :disabled="isViewMode"

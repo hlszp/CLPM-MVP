@@ -701,8 +701,10 @@ const batchForm = reactive({
 
 const monitorStatusOptions: { label: string; value: BoolOptionValue }[] = [
   { label: '全部', value: undefined },
-  { label: '监控中', value: 'true' },
-  { label: '已停用', value: 'false' },
+  // 括注子状态：列徽章显示的是数据完备度（就绪/部分关联/未启用），
+  // 与开关语义（监控中/已停用）对齐，消除筛选与列值不一致的困惑
+  { label: '监控中（就绪/部分关联）', value: 'true' },
+  { label: '已停用（未启用）', value: 'false' },
 ];
 
 // 监控状态查询代理（boolean ↔ 'true'/'false' 选项值）
