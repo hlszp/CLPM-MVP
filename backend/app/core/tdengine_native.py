@@ -61,7 +61,9 @@ class TDengineConnectionPool:
 
     _pool: list[Any] = []  # list[TaosRestConnection]
     _lock = threading.Lock()
-    _max_size: int = 10
+    # 2026-09-28：10 → 16，覆盖 KPI 回路级并发提效（CONCURRENCY=12）后的
+    # TD REST 查询并发需求，余量留给实时写入路径
+    _max_size: int = 16
     _created_count: int = 0  # 已创建的总连接数（用于日志）
 
     @classmethod

@@ -62,7 +62,11 @@ ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 
 # 单个 KPI 任务的数据库并发预算。Celery 可同时运行多个任务，且 FastAPI
 # 也需要连接余量，因此不能把 PostgreSQL 的连接上限全部交给单次批处理。
-CONCURRENCY = 5
+# 2026-09-28：5 → 12。961 回路/小时的墙钟时间 ~15min → ~6min（用户口径的
+# 提效诉求）；PG 引擎为 NullPool 按需建连（本机建连 <1ms），12 并发 +
+# FastAPI 余量远低于 max_connections=100；TDengine REST 池同步扩至 16
+# （tdengine_native._max_size）。
+CONCURRENCY = 12
 
 # ---------------------------------------------------------------------------
 # v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）

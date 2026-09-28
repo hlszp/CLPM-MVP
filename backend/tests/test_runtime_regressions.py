@@ -10,10 +10,17 @@ import pytest
 
 
 def test_kpi_concurrency_stays_within_database_budget() -> None:
-    """预热和计算并发都不能再按回路总数扩张。"""
+    """预热和计算并发都不能再按回路总数扩张。
+
+    2026-09-28 校准：CONCURRENCY 5 → 12。961 回路/小时的墙钟时间
+    ~15min → ~6min（E2E 实测 concurrency=12 生效）；PG 引擎为 NullPool
+    按需建连（本机建连 <1ms），12 并发 + FastAPI/其他任务余量远低于
+    max_connections=100。上限继续固定为常数——守护意图不变：
+    禁止按回路总数无界扩张。
+    """
     from app.tasks.kpi_calc import _PREWARM_CONCURRENCY, CONCURRENCY
 
-    assert CONCURRENCY <= 5
+    assert CONCURRENCY <= 12
     assert _PREWARM_CONCURRENCY <= 5
 
 
