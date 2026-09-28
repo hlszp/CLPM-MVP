@@ -435,16 +435,23 @@ async def write_events(
     conflict_policy: str = "skip",  # skip | overwrite_authorized
     source_task: str | None = None,
     db_session: Any | None = None,
+    dedup: bool = True,
 ) -> WriteResult:
     """写入一批点事件（幂等/冲突分流 + 分块写入 + 有界重试）.
+
+    dedup=True（默认，对账/导入路径）：先读回批内已存事实做 payload_hash 比对，
+    相同跳过、不同按 conflict_policy 分流并登记冲突审计。
+    dedup=False（实时热路径）：跳过读回比对直接 UPSERT——千万行级点表上这次
+    宽读是写入停摆的挂起点（2026-09-19 / 09-28 两次生产事故），而 TDengine
+    同 (point_id, ts) 的 INSERT 天然覆盖，幂等性不依赖比对；冲突审计仅在
+    dedup=True 路径提供。
 
     流程（设计 §4.3）：
     1. 批内自合并：同 (point, ts) 多事件按到达序保留最后一条（同 tick 多事件
        的中间态由 P2 的队列保证不在此丢失——本层合并仅针对重复重放）；
-    2. 读回已存事实（窗口=批内 ts 范围，1 次 SQL），逐条比对 payload_hash：
-       - 相同 → identical_skipped（幂等）；
-       - 不同 → 按 conflict_policy：skip=登记冲突保留既有；
-         overwrite_authorized=覆盖并登记 resolved_overwrite；
+    2. dedup=True 时读回已存事实（窗口=批内 ts 范围，1 次 SQL），逐条比对
+       payload_hash：相同 → identical_skipped（幂等）；不同 → 按 conflict_policy：
+       skip=登记冲突保留既有；overwrite_authorized=覆盖并登记 resolved_overwrite；
     3. 新事实分块写 TD（≤WRITE_CHUNK_ROWS 行/SQL，失败重试 3 次后置 failed）。
     """
     result = WriteResult()
@@ -458,58 +465,65 @@ async def write_events(
         merged[key] = ev
     ordered = sorted(merged.values(), key=lambda e: (e.point_id, e.ts))
 
-    # 2) 已存事实比对（批内 ts 范围一次宽读）
-    point_ids = sorted({ev.point_id for ev in ordered})
-    ts_min = min(ev.ts for ev in ordered)
-    all_ts = max(ev.ts for ev in ordered)
-    existing_full = await read_events(point_ids, ts_min, all_ts)
-    existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
-    for pid, rows in existing_full.items():
-        for row in rows:
-            if row["ts"] is not None:
-                existing_by_key[(pid, int(row["ts"].timestamp() * 1000))] = row
-
+    # 2) 已存事实比对（批内 ts 范围一次宽读）。
+    #    dedup=False（实时热路径）跳过这次宽读直接 UPSERT：千万行级点表上，
+    #    宽读比对是写入协程的挂起点（2026-09-19/09-28 两次停摆事故同款栈），
+    #    而 TDengine 同 (point_id, ts) 的 INSERT 天然覆盖，幂等性不依赖比对；
+    #    冲突登记审计仅在 dedup=True 的对账路径提供。
     to_insert: list[tuple[PointEvent, str]] = []
-    for ev in ordered:
-        key = (ev.point_id, int(ev.ts.timestamp() * 1000))
-        ph = ev.payload_hash()
-        prior = existing_by_key.get(key)
-        if prior is None:
-            to_insert.append((ev, ph))
-            continue
-        prior_hash = prior.get("payload_hash")
-        if prior_hash == ph:
-            result.identical_skipped += 1
-            continue
-        if not prior_hash:
-            # 整改 G11：既有行的 payload_hash 为空（历史遗留的导入行硬编码 ''），
-            # 不构成"与本次载荷不同"的证据。此时若按冲突 skip，实时值会被静默
-            # 丢弃且无任何可见信号——宁可覆盖（实时值是更权威的当前状态）。
-            to_insert.append((ev, ph))
-            result.conflicts.append(
-                {"point_id": ev.point_id, "ts_ms": key[1], "resolution": "overwrite_no_hash"}
-            )
-            continue
-        # 同 ts 不同 payload
-        if conflict_policy == "overwrite_authorized":
-            to_insert.append((ev, ph))
-            result.conflicts.append(
-                {"point_id": ev.point_id, "ts_ms": key[1], "resolution": "overwrite"}
-            )
-        else:
-            result.conflicts.append(
-                {
-                    "point_id": ev.point_id,
-                    "ts_ms": key[1],
-                    "resolution": "skip",
-                    "existing": prior,
-                    "incoming": {
-                        "value": ev.value,
-                        "quality_class": ev.quality_class,
-                        "quality_raw": ev.quality_raw,
-                    },
-                }
-            )
+    if dedup:
+        point_ids = sorted({ev.point_id for ev in ordered})
+        ts_min = min(ev.ts for ev in ordered)
+        all_ts = max(ev.ts for ev in ordered)
+        existing_full = await read_events(point_ids, ts_min, all_ts)
+        existing_by_key: dict[tuple[str, int], dict[str, Any]] = {}
+        for pid, rows in existing_full.items():
+            for row in rows:
+                if row["ts"] is not None:
+                    existing_by_key[(pid, int(row["ts"].timestamp() * 1000))] = row
+
+        for ev in ordered:
+            key = (ev.point_id, int(ev.ts.timestamp() * 1000))
+            ph = ev.payload_hash()
+            prior = existing_by_key.get(key)
+            if prior is None:
+                to_insert.append((ev, ph))
+                continue
+            prior_hash = prior.get("payload_hash")
+            if prior_hash == ph:
+                result.identical_skipped += 1
+                continue
+            if not prior_hash:
+                # 整改 G11：既有行的 payload_hash 为空（历史遗留的导入行硬编码 ''），
+                # 不构成"与本次载荷不同"的证据。此时若按冲突 skip，实时值会被静默
+                # 丢弃且无任何可见信号——宁可覆盖（实时值是更权威的当前状态）。
+                to_insert.append((ev, ph))
+                result.conflicts.append(
+                    {"point_id": ev.point_id, "ts_ms": key[1], "resolution": "overwrite_no_hash"}
+                )
+                continue
+            # 同 ts 不同 payload
+            if conflict_policy == "overwrite_authorized":
+                to_insert.append((ev, ph))
+                result.conflicts.append(
+                    {"point_id": ev.point_id, "ts_ms": key[1], "resolution": "overwrite"}
+                )
+            else:
+                result.conflicts.append(
+                    {
+                        "point_id": ev.point_id,
+                        "ts_ms": key[1],
+                        "resolution": "skip",
+                        "existing": prior,
+                        "incoming": {
+                            "value": ev.value,
+                            "quality_class": ev.quality_class,
+                            "quality_raw": ev.quality_raw,
+                        },
+                    }
+                )
+    else:
+        to_insert = [(ev, ev.payload_hash()) for ev in ordered]
 
     # 3) 分块写入（≤WRITE_CHUNK_ROWS 行/SQL；重试后仍失败→failed，不谎报成功）
     for i in range(0, len(to_insert), WRITE_CHUNK_ROWS):

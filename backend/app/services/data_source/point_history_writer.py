@@ -513,7 +513,9 @@ class PointHistoryWriter:
             )
         for i in range(0, len(events), DEFAULT_BATCH_EVENTS):
             chunk = events[i : i + DEFAULT_BATCH_EVENTS]
-            result = await write_events(chunk)
+            # dedup=False：实时热路径跳过读回比对（千万行点表上的宽读是写入
+            # 停摆的挂起点），TDengine 同 (point_id, ts) INSERT 天然覆盖幂等
+            result = await write_events(chunk, dedup=False)
             if result.failed:
                 self.metrics["chunks_failed"] += 1
                 self._retry_buffer.extend(chunk)
