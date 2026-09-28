@@ -95,3 +95,7 @@ releases/*.sha256
 
 # 项目级运维 skill：含生产拓扑等敏感信息，仅本机使用不入库（2026-09-27）
 .agents/
+
+# 镜像 tar 与校验值不入库（二进制，走 Release 附件）
+releases/images/*.tar
+releases/images/*.tar.sha256
