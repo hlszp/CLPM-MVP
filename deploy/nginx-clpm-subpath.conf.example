@@ -1,0 +1,73 @@
+# ============================================================
+# AAS 82 端口网关片段：把 CLPM 挂到子路径 /clpm/（可直接照抄）
+# ============================================================
+# 拓扑（2026-09-28 现场核实）：
+#   AAS 网关：宿主机 Windows，D:\AAS\nginx-1.24.0（纯 http，监听 82）
+#   CLPM：VMware 虚拟机 clpm（Ubuntu 24.04，IP 192.168.60.132）内的 7 个容器，
+#         前端容器发布 7141（compose 里 "7141:7141"）
+#
+# ⚠️ 上游地址怎么填（**最容易搞错的一处**）：
+#   - AAS 网关在【宿主机 Windows】→ 必须填【VM 的 IP】：http://192.168.60.132:7141/
+#     （填 127.0.0.1:7141 会打到宿主机自己，永远 502）
+#   - 若你的 AAS 网关其实跑在【VM 内】→ 才可用 http://127.0.0.1:7141/
+#   替换前先验证宿主机能否访问：curl -sI http://192.168.60.132:7141/  （期望 200）
+#
+# 关键：proxy_pass 末尾的“/”= 剥离 /clpm/ 前缀 → CLPM 容器内的 nginx 仍按
+#       / 与 /api/v1/ 工作，一行都不用改（含两条 WebSocket）。
+# ============================================================
+
+# WebSocket 升级映射：若 AAS 现有配置里已有同名 map，请删掉这段，勿重复定义
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 82;
+    server_name _;
+
+    # ---------------- CLPM 子路径 ----------------
+    location /clpm/ {
+        # ↓ 宿主机部署时用 VM 的 IP；若网关在 VM 内则改回 127.0.0.1
+        proxy_pass http://192.168.60.132:7141/;   # ← 末尾斜杠必须保留
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;      # WebSocket 升级
+        proxy_set_header Connection        $connection_upgrade;
+        proxy_read_timeout 3600s;      # 实时页 WS 长连接，勿用默认 60s
+        proxy_send_timeout 3600s;
+        client_max_body_size 20m;      # 与 CLPM 内层一致（Excel 导入）
+    }
+
+    # ---------------- AAS 原有配置保持不动 ----------------
+    # location / { proxy_pass http://127.0.0.1:8080; }   # ← 以现场为准
+}
+
+# ============================================================
+# 上线步骤（宿主机 Windows，cmd/PowerShell 均可）
+# ============================================================
+# 1) 备份
+#    copy D:\AAS\nginx-1.24.0\conf\nginx.conf  D:\AAS\nginx-1.24.0\conf\nginx.conf.bak-20260928
+# 2) 把本片段贴进 http { } 内（server 与 AAS 现有 server 并列）
+# 3) 语法检查（**必须先过**）
+#    D:\AAS\nginx-1.24.0\nginx.exe -t
+# 4) 重载（不中断 AAS 现有连接）
+#    D:\AAS\nginx-1.24.0\nginx.exe -s reload
+# 5) 验收（宿主机执行）
+#    curl -sI http://127.0.0.1:82/clpm/            → 200
+#    curl -s  http://127.0.0.1:82/clpm/ | findstr clpm   → 资源路径带 /clpm/
+#    curl -s -X POST http://127.0.0.1:82/clpm/api/v1/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"admin123\"}"  → code:0
+#    curl -sI http://127.0.0.1:82/                  → AAS 仍正常（未被影响）
+# 6) 回滚：把备份覆盖回去 → nginx.exe -t → nginx.exe -s reload
+# ============================================================
+
+# ============================================================
+# 配套要求（缺一不可）
+# ============================================================
+# A) 前端必须使用【子路径版镜像】clpm-frontend:subpath-<sha>
+#    （普通版镜像 base=/，会在 82 子路径下静态资源 404 / 白屏）
+# B) 宿主机 → VM:7141 必须连通（VM 防火墙放行 / VMware 网络模式允许）
+# C) CLPM 后端无需改动：浏览器访问 /clpm/api/v1/... → 网关剥离 → 内层 nginx 转 backend:7101

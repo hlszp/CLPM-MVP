@@ -33,11 +33,17 @@ RUN \
     && pnpm install --frozen-lockfile
 
 # 确保 .env.production 在 monorepo 根目录也可用（loadEnv 使用 process.cwd()，可能指向根目录）
-RUN cp apps/web-antd/.env.production /app/.env.production
+WORKDIR /app
 
-# 构建 web-antd 应用
+# 构建期选择 mode（默认 production = 根路径版；clpm = /clpm/ 子路径版）：
+#   - .env.<mode> 由本仓自定义 loadEnv 读取，其 mode 来自 npm_lifecycle_script 里的 --mode，
+#     直接执行 `pnpm vite build --mode X` 时该变量为空 → 会回退成 production，故此处显式设置；
+#   - Vite 自身也按 --mode 读取 .env.<mode>（import.meta.env 用它，两条 WebSocket 就依赖它）。
+ARG BUILD_MODE=production
+RUN cp apps/web-antd/.env.production /app/.env.production     && cp apps/web-antd/.env.clpm /app/.env.clpm
+
 WORKDIR /app/apps/web-antd
-RUN pnpm vite build --mode production
+RUN npm_lifecycle_script="vite build --mode ${BUILD_MODE}" pnpm vite build --mode ${BUILD_MODE}
 
 # ============================================================
 # Stage 2: Runtime (nginx)
