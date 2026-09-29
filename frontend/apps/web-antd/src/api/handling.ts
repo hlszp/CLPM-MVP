@@ -514,6 +514,9 @@ export namespace HandlingApi {
     keyword?: string;
     plannedBefore?: string;
     plannedAfter?: string;
+    /** 创建时间窗（按 created_at，闭区间；工作台下钻时间窗口径） */
+    createdBefore?: string;
+    createdAfter?: string;
   }
 
   /** 手动新建工单（POST /orders，§6.2；source=MANUAL） */

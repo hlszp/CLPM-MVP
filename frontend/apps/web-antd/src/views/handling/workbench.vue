@@ -537,6 +537,11 @@ const orderQuery = reactive({
   source: undefined as HandlingApi.OrderSource | undefined,
   handler: '',
   keyword: '',
+  // 工作台下钻口径（GAP-3 收口）：applyUrlContext 从 URL 消费，Tag 回显可清除
+  plantNodeId: undefined as string | undefined,
+  plannedBefore: undefined as string | undefined,
+  createdAfter: undefined as string | undefined,
+  createdBefore: undefined as string | undefined,
 });
 
 async function loadOrders() {
@@ -549,6 +554,10 @@ async function loadOrders() {
       source: orderQuery.source,
       handler: orderQuery.handler.trim() || undefined,
       keyword: orderQuery.keyword.trim() || undefined,
+      plantNodeId: orderQuery.plantNodeId,
+      plannedBefore: orderQuery.plannedBefore,
+      createdAfter: orderQuery.createdAfter,
+      createdBefore: orderQuery.createdBefore,
     };
     if (
       presetActive.value &&
@@ -684,6 +693,11 @@ async function handleOrderExport() {
       source: orderQuery.source,
       handler: orderQuery.handler.trim() || undefined,
       keyword: orderQuery.keyword.trim() || undefined,
+      // 下钻口径与列表同参（GAP-4），避免"列表被过滤、导出全量"的口径差
+      plantNodeId: orderQuery.plantNodeId,
+      plannedBefore: orderQuery.plannedBefore,
+      createdAfter: orderQuery.createdAfter,
+      createdBefore: orderQuery.createdBefore,
     });
     const url = URL.createObjectURL(
       new Blob([blob as unknown as BlobPart], {
@@ -794,6 +808,31 @@ async function loadPlantTree() {
   }
 }
 
+/** 下钻口径 Tag 回显：装置名从树解析，解析不到回显 id 前缀 */
+function plantNodeLabel(nodeId: string): string {
+  const find = (nodes: typeof plantTreeData.value): string | undefined => {
+    for (const n of nodes) {
+      if (n.value === nodeId) return n.label;
+      const hit = n.children ? find(n.children) : undefined;
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+  return find(plantTreeData.value) ?? nodeId.slice(0, 8);
+}
+
+/** 清除单个下钻口径筛选并重查 */
+function clearOrderDrillFilter(key: 'created' | 'planned' | 'plant') {
+  if (key === 'plant') orderQuery.plantNodeId = undefined;
+  if (key === 'planned') orderQuery.plannedBefore = undefined;
+  if (key === 'created') {
+    orderQuery.createdAfter = undefined;
+    orderQuery.createdBefore = undefined;
+  }
+  orderQuery.page = 1;
+  loadOrders();
+}
+
 /** 深链接分流（批次 C 契约）：
  * - suggestions 路由：focus=建议id → 开建议详情抽屉
  * - orders/tasks 路由：focus=工单id → 开工单抽屉；GET 404 时回落按同 id
@@ -805,6 +844,50 @@ async function applyUrlContext() {
     presetActive.value = preset.statuses.length > 1;
     if (preset.tab === 'orders') ordersLoaded.value = true;
     activeTab.value = preset.tab;
+  }
+  // 工作台下钻口径消费（GAP-3 收口 2026-09-29）：status/plantNodeId/plannedBefore/
+  // startTime+endTime（→ createdBefore/After，按工单创建时间）。此前这些参数被
+  // 静默丢弃，工作台点「在办 12 条」落到路由预设列表，数字对不上。
+  const qStatus = route.query.status as string | undefined;
+  if (qStatus) {
+    const statuses = qStatus
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s in ORDER_STATUS_RANK) as HandlingApi.OrderStatus[];
+    if (statuses.length > 0) {
+      if (statuses.length === 1) {
+        orderQuery.statusTab = statuses[0]!;
+        orderStatusPreset.value = [];
+        presetActive.value = false;
+      } else {
+        orderQuery.statusTab = '';
+        orderStatusPreset.value = statuses;
+        presetActive.value = true;
+      }
+      activeTab.value = 'orders';
+      ordersLoaded.value = true;
+    }
+  }
+  const qPlantNodeId = route.query.plantNodeId as string | undefined;
+  if (qPlantNodeId) {
+    // 两个 Tab 同步装置口径：工单侧 Tag 回显，建议侧 TreeSelect 控件回显
+    orderQuery.plantNodeId = qPlantNodeId;
+    sugQuery.plantNodeId = qPlantNodeId;
+    orderQuery.page = 1;
+  }
+  const qPlannedBefore = route.query.plannedBefore as string | undefined;
+  if (qPlannedBefore) {
+    orderQuery.plannedBefore = qPlannedBefore;
+    activeTab.value = 'orders';
+    ordersLoaded.value = true;
+  }
+  const qStart = route.query.startTime as string | undefined;
+  const qEnd = route.query.endTime as string | undefined;
+  if (qStart || qEnd) {
+    orderQuery.createdAfter = qStart;
+    orderQuery.createdBefore = qEnd;
+    activeTab.value = 'orders';
+    ordersLoaded.value = true;
   }
   // 回路深链：/handling/suggestions?loopId=xxx（工作台/诊断抽屉「去处置」入口）
   const qLoopId = route.query.loopId as string | undefined;
@@ -1194,6 +1277,29 @@ watch(
             style="width: 180px"
             @press-enter="((orderQuery.page = 1), loadOrders())"
           />
+          <!-- 工作台下钻口径回显：可单独清除，避免"列表被静默过滤" -->
+          <Tag
+            v-if="orderQuery.plantNodeId"
+            closable
+            @close.prevent="clearOrderDrillFilter('plant')"
+          >
+            装置：{{ plantNodeLabel(orderQuery.plantNodeId) }}
+          </Tag>
+          <Tag
+            v-if="orderQuery.plannedBefore"
+            closable
+            @close.prevent="clearOrderDrillFilter('planned')"
+          >
+            计划时间止：{{ fmt(orderQuery.plannedBefore) }}
+          </Tag>
+          <Tag
+            v-if="orderQuery.createdAfter || orderQuery.createdBefore"
+            closable
+            @close.prevent="clearOrderDrillFilter('created')"
+          >
+            创建窗口：{{ fmt(orderQuery.createdAfter) }} ~
+            {{ fmt(orderQuery.createdBefore) }}
+          </Tag>
           <!-- 导出 CSV（GAP-4：带当前筛选参数，上限 5000 行） -->
           <ClpmToolbarButton
             :loading="orderExporting"
