@@ -115,7 +115,40 @@ async def _create_event(
     final_severity: str,
     trigger_count: int,
 ) -> str:
-    """创建预警事件记录。"""
+    """创建预警事件记录。
+
+    0929 合并策略（用户口径"同问题只记命中次数，不重复推报警"）：同
+    loop+rule 已有未决事件（ACTIVE/ACKNOWLEDGED）时**不新建**，仅在原
+    事件上累计 trigger_count 并刷新最新触发值/快照/严重度（只升不降）。
+    事件 RESOLVED 后再触发才生成新一轮事件。
+    """
+    from sqlalchemy import select
+
+    existing = (
+        await db.execute(
+            select(AlertEvent)
+            .where(
+                AlertEvent.loop_id == loop_id,
+                AlertEvent.rule_id == rule.get("id"),
+                AlertEvent.status.in_(["ACTIVE", "ACKNOWLEDGED"]),
+            )
+            .order_by(AlertEvent.triggered_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.trigger_count = (existing.trigger_count or 0) + 1
+        existing.triggered_value = result.triggered_value
+        existing.trigger_condition_snapshot = result.condition_snapshot or {}
+        if result.data_window:
+            existing.data_window = result.data_window
+        # 严重度只升不降（upgrade_severity 已按重复命中计算，防抖动回退）
+        _sev_order = {"INFO": 0, "WARN": 1, "ERROR": 2, "CRITICAL": 3}
+        if _sev_order.get(str(final_severity), 0) > _sev_order.get(str(existing.severity), 0):
+            existing.severity = str(final_severity)
+        await db.flush()
+        return existing.id
+
     event_id = str(uuid4())
     now = datetime.now(UTC).replace(tzinfo=None)
     dsl = rule.get("dsl", {})

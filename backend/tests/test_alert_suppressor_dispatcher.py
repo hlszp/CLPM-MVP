@@ -444,12 +444,21 @@ def _make_rule_dict(
     }
 
 
+def _db_without_pending() -> AsyncMock:
+    """0929 合并策略：合并查询返回 None（无既有未决事件）→ 新建路径。"""
+    db = AsyncMock()
+    qr = MagicMock()
+    qr.scalar_one_or_none.return_value = None
+    db.execute = AsyncMock(return_value=qr)
+    return db
+
+
 class TestDispatchCreateEvent:
     """dispatch CREATE_EVENT 动作。"""
 
     @pytest.mark.asyncio
     async def test_create_event_success(self, fake_redis) -> None:
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict()
         result = _make_evaluation_result()
 
@@ -465,13 +474,43 @@ class TestDispatchCreateEvent:
 
         assert "CREATE_EVENT" in outcomes
         assert outcomes["CREATE_EVENT"] is not None
-        db.add.assert_called_once()
+        # 新建路径：db.add 恰好 1 次（事件）
+        assert db.add.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_create_event_merges_into_pending(self, fake_redis) -> None:
+        """0929 合并策略：同 loop+rule 已有未决事件 → 不新建，累计命中。"""
+        db = AsyncMock()
+        pending = MagicMock()
+        pending.trigger_count = 4
+        pending.severity = "WARN"
+        qr = MagicMock()
+        qr.scalar_one_or_none.return_value = pending
+        db.execute = AsyncMock(return_value=qr)
+
+        rule = _make_rule_dict()
+        result = _make_evaluation_result()
+
+        with (
+            patch.object(dispatcher, "redis_client", fake_redis),
+            patch.object(dispatcher, "_suppressor") as m_supp,
+        ):
+            m_supp.get_trigger_count = AsyncMock(return_value=1)
+            m_supp.set_cooldown = AsyncMock()
+            m_supp.clear_duration = AsyncMock()
+            outcomes = await dispatch(db, rule, "loop-1", result)
+
+        # 合并：不 add 新事件，返回既有事件 id
+        db.add.assert_not_called()
         db.flush.assert_awaited()
+        assert outcomes["CREATE_EVENT"] == pending.id
+        assert pending.trigger_count == 5  # 4+1 累计命中
+        assert pending.triggered_value == result.triggered_value
 
     @pytest.mark.asyncio
     async def test_create_event_severity_upgraded(self, fake_redis) -> None:
         """trigger_count >= 3 时严重度升级。"""
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(severity="WARN")
         result = _make_evaluation_result(severity="WARN")
 
@@ -491,7 +530,7 @@ class TestDispatchCreateEvent:
     @pytest.mark.asyncio
     async def test_cooldown_set_after_dispatch(self, fake_redis) -> None:
         """dispatch 完成后设置冷却期。"""
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(cooldown=600)
         result = _make_evaluation_result()
 
@@ -514,7 +553,7 @@ class TestDispatchCreateTracker:
     @pytest.mark.asyncio
     async def test_create_tracker_skipped_no_write(self, fake_redis) -> None:
         """CREATE_TRACKER 不再建单：outcomes 为 None，仅写入 event。"""
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(
             actions=[
                 {"type": "CREATE_EVENT"},
@@ -545,7 +584,7 @@ class TestDispatchCreateTracker:
     @pytest.mark.asyncio
     async def test_create_tracker_only_action_no_db_write(self, fake_redis) -> None:
         """仅含 CREATE_TRACKER 的规则：不产生任何 DB 写入。"""
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(actions=[{"type": "CREATE_TRACKER"}])
         result = _make_evaluation_result()
 
@@ -568,7 +607,7 @@ class TestDispatchNotify:
 
     @pytest.mark.asyncio
     async def test_notify_publishes_to_redis(self, fake_redis) -> None:
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(actions=[{"type": "CREATE_EVENT"}, {"type": "NOTIFY"}])
         result = _make_evaluation_result()
 
@@ -598,7 +637,7 @@ class TestDispatchNotify:
     @pytest.mark.asyncio
     async def test_notify_redis_exception_does_not_crash(self, fake_redis) -> None:
         """Redis publish 异常不影响其他动作。"""
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(actions=[{"type": "NOTIFY"}])
         result = _make_evaluation_result()
 
@@ -629,7 +668,7 @@ class TestDispatchNotify:
         """MW-P2-08：CREATE_EVENT + NOTIFY 时，通知 payload 携带 eventId。"""
         import json
 
-        db = AsyncMock()
+        db = _db_without_pending()
         rule = _make_rule_dict(actions=[{"type": "CREATE_EVENT"}, {"type": "NOTIFY"}])
         result = _make_evaluation_result()
 
