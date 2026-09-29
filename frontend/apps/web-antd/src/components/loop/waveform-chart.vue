@@ -533,16 +533,27 @@ function render() {
     });
   }
 
-  // Y 轴配置（整改 B3）：PV/SP 主轴按数据自适应（scale:true，不再被 OP 0-100% 压扁），
+  // Y 轴配置（0929 用户口径）：PV/SP 主轴默认固定为 PV 量程（Tag 配置的
+  // range_min/range_max，经 trend.pvRange 下发），不再随数据自适应放大；
+  // 放大/缩小通过左侧滑条或图上滚轮（Y 轴 dataZoom）。Tag 未配置量程时
+  // 降级为数据自适应（scale:true，仍不被 OP 0-100% 压扁）。
   // OP 固定副轴 0-100%（UI/UX §7.3），showMode 时 MODE 第三轴右置 offset。
+  const pvRange = props.trend?.pvRange;
+  const hasPvRange =
+    !!pvRange &&
+    typeof pvRange.min === 'number' &&
+    typeof pvRange.max === 'number' &&
+    pvRange.max > pvRange.min;
   const yAxis: any[] = [
     {
       axisLabel: { color: chartTextColor.value, formatter: '{value}' },
       name: 'PV/SP',
       nameTextStyle: { color: chartTextColor.value },
-      scale: true,
       splitLine: { lineStyle: { color: chartSplitLineColor.value } },
       type: 'value',
+      ...(hasPvRange
+        ? { max: pvRange.max, min: pvRange.min }
+        : { scale: true }),
     },
     {
       axisLabel: { color: chartTextColor.value, formatter: '{value}' },
@@ -634,14 +645,15 @@ function render() {
             height: 20,
             labelFormatter: (val: number) => fmtTimeShort(val),
           },
-          // Y 轴：滚轮 + 滑块（量程缩放）
+          // Y 轴：滚轮 + 左侧滑条（0929 用户口径：量程缩放走左侧）
           { ...zoomY, type: 'inside', yAxisIndex: 0 },
           {
             ...zoomY,
             type: 'slider',
             yAxisIndex: 0,
-            right: 8,
-            width: 20,
+            left: 2,
+            width: 18,
+            showDataShadow: false,
           },
         ]
       : [
@@ -658,7 +670,8 @@ function render() {
     grid: {
       bottom: 50,
       containLabel: true,
-      left: '3%',
+      // 0929：左侧加 Y 轴量程滑条（宽 18+2 边距），left 留出其空间
+      left: 30,
       right: showMode ? 110 : 60,
       top: 60,
     },

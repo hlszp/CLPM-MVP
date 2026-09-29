@@ -512,6 +512,8 @@ export namespace LoopApi {
     pointCount?: null | number;
     /** 是否触发了 LTTB 降采样 */
     downsampled?: boolean;
+    /** PV 量程（0929：趋势主轴固定量程用；Tag 未配置量程时为 null/缺省） */
+    pvRange?: null | { max: null | number; min: null | number };
   }
 
   /** 回路监控详情 - KPI 摘要（IDS v3.2 §2.2.14） */

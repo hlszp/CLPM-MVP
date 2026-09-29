@@ -1138,6 +1138,8 @@ async def get_loop_monitor_detail(
         "pidI": None,
         "pidD": None,
     }
+    # 0929：PV 量程（趋势主轴固定量程用，前端不再自适应放大）
+    pv_range: dict[str, float | None] | None = None
     read_at = None
     for role in ("PV", "SP", "OP", "MODE", "PID_P", "PID_I", "PID_D"):
         mapping = mappings.get(role)
@@ -1146,6 +1148,11 @@ async def get_loop_monitor_detail(
             # WS-D 阶段5：PV Tag 工程单位派生 currentValues.unit（PV/SP 共享）
             if role == "PV" and tag.unit:
                 current_values["unit"] = tag.unit
+            if role == "PV":
+                pv_range = {
+                    "min": float(tag.range_min) if tag.range_min is not None else None,
+                    "max": float(tag.range_max) if tag.range_max is not None else None,
+                }
             # 优先从 Redis 实时缓存读取
             cached = redis_cache.get(tag.tag_name)
             if cached:
@@ -1216,6 +1223,8 @@ async def get_loop_monitor_detail(
         "gaps": [],
         "observedRatio": None,
         "downsampled": False,
+        # 0929：PV 量程（趋势主轴固定量程；Tag 量程未配置时为 None，前端降级自适应）
+        "pvRange": pv_range,
     }
     trend_status = "EMPTY"  # EMPTY / OK / PARTIAL
 
