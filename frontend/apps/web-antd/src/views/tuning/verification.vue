@@ -26,6 +26,7 @@ import { getLoopListApi } from '#/api/loop';
 import { getTuningTaskDetailApi } from '#/api/tuning';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import TuningVerifyCompare from '#/components/clpm/tuning-verify-compare.vue';
+import { normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'TuningVerification' });
 
@@ -106,8 +107,10 @@ async function derivePointTime(recordId: string, loop: string) {
         String(b.submittedAt).localeCompare(String(a.submittedAt)),
       );
     const iso = withSubmit[0]?.submittedAt ?? record.createdAt;
-    // 后端 naive UTC（Z 后缀）→ 本地展示
-    pointTime.value = dayjs(iso);
+    // 后端 naive 串语义恒为 UTC（"补 Z 转本地"唯一约定，见 utils/format）。
+    // 直接 dayjs(naive) 会按本地时区解析，对比时点整体平移时区偏移
+    // （中国 +8h，"整定前窗"错切到错误时段），2026-09-29 修复。
+    pointTime.value = iso ? dayjs(normalizeUtcTimestamp(iso)) : dayjs();
     pointTimeSource.value = withSubmit[0]?.submittedAt
       ? '处置工单提交时间'
       : '整定记录创建时间';
