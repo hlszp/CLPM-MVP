@@ -40,6 +40,8 @@ celery_app = Celery(
         # 整定模块（09 设计方案恢复：历史辨识异步任务）
         "app.tasks.tuning",
         "app.tasks.alert_patrol",
+        # 低频慢变信号每小时锚点补点（0929：SP/MODE 趋势空白治理）
+        "app.tasks.lowfreq_anchor",
         # 工作台 v2.0（预计算 / SLA 巡检 / 事件归档 / 缓存清理 / MV 刷新）
         "app.tasks.workbench",
     ],
@@ -145,6 +147,7 @@ import app.tasks.diagnosis_maintenance  # noqa: E402, F401
 import app.tasks.diagnosis_schedule  # noqa: E402, F401
 import app.tasks.diagnosis_v2  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
+import app.tasks.lowfreq_anchor  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
 
 # import app.tasks.tracker_verification  # noqa: E402, F401
