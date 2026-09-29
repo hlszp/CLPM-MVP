@@ -180,8 +180,16 @@ async def update_plant_node(
     operator: str,
     is_kpi_enabled: bool | None = None,
     sort_order: int | None = None,
+    type_: str | None = None,
+    parent_id: str | None = None,
 ) -> dict:
-    """更新工厂节点（名称 + 排序 + 是否纳入性能评估）。
+    """更新工厂节点（名称 + 排序 + 是否纳入性能评估 + 类型/父节点）。
+
+    0929 新增：支持修改节点类型（FACTORY/AREA/UNIT）与父节点（改挂载层级）。
+    校验：
+    - 有子节点的节点不可改为 UNIT（UNIT 层不挂子节点）；
+    - 防环：新父节点不可为自身或自身子孙；
+    - 层级约定：FACTORY 必须为顶层（parent 置空）、UNIT 的父须为 AREA/FACTORY。
 
     Raises:
         BizError: ERR_NODE_NOT_FOUND (节点不存在)
@@ -195,15 +203,89 @@ async def update_plant_node(
             status_code=404,
         )
 
-    before_value = f'{{"name":"{node.name}","isKpiEnabled":{node.is_kpi_enabled}}}'
+    before_value = (
+        f'{{"name":"{node.name}","type":"{node.type}","isKpiEnabled":{node.is_kpi_enabled}}}'
+    )
 
-    # 改名时校验同父重名（改名场景才需要；数据库唯一约束兜底）
-    if name != node.name:
-        dup_stmt = select(PlantNode).where(PlantNode.name == name, PlantNode.id != node_id)
-        if node.parent_id:
-            dup_stmt = dup_stmt.where(PlantNode.parent_id == node.parent_id)
-        else:
-            dup_stmt = dup_stmt.where(PlantNode.parent_id.is_(None))
+    # --- 类型/父节点修改（0929）---
+    new_type = type_ or node.type
+    if new_type not in ("FACTORY", "AREA", "UNIT"):
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"非法节点类型: {new_type}（允许 FACTORY/AREA/UNIT）",
+            status_code=400,
+        )
+
+    change_parent = parent_id is not None
+    new_parent: str | None = parent_id or None
+    if change_parent and new_parent == node_id:
+        raise BizError(
+            code="ERR_PARAM",
+            message="父节点不可为节点自身",
+            status_code=400,
+        )
+
+    if change_parent and new_parent is not None:
+        new_parent_node = (
+            await db.execute(select(PlantNode).where(PlantNode.id == new_parent))
+        ).scalar_one_or_none()
+        if new_parent_node is None:
+            raise BizError(
+                code="ERR_PARAM",
+                message="目标父节点不存在",
+                status_code=400,
+            )
+        # 防环：新父不可为自身子孙
+        cursor = new_parent_node
+        seen: set[str] = {node_id}
+        while cursor is not None and cursor.id not in seen:
+            seen.add(cursor.id)
+            if cursor.id == node_id:
+                raise BizError(
+                    code="ERR_PARAM",
+                    message="不可将节点移动到其子孙节点下（会形成环）",
+                    status_code=400,
+                )
+            cursor = (
+                await db.execute(select(PlantNode).where(PlantNode.id == cursor.parent_id))
+            ).scalar_one_or_none()
+
+    # 层级约定 + 有子节点的节点不可降为 UNIT
+    children_count = (
+        await db.execute(select(PlantNode.id).where(PlantNode.parent_id == node_id).limit(1))
+    ).scalar_one_or_none()
+    if new_type == "UNIT" and children_count is not None:
+        raise BizError(
+            code="ERR_PARAM",
+            message="该节点存在子节点，不可改为「单元」类型（单元层不挂子节点）",
+            status_code=400,
+        )
+    if new_type == "FACTORY":
+        new_parent = None  # 工厂必须是顶层
+    elif new_type == "UNIT" and new_parent is not None:
+        parent_type = (
+            await db.execute(select(PlantNode.type).where(PlantNode.id == new_parent))
+        ).scalar_one_or_none()
+        if parent_type not in ("AREA", "FACTORY"):
+            raise BizError(
+                code="ERR_PARAM",
+                message="「单元」的父节点须为区域或工厂",
+                status_code=400,
+            )
+
+    effective_parent = new_parent if change_parent else node.parent_id
+
+    # 同父重名校验（改父或改名都可能产生新组合；数据库唯一约束兜底）
+    if name != node.name or change_parent:
+        dup_stmt = (
+            select(PlantNode)
+            .where(PlantNode.name == name, PlantNode.id != node_id)
+            .where(
+                PlantNode.parent_id == effective_parent
+                if effective_parent
+                else PlantNode.parent_id.is_(None)
+            )
+        )
         if (await db.execute(dup_stmt)).scalar_one_or_none() is not None:
             raise BizError(
                 code="ERR_NODE_NAME_DUPLICATED",
@@ -212,12 +294,15 @@ async def update_plant_node(
             )
 
     node.name = name
+    node.type = new_type
+    if change_parent:
+        node.parent_id = new_parent
     if is_kpi_enabled is not None:
         node.is_kpi_enabled = is_kpi_enabled
     if sort_order is not None:
         node.sort_order = sort_order
     node.updated_by = operator
-    after_value = f'{{"name":"{name}","isKpiEnabled":{node.is_kpi_enabled}}}'
+    after_value = f'{{"name":"{name}","type":"{node.type}","isKpiEnabled":{node.is_kpi_enabled}}}'
 
     await _write_audit(
         db=db,

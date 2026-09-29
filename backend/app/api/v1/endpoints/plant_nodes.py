@@ -229,7 +229,7 @@ async def update_plant_node_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
-    """更新工厂节点（名称 + 排序 + 是否纳入性能评估，仅 ADMIN）。"""
+    """更新工厂节点（名称 + 排序 + 是否纳入性能评估 + 类型/父节点，仅 ADMIN）。"""
     data = await update_plant_node(
         db=db,
         node_id=str(node_id),
@@ -237,6 +237,8 @@ async def update_plant_node_endpoint(
         operator=user.username,
         is_kpi_enabled=body.isKpiEnabled,
         sort_order=body.sortOrder,
+        type_=body.type,
+        parent_id=body.parentId,
     )
     return success(data=data, message="更新成功")
 

@@ -385,6 +385,9 @@ async function handleSave() {
       await updatePlantNodeApi(form.id, {
         name: form.name.trim(),
         sortOrder: form.sortOrder,
+        // 0929：编辑支持修改类型/父节点（改挂层级；后端防环/子节点校验）
+        type: form.type,
+        parentId: form.parentId || null,
       });
       message.success('节点已更新');
     }
@@ -929,9 +932,9 @@ onMounted(() => {
           />
         </FormItem>
         <FormItem label="节点类型">
+          <!-- 0929：编辑也允许修改类型/父节点（后端做防环/子节点校验） -->
           <Select
             v-model:value="form.type"
-            :disabled="modalMode === 'edit'"
             :options="[
               { value: 'FACTORY', label: '工厂（顶层）' },
               { value: 'AREA', label: '装置' },
@@ -943,7 +946,6 @@ onMounted(() => {
         <FormItem label="父节点">
           <Select
             v-model:value="form.parentId"
-            :disabled="modalMode === 'edit'"
             allow-clear
             show-search
             :options="parentOptions"

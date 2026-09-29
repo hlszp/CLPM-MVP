@@ -42,6 +42,10 @@ export namespace PlantNodeApi {
     sortOrder?: number;
     /** 是否纳入性能评估（KPI 参评开关；省略不修改） */
     isKpiEnabled?: boolean;
+    /** 节点类型（0929：编辑支持修改；省略不修改） */
+    type?: 'AREA' | 'FACTORY' | 'UNIT';
+    /** 父节点 id（0929：编辑支持改挂；null=改为顶层，省略不修改） */
+    parentId?: null | string;
   }
 
   /** 通用操作结果 */
