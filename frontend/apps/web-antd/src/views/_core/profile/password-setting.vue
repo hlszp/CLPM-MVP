@@ -7,6 +7,11 @@ import { ProfilePasswordSetting, z } from '@vben/common-ui';
 
 import { message } from 'ant-design-vue';
 
+import { changePasswordApi } from '#/api/core/auth';
+import { useAuthStore } from '#/store/auth';
+
+const authStore = useAuthStore();
+
 const formSchema = computed((): VbenFormSchema[] => {
   return [
     {
@@ -50,8 +55,19 @@ const formSchema = computed((): VbenFormSchema[] => {
   ];
 });
 
-function handleSubmit() {
-  message.success('密码修改成功');
+/** 接真实改密接口（PUT /auth/password）；后端撤销全部 token，
+ * 成功后必须清本地状态并回到登录页。失败由请求拦截器统一提示。 */
+async function handleSubmit(values: Record<string, any>) {
+  try {
+    await changePasswordApi({
+      oldPassword: values.oldPassword as string,
+      newPassword: values.newPassword as string,
+    });
+  } catch {
+    return;
+  }
+  message.success('密码修改成功，请重新登录');
+  await authStore.logout();
 }
 </script>
 <template>
