@@ -14,6 +14,9 @@ Beat 调度：
    b. 持续时长检查（去抖）
    c. 冷却期检查（去重）
    d. dispatcher 动作分发（建事件/建工单/通知）
+6. 工况恢复自动解除（0929 陈旧报警治理）：回路未决事件（ACTIVE/ACKNOWLEDGED）
+   逐条重估其规则，连续 3 次巡检未再触发 → RESOLVED（ISA-18.2：工况恢复后
+   报警应退出未决态，否则形成陈旧报警滞留关注队列）
 """
 
 from __future__ import annotations
@@ -73,6 +76,7 @@ async def _do_patrol() -> dict:
     total_loops = 0
     total_triggered = 0
     total_dispatched = 0
+    total_recovered = 0
 
     async with AsyncSessionLocal() as db:
         # 1. 全局开关检查
@@ -85,7 +89,7 @@ async def _do_patrol() -> dict:
         loop_ids = await get_all_active_loops(db)
         total_loops = len(loop_ids)
         if not loop_ids:
-            return {"total_loops": 0, "triggered": 0, "dispatched": 0}
+            return {"total_loops": 0, "triggered": 0, "dispatched": 0, "recovered": 0}
 
     # 3. 逐回路求值（每个回路独立 session，避免长事务）
     for loop_id in loop_ids:
@@ -110,22 +114,97 @@ async def _do_patrol() -> dict:
                     if dispatched:
                         total_dispatched += 1
 
+                # 工况恢复自动解除（陈旧报警治理，0929）
+                total_recovered += await _auto_recover_events(db, str(loop_id), confidence_level)
+
                 # 提交事件/工单写入
                 await db.commit()
         except Exception:  # noqa: BLE001
             logger.warning("回路 %s 巡检异常", loop_id, exc_info=True)
 
     logger.info(
-        "预警巡检完成: loops=%d triggered=%d dispatched=%d",
+        "预警巡检完成: loops=%d triggered=%d dispatched=%d recovered=%d",
         total_loops,
         total_triggered,
         total_dispatched,
+        total_recovered,
     )
     return {
         "total_loops": total_loops,
         "triggered": total_triggered,
         "dispatched": total_dispatched,
+        "recovered": total_recovered,
     }
+
+
+# ---------------------------------------------------------------------------
+# 工况恢复自动解除（0929 陈旧报警治理）
+# ---------------------------------------------------------------------------
+
+_RECOVERY_MISS_KEY = "alert:recovery_miss:{event_id}"
+_RECOVERY_MISS_TTL = 3600
+_RECOVERY_MISS_THRESHOLD = 3
+
+
+async def _auto_recover_events(db, loop_id: str, confidence_level: str | None) -> int:
+    """回路的未决事件工况恢复后自动 RESOLVED。
+
+    对 ACTIVE/ACKNOWLEDGED 事件逐条重估其规则：当前未触发且连续
+    ``_RECOVERY_MISS_THRESHOLD`` 次巡检未触发（Redis 计数防数据抖动误清）
+    → RESOLVED（resolved_by=system:auto-recovery）。
+
+    规则已删除/解绑（rule_id 空或查不到）的事件**不**自动恢复，留人工处理。
+    返回本次恢复的事件数。
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.core.redis import redis_client
+    from app.models.alert import AlertEvent
+    from app.services.alert_rule_engine.cache import get_rules_for_loop
+    from app.services.alert_rule_engine.evaluator import evaluate_rule
+
+    rows = await db.execute(
+        select(AlertEvent).where(
+            AlertEvent.loop_id == loop_id,
+            AlertEvent.status.in_(["ACTIVE", "ACKNOWLEDGED"]),
+        )
+    )
+    events = rows.scalars().all()
+    if not events:
+        return 0
+
+    rules_by_id = {str(r.get("id")): r for r in await get_rules_for_loop(db, loop_id)}
+
+    recovered = 0
+    now = datetime.now(UTC).replace(tzinfo=None)
+    for ev in events:
+        rule = rules_by_id.get(str(ev.rule_id)) if ev.rule_id else None
+        if rule is None:
+            continue
+        try:
+            result = await evaluate_rule(db, rule, loop_id, confidence_level=confidence_level)
+        except Exception:  # noqa: BLE001
+            logger.warning("自动恢复重估失败 event=%s", ev.id, exc_info=True)
+            continue
+        miss_key = _RECOVERY_MISS_KEY.format(event_id=ev.id)
+        if result.triggered:
+            await redis_client.delete(miss_key)
+            continue
+        misses = int(await redis_client.incr(miss_key))
+        await redis_client.expire(miss_key, _RECOVERY_MISS_TTL)
+        if misses < _RECOVERY_MISS_THRESHOLD:
+            continue
+        ev.status = "RESOLVED"
+        ev.resolved_by = "system:auto-recovery"
+        ev.resolved_at = now
+        ev.resolution_note = (
+            f"工况恢复自动解除：连续 {misses} 次巡检未再触发（自动恢复策略，2026-09-29 启用）"
+        )
+        await redis_client.delete(miss_key)
+        recovered += 1
+    return recovered
 
 
 async def _process_triggered(db, suppressor: Suppressor, loop_id: str, result) -> bool:

@@ -716,7 +716,9 @@ async def acknowledge_event(
     db: AsyncSession, event_id: str, operator: str, note: str | None = None
 ) -> dict[str, Any]:
     event = await _get_event_or_404(db, event_id)
-    if event.status not in ("ACTIVE", "SUPPRESSED"):
+    # 0929 状态机清理：SUPPRESSED 为不可达状态（无任何代码写入，抑制在独立表），
+    # 移出白名单；DB CheckConstraint 保留以兼容历史数据
+    if event.status != "ACTIVE":
         raise BizError(
             code="ERR_ALERT_EVENT_BAD_STATE",
             message=f"事件状态 {event.status} 不可确认",
@@ -750,8 +752,22 @@ async def resolve_event(
 
 
 async def mark_false_positive(db: AsyncSession, event_id: str, is_fp: bool) -> dict[str, Any]:
+    """标记误报；置位时未决事件（ACTIVE/ACKNOWLEDGED）联动 RESOLVED。
+
+    0929 修复：此前置误报不改状态，事件仍占关注队列/徽标计数——
+    "误报"语义即不该报，未决态滞留与标记自相矛盾。
+    """
     event = await _get_event_or_404(db, event_id)
     event.is_false_positive = is_fp
+    if is_fp and event.status in ("ACTIVE", "ACKNOWLEDGED"):
+        from datetime import UTC, datetime
+
+        event.status = "RESOLVED"
+        event.resolved_by = event.acknowledged_by or "system:false-positive"
+        event.resolved_at = datetime.now(UTC).replace(tzinfo=None)
+        event.resolution_note = (
+            event.resolution_note + "；" if event.resolution_note else ""
+        ) + "标记误报，未决事件自动解除"
     await db.flush()
     return await get_event(db, event_id)
 
