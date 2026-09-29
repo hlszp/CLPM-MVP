@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import { defineAsyncComponent, nextTick, ref } from 'vue';
+import { defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -11,6 +12,16 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 defineOptions({ name: 'MetricConfig' });
 
 const activeTab = ref('definition');
+const route = useRoute();
+
+// 深链：?tab=<key> 直开指定配置 Tab（诊断工作台 L0/L1 拦截横幅「查看适用性
+// 规则」入口，P0 修复 2026-09-29）；非法值静默保留默认 Tab
+onMounted(() => {
+  const q = route.query.tab;
+  if (typeof q === 'string' && q in TAB_DESCRIPTIONS) {
+    activeTab.value = q;
+  }
+});
 
 const DefinitionTab = defineAsyncComponent(
   () => import('./config-definition.vue'),

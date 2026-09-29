@@ -1035,7 +1035,9 @@ onMounted(() => {
                   <Button
                     size="small"
                     type="link"
-                    @click="router.push({ path: '/metric/fitness' })"
+                    @click="
+                      router.push({ path: '/config/metric', query: { tab: 'fitness' } })
+                    "
                   >
                     查看适用性规则 →
                   </Button>

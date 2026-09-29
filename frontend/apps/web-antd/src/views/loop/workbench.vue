@@ -1839,7 +1839,7 @@ const stageLabelMap: Record<string, string> = {
               <router-link
                 v-if="selectedLoopId"
                 :to="{
-                  path: '/performance/loops',
+                  path: '/metric/loop-performance',
                   query: { loopId: selectedLoopId },
                 }"
                 class="wb-r5__card-link"
