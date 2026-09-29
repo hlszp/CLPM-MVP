@@ -276,8 +276,7 @@ async function loadList() {
     };
     if (filterLoopId.value) params.loopId = filterLoopId.value;
     if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
-    // 多值状态逗号拼接直传（后端 status 目前单值精确匹配，
-    // 多值口径待后端扩展后自动生效，与整定 GAP-1 同类）
+    // 多值状态逗号拼接直传（后端已支持逗号分隔多值，2026-09-29 对齐生效）
     if (filterStatus.value.length > 0) {
       params.status = filterStatus.value.join(',');
     }

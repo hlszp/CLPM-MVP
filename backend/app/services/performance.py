@@ -1024,7 +1024,12 @@ def _apply_snapshot_filters(
     if end is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start <= end)
     if status_filter:
-        stmt = stmt.where(KpiSnapshotHourly.status == status_filter)
+        # 逗号分隔多值（端点契约如此声明）；单值保持精确匹配
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if len(statuses) == 1:
+            stmt = stmt.where(KpiSnapshotHourly.status == statuses[0])
+        elif statuses:
+            stmt = stmt.where(KpiSnapshotHourly.status.in_(statuses))
     if loop_ids is not None:
         if loop_ids:
             stmt = stmt.where(KpiSnapshotHourly.loop_id.in_(loop_ids))
