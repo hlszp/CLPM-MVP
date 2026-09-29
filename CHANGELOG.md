@@ -2,6 +2,37 @@
 
 本文件记录 CLPM-MVP 的版本锁定基线。版本线自原 CLPM v6.2.0 派生精简重建后延续（v6.2.0 → v7.0.0），设计事实来源为 `docs/MVP设计/`。
 
+## [Unreleased] - 2026-09-29
+
+全站产品/IA 诊断后的**总览收敛 + 死代码集中清理 + 口径单源化**批次（用户四项裁决：总览留三屏、工作台定位聚合+下钻、死代码本轮清理、AGENTS.md 补行为红线）。
+
+### 一、总览三屏收敛（IA 变更）
+
+- **下线装置总览 `/dashboard/workbench` 与管理总览 `/reports/overview`**（页面+路由删除），全站总览收敛为**驾驶舱（管理者）+ 工作台（工程任务台，定位=聚合+下钻薄层）+ 性能总览（评估看板）**三屏；旧书签经 redirect 落回路监视 / 绩效报告
+- **登录落地页调整**：前端 `defaultHomePath` `/dashboard`→`/cockpit`；ADMIN→`/workbench`（前后端 `ROLE_DEFAULT_HOME` 两张表逐角色对齐，test_auth 校验）；监控模块默认首页非 EXPERT→**回路监视**（原装置总览）
+- 管理总览的独有能力（阶段锁定 /reports/stage-lock、PDF 导出）后端端点保留，前端入口随页下线——两者在 P3 报表做实（生成占位收敛中）前本就不可用，恢复时随新载体重建
+
+### 二、死代码集中清理
+
+- **前端**：16 个零引用组件（workbench 11 + loop 3 + prediction-card + llm-config 孤儿页）、`views/dashboard/` 整目录、`reports/overview.vue` 及其测试随页面删除
+- **后端**：workbench BFF 五个空壳端点（A-05 /handling、A-07 /flags、A-08 /staff-load、A-09 /lane-more、A-11 /aggregate——恒返回硬编码空结构，TODO M2 从未落地，前端已绕行）、`/dashboard/system-overview`、`/dashboard/predictions`、`/performance/board`、`GET/PUT /configs/metrics` 架空链删除；`api-contract-allowlist.json` 同步摘除六条（含"待清理评估"全部出清）
+- **前端死封装**：getWorkbenchHandlingApi/getWorkbenchAggregateApi/getPredictionsApi/getSystemOverviewApi 及配套死类型删除
+- 旧版回路监视表 `/loop/monitor/legacy` 本轮**保留**（唯一带批量导出的视图，待回路监视页补导出后下线）；诊断/整定专属文件一律未动（仓库纪律）
+
+### 三、口径单源化（横向一致性）
+
+- **性能定级**：五份档位定义（use-score-color/cockpit/pid-dashboard/回路监视/指标矩阵）收敛到 `constants/clpm-ui GRADE_THRESHOLDS` 唯一源；回路工作台侧栏 A–E 阈值对齐 GB/T（原 90/80/**70**/60 自成一派）；指标矩阵补 40 分警告档、图例四档文案改五档
+- **时区**：修复 6 处 naive UTC 显示 8 小时偏移（指标矩阵 3 处、诊断记录窗口/时间列、诊断报告、收益报告、数据导入）+ 评估记录 `[UTC+8]` 硬编码标签，统一走 `formatLocalTime`
+- **权限**：预警事件页 `roles[0]`（只看第一个角色，多角色用户误判只读）改 `useClpmRoles.hasAnyRole`；管理总览的 localStorage 假读随页删除
+- **诚实化（AGENTS.md 新红线首次执行）**：FunnelStats"近 6 周闭环数"演示柱图、HeaderBar 恒真"数据可信"徽章移除；工作台整定/处置断言角标 `scopeParams.plantName`（不存在的字段，恒显"全厂/全局"）改 `scopeDisplayName` 真实解析
+- **性能总览阀门越限**：只查前 50 条（系统性漏报）改全量翻页 + `latestOnly`（同时修复历史快照重复命中）
+
+### 四、机制
+
+- AGENTS.md 行为红线新增：**下钻契约**（目标页必须消费全部下钻参数并回显）、**诚实化原则**（禁演示数据/静默截断/静默降级/恒真徽章）
+- openapi 基线随端点删除重新固化（`scripts/export_openapi.py`），契约漂移测试实跑守护（0929 前后端 273 个封装对账脚本 [OK]）
+- 已知残留增量：无（本轮净删除；`/reports/overview` 后端端点为唯一保留的已下线前端对应端点，已在 allowlist 注明恢复条件）
+
 ## [7.1.0] - 2026-09-13
 
 v7.0.0 锁定后的**生产交付收口 + 数据链路重构**版本（main 自 `b8525ee2` 起；含 08-31 部署就绪收口与 09-01~09-13 测点子表重构）。tag `v7.1.0`（annotated）。
