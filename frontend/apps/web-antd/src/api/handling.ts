@@ -594,6 +594,13 @@ export function getHandlingSuggestionsApi(
   );
 }
 
+/** 建议详情单查（0929：替代深链"分页扫描 5 页"定位——终态建议排在后面页时扫不到即静默丢失） */
+export function getHandlingSuggestionApi(id: string) {
+  return requestClient.get<HandlingApi.SuggestionItem>(
+    `/handling/suggestions/${id}`,
+  );
+}
+
 /** 手动新增建议（source=MANUAL，run_id 置空，§6.1） */
 export function createSuggestionApi(data: HandlingApi.CreateSuggestionBody) {
   return requestClient.post<HandlingApi.SuggestionItem>(

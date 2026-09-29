@@ -32,7 +32,7 @@ import {
 
 import {
   acceptSuggestionApi,
-  getHandlingSuggestionsApi,
+  getHandlingSuggestionApi,
   ignoreSuggestionApi,
   rejectSuggestionApi,
 } from '#/api/handling';
@@ -62,31 +62,20 @@ const drawerOpen = computed({
   set: (v: boolean) => emit('update:open', v),
 });
 
-/** 按 id 分页扫描清单定位建议（无单查端点的降级方案） */
-async function findSuggestionById(id: string) {
-  for (let page = 1; page <= 5; page++) {
-    const res = await getHandlingSuggestionsApi({ page, pageSize: 100 });
-    const hit = res.items.find((item) => item.id === id);
-    if (hit) return hit;
-    if (res.items.length < 100) break;
-  }
-  return null;
-}
-
+/** 单查建议详情（0929：后端新增 GET /suggestions/{id}，替换原"分页扫描 5 页"降级方案——
+ * 终态建议排在后面页时扫描定位静默丢失） */
 async function load() {
   if (!props.suggestionId) return;
   loading.value = true;
   detail.value = null;
   loadError.value = '';
   try {
-    const hit = await findSuggestionById(props.suggestionId);
-    if (hit) {
-      detail.value = hit;
-    } else {
-      loadError.value = '未找到该处置建议（可能已删除）';
-    }
+    detail.value = await getHandlingSuggestionApi(props.suggestionId);
   } catch (error: any) {
-    loadError.value = error?.message ?? '建议详情加载失败';
+    loadError.value =
+      error?.code === 'ERR_NOT_FOUND'
+        ? '未找到该处置建议（可能已删除）'
+        : (error?.message ?? '建议详情加载失败');
   } finally {
     loading.value = false;
   }

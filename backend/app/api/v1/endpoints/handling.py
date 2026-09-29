@@ -38,7 +38,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
@@ -618,6 +618,40 @@ async def create_suggestion(
     await db.commit()
     await db.refresh(row)
     return success(_suggestion_to_dict(row))
+
+
+@router.get("/suggestions/{suggestion_id}", response_model=ApiResponse[dict])
+async def get_suggestion(
+    suggestion_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """建议详情单查（0929 新增：替代前端深链"分页扫描 5 页"定位，扫不到即静默丢失）。"""
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT ai.*, ll.tag_name AS loop_tag_name,
+                       ll.description AS loop_description,
+                       ll.importance_level, ll.unit_id,
+                       ho.order_no AS converted_order_no
+                FROM loop_action_item ai
+                JOIN loop_ledger ll ON ll.id = ai.loop_id
+                LEFT JOIN handling_order ho ON ho.id = ai.converted_order_id
+                WHERE ai.id = :sid
+                """
+            ),
+            {"sid": suggestion_id},
+        )
+    ).first()
+    if row is None:
+        raise BizError(
+            code="ERR_NOT_FOUND",
+            message="处置建议不存在",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    unit_paths = await _load_unit_paths(db)
+    return success(_suggestion_list_row_to_dict(row, unit_paths))
 
 
 @router.post("/suggestions/{suggestion_id}/accept", response_model=ApiResponse[dict])
