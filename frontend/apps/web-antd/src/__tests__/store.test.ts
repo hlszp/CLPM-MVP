@@ -226,8 +226,8 @@ describe('store 测试', () => {
     expect(userStore.userInfo?.roles).toEqual(['ADMIN']);
     // 验证权限码已存储
     expect(accessStore.accessCodes).toEqual(['*']);
-    // 验证跳转
-    expect(routerPushSpy).toHaveBeenCalledWith('/dashboard');
+    // 验证跳转（0929 总览收敛：ADMIN 落工作台）
+    expect(routerPushSpy).toHaveBeenCalledWith('/workbench');
   });
 
   // UT-STORE-002: userStore-logout

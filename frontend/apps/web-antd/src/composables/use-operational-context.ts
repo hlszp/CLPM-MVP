@@ -176,7 +176,7 @@ export function useOperationalContext() {
     from: urlContext.value.from,
     backTo:
       urlContext.value.from === 'overview'
-        ? ({ path: '/dashboard/workbench' } as DeepLink)
+        ? ({ path: '/monitor/loops' } as DeepLink)
         : null,
   }));
 

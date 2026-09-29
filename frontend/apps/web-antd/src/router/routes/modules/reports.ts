@@ -6,8 +6,7 @@ import type { RouteRecordRaw } from 'vue-router';
  * 设计文档：docs/设计文档/IA 优化/CLPM-IA优化实施方案-0822.md §二
  * 跨域报表与管理决策中心，统一承载绩效/诊断/处置/收益报告的查看、导出与订阅。
  *
- * 二级菜单（8 个，P1 基座补域 2026-08-28：基座在前、闭环在后，与成熟度分层一致）：
- * - 管理总览 /reports/overview     全角色，S1~S3 自适应
+ * 二级菜单（7 个，0929 总览收敛：管理总览下线；基座在前、闭环在后，与成熟度分层一致）：
  * - 绩效报告 /reports/performance   ADMIN/IC/PE/SPONSOR（由 /metric/kpi-report 迁入）
  * - 数据质量 /reports/data-quality  全角色（P1 新增，基础模块数据自持）
  * - 预警统计 /reports/alert-statistics 全角色（P1 新增，基础模块数据自持）
@@ -22,7 +21,7 @@ const routes: RouteRecordRaw[] = [
   {
     name: 'Reports',
     path: '/reports',
-    redirect: '/reports/overview',
+    redirect: '/reports/performance',
     meta: {
       // 父路由 authority 取子路由并集，避免 IC/PE/SPONSOR 看不到菜单
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
@@ -32,17 +31,6 @@ const routes: RouteRecordRaw[] = [
       module: 'reports',
     },
     children: [
-      {
-        name: 'ReportsOverview',
-        path: '/reports/overview',
-        component: () => import('#/views/reports/overview.vue'),
-        meta: {
-          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
-          icon: 'lucide:layout-dashboard',
-          title: '管理总览',
-          module: 'reports',
-        },
-      },
       {
         name: 'ReportsPerformance',
         path: '/reports/performance',
@@ -124,6 +112,17 @@ const routes: RouteRecordRaw[] = [
           icon: 'lucide:bell-dot',
           title: '订阅配置',
           module: 'reports',
+        },
+      },
+      // 0929 总览收敛：管理总览下线，旧书签落绩效报告
+      {
+        name: 'ReportsOverviewLegacy',
+        path: '/reports/overview',
+        redirect: '/reports/performance',
+        meta: {
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          hideInMenu: true,
+          title: '管理总览（已下线）',
         },
       },
     ],

@@ -419,13 +419,8 @@ export namespace ReportsApi {
   }
 }
 
-export function getReportOverviewApi(
-  params: ReportsApi.ReportQuery & { stage?: ReportsApi.Stage },
-) {
-  return requestClient.get<ReportsApi.OverviewData>('/reports/overview', {
-    params,
-  });
-}
+// 0929 总览收敛：getReportOverviewApi 随管理总览页下线删除；
+// 后端 GET /reports/overview 端点保留（P3 报表做实后随新载体恢复）。
 
 export function getReportDiagnosisStatisticsApi(
   params: ReportsApi.ReportQuery,

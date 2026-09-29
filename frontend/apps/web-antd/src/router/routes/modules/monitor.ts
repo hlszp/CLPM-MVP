@@ -4,19 +4,21 @@ import { useUserStore } from '@vben/stores';
 
 function monitorHome() {
   const roles = useUserStore().userInfo?.roles ?? [];
+  // 0929 总览收敛：装置总览下线，非 EXPERT 落回路监视（列表页标杆）
   return roles.includes('EXPERT')
     ? '/monitor/loop-workbench'
-    : '/dashboard/workbench';
+    : '/monitor/loops';
 }
 
 /**
- * 监控路由模块（菜单重构：装置总览/回路监视/预警事件/关注队列/回路工作台）
+ * 监控路由模块（0929 总览收敛：4 子页）
  *
  * 定位：运行驾驶舱与单回路处置入口。
- * 菜单顺序：装置总览 → 回路监视 → 预警事件 → 关注队列 → 回路工作台。
+ * 菜单顺序：回路监视 → 预警事件 → 关注队列 → 回路工作台。
+ * （装置总览 /dashboard/workbench 已按 2026-09-29 裁决下线，
+ *   总览收敛为驾驶舱 + 工作台 + 性能总览三屏）
  *
  * 角色权限（实现契约 §5）：
- * - 装置总览：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR
  * - 回路监视/预警事件/关注队列：全部角色（Sponsor 只读）
  * - 回路工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / EXPERT
  *
@@ -37,17 +39,6 @@ const routes: RouteRecordRaw[] = [
       module: 'monitor',
     },
     children: [
-      {
-        name: 'MonitorOverview',
-        path: '/dashboard/workbench',
-        component: () => import('#/views/dashboard/workbench.vue'),
-        meta: {
-          affixTab: true,
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
-          icon: 'lucide:layout-dashboard',
-          title: '装置总览',
-        },
-      },
       {
         // 面点分离：回路列表独立成页（页型 B），全角色可见（含 EXPERT/SPONSOR）
         // /loop/monitor 旧书签重定向到本页
@@ -138,14 +129,25 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   // 旧 /dashboard 父路径兼容 redirect（保护书签/E2E）
+  // 0929：装置总览下线后改落回路监视
   {
     name: 'DashboardLegacy',
     path: '/dashboard',
-    redirect: '/dashboard/workbench',
+    redirect: '/monitor/loops',
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '工作台',
+    },
+  },
+  {
+    name: 'DashboardWorkbenchLegacy',
+    path: '/dashboard/workbench',
+    redirect: '/monitor/loops',
+    meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+      hideInMenu: true,
+      title: '装置总览（已下线）',
     },
   },
 ];

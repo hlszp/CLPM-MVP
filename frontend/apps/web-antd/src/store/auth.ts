@@ -21,10 +21,10 @@ import { $t } from '#/locales';
  *
  * - 驾驶舱方案 §3.1（C2）：SPONSOR / IC_ENGINEER / PE_ENGINEER 默认落地 /cockpit
  * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis/records（诊断记录）
- * - ADMIN：保持现行为 → /dashboard
+ * - ADMIN：/workbench 工作台（0929 总览收敛：/dashboard 装置总览下线）
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
-  ADMIN: '/dashboard',
+  ADMIN: '/workbench',
   EXPERT: '/diagnosis/records',
   IC_ENGINEER: '/cockpit',
   PE_ENGINEER: '/cockpit',
@@ -32,13 +32,13 @@ const ROLE_DEFAULT_HOME: Record<string, string> = {
 };
 
 /**
- * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /dashboard
+ * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /cockpit
  */
 function resolveHomePath(
   role: string,
   backendDefaultHome?: null | string,
 ): string {
-  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/dashboard';
+  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/cockpit';
 }
 
 export { resolveHomePath, ROLE_DEFAULT_HOME };

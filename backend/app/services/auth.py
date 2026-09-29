@@ -110,8 +110,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
 # /reports/overview）。前端 resolveHomePath 以自身映射优先，故用户可见行为
 # 一直取自前端；后端这张表只在 API 响应 defaultHome 与其它消费方生效，
 # 长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）与前端表对齐。
+#
+# 2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench 工作台。
 ROLE_DEFAULT_HOME: dict[str, str] = {
-    "ADMIN": "/dashboard",
+    "ADMIN": "/workbench",
     "IC_ENGINEER": "/cockpit",
     "PE_ENGINEER": "/cockpit",
     "SPONSOR": "/cockpit",
@@ -126,7 +128,7 @@ def get_permissions(role: str) -> list[str]:
 
 def get_default_home(role: str) -> str:
     """Return the default home path for a role."""
-    return ROLE_DEFAULT_HOME.get(role, "/dashboard")
+    return ROLE_DEFAULT_HOME.get(role, "/cockpit")
 
 
 # ---------------------------------------------------------------------------

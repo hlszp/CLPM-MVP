@@ -65,9 +65,9 @@ describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
     }
   });
 
-  it('aDMIN 默认首页为 /dashboard（保持现行为）', () => {
-    expect(ROLE_DEFAULT_HOME.ADMIN).toBe('/dashboard');
-    expect(resolveHomePath('ADMIN', '/dashboard')).toBe('/dashboard');
+  it('aDMIN 默认首页为 /workbench 工作台（0929 总览收敛）', () => {
+    expect(ROLE_DEFAULT_HOME.ADMIN).toBe('/workbench');
+    expect(resolveHomePath('ADMIN', '/dashboard')).toBe('/workbench');
   });
 
   it('角色映射优先于后端 defaultHome 返回值', () => {
@@ -76,9 +76,9 @@ describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
     expect(resolveHomePath('SPONSOR', '/reports/overview')).toBe('/cockpit');
   });
 
-  it('未知角色回退后端 defaultHome，再兜底 /dashboard', () => {
+  it('未知角色回退后端 defaultHome，再兜底 /cockpit', () => {
     expect(resolveHomePath('UNKNOWN_ROLE', '/metric')).toBe('/metric');
-    expect(resolveHomePath('UNKNOWN_ROLE', null)).toBe('/dashboard');
-    expect(resolveHomePath('UNKNOWN_ROLE')).toBe('/dashboard');
+    expect(resolveHomePath('UNKNOWN_ROLE', null)).toBe('/cockpit');
+    expect(resolveHomePath('UNKNOWN_ROLE')).toBe('/cockpit');
   });
 });

@@ -45,15 +45,7 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
     expect(authorityOf(route!)).toEqual(['ADMIN']);
   });
 
-  it('监控-系统概览（/dashboard/workbench）排除 EXPERT', () => {
-    const workbench = findRoute(
-      monitorRoutes,
-      (r) => r.path === '/dashboard/workbench',
-    );
-    expect(workbench).toBeDefined();
-    expect(authorityOf(workbench!)).not.toContain('EXPERT');
-    expect(authorityOf(workbench!)).toContain('SPONSOR');
-  });
+  // 0929 总览收敛：装置总览 /dashboard/workbench 已下线，原"排除 EXPERT"用例随路由删除
 
   it('监控承载回路工作台，且对 EXPERT 放行', () => {
     const workbench = findRoute(

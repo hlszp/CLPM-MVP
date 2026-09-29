@@ -20,7 +20,8 @@ export interface ReturnTarget {
 
 /** from 取值 → 返回目标（键为生产端实际写入的字符串） */
 export const RETURN_TARGETS: Record<string, ReturnTarget> = {
-  overview: { label: '装置总览', path: '/dashboard/workbench' },
+  // 0929 总览收敛：装置总览下线，存量 from=overview 深链落回路监视
+  overview: { label: '回路监视', path: '/monitor/loops' },
   workbench: { label: '工作台', path: '/workbench' },
   cockpit: { label: '驾驶舱', path: '/cockpit' },
   '/monitor/attention': { label: '关注队列', path: '/monitor/attention' },

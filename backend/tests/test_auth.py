@@ -49,7 +49,7 @@ class TestLogin:
         assert user["username"] == "admin"
         assert user["role"] == "ADMIN"
         assert user["permissions"] == ["*"]
-        assert user["defaultHome"] == "/dashboard"
+        assert user["defaultHome"] == "/workbench"
 
     def test_login_success_all_roles(self, client, mock_db, fake_redis) -> None:
         """Each role returns the correct permission list."""
@@ -363,7 +363,7 @@ class TestMe:
         assert data["username"] == "admin"
         assert data["role"] == "ADMIN"
         assert data["permissions"] == ["*"]
-        assert data["defaultHome"] == "/dashboard"
+        assert data["defaultHome"] == "/workbench"
 
     def test_me_no_token(self, client) -> None:
         """Request without token returns 401."""
@@ -662,11 +662,13 @@ class TestRolePermissions:
         2026-09-24 修正：原期望值是后端旧口径（IC/PE→/dashboard、
         SPONSOR→/reports/overview），而前端映射为 /cockpit 且前端优先，
         两张表长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）对齐。
+
+        2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench。
         """
         from app.services.auth import get_default_home
 
         expected = {
-            "ADMIN": "/dashboard",
+            "ADMIN": "/workbench",
             "IC_ENGINEER": "/cockpit",
             "PE_ENGINEER": "/cockpit",
             "SPONSOR": "/cockpit",

@@ -42,9 +42,9 @@ export namespace MonitorApi {
   /** 动作跳转目标 */
   export interface AttentionActionTarget {
     route:
-      | '/dashboard/workbench'
       | '/monitor/alerts'
-      | '/monitor/loop-workbench';
+      | '/monitor/loop-workbench'
+      | '/monitor/loops';
     query: Record<string, string>;
   }
 

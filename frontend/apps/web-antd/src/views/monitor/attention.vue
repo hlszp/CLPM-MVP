@@ -75,9 +75,9 @@ dayjs.locale('zh-cn');
 const route = useRoute();
 const router = useRouter();
 
-/** 返回系统概览（面包屑导航） */
+/** 返回回路监视（面包屑导航；0929 装置总览下线后改落列表页） */
 function goBackToOverview() {
-  router.push({ path: '/dashboard/workbench' });
+  router.push({ path: '/monitor/loops' });
 }
 
 // ===== 相对时间格式化 =====
