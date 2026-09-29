@@ -6,7 +6,6 @@
  * - A-01~A-05 / A-07~A-09 / A-11 / A-13 为 M1 skeleton，返回空结构
  * - A-E5 unread 为 M1 桩（后端端点待 M2，前端 unreadCount 桩 0，WS 留 M2）
  */
-import type { HandlingApi } from '#/api/handling';
 
 import { requestClient } from '#/api/request';
 
@@ -470,46 +469,7 @@ export namespace WorkbenchApi {
     window: string;
   }
 
-  /** A-05 GET /handling 响应（G-处置 · 类型契约；容器实际调 handling.ts 6 函数，A-05 落地即换） */
-  export interface HandlingResult {
-    /** 4 泳道工单（待办道含 PENDING+REOPENED 合并） */
-    kanban: {
-      closed: HandlingApi.OrderItem[];
-      executing: HandlingApi.OrderItem[];
-      pending: HandlingApi.OrderItem[];
-      verifying: HandlingApi.OrderItem[];
-    };
-    /** 重开 Top 列表（按 reopened 降序） */
-    reopen_list: HandlingApi.LoopAggregateItem[];
-    scope: { id: null | number; type: ScopeType };
-    /** SLA 分布（前端由在办 orders plannedAt 派生；A-05 落地后后端汇总） */
-    sla: { near: number; none: number; normal: number; overdue: number };
-    /** 人员负载（前端由在办 orders 按 handler 聚合派生；A-08 落地后后端汇总） */
-    staff_load: HandlingStaffLoad[];
-    window: TimeWindow;
-  }
-
-  /** 人员负载行（staff_load 派生口径：在办 orders 按 handler 聚合） */
-  export interface HandlingStaffLoad {
-    executing: number;
-    handler: string;
-    overdue: number;
-    pending: number;
-    verifying: number;
-  }
-
-  /** A-11 GET /aggregate 响应骨架（首屏批量预取 8 块合并 + 30s 缓存） */
-  export interface AggregateResult {
-    meta: {
-      cache_hit: boolean;
-      custom_end: null | string;
-      custom_start: null | string;
-      elapsed_ms: number;
-      scope: { id: null | number; type: ScopeType };
-      window: TimeWindow;
-    };
-    results: Record<string, unknown>;
-  }
+  // 0929 死代码清理：A-05 HandlingResult / A-11 AggregateResult 类型随空壳端点删除
 }
 
 // ---------------------------------------------------------------------------
@@ -587,21 +547,5 @@ export function getWorkbenchTuningScattersApi(
   );
 }
 
-// ---------------------------------------------------------------------------
-// A-05 处置（看板 + 漏斗 + 人员负载 + 重开列表）
-// ---------------------------------------------------------------------------
-export function getWorkbenchHandlingApi(params?: WorkbenchApi.ScopeParams) {
-  return requestClient.get<WorkbenchApi.HandlingResult>('/workbench/handling', {
-    params,
-  });
-}
-
-// ---------------------------------------------------------------------------
-// A-11 首屏批量预取（8 块合并 + WBFF_CACHE 30s TTL）
-// ---------------------------------------------------------------------------
-export function getWorkbenchAggregateApi(params?: WorkbenchApi.ScopeParams) {
-  return requestClient.get<WorkbenchApi.AggregateResult>(
-    '/workbench/aggregate',
-    { params },
-  );
-}
+// 0929 死代码清理：getWorkbenchHandlingApi（A-05）/ getWorkbenchAggregateApi（A-11）
+// 随后端空壳端点删除；工作台处置/聚合实际走 handling.ts 与各域端点。

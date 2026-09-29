@@ -107,18 +107,8 @@ const routes: RouteRecordRaw[] = [
           title: '订阅配置',
         },
       },
-      // MVP 精简：已屏蔽诊断模块 → 移除「LLM 配置」（自然语言诊断解读服务配置）
-      // {
-      //   // P3-04：LLM 配置（自然语言诊断解读服务配置）
-      //   name: 'SystemLlmConfig',
-      //   path: '/system/llm-config',
-      //   component: () => import('#/views/system/llm-config.vue'),
-      //   meta: {
-      //     authority: ['ADMIN'],
-      //     icon: 'lucide:bot',
-      //     title: 'LLM 配置',
-      //   },
-      // },
+      // 0929 死代码清理：LLM 配置路由与 llm-config.vue 已删除
+      // （MVP 精简决策下线；后端 /configs/llm 端点保留，恢复时重建前端）
       {
         // 已迁移至配置模块-指标配置（KPI 算法参数 Tab）
         // 保留重定向以兼容旧 URL 和书签

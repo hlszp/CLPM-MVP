@@ -202,89 +202,11 @@ async def get_tuning(
 
 
 # ---------------------------------------------------------------------------
-# A-05 GET /handling — 处置
+# A-05~A-09 空壳端点已删除（0929 死代码清理）：
+#   /handling /flags /staff-load /lane-more 此前恒返回硬编码空结构（TODO: M2
+#   填充从未落地），前端已绕行直连各域端点，属零消费者架空链。恢复时按
+#   CHANGELOG v7.0.0 登记的设计重建。
 # ---------------------------------------------------------------------------
-
-
-@router.get("/handling", response_model=ApiResponse[dict])
-async def get_handling(
-    scopeType: str = Query("GLOBAL"),
-    scopeId: int | None = Query(None),
-    window: str = Query("24h"),
-    db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
-) -> dict:
-    """A-05 处置：4 泳道看板 + 漏斗 + 人员负载 + 重开列表。"""
-    # TODO: M2 填充 — kanban + funnel + staff_load + reopen_list
-    return success(
-        data={
-            "kanban": {"PENDING": [], "EXECUTING": [], "VERIFYING": [], "CLOSED": []},
-            "funnel": [],
-            "staff_load": [],
-            "reopen_list": [],
-            "scope": {"type": scopeType, "id": scopeId},
-            "window": window,
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
-# A-07 GET /flags — 趋势 flags 气泡
-# ---------------------------------------------------------------------------
-
-
-@router.get("/flags", response_model=ApiResponse[dict])
-async def get_flags(
-    scopeType: str = Query("GLOBAL"),
-    scopeId: int | None = Query(None),
-    window: str = Query("24h"),
-    db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
-) -> dict:
-    """A-07 趋势 flags 气泡（dip/spike/deterioration/jump/oscillation/saturation）。"""
-    # TODO: M2 填充 — trend_flags 差分检测
-    return success(
-        data={"flags": [], "scope": {"type": scopeType, "id": scopeId}, "window": window}
-    )
-
-
-# ---------------------------------------------------------------------------
-# A-08 GET /staff-load — 人员负载（MV-01 包装）
-# ---------------------------------------------------------------------------
-
-
-@router.get("/staff-load", response_model=ApiResponse[dict])
-async def get_staff_load(
-    scopeType: str = Query("GLOBAL"),
-    scopeId: int | None = Query(None),
-    db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
-) -> dict:
-    """A-08 人员负载（包装物化视图 mv_staff_workload）。"""
-    # TODO: M2 填充 — 查询 mv_staff_workload MV
-    return success(data={"staff": [], "scope": {"type": scopeType, "id": scopeId}})
-
-
-# ---------------------------------------------------------------------------
-# A-09 GET /lane-more — 泳道展开更多
-# ---------------------------------------------------------------------------
-
-
-@router.get("/lane-more", response_model=ApiResponse[dict])
-async def get_lane_more(
-    lane: str = Query(..., description="泳道：PENDING/EXECUTING/VERIFYING/CLOSED"),
-    scopeType: str = Query("GLOBAL"),
-    scopeId: int | None = Query(None),
-    offset: int = Query(0, ge=0, description="分页偏移"),
-    limit: int = Query(20, ge=1, le=100, description="每页数量"),
-    db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
-) -> dict:
-    """A-09 泳道展开更多（分页加载工单卡片）。"""
-    # TODO: M2 填充 — 分页查询 handling_order by lane
-    return success(
-        data={"orders": [], "lane": lane, "offset": offset, "limit": limit, "has_more": False}
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -319,35 +241,8 @@ async def get_plugins(
 
 
 # ---------------------------------------------------------------------------
-# A-11 GET /aggregate — 首屏批量预取（8 块合并 + WBFF_CACHE）
+# A-11 GET /aggregate 空壳端点已删除（0929 死代码清理，同 A-05~A-09）
 # ---------------------------------------------------------------------------
-
-
-@router.get("/aggregate", response_model=ApiResponse[dict])
-async def get_aggregate(
-    scopeType: str = Query("GLOBAL"),
-    scopeId: int | None = Query(None),
-    window: str = Query("24h"),
-    customStart: str | None = Query(None, description="自定义窗口起始（ISO8601）"),
-    customEnd: str | None = Query(None, description="自定义窗口结束（ISO8601）"),
-    db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
-) -> dict:
-    """A-11 首屏批量预取：8 块合并 + WBFF_CACHE 30s TTL。"""
-    # TODO: M2 填充 — 并发聚合 A-01~A-05 + A-07 + A-08 + A-10 结果 + Redis 缓存
-    return success(
-        data={
-            "results": {},
-            "meta": {
-                "cache_hit": False,
-                "elapsed_ms": 0,
-                "scope": {"type": scopeType, "id": scopeId},
-                "window": window,
-                "custom_start": customStart,
-                "custom_end": customEnd,
-            },
-        }
-    )
 
 
 # ---------------------------------------------------------------------------

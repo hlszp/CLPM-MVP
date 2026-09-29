@@ -442,30 +442,5 @@ export function getBoardTrendApi(params?: {
   );
 }
 
-/**
- * 获取异常预测与提前预警 — P3-05
- *
- * 基于最近 7 天 KPI 快照趋势（线性回归），预测未来 24 小时可能出问题的回路。
- * 返回高风险回路列表（按风险分降序），仅含 MEDIUM+HIGH 等级。
- * 后端 Redis 缓存 10 分钟。
- */
-export function getPredictionsApi(params?: DashboardApi.PredictionQueryParams) {
-  return requestClient.get<DashboardApi.PredictionResult>(
-    '/dashboard/predictions',
-    { params },
-  );
-}
-
-/**
- * 获取系统概览聚合数据 — 04-系统概览标杆页
- * 一次返回概览页所需的全部统计数据
- */
-export function getSystemOverviewApi(params?: {
-  plantId?: string;
-  timeWindow?: string;
-}) {
-  return requestClient.get<DashboardApi.SystemOverviewResult>(
-    '/dashboard/system-overview',
-    { params },
-  );
-}
+// 0929 死代码清理：getPredictionsApi / getSystemOverviewApi 已删除
+// （后端架空端点一并下线；恢复时按 CHANGELOG 登记的设计重建）。

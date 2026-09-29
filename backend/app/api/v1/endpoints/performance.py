@@ -45,7 +45,6 @@ from app.services.performance import (
     SNAPSHOT_SORT_COLUMNS,
     export_analytics_csv,
     get_analytics,
-    get_board,
     get_grade_distribution,
     get_loop_metric_series,
     get_ranking,
@@ -145,42 +144,6 @@ async def update_rule_endpoint(
         is_enabled=body.isEnabled,
     )
     return success(data=data, message="更新成功")
-
-
-# ---------------------------------------------------------------------------
-# S3-METRIC-004: 全局看板 API
-# ---------------------------------------------------------------------------
-
-
-@router.get("/board", response_model=ApiResponse[dict])
-async def get_board_endpoint(
-    plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
-    timeWindow: str = Query(
-        "today",
-        description="时间窗：today/yesterday/last_8_hours/last_24_hours/"
-        "last_72_hours/last_168_hours/last_7_days/last_30_days/custom",
-    ),
-    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
-    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
-    db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
-) -> dict:
-    """全局看板（所有角色）。Redis 缓存 5 分钟。"""
-
-    def _parse_dt(s: str | None) -> datetime | None:
-        # 空值视为未指定；非空但非法的时间串由 parse_iso_datetime 抛 400
-        if not s:
-            return None
-        return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
-
-    data = await get_board(
-        db=db,
-        plant_node_id=plantNodeId,
-        time_window=timeWindow,
-        start_time=_parse_dt(startTime),
-        end_time=_parse_dt(endTime),
-    )
-    return success(data=data)
 
 
 # ---------------------------------------------------------------------------
