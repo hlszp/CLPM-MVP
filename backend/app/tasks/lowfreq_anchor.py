@@ -18,7 +18,7 @@ FILL(PREV) 无前值可填 → 趋势空白。导入链路有 600s 锚点（值�
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from celery.schedules import crontab
 from sqlalchemy import select
@@ -38,12 +38,20 @@ LOW_FREQ_ROLES = ("SP", "MODE", "PID_P", "PID_I", "PID_D")
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 1, "countdown": 300},
 )
-def run_lowfreq_anchor(self: AsyncTask) -> dict:
-    """每小时低频锚点补点。"""
-    return self.run_async(_do_anchor())
+def run_lowfreq_anchor(self: AsyncTask, backfill_hours: int = 0) -> dict:
+    """每小时低频锚点补点。
+
+    Args:
+        backfill_hours: 历史回填小时数（0=只补当前锚点）。首次部署后可手动
+            触发一次回填（如 720=30 天）：COV 语义下"最后有值点到 now 之间
+            无变化记录 = 值未变"，按小时回填是语义正确的还原而非推断。
+            上限 2160（90 天）。
+    """
+    backfill_hours = max(0, min(int(backfill_hours), 2160))
+    return self.run_async(_do_anchor(backfill_hours))
 
 
-async def _do_anchor() -> dict:
+async def _do_anchor(backfill_hours: int = 0) -> dict:
     from app.core.db import AsyncSessionLocal
     from app.models.loop import LoopLedger, LoopTagMapping
     from app.models.tag import TagRegistry
@@ -80,23 +88,37 @@ async def _do_anchor() -> dict:
 
     events: list[PointEvent] = []
     skipped_no_value = 0
+    now_hour = now.replace(minute=0, second=0, microsecond=0)
     for pid in point_ids:
         state = last_states.get(pid)
         if not state or state.get("value") is None:
             skipped_no_value += 1
             continue
-        events.append(
-            PointEvent(
-                point_id=pid,
-                ts=now,
-                value=state["value"],
-                quality_class=int(state.get("quality_class") or 1),
-                quality_raw=state.get("quality_raw"),
-                quality_schema=state.get("quality_schema"),
-                source_kind=SOURCE_KIND_SNAPSHOT,
-                source_id="clpm-lowfreq-anchor",
+        # 锚点时刻序列：从 max(now-回填窗, 最后有值点的下一整点) 起，
+        # 按整点每小时一个（COV 语义：last_ts 到 now 无变化记录 = 值未变）。
+        # 起点晚于当前整点（该小时已有真实推送）时序列为空，不补冗余点。
+        anchor_start = now_hour - timedelta(hours=backfill_hours)
+        last_ts = state.get("ts")
+        if last_ts is not None:
+            last_hour = (
+                last_ts.replace(tzinfo=UTC) if last_ts.tzinfo is None else last_ts.astimezone(UTC)
+            ).replace(minute=0, second=0, microsecond=0)
+            anchor_start = max(anchor_start, last_hour + timedelta(hours=1))
+        cursor = anchor_start
+        while cursor <= now_hour:
+            events.append(
+                PointEvent(
+                    point_id=pid,
+                    ts=cursor,
+                    value=state["value"],
+                    quality_class=int(state.get("quality_class") or 1),
+                    quality_raw=state.get("quality_raw"),
+                    quality_schema=state.get("quality_schema"),
+                    source_kind=SOURCE_KIND_SNAPSHOT,
+                    source_id="clpm-lowfreq-anchor",
+                )
             )
-        )
+            cursor += timedelta(hours=1)
 
     result = await write_events(events, dedup=False, source_task="lowfreq-anchor")
     logger.info(

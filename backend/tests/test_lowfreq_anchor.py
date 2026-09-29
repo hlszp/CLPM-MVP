@@ -125,6 +125,36 @@ async def test_anchor_skips_none_value(patch_deps):
 
 
 @pytest.mark.asyncio
+async def test_anchor_backfill_fills_hourly_between_last_and_now(patch_deps):
+    """回填模式：从最后有值点的下一整点到当前整点每小时一个（COV 语义还原）。"""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    last_ts = now - timedelta(hours=72)  # 最后有值点在 3 天前
+    candidates = [("p-sp", "TAG_SP")]
+    last_states = {
+        "p-sp": {
+            "value": 5.0,
+            "quality_class": 1,
+            "quality_raw": None,
+            "quality_schema": None,
+            "ts": last_ts,
+        },
+    }
+    m_read, m_write = patch_deps(candidates, last_states)
+
+    result = await lowfreq_anchor._do_anchor(backfill_hours=720)
+
+    written = m_write.await_args.args[0]
+    ts_list = [ev.ts for ev in written]
+    # 起点 = last_ts 下一整点；终点 = 当前整点；每小时一个
+    assert ts_list[0] == last_ts.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    assert ts_list[-1] == now
+    assert len(ts_list) == 72  # now-71h..now 含两端共 72 个整点
+    assert result["anchors_built"] == len(ts_list)
+
+
+@pytest.mark.asyncio
 async def test_anchor_no_candidates_early_return(patch_deps):
     """无活跃低频位号：早退且不触碰 repository。"""
     m_read, m_write = patch_deps([], {})
