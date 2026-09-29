@@ -48,6 +48,7 @@ import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp } from '#/composables/use-page-toolbar';
 import { TUNING_TASK_STATUS_LABEL } from '#/constants/clpm-ui';
 import { exportData } from '#/utils/export';
+import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'ReportsBenefit' });
 
@@ -624,7 +625,7 @@ onMounted(() => {
             <span v-else class="text-neutral-400">—</span>
           </template>
           <template v-else-if="column.dataIndex === 'verifiedAt'">
-            {{ record.verifiedAt ? dayjs(record.verifiedAt).format('YYYY-MM-DD HH:mm') : '—' }}
+            {{ formatLocalTime(record.verifiedAt, 'YYYY-MM-DD HH:mm') }}
           </template>
         </template>
       </Table>

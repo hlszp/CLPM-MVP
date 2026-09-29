@@ -33,6 +33,7 @@ import {
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+import { formatLocalTime } from '#/utils/format';
 
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 // 16 号文 F1 入口 2：详情抽屉头部"诊断档案"按钮 → 回路诊断档案抽屉
@@ -193,9 +194,10 @@ const columns = [
 ];
 
 function fmtWindow(record: DiagnosisApi.RunListItem) {
-  const s = record.timeWindowStart?.slice(5, 16).replace('T', ' ');
-  const e = record.timeWindowEnd?.slice(5, 16).replace('T', ' ');
-  return s && e ? `${s} ~ ${e}` : '—';
+  // 0929 时区收敛：slice 截取的是 UTC 串（差 8 小时），统一走 formatLocalTime 补 Z 转本地
+  const s = formatLocalTime(record.timeWindowStart, 'MM-DD HH:mm');
+  const e = formatLocalTime(record.timeWindowEnd, 'MM-DD HH:mm');
+  return record.timeWindowStart && record.timeWindowEnd ? `${s} ~ ${e}` : '—';
 }
 
 function catColor(record: DiagnosisApi.RunListItem) {
@@ -376,7 +378,7 @@ onMounted(() => {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'createdAt'">
-              {{ record.createdAt?.slice(0, 19).replace('T', ' ') }}
+              {{ formatLocalTime(record.createdAt, 'YYYY-MM-DD HH:mm') }}
             </template>
             <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
               <span

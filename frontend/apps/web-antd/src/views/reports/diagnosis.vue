@@ -47,6 +47,7 @@ import {
 } from '#/components/clpm';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp } from '#/composables/use-page-toolbar';
+import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'ReportsDiagnosis' });
 
@@ -517,7 +518,7 @@ onMounted(() => {
             {{ record.primaryConfidence != null ? `${(record.primaryConfidence * 100).toFixed(0)}%` : '—' }}
           </template>
           <template v-else-if="column.dataIndex === 'createdAt'">
-            {{ dayjs(record.createdAt).format('YYYY-MM-DD HH:mm') }}
+            {{ formatLocalTime(record.createdAt, 'YYYY-MM-DD HH:mm') }}
           </template>
         </template>
       </Table>

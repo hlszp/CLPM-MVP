@@ -379,10 +379,11 @@ function formatTsEnd(ts: null | string | undefined): string {
 /**
  * 完整时间格式化（用于抽屉详情）。
  *
- * 显式标注 UTC+8，避免用户误认为显示的是 UTC 时间。
+ * 0929 时区收敛：formatLocalTime 补 Z 转本地时区渲染，不再硬编码 [UTC+8] 标注
+ * （部署环境非 +8 时旧标签直接错误）。
  */
 function formatFullTime(ts: null | string | undefined): string {
-  return formatLocalTime(ts, 'YYYY-MM-DD HH:mm:ss [UTC+8]');
+  return formatLocalTime(ts, 'YYYY-MM-DD HH:mm:ss');
 }
 
 function formatNumber(val: null | number | undefined, suffix = ''): string {

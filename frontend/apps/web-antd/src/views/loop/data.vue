@@ -59,6 +59,7 @@ import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
 import { TASK_POLLING_INTERVAL } from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
+import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'LoopData' });
 
@@ -406,7 +407,7 @@ const taskColumns: TableColumnsType = [
     key: 'timeRange',
     width: 178,
     customRender: ({ record }) =>
-      `${dayjs(record.tsStart).format('MM-DD HH:mm')} ~ ${dayjs(record.tsEnd).format('MM-DD HH:mm')}`,
+      `${formatLocalTime(record.tsStart, 'MM-DD HH:mm')} ~ ${formatLocalTime(record.tsEnd, 'MM-DD HH:mm')}`,
   },
   {
     title: '窗口小时数',
