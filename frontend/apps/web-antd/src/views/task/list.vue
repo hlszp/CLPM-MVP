@@ -58,6 +58,9 @@ const props = defineProps<{
   defaultTaskType?: TaskApi.TaskType;
 }>();
 
+/** 轮询每轮回调（0929：父页监听以同步 RUNNING 徽章，此前徽章长期 stale） */
+const emit = defineEmits<{ polled: [] }>();
+
 const { themeColors } = useClpmTheme();
 
 // ============ 列表状态 ============
@@ -365,6 +368,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
     const result = await getTaskListApi(buildQueryParams());
     taskList.value = result.items ?? [];
     totalCount.value = result.total ?? 0;
+    emit('polled');
     if (!hasActiveTask()) {
       stopPolling();
     }

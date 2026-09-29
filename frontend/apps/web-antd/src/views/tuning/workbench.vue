@@ -210,12 +210,21 @@ const filteredLoops = computed(() => {
 async function loadLoops(): Promise<void> {
   loopLoading.value = true;
   try {
-    const res = await getLoopListApi({
-      page: 1,
-      pageSize: 100, // 后端 /loops pageSize 上限 le=100
-      plantNodeId: selectedPlantNodeId.value,
-    });
-    loopItems.value = res.items;
+    // 0929 诚实化修复：此前只拉前 100 条且无截断提示，改全量循环分页
+    const all: LoopApi.LoopListItem[] = [];
+    let page = 1;
+    let total = 0;
+    do {
+      const res = await getLoopListApi({
+        page,
+        pageSize: 100, // 后端 /loops pageSize 上限 le=100
+        plantNodeId: selectedPlantNodeId.value,
+      });
+      all.push(...(res.items ?? []));
+      total = res.total ?? 0;
+      page += 1;
+    } while ((page - 1) * 100 < total);
+    loopItems.value = all;
   } catch {
     loopItems.value = [];
   } finally {

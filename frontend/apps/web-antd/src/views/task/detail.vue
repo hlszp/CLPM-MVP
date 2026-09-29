@@ -22,6 +22,7 @@ import {
   Card,
   Descriptions,
   DescriptionsItem,
+  Popconfirm,
   Progress,
   Statistic,
   Table,
@@ -252,14 +253,15 @@ onUnmounted(() => {
             </h2>
             <p class="font-mono text-sm text-gray-500">{{ task.taskId }}</p>
           </div>
-          <Button
+          <Popconfirm
             v-if="isActive"
-            danger
-            :loading="cancelLoading"
-            @click="handleCancel"
+            title="确认取消该任务？取消后不可恢复"
+            ok-text="确认取消"
+            cancel-text="返回"
+            @confirm="handleCancel"
           >
-            取消任务
-          </Button>
+            <Button danger :loading="cancelLoading">取消任务</Button>
+          </Popconfirm>
         </div>
 
         <!-- 进度条 -->
@@ -340,12 +342,7 @@ onUnmounted(() => {
 
     <!-- 错误信息 -->
     <Card v-if="isFailed && task?.errorMessage" class="mb-4" title="错误信息">
-      <Alert
-        type="error"
-        :message="task.errorMessage"
-        show-icon
-        :description="task.errorMessage"
-      />
+      <Alert type="error" :message="task.errorMessage" show-icon />
     </Card>
 
     <!-- 任务详情 -->
@@ -413,7 +410,9 @@ onUnmounted(() => {
           { title: '操作', key: 'action', width: 100 },
         ]"
         :data-source="notifications"
-        row-key="taskId"
+        :row-key="
+          (n: TaskApi.TaskNotification) => `${n.taskId}-${n.createdAt}-${n.message}`
+        "
         size="small"
         :pagination="false"
       >

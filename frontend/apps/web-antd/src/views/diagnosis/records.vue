@@ -92,6 +92,12 @@ async function load() {
   }
 }
 
+/** 筛选变更统一入口：回第 1 页再查（此前第 5 页改筛选会请求空页） */
+function handleFilterChange() {
+  query.page = 1;
+  load();
+}
+
 function handleTableChange(pag: { current?: number; pageSize?: number }) {
   query.page = pag.current ?? 1;
   query.pageSize = pag.pageSize ?? 20;
@@ -302,7 +308,7 @@ onMounted(() => {
       <RangePicker
         v-model:value="query.range"
         style="width: 240px"
-        @change="load()"
+        @change="handleFilterChange"
       />
       <Select
         v-model:value="query.category"
@@ -310,7 +316,7 @@ onMounted(() => {
         :options="CATEGORY_OPTIONS"
         placeholder="主分类"
         style="width: 160px"
-        @change="load()"
+        @change="handleFilterChange"
       />
       <Select
         v-model:value="query.severity"
@@ -322,7 +328,7 @@ onMounted(() => {
         ]"
         placeholder="严重度"
         style="width: 110px"
-        @change="load()"
+        @change="handleFilterChange"
       />
       <Select
         v-model:value="query.status"
@@ -334,7 +340,7 @@ onMounted(() => {
         ]"
         placeholder="状态"
         style="width: 120px"
-        @change="load()"
+        @change="handleFilterChange"
       />
       <Select
         v-model:value="query.reviewStatus"
@@ -345,7 +351,7 @@ onMounted(() => {
         ]"
         placeholder="复核状态"
         style="width: 110px"
-        @change="load()"
+        @change="handleFilterChange"
       />
     </div>
 

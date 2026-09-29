@@ -197,13 +197,22 @@ const filteredLoops = computed(() => {
 
 async function loadLoops(plantNodeId?: string): Promise<void> {
   loopLoading.value = true;
-  // 后端 /loops pageSize 上限 le=100，超出直接 422
-  const params: Record<string, unknown> = { page: 1, pageSize: 100 };
-  if (plantNodeId) params.plantNodeId = plantNodeId;
+  // 0929 诚实化修复：此前只拉前 100 条且无截断提示，超 100 回路的装置
+  // 其余回路在左脊柱不可见；改全量循环分页（后端 pageSize 上限 100）
+  const all: LoopApi.LoopListItem[] = [];
+  let page = 1;
+  let total: number;
   try {
-    const res = await getLoopListApi(params);
-    loopItems.value = res.items;
-    for (const l of res.items) loopCache.value.set(l.loopId, l);
+    do {
+      const params: Record<string, unknown> = { page, pageSize: 100 };
+      if (plantNodeId) params.plantNodeId = plantNodeId;
+      const res = await getLoopListApi(params);
+      all.push(...(res.items ?? []));
+      total = res.total ?? 0;
+      page += 1;
+    } while ((page - 1) * 100 < total);
+    loopItems.value = all;
+    for (const l of all) loopCache.value.set(l.loopId, l);
     // 16 号文 F5：清单刷新后异步拉取预检徽标（不阻塞清单渲染）
     void loadPrecheck();
   } catch (error) {
@@ -217,7 +226,7 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
     console.error('[诊断工作台/回路清单] 加载失败:', {
       status: resp?.status,
       data: resp?.data,
-      params,
+      plantNodeId,
     });
   } finally {
     loopLoading.value = false;

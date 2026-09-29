@@ -129,7 +129,7 @@ onMounted(() => {
               <span>任务列表</span>
             </Badge>
           </template>
-          <TaskListTab ref="listRef" :default-task-type="defaultTaskType" />
+          <TaskListTab ref="listRef" :default-task-type="defaultTaskType" @polled="loadActiveTaskCount" />
         </TabPane>
         <TabPane key="strategy" tab="策略配置">
           <StrategyTab ref="strategyRef" />
