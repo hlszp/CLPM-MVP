@@ -223,6 +223,9 @@ function handleSearch() {
 function handleTableChange(pagination: TablePaginationConfig) {
   query.page = pagination.current || 1;
   query.pageSize = pagination.pageSize || 20;
+  // 批量目标只从当前页数据取，跨页保留勾选会"徽章 N 个、实际处理当前页几个"
+  // （P0 修复 2026-09-29，与 handleSearch 的 P2-07 清选口径一致）
+  selectedRowKeys.value = [];
   loadList();
 }
 
