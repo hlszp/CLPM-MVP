@@ -338,8 +338,10 @@ function getTimeRange(): { end: string; start: string } {
     case 'week': {
       const w = selectedWeek.value || dayjs();
       return {
-        start: w.startOf('week').toISOString(),
-        end: w.endOf('week').toISOString(),
+        // isoWeek（周一起始）与周选择器展示口径对齐；dayjs 默认周起始为周日，
+        // 两者混用会让用户选的"第 N 周"与实际查询窗口错位最多 6 天
+        start: w.startOf('isoWeek').toISOString(),
+        end: w.endOf('isoWeek').toISOString(),
       };
     }
     default: {
@@ -760,9 +762,15 @@ async function loadThresholds() {
 }
 
 async function loadComprehensive() {
-  const result = await getBoardAggregateApi(
-    plantNodeId.value ? { plantId: plantNodeId.value } : undefined,
-  );
+  // 综合报表与回路报表共用时间窗（P0 修复 2026-09-29）：此前只传 plantId
+  // 不带时间参数，用户切换日/周/月筛选毫无效果
+  const { start, end } = getTimeRange();
+  const result = await getBoardAggregateApi({
+    endTime: end,
+    plantId: plantNodeId.value || undefined,
+    startTime: start,
+    timeWindow: 'custom',
+  });
   comprehensiveData.value = result.items ?? [];
 }
 
