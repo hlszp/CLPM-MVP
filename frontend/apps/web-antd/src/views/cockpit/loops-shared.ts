@@ -14,6 +14,8 @@ import type { LoopApi } from '#/api/loop';
 import type { MetricApi } from '#/api/metric';
 import type { CockpitModeKey } from '#/store/cockpit';
 
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
+
 import { CHART_COLOR_FALLBACK } from './composables/use-cockpit-theme';
 
 // ---------------------------------------------------------------------------
@@ -38,13 +40,8 @@ const GRADE_META: Record<CockpitApi.GradeKey, { colorVar: string; label: string 
   };
 
 /** 国标默认阈值（GB/T 44693.2-2024 §6.3），配置未加载时降级使用 */
-const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  { level: 1, name: 'EXCELLENT', minScore: 90, maxScore: 100 },
-  { level: 2, name: 'GOOD', minScore: 80, maxScore: 90 },
-  { level: 3, name: 'FAIR', minScore: 60, maxScore: 80 },
-  { level: 4, name: 'WARNING', minScore: 40, maxScore: 60 },
-  { level: 5, name: 'POOR', minScore: 0, maxScore: 40 },
-];
+// 0929 口径收敛：档位定义唯一源在 constants/clpm-ui（GRADE_THRESHOLDS）
+const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = GRADE_THRESHOLDS;
 
 /**
  * 评分 → 五档等级；无评分（数据不足）返回 null（中性，不映射为不合格）

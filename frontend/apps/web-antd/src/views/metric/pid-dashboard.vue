@@ -32,6 +32,7 @@ import { useConfigAccess } from '#/composables/use-config-access';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
 import GateHealthPanel from './components/gate-health-panel.vue';
@@ -220,10 +221,23 @@ const valveAlerts = ref<ValveAlertItem[]>([]);
 async function loadValveAlerts() {
   try {
     const { getLoopSnapshotsApi } = await import('#/api/metric');
-    const res = await getLoopSnapshotsApi({ page: 1, pageSize: 50 });
-    const items = res.items ?? [];
+    // 0929 诚实化修复：latestOnly 每回路仅最新快照（防历史快照重复命中 + :key 重复）；
+    // 全量翻页拉取（此前只查前 50 条，阀门越限系统性漏报）
+    const all: Awaited<ReturnType<typeof getLoopSnapshotsApi>>['items'] = [];
+    let page = 1;
+    let total = 0;
+    do {
+      const res = await getLoopSnapshotsApi({
+        page,
+        pageSize: 100,
+        latestOnly: true,
+      });
+      all.push(...(res.items ?? []));
+      total = res.total ?? 0;
+      page += 1;
+    } while ((page - 1) * 100 < total);
     const alerts: ValveAlertItem[] = [];
-    for (const snap of items) {
+    for (const snap of all) {
       const lo = snap.valveOpMin;
       const hi = snap.valveOpMax;
       if (lo === null || lo === undefined || hi === null || hi === undefined)
@@ -259,13 +273,8 @@ const top5List = computed(() => {
 
 // 默认定级阈值（国标 GB/T 44693.2-2024 §6.3，与 use-score-color 内部默认值同口径；
 // 不配置 color 字段：配色统一走 gradeColor 的阈值配置色 > ZL 语义色降级链）
-const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100 },
-  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90 },
-  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80 },
-  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60 },
-  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40 },
-];
+// 0929 口径收敛：档位定义唯一源在 constants/clpm-ui（GRADE_THRESHOLDS）
+const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = GRADE_THRESHOLDS;
 
 /** 生效阈值集：动态配置优先，为空时降级默认阈值 */
 const effectiveThresholds = computed<MetricApi.GradingThresholdItem[]>(() =>

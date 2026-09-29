@@ -44,6 +44,7 @@ import {
 import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { useTableDensity } from '#/composables/use-table-density';
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 
 defineOptions({ name: 'LoopFleetView' });
 
@@ -286,18 +287,25 @@ interface GradeStats {
   none: number;
 }
 
+// 0929 口径收敛：档位定义唯一源在 constants/clpm-ui（GRADE_THRESHOLDS）
+const GRADE_TAG_COLOR: Record<number, string> = {
+  1: 'green',
+  2: 'blue',
+  3: 'gold',
+  4: 'orange',
+  5: 'red',
+};
 const GRADE_CONFIG: ReadonlyArray<{
   key: GradeKey;
   label: string;
   minScore: number;
   tagColor: string;
-}> = [
-  { key: 'excellent', label: '优秀', minScore: 90, tagColor: 'green' },
-  { key: 'good', label: '良好', minScore: 80, tagColor: 'blue' },
-  { key: 'fair', label: '合格', minScore: 60, tagColor: 'gold' },
-  { key: 'warning', label: '警告', minScore: 40, tagColor: 'orange' },
-  { key: 'poor', label: '不合格', minScore: 0, tagColor: 'red' },
-];
+}> = GRADE_THRESHOLDS.map((t) => ({
+  key: t.name.toLowerCase() as GradeKey,
+  label: t.label ?? t.name,
+  minScore: t.minScore,
+  tagColor: GRADE_TAG_COLOR[t.level] ?? 'gray',
+}));
 
 /** E-1：优先使用服务端全量聚合（gradeCounts），降级为当前页前端计算 */
 const gradeStats = computed<GradeStats>(() => {

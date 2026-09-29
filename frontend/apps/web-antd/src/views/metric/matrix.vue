@@ -57,6 +57,7 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { MULTI_SERIES_PALETTE } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'MetricMatrix' });
 
@@ -436,6 +437,8 @@ function metricColor(rule: ColorRule | null, value: null | number): null | strin
   }
   const c = themeColors.value;
   if (rule.kind === 'grade') {
+    // 0929 口径收敛：与 GB/T 五档（GRADE_THRESHOLDS）对齐，4/5 档共用 DANGER
+    // （跟随 use-score-color 档位降级链：合格 WARNING、警告/不合格 DANGER）
     if (value >= 90) return c.SUCCESS;
     if (value >= 80) return c.INFO;
     if (value >= 60) return c.WARNING;
@@ -640,7 +643,7 @@ function cellTooltip(def: MetricDef, row: any): string {
   const v = row[def.field] as null | number;
   const value = formatCell(def, v);
   const ts = row.tsEnd || row.tsStart || '';
-  return `${def.title}: ${value} · 可信度 ${row.confidenceLevel ?? '—'} · 窗口 ${ts ? dayjs(ts).format('MM-DD HH:mm') : '—'}`;
+  return `${def.title}: ${value} · 可信度 ${row.confidenceLevel ?? '—'} · 窗口 ${formatLocalTime(ts, 'MM-DD HH:mm')}`;
 }
 
 async function openCellDrawer(field: string, row: any) {
@@ -686,7 +689,7 @@ async function openCellDrawer(field: string, row: any) {
 
 function renderCellTrend(def: MetricDef, snapshots: KpiSnapshotItem[]) {
   const xLabels = snapshots.map((s) =>
-    s.tsStart ? dayjs(s.tsStart).format('MM-DD HH:mm') : '',
+    formatLocalTime(s.tsStart, 'MM-DD HH:mm'),
   );
   const values = snapshots.map((s) => {
     const v = (s as any)[def.field] as null | number;
@@ -798,7 +801,7 @@ function renderTrend(
       ...axisBase.value,
       type: 'category',
       data: (series[0]?.points ?? []).map((p) =>
-        p.ts ? dayjs(p.ts).format('MM-DD HH:mm') : '',
+        formatLocalTime(p.ts, 'MM-DD HH:mm'),
       ),
     },
     yAxis: { ...axisBase.value, type: 'value', scale: true },
@@ -1060,17 +1063,21 @@ onMounted(() => {
       <!-- 色阶图例 -->
       <div v-if="activeGroup === 'core' || activeGroup === 'diagnosis'" class="matrix-legend">
         <template v-if="activeGroup === 'core'">
+          <!-- 0929 口径收敛：图例对齐 GB/T 五档（GRADE_THRESHOLDS）；警告/不合格共用 DANGER -->
           <span class="matrix-legend-item">
-            <i :style="{ background: withAlpha(themeColors.SUCCESS, 0.35) }"></i>优（≥90）
+            <i :style="{ background: withAlpha(themeColors.SUCCESS, 0.35) }"></i>优秀（≥90）
           </span>
           <span class="matrix-legend-item">
-            <i :style="{ background: withAlpha(themeColors.INFO, 0.35) }"></i>良（80~90）
+            <i :style="{ background: withAlpha(themeColors.INFO, 0.35) }"></i>良好（80~90）
           </span>
           <span class="matrix-legend-item">
-            <i :style="{ background: withAlpha(themeColors.WARNING, 0.35) }"></i>中（60~80）
+            <i :style="{ background: withAlpha(themeColors.WARNING, 0.35) }"></i>合格（60~80）
           </span>
           <span class="matrix-legend-item">
-            <i :style="{ background: withAlpha(themeColors.DANGER, 0.35) }"></i>差（&lt;60）
+            <i :style="{ background: withAlpha(themeColors.DANGER, 0.35) }"></i>警告（40~60）
+          </span>
+          <span class="matrix-legend-item">
+            <i :style="{ background: withAlpha(themeColors.DANGER, 0.35) }"></i>不合格（&lt;40）
           </span>
           <span class="matrix-legend-note">
             振荡率/饱和率反向着色（&lt;5 优 / &lt;15 良 / &lt;30 中 / ≥30 差）

@@ -100,7 +100,10 @@ import {
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { useTableDensity } from '#/composables/use-table-density';
-import { KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
+import {
+  GRADE_LEVEL_LABEL,
+  KPI_TERM_EXPLANATIONS,
+} from '#/constants/clpm-ui';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 defineOptions({ name: 'MetricLoopPerformance' });
@@ -160,13 +163,8 @@ const GRADE_COLOR_MAP: Record<number, string> = {
   5: 'red',
 };
 
-const GRADE_LABEL_MAP: Record<number, string> = {
-  1: '优秀',
-  2: '良好',
-  3: '合格',
-  4: '警告',
-  5: '不合格',
-};
+// 0929 口径收敛：改引用 constants/clpm-ui 唯一档位定义
+const GRADE_LABEL_MAP: Record<number, string> = GRADE_LEVEL_LABEL;
 
 /** 控制类型筛选选项 */
 const controlTypeOptions = [

@@ -4,7 +4,7 @@
  * 集中定义可信度等级、严重度等级、专业术语Tooltip等映射，
  * 供所有列表/详情页统一使用，消除视图内重复硬编码。
  */
-import type { ConfidenceLevel } from '#/api/metric';
+import type { ConfidenceLevel, MetricApi } from '#/api/metric';
 
 // ---------------------------------------------------------------------------
 // 可信度等级（A/B/C/D/E） — 基于有效数据率 valid_rate
@@ -36,6 +36,28 @@ export const CONFIDENCE_LEVEL_DESCRIPTION: Record<ConfidenceLevel, string> = {
   D: '有效数据率≥20%，数据缺失严重，评估结果不可靠',
   E: '有效数据率<20%，数据严重缺失，无法给出可信评估',
 };
+
+// ---------------------------------------------------------------------------
+// 综合评分定级档位（GB/T 44693.2-2024 §6.3） — 全站唯一定义（0929 口径收敛）
+// ---------------------------------------------------------------------------
+
+/**
+ * 定级档位默认值：动态配置（/configs/grading-thresholds）加载失败时降级使用。
+ * 此前 use-score-color / cockpit / pid-dashboard / 回路监视 / 指标矩阵 各持一份
+ * 硬编码且互有出入（A–E 五档 90/80/70/60、四档 90/80/60 三套并存），已全部收敛到本常量。
+ */
+export const GRADE_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
+  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100 },
+  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90 },
+  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80 },
+  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60 },
+  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40 },
+];
+
+/** 档位 level → 中文名（1 优秀 … 5 不合格） */
+export const GRADE_LEVEL_LABEL: Record<number, string> = Object.fromEntries(
+  GRADE_THRESHOLDS.map((t) => [t.level, t.label ?? t.name]),
+);
 
 /** 可信度等级 → ZL 工业语义色 */
 export const CONFIDENCE_LEVEL_STATUS: Record<

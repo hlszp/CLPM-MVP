@@ -23,6 +23,7 @@ import type { MetricApi } from '#/api/metric';
 import { computed, toValue } from 'vue';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 
 /**
  * 默认定级阈值（GB/T 44693.2-2024 §6.3），配置未加载时降级使用。
@@ -30,13 +31,8 @@ import { useClpmTheme } from '#/composables/use-clpm-theme';
  * useClpmTheme 语义色（优秀 SUCCESS / 良好 INFO / 合格 WARNING /
  * 警告 DANGER / 不合格 DANGER），随明暗主题响应。
  */
-const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = [
-  { level: 1, name: 'EXCELLENT', label: '优秀', minScore: 90, maxScore: 100 },
-  { level: 2, name: 'GOOD', label: '良好', minScore: 80, maxScore: 90 },
-  { level: 3, name: 'FAIR', label: '合格', minScore: 60, maxScore: 80 },
-  { level: 4, name: 'WARNING', label: '警告', minScore: 40, maxScore: 60 },
-  { level: 5, name: 'POOR', label: '不合格', minScore: 0, maxScore: 40 },
-];
+// 0929 口径收敛：档位定义唯一源在 constants/clpm-ui（GRADE_THRESHOLDS）
+const DEFAULT_THRESHOLDS: MetricApi.GradingThresholdItem[] = GRADE_THRESHOLDS;
 
 export interface UseScoreColorReturn {
   /** 评分对应颜色；评分为空时返回 ZL 中性灰 NEUTRAL（随明暗主题响应） */

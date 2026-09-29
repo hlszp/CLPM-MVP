@@ -209,14 +209,15 @@ const loopListError = ref('');
 const searchKeyword = ref('');
 
 // ===== 性能等级（基于综合评分 score）=====
-// A(优)≥90  B(良)≥80  C(中)≥70  D(合格)≥60  E(差)<60
+// 0929 口径收敛：A–E 与全站 GB/T 五档（constants/clpm-ui GRADE_THRESHOLDS）对齐
+// A(优秀)≥90  B(良好)≥80  C(合格)≥60  D(警告)≥40  E(不合格)<40
 type PerfGrade = 'A' | 'B' | 'C' | 'D' | 'E';
 function performanceLevel(score: null | number | undefined): null | PerfGrade {
   if (score == null) return null;
   if (score >= 90) return 'A';
   if (score >= 80) return 'B';
-  if (score >= 70) return 'C';
-  if (score >= 60) return 'D';
+  if (score >= 60) return 'C';
+  if (score >= 40) return 'D';
   return 'E';
 }
 const PERF_GRADES: PerfGrade[] = ['A', 'B', 'C', 'D', 'E'];
