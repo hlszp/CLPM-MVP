@@ -136,6 +136,8 @@ export namespace MonitorApi {
     pageSize: number;
     aggregates: AttentionAggregates;
     truncated?: Record<string, boolean>;
+    /** 0929 诚实化：聚合失败的来源（按空处理），UI 需显式提示 */
+    unavailableSections?: string[];
     loadedAt?: string;
   }
 

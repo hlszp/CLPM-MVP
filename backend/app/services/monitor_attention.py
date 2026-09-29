@@ -1267,9 +1267,18 @@ async def list_attention(
     # 单一来源异常（缺表、TDengine/Redis 抖动）不应让整个关注队列 500：
     # 失败来源按空结果处理并留痕，其余来源照常返回。
     results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
+    unavailable: list[str] = []
+    label_to_source = {
+        "ALERT": "ALERT",
+        "DQ": "DEGRADATION/DATA_QUALITY",
+        "FITNESS": "FITNESS_ABNORMAL",
+        "HANDLING": "HANDLING",
+    }
     for label, res in zip(task_labels, results, strict=True):
         if isinstance(res, BaseException):
             logger.warning("关注队列来源 %s 聚合失败，本次按空来源处理: %s", label, res)
+            # 0929 诚实化：降级必须对用户可见（此前仅日志留痕，队列静默少数据）
+            unavailable.append(label_to_source.get(label, label))
             continue
         items, trunc = res
         raw_items.extend(items)
@@ -1344,6 +1353,7 @@ async def list_attention(
         "pageSize": page_size,
         "aggregates": aggregates,
         "truncated": truncated,
+        "unavailableSections": unavailable,
         "loadedAt": loaded_at,
     }
 
@@ -1367,6 +1377,7 @@ def _empty_result(page: int, page_size: int) -> dict:
             "dataQualityCount": 0,
         },
         "truncated": {},
+        "unavailableSections": [],
         "loadedAt": datetime.now(UTC).isoformat(),
     }
 

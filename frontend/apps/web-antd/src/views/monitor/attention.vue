@@ -164,6 +164,8 @@ const { tableSize, densityLabel, cycleDensity } =
 // ===== 列表状态 =====
 const loading = ref(false);
 const attentionGroups = ref<MonitorApi.AttentionGroup[]>([]);
+/** 聚合失败来源（0929 诚实化：单来源失败按空处理时必须让用户看到） */
+const unavailableSections = ref<string[]>([]);
 const totalGroups = ref(0);
 const totalItems = ref(0);
 const aggregates = ref<MonitorApi.AttentionAggregates>({
@@ -368,6 +370,7 @@ async function loadData() {
     aggregates.value = res.aggregates;
 
     truncated.value = res.truncated || {};
+    unavailableSections.value = res.unavailableSections ?? [];
     loadedAt.value = res.loadedAt || new Date().toISOString();
 
     // 抽屉内容同步：若打开的回路组仍在结果中则刷新，否则关闭
@@ -387,6 +390,7 @@ async function loadData() {
     attentionGroups.value = [];
     totalGroups.value = 0;
     totalItems.value = 0;
+    unavailableSections.value = [];
   } finally {
     loading.value = false;
   }
@@ -619,6 +623,13 @@ const truncationMessage = computed(() => {
   return `已达单来源 500 条聚合上限（${sources.join('、')}），请细化筛选`;
 });
 
+// ===== 降级提示（0929 诚实化：来源聚合失败按空处理时必须显式可见） =====
+const hasUnavailable = computed(() => unavailableSections.value.length > 0);
+const unavailableMessage = computed(() => {
+  if (!hasUnavailable.value) return '';
+  return `以下来源本次聚合失败，当前列表不含其数据：${unavailableSections.value.join('、')}（通常为瞬时抖动，稍后刷新恢复）`;
+});
+
 // ===== 是否有筛选（用于空态区分） =====
 const hasFilters = computed(
   () =>
@@ -745,6 +756,18 @@ watch(
               </div>
             </template>
             <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+              <Tooltip v-if="hasUnavailable" :title="unavailableMessage">
+                <span
+                  class="flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600"
+                >
+                  <IconifyIcon
+                    icon="lucide:cloud-off"
+                    :size="12"
+                    class="text-amber-500"
+                  />
+                  部分来源不可用
+                </span>
+              </Tooltip>
               <Tooltip v-if="hasTruncation" :title="truncationMessage">
                 <IconifyIcon
                   icon="lucide:alert-triangle"
@@ -1077,7 +1100,7 @@ watch(
               第 {{ query.page }} 页 · {{ query.pageSize }}/页
               <span class="mx-2">｜</span>
               已加载
-              {{ Math.min(query.page * query.pageSize, totalGroups) }} 回路组 ·
+              {{ attentionGroups.length }} 回路组 ·
               {{ currentPageItemCount }} 项
               <span class="mx-2">/</span>
               共 {{ totalGroups }} 回路组 · {{ totalItems }} 项
