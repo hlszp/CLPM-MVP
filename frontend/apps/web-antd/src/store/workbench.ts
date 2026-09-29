@@ -57,6 +57,13 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     ...(customEnd.value ? { customEnd: customEnd.value } : {}),
   }));
 
+  /** scope 显示名（0929 修复：scopeParams 无 plantName 字段，工作台断言角标
+   *  此前 as 断言硬取必得 undefined，选了装置仍恒显“全厂”） */
+  const scopeDisplayName = computed<string>(() => {
+    if (scopeType.value === 'GLOBAL' || scopeId.value === null) return '全厂';
+    return scopeTree.value.find((n) => n.id === scopeId.value)?.name ?? '全厂';
+  });
+
   // ============ Actions ============
   function setScope(type: WorkbenchApi.ScopeType, id: null | number) {
     scopeType.value = type;
@@ -142,6 +149,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     lastRefreshAt,
     loading,
     plugins,
+    scopeDisplayName,
     scopeId,
     scopeParams,
     scopeTree,

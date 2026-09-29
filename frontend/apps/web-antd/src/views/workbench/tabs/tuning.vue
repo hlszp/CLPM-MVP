@@ -326,7 +326,7 @@ watch(
               </b>
             </template>。
             <span class="ml-1 text-[9.5px] text-[#8C4A00] opacity-70">
-              {{ (store.scopeParams as { plantName?: string }).plantName ?? '全厂' }} / {{ (store.scopeParams as { window?: string }).window ?? '30d' }}
+              {{ store.scopeDisplayName }} / {{ (store.scopeParams as { window?: string }).window ?? '30d' }}
             </span>
           </div>
           <HelpBubble :size="13" theme="blue" title="核心问题断言说明" :items="assertionHelpItems" class="ml-2 flex-none" />

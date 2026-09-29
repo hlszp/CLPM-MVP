@@ -49,6 +49,7 @@ import {
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { usePolling } from '#/composables/use-polling';
 import { useTableDensity } from '#/composables/use-table-density';
@@ -64,14 +65,13 @@ const severityLabel = ALERT_LEVEL_LABEL;
 
 const userStore = useUserStore();
 const router = useRouter();
-const canEdit = computed(() =>
-  ['ADMIN', 'IC_ENGINEER'].includes(userStore.userInfo?.roles?.[0] ?? ''),
-);
-const canArchive = computed(() => userStore.userInfo?.roles?.[0] === 'ADMIN');
+// 0929 权限收口：roles[0] 只看第一个角色，多角色用户（如 ADMIN+IC）会被误判只读，
+// 统一走 useClpmRoles.hasAnyRole（roles.some 语义）
+const { hasAnyRole } = useClpmRoles();
+const canEdit = computed(() => hasAnyRole(['ADMIN', 'IC_ENGINEER']));
+const canArchive = computed(() => hasAnyRole(['ADMIN']));
 const canOpenWorkbench = computed(() =>
-  ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'].includes(
-    userStore.userInfo?.roles?.[0] ?? '',
-  ),
+  hasAnyRole(['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER']),
 );
 
 function openLoopWorkbench(loopId: string) {

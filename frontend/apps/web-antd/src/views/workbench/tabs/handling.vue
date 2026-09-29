@@ -363,7 +363,7 @@ const assertionHelpItems = [
             ｜ SLA 及时率 <b :class="assertText.timelyRate >= 80 ? 'text-[#52C41A]' : 'text-[#FA8C16]'">{{ assertText.timelyRate }}%</b>
           </template>
           <span class="ml-1 text-[9.5px] text-[#8C4A00] opacity-70">
-            {{ (store.scopeParams as { plantName?: string }).plantName ?? '全局' }} / {{ (store.scopeParams as { window?: string }).window ?? '30d' }}
+            {{ store.scopeDisplayName }} / {{ (store.scopeParams as { window?: string }).window ?? '30d' }}
           </span>
         </div>
         <HelpBubble :size="13" theme="blue" title="处置断言说明" :items="assertionHelpItems" class="ml-2 flex-none" />

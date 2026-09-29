@@ -77,10 +77,6 @@ const reopenRate = computed(() => {
   if (denom <= 0) return null;
   return Math.round((f.reopened / denom) * 1000) / 10;
 });
-
-// 近 6 周每周闭环数（演示数据，对齐原型 [3,5,4,6,5,4]）
-const weeklyClosed = [3, 5, 4, 6, 5, 4];
-const weeklyMax = Math.max(...weeklyClosed, 1);
 </script>
 
 <template>
@@ -144,29 +140,8 @@ const weeklyMax = Math.max(...weeklyClosed, 1);
         </div>
       </div>
 
-      <!-- 近 6 周每周闭环数 mini 柱图 -->
-      <div class="mt-auto border-t border-[#EBEEF5] pt-1.5">
-        <div class="mb-0.5 text-[10px] text-gray-500">近 6 周每周闭环数</div>
-        <svg viewBox="0 0 220 26" class="h-6 w-full" preserveAspectRatio="none" style="display:block">
-          <g v-for="(v, i) in weeklyClosed" :key="`wb-${i}`">
-            <rect
-              :x="220 * (i + 0.5) / weeklyClosed.length - (220 / weeklyClosed.length * 0.55) / 2"
-              :y="26 - (26 * v / weeklyMax)"
-              :width="220 / weeklyClosed.length * 0.55"
-              :height="26 * v / weeklyMax"
-              rx="1.5"
-              :fill="i === weeklyClosed.length - 1 ? '#0d9488' : '#A9BBD3'"
-            />
-            <text
-              :x="220 * (i + 0.5) / weeklyClosed.length"
-              :y="Math.max(26 - (26 * v / weeklyMax) - 3, 9)"
-              text-anchor="middle"
-              font-size="9"
-              fill="#8A94A6"
-            >{{ v }}</text>
-          </g>
-        </svg>
-      </div>
+      <!-- 0929 诚实化：移除“近 6 周闭环数”演示柱图（后端无周聚合端点，
+           硬编码数据属于编造展示）；待周聚合端点落地后以真实数据恢复 -->
     </div>
 
     <!-- 空态 -->

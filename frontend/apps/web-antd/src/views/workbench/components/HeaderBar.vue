@@ -169,16 +169,8 @@ function onBellClick() {
     </div>
     <span class="h-4 w-px bg-[var(--clpm-industrial-border)]" aria-hidden="true"></span>
 
-    <!-- 可信徽章 -->
-    <span
-      class="flex items-center gap-1 rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700"
-      title="数据可信度"
-    >
-      <span class="inline-block h-1.5 w-1.5 rounded-full bg-green-500"></span>
-      数据可信
-    </span>
-    <span class="h-4 w-px bg-[var(--clpm-industrial-border)]" aria-hidden="true"></span>
-
+    <!-- 0929 诚实化：恒真“数据可信”徽章已移除（未接任何数据质量接口，
+         恒真状态与报告页真实“数据健康率”语义冲突）；待接入后恢复 -->
     <!-- 驾驶舱入口（2026-09-24：驾驶舱与工作台 v2.0 都保留、互不替代——
          驾驶舱是管理层只读总览，工作台是工程闭环任务台；此处提供双向互通，
          驾驶舱顶栏已有「管理后台」回入口） -->
