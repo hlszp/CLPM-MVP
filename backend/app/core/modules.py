@@ -343,6 +343,43 @@ async def save_enabled_modules(db, enabled: set[str], operator: str | None = Non
                 description="已启用模块 key 列表（JSON 数组）",
             )
         )
+    # 读路径（_load_sync/load_enabled_modules）优先 module_plugin 表，写路径必须
+    # 同步双写，否则 PUT 的修改在重启后被表内旧状态静默覆盖（P0 修复 2026-09-29）
+    await _sync_module_plugin_statuses(db, normalized)
     await db.commit()
     set_cache(normalized)
     return normalized
+
+
+async def _sync_module_plugin_statuses(db, enabled: set[str]) -> None:
+    """将启用集合同步到 module_plugin 表（缺行时按注册表补种子行）。
+
+    管理开关只有开/关两态：启用 → ENABLED（base 模块保持 CORE），
+    停用 → UNINSTALLED（显式覆盖 MAINTENANCE，开关是最高优先级输入）。
+    display_name 等既有行属性不覆盖，仅维护 status。
+    """
+    from sqlalchemy import select
+
+    from app.models.module_plugin import ModulePlugin
+
+    rows = (await db.execute(select(ModulePlugin))).scalars().all()
+    by_key = {row.module_key: row for row in rows}
+    for key, meta in MODULES.items():
+        if key in enabled:
+            status = "CORE" if meta.get("base") else "ENABLED"
+        else:
+            status = "UNINSTALLED"
+        row = by_key.get(key)
+        if row is None:
+            db.add(
+                ModulePlugin(
+                    module_key=key,
+                    display_name=meta["name"],
+                    status=status,
+                    is_core=bool(meta.get("base")),
+                    order_index=meta["order"],
+                    dependencies=list(meta.get("deps", [])),
+                )
+            )
+        else:
+            row.status = status
