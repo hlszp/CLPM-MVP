@@ -1,13 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router';
 
-import { useUserStore } from '@vben/stores';
 
 function monitorHome() {
-  const roles = useUserStore().userInfo?.roles ?? [];
-  // 0929 总览收敛：装置总览下线，非 EXPERT 落回路监视（列表页标杆）
-  return roles.includes('EXPERT')
-    ? '/monitor/loop-workbench'
-    : '/monitor/loops';
+  // 0930 用户口径：监控模块默认页统一落工作台（回路监视仍为菜单首项）
+  return '/workbench';
 }
 
 /**

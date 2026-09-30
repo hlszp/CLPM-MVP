@@ -19,26 +19,24 @@ import { $t } from '#/locales';
  * FP-P0-08：后端 auth.py ROLE_DEFAULT_HOME 已对齐本表，事实源统一。
  * 角色映射优先于后端 defaultHome 返回值（双保险），二者口径一致。
  *
- * - 驾驶舱方案 §3.1（C2）：SPONSOR / IC_ENGINEER / PE_ENGINEER 默认落地 /cockpit
- * - EXPERT：仅诊断中心 + 回路整定 → /diagnosis/records（诊断记录）
- * - ADMIN：/workbench 工作台（0929 总览收敛：/dashboard 装置总览下线）
+ * - 0930 用户口径：默认落地统一 /workbench 工作台（驾驶舱保留在菜单首位可随时进入）
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
   ADMIN: '/workbench',
-  EXPERT: '/diagnosis/records',
-  IC_ENGINEER: '/cockpit',
-  PE_ENGINEER: '/cockpit',
-  SPONSOR: '/cockpit',
+  EXPERT: '/workbench',
+  IC_ENGINEER: '/workbench',
+  PE_ENGINEER: '/workbench',
+  SPONSOR: '/workbench',
 };
 
 /**
- * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /cockpit
+ * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /workbench
  */
 function resolveHomePath(
   role: string,
   backendDefaultHome?: null | string,
 ): string {
-  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/cockpit';
+  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/workbench';
 }
 
 export { resolveHomePath, ROLE_DEFAULT_HOME };

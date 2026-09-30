@@ -112,12 +112,13 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
 # 长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）与前端表对齐。
 #
 # 2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench 工作台。
+# 2026-09-30 用户口径：默认落地统一 /workbench 工作台（驾驶舱保留菜单首位可进入）。
 ROLE_DEFAULT_HOME: dict[str, str] = {
     "ADMIN": "/workbench",
-    "IC_ENGINEER": "/cockpit",
-    "PE_ENGINEER": "/cockpit",
-    "SPONSOR": "/cockpit",
-    "EXPERT": "/diagnosis/records",
+    "IC_ENGINEER": "/workbench",
+    "PE_ENGINEER": "/workbench",
+    "SPONSOR": "/workbench",
+    "EXPERT": "/workbench",
 }
 
 
@@ -128,7 +129,7 @@ def get_permissions(role: str) -> list[str]:
 
 def get_default_home(role: str) -> str:
     """Return the default home path for a role."""
-    return ROLE_DEFAULT_HOME.get(role, "/cockpit")
+    return ROLE_DEFAULT_HOME.get(role, "/workbench")
 
 
 # ---------------------------------------------------------------------------

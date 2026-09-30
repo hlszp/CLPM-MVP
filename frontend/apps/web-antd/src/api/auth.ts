@@ -28,14 +28,14 @@ export const CLPM_ROLES = [
 export type ClpmRole = (typeof CLPM_ROLES)[number];
 
 /**
- * 角色默认首页映射（0929 总览收敛，与 store/auth.ts 前端表逐角色一致）
+ * 角色默认首页映射（0930 用户口径：统一 /workbench 工作台）
  */
 export const ROLE_DEFAULT_HOME: Record<ClpmRole, string> = {
   ADMIN: '/workbench',
-  EXPERT: '/diagnosis/records',
-  IC_ENGINEER: '/cockpit',
-  PE_ENGINEER: '/cockpit',
-  SPONSOR: '/cockpit',
+  EXPERT: '/workbench',
+  IC_ENGINEER: '/workbench',
+  PE_ENGINEER: '/workbench',
+  SPONSOR: '/workbench',
 };
 
 /**

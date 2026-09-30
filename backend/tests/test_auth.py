@@ -664,15 +664,16 @@ class TestRolePermissions:
         两张表长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）对齐。
 
         2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench。
+        2026-09-30 用户口径：全角色统一 /workbench 工作台。
         """
         from app.services.auth import get_default_home
 
         expected = {
             "ADMIN": "/workbench",
-            "IC_ENGINEER": "/cockpit",
-            "PE_ENGINEER": "/cockpit",
-            "SPONSOR": "/cockpit",
-            "EXPERT": "/diagnosis/records",
+            "IC_ENGINEER": "/workbench",
+            "PE_ENGINEER": "/workbench",
+            "SPONSOR": "/workbench",
+            "EXPERT": "/workbench",
         }
         for role, home in expected.items():
             assert get_default_home(role) == home, f"{role} 默认首页应为 {home}"

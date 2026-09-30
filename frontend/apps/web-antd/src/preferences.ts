@@ -78,8 +78,8 @@ export const overridesPreferences = defineOverridesPreferences({
   app: {
     // 启用 Refresh Token 自动续期（对齐 IDS v3.2 §5.2）
     enableRefreshToken: true,
-    // 默认首页路径（0929 总览收敛：/dashboard 装置总览下线，兜底落驾驶舱）
-    defaultHomePath: '/cockpit',
+    // 默认首页路径（0930 用户口径：统一落工作台）
+    defaultHomePath: '/workbench',
     // 应用名称（显示在主布局左上角 LOGO 旁；浏览器标题仍由 index.html <title> 控制）
     name: 'iCLPM 系统',
     // 登录过期模式：页面跳转
