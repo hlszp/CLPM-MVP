@@ -103,14 +103,14 @@ const NODES = computed<FlowNode[]>(() => {
     {
       x: 16,
       n: '实时数据库',
-      s: `${loopN.value} 回路采集`,
+      s: `参评回路 ${loopN.value}/小时`,
       ring: '#94a3b8',
       dash: false,
     },
     {
       x: 132,
       n: '性能评估',
-      s: `${loopN.value} 回路/5min`,
+      s: `参评回路 ${loopN.value}/小时`,
       ring: ringOn,
       dash: false,
     },
