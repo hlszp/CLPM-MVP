@@ -130,7 +130,7 @@ const reopenRate = computed(() => {
           <div class="text-sm font-semibold text-gray-700">
             {{ funnel.avg_cycle_hours?.toFixed(1) ?? '—' }}h
           </div>
-          <div class="text-center text-[9px] text-gray-400">平均闭环周期<br /><span class="text-[#2E7D32]">▼1.8h</span> 环比</div>
+          <div class="text-center text-[9px] text-gray-400">平均闭环周期</div>
         </div>
         <div class="flex flex-1 flex-col items-center justify-center rounded border border-[#EBEEF5] py-1">
           <div class="text-sm font-semibold text-gray-600">

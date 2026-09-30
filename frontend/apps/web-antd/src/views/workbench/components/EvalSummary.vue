@@ -52,9 +52,11 @@ const delta = computed(() => props.summary?.delta);
 
 function onLink(action: string) {
   // 追溯矩阵：tab:diag → 诊断记录明细页（携带窗口+scope 口径）；
-  // alerts → 监控域预警（Q5 本次不接线，保持桩）
+  // alerts → 监控域预警事件列表（0930：补真实路由，此前为空桩）
   if (action === 'tab:diag') {
     drill('diagnosis', '/diagnosis/records');
+  } else if (action === 'alerts') {
+    drill('monitor', '/monitor/alerts');
   }
 }
 

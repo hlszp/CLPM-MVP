@@ -30,6 +30,7 @@ from app.services.workbench_overview import (
     _get_lose_threshold,
     _iso,
     _load_plant_hierarchy,
+    _loops_per_hour,
     _lose_factors,
     _query_alarm_per_unit,
     _query_overdue_per_unit,
@@ -37,6 +38,7 @@ from app.services.workbench_overview import (
     _scope_id_int,
     _to_float,
 )
+from app.services.workbench_scope import node_scope_id
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +122,10 @@ def shape_summary(
         }
 
     score = _to_float(getattr(win_row, "score", None))
-    evaluated = getattr(win_row, "loop_count", 0) or 0
+    # 0930：参评口径与 overview 一致（窗口累计 → 平均每小时参评回路数）
+    evaluated = _loops_per_hour(
+        getattr(win_row, "loop_count", 0) or 0, getattr(win_row, "window_w", None)
+    )
     sparkline = getattr(win_row, "score_trend", None) or []
     delta = _sparkline_delta(sparkline)
     distance = round(score - target, 1) if score is not None else None
@@ -191,12 +196,22 @@ def shape_ranking_plant(
     列：rank / name / score / delta / join(参评) / alarm / overdue / sparkline / lose_factors
     """
     name_by_source_id: dict[int, str] = hierarchy["name_by_source_id"]
+    unit_to_factory: dict[str, str] = hierarchy["unit_to_factory"]
+    factories = hierarchy["factories"]
+    # source_node_id → factory_id（与 overview.shape_plants 同款聚合）
+    factory_id_by_source = {node_scope_id(f.source_node_id, f.id): f.id for f in factories}
+    units_per_factory: dict[str, list[str]] = {}
+    for unit_id, factory_id in unit_to_factory.items():
+        units_per_factory.setdefault(factory_id, []).append(unit_id)
+
     items: list[dict[str, Any]] = []
     for row in kpi_rows:
         src_id = getattr(row, "scope_id", None)
         name = name_by_source_id.get(src_id) or f"装置#{src_id}"
         sparkline = getattr(row, "score_trend", None) or []
         loop_count = getattr(row, "loop_count", 0) or 0
+        factory_id = factory_id_by_source.get(src_id)
+        unit_ids = units_per_factory.get(factory_id, []) if factory_id else []
         items.append(
             {
                 "id": src_id,
@@ -206,17 +221,15 @@ def shape_ranking_plant(
                 "delta": _sparkline_delta(sparkline),
                 "join": f"{loop_count}/{total_loops}",
                 "loop_count": loop_count,
-                "alarm_count": 0,
-                "overdue_tasks": 0,
+                # 0930：真值聚合（此前硬编码 0，排名表预警/超期两列恒空）
+                "alarm_count": sum(alarm_per_unit.get(uid, 0) for uid in unit_ids),
+                "overdue_tasks": sum(overdue_per_unit.get(uid, 0) for uid in unit_ids),
                 "sparkline": sparkline,
                 "lose_factors": _lose_factors(row, threshold),
             }
         )
     # 按综合评分升序（最低分 = 最高风险 = rank 1，对齐原型）
     items.sort(key=lambda x: (x["score"] is None, x["score"] if x["score"] is not None else 0))
-    # 累加 alarm/overdue（需 unit→factory 映射；此处按 source_id 直接查 alarm_per_unit
-    # 的 key 是 plant_node.id(UUID)，与 unit 维度对齐——若 ranking 行即 UNIT 级则直接命中；
-    # FACTORY 级行无 unit_id 映射时保持 0，由 overview 聚合逻辑覆盖）
     for idx, it in enumerate(items, 1):
         it["rank"] = idx
     return items
@@ -434,7 +447,14 @@ async def build_assessment(
     global_row = (
         win_row if scope_type == "GLOBAL" else await _query_scope_row(db, "GLOBAL", 0, window)
     )
-    total_loops = getattr(global_row, "loop_count", 0) or 0 if global_row else 0
+    total_loops = (
+        _loops_per_hour(
+            getattr(global_row, "loop_count", 0) or 0,
+            getattr(global_row, "window_w", None),
+        )
+        if global_row
+        else 0
+    )
 
     # --- ranking（plant 视图：下一层 FACTORY/AREA/UNIT；unit 视图：UNIT 子树）---
     try:

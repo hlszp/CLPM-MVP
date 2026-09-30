@@ -129,7 +129,7 @@ class TestShapeSummary:
         out = shape_summary(row, plants, 34)
         assert out["score"] == 84.2
         assert out["grade"] == "B 良好"
-        assert out["participation"] == {"evaluated": 32, "total": 34}
+        assert out["participation"] == {"evaluated": 1, "total": 34}
         assert out["distance_to_target"] == round(84.2 - 90, 1)
         assert out["delta"] == 1.2  # trend 末减首（score - (score-1.2))
         assert "催化裂化" in out["conclusion"]

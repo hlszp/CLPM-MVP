@@ -140,8 +140,23 @@ const xLabels = computed(() => {
   if (!n) return [] as { label: string; x: number; }[];
   const step = Math.ceil(n / 8);
   const labels: { label: string; x: number; }[] = [];
+  // 0930：按窗口跨度自适应——首尾跨度 >36h（7d/30d）显示日期，否则时分；
+  // t 为 naive UTC ISO 串，补 Z 后转本地时区（此前 7d/30d 全显 "00:00"）
+  const spanH =
+    n > 1
+      ? (new Date(`${t[n - 1]!.t}Z`).getTime() - new Date(`${t[0]!.t}Z`).getTime()) / 3_600_000
+      : 0;
+  const byDate = spanH > 36;
   for (let i = 0; i < n; i += step) {
-    const label = t[i]!.t.slice(11, 16) || String(i); // HH:mm
+    const d = new Date(`${t[i]!.t}Z`);
+    let label: string;
+    if (Number.isNaN(d.getTime())) {
+      label = t[i]!.t.slice(11, 16);
+    } else if (byDate) {
+      label = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    } else {
+      label = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
     labels.push({ x: sx(i, n), label });
   }
   return labels;

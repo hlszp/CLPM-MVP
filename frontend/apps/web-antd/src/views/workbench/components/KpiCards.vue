@@ -91,7 +91,7 @@ const degradedCount = computed(() => {
 const pendingCount = computed(() => props.funnel?.pending ?? 0);
 const executingCount = computed(() => props.funnel?.executing ?? 0);
 
-// 预警事件（sla 警告计数）
+// SLA 超期工单数（funnel.breached；0930 名实对齐）
 const alertCount = computed(() => props.funnel?.breached ?? 0);
 
 // 进度条百分比（0-100）
@@ -210,7 +210,7 @@ const goodPct = computed(() => Math.min(100, Math.max(0, Math.round((goodValue.v
       @click="drillAlerts"
     >
       <div class="flex items-center justify-between">
-        <span class="text-xs text-gray-500">预警事件</span>
+        <span class="text-xs text-gray-500">SLA 超期</span>
       </div>
       <div class="flex items-baseline gap-1">
         <span class="text-2xl font-semibold text-[#FF4D4F]">

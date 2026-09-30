@@ -89,6 +89,19 @@ def _iso(val: Any) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _loops_per_hour(loop_count: int | None, window_w: str | None) -> int:
+    """loop_count（窗口内参评回路·小时累计）→ 平均每小时参评回路数。
+
+    0930 口径修正：预计算的 loop_count 是按小时累加的评估次数，
+    前端“回路采集/性能评估”卡片需要的是数量概念，直接显示累计值
+    会比真实回路数大一个数量级（如 24h×700 回路 ≈ 16853）。
+    """
+    hours = {"24h": 24, "7d": 168, "30d": 720}.get(window_w or "", 24)
+    if not loop_count or hours <= 0:
+        return 0
+    return max(1, round(loop_count / hours))
+
+
 def _shape_window_row(row: Any) -> dict[str, Any]:
     """单行 workbench_window_summary → window 块字典。
 
@@ -96,9 +109,10 @@ def _shape_window_row(row: Any) -> dict[str, Any]:
     前端显示 '—' 而非误导性的 0 分（预计算写入侧对空聚合落 0.0）。
     """
     metrics = {key: _to_float(getattr(row, key, None)) for key, _ in KPI_METRICS}
-    loop_count = getattr(row, "loop_count", 0) or 0
+    raw_loops = getattr(row, "loop_count", 0) or 0
+    loop_count = _loops_per_hour(raw_loops, getattr(row, "window_w", None))
     score = _to_float(getattr(row, "score", None))
-    if loop_count == 0:
+    if raw_loops == 0:
         score = None
     return {
         "score": score,
@@ -180,7 +194,11 @@ def shape_plants(
                 "name": name,
                 "score": _to_float(getattr(row, "score", None)),
                 "status": getattr(row, "status", None),
-                "loop_count": getattr(row, "loop_count", 0) or 0,
+                # 0930：窗口累计 → 平均每小时参评回路数（口径见 _loops_per_hour）
+                "loop_count": _loops_per_hour(
+                    getattr(row, "loop_count", 0) or 0,
+                    getattr(row, "window_w", None),
+                ),
                 "sparkline": getattr(row, "score_trend", None) or [],
                 "lose_factors": _lose_factors(row, threshold),
                 "alarm_count": alarm_count,
@@ -511,7 +529,7 @@ async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
             SELECT kv.key AS tag_code,
                    count(*) AS count,
                    count(*) FILTER (WHERE r.review_status = 'PENDING') AS active_count,
-                   MAX(r.created_at) AS last_seen_at,
+                   MAX(r.created_at) AS last_seen_at
             FROM diagnosis_run r
             CROSS JOIN LATERAL jsonb_each(r.symptom_tags) kv
             WHERE r.status = 'SUCCESS'
@@ -597,8 +615,13 @@ async def build_overview(
         hierarchy = await _load_plant_hierarchy(db)
         child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
         if scope_type == "GLOBAL" or not child_ids:
-            # GLOBAL → 全部 FACTORY 行
+            # GLOBAL → 全部 FACTORY 行（0930：按当前树过滤，旧树残留行不再以
+            # 「装置#hash」兜底名出现在装置风险列表）
             plant_rows = await _query_scope_rows(db, child_type, window)
+            current_scope_ids = set(hierarchy["name_by_source_id"].keys())
+            plant_rows = [
+                r for r in plant_rows if getattr(r, "scope_id", None) in current_scope_ids
+            ]
         else:
             # FACTORY/AREA → 限定子节点 ID
             stmt = (
