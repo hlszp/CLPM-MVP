@@ -32,6 +32,9 @@ class PlantNodeUpdate(CamelModel):
     sortOrder: int | None = Field(
         None, ge=0, le=999_999, description="同级展示排序（小值在前，同值按名称）"
     )
+    # 0929：编辑支持修改节点类型与父节点（后端做防环/子节点/层级校验）
+    type: str | None = Field(None, description="节点类型 FACTORY/AREA/UNIT")
+    parentId: str | None = Field(None, description="新父节点 id（null=改为顶层）")
 
 
 class PlantNodeInfo(CamelModel):
