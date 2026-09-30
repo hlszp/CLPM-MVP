@@ -234,8 +234,8 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
 }
 
 // ===== 16 号文 F5：发起前数据充足性预检徽标（左脊柱行内，D1 廉价代理） =====
-/** 后端单次预检上限（§5.3，与发起上限一致；超出分批调用） */
-const PRECHECK_BATCH = 10;
+/** 后端单次预检上限（只读聚合已放宽至 200；超出分批调用） */
+const PRECHECK_BATCH = 200;
 /** 回路 ID → 预检徽标项 */
 const precheckItems = ref(new Map<string, DiagnosisApi.PrecheckItem>());
 /** 评估模块启用能力字段（false → 徽标整列隐藏，§5.4 隐藏而非置灰/误报） */

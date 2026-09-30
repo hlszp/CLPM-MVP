@@ -768,7 +768,7 @@ export function getDiagnosisCategoryCohortApi(
 /**
  * F5 发起前数据充足性预检（kpi_snapshot_hourly 近 24h 行数密度徽标，零 TDengine）
  *
- * @param loopIds 回路 ID 列表（后端单次 ≤10，超出由调用方分批）
+ * @param loopIds 回路 ID 列表（后端单次 ≤200，超出由调用方分批）
  * @param window 预检窗口（默认 24h；预期行数=窗口小时数）
  */
 export function getDiagnosisPrecheckApi(

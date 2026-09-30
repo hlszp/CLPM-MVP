@@ -42,9 +42,9 @@ import dayjs from 'dayjs';
 import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
 import { getHandlingOrdersApi } from '#/api/handling';
 import {
-  getLoopDetailApi,
   getLoopListApi,
   getLoopMonitorListApi,
+  getLoopsRuntimeParamsApi,
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
@@ -362,20 +362,22 @@ async function loadOverview(): Promise<void> {
         },
       };
     });
-    // P/I/D 初值：并行拉回路详情（量级=装置范围内回路数；单回路失败不阻断）
-    await Promise.allSettled(
-      overviewRows.value.map(async (row) => {
-        const d = await getLoopDetailApi(row.loopId);
-        const rp = (d.runtimeParams ?? {}) as {
-          pidD?: null | number;
-          pidI?: null | number;
-          pidP?: null | number;
-        };
+    // P/I/D 初值：一次批量拉全部回路运行参数（原逐回路 /loops/{id}，
+    // 961 回路时 6 并发槽位排队近 30s 且 axios 10s 超时整批报错）
+    try {
+      const rpMap = await getLoopsRuntimeParamsApi(
+        selectedPlantNodeId.value || undefined,
+      );
+      for (const row of overviewRows.value) {
+        const rp = rpMap[row.loopId];
+        if (!rp) continue;
         row.currentValues.pidP = rp.pidP ?? null;
         row.currentValues.pidI = rp.pidI ?? null;
         row.currentValues.pidD = rp.pidD ?? null;
-      }),
-    );
+      }
+    } catch {
+      // 批量失败不阻断总览（与原单回路失败不阻断口径一致）
+    }
   } catch {
     overviewRows.value = [];
   } finally {

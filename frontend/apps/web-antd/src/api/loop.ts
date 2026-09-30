@@ -717,6 +717,16 @@ export function getLoopDetailApi(loopId: string) {
 }
 
 /**
+ * 批量获取回路运行参数（整定工作台总览用，替代逐回路 /loops/{id}）
+ */
+export function getLoopsRuntimeParamsApi(plantNodeId?: string) {
+  return requestClient.get<Record<string, LoopApi.LoopRuntimeParams>>(
+    '/loops/runtime-params',
+    { params: plantNodeId ? { plantNodeId } : {} },
+  );
+}
+
+/**
  * 更新回路 — IDS v3.2 §2.2.10
  */
 export function updateLoopApi(loopId: string, data: LoopApi.UpdateLoopParams) {

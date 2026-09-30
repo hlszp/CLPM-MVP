@@ -115,6 +115,26 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     },
   });
 
+  // 超时/网络错误自动重试一次（仅幂等 GET）：公网方向存在低概率新建
+  // TCP 连接被间歇阻断的故障，超时后立刻重开连接大概率立即可用；
+  // POST 等非幂等请求不重试，避免重复提交
+  client.addResponseInterceptor({
+    rejected: (error: any) => {
+      const config = error?.config;
+      const code = error?.code ?? '';
+      const retriable =
+        config &&
+        !config.__isTimeoutRetried &&
+        String(config.method ?? '').toLowerCase() === 'get' &&
+        (code === 'ECONNABORTED' || code === 'ERR_NETWORK');
+      if (retriable) {
+        config.__isTimeoutRetried = true;
+        return client.instance.request(config);
+      }
+      throw error;
+    },
+  });
+
   // 处理返回的响应数据格式（对齐 IDS v3.2 统一响应规范）
   // 成功：code === "0" 或 code === 0 → 返回 data 字段
   // 业务错误：code !== "0" → 抛出包含 {code, message} 的错误
