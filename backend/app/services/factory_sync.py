@@ -402,7 +402,9 @@ async def sync_factory_model(db: AsyncSession, operator: str) -> dict[str, Any]:
                     name=name[:100],
                     type=node_type,
                     parent_id=parent_local_id,
-                    is_kpi_enabled=False,
+                    # 0930：UNIT 默认启用性能评估（此前默认 False，新树重建后
+                    # KPI 聚合/工作台全部静默归零，需手工逐个打开）
+                    is_kpi_enabled=(node_type == "UNIT"),
                     source_node_id=aas_id,
                     sort_order=sort_value,
                     updated_by="aas:sync",

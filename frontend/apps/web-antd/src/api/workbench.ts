@@ -162,6 +162,8 @@ export namespace WorkbenchApi {
   export interface RootRow {
     active_count: number;
     count: number;
+    /** 最近检出时间（0930：ISO8601 串；时间线卡片显示真实时间） */
+    last_seen_at?: null | string;
     severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
     tag_code: string;
     tag_name: string;

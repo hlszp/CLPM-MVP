@@ -22,6 +22,7 @@ class PlantNodeCreate(PlantNodeBase):
     sortOrder: int | None = Field(
         None, ge=0, le=999_999, description="同级展示排序（小值在前，同值按名称）"
     )
+    isKpiEnabled: bool | None = Field(None, description="是否纳入性能评估（UNIT 省略时默认启用）")
 
 
 class PlantNodeUpdate(CamelModel):

@@ -95,6 +95,7 @@ async def create_plant_node(
     parent_id: str | None,
     operator: str,
     sort_order: int | None = None,
+    is_kpi_enabled: bool | None = None,
 ) -> dict:
     """创建工厂节点。
 
@@ -141,11 +142,14 @@ async def create_plant_node(
         )
 
     # 创建节点
+    # 0930：UNIT 未显式指定时默认启用性能评估（False 会让 KPI/工作台静默归零）
+    kpi_enabled = is_kpi_enabled if is_kpi_enabled is not None else (node_type == "UNIT")
     node = PlantNode(
         id=str(uuid4()),
         name=name,
         type=node_type,
         parent_id=parent_id,
+        is_kpi_enabled=kpi_enabled,
         updated_by=operator,
         # 新增弹窗同样提供「排序值」；此前创建路径不接收该字段，
         # 用户填写的排序值被静默丢弃（只能再进编辑页改一次）。
@@ -657,7 +661,10 @@ async def _import_one_node(
             name=name,
             type=node_type,
             parent_id=parent_id,
-            is_kpi_enabled=is_kpi_enabled if is_kpi_enabled is not None else False,
+            # 0930：UNIT 未显式指定时默认启用（False 会让 KPI/工作台对该单元静默归零）
+            is_kpi_enabled=(
+                is_kpi_enabled if is_kpi_enabled is not None else (node_type == "UNIT")
+            ),
             updated_by=f"import:{operator}",
         )
         db.add(node)

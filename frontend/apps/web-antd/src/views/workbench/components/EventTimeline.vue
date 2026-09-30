@@ -31,16 +31,17 @@ const SEVERITY_LABELS: Record<string, string> = {
 
 const events = computed(() => {
   if (!props.roots?.length) return [];
-  const now = new Date();
-  return props.roots.slice(0, 6).map((r, i) => ({
+  // 0930：使用后端 lastSeenAt 真实最近检出时间（此前为前端伪造的均匀间隔假时间）
+  return props.roots.slice(0, 6).map((r) => ({
     ...r,
-    time: new Date(now.getTime() - i * 3_600_000 * 2), // 每 2 小时一条
+    time: r.last_seen_at ? new Date(r.last_seen_at) : null,
     color: SEVERITY_COLORS[r.severity ?? 'INFO'],
     label: SEVERITY_LABELS[r.severity ?? 'INFO'],
   }));
 });
 
-function formatTime(d: Date) {
+function formatTime(d: Date | null) {
+  if (!d || Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',

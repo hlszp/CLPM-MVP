@@ -173,6 +173,7 @@ async def create_plant_node_endpoint(
         parent_id=body.parentId,
         operator=user.username,
         sort_order=body.sortOrder,
+        is_kpi_enabled=body.isKpiEnabled,
     )
     return success(data=data, message="创建成功")
 

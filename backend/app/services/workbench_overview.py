@@ -90,12 +90,20 @@ def _iso(val: Any) -> str | None:
 
 
 def _shape_window_row(row: Any) -> dict[str, Any]:
-    """单行 workbench_window_summary → window 块字典。"""
+    """单行 workbench_window_summary → window 块字典。
+
+    0930 伪 0 修复：窗口内无任何回路评估（loop_count=0）时 score 置 None，
+    前端显示 '—' 而非误导性的 0 分（预计算写入侧对空聚合落 0.0）。
+    """
     metrics = {key: _to_float(getattr(row, key, None)) for key, _ in KPI_METRICS}
+    loop_count = getattr(row, "loop_count", 0) or 0
+    score = _to_float(getattr(row, "score", None))
+    if loop_count == 0:
+        score = None
     return {
-        "score": _to_float(getattr(row, "score", None)),
+        "score": score,
         "status": getattr(row, "status", None),
-        "loop_count": getattr(row, "loop_count", 0) or 0,
+        "loop_count": loop_count,
         "metrics": metrics,
         "score_trend": getattr(row, "score_trend", None) or [],
         "flags": getattr(row, "flags", None) or [],
@@ -249,6 +257,8 @@ def shape_roots(rows: list[Any], top_n: int = ROOTS_TOP_N) -> list[dict[str, Any
                 or (r.get("active_count") if isinstance(r, dict) else 0)
                 or 0,
                 "severity": severity,
+                # 0930：最近检出时间（此前时间线卡片用前端伪造时间）
+                "last_seen_at": _iso(r.get("last_seen_at")) if isinstance(r, dict) else None,
             }
         )
     # active 优先，再按总数降序
@@ -501,8 +511,7 @@ async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
             SELECT kv.key AS tag_code,
                    count(*) AS count,
                    count(*) FILTER (WHERE r.review_status = 'PENDING') AS active_count,
-                   MAX(CASE r.severity WHEN 'HIGH' THEN 4 WHEN 'MEDIUM' THEN 2 ELSE 1 END)
-                       AS severity_rank
+                   MAX(r.created_at) AS last_seen_at,
             FROM diagnosis_run r
             CROSS JOIN LATERAL jsonb_each(r.symptom_tags) kv
             WHERE r.status = 'SUCCESS'
@@ -577,6 +586,13 @@ async def build_overview(
     threshold = await _get_lose_threshold(db)
 
     # --- plants：下一层排名（GLOBAL→工厂 / FACTORY→装置 / AREA→单元）+ alarm/overdue 聚合 ---
+    # 0930：默认空层级，防 _load_plant_hierarchy 异常被吞后下方引用触发 NameError
+    hierarchy: dict[str, Any] = {
+        "factories": [],
+        "by_id": {},
+        "unit_to_factory": {},
+        "name_by_source_id": {},
+    }
     try:
         hierarchy = await _load_plant_hierarchy(db)
         child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)

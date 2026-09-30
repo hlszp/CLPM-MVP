@@ -42,8 +42,23 @@ const PB = 20;
 const INNER_W = W - PL - PR;
 const INNER_H = H - PT - PB;
 
-const yMin = 78;
-const yMax = 92;
+// 0930：Y 轴随数据自适应（数据空时回落 78~92 默认；含目标线并在上下留 15% 余量）
+const yBounds = computed(() => {
+  const vals = (props.trend ?? [])
+    .map((p) => p.v)
+    .filter((v): v is number => typeof v === 'number');
+  const target = props.target ?? 90;
+  if (vals.length === 0) return { min: 78, max: 92 };
+  const dMin = Math.min(...vals, target);
+  const dMax = Math.max(...vals, target);
+  const pad = Math.max((dMax - dMin) * 0.15, 1);
+  return {
+    min: Math.max(0, Math.floor(dMin - pad)),
+    max: Math.min(100, Math.ceil(dMax + pad)),
+  };
+});
+const yMin = computed(() => yBounds.value.min);
+const yMax = computed(() => yBounds.value.max);
 const targetLine = computed(() => props.target ?? 90);
 
 // 开关
@@ -55,8 +70,10 @@ function sx(i: number, n: number): number {
   return n > 1 ? PL + (i * INNER_W) / (n - 1) : PL;
 }
 function sy(v: number): number {
-  const clamped = Math.max(yMin, Math.min(yMax, v));
-  return PT + (1 - (clamped - yMin) / (yMax - yMin)) * INNER_H;
+  const lo = yMin.value;
+  const hi = yMax.value;
+  const clamped = Math.max(lo, Math.min(hi, v));
+  return PT + (1 - (clamped - lo) / (hi - lo)) * INNER_H;
 }
 
 // 主系列（全厂）
@@ -91,7 +108,7 @@ function areaPath(pts: { x: number; y: number }[]): string {
   const line = pathFrom(pts);
   const last = pts[pts.length - 1]!;
   const first = pts[0]!;
-  return `${line} L${last.x.toFixed(1)} ${sy(yMin)} L${first.x.toFixed(1)} ${sy(yMin)} Z`;
+  return `${line} L${last.x.toFixed(1)} ${sy(yMin.value)} L${first.x.toFixed(1)} ${sy(yMin.value)} Z`;
 }
 
 const mainPath = computed(() => pathFrom(mainPoints.value));
@@ -107,7 +124,10 @@ const FLAG_COLORS: Record<string, string> = {
 };
 const yTicks = computed(() => {
   const ticks: { v: number; y: number }[] = [];
-  for (let v = yMin; v <= yMax; v += 2) {
+  const lo = yMin.value;
+  const hi = yMax.value;
+  const step = Math.max(Math.round((hi - lo) / 5 / 2) * 2, 2);
+  for (let v = Math.ceil(lo); v <= hi; v += step) {
     ticks.push({ v, y: sy(v) });
   }
   return ticks;
