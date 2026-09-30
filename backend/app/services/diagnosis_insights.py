@@ -937,8 +937,10 @@ _PRECHECK_WINDOWS: dict[str, int] = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
 _PRECHECK_INSUFFICIENT_RATIO = 0.5
 _PRECHECK_MARGINAL_RATIO = 0.9
 
-#: 批量上限（§5.3：与工作台单次勾选对齐，单次 PostgreSQL 聚合查询）
-_PRECHECK_MAX_LOOPS = 10
+#: 批量上限。原 10（§5.3 与发起上限一致）导致诊断工作台左脊柱徽标拉取
+#: 被切成 961/10≈97 批串行 ~20s；预检本身是只读单次 PostgreSQL 聚合
+#: （零 TDengine、零副作用），与"发起诊断"上限解耦放宽到 200。
+_PRECHECK_MAX_LOOPS = 200
 
 
 def _precheck_level(ratio: float) -> str:
@@ -974,7 +976,7 @@ async def precheck(
     if len(loop_ids) > _PRECHECK_MAX_LOOPS:
         raise BizError(
             code="ERR_PARAM",
-            message=f"单次预检回路数不超过 {_PRECHECK_MAX_LOOPS}（与发起上限一致）",
+            message=f"单次预检回路数不超过 {_PRECHECK_MAX_LOOPS}",
             status_code=400,
         )
     for lid in loop_ids:

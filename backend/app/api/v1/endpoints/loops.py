@@ -63,6 +63,7 @@ from app.services.loop import (
     get_loop_detail,
     get_loop_role_tag_names,
     get_loop_type_stats,
+    get_loops_runtime_params,
     import_loops,
     list_complex_groups,
     list_loops,
@@ -285,6 +286,17 @@ async def list_complex_groups_endpoint(
 # ---------------------------------------------------------------------------
 # Loop Monitor (固定路径，必须在 {loop_id} 之前)
 # ---------------------------------------------------------------------------
+
+
+@router.get("/runtime-params", response_model=ApiResponse[dict])
+async def get_loops_runtime_params_endpoint(
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选（含子孙递归）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("loop:view")),
+) -> dict:
+    """批量获取回路运行参数（整定工作台总览用，替代逐回路 /loops/{id}）。"""
+    data = await get_loops_runtime_params(db=db, plant_node_id=plantNodeId)
+    return success(data=data)
 
 
 @router.get("/monitor", response_model=ApiResponse[dict])

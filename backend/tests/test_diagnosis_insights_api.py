@@ -1045,8 +1045,8 @@ class TestPrecheckEndpoint:
         assert resp.status_code == 400
 
     def test_precheck_over_limit(self, client) -> None:
-        """批量上限 10（§5.3，与发起上限一致）。"""
-        ids = ",".join(str(uuid4()) for _ in range(11))
+        """批量上限 200（预检只读聚合，已与发起上限解耦）。"""
+        ids = ",".join(str(uuid4()) for _ in range(201))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/diagnosis/precheck",

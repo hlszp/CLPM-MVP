@@ -772,7 +772,7 @@ async def get_category_cohort(
 async def get_diagnosis_precheck(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
-    loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤10 个）"),
+    loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤200 个）"),
     window: str = Query("24h", description="预检窗口 24h/7d/30d"),
 ) -> dict:
     """发起前数据充足性预检徽标（16 号文 F5，D1=a 廉价代理）。

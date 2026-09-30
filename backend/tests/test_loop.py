@@ -62,6 +62,12 @@ def _make_scalar_mock(value) -> MagicMock:
     return result
 
 
+def _make_all_mock(rows: list) -> MagicMock:
+    result = MagicMock()
+    result.all.return_value = rows
+    return result
+
+
 class TestLoopList:
     """GET /api/v1/loops tests."""
 
@@ -179,6 +185,72 @@ class TestLoopCreate:
 
 class TestLoopDetail:
     """GET /api/v1/loops/{id} tests."""
+
+    def test_get_runtime_params_batch(self, client, mock_db, fake_redis) -> None:
+        """批量运行参数：Redis 缓存值直取，与单回路口径一致。"""
+        row = MagicMock()
+        row.id = LOOP_001.id
+        row.dcs_model_id = None
+
+        mapping = MagicMock()
+        mapping.loop_id = LOOP_001.id
+        mapping.tag_role = "PID_P"
+        mapping.tag_id = "00000000-0000-0000-0000-000000000301"
+
+        tag = MagicMock()
+        tag.id = mapping.tag_id
+        tag.tag_name = "HDS-RX-TIC-101.PID_P"
+        tag.current_value = 1.5
+
+        mock_db.execute = AsyncMock(
+            side_effect=[
+                _make_all_mock([row]),  # 1. select(LoopLedger.id, dcs_model_id)
+                _make_scalars_mock([mapping]),  # 2. select(LoopTagMapping) in_
+                _make_scalars_mock([tag]),  # 3. select(TagRegistry) in_
+            ]
+        )
+        sub = MagicMock()
+        sub.get_cached_values = AsyncMock(
+            return_value=[
+                {
+                    "tagCode": tag.tag_name,
+                    "value": "2.5",
+                    "collectTime": "2026-09-30T10:00:00Z",
+                }
+            ]
+        )
+        with (
+            patch(
+                "app.services.data_source.realtime_subscriber.get_subscriber",
+                return_value=sub,
+            ),
+            patch(
+                "app.services.loop._build_raw_to_standard_maps",
+                AsyncMock(return_value={}),
+            ),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/loops/runtime-params",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data[LOOP_001.id]["pidP"] == 2.5
+        assert data[LOOP_001.id]["pidI"] is None
+        assert data[LOOP_001.id]["readAt"] == "2026-09-30T10:00:00Z"
+
+    def test_get_runtime_params_empty(self, client, mock_db, fake_redis) -> None:
+        """无回路时返回空对象。"""
+        mock_db.execute = AsyncMock(return_value=_make_all_mock([]))
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops/runtime-params",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"] == {}
+
 
     def test_get_loop_detail_success(self, client, mock_db, fake_redis) -> None:
         """获取回路详情成功。"""

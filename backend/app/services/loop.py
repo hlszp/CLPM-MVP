@@ -1067,6 +1067,112 @@ async def create_loop(
     }
 
 
+async def get_loops_runtime_params(
+    db: AsyncSession, plant_node_id: str | None = None
+) -> dict[str, dict]:
+    """批量获取回路运行参数（controlMode/pidP/pidI/pidD/readAt）。
+
+    整定工作台总览原对每回路逐个调 ``GET /loops/{id}``，961 回路即 961 个
+    请求（浏览器 6 并发槽位排队近 30s，axios 10s 超时整批报错）。此接口
+    将每回路 ~5 次查询收敛为整体 3 次 PG 查询 + 1 次 Redis MGET。
+
+    Args:
+        plant_node_id: 装置/单元 ID（含子孙递归），None 时返回全部回路
+
+    Returns:
+        ``{loopId: {controlMode, pidP, pidI, pidD, readAt}}``；
+        字段口径与单回路详情 runtimeParams 一致（Redis 优先，
+        值不可转换时回退 tag.current_value，无缓存则为 None）
+    """
+    conditions = []
+    if plant_node_id:
+        all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
+        all_node_ids.append(plant_node_id)
+        conditions.append(LoopLedger.unit_id.in_(all_node_ids))
+
+    result = await db.execute(select(LoopLedger.id, LoopLedger.dcs_model_id).where(*conditions))
+    loops = result.all()
+    if not loops:
+        return {}
+
+    loop_ids = [str(r.id) for r in loops]
+
+    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id.in_(loop_ids)))
+    mappings_by_loop: dict[str, dict[str, LoopTagMapping]] = {}
+    tag_ids: set[str] = set()
+    for m in m_result.scalars().all():
+        mappings_by_loop.setdefault(str(m.loop_id), {})[m.tag_role] = m
+        tag_ids.add(str(m.tag_id))
+
+    tags_map: dict[str, TagRegistry] = {}
+    if tag_ids:
+        t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
+        for t in t_result.scalars().all():
+            tags_map[str(t.id)] = t
+
+    redis_cache: dict[str, dict] = {}
+    all_tag_names = [t.tag_name for t in tags_map.values() if t.tag_name]
+    if all_tag_names:
+        try:
+            from app.services.data_source.realtime_subscriber import get_subscriber
+
+            cached_list = await get_subscriber().get_cached_values(all_tag_names)
+            for item in cached_list:
+                tc = item.get("tagCode")
+                if tc:
+                    redis_cache[tc] = item
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("批量从 Redis 读取实时值失败，回退数据库值: %s", exc)
+
+    dcs_model_ids = {str(r.dcs_model_id) if r.dcs_model_id else None for r in loops}
+    raw_to_standard_maps = await _build_raw_to_standard_maps(db, dcs_model_ids)
+
+    runtime_by_loop: dict[str, dict] = {}
+    for row in loops:
+        loop_id = str(row.id)
+        model_id = str(row.dcs_model_id) if row.dcs_model_id else None
+        raw_to_standard = raw_to_standard_maps.get(model_id) or (
+            raw_to_standard_maps.get(None) or {}
+        )
+        params: dict = {
+            "controlMode": None,
+            "pidP": None,
+            "pidI": None,
+            "pidD": None,
+            "readAt": None,
+        }
+        mappings = mappings_by_loop.get(loop_id, {})
+        for role in ("MODE", "PID_P", "PID_I", "PID_D"):
+            mapping = mappings.get(role)
+            if not mapping:
+                continue
+            tag = tags_map.get(str(mapping.tag_id))
+            if not tag:
+                continue
+            cached = redis_cache.get(tag.tag_name)
+            if not cached:
+                continue
+            value: float | None = None
+            try:
+                value = float(cached.get("value"))
+            except (TypeError, ValueError):
+                value = tag.current_value
+            if role == "MODE":
+                params["controlMode"] = _mode_value_to_label(value, raw_to_standard)
+            elif role == "PID_P":
+                params["pidP"] = value
+            elif role == "PID_I":
+                params["pidI"] = value
+            elif role == "PID_D":
+                params["pidD"] = value
+            if cached.get("collectTime") and (
+                params["readAt"] is None or cached["collectTime"] > params["readAt"]
+            ):
+                params["readAt"] = cached["collectTime"]
+        runtime_by_loop[loop_id] = params
+    return runtime_by_loop
+
+
 async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
     """获取回路详情（含 basicInfo/tagMapping/runtimeParams/aasSyncStatus）。
 
