@@ -305,16 +305,7 @@ def shape_rootcause_top(rows: list[dict[str, Any]], top_n: int = 10) -> list[dic
 # ---------------------------------------------------------------------------
 
 
-# 诊断引擎元信息（原型截图：v3.2.1 · 连续运行 126 天 · 规则库 2026-08-18 更新）
-# 无实时引擎元信息来源时回退此常量，避免 DDL
-_ENGINE_VERSION_FALLBACK: dict[str, Any] = {
-    "version": "v3.2.1",
-    "running_days": 126,
-    "rulebase_updated_at": "2026-08-18",
-    "status": "ONLINE",
-}
-
-# 平均诊断时延阈值（≤60s 达标 → 原型 42s 达标）
+# 平均诊断时延阈值（≤60s 达标）
 AVG_LATENCY_TARGET_SEC = 60
 
 
@@ -325,7 +316,7 @@ def shape_summary_band(
     engine_meta: Mapping[str, Any] | None = None,
     diag_count_delta: int | None = None,
     worsening_delta: int | None = None,
-    avg_latency_sec: int = 42,
+    avg_latency_sec: float | None = None,
 ) -> dict[str, Any]:
     """摘要带 5 项（纯派生，不查新表）。
 
@@ -346,33 +337,65 @@ def shape_summary_band(
     high_conf = sum(1 for c in confs if c >= 0.8)
     avg_conf = round(sum(confs) / total_concl, 2) if total_concl > 0 else None
 
-    meta = dict(engine_meta or _ENGINE_VERSION_FALLBACK)
-    for k, v in _ENGINE_VERSION_FALLBACK.items():
-        meta.setdefault(k, v)
-
-    latency_ok = avg_latency_sec <= AVG_LATENCY_TARGET_SEC
+    # 0930 诚实化：引擎元信息无真实来源 → None（前端如实显示 '—'），
+    # 不再用原型截图常量伪造（v3.2.1/126 天/2026-08-18）
+    meta = dict(engine_meta or {})
+    latency_ok = avg_latency_sec is not None and avg_latency_sec <= AVG_LATENCY_TARGET_SEC
 
     return {
         "diag_count": total_concl,
         "diag_count_delta": diag_count_delta,
         "worsening_loops": open_tags_len,
         "worsening_delta": worsening_delta,
-        "avg_latency_sec": avg_latency_sec,
+        "avg_latency_sec": round(avg_latency_sec, 1) if avg_latency_sec is not None else None,
         "avg_latency_target": AVG_LATENCY_TARGET_SEC,
         "avg_latency_ok": latency_ok,
         "avg_confidence": avg_conf,
         "high_confidence_count": high_conf,
         "total_confidence_count": total_concl,
-        "engine_version": meta["version"],
-        "engine_running_days": meta["running_days"],
-        "engine_rulebase_updated_at": meta["rulebase_updated_at"],
-        "engine_status": meta["status"],
+        "engine_version": meta.get("version"),
+        "engine_running_days": meta.get("running_days"),
+        "engine_rulebase_updated_at": meta.get("rulebase_updated_at"),
+        "engine_status": meta.get("status"),
     }
 
 
 # ---------------------------------------------------------------------------
 # async 查询 helper
 # ---------------------------------------------------------------------------
+
+
+async def _query_avg_latency(db: AsyncSession, since: datetime) -> tuple[float | None, str | None]:
+    """窗口内 SUCCESS run 的平均时延（秒）与最新算法版本（自兜底，失败返回 None）。
+
+    0930 诚实化：替代原硬编码 42s/引擎常量。
+    """
+    try:
+        result = await db.execute(
+            text(
+                """
+                SELECT AVG(EXTRACT(EPOCH FROM (finished_at - started_at))) AS avg_sec,
+                       MAX(algorithm_version) AS algo_ver
+                FROM diagnosis_run
+                WHERE status = 'SUCCESS'
+                  AND started_at IS NOT NULL
+                  AND finished_at IS NOT NULL
+                  AND created_at >= :since
+                """
+            ),
+            {"since": since},
+        )
+        row = result.mappings().first()
+        if not row:
+            return None, None
+        avg_sec = row.get("avg_sec")
+        return (
+            round(float(avg_sec), 1) if avg_sec is not None else None,
+            row.get("algo_ver"),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("诊断平均时延查询失败，按无数据处理", exc_info=True)
+        return None, None
 
 
 async def _get_scope_unit_ids(db: AsyncSession, scope_type: str, scope_id: int) -> list[str] | None:
@@ -727,13 +750,19 @@ async def build_diagnosis(
     except Exception:  # noqa: BLE001
         logger.warning("诊断 rootcause_top 块构建失败", exc_info=True)
 
-    # --- summary_band：Row1 摘要带（纯派生，零 DDL）---
+    # --- summary_band：Row1 摘要带 ---
     try:
+        # 0930 诚实化：平均时延=SUCCESS run 实际时长均值；引擎版本=run 内
+        # algorithm_version 最新值（此前硬编码 42s/原型常量）
+        avg_latency, algo_ver = await _query_avg_latency(db, since_30d)
+        engine_meta = {"version": algo_ver, "status": "ONLINE"} if algo_ver else None
         diagnosis["summary_band"] = shape_summary_band(
             open_tags_len=len(diagnosis["open_tags"]),
             concl_items=diagnosis["concl_timeline"],
+            engine_meta=engine_meta,
             diag_count_delta=None,
             worsening_delta=None,
+            avg_latency_sec=avg_latency,
         )
     except Exception:  # noqa: BLE001
         logger.warning("诊断 summary_band 块构建失败", exc_info=True)

@@ -39,6 +39,9 @@ engine = create_async_engine(
             #   - date_trunc('day', now()) 的日界落在 08:00 +08，凌晨时段「昨日基线」取到当天快照。
             # 会话时区设为 UTC 后，naive 列即按 UTC 解释，与写入口径一致。
             "timezone": "UTC",
+            # 0930 泄漏兜底：idle in transaction 超过 5 分钟由服务端断开
+            # （应用事务均为毫秒级；泄漏连接从「挂数小时」变成「5 分钟自清理」）
+            "idle_in_transaction_session_timeout": "300000",
         },
         "command_timeout": 60,
     },

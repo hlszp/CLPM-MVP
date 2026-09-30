@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.alert import AlertEvent
 from app.models.handling_order import HandlingOrder
 from app.models.plant_node import PlantNode
 from app.models.sys_config import SysConfig
@@ -545,6 +546,47 @@ async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
     return [dict(r._mapping) for r in result.all()]
 
 
+async def _query_alert_events(db: AsyncSession, limit: int = 8) -> list[dict[str, Any]]:
+    """预警规则引擎真实事件（alert_event）近 24h 未决优先，最新在前。
+
+    0930 新增：工作台总览"预警事件"卡片此前数据源是 diagnosis_run 检出标签
+    （诊断链），与预警规则引擎（alert_event）是两条链——用户在有预警事件的
+    前提下看到空白，属设计位错接。
+    """
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
+    result = await db.execute(
+        select(
+            AlertEvent.id,
+            AlertEvent.rule_code,
+            AlertEvent.loop_id,
+            AlertEvent.severity,
+            AlertEvent.status,
+            AlertEvent.triggered_value,
+            AlertEvent.triggered_at,
+        )
+        .where(AlertEvent.triggered_at >= since)
+        .order_by(
+            AlertEvent.status == "ACTIVE",
+            AlertEvent.status == "ACKNOWLEDGED",
+            AlertEvent.triggered_at.desc(),
+        )
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {
+            "id": str(r.id),
+            "rule_code": r.rule_code,
+            "loop_id": str(r.loop_id) if r.loop_id else None,
+            "severity": r.severity,
+            "status": r.status,
+            "triggered_value": float(r.triggered_value) if r.triggered_value is not None else None,
+            "triggered_at": _iso(r.triggered_at),
+        }
+        for r in rows
+    ]
+
+
 async def _query_funnel(db: AsyncSession, scope_type: str, scope_id: int) -> dict[str, Any] | None:
     """MV-03 mv_handling_funnel 指定 scope 行（GLOBAL: scope_type='GLOBAL', scope_id=0）。"""
     result = await db.execute(
@@ -590,6 +632,7 @@ async def build_overview(
         "units": [],
         "pareto": [],
         "roots": [],
+        "alert_events": [],
         "funnel": None,
     }
 
@@ -670,6 +713,12 @@ async def build_overview(
         overview["roots"] = shape_roots(root_rows, ROOTS_TOP_N)
     except Exception:  # noqa: BLE001
         logger.warning("总览 roots 块构建失败", exc_info=True)
+
+    # --- alert_events：预警规则引擎真实事件（0930：用户预期"有预警事件"的本源）---
+    try:
+        overview["alert_events"] = await _query_alert_events(db)
+    except Exception:  # noqa: BLE001
+        logger.warning("总览 alert_events 块构建失败", exc_info=True)
 
     # --- funnel：处置漏斗（MV-03，scope 行）---
     try:

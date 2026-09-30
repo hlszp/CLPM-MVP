@@ -2,17 +2,19 @@
 /**
  * 系统总览 · 预警事件时间线（原型对齐）
  *
- * 展示近 24h 的预警/诊断事件列表：
- * - 使用 roots 数据（top N 根因标签）作为事件源
- * - 严重度：CRITICAL 红 / ERROR 橙 / WARN 黄 / INFO 灰
- * - 每条：时间 + 标签名 + 描述 + 严重度 dot
+ * 0930 数据源修正：接预警规则引擎真实事件（alert_event，经 A-01 的
+ * alert_events 块下发）——此前接的是 diagnosis_run 检出标签（诊断链），
+ * 用户在"有预警事件"的前提下看到空白，属设计位错接。
+ * 每条：规则编号 + 回路位号 + 严重度 + 触发时间（真实时间）。
  */
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed } from 'vue';
 
+import { formatLocalTime } from '#/utils/format';
+
 const props = defineProps<{
-  roots?: WorkbenchApi.RootRow[];
+  alertEvents?: WorkbenchApi.AlertEventItem[];
 }>();
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -29,25 +31,21 @@ const SEVERITY_LABELS: Record<string, string> = {
   INFO: '提示',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: '未决',
+  ACKNOWLEDGED: '已确认',
+  RESOLVED: '已解除',
+};
+
 const events = computed(() => {
-  if (!props.roots?.length) return [];
-  // 0930：使用后端 lastSeenAt 真实最近检出时间（此前为前端伪造的均匀间隔假时间）
-  return props.roots.slice(0, 6).map((r) => ({
-    ...r,
-    time: r.last_seen_at ? new Date(r.last_seen_at) : null,
-    color: SEVERITY_COLORS[r.severity ?? 'INFO'],
-    label: SEVERITY_LABELS[r.severity ?? 'INFO'],
+  if (!props.alertEvents?.length) return [];
+  return props.alertEvents.map((e) => ({
+    ...e,
+    color: SEVERITY_COLORS[e.severity ?? 'INFO'] ?? SEVERITY_COLORS.INFO!,
+    label: SEVERITY_LABELS[e.severity ?? 'INFO'] ?? e.severity,
+    statusLabel: e.status ? (STATUS_LABELS[e.status] ?? e.status) : '',
   }));
 });
-
-function formatTime(d: Date | null) {
-  if (!d || Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-}
 </script>
 
 <template>
@@ -59,7 +57,7 @@ function formatTime(d: Date | null) {
     <div class="flex flex-1 flex-col gap-0.5 overflow-auto p-2">
       <div
         v-for="evt in events"
-        :key="evt.tag_code"
+        :key="evt.id"
         class="flex items-start gap-2 rounded border border-[#EBEEF5] px-2 py-1.5"
       >
         <span
@@ -69,7 +67,7 @@ function formatTime(d: Date | null) {
         <div class="flex flex-1 flex-col gap-0.5">
           <div class="flex items-center gap-1">
             <span class="text-xs font-medium text-gray-700">
-              {{ evt.tag_name }}
+              {{ evt.rule_code }}
             </span>
             <span
               class="rounded px-1 py-0.5 text-[9px]"
@@ -80,13 +78,19 @@ function formatTime(d: Date | null) {
             >
               {{ evt.label }}
             </span>
+            <span
+              v-if="evt.statusLabel"
+              class="rounded bg-gray-100 px-1 py-0.5 text-[9px] text-gray-500"
+            >
+              {{ evt.statusLabel }}
+            </span>
           </div>
           <span class="text-[10px] text-gray-400">
-            {{ evt.count }} 条次 · 活跃 {{ evt.active_count }}
+            触发值 {{ evt.triggered_value ?? '—' }}
           </span>
         </div>
         <span class="flex-none text-[10px] text-gray-400">
-          {{ formatTime(evt.time) }}
+          {{ formatLocalTime(evt.triggered_at, 'MM-DD HH:mm') }}
         </span>
       </div>
       <div

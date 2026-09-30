@@ -18,6 +18,7 @@ scope_id 约定（同 G-总览）：GLOBAL → 0；FACTORY/AREA/UNIT → PlantNo
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -357,6 +358,23 @@ def shape_trend(
 
     current = list(getattr(win_row, "score_trend", None) or [])
     previous = list(getattr(prev_win_row, "score_trend", None) or [])
+
+    # 0930 粒度守卫：previous 桶距与 current 差异过大（如 24h 小时桶混排 7d 日桶）
+    # 时丢弃 previous——错粒度序列同轴混排会让趋势曲线失真（诚实留空优于错图）
+    def _bucket_hours(points: list[Any]) -> float | None:
+        if len(points) < 2:
+            return None
+        try:
+            a = datetime.fromisoformat(points[0]["t"].replace("Z", "+00:00"))
+            b = datetime.fromisoformat(points[1]["t"].replace("Z", "+00:00"))
+            return abs((b - a).total_seconds()) / 3600
+        except (KeyError, ValueError, TypeError):
+            return None
+
+    cur_bh = _bucket_hours(current)
+    prev_bh = _bucket_hours(previous)
+    if cur_bh and prev_bh and abs(cur_bh - prev_bh) > max(cur_bh, prev_bh) * 0.5:
+        previous = []
     dist = getattr(win_row, "distribution", None) or {}
 
     return {

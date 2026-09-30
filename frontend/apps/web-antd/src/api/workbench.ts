@@ -169,6 +169,17 @@ export namespace WorkbenchApi {
     tag_name: string;
   }
 
+  /** 预警规则引擎真实事件（0930：总览"预警事件"卡片数据源，近 24h 未决优先） */
+  export interface AlertEventItem {
+    id: string;
+    rule_code: string;
+    loop_id: null | string;
+    severity: 'CRITICAL' | 'ERROR' | 'INFO' | 'WARN' | null;
+    status: null | string;
+    triggered_at?: null | string;
+    triggered_value: null | number;
+  }
+
   /** 处置漏斗（MV-03，4 泳道计数 + 超期 + 平均周期；缺失为 null） */
   export interface FunnelStat {
     avg_cycle_hours: null | number;
@@ -188,6 +199,7 @@ export namespace WorkbenchApi {
     /** C（2026-09-28）：装置/单元排名为空的判定原因（NO_ORG_NODES / NO_PRECALC_ROWS） */
     plantsEmptyReason?: 'NO_ORG_NODES' | 'NO_PRECALC_ROWS' | null;
     roots: RootRow[];
+    alert_events: AlertEventItem[];
     scope: { id: null | number; type: ScopeType };
     units: UnitRow[];
     window: TimeWindow;

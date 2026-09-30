@@ -28,7 +28,6 @@ v1.1/v1.2 更新：
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -897,11 +896,10 @@ async def _aggregate_degradation_and_data_quality(
         )
         return {str(s.loop_id): s for s in (await db.execute(c_stmt)).scalars().all()}
 
-    snap_map, prev_map, confidence_map = await asyncio.gather(
-        _fetch_latest_snap(),
-        _fetch_prev_snap(),
-        _fetch_confidence(),
-    )
+    # 0930：同上，单会话禁并发，改顺序 await
+    snap_map = await _fetch_latest_snap()
+    prev_map = await _fetch_prev_snap()
+    confidence_map = await _fetch_confidence()
 
     items: list[_RawItem] = []
 
@@ -1266,7 +1264,14 @@ async def list_attention(
     # 四个来源（ALERT / DATA_QUALITY / FITNESS / HANDLING）相互独立，
     # 单一来源异常（缺表、TDengine/Redis 抖动）不应让整个关注队列 500：
     # 失败来源按空结果处理并留痕，其余来源照常返回。
-    results = await asyncio.gather(*tasks, return_exceptions=True) if tasks else []
+    # 0930 泄漏修复：单条 AsyncSession 不支持并发执行（asyncpg _Atomic 守卫会抛
+    # InterfaceError），gather 的"并行"实为串行竞态 + 挂死窗口；改顺序 await。
+    results: list[Any] = []
+    for t in tasks:
+        try:
+            results.append(await t)
+        except Exception as exc:  # noqa: BLE001
+            results.append(exc)
     unavailable: list[str] = []
     label_to_source = {
         "ALERT": "ALERT",

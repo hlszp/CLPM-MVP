@@ -42,6 +42,7 @@ import { useUserStore } from '@vben/stores';
 
 import {
   getHandlingLoopsApi,
+  getHandlingOrderApi,
   getHandlingOrdersApi,
   getHandlingStatisticsApi,
   getOrderKpiComparisonApi,
@@ -272,8 +273,33 @@ let kpiSeq = 0;
 watch(selectedTask, async (task) => {
   kpiCompare.value = null;
   if (!task) return;
-  // 仅 VERIFYING/CLOSED 工单有 KPI 前后对比意义；其余不拉取
-  if (task.status !== 'VERIFYING' && task.status !== 'CLOSED') return;
+  // 0930：仅 VERIFYING 有"实时对比预览"端点意义（CLOSED 调它恒 422）；
+  // CLOSED 的前后 KPI 已在验证时固化进工单，改拉详情取固化字段
+  if (task.status === 'CLOSED') {
+    const seq = ++kpiSeq;
+    try {
+      const detail = await getHandlingOrderApi(task.id);
+      if (seq === kpiSeq && (detail.kpiBefore || detail.kpiAfter)) {
+        kpiCompare.value = {
+          id: detail.id,
+          loopId: detail.loopId,
+          kpiBefore: detail.kpiBefore ?? null,
+          kpiAfter: detail.kpiAfter ?? null,
+          // 固化窗口时间取工单执行/验证时间（近似口径，仅展示用）
+          window: {
+            beforeStart: detail.startedAt ?? null,
+            beforeEnd: detail.startedAt ?? null,
+            afterStart: detail.submittedAt ?? null,
+            afterEnd: detail.submittedAt ?? null,
+          },
+        };
+      }
+    } catch {
+      if (seq === kpiSeq) kpiCompare.value = null;
+    }
+    return;
+  }
+  if (task.status !== 'VERIFYING') return;
   const seq = ++kpiSeq;
   try {
     const cmp = await getOrderKpiComparisonApi(task.id);

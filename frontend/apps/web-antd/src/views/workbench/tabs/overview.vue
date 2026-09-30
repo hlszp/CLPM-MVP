@@ -218,7 +218,7 @@ function onFunnelLaneClick(status: HandlingApi.OrderStatus) {
         <ScoreTrendChart :trend="scoreTrend" :flags="currentWindowBlock?.flags" />
       </div>
       <div class="col-span-4 min-h-0">
-        <EventTimeline :roots="overview?.roots" />
+        <EventTimeline :alert-events="overview?.alert_events" />
       </div>
       <div class="col-span-3 min-h-0">
         <FunnelStats :funnel="overview?.funnel" @lane-click="onFunnelLaneClick" />

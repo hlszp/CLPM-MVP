@@ -164,6 +164,11 @@ redis_client: _RedisProxy = _RedisProxy(
     # Leader 全面瘫痪）。64 = 单进程合理并发峰值的多倍；触顶时单条命令报
     # "Too many connections" 快速失败，而非耗尽进程全部文件描述符
     max_connections=64,
+    # 0930 连接泄漏根因修复：无超时的 Redis 命令在半开连接上永久挂起
+    # （挂起点可能落在持有 PG 事务的代码段内 → idle in transaction 挂数小时）
+    socket_timeout=5,
+    socket_connect_timeout=5,
+    health_check_interval=30,
 )
 
 

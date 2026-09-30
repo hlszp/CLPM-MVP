@@ -394,17 +394,17 @@ class TestShapeSummaryBand:
         out = shape_summary_band(open_tags_len=6, concl_items=concl_items)
         assert out["diag_count"] == 17
         assert out["worsening_loops"] == 6
-        assert out["avg_latency_sec"] == 42
+        assert out["avg_latency_sec"] is None  # 0930 诚实化：无 run 时长数据 → None
         assert out["avg_latency_target"] == AVG_LATENCY_TARGET_SEC
-        assert out["avg_latency_ok"] is True
+        assert out["avg_latency_ok"] is False  # None 不判达标
         # 均值 = (12*0.91 + 5*0.65)/17 = (10.92+3.25)/17 = 14.17/17 ≈ 0.83
         assert out["avg_confidence"] == round((12 * 0.91 + 5 * 0.65) / 17, 2)
         assert out["high_confidence_count"] == 12
         assert out["total_confidence_count"] == 17
         # 引擎元信息默认回退
-        assert out["engine_version"] == "v3.2.1"
-        assert out["engine_running_days"] == 126
-        assert out["engine_status"] == "ONLINE"
+        assert out["engine_version"] is None  # 0930 诚实化
+        assert out["engine_running_days"] is None  # 0930 诚实化
+        assert out["engine_status"] is None  # 0930 诚实化
 
     def test_置信度归一与空容错(self):
         """85 → 0.85（归一）；0~1 口径透传；None 跳过。"""
@@ -443,7 +443,7 @@ class TestShapeSummaryBand:
         assert out["worsening_loops"] == 0
         assert out["avg_confidence"] is None
         assert out["high_confidence_count"] == 0
-        assert out["engine_rulebase_updated_at"] == "2026-08-18"
+        assert out["engine_rulebase_updated_at"] is None  # 0930 诚实化
 
 
 # ===========================================================================
@@ -522,8 +522,10 @@ class TestBuildDiagnosis:
         assert out["summary_band"]["worsening_loops"] == 1  # open_tags=1
         assert out["summary_band"]["diag_count"] == 1  # concl=1 (置信度0.96→归一)
         assert out["summary_band"]["high_confidence_count"] == 1
-        assert out["summary_band"]["avg_latency_ok"] is True
-        assert out["summary_band"]["engine_version"] == "v3.2.1"
+        # 0930 诚实化：时延/引擎版本来自 _query_avg_latency（本测试 mock db 未
+        # 覆盖该查询 → helper 自兜底返回 None）
+        assert out["summary_band"]["avg_latency_ok"] is False
+        assert out["summary_band"]["engine_version"] is None
         # open_tags（severity 映射 + 中文 + SLA 下线）
         assert len(out["open_tags"]) == 1
         assert out["open_tags"][0]["spark"] == [70.0, 68.0]

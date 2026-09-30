@@ -72,7 +72,8 @@ class TestShapeWindows:
         assert set(out.keys()) == {"24h", "7d", "30d"}
         assert out["24h"]["score"] == 82.0
         assert out["24h"]["status"] == "GOOD"
-        assert out["24h"]["loop_count"] == 120
+        # 0930：loop_count 读侧换算为平均每小时参评回路数（24h 累计 120 → 5/小时）
+        assert out["24h"]["loop_count"] == 5
         assert set(out["24h"]["metrics"].keys()) == {k for k, _ in KPI_METRICS}
         assert out["24h"]["metrics"]["good_value_rate"] == 0.95
         assert out["7d"]["metrics"]["steady_rate"] == 0.80
@@ -331,6 +332,10 @@ class TestBuildOverview:
                 AsyncMock(return_value=[]),
             ),
             patch(
+                "app.services.workbench_overview._query_alert_events",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
                 "app.services.workbench_overview._query_funnel",
                 AsyncMock(side_effect=RuntimeError("MV 不可读")),  # 模拟单块失败
             ),
@@ -347,6 +352,7 @@ class TestBuildOverview:
             "units",
             "pareto",
             "roots",
+            "alert_events",  # 0930：预警规则引擎真实事件
             "funnel",
         }
         assert data["scope"] == {"type": "GLOBAL", "id": None}
