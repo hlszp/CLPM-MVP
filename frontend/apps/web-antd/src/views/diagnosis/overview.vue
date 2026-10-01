@@ -253,7 +253,7 @@ onMounted(() => {
   <Page>
     <ClpmPageToolbar
       :loading="latestLoading"
-      subtitle="每回路最新一条诊断结论：症状证据 → 原因分类 → 处置建议"
+      subtitle="每回路最新一条诊断结论：症状证据 → 原因分类 → 处置建议（表分页渲染）"
       title="诊断概览"
     >
       <template #actions>
@@ -387,9 +387,16 @@ onMounted(() => {
             "
             :data-source="filteredLatestItems"
             :loading="latestLoading"
-            :pagination="false"
             :row-key="(record: DiagnosisApi.LatestRunItem) => record.loopId"
-            :scroll="{ x: 1330, y: 560 }"
+            :pagination="{
+              pageSize: 50,
+              pageSizeOptions: ['20', '50', '100'],
+              showSizeChanger: true,
+              showTotal: (t: number) => `共 ${t} 条`,
+              size: 'small',
+              showLessItems: true,
+            }"
+            :scroll="{ x: 1330 }"
             size="small"
           >
             <template #bodyCell="{ column, record }">

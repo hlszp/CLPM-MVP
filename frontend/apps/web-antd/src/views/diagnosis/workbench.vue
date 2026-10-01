@@ -122,11 +122,13 @@ const router = useRouter();
 
 // ===== 左脊柱：装置树 =====
 /** ant Tree 节点约定为 {key, title}（TreeSelect 才是 {value, label}，
- *  误用会让 Tree 自动生成 "0-0" 假 key 传给后端 → UUID 列 500） */
+ *  误用会让 Tree 自动生成 "0-0" 假 key 传给后端 → UUID 列 500）。
+ *  额外保留 type（回路挂 UNIT，用于初始自动定位第一个单元） */
 interface PlantTreeNode {
   children?: PlantTreeNode[];
   key: string;
   title: string;
+  type?: string;
 }
 
 const plantTreeData = ref<PlantTreeNode[]>([]);
@@ -139,8 +141,24 @@ function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
   return nodes.map((n) => ({
     key: n.id,
     title: n.name,
+    type: n.type,
     children: n.children?.length ? buildTreeNodes(n.children) : undefined,
   }));
+}
+
+/** DFS 找第一个 UNIT 节点（含其祖先链，用于初始选中与展开） */
+function findFirstUnit(
+  nodes: PlantTreeNode[],
+  ancestors: PlantTreeNode[] = [],
+): { ancestors: PlantTreeNode[]; node: PlantTreeNode } | null {
+  for (const n of nodes) {
+    if (n.type === 'UNIT') return { ancestors, node: n };
+    if (n.children?.length) {
+      const hit = findFirstUnit(n.children, [...ancestors, n]);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
 async function loadPlantTree(): Promise<void> {
@@ -176,14 +194,35 @@ const selectedLoopIds = ref<string[]>([]);
 /** 跨装置回路名称缓存：切换装置树后仍能显示已选回路的位号/名称 */
 const loopCache = ref(new Map<string, LoopApi.LoopListItem>());
 
+/** 左脊柱预检徽标筛选（2026-10-01 用户需求：按充足性符号筛选回路） */
+type BadgeFilter = 'all' | 'sufficient' | 'marginal' | 'insufficient' | 'unknown';
+const badgeFilter = ref<BadgeFilter>('all');
+
 const filteredLoops = computed(() => {
+  let list = loopItems.value;
+  if (badgeFilter.value !== 'all') {
+    list = list.filter(
+      (l) => (precheckItems.value.get(l.loopId)?.level ?? 'unknown') === badgeFilter.value,
+    );
+  }
   const kw = loopKeyword.value.trim().toLowerCase();
-  if (!kw) return loopItems.value;
-  return loopItems.value.filter(
+  if (!kw) return list;
+  return list.filter(
     (l) =>
       l.tagName.toLowerCase().includes(kw) ||
       (l.description ?? '').toLowerCase().includes(kw),
   );
+});
+
+/** 当前范围内各徽标档计数（筛选按钮角标；评估禁用时整组隐藏） */
+const badgeCounts = computed(() => {
+  const c: Record<string, number> = { all: 0, sufficient: 0, marginal: 0, insufficient: 0, unknown: 0 };
+  for (const l of loopItems.value) {
+    const lv = precheckItems.value.get(l.loopId)?.level ?? 'unknown';
+    c[lv] = (c[lv] ?? 0) + 1;
+  }
+  c.all = loopItems.value.length;
+  return c;
 });
 
 // P2（2026-10-01）：左脊柱虚拟化——961 回路全量渲染 ~1000 行 DOM 可感
@@ -599,14 +638,32 @@ function goBackToWorkbench() {
 }
 
 onMounted(() => {
-  loadPlantTree();
-  loadLoops();
   loadOperators();
+  // 2026-10-01：初始只加载第一个单元的回路（原全量 961 回路 13 页串行
+  // + 预检 6 批，左脊柱"迟迟不能刷新"；切装置节点时动态加载对应范围）
+  void loadPlantTreeAndSelectFirstUnit();
   const q = route.query.loopId;
   if (typeof q === 'string' && q) {
     selectedLoopIds.value = [q];
   }
 });
+
+/** 树加载后自动选中第一个 UNIT 并展开其祖先链；无 UNIT 时回退全量 */
+async function loadPlantTreeAndSelectFirstUnit(): Promise<void> {
+  await loadPlantTree();
+  const hit = findFirstUnit(plantTreeData.value);
+  if (!hit) {
+    loadLoops(); // 无单元层级（如种子/异常结构）：回退全量
+    return;
+  }
+  plantTreeSelectedKeys.value = [hit.node.key];
+  selectedPlantNodeId.value = hit.node.key;
+  for (const a of hit.ancestors) {
+    if (!plantTreeExpandedKeys.value.includes(a.key))
+      plantTreeExpandedKeys.value.push(a.key);
+  }
+  loadLoops(hit.node.key);
+}
 </script>
 
 <template>
@@ -674,6 +731,32 @@ onMounted(() => {
           placeholder="搜索位号/描述..."
           size="small"
         />
+        <!-- 预检徽标筛选（数据充足性；评估禁用时徽标整列隐藏，筛选组同隐藏） -->
+        <div v-if="precheckAssessEnabled" class="diag-badge-filter">
+          <button
+            v-for="opt in [
+              { key: 'all', label: '全部', color: '#6c757d' },
+              { key: 'sufficient', label: '充足', color: '#10b981' },
+              { key: 'marginal', label: '疑似不足', color: '#f59e0b' },
+              { key: 'insufficient', label: '不足', color: '#ef4444' },
+              { key: 'unknown', label: '未知', color: '#94a3b8' },
+            ]"
+            :key="opt.key"
+            class="diag-badge-filter__btn"
+            :class="{ 'diag-badge-filter__btn--active': badgeFilter === opt.key }"
+            :title="`按数据充足性筛选（${opt.label}）`"
+            @click="badgeFilter = opt.key as BadgeFilter"
+          >
+            <span
+              class="diag-badge-filter__dot"
+              :style="{ background: opt.color }"
+            ></span>
+            {{ opt.label }}
+            <span class="diag-badge-filter__count">{{
+              badgeCounts[opt.key] ?? 0
+            }}</span>
+          </button>
+        </div>
         <div
           :ref="setDiagLoopListRef"
           class="diag-sidebar__list-wrap"
@@ -1153,6 +1236,51 @@ onMounted(() => {
 .diag-plant-tree :deep(.ant-tree-treenode) {
   padding-top: 0;
   padding-bottom: 0;
+}
+
+/* 预检徽标筛选组 */
+.diag-badge-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 6px 0 4px;
+}
+
+.diag-badge-filter__btn {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 3px;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.diag-badge-filter__btn:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--accent));
+}
+
+.diag-badge-filter__btn--active {
+  font-weight: 500;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 8%);
+  border-color: hsl(var(--primary) / 25%);
+}
+
+.diag-badge-filter__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.diag-badge-filter__count {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
 }
 
 .diag-sidebar__list-wrap {
