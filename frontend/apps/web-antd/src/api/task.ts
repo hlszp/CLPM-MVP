@@ -21,6 +21,7 @@ export namespace TaskApi {
   export type TaskType =
     | 'BACKFILL'
     | 'CUSTOM'
+    | 'DIAGNOSIS'
     | 'REPORT'
     | 'STANDARD'
     | 'TUNING';

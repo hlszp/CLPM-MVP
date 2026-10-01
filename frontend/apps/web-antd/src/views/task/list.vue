@@ -89,6 +89,11 @@ const taskTypeTextMap: Record<string, string> = {
   BACKFILL: '手动评估',
   CUSTOM: '自定义评估',
   STANDARD: '自动评估',
+  // 2026-10-01：定时/手动诊断任务进入统一任务列表（每日全量诊断上线），
+  // 原缺映射显示英文原串；TUNING/REPORT 同步补齐
+  DIAGNOSIS: '回路诊断',
+  TUNING: '整定任务',
+  REPORT: '报告导出',
 };
 
 // ============ 详情 Drawer ============
@@ -510,6 +515,10 @@ onUnmounted(() => {
         >
           <Select.Option value="STANDARD">自动评估</Select.Option>
           <Select.Option value="BACKFILL">手动评估</Select.Option>
+          <Select.Option value="CUSTOM">自定义评估</Select.Option>
+          <Select.Option value="DIAGNOSIS">回路诊断</Select.Option>
+          <Select.Option value="TUNING">整定任务</Select.Option>
+          <Select.Option value="REPORT">报告导出</Select.Option>
         </Select>
         <Select
           v-model:value="filterStatus"
