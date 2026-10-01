@@ -43,6 +43,7 @@ import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useModules } from '#/composables/use-modules';
+import { useVirtualList } from '#/composables/use-virtual-list';
 import { useReturnNav } from '#/composables/use-return-nav';
 
 // 16 号文 F3：诊断健康度折叠块（D6 概览区默认展开）
@@ -203,6 +204,21 @@ const filteredLoops = computed(() => {
       (l.description ?? '').toLowerCase().includes(kw),
   );
 });
+
+// P2（2026-10-01）：左脊柱虚拟化——961 回路全量渲染 ~1000 行 DOM 可感
+// 卡顿；复用 use-virtual-list（回路工作台同款，定高 32px）
+const {
+  containerRef: diagLoopListRef,
+  offsetY: diagLoopListOffsetY,
+  onScroll: onDiagLoopListScroll,
+  totalHeight: diagLoopListTotalHeight,
+  visibleItems: visibleDiagLoopItems,
+} = useVirtualList({ itemHeight: 32, items: filteredLoops });
+
+/** 模板函数 ref：容器元素写入组合式函数（对齐 VNodeRef 类型） */
+function setDiagLoopListRef(el: unknown) {
+  diagLoopListRef.value = (el as HTMLElement) || null;
+}
 
 async function loadLoops(plantNodeId?: string): Promise<void> {
   loopLoading.value = true;
@@ -839,10 +855,21 @@ onMounted(() => {
           placeholder="搜索位号/描述..."
           size="small"
         />
-        <div class="diag-sidebar__list-wrap">
+        <div
+          :ref="setDiagLoopListRef"
+          class="diag-sidebar__list-wrap"
+          @scroll="onDiagLoopListScroll"
+        >
           <Spin :spinning="loopLoading" size="small">
             <div
-              v-for="item in filteredLoops"
+              :style="{
+                height: `${diagLoopListTotalHeight}px`,
+                position: 'relative',
+              }"
+            >
+              <div :style="{ transform: `translateY(${diagLoopListOffsetY}px)` }">
+            <div
+              v-for="{ item } in visibleDiagLoopItems"
               :key="item.loopId"
               class="diag-loop-item"
               :class="{
@@ -867,6 +894,9 @@ onMounted(() => {
                 :item="precheckItems.get(item.loopId)"
               />
               <span class="diag-loop-item__unit">{{ item.unitName }}</span>
+            </div>
+                </div>
+              </div>
             </div>
             <!-- 加载失败可见化：此前只 console.error，空白脊柱被误解为"没有回路" -->
             <div
@@ -1646,7 +1676,8 @@ onMounted(() => {
   display: flex;
   gap: 6px;
   align-items: center;
-  min-height: 28px;
+  /* P2 虚拟化：定高（use-virtual-list itemHeight=32 的前提） */
+  height: 32px;
   padding: 0 4px;
   font-size: 12px;
   cursor: pointer;

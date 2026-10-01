@@ -42,7 +42,11 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
+import type { MetricApi } from '#/api/metric';
+
 import { getLoopListApi } from '#/api/loop';
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
+import { useConfigAccess } from '#/composables/use-config-access';
 import {
   getLoopMetricSeriesApi,
   getLoopSnapshotsApi,
@@ -430,6 +434,34 @@ function withAlpha(hex: string, alpha: number): string {
   return `${hex}${v}`;
 }
 
+/**
+ * E2 修复（2026-10-01）：定级阈值动态化——原 90/80/60 硬编码与可配置
+ * 定级阈值（/configs/grading-thresholds）脱钩，管理员改阈值后矩阵
+ * 着色/薄弱判定与等级分布、grade 下钻数字对不上。口径对齐
+ * use-score-color：动态配置优先，空时降级 GB/T 默认五档。
+ */
+const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
+/** 动态配置优先，空时降级 GB/T 默认五档（与 use-score-color 同口径） */
+const effectiveGradeThresholds = computed<MetricApi.GradingThresholdItem[]>(
+  () =>
+    gradingThresholds.value.length > 0
+      ? gradingThresholds.value
+      : GRADE_THRESHOLDS,
+);
+
+async function loadGradingThresholds() {
+  // SPONSOR/EXPERT 无 /configs/* 读取权限，前置跳过避免 403 toast（同 pid-dashboard）
+  const { canReadConfig } = useConfigAccess();
+  if (!canReadConfig.value) return;
+  try {
+    const { getGradingThresholdsApi } = await import('#/api/metric');
+    const data = await getGradingThresholdsApi();
+    gradingThresholds.value = data.thresholds ?? [];
+  } catch {
+    // 加载失败时使用默认阈值
+  }
+}
+
 /** 命中档位语义色；值无效/规则缺失 → null（不着色） */
 function metricColor(rule: ColorRule | null, value: null | number): null | string {
   if (!rule || value === null || value === undefined || Number.isNaN(value)) {
@@ -437,11 +469,17 @@ function metricColor(rule: ColorRule | null, value: null | number): null | strin
   }
   const c = themeColors.value;
   if (rule.kind === 'grade') {
-    // 0929 口径收敛：与 GB/T 五档（GRADE_THRESHOLDS）对齐，4/5 档共用 DANGER
-    // （跟随 use-score-color 档位降级链：合格 WARNING、警告/不合格 DANGER）
-    if (value >= 90) return c.SUCCESS;
-    if (value >= 80) return c.INFO;
-    if (value >= 60) return c.WARNING;
+    // 0929 口径收敛：与 GB/T 五档对齐，4/5 档共用 DANGER
+    // （合格 WARNING、警告/不合格 DANGER；E2：边界改为动态阈值）
+    const sorted = [...effectiveGradeThresholds.value].toSorted(
+      (a, b) => b.minScore - a.minScore,
+    );
+    const hit = sorted.find((t) => value >= t.minScore) ?? sorted.at(-1);
+    if (!hit) return null;
+    const lv = hit.level;
+    if (lv <= 1) return c.SUCCESS;
+    if (lv === 2) return c.INFO;
+    if (lv === 3) return c.WARNING;
     return c.DANGER;
   }
   if (value < rule.good) return c.SUCCESS;
@@ -465,7 +503,13 @@ function cellStyle(field: string, value: null | number) {
 function isWeakLoop(def: MetricDef, value: null | number): boolean {
   if (value === null || value === undefined || Number.isNaN(value)) return false;
   if (!def.color) return false;
-  if (def.color.kind === 'grade') return value < 60;
+  if (def.color.kind === 'grade') {
+    // E2：薄弱=低于合格档（level 3）下界（原硬编码 60）
+    const fairMin = effectiveGradeThresholds.value.find(
+      (t) => t.level === 3,
+    )?.minScore;
+    return value < (fairMin ?? 60);
+  }
   return value >= def.color.warn;
 }
 
@@ -752,10 +796,60 @@ function topWeakLoops(def: MetricDef, n: number): KpiSnapshotItem[] {
     .slice(0, n);
 }
 
+/**
+ * E3（2026-10-01）：服务端排序白名单镜像（performance.py
+ * SNAPSHOT_SORT_COLUMNS）——白名单内指标 TOP10 走服务端全量最差；
+ * 其余指标服务端不支持排序，降级当前页最差并诚实标注
+ */
+const SERVER_SORTABLE = new Set([
+  'score',
+  'accuracy_rate',
+  'auto_mode_rate',
+  'effective_auto_rate',
+  'fast_rate',
+  'steady_rate',
+  'good_value_rate',
+]);
+/** 当前趋势弹层取数口径（全厂 / 当前页） */
+const trendScope = ref<'all' | 'page'>('page');
+
+/** E3：趋势弹层标题按取数口径诚实标注 */
+const trendModalTitle = computed(
+  () =>
+    `趋势对比 - ${trendModalDef.value?.title ?? ''}（TOP10 薄弱回路${
+      trendScope.value === 'all'
+        ? '·全厂'
+        : '·当前页（该指标暂不支持全量排序）'
+    }）`,
+);
+
 async function openColumnTrend(field: string) {
   const def = defByField.get(field);
   if (!def || !def.seriesKey) return;
-  const targets = topWeakLoops(def, 10);
+  // E3：白名单内正向指标改服务端全量最差（原取当前页最差——961 回路
+  // 分页下"全厂 TOP10 最差"实为"当前页最差"，以偏概全）
+  let targets: KpiSnapshotItem[];
+  if (def.sortKey && SERVER_SORTABLE.has(def.sortKey)) {
+    const snapParams: any = {
+      page: 1,
+      pageSize: 10,
+      latestOnly: true,
+      sortBy: def.sortKey,
+      sortOrder: 'asc',
+    };
+    if (filterPlantNodeId.value) snapParams.plantNodeId = filterPlantNodeId.value;
+    if (windowValue.value !== 'latest') {
+      const { startTime, endTime } = currentWindowRange();
+      snapParams.startTime = startTime;
+      snapParams.endTime = endTime;
+    }
+    const ranked = await getLoopSnapshotsApi(snapParams);
+    targets = ranked.items;
+    trendScope.value = 'all';
+  } else {
+    targets = topWeakLoops(def, 10);
+    trendScope.value = 'page';
+  }
   if (targets.length === 0) {
     message.warning('当前数据无有效值，无法对比趋势');
     return;
@@ -906,6 +1000,7 @@ onMounted(() => {
   loadPlantNodeTree();
   loadLoops(filterPlantNodeId.value);
   loadList();
+  loadGradingThresholds(); // E2：动态定级阈值（着色/薄弱判定）
 });
 </script>
 
@@ -1123,7 +1218,7 @@ onMounted(() => {
     <!-- 列头趋势弹层：TOP N 薄弱回路折线叠加 -->
     <Modal
       v-model:open="trendModalVisible"
-      :title="`趋势对比 - ${trendModalDef?.title ?? ''}（TOP10 薄弱回路）`"
+      :title="trendModalTitle"
       :width="900"
       destroy-on-close
       :footer="null"
