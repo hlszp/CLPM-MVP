@@ -214,6 +214,17 @@ def _override_to_dict(o: DiagnosisThresholdOverride) -> dict:
 # ---------------------------------------------------------------------------
 
 
+async def load_enabled_map(db: AsyncSession) -> dict[str, bool]:
+    """全量诊断项启停映射（diag_code → is_enabled）。
+
+    v2 编排器消费（三模块审查 P0-2 修复）：is_enabled 仅显式 False 视为
+    停用（None/True 均启用，与模型 default=True 一致）。原实现该开关仅被
+    已退役旧引擎消费，配置页停用后 v2 仍执行——恒真开关违反诚实化。
+    """
+    result = await db.execute(select(DiagnosisConfig))
+    return {c.diag_code: bool(c.is_enabled) for c in result.scalars().all()}
+
+
 async def recommend_for_loop(db: AsyncSession, loop_id: str) -> dict:
     """按回路推荐阈值模板（P3-02 自适应推荐核心）。
 

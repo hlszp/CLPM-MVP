@@ -653,16 +653,22 @@ def _run_operators(
     effective_thresholds: dict[str, dict[str, Any]],
     operator_group: str,
     operators: list[str] | None = None,
+    disabled_diag_codes: set[str] | None = None,
 ) -> tuple[dict[str, OperatorResult], dict[str, FamilyFusion]]:
     """执行全部算子并按症状分组做族内融合。
 
     operators 为单算子细选白名单（None=不细选）：与 fast 组过滤叠加生效。
+    disabled_diag_codes 为诊断配置页停用的 diag_code 集合（P0-2：启停
+    开关接入 v2 链路，停用算子记 skip 而非静默执行）。
     """
     selected = set(operators) if operators else None
     results: dict[str, OperatorResult] = {}
     for name, (meta, fn) in OPERATOR_REGISTRY.items():
         if operator_group == "fast" and not meta.fast_group:
             results[name] = OperatorResult(name, executed=False, skip_reason="fast 组未包含该算子")
+            continue
+        if disabled_diag_codes and meta.diag_code in disabled_diag_codes:
+            results[name] = OperatorResult(name, executed=False, skip_reason="诊断配置已停用该算法")
             continue
         if selected is not None and name not in selected:
             results[name] = OperatorResult(name, executed=False, skip_reason="未在本次细选算子内")
@@ -748,6 +754,16 @@ async def run_diagnosis_for_loop(
 
     # 阈值（四级覆盖，失败回退默认）
     effective_thresholds = await _effective_thresholds(db, loop_id)
+
+    # 诊断配置启停（P0-2：配置页停用的算法在 v2 链路同步跳过；加载失败不阻断）
+    disabled_diag_codes: set[str] = set()
+    try:
+        from app.services.diagnosis_threshold import load_enabled_map
+
+        enabled_map = await load_enabled_map(db)
+        disabled_diag_codes = {code for code, on in enabled_map.items() if not on}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("诊断配置启停加载失败（本轮回退全启用）: %s", exc)
 
     # ---- 取数（宽表查询，本地 TDengine）----
     await _report(0.05, "读取历史数据")
@@ -984,7 +1000,7 @@ async def run_diagnosis_for_loop(
         )
 
         op_results, fusions = _run_operators(
-            op_input, effective_thresholds, operator_group, operators
+            op_input, effective_thresholds, operator_group, operators, disabled_diag_codes
         )
         await _report(0.9, "融合与分类")
         classification: ClassificationResult = classify(fusions, op_results, kpi_ctx, gate)

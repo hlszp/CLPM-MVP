@@ -2,7 +2,8 @@
 
 设计文档：docs/MVP设计/07-诊断模块设计方案.md §9.1
 端点清单：
-- POST /diagnosis/run        发起诊断（异步任务，仅手动触发）
+- POST /diagnosis/run        发起诊断（异步任务，手动触发入口；另有 SCHEDULED
+  定时 daily/weekly 与预警 EVENT 自动路径，见 diagnosis_schedule.py，16 号文 §12）
 - GET  /diagnosis/runs       诊断记录列表（筛选/分页）
 - GET  /diagnosis/runs/{id}  诊断详情（算子结果+证据链+波形快照）
 - GET  /diagnosis/operators  算子注册表元数据（前端+AI 共用）
@@ -422,6 +423,10 @@ async def review_diagnosis_run(
             LoopActionItem.run_id == row.id, LoopActionItem.source == "SYSTEM"
         )
     )
+    # D3 修复（2026-10-01）：删除后立即重建——懒生成仅在建议列表完全为空时
+    # 触发，存在 MANUAL 项时重新复核后的新结论永远不会再带出系统建议，
+    # 与上方注释"按复核结论重新带出"矛盾
+    await _generate_system_actions(db, row)
     await db.commit()
 
     return success(_run_to_summary(row, None))
@@ -470,7 +475,9 @@ async def list_run_actions(
         .scalars()
         .all()
     )
-    if not rows:
+    if not any(r.source == "SYSTEM" for r in rows):
+        # D3（2026-10-01）：仅无 SYSTEM 项时懒生成（原"列表完全为空"导致
+        # 只剩 MANUAL 项的 run 永远补不出系统建议；守卫口径已同步放宽）
         await _generate_system_actions(db, run)
         await db.commit()
         rows = (

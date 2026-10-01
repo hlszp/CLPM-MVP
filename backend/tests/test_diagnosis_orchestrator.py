@@ -11,7 +11,7 @@ import pytest
 
 import app.services.diagnosis_orchestrator as orch
 from app.contracts.data_types import RawTimeSeries
-from app.services.diagnosis_operators import OPERATOR_REGISTRY
+from app.services.diagnosis_operators import OPERATOR_REGISTRY, OperatorInput
 
 LOOP_ID = str(uuid4())
 START = datetime(2026, 8, 15, 0, 0, 0)
@@ -129,6 +129,32 @@ async def test_gate_fail_outputs_data_insufficient() -> None:
     assert run.status == "SUCCESS"  # 门禁不过属正常完成
     assert run.operator_results == {}  # 不执行算子
     assert run.recommendations[0]["content"].startswith("先通过数据管理")
+
+
+def test_disabled_diag_code_skips_operator() -> None:
+    """P0-2：配置页停用的算法（disabled_diag_codes）记 skip 而非执行。"""
+    ts = np.zeros(10)
+    op_input = OperatorInput(
+        loop_id=LOOP_ID,
+        signals={
+            "pv": np.full(10, 50.0),
+            "sp": np.full(10, 50.0),
+            "op": np.full(10, 50.0),
+            "mode": np.ones(10),
+        },
+        timestamps=ts,
+        meta={},
+    )
+    # 取一个真实算子的 diag_code 停用
+    meta = next(iter(OPERATOR_REGISTRY.values()))[0]
+    results, _fusions = orch._run_operators(
+        op_input, {}, "full", None, disabled_diag_codes={meta.diag_code}
+    )
+    target_name = next(
+        name for name, (m, _fn) in OPERATOR_REGISTRY.items() if m.diag_code == meta.diag_code
+    )
+    assert results[target_name].executed is False
+    assert "已停用" in (results[target_name].skip_reason or "")
 
 
 @pytest.mark.asyncio

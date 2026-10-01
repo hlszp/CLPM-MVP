@@ -49,12 +49,15 @@ async def generate_system_actions(db: AsyncSession, run: DiagnosisRun) -> int:
     分类来源：已复核 → review_results（人工复核优先）；
     未复核 → primary_category + secondary_categories（诊断结论）。
 
-    幂等守卫：该 run 已存在任何建议记录（SYSTEM 或 MANUAL）时跳过，
-    与懒生成路径"列表非空则不生成"的口径一致。返回新增条数。
+    幂等守卫：该 run 已存在 SYSTEM 建议时跳过（MANUAL 不拦——D3 修复
+    2026-10-01：复核路径先删 SYSTEM 再重建，原"存在任何记录即跳过"导致
+    有 MANUAL 项时复核后的新结论永远带不出系统建议）。返回新增条数。
     """
     existing = (
         await db.execute(
-            select(func.count()).select_from(LoopActionItem).where(LoopActionItem.run_id == run.id)
+            select(func.count())
+            .select_from(LoopActionItem)
+            .where(LoopActionItem.run_id == run.id, LoopActionItem.source == "SYSTEM")
         )
     ).scalar()
     if existing:

@@ -686,9 +686,13 @@ class TestRunActionsEndpoint:
         mock_db.commit.assert_awaited()
 
     def test_list_returns_existing_without_regeneration(self, client) -> None:
+        """D3（2026-10-01）新语义：已有 SYSTEM 建议才幂等跳过；仅 MANUAL 不拦。"""
         run = _make_run()
         existing = [
-            _make_action(source="MANUAL", category=None, content="人工措施", suggested_by="admin")
+            _make_action(
+                category="TUNING", content="重新整定 PID 参数：…", priority=1
+            ),
+            _make_action(source="MANUAL", category=None, content="人工措施", suggested_by="admin"),
         ]
         with mock_current_user(TEST_USERS["admin"]):
             mock_db = self._override_db(client, run, [self._list_result(existing)])
@@ -698,9 +702,11 @@ class TestRunActionsEndpoint:
             )
         assert resp.status_code == 200
         items = resp.json()["data"]["items"]
-        assert len(items) == 1
-        assert items[0]["source"] == "MANUAL"
-        assert items[0]["suggestedBy"] == "admin"
+        assert len(items) == 2
+        # 排序按 priority asc：SYSTEM(priority=1) 在前，MANUAL 在后
+        assert items[0]["source"] == "SYSTEM"
+        assert items[1]["source"] == "MANUAL"
+        assert items[1]["suggestedBy"] == "admin"
         mock_db.add.assert_not_called()
 
     def test_list_uses_review_results_when_reviewed(self, client) -> None:

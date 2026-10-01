@@ -8,7 +8,7 @@
 
 **现行事实来源**：`docs/MVP设计/`（00~12 设计与实施文档 + README 索引）。MVP 差异要点：
 
-- **模块现状**：闭环六模块 + 管理层视图 + 工作台 v2.0 已落地；路由模块清单：`clpm`（工作台）+ `monitor/assess/diagnosis/tuning/handling/reports/alert/config/system/task/loop`；导航顺序：工作台(0)-监控-评估-诊断-整定-处置-报告-配置-系统；现行形态：**工作台 v2.0**（`/workbench` 单屏 5 Tab：**系统总览/性能评估/回路诊断/参数整定/问题处置**——文案以 `frontend/apps/web-antd/src/views/workbench/index.vue:57-62` 为准，旧文档写的"总览/评估/诊断/整定/处置"是改名前口径，order=0 全角色可见，方案见 `docs/设计文档/CLPM工作台改进方案-v2.0.md`，进度见 `docs/过程文档/工作台v2实施计划-2026-08-25.md`）/ 监控菜单重排为装置总览→回路监视→预警事件→关注队列→回路工作台（列表页标杆 v2.0）/ 诊断两页式 / 整定三页式 / 处置 v2.0 双实体（loop_action_item + handling_order）/ 统计报告一级菜单（order=6，配置→7、系统→8）/ 模块热插拔（诊断/整定/处置可弹性启用禁用）/ 适用性评估 L0~L4（诊断 L0/L1 阻止 L2 横幅、整定 L3 以下 ERR_TUNING_FITNESS_INSUFFICIENT 门禁）/ 系统管理含基础信息+字典管理（MEASURE_TYPE/TAG_TYPE/LOOP_TYPE）+ 模块管理页；IA 细节以 `docs/MVP设计/` 为准，演进历史见 `docs/过程文档/agents-md-history-2026-08-24.md`（按需读取）
+- **模块现状**：闭环六模块 + 管理层视图 + 工作台 v2.0 已落地；路由模块清单：`clpm`（工作台）+ `monitor/assess/diagnosis/tuning/handling/reports/alert/config/system/task/loop`；导航顺序：工作台(0)-监控-评估-诊断-整定-处置-报告-配置-系统；现行形态：**工作台 v2.0**（`/workbench` 单屏 5 Tab：**系统总览/性能评估/回路诊断/参数整定/问题处置**——文案以 `frontend/apps/web-antd/src/views/workbench/index.vue:57-62` 为准，旧文档写的"总览/评估/诊断/整定/处置"是改名前口径，order=0 全角色可见，方案见 `docs/设计文档/CLPM工作台改进方案-v2.0.md`，进度见 `docs/过程文档/工作台v2实施计划-2026-08-25.md`）/ 监控菜单重排为装置总览→回路监视→预警事件→关注队列→回路工作台（列表页标杆 v2.0）/ 诊断两页式 / 整定三页式 / 处置 v2.0 双实体（loop_action_item + handling_order）/ 统计报告一级菜单（order=6，配置→7、系统→8）/ 模块热插拔（诊断/整定/处置可弹性启用禁用）/ 适用性评估 L0~L4（诊断 L0/L1 阻止 L2 横幅、整定 L2 以下 ERR_TUNING_FITNESS_INSUFFICIENT 门禁——L2 放开为警告系 2026-10-01 三模块审查裁决，L3 可发起但前端前置激励提示）/ 系统管理含基础信息+字典管理（MEASURE_TYPE/TAG_TYPE/LOOP_TYPE）+ 模块管理页；IA 细节以 `docs/MVP设计/` 为准，演进历史见 `docs/过程文档/agents-md-history-2026-08-24.md`（按需读取）
 - **纪律**：**不删除诊断/整定专属前后端文件**；构建闭环而非屏蔽闭环
 - **端口**：后端 API **17101**、前端 **15666**、mock 数据服务 **17106**（原端口 +10000 隔离）；开发容器 `clpm-mvp-*`；生产 compose 仍为原项目口径（隔离改造未执行）
 - **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
@@ -90,7 +90,7 @@ cd frontend && pnpm run format
 - worker 静默挂死识别与处置、并发与回填性能、prewarm 废止背景 → ops-runbook §Celery Worker 运维
 - 网络模式切换（Tailscale）验证命令、sudoers 免密、lifespan 预载细节 → ops-runbook §网络模式切换
 - 实时数据断点续传机制细节 → ops-runbook §数据链路
-- 诊断调度细节（**自动诊断 Beat 已停用**，仅保留手动触发）→ ops-runbook §诊断调度细节
+- 诊断调度细节（**v2 三层触发现行：手动 + 定时 daily/weekly + 预警事件**，16 号文 §12，2026-10-01 裁决确认；08-07 停用的是旧引擎 Beat）→ ops-runbook §诊断调度细节
 - **uvicorn 静默挂死排查** → ops-runbook §uvicorn 静默挂死排查
 - **生产部署与 TDengine 口令/初始化**（compose 必须带 `--env-file .env.prod` + `--profile tdengine`；口令三处一致；`.td-password-changed` 首次/非首次差异；五闸门判读顺序；建表 DDL 挂载缺口）→ ops-runbook §生产部署与 TDengine 口令/初始化（2026-09-27 现场事故沉淀）
 

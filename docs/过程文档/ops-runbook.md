@@ -194,11 +194,16 @@ celery prefork 子进程中 naive `datetime.timestamp()`（mktime→localtime）
 
 API 触发的异步任务全链路可追踪：`before_task_publish` 信号把当前请求 contextvar 中的 request_id 写入 Celery 消息 headers，`task_prerun` 恢复到 worker 侧 contextvar（`task_postrun` 清理防泄漏），任务日志自动携带 request_id 与 task_id/celery_id，可由任一侧 grep 定位全链路。Beat 定时派发无请求上下文，任务日志自然不带 request_id。worker/beat 进程日志经 `after_setup_logger` 应用与 API 一致的 Formatter（生产 JSON 单行 / DEBUG 文本 + `[request_id]` 前缀，含脱敏）。
 
-## 诊断调度细节（2026-07-20，PR #86-#96；2026-08-07 更新）
+## 诊断调度细节（2026-07-20，PR #86-#96；2026-08-07 停旧引擎 Beat；2026-10-01 口径校正）
 
-**⚠️ 2026-08-07 起，自动诊断 Beat 已停用**（commit `5e216ba8`）：`diagnosis_engine.py` 中 `diagnosis-engine-hourly` 与 `diagnosis-engine-checkup-8h` 两个 Celery Beat 注册已注释（保留代码以便恢复），仅保留手动触发函数。系统现仅保留小时级自动性能评估，诊断与整定一律手动触发。恢复方法：取消 `backend/app/tasks/diagnosis_engine.py` 中 `_existing_beat["diagnosis-engine-hourly"]` 与 `_existing_beat["diagnosis-engine-checkup-8h"]` 两段注释并重启后端。
+**现行设计（16 号文 §12 三层触发，2026-10-01 用户裁决确认为现行口径）**：v2 诊断引擎支持三类触发——
+- **MANUAL 手动**：POST /diagnosis/run（工作台勾选发起，L0/L1 fitness 门禁 + 预检徽标）
+- **SCHEDULED 分级定时**：`diagnosis_schedule.py` 注册 `diagnosis-scheduled-daily`（每日 01:10，1 级重要回路近 24h 窗）与 `diagnosis-scheduled-weekly`（每周日 02:10，2 级回路近 7d 窗）；仅当 `enabled_modules` 禁用 diagnosis 模块时才从 Beat 移除（`beat_registry.py`）
+- **EVENT 预警事件**：`alert_rule_engine/dispatcher.py` 预警命中后自动触发诊断（6h 防抖）
 
-历史口径（已停用，仅备查）：事件轨 `diagnosis-engine-hourly`（crontab 整点 10 分，score<60 或 score NULL 即 INCONCLUSIVE 回路触发深诊）+ 体检轨 `diagnosis-engine-checkup-8h`（crontab 0/8/16 点 20 分，全部 READY 回路 1h 窗口体检，`triggered_by='checkup-scheduler'`；开关经 EngineRuleLoader `DIAG_CHECKUP` rule params 配置，默认开）；诊断阈值配置**已真实生效**（种子键名已对齐算法读取键，存量库经 v6p1diag002 迁移），`is_enabled=False` 真正禁用对应算法；按需诊断支持 labels 子集。
+注意：自动路径（SCHEDULED/EVENT）目前**不做** L0/L1 fitness 门禁，仅做数据密度门禁（快照行数 ≥50% 预期）。
+
+历史口径（旧引擎，已退役，仅备查）：2026-08-07（commit `5e216ba8`）停用的是**旧引擎** `diagnosis_engine.py` 的 `diagnosis-engine-hourly` 与 `diagnosis-engine-checkup-8h` 两条 Beat（代码已注释保留）。旧引擎事件轨整点 10 分深诊 + 8h 体检轨，`is_enabled` 启停开关仅作用于该旧引擎（v2 链路不消费，见三模块审查 P0-2）。
 
 ## 模型变更与迁移同批纪律（2026-07-21 教训）
 

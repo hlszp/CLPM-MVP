@@ -1,13 +1,20 @@
-"""诊断分级定时调度（自动诊断层①，设计文档 §12.3）。
+"""诊断分级定时调度（自动诊断层①，设计文档 §12.3；2026-10-01 裁决更新）。
 
-不做每小时全量诊断（1h 窗证据不足、滚动窗冗余），按回路重要性等级排程：
-- 1 级（关键）：每日 01:10，近 24h 窗口 → 每日基线
-- 2 级（重要）：每周日 02:10，近 7d 窗口 → 周期体检
-- 3 级（一般）：不排程（仅事件触发/手动）
+- 每日 01:10（run_daily）：**全量** READY 活跃回路，近 24h 窗口 → 每日基线
+  （2026-10-01 用户裁决"每天全回路诊断一次"；原 1 级过滤在生产
+  importance_level 全=2 下实际空跑）
+- 每周日 02:10（run_weekly）：2 级重要回路，近 7d 窗口 → 周期体检（保留长窗视角）
 
-前置密度门禁：目标窗口 TDengine 行数 < 预期 50% 的回路跳过（缺数窗口
-只会产出 DATA_INSUFFICIENT 噪音），跳过记录日志不发任务。
-triggered_by='scheduler-grade{N}'，trigger_type='SCHEDULED'。
+前置门禁（缺数/不可信窗口只产出噪音，跳过记录日志不发任务）：
+1. 密度门禁：目标窗口 TDengine 行数 < 预期 50% 的回路跳过；
+2. fitness 门禁（2026-10-01 裁决 3）：最新适用性 L0（数据严重不足）/
+   L1（手动主导）的回路跳过——生产 59% 回路处于 L0/L1，每日全量下
+   无效计算占比过高且结论不可信；快照缺失（无 fitness 记录）不拦。
+
+分批派发：eligible 按 50 回路/批切独立任务（全局 task_time_limit=1800s
+硬杀 + autoretry 放大风险，单任务串行回路数必须受限；分批独立
+TaskTracker，进度与失败互不污染）。
+triggered_by='schedule'，trigger_type='SCHEDULED'。
 """
 
 from __future__ import annotations
@@ -32,22 +39,37 @@ logger = logging.getLogger(__name__)
 #: 密度门禁：窗口行数低于预期点数该比例时跳过
 _DENSITY_THRESHOLD = 0.5
 
+#: 定时派发分批大小（全局 task_time_limit=1800s + autoretry 放大，单批回路数受限）
+_DISPATCH_BATCH_SIZE = 50
+
 
 def _utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-async def _loops_by_importance(level: int) -> list[str]:
-    """查指定重要性等级的 READY 活跃回路 ID。"""
+async def _loops_by_importance(level: int | None) -> list[str]:
+    """查 READY 活跃回路 ID；level=None 时全量（2026-10-01 裁决：daily 全回路）。"""
+    conditions = [LoopLedger.status == "READY", LoopLedger.is_active.is_(True)]
+    if level is not None:
+        conditions.append(LoopLedger.importance_level == level)
     async with AsyncSessionLocal() as db:
-        rows = await db.execute(
-            select(LoopLedger.id).where(
-                LoopLedger.importance_level == level,
-                LoopLedger.status == "READY",
-                LoopLedger.is_active.is_(True),
-            )
-        )
+        rows = await db.execute(select(LoopLedger.id).where(*conditions))
         return [str(r) for r in rows.scalars().all()]
+
+
+async def _fitness_blocked_ids(loop_ids: list[str]) -> set[str]:
+    """fitness 门禁（裁决 3）：返回 L0/L1 回路集合；快照缺失/查询失败不拦。"""
+    if not loop_ids:
+        return set()
+    try:
+        from app.services.loop_fitness import get_latest_fitness_per_loop
+
+        async with AsyncSessionLocal() as db:
+            latest = await get_latest_fitness_per_loop(db, loop_ids)
+        return {lid for lid, f in latest.items() if f.level in ("L0", "L1")}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("调度 fitness 门禁查询失败（本轮不拦 L0/L1）: %s", exc)
+        return set()
 
 
 async def _density_ok(loop_id: str, loop_meta: dict, start: datetime, end: datetime) -> bool:
@@ -98,10 +120,11 @@ async def _logical_coverage_ok(loop_id: str, start: datetime, end: datetime) -> 
 
 
 async def _run_scheduled(level: int, window: timedelta) -> dict:
-    """按等级发起定时诊断（密度门禁过滤后批量建任务）。"""
+    """发起定时诊断（level=None 全量；密度+fitness 双门禁过滤，分批建任务）。"""
     loop_ids = await _loops_by_importance(level)
+    scope = "全量" if level is None else f"{level} 级"
     if not loop_ids:
-        logger.info("分级定时诊断：等级 %d 无目标回路，跳过", level)
+        logger.info("分级定时诊断：%s 无目标回路，跳过", scope)
         return {"level": level, "total": 0, "dispatched": 0, "skipped": 0}
 
     end = _utcnow_naive()
@@ -110,11 +133,16 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
     async with AsyncSessionLocal() as db:
         loop_meta = await _batch_get_loop_data(db, loop_ids)
 
+    fitness_blocked = await _fitness_blocked_ids(loop_ids)
+
     eligible: list[str] = []
     skipped: list[str] = []
     for lid in loop_ids:
         meta = loop_meta.get(lid, {})
         if not meta.get("role_tag_map"):
+            skipped.append(lid)
+            continue
+        if lid in fitness_blocked:
             skipped.append(lid)
             continue
         if await _density_ok(lid, meta, start, end):
@@ -128,59 +156,70 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
                 end.isoformat(),
             )
 
-    if not eligible:
-        logger.info(
-            "分级定时诊断：等级 %d 全部跳过（共 %d 个：密度不足/无映射）",
-            level,
-            len(skipped),
-        )
-        return {"level": level, "total": len(loop_ids), "dispatched": 0, "skipped": len(skipped)}
-
-    # TaskTracker 建单（单任务聚合本批回路，进度按回路分段）
-    task_id = str(uuid4())
-    await create_task(
-        task_type=TaskType.DIAGNOSIS,
-        created_by=f"scheduler-grade{level}",
-        created_by_id="00000000-0000-0000-0000-000000000001",
-        loop_ids=eligible,
-        triggered_by="schedule",
-        title=f"分级定时诊断（{level} 级，{len(eligible)} 个回路）",
+    logger.info(
+        "分级定时诊断：%s 目标 %d，fitness 门禁拦 %d，密度/映射拦 %d，可跑 %d",
+        scope,
+        len(loop_ids),
+        len(fitness_blocked),
+        len(skipped) - len(fitness_blocked),
+        len(eligible),
     )
+    if not eligible:
+        return {"level": level, "total": len(loop_ids), "dispatched": 0, "skipped": len(skipped)}
 
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
-    celery_result = run_diagnosis_batch.delay(
-        loop_ids=eligible,
-        start=start.isoformat(),
-        end=end.isoformat(),
-        task_id=task_id,
-        operator_group="full",
-        triggered_by=f"scheduler-grade{level}",
-        trigger_type="SCHEDULED",
-    )
-    from app.services.task_tracker import set_celery_task_ids
+    # 分批派发：每批独立 TaskTracker（全局 30min 硬杀 + autoretry 3 次，
+    # 单任务串行回路数必须受限；批间进度/失败互不污染）
+    batches = [
+        eligible[i : i + _DISPATCH_BATCH_SIZE]
+        for i in range(0, len(eligible), _DISPATCH_BATCH_SIZE)
+    ]
+    task_ids: list[str] = []
+    for bi, batch in enumerate(batches, start=1):
+        task_id = str(uuid4())
+        await create_task(
+            task_type=TaskType.DIAGNOSIS,
+            created_by=f"scheduler-grade{level}" if level is not None else "scheduler-daily-all",
+            created_by_id="00000000-0000-0000-0000-000000000001",
+            loop_ids=batch,
+            triggered_by="schedule",
+            title=f"定时诊断（{scope}，第 {bi}/{len(batches)} 批，{len(batch)} 个回路）",
+        )
+        celery_result = run_diagnosis_batch.delay(
+            loop_ids=batch,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            task_id=task_id,
+            operator_group="full",
+            triggered_by="schedule",
+            trigger_type="SCHEDULED",
+        )
+        from app.services.task_tracker import set_celery_task_ids
 
-    await set_celery_task_ids(task_id, [celery_result.id])
+        await set_celery_task_ids(task_id, [celery_result.id])
+        task_ids.append(task_id)
     logger.info(
-        "分级定时诊断：等级 %d 发起 %d 个回路（跳过 %d），taskId=%s",
-        level,
+        "分级定时诊断：%s 发起 %d 个回路（%d 批，跳过 %d），taskIds=%s",
+        scope,
         len(eligible),
+        len(batches),
         len(skipped),
-        task_id,
+        task_ids,
     )
     return {
         "level": level,
         "total": len(loop_ids),
         "dispatched": len(eligible),
         "skipped": len(skipped),
-        "taskId": task_id,
+        "taskIds": task_ids,
     }
 
 
 @celery_app.task(name="app.tasks.diagnosis_schedule.run_daily", bind=True, base=AsyncTask)
 def run_daily(self: AsyncTask) -> dict:
-    """每日 01:10：1 级关键回路，近 24h 窗口。"""
-    return self.run_async(_run_scheduled(1, timedelta(hours=24)))
+    """每日 01:10：全量 READY 活跃回路，近 24h 窗口（2026-10-01 裁决）。"""
+    return self.run_async(_run_scheduled(None, timedelta(hours=24)))
 
 
 @celery_app.task(name="app.tasks.diagnosis_schedule.run_weekly", bind=True, base=AsyncTask)
