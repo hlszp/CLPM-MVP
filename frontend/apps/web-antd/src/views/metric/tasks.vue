@@ -129,7 +129,13 @@ onMounted(() => {
               <span>任务列表</span>
             </Badge>
           </template>
-          <TaskListTab ref="listRef" :default-task-type="defaultTaskType" @polled="loadActiveTaskCount" />
+          <!-- 2026-10-01：诊断任务切至诊断模块（/diagnosis/tasks），评估列表排除 -->
+          <TaskListTab
+            ref="listRef"
+            :default-task-type="defaultTaskType"
+            :exclude-task-types="['DIAGNOSIS']"
+            @polled="loadActiveTaskCount"
+          />
         </TabPane>
         <TabPane key="strategy" tab="策略配置">
           <StrategyTab ref="strategyRef" />

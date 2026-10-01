@@ -133,6 +133,8 @@ export namespace TaskApi {
   /** 任务列表查询参数 */
   export interface TaskListQueryParams {
     taskType?: TaskType;
+    /** 按类型排除（逗号分隔；2026-10-01 诊断任务切至诊断模块，评估列表传 DIAGNOSIS） */
+    excludeTaskTypes?: string;
     status?: TaskStatus;
     startTime?: string;
     endTime?: string;

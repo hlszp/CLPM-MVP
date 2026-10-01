@@ -2,17 +2,19 @@
 import type { Dayjs } from 'dayjs';
 
 /**
- * 诊断工作台 —— 左脊柱（装置树 + 回路清单多选）+ 右主区（配置 + 结果）。
+ * 诊断工作台（2026-10-01 UX 重构）—— 左脊柱（装置树 + 回路单选）+
+ * 右主区上部"发起诊断"（选中回路 + 时间窗 + 算子）+ 下部"结论与证据"
+ * （诊断结论 / 证据链 / 处置建议三 Tab，DiagnosisResultPanel 分段复用）。
  *
  * 设计文档：docs/MVP设计/07-诊断模块设计方案.md §9.2
- * 布局参考回路工作台：左脊柱按装置导航勾选回路（跨装置累计），
- * 右主区配置时间范围（小时粒度）/算子（组或细选）并呈现诊断结果。
+ * 概览已独立为 /diagnosis/overview；批量诊断由每日定时全量覆盖，
+ * 手动路径收敛为单回路聚焦诊断。
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -29,9 +31,9 @@ import {
   Progress,
   RangePicker,
   Segmented,
-  Select,
   Spin,
-  Table,
+  TabPane,
+  Tabs,
   Tree,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -46,31 +48,11 @@ import { useModules } from '#/composables/use-modules';
 import { useVirtualList } from '#/composables/use-virtual-list';
 import { useReturnNav } from '#/composables/use-return-nav';
 
-// 16 号文 F3：诊断健康度折叠块（D6 概览区默认展开）
-import DiagnosisCoveragePanel from './components/coverage-panel.vue';
-import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
-import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
-// 16 号文 F1：概览"历史"入口升级为回路诊断档案抽屉（history-drawer 列表逻辑已迁移入内，文件保留不删）
-import DiagnosisLoopArchiveDrawer from './components/loop-archive-drawer.vue';
 // 16 号文 F5：左脊柱回路行内数据充足性预检徽标（D1 廉价代理：快照密度）
 import DiagnosisPrecheckBadge from './components/precheck-badge.vue';
-import DiagnosisReviewDrawer from './components/review-drawer.vue';
 import { useDiagnosisRunner } from './composables/use-diagnosis-runner';
-import {
-  CATEGORY_META,
-  CATEGORY_OPTIONS,
-  IMPORTANCE_LEVEL_COLOR,
-  IMPORTANCE_LEVEL_TEXT,
-  PRECHECK_META,
-  REVIEW_STATUS_COLOR,
-  REVIEW_STATUS_TEXT,
-  SCORE_GRADES,
-  scoreGrade,
-  SEVERITY_TEXT,
-  TRIGGER_TYPE_COLOR,
-  TRIGGER_TYPE_TEXT,
-} from './constants';
+import { PRECHECK_META } from './constants';
 
 /** P2 IA优化：fitness tag 中文映射（与 fitness-badge 组件约定一致） */
 const FITNESS_TAG_CN: Record<string, string> = {
@@ -174,13 +156,12 @@ async function loadPlantTree(): Promise<void> {
   }
 }
 
-/** 装置节点选中：重拉该范围回路清单与最新诊断概览（已勾选回路保留） */
+/** 装置节点选中：重拉该范围回路清单（2026-10-01：概览已独立成页） */
 function handlePlantTreeSelect(keys: (number | string)[]): void {
   const key = keys[0] as string | undefined;
   plantTreeSelectedKeys.value = key ? [key] : [];
   selectedPlantNodeId.value = key || undefined;
   loadLoops(selectedPlantNodeId.value);
-  loadLatestOverview();
 }
 
 // ===== 左脊柱：回路清单（勾选式多选） =====
@@ -189,8 +170,8 @@ const loopLoading = ref(false);
 /** 回路清单加载失败（可见错误态 + 重试） */
 const loopLoadError = ref(false);
 const loopKeyword = ref('');
-/** 批量诊断回路上限（行1 多选框展示约束） */
-const MAX_SELECTED_LOOPS = 10;
+/** 2026-10-01 UX 重构：回路单选（数组结构保留、长度恒 ≤1，最小化对
+ *  既有门禁/发起链路的改动；批量诊断由每日定时全量覆盖） */
 const selectedLoopIds = ref<string[]>([]);
 /** 跨装置回路名称缓存：切换装置树后仍能显示已选回路的位号/名称 */
 const loopCache = ref(new Map<string, LoopApi.LoopListItem>());
@@ -295,15 +276,10 @@ const precheckInsufficientSelected = computed(
     ).length,
 );
 
+/** 单选：点新回路即切换；点当前回路取消选中 */
 function toggleLoop(loopId: string): void {
-  const idx = selectedLoopIds.value.indexOf(loopId);
-  if (idx !== -1) {
-    selectedLoopIds.value.splice(idx, 1);
-  } else if (selectedLoopIds.value.length >= MAX_SELECTED_LOOPS) {
-    message.warning(`最多同时选择 ${MAX_SELECTED_LOOPS} 个回路`);
-  } else {
-    selectedLoopIds.value.push(loopId);
-  }
+  selectedLoopIds.value =
+    selectedLoopIds.value[0] === loopId ? [] : [loopId];
 }
 
 /** 行1 展示：选中回路（位号+名称；跨装置从缓存取名称） */
@@ -387,6 +363,50 @@ async function loadOperators(): Promise<void> {
 const selectedRunId = ref('');
 const selectedDetail = ref<DiagnosisApi.RunDetail | null>(null);
 const detailLoading = ref(false);
+/** 结论与证据 Tab 激活页（conclusion/evidence/advice） */
+const resultTab = ref('conclusion');
+
+/** 选中回路适用性（行1 展示；fetchFitnessByLoopIds 拉取） */
+const selectedFitnessMap = ref(
+  new Map<string, { level: null | string; tags: string[] }>(),
+);
+const selectedFitness = computed(() => {
+  const id = selectedLoopIds.value[0];
+  if (!id) return null;
+  const info = selectedFitnessMap.value.get(id);
+  if (!info?.level) return null;
+  const color =
+    info.level === 'L0' || info.level === 'L1'
+      ? '#ef4444'
+      : info.level === 'L2'
+        ? '#f59e0b'
+        : info.level === 'L3'
+          ? '#3b82f6'
+          : '#10b981';
+  return {
+    color,
+    level: info.level,
+    tagsText: info.tags.length > 0 ? tagsText(info.tags) : '',
+  };
+});
+
+/** 选中回路变化 → 拉取该回路 fitness（行1 徽标联动） */
+watch(
+  () => selectedLoopIds.value[0],
+  async (id) => {
+    if (!id) {
+      selectedFitnessMap.value = new Map();
+      return;
+    }
+    if (selectedFitnessMap.value.has(id)) return;
+    const m = await fetchFitnessByLoopIds([id]);
+    selectedFitnessMap.value = new Map([
+      ...selectedFitnessMap.value,
+      ...m,
+    ]);
+  },
+  { immediate: true },
+);
 
 async function loadDetail(runId: string) {
   selectedRunId.value = runId;
@@ -408,8 +428,6 @@ const runner = useDiagnosisRunner({
     } else {
       message.warning('诊断完成但未产生结果记录');
     }
-    // 刷新左侧概览（最新诊断时间/结论可能已更新）
-    loadLatestOverview();
   },
 });
 
@@ -555,217 +573,19 @@ async function handleTrigger() {
   );
 }
 
-// ===== 最新诊断概览（跟随装置树选择；每回路最新一条 + 未诊断回路） =====
-const latestItems = ref<DiagnosisApi.LatestRunItem[]>([]);
-const latestLoading = ref(false);
-
-/** 后端时间为 naive UTC ISO（无 Z 后缀），补 Z 后按本地时区展示 */
-function fmtUtc(naiveIso?: null | string): string {
-  if (!naiveIso) return '—';
-  const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveIso)
-    ? naiveIso
-    : `${naiveIso}Z`;
-  return dayjs(withZ).format('MM-DD HH:mm');
-}
-
-async function loadLatestOverview(): Promise<void> {
-  latestLoading.value = true;
-  try {
-    const { getDiagnosisRunsLatestApi } = await import('#/api/diagnosis');
-    const res = await getDiagnosisRunsLatestApi(selectedPlantNodeId.value);
-    latestItems.value = res.items;
-  } catch {
-    latestItems.value = [];
-  } finally {
-    latestLoading.value = false;
-  }
-}
-
-// ===== 最新诊断概览筛选（诊断状态 + 等级/评分/结论/严重度，2026-08-18） =====
-type LatestFilter = 'all' | 'diagnosed' | 'undiagnosed';
-const latestFilter = ref<LatestFilter>('all');
-const filterImportance = ref<number | undefined>();
-const filterScoreGrade = ref<string | undefined>();
-const filterCategory = ref<DiagnosisApi.Category | undefined>();
-const filterSeverity = ref<DiagnosisApi.Severity | undefined>();
-
-const filteredLatestItems = computed(() => {
-  let list = latestItems.value;
-  if (latestFilter.value === 'diagnosed') list = list.filter((i) => i.runId);
-  if (latestFilter.value === 'undiagnosed') list = list.filter((i) => !i.runId);
-  if (filterImportance.value != null)
-    list = list.filter((i) => i.importanceLevel === filterImportance.value);
-  if (filterScoreGrade.value) {
-    const grade = SCORE_GRADES.find((g) => g.key === filterScoreGrade.value);
-    if (grade) {
-      const next = SCORE_GRADES.find((g) => g.min < grade.min);
-      list = list.filter((i) => {
-        if (i.latestScore == null) return false;
-        return (
-          i.latestScore >= grade.min && (next ? i.latestScore < next.min : true)
-        );
-      });
-    }
-  }
-  if (filterCategory.value)
-    list = list.filter((i) => i.primaryCategory === filterCategory.value);
-  if (filterSeverity.value)
-    list = list.filter((i) => i.severity === filterSeverity.value);
-  return list;
-});
-
-/** 未诊断回路数（一回路一条） */
-const undiagnosedCount = computed(
-  () => latestItems.value.filter((item) => !item.runId).length,
-);
-
-/** 概览覆盖回路数（用于标题"N 个回路"） */
-const overviewLoopCount = computed(() => latestItems.value.length);
-
-const latestColumns = [
-  { dataIndex: 'loopTagName', title: '回路', width: 116 },
-  { dataIndex: 'loopDescription', title: '名称', width: 126, ellipsis: true },
-  { dataIndex: 'importanceLevel', title: '等级', width: 54 },
-  { dataIndex: 'latestScore', title: '性能评分', width: 70 },
-  { key: 'scoreGrade', title: '性能等级', width: 66 },
-  {
-    dataIndex: 'primaryCategoryLabel',
-    title: '诊断结论',
-    width: 140,
-    ellipsis: true,
-  },
-  { dataIndex: 'primaryConfidence', title: '置信度', width: 62 },
-  { dataIndex: 'severity', title: '严重度', width: 54 },
-  { dataIndex: 'triggerType', title: '触发方式', width: 80 },
-  { dataIndex: 'runCount', title: '诊断次序', width: 68 },
-  {
-    dataIndex: 'reviewResultLabels',
-    title: '复核结论',
-    width: 130,
-    ellipsis: true,
-  },
-  { dataIndex: 'reviewStatus', title: '状态', width: 66 },
-  { dataIndex: 'lastDiagnosedAt', title: '诊断时间', width: 96 },
-  { key: 'action', title: '操作', width: 156, fixed: 'right' as const },
-];
-
-function latestCatColor(record: DiagnosisApi.LatestRunItem): string {
-  return record.primaryCategory
-    ? (CATEGORY_META[record.primaryCategory]?.color ?? '#6c757d')
-    : '#6c757d';
-}
-
-function openLatestDetail(record: DiagnosisApi.LatestRunItem): void {
-  // 概览行点击 → 诊断详情弹窗（基本信息 + KPI + 结论 + 证据）
-  detailItem.value = record;
-  detailModalOpen.value = true;
-}
-
-// ===== 诊断详情弹窗（2026-08-18：行点击弹出） =====
-const detailModalOpen = ref(false);
-const detailItem = ref<DiagnosisApi.LatestRunItem | null>(null);
-
-/** 正在快捷诊断的回路 ID（按钮 loading/防重复点击） */
-const quickDiagnosingId = ref('');
-
-/**
- * 快捷诊断：对单条回路直接发起（未诊断首诊 / 已诊断复评）。
- *
- * 2026-09-24 修复：原实现会**静默改写用户的全局配置** —— 把已勾选的回路集合
- * 覆盖成 1 条、把时间窗改回 24h、把算子勾选改成全量。工程师精心选的 8 个回路
- * 在一次行内点击后就被清空。现改为用局部参数直接发起（近 24h + 全量算子），
- * 不触碰任何全局状态；适用性门禁与主按钮共用同一实现。
- */
-async function quickDiagnose(loopId: string) {
-  if (quickDiagnosingId.value || runner.running.value) return;
-  quickDiagnosingId.value = loopId;
-  try {
-    if (!(await passFitnessGate([loopId]))) return;
-    await submitDiagnosis([loopId], { preset: timeWindowMap['24h'] }, undefined);
-  } finally {
-    quickDiagnosingId.value = '';
-  }
-}
-
-// ===== 概览行操作：证据 / 复核 / 历史 / 诊断（2026-08-18） =====
-const evidenceOpen = ref(false);
-const evidenceRunId = ref<null | string>(null);
-const reviewOpen = ref(false);
-const reviewItem = ref<DiagnosisApi.LatestRunItem | null>(null);
-const historyOpen = ref(false);
-const historyItem = ref<DiagnosisApi.LatestRunItem | null>(null);
-
-function openEvidence(record: DiagnosisApi.LatestRunItem): void {
-  if (!record.runId) return;
-  evidenceRunId.value = record.runId;
-  evidenceOpen.value = true;
-}
-
-function openReview(record: DiagnosisApi.LatestRunItem): void {
-  if (!record.runId) return;
-  reviewItem.value = record;
-  reviewOpen.value = true;
-}
-
-function openHistory(record: DiagnosisApi.LatestRunItem): void {
-  historyItem.value = record;
-  historyOpen.value = true;
-}
-
-/** 档案抽屉：run 色块/列表行点击 → 复用诊断详情弹窗打开该次 run（16 号文 F1） */
-function openArchiveRun(item: DiagnosisApi.LatestRunItem): void {
-  detailItem.value = item;
-  detailModalOpen.value = true;
-}
-
-/** 档案抽屉空态引导 → 关闭抽屉并发起该回路诊断（复用快捷诊断链路） */
-function onArchiveTriggerDiagnosis(loopId: string): void {
-  historyOpen.value = false;
-  quickDiagnose(loopId);
-}
-
-/** 复核完成 → 刷新概览（复核状态/结论即时回显） */
-function onReviewDone(): void {
-  loadLatestOverview();
-}
-
-// ===== 结果列表（多回路批量） =====
-const resultColumns = [
-  { dataIndex: 'loopTagName', title: '回路', width: 130 },
-  { dataIndex: 'status', title: '状态', width: 100 },
-  { dataIndex: 'primaryCategoryLabel', title: '主分类', width: 160 },
-  { dataIndex: 'primaryConfidence', title: '置信度', width: 90 },
-  { dataIndex: 'severity', title: '严重度', width: 80 },
-  // 2026-09-24：结果表直出闭环动作，省掉点行进详情弹窗再找按钮两步
-  // （批量诊断完成后原先既不能排序也不能直接生成处置建议）。
-  { key: 'actions', title: '操作', width: 150 },
-];
-
-/** 结果行 → 去处置（按回路深链到处置建议列表） */
+// ===== 结果闭环动作（结论卡头部；模块禁用时不渲染） =====
+/** 结论 → 去处置（按回路深链到处置建议列表） */
 function gotoHandling(loopId: string): void {
   router.push({ path: '/handling/suggestions', query: { loopId } });
 }
 
-/** 结果行 → 去整定（携带诊断来源，整定工作台据此显示返回） */
+/** 结论 → 去整定（携带诊断来源，整定工作台据此显示返回） */
 function gotoTuning(loopId: string): void {
   router.push({
     path: '/tuning/workbench',
     query: { from: 'diagnosis', loopId },
   });
 }
-
-function confOf(record: DiagnosisApi.RunListItem) {
-  return record.primaryConfidence == null
-    ? '—'
-    : `${Math.round(record.primaryConfidence * 100)}%`;
-}
-
-function catColor(record: DiagnosisApi.RunListItem) {
-  return record.primaryCategory
-    ? (CATEGORY_META[record.primaryCategory]?.color ?? '#6c757d')
-    : '#6c757d';
-}
-
 // ===== URL 上下文（统一 from 映射，见 composables/use-return-nav.ts） =====
 // 原实现只认 from === 'workbench'（回路工作台），而整定工作台的「去诊断」
 // 会带 from=tuning —— 那条路径同样没有返回按钮。
@@ -782,7 +602,6 @@ onMounted(() => {
   loadPlantTree();
   loadLoops();
   loadOperators();
-  loadLatestOverview();
   const q = route.query.loopId;
   if (typeof q === 'string' && q) {
     selectedLoopIds.value = [q];
@@ -844,9 +663,9 @@ onMounted(() => {
         </Spin>
 
         <div class="diag-sidebar__section-title">
-          <span>回路</span>
+          <span>回路（单选）</span>
           <span class="text-xs text-neutral-400">
-            已勾选 {{ selectedLoopIds.length }}
+            {{ selectedLoopIds.length > 0 ? '已选 1' : '未选' }}
           </span>
         </div>
         <Input
@@ -880,11 +699,6 @@ onMounted(() => {
               @click="toggleLoop(item.loopId)"
               @keydown.enter="toggleLoop(item.loopId)"
             >
-              <Checkbox
-                :checked="selectedLoopIds.includes(item.loopId)"
-                class="diag-loop-item__check"
-                @click.prevent="toggleLoop(item.loopId)"
-              />
               <span class="diag-loop-item__tag" :title="item.description">
                 {{ item.tagName }}
               </span>
@@ -919,37 +733,33 @@ onMounted(() => {
 
       <!-- ===== 右主区：配置 + 结果 ===== -->
       <div class="diag-main">
-        <!-- ===== 回路诊断界面（勾选回路后显示；未勾选时下方显示最新诊断概览） ===== -->
+        <!-- ===== 主区：上发起 / 下结论证据（2026-10-01 UX 重构） ===== -->
         <template v-if="selectedLoopIds.length > 0">
-          <!-- 行1：选中回路（多回路 → 多选框，点击可移除；上限 10 个） -->
+          <!-- 行1：选中回路（单选；点击位号可取消选中） -->
           <Card class="mb-3" size="small">
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
               <span class="text-xs font-medium text-neutral-500">选中回路</span>
-              <template v-if="selectedLoopChips.length === 1">
-                <span class="text-sm font-semibold">
-                  {{ selectedLoopChips[0]!.tagName }}
-                </span>
-                <span
-                  class="max-w-480px truncate text-xs text-neutral-400"
-                  :title="selectedLoopChips[0]!.description"
-                >
-                  {{ selectedLoopChips[0]!.description || '—' }}
-                </span>
-              </template>
-              <template v-else>
-                <Checkbox
-                  v-for="c in selectedLoopChips"
-                  :key="c.loopId"
-                  :checked="true"
-                  class="diag-loop-chip"
-                  @click.prevent="toggleLoop(c.loopId)"
-                >
-                  <span :title="c.description">{{ c.tagName }}</span>
-                </Checkbox>
-              </template>
-              <span class="ml-auto text-xs text-neutral-400">
-                {{ selectedLoopIds.length }}/{{ MAX_SELECTED_LOOPS }}
-                {{ selectedLoopChips.length > 1 ? '· 点击勾选框移除' : '' }}
+              <span
+                class="cursor-pointer text-sm font-semibold hover:text-red-500"
+                title="点击取消选中"
+                @click="toggleLoop(selectedLoopChips[0]!.loopId)"
+              >
+                {{ selectedLoopChips[0]!.tagName }} ×
+              </span>
+              <span
+                class="max-w-480px truncate text-xs text-neutral-400"
+                :title="selectedLoopChips[0]!.description"
+              >
+                {{ selectedLoopChips[0]!.description || '—' }}
+              </span>
+              <span
+                v-if="selectedFitness"
+                class="ml-auto text-xs"
+                :style="{ color: selectedFitness.color }"
+              >
+                适用性 {{ selectedFitness.level }}（{{
+                  selectedFitness.tagsText || '条件正常'
+                }}）
               </span>
             </div>
           </Card>
@@ -1127,13 +937,44 @@ onMounted(() => {
             </div>
           </Card>
 
-          <!-- 行3+：诊断结果 → 详情/处置建议/证据链 -->
+          <!-- 行3+：结论与证据（三 Tab；2026-10-01 重构：单回路场景直接呈现
+               详情分段，替代原批量结果表 + 行点击加载详情两步） -->
           <ClpmDataCanvas
-            :empty="runner.resultItems.value.length === 0"
-            empty-text="发起诊断后在此查看结果"
+            :empty="!selectedDetail"
+            :loading="detailLoading"
             class="mb-4"
+            empty-text="发起诊断后在此查看结论与证据"
           >
-            <Card size="small" title="诊断结果">
+            <Card size="small">
+              <template #title>
+                诊断结论与证据
+                <span
+                  v-if="selectedDetail?.loopTagName"
+                  class="text-xs font-normal text-neutral-400"
+                >
+                  {{ selectedDetail.loopTagName }}
+                </span>
+              </template>
+              <template #extra>
+                <div class="flex gap-1">
+                  <Button
+                    v-if="moduleEnabled('handling') && selectedDetail?.loopId"
+                    size="small"
+                    type="link"
+                    @click="gotoHandling(selectedDetail!.loopId)"
+                  >
+                    去处置 →
+                  </Button>
+                  <Button
+                    v-if="moduleEnabled('tuning') && selectedDetail?.loopId"
+                    size="small"
+                    type="link"
+                    @click="gotoTuning(selectedDetail!.loopId)"
+                  >
+                    去整定 →
+                  </Button>
+                </div>
+              </template>
               <!-- P2 IA优化：L2 条件异常横幅 -->
               <div
                 v-if="
@@ -1154,386 +995,38 @@ onMounted(() => {
                     {{
                       l2WarningLoopNames.length > 0
                         ? l2WarningLoopNames.join('、')
-                        : '详见下方结果行'
+                        : '当前回路'
                     }}
                   </div>
                 </div>
               </div>
-              <Table
-                :columns="resultColumns"
-                :custom-row="
-                  (record: DiagnosisApi.RunListItem) => ({
-                    onClick: () => loadDetail(record.id),
-                  })
-                "
-                :data-source="runner.resultItems.value"
-                :pagination="false"
-                :row-class-name="
-                  (record: DiagnosisApi.RunListItem) =>
-                    record.id === selectedRunId ? 'diag-row-selected' : ''
-                "
-                row-key="id"
-                size="small"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.dataIndex === 'status'">
-                    {{
-                      record.status === 'SUCCESS'
-                        ? '完成'
-                        : record.status === 'PARTIAL'
-                          ? '部分完成'
-                          : record.status
-                    }}
-                  </template>
-                  <template
-                    v-else-if="column.dataIndex === 'primaryCategoryLabel'"
-                  >
-                    <span
-                      v-if="record.primaryCategoryLabel"
-                      :style="{
-                        color: catColor(record as DiagnosisApi.RunListItem),
-                      }"
-                      class="font-medium"
-                    >
-                      {{ record.primaryCategoryLabel }}
-                    </span>
-                    <span v-else class="text-neutral-400">—</span>
-                  </template>
-                  <template
-                    v-else-if="column.dataIndex === 'primaryConfidence'"
-                  >
-                    {{ confOf(record as DiagnosisApi.RunListItem) }}
-                  </template>
-                  <template v-else-if="column.dataIndex === 'severity'">
-                    {{
-                      record.severity
-                        ? (SEVERITY_TEXT[record.severity] ?? record.severity)
-                        : '—'
-                    }}
-                  </template>
-                  <!-- 闭环动作列：不离开本页即可进入处置/整定（模块禁用时不做无效跳转） -->
-                  <template v-else-if="column.key === 'actions'">
-                    <div class="flex gap-1">
-                      <Button
-                        v-if="moduleEnabled('handling')"
-                        size="small"
-                        type="link"
-                        @click.stop="gotoHandling(record.loopId)"
-                      >
-                        去处置
-                      </Button>
-                      <Button
-                        v-if="moduleEnabled('tuning')"
-                        size="small"
-                        type="link"
-                        @click.stop="gotoTuning(record.loopId)"
-                      >
-                        去整定
-                      </Button>
-                    </div>
-                  </template>
-                </template>
-              </Table>
+              <Tabs v-if="selectedDetail" v-model:active-key="resultTab">
+                <TabPane key="conclusion" tab="诊断结论">
+                  <DiagnosisResultPanel
+                    :detail="selectedDetail"
+                    section="conclusion"
+                  />
+                </TabPane>
+                <TabPane key="evidence" tab="证据链">
+                  <DiagnosisResultPanel
+                    :detail="selectedDetail"
+                    section="evidence"
+                  />
+                </TabPane>
+                <TabPane key="advice" tab="处置建议">
+                  <DiagnosisResultPanel
+                    :detail="selectedDetail"
+                    section="advice"
+                  />
+                </TabPane>
+              </Tabs>
             </Card>
           </ClpmDataCanvas>
         </template>
 
-        <!-- ===== 最新诊断概览（未勾选回路时显示；按诊断时间降序、未诊断垫底） ===== -->
-        <template v-else>
-          <!-- 16 号文 F3：诊断健康度折叠块（D6 默认展开，Calm UI 单行摘要+明细） -->
-          <DiagnosisCoveragePanel class="mb-3" />
-          <Card class="mb-4" size="small">
-          <template #title>
-            最新诊断概览
-            <span class="text-xs font-normal text-neutral-400">
-              {{ selectedPlantNodeId ? '当前装置范围' : '全厂' }} ·
-              {{ overviewLoopCount }} 个回路（一回路一条最新结论）
-            </span>
-          </template>
-          <!-- 筛选：诊断状态标签 + 等级/评分/结论/严重度下拉 -->
-          <div class="diag-latest-filter">
-            <button
-              v-for="f in [
-                { key: 'all', label: '全部' },
-                { key: 'diagnosed', label: '已诊断' },
-                { key: 'undiagnosed', label: '未诊断' },
-              ]"
-              :key="f.key"
-              class="diag-latest-filter__btn"
-              :class="{
-                'diag-latest-filter__btn--active': latestFilter === f.key,
-              }"
-              @click="latestFilter = f.key as LatestFilter"
-            >
-              {{ f.label }}
-              <span
-                v-if="f.key === 'undiagnosed' && undiagnosedCount > 0"
-                class="diag-latest-filter__count"
-              >
-                {{ undiagnosedCount }}
-              </span>
-            </button>
-            <Select
-              v-model:value="filterImportance"
-              :allow-clear="true"
-              :options="[
-                { label: '1级（关键）', value: 1 },
-                { label: '2级（重要）', value: 2 },
-                { label: '3级（一般）', value: 3 },
-              ]"
-              placeholder="回路等级"
-              size="small"
-              style="width: 118px"
-            />
-            <Select
-              v-model:value="filterScoreGrade"
-              :allow-clear="true"
-              :options="
-                SCORE_GRADES.map((g) => ({ label: g.label, value: g.key }))
-              "
-              placeholder="性能评分"
-              size="small"
-              style="width: 100px"
-            />
-            <Select
-              v-model:value="filterCategory"
-              :allow-clear="true"
-              :options="CATEGORY_OPTIONS"
-              placeholder="诊断结论"
-              size="small"
-              style="width: 140px"
-            />
-            <Select
-              v-model:value="filterSeverity"
-              :allow-clear="true"
-              :options="[
-                { label: '高', value: 'HIGH' },
-                { label: '中', value: 'MEDIUM' },
-                { label: '低', value: 'LOW' },
-              ]"
-              placeholder="严重度"
-              size="small"
-              style="width: 92px"
-            />
-          </div>
-          <Table
-            class="diag-latest-table"
-            :columns="latestColumns"
-            :custom-row="
-              (record: DiagnosisApi.LatestRunItem) => ({
-                style: record.runId ? 'cursor: pointer' : '',
-                onClick: () => openLatestDetail(record),
-              })
-            "
-            :data-source="filteredLatestItems"
-            :loading="latestLoading"
-            :pagination="false"
-            :row-key="(record: DiagnosisApi.LatestRunItem) => record.loopId"
-            :scroll="{ x: 1330, y: 560 }"
-            size="small"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'loopTagName'">
-                {{ record.loopTagName }}
-              </template>
-              <template v-else-if="column.dataIndex === 'loopDescription'">
-                <span class="text-neutral-500">{{
-                  record.loopDescription || '—'
-                }}</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'importanceLevel'">
-                <span
-                  v-if="record.importanceLevel"
-                  :style="{
-                    color: IMPORTANCE_LEVEL_COLOR[record.importanceLevel],
-                  }"
-                >
-                  {{
-                    IMPORTANCE_LEVEL_TEXT[record.importanceLevel] ??
-                    record.importanceLevel
-                  }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'latestScore'">
-                <span
-                  v-if="record.latestScore != null"
-                  class="font-medium tabular-nums"
-                >
-                  {{ record.latestScore.toFixed(1) }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.key === 'scoreGrade'">
-                <span
-                  v-if="record.latestScore != null"
-                  :style="{ color: scoreGrade(record.latestScore)?.color }"
-                >
-                  {{ scoreGrade(record.latestScore)?.label }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'triggerType'">
-                <span
-                  v-if="record.triggerType"
-                  :style="{ color: TRIGGER_TYPE_COLOR[record.triggerType] }"
-                >
-                  {{
-                    record.triggerTypeLabel ??
-                    TRIGGER_TYPE_TEXT[record.triggerType] ??
-                    record.triggerType
-                  }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'runCount'">
-                <span v-if="record.runId && record.runCount">
-                  第 {{ record.runCount }} 次
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
-                <span
-                  v-if="record.primaryCategoryLabel"
-                  :style="{
-                    color: latestCatColor(record as DiagnosisApi.LatestRunItem),
-                  }"
-                  class="font-medium"
-                >
-                  {{ record.primaryCategoryLabel }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'primaryConfidence'">
-                {{
-                  record.primaryConfidence == null
-                    ? '—'
-                    : `${Math.round(record.primaryConfidence * 100)}%`
-                }}
-              </template>
-              <template v-else-if="column.dataIndex === 'severity'">
-                {{
-                  record.severity
-                    ? (SEVERITY_TEXT[record.severity] ?? record.severity)
-                    : '—'
-                }}
-              </template>
-              <template v-else-if="column.dataIndex === 'reviewResultLabels'">
-                <span v-if="record.reviewResultLabels?.length" class="text-xs">
-                  {{ record.reviewResultLabels.join('、') }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'reviewStatus'">
-                <span
-                  v-if="record.reviewStatus"
-                  :style="{ color: REVIEW_STATUS_COLOR[record.reviewStatus] }"
-                >
-                  {{
-                    REVIEW_STATUS_TEXT[record.reviewStatus] ??
-                    record.reviewStatus
-                  }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'lastDiagnosedAt'">
-                <span v-if="record.runId">{{
-                  fmtUtc(record.lastDiagnosedAt)
-                }}</span>
-                <span v-else class="text-neutral-400">未诊断</span>
-              </template>
-              <template v-else-if="column.key === 'action'">
-                <div class="flex gap-1" @click.stop>
-                  <Button
-                    size="small"
-                    type="link"
-                    :disabled="!record.runId"
-                    @click.stop="
-                      openEvidence(record as DiagnosisApi.LatestRunItem)
-                    "
-                  >
-                    证据
-                  </Button>
-                  <Button
-                    size="small"
-                    type="link"
-                    :disabled="!record.runId"
-                    @click.stop="
-                      openReview(record as DiagnosisApi.LatestRunItem)
-                    "
-                  >
-                    复核
-                  </Button>
-                  <Button
-                    size="small"
-                    type="link"
-                    @click.stop="
-                      openHistory(record as DiagnosisApi.LatestRunItem)
-                    "
-                  >
-                    历史
-                  </Button>
-                  <Button
-                    size="small"
-                    type="link"
-                    :loading="quickDiagnosingId === record.loopId"
-                    :disabled="
-                      runner.running.value &&
-                      quickDiagnosingId !== record.loopId
-                    "
-                    @click.stop="quickDiagnose(record.loopId)"
-                  >
-                    诊断
-                  </Button>
-                </div>
-              </template>
-            </template>
-          </Table>
-          </Card>
-        </template>
-
-        <!-- 结论详情（结果表/概览表点击行加载） -->
-        <Card
-          v-if="selectedDetail || detailLoading"
-          size="small"
-          title="结论详情"
-        >
-          <ClpmDataCanvas
-            :empty="!selectedDetail"
-            :loading="detailLoading"
-            empty-text="加载中..."
-          >
-            <DiagnosisResultPanel
-              v-if="selectedDetail"
-              :detail="selectedDetail"
-            />
-          </ClpmDataCanvas>
-        </Card>
       </div>
     </div>
 
-    <!-- 概览行操作弹层：证据 / 复核 / 历史 + 行点击诊断详情 -->
-    <DiagnosisEvidenceDrawer
-      v-model:open="evidenceOpen"
-      :run-id="evidenceRunId"
-    />
-    <DiagnosisReviewDrawer
-      v-model:open="reviewOpen"
-      :item="reviewItem"
-      @done="onReviewDone"
-    />
-    <DiagnosisLoopArchiveDrawer
-      v-model:open="historyOpen"
-      :loop-id="historyItem?.loopId ?? null"
-      :loop-tag-name="historyItem?.loopTagName"
-      @open-run="openArchiveRun"
-      @trigger-diagnosis="onArchiveTriggerDiagnosis"
-    />
-    <DiagnosisDetailModal
-      v-model:open="detailModalOpen"
-      :item="detailItem"
-      @reviewed="onReviewDone"
-    />
   </Page>
 </template>
 

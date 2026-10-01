@@ -624,6 +624,22 @@ class TestListTasks:
         assert data["total"] == 2
         assert len(data["items"]) == 2
 
+    def test_list_tasks_exclude_by_type(self, client, task_redis, fake_redis) -> None:
+        """按类型排除（2026-10-01：诊断任务切至诊断模块，评估列表排除 DIAGNOSIS）."""
+        _save_task_to_redis(task_redis, task_id="task-std", task_type="STANDARD", status="SUCCESS")
+        _save_task_to_redis(
+            task_redis, task_id="task-diag", task_type="DIAGNOSIS", status="PENDING"
+        )
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/tasks?excludeTaskTypes=DIAGNOSIS",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert data["items"][0]["taskType"] == "STANDARD"
+
     def test_list_tasks_filter_by_type(self, client, task_redis, fake_redis) -> None:
         """按任务类型筛选."""
         _save_task_to_redis(task_redis, task_id="task-std", task_type="STANDARD", status="SUCCESS")

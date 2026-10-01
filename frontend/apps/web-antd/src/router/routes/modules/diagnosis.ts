@@ -1,11 +1,14 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 诊断路由模块（MVP v2 重设计版，2026-08-16）
+ * 诊断路由模块（MVP v2 重设计版，2026-08-16；2026-10-01 UX 重构）
  *
  * 设计文档：docs/MVP设计/07-诊断模块设计方案.md §9.2
- * 两页式：诊断工作台（发起+结果一体）/ 诊断记录（历史+导出）。
- * 原诊断中心 5 页结构不沿用；旧页面文件已在 MVP 精简时删除。
+ * 四页式（2026-10-01 用户口径）：
+ * - 诊断工作台：左脊柱单选回路 + 上发起 / 下结论证据 Tabs
+ * - 诊断概览：每回路最新一条诊断结论（原工作台概览区独立成页）
+ * - 诊断记录：历史 + 导出
+ * - 诊断任务：诊断类任务执行列表（从评估任务列表切分）
  *
  * 角色权限：
  * - 工作台发起诊断：ADMIN / IC_ENGINEER / PE_ENGINEER（后端校验）
@@ -36,6 +39,22 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'DiagnosisOverview',
+        path: '/diagnosis/overview',
+        component: () => import('#/views/diagnosis/overview.vue'),
+        meta: {
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
+          icon: 'lucide:list-checks',
+          title: '诊断概览',
+        },
+      },
+      {
         name: 'DiagnosisRecords',
         path: '/diagnosis/records',
         component: () => import('#/views/diagnosis/records.vue'),
@@ -49,6 +68,16 @@ const routes: RouteRecordRaw[] = [
           ],
           icon: 'lucide:history',
           title: '诊断记录',
+        },
+      },
+      {
+        name: 'DiagnosisTasks',
+        path: '/diagnosis/tasks',
+        component: () => import('#/views/diagnosis/tasks.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:loader-circle',
+          title: '诊断任务',
         },
       },
     ],

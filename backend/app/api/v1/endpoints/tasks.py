@@ -1151,6 +1151,10 @@ async def get_task_status(
 @router.get("", response_model=ApiResponse[TaskListResponse])
 async def list_tasks(
     taskType: str | None = Query(None, description="按任务类型筛选：STANDARD/CUSTOM/BACKFILL"),
+    excludeTaskTypes: str | None = Query(
+        None,
+        description="按任务类型排除（逗号分隔；诊断任务已切至诊断模块，评估列表传 DIAGNOSIS）",
+    ),
     status_filter: str | None = Query(
         None, alias="status", description="按状态筛选：PENDING/RUNNING/SUCCESS/FAILED/CANCELLED"
     ),
@@ -1177,6 +1181,9 @@ async def list_tasks(
     plant_node_filter = (
         [pid.strip() for pid in plantNodeIds.split(",") if pid.strip()] if plantNodeIds else None
     )
+    exclude_set = (
+        {t.strip() for t in excludeTaskTypes.split(",") if t.strip()} if excludeTaskTypes else set()
+    )
 
     # 预解析时间筛选（created_at 为 ISO 字符串，统一按 datetime 比较，
     # 避免 "+00:00" 与 "Z" 混合格式下字符串比较在同秒边界误判）
@@ -1197,7 +1204,7 @@ async def list_tasks(
 
     offset = (page - 1) * pageSize
 
-    if not (taskType or status_filter or plant_node_filter):
+    if not (taskType or status_filter or plant_node_filter or exclude_set):
         # 无哈希字段筛选：索引层先分页，仅 pipeline 读取当前页详情。
         # 列表路径不再逐条 _sync_task_status（AsyncResult.state 是 Celery 同步
         # Redis 调用，串行执行会阻塞 event loop）；进度由任务运行期写入的
@@ -1216,6 +1223,9 @@ async def list_tasks(
 
         # 筛选：任务类型
         if taskType and data.get("task_type") != taskType:
+            continue
+        # 筛选：排除任务类型（评估任务列表排除 DIAGNOSIS 等）
+        if exclude_set and data.get("task_type") in exclude_set:
             continue
         # 筛选：状态
         if status_filter and data.get("status") != status_filter:

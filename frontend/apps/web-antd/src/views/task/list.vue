@@ -53,9 +53,14 @@ import BackfillTaskDrawer from './backfill-task-drawer.vue';
 
 defineOptions({ name: 'TaskList' });
 
-/** 默认任务类型筛选（宿主按角色传入；缺省 undefined = 全部） */
+/** 默认任务类型筛选（宿主按角色传入；缺省 undefined = 全部）。
+ *  fixedTaskType：锁定类型（诊断模块"诊断任务"页，隐藏类型筛选下拉）；
+ *  excludeTaskTypes：排除类型（评估任务列表排除 DIAGNOSIS，2026-10-01 切分）
+ */
 const props = defineProps<{
   defaultTaskType?: TaskApi.TaskType;
+  excludeTaskTypes?: TaskApi.TaskType[];
+  fixedTaskType?: TaskApi.TaskType;
 }>();
 
 /** 轮询每轮回调（0929：父页监听以同步 RUNNING 徽章，此前徽章长期 stale） */
@@ -72,7 +77,9 @@ const currentPage = ref(1);
 const pageSize = ref(20);
 
 // 筛选状态
-const filterTaskType = ref<TaskApi.TaskType | undefined>(props.defaultTaskType);
+const filterTaskType = ref<TaskApi.TaskType | undefined>(
+  props.fixedTaskType ?? props.defaultTaskType,
+);
 const filterStatus = ref<TaskApi.TaskStatus | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 
@@ -310,6 +317,8 @@ function buildQueryParams(): TaskApi.TaskListQueryParams {
     pageSize: pageSize.value,
   };
   if (filterTaskType.value) params.taskType = filterTaskType.value;
+  if (props.excludeTaskTypes?.length)
+    params.excludeTaskTypes = props.excludeTaskTypes.join(',');
   if (filterStatus.value) params.status = filterStatus.value;
   if (filterDateRange.value) {
     params.startTime = filterDateRange.value[0].startOf('day').toISOString();
@@ -507,6 +516,7 @@ onUnmounted(() => {
       </Space>
       <Space>
         <Select
+          v-if="!props.fixedTaskType"
           v-model:value="filterTaskType"
           placeholder="任务类型：全部"
           allow-clear
