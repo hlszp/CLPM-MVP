@@ -897,7 +897,6 @@ onMounted(() => {
             </div>
                 </div>
               </div>
-            </div>
             <!-- 加载失败可见化：此前只 console.error，空白脊柱被误解为"没有回路" -->
             <div
               v-if="loopLoadError"
