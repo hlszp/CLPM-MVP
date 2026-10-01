@@ -505,6 +505,35 @@ watch(isDark, () => {
         type="warning"
       />
     </div>
+    <!-- ①' 未见异常（数据充足但全部症状未命中：NO_SYMPTOM 哨兵落库为
+         NULL 主分类，前端原无分支 → "诊断结论"Tab 空白，2026-10-01 修复） -->
+    <div
+      v-else-if="showConclusion"
+      class="rounded-lg border p-4"
+      :style="{ borderColor: '#10b98155', background: '#10b9810d' }"
+    >
+      <div class="flex items-center gap-3">
+        <span
+          class="inline-block h-8 w-1.5 rounded-full"
+          :style="{ background: '#10b981' }"
+        ></span>
+        <div class="flex-1">
+          <div class="text-lg font-semibold" style="color: #10b981">
+            未见异常
+          </div>
+          <div class="mt-0.5 text-xs text-neutral-500">
+            评估窗口内数据充足，全部诊断算子未检出显著控制问题症状。
+          </div>
+        </div>
+      </div>
+      <div
+        v-if="detail.rationale?.length"
+        class="mt-2 border-t border-dashed border-neutral-200 pt-2 text-xs leading-5 text-neutral-400"
+      >
+        判定过程：{{ detail.rationale.join('；') }}
+      </div>
+    </div>
+
 
     <!-- ② 并存 / 待复核 chips -->
     <div
