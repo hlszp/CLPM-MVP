@@ -4,6 +4,27 @@ export default defineConfig(async () => {
   return {
     application: {},
     vite: {
+      build: {
+        // 2026-10-01：启动 chunk 瀑布收敛——路由级 code splitting 产出 160+ 碎
+        // chunk，弱网/受限公网（如 82 端口经 AAS 网关）下串行瀑布把首屏拖到
+        // 数十秒"一直打转"。按顶层包归并到少量大 chunk（首屏请求数 160→~15，
+        // HTTP keep-alive 复用 6 连接，总传输量不变）。页面级动态 import
+        // 保持（访问页面才拉对应 chunk）。
+        rollupOptions: {
+          output: {
+            manualChunks(id) {
+              if (!id.includes('node_modules')) return undefined;
+              if (id.includes('echarts') || id.includes('zrender')) return 'vendor-echarts';
+              if (id.includes('ant-design-vue') || id.includes('@ant-design')) return 'vendor-antd';
+              if (id.includes('dayjs') || id.includes('lodash') || id.includes('@vueuse')) return 'vendor-utils';
+              if (id.includes('@vben') || id.includes('@vben-core')) return 'vendor-vben';
+              if (id.includes('iconify') || id.includes('lucide')) return 'vendor-icons';
+              if (id.includes('@vue/') || id.includes('vue-router') || id.includes('pinia')) return 'vendor-vue';
+              return 'vendor-misc';
+            },
+          },
+        },
+      },
       server: {
         proxy: {
           '/api': {
