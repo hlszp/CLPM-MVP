@@ -89,10 +89,12 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "metricCode": "accuracy_rate",
         "metricName": "准确率",
         "category": "CORE",
-        "formula": "max(0, (1 - mean_abs_error / e_max)) × 100",
+        "formula": "A = [1 - r × (1 - e^(-r))] × 100，r = |PV-SP|均值 / e_max",
         "description": (
-            "衡量 PV 与 SP 的偏离程度。mean_abs_error 为评估窗内 |PV-SP| 均值，"
-            "e_max 为工艺允许最大偏差。对齐 GB/T 44693.2-2024 §6.4.2。"
+            "衡量 PV 与 SP 的偏离程度。r 为评估窗内 |PV-SP| 均值与最大允许偏差 "
+            "e_max 之比，按指数衰减计罚（偏差越大惩罚越重，非线性）。"
+            "e_max 取自数据驱动 max(|PV-SP|)；偏差恒定的退化场景按量程百分比兜底。"
+            "对齐 GB/T 44693.2-2024 §6.4.2。"
         ),
         "unit": None,
         "sortOrder": 10,
@@ -101,10 +103,12 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "metricCode": "fast_rate",
         "metricName": "快速率",
         "category": "CORE",
-        "formula": "ideal_settling_time / actual_settling_time × 100",
+        "formula": "分段：已达稳态(T≤阈值) → 100；否则 F = e^(-(T-T')/T') × 100",
         "description": (
-            "衡量回路响应速度。理想稳态时间与实际稳态时间之比，"
-            "基于 ARMA 模型辨识 + Green 函数法计算。对齐 GB/T 44693.2-2024 §6.4.3。"
+            "衡量回路响应速度。T 为实际稳态时间、T' 为理想稳态时间"
+            "（ARMA 模型辨识 + Green 函数法）；实际稳态时间超出阈值后按 "
+            "(T-T')/T' 的指数衰减计分（越慢衰减越快），不再用线性比值。"
+            "对齐 GB/T 44693.2-2024 §6.4.3。"
         ),
         "unit": None,
         "sortOrder": 11,
@@ -126,9 +130,10 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "metricCode": "effective_auto_rate",
         "metricName": "有效自控率",
         "category": "COMMISSIONING",
-        "formula": "count(auto AND op NOT saturated AND pv_quality=Good) / count(*) × 100",
+        "formula": "时长(自控模式 AND OP 未饱和 AND |PV-SP| < e_max) / 总时长 × 100",
         "description": (
-            "综合考量自动模式、输出未饱和、PV 质量良好三个条件同时满足的占比。"
+            "综合考量自动模式、输出未饱和、偏差在允许范围内"
+            "（|PV-SP| < e_max，非质量码判定）三个条件同时满足的时长占比。"
             "作为综合评分的折扣因子 R，非加权项。对齐 GB/T 44693.2-2024 §6.4.5。"
         ),
         "unit": None,
@@ -151,9 +156,9 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "metricCode": "auto_mode_rate",
         "metricName": "自控率",
         "category": "AUXILIARY_DIAGNOSTIC",
-        "formula": "count(mode IN (Auto, Cascade, Remote)) / count(*) × 100",
+        "formula": "count(mode IN (Auto, Cascade, Remote, APC)) / count(*) × 100",
         "description": (
-            "回路处于自动模式（Auto/Cascade/Remote）的时长占比。"
+            "回路处于自动模式（Auto/Cascade/Remote/APC）的时长占比。"
             "投用定义可按回路单独配置（loop_mode_mapping）。"
         ),
         "unit": None,
@@ -210,10 +215,11 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "metricCode": "stiction_index",
         "metricName": "粘滞指数",
         "category": "AUXILIARY_DIAGNOSTIC",
-        "formula": "cross_correlation_based_stiction_detection",
+        "formula": "St = b / a × 100（PV-OP 椭圆拟合）",
         "description": (
-            "基于互相关分析的阀门粘滞检测指数。值域 [0, 1]，>0.5 提示存在粘滞。"
-            "对齐 Choudhury-Horch-Shah 方法。"
+            "基于 PV-OP 相平面椭圆拟合的阀门粘滞指数（Choudhury-Horch-Shah 方法）："
+            "a 为椭圆长轴、b 为短轴。值域 [0, 100]，分级阈值："
+            "<5 无、5~15 轻度、15~30 中度、≥30 重度。"
         ),
         "unit": None,
         "sortOrder": 36,
@@ -222,10 +228,10 @@ _BUILTIN_DEFINITIONS: list[dict[str, Any]] = [
         "metricCode": "output_trip_index",
         "metricName": "输出行程指数",
         "category": "AUXILIARY_DIAGNOSTIC",
-        "formula": "std(op_diff) / range",
+        "formula": "Σ|ΔOP| / (评估时长 T × OP 量程)",
         "description": (
-            "OP 输出变化量的标准差与量程之比，衡量阀门动作频繁程度。"
-            "值过大提示可能存在整定不当或噪声干扰。"
+            "OP 输出累计变化量与（评估时长 × 量程）之比，衡量阀门动作频繁程度"
+            "（单位时间归一化后的行程占比）。值过大提示可能存在整定不当或噪声干扰。"
         ),
         "unit": None,
         "sortOrder": 37,

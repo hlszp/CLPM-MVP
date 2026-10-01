@@ -251,7 +251,6 @@ class TestLoopDetail:
         assert resp.status_code == 200
         assert resp.json()["data"] == {}
 
-
     def test_get_loop_detail_success(self, client, mock_db, fake_redis) -> None:
         """获取回路详情成功。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(LOOP_001))

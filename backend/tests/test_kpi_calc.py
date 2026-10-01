@@ -1642,7 +1642,11 @@ class TestBuildWeightsMapMetricConfigPriority:
         }
 
     def test_metric_config_with_zero_weight_falls_back_to_loop_type(self) -> None:
-        """MetricConfig.weight 含 0 时回退到 LoopTypeWeight（视作未配置）。"""
+        """E4 修复（2026-10-01）：weight=0 是合法配置（该指标不参与评分）。
+
+        0/正权重均参与归一化（accuracy=0 → 权重 0）；三项全 0（total=0，
+        无意义）才回退 LoopTypeWeight。仅未配置（None）判无效回退。
+        """
         metric_configs = {
             "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("0")),
             "fast_rate": _make_metric_config("fast_rate", weight=Decimal("50")),
@@ -1657,6 +1661,19 @@ class TestBuildWeightsMapMetricConfigPriority:
         }
         result = _build_weights_map(type_weights, "FAST", metric_configs)
         assert result == {
+            "accuracy_rate": 0.0,
+            "fast_rate": 0.5,
+            "stability_rate": 0.5,
+        }
+
+        # 三项全 0：无意义配置，回退 LoopTypeWeight
+        all_zero = {
+            "accuracy_rate": _make_metric_config("accuracy_rate", weight=Decimal("0")),
+            "fast_rate": _make_metric_config("fast_rate", weight=Decimal("0")),
+            "steady_rate": _make_metric_config("steady_rate", weight=Decimal("0")),
+        }
+        result2 = _build_weights_map(type_weights, "FAST", all_zero)
+        assert result2 == {
             "accuracy_rate": 0.2,
             "fast_rate": 0.4,
             "stability_rate": 0.4,

@@ -1823,7 +1823,10 @@ def _build_weights_map(
     优先级链：MetricConfig.weight > LoopTypeWeight > None
 
     - 若 metric_configs 中 3 个核心指标（accuracy_rate/fast_rate/steady_rate）
-      的 weight 全部有效（非 None、非 0），则归一化后使用 MetricConfig 权重
+      的 weight 全部有效（非 None），则归一化后使用 MetricConfig 权重。
+      **weight=0 是合法配置**（E4 修复，2026-10-01）：confidence_evaluator
+      支持"权重为 0 的核心指标不参与评分"（如逻辑型回路配 accuracy=0），
+      仅未配置（None）才判无效回退；三项全 0（total=0）无意义，仍回退
     - 否则回退到 LoopTypeWeight（type_weights[score_type]）
     - 两者都无 → 返回 None（使用 ConfidenceEvaluator 默认权重）
 
@@ -1844,7 +1847,7 @@ def _build_weights_map(
         all_valid = True
         for db_code, calc_code in core_metrics:
             config = metric_configs.get(db_code)
-            if config is not None and config.weight is not None and config.weight > 0:
+            if config is not None and config.weight is not None:
                 mc_weights[calc_code] = float(config.weight)
             else:
                 all_valid = False
