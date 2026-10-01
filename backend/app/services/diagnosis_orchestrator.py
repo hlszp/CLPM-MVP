@@ -952,7 +952,15 @@ async def run_diagnosis_for_loop(
                             observed_mask[_i] = False
                             break
         else:
-            op_rows = [d for d in aligned if d.get("op") is not None]
+            # D4 修复（2026-10-01）：pv/sp/op 原各自按"非 None"独立过滤，
+            # 任一信号中途缺值时 pv[:min_len]-sp[:min_len] 的 PV-OP 配对
+            # 错位，污染振荡/阶跃/粘滞等算子。改用公共有效行（三信号同时
+            # 非 None，与 point 路径 AD04/I03 公共掩码同思路）。
+            valid_rows = [
+                d
+                for d in aligned
+                if d.get("pv") is not None and d.get("sp") is not None and d.get("op") is not None
+            ]
             # 原始序列相对秒（与 pv_quality 同长度/同基准）：供质量码算子把
             # Bad 段索引映射为窗口内偏移秒（前端结合 timeWindowStart 展示
             # 本地钟点）；对齐轴 timestamps 长度不含 BAD 行，无法直接复用
@@ -962,16 +970,16 @@ async def run_diagnosis_for_loop(
             else:
                 pv_quality_ts = np.array([], dtype=float)
             signals: dict[str, np.ndarray] = {
-                "pv": np.array([d["pv"] for d in aligned if d.get("pv") is not None], dtype=float),
-                "sp": np.array([d["sp"] for d in aligned if d.get("sp") is not None], dtype=float),
-                "op": np.array([d["op"] for d in op_rows], dtype=float),
-                # 与 op 同行取 mode（可为 None：_is_auto_mode(None)=False，
+                "pv": np.array([d["pv"] for d in valid_rows], dtype=float),
+                "sp": np.array([d["sp"] for d in valid_rows], dtype=float),
+                "op": np.array([d["op"] for d in valid_rows], dtype=float),
+                # 与公共行同取 mode（可为 None：_is_auto_mode(None)=False，
                 # 与引擎"仅自控模式计分子"语义一致且保证索引对齐）
-                "mode": np.array([d.get("mode") for d in op_rows], dtype=object),
+                "mode": np.array([d.get("mode") for d in valid_rows], dtype=object),
                 "pv_quality": np.array(pv_quality_codes, dtype=int),
                 "pv_quality_ts": pv_quality_ts,
             }
-            signals_valid = None  # legacy：无逐信号掩码（组装即已对齐）
+            signals_valid = None  # legacy：无逐信号掩码（公共行切片即对齐）
 
         ts_seconds = _ts_list_to_seconds([d["ts"] for d in aligned])
         ts_seconds = ts_seconds - (np.nanmin(ts_seconds) if len(ts_seconds) else 0.0)

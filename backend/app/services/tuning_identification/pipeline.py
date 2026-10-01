@@ -368,7 +368,9 @@ def identify_from_history(
     results: list[CandidateModel] = []
 
     # ── 层 1：激励检测 ──
-    exc = check_excitation(u, y, d)
+    # V62-P1-009 接线（2026-10-01）：planner 输出 OP 已归一化 0~100，
+    # op_span=100.0 走量程归一化路径（原不传恒走"u/y 跨量纲"回退）
+    exc = check_excitation(u, y, d, op_span=100.0)
     if not exc.is_sufficient:
         return IdentificationResult(
             success=False,

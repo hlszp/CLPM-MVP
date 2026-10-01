@@ -689,9 +689,7 @@ class TestRunActionsEndpoint:
         """D3（2026-10-01）新语义：已有 SYSTEM 建议才幂等跳过；仅 MANUAL 不拦。"""
         run = _make_run()
         existing = [
-            _make_action(
-                category="TUNING", content="重新整定 PID 参数：…", priority=1
-            ),
+            _make_action(category="TUNING", content="重新整定 PID 参数：…", priority=1),
             _make_action(source="MANUAL", category=None, content="人工措施", suggested_by="admin"),
         ]
         with mock_current_user(TEST_USERS["admin"]):

@@ -284,15 +284,9 @@ async def trigger_diagnosis(
             data={"blocked": blocked, "conditionWarning": condition_warning},
         )
 
-    task_id = await create_task(
-        task_type=TaskType.DIAGNOSIS,
-        created_by=user.username,
-        created_by_id=str(user.id),
-        loop_ids=loop_ids,
-        triggered_by="user",
-        title=f"回路诊断（{len(loop_ids)} 个回路）",
-    )
-    # 单算子细选：校验合法算子名（防拼写错误静默空跑）
+    # 单算子细选：校验合法算子名（防拼写错误静默空跑）。
+    # P2 修复（2026-10-01）：校验前置到 create_task 之前——原顺序先建
+    # TaskTracker 再校验，未知算子 400 后残留永久 PENDING 的孤儿任务
     selected_ops = [o for o in (body.operators or []) if o]
     if selected_ops:
         valid = {m["name"] for m in list_operators()}
@@ -303,6 +297,15 @@ async def trigger_diagnosis(
                 message=f"未知算子: {unknown[:5]}（可用: {sorted(valid)}）",
                 status_code=400,
             )
+
+    task_id = await create_task(
+        task_type=TaskType.DIAGNOSIS,
+        created_by=user.username,
+        created_by_id=str(user.id),
+        loop_ids=loop_ids,
+        triggered_by="user",
+        title=f"回路诊断（{len(loop_ids)} 个回路）",
+    )
     celery_result = run_diagnosis_batch.delay(
         loop_ids=loop_ids,
         start=start.isoformat(),

@@ -989,7 +989,8 @@ async def preview_identify_segments(
             u = np.array(seg_op, dtype=float)
             y = np.array(seg_pv, dtype=float)
             d = 1  # 预览用默认滞后，正式辨识由 pipeline 延迟搜索确定
-            exc = check_excitation(u, y, d)
+            # V62-P1-009 接线（2026-10-01）：OP 已归一化 0~100，走量程归一化
+            exc = check_excitation(u, y, d, op_span=100.0)
             score = excitation_score(exc.condition_number, exc.significant_changes)
             if exc.is_sufficient:
                 sufficient_count += 1
