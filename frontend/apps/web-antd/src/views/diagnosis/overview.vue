@@ -23,7 +23,6 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 
-import DiagnosisCoveragePanel from './components/coverage-panel.vue';
 import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
 import DiagnosisLoopArchiveDrawer from './components/loop-archive-drawer.vue';
@@ -66,12 +65,23 @@ function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
   }));
 }
 
+/** 收集全部有子节点的 key（默认展开到 UNIT 层，可手动折叠，2026-10-01 用户口径） */
+function collectExpandableKeys(nodes: PlantTreeNode[], acc: string[] = []): string[] {
+  for (const n of nodes) {
+    if (n.children?.length) {
+      acc.push(n.key);
+      collectExpandableKeys(n.children, acc);
+    }
+  }
+  return acc;
+}
+
 async function loadPlantTree(): Promise<void> {
   plantTreeLoading.value = true;
   try {
     const tree = await getPlantNodeTreeApi();
     plantTreeData.value = buildTreeNodes(tree);
-    plantTreeExpandedKeys.value = tree.map((n) => n.id);
+    plantTreeExpandedKeys.value = collectExpandableKeys(plantTreeData.value);
   } catch {
     plantTreeData.value = [];
   } finally {
@@ -301,7 +311,6 @@ onMounted(() => {
 
       <!-- 主区：覆盖面板 + 概览表 -->
       <div class="diag-ov-main">
-        <DiagnosisCoveragePanel class="mb-3" />
         <Card size="small">
           <template #title>
             最新诊断概览
