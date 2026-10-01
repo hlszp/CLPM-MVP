@@ -870,6 +870,10 @@ async def identify_model_from_history(
     d["dataPoints"] = len(pv)
     d["validRate"] = signals["valid_rate"]
     d["samplingFreq"] = signals["sampling_freq"]
+    # T2（2026-10-01）：任务层版本表读 samplingPeriod（原恒 None）；
+    # 周期 = 1/采样频率（Hz）
+    _freq = signals["sampling_freq"]
+    d["samplingPeriod"] = round(1.0 / _freq, 4) if _freq else None
 
     # ConfidenceEvaluator 接入：数据质量可信度（基于 valid_rate）
     # 与算法内部可信度（R²+残差+激励）取较低者，确保保守评级

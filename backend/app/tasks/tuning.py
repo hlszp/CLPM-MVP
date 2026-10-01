@@ -34,19 +34,27 @@ from app.services.process_model_version import create_candidate_version
 logger = logging.getLogger(__name__)
 
 
-def _build_version_metrics(result: dict[str, Any]) -> dict[str, Any] | None:
-    """从辨识结果提取验证指标快照（process_model_version.metrics）."""
+def _build_version_metrics(
+    result: dict[str, Any], evidence: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """从辨识结果提取验证指标快照（process_model_version.metrics）.
+
+    T2（2026-10-01）：r2Train/r2Val/nrmseVal 位于 evidence 嵌套层
+    （IdentificationResult.to_dict 的 evidence 字段），原从顶层读恒缺失。
+    """
+    ev = evidence or {}
     metrics: dict[str, Any] = {}
     for key in (
         "fittingScore",
         "excitationScore",
-        "r2Train",
-        "r2Val",
-        "nrmseVal",
         "aic",
         "bic",
     ):
         val = result.get(key)
+        if val is not None:
+            metrics[key] = val
+    for key in ("r2Train", "r2Val", "nrmseVal"):
+        val = ev.get(key)
         if val is not None:
             metrics[key] = val
     return metrics or None
@@ -194,12 +202,12 @@ async def _do_identify(
         try:
             fit_map = await get_latest_fitness_per_loop(db, [loop_id])
             fit = fit_map.get(str(loop_id))
-            if fit is not None and fit.level in {"L0", "L1", "L2"}:
+            if fit is not None and fit.level in {"L0", "L1"}:  # L2 放开（2026-10-01 裁决）
                 reasons = fit.human_readable_tags or ["适用性分层不足"]
                 raise BizError(
                     code="ERR_TUNING_FITNESS_INSUFFICIENT",
                     message=(
-                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L3+）。"
+                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L2+）。"
                         f"请先处理控制状态（{'；'.join(reasons)}）。"
                     ),
                     status_code=400,
@@ -207,7 +215,7 @@ async def _do_identify(
                         "loopId": str(loop_id),
                         "fitnessLevel": fit.level,
                         "reasons": reasons,
-                        "requiredMinimum": "L3",
+                        "requiredMinimum": "L2",
                     },
                 )
         except BizError:
@@ -284,6 +292,10 @@ async def _do_identify(
                     result.get("confidenceReason"),
                     result.get("thetaSource"),
                 )
+                # T2 修复（2026-10-01）：dataHash/不确定度/r2 等证据链字段嵌在
+                # result["evidence"] 内（IdentificationResult.to_dict 结构），
+                # 原从顶层读取恒 None → 版本表可追溯字段实际失效
+                evidence = result.get("evidence") or {}
                 version = await create_candidate_version(
                     db,
                     loop_id=loop_id,
@@ -295,12 +307,12 @@ async def _do_identify(
                     sampling_period=result.get("samplingPeriod"),
                     data_window_start=_parse_iso_naive(start_time),
                     data_window_end=_parse_iso_naive(end_time),
-                    data_hash=result.get("dataHash"),
+                    data_hash=evidence.get("dataHash"),
                     condition_summary=result.get("conditionSummary"),
-                    metrics=_build_version_metrics(result),
+                    metrics=_build_version_metrics(result, evidence),
                     residual_test=_build_version_residual_test(result),
-                    uncertainty=result.get("uncertainty"),
-                    physical_feasibility=result.get("physicalFeasibility"),
+                    uncertainty=evidence.get("parameterUncertainty"),
+                    physical_feasibility=evidence.get("physicalFeasibility"),
                     confidence_level=result.get("confidenceLevel"),
                     confidence_reason=confidence_reason,
                     created_by=created_by,
@@ -455,12 +467,12 @@ async def _do_tune_and_simulate(
         try:
             fit_map = await get_latest_fitness_per_loop(db, [loop_id])
             fit = fit_map.get(str(loop_id))
-            if fit is not None and fit.level in {"L0", "L1", "L2"}:
+            if fit is not None and fit.level in {"L0", "L1"}:  # L2 放开（2026-10-01 裁决）
                 reasons = fit.human_readable_tags or ["适用性分层不足"]
                 raise BizError(
                     code="ERR_TUNING_FITNESS_INSUFFICIENT",
                     message=(
-                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L3+）。"
+                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L2+）。"
                         f"请先处理控制状态（{'；'.join(reasons)}）。"
                     ),
                     status_code=400,
@@ -468,7 +480,7 @@ async def _do_tune_and_simulate(
                         "loopId": str(loop_id),
                         "fitnessLevel": fit.level,
                         "reasons": reasons,
-                        "requiredMinimum": "L3",
+                        "requiredMinimum": "L2",
                     },
                 )
         except BizError:

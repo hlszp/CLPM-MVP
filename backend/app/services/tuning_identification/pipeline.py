@@ -199,6 +199,17 @@ def _clean_nan_segments(
     return u, y, sp, stats
 
 
+def _feasibility_dict(feasibility) -> dict | None:
+    """T2（2026-10-01）：物理可行性检查结构化（原仅拼进 reason 字符串）。"""
+    if feasibility is None:
+        return None
+    return {
+        "passed": bool(feasibility.passed),
+        "reasonCode": feasibility.reason_code,
+        "details": feasibility.details,
+    }
+
+
 def _evidence_cleaning_stats(cleaning_stats: dict) -> dict | None:
     """仅在有清洗时返回统计（无坏点时 None，避免证据冗余）."""
     if cleaning_stats["interpolated_points"] > 0 or cleaning_stats["dropped_points"] > 0:
@@ -606,6 +617,7 @@ def identify_from_history(
                     ts=ts,
                 ),
                 cleaning_stats=_evidence_cleaning_stats(cleaning_stats),
+                physical_feasibility=_feasibility_dict(feasibility),
             )
 
             candidate = CandidateModel(
@@ -761,6 +773,8 @@ def _compute_parameter_uncertainty(
     K_samples: list[float] = []
     tau_samples: list[float] = []
     theta_samples: list[float] = []
+    t1_samples: list[float] = []
+    t2_samples: list[float] = []
     for s in samples:
         s_a = s[:na].tolist()
         s_b = s[na:].tolist()
@@ -773,7 +787,10 @@ def _compute_parameter_uncertainty(
             elif model_type == ModelType.SOPDT and na >= 2:
                 p = arx_to_sopdt(s_a[0], s_a[1], s_b[0], d, ts)
                 K_samples.append(p.K)
-                tau_samples.append(p.tau)
+                # T3（2026-10-01）：SOPDT 时间常数在 T1/T2（ModelParams.tau
+                # 恒 0），采样进 tau 会产出恒 [0,0] 的假置信区间
+                t1_samples.append(p.T1)
+                t2_samples.append(p.T2)
                 theta_samples.append(p.theta)
         except Exception:
             continue  # 不稳定采样点跳过
@@ -785,10 +802,14 @@ def _compute_parameter_uncertainty(
     return ParameterUncertainty(
         K_ci_lower=float(np.percentile(K_samples, 2.5)),
         K_ci_upper=float(np.percentile(K_samples, 97.5)),
-        tau_ci_lower=float(np.percentile(tau_samples, 2.5)),
-        tau_ci_upper=float(np.percentile(tau_samples, 97.5)),
+        tau_ci_lower=float(np.percentile(tau_samples, 2.5)) if tau_samples else 0.0,
+        tau_ci_upper=float(np.percentile(tau_samples, 97.5)) if tau_samples else 0.0,
         theta_ci_lower=float(np.percentile(theta_samples, 2.5)),
         theta_ci_upper=float(np.percentile(theta_samples, 97.5)),
+        t1_ci_lower=float(np.percentile(t1_samples, 2.5)) if t1_samples else 0.0,
+        t1_ci_upper=float(np.percentile(t1_samples, 97.5)) if t1_samples else 0.0,
+        t2_ci_lower=float(np.percentile(t2_samples, 2.5)) if t2_samples else 0.0,
+        t2_ci_upper=float(np.percentile(t2_samples, 97.5)) if t2_samples else 0.0,
         n_mc_samples=n_valid,
     )
 
@@ -1173,6 +1194,7 @@ def _identify_ipdt_candidate(
         y_val_predicted=[round(float(v), 6) for v in y_val_pred],
         residuals_val=[round(float(v), 6) for v in residuals_val_arr],
         cleaning_stats=_evidence_cleaning_stats(cleaning_stats),
+        physical_feasibility=_feasibility_dict(feasibility),
     )
 
     return CandidateModel(

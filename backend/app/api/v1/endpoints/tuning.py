@@ -101,11 +101,16 @@ router = APIRouter(prefix="/tuning", tags=["tuning"])
 
 
 async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
-    """整定写端点 fitness 门禁：L3 以下（L0/L1/L2）→ 阻断并抛出错误码.
+    """整定写端点 fitness 门禁：L2 以下（L0/L1）→ 阻断并抛出错误码.
 
     区别于 ERR_TUNING_DATA_INSUFFICIENT（波形不足），本错误码语义为
-    "回路适用性分层不足"（手动主导/OP严重饱和/无激励等）。
+    "回路适用性分层不足"（手动主导/数据严重不足等）。
     fitness=None（首次尚未计算快照）→ 放行不阻断。
+
+    2026-10-01 三模块审查裁决：L2（OP 饱和/SP-PV 偏离）从阻断改为放行
+    ——OP 饱和只影响部分时段，辨识管线自带激励检测与分段，数学上可行；
+    与前端"L2 警告不禁止"口径统一（原前后端矛盾：前端放行后端 400）。
+    L3 不在阻断集：无激励回路过门禁但辨识大概率失败，由前端前置提示。
     """
     try:
         fitness_map = await get_latest_fitness_per_loop(db, [loop_id])
@@ -114,14 +119,13 @@ async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
     fit = fitness_map.get(str(loop_id))
     if fit is None or fit.level is None:
         return  # 无 fitness 数据 → 暂放过
-    # L3 以下：L0（数据不足）、L1（手动/低自控）、L2（OP饱和/SP-PV偏离严重）
-    BLOCK_LEVELS = {"L0", "L1", "L2"}
+    BLOCK_LEVELS = {"L0", "L1"}
     if fit.level in BLOCK_LEVELS:
         reasons = fit.human_readable_tags or ["适用性分层不足"]
         raise BizError(
             code="ERR_TUNING_FITNESS_INSUFFICIENT",
             message=(
-                f"回路适用性等级为 {fit.level}，不满足整定要求（需要 L3+）。"
+                f"回路适用性等级为 {fit.level}，不满足整定要求（需要 L2+）。"
                 f"请先处理控制状态（{'；'.join(reasons)}），或在诊断后再尝试整定。"
             ),
             status_code=400,
@@ -129,7 +133,7 @@ async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
                 "loopId": str(loop_id),
                 "fitnessLevel": fit.level,
                 "reasons": reasons,
-                "requiredMinimum": "L3",
+                "requiredMinimum": "L2",
             },
         )
 
@@ -334,6 +338,8 @@ async def tune_matrix_endpoint(
     该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计日志——
     审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
     """
+    # T4 修复：矩阵端点原漏装 fitness 门禁（/tune 有），补齐口径
+    await _ensure_tuning_fitness(db, body.loopId)
     source_context = await authorize_tuning_model(
         db=db,
         requested_model_type=body.modelType,

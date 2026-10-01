@@ -108,15 +108,28 @@ class ParameterUncertainty:
     tau_ci_upper: float = 0.0
     theta_ci_lower: float = 0.0
     theta_ci_upper: float = 0.0
+    # T3 修复（2026-10-01）：SOPDT 时间常数是 T1/T2（ModelParams.tau 恒 0），
+    # 原实现采样 p.tau → tau CI 恒 [0,0] 的假置信区间
+    t1_ci_lower: float = 0.0
+    t1_ci_upper: float = 0.0
+    t2_ci_lower: float = 0.0
+    t2_ci_upper: float = 0.0
     n_mc_samples: int = 0  # 有效 Monte Carlo 采样数（转换成功）
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "K": {"ci95": [round(self.K_ci_lower, 4), round(self.K_ci_upper, 4)]},
-            "tau": {"ci95": [round(self.tau_ci_lower, 4), round(self.tau_ci_upper, 4)]},
             "theta": {"ci95": [round(self.theta_ci_lower, 4), round(self.theta_ci_upper, 4)]},
             "nMcSamples": self.n_mc_samples,
         }
+        # 仅输出实际采样的参数 CI（FOPDT=tau；SOPDT=T1/T2），
+        # 避免未采样维度输出 [0,0] 误导
+        if self.tau_ci_lower != 0.0 or self.tau_ci_upper != 0.0:
+            d["tau"] = {"ci95": [round(self.tau_ci_lower, 4), round(self.tau_ci_upper, 4)]}
+        if self.t1_ci_lower != 0.0 or self.t1_ci_upper != 0.0:
+            d["T1"] = {"ci95": [round(self.t1_ci_lower, 4), round(self.t1_ci_upper, 4)]}
+            d["T2"] = {"ci95": [round(self.t2_ci_lower, 4), round(self.t2_ci_upper, 4)]}
+        return d
 
 
 @dataclass
@@ -174,6 +187,9 @@ class ModelEvidence:
     parameter_uncertainty: ParameterUncertainty | None = None
     # P2-019：坏点清洗统计（None 表示无清洗/原始数据无坏点）
     cleaning_stats: dict[str, Any] | None = None
+    # T2（2026-10-01）：物理可行性结构化输出（原仅拼进 reason 字符串，
+    # 任务层读顶层 physicalFeasibility 恒 None → 版本表字段失效）
+    physical_feasibility: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -197,6 +213,7 @@ class ModelEvidence:
                 else None
             ),
             "cleaningStats": self.cleaning_stats,
+            "physicalFeasibility": self.physical_feasibility,
         }
 
 
