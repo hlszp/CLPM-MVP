@@ -73,6 +73,15 @@ import {
 
 /** P2 IA优化：fitness tag 中文映射（与 fitness-badge 组件约定一致） */
 const FITNESS_TAG_CN: Record<string, string> = {
+  // H1 修复（2026-10-01）：后端 loop_fitness.py 实际产出以下 7 标签
+  // （T_* 系为历史标签，保留兼容旧快照；文案与后端 TAG_HUMAN_REASON 一致）
+  DATA_INSUFFICIENT: '数据严重不足',
+  MANUAL_DOMINANT: '手动模式占比过高',
+  LOW_AUTO_RATE: '自控率极低',
+  OP_SATURATED: 'OP 长期处于饱和限位附近',
+  SP_PV_DEVIATION: 'SP-PV 长期偏离设定',
+  NO_EXCITATION: 'OP 无有效激励',
+  WEAK_RESPONSE: 'PV 对 OP 响应极弱',
   T_UNKNOWN: '未知',
   T_LOCAL_DATA_MISSING: '本地无历史数据',
   T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
@@ -479,12 +488,19 @@ async function submitDiagnosis(
   operators: string[] | undefined,
 ): Promise<void> {
   try {
-    await runner.trigger({
+    const res = await runner.trigger({
       loopIds,
       timeWindow: timeWindowBody as never,
       operatorGroup: 'full',
       ...(operators ? { operators } : {}),
     });
+    // D5（2026-10-01）：合并后端权威 L2 警告（前端预检接口失败降级放行的
+    // 场景下，后端返回的 L2 回路此前被丢弃）
+    if (res.conditionWarning?.length) {
+      const merged = new Set(l2WarningLoopIds.value);
+      for (const w of res.conditionWarning) merged.add(w.loopId);
+      l2WarningLoopIds.value = merged;
+    }
     message.info(
       l2WarningLoopIds.value.size > 0
         ? `诊断任务已提交（含 ${l2WarningLoopIds.value.size} 个 L2 条件异常回路）`

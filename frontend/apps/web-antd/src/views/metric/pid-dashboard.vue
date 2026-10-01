@@ -53,6 +53,15 @@ const timeWindowOptions = [
 
 /** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
 const PID_NA_TAG_CN: Record<string, string> = {
+  // H1 修复（2026-10-01）：后端 loop_fitness.py 实际产出以下 7 标签
+  // （T_* 系为历史标签，保留兼容旧快照；文案与后端 TAG_HUMAN_REASON 一致）
+  DATA_INSUFFICIENT: '数据严重不足',
+  MANUAL_DOMINANT: '手动模式占比过高',
+  LOW_AUTO_RATE: '自控率极低',
+  OP_SATURATED: 'OP 长期处于饱和限位附近',
+  SP_PV_DEVIATION: 'SP-PV 长期偏离设定',
+  NO_EXCITATION: 'OP 无有效激励',
+  WEAK_RESPONSE: 'PV 对 OP 响应极弱',
   T_UNKNOWN: '未知',
   T_LOCAL_DATA_MISSING: '本地无历史数据',
   T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',

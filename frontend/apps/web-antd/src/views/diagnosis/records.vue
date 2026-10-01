@@ -24,6 +24,9 @@ import {
   Table,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+
+dayjs.extend(utc);
 
 import {
   exportDiagnosisRunsApi,
@@ -81,8 +84,16 @@ async function load() {
       loopId: query.loopId,
     };
     if (query.range) {
-      params.startTime = `${query.range[0].format('YYYY-MM-DD')}T00:00:00`;
-      params.endTime = `${query.range[1].format('YYYY-MM-DD')}T23:59:59`;
+      // D1 修复（2026-10-01）：后端按 naive UTC 比较 created_at，此前发本地
+      // naive 串致本地 00:00–08:00 创建的记录被算入前一天。本地日界转 UTC。
+      params.startTime = query.range[0]
+        .startOf('day')
+        .utc()
+        .format('YYYY-MM-DDTHH:mm:ss');
+      params.endTime = query.range[1]
+        .endOf('day')
+        .utc()
+        .format('YYYY-MM-DDTHH:mm:ss');
     }
     const res = await getDiagnosisRunsApi(params);
     items.value = res.items;
@@ -160,12 +171,28 @@ function onArchiveTriggerDiagnosis(loopId: string) {
 
 // ---- 导出 ----
 async function handleExport() {
+  // D2 修复（2026-10-01）：透传时间范围/回路筛选（reviewStatus 后端导出
+  // 端点不支持，不透传）；后端 5000 行上限——当前筛选超出时前置显式提示
+  // （静默截断违反诚实化红线）
+  const EXPORT_LIMIT = 5000;
+  if (total.value > EXPORT_LIMIT) {
+    message.warning(
+      `当前筛选 ${total.value} 条，导出仅包含前 ${EXPORT_LIMIT} 条（上限）`,
+    );
+  }
   exporting.value = true;
   try {
     const blob = await exportDiagnosisRunsApi({
       category: query.category,
       severity: query.severity,
       status: query.status,
+      loopId: query.loopId,
+      startTime: query.range
+        ? query.range[0].startOf('day').utc().format('YYYY-MM-DDTHH:mm:ss')
+        : undefined,
+      endTime: query.range
+        ? query.range[1].endOf('day').utc().format('YYYY-MM-DDTHH:mm:ss')
+        : undefined,
     });
     const url = URL.createObjectURL(
       new Blob([blob as unknown as BlobPart], {

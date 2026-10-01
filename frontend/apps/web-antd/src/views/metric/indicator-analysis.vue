@@ -136,6 +136,15 @@ const METRIC_OPTIONS: MetricMeta[] = [
 // ===== fitness tag 中文映射（与 loop-performance/pid-dashboard 共用口径）=====
 
 const NA_TAG_CN: Record<string, string> = {
+  // H1 修复（2026-10-01）：后端 loop_fitness.py 实际产出以下 7 标签
+  // （T_* 系为历史标签，保留兼容旧快照；文案与后端 TAG_HUMAN_REASON 一致）
+  DATA_INSUFFICIENT: '数据严重不足',
+  MANUAL_DOMINANT: '手动模式占比过高',
+  LOW_AUTO_RATE: '自控率极低',
+  OP_SATURATED: 'OP 长期处于饱和限位附近',
+  SP_PV_DEVIATION: 'SP-PV 长期偏离设定',
+  NO_EXCITATION: 'OP 无有效激励',
+  WEAK_RESPONSE: 'PV 对 OP 响应极弱',
   T_UNKNOWN: '未知',
   T_LOCAL_DATA_MISSING: '本地无历史数据',
   T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
@@ -211,6 +220,8 @@ const metricMeta = computed(
 
 const rankingItems = ref<MetricApi.RankingItem[]>([]);
 const prevRankingItems = ref<MetricApi.RankingItem[]>([]);
+/** E5（2026-10-01）：上窗拉取失败显式标记（区别于"真无上窗数据"） */
+const prevLoadFailed = ref(false);
 const nodeItems = ref<MetricApi.NodeRankingItem[]>([]);
 const loading = ref(false);
 const loadError = ref(false);
@@ -218,6 +229,7 @@ const loadError = ref(false);
 async function loadAll() {
   loading.value = true;
   loadError.value = false;
+  prevLoadFailed.value = false;
   const params: MetricApi.RankingQueryParams = {
     timeWindow: timeWindow.value as TimeWindowParam,
     sortBy: metricMeta.value.sortKey,
@@ -259,7 +271,11 @@ async function loadAll() {
         limit: 200,
       }),
       prevParams
-        ? getRankingApi(prevParams).catch(() => [] as MetricApi.RankingItem[])
+        ? getRankingApi(prevParams).catch(() => {
+            // E5：失败显式标记（原静默按空=与"真无上窗数据"不可区分）
+            prevLoadFailed.value = true;
+            return [] as MetricApi.RankingItem[];
+          })
         : Promise.resolve([] as MetricApi.RankingItem[]),
     ]);
     rankingItems.value = ranking;
@@ -977,6 +993,13 @@ onMounted(() => {
                 />
                 {{ formatDelta(avgDelta) }}
                 <span class="font-normal text-gray-400">环比</span>
+              </div>
+              <!-- E5：上窗拉取失败与"真无上窗数据"区分显示 -->
+              <div
+                v-else-if="prevLoadFailed"
+                class="mt-0.5 text-xs text-amber-500"
+              >
+                上窗数据不可用
               </div>
               <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
             </Card>

@@ -9,7 +9,7 @@ import type { TuningApi } from '#/api/tuning';
 
 import { computed, reactive, toRefs } from 'vue';
 
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 
 import { getLoopDetailApi, getLoopMonitorListApi } from '#/api/loop';
 import {
@@ -26,6 +26,15 @@ import { tuningAlgoLabel } from '../constants';
 
 /** P2 IA优化：fitness tag 中文映射（与 fitness-badge/诊断 对齐） */
 const FITNESS_TAG_CN: Record<string, string> = {
+  // H1 修复（2026-10-01）：后端 loop_fitness.py 实际产出以下 7 标签
+  // （T_* 系为历史标签，保留兼容旧快照；文案与后端 TAG_HUMAN_REASON 一致）
+  DATA_INSUFFICIENT: '数据严重不足',
+  MANUAL_DOMINANT: '手动模式占比过高',
+  LOW_AUTO_RATE: '自控率极低',
+  OP_SATURATED: 'OP 长期处于饱和限位附近',
+  SP_PV_DEVIATION: 'SP-PV 长期偏离设定',
+  NO_EXCITATION: 'OP 无有效激励',
+  WEAK_RESPONSE: 'PV 对 OP 响应极弱',
   T_UNKNOWN: '未知',
   T_LOCAL_DATA_MISSING: '本地无历史数据',
   T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
@@ -372,7 +381,37 @@ export function useTuningWorkbench() {
   }
 
   // ===== ② 整定矩阵 =====
-  function matrixRequestBase() {
+  /**
+   * T5 修复（2026-10-01）：C 级风险确认。原两处硬编码 riskConfirmed: true
+   * 绕过后端 ERR_TUNING_RISK_CONFIRMATION_REQUIRED 门禁（形同虚设）。
+   * 改为默认不带确认发起；命中 C 级门禁时弹风险说明，用户确认后
+   * 带 riskConfirmed: true 重试一次。
+   */
+  async function withRiskConfirm<T>(
+    call: (riskConfirmed: boolean) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await call(false);
+    } catch (error: any) {
+      const code = error?.response?.data?.code ?? error?.code;
+      if (code !== 'ERR_TUNING_RISK_CONFIRMATION_REQUIRED') throw error;
+      const ok = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: 'C 级辨识结果风险确认',
+          content:
+            '该回路辨识结果可信度为 C 级（可能存在负增益或非最小相位特性），整定建议仅供试验参考。请确认已了解风险并完成人工核验后继续。',
+          okText: '已了解风险，继续',
+          cancelText: '取消',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!ok) throw error;
+      return await call(true);
+    }
+  }
+
+  function matrixRequestBase(riskConfirmed: boolean) {
     const o = state.outcome!;
     return {
       modelType: o.modelType,
@@ -386,7 +425,7 @@ export function useTuningWorkbench() {
           ? 'STEP_EXPERIMENT'
           : 'IDENTIFICATION_RECORD')
         : 'MANUAL',
-      riskConfirmed: true,
+      riskConfirmed,
     };
   }
 
@@ -394,7 +433,7 @@ export function useTuningWorkbench() {
     state.matrixLoading = true;
     state.matrixError = '';
     try {
-      const res = await tuneMatrixApi(matrixRequestBase());
+      const res = await withRiskConfirm((rc) => tuneMatrixApi(matrixRequestBase(rc)));
       state.matrixRows = res.rows.map((r) => ({
         algorithm: r.algorithm,
         ok: r.ok,
@@ -450,11 +489,13 @@ export function useTuningWorkbench() {
     row.recomputing = true;
     try {
       const paramKey = ALGO_PARAM_KEY[row.algorithm];
-      const res = await tuneSingleApi({
-        ...matrixRequestBase(),
-        algorithm: row.algorithm,
-        algorithmParams: paramKey ? { [paramKey]: row.paramValue } : undefined,
-      });
+      const res = await withRiskConfirm((rc) =>
+        tuneSingleApi({
+          ...matrixRequestBase(rc),
+          algorithm: row.algorithm,
+          algorithmParams: paramKey ? { [paramKey]: row.paramValue } : undefined,
+        }),
+      );
       row.pid = res.recommendedPid;
       row.ok = true;
       row.error = undefined;
@@ -508,20 +549,23 @@ export function useTuningWorkbench() {
           algorithm: row.algorithm,
         });
       }
-      const res = await comparePidsApi({
-        modelType: state.outcome.modelType,
-        modelParams: state.outcome.params,
-        pidCandidates: candidates,
-        currentPid: state.currentPid ?? undefined,
-        loopId: state.loopId,
-        sourceRecordId: state.outcome.recordId ?? undefined,
-        modelSource: state.outcome.recordId
-          ? (state.outcome.dataSource === 'STEP_EXPERIMENT'
-            ? 'STEP_EXPERIMENT'
-            : 'IDENTIFICATION_RECORD')
-          : 'MANUAL',
-        riskConfirmed: true,
-      });
+      const outcome = state.outcome!;
+      const res = await withRiskConfirm((rc) =>
+        comparePidsApi({
+          modelType: outcome.modelType,
+          modelParams: outcome.params,
+          pidCandidates: candidates,
+          currentPid: state.currentPid ?? undefined,
+          loopId: state.loopId,
+          sourceRecordId: outcome.recordId ?? undefined,
+          modelSource: outcome.recordId
+            ? (outcome.dataSource === 'STEP_EXPERIMENT'
+              ? 'STEP_EXPERIMENT'
+              : 'IDENTIFICATION_RECORD')
+            : 'MANUAL',
+          riskConfirmed: rc,
+        }),
+      );
       state.simResult = res;
       state.simCandidates = simCandidates;
       state.finalLabel = simCandidates.find((c) => !c.isCurrent)?.label ?? '';

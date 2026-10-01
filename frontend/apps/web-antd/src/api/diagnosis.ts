@@ -289,6 +289,8 @@ export namespace DiagnosisApi {
   export interface TriggerResult {
     taskId: string;
     accepted: number;
+    /** D5（2026-10-01）：后端权威 L2 条件警告（前端预检失败降级时兜底） */
+    conditionWarning?: null | { fitnessLevel: string; loopId: string; warnings: string[] }[];
   }
 
   export interface RunQuery extends PageQuery {
