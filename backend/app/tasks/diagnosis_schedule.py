@@ -7,9 +7,9 @@
 
 前置门禁（缺数/不可信窗口只产出噪音，跳过记录日志不发任务）：
 1. 密度门禁：目标窗口 TDengine 行数 < 预期 50% 的回路跳过；
-2. fitness 门禁（2026-10-01 裁决 3）：最新适用性 L0（数据严重不足）/
-   L1（手动主导）的回路跳过——生产 59% 回路处于 L0/L1，每日全量下
-   无效计算占比过高且结论不可信；快照缺失（无 fitness 记录）不拦。
+2. fitness 门禁（2026-10-01 裁决 3，同日更新：仅拦 L0）：最新适用性
+   L0（数据严重不足，跑诊断必产出噪音）的回路跳过；L1 手动主导随
+   裁决放开诊断（仪表/质量码算子不受自控模式限制）；快照缺失不拦。
 
 分批派发：eligible 按 50 回路/批切独立任务（全局 task_time_limit=1800s
 硬杀 + autoretry 放大风险，单任务串行回路数必须受限；分批独立
@@ -66,7 +66,7 @@ async def _fitness_blocked_ids(loop_ids: list[str]) -> set[str]:
 
         async with AsyncSessionLocal() as db:
             latest = await get_latest_fitness_per_loop(db, loop_ids)
-        return {lid for lid, f in latest.items() if f.level in ("L0", "L1")}
+        return {lid for lid, f in latest.items() if f.level == "L0"}
     except Exception as exc:  # noqa: BLE001
         logger.warning("调度 fitness 门禁查询失败（本轮不拦 L0/L1）: %s", exc)
         return set()

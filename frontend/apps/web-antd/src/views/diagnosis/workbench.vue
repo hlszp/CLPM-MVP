@@ -230,12 +230,12 @@ const badgeFilter = ref<BadgeFilter>('all');
 
 const filteredLoops = computed(() => {
   let list = loopItems.value;
-  // 默认隐藏不具备诊断条件的回路（L0/L1 被门禁拦截）；无 fitness 数据
-  // 的回路不隐藏（与发起门禁"无数据放行"同口径）
+  // 默认隐藏不具备诊断条件的回路（仅 L0 数据严重不足；L1 手动主导已随
+  // 2026-10-01 裁决放开诊断）；无 fitness 数据的回路不隐藏（与门禁同口径）
   if (onlyDiagnosable.value && loopFitnessMap.value.size > 0) {
     list = list.filter((l) => {
       const lv = loopFitnessMap.value.get(l.loopId);
-      return !lv || lv === 'L2' || lv === 'L3' || lv === 'L4';
+      return !lv || lv !== 'L0';
     });
   }
   if (badgeFilter.value !== 'all') {
@@ -572,13 +572,14 @@ async function passFitnessGate(loopIds: string[]): Promise<boolean> {
       const tags = info?.tags ?? [];
       const tag = loopCache.value.get(id);
       const tagName = tag?.tagName ?? id;
-      if (level === 'L0' || level === 'L1') {
+      if (level === 'L0') {
         blocked.push({
           level,
           reason: tags.length > 0 ? tagsText(tags) : '适用性不足',
           tagName,
         });
-      } else if (level === 'L2') {
+      } else if (level === 'L1' || level === 'L2') {
+        // L1（2026-10-01 裁决放开）与 L2 同为警告放行
         l2WarningLoopIds.value.add(id);
       }
     }
@@ -763,7 +764,7 @@ async function loadPlantTreeAndSelectFirstUnit(): Promise<void> {
           <span>回路（单选）</span>
           <label
             class="diag-diag-switch"
-            title="默认隐藏不具备诊断条件的回路（L0/L1 被适用性门禁拦截）"
+            title="默认隐藏不具备诊断条件的回路（仅 L0 数据严重不足；L1 手动主导已放开诊断）"
           >
             <input v-model="onlyDiagnosable" type="checkbox" />
             仅可诊断
@@ -1010,7 +1011,7 @@ async function loadPlantTreeAndSelectFirstUnit(): Promise<void> {
               @close="fitnessBlocked = []"
             >
               <template #message>
-                {{ fitnessBlocked.length }} 个回路适用性不足（L0/L1），已阻止发起诊断
+                {{ fitnessBlocked.length }} 个回路适用性不足（L0 数据严重不足），已阻止发起诊断
               </template>
               <template #description>
                 <ul class="m-0 pl-4">
@@ -1118,7 +1119,7 @@ async function loadPlantTreeAndSelectFirstUnit(): Promise<void> {
                 ></span>
                 <div class="diag-condition-warning__body">
                   <div class="diag-condition-warning__title">
-                    L2 条件异常，诊断结论可能受控制状态干扰
+                    L1/L2 条件提示（手动主导/控制条件异常），结论可能受影响
                   </div>
                   <div class="diag-condition-warning__subtitle">
                     建议先消除控制侧异常再跑诊断；受影响回路：

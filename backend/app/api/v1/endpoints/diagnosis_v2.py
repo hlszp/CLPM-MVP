@@ -248,7 +248,9 @@ async def trigger_diagnosis(
             status_code=400,
         )
 
-    # P2 IA优化：诊断发起门禁（fitness L0/L1 直接阻止，L2 允许但提示横幅）
+    # 诊断发起门禁（2026-10-01 裁决：仅 L0 阻断——数据严重不足跑诊断必产出
+    # "数据不足"噪音；L1 手动主导放开为警告——仪表/质量码类算子用全量数据
+    # 不受自控模式限制，仍有诊断价值；L2 维持警告放行）
     fitness_map = await get_latest_fitness_per_loop(db, loop_ids)
     blocked: list[dict[str, Any]] = []
     condition_warning: list[dict[str, Any]] = []
@@ -256,7 +258,7 @@ async def trigger_diagnosis(
         fit = fitness_map.get(lid)
         if fit is None or fit.level is None:
             continue  # 无 fitness 数据 → 暂放过（兼容首次计算前窗口）
-        if fit.level in ("L0", "L1"):
+        if fit.level == "L0":
             blocked.append(
                 {
                     "loopId": lid,
@@ -264,7 +266,7 @@ async def trigger_diagnosis(
                     "reasons": fit.human_readable_tags or ["适用性不足"],
                 }
             )
-        elif fit.level == "L2":
+        elif fit.level in ("L1", "L2"):
             condition_warning.append(
                 {
                     "loopId": lid,
@@ -276,9 +278,9 @@ async def trigger_diagnosis(
         raise BizError(
             code="ERR_DIAGNOSIS_FITNESS_INSUFFICIENT",
             message=(
-                f"{len(blocked)} 条回路适用性不足以诊断（L0/L1）："
-                f"原因包含手动主导/自控率极低/数据严重不足，"
-                f"请先处理控制状态后再发起诊断（示例回路 {blocked[0]['loopId']}）"
+                f"{len(blocked)} 条回路适用性不足以诊断（L0 数据严重不足）："
+                f"请先补齐历史数据（数据管理→历史导入）后再发起诊断"
+                f"（示例回路 {blocked[0]['loopId']}）"
             ),
             status_code=400,
             data={"blocked": blocked, "conditionWarning": condition_warning},

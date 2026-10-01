@@ -43,6 +43,9 @@ import {
 
 const router = useRouter();
 
+/** 左脊柱折叠（2026-10-01 用户口径：收起后主显示区占满；浮钮展开） */
+const sidebarCollapsed = ref(false);
+
 // ===== 左脊柱：装置树 =====
 /** ant Tree 节点约定为 {key, title}（TreeSelect 才是 {value, label}） */
 interface PlantTreeNode {
@@ -282,17 +285,35 @@ onMounted(() => {
     </ClpmPageToolbar>
 
     <div class="diag-ov-layout">
-      <!-- 左脊柱：装置树（范围切换） -->
-      <aside class="diag-ov-sidebar">
+      <!-- 左脊柱折叠态：浮起小按钮展开 -->
+      <button
+        v-if="sidebarCollapsed"
+        class="diag-ov-sidebar-expand"
+        title="展开装置树"
+        @click="sidebarCollapsed = false"
+      >
+        <span class="i-lucide:panel-right"></span>
+      </button>
+      <!-- 左脊柱：装置树（范围切换；可折叠收起扩大主区） -->
+      <aside v-if="!sidebarCollapsed" class="diag-ov-sidebar">
         <div class="diag-ov-sidebar__section-title">
           <span>装置</span>
-          <button
-            v-if="plantTreeSelectedKeys.length > 0"
-            class="diag-ov-sidebar__clear"
-            @click="handlePlantTreeSelect([])"
-          >
-            清除
-          </button>
+          <span class="flex items-center gap-1">
+            <button
+              v-if="plantTreeSelectedKeys.length > 0"
+              class="diag-ov-sidebar__clear"
+              @click="handlePlantTreeSelect([])"
+            >
+              清除
+            </button>
+            <button
+              class="diag-ov-sidebar__clear"
+              title="收起装置树"
+              @click="sidebarCollapsed = true"
+            >
+              收起
+            </button>
+          </span>
         </div>
         <Spin :spinning="plantTreeLoading" size="small">
           <Tree
@@ -595,6 +616,26 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   align-items: stretch;
+}
+
+.diag-ov-sidebar-expand {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 44px;
+  margin-top: 4px;
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.diag-ov-sidebar-expand:hover {
+  color: hsl(var(--primary));
 }
 
 .diag-ov-sidebar {
