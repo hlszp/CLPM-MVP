@@ -194,12 +194,50 @@ const selectedLoopIds = ref<string[]>([]);
 /** 跨装置回路名称缓存：切换装置树后仍能显示已选回路的位号/名称 */
 const loopCache = ref(new Map<string, LoopApi.LoopListItem>());
 
+/** 装置范围回路适用性映射（loopId → L0~L4；2026-10-01 用户需求：
+ *  左脊柱默认只显示具备诊断条件的回路，L0/L1 被门禁拦截故默认隐藏） */
+const loopFitnessMap = ref(new Map<string, string>());
+/** 仅显示可诊断回路（L2/L3/L4；L2 按裁决放行为警告可发起）。默认开 */
+const onlyDiagnosable = ref(true);
+
+/** 装置范围批量拉 fitness（monitor 接口带 plantNodeId 递归过滤；
+ *  单元加载后回路数少，1~2 页即齐。失败清空回退不过滤（不因接口
+ *  故障让左脊柱变空） */
+async function loadLoopFitness(plantNodeId?: string): Promise<void> {
+  const map = new Map<string, string>();
+  try {
+    let page = 1;
+    let total = 0;
+    do {
+      const params: Record<string, unknown> = { page, pageSize: 100 };
+      if (plantNodeId) params.plantNodeId = plantNodeId;
+      const res = await getLoopMonitorListApi(params as never);
+      for (const it of res.items ?? []) {
+        if (it.fitnessLevel) map.set(it.loopId, it.fitnessLevel);
+      }
+      total = res.total ?? 0;
+      page += 1;
+    } while ((page - 1) * 100 < total);
+    loopFitnessMap.value = map;
+  } catch {
+    loopFitnessMap.value = new Map(); // 回退：不过滤
+  }
+}
+
 /** 左脊柱预检徽标筛选（2026-10-01 用户需求：按充足性符号筛选回路） */
 type BadgeFilter = 'all' | 'sufficient' | 'marginal' | 'insufficient' | 'unknown';
 const badgeFilter = ref<BadgeFilter>('all');
 
 const filteredLoops = computed(() => {
   let list = loopItems.value;
+  // 默认隐藏不具备诊断条件的回路（L0/L1 被门禁拦截）；无 fitness 数据
+  // 的回路不隐藏（与发起门禁"无数据放行"同口径）
+  if (onlyDiagnosable.value && loopFitnessMap.value.size > 0) {
+    list = list.filter((l) => {
+      const lv = loopFitnessMap.value.get(l.loopId);
+      return !lv || lv === 'L2' || lv === 'L3' || lv === 'L4';
+    });
+  }
   if (badgeFilter.value !== 'all') {
     list = list.filter(
       (l) => (precheckItems.value.get(l.loopId)?.level ?? 'unknown') === badgeFilter.value,
@@ -260,6 +298,8 @@ async function loadLoops(plantNodeId?: string): Promise<void> {
     for (const l of all) loopCache.value.set(l.loopId, l);
     // 16 号文 F5：清单刷新后异步拉取预检徽标（不阻塞清单渲染）
     void loadPrecheck();
+    // 2026-10-01：装置范围 fitness（左脊柱"仅可诊断"默认过滤）
+    void loadLoopFitness(plantNodeId);
   } catch (error) {
     loopItems.value = [];
     precheckItems.value = new Map();
@@ -721,6 +761,13 @@ async function loadPlantTreeAndSelectFirstUnit(): Promise<void> {
 
         <div class="diag-sidebar__section-title">
           <span>回路（单选）</span>
+          <label
+            class="diag-diag-switch"
+            title="默认隐藏不具备诊断条件的回路（L0/L1 被适用性门禁拦截）"
+          >
+            <input v-model="onlyDiagnosable" type="checkbox" />
+            仅可诊断
+          </label>
           <span class="text-xs text-neutral-400">
             {{ selectedLoopIds.length > 0 ? '已选 1' : '未选' }}
           </span>
@@ -1236,6 +1283,25 @@ async function loadPlantTreeAndSelectFirstUnit(): Promise<void> {
 .diag-plant-tree :deep(.ant-tree-treenode) {
   padding-top: 0;
   padding-bottom: 0;
+}
+
+/* "仅可诊断"开关（回路标题行内联） */
+.diag-diag-switch {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  user-select: none;
+}
+
+.diag-diag-switch input {
+  width: 11px;
+  height: 11px;
+  accent-color: hsl(var(--primary));
 }
 
 /* 预检徽标筛选组 */
