@@ -128,6 +128,7 @@ cd frontend && pnpm run format
 - 设计方案 v3（结构与行为事实源，含裁决记录 D1–D21、实现规格、P1–P4 计划）：`docs/设计文档/回路工作台-设计方案-2026-10-02.md`
 - API 对接契约（含后端缺口 G1–G4 核实结论）：`docs/设计文档/回路工作台-API对接契约-2026-10-02.md`
 - 实施任务书（P1–P4 阶段提示词，按分阶段工作流骨架）：`docs/设计文档/回路工作台-实施任务书-2026-10-02.md`
+- **多智能体协调机制（子任务会话启动必读）**：`docs/设计文档/回路工作台-协调机制-2026-10-02.md`——子分支纪律（`zp-p<N>-<slug>` 从 zp 切出、禁自行合并、禁碰 main）、30 分钟检查点与移交文件、验收与合并由主协调会话承担；状态看板在 `docs/设计文档/回路工作台-任务状态/`（gitignored 本地瞬态）
 
 红线：新代码只进 `views/loop/workbench360/`；**旧页面（loop/workbench.vue、metric/*、diagnosis/*、tuning/*、handling/*）一律禁改**（唯一例外：P2 从 loop-performance 抽取详情抽屉组件，原页面行为不变）；整定四步复用 `use-tuning-workbench`、诊断结论复用 `diagnosis-result-panel`，禁分叉第二套实现；新路由 `/loop/workbench360`（旧路由与旧菜单暂留，用户验收后另行裁决隐藏/删除）；后端缺口 G1（fitness 出口）/G2（评估历史 custom 来源）未落定前对应 UI 按缺数据显式提示，禁用演示数据。
 
