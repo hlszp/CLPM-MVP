@@ -11,15 +11,19 @@
 <script setup lang="ts">
 import type { WB360SectionKey } from '#/constants/clpm-ui';
 
+import { scoreToGradeInfo } from '#/constants/clpm-ui';
+
 defineProps<{
   /** 当前活跃剖面（half 态点亮对应段） */
   activeSection: null | WB360SectionKey;
-  /** 评估摘要（清单行真实数据；null=回路无评分） */
-  assess: null | {
+  /** 评估摘要（最新快照真实数据；null=回路无评分） */
+  assess: {
     kpiStatus: null | string;
+    /** 失分主因摘要（v3 §4 评估段；最新快照核心 KPI 前端推导，null=无法推导） */
+    lossSummary?: null | string;
     score: null | number;
     scoreDelta: null | number;
-  };
+  } | null;
   /** 可用剖面（模块热插拔过滤后） */
   sections: Array<{ key: string; label: string }>;
 }>();
@@ -44,14 +48,10 @@ function fmtDelta(v: null | number | undefined) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
 }
 
-/** 评分等级类（沿用左脊柱单源阈值语义） */
+/** 评分等级类（P2 起单源 scoreToGradeInfo，A–E → g1–g5） */
 function gradeCls(score: null | number | undefined): string {
-  if (score === null || score === undefined) return 'g-none';
-  if (score >= 90) return 'g1';
-  if (score >= 80) return 'g2';
-  if (score >= 60) return 'g3';
-  if (score >= 40) return 'g4';
-  return 'g5';
+  const info = scoreToGradeInfo(score);
+  return info ? `g${info.level}` : 'g-none';
 }
 </script>
 
@@ -83,6 +83,12 @@ function gradeCls(score: null | number | undefined): string {
               }}</span>
               <span v-if="assess.kpiStatus === 'INCONCLUSIVE'" class="dim"
                 >快照无法判定</span
+              >
+              <span
+                v-if="assess.lossSummary"
+                class="loss"
+                :title="`失分主因：${assess.lossSummary}`"
+                >{{ assess.lossSummary }}</span
               >
             </template>
             <span v-else class="dim">暂无评分快照</span>
@@ -188,6 +194,15 @@ function gradeCls(score: null | number | undefined): string {
   color: hsl(var(--muted-foreground) / 80%);
   font-family: var(--font-mono, monospace);
   font-size: 11px;
+}
+
+/* 失分主因摘要（v3 §4 评估段；省略号截断，完整内容走 title） */
+.s-sub .loss {
+  color: hsl(var(--warning) / 90%);
+  font-size: 11px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dim {

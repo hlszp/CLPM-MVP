@@ -21,6 +21,7 @@ import {
   parseTagCode,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
+import { scoreToGradeInfo } from '#/constants/clpm-ui';
 
 /** 装置树节点（展示模型：plant → unit，unit 附回路计数） */
 export interface SpineTreeNode {
@@ -41,15 +42,10 @@ export type GradeFilter = 'A' | 'B' | 'C' | 'D' | 'E' | 'none';
 const LIST_PAGE_SIZE = 100;
 const LIST_MAX_PAGES = 5;
 
-/** score → 等级字母（对齐 GRADE_THRESHOLDS 1–5 档） */
+/** score → 等级字母（A–E 对应 GRADE_THRESHOLDS 1–5 档；P2 起单源 scoreToGradeInfo） */
 function scoreToGrade(score: null | number | undefined): GradeFilter | null {
-  if (score === null || score === undefined || Number.isNaN(score))
-    return null;
-  if (score >= 90) return 'A';
-  if (score >= 80) return 'B';
-  if (score >= 60) return 'C';
-  if (score >= 40) return 'D';
-  return 'E';
+  const info = scoreToGradeInfo(score);
+  return info ? (info.letter as GradeFilter) : null;
 }
 
 export function useWb360Loop(initialLoopId: null | string) {
@@ -94,7 +90,8 @@ export function useWb360Loop(initialLoopId: null | string) {
         loopsError.value = `回路清单仅加载前 ${items.length} 条（共 ${first.total} 条），请用搜索/筛选缩小范围`;
       }
     } catch (error) {
-      loopsError.value = error instanceof Error ? error.message : '回路清单加载失败';
+      loopsError.value =
+        error instanceof Error ? error.message : '回路清单加载失败';
       loops.value = [];
     } finally {
       loopsLoading.value = false;
@@ -189,13 +186,15 @@ export function useWb360Loop(initialLoopId: null | string) {
   );
 
   // WS：兴趣集合跟随选中回路位号；消息更新头部实时值并转发趋势层
-  const realtimeHandlers = new Set<(payload: {
-    collectTime: number;
-    quality: null | string;
-    role: string;
-    tagName: string;
-    value: null | number;
-  }) => void>();
+  const realtimeHandlers = new Set<
+    (payload: {
+      collectTime: number;
+      quality: null | string;
+      role: string;
+      tagName: string;
+      value: null | number;
+    }) => void
+  >();
 
   bindLoopInterest(() => {
     const tag = current.value?.tagName;
@@ -219,7 +218,8 @@ export function useWb360Loop(initialLoopId: null | string) {
           ? Number.NaN
           : Number.parseFloat(msg.value);
       // WS 数值质量码（共享契约：1=Good 0=Bad）→ 趋势层字符串口径
-      const quality = msg.quality === 0 ? 'BAD' : (msg.quality > 0 ? 'GOOD' : null);
+      const quality =
+        msg.quality === 0 ? 'BAD' : (msg.quality > 0 ? 'GOOD' : null);
       h({
         collectTime: Number.isNaN(ts) ? Date.now() : ts,
         quality,

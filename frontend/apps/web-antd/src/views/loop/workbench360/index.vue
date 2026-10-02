@@ -18,12 +18,21 @@
   固定视口：整页零滚动（100% 高 + overflow:hidden）。
 -->
 <script setup lang="ts">
+import type { Component } from 'vue';
+
 import type {
   SeriesVisible,
   TrendEventMark,
 } from './components/TrendChart/types';
 
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { message } from 'ant-design-vue';
@@ -49,9 +58,11 @@ import ThumbStrip from './components/ThumbStrip.vue';
 import TrendChart from './components/TrendChart/index.vue';
 import { useTrendData } from './components/TrendChart/use-trend-data';
 import {
-  MINI_DEFAULT_H,
-  useWb360Layout,
-} from './composables/use-wb360-layout';
+  deriveLossSummary,
+  useAssessHistory,
+} from './composables/use-assess-history';
+import { setDiagPrefill } from './composables/use-diag-prefill';
+import { MINI_DEFAULT_H, useWb360Layout } from './composables/use-wb360-layout';
 import { useWb360Loop } from './composables/use-wb360-loop';
 
 defineOptions({ name: 'LoopWorkbench360' });
@@ -67,6 +78,8 @@ const initialLoopId =
 const loop = useWb360Loop(initialLoopId);
 const layout = useWb360Layout();
 const trend = useTrendData();
+/** 页面级评估历史（P2）：剖面/旅程条/页头徽章共用，剖面经 inject 消费 */
+const assessHistory = useAssessHistory(loop.selectedLoopId);
 const { isDark } = useClpmTheme();
 
 const mainRef = ref<HTMLElement | null>(null);
@@ -127,7 +140,7 @@ const clockText = computed(() => {
   return `数据截至 ${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 });
 
-/* ── 评估摘要（清单行真实数据，供旅程条/缩略卡） ── */
+/* ── 评估摘要（清单行真实数据 + 最新快照失分摘要，供旅程条/缩略卡） ── */
 const assessSummary = computed(() => {
   const c = loop.current.value;
   if (!c) return null;
@@ -135,19 +148,47 @@ const assessSummary = computed(() => {
     kpiStatus: c.kpiStatus ?? null,
     score: c.score ?? null,
     scoreDelta: c.scoreDelta ?? null,
+    lossSummary: deriveLossSummary(assessHistory.latest.value),
   };
 });
 
+/* ── 适用性（P2-5，G1 受阻显式提示 + 接入位） ──
+ * fitness 数据出口缺失（后端 G1：snapshots 端点 fitnessLevel 恒 null、
+ * /monitor summary 无该字段）。此处读取快照 fitnessLevel 作为接入位：
+ * G1 落地（端点回填该字段）后自动点亮等级徽章，未落地时显式提示，禁编造。 */
+const fitness = computed(() => ({
+  level: assessHistory.latest.value?.fitnessLevel ?? null,
+}));
+
 /* ── 剖面渲染 ── */
-const sectionComponents: Record<string, typeof AssessSection> = {
+const sectionComponents: Record<string, Component> = {
   assess: AssessSection,
   diag: DiagSection,
   handling: HandlingSection,
   tuning: TuningSection,
 };
 
+/** 各剖面 props（评估剖面：回路上下文；其余剖面 P3/P4 增量补充） */
+const sectionProps = computed<Record<string, Record<string, unknown>>>(() => ({
+  assess: {
+    loopTagName: loop.current.value?.tagName ?? null,
+    selectedLoopId: loop.selectedLoopId.value,
+  },
+}));
+
 function onSectionOpen(key: string) {
   layout.openSection(key as never);
+}
+
+/* ── P2-4 失分→诊断联动：切诊断剖面 + 预填时间窗（不发新请求） ── */
+function onDiagnoseWindow(win: { tsEnd: string; tsStart: string }) {
+  if (!layout.isSectionAvailable('diag')) {
+    message.warning('诊断模块未启用，无法跳转诊断剖面');
+    return;
+  }
+  setDiagPrefill(win.tsStart, win.tsEnd);
+  layout.openSection('diag');
+  message.info('已切换到诊断剖面并预填该时间窗');
 }
 
 function onEventMarkClick(mark: TrendEventMark) {
@@ -239,6 +280,7 @@ const wsName = computed(
   <div class="wb360">
     <LoopHeader
       :connection-status="loop.connectionStatus.value"
+      :fitness-level="fitness.level"
       :last-message-at="loop.lastMessageAt.value"
       :loop="loop.current.value"
     />
@@ -323,10 +365,7 @@ const wsName = computed(
                 :class="{ off: !seriesVisible.pv }"
                 @click="seriesVisible.pv = !seriesVisible.pv"
               >
-                <span
-                  class="sw"
-                  :style="{ background: palette.pv }"
-                ></span>PV
+                <span class="sw" :style="{ background: palette.pv }"></span>PV
               </span>
               <span
                 class="lg"
@@ -340,7 +379,8 @@ const wsName = computed(
                 :class="{ off: !seriesVisible.op }"
                 @click="seriesVisible.op = !seriesVisible.op"
               >
-                <span class="sw" :style="{ background: palette.op }"></span>OP（右轴 %）
+                <span class="sw" :style="{ background: palette.op }"></span
+                >OP（右轴 %）
               </span>
               <span
                 class="lg"
@@ -427,6 +467,8 @@ const wsName = computed(
                   sectionComponents[layout.activeSection.value ?? 'assess'] ??
                   AssessSection
                 "
+                v-bind="sectionProps[layout.activeSection.value ?? 'assess']"
+                @diagnose-window="onDiagnoseWindow"
               />
             </div>
           </template>
@@ -439,7 +481,9 @@ const wsName = computed(
           :last-message-at="loop.lastMessageAt.value"
           :point-count="trend.pointCount.value"
           :source="trend.source.value"
-          :unit-label="loop.selectedUnit.value ?? loop.current.value?.unitName ?? null"
+          :unit-label="
+            loop.selectedUnit.value ?? loop.current.value?.unitName ?? null
+          "
           :window-label="activePreset.label"
         />
       </main>

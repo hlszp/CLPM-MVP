@@ -97,7 +97,10 @@ export function resampleFrames(
     out.sp.push(interpAt(ts, sp, t, hint));
     out.op.push(interpAt(ts, op, t, hint));
     // 最近邻（游标单调前进）
-    while (hint < ts.length - 1 && Math.abs(ts[hint + 1]! - t) <= Math.abs(ts[hint]! - t))
+    while (
+      hint < ts.length - 1 &&
+      Math.abs(ts[hint + 1]! - t) <= Math.abs(ts[hint]! - t)
+    )
       hint++;
     const near = frames[hint]!;
     out.mode.push(near.mode);
@@ -117,12 +120,8 @@ export function buildEnvelope(
   cols: number,
 ): { cMax: number[]; cMin: number[] } {
   const n = Math.max(cols, 2);
-  const cMin = Array.from<number>({ length: n }).fill(
-    Number.POSITIVE_INFINITY,
-  );
-  const cMax = Array.from<number>({ length: n }).fill(
-    Number.NEGATIVE_INFINITY,
-  );
+  const cMin = Array.from<number>({ length: n }).fill(Number.POSITIVE_INFINITY);
+  const cMax = Array.from<number>({ length: n }).fill(Number.NEGATIVE_INFINITY);
   for (let i = 0; i < vals.length; i++) {
     const v = vals[i];
     if (v === null || v === undefined) continue;
@@ -158,9 +157,10 @@ export function segmentsOf<T>(
 }
 
 /** 数据域 Y 轴范围（PV/SP 数值 min/max + 8% 余量；无数据退 [0,1]） */
-export function computeYDomain(
-  frames: TrendFrame[],
-): { hi: number; lo: number } {
+export function computeYDomain(frames: TrendFrame[]): {
+  hi: number;
+  lo: number;
+} {
   let lo = Number.POSITIVE_INFINITY;
   let hi = Number.NEGATIVE_INFINITY;
   for (const f of frames) {

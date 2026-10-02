@@ -7,6 +7,8 @@
 <script setup lang="ts">
 import type { WB360SectionKey } from '#/constants/clpm-ui';
 
+import { scoreToGradeInfo } from '#/constants/clpm-ui';
+
 defineProps<{
   assess: null | {
     kpiStatus: null | string;
@@ -26,13 +28,10 @@ const PENDING_TEXT: Record<string, string> = {
   tuning: '整定剖面 · P4 接入',
 };
 
+/** 等级色类（P2 起单源 scoreToGradeInfo，A–E → g1–g5） */
 function gradeCls(score: null | number | undefined): string {
-  if (score === null || score === undefined) return 'g-none';
-  if (score >= 90) return 'g1';
-  if (score >= 80) return 'g2';
-  if (score >= 60) return 'g3';
-  if (score >= 40) return 'g4';
-  return 'g5';
+  const info = scoreToGradeInfo(score);
+  return info ? `g${info.level}` : 'g-none';
 }
 </script>
 
@@ -47,7 +46,9 @@ function gradeCls(score: null | number | undefined): string {
       @click="emit('open', sec.key as WB360SectionKey)"
       @keydown.enter="emit('open', sec.key as WB360SectionKey)"
     >
-      <div class="th-top"><b>{{ sec.label }}</b></div>
+      <div class="th-top">
+        <b>{{ sec.label }}</b>
+      </div>
       <div class="th-body">
         <template v-if="sec.key === 'assess'">
           <template v-if="assess && assess.score !== null">
@@ -60,7 +61,9 @@ function gradeCls(score: null | number | undefined): string {
           </template>
           <span v-else class="th-sub">暂无评分快照</span>
         </template>
-        <span v-else class="th-sub">{{ PENDING_TEXT[sec.key] ?? '待接入' }}</span>
+        <span v-else class="th-sub">{{
+          PENDING_TEXT[sec.key] ?? '待接入'
+        }}</span>
       </div>
       <div class="th-sub th-foot">
         <template v-if="sec.key === 'assess'">

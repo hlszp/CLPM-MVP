@@ -118,15 +118,14 @@ export function useTrendData() {
       }
       frames.value = dedup;
       domain.value =
-        dedup.length > 0
-          ? { t0: dedup[0]!.ts, t1: dedup.at(-1)!.ts }
-          : null;
+        dedup.length > 0 ? { t0: dedup[0]!.ts, t1: dedup.at(-1)!.ts } : null;
       if (dedup.length === 0) {
         error.value = '该窗口暂无数据（本地库不完整时请先在数据管理导入历史）';
       }
     } catch (error_) {
       if (gen !== generation) return;
-      error.value = error_ instanceof Error ? error_.message : '趋势数据加载失败';
+      error.value =
+        error_ instanceof Error ? error_.message : '趋势数据加载失败';
       frames.value = [];
       domain.value = null;
     } finally {

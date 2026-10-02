@@ -29,7 +29,6 @@ import type {
   KpiSnapshotItem,
   KpiSnapshotQueryParams,
   KpiStatus,
-  LoopConfidenceLatestItem,
   MetricApi,
 } from '#/api/metric';
 import type { PlantNodeApi } from '#/api/plant-node';
@@ -50,12 +49,9 @@ import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
-  Badge,
   Button,
   Card,
   CheckboxGroup,
-  Descriptions,
-  DescriptionsItem,
   Drawer,
   Input,
   message,
@@ -75,7 +71,6 @@ import { getLoopListApi } from '#/api/loop';
 import {
   getGradeDistributionApi,
   getGradingThresholdsApi,
-  getLoopConfidenceLatestApi,
   getLoopSnapshotsApi,
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
@@ -93,23 +88,19 @@ import { useAiInsightGate } from '#/composables/use-ai-insight-gate';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useConfigAccess } from '#/composables/use-config-access';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
-import {
-  LOOP_TYPE_LABEL_MAP,
-  useLoopPalettes,
-} from '#/composables/use-loop-palettes';
+import { LOOP_TYPE_LABEL_MAP } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { useTableDensity } from '#/composables/use-table-density';
-import {
-  GRADE_LEVEL_LABEL,
-  KPI_TERM_EXPLANATIONS,
-} from '#/constants/clpm-ui';
+import { GRADE_LEVEL_LABEL, KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
+
+import LoopConfidenceContent from './components/loop-confidence-content.vue';
+import LoopPerformanceDetailContent from './components/loop-performance-detail-content.vue';
 
 defineOptions({ name: 'MetricLoopPerformance' });
 
 const { isDark, themeColors } = useClpmTheme();
-const { modeLabelColor } = useLoopPalettes();
 
 // ===== 常量映射 =====
 
@@ -135,23 +126,6 @@ const STATUS_LABEL_MAP: Record<string, string> = {
   SUCCESS: '成功',
   INCONCLUSIVE: '不确定',
   PARTIAL: '部分',
-};
-
-/** 可信度徽章颜色 */
-const CONFIDENCE_COLOR_MAP: Record<string, string> = {
-  A: 'green',
-  B: 'blue',
-  C: 'gold',
-  D: 'orange',
-  E: 'red',
-};
-
-const CONFIDENCE_LABEL_MAP: Record<string, string> = {
-  A: 'A 优秀',
-  B: 'B 良好',
-  C: 'C 一般',
-  D: 'D 较差',
-  E: 'E 不足',
 };
 
 /** 评估等级颜色（优秀/良好/合格/警告/不合格） */
@@ -255,7 +229,9 @@ function lpFitnessNATip(
 ): string {
   const lv = level ?? '';
   const tagText =
-    tags && tags.length > 0 ? tags.map((t) => lpNATagToCn(t)).join('、') : '适用性不足';
+    tags && tags.length > 0
+      ? tags.map((t) => lpNATagToCn(t)).join('、')
+      : '适用性不足';
   return `不适用（${lv || 'NA'}）：${tagText}`;
 }
 const LP_NA_COLOR = 'var(--color-slate-500)';
@@ -641,10 +617,6 @@ function formatTsRange(start: null | string, end: null | string): string {
   return dayjs(e || s).format(fmt);
 }
 
-function formatTime(ts: null | string | undefined): string {
-  return formatLocalTime(ts, 'YYYY-MM-DD HH:mm:ss');
-}
-
 function formatShortTime(ts: null | string | undefined): string {
   return formatLocalTime(ts, 'MM-DD HH:mm');
 }
@@ -652,20 +624,6 @@ function formatShortTime(ts: null | string | undefined): string {
 function formatNumber(val: null | number | undefined, suffix = ''): string {
   if (val === null || val === undefined) return '—';
   return `${val.toFixed(2)}${suffix}`;
-}
-
-/** 0~1 比率（如 validRate）格式化为百分比 */
-function formatRatio(val: null | number | undefined): string {
-  if (val === null || val === undefined) return '—';
-  return `${(val * 100).toFixed(2)}%`;
-}
-
-function getMetricValue(
-  record: object,
-  dataIndex: string,
-): null | number | undefined {
-  const value = (record as unknown as Record<string, unknown>)[dataIndex];
-  return typeof value === 'number' ? value : undefined;
 }
 
 // ===== 数据加载 =====
@@ -789,7 +747,8 @@ function handleTableChange(
   loadList();
 }
 
-// ===== 详情抽屉 =====
+// ===== 详情抽屉（P2-3：模板与历史子表逻辑抽取至
+// components/loop-performance-detail-drawer.vue，此处仅保留开合状态） =====
 
 const drawerVisible = ref(false);
 const drawerRecord = ref<LoopPerformanceRow | null>(null);
@@ -845,40 +804,14 @@ const { tableSize, densityLabel, cycleDensity } = useTableDensity(
   'metric-loop-performance',
 );
 
-/** 抽屉内历史快照子表（最近 10 条） */
-const drawerHistory = ref<KpiSnapshotItem[]>([]);
-const drawerHistoryLoading = ref(false);
-
-async function loadDrawerHistory(loopId: string) {
-  drawerHistoryLoading.value = true;
-  try {
-    const result = await getLoopSnapshotsApi({
-      loopId,
-      latestOnly: false,
-      page: 1,
-      pageSize: 10,
-    });
-    drawerHistory.value = result.items || [];
-  } catch {
-    drawerHistory.value = [];
-  } finally {
-    drawerHistoryLoading.value = false;
-  }
-}
-
 function openDetail(record: LoopPerformanceRow) {
   drawerRecord.value = record;
   drawerVisible.value = true;
-  drawerHistory.value = [];
-  if (record.loopId) {
-    loadDrawerHistory(record.loopId);
-  }
 }
 
 function closeDetail() {
   drawerVisible.value = false;
   drawerRecord.value = null;
-  drawerHistory.value = [];
 }
 
 /** 表格行点击 → 打开详情抽屉（对齐低效排行页行级交互）。
@@ -894,76 +827,21 @@ function rowClick(record: LoopPerformanceRow) {
   };
 }
 
-// ===== 可信度详情抽屉 =====
-
-/** 12 子指标元数据（3+1+8 体系，键为 DB 列名 snake_case） */
-const CONFIDENCE_METRIC_META: { key: string; label: string; unit: string }[] = [
-  { key: 'accuracy_rate', label: '准确率', unit: '%' },
-  { key: 'fast_rate', label: '快速率', unit: '%' },
-  { key: 'steady_rate', label: '平稳率', unit: '%' },
-  { key: 'effective_auto_rate', label: '有效自控率', unit: '%' },
-  { key: 'good_value_rate', label: '好值率', unit: '%' },
-  { key: 'auto_mode_rate', label: '自控率', unit: '%' },
-  { key: 'settling_time', label: '稳定时间', unit: 's' },
-  { key: 'ideal_settling_time', label: '理想稳定时间', unit: 's' },
-  { key: 'oscillation_rate', label: '振荡率', unit: '%' },
-  { key: 'saturation_rate', label: '饱和率', unit: '%' },
-  { key: 'stiction_index', label: '阀门粘滞指数', unit: '' },
-  { key: 'output_trip_index', label: '输出跳变率', unit: '' },
-];
+// ===== 可信度详情抽屉（P2-3：内容与加载逻辑抽取至
+// components/loop-confidence-drawer.vue，此处仅保留开合状态） =====
 
 const confDrawerVisible = ref(false);
-const confDrawerLoading = ref(false);
 const confDrawerRecord = ref<LoopPerformanceRow | null>(null);
-const confDetail = ref<LoopConfidenceLatestItem | null>(null);
-
-const confMetricColumns: TableColumnsType = [
-  { title: '指标', key: 'label', dataIndex: 'label' },
-  {
-    title: '计算值',
-    key: 'value',
-    dataIndex: 'value',
-    width: 120,
-    align: 'right' as const,
-  },
-];
-
-/**
- * 12 子指标表格行（按 3+1+8 顺序合并计算值）。
- *
- * 可信度统一 Phase 2（P2-6 / D2）：子指标可信度已统一为回路级，
- * ``metrics`` JSONB 仅保留 ``value`` 字段（去掉 ``confidence``），
- * 故此处不再合并 confidence。回路级可信度见上方 Descriptions。
- */
-const confMetricRows = computed(() => {
-  const metrics = confDetail.value?.metrics ?? {};
-  return CONFIDENCE_METRIC_META.map((meta) => ({
-    ...meta,
-    value: metrics[meta.key]?.value ?? null,
-  }));
-});
 
 /** 点击可信度单元格 → 打开可信度详情抽屉（不触发行抽屉） */
-async function openConfidence(record: LoopPerformanceRow) {
+function openConfidence(record: LoopPerformanceRow) {
   confDrawerRecord.value = record;
   confDrawerVisible.value = true;
-  confDetail.value = null;
-  if (!record.loopId) return;
-  confDrawerLoading.value = true;
-  try {
-    confDetail.value = await getLoopConfidenceLatestApi(record.loopId);
-  } catch (error) {
-    // 错误 toast 由 api/request.ts 拦截器统一弹出，抽屉内展示"暂无评估记录"
-    console.error('加载可信度详情失败:', error);
-  } finally {
-    confDrawerLoading.value = false;
-  }
 }
 
 function closeConfidence() {
   confDrawerVisible.value = false;
   confDrawerRecord.value = null;
-  confDetail.value = null;
 }
 
 // ===== 历史 Modal =====
@@ -1150,58 +1028,6 @@ function renderHistoryTrend() {
 function handleHistoryWindowChange() {
   loadHistoryData();
 }
-
-// ===== 抽屉历史快照子表列定义（复用于详情抽屉历史子表） =====
-
-const diagHistoryColumns: TableColumnsType = [
-  {
-    title: '时间窗',
-    key: 'tsRange',
-    width: 140,
-  },
-  {
-    title: '综合评分',
-    key: 'score',
-    dataIndex: 'score',
-    width: 90,
-  },
-  {
-    title: '准确率',
-    key: 'accuracyRate',
-    dataIndex: 'accuracyRate',
-    width: 80,
-  },
-  {
-    title: '快速率',
-    key: 'fastRate',
-    dataIndex: 'fastRate',
-    width: 80,
-  },
-  {
-    title: '平稳率',
-    key: 'steadyRate',
-    dataIndex: 'steadyRate',
-    width: 80,
-  },
-  {
-    title: '有效自控率',
-    key: 'effectiveAutoRate',
-    dataIndex: 'effectiveAutoRate',
-    width: 100,
-  },
-  {
-    title: '可信度',
-    key: 'confidenceLevel',
-    dataIndex: 'confidenceLevel',
-    width: 80,
-  },
-  {
-    title: '状态',
-    key: 'status',
-    dataIndex: 'status',
-    width: 90,
-  },
-];
 
 // ===== 主题切换重渲图表 =====
 
@@ -1531,10 +1357,12 @@ onMounted(async () => {
           <template v-else-if="column.key === 'grade'">
             <template v-if="isFitnessNA(record as LoopPerformanceRow)">
               <Tooltip
-                :title="lpFitnessNATip(
-                  (record as LoopPerformanceRow).fitnessLevel,
-                  (record as LoopPerformanceRow).fitnessTags,
-                )"
+                :title="
+                  lpFitnessNATip(
+                    (record as LoopPerformanceRow).fitnessLevel,
+                    (record as LoopPerformanceRow).fitnessTags,
+                  )
+                "
                 placement="top"
               >
                 <Tag :color="LP_NA_COLOR" class="m-0">不适用</Tag>
@@ -1556,16 +1384,15 @@ onMounted(async () => {
           <template v-else-if="column.key === 'score'">
             <template v-if="isFitnessNA(record as LoopPerformanceRow)">
               <Tooltip
-                :title="lpFitnessNATip(
-                  (record as LoopPerformanceRow).fitnessLevel,
-                  (record as LoopPerformanceRow).fitnessTags,
-                )"
+                :title="
+                  lpFitnessNATip(
+                    (record as LoopPerformanceRow).fitnessLevel,
+                    (record as LoopPerformanceRow).fitnessTags,
+                  )
+                "
                 placement="top"
               >
-                <span
-                  class="font-semibold"
-                  :style="{ color: LP_NA_COLOR }"
-                >
+                <span class="font-semibold" :style="{ color: LP_NA_COLOR }">
                   —
                 </span>
               </Tooltip>
@@ -1663,7 +1490,7 @@ onMounted(async () => {
       </Table>
     </ClpmDataCanvas>
 
-    <!-- 详情抽屉 -->
+    <!-- 详情抽屉（P2-3：内容抽取至 components/loop-performance-detail-content.vue，行为不变） -->
     <Drawer
       :open="drawerVisible"
       title="回路性能详情"
@@ -1672,305 +1499,14 @@ onMounted(async () => {
       :mask-closable="true"
       @close="closeDetail"
     >
-      <template v-if="drawerRecord">
-        <!-- 回路基本信息 -->
-        <div class="mb-2 text-sm font-medium">回路基本信息</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem label="回路编号">
-            {{ drawerRecord.loopTagName || '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="回路名称">
-            {{ drawerRecord.description || '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="回路类型">
-            {{ LOOP_TYPE_LABEL_MAP[drawerRecord.loopType ?? 'OTHER'] ?? '—' }}
-          </DescriptionsItem>
-          <DescriptionsItem label="控制类型">
-            {{
-              drawerRecord.controlType
-                ? (CONTROL_TYPE_MAP[drawerRecord.controlType] ??
-                  drawerRecord.controlType)
-                : '—'
-            }}
-          </DescriptionsItem>
-          <DescriptionsItem label="控制方式">
-            <Tag
-              v-if="drawerRecord.controlMode"
-              :color="modeLabelColor(drawerRecord.controlMode)"
-            >
-              {{ drawerRecord.controlMode }}
-            </Tag>
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="评估等级">
-            <Tag
-              v-if="getGrade(drawerRecord.score)"
-              :color="GRADE_COLOR_MAP[getGrade(drawerRecord.score)!]"
-            >
-              {{ GRADE_LABEL_MAP[getGrade(drawerRecord.score)!] }}
-            </Tag>
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="PV 量程">
-            {{
-              drawerRecord.loopMeta?.pvRange
-                ? `${drawerRecord.loopMeta.pvRange.min ?? '—'} ~ ${
-                    drawerRecord.loopMeta.pvRange.max ?? '—'
-                  }${drawerRecord.loopMeta.pvUnit ? ` ${drawerRecord.loopMeta.pvUnit}` : ''}`
-                : '—'
-            }}
-          </DescriptionsItem>
-          <DescriptionsItem label="OP 量程">
-            {{
-              drawerRecord.loopMeta?.opRange
-                ? `${drawerRecord.loopMeta.opRange.min ?? '—'} ~ ${
-                    drawerRecord.loopMeta.opRange.max ?? '—'
-                  }${drawerRecord.loopMeta.opUnit ? ` ${drawerRecord.loopMeta.opUnit}` : ''}`
-                : '—'
-            }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 8 大性能评估 KPI -->
-        <div class="mb-2 mt-4 text-sm font-medium">8 大性能评估 KPI 指标</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem>
-            <template #label>
-              综合评分
-              <ClpmInfoTip
-                :term="KPI_TERM_EXPLANATIONS.compositeScore?.term"
-                :tip="KPI_TERM_EXPLANATIONS.compositeScore?.short ?? ''"
-                :detail="KPI_TERM_EXPLANATIONS.compositeScore?.detail"
-              />
-            </template>
-            <span
-              class="font-semibold"
-              :style="{ color: scoreColor(drawerRecord.score) }"
-            >
-              {{ formatNumber(drawerRecord.score) }}
-            </span>
-          </DescriptionsItem>
-          <DescriptionsItem>
-            <template #label>
-              准确率
-              <ClpmInfoTip
-                :term="KPI_TERM_EXPLANATIONS.accuracyScore?.term"
-                :tip="KPI_TERM_EXPLANATIONS.accuracyScore?.short ?? ''"
-                :detail="KPI_TERM_EXPLANATIONS.accuracyScore?.detail"
-              />
-            </template>
-            {{ formatNumber(drawerRecord.accuracyRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem>
-            <template #label>
-              快速率
-              <ClpmInfoTip
-                :term="KPI_TERM_EXPLANATIONS.responseScore?.term"
-                :tip="KPI_TERM_EXPLANATIONS.responseScore?.short ?? ''"
-                :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
-              />
-            </template>
-            {{ formatNumber(drawerRecord.fastRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem>
-            <template #label>
-              平稳率
-              <ClpmInfoTip
-                :term="KPI_TERM_EXPLANATIONS.steadyScore?.term"
-                :tip="KPI_TERM_EXPLANATIONS.steadyScore?.short ?? ''"
-                :detail="KPI_TERM_EXPLANATIONS.steadyScore?.detail"
-              />
-            </template>
-            {{ formatNumber(drawerRecord.steadyRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem>
-            <template #label>
-              有效自控率
-              <ClpmInfoTip
-                :term="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.term"
-                :tip="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.short ?? ''"
-                :detail="KPI_TERM_EXPLANATIONS.effectiveAutoRate?.detail"
-              />
-            </template>
-            {{ formatNumber(drawerRecord.effectiveAutoRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="自控率">
-            {{ formatNumber(drawerRecord.autoModeRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="好值率">
-            {{ formatNumber(drawerRecord.goodValueRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="振荡率">
-            {{ formatNumber(drawerRecord.oscillationRate, '%') }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 诊断与扩展指标（不参与评分） -->
-        <div class="mb-2 mt-4 text-sm font-medium">诊断与扩展指标</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem label="饱和率">
-            {{ formatNumber(drawerRecord.saturationRate, '%') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="输出跳变率">
-            {{ formatNumber(drawerRecord.outputTravelIndex) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="阀门粘滞指数">
-            {{ formatNumber(drawerRecord.stictionIndex) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="理想稳定时间">
-            {{ formatNumber(drawerRecord.idealSettlingTime, 's') }}
-          </DescriptionsItem>
-          <DescriptionsItem label="稳定时间" :span="2">
-            {{ formatNumber(drawerRecord.settlingTime, 's') }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 可信度 + 时间窗口 + 评估时间 -->
-        <div class="mb-2 mt-4 text-sm font-medium">评估信息</div>
-        <Descriptions
-          :column="2"
-          size="small"
-          bordered
-          :label-style="{ width: '120px' }"
-        >
-          <DescriptionsItem label="可信度">
-            <Badge
-              v-if="drawerRecord.confidenceLevel"
-              :color="CONFIDENCE_COLOR_MAP[drawerRecord.confidenceLevel]"
-              :text="CONFIDENCE_LABEL_MAP[drawerRecord.confidenceLevel]"
-            />
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="评估状态">
-            <Tag :color="STATUS_COLOR_MAP[drawerRecord.status] || 'default'">
-              {{ STATUS_LABEL_MAP[drawerRecord.status] || drawerRecord.status }}
-            </Tag>
-          </DescriptionsItem>
-          <DescriptionsItem label="时间窗口">
-            <span class="font-mono text-xs">
-              {{ formatTsRange(drawerRecord.tsStart, drawerRecord.tsEnd) }}
-            </span>
-          </DescriptionsItem>
-          <DescriptionsItem label="评估时间">
-            <span class="font-mono text-xs">
-              {{ formatTime(drawerRecord.tsEnd) }}
-            </span>
-          </DescriptionsItem>
-          <DescriptionsItem label="有效数据率">
-            {{ formatRatio(drawerRecord.validRate) }}
-          </DescriptionsItem>
-          <DescriptionsItem label="算法版本">
-            {{ drawerRecord.algorithmVersion || '—' }}
-          </DescriptionsItem>
-        </Descriptions>
-
-        <!-- 历史快照子表（该回路最近 10 条评估记录） -->
-        <div class="mb-2 mt-4 text-sm font-medium">历史快照（最近 10 条）</div>
-        <Table
-          :columns="diagHistoryColumns"
-          :data-source="drawerHistory"
-          :loading="drawerHistoryLoading"
-          :pagination="false"
-          row-key="tsStart"
-          size="small"
-          :scroll="{ x: 680 }"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'tsRange'">
-              <span class="font-mono text-xs">
-                {{
-                  formatTsRange(
-                    (record as KpiSnapshotItem).tsStart,
-                    (record as KpiSnapshotItem).tsEnd,
-                  )
-                }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'score'">
-              <span
-                class="font-semibold"
-                :style="{
-                  color: scoreColor((record as KpiSnapshotItem).score),
-                }"
-              >
-                {{ formatNumber((record as KpiSnapshotItem).score) }}
-              </span>
-            </template>
-            <template
-              v-else-if="
-                (
-                  [
-                    'accuracyRate',
-                    'fastRate',
-                    'steadyRate',
-                    'effectiveAutoRate',
-                  ] as string[]
-                ).includes(column.key as string)
-              "
-            >
-              <span class="font-mono text-xs">
-                {{
-                  formatNumber(
-                    getMetricValue(
-                      record as KpiSnapshotItem,
-                      column.dataIndex as string,
-                    ),
-                    '%',
-                  )
-                }}
-              </span>
-            </template>
-            <template v-else-if="column.key === 'confidenceLevel'">
-              <Badge
-                v-if="(record as KpiSnapshotItem).confidenceLevel"
-                :color="
-                  CONFIDENCE_COLOR_MAP[
-                    (record as KpiSnapshotItem).confidenceLevel!
-                  ]
-                "
-                :text="
-                  CONFIDENCE_LABEL_MAP[
-                    (record as KpiSnapshotItem).confidenceLevel!
-                  ]
-                "
-              />
-              <span v-else class="text-gray-400">—</span>
-            </template>
-            <template v-else-if="column.key === 'status'">
-              <Tag
-                :color="
-                  STATUS_COLOR_MAP[(record as KpiSnapshotItem).status] ||
-                  'default'
-                "
-                class="m-0"
-              >
-                {{
-                  STATUS_LABEL_MAP[(record as KpiSnapshotItem).status] ||
-                  (record as KpiSnapshotItem).status
-                }}
-              </Tag>
-            </template>
-          </template>
-        </Table>
-      </template>
+      <LoopPerformanceDetailContent
+        v-if="drawerRecord"
+        :grading-thresholds="gradingThresholds"
+        :record="drawerRecord"
+      />
     </Drawer>
 
-    <!-- 可信度详情抽屉 -->
+    <!-- 可信度详情抽屉（P2-3：内容抽取至 components/loop-confidence-content.vue） -->
     <Drawer
       :open="confDrawerVisible"
       :title="`可信度详情 - ${confDrawerRecord?.loopTagName ?? ''}`"
@@ -1979,85 +1515,7 @@ onMounted(async () => {
       :mask-closable="true"
       @close="closeConfidence"
     >
-      <Spin :spinning="confDrawerLoading">
-        <template v-if="confDetail">
-          <!-- 评估概要 -->
-          <div class="mb-2 text-sm font-medium">评估概要</div>
-          <Descriptions
-            :column="2"
-            size="small"
-            bordered
-            :label-style="{ width: '110px' }"
-          >
-            <DescriptionsItem label="最新评估时间">
-              <span class="font-mono text-xs">
-                {{ formatTime(confDetail.evalTime) }}
-              </span>
-            </DescriptionsItem>
-            <DescriptionsItem label="数据源时间区间">
-              <span class="font-mono text-xs">
-                {{
-                  formatTsRange(confDetail.dataTsStart, confDetail.dataTsEnd)
-                }}
-              </span>
-            </DescriptionsItem>
-            <DescriptionsItem label="评估状态">
-              <Tag
-                :color="STATUS_COLOR_MAP[confDetail.status] || 'default'"
-                class="m-0"
-              >
-                {{ STATUS_LABEL_MAP[confDetail.status] || confDetail.status }}
-              </Tag>
-            </DescriptionsItem>
-            <DescriptionsItem label="综合评分">
-              <span
-                class="font-semibold"
-                :style="{ color: scoreColor(confDetail.score) }"
-              >
-                {{ formatNumber(confDetail.score) }}
-              </span>
-            </DescriptionsItem>
-            <DescriptionsItem label="可信度">
-              <Badge
-                v-if="confDetail.confidenceLevel"
-                :color="CONFIDENCE_COLOR_MAP[confDetail.confidenceLevel]"
-                :text="CONFIDENCE_LABEL_MAP[confDetail.confidenceLevel]"
-              />
-              <span v-else>—</span>
-            </DescriptionsItem>
-            <DescriptionsItem label="有效数据率">
-              {{ formatRatio(confDetail.validRate) }}
-            </DescriptionsItem>
-            <DescriptionsItem label="算法版本" :span="2">
-              {{ confDetail.algorithmVersion || '—' }}
-            </DescriptionsItem>
-          </Descriptions>
-
-          <!-- 12 子指标明细（可信度统一 Phase 2：仅展示计算值，可信度统一为回路级） -->
-          <div class="mb-2 mt-4 text-sm font-medium">子指标数值（3+1+8）</div>
-          <Table
-            :columns="confMetricColumns"
-            :data-source="confMetricRows"
-            :pagination="false"
-            row-key="key"
-            size="small"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'value'">
-                <span class="font-mono text-xs">
-                  {{ formatNumber(record.value, record.unit) }}
-                </span>
-              </template>
-            </template>
-          </Table>
-        </template>
-        <div
-          v-else-if="!confDrawerLoading"
-          class="py-12 text-center text-gray-400"
-        >
-          暂无评估记录。该回路尚未执行过 KPI 评估，请前往「评估任务」页触发评估
-        </div>
-      </Spin>
+      <LoopConfidenceContent :loop-id="confDrawerRecord?.loopId" />
     </Drawer>
 
     <!-- 历史 Modal -->

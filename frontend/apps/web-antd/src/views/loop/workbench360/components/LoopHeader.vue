@@ -12,6 +12,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 const props = defineProps<{
   /** WS 连接状态（useLoopRealtime.connectionStatus） */
   connectionStatus: string;
+  /**
+   * 适用性等级（P2-5，G1 接入位）：最新快照 fitnessLevel（L0~L4）。
+   * 后端 G1 落地前恒 null → 徽章显示显式"待接"提示（诚实化，禁编造等级）。
+   */
+  fitnessLevel: null | string;
   /** 最近一条实时消息时间 */
   lastMessageAt: Date | null;
   /** 当前选中回路（含 WS 局部更新的实时值） */
@@ -30,7 +35,10 @@ onBeforeUnmount(() => {
 /** 数据新鲜度（秒；null=尚无实时消息） */
 const freshSeconds = computed(() => {
   if (!props.lastMessageAt) return null;
-  return Math.max(0, Math.round((now.value - props.lastMessageAt.getTime()) / 1000));
+  return Math.max(
+    0,
+    Math.round((now.value - props.lastMessageAt.getTime()) / 1000),
+  );
 });
 
 const modeTag = computed(() => {
@@ -43,6 +51,23 @@ const modeTag = computed(() => {
 
 const fmt = (v: null | number | undefined, digits = 1) =>
   v === null || v === undefined ? '--' : v.toFixed(digits);
+
+/* 适用性徽章（P2-5）：L0/L1=不适用（红），L2=警告，L3/L4=就绪（蓝）；
+ * null=后端 G1 缺口 → 显式"待接"占位（诚实化） */
+const fitnessTag = computed(() => {
+  const lv = props.fitnessLevel;
+  if (!lv) {
+    return {
+      cls: 't-gray',
+      label: '适用性待接',
+      tip: '适用性（fitness）数据出口待后端 G1 补齐，暂无法展示等级',
+    };
+  }
+  if (lv === 'L0' || lv === 'L1')
+    return { cls: 't-danger', label: `适用性 ${lv} 不适用`, tip: '' };
+  if (lv === 'L2') return { cls: 't-gray', label: '适用性 L2', tip: '' };
+  return { cls: 't-info', label: `适用性 ${lv} 就绪`, tip: '' };
+});
 </script>
 
 <template>
@@ -51,7 +76,9 @@ const fmt = (v: null | number | undefined, digits = 1) =>
     <div v-if="loop" class="loop-info">
       <div class="loop-line">
         <span class="loop-id">{{ loop.tagName }}</span>
-        <span class="tag" :class="modeTag.cls"><span class="dot"></span>{{ modeTag.label }}</span>
+        <span class="tag" :class="modeTag.cls"
+          ><span class="dot"></span>{{ modeTag.label }}</span
+        >
       </div>
       <div class="loop-desc">
         {{ loop.description || '（无描述）' }} ·
@@ -61,9 +88,17 @@ const fmt = (v: null | number | undefined, digits = 1) =>
     <div v-else class="loop-info loop-empty">未选中回路</div>
     <div class="spacer"></div>
     <div v-if="loop" class="live">
-      <span>PV <b>{{ fmt(loop.currentValues.pv) }}</b> {{ loop.currentValues.unit || loop.pvUnit || '' }}</span>
-      <span>SP <b>{{ fmt(loop.currentValues.sp) }}</b></span>
-      <span>OP <b>{{ fmt(loop.currentValues.op) }}</b> {{ loop.opUnit || '%' }}</span>
+      <span
+        >PV <b>{{ fmt(loop.currentValues.pv) }}</b>
+        {{ loop.currentValues.unit || loop.pvUnit || '' }}</span
+      >
+      <span
+        >SP <b>{{ fmt(loop.currentValues.sp) }}</b></span
+      >
+      <span
+        >OP <b>{{ fmt(loop.currentValues.op) }}</b>
+        {{ loop.opUnit || '%' }}</span
+      >
       <span
         :class="
           connectionStatus === 'online'
@@ -80,8 +115,17 @@ const fmt = (v: null | number | undefined, digits = 1) =>
               : `● 数据新鲜 ${freshSeconds}s`
           }}
         </template>
-        <template v-else-if="connectionStatus === 'reconnecting'">● 实时重连中…</template>
+        <template v-else-if="connectionStatus === 'reconnecting'"
+          >● 实时重连中…</template
+        >
         <template v-else>● 实时连接离线</template>
+      </span>
+      <span
+        class="tag"
+        :class="fitnessTag.cls"
+        :title="fitnessTag.tip || undefined"
+      >
+        <span class="dot"></span>{{ fitnessTag.label }}
       </span>
     </div>
   </header>

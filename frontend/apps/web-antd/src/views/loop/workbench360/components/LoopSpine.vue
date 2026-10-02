@@ -107,7 +107,9 @@ const footerText = computed(() => {
             </div>
           </template>
         </template>
-        <div v-if="tree.length === 0" class="tree-empty">装置树加载中或为空</div>
+        <div v-if="tree.length === 0" class="tree-empty">
+          装置树加载中或为空
+        </div>
       </div>
     </div>
 
@@ -118,7 +120,9 @@ const footerText = computed(() => {
           aria-label="搜索回路位号"
           placeholder="搜索回路位号…"
           type="text"
-          @input="emit('update:keyword', ($event.target as HTMLInputElement).value)"
+          @input="
+            emit('update:keyword', ($event.target as HTMLInputElement).value)
+          "
         />
       </div>
       <div class="grade-chips">
