@@ -21,6 +21,7 @@ import dayjs from 'dayjs';
 import { getLoopConfidenceLatestApi } from '#/api/metric';
 import {
   getTaskDetailApi,
+  startTaskApi,
   triggerBackfillApi,
   triggerCustomEvaluateApi,
 } from '#/api/task';
@@ -140,6 +141,9 @@ export function useWorkbenchTaskRunner(
           loopIds: [loopId.value],
         });
         taskId = (res as { taskId: string }).taskId;
+        // 后端 backfill 创建为 PENDING 不自动执行，必须显式 start
+        // （否则任务永久滞留待执行；先例：task/backfill-task-drawer.vue）
+        await startTaskApi(taskId);
       } else {
         const res = await triggerCustomEvaluateApi({
           loopIds: [loopId.value],

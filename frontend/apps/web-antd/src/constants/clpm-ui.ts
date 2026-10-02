@@ -59,6 +59,28 @@ export const GRADE_LEVEL_LABEL: Record<number, string> = Object.fromEntries(
   GRADE_THRESHOLDS.map((t) => [t.level, t.label ?? t.name]),
 );
 
+/**
+ * score → 等级信息（字母档 + level + 中文名；无评分返回 null）。
+ *
+ * P2 抽取（workbench360 移交项）：此前 use-wb360-loop / JourneyRail / ThumbStrip
+ * 各持一份 90/80/60/40 硬编码，收敛到 GRADE_THRESHOLDS 单源派生。
+ * 注意：基于默认阈值；动态阈值配置（/configs/grading-thresholds）场景
+ * 仍走 useScoreColor(score, thresholds) 判定链。
+ */
+export function scoreToGradeInfo(
+  score: null | number | undefined,
+): null | { label: string; letter: string; level: number } {
+  if (score === null || score === undefined || Number.isNaN(score)) return null;
+  const sorted = [...GRADE_THRESHOLDS].toSorted(
+    (a, b) => b.minScore - a.minScore,
+  );
+  const hit = sorted.find((t) => score >= t.minScore) ?? sorted.at(-1) ?? null;
+  if (!hit) return null;
+  // 字母档：A–E 对应 level 1–5（左脊柱等级筛选/趋势等级色同口径）
+  const letter = String.fromCodePoint(64 + hit.level);
+  return { label: hit.label ?? hit.name, letter, level: hit.level };
+}
+
 /** 可信度等级 → ZL 工业语义色 */
 export const CONFIDENCE_LEVEL_STATUS: Record<
   ConfidenceLevel,
@@ -753,7 +775,8 @@ export const DQ_AUDIT_ISSUE_COLOR: Record<string, string> = {
 
 /** C（2026-09-28）：排名空态文案的单一事实源（装置排名 / 单元排名 共用；{subject} 由调用方注入） */
 export const RANKING_EMPTY_TEMPLATES: Record<string, string> = {
-  NO_ORG_NODES: '组织树未配置工厂/装置节点，{subject}不可用（请先在系统管理配置组织）',
+  NO_ORG_NODES:
+    '组织树未配置工厂/装置节点，{subject}不可用（请先在系统管理配置组织）',
   NO_PRECALC_ROWS: '{subject}暂无数据：预计算尚未产出，请稍候或检查预计算任务',
 };
 
@@ -762,7 +785,185 @@ export function rankingEmptyText(
   reason: null | string | undefined,
   subject: string,
   fallback?: string,
-): string {
+) {
   const tpl = reason ? RANKING_EMPTY_TEMPLATES[reason] : undefined;
-  return tpl ? tpl.replace('{subject}', subject) : (fallback ?? '暂无' + subject);
+  return tpl
+    ? tpl.replace('{subject}', subject)
+    : (fallback ?? '暂无' + subject);
 }
+
+// ---------------------------------------------------------------------------
+// 回路工作台新版（workbench360，2026-10-02 P1 起）
+//
+// 本节常量供 views/loop/workbench360/** 消费；hex 集中在此
+// （constants/ 是 hex 棘轮白名单目录，组件内禁 hex）。
+// 色值对齐原型 docs/设计文档/原型/回路工作台-原型-2026-10-02.html。
+// ---------------------------------------------------------------------------
+
+/** 趋势系列色（浅色模式，原型 §5.2：PV 蓝 / SP 绿 / OP 紫；SP 提亮一档保障白底对比） */
+export const WB360_TREND_PALETTE_LIGHT = {
+  pv: '#1677ff',
+  sp: '#10b981',
+  op: '#7b61ff',
+  /** 质量码 BAD 段（灰虚线） */
+  qualityBad: '#9aa2ad',
+  /** 质量码 UNCERTAIN 段（琥珀点划） */
+  qualityUncertain: '#d48806',
+  /** MANUAL 背景带边界 */
+  manualBand: '#d9363e',
+  /** 图表网格/坐标轴（浅） */
+  grid: '#eef1f4',
+  grid2: '#f6f8fa',
+  axis: '#8c93a0',
+  /** 质量码垫层（断开主线的底色，浅色=白） */
+  underlay: '#ffffff',
+  /** OP 右轴文字色 */
+  opAxis: '#a89ce0',
+} as const;
+
+/** 趋势系列色（深色模式，html.dark 时使用） */
+export const WB360_TREND_PALETTE_DARK = {
+  pv: '#5b9bff',
+  sp: '#43d9a4',
+  op: '#9d8cff',
+  qualityBad: '#6b7484',
+  qualityUncertain: '#e8b34b',
+  manualBand: '#f2707a',
+  grid: '#272f3d',
+  grid2: '#202836',
+  axis: '#78839a',
+  underlay: '#1f2734',
+  opAxis: '#9d92e8',
+} as const;
+
+/** 包络带填充色（半透明，密集采样时 PV/OP 的 min/max 带） */
+export const WB360_ENVELOPE_FILL = {
+  pvLight: 'rgba(22,119,255,.32)',
+  pvDark: 'rgba(91,155,255,.36)',
+  opLight: 'rgba(123,97,255,.26)',
+  opDark: 'rgba(157,140,255,.30)',
+} as const;
+
+/** SP 容差带填充（SP±tol 多边形带；终验优化） */
+export const WB360_TOL_BAND_FILL = {
+  light: 'rgba(16,185,129,.10)',
+  dark: 'rgba(64,222,178,.12)',
+} as const;
+
+/** 趋势 PNG 导出的背景/标题字色（离屏合成用，非组件内 hex） */
+export const WB360_TREND_EXPORT_BG = {
+  light: '#ffffff',
+  dark: '#101418',
+} as const;
+export const WB360_TREND_EXPORT_TEXT = {
+  light: '#1f2733',
+  dark: '#dfe6ee',
+} as const;
+
+/** MANUAL 背景带填充（半透明红带） */
+export const WB360_MANUAL_BAND_FILL = {
+  light: 'rgba(217,54,62,.08)',
+  dark: 'rgba(217,54,62,.13)',
+} as const;
+
+/** 深色状态栏（浅/深主题均为深色应用式底，原型 #sbar） */
+export const WB360_STATUSBAR = {
+  bg: '#1c2330',
+  divider: 'rgba(255,255,255,.08)',
+  errDot: '#d9363e',
+  okDot: '#13a876',
+  text: '#9aa5b8',
+  textStrong: '#e6ebf3',
+  warnDot: '#d48806',
+  warnText: '#e8b34b',
+} as const;
+
+/** 事件标注层徽标色（诊断▼/整定◆/验证▮/手动⏸；P1 仅 MANUAL 投入使用，其余 P2-P4 接数据） */
+export const WB360_EVENT_MARK_COLORS = {
+  diag: '#d9363e',
+  tuning: '#7b61ff',
+  verify: '#13a876',
+  manual: '#d9363e',
+} as const;
+
+/** 窗口九档（D12：1H~7D+自定义；D13：每窗恒 ≈3600 采样点） */
+export interface WB360WindowPreset {
+  /** 档位 key（custom 为自定义占位档） */
+  key: string;
+  /** 显示名 */
+  label: string;
+  /** 窗口跨度（秒）；custom 档无固定跨度 */
+  spanSeconds?: number;
+  /**
+   * 后端 trendWindow 预设（GET /loops/{id}/monitor）。
+   * 无预设档（12H/7D）走 waveform 自定义起止（API 契约 §1.2）。
+   */
+  trendWindow?:
+    | 'last_1_hour'
+    | 'last_2_hours'
+    | 'last_4_hours'
+    | 'last_8_hours'
+    | 'last_24_hours'
+    | 'last_72_hours';
+  /** 是否为自定义占位档（正式版做起止选择器） */
+  custom?: boolean;
+}
+
+export const WB360_WINDOW_PRESETS: WB360WindowPreset[] = [
+  { key: '1h', label: '1H', spanSeconds: 3600, trendWindow: 'last_1_hour' },
+  { key: '2h', label: '2H', spanSeconds: 7200, trendWindow: 'last_2_hours' },
+  { key: '4h', label: '4H', spanSeconds: 14_400, trendWindow: 'last_4_hours' },
+  { key: '8h', label: '8H', spanSeconds: 28_800, trendWindow: 'last_8_hours' },
+  { key: '12h', label: '12H', spanSeconds: 43_200 },
+  {
+    key: '24h',
+    label: '24H',
+    spanSeconds: 86_400,
+    trendWindow: 'last_24_hours',
+  },
+  {
+    key: '3d',
+    label: '3D',
+    spanSeconds: 259_200,
+    trendWindow: 'last_72_hours',
+  },
+  { key: '7d', label: '7D', spanSeconds: 604_800 },
+  { key: 'custom', label: '自定义', custom: true },
+];
+
+/** 默认窗口档（24H，对齐原型默认选中） */
+export const WB360_DEFAULT_WINDOW_KEY = '24h';
+
+/** 绘制恒采样点数（D13 定标：每窗 ≈3600 点） */
+export const WB360_SAMPLE_POINTS = 3600;
+
+/** 效果验证窗口 7 档（P4；契约 §1.5：windowHours ∈ 1/2/4/8/24/72/168） */
+export const WB360_VERIFY_WINDOW_OPTIONS = [1, 2, 4, 8, 24, 72, 168].map(
+  (h) => ({ label: `${h}h`, value: h }),
+) as Array<{ label: string; value: number }>;
+
+/** 关注抽屉：来源/优先级中文（P4；文案与 monitor/attention.vue 现行口径一致） */
+export const WB360_ATTENTION_SOURCE_LABEL: Record<string, string> = {
+  ALERT: '活跃预警',
+  DATA_QUALITY: '数据质量',
+  DEGRADATION: '评分恶化',
+  FITNESS_ABNORMAL: '适用性异常',
+  HANDLING: '处置工单',
+};
+
+export const WB360_ATTENTION_PRIORITY_LABEL: Record<string, string> = {
+  URGENT: '紧急',
+  HIGH: '高',
+  MEDIUM: '中',
+  LOW: '低',
+};
+
+/** 四剖面 key 与名称（旅程条/缩略卡/工作区共用；v3 §4） */
+export const WB360_SECTIONS = [
+  { key: 'assess', label: '性能评估', module: 'assess' },
+  { key: 'diag', label: '回路诊断', module: 'diagnosis' },
+  { key: 'tuning', label: '参数整定', module: 'tuning' },
+  { key: 'handling', label: '问题处置', module: 'handling' },
+] as const;
+
+export type WB360SectionKey = (typeof WB360_SECTIONS)[number]['key'];

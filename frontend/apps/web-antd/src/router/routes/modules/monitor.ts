@@ -97,6 +97,22 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        // 回路工作台新版（P1 壳层与趋势基座，2026-10-02 起）：
+        // 单页全生命周期工作台（监视-评估-诊断-整定-处置，零跳转全内嵌）。
+        // 验收期与旧 /monitor/loop-workbench 菜单项并存，便于对照；
+        // 验收通过后由用户决定隐藏/删除旧菜单（设计方案 v3 §2）。
+        name: 'LoopWorkbench360',
+        path: '/loop/workbench360',
+        component: () => import('#/views/loop/workbench360/index.vue'),
+        meta: {
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
+          fullPathKey: false,
+          icon: 'lucide:panel-top-close',
+          module: 'monitor',
+          title: '回路工作台（新版）',
+        },
+      },
+      {
         name: 'MonitorLoopRealtime',
         path: '/loop/monitor',
         // 面点分离：旧 /loop/monitor 重定向到独立回路列表页（不再进工作台 table 模式）

@@ -18,6 +18,7 @@ import { registerPermissionDirective } from './directives/permission';
 import { router } from './router';
 
 import '#/constants/icon-offline';
+
 import '#/styles/industrial-light.css';
 
 async function bootstrap(namespace: string) {
