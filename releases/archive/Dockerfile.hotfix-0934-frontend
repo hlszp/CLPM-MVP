@@ -1,0 +1,15 @@
+# 热修补丁镜像 v7（0930 晚）：以生产运行镜像 subpath-hotfix-0933 为底座，
+# 仅替换静态产物。本版前端改动：
+#   - 整定工作台总览 P/I/D 改一次批量 GET /loops/runtime-params
+#     （原逐回路 /loops/{id} ×1209，avg 18.7s 排队，axios 10s 超时整批报错）
+#   - 诊断工作台预检徽标分批 10→200（97 批串行 ~20s → 5 批）
+#   - 请求层：GET 超时/网络错误自动重试一次（间歇连接阻断场景）
+#   - VITE_COMPRESS=gzip：350 个 .gz 静态压缩产物（内层 nginx gzip_static
+#     on 直接命中，免去每请求动态压缩 CPU）
+# dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite
+# build --mode clpm` 构建，已拷贝至 releases/frontend-dist-0934/。
+FROM clpm-frontend:subpath-hotfix-0933
+
+ENV APP_VERSION=v7.1.0-hotfix0934-workbench-req
+
+COPY --chown=nginx:nginx releases/frontend-dist-0934/ /usr/share/nginx/html/

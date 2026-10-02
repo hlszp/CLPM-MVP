@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回路工作台 · FIC-2103A — CLPM 原型</title>
+<style>
+/* ============ 设计 tokens（对齐 DESIGN.md v3.2） ============ */
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --panel-2:#fafbfc; --border:#e5e7eb; --border-2:#d9dde3;
+  --primary:#1677ff; --primary-hover:#3c8dff; --primary-bg:#e8f1ff;
+  --ok:#13a876; --ok-bg:#e6f7f1; --info:#1677ff; --info-bg:#e8f1ff;
+  --warn:#d48806; --warn-bg:#fff7e0; --danger:#d9363e; --danger-bg:#fdecec;
+  --gray:#8c93a0; --gray-bg:#f0f2f5;
+  --text:#262b33; --text-2:#5a6270; --text-3:#8c93a0;
+  --mono:"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+  --radius:6px; --radius-s:4px;
+  --shadow-1:0 1px 2px rgba(16,24,40,.05); --shadow-2:0 4px 16px rgba(16,24,40,.10); --shadow-3:0 8px 32px rgba(16,24,40,.16);
+  --rail-h:60px; --ws-thumbs-h:96px; --spine-w:236px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden} /* 整页禁止滚动：桌面应用式固定视口 */
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:13px;color:var(--text);background:var(--bg)}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#cdd2da;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+.mono{font-family:var(--mono)}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:4px;font-size:12px;line-height:18px;white-space:nowrap}
+.tag .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.t-ok{background:var(--ok-bg);color:var(--ok)}.t-ok .dot{background:var(--ok)}
+.t-info{background:var(--info-bg);color:var(--info)}.t-info .dot{background:var(--info)}
+.t-warn{background:var(--warn-bg);color:var(--warn)}.t-warn .dot{background:var(--warn)}
+.t-danger{background:var(--danger-bg);color:var(--danger)}.t-danger .dot{background:var(--danger)}
+.t-gray{background:var(--gray-bg);color:var(--gray)}.t-gray .dot{background:var(--gray)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:var(--radius-s);font-size:13px;border:1px solid var(--border-2);background:var(--panel);color:var(--text-2);transition:.15s}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.primary:hover{background:var(--primary-hover)}
+.btn.sm{padding:2px 10px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.link{color:var(--primary);cursor:pointer}.link:hover{text-decoration:underline}
+
+/* ============ 全页骨架 ============ */
+#app{height:100vh;display:grid;grid-template-columns:52px 1fr;grid-template-rows:52px 1fr}
+#nav{grid-row:1/3}
+#hdr{grid-column:2}
+#body{grid-column:2}
+/* 系统导航侧栏（真实壳层：回路工作台挂于监控模块） */
+#nav{background:#1c2330;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px}
+.nv-logo{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,#0e5fd8,#1677ff);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;margin-bottom:10px;flex:none}
+.nv-it{width:36px;height:36px;border-radius:7px;color:#8792a6;font-size:15px;display:grid;place-items:center;margin:1px 0;font-family:inherit}
+.nv-it:hover{background:rgba(255,255,255,.08);color:#fff}
+.nv-it.cur{background:var(--primary);color:#fff}
+.nv-user{margin-top:auto;width:28px;height:28px;border-radius:50%;background:#3a4356;color:#cbd3e0;font-size:12px;display:grid;place-items:center;flex:none}
+/* R1 头 */
+#hdr{display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--border)}
+#hdr .brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--text)}
+#hdr .brand .logo{width:22px;height:22px;border-radius:5px;background:linear-gradient(135deg,#0e5fd8,#1677ff);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800}
+#hdr .loop-id{font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:.5px}
+#hdr .loop-desc{font-size:13px;color:var(--text-2)}
+#hdr .crumb{font-size:12px;color:var(--text-3)}
+#hdr .live{display:flex;gap:14px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--text-2)}
+#hdr .live b{font-size:13px;color:var(--text)}
+#hdr .spacer{flex:1}
+.proto-badge{font-size:11px;color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:1px 8px;background:#fffdf5}
+.icon-btn{position:relative;width:30px;height:30px;border-radius:var(--radius-s);display:grid;place-items:center;color:var(--text-2);font-size:15px}
+.icon-btn:hover{background:var(--gray-bg);color:var(--primary)}
+.icon-btn .bdg{position:absolute;top:2px;right:2px;min-width:14px;height:14px;border-radius:7px;background:var(--danger);color:#fff;font-size:10px;display:grid;place-items:center;padding:0 3px}
+
+/* 旅程状态条 */
+/* 旅程状态条（置于主列顶部，与主显示区同宽，不横跨左脊柱） */
+#rail{display:flex;align-items:stretch;gap:0;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex:none}
+#rail .rail-title span{font-size:11px;color:var(--text-3)}
+#rail .rail-title{display:flex;flex-direction:column;justify-content:center;padding-right:14px;margin-right:6px;border-right:1px solid var(--border)}
+#rail .rail-title b{font-size:13px}
+#rail .rail-title span{font-size:11px;color:var(--text-3)}
+.seg-wrap{display:flex;align-items:center;flex:1;min-width:0}
+.seg{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:4px 14px;border-radius:var(--radius);cursor:pointer;border:1px solid transparent;transition:.15s}
+.seg:hover{background:var(--panel-2);border-color:var(--border)}
+.seg .s-top{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}
+.seg .s-top .n{font-size:11px;font-weight:500;color:var(--text-3)}
+.seg .s-sub{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden}
+.seg .s-sub .mono{font-size:12px}
+.seg.active{background:var(--primary-bg);border-color:#b8d4ff}
+.seg.next::after{content:"推荐下一步";position:absolute;top:-4px;right:8px;font-size:10px;color:var(--primary);background:#fff;border:1px solid #b8d4ff;border-radius:8px;padding:0 6px;line-height:14px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(22,119,255,.25)}50%{box-shadow:0 0 0 5px rgba(22,119,255,.06)}}
+@media (prefers-reduced-motion:reduce){.seg.next::after{animation:none}}
+.rail-arrow{color:#c3c9d4;font-size:14px;flex:none;padding:0 2px}
+
+/* 主体三列 */
+#body{display:flex;min-height:0}
+/* 左脊柱 */
+#spine{width:var(--spine-w);flex:none;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.spine-h{padding:8px 10px;border-bottom:1px solid var(--border)}
+.spine-h .row{display:flex;align-items:center;gap:6px}
+.spine-h input[type=text]{flex:1;border:1px solid var(--border-2);border-radius:var(--radius-s);padding:3px 8px;font-size:12px;outline:none}
+.spine-h input[type=text]:focus{border-color:var(--primary)}
+.grade-chips{display:flex;gap:4px;margin-top:6px}
+.gchip{padding:0 7px;font-size:11px;line-height:18px;border-radius:9px;background:var(--gray-bg);color:var(--text-3);cursor:pointer;border:1px solid transparent}
+.gchip.on{color:#fff;background:var(--primary)}
+#tree{flex:none;max-height:236px;overflow:auto;padding:6px 4px;border-bottom:1px solid var(--border);font-size:12px}
+.tnode{padding:3px 8px;border-radius:4px;color:var(--text-2);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.tnode:hover{background:var(--gray-bg)}
+.tnode .cnt{margin-left:auto;font-size:11px;color:var(--text-3);font-family:var(--mono)}
+.tnode.plant{font-weight:600;color:var(--text)}
+.tnode.unit.on{background:var(--primary-bg);color:var(--primary);font-weight:600}
+#loops{flex:1;overflow:auto;min-height:0}
+.lrow{display:flex;align-items:center;gap:8px;padding:0 10px;height:30px;cursor:pointer;border-left:2px solid transparent;font-size:12px}
+.lrow:hover{background:var(--panel-2)}
+.lrow.on{background:var(--primary-bg);border-left-color:var(--primary)}
+.lrow .id{font-family:var(--mono);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .sc{font-family:var(--mono);font-weight:600}
+.gA{color:var(--ok)}.gB{color:var(--info)}.gC{color:var(--warn)}.gD,.gE{color:var(--danger)}.gI{color:var(--gray)}
+.spine-f{padding:5px 10px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+
+/* 主列：画布 + 工作区 */
+#main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+#canvas{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--panel);position:relative}
+.cv-bar{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);flex:none;flex-wrap:wrap;row-gap:4px}
+.segctl{display:inline-flex;border:1px solid var(--border-2);border-radius:var(--radius-s);overflow:hidden}
+.segctl button{padding:3px 12px;font-size:12px;color:var(--text-2);background:var(--panel);border-right:1px solid var(--border)}
+.segctl button:last-child{border-right:none}
+.segctl button.on{background:var(--primary);color:#fff}
+.legend{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--text-2);flex-wrap:wrap}
+.lg{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+.lg.off{opacity:.35}
+.lg .sw{width:14px;height:3px;border-radius:2px}
+.lg .mk{font-size:11px;color:var(--primary)}
+.cv-body{flex:1;min-height:0;position:relative;padding:4px 8px 0;display:flex;flex-direction:column}
+#chart{flex:1;min-height:0;width:100%}
+/* 事件标注层：固定高度（不随趋势图压缩变化），HTML 徽标 + 指示三角 */
+.tlane{flex:none;height:26px;position:relative;margin:0 26px 0 46px}
+.pill{position:absolute;top:3px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 8px;border-radius:9px;background:var(--panel);border:1px solid currentColor;color:inherit;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;line-height:1}
+.pill:hover{box-shadow:var(--shadow-1)}
+.pill .tri{position:absolute;top:17px;left:50%;margin-left:-4px;border:4px solid transparent;border-top-color:currentColor}
+.lane-cap{font-size:11px;color:var(--text-3);position:absolute;left:0;top:5px}
+/* 统一"展开详情"角标：摘要卡右上角，点击打开对应抽屉 */
+.xbadge{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:4px;border:1px solid var(--border-2);background:var(--panel);color:var(--text-3);display:grid;place-items:center;font-size:12px;cursor:pointer;line-height:1}
+.xbadge:hover{color:var(--primary);border-color:var(--primary);background:var(--primary-bg)}
+/* 趋势图滚动条：底部=X 轴（时间），右侧=Y 轴（幅值），支持平移与两端拉伸缩放 */
+#xbar{flex:none;height:14px;position:relative;background:var(--gray-bg);border-radius:4px;margin:2px 26px 6px 46px;cursor:grab;touch-action:none}
+#xthumb{position:absolute;top:2px;bottom:2px;background:#b9c2cf;border-radius:3px;min-width:26px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+#ybar{position:absolute;right:8px;top:8px;bottom:24px;width:14px;background:var(--gray-bg);border-radius:4px;cursor:grab;touch-action:none}
+#ythumb{position:absolute;left:2px;right:2px;background:#b9c2cf;border-radius:3px;min-height:26px}
+html[data-theme=dark] #xthumb,html[data-theme=dark] #ythumb{background:#4a5468;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+/* ── 深色主题令牌 ── */
+html[data-theme=dark]{--bg:#141922;--panel:#1b212c;--panel-2:#161c26;--border:#2a3140;--border-2:#39424f;--text:#e4e9f2;--text-2:#aab3c2;--text-3:#7c8798;--gray-bg:#252d3a;--primary-bg:#12294d;
+ --ok-bg:rgba(19,168,118,.16);--info-bg:rgba(22,119,255,.2);--warn-bg:rgba(212,136,6,.18);--danger-bg:rgba(217,54,62,.18)}
+html[data-theme=dark] .t-ok{color:#43d9a4}html[data-theme=dark] .t-info{color:#5b9bff}
+html[data-theme=dark] .t-warn{color:#e8b34b}html[data-theme=dark] .t-danger{color:#f2707a}
+html[data-theme=dark] .t-gray{color:#8792a6}
+.sw2{display:inline-flex;gap:2px;align-items:center}
+.sw2 i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.at-a-glance .big{display:flex;align-items:baseline;gap:8px;margin:2px 0 6px}
+.at-a-glance .big b{font-size:26px;font-family:var(--mono)}
+.at-a-glance .mini{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-2)}
+#cv-mini{display:none;height:150px;border-bottom:1px solid var(--border);padding:2px 8px;position:relative;flex-direction:column;gap:2px}
+#cv-mini .tlane{height:22px}
+#mini-chart{flex:1;min-height:0;width:100%}
+/* 最大化态：旧画布整体隐藏，迷你趋势贴在旅程条正下方；高度由 --mini-h 控制（分屏条可调） */
+#main.max #canvas{display:none}
+#main.max #ws{flex:1;height:auto}   /* 最大化：工作区吃掉剩余高度，状态栏钉在页底 */
+#main.max .cv-bar,#main.max .cv-body{display:none}
+#main.max #cv-mini{display:flex}
+#cv-mini{height:var(--mini-h,152px)}
+
+/* 分屏条 */
+#split{flex:none;height:24px;background:var(--panel-2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);cursor:row-resize;display:flex;align-items:center;justify-content:center;position:relative;user-select:none}
+#split .grip{width:36px;height:3px;border-radius:2px;background:#cdd2da}
+#split .pz{position:absolute;right:8px;top:0;bottom:0;display:flex;align-items:center;gap:4px}
+#split button{font-size:11px;color:var(--text-3);padding:2px 8px;border-radius:4px}
+#split button:hover{color:var(--primary)}
+#split button.on{background:var(--primary-bg);color:var(--primary)}
+/* 脊柱-主显示区分隔线（垂直拖拽） */
+#vsplit{flex:none;width:5px;cursor:col-resize;background:var(--panel-2);border-left:1px solid var(--border);border-right:1px solid var(--border)}
+#vsplit:hover{background:var(--primary-bg)}
+/* 抽屉左缘拖拽手柄 */
+.drawer .d-resize{position:absolute;left:0;top:0;bottom:0;width:7px;cursor:ew-resize;z-index:2}
+.drawer .d-resize:hover{background:var(--primary-bg)}
+
+/* 工作区：缩略态 / 展开态 */
+#ws{flex:none;background:var(--panel);display:flex;min-height:0}
+#ws.thumbs{height:var(--ws-thumbs-h);gap:10px;padding:8px 12px;align-items:stretch}
+#thumbs{display:flex;gap:10px;flex:1;min-width:0}
+#ws.open #thumbs{display:none}
+.thumb{flex:1;border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0;transition:.15s;background:var(--panel-2)}
+.thumb:hover{border-color:var(--primary);box-shadow:var(--shadow-1)}
+.thumb .th-top{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-3)}
+.thumb .th-top b{font-size:12px;color:var(--text)}
+.thumb .th-body{display:flex;align-items:center;gap:8px;flex:1;min-height:0;overflow:hidden}
+.thumb .th-num{font-family:var(--mono);font-size:15px;font-weight:700;white-space:nowrap}
+.thumb .th-sub{font-size:11px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ws.open{height:var(--ws-h,46%);flex-direction:column}
+#ws.open #thumbs{display:none}
+#ws .ws-head{flex:none;display:none;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--border)}
+#ws.open .ws-head{display:flex}
+#ws .ws-head .wname{font-size:14px;font-weight:700}
+#ws .ws-head .spacer{flex:1}
+#ws .ws-body{flex:1;min-height:0;overflow:auto;padding:10px 12px}
+
+/* 工作区内部组件 */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{position:sticky;top:0;background:var(--panel-2);text-align:left;font-weight:600;color:var(--text-3);padding:5px 8px;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
+.tbl td{padding:5px 8px;border-bottom:1px solid #f0f2f4;white-space:nowrap}
+.tbl tr:hover td{background:#f8fafd}
+.tbl .num{font-family:var(--mono)}
+.filterbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.status-line{font-size:12px;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.card{border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:var(--panel);position:relative}
+.kv{display:flex;gap:8px;align-items:baseline}
+.kv .k{font-size:12px;color:var(--text-3);width:88px;flex:none}
+.kv .v{font-family:var(--mono);font-size:13px}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.note{font-size:12px;color:var(--text-3);line-height:1.6}
+.gate{display:flex;align-items:center;gap:8px;background:var(--warn-bg);border:1px solid #f2ddb0;border-radius:var(--radius-s);padding:5px 10px;font-size:12px;color:var(--warn);margin-bottom:8px}
+.progress-wrap{margin:10px 0}
+.progress{height:8px;background:var(--gray-bg);border-radius:4px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--primary);border-radius:4px;transition:width .4s}
+.step-pipe{display:flex;gap:0;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.step-pipe .st{flex:1;padding:7px 10px;font-size:12px;background:var(--panel-2);color:var(--text-3);border-right:1px solid var(--border);cursor:pointer;display:flex;gap:6px;align-items:center}
+.step-pipe .st:last-child{border-right:none}
+.step-pipe .st .idx{width:16px;height:16px;border-radius:50%;background:var(--gray-bg);display:grid;place-items:center;font-size:11px;flex:none}
+.step-pipe .st.done{color:var(--ok)} .step-pipe .st.done .idx{background:var(--ok-bg);color:var(--ok)}
+.step-pipe .st.on{background:var(--primary-bg);color:var(--primary);font-weight:600} .step-pipe .st.on .idx{background:var(--primary);color:#fff}
+.pid-compare{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.pid-compare .cell{border:1px solid var(--border);border-radius:var(--radius-s);padding:6px 10px;font-size:12px;position:relative}
+.pid-compare .cell b{display:block;font-size:11px;color:var(--text-3);font-weight:500;margin-bottom:2px}
+.pid-compare .cell span{font-family:var(--mono);font-size:13px}
+.tl{position:relative;padding-left:20px}
+.tl::before{content:"";position:absolute;left:6px;top:4px;bottom:4px;width:2px;background:var(--border)}
+.tl-item{position:relative;padding:4px 0 10px}
+.tl-item::before{content:"";position:absolute;left:-18px;top:8px;width:8px;height:8px;border-radius:50%;background:#fff;border:2px solid var(--primary)}
+.tl-item.ok::before{border-color:var(--ok)}
+.tl-item.warn::before{border-color:var(--warn)}
+.tl-item .t-h{display:flex;gap:8px;align-items:center;font-size:12px}
+.tl-item .t-h b{font-size:13px}
+.tl-item .t-m{font-size:12px;color:var(--text-3);margin-top:2px;line-height:1.5}
+.tl-item .t-m .mono{font-size:11px}
+
+/* 抽屉与弹窗 */
+.ovl{position:fixed;inset:0;background:rgba(16,24,40,.32);z-index:60;opacity:0;pointer-events:none;transition:.2s}
+.ovl.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(860px,82vw);background:var(--panel);box-shadow:var(--shadow-3);z-index:70;transform:translateX(102%);transition:.22s ease;display:flex;flex-direction:column}
+.drawer.on{transform:translateX(0)}
+.drawer .d-head{flex:none;display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.drawer .d-head b{font-size:15px}
+.drawer .d-body{flex:1;overflow:auto;padding:14px 16px;min-height:0}
+.drawer .d-foot{flex:none;padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+.modal-mask{position:fixed;inset:0;background:rgba(16,24,40,.4);z-index:80;display:none;place-items:center}
+.modal-mask.on{display:grid}
+.modal{width:520px;max-width:92vw;background:var(--panel);border-radius:8px;box-shadow:var(--shadow-3);max-height:88vh;display:flex;flex-direction:column}
+.modal .m-head{padding:12px 16px;border-bottom:1px solid var(--border);font-size:15px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.modal .m-body{padding:14px 16px;overflow:auto}
+.modal .m-foot{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex:flex-end;justify-content:flex-end}
+.frm{display:flex;flex-direction:column;gap:10px}
+.frm .frow{display:flex;align-items:center;gap:10px}
+.frm label{width:88px;flex:none;font-size:12px;color:var(--text-2);text-align:right}
+.frm select,.frm input{border:1px solid var(--border-2);border-radius:var(--radius-s);padding:4px 8px;font-size:13px;font-family:inherit;outline:none}
+.frm select:focus,.frm input:focus{border-color:var(--primary)}
+.chks{display:flex;flex-wrap:wrap;gap:6px}
+.chks .chk{font-size:12px;border:1px solid var(--border-2);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-2)}
+.chks .chk.on{border-color:var(--primary);color:var(--primary);background:var(--primary-bg)}
+details.adv{border:1px solid var(--border);border-radius:var(--radius-s);padding:6px 10px;font-size:12px}
+details.adv summary{cursor:pointer;color:var(--text-2);user-select:none}
+details.adv .inner{padding:8px 2px 2px}
+#toast-wrap{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--ok);border-radius:var(--radius);box-shadow:var(--shadow-2);padding:8px 16px;font-size:13px;animation:tin .2s}
+@keyframes tin{from{opacity:0;transform:translateY(-6px)}to{opacity:1}}
+.menu{position:fixed;z-index:90;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-2);padding:4px;display:none;min-width:190px}
+.menu.on{display:block}
+.menu .mi{display:flex;justify-content:space-between;gap:12px;padding:6px 10px;border-radius:4px;font-size:13px;color:var(--text-2);cursor:pointer;width:100%;text-align:left}
+.menu .mi:hover{background:var(--gray-bg)}
+.menu .mi .ext{color:var(--warn);font-size:11px}
+.menu .mdiv{height:1px;background:var(--border);margin:4px 6px}
+
+/* 底部状态栏（深色应用式，一行高，不与顶部重复） */
+#sbar{flex:none;background:#1c2330;color:#9aa5b8;font-size:11.5px;display:flex;align-items:center;padding:0 10px;overflow:hidden;white-space:nowrap}
+#sbar .sb-seg{display:inline-flex;align-items:center;gap:5px;padding:0 12px;border-right:1px solid rgba(255,255,255,.08);font-family:var(--mono)}
+#sbar .sb-seg:last-child{border-right:none}
+#sbar b{color:#e6ebf3;font-weight:600}
+#sbar .sb-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex:none}
+
+/* 小屏降级：工作区 → 底部上拉抽屉（保持固定视口原则） */
+@media (max-height:760px){
+  #ws.open{position:absolute;left:0;right:0;bottom:0;height:52%;z-index:40;box-shadow:var(--shadow-3);border-top:2px solid var(--primary)}
+  #split{display:none}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══ 系统导航侧栏 ═══ -->
+  <aside id="nav" aria-label="系统导航">
+    <div class="nv-logo">CL</div>
+    <button class="nv-it" title="工作台">▧</button>
+    <button class="nv-it cur" title="监控（当前：回路工作台）">◉</button>
+    <button class="nv-it" title="评估">◔</button>
+    <button class="nv-it" title="诊断">✚</button>
+    <button class="nv-it" title="整定">⇄</button>
+    <button class="nv-it" title="处置">⚑</button>
+    <button class="nv-it" title="报告">▤</button>
+    <button class="nv-it" title="配置">⚙</button>
+    <button class="nv-it" title="系统">☰</button>
+    <div class="nv-user" title="张工 · IC_ENGINEER">Z</div>
+  </aside>
+
+  <!-- ═══ R1 回路头 ═══ -->
+  <header id="hdr">
+    <div class="brand"><b>回路工作台</b></div>
+    <div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="loop-id">FIC-2103A</span>
+        <span class="tag t-ok"><span class="dot"></span>AUTO</span>
+      </div>
+      <div class="loop-desc">常压塔进料流量控制 · <span class="crumb">常减压蒸馏装置 / 常压单元</span></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="live">
+      <span>PV <b id="lPV">156.3</b> t/h</span>
+      <span>SP <b id="lSP">156.0</b> t/h</span>
+      <span>OP <b id="lOP">47.2</b> %</span>
+      <span style="color:var(--ok)" id="fresh-ind">● 数据新鲜 2s</span>
+      <span class="tag t-info"><span class="dot"></span>适用性 L4 就绪</span>
+    </div>
+    <button class="icon-btn" id="btn-theme" title="主题切换（演示）">◐</button>
+    <button class="icon-btn" id="btn-att" title="本回路关注（2）" aria-label="关注">🔔<span class="bdg">2</span></button>
+    <button class="icon-btn" id="btn-more" title="更多" aria-label="更多">⋯</button>
+  </header>
+
+  <!-- ═══ 主体 ═══ -->
+  <div id="body">
+    <!-- 左脊柱 -->
+    <aside id="spine">
+      <div class="spine-h">
+        <div class="row"><span style="font-size:13px;font-weight:700">装置 / 单元</span></div>
+        <div id="tree"></div>
+      </div>
+      <div class="spine-h">
+        <div class="row"><input type="text" placeholder="搜索回路位号…" aria-label="搜索回路"><button class="btn sm">⊞</button></div>
+        <div class="grade-chips" id="gchips">
+          <span class="gchip on" data-g="all">全部</span><span class="gchip" data-g="A">A</span><span class="gchip" data-g="B">B</span><span class="gchip" data-g="C">C</span><span class="gchip" data-g="D">D</span><span class="gchip" data-g="I">?</span>
+        </div>
+      </div>
+      <div id="loops" aria-label="回路清单"></div>
+      <div class="spine-f" id="loop-count"></div>
+    </aside>
+
+    <!-- 脊柱-主显示区分隔（可拖拽调宽） -->
+    <div id="vsplit" title="拖动调整左脊柱宽度（180–420px）"></div>
+
+    <!-- 主列 -->
+    <main id="main">
+      <!-- ═══ 旅程状态条（与主显示区同宽，独立于左脊柱树） ═══ -->
+      <nav id="rail" aria-label="回路全生命周期">
+        <div class="rail-title"><b>回路旅程</b><span id="rail-clock" class="mono">数据截至 10-02 10:04</span></div>
+        <div class="seg-wrap">
+          <div class="seg" data-sec="assess">
+            <div class="s-top">性能评估 <span class="n">10:00 · 自动</span></div>
+            <div class="s-sub"><span class="mono" style="font-size:15px;font-weight:700;color:var(--info)">74.6</span><span class="tag t-info"><span class="dot"></span>B 良好</span><span>平稳率 61.3% 偏低</span><span class="mono" style="font-size:11px;color:var(--text-3)">Δ+0.4</span></div>
+          </div>
+          <span class="rail-arrow">➜</span>
+          <div class="seg next" data-sec="diag">
+            <div class="s-top">回路诊断 <span class="n">昨 16:20 · 事件触发</span></div>
+            <div class="s-sub"><span class="tag t-danger"><span class="dot"></span>参数</span><span class="tag t-danger"><span class="dot"></span>高</span><span class="mono">置信 0.87</span><span class="tag t-warn"><span class="dot"></span>待复核</span></div>
+          </div>
+          <span class="rail-arrow">➜</span>
+          <div class="seg" data-sec="tuning">
+            <div class="s-top">参数整定 <span class="n">今 06:40</span></div>
+            <div class="s-sub"><span class="tag t-warn"><span class="dot"></span>已仿真</span><span>SIMC 方案待确认</span></div>
+          </div>
+          <span class="rail-arrow">➜</span>
+          <div class="seg" data-sec="handling">
+            <div class="s-top">问题处置 <span class="n">HO-2026-1008</span></div>
+            <div class="s-sub"><span class="tag t-info"><span class="dot"></span>执行中</span><span>参数优化实施 · 张工</span></div>
+          </div>
+        </div>
+      </nav>
+
+      <!-- 监视画布（常驻） -->
+      <section id="canvas">
+        <div class="cv-bar">
+          <div class="segctl" id="cv-live">
+            <button class="on" data-l="hist">历史</button><button data-l="live">实时</button>
+          </div>
+          <div class="segctl" id="cv-mode">
+            <button class="on" data-m="proc">过程变量</button><button data-m="kpi">性能指标</button>
+          </div>
+          <div class="segctl" id="cv-win">
+            <button data-w="3600">1H</button><button data-w="7200">2H</button><button data-w="14400">4H</button><button data-w="28800">8H</button><button data-w="43200">12H</button><button class="on" data-w="86400">24H</button><button data-w="259200">3D</button><button data-w="604800">7D</button><button data-w="custom">自定义</button>
+          </div>
+          <div class="legend" id="cv-legend">
+            <span class="lg" data-s="pv"><span class="sw" style="background:#1677ff"></span>PV</span>
+            <span class="lg" data-s="sp"><span class="sw" style="background:#13a876"></span>SP</span>
+            <span class="lg" data-s="op"><span class="sw" style="background:#7b61ff"></span>OP（右轴 %）</span>
+            <span class="lg" data-s="mode"><span class="sw2"><i style="background:#b7ebc9"></i><i style="background:#fbd5d5"></i></span>MODE 段</span>
+            <span class="lg" data-s="ev"><span style="font-size:11px"><span style="color:var(--danger)">▼</span>诊断 <span style="color:#7b61ff">◆</span>整定 <span style="color:var(--ok)">▮</span>验证 <span style="color:var(--text-3)">（可点击）</span></span></span>
+          </div>
+        </div>
+        <div class="cv-body" id="cv-body">
+          <div id="evlane" class="tlane" aria-label="事件标注"></div>
+          <div id="chart" aria-label="趋势图"></div>
+          <div id="xbar" title="拖动平移 · 拉两端缩放"><i id="xthumb"></i></div>
+          <div id="ybar" title="拖动平移 · 拉两端缩放"><i id="ythumb"></i></div>
+        </div>
+      </section>
+      <!-- 迷你趋势（最大化态） -->
+      <div id="cv-mini"><div id="minievlane" class="tlane"></div><div id="mini-chart"></div></div>
+
+      <!-- 分屏条 -->
+      <div id="split" role="separator" aria-label="拖拽调整画布与工作区高度">
+        <span class="grip"></span>
+        <button data-p="thumbs" class="on">收起</button><button data-p="half">55 : 45</button><button data-p="max">工作区最大化</button>
+      </div>
+
+      <!-- 工作区 -->
+      <section id="ws" class="thumbs" aria-label="剖面工作区">
+        <div id="thumbs">
+          <div class="thumb" data-sec="assess">
+            <div class="th-top"><b>性能评估</b><span>10:00</span></div>
+            <div class="th-body"><span class="th-num" style="color:var(--info)">74.6</span><span class="tag t-info"><span class="dot"></span>B</span><svg id="th-assess" width="110" height="24" style="margin-left:auto"></svg></div>
+            <div class="th-sub">平稳率 61.3% 偏低 · 自动整点</div>
+          </div>
+          <div class="thumb" data-sec="diag">
+            <div class="th-top"><b>回路诊断</b><span>昨 16:20</span></div>
+            <div class="th-body"><span class="tag t-danger"><span class="dot"></span>参数·高</span><span class="th-num">0.87</span><span class="tag t-warn"><span class="dot"></span>待复核</span></div>
+            <div class="th-sub">振荡 · 第 6 次诊断</div>
+          </div>
+          <div class="thumb" data-sec="tuning">
+            <div class="th-top"><b>参数整定</b><span>今 06:40</span></div>
+            <div class="th-body"><span class="tag t-warn"><span class="dot"></span>已仿真</span><span class="th-num">SIMC</span><span class="th-sub">1.05 / 1.90 / 0.31</span></div>
+            <div class="th-sub">当前 1.20 / 0.80 / 0 · 待确认</div>
+          </div>
+          <div class="thumb" data-sec="handling">
+            <div class="th-top"><b>问题处置</b><span>今</span></div>
+            <div class="th-body"><span class="tag t-info"><span class="dot"></span>执行中</span><span class="th-num">1</span><span class="th-sub">HO-2026-1008 参数优化</span></div>
+            <div class="th-sub">建议 3：已转 1 · 待审 1 · 驳回 1</div>
+          </div>
+        </div>
+        <div class="ws-head">
+          <span class="wname" id="ws-name">性能评估</span>
+          <span class="tag t-gray" style="font-size:11px"><span class="dot"></span><span id="ws-hint">剖面 · 页内完成，不跳转</span></span>
+          <span class="spacer"></span>
+          <span id="ws-actions" style="display:flex;gap:8px"></span>
+          <button class="btn sm" id="ws-close">收起 ▾</button>
+        </div>
+        <div class="ws-body" id="ws-body"></div>
+      </section>
+
+      <!-- ═══ 底部状态栏（深色应用式 · 仅主显示区） ═══ -->
+      <footer id="sbar">
+        <span class="sb-seg">单元 <b>常压单元</b> · 5 回路</span>
+        <span class="sb-seg">Tag 关联 <b>7/7</b></span>
+        <span class="sb-seg"><i class="sb-dot" style="background:#13a876"></i>SignalR 实时 · TDengine 入库 <b>10:04:00</b></span>
+        <span class="sb-seg">今日 快照 <b>10</b> · 诊断 <b>0</b> · 预警 <b>1</b></span>
+        <span class="sb-seg">下一任务 整点评估 <b>11:00</b></span>
+        <span class="sb-seg" style="margin-left:auto;border-right:none">角色 <b>IC_ENGINEER</b></span>
+        <span class="sb-seg" style="border-right:none;color:#e8b34b">原型 · 演示数据</span>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<!-- ═══ 抽屉 ═══ -->
+<div class="ovl" id="ovl"></div>
+
+<aside class="drawer" id="dr-kpi" aria-label="评估详情">
+  <div class="d-head"><b>评估详情 · 最新快照</b><span class="tag t-info"><span class="dot"></span>B 良好</span><span style="flex:1"></span><button class="btn sm">导出</button><button class="icon-btn dr-x">✕</button></div>
+  <div class="d-body" id="dr-kpi-body"></div>
+  <div class="d-foot"><span style="flex:1;font-size:11px;color:var(--text-3);align-self:center">数据血缘：本地 TDengine · 窗口 24h · 1s 采样小时聚合 · 断流 0.8%</span><button class="btn dr-x">关闭</button></div>
+</aside>
+
+<aside class="drawer" id="dr-diag" aria-label="诊断全量详情">
+  <div class="d-head"><b>诊断详情 · RUN-20261001-0442</b><span class="tag t-danger"><span class="dot"></span>参数</span><span class="tag t-danger"><span class="dot"></span>高</span><span class="tag t-warn"><span class="dot"></span>待复核</span><span style="flex:1"></span><button class="btn primary sm dr-rev">通过复核</button><button class="icon-btn dr-x">✕</button></div>
+  <div class="d-body" id="dr-diag-body"></div>
+  <div class="d-foot"><button class="btn dr-x">关闭</button><button class="btn primary" id="dr-diag-totune">基于此结论发起整定 →（页内）</button></div>
+</aside>
+
+<aside class="drawer" id="dr-order" aria-label="工单详情">
+  <div class="d-head"><b>工单 HO-2026-1008</b><span class="tag t-info"><span class="dot"></span>执行中</span><span style="flex:1"></span><button class="icon-btn dr-x">✕</button></div>
+  <div class="d-body" id="dr-order-body"></div>
+  <div class="d-foot"><button class="btn dr-x">关闭</button><button class="btn">推进到 验证中</button></div>
+</aside>
+
+<aside class="drawer" id="dr-verify" aria-label="效果验证详情">
+  <div class="d-head"><b>效果验证 · 上一轮整定（已验证）</b><span class="tag t-ok"><span class="dot"></span>已验证</span><span style="flex:1"></span><button class="icon-btn dr-x">✕</button></div>
+  <div class="d-body">
+    <div class="note" style="margin-bottom:10px">方案：LAMBDA P 0.90 / I 1.20s / D 0 · 2026-07-12 实施 · 验证窗 T-7d vs T+7d · 关联工单 <span class="link">HO-2026-0817</span>。当前 SIMC 方案实施后，T+7d 将自动生成本页同款对比。</div>
+    <div class="card" style="margin-bottom:10px"><b style="font-size:13px">前后波形对比 · SP 阶跃窗</b><div id="verify-chart" style="height:150px;margin-top:6px"></div>
+      <div class="legend" style="margin-top:6px"><span class="lg"><span class="sw" style="background:#9aa2ad"></span>实施前 T-7d</span><span class="lg"><span class="sw" style="background:#13a876"></span>实施后 T+7d</span><span class="lg"><span class="sw" style="background:#c3c9d4;height:1px"></span>SP 目标线</span></div></div>
+    <b style="font-size:13px;display:block;margin-bottom:6px">KPI 前后对比</b>
+    <table class="tbl"><thead><tr><th>指标</th><th>before（T-7d）</th><th>after（T+7d）</th><th>Δ</th><th>判定</th></tr></thead><tbody>
+      <tr><td>平稳率</td><td class="num">58.2 %</td><td class="num">79.4 %</td><td class="num" style="color:var(--ok)">+21.2 pp</td><td><span class="tag t-ok"><span class="dot"></span>改善</span></td></tr>
+      <tr><td>振荡率</td><td class="num">22.5 %</td><td class="num">6.1 %</td><td class="num" style="color:var(--ok)">−16.4 pp</td><td><span class="tag t-ok"><span class="dot"></span>改善</span></td></tr>
+      <tr><td>超调量</td><td class="num">28.6 %</td><td class="num">11.3 %</td><td class="num" style="color:var(--ok)">−17.3 pp</td><td><span class="tag t-ok"><span class="dot"></span>改善</span></td></tr>
+      <tr><td>调节时间</td><td class="num">31.2 min</td><td class="num">14.8 min</td><td class="num" style="color:var(--ok)">−52.6 %</td><td><span class="tag t-ok"><span class="dot"></span>改善</span></td></tr>
+      <tr><td>ITAE</td><td class="num">41.7</td><td class="num">15.9</td><td class="num" style="color:var(--ok)">−61.9 %</td><td><span class="tag t-ok"><span class="dot"></span>改善</span></td></tr>
+    </tbody></table>
+    <div class="card" style="margin-top:10px"><b style="font-size:13px">风险与遗留</b><div class="note" style="margin-top:4px">OP 均值上移 4.2 pp（47.1→51.3%），阀门余量充足；快速响应段存在轻微超调（8.2%），在验收阈值（≤12%）内，无需回退。</div></div>
+  </div>
+  <div class="d-foot"><button class="btn dr-x">关闭</button></div>
+</aside>
+
+<aside class="drawer" id="dr-att" style="width:400px" aria-label="本回路关注">
+  <div class="d-head"><b>本回路关注（2）</b><span style="flex:1"></span><button class="icon-btn dr-x">✕</button></div>
+  <div class="d-body">
+    <div class="card" style="margin-bottom:10px"><div class="tl-item warn"><div class="t-h"><b>预警</b><span class="tag t-warn"><span class="dot"></span>中</span><span class="mono" style="margin-left:auto">09:42</span></div><div class="t-m">PV 波动超限：10 分钟内波动 ±2.8%，阈值 ±2.0%</div></div></div>
+    <div class="card"><div class="tl-item warn"><div class="t-h"><b>数据质量</b><span class="tag t-warn"><span class="dot"></span>中</span><span class="mono" style="margin-left:auto">02:00</span></div><div class="t-m">坏值段 12 分钟（02:03–02:15），该小时 KPI 标记 INCONCLUSIVE</div></div></div>
+  </div>
+</aside>
+
+<!-- ═══ 弹窗 ═══ -->
+<div class="modal-mask" id="md-assess"><div class="modal">
+  <div class="m-head">发起评估 · FIC-2103A<button class="icon-btn md-x">✕</button></div>
+  <div class="m-body frm">
+    <div class="segctl" style="align-self:flex-start"><button class="on">整点回算</button><button>自定义时段</button></div>
+    <div class="frow"><label>目标整点</label><input type="datetime-local" value="2026-10-02T10:00" style="font-family:var(--mono)"></div>
+    <div class="note">整点回算覆盖 <span class="mono">kpi_snapshot_hourly</span> 标准快照；分钟/秒自动归零。历史重算窗口 ≤ 30 天。</div>
+    <details class="adv"><summary>切换到"自定义时段"可仅评估选定指标（写入 custom 快照，不参与聚合）</summary><div class="inner note">适用场景：诊断前补充特定窗、指标实验对照。</div></details>
+  </div>
+  <div class="m-foot"><button class="btn md-x">取消</button><button class="btn primary" id="md-assess-go">发起（预计 20s）</button></div>
+</div></div>
+
+<div class="modal-mask" id="md-diag"><div class="modal">
+  <div class="m-head">就地发起诊断 · FIC-2103A<button class="icon-btn md-x">✕</button></div>
+  <div class="m-body frm" id="md-diag-form">
+    <div class="gate" style="background:var(--ok-bg);border-color:#bfe8d8;color:var(--ok)">✓ 预检通过：24h 数据充足 · PV 有效率 99.2% · 适用性 L4 就绪</div>
+    <div class="frow"><label>时间窗</label>
+      <select><option selected>最近 24 小时（诊断窗）</option><option>最近 7 天</option><option>最近 30 天</option><option>自定义…</option></select>
+    </div>
+    <div class="frow"><label>算子组</label>
+      <select><option selected>完整算子组（12 算子）</option><option>快速算子组（6 算子）</option></select>
+    </div>
+    <details class="adv"><summary>高级：算子细选 / 结论融合权重</summary><div class="inner chks">
+      <span class="chk on">振荡检测</span><span class="chk on">阶跃特征</span><span class="chk on">CUSUM 偏差</span><span class="chk on">模式分析</span><span class="chk on">粘滞检测</span><span class="chk">饱和检测</span><span class="chk on">相关性分析</span>
+    </div></details>
+    <div class="note">诊断在后台异步执行，完成后结论就地呈现在本页诊断剖面；全程不离开回路工作台。</div>
+  </div>
+  <div class="m-body frm" id="md-diag-run" style="display:none">
+    <div class="status-line" id="diag-stage">阶段：数据提取…</div>
+    <div class="progress-wrap"><div class="progress"><i id="diag-bar" style="width:8%"></i></div></div>
+    <div class="note">RUN-20261002-0001 · 异步任务 · 页面隐藏时暂停轮询，回到本页继续。</div>
+  </div>
+  <div class="m-foot"><button class="btn md-x">取消</button><button class="btn primary" id="md-diag-go">发起诊断</button></div>
+</div></div>
+
+<div class="modal-mask" id="md-order"><div class="modal">
+  <div class="m-head">创建处置项 · FIC-2103A<button class="icon-btn md-x">✕</button></div>
+  <div class="m-body frm">
+    <div class="frow"><label>来源</label><select><option selected>整定方案确认（SIMC）</option><option>诊断建议 R1</option><option>手工创建</option></select></div>
+    <div class="frow"><label>类型</label><select><option selected>参数优化</option><option>设备检修</option><option>组态变更</option></select></div>
+    <div class="frow"><label>标题</label><input style="flex:1" value="FIC-2103A 参数优化实施（SIMC 推荐值）"></div>
+    <div class="frow"><label>执行人</label><select><option selected>张工（仪控）</option><option>李工（工艺）</option></select></div>
+    <div class="frow"><label>计划实施</label><input type="date" value="2026-10-03"></div>
+    <div class="note">建议参数：P 1.05 / I 1.90s / D 0.31（当前 P 1.20 / I 0.80s / D 0）。授权人员在 DCS 侧人工实施并回填，平台不直写参数。</div>
+  </div>
+  <div class="m-foot"><button class="btn md-x">取消</button><button class="btn primary md-x" id="md-order-go">创建工单</button></div>
+</div></div>
+
+<div class="menu" id="menu-more">
+  <button class="mi"><span>导出诊断报告（PDF）</span><span class="ext">离开本页 ↗</span></button>
+  <button class="mi"><span>整定知识库 / 相似案例</span><span class="ext">离开本页 ↗</span></button>
+  <button class="mi"><span>相似回路横向对比</span><span class="ext">离开本页 ↗</span></button>
+  <button class="mi"><span>多回路批量诊断</span><span class="ext">离开本页 ↗</span></button>
+  <div class="mdiv"></div>
+  <button class="mi"><span>回路组态 / Tag 关联</span><span class="ext">离开本页 ↗</span></button>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script>
+/* ================= 演示数据（原型数据，非生产） ================= */
+const LOOPS=[
+ {id:"FIC-2103A",d:"常压塔进料流量",u:"常压单元",s:74.6,g:"B",mode:"AUTO"},
+ {id:"LIC-2108",d:"常压塔液位",u:"常压单元",s:88.2,g:"A",mode:"AUTO"},
+ {id:"TIC-2115",d:"常压塔顶温",u:"常压单元",s:91.0,g:"A",mode:"AUTO"},
+ {id:"FIC-2107",d:"初馏塔进料流量",u:"初馏单元",s:55.1,g:"C",mode:"AUTO"},
+ {id:"PIC-2305",d:"减压塔顶压力",u:"减压单元",s:79.8,g:"B",mode:"CAS"},
+ {id:"TIC-2120",d:"常压炉出口温",u:"加热炉单元",s:83.7,g:"B",mode:"AUTO"},
+ {id:"FIC-2201",d:"中段回流流量",u:"常压单元",s:62.4,g:"C",mode:"AUTO"},
+ {id:"LIC-2210",d:"汽提塔液位",u:"常压单元",s:90.2,g:"A",mode:"AUTO"},
+ {id:"FIC-2302",d:"减压进料流量",u:"减压单元",s:47.8,g:"D",mode:"MAN"},
+ {id:"TIC-2308",d:"减压塔顶温",u:"减压单元",s:null,g:"I",mode:"AUTO"},
+ {id:"FIC-2401",d:"反应进料流量",u:"反应再生单元",s:76.5,g:"B",mode:"AUTO"},
+ {id:"TIC-2410",d:"提升管出口温",u:"反应再生单元",s:85.3,g:"B",mode:"AUTO"},
+ {id:"LIC-2502",d:"分馏塔底液位",u:"分馏单元",s:81.9,g:"B",mode:"AUTO"},
+ {id:"FIC-2515",d:"吸收稳定补气",u:"吸收稳定单元",s:58.7,g:"C",mode:"AUTO"}];
+const ASSESS_HIST=[
+ ["10:00","74.6","B","自动","24h→整点","SUCCESS"],["09:00","74.2","B","自动","24h→整点","SUCCESS"],
+ ["08:00","73.9","B","自动","24h→整点","SUCCESS"],["07:00","74.1","B","自动","24h→整点","SUCCESS"],
+ ["06:00","74.8","B","自动","24h→整点","SUCCESS"],["02:00","—","?","自动","24h→整点","INCONCLUSIVE"],
+ ["昨 22:00","75.3","B","自动","24h→整点","SUCCESS"],["昨 16:20","71.8","C","手动","诊断窗 24h","PARTIAL"],
+ ["昨 14:00","73.0","B","重算","06:00–14:00","SUCCESS"],["昨 10:00","73.6","B","自动","24h→整点","SUCCESS"],
+ ["昨 06:00","72.4","C","自动","24h→整点","SUCCESS"],["前 22:00","71.9","C","自动","24h→整点","SUCCESS"]];
+const DIAG_HIST=[
+ ["2026-10-01 16:20","参数","高","0.87","预警事件","待复核","RUN-20261001-0442"],
+ ["2026-09-29 01:10","参数","中","0.74","定时·每日","已复核","RUN-20260929-0113"],
+ ["2026-09-24 01:10","参数","中","0.71","定时·每日","已复核","RUN-20260924-0108"],
+ ["2026-09-19 14:05","阀门","低","0.42","手动","已复核","RUN-20260919-0311"],
+ ["2026-09-15 01:10","数据不足","低","0.31","定时·每日","已复核","RUN-20260915-0122"],
+ ["2026-09-10 01:10","参数","中","0.69","定时·每日","已复核","RUN-20260910-0117"]];
+const TUNE_MATRIX=[
+ ["IMC","0.94","1.60","0.28","85%","中",true],
+ ["LAMBDA","0.88","1.45","0.24","83%","低",false],
+ ["Ziegler-Nichols","1.38","0.72","0.43","64%","高",false],
+ ["Cohen-Coon","1.30","0.83","0.40","67%","高",false],
+ ["SIMC","1.05","1.90","0.31","87%","中",true]];
+const SIM_ROWS=[["指标","现状 PID","IMC","SIMC"],["上升时间","14.2 s","9.1 s","8.6 s"],["超调量","21.4 %","9.8 %","8.2 %"],["调节时间","28.4 min","12.1 min","10.6 min"],["ITAE","38.4","14.2","12.0"]];
+
+/* ================= 左脊柱 ================= */
+const treeEl=document.getElementById("tree");
+const TREE=[["常减压蒸馏装置",[["初馏单元",1],["常压单元",5],["减压单元",3],["加热炉单元",1]],true],
+            ["催化裂化装置",[["反应再生单元",2],["分馏单元",1],["吸收稳定单元",1]],false]];
+TREE.forEach(([p,units,open])=>{
+  const pEl=document.createElement("div");pEl.className="tnode plant";
+  pEl.innerHTML=`<span>${open?"▾":"▸"}</span><span>${p}</span><span class="cnt">${units.reduce((s,u)=>s+u[1],0)}</span>`;
+  let openState=open;
+  const unitEls=[];
+  units.forEach(([u,c])=>{const uEl=document.createElement("div");uEl.className="tnode unit"+(u==="常压单元"?" on":"");
+    uEl.style.paddingLeft="26px";uEl.style.display=open?"flex":"none";
+    uEl.innerHTML=`<span>${u}</span><span class="cnt">${c}</span>`;
+    uEl.onclick=()=>{document.querySelectorAll(".tnode.unit").forEach(x=>x.classList.remove("on"));uEl.classList.add("on")};
+    unitEls.push(uEl)});
+  pEl.onclick=()=>{openState=!openState;pEl.querySelector("span").textContent=openState?"▾":"▸";unitEls.forEach(u=>u.style.display=openState?"flex":"none")};
+  treeEl.appendChild(pEl);unitEls.forEach(u=>treeEl.appendChild(u));
+});
+const loopsEl=document.getElementById("loops");
+function renderLoops(filter="all"){
+  loopsEl.innerHTML="";
+  const rows=LOOPS.filter(l=>filter==="all"||l.g===filter);
+  rows.forEach(l=>{
+    const r=document.createElement("div");r.className="lrow"+(l.id==="FIC-2103A"?" on":"");
+    r.innerHTML=`<span class="id" title="${l.d}">${l.id}</span><span class="sc g${l.g}">${l.g==="I"?"?":l.s.toFixed(1)}</span><span class="tag ${l.mode==="AUTO"?"t-ok":l.mode==="MAN"?"t-danger":"t-info"}" style="font-size:10px;padding:0 5px">${l.mode}</span>`;
+    r.onclick=()=>{document.querySelectorAll(".lrow").forEach(x=>x.classList.remove("on"));r.classList.add("on")};
+    loopsEl.appendChild(r);
+  });
+  document.getElementById("loop-count").textContent=`${rows.length} / ${LOOPS.length} 回路 · B 以上 ${LOOPS.filter(l=>["A","B"].includes(l.g)).length}`;
+}
+renderLoops();
+document.getElementById("gchips").addEventListener("click",e=>{const c=e.target.closest(".gchip");if(!c)return;document.querySelectorAll(".gchip").forEach(x=>x.classList.remove("on"));c.classList.add("on");renderLoops(c.dataset.g)});
+
+/* ================= 趋势图（SVG 手绘，PV 质量码分段渲染） ================= */
+const NS="http://www.w3.org/2000/svg";
+function svgEl(t,attrs){const e=document.createElementNS(NS,t);for(const k in attrs)e.setAttribute(k,attrs[k]);return e}
+/* ── 虚拟连续信号（演示）：绝对秒为真值，绘制时按窗口动态采样（恒 ≈3600 点）──
+   采样间隔随窗口自适应：1H=1s、2H=2s、24H=24s、7D=168s（用户定标口径） */
+const DAY=86400;
+let NOW=10*3600+4*60;   // 演示数据截至 10-02 10:04（相对演示日 00:00 的秒数）
+const EV_MARKS=[{t:-DAY+(16*3600+20*60),g:"▼",lb:"诊断",c:"#d9363e",act:"run"},  // 昨 16:20 预警触发
+                {t:6*3600+40*60,g:"◆",lb:"整定",c:"#7b61ff",act:"tune"},          // 今 06:40
+                {t:-DAY+(22*3600+10*60),g:"▮",lb:"验证",c:"#13a876",act:"ver"}];   // 昨 22:10（上一轮验证）
+const dOfDay=t=>t-DAY*Math.floor(t/DAY);
+function spAt(t){const d=dOfDay(t);return d<7.2*3600?156.0:d<14.93*3600?158.0:156.5}
+function oscAt(t){const d=dOfDay(t);const r=d<9*3600?0:d<10.5*3600?(d-9*3600)/(1.5*3600):1;
+  return Math.sin(2*Math.PI*d/504)*(0.35+0.85*r)}   // 8.4min 振荡，09:00 起渐强（诊断结论）
+function pvAt(t){const d=dOfDay(t);
+  const n=0.08*Math.sin(2*Math.PI*d/5400)+0.06*Math.sin(2*Math.PI*d/1150+t*1e-4);
+  return Math.max(153.5,Math.min(160.5,spAt(t)+oscAt(t)+n))}
+function opAt(t){return Math.max(36,Math.min(64,48.5+(spAt(t)-156)*8-oscAt(t)*6))}
+function qAt(t){const d=dOfDay(t);return d>=0.72*DAY&&d<=0.76*DAY?"BAD":d>=0.40*DAY&&d<=0.415*DAY?"UNC":"GOOD"}
+function modeAt(t){const di=Math.floor(t/DAY),d=dOfDay(t);
+  return ((di===0||di===-2)&&d>=0.55*DAY&&d<=0.60*DAY)?"MAN":"AUTO"}
+let XDOMAIN={t0:NOW-DAY,t1:NOW};            // 当前窗口的数据域
+let viewX={t0:NOW-DAY,t1:NOW};              // 视口（滚动条/缩放平移作用于此）
+let viewY={lo:153.5,hi:160.5};
+const YDOMAIN={lo:151,hi:162};
+let VIEW={live:false};                      // 历史/实时模式标志
+let DARK=false;
+const PAL=()=>DARK?{grid:"#272f3d",grid2:"#202836",axis:"#78839a",pillBg:"#1f2734",manBand:"rgba(217,54,62,.13)",opAxis:"#9d92e8"}
+                  :{grid:"#eef1f4",grid2:"#f6f8fa",axis:"#8c93a0",pillBg:"#ffffff",manBand:"rgba(217,54,62,.08)",opAxis:"#a89ce0"};
+function niceStep(r){const p=Math.pow(10,Math.floor(Math.log10(r||1)));const n=r/p;return (n<1.5?1:n<3.5?2:n<7.5?5:10)*p}
+let rafP=false;
+function requestDraw(){if(rafP)return;rafP=true;requestAnimationFrame(()=>{rafP=false;
+  drawChart(chartEl,chartEl.dataset.mode||"proc");drawBars();
+  renderLane(document.getElementById("evlane"));
+  renderLane(document.getElementById("minievlane"),true)})}
+/* 事件标注层（固定高度，HTML 徽标）：事件+MANUAL 段，随视口取位，可点击 */
+function renderLane(lane,mini){
+  lane.innerHTML="";
+  if(mini){const cap=document.createElement("span");cap.className="lane-cap";cap.textContent="监视（迷你）";lane.appendChild(cap)}
+  const span=viewX.t1-viewX.t0,LO=viewX.t0;
+  const pct=t=>Math.max(7,Math.min(93,(t-LO)/span*100));
+  const addPill=(p,g,lb,c,act)=>{
+    const el=document.createElement("button");el.className="pill";el.style.left=p+"%";el.style.color=c;
+    el.innerHTML=`<span>${g}</span>${lb}`+(act?`<i class="tri"></i>`:"");
+    el.title=lb;
+    if(act)el.onclick=()=>openSection(act==="run"?"diag":act==="tune"?"tuning":"handling");
+    lane.appendChild(el)};
+  let m0=-1; // MANUAL 段中点 → 手动徽标
+  for(let i=0;i<=720;i++){const t=LO+span*i/720,man=i<720&&modeAt(t)==="MAN";
+    if(man&&m0<0)m0=i;
+    if((!man||i===720)&&m0>=0){addPill(pct(LO+span*((m0+i-1)/2)/720),"⏸","手动","#d9363e",null);m0=-1}}
+  EV_MARKS.forEach(mk=>{if(mk.t<LO||mk.t>viewX.t1)return;addPill(pct(mk.t),mk.g,mk.lb,mk.c,mk.act)});
+}
+function drawChart(container,mode){
+  const W=container.clientWidth||800,H=container.clientHeight||220;
+  container.innerHTML="";
+  const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",height:"100%",preserveAspectRatio:"none"});
+  const L=46,R=54,T=10,B=30,pw=W-L-R,ph=H-T-B;
+  const P=PAL();
+  const yLo=viewY.lo,yHi=viewY.hi,yv=v=>T+ph*(1-(v-yLo)/(yHi-yLo));
+  const opLo=20,opHi=80,opv=v=>T+ph*(1-(v-opLo)/(opHi-opLo));
+  const gx=svgEl("g",{});svg.appendChild(gx);
+  const yStep=niceStep((yHi-yLo)/4);
+  for(let g=Math.ceil(yLo/yStep-1e-9)*yStep;g<=yHi+1e-9;g+=yStep){const y=yv(g);
+    gx.appendChild(svgEl("line",{x1:L,y1:y,x2:W-R,y2:y,stroke:P.grid}));
+    gx.appendChild(Object.assign(svgEl("text",{x:L-6,y:y+3.5,"text-anchor":"end","font-size":10,fill:P.axis}),{textContent:g.toFixed(yStep<1?1:0)}))}
+  for(let g=30;g<=70;g+=20){const y=opv(g);
+    gx.appendChild(Object.assign(svgEl("text",{x:W-R+6,y:y+3.5,"font-size":9.5,fill:P.opAxis}),{textContent:g+"%"}))}
+  const span=viewX.t1-viewX.t0;
+  const fmtT=t=>{const d=(t%DAY+DAY)%DAY,h=Math.floor(d/3600),m=Math.floor(d%3600/60);return (h<10?"0":"")+h+":"+(m<10?"0":"")+m};
+  const clockMode=span<=DAY*1.2;
+  const XL=[0,1,2,3,4].map(k=>{const t=viewX.t0+span*k/4;return clockMode?fmtT(t):"-"+(Math.round((NOW-t)/DAY*10)/10)+"D"});
+  XL[4]=VIEW.live?"现在":"截至";
+  XL.forEach((lb,i)=>{const x=L+pw*i/4;
+    if(i>0&&i<4)gx.appendChild(svgEl("line",{x1:x,y1:T,x2:x,y2:T+ph,stroke:P.grid2}));
+    gx.appendChild(Object.assign(svgEl("text",{x:x,y:H-8,"text-anchor":"middle","font-size":10,fill:P.axis}),{textContent:lb}))});
+  if(mode==="proc"){
+    // 窗口动态采样：恒 ≈3600 点，dt=span/3600（1H→1s、24H→24s、7D→168s）
+    const Np=3600,dtm=span/Np;
+    const pvS=new Array(Np+1),spS=new Array(Np+1),opS=new Array(Np+1),qs=new Array(Np+1);
+    for(let i=0;i<=Np;i++){const t=viewX.t0+i*dtm;pvS[i]=pvAt(t);spS[i]=spAt(t);opS[i]=opAt(t);qs[i]=qAt(t)}
+    const X=i=>L+pw*i/Np;
+    const mkPath=yVals=>{let d="";yVals.forEach((y,i)=>{d+=(i?"L":"M")+X(i).toFixed(1)+" "+y.toFixed(1)+" "});return d};
+    // MANUAL 背景带：虚线边界（“手动”徽标在标注层渲染）
+    let m0=-1;
+    for(let i=0;i<=Np;i++){const man=i<Np&&modeAt(viewX.t0+i*dtm)==="MAN";
+      if(man&&m0<0)m0=i;
+      if((!man||i===Np)&&m0>=0){const i1=man?i:i-1,x0=X(m0),x1=X(i1);
+        svg.appendChild(svgEl("rect",{x:x0,y:T,width:Math.max(2,x1-x0),height:ph,fill:P.manBand}));
+        svg.appendChild(svgEl("line",{x1:x0,y1:T,x2:x0,y2:T+ph,stroke:"#d9363e","stroke-dasharray":"4 3","stroke-width":1,opacity:.5}));
+        svg.appendChild(svgEl("line",{x1:x1,y1:T,x2:x1,y2:T+ph,stroke:"#d9363e","stroke-dasharray":"4 3","stroke-width":1,opacity:.5}));
+        m0=-1}}
+    // OP（右轴 %，细线）/ SP / PV —— 密集窗口（振荡周期 < ~12px/周期）自动切换 min/max 包络带渲染
+    const pxPerCycle=pw/(span/504);
+    const dense=pxPerCycle<12;
+    const envelope=(get,map)=>{const cols=Math.max(2,Math.floor(pw));
+      const cMin=new Array(cols).fill(Infinity),cMax=new Array(cols).fill(-Infinity);
+      for(let i=0;i<=Np;i++){const c=Math.min(cols-1,Math.floor(i/Np*cols));const v=get(i);if(v<cMin[c])cMin[c]=v;if(v>cMax[c])cMax[c]=v}
+      let d="";for(let c=0;c<cols;c++)d+=(c?"L":"M")+X(c*Np/cols).toFixed(1)+" "+yv(map(cMax[c])).toFixed(1)+" ";
+      for(let c=cols-1;c>=0;c--)d+="L"+X(c*Np/cols).toFixed(1)+" "+yv(map(cMin[c])).toFixed(1)+" ";
+      return d+"Z"};
+    svg.appendChild(svgEl("path",{d:mkPath(spS.map(yv)),fill:"none",stroke:"#13a876","stroke-width":1.8}));
+    if(dense){
+      svg.appendChild(svgEl("path",{d:envelope(i=>opS[i],opv),fill:"rgba(123,97,255,.20)",stroke:"none"}));
+      svg.appendChild(svgEl("path",{d:envelope(i=>pvS[i],v=>v),fill:"rgba(22,119,255,.26)",stroke:"none"}));
+    }else{
+      svg.appendChild(svgEl("path",{d:mkPath(opS.map(opv)),fill:"none",stroke:"#7b61ff","stroke-width":1.1,opacity:.7}));
+      svg.appendChild(svgEl("path",{d:mkPath(pvS.map(yv)),fill:"none",stroke:"#1677ff","stroke-width":1.5}));
+    }
+    // 质量码覆盖（连续段）：BAD=灰虚线 / UNCERTAIN=琥珀点划（DESIGN.md §6.1），底色垫层断开蓝线
+    [["BAD","#9aa2ad","3 2"],["UNC","#d48806","6 3 1 3"]].forEach(([q,stroke,dash])=>{
+      let s=-1;
+      for(let i=0;i<=Np+1;i++){const hit=i<Np&&qs[i]===q;
+        if(hit&&s<0)s=i;
+        if((!hit||i===Np)&&s>=0){let d="";for(let k=s;k<=i-1;k++)d+=(d?"L":"M")+X(k).toFixed(1)+" "+yv(pvS[k]).toFixed(1)+" ";
+          svg.appendChild(svgEl("path",{d,fill:"none",stroke:P.pillBg,"stroke-width":3.4}));
+          svg.appendChild(svgEl("path",{d,fill:"none",stroke,"stroke-width":1.5,"stroke-dasharray":dash}));s=-1}}});
+    // 事件徽标在固定高度标注层渲染（renderLane），SVG 内不再绘制
+    container.dataset.mode="proc";
+  }else{
+    // KPI 模式：评分折线 + 三指标棒图
+    const yv=v=>T+ph*(1-(v-55)/30);
+    let d="";const scores=[];for(let i=0;i<48;i++){scores.push(72+Math.sin(i/6)*3+((i%7===0)?-2.5:0)+i*0.04)}
+    scores.forEach((v,i)=>{const x=L+pw*i/47;d+=(i?"L":"M")+x.toFixed(1)+" "+yv(v).toFixed(1)+" "});
+    svg.appendChild(svgEl("path",{d,fill:"none",stroke:"#1677ff","stroke-width":1.8}));
+    svg.appendChild(svgEl("line",{x1:L,y1:yv(80),x2:W-R,y2:yv(80),stroke:"#faad14","stroke-dasharray":"4 3","stroke-width":1}));
+    svg.appendChild(Object.assign(svgEl("text",{x:W-R,y:yv(80)-5,"text-anchor":"end","font-size":9,fill:"#d48806"}),{textContent:"80 分线"}));
+    const bars=[["平稳",61.3,"#d48806"],["准确",87.5,"#13a876"],["快速",82.0,"#13a876"]];
+    bars.forEach(([lb,v,c],i)=>{const bx=L+pw*(0.06+i*0.11);svg.appendChild(svgEl("rect",{x:bx,y:yv(v),width:16,height:T+ph-yv(v),fill:c,opacity:.85,rx:2}));
+      svg.appendChild(Object.assign(svgEl("text",{x:bx+8,y:yv(v)-5,"text-anchor":"middle","font-size":9.5,fill:c}),{textContent:lb+" "+v}))});
+    svg.appendChild(Object.assign(svgEl("text",{x:W-R,y:T+11,"text-anchor":"end","font-size":10,fill:"#8c93a0"}),{textContent:"综合评分（48h）"}));
+  }
+  container.appendChild(svg);
+}
+const chartEl=document.getElementById("chart");
+requestAnimationFrame(()=>{drawChart(chartEl,"proc");drawChart(document.getElementById("mini-chart"),"proc");drawBars();drawThumb();
+  renderLane(document.getElementById("evlane"));renderLane(document.getElementById("minievlane"),true)});
+window.addEventListener("resize",()=>requestDraw());
+function drawThumb(){
+  const s=document.getElementById("th-assess");if(!s)return;s.innerHTML="";
+  let d="";for(let i=0;i<40;i++){const v=16-(72+Math.sin(i/5)*2+i*0.05-70)*0.5;d+=(i?"L":"M")+(i*2.75)+" "+v.toFixed(1)+" "}
+  s.appendChild(svgEl("path",{d,fill:"none",stroke:"#1677ff","stroke-width":1.3}));
+  s.appendChild(svgEl("line",{x1:0,y1:11,x2:110,y2:11,stroke:"#faad14","stroke-dasharray":"3 2","stroke-width":.8}));
+}
+document.getElementById("cv-mode").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;document.querySelectorAll("#cv-mode button").forEach(x=>x.classList.remove("on"));b.classList.add("on");drawChart(chartEl,b.dataset.m)});
+function applyWindow(sec){XDOMAIN={t0:NOW-sec,t1:NOW};viewX={t0:NOW-sec,t1:NOW};viewY={lo:153.5,hi:160.5};requestDraw()}
+document.getElementById("cv-win").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  document.querySelectorAll("#cv-win button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+  if(b.dataset.w==="custom"){toast("自定义时间窗（原型占位）：正式版提供起止时间选择与窗口别名保存");return}
+  applyWindow(+b.dataset.w)});
+/* ── 历史 / 实时切换：实时=每 1.2s 追加新样本，窗口右推 ── */
+let liveTimer=null;
+function liveTick(){
+  const W=XDOMAIN.t1-XDOMAIN.t0,adv=Math.max(2,W/150); // 每 tick 推进窗口的 1/150（右推观感）
+  NOW+=adv;XDOMAIN.t1=NOW;XDOMAIN.t0=NOW-W;
+  viewX.t0+=adv;viewX.t1+=adv;
+  const d=new Date(2026,9,2);d.setSeconds(NOW);const p2=n=>(n<10?"0":"")+n;
+  document.getElementById("rail-clock").textContent="数据截至 "+p2(d.getMonth()+1)+"-"+p2(d.getDate())+" "+p2(d.getHours())+":"+p2(d.getMinutes());
+  document.getElementById("lPV").textContent=pvAt(NOW).toFixed(1);
+  document.getElementById("lSP").textContent=spAt(NOW).toFixed(1);
+  document.getElementById("lOP").textContent=opAt(NOW).toFixed(1);
+  requestDraw();
+}
+document.getElementById("cv-live").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  document.querySelectorAll("#cv-live button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+  const live=b.dataset.l==="live",fresh=document.getElementById("fresh-ind");
+  if(live){
+    if(chartEl.dataset.mode!=="proc")document.querySelector('#cv-mode button[data-m="proc"]').click();
+    viewX={t0:XDOMAIN.t0,t1:XDOMAIN.t1};viewY={lo:153.5,hi:160.5};
+    VIEW.live=true;
+    fresh.textContent="● 实时推送中";
+    liveTimer=setInterval(liveTick,1200);liveTick();
+  }else{
+    clearInterval(liveTimer);liveTimer=null;
+    VIEW.live=false;
+    fresh.textContent="● 数据新鲜 2s";
+    document.getElementById("lPV").textContent=pvAt(NOW).toFixed(1);
+    document.getElementById("lSP").textContent=spAt(NOW).toFixed(1);
+    document.getElementById("lOP").textContent=opAt(NOW).toFixed(1);
+    requestDraw();
+  }
+});
+/* ── 趋势图滚动条：底部=X 时间轴，右侧=Y 幅值轴；中键平移、两端拉伸缩放、滚轮缩放、双击复位 ── */
+const xbar=document.getElementById("xbar"),xthumb=document.getElementById("xthumb");
+const ybar=document.getElementById("ybar"),ythumb=document.getElementById("ythumb");
+function drawBars(){
+  const d0=XDOMAIN.t0,d1=XDOMAIN.t1;
+  xthumb.style.left=((viewX.t0-d0)/(d1-d0)*100)+"%";
+  xthumb.style.width=Math.max(1.5,(viewX.t1-viewX.t0)/(d1-d0)*100)+"%";
+  ythumb.style.bottom=((viewY.lo-YDOMAIN.lo)/(YDOMAIN.hi-YDOMAIN.lo)*100)+"%";
+  ythumb.style.height=Math.max(1.5,(viewY.hi-viewY.lo)/(YDOMAIN.hi-YDOMAIN.lo)*100)+"%";
+}
+function clampViewX(t0,t1){const s=Math.max(60,Math.min(t1-t0,XDOMAIN.t1-XDOMAIN.t0));
+  let a=t0,b=a+s;if(b>XDOMAIN.t1){b=XDOMAIN.t1;a=b-s}if(a<XDOMAIN.t0){a=XDOMAIN.t0;b=a+s}
+  viewX={t0:a,t1:b};requestDraw()}
+function clampViewY(lo,hi){const s=Math.max(0.5,Math.min(hi-lo,YDOMAIN.hi-YDOMAIN.lo));
+  let l=lo,h=l+s;if(h>YDOMAIN.hi){h=YDOMAIN.hi;l=h-s}if(l<YDOMAIN.lo){l=YDOMAIN.lo;h=l+s}
+  viewY={lo:l,hi:h};requestDraw()}
+function zoomX(f,center){const s0=viewX.t1-viewX.t0,s=Math.max(60,Math.min(s0*f,XDOMAIN.t1-XDOMAIN.t0));
+  const c=center==null?(viewX.t0+viewX.t1)/2:center,k=s/s0;
+  clampViewX(c-(c-viewX.t0)*k,c+(viewX.t1-c)*k)}
+function zoomY(f,c){const s0=viewY.hi-viewY.lo,s=Math.max(0.5,Math.min(s0*f,YDOMAIN.hi-YDOMAIN.lo));
+  const cc=c==null?(viewY.lo+viewY.hi)/2:c,k=s/s0;
+  clampViewY(cc-(cc-viewY.lo)*k,cc+(viewY.hi-cc)*k)}
+function barDrag(bar,horiz){
+  bar.addEventListener("pointerdown",e=>{
+    const r=xthumb.getBoundingClientRect(),yr=ythumb.getBoundingClientRect();
+    const tr=horiz?r:yr,tl=horiz?tr.width:tr.height,p=horiz?e.clientX:e.clientY,tp=horiz?tr.left:tr.top;
+    const off=(p-tp)/tl,mode=off<0.14?"lo":off>0.86?"hi":"pan";
+    const sx=e.clientX,sy=e.clientY,v0=horiz?{...viewX}:{...viewY};
+    bar.style.cursor="grabbing";e.preventDefault();
+    const mv=ev=>{if(horiz){const dd=(ev.clientX-sx)/bar.clientWidth*(XDOMAIN.t1-XDOMAIN.t0);
+        if(mode==="pan")clampViewX(v0.t0-dd,v0.t1-dd);
+        else if(mode==="lo")clampViewX(Math.min(v0.t1-60,v0.t0+dd),v0.t1);
+        else clampViewX(v0.t0,Math.max(v0.t0+60,v0.t1+dd))}
+      else{const dd=-(ev.clientY-sy)/bar.clientHeight*(YDOMAIN.hi-YDOMAIN.lo);
+        if(mode==="pan")clampViewY(v0.lo-dd,v0.hi-dd);
+        else if(mode==="lo")clampViewY(Math.min(v0.hi-0.5,v0.lo+dd),v0.hi);
+        else clampViewY(v0.lo,Math.max(v0.lo+0.5,v0.hi+dd))}};
+    const up=()=>{bar.style.cursor="grab";window.removeEventListener("pointermove",mv);window.removeEventListener("pointerup",up)};
+    window.addEventListener("pointermove",mv);window.addEventListener("pointerup",up)});
+}
+barDrag(xbar,true);barDrag(ybar,false);
+chartEl.addEventListener("wheel",e=>{e.preventDefault();
+  if(e.shiftKey){const r=chartEl.getBoundingClientRect(),frac=1-(e.clientY-r.top-26)/(r.height-56);
+    zoomY(e.deltaY>0?1.15:1/1.15,viewY.lo+Math.max(0,Math.min(1,frac))*(viewY.hi-viewY.lo))}
+  else{const r=chartEl.getBoundingClientRect(),t=viewX.t0+Math.max(0,Math.min(1,(e.clientX-r.left-46)/(r.width-100)))*(viewX.t1-viewX.t0);
+    zoomX(e.deltaY>0?1.15:1/1.15,t)}},{passive:false});
+chartEl.addEventListener("dblclick",()=>{viewX={...XDOMAIN};viewY={lo:153.5,hi:160.5};requestDraw()});
+/* ── 主题切换（演示：浅色/深色令牌 + 图表重绘） ── */
+document.getElementById("btn-theme").onclick=()=>{DARK=!DARK;
+  document.documentElement.setAttribute("data-theme",DARK?"dark":"light");
+  document.getElementById("btn-theme").textContent=DARK?"☀":"◐";
+  requestDraw()};
+document.getElementById("cv-legend").addEventListener("click",e=>{const lg=e.target.closest(".lg");if(!lg||lg.dataset.s==="ev")return;lg.classList.toggle("off")});
+
+/* ================= 工作区：剖面体系 ================= */
+const ws=document.getElementById("ws"),mainEl=document.getElementById("main"),split=document.getElementById("split");
+const SECS={assess:"性能评估",diag:"回路诊断",tuning:"参数整定",handling:"问题处置"};
+let activeSec=null;
+function openSection(sec){
+  activeSec=sec;
+  ws.classList.remove("thumbs");ws.classList.add("open");
+  mainEl.classList.remove("max");
+  document.querySelectorAll("#split button").forEach(b=>b.classList.toggle("on",b.dataset.p==="half"));
+  document.querySelectorAll(".seg").forEach(s=>s.classList.toggle("active",s.dataset.sec===sec));
+  document.getElementById("ws-name").textContent=SECS[sec];
+  renderSec(sec);
+}
+function closeWs(){ws.classList.add("thumbs");ws.classList.remove("open");activeSec=null;mainEl.classList.remove("max");document.documentElement.style.removeProperty("--mini-h");
+  document.querySelectorAll(".seg").forEach(s=>s.classList.remove("active"));
+  document.querySelectorAll("#split button").forEach(b=>b.classList.toggle("on",b.dataset.p==="thumbs"))}
+document.getElementById("ws-close").onclick=closeWs;
+document.querySelectorAll(".seg,.thumb").forEach(el=>el.addEventListener("click",()=>openSection(el.dataset.sec)));
+split.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  document.querySelectorAll("#split button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+  const exitMax=()=>{mainEl.classList.remove("max");document.documentElement.style.removeProperty("--mini-h")};
+  if(b.dataset.p==="thumbs")closeWs();
+  else if(b.dataset.p==="half"){exitMax();if(!activeSec)openSection("assess");else openSection(activeSec)}
+  else if(mainEl.classList.contains("max")){exitMax();openSection(activeSec||"assess")} /* 再点=复原 */
+  else{ /* 最大化：整定等重剖面 */ if(!activeSec)activeSec="tuning";ws.classList.remove("thumbs");ws.classList.add("open");mainEl.classList.add("max");
+    document.querySelectorAll(".seg").forEach(s=>s.classList.toggle("active",s.dataset.sec===activeSec));
+    document.getElementById("ws-name").textContent=SECS[activeSec];renderSec(activeSec)}
+});
+/* 分屏拖拽：最大化态=调迷你趋势高度；缩略图态=上拖展开；展开态=调工作区高度 */
+split.addEventListener("pointerdown",e=>{if(e.target.closest("button"))return;e.preventDefault();
+  const startY=e.clientY,startH=ws.getBoundingClientRect().height,bodyH=document.getElementById("body").clientHeight;
+  const miniEl=document.getElementById("cv-mini");
+  let openY=null,baseH=null;
+  const mv=ev=>{
+    if(mainEl.classList.contains("max")){
+      const mh=miniEl.getBoundingClientRect().height;
+      const nh=Math.max(100,Math.min(bodyH*0.6,mh+(ev.clientY-startY)));
+      document.documentElement.style.setProperty("--mini-h",nh+"px");requestDraw();return}
+    if(!ws.classList.contains("open")){
+      if(startY-ev.clientY>24){openSection(activeSec||"assess");openY=ev.clientY;baseH=null}
+      return}
+    if(baseH==null)baseH=ws.getBoundingClientRect().height;
+    const ref=openY==null?startY:openY;
+    const nh=Math.min(bodyH*0.8,Math.max(bodyH*0.18,baseH-(ev.clientY-ref)));
+    ws.style.setProperty("--ws-h",nh+"px")};
+  const up=()=>{document.removeEventListener("pointermove",mv);document.removeEventListener("pointerup",up)};
+  document.addEventListener("pointermove",mv);document.addEventListener("pointerup",up)});
+
+/* ── 脊柱-主区分隔：水平拖拽调宽（图表随宽重采样） ── */
+const vsplitEl=document.getElementById("vsplit");
+vsplitEl.addEventListener("pointerdown",e=>{e.preventDefault();
+  const spineEl=document.getElementById("spine");
+  const sw=spineEl.getBoundingClientRect().width,sx=e.clientX;
+  document.body.style.userSelect="none";document.body.style.cursor="col-resize";
+  const mv=ev=>{const w=Math.max(180,Math.min(420,sw+(ev.clientX-sx)));
+    document.documentElement.style.setProperty("--spine-w",w+"px");requestDraw()};
+  const up=()=>{document.body.style.userSelect="";document.body.style.cursor="";
+    window.removeEventListener("pointermove",mv);window.removeEventListener("pointerup",up)};
+  window.addEventListener("pointermove",mv);window.addEventListener("pointerup",up)});
+/* ── 右侧抽屉：左缘拖拽调宽，双击复位 ── */
+document.querySelectorAll(".drawer").forEach(d=>{
+  const h=document.createElement("div");h.className="d-resize";h.title="拖动调整宽度 · 双击复位";d.appendChild(h);
+  h.addEventListener("pointerdown",e=>{e.preventDefault();
+    const dw=d.getBoundingClientRect().width,sx=e.clientX;
+    document.body.style.userSelect="none";document.body.style.cursor="ew-resize";
+    const mv=ev=>{const w=Math.max(360,Math.min(window.innerWidth*0.94,1200,dw-(ev.clientX-sx)));
+      d.style.width=w+"px"};
+    const up=()=>{document.body.style.userSelect="";document.body.style.cursor="";
+      window.removeEventListener("pointermove",mv);window.removeEventListener("pointerup",up)};
+    window.addEventListener("pointermove",mv);window.addEventListener("pointerup",up)});
+  h.addEventListener("dblclick",()=>{d.style.width=""})});
+
+const wsActions=document.getElementById("ws-actions"),wsBody=document.getElementById("ws-body");
+function renderSec(sec){
+  wsActions.innerHTML="";wsBody.innerHTML="";
+  if(sec==="assess"){
+    wsActions.innerHTML=`<button class="btn primary sm" id="a-go">发起评估</button>
+      <div class="segctl" id="a-src"><button class="on">全部</button><button>自动</button><button>手动</button><button>重算</button></div>`;
+    wsBody.innerHTML=`
+      <div class="status-line">自动评估每小时整点执行 · 最近一次 <span class="mono">10:00</span>（自动）· 全部来源已汇聚（自动 / 手动 / 重算）</div>
+      <div class="cols2" style="margin-bottom:10px">
+        <div class="card"><button class="xbadge" data-dr="dr-kpi" title="展开评估详情（24 KPI · 可信度）">↗</button><div class="kv"><span class="k">最新得分</span><span class="v" style="font-size:20px;color:var(--info)">74.6 <span style="font-size:12px">B 良好</span></span></div>
+          <div class="kv" style="margin-top:4px"><span class="k">失分主因</span><span class="v" style="font-family:inherit;color:var(--warn)">平稳率 61.3%（阈值 80）· 稳定时间 28.4 min</span></div></div>
+        <div class="card"><div class="kv"><span class="k">可信度</span><span class="v">B · 有效率 99.2%</span></div>
+          <div class="kv" style="margin-top:4px"><span class="k">数据血缘</span><span class="v" style="font-family:inherit">TDengine 24h · 断流 0.8% · <span class="link" id="a-detail">24 KPI 详情 →</span></span></div></div>
+      </div>
+      <table class="tbl"><thead><tr><th>时间</th><th>得分</th><th>等级</th><th>来源</th><th>窗口</th><th>状态</th><th style="width:150px">操作</th></tr></thead><tbody>
+      ${ASSESS_HIST.map(r=>`<tr><td class="mono">${r[0]}</td><td class="num">${r[1]}</td><td class="g${r[2]==="?"?"I":r[2]}">${r[2]}</td><td>${r[3]}</td><td class="mono" style="color:var(--text-3)">${r[4]}</td><td><span class="tag ${r[5]==="SUCCESS"?"t-ok":r[5]==="PARTIAL"?"t-warn":"t-gray"}"><span class="dot"></span>${r[5]==="SUCCESS"?"成功":r[5]==="PARTIAL"?"部分":"无法判定"}</span></td>
+        <td><span class="link a-det">详情</span> · <span class="link a-diag">诊断此窗</span></td></tr>`).join("")}
+      </tbody></table>
+      <div class="note" style="margin-top:8px">“无法判定”= 该小时坏值占比超阈值（02:03–02:15 坏值段），补数后可重算。</div>`;
+    document.getElementById("a-go").onclick=()=>openModal("md-assess");
+    wsBody.querySelector("#a-detail").onclick=()=>openDrawer("dr-kpi");
+    wsBody.querySelectorAll(".a-det").forEach(x=>x.onclick=()=>openDrawer("dr-kpi"));
+    wsBody.querySelectorAll(".a-diag").forEach(x=>x.onclick=()=>{openSection("diag");toast("已切换到诊断剖面并预填该时间窗（演示）")});
+  }
+  if(sec==="diag"){
+    wsActions.innerHTML=`<button class="btn primary sm" id="d-go">发起诊断</button><span class="tag t-ok"><span class="dot"></span>预检通过 · 24h 数据充足</span><span class="tag t-info"><span class="dot"></span>L4 就绪</span>`;
+    wsBody.innerHTML=`
+      <div class="cols2" style="margin-bottom:10px">
+        <div class="card">
+          <button class="xbadge" data-dr="dr-diag" title="展开诊断详情（证据链 · 处置建议）">↗</button>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><b style="font-size:14px">最新结论</b><span class="tag t-danger"><span class="dot"></span>参数</span><span class="tag t-danger"><span class="dot"></span>高</span><span class="mono">置信 0.87</span><span class="tag t-warn"><span class="dot"></span>待复核</span></div>
+          <div class="note" style="margin-bottom:6px">主分类：参数（TUNING）· 并存：阀门 0.31。振荡特征显著（周期 8.4 min，幅值 ±2.3%），积分作用偏强为主因，建议整定。</div>
+          <div style="display:flex;gap:8px"><button class="btn sm primary" id="d-full">全量证据与建议 →</button><button class="btn sm">结论演变时间线</button></div>
+        </div>
+        <div class="card"><div class="kv"><span class="k">负向指标</span></div>
+          ${[["振荡率","18.7%",62],["坏值率","0.8%",8],["饱和率","3.1%",31],["粘滞指数","0.12",12]].map(([n,v,w])=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-top:5px"><span style="width:52px;font-size:12px;color:var(--text-3)">${n}</span>
+            <div style="flex:1;height:6px;background:var(--gray-bg);border-radius:3px"><i style="display:block;height:100%;width:${w}%;border-radius:3px;background:${w>50?"var(--danger)":"var(--warn)"}"></i></div><span class="mono" style="font-size:12px;width:44px;text-align:right">${v}</span></div>`).join("")}
+        </div>
+      </div>
+      <table class="tbl"><thead><tr><th>时间</th><th>主分类</th><th>严重度</th><th>置信</th><th>触发</th><th>复核</th><th>操作</th></tr></thead><tbody>
+      ${DIAG_HIST.map(r=>`<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="num">${r[3]}</td><td>${r[4]}</td><td><span class="tag ${r[5]==="待复核"?"t-warn":"t-ok"}"><span class="dot"></span>${r[5]}</span></td><td><span class="link d-det">详情</span></td></tr>`).join("")}
+      </tbody></table>`;
+    document.getElementById("d-go").onclick=()=>openModal("md-diag");
+    wsBody.querySelector("#d-full").onclick=()=>openDrawer("dr-diag");
+    wsBody.querySelectorAll(".d-det").forEach(x=>x.onclick=()=>openDrawer("dr-diag"));
+  }
+  if(sec==="tuning"){
+    wsActions.innerHTML=`<button class="btn primary sm" id="t-step">继续：③ 仿真对比</button><button class="btn sm" id="t-order">④ 创建处置项</button><button class="btn sm" id="t-verify">效果验证</button><span class="tag t-warn"><span class="dot"></span>已仿真 · 待确认</span>`;
+    wsBody.innerHTML=`
+      <div class="pid-compare">
+        <div class="cell"><b>当前 PID（实时）</b><span>1.20 / 0.80 / 0</span></div>
+        <div class="cell" style="border-color:#b8d4ff;background:var(--primary-bg)"><b>推荐 SIMC</b><span>1.05 / 1.90 / 0.31</span><button class="xbadge" data-dr="dr-verify" title="展开效果验证详情（上一轮对比）">↗</button></div>
+        <div class="cell"><b>模型 FOPDT</b><span>K 1.82 · T 12.4s · τ 3.1s</span></div>
+      </div>
+      <div class="step-pipe" id="t-pipe">
+        <div class="st done"><span class="idx">✓</span>① 过程辨识 <span style="margin-left:auto;font-size:11px">拟合 87%</span></div>
+        <div class="st done"><span class="idx">✓</span>② 整定矩阵</div>
+        <div class="st on"><span class="idx">3</span>③ 仿真对比</div>
+        <div class="st"><span class="idx">4</span>④ 方案确认</div>
+      </div>
+      <div class="cols2">
+        <div class="card">
+          <b style="font-size:13px">闭环仿真 · SP 阶跃 ±2 t/h</b>
+          <div id="sim-chart" style="height:150px;margin-top:6px"></div>
+        </div>
+        <div class="card">
+          <b style="font-size:13px">候选方案对比（勾选于②矩阵）</b>
+          <table class="tbl" style="margin-top:6px"><tbody>
+          ${SIM_ROWS.map((r,i)=>`<tr style="${i?"":"font-weight:600;color:var(--text-3)"}">${r.map((c,j)=>`<td class="${i&&j?"num":""}">${c}</td>`).join("")}</tr>`).join("")}
+          </tbody></table>
+          <div class="note" style="margin-top:6px">SIMC 综合最优；超调 8.2%、调节时间 10.6 min。风险中：OP 逼近 62% 高限，实施时观察阀门余量。</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <span class="note" style="flex:1">④ 确认后保存方案（状态=已仿真）并可创建处置项交由授权人员实施；平台不直写 DCS 参数。</span>
+      </div>`;
+    document.getElementById("t-order").onclick=()=>openModal("md-order");
+    document.getElementById("t-verify").onclick=()=>openDrawer("dr-verify");
+    document.getElementById("t-step").onclick=()=>toast("仿真已完成（演示态）：点击画布顶部“工作区最大化”可展开四步全流程");
+    requestAnimationFrame(()=>drawSim(document.getElementById("sim-chart")));
+  }
+  if(sec==="handling"){
+    wsActions.innerHTML=`<button class="btn primary sm" id="h-new">创建处置项</button><span class="tag t-info"><span class="dot"></span>1 工单执行中</span>`;
+    wsBody.innerHTML=`
+      <div class="cols2">
+        <div>
+          <b style="font-size:13px;display:block;margin-bottom:6px">处置建议（本回路）</b>
+          <table class="tbl"><thead><tr><th>建议</th><th>来源</th><th>状态</th><th>操作</th></tr></thead><tbody>
+            <tr><td>R1 参数优化（降积分）</td><td>诊断</td><td><span class="tag t-info"><span class="dot"></span>已转工单</span></td><td class="link h-ord">查看工单</td></tr>
+            <tr><td>R3 阀门行程检查</td><td>诊断</td><td><span class="tag t-warn"><span class="dot"></span>待审核</span></td><td><span class="link h-ok">通过</span> · <span class="link h-no">驳回</span></td></tr>
+            <tr><td>位号巡检（坏值段）</td><td>数据质量</td><td><span class="tag t-gray"><span class="dot"></span>已驳回</span></td><td class="note">09-30 驳回：计划大修</td></tr>
+          </tbody></table>
+        </div>
+        <div>
+          <b style="font-size:13px;display:block;margin-bottom:6px">工单时间线（本回路）</b>
+          <div class="card"><button class="xbadge" data-dr="dr-order" title="展开工单详情">↗</button><div class="tl">
+            <div class="tl-item"><div class="t-h"><b>创建工单</b><span class="tag t-gray"><span class="dot"></span>完成</span><span class="mono" style="margin-left:auto">10-01 17:02</span></div><div class="t-m">来源：诊断建议 R1 · 创建人：系统（自动转单）</div></div>
+            <div class="tl-item ok"><div class="t-h"><b>接单</b><span class="tag t-gray"><span class="dot"></span>完成</span><span class="mono" style="margin-left:auto">10-01 18:20</span></div><div class="t-m">张工（仪控）· 计划 10-03 实施</div></div>
+            <div class="tl-item warn"><div class="t-h"><b>参数实施</b><span class="tag t-info"><span class="dot"></span>执行中</span><span class="mono" style="margin-left:auto">进行中</span></div><div class="t-m">SIMC P 1.05 / I 1.90 / D 0.31 · 待 DCS 侧人工实施回填 <span class="link h-ord">工单详情 →</span></div></div>
+            <div class="tl-item"><div class="t-h" style="color:var(--text-3)"><b>效果验证（T+7d）</b></div><div class="t-m">前后窗 KPI 对比 · 10-10 后可验证</div></div>
+          </div></div>
+        </div>
+      </div>`;
+    document.getElementById("h-new").onclick=()=>openModal("md-order");
+    wsBody.querySelectorAll(".h-ord").forEach(x=>x.onclick=()=>openDrawer("dr-order"));
+    wsBody.querySelector(".h-ok").onclick=()=>toast("建议 R3 已通过（演示）：可转工单");
+    wsBody.querySelector(".h-no").onclick=()=>toast("建议 R3 已驳回（演示）：需填写驳回原因");
+  }
+  wsBody.querySelectorAll(".xbadge").forEach(b=>b.onclick=()=>openDrawer(b.dataset.dr));
+}
+function drawSim(c){if(!c)return;const W=c.clientWidth,H=c.clientHeight;c.innerHTML="";
+  const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",height:"100%"});
+  const curve=(k,ov,ts,color)=>{let d="",v=0;for(let i=0;i<=120;i++){const t=i/12;
+    const e=1-Math.exp(-t/ts)*Math.cos(2.2*t/ts*(1-ov/100));v=2*(k?e:1);
+    d+=(i?"L":"M")+(t/10*W*.94+4).toFixed(1)+" "+(H*.62-v*H*.4*Math.exp(-t/6)).toFixed(1)+" "}
+    svg.appendChild(svgEl("path",{d,fill:"none",stroke:color,"stroke-width":1.6}))};
+  curve(1,21,3.4,"#9aa2ad");curve(0,9,2.1,"#1677ff");curve(0,8,1.9,"#13a876");
+  svg.appendChild(svgEl("line",{x1:4,y1:H*.62,x2:W-6,y2:H*.62,stroke:"#c3c9d4","stroke-dasharray":"3 2"}));
+  const lg=[["现状","#9aa2ad"],["IMC","#1677ff"],["SIMC","#13a876"]];lg.forEach(([n,c],i)=>{svg.appendChild(svgEl("rect",{x:8+i*64,y:6,width:12,height:3,fill:c}));svg.appendChild(Object.assign(svgEl("text",{x:24+i*64,y:10,"font-size":9,fill:"#5a6270"}),{textContent:n}))});
+  c.appendChild(svg)}
+
+/* ================= 抽屉 / 弹窗 / 菜单 ================= */
+const ovl=document.getElementById("ovl");
+function openDrawer(id){closeAll();document.getElementById(id).classList.add("on");ovl.classList.add("on");
+  if(id==="dr-verify")requestAnimationFrame(drawVerifyChart)}
+function drawVerifyChart(){const c=document.getElementById("verify-chart");if(!c||!c.clientWidth)return;
+  const W=c.clientWidth,H=c.clientHeight;c.innerHTML="";
+  const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",height:"100%"});
+  const y0=H*.62;
+  svg.appendChild(svgEl("line",{x1:4,y1:y0,x2:W-4,y2:y0,stroke:"#c3c9d4","stroke-dasharray":"3 2"}));
+  const curve=(ov,ts,color,w)=>{let d="";for(let i=0;i<=200;i++){const t=i/20;
+    const resp=1-Math.exp(-t/ts)*Math.cos(2.6*t/ts);const v=y0-resp*H*.4*Math.exp(-t/9);
+    d+=(i?"L":"M")+(i/200*W*.94+3).toFixed(1)+" "+v.toFixed(1)+" "}
+    svg.appendChild(svgEl("path",{d,fill:"none",stroke:color,"stroke-width":w}))};
+  curve(28,3.6,"#9aa2ad",1.5); // 实施前：高超调振荡
+  curve(11,2.1,"#13a876",1.8); // 实施后：平稳
+  const lg=[["实施前 T-7d","#9aa2ad"],["实施后 T+7d","#13a876"]];
+  lg.forEach(([n,cc],i)=>{svg.appendChild(svgEl("rect",{x:8+i*96,y:6,width:12,height:3,fill:cc}));
+    svg.appendChild(Object.assign(svgEl("text",{x:24+i*96,y:10,"font-size":9.5,fill:"#5a6270"}),{textContent:n}))});
+  c.appendChild(svg)}
+function openModal(id){closeAll();document.getElementById(id).classList.add("on")}
+function closeAll(){document.querySelectorAll(".drawer.on,.modal-mask.on,.menu.on").forEach(x=>x.classList.remove("on"));ovl.classList.remove("on")}
+ovl.onclick=closeAll;
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeAll()});
+document.querySelectorAll(".dr-x,.md-x").forEach(b=>b.onclick=closeAll);
+document.querySelectorAll(".dr-rev").forEach(b=>b.onclick=()=>{toast("复核已提交（演示）");closeAll()});
+document.getElementById("dr-diag-totune").onclick=()=>{closeAll();openSection("tuning");toast("已带入诊断基线：参数 · 振荡 · 置信 0.87")};
+document.getElementById("btn-att").onclick=()=>openDrawer("dr-att");
+document.querySelectorAll("#nav .nv-it").forEach(b=>b.addEventListener("click",()=>{if(!b.classList.contains("cur"))toast("（原型）模块切换："+(b.title||"").split("（")[0])}));
+const menu=document.getElementById("menu-more");
+document.getElementById("btn-more").onclick=e=>{e.stopPropagation();const r=e.target.getBoundingClientRect();menu.style.top=r.bottom+6+"px";menu.style.right=(innerWidth-r.right)+"px";menu.style.left="auto";menu.classList.toggle("on")};
+document.addEventListener("click",e=>{if(!e.target.closest("#menu-more,#btn-more"))menu.classList.remove("on")});
+menu.addEventListener("click",e=>{const mi=e.target.closest(".mi");if(mi){menu.classList.remove("on");toast("（演示）该辅助能力将离开本页，收纳入“更多”菜单")}});
+
+/* 抽屉内容：24 KPI */
+const KPI_GROUPS=[["综合", [["综合评分","74.6","B"]]],
+ ["核心六项",[["好值率","99.2 %","A"],["自控率","96.4 %","A"],["有效自控率","94.1 %","B"],["平稳率","61.3 %","D"],["准确度","87.5 %","B"],["快速性","82.0 %","B"]]],
+ ["振荡与扰动",[["振荡率","18.7 %","D"],["振荡幅值","±2.3 %","—"],["SP 越限次数","6.2 次/h","C"]]],
+ ["饱和与阀门",[["饱和率","3.1 %","B"],["阀门行程指数","118 %","C"],["粘滞指数","0.12","B"]]],
+ ["时域特征",[["稳定时间","28.4 min","D"],["理想稳定时间","8.2 min","—"],["行程指数","0.94","B"],["时间常数","12.4 s","—"]]],
+ ["统计量",[["PV 均值","156.1 t/h","—"],["PV 标准差","2.31","—"],["OP 均值","47.2 %","—"],["SP 交叉计数","6.2 /h","C"]]]];
+document.getElementById("dr-kpi-body").innerHTML=KPI_GROUPS.map(([g,rows])=>`
+  <div style="margin-bottom:12px"><b style="font-size:13px;display:block;margin-bottom:4px">${g}</b>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">
+  ${rows.map(([n,v,lv])=>`<div class="card" style="padding:6px 10px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--text-2)">${n}</span><span class="mono" style="font-weight:600">${v}</span>${lv!=="—"?`<span class="tag ${["A"].includes(lv)?"t-ok":["B"].includes(lv)?"t-info":["C"].includes(lv)?"t-warn":"t-danger"}" style="font-size:10px;padding:0 5px">${lv}</span>`:""}</div>`).join("")}
+  </div></div>`).join("")+`
+  <div class="card"><b style="font-size:13px">可信度 · 12 子指标（摘）</b><div class="note" style="margin-top:4px">总体 B · 有效率 99.2% · 样本量 A · 断流占比 C（0.8%）· 覆盖度 A · 噪声带 B · 阶跃激励 C（待激励，L3→L4 已就绪）…<span class="link">展开全部</span></div></div>`;
+
+/* 抽屉内容：诊断全量 */
+document.getElementById("dr-diag-body").innerHTML=`
+  <div class="cols2" style="margin-bottom:10px">
+    <div class="card"><b style="font-size:13px">分类定性</b>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap"><span class="tag t-danger"><span class="dot"></span>参数（主）0.87</span><span class="tag t-warn"><span class="dot"></span>阀门（并存）0.31</span><span class="tag t-gray"><span class="dot"></span>仪表 已排除</span></div>
+      <div class="note" style="margin-top:6px">结论依据：振荡周期/幅值/衰减比联合判定积分作用偏强；阀门粘滞指数 0.12 低于阈值，排除阀门主导。</div></div>
+    <div class="card"><b style="font-size:13px">症状标签</b><div class="chks" style="margin-top:6px">
+      <span class="chk on">持续振荡</span><span class="chk on">超调偏大</span><span class="chk on">稳定时间过长</span><span class="chk">SP 跟踪滞后</span><span class="chk">积分饱和倾向</span></div></div>
+  </div>
+  <b style="font-size:13px;display:block;margin-bottom:6px">证据链</b>
+  <table class="tbl" style="margin-bottom:10px"><thead><tr><th>特征</th><th>值</th><th>参考阈</th><th>判定</th></tr></thead><tbody>
+    <tr><td>振荡周期</td><td class="num">8.4 min</td><td class="num">—</td><td><span class="tag t-danger"><span class="dot"></span>显著</span></td></tr>
+    <tr><td>振荡幅值</td><td class="num">±2.3 %</td><td class="num">±1.0 %</td><td><span class="tag t-danger"><span class="dot"></span>超阈</span></td></tr>
+    <tr><td>衰减比</td><td class="num">1 : 1.8</td><td class="num">≥ 1 : 4</td><td><span class="tag t-warn"><span class="dot"></span>欠阻尼</span></td></tr>
+    <tr><td>超调量</td><td class="num">21.4 %</td><td class="num">≤ 12 %</td><td><span class="tag t-danger"><span class="dot"></span>超阈</span></td></tr>
+    <tr><td>CUSUM 偏差突变</td><td class="num">3 次/h</td><td class="num">≤ 1 次/h</td><td><span class="tag t-warn"><span class="dot"></span>外扰叠加</span></td></tr>
+    <tr><td>阀门粘滞指数</td><td class="num">0.12</td><td class="num">≥ 0.3</td><td><span class="tag t-ok"><span class="dot"></span>排除</span></td></tr>
+  </tbody></table>
+  <div class="card" style="margin-bottom:10px"><b style="font-size:13px">波形快照 · 振荡窗（昨 15:40–16:20）</b><div id="ev-chart" style="height:130px;margin-top:6px"></div></div>
+  <b style="font-size:13px;display:block;margin-bottom:6px">处置建议（R1–R5）</b>
+  <table class="tbl"><thead><tr><th>优先</th><th>建议</th><th>依据</th><th>动作</th></tr></thead><tbody>
+    <tr><td><span class="tag t-danger"><span class="dot"></span>R1 高</span></td><td>参数整定：降低积分作用（I 0.80→1.90），采用 SIMC 推荐</td><td>振荡特征 + 模型辨识</td><td><span class="tag t-info" style="font-size:11px"><span class="dot"></span>已转工单</span></td></tr>
+    <tr><td><span class="tag t-warn"><span class="dot"></span>R2 中</span></td><td>实施后 T+7d 复评平稳率与振荡率</td><td>闭环验证</td><td class="link r-acc">接受</td></tr>
+    <tr><td><span class="tag t-gray"><span class="dot"></span>R3 低</span></td><td>阀门行程检查（下次大修窗口）</td><td>行程指数 118%</td><td class="link r-acc">接受</td></tr>
+    <tr><td><span class="tag t-gray"><span class="dot"></span>R4 信息</span></td><td>持续观察 CUSUM 外扰（工艺侧波动）</td><td>3 次/h</td><td class="note">—</td></tr>
+  </tbody></table>`;
+requestAnimationFrame(()=>{const c=document.getElementById("ev-chart");if(!c)return;const W=c.clientWidth,H=c.clientHeight;const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",height:"100%"});
+  let d="";for(let i=0;i<=200;i++){const t=i/10;d+=(i?"L":"M")+(i/200*W*.94+3).toFixed(1)+" "+(H/2-((1-Math.exp(-t/4)*Math.cos(t*1.4))*H*.32)).toFixed(1)+" "}
+  svg.appendChild(svgEl("path",{d,fill:"none",stroke:"#d9363e","stroke-width":1.5}));
+  svg.appendChild(svgEl("line",{x1:3,y1:H/2,x2:W-3,y2:H/2,stroke:"#c3c9d4","stroke-dasharray":"3 2"}));c.appendChild(svg)});
+document.querySelectorAll(".r-acc").forEach(x=>x.onclick=()=>toast("建议已接受（演示）"));
+
+/* 抽屉内容：工单 */
+document.getElementById("dr-order-body").innerHTML=`
+  <div class="pid-compare" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">
+    <div class="cell"><b>工单状态</b><span style="font-family:inherit"><span class="tag t-info"><span class="dot"></span>执行中</span> 张工 · 10-03 计划</span></div>
+    <div class="cell"><b>建议参数</b><span>1.05 / 1.90 / 0.31</span></div>
+    <div class="cell"><b>回退方案</b><span style="font-size:12px">恢复 1.20 / 0.80 / 0（留痕）</span></div>
+  </div>
+  <b style="font-size:13px;display:block;margin-bottom:6px">流程时间线</b>
+  <div class="card"><div class="tl">
+    <div class="tl-item ok"><div class="t-h"><b>创建</b><span class="mono" style="margin-left:auto">10-01 17:02</span></div><div class="t-m">系统 · 诊断建议 R1 自动转单</div></div>
+    <div class="tl-item ok"><div class="t-h"><b>审核通过</b><span class="mono" style="margin-left:auto">10-01 17:40</span></div><div class="t-m">王工（仪控班长）· 备注同意 SIMC 方案</div></div>
+    <div class="tl-item warn"><div class="t-h"><b>参数实施</b><span class="tag t-info"><span class="dot"></span>执行中</span></div><div class="t-m">张工 · 待 DCS 回填实际写入值与时间</div></div>
+    <div class="tl-item"><div class="t-h" style="color:var(--text-3)"><b>效果验证</b><span class="mono" style="margin-left:auto">≥10-10</span></div><div class="t-m">T+7d 前后窗 KPI 对比（平稳率 / 振荡率 / ITAE）</div></div>
+  </div></div>
+  <b style="font-size:13px;display:block;margin:12px 0 6px">处置前后 KPI 对比（占位 · 实施后填充）</b>
+  <table class="tbl"><thead><tr><th>指标</th><th>before</th><th>after</th><th>Δ</th></tr></thead><tbody>
+    <tr><td>平稳率</td><td class="num">61.3 %</td><td class="num" style="color:var(--text-3)">待实施</td><td class="num">—</td></tr>
+    <tr><td>振荡率</td><td class="num">18.7 %</td><td class="num" style="color:var(--text-3)">待实施</td><td class="num">—</td></tr>
+  </tbody></table>`;
+
+/* 弹窗动作 */
+document.getElementById("md-assess-go").onclick=()=>{closeAll();toast("评估任务已发起（演示）：完成后本剖面自动刷新")};
+document.getElementById("md-diag-go").onclick=()=>{
+  document.getElementById("md-diag-form").style.display="none";
+  const run=document.getElementById("md-diag-run");run.style.display="flex";
+  const bar=document.getElementById("diag-bar"),st=document.getElementById("diag-stage");
+  const stages=[[18,"数据提取…"],[42,"特征计算…"],[68,"算子诊断（12）…"],[90,"结论融合…"],[100,"完成"]];
+  let i=0;const t=setInterval(()=>{if(i>=stages.length){clearInterval(t);setTimeout(()=>{closeAll();toast("诊断完成（演示）：最新结论已更新，状态=待复核");document.getElementById("md-diag-form").style.display="";run.style.display="none";bar.style.width="8%"},600);return}
+    bar.style.width=stages[i][0]+"%";st.textContent="阶段："+stages[i][1];i++},900)};
+document.getElementById("md-order-go").onclick=()=>{closeAll();toast("工单已创建（演示）：HO-2026-1009 · 执行人张工")};
+
+function toast(msg){const w=document.getElementById("toast-wrap");const t=document.createElement("div");t.className="toast";t.textContent=msg;w.appendChild(t);setTimeout(()=>{t.style.opacity="0";t.style.transition=".3s";setTimeout(()=>t.remove(),300)},2600)}
+</script>
+</body>
+</html>

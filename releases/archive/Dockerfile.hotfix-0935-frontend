@@ -1,0 +1,15 @@
+# 热修补丁镜像 v7（2026-10-01）：以生产运行镜像 subpath-hotfix-0934 为底座，
+# 仅替换静态产物。本版（hotfix-0935，三模块整改 A+B+C 批）前端改动：
+#   - C 级辨识风险确认弹窗（原硬编码 riskConfirmed=true 绕过后端门禁）
+#   - fitnessTags 中文标签映射补齐（六处，原 T_* 死映射致提示显英文）
+#   - records 时间筛选转 UTC + 导出透传筛选与上限提示
+#   - 环比失败显式"上窗数据不可用"（不再静默按空）
+#   - 矩阵页动态定级阈值着色 + TOP10 趋势服务端全量最差
+#   - 辨识轮询 15min 超时 + 诊断工作台左脊柱虚拟化（961 回路）
+# dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite
+# build --mode clpm` 构建，已拷贝至 releases/frontend-dist-0935/。
+FROM clpm-frontend:subpath-hotfix-0934
+
+ENV APP_VERSION=v7.1.0-hotfix0935-3mod-audit
+
+COPY --chown=nginx:nginx releases/frontend-dist-0935/ /usr/share/nginx/html/

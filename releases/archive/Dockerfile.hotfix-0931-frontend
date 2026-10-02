@@ -1,0 +1,10 @@
+# 热修补丁镜像 v5（0930）：以生产运行镜像 subpath-hotfix-0930 为底座，仅替换
+# 静态产物（趋势量程 + 工厂节点编辑，git 255dfea3）。dist 由本地
+# `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite build --mode clpm`
+# 构建，已拷贝至 releases/frontend-dist-0931/（绕 .dockerignore 的 **/dist）。
+# COPY 为合并语义：旧 hash 产物残留无害，index.html 只引用新产物。
+FROM clpm-frontend:subpath-hotfix-0930
+
+ENV APP_VERSION=v7.1.0-171-g255dfea3-hotfix0931
+
+COPY --chown=nginx:nginx releases/frontend-dist-0931/ /usr/share/nginx/html/

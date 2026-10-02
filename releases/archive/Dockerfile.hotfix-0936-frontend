@@ -1,0 +1,14 @@
+# 热修补丁镜像 v7（2026-10-01 晚）：以生产运行镜像 subpath-hotfix-0935 为底座，
+# 仅替换静态产物。本版（hotfix-0936，诊断 UX 重构）前端改动：
+#   - 诊断任务切分：诊断模块"诊断任务"子菜单（锁定 DIAGNOSIS）+
+#     评估任务列表排除诊断任务
+#   - 任务列表类型筛选补齐六类（自动/手动/自定义评估/回路诊断/整定/报告）
+#   - 诊断概览独立成页（/diagnosis/overview）
+#   - 诊断工作台重构：左脊柱单选联动 + 上发起/下结论证据三 Tab
+# dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite
+# build --mode clpm` 构建（exit=0 核验），已拷贝至 releases/frontend-dist-0936/。
+FROM clpm-frontend:subpath-hotfix-0935
+
+ENV APP_VERSION=v7.1.0-hotfix0936-diag-ux
+
+COPY --chown=nginx:nginx releases/frontend-dist-0936/ /usr/share/nginx/html/

@@ -1,0 +1,10 @@
+# 热修补丁镜像 v7（2026-10-01 夜）：以 hotfix-0936 为底座（0937 后端未变）。
+# 0938 后端：诊断 L1 放开为警告（2026-10-01 裁决）
+#   - diagnosis_v2.py：手动门禁仅拦 L0，L1/L2 入 conditionWarning
+#   - diagnosis_schedule.py：定时全量 fitness 过滤仅拦 L0
+FROM clpm-backend:hotfix-0936
+
+ENV APP_VERSION=v7.1.0-hotfix0938-l1-open
+
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/diagnosis_v2.py /app/app/api/v1/endpoints/diagnosis_v2.py
+COPY --chown=clpm:clpm backend/app/tasks/diagnosis_schedule.py /app/app/tasks/diagnosis_schedule.py
