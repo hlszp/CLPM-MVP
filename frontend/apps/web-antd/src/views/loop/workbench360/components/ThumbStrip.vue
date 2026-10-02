@@ -15,6 +15,12 @@ defineProps<{
     score: null | number;
     scoreDelta: null | number;
   };
+  /** 诊断摘要（P3：最新诊断真实数据；null/无记录=显式空态） */
+  diag: null | {
+    categoryLabel: null | string;
+    lastDiagnosedText: null | string;
+    runCount: null | number;
+  };
   sections: Array<{ key: string; label: string }>;
 }>();
 
@@ -23,7 +29,6 @@ const emit = defineEmits<{
 }>();
 
 const PENDING_TEXT: Record<string, string> = {
-  diag: '诊断剖面 · P3 接入',
   handling: '处置剖面 · P4 接入',
   tuning: '整定剖面 · P4 接入',
 };
@@ -61,6 +66,17 @@ function gradeCls(score: null | number | undefined): string {
           </template>
           <span v-else class="th-sub">暂无评分快照</span>
         </template>
+        <template v-else-if="sec.key === 'diag'">
+          <template v-if="diag && diag.runCount">
+            <span class="th-cat">{{
+              diag.categoryLabel ?? '未见异常'
+            }}</span>
+            <span v-if="diag.lastDiagnosedText" class="th-sub">{{
+              diag.lastDiagnosedText
+            }}</span>
+          </template>
+          <span v-else class="th-sub">暂无诊断记录</span>
+        </template>
         <span v-else class="th-sub">{{
           PENDING_TEXT[sec.key] ?? '待接入'
         }}</span>
@@ -68,6 +84,9 @@ function gradeCls(score: null | number | undefined): string {
       <div class="th-sub th-foot">
         <template v-if="sec.key === 'assess'">
           点击展开评估剖面 · 历史与详情 P2 接入
+        </template>
+        <template v-else-if="sec.key === 'diag'">
+          点击展开诊断剖面 · 发起/结论/历史/时间线
         </template>
         <template v-else>点击展开剖面占位</template>
       </div>
@@ -128,6 +147,16 @@ function gradeCls(score: null | number | undefined): string {
   font-family: var(--font-mono, monospace);
   font-size: 15px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+/* 诊断卡主分类（P3；文本即状态，过长省略） */
+.th-cat {
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
