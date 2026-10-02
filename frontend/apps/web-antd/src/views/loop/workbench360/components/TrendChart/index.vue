@@ -568,7 +568,7 @@ function bindBarDrag(bar: HTMLDivElement | null, horiz: boolean) {
     const p = horiz ? e.clientX : e.clientY;
     const tp = horiz ? (tr?.left ?? 0) : (tr?.top ?? 0);
     const off = (p - tp) / tl;
-    const mode = off < 0.14 ? 'lo' : off > 0.86 ? 'hi' : 'pan';
+    const mode = off < 0.14 ? 'lo' : (off > 0.86 ? 'hi' : 'pan');
     const sx = e.clientX;
     const sy = e.clientY;
     // 按下时视口快照（拖拽基准）

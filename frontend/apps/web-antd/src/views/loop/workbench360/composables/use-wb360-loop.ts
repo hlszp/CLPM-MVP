@@ -219,7 +219,7 @@ export function useWb360Loop(initialLoopId: null | string) {
           : Number.parseFloat(msg.value);
       // WS 数值质量码（共享契约：1=Good 0=Bad）→ 趋势层字符串口径
       const quality =
-        msg.quality === 0 ? 'BAD' : msg.quality > 0 ? 'GOOD' : null;
+        msg.quality === 0 ? 'BAD' : (msg.quality > 0 ? 'GOOD' : null);
       h({
         collectTime: Number.isNaN(ts) ? Date.now() : ts,
         quality,

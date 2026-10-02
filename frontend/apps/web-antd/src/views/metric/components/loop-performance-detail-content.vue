@@ -48,14 +48,19 @@ import {
 
 defineOptions({ name: 'LoopPerformanceDetailContent' });
 
-const props = defineProps<{
-  /** 定级阈值（动态配置；空数组时 useScoreColor 降级默认阈值） */
-  gradingThresholds?: MetricApi.GradingThresholdItem[];
-  /** 目标行（快照 + 回路元数据；父层 v-if 保证非空） */
-  record: LoopPerformanceRow;
-  /** 是否渲染历史快照子表（原页详情抽屉 true；workbench360 剖面自带全量历史列表，传 false） */
-  withHistory?: boolean;
-}>();
+/* withHistory 默认 true：Vue 对缺省 boolean prop 会强转 false，
+ * 需 withDefaults 显式默认值保证原页面（不传该 prop）仍渲染历史子表 */
+const props = withDefaults(
+  defineProps<{
+    /** 定级阈值（动态配置；空数组时 useScoreColor 降级默认阈值） */
+    gradingThresholds?: MetricApi.GradingThresholdItem[];
+    /** 目标行（快照 + 回路元数据；父层 v-if 保证非空） */
+    record: LoopPerformanceRow;
+    /** 是否渲染历史快照子表（原页详情抽屉 true；workbench360 剖面自带全量历史列表，传 false） */
+    withHistory?: boolean;
+  }>(),
+  { gradingThresholds: () => [], withHistory: true },
+);
 
 const { modeLabelColor } = useLoopPalettes();
 
