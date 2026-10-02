@@ -800,10 +800,10 @@ export function rankingEmptyText(
 // 色值对齐原型 docs/设计文档/原型/回路工作台-原型-2026-10-02.html。
 // ---------------------------------------------------------------------------
 
-/** 趋势系列色（浅色模式，原型 §5.2：PV 蓝 / SP 绿 / OP 紫） */
+/** 趋势系列色（浅色模式，原型 §5.2：PV 蓝 / SP 绿 / OP 紫；SP 提亮一档保障白底对比） */
 export const WB360_TREND_PALETTE_LIGHT = {
   pv: '#1677ff',
-  sp: '#13a876',
+  sp: '#10b981',
   op: '#7b61ff',
   /** 质量码 BAD 段（灰虚线） */
   qualityBad: '#9aa2ad',
@@ -838,10 +838,10 @@ export const WB360_TREND_PALETTE_DARK = {
 
 /** 包络带填充色（半透明，密集采样时 PV/OP 的 min/max 带） */
 export const WB360_ENVELOPE_FILL = {
-  pvLight: 'rgba(22,119,255,.26)',
-  pvDark: 'rgba(91,155,255,.30)',
-  opLight: 'rgba(123,97,255,.20)',
-  opDark: 'rgba(157,140,255,.24)',
+  pvLight: 'rgba(22,119,255,.32)',
+  pvDark: 'rgba(91,155,255,.36)',
+  opLight: 'rgba(123,97,255,.26)',
+  opDark: 'rgba(157,140,255,.30)',
 } as const;
 
 /** MANUAL 背景带填充（半透明红带） */

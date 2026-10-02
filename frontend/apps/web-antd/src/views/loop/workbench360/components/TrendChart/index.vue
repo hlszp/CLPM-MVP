@@ -188,8 +188,20 @@ watch(
     requestDraw();
   },
 );
-watch([isDark, () => props.frames, () => props.seriesVisible], () =>
-  requestDraw(),
+// seriesVisible 必须逐属性 getter：对象引用恒定，整对象作 watch 源
+// 永不触发（图例点击开关曲线失效的根因，2026-10-02 终验反馈）
+watch(
+  [
+    isDark,
+    () => props.frames,
+    () => [
+      props.seriesVisible.mode,
+      props.seriesVisible.op,
+      props.seriesVisible.pv,
+      props.seriesVisible.sp,
+    ],
+  ],
+  () => requestDraw(),
 );
 
 /* ── 滚动条 thumb 位置 ── */
@@ -468,13 +480,16 @@ function draw() {
     ctx.fill();
   };
 
-  // SP 恒为线；PV/OP 密集切包络（v3 §5.2 防混叠）
+  // SP 恒为线；PV/OP 密集切包络（v3 §5.2 防混叠）——包络之上仍描主线，
+  // 纯半透明填充在浅色工业风底上对比不足（2026-10-02 终验反馈）
   if (props.seriesVisible.sp) strokeSeries(rs.sp, yv, P.sp, 1.8);
   if (dense) {
     if (props.seriesVisible.op) fillEnvelope(rs.op, opv, envelopeFill.value.op);
     if (props.seriesVisible.pv) fillEnvelope(rs.pv, yv, envelopeFill.value.pv);
+    if (props.seriesVisible.op) strokeSeries(rs.op, opv, P.op, 1, 0.9);
+    if (props.seriesVisible.pv) strokeSeries(rs.pv, yv, P.pv, 1.2);
   } else {
-    if (props.seriesVisible.op) strokeSeries(rs.op, opv, P.op, 1.1, 0.7);
+    if (props.seriesVisible.op) strokeSeries(rs.op, opv, P.op, 1.4, 0.95);
     if (props.seriesVisible.pv) strokeSeries(rs.pv, yv, P.pv, 1.5);
   }
 
