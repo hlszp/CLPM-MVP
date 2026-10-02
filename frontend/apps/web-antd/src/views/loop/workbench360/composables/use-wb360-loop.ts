@@ -1,3 +1,7 @@
+import type { LoopApi } from '#/api/loop';
+import type { PlantNodeApi } from '#/api/plant-node';
+import type { RealtimeUpdatable } from '#/composables/use-loop-realtime';
+
 /**
  * 回路工作台（新版）回路上下文 —— 清单/装置树/选中回路/实时值
  *
@@ -10,11 +14,8 @@
 import { computed, ref, shallowRef } from 'vue';
 import { watch } from 'vue';
 
-import type { LoopApi } from '#/api/loop';
-
 import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
-import type { PlantNodeApi } from '#/api/plant-node';
 import {
   bindLoopInterest,
   parseTagCode,
@@ -58,7 +59,7 @@ export function useWb360Loop(initialLoopId: null | string) {
   const selectedLoopId = ref<null | string>(initialLoopId);
   const selectedUnit = ref<null | string>(null); // unitName（清单口径）
   const keyword = ref('');
-  const gradeFilter = ref<GradeFilter | 'all'>('all');
+  const gradeFilter = ref<'all' | GradeFilter>('all');
 
   /** 实时值承载对象（applyMessage 鸭子类型；切换回路时整体重建） */
   const current = ref<LoopApi.MonitorListItem | null>(null);
@@ -83,8 +84,8 @@ export function useWb360Loop(initialLoopId: null | string) {
         // 诚实化：清单超页禁止静默截断，显式提示
         loopsError.value = `回路清单仅加载前 ${LIST_PAGE_SIZE} 条（共 ${res.total} 条），请用搜索/筛选缩小范围`;
       }
-    } catch (err) {
-      loopsError.value = err instanceof Error ? err.message : '回路清单加载失败';
+    } catch (error) {
+      loopsError.value = error instanceof Error ? error.message : '回路清单加载失败';
       loops.value = [];
     } finally {
       loopsLoading.value = false;
@@ -196,7 +197,11 @@ export function useWb360Loop(initialLoopId: null | string) {
     if (!current.value) return;
     const parsed = parseTagCode(msg.tagCode);
     if (!parsed || parsed.tagName !== current.value.tagName) return;
-    const applied = applyMessage(msg, [current.value]);
+    // 鸭子类型桥接（MonitorCurrentValues 缺 PID 三值字段，applyMessage
+    // 按 tagName 匹配后仅写命中角色；先例 tuning/workbench.vue 同口径）
+    const applied = applyMessage(msg, [
+      current.value as unknown as RealtimeUpdatable,
+    ]);
     if (!applied) return;
     for (const h of realtimeHandlers) {
       const ts = msg.collectTime ? Date.parse(msg.collectTime) : Date.now();
@@ -205,7 +210,7 @@ export function useWb360Loop(initialLoopId: null | string) {
           ? Number.NaN
           : Number.parseFloat(msg.value);
       // WS 数值质量码（共享契约：1=Good 0=Bad）→ 趋势层字符串口径
-      const quality = msg.quality === 0 ? 'BAD' : msg.quality > 0 ? 'GOOD' : null;
+      const quality = msg.quality === 0 ? 'BAD' : (msg.quality > 0 ? 'GOOD' : null);
       h({
         collectTime: Number.isNaN(ts) ? Date.now() : ts,
         quality,

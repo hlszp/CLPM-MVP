@@ -9,11 +9,11 @@
  */
 import { computed, reactive, readonly, ref } from 'vue';
 
-import {
-  type WB360SectionKey,
-  WB360_SECTIONS,
-} from '#/constants/clpm-ui';
 import { moduleEnabled } from '#/composables/use-modules';
+import {
+  WB360_SECTIONS,
+  type WB360SectionKey,
+} from '#/constants/clpm-ui';
 
 export type Wb360PanelState = 'half' | 'max' | 'thumbs';
 

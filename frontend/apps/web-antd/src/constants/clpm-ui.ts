@@ -828,10 +828,13 @@ export const WB360_MANUAL_BAND_FILL = {
 /** 深色状态栏（浅/深主题均为深色应用式底，原型 #sbar） */
 export const WB360_STATUSBAR = {
   bg: '#1c2330',
+  divider: 'rgba(255,255,255,.08)',
+  errDot: '#d9363e',
+  okDot: '#13a876',
   text: '#9aa5b8',
   textStrong: '#e6ebf3',
-  divider: 'rgba(255,255,255,.08)',
-  okDot: '#13a876',
+  warnDot: '#d48806',
+  warnText: '#e8b34b',
 } as const;
 
 /** 事件标注层徽标色（诊断▼/整定◆/验证▮/手动⏸；P1 仅 MANUAL 投入使用，其余 P2-P4 接数据） */
@@ -854,8 +857,13 @@ export interface WB360WindowPreset {
    * 后端 trendWindow 预设（GET /loops/{id}/monitor）。
    * 无预设档（12H/7D）走 waveform 自定义起止（API 契约 §1.2）。
    */
-  trendWindow?: 'last_1_hour' | 'last_2_hours' | 'last_4_hours' |
-    | 'last_8_hours' | 'last_24_hours' | 'last_72_hours';
+  trendWindow?:
+    | 'last_1_hour'
+    | 'last_2_hours'
+    | 'last_4_hours'
+    | 'last_8_hours'
+    | 'last_24_hours'
+    | 'last_72_hours';
   /** 是否为自定义占位档（正式版做起止选择器） */
   custom?: boolean;
 }

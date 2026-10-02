@@ -84,12 +84,10 @@ export function resampleFrames(
   }
   const ts = frames.map((f) => f.ts);
   const dt = (t1 - t0) / np;
-  // 预提取通道
+  // 预提取数值通道
   const pv = frames.map((f) => f.pv);
   const sp = frames.map((f) => f.sp);
   const op = frames.map((f) => f.op);
-  const mode = frames.map((f) => f.mode);
-  const quality = frames.map((f) => f.quality);
 
   // 分类通道：桶内最近邻（每个网格点找最近源点）
   let hint = 0;
@@ -118,9 +116,13 @@ export function buildEnvelope(
   vals: (null | number)[],
   cols: number,
 ): { cMax: number[]; cMin: number[] } {
-  const n = cols < 2 ? 2 : cols;
-  const cMin = new Array<number>(n).fill(Number.POSITIVE_INFINITY);
-  const cMax = new Array<number>(n).fill(Number.NEGATIVE_INFINITY);
+  const n = Math.max(cols, 2);
+  const cMin = Array.from<number>({ length: n }).fill(
+    Number.POSITIVE_INFINITY,
+  );
+  const cMax = Array.from<number>({ length: n }).fill(
+    Number.NEGATIVE_INFINITY,
+  );
   for (let i = 0; i < vals.length; i++) {
     const v = vals[i];
     if (v === null || v === undefined) continue;
@@ -178,6 +180,9 @@ export function computeYDomain(
 export function niceStep(range: number): number {
   const p = 10 ** Math.floor(Math.log10(range || 1));
   const n = range / p;
-  const step = n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10;
+  let step = 10;
+  if (n < 1.5) step = 1;
+  else if (n < 3.5) step = 2;
+  else if (n < 7.5) step = 5;
   return step * p;
 }

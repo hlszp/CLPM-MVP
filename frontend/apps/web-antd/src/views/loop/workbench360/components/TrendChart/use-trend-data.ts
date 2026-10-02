@@ -1,3 +1,7 @@
+import type { TrendFrame } from './types';
+
+import type { LoopApi } from '#/api/loop';
+
 /**
  * 趋势窗口取数与实时追加（workbench360 P1，API 契约 §1.2）
  *
@@ -12,16 +16,14 @@
  */
 import { computed, ref, shallowRef } from 'vue';
 
-import { getWaveformApi } from '#/api/workbench360';
-import type { LoopApi } from '#/api/loop';
 import { getLoopMonitorDetailApi } from '#/api/loop';
+import { getWaveformApi } from '#/api/workbench360';
 import {
-  type WB360WindowPreset,
   WB360_SAMPLE_POINTS,
+  type WB360WindowPreset,
 } from '#/constants/clpm-ui';
 
 import { computeYDomain } from './resample';
-import type { TrendFrame } from './types';
 
 /** 实时追加的桶间隔下限（ms）：小于该间隔并入最后一帧 */
 const REALTIME_MERGE_MS = 900;
@@ -45,23 +47,6 @@ export function useTrendData() {
   let generation = 0;
 
   const yDomain = computed(() => computeYDomain(frames.value));
-
-  /** 归并追加（ts 相同覆盖；升序维护） */
-  function pushFrame(frame: TrendFrame) {
-    const list = frames.value;
-    const last = list.at(-1);
-    if (last && frame.ts < last.ts) {
-      // 实时乱序小回退：覆盖合并到尾帧（历史加载不会走这里）
-      return;
-    }
-    if (last && frame.ts === last.ts) {
-      list[list.length - 1] = { ...last, ...frame };
-    } else {
-      list.push(frame);
-    }
-    const first = list[0]!;
-    domain.value = { t0: first.ts, t1: list.at(-1)!.ts };
-  }
 
   async function loadWindow(
     loopId: string,
@@ -139,9 +124,9 @@ export function useTrendData() {
       if (dedup.length === 0) {
         error.value = '该窗口暂无数据（本地库不完整时请先在数据管理导入历史）';
       }
-    } catch (err) {
+    } catch (error_) {
       if (gen !== generation) return;
-      error.value = err instanceof Error ? err.message : '趋势数据加载失败';
+      error.value = error_ instanceof Error ? error_.message : '趋势数据加载失败';
       frames.value = [];
       domain.value = null;
     } finally {
@@ -210,19 +195,19 @@ function applyRole(
   quality?: null | string,
 ) {
   switch (role) {
-    case 'PV': {
-      frame.pv = value;
-      if (quality === 'BAD' || quality === 'GOOD' || quality === 'UNCERTAIN') {
-        frame.quality = quality;
-      }
+    case 'MODE': {
+      frame.mode = value;
       break;
     }
     case 'OP': {
       frame.op = value;
       break;
     }
-    case 'MODE': {
-      frame.mode = value;
+    case 'PV': {
+      frame.pv = value;
+      if (quality === 'BAD' || quality === 'GOOD' || quality === 'UNCERTAIN') {
+        frame.quality = quality;
+      }
       break;
     }
     case 'SP': {

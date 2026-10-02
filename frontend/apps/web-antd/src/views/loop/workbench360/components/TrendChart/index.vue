@@ -10,7 +10,7 @@
   颜色全部来自 constants/clpm-ui.ts（hex 棘轮白名单目录），无内联 hex。
 -->
 <script setup lang="ts">
-import type { TrendEventMark, TrendFrame } from './types';
+import type { SeriesVisible, TrendEventMark, TrendFrame } from './types';
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
@@ -26,14 +26,6 @@ import {
 } from '#/constants/clpm-ui';
 
 import { buildEnvelope, isDense, niceStep, resampleFrames, segmentsOf } from './resample';
-
-/** 图例显隐（页面工具栏 legend 状态透传） */
-export interface SeriesVisible {
-  mode: boolean;
-  op: boolean;
-  pv: boolean;
-  sp: boolean;
-}
 
 const props = withDefaults(
   defineProps<{
@@ -57,7 +49,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (e: 'event-click', mark: TrendEventMark): void;
+  (e: 'eventClick', mark: TrendEventMark): void;
 }>();
 
 const DAY_MS = 86_400_000;
@@ -550,13 +542,10 @@ function bindInteractions() {
   bindBarDrag(yBarRef.value, false);
 }
 
-const xBarRef = ref<null | HTMLDivElement>(null);
-const yBarRef = ref<null | HTMLDivElement>(null);
+const xBarRef = ref<HTMLDivElement | null>(null);
+const yBarRef = ref<HTMLDivElement | null>(null);
 
-function bindBarDrag(
-  bar: null | HTMLDivElement>,
-  horiz: boolean,
-) {
+function bindBarDrag(bar: HTMLDivElement | null, horiz: boolean) {
   if (!bar) return;
   bar.addEventListener('pointerdown', (e: PointerEvent) => {
     const d = props.domain;
@@ -568,27 +557,33 @@ function bindBarDrag(
     const p = horiz ? e.clientX : e.clientY;
     const tp = horiz ? (tr?.left ?? 0) : (tr?.top ?? 0);
     const off = (p - tp) / tl;
-    const mode = off < 0.14 ? 'lo' : off > 0.86 ? 'hi' : 'pan';
+    const mode = off < 0.14 ? 'lo' : (off > 0.86 ? 'hi' : 'pan');
     const sx = e.clientX;
     const sy = e.clientY;
-    const v0 = horiz ? { ...viewX.value } : { ...viewY.value };
+    // 按下时视口快照（拖拽基准）
+    const v0x: null | { t0: number; t1: number } = horiz
+      ? { ...viewX.value }
+      : null;
+    const v0y: null | { hi: number; lo: number } = horiz
+      ? null
+      : { ...viewY.value };
     bar.style.cursor = 'grabbing';
 
     const mv = (ev: PointerEvent) => {
-      if (horiz) {
+      if (horiz && v0x) {
         const dd =
           ((ev.clientX - sx) / (bar.clientWidth || 1)) * (d.t1 - d.t0);
-        if (mode === 'pan') clampViewX(v0.t0 - dd, v0.t1 - dd);
+        if (mode === 'pan') clampViewX(v0x.t0 - dd, v0x.t1 - dd);
         else if (mode === 'lo')
-          clampViewX(Math.min(v0.t1 - X_MIN_SPAN / 1000, v0.t0 + dd), v0.t1);
-        else clampViewX(v0.t0, Math.max(v0.t0 + X_MIN_SPAN / 1000, v0.t1 + dd));
-      } else {
+          clampViewX(Math.min(v0x.t1 - X_MIN_SPAN / 1000, v0x.t0 + dd), v0x.t1);
+        else clampViewX(v0x.t0, Math.max(v0x.t0 + X_MIN_SPAN / 1000, v0x.t1 + dd));
+      } else if (v0y) {
         const yd = props.yDomain;
         const dd = (-(ev.clientY - sy) / (bar.clientHeight || 1)) * (yd.hi - yd.lo);
-        if (mode === 'pan') clampViewY(v0.lo - dd, v0.hi - dd);
+        if (mode === 'pan') clampViewY(v0y.lo - dd, v0y.hi - dd);
         else if (mode === 'lo')
-          clampViewY(Math.min(v0.hi - Y_MIN_SPAN, v0.lo + dd), v0.hi);
-        else clampViewY(v0.lo, Math.max(v0.lo + Y_MIN_SPAN, v0.hi + dd));
+          clampViewY(Math.min(v0y.hi - Y_MIN_SPAN, v0y.lo + dd), v0y.hi);
+        else clampViewY(v0y.lo, Math.max(v0y.lo + Y_MIN_SPAN, v0y.hi + dd));
       }
     };
     const up = () => {
@@ -636,14 +631,14 @@ defineExpose({ requestDraw });
         :style="{ color: pill.color, left: `${pill.left}%` }"
         :title="pill.label"
         type="button"
-        @click="pill.mark && emit('event-click', pill.mark)"
+        @click="pill.mark && emit('eventClick', pill.mark)"
       >
         <span>{{ pill.glyph }}</span>{{ pill.label }}
-        <i v-if="pill.mark" class="tri" />
+        <i v-if="pill.mark" class="tri"></i>
       </button>
     </div>
     <div ref="canvasHostRef" class="chart-host">
-      <canvas ref="canvasRef" class="chart-cvs" />
+      <canvas ref="canvasRef" class="chart-cvs"></canvas>
     </div>
     <div
       v-if="!mini"
@@ -652,7 +647,7 @@ defineExpose({ requestDraw });
       class="xbar"
       title="拖动平移 · 拉两端缩放"
     >
-      <i :style="xThumbStyle" class="thumb" />
+      <i :style="xThumbStyle" class="thumb"></i>
     </div>
     <div
       v-if="!mini"
@@ -661,7 +656,7 @@ defineExpose({ requestDraw });
       class="ybar"
       title="拖动平移 · 拉两端缩放"
     >
-      <i :style="yThumbStyle" class="thumb" />
+      <i :style="yThumbStyle" class="thumb"></i>
     </div>
   </div>
 </template>

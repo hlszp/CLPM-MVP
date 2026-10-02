@@ -31,9 +31,17 @@ export interface TrendEventMark {
   key: string;
   label: string;
   /** 点击动作目标剖面（null=无动作） */
-  section?: null | 'assess' | 'diag' | 'handling' | 'tuning';
+  section?: 'assess' | 'diag' | 'handling' | 'tuning' | null;
   ts: number;
 }
 
 /** 视口 X 变化（EventLane 与滚动条联动） */
 export type ViewXChange = TimeRange;
+
+/** 图例显隐（页面工具栏 legend 状态透传给趋势组件） */
+export interface SeriesVisible {
+  mode: boolean;
+  op: boolean;
+  pv: boolean;
+  sp: boolean;
+}
