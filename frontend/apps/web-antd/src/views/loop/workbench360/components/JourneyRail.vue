@@ -76,6 +76,19 @@ function fmtDelta(v: null | number | undefined) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
 }
 
+/**
+ * 推荐下一步（v3 §4 / D9：段卡右上呼吸徽标；P1 遗留项 2026-10-03 补齐）。
+ * 按旅程真实信号推断：无评分→评估；无诊断记录→诊断；诊断有异常结论
+ * 且无整定记录→整定；其余（未见异常/已整定/模块禁用）无推荐。
+ */
+const nextSection = computed<null | string>(() => {
+  const has = (k: string) => props.sections.some((s) => s.key === k);
+  if (!props.assess && has('assess')) return 'assess';
+  if (!props.diag && has('diag')) return 'diag';
+  if (props.diag && props.diag.categoryLabel !== null && has('tuning') && (props.tuning?.total ?? 0) === 0) return 'tuning';
+  return null;
+});
+
 /** 评分等级类（P2 起单源 scoreToGradeInfo，A–E → g1–g5） */
 function gradeCls(score: null | number | undefined): string {
   const info = scoreToGradeInfo(score);
@@ -94,7 +107,7 @@ function gradeCls(score: null | number | undefined): string {
         <span v-if="i > 0" class="rail-arrow">➜</span>
         <div
           class="seg"
-          :class="{ active: activeSection === sec.key }"
+          :class="{ active: activeSection === sec.key, next: sec.key === nextSection }"
           role="button"
           tabindex="0"
           @click="emit('open', sec.key as WB360SectionKey)"
@@ -217,6 +230,39 @@ function gradeCls(score: null | number | undefined): string {
 .seg.active {
   background: hsl(var(--primary) / 10%);
   border-color: hsl(var(--primary) / 35%);
+}
+
+/* 推荐下一步徽标（原型 .seg.next::after 同款呼吸标） */
+.seg.next::after {
+  animation: wb360-pulse 2s infinite;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--primary) / 35%);
+  border-radius: 8px;
+  color: hsl(var(--primary));
+  content: '推荐下一步';
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 6px;
+  position: absolute;
+  right: 8px;
+  top: -4px;
+}
+
+@keyframes wb360-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 25%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px hsl(var(--primary) / 6%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seg.next::after {
+    animation: none;
+  }
 }
 
 .s-top {

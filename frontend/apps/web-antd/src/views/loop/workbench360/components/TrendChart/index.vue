@@ -968,42 +968,61 @@ defineExpose({ requestDraw });
   border-radius: 4px;
   cursor: grab;
   flex: none;
-  height: 14px;
+  height: 8px;
   margin: 2px 54px 6px 46px;
   position: relative;
   touch-action: none;
+}
+
+/* 8px 视觉条 + 伪元素扩展拖拽热区（±6px，不影响布局） */
+.xbar::before {
+  bottom: -6px;
+  content: '';
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: -6px;
 }
 
 /* 右侧 Y 滚动条 */
 .ybar {
   background: hsl(var(--accent) / 30%);
   border-radius: 4px;
-  bottom: 24px;
+  bottom: 16px;
   cursor: grab;
   position: absolute;
   right: 8px;
   top: 8px;
   touch-action: none;
-  width: 14px;
+  width: 8px;
+}
+
+.ybar::before {
+  bottom: 0;
+  content: '';
+  left: -6px;
+  position: absolute;
+  right: -6px;
+  top: 0;
 }
 
 .thumb {
   background: hsl(var(--accent-foreground) / 25%);
-  border-radius: 3px;
-  min-height: 26px;
-  min-width: 26px;
+  border-radius: 2px;
+  min-height: 16px;
+  min-width: 16px;
   position: absolute;
 }
 
 .xbar .thumb {
-  bottom: 2px;
+  bottom: 1px;
   position: absolute;
-  top: 2px;
-  min-width: 26px;
+  top: 1px;
+  min-width: 16px;
 }
 
 .ybar .thumb {
-  left: 2px;
-  right: 2px;
+  left: 1px;
+  right: 1px;
 }
 </style>
