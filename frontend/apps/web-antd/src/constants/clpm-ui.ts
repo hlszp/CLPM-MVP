@@ -921,6 +921,27 @@ export const WB360_DEFAULT_WINDOW_KEY = '24h';
 /** 绘制恒采样点数（D13 定标：每窗 ≈3600 点） */
 export const WB360_SAMPLE_POINTS = 3600;
 
+/** 效果验证窗口 7 档（P4；契约 §1.5：windowHours ∈ 1/2/4/8/24/72/168） */
+export const WB360_VERIFY_WINDOW_OPTIONS = [1, 2, 4, 8, 24, 72, 168].map(
+  (h) => ({ label: `${h}h`, value: h }),
+) as Array<{ label: string; value: number }>;
+
+/** 关注抽屉：来源/优先级中文（P4；文案与 monitor/attention.vue 现行口径一致） */
+export const WB360_ATTENTION_SOURCE_LABEL: Record<string, string> = {
+  ALERT: '活跃预警',
+  DATA_QUALITY: '数据质量',
+  DEGRADATION: '评分恶化',
+  FITNESS_ABNORMAL: '适用性异常',
+  HANDLING: '处置工单',
+};
+
+export const WB360_ATTENTION_PRIORITY_LABEL: Record<string, string> = {
+  URGENT: '紧急',
+  HIGH: '高',
+  MEDIUM: '中',
+  LOW: '低',
+};
+
 /** 四剖面 key 与名称（旅程条/缩略卡/工作区共用；v3 §4） */
 export const WB360_SECTIONS = [
   { key: 'assess', label: '性能评估', module: 'assess' },

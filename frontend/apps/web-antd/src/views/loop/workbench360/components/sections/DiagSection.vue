@@ -55,8 +55,17 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 基于此结论发起整定（页内动线）：切整定剖面（P4 消费上下文） */
-  (e: 'goTuning', loopId: string): void;
+  /** 基于此结论发起整定（页内动线）：切整定剖面并预填辨识窗（P4 消费上下文） */
+  (
+    e: 'goTuning',
+    payload: {
+      categoryLabel: null | string;
+      loopId: string;
+      primaryConfidence: null | number;
+      tsEnd: string;
+      tsStart: string;
+    },
+  ): void;
 }>();
 
 const prefill = useDiagPrefill();
@@ -358,11 +367,35 @@ function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
   openDetail(item.runId);
 }
 
-/* ── 基于此结论发起整定（页内动线；整定剖面 P4 落地） ── */
+/* ── 基于此结论发起整定（页内动线；P4：预填辨识窗 = 该结论时间窗） ── */
 function onGoTuning() {
   const id = props.selectedLoopId;
   if (!id) return;
-  emit('goTuning', id);
+  // 上下文优先级：打开中的行详情 > 最新结论
+  const src = detail.value ?? latest.value;
+  const tsStart = src?.timeWindowStart;
+  const tsEnd = src?.timeWindowEnd;
+  if (!tsStart || !tsEnd) {
+    message.warning('该结论无时间窗，无法预填辨识窗口（可直接在整定剖面手动选择）');
+    emit('goTuning', {
+      categoryLabel: null,
+      loopId: id,
+      primaryConfidence: null,
+      tsEnd: '',
+      tsStart: '',
+    });
+    return;
+  }
+  emit('goTuning', {
+    categoryLabel:
+      (src?.primaryCategoryLabel as null | string | undefined) ??
+      (src?.primaryCategory as null | string | undefined) ??
+      null,
+    loopId: id,
+    primaryConfidence: (src?.primaryConfidence as null | number | undefined) ?? null,
+    tsEnd,
+    tsStart,
+  });
 }
 </script>
 

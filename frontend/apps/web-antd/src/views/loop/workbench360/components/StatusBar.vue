@@ -1,10 +1,10 @@
 <!--
-  底部状态栏（workbench360 P1，P1-8）
+  底部状态栏（workbench360 P1，P1-8；P4-4 计数接入）
   原型 #sbar：深色应用式一行高，钉在主列底部（浅/深主题均为深底）。
-  P1 真实数据口径（诚实化）：
+  真实数据口径（诚实化）：
   - 单元 · N 回路（清单过滤结果）；SignalR 连接状态 + 最近消息时间（WS 真实）；
   - 趋势采样状态（点数 / LTTB 降采样提示 / 数据来源）；
-  - 今日快照/诊断/预警计数、下一任务时间（原型演示字段）P1 无数据源 → 不渲染；
+  - 快照/诊断/在途工单计数（P4：页面级真实 total，null=对应模块数据未就绪不显示）；
   - 原型"原型 · 演示数据"角标在生产替换为当前窗口档位。
 -->
 <script setup lang="ts">
@@ -14,9 +14,15 @@ import { WB360_STATUSBAR } from '#/constants/clpm-ui';
 
 const props = defineProps<{
   connectionStatus: string;
+  /** 诊断 run 总数（诊断模块禁用/未加载为 null → 不显示该段） */
+  diagCount: null | number;
   downsampled: boolean;
+  /** 在途处置工单数（处置模块禁用/未加载为 null → 不显示该段） */
+  handlingOpenCount: null | number;
   lastMessageAt: Date | null;
   pointCount: number;
+  /** 评估快照总数（未加载为 null → 不显示该段） */
+  snapshotCount: null | number;
   /** 当前趋势来源（monitor 预设 / waveform 自定义起止） */
   source: string;
   unitLabel: null | string;
@@ -96,9 +102,13 @@ const sourceText = computed(() => {
       >趋势 {{ windowLabel }} · <b>{{ pointCount }}</b> 点 · {{ sourceText }}
       <template v-if="downsampled">（后端 LTTB 降采样）</template>
     </span>
-    <span class="sb-seg sb-right"
-      >快照/诊断/预警计数与任务调度提示将在 P2-P4 接入</span
-    >
+    <span class="sb-seg sb-right">
+      <template v-if="snapshotCount !== null">快照 {{ snapshotCount }}</template>
+      <template v-if="diagCount !== null"> · 诊断 {{ diagCount }}</template>
+      <template v-if="handlingOpenCount !== null">
+        · 在途工单 {{ handlingOpenCount }}</template
+      >
+    </span>
   </footer>
 </template>
 

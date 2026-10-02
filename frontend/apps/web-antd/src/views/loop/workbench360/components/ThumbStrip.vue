@@ -1,8 +1,8 @@
 <!--
-  缩略卡条（workbench360 P1，P1-5）
+  缩略卡条（workbench360 P1，P1-5；P4-4 整定/处置卡真实数据接入）
   原型 #ws.thumbs / #thumbs：四张微缩卡常驻底部（缩略态 96px），点击展开工作区到对应剖面。
-  P1 数据口径（诚实化）：评估卡渲染清单行真实评分；其余三卡显式空态（P3/P4 接入）；
-  模块禁用的剖面卡隐藏（v3 §9）。
+  数据口径（诚实化）：评估卡真实评分（P2）/诊断卡最新结论（P3）/整定·处置卡最新记录
+  （P4，use-journey-summary）；无数据显式空态，不编造；模块禁用的剖面卡隐藏（v3 §9）。
 -->
 <script setup lang="ts">
 import type { WB360SectionKey } from '#/constants/clpm-ui';
@@ -21,17 +21,23 @@ defineProps<{
     lastDiagnosedText: null | string;
     runCount: null | number;
   };
+  /** 处置摘要（P4：use-journey-summary；null/无记录=显式空态） */
+  handling?: null | {
+    inFlightCount: number;
+    latestOrderNo: null | string;
+  };
   sections: Array<{ key: string; label: string }>;
+  /** 整定摘要（P4：use-journey-summary；null/无记录=显式空态） */
+  tuning?: null | {
+    algoLabel: null | string;
+    createdAtText: null | string;
+    total: number;
+  };
 }>();
 
 const emit = defineEmits<{
   (e: 'open', key: WB360SectionKey): void;
 }>();
-
-const PENDING_TEXT: Record<string, string> = {
-  handling: '处置剖面 · P4 接入',
-  tuning: '整定剖面 · P4 接入',
-};
 
 /** 等级色类（P2 起单源 scoreToGradeInfo，A–E → g1–g5） */
 function gradeCls(score: null | number | undefined): string {
@@ -77,18 +83,35 @@ function gradeCls(score: null | number | undefined): string {
           </template>
           <span v-else class="th-sub">暂无诊断记录</span>
         </template>
-        <span v-else class="th-sub">{{
-          PENDING_TEXT[sec.key] ?? '待接入'
-        }}</span>
+        <template v-else-if="sec.key === 'tuning'">
+          <template v-if="tuning">
+            <span class="th-cat">整定 {{ tuning.algoLabel ?? '—' }}</span>
+            <span v-if="tuning.createdAtText" class="th-sub">{{
+              tuning.createdAtText
+            }}</span>
+          </template>
+          <span v-else class="th-sub">暂无整定记录</span>
+        </template>
+        <template v-else-if="sec.key === 'handling'">
+          <template v-if="handling">
+            <span class="th-cat">{{ handling.latestOrderNo ?? '工单' }}</span>
+            <span class="th-sub">{{ handling.inFlightCount }} 单在途</span>
+          </template>
+          <span v-else class="th-sub">暂无处置工单</span>
+        </template>
+        <span v-else class="th-sub">--</span>
       </div>
       <div class="th-sub th-foot">
         <template v-if="sec.key === 'assess'">
-          点击展开评估剖面 · 历史与详情 P2 接入
+          点击展开评估剖面 · 发起/得分/历史
         </template>
         <template v-else-if="sec.key === 'diag'">
           点击展开诊断剖面 · 发起/结论/历史/时间线
         </template>
-        <template v-else>点击展开剖面占位</template>
+        <template v-else-if="sec.key === 'tuning'">
+          点击展开整定剖面 · 四步流水/效果验证
+        </template>
+        <template v-else>点击展开处置剖面 · 建议/工单</template>
       </div>
     </div>
   </div>

@@ -46,6 +46,7 @@ import {
   WB360_WINDOW_PRESETS,
 } from '#/constants/clpm-ui';
 
+import AttentionDrawer from './components/AttentionDrawer.vue';
 import JourneyRail from './components/JourneyRail.vue';
 import LoopHeader from './components/LoopHeader.vue';
 import LoopSpine from './components/LoopSpine.vue';
@@ -64,6 +65,8 @@ import {
 } from './composables/use-assess-history';
 import { diagWithZone, useDiagData } from './composables/use-diag-data';
 import { setDiagPrefill } from './composables/use-diag-prefill';
+import { useJourneySummary } from './composables/use-journey-summary';
+import { setTuningPrefill } from './composables/use-tuning-prefill';
 import { MINI_DEFAULT_H, useWb360Layout } from './composables/use-wb360-layout';
 import { useWb360Loop } from './composables/use-wb360-loop';
 
@@ -84,6 +87,16 @@ const trend = useTrendData();
 const assessHistory = useAssessHistory(loop.selectedLoopId);
 /** 页面级诊断数据（P3）：最新结论 + 历史，剖面经 inject 消费；旅程条/缩略卡共用 */
 const diagData = useDiagData(loop.selectedLoopId);
+/** 页面级整定/处置摘要（P4-4）：旅程条/缩略卡/状态栏/事件层共用；模块禁用零请求 */
+const journey = useJourneySummary(
+  () => loop.selectedLoopId.value,
+  {
+    enabled: () => ({
+      handling: layout.isSectionAvailable('handling'),
+      tuning: layout.isSectionAvailable('tuning'),
+    }),
+  },
+);
 const { isDark } = useClpmTheme();
 
 const mainRef = ref<HTMLElement | null>(null);
@@ -184,7 +197,7 @@ const sectionComponents: Record<string, Component> = {
   tuning: TuningSection,
 };
 
-/** 各剖面 props（评估/诊断剖面：回路上下文；其余剖面 P4 增量补充） */
+/** 各剖面 props（P4：整定/处置剖面回路上下文） */
 const sectionProps = computed<Record<string, Record<string, unknown>>>(() => ({
   assess: {
     loopTagName: loop.current.value?.tagName ?? null,
@@ -193,6 +206,14 @@ const sectionProps = computed<Record<string, Record<string, unknown>>>(() => ({
   diag: {
     fitnessLevel: loop.current.value?.fitnessLevel ?? null,
     fitnessTags: loop.current.value?.fitnessTags ?? [],
+    loopTagName: loop.current.value?.tagName ?? null,
+    selectedLoopId: loop.selectedLoopId.value,
+  },
+  handling: {
+    loopTagName: loop.current.value?.tagName ?? null,
+    selectedLoopId: loop.selectedLoopId.value,
+  },
+  tuning: {
     loopTagName: loop.current.value?.tagName ?? null,
     selectedLoopId: loop.selectedLoopId.value,
   },
@@ -213,18 +234,71 @@ function onDiagnoseWindow(win: { tsEnd: string; tsStart: string }) {
   message.info('已切换到诊断剖面并预填该时间窗');
 }
 
-/* ── P3 诊断→整定页内动线：抽屉「基于此结论发起整定」切整定剖面（P4 消费上下文） ── */
-function onGoTuning(_loopId: string) {
+/* ── P4 诊断→整定页内动线：切整定剖面 + 预填辨识窗（use-tuning-prefill 单一事实源） ── */
+function onGoTuning(payload: {
+  categoryLabel: null | string;
+  loopId: string;
+  primaryConfidence: null | number;
+  tsEnd: string;
+  tsStart: string;
+}) {
   if (!layout.isSectionAvailable('tuning')) {
     message.warning('整定模块未启用，无法切换到整定剖面');
     return;
   }
-  layout.openSection('tuning');
-  message.info('已切换到参数整定剖面');
+  if (payload.tsStart && payload.tsEnd) {
+    setTuningPrefill({
+      categoryLabel: payload.categoryLabel,
+      primaryConfidence: payload.primaryConfidence,
+      tsEnd: payload.tsEnd,
+      tsStart: payload.tsStart,
+    });
+    layout.openSection('tuning');
+    message.info('已切换到参数整定剖面，并预填该结论的辨识时间窗');
+  } else {
+    layout.openSection('tuning');
+    message.info('已切换到参数整定剖面');
+  }
 }
 
 function onEventMarkClick(mark: TrendEventMark) {
   if (mark.section) layout.openSection(mark.section);
+}
+
+/* ── P4-4 事件标注层：诊断 ▼（页面级诊断历史首页）+ 整定 ◆ / 工单实施 ▮（摘要页）── */
+const trendEvents = computed<TrendEventMark[]>(() => {
+  const marks: TrendEventMark[] = [];
+  for (const row of diagData.rows.value) {
+    const local = diagWithZone(row.createdAt);
+    if (!local) continue;
+    marks.push({
+      glyph: '▼',
+      key: `diag-${row.id}`,
+      label: '诊断',
+      section: 'diag',
+      ts: new Date(local).getTime(),
+    });
+  }
+  for (const seed of journey.eventSeeds.value) {
+    const local = diagWithZone(seed.tsIso);
+    if (!local) continue;
+    marks.push({
+      glyph: seed.glyph,
+      key: seed.key,
+      label: seed.label,
+      section: seed.section,
+      ts: new Date(local).getTime(),
+    });
+  }
+  return marks;
+});
+
+/* ── P4-6 关注抽屉（页头 🔔 唤起，全局通知性质例外） ── */
+const attentionOpen = ref(false);
+
+/* ── P4 剖面内数据变化 → 刷新页头摘要（保存方案/创建/转单/流转） ── */
+function onJourneyDirty() {
+  journey.refresh();
 }
 
 /* ── 分屏拖拽（页面持有主列高度上下文） ── */
@@ -315,6 +389,7 @@ const wsName = computed(
       :fitness-level="fitness.level"
       :last-message-at="loop.lastMessageAt.value"
       :loop="loop.current.value"
+      @open-attention="attentionOpen = true"
     />
 
     <div class="wb360-body">
@@ -349,12 +424,14 @@ const wsName = computed(
         class="wb360-main"
         :class="{ max: layout.readonlyState.panelState === 'max' }"
       >
-        <!-- 旅程状态条（P1-4） -->
+        <!-- 旅程状态条（P1-4；P4-4 整定/处置段真实数据） -->
         <JourneyRail
           :active-section="layout.activeSection.value"
           :assess="assessSummary"
           :diag="diagSummary"
+          :handling="journey.handlingSummary.value"
           :sections="layout.availableSections.value"
+          :tuning="journey.tuningSummary.value"
           @open="onSectionOpen"
         >
           <template #clock>
@@ -425,16 +502,16 @@ const wsName = computed(
             </div>
           </div>
           <div class="cv-body">
-            <TrendChart
-              :domain="trend.domain.value"
-              :events="[]"
-              :frames="trend.frames.value"
-              :live="trend.live.value"
-              :mode-mapping="loop.current.value?.modeMapping ?? null"
-              :series-visible="seriesVisible"
-              :y-domain="trend.yDomain.value"
-              @event-click="onEventMarkClick"
-            />
+          <TrendChart
+            :domain="trend.domain.value"
+            :events="trendEvents"
+            :frames="trend.frames.value"
+            :live="trend.live.value"
+            :mode-mapping="loop.current.value?.modeMapping ?? null"
+            :series-visible="seriesVisible"
+            :y-domain="trend.yDomain.value"
+            @event-click="onEventMarkClick"
+          />
             <div v-if="trend.loading.value" class="cv-overlay">
               趋势数据加载中…
             </div>
@@ -451,7 +528,7 @@ const wsName = computed(
         <div :style="miniStyle" class="wb360-cv-mini">
           <TrendChart
             :domain="trend.domain.value"
-            :events="[]"
+            :events="trendEvents"
             :frames="trend.frames.value"
             :live="trend.live.value"
             :mode-mapping="loop.current.value?.modeMapping ?? null"
@@ -483,7 +560,9 @@ const wsName = computed(
             v-if="layout.readonlyState.panelState === 'thumbs'"
             :assess="assessSummary"
             :diag="diagSummary"
+            :handling="journey.handlingSummary.value"
             :sections="layout.availableSections.value"
+            :tuning="journey.tuningSummary.value"
             @open="onSectionOpen"
           />
           <template v-else>
@@ -504,17 +583,25 @@ const wsName = computed(
                 v-bind="sectionProps[layout.activeSection.value ?? 'assess']"
                 @diagnose-window="onDiagnoseWindow"
                 @go-tuning="onGoTuning"
+                @journey-dirty="onJourneyDirty"
               />
             </div>
           </template>
         </section>
 
-        <!-- 状态栏（P1-8，深色钉底） -->
+        <!-- 状态栏（P1-8，深色钉底；P4-4 计数接入） -->
         <StatusBar
           :connection-status="loop.connectionStatus.value"
+          :diag-count="layout.isSectionAvailable('diag') ? diagData.total.value : null"
           :downsampled="trend.downsampled.value"
+          :handling-open-count="
+            layout.isSectionAvailable('handling')
+              ? (journey.handlingSummary.value?.inFlightCount ?? 0)
+              : null
+          "
           :last-message-at="loop.lastMessageAt.value"
           :point-count="trend.pointCount.value"
+          :snapshot-count="assessHistory.total.value"
           :source="trend.source.value"
           :unit-label="
             loop.selectedUnit.value ?? loop.current.value?.unitName ?? null
@@ -523,6 +610,13 @@ const wsName = computed(
         />
       </main>
     </div>
+
+    <!-- 本回路关注抽屉（P4-6；页头 🔔 唤起） -->
+    <AttentionDrawer
+      v-model:open="attentionOpen"
+      :loop-id="loop.selectedLoopId.value"
+      :loop-tag-name="loop.current.value?.tagName ?? null"
+    />
   </div>
 </template>
 

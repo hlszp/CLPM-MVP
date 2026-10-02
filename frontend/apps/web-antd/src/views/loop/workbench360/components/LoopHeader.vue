@@ -1,13 +1,16 @@
 <!--
-  R1 回路头（workbench360 P1）
+  R1 回路头（workbench360 P1；P4-5 主题切换 / P4-6 关注铃铛接入）
   原型 #hdr 的生产映射（v3 §2）：位于 vben Layout 内容区顶部的页面级页头。
-  展示：页面名 + 回路位号 + 控制模式 + 描述/装置路径 + 实时值（WS 联动）+ 数据新鲜度。
-  P1 不渲染适用性徽标/关注铃铛/主题按钮（主题=vben 全局能力；适用性/关注待 P2-P4 接数据）。
+  展示：页面名 + 回路位号 + 控制模式 + 描述/装置路径 + 实时值（WS 联动）+ 数据新鲜度
+  + 适用性徽章（P2-5）+ 🔔 关注抽屉入口（P4-6，全局通知性质）+ ◐ 主题切换（P4-5，
+  切 vben 全局主题——原型 html[data-theme=dark] 令牌映射到 vben preferences.theme.mode）。
 -->
 <script setup lang="ts">
 import type { LoopApi } from '#/api/loop';
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+
+import { updatePreferences, usePreferences } from '@vben/preferences';
 
 const props = defineProps<{
   /** WS 连接状态（useLoopRealtime.connectionStatus） */
@@ -22,6 +25,18 @@ const props = defineProps<{
   /** 当前选中回路（含 WS 局部更新的实时值） */
   loop: LoopApi.MonitorListItem | null;
 }>();
+
+const emit = defineEmits<{
+  /** 🔔 打开本回路关注抽屉（P4-6） */
+  (e: 'openAttention'): void;
+}>();
+
+/* 主题切换（P4-5）：vben 全局主题深/浅往返（v3 §16.7 基线） */
+const { isDark } = usePreferences();
+
+function toggleTheme() {
+  updatePreferences({ theme: { mode: isDark.value ? 'light' : 'dark' } });
+}
 
 const now = ref(Date.now());
 let timer: null | ReturnType<typeof setInterval> = null;
@@ -128,6 +143,24 @@ const fitnessTag = computed(() => {
         <span class="dot"></span>{{ fitnessTag.label }}
       </span>
     </div>
+    <button
+      aria-label="打开本回路关注抽屉"
+      class="icon-btn"
+      title="本回路关注（预警 / 数据质量提醒）"
+      type="button"
+      @click="emit('openAttention')"
+    >
+      🔔
+    </button>
+    <button
+      :aria-label="isDark ? '切换到浅色主题' : '切换到深色主题'"
+      class="icon-btn"
+      :title="isDark ? '切换到浅色主题' : '切换到深色主题'"
+      type="button"
+      @click="toggleTheme"
+    >
+      ◐
+    </button>
   </header>
 </template>
 
@@ -268,5 +301,23 @@ const fitnessTag = computed(() => {
 
 .fresh-bad {
   color: hsl(var(--destructive));
+}
+
+/* 页头图标钮（原型 icon-btn：🔔 关注 / ◐ 主题） */
+.icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.icon-btn:hover {
+  border-color: hsl(var(--border));
+  color: hsl(var(--primary));
 }
 </style>
