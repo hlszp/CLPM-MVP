@@ -10,12 +10,16 @@ import type { RealtimeUpdatable } from '#/composables/use-loop-realtime';
  * - 装置树：GET /plant-nodes（回路计数由前端按清单 unitName 聚合）
  * - 实时值：realtimeWs 推送经 useLoopRealtime().applyMessage 局部更新；
  *   bindLoopInterest 声明兴趣集合（服务端订阅过滤，非本页回路零流量）
+ * - 量程：选中回路 → GET /loops/{id}/tags 取 PV/OP tagId → GET /tags/{id}
+ *   取 rangeMin/Max/unit（趋势轴定标：PV/SP 左轴满量程、OP 右轴 OP 量程；
+ *   量程缺失时趋势退回数据自适应域——诚实降级，不虚构量程）
  */
 import { computed, ref, shallowRef } from 'vue';
 import { watch } from 'vue';
 
-import { getLoopMonitorListApi } from '#/api/loop';
+import { getLoopMonitorListApi, getLoopTagsApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { getTagDetailApi } from '#/api/tag';
 import {
   bindLoopInterest,
   parseTagCode,
@@ -36,6 +40,13 @@ export interface SpineTreeNode {
 
 /** 等级筛选档（A–E 对应 GRADE_THRESHOLDS 1–5 档；? = 无评分） */
 export type GradeFilter = 'A' | 'B' | 'C' | 'D' | 'E' | 'none';
+
+/** PV/OP 位号量程（趋势轴定标；缺失项为 null → 趋势退回数据域） */
+export interface Wb360Ranges {
+  opRange: null | { hi: number; lo: number };
+  pvRange: null | { hi: number; lo: number };
+  pvUnit: null | string;
+}
 
 /** 清单拉取页大小（后端上限 100/页）与页数上限（本地筛选所需全量；
  *  超出上限显式截断提示，>500 回路场景再引入服务端筛选） */
@@ -185,6 +196,66 @@ export function useWb360Loop(initialLoopId: null | string) {
     { immediate: true },
   );
 
+  // ── PV/OP 量程（趋势轴定标，2026-10-02 终验需求）──
+  const ranges = ref<Wb360Ranges>({
+    opRange: null,
+    pvRange: null,
+    pvUnit: null,
+  });
+  const rangesCache = new Map<string, Wb360Ranges>();
+
+  function validRange(d: null | { rangeMax?: null | number; rangeMin?: null | number }) {
+    if (
+      d &&
+      typeof d.rangeMax === 'number' &&
+      typeof d.rangeMin === 'number' &&
+      d.rangeMax > d.rangeMin
+    ) {
+      return { hi: d.rangeMax, lo: d.rangeMin };
+    }
+    return null;
+  }
+
+  async function loadRanges(loopId: string) {
+    const cached = rangesCache.get(loopId);
+    if (cached) {
+      ranges.value = cached;
+      return;
+    }
+    ranges.value = { opRange: null, pvRange: null, pvUnit: null };
+    try {
+      const tags = await getLoopTagsApi(loopId);
+      const byRole = (role: string) =>
+        tags.tags.find((t) => t.role === role && t.tagId) ?? null;
+      const pvTag = byRole('PV');
+      const opTag = byRole('OP');
+      const [pvDetail, opDetail] = await Promise.all([
+        pvTag?.tagId
+          ? getTagDetailApi(pvTag.tagId).catch(() => null)
+          : Promise.resolve(null),
+        opTag?.tagId
+          ? getTagDetailApi(opTag.tagId).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      const next: Wb360Ranges = {
+        opRange: validRange(opDetail),
+        pvRange: validRange(pvDetail),
+        pvUnit: pvDetail?.unit ?? null,
+      };
+      rangesCache.set(loopId, next);
+      ranges.value = next;
+    } catch {
+      // 量程获取失败：保持空（趋势退回数据域），不阻塞主链路
+    }
+  }
+
+  watch(
+    () => current.value?.loopId,
+    (id) => {
+      if (id) void loadRanges(id);
+    },
+  );
+
   // WS：兴趣集合跟随选中回路位号；消息更新头部实时值并转发趋势层
   const realtimeHandlers = new Set<
     (payload: {
@@ -259,6 +330,7 @@ export function useWb360Loop(initialLoopId: null | string) {
     loopsError,
     loopsLoading,
     onRealtimePoint,
+    ranges,
     selectLoop,
     selectedLoop,
     selectedLoopId,

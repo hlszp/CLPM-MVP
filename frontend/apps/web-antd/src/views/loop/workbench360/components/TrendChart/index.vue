@@ -47,11 +47,21 @@ const props = withDefaults(
     mini?: boolean;
     /** MODE 数值映射（回路 modeMapping） */
     modeMapping?: null | Record<string, string>;
+    /** OP 右轴量程（OP tag range；null=兜底 0–100） */
+    opDomain?: null | { hi: number; lo: number };
+    /** PV 工程单位（悬停读值展示） */
+    pvUnit?: null | string;
     seriesVisible: SeriesVisible;
-    /** Y 数据域（PV/SP min/max + 余量） */
+    /** Y 数据域（量程优先：PV/SP 满量程；缺失时数据 min/max+余量） */
     yDomain: { hi: number; lo: number };
   }>(),
-  { events: () => [], mini: false, modeMapping: null },
+  {
+    events: () => [],
+    mini: false,
+    modeMapping: null,
+    opDomain: null,
+    pvUnit: null,
+  },
 );
 
 const emit = defineEmits<{
@@ -103,6 +113,108 @@ function requestDraw() {
     draw();
   });
 }
+
+/* ── 悬停读值（2026-10-02 终验需求：光标处显示 ts+PV/SP/OP/MODE）── */
+const hover = ref<null | {
+  frame: TrendFrame;
+  mouseX: number;
+  mouseY: number;
+  x: number;
+}>(null);
+
+/** 二分最近帧（frames.ts 升序） */
+function findFrameAt(ts: number): null | TrendFrame {
+  const fr = props.frames;
+  if (fr.length === 0) return null;
+  let lo = 0;
+  let hi = fr.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (fr[mid]!.ts < ts) lo = mid + 1;
+    else hi = mid;
+  }
+  const a = fr[lo]!;
+  const b = lo > 0 ? fr[lo - 1]! : null;
+  return b && Math.abs(b.ts - ts) <= Math.abs(a.ts - ts) ? b : a;
+}
+
+function fmtVal(v: null | number): string {
+  if (v === null || !Number.isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(1);
+  if (a >= 1) return v.toFixed(2);
+  return v.toFixed(4);
+}
+
+function onHoverMove(e: MouseEvent) {
+  if (props.mini) return;
+  const host = canvasHostRef.value;
+  if (!host) return;
+  const W = host.clientWidth || 800;
+  const H = host.clientHeight || 220;
+  const { b: B, l: L, r: R, t: T } = M;
+  const pw = W - L - R;
+  const ph = H - T - B;
+  const ox = e.offsetX;
+  const oy = e.offsetY;
+  if (pw <= 0 || ox < L || ox > W - R || oy < T || oy > T + ph) {
+    hover.value = null;
+    return;
+  }
+  const { t0, t1 } = viewX.value;
+  const ts = t0 + ((ox - L) / pw) * (t1 - t0);
+  const frame = findFrameAt(ts);
+  if (!frame) {
+    hover.value = null;
+    return;
+  }
+  hover.value = {
+    frame,
+    mouseX: ox,
+    mouseY: oy,
+    x: L + ((frame.ts - t0) / (t1 - t0)) * pw,
+  };
+}
+
+function onHoverLeave() {
+  hover.value = null;
+}
+
+const tipStyle = computed(() => {
+  const h = hover.value;
+  if (!h) return {};
+  const host = canvasHostRef.value;
+  const W = host?.clientWidth ?? 800;
+  // 右缘翻转（tip 宽约 168）
+  const flip = h.mouseX > W - 200;
+  return {
+    left: `${flip ? h.mouseX - 182 : h.mouseX + 14}px`,
+    top: `${Math.max(4, h.mouseY - 16)}px`,
+  };
+});
+
+const hoverTime = computed(() => {
+  const h = hover.value;
+  if (!h) return '';
+  const dt = new Date(h.frame.ts);
+  return `${p2(dt.getMonth() + 1)}-${p2(dt.getDate())} ${p2(dt.getHours())}:${p2(dt.getMinutes())}:${p2(dt.getSeconds())}`;
+});
+const hoverMode = computed(() =>
+  hover.value
+    ? (resolveModeLabel(hover.value.frame.mode, props.modeMapping) ?? '—')
+    : '',
+);
+const hoverOp = computed(() => {
+  const h = hover.value;
+  return h ? (h.frame.op === null ? '—' : `${fmtVal(h.frame.op)}%`) : '';
+});
+const hoverPv = computed(() =>
+  hover.value ? fmtVal(hover.value.frame.pv) : '',
+);
+const hoverSp = computed(() =>
+  hover.value ? fmtVal(hover.value.frame.sp) : '',
+);
+
 
 /* ── 视口钳制（对齐原型 clampViewX/clampViewY） ── */
 function clampViewX(t0: number, t1: number) {
@@ -324,7 +436,9 @@ function draw() {
   const yLo = viewY.value.lo;
   const yHi = viewY.value.hi;
   const yv = (v: number) => T + ph * (1 - (v - yLo) / (yHi - yLo));
-  const opv = (v: number) => T + ph * (1 - (v - 20) / 60); // OP 右轴 20–80%
+  // OP 右轴=OP 量程（2026-10-02 终验：量程缺失兜底 0–100）
+  const od = props.opDomain ?? { hi: 100, lo: 0 };
+  const opv = (v: number) => T + ph * (1 - (v - od.lo) / (od.hi - od.lo));
 
   // 无数据：不绘制坐标/波形，仅居中提示（诚实化：不画假轴）
   const hasData =
@@ -359,12 +473,13 @@ function draw() {
     ctx.fillStyle = P.axis;
     ctx.fillText(g.toFixed(yStep < 1 ? 1 : 0), L - 6, y + 3.5);
   }
-  // OP 右轴标签
+  // OP 右轴标签（按 OP 量程四分位内三档；OP 语义为百分比输出）
   ctx.textAlign = 'left';
   ctx.fillStyle = P.opAxis;
   ctx.font = '9.5px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
-  for (let g = 30; g <= 70; g += 20) {
-    ctx.fillText(`${g}%`, W - R + 6, opv(g) + 3.5);
+  for (let k = 1; k <= 3; k++) {
+    const g = od.lo + ((od.hi - od.lo) * k) / 4;
+    ctx.fillText(`${g.toFixed(g % 1 === 0 ? 0 : 1)}%`, W - R + 6, opv(g) + 3.5);
   }
 
   // X 刻度：5 档；跨度 ≤1.2 天用时钟 HH:MM，否则相对 -xD；末刻度 现在/截至
@@ -665,8 +780,32 @@ defineExpose({ requestDraw });
         <i v-if="pill.mark" class="tri"></i>
       </button>
     </div>
-    <div ref="canvasHostRef" class="chart-host">
+    <div
+      ref="canvasHostRef"
+      class="chart-host"
+      @mouseleave="onHoverLeave"
+      @mousemove="onHoverMove"
+    >
       <canvas ref="canvasRef" class="chart-cvs"></canvas>
+      <template v-if="hover && !mini">
+        <div :style="{ left: `${hover.x}px` }" class="hover-xline"></div>
+        <div :style="tipStyle" class="hover-tip">
+          <div class="tip-time">{{ hoverTime }}</div>
+          <div class="tip-row">
+            <i :style="{ background: palette.pv }" class="dot"></i>PV
+            <b>{{ hoverPv }}</b><span v-if="pvUnit" class="u">{{ pvUnit }}</span>
+          </div>
+          <div class="tip-row">
+            <i :style="{ background: palette.sp }" class="dot"></i>SP
+            <b>{{ hoverSp }}</b>
+          </div>
+          <div class="tip-row">
+            <i :style="{ background: palette.op }" class="dot"></i>OP
+            <b>{{ hoverOp }}</b>
+          </div>
+          <div class="tip-row mode">MODE {{ hoverMode }}</div>
+        </div>
+      </template>
     </div>
     <div
       v-if="!mini"
@@ -696,6 +835,65 @@ defineExpose({ requestDraw });
   flex-direction: column;
   min-height: 0;
   position: relative;
+}
+
+/* 悬停读值：十字竖线 + 跟随浮层（终验需求） */
+.hover-xline {
+  bottom: 30px;
+  pointer-events: none;
+  position: absolute;
+  top: 10px;
+  width: 1px;
+  z-index: 3;
+  background: hsl(var(--muted-foreground) / 45%);
+}
+
+.hover-tip {
+  background: hsl(var(--card) / 0.97);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(16 24 40 / 18%);
+  font-size: 11.5px;
+  line-height: 1.75;
+  min-width: 150px;
+  padding: 5px 10px 6px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+
+.hover-tip .tip-row {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.hover-tip .tip-row b {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.hover-tip .dot {
+  border-radius: 50%;
+  flex: none;
+  height: 7px;
+  width: 7px;
+}
+
+.hover-tip .tip-time {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  margin-bottom: 1px;
+}
+
+.hover-tip .u {
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+}
+
+.hover-tip .tip-row.mode {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
 }
 
 /* 事件标注层（固定高，不随趋势压缩变形） */

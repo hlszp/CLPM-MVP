@@ -83,6 +83,11 @@ const initialLoopId =
 const loop = useWb360Loop(initialLoopId);
 const layout = useWb360Layout();
 const trend = useTrendData();
+/** 趋势左轴域：PV 满量程优先（2026-10-02 终验；量程缺失退数据域） */
+const trendYDomain = computed(() => {
+  const r = loop.ranges.value.pvRange;
+  return r && r.hi > r.lo ? r : trend.yDomain.value;
+});
 /** 页面级评估历史（P2）：剖面/旅程条/页头徽章共用，剖面经 inject 消费 */
 const assessHistory = useAssessHistory(loop.selectedLoopId);
 /** 页面级诊断数据（P3）：最新结论 + 历史，剖面经 inject 消费；旅程条/缩略卡共用 */
@@ -508,8 +513,10 @@ const wsName = computed(
             :frames="trend.frames.value"
             :live="trend.live.value"
             :mode-mapping="loop.current.value?.modeMapping ?? null"
+            :op-domain="loop.ranges.value.opRange"
+            :pv-unit="loop.ranges.value.pvUnit"
             :series-visible="seriesVisible"
-            :y-domain="trend.yDomain.value"
+            :y-domain="trendYDomain"
             @event-click="onEventMarkClick"
           />
             <div v-if="trend.loading.value" class="cv-overlay">
@@ -533,7 +540,7 @@ const wsName = computed(
             :live="trend.live.value"
             :mode-mapping="loop.current.value?.modeMapping ?? null"
             :series-visible="seriesVisible"
-            :y-domain="trend.yDomain.value"
+            :y-domain="trendYDomain"
             mini
             @event-click="onEventMarkClick"
           />
