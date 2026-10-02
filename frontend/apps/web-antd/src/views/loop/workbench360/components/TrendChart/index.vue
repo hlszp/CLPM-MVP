@@ -304,6 +304,20 @@ function draw() {
   const yv = (v: number) => T + ph * (1 - (v - yLo) / (yHi - yLo));
   const opv = (v: number) => T + ph * (1 - (v - 20) / 60); // OP 右轴 20–80%
 
+  // 无数据：不绘制坐标/波形，仅居中提示（诚实化：不画假轴）
+  const hasData =
+    props.domain !== null &&
+    props.frames.length > 0 &&
+    props.domain.t1 > props.domain.t0;
+  if (!hasData) {
+    ctx.fillStyle = P.axis;
+    ctx.textAlign = 'center';
+    ctx.font =
+      '12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillText('暂无趋势数据', W / 2, H / 2);
+    return;
+  }
+
   ctx.font = '10px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
 
   // Y 主轴网格 + 标签（niceStep）
@@ -365,11 +379,6 @@ function draw() {
     ctx.fillText(label, x, H - 8);
   }
 
-  const hasData =
-    props.domain !== null && props.frames.length > 0 && span > 0;
-  if (!hasData) return;
-
-  // 视口重采样（数值线性插值 / 分类最近邻）
   const rs = resampleFrames(
     props.frames,
     viewX.value.t0,

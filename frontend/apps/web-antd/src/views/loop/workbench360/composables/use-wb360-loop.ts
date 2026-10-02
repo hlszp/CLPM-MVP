@@ -36,8 +36,10 @@ export interface SpineTreeNode {
 /** 等级筛选档（A–E 对应 GRADE_THRESHOLDS 1–5 档；? = 无评分） */
 export type GradeFilter = 'A' | 'B' | 'C' | 'D' | 'E' | 'none';
 
-/** 清单拉取页大小（本地筛选所需全量；>500 回路场景再引入服务端筛选） */
-const LIST_PAGE_SIZE = 500;
+/** 清单拉取页大小（后端上限 100/页）与页数上限（本地筛选所需全量；
+ *  超出上限显式截断提示，>500 回路场景再引入服务端筛选） */
+const LIST_PAGE_SIZE = 100;
+const LIST_MAX_PAGES = 5;
 
 /** score → 等级字母（对齐 GRADE_THRESHOLDS 1–5 档） */
 function scoreToGrade(score: null | number | undefined): GradeFilter | null {
@@ -67,22 +69,29 @@ export function useWb360Loop(initialLoopId: null | string) {
   const { applyMessage, connectionStatus, lastMessageAt, onMessage, start } =
     useLoopRealtime();
 
-  /** 拉取回路清单（全量本地筛选） */
+  /** 拉取回路清单（分页拉全量，本地筛选；后端 pageSize 上限 100） */
   async function loadLoops() {
     loopsLoading.value = true;
     loopsError.value = null;
     try {
-      const res = await getLoopMonitorListApi({
-        page: 1,
-        pageSize: LIST_PAGE_SIZE,
-        sortBy: 'tagName',
-        sortOrder: 'asc',
-        view: 'list',
-      });
-      loops.value = res.items;
-      if (res.total > LIST_PAGE_SIZE) {
+      const fetchPage = (page: number) =>
+        getLoopMonitorListApi({
+          page,
+          pageSize: LIST_PAGE_SIZE,
+          sortBy: 'tagName',
+          sortOrder: 'asc',
+        });
+      const first = await fetchPage(1);
+      const items = [...first.items];
+      const totalPages = Math.ceil(first.total / LIST_PAGE_SIZE);
+      for (let p = 2; p <= Math.min(totalPages, LIST_MAX_PAGES); p++) {
+        const res = await fetchPage(p);
+        items.push(...res.items);
+      }
+      loops.value = items;
+      if (first.total > items.length) {
         // 诚实化：清单超页禁止静默截断，显式提示
-        loopsError.value = `回路清单仅加载前 ${LIST_PAGE_SIZE} 条（共 ${res.total} 条），请用搜索/筛选缩小范围`;
+        loopsError.value = `回路清单仅加载前 ${items.length} 条（共 ${first.total} 条），请用搜索/筛选缩小范围`;
       }
     } catch (error) {
       loopsError.value = error instanceof Error ? error.message : '回路清单加载失败';

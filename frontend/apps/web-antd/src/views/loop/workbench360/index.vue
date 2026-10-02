@@ -448,11 +448,13 @@ const wsName = computed(
 </template>
 
 <style scoped>
-/* 整页固定视口（桌面应用式，禁止整页滚动） */
+/* 整页固定视口（桌面应用式，禁止整页滚动）。
+ * 高度对齐旧版回路工作台先例（calc(100vh - 110px) = vben header+tabs+间距），
+ * vben 内容容器为 min-height 流式布局，height:100% 无法形成固定视口。 */
 .wb360 {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100vh - 110px);
   overflow: hidden;
 }
 
