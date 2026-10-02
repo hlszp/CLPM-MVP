@@ -21,6 +21,9 @@ import {
   WB360_EVENT_MARK_COLORS,
   WB360_MANUAL_BAND_FILL,
   WB360_SAMPLE_POINTS,
+  WB360_TOL_BAND_FILL,
+  WB360_TREND_EXPORT_BG,
+  WB360_TREND_EXPORT_TEXT,
   WB360_TREND_PALETTE_DARK,
   WB360_TREND_PALETTE_LIGHT,
 } from '#/constants/clpm-ui';
@@ -52,6 +55,10 @@ const props = withDefaults(
     /** PV 工程单位（悬停读值展示） */
     pvUnit?: null | string;
     seriesVisible: SeriesVisible;
+    /** 左轴刻度显示量程%（仅量程域时为 true；数据域兜底时 % 无意义） */
+    spanPct?: boolean;
+    /** SP 容差带宽（工程值；null/0=不画带，终验优化） */
+    spTolerance?: null | number;
     /** Y 数据域（量程优先：PV/SP 满量程；缺失时数据 min/max+余量） */
     yDomain: { hi: number; lo: number };
   }>(),
@@ -61,6 +68,8 @@ const props = withDefaults(
     modeMapping: null,
     opDomain: null,
     pvUnit: null,
+    spanPct: false,
+    spTolerance: null,
   },
 );
 
@@ -99,6 +108,9 @@ const envelopeFill = computed(() =>
 );
 const manualFill = computed(() =>
   isDark.value ? WB360_MANUAL_BAND_FILL.dark : WB360_MANUAL_BAND_FILL.light,
+);
+const tolFill = computed(() =>
+  isDark.value ? WB360_TOL_BAND_FILL.dark : WB360_TOL_BAND_FILL.light,
 );
 
 /* ── rAF 节流绘制 ── */
@@ -455,7 +467,7 @@ function draw() {
 
   ctx.font = '10px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
 
-  // Y 主轴网格 + 标签（niceStep）
+  // Y 主轴网格 + 标签（niceStep；量程域时附量程%第二行——终验优化）
   const yStep = niceStep((yHi - yLo) / 4);
   ctx.textAlign = 'right';
   for (
@@ -472,6 +484,19 @@ function draw() {
     ctx.stroke();
     ctx.fillStyle = P.axis;
     ctx.fillText(g.toFixed(yStep < 1 ? 1 : 0), L - 6, y + 3.5);
+    if (props.spanPct) {
+      const yd = props.yDomain;
+      const pct = ((g - yd.lo) / (yd.hi - yd.lo)) * 100;
+      if (pct >= 0 && pct <= 100) {
+        ctx.font =
+          '8.5px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+        ctx.globalAlpha = 0.72;
+        ctx.fillText(`${pct.toFixed(0)}%`, L - 6, y + 13);
+        ctx.globalAlpha = 1;
+        ctx.font =
+          '10px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+      }
+    }
   }
   // OP 右轴标签（按 OP 量程四分位内三档；OP 语义为百分比输出）
   ctx.textAlign = 'left';
@@ -594,6 +619,34 @@ function draw() {
     ctx.closePath();
     ctx.fill();
   };
+
+  // SP 容差带（终验优化：SP±tol 多边形带；断点跳过）
+  const tol = props.spTolerance ?? 0;
+  if (tol > 0 && props.seriesVisible.sp) {
+    let began = false;
+    ctx.beginPath();
+    for (let i = 0; i <= NP; i++) {
+      const s = rs.sp[i];
+      if (s === null || s === undefined) continue;
+      const y = yv(s + tol);
+      if (began) {
+        ctx.lineTo(X(i), y);
+      } else {
+        ctx.moveTo(X(i), y);
+        began = true;
+      }
+    }
+    for (let i = NP; i >= 0; i--) {
+      const s = rs.sp[i];
+      if (s === null || s === undefined) continue;
+      ctx.lineTo(X(i), yv(s - tol));
+    }
+    if (began) {
+      ctx.closePath();
+      ctx.fillStyle = tolFill.value;
+      ctx.fill();
+    }
+  }
 
   // SP 恒为线；PV/OP 密集切包络（v3 §5.2 防混叠）——包络之上仍描主线，
   // 纯半透明填充在浅色工业风底上对比不足（2026-10-02 终验反馈）
@@ -754,7 +807,38 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', requestDraw);
 });
 
-defineExpose({ requestDraw });
+/** 视口跳转到指定时间窗（诊断→趋势联动；钳制在数据域内） */
+function locate(t0: number, t1: number) {
+  if (!(t1 > t0)) return;
+  clampViewX(t0, t1);
+}
+
+/** 合成导出 PNG（背景+标题条+当前画布），返回 dataURL（终验优化） */
+function exportPng(title: string): null | string {
+  const cvs = canvasRef.value;
+  if (!cvs || cvs.width === 0) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const headH = Math.round(26 * dpr);
+  const out = document.createElement('canvas');
+  out.width = cvs.width;
+  out.height = cvs.height + headH;
+  const octx = out.getContext('2d');
+  if (!octx) return null;
+  octx.fillStyle = isDark.value
+    ? WB360_TREND_EXPORT_BG.dark
+    : WB360_TREND_EXPORT_BG.light;
+  octx.fillRect(0, 0, out.width, out.height);
+  octx.fillStyle = isDark.value
+    ? WB360_TREND_EXPORT_TEXT.dark
+    : WB360_TREND_EXPORT_TEXT.light;
+  octx.font = `${12 * dpr}px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif`;
+  octx.textBaseline = 'middle';
+  octx.fillText(title, Math.round(10 * dpr), Math.round(headH / 2));
+  octx.drawImage(cvs, 0, headH);
+  return out.toDataURL('image/png');
+}
+
+defineExpose({ exportPng, locate, requestDraw });
 </script>
 
 <template>

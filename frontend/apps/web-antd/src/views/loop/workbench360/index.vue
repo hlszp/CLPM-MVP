@@ -39,6 +39,7 @@ import { message } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { resolveModeLabel } from '#/composables/use-loop-realtime';
 import {
   WB360_DEFAULT_WINDOW_KEY,
   WB360_TREND_PALETTE_DARK,
@@ -130,10 +131,103 @@ function selectWindow(key: string) {
   reloadTrend();
 }
 
+/* ── 诊断→趋势联动 + 导出 + SP 容差带（2026-10-03 终验优化）── */
+const mainTrendRef = ref<null | {
+  exportPng: (title: string) => null | string;
+  locate: (t0: number, t1: number) => void;
+}>(null);
+const spToleranceInput = ref<'' | null | number>(null);
+const spTolerance = computed(() => {
+  const v = spToleranceInput.value;
+  return typeof v === 'number' && v > 0 ? v : null;
+});
+/** 左轴量程%（仅量程域有效；数据域兜底时 % 无意义不显示） */
+const trendSpanPct = computed(() => !!loop.ranges.value.pvRange);
+
+const p2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+function fmtLocal(ts: number) {
+  const dt = new Date(ts);
+  return `${p2(dt.getMonth() + 1)}-${p2(dt.getDate())} ${p2(dt.getHours())}:${p2(dt.getMinutes())}`;
+}
+
+/** 诊断结论/历史行 → 主趋势视口定位该时间窗（切历史模式；超出当前窗口提示换档） */
+function onLocateTrend(p: { tsEnd: string; tsStart: string }) {
+  const a = Date.parse(p.tsStart);
+  const b = Date.parse(p.tsEnd);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !(b > a)) {
+    message.warning('该记录时间窗无效，无法定位趋势');
+    return;
+  }
+  const d = trend.domain.value;
+  if (d && (a > d.t1 || b < d.t0)) {
+    message.warning(
+      '该时间窗超出当前趋势窗口范围，请先切换更大的时间窗（如 3D / 7D）',
+    );
+    return;
+  }
+  setLive(false);
+  if (layout.readonlyState.panelState !== 'half') {
+    layout.setPanel('half');
+  }
+  mainTrendRef.value?.locate(a, b);
+  message.success(
+    `趋势已定位到 ${fmtLocal(a)} ~ ${fmtLocal(b)}（历史模式，切回"实时"恢复追跟）`,
+  );
+}
+
+function trendFileBase() {
+  const tag =
+    loop.current.value?.tagName ?? loop.current.value?.loopId ?? 'loop';
+  return `wb360-${tag}-${activePreset.value.label}`;
+}
+
+function exportTrendPng() {
+  const url = mainTrendRef.value?.exportPng(
+    `${loop.current.value?.tagName ?? ''} 趋势 · ${activePreset.value.label} · ${fmtLocal(Date.now())} 导出`,
+  );
+  if (!url) {
+    message.warning('当前无趋势画布可导出');
+    return;
+  }
+  const a = document.createElement('a');
+  a.download = `${trendFileBase()}.png`;
+  a.href = url;
+  a.click();
+}
+
+function exportTrendCsv() {
+  const fr = trend.frames.value;
+  if (fr.length === 0) {
+    message.warning('当前无趋势数据可导出');
+    return;
+  }
+  const mm = loop.current.value?.modeMapping ?? null;
+  const rows = ['timestamp,pv,sp,op,mode,quality'];
+  for (const f of fr) {
+    rows.push(
+      [
+        new Date(f.ts).toISOString(),
+        f.pv ?? '',
+        f.sp ?? '',
+        f.op ?? '',
+        resolveModeLabel(f.mode, mm) ?? f.mode ?? '',
+        f.quality ?? '',
+      ].join(','),
+    );
+  }
+  const blob = new Blob([`\uFEFF${rows.join('\n')}`], {
+    type: 'text/csv;charset=utf-8',
+  });
+  const a = document.createElement('a');
+  a.download = `${trendFileBase()}.csv`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ── 历史 / 实时切换 ── */
 function setLive(on: boolean) {
-  trend.live.value = on;
-  if (!on) {
+  trend.live.value = on;  if (!on) {
     reloadTrend();
   } else if (!trend.domain.value) {
     reloadTrend();
@@ -474,6 +568,20 @@ const wsName = computed(
                 {{ p.label }}
               </button>
             </div>
+            <div aria-label="SP 容差带" class="segctl tol" title="设定 SP 容差带宽（工程值），0/空=不显示">
+              <span class="tol-l">SP±</span>
+              <input
+                v-model.number="spToleranceInput"
+                :placeholder="loop.ranges.value.pvUnit ?? '工程值'"
+                min="0"
+                step="any"
+                type="number"
+              />
+            </div>
+            <div aria-label="导出趋势" class="segctl">
+              <button type="button" @click="exportTrendPng">PNG</button>
+              <button type="button" @click="exportTrendCsv">CSV</button>
+            </div>
             <div class="legend">
               <span
                 class="lg"
@@ -508,6 +616,7 @@ const wsName = computed(
           </div>
           <div class="cv-body">
           <TrendChart
+            ref="mainTrendRef"
             :domain="trend.domain.value"
             :events="trendEvents"
             :frames="trend.frames.value"
@@ -516,6 +625,8 @@ const wsName = computed(
             :op-domain="loop.ranges.value.opRange"
             :pv-unit="loop.ranges.value.pvUnit"
             :series-visible="seriesVisible"
+            :span-pct="trendSpanPct"
+            :sp-tolerance="spTolerance"
             :y-domain="trendYDomain"
             @event-click="onEventMarkClick"
           />
@@ -591,6 +702,7 @@ const wsName = computed(
                 @diagnose-window="onDiagnoseWindow"
                 @go-tuning="onGoTuning"
                 @journey-dirty="onJourneyDirty"
+                @locate-trend="onLocateTrend"
               />
             </div>
           </template>
@@ -717,6 +829,33 @@ const wsName = computed(
   border-radius: 4px;
   display: inline-flex;
   overflow: hidden;
+}
+
+/* SP 容差带输入（终验优化） */
+.segctl.tol {
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+}
+
+.segctl.tol .tol-l {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.segctl.tol input {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 12px;
+  outline: none;
+  padding: 3px 2px;
+  width: 64px;
+}
+
+.segctl.tol input:focus {
+  border-bottom: 1px solid hsl(var(--primary) / 60%);
 }
 
 .segctl button {

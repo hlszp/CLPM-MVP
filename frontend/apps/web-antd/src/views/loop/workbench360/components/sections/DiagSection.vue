@@ -66,6 +66,7 @@ const emit = defineEmits<{
       tsStart: string;
     },
   ): void;
+  (e: 'locateTrend', payload: { tsEnd: string; tsStart: string }): void;
 }>();
 
 const prefill = useDiagPrefill();
@@ -367,6 +368,15 @@ function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
   openDetail(item.runId);
 }
 
+/* ── 趋势定位（终验优化：结论卡/历史行 → 主趋势视口跳该时间窗） ── */
+function emitLocateTrend(tsStart?: null | string, tsEnd?: null | string) {
+  if (!tsStart || !tsEnd) {
+    message.warning('该记录无时间窗，无法定位趋势');
+    return;
+  }
+  emit('locateTrend', { tsEnd, tsStart });
+}
+
 /* ── 基于此结论发起整定（页内动线；P4：预填辨识窗 = 该结论时间窗） ── */
 function onGoTuning() {
   const id = props.selectedLoopId;
@@ -546,6 +556,13 @@ function onGoTuning() {
             >
               全量证据与建议 →
             </button>
+            <button
+              class="link"
+              type="button"
+              @click="emitLocateTrend(latest?.timeWindowStart, latest?.timeWindowEnd)"
+            >
+              趋势定位此窗
+            </button>
             <button class="link" type="button" @click="archiveOpen = true">
               结论演变时间线
             </button>
@@ -662,6 +679,13 @@ function onGoTuning() {
             <td>
               <button class="link" type="button" @click="openDetail(row.id)">
                 详情
+              </button>
+              <button
+                class="link"
+                type="button"
+                @click="emitLocateTrend(row.timeWindowStart, row.timeWindowEnd)"
+              >
+                定位
               </button>
             </td>
           </tr>

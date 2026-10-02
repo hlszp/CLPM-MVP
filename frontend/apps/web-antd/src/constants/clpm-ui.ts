@@ -844,6 +844,22 @@ export const WB360_ENVELOPE_FILL = {
   opDark: 'rgba(157,140,255,.30)',
 } as const;
 
+/** SP 容差带填充（SP±tol 多边形带；终验优化） */
+export const WB360_TOL_BAND_FILL = {
+  light: 'rgba(16,185,129,.10)',
+  dark: 'rgba(64,222,178,.12)',
+} as const;
+
+/** 趋势 PNG 导出的背景/标题字色（离屏合成用，非组件内 hex） */
+export const WB360_TREND_EXPORT_BG = {
+  light: '#ffffff',
+  dark: '#101418',
+} as const;
+export const WB360_TREND_EXPORT_TEXT = {
+  light: '#1f2733',
+  dark: '#dfe6ee',
+} as const;
+
 /** MANUAL 背景带填充（半透明红带） */
 export const WB360_MANUAL_BAND_FILL = {
   light: 'rgba(217,54,62,.08)',
