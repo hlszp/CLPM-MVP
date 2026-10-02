@@ -34,7 +34,10 @@ onBeforeUnmount(() => {
 
 const lastMsgText = computed(() => {
   if (!props.lastMessageAt) return '等待消息';
-  const s = Math.max(0, Math.round((now.value - props.lastMessageAt.getTime()) / 1000));
+  const s = Math.max(
+    0,
+    Math.round((now.value - props.lastMessageAt.getTime()) / 1000),
+  );
   const hh = String(props.lastMessageAt.getHours()).padStart(2, '0');
   const mm = String(props.lastMessageAt.getMinutes()).padStart(2, '0');
   const ss = String(props.lastMessageAt.getSeconds()).padStart(2, '0');
@@ -86,13 +89,16 @@ const sourceText = computed(() => {
                 ? WB360_STATUSBAR.warnDot
                 : WB360_STATUSBAR.errDot,
         }"
-      ></i>{{ connText }} · 最近消息 <b>{{ lastMsgText }}</b>
+      ></i
+      >{{ connText }} · 最近消息 <b>{{ lastMsgText }}</b>
     </span>
     <span class="sb-seg"
       >趋势 {{ windowLabel }} · <b>{{ pointCount }}</b> 点 · {{ sourceText }}
       <template v-if="downsampled">（后端 LTTB 降采样）</template>
     </span>
-    <span class="sb-seg sb-right">快照/诊断/预警计数与任务调度提示将在 P2-P4 接入</span>
+    <span class="sb-seg sb-right"
+      >快照/诊断/预警计数与任务调度提示将在 P2-P4 接入</span
+    >
   </footer>
 </template>
 

@@ -25,7 +25,13 @@ import {
   WB360_TREND_PALETTE_LIGHT,
 } from '#/constants/clpm-ui';
 
-import { buildEnvelope, isDense, niceStep, resampleFrames, segmentsOf } from './resample';
+import {
+  buildEnvelope,
+  isDense,
+  niceStep,
+  resampleFrames,
+  segmentsOf,
+} from './resample';
 
 const props = withDefaults(
   defineProps<{
@@ -146,7 +152,10 @@ function zoomX(f: number, center?: null | number) {
 
 function zoomY(f: number, c?: null | number) {
   const { lo, hi } = viewY.value;
-  const s = Math.min(Math.max((hi - lo) * f, Y_MIN_SPAN), props.yDomain.hi - props.yDomain.lo);
+  const s = Math.min(
+    Math.max((hi - lo) * f, Y_MIN_SPAN),
+    props.yDomain.hi - props.yDomain.lo,
+  );
   const cc = c ?? (lo + hi) / 2;
   const k = s / (hi - lo);
   clampViewY(cc - (cc - lo) * k, cc + (hi - cc) * k);
@@ -179,7 +188,9 @@ watch(
     requestDraw();
   },
 );
-watch([isDark, () => props.frames, () => props.seriesVisible], () => requestDraw());
+watch([isDark, () => props.frames, () => props.seriesVisible], () =>
+  requestDraw(),
+);
 
 /* ── 滚动条 thumb 位置 ── */
 const xThumbStyle = computed(() => {
@@ -222,8 +233,7 @@ const pills = computed(() => {
   if (props.seriesVisible.mode) {
     let m0 = -1;
     for (let i = 0; i <= props.frames.length; i++) {
-      const man =
-        i < props.frames.length && isManual(props.frames[i]!.mode);
+      const man = i < props.frames.length && isManual(props.frames[i]!.mode);
       if (man && m0 < 0) m0 = i;
       if ((!man || i === props.frames.length) && m0 >= 0) {
         const i1 = Math.min(i - 1, props.frames.length - 1);
@@ -312,8 +322,7 @@ function draw() {
   if (!hasData) {
     ctx.fillStyle = P.axis;
     ctx.textAlign = 'center';
-    ctx.font =
-      '12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.font = '12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
     ctx.fillText('暂无趋势数据', W / 2, H / 2);
     return;
   }
@@ -349,9 +358,7 @@ function draw() {
   // X 刻度：5 档；跨度 ≤1.2 天用时钟 HH:MM，否则相对 -xD；末刻度 现在/截至
   const span = viewX.value.t1 - viewX.value.t0;
   const clockMode = span <= 1.2 * DAY_MS;
-  const refT = props.live
-    ? Date.now()
-    : (props.domain?.t1 ?? Date.now());
+  const refT = props.live ? Date.now() : (props.domain?.t1 ?? Date.now());
   ctx.textAlign = 'center';
   ctx.font = '10px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
   for (let k = 0; k <= 4; k++) {
@@ -379,12 +386,7 @@ function draw() {
     ctx.fillText(label, x, H - 8);
   }
 
-  const rs = resampleFrames(
-    props.frames,
-    viewX.value.t0,
-    viewX.value.t1,
-    NP,
-  );
+  const rs = resampleFrames(props.frames, viewX.value.t0, viewX.value.t1, NP);
   const X = (i: number) => L + (pw * i) / NP;
 
   // MANUAL 背景带（红色半透明 + 虚线边界）
@@ -566,7 +568,7 @@ function bindBarDrag(bar: HTMLDivElement | null, horiz: boolean) {
     const p = horiz ? e.clientX : e.clientY;
     const tp = horiz ? (tr?.left ?? 0) : (tr?.top ?? 0);
     const off = (p - tp) / tl;
-    const mode = off < 0.14 ? 'lo' : (off > 0.86 ? 'hi' : 'pan');
+    const mode = off < 0.14 ? 'lo' : off > 0.86 ? 'hi' : 'pan';
     const sx = e.clientX;
     const sy = e.clientY;
     // 按下时视口快照（拖拽基准）
@@ -580,15 +582,16 @@ function bindBarDrag(bar: HTMLDivElement | null, horiz: boolean) {
 
     const mv = (ev: PointerEvent) => {
       if (horiz && v0x) {
-        const dd =
-          ((ev.clientX - sx) / (bar.clientWidth || 1)) * (d.t1 - d.t0);
+        const dd = ((ev.clientX - sx) / (bar.clientWidth || 1)) * (d.t1 - d.t0);
         if (mode === 'pan') clampViewX(v0x.t0 - dd, v0x.t1 - dd);
         else if (mode === 'lo')
           clampViewX(Math.min(v0x.t1 - X_MIN_SPAN / 1000, v0x.t0 + dd), v0x.t1);
-        else clampViewX(v0x.t0, Math.max(v0x.t0 + X_MIN_SPAN / 1000, v0x.t1 + dd));
+        else
+          clampViewX(v0x.t0, Math.max(v0x.t0 + X_MIN_SPAN / 1000, v0x.t1 + dd));
       } else if (v0y) {
         const yd = props.yDomain;
-        const dd = (-(ev.clientY - sy) / (bar.clientHeight || 1)) * (yd.hi - yd.lo);
+        const dd =
+          (-(ev.clientY - sy) / (bar.clientHeight || 1)) * (yd.hi - yd.lo);
         if (mode === 'pan') clampViewY(v0y.lo - dd, v0y.hi - dd);
         else if (mode === 'lo')
           clampViewY(Math.min(v0y.hi - Y_MIN_SPAN, v0y.lo + dd), v0y.hi);
@@ -642,7 +645,8 @@ defineExpose({ requestDraw });
         type="button"
         @click="pill.mark && emit('eventClick', pill.mark)"
       >
-        <span>{{ pill.glyph }}</span>{{ pill.label }}
+        <span>{{ pill.glyph }}</span
+        >{{ pill.label }}
         <i v-if="pill.mark" class="tri"></i>
       </button>
     </div>

@@ -10,10 +10,7 @@
 import { computed, reactive, readonly, ref } from 'vue';
 
 import { moduleEnabled } from '#/composables/use-modules';
-import {
-  WB360_SECTIONS,
-  type WB360SectionKey,
-} from '#/constants/clpm-ui';
+import { WB360_SECTIONS, type WB360SectionKey } from '#/constants/clpm-ui';
 
 export type Wb360PanelState = 'half' | 'max' | 'thumbs';
 
@@ -122,9 +119,7 @@ export function useWb360Layout() {
   /** 迷你趋势高度拖拽（最大化态，px 100–bodyH*0.6） */
   function resizeMiniHeight(px: number, bodyHeight: number) {
     const maxH = Math.max(MINI_MIN_H + 40, bodyHeight * 0.6);
-    miniHeightPx.value = Math.round(
-      Math.min(maxH, Math.max(MINI_MIN_H, px)),
-    );
+    miniHeightPx.value = Math.round(Math.min(maxH, Math.max(MINI_MIN_H, px)));
   }
 
   function resizeSpine(px: number) {
@@ -134,8 +129,8 @@ export function useWb360Layout() {
   }
 
   /** 当前剖面元信息 */
-  const activeSectionMeta = computed(() =>
-    WB360_SECTIONS.find((s) => s.key === activeSection.value) ?? null,
+  const activeSectionMeta = computed(
+    () => WB360_SECTIONS.find((s) => s.key === activeSection.value) ?? null,
   );
 
   const state = reactive({

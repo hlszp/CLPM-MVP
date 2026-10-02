@@ -59,6 +59,28 @@ export const GRADE_LEVEL_LABEL: Record<number, string> = Object.fromEntries(
   GRADE_THRESHOLDS.map((t) => [t.level, t.label ?? t.name]),
 );
 
+/**
+ * score → 等级信息（字母档 + level + 中文名；无评分返回 null）。
+ *
+ * P2 抽取（workbench360 移交项）：此前 use-wb360-loop / JourneyRail / ThumbStrip
+ * 各持一份 90/80/60/40 硬编码，收敛到 GRADE_THRESHOLDS 单源派生。
+ * 注意：基于默认阈值；动态阈值配置（/configs/grading-thresholds）场景
+ * 仍走 useScoreColor(score, thresholds) 判定链。
+ */
+export function scoreToGradeInfo(
+  score: null | number | undefined,
+): { label: string; letter: string; level: number } | null {
+  if (score === null || score === undefined || Number.isNaN(score)) return null;
+  const sorted = [...GRADE_THRESHOLDS].toSorted(
+    (a, b) => b.minScore - a.minScore,
+  );
+  const hit = sorted.find((t) => score >= t.minScore) ?? sorted.at(-1) ?? null;
+  if (!hit) return null;
+  // 字母档：A–E 对应 level 1–5（左脊柱等级筛选/趋势等级色同口径）
+  const letter = String.fromCodePoint(64 + hit.level);
+  return { label: hit.label ?? hit.name, letter, level: hit.level };
+}
+
 /** 可信度等级 → ZL 工业语义色 */
 export const CONFIDENCE_LEVEL_STATUS: Record<
   ConfidenceLevel,
@@ -753,7 +775,8 @@ export const DQ_AUDIT_ISSUE_COLOR: Record<string, string> = {
 
 /** C（2026-09-28）：排名空态文案的单一事实源（装置排名 / 单元排名 共用；{subject} 由调用方注入） */
 export const RANKING_EMPTY_TEMPLATES: Record<string, string> = {
-  NO_ORG_NODES: '组织树未配置工厂/装置节点，{subject}不可用（请先在系统管理配置组织）',
+  NO_ORG_NODES:
+    '组织树未配置工厂/装置节点，{subject}不可用（请先在系统管理配置组织）',
   NO_PRECALC_ROWS: '{subject}暂无数据：预计算尚未产出，请稍候或检查预计算任务',
 };
 
@@ -764,7 +787,9 @@ export function rankingEmptyText(
   fallback?: string,
 ) {
   const tpl = reason ? RANKING_EMPTY_TEMPLATES[reason] : undefined;
-  return tpl ? tpl.replace('{subject}', subject) : (fallback ?? '暂无' + subject);
+  return tpl
+    ? tpl.replace('{subject}', subject)
+    : (fallback ?? '暂无' + subject);
 }
 
 // ---------------------------------------------------------------------------
@@ -905,4 +930,3 @@ export const WB360_SECTIONS = [
 ] as const;
 
 export type WB360SectionKey = (typeof WB360_SECTIONS)[number]['key'];
-
