@@ -762,7 +762,147 @@ export function rankingEmptyText(
   reason: null | string | undefined,
   subject: string,
   fallback?: string,
-): string {
+) {
   const tpl = reason ? RANKING_EMPTY_TEMPLATES[reason] : undefined;
   return tpl ? tpl.replace('{subject}', subject) : (fallback ?? '暂无' + subject);
 }
+
+// ---------------------------------------------------------------------------
+// 回路工作台新版（workbench360，2026-10-02 P1 起）
+//
+// 本节常量供 views/loop/workbench360/** 消费；hex 集中在此
+// （constants/ 是 hex 棘轮白名单目录，组件内禁 hex）。
+// 色值对齐原型 docs/设计文档/原型/回路工作台-原型-2026-10-02.html。
+// ---------------------------------------------------------------------------
+
+/** 趋势系列色（浅色模式，原型 §5.2：PV 蓝 / SP 绿 / OP 紫） */
+export const WB360_TREND_PALETTE_LIGHT = {
+  pv: '#1677ff',
+  sp: '#13a876',
+  op: '#7b61ff',
+  /** 质量码 BAD 段（灰虚线） */
+  qualityBad: '#9aa2ad',
+  /** 质量码 UNCERTAIN 段（琥珀点划） */
+  qualityUncertain: '#d48806',
+  /** MANUAL 背景带边界 */
+  manualBand: '#d9363e',
+  /** 图表网格/坐标轴（浅） */
+  grid: '#eef1f4',
+  grid2: '#f6f8fa',
+  axis: '#8c93a0',
+  /** 质量码垫层（断开主线的底色，浅色=白） */
+  underlay: '#ffffff',
+  /** OP 右轴文字色 */
+  opAxis: '#a89ce0',
+} as const;
+
+/** 趋势系列色（深色模式，html.dark 时使用） */
+export const WB360_TREND_PALETTE_DARK = {
+  pv: '#5b9bff',
+  sp: '#43d9a4',
+  op: '#9d8cff',
+  qualityBad: '#6b7484',
+  qualityUncertain: '#e8b34b',
+  manualBand: '#f2707a',
+  grid: '#272f3d',
+  grid2: '#202836',
+  axis: '#78839a',
+  underlay: '#1f2734',
+  opAxis: '#9d92e8',
+} as const;
+
+/** 包络带填充色（半透明，密集采样时 PV/OP 的 min/max 带） */
+export const WB360_ENVELOPE_FILL = {
+  pvLight: 'rgba(22,119,255,.26)',
+  pvDark: 'rgba(91,155,255,.30)',
+  opLight: 'rgba(123,97,255,.20)',
+  opDark: 'rgba(157,140,255,.24)',
+} as const;
+
+/** MANUAL 背景带填充（半透明红带） */
+export const WB360_MANUAL_BAND_FILL = {
+  light: 'rgba(217,54,62,.08)',
+  dark: 'rgba(217,54,62,.13)',
+} as const;
+
+/** 深色状态栏（浅/深主题均为深色应用式底，原型 #sbar） */
+export const WB360_STATUSBAR = {
+  bg: '#1c2330',
+  divider: 'rgba(255,255,255,.08)',
+  errDot: '#d9363e',
+  okDot: '#13a876',
+  text: '#9aa5b8',
+  textStrong: '#e6ebf3',
+  warnDot: '#d48806',
+  warnText: '#e8b34b',
+} as const;
+
+/** 事件标注层徽标色（诊断▼/整定◆/验证▮/手动⏸；P1 仅 MANUAL 投入使用，其余 P2-P4 接数据） */
+export const WB360_EVENT_MARK_COLORS = {
+  diag: '#d9363e',
+  tuning: '#7b61ff',
+  verify: '#13a876',
+  manual: '#d9363e',
+} as const;
+
+/** 窗口九档（D12：1H~7D+自定义；D13：每窗恒 ≈3600 采样点） */
+export interface WB360WindowPreset {
+  /** 档位 key（custom 为自定义占位档） */
+  key: string;
+  /** 显示名 */
+  label: string;
+  /** 窗口跨度（秒）；custom 档无固定跨度 */
+  spanSeconds?: number;
+  /**
+   * 后端 trendWindow 预设（GET /loops/{id}/monitor）。
+   * 无预设档（12H/7D）走 waveform 自定义起止（API 契约 §1.2）。
+   */
+  trendWindow?:
+    | 'last_1_hour'
+    | 'last_2_hours'
+    | 'last_4_hours'
+    | 'last_8_hours'
+    | 'last_24_hours'
+    | 'last_72_hours';
+  /** 是否为自定义占位档（正式版做起止选择器） */
+  custom?: boolean;
+}
+
+export const WB360_WINDOW_PRESETS: WB360WindowPreset[] = [
+  { key: '1h', label: '1H', spanSeconds: 3600, trendWindow: 'last_1_hour' },
+  { key: '2h', label: '2H', spanSeconds: 7200, trendWindow: 'last_2_hours' },
+  { key: '4h', label: '4H', spanSeconds: 14_400, trendWindow: 'last_4_hours' },
+  { key: '8h', label: '8H', spanSeconds: 28_800, trendWindow: 'last_8_hours' },
+  { key: '12h', label: '12H', spanSeconds: 43_200 },
+  {
+    key: '24h',
+    label: '24H',
+    spanSeconds: 86_400,
+    trendWindow: 'last_24_hours',
+  },
+  {
+    key: '3d',
+    label: '3D',
+    spanSeconds: 259_200,
+    trendWindow: 'last_72_hours',
+  },
+  { key: '7d', label: '7D', spanSeconds: 604_800 },
+  { key: 'custom', label: '自定义', custom: true },
+];
+
+/** 默认窗口档（24H，对齐原型默认选中） */
+export const WB360_DEFAULT_WINDOW_KEY = '24h';
+
+/** 绘制恒采样点数（D13 定标：每窗 ≈3600 点） */
+export const WB360_SAMPLE_POINTS = 3600;
+
+/** 四剖面 key 与名称（旅程条/缩略卡/工作区共用；v3 §4） */
+export const WB360_SECTIONS = [
+  { key: 'assess', label: '性能评估', module: 'assess' },
+  { key: 'diag', label: '回路诊断', module: 'diagnosis' },
+  { key: 'tuning', label: '参数整定', module: 'tuning' },
+  { key: 'handling', label: '问题处置', module: 'handling' },
+] as const;
+
+export type WB360SectionKey = (typeof WB360_SECTIONS)[number]['key'];
+
