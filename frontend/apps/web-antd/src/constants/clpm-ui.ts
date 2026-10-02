@@ -69,7 +69,7 @@ export const GRADE_LEVEL_LABEL: Record<number, string> = Object.fromEntries(
  */
 export function scoreToGradeInfo(
   score: null | number | undefined,
-): { label: string; letter: string; level: number } | null {
+): null | { label: string; letter: string; level: number } {
   if (score === null || score === undefined || Number.isNaN(score)) return null;
   const sorted = [...GRADE_THRESHOLDS].toSorted(
     (a, b) => b.minScore - a.minScore,

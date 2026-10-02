@@ -21,6 +21,7 @@ import type {
   KpiSnapshotListResult,
   MetricSeriesKey,
 } from '#/api/metric';
+import type { MetricApi } from '#/api/metric';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -42,11 +43,7 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import type { MetricApi } from '#/api/metric';
-
 import { getLoopListApi } from '#/api/loop';
-import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
-import { useConfigAccess } from '#/composables/use-config-access';
 import {
   getLoopMetricSeriesApi,
   getLoopSnapshotsApi,
@@ -58,9 +55,11 @@ import {
   ClpmStandardActions,
 } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useConfigAccess } from '#/composables/use-config-access';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { MULTI_SERIES_PALETTE } from '#/composables/use-loop-palettes';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 
 defineOptions({ name: 'MetricMatrix' });
@@ -802,13 +801,13 @@ function topWeakLoops(def: MetricDef, n: number): KpiSnapshotItem[] {
  * 其余指标服务端不支持排序，降级当前页最差并诚实标注
  */
 const SERVER_SORTABLE = new Set([
-  'score',
   'accuracy_rate',
   'auto_mode_rate',
   'effective_auto_rate',
   'fast_rate',
-  'steady_rate',
   'good_value_rate',
+  'score',
+  'steady_rate',
 ]);
 /** 当前趋势弹层取数口径（全厂 / 当前页） */
 const trendScope = ref<'all' | 'page'>('page');

@@ -354,7 +354,7 @@ export function useTuningWorkbench() {
     // 细粒度进度轮询（2s 间隔；后端按阶段更新 progress）。
     // P2 修复（2026-10-01）：加轮询上限——原 for(;;) 无限轮询，worker
     // 死亡/任务丢失时按钮永久 loading 无退出路径。上限 15 分钟
-    //（450 次 × 2s；后端 Celery time_limit=1800s 兜底，前端先到先报）
+    // （450 次 × 2s；后端 Celery time_limit=1800s 兜底，前端先到先报）
     const MAX_POLLS = 450;
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 2000));

@@ -45,8 +45,8 @@ import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useModules } from '#/composables/use-modules';
-import { useVirtualList } from '#/composables/use-virtual-list';
 import { useReturnNav } from '#/composables/use-return-nav';
+import { useVirtualList } from '#/composables/use-virtual-list';
 
 import DiagnosisResultPanel from './components/diagnosis-result-panel.vue';
 // 16 号文 F5：左脊柱回路行内数据充足性预检徽标（D1 廉价代理：快照密度）
@@ -150,7 +150,7 @@ function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
 function findFirstUnit(
   nodes: PlantTreeNode[],
   ancestors: PlantTreeNode[] = [],
-): { ancestors: PlantTreeNode[]; node: PlantTreeNode } | null {
+): null | { ancestors: PlantTreeNode[]; node: PlantTreeNode } {
   for (const n of nodes) {
     if (n.type === 'UNIT') return { ancestors, node: n };
     if (n.children?.length) {
@@ -225,7 +225,7 @@ async function loadLoopFitness(plantNodeId?: string): Promise<void> {
 }
 
 /** 左脊柱预检徽标筛选（2026-10-01 用户需求：按充足性符号筛选回路） */
-type BadgeFilter = 'all' | 'sufficient' | 'marginal' | 'insufficient' | 'unknown';
+type BadgeFilter = 'all' | 'insufficient' | 'marginal' | 'sufficient' | 'unknown';
 const badgeFilter = ref<BadgeFilter>('all');
 
 const filteredLoops = computed(() => {
@@ -454,14 +454,22 @@ const selectedFitness = computed(() => {
   if (!id) return null;
   const info = selectedFitnessMap.value.get(id);
   if (!info?.level) return null;
-  const color =
-    info.level === 'L0' || info.level === 'L1'
-      ? '#ef4444'
-      : info.level === 'L2'
-        ? '#f59e0b'
-        : info.level === 'L3'
-          ? '#3b82f6'
-          : '#10b981';
+  let color = '#10b981';
+  switch (info.level) {
+    case 'L0':
+    case 'L1': {
+      color = '#ef4444';
+      break;
+    }
+    case 'L2': {
+      color = '#f59e0b';
+      break;
+    }
+    case 'L3': {
+      color = '#3b82f6';
+      break;
+    }
+  }
   return {
     color,
     level: info.level,
