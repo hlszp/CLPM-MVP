@@ -1,0 +1,8 @@
+# 热修补丁镜像 v7（2026-10-01 夜）：以 subpath-hotfix-0937 为底座。
+# 0938：①工作台左脊柱默认仅显示可诊断回路（L2+，L0/L1 隐藏带开关）
+#       ②结论面板补"未见异常"分支（NO_SYMPTOM 落库 NULL 主分类原渲染空白）
+FROM clpm-frontend:subpath-hotfix-0937
+
+ENV APP_VERSION=v7.1.0-hotfix0938-diag-filter
+
+COPY --chown=nginx:nginx releases/frontend-dist-0938/ /usr/share/nginx/html/

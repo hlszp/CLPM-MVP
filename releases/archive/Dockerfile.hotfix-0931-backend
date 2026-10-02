@@ -1,0 +1,15 @@
+# 热修补丁镜像 v5（0930）：以生产运行镜像 hotfix-0930 为底座，覆盖
+# 趋势量程 + 工厂节点编辑功能的 4 个后端文件（git 255dfea3）：
+#   - services/monitor.py             趋势详情下发 trend.pvRange（PV 量程）
+#   - services/plant_node.py          节点更新支持 type/parentId（防环等校验）
+#   - api/v1/endpoints/plant_nodes.py 端点透传新字段
+#   - schemas/plant_node.py           PlantNodeUpdate 新字段
+# 无 RUN 指令：arm64 构建机无需 amd64 模拟，产物架构继承底座。
+FROM clpm-backend:hotfix-0930
+
+ENV APP_VERSION=v7.1.0-171-g255dfea3-hotfix0931
+
+COPY --chown=clpm:clpm backend/app/services/monitor.py /app/app/services/monitor.py
+COPY --chown=clpm:clpm backend/app/services/plant_node.py /app/app/services/plant_node.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/plant_nodes.py /app/app/api/v1/endpoints/plant_nodes.py
+COPY --chown=clpm:clpm backend/app/schemas/plant_node.py /app/app/schemas/plant_node.py

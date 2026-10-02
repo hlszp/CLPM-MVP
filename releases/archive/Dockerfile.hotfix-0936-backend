@@ -1,0 +1,10 @@
+# 热修补丁镜像 v7（2026-10-01 晚）：以生产运行镜像 hotfix-0935 为底座。
+# 本版（hotfix-0936，诊断 UX 重构）后端改动（1 个文件，git b15e22b3）：
+#   - tasks.py：/tasks 新增 excludeTaskTypes 参数（诊断任务切至诊断模块，
+#     评估任务列表排除 DIAGNOSIS）
+# 无 RUN 指令：产物架构继承底座。
+FROM clpm-backend:hotfix-0935
+
+ENV APP_VERSION=v7.1.0-hotfix0936-diag-ux
+
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/tasks.py /app/app/api/v1/endpoints/tasks.py

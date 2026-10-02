@@ -1,0 +1,32 @@
+# 热修补丁镜像 v7（0930）：以生产运行镜像 hotfix-0931b 为底座，覆盖
+# B 组取数修复 + 五 Tab 修复 + 泄漏修复的后端文件（git b43f0fe5，8 个）：
+#   - core/db.py                     PG idle_in_transaction 5min 兜底
+#   - core/redis.py                  Redis socket/connect 超时 + 健康检查
+#   - services/monitor_attention.py  共享会话 gather 改顺序（泄漏修复）
+#   - services/workbench_overview.py roots SQL 尾逗号/伪0/每小时参评/
+#                                     funnel 回退/幽灵行过滤/alert_events 块
+#   - services/workbench_assessment.py 排名真值/参评口径/粒度守卫
+#   - services/workbench_diagnosis.py  摘要诚实化（真实时延/引擎版本）
+#   - tasks/workbench.py             sla_stage 升级写手
+#   - services/auth.py               默认落地统一 /workbench
+#   - services/plant_node.py         UNIT 默认启用 KPI + 编辑类型/父节点
+#   - services/factory_sync.py       AAS 同步 UNIT 默认启用 KPI
+#   - schemas/plant_node.py          isKpiEnabled/PlantNodeUpdate 字段
+#   - api/v1/endpoints/plant_nodes.py 创建/更新端点透传
+# 无 RUN 指令：arm64 构建机无需 amd64 模拟，产物架构继承底座。
+FROM clpm-backend:hotfix-0931b
+
+ENV APP_VERSION=v7.1.0-176-gb43f0fe5-hotfix0933
+
+COPY --chown=clpm:clpm backend/app/core/db.py /app/app/core/db.py
+COPY --chown=clpm:clpm backend/app/core/redis.py /app/app/core/redis.py
+COPY --chown=clpm:clpm backend/app/services/monitor_attention.py /app/app/services/monitor_attention.py
+COPY --chown=clpm:clpm backend/app/services/workbench_overview.py /app/app/services/workbench_overview.py
+COPY --chown=clpm:clpm backend/app/services/workbench_assessment.py /app/app/services/workbench_assessment.py
+COPY --chown=clpm:clpm backend/app/services/workbench_diagnosis.py /app/app/services/workbench_diagnosis.py
+COPY --chown=clpm:clpm backend/app/tasks/workbench.py /app/app/tasks/workbench.py
+COPY --chown=clpm:clpm backend/app/services/auth.py /app/app/services/auth.py
+COPY --chown=clpm:clpm backend/app/services/plant_node.py /app/app/services/plant_node.py
+COPY --chown=clpm:clpm backend/app/services/factory_sync.py /app/app/services/factory_sync.py
+COPY --chown=clpm:clpm backend/app/schemas/plant_node.py /app/app/schemas/plant_node.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/plant_nodes.py /app/app/api/v1/endpoints/plant_nodes.py

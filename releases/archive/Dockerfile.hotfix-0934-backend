@@ -1,0 +1,19 @@
+# 热修补丁镜像 v7（0930 晚）：以生产运行镜像 hotfix-0933 为底座，覆盖
+# 工作台请求数量治理的后端文件（4 个）：
+#   - services/loop.py               新增 get_loops_runtime_params 批量运行参数
+#                                    （3 次 PG + 1 次 MGET，替代整定工作台
+#                                    逐回路 /loops/{id}——961 回路 1209 请求
+#                                    avg 18.7s 排队，axios 10s 超时整批报错）
+#   - api/v1/endpoints/loops.py      GET /loops/runtime-params（/{loop_id} 前）
+#   - services/diagnosis_insights.py 预检上限 10→200（只读聚合，与发起解耦；
+#                                    961/10=97 批串行 ~20s → 5 批）
+#   - api/v1/endpoints/diagnosis_v2.py precheck Query 描述同步 ≤200
+# 无 RUN 指令：arm64 构建机无需 amd64 模拟，产物架构继承底座。
+FROM clpm-backend:hotfix-0933
+
+ENV APP_VERSION=v7.1.0-hotfix0934-workbench-req
+
+COPY --chown=clpm:clpm backend/app/services/loop.py /app/app/services/loop.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/loops.py /app/app/api/v1/endpoints/loops.py
+COPY --chown=clpm:clpm backend/app/services/diagnosis_insights.py /app/app/services/diagnosis_insights.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/diagnosis_v2.py /app/app/api/v1/endpoints/diagnosis_v2.py

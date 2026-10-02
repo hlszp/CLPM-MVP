@@ -1,0 +1,11 @@
+# 热修补丁镜像 v3（2026-09-29）：以生产运行镜像 hotfix-0928b 为底座，仅覆盖
+# P0 整改的两个后端文件（git 82f9fce7）：
+#   - app/core/modules.py        模块开关双写 module_plugin（修复重启回滚）
+#   - app/services/performance.py 快照状态逗号多值解析（修复多选筛选恒空）
+# 无 RUN 指令：arm64 构建机无需 amd64 模拟，产物架构继承底座。
+FROM clpm-backend:hotfix-0928b
+
+ENV APP_VERSION=v7.1.0-151-g82f9fce7-hotfix0929
+
+COPY --chown=clpm:clpm backend/app/core/modules.py /app/app/core/modules.py
+COPY --chown=clpm:clpm backend/app/services/performance.py /app/app/services/performance.py

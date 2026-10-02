@@ -1,0 +1,29 @@
+# 热修补丁镜像 v4（0930）：以生产运行镜像 hotfix-0929 为底座，覆盖
+# 第二/三/四批整改的后端运行文件（git 76582bef，共 12 个）：
+#   - 总览收敛落地页（services/auth.py ROLE_DEFAULT_HOME）
+#   - 死代码清理（configs/dashboard/performance/workbench 四端点文件）
+#   - 预警（tasks/alert_patrol.py 自动恢复、rule_engine/service.py 误报联动、
+#     rule_engine/dispatcher.py 事件合并）
+#   - 低频锚点（tasks/lowfreq_anchor.py 新任务 + tasks/celery_app.py 注册）
+#   - 处置建议单查（endpoints/handling.py）+ 关注队列降级暴露
+#     （services/monitor_attention.py）
+# 无 RUN 指令：arm64 构建机无需 amd64 模拟，产物架构继承底座。
+FROM clpm-backend:hotfix-0929
+
+ENV APP_VERSION=v7.1.0-169-g76582bef-hotfix0930
+
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/configs.py /app/app/api/v1/endpoints/configs.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/dashboard.py /app/app/api/v1/endpoints/dashboard.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/handling.py /app/app/api/v1/endpoints/handling.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/performance.py /app/app/api/v1/endpoints/performance.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/workbench.py /app/app/api/v1/endpoints/workbench.py
+COPY --chown=clpm:clpm backend/app/services/alert_rule_engine/dispatcher.py /app/app/services/alert_rule_engine/dispatcher.py
+COPY --chown=clpm:clpm backend/app/services/alert_rule_engine/service.py /app/app/services/alert_rule_engine/service.py
+COPY --chown=clpm:clpm backend/app/services/auth.py /app/app/services/auth.py
+COPY --chown=clpm:clpm backend/app/services/monitor_attention.py /app/app/services/monitor_attention.py
+COPY --chown=clpm:clpm backend/app/tasks/alert_patrol.py /app/app/tasks/alert_patrol.py
+COPY --chown=clpm:clpm backend/app/tasks/celery_app.py /app/app/tasks/celery_app.py
+COPY --chown=clpm:clpm backend/app/tasks/lowfreq_anchor.py /app/app/tasks/lowfreq_anchor.py
+# P0 修复保底重打（防底座混乱导致回退）
+COPY --chown=clpm:clpm backend/app/core/modules.py /app/app/core/modules.py
+COPY --chown=clpm:clpm backend/app/services/performance.py /app/app/services/performance.py

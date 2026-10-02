@@ -1,0 +1,22 @@
+# 热修补丁镜像 v6（0930）：以生产运行镜像 hotfix-0931b 为底座，覆盖
+# 默认页统一工作台 + B 组取数修复的 8 个后端文件（git cca64506）：
+#   - services/auth.py                默认落地全角色 /workbench
+#   - services/plant_node.py          导入/手工创建 UNIT 默认启用 KPI
+#   - services/factory_sync.py        AAS 同步 UNIT 默认启用 KPI
+#   - services/workbench_overview.py  伪 0 修复/hierarchy 预初始化/
+#                                     funnel 非 GLOBAL 回退/roots 补真实时间
+#   - tasks/workbench.py              sla_sweep 补 M2 升级（sla_stage 写手）
+#   - schemas/plant_node.py           PlantNodeCreate 补 isKpiEnabled
+#   - api/v1/endpoints/plant_nodes.py 创建端点透传 is_kpi_enabled
+# 无 RUN 指令：arm64 构建机无需 amd64 模拟，产物架构继承底座。
+FROM clpm-backend:hotfix-0931b
+
+ENV APP_VERSION=v7.1.0-174-gcca64506-hotfix0932
+
+COPY --chown=clpm:clpm backend/app/services/auth.py /app/app/services/auth.py
+COPY --chown=clpm:clpm backend/app/services/plant_node.py /app/app/services/plant_node.py
+COPY --chown=clpm:clpm backend/app/services/factory_sync.py /app/app/services/factory_sync.py
+COPY --chown=clpm:clpm backend/app/services/workbench_overview.py /app/app/services/workbench_overview.py
+COPY --chown=clpm:clpm backend/app/tasks/workbench.py /app/app/tasks/workbench.py
+COPY --chown=clpm:clpm backend/app/schemas/plant_node.py /app/app/schemas/plant_node.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/plant_nodes.py /app/app/api/v1/endpoints/plant_nodes.py

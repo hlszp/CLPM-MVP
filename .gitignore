@@ -102,3 +102,9 @@ releases/images/*.tar.sha256
 
 # 回路工作台多智能体协调的本地瞬态状态（不入库）
 docs/设计文档/回路工作台-任务状态/
+
+# 本地构建产物与工具（不入库；0938 部署包已固化为 tar.gz）
+releases/frontend-dist-*/
+.zcodeignore
+e2e/netprobe*.mjs
+!releases/deploy-pkg-0938.tar.gz

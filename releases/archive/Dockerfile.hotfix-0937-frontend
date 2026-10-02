@@ -1,0 +1,15 @@
+# 热修补丁镜像 v7（2026-10-01 深夜）：以生产运行镜像 subpath-hotfix-0936 为底座，
+# 仅替换静态产物。本版（hotfix-0937，概览性能 + 图标离线）前端改动：
+#   - 诊断概览表分页渲染（原 1209 行全量 DOM"迟迟不能刷新"；客户端分页
+#     50/页 + 共N条提示，数据仍在内存、筛选不变）
+#   - 图标离线化：169 个引用图标（lucide 121 / ant-design 43 / ep 2 /
+#     mdi 3 / fluent-mdl2 1）从 @iconify/json 提取子集，启动时
+#     addCollection 本地注册——生产浏览器访问不了 iconify 公网 CDN
+#     （ERR_CONNECTION_CLOSED 拖慢整页渲染），实测五页浏览零 CDN 请求
+# dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite
+# build --mode clpm` 构建（exit=0 核验），已拷贝至 releases/frontend-dist-0937/。
+FROM clpm-frontend:subpath-hotfix-0936
+
+ENV APP_VERSION=v7.1.0-hotfix0937-icon-offline
+
+COPY --chown=nginx:nginx releases/frontend-dist-0937/ /usr/share/nginx/html/

@@ -1,0 +1,12 @@
+# 热修补丁镜像 v3（2026-09-29）：以生产运行镜像 subpath-hotfix-0928b 为底座，
+# 仅替换静态产物（P0 整改 10 个前端文件，git 82f9fce7）。
+# dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite build --mode clpm`
+# 构建（.env.clpm：VITE_BASE=/clpm/ 子路径 + hash 路由，与生产部署形态一致），
+# 已拷贝到 releases/frontend-dist-0929/（绕开 .dockerignore 的 **/dist 通配）。
+# 注意：COPY 为合并语义，底座中旧 hash 命名产物会残留（无害，仅占少量磁盘，
+# index.html 只引用新产物）。无 RUN 指令：无需 amd64 模拟，架构继承底座。
+FROM clpm-frontend:subpath-hotfix-0928b
+
+ENV APP_VERSION=v7.1.0-151-g82f9fce7-hotfix0929
+
+COPY --chown=nginx:nginx releases/frontend-dist-0929/ /usr/share/nginx/html/

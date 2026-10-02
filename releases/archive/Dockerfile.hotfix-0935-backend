@@ -1,0 +1,28 @@
+# 热修补丁镜像 v7（2026-10-01）：以生产运行镜像 hotfix-0934 为底座，覆盖
+# 三模块系统性整改 A+B+C 批的后端文件（13 个，git 95c5c3e5..a866e6c7）：
+#   P0-2 启停开关接入 v2 链路（threshold/orchestrator）
+#   定时诊断全量化 + 自动路径 L0/L1 fitness 过滤 + 50/批分派（diagnosis_schedule）
+#   SYSTEM 建议复核重建 + 守卫放宽（system_actions/diagnosis_v2 + 孤儿任务前置）
+#   整定 L2 门禁放开 + /tune/matrix 补门禁（endpoints/tuning + tasks/tuning）
+#   版本表证据链接线 + SOPDT T1/T2 CI + 结构化 feasibility（tuning.py/
+#     tuning_identification/{types,pipeline}）+ 激励量程接线（op_span=100）
+#   指标定义公式文案对齐 + 权重 0 合法化（metric_definition/kpi_calc）
+#   legacy 取数公共掩码统一（diagnosis_orchestrator D4）+ loop_fitness 口径注释
+# 无 RUN 指令：产物架构继承底座。
+FROM clpm-backend:hotfix-0934
+
+ENV APP_VERSION=v7.1.0-hotfix0935-3mod-audit
+
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/diagnosis_v2.py /app/app/api/v1/endpoints/diagnosis_v2.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/metric_definition.py /app/app/api/v1/endpoints/metric_definition.py
+COPY --chown=clpm:clpm backend/app/api/v1/endpoints/tuning.py /app/app/api/v1/endpoints/tuning.py
+COPY --chown=clpm:clpm backend/app/services/diagnosis_orchestrator.py /app/app/services/diagnosis_orchestrator.py
+COPY --chown=clpm:clpm backend/app/services/diagnosis_system_actions.py /app/app/services/diagnosis_system_actions.py
+COPY --chown=clpm:clpm backend/app/services/diagnosis_threshold.py /app/app/services/diagnosis_threshold.py
+COPY --chown=clpm:clpm backend/app/services/loop_fitness.py /app/app/services/loop_fitness.py
+COPY --chown=clpm:clpm backend/app/services/tuning.py /app/app/services/tuning.py
+COPY --chown=clpm:clpm backend/app/services/tuning_identification/pipeline.py /app/app/services/tuning_identification/pipeline.py
+COPY --chown=clpm:clpm backend/app/services/tuning_identification/types.py /app/app/services/tuning_identification/types.py
+COPY --chown=clpm:clpm backend/app/tasks/diagnosis_schedule.py /app/app/tasks/diagnosis_schedule.py
+COPY --chown=clpm:clpm backend/app/tasks/kpi_calc.py /app/app/tasks/kpi_calc.py
+COPY --chown=clpm:clpm backend/app/tasks/tuning.py /app/app/tasks/tuning.py

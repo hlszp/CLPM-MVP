@@ -1,0 +1,7 @@
+# 热修补丁镜像 v2（2026-09-28 晚）：以 hotfix-0928 为底座，仅覆盖批量状态同步修复。
+# 内容 = git fd54a51a（batch_update_loops 补 status 派生重算）。
+FROM clpm-backend:hotfix-0928
+
+ENV APP_VERSION=v7.1.0-143-gfd54a51a-hotfix0928b
+
+COPY --chown=clpm:clpm backend/app/services/loop_batch.py /app/app/services/loop_batch.py
