@@ -10,6 +10,8 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps<{
   ariaLabel?: string;
+  /** 初始宽度（px；缺省 min(860, 82vw)；关注抽屉等窄抽屉用，如 400） */
+  defaultWidth?: number;
   open: boolean;
   title: string;
 }>();
@@ -18,12 +20,18 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
-/** 抽屉宽（px；null=未拖拽，用默认 min(860, 82vw)） */
+/** 抽屉宽（px；null=未拖拽，用默认宽） */
 const widthPx = ref<null | number>(null);
+
+const defaultWidth = computed(() =>
+  props.defaultWidth
+    ? Math.min(props.defaultWidth, window.innerWidth * 0.82)
+    : Math.min(860, window.innerWidth * 0.82),
+);
 
 const maxW = computed(() => Math.min(window.innerWidth * 0.94, 1200));
 const style = computed(() => {
-  const w = widthPx.value ?? Math.min(860, window.innerWidth * 0.82);
+  const w = widthPx.value ?? defaultWidth.value;
   return { width: `${Math.round(w)}px` };
 });
 
@@ -34,7 +42,7 @@ let dragStartW = 0;
 function onEdgeDown(e: PointerEvent) {
   e.preventDefault();
   dragStartX = e.clientX;
-  dragStartW = widthPx.value ?? Math.min(860, window.innerWidth * 0.82);
+  dragStartW = widthPx.value ?? defaultWidth.value;
   window.addEventListener('pointermove', onEdgeMove);
   window.addEventListener('pointerup', onEdgeUp);
 }

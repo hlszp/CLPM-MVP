@@ -1,19 +1,22 @@
 <!--
-  旅程状态条（workbench360 P1，P1-4）
+  旅程状态条（workbench360 P1，P1-4；P4-4 整定/处置段真实数据接入）
   原型 #rail：主列顶部，四段（评估→诊断→整定→处置）+ 左侧"回路旅程 + 数据截至时钟"。
   段 = 状态与导航合一（全页唯一剖面切换入口，D19）；点击段 → openSection。
-  P1 数据口径（诚实化）：
-  - 评估段渲染清单行真实评分（score/scoreDelta/kpiStatus）；
-  - 诊断/整定/处置段无数据源（P2-P4 接入），显示显式空态文案，不编造；
-  - 推荐下一步呼吸标（nextAction）属 P2+ 逻辑，P1 不渲染；
-  - 模块禁用段置灰不可点（v3 §9 热插拔）。
+  数据口径（诚实化）：
+  - 评估段渲染清单行真实评分（score/scoreDelta/kpiStatus，P2）；
+  - 诊断段最新结论真实数据（P3）；
+  - 整定/处置段最新记录/在途工单真实数据（P4，use-journey-summary）；
+  - 无数据/加载失败时显示显式空态文案，不编造；
+  - 模块禁用段不出现（availableSections 过滤，v3 §9 热插拔）。
 -->
 <script setup lang="ts">
 import type { WB360SectionKey } from '#/constants/clpm-ui';
 
+import { computed } from 'vue';
+
 import { scoreToGradeInfo } from '#/constants/clpm-ui';
 
-defineProps<{
+const props = defineProps<{
   /** 当前活跃剖面（half 态点亮对应段） */
   activeSection: null | WB360SectionKey;
   /** 评估摘要（最新快照真实数据；null=回路无评分） */
@@ -33,19 +36,36 @@ defineProps<{
     /** 累计诊断次数 */
     runCount: null | number;
   } | null;
+  /** 处置摘要（P4：use-journey-summary；null/无记录=显式空态） */
+  handling?: {
+    /** 在途工单数（待执行/执行中/重开） */
+    inFlightCount: number;
+    latestOrderNo: null | string;
+  } | null;
   /** 可用剖面（模块热插拔过滤后） */
   sections: Array<{ key: string; label: string }>;
+  /** 整定摘要（P4：use-journey-summary；null/无记录=显式空态） */
+  tuning?: {
+    /** 最新整定算法（后端 key） */
+    algoLabel: null | string;
+    /** 最新整定时间（已转本地文本；null=未知） */
+    createdAtText: null | string;
+    /** 整定记录总数 */
+    total: number;
+  } | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'open', key: WB360SectionKey): void;
 }>();
 
-/** 空态文案（诚实化：该剖面数据在后续阶段接入） */
-const PENDING_TEXT: Record<string, string> = {
-  handling: '处置数据将在 P4 阶段接入',
-  tuning: '整定数据将在 P4 阶段接入',
-};
+/** 段右上角时间/编号角标（原型 s-top .n；无数据 '--'） */
+const topNote = computed<Record<string, string>>(() => ({
+  assess: '--',
+  diag: props.diag?.lastDiagnosedText ?? '--',
+  handling: props.handling?.latestOrderNo ?? '--',
+  tuning: props.tuning?.createdAtText ?? '--',
+}));
 
 function fmtScore(v: null | number | undefined) {
   return v === null || v === undefined ? '--' : v.toFixed(1);
@@ -80,7 +100,9 @@ function gradeCls(score: null | number | undefined): string {
           @click="emit('open', sec.key as WB360SectionKey)"
           @keydown.enter="emit('open', sec.key as WB360SectionKey)"
         >
-          <div class="s-top">{{ sec.label }} <span class="n">--</span></div>
+          <div class="s-top"
+            >{{ sec.label }} <span class="n">{{ topNote[sec.key] ?? '--' }}</span></div
+          >
           <div v-if="sec.key === 'assess'" class="s-sub">
             <template v-if="assess && assess.score !== null">
               <span class="score" :class="gradeCls(assess.score)">{{
@@ -113,8 +135,22 @@ function gradeCls(score: null | number | undefined): string {
             </template>
             <span v-else class="dim">暂无诊断记录</span>
           </div>
+          <div v-else-if="sec.key === 'tuning'" class="s-sub">
+            <template v-if="tuning">
+              <span class="diag-cat">整定 {{ tuning.algoLabel ?? '—' }}</span>
+              <span class="dim">共 {{ tuning.total }} 次</span>
+            </template>
+            <span v-else class="dim">暂无整定记录</span>
+          </div>
+          <div v-else-if="sec.key === 'handling'" class="s-sub">
+            <template v-if="handling">
+              <span class="diag-cat">{{ handling.latestOrderNo ?? '工单' }}</span>
+              <span class="dim">{{ handling.inFlightCount }} 单在途</span>
+            </template>
+            <span v-else class="dim">暂无处置工单</span>
+          </div>
           <div v-else class="s-sub">
-            <span class="dim">{{ PENDING_TEXT[sec.key] ?? '待接入' }}</span>
+            <span class="dim">--</span>
           </div>
         </div>
       </template>
