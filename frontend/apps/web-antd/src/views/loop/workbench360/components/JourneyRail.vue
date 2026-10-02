@@ -24,6 +24,15 @@ defineProps<{
     score: null | number;
     scoreDelta: null | number;
   } | null;
+  /** 诊断摘要（P3：最新诊断真实数据；null/无记录=显式空态） */
+  diag: {
+    /** 最新主分类文案（null=未见异常） */
+    categoryLabel: null | string;
+    /** 最近诊断时间（已转本地文本；null=未诊断） */
+    lastDiagnosedText: null | string;
+    /** 累计诊断次数 */
+    runCount: null | number;
+  } | null;
   /** 可用剖面（模块热插拔过滤后） */
   sections: Array<{ key: string; label: string }>;
 }>();
@@ -32,9 +41,8 @@ const emit = defineEmits<{
   (e: 'open', key: WB360SectionKey): void;
 }>();
 
-/** P1 空态文案（诚实化：该剖面数据在后续阶段接入） */
+/** 空态文案（诚实化：该剖面数据在后续阶段接入） */
 const PENDING_TEXT: Record<string, string> = {
-  diag: '诊断数据将在 P3 阶段接入',
   handling: '处置数据将在 P4 阶段接入',
   tuning: '整定数据将在 P4 阶段接入',
 };
@@ -92,6 +100,18 @@ function gradeCls(score: null | number | undefined): string {
               >
             </template>
             <span v-else class="dim">暂无评分快照</span>
+          </div>
+          <div v-else-if="sec.key === 'diag'" class="s-sub">
+            <template v-if="diag && diag.runCount">
+              <span class="diag-cat">{{
+                diag.categoryLabel ?? '未见异常'
+              }}</span>
+              <span v-if="diag.lastDiagnosedText" class="delta">{{
+                diag.lastDiagnosedText
+              }}</span>
+              <span class="dim">第 {{ diag.runCount }} 次</span>
+            </template>
+            <span v-else class="dim">暂无诊断记录</span>
           </div>
           <div v-else class="s-sub">
             <span class="dim">{{ PENDING_TEXT[sec.key] ?? '待接入' }}</span>
@@ -194,6 +214,15 @@ function gradeCls(score: null | number | undefined): string {
   color: hsl(var(--muted-foreground) / 80%);
   font-family: var(--font-mono, monospace);
   font-size: 11px;
+}
+
+/* 诊断段主分类（P3；文本即状态，过长省略） */
+.s-sub .diag-cat {
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 失分主因摘要（v3 §4 评估段；省略号截断，完整内容走 title） */

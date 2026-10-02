@@ -36,6 +36,7 @@ import {
 import { useRoute, useRouter } from 'vue-router';
 
 import { message } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import {
@@ -61,6 +62,7 @@ import {
   deriveLossSummary,
   useAssessHistory,
 } from './composables/use-assess-history';
+import { diagWithZone, useDiagData } from './composables/use-diag-data';
 import { setDiagPrefill } from './composables/use-diag-prefill';
 import { MINI_DEFAULT_H, useWb360Layout } from './composables/use-wb360-layout';
 import { useWb360Loop } from './composables/use-wb360-loop';
@@ -80,6 +82,8 @@ const layout = useWb360Layout();
 const trend = useTrendData();
 /** 页面级评估历史（P2）：剖面/旅程条/页头徽章共用，剖面经 inject 消费 */
 const assessHistory = useAssessHistory(loop.selectedLoopId);
+/** 页面级诊断数据（P3）：最新结论 + 历史，剖面经 inject 消费；旅程条/缩略卡共用 */
+const diagData = useDiagData(loop.selectedLoopId);
 const { isDark } = useClpmTheme();
 
 const mainRef = ref<HTMLElement | null>(null);
@@ -152,6 +156,18 @@ const assessSummary = computed(() => {
   };
 });
 
+/* ── 诊断摘要（P3：最新诊断真实数据，供旅程条/缩略卡） ── */
+const diagSummary = computed(() => {
+  const l = diagData.latest.value;
+  if (!l) return null;
+  const ts = diagWithZone(l.lastDiagnosedAt ?? null);
+  return {
+    categoryLabel: l.primaryCategoryLabel ?? null,
+    lastDiagnosedText: ts ? dayjs(ts).format('MM-DD HH:mm') : null,
+    runCount: l.runCount ?? null,
+  };
+});
+
 /* ── 适用性（P2-5，G1 受阻显式提示 + 接入位） ──
  * fitness 数据出口缺失（后端 G1：snapshots 端点 fitnessLevel 恒 null、
  * /monitor summary 无该字段）。此处读取快照 fitnessLevel 作为接入位：
@@ -168,9 +184,15 @@ const sectionComponents: Record<string, Component> = {
   tuning: TuningSection,
 };
 
-/** 各剖面 props（评估剖面：回路上下文；其余剖面 P3/P4 增量补充） */
+/** 各剖面 props（评估/诊断剖面：回路上下文；其余剖面 P4 增量补充） */
 const sectionProps = computed<Record<string, Record<string, unknown>>>(() => ({
   assess: {
+    loopTagName: loop.current.value?.tagName ?? null,
+    selectedLoopId: loop.selectedLoopId.value,
+  },
+  diag: {
+    fitnessLevel: loop.current.value?.fitnessLevel ?? null,
+    fitnessTags: loop.current.value?.fitnessTags ?? [],
     loopTagName: loop.current.value?.tagName ?? null,
     selectedLoopId: loop.selectedLoopId.value,
   },
@@ -189,6 +211,16 @@ function onDiagnoseWindow(win: { tsEnd: string; tsStart: string }) {
   setDiagPrefill(win.tsStart, win.tsEnd);
   layout.openSection('diag');
   message.info('已切换到诊断剖面并预填该时间窗');
+}
+
+/* ── P3 诊断→整定页内动线：抽屉「基于此结论发起整定」切整定剖面（P4 消费上下文） ── */
+function onGoTuning(_loopId: string) {
+  if (!layout.isSectionAvailable('tuning')) {
+    message.warning('整定模块未启用，无法切换到整定剖面');
+    return;
+  }
+  layout.openSection('tuning');
+  message.info('已切换到参数整定剖面');
 }
 
 function onEventMarkClick(mark: TrendEventMark) {
@@ -321,6 +353,7 @@ const wsName = computed(
         <JourneyRail
           :active-section="layout.activeSection.value"
           :assess="assessSummary"
+          :diag="diagSummary"
           :sections="layout.availableSections.value"
           @open="onSectionOpen"
         >
@@ -449,6 +482,7 @@ const wsName = computed(
           <ThumbStrip
             v-if="layout.readonlyState.panelState === 'thumbs'"
             :assess="assessSummary"
+            :diag="diagSummary"
             :sections="layout.availableSections.value"
             @open="onSectionOpen"
           />
@@ -469,6 +503,7 @@ const wsName = computed(
                 "
                 v-bind="sectionProps[layout.activeSection.value ?? 'assess']"
                 @diagnose-window="onDiagnoseWindow"
+                @go-tuning="onGoTuning"
               />
             </div>
           </template>
