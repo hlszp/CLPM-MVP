@@ -48,10 +48,10 @@ export interface Wb360Ranges {
   pvUnit: null | string;
 }
 
-/** 清单拉取页大小（后端上限 100/页）与页数上限（本地筛选所需全量；
- *  超出上限显式截断提示，>500 回路场景再引入服务端筛选） */
+/** 清单拉取页大小（后端上限 100/页） */
 const LIST_PAGE_SIZE = 100;
-const LIST_MAX_PAGES = 5;
+/** 余页拉取并发上限（monitor 列表是重查询，避免全部页同时压后端） */
+const LIST_PAGE_CONCURRENCY = 4;
 
 /** score → 等级字母（A–E 对应 GRADE_THRESHOLDS 1–5 档；P2 起单源 scoreToGradeInfo） */
 function scoreToGrade(score: null | number | undefined): GradeFilter | null {
@@ -77,6 +77,11 @@ export function useWb360Loop(initialLoopId: null | string) {
     useLoopRealtime();
 
   /** 拉取回路清单（分页拉全量，本地筛选；后端 pageSize 上限 100） */
+  /**
+   * 拉取回路清单（渐进加载，2026-10-03 生产 1209 回路提速）：
+   * 首页到达立即渲染（首屏解锁），余页按并发上限分批并行并入、
+   * 每批到达即更新（树/筛选为派生响应式，自动重算）；全量无截断。
+   */
   async function loadLoops() {
     loopsLoading.value = true;
     loopsError.value = null;
@@ -89,16 +94,16 @@ export function useWb360Loop(initialLoopId: null | string) {
           sortOrder: 'asc',
         });
       const first = await fetchPage(1);
-      const items = [...first.items];
+      loops.value = [...first.items];
+      loopsLoading.value = false; // 首页即解锁首屏（树/选中/趋势链路启动）
       const totalPages = Math.ceil(first.total / LIST_PAGE_SIZE);
-      for (let p = 2; p <= Math.min(totalPages, LIST_MAX_PAGES); p++) {
-        const res = await fetchPage(p);
-        items.push(...res.items);
-      }
-      loops.value = items;
-      if (first.total > items.length) {
-        // 诚实化：清单超页禁止静默截断，显式提示
-        loopsError.value = `回路清单仅加载前 ${items.length} 条（共 ${first.total} 条），请用搜索/筛选缩小范围`;
+      const rest: number[] = [];
+      for (let p = 2; p <= totalPages; p++) rest.push(p);
+      for (let i = 0; i < rest.length; i += LIST_PAGE_CONCURRENCY) {
+        const batch = await Promise.all(
+          rest.slice(i, i + LIST_PAGE_CONCURRENCY).map(fetchPage),
+        );
+        loops.value = [...loops.value, ...batch.flatMap((b) => b.items)];
       }
     } catch (error) {
       loopsError.value =
@@ -109,49 +114,62 @@ export function useWb360Loop(initialLoopId: null | string) {
     }
   }
 
-  /** 拉取装置树并按清单聚合单元回路计数 */
+  /** 拉取装置树（节点只拉一次缓存；回路计数聚合随清单渐进到达自动重算） */
   async function loadTree() {
     try {
-      const nodes = await getPlantNodeTreeApi();
-      // 展开 FACTORY → UNIT 两级（AREA 归并展示为其 UNIT 子层）
-      const plants: SpineTreeNode[] = [];
-      const unitCount = new Map<string, number>();
-      for (const l of loops.value) {
-        const key = l.unitName ?? '';
-        unitCount.set(key, (unitCount.get(key) ?? 0) + 1);
-      }
-      const walk = (node: PlantNodeApi.PlantNode): SpineTreeNode[] => {
-        const out: SpineTreeNode[] = [];
-        for (const child of node.children ?? []) {
-          if (child.type === 'UNIT') {
-            out.push({
-              count: unitCount.get(child.name) ?? 0,
-              id: child.id,
-              name: child.name,
-              parentId: node.id,
-              type: child.type,
-            });
-          } else {
-            out.push(...walk(child));
-          }
-        }
-        return out;
-      };
-      for (const n of nodes) {
-        const units = walk(n);
-        plants.push({
-          count: units.reduce((s, u) => s + u.count, 0),
-          id: n.id,
-          name: n.name,
-          parentId: null,
-          type: n.type,
-          units,
-        });
-      }
-      tree.value = plants;
+      plantNodesCache ??= await getPlantNodeTreeApi();
+      rebuildTree();
     } catch {
       tree.value = [];
     }
+  }
+
+  // 清单渐进到达（余页分批并入）→ 树计数自动重算
+  watch(loops, () => {
+    if (plantNodesCache) rebuildTree();
+  });
+
+  let plantNodesCache: null | PlantNodeApi.PlantNode[] = null;
+
+  /** 按当前清单重建 FACTORY→UNIT 两级树（AREA 归并展示为其 UNIT 子层） */
+  function rebuildTree() {
+    const nodes = plantNodesCache;
+    if (!nodes) return;
+    const plants: SpineTreeNode[] = [];
+    const unitCount = new Map<string, number>();
+    for (const l of loops.value) {
+      const key = l.unitName ?? '';
+      unitCount.set(key, (unitCount.get(key) ?? 0) + 1);
+    }
+    const walk = (node: PlantNodeApi.PlantNode): SpineTreeNode[] => {
+      const out: SpineTreeNode[] = [];
+      for (const child of node.children ?? []) {
+        if (child.type === 'UNIT') {
+          out.push({
+            count: unitCount.get(child.name) ?? 0,
+            id: child.id,
+            name: child.name,
+            parentId: node.id,
+            type: child.type,
+          });
+        } else {
+          out.push(...walk(child));
+        }
+      }
+      return out;
+    };
+    for (const n of nodes) {
+      const units = walk(n);
+      plants.push({
+        count: units.reduce((s, u) => s + u.count, 0),
+        id: n.id,
+        name: n.name,
+        parentId: null,
+        type: n.type,
+        units,
+      });
+    }
+    tree.value = plants;
   }
 
   /** 左脊柱过滤后的清单（单元/关键词/等级三重过滤） */

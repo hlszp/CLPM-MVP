@@ -108,7 +108,7 @@ function handleTrendClick(record: LoopApi.MonitorListItem) {
 // ===== 抽屉内进入回路工作台（携带监控上下文）=====
 function handleGotoWorkbench(loopId: string) {
   drawerOpen.value = false;
-  monitorCtx.navigateWithMonitorContext('/monitor/loop-workbench', {
+  monitorCtx.navigateWithMonitorContext('/loop/workbench360', {
     loopId,
     from: '/monitor/loops',
   });

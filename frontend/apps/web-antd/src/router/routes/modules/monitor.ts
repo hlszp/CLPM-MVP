@@ -86,21 +86,10 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'MonitorLoopWorkbench',
-        path: '/monitor/loop-workbench',
-        component: () => import('#/views/loop/workbench.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-          fullPathKey: false,
-          icon: 'lucide:layout-panel-top',
-          title: '回路工作台',
-        },
-      },
-      {
-        // 回路工作台新版（P1 壳层与趋势基座，2026-10-02 起）：
-        // 单页全生命周期工作台（监视-评估-诊断-整定-处置，零跳转全内嵌）。
-        // 验收期与旧 /monitor/loop-workbench 菜单项并存，便于对照；
-        // 验收通过后由用户决定隐藏/删除旧菜单（设计方案 v3 §2）。
+        // 回路工作台（2026-10-03 起为唯一版本）：单页全生命周期工作台
+        // （监视-评估-诊断-整定-处置，零跳转全内嵌）。
+        // 旧 /monitor/loop-workbench 页面已按用户裁决删除（2026-10-03），
+        // 旧路径经 loop.ts 兼容 redirect 落到本页。
         name: 'LoopWorkbench360',
         path: '/loop/workbench360',
         component: () => import('#/views/loop/workbench360/index.vue'),

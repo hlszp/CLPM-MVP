@@ -15,8 +15,8 @@
  *   /system/pid-template → /config/link
  *   /loop/data           → /config/datasource
  * - IA v2.9：
- *   /loop/workbench      → /monitor/loop-workbench
- *   /loop/detail/:id     → /monitor/loop-workbench?loopId=:id
+ *   /loop/workbench      → /loop/workbench360
+ *   /loop/detail/:id     → /loop/workbench360?loopId=:id
  *   /alert/events        → /monitor/alerts
  *   /alert/rules         → /config/alert-rules
  *
@@ -263,7 +263,7 @@ test.describe('回路工作台内嵌趋势图区（Grid 布局重构后）', () 
   test('E2E-ROUTE-WB: 概览区趋势/历史按钮已下线，趋势为内嵌图区', async ({
     page,
   }) => {
-    await page.goto('/monitor/loop-workbench', { waitUntil: 'domcontentloaded' });
+    await page.goto('/loop/workbench360', { waitUntil: 'domcontentloaded' });
     // 概览区不再有"趋势/历史"按钮（antd 双汉字按钮可访问名带空格，正则兼容）
     await expect(
       page.getByRole('button', { name: /趋\s*势/ }),
@@ -282,7 +282,7 @@ test.describe('回路工作台内嵌趋势图区（Grid 布局重构后）', () 
   });
 
   test('E2E-ROUTE-WB: 内嵌趋势图区渲染图表且不跳路由', async ({ page }) => {
-    await page.goto('/monitor/loop-workbench', { waitUntil: 'domcontentloaded' });
+    await page.goto('/loop/workbench360', { waitUntil: 'domcontentloaded' });
     const firstLoopItem = page.locator('.wb-loop-item').first();
     await expect(firstLoopItem).toBeVisible({ timeout: 20_000 });
     await firstLoopItem.click();

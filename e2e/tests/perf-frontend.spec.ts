@@ -21,7 +21,7 @@ test.describe('MW-P5-04 前端性能', () => {
     });
 
     // 导航到工作台
-    await page.goto('/monitor/loop-workbench');
+    await page.goto('/loop/workbench360');
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(5000); // 等待首屏 API 请求完成
 

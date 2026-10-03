@@ -5,7 +5,7 @@
  * 这是冒烟级测试，不深度验证业务逻辑——只确保关键流程可进入、可渲染。
  *
  * 角色权限矩阵（对齐 monitor.ts / tuning.ts / diagnosis.ts authority）：
- *   /monitor/loop-workbench : ADMIN, IC, PE, EXPERT（SPONSOR 无权限）
+ *   /loop/workbench360 : ADMIN, IC, PE, EXPERT（SPONSOR 无权限）
  *   /monitor/attention      : 全五角色
  *   /monitor/alerts         : 全五角色
  *   /tuning/workbench       : ADMIN, IC, EXPERT
@@ -69,7 +69,7 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await loginAs('ADMIN');
 
     // 1. 回路工作台（workspace 模式）
-    await page.goto('/monitor/loop-workbench');
+    await page.goto('/loop/workbench360');
     await waitForRender(page);
     await assertPageHealthy(page);
     // 工作台主内容区应渲染（workspace 模式用虚拟列表+自定义布局，容忍加载中/空态）
@@ -102,7 +102,7 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await loginAs('IC_ENGINEER');
 
     // 1. 回路工作台
-    await page.goto('/monitor/loop-workbench');
+    await page.goto('/loop/workbench360');
     await waitForRender(page);
     await assertPageHealthy(page);
 
@@ -122,7 +122,7 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await loginAs('PE_ENGINEER');
 
     // 1. 回路工作台（只读，写动作应 disabled，但不阻断渲染）
-    await page.goto('/monitor/loop-workbench');
+    await page.goto('/loop/workbench360');
     await waitForRender(page);
     await assertPageHealthy(page);
     await assertNoForbiddenToast(page);
@@ -174,7 +174,7 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     // 已知例外：后端 /configs/grading-thresholds 拒绝 EXPERT（require_roles
     // ADMIN/IC/PE），前端全局拦截器会弹一次"无权限访问" toast，但页面本身
     // 已 .catch 降级不影响渲染——此为现行代码预期行为，仅断言无预期外 403。
-    await page.goto('/monitor/loop-workbench');
+    await page.goto('/loop/workbench360');
     await waitForRender(page);
     await assertPageHealthy(page);
     const unexpected403 = forbiddenResponses.filter(
@@ -210,8 +210,8 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await assertPageHealthy(page);
     await assertNoForbiddenToast(page);
 
-    // 4. SPONSOR 无工作台权限：直接访问 /monitor/loop-workbench 应显示 403 内容页
-    await page.goto('/monitor/loop-workbench');
+    // 4. SPONSOR 无工作台权限：直接访问 /loop/workbench360 应显示 403 内容页
+    await page.goto('/loop/workbench360');
     await waitForRender(page);
     const denied = await assertAccessDenied(page);
     expect(denied, 'SPONSOR 访问工作台应显示 403 内容页').toBeTruthy();

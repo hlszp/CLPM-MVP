@@ -109,7 +109,7 @@ export function createMockWorkbenchSummary(
       enabled: true,
       disabledReason: null,
       target: {
-        route: '/monitor/loop-workbench',
+        route: '/loop/workbench360',
         query: { loopId: 'LP-001', section: 'assessment' },
       },
     },

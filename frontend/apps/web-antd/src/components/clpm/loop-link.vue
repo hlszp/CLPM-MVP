@@ -53,7 +53,7 @@ function canAccess(target: string): boolean {
 
 const detailPath = computed(() => {
   const paths = {
-    detail: `/monitor/loop-workbench?loopId=${props.loopId}`,
+    detail: `/loop/workbench360?loopId=${props.loopId}`,
     // 诊断两页式重构（2026-08-16）：原 /diagnosis/detail/:id 已下线，
     // 跳诊断工作台并携带 loopId 预选（workbench.vue onMounted 支持）
     diagnosis: `/diagnosis/workbench?loopId=${props.loopId}`,
@@ -75,11 +75,11 @@ const hasVisibleMenuItem = computed(() => {
 const handleMenuClick = ({ key }: { key: number | string }) => {
   const keyStr = String(key);
   const routes: Record<string, string> = {
-    detail: `/monitor/loop-workbench?loopId=${props.loopId}`,
+    detail: `/loop/workbench360?loopId=${props.loopId}`,
     diagnosis: `/diagnosis/workbench?loopId=${props.loopId}`,
     tuning: `/tuning/workbench?loopId=${props.loopId}`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
-    trend: `/monitor/loop-workbench?loopId=${props.loopId}`,
+    trend: `/loop/workbench360?loopId=${props.loopId}`,
   };
   const path = routes[keyStr];
   if (path) {

@@ -46,11 +46,12 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
   });
 
   // 0929 总览收敛：装置总览 /dashboard/workbench 已下线，原"排除 EXPERT"用例随路由删除
+  // 1003 旧回路工作台删除：回路工作台唯一版本为 /loop/workbench360（旧路径兼容 redirect）
 
-  it('监控承载回路工作台，且对 EXPERT 放行', () => {
+  it('监控承载回路工作台（新版），且对 EXPERT 放行', () => {
     const workbench = findRoute(
       monitorRoutes,
-      (r) => r.path === '/monitor/loop-workbench',
+      (r) => r.path === '/loop/workbench360',
     );
     expect(workbench).toBeDefined();
     expect(authorityOf(workbench!)).toContain('EXPERT');

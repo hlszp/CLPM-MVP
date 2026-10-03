@@ -1,13 +1,17 @@
 # 热修补丁镜像（2026-10-03）：以生产运行镜像 subpath-hotfix-0938 为底座，仅替换静态产物。
-# 1003（回路工作台新版全量上线）前端改动（P1-P4 + 终验优化，main 7a3898b2）：
+# 1003（回路工作台新版上线 + 旧工作台下线）前端改动（main：P1-P4+终验优化+下线批次）：
 #   - 新增「回路工作台（新版）」/loop/workbench360：单页全生命周期闭环
 #     （监视-评估-诊断-整定-处置，零跳转全内嵌，趋势九档/包络/悬停读值/
 #     固定量程轴/事件标注/旅程条/四剖面/五抽屉/统一动线角标）
 #   - 趋势终验优化：导出 PNG/CSV、SP 容差带、Y 轴量程%、诊断→趋势定位、
 #     旅程条"推荐下一步"徽标
-#   - 附带：旧 use-workbench-task-runner backfill 补 start（修任务滞留 PENDING）、
+#   - 旧回路工作台下线（用户裁决）：/monitor/loop-workbench 页面删除，
+#     旧路径（/monitor/loop-workbench、/loop、/loop/workbench、/loop/detail/:id）
+#     全部兼容 redirect 到新版；loop-link 等下钻链接改指新版
+#   - 回路清单渐进加载（生产 1209 回路提速）：首页即渲染，余页 4 并发
+#     分批并行并入，取消 500 条截断上限（原红字提示随之移除）
+#   - 附带：旧 use-workbench-task-runner backfill 补 start（随旧页删除退役）、
 #     旧页面 eslint 基线债 13 处清零（CI 转绿）
-# 旧路由 /monitor/loop-workbench 与旧页面原样保留并存（生产验收后另行裁决）。
 # dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite build
 # --mode clpm` 构建（exit=0 核验），已拷贝至 releases/frontend-dist-1003/。
 FROM clpm-frontend:subpath-hotfix-0938

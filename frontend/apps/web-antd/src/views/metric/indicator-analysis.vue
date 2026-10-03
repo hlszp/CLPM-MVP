@@ -654,7 +654,7 @@ async function renderCharts() {
       const data = params.data as undefined | { loopId?: string };
       if (params.componentType === 'series' && data?.loopId) {
         router.push({
-          path: '/monitor/loop-workbench',
+          path: '/loop/workbench360',
           query: { loopId: data.loopId },
         });
       }

@@ -22,7 +22,7 @@ export interface LoopContext {
  *
  * 用法：
  *   const { loopId, navigateWithLoop, withLoop } = useLoopContext();
- *   navigateWithLoop('/monitor/loop-workbench', 'LIC-101');
+ *   navigateWithLoop('/loop/workbench360', 'LIC-101');
  *   <router-link :to="withLoop('/monitor/loops')">查看回路</router-link>
  */
 export function useLoopContext() {

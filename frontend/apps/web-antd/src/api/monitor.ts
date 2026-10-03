@@ -43,7 +43,7 @@ export namespace MonitorApi {
   export interface AttentionActionTarget {
     route:
       | '/monitor/alerts'
-      | '/monitor/loop-workbench'
+      | '/loop/workbench360'
       | '/monitor/loops';
     query: Record<string, string>;
   }
@@ -209,7 +209,7 @@ export namespace MonitorApi {
     disabledReason?: null | string;
     target?: null | {
       query: Record<string, string>;
-      route: '/monitor/loop-workbench';
+      route: '/loop/workbench360';
     };
   }
 
