@@ -9,7 +9,7 @@ import type { RouteRecordRaw } from 'vue-router';
  * - /monitor/loop-workbench → redirect /loop/workbench360（旧工作台 2026-10-03 删除）
  *
  * 注：/loop/monitor 由 monitor.ts 保留为隐藏的高密度实时表；
- *    回路维度主入口是回路工作台（新版）/loop/workbench360。
+ *    回路维度主入口是回路工作台 /loop/workbench360（一级菜单）。
  *    原结构性配置子路由（aas-sync/tag/manage/factory/ledger/data）
  *    已迁入 config.ts 为 /config/* 新路径 + legacy redirect。
  *

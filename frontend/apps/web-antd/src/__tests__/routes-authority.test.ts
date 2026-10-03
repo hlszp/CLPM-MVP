@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import alertRoutes from '#/router/routes/modules/alert';
 import assessRoutes from '#/router/routes/modules/assess';
 import configRoutes from '#/router/routes/modules/config';
+import loopWorkbenchRoutes from '#/router/routes/modules/loop-workbench';
 import monitorRoutes from '#/router/routes/modules/monitor';
 import systemRoutes from '#/router/routes/modules/system';
 
@@ -46,11 +47,11 @@ describe('路由权限三方对齐（实现契约 §5 + UI/UX §4.2）', () => {
   });
 
   // 0929 总览收敛：装置总览 /dashboard/workbench 已下线，原"排除 EXPERT"用例随路由删除
-  // 1003 旧回路工作台删除：回路工作台唯一版本为 /loop/workbench360（旧路径兼容 redirect）
+  // 1003 旧回路工作台删除；同日升为一级菜单（loop-workbench.ts，order 1.5 监控之后）
 
-  it('监控承载回路工作台（新版），且对 EXPERT 放行', () => {
+  it('回路工作台为一级菜单，且对 EXPERT 放行', () => {
     const workbench = findRoute(
-      monitorRoutes,
+      loopWorkbenchRoutes,
       (r) => r.path === '/loop/workbench360',
     );
     expect(workbench).toBeDefined();
