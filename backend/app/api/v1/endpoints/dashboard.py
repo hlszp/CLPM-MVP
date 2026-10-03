@@ -235,7 +235,29 @@ async def get_board_trend_endpoint(
 
     v6.1 更新：支持递归聚合当前节点及所有下属节点的趋势数据（使用 PostgreSQL 递归 CTE）
     v4.4 更新：新增 last_24/72/168 小时滚动窗口与 custom 自定义起止窗口
+
+    2026-10-03：60s TTL 短缓存（agg_cache，custom 窗除外）——驾驶舱 5min
+    刷新周期下同参聚合不重复执行。
     """
+    from app.services.agg_cache import cached_agg
+
+    if timeWindow != "custom":
+        key = f"board-trend:{plantId or 'ALL'}:{timeWindow}"
+        return await cached_agg(
+            key,
+            lambda: _get_board_trend_data(db, plantId, timeWindow, startTime, endTime),
+        )
+    return await _get_board_trend_data(db, plantId, timeWindow, startTime, endTime)
+
+
+async def _get_board_trend_data(
+    db: AsyncSession,
+    plantId: str | None,
+    timeWindow: str,
+    startTime: str | None,
+    endTime: str | None,
+) -> dict:
+    """实际聚合（get_board_trend_endpoint 的缓存包装主体）。"""
 
     def _parse_dt(s: str | None) -> datetime | None:
         if not s:

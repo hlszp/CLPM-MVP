@@ -64,11 +64,14 @@ async def dispatch(
     final_severity = upgrade_severity(result.severity or dsl.get("severity", "WARN"), trigger_count)
 
     created_event_id: str | None = None
+    # 默认 True：仅当 CREATE_EVENT 明确返回"复发合并到未决事件"时才置 False；
+    # 规则未配置 CREATE_EVENT（纯通知类）不受复发抑制影响。
+    event_is_new = True
     for action in actions:
         act_type = action.get("type")
         try:
             if act_type == "CREATE_EVENT":
-                created_event_id = await _create_event(
+                created_event_id, event_is_new = await _create_event(
                     db, rule, loop_id, result, final_severity, trigger_count
                 )
                 outcomes["CREATE_EVENT"] = created_event_id
@@ -83,8 +86,14 @@ async def dispatch(
                 )
                 outcomes["CREATE_TRACKER"] = None
             elif act_type == "NOTIFY":
-                await _notify(rule, loop_id, result, final_severity, created_event_id)
-                outcomes["NOTIFY"] = "published"
+                # 2026-10-03 用户裁决（"预警时间不断在刷新"）：未决事件复发仅累计
+                # trigger_count，不再推送 NOTIFY——WS 置顶/时间戳刷新随之停止，
+                # 仅全新事件才广播；复发次数经事件详情 trigger_count 可见。
+                if event_is_new:
+                    await _notify(rule, loop_id, result, final_severity, created_event_id)
+                    outcomes["NOTIFY"] = "published"
+                else:
+                    outcomes["NOTIFY"] = "suppressed_recurrent"
             elif act_type == "TRIGGER_DIAGNOSIS":
                 diagnosis_task_id = await _trigger_diagnosis(rule, loop_id)
                 outcomes["TRIGGER_DIAGNOSIS"] = diagnosis_task_id
@@ -98,13 +107,38 @@ async def dispatch(
             )
             outcomes[act_type or "UNKNOWN"] = "failed"
 
-    # 设置冷却期（所有动作执行后，避免冷却期内重复告警）
-    cooldown = dsl.get("cooldownSeconds", 1800)
+    # 设置冷却期（所有动作执行后，避免冷却期内重复告警）。
+    # 优先级：规则 DSL cooldownSeconds > sys_config 全局默认
+    # alert.rule_engine.default_cooldown_seconds > 内置 1800s
+    # （2026-10-03 用户裁决：刷新周期应可配置——规则级 DSL 一直可配，
+    #  本轮补全局默认值的 sys_config 出口，配置页改动后即时生效）。
+    cooldown = dsl.get("cooldownSeconds")
+    if cooldown is None:
+        cooldown = await _default_cooldown_seconds(db)
     if cooldown > 0 and result.dedup_key:
-        await _suppressor.set_cooldown(result.dedup_key, cooldown)
+        await _suppressor.set_cooldown(result.dedup_key, int(cooldown))
         await _suppressor.clear_duration(result.dedup_key)
 
     return outcomes
+
+
+async def _default_cooldown_seconds(db: AsyncSession) -> int:
+    """全局默认冷却期（sys_config alert.rule_engine.default_cooldown_seconds）。"""
+    from app.models.sys_config import SysConfig
+
+    try:
+        row = (
+            await db.execute(
+                select(SysConfig).where(
+                    SysConfig.key == "alert.rule_engine.default_cooldown_seconds"
+                )
+            )
+        ).scalar_one_or_none()
+        if row is not None and str(row.value or "").strip().isdigit():
+            return max(0, int(str(row.value).strip()))
+    except Exception:  # noqa: BLE001
+        logger.warning("读取全局默认冷却期失败，回退 1800s", exc_info=True)
+    return 1800
 
 
 async def _create_event(
@@ -114,13 +148,16 @@ async def _create_event(
     result: EvaluationResult,
     final_severity: str,
     trigger_count: int,
-) -> str:
+) -> tuple[str, bool]:
     """创建预警事件记录。
 
     0929 合并策略（用户口径"同问题只记命中次数，不重复推报警"）：同
     loop+rule 已有未决事件（ACTIVE/ACKNOWLEDGED）时**不新建**，仅在原
     事件上累计 trigger_count 并刷新最新触发值/快照/严重度（只升不降）。
     事件 RESOLVED 后再触发才生成新一轮事件。
+
+    Returns:
+        (event_id, is_new)：is_new=False 表示复发合并到既有未决事件。
     """
     from sqlalchemy import select
 
@@ -147,7 +184,7 @@ async def _create_event(
         if _sev_order.get(str(final_severity), 0) > _sev_order.get(str(existing.severity), 0):
             existing.severity = str(final_severity)
         await db.flush()
-        return existing.id
+        return existing.id, False
 
     event_id = str(uuid4())
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -178,7 +215,7 @@ async def _create_event(
         loop_id,
         final_severity,
     )
-    return event_id
+    return event_id, True
 
 
 async def _create_tracker(

@@ -170,23 +170,28 @@ def shape_plants(
     overdue_per_unit: dict[str, int],
     threshold: float,
 ) -> list[dict[str, Any]]:
-    """装置排名：FACTORY 预计算行 + 层级映射 → 排名列表（按 score 降序）。"""
-    unit_to_factory: dict[str, str] = hierarchy["unit_to_factory"]
+    """装置排名：AREA（装置级）预计算行 + 层级映射 → 排名列表（按 score 降序）。
+
+    2026-10-03 用户裁决修正：GLOBAL 视图原取 FACTORY（工厂）行，语义错位
+    （工厂通常仅 1 家，排名无意义）；改取 AREA（装置）行——预计算表已覆盖。
+    alarm/overdue 按 unit→area 映射聚合到装置。
+    """
+    unit_to_area: dict[str, str] = hierarchy["unit_to_area"]
     name_by_source_id: dict[int, str] = hierarchy["name_by_source_id"]
-    factories = hierarchy["factories"]
-    # source_node_id → factory_id（UUID）映射
-    factory_id_by_source = {node_scope_id(f.source_node_id, f.id): f.id for f in factories}
-    # 倒置：factory_id → [unit_id]
-    units_per_factory: dict[str, list[str]] = {}
-    for unit_id, factory_id in unit_to_factory.items():
-        units_per_factory.setdefault(factory_id, []).append(unit_id)
+    # source_node_id → area_id（UUID）映射
+    areas = hierarchy["areas"]
+    area_id_by_source = {node_scope_id(a.source_node_id, a.id): a.id for a in areas}
+    # 倒置：area_id → [unit_id]
+    units_per_area: dict[str, list[str]] = {}
+    for unit_id, area_id in unit_to_area.items():
+        units_per_area.setdefault(area_id, []).append(unit_id)
 
     plants: list[dict[str, Any]] = []
     for row in kpi_rows:
         src_id = getattr(row, "scope_id", None)
         name = name_by_source_id.get(src_id) or f"装置#{src_id}"
-        factory_id = factory_id_by_source.get(src_id)
-        unit_ids = units_per_factory.get(factory_id, []) if factory_id else []
+        area_id = area_id_by_source.get(src_id)
+        unit_ids = units_per_area.get(area_id, []) if area_id else []
         alarm_count = sum(alarm_per_unit.get(uid, 0) for uid in unit_ids)
         overdue = sum(overdue_per_unit.get(uid, 0) for uid in unit_ids)
         plants.append(
@@ -325,32 +330,38 @@ async def _get_lose_threshold(db: AsyncSession) -> float:
 
 
 async def _load_plant_hierarchy(db: AsyncSession) -> dict[str, Any]:
-    """加载 PlantNode 三层，构建 unit→factory / source_id→name 映射。"""
+    """加载 PlantNode 三层，构建 unit→factory / unit→area / source_id→name 映射。"""
     result = await db.execute(select(PlantNode))
     nodes = result.scalars().all()
     by_id = {n.id: n for n in nodes}
+    unit_to_area: dict[str, str] = {}
     unit_to_factory: dict[str, str] = {}
     for n in nodes:
         if n.type == "UNIT":
-            fid = _resolve_factory_id(n, by_id)
+            aid = _resolve_ancestor_type_id(n, by_id, "AREA")
+            if aid:
+                unit_to_area[n.id] = aid
+            fid = _resolve_ancestor_type_id(n, by_id, "FACTORY")
             if fid:
                 unit_to_factory[n.id] = fid
     name_by_source_id = {node_scope_id(n.source_node_id, n.id): n.name for n in nodes}
     return {
+        "areas": [n for n in nodes if n.type == "AREA"],
         "by_id": by_id,
-        "unit_to_factory": unit_to_factory,
-        "name_by_source_id": name_by_source_id,
         "factories": [n for n in nodes if n.type == "FACTORY"],
+        "name_by_source_id": name_by_source_id,
+        "unit_to_area": unit_to_area,
+        "unit_to_factory": unit_to_factory,
     }
 
 
-def _resolve_factory_id(node: Any, by_id: dict[str, Any]) -> str | None:
-    """沿 parent_id 上溯到 FACTORY 节点 id。"""
+def _resolve_ancestor_type_id(node: Any, by_id: dict[str, Any], node_type: str) -> str | None:
+    """沿 parent_id 上溯到指定类型（FACTORY/AREA）的祖先节点 id。"""
     current = node
     seen: set[str] = set()
     while current and current.id not in seen:
         seen.add(current.id)
-        if current.type == "FACTORY":
+        if current.type == node_type:
             return current.id
         parent_id = current.parent_id
         current = by_id.get(parent_id) if parent_id else None
@@ -403,12 +414,13 @@ async def _get_child_ids_for_plants(
 ) -> tuple[None | str, list[int]]:
     """查 plants 排名所需的下一层 scope_type + source_node_id 列表。
 
-    - GLOBAL → ("FACTORY", [])  意为查全部 FACTORY 行
+    - GLOBAL → ("AREA", [])  意为查全部 AREA（装置级）行——2026-10-03 修正：
+      装置排名取装置级节点（原取 FACTORY 工厂行）
     - FACTORY → ("AREA", [子 area source_node_id, …])
     - AREA → ("UNIT", [子 unit source_node_id, …])
     """
     if scope_type == "GLOBAL":
-        return "FACTORY", []
+        return "AREA", []
 
     # 递归查直接子节点（下一层）
     child_type = "AREA" if scope_type == "FACTORY" else "UNIT"
@@ -619,7 +631,23 @@ async def build_overview(
     scope_id: int | None = None,
     window: str = "24h",
 ) -> dict[str, Any]:
-    """组装 A-01 总览六块。部分失败容错：单块异常不阻断其余块。"""
+    """组装 A-01 总览六块。部分失败容错：单块异常不阻断其余块。
+
+    2026-10-03：60s TTL 短缓存（agg_cache），同参聚合 60s 内直接复用。
+    """
+    from app.services.agg_cache import cached_agg
+
+    key = f"workbench-overview:{scope_type}:{scope_id or 0}:{window}"
+    return await cached_agg(key, lambda: _build_overview_impl(db, scope_type, scope_id, window))
+
+
+async def _build_overview_impl(
+    db: AsyncSession,
+    scope_type: str = "GLOBAL",
+    scope_id: int | None = None,
+    window: str = "24h",
+) -> dict[str, Any]:
+    """实际聚合（由 build_overview 的短缓存包装）。"""
     sid = _scope_id_int(scope_type, scope_id)
     overview: dict[str, Any] = {
         "scope": {"type": scope_type, "id": scope_id},
@@ -658,8 +686,7 @@ async def build_overview(
         hierarchy = await _load_plant_hierarchy(db)
         child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
         if scope_type == "GLOBAL" or not child_ids:
-            # GLOBAL → 全部 FACTORY 行（0930：按当前树过滤，旧树残留行不再以
-            # 「装置#hash」兜底名出现在装置风险列表）
+            # GLOBAL → 全部 AREA（装置级）行（0930 按当前树过滤 + 1003 装置级修正）
             plant_rows = await _query_scope_rows(db, child_type, window)
             current_scope_ids = set(hierarchy["name_by_source_id"].keys())
             plant_rows = [

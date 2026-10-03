@@ -170,6 +170,13 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
               <span class="alert-stream__rule" :title="e.ruleName ?? e.ruleCode">
                 {{ e.ruleName ?? e.ruleCode }}
               </span>
+              <span
+                v-if="(e.triggerCount ?? 0) > 1"
+                class="alert-stream__hits"
+                :title="`冷却期内复发累计命中 ${e.triggerCount} 次（未确认期间合并为一条，不再重复推送）`"
+              >
+                ×{{ e.triggerCount }}
+              </span>
               <span v-if="isUnconfirmed(e)" class="alert-stream__unack">
                 未确认
               </span>
@@ -260,6 +267,17 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
   color: var(--ck-text);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.alert-stream__hits {
+  background: hsl(var(--warning) / 15%);
+  border: 1px solid hsl(var(--warning) / 45%);
+  border-radius: 8px;
+  color: hsl(var(--warning-foreground));
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 5px;
 }
 
 .alert-stream__unack {

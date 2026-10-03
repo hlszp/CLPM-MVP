@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 /**
- * 驾驶舱总览 §3 绩效发展趋势（方案 11 §5.2）
+ * 驾驶舱总览 §3 绩效趋势（方案 11 §5.2）
  *
  * 数据：getBoardTrendApi（/dashboard/board/trend，恒全厂口径）。
  * 窗口映射：24h→last_24_hours（小时粒度）/ 7d→last_7_days / 30d→last_30_days。
@@ -78,13 +78,12 @@ function buildOption() {
     },
     series: [
       {
+        // 2026-10-03 用户裁决：综合评分改柱状图，自动投用率保持折线
+        barMaxWidth: 18,
         data: t.avgScore,
         itemStyle: { color: scoreColor },
-        lineStyle: { color: scoreColor, width: 2 },
         name: '综合评分',
-        showSymbol: false,
-        symbol: 'circle',
-        type: 'line' as const,
+        type: 'bar' as const,
       },
       {
         data: t.autoModeRate,
@@ -109,7 +108,8 @@ function buildOption() {
     xAxis: {
       axisLabel: { color: cc.text, fontSize: 10, hideOverlap: true },
       axisLine: { lineStyle: { color: cc.splitLine } },
-      boundaryGap: false,
+      // 柱状图（综合评分）需要类目轴留白：首柱不贴 Y 轴
+      boundaryGap: true,
       data: xData,
       type: 'category' as const,
     },
@@ -146,7 +146,7 @@ watch([trend, loading], () => {
 <template>
   <div class="cockpit-panel trend">
     <div class="cockpit-panel__hd">
-      绩效发展趋势
+      绩效趋势
       <span class="sub">
         综合评分 / 自动投用率 · 全厂口径（等级分布序列接口缺失，暂不堆叠）
       </span>

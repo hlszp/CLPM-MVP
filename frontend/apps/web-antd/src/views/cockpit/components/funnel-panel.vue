@@ -12,8 +12,9 @@ import type { CockpitApi } from '#/api/cockpit';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { getCockpitOverviewApi } from '#/api/cockpit';
 import { useCockpitStore } from '#/store/cockpit';
+
+import { loadOverviewData } from '../composables/use-overview-data';
 
 export type FunnelStageKey = 'closed' | 'diagnosed' | 'discovered' | 'tuned';
 
@@ -29,7 +30,7 @@ const funnel = ref<CockpitApi.CockpitFunnel | null>(null);
 async function load() {
   loading.value = true;
   try {
-    const res = await getCockpitOverviewApi(cockpitStore.timeWindow);
+    const res = await loadOverviewData(cockpitStore.timeWindow);
     funnel.value = res?.funnel ?? null;
   } catch {
     funnel.value = null;

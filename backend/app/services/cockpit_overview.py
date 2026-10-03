@@ -358,7 +358,18 @@ async def _query_loop_counts_per_unit(db: AsyncSession) -> dict[str, int]:
 
 
 async def build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any]:
-    """组装驾驶舱总览（KPI 指标带 + 闭环治理漏斗）。部分失败容错。"""
+    """组装驾驶舱总览（KPI 指标带 + 闭环治理漏斗）。部分失败容错。
+
+    2026-10-03：60s TTL 短缓存（agg_cache）——驾驶舱 5min 刷新周期下
+    多用户/手动刷新命中缓存，生产 1209 回路聚合不再重复执行。
+    """
+    from app.services.agg_cache import cached_agg
+
+    return await cached_agg(f"cockpit-overview:{window}", lambda: _build_overview(db, window))
+
+
+async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any]:
+    """实际聚合（由 build_overview 的短缓存包装）。"""
     hours = WINDOW_HOURS.get(window, 24)
     now = datetime.now(UTC).replace(tzinfo=None)
     start = now - timedelta(hours=hours)

@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services.agg_cache import invalidate_agg
 from app.services.workbench_overview import (
     DEFAULT_LOSE_FACTOR_THRESHOLD,
     KPI_METRICS,
@@ -25,6 +26,13 @@ from app.services.workbench_overview import (
     shape_units,
     shape_windows,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_agg_cache():
+    """60s TTL 聚合缓存会跨测试污染，每用例清空。"""
+    invalidate_agg()
+
 
 # ---------------------------------------------------------------------------
 # 合成行构造
@@ -100,14 +108,17 @@ class TestShapeWindows:
 
 class TestShapePlants:
     def _hierarchy(self):
-        factory = _plant_node("f1", "装置A", "FACTORY", source_id=10)
-        area = _plant_node("a1", "区域A", "AREA", parent_id="f1")
+        factory = _plant_node("f1", "工厂X", "FACTORY", source_id=1)
+        # 1003 装置级修正：plants 取 AREA（装置）行，source_id=10 归 AREA
+        area = _plant_node("a1", "装置A", "AREA", parent_id="f1", source_id=10)
         unit = _plant_node("u1", "单元A1", "UNIT", parent_id="a1")
         return {
+            "areas": [area],
             "by_id": {"f1": factory, "a1": area, "u1": unit},
-            "unit_to_factory": {"u1": "f1"},
-            "name_by_source_id": {10: "装置A"},
             "factories": [factory],
+            "name_by_source_id": {10: "装置A"},
+            "unit_to_area": {"u1": "a1"},
+            "unit_to_factory": {"u1": "f1"},
         }
 
     def test_排名按分降序且含lose_factors与alarm_overdue(self):
@@ -288,10 +299,12 @@ class TestBuildOverview:
     async def test_六块组装且部分失败容错(self):
         db = AsyncMock()
         hierarchy = {
+            "areas": [_plant_node("a1", "装置A", "AREA", source_id=10)],
             "by_id": {},
-            "unit_to_factory": {},
+            "factories": [],
             "name_by_source_id": {10: "装置A"},
-            "factories": [_plant_node("f1", "装置A", "FACTORY", source_id=10)],
+            "unit_to_area": {},
+            "unit_to_factory": {},
         }
         plant_kpi = _win_row("24h", 88.0, {"steady_rate": 0.80})
         plant_kpi.scope_id = 10

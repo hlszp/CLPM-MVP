@@ -20,7 +20,7 @@ import { getAlertEventsApi } from '#/api/alert';
 import { getHandlingOrdersApi } from '#/api/handling';
 import { getRankingApi } from '#/api/metric';
 import { useCockpitStore } from '#/store/cockpit';
-import { formatLocalTime } from '#/utils/format';
+import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 import AlertStream from './components/alert-stream.vue';
 import CockpitHeader from './components/cockpit-header.vue';
@@ -219,9 +219,16 @@ async function openTodoList() {
     title: '处置待办清单',
   });
   try {
-    const res = await getHandlingOrdersApi({ page: 1, pageSize: 100 });
+    const res = await getHandlingOrdersApi({ page: 1, pageSize: 200 });
+    const since = windowStartDate(cockpitStore.timeWindow).getTime();
     listModal.rows = (res?.items ?? [])
       .filter((o) => ACTIVE_ORDER_STATUSES.has(o.status))
+      .filter((o) => {
+        const t = new Date(
+          normalizeUtcTimestamp(o.updatedAt ?? ''),
+        ).getTime();
+        return Number.isFinite(t) && t >= since;
+      })
       .map((o) => ({
         loopTagName: o.loopTagName,
         orderId: o.id,

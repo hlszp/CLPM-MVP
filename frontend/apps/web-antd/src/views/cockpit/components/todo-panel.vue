@@ -17,7 +17,7 @@ import { getHandlingOrdersApi } from '#/api/handling';
 import { useCockpitStore } from '#/store/cockpit';
 import { normalizeUtcTimestamp } from '#/utils/format';
 
-import { formatDuration } from '../utils/format';
+import { formatDuration, windowStartDate } from '../utils/format';
 
 const emit = defineEmits<{ openTodo: [orderId: string] }>();
 
@@ -52,20 +52,36 @@ const items = ref<HandlingApi.OrderItem[]>([]);
 
 async function load() {
   loading.value = true;
-  // 计数：每状态 pageSize=1 取分页 total（精确）；清单：单页 100 条前端聚合
-  const [list, ...stats] = await Promise.allSettled([
-    getHandlingOrdersApi({ page: 1, pageSize: 100 }),
-    ...CAPSULES.map((c) =>
-      getHandlingOrdersApi({ page: 1, pageSize: 1, status: c.key }),
-    ),
-  ]);
-  if (list.status === 'fulfilled') items.value = list.value?.items ?? [];
-  stats.forEach((s, i) => {
-    if (s.status === 'fulfilled') {
-      counts.value[CAPSULES[i]!.key] = s.value?.total ?? 0;
-    }
-  });
-  loading.value = false;
+  // 2026-10-03 优化：5 请求（1 清单 + 4 状态计数）合并为 1 次拉取（pageSize=200），
+  // 计数前端按状态统计；清单口径 = 在途工单 ∩ 页面时间窗（updatedAt ≥ 窗口起点，
+  // 用户裁决 1003：驾驶舱全部区块随时间范围刷新）。
+  try {
+    const res = await getHandlingOrdersApi({ page: 1, pageSize: 200 });
+    const all = res?.items ?? [];
+    const base: Record<HandlingApi.OrderStatus, number> = {
+      CANCELLED: 0,
+      CLOSED: 0,
+      EXECUTING: 0,
+      PENDING: 0,
+      REOPENED: 0,
+      VERIFYING: 0,
+    };
+    for (const o of all) base[o.status] = (base[o.status] ?? 0) + 1;
+    counts.value = base;
+    const since = windowStartDate(cockpitStore.timeWindow).getTime();
+    items.value = all
+      .filter((o) => ACTIVE_STATUSES.has(o.status))
+      .filter((o) => {
+        const t = new Date(
+          normalizeUtcTimestamp(o.updatedAt ?? ''),
+        ).getTime();
+        return Number.isFinite(t) && t >= since;
+      });
+  } catch {
+    items.value = [];
+  } finally {
+    loading.value = false;
+  }
 }
 
 onMounted(load);

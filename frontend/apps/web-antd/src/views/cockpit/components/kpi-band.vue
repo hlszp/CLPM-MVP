@@ -12,10 +12,10 @@ import type { CockpitApi } from '#/api/cockpit';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { getCockpitOverviewApi } from '#/api/cockpit';
 import { useCockpitStore } from '#/store/cockpit';
 
 import { GRADE_LABELS, GRADE_ORDER, useCockpitTheme } from '../composables/use-cockpit-theme';
+import { loadOverviewData } from '../composables/use-overview-data';
 import { deltaView } from '../utils/format';
 
 export type KpiCardKey = 'alert' | 'degraded' | 'score' | 'todo';
@@ -31,7 +31,7 @@ const kpi = ref<CockpitApi.CockpitKpi | null>(null);
 async function load() {
   loading.value = true;
   try {
-    const res = await getCockpitOverviewApi(cockpitStore.timeWindow);
+    const res = await loadOverviewData(cockpitStore.timeWindow);
     kpi.value = res?.kpi ?? null;
   } catch {
     kpi.value = null;
