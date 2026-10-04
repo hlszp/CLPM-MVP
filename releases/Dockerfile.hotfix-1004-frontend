@@ -13,9 +13,12 @@
 #     + embed=1 精简版工作台
 #   - 整定审计体验批：可整定徽标列 / Δ 对比表 / 历史入口
 # dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite build
-# --mode clpm` 构建（exit=0 核验），已拷贝至 releases/frontend-dist-1004/。
+# --mode clpm` 构建（exit=0 核验）。
+# 构建上下文 = deploy-pkg-1004 包解压根目录（自包含，无需仓库）：
+#   cd deploy-pkg-1004 && docker build -f Dockerfile.hotfix-1004-frontend \
+#     -t clpm-frontend:subpath-hotfix-1004 .
 FROM clpm-frontend:subpath-hotfix-1003
 
 ENV APP_VERSION=v7.3.0-1004-consolidation
 
-COPY --chown=nginx:nginx releases/frontend-dist-1004/ /usr/share/nginx/html/
+COPY --chown=nginx:nginx frontend-dist-1004/ /usr/share/nginx/html/

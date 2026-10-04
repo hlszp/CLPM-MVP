@@ -10,8 +10,11 @@
 #   - 预警事件（5eaa9c9e）：POST /alert/events/batch-acknowledge 批量确认
 #   - 整定审计（935c101e）：tuningRecordId 关联断链修复 + 窗口均值口径统一
 #   - 工作台规整 D1（e0726aae）：诊断触发角色 +EXPERT、整定 require_roles +PE
-# 部署顺序（严格）：① 执行两个 alembic 迁移 ② 重建后端容器（lifespan 自动
-# 拉起 Worker/Beat，勿手工启动）③ 重建前端容器 ④ 浏览器验收。
+# 部署顺序（严格）：① 重建后端容器 ② docker exec clpm-backend alembic upgrade head
+# ③ 重建前端容器 ④ 浏览器验收。
+# 构建上下文 = deploy-pkg-1004 包解压根目录（自包含，无需仓库）：
+#   cd deploy-pkg-1004 && docker build -f Dockerfile.hotfix-1004-backend \
+#     -t clpm-backend:hotfix-1004 .
 FROM clpm-backend:hotfix-0938
 
 ENV APP_VERSION=v7.3.0-1004-consolidation
