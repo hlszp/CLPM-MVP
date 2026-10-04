@@ -10,10 +10,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -215,6 +215,11 @@ async def get_board_trend_endpoint(
     ),
     startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
     endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
+    granularity: str = Query(
+        "auto",
+        description="聚合粒度：hour/day/auto（auto=窗口>48h 用 day，否则 hour；"
+        "2026-10-03 改版：恒柱状渲染，长窗口切日粒度防柱过密）",
+    ),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -227,6 +232,14 @@ async def get_board_trend_endpoint(
     - ``fastRate``: 快速率（加权平均，04-系统概览 v4.0）
     - ``accuracyRate``: 准确率（加权平均，04-系统概览 v4.0）
     - ``evaluatedLoops``: 参评回路数（求和）
+    - ``granularity``: 实际生效粒度（hour/day）
+
+    2026-10-03 改版：
+    - 完整桶对齐——小时粒度序列取 [ceil_hour(start), floor_hour(now)]，
+      「当前进行中小时」不再出桶（unit_kpi_summary 只写上一完整小时，
+      末桶永无数据导致曲线末点掉 0/断线）；日粒度按北京日历日聚合，
+      序列止于昨日（完整日）。
+    - granularity 参数（hour/day/auto）。
 
     若指定 ``plantId``，返回该节点及其所有下属节点的聚合趋势；
     若未指定 ``plantId``，返回全厂所有节点的聚合趋势。
@@ -237,17 +250,17 @@ async def get_board_trend_endpoint(
     v4.4 更新：新增 last_24/72/168 小时滚动窗口与 custom 自定义起止窗口
 
     2026-10-03：60s TTL 短缓存（agg_cache，custom 窗除外）——驾驶舱 5min
-    刷新周期下同参聚合不重复执行。
+    刷新周期下同参聚合不重复执行；缓存 key 含 granularity。
     """
     from app.services.agg_cache import cached_agg
 
     if timeWindow != "custom":
-        key = f"board-trend:{plantId or 'ALL'}:{timeWindow}"
+        key = f"board-trend:{plantId or 'ALL'}:{timeWindow}:{granularity}"
         return await cached_agg(
             key,
-            lambda: _get_board_trend_data(db, plantId, timeWindow, startTime, endTime),
+            lambda: _get_board_trend_data(db, plantId, timeWindow, startTime, endTime, granularity),
         )
-    return await _get_board_trend_data(db, plantId, timeWindow, startTime, endTime)
+    return await _get_board_trend_data(db, plantId, timeWindow, startTime, endTime, granularity)
 
 
 async def _get_board_trend_data(
@@ -256,8 +269,14 @@ async def _get_board_trend_data(
     timeWindow: str,
     startTime: str | None,
     endTime: str | None,
+    granularity: str | None = None,
 ) -> dict:
-    """实际聚合（get_board_trend_endpoint 的缓存包装主体）。"""
+    """实际聚合（get_board_trend_endpoint 的缓存包装主体）。
+
+    granularity：hour/day/auto（None 视同 auto）。完整桶原则——小时粒度
+    序列 [ceil_hour(start), floor_hour(now)]，日粒度按北京日历日、序列止于
+    昨日（进行中的桶不完整不出桶）。
+    """
 
     def _parse_dt(s: str | None) -> datetime | None:
         if not s:
@@ -284,6 +303,14 @@ async def _get_board_trend_data(
         start = now - timedelta(days=30)
     else:
         start = now - timedelta(hours=24)
+
+    # 粒度决定：auto=窗口跨度 > 48h 用 day，否则 hour
+    if granularity == "day":
+        use_day = True
+    elif granularity == "hour":
+        use_day = False
+    else:
+        use_day = (now - start) > timedelta(hours=48)
 
     # v6.1.2 修复：只聚合 UNIT 级节点，避免 FACTORY/AREA/UNIT 父子节点重复累加
     if plantId:
@@ -312,25 +339,55 @@ async def _get_board_trend_data(
         total_loop_ids = [str(row[0]) for row in loop_result.all()]
     total_loops_count = len(total_loop_ids)
 
+    empty_payload = {
+        "timestamps": [],
+        "avgScore": [],
+        "autoModeRate": [],
+        "stabilityRate": [],
+        "fastRate": [],
+        "accuracyRate": [],
+        "evaluatedLoops": [],
+        "totalLoops": total_loops_count,
+        "granularity": "day" if use_day else "hour",
+    }
     if not descendant_ids:
-        return success(
-            data={
-                "timestamps": [],
-                "avgScore": [],
-                "autoModeRate": [],
-                "stabilityRate": [],
-                "fastRate": [],
-                "accuracyRate": [],
-                "evaluatedLoops": [],
-                "totalLoops": total_loops_count,
-            }
-        )
+        return success(data=empty_payload)
 
-    hour_col = func.date_trunc("hour", UnitKpiSummary.snapshot_time).label("hour")
+    # 完整桶边界（unit_kpi_summary 只写已结束的完整小时/日——小时任务在
+    # H+1 整点后写 H 桶，snapshot_time=ts_start 即窗口起点）：
+    # - hour：首桶向上取整（窗口起点带分秒则丢弃残桶）；末桶 = floor(now)-1h
+    #   （floor(now) 是进行中的小时，快照要等下一整点后才写，出桶必空——
+    #   2026-10-03 修复：原实现末桶取 floor(now) 导致末桶恒无评分）
+    # - day：北京日历日桶，序列止于昨日
+    if use_day:
+        cst_offset = timedelta(hours=8)
+        start_cst = start + cst_offset
+        if start_cst.time() == time(0, 0):
+            first_day = start_cst.date()
+        else:
+            first_day = start_cst.date() + timedelta(days=1)
+        last_day = (now + cst_offset).date() - timedelta(days=1)
+        seq_start = datetime.combine(first_day, time(0, 0)) - cst_offset
+        seq_end = datetime.combine(last_day, time(0, 0)) - cst_offset
+        step = timedelta(days=1)
+    else:
+        seq_start = start.replace(minute=0, second=0, microsecond=0)
+        if seq_start < start:
+            seq_start += timedelta(hours=1)
+        seq_end = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+        step = timedelta(hours=1)
+
+    if use_day:
+        bucket_col = func.date_trunc(
+            "day",
+            UnitKpiSummary.snapshot_time + literal_column("interval '8 hours'"),
+        ).label("bucket")
+    else:
+        bucket_col = func.date_trunc("hour", UnitKpiSummary.snapshot_time).label("bucket")
 
     subq = (
         select(
-            hour_col,
+            bucket_col,
             UnitKpiSummary.node_id.label("nid"),
             UnitKpiSummary.evaluated_loops,
             UnitKpiSummary.avg_score,
@@ -340,14 +397,14 @@ async def _get_board_trend_data(
             UnitKpiSummary.accuracy_rate,
         ).where(
             UnitKpiSummary.node_id.in_(descendant_ids),
-            UnitKpiSummary.snapshot_time >= start,
+            UnitKpiSummary.snapshot_time >= seq_start,
             UnitKpiSummary.snapshot_time <= now,
         )
     ).subquery()
 
     stmt = (
         select(
-            subq.c.hour,
+            subq.c.bucket,
             func.sum(subq.c.evaluated_loops).label("total_evaluated"),
             func.sum(subq.c.avg_score * subq.c.evaluated_loops).label("score_weighted_sum"),
             func.sum(subq.c.auto_mode_rate * subq.c.evaluated_loops).label("auto_weighted_sum"),
@@ -355,20 +412,23 @@ async def _get_board_trend_data(
             func.sum(subq.c.fast_rate * subq.c.evaluated_loops).label("fast_weighted_sum"),
             func.sum(subq.c.accuracy_rate * subq.c.evaluated_loops).label("acc_weighted_sum"),
         )
-        .group_by(subq.c.hour)
-        .order_by(subq.c.hour.asc())
+        .group_by(subq.c.bucket)
+        .order_by(subq.c.bucket.asc())
     )
 
     result = await db.execute(stmt)
     rows = result.all()
 
-    # 构建按小时索引的数据字典
+    # 构建按桶索引的数据字典（日桶 key=北京日字符串，小时桶 key=整点 ISO）
     row_map: dict[str, any] = {}
     for row in rows:
-        hour_key = row.hour.strftime("%Y-%m-%dT%H:00:00")
-        row_map[hour_key] = row
+        if use_day:
+            bucket_key = row.bucket.strftime("%Y-%m-%d")
+        else:
+            bucket_key = row.bucket.strftime("%Y-%m-%dT%H:00:00")
+        row_map[bucket_key] = row
 
-    # 生成完整的小时序列（填充缺失的小时）
+    # 生成完整的桶序列（填充缺失的桶）
     timestamps: list[str] = []
     avg_score: list[float | None] = []
     auto_mode_rate: list[float | None] = []
@@ -377,11 +437,14 @@ async def _get_board_trend_data(
     accuracy_rate: list[float | None] = []
     evaluated_loops: list[int] = []
 
-    current = start.replace(minute=0, second=0, microsecond=0)
-    while current <= now:
-        hour_key = current.strftime("%Y-%m-%dT%H:00:00")
-        timestamps.append(hour_key)
-        row = row_map.get(hour_key)
+    current = seq_start
+    while current <= seq_end:
+        if use_day:
+            bucket_key = (current + cst_offset).strftime("%Y-%m-%d")
+        else:
+            bucket_key = current.strftime("%Y-%m-%dT%H:00:00")
+        timestamps.append(bucket_key)
+        row = row_map.get(bucket_key)
         if row is not None:
             total = row.total_evaluated or 0
             evaluated_loops.append(total)
@@ -404,7 +467,7 @@ async def _get_board_trend_data(
             stability_rate.append(None)
             fast_rate.append(None)
             accuracy_rate.append(None)
-        current += timedelta(hours=1)
+        current += step
 
     return success(
         data={
@@ -416,6 +479,7 @@ async def _get_board_trend_data(
             "accuracyRate": accuracy_rate,
             "evaluatedLoops": evaluated_loops,
             "totalLoops": total_loops_count,
+            "granularity": "day" if use_day else "hour",
         }
     )
 
@@ -897,6 +961,123 @@ async def get_board_aggregate_endpoint(
         data["windowStart"] = window[0].isoformat()
         data["windowEnd"] = window[1].isoformat()
     return success(data=data)
+
+
+@router.get("/board/tree", response_model=ApiResponse[dict])
+async def get_board_tree_endpoint(
+    plantId: str | None = Query(None, description="按节点筛选；为空返回全厂；以其子树为根"),
+    timeWindow: str | None = Query(
+        None, description="时间窗（取值同 board/aggregate）；配合 startTime/endTime 传 custom"
+    ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(get_current_user),
+) -> dict:
+    """节点树形聚合 KPI（装置/单元明细表可折叠视图，2026-10-03 评估总览改版）.
+
+    返回所选范围 PlantNode 树（嵌套 ``children``），每节点带与
+    board/aggregate 明细行同口径的窗口聚合字段 + ``nodeType`` /
+    ``hasSnapshot``；无快照节点计数字段为 null（前端显示 —）。
+
+    与 board/aggregate（当前节点+直接子节点两层平铺）互补：本端点一次
+    返回整棵子树，前端以可展开行表格逐层折叠展示，行数不再随层级漂移。
+    """
+    from app.services.node_performance import batch_collect_descendant_loop_ids
+
+    # custom 窗口（时间选择改版 2026-10-03：前端统一算好起止传 custom）
+    if timeWindow == "custom" and startTime and endTime:
+        window = _resolve_aggregate_window(
+            "custom",
+            start_dt=to_naive_utc(parse_iso_datetime(startTime, field="startTime")),
+            end_dt=to_naive_utc(parse_iso_datetime(endTime, field="endTime")),
+        )
+    else:
+        window = _resolve_aggregate_window(timeWindow if timeWindow else "today")
+    if window is None:
+        window = _resolve_aggregate_window("today")
+
+    # 节点集合：选中节点子树全部节点 / 全部节点（按名称排序稳定树序）
+    if plantId:
+        cte_sql = text("""
+            WITH RECURSIVE node_tree AS (
+                SELECT id FROM plant_node WHERE id = :node_id
+                UNION ALL
+                SELECT child.id FROM plant_node child
+                JOIN node_tree ON child.parent_id = node_tree.id
+            )
+            SELECT id FROM node_tree
+        """)
+        result = await db.execute(cte_sql, {"node_id": plantId})
+        subtree_ids = [str(row.id) for row in result.all()]
+        if not subtree_ids:
+            return success(data={"items": [], "total": 0})
+        nodes_result = await db.execute(
+            select(PlantNode).where(PlantNode.id.in_(subtree_ids)).order_by(PlantNode.name)
+        )
+        nodes = list(nodes_result.scalars().all())
+    else:
+        nodes_result = await db.execute(select(PlantNode).order_by(PlantNode.name))
+        nodes = list(nodes_result.scalars().all())
+
+    if not nodes:
+        return success(data={"items": [], "total": 0})
+
+    node_ids = [str(n.id) for n in nodes]
+
+    # 窗口聚合（rate 字段加权 + 计数字段取窗口内最新快照），与明细表同口径
+    agg_items = await _load_window_items(db, node_ids, window)
+    agg_map = {it["nodeId"]: it for it in agg_items}
+
+    # 每节点实际回路数（1 次递归 CTE，避免 N+1）；无快照节点也有 totalLoops
+    loop_counts = await batch_collect_descendant_loop_ids(db, node_ids)
+    loops_map = {nid: len(ids) for nid, ids in loop_counts.items()}
+
+    # 组树：parent 不在集合内（或为空）即为根
+    _AGG_FIELDS = (
+        "avgScore",
+        "autoModeRate",
+        "stabilityRate",
+        "effectiveAutoRate",
+        "accuracyRate",
+        "fastRate",
+        "goodValueRate",
+        "oscillationRate",
+        "saturationRate",
+        "instrumentFaultRate",
+        "evaluatedLoops",
+        "inconclusiveLoops",
+        "excludedLoops",
+        "snapshotTime",
+    )
+    node_map: dict[str, dict] = {}
+    for n in nodes:
+        nid = str(n.id)
+        agg = agg_map.get(nid)
+        row: dict = {
+            "nodeId": nid,
+            "nodeName": n.name,
+            "nodeType": n.type,
+            "hasSnapshot": agg is not None,
+            "totalLoops": loops_map.get(nid, 0),
+            "children": [],
+        }
+        for key in _AGG_FIELDS:
+            row[key] = agg.get(key) if agg is not None else None
+        node_map[nid] = row
+
+    roots: list[dict] = []
+    for n in nodes:
+        nid = str(n.id)
+        row = node_map[nid]
+        parent_key = str(n.parent_id) if n.parent_id is not None else None
+        parent_row = node_map.get(parent_key) if parent_key else None
+        if parent_row is not None:
+            parent_row["children"].append(row)
+        else:
+            roots.append(row)
+
+    return success(data={"items": roots, "total": len(nodes)})
 
 
 # ---------------------------------------------------------------------------

@@ -305,8 +305,8 @@ const offenderRows = computed(() =>
   padding: 6px 8px;
   margin-top: 8px;
   font-size: 11px;
-  color: hsl(35 80% 30%);
-  background: hsl(45 90% 50% / 8%);
+  color: hsl(35deg 80% 30%);
+  background: hsl(45deg 90% 50% / 8%);
   border-radius: 4px;
 }
 </style>

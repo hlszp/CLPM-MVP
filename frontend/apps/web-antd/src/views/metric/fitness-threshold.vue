@@ -12,7 +12,7 @@
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
-import type { MetricApi } from '#/api/metric';
+import type { DimensionMapsView, MetricApi } from '#/api/metric';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
@@ -25,6 +25,7 @@ import {
   InputNumber,
   message,
   Modal,
+  Select,
   Space,
   Table,
   Tag,
@@ -32,7 +33,9 @@ import {
 } from 'ant-design-vue';
 
 import {
+  getFitnessDimensionMapsApi,
   getFitnessThresholdsApi,
+  saveFitnessDimensionMapsApi,
   saveFitnessThresholdsApi,
 } from '#/api/metric';
 import { ClpmToolbarButton } from '#/components/clpm';
@@ -283,7 +286,162 @@ onMounted(() => {
   loadList().catch(() => {
     /* handled by global request layer */
   });
+  loadDimensionMaps().catch(() => {
+    /* handled by global request layer */
+  });
 });
+
+// ===========================================================================
+// 三性分离（R5，2026-10-03）：维度口径矩阵（可评估/可诊断/可整定 × tag 档位）
+// ===========================================================================
+
+const dimLoading = ref(false);
+const dimView = ref<DimensionMapsView | null>(null);
+/** 编辑态：{维度: {tag: 档位|null}}（null=该 tag 不影响该维度） */
+const dimEdit = reactive<Record<string, Record<string, null | string>>>({});
+
+const DIMENSION_LEVEL_OPTIONS = [
+  { label: '不影响', value: '__none__' },
+  { label: 'L1 不适用/阻断', value: 'L1' },
+  { label: 'L2 警告放行', value: 'L2' },
+  { label: 'L3 提示放行', value: 'L3' },
+];
+
+async function loadDimensionMaps() {
+  dimLoading.value = true;
+  try {
+    const data = await getFitnessDimensionMapsApi();
+    dimView.value = data;
+    for (const dim of data.dimensions ?? []) {
+      dimEdit[dim.key] = {};
+      for (const t of dim.tags ?? []) {
+        dimEdit[dim.key]![t.tag] = t.value ?? '__none__';
+      }
+    }
+  } finally {
+    dimLoading.value = false;
+  }
+}
+
+/** 维度矩阵行：tag 为行键，3 维度各一格 */
+const dimRows = computed(() => {
+  const dims = dimView.value?.dimensions ?? [];
+  if (dims.length === 0) return [];
+  const tagSet = new Set<string>();
+  for (const d of dims) for (const t of d.tags ?? []) tagSet.add(t.tag);
+  const labelMap = new Map<string, string>();
+  for (const d of dims) {
+    for (const t of d.tags ?? []) labelMap.set(t.tag, t.tagLabel);
+  }
+  return [...tagSet].map((tag) => ({
+    key: tag,
+    tag,
+    tagLabel: labelMap.get(tag) ?? tag,
+    levels: Object.fromEntries(
+      dims.map((d) => [d.key, dimEdit[d.key]?.[tag] ?? '__none__']),
+    ),
+    defaults: Object.fromEntries(
+      dims.map((d) => [d.key, d.tags?.find((t) => t.tag === tag)?.value ?? null]),
+    ),
+  }));
+});
+
+/** 维度矩阵是否有未保存修改 */
+const dimDirty = computed(() => {
+  const dims = dimView.value?.dimensions ?? [];
+  for (const d of dims) {
+    for (const t of d.tags ?? []) {
+      if ((dimEdit[d.key]?.[t.tag] ?? '__none__') !== (t.value ?? '__none__')) {
+        return true;
+      }
+    }
+  }
+  return false;
+});
+
+async function handleSaveDimensionMaps() {
+  const maps: Record<string, Record<string, null | string>> = {};
+  for (const dim of dimView.value?.dimensions ?? []) {
+    maps[dim.key] = {};
+    for (const t of dim.tags ?? []) {
+      const v = dimEdit[dim.key]?.[t.tag];
+      maps[dim.key]![t.tag] = v === '__none__' || v == null ? null : v;
+    }
+  }
+  const view = await saveFitnessDimensionMapsApi({
+    maps,
+    remark: '维度口径矩阵保存（适用性配置 Tab）',
+    resetAll: false,
+  });
+  dimView.value = view;
+  for (const dim of view.dimensions ?? []) {
+    dimEdit[dim.key] = {};
+    for (const t of dim.tags ?? []) {
+      dimEdit[dim.key]![t.tag] = t.value ?? '__none__';
+    }
+  }
+  message.success('维度口径已保存，下次 KPI 计算生效');
+}
+
+function handleResetDimensionMaps() {
+  for (const dim of dimView.value?.dimensions ?? []) {
+    for (const t of dim.tags ?? []) {
+      dimEdit[dim.key]![t.tag] = t.value ?? '__none__';
+    }
+  }
+  message.info('已撤销未保存的维度口径修改');
+}
+
+function dimColumn(dimKey: 'assess' | 'diagnose' | 'tune'): TableColumnsType {
+  const meta = dimView.value?.dimensions.find((d) => d.key === dimKey);
+  return [
+    {
+      title: meta?.label ?? dimKey,
+      dataIndex: dimKey,
+      key: dimKey,
+      width: 180,
+      customRender: ({ record }) => {
+        const v = record.levels[dimKey];
+        const dv = record.defaults[dimKey];
+        const modified = v !== (dv ?? '__none__');
+        return (
+          <Space>
+            <Select
+              onChange={(nv: unknown) => {
+                dimEdit[dimKey]![record.tag] = nv as null | string;
+              }}
+              options={DIMENSION_LEVEL_OPTIONS}
+              size="small"
+              style={{ width: 130 }}
+              value={v ?? '__none__'}
+            />
+            {modified ? <Tag color="blue">已修改</Tag> : null}
+          </Space>
+        );
+      },
+    },
+  ];
+}
+
+const dimColumns = computed<TableColumnsType>(() => [
+  {
+    title: '原子标签',
+    dataIndex: 'tagLabel',
+    key: 'tagLabel',
+    width: 220,
+    customRender: ({ record }) => (
+      <Space>
+        <Tag color="geekblue" style={{ fontFamily: 'monospace' }}>
+          {record.tag}
+        </Tag>
+        <span>{record.tagLabel}</span>
+      </Space>
+    ),
+  },
+  ...dimColumn('assess'),
+  ...dimColumn('diagnose'),
+  ...dimColumn('tune'),
+]);
 </script>
 
 <template>
@@ -340,6 +498,55 @@ onMounted(() => {
           :columns="columns"
           :data-source="g.items"
           :loading="loading"
+          :pagination="false"
+          size="small"
+          :row-key="(r: any) => r.key"
+        />
+      </Card>
+
+      <!-- 三性分离（R5）：维度口径矩阵 -->
+      <Card size="small" :bordered="true">
+        <template #title>
+          <Space>
+            <span>维度口径（可评估 / 可诊断 / 可整定）</span>
+            <Tooltip
+              placement="right"
+              :title="
+                dimView?.note ??
+                '档位语义：L1=不适用/阻断、L2=警告放行、L3=提示放行、不影响=该标签不降该维度档；未命中任何降档 → L4 开放。DATA_INSUFFICIENT 恒为三维 L0。'
+              "
+            >
+              <IconifyIcon
+                height="14"
+                icon="ant-design:question-circle-outlined"
+                width="14"
+              />
+            </Tooltip>
+          </Space>
+        </template>
+        <template #extra>
+          <Space>
+            <span v-if="dimDirty" style="font-size: 12px; color: var(--color-amber-600)">
+              有未保存修改
+            </span>
+            <ClpmToolbarButton
+              label="撤销"
+              icon="lucide:undo-2"
+              @click="handleResetDimensionMaps"
+            />
+            <ClpmToolbarButton
+              label="保存..."
+              icon="lucide:save"
+              type="primary"
+              :disabled="!dimDirty"
+              @click="handleSaveDimensionMaps"
+            />
+          </Space>
+        </template>
+        <Table
+          :columns="dimColumns"
+          :data-source="dimRows"
+          :loading="dimLoading"
           :pagination="false"
           size="small"
           :row-key="(r: any) => r.key"

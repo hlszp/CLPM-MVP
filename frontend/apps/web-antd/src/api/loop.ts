@@ -437,6 +437,11 @@ export namespace LoopApi {
     fitnessLevel?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null | string;
     /** P2 IA优化：适用性原因标签枚举（DATA_INSUFFICIENT/OP_SATURATED 等） */
     fitnessTags?: null | string[];
+    /**
+     * 三性分离（R5）：可整定档位（整定门禁口径，与后端
+     * tune_level_effective 同源）；旧快照为 null 时回退 fitnessLevel
+     */
+    tuneLevel?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | null | string;
   }
 
   /** 回路数据健康度（预处理有效率 + 可信度） */
@@ -460,6 +465,12 @@ export namespace LoopApi {
     loopId?: string;
     /** 按实时控制模式筛选（与列表 modeLabel 口径一致） */
     controlMode?: 'Auto' | 'Cascade' | 'Manual';
+    /** 最低评分（含，0-100；与 maxScore 构成半开区间 [min, max)，回路监视页改版 P1-1） */
+    minScore?: number;
+    /** 最高评分（不含，0-100；与 minScore 构成半开区间 [min, max)） */
+    maxScore?: number;
+    /** 只看无评分回路（最新快照无分数或无快照，与 gradeCounts.INCONCLUSIVE 口径一致） */
+    unscored?: boolean;
     /** 排序字段（默认 score：评分升序，最差在前） */
     sortBy?: 'score' | 'tagName';
     /** 排序方向（默认 asc） */

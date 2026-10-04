@@ -447,6 +447,9 @@ class KpiSnapshotListItem(CamelModel):
 
     loopId: str | None = None
     loopTagName: str | None = None
+    # 来源标注（2026-10-03 整合方案 B3）：SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL
+    source: str | None = None
+    sourceTaskId: str | None = None
     tsStart: str | None = None
     tsEnd: str | None = None
     score: float | None = None

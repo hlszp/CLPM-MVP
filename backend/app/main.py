@@ -58,6 +58,7 @@ from app.api.v1.endpoints import (
     # 工厂模型 AAS 同步（工厂配置页：独立同步配置区 + 全量同步）
     factory_sync,
     # diagnosis_trigger_config,
+    fitness_dimension_config,
     fitness_threshold_config,
     grading_config,
     handling,
@@ -1190,6 +1191,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(grading_config.router)
     # IA优化P2: 适用性阈值配置
     v1_router.include_router(fitness_threshold_config.router)
+    # 三性分离（R5）：维度口径配置（可评估/可诊断/可整定 × tag 档位）
+    v1_router.include_router(fitness_dimension_config.router)
     # 指标定义管理（指标配置-指标定义 Tab：CRUD + 版本化）
     v1_router.include_router(metric_definition.router)
     # 工厂模型 AAS 同步（工厂配置页）

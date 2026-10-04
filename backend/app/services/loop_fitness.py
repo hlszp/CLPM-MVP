@@ -51,6 +51,119 @@ _DEFAULT_THRESHOLDS: dict[str, float] = {
 # sys_config 前缀（配置项完整键，如 "fitness.low_auto_rate_pct"）
 FITNESS_CONFIG_PREFIX = "fitness."
 
+# ---------------------------------------------------------------------------
+# 三性分离（2026-10-03 R5 裁决）：tag → 各维度档位映射
+# 设计：docs/设计文档/评估性能总览页改版-方案-2026-10-03.md §5
+# - 一套原子 tag 判定（7 项阈值已可配），三个维度视图各自映射
+# - DATA_INSUFFICIENT 恒为三维 L0（数据红线，不可配置降档）
+# - 维度等级 = 命中 tags 在该维度映射中的最严档；无命中 → L4
+# - 默认映射与现行三模块消费行为完全等价（零行为变化的等价迁移）
+# ---------------------------------------------------------------------------
+
+# 可参与维度映射的原子 tags（DATA_INSUFFICIENT 除外）
+DIMENSION_TAGS = (
+    "MANUAL_DOMINANT",
+    "LOW_AUTO_RATE",
+    "OP_SATURATED",
+    "SP_PV_DEVIATION",
+    "NO_EXCITATION",
+    "WEAK_RESPONSE",
+)
+
+DIMENSIONS = ("assess", "diagnose", "tune")
+
+# sys_config 键：JSON {"assess": {tag: level|None}, "diagnose": {...}, "tune": {...}}
+FITNESS_DIMENSION_MAPS_KEY = "fitness.dimension_maps"
+
+_DEFAULT_DIMENSION_MAPS: dict[str, dict[str, str]] = {
+    # 可评估性：仅数据充分性 + 手动主导影响（饱和/偏差/激励不影响"能不能评"）
+    "assess": {
+        "MANUAL_DOMINANT": "L1",
+        "LOW_AUTO_RATE": "L1",
+    },
+    # 可诊断性：现行口径（L0 阻断、L1 阻断、L2 警告放行、L3 受限提示）
+    "diagnose": {
+        "MANUAL_DOMINANT": "L1",
+        "LOW_AUTO_RATE": "L1",
+        "OP_SATURATED": "L2",
+        "SP_PV_DEVIATION": "L2",
+        "NO_EXCITATION": "L3",
+        "WEAK_RESPONSE": "L3",
+    },
+    # 可整定性：现行口径（L0/L1 阻断 ERR_TUNING_FITNESS_INSUFFICIENT、
+    # L2 警告、L3 可发起但前置激励提示）
+    "tune": {
+        "MANUAL_DOMINANT": "L1",
+        "LOW_AUTO_RATE": "L1",
+        "OP_SATURATED": "L2",
+        "SP_PV_DEVIATION": "L2",
+        "NO_EXCITATION": "L3",
+        "WEAK_RESPONSE": "L3",
+    },
+}
+
+_LEVEL_ORDER = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
+
+
+def load_dimension_maps(
+    sys_configs: Mapping[str, str] | None,
+) -> dict[str, dict[str, str]]:
+    """从 sys_config 读取维度映射，与默认映射合并（用户配置覆盖默认项）.
+
+    非法 JSON / 非法维度 / 非法 tag / 非法档位一律忽略该项回退默认；
+    映射值为 None（tag 不影响该维度）在 JSON 中用 null 表示，解析为"移除默认项"。
+    """
+    import json
+
+    maps = {dim: dict(levels) for dim, levels in _DEFAULT_DIMENSION_MAPS.items()}
+    if sys_configs is None:
+        return maps
+    raw = sys_configs.get(FITNESS_DIMENSION_MAPS_KEY)
+    if not raw:
+        return maps
+    try:
+        overrides = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning("维度映射 %s 非法 JSON，回退默认映射", FITNESS_DIMENSION_MAPS_KEY)
+        return maps
+    if not isinstance(overrides, dict):
+        return maps
+    for dim, tag_map in overrides.items():
+        if dim not in DIMENSIONS or not isinstance(tag_map, dict):
+            continue
+        for tag, level in tag_map.items():
+            if tag not in DIMENSION_TAGS:
+                continue
+            if level is None:
+                maps[dim].pop(tag, None)
+            elif level in _LEVEL_ORDER:
+                maps[dim][tag] = level
+    return maps
+
+
+def derive_dimension_levels(
+    tags: list[str],
+    dimension_maps: dict[str, dict[str, str]] | None = None,
+) -> dict[str, str]:
+    """由命中 tags 推导三性维度等级（不含 L0 判定，gate 失败调用方直接置 L0）.
+
+    Returns:
+        {"assess": "L4", "diagnose": "L2", "tune": "L2"} 等
+    """
+    maps = dimension_maps or _DEFAULT_DIMENSION_MAPS
+    result: dict[str, str] = {}
+    tag_set = set(tags)
+    for dim in DIMENSIONS:
+        if "DATA_INSUFFICIENT" in tag_set:
+            result[dim] = "L0"
+            continue
+        level = "L4"
+        for tag, mapped in maps.get(dim, {}).items():
+            if tag in tag_set and _LEVEL_ORDER.get(mapped, 4) < _LEVEL_ORDER[level]:
+                level = mapped
+        result[dim] = level
+    return result
+
 
 @dataclass
 class FitnessResult:
@@ -59,12 +172,19 @@ class FitnessResult:
     level: str  # 'L0' | 'L1' | 'L2' | 'L3' | 'L4' | None
     tags: list[str]  # 命中的标签列表，如 ['OP_SATURATED', 'SP_PV_DEVIATION']
     detail: dict[str, Any]  # 详细判定数据，含各指标实际值
+    # 三性分离（R5）：可评估/可诊断/可整定各独立一档（L0~L4，L4=开放）
+    assess_level: str | None = None
+    diagnose_level: str | None = None
+    tune_level: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "level": self.level,
             "tags": self.tags,
             "detail": self.detail,
+            "assessLevel": self.assess_level,
+            "diagnoseLevel": self.diagnose_level,
+            "tuneLevel": self.tune_level,
         }
 
 
@@ -238,7 +358,7 @@ def compute_fitness(
     }
 
     # ---------------------------------------------------------------
-    # L0：直接复用 gate.py 结果（不重复计算）
+    # L0：直接复用 gate.py 结果（不重复计算）；三性维度同为 L0（数据红线）
     # ---------------------------------------------------------------
     if gate_result is not None and not gate_result.passed:
         tags.append("DATA_INSUFFICIENT")
@@ -246,7 +366,14 @@ def compute_fitness(
         detail["gapRatio"] = round(gate_result.gap_ratio, 4)
         detail["pointCount"] = gate_result.point_count
         detail["validRate"] = round(gate_result.valid_rate, 4)
-        return FitnessResult(level="L0", tags=tags, detail=detail)
+        return FitnessResult(
+            level="L0",
+            tags=tags,
+            detail=detail,
+            assess_level="L0",
+            diagnose_level="L0",
+            tune_level="L0",
+        )
 
     # ---------------------------------------------------------------
     # 阈值加载（全部从 sys_config，缺失走默认值）
@@ -444,10 +571,22 @@ def compute_fitness(
     else:
         level = "L4"
 
+    # 三性分离（R5）：按维度映射独立推导（sys_config 可配，默认=现行行为等价）
+    dimension_maps = load_dimension_maps(sys_configs)
+    dimension_levels = derive_dimension_levels(tags, dimension_maps)
+    detail["dimensionLevels"] = dimension_levels
+
     detail["levelDetermined"] = level
     detail["approximated"] = detail.get("approximated", approx)
 
-    return FitnessResult(level=level, tags=tags, detail=detail)
+    return FitnessResult(
+        level=level,
+        tags=tags,
+        detail=detail,
+        assess_level=dimension_levels["assess"],
+        diagnose_level=dimension_levels["diagnose"],
+        tune_level=dimension_levels["tune"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +602,10 @@ class LoopFitnessLatest:
     level: str | None  # 'L0'~'L4' 或 None（无快照）
     tags: list[str] | None
     detail: dict | None
+    # 三性分离（R5）：旧快照三列为 NULL 时回退 level（默认映射下等价）
+    assess_level: str | None = None
+    diagnose_level: str | None = None
+    tune_level: str | None = None
 
     def to_public_dict(self) -> dict:
         return {
@@ -470,7 +613,25 @@ class LoopFitnessLatest:
             "fitnessLevel": self.level,
             "fitnessTags": self.tags or [],
             "fitnessDetail": self.detail or {},
+            "assessLevel": self.assess_level or self.level,
+            "diagnoseLevel": self.diagnose_level or self.level,
+            "tuneLevel": self.tune_level or self.level,
         }
+
+    @property
+    def assess_level_effective(self) -> str | None:
+        """可评估性生效档（旧快照三列 NULL → 回退综合 level，默认映射下等价）."""
+        return self.assess_level or self.level
+
+    @property
+    def diagnose_level_effective(self) -> str | None:
+        """可诊断性生效档（回退语义同上）."""
+        return self.diagnose_level or self.level
+
+    @property
+    def tune_level_effective(self) -> str | None:
+        """可整定性生效档（回退语义同上）."""
+        return self.tune_level or self.level
 
     @property
     def human_readable_tags(self) -> list[str]:
@@ -539,11 +700,15 @@ async def get_latest_fitness_per_loop(
                 tags_list = [str(x) for x in snap.fitness_tags["tags"]]
             elif isinstance(snap.fitness_tags, list):
                 tags_list = [str(x) for x in snap.fitness_tags]
+            # 三性列直读（getattr 兼容旧库行对象无该属性的场景）
             result_map[lid] = LoopFitnessLatest(
                 loop_id=lid,
                 level=snap.fitness_level,
                 tags=tags_list,
                 detail=snap.fitness_detail if isinstance(snap.fitness_detail, dict) else None,
+                assess_level=getattr(snap, "assess_level", None),
+                diagnose_level=getattr(snap, "diagnose_level", None),
+                tune_level=getattr(snap, "tune_level", None),
             )
     except Exception as exc:  # noqa: BLE001
         logger.debug("批量查询最新 fitness 失败（返回 None 占位）: %s", exc)

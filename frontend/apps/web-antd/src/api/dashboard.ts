@@ -206,6 +206,38 @@ export namespace DashboardApi {
     accuracyRate?: (null | number)[];
     evaluatedLoops: number[];
     totalLoops: number;
+    /** 实际生效粒度（2026-10-03 改版：hour/day；day 时 timestamps 为北京日 YYYY-MM-DD） */
+    granularity?: 'day' | 'hour';
+  }
+
+  /** 节点树形聚合行（board/tree，2026-10-03 明细表可折叠视图） */
+  export interface BoardTreeItem {
+    nodeId: string;
+    nodeName: string;
+    nodeType: null | string;
+    hasSnapshot: boolean;
+    totalLoops: number;
+    avgScore: null | number;
+    autoModeRate: null | number;
+    stabilityRate: null | number;
+    effectiveAutoRate: null | number;
+    accuracyRate: null | number;
+    fastRate: null | number;
+    goodValueRate: null | number;
+    oscillationRate: null | number;
+    saturationRate: null | number;
+    instrumentFaultRate: null | number;
+    evaluatedLoops: null | number;
+    inconclusiveLoops: null | number;
+    excludedLoops: null | number;
+    snapshotTime: null | string;
+    children: BoardTreeItem[];
+  }
+
+  /** 节点树形聚合结果 */
+  export interface BoardTreeResult {
+    items: BoardTreeItem[];
+    total: number;
   }
 
   // -------------------------------------------------------------------------
@@ -425,10 +457,14 @@ export function getBoardAggregateApi(params?: {
 /**
  * 获取节点级聚合趋势数据（v6.1 新增）
  * 递归聚合当前节点及所有下属节点的趋势数据
+ * 2026-10-03 改版：granularity=hour/day/auto（auto=窗口>48h 用 day），
+ * 完整桶对齐（末桶=上一完整小时/昨日）
  */
 export function getBoardTrendApi(params?: {
   /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
   endTime?: string;
+  /** 聚合粒度：hour/day/auto（默认 auto） */
+  granularity?: string;
   plantId?: string;
   /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
   startTime?: string;
@@ -436,6 +472,22 @@ export function getBoardTrendApi(params?: {
 }) {
   return requestClient.get<DashboardApi.BoardTrendResult>(
     '/dashboard/board/trend',
+    {
+      params,
+    },
+  );
+}
+
+/**
+ * 节点树形聚合 KPI（2026-10-03 明细表可折叠视图）
+ * 一次返回整棵子树（嵌套 children），每节点带窗口聚合字段
+ */
+export function getBoardTreeApi(params?: {
+  plantId?: string;
+  timeWindow?: string;
+}) {
+  return requestClient.get<DashboardApi.BoardTreeResult>(
+    '/dashboard/board/tree',
     {
       params,
     },

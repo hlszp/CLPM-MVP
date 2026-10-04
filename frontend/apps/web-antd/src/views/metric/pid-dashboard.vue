@@ -5,18 +5,27 @@ import type {
   DashboardApi,
   GradeDistributionResult,
   MetricApi,
-  TimeWindow,
 } from '#/api';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Button, Drawer, Select, Table, Tag, Tooltip } from 'ant-design-vue';
+import {
+  Button,
+  DatePicker,
+  Drawer,
+  RangePicker,
+  Select,
+  Table,
+  TabPane,
+  Tabs,
+  Tag,
+  Tooltip,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
@@ -44,12 +53,127 @@ const { isDark, themeColors, chartColors } = useClpmTheme();
 const { canReadConfig } = useConfigAccess();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
 
-const timeWindowOptions = [
-  { label: '近8小时', value: 'last_8_hours' },
-  { label: '24小时', value: 'today' },
-  { label: '168小时', value: 'last_7_days' },
-  { label: '近1月', value: 'last_30_days' },
+// ===== 时间选择（2026-10-03 裁决）：今日 / 按日 / 按周 / 按月 / 自定义 =====
+// 语义统一由前端 resolveWindow 计算起止（今日=北京日历日 00:00 → 当前时刻；
+// 周=周一起的 7 个日历日；自定义精度小时），全部以 timeWindow=custom +
+// startTime/endTime 下发后端，根治本页三处窗口口径不一致问题。
+type WindowMode = 'custom' | 'day' | 'month' | 'today' | 'week';
+
+const windowMode = ref<WindowMode>('today');
+const dayValue = ref(dayjs());
+const weekValue = ref(dayjs());
+const monthValue = ref(dayjs());
+const customRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('day'), dayjs()]);
+
+const windowModeOptions = [
+  { label: '今日', value: 'today' },
+  { label: '按日', value: 'day' },
+  { label: '按周', value: 'week' },
+  { label: '按月', value: 'month' },
+  { label: '自定义', value: 'custom' },
 ];
+
+/** 与 locale 无关的周一锚点（中国惯例周一为首日） */
+function startOfWeekMonday(d: dayjs.Dayjs): dayjs.Dayjs {
+  const dayNum = (d.day() + 6) % 7; // 周一=0 … 周日=6
+  return d.subtract(dayNum, 'day').startOf('day');
+}
+
+/** ISO 周数（无 weekOfYear 插件的手动算法：周四决定所属年份） */
+function isoWeekNumber(d: dayjs.Dayjs): number {
+  const monday = startOfWeekMonday(d);
+  const thursday = monday.add(3, 'day');
+  const yearStart = thursday.startOf('year');
+  const yearStartMondayOffset = (yearStart.day() + 6) % 7;
+  return (
+    Math.floor((thursday.diff(yearStart, 'day') + yearStartMondayOffset) / 7) + 1
+  );
+}
+
+/** 统一解析窗口 [start, end]（本地时间；end 钳制到当前时刻，未来不取数） */
+function resolveWindow(): { end: dayjs.Dayjs; start: dayjs.Dayjs } {
+  const now = dayjs();
+  let start: dayjs.Dayjs;
+  let end: dayjs.Dayjs;
+  switch (windowMode.value) {
+    case 'custom': {
+      [start, end] = customRange.value;
+      break;
+    }
+    case 'day': {
+      start = dayValue.value.startOf('day');
+      end = start.add(1, 'day');
+      break;
+    }
+    case 'month': {
+      start = monthValue.value.startOf('month');
+      end = start.endOf('month').add(1, 'millisecond');
+      break;
+    }
+    case 'week': {
+      start = startOfWeekMonday(weekValue.value);
+      end = start.add(7, 'day');
+      break;
+    }
+    default: {
+      start = now.startOf('day');
+      end = now;
+    }
+  }
+  if (end.isAfter(now)) end = now;
+  return { start, end };
+}
+
+/** 指标分析页深链窗口映射：其窗口枚举为滚动窗预设，按当前窗口跨度取最近档 */
+function nearestIndicatorWindow(): string {
+  const { start, end } = resolveWindow();
+  const hours = end.diff(start, 'hour', true);
+  if (hours <= 8) return 'last_8_hours';
+  if (hours <= 24) return 'today';
+  if (hours <= 24 * 7) return 'last_7_days';
+  return 'last_30_days';
+}
+
+/** 统一 API 窗口参数（custom + UTC ISO），所有数据接口共用同一窗口 */
+const windowParams = computed<{
+  endTime: string;
+  startTime: string;
+  timeWindow: 'custom';
+}>(() => {
+  const { start, end } = resolveWindow();
+  return {
+    timeWindow: 'custom',
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+  };
+});
+
+/** 禁止选择未来日期 */
+const disableFutureDate = (current: dayjs.Dayjs) =>
+  current.isAfter(dayjs().endOf('day'));
+
+/** 当前时间窗中文标签（gauges 卡片统计窗口标注） */
+const timeWindowLabel = computed(() => {
+  switch (windowMode.value) {
+    case 'custom': {
+      const { start, end } = resolveWindow();
+      return `${start.format('M-D HH:mm')}~${end.format('M-D HH:mm')}`;
+    }
+    case 'day': {
+      return dayValue.value.format('M月D日');
+    }
+    case 'month': {
+      return monthValue.value.format('YYYY年M月');
+    }
+    case 'week': {
+      const monday = startOfWeekMonday(weekValue.value);
+      return `${monday.add(3, 'day').year()}年第${isoWeekNumber(weekValue.value)}周`;
+    }
+    default: {
+      return '今日';
+    }
+  }
+});
 
 /** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
 const PID_NA_TAG_CN: Record<string, string> = {
@@ -97,14 +221,6 @@ function fitnessNATip(
 /** 不适用时统一中性灰 slate（与其他模块一致，不红不警告） */
 const FITNESS_NA_COLOR = 'var(--color-slate-500)';
 
-const timeWindow = ref<TimeWindow>('today');
-
-/** 当前时间窗中文标签（gauges 卡片统计窗口标注） */
-const timeWindowLabel = computed(
-  () =>
-    timeWindowOptions.find((o) => o.value === timeWindow.value)?.label ?? '',
-);
-
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref<string>('全厂');
 
@@ -123,7 +239,7 @@ function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
   loadAll();
 }
 
-function handleTimeWindowChange() {
+function handleWindowChange() {
   loadAll();
 }
 
@@ -131,7 +247,7 @@ function handleTimeWindowChange() {
 function goIndicatorAnalysis(metric: string) {
   router.push({
     path: '/metric/indicator-analysis',
-    query: { metric, window: timeWindow.value },
+    query: { metric, window: nearestIndicatorWindow() },
   });
 }
 
@@ -219,65 +335,156 @@ const gradeRows = computed(() => {
   return rows;
 });
 
+// ===== 2026-10-03 改版：适用性分层 L0~L4（评估/诊断/整定共用口径；三性分离见改版方案 §5） =====
+// 分层语义与 loop_fitness.py 一致：L0 数据不足 / L1 仅可监视 / L2 条件异常 / L3 待激励 / L4 可优化
+const FITNESS_LEVEL_META: {
+  color: string;
+  key: string;
+  label: string;
+}[] = [
+  { key: 'L0', label: 'L0 数据不足', color: 'var(--status-error)' },
+  { key: 'L1', label: 'L1 仅可监视', color: 'var(--status-error)' },
+  { key: 'L2', label: 'L2 条件异常', color: 'var(--status-warning)' },
+  { key: 'L3', label: 'L3 待激励', color: 'var(--status-info)' },
+  { key: 'L4', label: 'L4 可优化', color: 'var(--status-success)' },
+];
+
+// ===== 三性分离（R5，2026-10-03）：可评估/可诊断/可整定分布 =====
+// 数据源 grade-distribution 的 assessDistribution/diagnoseDistribution/tuneDistribution
+// （每回路最新快照口径，旧快照三列 NULL 已由后端 COALESCE 回退 fitness_level）
+const DIMENSION_LABELS: Record<string, string> = {
+  assess: '可评估性',
+  diagnose: '可诊断性',
+  tune: '可整定性',
+};
+
+const fitnessRows = computed(() => {
+  const dist = gradeDistribution.value;
+  if (!dist) return [];
+  const withSnap = Number(dist.fitnessDistribution?.total ?? dist.total ?? 0);
+  const plantTotal = aggregateData.value?.totalLoops ?? 0;
+  const rows = FITNESS_LEVEL_META.map((m) => {
+    const count = Number(dist.fitnessDistribution?.[m.key] ?? 0);
+    return {
+      label: m.label,
+      count,
+      pct: withSnap > 0 ? Math.round((count / withSnap) * 100) : 0,
+      color: m.color,
+    };
+  });
+  // 对账行：窗口内无快照回路（全量活跃 − 有快照）
+  const noSnap = Math.max(plantTotal - withSnap, 0);
+  if (plantTotal > 0) {
+    rows.push({
+      label: '无快照',
+      count: noSnap,
+      pct: plantTotal > 0 ? Math.round((noSnap / plantTotal) * 100) : 0,
+      color: 'var(--status-neutral)',
+    });
+  }
+  return rows;
+});
+
+/** 三性各维度分布行（堆叠条 + 可用/阻断摘要） */
+const dimensionRows = computed(() => {
+  const dist = gradeDistribution.value as unknown as null | Record<string, Record<string, number>>;
+  if (!dist) return [];
+  const dims: { key: string; label: string }[] = [
+    { key: 'assessDistribution', label: DIMENSION_LABELS.assess! },
+    { key: 'diagnoseDistribution', label: DIMENSION_LABELS.diagnose! },
+    { key: 'tuneDistribution', label: DIMENSION_LABELS.tune! },
+  ];
+  const out: {
+    blocked: number;
+    colorScale: string[];
+    key: string;
+    label: string;
+    open: number;
+    segs: { count: number; label: string; pct: number }[];
+    total: number;
+  }[] = [];
+  for (const d of dims) {
+    const raw = dist[d.key];
+    if (!raw || typeof raw !== 'object') continue;
+    const total = Number(raw.total ?? 0);
+    const segs = FITNESS_LEVEL_META.map((m) => {
+      const count = Number(raw[m.key] ?? 0);
+      return {
+        label: m.label,
+        count,
+        pct: total > 0 ? (count / total) * 100 : 0,
+      };
+    });
+    const blocked = (Number(raw.L0) || 0) + (Number(raw.L1) || 0);
+    const open = (Number(raw.L2) || 0) + (Number(raw.L3) || 0) + (Number(raw.L4) || 0);
+    out.push({
+      key: d.key,
+      label: d.label,
+      segs,
+      total,
+      blocked,
+      open,
+      colorScale: FITNESS_LEVEL_META.map((m) => m.color),
+    });
+  }
+  return out;
+});
+
+/** 等级/适用性卡当前 Tab */
+const distTab = ref<'fitness' | 'grade'>('grade');
+
 // ===== 整改 F4：阀门运行区间异常（OP 行程越限 5%~95%） =====
-interface ValveAlertItem {
+// 2026-10-03 改版：改走服务端聚合 /performance/valve-alerts（TOP N + 总数），
+// 替代前端全量翻页拉快照再客户端过滤（生产 961 回路 = 10 页串行请求）且全量渲染无上限
+const VALVE_TOP_N = 10;
+interface ValveAlertRow {
   loopId: string;
   tagName: string;
+  loopName: null | string;
   range: string;
 }
-const valveAlerts = ref<ValveAlertItem[]>([]);
+
+const valveAlerts = ref<ValveAlertRow[]>([]);
+const valveAlertsTotal = ref(0);
 
 async function loadValveAlerts() {
   try {
-    const { getLoopSnapshotsApi } = await import('#/api/metric');
-    // 0929 诚实化修复：latestOnly 每回路仅最新快照（防历史快照重复命中 + :key 重复）；
-    // 全量翻页拉取（此前只查前 50 条，阀门越限系统性漏报）
-    const all: Awaited<ReturnType<typeof getLoopSnapshotsApi>>['items'] = [];
-    let page = 1;
-    let total = 0;
-    do {
-      const res = await getLoopSnapshotsApi({
-        page,
-        pageSize: 100,
-        latestOnly: true,
-      });
-      all.push(...(res.items ?? []));
-      total = res.total ?? 0;
-      page += 1;
-    } while ((page - 1) * 100 < total);
-    const alerts: ValveAlertItem[] = [];
-    for (const snap of all) {
-      const lo = snap.valveOpMin;
-      const hi = snap.valveOpMax;
-      if (lo === null || lo === undefined || hi === null || hi === undefined)
-        continue;
-      if (lo <= 5 || hi >= 95) {
-        alerts.push({
-          loopId: snap.loopId ?? '',
-          tagName: snap.loopTagName ?? snap.loopId ?? '—',
-          range: `OP ${lo.toFixed(1)}% ~ ${hi.toFixed(1)}%`,
-        });
-      }
-    }
-    valveAlerts.value = alerts;
+    const { getValveAlertsApi } = await import('#/api/metric');
+    const res = await getValveAlertsApi({
+      plantNodeId: selectedPlantNodeId.value,
+      ...windowParams.value,
+      limit: VALVE_TOP_N,
+    });
+    valveAlertsTotal.value = res.total ?? 0;
+    valveAlerts.value = (res.items ?? []).map((it) => ({
+      loopId: it.loopId,
+      tagName: it.tagName,
+      loopName: it.loopName,
+      range: `OP ${it.valveOpMin?.toFixed(1) ?? '—'}% ~ ${
+        it.valveOpMax?.toFixed(1) ?? '—'
+      }%`,
+    }));
   } catch {
     valveAlerts.value = [];
+    valveAlertsTotal.value = 0;
   }
 }
 
 // 整改 C2-3：默认评分升序（最差优先），管理者注意力直达 Bad Actor
-const top5Sort = ref<'asc' | 'desc'>('asc');
+// 2026-10-03 改版：TOP5 治理台账 → 待治理 TOP10（服务端 fitnessFilter 剔除 L0/L1）
+const GOVERNANCE_TOP_N = 10;
+const topNSort = ref<'asc' | 'desc'>('asc');
 
 const aggregateData = computed(() => boardAggregate.value?.aggregate);
 
-const top5List = computed(() => {
+const topNList = computed(() => {
   const items = [...rankingList.value];
-  if (top5Sort.value === 'asc') {
+  if (topNSort.value === 'asc') {
     items.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
   } else {
     items.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   }
-  return items.slice(0, 5);
+  return items.slice(0, GOVERNANCE_TOP_N);
 });
 
 // 默认定级阈值（国标 GB/T 44693.2-2024 §6.3，与 use-score-color 内部默认值同口径；
@@ -336,17 +543,10 @@ function getRatingLevel(score: null | number | undefined): null | string {
 
 const tableColumns = [
   {
-    title: '序号',
-    dataIndex: 'index',
-    key: 'index',
-    width: 60,
-    align: 'center' as const,
-  },
-  {
     title: '名称',
     dataIndex: 'name',
     key: 'name',
-    width: 150,
+    width: 200,
     align: 'left' as const,
   },
   {
@@ -386,34 +586,63 @@ const tableColumns = [
   },
 ];
 
-const tableData = computed(() => {
-  const items = boardAggregate.value?.items ?? [];
-  // 第一行固定为当前选中节点，其后仅列当前节点的下一层子节点（按评分降序）
-  // （后端 board/aggregate 已只返回当前节点 + 直接子节点）
-  const currentId = selectedPlantNodeId.value;
-  const currentRows = currentId
-    ? items.filter((it) => it.nodeId === currentId)
-    : [];
-  const childRows = items
-    .filter((it) => it.nodeId !== currentId)
-    .toSorted((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0));
-  return [...currentRows, ...childRows].map((item, index) => {
-    const rating = getRatingLevel(item.avgScore);
-    return {
-      key: item.nodeId,
-      index: index + 1,
-      name: item.nodeName ?? '',
-      rating,
-      ratingColor: rating ? gradeColor(Number(rating)) : '',
-      score: formatNumber(item.avgScore),
-      totalLoops: item.totalLoops ?? 0,
-      autoRate: formatNumber(item.autoModeRate),
-      smoothRate: formatNumber(item.stabilityRate),
-    };
-  });
-});
+/**
+ * 明细表树数据（2026-10-03 改版：board/tree 一次取整棵子树，可折叠）
+ * 树形下行序=层级序（树结构下按评分重排会破坏层级）；
+ * 无快照节点指标显示 —（诚实化：不把「无数据」渲染成 0）
+ */
+interface TableTreeNode {
+  children?: TableTreeNode[];
+  key: string;
+  name: string;
+  rating: null | string;
+  ratingColor: string;
+  score: string;
+  totalLoops: number;
+  autoRate: string;
+  smoothRate: string;
+}
 
-const top5Columns = [
+const boardTree = ref<DashboardApi.BoardTreeItem[]>([]);
+/** 默认展开首层（根节点行） */
+const tableExpandedRowKeys = ref<string[]>([]);
+
+function mapTreeItem(node: DashboardApi.BoardTreeItem): TableTreeNode {
+  const rating = node.hasSnapshot ? getRatingLevel(node.avgScore) : null;
+  const children = node.children?.map((c) => mapTreeItem(c)) ?? [];
+  return {
+    key: node.nodeId,
+    name: node.nodeName ?? '',
+    rating,
+    ratingColor: rating ? gradeColor(Number(rating)) : '',
+    score: formatNumber(node.avgScore),
+    totalLoops: node.totalLoops ?? 0,
+    autoRate: formatNumber(node.autoModeRate),
+    smoothRate: formatNumber(node.stabilityRate),
+    ...(children.length > 0 ? { children } : {}),
+  };
+}
+
+const tableData = computed<TableTreeNode[]>(() =>
+  boardTree.value.map((root) => mapTreeItem(root)),
+);
+
+async function loadBoardTree() {
+  try {
+    const { getBoardTreeApi } = await import('#/api/dashboard');
+    const res = await getBoardTreeApi({
+      ...(selectedPlantNodeId.value && { plantId: selectedPlantNodeId.value }),
+      ...windowParams.value,
+    });
+    boardTree.value = res.items ?? [];
+    tableExpandedRowKeys.value = boardTree.value.map((n) => n.nodeId);
+  } catch {
+    boardTree.value = [];
+    tableExpandedRowKeys.value = [];
+  }
+}
+
+const topNColumns = [
   {
     title: '序号',
     dataIndex: 'index',
@@ -433,7 +662,7 @@ const top5Columns = [
     title: '性能评级',
     dataIndex: 'rating',
     key: 'rating',
-    width: 80,
+    width: 70,
     align: 'center' as const,
   },
   {
@@ -452,8 +681,8 @@ const top5Columns = [
   },
 ];
 
-const top5TableData = computed(() => {
-  return top5List.value.map((item, index) => {
+const topNTableData = computed(() => {
+  return topNList.value.map((item, index) => {
     const fitnessLevel = item.fitnessLevel ?? null;
     const fitnessTags = Array.isArray(item.fitnessTags)
       ? item.fitnessTags
@@ -495,20 +724,20 @@ function renderTrendChart() {
   const trend = boardTrend.value;
   if (!trend || !trend.timestamps?.length) return;
 
-  // 性能 #11：用"补 Z 转本地"约定替代 +8h hack。
-  // 后端 timestamps 为无时区后缀的 ISO8601（如 "2026-07-22T10:00:00"），
-  // 补 "Z" 标记为 UTC 后由 dayjs 按本地时区渲染，跨时区正确。
+  // 2026-10-03 改版：恒柱状（不再随窗口切换柱/线漂移）；
+  // day 粒度 timestamps 为北京日字符串（YYYY-MM-DD）直接格式化，
+  // hour 粒度沿用"补 Z 转本地"约定（后端为无时区后缀的 UTC ISO8601）
+  const isDay = trend.granularity === 'day';
   const timestamps = trend.timestamps.map((ts) =>
-    dayjs(normalizeUtcTimestamp(ts)).format('M-D H:00'),
+    isDay
+      ? dayjs(ts).format('M-D')
+      : dayjs(normalizeUtcTimestamp(ts)).format('M-D H:00'),
   );
 
   const barDataTotal =
     (trend.totalLoops ?? 0) > 0 ? timestamps.map(() => trend.totalLoops) : [];
   const barDataEvaluated = trend.evaluatedLoops ?? [];
 
-  const showBar = timestamps.length <= 24;
-
-  // 整改 A-15：轴/工具提示走 ECharts 工业 preset；X 轴标签不再 45° 旋转（hideOverlap 自动抽稀）
   renderTrend({
     grid: { bottom: 40, left: '2%', right: '2%', top: 20, containLabel: true },
     xAxis: {
@@ -542,53 +771,17 @@ function renderTrendChart() {
     series: [
       {
         name: '总回路数',
-        type: showBar ? ('bar' as const) : ('line' as const),
+        type: 'bar' as const,
         data: barDataTotal,
         itemStyle: { color: themeColors.value.INFO },
-        areaStyle: showBar
-          ? undefined
-          : {
-              color: {
-                type: 'linear',
-                x: 0,
-                y: 0,
-                x2: 0,
-                y2: 1,
-                colorStops: [
-                  { offset: 0, color: `${themeColors.value.INFO}40` },
-                  { offset: 1, color: `${themeColors.value.INFO}05` },
-                ],
-              },
-            },
-        lineStyle: showBar ? undefined : { width: 2 },
-        smooth: !showBar,
-        symbol: 'circle',
-        symbolSize: 4,
+        barMaxWidth: 26,
       },
       {
         name: '参评回路数',
-        type: showBar ? ('bar' as const) : ('line' as const),
+        type: 'bar' as const,
         data: barDataEvaluated,
         itemStyle: { color: themeColors.value.SUCCESS },
-        areaStyle: showBar
-          ? undefined
-          : {
-              color: {
-                type: 'linear',
-                x: 0,
-                y: 0,
-                x2: 0,
-                y2: 1,
-                colorStops: [
-                  { offset: 0, color: `${themeColors.value.SUCCESS}40` },
-                  { offset: 1, color: `${themeColors.value.SUCCESS}05` },
-                ],
-              },
-            },
-        lineStyle: showBar ? undefined : { width: 2 },
-        smooth: !showBar,
-        symbol: 'circle',
-        symbolSize: 4,
+        barMaxWidth: 26,
       },
       {
         name: '性能评分',
@@ -699,13 +892,14 @@ async function loadBoard() {
         ...(selectedPlantNodeId.value && {
           plantId: selectedPlantNodeId.value,
         }),
-        timeWindow: timeWindow.value,
+        ...windowParams.value,
       }),
       getBoardTrendApi({
         ...(selectedPlantNodeId.value && {
           plantId: selectedPlantNodeId.value,
         }),
-        timeWindow: timeWindow.value,
+        ...windowParams.value,
+        granularity: 'auto',
       }),
     ]);
     boardAggregate.value = aggregate;
@@ -731,18 +925,21 @@ async function loadAutoRateRt() {
 }
 
 /**
- * TOP5 排行：服务端排序 + limit 单次请求（原循环分页拉全量仅为喂饼图，
- * 饼图已改走 /grade-distribution 服务端聚合，排行只需首屏 5 条）
+ * 待治理 TOP N 排行：服务端排序 + limit 单次请求。
+ * 2026-10-03 改版：TOP10 + fitnessFilter=true（服务端先剔除最新快照为
+ * L0/L1 的回路再截断——「待治理」语义=可采取治理动作的回路，
+ * 客户端过滤在 L0/L1 ≥ limit 时会把榜单滤空）
  */
 async function loadRanking() {
   try {
     const { getRankingApi } = await import('#/api/metric');
     const items = await getRankingApi({
       plantNodeId: selectedPlantNodeId.value,
-      timeWindow: timeWindow.value,
+      ...windowParams.value,
       sortBy: 'score',
-      sortOrder: top5Sort.value,
-      limit: 5,
+      sortOrder: topNSort.value,
+      limit: GOVERNANCE_TOP_N,
+      fitnessFilter: true,
     });
     rankingList.value = items.filter((it) => it.includeInEvaluation !== false);
   } catch {
@@ -750,27 +947,16 @@ async function loadRanking() {
   }
 }
 
-/** timeWindow → 滚动窗口毫秒数（口径同后端 TIME_WINDOWS：today=近 24h） */
-const TIME_WINDOW_DURATION_MS: Record<string, number> = {
-  last_8_hours: 8 * 3_600_000,
-  today: 24 * 3_600_000,
-  yesterday: 24 * 3_600_000,
-  last_7_days: 7 * 24 * 3_600_000,
-  last_30_days: 30 * 24 * 3_600_000,
-};
-
-/** 加载等级分布（服务端 GROUP BY 聚合，替代前端全量拉取统计） */
+/** 加载等级分布 + 三性分布（服务端 GROUP BY 聚合，窗口与其他接口同源） */
 async function loadGradeDistribution() {
   try {
     const { getGradeDistributionApi } = await import('#/api/metric');
-    const end = dayjs();
-    const durationMs =
-      TIME_WINDOW_DURATION_MS[timeWindow.value] ?? 24 * 3_600_000;
+    const { start, end } = resolveWindow();
     gradeDistribution.value = await getGradeDistributionApi({
       ...(selectedPlantNodeId.value && {
         plantNodeId: selectedPlantNodeId.value,
       }),
-      startTime: end.subtract(durationMs, 'millisecond').toISOString(),
+      startTime: start.toISOString(),
       endTime: end.toISOString(),
     });
     await nextTick();
@@ -793,13 +979,14 @@ async function loadGradingThresholds() {
 
 function loadAll() {
   loadBoard();
+  loadBoardTree();
   loadAutoRateRt();
   loadRanking();
   loadGradeDistribution();
   loadValveAlerts();
 }
 
-watch(top5Sort, () => loadRanking());
+watch(topNSort, () => loadRanking());
 
 watch(isDark, () => {
   nextTick(() => {
@@ -825,7 +1012,7 @@ function handleHelp() {
   showPageHelp({
     title: '评估看板 帮助',
     content:
-      '工厂级 KPI 评估看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率 6 仪表盘 + 性能指标趋势图 + 回路等级占比饼图 + 装置/单元性能明细表 + TOP5 回路（可切换升降序）。支持按工厂节点树筛选与时间窗口切换（近 8h / 24h / 168h / 近 1 月）。',
+      '工厂级 KPI 评估看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率 6 仪表盘 + 性能指标趋势图（恒柱状，长窗口自动按日聚合）+ 等级/适用性 L0~L4 分布 + 装置/单元可折叠明细表 + 待治理 TOP10 + 阀门越限 TOP10。支持按工厂节点树筛选与时间窗口切换（近 8h / 24h / 168h / 近 1 月）。',
   });
 }
 
@@ -842,11 +1029,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
-    <div class="clpm-pid-dashboard">
+  <!-- 2026-10-03 改版（R6）：不走 vben Page 组件（自带 padding 破坏固定视口），
+       方法对齐回路工作台 workbench360——整页零滚动，1080 设计基准 -->
+  <div class="clpm-pid-dashboard">
       <ClpmPageToolbar
         title="评估看板"
-        subtitle="工厂级 KPI 仪表盘 · 趋势 · 等级分布 · TOP5"
+        subtitle="工厂级 KPI 仪表盘 · 趋势 · 等级分布 · 待治理 TOP10"
         :loading="loading"
       >
         <Button size="small" @click="treeDrawerOpen = true">
@@ -855,12 +1043,49 @@ onMounted(() => {
           </template>
           {{ selectedPlantNodeName }}
         </Button>
+        <!-- 时间选择（2026-10-03 裁决）：今日 / 按日 / 按周 / 按月 / 自定义（精度小时） -->
         <Select
-          v-model:value="timeWindow"
-          style="width: 140px"
+          v-model:value="windowMode"
+          style="width: 92px"
           size="small"
-          :options="timeWindowOptions"
-          @change="handleTimeWindowChange"
+          :options="windowModeOptions"
+          @change="handleWindowChange"
+        />
+        <DatePicker
+          v-if="windowMode === 'day'"
+          v-model:value="dayValue"
+          size="small"
+          :allow-clear="false"
+          :disabled-date="disableFutureDate"
+          @change="handleWindowChange"
+        />
+        <DatePicker
+          v-else-if="windowMode === 'week'"
+          v-model:value="weekValue"
+          picker="week"
+          size="small"
+          :allow-clear="false"
+          :disabled-date="disableFutureDate"
+          @change="handleWindowChange"
+        />
+        <DatePicker
+          v-else-if="windowMode === 'month'"
+          v-model:value="monthValue"
+          picker="month"
+          size="small"
+          :allow-clear="false"
+          :disabled-date="disableFutureDate"
+          @change="handleWindowChange"
+        />
+        <RangePicker
+          v-else-if="windowMode === 'custom'"
+          v-model:value="customRange"
+          show-time
+          format="MM-DD HH:00"
+          size="small"
+          :allow-clear="false"
+          :disabled-date="disableFutureDate"
+          @change="handleWindowChange"
         />
         <template #actions>
           <ClpmStandardActions :items="toolbarItems" />
@@ -1005,30 +1230,97 @@ onMounted(() => {
             <div
               class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--pie"
             >
-              <div class="clpm-pid-dashboard__card-header">
-                <span>回路等级占比</span>
-              </div>
+              <Tabs v-model:active-key="distTab" size="small">
+                <TabPane key="grade" tab="等级占比" />
+                <TabPane key="fitness" tab="适用性 L0~L4" />
+              </Tabs>
               <div class="clpm-pid-dashboard__grade-list">
-                <div
-                  v-for="row in gradeRows"
-                  :key="row.label"
-                  class="clpm-pid-dashboard__dist-row"
-                >
-                  <span class="clpm-pid-dashboard__dist-label">{{
-                    row.label
-                  }}</span>
-                  <span class="clpm-pid-dashboard__dist-track">
-                    <i
-                      :style="{
-                        width: `${row.pct}%`,
-                        background: row.color,
-                      }"
-                    ></i>
-                  </span>
-                  <span class="clpm-pid-dashboard__dist-count">{{
-                    row.count
-                  }}</span>
-                </div>
+                <template v-if="distTab === 'grade'">
+                  <div
+                    v-for="row in gradeRows"
+                    :key="row.label"
+                    class="clpm-pid-dashboard__dist-row"
+                  >
+                    <span class="clpm-pid-dashboard__dist-label">{{
+                      row.label
+                    }}</span>
+                    <span class="clpm-pid-dashboard__dist-track">
+                      <i
+                        :style="{
+                          width: `${row.pct}%`,
+                          background: row.color,
+                        }"
+                      ></i>
+                    </span>
+                    <span class="clpm-pid-dashboard__dist-count">{{
+                      row.count
+                    }}</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div
+                    v-if="dimensionRows.length === 0 && fitnessRows.length === 0"
+                    class="py-6 text-center text-xs text-gray-400"
+                  >
+                    暂无适用性数据
+                  </div>
+                  <!-- 三性分离（R5）：三维度堆叠条 + 可用/阻断摘要 -->
+                  <div
+                    v-for="dim in dimensionRows"
+                    :key="dim.key"
+                    class="clpm-pid-dashboard__dim-block"
+                  >
+                    <div class="clpm-pid-dashboard__dim-head">
+                      <span class="clpm-pid-dashboard__dim-label">{{
+                        dim.label
+                      }}</span>
+                      <span class="clpm-pid-dashboard__dim-summary">
+                        可用 {{ dim.open }} / 阻断 {{ dim.blocked }} / 共
+                        {{ dim.total }}
+                      </span>
+                    </div>
+                    <div class="clpm-pid-dashboard__dim-stack">
+                      <Tooltip
+                        v-for="(seg, i) in dim.segs"
+                        :key="seg.label"
+                        :title="`${seg.label}：${seg.count}（${seg.pct.toFixed(0)}%）`"
+                      >
+                        <i
+                          :style="{
+                            width: `${seg.pct}%`,
+                            background: dim.colorScale[i],
+                          }"
+                        ></i>
+                      </Tooltip>
+                    </div>
+                  </div>
+                  <!-- 兼容降级：三性分布缺失时显示综合 L0~L4 行列表 -->
+                  <template v-if="dimensionRows.length === 0">
+                    <div
+                      v-for="row in fitnessRows"
+                      :key="row.label"
+                      class="clpm-pid-dashboard__dist-row"
+                    >
+                      <span class="clpm-pid-dashboard__dist-label">{{
+                        row.label
+                      }}</span>
+                      <span class="clpm-pid-dashboard__dist-track">
+                        <i
+                          :style="{
+                            width: `${row.pct}%`,
+                            background: row.color,
+                          }"
+                        ></i>
+                      </span>
+                      <span class="clpm-pid-dashboard__dist-count">{{
+                        row.count
+                      }}</span>
+                    </div>
+                  </template>
+                  <div class="clpm-pid-dashboard__dist-note">
+                    维度口径可在 配置 → 指标配置 → 适用性 Tab 调整
+                  </div>
+                </template>
               </div>
             </div>
           </div>
@@ -1036,13 +1328,19 @@ onMounted(() => {
           <div class="clpm-pid-dashboard__bottom-row">
             <div class="clpm-pid-dashboard__table-card">
               <div class="clpm-pid-dashboard__card-header">
-                <span>装置/单元性能明细表</span>
+                <span>装置/单元明细（可折叠）</span>
               </div>
               <Table
                 :columns="tableColumns"
                 :data-source="tableData"
                 :pagination="false"
-                :scroll="{ y: 200 }"
+                :scroll="{ y: 340 }"
+                :expanded-row-keys="tableExpandedRowKeys"
+                size="small"
+                @expanded-rows-change="
+                  (keys: (number | string)[]) =>
+                    (tableExpandedRowKeys = keys.map(String))
+                "
               >
                 <template #headerCell="{ column }">
                   <!-- M3 联动：列头“分析”深链指标分析页（按该指标找最差装置/回路） -->
@@ -1097,10 +1395,10 @@ onMounted(() => {
 
             <div class="clpm-pid-dashboard__top5-card">
               <div class="clpm-pid-dashboard__card-header">
-                <span>TOP5 治理台账</span>
+                <span>待治理 TOP{{ GOVERNANCE_TOP_N }}</span>
                 <Tooltip
                   :title="
-                    top5Sort === 'desc'
+                    topNSort === 'desc'
                       ? '当前：评分最高，点击切换为最低'
                       : '当前：评分最低，点击切换为最高'
                   "
@@ -1110,15 +1408,15 @@ onMounted(() => {
                     size="small"
                     class="clpm-pid-dashboard__sort-btn"
                     :aria-label="
-                      top5Sort === 'desc'
+                      topNSort === 'desc'
                         ? '当前按评分最低排序，切换为最高'
                         : '当前按评分最高排序，切换为最低'
                     "
-                    @click="top5Sort = top5Sort === 'desc' ? 'asc' : 'desc'"
+                    @click="topNSort = topNSort === 'desc' ? 'asc' : 'desc'"
                   >
                     <IconifyIcon
                       :icon="
-                        top5Sort === 'desc'
+                        topNSort === 'desc'
                           ? 'ant-design:sort-descending-outlined'
                           : 'ant-design:sort-ascending-outlined'
                       "
@@ -1127,14 +1425,15 @@ onMounted(() => {
                 </Tooltip>
               </div>
               <Table
-                :columns="top5Columns"
-                :data-source="top5TableData"
+                :columns="topNColumns"
+                :data-source="topNTableData"
                 :pagination="false"
-                :scroll="{ y: 200 }"
+                :scroll="{ y: 340 }"
+                size="small"
               >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'tagName'">
-                    <!-- F-PID-002：位号接 LoopLink，默认跳诊断（TOP5 用户任务=找最差回路去处置），
+                    <!-- F-PID-002：位号接 LoopLink，默认跳诊断（待治理用户任务=找最差回路去处置），
                          下拉菜单可跳工作台/整定/评估 -->
                     <ClpmLoopLink
                       :loop-id="record.loopId"
@@ -1188,12 +1487,12 @@ onMounted(() => {
               </Table>
             </div>
 
-            <!-- 整改 F4：阀门运行区间异常卡 -->
+            <!-- 整改 F4：阀门运行区间异常卡（2026-10-03：服务端聚合 TOP N） -->
             <div class="clpm-pid-dashboard__valve-card">
               <div class="clpm-pid-dashboard__card-header">
                 <span>阀门运行区间异常</span>
                 <span class="clpm-pid-dashboard__card-meta">
-                  {{ valveAlerts.length }} 回路越限
+                  {{ valveAlertsTotal }} 回路越限
                 </span>
               </div>
               <div
@@ -1207,18 +1506,28 @@ onMounted(() => {
                 :key="item.loopId"
                 class="clpm-pid-dashboard__valve-row"
               >
-                <span class="font-mono text-xs">{{ item.tagName }}</span>
+                <ClpmLoopLink
+                  :loop-id="item.loopId"
+                  :tag-name="item.tagName"
+                  default-target="tuning"
+                />
                 <span
                   class="text-xs"
                   :style="{ color: 'var(--status-warning)' }"
                   >{{ item.range }}</span
                 >
               </div>
+              <div
+                v-if="valveAlertsTotal > valveAlerts.length"
+                class="clpm-pid-dashboard__valve-more"
+              >
+                共 {{ valveAlertsTotal }} 回路越限，仅列严重度前
+                {{ valveAlerts.length }}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
     <!-- 整改 A-13：工厂导航抽屉 -->
     <Drawer
@@ -1229,7 +1538,7 @@ onMounted(() => {
     >
       <PlantNodeTree card-title="" :width="260" @select="onTreeSelect" />
     </Drawer>
-  </Page>
+  </div>
 </template>
 
 <style lang="scss" scoped>
@@ -1237,9 +1546,16 @@ onMounted(() => {
  * 配色统一走 vben 设计令牌 CSS 变量（--background/--card/--foreground/
  * --muted-foreground/--border/--primary/--muted），明暗主题自动响应，
  * 不再需要 .dark 覆写块。
+ *
+ * 2026-10-03 改版（R6）：1920×1080 固定视口——整页零滚动，仅卡片内滚动
+ * （方法对齐回路工作台 workbench360：calc(100vh - 110px) + overflow:hidden
+ * + flex 分区 min-height:0）。底部三卡 flex:1，表格走 :scroll.y 内滚。
  */
 .clpm-pid-dashboard {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 110px);
+  overflow: hidden;
   color: hsl(var(--foreground));
   background: linear-gradient(
     180deg,
@@ -1282,8 +1598,9 @@ onMounted(() => {
 
 .clpm-pid-dashboard__body {
   display: flex;
+  flex: 1;
   gap: 12px;
-  height: calc(100vh - 56px);
+  min-height: 0;
   padding: 12px;
 }
 
@@ -1292,11 +1609,13 @@ onMounted(() => {
   flex: 1;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .clpm-pid-dashboard__top-row {
   display: flex;
+  flex: none;
   gap: 12px;
 
   & > * {
@@ -1360,11 +1679,17 @@ onMounted(() => {
 
 .clpm-pid-dashboard__middle-row {
   display: flex;
+  flex: none;
   gap: 8px;
+  /* 固定行高：趋势图 240 + 卡头/内边距（1080 预算） */
+  height: 302px;
 }
 
 .clpm-pid-dashboard__chart-card {
+  display: flex;
+  flex-direction: column;
   padding: 8px 12px;
+  overflow: hidden;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -1379,6 +1704,24 @@ onMounted(() => {
 
   &--pie {
     width: 20%;
+
+    &:deep(.ant-tabs) {
+      margin-bottom: 2px;
+
+      .ant-tabs-nav {
+        margin-bottom: 0;
+
+        &::before {
+          display: none;
+        }
+      }
+
+      .ant-tabs-tab {
+        padding: 4px 0;
+        margin-right: 14px;
+        font-size: 13px;
+      }
+    }
   }
 }
 
@@ -1406,6 +1749,7 @@ onMounted(() => {
   display: flex;
   flex: 1;
   gap: 8px;
+  min-height: 0;
 }
 
 .clpm-pid-dashboard__table-card {
@@ -1413,6 +1757,7 @@ onMounted(() => {
   flex-direction: column;
   width: 40%;
   padding: 8px 12px;
+  overflow: hidden;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -1435,6 +1780,7 @@ onMounted(() => {
   flex-direction: column;
   width: 32%;
   padding: 8px 12px;
+  overflow: hidden;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -1481,12 +1827,13 @@ onMounted(() => {
   text-align: right;
 }
 
-/* 整改 F4：阀门运行区间异常卡 */
+/* 整改 F4：阀门运行区间异常卡（2026-10-03：TOP N + 溢出内滚） */
 .clpm-pid-dashboard__valve-card {
   display: flex;
   flex-direction: column;
   width: 28%;
   padding: 8px 12px;
+  overflow-y: auto;
   background: hsl(var(--card) / 80%);
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
@@ -1502,6 +1849,60 @@ onMounted(() => {
 
 .clpm-pid-dashboard__valve-row:last-child {
   border-bottom: none;
+}
+
+.clpm-pid-dashboard__valve-more {
+  padding-top: 6px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  text-align: center;
+}
+
+/* 适用性 Tab 底注 */
+.clpm-pid-dashboard__dist-note {
+  padding-top: 6px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: hsl(var(--muted-foreground) / 70%);
+}
+
+/* 三性分离（R5）：维度堆叠条块 */
+.clpm-pid-dashboard__dim-block {
+  padding: 4px 0 6px;
+}
+
+.clpm-pid-dashboard__dim-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+
+.clpm-pid-dashboard__dim-label {
+  font-weight: 500;
+  color: hsl(var(--foreground));
+}
+
+.clpm-pid-dashboard__dim-summary {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.clpm-pid-dashboard__dim-stack {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 2px;
+
+  i {
+    display: block;
+    height: 100%;
+    min-width: 0;
+    transition: width 0.3s;
+  }
 }
 
 /* 评级标签底色为行内 style（等级色 + 10% 透明背景，色值随阈值配置），

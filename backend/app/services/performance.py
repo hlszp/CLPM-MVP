@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import case, func, nulls_last, or_, select
+from sqlalchemy import case, false, func, nulls_last, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -29,7 +29,7 @@ from app.core.timeparse import parse_iso_datetime
 from app.models.audit import SysAuditLog
 from app.models.engine import EngineRule
 from app.models.loop import LoopLedger
-from app.models.metric import KpiSnapshotHourly, MetricConfig
+from app.models.metric import KpiSnapshotCustom, KpiSnapshotHourly, MetricConfig
 from app.models.node_kpi import KpiNodeSnapshotHourly
 from app.models.plant_node import PlantNode
 from app.models.sys_config import SysConfig
@@ -858,6 +858,85 @@ async def get_ranking(
         item["rank"] = idx
 
     return items
+
+
+# 阀门越限判定边界（OP 行程 %，与快照页/总览卡口径一致；进 sys_config 列为后续可选项）
+VALVE_ALERT_LOW = 5.0
+VALVE_ALERT_HIGH = 95.0
+
+
+async def get_valve_alerts(
+    db: AsyncSession,
+    plant_node_id: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = 10,
+) -> dict:
+    """阀门运行区间异常回路（OP 行程越限 5%~95%，服务端聚合）.
+
+    口径：窗口内每回路最新一条快照（DISTINCT ON，同 /loops/snapshots
+    latestOnly=True），valve_op_min/valve_op_max 非空且 min<=5 或 max>=95
+    为越限；按越限严重度（贴边深度）降序。替代前端全量翻页拉快照再
+    客户端过滤的反模式（生产 961 回路 = 10 页串行请求）。
+    结果集上限=回路数（千级），越限判定与排序在 Python 端完成
+    （避免 numeric 列与 float 字面量的 SQL 类型坑）。
+
+    Returns:
+        ``{"total": 越限回路总数, "items": [{...前 limit 条...}]}``
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if start is None:
+        start = now - timedelta(days=1)
+    if end is None:
+        end = now
+
+    descendant_loop_ids: list[str] | None = None
+    if plant_node_id:
+        from app.services.node_performance import collect_descendant_loop_ids
+
+        descendant_loop_ids = await collect_descendant_loop_ids(db, plant_node_id)
+
+    base = (
+        select(
+            KpiSnapshotHourly.loop_id,
+            KpiSnapshotHourly.valve_op_min,
+            KpiSnapshotHourly.valve_op_max,
+            LoopLedger.tag_name.label("tag_name"),
+            LoopLedger.description.label("loop_name"),
+        )
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    )
+    base = _apply_snapshot_filters(
+        base,
+        plant_node_id=None,
+        start=start,
+        end=end,
+        loop_ids=descendant_loop_ids,
+    )
+    stmt = base.outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+    rows = (await db.execute(stmt)).all()
+
+    alerts: list[dict] = []
+    for row in rows:
+        lo = _to_float(row.valve_op_min)
+        hi = _to_float(row.valve_op_max)
+        if lo is None or hi is None:
+            continue
+        if lo > VALVE_ALERT_LOW and hi < VALVE_ALERT_HIGH:
+            continue
+        alerts.append(
+            {
+                "loopId": str(row.loop_id),
+                "tagName": row.tag_name or str(row.loop_id),
+                "loopName": row.loop_name,
+                "valveOpMin": lo,
+                "valveOpMax": hi,
+                "severity": round(max(VALVE_ALERT_LOW - lo, hi - VALVE_ALERT_HIGH, 0.0), 2),
+            }
+        )
+    alerts.sort(key=lambda a: (-a["severity"], a["tagName"]))
+    return {"total": len(alerts), "items": alerts[:limit]}
 
 
 # ---------------------------------------------------------------------------
@@ -1743,6 +1822,16 @@ async def get_grade_distribution(
         KpiSnapshotHourly.id.label("snap_id"),
         KpiSnapshotHourly.score.label("score"),
         KpiSnapshotHourly.fitness_level.label("fitness_level"),
+        # 三性分离（R5）：COALESCE 旧快照 NULL → fitness_level（默认映射下等价）
+        func.coalesce(KpiSnapshotHourly.assess_level, KpiSnapshotHourly.fitness_level).label(
+            "assess_level"
+        ),
+        func.coalesce(KpiSnapshotHourly.diagnose_level, KpiSnapshotHourly.fitness_level).label(
+            "diagnose_level"
+        ),
+        func.coalesce(KpiSnapshotHourly.tune_level, KpiSnapshotHourly.fitness_level).label(
+            "tune_level"
+        ),
         rn_col,
     )
     if need_loop_join:
@@ -1781,6 +1870,27 @@ async def get_grade_distribution(
             fitness_distribution[row.fitness_level] += row.cnt
     fitness_distribution["total"] = total
     distribution["fitnessDistribution"] = fitness_distribution
+
+    # 三性分离（R5）：可评估/可诊断/可整定各维度独立分布（同一最新快照口径，
+    # 旧快照三列 NULL 已在子查询 COALESCE 回退 fitness_level）
+    for dim_key, dim_col_name in (
+        ("assessDistribution", "assess_level"),
+        ("diagnoseDistribution", "diagnose_level"),
+        ("tuneDistribution", "tune_level"),
+    ):
+        dim_col = getattr(latest_subq.c, dim_col_name)
+        dim_stmt = (
+            select(dim_col, func.count().label("cnt"))
+            .where(latest_subq.c.rn == 1)
+            .group_by(dim_col)
+        )
+        dim_rows = (await db.execute(dim_stmt)).all()
+        dim_dist: dict[str, int] = dict.fromkeys(("L0", "L1", "L2", "L3", "L4"), 0)
+        for row in dim_rows:
+            if getattr(row, dim_col_name) in dim_dist:
+                dim_dist[getattr(row, dim_col_name)] += row.cnt
+        dim_dist["total"] = total
+        distribution[dim_key] = dim_dist
     return distribution
 
 
@@ -1888,6 +1998,74 @@ async def get_loop_metric_series(
     return list(series_map.values())
 
 
+# 来源筛选合法值（整合方案 B3；MANUAL_CUSTOM 由 custom 表查询承载）
+SNAPSHOT_SOURCES = ("SCHEDULED", "MANUAL_STANDARD", "BACKFILL")
+
+
+async def list_custom_snapshots(
+    db: AsyncSession,
+    task_id: str | None = None,
+    loop_ids: list[str] | None = None,
+    plant_node_ids: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status_filter: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[tuple[KpiSnapshotCustom, str | None]], int]:
+    """查询自定义评估任务快照列表（整合方案 B4：手动评估结果首次可列表浏览）.
+
+    口径：kpi_snapshot_custom 按 ts_start DESC 分页；支持按任务（taskId）、
+    回路、装置、时间窗、状态过滤。行结构与 hourly 同构（KpiSnapshotCustom
+    实体），端点侧复用同一 item 组装。
+    """
+    conditions = []
+    if task_id:
+        conditions.append(KpiSnapshotCustom.task_id == task_id)
+    if loop_ids:
+        conditions.append(KpiSnapshotCustom.loop_id.in_(loop_ids))
+    if plant_node_ids:
+        from app.services.loop import _get_descendant_node_ids
+
+        expanded = list(plant_node_ids)
+        for nid in plant_node_ids:
+            expanded.extend(await _get_descendant_node_ids(db, nid))
+        conditions.append(LoopLedger.unit_id.in_(expanded))
+    if start is not None:
+        conditions.append(KpiSnapshotCustom.ts_start >= start)
+    if end is not None:
+        conditions.append(KpiSnapshotCustom.ts_start <= end)
+    if status_filter:
+        conditions.append(KpiSnapshotCustom.status.in_(status_filter.split(",")))
+
+    base = select(KpiSnapshotCustom, LoopLedger.tag_name).outerjoin(
+        LoopLedger, KpiSnapshotCustom.loop_id == LoopLedger.id
+    )
+    if conditions:
+        base = base.where(*conditions)
+
+    count_stmt = select(func.count()).select_from(KpiSnapshotCustom)
+    if task_id:
+        count_stmt = count_stmt.where(KpiSnapshotCustom.task_id == task_id)
+    if loop_ids:
+        count_stmt = count_stmt.where(KpiSnapshotCustom.loop_id.in_(loop_ids))
+    if start is not None:
+        count_stmt = count_stmt.where(KpiSnapshotCustom.ts_start >= start)
+    if end is not None:
+        count_stmt = count_stmt.where(KpiSnapshotCustom.ts_start <= end)
+    if status_filter:
+        count_stmt = count_stmt.where(KpiSnapshotCustom.status.in_(status_filter.split(",")))
+    total = int((await db.execute(count_stmt)).scalar() or 0)
+
+    stmt = (
+        base.order_by(KpiSnapshotCustom.ts_start.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = (await db.execute(stmt)).all()
+    return [(snap, tag) for snap, tag in rows], total
+
+
 async def list_loop_snapshots(
     db: AsyncSession,
     loop_ids: list[str] | None = None,
@@ -1903,6 +2081,7 @@ async def list_loop_snapshots(
     page_size: int = 20,
     sort_by: str | None = None,
     sort_order: str | None = None,
+    source_filter: str | None = None,
 ) -> tuple[list[tuple[KpiSnapshotHourly, str | None]], int]:
     """查询回路小时指标快照列表（含回路名，分页）.
 
@@ -1946,6 +2125,24 @@ async def list_loop_snapshots(
         confidence_level=confidence_level,
         loop_tag_name=loop_tag_name,
     )
+
+    # 来源筛选（整合方案 B3，仅作用于小时快照表；MANUAL_CUSTOM 走 custom 查询）
+    if source_filter:
+        sources = [x.strip().upper() for x in source_filter.split(",") if x.strip()]
+        invalid = [x for x in sources if x not in SNAPSHOT_SOURCES and x != "MANUAL_CUSTOM"]
+        if invalid:
+            raise BizError(
+                code="ERR_INVALID_SOURCE",
+                message=(
+                    f"非法评估来源: {invalid}"
+                    "（合法值 SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL）"
+                ),
+            )
+        if any(x in SNAPSHOT_SOURCES for x in sources):
+            base_conditions.append(KpiSnapshotHourly.source.in_(tuple(sources)))
+        elif "MANUAL_CUSTOM" in sources:
+            # 仅选自定义来源且无小时表来源 → 小时表恒空结果
+            base_conditions.append(false())
 
     # 等级筛选条件（grade 由最新快照的 score 派生，需在窗口取数后应用）
     grade_cond = None
