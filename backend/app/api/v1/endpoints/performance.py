@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -48,6 +48,7 @@ from app.services.performance import (
     get_grade_distribution,
     get_loop_metric_series,
     get_ranking,
+    get_valve_alerts,
     list_engine_rules,
     list_loop_snapshots,
     list_metric_configs,
@@ -56,6 +57,9 @@ from app.services.performance import (
 )
 
 router = APIRouter(prefix="/performance", tags=["performance"])
+
+# 跨表归并排序兜底（ts_start 为 None 的行恒排末尾）
+_FLOOR_DT = datetime(1970, 1, 1)
 
 
 @router.get("/gate-overview", response_model=ApiResponse[dict])
@@ -394,6 +398,47 @@ async def get_grade_distribution_endpoint(
     return success(data=data)
 
 
+@router.get("/valve-alerts", response_model=ApiResponse[dict])
+async def get_valve_alerts_endpoint(
+    plantNodeId: str | None = Query(None, description="按装置/单元筛选（递归子树）"),
+    timeWindow: str = Query(
+        "today",
+        description="时间窗：today/last_8_hours/last_24_hours/last_7_days/last_30_days/custom",
+    ),
+    startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
+    endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
+    limit: int = Query(10, ge=1, le=100, description="返回条数（默认 10，最多 100）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """阀门运行区间异常回路 TOP N（OP 行程越限 5%~95%，所有角色）.
+
+    窗口内每回路最新一条快照判定，按越限严重度（贴边深度）降序；
+    返回 ``{"total": 越限回路总数, "items": [前 limit 条]}``。
+    2026-10-03 评估总览改版：替代前端全量翻页拉快照的客户端聚合。
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if timeWindow == "custom" and startTime and endTime:
+        start = to_naive_utc(parse_iso_datetime(startTime, field="startTime"))
+        end = to_naive_utc(parse_iso_datetime(endTime, field="endTime"))
+    else:
+        delta = {
+            "last_8_hours": timedelta(hours=8),
+            "last_24_hours": timedelta(hours=24),
+            "last_7_days": timedelta(days=7),
+            "last_30_days": timedelta(days=30),
+        }.get(timeWindow, timedelta(days=1))
+        start, end = now - delta, now
+    data = await get_valve_alerts(
+        db=db,
+        plant_node_id=plantNodeId,
+        start=start,
+        end=end,
+        limit=limit,
+    )
+    return success(data=data)
+
+
 @router.get("/loops/snapshots", response_model=ApiResponse[KpiSnapshotListData])
 async def list_loop_snapshots_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
@@ -422,6 +467,22 @@ async def list_loop_snapshots_endpoint(
         "effective_auto_rate/fast_rate/steady_rate/good_value_rate，非法值回退默认）",
     ),
     sortOrder: str | None = Query(None, description="排序方向（asc/desc，默认 desc）"),
+    source: str | None = Query(
+        None,
+        description="评估来源筛选（SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL，"
+        "逗号分隔多值）；MANUAL_CUSTOM 走自定义任务快照表",
+    ),
+    taskId: str | None = Query(
+        None,
+        description="自定义评估任务 ID：指定后列表切换为该任务的自定义快照"
+        "（整合方案 B4：手动评估结果可浏览）",
+    ),
+    includeCustom: bool = Query(
+        False,
+        description="（G2 关闭，2026-10-03）True 且 latestOnly=False 时，合并"
+        " kpi_snapshot_custom 手动评估记录（按 tsStart DESC 跨表归并分页，"
+        "手动行 source=MANUAL_CUSTOM）；latestOnly=True 时忽略本参数",
+    ),
     page: int = Query(1, ge=1, description="页码（1-based）"),
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
@@ -447,26 +508,84 @@ async def list_loop_snapshots_endpoint(
     start_dt = _parse_dt(startTime)
     end_dt = _parse_dt(endTime)
 
-    rows, total = await list_loop_snapshots(
-        db=db,
-        loop_ids=loop_ids,
-        plant_node_ids=plant_node_ids,
-        start=start_dt,
-        end=end_dt,
-        status_filter=status,
-        confidence_level=confidenceLevel,
-        loop_tag_name=loopTagName,
-        grade=grade,
-        latest_only=latestOnly,
-        page=page,
-        page_size=pageSize,
-        sort_by=sortBy if sortBy in SNAPSHOT_SORT_COLUMNS else None,
-        sort_order=sortOrder if sortOrder in ("asc", "desc") else None,
+    wants_custom = bool(taskId) or (
+        bool(source) and {x.strip().upper() for x in source.split(",")} == {"MANUAL_CUSTOM"}
     )
+    if wants_custom:
+        # 整合方案 B4：自定义评估任务快照（手动评估结果首次可列表浏览）
+        from app.services.performance import list_custom_snapshots
+
+        rows, total = await list_custom_snapshots(
+            db=db,
+            task_id=taskId,
+            loop_ids=loop_ids,
+            plant_node_ids=plant_node_ids,
+            start=start_dt,
+            end=end_dt,
+            status_filter=status,
+            page=page,
+            page_size=pageSize,
+        )
+    else:
+        # G2 关闭（2026-10-03）：includeCustom 且历史模式时跨表合并手动评估记录——
+        # 两表各取前 page*pageSize 条，按 ts_start DESC 归并后切当前页；total=两表之和。
+        # latestOnly/grade 场景不合并（最新快照与等级分布保持小时表口径，custom 不参与聚合）。
+        merge_custom = includeCustom and not latestOnly
+        rows, total = await list_loop_snapshots(
+            db=db,
+            loop_ids=loop_ids,
+            plant_node_ids=plant_node_ids,
+            start=start_dt,
+            end=end_dt,
+            status_filter=status,
+            confidence_level=confidenceLevel,
+            loop_tag_name=loopTagName,
+            grade=grade,
+            latest_only=latestOnly,
+            page=1 if merge_custom else page,
+            page_size=page * pageSize if merge_custom else pageSize,
+            sort_by=sortBy if sortBy in SNAPSHOT_SORT_COLUMNS else None,
+            sort_order=sortOrder if sortOrder in ("asc", "desc") else None,
+            source_filter=source,
+        )
+        if merge_custom:
+            from app.services.performance import list_custom_snapshots as _list_custom
+
+            custom_rows, custom_total = await _list_custom(
+                db=db,
+                task_id=None,
+                loop_ids=loop_ids,
+                plant_node_ids=plant_node_ids,
+                start=start_dt,
+                end=end_dt,
+                status_filter=status,
+                page=1,
+                page_size=page * pageSize,
+            )
+            merged = sorted(
+                [*rows, *custom_rows],
+                key=lambda pair: pair[0].ts_start or _FLOOR_DT,
+                reverse=True,
+            )
+            rows = merged[(page - 1) * pageSize : page * pageSize]
+            total = total + custom_total
 
     # 组装响应
     items: list[KpiSnapshotListItem] = []
     for snap, tag_name in rows:
+        # 来源标注（整合方案 B3）：非字符串（测试 MagicMock 等）置 None
+        from app.models.metric import KpiSnapshotCustom as _KpiSnapshotCustom
+
+        _source = getattr(snap, "source", None)
+        _source_task_id = getattr(snap, "source_task_id", None)
+        _source = _source if isinstance(_source, str) else None
+        _source_task_id = _source_task_id if isinstance(_source_task_id, str) else None
+        if isinstance(snap, _KpiSnapshotCustom):
+            # custom 表无 source 列；task_id 即来源任务
+            _source = "MANUAL_CUSTOM"
+            _source_task_id = _source_task_id or (
+                str(snap.task_id) if getattr(snap, "task_id", None) else None
+            )
         from app.schemas.performance import DataLineageSchema
 
         data_lineage = None
@@ -500,6 +619,8 @@ async def list_loop_snapshots_endpoint(
                 outputTravelIndex=_to_float(snap.output_trip_index),
                 status=snap.status or "INCONCLUSIVE",
                 idealSettlingTime=_to_float(snap.ideal_settling_time),
+                source=_source,
+                sourceTaskId=_source_task_id,
                 algorithmVersion=snap.algorithm_version,
                 samplingFreq=snap.sampling_freq,
                 qualityPolicy=snap.quality_policy,

@@ -56,6 +56,27 @@ const runner = useAssessRunner({
   },
 });
 
+/** 来源标签（G2 关闭后行内可区分） */
+function sourceLabel(source: null | string | undefined): string {
+  switch (source) {
+    case 'BACKFILL': {
+      return '回算';
+    }
+    case 'MANUAL_CUSTOM': {
+      return '手动';
+    }
+    case 'MANUAL_STANDARD': {
+      return '手动整点';
+    }
+    case 'SCHEDULED': {
+      return '自动';
+    }
+    default: {
+      return '整点';
+    }
+  }
+}
+
 /* ── 来源筛选（G2：自动/重算行内不可区分 → 合并档；手动=显式缺数据） ── */
 const SOURCE_OPTIONS: Array<{ key: AssessSourceFilter; label: string }> = [
   { key: 'all', label: '全部' },
@@ -220,8 +241,8 @@ const progressPct = computed(() => {
       <template v-else>本回路暂无快照 · </template>
       <span
         class="warn-hint"
-        title="手动（自定义时段）快照存于 kpi_snapshot_custom，按回路查询出口待后端 G2 并接"
-        >手动来源待并接（G2），当前仅显示整点快照</span
+        title="手动（自定义时段）评估记录已合并展示（来源=手动）；自动与重算按行内来源标注"
+        >共 {{ history.total.value }} 条 · 含手动评估记录</span
       >
     </div>
 
@@ -288,17 +309,8 @@ const progressPct = computed(() => {
       </div>
     </div>
 
-    <!-- 历史列表（G2：手动来源显式缺数据；整点自动/重算不可区分如实标注） -->
-    <template v-if="history.sourceFilter.value === 'manual'">
-      <div class="g2-note">
-        <b>手动（自定义时段）评估暂不可见</b>
-        <p>
-          自定义时段评估写入 kpi_snapshot_custom，按回路汇聚查询出口待后端 G2
-          并接（契约 §2）。并接后此处自动展示 手动 来源记录。
-        </p>
-      </div>
-    </template>
-    <template v-else>
+    <!-- 历史列表（G2 已关闭 2026-10-03：三档全部真实取数，行内来源可区分） -->
+    <template v-if="true">
       <div v-if="history.error.value" class="error-line">
         {{ history.error.value }}
         <button
@@ -315,9 +327,7 @@ const progressPct = computed(() => {
             <th>时间</th>
             <th>得分</th>
             <th>等级</th>
-            <th
-              title="kpi_snapshot_hourly 行内无来源字段，自动（整点调度）与重算（backfill 覆盖）不可区分"
-            >
+            <th title="MANUAL_CUSTOM=手动（自定义时段）；SCHEDULED=整点自动；BACKFILL=回算覆盖；MANUAL_STANDARD=手动整点">
               来源
             </th>
             <th>窗口</th>
@@ -327,15 +337,21 @@ const progressPct = computed(() => {
         </thead>
         <tbody>
           <tr v-if="history.loading.value && history.rows.value.length === 0">
-            <td class="dim" colspan="7">评估历史加载中…</td>
+            <td class="dim" colspan="7">
+              {{ history.sourceFilter.value === 'manual' ? '手动评估记录加载中…' : '评估历史加载中…' }}
+            </td>
           </tr>
           <tr v-else-if="history.rows.value.length === 0">
             <td class="dim" colspan="7">
-              暂无评估快照（自动评估每小时执行，或点「发起评估」补算）
+              {{
+                history.sourceFilter.value === 'manual'
+                  ? '暂无手动（自定义时段）评估记录——点「发起评估」选任意时段生成'
+                  : '暂无评估快照（自动评估每小时执行，或点「发起评估」补算）'
+              }}
             </td>
           </tr>
           <template v-else>
-            <tr v-for="row in history.rows.value" :key="`${row.tsStart}`">
+            <tr v-for="row in history.rows.value" :key="`${row.source ?? ''}-${row.tsStart}`">
               <td class="mono">{{ formatTsRange(row.tsStart, row.tsEnd) }}</td>
               <td class="num score" :class="gradeCls(row.score)">
                 {{ row.score === null ? '—' : row.score.toFixed(1) }}
@@ -345,7 +361,14 @@ const progressPct = computed(() => {
                   scoreToGradeInfo(row.score)?.letter ?? '?'
                 }}</span>
               </td>
-              <td>整点</td>
+              <td>
+                <span
+                  class="tag"
+                  :class="row.source === 'MANUAL_CUSTOM' ? 't-manual' : 't-gray'"
+                >
+                  {{ sourceLabel(row.source) }}
+                </span>
+              </td>
               <td class="mono dim">
                 {{ formatTsRange(row.tsStart, row.tsEnd) }}
               </td>
@@ -479,10 +502,10 @@ const progressPct = computed(() => {
 
 /* 动作条 */
 .act-bar {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
 }
 
 .act-bar .spacer {
@@ -490,13 +513,13 @@ const progressPct = computed(() => {
 }
 
 .btn.primary.sm {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: hsl(var(--primary-foreground));
+  cursor: pointer;
   background: hsl(var(--primary));
   border: none;
   border-radius: 4px;
-  color: hsl(var(--primary-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  padding: 5px 14px;
 }
 
 .btn.primary.sm:disabled {
@@ -505,19 +528,19 @@ const progressPct = computed(() => {
 }
 
 .segctl {
-  border: 1px solid hsl(var(--border));
-  border-radius: 4px;
   display: inline-flex;
   overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
 }
 
 .segctl button {
-  background: hsl(var(--card));
-  border-right: 1px solid hsl(var(--border));
+  padding: 3px 12px;
+  font-size: 12px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  font-size: 12px;
-  padding: 3px 12px;
+  background: hsl(var(--card));
+  border-right: 1px solid hsl(var(--border));
 }
 
 .segctl button:last-child {
@@ -525,29 +548,29 @@ const progressPct = computed(() => {
 }
 
 .segctl button.on {
-  background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
 }
 
 /* 进度条 */
 .progress-line {
-  align-items: center;
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
 .progress-line .bar {
-  background: hsl(var(--accent) / 60%);
-  border-radius: 3px;
   flex: 1;
   height: 6px;
   overflow: hidden;
+  background: hsl(var(--accent) / 60%);
+  border-radius: 3px;
 }
 
 .progress-line .bar i {
-  background: hsl(var(--primary));
   display: block;
   height: 100%;
+  background: hsl(var(--primary));
   transition: width 0.4s;
 }
 
@@ -566,16 +589,16 @@ const progressPct = computed(() => {
 }
 
 .progress-line .mono {
-  color: hsl(var(--muted-foreground));
   font-family: var(--font-mono, monospace);
   font-size: 12px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 /* 状态行 / 提示 */
 .status-line {
-  color: hsl(var(--muted-foreground));
   font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .warn-hint {
@@ -591,59 +614,59 @@ const progressPct = computed(() => {
 }
 
 .error-line {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: hsl(var(--destructive));
   border: 1px solid hsl(var(--destructive) / 35%);
   border-radius: 4px;
-  color: hsl(var(--destructive));
-  font-size: 12px;
-  padding: 8px 12px;
 }
 
 /* 摘要双卡 */
 .cards {
   display: grid;
-  gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
 }
 
 .card {
-  background: hsl(var(--accent) / 35%);
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 10px 14px;
-  position: relative;
+  background: hsl(var(--accent) / 35%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
 }
 
 .xbadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  position: absolute;
-  right: 8px;
-  top: 8px;
 }
 
 .xbadge:hover {
-  border-color: hsl(var(--primary));
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 .kv {
-  align-items: baseline;
   display: flex;
   gap: 10px;
+  align-items: baseline;
 }
 
 .kv .k {
-  color: hsl(var(--muted-foreground));
   flex: none;
-  font-size: 12px;
   width: 52px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .kv .v {
@@ -661,9 +684,9 @@ const progressPct = computed(() => {
 }
 
 .grade-label {
+  margin-left: 4px;
   font-size: 12px;
   font-weight: 500;
-  margin-left: 4px;
 }
 
 .links {
@@ -673,12 +696,12 @@ const progressPct = computed(() => {
 }
 
 .link {
-  background: none;
-  border: none;
+  padding: 0;
+  font-size: 12px;
   color: hsl(var(--primary));
   cursor: pointer;
-  font-size: 12px;
-  padding: 0;
+  background: none;
+  border: none;
 }
 
 .link:hover {
@@ -708,50 +731,56 @@ const progressPct = computed(() => {
 }
 
 .grade-pill {
-  border: 1px solid currentcolor;
-  border-radius: 3px;
+  padding: 0 6px;
   font-size: 11px;
   font-weight: 700;
-  padding: 0 6px;
+  border: 1px solid currentcolor;
+  border-radius: 3px;
 }
 
 /* G2 显式缺数据提示 */
+.tag.t-manual {
+  background: hsl(var(--primary) / 12%);
+  border: 1px solid hsl(var(--primary) / 35%);
+  color: hsl(var(--primary));
+}
+
 .g2-note {
+  padding: 14px 16px;
   border: 1px dashed hsl(var(--warning) / 55%);
   border-radius: 6px;
-  padding: 14px 16px;
 }
 
 .g2-note b {
-  color: hsl(var(--warning));
   font-size: 13px;
+  color: hsl(var(--warning));
 }
 
 .g2-note p {
-  color: hsl(var(--muted-foreground));
+  margin: 6px 0 0;
   font-size: 12px;
   line-height: 1.7;
-  margin: 6px 0 0;
+  color: hsl(var(--muted-foreground));
 }
 
 /* 历史表 */
 .tbl {
-  border-collapse: collapse;
-  font-size: 12px;
   width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
 }
 
 .tbl th {
-  border-bottom: 1px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
-  font-weight: 500;
   padding: 6px 10px;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
   text-align: left;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .tbl td {
-  border-bottom: 1px solid hsl(var(--border) / 55%);
   padding: 6px 10px;
+  border-bottom: 1px solid hsl(var(--border) / 55%);
 }
 
 .tbl .num {
@@ -764,22 +793,22 @@ const progressPct = computed(() => {
 }
 
 .tbl-foot {
-  align-items: center;
   display: flex;
-  font-size: 12px;
   gap: 10px;
+  align-items: center;
   justify-content: space-between;
+  font-size: 12px;
 }
 
 .pager button {
+  padding: 2px 10px;
+  margin-left: 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  margin-left: 6px;
-  padding: 2px 10px;
 }
 
 .pager button:disabled {
@@ -788,8 +817,8 @@ const progressPct = computed(() => {
 }
 
 .note {
-  color: hsl(var(--muted-foreground) / 75%);
   font-size: 12px;
+  color: hsl(var(--muted-foreground) / 75%);
 }
 
 .mono {
@@ -798,24 +827,24 @@ const progressPct = computed(() => {
 
 /* tag 徽标（原型 .tag 口径） */
 .tag {
-  align-items: center;
-  border-radius: 10px;
   display: inline-flex;
-  font-size: 11px;
   gap: 5px;
+  align-items: center;
   padding: 1px 9px;
+  font-size: 11px;
   white-space: nowrap;
+  border-radius: 10px;
 }
 
 .tag .dot {
-  border-radius: 50%;
-  height: 5px;
   width: 5px;
+  height: 5px;
+  border-radius: 50%;
 }
 
 .t-ok {
-  background: hsl(var(--success) / 12%);
   color: hsl(var(--success));
+  background: hsl(var(--success) / 12%);
 }
 
 .t-ok .dot {
@@ -823,8 +852,8 @@ const progressPct = computed(() => {
 }
 
 .t-warn {
-  background: hsl(var(--warning) / 14%);
   color: hsl(var(--warning));
+  background: hsl(var(--warning) / 14%);
 }
 
 .t-warn .dot {
@@ -832,8 +861,8 @@ const progressPct = computed(() => {
 }
 
 .t-info {
-  background: hsl(var(--primary) / 12%);
   color: hsl(var(--primary));
+  background: hsl(var(--primary) / 12%);
 }
 
 .t-info .dot {
@@ -841,8 +870,8 @@ const progressPct = computed(() => {
 }
 
 .t-gray {
-  background: hsl(var(--muted-foreground) / 12%);
   color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted-foreground) / 12%);
 }
 
 .t-gray .dot {
@@ -850,8 +879,8 @@ const progressPct = computed(() => {
 }
 
 .t-danger {
-  background: hsl(var(--destructive) / 12%);
   color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 12%);
 }
 
 .t-danger .dot {
@@ -860,15 +889,15 @@ const progressPct = computed(() => {
 
 /* 详情抽屉血缘脚注 */
 .lineage-foot {
-  border-top: 1px solid hsl(var(--border));
-  margin-top: 12px;
   padding-top: 10px;
+  margin-top: 12px;
+  border-top: 1px solid hsl(var(--border));
 }
 
 .lineage-foot b {
   display: block;
-  font-size: 13px;
   margin-bottom: 4px;
+  font-size: 13px;
 }
 
 .lineage-foot .dim {

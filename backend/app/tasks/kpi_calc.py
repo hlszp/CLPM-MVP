@@ -186,7 +186,13 @@ def calculate_hourly_kpi(
         # task_tracker 不可用时回退到直接计算（无任务跟踪）
         logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
         ts_start_dt = _parse_ts_start(ts_start)
-        return self.run_async(_do_calculate(ts_start=ts_start_dt))
+        return self.run_async(
+            _do_calculate(
+                ts_start=ts_start_dt,
+                source="MANUAL_STANDARD" if task_id else "SCHEDULED",
+                source_task_id=task_id,
+            )
+        )
 
 
 def _parse_ts_start(ts_start: str | None) -> datetime | None:
@@ -285,11 +291,20 @@ async def _do_hourly_with_tracking(
             # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
             _SHANGHAI = timezone(timedelta(hours=8))
             title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+            # 任务时间窗（2026-10-03 修复：此前 ts_start=None 不落 hash，
+            # 任务列表"时间窗口"列恒空）。窗口口径与 _do_calculate 一致：
+            # 指定 ts_start 用之；缺省=上一个完整小时，[start, start+1h)
+            _win_start = _parse_ts_start(ts_start)
+            if _win_start is None:
+                _now = datetime.now(UTC).replace(tzinfo=None)
+                _win_start = _now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+            _win_start = _win_start.replace(tzinfo=None) if _win_start.tzinfo else _win_start
             task_id = await task_tracker.create_task(
                 task_type=TaskType.STANDARD,
                 created_by="system",
                 created_by_id="",
-                ts_start=ts_start,
+                ts_start=_win_start.isoformat(),
+                ts_end=(_win_start + timedelta(hours=1)).isoformat(),
                 triggered_by="system",
                 title=title,
             )
@@ -307,6 +322,8 @@ async def _do_hourly_with_tracking(
                 task_id=task_id,
                 window_index=1,
                 total_windows=1,
+                source="MANUAL_STANDARD" if task_id else "SCHEDULED",
+                source_task_id=task_id,
             )
             await task_tracker.update_status(
                 task_id,
@@ -785,6 +802,8 @@ async def _run_batch_loop_calculations(
     ts_end: datetime,
     type_weights: dict[str, dict] | None,
     custom_task_id: str | None = None,
+    source: str | None = None,
+    source_task_id: str | None = None,
     on_completed=None,
     bundle_cache=None,
     concurrency: int = CONCURRENCY,
@@ -826,6 +845,8 @@ async def _run_batch_loop_calculations(
                         type_weights=type_weights,
                         custom_task_id=custom_task_id,
                         loop_cfg=loop_configs.get(str(loop.id)),
+                        source=source,
+                        source_task_id=source_task_id,
                     )
                     await worker_db.commit()
                     return result
@@ -889,6 +910,8 @@ async def _do_calculate(
     task_id: str | None = None,
     window_index: int = 0,
     total_windows: int = 0,
+    source: str = "SCHEDULED",
+    source_task_id: str | None = None,
 ) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。
 
@@ -976,6 +999,8 @@ async def _do_calculate(
         ts_start=ts_start_dt,
         ts_end=ts_end_dt,
         type_weights=type_weights,
+        source=source,
+        source_task_id=source_task_id,
         on_completed=_on_completed if task_id else None,
     )
     t_calc_elapsed = time.perf_counter() - t_calc_start
@@ -1045,6 +1070,7 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             ts_end=ts_end_dt,
             data_planner=data_planner,
             type_weights=type_weights,
+            source="MANUAL_STANDARD",
         )
         await db.commit()
         return snap or {"loopId": loop_id, "status": "FAILED"}
@@ -1124,9 +1150,15 @@ async def _do_calculate_custom_batch(
     if not loop_ids:
         return {"total": 0, "success": 0, "failed": 0}
 
-    ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    # 统一转 naive UTC：kpi_snapshot_custom 时间列为 TIMESTAMP WITHOUT TIME ZONE，
+    # aware 入参（ISO 带 Z/offset）直接透传会触发 asyncpg
+    # "can't subtract offset-naive and offset-aware datetimes"（2026-10-03 实证：
+    # 自定义评估计算成功但落库 100% 失败的根因）
+    from app.core.timeparse import to_naive_utc
+
+    ts_start_dt = to_naive_utc(datetime.fromisoformat(ts_start.replace("Z", "+00:00")))
     if ts_end is not None:
-        ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+        ts_end_dt = to_naive_utc(datetime.fromisoformat(ts_end.replace("Z", "+00:00")))
     else:
         engine = get_engine_rule_loader()
         cycle_minutes = await engine.get_calc_cycle_minutes()
@@ -1374,13 +1406,23 @@ def _derive_expected_points(
 def _build_fitness_kwargs_from_result(
     result: Any,
 ) -> dict[str, Any]:
-    """把 FitnessResult 转换为 _persist_snapshot 所需的 kwargs."""
+    """把 FitnessResult 转换为 _persist_snapshot 所需的 kwargs（含三性维度等级）."""
     if result is None:
-        return {"fitness_level": None, "fitness_tags": None, "fitness_detail": None}
+        return {
+            "fitness_level": None,
+            "fitness_tags": None,
+            "fitness_detail": None,
+            "assess_level": None,
+            "diagnose_level": None,
+            "tune_level": None,
+        }
     return {
         "fitness_level": result.level,
         "fitness_tags": {"tags": result.tags} if isinstance(result.tags, list) else None,
         "fitness_detail": result.detail if isinstance(result.detail, dict) else None,
+        "assess_level": result.assess_level,
+        "diagnose_level": result.diagnose_level,
+        "tune_level": result.tune_level,
     }
 
 
@@ -1411,6 +1453,8 @@ async def _calculate_loop_kpi(
     type_weights: dict[str, dict] | None = None,
     custom_task_id: str | None = None,
     loop_cfg: dict | None = None,
+    source: str | None = None,
+    source_task_id: str | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1469,6 +1513,11 @@ async def _calculate_loop_kpi(
             fitness_level="L0",
             fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
             fitness_detail={"reason": "DataPlanner取数失败", "error": str(exc)},
+            assess_level="L0",
+            diagnose_level="L0",
+            tune_level="L0",
+            source=source,
+            source_task_id=source_task_id,
         )
 
     if not bundles:
@@ -1484,6 +1533,11 @@ async def _calculate_loop_kpi(
             fitness_level="L0",
             fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
             fitness_detail={"reason": "空Bundle，无可用数据"},
+            assess_level="L0",
+            diagnose_level="L0",
+            tune_level="L0",
+            source=source,
+            source_task_id=source_task_id,
         )
 
     # P2: 提取 BASE 时序（fitness 的 OP_SATURATED / SP_PV_DEVIATION 逐点统计用）
@@ -1549,6 +1603,8 @@ async def _calculate_loop_kpi(
             "fitness_level": None,
             "fitness_tags": None,
             "fitness_detail": None,
+            "source": source,
+            "source_task_id": source_task_id,
         }
         try:
             fresult = compute_fitness(
@@ -2595,6 +2651,13 @@ async def _save_snapshot(
     fitness_level: str | None = None,
     fitness_tags: dict | None = None,
     fitness_detail: dict | None = None,
+    # 三性分离（R5）
+    assess_level: str | None = None,
+    diagnose_level: str | None = None,
+    tune_level: str | None = None,
+    # 来源标注（整合方案 B1）
+    source: str | None = None,
+    source_task_id: str | None = None,
 ) -> dict:
     """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
 
@@ -2656,6 +2719,13 @@ async def _save_snapshot(
         "fitness_level": fitness_level,
         "fitness_tags": fitness_tags,
         "fitness_detail": fitness_detail,
+        # 三性分离（R5）
+        "assess_level": assess_level,
+        "diagnose_level": diagnose_level,
+        "tune_level": tune_level,
+        # 来源标注（整合方案 B1）
+        "source": source,
+        "source_task_id": source_task_id,
     }
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
@@ -2781,6 +2851,13 @@ async def _save_custom_snapshot(
     fitness_level: str | None = None,
     fitness_tags: dict | None = None,
     fitness_detail: dict | None = None,
+    # 三性分离（R5）
+    assess_level: str | None = None,
+    diagnose_level: str | None = None,
+    tune_level: str | None = None,
+    # 来源标注（整合方案 B1）
+    source: str | None = None,
+    source_task_id: str | None = None,
 ) -> dict:
     """幂等写入自定义任务快照（select-then-add 模式）.
 
@@ -2889,6 +2966,12 @@ async def _save_custom_snapshot(
             fitness_level=fitness_level,
             fitness_tags=fitness_tags,
             fitness_detail=fitness_detail,
+            assess_level=assess_level,
+            diagnose_level=diagnose_level,
+            tune_level=tune_level,
+            # 来源标注（整合方案 B1）：本表恒为手动自定义评估产出
+            source="MANUAL_CUSTOM",
+            source_task_id=task_id,
         )
         db.add(snapshot)
 
@@ -3271,6 +3354,7 @@ def _backfill_window_batch(
                     type_weights=type_weights,
                     bundle_cache=False,
                     concurrency=_BACKFILL_LOOP_CONCURRENCY,
+                    source="BACKFILL",
                     on_completed=_on_completed if task_id else None,
                 )
                 summary = _summarize_batch_results(results)
@@ -3852,6 +3936,7 @@ def _process_windows_subprocess(
                     ts_start=w,
                     ts_end=w + timedelta(hours=1),
                     type_weights=type_weights,
+                    source="BACKFILL",
                     bundle_cache=False,
                 )
                 summary = _summarize_batch_results(results)

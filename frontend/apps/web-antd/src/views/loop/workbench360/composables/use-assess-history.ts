@@ -101,10 +101,26 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
   const page = ref(1);
   const loading = ref(false);
   const error = ref<null | string>(null);
-  /** 手动来源（G2）：显式缺数据态标记，由 UI 渲染提示 */
+  /** 手动来源（G2 已关闭 2026-10-03：三档全部真实取数） */
   const sourceFilter = ref<AssessSourceFilter>('all');
 
-  const latest = computed(() => rows.value[0] ?? null);
+  /**
+   * 最新快照口径：整点来源优先（摘要/徽章/旅程条反映连续评估口径，
+   * 手动评估是用户验证性动作，不驱动摘要——首条非 MANUAL_CUSTOM 行）
+   */
+  const latest = computed(
+    () => rows.value.find((r) => r.source !== 'MANUAL_CUSTOM') ?? null,
+  );
+
+  /** 三档来源 → 请求参数（all=合并手动；hourly=整点三来源；manual=B4 custom 表） */
+  const SOURCE_QUERY: Record<
+    AssessSourceFilter,
+    { includeCustom?: boolean; source?: string }
+  > = {
+    all: { includeCustom: true },
+    hourly: { source: 'SCHEDULED,MANUAL_STANDARD,BACKFILL' },
+    manual: { source: 'MANUAL_CUSTOM' },
+  };
 
   async function loadHistory(targetPage = 1) {
     const id = loopId.value;
@@ -123,6 +139,7 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
         pageSize: ASSESS_HISTORY_PAGE_SIZE,
         sortBy: 'tsStart',
         sortOrder: 'desc',
+        ...SOURCE_QUERY[sourceFilter.value],
       });
       rows.value = res.items ?? [];
       total.value = res.total ?? rows.value.length;
@@ -136,6 +153,9 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
       loading.value = false;
     }
   }
+
+  // 来源档切换 → 重拉首页
+  watch(sourceFilter, () => loadHistory(1));
 
   /** 选中回路变化即重载首页；任务完成后由剖面调 loadHistory(1) 刷新 */
   watch(

@@ -1016,6 +1016,42 @@ export function getRankingApi(params: MetricApi.RankingQueryParams) {
   });
 }
 
+// ===========================================================================
+// 阀门运行区间异常 TOP N — GET /performance/valve-alerts（2026-10-03 改版）
+// ===========================================================================
+
+/** 单条阀门越限回路（窗口内每回路最新快照判定，按越限严重度降序） */
+export interface ValveAlertItem {
+  loopId: string;
+  tagName: string;
+  loopName: null | string;
+  valveOpMin: null | number;
+  valveOpMax: null | number;
+  /** 越限严重度 = max(5-min, max-95, 0)（贴边深度） */
+  severity: number;
+}
+
+/** 阀门越限聚合结果：total=越限回路总数，items=前 limit 条 */
+export interface ValveAlertsResult {
+  total: number;
+  items: ValveAlertItem[];
+}
+
+/**
+ * 查询阀门运行区间异常回路 TOP N（OP 行程越限 5%~95%）
+ *
+ * 服务端一次聚合，替代前端全量翻页拉快照再客户端过滤的反模式。
+ */
+export function getValveAlertsApi(params?: {
+  limit?: number;
+  plantNodeId?: string;
+  timeWindow?: string;
+}) {
+  return requestClient.get<ValveAlertsResult>(`${BASE}/valve-alerts`, {
+    params,
+  });
+}
+
 /**
  * 评估门禁健康总览（0921 监控面板）— GET /performance/gate-overview
  */
@@ -1362,6 +1398,57 @@ export function saveFitnessThresholdsApi(
 }
 
 // ===========================================================================
+// 三性分离维度口径配置 — /configs/fitness-dimension-maps（2026-10-03 R5）
+// ===========================================================================
+
+/** 维度口径：单维度 × 单 tag 的档位行 */
+export interface DimensionTagRow {
+  tag: string;
+  tagLabel: string;
+  /** 默认映射档位（null=该 tag 不影响该维度） */
+  defaultValue: null | string;
+  /** 生效档位（默认 + 用户覆盖合并后） */
+  value: null | string;
+  isOverridden: boolean;
+}
+
+/** 维度口径：单维度（assess/diagnose/tune） */
+export interface DimensionMeta {
+  key: 'assess' | 'diagnose' | 'tune';
+  label: string;
+  description: string;
+  tags: DimensionTagRow[];
+}
+
+/** 维度口径合并视图 */
+export interface DimensionMapsView {
+  dimensions: DimensionMeta[];
+  note: string;
+  updatedAt?: null | string;
+  updatedBy?: null | string;
+}
+
+/** 维度口径保存请求（maps=完整覆盖视图；resetAll=true 重置默认） */
+export interface DimensionMapsSaveRequest {
+  maps: Record<string, Record<string, null | string>>;
+  remark?: string;
+  resetAll: boolean;
+}
+
+/** 获取三性维度口径合并视图（默认映射 + sys_config 覆盖） */
+export function getFitnessDimensionMapsApi() {
+  return requestClient.get<DimensionMapsView>('/configs/fitness-dimension-maps');
+}
+
+/** 保存维度口径覆盖或重置默认 — 仅 ADMIN，下次 KPI 计算生效 */
+export function saveFitnessDimensionMapsApi(data: DimensionMapsSaveRequest) {
+  return requestClient.put<DimensionMapsView>(
+    '/configs/fitness-dimension-maps',
+    data,
+  );
+}
+
+// ===========================================================================
 // 指标定义管理 API（指标配置-指标定义 Tab：CRUD + 版本化）
 // ===========================================================================
 
@@ -1463,6 +1550,10 @@ const SNAPSHOTS_BASE = '/performance/loops/snapshots';
 export interface KpiSnapshotItem {
   loopId: null | string;
   loopTagName: null | string;
+  /** 评估来源（整合方案 B3）：SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL */
+  source?: null | string;
+  /** 来源任务 ID（手动触发时溯源） */
+  sourceTaskId?: null | string;
   tsStart: null | string;
   tsEnd: null | string;
   score: null | number;
@@ -1556,6 +1647,15 @@ export interface KpiSnapshotQueryParams {
     | 'tsStart';
   /** 排序方向（asc/desc，默认 desc） */
   sortOrder?: 'asc' | 'desc';
+  /** 评估来源筛选（MANUAL_CUSTOM 走自定义任务快照表） */
+  source?: string;
+  /** 自定义评估任务 ID（指定后列表切换为该任务快照） */
+  taskId?: string;
+  /**
+   * G2 关闭（2026-10-03）：True 且 latestOnly=False 时合并手动评估记录
+   * （kpi_snapshot_custom 跨表归并分页，手动行 source=MANUAL_CUSTOM）
+   */
+  includeCustom?: boolean;
   /** 页码 */
   page?: number;
   /** 每页条数 */
