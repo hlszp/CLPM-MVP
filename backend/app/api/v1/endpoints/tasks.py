@@ -372,6 +372,43 @@ async def _maybe_sweep_stale_running() -> None:
         logger.warning("评估任务 RUNNING 超时清扫失败", exc_info=True)
 
 
+def _resolve_window_count(data: dict[str, Any]) -> int | None:
+    """小时窗口数（2026-10-03 裁决：全部任务填满，不留空白）.
+
+    优先取任务 hash 的 window_count（BACKFILL 创建时写入的精确整小时窗口数）；
+    缺失时由 ts_start/ts_end 推导（标准评估=1，自定义评估=周期小时数，
+    不足 1 小时按 1 计）。
+    """
+    explicit = _to_int(data.get("window_count"))
+    if explicit is not None:
+        return explicit
+    ts_s = _to_str_or_none(data.get("ts_start"))
+    ts_e = _to_str_or_none(data.get("ts_end"))
+    if not ts_s or not ts_e:
+        return None
+    try:
+        start_dt = datetime.fromisoformat(ts_s.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(ts_e.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    hours = (end_dt - start_dt).total_seconds() / 3600
+    if hours <= 0:
+        return None
+    return max(1, round(hours))
+
+
+def _resolve_triggered_by(data: dict[str, Any]) -> str:
+    """触发方判定：显式 triggered_by 优先；存量任务缺失时按 created_by 推断
+    （system/scheduler* → system 定时；其余含真实用户名 → user 手动）。"""
+    explicit = _to_str_or_none(data.get("triggered_by"))
+    if explicit in ("system", "user"):
+        return explicit
+    created_by = data.get("created_by", "") or ""
+    if created_by == "system" or created_by.startswith("scheduler"):
+        return "system"
+    return "user"
+
+
 def _task_to_response(data: dict[str, Any]) -> TaskResponse:
     """将 Redis Hash 字典转换为 TaskResponse.
 
@@ -419,12 +456,13 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
         currentStage=_to_str_or_none(data.get("current_stage")),
         loopsTotal=loops_total,
         loopsDone=loops_done,
-        windowCount=_to_int(data.get("window_count")),
+        windowCount=_resolve_window_count(data),
         createdAt=data.get("created_at", ""),
         startedAt=_to_str_or_none(data.get("started_at")),
         finishedAt=_to_str_or_none(data.get("finished_at")),
         errorMessage=_to_str_or_none(data.get("error_message")),
         createdBy=data.get("created_by", ""),
+        triggeredBy=_resolve_triggered_by(data),
         tsStart=_to_str_or_none(data.get("ts_start")),
         tsEnd=_to_str_or_none(data.get("ts_end")),
         loopIds=loop_ids,
@@ -715,6 +753,15 @@ async def trigger_standard_evaluation(
     celery_result = calculate_hourly_kpi.delay(ts_start=body.tsStart, task_id=task_id)
     celery_task_id = celery_result.id
 
+    # 任务时间窗（2026-10-03 修复：body.tsStart 缺省时推导上一完整小时，
+    # 并补 ts_end——任务列表"时间窗口"列此前恒空）
+    _win_start_dt = _parse_iso_dt(body.tsStart) if body.tsStart else None
+    if _win_start_dt is None:
+        _win_start_dt = datetime.now(UTC).replace(
+            tzinfo=None, minute=0, second=0, microsecond=0
+        ) - timedelta(hours=1)
+    if _win_start_dt.tzinfo is not None:
+        _win_start_dt = _win_start_dt.replace(tzinfo=None)
     task_data: dict[str, str] = {
         "task_id": task_id,
         "task_type": TaskType.STANDARD.value,
@@ -730,8 +777,10 @@ async def trigger_standard_evaluation(
         "error_message": "",
         "created_by": user.username,
         "created_by_id": str(user.id),
+        "triggered_by": "user",
         "celery_task_id": celery_task_id,
-        "ts_start": _to_str(body.tsStart),
+        "ts_start": _win_start_dt.isoformat(),
+        "ts_end": (_win_start_dt + timedelta(hours=1)).isoformat(),
     }
     await _save_task(task_data)
 
@@ -1155,6 +1204,9 @@ async def list_tasks(
         None,
         description="按任务类型排除（逗号分隔；诊断任务已切至诊断模块，评估列表传 DIAGNOSIS）",
     ),
+    triggeredBy: str | None = Query(
+        None, description="触发方筛选：system=定时/系统任务，user=手动任务（含工作台发起）"
+    ),
     status_filter: str | None = Query(
         None, alias="status", description="按状态筛选：PENDING/RUNNING/SUCCESS/FAILED/CANCELLED"
     ),
@@ -1184,6 +1236,7 @@ async def list_tasks(
     exclude_set = (
         {t.strip() for t in excludeTaskTypes.split(",") if t.strip()} if excludeTaskTypes else set()
     )
+    triggered_by_filter = triggeredBy if triggeredBy in ("system", "user") else None
 
     # 预解析时间筛选（created_at 为 ISO 字符串，统一按 datetime 比较，
     # 避免 "+00:00" 与 "Z" 混合格式下字符串比较在同秒边界误判）
@@ -1204,7 +1257,7 @@ async def list_tasks(
 
     offset = (page - 1) * pageSize
 
-    if not (taskType or status_filter or plant_node_filter or exclude_set):
+    if not (taskType or status_filter or plant_node_filter or exclude_set or triggered_by_filter):
         # 无哈希字段筛选：索引层先分页，仅 pipeline 读取当前页详情。
         # 列表路径不再逐条 _sync_task_status（AsyncResult.state 是 Celery 同步
         # Redis 调用，串行执行会阻塞 event loop）；进度由任务运行期写入的
@@ -1226,6 +1279,11 @@ async def list_tasks(
             continue
         # 筛选：排除任务类型（评估任务列表排除 DIAGNOSIS 等）
         if exclude_set and data.get("task_type") in exclude_set:
+            continue
+        # 筛选：触发方（自动=system 定时/系统，手动=user 含工作台发起）。
+        # 用 _resolve_triggered_by 与展示口径一致（存量任务 hash 无该字段，
+        # 按 created_by 推断：system/scheduler* → system，其余 → user）
+        if triggered_by_filter and _resolve_triggered_by(data) != triggered_by_filter:
             continue
         # 筛选：状态
         if status_filter and data.get("status") != status_filter:

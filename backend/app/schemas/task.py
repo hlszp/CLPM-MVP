@@ -156,6 +156,9 @@ class TaskResponse(CamelModel):
     finishedAt: str | None = None
     errorMessage: str | None = None
     createdBy: str
+    triggeredBy: str | None = Field(
+        None, description="触发方：system=定时/系统，user=手动（含工作台）"
+    )
     # 历史重算任务额外字段（其他任务类型为 None）
     tsStart: str | None = Field(None, description="重算时间窗起始（仅 BACKFILL）")
     tsEnd: str | None = Field(None, description="重算时间窗结束（仅 BACKFILL）")

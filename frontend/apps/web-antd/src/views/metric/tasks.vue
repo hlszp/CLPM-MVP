@@ -129,11 +129,12 @@ onMounted(() => {
               <span>任务列表</span>
             </Badge>
           </template>
-          <!-- 2026-10-01：诊断任务切至诊断模块（/diagnosis/tasks），评估列表排除 -->
+          <!-- 2026-10-01：诊断任务切至诊断模块；2026-10-03：整定/报告任务
+               同步排除（评估任务页只留评估类：标准/重算/自定义） -->
           <TaskListTab
             ref="listRef"
             :default-task-type="defaultTaskType"
-            :exclude-task-types="['DIAGNOSIS']"
+            :exclude-task-types="['DIAGNOSIS', 'TUNING', 'REPORT']"
             @polled="loadActiveTaskCount"
           />
         </TabPane>

@@ -15,6 +15,8 @@ const TaskList = defineAsyncComponent(() => import('#/views/task/list.vue'));
 
 <template>
   <Page>
-    <TaskList fixed-task-type="DIAGNOSIS" />
+    <!-- 2026-10-03：诊断任务页 = 诊断 + 诊断报告导出（REPORT 原在评估任务
+         页混杂且两个任务页都看不到，现归诊断侧） -->
+    <TaskList :exclude-task-types="['STANDARD', 'CUSTOM', 'BACKFILL', 'TUNING']" />
   </Page>
 </template>

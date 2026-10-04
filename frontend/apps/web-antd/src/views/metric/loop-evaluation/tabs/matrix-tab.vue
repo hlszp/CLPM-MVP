@@ -26,7 +26,6 @@ import type { MetricApi } from '#/api/metric';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
@@ -62,7 +61,7 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 
-defineOptions({ name: 'MetricMatrix' });
+defineOptions({ name: 'LoopEvalMatrixTab' });
 
 const { isDark, themeColors } = useClpmTheme();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
@@ -1004,7 +1003,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
+  <div class="le-tab-pane">
     <!-- 顶部工具栏 -->
     <ClpmPageToolbar
       title="指标矩阵"
@@ -1227,7 +1226,7 @@ onMounted(() => {
       </div>
       <EchartsUI v-else ref="trendChartRef" height="420px" />
     </Modal>
-  </Page>
+  </div>
 </template>
 
 <style scoped>

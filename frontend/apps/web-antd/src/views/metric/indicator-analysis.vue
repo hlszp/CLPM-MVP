@@ -957,7 +957,7 @@ onMounted(() => {
         :loading-variant="rankingItems.length > 0 ? 'opacity' : 'skeleton'"
         :error="loadError"
         :empty="!loading && !loadError && filteredItems.length === 0"
-        empty-reason="当前时间窗内暂无参评回路快照；可先在「评估任务」页发起评估"
+        empty-reason="当前时间窗内暂无参评回路快照；可调整时间窗，或先发起评估（单回路→回路工作台评估区，批量/全量→评估任务页）"
         @retry="loadAll"
       >
         <div class="flex h-full flex-col gap-3">

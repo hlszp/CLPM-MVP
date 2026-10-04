@@ -44,7 +44,6 @@ import {
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
@@ -94,11 +93,10 @@ import { useScoreColor } from '#/composables/use-score-color';
 import { useTableDensity } from '#/composables/use-table-density';
 import { GRADE_LEVEL_LABEL, KPI_TERM_EXPLANATIONS } from '#/constants/clpm-ui';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
+import LoopConfidenceContent from '#/views/metric/components/loop-confidence-content.vue';
+import LoopPerformanceDetailContent from '#/views/metric/components/loop-performance-detail-content.vue';
 
-import LoopConfidenceContent from './components/loop-confidence-content.vue';
-import LoopPerformanceDetailContent from './components/loop-performance-detail-content.vue';
-
-defineOptions({ name: 'MetricLoopPerformance' });
+defineOptions({ name: 'LoopEvalRankTab' });
 
 const { isDark, themeColors } = useClpmTheme();
 
@@ -915,12 +913,12 @@ async function openHistory(record: LoopPerformanceRow) {
   await loadHistoryData();
 }
 
-/** F-EVAL-001：跳转诊断工作台深挖（携带 loopId 预选，跨模块闭环） */
+/** F-EVAL-001：跳回路工作台诊断剖面深挖（携带 loopId 预选，跨模块闭环；2026-10-04 D2） */
 function goDiagnosis(record: LoopPerformanceRow) {
   if (!record.loopId) return;
   router.push({
-    path: '/diagnosis/workbench',
-    query: { loopId: record.loopId },
+    path: '/loop/workbench360',
+    query: { loopId: record.loopId, section: 'diagnosis' },
   });
 }
 
@@ -1069,7 +1067,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page>
+  <div class="le-tab-pane">
     <!-- 顶部工具栏（统一工具栏） -->
     <ClpmPageToolbar
       title="回路性能"
@@ -1573,7 +1571,7 @@ onMounted(async () => {
       scene="performance"
       :loop-id="aiLoopId"
     />
-  </Page>
+  </div>
 </template>
 
 <style scoped>

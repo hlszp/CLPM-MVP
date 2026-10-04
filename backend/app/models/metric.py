@@ -121,6 +121,17 @@ class KpiSnapshotHourly(Base):
     fitness_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
     fitness_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     fitness_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # --- 三性分离（2026-10-03 R5 裁决）：可评估/可诊断/可整定各独立一档 ---
+    # 语义同 L0~L4（L4=开放）；旧快照 NULL 由读取方回退 fitness_level 等价值
+    assess_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    diagnose_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    tune_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # --- 来源标注（2026-10-03 整合方案 B1）：SCHEDULED=Beat 整点 /
+    #     MANUAL_STANDARD=任务页手动触发标准 / BACKFILL=断点续传补算 ---
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True, comment="评估来源")
+    source_task_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, comment="来源任务 ID（手动触发时溯源）"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -216,6 +227,15 @@ class KpiSnapshotCustom(Base):
     fitness_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
     fitness_tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     fitness_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # --- 三性分离（2026-10-03 R5 裁决）：与 hourly 同频字段 ---
+    assess_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    diagnose_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    tune_level: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # --- 来源标注（2026-10-03 整合方案 B1）：本表恒为 MANUAL_CUSTOM ---
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True, comment="评估来源")
+    source_task_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, comment="来源任务 ID（手动触发时溯源）"
+    )
 
     __table_args__ = (
         CheckConstraint(

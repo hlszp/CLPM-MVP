@@ -902,8 +902,8 @@ async def test_get_grade_distribution_sql_group_by() -> None:
     distribution = await get_grade_distribution(db)
 
     assert (
-        len(captured_stmts) == 3
-    )  # sys_config + 等级聚合 + 适用性分层聚合（SQL 下推，无全量拉取）
+        len(captured_stmts) == 6
+    )  # sys_config + 等级聚合 + 适用性分层聚合 + 三性分布聚合 ×3（R5）
     sql = str(captured_stmts[1].compile()).upper()
     assert "GROUP BY" in sql
     assert "CASE" in sql
@@ -911,6 +911,11 @@ async def test_get_grade_distribution_sql_group_by() -> None:
     fitness_sql = str(captured_stmts[2].compile()).upper()
     assert "GROUP BY" in fitness_sql
     assert "FITNESS_LEVEL" in fitness_sql
+    # 三性分布（R5）：COALESCE 回退 + 逐维度 GROUP BY
+    for extra_stmt in captured_stmts[3:6]:
+        extra_sql = str(extra_stmt.compile()).upper()
+        assert "GROUP BY" in extra_sql
+        assert "COALESCE" in extra_sql
     assert distribution["total"] == 0
     assert distribution["fitnessDistribution"] == {
         "L0": 0,

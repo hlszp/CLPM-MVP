@@ -19,8 +19,6 @@ import type { ConfidenceLevel, KpiSnapshotItem, KpiStatus } from '#/api/metric';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { Page } from '@vben/common-ui';
-
 import {
   Button,
   DatePicker,
@@ -52,7 +50,7 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 
-defineOptions({ name: 'MetricHistorySnapshots' });
+defineOptions({ name: 'LoopEvalHistoryTab' });
 
 const { themeColors } = useClpmTheme();
 
@@ -73,6 +71,17 @@ const filterConfidence = ref<ConfidenceLevel | undefined>();
 const filterDateRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>();
 // 快照粒度：false=全部快照（历史明细默认）；深链 latestOnly=true 切回路粒度
 const filterLatestOnly = ref(false);
+// 评估来源筛选（整合方案 B3）：空=全部；MANUAL_CUSTOM 切换到自定义任务快照表
+const filterSource = ref<string | undefined>();
+// 来源任务深链（评估任务页「查看结果」/工作台完成跳转）
+const filterTaskId = ref<string | undefined>();
+
+const SOURCE_META: Record<string, { color: string; label: string }> = {
+  SCHEDULED: { label: '定时调度', color: 'var(--status-info)' },
+  BACKFILL: { label: '补算', color: 'var(--status-neutral)' },
+  MANUAL_STANDARD: { label: '手动·标准', color: 'var(--status-primary)' },
+  MANUAL_CUSTOM: { label: '手动·自定义', color: 'var(--status-warning)' },
+};
 
 // 服务端排序状态（综合评分列，其余列按 tsStart DESC 默认序）
 const sortBy = ref<'score' | undefined>();
@@ -139,6 +148,13 @@ const columns = computed<TableColumnsType>(() => [
     fixed: 'left',
     ellipsis: true,
   },
+    {
+      title: '来源',
+      dataIndex: 'source',
+      key: 'source',
+      width: 100,
+    },
+
   {
     title: '时间窗',
     key: 'tsRange',
@@ -281,6 +297,8 @@ async function loadList() {
       params.status = filterStatus.value.join(',');
     }
     if (filterConfidence.value) params.confidenceLevel = filterConfidence.value;
+    if (filterSource.value) params.source = filterSource.value;
+    if (filterTaskId.value) params.taskId = filterTaskId.value;
     if (filterDateRange.value) {
       params.startTime = filterDateRange.value[0].startOf('day').toISOString();
       // 日期型 RangePicker 的结束值是当日 00:00，需扩展到 23:59:59
@@ -301,6 +319,14 @@ async function loadList() {
   } finally {
     loading.value = false;
   }
+}
+
+/** 来源切换：离开 MANUAL_CUSTOM 时清除任务深链过滤 */
+function onSourceChange() {
+  if (filterSource.value !== 'MANUAL_CUSTOM') {
+    filterTaskId.value = undefined;
+  }
+  handleFilterChange();
 }
 
 // ============ 加载装置树 ============
@@ -518,6 +544,15 @@ function applyRouteQuery() {
   if (typeof q.latestOnly === 'string') {
     filterLatestOnly.value = q.latestOnly === 'true';
   }
+  // 来源深链（整合方案 A2/B4：任务页「查看结果」、工作台评估完成跳转）
+  if (typeof q.source === 'string' && SOURCE_META[q.source]) {
+    filterSource.value = q.source;
+  }
+  if (typeof q.taskId === 'string' && q.taskId) {
+    filterTaskId.value = q.taskId;
+    // 指定任务 → 必为自定义快照
+    filterSource.value = 'MANUAL_CUSTOM';
+  }
 }
 
 // ============ 生命周期 ============
@@ -553,7 +588,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
+  <div class="le-tab-pane">
     <!-- 顶部工具栏 -->
     <ClpmPageToolbar
       title="评估记录"
@@ -630,6 +665,18 @@ onMounted(() => {
         <Select.Option value="D">D 较差</Select.Option>
         <Select.Option value="E">E 不足</Select.Option>
       </Select>
+      <Select
+        v-model:value="filterSource"
+        placeholder="来源"
+        allow-clear
+        style="width: 130px"
+        @change="onSourceChange"
+      >
+        <Select.Option value="SCHEDULED">定时调度</Select.Option>
+        <Select.Option value="MANUAL_STANDARD">手动·标准</Select.Option>
+        <Select.Option value="MANUAL_CUSTOM">手动·自定义</Select.Option>
+        <Select.Option value="BACKFILL">补算</Select.Option>
+      </Select>
       <DatePicker.RangePicker
         v-model:value="filterDateRange"
         :allow-clear="true"
@@ -664,6 +711,20 @@ onMounted(() => {
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
+      <template v-if="column.dataIndex === 'source'">
+        <Tag
+          v-if="record.source && SOURCE_META[record.source]"
+          :bordered="false"
+          :style="{
+            marginInlineEnd: 0,
+            color: SOURCE_META[record.source]?.color,
+            borderColor: SOURCE_META[record.source]?.color,
+          }"
+        >
+          {{ SOURCE_META[record.source]?.label }}
+        </Tag>
+        <span v-else class="text-neutral-400">—</span>
+      </template>
           <template v-if="column.key === 'tsRange'">
             <span class="font-mono text-xs">
               {{ formatTsEnd(record.tsEnd) }}
@@ -969,5 +1030,5 @@ onMounted(() => {
         </div>
       </template>
     </Drawer>
-  </Page>
+  </div>
 </template>

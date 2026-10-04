@@ -93,6 +93,8 @@ export namespace TaskApi {
   /** 任务响应（对齐 app.schemas.task.TaskResponse） */
   export interface TaskItem {
     taskId: string;
+    /** 触发方（2026-10-03）：system=定时/系统，user=手动（含工作台发起） */
+    triggeredBy?: null | string;
     taskType: TaskType;
     status: TaskStatus;
     /** 任务标题 */
@@ -133,6 +135,8 @@ export namespace TaskApi {
   /** 任务列表查询参数 */
   export interface TaskListQueryParams {
     taskType?: TaskType;
+    /** 触发方筛选：system=自动（定时/系统），user=手动（含工作台发起） */
+    triggeredBy?: string;
     /** 按类型排除（逗号分隔；2026-10-01 诊断任务切至诊断模块，评估列表传 DIAGNOSIS） */
     excludeTaskTypes?: string;
     status?: TaskStatus;

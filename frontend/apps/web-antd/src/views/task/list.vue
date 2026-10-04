@@ -14,6 +14,7 @@ import type { TableColumnsType } from 'ant-design-vue';
 import type { TaskApi } from '#/api/task';
 
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Plus, RotateCw } from '@vben/icons';
 
@@ -66,6 +67,8 @@ const props = defineProps<{
 /** 轮询每轮回调（0929：父页监听以同步 RUNNING 徽章，此前徽章长期 stale） */
 const emit = defineEmits<{ polled: [] }>();
 
+const router = useRouter();
+
 const { themeColors } = useClpmTheme();
 
 // ============ 列表状态 ============
@@ -77,6 +80,23 @@ const currentPage = ref(1);
 const pageSize = ref(20);
 
 // 筛选状态
+const filterTriggeredBy = ref<string | undefined>();
+
+/** 类型筛选可选集 = 全部类型 − 宿主排除集（2026-10-03：评估任务页排除
+ * 诊断/整定/报告后，下拉不再出现这些选项，避免选了查不出结果的误导） */
+const TASK_TYPE_OPTIONS: { label: string; value: TaskApi.TaskType }[] = [
+  { value: 'STANDARD', label: '标准评估' },
+  { value: 'BACKFILL', label: '重算' },
+  { value: 'CUSTOM', label: '自定义评估' },
+  { value: 'DIAGNOSIS', label: '回路诊断' },
+  { value: 'TUNING', label: '整定任务' },
+  { value: 'REPORT', label: '报告导出' },
+];
+const typeOptions = computed(() =>
+  TASK_TYPE_OPTIONS.filter(
+    (o) => !props.excludeTaskTypes?.includes(o.value),
+  ),
+);
 const filterTaskType = ref<TaskApi.TaskType | undefined>(
   props.fixedTaskType ?? props.defaultTaskType,
 );
@@ -93,9 +113,9 @@ const statusColorMap = (status: string) =>
 const statusTextMap = TASK_STATUS_LABEL;
 
 const taskTypeTextMap: Record<string, string> = {
-  BACKFILL: '手动评估',
+  BACKFILL: '重算',
   CUSTOM: '自定义评估',
-  STANDARD: '自动评估',
+  STANDARD: '标准评估',
   // 2026-10-01：定时/手动诊断任务进入统一任务列表（每日全量诊断上线），
   // 原缺映射显示英文原串；TUNING/REPORT 同步补齐
   DIAGNOSIS: '回路诊断',
@@ -317,6 +337,7 @@ function buildQueryParams(): TaskApi.TaskListQueryParams {
     pageSize: pageSize.value,
   };
   if (filterTaskType.value) params.taskType = filterTaskType.value;
+  if (filterTriggeredBy.value) params.triggeredBy = filterTriggeredBy.value;
   if (props.excludeTaskTypes?.length)
     params.excludeTaskTypes = props.excludeTaskTypes.join(',');
   if (filterStatus.value) params.status = filterStatus.value;
@@ -411,6 +432,19 @@ async function handleTriggerStandard() {
     // 错误已由拦截器处理
   } finally {
     triggerLoading.value = false;
+  }
+}
+
+/** A2（整合方案）：任务完成 → 评估记录页查看产出快照
+ *  CUSTOM 任务→按任务 ID 定位自定义快照；HOURLY 任务→按来源（手动·标准）过滤 */
+function viewResults(task: TaskApi.TaskItem) {
+  if (task.taskType === 'CUSTOM') {
+    router.push({
+      path: '/metric/loop-evaluation',
+      query: { view: 'history', source: 'MANUAL_CUSTOM', taskId: task.taskId },
+    });
+  } else {
+    router.push({ path: '/metric/loop-evaluation', query: { view: 'history', source: 'MANUAL_STANDARD' } });
   }
 }
 
@@ -516,20 +550,24 @@ onUnmounted(() => {
       </Space>
       <Space>
         <Select
+          v-model:value="filterTriggeredBy"
+          placeholder="发起方：全部"
+          allow-clear
+          style="width: 122px"
+          @change="handleFilterChange"
+        >
+          <Select.Option value="system">自动（定时/系统）</Select.Option>
+          <Select.Option value="user">手动（含工作台）</Select.Option>
+        </Select>
+        <Select
           v-if="!props.fixedTaskType"
           v-model:value="filterTaskType"
+          :options="typeOptions"
           placeholder="任务类型：全部"
           allow-clear
           style="width: 150px"
           @change="handleFilterChange"
-        >
-          <Select.Option value="STANDARD">自动评估</Select.Option>
-          <Select.Option value="BACKFILL">手动评估</Select.Option>
-          <Select.Option value="CUSTOM">自定义评估</Select.Option>
-          <Select.Option value="DIAGNOSIS">回路诊断</Select.Option>
-          <Select.Option value="TUNING">整定任务</Select.Option>
-          <Select.Option value="REPORT">报告导出</Select.Option>
-        </Select>
+        />
         <Select
           v-model:value="filterStatus"
           placeholder="状态筛选"
@@ -672,6 +710,14 @@ onUnmounted(() => {
           </template>
           <template v-else-if="column.key === 'action'">
             <Space :size="4">
+              <Button
+                v-if="(record as TaskApi.TaskItem).status === 'SUCCESS'"
+                type="link"
+                size="small"
+                @click.stop="viewResults(record as TaskApi.TaskItem)"
+              >
+                查看结果
+              </Button>
               <Button
                 v-if="
                   (record as TaskApi.TaskItem).status === 'RUNNING' ||

@@ -3,7 +3,8 @@ import type { RouteRecordRaw } from 'vue-router';
 /**
  * 评估路由模块（IA 重构 Phase A·职能轴）
  *
- * 子菜单：性能总览 / 指标分析 / 回路性能 / 指标矩阵 / 评估记录 / 评估任务
+ * 子菜单：性能总览 / 指标分析 / 回路评估 / 评估任务
+ * （2026-10-03 C1 合并：回路性能+评估记录+指标矩阵 → 回路评估三视图，旧路径 redirect）
  * KPI 报表已迁入「统计报告-绩效报告」（/reports/performance），旧路径保留 redirect。
  * 指标配置已迁入配置模块（/config/metric），见 config.ts
  * 评估记录（KPI 快照明细）由 Tab 提升为二级菜单（/metric/history，IA 重构二期）。
@@ -56,35 +57,16 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        name: 'AssessLoopPerformance',
-        path: '/metric/loop-performance',
-        component: () => import('#/views/metric/loop-performance.vue'),
+        name: 'AssessLoopEvaluation',
+        path: '/metric/loop-evaluation',
+        component: () => import('#/views/metric/loop-evaluation/index.vue'),
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
-          icon: 'lucide:git-branch',
-          title: '回路性能',
-        },
-      },
-      {
-        name: 'AssessMatrix',
-        path: '/metric/matrix',
-        component: () => import('#/views/metric/matrix.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
-          // URL query 为真相源（tab/window/plantNodeId/loopId），控件切换 replace query
+          // URL query 为真相源（view=rank|history|matrix + 各视图原生参数），
+          // fullPathKey=false 使 query 变化不重建组件实例（视图切换保活）
           fullPathKey: false,
-          icon: 'lucide:table-2',
-          title: '指标矩阵',
-        },
-      },
-      {
-        name: 'AssessHistory',
-        path: '/metric/history',
-        component: () => import('#/views/metric/history-snapshots.vue'),
-        meta: {
-          authority: ['ADMIN', 'IC_ENGINEER'],
-          icon: 'lucide:history',
-          title: '评估记录',
+          icon: 'lucide:git-branch',
+          title: '回路评估',
         },
       },
       {
@@ -98,6 +80,43 @@ const routes: RouteRecordRaw[] = [
         },
       },
     ],
+  },
+  // ===== 2026-10-03 整合方案 C1：回路性能/评估记录/指标矩阵 合并为「回路评估」，
+  // 旧路径 redirect（query 原样透传，保护书签/深链/E2E） =====
+  {
+    name: 'LegacyLoopPerformance',
+    path: '/metric/loop-performance',
+    redirect: (to) => ({
+      path: '/metric/loop-evaluation',
+      query: { ...to.query, view: 'rank' },
+    }),
+    meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+      hideInMenu: true,
+      title: '回路性能',
+    },
+  },
+  {
+    name: 'LegacyHistory',
+    path: '/metric/history',
+    redirect: (to) => ({
+      path: '/metric/loop-evaluation',
+      query: { ...to.query, view: 'history' },
+    }),
+    meta: { authority: ['ADMIN', 'IC_ENGINEER'], hideInMenu: true, title: '评估记录' },
+  },
+  {
+    name: 'LegacyMatrix',
+    path: '/metric/matrix',
+    redirect: (to) => ({
+      path: '/metric/loop-evaluation',
+      query: { ...to.query, view: 'matrix' },
+    }),
+    meta: {
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+      hideInMenu: true,
+      title: '指标矩阵',
+    },
   },
   // 旧 /metric 父路径兼容 redirect（保护书签/E2E，/metric/config 由 config.ts 接管）
   {
