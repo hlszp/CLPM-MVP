@@ -125,38 +125,38 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .wb360-dr {
-  inset: 0;
   position: fixed;
+  inset: 0;
   z-index: 1000;
 }
 
 .wb360-dr-mask {
-  background: rgb(15 23 42 / 38%);
-  inset: 0;
   position: absolute;
+  inset: 0;
+  background: rgb(15 23 42 / 38%);
 }
 
 .wb360-dr-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 94vw;
+  height: 100%;
+  margin-left: auto;
   background: hsl(var(--card));
   border-left: 1px solid hsl(var(--border));
   box-shadow: -12px 0 32px rgb(16 24 40 / 14%);
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  margin-left: auto;
-  max-width: 94vw;
-  position: relative;
 }
 
 /* 左缘拖拽柄（8px 命中区） */
 .wb360-dr-edge {
-  cursor: col-resize;
-  height: 100%;
-  left: -4px;
   position: absolute;
-  touch-action: none;
-  width: 8px;
+  left: -4px;
   z-index: 5;
+  width: 8px;
+  height: 100%;
+  touch-action: none;
+  cursor: col-resize;
 }
 
 .wb360-dr-edge:hover {
@@ -164,13 +164,13 @@ onBeforeUnmount(() => {
 }
 
 .wb360-dr-head {
-  align-items: center;
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   flex: none;
-  font-size: 14px;
   gap: 10px;
+  align-items: center;
   padding: 10px 14px;
+  font-size: 14px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .wb360-dr-head b {
@@ -178,40 +178,40 @@ onBeforeUnmount(() => {
 }
 
 .head-extra {
-  align-items: center;
   display: inline-flex;
   flex: 1;
   gap: 8px;
+  align-items: center;
 }
 
 .dr-close {
-  border: 1px solid hsl(var(--border));
-  border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
+  padding: 4px 8px;
   font-size: 12px;
   line-height: 1;
-  padding: 4px 8px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
 }
 
 .dr-close:hover {
-  border-color: hsl(var(--primary));
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 .wb360-dr-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
   padding: 12px 14px;
+  overflow: auto;
 }
 
 .wb360-dr-foot {
-  border-top: 1px solid hsl(var(--border));
   display: flex;
   flex: none;
   gap: 8px;
   justify-content: flex-end;
   padding: 8px 14px;
+  border-top: 1px solid hsl(var(--border));
 }
 </style>

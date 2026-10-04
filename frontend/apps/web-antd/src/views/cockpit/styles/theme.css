@@ -24,9 +24,11 @@
   --ck-grade-fair: #f5a623;
   --ck-grade-warning: #f87171;
   --ck-grade-poor: #ef4444;
+
   /*  accent 上的前景文字 / accent 渐变端色  */
   --ck-on-accent: #fff;
   --ck-accent-2: #2563eb;
+
   /* 排名奖牌（金/银/铜，深浅主题同值） */
   --ck-medal-gold: #ffd75e;
   --ck-medal-gold-text: #7c5a00;
@@ -34,6 +36,7 @@
   --ck-medal-silver-text: #4b5563;
   --ck-medal-bronze: #e0a56f;
   --ck-medal-bronze-text: #6b3f1d;
+
   /* 闭环漏斗四级渐变端色（深浅主题同值） */
   --ck-funnel-1-from: #1d4ed8;
   --ck-funnel-1-to: #2563eb;

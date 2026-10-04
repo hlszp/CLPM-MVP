@@ -197,8 +197,8 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
 .alert-stream__bd {
   flex: 1;
   min-height: 0;
-  overflow: auto;
   padding: 4px 8px;
+  overflow: auto;
 }
 
 .alert-stream__state {
@@ -249,8 +249,8 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
 .alert-stream__main {
   display: flex;
   flex-direction: column;
-  min-width: 0;
   gap: 1px;
+  min-width: 0;
 }
 
 .alert-stream__line1 {
@@ -262,22 +262,22 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
 
 .alert-stream__rule {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 600;
   color: var(--ck-text);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .alert-stream__hits {
+  flex: none;
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 1;
+  color: hsl(var(--warning-foreground));
   background: hsl(var(--warning) / 15%);
   border: 1px solid hsl(var(--warning) / 45%);
   border-radius: 8px;
-  color: hsl(var(--warning-foreground));
-  flex: none;
-  font-size: 10px;
-  line-height: 1;
-  padding: 1px 5px;
 }
 
 .alert-stream__unack {
@@ -293,9 +293,9 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
   display: flex;
   gap: 10px;
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px;
   color: var(--ck-text-3);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

@@ -42,8 +42,8 @@ export namespace MonitorApi {
   /** 动作跳转目标 */
   export interface AttentionActionTarget {
     route:
-      | '/monitor/alerts'
       | '/loop/workbench360'
+      | '/monitor/alerts'
       | '/monitor/loops';
     query: Record<string, string>;
   }

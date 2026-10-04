@@ -141,21 +141,21 @@ function priorityCls(p?: string): string {
 
 <style scoped>
 .error-line {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: hsl(var(--destructive));
   border: 1px solid hsl(var(--destructive) / 35%);
   border-radius: 4px;
-  color: hsl(var(--destructive));
-  font-size: 12px;
-  padding: 8px 12px;
 }
 
 .link {
-  background: none;
-  border: none;
+  padding: 0;
+  margin-left: 8px;
+  font-size: 12px;
   color: hsl(var(--destructive));
   cursor: pointer;
-  font-size: 12px;
-  margin-left: 8px;
-  padding: 0;
+  background: none;
+  border: none;
 }
 
 .dim {
@@ -172,20 +172,20 @@ function priorityCls(p?: string): string {
 }
 
 .att-item {
-  background: hsl(var(--accent) / 35%);
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 10px;
   padding: 8px 12px;
+  margin-bottom: 10px;
+  background: hsl(var(--accent) / 35%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
 }
 
 .att-head {
-  align-items: center;
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .att-head b {
@@ -193,41 +193,41 @@ function priorityCls(p?: string): string {
 }
 
 .att-head .time {
-  font-size: 11px;
   margin-left: auto;
+  font-size: 11px;
 }
 
 .att-body {
-  color: hsl(var(--muted-foreground));
   font-size: 12px;
   line-height: 1.6;
+  color: hsl(var(--muted-foreground));
 }
 
 .foot-note {
-  font-size: 11px;
   padding: 4px 2px;
+  font-size: 11px;
 }
 
 .tag {
+  display: inline-flex;
+  gap: 5px;
   align-items: center;
+  padding: 1px 9px;
+  font-size: 11px;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 10px;
-  display: inline-flex;
-  font-size: 11px;
-  gap: 5px;
-  padding: 1px 9px;
-  white-space: nowrap;
 }
 
 .tag .dot {
-  border-radius: 50%;
-  height: 5px;
   width: 5px;
+  height: 5px;
+  border-radius: 50%;
 }
 
 .t-warn {
-  background: hsl(var(--warning) / 14%);
   color: hsl(var(--warning));
+  background: hsl(var(--warning) / 14%);
 }
 
 .t-warn .dot {
@@ -235,8 +235,8 @@ function priorityCls(p?: string): string {
 }
 
 .t-gray {
-  background: hsl(var(--muted-foreground) / 12%);
   color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted-foreground) / 12%);
 }
 
 .t-gray .dot {
@@ -244,8 +244,8 @@ function priorityCls(p?: string): string {
 }
 
 .t-danger {
-  background: hsl(var(--destructive) / 12%);
   color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 12%);
 }
 
 .t-danger .dot {

@@ -140,16 +140,16 @@ function runCompare() {
 
 <style scoped>
 .verify-ctrl {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
   margin-bottom: 12px;
 }
 
 .src-note {
-  color: hsl(var(--muted-foreground) / 80%);
   font-size: 12px;
+  color: hsl(var(--muted-foreground) / 80%);
 }
 
 .src-note.fallback {
@@ -157,10 +157,10 @@ function runCompare() {
 }
 
 .empty-tip {
-  color: hsl(var(--muted-foreground));
+  padding: 32px 0;
   font-size: 12px;
   line-height: 1.8;
-  padding: 32px 0;
+  color: hsl(var(--muted-foreground));
   text-align: center;
 }
 </style>

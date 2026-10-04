@@ -17,6 +17,7 @@
 import type { TuningApi } from '#/api/tuning';
 
 import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { message } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -261,6 +262,17 @@ async function handleSave() {
 /* ── 效果验证抽屉 / 创建处置项弹窗 ── */
 const verifyOpen = ref(false);
 const orderOpen = ref(false);
+const router = useRouter();
+
+/** C2：查看整定历史（此前剖面内只有最新 1 条，完整历史必须离开工作台走菜单） */
+function goRecords() {
+  if (props.selectedLoopId) {
+    router.push({
+      path: '/tuning/records',
+      query: { loopId: props.selectedLoopId },
+    });
+  }
+}
 
 const tuningCtxForOrder = computed(() => {
   const t = latestTask.value;
@@ -300,6 +312,14 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
     <div class="act-bar">
       <button class="btn primary sm" type="button" @click="verifyOpen = true">
         效果验证
+      </button>
+      <button
+        class="btn sm"
+        type="button"
+        title="查看该回路全部整定记录（整定记录页）"
+        @click="goRecords"
+      >
+        整定历史
       </button>
       <button
         class="btn sm"
@@ -446,12 +466,6 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
           </button>
         </div>
       </template>
-      <div v-if="ctx.savedRecordId.value" class="saved-tip">
-        方案已保存。请线下实施后在处置模块记录闭环（平台不直接下写 DCS 参数）
-        <button class="link" type="button" @click="orderOpen = true">
-          创建处置项 →（页内）
-        </button>
-      </div>
     </div>
 
     <!-- 效果验证抽屉（P4-2） -->
@@ -483,10 +497,10 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 
 /* 动作条 */
 .act-bar {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
 }
 
 .act-bar .spacer {
@@ -494,13 +508,13 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .btn.primary.sm {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: hsl(var(--primary-foreground));
+  cursor: pointer;
   background: hsl(var(--primary));
   border: none;
   border-radius: 4px;
-  color: hsl(var(--primary-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  padding: 5px 14px;
 }
 
 .btn.primary.sm:disabled {
@@ -509,13 +523,13 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .btn.sm {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  padding: 4px 12px;
 }
 
 .btn.sm:disabled {
@@ -524,8 +538,8 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .btn.sm:hover:not(:disabled) {
-  border-color: hsl(var(--primary));
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 .dim {
@@ -538,15 +552,15 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 
 /* 预填回显 */
 .prefill-box {
-  align-items: center;
-  border: 1px solid hsl(var(--primary) / 35%);
-  border-radius: 6px;
-  color: hsl(var(--muted-foreground));
   display: flex;
   flex-wrap: wrap;
-  font-size: 12px;
   gap: 12px;
+  align-items: center;
   padding: 6px 12px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--primary) / 35%);
+  border-radius: 6px;
 }
 
 .prefill-box .mono {
@@ -557,24 +571,24 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 /* PID 对照三卡（原型 pid-compare） */
 .pid-compare {
   display: grid;
-  gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
 }
 
 .pid-compare .cell {
-  background: hsl(var(--accent) / 35%);
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 8px 12px;
-  position: relative;
+  background: hsl(var(--accent) / 35%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
 }
 
 .pid-compare .cell.rec {
-  border-color: hsl(var(--primary) / 45%);
   background: hsl(var(--primary) / 8%);
+  border-color: hsl(var(--primary) / 45%);
 }
 
 .pid-compare .cell b {
@@ -587,39 +601,39 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .cell-note {
-  color: hsl(var(--muted-foreground) / 80%);
   font-size: 11px;
+  color: hsl(var(--muted-foreground) / 80%);
 }
 
 .xbadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  position: absolute;
-  right: 8px;
-  top: 8px;
 }
 
 .xbadge:hover {
-  border-color: hsl(var(--primary));
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 /* ④ 确认卡 */
 .confirm-card {
+  padding: 10px 14px;
   background: hsl(var(--accent) / 30%);
   border: 1px solid hsl(var(--border));
   border-radius: 6px;
-  padding: 10px 14px;
 }
 
 .confirm-head {
-  align-items: baseline;
   display: flex;
   gap: 10px;
+  align-items: baseline;
 }
 
 .confirm-head b {
@@ -627,44 +641,44 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .confirm-empty {
-  border-left: 3px solid hsl(var(--primary) / 40%);
-  font-size: 12px;
-  margin-top: 8px;
   padding: 4px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  border-left: 3px solid hsl(var(--primary) / 40%);
 }
 
 .confirm-body {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
+  align-items: center;
   margin-top: 8px;
 }
 
 .radio {
-  align-items: center;
-  cursor: pointer;
   display: inline-flex;
-  font-size: 12px;
   gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .saved-tip {
-  border-top: 1px solid hsl(var(--border) / 60%);
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
-  margin-top: 10px;
   padding-top: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  border-top: 1px solid hsl(var(--border) / 60%);
 }
 
 .link {
-  background: none;
-  border: none;
+  padding: 0;
+  margin-left: 8px;
+  font-size: 12px;
   color: hsl(var(--primary));
   cursor: pointer;
-  font-size: 12px;
-  margin-left: 8px;
-  padding: 0;
+  background: none;
+  border: none;
 }
 
 .link:hover {
@@ -677,25 +691,25 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 
 /* tag 徽标（与 DiagSection 同口径） */
 .tag {
+  display: inline-flex;
+  gap: 5px;
   align-items: center;
+  padding: 1px 9px;
+  font-size: 11px;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 10px;
-  display: inline-flex;
-  font-size: 11px;
-  gap: 5px;
-  padding: 1px 9px;
-  white-space: nowrap;
 }
 
 .tag .dot {
-  border-radius: 50%;
-  height: 5px;
   width: 5px;
+  height: 5px;
+  border-radius: 50%;
 }
 
 .t-ok {
-  background: hsl(var(--success) / 12%);
   color: hsl(var(--success));
+  background: hsl(var(--success) / 12%);
 }
 
 .t-ok .dot {
@@ -703,8 +717,8 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .t-warn {
-  background: hsl(var(--warning) / 14%);
   color: hsl(var(--warning));
+  background: hsl(var(--warning) / 14%);
 }
 
 .t-warn .dot {
@@ -712,8 +726,8 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .t-info {
-  background: hsl(var(--primary) / 12%);
   color: hsl(var(--primary));
+  background: hsl(var(--primary) / 12%);
 }
 
 .t-info .dot {
@@ -721,8 +735,8 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 }
 
 .t-danger {
-  background: hsl(var(--destructive) / 12%);
   color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 12%);
 }
 
 .t-danger .dot {

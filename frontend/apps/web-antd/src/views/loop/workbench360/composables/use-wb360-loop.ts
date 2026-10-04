@@ -101,7 +101,7 @@ export function useWb360Loop(initialLoopId: null | string) {
       for (let p = 2; p <= totalPages; p++) rest.push(p);
       for (let i = 0; i < rest.length; i += LIST_PAGE_CONCURRENCY) {
         const batch = await Promise.all(
-          rest.slice(i, i + LIST_PAGE_CONCURRENCY).map(fetchPage),
+          rest.slice(i, i + LIST_PAGE_CONCURRENCY).map((p) => fetchPage(p)),
         );
         loops.value = [...loops.value, ...batch.flatMap((b) => b.items)];
       }

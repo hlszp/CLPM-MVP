@@ -830,10 +830,10 @@ const ordTotalPages = computed(() =>
 }
 
 .act-bar {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
 }
 
 .act-bar .spacer {
@@ -841,19 +841,19 @@ const ordTotalPages = computed(() =>
 }
 
 .btn.primary.sm {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: hsl(var(--primary-foreground));
+  cursor: pointer;
   background: hsl(var(--primary));
   border: none;
   border-radius: 4px;
-  color: hsl(var(--primary-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  padding: 5px 14px;
 }
 
 .cols2 {
   display: grid;
-  gap: 12px;
   grid-template-columns: minmax(360px, 1.2fr) minmax(300px, 1fr);
+  gap: 12px;
 }
 
 @media (max-width: 1100px) {
@@ -887,23 +887,23 @@ const ordTotalPages = computed(() =>
 
 /* 建议表 */
 .tbl {
-  border-collapse: collapse;
-  font-size: 12px;
   width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
 }
 
 .tbl th {
-  border-bottom: 1px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
-  font-weight: 500;
   padding: 6px 8px;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
   text-align: left;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .tbl td {
-  border-bottom: 1px solid hsl(var(--border) / 55%);
   padding: 6px 8px;
   vertical-align: top;
+  border-bottom: 1px solid hsl(var(--border) / 55%);
 }
 
 .sug-content {
@@ -918,22 +918,22 @@ const ordTotalPages = computed(() =>
 }
 
 .tbl-foot {
-  align-items: center;
   display: flex;
-  font-size: 12px;
   gap: 10px;
+  align-items: center;
   justify-content: space-between;
+  font-size: 12px;
 }
 
 .pager button {
+  padding: 2px 10px;
+  margin-left: 6px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  margin-left: 6px;
-  padding: 2px 10px;
 }
 
 .pager button:disabled {
@@ -947,21 +947,21 @@ const ordTotalPages = computed(() =>
 
 /* 工单时间线卡 */
 .tl-card {
-  background: hsl(var(--accent) / 35%);
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 14px;
-  position: relative;
+  background: hsl(var(--accent) / 35%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
 }
 
 .tl-head {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   padding-right: 34px;
 }
 
@@ -970,45 +970,45 @@ const ordTotalPages = computed(() =>
 }
 
 .xbadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 12px;
-  position: absolute;
-  right: 8px;
-  top: 8px;
 }
 
 .xbadge:hover {
-  border-color: hsl(var(--primary));
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 .tl {
-  border-left: 2px solid hsl(var(--border));
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-left: 6px;
   padding-left: 12px;
+  margin-left: 6px;
+  border-left: 2px solid hsl(var(--border));
 }
 
 .tl-item {
-  font-size: 12px;
   position: relative;
+  font-size: 12px;
 }
 
 .tl-item::before {
-  background: hsl(var(--muted-foreground) / 50%);
-  border-radius: 50%;
-  content: '';
-  height: 7px;
-  left: -17.5px;
   position: absolute;
   top: 4px;
+  left: -17.5px;
   width: 7px;
+  height: 7px;
+  content: '';
+  background: hsl(var(--muted-foreground) / 50%);
+  border-radius: 50%;
 }
 
 .tl-item.done::before {
@@ -1033,9 +1033,9 @@ const ordTotalPages = computed(() =>
 }
 
 .t-h {
-  align-items: baseline;
   display: flex;
   gap: 10px;
+  align-items: baseline;
 }
 
 .t-h .time {
@@ -1043,9 +1043,9 @@ const ordTotalPages = computed(() =>
 }
 
 .t-m {
-  color: hsl(var(--muted-foreground));
-  font-size: 11px;
   margin-top: 1px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 .link.block {
@@ -1060,17 +1060,17 @@ const ordTotalPages = computed(() =>
 }
 
 .ord-row {
+  display: flex;
+  gap: 8px;
   align-items: center;
+  padding: 5px 4px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  text-align: left;
+  cursor: pointer;
   background: none;
   border: none;
   border-bottom: 1px dashed hsl(var(--border) / 70%);
-  color: hsl(var(--foreground));
-  cursor: pointer;
-  display: flex;
-  font-size: 12px;
-  gap: 8px;
-  padding: 5px 4px;
-  text-align: left;
 }
 
 .ord-row:hover {
@@ -1078,21 +1078,21 @@ const ordTotalPages = computed(() =>
 }
 
 .ord-title {
-  color: hsl(var(--muted-foreground));
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 .link {
-  background: none;
-  border: none;
+  padding: 0;
+  margin-right: 8px;
+  font-size: 12px;
   color: hsl(var(--primary));
   cursor: pointer;
-  font-size: 12px;
-  margin-right: 8px;
-  padding: 0;
+  background: none;
+  border: none;
 }
 
 .link:hover {
@@ -1101,28 +1101,28 @@ const ordTotalPages = computed(() =>
 
 .link:disabled {
   color: hsl(var(--muted-foreground) / 60%);
-  cursor: not-allowed;
   text-decoration: none;
+  cursor: not-allowed;
 }
 
 .error-line {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: hsl(var(--destructive));
   border: 1px solid hsl(var(--destructive) / 35%);
   border-radius: 4px;
-  color: hsl(var(--destructive));
-  font-size: 12px;
-  padding: 8px 12px;
 }
 
 .error-line .link {
-  color: hsl(var(--destructive));
   margin-left: 8px;
+  color: hsl(var(--destructive));
 }
 
 /* 弹窗表单 */
 .modal-tip {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
   margin: 4px 0 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .modal-form {
@@ -1132,39 +1132,39 @@ const ordTotalPages = computed(() =>
 }
 
 .frow {
-  align-items: center;
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
 .frow label {
-  color: hsl(var(--muted-foreground));
   flex: none;
-  font-size: 12px;
   width: 62px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* tag 徽标（与 DiagSection 同口径） */
 .tag {
+  display: inline-flex;
+  gap: 5px;
   align-items: center;
+  padding: 1px 9px;
+  font-size: 11px;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 10px;
-  display: inline-flex;
-  font-size: 11px;
-  gap: 5px;
-  padding: 1px 9px;
-  white-space: nowrap;
 }
 
 .tag .dot {
-  border-radius: 50%;
-  height: 5px;
   width: 5px;
+  height: 5px;
+  border-radius: 50%;
 }
 
 .t-ok {
-  background: hsl(var(--success) / 12%);
   color: hsl(var(--success));
+  background: hsl(var(--success) / 12%);
 }
 
 .t-ok .dot {
@@ -1172,8 +1172,8 @@ const ordTotalPages = computed(() =>
 }
 
 .t-warn {
-  background: hsl(var(--warning) / 14%);
   color: hsl(var(--warning));
+  background: hsl(var(--warning) / 14%);
 }
 
 .t-warn .dot {
@@ -1181,8 +1181,8 @@ const ordTotalPages = computed(() =>
 }
 
 .t-info {
-  background: hsl(var(--primary) / 12%);
   color: hsl(var(--primary));
+  background: hsl(var(--primary) / 12%);
 }
 
 .t-info .dot {
@@ -1190,8 +1190,8 @@ const ordTotalPages = computed(() =>
 }
 
 .t-gray {
-  background: hsl(var(--muted-foreground) / 12%);
   color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted-foreground) / 12%);
 }
 
 .t-gray .dot {
@@ -1199,8 +1199,8 @@ const ordTotalPages = computed(() =>
 }
 
 .t-danger {
-  background: hsl(var(--destructive) / 12%);
   color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 12%);
 }
 
 .t-danger .dot {

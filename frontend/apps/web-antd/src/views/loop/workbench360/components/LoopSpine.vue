@@ -180,41 +180,41 @@ const footerText = computed(() => {
 
 <style scoped>
 .wb360-spine {
-  background: hsl(var(--card));
-  border-right: 1px solid hsl(var(--border));
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: hsl(var(--card));
+  border-right: 1px solid hsl(var(--border));
 }
 
 .spine-h {
-  border-bottom: 1px solid hsl(var(--border));
   padding: 8px 10px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .row-title {
+  margin-bottom: 4px;
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 4px;
 }
 
 .tree {
-  font-size: 12px;
   max-height: 200px;
   overflow: auto;
+  font-size: 12px;
 }
 
 .tnode {
-  align-items: center;
-  border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
   display: flex;
   gap: 6px;
-  overflow: hidden;
+  align-items: center;
   padding: 3px 8px;
+  overflow: hidden;
   text-overflow: ellipsis;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
+  cursor: pointer;
+  border-radius: 4px;
 }
 
 .tnode:hover {
@@ -222,14 +222,14 @@ const footerText = computed(() => {
 }
 
 .tnode.plant {
-  color: hsl(var(--foreground));
   font-weight: 600;
+  color: hsl(var(--foreground));
 }
 
 .tnode.unit.on {
-  background: hsl(var(--primary) / 12%);
-  color: hsl(var(--primary));
   font-weight: 600;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 12%);
 }
 
 .tnode .tw {
@@ -244,28 +244,28 @@ const footerText = computed(() => {
 }
 
 .tnode .cnt {
-  color: hsl(var(--muted-foreground) / 80%);
   flex: none;
+  margin-left: auto;
   font-family: var(--font-mono, monospace);
   font-size: 11px;
-  margin-left: auto;
+  color: hsl(var(--muted-foreground) / 80%);
 }
 
 .tree-empty {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
   padding: 4px 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .row input[type='text'] {
+  flex: 1;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+  outline: none;
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  color: hsl(var(--foreground));
-  flex: 1;
-  font-size: 12px;
-  outline: none;
-  padding: 3px 8px;
 }
 
 .row input[type='text']:focus {
@@ -279,25 +279,25 @@ const footerText = computed(() => {
 }
 
 .gchip {
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: hsl(var(--accent) / 60%);
   border: 1px solid transparent;
   border-radius: 9px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  font-size: 11px;
-  line-height: 18px;
-  padding: 0 7px;
 }
 
 .gchip.on {
-  background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
 }
 
 .loops {
+  position: relative;
   flex: 1;
   min-height: 0;
-  position: relative;
 }
 
 .loops-scroll {
@@ -306,14 +306,14 @@ const footerText = computed(() => {
 }
 
 .lrow {
-  align-items: center;
-  border-left: 2px solid transparent;
-  cursor: pointer;
   display: flex;
-  font-size: 12px;
   gap: 8px;
+  align-items: center;
   height: 30px;
   padding: 0 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
 }
 
 .lrow:hover {
@@ -327,9 +327,9 @@ const footerText = computed(() => {
 
 .lrow .id {
   flex: 1;
-  font-family: var(--font-mono, monospace);
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-mono, monospace);
   white-space: nowrap;
 }
 
@@ -357,32 +357,29 @@ const footerText = computed(() => {
 }
 
 .loops-overlay {
-  align-items: center;
-  bottom: 0;
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  font-size: 12px;
-  justify-content: center;
-  left: 0;
-  padding: 10px;
-  pointer-events: none;
   position: absolute;
-  right: 0;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   text-align: center;
-  top: 0;
+  pointer-events: none;
 }
 
 .loops-error {
   align-items: flex-start;
-  color: hsl(var(--destructive));
   justify-content: flex-start;
   padding-top: 20px;
+  color: hsl(var(--destructive));
 }
 
 .spine-f {
-  border-top: 1px solid hsl(var(--border));
-  color: hsl(var(--muted-foreground));
-  font-size: 11px;
   padding: 5px 10px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  border-top: 1px solid hsl(var(--border));
 }
 </style>

@@ -114,42 +114,42 @@ const sourceText = computed(() => {
 
 <style scoped>
 .wb360-sbar {
-  align-items: center;
-  background: v-bind('WB360_STATUSBAR.bg');
-  color: v-bind('WB360_STATUSBAR.text');
   display: flex;
   flex: none;
-  font-size: 11.5px;
-  overflow: hidden;
+  align-items: center;
   padding: 0 10px;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: v-bind('WB360_STATUSBAR.text');
   white-space: nowrap;
+  background: v-bind('WB360_STATUSBAR.bg');
 }
 
 .sb-seg {
-  align-items: center;
-  border-right: 1px solid v-bind('WB360_STATUSBAR.divider');
   display: inline-flex;
-  font-family: var(--font-mono, monospace);
   gap: 5px;
+  align-items: center;
   padding: 0 12px;
+  font-family: var(--font-mono, monospace);
+  border-right: 1px solid v-bind('WB360_STATUSBAR.divider');
 }
 
 .sb-seg b {
-  color: v-bind('WB360_STATUSBAR.textStrong');
   font-weight: 600;
+  color: v-bind('WB360_STATUSBAR.textStrong');
 }
 
 .sb-right {
-  border-right: none;
-  color: v-bind('WB360_STATUSBAR.warnText');
   margin-left: auto;
+  color: v-bind('WB360_STATUSBAR.warnText');
+  border-right: none;
 }
 
 .sb-dot {
-  border-radius: 50%;
   display: inline-block;
   flex: none;
-  height: 6px;
   width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 </style>

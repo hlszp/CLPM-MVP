@@ -141,6 +141,12 @@ async function submit() {
       plannedAt: form.plannedAt?.toISOString(),
       handler: form.handler.trim() || undefined,
       actionDetail,
+      // 2026-10-04 P0：显式顶层字段（后端写 handling_order.tuning_record_id，
+      // submit→APPLIED / verify→VERIFIED|ROLLED_BACK 状态推进依赖此关联）
+      tuningRecordId:
+        form.sourceMode === 'tuning' && props.tuning
+          ? props.tuning.tuningRecordId
+          : undefined,
     });
     message.success(`处置工单已创建：${order.orderNo}（待授权人员实施）`);
     emit('created', order.orderNo);
@@ -233,24 +239,24 @@ defineExpose({
 }
 
 .frow {
-  align-items: center;
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
 .frow label {
-  color: hsl(var(--muted-foreground));
   flex: none;
-  font-size: 12px;
   width: 60px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .note {
-  background: hsl(var(--accent) / 40%);
-  border-radius: 4px;
-  color: hsl(var(--muted-foreground));
+  padding: 8px 10px;
   font-size: 12px;
   line-height: 1.7;
-  padding: 8px 10px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--accent) / 40%);
+  border-radius: 4px;
 }
 </style>

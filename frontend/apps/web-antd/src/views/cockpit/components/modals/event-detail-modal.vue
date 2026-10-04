@@ -202,10 +202,10 @@ const duration = computed(() =>
 
 .ed__rule {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 15px;
   font-weight: 600;
   color: var(--ck-text);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -248,8 +248,8 @@ const duration = computed(() =>
 
 .ed__meta-item .v {
   overflow: hidden;
-  color: var(--ck-text);
   text-overflow: ellipsis;
+  color: var(--ck-text);
   white-space: nowrap;
 }
 

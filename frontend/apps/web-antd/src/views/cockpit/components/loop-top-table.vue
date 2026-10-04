@@ -187,8 +187,8 @@ function statusLabel(item: MetricApi.RankingItem): string {
 .toptbl__table td {
   padding: 5px 8px;
   overflow: hidden;
-  color: var(--ck-text-2);
   text-overflow: ellipsis;
+  color: var(--ck-text-2);
   white-space: nowrap;
   border-bottom: 1px solid var(--ck-border);
 }

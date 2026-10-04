@@ -297,9 +297,9 @@ const capsuleRows = computed(() =>
 
 .todo__title {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   color: var(--ck-text-2);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

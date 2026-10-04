@@ -248,8 +248,8 @@ const statusClass = computed(() =>
 
 .td__meta-item .v {
   overflow: hidden;
-  color: var(--ck-text);
   text-overflow: ellipsis;
+  color: var(--ck-text);
   white-space: nowrap;
 }
 
@@ -258,8 +258,8 @@ const statusClass = computed(() =>
 }
 
 .td__kpi {
-  margin-top: 12px;
   padding: 8px 12px;
+  margin-top: 12px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--ck-text);

@@ -30,32 +30,32 @@ defineProps<{
 
 <style scoped>
 .wb360-sec-ph {
-  align-items: center;
   display: flex;
   flex: 1;
+  align-items: center;
   justify-content: center;
   min-height: 0;
 }
 
 .ph-card {
-  border: 1px dashed hsl(var(--border));
-  border-radius: 6px;
   max-width: 420px;
   padding: 22px 26px;
   text-align: center;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 6px;
 }
 
 .ph-title {
+  margin-bottom: 8px;
   font-size: 15px;
   font-weight: 700;
-  margin-bottom: 8px;
 }
 
 .ph-body p {
-  color: hsl(var(--muted-foreground));
+  margin: 0;
   font-size: 13px;
   line-height: 1.8;
-  margin: 0;
+  color: hsl(var(--muted-foreground));
 }
 
 .ph-body b {
@@ -63,7 +63,7 @@ defineProps<{
 }
 
 .ph-dim {
-  color: hsl(var(--muted-foreground) / 70%);
   font-size: 12px;
+  color: hsl(var(--muted-foreground) / 70%);
 }
 </style>

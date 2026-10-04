@@ -454,9 +454,9 @@ watch(
 
 .ld__desc {
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--ck-text-2);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -490,8 +490,8 @@ watch(
 }
 
 .ld__notice {
-  margin-top: 12px;
   padding: 8px 12px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--ck-grade-fair);
   background: var(--ck-panel-2);
@@ -590,8 +590,8 @@ watch(
   display: flex;
   gap: 12px;
   align-items: center;
-  margin-top: 12px;
   padding: 8px 12px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--ck-text-2);
   background: var(--ck-panel-2);

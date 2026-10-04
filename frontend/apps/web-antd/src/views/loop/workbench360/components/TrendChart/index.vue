@@ -914,78 +914,78 @@ defineExpose({ exportPng, locate, requestDraw });
 
 <style scoped>
 .wb360-trend {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  position: relative;
 }
 
 /* 悬停读值：十字竖线 + 跟随浮层（终验需求） */
 .hover-xline {
-  bottom: 30px;
-  pointer-events: none;
   position: absolute;
   top: 10px;
-  width: 1px;
+  bottom: 30px;
   z-index: 3;
+  width: 1px;
+  pointer-events: none;
   background: hsl(var(--muted-foreground) / 45%);
 }
 
 .hover-tip {
-  background: hsl(var(--card) / 0.97);
+  position: absolute;
+  z-index: 4;
+  min-width: 150px;
+  padding: 5px 10px 6px;
+  font-size: 11.5px;
+  line-height: 1.75;
+  pointer-events: none;
+  background: hsl(var(--card) / 97%);
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
   box-shadow: 0 4px 14px rgb(16 24 40 / 18%);
-  font-size: 11.5px;
-  line-height: 1.75;
-  min-width: 150px;
-  padding: 5px 10px 6px;
-  pointer-events: none;
-  position: absolute;
-  z-index: 4;
 }
 
 .hover-tip .tip-row {
-  align-items: center;
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 
 .hover-tip .tip-row b {
-  font-variant-numeric: tabular-nums;
   margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 
 .hover-tip .dot {
-  border-radius: 50%;
   flex: none;
-  height: 7px;
   width: 7px;
+  height: 7px;
+  border-radius: 50%;
 }
 
 .hover-tip .tip-time {
-  color: hsl(var(--muted-foreground));
-  font-size: 11px;
   margin-bottom: 1px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 .hover-tip .u {
-  color: hsl(var(--muted-foreground));
   font-size: 10px;
+  color: hsl(var(--muted-foreground));
 }
 
 .hover-tip .tip-row.mode {
-  color: hsl(var(--muted-foreground));
   font-size: 11px;
+  color: hsl(var(--muted-foreground));
 }
 
 /* 事件标注层（固定高，不随趋势压缩变形） */
 .tlane {
+  position: relative;
   flex: none;
   height: 26px;
   margin: 0 54px 0 46px;
-  position: relative;
 }
 
 .tlane.mini {
@@ -993,31 +993,31 @@ defineExpose({ exportPng, locate, requestDraw });
 }
 
 .lane-cap {
-  color: hsl(var(--muted-foreground) / 60%);
-  font-size: 11px;
-  left: 0;
   position: absolute;
   top: 5px;
+  left: 0;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground) / 60%);
 }
 
 .pill {
+  position: absolute;
+  top: 3px;
+  display: inline-flex;
+  gap: 4px;
   align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
   background: hsl(var(--card));
   border: 1px solid currentcolor;
   border-radius: 9px;
-  color: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 600;
-  gap: 4px;
-  height: 18px;
-  line-height: 1;
-  padding: 0 8px;
-  position: absolute;
-  top: 3px;
   transform: translateX(-50%);
-  white-space: nowrap;
 }
 
 .pill:hover {
@@ -1025,88 +1025,82 @@ defineExpose({ exportPng, locate, requestDraw });
 }
 
 .pill .tri {
-  border: 4px solid transparent;
-  border-top-color: currentcolor;
-  left: 50%;
-  margin-left: -4px;
   position: absolute;
   top: 17px;
+  left: 50%;
+  margin-left: -4px;
+  border: 4px solid transparent;
+  border-top-color: currentcolor;
 }
 
 .chart-host {
-  flex: 1;
-  min-height: 0;
   position: relative;
+  flex: 1;
   width: 100%;
+  min-height: 0;
 }
 
 .chart-cvs {
   display: block;
-  height: 100%;
   width: 100%;
+  height: 100%;
 }
 
 /* 底部 X 滚动条（与绘图区对齐：左 46 / 右 54） */
 .xbar {
-  background: hsl(var(--accent) / 30%);
-  border-radius: 4px;
-  cursor: grab;
+  position: relative;
   flex: none;
   height: 8px;
   margin: 2px 54px 6px 46px;
-  position: relative;
   touch-action: none;
+  cursor: grab;
+  background: hsl(var(--accent) / 30%);
+  border-radius: 4px;
 }
 
 /* 8px 视觉条 + 伪元素扩展拖拽热区（±6px，不影响布局） */
 .xbar::before {
-  bottom: -6px;
-  content: '';
-  left: 0;
   position: absolute;
-  right: 0;
-  top: -6px;
+  inset: -6px 0;
+  content: '';
 }
 
 /* 右侧 Y 滚动条 */
 .ybar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 16px;
+  width: 8px;
+  touch-action: none;
+  cursor: grab;
   background: hsl(var(--accent) / 30%);
   border-radius: 4px;
-  bottom: 16px;
-  cursor: grab;
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  touch-action: none;
-  width: 8px;
 }
 
 .ybar::before {
-  bottom: 0;
-  content: '';
-  left: -6px;
   position: absolute;
-  right: -6px;
-  top: 0;
+  inset: 0 -6px;
+  content: '';
 }
 
 .thumb {
+  position: absolute;
+  min-width: 16px;
+  min-height: 16px;
   background: hsl(var(--accent-foreground) / 25%);
   border-radius: 2px;
-  min-height: 16px;
-  min-width: 16px;
-  position: absolute;
 }
 
 .xbar .thumb {
-  bottom: 1px;
   position: absolute;
   top: 1px;
+  bottom: 1px;
   min-width: 16px;
 }
 
 .ybar .thumb {
-  left: 1px;
   right: 1px;
+  left: 1px;
 }
 </style>

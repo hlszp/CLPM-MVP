@@ -173,22 +173,22 @@ function gradeCls(score: null | number | undefined): string {
 
 <style scoped>
 .wb360-rail {
-  align-items: stretch;
-  background: hsl(var(--card));
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   flex: none;
+  align-items: stretch;
   padding: 8px 14px;
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .rail-title {
-  border-right: 1px solid hsl(var(--border));
   display: flex;
   flex-direction: column;
-  font-size: 11px;
   justify-content: center;
-  margin-right: 6px;
   padding-right: 14px;
+  margin-right: 6px;
+  font-size: 11px;
+  border-right: 1px solid hsl(var(--border));
 }
 
 .rail-title b {
@@ -196,21 +196,19 @@ function gradeCls(score: null | number | undefined): string {
 }
 
 .rail-title span {
-  color: hsl(var(--muted-foreground) / 80%);
   font-family: var(--font-mono, monospace);
+  color: hsl(var(--muted-foreground) / 80%);
 }
 
 .seg-wrap {
-  align-items: center;
   display: flex;
   flex: 1;
+  align-items: center;
   min-width: 0;
 }
 
 .seg {
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -218,7 +216,9 @@ function gradeCls(score: null | number | undefined): string {
   justify-content: center;
   min-width: 0;
   padding: 4px 14px;
-  position: relative;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 6px;
   transition: 0.15s;
 }
 
@@ -234,18 +234,18 @@ function gradeCls(score: null | number | undefined): string {
 
 /* 推荐下一步徽标（原型 .seg.next::after 同款呼吸标） */
 .seg.next::after {
-  animation: wb360-pulse 2s infinite;
+  position: absolute;
+  top: -4px;
+  right: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 14px;
+  color: hsl(var(--primary));
+  content: '推荐下一步';
   background: hsl(var(--card));
   border: 1px solid hsl(var(--primary) / 35%);
   border-radius: 8px;
-  color: hsl(var(--primary));
-  content: '推荐下一步';
-  font-size: 10px;
-  line-height: 14px;
-  padding: 0 6px;
-  position: absolute;
-  right: 8px;
-  top: -4px;
+  animation: wb360-pulse 2s infinite;
 }
 
 @keyframes wb360-pulse {
@@ -271,18 +271,18 @@ function gradeCls(score: null | number | undefined): string {
 }
 
 .s-top .n {
-  color: hsl(var(--muted-foreground) / 80%);
   font-size: 11px;
   font-weight: 500;
+  color: hsl(var(--muted-foreground) / 80%);
 }
 
 .s-sub {
-  align-items: center;
-  color: hsl(var(--muted-foreground));
   display: flex;
-  font-size: 12px;
   gap: 6px;
+  align-items: center;
   overflow: hidden;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
@@ -293,27 +293,27 @@ function gradeCls(score: null | number | undefined): string {
 }
 
 .s-sub .delta {
-  color: hsl(var(--muted-foreground) / 80%);
   font-family: var(--font-mono, monospace);
   font-size: 11px;
+  color: hsl(var(--muted-foreground) / 80%);
 }
 
 /* 诊断段主分类（P3；文本即状态，过长省略） */
 .s-sub .diag-cat {
-  font-size: 12px;
-  font-weight: 600;
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* 失分主因摘要（v3 §4 评估段；省略号截断，完整内容走 title） */
 .s-sub .loss {
-  color: hsl(var(--warning) / 90%);
-  font-size: 11px;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 11px;
+  color: hsl(var(--warning) / 90%);
 }
 
 .dim {
@@ -342,9 +342,9 @@ function gradeCls(score: null | number | undefined): string {
 }
 
 .rail-arrow {
-  color: hsl(var(--muted-foreground) / 50%);
   flex: none;
-  font-size: 14px;
   padding: 0 2px;
+  font-size: 14px;
+  color: hsl(var(--muted-foreground) / 50%);
 }
 </style>

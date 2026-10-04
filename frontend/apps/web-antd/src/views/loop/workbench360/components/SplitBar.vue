@@ -72,42 +72,42 @@ function onPointerDown(e: PointerEvent) {
 
 <style scoped>
 .wb360-split {
-  align-items: center;
-  background: hsl(var(--accent) / 25%);
-  border-bottom: 1px solid hsl(var(--border));
-  border-top: 1px solid hsl(var(--border));
-  cursor: row-resize;
+  position: relative;
   display: flex;
   flex: none;
-  height: 24px;
+  align-items: center;
   justify-content: center;
-  position: relative;
+  height: 24px;
+  cursor: row-resize;
   user-select: none;
+  background: hsl(var(--accent) / 25%);
+  border-top: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .grip {
+  width: 36px;
+  height: 3px;
   background: hsl(var(--muted-foreground) / 35%);
   border-radius: 2px;
-  height: 3px;
-  width: 36px;
 }
 
 .pz {
-  align-items: center;
+  position: absolute;
+  top: 0;
+  right: 8px;
   bottom: 0;
   display: flex;
   gap: 4px;
-  position: absolute;
-  right: 8px;
-  top: 0;
+  align-items: center;
 }
 
 .pz button {
-  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  font-size: 11px;
-  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .pz button:hover {
@@ -115,7 +115,7 @@ function onPointerDown(e: PointerEvent) {
 }
 
 .pz button.on {
-  background: hsl(var(--primary) / 12%);
   color: hsl(var(--primary));
+  background: hsl(var(--primary) / 12%);
 }
 </style>

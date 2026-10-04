@@ -126,17 +126,17 @@ function gradeCls(score: null | number | undefined): string {
 }
 
 .thumb {
-  align-items: stretch;
-  background: hsl(var(--accent) / 25%);
-  border: 1px solid hsl(var(--border));
-  border-radius: 6px;
-  cursor: pointer;
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 3px;
+  align-items: stretch;
   min-width: 0;
   padding: 7px 10px;
+  cursor: pointer;
+  background: hsl(var(--accent) / 25%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
   transition: 0.15s;
 }
 
@@ -146,22 +146,22 @@ function gradeCls(score: null | number | undefined): string {
 }
 
 .th-top {
-  color: hsl(var(--muted-foreground));
   display: flex;
-  font-size: 12px;
   justify-content: space-between;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .th-top b {
-  color: hsl(var(--foreground));
   font-size: 12px;
+  color: hsl(var(--foreground));
 }
 
 .th-body {
-  align-items: center;
   display: flex;
   flex: 1;
   gap: 8px;
+  align-items: center;
   min-height: 0;
   overflow: hidden;
 }
@@ -175,19 +175,19 @@ function gradeCls(score: null | number | undefined): string {
 
 /* 诊断卡主分类（P3；文本即状态，过长省略） */
 .th-cat {
-  font-size: 12px;
-  font-weight: 600;
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .th-sub {
-  color: hsl(var(--muted-foreground) / 80%);
-  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground) / 80%);
   white-space: nowrap;
 }
 
