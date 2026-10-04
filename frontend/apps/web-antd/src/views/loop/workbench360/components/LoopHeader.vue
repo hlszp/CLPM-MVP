@@ -24,11 +24,15 @@ const props = defineProps<{
   lastMessageAt: Date | null;
   /** 当前选中回路（含 WS 局部更新的实时值） */
   loop: LoopApi.MonitorListItem | null;
+  /** 显示返回按钮（回路监视页改版 P1-2：路由精简模式 embed=1） */
+  showBack?: boolean;
 }>();
 
 const emit = defineEmits<{
   /** 🔔 打开本回路关注抽屉（P4-6） */
   (e: 'openAttention'): void;
+  /** ← 返回来源页（P1-2 精简模式，由页面处理 from query / router.back） */
+  (e: 'back'): void;
 }>();
 
 /* 主题切换（P4-5）：vben 全局主题深/浅往返（v3 §16.7 基线） */
@@ -87,6 +91,16 @@ const fitnessTag = computed(() => {
 
 <template>
   <header class="wb360-hdr">
+    <button
+      v-if="props.showBack"
+      aria-label="返回来源页面"
+      class="icon-btn back-btn"
+      title="返回"
+      type="button"
+      @click="emit('back')"
+    >
+      ←
+    </button>
     <div class="brand"><b>回路工作台</b></div>
     <div v-if="loop" class="loop-info">
       <div class="loop-line">
@@ -166,14 +180,14 @@ const fitnessTag = computed(() => {
 
 <style scoped>
 .wb360-hdr {
-  align-items: center;
-  background: hsl(var(--card));
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   flex: none;
   gap: 14px;
+  align-items: center;
   height: 52px;
   padding: 0 14px;
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .brand {
@@ -189,9 +203,9 @@ const fitnessTag = computed(() => {
 }
 
 .loop-line {
-  align-items: center;
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .loop-id {
@@ -202,10 +216,10 @@ const fitnessTag = computed(() => {
 }
 
 .loop-desc {
-  color: hsl(var(--muted-foreground));
-  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
@@ -214,32 +228,32 @@ const fitnessTag = computed(() => {
 }
 
 .loop-empty {
-  color: hsl(var(--muted-foreground));
-  font-size: 13px;
   justify-content: center;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
 }
 
 .tag {
-  align-items: center;
-  border-radius: 4px;
   display: inline-flex;
-  font-size: 12px;
   gap: 4px;
-  line-height: 18px;
+  align-items: center;
   padding: 1px 8px;
+  font-size: 12px;
+  line-height: 18px;
   white-space: nowrap;
+  border-radius: 4px;
 }
 
 .tag .dot {
-  border-radius: 50%;
   flex: none;
-  height: 6px;
   width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 
 .t-ok {
-  background: hsl(var(--success) / 12%);
   color: hsl(var(--success));
+  background: hsl(var(--success) / 12%);
 }
 
 .t-ok .dot {
@@ -247,8 +261,8 @@ const fitnessTag = computed(() => {
 }
 
 .t-info {
-  background: hsl(var(--primary) / 12%);
   color: hsl(var(--primary));
+  background: hsl(var(--primary) / 12%);
 }
 
 .t-info .dot {
@@ -256,8 +270,8 @@ const fitnessTag = computed(() => {
 }
 
 .t-danger {
-  background: hsl(var(--destructive) / 12%);
   color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 12%);
 }
 
 .t-danger .dot {
@@ -265,8 +279,8 @@ const fitnessTag = computed(() => {
 }
 
 .t-gray {
-  background: hsl(var(--accent) / 60%);
   color: hsl(var(--muted-foreground));
+  background: hsl(var(--accent) / 60%);
 }
 
 .t-gray .dot {
@@ -278,17 +292,17 @@ const fitnessTag = computed(() => {
 }
 
 .live {
-  align-items: center;
-  color: hsl(var(--muted-foreground));
   display: flex;
+  gap: 14px;
+  align-items: center;
   font-family: var(--font-mono, monospace);
   font-size: 12px;
-  gap: 14px;
+  color: hsl(var(--muted-foreground));
 }
 
 .live b {
-  color: hsl(var(--foreground));
   font-size: 13px;
+  color: hsl(var(--foreground));
 }
 
 .fresh-ok {
@@ -305,19 +319,26 @@ const fitnessTag = computed(() => {
 
 /* 页头图标钮（原型 icon-btn：🔔 关注 / ◐ 主题） */
 .icon-btn {
+  flex: none;
+  padding: 4px 7px;
+  font-size: 14px;
+  line-height: 1;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
   background: none;
   border: 1px solid transparent;
   border-radius: 4px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  flex: none;
-  font-size: 14px;
-  line-height: 1;
-  padding: 4px 7px;
 }
 
 .icon-btn:hover {
-  border-color: hsl(var(--border));
   color: hsl(var(--primary));
+  border-color: hsl(var(--border));
+}
+
+/* 返回钮（P1-2 精简模式）：比图标钮稍宽，箭头加粗 */
+.back-btn {
+  padding: 4px 9px;
+  font-size: 16px;
+  font-weight: 700;
 }
 </style>

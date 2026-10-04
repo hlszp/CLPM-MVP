@@ -21,6 +21,7 @@ import {
   MODE_LABEL_MAP,
 } from '#/composables/use-loop-palettes';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
+import { formatNumber } from '#/views/metric/components/loop-performance-shared';
 
 defineOptions({ name: 'LoopDetailDrawer' });
 
@@ -59,12 +60,12 @@ const grade = computed(() => {
   return null;
 });
 
-// ===== 最新性能评估指标（kpiSummary；比率指标 0-1 → 百分比展示）=====
+// ===== 最新性能评估指标（kpiSummary；KPI 率字段后端快照为 0-100 口径，直拼 %，禁再 ×100）=====
 const kpiRows = computed(() => {
   const k = props.loop?.kpiSummary;
   if (!k) return [];
   const pct = (v: null | number | undefined) =>
-    v == null || Number.isNaN(v) ? '—' : `${(v * 100).toFixed(1)}%`;
+    v == null || Number.isNaN(v) ? '—' : formatNumber(v, '%');
   return [
     { label: '有效自控率', value: pct(k.effective_auto_rate) },
     { label: '平稳率', value: pct(k.steady_rate) },

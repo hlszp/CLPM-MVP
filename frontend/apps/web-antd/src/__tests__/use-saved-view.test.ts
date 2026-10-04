@@ -29,6 +29,7 @@ function makeCtx(overrides: Partial<MonitorContext> = {}): MonitorContext {
     loopType: null,
     keyword: '',
     controlMode: null,
+    grade: null,
     attentionOnly: false,
     timeWindow: '24h',
     eventId: null,

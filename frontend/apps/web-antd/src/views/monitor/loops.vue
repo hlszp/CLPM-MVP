@@ -5,15 +5,17 @@
  * 路由：/monitor/loops（canonical）
  * 角色：全角色可见（ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT）
  *
- * 菜单重构 Phase1（2026-08-24）：
- * - 列表只呈现干净结论（评分/性能等级/适用性），佐证走右侧抽屉
- * - 行点击/位号链接 → 打开回路详情抽屉（基本信息/最新指标/等级/适用性原因）
- * - 抽屉内"进入回路工作台"携带 from=/monitor/loops 及筛选上下文
+ * 回路监视页改版 P1（2026-10-03，含当日裁决回退）：
+ * - 微型卡片（类型/等级/综合/自控率）收缩进筛选区（类型/等级 Select），顶部统计区移除
+ * - 行点击/位号/操作列"详情" → 右侧详情抽屉（保留原有佐证内容；用户裁决：
+ *   不直接跳工作台，抽屉内"进入回路工作台"承载入口）
+ * - 抽屉按钮 → 精简版回路工作台（?embed=1：无左脊柱、直接定位、带返回）
  */
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Button, Input, Select, Tooltip, TreeSelect } from 'ant-design-vue';
 
@@ -22,11 +24,14 @@ import { ClpmPageToolbar } from '#/components/clpm';
 import LoopTrendModal from '#/components/loop/loop-trend-modal.vue';
 import LoopDetailDrawer from '#/components/monitor/loop-detail-drawer.vue';
 import LoopFleetView from '#/components/monitor/loop-fleet-view.vue';
+import { LOOP_TYPE_LABEL_MAP } from '#/composables/use-loop-palettes';
 import { useMonitorContext } from '#/composables/use-monitor-context';
+import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 
 defineOptions({ name: 'MonitorLoops' });
 
 const monitorCtx = useMonitorContext();
+const route = useRoute();
 
 // ===== 筛选草稿态：本地编辑，点“查询”一次性提交到 context 触发列表刷新 =====
 const plantTree = ref<PlantNodeApi.PlantNode[]>([]);
@@ -58,6 +63,23 @@ const controlModeDraft = ref<
     undefined,
 );
 
+// ===== 类型/等级筛选草稿（回路监视页改版 P1-1：微型卡片收缩进筛选区） =====
+const loopTypeOptions = Object.entries(LOOP_TYPE_LABEL_MAP).map(
+  ([value, label]) => ({ label, value }),
+);
+
+const gradeOptions = [
+  ...GRADE_THRESHOLDS.map((t) => ({ label: t.label ?? t.name, value: t.name })),
+  { label: '无评分', value: 'INCONCLUSIVE' },
+];
+
+const loopTypeDraft = ref<string | undefined>(
+  monitorCtx.loopType.value ?? undefined,
+);
+const gradeDraft = ref<string | undefined>(
+  monitorCtx.grade.value ?? undefined,
+);
+
 // ===== 关键词搜索草稿（初始从 URL 同步；不再即时/防抖提交） =====
 const keywordDraft = ref(monitorCtx.keyword.value);
 
@@ -66,6 +88,8 @@ function applyFilters() {
   monitorCtx.update({
     plantNodeId: plantNodeDraft.value ?? null,
     controlMode: controlModeDraft.value ?? null,
+    loopType: loopTypeDraft.value ?? null,
+    grade: gradeDraft.value ?? null,
     keyword: keywordDraft.value,
   });
 }
@@ -75,25 +99,40 @@ watch(
   () => [
     monitorCtx.plantNodeId.value,
     monitorCtx.controlMode.value,
+    monitorCtx.loopType.value,
+    monitorCtx.grade.value,
     monitorCtx.keyword.value,
   ],
-  ([plantNodeId, controlMode, keyword]) => {
+  ([plantNodeId, controlMode, loopType, grade, keyword]) => {
     if (plantNodeId !== plantNodeDraft.value) {
       plantNodeDraft.value = plantNodeId ?? undefined;
     }
     const mode = controlMode as 'Auto' | 'Cascade' | 'Manual' | null;
     if (mode !== controlModeDraft.value) controlModeDraft.value = mode ?? undefined;
+    if (loopType !== loopTypeDraft.value) loopTypeDraft.value = loopType ?? undefined;
+    if (grade !== gradeDraft.value) gradeDraft.value = grade ?? undefined;
     if (keyword !== keywordDraft.value) keywordDraft.value = keyword ?? '';
   },
 );
 
-// ===== 行点击 → 打开右侧详情抽屉 =====
+// ===== 行点击/位号/详情 → 右侧详情抽屉（保留原佐证内容，2026-10-03 用户裁决）=====
 const drawerOpen = ref(false);
 const drawerLoop = ref<LoopApi.MonitorListItem | null>(null);
 
 function handleLoopClick(_loopId: string, record: LoopApi.MonitorListItem) {
   drawerLoop.value = record;
   drawerOpen.value = true;
+}
+
+// ===== 抽屉内进入精简版回路工作台（P1-2：无左脊柱、直接定位、带返回）=====
+function handleGotoWorkbench(loopId: string) {
+  drawerOpen.value = false;
+  // from 携带完整路径（含筛选 query），工作台返回时筛选上下文原样恢复
+  monitorCtx.navigateWithMonitorContext('/loop/workbench360', {
+    loopId,
+    from: route.fullPath,
+    embed: '1',
+  });
 }
 
 // ===== 操作列"趋势" → 趋势图弹窗 =====
@@ -103,15 +142,6 @@ const trendLoop = ref<LoopApi.MonitorListItem | null>(null);
 function handleTrendClick(record: LoopApi.MonitorListItem) {
   trendLoop.value = record;
   trendOpen.value = true;
-}
-
-// ===== 抽屉内进入回路工作台（携带监控上下文）=====
-function handleGotoWorkbench(loopId: string) {
-  drawerOpen.value = false;
-  monitorCtx.navigateWithMonitorContext('/loop/workbench360', {
-    loopId,
-    from: '/monitor/loops',
-  });
 }
 </script>
 
@@ -130,15 +160,29 @@ function handleGotoWorkbench(loopId: string) {
             :field-names="{ label: 'name', value: 'id', children: 'children' }"
             allow-clear
             placeholder="全部装置"
-            class="!w-48"
+            class="!w-44"
             tree-default-expand-all
+          />
+          <Select
+            v-model:value="loopTypeDraft"
+            :options="loopTypeOptions"
+            allow-clear
+            placeholder="类型"
+            class="!w-32"
+          />
+          <Select
+            v-model:value="gradeDraft"
+            :options="gradeOptions"
+            allow-clear
+            placeholder="性能等级"
+            class="!w-32"
           />
           <Select
             v-model:value="controlModeDraft"
             :options="controlModeOptions"
             allow-clear
             placeholder="模式"
-            class="!w-36"
+            class="!w-32"
           />
           <Input
             v-model:value="keywordDraft"
@@ -159,10 +203,9 @@ function handleGotoWorkbench(loopId: string) {
       </template>
     </ClpmPageToolbar>
 
-    <!-- R4 主画布：LoopFleetView 承载统计卡 + 表格 -->
+    <!-- R4 主画布：LoopFleetView 承载表格（微型卡片已收缩进筛选区，P1-1） -->
     <div class="flex-1 overflow-auto p-4">
       <LoopFleetView
-        :show-stats="true"
         :show-auto-refresh="true"
         :show-toolbar="false"
         @loop-click="handleLoopClick"
@@ -170,7 +213,7 @@ function handleGotoWorkbench(loopId: string) {
       />
     </div>
 
-    <!-- 回路详情抽屉（右侧；列表结论的佐证承载） -->
+    <!-- 回路详情抽屉（右侧；列表结论的佐证承载，工作台入口在抽屉底部） -->
     <LoopDetailDrawer
       v-model:open="drawerOpen"
       :loop="drawerLoop"

@@ -37,6 +37,8 @@ export interface MonitorContext {
   /** 实时控制模式筛选（Auto/Cascade/Manual），null 表示不筛选 */
   controlMode: null | string;
   eventId: null | string;
+  /** 性能等级单选筛选（回路监视页改版 P1-1）：EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE（无评分），null 不筛选 */
+  grade: null | string;
   /** P2 IA优化：适用性等级多选筛选（L0~L4），空数组表示不筛选 */
   fitnessLevels: string[];
   from: null | string;
@@ -63,6 +65,7 @@ const CONTEXT_KEYS = [
   'section',
   'from',
   'fitnessLevels',
+  'grade',
 ] as const;
 
 /** 合法时间窗集合 */
@@ -91,6 +94,23 @@ const VALID_FITNESS_LEVELS = new Set<string>([
   'L3',
   'L4',
 ]);
+
+/** 合法性能等级集合（回路监视页改版 P1-1；INCONCLUSIVE=无评分，对齐 gradeCounts） */
+const VALID_GRADES = new Set<string>([
+  'EXCELLENT',
+  'FAIR',
+  'GOOD',
+  'INCONCLUSIVE',
+  'POOR',
+  'WARNING',
+]);
+
+/** 解析性能等级，非法值返回 null */
+function parseGrade(v: unknown): null | string {
+  const parsed = parseStr(v);
+  if (parsed && VALID_GRADES.has(parsed)) return parsed;
+  return null;
+}
 
 /** 解析字符串 query 值，空/未定义返回 null */
 function parseStr(v: unknown): null | string {
@@ -179,6 +199,7 @@ export function useMonitorContext() {
     eventId: parseStr(route.query.eventId),
     fitnessLevels: parseFitnessLevels(route.query.fitnessLevels),
     from: parseStr(route.query.from),
+    grade: parseGrade(route.query.grade),
     keyword: parseKeyword(route.query.keyword),
     loopId: parseStr(route.query.loopId),
     loopType: parseStr(route.query.loopType),
@@ -201,6 +222,7 @@ export function useMonitorContext() {
   const section = computed(() => context.value.section);
   const from = computed(() => context.value.from);
   const fitnessLevels = computed(() => context.value.fitnessLevels);
+  const grade = computed(() => context.value.grade);
 
   /**
    * 增量更新上下文（合并到现有 query，未传字段保留原值）。
@@ -269,6 +291,7 @@ export function useMonitorContext() {
     eventId,
     fitnessLevels,
     from,
+    grade,
     keyword,
     loopId,
     loopType,

@@ -98,6 +98,7 @@ vi.mock('#/composables/use-monitor-context', () => ({
     loopType: { value: null },
     keyword: { value: '' },
     controlMode: { value: null },
+    grade: { value: null },
     attentionOnly: { value: false },
     view: { value: 'table' },
     update: vi.fn(),

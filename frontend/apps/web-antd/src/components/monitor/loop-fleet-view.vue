@@ -26,10 +26,10 @@ import {
   watch,
 } from 'vue';
 
-import { Button, Card, message, Switch, Table, Tag } from 'ant-design-vue';
+import { Button, message, Switch, Table, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getLoopMonitorListApi, getLoopTypeStatsApi } from '#/api/loop';
+import { getLoopMonitorListApi } from '#/api/loop';
 import {
   ClpmFitnessBadge,
   ClpmNumeric,
@@ -52,13 +52,10 @@ withDefaults(
   defineProps<{
     /** 是否显示自动刷新开关 */
     showAutoRefresh?: boolean;
-    /** 是否显示统计卡片区域 */
-    showStats?: boolean;
     /** 是否显示表格工具条（标题 + 导出 + WS 开关） */
     showToolbar?: boolean;
   }>(),
   {
-    showStats: true,
     showAutoRefresh: true,
     showToolbar: true,
   },
@@ -90,11 +87,6 @@ const loading = ref(false);
 const errorMessage = ref<null | string>(null);
 const monitorList = ref<LoopApi.MonitorListItem[]>([]);
 const total = ref(0);
-const typeStats = ref<Record<string, number>>({});
-/** 控制方式统计（后端基于 Redis 实时 MODE 值全量聚合） */
-const modeStats = ref<Record<string, number>>({});
-/** E-1 服务端聚合统计（全量不分页，五档计数/平均分/WORSENED/MODE分布） */
-const aggregate = ref<LoopApi.MonitorAggregate | null>(null);
 
 // ===== 表格列定义 =====
 // 顺序：位号 / 描述 / 装置·单元 / 回路类型 / 量程 / 模式 / SP / PV / OP / 回路等级 / 性能评分 / 适用性 / 操作
@@ -257,35 +249,10 @@ const lastRefreshText = computed(() => {
   return dayjs(lastRefreshAt.value).format('HH:mm:ss');
 });
 
-// ===== 统计卡片 =====
-/** 类型分布（分面口径）：优先列表响应 aggregate.typeCounts——装置/关键词/控制
- * 模式筛选全部联动，仅排除类型筛选自身（点击类型卡片后其余卡片仍可见）；
- * 响应无聚合（深链接/旧后端）时回退 /monitor/stats 旧口径（仅装置维度） */
-const facetTypeCounts = ref<null | Record<string, number>>(null);
-const typeStatsView = computed<Record<string, number>>(() => {
-  if (facetTypeCounts.value !== null) return facetTypeCounts.value;
-  return typeStats.value;
-});
-const totalLoops = computed(() =>
-  Object.values(typeStatsView.value).reduce((sum, count) => sum + count, 0),
-);
-
-/** 当前回路类型（从 monitorCtx 读取，用于统计卡片高亮） */
-const currentLoopType = computed(() => monitorCtx.loopType.value ?? '');
-
 // ===== 回路等级配置（对齐 use-score-color GB/T 44693.2-2024 §6.3 默认阈值）=====
 // 五档：优秀(≥90) / 良好(≥80) / 合格(≥60) / 警告(≥40) / 不合格(<40)
 // tagColor 使用 Ant Design Tag 预设色：绿→蓝→金→橙→红 形成视觉渐变
 type GradeKey = 'excellent' | 'fair' | 'good' | 'poor' | 'warning';
-
-interface GradeStats {
-  excellent: number;
-  good: number;
-  fair: number;
-  warning: number;
-  poor: number;
-  none: number;
-}
 
 // 0929 口径收敛：档位定义唯一源在 constants/clpm-ui（GRADE_THRESHOLDS）
 const GRADE_TAG_COLOR: Record<number, string> = {
@@ -307,97 +274,30 @@ const GRADE_CONFIG: ReadonlyArray<{
   tagColor: GRADE_TAG_COLOR[t.level] ?? 'gray',
 }));
 
-/** E-1：优先使用服务端全量聚合（gradeCounts），降级为当前页前端计算 */
-const gradeStats = computed<GradeStats>(() => {
-  const stats: GradeStats = {
-    excellent: 0,
-    good: 0,
-    fair: 0,
-    warning: 0,
-    poor: 0,
-    none: 0,
-  };
-  // 优先服务端聚合
-  const ag = aggregate.value;
-  if (ag?.gradeCounts) {
-    stats.excellent = ag.gradeCounts.EXCELLENT ?? 0;
-    stats.good = ag.gradeCounts.GOOD ?? 0;
-    stats.fair = ag.gradeCounts.FAIR ?? 0;
-    stats.warning = ag.gradeCounts.WARNING ?? 0;
-    stats.poor = ag.gradeCounts.POOR ?? 0;
-    stats.none = ag.gradeCounts.INCONCLUSIVE ?? 0;
-    return stats;
-  }
-  // 降级：当前页前端计算
-  for (const item of monitorList.value) {
-    const score = item.score;
-    if (score == null || Number.isNaN(score)) {
-      stats.none++;
-      continue;
-    }
-    for (const cfg of GRADE_CONFIG) {
-      if (score >= cfg.minScore) {
-        stats[cfg.key]++;
-        break;
-      }
-    }
-  }
-  return stats;
-});
-
-/** 综合性能（简单平均，筛选联动）：优先服务端聚合 */
-const avgScore = computed<null | number>(() => {
-  return aggregate.value?.avgScore ?? null;
-});
-
-/** 较昨日恶化数：优先服务端聚合 */
-const worsenedCount = computed<number>(() => {
-  return aggregate.value?.worsenedCount ?? 0;
-});
-
-// ===== 实时自控率 =====
-// E-1 优先服务端 aggregate.autoControlRate（全量 MODE 分布聚合），降级为 modeStats 计算
-const autoControlRate = computed(() => {
-  if (aggregate.value?.autoControlRate != null) {
-    return aggregate.value.autoControlRate;
-  }
-  const s = modeStats.value;
-  const auto = (s['1'] ?? 0) + (s['2'] ?? 0) + (s['3'] ?? 0) + (s['4'] ?? 0);
-  const denom = (s['0'] ?? 0) + auto + (s.unknown ?? 0);
-  if (denom === 0) return 0;
-  return Number(((auto / denom) * 100).toFixed(1));
-});
-
-const autoControlRateText = computed(
-  () => `${autoControlRate.value.toFixed(1)}%`,
-);
-
-const autoControlRateColorClass = computed(() => {
-  const rate = autoControlRate.value;
-  if (rate >= 90) return 'text-emerald-600';
-  if (rate >= 80) return 'text-blue-600';
-  if (rate >= 60) return 'text-amber-600';
-  return 'text-rose-600';
-});
-
-function handleTypeCardClick(type: string) {
-  // MW-P4-03：类型筛选写入共享上下文（URL），不再维护内部状态
-  if (type === 'ALL') {
-    monitorCtx.update({ loopType: null, loopId: null });
-  } else {
-    monitorCtx.update({
-      loopType: currentLoopType.value === type ? null : type,
-      loopId: null,
-    });
-  }
-  query.page = 1;
-}
+/** 性能等级 → 评分区间请求参数（回路监视页改版 P1-1；从 GRADE_THRESHOLDS
+ * 单源派生半开区间 [min, max)，0/100 端点等价不设限；INCONCLUSIVE=无评分） */
+const GRADE_QUERY_MAP: Record<
+  string,
+  { maxScore?: number; minScore?: number } | { unscored: true }
+> = Object.fromEntries([
+  ...GRADE_THRESHOLDS.map((t) => [
+    t.name,
+    {
+      minScore: t.minScore > 0 ? t.minScore : undefined,
+      maxScore: t.maxScore < 100 ? t.maxScore : undefined,
+    },
+  ]),
+  ['INCONCLUSIVE', { unscored: true }],
+]);
 
 // ===== 数据加载 =====
 async function loadList() {
   loading.value = true;
   errorMessage.value = null;
   try {
+    const gradeQuery = monitorCtx.grade.value
+      ? GRADE_QUERY_MAP[monitorCtx.grade.value]
+      : undefined;
     const data = await getLoopMonitorListApi({
       plantNodeId: monitorCtx.plantNodeId.value ?? undefined,
       loopType: (monitorCtx.loopType.value as LoopApi.LoopType) || undefined,
@@ -405,6 +305,7 @@ async function loadList() {
       controlMode:
         (monitorCtx.controlMode.value as LoopApi.MonitorQueryParams['controlMode']) ??
         undefined,
+      ...gradeQuery,
       sortBy: sortState.field,
       sortOrder: sortState.order === 'ascend' ? 'asc' : 'desc',
       page: query.page,
@@ -417,32 +318,13 @@ async function loadList() {
         ? data.items.toSorted((a, b) => (a.score ?? 999) - (b.score ?? 999))
         : data.items;
     total.value = data.total;
-    aggregate.value = data.aggregate ?? null;
-    // 类型卡片跟随筛选：分面计数来自列表聚合；空结果或加载失败时清空防陈旧
-    facetTypeCounts.value =
-      data.aggregate?.typeCounts ?? (data.total === 0 ? {} : null);
   } catch (error: any) {
     errorMessage.value = error?.message ?? '加载失败';
     monitorList.value = [];
     total.value = 0;
-    aggregate.value = null;
-    facetTypeCounts.value = {};
   } finally {
     loading.value = false;
     lastRefreshAt.value = new Date();
-  }
-}
-
-async function loadLoopTypeStats() {
-  try {
-    const data = await getLoopTypeStatsApi(
-      monitorCtx.plantNodeId.value ?? undefined,
-    );
-    const payload = data as any;
-    typeStats.value = payload.loopTypeStats || payload;
-    modeStats.value = payload.controlModeStats || {};
-  } catch {
-    // 错误已由拦截器处理
   }
 }
 
@@ -574,7 +456,6 @@ watch(wsConnectionStatus, (status) => {
 // ===== 生命周期 =====
 onMounted(() => {
   loadList();
-  loadLoopTypeStats();
   if (autoRefresh.value) {
     start();
   }
@@ -585,12 +466,13 @@ onBeforeUnmount(() => {
   stopFallback();
 });
 
-// MW-P4-03：监听共享上下文筛选变化 → 重新加载列表和统计
-// 装置/类型/关键词/只看关注项均从 URL 读取，变化时重置到第 1 页
+// MW-P4-03：监听共享上下文筛选变化 → 重新加载列表
+// 装置/类型/等级/关键词/只看关注项均从 URL 读取，变化时重置到第 1 页
 watch(
   () => [
     monitorCtx.plantNodeId.value,
     monitorCtx.loopType.value,
+    monitorCtx.grade.value,
     monitorCtx.keyword.value,
     monitorCtx.controlMode.value,
     monitorCtx.attentionOnly.value,
@@ -598,7 +480,6 @@ watch(
   () => {
     query.page = 1;
     loadList();
-    loadLoopTypeStats();
   },
 );
 
@@ -639,120 +520,6 @@ defineExpose({
           </span>
         </template>
       </div>
-    </div>
-
-    <!-- 统计卡片区域 -->
-    <div v-if="showStats" class="loop-fleet-view__stats">
-      <Card :body-style="{ padding: '8px 16px' }" class="h-auto">
-        <div class="flex flex-wrap items-center gap-3">
-          <div
-            class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 transition-opacity hover:opacity-80"
-            :class="{ 'bg-gray-100': !currentLoopType }"
-            role="button"
-            tabindex="0"
-            @click="handleTypeCardClick('ALL')"
-            @keydown.enter="handleTypeCardClick('ALL')"
-          >
-            <span class="text-sm font-medium text-gray-600">全部</span>
-            <span class="text-sm font-bold text-gray-800">{{
-              totalLoops
-            }}</span>
-          </div>
-          <div
-            v-for="(count, key) in typeStatsView"
-            v-show="count > 0"
-            :key="key"
-            class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 transition-opacity hover:opacity-80"
-            :class="{ 'bg-blue-50': currentLoopType === key }"
-            role="button"
-            tabindex="0"
-            @click="handleTypeCardClick(key)"
-            @keydown.enter="handleTypeCardClick(key)"
-          >
-            <Tag class="m-0">
-              {{ LOOP_TYPE_LABEL_MAP[key ?? 'OTHER'] ?? '其他' }}
-            </Tag>
-            <span class="text-sm font-bold">{{ count }}</span>
-          </div>
-
-          <!-- 分隔符：类型统计 ↔ 等级统计 -->
-          <div class="mx-1 h-5 w-px bg-gray-200"></div>
-
-          <!-- 回路等级统计（基于当前页数据，五档颜色区分） -->
-          <div
-            v-for="cfg in GRADE_CONFIG"
-            v-show="gradeStats[cfg.key] > 0"
-            :key="`grade-${cfg.key}`"
-            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5"
-          >
-            <Tag :color="cfg.tagColor" class="m-0">{{ cfg.label }}</Tag>
-            <span class="text-sm font-bold text-gray-800">{{
-              gradeStats[cfg.key]
-            }}</span>
-          </div>
-          <!-- 无评分回路（数据不足，中性灰，不计入任何等级） -->
-          <div
-            v-if="gradeStats.none > 0"
-            class="flex items-center gap-1.5 rounded-lg px-3 py-1.5"
-          >
-            <Tag color="default" class="m-0">无评分</Tag>
-            <span class="text-sm font-bold text-gray-400">{{
-              gradeStats.none
-            }}</span>
-          </div>
-
-          <!-- 分隔符：等级统计 ↔ 综合统计 -->
-          <div class="mx-1 h-5 w-px bg-gray-200"></div>
-
-          <!-- 综合性能（简单平均，E-1 服务端聚合，筛选联动） -->
-          <div
-            v-if="avgScore != null"
-            class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5"
-          >
-            <span class="text-sm font-medium text-gray-600">综合性能</span>
-            <span class="text-sm font-bold text-gray-800">{{
-              avgScore.toFixed(1)
-            }}</span>
-            <Tooltip title="筛选集合评分简单平均（非加权）" placement="bottom">
-              <span class="cursor-help text-[10px] text-gray-400"
-                >简单平均</span
-              >
-            </Tooltip>
-          </div>
-
-          <!-- 较昨日恶化（E-1 服务端聚合，scoreDelta ≤ -2） -->
-          <div
-            v-if="worsenedCount > 0"
-            class="flex items-center gap-1.5 rounded-lg bg-rose-50 px-3 py-1.5"
-          >
-            <span class="text-sm font-medium text-rose-600">较昨日恶化</span>
-            <span class="text-sm font-bold text-rose-700">{{
-              worsenedCount
-            }}</span>
-          </div>
-
-          <!-- 分隔符：综合统计 ↔ 实时自控率 -->
-          <div class="mx-1 h-5 w-px bg-gray-200"></div>
-
-          <!-- 实时自控率（E-1 优先服务端聚合，降级 modeStats） -->
-          <div
-            class="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5"
-          >
-            <span class="text-sm font-medium text-gray-600">实时自控率</span>
-            <span
-              class="text-sm font-bold"
-              :class="autoControlRateColorClass"
-              >{{ autoControlRateText }}</span
-            >
-            <Tooltip
-              title="实时口径（MODE 分布），与 KPI 有效自控率（快照口径）不同"
-              placement="bottom"
-            >
-              <span class="cursor-help text-[10px] text-gray-400">实时</span>
-            </Tooltip>
-          </div>
-        </div>
-      </Card>
     </div>
 
     <!-- 表格 -->
@@ -974,10 +741,6 @@ defineExpose({
   gap: 8px;
   align-items: center;
   padding: 4px 8px;
-}
-
-.loop-fleet-view__stats {
-  flex-shrink: 0;
 }
 
 .loop-fleet-view__table {

@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -674,6 +674,9 @@ async def list_loop_monitor(
     loop_type: str | None = None,
     loop_id: str | None = None,
     control_mode: str | None = None,
+    min_score: float | None = None,
+    max_score: float | None = None,
+    unscored: bool = False,
     sort_by: str = "score",
     sort_order: str = "asc",
     page: int = 1,
@@ -684,6 +687,8 @@ async def list_loop_monitor(
     ``loop_id`` 提供精确查询：当传入时按主键过滤，命中则只返回目标回路，
     未命中（不存在/已停用/无权限）则返回空列表，不回退其他回路——供深链接解析。
     ``control_mode`` 按实时控制模式（Auto/Cascade/Manual，大小写不敏感）过滤。
+    ``min_score``/``max_score`` 按最新快照评分过滤（半开区间 [min, max)，0-100），
+    ``unscored=True`` 只看无评分回路（无任何快照）。互斥语义：区间优先。
     ``sort_by`` 支持 score / tagName，``sort_order`` 支持 asc / desc。
     """
     if sort_by not in {"score", "tagName"}:
@@ -706,6 +711,20 @@ async def list_loop_monitor(
         raise BizError(
             code="ERR_VALIDATION",
             message=f"无效的控制模式: {control_mode}，支持: Auto、Cascade、Manual",
+            status_code=400,
+        )
+    # 评分区间校验（0-100，半开区间 [min, max)）
+    for label, score_val in (("minScore", min_score), ("maxScore", max_score)):
+        if score_val is not None and not 0 <= score_val <= 100:
+            raise BizError(
+                code="ERR_VALIDATION",
+                message=f"无效的评分筛选 {label}: {score_val}，应在 0-100 范围内",
+                status_code=400,
+            )
+    if min_score is not None and max_score is not None and min_score >= max_score:
+        raise BizError(
+            code="ERR_VALIDATION",
+            message=f"无效的评分区间: minScore={min_score} 应小于 maxScore={max_score}",
             status_code=400,
         )
     conditions = []
@@ -758,6 +777,41 @@ async def list_loop_monitor(
                 "aggregate": None,
             }
         conditions.append(LoopLedger.id.in_(matched_ids))
+
+    # 评分等级筛选（回路监视页改版 P1-1）：按最新快照 score 半开区间 [min, max)
+    # 过滤；unscored 只看无快照回路。SQL 子查询下推，count/aggregate/分页同口径。
+    if min_score is not None or max_score is not None:
+        grade_snap_sq = (
+            select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
+            .distinct(KpiSnapshotHourly.loop_id)
+            .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+            .subquery("grade_snap")
+        )
+        grade_conds = []
+        if min_score is not None:
+            grade_conds.append(grade_snap_sq.c.score >= min_score)
+        if max_score is not None:
+            grade_conds.append(grade_snap_sq.c.score < max_score)
+        conditions.append(
+            LoopLedger.id.in_(select(grade_snap_sq.c.loop_id).where(and_(*grade_conds)))
+        )
+    elif unscored:
+        # 无评分：最新快照 score 为 NULL 或无任何快照（与 aggregate
+        # gradeCounts.INCONCLUSIVE 及列表评分 NULL 展示口径一致）
+        grade_snap_sq = (
+            select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
+            .distinct(KpiSnapshotHourly.loop_id)
+            .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+            .subquery("grade_snap")
+        )
+        conditions.append(
+            or_(
+                ~LoopLedger.id.in_(select(KpiSnapshotHourly.loop_id).distinct()),
+                LoopLedger.id.in_(
+                    select(grade_snap_sq.c.loop_id).where(grade_snap_sq.c.score.is_(None))
+                ),
+            )
+        )
 
     count_stmt = select(func.count()).select_from(LoopLedger)
     for cond in conditions:
@@ -1010,6 +1064,9 @@ async def list_loop_monitor(
 
         # P2 IA优化：适用性分层（L0~L4）与原因标签，直接取自最新 KPI 快照
         fitness_level = snap.fitness_level if snap else None
+        # 三性分离（R5，2026-10-04）：可整定档位供整定门禁前端预判
+        # （旧快照 tune_level 为 NULL 时由前端回退 fitnessLevel）
+        tune_level = snap.tune_level if snap is not None else None
         fitness_tags: list[str] | None = None
         if snap is not None and snap.fitness_tags is not None:
             raw_tags = snap.fitness_tags
@@ -1056,6 +1113,8 @@ async def list_loop_monitor(
                 # P2 IA优化：适用性等级/原因标签（回路监视列表 + 详情抽屉）
                 "fitnessLevel": fitness_level,
                 "fitnessTags": fitness_tags,
+                # 三性分离（R5）：可整定档（与后端整定门禁 tune_level_effective 同源）
+                "tuneLevel": tune_level,
                 "isActive": bool(loop.is_active),
                 "readAt": read_at,
             }

@@ -541,6 +541,54 @@ class TestListLoopMonitor:
         assert result["total"] == 0
         assert result["items"] == []
 
+    # ===== 评分等级筛选（回路监视页改版 P1-1）=====
+
+    async def test_score_range_filter_injected(self) -> None:
+        """min/max_score 半开区间 [min, max) 注入 count 与 list 查询。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        await list_loop_monitor(db, min_score=80, max_score=90)
+        for call in db.execute.await_args_list[:2]:
+            compiled = str(call.args[0].compile(compile_kwargs={"literal_binds": True}))
+            assert "score >= 80" in compiled
+            assert "score < 90" in compiled
+
+    async def test_unscored_filter_injected(self) -> None:
+        """unscored=True 注入 NOT IN（排除一切有快照回路）。"""
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(0),
+                _make_scalars_mock([]),
+            ]
+        )
+        await list_loop_monitor(db, unscored=True)
+        for call in db.execute.await_args_list[:2]:
+            compiled = str(call.args[0].compile(compile_kwargs={"literal_binds": True})).upper()
+            assert "NOT IN" in compiled
+
+    async def test_invalid_score_params_raise(self) -> None:
+        """min>=max 或超 0-100 范围抛 ERR_VALIDATION。"""
+        db = AsyncMock()
+        with pytest.raises(BizError):
+            await list_loop_monitor(db, min_score=90, max_score=80)
+        with pytest.raises(BizError):
+            await list_loop_monitor(db, min_score=-1)
+        with pytest.raises(BizError):
+            await list_loop_monitor(db, max_score=101)
+        db.execute.assert_not_awaited()
+
     async def test_pagination(self) -> None:
         """分页参数正确传递。"""
         db = AsyncMock()
