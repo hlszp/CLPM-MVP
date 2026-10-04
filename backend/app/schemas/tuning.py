@@ -402,13 +402,19 @@ class TuningTaskItem(CamelModel):
     residualTestPassed: bool | None = None
     taskId: str | None = None
     completedAt: str | None = None
+    # V62-P3-007 人工实施清单（2026-10-04 出参补齐）
+    currentPid: dict[str, Any] | None = None
+    rollbackPid: dict[str, Any] | None = None
+    riskAssessment: dict[str, Any] | None = None
+    # 辨识时间窗（异步历史辨识落库；同步阶跃/MANUAL 为 None）
+    timeWindowStart: str | None = None
+    timeWindowEnd: str | None = None
 
 
 class TuningTaskDetail(TuningTaskItem):
     """整定任务详情。"""
 
     simulationResult: dict[str, Any] | None = None
-    currentPid: dict[str, Any] | None = None
     # Phase 2.2 新增
     pidCandidates: dict[str, Any] | None = None
     candidateResults: dict[str, Any] | None = None
@@ -435,6 +441,9 @@ class CreateTuningTaskRequest(CamelModel):
     residualTestPassed: bool | None = None
     pidCandidates: dict[str, Any] | None = None
     candidateResults: dict[str, Any] | None = None
+    # V62-P3-007 人工实施清单（2026-10-04 P0：回退方案/风险评估随方案保存）
+    rollbackPid: PidParams | None = None
+    riskAssessment: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

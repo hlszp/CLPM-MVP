@@ -202,18 +202,20 @@ async def _do_identify(
         try:
             fit_map = await get_latest_fitness_per_loop(db, [loop_id])
             fit = fit_map.get(str(loop_id))
-            if fit is not None and fit.level in {"L0", "L1"}:  # L2 放开（2026-10-01 裁决）
+            # 三性分离（R5）：整定兜底门禁读 tune_level（旧快照 NULL 回退综合 level）
+            tune_lv = fit.tune_level_effective if fit is not None else None
+            if tune_lv in {"L0", "L1"}:  # L2 放开（2026-10-01 裁决）
                 reasons = fit.human_readable_tags or ["适用性分层不足"]
                 raise BizError(
                     code="ERR_TUNING_FITNESS_INSUFFICIENT",
                     message=(
-                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L2+）。"
+                        f"回路可整定等级 {tune_lv} 不满足整定要求（需要L2+）。"
                         f"请先处理控制状态（{'；'.join(reasons)}）。"
                     ),
                     status_code=400,
                     data={
                         "loopId": str(loop_id),
-                        "fitnessLevel": fit.level,
+                        "fitnessLevel": tune_lv,
                         "reasons": reasons,
                         "requiredMinimum": "L2",
                     },
@@ -467,18 +469,20 @@ async def _do_tune_and_simulate(
         try:
             fit_map = await get_latest_fitness_per_loop(db, [loop_id])
             fit = fit_map.get(str(loop_id))
-            if fit is not None and fit.level in {"L0", "L1"}:  # L2 放开（2026-10-01 裁决）
+            # 三性分离（R5）：整定兜底门禁读 tune_level（旧快照 NULL 回退综合 level）
+            tune_lv = fit.tune_level_effective if fit is not None else None
+            if tune_lv in {"L0", "L1"}:  # L2 放开（2026-10-01 裁决）
                 reasons = fit.human_readable_tags or ["适用性分层不足"]
                 raise BizError(
                     code="ERR_TUNING_FITNESS_INSUFFICIENT",
                     message=(
-                        f"回路适用性等级 {fit.level} 不满足整定要求（需要L2+）。"
+                        f"回路可整定等级 {tune_lv} 不满足整定要求（需要L2+）。"
                         f"请先处理控制状态（{'；'.join(reasons)}）。"
                     ),
                     status_code=400,
                     data={
                         "loopId": str(loop_id),
-                        "fitnessLevel": fit.level,
+                        "fitnessLevel": tune_lv,
                         "reasons": reasons,
                         "requiredMinimum": "L2",
                     },

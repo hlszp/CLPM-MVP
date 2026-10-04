@@ -60,6 +60,13 @@
 
 **报告订阅自动生成暂为占位实现**（2026-08-28，报告模块优化 P0-1）：自动生成的 PDF 为极简占位且无真实文件落盘，四周期 Beat 调度（report-shift/daily/weekly/monthly）已摘除止血，订阅页「立即生成」置灰、「批量生成」移除、进度列隐藏；配置 CRUD 保留（语义为"预配置"）。P3 报告做实后恢复调度与生成入口（见 `docs/设计文档/CLPM报告模块优化实施方案-2026-08-28.md` §3.1，D1 已决）。
 
+**整定模块 2026-10-04 系统性优化批次的死代码/架空登记**（不删，待下周期集中清理）：
+
+- `backend/app/tasks/tuning.py` 的 `tune_and_simulate_task` 为死代码（全仓仅测试引用）；它曾是唯一完整落库 current_pid/rollback_pid/risk_assessment 的路径，该职责已由 `create_tuning_task` 活路径承担。
+- `backend/app/api/v1/endpoints/handling.py` 的 `_kpi_summary` 私有副本无调用方（B2 口径统一后由共享 `kpi_snapshot.window_avg_summary` 取代）。
+- `tuning_batch` 仍无生产写入方（仅 seed 灌数）；`tuning_record` 的 DRAFT/PENDING/COMPLETED 三态生产代码零写入（APPLIED/VERIFIED/ROLLED_BACK 自 2026-10-04 起经处置工单关联可达）。
+- tracker 自动验证的 `_aggregate_kpi_window`（SQL 均值）与 `kpi_snapshot.window_avg_summary`（Python 均值）语义等价、实现并存，待收敛为单实现。
+
 ## 使用场景
 
 生产环境最小可用版：提供"监控-评估-诊断-整定/处置"完整闭环能力，平台只读 DCS、只输出建议，不直接写入 DCS 参数。

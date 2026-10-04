@@ -12,7 +12,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, RadioGroup, Select, Table, Tag } from 'ant-design-vue';
+import { Button, Card, Input, RadioGroup, Select, Table, Tag } from 'ant-design-vue';
 
 import {
   getTuningBatchesApi,
@@ -55,7 +55,8 @@ const rows = ref<TuningApi.TuningTaskItem[]>([]);
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 });
 // 状态筛选为多值（工作台下钻可携 DRAFT,PENDING 逗号多值口径）
 const statusFilter = ref<string[]>([]);
-// 回路 / 创建时间窗筛选（仅深链带入，页面无对应控件）
+// 回路筛选（深链带入时可回显可清除；页面控件 2026-10-04 补齐——此前仅深链
+// 生效且无控件，用户看不到"当前被过滤"的完整条件）
 const loopIdFilter = ref<string | undefined>();
 const startTimeFilter = ref<string | undefined>();
 const endTimeFilter = ref<string | undefined>();
@@ -76,6 +77,12 @@ const STATUS_META: Record<string, { color: string; label: string }> =
       },
     ]),
   );
+
+/** 状态多选选项：全站唯一字典全量生成（11 态；此前手写 6 项，深链带入其余状态时显示原始枚举值） */
+const statusOptions = Object.entries(STATUS_META).map(([value, meta]) => ({
+  label: meta.label,
+  value,
+}));
 
 function fittingClass(score: null | number | undefined): string {
   if (score == null) return '';
@@ -307,16 +314,38 @@ onMounted(() => {
           size="small"
           :max-tag-count="2"
           style="width: 220px"
-          :options="[
-            { label: '草稿', value: 'DRAFT' },
-            { label: '待实施', value: 'PENDING' },
-            { label: '已仿真', value: 'SIMULATED' },
-            { label: '已实施', value: 'APPLIED' },
-            { label: '已验证', value: 'VERIFIED' },
-            { label: '已回退', value: 'ROLLED_BACK' },
-          ]"
+          :options="statusOptions"
           @change="handleFilterChange"
         />
+        <span class="text-xs text-neutral-500">回路</span>
+        <Input
+          v-model:value="loopIdFilter"
+          allow-clear
+          placeholder="回路 ID（下钻带入）"
+          size="small"
+          style="width: 240px"
+          @change="
+            (e: any) => {
+              // 回车/清除时查询（避免逐键触发请求）
+              if (e.type === 'click' || !e.target?.value) handleFilterChange();
+            }
+          "
+          @press-enter="handleFilterChange"
+        />
+        <Tag
+          v-if="startTimeFilter || endTimeFilter"
+          closable
+          size="small"
+          @close="
+            () => {
+              startTimeFilter = undefined;
+              endTimeFilter = undefined;
+              handleFilterChange();
+            }
+          "
+        >
+          创建时间窗（下钻带入）
+        </Tag>
       </div>
       <Table
         :columns="columns"

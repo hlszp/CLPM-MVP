@@ -555,6 +555,25 @@ class TestTuningAPI:
         data = resp.json()
         assert data["code"] == "ERR_LOOP_NOT_FOUND"
 
+    def test_identify_pe_engineer_allowed(self, client, mock_db) -> None:
+        """PE_ENGINEER 可进入辨识端点（2026-10-04 工作台规整 D1：对齐回路工作台
+        剖面四角色；以业务 404 而非 403 证明 RBAC 放行）。"""
+        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+
+        with mock_current_user(TEST_USERS["pe_engineer"]):
+            resp = client.post(
+                "/api/v1/tuning/identify",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopId": "00000000-0000-0000-0000-000000000000",
+                    "startTime": "2026-01-01T00:00:00",
+                    "endTime": "2026-01-01T01:00:00",
+                    "modelType": "FOPDT",
+                },
+            )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "ERR_LOOP_NOT_FOUND"
+
     def test_tune_sponsor_forbidden(self, client) -> None:
         """SPONSOR 角色不能整定（403）。"""
         with mock_current_user(TEST_USERS["sponsor"]):

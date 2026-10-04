@@ -62,8 +62,7 @@ from app.schemas.tuning_knowledge import (
 )
 from app.services.kpi_snapshot import (
     iso_z,
-    kpi_summary,
-    latest_snapshot_in_window,
+    window_avg_summary,
 )
 from app.services.loop_fitness import get_latest_fitness_per_loop
 from app.services.tuning import (
@@ -117,10 +116,12 @@ async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
     except Exception:  # noqa: BLE001
         return  # 查询异常 → 放行
     fit = fitness_map.get(str(loop_id))
-    if fit is None or fit.level is None:
+    # 三性分离（R5）：整定门禁读 tune_level（旧快照 NULL 回退综合 level）
+    tune_lv = fit.tune_level_effective if fit is not None else None
+    if fit is None or tune_lv is None:
         return  # 无 fitness 数据 → 暂放过
     BLOCK_LEVELS = {"L0", "L1"}
-    if fit.level in BLOCK_LEVELS:
+    if tune_lv in BLOCK_LEVELS:
         reasons = fit.human_readable_tags or ["适用性分层不足"]
         raise BizError(
             code="ERR_TUNING_FITNESS_INSUFFICIENT",
@@ -131,7 +132,7 @@ async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
             status_code=400,
             data={
                 "loopId": str(loop_id),
-                "fitnessLevel": fit.level,
+                "fitnessLevel": tune_lv,
                 "reasons": reasons,
                 "requiredMinimum": "L2",
             },
@@ -161,7 +162,7 @@ async def get_methods_endpoint(
 async def identify_model_endpoint(
     body: ModelIdentifyRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """模型辨识（阶跃实验路径，同步；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -192,7 +193,7 @@ async def identify_model_endpoint(
 async def identify_history_endpoint(
     body: ModelIdentifyHistoryRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -256,7 +257,7 @@ async def identify_history_endpoint(
 async def identify_segments_endpoint(
     body: IdentifySegmentsRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """可辨识片段预览（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -280,7 +281,7 @@ async def identify_segments_endpoint(
 async def tune_pid_endpoint(
     body: TuneRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -330,7 +331,7 @@ async def tune_pid_endpoint(
 async def tune_matrix_endpoint(
     body: TuneMatrixRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -379,7 +380,7 @@ async def tune_matrix_endpoint(
 async def simulate_endpoint(
     body: SimulateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -418,7 +419,7 @@ async def simulate_endpoint(
 async def compare_pids_endpoint(
     body: CompareRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -498,8 +499,10 @@ async def verification_data_endpoint(
     """效果验证前后窗曲线数据（全部登录用户只读；实时拉取不落库）。
 
     前窗 [pointTime−window, pointTime] 与后窗 [pointTime, pointTime+window]
-    各拉一次 SP/PV/OP 波形 + 窗口内最新 KPI 快照摘要（无快照侧为 null）；
-    后窗超出当前时刻时 afterTruncated=true，前端标注"数据截至当前时刻"。
+    各拉一次 SP/PV/OP 波形 + 窗口 KPI 均值摘要（2026-10-04 B2：由"窗口内
+    最新单条"改为"窗口均值"，口径对齐 tracker 自动验证；等级取窗口内最新
+    一条快照）。后窗超出当前时刻时 afterTruncated=true；后窗有效快照数不足
+    （< min(24, windowHours)）时 dataInsufficient=true，前端显式提示。
     """
     if windowHours not in (1, 2, 4, 8, 24, 72, 168):
         raise BizError(
@@ -511,9 +514,10 @@ async def verification_data_endpoint(
     delta = timedelta(hours=windowHours)
     before = await get_waveform(db, loopId, start_time=iso_z(point - delta), end_time=iso_z(point))
     after = await get_waveform(db, loopId, start_time=iso_z(point), end_time=iso_z(point + delta))
-    kpi_before = kpi_summary(await latest_snapshot_in_window(db, loopId, point - delta, point))
-    kpi_after = kpi_summary(await latest_snapshot_in_window(db, loopId, point, point + delta))
+    kpi_before = await window_avg_summary(db, loopId, point - delta, point)
+    kpi_after = await window_avg_summary(db, loopId, point, point + delta)
     now_naive = datetime.now(UTC).replace(tzinfo=None)
+    after_count = kpi_after.get("snapshotCount", 0) if kpi_after else 0
     return success(
         data={
             "loopId": loopId,
@@ -524,6 +528,9 @@ async def verification_data_endpoint(
             "kpiBefore": kpi_before,
             "kpiAfter": kpi_after,
             "afterTruncated": (point + delta) > now_naive,
+            "beforeSnapshotCount": kpi_before.get("snapshotCount", 0) if kpi_before else 0,
+            "afterSnapshotCount": after_count,
+            "dataInsufficient": after_count < min(24, windowHours),
         }
     )
 
@@ -601,7 +608,7 @@ async def get_task_status_endpoint(
 @router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
 async def cancel_task_endpoint(
     task_id: str,
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -631,7 +638,7 @@ async def cancel_task_endpoint(
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT")),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
     """保存整定任务（ADMIN/IC_ENGINEER/EXPERT）。"""
     data = await create_tuning_task(
@@ -655,6 +662,9 @@ async def create_task_endpoint(
         residual_test_passed=body.residualTestPassed,
         pid_candidates=body.pidCandidates,
         candidate_results=body.candidateResults,
+        # V62-P3-007：人工实施清单（回退方案缺省=实施前参数，service 层兜底）
+        rollback_pid=body.rollbackPid.model_dump() if body.rollbackPid else None,
+        risk_assessment=body.riskAssessment,
     )
     # 审计日志（S1-B7）
     log = SysAuditLog(

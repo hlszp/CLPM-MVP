@@ -18,7 +18,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Empty, Spin, Tag } from 'ant-design-vue';
+import { Alert, Empty, Spin, Tag } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getVerificationDataApi } from '#/api/tuning';
@@ -273,6 +273,26 @@ const kpiRows = computed<KpiDeltaRow[]>(() => {
 const hasKpi = computed(
   () => !!(data.value?.kpiBefore || data.value?.kpiAfter),
 );
+
+/** B2：均值样本量标注（"均值基于 N 条快照"，避免误读为单点值） */
+const kpiSampleNote = computed(() => {
+  const d = data.value;
+  if (!d?.kpiBefore && !d?.kpiAfter) return '';
+  const parts: string[] = [];
+  if (d?.kpiBefore?.snapshotCount != null)
+    parts.push(`前窗 ${d.kpiBefore.snapshotCount} 条`);
+  if (d?.kpiAfter?.snapshotCount != null)
+    parts.push(`后窗 ${d.kpiAfter.snapshotCount} 条`);
+  return parts.length > 0 ? `窗口均值（${parts.join(' · ')}小时级快照）` : '';
+});
+
+/** B2：适用性等级对比（分类型，取窗口内最新一条） */
+const fitnessCompare = computed(() => {
+  const b = data.value?.kpiBefore?.fitnessLevel ?? null;
+  const a = data.value?.kpiAfter?.fitnessLevel ?? null;
+  if (!b && !a) return null;
+  return { before: b ?? '—', after: a ?? '—' };
+});
 </script>
 
 <template>
@@ -283,28 +303,49 @@ const hasKpi = computed(
       :image="Empty.PRESENTED_IMAGE_SIMPLE"
     />
     <template v-else-if="data">
+      <!-- B2：后窗数据不足显式提示（诚实化：不静默展示参考性不足的结论） -->
+      <Alert
+        v-if="data.dataInsufficient"
+        class="mb-2"
+        type="warning"
+        show-icon
+        :message="`后窗有效快照不足（${data.afterSnapshotCount} 条），以下对比结论参考性不足，建议积累数据后再验证`"
+      />
       <!-- KPI 摘要条 -->
-      <div v-if="hasKpi" class="kpi-strip">
-        <div v-for="row in kpiRows" :key="row.key" class="kpi-cell">
-          <div class="kpi-label">{{ row.label }}</div>
-          <div class="kpi-values">
-            <span>{{ row.before }}</span>
-            <span class="kpi-arrow">→</span>
-            <span>{{ row.after }}</span>
-            <span
-              v-if="row.delta != null"
-              class="kpi-delta"
-              :class="
-                row.delta > 0
-                  ? 'kpi-delta--up'
-                  : row.delta < 0
-                    ? 'kpi-delta--down'
-                    : ''
-              "
-            >
-              {{ row.delta > 0 ? '▲' : row.delta < 0 ? '▼' : '' }}
-              {{ Math.abs(row.delta).toFixed(1) }}
-            </span>
+      <div v-if="hasKpi">
+        <div class="mb-1 flex items-center gap-2">
+          <span class="text-xs font-medium text-neutral-500">
+            KPI 前后对比{{ kpiSampleNote ? ` · ${kpiSampleNote}` : '' }}
+          </span>
+          <span
+            v-if="fitnessCompare"
+            class="text-xs text-neutral-500"
+          >
+            适用性 {{ fitnessCompare.before }} → {{ fitnessCompare.after }}
+          </span>
+        </div>
+        <div class="kpi-strip">
+          <div v-for="row in kpiRows" :key="row.key" class="kpi-cell">
+            <div class="kpi-label">{{ row.label }}</div>
+            <div class="kpi-values">
+              <span>{{ row.before }}</span>
+              <span class="kpi-arrow">→</span>
+              <span>{{ row.after }}</span>
+              <span
+                v-if="row.delta != null"
+                class="kpi-delta"
+                :class="
+                  row.delta > 0
+                    ? 'kpi-delta--up'
+                    : row.delta < 0
+                      ? 'kpi-delta--down'
+                      : ''
+                "
+              >
+                {{ row.delta > 0 ? '▲' : row.delta < 0 ? '▼' : '' }}
+                {{ Math.abs(row.delta).toFixed(1) }}
+              </span>
+            </div>
           </div>
         </div>
       </div>

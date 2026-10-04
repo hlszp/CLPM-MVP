@@ -527,6 +527,8 @@ export namespace HandlingApi {
     plannedAt?: string;
     handler?: string;
     actionDetail?: Record<string, any>;
+    /** TUNING 工单 ↔ 整定记录显式关联（2026-10-04 P0：APPLIED/VERIFIED 状态推进依赖） */
+    tuningRecordId?: string;
   }
 
   /** 开工（PENDING/REOPENED → EXECUTING；§6.2） */

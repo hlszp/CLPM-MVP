@@ -4,7 +4,8 @@
 - 前后窗边界与时间串正确（pointTime ± window，Z 后缀 UTC）
 - windowHours 非法值 → 400 ERR_PARAM
 - 回路不存在 → 404（get_waveform 既有行为透传）
-- KPI 快照摘要：有快照侧字段齐全，无快照侧为 null
+- KPI 窗口均值摘要（2026-10-04 B2：单条→均值；有快照侧字段齐全，无快照侧为 null；
+  等级取窗口内最新一条；后窗快照数不足 → dataInsufficient=true）
 """
 
 from __future__ import annotations
@@ -33,6 +34,13 @@ _FAKE_WAVEFORM = {
 }
 
 
+def _empty_scalars_db(db: AsyncMock) -> None:
+    """window_avg_summary 取数路径返回空（窗口无快照 → None）。"""
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=result)
+
+
 def _params(point: str = "2026-08-10T12:00:00", hours: int = 1) -> dict:
     return {"loopId": _LOOP_ID, "pointTime": point, "windowHours": hours}
 
@@ -42,6 +50,7 @@ class TestVerificationDataAPI:
 
     def test_window_split_and_structure(self, client, mock_db) -> None:
         """前后窗各拉一次波形，时间串 Z 后缀边界正确；无快照侧 KPI 为 null。"""
+        _empty_scalars_db(mock_db)
         with (
             mock_current_user(TEST_USERS["admin"]),
             patch(
@@ -68,6 +77,10 @@ class TestVerificationDataAPI:
         # mock_db 默认无快照
         assert data["kpiBefore"] is None
         assert data["kpiAfter"] is None
+        assert data["beforeSnapshotCount"] == 0
+        assert data["afterSnapshotCount"] == 0
+        # 1h 窗口无后窗快照 → 数据不足
+        assert data["dataInsufficient"] is True
         # 历史时点：后窗不截断
         assert data["afterTruncated"] is False
 
@@ -102,21 +115,35 @@ class TestVerificationDataAPI:
         assert resp.status_code == 404
 
     def test_kpi_summary_present(self, client, mock_db) -> None:
-        """窗口内有快照时返回评分+六率+可信度摘要。"""
-        snap = MagicMock()
-        snap.score = 85.5
-        snap.good_value_rate = 0.97
-        snap.effective_auto_rate = 0.88
-        snap.steady_rate = 0.9
-        snap.accuracy_rate = 0.86
-        snap.fast_rate = 0.8
-        snap.oscillation_rate = 0.05
-        snap.saturation_rate = 0.02
-        snap.confidence_level = "A"
-        snap.ts_start = datetime(2026, 8, 10, 11, 0)
-        snap.ts_end = datetime(2026, 8, 10, 12, 0)
+        """窗口内多条快照 → 均值摘要 + 条数 + 等级取最新一条（B2 口径）。"""
+        snap1 = MagicMock()
+        snap1.score = 85.0
+        snap1.good_value_rate = 0.96
+        snap1.effective_auto_rate = 0.86
+        snap1.steady_rate = 0.89
+        snap1.accuracy_rate = 0.85
+        snap1.fast_rate = 0.79
+        snap1.oscillation_rate = 0.06
+        snap1.saturation_rate = 0.03
+        snap1.confidence_level = "B"
+        snap1.fitness_level = "L2"
+        snap1.tune_level = None
+        snap1.ts_start = datetime(2026, 8, 10, 11, 0)
+        snap2 = MagicMock()
+        snap2.score = 86.0
+        snap2.good_value_rate = 0.98
+        snap2.effective_auto_rate = 0.90
+        snap2.steady_rate = 0.91
+        snap2.accuracy_rate = 0.87
+        snap2.fast_rate = 0.81
+        snap2.oscillation_rate = 0.04
+        snap2.saturation_rate = 0.01
+        snap2.confidence_level = "A"
+        snap2.fitness_level = "L3"
+        snap2.tune_level = "L3"
+        snap2.ts_start = datetime(2026, 8, 10, 11, 30)
         result = MagicMock()
-        result.scalar_one_or_none = MagicMock(return_value=snap)
+        result.scalars.return_value.all.return_value = [snap1, snap2]
         mock_db.execute = AsyncMock(return_value=result)
 
         with (
@@ -129,8 +156,16 @@ class TestVerificationDataAPI:
             resp = client.get(_URL, headers=_AUTH, params=_params())
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["kpiBefore"]["score"] == 85.5
-        assert data["kpiBefore"]["effectiveAutoRate"] == 0.88
-        assert data["kpiBefore"]["confidenceLevel"] == "A"
-        assert data["kpiBefore"]["tsStart"] == "2026-08-10T11:00:00Z"
-        assert data["kpiAfter"]["score"] == 85.5
+        kb = data["kpiBefore"]
+        assert kb["score"] == 85.5  # (85 + 86) / 2
+        assert kb["effectiveAutoRate"] == 0.88  # (0.86 + 0.90) / 2
+        assert kb["snapshotCount"] == 2
+        # 等级分类型不可均值：取窗口内最新一条
+        assert kb["fitnessLevel"] == "L3"
+        assert kb["tuneLevel"] == "L3"
+        assert kb["confidenceLevel"] == "A"
+        assert kb["tsStart"] == "2026-08-10T11:00:00Z"
+        assert kb["tsEnd"] == "2026-08-10T11:30:00Z"
+        # 后窗同样有 2 条快照 → 1h 窗口数据充分
+        assert data["afterSnapshotCount"] == 2
+        assert data["dataInsufficient"] is False

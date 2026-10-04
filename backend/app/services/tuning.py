@@ -1697,6 +1697,9 @@ async def create_tuning_task(
     residual_test_passed: bool | None = None,
     pid_candidates: dict[str, Any] | None = None,
     candidate_results: dict[str, Any] | None = None,
+    # V62-P3-007 人工实施清单（2026-10-04 P0 修复：此前 current_pid 收参后丢弃）
+    rollback_pid: dict[str, Any] | None = None,
+    risk_assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """创建整定任务记录。"""
     # 校验回路
@@ -1722,6 +1725,12 @@ async def create_tuning_task(
         residual_test_passed=residual_test_passed,
         pid_candidates=pid_candidates,
         candidate_results=candidate_results,
+        # V62-P3-007：人工实施清单落库（回退方案缺省=实施前参数）
+        current_pid=dict(current_pid) if current_pid else None,
+        rollback_pid=(
+            dict(rollback_pid) if rollback_pid else dict(current_pid) if current_pid else None
+        ),
+        risk_assessment=risk_assessment,
     )
     db.add(record)
     await db.commit()
@@ -1961,6 +1970,11 @@ def _record_to_dict(
         "currentPid": record.current_pid,
         "riskAssessment": record.risk_assessment,
         "rollbackPid": record.rollback_pid,
+        # 辨识时间窗（异步历史辨识落库；同步阶跃/MANUAL 为 None）
+        "timeWindowStart": record.time_window_start.isoformat()
+        if record.time_window_start
+        else None,
+        "timeWindowEnd": record.time_window_end.isoformat() if record.time_window_end else None,
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result

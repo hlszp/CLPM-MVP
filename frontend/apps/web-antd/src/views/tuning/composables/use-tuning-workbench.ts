@@ -21,41 +21,13 @@ import {
   tuneMatrixApi,
   tuneSingleApi,
 } from '#/api/tuning';
+import { fitnessTagToLabel } from '#/constants/clpm-ui';
 
 import { tuningAlgoLabel } from '../constants';
 
-/** P2 IA优化：fitness tag 中文映射（与 fitness-badge/诊断 对齐） */
-const FITNESS_TAG_CN: Record<string, string> = {
-  // H1 修复（2026-10-01）：后端 loop_fitness.py 实际产出以下 7 标签
-  // （T_* 系为历史标签，保留兼容旧快照；文案与后端 TAG_HUMAN_REASON 一致）
-  DATA_INSUFFICIENT: '数据严重不足',
-  MANUAL_DOMINANT: '手动模式占比过高',
-  LOW_AUTO_RATE: '自控率极低',
-  OP_SATURATED: 'OP 长期处于饱和限位附近',
-  SP_PV_DEVIATION: 'SP-PV 长期偏离设定',
-  NO_EXCITATION: 'OP 无有效激励',
-  WEAK_RESPONSE: 'PV 对 OP 响应极弱',
-  T_UNKNOWN: '未知',
-  T_LOCAL_DATA_MISSING: '本地无历史数据',
-  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
-  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
-  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
-  T_MODE_NOT_AUTO: '当前处于手动控制模式',
-  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
-  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
-  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
-  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
-  T_OOS_PV: 'PV 量程外点比例过高',
-  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
-  T_DAMPED_OSC: '存在阻尼振荡趋势',
-  T_SUSTAINED_OSC: '存在持续振荡趋势',
-  T_VALVE_STICTION: '阀门疑似粘滞',
-  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
-  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
-  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
-};
-const tagToCn = (t: string) => FITNESS_TAG_CN[t] ?? t;
-const tagsToText = (tags: string[]) => tags.map((t) => tagToCn(t)).join('、');
+/** P2 IA优化：fitness tag 中文映射收敛单源（clpm-ui.ts FITNESS_TAG_LABEL） */
+const tagsToText = (tags: string[]) =>
+  tags.map((t) => fitnessTagToLabel(t)).join('、');
 
 /** 辨识结果（统一历史/阶跃双路径的输出形态；MANUAL=人工修改后的模型） */
 export interface IdentifyOutcome {
@@ -80,6 +52,8 @@ export interface MatrixRow {
   /** 算法参数微调值（IMC/LAMBDA: lambdaRatio；SIMC: tauCRatio） */
   paramValue: number;
   recomputing: boolean;
+  /** 算法风险评估（随方案保存落 risk_assessment，V62-P3-007） */
+  risk?: null | Record<string, any>;
 }
 
 /** 仿真候选组（当前 PID + 勾选推荐组） */
@@ -106,7 +80,10 @@ export function useTuningWorkbench() {
     loopId: '' as string,
     currentPid: null as null | TuningApi.PidParams,
     currentPidMissing: false,
-    /** P2 IA优化：回路适用性等级 L0/L1/L2/L3/L4/L5（空=未加载） */
+    /**
+     * P2 IA优化：可整定等级（三性分离 R5：优先 tune 维度档，旧快照回退综合
+     * fitnessLevel）；L0/L1（空=未加载）。口径与后端 _ensure_tuning_fitness 一致
+     */
     fitnessLevel: null as null | string,
     /** P2 IA优化：回路适用性原因标签列表 */
     fitnessTags: [] as string[],
@@ -139,7 +116,7 @@ export function useTuningWorkbench() {
     () => state.fitnessLevel === 'L0' || state.fitnessLevel === 'L1',
   );
   const isFitnessL2 = computed(() => state.fitnessLevel === 'L2');
-  /** L0/L1 → 禁止进入下游按钮；L2/L3/L4/L5/null → 放行 */
+  /** L0/L1 → 禁止进入下游按钮；L2/L3/L4/null → 放行 */
   const tuningDisabled = computed(() => isFitnessL0L1.value);
   /** Tooltip 文案（L0/L1 禁用原因） */
   const tuningDisabledReason = computed<string>(() => {
@@ -167,12 +144,13 @@ export function useTuningWorkbench() {
         pageSize: 1,
       });
       const item = res.items?.[0];
-      state.fitnessLevel = (item?.fitnessLevel as null | string) ?? null;
+      // 三性分离（R5）：整定门禁读可整定档 tuneLevel（旧快照 NULL 回退综合档）
+      state.fitnessLevel = (item?.tuneLevel ?? item?.fitnessLevel) ?? null;
       state.fitnessTags = Array.isArray(item?.fitnessTags)
         ? (item.fitnessTags as string[])
         : [];
     } catch {
-      // 降级：fitness 取空（按 L3/L4/L5 放行，不阻塞已有业务）
+      // 降级：fitness 取空（按 L3/L4 放行，不阻塞已有业务）
       state.fitnessLevel = null;
       state.fitnessTags = [];
     }
@@ -203,8 +181,8 @@ export function useTuningWorkbench() {
         content: `【${step}】L2 条件异常（${state.fitnessLevel}）：${reason}。整定结果可能受控制状态干扰，请优先消除异常后重做。`,
         duration: 5,
       });
-    } else if (level === 'L3' || level === 'L4' || level === 'L5') {
-      message.success(`【${step}】当前适用性等级 = ${level}，可正常整定。`);
+    } else if (level === 'L3' || level === 'L4') {
+      message.success(`【${step}】当前可整定等级 = ${level}，可正常整定。`);
     } else {
       // 未评定（接口不通或该回路尚未有评定）→ 仅提示
       message.info(`【${step}】尚未评定适用性等级。`);
@@ -447,6 +425,7 @@ export function useTuningWorkbench() {
         checked: false,
         paramValue: 1,
         recomputing: false,
+        risk: r.ok ? (r.result?.risk ?? null) : null,
       }));
       // 第 6 行：手动整定（P/I/D 工程师手工设定；预填当前 PID 便于起步）
       state.matrixRows.push({
@@ -504,6 +483,7 @@ export function useTuningWorkbench() {
       row.pid = res.recommendedPid;
       row.ok = true;
       row.error = undefined;
+      row.risk = res.risk ?? null;
     } catch (error: any) {
       row.ok = false;
       row.error = error?.message || '重算失败';
@@ -603,6 +583,9 @@ export function useTuningWorkbench() {
         algorithm: algoRow?.algorithm ?? 'IMC',
         recommendedPid: chosen.pid,
         currentPid: state.currentPid ?? undefined,
+        // V62-P3-007 人工实施清单：回退方案=实施前参数（后端缺省同口径兜底）
+        rollbackPid: state.currentPid ?? undefined,
+        riskAssessment: algoRow?.risk ?? undefined,
         // 人工修改模型无拟合度可言；辨识来源元数据仅服务端辨识链结果携带
         fittingScore: isManualModel ? undefined : state.outcome.fittingScore,
         simulationResult: state.simResult as unknown as Record<string, any>,

@@ -793,7 +793,11 @@ class TestOrderVerifyEndpoint:
         )
         _override_db(
             client,
-            [_scalar_result(order), _scalar_result(snap_before), _scalar_result(snap_after)],
+            [
+                _scalar_result(order),
+                _scalars_all_result([snap_before]),
+                _scalars_all_result([snap_after]),
+            ],
         )
         resp = self._post(client, {"verifyResult": "EFFECTIVE", "verifyNote": "评分回升"})
         assert resp.status_code == 200
@@ -816,7 +820,10 @@ class TestOrderVerifyEndpoint:
     def test_verify_ineffective_reopens(self, client) -> None:
         """合法迁移 #6：VERIFYING → REOPENED（验证无效，可再次开工）。"""
         order = self._verifying_order()
-        _override_db(client, [_scalar_result(order), _scalar_result(None), _scalar_result(None)])
+        _override_db(
+            client,
+            [_scalar_result(order), _scalars_all_result([]), _scalars_all_result([])],
+        )
         resp = self._post(client, {"verifyResult": "INEFFECTIVE", "verifyNote": "振荡未消除"})
         assert resp.status_code == 200
         data = resp.json()["data"]
@@ -833,7 +840,9 @@ class TestOrderVerifyEndpoint:
         order = self._verifying_order()
         captured: list = []
         _capture_override_db(
-            client, [_scalar_result(order), _scalar_result(None), _scalar_result(None)], captured
+            client,
+            [_scalar_result(order), _scalars_all_result([]), _scalars_all_result([])],
+            captured,
         )
         resp = self._post(client, {"verifyResult": "EFFECTIVE"})
         assert resp.status_code == 200
@@ -856,8 +865,8 @@ class TestOrderVerifyEndpoint:
             [
                 _scalar_result(order),
                 _scalar_result(revisit_run_id),  # diagnosis_run 存在性校验
-                _scalar_result(None),
-                _scalar_result(None),
+                _scalars_all_result([]),
+                _scalars_all_result([]),
             ],
         )
         resp = self._post(client, {"verifyResult": "EFFECTIVE", "verifyRunId": revisit_run_id})
@@ -958,7 +967,8 @@ class TestOrderKpiComparisonEndpoint:
             score="72.30", ts_start=datetime(2026, 8, 10, 7, 0, 0), ts_end=STARTED_AT
         )
         mock_db = _override_db(
-            client, [_scalar_result(order), _scalar_result(snap_before), _scalar_result(None)]
+            client,
+            [_scalar_result(order), _scalars_all_result([snap_before]), _scalars_all_result([])],
         )
         resp = self._post(client)
         assert resp.status_code == 200

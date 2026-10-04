@@ -168,6 +168,12 @@ export namespace TuningApi {
     residualTestPassed?: boolean | null;
     taskId?: null | string;
     completedAt?: null | string;
+    /** V62-P3-007 人工实施清单（2026-10-04 出参补齐；旧记录为 null） */
+    rollbackPid?: null | PidParams;
+    riskAssessment?: null | Record<string, any>;
+    /** 辨识时间窗（异步历史辨识落库；同步阶跃/MANUAL 为 null） */
+    timeWindowStart?: null | string;
+    timeWindowEnd?: null | string;
   }
 
   export interface TuningTaskDetail extends TuningTaskItem {
@@ -190,7 +196,7 @@ export namespace TuningApi {
     recentTasks: TuningTaskItem[];
   }
 
-  /** KPI 快照摘要（与处置模块同口径） */
+  /** KPI 快照摘要（窗口均值口径，2026-10-04 B2） */
   export interface KpiSummary {
     score: null | number;
     goodValueRate: null | number;
@@ -203,6 +209,11 @@ export namespace TuningApi {
     confidenceLevel: null | string;
     tsStart: null | string;
     tsEnd: null | string;
+    /** 窗口内参与均值的快照条数（B2 新增） */
+    snapshotCount?: number;
+    /** 窗口内最新一条快照的适用性等级（分类型不可均值，B2 新增） */
+    fitnessLevel?: null | string;
+    tuneLevel?: null | string;
   }
 
   /** 波形序列（get_waveform 契约） */
@@ -227,10 +238,16 @@ export namespace TuningApi {
     windowHours: number;
     before: WaveformData;
     after: WaveformData;
+    /** 窗口 KPI 均值摘要（2026-10-04 B2：单条→均值；等级取窗口内最新一条） */
     kpiBefore: KpiSummary | null;
     kpiAfter: KpiSummary | null;
     /** 后窗超出当前时刻（数据截至当前时刻） */
     afterTruncated: boolean;
+    /** 前后窗快照条数（B2 新增，供"均值基于 N 条快照"标注） */
+    beforeSnapshotCount: number;
+    afterSnapshotCount: number;
+    /** 后窗有效快照不足（< min(24, windowHours)），结论参考性不足需显式提示 */
+    dataInsufficient: boolean;
   }
 
   /** 整定批次状态（status 为 B-06 动态阻塞判定后的有效状态） */

@@ -69,6 +69,7 @@ from app.services.handling_stats import (
 from app.services.handling_stats import (
     build_handling_statistics as _collect_handling_statistics,
 )
+from app.services.kpi_snapshot import window_avg_summary
 
 router = APIRouter(prefix="/handling", tags=["handling"])
 
@@ -186,6 +187,9 @@ class CreateOrderBody(BaseModel):
     plannedAt: datetime | None = None
     handler: str | None = Field(None, max_length=64)
     actionDetail: dict[str, Any] | None = None
+    # 2026-10-04 P0：TUNING 工单与整定记录显式关联（此前只塞 actionDetail，
+    # 后端不读 → tuning_record_id 恒空，APPLIED/VERIFIED 状态不可达）
+    tuningRecordId: str | None = None
 
 
 class OrderStartBody(BaseModel):
@@ -313,7 +317,11 @@ async def _get_order_or_404(db: AsyncSession, order_id: str) -> HandlingOrder:
 
 
 def _kpi_summary(snap: KpiSnapshotHourly | None) -> dict[str, Any] | None:
-    """KPI 快照摘要（§4.3：score + 六率 + 可信度 + 窗口；无快照侧为 None）。"""
+    """KPI 快照摘要（§4.3：score + 六率 + 可信度 + 窗口；无快照侧为 None）。
+
+    2026-10-04 B2：_pull_kpi_windows 已改用共享 window_avg_summary（窗口均值），
+    本函数保留给仅需要单条快照摘要语义的存量调用；当前无调用方，登记冗余待清。
+    """
 
     def _f(v: Any) -> float | None:
         return float(v) if v is not None else None
@@ -335,25 +343,6 @@ def _kpi_summary(snap: KpiSnapshotHourly | None) -> dict[str, Any] | None:
     }
 
 
-async def _latest_snapshot_in_window(
-    db: AsyncSession, loop_id: str, win_start: datetime, win_end: datetime
-) -> KpiSnapshotHourly | None:
-    """窗口内最新一条有 score 的 kpi_snapshot_hourly 记录（§4.3 快照来源）。"""
-    return (
-        await db.execute(
-            select(KpiSnapshotHourly)
-            .where(
-                KpiSnapshotHourly.loop_id == loop_id,
-                KpiSnapshotHourly.score.is_not(None),
-                KpiSnapshotHourly.ts_start >= win_start,
-                KpiSnapshotHourly.ts_start <= win_end,
-            )
-            .order_by(KpiSnapshotHourly.ts_start.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-
-
 async def _pull_kpi_windows(
     db: AsyncSession, order: HandlingOrder
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -362,18 +351,19 @@ async def _pull_kpi_windows(
     - kpi_before：[started_at − 24h, started_at]（开工前最后基线，原 handled_at 口径平移）
     - kpi_after：[submitted_at, submitted_at + 24h]（提交验证后线上效果）
     两侧窗口隔离：处置执行期数据不参与对比；窗口不足/无快照侧为 None。
+
+    2026-10-04 B2 口径统一：由"窗口内最新单条"改为"窗口均值"（对齐 tracker
+    自动验证与整定效果验证页）；等级字段取窗口内最新一条，附 snapshotCount。
     """
     before = after = None
     if order.started_at:
-        snap = await _latest_snapshot_in_window(
+        before = await window_avg_summary(
             db, order.loop_id, order.started_at - _KPI_WINDOW, order.started_at
         )
-        before = _kpi_summary(snap)
     if order.submitted_at:
-        snap = await _latest_snapshot_in_window(
+        after = await window_avg_summary(
             db, order.loop_id, order.submitted_at, order.submitted_at + _KPI_WINDOW
         )
-        after = _kpi_summary(snap)
     return before, after
 
 
@@ -1164,6 +1154,13 @@ async def create_order(
         raise _err_param("title 必填（缺省取 content 前 50 字，两者均空时需显式填写）")
 
     planned_at = _to_naive_utc(body.plannedAt) if body.plannedAt else None
+    # 2026-10-04 P0：TUNING 工单 ↔ 整定记录关联（显式字段优先，actionDetail 兜底
+    # 兼容存量前端写法）。查无记录即报错，不做静默丢弃。
+    tuning_record_id = body.tuningRecordId or (body.actionDetail or {}).get("tuningRecordId")
+    if tuning_record_id:
+        tuning_record_id = str(tuning_record_id)
+        if await db.get(TuningRecord, tuning_record_id) is None:
+            raise _err_param(f"整定记录不存在: {tuning_record_id}")
     order: HandlingOrder | None = None
     for attempt in (0, 1):
         try:
@@ -1180,6 +1177,7 @@ async def create_order(
                 planned_by=user.username,
                 handler=body.handler,
                 status="PENDING",
+                tuning_record_id=tuning_record_id,
             )
             db.add(order)
             await db.commit()
@@ -1324,9 +1322,10 @@ async def verify_order(
     order.verified_by = user.username
     order.verified_at = _utcnow_naive()
     order.status = "CLOSED" if body.verifyResult == "EFFECTIVE" else "REOPENED"
-    # 09 设计方案 §5.4：TUNING 类验证有效 → VERIFIED；无效重开 → 回退 SIMULATED
+    # 09 设计方案 §5.4：TUNING 类验证有效 → VERIFIED；无效重开 → ROLLED_BACK
+    # （2026-10-04 用户裁决：启用 ROLLED_BACK，回滚率报表真实有数）
     await _writeback_tuning_record(
-        db, order, "VERIFIED" if body.verifyResult == "EFFECTIVE" else "SIMULATED"
+        db, order, "VERIFIED" if body.verifyResult == "EFFECTIVE" else "ROLLED_BACK"
     )
     await db.commit()
     await db.refresh(order)

@@ -491,6 +491,33 @@ async def _aggregate_kpi_window(
     return int(row[0] or 0), list(row[1:])
 
 
+async def _latest_levels_in_window(
+    db: AsyncSession,
+    loop_id: str,
+    start: datetime,
+    end: datetime,
+    *,
+    start_exclusive: bool = False,
+    end_exclusive: bool = False,
+) -> tuple[str | None, str | None]:
+    """窗口内最新一条快照的 (fitness_level, tune_level)（等级分类型不可均值）。"""
+    conds: list[Any] = [KpiSnapshotHourly.loop_id == loop_id]
+    ts_start = KpiSnapshotHourly.ts_start
+    conds.append(ts_start > start if start_exclusive else ts_start >= start)
+    conds.append(ts_start < end if end_exclusive else ts_start <= end)
+    row = (
+        await db.execute(
+            select(KpiSnapshotHourly.fitness_level, KpiSnapshotHourly.tune_level)
+            .where(*conds)
+            .order_by(KpiSnapshotHourly.ts_start.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None, None
+    return row[0], row[1]
+
+
 async def _collect_window_labels(
     db: AsyncSession,
     loop_id: str,
@@ -649,6 +676,14 @@ async def get_ab_compare(
         data_insufficient,
     )
 
+    # 2026-10-04 B2：等级前后对比（分类型取窗口内最新一条，不参与均值）
+    before_fit_lv, before_tune_lv = await _latest_levels_in_window(
+        db, loop_id, b_start, b_end, end_exclusive=b_end_excl
+    )
+    after_fit_lv, after_tune_lv = await _latest_levels_in_window(
+        db, loop_id, a_start, a_end, start_exclusive=a_start_excl
+    )
+
     kpi_items: list[dict[str, Any]] = []
     for (field, name, unit, higher_better), b_raw, a_raw in zip(
         AB_COMPARE_KPIS, before_avgs, after_avgs, strict=True
@@ -697,6 +732,10 @@ async def get_ab_compare(
         "tagName": loop.tag_name,
         "implementedAt": resolved_at.isoformat() if resolved_at else None,
         "dataInsufficient": after_count < AB_MIN_AFTER_SNAPSHOTS,
+        "beforeFitnessLevel": before_fit_lv,
+        "afterFitnessLevel": after_fit_lv,
+        "beforeTuneLevel": before_tune_lv,
+        "afterTuneLevel": after_tune_lv,
         "beforeWindow": {
             "startTime": b_start.isoformat(),
             "endTime": b_end.isoformat(),

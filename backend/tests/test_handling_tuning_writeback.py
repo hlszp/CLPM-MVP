@@ -53,6 +53,13 @@ def _scalar_result(value) -> MagicMock:
     return r
 
 
+def _scalars_all_result(rows: list) -> MagicMock:
+    """select(...).scalers().all() 形态的 execute 结果（window_avg_summary 取数）。"""
+    r = MagicMock()
+    r.scalars.return_value.all.return_value = rows
+    return r
+
+
 def _seq_execute(results: list):
     it = iter(results)
 
@@ -125,10 +132,10 @@ class TestVerifyWriteback:
     def _verify(self, client, verify_result: str):
         order = _make_order(status="VERIFYING")
         rec = _make_tuning_record("APPLIED")
-        # execute 序列：_get_order_or_404 → kpi_before 快照 → kpi_after 快照
+        # execute 序列：_get_order_or_404 → kpi_before 窗口均值 → kpi_after 窗口均值
         mock_db = _override_db(
             client,
-            [_scalar_result(order), _scalar_result(None), _scalar_result(None)],
+            [_scalar_result(order), _scalars_all_result([]), _scalars_all_result([])],
             rec,
         )
         with mock_current_user(TEST_USERS["admin"]):
@@ -145,8 +152,9 @@ class TestVerifyWriteback:
         assert resp.json()["data"]["status"] == "CLOSED"
         assert rec.status == "VERIFIED"
 
-    def test_verify_ineffective_rolls_back_to_simulated(self, client) -> None:
+    def test_verify_ineffective_rolls_back_to_rolled_back(self, client) -> None:
+        """验证无效 → ROLLED_BACK（2026-10-04 用户裁决：启用回滚态，回滚率报表真实有数）。"""
         resp, rec, _ = self._verify(client, "INEFFECTIVE")
         assert resp.status_code == 200
         assert resp.json()["data"]["status"] == "REOPENED"
-        assert rec.status == "SIMULATED"
+        assert rec.status == "ROLLED_BACK"
