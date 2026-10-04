@@ -9,7 +9,8 @@
 - GET    /api/v1/diagnosis/records                  — 诊断记录列表（已归档）
 
 测试要点：
-- RBAC：仅 ADMIN/IC_ENGINEER/PE_ENGINEER 可触发/归档/取消；SPONSOR/EXPERT 403
+- RBAC：ADMIN/IC_ENGINEER/PE_ENGINEER/EXPERT 可触发/归档/取消（EXPERT 系
+  2026-10-04 工作台规整 D1 放开，对齐回路工作台剖面四角色）；SPONSOR 403
 - 状态机：PENDING/RUNNING 不可归档；SUCCESS/FAILED/CANCELLED 不可取消
 - Celery 任务派发：trigger_diagnosis 调用 run_loop_diagnosis.delay
 - 数据组装：任务列表/详情正确关联回路信息和评分
@@ -141,6 +142,25 @@ class TestTriggerDiagnosis:
         assert data["tasks"][0]["taskId"]  # 非空
         # Celery 任务应被派发
         mock_celery.delay.assert_called_once()
+
+    def test_trigger_expert_allowed(self, client, mock_db, fake_redis) -> None:
+        """EXPERT 可以触发诊断（2026-10-04 工作台规整 D1：对齐回路工作台剖面四角色）。"""
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        with (
+            mock_current_user(TEST_USERS["expert"]),
+            patch("app.tasks.diagnosis_engine.run_loop_diagnosis") as mock_celery,
+        ):
+            mock_celery.delay = MagicMock()
+            resp = client.post(
+                "/api/v1/diagnosis/trigger",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopIds": ["00000000-0000-0000-0000-000000000201"],
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"
 
     def test_trigger_batch_success(self, client, mock_db, fake_redis) -> None:
         """ADMIN 可以批量触发诊断任务。"""

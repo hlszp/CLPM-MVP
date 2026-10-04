@@ -14,7 +14,7 @@ defineOptions({ name: 'MetricConfig' });
 const activeTab = ref('definition');
 const route = useRoute();
 
-// 深链：?tab=<key> 直开指定配置 Tab（诊断工作台 L0/L1 拦截横幅「查看适用性
+// 深链：?tab=<key> 直开指定配置 Tab（诊断剖面 L0/L1 拦截横幅「查看适用性
 // 规则」入口，P0 修复 2026-09-29）；非法值静默保留默认 Tab
 onMounted(() => {
   const q = route.query.tab;

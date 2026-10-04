@@ -1,7 +1,7 @@
 <!--
   就地发起诊断弹窗（workbench360 P3，P3-1；v3 §6.2 / 原型 md-diag）
 
-  复用诊断工作台既有语义（views/diagnosis/workbench.vue，行为口径一致）：
+  复用原诊断工作台既有语义（该页已于 2026-10-04 并入本剖面，行为口径一致）：
   - 时间窗：24h（默认）/7d/30d 预设 → {preset}；自定义 → start 整点化 + end 截当前
     时刻（跨度 ≤31 天）→ {start,end}；
   - 算子：operatorGroup 恒 'full' + 细选白名单（全选=不传 operators，

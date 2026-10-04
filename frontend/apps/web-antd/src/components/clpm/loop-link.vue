@@ -33,11 +33,13 @@ const props = withDefaults(defineProps<Props>(), {
 const router = useRouter();
 
 // FP-P0-06：角色感知——根据用户角色过滤无权访问的菜单项
-// 权限映射对齐各路由 meta.authority（router/routes/modules/*）
+// 权限映射对齐各路由 meta.authority（router/routes/modules/*）；
+// diagnosis/tuning 已并入回路工作台剖面（2026-10-04 工作台规整 D1/D2/D3），
+// 角色口径对齐回路工作台四角色
 const TARGET_AUTHORITY: Record<string, string[]> = {
   detail: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
-  diagnosis: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER'],
-  tuning: ['ADMIN', 'IC_ENGINEER', 'EXPERT'],
+  diagnosis: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
+  tuning: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
   performance: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
   trend: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
 };
@@ -54,10 +56,9 @@ function canAccess(target: string): boolean {
 const detailPath = computed(() => {
   const paths = {
     detail: `/loop/workbench360?loopId=${props.loopId}`,
-    // 诊断两页式重构（2026-08-16）：原 /diagnosis/detail/:id 已下线，
-    // 跳诊断工作台并携带 loopId 预选（workbench.vue onMounted 支持）
-    diagnosis: `/diagnosis/workbench?loopId=${props.loopId}`,
-    tuning: `/tuning/workbench?loopId=${props.loopId}`,
+    // 工作台规整（2026-10-04 D2/D3）：诊断/整定单回路操作统一走回路工作台剖面
+    diagnosis: `/loop/workbench360?loopId=${props.loopId}&section=diagnosis`,
+    tuning: `/loop/workbench360?loopId=${props.loopId}&section=tuning`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
   };
   return paths[props.defaultTarget];
@@ -76,8 +77,8 @@ const handleMenuClick = ({ key }: { key: number | string }) => {
   const keyStr = String(key);
   const routes: Record<string, string> = {
     detail: `/loop/workbench360?loopId=${props.loopId}`,
-    diagnosis: `/diagnosis/workbench?loopId=${props.loopId}`,
-    tuning: `/tuning/workbench?loopId=${props.loopId}`,
+    diagnosis: `/loop/workbench360?loopId=${props.loopId}&section=diagnosis`,
+    tuning: `/loop/workbench360?loopId=${props.loopId}&section=tuning`,
     performance: `/metric/loop-performance?loopId=${props.loopId}`,
     trend: `/loop/workbench360?loopId=${props.loopId}`,
   };

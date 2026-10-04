@@ -8,7 +8,7 @@
  *   /loop/workbench360 : ADMIN, IC, PE, EXPERT（SPONSOR 无权限）
  *   /monitor/attention      : 全五角色
  *   /monitor/alerts         : 全五角色
- *   /tuning/workbench       : ADMIN, IC, EXPERT
+ *   /tuning/overview        : 全五角色（2026-10-04 D1；旧 /tuning/workbench redirect 至此）
  *   /diagnosis/records      : 全五角色（MVP 两页式；原 /diagnosis/tasks 已不存在）
  *   /metric/indicator-analysis : ADMIN, IC, PE, SPONSOR（EXPERT 无评估模块，
  *                                2026-08-25 指标分析页 M3 联动新增）
@@ -98,7 +98,7 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await assertPageHealthy(page);
   });
 
-  test('E2E-SMOKE-IC: 工作台 + 诊断记录 + 整定工作台', async ({ page, loginAs }) => {
+  test('E2E-SMOKE-IC: 运维工作台 + 诊断记录 + 整定总览', async ({ page, loginAs }) => {
     await loginAs('IC_ENGINEER');
 
     // 1. 回路工作台
@@ -111,14 +111,15 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await waitForRender(page);
     await assertPageHealthy(page);
 
-    // 3. 整定工作台
+    // 3. 整定总览（旧 /tuning/workbench redirect 至此）
     await page.goto('/tuning/workbench');
+    await page.waitForURL(/\/tuning\/overview/, { timeout: 15_000 });
     await waitForRender(page);
     await assertPageHealthy(page);
     await assertNoForbiddenToast(page);
   });
 
-  test('E2E-SMOKE-PE: 工作台只读 + 评估看板（无整定）', async ({ page, loginAs }) => {
+  test('E2E-SMOKE-PE: 回路工作台 + 评估看板 + 整定总览只读', async ({ page, loginAs }) => {
     await loginAs('PE_ENGINEER');
 
     // 1. 回路工作台（只读，写动作应 disabled，但不阻断渲染）
@@ -132,11 +133,11 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await waitForRender(page);
     await assertPageHealthy(page);
 
-    // 3. PE 无整定权限：直接访问 /tuning/workbench 应显示 403 内容页（vben 在原 URL 渲染"访问被拒绝"）
+    // 3. 2026-10-04 D1：PE 可进整定总览（查看；「调参优化」入口按角色隐藏）
     await page.goto('/tuning/workbench');
+    await page.waitForURL(/\/tuning\/overview/, { timeout: 15_000 });
     await waitForRender(page);
-    const denied = await assertAccessDenied(page);
-    expect(denied, 'PE 访问整定应显示 403 内容页').toBeTruthy();
+    await assertPageHealthy(page);
   });
 
   test('E2E-SMOKE-EXPERT: 诊断 + 整定 + 回路工作台无阻断性 403', async ({
@@ -158,8 +159,9 @@ test.describe('MW-P5-03 五角色核心流程冒烟', () => {
     await waitForRender(page);
     await assertPageHealthy(page);
 
-    // 2. 整定工作台
+    // 2. 整定总览（旧 /tuning/workbench redirect 至此）
     await page.goto('/tuning/workbench');
+    await page.waitForURL(/\/tuning\/overview/, { timeout: 15_000 });
     await waitForRender(page);
     await assertPageHealthy(page);
     await assertNoForbiddenToast(page);

@@ -162,11 +162,14 @@ function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
   }
 }
 
-/** 档案空态引导发起诊断 → 无快捷诊断上下文，跳诊断工作台并预选该回路 */
+/** 档案空态引导发起诊断 → 跳回路工作台诊断剖面预选该回路（2026-10-04 D2） */
 function onArchiveTriggerDiagnosis(loopId: string) {
   archiveOpen.value = false;
   drawerOpen.value = false;
-  router.push({ path: '/diagnosis/workbench', query: { loopId } });
+  router.push({
+    path: '/loop/workbench360',
+    query: { loopId, section: 'diagnosis' },
+  });
 }
 
 // ---- 导出 ----

@@ -73,16 +73,53 @@ import { useWb360Loop } from './composables/use-wb360-loop';
 
 defineOptions({ name: 'LoopWorkbench360' });
 
+// embed 模式：被其他页面的 Drawer 内嵌时通过 prop 指定初始回路，
+// 且不回写宿主页面的路由 query（弹出"检查"工作台场景）
+const props = defineProps<{ embedLoopId?: string }>();
+const isEmbed = computed(() => props.embedLoopId !== undefined);
+
 const route = useRoute();
 const router = useRouter();
 
+// 路由精简模式（回路监视页改版 P1-2）：?embed=1 进入时隐藏左脊柱，
+// 直接定位 loopId，页头出现返回按钮（from query 优先，无 from 时 router.back）
+const isCompact = computed(() => route.query.embed === '1');
+
+/** 精简模式返回：from query 优先（携带监控上下文回监视页），无 from 时浏览器历史回退 */
+function goCompactBack() {
+  const from = typeof route.query.from === 'string' ? route.query.from : '';
+  if (from) {
+    router.push(from);
+  } else {
+    router.back();
+  }
+}
+
 /* ── 上下文 ── */
 const initialLoopId =
-  typeof route.query.loopId === 'string' && route.query.loopId
+  props.embedLoopId ||
+  (typeof route.query.loopId === 'string' && route.query.loopId
     ? route.query.loopId
-    : null;
+    : null);
 const loop = useWb360Loop(initialLoopId);
 const layout = useWb360Layout();
+
+/* ── 外部剖面直达（工作台规整 2026-10-04 D2/D3）：?section= 一次性消费 ──
+ * 诊断概览/整定总览等模块页跳转协议：/loop/workbench360?loopId=&section=
+ * 值域 assess|diagnosis|tuning|handling（diagnosis 为 diag 的对外别名）；
+ * 消费后随选中回写从 URL 清除；模块禁用时静默忽略（openSection 自 guard） */
+const SECTION_QUERY_ALIAS: Record<string, 'assess' | 'diag' | 'handling' | 'tuning'> = {
+  assess: 'assess',
+  diag: 'diag',
+  diagnosis: 'diag',
+  handling: 'handling',
+  tuning: 'tuning',
+};
+if (!isEmbed.value) {
+  const qs = typeof route.query.section === 'string' ? route.query.section : '';
+  const sectionKey = qs ? SECTION_QUERY_ALIAS[qs] : undefined;
+  if (sectionKey) layout.openSection(sectionKey);
+}
 const trend = useTrendData();
 /** 趋势左轴域：PV 满量程优先（2026-10-02 终验；量程缺失退数据域） */
 const trendYDomain = computed(() => {
@@ -447,23 +484,34 @@ onMounted(() => {
   offRealtime = loop.onRealtimePoint((p) => {
     trend.appendRealtimePoint(p.collectTime, p.role, p.value, p.quality);
   });
-  loop.loadLoops().then(() => loop.loadTree());
+  // 精简模式无左脊柱：装置树只喂脊柱，跳过 loadTree；loadLoops 必须保留（current 数据源）
+  loop.loadLoops().then(() => {
+    if (!isCompact.value) loop.loadTree();
+  });
 });
 
 onBeforeUnmount(() => {
   offRealtime?.();
 });
 
-// 选中回路变化：同步 query + 重载趋势窗口
+// 选中回路变化：同步 query + 重载趋势窗口（embed 模式不改宿主路由）。
+// immediate：?loopId= 直接定位（含精简模式）时 selectedLoopId 初值即命中，
+// 值不再变化，不补立即执行趋势会永远空白（同剖面 composable 的 immediate 口径）
 watch(
   () => loop.selectedLoopId.value,
   (id) => {
     if (!id) return;
-    if (route.query.loopId !== id) {
-      router.replace({ query: { ...route.query, loopId: id } });
+    // ?section= 已消费：随选中回写一并清除（含 loopId 恰好命中的直达场景）
+    if (
+      !isEmbed.value &&
+      (route.query.loopId !== id || route.query.section !== undefined)
+    ) {
+      const { section: _drop, ...rest } = route.query;
+      router.replace({ query: { ...rest, loopId: id } });
     }
     reloadTrend();
   },
+  { immediate: true },
 );
 
 const wsStyle = computed(() => {
@@ -482,18 +530,21 @@ const wsName = computed(
 </script>
 
 <template>
-  <div class="wb360">
+  <div class="wb360" :class="{ 'wb360--embed': isEmbed }">
     <LoopHeader
       :connection-status="loop.connectionStatus.value"
       :fitness-level="fitness.level"
       :last-message-at="loop.lastMessageAt.value"
       :loop="loop.current.value"
+      :show-back="isCompact"
+      @back="goCompactBack"
       @open-attention="attentionOpen = true"
     />
 
     <div class="wb360-body">
-      <!-- 左脊柱（P1-3） -->
+      <!-- 左脊柱（P1-3）；路由精简模式隐藏（P1-2：回路定位走 URL，脊柱无用） -->
       <LoopSpine
+        v-if="!isCompact"
         :grade-filter="loop.gradeFilter.value"
         :keyword="loop.keyword.value"
         :loops="loop.filteredLoops.value"
@@ -510,8 +561,9 @@ const wsName = computed(
         @update:keyword="loop.keyword.value = $event"
       />
 
-      <!-- 脊柱-主区分隔（垂直拖拽） -->
+      <!-- 脊柱-主区分隔（垂直拖拽）；精简模式随之隐藏 -->
       <div
+        v-if="!isCompact"
         class="wb360-vsplit"
         title="拖动调整左脊柱宽度（180–420px）"
         @pointerdown="onVsplitDown"
@@ -750,6 +802,13 @@ const wsName = computed(
   overflow: hidden;
 }
 
+/* embed 模式（Drawer 内嵌）：容器高度由宿主给定，去掉整页视口假设 */
+.wb360.wb360--embed {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+}
+
 .wb360-body {
   display: flex;
   flex: 1;
@@ -758,12 +817,12 @@ const wsName = computed(
 
 /* 脊柱-主区分隔（5px 垂直拖拽） */
 .wb360-vsplit {
-  background: hsl(var(--accent) / 25%);
-  border-left: 1px solid hsl(var(--border));
-  border-right: 1px solid hsl(var(--border));
-  cursor: col-resize;
   flex: none;
   width: 5px;
+  cursor: col-resize;
+  background: hsl(var(--accent) / 25%);
+  border-right: 1px solid hsl(var(--border));
+  border-left: 1px solid hsl(var(--border));
 }
 
 .wb360-vsplit:hover {
@@ -771,12 +830,12 @@ const wsName = computed(
 }
 
 .wb360-main {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
-  min-height: 0;
   min-width: 0;
-  position: relative;
+  min-height: 0;
 }
 
 /* 最大化态：旧画布整体隐藏，迷你趋势贴旅程条正下方 */
@@ -794,64 +853,64 @@ const wsName = computed(
 }
 
 .wb360-cv-mini {
-  border-bottom: 1px solid hsl(var(--border));
   display: none;
   flex: none;
   flex-direction: column;
   gap: 2px;
   height: var(--mini-h, 152px);
   padding: 2px 8px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 /* 监视画布 */
 .wb360-canvas {
-  background: hsl(var(--card));
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  position: relative;
+  background: hsl(var(--card));
 }
 
 .cv-bar {
-  align-items: center;
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   flex: none;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 7px 12px;
   row-gap: 4px;
+  align-items: center;
+  padding: 7px 12px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .segctl {
-  border: 1px solid hsl(var(--border));
-  border-radius: 4px;
   display: inline-flex;
   overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
 }
 
 /* SP 容差带输入（终验优化） */
 .segctl.tol {
-  align-items: center;
   gap: 2px;
+  align-items: center;
   padding: 0 6px;
 }
 
 .segctl.tol .tol-l {
-  color: hsl(var(--muted-foreground));
   font-size: 11px;
+  color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 
 .segctl.tol input {
+  width: 64px;
+  padding: 3px 2px;
+  font-size: 12px;
+  color: inherit;
+  outline: none;
   background: transparent;
   border: none;
-  color: inherit;
-  font-size: 12px;
-  outline: none;
-  padding: 3px 2px;
-  width: 64px;
 }
 
 .segctl.tol input:focus {
@@ -859,12 +918,12 @@ const wsName = computed(
 }
 
 .segctl button {
-  background: hsl(var(--card));
-  border-right: 1px solid hsl(var(--border));
+  padding: 3px 12px;
+  font-size: 12px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  font-size: 12px;
-  padding: 3px 12px;
+  background: hsl(var(--card));
+  border-right: 1px solid hsl(var(--border));
 }
 
 .segctl button:last-child {
@@ -872,24 +931,24 @@ const wsName = computed(
 }
 
 .segctl button.on {
-  background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
 }
 
 .legend {
-  align-items: center;
-  color: hsl(var(--muted-foreground));
   display: flex;
   flex-wrap: wrap;
-  font-size: 12px;
   gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .lg {
-  align-items: center;
-  cursor: pointer;
   display: inline-flex;
   gap: 5px;
+  align-items: center;
+  cursor: pointer;
   user-select: none;
 }
 
@@ -898,59 +957,56 @@ const wsName = computed(
 }
 
 .lg .sw {
-  border-radius: 2px;
-  height: 3px;
   width: 14px;
+  height: 3px;
+  border-radius: 2px;
 }
 
 .lg .mk {
-  color: hsl(var(--destructive));
   font-size: 11px;
+  color: hsl(var(--destructive));
 }
 
 .cv-body {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
   padding: 4px 8px 0;
-  position: relative;
 }
 
 .cv-overlay {
-  align-items: center;
-  background: hsl(var(--card) / 55%);
-  bottom: 0;
-  color: hsl(var(--muted-foreground));
-  display: flex;
-  font-size: 13px;
-  justify-content: center;
-  left: 0;
   position: absolute;
-  right: 0;
-  top: 0;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--card) / 55%);
 }
 
 .cv-overlay-error {
   align-items: flex-start;
-  background: hsl(var(--card) / 85%);
-  color: hsl(var(--destructive));
   justify-content: center;
   padding: 0 24px;
+  color: hsl(var(--destructive));
   text-align: center;
+  background: hsl(var(--card) / 85%);
 }
 
 /* 工作区：缩略态 / 展开态 */
 .wb360-ws {
-  background: hsl(var(--card));
   display: flex;
   flex: none;
   min-height: 0;
+  background: hsl(var(--card));
 }
 
 .wb360-ws.thumbs {
-  align-items: stretch;
   gap: 10px;
+  align-items: stretch;
   height: 96px;
   padding: 8px 12px;
 }
@@ -961,12 +1017,12 @@ const wsName = computed(
 }
 
 .ws-head {
-  align-items: center;
-  border-bottom: 1px solid hsl(var(--border));
   display: flex;
   flex: none;
   gap: 10px;
+  align-items: center;
   padding: 6px 12px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .ws-head .wname {
@@ -975,11 +1031,11 @@ const wsName = computed(
 }
 
 .ws-hint {
-  border-radius: 4px;
-  background: hsl(var(--accent) / 60%);
-  color: hsl(var(--muted-foreground));
-  font-size: 11px;
   padding: 1px 8px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--accent) / 60%);
+  border-radius: 4px;
 }
 
 .ws-head .spacer {
@@ -987,17 +1043,17 @@ const wsName = computed(
 }
 
 .ws-close {
-  border: 1px solid hsl(var(--border));
-  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  font-size: 12px;
-  padding: 2px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
 }
 
 .ws-close:hover {
-  border-color: hsl(var(--primary));
   color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 .ws-body {
@@ -1005,8 +1061,8 @@ const wsName = computed(
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  overflow: auto;
   padding: 10px 12px;
+  overflow: auto;
 }
 
 .mono {
@@ -1016,14 +1072,14 @@ const wsName = computed(
 /* 小屏降级（P1-9）：展开态工作区 → 底部上拉抽屉，分屏条隐藏 */
 @media (max-height: 760px) {
   .wb360-ws.open {
-    border-top: 2px solid hsl(var(--primary));
-    bottom: 26px;
-    box-shadow: 0 8px 32px rgb(16 24 40 / 16%);
-    height: 52%;
-    left: 0;
     position: absolute;
     right: 0;
+    bottom: 26px;
+    left: 0;
     z-index: 40;
+    height: 52%;
+    border-top: 2px solid hsl(var(--primary));
+    box-shadow: 0 8px 32px rgb(16 24 40 / 16%);
   }
 
   .page-split {

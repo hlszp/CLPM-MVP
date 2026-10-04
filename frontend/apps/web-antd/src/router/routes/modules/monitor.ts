@@ -126,7 +126,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
-      title: '工作台',
+      title: '运维工作台',
     },
   },
   {

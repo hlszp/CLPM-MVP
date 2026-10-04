@@ -325,13 +325,13 @@ function fmtKpi(
   return key === 'score' ? v.toFixed(1) : `${v.toFixed(1)}%`;
 }
 
-/** 复诊入口：跳诊断工作台对该回路复诊（§8.1） */
+/** 复诊入口：跳回路工作台诊断剖面对该回路复诊（§8.1；2026-10-04 D2） */
 function goRevisit() {
   if (!detail.value) return;
   if (!moduleEnabled('diagnosis')) return;
   router.push({
-    path: '/diagnosis/workbench',
-    query: { loopId: detail.value.loopId },
+    path: '/loop/workbench360',
+    query: { loopId: detail.value.loopId, section: 'diagnosis' },
   });
 }
 

@@ -65,12 +65,12 @@ const sparkPoints = computed(() =>
 
 function toTuning() {
   emit('close');
-  // 追溯矩阵：→ 整定向导页（携带回路上下文；不带窗口/scope）
+  // 追溯矩阵：→ 回路工作台整定剖面（2026-10-04 D3；携带回路上下文；不带窗口/scope）
   if (!props.row) return;
   drill(
     'tuning',
-    '/tuning/workbench',
-    { loopId: props.row.loop_id },
+    '/loop/workbench360',
+    { loopId: props.row.loop_id, section: 'tuning' },
     { withScope: false, withWindow: false },
   );
 }
@@ -113,14 +113,14 @@ function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
   });
 }
 
-/** 档案空态引导发起诊断 → 无快捷诊断上下文，跳诊断工作台并预选该回路 */
+/** 档案空态引导发起诊断 → 无快捷诊断上下文，跳回路工作台诊断剖面预选该回路（2026-10-04 D2） */
 function onArchiveTriggerDiagnosis(loopId: string) {
   emit('close');
   archiveOpen.value = false;
   drill(
     'diagnosis',
-    '/diagnosis/workbench',
-    { loopId },
+    '/loop/workbench360',
+    { loopId, section: 'diagnosis' },
     { withScope: false, withWindow: false },
   );
 }

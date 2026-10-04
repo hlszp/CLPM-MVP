@@ -1,114 +1,61 @@
 /**
- * E2E 回路整定三页式测试（2026-08-23 对齐现行 IA 重写）
+ * E2E 回路整定三页式测试（2026-08-23 重写；2026-10-04 工作台规整 D3 更新）
  *
- * 现行 IA（09 设计方案 §6.1，router/routes/modules/tuning.ts）：
- *   三页式 = 整定工作台（辨识→整定矩阵→仿真对比→方案确认 单页 4 锚点流程）
+ * 现行 IA（router/routes/modules/tuning.ts）：
+ *   三页式 = 整定总览（全回路可整定性 + 在途整定建议）
  *          / 整定记录（历史追溯）/ 效果验证（前后窗曲线对比）。
+ *   单回路四步流程（辨识→矩阵→仿真→确认）已移回路工作台整定剖面
+ *   （/loop/workbench360?loopId=&section=tuning）；/tuning/workbench 为
+ *   redirect 兼容路径。
  *
  * 覆盖用例：
- * - E2E-TUNE-001: 整定工作台（/tuning/workbench → 标题 + 4 锚点导航）
- * - E2E-TUNE-002: 过程辨识区（identify-section → 时间窗 RangePicker + 开始辨识按钮）
- * - E2E-TUNE-003: 锚点导航 4 步骤目标区存在（tuning-anchor-* section id）
+ * - E2E-TUNE-001: 整定总览（旧路径 redirect + 标题 + 「调参优化」入口）
  * - E2E-TUNE-004: 整定记录页（/tuning/records → 标题 + 表格/空态）
  * - E2E-TUNE-005: 效果验证页（/tuning/verification → 标题渲染）
- * - E2E-TUNE-006: 辨识策略说明渲染（历史数据辨识 / 阶跃实验口径）
  *
- * 删除的旧 IA 用例（均为 Phase D 单页整合遗物，现行代码无对应页面/行为）：
- * - 原 TUNE-002/003/004/006/007：访问 /tuning/detail + .anchor-item 锚点门禁。
- *   现行工作台锚点为纯页内滚动（workbench.vue scrollIntoView），无门禁约束，
- *   /tuning/detail 路由不存在。
- * - 原 TUNE-005：/tuning/stats 效果统计页（已删除，效果验证由
- *   /tuning/verification 承接）。
- * - 原 TUNE-008：/tuning/knowledge-base 整定知识库页（现行 tuning.ts 无此路由）。
- * - 原 TUNE-009：工作台"待整定回路相似案例推荐"（现行工作台无该区域）。
+ * 删除的旧用例（2026-10-04 D3：四锚点流程已移回路工作台整定剖面）：
+ * - 原 TUNE-002/003/006（identify 区/锚点目标区/辨识策略说明）——组件仍存在
+ *   并被 workbench360 TuningSection 复用，其渲染由 perf-frontend.spec.ts 的
+ *   /loop/workbench360 用例覆盖页面加载，此处不再重复断言页内细节。
+ * - 更早的 Phase D 遗物用例见 git 历史。
  *
  * 页面源码依据：
- *   frontend/apps/web-antd/src/views/tuning/{workbench,records,verification}.vue
- *   frontend/apps/web-antd/src/views/tuning/components/{identify,matrix,simulate,confirm}-section.vue
+ *   frontend/apps/web-antd/src/views/tuning/{overview,records,verification}.vue
  */
 import { test, expect } from '../fixtures/auth.js';
-import type { Page } from '@playwright/test';
-
-/** 选中左侧回路列表首个回路：工作台的 4 锚点整定流程区
- * （anchor-nav + identify/matrix/simulate/confirm section）仅在
- * 已选回路后渲染（workbench.vue v-if="ctx.loopId.value"） */
-async function selectFirstLoop(page: Page): Promise<void> {
-  const firstLoop = page.locator('.tuning-loop-item').first();
-  await expect(firstLoop).toBeVisible({ timeout: 20_000 });
-  await firstLoop.click();
-  // 流程区渲染 + 诊断基线/建议等异步加载
-  await page.waitForTimeout(1500);
-}
 
 test.describe('回路整定三页式 E2E', () => {
   test.beforeEach(async ({ loginAs }) => {
-    // 整定模块需要 ADMIN / IC_ENGINEER / EXPERT 权限
+    // 整定总览全角色可见；操作入口需 ADMIN/IC/PE/EXPERT（D1 四角色）
     await loginAs('ADMIN');
   });
 
-  test('E2E-TUNE-001: 整定工作台', async ({ page }) => {
+  test('E2E-TUNE-001: 整定总览（含旧路径 redirect）', async ({ page }) => {
+    // 旧「整定工作台」书签 → redirect 落整定总览
     await page.goto('/tuning/workbench', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('整定工作台', {
+    await expect(page.locator('body')).toContainText('整定总览', {
       timeout: 20_000,
     });
+    expect(page.url()).toContain('/tuning/overview');
 
-    // 副标题（09 方案 §6.2：辨识 → 整定矩阵 → 仿真对比 → 方案确认）
-    const pageText = await page.locator('body').innerText();
-    expect(pageText).toMatch(/辨识/);
+    // 左脊柱整定建议区标题 + 总览表/空态二选一渲染
+    await expect(page.locator('body')).toContainText('整定建议');
+    const tableOrEmpty = page.locator('.ant-table, .ant-empty').first();
+    await expect(tableOrEmpty).toBeVisible({ timeout: 15_000 });
 
-    // 选中回路后 4 锚点导航才渲染（v-if ctx.loopId）
-    await selectFirstLoop(page);
-    const anchors = page.locator('.tuning-anchor-link');
-    await expect(anchors).toHaveCount(4, { timeout: 15_000 });
-
-    expect(page.url()).toContain('/tuning/workbench');
-  });
-
-  test('E2E-TUNE-002: 过程辨识区（第①步）', async ({ page }) => {
-    await page.goto('/tuning/workbench', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('整定工作台', {
-      timeout: 20_000,
-    });
-
-    // identify-section 随已选回路渲染
-    await selectFirstLoop(page);
-
-    // identify-section：时间窗 RangePicker（placeholder 开始时间/结束时间）
-    const rangePicker = page.locator('.ant-picker-range').first();
-    await expect(rangePicker).toBeVisible({ timeout: 15_000 });
-
-    // "开始辨识"按钮存在
-    const identifyBtn = page.getByRole('button', { name: /开始辨识/ }).first();
-    await expect(identifyBtn).toBeVisible({ timeout: 15_000 });
-
-    expect(page.url()).toContain('/tuning/workbench');
-  });
-
-  test('E2E-TUNE-003: 锚点导航 4 步骤目标区存在', async ({ page }) => {
-    await page.goto('/tuning/workbench', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('整定工作台', {
-      timeout: 20_000,
-    });
-
-    // 4 个 section 锚点目标（Card id）随已选回路挂载在 DOM
-    await selectFirstLoop(page);
-    for (const id of [
-      'tuning-anchor-identify',
-      'tuning-anchor-matrix',
-      'tuning-anchor-simulate',
-      'tuning-anchor-confirm',
-    ]) {
-      await expect(page.locator(`#${id}`)).toHaveCount(1);
-    }
-
-    // 点击锚点不跳路由（纯页内滚动，URL 保持不变）
-    await page
-      .locator('.tuning-anchor-link')
-      .filter({ hasText: '整定矩阵' })
+    // 「调参优化」入口随表格渲染（无数据环境下弱断言：表格表头存在）
+    const hasTable = await page
+      .locator('.ant-table-thead')
       .first()
-      .click();
-    await page.waitForTimeout(800);
-    expect(page.url()).toContain('/tuning/workbench');
+      .isVisible()
+      .catch(() => false);
+    if (hasTable) {
+      const headerText = await page
+        .locator('.ant-table-thead')
+        .first()
+        .innerText();
+      expect(headerText).toMatch(/可整定性|操作|回路/);
+    }
   });
 
   test('E2E-TUNE-004: 整定记录页', async ({ page }) => {
@@ -135,20 +82,5 @@ test.describe('回路整定三页式 E2E', () => {
     expect(pageText).toMatch(/前后窗|曲线对比|效果验证/);
 
     expect(page.url()).toContain('/tuning/verification');
-  });
-
-  test('E2E-TUNE-006: 辨识策略口径说明渲染', async ({ page }) => {
-    await page.goto('/tuning/workbench', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('整定工作台', {
-      timeout: 20_000,
-    });
-
-    // identify-section 随已选回路渲染，含两种辨识口径（历史数据辨识 / 阶跃实验）
-    await selectFirstLoop(page);
-    const pageText = await page.locator('body').innerText();
-    const hasStrategyText = /历史数据辨识|阶跃/.test(pageText);
-    expect(hasStrategyText).toBeTruthy();
-
-    expect(page.url()).toContain('/tuning/workbench');
   });
 });

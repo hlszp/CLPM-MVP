@@ -98,12 +98,12 @@ function gotoHandling(actionId: string): void {
   router.push({ path: '/handling/suggestions', query: { focus: actionId } });
 }
 
-/** 「去整定」：TUNING 类建议跳整定工作台并预填回路（09 设计方案 §6.5 联动） */
+/** 「去整定」：TUNING 类建议跳回路工作台整定剖面预选回路（09 设计方案 §6.5 联动；2026-10-04 D3） */
 function gotoTuning(loopId: string): void {
   open.value = false;
   router.push({
-    path: '/tuning/workbench',
-    query: { from: 'diagnosis', loopId },
+    path: '/loop/workbench360',
+    query: { loopId, section: 'tuning' },
   });
 }
 

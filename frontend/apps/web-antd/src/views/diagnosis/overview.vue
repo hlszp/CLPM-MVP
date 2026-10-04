@@ -18,7 +18,8 @@ import { Page } from '@vben/common-ui';
 import { Button, Card, Select, Spin, Table, Tree } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
+import { getDiagnosisPrecheckApi, getDiagnosisRunsLatestApi } from '#/api/diagnosis';
+import { getLoopMonitorListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
@@ -26,6 +27,7 @@ import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
 import DiagnosisLoopArchiveDrawer from './components/loop-archive-drawer.vue';
+import DiagnosisPrecheckBadge from './components/precheck-badge.vue';
 import DiagnosisReviewDrawer from './components/review-drawer.vue';
 import {
   CATEGORY_META,
@@ -118,10 +120,69 @@ async function loadLatestOverview(): Promise<void> {
   try {
     const res = await getDiagnosisRunsLatestApi(selectedPlantNodeId.value);
     latestItems.value = res.items;
+    // 可诊断性数据源（仅可诊断过滤 + 预检徽标列）：随概览并行加载
+    void loadLoopFitness(selectedPlantNodeId.value);
+    void loadPrecheck();
   } catch {
     latestItems.value = [];
   } finally {
     latestLoading.value = false;
+  }
+}
+
+// ===== 可诊断性承接（2026-10-04 工作台规整 D2：自诊断工作台迁入） =====
+/** 装置范围回路适用性映射（loopId → L0~L4；失败清空回退不过滤） */
+const loopFitnessMap = ref(new Map<string, string>());
+
+async function loadLoopFitness(plantNodeId?: string): Promise<void> {
+  const map = new Map<string, string>();
+  try {
+    let page = 1;
+    let total = 0;
+    do {
+      const params: Record<string, unknown> = { page, pageSize: 100 };
+      if (plantNodeId) params.plantNodeId = plantNodeId;
+      const res = await getLoopMonitorListApi(params as never);
+      for (const it of res.items ?? []) {
+        if (it.fitnessLevel) map.set(it.loopId, it.fitnessLevel);
+      }
+      total = res.total ?? 0;
+      page += 1;
+    } while ((page - 1) * 100 < total);
+    loopFitnessMap.value = map;
+  } catch {
+    loopFitnessMap.value = new Map();
+  }
+}
+
+/** 仅可诊断（隐藏 L0 数据严重不足；无 fitness 数据的回路不隐藏，与门禁同口径） */
+const onlyDiagnosable = ref(false);
+
+/** 预检徽标（16 号文 F5：后端单次上限 200，分批；评估禁用整列隐藏） */
+const PRECHECK_BATCH = 200;
+const precheckItems = ref(new Map<string, DiagnosisApi.PrecheckItem>());
+const precheckAssessEnabled = ref(true);
+type BadgeFilter = 'all' | 'insufficient' | 'marginal' | 'sufficient' | 'unknown';
+const badgeFilter = ref<BadgeFilter>('all');
+
+async function loadPrecheck(): Promise<void> {
+  const ids = latestItems.value.map((l) => l.loopId).filter((id) => !!id);
+  if (ids.length === 0) {
+    precheckItems.value = new Map();
+    return;
+  }
+  try {
+    const next = new Map<string, DiagnosisApi.PrecheckItem>();
+    for (let i = 0; i < ids.length; i += PRECHECK_BATCH) {
+      const res = await getDiagnosisPrecheckApi(ids.slice(i, i + PRECHECK_BATCH));
+      precheckAssessEnabled.value = res.assessEnabled;
+      if (!res.assessEnabled) return;
+      for (const item of res.items) next.set(item.loopId, item);
+    }
+    precheckItems.value = next;
+  } catch {
+    // 预检失败降级：不显示徽标（不影响概览主数据）
+    precheckItems.value = new Map();
   }
 }
 
@@ -137,6 +198,22 @@ const filteredLatestItems = computed(() => {
   let list = latestItems.value;
   if (latestFilter.value === 'diagnosed') list = list.filter((i) => i.runId);
   if (latestFilter.value === 'undiagnosed') list = list.filter((i) => !i.runId);
+  // 仅可诊断：隐藏 L0（数据严重不足；无 fitness 数据不隐藏）
+  if (onlyDiagnosable.value && loopFitnessMap.value.size > 0) {
+    list = list.filter((i) => {
+      const lv = i.loopId ? loopFitnessMap.value.get(i.loopId) : undefined;
+      return !lv || lv !== 'L0';
+    });
+  }
+  // 预检徽标档筛选（评估禁用时徽标列隐藏，筛选同步失效）
+  if (badgeFilter.value !== 'all' && precheckAssessEnabled.value) {
+    list = list.filter((i) => {
+      const lv = i.loopId
+        ? (precheckItems.value.get(i.loopId)?.level ?? 'unknown')
+        : 'unknown';
+      return lv === badgeFilter.value;
+    });
+  }
   if (filterImportance.value != null)
     list = list.filter((i) => i.importanceLevel === filterImportance.value);
   if (filterScoreGrade.value) {
@@ -166,11 +243,18 @@ const undiagnosedCount = computed(
 /** 概览覆盖回路数（用于标题"N 个回路"） */
 const overviewLoopCount = computed(() => latestItems.value.length);
 
-const latestColumns = [
-  { dataIndex: 'loopTagName', title: '回路', width: 116 },
-  { dataIndex: 'loopDescription', title: '名称', width: 126, ellipsis: true },
-  { dataIndex: 'importanceLevel', title: '等级', width: 54 },
-  { dataIndex: 'latestScore', title: '性能评分', width: 70 },
+const latestColumns = computed(() => {
+  const cols: Array<Record<string, unknown>> = [
+    { dataIndex: 'loopTagName', title: '回路', width: 116 },
+    { dataIndex: 'loopDescription', title: '名称', width: 126, ellipsis: true },
+    { dataIndex: 'importanceLevel', title: '等级', width: 54 },
+  ];
+  // 预检徽标列（评估禁用能力时整列隐藏，§5.4 隐藏而非置灰/误报）
+  if (precheckAssessEnabled.value) {
+    cols.push({ key: 'precheck', title: '预检', width: 62 });
+  }
+  cols.push(
+    { dataIndex: 'latestScore', title: '性能评分', width: 70 },
   { key: 'scoreGrade', title: '性能等级', width: 66 },
   {
     dataIndex: 'primaryCategoryLabel',
@@ -191,7 +275,9 @@ const latestColumns = [
   { dataIndex: 'reviewStatus', title: '状态', width: 66 },
   { dataIndex: 'lastDiagnosedAt', title: '诊断时间', width: 96 },
   { key: 'action', title: '操作', width: 156, fixed: 'right' as const },
-];
+  );
+  return cols;
+});
 
 function latestCatColor(record: DiagnosisApi.LatestRunItem): string {
   return record.primaryCategory
@@ -209,9 +295,12 @@ function openLatestDetail(record: DiagnosisApi.LatestRunItem): void {
 const detailModalOpen = ref(false);
 const detailItem = ref<DiagnosisApi.LatestRunItem | null>(null);
 
-/** 行内"诊断"→ 跳工作台预选该回路（发起职责收敛到工作台，2026-10-01） */
+/** 行内"诊断"→ 跳回路工作台诊断剖面预选该回路（发起职责收敛，2026-10-01；D2 并入 2026-10-04） */
 function gotoWorkbench(loopId: string): void {
-  router.push({ path: '/diagnosis/workbench', query: { loopId } });
+  router.push({
+    path: '/loop/workbench360',
+    query: { loopId, section: 'diagnosis' },
+  });
 }
 
 // ===== 概览行操作：证据 / 复核 / 历史 =====
@@ -363,6 +452,31 @@ onMounted(() => {
                 {{ undiagnosedCount }}
               </span>
             </button>
+            <!-- 仅可诊断（2026-10-04 D2 自诊断工作台迁入：隐藏 L0 数据严重不足） -->
+            <button
+              class="diag-ov-latest-filter__btn"
+              :class="{
+                'diag-ov-latest-filter__btn--active': onlyDiagnosable,
+              }"
+              title="隐藏不具备诊断条件的回路（仅 L0 数据严重不足；无适用性数据的回路不隐藏）"
+              @click="onlyDiagnosable = !onlyDiagnosable"
+            >
+              仅可诊断
+            </button>
+            <!-- 预检档位筛选（评估禁用时徽标列隐藏，筛选同隐藏） -->
+            <Select
+              v-if="precheckAssessEnabled"
+              v-model:value="badgeFilter"
+              :options="[
+                { label: '预检全部', value: 'all' },
+                { label: '数据充足', value: 'sufficient' },
+                { label: '疑似不足', value: 'marginal' },
+                { label: '数据不足', value: 'insufficient' },
+                { label: '预检未知', value: 'unknown' },
+              ]"
+              size="small"
+              style="width: 110px"
+            />
             <Select
               v-model:value="filterImportance"
               :allow-clear="true"
@@ -426,7 +540,7 @@ onMounted(() => {
               size: 'small',
               showLessItems: true,
             }"
-            :scroll="{ x: 1330 }"
+            :scroll="{ x: 1392 }"
             size="small"
           >
             <template #bodyCell="{ column, record }">
@@ -451,6 +565,15 @@ onMounted(() => {
                   }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
+              </template>
+              <template v-else-if="column.key === 'precheck'">
+                <DiagnosisPrecheckBadge
+                  :item="
+                    record.loopId
+                      ? precheckItems.get(record.loopId)
+                      : undefined
+                  "
+                />
               </template>
               <template v-else-if="column.dataIndex === 'latestScore'">
                 <span
@@ -640,8 +763,8 @@ onMounted(() => {
 
 .diag-ov-sidebar {
   display: flex;
-  flex-direction: column;
   flex-shrink: 0;
+  flex-direction: column;
   width: 208px;
   padding: 8px;
   overflow: auto;

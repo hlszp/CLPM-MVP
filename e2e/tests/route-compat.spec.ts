@@ -33,18 +33,20 @@
 import { test, expect } from '../fixtures/auth.js';
 
 /**
- * 整定模块现行三页式路由（09 设计方案 §6.1：工作台/记录/效果验证）。
+ * 整定模块现行三页式路由（2026-10-04 工作台规整 D3：总览/记录/效果验证）。
  * 旧 /tuning/{model,algorithm,simulation,flow/*} 路由在现行代码中不存在
  * （无 legacy redirect 段），原 18 个 redirect 用例属旧 IA 遗物已删除，
  * 此处改为对现行路由做等价的防白屏基线验证。
+ * /tuning/workbench 现为 redirect 兼容路径 → /tuning/overview。
  */
 const TUNING_CURRENT_ROUTES: Array<{ path: string; target: RegExp }> = [
-  { path: '/tuning/workbench', target: /\/tuning\/workbench/ },
+  { path: '/tuning/workbench', target: /\/tuning\/overview/ },
+  { path: '/tuning/overview', target: /\/tuning\/overview/ },
   { path: '/tuning/records', target: /\/tuning\/records/ },
   { path: '/tuning/verification', target: /\/tuning\/verification/ },
 ];
 
-/** 诊断模块旧路由兼容（MVP 两页式：/diagnosis/tasks 已下线，
+/** 诊断模块旧路由兼容（2026-10-04 D2：/diagnosis/workbench → 概览 redirect；
  * /diagnosis/records 为现存直链页，断言 URL 保持且页面可渲染） */
 const DIAGNOSIS_LEGACY_ROUTES: Array<{ legacy: string; target: RegExp }> = [
   { legacy: '/diagnosis/records', target: /\/diagnosis\/records/ },
@@ -95,9 +97,10 @@ test.describe('回路整定三页式路由防白屏基线（09 方案）', () =>
 
     test(`E2E-ROUTE-TUNE: ${path} 前进后退导航正常`, async ({ page }) => {
       // 先建立历史栈：访问 records → 访问目标路由 → 回退 → 前进
-      // （目标本身为 records 时改用 workbench 作为对照页）
+      // （目标本身为 records 时改用 overview 作为对照页；2026-10-04 起
+      //   /tuning/workbench 会 redirect 到 overview，统一以 overview 为对照）
       const other =
-        path === '/tuning/records' ? '/tuning/workbench' : '/tuning/records';
+        path === '/tuning/records' ? '/tuning/overview' : '/tuning/records';
       await page.goto(other, { waitUntil: 'domcontentloaded' });
       await page.goto(path, { waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(target, { timeout: 15_000 });
@@ -142,14 +145,14 @@ test.describe('旧路由兼容 - 诊断中心（V62-P0-037）', () => {
     });
 
     test(`E2E-ROUTE-DIAG: ${legacy} 前进后退导航正常`, async ({ page }) => {
-      // 先建立历史栈：访问 workbench → 访问旧路由 → 回退 → 前进
-      await page.goto('/diagnosis/workbench', { waitUntil: 'domcontentloaded' });
+      // 先建立历史栈：访问概览（旧 workbench 已 redirect 至此）→ 访问旧路由 → 回退 → 前进
+      await page.goto('/diagnosis/overview', { waitUntil: 'domcontentloaded' });
       await page.goto(legacy, { waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(target, { timeout: 15_000 });
 
-      // 回退到 workbench
+      // 回退到概览
       await page.goBack({ waitUntil: 'domcontentloaded' });
-      await expect(page).toHaveURL(/\/diagnosis\/workbench/, { timeout: 15_000 });
+      await expect(page).toHaveURL(/\/diagnosis\/overview/, { timeout: 15_000 });
 
       // 前进回新路由
       await page.goForward({ waitUntil: 'domcontentloaded' });

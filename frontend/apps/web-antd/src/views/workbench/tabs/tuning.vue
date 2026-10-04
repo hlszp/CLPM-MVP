@@ -138,7 +138,7 @@ function handleSim(row: WorkbenchApi.TuneQueueItem) {
 /** 行动区 ? 帮助弹窗说明项 */
 const actionHelpItems = [
   { text: '清单点击行 → 右侧趋势联动，加载该回路最近 24h 趋势 + 评分快照。' },
-  { label: '整定仿真', text: '右侧详情卡顶栏「▶ 整定仿真」按钮 → 弹出整定工作台配置弹窗。' },
+  { label: '整定仿真', text: '右侧详情卡顶栏「▶ 整定仿真」按钮 → 确认后跳回路工作台整定剖面执行。' },
   { label: '仿真边界', text: '平台不直接修改 DCS 的 P/I/D 参数，仅输出建议、证据、风险与回退方案；参数由授权人员人工实施并留痕。' },
   { label: '灰行', text: '前置工单未闭合的回路标记为 blocked，整定入口禁用，等前置工单关闭后自动解锁。' },
 ];
@@ -163,7 +163,7 @@ const scatterHelpItems = [
  * 2026-09-24 修复：此前 onOk 只弹 message.success('仿真任务已提交')，
  * 既不调用任何仿真接口也不跳转 —— 在工业场景里属于**误导性成功反馈**
  * （工程师以为任务已排队，实际什么都没发生），违反 DESIGN.md「不允许空点击」。
- * 现改为跳转整定工作台并携带回路上下文，真正的仿真在整定工作台执行。
+ * 现改为跳转回路工作台整定剖面并携带回路上下文，真正的仿真在那里执行。
  */
 function openSimConfirm(row: WorkbenchApi.TuneQueueItem): void {
   const loopLabel = row.loop_name ?? row.loop_id;
@@ -181,7 +181,7 @@ function openSimConfirm(row: WorkbenchApi.TuneQueueItem): void {
   const batchNo = (row as unknown as { batch_no?: null | string }).batch_no;
   Modal.confirm({
     cancelText: '取消',
-    okText: '前往整定工作台仿真',
+    okText: '前往回路工作台仿真',
     okType: 'primary',
     title: `整定仿真 — ${loopLabel}`,
     width: 520,
@@ -246,15 +246,15 @@ function openSimConfirm(row: WorkbenchApi.TuneQueueItem): void {
           style:
             'margin-top: 12px; padding: 6px 8px; font-size: 11px; color: #8C8C8C; background: #FFFBE6; border: 1px solid #FFE58F; border-radius: 2px;',
         },
-        '⚠ 仿真仅输出建议与证据，参数由授权人员线下人工实施并留痕。仿真过程中 DCS 实时值不会被修改。点击「前往整定工作台仿真」将打开该回路的完整整定流程（过程辨识 → 算法矩阵 → 闭环仿真 → 确认单）。',
+        '⚠ 仿真仅输出建议与证据，参数由授权人员线下人工实施并留痕。仿真过程中 DCS 实时值不会被修改。点击「前往回路工作台仿真」将打开该回路的完整整定流程（过程辨识 → 算法矩阵 → 闭环仿真 → 确认单）。',
       ),
     ]),
     onOk: () => {
-      // 工作台只做发起与跳转；仿真本身在整定工作台执行（含进度与结果）。
+      // 工作台只做发起与跳转；仿真本身在回路工作台整定剖面执行（含进度与结果，2026-10-04 D3）。
       drill(
         'tuning',
-        '/tuning/workbench',
-        { loopId: row.loop_id, from: 'workbench' },
+        '/loop/workbench360',
+        { loopId: row.loop_id, section: 'tuning' },
         { withScope: false, withWindow: false },
       );
     },

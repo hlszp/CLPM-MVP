@@ -2,30 +2,28 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 /**
- * 整定工作台（整定模块主入口，09 设计方案 §6.2）
+ * 整定总览（整定模块主入口，09 设计方案 §6.2；2026-10-04 工作台规整 D3 转型）
  *
- * 布局对齐回路工作台/诊断工作台：
- * - 左脊柱：装置树 + 回路清单（选中装置节点过滤）+ 整定建议列表（TUNING 类
- *   处置建议，待处理优先）
- * - 右主区：未选回路时显示该节点下所有回路的总览表格（回路编号/名称/等级/
- *   性能评分/性能等级/诊断结论/处置建议摘要/P·I·D 实时参数），点击行进入
- *   单页 4 锚点流程：① 过程辨识 → ② 整定矩阵 → ③ 仿真对比 → ④ 方案确认
+ * - 左脊柱：装置树 + 回路清单 + 整定建议列表（TUNING 类在途工单，待排程优先）
+ * - 右主区：该节点下所有回路的总览表格（回路编号/名称/等级/性能评分/性能
+ *   等级/可整定性/诊断结论/处置建议摘要/P·I·D 实时参数）
+ * - 单回路整定流程（辨识→矩阵→仿真→确认）已让位回路工作台整定剖面：
+ *   行点击/清单点击/「调参优化」→ /loop/workbench360?loopId=&section=tuning
+ *   （入口门禁保留：L0/L1 阻止、L2 警告提示）
  *
- * P/I/D 初值来自回路详情（并行拉取），随后由全局实时 WS 推送更新。
- * 入口上下文：?loopId=xx&from=diagnosis（诊断 TUNING 类建议「去整定」）。
+ * P/I/D 初值批量拉取（getLoopsRuntimeParamsApi），随后由全局实时 WS 推送更新。
  */
-import type { DiagnosisApi } from '#/api/diagnosis';
 import type { HandlingApi } from '#/api/handling';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
 import {
-  Alert,
   Button,
   Card,
   Empty,
@@ -37,7 +35,6 @@ import {
   Tooltip,
   Tree,
 } from 'ant-design-vue';
-import dayjs from 'dayjs';
 
 import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
 import { getHandlingOrdersApi } from '#/api/handling';
@@ -47,16 +44,12 @@ import {
   getLoopsRuntimeParamsApi,
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import ClpmFitnessBadge from '#/components/clpm/fitness-badge.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
+import { fitnessTagToLabel } from '#/constants/clpm-ui';
 
-import { SEVERITY_COLOR } from '../diagnosis/constants';
-import ConfirmSection from './components/confirm-section.vue';
-import IdentifySection from './components/identify-section.vue';
-import MatrixSection from './components/matrix-section.vue';
-import SimulateSection from './components/simulate-section.vue';
-import { useTuningWorkbench } from './composables/use-tuning-workbench';
 import {
   fmtNum2,
   IMPORTANCE_LEVEL_COLOR,
@@ -64,52 +57,47 @@ import {
   scoreGrade,
 } from './constants';
 
-defineOptions({ name: 'TuningWorkbench' });
-/** P2 IA优化：fitness tag 中文映射（与其他模块共用） */
-const TUNING_ENTRY_TAG_CN: Record<string, string> = {
-  // H1 修复（2026-10-01）：后端 loop_fitness.py 实际产出以下 7 标签
-  // （T_* 系为历史标签，保留兼容旧快照；文案与后端 TAG_HUMAN_REASON 一致）
-  DATA_INSUFFICIENT: '数据严重不足',
-  MANUAL_DOMINANT: '手动模式占比过高',
-  LOW_AUTO_RATE: '自控率极低',
-  OP_SATURATED: 'OP 长期处于饱和限位附近',
-  SP_PV_DEVIATION: 'SP-PV 长期偏离设定',
-  NO_EXCITATION: 'OP 无有效激励',
-  WEAK_RESPONSE: 'PV 对 OP 响应极弱',
-  T_UNKNOWN: '未知',
-  T_LOCAL_DATA_MISSING: '本地无历史数据',
-  T_LOW_COVERAGE_7D: '近 7 日覆盖不足 50%',
-  T_LOW_COVERAGE_30D: '近 30 日覆盖不足 50%',
-  T_BAD_QUALITY: '数据质量差（PV 坏值/不确定）',
-  T_MODE_NOT_AUTO: '当前处于手动控制模式',
-  T_SETPOINT_MISSING: 'OPC 未绑定 SP 位号',
-  T_OUTPUT_MISSING: 'OPC 未绑定 OP 位号',
-  T_PID_PARAMS_INCOMPLETE: 'OPC 未绑定 P/I/D 位号',
-  T_CONSTANT_SETPOINT: 'SP 长时间未变（如 30 天全恒定）',
-  T_OOS_PV: 'PV 量程外点比例过高',
-  T_BAD_OP_RANGE: 'OP 长期顶边或贴底（<5% / >95%）',
-  T_DAMPED_OSC: '存在阻尼振荡趋势',
-  T_SUSTAINED_OSC: '存在持续振荡趋势',
-  T_VALVE_STICTION: '阀门疑似粘滞',
-  T_DEADTIME_HIGH: '纯滞后/惯性比偏高',
-  T_DRIFT: 'SP-PV 长期偏移（均值偏差）',
-  T_HIGH_PV_NOISE: 'PV 高频噪声过大',
-};
-const tuningTagToCn = (t: string) => TUNING_ENTRY_TAG_CN[t] ?? t;
-const tuningTagsToText = (tags: string[]) => tags.map((t) => tuningTagToCn(t)).join('、');
+defineOptions({ name: 'TuningOverview' });
 
-/** P2 IA优化：总览表格「调参优化」入口按钮点击处理
- *  —— 先查 fitness，L0/L1 阻止并弹 error；L2 弹 warning Toast；L3+/未评定 正常进整定。
+const route = useRoute();
+const router = useRouter();
+
+const userStore = useUserStore();
+
+/** 整定操作角色（2026-10-04 D1：对齐回路工作台剖面四角色；SPONSOR 只读） */
+const TUNING_OPERATE_ROLES = [
+  'ADMIN',
+  'EXPERT',
+  'IC_ENGINEER',
+  'PE_ENGINEER',
+] as const;
+const canOperateTuning = computed(() => {
+  const roles = userStore.userInfo?.roles ?? [];
+  return roles.some((r) =>
+    (TUNING_OPERATE_ROLES as readonly string[]).includes(r),
+  );
+});
+
+// P2 IA优化：fitness tag 中文映射收敛单源（clpm-ui.ts FITNESS_TAG_LABEL）
+const tuningTagsToText = (tags: string[]) =>
+  tags.map((t) => fitnessTagToLabel(t)).join('、');
+
+/** 「调参优化」/行点击/清单点击统一入口（2026-10-04 D3：跳回路工作台整定剖面）
+ *  —— 先查可整定档（三性 R5：tuneLevel 回退综合档），L0/L1 阻止并弹 error；
+ *     L2 弹 warning Toast；L3/L4/未评定 正常进入。
  */
-async function handleGoTuning(record: OverviewRow) {
-  const loopId = record.loopId;
-  const tagName = record.tagName || loopId;
+async function gotoWorkbenchTuning(loopId: string, tagName?: string) {
+  if (!canOperateTuning.value) {
+    message.warning('当前角色无整定操作权限（可在回路工作台查看回路状态）');
+    return;
+  }
+  const tag = tagName || loopId;
   let level: null | string;
   let tags: string[];
   try {
     const res = await getLoopMonitorListApi({ loopId, page: 1, pageSize: 1 });
     const item = res.items?.[0];
-    level = (item?.fitnessLevel as null | string) ?? null;
+    level = (item?.tuneLevel ?? item?.fitnessLevel) ?? null;
     tags = Array.isArray(item?.fitnessTags) ? (item.fitnessTags as string[]) : [];
   } catch {
     level = null;
@@ -118,7 +106,7 @@ async function handleGoTuning(record: OverviewRow) {
   if (level === 'L0' || level === 'L1') {
     const reason = tags.length > 0 ? tuningTagsToText(tags) : '适用性不足';
     message.error({
-      content: `回路「${tagName}」适用性不足（${level}），不建议做整定：${reason}。先消除异常来源后再操作。`,
+      content: `回路「${tag}」可整定等级不足（${level}），不建议做整定：${reason}。先消除异常来源后再操作。`,
       duration: 6,
     });
     return;
@@ -130,31 +118,15 @@ async function handleGoTuning(record: OverviewRow) {
       content: `【调参优化】L2 条件异常：${reason}。当前控制状态可能影响整定结论，建议先修正再做整定。`,
       duration: 5,
     });
-  } else if (level === 'L3' || level === 'L4' || level === 'L5') {
-    message.success(`【调参优化】当前适用性等级 = ${level}，可正常整定。`);
+  } else if (level === 'L3' || level === 'L4') {
+    message.success(`【调参优化】当前可整定等级 = ${level}，可正常整定。`);
   } else {
     message.info(`【调参优化】尚未评定适用性等级。`);
   }
-  ctx.selectLoop(loopId);
-}
-
-const route = useRoute();
-const router = useRouter();
-const ctx = useTuningWorkbench();
-
-const fromDiagnosis = ref(false);
-
-const anchors = [
-  { href: '#tuning-anchor-identify', label: '① 过程辨识' },
-  { href: '#tuning-anchor-matrix', label: '② 整定矩阵' },
-  { href: '#tuning-anchor-simulate', label: '③ 仿真对比' },
-  { href: '#tuning-anchor-confirm', label: '④ 方案确认' },
-];
-
-function scrollTo(href: string) {
-  document
-    .querySelector(href)
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  router.push({
+    path: '/loop/workbench360',
+    query: { loopId, section: 'tuning' },
+  });
 }
 
 // ===== 左脊柱：装置树 =====
@@ -192,12 +164,11 @@ async function loadPlantTree(): Promise<void> {
   }
 }
 
-/** 装置节点选中：清除回路选择（右侧回到总览），重拉回路清单/建议/总览 */
+/** 装置节点选中：重拉回路清单/建议/总览 */
 function handlePlantTreeSelect(keys: (number | string)[]): void {
   const key = keys[0] as string | undefined;
   plantTreeSelectedKeys.value = key ? [key] : [];
   selectedPlantNodeId.value = key || undefined;
-  ctx.clearLoop();
   reloadForNode();
 }
 
@@ -300,8 +271,9 @@ interface OverviewRow {
   primaryCategoryLabel: null | string;
   suggCount: number;
   suggFirst: null | string;
-  /** 原始最新诊断概览（诊断基线条消费，含 metricSummary） */
-  rawLatest: DiagnosisApi.LatestRunItem;
+  /** 适用性（C1：监控列表批量拉取，失败/无快照为 null → 徽标显示"待评估"） */
+  fitnessLevel: null | string;
+  fitnessTags: string[];
   /** 实时值容器（P/I/D 经 WS 推送更新；结构对齐 useLoopRealtime） */
   currentValues: {
     mode: null | number;
@@ -326,6 +298,7 @@ const overviewColumns: TableColumnsType = [
   { key: 'importanceLevel', title: '等级', width: 56, align: 'center' },
   { key: 'latestScore', title: '性能评分', width: 80, align: 'center' },
   { key: 'scoreGrade', title: '性能等级', width: 76, align: 'center' },
+  { key: 'fitness', title: '可整定性', width: 92, align: 'center' },
   { key: 'diagnosis', title: '诊断结论', width: 120, ellipsis: true },
   { key: 'suggestion', title: '处置建议摘要', ellipsis: true },
   { key: 'pid', title: 'P / I / D 参数', width: 130, align: 'center' },
@@ -343,10 +316,37 @@ async function loadOverview(): Promise<void> {
       arr.push(it);
       byLoop.set(it.loopId, arr);
     }
+    // C1：适用性徽标数据源（监控列表循环分页拉全量；失败时整列"待评估"不阻断）
+    const fitnessMap = new Map<
+      string,
+      { level: null | string; tags: string[] }
+    >();
+    try {
+      let page = 1;
+      let total = 0;
+      do {
+        const res = await getLoopMonitorListApi({
+          page,
+          pageSize: 100,
+          plantNodeId: selectedPlantNodeId.value,
+        });
+        for (const item of res.items ?? []) {
+          fitnessMap.set(item.loopId, {
+            level: item.fitnessLevel ?? null,
+            tags: Array.isArray(item.fitnessTags) ? item.fitnessTags : [],
+          });
+        }
+        total = res.total ?? 0;
+        page += 1;
+      } while ((page - 1) * 100 < total);
+    } catch {
+      // 适用性列整体降级为"待评估"（诚实化：不猜测等级）
+    }
     overviewRows.value = latest.items.map((l) => {
       const items = (byLoop.get(l.loopId) ?? []).toSorted((a, b) =>
         String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
       );
+      const fit = fitnessMap.get(l.loopId);
       return {
         loopId: l.loopId,
         tagName: l.loopTagName,
@@ -354,9 +354,10 @@ async function loadOverview(): Promise<void> {
         importanceLevel: l.importanceLevel ?? null,
         latestScore: l.latestScore ?? null,
         primaryCategoryLabel: l.primaryCategoryLabel ?? null,
+        fitnessLevel: fit?.level ?? null,
+        fitnessTags: fit?.tags ?? [],
         suggCount: items.length,
         suggFirst: items[0]?.title ?? null,
-        rawLatest: l,
         currentValues: {
           mode: null,
           modeLabel: null,
@@ -398,93 +399,7 @@ function fmtPid(v: null | number | undefined): string {
   return fmtNum2(v);
 }
 
-/** 选中回路的位号（总览/清单缓存中查找，用于流程区标题） */
-const selectedLoopTag = computed(() => {
-  const id = ctx.loopId.value;
-  if (!id) return '';
-  return (
-    overviewRows.value.find((r) => r.loopId === id)?.tagName ??
-    loopItems.value.find((l) => l.loopId === id)?.tagName ??
-    ''
-  );
-});
-
-// ===== 诊断基线（选中回路最新诊断指标，2026-08-19）=====
-// 整定目标即改善振荡率/稳定时间等负向指标：展示最新诊断基线供整定前后对照。
-// 优先取总览缓存（装置级 latest 已含 metricSummary）；跨装置跳入等场景
-// 总览不含该回路时，单回路 latest 兜底拉取。
-const fallbackDiagnosis = ref<DiagnosisApi.LatestRunItem | null>(null);
-
-watch(
-  () => ctx.loopId.value,
-  async (id) => {
-    fallbackDiagnosis.value = null;
-    if (!id) return;
-    if (overviewRows.value.some((r) => r.loopId === id && r.rawLatest.runId)) {
-      return;
-    }
-    const data = await getDiagnosisRunsLatestApi(undefined, id).catch(() => null);
-    fallbackDiagnosis.value = data?.items[0] ?? null;
-  },
-);
-
-const selectedDiagnosis = computed<DiagnosisApi.LatestRunItem | null>(() => {
-  const id = ctx.loopId.value;
-  if (!id) return null;
-  return (
-    overviewRows.value.find((r) => r.loopId === id)?.rawLatest ??
-    fallbackDiagnosis.value ??
-    null
-  );
-});
-
-/** 诊断基线 meta：置信度 · 复核状态 · 时间（naive UTC 补 Z 转本地） */
-const diagBaselineMeta = computed(() => {
-  const d = selectedDiagnosis.value;
-  if (!d?.runId) return '';
-  const parts: string[] = [];
-  if (d.primaryConfidence != null)
-    parts.push(`置信度 ${Math.round(d.primaryConfidence * 100)}%`);
-  parts.push(d.reviewStatus === 'REVIEWED' ? '已复核' : '待复核');
-  if (d.lastDiagnosedAt) {
-    const s = d.lastDiagnosedAt;
-    const iso = /[Zz]|[+-]\d{2}:?\d{2}$/.test(s) ? s : `${s}Z`;
-    parts.push(dayjs(iso).format('MM-DD HH:mm'));
-  }
-  return parts.join(' · ');
-});
-
-/** 诊断基线负向指标紧凑文本（率类 + 非率类原值透传） */
-const diagBaselineMetrics = computed(() => {
-  const neg = selectedDiagnosis.value?.metricSummary?.negative;
-  if (!neg) return '';
-  const parts: string[] = [];
-  const defs: Array<{ key: keyof typeof neg; label: string; unit: string }> = [
-    { key: 'oscillationRate', label: '振荡率', unit: '%' },
-    { key: 'badValueRate', label: '坏值率', unit: '%' },
-    { key: 'saturationRate', label: '饱和率', unit: '%' },
-    { key: 'stictionIndex', label: '粘滞系数', unit: '%' },
-    { key: 'settlingTime', label: '稳定时间', unit: ' s' },
-    { key: 'outputTravelIndex', label: '行程指数', unit: '' },
-  ];
-  for (const d of defs) {
-    const v = neg[d.key];
-    if (v != null) parts.push(`${d.label} ${Number(v).toFixed(1)}${d.unit}`);
-  }
-  return parts.join(' · ');
-});
-
-/** 跳转诊断工作台（携带回路上下文） */
-function goDiagnose(): void {
-  const loopId = ctx.loopId.value;
-  if (!loopId) return;
-  router.push({
-    path: '/diagnosis/workbench',
-    query: { loopId, from: 'tuning' },
-  });
-}
-
-// ===== 实时更新（P/I/D 由全局 WS 推送，初值来自回路详情） =====
+// ===== 实时更新（P/I/D 由全局 WS 推送，初值批量拉取） =====
 const { applyMessage, onMessage, start, stop } = useLoopRealtime();
 
 // 服务端订阅过滤：仅接收当前概览行回路的位号
@@ -503,11 +418,12 @@ async function reloadForNode(): Promise<void> {
 onMounted(async () => {
   start();
   await Promise.all([loadPlantTree(), reloadForNode()]);
-  const loopId = route.query.loopId as string | undefined;
-  if (loopId) {
-    fromDiagnosis.value = route.query.from === 'diagnosis';
-    ctx.selectLoop(loopId);
-  }
+});
+
+/** 旧书签定位（/tuning/workbench?loopId= redirect 透传）：高亮该行 */
+const highlightLoopId = computed(() => {
+  const id = route.query.loopId;
+  return typeof id === 'string' && id ? id : null;
 });
 
 onBeforeUnmount(() => {
@@ -518,8 +434,8 @@ onBeforeUnmount(() => {
 <template>
   <Page>
     <ClpmPageToolbar
-      subtitle="回路 PID 参数优化：辨识 → 整定矩阵 → 仿真对比 → 方案确认"
-      title="整定工作台"
+      subtitle="全回路可整定性总览与在途整定建议；单回路整定流程在回路工作台（点击行进入）"
+      title="整定总览"
     >
       <template #actions>
         <ClpmToolbarButton
@@ -577,13 +493,14 @@ onBeforeUnmount(() => {
               :key="item.loopId"
               class="tuning-loop-item"
               :class="{
-                'tuning-loop-item--active': ctx.loopId.value === item.loopId,
+                'tuning-loop-item--active':
+                  highlightLoopId === item.loopId,
               }"
               role="button"
               tabindex="0"
               :title="item.description || item.tagName"
-              @click="ctx.selectLoop(item.loopId)"
-              @keydown.enter="ctx.selectLoop(item.loopId)"
+              @click="gotoWorkbenchTuning(item.loopId, item.tagName)"
+              @keydown.enter="gotoWorkbenchTuning(item.loopId, item.tagName)"
             >
               <span class="tuning-loop-item__tag">{{ item.tagName }}</span>
               <span class="tuning-loop-item__unit">{{ item.unitName }}</span>
@@ -610,13 +527,13 @@ onBeforeUnmount(() => {
               :key="item.id"
               class="tuning-sugg-item"
               :class="{
-                'tuning-sugg-item--active': ctx.loopId.value === item.loopId,
+                'tuning-sugg-item--active': highlightLoopId === item.loopId,
               }"
               role="button"
               tabindex="0"
               :title="item.title"
-              @click="ctx.selectLoop(item.loopId)"
-              @keydown.enter="ctx.selectLoop(item.loopId)"
+              @click="gotoWorkbenchTuning(item.loopId, item.loopTagName)"
+              @keydown.enter="gotoWorkbenchTuning(item.loopId, item.loopTagName)"
             >
               <span class="tuning-sugg-item__tag">{{ item.loopTagName }}</span>
               <span class="tuning-sugg-item__meta">
@@ -638,73 +555,14 @@ onBeforeUnmount(() => {
         </div>
       </aside>
 
-      <!-- ===== 右主区 ===== -->
+      <!-- ===== 右主区：该节点下所有回路总览（2026-10-04 D3：流程区已让位回路工作台） ===== -->
       <div class="tuning-main">
-        <Alert
-          v-if="fromDiagnosis"
-          class="mb-2"
-          type="info"
-          message="来自诊断中心的整定请求：已预填回路，可直接发起过程辨识"
-          show-icon
-          closable
-        />
-
-        <!-- 已选回路：4 锚点整定流程 -->
-        <template v-if="ctx.loopId.value">
-          <div class="tuning-flow-header">
-            <button class="tuning-back" @click="ctx.clearLoop()">
-              ← 返回回路列表
-            </button>
-            <span class="tuning-flow-tag">{{ selectedLoopTag }}</span>
-          </div>
-
-          <div class="tuning-anchor-nav">
-            <a
-              v-for="a in anchors"
-              :key="a.href"
-              class="tuning-anchor-link"
-              @click.prevent="scrollTo(a.href)"
-            >
-              {{ a.label }}
-            </a>
-          </div>
-
-          <!-- 诊断基线条（2026-08-19）：最新诊断结论与负向指标，整定前后对照 -->
-          <div v-if="selectedDiagnosis?.runId" class="diag-baseline">
-            <span class="diag-baseline__label">诊断基线</span>
-            <Tag
-              class="diag-baseline__cat"
-              :color="
-                SEVERITY_COLOR[selectedDiagnosis.severity ?? ''] ?? 'default'
-              "
-            >
-              {{ selectedDiagnosis.primaryCategoryLabel ?? '—' }}
-            </Tag>
-            <span class="diag-baseline__meta">{{ diagBaselineMeta }}</span>
-            <span v-if="diagBaselineMetrics" class="diag-baseline__metrics">
-              {{ diagBaselineMetrics }}
-            </span>
-          </div>
-          <div v-else class="diag-baseline diag-baseline--empty">
-            <span class="diag-baseline__label">诊断基线</span>
-            <span class="diag-baseline__meta">该回路尚未诊断，建议先诊断获取基线</span>
-            <a class="diag-baseline__link" @click.prevent="goDiagnose">
-              去诊断 →
-            </a>
-          </div>
-
-          <IdentifySection :ctx="ctx" />
-          <MatrixSection :ctx="ctx" />
-          <SimulateSection :ctx="ctx" />
-          <ConfirmSection :ctx="ctx" />
-        </template>
-
-        <!-- 未选回路：该节点下所有回路总览 -->
-        <Card v-else size="small">
+        <Card size="small">
           <template #title>
             <span class="section-title">回路总览</span>
             <span class="ml-2 text-xs font-normal text-neutral-400">
-              {{ overviewRows.length }} 个回路 · 点击行进入整定流程
+              {{ overviewRows.length }} 个回路 ·
+              {{ canOperateTuning ? '点击行进入回路工作台整定' : '整定流程需操作角色' }}
             </span>
           </template>
           <Table
@@ -714,9 +572,14 @@ onBeforeUnmount(() => {
             :pagination="false"
             size="small"
             row-key="loopId"
+            :row-class-name="
+              (record: any) =>
+                record.loopId === highlightLoopId ? 'tuning-row--hl' : ''
+            "
             :custom-row="
               (record: any) => ({
-                onClick: () => ctx.selectLoop(record.loopId),
+                onClick: () =>
+                  gotoWorkbenchTuning(record.loopId, record.tagName),
               })
             "
             :custom-cell="() => ({ style: { cursor: 'pointer' } })"
@@ -758,6 +621,13 @@ onBeforeUnmount(() => {
                 </Tag>
                 <span v-else class="text-neutral-400">—</span>
               </template>
+              <template v-else-if="column.key === 'fitness'">
+                <ClpmFitnessBadge
+                  :level="record.fitnessLevel"
+                  :tags="record.fitnessTags"
+                  size="sm"
+                />
+              </template>
               <template v-else-if="column.key === 'diagnosis'">
                 <span
                   v-if="record.primaryCategoryLabel"
@@ -795,18 +665,22 @@ onBeforeUnmount(() => {
               </template>
               <template v-else-if="column.key === 'action'">
                 <Tooltip
-                  title="进入整定流程前会校验适用性（L0/L1 阻止，L2 提示）"
+                  v-if="canOperateTuning"
+                  title="进入回路工作台整定剖面前会校验适用性（L0/L1 阻止，L2 提示）"
                   placement="top"
                 >
                   <Button
                     type="link"
                     size="small"
                     class="p-0"
-                    @click.stop="handleGoTuning(record as OverviewRow)"
+                    @click.stop="
+                      gotoWorkbenchTuning(record.loopId, record.tagName)
+                    "
                   >
                     调参优化
                   </Button>
                 </Tooltip>
+                <span v-else class="text-neutral-400">—</span>
               </template>
             </template>
           </Table>
@@ -1008,108 +882,8 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.tuning-flow-header {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.tuning-back {
-  padding: 2px 8px;
-  font-size: 12px;
-  color: hsl(var(--primary));
-  cursor: pointer;
-  background: none;
-  border: none;
-}
-
-.tuning-back:hover {
-  text-decoration: underline;
-}
-
-.tuning-flow-tag {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.tuning-anchor-nav {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  gap: 16px;
-  padding: 6px 12px;
-  margin-bottom: 8px;
-  background: hsl(var(--background));
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.tuning-anchor-link {
-  font-size: 12px;
-  color: hsl(var(--primary));
-  cursor: pointer;
-}
-
-.tuning-anchor-link:hover {
-  text-decoration: underline;
-}
-
-/* ===== 诊断基线条（2026-08-19）：最新诊断结论 + 负向指标紧凑横排 ===== */
-.diag-baseline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  align-items: center;
-  padding: 5px 12px;
-  margin-bottom: 8px;
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border) / 60%);
-  border-radius: 4px;
-}
-
-.diag-baseline__label {
-  font-size: 11px;
-  font-weight: 600;
-  color: hsl(var(--foreground) / 60%);
-}
-
-.diag-baseline__cat {
-  margin-right: 0;
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.diag-baseline__meta {
-  font-size: 11px;
-  color: hsl(var(--foreground) / 45%);
-}
-
-.diag-baseline__metrics {
-  margin-left: auto;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: hsl(var(--foreground) / 75%);
-}
-
-.diag-baseline--empty .diag-baseline__meta {
-  color: hsl(var(--foreground) / 40%);
-}
-
-.diag-baseline__link {
-  margin-left: auto;
-  font-size: 11px;
-  color: hsl(var(--primary));
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.diag-baseline__link:hover {
-  text-decoration: underline;
-}
-
-:deep(.tuning-section) {
-  margin-bottom: 12px;
-  scroll-margin-top: 48px;
+/* 旧书签 ?loopId 定位高亮行 */
+:deep(.tuning-row--hl) > td {
+  background: hsl(var(--accent)) !important;
 }
 </style>

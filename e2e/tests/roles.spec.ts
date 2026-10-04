@@ -74,8 +74,8 @@ test.describe('多角色权限验证 E2E', () => {
     expect(menuTexts).not.toContain('配置');
     expect(menuTexts).not.toContain('系统');
 
-    // SPONSOR 无整定工作台操作权限：菜单不应含"整定工作台"项
-    expect(menuTexts).not.toContain('整定工作台');
+    // 2026-10-04 D1：整定总览为查看页全角色可见（操作入口按角色渲染）
+    expect(menuTexts).toContain('整定总览');
   });
 
   test('E2E-ROLE-002: SPONSOR 直接访问受限页 → 403/404 或重定向', async ({
@@ -128,9 +128,8 @@ test.describe('多角色权限验证 E2E', () => {
     expect(menuTexts).toContain('整定');
     expect(menuTexts).toContain('配置');
 
-    // 现行口径（tuning.ts）：PE 可见整定记录/效果验证，但无整定工作台菜单项；
-    // 直接访问 /tuning/workbench 由路由 authority 拦截（roles-smoke 另行验证 403 页）
-    expect(menuTexts).not.toContain('整定工作台');
+    // 2026-10-04 D1：整定总览对 PE 放开（对齐回路工作台剖面四角色）
+    expect(menuTexts).toContain('整定总览');
 
     // PE_ENGINEER 不应可见：系统
     expect(menuTexts).not.toContain('系统');
@@ -147,10 +146,10 @@ test.describe('多角色权限验证 E2E', () => {
     // EXPERT 应可见：整定
     expect(menuTexts).toContain('整定');
 
-    // 验证可访问整定工作台
+    // 验证可访问整定总览（旧 /tuning/workbench redirect 至此）
     await page.goto('/tuning/workbench');
     await page.waitForLoadState('domcontentloaded');
-    // 不应跳转到 403
+    await page.waitForURL(/\/tuning\/overview/, { timeout: 15_000 });
     expect(page.url()).not.toContain('/403');
     expect(page.url()).not.toContain('/auth/login');
   });
@@ -169,7 +168,7 @@ test.describe('多角色权限验证 E2E', () => {
     expect(menuTexts).toContain('评估');
     expect(menuTexts).toContain('诊断');
     expect(menuTexts).toContain('整定');
-    expect(menuTexts).toContain('整定工作台');
+    expect(menuTexts).toContain('整定总览');
     expect(menuTexts).toContain('处置');
     expect(menuTexts).toContain('报告');
     expect(menuTexts).toContain('配置');

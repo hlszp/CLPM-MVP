@@ -1,59 +1,46 @@
 /**
- * E2E 诊断中心测试（2026-08-23 对齐现行两页式 IA 重写）
+ * E2E 诊断中心测试（2026-08-23 两页式重写；2026-10-04 工作台规整 D2 三页式更新）
  *
- * 现行 IA（MVP v2 重设计，router/routes/modules/diagnosis.ts）：
- *   两页式 = 诊断工作台（发起+结果一体）/ 诊断记录（历史+筛选+导出）。
- *   原诊断中心 5 页结构（list/waveform/tracker/detail/tasks）已在 MVP 精简时删除。
+ * 现行 IA（router/routes/modules/diagnosis.ts）：
+ *   三页式 = 诊断概览（每回路最新结论 + 可诊断性筛选）/ 诊断记录 / 诊断任务。
+ *   诊断工作台已并入回路工作台诊断剖面（/loop/workbench360?loopId=&section=diagnosis），
+ *   /diagnosis/workbench 为 redirect 兼容路径。
  *
  * 覆盖用例：
- * - E2E-DIAG-001: 诊断工作台（/diagnosis/workbench → 标题 + 发起诊断入口）
+ * - E2E-DIAG-001: 诊断概览（/diagnosis/overview → 标题 + 「仅可诊断」筛选 + 概览表）
+ *   与旧路径 redirect（/diagnosis/workbench → 概览；带 loopId → 回路工作台诊断剖面）
  * - E2E-DIAG-002: 诊断记录（/diagnosis/records → 筛选栏 + 导出 + 表格/空态）
  * - E2E-DIAG-003: 诊断记录行点击抽屉（有数据行时打开"诊断结论"抽屉）
  *
- * 删除的旧 IA 用例（页面已随 MVP 两页式下线，无现行对应行为）：
- * - 原 E2E-DIAG-001/002：/diagnosis/list 筛选与 /diagnosis/waveform 波形页。
- * - 原 E2E-DIAG-003/006：/diagnosis/tracker Tracker 处理与 SPA 导航——
- *   tracker 服务已随处置 v2.0 批次 A1 关停，页面 404 兜底行为由
- *   diagnosis-tracker-flow.spec.ts D1 用例覆盖。
- * - 原 E2E-DIAG-004：/diagnosis/detail/:loopId 详情页（版本号竞态回归）——
- *   详情改为诊断记录行点击抽屉（本文件 DIAG-003 等价覆盖入口）。
- * - 原 E2E-DIAG-005：/diagnosis/tasks 显示已归档开关——页面已删除。
- *
  * 页面源码依据：
- *   frontend/apps/web-antd/src/views/diagnosis/{workbench,records}.vue
- *   - workbench: ClpmPageToolbar title=诊断工作台 + 回路选择 + 发起诊断
+ *   frontend/apps/web-antd/src/views/diagnosis/{overview,records}.vue
+ *   - overview: ClpmPageToolbar title=诊断概览 + 「仅可诊断」按钮 + 预检 Select + 表格
  *   - records: 筛选 Select（主分类/严重度/状态）+ 导出 CSV + 表格 + 行点击抽屉"诊断结论"
  */
 import { test, expect } from '../fixtures/auth.js';
 
-test.describe('诊断中心 E2E（两页式）', () => {
+test.describe('诊断中心 E2E（三页式）', () => {
   test.beforeEach(async ({ page, loginAs }) => {
     // IC_ENGINEER 拥有诊断发起与记录查看权限
     await loginAs('IC_ENGINEER');
   });
 
-  test('E2E-DIAG-001: 诊断工作台', async ({ page }) => {
+  test('E2E-DIAG-001: 诊断概览与旧路径 redirect', async ({ page }) => {
+    // 旧「诊断工作台」书签 → redirect 落诊断概览
     await page.goto('/diagnosis/workbench', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText('诊断工作台', {
+    await expect(page.locator('body')).toContainText('诊断概览', {
       timeout: 20_000,
     });
+    expect(page.url()).toContain('/diagnosis/overview');
 
-    // 副标题（症状证据 → 原因分类 → 处置建议）
-    const pageText = await page.locator('body').innerText();
-    expect(pageText).toMatch(/原因分类|症状证据|处置建议/);
+    // 「仅可诊断」筛选（2026-10-04 D2 自诊断工作台迁入）
+    await expect(
+      page.getByRole('button', { name: /仅可诊断/ }).first(),
+    ).toBeVisible({ timeout: 15_000 });
 
-    // 「发起诊断」按钮仅在勾选回路后渲染（workbench.vue
-    // v-if="selectedLoopIds.length > 0"），先勾选左侧首个回路
-    const firstLoop = page.locator('.diag-loop-item').first();
-    await expect(firstLoop).toBeVisible({ timeout: 20_000 });
-    await firstLoop.click();
-    await page.waitForTimeout(1000);
-
-    // 发起诊断入口存在（IC_ENGINEER 有发起权限）
-    const runBtn = page.getByRole('button', { name: /发起诊断/ }).first();
-    await expect(runBtn).toBeVisible({ timeout: 15_000 });
-
-    expect(page.url()).toContain('/diagnosis/workbench');
+    // 概览表或空态二选一渲染（容忍无数据环境）
+    const tableOrEmpty = page.locator('.ant-table, .ant-empty').first();
+    await expect(tableOrEmpty).toBeVisible({ timeout: 15_000 });
   });
 
   test('E2E-DIAG-002: 诊断记录页', async ({ page }) => {
