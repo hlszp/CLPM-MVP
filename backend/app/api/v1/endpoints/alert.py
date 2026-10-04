@@ -50,6 +50,8 @@ from app.schemas.alert import (
     AlertBadgeCount,
     AlertDryRunRequest,
     AlertEventAcknowledge,
+    AlertEventBatchAcknowledge,
+    AlertEventBatchAcknowledgeResult,
     AlertEventFalsePositive,
     AlertEventItem,
     AlertEventListData,
@@ -250,7 +252,8 @@ async def list_events_endpoint(
     loopId: str | None = Query(None),
     ruleId: str | None = Query(None),
     severity: str | None = Query(None),
-    status: str | None = Query(None, alias="status", description="事件状态"),
+    status: list[str] | None = Query(None, description="事件状态（多值：?status=A&status=B）"),
+    plantNodeId: str | None = Query(None, description="装置-单元节点 ID（含子树）"),
     startTime: datetime | None = Query(None),
     endTime: datetime | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
@@ -273,12 +276,34 @@ async def list_events_endpoint(
         rule_id=ruleId,
         severity=severity,
         status_filter=status,
+        plant_node_id=plantNodeId,
         start_time=startTime,
         end_time=endTime,
         limit=limit,
         offset=offset,
     )
     return success(data=data)
+
+
+@router.post(
+    "/events/batch-acknowledge",
+    response_model=ApiResponse[AlertEventBatchAcknowledgeResult],
+)
+async def batch_acknowledge_events_endpoint(
+    body: AlertEventBatchAcknowledge,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """批量确认预警事件（ADMIN/IC_ENGINEER）。
+
+    仅 ACTIVE 状态可确认；非 ACTIVE/不存在的事件跳过并在响应中说明。
+    路径注册于 /events/{event_id} 之前，避免 batch-acknowledge 被当作 eventId。
+    """
+    data = await alert_service.batch_acknowledge_events(
+        db, body.event_ids, user.username, body.note
+    )
+    await db.commit()
+    return success(data=data, message=f"已确认 {data['acknowledged_count']} 条事件")
 
 
 @router.get("/events/{event_id}", response_model=ApiResponse[AlertEventItem])

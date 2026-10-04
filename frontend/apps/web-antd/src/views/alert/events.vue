@@ -2,6 +2,7 @@
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { AlertApi } from '#/api/alert';
+import type { PlantNodeApi } from '#/api/plant-node';
 import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, h, onMounted, reactive, ref } from 'vue';
@@ -17,31 +18,33 @@ import {
   DescriptionsItem,
   Drawer,
   Dropdown,
-  Form,
   FormItem,
   Input,
   Menu,
   message,
-  Modal,
   Popconfirm,
   RangePicker,
   Select,
   Space,
   Table,
+  TabPane,
+  Tabs,
   Tag,
+  TreeSelect,
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import {
   acknowledgeEventApi,
   archiveEventApi,
+  batchAcknowledgeEventsApi,
   getAlertBadgeApi,
   getAlertEventsApi,
   getAlertRulesApi,
   markFalsePositiveApi,
   resetAlertBadgeApi,
-  resolveEventApi,
 } from '#/api/alert';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDangerConfirmModal,
   ClpmEmptyState,
@@ -57,6 +60,9 @@ import { ALERT_LEVEL_LABEL } from '#/constants/clpm-ui';
 import { BADGE_REFRESH_INTERVAL } from '#/constants/polling';
 import { exportData } from '#/utils/export';
 import { formatTime } from '#/utils/format';
+import Workbench360 from '#/views/loop/workbench360/index.vue';
+
+import EventSnapshotView from './components/event-snapshot-view.vue';
 
 defineOptions({ name: 'AlertEvents' });
 
@@ -75,8 +81,10 @@ const canOpenWorkbench = computed(() =>
 );
 
 function openLoopWorkbench(loopId: string) {
+  // 2026-10-03：旧路由名 MonitorLoopWorkbench 已随旧工作台删除（现为 Legacy
+  // redirect），改指新版回路工作台
   router.push({
-    name: 'MonitorLoopWorkbench',
+    name: 'LoopWorkbench360',
     query: { loopId },
   });
 }
@@ -85,20 +93,99 @@ function openLoopWorkbench(loopId: string) {
 const { tableSize, densityLabel, cycleDensity } =
   useTableDensity('alert-events');
 
+// ===== 双 Tab（2026-10-03 改版）：实时=未确认（ACTIVE），历史=已确认（非 ACTIVE 全部状态）=====
+type EventTab = 'history' | 'realtime';
+const activeTab = ref<EventTab>('realtime');
+/** 历史 Tab 默认口径：一切离开未确认态的事件（SUPPRESSED 保留兼容历史数据） */
+const HISTORY_STATUSES: AlertApi.EventStatus[] = [
+  'ACKNOWLEDGED',
+  'RESOLVED',
+  'ARCHIVED',
+  'SUPPRESSED',
+];
+
+/** Tab 切换：清分页/清多选（跨 Tab 选中无意义）后重查 */
+function handleTabChange(tab: number | string) {
+  activeTab.value = tab === 'history' ? 'history' : 'realtime';
+  query.page = 1;
+  selectedRowKeys.value = [];
+  loadEvents();
+}
+
 // 列表状态
 const loading = ref(false);
 const eventList = ref<AlertApi.EventItem[]>([]);
 const total = ref(0);
 const query = reactive({
+  /** 历史 Tab 内的状态细分（实时 Tab 恒为 ACTIVE，不走此字段） */
   status: undefined as AlertApi.EventStatus | undefined,
   severity: undefined as AlertApi.Severity | undefined,
   loopId: '',
   // P3-43：新增规则与时间范围筛选
   ruleId: undefined as string | undefined,
   timeRange: undefined as [dayjs.Dayjs, dayjs.Dayjs] | undefined,
+  plantNodeId: undefined as string | undefined,
   page: 1,
   pageSize: 20,
 });
+
+// ===== 装置-单元树（筛选） =====
+const plantTree = ref<PlantNodeApi.PlantNode[]>([]);
+
+async function loadPlantTree() {
+  try {
+    plantTree.value = await getPlantNodeTreeApi();
+  } catch {
+    // 静默失败，装置筛选保留为空树
+  }
+}
+
+// ===== 多选批量确认（实时 Tab） =====
+const selectedRowKeys = ref<string[]>([]);
+const batchAckLoading = ref(false);
+
+const rowSelection = computed(() =>
+  activeTab.value === 'realtime' && canEdit.value
+    ? {
+        selectedRowKeys: selectedRowKeys.value,
+        onChange: (keys: (number | string)[]) => {
+          selectedRowKeys.value = keys.map(String);
+        },
+      }
+    : undefined,
+);
+
+async function handleBatchAcknowledge() {
+  if (selectedRowKeys.value.length === 0 || batchAckLoading.value) return;
+  batchAckLoading.value = true;
+  try {
+    const res = await batchAcknowledgeEventsApi({
+      eventIds: selectedRowKeys.value,
+    });
+    const skipped = res.skipped?.length ?? 0;
+    message.success(
+      skipped > 0
+        ? `已确认 ${res.acknowledgedCount} 条，跳过 ${skipped} 条（非待确认状态）`
+        : `已确认 ${res.acknowledgedCount} 条事件`,
+    );
+    selectedRowKeys.value = [];
+    await loadEvents();
+    loadBadge();
+  } catch {
+    message.error('批量确认失败');
+  } finally {
+    batchAckLoading.value = false;
+  }
+}
+
+// ===== 检查：Drawer 内嵌回路工作台 =====
+const wbVisible = ref(false);
+const wbLoopId = ref('');
+
+function openWorkbenchDrawer(record: AlertApi.EventItem) {
+  wbLoopId.value = record.loopId;
+  wbVisible.value = true;
+}
 
 /** P3-43：规则选项（用于规则筛选下拉） */
 const ruleOptions = ref<{ label: string; value: string }[]>([]);
@@ -128,11 +215,6 @@ const lastRefresh = ref('');
 const detailVisible = ref(false);
 const currentEvent = ref<AlertApi.EventItem | null>(null);
 
-// 处置弹窗
-const resolveVisible = ref(false);
-const resolveNote = ref('');
-const resolvingEventId = ref('');
-
 // 严重度颜色映射
 const severityColor: Record<AlertApi.Severity, string> = {
   CRITICAL: 'red',
@@ -156,6 +238,12 @@ const statusLabel: Record<AlertApi.EventStatus, string> = {
   SUPPRESSED: '已抑制',
   ARCHIVED: '已归档',
 };
+
+/** 历史 Tab 状态细分下拉选项（不含 ACTIVE——未确认事件在实时 Tab） */
+const historyStatusOptions = HISTORY_STATUSES.map((v) => ({
+  value: v,
+  label: statusLabel[v],
+}));
 
 /** 指标代码 → 中文标签（对齐后端 12 条预制规则的 metricCode） */
 const METRIC_LABEL: Record<string, string> = {
@@ -189,6 +277,7 @@ function metricScoreOf(record: AlertApi.EventItem): string {
     record.triggeredValue;
   return v == null ? '-' : Number(v).toFixed(3);
 }
+
 
 const columns: TableColumnsType = [
   {
@@ -308,11 +397,17 @@ async function loadEvents() {
     const endTime = query.timeRange?.[1]
       ?.endOf('day')
       .format('YYYY-MM-DD HH:mm:ss');
+    // 双 Tab 口径：实时=未确认（恒 ACTIVE）；历史=已确认（默认全部非 ACTIVE，可选细分）
+    const status: AlertApi.EventStatus | AlertApi.EventStatus[] =
+      activeTab.value === 'realtime'
+        ? 'ACTIVE'
+        : (query.status ?? HISTORY_STATUSES);
     const params: AlertApi.EventListParams = {
-      status: query.status,
+      status,
       severity: query.severity,
       loopId: query.loopId || undefined,
       ruleId: query.ruleId || undefined,
+      plantNodeId: query.plantNodeId || undefined,
       startTime,
       endTime,
       limit: query.pageSize,
@@ -360,6 +455,7 @@ function handleReset() {
   query.loopId = '';
   query.ruleId = undefined;
   query.timeRange = undefined;
+  query.plantNodeId = undefined;
   query.page = 1;
   loadEvents();
 }
@@ -384,6 +480,10 @@ async function handleAcknowledge(record: AlertApi.EventItem) {
   try {
     await acknowledgeEventApi(record.eventId);
     message.success('事件已确认');
+    // 同步剔除多选集合（避免残留已确认行的 key）
+    selectedRowKeys.value = selectedRowKeys.value.filter(
+      (k) => k !== record.eventId,
+    );
     await loadEvents();
     // P3-42：确认后立即刷新徽章计数（无需等 30s 轮询）
     loadBadge();
@@ -391,36 +491,6 @@ async function handleAcknowledge(record: AlertApi.EventItem) {
     message.error('确认失败');
   } finally {
     actingEventId.value = '';
-  }
-}
-
-function openResolveModal(record: AlertApi.EventItem) {
-  resolvingEventId.value = record.eventId;
-  resolveNote.value = '';
-  resolveVisible.value = true;
-}
-
-/** 处置弹窗提交中状态（防重复提交） */
-const resolveLoading = ref(false);
-
-async function handleResolve() {
-  if (!resolveNote.value.trim()) {
-    message.warning('请填写处置说明');
-    return;
-  }
-  if (resolveLoading.value) return;
-  resolveLoading.value = true;
-  try {
-    await resolveEventApi(resolvingEventId.value, resolveNote.value);
-    message.success('事件已处置');
-    resolveVisible.value = false;
-    await loadEvents();
-    // P3-42：处置后立即刷新徽章计数
-    loadBadge();
-  } catch {
-    message.error('处置失败');
-  } finally {
-    resolveLoading.value = false;
   }
 }
 
@@ -507,7 +577,7 @@ function handleExport(format: 'csv' | 'excel') {
     String(e.triggerCount ?? ''),
   ]);
   exportData({
-    filename: `alert-events-${new Date().toISOString().slice(0, 10)}`,
+    filename: `alert-events-${activeTab.value === 'realtime' ? 'realtime' : 'history'}-${new Date().toISOString().slice(0, 10)}`,
     format,
     headers,
     rows,
@@ -520,7 +590,7 @@ function handleHelp() {
   showPageHelp({
     title: '预警事件 帮助',
     content:
-      '预警事件由规则引擎实时求值产生。可按状态、预警等级、回路筛选；对待确认事件执行「确认/处置/误报」操作，已处置事件可归档。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
+      '预警事件由规则引擎实时求值产生，分两个 Tab：实时预警=当前所有未确认事件（待确认），历史预警=已确认/已处置/已归档事件。实时 Tab 可多选后批量确认；「检查」在抽屉中打开该回路的回路工作台查看实时情况；支持按装置-单元、等级、规则、时间筛选。点击「导出」可将当前筛选结果保存为 CSV 或 Excel 文件。',
   });
 }
 
@@ -546,6 +616,7 @@ onMounted(() => {
   loadEvents();
   loadBadge();
   loadRuleOptions();
+  loadPlantTree();
   // P3-42：启动徽章自动轮询（页面隐藏暂停、卸载自动清理）
   startBadgePolling();
 });
@@ -593,23 +664,62 @@ onMounted(() => {
       </template>
     </ClpmPageToolbar>
 
+    <!-- 双 Tab：实时=未确认 / 历史=已确认（2026-10-03 改版） -->
+    <Tabs
+      :active-key="activeTab"
+      class="clpm-alert-tabs"
+      @change="handleTabChange"
+    >
+      <TabPane key="realtime" tab="实时预警" />
+      <TabPane key="history" tab="历史预警" />
+    </Tabs>
+
+    <!-- 多选批量确认操作条（实时 Tab 选中行后浮出） -->
+    <div
+      v-if="activeTab === 'realtime' && selectedRowKeys.length > 0"
+      class="mb-3 flex items-center gap-3 rounded border border-solid border-blue-200 bg-blue-50/60 px-3 py-1.5 dark:border-blue-900 dark:bg-blue-950/30"
+    >
+      <span class="text-xs text-gray-600 dark:text-gray-300">
+        已选 {{ selectedRowKeys.length }} 条待确认事件
+      </span>
+      <Popconfirm
+        :title="`确认将选中的 ${selectedRowKeys.length} 条事件全部标记为已确认？`"
+        ok-text="批量确认"
+        cancel-text="取消"
+        @confirm="handleBatchAcknowledge"
+      >
+        <Button type="primary" size="small" :loading="batchAckLoading">
+          批量确认
+        </Button>
+      </Popconfirm>
+      <Button size="small" type="link" @click="selectedRowKeys = []">
+        取消选择
+      </Button>
+    </div>
+
     <!-- 筛选区（工具栏「筛选」工具可折叠） -->
     <div
       class="clpm-filter-bar"
       :class="{ 'clpm-filter-bar--collapsed': !filterVisible }"
     >
-      <FormItem label="状态" class="!mb-0">
+      <FormItem label="装置/单元" class="!mb-0">
+        <TreeSelect
+          v-model:value="query.plantNodeId"
+          :tree-data="plantTree"
+          :field-names="{ label: 'name', value: 'id', children: 'children' }"
+          allow-clear
+          placeholder="全部装置"
+          style="width: 200px"
+          tree-default-expand-all
+        />
+      </FormItem>
+      <FormItem v-if="activeTab === 'history'" label="状态" class="!mb-0">
         <Select
           v-model:value="query.status"
           allow-clear
-          placeholder="全部状态"
+          placeholder="全部已确认侧"
           style="width: 140px"
-          :options="
-            Object.entries(statusLabel).map(([value, label]) => ({
-              value,
-              label,
-            }))
-          "
+          :options="historyStatusOptions"
         />
       </FormItem>
       <FormItem label="预警等级" class="!mb-0">
@@ -702,6 +812,7 @@ onMounted(() => {
       :columns="visibleColumns"
       :data-source="eventList"
       :loading="loading"
+      :row-selection="rowSelection"
       :pagination="{
         current: query.page,
         pageSize: query.pageSize,
@@ -755,16 +866,14 @@ onMounted(() => {
             >
               确认
             </Button>
+            <!-- 2026-10-03 改版：处置→检查，抽屉内嵌该回路的回路工作台 -->
             <Button
-              v-if="
-                canEdit &&
-                ['ACTIVE', 'ACKNOWLEDGED', 'SUPPRESSED'].includes(record.status)
-              "
+              v-if="canOpenWorkbench"
               type="link"
               size="small"
-              @click="openResolveModal(record as AlertApi.EventItem)"
+              @click="openWorkbenchDrawer(record as AlertApi.EventItem)"
             >
-              处置
+              检查
             </Button>
             <Popconfirm
               v-if="canEdit && !record.isFalsePositive"
@@ -809,8 +918,12 @@ onMounted(() => {
       </template>
       <template #emptyText>
         <ClpmEmptyState
-          title="暂无预警事件"
-          description="当前筛选条件（状态/预警等级/回路）下无预警事件；规则引擎巡检产生的事件会实时出现在这里。"
+          :title="activeTab === 'realtime' ? '当前无未确认预警' : '暂无历史预警'"
+          :description="
+            activeTab === 'realtime'
+              ? '当前筛选条件下没有待确认的预警事件；规则引擎巡检产生的新事件会实时出现在这里。'
+              : '当前筛选条件下没有已确认/已处置/已归档的预警事件。'
+          "
         />
       </template>
     </Table>
@@ -885,39 +998,36 @@ onMounted(() => {
           currentEvent.trackerId || '-'
         }}</DescriptionsItem>
         <DescriptionsItem label="触发条件快照">
-          <pre class="max-h-48 overflow-auto rounded bg-gray-50 p-2 text-xs">{{
-            JSON.stringify(currentEvent.triggerConditionSnapshot, null, 2)
-          }}</pre>
+          <EventSnapshotView
+            kind="condition"
+            :snapshot="currentEvent.triggerConditionSnapshot"
+          />
         </DescriptionsItem>
         <DescriptionsItem label="规则DSL快照">
-          <pre class="max-h-64 overflow-auto rounded bg-gray-50 p-2 text-xs">{{
-            JSON.stringify(currentEvent.ruleDslSnapshot, null, 2)
-          }}</pre>
+          <EventSnapshotView
+            kind="dsl"
+            :snapshot="currentEvent.ruleDslSnapshot"
+          />
         </DescriptionsItem>
       </Descriptions>
     </Drawer>
 
-    <!-- 处置弹窗 -->
-    <Modal
-      v-model:open="resolveVisible"
-      title="处置预警事件"
-      ok-text="确认处置"
-      cancel-text="取消"
-      :confirm-loading="resolveLoading"
-      @ok="handleResolve"
+    <!-- 检查：Drawer 内嵌该回路的回路工作台（关闭即卸载，停止实时订阅） -->
+    <Drawer
+      v-model:open="wbVisible"
+      title="回路工作台（检查）"
+      placement="right"
+      width="min(1560px, 94vw)"
+      :body-style="{
+        padding: '0',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }"
+      destroy-on-close
     >
-      <Form layout="vertical">
-        <FormItem label="处置说明" required>
-          <Input.TextArea
-            v-model:value="resolveNote"
-            :rows="4"
-            placeholder="请填写处置说明（必填）"
-            :maxlength="500"
-            show-count
-          />
-        </FormItem>
-      </Form>
-    </Modal>
+      <Workbench360 v-if="wbVisible" :embed-loop-id="wbLoopId" />
+    </Drawer>
 
     <!-- 归档事件：危险确认弹窗（归档后不可再操作，按不可逆处理） -->
     <ClpmDangerConfirmModal

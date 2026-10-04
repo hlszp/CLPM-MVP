@@ -137,11 +137,21 @@ export namespace AlertApi {
     loopId?: string;
     ruleId?: string;
     severity?: Severity;
-    status?: EventStatus;
+    /** 状态（支持多值：axios paramsSerializer=repeat 时数组序列化为重复参数） */
+    status?: EventStatus | EventStatus[];
+    /** 装置-单元节点 ID（含子树，按 loop_ledger.unit_id 过滤） */
+    plantNodeId?: string;
     startTime?: string;
     endTime?: string;
     limit?: number;
     offset?: number;
+  }
+
+  /** 批量确认结果 */
+  export interface BatchAcknowledgeResult {
+    acknowledgedCount: number;
+    acknowledgedIds: string[];
+    skipped: { eventId: string; reason: string }[];
   }
 
   /** 手动抑制记录 */
@@ -281,6 +291,17 @@ export function acknowledgeEventApi(eventId: string, note?: string) {
   return requestClient.post<AlertApi.EventItem>(
     `${BASE}/events/${eventId}/acknowledge`,
     { note },
+  );
+}
+
+/** 批量确认（仅 ACTIVE 可确认，非 ACTIVE 跳过并在 skipped 中返回原因） */
+export function batchAcknowledgeEventsApi(data: {
+  eventIds: string[];
+  note?: string;
+}) {
+  return requestClient.post<AlertApi.BatchAcknowledgeResult>(
+    `${BASE}/events/batch-acknowledge`,
+    data,
   );
 }
 

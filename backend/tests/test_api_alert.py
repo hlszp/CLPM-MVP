@@ -448,8 +448,29 @@ class TestEventQuery:
         # 验证筛选参数
         kwargs = m.call_args.kwargs
         assert kwargs["severity"] == "WARN"
-        assert kwargs["status_filter"] == "ACTIVE"
+        assert kwargs["status_filter"] == ["ACTIVE"]
         assert kwargs["limit"] == 20
+
+    def test_list_events_multi_status_and_plant_node(self, client, mock_db, fake_redis) -> None:
+        """历史 Tab 多状态筛选 + 装置-单元子树筛选参数透传。"""
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.list_events",
+                new_callable=AsyncMock,
+                return_value={"total": 0, "items": []},
+            ) as m,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/alert/events"
+                "?status=ACKNOWLEDGED&status=RESOLVED&status=ARCHIVED"
+                "&plantNodeId=node-001",
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        kwargs = m.call_args.kwargs
+        assert kwargs["status_filter"] == ["ACKNOWLEDGED", "RESOLVED", "ARCHIVED"]
+        assert kwargs["plant_node_id"] == "node-001"
 
     def test_get_event_detail(self, client, mock_db, fake_redis) -> None:
         with (
@@ -484,6 +505,71 @@ class TestEventQuery:
         assert resp.status_code == 200
         assert resp.json()["data"]["status"] == "ACKNOWLEDGED"
         mock_db.commit.assert_awaited_once()
+
+    def test_batch_acknowledge_success(self, client, mock_db, fake_redis) -> None:
+        """批量确认：ACTIVE 确认、非 ACTIVE 跳过，响应 camel 化。"""
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.batch_acknowledge_events",
+                new_callable=AsyncMock,
+                return_value={
+                    "acknowledged_count": 2,
+                    "acknowledged_ids": ["evt-001", "evt-002"],
+                    "skipped": [
+                        {"event_id": "evt-003", "reason": "ACKNOWLEDGED"},
+                        {"event_id": "evt-004", "reason": "NOT_FOUND"},
+                    ],
+                },
+            ) as m,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/alert/events/batch-acknowledge",
+                json={"eventIds": ["evt-001", "evt-002", "evt-003", "evt-004"]},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["acknowledgedCount"] == 2
+        assert data["acknowledgedIds"] == ["evt-001", "evt-002"]
+        assert data["skipped"][0] == {"eventId": "evt-003", "reason": "ACKNOWLEDGED"}
+        assert m.call_args.args[1] == ["evt-001", "evt-002", "evt-003", "evt-004"]
+        assert m.call_args.args[2] == TEST_USERS["ic_engineer"].username
+        mock_db.commit.assert_awaited_once()
+
+    def test_batch_acknowledge_rejects_pe_engineer(self, client, mock_db, fake_redis) -> None:
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.batch_acknowledge_events",
+                new_callable=AsyncMock,
+            ) as m,
+            mock_current_user(TEST_USERS["pe_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/alert/events/batch-acknowledge",
+                json={"eventIds": ["evt-001"]},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 403
+        m.assert_not_awaited()
+
+    def test_batch_acknowledge_empty_ids_422(self, client, mock_db, fake_redis) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/alert/events/batch-acknowledge",
+                json={"eventIds": []},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 422
+
+    def test_batch_acknowledge_over_limit_422(self, client, mock_db, fake_redis) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/alert/events/batch-acknowledge",
+                json={"eventIds": [f"evt-{i}" for i in range(201)]},
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 422
 
     def test_resolve_event(self, client, mock_db, fake_redis) -> None:
         with (

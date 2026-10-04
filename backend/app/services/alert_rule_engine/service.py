@@ -656,12 +656,20 @@ async def list_events(
     loop_id: str | None = None,
     rule_id: str | None = None,
     severity: str | None = None,
-    status_filter: str | None = None,
+    status_filter: str | list[str] | None = None,
+    plant_node_id: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    """事件分页查询。
+
+    status_filter 支持多值（实时=ACTIVE 单值；历史=ACKNOWLEDGED/RESOLVED/
+    ARCHIVED 等多值，前端 Tab 化后一次拉全"已确认"侧全部状态）。
+    plant_node_id 为装置-单元节点 ID，按 loop_ledger.unit_id 子树过滤
+    （未挂单元的回路不属于任何装置，会被排除）。
+    """
     stmt = (
         select(AlertEvent, LoopLedger.tag_name, AlertRule.rule_name)
         .outerjoin(LoopLedger, LoopLedger.id == AlertEvent.loop_id)
@@ -679,8 +687,20 @@ async def list_events(
         stmt = stmt.where(AlertEvent.severity == severity)
         count_stmt = count_stmt.where(AlertEvent.severity == severity)
     if status_filter:
-        stmt = stmt.where(AlertEvent.status == status_filter)
-        count_stmt = count_stmt.where(AlertEvent.status == status_filter)
+        statuses = [status_filter] if isinstance(status_filter, str) else list(status_filter)
+        stmt = stmt.where(AlertEvent.status.in_(statuses))
+        count_stmt = count_stmt.where(AlertEvent.status.in_(statuses))
+    if plant_node_id:
+        from app.services.plant_node_tree import collect_descendant_node_ids
+
+        node_ids = await collect_descendant_node_ids(db, plant_node_id)
+        node_ids.append(plant_node_id)
+        # count 侧用 EXISTS 子查询，与列表侧 outerjoin+where 过滤语义一致
+        unit_filter = LoopLedger.unit_id.in_(node_ids)
+        stmt = stmt.where(unit_filter)
+        count_stmt = count_stmt.where(
+            AlertEvent.loop_id.in_(select(LoopLedger.id).where(unit_filter))
+        )
     if start_time:
         stmt = stmt.where(AlertEvent.triggered_at >= start_time)
         count_stmt = count_stmt.where(AlertEvent.triggered_at >= start_time)
@@ -731,6 +751,40 @@ async def acknowledge_event(
         event.resolution_note = note
     await db.flush()
     return await get_event(db, event_id)
+
+
+async def batch_acknowledge_events(
+    db: AsyncSession, event_ids: list[str], operator: str, note: str | None = None
+) -> dict[str, Any]:
+    """批量确认：仅 ACTIVE 可确认，非 ACTIVE/不存在的事件跳过并记录原因。
+
+    供预警事件页实时 Tab 多选批量确认使用（存量未决预警清理场景）。
+    """
+    result = await db.execute(select(AlertEvent).where(AlertEvent.id.in_(event_ids)))
+    found = {e.id: e for e in result.scalars().all()}
+    now = _now_naive()
+    acknowledged_ids: list[str] = []
+    skipped: list[dict[str, str]] = []
+    for event_id in event_ids:
+        event = found.get(event_id)
+        if event is None:
+            skipped.append({"event_id": event_id, "reason": "NOT_FOUND"})
+            continue
+        if event.status != "ACTIVE":
+            skipped.append({"event_id": event_id, "reason": event.status})
+            continue
+        event.status = "ACKNOWLEDGED"
+        event.acknowledged_by = operator
+        event.acknowledged_at = now
+        if note:
+            event.resolution_note = note
+        acknowledged_ids.append(event_id)
+    await db.flush()
+    return {
+        "acknowledged_count": len(acknowledged_ids),
+        "acknowledged_ids": acknowledged_ids,
+        "skipped": skipped,
+    }
 
 
 async def resolve_event(

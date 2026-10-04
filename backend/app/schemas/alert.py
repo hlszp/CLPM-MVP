@@ -147,6 +147,30 @@ class AlertEventAcknowledge(CamelModel):
     note: str | None = Field(None, max_length=500)
 
 
+class AlertEventBatchAcknowledge(CamelModel):
+    """POST /alert/events/batch-acknowledge 请求体。"""
+
+    event_ids: list[str] = Field(
+        ..., min_length=1, max_length=200, description="事件 ID 列表（≤200）"
+    )
+    note: str | None = Field(None, max_length=500)
+
+
+class AlertEventBatchSkipItem(CamelModel):
+    """批量确认中被跳过的事件及原因。"""
+
+    event_id: str
+    reason: str
+
+
+class AlertEventBatchAcknowledgeResult(CamelModel):
+    """POST /alert/events/batch-acknowledge 响应。"""
+
+    acknowledged_count: int
+    acknowledged_ids: list[str]
+    skipped: list[AlertEventBatchSkipItem]
+
+
 class AlertEventResolve(CamelModel):
     """POST /alert/events/{eventId}/resolve 请求体。"""
 
