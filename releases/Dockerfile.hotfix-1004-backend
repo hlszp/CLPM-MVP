@@ -1,0 +1,20 @@
+# 热修补丁镜像（2026-10-04）：以生产后端 hotfix-0938 为底座，整目录覆盖源码。
+# 1004 批次后端改动（main 20b1ac6a..97c9e93f；pyproject 无依赖变更，仅源码+迁移）：
+#   - 驾驶舱五项（d40f8138）：AREA 装置级排名 / 趋势柱线 granularity /
+#     TTL 缓存 + 请求合并 / 预警复发不推 NOTIFY + 冷却 sys_config 可配
+#   - 手动评估全链修复（fb0d8979）：写库时区 bug + G2 历史合并出口
+#   - 评估模块整合（72e90f7e）：快照表 source/source_task_id
+#     【迁移 17fdbfa579af——部署时必须先执行】+ 任务时间窗/触发方筛选
+#   - 评估总览改版（2f808686）：三性分离 dimension_maps
+#     【迁移 daa4f06b6e26——部署时必须先执行】+ fitness_dimension_config 端点
+#   - 预警事件（5eaa9c9e）：POST /alert/events/batch-acknowledge 批量确认
+#   - 整定审计（935c101e）：tuningRecordId 关联断链修复 + 窗口均值口径统一
+#   - 工作台规整 D1（e0726aae）：诊断触发角色 +EXPERT、整定 require_roles +PE
+# 部署顺序（严格）：① 执行两个 alembic 迁移 ② 重建后端容器（lifespan 自动
+# 拉起 Worker/Beat，勿手工启动）③ 重建前端容器 ④ 浏览器验收。
+FROM clpm-backend:hotfix-0938
+
+ENV APP_VERSION=v7.3.0-1004-consolidation
+
+COPY --chown=clpm:clpm backend/app/ /app/app/
+COPY --chown=clpm:clpm backend/alembic/ /app/alembic/

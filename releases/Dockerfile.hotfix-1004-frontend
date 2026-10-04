@@ -1,0 +1,21 @@
+# 热修补丁镜像（2026-10-04）：以生产前端 subpath-hotfix-1003 为底座，仅替换静态产物。
+# 1004 批次前端改动（main 20b1ac6a..97c9e93f，工作台规整 + 五批未部署改动）：
+#   - 四工作台规整（用户裁决 D1-D4）：全局工作台更名「运维工作台」；诊断工作台
+#     并入回路工作台诊断剖面（诊断三页式：概览/记录/任务，旧路径 redirect）；
+#     整定工作台转型「整定总览」/tuning/overview（四锚点流程移回路工作台整定
+#     剖面，行操作带 L0/L1 门禁跳转）；回路工作台新增 ?section= 剖面直达协议
+#   - 回路工作台升一级菜单（order 1.5）
+#   - 评估模块整合：三视图合并「回路评估」（rank/history/matrix，旧三页删除）
+#   - 评估总览改版：三性分离 + 日历型时间选择 + tuneLevel 门禁口径
+#   - 预警事件页改版：实时/历史双 Tab + 批量确认 + 判定摘要快照卡 + Drawer
+#     内嵌回路工作台（embedLoopId）
+#   - 回路监视页 P1：×100 修复 + 筛选区收缩（minScore/maxScore/unscored）
+#     + embed=1 精简版工作台
+#   - 整定审计体验批：可整定徽标列 / Δ 对比表 / 历史入口
+# dist 由本地 `npm_lifecycle_script="vite build --mode clpm" pnpm exec vite build
+# --mode clpm` 构建（exit=0 核验），已拷贝至 releases/frontend-dist-1004/。
+FROM clpm-frontend:subpath-hotfix-1003
+
+ENV APP_VERSION=v7.3.0-1004-consolidation
+
+COPY --chown=nginx:nginx releases/frontend-dist-1004/ /usr/share/nginx/html/
