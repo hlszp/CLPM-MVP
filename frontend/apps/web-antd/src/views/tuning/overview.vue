@@ -35,6 +35,7 @@ import {
 import { getLoopMonitorListApi, getLoopsRuntimeParamsApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmFitnessBadge from '#/components/clpm/fitness-badge.vue';
+import ClpmFitnessRulesModal from '#/components/clpm/fitness-rules-modal.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
@@ -213,6 +214,7 @@ async function loadOverview(): Promise<void> {
 
 // ===== 筛选区（1009：等级/性能等级/可整定性/搜索）+ 客户端分页 =====
 const keyword = ref('');
+const fitnessRulesOpen = ref(false);
 const filterImportance = ref<number | undefined>();
 const filterGrade = ref<string | undefined>();
 const filterFitness = ref<string | undefined>();
@@ -463,8 +465,9 @@ onBeforeUnmount(() => {
           allow-clear
           placeholder="搜索位号/名称..."
           size="small"
-          style="width: 200px; margin-left: auto"
+          style="width: 180px; margin-left: auto"
         />
+        <Button size="small" @click="fitnessRulesOpen = true">三性说明</Button>
       </div>
       <Table
         :columns="overviewColumns"
@@ -590,6 +593,7 @@ onBeforeUnmount(() => {
     </Card>
       </div>
     </div>
+    <ClpmFitnessRulesModal v-model:open="fitnessRulesOpen" />
 
     <!-- 参数整定抽屉：四步流程内嵌（辨识→矩阵→仿真→确认） -->
     <Drawer

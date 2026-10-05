@@ -26,10 +26,11 @@ class TestDeriveDimensionLevels:
         d = derive_dimension_levels(["DATA_INSUFFICIENT"])
         assert d == {"assess": "L0", "diagnose": "L0", "tune": "L0"}
 
-    def test_l1_tags_block_all_dimensions(self) -> None:
+    def test_l1_tags_block_diagnose_tune_not_assess(self) -> None:
+        # 2026-10-05 用户裁决：可评估性取消 L1 限制（手动主导照常参与评分）
         for tag in ("MANUAL_DOMINANT", "LOW_AUTO_RATE"):
             d = derive_dimension_levels([tag])
-            assert d == {"assess": "L1", "diagnose": "L1", "tune": "L1"}, (tag, d)
+            assert d == {"assess": "L4", "diagnose": "L1", "tune": "L1"}, (tag, d)
 
     def test_l2_tags_do_not_affect_assess(self) -> None:
         # 分离价值：OP 饱和/SP-PV 偏离不影响「能不能评」

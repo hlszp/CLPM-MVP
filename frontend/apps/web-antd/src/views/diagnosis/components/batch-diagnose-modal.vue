@@ -317,7 +317,7 @@ watch(open, (v) => {
       <Alert
         type="info"
         show-icon
-        :message="`将按整点回算口径对已选 ${checkedIds.length} 个回路发起诊断；L0（数据严重不足）回路会被后端拒绝并计入任务结果。`"
+        :message="`将按整点回算口径对已选 ${checkedIds.length} 个回路发起诊断；全档位可发起，L0（数据严重不足）回路将带警告执行（结论可能为「数据不足」）。`"
       />
     </div>
   </Modal>

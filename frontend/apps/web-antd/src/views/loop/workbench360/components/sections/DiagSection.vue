@@ -117,13 +117,13 @@ const fitnessTagsText = computed(() =>
 const gateBadge = computed(() => {
   const lv = props.fitnessLevel;
   if (!lv) return null;
-  if (lv === 'L0')
+  if (lv === 'L0' || lv === 'L1' || lv === 'L2')
     return {
-      cls: 't-danger',
-      label: `适用性 ${lv} 不适用`,
-      tip: fitnessTagsText.value || '数据严重不足，诊断已被门禁阻断',
+      cls: 't-warn',
+      label: `适用性 ${lv} 警告放行`,
+      tip: `${fitnessTagsText.value || (lv === 'L0' ? '数据严重不足' : '条件异常')}：允许发起，结论将附带条件警告（L0 可能产出"数据不足"结论）`,
     };
-  if (lv === 'L1' || lv === 'L2')
+  if (false)
     return {
       cls: 't-warn',
       label: `适用性 ${lv} 警告放行`,
@@ -135,11 +135,6 @@ const gateBadge = computed(() => {
     tip: fitnessTagsText.value || '',
   };
 });
-/** L0 阻断常驻告警（对齐旧页 fitnessBlocked Alert：列原因，可关闭） */
-const blockedVisible = ref(false);
-const blockedReason = computed(
-  () => fitnessTagsText.value || '数据严重不足，适用性不足 L0',
-);
 
 /* ── L2 条件异常横幅（D5：后端权威 conditionWarning + 结果行标记） ── */
 const l2Warnings = ref<DiagnosisApi.TriggerResult['conditionWarning']>([]);
@@ -151,7 +146,6 @@ const l2WarningVisible = computed(() => {
 watch(
   () => props.selectedLoopId,
   () => {
-    blockedVisible.value = false;
     l2Warnings.value = [];
     runner.reset();
   },
@@ -161,11 +155,9 @@ watch(
 const triggerOpen = ref(false);
 
 function onTriggerClick() {
-  // L0 阻断（2026-10-01 裁决口径：仅 L0 阻断，L1/L2 警告放行）
+  // L0 警告放行（2026-10-05 用户裁决：全档位可发起；引擎给正式结论）
   if (props.fitnessLevel === 'L0') {
-    blockedVisible.value = true;
-    message.error('适用性 L0（数据严重不足），已阻止发起诊断');
-    return;
+    message.warning('适用性 L0（数据严重不足）：允许发起，诊断结论可能为"数据不足"', 5);
   }
   triggerOpen.value = true;
 }
@@ -462,18 +454,6 @@ function onGoTuning() {
       >
     </div>
 
-    <!-- L0 阻断常驻告警（对齐旧页 fitnessBlocked） -->
-    <div v-if="blockedVisible" class="blocked-alert">
-      <b>已阻止发起诊断：适用性 L0（数据严重不足）</b>
-      <p>原因：{{ blockedReason }}。请先在「数据管理 → 历史数据导入」补齐本回路历史数据，适用性恢复后可发起。</p>
-      <button
-        class="link"
-        type="button"
-        @click="blockedVisible = false"
-      >
-        知道了
-      </button>
-    </div>
 
     <!-- L2 条件异常横幅（D5 后端权威 + 结果行标记） -->
     <div v-if="l2WarningVisible" class="l2-alert">

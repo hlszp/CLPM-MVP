@@ -20,6 +20,7 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisPrecheckApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import ClpmFitnessRulesModal from '#/components/clpm/fitness-rules-modal.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
@@ -44,6 +45,7 @@ import {
 } from './constants';
 
 const router = useRouter();
+const fitnessRulesOpen = ref(false);
 
 /** 左脊柱折叠（2026-10-01 用户口径：收起后主显示区占满；浮钮展开） */
 const sidebarCollapsed = ref(false);
@@ -379,6 +381,11 @@ onMounted(() => {
           icon="ant-design:fund-projection-screen-outlined"
           label="诊断记录"
           @click="router.push({ path: '/diagnosis/records' })"
+        />
+        <ClpmToolbarButton
+          icon="ant-design:question-circle-outlined"
+          label="三性说明"
+          @click="fitnessRulesOpen = true"
         />
       </template>
     </ClpmPageToolbar>
@@ -755,6 +762,7 @@ onMounted(() => {
       :item="detailItem"
       @reviewed="onReviewDone"
     />
+    <ClpmFitnessRulesModal v-model:open="fitnessRulesOpen" />
   </Page>
 </template>
 

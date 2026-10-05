@@ -254,10 +254,11 @@ async def trigger_diagnosis(
             status_code=400,
         )
 
-    # 诊断发起门禁（2026-10-01 裁决：仅 L0 阻断——数据严重不足跑诊断必产出
-    # "数据不足"噪音；L1 手动主导放开为警告——仪表/质量码类算子用全量数据
-    # 不受自控模式限制，仍有诊断价值；L2 维持警告放行）
-    # 三性分离（R5，2026-10-03）：门禁改读 diagnose_level（可诊断性维度，
+    # 诊断发起门禁（2026-10-05 用户裁决：全档位放行——任何回路均可发起诊断，
+    # L0 数据严重不足也改为警告放行（诊断引擎给出正式 DATA_INSUFFICIENT 结论
+    # 记录，替代系统拒绝；夜间定时全量仍过滤 L0，见 diagnosis_schedule）。
+    # 历史：2026-10-01 曾裁决"仅 L0 阻断"，本次进一步放开 L0。
+    # 三性分离（R5，2026-10-03）：门禁读 diagnose_level（可诊断性维度，
     # 旧快照 NULL 自动回退综合 level，默认映射下行为零变化）
     fitness_map = await get_latest_fitness_per_loop(db, loop_ids)
     blocked: list[dict[str, Any]] = []
@@ -267,15 +268,7 @@ async def trigger_diagnosis(
         if fit is None or fit.diagnose_level_effective is None:
             continue  # 无 fitness 数据 → 暂放过（兼容首次计算前窗口）
         diag_level = fit.diagnose_level_effective
-        if diag_level == "L0":
-            blocked.append(
-                {
-                    "loopId": lid,
-                    "fitnessLevel": diag_level,
-                    "reasons": fit.human_readable_tags or ["适用性不足"],
-                }
-            )
-        elif diag_level in ("L1", "L2"):
+        if diag_level in ("L0", "L1", "L2"):
             condition_warning.append(
                 {
                     "loopId": lid,

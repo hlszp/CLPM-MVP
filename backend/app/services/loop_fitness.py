@@ -76,11 +76,9 @@ DIMENSIONS = ("assess", "diagnose", "tune")
 FITNESS_DIMENSION_MAPS_KEY = "fitness.dimension_maps"
 
 _DEFAULT_DIMENSION_MAPS: dict[str, dict[str, str]] = {
-    # 可评估性：仅数据充分性 + 手动主导影响（饱和/偏差/激励不影响"能不能评"）
-    "assess": {
-        "MANUAL_DOMINANT": "L1",
-        "LOW_AUTO_RATE": "L1",
-    },
+    # 可评估性：仅数据红线影响（2026-10-05 用户裁决：取消 L1 限制——手动
+    # 主导/低自控率回路照常参与评估评分；饱和/偏差/激励本就不影响"能不能评"）
+    "assess": {},
     # 可诊断性：现行口径（L0 阻断、L1 阻断、L2 警告放行、L3 受限提示）
     "diagnose": {
         "MANUAL_DOMINANT": "L1",
