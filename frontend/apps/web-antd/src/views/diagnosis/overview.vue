@@ -10,17 +10,17 @@
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, Select, Spin, Table, Tree } from 'ant-design-vue';
+import { Button, Card, message, Select, Spin, Table, Tree } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getDiagnosisPrecheckApi, getDiagnosisRunsLatestApi } from '#/api/diagnosis';
-import { getLoopMonitorListApi } from '#/api/loop';
+import { getDiagnosisPrecheckApi } from '#/api/diagnosis';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 
@@ -103,8 +103,11 @@ function handlePlantTreeSelect(keys: (number | string)[]): void {
 }
 
 // ===== 最新诊断概览（每回路最新一条 + 未诊断回路） =====
-const latestItems = ref<DiagnosisApi.LatestRunItem[]>([]);
-const latestLoading = ref(false);
+// 1005 性能优化：模块级 60s 共享缓存（与整定总览复用一次 latest 大 JOIN），
+// 且 latest 已自带 fitnessLevel（同表 LATERAL 扩列），免拉 monitor 13 页分页
+const latestCache = useLatestOverviewCache();
+const latestItems = latestCache.items;
+const latestLoading = latestCache.loading;
 
 /** 后端时间为 naive UTC ISO（无 Z 后缀），补 Z 后按本地时区展示 */
 function fmtUtc(naiveIso?: null | string): string {
@@ -116,73 +119,83 @@ function fmtUtc(naiveIso?: null | string): string {
 }
 
 async function loadLatestOverview(): Promise<void> {
-  latestLoading.value = true;
-  try {
-    const res = await getDiagnosisRunsLatestApi(selectedPlantNodeId.value);
-    latestItems.value = res.items;
-    // 可诊断性数据源（仅可诊断过滤 + 预检徽标列）：随概览并行加载
-    void loadLoopFitness(selectedPlantNodeId.value);
-    void loadPrecheck();
-  } catch {
-    latestItems.value = [];
-  } finally {
-    latestLoading.value = false;
-  }
+  await latestCache.load(selectedPlantNodeId.value);
+  // 预检徽标异步补（默认限量，见 loadPrecheck）；主表不等它
+  void loadPrecheck();
 }
 
-// ===== 可诊断性承接（2026-10-04 工作台规整 D2：自诊断工作台迁入） =====
-/** 装置范围回路适用性映射（loopId → L0~L4；失败清空回退不过滤） */
-const loopFitnessMap = ref(new Map<string, string>());
-
-async function loadLoopFitness(plantNodeId?: string): Promise<void> {
-  const map = new Map<string, string>();
-  try {
-    let page = 1;
-    let total = 0;
-    do {
-      const params: Record<string, unknown> = { page, pageSize: 100 };
-      if (plantNodeId) params.plantNodeId = plantNodeId;
-      const res = await getLoopMonitorListApi(params as never);
-      for (const it of res.items ?? []) {
-        if (it.fitnessLevel) map.set(it.loopId, it.fitnessLevel);
-      }
-      total = res.total ?? 0;
-      page += 1;
-    } while ((page - 1) * 100 < total);
-    loopFitnessMap.value = map;
-  } catch {
-    loopFitnessMap.value = new Map();
-  }
-}
-
-/** 仅可诊断（隐藏 L0 数据严重不足；无 fitness 数据的回路不隐藏，与门禁同口径） */
+// ===== 可诊断性承接（2026-10-04 D2 迁入；1005 改用 latest 自带 fitnessLevel） =====
+/** 仅可诊断（隐藏 L0 数据严重不足；无适用性数据的回路不隐藏，与门禁同口径） */
 const onlyDiagnosable = ref(false);
 
-/** 预检徽标（16 号文 F5：后端单次上限 200，分批；评估禁用整列隐藏） */
+/** 预检徽标（16 号文 F5：后端单次上限 200）。
+ *  1005 性能优化：默认只算前 PRECHECK_LIMIT 个回路（首屏分页+筛选够用），
+ *  批间并行；1209 全量改为显式「加载全部预检」（loadAllPrecheck） */
 const PRECHECK_BATCH = 200;
+const PRECHECK_LIMIT = 400;
 const precheckItems = ref(new Map<string, DiagnosisApi.PrecheckItem>());
 const precheckAssessEnabled = ref(true);
+const precheckAllLoaded = ref(false);
+const precheckAllLoading = ref(false);
 type BadgeFilter = 'all' | 'insufficient' | 'marginal' | 'sufficient' | 'unknown';
 const badgeFilter = ref<BadgeFilter>('all');
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function fetchPrecheckBatched(ids: string[]): Promise<Map<string, DiagnosisApi.PrecheckItem>> {
+  const next = new Map<string, DiagnosisApi.PrecheckItem>();
+  const results = await Promise.all(
+    chunk(ids, PRECHECK_BATCH).map((b) => getDiagnosisPrecheckApi(b)),
+  );
+  for (const res of results) {
+    precheckAssessEnabled.value = res.assessEnabled;
+    if (!res.assessEnabled) break;
+    for (const item of res.items) next.set(item.loopId, item);
+  }
+  return next;
+}
+
 async function loadPrecheck(): Promise<void> {
-  const ids = latestItems.value.map((l) => l.loopId).filter((id) => !!id);
+  const ids = latestItems.value
+    .map((l) => l.loopId)
+    .filter((id) => !!id)
+    .slice(0, PRECHECK_LIMIT);
   if (ids.length === 0) {
     precheckItems.value = new Map();
+    precheckAllLoaded.value = true;
     return;
   }
   try {
-    const next = new Map<string, DiagnosisApi.PrecheckItem>();
-    for (let i = 0; i < ids.length; i += PRECHECK_BATCH) {
-      const res = await getDiagnosisPrecheckApi(ids.slice(i, i + PRECHECK_BATCH));
-      precheckAssessEnabled.value = res.assessEnabled;
-      if (!res.assessEnabled) return;
-      for (const item of res.items) next.set(item.loopId, item);
-    }
-    precheckItems.value = next;
+    precheckItems.value = await fetchPrecheckBatched(ids);
+    precheckAllLoaded.value = latestItems.value.length <= PRECHECK_LIMIT;
   } catch {
     // 预检失败降级：不显示徽标（不影响概览主数据）
     precheckItems.value = new Map();
+  }
+}
+
+// 诚实化：按预检档筛选必须基于全量数据（限量数据上筛选=静默截断），自动补全
+watch(badgeFilter, (v) => {
+  if (v !== 'all' && !precheckAllLoaded.value) void loadAllPrecheck();
+});
+
+async function loadAllPrecheck(): Promise<void> {
+  if (precheckAllLoaded.value || precheckAllLoading.value) return;
+  precheckAllLoading.value = true;
+  try {
+    const all = latestItems.value.map((l) => l.loopId).filter((id) => !!id);
+    const rest = all.slice(PRECHECK_LIMIT);
+    const loaded = await fetchPrecheckBatched(rest);
+    precheckItems.value = new Map([...precheckItems.value, ...loaded]);
+    precheckAllLoaded.value = true;
+  } catch {
+    message.warning('预检全量加载失败，可重试');
+  } finally {
+    precheckAllLoading.value = false;
   }
 }
 
@@ -198,12 +211,9 @@ const filteredLatestItems = computed(() => {
   let list = latestItems.value;
   if (latestFilter.value === 'diagnosed') list = list.filter((i) => i.runId);
   if (latestFilter.value === 'undiagnosed') list = list.filter((i) => !i.runId);
-  // 仅可诊断：隐藏 L0（数据严重不足；无 fitness 数据不隐藏）
-  if (onlyDiagnosable.value && loopFitnessMap.value.size > 0) {
-    list = list.filter((i) => {
-      const lv = i.loopId ? loopFitnessMap.value.get(i.loopId) : undefined;
-      return !lv || lv !== 'L0';
-    });
+  // 仅可诊断：隐藏 L0（数据严重不足；无适用性数据不隐藏）
+  if (onlyDiagnosable.value) {
+    list = list.filter((i) => i.fitnessLevel !== 'L0');
   }
   // 预检徽标档筛选（评估禁用时徽标列隐藏，筛选同步失效）
   if (badgeFilter.value !== 'all' && precheckAssessEnabled.value) {
@@ -463,7 +473,22 @@ onMounted(() => {
             >
               仅可诊断
             </button>
-            <!-- 预检档位筛选（评估禁用时徽标列隐藏，筛选同隐藏） -->
+            <!-- 预检档位筛选（评估禁用时徽标列隐藏，筛选同隐藏）；
+                 1005：预检默认限量加载，全量需显式触发（档位筛选会自动补全） -->
+            <span
+              v-if="precheckAssessEnabled && !precheckAllLoaded"
+              class="text-xs text-neutral-400"
+            >
+              预检已载 {{ precheckItems.size }}/{{ overviewLoopCount }}
+            </span>
+            <Button
+              v-if="precheckAssessEnabled && !precheckAllLoaded"
+              size="small"
+              :loading="precheckAllLoading"
+              @click="loadAllPrecheck()"
+            >
+              加载全部预检
+            </Button>
             <Select
               v-if="precheckAssessEnabled"
               v-model:value="badgeFilter"

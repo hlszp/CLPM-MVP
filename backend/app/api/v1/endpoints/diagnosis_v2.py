@@ -651,6 +651,7 @@ async def get_latest_runs_per_loop(
                r.time_window_start, r.time_window_end,
                r.metric_summary,
                k.score AS latest_score,
+               k.fitness_level, k.tune_level, k.fitness_tags,
                rc.run_count
         FROM loop_ledger ll
         LEFT JOIN LATERAL (
@@ -659,7 +660,8 @@ async def get_latest_runs_per_loop(
                 ORDER BY dr.created_at DESC LIMIT 1
             ) r ON true
         LEFT JOIN LATERAL (
-                SELECT ks.score FROM kpi_snapshot_hourly ks
+                SELECT ks.score, ks.fitness_level, ks.tune_level, ks.fitness_tags
+                FROM kpi_snapshot_hourly ks
                 WHERE ks.loop_id = ll.id AND ks.score IS NOT NULL
                 ORDER BY ks.ts_start DESC LIMIT 1
             ) k ON true
@@ -704,6 +706,12 @@ async def get_latest_runs_per_loop(
                 # 诊断次序：该回路累计第几次诊断（未诊断为 None）
                 "runCount": int(r.run_count) if r.run_id else 0,
                 "latestScore": float(r.latest_score) if r.latest_score is not None else None,
+                # 适用性（1005 性能优化：随最新快照一并带出，前端免拉 monitor 分页全量）
+                "fitnessLevel": r.fitness_level,
+                "tuneLevel": r.tune_level,
+                "fitnessTags": (
+                    list(r.fitness_tags) if isinstance(r.fitness_tags, (list, tuple)) else []
+                ),
                 "triggerType": r.trigger_type if r.run_id else None,
                 "triggerTypeLabel": (
                     _TRIGGER_TYPE_LABELS.get(r.trigger_type or "", "") if r.run_id else None

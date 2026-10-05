@@ -236,6 +236,10 @@ export namespace DiagnosisApi {
     /** 诊断指标汇总（窗口 KPI 均值+算子特征，0~100 口径；未诊断为 null）。
      *  回路工作台 R5 诊断卡 / 整定工作台摘要条消费（2026-08-19） */
     metricSummary?: MetricSummary | null;
+    /** 适用性（1005 性能优化：随最新快照一并返回，免拉 monitor 分页全量） */
+    fitnessLevel?: null | string;
+    tuneLevel?: null | string;
+    fitnessTags?: string[];
   }
 
   /** 复核状态：PENDING 待复核 / REVIEWED 已复核 */

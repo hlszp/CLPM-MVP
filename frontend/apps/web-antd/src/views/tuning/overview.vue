@@ -36,8 +36,8 @@ import {
   Tree,
 } from 'ant-design-vue';
 
-import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
 import { getHandlingOrdersApi } from '#/api/handling';
+import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
 import {
   getLoopListApi,
   getLoopMonitorListApi,
@@ -305,10 +305,15 @@ const overviewColumns: TableColumnsType = [
   { key: 'action', title: '操作', width: 72 },
 ];
 
+// 1005 性能优化：latest 走模块级 60s 共享缓存（与诊断概览复用），且自带
+// fitnessLevel/fitnessTags（后端 LATERAL 扩列）——原 13 页 monitor 分页拉取删除
+const latestCache = useLatestOverviewCache();
+
 async function loadOverview(): Promise<void> {
   overviewLoading.value = true;
   try {
-    const latest = await getDiagnosisRunsLatestApi(selectedPlantNodeId.value);
+    await latestCache.load(selectedPlantNodeId.value);
+    const latest = { items: latestCache.items.value };
     // 开放处置工单按回路分组（最新在前）
     const byLoop = new Map<string, HandlingApi.OrderItem[]>();
     for (const it of openItems.value) {
@@ -316,37 +321,14 @@ async function loadOverview(): Promise<void> {
       arr.push(it);
       byLoop.set(it.loopId, arr);
     }
-    // C1：适用性徽标数据源（监控列表循环分页拉全量；失败时整列"待评估"不阻断）
-    const fitnessMap = new Map<
-      string,
-      { level: null | string; tags: string[] }
-    >();
-    try {
-      let page = 1;
-      let total = 0;
-      do {
-        const res = await getLoopMonitorListApi({
-          page,
-          pageSize: 100,
-          plantNodeId: selectedPlantNodeId.value,
-        });
-        for (const item of res.items ?? []) {
-          fitnessMap.set(item.loopId, {
-            level: item.fitnessLevel ?? null,
-            tags: Array.isArray(item.fitnessTags) ? item.fitnessTags : [],
-          });
-        }
-        total = res.total ?? 0;
-        page += 1;
-      } while ((page - 1) * 100 < total);
-    } catch {
-      // 适用性列整体降级为"待评估"（诚实化：不猜测等级）
-    }
     overviewRows.value = latest.items.map((l) => {
       const items = (byLoop.get(l.loopId) ?? []).toSorted((a, b) =>
         String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
       );
-      const fit = fitnessMap.get(l.loopId);
+      const fit = {
+        level: l.fitnessLevel ?? null,
+        tags: Array.isArray(l.fitnessTags) ? l.fitnessTags : [],
+      };
       return {
         loopId: l.loopId,
         tagName: l.loopTagName,
