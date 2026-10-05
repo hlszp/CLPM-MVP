@@ -653,6 +653,7 @@ async def get_latest_runs_per_loop(
                r.metric_summary,
                k.score AS latest_score,
                k.fitness_level, k.tune_level, k.fitness_tags,
+               sugg.action_content, sugg.action_count,
                rc.run_count
         FROM loop_ledger ll
         LEFT JOIN plant_node unit ON unit.id = ll.unit_id
@@ -671,6 +672,17 @@ async def get_latest_runs_per_loop(
                 SELECT COUNT(*) AS run_count FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
             ) rc ON true
+        LEFT JOIN LATERAL (
+                SELECT ai.content AS action_content, (
+                    SELECT COUNT(*) FROM loop_action_item a2
+                    WHERE a2.loop_id = ll.id
+                      AND a2.status IN ('PENDING', 'ACCEPTED')
+                ) AS action_count
+                FROM loop_action_item ai
+                WHERE ai.loop_id = ll.id
+                  AND ai.status IN ('PENDING', 'ACCEPTED')
+                ORDER BY ai.suggested_at DESC LIMIT 1
+            ) sugg ON true
             WHERE {" AND ".join(conditions)}
             """
     )
@@ -715,6 +727,9 @@ async def get_latest_runs_per_loop(
                 "fitnessTags": (
                     list(r.fitness_tags) if isinstance(r.fitness_tags, (list, tuple)) else []
                 ),
+                # 待处理处置建议（1008：PENDING/ACCEPTED 最新一条摘要+计数，整定总览列）
+                "actionSuggest": r.action_content,
+                "actionSuggestCount": int(r.action_count or 0),
                 "triggerType": r.trigger_type if r.run_id else None,
                 "triggerTypeLabel": (
                     _TRIGGER_TYPE_LABELS.get(r.trigger_type or "", "") if r.run_id else None

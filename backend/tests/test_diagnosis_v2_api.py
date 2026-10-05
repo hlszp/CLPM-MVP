@@ -351,6 +351,8 @@ class TestRunsLatestEndpoint:
             time_window_end=None,
             trigger_type=trigger_type,
             latest_score=latest_score if run_id else None,
+            action_content="检查阀门" if run_id else None,
+            action_count=1 if run_id else 0,
             fitness_level="L3" if run_id else None,
             tune_level="L3" if run_id else None,
             fitness_tags=["有激励"] if run_id else None,

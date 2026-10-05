@@ -2,23 +2,17 @@
 import type { TableColumnsType } from 'ant-design-vue';
 
 /**
- * 整定总览（整定模块主入口，09 设计方案 §6.2；2026-10-04 工作台规整 D3 转型）
+ * 整定总览（2026-10-04 D3 转型；2026-10-05 1008 纯列表化改版）
  *
- * - 左脊柱：装置树 + 回路清单 + 整定建议列表（TUNING 类在途工单，待排程优先）
- * - 右主区：该节点下所有回路的总览表格（回路编号/名称/等级/性能评分/性能
- *   等级/可整定性/诊断结论/处置建议摘要/P·I·D 实时参数）
- * - 单回路整定流程（辨识→矩阵→仿真→确认）已让位回路工作台整定剖面：
- *   行点击/清单点击/「调参优化」→ /loop/workbench360?loopId=&section=tuning
- *   （入口门禁保留：L0/L1 阻止、L2 警告提示）
- *
- * P/I/D 初值批量拉取（getLoopsRuntimeParamsApi），随后由全局实时 WS 推送更新。
+ * - 纯列表页：全回路总览表（客户端分页 50/页 + 本地搜索），无左脊柱
+ *   （装置树/回路清单/整定建议列表已删，用户裁决 1008）
+ * - 数据源：runs/latest（共享缓存，自带 fitnessLevel/tuneLevel/fitnessTags/
+ *   unitName/处置建议 actionSuggest）+ getLoopsRuntimeParamsApi 批量 PID
+ * - PID 三列分立（P/I/D），实时值经全局 WS 推送更新
+ * - 「调参优化」以右侧抽屉推入参数整定四步流程（辨识→矩阵→仿真→确认，
+ *   复用 use-tuning-workbench + 四 section，L0/L1 门禁保留在打开前）
  */
-import type { HandlingApi } from '#/api/handling';
-import type { LoopApi } from '#/api/loop';
-import type { PlantNodeApi } from '#/api/plant-node';
-
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -26,30 +20,28 @@ import { useUserStore } from '@vben/stores';
 import {
   Button,
   Card,
+  Drawer,
   Empty,
   Input,
   message,
-  Spin,
   Table,
   Tag,
   Tooltip,
-  Tree,
 } from 'ant-design-vue';
 
-import { getHandlingOrdersApi } from '#/api/handling';
-import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
-import {
-  getLoopListApi,
-  getLoopMonitorListApi,
-  getLoopsRuntimeParamsApi,
-} from '#/api/loop';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { getLoopMonitorListApi, getLoopsRuntimeParamsApi } from '#/api/loop';
 import ClpmFitnessBadge from '#/components/clpm/fitness-badge.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
 import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
 
+import ConfirmSection from './components/confirm-section.vue';
+import IdentifySection from './components/identify-section.vue';
+import MatrixSection from './components/matrix-section.vue';
+import SimulateSection from './components/simulate-section.vue';
+import { useTuningWorkbench } from './composables/use-tuning-workbench';
 import {
   fmtNum2,
   IMPORTANCE_LEVEL_COLOR,
@@ -59,12 +51,9 @@ import {
 
 defineOptions({ name: 'TuningOverview' });
 
-const route = useRoute();
-const router = useRouter();
-
 const userStore = useUserStore();
 
-/** 整定操作角色（2026-10-04 D1：对齐回路工作台剖面四角色；SPONSOR 只读） */
+/** 整定操作角色（D1：回路工作台剖面四角色；SPONSOR 只读） */
 const TUNING_OPERATE_ROLES = [
   'ADMIN',
   'EXPERT',
@@ -78,266 +67,10 @@ const canOperateTuning = computed(() => {
   );
 });
 
-// P2 IA优化：fitness tag 中文映射收敛单源（clpm-ui.ts FITNESS_TAG_LABEL）
 const tuningTagsToText = (tags: string[]) =>
   tags.map((t) => fitnessTagToLabel(t)).join('、');
 
-/** 「调参优化」/行点击/清单点击统一入口（2026-10-04 D3：跳回路工作台整定剖面）
- *  —— 先查可整定档（三性 R5：tuneLevel 回退综合档），L0/L1 阻止并弹 error；
- *     L2 弹 warning Toast；L3/L4/未评定 正常进入。
- */
-async function gotoWorkbenchTuning(loopId: string, tagName?: string) {
-  if (!canOperateTuning.value) {
-    message.warning('当前角色无整定操作权限（可在回路工作台查看回路状态）');
-    return;
-  }
-  const tag = tagName || loopId;
-  let level: null | string;
-  let tags: string[];
-  try {
-    const res = await getLoopMonitorListApi({ loopId, page: 1, pageSize: 1 });
-    const item = res.items?.[0];
-    level = (item?.tuneLevel ?? item?.fitnessLevel) ?? null;
-    tags = Array.isArray(item?.fitnessTags) ? (item.fitnessTags as string[]) : [];
-  } catch {
-    level = null;
-    tags = [];
-  }
-  if (level === 'L0' || level === 'L1') {
-    const reason = tags.length > 0 ? tuningTagsToText(tags) : '适用性不足';
-    message.error({
-      content: `回路「${tag}」可整定等级不足（${level}），不建议做整定：${reason}。先消除异常来源后再操作。`,
-      duration: 6,
-    });
-    return;
-  }
-  // Toast 提示（G3 要求）
-  if (level === 'L2') {
-    const reason = tags.length > 0 ? tuningTagsToText(tags) : '控制条件异常';
-    message.warning({
-      content: `【调参优化】L2 条件异常：${reason}。当前控制状态可能影响整定结论，建议先修正再做整定。`,
-      duration: 5,
-    });
-  } else if (level === 'L3' || level === 'L4') {
-    message.success(`【调参优化】当前可整定等级 = ${level}，可正常整定。`);
-  } else {
-    message.info(`【调参优化】尚未评定适用性等级。`);
-  }
-  router.push({
-    path: '/loop/workbench360',
-    query: { loopId, section: 'tuning' },
-  });
-}
-
-// ===== 左脊柱：装置树 =====
-/** ant Tree 节点约定为 {key, title}（TreeSelect 才是 {value, label}） */
-interface PlantTreeNode {
-  children?: PlantTreeNode[];
-  key: string;
-  title: string;
-}
-
-const plantTreeData = ref<PlantTreeNode[]>([]);
-const plantTreeLoading = ref(false);
-const plantTreeExpandedKeys = ref<string[]>([]);
-const plantTreeSelectedKeys = ref<string[]>([]);
-const selectedPlantNodeId = ref<string | undefined>(undefined);
-
-function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
-  return nodes.map((n) => ({
-    key: n.id,
-    title: n.name,
-    children: n.children?.length ? buildTreeNodes(n.children) : undefined,
-  }));
-}
-
-async function loadPlantTree(): Promise<void> {
-  plantTreeLoading.value = true;
-  try {
-    const tree = await getPlantNodeTreeApi();
-    plantTreeData.value = buildTreeNodes(tree);
-    plantTreeExpandedKeys.value = tree.map((n) => n.id);
-  } catch {
-    plantTreeData.value = [];
-  } finally {
-    plantTreeLoading.value = false;
-  }
-}
-
-/** 装置节点选中：重拉回路清单/建议/总览 */
-function handlePlantTreeSelect(keys: (number | string)[]): void {
-  const key = keys[0] as string | undefined;
-  plantTreeSelectedKeys.value = key ? [key] : [];
-  selectedPlantNodeId.value = key || undefined;
-  reloadForNode();
-}
-
-// ===== 左脊柱：回路清单（选中装置节点下的回路，单选进入整定） =====
-const loopItems = ref<LoopApi.LoopListItem[]>([]);
-const loopLoading = ref(false);
-const loopKeyword = ref('');
-
-const filteredLoops = computed(() => {
-  const kw = loopKeyword.value.trim().toLowerCase();
-  if (!kw) return loopItems.value;
-  // 未全载期间关键词已由后端 keyword 筛选（remoteSearchLoops），跳过二次本地过滤
-  if (!loopsFullyLoaded.value) return loopItems.value;
-  return loopItems.value.filter(
-    (l) =>
-      l.tagName.toLowerCase().includes(kw) ||
-      (l.description ?? '').toLowerCase().includes(kw),
-  );
-});
-
-/** 清单渐进加载（1007 修订：1209 回路 13 页串行是整定总览残余慢点）：
- *  首页 50 条到达即渲染（总数一并展示），余页 4 路并发补全；
- *  未补全期间标注"已载 N/总数"，搜索走后端 keyword（全量命中） */
-const loopsTotal = ref(0);
-const loopsFullyLoaded = ref(false);
-let loadLoopsSeq = 0;
-
-async function loadLoops(): Promise<void> {
-  const seq = ++loadLoopsSeq;
-  loopLoading.value = true;
-  loopsFullyLoaded.value = false;
-  try {
-    const first = await getLoopListApi({
-      page: 1,
-      pageSize: 50,
-      plantNodeId: selectedPlantNodeId.value,
-    });
-    if (seq !== loadLoopsSeq) return; // 已切换装置节点，丢弃过期响应
-    loopItems.value = [...(first.items ?? [])];
-    loopsTotal.value = first.total ?? loopItems.value.length;
-    loopLoading.value = false; // 首页即渲染，余页后台补全
-    const total = first.total ?? 0;
-    const restPages: number[] = [];
-    for (let pg = 2; (pg - 1) * 50 < total; pg += 1) restPages.push(pg);
-    const remaining = total - loopItems.value.length;
-    if (remaining <= 0) {
-      loopsFullyLoaded.value = true;
-      return;
-    }
-    // 4 路并发分批并入（回路工作台脊柱同款模式）
-    const merged = [...loopItems.value];
-    for (let i = 0; i < restPages.length; i += 4) {
-      const batch = restPages.slice(i, i + 4);
-      const results = await Promise.all(
-        batch.map((pg) =>
-          getLoopListApi({
-            page: pg,
-            pageSize: 50,
-            plantNodeId: selectedPlantNodeId.value,
-          }),
-        ),
-      );
-      if (seq !== loadLoopsSeq) return;
-      for (const res of results) merged.push(...(res.items ?? []));
-      loopItems.value = [...merged];
-    }
-    loopsFullyLoaded.value = true;
-  } catch {
-    if (seq === loadLoopsSeq) {
-      loopItems.value = [];
-      loopsTotal.value = 0;
-      loopLoading.value = false;
-    }
-  }
-}
-
-/** 未全载期间的关键词搜索走后端 keyword（全量命中，单页 100） */
-const remoteSearching = ref(false);
-let remoteSearchSeq = 0;
-async function remoteSearchLoops(kw: string): Promise<void> {
-  const seq = ++remoteSearchSeq;
-  remoteSearching.value = true;
-  try {
-    const res = await getLoopListApi({
-      page: 1,
-      pageSize: 100,
-      plantNodeId: selectedPlantNodeId.value,
-      keyword: kw,
-    });
-    if (seq !== remoteSearchSeq) return;
-    loopItems.value = res.items ?? [];
-    loopsTotal.value = res.total ?? loopItems.value.length;
-  } catch {
-    if (seq === remoteSearchSeq) loopItems.value = [];
-  } finally {
-    if (seq === remoteSearchSeq) remoteSearching.value = false;
-  }
-}
-
-/** 关键词变化：全载→本地过滤（零请求）；未全载→防抖 300ms 转后端搜索 */
-let keywordTimer: null | ReturnType<typeof setTimeout> = null;
-watch(loopKeyword, (kw) => {
-  if (keywordTimer) clearTimeout(keywordTimer);
-  if (loopsFullyLoaded.value || !kw.trim()) return;
-  keywordTimer = setTimeout(() => {
-    void remoteSearchLoops(kw.trim());
-  }, 300);
-});
-
-/** 清空关键词：恢复已载清单（渐进数据仍在 loopItems？——remote 覆盖了，
- *  简化处理：清空时重拉首页快速恢复） */
-watch(loopKeyword, (kw) => {
-  if (!kw.trim() && !loopsFullyLoaded.value && loopsTotal.value > 0) {
-    void loadLoops();
-  }
-});
-
-// ===== 左脊柱：整定建议列表（TUNING 类在途处置工单，待排程优先） =====
-const openItems = ref<HandlingApi.OrderItem[]>([]);
-const openLoading = ref(false);
-
-/** 状态排序权重：待排程 → 重开（验证失败需返工）→ 执行中 */
-const SUGG_STATUS_ORDER: Record<string, number> = {
-  PENDING: 0,
-  REOPENED: 1,
-  EXECUTING: 2,
-};
-
-const tuningSuggestions = computed(() =>
-  openItems.value
-    .filter((i) => i.actionType === 'TUNING')
-    .toSorted(
-      (a, b) =>
-        (SUGG_STATUS_ORDER[a.status] ?? 9) - (SUGG_STATUS_ORDER[b.status] ?? 9) ||
-        String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
-    ),
-);
-
-async function loadOpenItems(): Promise<void> {
-  openLoading.value = true;
-  try {
-    // 工单口径状态映射（v1.x PENDING,HANDLING,REOPENED → PENDING,EXECUTING,REOPENED）；
-    // 后端 /orders status 为单值，按状态并行请求后合并
-    const statuses: HandlingApi.OrderStatus[] = [
-      'PENDING',
-      'EXECUTING',
-      'REOPENED',
-    ];
-    const results = await Promise.all(
-      statuses.map((status) =>
-        getHandlingOrdersApi({
-          page: 1,
-          pageSize: 100, // 后端 /handling/orders pageSize 上限 le=100
-          status,
-          // 1007 修订：本页只消费 TUNING 类，接口侧过滤（原拉全类型再前端滤）
-          actionType: 'TUNING',
-          plantNodeId: selectedPlantNodeId.value,
-        }),
-      ),
-    );
-    openItems.value = results.flatMap((r) => r.items);
-  } catch {
-    openItems.value = [];
-  } finally {
-    openLoading.value = false;
-  }
-}
-
-// ===== 右主区：回路总览表格 =====
+// ===== 总览数据（latest 共享缓存 + 批量 PID） =====
 interface OverviewRow {
   loopId: string;
   tagName: string;
@@ -345,9 +78,9 @@ interface OverviewRow {
   importanceLevel: null | number;
   latestScore: null | number;
   primaryCategoryLabel: null | string;
-  suggCount: number;
-  suggFirst: null | string;
-  /** 适用性（C1：监控列表批量拉取，失败/无快照为 null → 徽标显示"待评估"） */
+  /** 待处理处置建议（PENDING/ACCEPTED 最新一条 + 计数） */
+  actionSuggest: null | string;
+  actionSuggestCount: number;
   fitnessLevel: null | string;
   fitnessTags: string[];
   /** 实时值容器（P/I/D 经 WS 推送更新；结构对齐 useLoopRealtime） */
@@ -368,75 +101,41 @@ interface OverviewRow {
 const overviewLoading = ref(false);
 const overviewRows = ref<OverviewRow[]>([]);
 
-const overviewColumns: TableColumnsType = [
-  { key: 'tagName', title: '回路编号', width: 160 },
-  { key: 'description', title: '回路名称', ellipsis: true, width: 160 },
-  { key: 'importanceLevel', title: '等级', width: 56, align: 'center' },
-  { key: 'latestScore', title: '性能评分', width: 80, align: 'center' },
-  { key: 'scoreGrade', title: '性能等级', width: 76, align: 'center' },
-  { key: 'fitness', title: '可整定性', width: 92, align: 'center' },
-  { key: 'diagnosis', title: '诊断结论', width: 120, ellipsis: true },
-  { key: 'suggestion', title: '处置建议摘要', ellipsis: true },
-  { key: 'pid', title: 'P / I / D 参数', width: 130, align: 'center' },
-  { key: 'action', title: '操作', width: 72 },
-];
-
-// 1005 性能优化：latest 走模块级 60s 共享缓存（与诊断概览复用），且自带
-// fitnessLevel/fitnessTags（后端 LATERAL 扩列）——原 13 页 monitor 分页拉取删除
 const latestCache = useLatestOverviewCache();
 
 async function loadOverview(): Promise<void> {
   overviewLoading.value = true;
   try {
-    await latestCache.load(selectedPlantNodeId.value);
-    const latest = { items: latestCache.items.value };
-    // 开放处置工单按回路分组（最新在前）
-    const byLoop = new Map<string, HandlingApi.OrderItem[]>();
-    for (const it of openItems.value) {
-      const arr = byLoop.get(it.loopId) ?? [];
-      arr.push(it);
-      byLoop.set(it.loopId, arr);
-    }
-    overviewRows.value = latest.items.map((l) => {
-      const items = (byLoop.get(l.loopId) ?? []).toSorted((a, b) =>
-        String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')),
-      );
-      const fit = {
-        level: l.fitnessLevel ?? null,
-        tags: Array.isArray(l.fitnessTags) ? l.fitnessTags : [],
-      };
-      return {
-        loopId: l.loopId,
-        tagName: l.loopTagName,
-        // 1007 修订：台账 description 缺失时兜底显示所属单元名（名称列不再恒空）
-        description: l.loopDescription ?? l.unitName ?? null,
-        importanceLevel: l.importanceLevel ?? null,
-        latestScore: l.latestScore ?? null,
-        primaryCategoryLabel: l.primaryCategoryLabel ?? null,
-        fitnessLevel: fit?.level ?? null,
-        fitnessTags: fit?.tags ?? [],
-        suggCount: items.length,
-        suggFirst: items[0]?.title ?? null,
-        currentValues: {
-          mode: null,
-          modeLabel: null,
-          op: null,
-          pidD: null,
-          pidI: null,
-          pidP: null,
-          pv: null,
-          pvQuality: null,
-          readAt: null,
-          sp: null,
-        },
-      };
-    });
-    // P/I/D 初值：一次批量拉全部回路运行参数（原逐回路 /loops/{id}，
-    // 961 回路时 6 并发槽位排队近 30s 且 axios 10s 超时整批报错）
+    await latestCache.load(undefined);
+    const items = latestCache.items.value;
+    overviewRows.value = items.map((l) => ({
+      loopId: l.loopId,
+      tagName: l.loopTagName,
+      // 名称三重兜底（1008：绝不留空）——台账描述 → 所属单元 → 位号
+      description: l.loopDescription ?? l.unitName ?? l.loopTagName ?? null,
+      importanceLevel: l.importanceLevel ?? null,
+      latestScore: l.latestScore ?? null,
+      primaryCategoryLabel: l.primaryCategoryLabel ?? null,
+      actionSuggest: l.actionSuggest ?? null,
+      actionSuggestCount: l.actionSuggestCount ?? 0,
+      fitnessLevel: l.fitnessLevel ?? null,
+      fitnessTags: Array.isArray(l.fitnessTags) ? l.fitnessTags : [],
+      currentValues: {
+        mode: null,
+        modeLabel: null,
+        op: null,
+        pidD: null,
+        pidI: null,
+        pidP: null,
+        pv: null,
+        pvQuality: null,
+        readAt: null,
+        sp: null,
+      },
+    }));
+    // P/I/D 初值：一次批量拉全部回路运行参数（0934 优化口径保持）
     try {
-      const rpMap = await getLoopsRuntimeParamsApi(
-        selectedPlantNodeId.value || undefined,
-      );
+      const rpMap = await getLoopsRuntimeParamsApi(undefined);
       for (const row of overviewRows.value) {
         const rp = rpMap[row.loopId];
         if (!rp) continue;
@@ -445,7 +144,7 @@ async function loadOverview(): Promise<void> {
         row.currentValues.pidD = rp.pidD ?? null;
       }
     } catch {
-      // 批量失败不阻断总览（与原单回路失败不阻断口径一致）
+      // 批量失败不阻断总览
     }
   } catch {
     overviewRows.value = [];
@@ -454,35 +153,114 @@ async function loadOverview(): Promise<void> {
   }
 }
 
-function fmtPid(v: null | number | undefined): string {
-  return fmtNum2(v);
-}
+// ===== 搜索 + 客户端分页（1209 行本地过滤零压力） =====
+const keyword = ref('');
+const filteredRows = computed(() => {
+  const kw = keyword.value.trim().toLowerCase();
+  if (!kw) return overviewRows.value;
+  return overviewRows.value.filter(
+    (r) =>
+      r.tagName.toLowerCase().includes(kw) ||
+      (r.description ?? '').toLowerCase().includes(kw),
+  );
+});
+
+const overviewColumns: TableColumnsType = [
+  { key: 'tagName', title: '回路编号', width: 150 },
+  { key: 'description', title: '回路名称', width: 150, ellipsis: true },
+  { key: 'importanceLevel', title: '等级', width: 54, align: 'center' },
+  { key: 'latestScore', title: '性能评分', width: 76, align: 'center' },
+  { key: 'scoreGrade', title: '性能等级', width: 72, align: 'center' },
+  { key: 'fitness', title: '可整定性', width: 90, align: 'center' },
+  { key: 'diagnosis', title: '诊断结论', width: 120, ellipsis: true },
+  { key: 'suggestion', title: '处置建议', width: 150, ellipsis: true },
+  { key: 'pidP', title: 'P', width: 68, align: 'center' },
+  { key: 'pidI', title: 'I', width: 68, align: 'center' },
+  { key: 'pidD', title: 'D', width: 68, align: 'center' },
+  { key: 'action', title: '操作', width: 88 },
+];
 
 // ===== 实时更新（P/I/D 由全局 WS 推送，初值批量拉取） =====
 const { applyMessage, onMessage, start, stop } = useLoopRealtime();
 
-// 服务端订阅过滤：仅接收当前概览行回路的位号
-bindLoopInterest(() => overviewRows.value.map((r: any) => r.tagName));
+bindLoopInterest(() => overviewRows.value.map((r) => r.tagName));
 
 onMessage((msg) => {
-  applyMessage(msg, overviewRows.value as any[]);
+  applyMessage(msg, overviewRows.value as never[]);
 });
 
-// ===== 装载 =====
-async function reloadForNode(): Promise<void> {
-  await Promise.all([loadLoops(), loadOpenItems()]);
-  await loadOverview();
+// ===== 整定抽屉（1008：调参优化改右侧抽屉，四步流程内嵌） =====
+const tuneDrawerOpen = ref(false);
+const tuneDrawerLoop = ref<null | OverviewRow>(null);
+const ctx = useTuningWorkbench();
+
+const drawerAnchors = [
+  { href: '#tune-dr-identify', label: '① 辨识' },
+  { href: '#tune-dr-matrix', label: '② 矩阵' },
+  { href: '#tune-dr-simulate', label: '③ 仿真' },
+  { href: '#tune-dr-confirm', label: '④ 确认' },
+];
+
+function scrollDrawerTo(href: string) {
+  document.querySelector(href)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  });
 }
 
-onMounted(async () => {
-  start();
-  await Promise.all([loadPlantTree(), reloadForNode()]);
-});
+/** 打开整定抽屉（先过 L0/L1 门禁，L2 警告放行） */
+async function openTuneDrawer(record: OverviewRow) {
+  if (!canOperateTuning.value) {
+    message.warning('当前角色无整定操作权限');
+    return;
+  }
+  const loopId = record.loopId;
+  const tag = record.tagName || loopId;
+  let level: null | string;
+  let tags: string[];
+  try {
+    const res = await getLoopMonitorListApi({ loopId, page: 1, pageSize: 1 });
+    const item = res.items?.[0];
+    level = (item?.tuneLevel ?? item?.fitnessLevel) ?? null;
+    tags = Array.isArray(item?.fitnessTags)
+      ? (item.fitnessTags as string[])
+      : [];
+  } catch {
+    level = null;
+    tags = [];
+  }
+  if (level === 'L0' || level === 'L1') {
+    const reason = tags.length > 0 ? tuningTagsToText(tags) : '适用性不足';
+    message.error({
+      content: `回路「${tag}」可整定等级不足（${level}），不建议做整定：${reason}。先消除异常来源后再操作。`,
+      duration: 6,
+    });
+    return;
+  }
+  if (level === 'L2') {
+    const reason = tags.length > 0 ? tuningTagsToText(tags) : '控制条件异常';
+    message.warning({
+      content: `【调参优化】L2 条件异常：${reason}。当前控制状态可能影响整定结论，建议先修正再做整定。`,
+      duration: 5,
+    });
+  } else if (level === 'L3' || level === 'L4') {
+    message.success(`当前可整定等级 = ${level}，可正常整定。`);
+  } else {
+    message.info('尚未评定适用性等级。');
+  }
+  tuneDrawerLoop.value = record;
+  ctx.selectLoop(loopId);
+  tuneDrawerOpen.value = true;
+}
 
-/** 旧书签定位（/tuning/workbench?loopId= redirect 透传）：高亮该行 */
-const highlightLoopId = computed(() => {
-  const id = route.query.loopId;
-  return typeof id === 'string' && id ? id : null;
+function onTuneDrawerClose() {
+  ctx.clearLoop();
+  tuneDrawerLoop.value = null;
+}
+
+onMounted(() => {
+  start();
+  void loadOverview();
 });
 
 onBeforeUnmount(() => {
@@ -493,456 +271,208 @@ onBeforeUnmount(() => {
 <template>
   <Page>
     <ClpmPageToolbar
-      subtitle="全回路可整定性总览与在途整定建议；单回路整定流程在回路工作台（点击行进入）"
+      subtitle="全回路可整定性总览；点击行或「调参优化」在右侧抽屉进行参数整定（L0/L1 门禁）"
       title="整定总览"
     >
       <template #actions>
         <ClpmToolbarButton
           icon="ant-design:sync-outlined"
           label="刷新"
-          :loading="overviewLoading || openLoading"
-          @click="reloadForNode"
+          :loading="overviewLoading"
+          @click="loadOverview()"
         />
       </template>
     </ClpmPageToolbar>
 
-    <div class="tuning-layout">
-      <!-- ===== 左脊柱：装置树 + 回路清单 + 整定建议 ===== -->
-      <aside class="tuning-sidebar">
-        <div class="tuning-sidebar__section-title">
-          <span>装置</span>
-          <button
-            v-if="plantTreeSelectedKeys.length > 0"
-            class="tuning-sidebar__clear"
-            @click="handlePlantTreeSelect([])"
-          >
-            清除
-          </button>
-        </div>
-        <Spin :spinning="plantTreeLoading" size="small">
-          <Tree
-            v-if="plantTreeData.length > 0"
-            v-model:expanded-keys="plantTreeExpandedKeys"
-            v-model:selected-keys="plantTreeSelectedKeys"
-            :block-node="true"
-            :show-line="false"
-            :tree-data="plantTreeData as any"
-            class="tuning-plant-tree"
-            @select="handlePlantTreeSelect"
-          />
-          <div v-else class="tuning-sidebar__empty">暂无装置数据</div>
-        </Spin>
-
-        <div class="tuning-sidebar__section-title">
-          <span>回路</span>
-          <span class="text-xs text-neutral-400" :title="loopsFullyLoaded ? '全部已加载' : `渐进加载中（共 ${loopsTotal} 个）`">
-            {{ loopsFullyLoaded ? filteredLoops.length : `${filteredLoops.length}/${loopsTotal}` }}
-          </span>
-        </div>
+    <Card size="small">
+      <template #title>
+        <span class="text-[13px]">回路总览</span>
+        <span class="ml-2 text-xs font-normal text-neutral-400">
+          {{ filteredRows.length }} 个回路
+        </span>
+      </template>
+      <template #extra>
         <Input
-          v-model:value="loopKeyword"
+          v-model:value="keyword"
           allow-clear
-          placeholder="搜索位号/描述（全量检索）..."
+          placeholder="搜索位号/名称..."
           size="small"
+          style="width: 200px"
         />
-        <div class="tuning-sidebar__list-wrap">
-          <Spin :spinning="loopLoading" size="small">
-            <div
-              v-for="item in filteredLoops"
-              :key="item.loopId"
-              class="tuning-loop-item"
-              :class="{
-                'tuning-loop-item--active':
-                  highlightLoopId === item.loopId,
-              }"
-              role="button"
-              tabindex="0"
-              :title="item.description || item.tagName"
-              @click="gotoWorkbenchTuning(item.loopId, item.tagName)"
-              @keydown.enter="gotoWorkbenchTuning(item.loopId, item.tagName)"
-            >
-              <span class="tuning-loop-item__tag">{{ item.tagName }}</span>
-              <span class="tuning-loop-item__unit">{{ item.unitName }}</span>
-            </div>
-            <Empty
-              v-if="!loopLoading && filteredLoops.length === 0"
-              :image="Empty.PRESENTED_IMAGE_SIMPLE"
-              class="tuning-sidebar__empty"
-              description="暂无回路"
-            />
-          </Spin>
-        </div>
-
-        <div class="tuning-sidebar__section-title">
-          <span>整定建议</span>
-          <span class="text-xs text-neutral-400">
-            {{ tuningSuggestions.length }} 项
-          </span>
-        </div>
-        <div class="tuning-sidebar__sugg-wrap">
-          <Spin :spinning="openLoading" size="small">
-            <div
-              v-for="item in tuningSuggestions"
-              :key="item.id"
-              class="tuning-sugg-item"
-              :class="{
-                'tuning-sugg-item--active': highlightLoopId === item.loopId,
-              }"
-              role="button"
-              tabindex="0"
-              :title="item.title"
-              @click="gotoWorkbenchTuning(item.loopId, item.loopTagName)"
-              @keydown.enter="gotoWorkbenchTuning(item.loopId, item.loopTagName)"
-            >
-              <span class="tuning-sugg-item__tag">{{ item.loopTagName }}</span>
-              <span class="tuning-sugg-item__meta">
-                <span
-                  class="tuning-sugg-item__status"
-                  :class="`is-${item.status.toLowerCase()}`"
-                >
-                  {{ item.statusLabel }}
-                </span>
-              </span>
-            </div>
-            <Empty
-              v-if="!openLoading && tuningSuggestions.length === 0"
-              :image="Empty.PRESENTED_IMAGE_SIMPLE"
-              class="tuning-sidebar__empty"
-              description="暂无整定建议"
-            />
-          </Spin>
-        </div>
-      </aside>
-
-      <!-- ===== 右主区：该节点下所有回路总览（2026-10-04 D3：流程区已让位回路工作台） ===== -->
-      <div class="tuning-main">
-        <Card size="small">
-          <template #title>
-            <span class="section-title">回路总览</span>
-            <span class="ml-2 text-xs font-normal text-neutral-400">
-              {{ overviewRows.length }} 个回路 ·
-              {{ canOperateTuning ? '点击行进入回路工作台整定' : '整定流程需操作角色' }}
-            </span>
+      </template>
+      <Table
+        :columns="overviewColumns"
+        :custom-cell="() => ({ style: { cursor: 'pointer' } })"
+        :custom-row="
+          (record: any) => ({
+            onClick: () => openTuneDrawer(record as OverviewRow),
+          })
+        "
+        :data-source="filteredRows"
+        :loading="overviewLoading"
+        :pagination="{
+          pageSize: 50,
+          pageSizeOptions: ['20', '50', '100'],
+          showSizeChanger: true,
+          showTotal: (t: number) => `共 ${t} 条`,
+          size: 'small',
+          showLessItems: true,
+        }"
+        row-key="loopId"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'tagName'">
+            <span>{{ record.tagName }}</span>
           </template>
-          <Table
-            :columns="overviewColumns"
-            :data-source="overviewRows"
-            :loading="overviewLoading"
-            :pagination="false"
-            size="small"
-            row-key="loopId"
-            :row-class-name="
-              (record: any) =>
-                record.loopId === highlightLoopId ? 'tuning-row--hl' : ''
-            "
-            :custom-row="
-              (record: any) => ({
-                onClick: () =>
-                  gotoWorkbenchTuning(record.loopId, record.tagName),
-              })
-            "
-            :custom-cell="() => ({ style: { cursor: 'pointer' } })"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'tagName'">
-                <span class="font-medium">{{ record.tagName }}</span>
-              </template>
-              <template v-else-if="column.key === 'importanceLevel'">
-                <span
-                  v-if="record.importanceLevel"
-                  :style="{
-                    color: IMPORTANCE_LEVEL_COLOR[record.importanceLevel],
-                  }"
-                >
-                  {{ IMPORTANCE_LEVEL_TEXT[record.importanceLevel] ?? '—' }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.key === 'latestScore'">
-                <span
-                  v-if="record.latestScore != null"
-                  class="clpm-num font-medium"
-                  :style="{
-                    color: scoreGrade(record.latestScore)?.color,
-                  }"
-                >
-                  {{ record.latestScore.toFixed(1) }}
-                </span>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.key === 'scoreGrade'">
+          <template v-else-if="column.key === 'description'">
+            <span>{{ record.description || record.tagName }}</span>
+          </template>
+          <template v-else-if="column.key === 'importanceLevel'">
+            <span
+              v-if="record.importanceLevel"
+              :style="{
+                color: IMPORTANCE_LEVEL_COLOR[record.importanceLevel],
+              }"
+            >
+              {{ IMPORTANCE_LEVEL_TEXT[record.importanceLevel] ?? '—' }}
+            </span>
+            <span v-else class="text-neutral-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'latestScore'">
+            <span
+              v-if="record.latestScore != null"
+              class="clpm-num"
+              :style="{ color: scoreGrade(record.latestScore)?.color }"
+            >
+              {{ record.latestScore.toFixed(1) }}
+            </span>
+            <span v-else class="text-neutral-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'scoreGrade'">
+            <span
+              v-if="scoreGrade(record.latestScore)"
+              :style="{ color: scoreGrade(record.latestScore)?.color }"
+            >
+              {{ scoreGrade(record.latestScore)?.label }}
+            </span>
+            <span v-else class="text-neutral-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'fitness'">
+            <ClpmFitnessBadge
+              :level="record.fitnessLevel"
+              :tags="record.fitnessTags"
+              size="sm"
+            />
+          </template>
+          <template v-else-if="column.key === 'diagnosis'">
+            <span v-if="record.primaryCategoryLabel">
+              {{ record.primaryCategoryLabel }}
+            </span>
+            <span v-else class="text-neutral-400">未诊断</span>
+          </template>
+          <template v-else-if="column.key === 'suggestion'">
+            <Tooltip
+              v-if="record.actionSuggest"
+              :title="record.actionSuggest"
+              placement="topLeft"
+            >
+              <span>
+                {{ record.actionSuggest }}
                 <Tag
-                  v-if="scoreGrade(record.latestScore)"
-                  :color="scoreGrade(record.latestScore)?.color"
+                  v-if="record.actionSuggestCount > 1"
+                  color="orange"
                   class="mr-0"
                 >
-                  {{ scoreGrade(record.latestScore)?.label }}
+                  {{ record.actionSuggestCount }}
                 </Tag>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.key === 'fitness'">
-                <ClpmFitnessBadge
-                  :level="record.fitnessLevel"
-                  :tags="record.fitnessTags"
-                  size="sm"
-                />
-              </template>
-              <template v-else-if="column.key === 'diagnosis'">
-                <span
-                  v-if="record.primaryCategoryLabel"
-                  :title="record.primaryCategoryLabel"
-                >
-                  {{ record.primaryCategoryLabel }}
-                </span>
-                <span v-else class="text-neutral-400">未诊断</span>
-              </template>
-              <template v-else-if="column.key === 'suggestion'">
-                <Tooltip
-                  v-if="record.suggFirst"
-                  :title="record.suggFirst"
-                  placement="topLeft"
-                >
-                  <span class="text-xs">
-                    {{ record.suggFirst }}
-                    <Tag
-                      v-if="record.suggCount > 1"
-                      color="orange"
-                      class="mr-0"
-                    >
-                      {{ record.suggCount }}
-                    </Tag>
-                  </span>
-                </Tooltip>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-              <template v-else-if="column.key === 'pid'">
-                <span class="clpm-num text-xs">
-                  {{ fmtPid(record.currentValues.pidP) }} /
-                  {{ fmtPid(record.currentValues.pidI) }} /
-                  {{ fmtPid(record.currentValues.pidD) }}
-                </span>
-              </template>
-              <template v-else-if="column.key === 'action'">
-                <Tooltip
-                  v-if="canOperateTuning"
-                  title="进入回路工作台整定剖面前会校验适用性（L0/L1 阻止，L2 提示）"
-                  placement="top"
-                >
-                  <Button
-                    type="link"
-                    size="small"
-                    class="p-0"
-                    @click.stop="
-                      gotoWorkbenchTuning(record.loopId, record.tagName)
-                    "
-                  >
-                    调参优化
-                  </Button>
-                </Tooltip>
-                <span v-else class="text-neutral-400">—</span>
-              </template>
-            </template>
-          </Table>
-        </Card>
+              </span>
+            </Tooltip>
+            <span v-else class="text-neutral-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'pidP'">
+            <span class="clpm-num">{{ fmtNum2(record.currentValues.pidP) }}</span>
+          </template>
+          <template v-else-if="column.key === 'pidI'">
+            <span class="clpm-num">{{ fmtNum2(record.currentValues.pidI) }}</span>
+          </template>
+          <template v-else-if="column.key === 'pidD'">
+            <span class="clpm-num">{{ fmtNum2(record.currentValues.pidD) }}</span>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <Tooltip
+              v-if="canOperateTuning"
+              title="打开前校验适用性（L0/L1 阻止，L2 提示）"
+              placement="top"
+            >
+              <Button
+                type="link"
+                size="small"
+                class="p-0"
+                @click.stop="openTuneDrawer(record as OverviewRow)"
+              >
+                调参优化
+              </Button>
+            </Tooltip>
+            <span v-else class="text-neutral-400">—</span>
+          </template>
+        </template>
+        <template #emptyText>
+          <Empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="暂无回路" />
+        </template>
+      </Table>
+    </Card>
+
+    <!-- 参数整定抽屉：四步流程内嵌（辨识→矩阵→仿真→确认） -->
+    <Drawer
+      v-model:open="tuneDrawerOpen"
+      :title="`参数整定 — ${tuneDrawerLoop?.tagName ?? ''}`"
+      destroy-on-close
+      placement="right"
+      width="88%"
+      @close="onTuneDrawerClose"
+    >
+      <div class="tune-dr-anchor">
+        <a
+          v-for="a in drawerAnchors"
+          :key="a.href"
+          @click.prevent="scrollDrawerTo(a.href)"
+        >
+          {{ a.label }}
+        </a>
       </div>
-    </div>
+      <div id="tune-dr-identify"><IdentifySection :ctx="ctx" /></div>
+      <div id="tune-dr-matrix"><MatrixSection :ctx="ctx" /></div>
+      <div id="tune-dr-simulate"><SimulateSection :ctx="ctx" /></div>
+      <div id="tune-dr-confirm"><ConfirmSection :ctx="ctx" /></div>
+    </Drawer>
   </Page>
 </template>
 
 <style scoped>
-.tuning-layout {
+.tune-dr-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
-  gap: 12px;
-  align-items: stretch;
+  gap: 16px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  background: hsl(var(--background));
+  border-bottom: 1px solid hsl(var(--border));
 }
 
-/* ===== 左脊柱（对齐回路/诊断工作台） ===== */
-.tuning-sidebar {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 6px;
-  width: 248px;
-  max-height: calc(100vh - 180px);
-  padding: 10px 10px 8px;
-  overflow: hidden;
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-}
-
-.tuning-sidebar__section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 2px 0;
+.tune-dr-anchor a {
   font-size: 12px;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground));
-}
-
-.tuning-sidebar__clear {
-  padding: 0 4px;
-  font-size: 11px;
   color: hsl(var(--primary));
   cursor: pointer;
-  background: none;
-  border: none;
 }
 
-.tuning-sidebar__empty {
-  padding: 12px 0;
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-  text-align: center;
+.tune-dr-anchor a:hover {
+  text-decoration: underline;
 }
 
-/* 装置树：紧凑（28px 行高） */
-.tuning-plant-tree {
-  flex-shrink: 0;
-  max-height: 140px;
-  overflow: auto;
-  font-size: 12px;
-}
-
-.tuning-plant-tree :deep(.ant-tree-node-content-wrapper) {
-  min-height: 28px;
-  line-height: 28px;
-}
-
-.tuning-plant-tree :deep(.ant-tree-treenode) {
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-/* 回路清单（主区，flex-1） */
-.tuning-sidebar__list-wrap {
-  flex: 1;
-  min-height: 140px;
-  padding-top: 6px;
-  overflow: auto;
-  border-top: 1px solid hsl(var(--border));
-}
-
-.tuning-loop-item {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 4px;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.tuning-loop-item:hover {
-  background: hsl(var(--accent));
-}
-
-.tuning-loop-item--active {
-  background: hsl(var(--accent));
-  box-shadow: inset 1px 0 0 hsl(var(--primary));
-}
-
-.tuning-loop-item__tag {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.tuning-loop-item__unit {
-  flex-shrink: 0;
-  max-width: 72px;
-  margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 10px;
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-}
-
-/* 整定建议（底部固定高度区） */
-.tuning-sidebar__sugg-wrap {
-  flex-shrink: 0;
-  max-height: 150px;
-  padding-top: 6px;
-  overflow: auto;
-  border-top: 1px solid hsl(var(--border));
-}
-
-.tuning-sugg-item {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 4px;
-  font-size: 12px;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.tuning-sugg-item:hover {
-  background: hsl(var(--accent));
-}
-
-.tuning-sugg-item--active {
-  background: hsl(var(--accent));
-  box-shadow: inset 1px 0 0 hsl(var(--primary));
-}
-
-.tuning-sugg-item__tag {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.tuning-sugg-item__meta {
-  display: flex;
-  flex-shrink: 0;
-  gap: 4px;
-  align-items: center;
-  margin-left: auto;
-}
-
-.tuning-sugg-item__prio {
-  font-size: 10px;
-  font-weight: 600;
-  color: hsl(var(--destructive));
-}
-
-.tuning-sugg-item__status {
-  font-size: 10px;
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-}
-
-.tuning-sugg-item__status.is-pending {
-  color: hsl(var(--warning, #b45309));
-}
-
-.tuning-sugg-item__status.is-handling {
-  color: hsl(var(--primary));
-}
-
-.tuning-sugg-item__status.is-reopened {
-  color: hsl(var(--destructive));
-}
-
-/* ===== 右主区 ===== */
-.tuning-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.section-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* 旧书签 ?loopId 定位高亮行 */
-:deep(.tuning-row--hl) > td {
-  background: hsl(var(--accent)) !important;
+.tune-dr-anchor + div {
+  scroll-margin-top: 48px;
 }
 </style>
