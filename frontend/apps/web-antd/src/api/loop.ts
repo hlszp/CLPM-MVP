@@ -471,6 +471,11 @@ export namespace LoopApi {
     maxScore?: number;
     /** 只看无评分回路（最新快照无分数或无快照，与 gradeCounts.INCONCLUSIVE 口径一致） */
     unscored?: boolean;
+    /**
+     * 是否返回全量聚合 aggregate（P1 改版：监视页微型卡已删、不消费聚合，
+     * 传 false 跳过服务端全量统计——961 回路下是每页请求的固定全量开销）
+     */
+    withAggregate?: boolean;
     /** 排序字段（默认 score：评分升序，最差在前） */
     sortBy?: 'score' | 'tagName';
     /** 排序方向（默认 asc） */

@@ -326,6 +326,11 @@ async def list_loop_monitor_endpoint(
         description="最高评分（不含，0-100；与 minScore 构成半开区间 [min, max)）",
     ),
     unscored: bool = Query(False, description="只看无评分回路（无任何评估快照）"),
+    withAggregate: bool = Query(
+        True,
+        description="是否返回全量聚合统计 aggregate（分页不受影响）；"
+        "监视页微型卡已删不消费聚合，可传 false 跳过全量计算提速",
+    ),
     sortBy: str = Query("score", description="排序字段：score/tagName"),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     page: int = Query(1, ge=1),
@@ -345,6 +350,7 @@ async def list_loop_monitor_endpoint(
         min_score=minScore,
         max_score=maxScore,
         unscored=unscored,
+        with_aggregate=withAggregate,
         sort_by=sortBy,
         sort_order=sortOrder,
         page=page,

@@ -308,7 +308,8 @@ class TestListLoopMonitor:
 
     @classmethod
     def setup_class(cls) -> None:
-        _mock_aggregate_patcher.start()
+        # 保留 mock 引用供 with_aggregate=False 用例断言"未被调用"
+        cls._agg_mock = _mock_aggregate_patcher.start()
 
     @classmethod
     def teardown_class(cls) -> None:
@@ -588,6 +589,27 @@ class TestListLoopMonitor:
         with pytest.raises(BizError):
             await list_loop_monitor(db, max_score=101)
         db.execute.assert_not_awaited()
+
+    async def test_with_aggregate_false_skips_aggregation(self) -> None:
+        """with_aggregate=False 跳过全量聚合（P1 改版监视页），aggregate 为 None。"""
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_count_mock(1),
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_plant_node()]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+                _make_scalars_mock([]),
+            ]
+        )
+        type(self)._agg_mock.reset_mock()
+        result = await list_loop_monitor(db, with_aggregate=False)
+        assert result["aggregate"] is None
+        assert result["total"] == 1
+        type(self)._agg_mock.assert_not_awaited()
 
     async def test_pagination(self) -> None:
         """分页参数正确传递。"""

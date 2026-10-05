@@ -288,12 +288,14 @@ const modeRows = computed(() => {
   const rt = autoRateRt.value;
   const total = rt?.totalCount ?? 0;
   const counts = rt?.modeCounts ?? {};
-  const order: { key: string; label: string }[] = [
-    { key: '1', label: '自动' },
-    { key: '2', label: '串级' },
-    { key: '3', label: '远程' },
-    { key: '4', label: '先控' },
-    { key: '0', label: '手动' },
+  // 饼图扇区色必须为具体色值（ECharts canvas 不解析 CSS 变量——
+  // 装置性能改版踩坑：var(--*) 传入导致扇区全部不渲染）
+  const order: { color: string; key: string; label: string }[] = [
+    { key: '1', label: '自动', color: themeColors.value.SUCCESS },
+    { key: '2', label: '串级', color: themeColors.value.INFO },
+    { key: '3', label: '远程', color: themeColors.value.ACCENT },
+    { key: '4', label: '先控', color: themeColors.value.WARNING },
+    { key: '0', label: '手动', color: themeColors.value.DANGER },
   ];
   return order
     .map((o) => {
@@ -302,7 +304,7 @@ const modeRows = computed(() => {
         label: o.label,
         count,
         pct: total > 0 ? Math.round((count / total) * 100) : 0,
-        color: o.key === '0' ? 'var(--status-error)' : 'var(--color-slate-400)',
+        color: o.color,
         emphasis: o.key === '0' && count > 0,
       };
     })
@@ -432,6 +434,13 @@ const dimensionRows = computed(() => {
 
 /** 等级/适用性卡当前 Tab */
 const distTab = ref<'fitness' | 'grade'>('grade');
+
+/** 切回等级 Tab 时环图需重绘（ECharts 容器在 v-if 下重挂载） */
+function onDistTabChange() {
+  if (distTab.value === 'grade') {
+    nextTick(() => renderGradeDonutChart());
+  }
+}
 
 // ===== 整改 F4：阀门运行区间异常（OP 行程越限 5%~95%） =====
 // 2026-10-03 改版：改走服务端聚合 /performance/valve-alerts（TOP N + 总数），
@@ -734,8 +743,7 @@ function renderTrendChart() {
       : dayjs(normalizeUtcTimestamp(ts)).format('M-D H:00'),
   );
 
-  const barDataTotal =
-    (trend.totalLoops ?? 0) > 0 ? timestamps.map(() => trend.totalLoops) : [];
+  // 装置性能改版 4：删除"总回路数"序列；"参评回路数"更名"产品回路"
   const barDataEvaluated = trend.evaluatedLoops ?? [];
 
   renderTrend({
@@ -770,14 +778,7 @@ function renderTrendChart() {
     ],
     series: [
       {
-        name: '总回路数',
-        type: 'bar' as const,
-        data: barDataTotal,
-        itemStyle: { color: themeColors.value.INFO },
-        barMaxWidth: 26,
-      },
-      {
-        name: '参评回路数',
+        name: '产品回路',
         type: 'bar' as const,
         data: barDataEvaluated,
         itemStyle: { color: themeColors.value.SUCCESS },
@@ -864,7 +865,101 @@ function renderTrendChart() {
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: ['总回路数', '参评回路数', '性能评分', '自控率', '平稳率'],
+      data: ['产品回路', '性能评分', '自控率', '平稳率'],
+    },
+  });
+}
+
+/** 回路状态统计 → 饼图（数量+百分比；装置性能改版 2） */
+const modePieRef = ref<EchartsUIType>();
+const { renderEcharts: renderModePie } = useEcharts(modePieRef);
+
+function renderModePieChart() {
+  const rows = modeRows.value.filter((r) => r.count > 0);
+  if (rows.length === 0) return;
+  renderModePie({
+    series: [
+      {
+        type: 'pie',
+        radius: '72%',
+        center: ['50%', '52%'],
+        data: rows.map((r) => ({
+          name: r.label,
+          value: r.count,
+          itemStyle: { color: r.color },
+        })),
+        label: {
+          color: chartColors.value.text,
+          fontSize: 11,
+          formatter: '{b}\n{c}（{d}%）',
+          lineHeight: 15,
+        },
+        labelLine: { length: 6, length2: 8 },
+      },
+    ],
+    tooltip: {
+      ...getTooltipPreset(),
+      trigger: 'item',
+      formatter: '{b}：{c}（{d}%）',
+    },
+  });
+}
+
+/** 等级占比 → 环形图（数量+百分比；装置性能改版 3，实时口径） */
+const gradeDonutRef = ref<EchartsUIType>();
+const { renderEcharts: renderGradeDonut } = useEcharts(gradeDonutRef);
+
+function renderGradeDonutChart() {
+  const rows = gradeRows.value.filter((r) => r.count > 0);
+  if (rows.length === 0) return;
+  renderGradeDonut({
+    series: [
+      {
+        type: 'pie',
+        radius: ['42%', '68%'],
+        center: ['50%', '50%'],
+        avoidLabelOverlap: true,
+        data: rows.map((r) => ({
+          name: r.label,
+          value: r.count,
+          itemStyle: { color: r.color },
+        })),
+        label: {
+          color: chartColors.value.text,
+          fontSize: 10,
+          formatter: '{b}\n{c}（{d}%）',
+          lineHeight: 13,
+        },
+        labelLine: { length: 4, length2: 6 },
+      },
+    ],
+    graphic: [
+      {
+        type: 'text',
+        left: 'center',
+        top: '46%',
+        style: {
+          text: `${gradeDistribution.value?.total ?? 0}`,
+          fill: chartColors.value.text,
+          fontSize: 20,
+          fontWeight: 600,
+        },
+      },
+      {
+        type: 'text',
+        left: 'center',
+        top: '56%',
+        style: {
+          text: '有快照回路',
+          fill: chartColors.value.text,
+          fontSize: 10,
+        },
+      },
+    ],
+    tooltip: {
+      ...getTooltipPreset(),
+      trigger: 'item',
+      formatter: '{b}：{c}（{d}%）',
     },
   });
 }
@@ -919,6 +1014,7 @@ async function loadAutoRateRt() {
     );
     autoRateRt.value = data;
     await nextTick();
+    renderModePieChart();
   } catch {
     // ignore
   }
@@ -947,23 +1043,45 @@ async function loadRanking() {
   }
 }
 
-/** 加载等级分布 + 三性分布（服务端 GROUP BY 聚合，窗口与其他接口同源） */
+/**
+ * 加载等级分布 + 三性分布（装置性能改版 2026-10-03 裁决）：
+ * 实时口径——固定近 7 天窗口取每回路最新一条快照，不随页面时间选择联动
+ * （等级为慢变量，读"刷新时刻的回路等级"），随工厂模型筛选联动；
+ * latestTs 回传用于"数据更新于"标注
+ */
 async function loadGradeDistribution() {
   try {
     const { getGradeDistributionApi } = await import('#/api/metric');
-    const { start, end } = resolveWindow();
+    const now = dayjs();
     gradeDistribution.value = await getGradeDistributionApi({
       ...(selectedPlantNodeId.value && {
         plantNodeId: selectedPlantNodeId.value,
       }),
-      startTime: start.toISOString(),
-      endTime: end.toISOString(),
+      startTime: now.subtract(7, 'day').toISOString(),
+      endTime: now.toISOString(),
     });
     await nextTick();
+    renderGradeDonutChart();
   } catch {
     // 错误 toast 由拦截器统一处理
   }
 }
+
+/** 等级/适用性数据更新时间（实时口径窗口内最新快照时刻） */
+const gradeUpdatedAtText = computed(() => {
+  const ts = gradeDistribution.value?.latestTs;
+  if (!ts) return '';
+  return `数据更新于 ${dayjs(ts).format('HH:mm')}`;
+});
+
+/** 实时口径产品回路数 = 有快照回路 − 数据不足（有评分回路） */
+const productLoopCount = computed(() => {
+  const dist = gradeDistribution.value;
+  if (!dist) return null;
+  const total = dist.total ?? 0;
+  const inconclusive = dist.INCONCLUSIVE ?? 0;
+  return Math.max(total - inconclusive, 0);
+});
 
 async function loadGradingThresholds() {
   // 整改 C2-1：SPONSOR/EXPERT 无 /configs/* 读取权限，前置跳过避免 403 toast
@@ -991,7 +1109,27 @@ watch(topNSort, () => loadRanking());
 watch(isDark, () => {
   nextTick(() => {
     renderTrendChart();
+    renderModePieChart();
+    renderGradeDonutChart();
   });
+});
+
+/**
+ * 参评回路卡（装置性能改版 5）：产品回路数 / 总回路数（实时口径产品回路 ×
+ * 全量活跃回路），当前值，随工厂模型筛选联动
+ */
+const participationRate = computed(() => {
+  const product = productLoopCount.value;
+  const total = aggregateData.value?.totalLoops ?? 0;
+  if (product === null || total <= 0) return null;
+  return Number(((product / total) * 100).toFixed(1));
+});
+
+const participationMeta = computed(() => {
+  const product = productLoopCount.value;
+  const total = aggregateData.value?.totalLoops ?? 0;
+  if (product === null) return '';
+  return `产品 ${product} / 总 ${total}`;
 });
 
 /** 工具栏刷新态（刷新时短暂保持供工具栏反馈） */
@@ -1010,9 +1148,9 @@ function handleRefresh() {
 /** 工具栏帮助 */
 function handleHelp() {
   showPageHelp({
-    title: '评估看板 帮助',
+    title: '装置性能 帮助',
     content:
-      '工厂级 KPI 评估看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率 6 仪表盘 + 性能指标趋势图（恒柱状，长窗口自动按日聚合）+ 等级/适用性 L0~L4 分布 + 装置/单元可折叠明细表 + 待治理 TOP10 + 阀门越限 TOP10。支持按工厂节点树筛选与时间窗口切换（近 8h / 24h / 168h / 近 1 月）。',
+      '装置性能看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率/参评回路 7 仪表盘 + 性能指标趋势图（产品回路柱 + 三率线，长窗口自动按日聚合）+ 回路状态饼图 + 等级环形图（实时：每回路最新等级）与适用性 L0~L4 + 装置/单元可折叠明细表 + 待治理 TOP10 + 阀门越限 TOP10。支持按工厂节点树筛选与时间窗口切换（今日/日/周/月/自定义）。',
   });
 }
 
@@ -1033,8 +1171,8 @@ onMounted(() => {
        方法对齐回路工作台 workbench360——整页零滚动，1080 设计基准 -->
   <div class="clpm-pid-dashboard">
       <ClpmPageToolbar
-        title="评估看板"
-        subtitle="工厂级 KPI 仪表盘 · 趋势 · 等级分布 · 待治理 TOP10"
+        title="装置性能"
+        subtitle="装置/单元级 KPI 仪表盘 · 趋势 · 等级分布 · 待治理 TOP10"
         :loading="loading"
       >
         <Button size="small" @click="treeDrawerOpen = true">
@@ -1167,6 +1305,21 @@ onMounted(() => {
                 :meta="`统计窗口：${timeWindowLabel}`"
               />
             </div>
+
+            <!-- 参评回路（装置性能改版 5）：产品回路数/总回路数，实时口径，
+                 随工厂模型筛选联动 -->
+            <div class="clpm-pid-dashboard__gauge-card">
+              <ClpmBulletChart
+                label="参评回路"
+                :value="participationRate"
+                :meta="participationMeta"
+              />
+              <span
+                class="clpm-pid-dashboard__gauge-meta clpm-pid-dashboard__gauge-meta--fresh"
+              >
+                {{ gradeUpdatedAtText }}
+              </span>
+            </div>
           </div>
 
           <div class="clpm-pid-dashboard__middle-row">
@@ -1184,37 +1337,17 @@ onMounted(() => {
                   {{ rtReadAtText }}
                 </span>
               </div>
-              <div class="clpm-pid-dashboard__mode-list">
-                <div
-                  v-for="row in modeRows"
-                  :key="row.label"
-                  class="clpm-pid-dashboard__dist-row"
-                >
-                  <span class="clpm-pid-dashboard__dist-label">{{
-                    row.label
-                  }}</span>
-                  <span class="clpm-pid-dashboard__dist-track">
-                    <i
-                      :style="{
-                        width: `${row.pct}%`,
-                        background: row.color,
-                      }"
-                    ></i>
-                  </span>
-                  <span
-                    class="clpm-pid-dashboard__dist-count"
-                    :style="
-                      row.emphasis ? { color: 'var(--status-error)' } : {}
-                    "
-                    >{{ row.count }}</span
-                  >
-                </div>
-                <div
-                  v-if="modeRows.length === 0"
-                  class="py-6 text-center text-xs text-gray-400"
-                >
-                  暂无实时数据
-                </div>
+              <div
+                v-if="modeRows.some((r) => r.count > 0)"
+                class="clpm-pid-dashboard__mode-pie"
+              >
+                <EchartsUI ref="modePieRef" height="220px" />
+              </div>
+              <div
+                v-else
+                class="py-6 text-center text-xs text-gray-400"
+              >
+                暂无实时数据
               </div>
             </div>
 
@@ -1230,31 +1363,33 @@ onMounted(() => {
             <div
               class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--pie"
             >
-              <Tabs v-model:active-key="distTab" size="small">
+              <Tabs
+                v-model:active-key="distTab"
+                size="small"
+                @change="onDistTabChange"
+              >
                 <TabPane key="grade" tab="等级占比" />
                 <TabPane key="fitness" tab="适用性 L0~L4" />
               </Tabs>
               <div class="clpm-pid-dashboard__grade-list">
                 <template v-if="distTab === 'grade'">
+                  <!-- 等级占比 → 环形图（装置性能改版 3）：实时口径，
+                       每回路最新快照（近 7 天窗口），标注数据更新时间 -->
                   <div
-                    v-for="row in gradeRows"
-                    :key="row.label"
-                    class="clpm-pid-dashboard__dist-row"
+                    v-if="gradeRows.some((r) => r.count > 0)"
+                    class="clpm-pid-dashboard__grade-donut"
                   >
-                    <span class="clpm-pid-dashboard__dist-label">{{
-                      row.label
-                    }}</span>
-                    <span class="clpm-pid-dashboard__dist-track">
-                      <i
-                        :style="{
-                          width: `${row.pct}%`,
-                          background: row.color,
-                        }"
-                      ></i>
-                    </span>
-                    <span class="clpm-pid-dashboard__dist-count">{{
-                      row.count
-                    }}</span>
+                    <EchartsUI ref="gradeDonutRef" height="218px" />
+                  </div>
+                  <div v-else class="py-6 text-center text-xs text-gray-400">
+                    暂无等级数据
+                  </div>
+                  <div
+                    v-if="gradeUpdatedAtText"
+                    class="clpm-pid-dashboard__card-meta"
+                    style="text-align: center"
+                  >
+                    {{ gradeUpdatedAtText }}（实时：每回路最新等级）
                   </div>
                 </template>
                 <template v-else>
@@ -1856,6 +1991,14 @@ onMounted(() => {
   font-size: 11px;
   color: hsl(var(--muted-foreground));
   text-align: center;
+}
+
+/* 装置性能改版：状态饼图 / 等级环图容器（flex 卡内需显式 100% 宽，
+   否则被压缩至内容宽，外标签放不下） */
+.clpm-pid-dashboard__mode-pie,
+.clpm-pid-dashboard__grade-donut {
+  width: 100%;
+  min-width: 0;
 }
 
 /* 适用性 Tab 底注 */

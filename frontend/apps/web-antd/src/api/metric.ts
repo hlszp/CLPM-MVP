@@ -1755,6 +1755,8 @@ export interface GradeDistributionResult {
   INCONCLUSIVE: number;
   /** 全部回路数（各等级计数之和，含 INCONCLUSIVE） */
   total: number;
+  /** 数据更新时间：每回路最新快照中的最大 ts_start（ISO；装置性能改版 2026-10-03） */
+  latestTs?: null | string;
   /** P2 IA优化：适用性分布 L0~L4 → 数量；后端未就绪时为 undefined */
   fitnessDistribution?: Record<string, number>;
 }

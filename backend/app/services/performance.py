@@ -1821,6 +1821,7 @@ async def get_grade_distribution(
     subq_stmt = select(
         KpiSnapshotHourly.id.label("snap_id"),
         KpiSnapshotHourly.score.label("score"),
+        KpiSnapshotHourly.ts_start.label("ts_start"),
         KpiSnapshotHourly.fitness_level.label("fitness_level"),
         # 三性分离（R5）：COALESCE 旧快照 NULL → fitness_level（默认映射下等价）
         func.coalesce(KpiSnapshotHourly.assess_level, KpiSnapshotHourly.fitness_level).label(
@@ -1891,6 +1892,13 @@ async def get_grade_distribution(
                 dim_dist[getattr(row, dim_col_name)] += row.cnt
         dim_dist["total"] = total
         distribution[dim_key] = dim_dist
+
+    # 数据更新时间：每回路最新一条快照中的最大 ts_start（前端"数据更新于"标注；
+    # 2026-10-03 装置性能改版：等级分布改实时口径后需展示数据新鲜度）
+    latest_ts_stmt = select(func.max(latest_subq.c.ts_start)).where(latest_subq.c.rn == 1)
+    latest_ts = (await db.execute(latest_ts_stmt)).scalar()
+    if latest_ts is not None:
+        distribution["latestTs"] = latest_ts.isoformat()
     return distribution
 
 

@@ -306,6 +306,9 @@ async function loadList() {
         (monitorCtx.controlMode.value as LoopApi.MonitorQueryParams['controlMode']) ??
         undefined,
       ...gradeQuery,
+      // P1 改版：微型卡已删、不消费 aggregate，跳过服务端全量聚合（961 回路下
+      // 的固定全量开销：distinct-on 快照×2 + Redis 全量 MODE 分布）
+      withAggregate: false,
       sortBy: sortState.field,
       sortOrder: sortState.order === 'ascend' ? 'asc' : 'desc',
       page: query.page,

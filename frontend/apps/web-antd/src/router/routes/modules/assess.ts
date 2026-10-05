@@ -39,7 +39,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
-          title: '性能总览',
+          title: '装置性能',
         },
       },
       {

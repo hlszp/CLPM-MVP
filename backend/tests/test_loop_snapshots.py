@@ -902,8 +902,8 @@ async def test_get_grade_distribution_sql_group_by() -> None:
     distribution = await get_grade_distribution(db)
 
     assert (
-        len(captured_stmts) == 6
-    )  # sys_config + 等级聚合 + 适用性分层聚合 + 三性分布聚合 ×3（R5）
+        len(captured_stmts) == 7
+    )  # sys_config + 等级聚合 + 适用性分层 + 三性分布 ×3 + latestTs（R5/装置性能改版）
     sql = str(captured_stmts[1].compile()).upper()
     assert "GROUP BY" in sql
     assert "CASE" in sql

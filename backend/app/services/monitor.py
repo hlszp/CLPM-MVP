@@ -677,6 +677,7 @@ async def list_loop_monitor(
     min_score: float | None = None,
     max_score: float | None = None,
     unscored: bool = False,
+    with_aggregate: bool = True,
     sort_by: str = "score",
     sort_order: str = "asc",
     page: int = 1,
@@ -689,6 +690,7 @@ async def list_loop_monitor(
     ``control_mode`` 按实时控制模式（Auto/Cascade/Manual，大小写不敏感）过滤。
     ``min_score``/``max_score`` 按最新快照评分过滤（半开区间 [min, max)，0-100），
     ``unscored=True`` 只看无评分回路（无任何快照）。互斥语义：区间优先。
+    ``with_aggregate=False`` 跳过全量聚合（P1 改版监视页不消费 aggregate）。
     ``sort_by`` 支持 score / tagName，``sort_order`` 支持 asc / desc。
     """
     if sort_by not in {"score", "tagName"}:
@@ -821,9 +823,12 @@ async def list_loop_monitor(
 
     # ===== E-1 aggregate 聚合（范围内全量统计，不分页）=====
     # 用于回路列表页 R2 摘要条 + R2.5 等级速览卡，与分页列表同一筛选口径；
-    # typeCounts 分面排除类型筛选自身（loop_type_condition），供前端类型卡片联动
+    # typeCounts 分面排除类型筛选自身（loop_type_condition），供前端类型卡片联动。
+    # with_aggregate=False（P1 改版：监视页微型卡已删、不消费 aggregate）时跳过——
+    # 全量聚合含 distinct-on 快照×2 + Redis 全量 MODE 分布，961 回路下是每页请求
+    # 的固定全量开销；legacy 隐藏页默认 True 保持兼容
     aggregate: dict[str, Any] | None = None
-    if total > 0 and not loop_id:
+    if with_aggregate and total > 0 and not loop_id:
         # 深链接精确查询（loop_id）场景下不计算 aggregate（前端不需要）
         aggregate = await _build_loop_monitor_aggregate(
             db, conditions, type_facet_exclude=loop_type_condition
