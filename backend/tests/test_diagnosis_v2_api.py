@@ -339,6 +339,7 @@ class TestRunsLatestEndpoint:
             loop_id=uuid4(),
             tag_name=tag,
             loop_description=f"{tag} 描述",
+            unit_name=f"{tag} 单元",
             importance_level=importance_level,
             run_id=run_id,
             primary_category="VALVE" if run_id else None,

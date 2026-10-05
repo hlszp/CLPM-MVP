@@ -17,7 +17,7 @@ import type { HandlingApi } from '#/api/handling';
 import type { LoopApi } from '#/api/loop';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -180,6 +180,8 @@ const loopKeyword = ref('');
 const filteredLoops = computed(() => {
   const kw = loopKeyword.value.trim().toLowerCase();
   if (!kw) return loopItems.value;
+  // 未全载期间关键词已由后端 keyword 筛选（remoteSearchLoops），跳过二次本地过滤
+  if (!loopsFullyLoaded.value) return loopItems.value;
   return loopItems.value.filter(
     (l) =>
       l.tagName.toLowerCase().includes(kw) ||
@@ -187,30 +189,102 @@ const filteredLoops = computed(() => {
   );
 });
 
+/** 清单渐进加载（1007 修订：1209 回路 13 页串行是整定总览残余慢点）：
+ *  首页 50 条到达即渲染（总数一并展示），余页 4 路并发补全；
+ *  未补全期间标注"已载 N/总数"，搜索走后端 keyword（全量命中） */
+const loopsTotal = ref(0);
+const loopsFullyLoaded = ref(false);
+let loadLoopsSeq = 0;
+
 async function loadLoops(): Promise<void> {
+  const seq = ++loadLoopsSeq;
   loopLoading.value = true;
+  loopsFullyLoaded.value = false;
   try {
-    // 0929 诚实化修复：此前只拉前 100 条且无截断提示，改全量循环分页
-    const all: LoopApi.LoopListItem[] = [];
-    let page = 1;
-    let total = 0;
-    do {
-      const res = await getLoopListApi({
-        page,
-        pageSize: 100, // 后端 /loops pageSize 上限 le=100
-        plantNodeId: selectedPlantNodeId.value,
-      });
-      all.push(...(res.items ?? []));
-      total = res.total ?? 0;
-      page += 1;
-    } while ((page - 1) * 100 < total);
-    loopItems.value = all;
+    const first = await getLoopListApi({
+      page: 1,
+      pageSize: 50,
+      plantNodeId: selectedPlantNodeId.value,
+    });
+    if (seq !== loadLoopsSeq) return; // 已切换装置节点，丢弃过期响应
+    loopItems.value = [...(first.items ?? [])];
+    loopsTotal.value = first.total ?? loopItems.value.length;
+    loopLoading.value = false; // 首页即渲染，余页后台补全
+    const total = first.total ?? 0;
+    const restPages: number[] = [];
+    for (let pg = 2; (pg - 1) * 50 < total; pg += 1) restPages.push(pg);
+    const remaining = total - loopItems.value.length;
+    if (remaining <= 0) {
+      loopsFullyLoaded.value = true;
+      return;
+    }
+    // 4 路并发分批并入（回路工作台脊柱同款模式）
+    const merged = [...loopItems.value];
+    for (let i = 0; i < restPages.length; i += 4) {
+      const batch = restPages.slice(i, i + 4);
+      const results = await Promise.all(
+        batch.map((pg) =>
+          getLoopListApi({
+            page: pg,
+            pageSize: 50,
+            plantNodeId: selectedPlantNodeId.value,
+          }),
+        ),
+      );
+      if (seq !== loadLoopsSeq) return;
+      for (const res of results) merged.push(...(res.items ?? []));
+      loopItems.value = [...merged];
+    }
+    loopsFullyLoaded.value = true;
   } catch {
-    loopItems.value = [];
-  } finally {
-    loopLoading.value = false;
+    if (seq === loadLoopsSeq) {
+      loopItems.value = [];
+      loopsTotal.value = 0;
+      loopLoading.value = false;
+    }
   }
 }
+
+/** 未全载期间的关键词搜索走后端 keyword（全量命中，单页 100） */
+const remoteSearching = ref(false);
+let remoteSearchSeq = 0;
+async function remoteSearchLoops(kw: string): Promise<void> {
+  const seq = ++remoteSearchSeq;
+  remoteSearching.value = true;
+  try {
+    const res = await getLoopListApi({
+      page: 1,
+      pageSize: 100,
+      plantNodeId: selectedPlantNodeId.value,
+      keyword: kw,
+    });
+    if (seq !== remoteSearchSeq) return;
+    loopItems.value = res.items ?? [];
+    loopsTotal.value = res.total ?? loopItems.value.length;
+  } catch {
+    if (seq === remoteSearchSeq) loopItems.value = [];
+  } finally {
+    if (seq === remoteSearchSeq) remoteSearching.value = false;
+  }
+}
+
+/** 关键词变化：全载→本地过滤（零请求）；未全载→防抖 300ms 转后端搜索 */
+let keywordTimer: null | ReturnType<typeof setTimeout> = null;
+watch(loopKeyword, (kw) => {
+  if (keywordTimer) clearTimeout(keywordTimer);
+  if (loopsFullyLoaded.value || !kw.trim()) return;
+  keywordTimer = setTimeout(() => {
+    void remoteSearchLoops(kw.trim());
+  }, 300);
+});
+
+/** 清空关键词：恢复已载清单（渐进数据仍在 loopItems？——remote 覆盖了，
+ *  简化处理：清空时重拉首页快速恢复） */
+watch(loopKeyword, (kw) => {
+  if (!kw.trim() && !loopsFullyLoaded.value && loopsTotal.value > 0) {
+    void loadLoops();
+  }
+});
 
 // ===== 左脊柱：整定建议列表（TUNING 类在途处置工单，待排程优先） =====
 const openItems = ref<HandlingApi.OrderItem[]>([]);
@@ -249,6 +323,8 @@ async function loadOpenItems(): Promise<void> {
           page: 1,
           pageSize: 100, // 后端 /handling/orders pageSize 上限 le=100
           status,
+          // 1007 修订：本页只消费 TUNING 类，接口侧过滤（原拉全类型再前端滤）
+          actionType: 'TUNING',
           plantNodeId: selectedPlantNodeId.value,
         }),
       ),
@@ -293,8 +369,8 @@ const overviewLoading = ref(false);
 const overviewRows = ref<OverviewRow[]>([]);
 
 const overviewColumns: TableColumnsType = [
-  { key: 'tagName', title: '回路编号', width: 130 },
-  { key: 'description', title: '回路名称', ellipsis: true },
+  { key: 'tagName', title: '回路编号', width: 160 },
+  { key: 'description', title: '回路名称', ellipsis: true, width: 160 },
   { key: 'importanceLevel', title: '等级', width: 56, align: 'center' },
   { key: 'latestScore', title: '性能评分', width: 80, align: 'center' },
   { key: 'scoreGrade', title: '性能等级', width: 76, align: 'center' },
@@ -332,7 +408,8 @@ async function loadOverview(): Promise<void> {
       return {
         loopId: l.loopId,
         tagName: l.loopTagName,
-        description: l.loopDescription ?? null,
+        // 1007 修订：台账 description 缺失时兜底显示所属单元名（名称列不再恒空）
+        description: l.loopDescription ?? l.unitName ?? null,
         importanceLevel: l.importanceLevel ?? null,
         latestScore: l.latestScore ?? null,
         primaryCategoryLabel: l.primaryCategoryLabel ?? null,
@@ -458,14 +535,14 @@ onBeforeUnmount(() => {
 
         <div class="tuning-sidebar__section-title">
           <span>回路</span>
-          <span class="text-xs text-neutral-400">
-            {{ filteredLoops.length }}
+          <span class="text-xs text-neutral-400" :title="loopsFullyLoaded ? '全部已加载' : `渐进加载中（共 ${loopsTotal} 个）`">
+            {{ loopsFullyLoaded ? filteredLoops.length : `${filteredLoops.length}/${loopsTotal}` }}
           </span>
         </div>
         <Input
           v-model:value="loopKeyword"
           allow-clear
-          placeholder="搜索位号/描述..."
+          placeholder="搜索位号/描述（全量检索）..."
           size="small"
         />
         <div class="tuning-sidebar__list-wrap">

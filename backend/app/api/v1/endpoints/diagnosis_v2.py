@@ -644,6 +644,7 @@ async def get_latest_runs_per_loop(
         {cte}
         SELECT ll.id AS loop_id, ll.tag_name, ll.description AS loop_description,
                ll.importance_level,
+               unit.name AS unit_name,
                r.id AS run_id, r.primary_category, r.primary_confidence,
                r.severity, r.status, r.trigger_type,
                r.review_status, r.review_results, r.reviewed_by, r.reviewed_at,
@@ -654,6 +655,7 @@ async def get_latest_runs_per_loop(
                k.fitness_level, k.tune_level, k.fitness_tags,
                rc.run_count
         FROM loop_ledger ll
+        LEFT JOIN plant_node unit ON unit.id = ll.unit_id
         LEFT JOIN LATERAL (
                 SELECT * FROM diagnosis_run dr
                 WHERE dr.loop_id = ll.id
@@ -701,6 +703,7 @@ async def get_latest_runs_per_loop(
                 "loopId": str(r.loop_id),
                 "loopTagName": r.tag_name,
                 "loopDescription": r.loop_description,
+                "unitName": r.unit_name,
                 "importanceLevel": int(r.importance_level) if r.importance_level else None,
                 "runId": str(r.run_id) if r.run_id else None,
                 # 诊断次序：该回路累计第几次诊断（未诊断为 None）

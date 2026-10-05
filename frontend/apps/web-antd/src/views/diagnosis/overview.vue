@@ -574,7 +574,7 @@ onMounted(() => {
               </template>
               <template v-else-if="column.dataIndex === 'loopDescription'">
                 <span class="text-neutral-500">{{
-                  record.loopDescription || '—'
+                  record.loopDescription || record.unitName || '—'
                 }}</span>
               </template>
               <template v-else-if="column.dataIndex === 'importanceLevel'">
