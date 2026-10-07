@@ -2,13 +2,17 @@
 import type { KpiCardKey } from './components/kpi-band.vue';
 
 /**
- * 驾驶舱 · 页1 总览（方案 11 §5.1，C3 全量落地）
+ * 驾驶舱 · 页1 总览（方案 11 §5.1；2026-10-05 整合裁决 D2 合并重构）
+ *
+ * 新总览 = 原驾驶舱总览 + 原运维工作台「系统总览」Tab 核心内容合并，
+ * 重点显示当前全厂级各装置、单元的性能情况；按裁决删除「问题回路
+ * TOP-8」「闭环治理漏斗」。
  *
  * 布局栅格（1920×1080 满屏无页面滚动，区块内滚动）：
- * - §0 顶栏 64px（cockpit-header）
+ * - §0 顶栏 64px（cockpit-header，六页签）
  * - §1 KPI 指标带 ~120px：6 卡横排（kpi-band）
- * - 行1：§2 装置排名横道图(20%) §3 绩效发展趋势(45%) §4 处置待办(35%)
- * - 行2：§5 闭环治理漏斗(20%) §6 问题回路 TOP-8(45%) §7 预警事件流(35%)
+ * - 行1：装置性能排名(26%) | 绩效发展趋势(1fr) | 处置待办(32%，跨两行)
+ * - 行2：单元平稳率(26%)   | 预警事件流(1fr)   | （待办续）
  *
  * 交互铁律：纯查看零操作——所有点击仅打开舱内深度弹窗，
  * 无写操作按钮、无后台跳转链接（唯一后台入口为顶栏「管理后台」）。
@@ -25,15 +29,14 @@ import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 import AlertStream from './components/alert-stream.vue';
 import CockpitHeader from './components/cockpit-header.vue';
 import DeviceRankBars from './components/device-rank-bars.vue';
-import FunnelPanel from './components/funnel-panel.vue';
 import KpiBand from './components/kpi-band.vue';
-import LoopTopTable from './components/loop-top-table.vue';
 import EventDetailModal from './components/modals/event-detail-modal.vue';
 import ListModal from './components/modals/list-modal.vue';
 import LoopDetailModal from './components/modals/loop-detail-modal.vue';
 import TodoDetailModal from './components/modals/todo-detail-modal.vue';
 import TodoPanel from './components/todo-panel.vue';
 import TrendPanel from './components/trend-panel.vue';
+import UnitSteadyBars from './components/unit-steady-bars.vue';
 import { GRADE_LABELS, gradeOfScore } from './composables/use-cockpit-theme';
 import { WINDOW_MAP, windowStartDate } from './utils/format';
 
@@ -51,18 +54,17 @@ const kpiBandRef = ref<InstanceType<typeof KpiBand>>();
 const rankBarsRef = ref<InstanceType<typeof DeviceRankBars>>();
 const trendPanelRef = ref<InstanceType<typeof TrendPanel>>();
 const todoPanelRef = ref<InstanceType<typeof TodoPanel>>();
-const funnelPanelRef = ref<InstanceType<typeof FunnelPanel>>();
-const topTableRef = ref<InstanceType<typeof LoopTopTable>>();
+const steadyBarsRef = ref<InstanceType<typeof UnitSteadyBars>>();
 const alertStreamRef = ref<InstanceType<typeof AlertStream>>();
 
-/** §1 KPI/§2 排名/§3 趋势/§5 漏斗/§6 问题回路（5min 定时器口径） */
-const staticRefs = [kpiBandRef, rankBarsRef, trendPanelRef, funnelPanelRef, topTableRef];
+/** §1 KPI/§2 装置排名/§3 趋势/§8 单元平稳率（5min 定时器口径） */
+const staticRefs = [kpiBandRef, rankBarsRef, trendPanelRef, steadyBarsRef];
 
 function reloadStatic() {
   for (const r of staticRefs) void r.value?.reload();
 }
 
-/** 手动全页刷新：静态 5 区块 + §4 待办 + §7 预警流 */
+/** 手动全页刷新：静态 4 区块 + 处置待办 + 预警流 */
 function reloadAll() {
   reloadStatic();
   void todoPanelRef.value?.reload();
@@ -193,7 +195,7 @@ async function openScoreList(sortOrder: 'asc' | 'desc', title: string) {
         grade: GRADE_LABELS[gradeOfScore(it.score) ?? 'FAIR'] ?? '—',
         loopId: it.loopId,
         loopName: it.loopName ?? '—',
-        scoreText: it.score.toFixed(1),
+        scoreText: it.score.toFixed(2),
         tagName: it.tagName,
         unitName: it.unitName,
       }));
@@ -219,7 +221,7 @@ async function openTodoList() {
     title: '处置待办清单',
   });
   try {
-    const res = await getHandlingOrdersApi({ page: 1, pageSize: 200 });
+    const res = await getHandlingOrdersApi({ page: 1, pageSize: 100 });
     const since = windowStartDate(cockpitStore.timeWindow).getTime();
     listModal.rows = (res?.items ?? [])
       .filter((o) => ACTIVE_ORDER_STATUSES.has(o.status))
@@ -287,66 +289,23 @@ function onKpiCardClick(key: KpiCardKey) {
   switch (key) {
   case 'degraded': {
     openScoreList('asc', '劣化回路清单（按评分升序）');
-  
+
   break;
   }
   case 'score': {
     openScoreList('desc', '回路评分清单');
-  
+
   break;
   }
   case 'todo': {
     openTodoList();
-  
+
   break;
   }
   default: {
     openAlertList();
   }
   }
-}
-
-// ---------------------------------------------------------------------------
-// §5 漏斗阶段点击 → 阶段计数与口径说明（无后端阶段清单接口，不造数）
-// ---------------------------------------------------------------------------
-const FUNNEL_STAGE_META: Record<
-  string,
-  { description: string; label: string }
-> = {
-  closed: {
-    description: '口径：时间窗内处置闭环数（处置工单 CLOSED）。',
-    label: '处置闭环',
-  },
-  diagnosed: {
-    description:
-      '口径：时间窗内完成诊断的回路数（diagnosis_run COMPLETED 按回路去重）。',
-    label: '完成诊断',
-  },
-  discovered: {
-    description:
-      '口径：时间窗内评估发现的劣化回路数（警告 + 不合格档）。',
-    label: '发现异常',
-  },
-  tuned: {
-    description: '口径：时间窗内整定方案确认数。',
-    label: '产出方案',
-  },
-};
-
-function onFunnelStageClick(stage: string, count: number) {
-  const meta = FUNNEL_STAGE_META[stage];
-  if (!meta) return;
-  openListModal({
-    columns: [
-      { key: 'label', label: '阶段' },
-      { key: 'count', label: '数量', width: '100px' },
-    ],
-    description: `${meta.description}（阶段明细清单接口暂缺，仅展示阶段计数与口径说明）`,
-    rowAction: null,
-    title: `闭环治理漏斗 · ${meta.label}`,
-  });
-  listModal.rows = [{ count, label: meta.label }];
-  listModal.loading = false;
 }
 </script>
 
@@ -357,7 +316,7 @@ function onFunnelStageClick(stage: string, count: number) {
     <!-- §1 KPI 指标带（6 卡横排） -->
     <KpiBand ref="kpiBandRef" @card-click="onKpiCardClick" />
 
-    <!-- §2~§7 两行三列区块（20% / 45% / 35%） -->
+    <!-- 五区块两行三列（26% / 1fr / 32%），处置待办跨两行 -->
     <section class="block-grid">
       <DeviceRankBars ref="rankBarsRef" class="block-rank" />
       <TrendPanel ref="trendPanelRef" class="block-trend" />
@@ -366,16 +325,7 @@ function onFunnelStageClick(stage: string, count: number) {
         class="block-todo"
         @open-todo="openTodoDetail"
       />
-      <FunnelPanel
-        ref="funnelPanelRef"
-        class="block-funnel"
-        @stage-click="onFunnelStageClick"
-      />
-      <LoopTopTable
-        ref="topTableRef"
-        class="block-top8"
-        @open-loop="openLoopDetail"
-      />
+      <UnitSteadyBars ref="steadyBarsRef" class="block-steady" />
       <AlertStream
         ref="alertStreamRef"
         class="block-alert"
@@ -419,14 +369,34 @@ function onFunnelStageClick(stage: string, count: number) {
   padding-bottom: 12px;
 }
 
-/* §2~§7 两行三列：20% / 45% / 35%，行高弹性均分剩余空间 */
+/* 五区块两行三列（26% / 1fr / 32%）；处置待办右列跨两行 */
 .block-grid {
   display: grid;
   flex: 1;
   grid-template-rows: 1fr 1fr;
-  grid-template-columns: 20% 1fr 35%;
+  grid-template-columns: 26% 1fr 32%;
   gap: 12px;
   min-height: 0;
   padding: 0 12px;
+}
+
+.block-rank {
+  grid-area: 1 / 1;
+}
+
+.block-trend {
+  grid-area: 1 / 2;
+}
+
+.block-todo {
+  grid-area: 1 / 3 / 3 / 4;
+}
+
+.block-steady {
+  grid-area: 2 / 1;
+}
+
+.block-alert {
+  grid-area: 2 / 2;
 }
 </style>

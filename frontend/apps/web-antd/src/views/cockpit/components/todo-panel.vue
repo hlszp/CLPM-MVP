@@ -52,11 +52,12 @@ const items = ref<HandlingApi.OrderItem[]>([]);
 
 async function load() {
   loading.value = true;
-  // 2026-10-03 优化：5 请求（1 清单 + 4 状态计数）合并为 1 次拉取（pageSize=200），
+  // 2026-10-03 优化：5 请求（1 清单 + 4 状态计数）合并为 1 次拉取，
   // 计数前端按状态统计；清单口径 = 在途工单 ∩ 页面时间窗（updatedAt ≥ 窗口起点，
   // 用户裁决 1003：驾驶舱全部区块随时间范围刷新）。
+  // pageSize=100：后端 /handling/orders 校验上限 le=100（200 会被 422 拒绝致面板静默空态）。
   try {
-    const res = await getHandlingOrdersApi({ page: 1, pageSize: 200 });
+    const res = await getHandlingOrdersApi({ page: 1, pageSize: 100 });
     const all = res?.items ?? [];
     const base: Record<HandlingApi.OrderStatus, number> = {
       CANCELLED: 0,

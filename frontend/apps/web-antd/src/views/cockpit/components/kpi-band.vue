@@ -65,11 +65,11 @@ const gradeSegments = computed(() => {
 });
 
 function fmtScore(v: null | number | undefined): string {
-  return v === null || v === undefined ? '—' : v.toFixed(1);
+  return v === null || v === undefined ? '—' : v.toFixed(2);
 }
 
 function fmtPct(v: null | number | undefined): string {
-  return v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
+  return v === null || v === undefined ? '—' : `${v.toFixed(2)}%`;
 }
 </script>
 

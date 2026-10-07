@@ -151,7 +151,7 @@ def shape_summary(
     grade = _grade_label(score)
     if score is not None:
         delta_txt = (
-            f"环比 <b>{'+' if (delta or 0) >= 0 else ''}{delta}</b> 分"
+            f"环比 <b>{'+' if (delta or 0) >= 0 else ''}{delta:.2f}</b> 分"
             if delta is not None
             else "环比持平"
         )
@@ -162,8 +162,9 @@ def shape_summary(
             worst_txt = f"压力集中于 <b>{worst['name']}</b>，主要受 <b>{joined}</b> 影响"
         else:
             worst_txt = "各装置运行平稳"
+        # 2026-10-07 用户裁决：驾驶舱数值统一保留两位小数（结论文案内嵌数值同口径）
         conclusion = (
-            f"控制性能处于 <b>{grade}</b> 水平，综合评分 <b>{score}</b>，{delta_txt}；{worst_txt}。"
+            f"控制性能处于 <b>{grade}</b> 水平，综合评分 <b>{score:.2f}</b>，{delta_txt}；{worst_txt}。"
         )
     else:
         conclusion = "暂无评估数据"

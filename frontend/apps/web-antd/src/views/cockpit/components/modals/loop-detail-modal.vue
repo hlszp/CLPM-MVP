@@ -249,7 +249,7 @@ function buildRadarOption() {
   const cc = chartColors.value;
   const poly = cc.radar;
   const scoreText =
-    score.value === null ? '—' : Number(score.value).toFixed(1);
+    score.value === null ? '—' : Number(score.value).toFixed(2);
   return {
     animation: false,
     graphic: {
@@ -355,7 +355,7 @@ watch(
             :style="{ color: gradeColor, borderColor: gradeColor }"
           >{{ gradeText }}</span>
           <span class="ld__score" :style="{ color: gradeColor }">
-            {{ score === null ? '—' : score.toFixed(1) }}
+            {{ score === null ? '—' : score.toFixed(2) }}
           </span>
         </div>
       </div>
@@ -372,7 +372,7 @@ watch(
           <div class="ld__values">
             <div v-for="it in realtimeItems" :key="it.label" class="ld__value">
               <span class="ld__value-label">{{ it.label }}</span>
-              <span class="ld__value-num">{{ it.value }}</span>
+              <span class="ld__value-num">{{ it.value != null && !Number.isNaN(Number(it.value)) ? Number(it.value).toFixed(2) : (it.value ?? '—') }}</span>
             </div>
           </div>
           <div class="ld__readat">

@@ -1,0 +1,283 @@
+<script setup lang="ts">
+/**
+ * 诊断队列 Top6（方案 §5.1 F-DG-01 · 原型 loopRow 复刻 · 右上分段选项卡）
+ *
+ * 数据源（14 号方案 A2）：open_tags = diagnosis_run 每回路最新未处置异常 run
+ * （severity 已由后端映射回四档颜色域；SLA 倒计时列已下线 D1=a——SLA 归处置域）
+ *
+ * 分段选项卡（原型 #diagSeg，右上 3 段）：
+ *   · 风险优先（默认）—— 后端按 severity × 时间排好
+ *   · 恶化最快 —— 按 spark.slope 降序前端模拟重排
+ *   · 长期手动 —— 前端筛选 category 含"投用/操作"或 symptom 含"手动"
+ *
+ * 每行主要信息（对齐原型复合块）：
+ *   [1] 严重度色点（小dot，≈8px）
+ *   [2] 回路名 + 症状chip + 状态chip（处理中/验证中）
+ *   [3] 评分▼dd（数字 + ▼delta，红/绿着色 + spark 柱线小图旁）
+ *   [4] sparkline（Mini 柱+线，≈72px 宽，无动画）
+ *   [5] 置信度 ●0.91（绿/橙）
+ *
+ * - 点击行 → emit('rowClick', row) → 父级打开回路详情抽屉（用户决策）
+ */
+import type { WorkbenchApi } from '#/api/workbench';
+
+import { computed, ref } from 'vue';
+
+import Spark from './Spark.vue';
+
+type DiagSeg = 'manual' | 'risk' | 'worsening';
+
+const props = defineProps<{
+  rows?: WorkbenchApi.DiagnosisOpenTag[];
+  window?: string;
+}>();
+
+const emit = defineEmits<{
+  (e: 'rowClick', row: WorkbenchApi.DiagnosisOpenTag): void;
+}>();
+
+const SEGMENTS: { key: DiagSeg; label: string }[] = [
+  { key: 'risk', label: '风险优先' },
+  { key: 'worsening', label: '恶化最快' },
+  { key: 'manual', label: '长期手动' },
+];
+
+const seg = ref<DiagSeg>('risk');
+
+const SEVERITY_COLOR: Record<string, string> = {
+  CRITICAL: '#FF4D4F',
+  ERROR: '#FF4D4F',
+  WARN: '#FA8C16',
+  INFO: '#1890FF',
+};
+
+/** 严重度中文标签与底色（**真实字段**的如实展示）。
+ *
+ * 2026-09-13 整改 G40：此前把 severity 映射成"处理中"/"验证中"这类**并不
+ * 存在的工单流转状态**（原注释自述以 severity 推断工单状态），会让用户
+ * 以为工单已在流转并据此判断跟进优先级。severity 本身是真实字段，故如实展示
+ * 严重度；工单真实状态应由处置模块的数据源提供，不由本表推断。
+ */
+const SEVERITY_TEXT: Record<string, string> = {
+  CRITICAL: '严重',
+  ERROR: '错误',
+  WARN: '警告',
+  INFO: '提示',
+};
+
+function statusPill(row: WorkbenchApi.DiagnosisOpenTag): {
+  bgClass: string;
+  color: string;
+  text: string;
+} {
+  const sev = row.severity ?? '';
+  return {
+    // 底色用 Tailwind 中性类而非 hex：本项目有 hex 硬编码棘轮（只减不增，见
+    // scripts/check-hex-whitelist.mjs），G40 修造数时曾因新增 4 个 hex 触发超限。
+    bgClass: 'ckwb-panel-2',
+    color: severityColor(sev),
+    text: SEVERITY_TEXT[sev] ?? '—',
+  };
+}
+
+function severityColor(sev: null | string | undefined): string {
+  return SEVERITY_COLOR[sev ?? ''] ?? '#BFBFBF';
+}
+
+function toPoints(spark: number[]): { t: string; v: number }[] {
+  return spark.map((v) => ({ t: '', v }));
+}
+
+/** 最新评分 + delta（末 - 前末；负值=劣化红，正值=改善绿） */
+function scoreDelta(spark: number[]): { color: string; cur: null | number; delta: null | number; } {
+  if (spark.length === 0) return { cur: null, delta: null, color: 'var(--ck-text-3)' };
+  const cur = spark[spark.length - 1] ?? null;
+  let delta: null | number = null;
+  if (spark.length >= 2) {
+    const prev = spark[spark.length - 2] ?? 0;
+    const curr = cur ?? 0;
+    delta = Math.round((curr - prev) * 100) / 100;
+  }
+  let color = 'var(--ck-text-2)';
+  if (delta !== null) {
+    if (delta < 0) color = '#FF4D4F';
+    else if (delta > 0) color = '#52C41A';
+  }
+  return { cur, delta, color };
+}
+
+/** spark 斜率（恶化最快排序依据：末−首 / len，越负 = 恶化越快） */
+function sparkSlope(spark: number[]): number {
+  if (spark.length < 2) return 0;
+  const first = spark[0] ?? 0;
+  const last = spark[spark.length - 1] ?? 0;
+  return (last - first) / spark.length;
+}
+
+function confColor(conf: null | number | undefined): string {
+  return conf !== null && conf !== undefined && conf >= 0.8 ? '#52C41A' : '#FA8C16';
+}
+
+/** 分段选项卡过滤 + 排序 */
+const visibleRows = computed(() => {
+  const raw = props.rows ?? [];
+  if (seg.value === 'risk') {
+    // 默认端口序（按原始顺序——后端已按严重度×时间排好）
+    return raw.slice(0, 6);
+  }
+  if (seg.value === 'worsening') {
+    // 恶化最快：按 spark 斜率升序（最负在前，斜率 null 的排后）
+    return [...raw]
+      .map((r) => ({ r, s: sparkSlope(r.spark) }))
+      .toSorted((a, b) => a.s - b.s)
+      .map((x) => x.r)
+      .slice(0, 6);
+  }
+  // 长期手动：symptom 含「手动」/「长期」/「manual」或 category 为投用/操作类（中文标签域）
+  return raw
+    .filter((r) => {
+      const sym = (r.symptom ?? '').toLowerCase();
+      const cat = r.category ?? '';
+      return (
+        sym.includes('手动') ||
+        sym.includes('长期') ||
+        sym.includes('manual') ||
+        cat.includes('投用') ||
+        cat.includes('操作')
+      );
+    })
+    .slice(0, 6);
+});
+</script>
+
+<template>
+  <div class="flex h-full w-full flex-col overflow-hidden ckwb-panel">
+    <!-- 标题栏：左 标题 + 分段规则；右 分段选项卡 -->
+    <div class="flex flex-none items-center justify-between border-b ckwb-border px-3 py-1.5">
+      <span class="flex items-center gap-1.5 text-xs font-medium text-[#FF4D4F]">
+        <span class="inline-block h-1 w-3 rounded-sm bg-[#FF4D4F]"></span>
+        诊断队列 · 劣化回路
+        <span class="text-[10px] font-normal ckwb-text-3">
+          严重度 × 恶化速度 × 装置权重
+        </span>
+      </span>
+      <div class="flex items-center gap-0.5 rounded-sm border ckwb-border bg-[#FAFBFC] p-0.5">
+        <button
+          v-for="sg in SEGMENTS"
+          :key="sg.key"
+          class="flex-none rounded-sm px-2 py-0.5 text-[10.5px] transition-colors"
+          :class="
+            seg === sg.key
+              ? 'ckwb-panel ckwb-accent shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-semibold'
+              : 'ckwb-text-2 hover:ckwb-text'
+          "
+          @click="seg = sg.key"
+        >
+          {{ sg.label }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 列表区 -->
+    <div class="flex-1 overflow-auto">
+      <div
+        v-for="row in visibleRows"
+        :key="row.tag_id"
+        class="flex cursor-pointer items-center gap-2 border-b border-[var(--ck-panel-2)] px-3 py-2 ckwb-hover"
+        @click="emit('rowClick', row)"
+      >
+        <!-- [1] 严重度色点 -->
+        <span
+          class="mt-0.5 inline-block h-2 w-2 flex-none rounded-full"
+          :style="{ backgroundColor: severityColor(row.severity) }"
+          :title="row.severity ?? ''"
+        ></span>
+
+        <!-- [2] 回路名 + 症状 chip + 状态 chip -->
+        <div class="min-w-0 flex-[1.3]">
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="truncate text-[12px] font-semibold ckwb-text">{{
+              row.loop_name ?? row.loop_id
+            }}</span>
+            <span
+              class="flex-none rounded-sm bg-[#FFF1F0] px-1 py-px text-[10px] text-[#FF4D4F]"
+            >
+              {{ row.symptom ?? '—' }}
+            </span>
+            <span
+              class="flex-none rounded-sm px-1 py-px text-[10px]"
+              :class="statusPill(row).bgClass"
+              :style="{
+                color: statusPill(row).color,
+              }"
+            >
+              {{ statusPill(row).text }}
+            </span>
+          </div>
+          <div class="truncate text-[10.5px] leading-4 ckwb-text-3" :title="row.conclusion ?? ''">
+            {{ row.conclusion ?? row.category ?? '暂无结论摘要' }}
+          </div>
+        </div>
+
+        <!-- [3] 评分 + delta▼▲ + [4] sparkline（无动画） -->
+        <div class="flex flex-none items-center gap-1.5">
+          <div class="flex flex-col items-end leading-tight">
+            <div class="flex items-baseline gap-0.5">
+              <span
+                class="text-[13px] font-semibold tabular-nums"
+                :style="{ color: scoreDelta(row.spark).color }"
+              >
+                {{ scoreDelta(row.spark).cur?.toFixed(2) ?? '—' }}
+              </span>
+              <span
+                v-if="scoreDelta(row.spark).delta !== null"
+                class="text-[10px] font-semibold tabular-nums"
+                :style="{ color: scoreDelta(row.spark).color }"
+              >
+                {{
+                  scoreDelta(row.spark).delta! > 0
+                    ? `▲${scoreDelta(row.spark).delta}`
+                    : `▼${Math.abs(scoreDelta(row.spark).delta!)}`
+                }}
+              </span>
+            </div>
+          </div>
+          <Spark
+            :points="toPoints(row.spark)"
+            :width="72"
+            :height="20"
+            :color="scoreDelta(row.spark).color"
+          />
+        </div>
+
+        <!-- [5] 置信度 ●0.91 -->
+        <span
+          class="w-12 flex-none text-right text-[11px] font-semibold tabular-nums"
+          :style="{ color: confColor(row.confidence) }"
+        >
+          {{ row.confidence === null || row.confidence === undefined
+            ? '—'
+            : `●${row.confidence.toFixed(2)}` }}
+        </span>
+      </div>
+
+      <div
+        v-if="visibleRows.length === 0"
+        class="py-10 text-center text-xs ckwb-text-3"
+      >
+        {{ seg === 'manual' ? '当前分段无长期手动异常' : '近窗口无未处置异常标签' }}
+      </div>
+    </div>
+
+    <!-- 底部辅助行 -->
+    <div
+      class="flex-none border-t ckwb-border px-3 py-1 text-[10px] ckwb-text-3"
+    >
+      共 {{ visibleRows.length }} 条 · 按
+      <span class="ckwb-text-2">
+        {{ seg === 'risk' ? '风险优先' : seg === 'worsening' ? '恶化最快' : '长期手动' }}
+      </span>
+      排序 · 未处置=建议未终态
+    </div>
+  </div>
+</template>

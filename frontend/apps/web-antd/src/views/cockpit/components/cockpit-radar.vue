@@ -60,7 +60,7 @@ function buildOption() {
   const scoreText =
     score === null || score === undefined || Number.isNaN(score)
       ? '—'
-      : Number(score).toFixed(1);
+      : Number(score).toFixed(2);
   const gradeColor = props.grade
     ? resolveCssVar(rootRef.value, props.grade.colorVar)
     : colors.text2;

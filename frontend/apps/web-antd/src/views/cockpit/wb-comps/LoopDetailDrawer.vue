@@ -1,0 +1,266 @@
+<script setup lang="ts">
+/**
+ * 回路详情抽屉（F-DG-01 行点击 · 用户决策：抽屉而非路由整定 Tab）
+ *
+ * 对齐原型 openLoopDrawer 只读信息结构（本批次无写操作）：
+ * - 概览：当前评分 + sparkline + 触发时间（SLA 倒计时已下线 D1=a，归处置域）
+ * - 诊断结论：置信度 + 结论摘要 + 异常类别
+ * - 适用性：L0~L4 徽章 + 说明
+ * - 底部：前往参数整定 Tab（诊断 → 整定闭环动线，携带回路上下文）
+ * - 16 号文 F1 入口 3："查看完整诊断记录"旁"诊断档案"入口（回路诊断档案抽屉）
+ */
+import type { DiagnosisApi } from '#/api/diagnosis';
+import type { WorkbenchApi } from '#/api/workbench';
+
+import { computed, ref } from 'vue';
+
+import { CLPM_INDUSTRIAL } from '#/constants/clpm-ui';
+// 16 号文 F1 入口 3：回路详情抽屉"诊断档案"入口（跨模块复用诊断域档案抽屉）
+import DiagnosisLoopArchiveDrawer from '#/views/diagnosis/components/loop-archive-drawer.vue';
+
+import Spark from './Spark.vue';
+import { useCockpitDrill } from './use-drill';
+
+const props = defineProps<{
+  row: null | WorkbenchApi.DiagnosisOpenTag;
+}>();
+
+const emit = defineEmits<{
+  (e: 'close'): void;
+}>();
+
+const { drill } = useCockpitDrill();
+
+const FITNESS_LABEL: Record<string, string> = {
+  L0: '不可评估（数据严重不足）',
+  L1: '仅可监视（手动主导）',
+  L2: '条件异常（可评估可诊断）',
+  L3: '待激励（整定禁用）',
+  L4: '可优化（全链路开放）',
+};
+
+const FITNESS_COLOR: Record<string, string> = {
+  L0: '#FF4D4F',
+  L1: '#FA8C16',
+  L2: '#52C41A',
+  L3: CLPM_INDUSTRIAL.navy,
+  L4: '#52C41A',
+};
+
+const SEVERITY_COLOR: Record<string, string> = {
+  CRITICAL: '#FF4D4F',
+  ERROR: '#FF4D4F',
+  WARN: '#FA8C16',
+  INFO: '#1890FF',
+};
+
+const lastScore = computed(() => {
+  const spark = props.row?.spark ?? [];
+  return spark.length > 0 ? (spark[spark.length - 1] ?? null) : null;
+});
+
+const sparkPoints = computed(() =>
+  (props.row?.spark ?? []).map((v) => ({ t: '', v })),
+);
+
+function toTuning() {
+  emit('close');
+  // 追溯矩阵：→ 回路工作台整定剖面（2026-10-04 D3；携带回路上下文；不带窗口/scope）
+  if (!props.row) return;
+  // D3 弹窗化：原跳回路工作台整定剖面，改开回路详情弹窗（纯查看）
+  void drill({ kind: 'loop', loopId: props.row.loop_id });
+}
+
+/** 「去处置」：按回路深链到处置建议列表（后端 GET /handling/suggestions 支持 loopId） */
+function toHandling() {
+  emit('close');
+  if (!props.row) return;
+  void drill({ kind: 'suggestions', loopId: props.row.loop_id });
+}
+
+/** 追溯矩阵 §4 下钻：抽屉内"查看完整诊断记录" → 诊断记录页（loopId 口径） */
+function toRecords() {
+  emit('close');
+  if (!props.row) return;
+  void drill({ kind: 'diagRuns', loopId: props.row.loop_id, title: '本回路 · 诊断记录' });
+}
+
+// ---- 诊断档案抽屉（16 号文 F1 入口 3：本抽屉内打开，不跳页） ----
+const archiveOpen = ref(false);
+
+function openArchive() {
+  if (!props.row) return;
+  archiveOpen.value = true;
+}
+
+/** 档案内 run 点击 → 降级跳诊断记录页 focus 深链（/diagnosis/records?loopId=&focus=） */
+function onArchiveOpenRun(item: DiagnosisApi.LatestRunItem) {
+  emit('close');
+  archiveOpen.value = false;
+  if (!item.runId) return;
+  // D3 弹窗化：focus 深链定位弹窗不支持，按回路过滤并在标题注明口径
+  void drill({ kind: 'diagRuns', loopId: item.loopId, title: '诊断记录（档案回路口径）' });
+}
+
+/** 档案空态引导发起诊断 → 无快捷诊断上下文，跳回路工作台诊断剖面预选该回路（2026-10-04 D2） */
+function onArchiveTriggerDiagnosis(loopId: string) {
+  emit('close');
+  archiveOpen.value = false;
+  // D3 弹窗化：原跳工作台诊断剖面发起诊断（作业动作），驾驶舱纯查看原则下改开回路详情弹窗
+  void drill({ kind: 'loop', loopId });
+}
+</script>
+
+<template>
+      <div v-if="row" class="fixed inset-0 z-[1000]" @click.self="emit('close')">
+      <!-- 遮罩 -->
+      <div class="absolute inset-0 bg-black/30"></div>
+      <!-- 抽屉面板 w480 -->
+      <div
+        class="absolute inset-y-0 right-0 flex w-[480px] flex-col ckwb-panel shadow-xl"
+      >
+        <!-- 头部 -->
+        <div class="flex-none border-b border-[var(--ck-border)] px-4 py-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-[15px] font-semibold ckwb-text">{{
+                row.loop_name ?? row.loop_id
+              }}</span>
+              <span
+                class="rounded-sm px-1.5 py-px text-[10px] text-white"
+                :style="{
+                  backgroundColor: SEVERITY_COLOR[row.severity ?? ''] ?? '#BFBFBF',
+                }"
+                >{{ row.symptom ?? '异常' }}</span
+              >
+            </div>
+            <button
+              class="px-1 text-base leading-none ckwb-text-3 hover:ckwb-text-2"
+              @click="emit('close')"
+              >✕</button
+            >
+          </div>
+          <div class="mt-1 text-[11px] ckwb-text-3">
+            异常类别 {{ row.category ?? '—' }} ｜ 触发
+            {{ row.triggered_at ? new Date(row.triggered_at).toLocaleString('zh-CN') : '—' }}
+          </div>
+        </div>
+
+        <!-- 内容 -->
+        <div class="flex-1 space-y-4 overflow-auto px-4 py-3">
+          <!-- 概览（SLA 倒计时已下线 D1=a） -->
+          <section>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--ck-accent)]">概览</div>
+            <div class="flex items-center gap-3">
+              <div class="flex-none">
+                <div class="text-[24px] font-bold tabular-nums text-[#FF4D4F]">
+                  {{ lastScore?.toFixed(2) ?? '—' }}
+                </div>
+                <div class="text-[10px] ckwb-text-3">综合评分（近窗口）</div>
+              </div>
+              <div class="min-w-0 flex-1">
+                <Spark :points="sparkPoints" :width="220" :height="36" color="#FF4D4F" />
+                <div class="text-center text-[10px] ckwb-text-3">评分趋势（近 6 小时）</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 诊断结论 -->
+          <section>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--ck-accent)]">
+              诊断结论（置信度
+              <span
+                class="tabular-nums"
+                :style="{
+                  color: row.confidence !== null && row.confidence >= 0.8 ? '#52C41A' : '#FA8C16',
+                }"
+                >{{ row.confidence === null ? '—' : row.confidence.toFixed(2) }}</span
+              >）
+            </div>
+            <div
+              class="rounded border border-[var(--ck-border)] ckwb-panel-2 px-2.5 py-2 text-[12px] leading-5 ckwb-text"
+            >
+              {{ row.conclusion ?? '暂无结论摘要，可进入诊断模块查看完整证据链。' }}
+            </div>
+          </section>
+
+          <!-- 适用性 -->
+          <section>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--ck-accent)]">适用性（B-09 分级漏斗）</div>
+            <div class="flex items-center gap-2">
+              <span
+                class="rounded px-1.5 py-0.5 text-[11px] font-semibold text-white"
+                :style="{
+                  backgroundColor: row.fitness_level
+                    ? (FITNESS_COLOR[row.fitness_level] ?? '#BFBFBF')
+                    : '#BFBFBF',
+                }"
+                >{{ row.fitness_level ?? '无快照' }}</span
+              >
+              <span class="text-[11px] ckwb-text-2">{{
+                row.fitness_level ? FITNESS_LABEL[row.fitness_level] : '暂无适用性评估结果'
+              }}</span>
+            </div>
+          </section>
+
+          <!-- 完整诊断记录链接（追溯矩阵 §4：抽屉 → 诊断记录页下钻）+ 诊断档案入口（16 号文 F1） -->
+          <section>
+            <a
+              class="cursor-pointer text-[11.5px] text-[var(--ck-accent)] hover:underline"
+              @click="toRecords"
+              >查看完整诊断记录 →</a
+            >
+            <a
+              class="ml-4 cursor-pointer text-[11.5px] text-[var(--ck-accent)] hover:underline"
+              @click="openArchive"
+              >诊断档案 →</a
+            >
+          </section>
+
+          <!-- 处置动线提示 -->
+          <section>
+            <div class="mb-1.5 text-[11px] font-semibold text-[var(--ck-accent)]">处置动线</div>
+            <ol class="list-decimal space-y-1 pl-4 text-[11px] leading-5 ckwb-text-2">
+              <li>按诊断结论执行现场排查 / 参数调整</li>
+              <li>完成后进入 24h 验证期，评分回升自动闭环</li>
+              <li>参数类问题可在「参数整定」Tab 发起整定建议</li>
+            </ol>
+          </section>
+        </div>
+
+        <!-- 底部操作 -->
+        <div class="flex flex-none items-center justify-end gap-2 border-t border-[var(--ck-border)] px-4 py-2.5">
+          <button
+            class="rounded border border-[#DCDFE6] px-3 py-1 text-xs ckwb-text-2 hover:ckwb-panel-2"
+            @click="emit('close')"
+          >
+            关闭
+          </button>
+          <button
+            class="rounded bg-[var(--ck-accent)] px-3 py-1 text-xs text-white hover:opacity-90"
+            @click="toTuning"
+          >
+            前往参数整定 →
+          </button>
+          <!-- 2026-09-24：闭环动线在此断头——原抽屉只有"前往参数整定"，
+               工程师看完根因无法就地进入处置，必须离开工作台重找该回路。
+               处置在处置模块发起（含建议生成/转单/验证），此处按回路深链过去。 -->
+          <button
+            class="rounded border border-[var(--ck-accent)] px-3 py-1 text-xs text-[var(--ck-accent)] hover:bg-[var(--ck-hover)]"
+            @click="toHandling"
+          >
+            去处置 →
+          </button>
+        </div>
+      </div>
+
+      <!-- 16 号文 F1 入口 3：回路诊断档案抽屉（portal 到 body，叠于本抽屉之上） -->
+      <DiagnosisLoopArchiveDrawer
+        v-model:open="archiveOpen"
+        :loop-id="row.loop_id"
+        :loop-tag-name="row.loop_name ?? row.loop_id"
+        @open-run="onArchiveOpenRun"
+        @trigger-diagnosis="onArchiveTriggerDiagnosis"
+      />
+    </div>
+  </template>

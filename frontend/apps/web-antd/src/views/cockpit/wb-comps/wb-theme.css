@@ -1,0 +1,39 @@
+/**
+ * 驾驶舱 wb-comps 主题层（2026-10-05 整合裁决 D1/D3）
+ *
+ * 自运维工作台迁移的组件经批量替换（模板 tailwind 色类 → ckwb-* 语义类，
+ * scoped 色值 → --ck-* CSS 变量）后，由本文件提供语义类定义，使迁移
+ * 组件随驾驶舱深浅双主题自适应。基座变量来自 ../styles/theme.css。
+ */
+
+.ckwb-panel {
+  background: var(--ck-panel);
+}
+
+.ckwb-panel-2 {
+  background: var(--ck-panel-2);
+}
+
+.ckwb-border {
+  border-color: var(--ck-border);
+}
+
+.ckwb-text {
+  color: var(--ck-text);
+}
+
+.ckwb-text-2 {
+  color: var(--ck-text-2);
+}
+
+.ckwb-text-3 {
+  color: var(--ck-text-3);
+}
+
+.ckwb-accent {
+  color: var(--ck-accent);
+}
+
+.ckwb-hover:hover {
+  background: var(--ck-hover);
+}

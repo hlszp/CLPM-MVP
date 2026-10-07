@@ -51,11 +51,14 @@ import { MODE_KEY_ORDER, MODE_KEY_ZH, toLoopCardModel } from './loops-shared';
 
 import './styles/theme.css';
 
-const PAGE_SIZE = 20;
-/** 服务端单页上限（/loops/monitor pageSize le=100） */
-const FETCH_PAGE_SIZE = 100;
+const PAGE_SIZE = 30; // 2026-10-06 用户裁决：6 列 × 5 行（原 4 列 × 5 行）
+/** 懒加载批量 = 页大小（2026-10-07 用户裁决：首批 30 张、翻页按需拉取；
+ *  页大小恒定保证服务端 page 边界对齐，追加段与已加载前缀序连续） */
+const FETCH_BATCH = 30;
+/** 补全并发度（筛选/劣化排序需全量时的分批并发页数） */
+const ENSURE_CONCURRENCY = 6;
 /** 拉全量页数上限（防护） */
-const MAX_FETCH_PAGES = 20;
+const MAX_FETCH_PAGES = 80;
 
 const cockpitStore = useCockpitStore();
 const theme = computed(() => cockpitStore.theme);
@@ -104,9 +107,99 @@ async function refreshTree() {
 // ---------------------------------------------------------------------------
 const allLoops = ref<LoopApi.MonitorListItem[]>([]);
 const listLoading = ref(true);
+/** 懒加载：翻页/补全进行中（卡片墙显示加载提示） */
+const pagingLoading = ref(false);
+/** 服务端总数（默认浏览态分页总页数以此为准，未全量也准确） */
+const serverTotal = ref(0);
+/** 当前节点数据是否已全量加载（筛选/劣化排序需要全量，触发时自动补全） */
+const fullyLoaded = ref(false);
+/** 补全互斥（并发触发去重） */
+let ensuring = false;
 /** 节点口径模式分布（服务端聚合，面板态一柱状图） */
 const modeDistribution = ref<null | Record<string, number>>(null);
 const nodeLoopTotal = ref(0);
+
+/**
+ * 本地筛选/本地排序态：等级 chips / 模式 chips / 劣化排序都基于全量数据
+ * 才准确（接口不支持这些筛选参数）——激活时自动补全加载。
+ * 默认态（无筛选 + 评分降序）与服务端排序口径一致，已加载前缀即全局序。
+ */
+const needsFullData = computed(() => {
+  const { grades, modes, sortBy } = cockpitStore.loopsFilters;
+  return grades.length > 0 || modes.length > 0 || sortBy !== 'scoreDesc';
+});
+
+async function fetchRange(
+  plantNodeId: string | undefined,
+  page: number,
+  withAggregate: boolean,
+) {
+  return getLoopMonitorListApi({
+    page,
+    pageSize: FETCH_BATCH,
+    plantNodeId,
+    sortBy: 'score',
+    sortOrder: 'desc',
+    withAggregate,
+  });
+}
+
+/**
+ * 按需补全：加载到覆盖目标下标（Infinity = 全量）。
+ * 从已加载断点续页拉取（分批并发，页界与首批对齐），追加不重置——
+ * 已渲染卡片不闪烁，WS 订阅/选中态自然延续。
+ */
+async function ensureMore(uptoIndex: number) {
+  if (fullyLoaded.value || ensuring || uptoIndex < allLoops.value.length) {
+    return;
+  }
+  ensuring = true;
+  pagingLoading.value = true;
+  try {
+    const plantNodeId = cockpitStore.loopsNodeId ?? undefined;
+    let next = Math.floor(allLoops.value.length / FETCH_BATCH) + 1;
+    while (next <= MAX_FETCH_PAGES && !fullyLoaded.value) {
+      const batch: number[] = [];
+      for (let p = next; p < next + ENSURE_CONCURRENCY; p++) {
+        if (p > Math.ceil(serverTotal.value / FETCH_BATCH)) break;
+        batch.push(p);
+      }
+      if (batch.length === 0) break;
+      const results = await Promise.all(
+        batch.map((p) => fetchRange(plantNodeId, p, false).catch(() => null)),
+      );
+      let appended = 0;
+      for (const res of results) {
+        if (!res) continue;
+        const items = res.items ?? [];
+        if (items.length === 0) continue;
+        // 页边界抖动防御：按 loopId 去重追加
+        const known = new Set(allLoops.value.map((i) => i.loopId));
+        allLoops.value.push(...items.filter((i) => !known.has(i.loopId)));
+        appended += items.length;
+        if (res.aggregate?.modeDistribution) {
+          modeDistribution.value = res.aggregate.modeDistribution;
+        }
+      }
+      if (appended === 0) {
+        // 全部请求失败或全为空 → 终止，避免死循环
+        break;
+      }
+      fullyLoaded.value = allLoops.value.length >= serverTotal.value;
+      if (
+        uptoIndex !== Number.POSITIVE_INFINITY &&
+        allLoops.value.length > uptoIndex
+      ) {
+        break;
+      }
+      next += ENSURE_CONCURRENCY;
+    }
+    fullyLoaded.value = allLoops.value.length >= serverTotal.value;
+  } finally {
+    ensuring = false;
+    pagingLoading.value = false;
+  }
+}
 
 /** 定级阈值（等级五档色染；未加载时 loops-shared 降级国标默认） */
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
@@ -115,30 +208,27 @@ async function loadLoops(silent = false) {
   if (!silent) listLoading.value = true;
   try {
     const plantNodeId = cockpitStore.loopsNodeId ?? undefined;
-    const items: LoopApi.MonitorListItem[] = [];
-    let total = 0;
-    let aggregate: LoopApi.MonitorAggregate | null = null;
-    for (let page = 1; page <= MAX_FETCH_PAGES; page++) {
-      const res = await getLoopMonitorListApi({
-        plantNodeId,
-        page,
-        pageSize: FETCH_PAGE_SIZE,
-      });
-      if (page === 1) {
-        total = res.total ?? 0;
-        aggregate = res.aggregate ?? null;
-      }
-      items.push(...(res.items ?? []));
-      if (items.length >= total || (res.items ?? []).length === 0) break;
-    }
-    allLoops.value = items;
+    // 懒加载首批：只拉第 1 页 30 条（带全量聚合，树角标/模式分布一次取齐）
+    const res = await fetchRange(plantNodeId, 1, true);
+    const items = res.items ?? [];
+    const total = res.total ?? 0;
+    serverTotal.value = total;
     nodeLoopTotal.value = total;
-    modeDistribution.value = aggregate?.modeDistribution ?? null;
+    modeDistribution.value = res.aggregate?.modeDistribution ?? null;
+    fullyLoaded.value = items.length >= total;
+    allLoops.value = items;
+    // 筛选/劣化排序态必须保持全量（否则本地筛选口径失真）→ 自动补全
+    // （静默刷新场景会短暂回首批渲染，2~3s 内补全恢复，可接受）
+    if (!fullyLoaded.value && needsFullData.value) {
+      await ensureMore(Number.POSITIVE_INFINITY);
+    }
   } catch {
     if (!silent) {
       allLoops.value = [];
+      serverTotal.value = 0;
       nodeLoopTotal.value = 0;
       modeDistribution.value = null;
+      fullyLoaded.value = false;
     }
   } finally {
     if (!silent) listLoading.value = false;
@@ -171,9 +261,14 @@ const filteredSorted = computed<LoopCardModel[]>(() => {
   return sorted;
 });
 
-const pageCount = computed(() =>
-  Math.max(1, Math.ceil(filteredSorted.value.length / PAGE_SIZE)),
-);
+const pageCount = computed(() => {
+  // 筛选/劣化态（已自动补全全量）或已全量：本地口径准确
+  if (needsFullData.value || fullyLoaded.value) {
+    return Math.max(1, Math.ceil(filteredSorted.value.length / PAGE_SIZE));
+  }
+  // 默认浏览态：以服务端总数为准（已加载仅为前缀，翻页按需补拉）
+  return Math.max(1, Math.ceil(serverTotal.value / PAGE_SIZE));
+});
 
 const pageItems = computed<LoopCardModel[]>(() => {
   const start = (cockpitStore.loopsPage - 1) * PAGE_SIZE;
@@ -203,8 +298,24 @@ watch(filteredSorted, (list) => {
 
 watch(
   () => cockpitStore.loopsFilters,
-  () => applyPostChangeRule(),
+  async () => {
+    // 筛选/劣化排序需全量数据（口径准确），先补全再回跳定位
+    if (needsFullData.value && !fullyLoaded.value) {
+      await ensureMore(Number.POSITIVE_INFINITY);
+    }
+    applyPostChangeRule();
+  },
   { deep: true },
+);
+
+// 翻页触及未加载区间 → 按需补拉（覆盖分页控件/‹›跨页/回跳等全部页码来源）
+watch(
+  () => cockpitStore.loopsPage,
+  async (p) => {
+    if (!needsFullData.value) {
+      await ensureMore(p * PAGE_SIZE - 1);
+    }
+  },
 );
 
 watch(
@@ -549,6 +660,9 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
 
         <div class="cockpit-panel loops-wall__cards">
           <div v-if="listLoading" class="loops-wall__hint">回路加载中…</div>
+          <div v-else-if="pagingLoading && pageItems.length === 0" class="loops-wall__hint">
+            下一页加载中…
+          </div>
           <div v-else-if="pageItems.length === 0" class="loops-wall__hint">
             当前条件下无回路
           </div>
@@ -672,8 +786,10 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
 
 .loops-wall__grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: 118px;
+  /* 2026-10-07 用户裁决：6 列 × 5 行固定排布，行高弹性均分撑满主显示区
+     （原 118px 固定行高在剩余空间大时底部留白） */
+  grid-template-columns: repeat(6, 1fr);
+  grid-template-rows: repeat(5, minmax(0, 1fr));
   gap: 10px;
   height: 100%;
   padding: 12px;

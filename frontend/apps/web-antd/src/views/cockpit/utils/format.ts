@@ -45,12 +45,12 @@ export function deltaView(delta: null | number | undefined): {
     return { arrow: '', text: '—', trend: 'flat' };
   }
   if (Math.abs(delta) < 0.05) {
-    return { arrow: '→', text: '0.0', trend: 'flat' };
+    return { arrow: '→', text: '0.00', trend: 'flat' };
   }
   const up = delta > 0;
   return {
     arrow: up ? '▲' : '▼',
-    text: `${up ? '+' : ''}${delta.toFixed(1)}`,
+    text: `${up ? '+' : ''}${delta.toFixed(2)}`,
     trend: up ? 'up' : 'down',
   };
 }

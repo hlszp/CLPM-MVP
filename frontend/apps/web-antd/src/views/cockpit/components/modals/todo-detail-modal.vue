@@ -146,13 +146,13 @@ const statusClass = computed(() =>
         v-if="order.kpiBefore?.score !== null && order.kpiBefore?.score !== undefined && order.kpiAfter?.score !== null && order.kpiAfter?.score !== undefined"
         class="td__kpi"
       >
-        KPI 评分：{{ order.kpiBefore!.score!.toFixed(1) }} →
-        {{ order.kpiAfter!.score!.toFixed(1) }}
+        KPI 评分：{{ order.kpiBefore!.score!.toFixed(2) }} →
+        {{ order.kpiAfter!.score!.toFixed(2) }}
         <span
           :class="(order.kpiAfter!.score! - order.kpiBefore!.score!) >= 0 ? 'up' : 'down'"
         >
           （{{ (order.kpiAfter!.score! - order.kpiBefore!.score!) >= 0 ? '+' : ''
-          }}{{ (order.kpiAfter!.score! - order.kpiBefore!.score!).toFixed(1) }}）
+          }}{{ (order.kpiAfter!.score! - order.kpiBefore!.score!).toFixed(2) }}）
         </span>
       </div>
 

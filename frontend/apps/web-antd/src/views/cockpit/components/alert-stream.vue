@@ -213,6 +213,8 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
 .alert-stream__rows {
   display: flex;
   flex-direction: column;
+  /* 8 条事件均分容器高度（P6 小修：消除底部半行裁切观感） */
+  height: 100%;
 }
 
 .alert-stream__row {
@@ -220,7 +222,8 @@ function isUnconfirmed(e: AlertApi.EventItem): boolean {
   grid-template-columns: 4px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  min-height: 42px;
+  flex: 1;
+  min-height: 0;
   padding: 4px 6px;
   cursor: pointer;
   border-bottom: 1px solid var(--ck-border);

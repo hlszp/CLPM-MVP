@@ -103,7 +103,7 @@ function buildOption() {
       textStyle: { color: cc.textStrong, fontSize: 12 },
       trigger: 'axis' as const,
       valueFormatter: (v: unknown) =>
-        typeof v === 'number' ? v.toFixed(1) : '—',
+        typeof v === 'number' ? v.toFixed(2) : '—',
     },
     xAxis: {
       axisLabel: { color: cc.text, fontSize: 10, hideOverlap: true },

@@ -223,7 +223,7 @@ const modeText = computed(() =>
 function fmt(v: null | number | undefined): string {
   return v === null || v === undefined || Number.isNaN(v)
     ? '—'
-    : String(Math.round(v * 1000) / 1000);
+    : v.toFixed(2);
 }
 
 function fmtTime(iso: null | string | undefined): string {
@@ -364,9 +364,6 @@ watch(
 // ---------------------------------------------------------------------------
 const realtime = useLoopRealtime();
 
-// 服务端订阅过滤：仅接收当前面板回路的位号
-bindLoopInterest(() => realtimeItem.value.map((i) => i.tagName));
-
 /** applyMessage 按 tagName 匹配，选中回路切换时同步最新 tagName */
 const realtimeItem = computed(() =>
   props.loop
@@ -379,6 +376,11 @@ const realtimeItem = computed(() =>
       ]
     : [],
 );
+
+// 服务端订阅过滤：仅接收当前面板回路的位号。
+// realtimeItem 必须先于本调用声明：bindLoopInterest 的 watch 带
+// immediate:true，注册即执行回调，声明在后会触发 TDZ ReferenceError。
+bindLoopInterest(() => realtimeItem.value.map((i) => i.tagName));
 
 onMounted(() => {
   realtime.start();
@@ -466,7 +468,7 @@ watch(
                   : 'var(--ck-text-3)',
               }"
             >
-              {{ loop.score === null ? '—' : loop.score.toFixed(1) }}
+              {{ loop.score === null ? '—' : loop.score.toFixed(2) }}
             </b>
           </div>
         </div>

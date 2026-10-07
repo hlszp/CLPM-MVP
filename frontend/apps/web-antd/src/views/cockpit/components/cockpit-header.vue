@@ -2,7 +2,8 @@
 /**
  * 驾驶舱三段式顶栏（方案 11 §4 / v1.4，两页共用）
  *
- * 左：页签 Tab（总览 | 回路，router-link 舱内导航）
+ * 左：页签 Tab（总览 | 回路 | 性能 | 诊断 | 整定 | 处置，router-link 舱内导航，
+ *     2026-10-05 驾驶舱整合裁决 D4：六页签，后四页吸收原运维工作台四 Tab）
  * 中：主标题「控制回路绩效监控驾驶舱」居中 + 两侧装饰条（渐变线+菱形端点，纯 CSS）
  * 右：自动刷新暂停/恢复 · 手动刷新（store.refreshTick ++，全页重拉）·
  *     时间窗切换（近 24h/近 7 天/近 30 天，驾驶舱 store 共享）· 实时时钟 ·
@@ -29,6 +30,10 @@ const cockpitStore = useCockpitStore();
 const tabs = [
   { label: '总览', path: '/cockpit' },
   { label: '回路', path: '/cockpit/loops' },
+  { label: '性能', path: '/cockpit/performance' },
+  { label: '诊断', path: '/cockpit/diagnosis' },
+  { label: '整定', path: '/cockpit/tuning' },
+  { label: '处置', path: '/cockpit/handling' },
 ];
 
 // ============ 右：时间窗切换 ============
@@ -71,7 +76,8 @@ function goBackend() {
     message.warning('当前角色无后台访问权限');
     return;
   }
-  router.push('/workbench');
+  // 2026-10-07 P7：旧运维工作台退役，管理后台入口改指回路监视
+  router.push('/monitor/loops');
 }
 
 // ============ 右：刷新控制（暂停/恢复自动刷新 + 手动全页刷新） ============

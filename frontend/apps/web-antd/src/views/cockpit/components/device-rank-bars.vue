@@ -56,7 +56,7 @@ const avgScore = computed(() => {
 });
 
 function fmtScore(v: null | number): string {
-  return v === null ? '—' : v.toFixed(1);
+  return v === null ? '—' : v.toFixed(2);
 }
 
 /** TOP3 徽章配色（金/银/铜） */
@@ -101,7 +101,7 @@ function rankClass(rank: number): string {
                 v-if="avgScore !== null"
                 class="rank__avg"
                 :style="{ left: `${Math.max(0, Math.min(100, avgScore))}%` }"
-                :title="`全厂平均 ${avgScore.toFixed(1)}`"
+                :title="`全厂平均 ${avgScore.toFixed(2)}`"
               ></div>
             </div>
           </div>
@@ -110,7 +110,7 @@ function rankClass(rank: number): string {
           </span>
         </div>
         <div v-if="avgScore !== null" class="rank__legend">
-          <span class="rank__avg-sample"></span>全厂平均 {{ avgScore.toFixed(1) }}
+          <span class="rank__avg-sample"></span>全厂平均 {{ avgScore.toFixed(2) }}
         </div>
       </div>
     </div>

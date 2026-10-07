@@ -29,13 +29,13 @@ const emit = defineEmits<{ select: [loopId: string] }>();
 const gradeVar = computed(() => props.loop.grade?.colorVar ?? '--ck-border-2');
 
 const scoreText = computed(() =>
-  props.loop.score === null ? '—' : props.loop.score.toFixed(1),
+  props.loop.score === null ? '—' : props.loop.score.toFixed(2),
 );
 
 function fmt(v: null | number | undefined): string {
   return v === null || v === undefined || Number.isNaN(v)
     ? '—'
-    : String(Math.round(v * 100) / 100);
+    : v.toFixed(2);
 }
 
 // ---------------------------------------------------------------------------
