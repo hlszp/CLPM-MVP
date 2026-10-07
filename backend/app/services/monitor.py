@@ -1229,9 +1229,7 @@ async def get_loop_monitor_detail(
                     # 2026-10-08 修复：Redis 命中分支误写 snake_case（pid_p），
                     # 与 DB 回退分支及前端/批量接口的 camelCase（pidP）口径
                     # 分裂，致驾驶舱回路详情 P/I/D 恒空
-                    runtime_params[_PID_ROLE_KEY[role]] = parse_finite_float(
-                        cached.get("value")
-                    )
+                    runtime_params[_PID_ROLE_KEY[role]] = parse_finite_float(cached.get("value"))
                 if role == "PV":
                     current_values["pvQuality"] = _quality_code_to_label(
                         cached.get("quality", tag.quality)

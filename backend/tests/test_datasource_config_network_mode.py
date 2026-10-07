@@ -66,6 +66,9 @@ class TestGetDatasourceConfig:
             mock_settings.REALTIME_WRITEBACK_ENABLED = False
             mock_settings.GAP_BACKFILL_ENABLED = False
             mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
+            mock_settings.IMPORT_LOOP_CONCURRENCY = 4
+            mock_settings.IMPORT_CHUNK_CONCURRENCY = 1
+            mock_settings.IMPORT_REMOTE_CONCURRENCY = 4
 
             data = await get_datasource_config(db)
             assert data["networkMode"] == "lan"
@@ -98,6 +101,9 @@ class TestGetDatasourceConfig:
             mock_settings.REALTIME_WRITEBACK_ENABLED = False
             mock_settings.GAP_BACKFILL_ENABLED = False
             mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
+            mock_settings.IMPORT_LOOP_CONCURRENCY = 4
+            mock_settings.IMPORT_CHUNK_CONCURRENCY = 1
+            mock_settings.IMPORT_REMOTE_CONCURRENCY = 4
 
             data = await get_datasource_config(db)
             assert data["networkMode"] == "wan"
@@ -154,6 +160,9 @@ class TestUpdateDatasourceConfigNetworkMode:
             mock_settings.REALTIME_WRITEBACK_ENABLED = False
             mock_settings.GAP_BACKFILL_ENABLED = False
             mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
+            mock_settings.IMPORT_LOOP_CONCURRENCY = 4
+            mock_settings.IMPORT_CHUNK_CONCURRENCY = 1
+            mock_settings.IMPORT_REMOTE_CONCURRENCY = 4
 
             mock_switch.return_value = {
                 "status": "success",
@@ -206,6 +215,9 @@ class TestUpdateDatasourceConfigNetworkMode:
             mock_settings.REALTIME_WRITEBACK_ENABLED = False
             mock_settings.GAP_BACKFILL_ENABLED = False
             mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
+            mock_settings.IMPORT_LOOP_CONCURRENCY = 4
+            mock_settings.IMPORT_CHUNK_CONCURRENCY = 1
+            mock_settings.IMPORT_REMOTE_CONCURRENCY = 4
 
             # 传入 networkMode=lan（与当前相同）
             data = await update_datasource_config(db, "admin", networkMode="lan")
@@ -252,6 +264,9 @@ class TestUpdateDatasourceConfigNetworkMode:
             mock_settings.REALTIME_WRITEBACK_ENABLED = False
             mock_settings.GAP_BACKFILL_ENABLED = False
             mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
+            mock_settings.IMPORT_LOOP_CONCURRENCY = 4
+            mock_settings.IMPORT_CHUNK_CONCURRENCY = 1
+            mock_settings.IMPORT_REMOTE_CONCURRENCY = 4
 
             # 只更新 historyApiUrl，不传 networkMode
             data = await update_datasource_config(

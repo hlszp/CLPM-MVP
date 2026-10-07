@@ -55,6 +55,9 @@ DATASOURCE_CONFIG_KEYS = {
     "realtimeWritebackEnabled": "datasource.realtime_writeback_enabled",
     "gapBackfillEnabled": "datasource.gap_backfill_enabled",
     "gapBackfillMinGapSeconds": "datasource.gap_backfill_min_gap_seconds",
+    "importLoopConcurrency": "datasource.import_loop_concurrency",
+    "importChunkConcurrency": "datasource.import_chunk_concurrency",
+    "importRemoteConcurrency": "datasource.import_remote_concurrency",
 }
 
 # 字段 → settings 属性名 映射（用于同步内存）
@@ -70,6 +73,9 @@ _SETTINGS_ATTR_MAP = {
     "realtimeWritebackEnabled": "REALTIME_WRITEBACK_ENABLED",
     "gapBackfillEnabled": "GAP_BACKFILL_ENABLED",
     "gapBackfillMinGapSeconds": "GAP_BACKFILL_MIN_GAP_SECONDS",
+    "importLoopConcurrency": "IMPORT_LOOP_CONCURRENCY",
+    "importChunkConcurrency": "IMPORT_CHUNK_CONCURRENCY",
+    "importRemoteConcurrency": "IMPORT_REMOTE_CONCURRENCY",
 }
 
 # 字段 → 类型转换（sys_config 存字符串，需转回原类型）
@@ -80,6 +86,9 @@ _TYPE_CASTERS: dict[str, type] = {
     "realtimeWritebackEnabled": lambda v: v.lower() == "true",
     "gapBackfillEnabled": lambda v: v.lower() == "true",
     "gapBackfillMinGapSeconds": int,
+    "importLoopConcurrency": int,
+    "importChunkConcurrency": int,
+    "importRemoteConcurrency": int,
 }
 
 _KEY_DESCRIPTIONS = {
@@ -94,6 +103,9 @@ _KEY_DESCRIPTIONS = {
     "realtimeWritebackEnabled": "实时数据写回本地 TDengine 宽表（仅 tdengine 模式）",
     "gapBackfillEnabled": "实时数据断点续传总开关",
     "gapBackfillMinGapSeconds": "断点续传缺口阈值（秒，小于该缺口不补）",
+    "importLoopConcurrency": "历史导入回路级并发（默认 4；任务发起时生效免重启）",
+    "importChunkConcurrency": "历史导入单回路分块内并发（默认 1=串行；1~8）",
+    "importRemoteConcurrency": "历史导入远端 API 并发闸（默认 4；扩容即时生效）",
 }
 
 # 支持的网络模式
@@ -284,6 +296,15 @@ async def get_datasource_config(db: AsyncSession, *, mask_token: bool = True) ->
         "gapBackfillEnabled": _cast_value("gapBackfillEnabled", values["gapBackfillEnabled"]),
         "gapBackfillMinGapSeconds": _cast_value(
             "gapBackfillMinGapSeconds", values["gapBackfillMinGapSeconds"]
+        ),
+        "importLoopConcurrency": _cast_value(
+            "importLoopConcurrency", values["importLoopConcurrency"]
+        ),
+        "importChunkConcurrency": _cast_value(
+            "importChunkConcurrency", values["importChunkConcurrency"]
+        ),
+        "importRemoteConcurrency": _cast_value(
+            "importRemoteConcurrency", values["importRemoteConcurrency"]
         ),
         # 运行态：计算类历史数据查询一律本地 TDengine（2026-07-20 架构决策）
         "historyProviderActive": "tdengine",

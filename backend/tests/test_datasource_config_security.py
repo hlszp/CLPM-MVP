@@ -48,6 +48,9 @@ def _set_mock_settings(mock_settings) -> None:
     mock_settings.REALTIME_WRITEBACK_ENABLED = False
     mock_settings.GAP_BACKFILL_ENABLED = False
     mock_settings.GAP_BACKFILL_MIN_GAP_SECONDS = 600
+    mock_settings.IMPORT_LOOP_CONCURRENCY = 4
+    mock_settings.IMPORT_CHUNK_CONCURRENCY = 1
+    mock_settings.IMPORT_REMOTE_CONCURRENCY = 4
 
 
 class TestMaskToken:

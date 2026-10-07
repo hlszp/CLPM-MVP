@@ -39,6 +39,9 @@ class DataSourceConfigInfo(CamelModel):
         False, description="实时数据断点续传总开关（SignalR 重连后自动补齐缺口）"
     )
     gapBackfillMinGapSeconds: int = Field(600, description="断点续传缺口阈值（秒，小于该缺口不补）")
+    importLoopConcurrency: int = Field(4, description="历史导入回路级并发")
+    importChunkConcurrency: int = Field(1, description="历史导入单回路分块内并发（1=串行）")
+    importRemoteConcurrency: int = Field(4, description="历史导入远端 API 并发闸")
 
     # 运行态标记（启动时初始化的实际状态，UI 用于提示"需重启生效"）
     historyProviderActive: str = Field(
@@ -91,6 +94,16 @@ class DataSourceConfigUpdate(CamelModel):
         description="断点续传缺口阈值（秒，下限 60，上限 86400=24h）",
         ge=60,
         le=86400,
+    )
+
+    importLoopConcurrency: int | None = Field(
+        None, ge=1, le=16, description="历史导入回路级并发（默认 4）"
+    )
+    importChunkConcurrency: int | None = Field(
+        None, ge=1, le=8, description="历史导入单回路分块内并发（默认 1=串行）"
+    )
+    importRemoteConcurrency: int | None = Field(
+        None, ge=1, le=16, description="历史导入远端 API 并发闸（默认 4）"
     )
 
 

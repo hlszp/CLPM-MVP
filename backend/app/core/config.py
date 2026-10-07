@@ -155,6 +155,10 @@ class Settings(BaseSettings):
     GAP_BACKFILL_MAX_HOURS: int = 24  # 单次补数最大窗口（超出部分截断并告警，需手工导入）
     GAP_BACKFILL_RETRY_BASE_SECONDS: int = 300  # 补数失败重试起步退避（5 分钟，连接在线也生效）
     GAP_BACKFILL_RETRY_MAX_SECONDS: int = 1800  # 补数失败重试退避上限（30 分钟，指数翻倍封顶）
+    # 历史导入并发（2026-10-08 参数化，sys_config 运行时可调；导入任务发起时直读表）
+    IMPORT_LOOP_CONCURRENCY: int = 4  # 回路级并发
+    IMPORT_CHUNK_CONCURRENCY: int = 1  # 单回路分块内并发（1=串行，原行为）
+    IMPORT_REMOTE_CONCURRENCY: int = 4  # 远端 API 并发闸（仅扩容生效）
     # 断点续传 SETNX 分布式锁（多副本防重复补数）
     GAP_BACKFILL_LOCK_TTL_SECONDS: int = 7200  # 锁 TTL（2 小时，覆盖单次补数最长时长）
 

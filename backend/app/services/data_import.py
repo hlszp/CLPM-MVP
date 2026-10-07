@@ -61,6 +61,52 @@ def _get_remote_guard() -> RemoteApiProvider:
     return _remote_guard
 
 
+# ---------------------------------------------------------------------------
+# 导入并发参数（sys_config 免重启可调，2026-10-08 导入提速裁决）
+# 键经数据源配置链路（PUT /datasource/config）修改；Celery worker 子进程
+# 的 settings 是启动快照，故任务发起时直读 sys_config 表（跨进程真相源）。
+# 默认值 = 原硬编码行为（回路 4 / 分块串行 / 远端闸 4）。
+# ---------------------------------------------------------------------------
+_IMPORT_LOOP_CONC_KEY = "datasource.import_loop_concurrency"
+_IMPORT_CHUNK_CONC_KEY = "datasource.import_chunk_concurrency"
+_IMPORT_REMOTE_CONC_KEY = "datasource.import_remote_concurrency"
+_DEFAULT_LOOP_CONC = 4
+_DEFAULT_CHUNK_CONC = 1
+_DEFAULT_REMOTE_CONC = 4  # 与 settings.REMOTE_API_MAX_CONCURRENCY 默认一致
+
+
+def _clamp_int(raw, default: int, lo: int, hi: int) -> int:
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(v, hi))
+
+
+async def _read_import_concurrency(db_session) -> tuple[int, int, int]:
+    """读导入并发三参数（回路 / 分块内 / 远端闸），钳制防误配."""
+    from sqlalchemy import select as _sa_select
+
+    from app.models.sys_config import SysConfig
+
+    keys = (_IMPORT_LOOP_CONC_KEY, _IMPORT_CHUNK_CONC_KEY, _IMPORT_REMOTE_CONC_KEY)
+    try:
+        rows = (
+            await db_session.execute(
+                _sa_select(SysConfig.key, SysConfig.value).where(SysConfig.key.in_(keys))
+            )
+        ).all()
+        found = {r[0]: r[1] for r in rows}
+    except Exception as exc:  # noqa: BLE001 — 配置读取失败回退默认，不阻塞导入
+        logger.warning("导入并发配置读取失败（回退默认）: %s", exc)
+        found = {}
+    return (
+        _clamp_int(found.get(_IMPORT_LOOP_CONC_KEY), _DEFAULT_LOOP_CONC, 1, 16),
+        _clamp_int(found.get(_IMPORT_CHUNK_CONC_KEY), _DEFAULT_CHUNK_CONC, 1, 8),
+        _clamp_int(found.get(_IMPORT_REMOTE_CONC_KEY), _DEFAULT_REMOTE_CONC, 1, 16),
+    )
+
+
 # Redis key 前缀
 _IMPORT_TASK_PREFIX = "import_task"
 _IMPORT_TASK_INDEX = "import_task:index"
@@ -778,9 +824,27 @@ async def import_history_data(
 
         import asyncio as _asyncio_sem
 
-        # 2026-09-10 实测：远端 24h 窗口 0.5s/请求很健康（见 _MAX_CHUNK_HOURS），
-        # 并发从 2 放宽至 4（总对外并发 = 4 回路 × 单请求，远端可承受）。
-        sem = _asyncio_sem.Semaphore(4)  # 限制最多 4 个回路并发拉取/写入
+        # 回路级并发（2026-10-08 参数化：sys_config datasource.import_loop_concurrency，
+        # 免重启可调——任务发起时直读表，跑中任务不受影响；默认 4=原硬编码行为）。
+        # 总对外并发 = loop_conc × chunk_conc，受远端闸（provider 信号量，随
+        # datasource.import_remote_concurrency 扩容）总约束。
+        loop_conc, chunk_conc, remote_conc = await _read_import_concurrency(db_session)
+        try:
+            _get_remote_guard().ensure_remote_concurrency(remote_conc)
+        except Exception as exc:  # noqa: BLE001 — 扩容失败不影响默认闸导入
+            logger.warning("远端闸扩容失败（沿用当前容量）: %s", exc)
+        if (loop_conc, chunk_conc, remote_conc) != (
+            _DEFAULT_LOOP_CONC,
+            _DEFAULT_CHUNK_CONC,
+            _DEFAULT_REMOTE_CONC,
+        ):
+            logger.info(
+                "导入并发配置: loop=%d chunk=%d remote=%d（默认 4/1/4）",
+                loop_conc,
+                chunk_conc,
+                remote_conc,
+            )
+        sem = _asyncio_sem.Semaphore(loop_conc)  # 回路并发拉取/写入上限
         progress_lock = _asyncio_sem.Lock()
         # 共享计数器（并发安全）
         shared_succeeded = 0
@@ -851,6 +915,7 @@ async def import_history_data(
                         on_chunk_complete=_on_chunk_complete,
                         role_point_map=loop_meta.get("role_point_map", {}),
                         storage_mode=storage_mode,
+                        chunk_concurrency=chunk_conc,
                     )
                     if loop_cancelled:
                         # 取消中断：不计成功也不计失败（最终状态由任务级取消
@@ -1011,6 +1076,7 @@ async def _import_single_loop(
     on_chunk_complete: callable | None = None,
     role_point_map: dict[str, tuple[str, str]] | None = None,
     storage_mode: str = "point",
+    chunk_concurrency: int = 1,
 ) -> tuple[int, list[dict[str, str]], bool]:
     """导入单个回路的历史数据（算法 v3：单相逐位号直导）.
 
@@ -1061,15 +1127,29 @@ async def _import_single_loop(
     fetch_map = dict(role_tag_map)
     fetch_point_map = {r: v for r, v in role_point_map.items() if r in fetch_map}
 
-    chunk_start = start_dt
-    while chunk_start < end_dt:
+    import asyncio as _asyncio_sem
+
+    # 分块窗口预生成（2026-10-08 参数化并行：chunk_concurrency=1 时逐个顺序执行，
+    # 行为与原 while 循环完全等价；>1 时分块内并行拉取写入——asyncio 单线程内
+    # total_count += / list.append 均为同步步骤，天然并发安全）
+    chunk_windows: list[tuple[datetime, datetime]] = []
+    cs = start_dt
+    while cs < end_dt:
+        ce = min(cs + timedelta(hours=chunk_hours), end_dt)
+        chunk_windows.append((cs, ce))
+        cs = ce
+    chunk_sem = _asyncio_sem.Semaphore(max(1, chunk_concurrency))
+
+    async def _do_chunk(chunk_start: datetime, chunk_end: datetime) -> None:
+        nonlocal total_count, was_cancelled
         if task_id and await _is_task_cancelled(task_id):
             was_cancelled = True
-            logger.info("回路 %s 导入被取消（已写入 %d 行），跳过剩余分块", loop_id, total_count)
-            break
-
-        chunk_end = min(chunk_start + timedelta(hours=chunk_hours), end_dt)
-
+            logger.info(
+                "回路 %s 导入被取消（已写入 %d 行），跳过该分块",
+                loop_id,
+                total_count,
+            )
+            return
         try:
             raw_data = await _fetch_remote_history(
                 list(fetch_map.values()),
@@ -1090,7 +1170,7 @@ async def _import_single_loop(
                 total_count += await _write_points_bulk(
                     fetch_point_map, raw_data, source_task=task_id or ""
                 )
-        except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续后续分块
+        except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续其他分块
             failed_windows.append(
                 {
                     "start": chunk_start.isoformat(),
@@ -1099,16 +1179,20 @@ async def _import_single_loop(
                 }
             )
             logger.warning(
-                "分块导入失败（已重试仍失败，继续后续分块）: loop=%s, 窗口=%s ~ %s, err=%s",
+                "分块导入失败（已重试仍失败，继续其他分块）: loop=%s, 窗口=%s ~ %s, err=%s",
                 loop_id,
                 chunk_start.isoformat(),
                 chunk_end.isoformat(),
                 exc,
             )
 
-        chunk_start = chunk_end
-        if on_chunk_complete:
-            await on_chunk_complete()
+    async def _do_chunk_with_sem(chunk_start: datetime, chunk_end: datetime) -> None:
+        async with chunk_sem:
+            await _do_chunk(chunk_start, chunk_end)
+            if on_chunk_complete:
+                await on_chunk_complete()
+
+    await _asyncio_sem.gather(*[_do_chunk_with_sem(cs_, ce_) for cs_, ce_ in chunk_windows])
 
     # 覆盖登记（v3 批量化）：每个 (位号, 分块窗口) 一条段——不再逐点，
     # 读取侧 anchor 语义保留（窗口级覆盖证明）

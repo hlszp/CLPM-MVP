@@ -119,6 +119,8 @@ class RemoteApiProvider:
         # 限流信号量（随 event loop 重建，与 client 生命周期一致）
         self._semaphore: asyncio.Semaphore | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
+        # 当前闸容量（2026-10-08 导入提速：支持 sys_config 运行时扩容重建）
+        self._semaphore_limit: int = 0
         # 熔断器状态（进程内）
         self._cb_failures = 0
         self._cb_open_until = 0.0  # time.monotonic() 截止时间，0 = 闭合
@@ -130,7 +132,25 @@ class RemoteApiProvider:
         if self._semaphore is None or self._semaphore_loop is not loop or loop.is_closed():
             self._semaphore = asyncio.Semaphore(settings.REMOTE_API_MAX_CONCURRENCY)
             self._semaphore_loop = loop
+            self._semaphore_limit = settings.REMOTE_API_MAX_CONCURRENCY
         return self._semaphore
+
+    def ensure_remote_concurrency(self, limit: int) -> None:
+        """按导入提速配置扩容限流闸（2026-10-08，sys_config 免重启可调）.
+
+        仅扩容重建（新请求走新闸；在途请求持旧闸自然完成，过渡期短暂
+        略超限无害）；缩容不重建——等在途持有自然收敛到新上限以内。
+        非导入消费方不受影响（无人调用本方法时闸容量恒为 env 默认值）。
+        """
+        if limit <= self._semaphore_limit:
+            return
+        loop = asyncio.get_running_loop()
+        if self._semaphore_loop is not loop or loop.is_closed():
+            return  # 下一请求会按 loop 重建，届时再以新容量创建
+        self._semaphore = asyncio.Semaphore(limit)
+        self._semaphore_loop = loop
+        self._semaphore_limit = limit
+        logger.info("远端限流闸扩容: %d → %d", self._semaphore_limit, limit)
 
     # ---- 熔断器 ----
 
