@@ -1196,6 +1196,8 @@ async def get_loop_monitor_detail(
         "unit": None,
         "readAt": None,
     }
+    # PID 角色 → runtimeParams 键（camelCase，与 schema/前端一致）
+    _PID_ROLE_KEY = {"PID_P": "pidP", "PID_I": "pidI", "PID_D": "pidD"}
     runtime_params: dict[str, Any] = {
         "controlMode": None,
         "pidP": None,
@@ -1224,7 +1226,12 @@ async def get_loop_monitor_detail(
                 if role in ("PV", "SP", "OP", "MODE"):
                     current_values[role.lower()] = parse_finite_float(cached.get("value"))
                 elif role in ("PID_P", "PID_I", "PID_D"):
-                    runtime_params[role.lower()] = parse_finite_float(cached.get("value"))
+                    # 2026-10-08 修复：Redis 命中分支误写 snake_case（pid_p），
+                    # 与 DB 回退分支及前端/批量接口的 camelCase（pidP）口径
+                    # 分裂，致驾驶舱回路详情 P/I/D 恒空
+                    runtime_params[_PID_ROLE_KEY[role]] = parse_finite_float(
+                        cached.get("value")
+                    )
                 if role == "PV":
                     current_values["pvQuality"] = _quality_code_to_label(
                         cached.get("quality", tag.quality)
