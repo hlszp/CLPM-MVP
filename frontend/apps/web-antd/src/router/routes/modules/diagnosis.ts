@@ -23,8 +23,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:stethoscope',
-      order: 3,
-      title: '诊断',
+      order: 4,
+      title: '回路诊断',
       module: 'diagnosis',
     },
     children: [
@@ -61,7 +61,27 @@ const routes: RouteRecordRaw[] = [
             'SPONSOR',
           ],
           icon: 'lucide:list-checks',
+          order: 1,
           title: '诊断概览',
+        },
+      },
+      {
+        // 菜单顺序（2026-10-05 用户裁决）：概览 → 任务 → 记录
+        name: 'DiagnosisTasks',
+        path: '/diagnosis/tasks',
+        component: () => import('#/views/diagnosis/tasks.vue'),
+        meta: {
+          // 查看类页面统一全 5 角色（2026-10-04 D1；发起类操作在回路工作台剖面）
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
+          icon: 'lucide:loader-circle',
+          order: 2,
+          title: '诊断任务',
         },
       },
       {
@@ -77,24 +97,8 @@ const routes: RouteRecordRaw[] = [
             'SPONSOR',
           ],
           icon: 'lucide:history',
+          order: 3,
           title: '诊断记录',
-        },
-      },
-      {
-        name: 'DiagnosisTasks',
-        path: '/diagnosis/tasks',
-        component: () => import('#/views/diagnosis/tasks.vue'),
-        meta: {
-          // 查看类页面统一全 5 角色（2026-10-04 D1；发起类操作在回路工作台剖面）
-          authority: [
-            'ADMIN',
-            'EXPERT',
-            'IC_ENGINEER',
-            'PE_ENGINEER',
-            'SPONSOR',
-          ],
-          icon: 'lucide:loader-circle',
-          title: '诊断任务',
         },
       },
     ],

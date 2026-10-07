@@ -21,8 +21,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:sliders-horizontal',
-      order: 4,
-      title: '整定',
+      order: 5,
+      title: '参数整定',
       module: 'tuning',
     },
     children: [

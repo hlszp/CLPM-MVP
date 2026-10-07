@@ -227,7 +227,7 @@ describe('store 测试', () => {
     // 验证权限码已存储
     expect(accessStore.accessCodes).toEqual(['*']);
     // 验证跳转（0929 总览收敛：ADMIN 落工作台）
-    expect(routerPushSpy).toHaveBeenCalledWith('/workbench');
+    expect(routerPushSpy).toHaveBeenCalledWith('/cockpit');
   });
 
   // UT-STORE-002: userStore-logout
@@ -296,8 +296,8 @@ describe('store 测试', () => {
     expect(userInfo.username).toBe('engineer');
     expect(userInfo.realName).toBe('工程师');
     expect(userInfo.roles).toEqual(['IC_ENGINEER']);
-    // IC_ENGINEER 默认落地驾驶舱（方案 11 §3.1，前端角色映射优先于后端 defaultHome）
-    expect(userInfo.homePath).toBe('/workbench');
+    // IC_ENGINEER 默认落地驾驶舱（2026-10-05 整合裁决：默认落地 /cockpit，前端角色映射优先于后端 defaultHome）
+    expect(userInfo.homePath).toBe('/cockpit');
     // 验证 store 已更新
     expect(userStore.userInfo?.username).toBe('engineer');
     expect(accessStore.accessCodes).toEqual([

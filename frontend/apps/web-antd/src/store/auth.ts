@@ -22,11 +22,11 @@ import { $t } from '#/locales';
  * - 0930 用户口径：默认落地统一 /workbench 工作台（驾驶舱保留在菜单首位可随时进入）
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
-  ADMIN: '/workbench',
-  EXPERT: '/workbench',
-  IC_ENGINEER: '/workbench',
-  PE_ENGINEER: '/workbench',
-  SPONSOR: '/workbench',
+  ADMIN: '/cockpit',
+  EXPERT: '/cockpit',
+  IC_ENGINEER: '/cockpit',
+  PE_ENGINEER: '/cockpit',
+  SPONSOR: '/cockpit',
 };
 
 /**
@@ -36,7 +36,7 @@ function resolveHomePath(
   role: string,
   backendDefaultHome?: null | string,
 ): string {
-  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/workbench';
+  return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/cockpit';
 }
 
 export { resolveHomePath, ROLE_DEFAULT_HOME };

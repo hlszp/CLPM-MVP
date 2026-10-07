@@ -15,10 +15,10 @@
  * - E2E-DRILL-004: 整定批次视图切换（记录/批次两视图独立渲染，允许空态）
  * - E2E-DRILL-005: 批次 API 冒烟（GET /tuning/batches → code=0 + items/total）
  *
- * 页面源码依据：
- *   frontend/apps/web-antd/src/views/workbench/components/KpiCards.vue（下钻卡 title 属性）
- *   frontend/apps/web-antd/src/views/workbench/utils/drill.ts（G1/G2/G4 口径契约）
- *   frontend/apps/web-antd/src/views/workbench/components/EvalDistributions.vue（长期手动链接）
+ * 页面源码依据（2026-10-07 P7：旧运维工作台退役，001/002 已改写为驾驶舱弹窗断言）：
+ *   frontend/apps/web-antd/src/views/cockpit/overview.vue（KPI 卡点击 → 舱内清单弹窗）
+ *   frontend/apps/web-antd/src/views/cockpit/wb-comps/use-drill.ts（D3 弹窗化口径契约）
+ *   frontend/apps/web-antd/src/views/cockpit/wb-comps/EvalDistributions.vue（长期手动链接）
  *   frontend/apps/web-antd/src/views/tuning/records.vue（route.query 初值 + 批次视图）
  */
 import {
@@ -34,54 +34,43 @@ test.describe('工作台有据可查下钻 E2E', () => {
     await loginAs('ADMIN');
   });
 
-  test('E2E-DRILL-001: 总览 KPI 卡下钻携带口径参数', async ({ page }) => {
-    // 追溯矩阵 §2：劣化回路卡 → 回路绩效明细（grade=POOR）
-    await page.goto('/workbench', { waitUntil: 'domcontentloaded' });
-    // KPI 卡用 title 属性精确锁定（页面上"劣化回路"文本可能多处出现）
-    const degradedCard = page.locator('[title="点击查看劣化回路口径明细"]');
-    await expect(degradedCard).toBeVisible({ timeout: 20_000 });
-    await degradedCard.click();
+  test('E2E-DRILL-001: 驾驶舱 KPI 卡点击打开清单弹窗（D3 弹窗化）', async ({
+    page,
+  }) => {
+    // 2026-10-07 P7 改写：旧运维工作台退役，KPI 卡下钻已弹窗化
+    //（不再路由跳转 /metric/loop-performance，改开舱内清单弹窗）
+    await page.goto('/cockpit', { waitUntil: 'domcontentloaded' });
+    const degradedCard = page.locator('[title*="劣化"], [class*=kpi] [class*=card]');
+    await expect(degradedCard.first()).toBeVisible({ timeout: 20_000 });
+    await degradedCard.first().click();
 
-    // 断言路由跳转 + 专有参数 grade=POOR（窗口 startTime/endTime 由 drill 自动携带）
-    await page.waitForURL(/\/metric\/loop-performance/, { timeout: 15_000 });
-    expect(page.url()).toContain('grade=POOR');
-    expect(page.url()).toContain('startTime=');
-    expect(page.url()).toContain('endTime=');
-
-    // 追溯矩阵 §2：处置待办卡 → 工单列表（status 含 PENDING）
-    await page.goto('/workbench', { waitUntil: 'domcontentloaded' });
-    const pendingCard = page.locator('[title="点击查看在办工单列表"]');
-    await expect(pendingCard).toBeVisible({ timeout: 20_000 });
-    await pendingCard.click();
-
-    await page.waitForURL(/\/handling\/orders/, { timeout: 15_000 });
-    // status=PENDING,REOPENED,EXECUTING（逗号被 URL 编码，首值 PENDING 可直查）
-    expect(page.url()).toContain('status=PENDING');
+    // 断言舱内弹窗打开（ck-modal 渲染于 .cockpit-root 内）
+    const modal = page.locator('.ck-modal');
+    await expect(modal.first()).toBeVisible({ timeout: 15_000 });
+    await expect(modal.first()).toContainText(/清单/);
   });
 
-  test('E2E-DRILL-002: 评估 tab 长期手动链接下钻诊断记录', async ({ page }) => {
-    // 追溯矩阵 §3 死链修复：长期手动 → /diagnosis/records?category=UTILIZATION
-    await page.goto('/workbench', { waitUntil: 'domcontentloaded' });
-
-    // 切"性能评估"tab（TabBar 为 button 切换 activeTab，非路由；
-    // 可访问名含模块状态点文本，如"内置 性能评估"，用正则匹配）
-    await page.getByRole('button', { name: /性能评估/ }).click();
-
-    // 等评估数据异步加载（控制模式分布饼图区渲染后才能判定链接是否存在）
+  test('E2E-DRILL-002: 驾驶舱性能页长期手动链接打开诊断记录弹窗', async ({
+    page,
+  }) => {
+    // 2026-10-07 P7 改写：原"长期手动 → /diagnosis/records?category=UTILIZATION"
+    // 弹窗化为诊断记录清单弹窗（不再路由跳转）
+    await page.goto('/cockpit/performance', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('回路', {
       timeout: 20_000,
     });
     await page.waitForTimeout(3000);
 
-    // 链接仅 manualCount>0 才渲染（EvalDistributions.vue v-if）；无手动回路时跳过
+    // 链接仅 manualCount>0 才渲染；无手动回路时跳过
     const manualLink = page.locator('a', { hasText: '长期手动' });
     if ((await manualLink.count()) === 0) {
-      test.skip(true, 'manualCount=0，长期手动链接未渲染，跳过下钻断言');
+      test.skip(true, 'manualCount=0，长期手动链接未渲染，跳过弹窗断言');
     }
     await manualLink.first().click();
 
-    await page.waitForURL(/\/diagnosis\/records/, { timeout: 15_000 });
-    expect(page.url()).toContain('category=UTILIZATION');
+    const modal = page.locator('.ck-modal');
+    await expect(modal.first()).toBeVisible({ timeout: 15_000 });
+    await expect(modal.first()).toContainText('诊断记录');
   });
 
   test('E2E-DRILL-003: 明细页从 route.query 读取筛选初值', async ({ page }) => {

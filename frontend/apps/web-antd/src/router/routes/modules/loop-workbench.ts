@@ -1,7 +1,7 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * 回路工作台（一级菜单，2026-10-03 用户裁决）
+ * 回路工作台 → 「工作台」（2026-10-05 驾驶舱整合裁决 D6 改名，一级菜单）
  *
  * 以回路为对象的单页全生命周期工作台（监视-评估-诊断-整定-处置，零跳转
  * 全内嵌）。原挂监控模块子菜单（P1 起验收期），验收通过后升为一级菜单，
@@ -23,8 +23,8 @@ const routes: RouteRecordRaw[] = [
       fullPathKey: false,
       icon: 'lucide:panel-top-close',
       module: 'monitor',
-      order: 1.5,
-      title: '回路工作台',
+      order: 1,
+      title: '工作台',
     },
   },
 ];

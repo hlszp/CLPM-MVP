@@ -15,7 +15,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const WORKBENCH_DIR = join(__dirname, '../views/workbench');
+// 2026-10-07 P7：旧运维工作台退役，守护对象改为驾驶舱迁移组件目录
+// （wb-comps，原 views/workbench 四 Tab 组件的迁移副本）——语义延续。
+const WORKBENCH_DIR = join(__dirname, '../views/cockpit/wb-comps');
 
 /** 已知的造数表达式片段（主序列算术派生）。 */
 const FORBIDDEN = [
@@ -38,7 +40,7 @@ function collectVueFiles(dir: string): string[] {
   return out;
 }
 
-describe('工作台不得造数（G40）', () => {
+describe('驾驶舱迁移组件不得造数（G40）', () => {
   it('不得存在主序列算术派生或硬编码图例数值', () => {
     const offenders: string[] = [];
     for (const file of collectVueFiles(WORKBENCH_DIR)) {

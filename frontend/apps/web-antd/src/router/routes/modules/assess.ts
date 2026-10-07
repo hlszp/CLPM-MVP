@@ -27,8 +27,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:gauge',
-      order: 2,
-      title: '评估',
+      order: 3,
+      title: '性能评估',
       module: 'assess',
     },
     children: [

@@ -30,8 +30,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'],
       icon: 'lucide:activity',
-      order: 1,
-      title: '监控',
+      order: 2,
+      title: '回路监控',
       module: 'monitor',
     },
     children: [
@@ -126,7 +126,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
-      title: '运维工作台',
+      title: '旧工作台重定向',
     },
   },
   {

@@ -1,24 +1,18 @@
 import type { RouteRecordRaw } from 'vue-router';
 
 /**
- * CLPM 运维工作台 v2.0 路由模块（统一框架页 · 单路由无子路由）
+ * 旧「运维工作台」退役兼容层（2026-10-05 驾驶舱整合裁决 D5/D6）
  *
- * /workbench 单路由直显 5 Tabs（button + v-show 组件切换，非子路由）。
- * 范围(scope)+ 时间窗口(window) 跨 Tab 共享，由 stores/workbench.ts 持有。
- * 一级菜单"运维工作台"无二级菜单，点击 Tab 只切换内容区，不整页刷新。
- * （2026-10-04 工作台规整 D4：更名「运维工作台」，消除四"工作台"命名歧义）
- *
- * 不设 meta.module：运维工作台为跨模块总览入口（'clpm' 非业务 module key，
- * 8 业务 key 不含 clpm），需始终可见，故不进模块过滤（filterTreeByModules
- * 对无 meta.module 的路由保留）。
+ * 运维工作台五 Tab 已被驾驶舱六页签吸收（性能/诊断/整定/处置四页迁移
+ * 至 /cockpit/*），本模块仅保留旧书签/深链重定向。全局总览入口=驾驶舱
+ * /cockpit（cockpit.ts，order 0）。
  */
 const routes: RouteRecordRaw[] = [
   {
     name: 'Workbench',
     path: '/workbench',
-    component: () => import('#/views/workbench/index.vue'),
+    redirect: '/cockpit',
     meta: {
-      // 全角色可见（运维工作台驾驶舱）
       authority: [
         'ADMIN',
         'EXPERT',
@@ -26,9 +20,8 @@ const routes: RouteRecordRaw[] = [
         'PE_ENGINEER',
         'SPONSOR',
       ],
-      icon: 'lucide:layout-dashboard',
-      order: 0,
-      title: '运维工作台',
+      hideInMenu: true,
+      title: '运维工作台（已并入驾驶舱）',
     },
   },
 ];

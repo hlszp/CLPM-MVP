@@ -40,8 +40,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: HANDLING_AUTHORITY,
       icon: 'lucide:clipboard-check',
-      order: 5,
-      title: '处置',
+      order: 6,
+      title: '运维处置',
       module: 'handling',
     },
     children: [
