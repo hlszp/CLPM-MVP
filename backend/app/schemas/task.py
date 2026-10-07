@@ -159,9 +159,9 @@ class TaskResponse(CamelModel):
     triggeredBy: str | None = Field(
         None, description="触发方：system=定时/系统，user=手动（含工作台）"
     )
-    # 历史重算任务额外字段（其他任务类型为 None）
-    tsStart: str | None = Field(None, description="重算时间窗起始（仅 BACKFILL）")
-    tsEnd: str | None = Field(None, description="重算时间窗结束（仅 BACKFILL）")
+    # 时间窗字段（BACKFILL 重算与 DIAGNOSIS 诊断任务写入；其他任务类型为 None）
+    tsStart: str | None = Field(None, description="任务时间窗起始（重算/诊断任务）")
+    tsEnd: str | None = Field(None, description="任务时间窗结束（重算/诊断任务）")
     loopIds: list[str] | None = Field(None, description="回路 ID 列表（仅 BACKFILL）")
     plantNodeIds: list[str] | None = Field(None, description="装置 ID 列表（仅 BACKFILL）")
     # V62-P3-33：报告导出任务产物（异步 PDF 下载用）

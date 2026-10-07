@@ -131,7 +131,7 @@ const submitForm = reactive({
 /** 验证结论表单（VERIFYING） */
 const verifyForm = reactive({ verifyNote: '', verifyRunId: '' });
 
-/** 作废 Modal（PENDING） */
+/** 作废 Modal（PENDING/EXECUTING，2026-10-05 裁决①扩展） */
 const cancelOpen = ref(false);
 const cancelReason = ref('');
 
@@ -642,10 +642,13 @@ const fmt = (ts: null | string | undefined) =>
                   :placeholder="f.placeholder"
                 />
               </div>
-              <div>
+              <div class="flex items-center gap-2">
                 <Button :loading="acting" type="primary" @click="handleSubmit">
                   提交验证
                 </Button>
+                <!-- 2026-10-05 用户裁决①：EXECUTING 可作废（计划变更/无法继续时，
+                     避免强走 verify INEFFECTIVE 污染无效重开率） -->
+                <Button danger @click="openCancel">作废</Button>
               </div>
             </div>
           </template>

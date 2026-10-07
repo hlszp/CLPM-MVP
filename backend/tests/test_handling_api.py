@@ -924,6 +924,27 @@ class TestOrderCancelEndpoint:
         assert data["cancelReason"] == "检修计划变更，并入下月窗口"
         mock_db.commit.assert_awaited()
 
+    def test_cancel_executing_ok(self, client) -> None:
+        """2026-10-05 用户裁决①（选项 A）：EXECUTING → CANCELLED 合法——
+        现场计划变更时此前只能挂僵尸单或强走 verify INEFFECTIVE（语义失真）。
+        已执行进度由 feedback_log 留痕；verify_result 恒空，不污染无效重开率。"""
+        order = _make_order(
+            status="EXECUTING",
+            handler="张工",
+            started_at=datetime(2026, 8, 10, 8, 0, 0),
+            feedback_log=[{"at": "2026-08-10T10:00:00Z", "by": "张工", "content": "阀门已拆检"}],
+        )
+        mock_db = _override_db(client, [_scalar_result(order)])
+        resp = self._post(client, {"cancelReason": "执行中发现备件不具备，计划变更"})
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["status"] == "CANCELLED"
+        assert data["verifyResult"] is None
+        # 已有执行痕迹保留（作废不抹除开工/反馈记录）
+        assert data["startedAt"] is not None
+        assert len(data["feedbackLog"]) == 1
+        mock_db.commit.assert_awaited()
+
     def test_cancel_missing_reason(self, client) -> None:
         order = _make_order(status="PENDING")
         _override_db(client, [_scalar_result(order)])
@@ -931,9 +952,10 @@ class TestOrderCancelEndpoint:
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_PARAM"
 
-    @pytest.mark.parametrize("status", ["EXECUTING", "VERIFYING", "CLOSED", "REOPENED"])
+    @pytest.mark.parametrize("status", ["VERIFYING", "CLOSED", "REOPENED"])
     def test_cancel_invalid_state(self, client, status: str) -> None:
-        """非法迁移：cancel 仅允许 PENDING（已开工不可作废，应走验证/重开）。"""
+        """非法迁移：cancel 允许 PENDING/EXECUTING（裁决①扩展），其余 400。
+        VERIFYING 已提交验证，只能走 verify 结论；终态不可动。"""
         order = _make_order(status=status)
         _override_db(client, [_scalar_result(order)])
         resp = self._post(client, {"cancelReason": "x"})

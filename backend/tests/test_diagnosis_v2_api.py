@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import re
+from asyncio import run as asyncio_run
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -272,6 +274,11 @@ class TestRunsEndpoints:
         assert item["primaryCategory"] == "INSTRUMENT"
         assert item["primaryCategoryLabel"] == "仪表/测量问题"
         assert item["severity"] == "MEDIUM"
+        # 2026-10-05 指标透明化：summary 带门禁与算子精简指标
+        assert item["dataGate"]["confidenceLevel"] == "A"
+        assert item["operatorMetrics"]["sensor_fault"]["detected"] is True
+        assert "features" in item["operatorMetrics"]["sensor_fault"]
+        assert "evidence" not in item["operatorMetrics"]["sensor_fault"]
 
     def test_run_detail(self, client) -> None:
         rows_r = MagicMock()
@@ -312,6 +319,10 @@ class TestRunsEndpoints:
         assert "主分类" in resp.text
         assert "仪表/测量问题" in resp.text
         assert resp.headers["content-type"].startswith("text/csv")
+        # 2026-10-05 指标透明化：导出含门禁列与算子结论/特征列
+        assert "数据点数" in resp.text
+        assert "可信度等级" in resp.text
+        assert "传感器故障检测·结论" in resp.text
 
 
 class TestRunsLatestEndpoint:
@@ -873,3 +884,119 @@ class TestActionUpdateDeleteEndpoints:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 403
+
+
+class TestTriggerTitleConvention:
+    """任务标题约定「回路诊断-YYMMDD-X」+ 任务时间窗写入（2026-10-05）。"""
+
+    def test_trigger_title_and_window_written(self, client, fake_redis) -> None:
+        with (
+            patch("app.tasks.diagnosis_v2.run_diagnosis_batch") as mock_celery,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery.delay.return_value = MagicMock(id="celery-1")
+            from app.core.db import get_db
+
+            mock_db = MagicMock()
+            mock_db.execute = _seq_execute([_loops_result(), _pv_mapping_result()])
+            client.app.dependency_overrides[get_db] = lambda: mock_db
+
+            resp = client.post(
+                "/api/v1/diagnosis/run",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"loopIds": [LOOP_ID], "timeWindow": {"preset": "last_7d"}},
+            )
+        assert resp.status_code == 200
+        task_id = resp.json()["data"]["taskId"]
+        task = asyncio_run(fake_redis.hgetall(f"task:{task_id}"))
+        # 标题 = 回路诊断-YYMMDD-X（X=当日自增序号）
+        assert re.fullmatch(r"回路诊断-\d{6}-\d+", task["title"])
+        # 任务记录带诊断时间窗（此前只传 Celery，列表时间窗恒空）
+        assert task["ts_start"]
+        assert task["ts_end"]
+
+    def test_title_sequence_increments(self, fake_redis) -> None:
+        from app.services.diagnosis_titles import next_diagnosis_title
+
+        t1 = asyncio_run(next_diagnosis_title())
+        t2 = asyncio_run(next_diagnosis_title())
+        m1 = re.fullmatch(r"回路诊断-(\d{6})-(\d+)", t1)
+        m2 = re.fullmatch(r"回路诊断-(\d{6})-(\d+)", t2)
+        assert m1 and m2
+        assert m1.group(1) == m2.group(1)  # 同日
+        assert int(m2.group(2)) == int(m1.group(2)) + 1  # 序号递增
+
+
+class TestBatchDeleteRuns:
+    """POST /api/v1/diagnosis/runs/batch-delete（2026-10-05 诊断记录页批删）."""
+
+    ID_OK = str(uuid4())
+    ID_OPEN_ACTION = str(uuid4())
+    ID_RUNNING = str(uuid4())
+    ID_MISSING = str(uuid4())
+
+    def _override_db(self, client, runs, open_action_run_ids) -> MagicMock:
+        from app.core.db import get_db
+
+        runs_r = MagicMock()
+        runs_r.scalars.return_value.all.return_value = runs
+        actions_r = MagicMock()
+        actions_r.scalars.return_value.all.return_value = open_action_run_ids
+        delete_r = MagicMock()
+        mock_db = MagicMock()
+        mock_db.execute = _seq_execute([runs_r, actions_r, delete_r])
+        mock_db.commit = AsyncMock()
+        client.app.dependency_overrides[get_db] = lambda: mock_db
+        return mock_db
+
+    @staticmethod
+    def _run(run_id: str, status: str) -> DiagnosisRun:
+        return DiagnosisRun(id=run_id, loop_id=LOOP_ID, status=status)
+
+    def test_batch_delete_mixed(self, client) -> None:
+        """终态无关联 → 删；在办建议/执行中/不存在 → 跳过并回报原因."""
+        runs = [
+            self._run(self.ID_OK, "SUCCESS"),
+            self._run(self.ID_OPEN_ACTION, "SUCCESS"),
+            self._run(self.ID_RUNNING, "RUNNING"),
+        ]
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_db(client, runs, [self.ID_OPEN_ACTION])
+            resp = client.post(
+                "/api/v1/diagnosis/runs/batch-delete",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "ids": [
+                        self.ID_OK,
+                        self.ID_OPEN_ACTION,
+                        self.ID_RUNNING,
+                        self.ID_MISSING,
+                    ]
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["requested"] == 4
+        assert data["deleted"] == 1
+        reasons = {s["id"]: s["reason"] for s in data["skipped"]}
+        assert "在办处置建议" in reasons[self.ID_OPEN_ACTION]
+        assert "非终态" in reasons[self.ID_RUNNING]
+        assert "不存在" in reasons[self.ID_MISSING]
+
+    def test_batch_delete_forbidden_for_sponsor(self, client) -> None:
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.post(
+                "/api/v1/diagnosis/runs/batch-delete",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"ids": [self.ID_OK]},
+            )
+        assert resp.status_code == 403
+
+    def test_batch_delete_rejects_empty(self, client) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/diagnosis/runs/batch-delete",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"ids": []},
+            )
+        assert resp.status_code == 422

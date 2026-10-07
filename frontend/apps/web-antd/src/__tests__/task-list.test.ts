@@ -27,45 +27,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ============ Mock API ============
 // vi.mock 是 hoisted 的，必须用 vi.hoisted 包装 mock 函数
-const { cancelTaskApiMock, deleteTaskApiMock, getTaskListApiMock } = vi.hoisted(
-  () => ({
-    cancelTaskApiMock: vi.fn().mockResolvedValue({
-      taskId: 'task-1',
-      cancelled: true,
-    }),
-    deleteTaskApiMock: vi.fn().mockResolvedValue({
-      task_id: 'task-1',
-      deleted: true,
-    }),
-    getTaskListApiMock: vi.fn().mockResolvedValue({
-      items: [
-        {
-          taskId: 'task-1',
-          taskType: 'BACKFILL',
-          status: 'RUNNING',
-          progress: 0.5,
-          loopsTotal: 10,
-          loopsDone: 5,
-          createdAt: '2026-07-06T10:00:00+08:00',
-          tsStart: '2026-07-01T00:00:00+08:00',
-          tsEnd: '2026-07-06T00:00:00+08:00',
-        },
-        {
-          taskId: 'task-2',
-          taskType: 'STANDARD',
-          status: 'SUCCESS',
-          progress: 1,
-          loopsTotal: 10,
-          loopsDone: 10,
-          createdAt: '2026-07-05T10:00:00+08:00',
-          tsStart: '2026-07-01T00:00:00+08:00',
-          tsEnd: '2026-07-06T00:00:00+08:00',
-        },
-      ],
-      total: 2,
-    }),
+const {
+  cancelTaskApiMock,
+  deleteTaskApiMock,
+  getTaskListApiMock,
+  routerPushMock,
+} = vi.hoisted(() => ({
+  cancelTaskApiMock: vi.fn().mockResolvedValue({
+    taskId: 'task-1',
+    cancelled: true,
   }),
-);
+  deleteTaskApiMock: vi.fn().mockResolvedValue({
+    task_id: 'task-1',
+    deleted: true,
+  }),
+  getTaskListApiMock: vi.fn().mockResolvedValue({
+    items: [],
+    total: 0,
+  }),
+  routerPushMock: vi.fn(),
+}));
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: routerPushMock }),
+}));
 
 vi.mock('#/api/task', () => ({
   cancelTaskApi: cancelTaskApiMock,
@@ -281,5 +266,113 @@ describe('统一评估任务列表 task/list.vue', () => {
     const formatted = vm.formatTime('2026-07-06T10:00:00+08:00');
     expect(formatted).toContain('2026-07-06');
     expect(formatted).toContain('10:00');
+  });
+});
+
+// ============ 诊断口径（scope=diagnosis，2026-10-05 诊断化改造）测试 ============
+
+describe('统一任务列表 task/list.vue 诊断口径', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTaskListApiMock.mockResolvedValue({ items: [], total: 0 });
+  });
+
+  const mountDiagnosis = () =>
+    mount(TaskList, { ...mountOptions, props: { scope: 'diagnosis' } });
+
+  it('uT-TASKLIST-011: 诊断口径隐藏评估触发按钮，空态文案切诊断口径', async () => {
+    const wrapper = mountDiagnosis();
+    await nextTick();
+    const vm = wrapper.vm as any;
+    // 评估触发入口由 !isDiagnosisScope 控制（发起入口由诊断任务页宿主提供）
+    expect(vm.isDiagnosisScope).toBe(true);
+    // 空态文案为诊断口径，且不渲染空态动作按钮（emptyActionText 为空）
+    expect(vm.emptyReason).toContain('暂无诊断任务记录');
+    expect(vm.emptyReason).toContain('发起批量诊断');
+    expect(vm.emptyActionText).toBe('');
+  });
+
+  it('uT-TASKLIST-012: 诊断口径隐藏小时窗口列，通用列名去评估前缀', async () => {
+    const wrapper = mountDiagnosis();
+    await nextTick();
+    const vm = wrapper.vm as any;
+    const keys = vm.columns.map((c: any) => c.key ?? c.dataIndex);
+    // 小时窗口仅评估口径（诊断任务无此概念恒空列）
+    expect(keys).not.toContain('windowCount');
+    // 列名中性化（评估/诊断双口径共用）
+    const titles = vm.columns.map((c: any) => c.title);
+    expect(titles).toContain('回路数');
+    expect(titles).toContain('状态');
+    expect(titles).toContain('进度');
+    expect(titles).toContain('时长');
+    expect(titles).not.toContain('评估状态');
+    expect(titles).not.toContain('评估进度');
+    // 通用列保留
+    expect(keys).toContain('loopsTotal');
+    expect(keys).toContain('tsRange');
+    expect(keys).toContain('action');
+  });
+
+  it('uT-TASKLIST-013: 评估口径（缺省 scope）保留小时窗口列与触发按钮', async () => {
+    getTaskListApiMock.mockResolvedValue({ items: [], total: 0 });
+    const wrapper = mount(TaskList, mountOptions);
+    await nextTick();
+    const vm = wrapper.vm as any;
+    expect(vm.isDiagnosisScope).toBe(false);
+    expect(vm.columns.map((c: any) => c.key)).toContain('windowCount');
+    expect(vm.emptyActionText).toBe('触发标准评估');
+    expect(vm.emptyReason).toContain('暂无评估任务记录');
+  });
+
+  it('uT-TASKLIST-014: viewResults 按任务类型分流（DIAGNOSIS 上抛宿主开抽屉）', async () => {
+    const wrapper = mount(TaskList, mountOptions);
+    await nextTick();
+    const vm = wrapper.vm as any;
+    // DIAGNOSIS → 上抛 viewDiagnosisRuns（2026-10-05 用户裁决：抽屉展示批次记录）
+    vm.viewResults({ taskId: 't1', taskType: 'DIAGNOSIS', status: 'SUCCESS' });
+    expect(routerPushMock).not.toHaveBeenCalled();
+    expect(wrapper.emitted('viewDiagnosisRuns')).toEqual([
+      [{ taskId: 't1', taskType: 'DIAGNOSIS', status: 'SUCCESS' }],
+    ]);
+    vm.viewResults({ taskId: 't2', taskType: 'CUSTOM', status: 'SUCCESS' });
+    expect(routerPushMock).toHaveBeenCalledWith({
+      path: '/metric/loop-evaluation',
+      query: { view: 'history', source: 'MANUAL_CUSTOM', taskId: 't2' },
+    });
+    vm.viewResults({ taskId: 't3', taskType: 'BACKFILL', status: 'SUCCESS' });
+    expect(routerPushMock).toHaveBeenCalledWith({
+      path: '/metric/loop-evaluation',
+      query: { view: 'history', source: 'MANUAL_STANDARD' },
+    });
+  });
+
+  it('uT-TASKLIST-015: 诊断口径确认弹窗文案使用诊断记录术语', async () => {
+    getTaskListApiMock.mockResolvedValue({
+      items: [
+        { taskId: 'task-1', taskType: 'DIAGNOSIS', status: 'RUNNING' },
+      ],
+      total: 1,
+    });
+    const wrapper = mountDiagnosis();
+    await nextTick();
+    const vm = wrapper.vm as any;
+    // 删除确认：产出术语 = 诊断记录（非 KPI 快照）
+    vm.handleDelete({
+      taskId: 'task-1',
+      taskType: 'DIAGNOSIS',
+      status: 'SUCCESS',
+    });
+    await nextTick();
+    expect(vm.dangerImpact).toContain('不影响已写入的诊断记录');
+    expect(vm.dangerImpact).not.toContain('KPI 快照');
+    // 取消确认：回滚提示指向诊断发起入口，标题中性化
+    vm.handleCancel({
+      taskId: 'task-1',
+      taskType: 'DIAGNOSIS',
+      status: 'RUNNING',
+    });
+    await nextTick();
+    expect(vm.dangerRollback).toContain('重新发起批量诊断');
+    expect(vm.dangerTitle).toBe('取消任务');
   });
 });

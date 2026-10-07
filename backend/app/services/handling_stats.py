@@ -259,7 +259,8 @@ async def build_handling_statistics(
                     FILTER (WHERE ho.status = 'CLOSED' AND ho.verified_at IS NOT NULL)
                     AS avg_cycle_hours,
                   AVG(EXTRACT(EPOCH FROM (ho.started_at - ho.created_at)) / 3600.0)
-                    FILTER (WHERE ho.started_at IS NOT NULL)
+                    FILTER (WHERE ho.started_at IS NOT NULL
+                                   AND ho.status != 'CANCELLED')
                     AS avg_schedule_hours,
                   AVG((ho.kpi_after ->> 'score')::float8 - (ho.kpi_before ->> 'score')::float8)
                     FILTER (WHERE ho.status = 'CLOSED'

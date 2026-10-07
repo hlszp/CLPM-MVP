@@ -1,8 +1,9 @@
 """诊断分级定时调度（自动诊断层①，设计文档 §12.3；2026-10-01 裁决更新）。
 
-- 每日 01:10（run_daily）：**全量** READY 活跃回路，近 24h 窗口 → 每日基线
+- 每日 00:30（run_daily）：**全量** READY 活跃回路，近 24h 窗口 → 每日基线
   （2026-10-01 用户裁决"每天全回路诊断一次"；原 1 级过滤在生产
-  importance_level 全=2 下实际空跑）
+  importance_level 全=2 下实际空跑。2026-10-05 用户裁决：01:10→00:30，
+  避开 01:00 起的小时 KPI 轮与 00:05 日度汇总）
 - 每周日 02:10（run_weekly）：2 级重要回路，近 7d 窗口 → 周期体检（保留长窗视角）
 
 前置门禁（缺数/不可信窗口只产出噪音，跳过记录日志不发任务）：
@@ -167,6 +168,7 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
     if not eligible:
         return {"level": level, "total": len(loop_ids), "dispatched": 0, "skipped": len(skipped)}
 
+    from app.services.diagnosis_titles import next_diagnosis_title
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
     # 分批派发：每批独立 TaskTracker（全局 30min 硬杀 + autoretry 3 次，
@@ -176,15 +178,20 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
         for i in range(0, len(eligible), _DISPATCH_BATCH_SIZE)
     ]
     task_ids: list[str] = []
-    for bi, batch in enumerate(batches, start=1):
+    for batch in batches:
         task_id = str(uuid4())
+        # 标题约定（2026-10-05 用户裁决）：回路诊断-YYMMDD-X；多批连续
+        # 创建时序号自然递增即批次号。任务记录同步写入诊断时间窗。
+        title = await next_diagnosis_title()
         await create_task(
             task_type=TaskType.DIAGNOSIS,
             created_by=f"scheduler-grade{level}" if level is not None else "scheduler-daily-all",
             created_by_id="00000000-0000-0000-0000-000000000001",
             loop_ids=batch,
             triggered_by="schedule",
-            title=f"定时诊断（{scope}，第 {bi}/{len(batches)} 批，{len(batch)} 个回路）",
+            title=title,
+            ts_start=start.isoformat(),
+            ts_end=end.isoformat(),
         )
         celery_result = run_diagnosis_batch.delay(
             loop_ids=batch,
@@ -218,7 +225,8 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
 
 @celery_app.task(name="app.tasks.diagnosis_schedule.run_daily", bind=True, base=AsyncTask)
 def run_daily(self: AsyncTask) -> dict:
-    """每日 01:10：全量 READY 活跃回路，近 24h 窗口（2026-10-01 裁决）。"""
+    """每日 00:30：全量 READY 活跃回路，近 24h 窗口（2026-10-01 裁决；
+    启动时间 2026-10-05 裁决 01:10→00:30，避开回路评估自动任务）。"""
     return self.run_async(_run_scheduled(None, timedelta(hours=24)))
 
 
@@ -236,7 +244,7 @@ from celery.schedules import crontab  # noqa: E402
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["diagnosis-scheduled-daily"] = {
     "task": "app.tasks.diagnosis_schedule.run_daily",
-    "schedule": crontab(hour=1, minute=10),
+    "schedule": crontab(hour=0, minute=30),
 }
 _existing_beat["diagnosis-scheduled-weekly"] = {
     "task": "app.tasks.diagnosis_schedule.run_weekly",

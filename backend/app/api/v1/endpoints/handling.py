@@ -18,7 +18,7 @@
 - POST /orders/{id}/feedback       执行反馈（EXECUTING 追加 feedback_log，状态不变）
 - POST /orders/{id}/submit         提交验证（EXECUTING → VERIFYING，TUNING 必填 pidAfter）
 - POST /orders/{id}/verify         验证结论（VERIFYING → CLOSED/REOPENED，服务端固化 KPI）
-- POST /orders/{id}/cancel         作废（PENDING → CANCELLED，cancelReason 必填）
+- POST /orders/{id}/cancel         作废（PENDING/EXECUTING → CANCELLED，cancelReason 必填）
 - POST /orders/{id}/kpi-comparison KPI 前后对比预览（VERIFYING，不落库）
 聚合（§6.3）：
 - GET  /loops                      档案聚合（双实体口径）
@@ -1339,9 +1339,17 @@ async def cancel_order(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
 ) -> dict:
-    """作废（PENDING → CANCELLED 终态，§4.2 #2；cancel_reason 必填）。"""
+    """作废（PENDING/EXECUTING → CANCELLED 终态，§4.2 #2；cancel_reason 必填）。
+
+    2026-10-05 用户裁决①（选项 A）：扩展 EXECUTING 可作废——现场计划变更时
+    此前只能挂僵尸单或强走 verify INEFFECTIVE（语义失真，污染无效重开率）。
+    已执行到何种程度由 feedback_log 自然留痕；作废单不计入无效重开率
+    （verify_result 恒空）与闭环率分母，仅 avgScheduleHours 统计侧排除。
+    整定回写无联动：TuningRecord 的 APPLIED 仅在 submit 时写入，EXECUTING
+    阶段作废时整定记录尚未被动过。
+    """
     order = await _get_order_or_404(db, order_id)
-    if order.status != "PENDING":
+    if order.status not in ("PENDING", "EXECUTING"):
         raise _err_order_state(order, "作废")
     if not body.cancelReason or not body.cancelReason.strip():
         raise _err_param("cancelReason 必填")

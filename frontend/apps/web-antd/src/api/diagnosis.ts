@@ -55,6 +55,15 @@ export namespace DiagnosisApi {
     reason?: null | string;
   }
 
+  /** 列表行算子指标精简视图（2026-10-05 指标列组展开；evidence 等重内容仅 detail 有） */
+  export interface OperatorMetric {
+    executed: boolean;
+    detected?: boolean;
+    confidence?: null | number;
+    skipReason?: null | string;
+    features: Record<string, any>;
+  }
+
   /** 证据波形快照（LTTB ≤2000 点，自包含） */
   export interface ChartSnapshot {
     trend: {
@@ -119,6 +128,9 @@ export namespace DiagnosisApi {
     fitnessLevel?: null | string;
     fitnessTags?: null | string[];
     createdAt: string;
+    /** 2026-10-05 指标透明化：数据门禁（数据质量列）与算子精简指标（列组展开） */
+    dataGate?: GateInfo | null;
+    operatorMetrics?: null | Record<string, OperatorMetric>;
   }
 
   /** 诊断完整详情（结果面板） */
@@ -620,6 +632,15 @@ export function getDiagnosisRunsApi(params: DiagnosisApi.RunQuery) {
       params,
     },
   );
+}
+
+/** 批量删除诊断记录（2026-10-05；非终态/在办处置建议的记录由后端跳过并回报） */
+export function deleteDiagnosisRunsApi(ids: string[]) {
+  return requestClient.post<{
+    deleted: number;
+    requested: number;
+    skipped: { id: string; reason: string }[];
+  }>('/diagnosis/runs/batch-delete', { ids });
 }
 
 /** 每回路最新诊断概览（装置节点下钻 / loopId 单回路；无诊断记录的回路 runId=null） */

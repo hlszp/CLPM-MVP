@@ -74,8 +74,13 @@ import { useWb360Loop } from './composables/use-wb360-loop';
 defineOptions({ name: 'LoopWorkbench360' });
 
 // embed 模式：被其他页面的 Drawer 内嵌时通过 prop 指定初始回路，
-// 且不回写宿主页面的路由 query（弹出"检查"工作台场景）
-const props = defineProps<{ embedLoopId?: string }>();
+// 且不回写宿主页面的路由 query（弹出"检查"工作台场景）；
+// embedSection 指定初始剖面（值域同 ?section= 协议，2026-10-05 诊断概览
+// 行操作抽屉直达诊断剖面；仅 embed 模式生效）
+const props = defineProps<{
+  embedLoopId?: string;
+  embedSection?: string;
+}>();
 const isEmbed = computed(() => props.embedLoopId !== undefined);
 
 const route = useRoute();
@@ -118,6 +123,10 @@ const SECTION_QUERY_ALIAS: Record<string, 'assess' | 'diag' | 'handling' | 'tuni
 if (!isEmbed.value) {
   const qs = typeof route.query.section === 'string' ? route.query.section : '';
   const sectionKey = qs ? SECTION_QUERY_ALIAS[qs] : undefined;
+  if (sectionKey) layout.openSection(sectionKey);
+} else if (props.embedSection) {
+  // embed 直达剖面（prop 优先于 query；模块禁用时 openSection 自 guard 忽略）
+  const sectionKey = SECTION_QUERY_ALIAS[props.embedSection];
   if (sectionKey) layout.openSection(sectionKey);
 }
 const trend = useTrendData();

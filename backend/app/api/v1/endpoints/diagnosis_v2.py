@@ -144,6 +144,23 @@ def _resolve_window(body: TimeWindowBody) -> tuple[datetime, datetime]:
     return start, end
 
 
+def _compact_operator_metrics(operator_results: dict[str, Any] | None) -> dict[str, Any]:
+    """列表用算子指标精简视图（2026-10-05 指标列组展开）：每算子仅保留
+    状态 + 特征值，去 evidence/波形等重内容（详情抽屉走 detail API 全量）。"""
+    out: dict[str, Any] = {}
+    for name, r in (operator_results or {}).items():
+        if not isinstance(r, dict):
+            continue
+        out[name] = {
+            "executed": bool(r.get("executed")),
+            "detected": bool(r.get("detected")),
+            "confidence": r.get("confidence"),
+            "skipReason": r.get("skipReason"),
+            "features": r.get("features") or {},
+        }
+    return out
+
+
 def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
     review_results = row.review_results or []
     return {
@@ -175,6 +192,9 @@ def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
         "reviewedBy": row.reviewed_by,
         "reviewedAt": row.reviewed_at.isoformat() if row.reviewed_at else None,
         "createdAt": row.created_at.isoformat() if row.created_at else None,
+        # 2026-10-05 指标透明化：数据质量列（门禁）+ 算子指标列组展开数据源
+        "dataGate": row.data_gate,
+        "operatorMetrics": _compact_operator_metrics(row.operator_results),
     }
 
 
@@ -302,13 +322,20 @@ async def trigger_diagnosis(
                 status_code=400,
             )
 
+    # 标题约定（2026-10-05 用户裁决）：回路诊断-YYMMDD-X（X=当日自增序号）；
+    # 任务记录同步写入诊断时间窗（此前只传给 Celery，任务列表时间窗恒空）
+    from app.services.diagnosis_titles import next_diagnosis_title
+
+    title = await next_diagnosis_title()
     task_id = await create_task(
         task_type=TaskType.DIAGNOSIS,
         created_by=user.username,
         created_by_id=str(user.id),
         loop_ids=loop_ids,
         triggered_by="user",
-        title=f"回路诊断（{len(loop_ids)} 个回路）",
+        title=title,
+        ts_start=start.isoformat(),
+        ts_end=end.isoformat(),
     )
     celery_result = run_diagnosis_batch.delay(
         loop_ids=loop_ids,
@@ -585,6 +612,80 @@ async def delete_run_action(
     await db.execute(sa_delete(LoopActionItem).where(LoopActionItem.id == action_id))
     await db.commit()
     return success({"id": action_id, "deleted": True})
+
+
+class BatchDeleteRunsBody(BaseModel):
+    """批量删除诊断记录请求体."""
+
+    ids: list[str] = Field(min_length=1, max_length=200, description="诊断记录 ID 列表")
+
+
+#: 诊断记录终态（非终态可能仍在被 Celery 写入，删除会导致落库丢失/更新悬空）
+_RUN_TERMINAL_STATUSES = ("SUCCESS", "PARTIAL", "FAILED")
+#: 处置建议在办状态（未审核完的记录删除会让建议悬空，跳过保护）
+_ACTION_OPEN_STATUSES = ("PENDING", "ACCEPTED")
+
+
+@router.post("/runs/batch-delete", response_model=ApiResponse[dict])
+async def batch_delete_runs(
+    body: BatchDeleteRunsBody,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+) -> dict:
+    """批量删除诊断记录（2026-10-05 用户需求：诊断记录页批量清理）.
+
+    保护口径（诚实化，逐条回报跳过原因）：
+    - 非终态（RUNNING 等，可能仍在执行）→ 跳过
+    - 存在在办处置建议（PENDING/ACCEPTED）→ 跳过（避免审核流程悬空；
+      已完结建议 CONVERTED/REJECTED/IGNORED 的关联 run 可删，其 run_id 置空留痕）
+    """
+    unique_ids = list(dict.fromkeys(body.ids))
+    runs = (
+        (await db.execute(select(DiagnosisRun).where(DiagnosisRun.id.in_(unique_ids))))
+        .scalars()
+        .all()
+    )
+    run_map = {str(r.id): r for r in runs}
+
+    open_action_runs: set[str] = set()
+    if run_map:
+        rows = (
+            (
+                await db.execute(
+                    select(LoopActionItem.run_id).where(
+                        LoopActionItem.run_id.in_(list(run_map)),
+                        LoopActionItem.status.in_(_ACTION_OPEN_STATUSES),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        open_action_runs = {str(x) for x in rows if x}
+
+    deletable: list[str] = []
+    skipped: list[dict[str, str]] = []
+    for rid in unique_ids:
+        run = run_map.get(rid)
+        if run is None:
+            skipped.append({"id": rid, "reason": "记录不存在"})
+        elif run.status not in _RUN_TERMINAL_STATUSES:
+            skipped.append({"id": rid, "reason": "非终态（执行中），不可删除"})
+        elif rid in open_action_runs:
+            skipped.append({"id": rid, "reason": "存在在办处置建议，先完成或忽略建议"})
+        else:
+            deletable.append(rid)
+
+    if deletable:
+        await db.execute(sa_delete(DiagnosisRun).where(DiagnosisRun.id.in_(deletable)))
+        await db.commit()
+    return success(
+        {
+            "requested": len(unique_ids),
+            "deleted": len(deletable),
+            "skipped": skipped,
+        }
+    )
 
 
 @router.get("/runs/latest", response_model=ApiResponse[dict])
@@ -907,9 +1008,40 @@ async def export_diagnosis_runs(
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(
-        ["时间", "回路", "主分类", "次分类", "置信度", "严重度", "时间窗", "发起人", "状态"]
-    )
+    # 2026-10-05 指标透明化：导出补全门禁指标与全部算子特征值
+    # （列序=算子注册顺序 × outputsSchema 特征序，线下分析用宽表）
+    op_metas = list_operators()
+    header = [
+        "时间",
+        "回路",
+        "主分类",
+        "次分类",
+        "置信度",
+        "严重度",
+        "时间窗",
+        "发起人",
+        "状态",
+        "数据点数",
+        "应有点数",
+        "可信度等级",
+        "缺口率",
+        "门禁说明",
+    ]
+    for m in op_metas:
+        header.append(f"{m['displayName']}·结论")
+        for feat_cn in m["outputsSchema"].values():
+            header.append(f"{m['displayName']}·{feat_cn}")
+    writer.writerow(header)
+
+    def _fmt_num(v: Any) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, bool):
+            return str(v)
+        if isinstance(v, int | float):
+            return f"{float(v):.4g}"
+        return str(v)
+
     for run, tag_name in rows:
         secondary = "、".join(
             _CATEGORY_LABELS.get(j.get("category", ""), j.get("category", ""))
@@ -920,21 +1052,39 @@ async def export_diagnosis_runs(
             if run.time_window_start and run.time_window_end
             else ""
         )
-        writer.writerow(
-            [
-                run.created_at.strftime("%Y-%m-%d %H:%M:%S") if run.created_at else "",
-                tag_name or "",
-                _CATEGORY_LABELS.get(run.primary_category or "", run.primary_category or ""),
-                secondary,
-                f"{float(run.primary_confidence):.0%}"
-                if run.primary_confidence is not None
-                else "",
-                run.severity or "",
-                window,
-                run.triggered_by,
-                run.status,
-            ]
-        )
+        gate = run.data_gate or {}
+        op_res = run.operator_results or {}
+        line = [
+            run.created_at.strftime("%Y-%m-%d %H:%M:%S") if run.created_at else "",
+            tag_name or "",
+            _CATEGORY_LABELS.get(run.primary_category or "", run.primary_category or ""),
+            secondary,
+            f"{float(run.primary_confidence):.0%}" if run.primary_confidence is not None else "",
+            run.severity or "",
+            window,
+            run.triggered_by,
+            run.status,
+            _fmt_num(gate.get("pointCount")),
+            _fmt_num(gate.get("expectedPoints")),
+            gate.get("confidenceLevel") or "",
+            f"{float(gate['gapRatio']):.1%}" if gate.get("gapRatio") is not None else "",
+            gate.get("reason") or "",
+        ]
+        for m in op_metas:
+            r = op_res.get(m["name"])
+            if not isinstance(r, dict) or not r.get("executed"):
+                verdict = (r.get("skipReason") or "未执行") if isinstance(r, dict) else ""
+                line.append(verdict)
+                line.extend([""] * len(m["outputsSchema"]))
+                continue
+            verdict = (
+                f"命中 {float(r.get('confidence') or 0):.2f}" if r.get("detected") else "未命中"
+            )
+            line.append(verdict)
+            feats = r.get("features") or {}
+            for feat_key in m["outputsSchema"]:
+                line.append(_fmt_num(feats.get(feat_key)))
+        writer.writerow(line)
     return PlainTextResponse(
         content=buf.getvalue(),
         media_type="text/csv",

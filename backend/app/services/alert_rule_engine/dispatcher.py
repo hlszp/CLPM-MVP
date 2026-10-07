@@ -408,6 +408,9 @@ async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
     start = end - timedelta(seconds=window_s)
 
     rule_code = rule.get("ruleCode", "rule")
+    from app.services.diagnosis_titles import next_diagnosis_title
+
+    title = await next_diagnosis_title()
     task_id = str(uuid4())
     await create_task(
         task_type=TaskType.DIAGNOSIS,
@@ -415,7 +418,9 @@ async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
         created_by_id="00000000-0000-0000-0000-000000000001",
         loop_ids=[loop_id],
         triggered_by="event",
-        title=f"事件触发诊断（{rule.get('ruleName', rule_code)}）",
+        title=title,
+        ts_start=start.isoformat(),
+        ts_end=end.isoformat(),
     )
 
     from app.tasks.diagnosis_v2 import run_diagnosis_batch

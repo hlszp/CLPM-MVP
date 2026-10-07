@@ -9,9 +9,10 @@
 触发，是条件化的唯一正确时机。
 
 条件化条目：
-- ``diagnosis-scheduled-daily``（diagnosis_schedule.py，每日 01:10）
+- ``diagnosis-scheduled-daily``（diagnosis_schedule.py，每日 00:30）
 - ``diagnosis-scheduled-weekly``（diagnosis_schedule.py，每周日 02:10）
 - ``diagnosis-evidence-cleanup``（diagnosis_maintenance.py，每日 03:40）
+- ``handling-remind``（handling_remind.py，每日 08:30）
 """
 
 from __future__ import annotations
@@ -32,6 +33,9 @@ _MODULE_BEAT_ENTRIES: dict[str, list[str]] = {
         "diagnosis-scheduled-daily",
         "diagnosis-scheduled-weekly",
         "diagnosis-evidence-cleanup",
+    ],
+    "handling": [
+        "handling-remind",
     ],
 }
 

@@ -4,18 +4,27 @@
  * "未勾选回路时显示的最新诊断概览"独立成页）。
  *
  * 布局：左脊柱装置树（范围切换）+ 主区（诊断健康度覆盖面板 + 概览表）。
- * 行操作：证据 / 复核 / 历史 / 诊断（诊断=跳工作台并预选该回路——
- * 发起职责收敛到工作台，本页只读概览 + 复核闭环）。
+ * 行操作：证据 / 复核 / 历史 / 诊断（诊断=右侧抽屉内嵌回路工作台诊断
+ * 剖面——2026-10-05 用户裁决改抽屉，原为跳转 /loop/workbench360）。
  */
 import type { DiagnosisApi } from '#/api/diagnosis';
 import type { PlantNodeApi } from '#/api/plant-node';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Button, Card, message, Select, Spin, Table, Tree } from 'ant-design-vue';
+import {
+  Button,
+  Card,
+  Drawer,
+  message,
+  Select,
+  Spin,
+  Table,
+  Tree,
+} from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisPrecheckApi } from '#/api/diagnosis';
@@ -307,12 +316,18 @@ function openLatestDetail(record: DiagnosisApi.LatestRunItem): void {
 const detailModalOpen = ref(false);
 const detailItem = ref<DiagnosisApi.LatestRunItem | null>(null);
 
-/** 行内"诊断"→ 跳回路工作台诊断剖面预选该回路（发起职责收敛，2026-10-01；D2 并入 2026-10-04） */
-function gotoWorkbench(loopId: string): void {
-  router.push({
-    path: '/loop/workbench360',
-    query: { loopId, section: 'diagnosis' },
-  });
+/** 行内"诊断" → 右侧抽屉内嵌回路工作台诊断剖面（2026-10-05 用户裁决：
+ * 单回路诊断页面抽屉推出，原为跳转 /loop/workbench360?section=diagnosis；
+ * 异步组件避免工作台大包拖累概览页首屏） */
+const Workbench360 = defineAsyncComponent(
+  () => import('#/views/loop/workbench360/index.vue'),
+);
+const diagWorkbenchOpen = ref(false);
+const diagWorkbenchLoopId = ref('');
+
+function openDiagWorkbench(loopId: string): void {
+  diagWorkbenchLoopId.value = loopId;
+  diagWorkbenchOpen.value = true;
 }
 
 // ===== 概览行操作：证据 / 复核 / 历史 =====
@@ -346,10 +361,10 @@ function openArchiveRun(item: DiagnosisApi.LatestRunItem): void {
   detailModalOpen.value = true;
 }
 
-/** 档案抽屉空态引导 → 跳工作台发起该回路诊断 */
+/** 档案抽屉空态引导 → 抽屉内嵌工作台发起该回路诊断 */
 function onArchiveTriggerDiagnosis(loopId: string): void {
   historyOpen.value = false;
-  gotoWorkbench(loopId);
+  openDiagWorkbench(loopId);
 }
 
 /** 复核完成 → 刷新概览（复核状态/结论即时回显） */
@@ -728,7 +743,7 @@ onMounted(() => {
                   <Button
                     size="small"
                     type="link"
-                    @click.stop="gotoWorkbench(record.loopId)"
+                    @click.stop="openDiagWorkbench(record.loopId)"
                   >
                     诊断
                   </Button>
@@ -763,6 +778,28 @@ onMounted(() => {
       @reviewed="onReviewDone"
     />
     <ClpmFitnessRulesModal v-model:open="fitnessRulesOpen" />
+
+    <!-- 单回路诊断抽屉：内嵌回路工作台诊断剖面（embed 模式；v-if +
+         destroy-on-close 关闭即卸载，停止工作台实时订阅） -->
+    <Drawer
+      v-model:open="diagWorkbenchOpen"
+      title="回路诊断"
+      placement="right"
+      width="min(1560px, 94vw)"
+      :body-style="{
+        padding: '0',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }"
+      destroy-on-close
+    >
+      <Workbench360
+        v-if="diagWorkbenchOpen"
+        :embed-loop-id="diagWorkbenchLoopId"
+        embed-section="diag"
+      />
+    </Drawer>
   </Page>
 </template>
 

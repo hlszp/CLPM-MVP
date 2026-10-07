@@ -1,14 +1,13 @@
 """工作台 v2.0 Celery 任务 + EventBus 单测（M1 skeleton）。
 
 覆盖：
-1. 5 条 beat 调度条目已注册（beat_schedule 断言，含 MV 错峰 2min）
-2. 5 个 task 已注册到 celery_app（name 断言）
+1. 4 条 beat 调度条目已注册（beat_schedule 断言，含 MV 错峰 2min；
+   sla-sweep 已按 2026-10-05 用户裁决②删除，处置提醒移交 handling_remind）
+2. 4 个 task 已注册到 celery_app（name 断言）
 3. EventBus.publish 双阶段：DB add+flush + WS 存根（mock session）
 4. EventBus.count_unread / mark_read 调用路径（mock session）
 5. task skeleton 可执行：asyncio.run 调用内部协程（连真实 DB，integration 标记，
    PG 不可达时 skip）
-
-M1 验收口径："4 beat 注册 + 单测触发 OK"。
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from app.tasks.celery_app import celery_app
 
 _EXPECTED_BEATS: dict[str, str] = {
     "workbench-precalc": "app.tasks.workbench.workbench_precalc",
-    "sla-sweep": "app.tasks.workbench.sla_sweep",
     "event-archive": "app.tasks.workbench.event_archive",
     "wb-cache-cleanup": "app.tasks.workbench.wb_cache_cleanup",
     "refresh-workbench-mv": "app.tasks.workbench.refresh_workbench_mv",
@@ -36,13 +34,18 @@ _EXPECTED_BEATS: dict[str, str] = {
 
 
 class TestBeatScheduleRegistered:
-    """5 条工作台 beat 调度条目必须注册到 celery_app.conf.beat_schedule。"""
+    """4 条工作台 beat 调度条目必须注册到 celery_app.conf.beat_schedule。"""
 
-    def test_five_workbench_beats_registered(self) -> None:
+    def test_workbench_beats_registered(self) -> None:
         schedule = celery_app.conf.beat_schedule
         for name, task_path in _EXPECTED_BEATS.items():
             assert name in schedule, f"beat_schedule 缺少条目 {name}"
             assert schedule[name]["task"] == task_path, f"{name} 的 task 路径不符"
+
+    def test_sla_sweep_removed(self) -> None:
+        """sla-sweep 骨架已删除（2026-10-05 裁决②），不得残留注册。"""
+        assert "sla-sweep" not in celery_app.conf.beat_schedule
+        assert "app.tasks.workbench.sla_sweep" not in celery_app.tasks
 
     def test_precalc_runs_every_5min(self) -> None:
         crontab = celery_app.conf.beat_schedule["workbench-precalc"]["schedule"]
@@ -52,10 +55,6 @@ class TestBeatScheduleRegistered:
         """MV 刷新与 precalc 错峰 2min（2,7,12...而非 0,5,10...）。"""
         crontab = celery_app.conf.beat_schedule["refresh-workbench-mv"]["schedule"]
         assert crontab.minute == {2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57}
-
-    def test_sla_sweep_runs_every_minute(self) -> None:
-        crontab = celery_app.conf.beat_schedule["sla-sweep"]["schedule"]
-        assert crontab.minute == set(range(60))
 
     def test_event_archive_runs_daily_0330(self) -> None:
         crontab = celery_app.conf.beat_schedule["event-archive"]["schedule"]
@@ -69,9 +68,9 @@ class TestBeatScheduleRegistered:
 
 
 class TestTasksRegistered:
-    """5 个 task 必须注册到 celery_app.tasks（可被 worker 发现）。"""
+    """4 个 task 必须注册到 celery_app.tasks（可被 worker 发现）。"""
 
-    def test_five_tasks_importable(self) -> None:
+    def test_workbench_tasks_importable(self) -> None:
         for task_path in _EXPECTED_BEATS.values():
             assert task_path in celery_app.tasks, f"task {task_path} 未注册到 celery_app"
 
@@ -198,14 +197,6 @@ class TestTaskSkeletonExecution:
         assert result["status"] == "ok"
         assert result["written"] > 0
         assert result["errors"] == 0
-
-    def test_sla_sweep_executable(self) -> None:
-        from app.tasks.workbench import _sla_sweep_async
-
-        result = asyncio.run(_sla_sweep_async())
-        assert result["status"] == "skeleton"
-        assert "warn_count" in result
-        assert "breach_count" in result
 
     def test_event_archive_executable(self) -> None:
         from app.tasks.workbench import _event_archive_async

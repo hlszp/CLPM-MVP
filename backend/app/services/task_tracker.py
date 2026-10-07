@@ -419,6 +419,24 @@ async def set_celery_task_ids(task_id: str, celery_task_ids: list[str]) -> None:
     )
 
 
+#: 日序号 key 的 TTL（2 天，序号只需在当日有效）
+_DAILY_SEQ_TTL_S = 48 * 3600
+
+
+async def next_daily_sequence(scope: str) -> int:
+    """按 scope 取当日自增序号（供任务标题「…-YYMMDD-X」的 X）。
+
+    - Redis INCR 原子递增，并发发起不重号；首次创建时设置 48h 过期
+    - 日期分段由调用方负责（key 已含天），此处只管递增
+    """
+    day = datetime.now().strftime("%y%m%d")
+    key = f"seq:daily:{scope}:{day}"
+    seq = await redis_client.incr(key)
+    if seq == 1:
+        await redis_client.expire(key, _DAILY_SEQ_TTL_S)
+    return seq
+
+
 async def reserve_backfill_dispatch(
     task_id: str,
     *,

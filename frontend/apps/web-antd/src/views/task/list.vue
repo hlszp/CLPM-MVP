@@ -1,12 +1,15 @@
 <script lang="ts" setup>
 /**
- * 统一评估任务列表（评估任务 → 任务列表 Tab）
+ * 统一任务列表（评估/诊断任务页共用宿主组件）
  *
- * IA 重构二期：手动（BACKFILL）/ 自动（STANDARD）任务合并为统一列表，
+ * IA 重构二期：手动（BACKFILL）/自动（STANDARD）任务合并为统一列表，
  * 任务类型为可选筛选（default-task-type 由宿主按角色传入，缺省查全部）。
+ * 2026-10-05 诊断化改造：scope="diagnosis" 时收敛为诊断口径——隐藏评估
+ * 触发按钮、隐藏小时窗口列、空态/确认弹窗文案按 scope 切换、
+ * DIAGNOSIS 任务查看结果跳诊断记录页（REPORT 任务无结果页，不展示入口）。
  *
- * - 列表上部左侧：触发标准评估、新建手动评估、批量删除、刷新；右侧：类型/状态/时间筛选
- * - 列表列：任务标题、任务类型、评估回路、小时窗口、时间窗口、评估状态、结果摘要、评估进度、创建时间、评估时长、创建人、操作
+ * - 列表上部左侧：触发标准评估、新建手动评估（仅评估 scope）、批量删除、刷新；右侧：类型/状态/时间筛选
+ * - 列表列：任务标题、任务类型、回路数、小时窗口（仅评估）、时间窗口、状态、结果摘要、进度、创建时间、时长、创建人、操作
  * - 自动轮询：有活跃任务时每 5s 刷新
  */
 import type { TableColumnsType } from 'ant-design-vue';
@@ -54,18 +57,29 @@ import BackfillTaskDrawer from './backfill-task-drawer.vue';
 
 defineOptions({ name: 'TaskList' });
 
-/** 默认任务类型筛选（宿主按角色传入；缺省 undefined = 全部）。
- *  fixedTaskType：锁定类型（诊断模块"诊断任务"页，隐藏类型筛选下拉）；
- *  excludeTaskTypes：排除类型（评估任务列表排除 DIAGNOSIS，2026-10-01 切分）
+/** 任务筛选与口径由宿主传入：
+ *  defaultTaskType：默认类型筛选（缺省 undefined = 全部）；
+ *  fixedTaskType：锁定类型（隐藏类型筛选下拉）；
+ *  excludeTaskTypes：排除类型（评估/诊断任务页互补切分，2026-10-01 起）；
+ *  scope：口径（缺省 'assess' 评估口径；'diagnosis' 收敛诊断口径的
+ *  按钮/列/文案/跳转，供诊断模块"诊断任务"页使用）
  */
 const props = defineProps<{
   defaultTaskType?: TaskApi.TaskType;
   excludeTaskTypes?: TaskApi.TaskType[];
   fixedTaskType?: TaskApi.TaskType;
+  scope?: 'assess' | 'diagnosis';
 }>();
 
-/** 轮询每轮回调（0929：父页监听以同步 RUNNING 徽章，此前徽章长期 stale） */
-const emit = defineEmits<{ polled: [] }>();
+/** 轮询每轮回调（0929：父页监听以同步 RUNNING 徽章，此前徽章长期 stale）；
+ *  viewDiagnosisRuns：诊断任务"查看结果"上抛宿主（2026-10-05 用户裁决：
+ *  右侧抽屉展示该批次诊断记录，不再跳转诊断记录页） */
+const emit = defineEmits<{
+  polled: [];
+  viewDiagnosisRuns: [task: TaskApi.TaskItem];
+}>();
+
+const isDiagnosisScope = computed(() => props.scope === 'diagnosis');
 
 const router = useRouter();
 
@@ -123,6 +137,16 @@ const taskTypeTextMap: Record<string, string> = {
   REPORT: '报告导出',
 };
 
+// ============ 空态文案（评估口径带动作按钮；诊断口径指引宿主页发起入口） ============
+const emptyReason = computed(() =>
+  isDiagnosisScope.value
+    ? '暂无诊断任务记录。可点击右上「发起批量诊断」批量发起，或在回路工作台诊断剖面对单回路发起诊断'
+    : '暂无评估任务记录。点击「触发标准评估」可对全部回路执行标准 KPI 评估，或点击「新建手动评估」按时间窗重算',
+);
+const emptyActionText = computed(() =>
+  isDiagnosisScope.value ? '' : '触发标准评估',
+);
+
 // ============ 详情 Drawer ============
 const drawerVisible = ref(false);
 const selectedTask = ref<null | TaskApi.TaskItem>(null);
@@ -135,10 +159,15 @@ const dangerTask = ref<null | TaskApi.TaskItem>(null);
 const dangerLoading = ref(false);
 
 const dangerTitle = computed(() => {
-  if (dangerAction.value === 'cancel') return '取消评估任务';
+  if (dangerAction.value === 'cancel') return '取消任务';
   if (dangerAction.value === 'delete') return '删除任务记录';
   return '批量删除任务';
 });
+
+/** 确认弹窗中的产出术语（评估=KPI 快照 / 诊断=诊断记录） */
+const artifactTerm = computed(() =>
+  isDiagnosisScope.value ? '诊断记录' : 'KPI 快照',
+);
 
 const dangerTarget = computed(() => {
   if (dangerAction.value === 'batch-delete') {
@@ -160,21 +189,23 @@ const dangerImpact = computed(() => {
     ).length;
     const deletable = selected - nonTerminal;
     if (nonTerminal > 0) {
-      return `已选中 ${selected} 个任务，其中 ${nonTerminal} 个为非终态（执行中/待执行）不可删除，将删除 ${deletable} 个终态任务；不影响已写入的 KPI 快照`;
+      return `已选中 ${selected} 个任务，其中 ${nonTerminal} 个为非终态（执行中/待执行）不可删除，将删除 ${deletable} 个终态任务；不影响已写入的${artifactTerm.value}`;
     }
-    return `将删除 ${selected} 条任务记录（仅终态任务可删除），不影响已写入的 KPI 快照`;
+    return `将删除 ${selected} 条任务记录（仅终态任务可删除），不影响已写入的${artifactTerm.value}`;
   }
   const t = dangerTask.value;
   if (!t) return '';
   const scope = `任务「${getTaskTitle(t)}」（创建时间 ${formatTime(t.createdAt)}）`;
   return dangerAction.value === 'cancel'
-    ? `${scope}；取消后计算中止，已写入的快照保留`
-    : `${scope}；仅删除任务记录，不影响已写入的 KPI 快照`;
+    ? `${scope}；取消后计算中止，已写入的${artifactTerm.value}保留`
+    : `${scope}；仅删除任务记录，不影响已写入的${artifactTerm.value}`;
 });
 
 const dangerRollback = computed(() =>
   dangerAction.value === 'cancel'
-    ? '取消不可撤销；如需评估可重新触发标准评估'
+    ? (isDiagnosisScope.value
+      ? '取消不可撤销；如需诊断可在本页重新发起批量诊断，或在回路工作台诊断剖面单回路发起'
+      : '取消不可撤销；如需评估可重新触发标准评估')
     : '任务记录删除后不可恢复',
 );
 
@@ -242,6 +273,7 @@ const rowSelection = computed(() => ({
 }));
 
 // ============ 列定义 ============
+/** 小时窗口列仅评估口径展示（重算任务的小时窗计数；诊断任务无此概念恒空） */
 const columns = computed<TableColumnsType>(() => [
   {
     title: '任务标题',
@@ -258,21 +290,25 @@ const columns = computed<TableColumnsType>(() => [
     align: 'center',
   },
   {
-    title: '评估回路',
+    title: '回路数',
     dataIndex: 'loopsTotal',
     key: 'loopsTotal',
     width: 90,
     className: 'clpm-num',
     align: 'center',
   },
-  {
-    title: '小时窗口',
-    dataIndex: 'windowCount',
-    key: 'windowCount',
-    width: 90,
-    className: 'clpm-num',
-    align: 'center',
-  },
+  ...(isDiagnosisScope.value
+    ? []
+    : [
+        {
+          title: '小时窗口',
+          dataIndex: 'windowCount',
+          key: 'windowCount',
+          width: 90,
+          className: 'clpm-num',
+          align: 'center',
+        } as const,
+      ]),
   {
     title: '时间窗口',
     key: 'tsRange',
@@ -280,7 +316,7 @@ const columns = computed<TableColumnsType>(() => [
     align: 'center',
   },
   {
-    title: '评估状态',
+    title: '状态',
     dataIndex: 'status',
     key: 'status',
     width: 100,
@@ -293,7 +329,7 @@ const columns = computed<TableColumnsType>(() => [
     align: 'center',
   },
   {
-    title: '评估进度',
+    title: '进度',
     dataIndex: 'progress',
     key: 'progress',
     width: 140,
@@ -307,7 +343,7 @@ const columns = computed<TableColumnsType>(() => [
     align: 'center',
   },
   {
-    title: '评估时长',
+    title: '时长',
     key: 'duration',
     width: 100,
     align: 'center',
@@ -435,9 +471,15 @@ async function handleTriggerStandard() {
   }
 }
 
-/** A2（整合方案）：任务完成 → 评估记录页查看产出快照
- *  CUSTOM 任务→按任务 ID 定位自定义快照；HOURLY 任务→按来源（手动·标准）过滤 */
+/** A2（整合方案）：任务完成 → 记录页查看产出
+ *  CUSTOM 任务→按任务 ID 定位自定义快照；HOURLY 任务→按来源（手动·标准）过滤；
+ *  DIAGNOSIS 任务→上抛宿主开批次记录抽屉（2026-10-05 用户裁决，不再跳页）；
+ *  REPORT 任务无结果查看页（按钮不展示，见模板 taskType !== 'REPORT'） */
 function viewResults(task: TaskApi.TaskItem) {
+  if (task.taskType === 'DIAGNOSIS') {
+    emit('viewDiagnosisRuns', task);
+    return;
+  }
   if (task.taskType === 'CUSTOM') {
     router.push({
       path: '/metric/loop-evaluation',
@@ -495,14 +537,22 @@ function refresh() {
 // 暴露给父组件 + 单元测试的接口（<script setup> 默认私有，需 defineExpose 才能被 vm 访问）
 defineExpose({
   refresh,
+  artifactTerm,
   columns,
+  dangerImpact,
+  dangerRollback,
+  dangerTitle,
+  emptyActionText,
+  emptyReason,
   formatProgress,
   formatTime,
   handleCancel,
   handleDangerConfirm,
   handleDelete,
+  isDiagnosisScope,
   isTaskActive,
   isTaskTerminal,
+  viewResults,
 });
 
 onMounted(() => {
@@ -519,7 +569,13 @@ onUnmounted(() => {
     <!-- 工具栏：左侧操作按钮 + 右侧筛选 -->
     <div class="mb-3 flex items-center justify-between gap-3">
       <Space>
+        <!-- 宿主扩展位（2026-10-05：诊断任务页「发起批量诊断」放批量删除旁） -->
+        <slot name="toolbar-actions"></slot>
+        <!-- 评估触发入口仅评估口径展示（诊断口径的发起入口在诊断任务页
+             「发起批量诊断」/回路工作台诊断剖面，且评估任务会被
+             excludeTaskTypes 过滤出列表，按钮会造成"发起后不可见"断层） -->
         <Button
+          v-if="!isDiagnosisScope"
           type="primary"
           :loading="triggerLoading"
           @click="handleTriggerStandard"
@@ -529,6 +585,7 @@ onUnmounted(() => {
         </Button>
         <!-- 新建手动评估（后端 /tasks/backfill require_roles(ADMIN, IC_ENGINEER)） -->
         <Button
+          v-if="!isDiagnosisScope"
           v-permission="['ADMIN', 'IC_ENGINEER']"
           @click="backfillDrawerOpen = true"
         >
@@ -595,8 +652,8 @@ onUnmounted(() => {
       :loading="loading"
       :error="loadError"
       :empty="!loading && !loadError && taskList.length === 0"
-      empty-reason="暂无评估任务记录。点击「触发标准评估」可对全部回路执行标准 KPI 评估，或点击「新建手动评估」按时间窗重算"
-      empty-action-text="触发标准评估"
+      :empty-reason="emptyReason"
+      :empty-action-text="emptyActionText"
       @retry="loadList"
       @empty-action="handleTriggerStandard"
     >
@@ -711,7 +768,10 @@ onUnmounted(() => {
           <template v-else-if="column.key === 'action'">
             <Space :size="4">
               <Button
-                v-if="(record as TaskApi.TaskItem).status === 'SUCCESS'"
+                v-if="
+                  (record as TaskApi.TaskItem).status === 'SUCCESS' &&
+                  (record as TaskApi.TaskItem).taskType !== 'REPORT'
+                "
                 type="link"
                 size="small"
                 @click.stop="viewResults(record as TaskApi.TaskItem)"
@@ -787,13 +847,13 @@ onUnmounted(() => {
             }}</Tag>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span :style="{ color: themeColors.NEUTRAL }">评估状态</span>
+            <span :style="{ color: themeColors.NEUTRAL }">状态</span>
             <Tag :color="statusColorMap(selectedTask.status)">
               {{ statusTextMap[selectedTask.status] || selectedTask.status }}
             </Tag>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span :style="{ color: themeColors.NEUTRAL }">评估进度</span>
+            <span :style="{ color: themeColors.NEUTRAL }">进度</span>
             <Progress
               :percent="formatProgress(selectedTask.progress)"
               :status="
@@ -833,7 +893,7 @@ onUnmounted(() => {
             }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
-            <span :style="{ color: themeColors.NEUTRAL }">评估时长</span>
+            <span :style="{ color: themeColors.NEUTRAL }">时长</span>
             <span class="font-mono">{{ formatDuration(selectedTask) }}</span>
           </div>
           <div v-if="selectedTask.errorMessage" class="border-b pb-2">
