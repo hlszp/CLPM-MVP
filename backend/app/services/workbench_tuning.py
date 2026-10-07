@@ -500,13 +500,14 @@ async def _query_latest_scores(db: AsyncSession, loop_ids: Sequence[str]) -> dic
     """每回路最新评分（kpi_snapshot_hourly 快照，DISTINCT ON）。"""
     if not loop_ids:
         return {}
+    # 2026-10-07 驾驶舱 P1：读 workbench_loop_latest 预计算（最新快照 score），
+    # 行缺失（无快照回路）不产出——与原 DISTINCT ON 缺行语义一致
     result = await db.execute(
         text(
             """
-            SELECT DISTINCT ON (loop_id) loop_id::text AS loop_id, score
-            FROM kpi_snapshot_hourly
-            WHERE loop_id::text = ANY(:loop_ids)
-            ORDER BY loop_id, ts_start DESC
+            SELECT loop_id::text AS loop_id, score
+            FROM workbench_loop_latest
+            WHERE loop_id::text = ANY(:loop_ids) AND score IS NOT NULL
             """
         ),
         {"loop_ids": [str(lid) for lid in loop_ids]},
@@ -527,20 +528,21 @@ async def _query_diag_src_map(db: AsyncSession, loop_ids: Sequence[str]) -> dict
     """
     if not loop_ids:
         return {}
+    # 2026-10-07 驾驶舱 P1：读 workbench_loop_latest 预计算（每回路最新异常
+    # run 主类），与原「无窗口无 status 的 DISTINCT ON」同口径
     result = await db.execute(
         text(
             """
-            SELECT DISTINCT ON (loop_id) loop_id::text AS loop_id, primary_category
-            FROM diagnosis_run
+            SELECT loop_id::text AS loop_id, latest_category
+            FROM workbench_loop_latest
             WHERE loop_id::text = ANY(:loop_ids)
-              AND primary_category IS NOT NULL
-            ORDER BY loop_id, created_at DESC
+              AND latest_category IS NOT NULL
             """
         ),
         {"loop_ids": [str(lid) for lid in loop_ids]},
     )
     return {
-        str(r.loop_id): str(category_label(r.primary_category) or r.primary_category)
+        str(r.loop_id): str(category_label(r.latest_category) or r.latest_category)
         for r in result.all()
     }
 

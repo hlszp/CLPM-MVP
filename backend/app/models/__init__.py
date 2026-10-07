@@ -66,6 +66,9 @@ from app.models.tuning_batch import TuningBatch, TuningBatchRecords  # Workbench
 from app.models.tuning_knowledge import TuningKnowledgeEntry
 from app.models.unit_kpi_summary import UnitKpiSummary
 from app.models.wb_cache_log import WbCacheLog  # Workbench v2.0
+from app.models.workbench_loop_latest import (  # 驾驶舱 P1 预计算
+    WorkbenchLoopLatest,
+)
 from app.models.workbench_summary import WorkbenchWindowSummary  # Workbench v2.0
 
 __all__ = [
@@ -126,6 +129,7 @@ __all__ = [
     # ---------- Workbench v2.0 工作台新增实体 ----------
     "ModulePlugin",  # M-01 模块插件4态注册表
     "WorkbenchWindowSummary",  # M-02 三窗口KPI预计算
+    "WorkbenchLoopLatest",  # 驾驶舱 P1 回路最新态预计算
     "EventBus",  # M-03 跨模块事件归一总线
     "SlaPolicy",  # M-04 SLA模板策略
     "TuningBatch",  # M-05 整定批次

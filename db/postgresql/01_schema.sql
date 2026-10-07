@@ -1896,6 +1896,37 @@ CREATE TABLE IF NOT EXISTS workbench_window_summary (
     CONSTRAINT ck_ws_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','POOR','CRITICAL','INCONCLUSIVE')),
     CONSTRAINT ck_ws_score_range CHECK (score >= 0 AND score <= 100)
 );
+
+-- 驾驶舱 P1 预计算（c9bf79b6868a）：每回路最新 fitness 快照 + 最新未处置诊断 run 摘要
+CREATE TABLE IF NOT EXISTS workbench_loop_latest (
+    id BIGSERIAL PRIMARY KEY,
+    loop_id UUID NOT NULL,
+    tag_name VARCHAR(64),
+    unit_id UUID,
+    unit_name VARCHAR(128),
+    factory_name VARCHAR(128),
+    score NUMERIC(6, 2),
+    fitness_level VARCHAR(8),
+    fitness_tags JSONB,
+    fitness_detail JSONB,
+    assess_level VARCHAR(8),
+    diagnose_level VARCHAR(8),
+    tune_level VARCHAR(8),
+    snapshot_ts TIMESTAMPTZ,
+    latest_run_id UUID,
+    latest_category VARCHAR(32),
+    latest_severity VARCHAR(16),
+    latest_confidence NUMERIC(4, 3),
+    latest_conclusion TEXT,
+    latest_run_at TIMESTAMPTZ,
+    top_symptom JSONB,
+    terminal_cnt INTEGER NOT NULL DEFAULT 0,
+    is_open BOOLEAN NOT NULL DEFAULT FALSE,
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uniq_wll_loop UNIQUE (loop_id)
+);
+CREATE INDEX IF NOT EXISTS idx_wll_open ON workbench_loop_latest (is_open, latest_severity, latest_run_at);
+CREATE INDEX IF NOT EXISTS idx_wll_unit ON workbench_loop_latest (unit_id);
 CREATE INDEX IF NOT EXISTS idx_ws_scope_window ON workbench_window_summary (scope_type, scope_id, "window");
 CREATE INDEX IF NOT EXISTS idx_ws_snapshot ON workbench_window_summary (snapshot_at);
 

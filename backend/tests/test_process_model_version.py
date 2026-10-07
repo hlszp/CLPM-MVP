@@ -75,12 +75,13 @@ def test_orm_has_38_tables() -> None:
     + 测点子表重构 P1 六表（loop_tag_binding_history /
     history_coverage_segment / history_layout_manifest / history_write_batch /
     history_point_conflict / point_state_anchor，2026-09-06 迁移
-    r1p0int00001）= 62。
+    r1p0int00001）= 62 + workbench_loop_latest（驾驶舱 P1 回路最新态
+    预计算，2026-10-07 迁移 c9bf79b6868a）= 63。
 
     注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
-    整体下线时移除，表计数从 63 回落至 62。
+    整体下线时移除，表计数曾从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 62
+    assert len(Base.metadata.tables) == 63
 
 
 def test_partial_unique_index_current_exists() -> None:

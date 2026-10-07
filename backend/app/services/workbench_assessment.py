@@ -164,7 +164,8 @@ def shape_summary(
             worst_txt = "各装置运行平稳"
         # 2026-10-07 用户裁决：驾驶舱数值统一保留两位小数（结论文案内嵌数值同口径）
         conclusion = (
-            f"控制性能处于 <b>{grade}</b> 水平，综合评分 <b>{score:.2f}</b>，{delta_txt}；{worst_txt}。"
+            f"控制性能处于 <b>{grade}</b> 水平，综合评分 "
+            f"<b>{score:.2f}</b>，{delta_txt}；{worst_txt}。"
         )
     else:
         conclusion = "暂无评估数据"

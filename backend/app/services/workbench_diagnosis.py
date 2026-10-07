@@ -455,7 +455,37 @@ async def _query_open_tag_rows(
 
     "未处置"过滤（terminal_action_cnt=0）在 filter_open_tag_rows 纯函数层完成（可单测）。
     """
-    unit_filter = "AND l.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
+    unit_filter = "AND w.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
+    # 2026-10-07 驾驶舱 P1：改读 workbench_loop_latest 预计算表（每回路最新异常
+    # run + 双 LATERAL 结果已由 5min 任务固化，生产 1209 回路下消除本接口最重
+    # 的 DISTINCT ON + 双 LATERAL）；表为空（部署空窗）回退原实时查询。
+    if not await _wll_table_empty(db):
+        result = await db.execute(
+            text(
+                f"""
+                SELECT w.loop_id, w.latest_run_id AS run_id,
+                       w.latest_severity AS severity, w.latest_run_at AS created_at,
+                       w.latest_category AS primary_category,
+                       w.latest_confidence AS confidence,
+                       w.latest_conclusion AS conclusion,
+                       w.top_symptom ->> 'key' AS top_symptom,
+                       w.terminal_cnt,
+                       w.tag_name AS loop_name,
+                       w.unit_name, w.factory_name
+                FROM workbench_loop_latest w
+                WHERE w.is_open
+                  AND w.latest_run_at >= :since
+                  {unit_filter}
+                ORDER BY CASE w.latest_severity WHEN 'HIGH' THEN 3
+                         WHEN 'MEDIUM' THEN 2 ELSE 1 END DESC,
+                         w.latest_run_at DESC
+                LIMIT 50
+                """
+            ),
+            {"since": since, "unit_ids": unit_ids},
+        )
+        return [dict(row._mapping) for row in result.all()]
+
     result = await db.execute(
         text(
             f"""
@@ -488,6 +518,21 @@ async def _query_open_tag_rows(
         {"since": since, "unit_ids": unit_ids},
     )
     return [dict(row._mapping) for row in result.all()]
+
+
+async def _wll_table_empty(db: AsyncSession) -> bool:
+    """workbench_loop_latest 是否为空（60s 进程缓存；部署空窗回退判定）。"""
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select as sa_select
+
+    from app.models.workbench_loop_latest import WorkbenchLoopLatest
+    from app.services.agg_cache import cached_agg
+
+    async def _count() -> int:
+        stmt = sa_select(sa_func.count()).select_from(WorkbenchLoopLatest)
+        return int(await db.scalar(stmt) or 0)
+
+    return await cached_agg("wll-table-empty", _count) == 0
 
 
 async def _query_concl_rows(

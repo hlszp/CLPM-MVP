@@ -97,6 +97,9 @@ class DiagnosisRun(Base, TimestampMixin):
         Index("idx_diagnosis_run_loop_created", "loop_id", "created_at"),
         Index("idx_diagnosis_run_category", "primary_category"),
         Index("idx_diagnosis_run_task", "task_id"),
+        # 驾驶舱 P1（c9bf79b6868a）：窗口过滤与漏斗 finished_at 段覆盖
+        Index("idx_diagnosis_run_status_created", "status", "created_at"),
+        Index("idx_diagnosis_run_finished_at", "finished_at"),
         {
             "comment": "诊断运行记录（MVP v2：一次诊断一条完整结论）",
         },

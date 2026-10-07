@@ -20,6 +20,7 @@ Beat 调度（追加式注册，不覆盖其他模块）：
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -141,6 +142,20 @@ async def _refresh_workbench_mv_async() -> dict[str, Any]:
     return {"status": "ok", "refreshed": refreshed}
 
 
+async def _workbench_loop_latest_refresh() -> dict:
+    from app.services.workbench_loop_latest import (
+        refresh_workbench_loop_latest_task,
+    )
+
+    return await refresh_workbench_loop_latest_task()
+
+
+@celery_app.task(name="app.tasks.workbench.workbench_loop_latest_refresh")
+def workbench_loop_latest_refresh() -> dict:
+    """回路最新态快照全量重算（5min，驾驶舱 P1 预计算）。"""
+    return asyncio.run(_workbench_loop_latest_refresh())
+
+
 # ---------------------------------------------------------------------------
 # Beat 调度注册（追加式，不覆盖其他模块的 beat_schedule）
 # ---------------------------------------------------------------------------
@@ -163,6 +178,11 @@ _existing_beat.update(
         "refresh-workbench-mv": {
             "task": "app.tasks.workbench.refresh_workbench_mv",
             "schedule": crontab(minute="2,7,12,17,22,27,32,37,42,47,52,57"),
+        },
+        # 回路最新态快照（驾驶舱 P1 根治，2026-10-07）：与 precalc/MV 三方错峰
+        "workbench-loop-latest": {
+            "task": "app.tasks.workbench.workbench_loop_latest_refresh",
+            "schedule": crontab(minute="4,9,14,19,24,29,34,39,44,49,54,59"),
         },
     }
 )

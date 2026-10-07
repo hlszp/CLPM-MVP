@@ -428,20 +428,20 @@ class TestQueryDiagSrcMap:
         db = AsyncMock()
         db.execute.return_value = MagicMock()
         db.execute.return_value.all.return_value = [
-            MagicMock(loop_id="loop-1", primary_category="TUNING"),
-            MagicMock(loop_id="loop-2", primary_category="INSTRUMENT"),
+            MagicMock(loop_id="loop-1", latest_category="TUNING"),
+            MagicMock(loop_id="loop-2", latest_category="INSTRUMENT"),
         ]
 
         out = await _query_diag_src_map(db, ["loop-1", "loop-2"])
         assert out == {"loop-1": "参数问题（PID 整定）", "loop-2": "仪表/测量问题"}
 
         sql = str(db.execute.call_args[0][0])
-        assert "diagnosis_run" in sql
-        assert "primary_category IS NOT NULL" in sql
+        # 2026-10-07 驾驶舱 P1：改读 workbench_loop_latest 预计算（每回路最新
+        # 异常 run 主类由 5min 任务固化），旧引擎表与实时 DISTINCT ON 均停读
+        assert "workbench_loop_latest" in sql
+        assert "latest_category IS NOT NULL" in sql
         assert "diagnosis_tag" not in sql  # 旧引擎表停读
-        # DISTINCT ON 取每回路最新一条
-        assert "DISTINCT ON (loop_id)" in sql
-        assert "ORDER BY loop_id, created_at DESC" in sql
+        assert "DISTINCT ON" not in sql
         assert db.execute.call_args[0][1]["loop_ids"] == ["loop-1", "loop-2"]
 
     @pytest.mark.asyncio

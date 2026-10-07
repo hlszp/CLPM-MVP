@@ -651,6 +651,57 @@ TAG_HUMAN_REASON: dict[str, str] = {
 }
 
 
+async def _latest_fitness_from_precalc(db, ids: list[str]):
+    """读 workbench_loop_latest 预计算行的 fitness 面。
+
+    返回 [(loop_id, SimpleNamespace(fitness_*))]（与原查询行对象同属性名，
+    供下方构造 LoopFitnessLatest 复用）；表整体为空返回 None 触发回退。
+    """
+    from types import SimpleNamespace
+
+    from sqlalchemy import select as sa_select
+
+    from app.models.workbench_loop_latest import WorkbenchLoopLatest
+    from app.services.agg_cache import cached_agg
+
+    async def _table_empty() -> bool:
+        from sqlalchemy import func as sa_func
+        from sqlalchemy import select as sa_select
+
+        from app.models.workbench_loop_latest import WorkbenchLoopLatest as W
+
+        cnt = await db.scalar(sa_select(sa_func.count()).select_from(W))
+        return not cnt
+
+    if await cached_agg("wll-table-empty", _table_empty):
+        return None
+    stmt = sa_select(
+        WorkbenchLoopLatest.loop_id,
+        WorkbenchLoopLatest.fitness_level,
+        WorkbenchLoopLatest.fitness_tags,
+        WorkbenchLoopLatest.fitness_detail,
+        WorkbenchLoopLatest.assess_level,
+        WorkbenchLoopLatest.diagnose_level,
+        WorkbenchLoopLatest.tune_level,
+    ).where(WorkbenchLoopLatest.loop_id.in_(ids))
+    out = []
+    for r in (await db.execute(stmt)).all():
+        out.append(
+            (
+                str(r.loop_id),
+                SimpleNamespace(
+                    fitness_level=r.fitness_level,
+                    fitness_tags=r.fitness_tags,
+                    fitness_detail=r.fitness_detail,
+                    assess_level=r.assess_level,
+                    diagnose_level=r.diagnose_level,
+                    tune_level=r.tune_level,
+                ),
+            )
+        )
+    return out
+
+
 async def get_latest_fitness_per_loop(
     db,
     loop_ids: list[str],
@@ -678,17 +729,22 @@ async def get_latest_fitness_per_loop(
         result_map[lid] = LoopFitnessLatest(loop_id=lid, level=None, tags=None, detail=None)
 
     try:
-        # LATERAL: 每 loop_id 取最新 ts_start 一条（零额外查询，性能对齐 runs/latest 实现）
-        stmt = (
-            select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly)
-            .where(KpiSnapshotHourly.loop_id.in_(ids))
-            .distinct(KpiSnapshotHourly.loop_id)
-            .order_by(
-                KpiSnapshotHourly.loop_id,
-                KpiSnapshotHourly.ts_start.desc(),
+        # 2026-10-07 驾驶舱 P1：优先读 workbench_loop_latest 预计算表（5min 快照，
+        # 1209 回路生产实测将本查询从秒级 DISTINCT ON 降为小表点查）；
+        # 表为空（任务首跑前部署空窗）时回退原实时查询，部署后自愈。
+        rows = await _latest_fitness_from_precalc(db, ids)
+        if rows is None:
+            # LATERAL: 每 loop_id 取最新 ts_start 一条（零额外查询，性能对齐 runs/latest 实现）
+            stmt = (
+                select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly)
+                .where(KpiSnapshotHourly.loop_id.in_(ids))
+                .distinct(KpiSnapshotHourly.loop_id)
+                .order_by(
+                    KpiSnapshotHourly.loop_id,
+                    KpiSnapshotHourly.ts_start.desc(),
+                )
             )
-        )
-        rows = (await db.execute(stmt)).all()
+            rows = (await db.execute(stmt)).all()
         for loop_id, snap in rows:
             lid = str(loop_id)
             tags_list: list[str] | None = None
