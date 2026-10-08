@@ -976,9 +976,16 @@ class TestGetLoopMonitorDetail:
     async def test_different_trend_windows(self) -> None:
         """不同 trend_window 参数均能正常处理。
 
-        WS-D 阶段5：last_7_days 已从 TREND_WINDOWS 移除（后端不支持，仅诊断/看板维度使用 7 天窗）。
+        2026-10-09：last_12_hours / last_7_days 已补入 TREND_WINDOWS（回路
+        工作台 12H/7D 档从 waveform 链路回归 monitor 预设链路）。
         """
-        for window in ("last_1_hour", "last_24_hours", "last_72_hours"):
+        for window in (
+            "last_1_hour",
+            "last_12_hours",
+            "last_24_hours",
+            "last_72_hours",
+            "last_7_days",
+        ):
             loop = _make_loop()
             db = AsyncMock()
             db.execute = AsyncMock(
@@ -993,7 +1000,7 @@ class TestGetLoopMonitorDetail:
             assert result["trendStatus"] == "EMPTY"
 
     async def test_invalid_trend_window_returns_400(self) -> None:
-        """WS-D 阶段5：非法 trend_window（如 last_7_days）返回 400 BizError。"""
+        """非法 trend_window（任意未注册值）返回 400 BizError。"""
         loop = _make_loop()
         db = AsyncMock()
         db.execute = AsyncMock(
@@ -1005,11 +1012,11 @@ class TestGetLoopMonitorDetail:
             ]
         )
         with pytest.raises(BizError) as exc_info:
-            await get_loop_monitor_detail(db, "loop-001", trend_window="last_7_days")
+            await get_loop_monitor_detail(db, "loop-001", trend_window="last_5_hours")
         # BizError status_code=400，code=ERR_VALIDATION
         assert exc_info.value.status_code == 400
         assert exc_info.value.code == "ERR_VALIDATION"
-        assert "last_7_days" in exc_info.value.message
+        assert "last_5_hours" in exc_info.value.message
 
     async def test_non_ready_status(self) -> None:
         """回路状态非 READY 时 KPI 状态为 INCONCLUSIVE。"""

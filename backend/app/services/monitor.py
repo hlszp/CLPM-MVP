@@ -47,6 +47,9 @@ LTTB_THRESHOLD = 10000
 LTTB_TARGET_POINTS = 2000
 
 # 趋势时间窗映射
+# 2026-10-09：补 last_12_hours / last_7_days——回路工作台 12H/7D 档原先无
+# 预设被迫走 /timeseries waveform 链路（另一套取数+降采样口径，且 LTTB 存在
+# 时区偏移缺陷），用户裁决"复用同一套方法，不要另起一套"后统一走本端点。
 TREND_WINDOWS: dict[str, timedelta] = {
     "last_10_minutes": timedelta(minutes=10),
     "last_30_minutes": timedelta(minutes=30),
@@ -54,8 +57,10 @@ TREND_WINDOWS: dict[str, timedelta] = {
     "last_2_hours": timedelta(hours=2),
     "last_4_hours": timedelta(hours=4),
     "last_8_hours": timedelta(hours=8),
+    "last_12_hours": timedelta(hours=12),
     "last_24_hours": timedelta(hours=24),
     "last_72_hours": timedelta(hours=72),
+    "last_7_days": timedelta(days=7),
 }
 
 
