@@ -337,29 +337,41 @@ const sparkMap = ref<Map<string, { ts: null | string; value: null | number }[]>>
   new Map(),
 );
 
+let sparkSeq = 0;
+
 async function loadSparks(items: LoopCardModel[]) {
   if (items.length === 0) {
     sparkMap.value = new Map();
     return;
   }
+  // 竞态守卫：快速翻页时旧批次响应不得覆盖新批次（并行化后仍有晚到风险）
+  const seq = ++sparkSeq;
   const end = new Date();
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
   const map = new Map<string, { ts: null | string; value: null | number }[]>();
   const ids = items.map((m) => m.loopId);
+  // 2026-10-03 提速：chunk 间由串行 for 改全并行（首屏 30 卡=3 批并发，
+  // 旧实现 3 批串行等待是火花线区"加载很慢"的主因）
+  const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += 10) {
-    const chunk = ids.slice(i, i + 10);
-    try {
-      const res = await getLoopMetricSeriesApi({
+    chunks.push(ids.slice(i, i + 10));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      getLoopMetricSeriesApi({
         loopIds: chunk.join(','),
         metricKey: 'score',
         startTime: start.toISOString(),
         endTime: end.toISOString(),
-      });
-      for (const s of res.series ?? []) {
-        if (s.loopId) map.set(s.loopId, s.points ?? []);
-      }
-    } catch {
-      // 火花线失败不阻断卡片墙，占位 "—"
+      }).catch(
+        () => null, // 火花线失败不阻断卡片墙，占位 "—"
+      ),
+    ),
+  );
+  if (seq !== sparkSeq) return;
+  for (const res of results) {
+    for (const s of res?.series ?? []) {
+      if (s.loopId) map.set(s.loopId, s.points ?? []);
     }
   }
   sparkMap.value = map;
@@ -461,18 +473,17 @@ function onCardSelect(loopId: string) {
 // 初始化
 // ---------------------------------------------------------------------------
 onMounted(async () => {
-  // 定级阈值（等级色染）
-  try {
-    const res = await getGradingThresholdsApi();
-    gradingThresholds.value = res?.thresholds ?? [];
-  } catch {
-    gradingThresholds.value = [];
-  }
-
-  // 装置树：默认选中「全厂」根节点（节点 watch 负责联动加载回路列表）
+  // 定级阈值（等级色染）与装置树互不依赖 → 并行拉取（2026-10-03 提速：
+  // 原串行 4 级链 阈值→树→列表→火花线，砍掉首级等待）
   let nodeAutoSelected = false;
-  try {
-    const tree = await getCockpitNodeTreeApi();
+  const [thrRes, treeRes] = await Promise.allSettled([
+    getGradingThresholdsApi(),
+    getCockpitNodeTreeApi(),
+  ]);
+  gradingThresholds.value =
+    thrRes.status === 'fulfilled' ? (thrRes.value?.thresholds ?? []) : [];
+  if (treeRes.status === 'fulfilled') {
+    const tree = treeRes.value;
     treeNodes.value = tree ?? [];
     if (!cockpitStore.loopsNodeId && tree?.length) {
       const root = tree[0];
@@ -481,11 +492,10 @@ onMounted(async () => {
         nodeAutoSelected = true;
       }
     }
-  } catch {
+  } else {
     treeNodes.value = [];
-  } finally {
-    treeLoading.value = false;
   }
+  treeLoading.value = false;
 
   // 未自动选根（树为空或已有选中节点）时由本处直接加载，避免与节点 watch 双发
   if (!nodeAutoSelected) {
