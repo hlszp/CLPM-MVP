@@ -576,11 +576,36 @@ def _make_sys_config_none_result() -> MagicMock:
 
 
 def _make_grade_rows_result(rows: list[tuple[str, int]]) -> MagicMock:
-    """构造等级聚合查询（grade, cnt）的 execute 结果."""
+    """构造等级聚合查询（grade, cnt）的 execute 结果（旧多查询形态，留作兼容）."""
     mock_rows = [MagicMock(grade=g, cnt=c) for g, c in rows]
     result = MagicMock()
     result.all.return_value = mock_rows
     return result
+
+
+def _make_grade_agg_result(
+    rows: list[tuple[str, int]] | None = None,
+) -> MagicMock:
+    """构造单查询条件聚合的 execute 结果（total/等级/fitness/三性/latestTs）.
+
+    rows 为 [(等级名, 计数)]，其余列（fitness/三性/latest_ts）默认 0/None——
+    MagicMock 需显式置 0/None，否则 __int__ 假值污染计数。
+    """
+    grades = dict(rows or [])
+    row = MagicMock(spec_set=())
+    object.__setattr__(row, "total", sum(grades.values()))
+    for g in (*GRADES5, "INCONCLUSIVE"):
+        object.__setattr__(row, f"g_{g}", grades.get(g, 0))
+    for prefix in ("fitness", "assess", "diagnose", "tune"):
+        for lv in ("L0", "L1", "L2", "L3", "L4"):
+            object.__setattr__(row, f"{prefix}_{lv}", 0)
+    object.__setattr__(row, "latest_ts", None)
+    result = MagicMock()
+    result.one.return_value = row
+    return result
+
+
+GRADES5 = ("EXCELLENT", "GOOD", "FAIR", "WARNING", "POOR")
 
 
 class TestListLoopSnapshotsGradeFilter:
@@ -804,7 +829,7 @@ class TestGradeDistributionEndpoint:
             call_count[0] += 1
             if call_count[0] == 1:
                 return _make_sys_config_none_result()
-            return _make_grade_rows_result([("EXCELLENT", 2), ("GOOD", 3), ("INCONCLUSIVE", 1)])
+            return _make_grade_agg_result([("EXCELLENT", 2), ("GOOD", 3), ("INCONCLUSIVE", 1)])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
 
@@ -834,7 +859,7 @@ class TestGradeDistributionEndpoint:
             call_count[0] += 1
             if call_count[0] == 1:
                 return _make_sys_config_none_result()
-            return _make_grade_rows_result([("POOR", 4)])
+            return _make_grade_agg_result([("POOR", 4)])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
 
@@ -860,7 +885,7 @@ class TestGradeDistributionEndpoint:
             call_count[0] += 1
             if call_count[0] == 1:
                 return _make_sys_config_none_result()
-            return _make_grade_rows_result([])
+            return _make_grade_agg_result([])
 
         mock_db.execute = AsyncMock(side_effect=execute_side_effect)
 
@@ -895,6 +920,16 @@ async def test_get_grade_distribution_sql_group_by() -> None:
         result = MagicMock()
         result.all.return_value = []
         result.scalar_one_or_none.return_value = None
+        # 单行聚合（.one()）：显式零值行，避免 MagicMock __int__ 假值
+        agg_row = MagicMock(spec_set=())
+        object.__setattr__(agg_row, "total", 0)
+        for g in (*GRADES5, "INCONCLUSIVE"):
+            object.__setattr__(agg_row, f"g_{g}", 0)
+        for prefix in ("fitness", "assess", "diagnose", "tune"):
+            for lv in ("L0", "L1", "L2", "L3", "L4"):
+                object.__setattr__(agg_row, f"{prefix}_{lv}", 0)
+        object.__setattr__(agg_row, "latest_ts", None)
+        result.one.return_value = agg_row
         return result
 
     db.execute = AsyncMock(side_effect=execute_side_effect)
@@ -902,20 +937,13 @@ async def test_get_grade_distribution_sql_group_by() -> None:
     distribution = await get_grade_distribution(db)
 
     assert (
-        len(captured_stmts) == 7
-    )  # sys_config + 等级聚合 + 适用性分层 + 三性分布 ×3 + latestTs（R5/装置性能改版）
+        len(captured_stmts) == 2
+    )  # sys_config + 单查询条件聚合（等级/适用性/三性/latestTs 合一，2026-10-08 生产 27s 超时修复）
     sql = str(captured_stmts[1].compile()).upper()
-    assert "GROUP BY" in sql
-    assert "CASE" in sql
     assert "ROW_NUMBER" in sql  # 每回路最新一条（口径同列表 latestOnly）
-    fitness_sql = str(captured_stmts[2].compile()).upper()
-    assert "GROUP BY" in fitness_sql
-    assert "FITNESS_LEVEL" in fitness_sql
-    # 三性分布（R5）：COALESCE 回退 + 逐维度 GROUP BY
-    for extra_stmt in captured_stmts[3:6]:
-        extra_sql = str(extra_stmt.compile()).upper()
-        assert "GROUP BY" in extra_sql
-        assert "COALESCE" in extra_sql
+    assert "FILTER" in sql  # 单查询条件聚合（等级/fitness/三性/latestTs 一次算出）
+    assert "COALESCE" in sql  # 三性 COALESCE 回退
+    assert "FITNESS_LEVEL" in sql
     assert distribution["total"] == 0
     assert distribution["fitnessDistribution"] == {
         "L0": 0,

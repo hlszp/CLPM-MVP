@@ -1839,66 +1839,64 @@ async def get_grade_distribution(
         subq_stmt = subq_stmt.outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
     latest_subq = subq_stmt.where(*conditions).subquery()
 
-    grade_col = _grade_case(latest_subq.c.score, thresholds).label("grade")
-    stmt = (
-        select(grade_col, func.count().label("cnt"))
-        .where(latest_subq.c.rn == 1)
-        .group_by(grade_col)
-    )
-    result = await db.execute(stmt)
+    grade_col = _grade_case(latest_subq.c.score, thresholds)
 
+    # 单查询条件聚合（2026-10-08 生产性能修复：生产 1209 回路×7 天快照上，
+    # 子查询（row_number 窗口）被重复执行 5 次导致 27s、前端 10s 超时
+    # "暂无数据"。等级/适用性/三性/latestTs 全部用 FILTER(WHERE...) 一次算出，
+    # 子查询只执行 1 次。）
+    def _lv_col(col, level: str):
+        return func.count().filter(col == level)
+
+    level_cols = {
+        "fitness": latest_subq.c.fitness_level,
+        "assess": latest_subq.c.assess_level,
+        "diagnose": latest_subq.c.diagnose_level,
+        "tune": latest_subq.c.tune_level,
+    }
+    agg_exprs: list = [
+        func.count().label("total"),
+        func.max(latest_subq.c.ts_start).label("latest_ts"),
+        # 性能等级（动态阈值 CASE 作 FILTER 条件；未知等级名并入 INCONCLUSIVE）
+        *[func.count().filter(grade_col == name).label(f"g_{name}") for name in GRADE_NAMES],
+        func.count()
+        .filter(
+            (grade_col == "INCONCLUSIVE")
+            | (grade_col.is_(None))
+            | (~grade_col.in_(list(GRADE_NAMES) + ["INCONCLUSIVE"]))
+        )
+        .label("g_INCONCLUSIVE"),
+    ]
+    for prefix, col in level_cols.items():
+        for lv in ("L0", "L1", "L2", "L3", "L4"):
+            agg_exprs.append(_lv_col(col, lv).label(f"{prefix}_{lv}"))
+
+    agg_stmt = select(*agg_exprs).where(latest_subq.c.rn == 1)
+    row = (await db.execute(agg_stmt)).one()
+
+    total = int(row.total or 0)
     distribution: dict[str, int] = dict.fromkeys(GRADE_NAMES, 0)
     distribution["INCONCLUSIVE"] = 0
-    total = 0
-    for row in result.all():
-        # 防御：自定义阈值配置了非国标等级名时并入 INCONCLUSIVE
-        key = row.grade if row.grade in distribution else "INCONCLUSIVE"
-        distribution[key] += row.cnt
-        total += row.cnt
+    for name in GRADE_NAMES:
+        distribution[name] = int(getattr(row, f"g_{name}") or 0)
+    distribution["INCONCLUSIVE"] = int(row.g_INCONCLUSIVE or 0)
     distribution["total"] = total
 
-    # 适用性分层分布（L0~L4，P2 IA优化；同一"每回路最新快照"口径，
-    # 未分层快照不计入各等级，total 为全量回路数）
-    fitness_stmt = (
-        select(latest_subq.c.fitness_level, func.count().label("cnt"))
-        .where(latest_subq.c.rn == 1)
-        .group_by(latest_subq.c.fitness_level)
-    )
-    fitness_rows = (await db.execute(fitness_stmt)).all()
-    fitness_distribution: dict[str, int] = dict.fromkeys(("L0", "L1", "L2", "L3", "L4"), 0)
-    for row in fitness_rows:
-        if row.fitness_level in fitness_distribution:
-            fitness_distribution[row.fitness_level] += row.cnt
-    fitness_distribution["total"] = total
-    distribution["fitnessDistribution"] = fitness_distribution
+    def _dist_from(prefix: str) -> dict[str, int]:
+        d: dict[str, int] = dict.fromkeys(("L0", "L1", "L2", "L3", "L4"), 0)
+        for lv in d:
+            d[lv] = int(getattr(row, f"{prefix}_{lv}") or 0)
+        d["total"] = total
+        return d
 
-    # 三性分离（R5）：可评估/可诊断/可整定各维度独立分布（同一最新快照口径，
-    # 旧快照三列 NULL 已在子查询 COALESCE 回退 fitness_level）
-    for dim_key, dim_col_name in (
-        ("assessDistribution", "assess_level"),
-        ("diagnoseDistribution", "diagnose_level"),
-        ("tuneDistribution", "tune_level"),
-    ):
-        dim_col = getattr(latest_subq.c, dim_col_name)
-        dim_stmt = (
-            select(dim_col, func.count().label("cnt"))
-            .where(latest_subq.c.rn == 1)
-            .group_by(dim_col)
-        )
-        dim_rows = (await db.execute(dim_stmt)).all()
-        dim_dist: dict[str, int] = dict.fromkeys(("L0", "L1", "L2", "L3", "L4"), 0)
-        for row in dim_rows:
-            if getattr(row, dim_col_name) in dim_dist:
-                dim_dist[getattr(row, dim_col_name)] += row.cnt
-        dim_dist["total"] = total
-        distribution[dim_key] = dim_dist
+    distribution["fitnessDistribution"] = _dist_from("fitness")
+    # 三性分离（R5）：COALESCE 回退已在子查询列完成
+    distribution["assessDistribution"] = _dist_from("assess")
+    distribution["diagnoseDistribution"] = _dist_from("diagnose")
+    distribution["tuneDistribution"] = _dist_from("tune")
 
-    # 数据更新时间：每回路最新一条快照中的最大 ts_start（前端"数据更新于"标注；
-    # 2026-10-03 装置性能改版：等级分布改实时口径后需展示数据新鲜度）
-    latest_ts_stmt = select(func.max(latest_subq.c.ts_start)).where(latest_subq.c.rn == 1)
-    latest_ts = (await db.execute(latest_ts_stmt)).scalar()
-    if latest_ts is not None:
-        distribution["latestTs"] = latest_ts.isoformat()
+    if row.latest_ts is not None:
+        distribution["latestTs"] = row.latest_ts.isoformat()
     return distribution
 
 
