@@ -153,6 +153,9 @@ class KpiSnapshotHourly(Base):
         Index("idx_kpi_snapshot_fitness_level", "fitness_level"),
         # 库中已有（x4c5d6e7f8a9 迁移创建），补入元数据避免 autogen 误 DROP
         Index("idx_kpi_snapshot_ts_loop", "ts_start", "loop_id"),
+        # per-loop latest 点查化（53f2f20435f1）：DISTINCT ON (loop_id)
+        # ORDER BY loop_id, ts_end DESC 全部走复合索引组内首行，免组内排序扫描
+        Index("idx_kpi_snapshot_loop_ts_end", "loop_id", "ts_end"),
         # UNIQUE 约束：每个回路每小时仅允许一条快照（q1a2b3c4d5e6 迁移）
         UniqueConstraint("loop_id", "ts_start", name="uq_kpi_snapshot_hourly_loop_ts"),
         {"comment": "每小时性能评估快照（好值率基于 PV 质量码统计，含P2适用性分层字段）"},

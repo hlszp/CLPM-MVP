@@ -1451,6 +1451,8 @@ CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_status   ON kpi_snapshot_hourly (sta
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_fitness_level ON kpi_snapshot_hourly (fitness_level);
 -- 复合索引（S1-C2）：优化常见查询模式
 CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_ts_loop ON kpi_snapshot_hourly (ts_start, loop_id);
+-- per-loop latest 点查化（53f2f20435f1）：DISTINCT ON (loop_id) ORDER BY loop_id, ts_end DESC 免组内排序扫描
+CREATE INDEX IF NOT EXISTS idx_kpi_snapshot_loop_ts_end ON kpi_snapshot_hourly (loop_id, ts_end);
 
 -- kpi_node_snapshot_hourly 索引
 CREATE INDEX IF NOT EXISTS idx_kpi_node_snapshot_node_id    ON kpi_node_snapshot_hourly (plant_node_id);
