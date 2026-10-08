@@ -24,6 +24,7 @@ import type {
   SeriesVisible,
   TrendEventMark,
 } from './components/TrendChart/types';
+import type { CustomRange } from './components/TrendChart/use-trend-data';
 
 import {
   computed,
@@ -35,7 +36,7 @@ import {
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { message } from 'ant-design-vue';
+import { DatePicker, message } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
@@ -161,20 +162,81 @@ const activePreset = computed(
     windowPresets.find((p) => p.key === windowKey.value) ?? windowPresets[0]!,
 );
 
+/* ── 自定义时间窗（2026-10-09 补全：起止选择器，同走 monitor 链路）── */
+/** 选择器面板开关（点"自定义"按钮切换；应用/收起后关闭） */
+const customPanelVisible = ref(false);
+/** RangePicker 绑定值（本地时区 Dayjs；应用时转 UTC ISO 下发） */
+const customRangeValue = ref<[dayjs.Dayjs, dayjs.Dayjs] | undefined>();
+/** 已生效的自定义范围（null=预设档） */
+const customRange = ref<CustomRange | null>(null);
+
+/** 状态栏窗口标签：自定义档展示起止摘要 */
+const windowLabel = computed(() => {
+  if (windowKey.value === 'custom' && customRange.value) {
+    const fmt = (iso: string) => dayjs(iso).format('MM-DD HH:mm');
+    return `自定义 ${fmt(customRange.value.tsStart)}~${fmt(customRange.value.tsEnd)}`;
+  }
+  return activePreset.value.label;
+});
+
 function reloadTrend() {
   const loopId = loop.selectedLoopId.value;
-  if (!loopId || activePreset.value.custom) return;
-  trend.loadWindow(loopId, activePreset.value);
+  if (!loopId) return;
+  if (activePreset.value.custom && !customRange.value) return;
+  trend.loadWindow(
+    loopId,
+    activePreset.value,
+    activePreset.value.custom && customRange.value
+      ? { customRange: customRange.value }
+      : undefined,
+  );
 }
 
 function selectWindow(key: string) {
-  if (key === windowKey.value) return;
   if (key === 'custom') {
-    message.info('自定义时间窗将在正式版提供起止时间选择器');
+    // 打开（或收起）起止选择器；确认前保持当前趋势不变
+    customPanelVisible.value = !customPanelVisible.value;
+    if (customPanelVisible.value && customRange.value) {
+      customRangeValue.value = [
+        dayjs(customRange.value.tsStart),
+        dayjs(customRange.value.tsEnd),
+      ];
+    }
     return;
   }
+  if (key === windowKey.value) return;
+  customPanelVisible.value = false;
+  customRange.value = null;
   windowKey.value = key;
   reloadTrend();
+}
+
+function applyCustomRange() {
+  const v = customRangeValue.value;
+  if (!v?.[0] || !v?.[1]) {
+    message.warning('请选择起止时间');
+    return;
+  }
+  if (!v[1].isAfter(v[0])) {
+    message.warning('结束时间必须晚于开始时间');
+    return;
+  }
+  if (v[1].diff(v[0], 'day', true) > 30) {
+    message.warning('自定义时间窗不能超过 30 天');
+    return;
+  }
+  customRange.value = {
+    tsStart: v[0].toISOString(),
+    tsEnd: v[1].toISOString(),
+  };
+  windowKey.value = 'custom';
+  customPanelVisible.value = false;
+  setLive(false); // 自定义窗口=固定历史区间，不追跟实时
+  reloadTrend();
+}
+
+function cancelCustomRange() {
+  customPanelVisible.value = false;
 }
 
 /* ── 诊断→趋势联动 + 导出 + SP 容差带（2026-10-03 终验优化）── */
@@ -622,12 +684,25 @@ const wsName = computed(
               <button
                 v-for="p in windowPresets"
                 :key="p.key"
-                :class="{ on: windowKey === p.key }"
+                :class="{ on: windowKey === p.key || (p.custom && customPanelVisible) }"
                 type="button"
                 @click="selectWindow(p.key)"
               >
                 {{ p.label }}
               </button>
+            </div>
+            <!-- 自定义起止选择器（2026-10-09）：同走 monitor 链路 tsStart/tsEnd -->
+            <div v-if="customPanelVisible" aria-label="自定义时间窗" class="custom-win">
+              <DatePicker.RangePicker
+                v-model:value="customRangeValue"
+                :allow-clear="false"
+                :disabled-date="(d: dayjs.Dayjs) => d.isAfter(dayjs())"
+                :show-time="{ format: 'HH:mm' }"
+                format="YYYY-MM-DD HH:mm"
+                size="small"
+              />
+              <button type="button" @click="applyCustomRange">应用</button>
+              <button type="button" @click="cancelCustomRange">取消</button>
             </div>
             <div aria-label="SP 容差带" class="segctl tol" title="设定 SP 容差带宽（工程值），0/空=不显示">
               <span class="tol-l">SP±</span>
@@ -786,7 +861,7 @@ const wsName = computed(
           :unit-label="
             loop.selectedUnit.value ?? loop.current.value?.unitName ?? null
           "
-          :window-label="activePreset.label"
+          :window-label="windowLabel"
         />
       </main>
     </div>
@@ -942,6 +1017,31 @@ const wsName = computed(
 .segctl button.on {
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
+}
+
+/* 自定义时间窗选择条（2026-10-09）：与工具栏同排，含起止选择器 */
+.custom-win {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 6px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+
+.custom-win button {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid hsl(var(--border));
+}
+
+.custom-win button:first-of-type {
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
 }
 
 .legend {

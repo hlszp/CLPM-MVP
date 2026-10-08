@@ -83,8 +83,10 @@ const WINDOW_MS: Record<LoopApi.TrendWindow, number> = {
   last_2_hours: 2 * 3600 * 1000,
   last_4_hours: 4 * 3600 * 1000,
   last_8_hours: 8 * 3600 * 1000,
+  last_12_hours: 12 * 3600 * 1000,
   last_24_hours: 24 * 3600 * 1000,
   last_72_hours: 72 * 3600 * 1000,
+  last_7_days: 7 * 24 * 3600 * 1000,
 };
 
 /** 实时模式最大保留点数（防止长时间挂窗内存/渲染膨胀） */

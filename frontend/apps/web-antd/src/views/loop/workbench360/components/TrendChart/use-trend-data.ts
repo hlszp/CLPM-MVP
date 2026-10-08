@@ -3,21 +3,25 @@ import type { TrendFrame } from './types';
 import type { LoopApi } from '#/api/loop';
 
 /**
- * 趋势窗口取数与实时追加（workbench360 P1，API 契约 §1.2）
+ * 趋势窗口取数与实时追加（workbench360，API 契约 §1.2）
  *
- * 历史窗口：
- * - 有 trendWindow 预设的档位（1H/2H/4H/8H/24H/3D）走
- *   GET /loops/{id}/monitor（trend.timestamps 毫秒）；
- * - 12H/7D（后端无预设）走 GET /timeseries/{id}/waveform 自定义起止（≤2000 点）；
- * - 数据域 XDOMAIN = 返回序列的实际 [首 ts, 尾 ts]（非请求窗，诚实呈现后端实际覆盖）。
+ * 2026-10-09 用户裁决"复用同一套方法，不要另起一套"：全部档位统一走
+ * GET /loops/{id}/monitor（trend.timestamps 毫秒）——
+ * - 预设档（1H~7D）走 trendWindow 预设（后端 TREND_WINDOWS 已补
+ *   last_12_hours / last_7_days）；
+ * - 自定义档走同端点 tsStart/tsEnd 起止（上限 30 天，后端校验）；
+ * - 原 waveform 链路（/timeseries/{id}/waveform，另一套取数+降采样口径，
+ *   且 LTTB 存在时区偏移缺陷）已从本页移除。
+ * - 数据域 XDOMAIN = 返回序列的实际 [首 ts, 尾 ts]（非请求窗，诚实呈现
+ *   后端实际覆盖）。
  *
- * 实时：WS 推送经页面层 onRealtimePoint 转发，appendRealtimePoint 按采样间隔
- * 分桶合并（同一桶内 PV/SP/OP/MODE 更新同一帧，跨桶新起帧），数据驱动窗口右推。
+ * 实时：WS 推送经页面层 onRealtimePoint 转发，appendRealtimePoint 按采样
+ * 间隔分桶合并（同一桶内 PV/SP/OP/MODE 更新同一帧，跨桶新起帧），数据
+ * 驱动窗口右推。
  */
 import { computed, ref, shallowRef } from 'vue';
 
 import { getLoopMonitorDetailApi } from '#/api/loop';
-import { getWaveformApi } from '#/api/workbench360';
 import {
   WB360_SAMPLE_POINTS,
   type WB360WindowPreset,
@@ -28,6 +32,12 @@ import { computeYDomain } from './resample';
 /** 实时追加的桶间隔下限（ms）：小于该间隔并入最后一帧 */
 const REALTIME_MERGE_MS = 900;
 
+/** 自定义起止范围（ISO 8601，UTC） */
+export interface CustomRange {
+  tsEnd: string;
+  tsStart: string;
+}
+
 export function useTrendData() {
   const frames = shallowRef<TrendFrame[]>([]);
   const domain = ref<null | { t0: number; t1: number }>(null);
@@ -35,10 +45,10 @@ export function useTrendData() {
   const error = ref<null | string>(null);
   /** 当前窗口档位 key */
   const windowKey = ref<string>('');
-  /** 实时模式标志（右推由数据驱动） */
+  /** 实时模式标志（右推由数据驱动；自定义窗口为历史模式） */
   const live = ref(false);
-  /** 趋势实际来源（monitor 预设 / waveform 自定义起止） */
-  const source = ref<'' | 'monitor' | 'waveform'>('');
+  /** 趋势实际来源（monitor 预设 / monitor 自定义起止） */
+  const source = ref<'' | 'custom' | 'monitor'>('');
   /** 后端 LTTB 降采样提示（诚实化：点数少于窗口应有密度时告知） */
   const downsampled = ref(false);
   const pointCount = ref(0);
@@ -51,7 +61,7 @@ export function useTrendData() {
   async function loadWindow(
     loopId: string,
     preset: WB360WindowPreset,
-    opts: { maxPoints?: number } = {},
+    opts: { customRange?: CustomRange } = {},
   ): Promise<void> {
     const gen = ++generation;
     loading.value = true;
@@ -62,53 +72,25 @@ export function useTrendData() {
     pointCount.value = 0;
     windowKey.value = preset.key;
     try {
-      let loaded: TrendFrame[] = [];
-      if (preset.trendWindow) {
-        source.value = 'monitor';
-        const detail: LoopApi.MonitorDetail = await getLoopMonitorDetailApi(
-          loopId,
-          preset.trendWindow,
-        );
-        if (gen !== generation) return;
-        const t = detail.trend;
-        loaded = t.timestamps.map((ts, i) => ({
-          mode: t.mode[i] ?? null,
-          op: t.op[i] ?? null,
-          pv: t.pv[i] ?? null,
-          quality: normalizeQuality(t.pvQuality[i] ?? null, true),
-          sp: t.sp[i] ?? null,
-          ts,
-        }));
-        downsampled.value = t.downsampled ?? false;
-        pointCount.value = t.pointCount ?? loaded.length;
-      } else if (preset.spanSeconds) {
-        source.value = 'waveform';
-        const now = Date.now();
-        const res = await getWaveformApi(
-          loopId,
-          new Date(now - preset.spanSeconds * 1000).toISOString(),
-          new Date(now).toISOString(),
-          opts.maxPoints ?? 2000,
-        );
-        if (gen !== generation) return;
-        loaded = res.points.map((p) => ({
-          mode: p.mode ?? null,
-          op: p.op ?? null,
-          pv: p.pv ?? null,
-          // waveform 质量口径：pvQuality 1/0（GOOD/BAD）；valid=false 视为 BAD；
-          // UNCERTAIN 该端点无法表达（诚实化：不虚构）
-          quality: normalizeQuality(p, false),
-          sp: p.sp ?? null,
-          ts: Date.parse(p.timestamp),
-        }));
-        downsampled.value = res.downsampled;
-        pointCount.value = res.pointCount ?? loaded.length;
-      } else {
-        // custom 占位档由 UI 拦截，不应进入取数
-        error.value = '自定义窗口尚未开放（正式版提供起止选择器）';
-        return;
-      }
+      source.value = opts.customRange ? 'custom' : 'monitor';
+      // 自定义起止时后端优先消费 tsStart/tsEnd（trendWindow 仍须为合法值）
+      const detail: LoopApi.MonitorDetail = await getLoopMonitorDetailApi(
+        loopId,
+        preset.trendWindow ?? 'last_24_hours',
+        opts.customRange,
+      );
       if (gen !== generation) return;
+      const t = detail.trend;
+      const loaded: TrendFrame[] = t.timestamps.map((ts, i) => ({
+        mode: t.mode[i] ?? null,
+        op: t.op[i] ?? null,
+        pv: t.pv[i] ?? null,
+        quality: normalizeQuality(t.pvQuality[i] ?? null),
+        sp: t.sp[i] ?? null,
+        ts,
+      }));
+      downsampled.value = t.downsampled ?? false;
+      pointCount.value = t.pointCount ?? loaded.length;
       // 升序 + 相同 ts 去重（保后者）
       loaded.sort((a, b) => a.ts - b.ts);
       const dedup: TrendFrame[] = [];
@@ -219,16 +201,9 @@ function applyRole(
   }
 }
 
-/** monitor 字符串质量码直通；waveform 数值/valid 掩码归一 */
+/** monitor 字符串质量码直通（三态：GOOD/BAD/UNCERTAIN） */
 function normalizeQuality(
   q: unknown,
-  isMonitor: boolean,
 ): 'BAD' | 'GOOD' | 'UNCERTAIN' | null {
-  if (isMonitor) {
-    return q === 'BAD' || q === 'GOOD' || q === 'UNCERTAIN' ? q : null;
-  }
-  // waveform WaveformPoint：pvQuality 1/0 + valid 掩码
-  const p = q as { pvQuality?: null | number; valid?: boolean };
-  if (p?.valid === false || p?.pvQuality === 0) return 'BAD';
-  return 'GOOD';
+  return q === 'BAD' || q === 'GOOD' || q === 'UNCERTAIN' ? q : null;
 }

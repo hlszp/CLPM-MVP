@@ -31,13 +31,17 @@ export namespace LoopApi {
   export type Quality = 'BAD' | 'GOOD' | 'UNCERTAIN' | null;
 
   /** 趋势时间窗（IDS v3.2 §2.2.14）
-   *  WS-D 阶段5：移除 last_7_days（后端 TREND_WINDOWS 不支持，仅诊断/看板维度使用 7 天窗） */
+   *  2026-10-09：恢复 last_7_days 并新增 last_12_hours（后端 TREND_WINDOWS 已
+   *  补齐；回路工作台 12H/7D 档从 waveform 链路回归本预设链路，用户裁决
+   *  "复用同一套方法，不要另起一套"） */
   export type TrendWindow =
     | 'last_1_hour'
     | 'last_2_hours'
     | 'last_4_hours'
+    | 'last_7_days'
     | 'last_8_hours'
     | 'last_10_minutes'
+    | 'last_12_hours'
     | 'last_24_hours'
     | 'last_30_minutes'
     | 'last_72_hours';

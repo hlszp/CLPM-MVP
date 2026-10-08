@@ -896,16 +896,20 @@ export interface WB360WindowPreset {
   spanSeconds?: number;
   /**
    * 后端 trendWindow 预设（GET /loops/{id}/monitor）。
-   * 无预设档（12H/7D）走 waveform 自定义起止（API 契约 §1.2）。
+   * 2026-10-09 用户裁决"复用同一套方法，不要另起一套"：全档位走本预设链路
+   * （后端 TREND_WINDOWS 已补 last_12_hours/last_7_days）；custom 档经同端点
+   * 的 tsStart/tsEnd 自定义起止，不再走 waveform 链路。
    */
   trendWindow?:
     | 'last_1_hour'
     | 'last_2_hours'
     | 'last_4_hours'
+    | 'last_7_days'
     | 'last_8_hours'
+    | 'last_12_hours'
     | 'last_24_hours'
     | 'last_72_hours';
-  /** 是否为自定义占位档（正式版做起止选择器） */
+  /** 是否为自定义占位档（起止选择器） */
   custom?: boolean;
 }
 
@@ -914,7 +918,7 @@ export const WB360_WINDOW_PRESETS: WB360WindowPreset[] = [
   { key: '2h', label: '2H', spanSeconds: 7200, trendWindow: 'last_2_hours' },
   { key: '4h', label: '4H', spanSeconds: 14_400, trendWindow: 'last_4_hours' },
   { key: '8h', label: '8H', spanSeconds: 28_800, trendWindow: 'last_8_hours' },
-  { key: '12h', label: '12H', spanSeconds: 43_200 },
+  { key: '12h', label: '12H', spanSeconds: 43_200, trendWindow: 'last_12_hours' },
   {
     key: '24h',
     label: '24H',
@@ -927,7 +931,12 @@ export const WB360_WINDOW_PRESETS: WB360WindowPreset[] = [
     spanSeconds: 259_200,
     trendWindow: 'last_72_hours',
   },
-  { key: '7d', label: '7D', spanSeconds: 604_800 },
+  {
+    key: '7d',
+    label: '7D',
+    spanSeconds: 604_800,
+    trendWindow: 'last_7_days',
+  },
   { key: 'custom', label: '自定义', custom: true },
 ];
 

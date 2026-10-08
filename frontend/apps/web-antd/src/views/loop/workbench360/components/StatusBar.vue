@@ -23,7 +23,7 @@ const props = defineProps<{
   pointCount: number;
   /** 评估快照总数（未加载为 null → 不显示该段） */
   snapshotCount: null | number;
-  /** 当前趋势来源（monitor 预设 / waveform 自定义起止） */
+  /** 当前趋势来源（monitor 预设 / monitor 自定义起止） */
   source: string;
   unitLabel: null | string;
   windowLabel: string;
@@ -66,11 +66,11 @@ const connText = computed(() => {
 
 const sourceText = computed(() => {
   switch (props.source) {
+    case 'custom': {
+      return 'monitor 自定义起止';
+    }
     case 'monitor': {
       return 'monitor 预设';
-    }
-    case 'waveform': {
-      return 'waveform 自定义起止';
     }
     default: {
       return '未加载';
