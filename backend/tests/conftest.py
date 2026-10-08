@@ -599,3 +599,18 @@ def _pin_legacy_layout_for_unit_tests(request):
         ),
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_agg_cache():
+    """每用例清空进程内聚合短缓存（agg_cache）。
+
+    2026-10-08 性能批：build_diagnosis / cockpit-overview 接入 60~240s TTL
+    进程内缓存后，同一 pytest 进程内多用例会互相命中缓存导致 mock 数据
+    串扰断言失败。每用例前后各清一次，保证隔离。
+    """
+    from app.services.agg_cache import invalidate_agg
+
+    invalidate_agg()
+    yield
+    invalidate_agg()

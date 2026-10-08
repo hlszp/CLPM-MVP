@@ -17,10 +17,18 @@ _TTL_SECONDS = 60.0
 _cache: dict[str, tuple[float, Any]] = {}
 
 
-async def cached_agg(key: str, builder: Callable[[], Awaitable[Any]]) -> Any:
-    """按 key 取缓存；过期/未命中时执行 builder 重建并回填。"""
+async def cached_agg(
+    key: str,
+    builder: Callable[[], Awaitable[Any]],
+    ttl: float = _TTL_SECONDS,
+) -> Any:
+    """按 key 取缓存；过期/未命中时执行 builder 重建并回填。
+
+    ttl 可按调用方覆盖（2026-10-08 性能批：cockpit-overview 用 240s 对齐
+    驾驶舱 5min 刷新周期，冷算频率降 4 倍）。
+    """
     hit = _cache.get(key)
-    if hit is not None and monotonic() - hit[0] < _TTL_SECONDS:
+    if hit is not None and monotonic() - hit[0] < ttl:
         return hit[1]
     data = await builder()
     _cache[key] = (monotonic(), data)

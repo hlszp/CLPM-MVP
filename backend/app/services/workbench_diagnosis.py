@@ -718,8 +718,30 @@ async def build_diagnosis(
     """组装 A-03 诊断六块。部分失败容错：单块异常不阻断其余块。
 
     only_active=True → concl_timeline 仅保留未处置（UNADDRESSED）run。
+
+    2026-10-08 性能批：60s TTL 短缓存（agg_cache，同 cockpit-overview 模式）——
+    生产 1209 回路冷算实测 8~9s（多段 diagnosis_run 窗口查询 + pareto 实时聚合），
+    驾驶舱 5min 刷新周期下多用户/手动刷新命中缓存。跨进程失效不可行
+    （进程内 dict），手动诊断完成后新 run 最多 60s 后在本页可见——
+    诊断任务本身分钟级，该延迟无感知。
     """
+    from app.services.agg_cache import cached_agg
+
     sid = _scope_id_int(scope_type, scope_id)
+    return await cached_agg(
+        f"wb-diagnosis:{scope_type}:{sid}:{window}:{only_active}",
+        lambda: _build_diagnosis(db, scope_type, sid, scope_id, window, only_active),
+    )
+
+
+async def _build_diagnosis(
+    db: AsyncSession,
+    scope_type: str,
+    sid: int,
+    scope_id: int | None,
+    window: str,
+    only_active: bool,
+) -> dict[str, Any]:
     now = datetime.now(UTC).replace(tzinfo=None)
     since = now - timedelta(hours=WINDOW_HOURS.get(window, 24))
     since_30d = now - timedelta(hours=WINDOW_HOURS[RULE_STATS_WINDOW])

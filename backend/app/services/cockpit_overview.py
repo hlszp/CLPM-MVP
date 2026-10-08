@@ -362,10 +362,17 @@ async def build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any
 
     2026-10-03：60s TTL 短缓存（agg_cache）——驾驶舱 5min 刷新周期下
     多用户/手动刷新命中缓存，生产 1209 回路聚合不再重复执行。
+    2026-10-08 性能批：TTL 60→240s——生产实测冷算 4~9s（grade_distribution
+    窗口函数×2 + 漏斗段），240s 对齐页面 5min 刷新周期后冷算频率降 4 倍，
+    数据延迟上限 4min 对总览无感知影响。
     """
     from app.services.agg_cache import cached_agg
 
-    return await cached_agg(f"cockpit-overview:{window}", lambda: _build_overview(db, window))
+    return await cached_agg(
+        f"cockpit-overview:{window}",
+        lambda: _build_overview(db, window),
+        ttl=240.0,
+    )
 
 
 async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any]:
