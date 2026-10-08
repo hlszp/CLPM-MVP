@@ -556,10 +556,17 @@ def _lttb_downsample_datablock(
     from app.services.trend_service import lttb_downsample_multi_series
 
     # datetime → 毫秒时间戳（LTTB 需要数值）
+    # 2026-10-09 时区修复：DataBlock.timestamps 为 naive UTC（DataPlanner 契约），
+    # 对 naive 直接调 .timestamp() 会按进程本地时区（生产 Asia/Shanghai）解释，
+    # 导致超 maxPoints 触发降采样的窗口（12H/7D 恒触发）整条时间轴偏移 -8h
+    # （实测：请求 21:32Z~22:32Z 返回 13:32~14:32 的标签）。naive 一律先按
+    # UTC 补 tzinfo 再取 epoch；aware 输入先归一到 UTC。
     ts_millis: list[int] = []
     for ts in timestamps:
         if isinstance(ts, datetime):
-            ts_millis.append(int(ts.timestamp() * 1000))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            ts_millis.append(int(ts.astimezone(UTC).timestamp() * 1000))
         else:
             ts_millis.append(int(ts))
 

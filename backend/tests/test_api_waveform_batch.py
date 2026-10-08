@@ -395,3 +395,65 @@ class TestRequirementCacheSnapshot:
         assert cached is not _row_obj
         assert cached.mask_expression == "pv_valid"
         assert cached.metric_code == "accuracy_rate"
+
+
+# ---------------------------------------------------------------------------
+# LTTB 降采样时区口径（2026-10-09 生产缺陷回归守护）
+# ---------------------------------------------------------------------------
+
+
+class TestLttbDownsampleTimezone:
+    """_lttb_downsample_datablock 对 naive UTC 时间轴不得发生时区平移。
+
+    生产缺陷：DataBlock.timestamps 为 naive UTC，旧实现对 naive 直接调
+    .timestamp() 被按进程本地时区（Asia/Shanghai）解释，导致超 maxPoints
+    触发降采样的窗口（12H/7D 恒触发）整条时间轴偏移 -8h。本测试强制
+    TZ=Asia/Shanghai 运行，确保修复不回退。
+    """
+
+    def test_naive_utc_timestamps_no_shift(self) -> None:
+        import os
+        import time
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        old_tz = os.environ.get("TZ")
+        try:
+            os.environ["TZ"] = "Asia/Shanghai"
+            time.tzset()
+
+            from app.api.v1.endpoints.tags import _lttb_downsample_datablock
+
+            # 2500 点（>2000 触发降采样），naive UTC 时间轴 [10:00, 10:41]
+            t0 = _dt(2026, 10, 8, 10, 0, 0)
+            n = 2500
+            timestamps = [t0 + _td(seconds=i) for i in range(n)]
+            signals = {"pv": [float(i) for i in range(n)]}
+
+            new_ts, new_sig, _, _ = _lttb_downsample_datablock(timestamps, signals, {}, {}, 2000)
+
+            assert len(new_ts) == 2000
+            # 首尾点必须与输入一致（LTTB 恒保留首尾）：偏移即时报
+            assert new_ts[0] == timestamps[0], "时间轴起点被平移（时区缺陷回退）"
+            assert new_ts[-1] == timestamps[-1], "时间轴终点被平移（时区缺陷回退）"
+            # 抽查中段点均落在输入窗口内且单调
+            assert timestamps[0] <= new_ts[1000] <= timestamps[-1]
+            assert new_ts == sorted(new_ts)
+            # 信号按同索引采样，长度一致
+            assert len(new_sig["pv"]) == 2000
+            assert new_sig["pv"][0] == 0.0
+            assert new_sig["pv"][-1] == float(n - 1)
+            # aware 输入（带 UTC tzinfo）同样不得平移
+            aware_ts = [t.replace(tzinfo=_UTC) for t in timestamps]
+            new_ts2, _, _, _ = _lttb_downsample_datablock(
+                aware_ts, {"pv": [float(i) for i in range(n)]}, {}, {}, 2000
+            )
+            assert new_ts2[0] == timestamps[0]
+            assert new_ts2[-1] == timestamps[-1]
+        finally:
+            if old_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old_tz
+            time.tzset()
