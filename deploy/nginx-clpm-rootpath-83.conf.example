@@ -1,0 +1,56 @@
+# ============================================================
+# CLPM 独立入口 83 端口网关片段（2026-10-08：根路径直出，不带 /clpm/）
+# ============================================================
+# 拓扑：AAS 网关 = 宿主机 Windows D:\AAS\nginx-1.24.0（另监听 83）；
+#       CLPM = VM 192.168.60.132 前端容器 7141（须为根路径版镜像 full-1023+）
+#
+# 与 82 子路径版（nginx-clpm-subpath.conf.example）的差异：
+#   - location 从 /clpm/ 改为 / ：静态资源、/api/v1、两条 WebSocket 全部
+#     由 CLPM 内层 nginx 处理，网关只做透传（内层本就按 / 与 /api/v1 工作）
+#   - 前端镜像必须用根路径版（clpm-frontend:full-1023+，BUILD_MODE=production；
+#     子路径版镜像在根路径下资源 404 / 白屏——反向同理）
+# ============================================================
+
+# WebSocket 升级映射：若 nginx.conf 里已有同名 map，删掉这段勿重复定义
+map $http_upgrade $connection_upgrade83 {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 83;
+    server_name _;
+
+    location / {
+        # 网关在宿主机 → 填 VM 的 IP（填 127.0.0.1 会打到宿主机自己，502）
+        proxy_pass http://192.168.60.132:7141;    # 根路径透传，无前缀剥离
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;       # WebSocket 升级
+        proxy_set_header Connection        $connection_upgrade83;
+        proxy_read_timeout 3600s;      # 实时页 WS 长连接，勿用默认 60s
+        proxy_send_timeout 3600s;
+        client_max_body_size 20m;      # 与 CLPM 内层一致（Excel 导入）
+    }
+}
+
+# ============================================================
+# 上线步骤（宿主机 Windows）
+# ============================================================
+# 1) 备份：copy D:\AAS\nginx-1.24.0\conf\nginx.conf D:\AAS\nginx-1.24.0\conf\nginx.conf.bak-20261008
+# 2) 本片段贴进 http { } 内（与 82 的 server 并列；82 现有配置不动）
+# 3) 语法检查（必须先过）：D:\AAS\nginx-1.24.0\nginx.exe -t
+# 4) 重载：D:\AAS\nginx-1.24.0\nginx.exe -s reload
+# 5) 验收（宿主机执行，前端镜像切到 full-1023 之后）：
+#    curl -sI http://127.0.0.1:83/                        → 200
+#    curl -s  http://127.0.0.1:83/ | findstr "src="       → 资源路径为 /jse/...（无 /clpm/ 前缀）
+#    curl -s -X POST http://127.0.0.1:83/api/v1/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"password\":\"admin123\"}"  → code:0
+# 6) 回滚：备份覆盖回去 → nginx.exe -t → -s reload
+#
+# ⚠️ 切换关系：前端容器换根路径版镜像后，82 的 /clpm/ 入口将失效
+#   （子路径版资源不在了）——83 生效即 CLPM 正式入口，82 的 /clpm/ 转发
+#   片段可择机删除，82 归还 AAS 独用。
+# ============================================================
