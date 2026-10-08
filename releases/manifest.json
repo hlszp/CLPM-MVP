@@ -42,5 +42,18 @@
     "deliveryTarSha256": "3a4c542d909a11f1093f44af5ecfa3fcd1a90453398d1175071e0b7becc5aa79",
     "sourcePackage": "clpm-mvp-d8c0014a-20260926-141019.tar.gz",
     "note": "2026-09-26 校准：历史 75 条条目对应的镜像包与交付包已清理（只保留最新），故移除；本文件改为标准 JSON。"
+  },
+  {
+    "version": "full-1024 (v7.4.3)",
+    "buildTime": "2026-10-09 07:06",
+    "gitCommit": "444be050",
+    "gitBranch": "main (tag v7.4.3)",
+    "buildPlatform": "linux/amd64 (worktree clean build)",
+    "appVersion": "v7.4.3-1024-full",
+    "tarFile": "clpm-images-1024-full.tar.gz",
+    "tarSize": "207M",
+    "tarSha256": "30d37d9369c2feaed88de12be55968c9672c489f6493b3bff0fac942096e8e26",
+    "migration": "53f2f20435f1 (idx_kpi_snapshot_loop_ts_end, CONCURRENTLY)",
+    "note": "1008 监视+驾驶舱性能批 + 1009 趋势窗口统一（-8h 修复）；前端根路径版（83 入口）"
   }
 ]
