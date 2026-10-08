@@ -860,7 +860,44 @@ async def _run_batch_loop_calculations(
                         except Exception:  # noqa: BLE001
                             logger.warning("批量 KPI 进度更新失败", exc_info=True)
 
-    return await asyncio.gather(*[_calculate_one(loop) for loop in loops], return_exceptions=True)
+    _batch_results = await asyncio.gather(
+        *[_calculate_one(loop) for loop in loops], return_exceptions=True
+    )
+    _log_batch_phase_timings(_batch_results, ts_start)
+    return _batch_results
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """简单百分位（已排序列表；空列表返回 0）。"""
+    if not sorted_values:
+        return 0.0
+    idx = min(int(round(pct / 100 * (len(sorted_values) - 1))), len(sorted_values) - 1)
+    return sorted_values[idx]
+
+
+def _log_batch_phase_timings(results: list, ts_start: datetime) -> None:
+    """批量级分段耗时聚合（每窗口一行）：read/persist/compute 的 p50/p95/max。
+
+    数据来自 _calculate_loop_kpi 结果 dict 的 _timing 键（2026-10-08 评估
+    吞吐优化观测——生产回填慢的大头定位依据，避免逐回路日志刷屏）。
+    """
+    timings: list[dict] = [r["_timing"] for r in results if isinstance(r, dict) and "_timing" in r]
+    if not timings:
+        return
+    parts = []
+    for phase in ("read", "compute", "persist"):
+        vals = sorted(float(t.get(phase, 0)) for t in timings)
+        parts.append(
+            f"{phase} p50={_percentile(vals, 50):.2f}s p95={_percentile(vals, 95):.2f}s "
+            f"max={vals[-1]:.2f}s sum={sum(vals):.1f}s"
+        )
+    logger.info(
+        "[批量计时] 窗口=%s 回路=%d/%d | %s",
+        ts_start.strftime("%m-%d %H:00"),
+        len(timings),
+        len(results),
+        " | ".join(parts),
+    )
 
 
 _BATCH_FAILURE_ABORT_RATIO = 0.5
@@ -1492,7 +1529,31 @@ async def _calculate_loop_kpi(
     except Exception:  # noqa: BLE001
         fitness_sys_configs = None  # 使用默认阈值
 
+    # 分段计时（2026-10-08 评估吞吐优化观测）：read=TDengine 取数 /
+    # persist=快照写库 / compute=其余（门禁+三层计算+fitness）。
+    # 结果 dict 附 _timing 键（仅内存返回供批量聚合日志，不入库）。
+    _t0 = time.perf_counter()
+    _t_read = 0.0
+    _t_persist = 0.0
+
+    def _timing_into(result: dict | None) -> dict | None:
+        if isinstance(result, dict):
+            result["_timing"] = {
+                "read": round(_t_read, 3),
+                "compute": round(time.perf_counter() - _t0 - _t_read - _t_persist, 3),
+                "persist": round(_t_persist, 3),
+            }
+        return result
+
+    async def _timed_persist(**kwargs: Any) -> dict:
+        nonlocal _t_persist
+        _tp = time.perf_counter()
+        _r = await _persist_snapshot(**kwargs)
+        _t_persist += time.perf_counter() - _tp
+        return _r
+
     # 通过 DataPlanner 获取所有指标的 MetricDataBundle
+    _tr = time.perf_counter()
     try:
         bundles = await data_planner.request_bundles(
             loop_id=str(loop.id),
@@ -1500,44 +1561,49 @@ async def _calculate_loop_kpi(
             time_window=time_window,
             control_type=control_type,
         )
+        _t_read += time.perf_counter() - _tr
     except Exception as exc:  # noqa: BLE001
         logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc)
         # P2: DataPlanner 失败 → 数据严重不足 → L0
-        return await _persist_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-            custom_task_id=custom_task_id,
-            fitness_level="L0",
-            fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
-            fitness_detail={"reason": "DataPlanner取数失败", "error": str(exc)},
-            assess_level="L0",
-            diagnose_level="L0",
-            tune_level="L0",
-            source=source,
-            source_task_id=source_task_id,
+        return _timing_into(
+            await _timed_persist(
+                db=db,
+                loop_id=str(loop.id),
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="INCONCLUSIVE",
+                custom_task_id=custom_task_id,
+                fitness_level="L0",
+                fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
+                fitness_detail={"reason": "DataPlanner取数失败", "error": str(exc)},
+                assess_level="L0",
+                diagnose_level="L0",
+                tune_level="L0",
+                source=source,
+                source_task_id=source_task_id,
+            )
         )
 
     if not bundles:
         logger.info("回路 %s 无数据（空 Bundle），返回 INCONCLUSIVE", loop.tag_name)
         # P2: 空 Bundle → 数据严重不足 → L0
-        return await _persist_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-            custom_task_id=custom_task_id,
-            fitness_level="L0",
-            fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
-            fitness_detail={"reason": "空Bundle，无可用数据"},
-            assess_level="L0",
-            diagnose_level="L0",
-            tune_level="L0",
-            source=source,
-            source_task_id=source_task_id,
+        return _timing_into(
+            await _timed_persist(
+                db=db,
+                loop_id=str(loop.id),
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="INCONCLUSIVE",
+                custom_task_id=custom_task_id,
+                fitness_level="L0",
+                fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
+                fitness_detail={"reason": "空Bundle，无可用数据"},
+                assess_level="L0",
+                diagnose_level="L0",
+                tune_level="L0",
+                source=source,
+                source_task_id=source_task_id,
+            )
         )
 
     # P2: 提取 BASE 时序（fitness 的 OP_SATURATED / SP_PV_DEVIATION 逐点统计用）
@@ -1621,16 +1687,18 @@ async def _calculate_loop_kpi(
             fitness_kwargs = _build_fitness_kwargs_from_result(fresult)
         except Exception as exc:  # noqa: BLE001
             logger.warning("回路 %s fitness 计算失败（INCONCLUSIVE分支）: %s", loop.tag_name, exc)
-        return await _persist_snapshot(
-            db=db,
-            loop_id=str(loop.id),
-            ts_start=ts_start,
-            ts_end=ts_end,
-            status="INCONCLUSIVE",
-            custom_task_id=custom_task_id,
-            confidence_level=composite_result.confidence_level,
-            metrics_detail=metrics_detail,
-            **fitness_kwargs,
+        return _timing_into(
+            await _timed_persist(
+                db=db,
+                loop_id=str(loop.id),
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="INCONCLUSIVE",
+                custom_task_id=custom_task_id,
+                confidence_level=composite_result.confidence_level,
+                metrics_detail=metrics_detail,
+                **fitness_kwargs,
+            )
         )
 
     # 提取 KPI 值（Calculator 代码 → DB 列名）
@@ -1744,46 +1812,48 @@ async def _calculate_loop_kpi(
                     min_observed_ratio,
                 )
 
-    return await _persist_snapshot(
-        db=db,
-        loop_id=str(loop.id),
-        ts_start=ts_start,
-        ts_end=ts_end,
-        status=status,
-        custom_task_id=custom_task_id,
-        metrics_detail=metrics_detail,
-        score=final_score,
-        good_value_rate=kpi_values.get("good_value_rate"),
-        auto_mode_rate=kpi_values.get("auto_mode_rate"),
-        effective_auto_rate=kpi_values.get("effective_auto_rate"),
-        steady_rate=kpi_values.get("steady_rate"),
-        accuracy_rate=kpi_values.get("accuracy_rate"),
-        fast_rate=kpi_values.get("fast_rate"),
-        oscillation_rate=kpi_values.get("oscillation_rate"),
-        saturation_rate=kpi_values.get("saturation_rate"),
-        stiction_index=kpi_values.get("stiction_index"),
-        output_trip_index=kpi_values.get("output_trip_index"),
-        settling_time=kpi_values.get("settling_time"),
-        ideal_settling_time=kpi_values.get("ideal_settling_time"),
-        # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
-        instrument_fault_rate=kpi_values.get("instrument_fault_rate"),
-        pv_mean=kpi_values.get("pv_mean"),
-        pv_std=kpi_values.get("pv_std"),
-        sp_mean=kpi_values.get("sp_mean"),
-        sp_std=kpi_values.get("sp_std"),
-        op_mean=kpi_values.get("op_mean"),
-        op_std=kpi_values.get("op_std"),
-        error_mean=kpi_values.get("error_mean"),
-        error_std=kpi_values.get("error_std"),
-        valve_linearity=kpi_values.get("valve_linearity"),
-        valve_nonlinearity=kpi_values.get("valve_nonlinearity"),
-        valve_op_min=valve_op_min,
-        valve_op_max=valve_op_max,
-        setpoint_crossing_count=kpi_values.get("setpoint_crossing_count"),
-        oscillation_amplitude=kpi_values.get("oscillation_amplitude"),
-        time_constant=kpi_values.get("time_constant"),
-        **lineage_info,
-        **main_fitness_kwargs,
+    return _timing_into(
+        await _timed_persist(
+            db=db,
+            loop_id=str(loop.id),
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            custom_task_id=custom_task_id,
+            metrics_detail=metrics_detail,
+            score=final_score,
+            good_value_rate=kpi_values.get("good_value_rate"),
+            auto_mode_rate=kpi_values.get("auto_mode_rate"),
+            effective_auto_rate=kpi_values.get("effective_auto_rate"),
+            steady_rate=kpi_values.get("steady_rate"),
+            accuracy_rate=kpi_values.get("accuracy_rate"),
+            fast_rate=kpi_values.get("fast_rate"),
+            oscillation_rate=kpi_values.get("oscillation_rate"),
+            saturation_rate=kpi_values.get("saturation_rate"),
+            stiction_index=kpi_values.get("stiction_index"),
+            output_trip_index=kpi_values.get("output_trip_index"),
+            settling_time=kpi_values.get("settling_time"),
+            ideal_settling_time=kpi_values.get("ideal_settling_time"),
+            # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+            instrument_fault_rate=kpi_values.get("instrument_fault_rate"),
+            pv_mean=kpi_values.get("pv_mean"),
+            pv_std=kpi_values.get("pv_std"),
+            sp_mean=kpi_values.get("sp_mean"),
+            sp_std=kpi_values.get("sp_std"),
+            op_mean=kpi_values.get("op_mean"),
+            op_std=kpi_values.get("op_std"),
+            error_mean=kpi_values.get("error_mean"),
+            error_std=kpi_values.get("error_std"),
+            valve_linearity=kpi_values.get("valve_linearity"),
+            valve_nonlinearity=kpi_values.get("valve_nonlinearity"),
+            valve_op_min=valve_op_min,
+            valve_op_max=valve_op_max,
+            setpoint_crossing_count=kpi_values.get("setpoint_crossing_count"),
+            oscillation_amplitude=kpi_values.get("oscillation_amplitude"),
+            time_constant=kpi_values.get("time_constant"),
+            **lineage_info,
+            **main_fitness_kwargs,
+        )
     )
 
 
@@ -3221,10 +3291,12 @@ async def _do_calculate_single_node(
 
 # 回填任务使用独立的较低内层并发，避免 Celery 外层并发与回路并发相乘。
 # BATCH_SIZE=1：每个小时窗口一个子任务（24 窗口 → 24 子任务），配合 worker
-# concurrency=8 分 3 波跑完，进程级 fan-out 拉满；窗口内回路并发仍为 4，
-# 受 PG 连接预算约束（见 CONCURRENCY 注释），不能随窗口拆分无界放大。
+# concurrency=8 分 3 波跑完，进程级 fan-out 拉满。
+# 2026-10-08：窗口内回路并发 4 → 8（生产实测回填吞吐瓶颈在 TDengine 取数，
+# 读并发翻倍预估整体提速 ~1.6 倍；PG 连接峰值 8 worker × 8 = 64，仍低于
+# max_connections=100；TDengine REST 池已同步扩至 32）。
 _BACKFILL_BATCH_SIZE = 1
-_BACKFILL_LOOP_CONCURRENCY = 4
+_BACKFILL_LOOP_CONCURRENCY = 8
 
 
 @celery_app.task(

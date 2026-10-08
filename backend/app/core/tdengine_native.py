@@ -63,7 +63,10 @@ class TDengineConnectionPool:
     _lock = threading.Lock()
     # 2026-09-28：10 → 16，覆盖 KPI 回路级并发提效（CONCURRENCY=12）后的
     # TD REST 查询并发需求，余量留给实时写入路径
-    _max_size: int = 16
+    # 2026-10-08：16 → 32，覆盖回填窗口内回路并发 4→8（生产实测单回路·窗口
+    # 取数占大头，读并发是吞吐瓶颈；池上限=并发连接回收复用，非 TDengine
+    # 服务端连接风暴——REST 连接按需建、闲置即还）
+    _max_size: int = 32
     _created_count: int = 0  # 已创建的总连接数（用于日志）
 
     @classmethod

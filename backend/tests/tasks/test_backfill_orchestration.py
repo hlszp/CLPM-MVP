@@ -439,8 +439,9 @@ def test_backfill_child_uses_dedicated_concurrency_limit() -> None:
             loop_ids=[str(loop.id)],
         )
 
-    assert _BACKFILL_LOOP_CONCURRENCY == 4
-    assert calculate.await_args.kwargs["concurrency"] == 4
+    # 2026-10-08 提速：4 → 8（TDengine REST 池同步扩至 32，PG 峰值 64 < 100）
+    assert _BACKFILL_LOOP_CONCURRENCY == 8
+    assert calculate.await_args.kwargs["concurrency"] == 8
     aggregate_nodes.assert_awaited_once()
 
 
