@@ -92,6 +92,9 @@ export function useWb360Loop(initialLoopId: null | string) {
           pageSize: LIST_PAGE_SIZE,
           sortBy: 'tagName',
           sortOrder: 'asc',
+          // 回路工作台不消费 aggregate（全量聚合+Redis MODE 分布是每页
+          // 固定全量开销，生产 1209 回路下秒级——2026-10-03 提速必关）
+          withAggregate: false,
         });
       const first = await fetchPage(1);
       loops.value = [...first.items];

@@ -835,27 +835,31 @@ async def list_loop_monitor(
         )
 
     # C1-1 增量巡检：默认排序"最需关注"优先——最新快照评分升序（差回路在前），
-    # 无快照回路排最后，次级按创建时间倒序保持确定性
-    latest_snap_sq = (
-        select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
-        .distinct(KpiSnapshotHourly.loop_id)
-        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
-        .subquery("latest_snap")
-    )
+    # 无快照回路排最后，次级按创建时间倒序保持确定性。
+    # 2026-10-03 生产提速（回路工作台 1209 回路列表 7~13s → 亚秒）：
+    # - 排序数据源改读 workbench_loop_latest 预计算表（1209 行小表，5min Beat
+    #   刷新），替代对 kpi_snapshot_hourly（生产 ~87 万行）的全表 DISTINCT ON；
+    # - tagName 排序不再 JOIN 快照子查询（排序键用不到它，纯浪费）。
+    #   注：预计算评分与行内实时快照评分存在 ≤5min 窗口差（评分本身小时级
+    #   更新，感知无差异；回算完成的新评分最迟 5min 后参与排序）。
+    from app.models.workbench_loop_latest import WorkbenchLoopLatest
+
+    wll_sq = select(WorkbenchLoopLatest.loop_id, WorkbenchLoopLatest.score).subquery("wll_latest")
     if sort_by == "tagName":
         primary_order = (
             LoopLedger.tag_name.asc() if sort_order == "asc" else LoopLedger.tag_name.desc()
         )
+        stmt = select(LoopLedger).order_by(primary_order, LoopLedger.created_at.desc())
     else:
-        score_col = latest_snap_sq.c.score
+        score_col = wll_sq.c.score
         primary_order = (
             score_col.asc().nulls_last() if sort_order == "asc" else score_col.desc().nulls_last()
         )
-    stmt = (
-        select(LoopLedger)
-        .outerjoin(latest_snap_sq, latest_snap_sq.c.loop_id == LoopLedger.id)
-        .order_by(primary_order, LoopLedger.created_at.desc())
-    )
+        stmt = (
+            select(LoopLedger)
+            .outerjoin(wll_sq, wll_sq.c.loop_id == LoopLedger.id)
+            .order_by(primary_order, LoopLedger.created_at.desc())
+        )
     for cond in conditions:
         stmt = stmt.where(cond)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
