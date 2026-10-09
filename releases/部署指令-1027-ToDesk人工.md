@@ -2,9 +2,12 @@
 
 > 适用：AAS 宿主机 Windows（ToDesk）→ VMware 内 clpm 虚拟机（192.168.60.132）。**逐条粘贴**，只动 clpm VM。
 >
-> **包**：`clpm-images-1027-full.tar.gz`（207M，sha256 `10afa6158b8d102f3a8282d068439a7645adb5e069ace55f208be148ea00ee70`）
-> **代码基线**：main `08db3471`（tag **v7.4.6**），双镜像 linux/amd64。**无数据库迁移、无 Beat 变更**。
-> **内容**：= full-1026 全部（Y 轴缩放统一+提示、SP/MODE 开头段补齐）**+ 本次 hotfix**——工作台趋势 Shift+滚轮只有放大没有缩小（浏览器按住 Shift 时垂直滚轮被转成水平滚动、deltaY 归零，原判定只剩单向）。
+> **包**：`clpm-images-1027-full.tar.gz`（207M，sha256 `b7e3acada4301e055e3fe40fa6f2d80a1069e06434c6fd22f2bd113657162714`）
+> **代码基线**：main `7659b98b`（tag **v7.4.6**），双镜像 linux/amd64。**无数据库迁移、无 Beat 变更**。
+> **内容**：= full-1026 全部（Y 轴缩放统一+提示、SP/MODE 开头段补齐）+ 三项 hotfix：
+> ① 工作台趋势 Shift+滚轮只有放大没有缩小（浏览器按住 Shift 时垂直滚轮被转成水平滚动、deltaY 归零，原判定只剩单向）
+> ② **预警每小时风暴根治**——auto-recovery 误杀修复（恢复重估 read_only 化：节流命中≠工况恢复；原逻辑事件创建约 3 分钟即被误 RESOLVED、下周期重建，生产每小时 ~2000 个短命事件）+ /alert/events/{非UUID} 炸 500 修复
+> ③ 关注队列提速——DEG/DQ 聚合裸列瘦身 + 120s 缓存（原生产 13~17s）
 > **适用场景**：无论生产当前在 full-1024 / 1025 / 1026 任一版本，均可直接升到本包。
 
 ## 0. Mac 侧
@@ -54,9 +57,11 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 
 ## 3. 部署后验证
 
-1. **工作台趋势：Shift+滚轮上下两个方向都能缩放幅值轴**（本次 hotfix 核心；双击复位）
+1. **工作台趋势：Shift+滚轮上下两个方向都能缩放幅值轴**（hotfix ①；双击复位）
 2. 监视趋势弹窗：滚轮缩时间轴 / Shift+滚轮缩幅值（右下角提示）
 3. SP 曲线开头空缺段补成平台线（1026 内容，若之前未部署）
+4. **预警事件不再每小时大量重建**（hotfix ②）：次日观察 /alert/events 页——事件创建后不再 3 分钟被自动解除重建；`docker logs clpm-worker | grep auto` 无批量 recover
+5. **关注队列页秒级加载**（hotfix ③，原 13~17s）
 
 ## 4. 回退
 
