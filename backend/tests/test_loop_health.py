@@ -109,3 +109,20 @@ class TestComputeSpFollowsPv:
         assert entry["task"] == "app.tasks.loop_health.compute_loop_health_flags"
         cron = entry["schedule"]
         assert (cron.hour, cron.minute) == ({3}, {40})
+
+
+class TestLoopHealthFlagSchema:
+    """结构防护：loop_id 必须是 UUID 类型（与 loop_ledger.id 对齐）。
+
+    曾因 VARCHAR(36) 导致 `uuid = character varying` 500（2026-10-10
+    dev 实测），mock 型单测无法暴露，需列类型断言兜底。
+    """
+
+    def test_loop_id_column_is_uuid(self) -> None:
+        from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+        from app.models.loop_health_flag import LoopHealthFlag
+
+        col = LoopHealthFlag.__table__.columns.get("loop_id")
+        assert col is not None
+        assert isinstance(col.type, PG_UUID)

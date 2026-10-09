@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -32,7 +32,7 @@ class LoopHealthFlag(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
     loop_id: Mapped[str] = mapped_column(
-        String(36), nullable=False, comment="回路 ID（loop_ledger.id）"
+        UUID(as_uuid=False), nullable=False, comment="回路 ID（loop_ledger.id）"
     )
     flag_type: Mapped[str] = mapped_column(
         String(32),

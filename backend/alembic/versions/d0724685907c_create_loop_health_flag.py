@@ -11,6 +11,7 @@ Create Date: 2026-10-10
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from alembic import op
 
@@ -25,7 +26,7 @@ def upgrade() -> None:
     op.create_table(
         "loop_health_flag",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("loop_id", sa.String(length=36), nullable=False),
+        sa.Column("loop_id", PG_UUID(as_uuid=False), nullable=False),
         sa.Column(
             "flag_type",
             sa.String(length=32),

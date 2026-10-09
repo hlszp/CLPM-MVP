@@ -1933,7 +1933,7 @@ CREATE INDEX IF NOT EXISTS idx_wll_unit ON workbench_loop_latest (unit_id);
 -- 2026-10-10 运维圈选：回路数据健康标记（SP_FOLLOWS_PV 等，每日任务全量重建）
 CREATE TABLE IF NOT EXISTS loop_health_flag (
     id BIGSERIAL PRIMARY KEY,
-    loop_id VARCHAR(36) NOT NULL,
+    loop_id UUID NOT NULL,
     flag_type VARCHAR(32) NOT NULL,
     evidence JSONB,
     suspected_cascade BOOLEAN NOT NULL DEFAULT FALSE,

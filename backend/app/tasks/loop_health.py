@@ -120,8 +120,8 @@ async def _do_compute_sp_follows_pv() -> dict:
                     """
                     INSERT INTO loop_health_flag
                         (loop_id, flag_type, evidence, suspected_cascade, computed_at)
-                    VALUES (:loop_id, :flag_type, CAST(:evidence AS jsonb),
-                            :suspected_cascade, :now)
+                    VALUES (CAST(:loop_id AS uuid), :flag_type,
+                            CAST(:evidence AS jsonb), :suspected_cascade, :now)
                     ON CONFLICT (loop_id, flag_type) DO UPDATE
                         SET evidence = CAST(:evidence AS jsonb),
                             suspected_cascade = :suspected_cascade,
