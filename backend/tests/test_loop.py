@@ -1641,3 +1641,77 @@ class TestHealthFlagsRecompute:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 403
+
+
+class TestControlModeFilterRedisFirst:
+    """2026-10-10 修复：controlMode 筛选与列表显示同口径（Redis 实时优先、
+    DB current_value 回退——原 EXISTS 直查 current_value 恒 NULL 筛不出）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_filter_uses_redis_value_over_db_null(self) -> None:
+        """Redis 有值（1.0=Auto）而 DB current_value 为 NULL → 命中。"""
+        from app.services.loop import list_loops
+
+        db = AsyncMock()
+        mode_rows = [("00000000-0000-0000-0000-000000000201", "MODE_TAG_A", None)]
+        r_mode = MagicMock()
+        r_mode.all.return_value = mode_rows
+        r_count = MagicMock()
+        r_count.scalar.return_value = 1
+        r_list = MagicMock()
+        r_list.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[r_mode, r_count, r_list])
+
+        sub = MagicMock()
+        sub.get_cached_values = AsyncMock(return_value=[{"tagCode": "MODE_TAG_A", "value": 1.0}])
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=sub,
+        ):
+            result = await list_loops(db, page=1, page_size=5, control_mode="Auto")
+        assert result["total"] == 1
+
+    @pytest.mark.asyncio
+    async def test_filter_falls_back_to_db_value(self) -> None:
+        """Redis 未命中（tag 无缓存）→ 回退 DB current_value 命中。"""
+        from app.services.loop import list_loops
+
+        db = AsyncMock()
+        mode_rows = [("00000000-0000-0000-0000-000000000201", "MODE_TAG_A", 0.0)]
+        r_mode = MagicMock()
+        r_mode.all.return_value = mode_rows
+        r_count = MagicMock()
+        r_count.scalar.return_value = 1
+        r_list = MagicMock()
+        r_list.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[r_mode, r_count, r_list])
+
+        sub = MagicMock()
+        sub.get_cached_values = AsyncMock(return_value=[])
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=sub,
+        ):
+            result = await list_loops(db, page=1, page_size=5, control_mode="Manual")
+        assert result["total"] == 1
+
+    @pytest.mark.asyncio
+    async def test_filter_empty_when_redis_down_and_db_null(self) -> None:
+        """Redis 读异常且回退值全 NULL → 空结果（不抛 500）。"""
+        from app.services.loop import list_loops
+
+        db = AsyncMock()
+        mode_rows = [("00000000-0000-0000-0000-000000000201", "MODE_TAG_A", None)]
+        r_mode = MagicMock()
+        r_mode.all.return_value = mode_rows
+        db.execute = AsyncMock(side_effect=[r_mode])
+
+        sub = MagicMock()
+        sub.get_cached_values = AsyncMock(side_effect=RuntimeError("redis down"))
+        with patch(
+            "app.services.data_source.realtime_subscriber.get_subscriber",
+            return_value=sub,
+        ):
+            result = await list_loops(db, page=1, page_size=5, control_mode="Auto")
+        assert result == {"items": [], "total": 0, "page": 1, "pageSize": 5}

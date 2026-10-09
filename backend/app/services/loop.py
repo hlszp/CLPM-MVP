@@ -541,21 +541,46 @@ async def list_loops(
             )
         )
 
-    # controlMode 过滤下沉到 SQL 层（EXISTS 子查询），避免后置过滤导致 total 与分页错乱
+    # controlMode 过滤（2026-10-10 修复：与列表显示同口径——Redis 实时值优先、
+    # DB current_value 回退。原 EXISTS 直接查 current_value，而该列在生产/
+    # dev 常年为 NULL（仅离线回退值，实时值只进 Redis），导致筛选恒为空）
     if control_mode:
         mode_values = _control_mode_to_values(control_mode)
         if not mode_values:
             # 无法识别的控制模式标签，直接返回空结果
             return {"items": [], "total": 0, "page": page, "pageSize": page_size}
-        mode_exists = (
-            select(LoopTagMapping.tag_id)
-            .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
-            .where(LoopTagMapping.loop_id == LoopLedger.id)
-            .where(LoopTagMapping.tag_role == "MODE")
-            .where(TagRegistry.current_value.in_(mode_values))
-            .exists()
-        )
-        conditions.append(mode_exists)
+        from app.services.data_source.realtime_subscriber import get_subscriber
+
+        mode_rows = (
+            await db.execute(
+                select(
+                    LoopTagMapping.loop_id,
+                    TagRegistry.tag_name,
+                    TagRegistry.current_value,
+                )
+                .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+                .where(LoopTagMapping.tag_role == "MODE")
+            )
+        ).all()
+        cached_map: dict[str, Any] = {}
+        try:
+            cached_list = await get_subscriber().get_cached_values(
+                [r[1] for r in mode_rows if r[1]]
+            )
+            cached_map = {c.get("tagCode"): c.get("value") for c in cached_list if c.get("tagCode")}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("controlMode 筛选读取 Redis 实时值失败，回退 DB: %s", exc)
+        matched_ids: set[str] = set()
+        for loop_id, tag_name, db_value in mode_rows:
+            raw = cached_map.get(tag_name, db_value)
+            try:
+                if raw is not None and float(raw) in mode_values:
+                    matched_ids.add(str(loop_id))
+            except (TypeError, ValueError):
+                continue
+        if not matched_ids:
+            return {"items": [], "total": 0, "page": page, "pageSize": page_size}
+        conditions.append(LoopLedger.id.in_(matched_ids))
 
     count_stmt = select(func.count()).select_from(LoopLedger)
     for cond in conditions:
