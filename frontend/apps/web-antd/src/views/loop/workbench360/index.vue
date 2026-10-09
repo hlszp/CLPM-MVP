@@ -102,8 +102,16 @@ function goCompactBack() {
 }
 
 /* ── 上下文 ── */
+/* 初始回路以浏览器真实 URL（hash）为准而非 route.query：tabbar persist 恢复的
+ * 激活页签可能与 URL 的 loopId 不一致，初始路由短暂跟随恢复页签时 query 会带偏
+ * （表现为刷新后先闪现上一回路的趋势再纠正）；hash 不受框架恢复态影响 */
+function loopIdFromLocationHash(): null | string {
+  const m = /[?&]loopId=([0-9a-zA-Z-]{8,})/.exec(window.location.hash);
+  return m?.[1] ?? null;
+}
 const initialLoopId =
   props.embedLoopId ||
+  loopIdFromLocationHash() ||
   (typeof route.query.loopId === 'string' && route.query.loopId
     ? route.query.loopId
     : null);
@@ -625,7 +633,9 @@ const wsName = computed(
         :selected-unit="loop.selectedUnit.value"
         :style="{ width: `${layout.readonlyState.spineWidth}px` }"
         :tree="loop.tree.value"
+        :tree-error="loop.treeError.value"
         :unit-total="loop.loops.value.length"
+        @retry-tree="loop.loadTree()"
         @select-loop="loop.selectLoop($event)"
         @select-unit="loop.selectedUnit.value = $event"
         @update:grade-filter="loop.gradeFilter.value = $event"

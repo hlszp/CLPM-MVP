@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useTabbarStore } from './tabbar';
+import { dedupeRestoredTabs, useTabbarStore } from './tabbar';
 
 describe('useAccessStore', () => {
   const router = createRouter({
@@ -296,5 +296,27 @@ describe('useAccessStore', () => {
 
     expect(store.excludeCachedTabs.has('Dashboard')).toBe(false);
     expect(store.renderRouteView).toBe(true);
+  });
+
+  it('dedupes restored tabs by key (persist deserialize)', () => {
+    const parsed = dedupeRestoredTabs([
+      {
+        key: '/loop/workbench360',
+        path: '/loop/workbench360',
+        query: { loopId: 'a' },
+      },
+      {
+        key: '/loop/workbench360',
+        path: '/loop/workbench360',
+        query: { loopId: 'b' },
+      },
+      { fullPath: '/about', path: '/about' },
+      { path: '/no-key' },
+    ]);
+
+    // 同 key 保留最后一次出现；无 key/fullPath 的项丢弃
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]?.query?.loopId).toBe('b');
+    expect(parsed[1]?.fullPath).toBe('/about');
   });
 });

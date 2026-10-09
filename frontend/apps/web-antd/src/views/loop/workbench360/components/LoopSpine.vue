@@ -26,10 +26,13 @@ const props = defineProps<{
   selectedLoopId: null | string;
   selectedUnit: null | string;
   tree: SpineTreeNode[];
+  /** 装置树加载失败信息（null=无失败；失败态显示重试入口） */
+  treeError: null | string;
   unitTotal: number;
 }>();
 
 const emit = defineEmits<{
+  (e: 'retryTree'): void;
   (e: 'selectLoop', loopId: string): void;
   (e: 'selectUnit', unit: null | string): void;
   (e: 'update:gradeFilter', v: 'all' | GradeFilter): void;
@@ -108,7 +111,13 @@ const footerText = computed(() => {
           </template>
         </template>
         <div v-if="tree.length === 0" class="tree-empty">
-          装置树加载中或为空
+          <template v-if="treeError">
+            {{ treeError }}
+            <button class="tree-retry" type="button" @click="emit('retryTree')">
+              重试
+            </button>
+          </template>
+          <template v-else>装置树加载中…</template>
         </div>
       </div>
     </div>
@@ -255,6 +264,21 @@ const footerText = computed(() => {
   padding: 4px 8px;
   font-size: 12px;
   color: hsl(var(--muted-foreground));
+}
+
+.tree-retry {
+  margin-left: 6px;
+  padding: 0 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 20px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+
+  &:hover {
+    background: hsl(var(--accent));
+  }
 }
 
 .row input[type='text'] {

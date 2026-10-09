@@ -629,6 +629,11 @@ export const useTabbarStore = defineStore('core-tabbar', {
             }
             parsed.visitHistory = stack;
           }
+          // 同 key 重复页签去重（保留最后一次出现的）：恢复与 addTab 竞态会
+          // 产生重复项，刷新后渲染可能跟随过时页签（如工作台闪现上一回路趋势）
+          if (Array.isArray(parsed.tabs)) {
+            parsed.tabs = dedupeRestoredTabs(parsed.tabs);
+          }
           return parsed;
         },
       },
@@ -706,11 +711,23 @@ function isTabShown(tab: TabDefinition) {
 }
 
 /**
+ * 持久化恢复的 tabs 按 key 去重（保留最后一次出现；无 key/fullPath 的项丢弃）。
+ * 恢复与 addTab 竞态会产生同 key 重复项，刷新后渲染可能跟随过时页签。
+ */
+function dedupeRestoredTabs(tabs: any[]): any[] {
+  const byKey = new Map<string, any>();
+  for (const tab of tabs) {
+    const key = tab?.key ?? tab?.fullPath;
+    if (typeof key === 'string' && key) byKey.set(key, tab);
+  }
+  return [...byKey.values()];
+}
+
+/**
  * 从route获取tab页的key
  * @param tab
  */
-function getTabKey(tab: RouteLocationNormalized | RouteRecordNormalized) {
-  const {
+function getTabKey(tab: RouteLocationNormalized | RouteRecordNormalized) {  const {
     fullPath,
     path,
     meta: { fullPathKey } = {},
@@ -767,4 +784,4 @@ function routeToTab(route: RouteRecordNormalized) {
   } as TabDefinition;
 }
 
-export { getTabKey };
+export { dedupeRestoredTabs, getTabKey };

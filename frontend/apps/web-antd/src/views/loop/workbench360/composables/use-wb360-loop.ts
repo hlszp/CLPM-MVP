@@ -117,13 +117,23 @@ export function useWb360Loop(initialLoopId: null | string) {
     }
   }
 
-  /** 拉取装置树（节点只拉一次缓存；回路计数聚合随清单渐进到达自动重算） */
+  /** 装置树加载失败信息（null=无失败；失败后可重试 loadTree） */
+  const treeError = ref<null | string>(null);
+
+  /** 拉取装置树（节点只拉一次缓存；回路计数聚合随清单渐进到达自动重算）。
+   *  失败显式置 treeError（此前静默置空会被"加载中"文案掩盖，用户无感知无重试） */
   async function loadTree() {
+    if (plantNodesCache) {
+      rebuildTree();
+      return;
+    }
+    treeError.value = null;
     try {
-      plantNodesCache ??= await getPlantNodeTreeApi();
+      plantNodesCache = await getPlantNodeTreeApi();
       rebuildTree();
     } catch {
       tree.value = [];
+      treeError.value = '装置树加载失败，请检查网络后重试';
     }
   }
 
@@ -358,5 +368,6 @@ export function useWb360Loop(initialLoopId: null | string) {
     selectedUnit,
     startRealtime: start,
     tree,
+    treeError,
   };
 }
