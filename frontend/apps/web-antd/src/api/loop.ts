@@ -735,6 +735,17 @@ export function getLoopListApi(params: LoopApi.LoopQueryParams) {
 }
 
 /**
+ * 手动触发 SP 随动等健康标记判定（同步执行，返回本次命中数；2026-10-10）
+ */
+export function recomputeHealthFlagsApi() {
+  return requestClient.post<{
+    flagged: number;
+    suspectedCascade: number;
+    flagType: string;
+  }>('/loops/health-flags/recompute');
+}
+
+/**
  * 创建回路 — IDS v3.2 §2.2.8
  */
 export function createLoopApi(data: LoopApi.CreateLoopParams) {

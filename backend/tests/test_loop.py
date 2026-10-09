@@ -1610,3 +1610,34 @@ class TestLoopListOpsFilters:
             )
         assert resp.status_code == 200
         assert resp.json()["code"] == "0"
+
+
+class TestHealthFlagsRecompute:
+    """2026-10-10 手动触发 SP 随动判定：POST /loops/health-flags/recompute。"""
+
+    def test_recompute_sync_result(self, client, fake_redis) -> None:
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            patch(
+                "app.tasks.loop_health._do_compute_sp_follows_pv",
+                new=AsyncMock(
+                    return_value={"flagType": "SP_FOLLOWS_PV", "flagged": 5, "suspectedCascade": 2}
+                ),
+            ) as mock_compute,
+        ):
+            resp = client.post(
+                "/api/v1/loops/health-flags/recompute",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["data"]["flagged"] == 5
+        mock_compute.assert_awaited_once()
+
+    def test_recompute_forbidden_for_non_admin(self, client, fake_redis) -> None:
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            resp = client.post(
+                "/api/v1/loops/health-flags/recompute",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403

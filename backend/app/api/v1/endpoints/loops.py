@@ -299,6 +299,26 @@ async def list_complex_groups_endpoint(
 
 
 # ---------------------------------------------------------------------------
+# SP 随动健康标记（固定路径，必须在 {loop_id} 之前）
+# ---------------------------------------------------------------------------
+
+
+@router.post("/health-flags/recompute", response_model=ApiResponse[dict])
+async def recompute_health_flags_endpoint(
+    user: SysUser = Depends(require_roles("ADMIN")),
+) -> dict:
+    """手动触发 SP 随动等健康标记判定（仅 ADMIN，2026-10-10 运维圈选）。
+
+    同步执行（近 7 天聚合 SQL，秒级），立即返回本次命中数——首次使用
+    或想立即刷新时不必等每日 03:40 的定时判定。
+    """
+    from app.tasks.loop_health import _do_compute_sp_follows_pv
+
+    data = await _do_compute_sp_follows_pv()
+    return success(data=data, message=f"判定完成：命中 {data.get('flagged', 0)} 个回路")
+
+
+# ---------------------------------------------------------------------------
 # Loop Monitor (固定路径，必须在 {loop_id} 之前)
 # ---------------------------------------------------------------------------
 

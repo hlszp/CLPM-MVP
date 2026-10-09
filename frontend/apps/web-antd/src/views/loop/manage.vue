@@ -57,6 +57,7 @@ import {
   batchGroupLoopsApi,
   deleteLoopApi,
   getLoopListApi,
+  recomputeHealthFlagsApi,
   updateLoopApi,
 } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
@@ -829,6 +830,27 @@ const batchEvaluationOptions: { label: string; value: BoolOptionValue }[] = [
   { label: '参评', value: 'true' },
   { label: '不参评', value: 'false' },
 ];
+
+/** 2026-10-10：手动触发 SP 随动判定（同步，秒级返回命中数） */
+const recomputingFlags = ref(false);
+async function handleRecomputeHealthFlags() {
+  if (recomputingFlags.value) return;
+  recomputingFlags.value = true;
+  const hide = message.loading('正在判定 SP 随动（近 7 天自动时段聚合）…', 0);
+  try {
+    const data = await recomputeHealthFlagsApi();
+    hide();
+    message.success(
+      `判定完成：命中 ${data.flagged} 个回路（其中疑似串级 ${data.suspectedCascade} 个，默认不进圈选）`,
+    );
+    await loadList();
+  } catch (error) {
+    hide();
+    console.error('[SP随动判定] 失败:', error);
+  } finally {
+    recomputingFlags.value = false;
+  }
+}
 
 /** 2026-10-10 运维圈选：全选当前筛选结果（分页拉回全部 loopId 后勾选） */
 const selectingAll = ref(false);
@@ -1672,6 +1694,20 @@ watch(
                       :options="spFollowsPvOptions"
                       @change="handleSearch"
                     />
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-400">
+                      每日 03:40 自动判定
+                    </span>
+                    <Button
+                      size="small"
+                      type="link"
+                      class="!px-0"
+                      :loading="recomputingFlags"
+                      @click="handleRecomputeHealthFlags"
+                    >
+                      立即重新判定
+                    </Button>
                   </div>
                   <div
                     class="flex justify-between border-t border-slate-200 pt-2"
