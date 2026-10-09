@@ -525,8 +525,14 @@ class TestCustomTaskEvaluate:
         assert resp.status_code == 400
         assert resp.json()["code"] == "ERR_INVALID_REQUEST"
 
-    def test_custom_evaluate_concurrency_limit_user(self, client, task_redis, fake_redis) -> None:
+    def test_custom_evaluate_concurrency_limit_user(
+        self, client, task_redis, fake_redis, mock_db
+    ) -> None:
         """单用户并发占用计数达到 3 时返回 429（原子槽位计数）."""
+        # 停用回路校验（2026-10-10）需要 db 查询：配置空结果避免误拦截
+        _empty_rows = MagicMock()
+        _empty_rows.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=_empty_rows)
         # 预先将单用户并发计数器占满（等效于已有 3 个活跃任务持有槽位）
         task_redis._strings["task:concurrency:user:00000000-0000-0000-0000-000000000002"] = "3"
         with mock_current_user(TEST_USERS["ic_engineer"]):

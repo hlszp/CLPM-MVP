@@ -1078,6 +1078,9 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
         loop = result.scalar_one_or_none()
         if loop is None:
             return {"loopId": loop_id, "status": "FAILED", "error": "回路不存在"}
+        if loop.is_active is False:
+            # 2026-10-10 停用裁决：停用回路不参与任何计算（显式拒绝而非静默）
+            return {"loopId": loop_id, "status": "FAILED", "error": "回路已停用，不参与计算"}
 
         # 时间窗（保持 tzinfo：带 Z → aware UTC，不带 Z → naive）
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -1141,6 +1144,14 @@ async def _do_calculate_custom_loop(
         loop = result.scalar_one_or_none()
         if loop is None:
             return {"loopId": loop_id, "taskId": task_id, "status": "FAILED", "error": "回路不存在"}
+        if loop.is_active is False:
+            # 2026-10-10 停用裁决：停用回路不参与任何计算（显式拒绝而非静默）
+            return {
+                "loopId": loop_id,
+                "taskId": task_id,
+                "status": "FAILED",
+                "error": "回路已停用，不参与计算",
+            }
 
         # 解析 ts_start（保持 tzinfo：带 Z → aware UTC，不带 Z → naive）
         ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))

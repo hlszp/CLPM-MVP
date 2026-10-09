@@ -769,3 +769,40 @@ class TestEvaluateLoopRules:
             m_vals.return_value = {"PV": 150}
             results = await evaluate_loop_rules(AsyncMock(), "loop-1")
         assert results == []
+
+
+class TestDisabledLoopEarlyReturn:
+    """2026-10-10 停用裁决：停用回路不再求值任何预警规则。"""
+
+    @pytest.mark.asyncio
+    async def test_disabled_loop_returns_empty(self) -> None:
+        from app.services.alert_rule_engine import evaluator
+
+        db = AsyncMock()
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = False
+        db.execute = AsyncMock(return_value=scalar_result)
+
+        with patch(
+            "app.services.alert_rule_engine.cache.get_rules_for_loop", new=AsyncMock()
+        ) as mock_rules:
+            results = await evaluator.evaluate_loop_rules(db, "loop-x")
+        assert results == []
+        mock_rules.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_active_loop_proceeds(self) -> None:
+        from app.services.alert_rule_engine import evaluator
+
+        db = AsyncMock()
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = True
+        db.execute = AsyncMock(return_value=scalar_result)
+
+        with patch(
+            "app.services.alert_rule_engine.cache.get_rules_for_loop",
+            new=AsyncMock(return_value=[]),
+        ) as mock_rules:
+            results = await evaluator.evaluate_loop_rules(db, "loop-x")
+        assert results == []
+        mock_rules.assert_awaited_once_with(db, "loop-x")

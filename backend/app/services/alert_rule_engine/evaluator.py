@@ -20,6 +20,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.alert_rule_engine.dsl import render_dedup_key
@@ -692,8 +693,18 @@ async def evaluate_loop_rules(
 
     Returns:
         所有触发的 EvaluationResult 列表（未触发的不返回）
+
+    2026-10-10 停用裁决：停用回路（is_active=False）不再求值任何预警规则
+    （巡检轨/实时轨统一在此收口，防止停用后产生新预警）。
     """
+    from app.models.loop import LoopLedger
     from app.services.alert_rule_engine.cache import get_rules_for_loop
+
+    is_active = (
+        await db.execute(select(LoopLedger.is_active).where(LoopLedger.id == loop_id))
+    ).scalar()
+    if is_active is False:
+        return []
 
     rules = await get_rules_for_loop(db, loop_id)
     if not rules:

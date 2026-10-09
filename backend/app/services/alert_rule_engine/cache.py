@@ -115,12 +115,21 @@ async def invalidate_all_cache() -> None:
 
 
 async def get_all_active_loops(db: AsyncSession) -> list[str]:
-    """获取所有有活跃订阅的回路 ID 列表（周期巡检用）。"""
+    """获取所有有活跃订阅的回路 ID 列表（周期巡检用）。
+
+    2026-10-10 停用裁决：停用回路（is_active=False）不参与预警巡检——
+    显式订阅的停用回路也从巡检集合中剔除（停用动作已联动关闭其
+    未确认预警，此处防止停用后产生新预警）。
+    """
+    from app.models.loop import LoopLedger
+
     stmt = (
         select(AlertRuleSubscription.loop_id)
+        .join(LoopLedger, LoopLedger.id == AlertRuleSubscription.loop_id)
         .where(
             AlertRuleSubscription.is_active.is_(True),
             AlertRuleSubscription.scope_type != "ALL",
+            LoopLedger.is_active.is_(True),
         )
         .distinct()
     )
@@ -128,8 +137,6 @@ async def get_all_active_loops(db: AsyncSession) -> list[str]:
     loop_ids = [row[0] for row in result]
 
     # ALL 类型的规则需要展开到所有活跃回路
-    from app.models.loop import LoopLedger
-
     stmt_all = select(AlertRuleSubscription).where(
         AlertRuleSubscription.is_active.is_(True),
         AlertRuleSubscription.scope_type == "ALL",

@@ -677,6 +677,15 @@ async def list_events(
     )
     count_stmt = select(func.count()).select_from(AlertEvent)
 
+    # 2026-10-10 停用裁决：停用回路的事件在事件列表（实时/历史 Tab）不显示——
+    # is_active 过滤走公共路径（无装置过滤也生效）；列表侧 outerjoin+where，
+    # count 侧 IN 子查询，两者语义一致（与下方 plant_node 分支同模式）
+    active_filter = LoopLedger.is_active.is_(True)
+    stmt = stmt.where(active_filter)
+    count_stmt = count_stmt.where(
+        AlertEvent.loop_id.in_(select(LoopLedger.id).where(active_filter))
+    )
+
     if loop_id:
         stmt = stmt.where(AlertEvent.loop_id == loop_id)
         count_stmt = count_stmt.where(AlertEvent.loop_id == loop_id)
@@ -799,9 +808,7 @@ async def acknowledge_loop_active_events(
     if not loop_ids:
         return 0
     result = await db.execute(
-        select(AlertEvent).where(
-            AlertEvent.loop_id.in_(loop_ids), AlertEvent.status == "ACTIVE"
-        )
+        select(AlertEvent).where(AlertEvent.loop_id.in_(loop_ids), AlertEvent.status == "ACTIVE")
     )
     events = result.scalars().all()
     if not events:

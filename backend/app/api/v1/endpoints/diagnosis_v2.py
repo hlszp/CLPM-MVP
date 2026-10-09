@@ -252,6 +252,15 @@ async def trigger_diagnosis(
             status_code=400,
         )
 
+    # 停用回路禁止发起诊断（2026-10-10 裁决：停用=不参与任何计算）
+    disabled = sorted(str(x.tag_name) for x in loops if x.is_active is False)
+    if disabled:
+        raise BizError(
+            code="ERR_LOOP_INACTIVE",
+            message=f"回路已停用，不可发起诊断: {disabled[:5]}",
+            status_code=400,
+        )
+
     # PV tag 关联校验（缺 PV 无法诊断）
     pv_mappings = (
         (

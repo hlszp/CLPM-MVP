@@ -803,6 +803,7 @@ async def trigger_standard_evaluation(
 @router.post("/custom/evaluate", response_model=ApiResponse[TaskResponse])
 async def trigger_custom_evaluation(
     body: CustomTaskCreate,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles(*_TASK_CREATOR_ROLES)),
 ) -> dict:
     """触发自定义评估任务（按需触发）.
@@ -824,6 +825,27 @@ async def trigger_custom_evaluation(
         raise BizError(
             code="ERR_INVALID_REQUEST",
             message="目标指标列表不能为空",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 停用回路显式拒绝（2026-10-10 裁决：停用=不参与任何计算；替代此前
+    # Celery 侧的静默跳过，让发起人第一时间知道目标不可用）
+    _disabled_rows = (
+        await db.execute(
+            select(
+                LoopLedger.id,
+                LoopLedger.tag_name,
+            ).where(
+                LoopLedger.id.in_(body.loopIds),
+                LoopLedger.is_active.is_(False),
+            )
+        )
+    ).all()
+    if _disabled_rows:
+        _names = sorted(str(r[1]) for r in _disabled_rows)
+        raise BizError(
+            code="ERR_LOOP_INACTIVE",
+            message=f"目标含已停用回路，不可发起评估: {_names[:5]}",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1468,11 +1490,15 @@ async def get_task_results(
     task_data = await _get_task(task_id)
     task_status = task_data.get("status", "UNKNOWN") if task_data else "NOT_FOUND"
 
-    # 统计总数
+    # 统计总数（停用回路过滤 2026-10-10 裁决：结果列表不含停用回路）
+    active_loop_cond = KpiSnapshotCustom.loop_id.in_(
+        select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+    )
     count_stmt = (
         select(func.count())
         .select_from(KpiSnapshotCustom)
         .where(KpiSnapshotCustom.task_id == task_id)
+        .where(active_loop_cond)
     )
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
@@ -1493,6 +1519,7 @@ async def get_task_results(
         select(KpiSnapshotCustom, LoopLedger.tag_name.label("loop_tag_name"))
         .outerjoin(LoopLedger, KpiSnapshotCustom.loop_id == LoopLedger.id)
         .where(KpiSnapshotCustom.task_id == task_id)
+        .where(active_loop_cond)
         .order_by(KpiSnapshotCustom.ts_start.desc())
         .offset((page - 1) * pageSize)
         .limit(pageSize)

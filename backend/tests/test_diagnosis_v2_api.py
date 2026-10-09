@@ -182,6 +182,29 @@ class TestTriggerDiagnosis:
             )
         assert resp.status_code == 400
 
+    def test_trigger_disabled_loop_rejected(self, client) -> None:
+        """2026-10-10 停用裁决：停用回路发起诊断返回 ERR_LOOP_INACTIVE。"""
+        r = MagicMock()
+        loop = MagicMock()
+        loop.id = LOOP_ID
+        loop.tag_name = "TAG-DISABLED"
+        loop.is_active = False
+        r.scalars.return_value.all.return_value = [loop]
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            from app.core.db import get_db
+
+            mock_db = MagicMock()
+            mock_db.execute = _seq_execute([r])
+            client.app.dependency_overrides[get_db] = lambda: mock_db
+
+            resp = client.post(
+                "/api/v1/diagnosis/run",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"loopIds": [LOOP_ID], "timeWindow": {"preset": "last_24h"}},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_LOOP_INACTIVE"
+
 
 class TestOperatorsEndpoint:
     def test_operators_returns_registry(self, client) -> None:
