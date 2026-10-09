@@ -603,14 +603,18 @@ def _pin_legacy_layout_for_unit_tests(request):
 
 @pytest.fixture(autouse=True)
 def _clear_agg_cache():
-    """每用例清空进程内聚合短缓存（agg_cache）。
+    """每用例清空聚合短缓存（agg_cache 进程内层），并确保 Redis 层关闭。
 
     2026-10-08 性能批：build_diagnosis / cockpit-overview 接入 60~240s TTL
-    进程内缓存后，同一 pytest 进程内多用例会互相命中缓存导致 mock 数据
+    缓存后，同一 pytest 进程内多用例会互相命中缓存导致 mock 数据
     串扰断言失败。每用例前后各清一次，保证隔离。
+    2026-10-09：agg_cache 升两级（Redis 跨 worker 共享）——测试进程禁用
+    Redis 层（mock 数据经 Redis 跨用例串扰 + 免依赖测试环境 Redis 可用），
+    每用例幂等重设一次。
     """
-    from app.services.agg_cache import invalidate_agg
+    import app.services.agg_cache as agg_cache
 
-    invalidate_agg()
+    agg_cache.REDIS_LAYER_ENABLED = False
+    agg_cache.invalidate_agg()
     yield
-    invalidate_agg()
+    agg_cache.invalidate_agg()

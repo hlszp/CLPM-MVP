@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.agg_cache import invalidate_agg
 from app.services.cockpit_overview import (
     DEFAULT_BACKEND_ROLES,
     GRADE_KEYS,
@@ -25,11 +24,7 @@ from app.services.cockpit_overview import (
     shape_node_tree,
 )
 
-
-@pytest.fixture(autouse=True)
-def _clear_agg_cache():
-    """60s TTL 聚合缓存会跨测试污染，每用例清空。"""
-    invalidate_agg()
+# agg_cache 隔离由 conftest 同名 autouse fixture 统一承担（禁 Redis 层防串扰）
 
 
 # ---------------------------------------------------------------------------
