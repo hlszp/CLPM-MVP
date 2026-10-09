@@ -563,10 +563,12 @@ onMounted(() => {
   offRealtime = loop.onRealtimePoint((p) => {
     trend.appendRealtimePoint(p.collectTime, p.role, p.value, p.quality);
   });
-  // 精简模式无左脊柱：装置树只喂脊柱，跳过 loadTree；loadLoops 必须保留（current 数据源）
-  loop.loadLoops().then(() => {
-    if (!isCompact.value) loop.loadTree();
-  });
+  // 清单（渐进加载，首页即渲染）与装置树并行发起——树节点接口独立
+  // （plant-nodes ~0.3s），回路计数随清单各批到达自动重算
+  // （use-wb360-loop: watch loops → rebuildTree）。原串行 .then 要等
+  // 清单全量拉完才发起树请求，是左脊柱树"每次刷新慢"的根因（2026-10-03）。
+  void loop.loadLoops();
+  if (!isCompact.value) void loop.loadTree();
 });
 
 onBeforeUnmount(() => {
