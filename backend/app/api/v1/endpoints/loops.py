@@ -105,6 +105,18 @@ async def list_loops_endpoint(
     includeInEvaluation: bool | None = Query(
         None, description="按参评状态筛选：true=参评/false=不参评"
     ),
+    fitnessLevel: str | None = Query(
+        None, description="按适用性等级筛选：L0/L1/L2/L3/L4（wll 预计算口径）"
+    ),
+    fitnessTag: str | None = Query(
+        None,
+        description="按适用性标签筛选：MANUAL_DOMINANT/LOW_AUTO_RATE/OP_SATURATED/"
+        "SP_PV_DEVIATION/NO_EXCITATION/WEAK_RESPONSE/DATA_INSUFFICIENT",
+    ),
+    spFollowsPv: bool | None = Query(
+        None,
+        description="SP 随动嫌疑筛选：true=仅命中回路（排除疑似串级）/false=仅未命中",
+    ),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -136,6 +148,9 @@ async def list_loops_endpoint(
             importance_level=effective_level,
             monitor_status=monitorStatus,
             include_in_evaluation=includeInEvaluation,
+            fitness_level=fitnessLevel,
+            fitness_tag=fitnessTag,
+            sp_follows_pv=spFollowsPv,
             page=page,
             page_size=pageSize,
         )

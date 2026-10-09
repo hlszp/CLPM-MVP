@@ -165,6 +165,12 @@ export namespace LoopApi {
     keyword?: string;
     /** 参评状态筛选（v5.3：true=参评/false=不参评） */
     includeInEvaluation?: boolean;
+    /** 适用性等级筛选（L0~L4，wll 预计算口径；2026-10-10 运维圈选） */
+    fitnessLevel?: string;
+    /** 适用性标签筛选（如 MANUAL_DOMINANT） */
+    fitnessTag?: string;
+    /** SP 随动嫌疑筛选（true=仅命中，排除疑似串级） */
+    spFollowsPv?: boolean;
   }
 
   /** 创建回路参数（IDS v3.2 §2.2.8） */

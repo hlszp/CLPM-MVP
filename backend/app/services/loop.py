@@ -443,6 +443,9 @@ async def list_loops(
     importance_level: int | None = None,
     monitor_status: bool | None = None,
     include_in_evaluation: bool | None = None,
+    fitness_level: str | None = None,
+    fitness_tag: str | None = None,
+    sp_follows_pv: bool | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
@@ -453,6 +456,11 @@ async def list_loops(
         control_type: 按控制类型筛选（STABLE/SLOW/FAST/LOGIC）
         monitor_status: 按监控状态筛选（True=is_active=True，False=is_active=False）
         include_in_evaluation: 按参评状态筛选（True=参评/False=不参评）
+        fitness_level: 按适用性等级筛选（L0~L4，数据源 wll 预计算表；
+            停用回路不在 wll 中，筛选适用性时天然排除）
+        fitness_tag: 按适用性标签筛选（如 MANUAL_DOMINANT，JSONB 包含匹配）
+        sp_follows_pv: True=仅 SP 随动嫌疑回路（loop_health_flag，
+            排除疑似串级）；False=仅无该标记回路
 
     Raises:
         ValueError: is_active 与 monitor_status 同时传入但值不一致（语义冲突）
@@ -492,6 +500,38 @@ async def list_loops(
         conditions.append(LoopLedger.is_active.is_(monitor_status))
     if include_in_evaluation is not None:
         conditions.append(LoopLedger.include_in_evaluation == include_in_evaluation)
+    # 2026-10-10 运维圈选筛选：适用性（wll 预计算，活跃回路口径）+ SP 随动标记
+    if fitness_level:
+        from app.models.workbench_loop_latest import WorkbenchLoopLatest
+
+        conditions.append(
+            LoopLedger.id.in_(
+                select(WorkbenchLoopLatest.loop_id).where(
+                    WorkbenchLoopLatest.fitness_level == fitness_level.upper()
+                )
+            )
+        )
+    if fitness_tag:
+        from app.models.workbench_loop_latest import WorkbenchLoopLatest
+
+        conditions.append(
+            LoopLedger.id.in_(
+                select(WorkbenchLoopLatest.loop_id).where(
+                    WorkbenchLoopLatest.fitness_tags.contains([fitness_tag])
+                )
+            )
+        )
+    if sp_follows_pv is not None:
+        from app.models.loop_health_flag import LoopHealthFlag
+
+        sub = select(LoopHealthFlag.loop_id).where(
+            LoopHealthFlag.flag_type == "SP_FOLLOWS_PV",
+            LoopHealthFlag.suspected_cascade.is_(False),
+        )
+        if sp_follows_pv:
+            conditions.append(LoopLedger.id.in_(sub))
+        else:
+            conditions.append(LoopLedger.id.not_in(sub))
     if keyword:
         kw = f"%{keyword}%"
         conditions.append(

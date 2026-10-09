@@ -1544,3 +1544,69 @@ class TestLoopSchemaExtraForbid:
             LoopCreate(tagName="X-1", unknownField="x")
         with pytest.raises(ValidationError):
             LoopUpdate(unknownField="x")
+
+
+class TestLoopListOpsFilters:
+    """2026-10-10 运维圈选筛选：fitnessLevel / fitnessTag / spFollowsPv。"""
+
+    def _setup_db(self, mock_db) -> list:
+        captured: list = []
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            captured.append(stmt)
+            compiled = str(stmt.compile()).lower()
+            if "count" in compiled:
+                return _make_scalar_mock(0)
+            return _make_scalars_mock([])
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+        return captured
+
+    def test_list_accepts_fitness_level(self, client, mock_db, fake_redis) -> None:
+        captured = self._setup_db(mock_db)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?fitnessLevel=L1",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"
+        sql = " ".join(str(c.compile()).lower() for c in captured)
+        assert "workbench_loop_latest" in sql
+        assert "fitness_level" in sql
+
+    def test_list_accepts_fitness_tag(self, client, mock_db, fake_redis) -> None:
+        captured = self._setup_db(mock_db)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?fitnessTag=MANUAL_DOMINANT",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        sql = " ".join(str(c.compile()).lower() for c in captured)
+        assert "fitness_tags" in sql
+
+    def test_list_accepts_sp_follows_pv(self, client, mock_db, fake_redis) -> None:
+        captured = self._setup_db(mock_db)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?spFollowsPv=true",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        sql = " ".join(str(c.compile()).lower() for c in captured)
+        assert "loop_health_flag" in sql
+        assert "flag_type" in sql
+        # 默认圈选排除疑似串级
+        assert "suspected_cascade" in sql
+
+    def test_list_accepts_control_mode_query(self, client, mock_db, fake_redis) -> None:
+        """当前控制模式筛选（后端既有能力，回归保护）。"""
+        self._setup_db(mock_db)
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/loops?controlMode=Manual",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "0"

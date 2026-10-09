@@ -1127,7 +1127,6 @@ class TestSnapshotFiltersExcludeDisabled:
     def test_performance_apply_snapshot_filters_has_active_subquery(self) -> None:
         from sqlalchemy import select
 
-        from app.models.loop import LoopLedger
         from app.models.metric import KpiSnapshotHourly
         from app.services.performance import _apply_snapshot_filters
 
@@ -1139,7 +1138,6 @@ class TestSnapshotFiltersExcludeDisabled:
     async def test_performance_build_snapshot_conditions_has_active(self) -> None:
         from unittest.mock import AsyncMock
 
-        from app.models.metric import KpiSnapshotHourly
         from app.services.performance import _build_snapshot_conditions
 
         db = AsyncMock()

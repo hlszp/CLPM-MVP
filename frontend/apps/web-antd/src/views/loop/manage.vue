@@ -209,6 +209,14 @@ const query = reactive({
   includeInEvaluation: undefined as boolean | undefined,
   /** v6.1：回路类型筛选（温度/压力/液位/流量/分析/速度/其他） */
   loopType: undefined as LoopApi.LoopType | undefined,
+  /** 2026-10-10 运维圈选：当前控制模式（后端既有参数） */
+  controlMode: undefined as 'Auto' | 'Cascade' | 'Manual' | undefined,
+  /** 适用性等级（L0~L4） */
+  fitnessLevel: undefined as string | undefined,
+  /** 适用性标签（MANUAL_DOMINANT 等） */
+  fitnessTag: undefined as string | undefined,
+  /** SP 随动嫌疑（自动时段 SP 跟随 PV） */
+  spFollowsPv: undefined as boolean | undefined,
   keyword: '',
   page: 1,
   pageSize: 20,
@@ -239,6 +247,38 @@ const controlTypeOptions: {
   { label: '慢速型', value: 'SLOW' },
   { label: '快速型', value: 'FAST' },
   { label: '逻辑型', value: 'LOGIC' },
+];
+
+const controlModeFilterOptions: {
+  label: string;
+  value: 'Auto' | 'Cascade' | 'Manual';
+}[] = [
+  { label: '手动 Manual', value: 'Manual' },
+  { label: '自动 Auto', value: 'Auto' },
+  { label: '串级 Cascade', value: 'Cascade' },
+];
+
+const fitnessLevelOptions: { label: string; value: string }[] = [
+  { label: 'L0 数据严重不足', value: 'L0' },
+  { label: 'L1 手动主导/低自控', value: 'L1' },
+  { label: 'L2 受限（饱和/偏差）', value: 'L2' },
+  { label: 'L3 激励不足', value: 'L3' },
+  { label: 'L4 完全适用', value: 'L4' },
+];
+
+const fitnessTagOptions: { label: string; value: string }[] = [
+  { label: '手动主导', value: 'MANUAL_DOMINANT' },
+  { label: '低自控率', value: 'LOW_AUTO_RATE' },
+  { label: '输出饱和', value: 'OP_SATURATED' },
+  { label: 'SP-PV 偏差', value: 'SP_PV_DEVIATION' },
+  { label: '激励不足', value: 'NO_EXCITATION' },
+  { label: '响应弱', value: 'WEAK_RESPONSE' },
+  { label: '数据不足', value: 'DATA_INSUFFICIENT' },
+];
+
+const spFollowsPvOptions: { label: string; value: BoolOptionValue }[] = [
+  { label: 'SP 随动嫌疑', value: 'true' },
+  { label: '无随动标记', value: 'false' },
 ];
 
 const levelOptions: { label: string; value: 1 | 2 | 3 | undefined }[] = [
@@ -532,6 +572,10 @@ async function loadList() {
       monitorStatus: query.monitorStatus,
       includeInEvaluation: query.includeInEvaluation,
       loopType: query.loopType,
+      controlMode: query.controlMode,
+      fitnessLevel: query.fitnessLevel,
+      fitnessTag: query.fitnessTag,
+      spFollowsPv: query.spFollowsPv,
       keyword: query.keyword || undefined,
       page: query.page,
       pageSize: query.pageSize,
@@ -753,6 +797,14 @@ const queryMonitorStatus = computed<BoolOptionValue>({
     query.monitorStatus = fromBoolOption(val);
   },
 });
+
+/** SP 随动筛选代理（boolean ↔ 'true'/'false' 选项值，2026-10-10） */
+const querySpFollowsPv = computed<BoolOptionValue>({
+  get: () => toBoolOption(query.spFollowsPv),
+  set: (val) => {
+    query.spFollowsPv = fromBoolOption(val);
+  },
+});
 const batchIsMonitored = computed<BoolOptionValue>({
   get: () => toBoolOption(batchForm.isMonitored),
   set: (val) => {
@@ -777,6 +829,50 @@ const batchEvaluationOptions: { label: string; value: BoolOptionValue }[] = [
   { label: '参评', value: 'true' },
   { label: '不参评', value: 'false' },
 ];
+
+/** 2026-10-10 运维圈选：全选当前筛选结果（分页拉回全部 loopId 后勾选） */
+const selectingAll = ref(false);
+async function handleSelectAllFiltered() {
+  if (total.value === 0) return;
+  selectingAll.value = true;
+  const hide = message.loading(
+    `正在拉取筛选结果全部 ${total.value} 个回路…`,
+    0,
+  );
+  try {
+    const ids: string[] = [];
+    const pageSize = 100;
+    const pages = Math.ceil(total.value / pageSize);
+    for (let page = 1; page <= pages; page++) {
+      const data = await getLoopListApi({
+        plantNodeId: query.plantNodeId,
+        controlType: query.controlType,
+        importanceLevel: query.importanceLevel,
+        status: query.status,
+        monitorStatus: query.monitorStatus,
+        includeInEvaluation: query.includeInEvaluation,
+        loopType: query.loopType,
+        controlMode: query.controlMode,
+        fitnessLevel: query.fitnessLevel,
+        fitnessTag: query.fitnessTag,
+        spFollowsPv: query.spFollowsPv,
+        keyword: query.keyword || undefined,
+        page,
+        pageSize,
+      });
+      for (const item of data.items) ids.push(item.loopId);
+      if (!data.items?.length) break;
+    }
+    selectedRowKeys.value = ids;
+    hide();
+    message.success(`已选中筛选结果全部 ${ids.length} 个回路，可进行批量操作`);
+  } catch (error) {
+    hide();
+    console.error('[全选筛选结果] 拉取失败:', error);
+  } finally {
+    selectingAll.value = false;
+  }
+}
 
 /** 打开批量配置弹窗 */
 function handleBatchConfig() {
@@ -1078,6 +1174,10 @@ const activeFilterCount = computed(() => {
   if (query.monitorStatus) count++;
   if (query.status) count++;
   if (query.loopType) count++;
+  if (query.controlMode) count++;
+  if (query.fitnessLevel) count++;
+  if (query.fitnessTag) count++;
+  if (query.spFollowsPv !== undefined) count++;
   return count;
 });
 
@@ -1122,6 +1222,62 @@ const activeFilterBadges = computed(() => {
       value: query.includeInEvaluation ? '参评' : '不参评',
       clear: () => {
         query.includeInEvaluation = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.controlMode) {
+    const opt = controlModeFilterOptions.find(
+      (o) => o.value === query.controlMode,
+    );
+    badges.push({
+      key: 'controlMode',
+      label: '控制模式',
+      value: opt?.label ?? String(query.controlMode),
+      clear: () => {
+        query.controlMode = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.fitnessLevel) {
+    const opt = fitnessLevelOptions.find((o) => o.value === query.fitnessLevel);
+    badges.push({
+      key: 'fitnessLevel',
+      label: '适用性',
+      value: opt?.label ?? String(query.fitnessLevel),
+      clear: () => {
+        query.fitnessLevel = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.fitnessTag) {
+    const opt = fitnessTagOptions.find((o) => o.value === query.fitnessTag);
+    badges.push({
+      key: 'fitnessTag',
+      label: '适用性标签',
+      value: opt?.label ?? String(query.fitnessTag),
+      clear: () => {
+        query.fitnessTag = undefined;
+        handleSearch();
+      },
+    });
+  }
+
+  if (query.spFollowsPv !== undefined) {
+    const opt = spFollowsPvOptions.find(
+      (o) => o.value === toBoolOption(query.spFollowsPv),
+    );
+    badges.push({
+      key: 'spFollowsPv',
+      label: 'SP随动',
+      value: opt?.label ?? String(query.spFollowsPv),
+      clear: () => {
+        query.spFollowsPv = undefined;
         handleSearch();
       },
     });
@@ -1175,6 +1331,10 @@ function clearAllFilters() {
   query.monitorStatus = undefined;
   query.status = undefined;
   query.loopType = undefined;
+  query.controlMode = undefined;
+  query.fitnessLevel = undefined;
+  query.fitnessTag = undefined;
+  query.spFollowsPv = undefined;
   handleSearch();
 }
 
@@ -1278,6 +1438,14 @@ watch(
             :disabled="selectedRowKeys.length === 0"
             disabled-reason="请先选择回路"
             @click="handleBatchConfig"
+          />
+          <ClpmToolbarButton
+            v-permission="['ADMIN']"
+            icon="ant-design:check-square-outlined"
+            :label="`全选筛选结果(${total})`"
+            :disabled="total === 0 || selectingAll"
+            :disabled-reason="selectingAll ? '正在拉取…' : '当前筛选无结果'"
+            @click="handleSelectAllFiltered"
           />
           <ClpmToolbarButton
             v-permission="['ADMIN', 'IC_ENGINEER']"
@@ -1454,6 +1622,54 @@ watch(
                       allow-clear
                       class="!w-full"
                       :options="statusOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">当前控制模式</div>
+                    <Select
+                      v-model:value="query.controlMode"
+                      placeholder="当前控制模式"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="controlModeFilterOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">适用性等级</div>
+                    <Select
+                      v-model:value="query.fitnessLevel"
+                      placeholder="适用性等级"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="fitnessLevelOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">适用性标签</div>
+                    <Select
+                      v-model:value="query.fitnessTag"
+                      placeholder="适用性标签"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="fitnessTagOptions"
+                      @change="handleSearch"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs text-slate-600">SP 随动</div>
+                    <Select
+                      v-model:value="querySpFollowsPv"
+                      placeholder="SP 随动嫌疑"
+                      size="small"
+                      allow-clear
+                      class="!w-full"
+                      :options="spFollowsPvOptions"
                       @change="handleSearch"
                     />
                   </div>

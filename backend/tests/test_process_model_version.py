@@ -76,12 +76,13 @@ def test_orm_has_38_tables() -> None:
     history_coverage_segment / history_layout_manifest / history_write_batch /
     history_point_conflict / point_state_anchor，2026-09-06 迁移
     r1p0int00001）= 62 + workbench_loop_latest（驾驶舱 P1 回路最新态
-    预计算，2026-10-07 迁移 c9bf79b6868a）= 63。
+    预计算，2026-10-07 迁移 c9bf79b6868a）= 63
+    + loop_health_flag（运维健康标记，2026-10-10 迁移 d0724685907c）= 64。
 
     注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
     整体下线时移除，表计数曾从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 63
+    assert len(Base.metadata.tables) == 64
 
 
 def test_partial_unique_index_current_exists() -> None:

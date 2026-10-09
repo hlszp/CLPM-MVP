@@ -28,6 +28,7 @@ from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_action_item import LoopActionItem
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
+from app.models.loop_health_flag import LoopHealthFlag  # 运维健康标记
 from app.models.metric import (
     KpiSnapshotCustom,
     KpiSnapshotHourly,
@@ -73,6 +74,7 @@ from app.models.workbench_summary import WorkbenchWindowSummary  # Workbench v2.
 
 __all__ = [
     "Base",
+    "LoopHealthFlag",
     "TimestampMixin",
     "AlgorithmParameter",
     "SysDictItem",

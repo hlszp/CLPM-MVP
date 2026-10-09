@@ -1929,6 +1929,18 @@ CREATE TABLE IF NOT EXISTS workbench_loop_latest (
 );
 CREATE INDEX IF NOT EXISTS idx_wll_open ON workbench_loop_latest (is_open, latest_severity, latest_run_at);
 CREATE INDEX IF NOT EXISTS idx_wll_unit ON workbench_loop_latest (unit_id);
+
+-- 2026-10-10 运维圈选：回路数据健康标记（SP_FOLLOWS_PV 等，每日任务全量重建）
+CREATE TABLE IF NOT EXISTS loop_health_flag (
+    id BIGSERIAL PRIMARY KEY,
+    loop_id VARCHAR(36) NOT NULL,
+    flag_type VARCHAR(32) NOT NULL,
+    evidence JSONB,
+    suspected_cascade BOOLEAN NOT NULL DEFAULT FALSE,
+    computed_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT uniq_lhf_loop_flag UNIQUE (loop_id, flag_type)
+);
+CREATE INDEX IF NOT EXISTS idx_lhf_flag_type ON loop_health_flag (flag_type);
 CREATE INDEX IF NOT EXISTS idx_ws_scope_window ON workbench_window_summary (scope_type, scope_id, "window");
 CREATE INDEX IF NOT EXISTS idx_ws_snapshot ON workbench_window_summary (snapshot_at);
 
