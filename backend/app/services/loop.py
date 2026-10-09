@@ -1531,6 +1531,22 @@ async def update_loop(
         loop.complex_role = complex_role
     loop.updated_by = operator
 
+    # 停用联动（2026-10-10 裁决）：显式停用时联动置「不参评」，并自动关闭
+    # 该回路全部 ACTIVE 预警；启用不反向恢复参评。联动放在全部字段应用之后，
+    # 避免被同一请求中随后应用的 include_in_evaluation 覆盖；关预警仅在
+    # is_active 真实发生 True→False 跳变时触发（重复保存已停用回路不重复关）。
+    newly_disabled = is_active is False and before.get("isActive") is True
+    if newly_disabled and loop.include_in_evaluation:
+        loop.include_in_evaluation = False
+    if newly_disabled:
+        from app.services.alert_rule_engine.service import acknowledge_loop_active_events
+
+        closed = await acknowledge_loop_active_events(
+            db, [str(loop.id)], operator="system:loop-disabled", note="回路停用自动关闭"
+        )
+        if closed:
+            logger.info("回路停用联动关闭 ACTIVE 预警: loop=%s count=%d", loop_id, closed)
+
     # 重新推导 status
     new_status = await derive_loop_status(db, loop)
     loop.status = new_status

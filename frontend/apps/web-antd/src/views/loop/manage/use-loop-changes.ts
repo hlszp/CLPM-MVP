@@ -337,13 +337,6 @@ export function buildBatchDiff(
       to: batchForm.isMonitored ? '启用监控' : '停用监控',
     });
   }
-  if (batchForm.isStatEnabled !== undefined) {
-    summary.push({
-      field: '统计纳入',
-      from: '保持原值',
-      to: batchForm.isStatEnabled ? '纳入统计' : '不纳入统计',
-    });
-  }
   if (batchForm.importanceLevel !== undefined) {
     summary.push({
       field: '回路级别',

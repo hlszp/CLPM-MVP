@@ -422,6 +422,14 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 60,
       align: 'center',
     },
+    // 停用/启用列（2026-10-10）：行内开关，停用联动不参评+关闭未确认预警
+    {
+      title: '停用/启用',
+      dataIndex: 'isActive',
+      key: 'isActive',
+      width: 70,
+      align: 'center',
+    },
     // P4 S4：复杂回路分组列（MAIN/SUB 角色标签）
     {
       title: '分组',
@@ -591,6 +599,38 @@ const rowSelection = computed(() => ({
   },
 }));
 
+/** 2026-10-10：内联切换停用/启用（is_active） */
+function handleToggleActive(record: LoopApi.LoopListItem, checked: boolean) {
+  if (checked) {
+    // 启用：不反向恢复参评（裁决口径），由使用者按需手动打开参评开关
+    updateLoopApi(record.loopId, { isActive: true })
+      .then(() => {
+        message.success('已启用监控（参评状态保持不参评，需手动开启）');
+        loadList();
+      })
+      .catch((error) => {
+        console.error('操作失败:', error);
+      });
+  } else {
+    Modal.warning({
+      title: '确认停用该回路',
+      content:
+        '停用后该回路：① 不再参与任何计算（评估/诊断/整定）；② 在监视、工作台、驾驶舱等所有页面不再显示与统计（本配置页除外）；③ 自动切换为「不参评」；④ 名下未确认预警自动关闭。实时数据仍会继续采集落库，重新启用后可回溯。确认停用？',
+      okText: '确认停用',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await updateLoopApi(record.loopId, { isActive: false });
+          message.success('已停用');
+          await loadList();
+        } catch (error) {
+          console.error('操作失败:', error);
+        }
+      },
+    });
+  }
+}
+
 // ===== 变更确认弹窗（通用） =====
 const confirmVisible = ref(false);
 const confirmLoading = ref(false);
@@ -693,7 +733,6 @@ const batchModalVisible = ref(false);
 const batchSaving = ref(false);
 const batchForm = reactive({
   isMonitored: undefined as boolean | undefined,
-  isStatEnabled: undefined as boolean | undefined,
   importanceLevel: undefined as 1 | 2 | 3 | undefined,
   /** v5.3：批量设置参评状态 */
   includeInEvaluation: undefined as boolean | undefined,
@@ -720,20 +759,10 @@ const batchIsMonitored = computed<BoolOptionValue>({
     batchForm.isMonitored = fromBoolOption(val);
   },
 });
-const batchIsStatEnabled = computed<BoolOptionValue>({
-  get: () => toBoolOption(batchForm.isStatEnabled),
-  set: (val) => {
-    batchForm.isStatEnabled = fromBoolOption(val);
-  },
-});
 
 const batchMonitoredOptions: { label: string; value: BoolOptionValue }[] = [
   { label: '启用监控', value: 'true' },
   { label: '停用监控', value: 'false' },
-];
-const batchStatEnabledOptions: { label: string; value: BoolOptionValue }[] = [
-  { label: '纳入统计', value: 'true' },
-  { label: '不纳入统计', value: 'false' },
 ];
 
 /** v5.3：批量参评状态代理 */
@@ -756,7 +785,6 @@ function handleBatchConfig() {
     return;
   }
   batchForm.isMonitored = undefined;
-  batchForm.isStatEnabled = undefined;
   batchForm.importanceLevel = undefined;
   batchForm.includeInEvaluation = undefined;
   batchModalVisible.value = true;
@@ -767,7 +795,6 @@ async function handleBatchConfigSubmit() {
   // 至少配置一项
   if (
     batchForm.isMonitored === undefined &&
-    batchForm.isStatEnabled === undefined &&
     batchForm.importanceLevel === undefined &&
     batchForm.includeInEvaluation === undefined
   ) {
@@ -788,9 +815,6 @@ async function doBatchConfigSubmit() {
     const updates: LoopApi.LoopBatchUpdates = {};
     if (batchForm.isMonitored !== undefined) {
       updates.isMonitored = batchForm.isMonitored;
-    }
-    if (batchForm.isStatEnabled !== undefined) {
-      updates.isStatEnabled = batchForm.isStatEnabled;
     }
     if (batchForm.importanceLevel !== undefined) {
       updates.importanceLevel = batchForm.importanceLevel;
@@ -1487,7 +1511,11 @@ watch(
           :custom-row="
             (record: LoopApi.LoopListItem) => ({
               class:
-                record.includeInEvaluation === false ? 'row-not-evaluated' : '',
+                record.isActive === false
+                  ? 'row-loop-disabled'
+                  : record.includeInEvaluation === false
+                    ? 'row-not-evaluated'
+                    : '',
             })
           "
           @change="handleTableChange"
@@ -1665,6 +1693,21 @@ watch(
                 "
               />
             </template>
+            <!-- 2026-10-10：停用/启用列（行内开关） -->
+            <template v-else-if="column.key === 'isActive'">
+              <Switch
+                :key="`active-${record.loopId}-${record.isActive}`"
+                :checked="record.isActive !== false"
+                size="small"
+                @change="
+                  (checked: boolean | string | number) =>
+                    handleToggleActive(
+                      record as LoopApi.LoopListItem,
+                      Boolean(checked),
+                    )
+                "
+              />
+            </template>
             <!-- P4 S4：复杂回路分组列 -->
             <template v-else-if="column.key === 'complexGroup'">
               <Tag
@@ -1782,14 +1825,6 @@ watch(
             placeholder="不修改"
             allow-clear
             :options="batchMonitoredOptions"
-          />
-        </FormItem>
-        <FormItem label="是否纳入统计">
-          <Select
-            v-model:value="batchIsStatEnabled"
-            placeholder="不修改"
-            allow-clear
-            :options="batchStatEnabledOptions"
           />
         </FormItem>
         <FormItem label="回路级别">
@@ -1932,6 +1967,16 @@ watch(
 }
 
 .row-not-evaluated:hover > td {
+  background-color: hsl(var(--muted)) !important;
+}
+
+/* 2026-10-10：停用回路行底色更深的灰，与不参评区分 */
+.row-loop-disabled > td {
+  background-color: hsl(var(--muted) / 80%) !important;
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.row-loop-disabled:hover > td {
   background-color: hsl(var(--muted)) !important;
 }
 

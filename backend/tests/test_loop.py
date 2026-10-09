@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from tests.conftest import TEST_USERS, mock_current_user
 
 # 测试用的回路数据
@@ -1347,6 +1349,165 @@ class TestLoopUpdateUnitId:
         assert resp.status_code == 404
         assert resp.json()["code"] == "ERR_NODE_NOT_FOUND"
         assert loop.unit_id == LOOP_001.unit_id
+
+
+class TestDisableLinkage:
+    """2026-10-10 停用联动：停用 → 置不参评 + 关闭该回路 ACTIVE 预警。
+
+    裁决口径：单向联动（启用不反向恢复参评）；关预警仅在 is_active
+    真实发生 True→False 跳变时触发，重复保存已停用回路不重复关。
+    """
+
+    def _make_update_loop_mock(
+        self, is_active: bool = True, include_in_evaluation: bool = True
+    ) -> MagicMock:
+        """构造 update_loop 流程用的回路 mock。"""
+        loop = MagicMock()
+        loop.id = LOOP_001.id
+        loop.tag_name = LOOP_001.tag_name
+        loop.description = "desc"
+        loop.unit_id = LOOP_001.unit_id
+        loop.score_weights = None
+        loop.is_active = is_active
+        loop.status = "READY" if is_active else "INACTIVE"
+        loop.loop_type = "TEMPERATURE"
+        loop.control_type = "STABLE"
+        loop.importance_level = 2
+        loop.include_in_evaluation = include_in_evaluation
+        loop.modeattr_tag_id = None
+        loop.data_retention_days = None
+        loop.op_output_lower_limit = None
+        loop.op_output_upper_limit = None
+        loop.dcs_model_id = None
+        loop.ideal_settling_time = None
+        loop.remark = None
+        loop.complex_loop_group_id = None
+        loop.complex_role = None
+        loop.updated_at = None
+        loop.updated_by = "admin"
+        return loop
+
+    def _mock_update_db(self, mock_db, loop: MagicMock) -> None:
+        """按 update_loop 调用序配置 mock_db.execute：
+
+        1) select LoopLedger → scalar_one_or_none → loop
+        2) _get_op_tag_range → first() → None（未关联 OP Tag）
+        3) _get_loop_tag_mappings → scalars().all() → []
+        """
+        first_result = MagicMock()
+        first_result.scalar_one_or_none.return_value = loop
+        op_range_result = MagicMock()
+        op_range_result.first.return_value = None
+        mock_db.execute = AsyncMock(
+            side_effect=[first_result, op_range_result, _make_scalars_mock([])]
+        )
+
+    def test_disable_sets_not_evaluated_and_closes_alerts(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """PUT isActive=false：联动置不参评，并按回路关闭 ACTIVE 预警。"""
+        loop = self._make_update_loop_mock(is_active=True, include_in_evaluation=True)
+        self._mock_update_db(mock_db, loop)
+        ack_mock = AsyncMock(return_value=2)
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            patch(
+                "app.services.alert_rule_engine.service.acknowledge_loop_active_events",
+                new=ack_mock,
+            ),
+        ):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"isActive": False},
+            )
+        assert resp.status_code == 200
+        assert loop.is_active is False
+        assert loop.include_in_evaluation is False
+        ack_mock.assert_awaited_once()
+        args, kwargs = ack_mock.call_args
+        assert args[1] == [LOOP_001.id]
+        assert kwargs.get("operator") == "system:loop-disabled"
+        assert kwargs.get("note") == "回路停用自动关闭"
+
+    def test_enable_keeps_not_evaluated(self, client, mock_db, fake_redis) -> None:
+        """PUT isActive=true 重新启用：参评保持不参评（单向联动），不触发关预警。"""
+        loop = self._make_update_loop_mock(is_active=False, include_in_evaluation=False)
+        self._mock_update_db(mock_db, loop)
+        ack_mock = AsyncMock(return_value=0)
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            patch(
+                "app.services.alert_rule_engine.service.acknowledge_loop_active_events",
+                new=ack_mock,
+            ),
+        ):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"isActive": True},
+            )
+        assert resp.status_code == 200
+        assert loop.is_active is True
+        assert loop.include_in_evaluation is False
+        ack_mock.assert_not_awaited()
+
+    def test_resave_disabled_loop_no_refire(self, client, mock_db, fake_redis) -> None:
+        """已停用回路再次保存 isActive=false（False→False）：不重复关预警。"""
+        loop = self._make_update_loop_mock(is_active=False, include_in_evaluation=False)
+        self._mock_update_db(mock_db, loop)
+        ack_mock = AsyncMock(return_value=0)
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            patch(
+                "app.services.alert_rule_engine.service.acknowledge_loop_active_events",
+                new=ack_mock,
+            ),
+        ):
+            resp = client.put(
+                f"/api/v1/loops/{LOOP_001.id}",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"isActive": False},
+            )
+        assert resp.status_code == 200
+        assert loop.include_in_evaluation is False
+        ack_mock.assert_not_awaited()
+
+
+class TestAcknowledgeLoopActiveEvents:
+    """按回路批量确认 ACTIVE 预警 helper 的行为测试。"""
+
+    @pytest.mark.asyncio
+    async def test_acknowledges_only_active_events(self) -> None:
+        from app.services.alert_rule_engine.service import acknowledge_loop_active_events
+
+        active1, active2, resolved = MagicMock(), MagicMock(), MagicMock()
+        active1.status = "ACTIVE"
+        active2.status = "ACTIVE"
+        resolved.status = "RESOLVED"
+        # 查询只返回 ACTIVE（helper 的 where 条件负责），mock 直接给命中集
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([active1, active2]))
+
+        count = await acknowledge_loop_active_events(
+            db, ["loop-1"], operator="system:loop-disabled", note="回路停用自动关闭"
+        )
+        assert count == 2
+        for ev in (active1, active2):
+            assert ev.status == "ACKNOWLEDGED"
+            assert ev.acknowledged_by == "system:loop-disabled"
+            assert ev.resolution_note == "回路停用自动关闭"
+        db.flush.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_ids_and_no_hits_return_zero(self) -> None:
+        from app.services.alert_rule_engine.service import acknowledge_loop_active_events
+
+        db = AsyncMock()
+        assert await acknowledge_loop_active_events(db, [], operator="x") == 0
+        db.execute = AsyncMock(return_value=_make_scalars_mock([]))
+        assert await acknowledge_loop_active_events(db, ["loop-1"], operator="x") == 0
+        db.flush.assert_not_awaited()
 
 
 class TestLoopSchemaExtraForbid:

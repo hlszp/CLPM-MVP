@@ -121,6 +121,7 @@ async def batch_update_loops(
         return 0
 
     # 逐回路应用更新并写审计（target_id 为 UUID 单列，每回路一条）
+    disabled_loop_ids: list[str] = []
     for loop in loops:
         before = {
             "loopId": str(loop.id),
@@ -129,6 +130,7 @@ async def batch_update_loops(
             "importance_level": loop.importance_level,
             "include_in_evaluation": loop.include_in_evaluation,
         }
+        was_active = loop.is_active
 
         if "is_monitored" in updates and updates["is_monitored"] is not None:
             # is_monitored=True 表示启用监控（is_active=True）
@@ -141,6 +143,13 @@ async def batch_update_loops(
             loop.importance_level = updates["importance_level"]
         if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
             loop.include_in_evaluation = bool(updates["include_in_evaluation"])
+        # 停用联动（2026-10-10 裁决，与 update_loop 同口径）：真实发生
+        # True→False 跳变的回路，联动置「不参评」（在显式 include_in_evaluation
+        # 之后应用，避免被覆盖），并收集待关预警清单。
+        if was_active and not loop.is_active:
+            if loop.include_in_evaluation:
+                loop.include_in_evaluation = False
+            disabled_loop_ids.append(str(loop.id))
         # 整改 0928：is_active 变化后必须重算派生状态（READY/PARTIAL/INACTIVE），
         # 否则监控状态列/筛选与 is_active 脱节（生产实锤：数百行
         # (true, INACTIVE)/(false, READY) 不一致组合，排名/筛选全乱）。
@@ -167,6 +176,20 @@ async def batch_update_loops(
             before_value=json.dumps(before, ensure_ascii=False, default=str),
             after_value=json.dumps(after, ensure_ascii=False, default=str),
         )
+
+    # 停用联动：批量关闭本次停用回路的全部 ACTIVE 预警（同事务，随 commit 生效）
+    if disabled_loop_ids:
+        from app.services.alert_rule_engine.service import acknowledge_loop_active_events
+
+        closed = await acknowledge_loop_active_events(
+            db, disabled_loop_ids, operator="system:loop-disabled", note="回路停用自动关闭"
+        )
+        if closed:
+            logger.info(
+                "[批量更新] 停用联动关闭 ACTIVE 预警: loops=%d count=%d",
+                len(disabled_loop_ids),
+                closed,
+            )
     await db.commit()
 
     logger.info(

@@ -128,6 +128,108 @@ class TestBatchUpdateLoopsMonitored:
 
 
 # ===========================================================================
+# TEST-01b: 批量停用联动（2026-10-10 裁决）
+# ===========================================================================
+
+
+class TestBatchDisableLinkage:
+    """批量停用 → 联动置不参评 + 仅对 True→False 跳变回路关 ACTIVE 预警。"""
+
+    @pytest.mark.asyncio
+    async def test_batch_disable_sets_not_evaluated_and_collects_alert_close(self) -> None:
+        """is_monitored=False：跳变回路置不参评并进入关预警清单；已停用回路不动。"""
+        loop1 = _make_loop("loop-001", is_active=True, include_in_evaluation=True)
+        loop2 = _make_loop("loop-002", is_active=False, include_in_evaluation=True)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1, loop2]))
+        db.commit = AsyncMock()
+
+        ack_mock = AsyncMock(return_value=3)
+        with (
+            patch("app.services.loop.derive_loop_status", new=AsyncMock(return_value="INACTIVE")),
+            patch(
+                "app.services.alert_rule_engine.service.acknowledge_loop_active_events",
+                new=ack_mock,
+            ),
+        ):
+            result = await batch_update_loops(
+                db=db,
+                loop_ids=["loop-001", "loop-002"],
+                updates={"is_monitored": False},
+                operator="admin",
+            )
+
+        assert result == 2
+        # 跳变回路：停用 + 联动不参评
+        assert loop1.is_active is False
+        assert loop1.include_in_evaluation is False
+        # 已停用回路（False→False）：不改参评、不进关预警清单
+        assert loop2.include_in_evaluation is True
+        ack_mock.assert_awaited_once()
+        args, kwargs = ack_mock.call_args
+        assert args[1] == ["loop-001"]
+        assert kwargs.get("operator") == "system:loop-disabled"
+        db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_enable_keeps_not_evaluated(self) -> None:
+        """is_monitored=True 重新启用：参评保持不参评（单向联动），不触发关预警。"""
+        loop1 = _make_loop("loop-001", is_active=False, include_in_evaluation=False)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1]))
+        db.commit = AsyncMock()
+
+        ack_mock = AsyncMock(return_value=0)
+        with (
+            patch("app.services.loop.derive_loop_status", new=AsyncMock(return_value="READY")),
+            patch(
+                "app.services.alert_rule_engine.service.acknowledge_loop_active_events",
+                new=ack_mock,
+            ),
+        ):
+            await batch_update_loops(
+                db=db,
+                loop_ids=["loop-001"],
+                updates={"is_monitored": True},
+                operator="admin",
+            )
+
+        assert loop1.is_active is True
+        assert loop1.include_in_evaluation is False
+        ack_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_explicit_include_in_evaluation_not_overwritten_by_disable(self) -> None:
+        """同一请求显式 include_in_evaluation 时停用联动仍生效（裁决：停用优先）。"""
+        loop1 = _make_loop("loop-001", is_active=True, include_in_evaluation=True)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalars_mock([loop1]))
+        db.commit = AsyncMock()
+
+        ack_mock = AsyncMock(return_value=0)
+        with (
+            patch("app.services.loop.derive_loop_status", new=AsyncMock(return_value="INACTIVE")),
+            patch(
+                "app.services.alert_rule_engine.service.acknowledge_loop_active_events",
+                new=ack_mock,
+            ),
+        ):
+            await batch_update_loops(
+                db=db,
+                loop_ids=["loop-001"],
+                updates={"is_monitored": False, "include_in_evaluation": True},
+                operator="admin",
+            )
+
+        assert loop1.is_active is False
+        # 联动在显式赋值之后应用：停用优先于同请求的参评=true
+        assert loop1.include_in_evaluation is False
+
+
+# ===========================================================================
 # TEST-02: 批量更新级别
 # ===========================================================================
 

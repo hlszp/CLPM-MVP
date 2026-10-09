@@ -623,9 +623,15 @@ export namespace LoopApi {
 
   /** 批量配置更新字段（至少一个非空） */
   export interface LoopBatchUpdates {
-    /** 是否监控（is_active=True 表示启用监控） */
+    /** 是否监控（is_active=True 表示启用监控；停用会联动不参评+关闭未确认预警） */
     isMonitored?: boolean;
-    /** 是否纳入统计 */
+    /**
+     * 是否纳入统计（已废弃 2026-10-10）：后端无独立字段，与 isMonitored 写同一
+     * is_active 列且互相覆盖——UI 已删除该项，语义并入「是否监控」。仅为兼容
+     * 保留类型定义，请勿在新代码中使用。
+     *
+     * @deprecated 使用 isMonitored 代替
+     */
     isStatEnabled?: boolean;
     /** 回路级别 1/2/3 */
     importanceLevel?: 1 | 2 | 3;

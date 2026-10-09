@@ -787,6 +787,36 @@ async def batch_acknowledge_events(
     }
 
 
+async def acknowledge_loop_active_events(
+    db: AsyncSession, loop_ids: list[str], operator: str, note: str | None = None
+) -> int:
+    """按回路批量确认全部 ACTIVE 事件（回路停用联动，2026-10-10 裁决）。
+
+    幂等：仅处理 ACTIVE 状态；空列表/无命中返回 0。
+    只 flush 不 commit，事务由调用方（update_loop / loop_batch）管理，
+    与停用主操作同生共死。
+    """
+    if not loop_ids:
+        return 0
+    result = await db.execute(
+        select(AlertEvent).where(
+            AlertEvent.loop_id.in_(loop_ids), AlertEvent.status == "ACTIVE"
+        )
+    )
+    events = result.scalars().all()
+    if not events:
+        return 0
+    now = _now_naive()
+    for event in events:
+        event.status = "ACKNOWLEDGED"
+        event.acknowledged_by = operator
+        event.acknowledged_at = now
+        if note:
+            event.resolution_note = note
+    await db.flush()
+    return len(events)
+
+
 async def resolve_event(
     db: AsyncSession, event_id: str, operator: str, resolution_note: str
 ) -> dict[str, Any]:
