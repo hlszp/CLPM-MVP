@@ -1374,7 +1374,10 @@ async def _query_diagnosis_tags(
     if ts_end:
         conditions.append(DiagnosisTag.triggered_at <= _parse_iso_dt(ts_end))
 
-    base_stmt = select(DiagnosisTag)
+    # 停用回路过滤（2026-10-10 裁决）：标签列表不含停用回路
+    base_stmt = select(DiagnosisTag).where(
+        DiagnosisTag.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+    )
     if plant_node_id:
         base_stmt = base_stmt.join(LoopLedger, DiagnosisTag.loop_id == LoopLedger.id).where(
             LoopLedger.unit_id == plant_node_id

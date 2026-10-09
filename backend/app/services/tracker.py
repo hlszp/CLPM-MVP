@@ -1140,12 +1140,18 @@ async def get_tracker_effectiveness(
     if plant_node_id:
         plant_filter = LoopLedger.unit_id == plant_node_id
 
+    # 停用回路过滤（2026-10-10 裁决）：整改跟踪统计不含停用回路
+    active_loop_cond = ActionTracker.loop_id.in_(
+        select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+    )
+
     # 1. 时间窗口内已实施数（IMPLEMENTED/VERIFYING/CLOSED 状态均表示已完成实施）
     # P1a 兼容：VERIFYING=实施后等待验证，CLOSED=验证通过闭环，IMPLEMENTED=历史兼容
     impl_statuses = ("IMPLEMENTED", "VERIFYING", "CLOSED")
     impl_stmt = select(func.count(ActionTracker.id)).where(
         ActionTracker.action_status.in_(impl_statuses),
         ActionTracker.updated_at >= window_start,
+        active_loop_cond,
     )
     if plant_filter is not None:
         impl_stmt = impl_stmt.join(LoopLedger, ActionTracker.loop_id == LoopLedger.id).where(
@@ -1157,6 +1163,7 @@ async def get_tracker_effectiveness(
     verified_base = select(ActionTracker).where(
         ActionTracker.effect_verified.is_not(None),
         ActionTracker.effect_verified_at >= window_start,
+        active_loop_cond,
     )
     if plant_filter is not None:
         verified_base = verified_base.join(
@@ -1181,6 +1188,7 @@ async def get_tracker_effectiveness(
     pending_stmt = select(func.count(ActionTracker.id)).where(
         ActionTracker.action_status.in_(("VERIFYING", "IMPLEMENTED")),
         ActionTracker.effect_verified.is_(None),
+        active_loop_cond,
     )
     if plant_filter is not None:
         pending_stmt = pending_stmt.join(LoopLedger, ActionTracker.loop_id == LoopLedger.id).where(
@@ -1201,6 +1209,7 @@ async def get_tracker_effectiveness(
         .where(
             ActionTracker.effect_verified.is_not(None),
             ActionTracker.effect_verified_at >= window_start,
+            active_loop_cond,
         )
         .group_by("day")
         .order_by("day")

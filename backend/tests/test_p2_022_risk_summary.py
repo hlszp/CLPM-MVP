@@ -66,15 +66,18 @@ class _AsyncSessionStub:
         has_group_by = "GROUP BY" in stmt_str.upper()
         has_risk_json = "risk_assessment" in stmt_str.lower()
         has_avg = "avg(" in stmt_str.lower()
+        # 2026-10-10 停用回路过滤：聚合查询带 loop_ledger IN 子查询但无 join，
+        # recent 查询以 LEFT OUTER JOIN loop_ledger 为特征区分
+        has_outer_join = "outer join" in stmt_str.lower()
         has_count_select = (
             col_count <= 1
             and has_group_by is False
             and "tuning_record" in stmt_str.lower()
-            and "loop_ledger" not in stmt_str.lower()
+            and not has_outer_join
             and not has_avg
         )
 
-        if "loop_ledger" in stmt_str.lower():  # recent tasks join
+        if has_outer_join:  # recent tasks join
             return _AsyncRowMock(self._recent)
         if has_avg:
             return _AsyncRowMock([(self._avg,)])

@@ -42,7 +42,9 @@ def _build_filters(
     alias: str = "ae",
 ) -> tuple[str, dict[str, Any]]:
     """窗口 + 装置 + severity/status 过滤 WHERE 片段（触发时间归窗）。"""
+    # 2026-10-10 停用裁决：停用回路不进预警统计——全部调用方均 JOIN loop_ledger ll
     conds = [f"{alias}.triggered_at >= :start", f"{alias}.triggered_at < :end"]
+    conds.append("ll.is_active = TRUE")
     if unit_ids is not None:
         conds.append("ll.unit_id = ANY(:unit_ids)")
     if severity:

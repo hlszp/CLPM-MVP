@@ -443,6 +443,7 @@ async def _query_pending_records(
             JOIN loop_ledger l ON l.id = tr.loop_id
             LEFT JOIN plant_node pu ON pu.id = l.unit_id
             WHERE tr.status IN ('DRAFT', 'PENDING')
+              AND l.is_active = TRUE
               {unit_filter}
             ORDER BY tr.created_at DESC
             LIMIT :limit
@@ -575,6 +576,7 @@ async def _query_scatter_orders(
               AND o.kpi_before ->> 'score' IS NOT NULL
               AND o.kpi_after ->> 'score' IS NOT NULL
               AND COALESCE(o.verified_at, o.updated_at) >= :since
+              AND l.is_active = TRUE
               {unit_filter}
             ORDER BY COALESCE(o.verified_at, o.updated_at) DESC
             LIMIT :limit

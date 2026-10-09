@@ -225,33 +225,44 @@ async def _query_window_weighted_avg(
     return {"score": _avg(row[0], row[1]), "auto_rate": _avg(row[2], row[3])}
 
 
+def _active_loop_ids():
+    """活跃回路 id 子查询（2026-10-10 停用裁决：停用回路不进驾驶舱统计）。"""
+    return select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+
+
 async def _query_todo_counts(db: AsyncSession) -> dict[str, int]:
     """处置待办：未闭合活动态计数 + sla_stage='BREACH' 且未闭合超期计数。"""
+    active_loops = _active_loop_ids()
     pending = await db.execute(
         select(func.count())
         .select_from(HandlingOrder)
         .where(HandlingOrder.status.in_(TODO_ACTIVE_STATUSES))
+        .where(HandlingOrder.loop_id.in_(active_loops))
     )
     overdue = await db.execute(
         select(func.count())
         .select_from(HandlingOrder)
         .where(HandlingOrder.sla_stage == "BREACH")
         .where(HandlingOrder.status.notin_(ORDER_TERMINAL_STATUSES))
+        .where(HandlingOrder.loop_id.in_(active_loops))
     )
     return {"pending": int(pending.scalar() or 0), "overdue": int(overdue.scalar() or 0)}
 
 
 async def _query_alert_counts(db: AsyncSession, since: datetime) -> dict[str, int]:
     """预警事件：时间窗内 ACTIVE 计数 + 时间窗内未确认（acknowledged_at IS NULL）计数。"""
+    active_loops = _active_loop_ids()
     active = await db.execute(
         select(func.count())
         .select_from(AlertEvent)
         .where(AlertEvent.status == "ACTIVE", AlertEvent.triggered_at >= since)
+        .where(AlertEvent.loop_id.in_(active_loops))
     )
     unconfirmed = await db.execute(
         select(func.count())
         .select_from(AlertEvent)
         .where(AlertEvent.acknowledged_at.is_(None), AlertEvent.triggered_at >= since)
+        .where(AlertEvent.loop_id.in_(active_loops))
     )
     return {"active": int(active.scalar() or 0), "unconfirmed": int(unconfirmed.scalar() or 0)}
 
@@ -268,12 +279,14 @@ async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime)
       （loop_action_item 无 CLOSED 态，处置闭环以工单 CLOSED 为准，
       与 governance-summary closedInWindow 同口径）
     """
+    active_loops = _active_loop_ids()
     discovered = await db.execute(
         select(func.count(func.distinct(DiagnosisRun.loop_id))).where(
             DiagnosisRun.status == "SUCCESS",
             DiagnosisRun.primary_category.is_not(None),
             DiagnosisRun.created_at >= start,
             DiagnosisRun.created_at <= end,
+            DiagnosisRun.loop_id.in_(active_loops),
         )
     )
     diagnosed = await db.execute(
@@ -282,6 +295,7 @@ async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime)
             DiagnosisRun.finished_at.isnot(None),
             DiagnosisRun.finished_at >= start,
             DiagnosisRun.finished_at <= end,
+            DiagnosisRun.loop_id.in_(active_loops),
         )
     )
     tuned = await db.execute(
@@ -291,6 +305,7 @@ async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime)
             TuningRecord.status.in_(TUNING_CONFIRMED_STATUSES),
             TuningRecord.created_at >= start,
             TuningRecord.created_at <= end,
+            TuningRecord.loop_id.in_(active_loops),
         )
     )
     closed = await db.execute(
@@ -301,6 +316,7 @@ async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime)
             HandlingOrder.verified_at.isnot(None),
             HandlingOrder.verified_at >= start,
             HandlingOrder.verified_at <= end,
+            HandlingOrder.loop_id.in_(active_loops),
         )
     )
     return {
@@ -316,6 +332,7 @@ async def _query_backlog(db: AsyncSession) -> dict[str, int]:
     result = await db.execute(
         select(HandlingOrder.status, func.count())
         .where(HandlingOrder.status.in_(TODO_ACTIVE_STATUSES))
+        .where(HandlingOrder.loop_id.in_(_active_loop_ids()))
         .group_by(HandlingOrder.status)
     )
     counts = {row[0]: int(row[1]) for row in result.all()}

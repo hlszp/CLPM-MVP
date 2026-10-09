@@ -327,8 +327,12 @@ def _report_run_conditions(
     category: str | None,
     severity: str | None,
 ) -> list:
-    """诊断明细（列表/导出共用）筛选条件组装（装置下钻条件异步追加）。"""
+    """诊断明细（列表/导出共用）筛选条件组装（装置下钻条件异步追加）。
+
+    含停用回路过滤（2026-10-10 裁决）：调用方查询均 outerjoin loop_ledger。
+    """
     conditions = [DiagnosisRun.status.in_(_REPORT_RUN_STATUSES)]
+    conditions.append(LoopLedger.is_active.is_(True))
     if category:
         conditions.append(DiagnosisRun.primary_category == category)
     if severity:

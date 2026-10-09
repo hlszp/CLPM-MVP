@@ -477,7 +477,8 @@ def _suggestion_list_row_to_dict(r: Any, unit_paths: dict[str, str]) -> dict[str
 
 def _build_suggestion_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
     """建议清单 WHERE 子句（仅追加出现的条件，参数走 named params）。"""
-    conds = ["1=1"]
+    # 2026-10-10 停用裁决：停用回路在处置建议列表不显示（count/rows 共用本 builder）
+    conds = ["1=1", "ll.is_active = TRUE"]
     if args.get("statuses"):
         conds.append("ai.status = ANY(CAST(:statuses AS text[]))")
         params["statuses"] = args["statuses"]
@@ -822,7 +823,8 @@ def _order_list_row_to_dict(r: Any, unit_paths: dict[str, str]) -> dict[str, Any
 
 def _build_order_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
     """工单清单 WHERE 子句（仅追加出现的条件，参数走 named params）。"""
-    conds = ["1=1"]
+    # 2026-10-10 停用裁决：停用回路在工单列表/CSV 导出不显示（count/rows/export 共用本 builder）
+    conds = ["1=1", "ll.is_active = TRUE"]
     if args.get("status"):
         conds.append("ho.status = :status")
         params["status"] = args["status"]
@@ -1507,8 +1509,10 @@ async def list_handling_loops(
         params["unit_ids"] = subtree_ids
 
     # plantNodeId/importanceLevel 过滤下推到内层聚合（loop_id IN 子查询），
-    # 避免建议/工单全表 GROUP BY 后再外层过滤；外层 where 保留同条件作冗余防护
-    loop_scope: list[str] = []
+    # 避免建议/工单全表 GROUP BY 后再外层过滤；外层 where 保留同条件作冗余防护。
+    # is_active = TRUE 常驻（2026-10-10 停用裁决）：停用回路的建议/工单不进
+    # 内层聚合 → 外层 totals=0 被 (suggestion_total+order_total)>0 自然剔除
+    loop_scope: list[str] = ["is_active = TRUE"]
     if importanceLevel:
         loop_scope.append("importance_level = :importance_level")
     if plantNodeId is not None:

@@ -1761,6 +1761,9 @@ async def list_tuning_tasks(
     query = select(TuningRecord, LoopLedger.tag_name).outerjoin(
         LoopLedger, TuningRecord.loop_id == LoopLedger.id
     )
+    # 2026-10-10 停用回路裁决：列表页不显示停用回路（outerjoin 上加过滤，
+    # 孤儿记录一并剔除）
+    query = query.where(LoopLedger.is_active.is_(True))
 
     if loop_id:
         query = query.where(TuningRecord.loop_id == loop_id)
@@ -1773,8 +1776,14 @@ async def list_tuning_tasks(
     if end_time:
         query = query.where(TuningRecord.created_at <= end_time)
 
-    # 总数
-    count_query = select(func.count()).select_from(TuningRecord)
+    # 总数（与列表同口径过滤停用回路：无 join，用活跃回路子查询）
+    count_query = (
+        select(func.count())
+        .select_from(TuningRecord)
+        .where(
+            TuningRecord.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+        )
+    )
     if loop_id:
         count_query = count_query.where(TuningRecord.loop_id == loop_id)
     if algorithm:
@@ -1827,25 +1836,37 @@ async def get_tuning_task_detail(db: AsyncSession, task_id: str) -> dict[str, An
 
 async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
     """整定历史统计。"""
+    # 2026-10-10 停用回路裁决：统计一律排除停用回路（无 join 查询统一用
+    # 活跃回路子查询过滤）
+    active_loops = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+
     # 总数
-    total_result = await db.execute(select(func.count()).select_from(TuningRecord))
+    total_result = await db.execute(
+        select(func.count()).select_from(TuningRecord).where(TuningRecord.loop_id.in_(active_loops))
+    )
     total = total_result.scalar() or 0
 
     # 按算法分组
     algo_result = await db.execute(
-        select(TuningRecord.algorithm, func.count()).group_by(TuningRecord.algorithm)
+        select(TuningRecord.algorithm, func.count())
+        .where(TuningRecord.loop_id.in_(active_loops))
+        .group_by(TuningRecord.algorithm)
     )
     by_algorithm = {row[0]: row[1] for row in algo_result.all()}
 
     # 按状态分组
     status_result = await db.execute(
-        select(TuningRecord.status, func.count()).group_by(TuningRecord.status)
+        select(TuningRecord.status, func.count())
+        .where(TuningRecord.loop_id.in_(active_loops))
+        .group_by(TuningRecord.status)
     )
     by_status = {row[0]: row[1] for row in status_result.all()}
 
     # 平均拟合度
     avg_result = await db.execute(
-        select(func.avg(TuningRecord.fitting_score)).where(TuningRecord.fitting_score.isnot(None))
+        select(func.avg(TuningRecord.fitting_score))
+        .where(TuningRecord.fitting_score.isnot(None))
+        .where(TuningRecord.loop_id.in_(active_loops))
     )
     avg_fitting = avg_result.scalar()
     avg_fitting_score = round(float(avg_fitting), 2) if avg_fitting else None
@@ -1857,6 +1878,7 @@ async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
         select(risk_level_col, func.count())
         .select_from(TuningRecord)
         .where(TuningRecord.risk_assessment.isnot(None))
+        .where(TuningRecord.loop_id.in_(active_loops))
         .group_by(risk_level_col)
     )
     by_risk_raw: dict[str, int] = {
@@ -1882,10 +1904,11 @@ async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
         + by_status.get("IDENTIFIED", 0)
     )
 
-    # 最近 10 条任务
+    # 最近 10 条任务（同口径过滤停用回路）
     recent_result = await db.execute(
         select(TuningRecord, LoopLedger.tag_name)
         .outerjoin(LoopLedger, TuningRecord.loop_id == LoopLedger.id)
+        .where(LoopLedger.is_active.is_(True))
         .order_by(TuningRecord.created_at.desc())
         .limit(10)
     )
@@ -1913,7 +1936,11 @@ def get_tuning_methods() -> list[dict[str, Any]]:
 
 
 async def _get_loop(db: AsyncSession, loop_id: str) -> LoopLedger:
-    """获取回路，不存在则抛错。"""
+    """获取回路，不存在则抛错。
+
+    2026-10-10 停用裁决：停用回路拒绝发起整定（本函数的 4 个调用方
+    identify/preview/create_tuning_task 均为计算触发口，无读路径）。
+    """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
     if loop is None:
@@ -1921,6 +1948,12 @@ async def _get_loop(db: AsyncSession, loop_id: str) -> LoopLedger:
             code="ERR_LOOP_NOT_FOUND",
             message="回路不存在",
             status_code=404,
+        )
+    if loop.is_active is False:
+        raise BizError(
+            code="ERR_LOOP_INACTIVE",
+            message=f"回路已停用，不可发起整定: {loop.tag_name}",
+            status_code=400,
         )
     return loop
 

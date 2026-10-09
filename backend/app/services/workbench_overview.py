@@ -495,6 +495,7 @@ async def _query_alarm_per_unit(db: AsyncSession) -> dict[str, int]:
             WHERE r.status = 'SUCCESS'
               AND r.primary_category IS NOT NULL
               AND r.created_at >= :since
+              AND l.is_active = TRUE
             GROUP BY l.unit_id
             """
         ),
@@ -512,6 +513,7 @@ async def _query_overdue_per_unit(db: AsyncSession) -> dict[str, int]:
         .join(HandlingOrder, HandlingOrder.loop_id == LoopLedger.id)
         .where(HandlingOrder.sla_stage == "BREACH")
         .where(HandlingOrder.status.notin_(["CLOSED", "CANCELLED"]))
+        .where(LoopLedger.is_active.is_(True))
         .group_by(LoopLedger.unit_id)
     )
     return {row[0]: int(row[1]) for row in result.all() if row[0]}

@@ -212,6 +212,7 @@ async def build_handling_statistics(
         unit_ids = await _load_subtree_unit_ids(db, plant_node_id)
 
     # 工单/建议聚合的公共过滤片段（summary/byType/byUnit/topLoops/驳回率共用）
+    # 2026-10-10 停用裁决：停用回路不进处置统计——ll JOIN 常态化 + is_active 常驻
     params: dict[str, Any] = {}
     ho_where = ["1=1"]
     if start is not None:
@@ -223,17 +224,18 @@ async def build_handling_statistics(
     if unit_ids is not None:
         ho_where.append("ll.unit_id = ANY(:unit_ids)")
         params["unit_ids"] = unit_ids
-    ho_join = "JOIN loop_ledger ll ON ll.id = ho.loop_id" if unit_ids is not None else ""
+    ho_where.append("ll.is_active = TRUE")
+    ho_join = "JOIN loop_ledger ll ON ll.id = ho.loop_id"
 
     su_where = ["1=1"]
-    su_join = ""
     if start is not None:
         su_where.append("su.suggested_at >= :win_start")
     if end is not None:
         su_where.append("su.suggested_at < :win_end")
     if unit_ids is not None:
         su_where.append("ll.unit_id = ANY(:unit_ids)")
-        su_join = "JOIN loop_ledger ll ON ll.id = su.loop_id"
+    su_where.append("ll.is_active = TRUE")
+    su_join = "JOIN loop_ledger ll ON ll.id = su.loop_id"
     su_where_sql = " AND ".join(su_where)
 
     # --- summary（工单聚合；闭环数按 verified_at 归期） ---
@@ -319,9 +321,8 @@ async def build_handling_statistics(
     if unit_ids is not None:
         monthly_where.append("ll.unit_id = ANY(:unit_ids)")
         monthly_params["unit_ids"] = unit_ids
-        monthly_join = "JOIN loop_ledger ll ON ll.id = ho.loop_id"
-    else:
-        monthly_join = ""
+    monthly_where.append("ll.is_active = TRUE")
+    monthly_join = "JOIN loop_ledger ll ON ll.id = ho.loop_id"
 
     if start is not None:
         # 传入时间窗：窗口逐月展开（上限 24 桶）
@@ -417,9 +418,15 @@ async def build_handling_statistics(
     by_unit = [{"unit": r.unit, "closed": int(r.closed)} for r in by_unit_rows]
 
     # --- topLoops（重开 Top 10；有筛选时注入内层聚合，避免全表 GROUP BY 后过滤） ---
+    # 2026-10-10 停用裁决：外层 WHERE ll.is_active = TRUE 常驻（无筛选分支也剔除
+    # 停用回路）；有筛选分支经 ho.→t. / ll.→t_ll. 别名映射把 is_active 随条件下推
     has_filters = start is not None or end is not None or unit_ids is not None
     if has_filters:
-        top_filter = " AND ".join(f for f in ho_where if f != "1=1").replace("ho.", "t.")
+        top_filter = (
+            " AND ".join(f for f in ho_where if f != "1=1")
+            .replace("ho.", "t.")
+            .replace("ll.", "t_ll.")
+        )
         inner_ho = _HO_AGG_SQL.format(
             lf=f" JOIN loop_ledger t_ll ON t_ll.id = t.loop_id WHERE {top_filter}"
         )
@@ -445,7 +452,8 @@ async def build_handling_statistics(
                                ho.last_closed_kpi_delta
                         FROM loop_ledger ll
                         LEFT JOIN ({inner_ho}) ho ON ho.loop_id = ll.id
-                        {"" if unit_ids is None else "WHERE ll.unit_id = ANY(:unit_ids)"}
+                        WHERE ll.is_active = TRUE
+                        {"" if unit_ids is None else "AND ll.unit_id = ANY(:unit_ids)"}
                     ) agg
                     WHERE agg.order_total > 0
                     ORDER BY agg.ho_reopened DESC, agg.ho_ineffective DESC,

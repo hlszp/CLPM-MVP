@@ -398,7 +398,8 @@ async def list_diagnosis(
     """
     # 构建基础查询：diagnosis_result JOIN loop_ledger LEFT JOIN action_tracker
     # 取每个 loop_id 最新的一条诊断结果
-    conditions: list[Any] = []
+    # 停用回路过滤（2026-10-10 裁决）：列表与聚合均不含停用回路
+    conditions: list[Any] = [LoopLedger.is_active.is_(True)]
     if plant_node_id:
         conditions.append(LoopLedger.unit_id == plant_node_id)
     if diagnosis_label:
@@ -858,6 +859,8 @@ async def get_diagnosis_analytics(
         )
         .where(DiagnosisResult.diagnosed_at >= start_dt)
         .where(DiagnosisResult.diagnosed_at <= end_dt)
+        # 停用回路过滤（2026-10-10 裁决）：统计报表不含停用回路
+        .where(LoopLedger.is_active.is_(True))
     )
     if plant_node_id:
         diag_stmt = diag_stmt.where(LoopLedger.unit_id == plant_node_id)
@@ -1180,6 +1183,14 @@ async def trigger_diagnosis(
 ACTIVE_STATUSES = {"PENDING", "RUNNING"}
 
 
+def _active_loop_ids_subq():
+    """活跃回路 ID 子查询（停用回路过滤，2026-10-10 裁决）。
+
+    用于未 join loop_ledger 的任务/标签查询：loop_id IN (活跃回路 id 集合)。
+    """
+    return select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+
+
 async def get_diagnosis_task_stats(
     db: AsyncSession,
     *,
@@ -1192,7 +1203,8 @@ async def get_diagnosis_task_stats(
     - completed：未归档且状态为终态（SUCCESS/FAILED/CANCELLED）
     - archived：已归档
     """
-    base_stmt = select(DiagnosisTask)
+    # 停用回路过滤（2026-10-10 裁决）：Tab 计数不含停用回路的任务
+    base_stmt = select(DiagnosisTask).where(DiagnosisTask.loop_id.in_(_active_loop_ids_subq()))
     if plant_node_id:
         base_stmt = base_stmt.join(LoopLedger, DiagnosisTask.loop_id == LoopLedger.id).where(
             LoopLedger.unit_id == plant_node_id
@@ -1261,6 +1273,9 @@ async def list_diagnosis_tasks(
         conditions.append(DiagnosisTask.trigger_type == trigger_type)
     if loop_id:
         conditions.append(DiagnosisTask.loop_id == loop_id)
+
+    # 停用回路过滤（2026-10-10 裁决）：任务列表不含停用回路的任务
+    conditions.append(DiagnosisTask.loop_id.in_(_active_loop_ids_subq()))
 
     base_stmt = select(DiagnosisTask)
     if plant_node_id:
@@ -1691,7 +1706,11 @@ async def list_diagnosis_records(
     Returns:
         {items, total, page, pageSize}
     """
-    conditions: list[Any] = [DiagnosisTask.is_archived.is_(True)]
+    # 停用回路过滤（2026-10-10 裁决）：记录列表/状态聚合/标签计数均不含停用回路
+    conditions: list[Any] = [
+        DiagnosisTask.is_archived.is_(True),
+        DiagnosisTask.loop_id.in_(_active_loop_ids_subq()),
+    ]
     if status:
         conditions.append(DiagnosisTask.status == status)
     if trigger_type:

@@ -387,6 +387,7 @@ async def export_diagnosis_statistics(
     end_dt = _parse_iso_datetime(end_date)
 
     # 查询时间窗内的诊断结果
+    # 停用回路过滤（2026-10-10 裁决）：报表不含停用回路的诊断结果
     stmt = (
         select(
             DiagnosisResult.diag_label,
@@ -395,6 +396,9 @@ async def export_diagnosis_statistics(
         .where(DiagnosisResult.diagnosed_at >= start_dt)
         .where(DiagnosisResult.diagnosed_at <= end_dt)
         .where(DiagnosisResult.diag_label.is_not(None))
+        .where(
+            DiagnosisResult.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+        )
         .group_by(DiagnosisResult.diag_label)
         .order_by(func.count(DiagnosisResult.id).desc())
     )
@@ -415,7 +419,7 @@ async def export_diagnosis_statistics(
         if node:
             plant_name = node.name
 
-    # 按天聚合趋势
+    # 按天聚合趋势（停用回路过滤同上）
     trend_stmt = (
         select(
             func.date_trunc("day", DiagnosisResult.diagnosed_at).label("day"),
@@ -425,6 +429,9 @@ async def export_diagnosis_statistics(
         .where(DiagnosisResult.diagnosed_at >= start_dt)
         .where(DiagnosisResult.diagnosed_at <= end_dt)
         .where(DiagnosisResult.diag_label.is_not(None))
+        .where(
+            DiagnosisResult.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+        )
         .group_by("day", DiagnosisResult.diag_label)
         .order_by("day", DiagnosisResult.diag_label)
     )

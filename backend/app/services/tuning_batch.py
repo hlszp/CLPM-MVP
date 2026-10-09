@@ -160,12 +160,15 @@ async def get_tuning_batch_detail(db: AsyncSession, batch_id: int) -> dict[str, 
             status_code=404,
         )
 
-    # 关联整定记录（tuning_batch_records N:M，按 sort_order 排序，附回路位号）
+    # 关联整定记录（tuning_batch_records N:M，按 sort_order 排序，附回路位号）；
+    # 2026-10-10 停用回路裁决：记录列表不显示停用回路（outerjoin 上加过滤，
+    # 孤儿记录一并剔除）
     records_result = await db.execute(
         select(TuningRecord, TuningBatchRecords.sort_order, LoopLedger.tag_name)
         .join(TuningBatchRecords, TuningBatchRecords.tuning_record_id == TuningRecord.id)
         .outerjoin(LoopLedger, TuningRecord.loop_id == LoopLedger.id)
         .where(TuningBatchRecords.batch_id == batch_id)
+        .where(LoopLedger.is_active.is_(True))
         .order_by(TuningBatchRecords.sort_order)
     )
     records: list[dict[str, Any]] = []

@@ -507,6 +507,7 @@ async def _query_open_tag_rows(
                 WHERE r.status = 'SUCCESS'
                   AND r.primary_category IS NOT NULL
                   AND r.created_at >= :since
+                  AND l.is_active = TRUE
                   {unit_filter}
                 ORDER BY r.loop_id, r.created_at DESC
             ) t
@@ -557,6 +558,7 @@ async def _query_concl_rows(
             {_ACTION_LATERAL}
             WHERE r.status = 'SUCCESS'
               AND r.created_at >= :since
+              AND l.is_active = TRUE
               {unit_filter}
             ORDER BY r.created_at DESC
             LIMIT :limit
@@ -619,6 +621,7 @@ async def _query_rule_stat_rows(db: AsyncSession, since: datetime) -> list[dict[
             WHERE r.status = 'SUCCESS'
               AND r.created_at >= :since
               AND kv.value->>'detected' = 'true'
+              AND r.loop_id IN (SELECT id FROM loop_ledger WHERE is_active = TRUE)
             GROUP BY kv.key
             ORDER BY hits DESC
             """
@@ -654,6 +657,7 @@ async def _query_pareto_rows(
             WHERE r.status = 'SUCCESS'
               AND r.primary_category IS NOT NULL
               AND r.created_at >= :since
+              AND l.is_active = TRUE
               {unit_filter}
             GROUP BY r.primary_category
             ORDER BY tag_count DESC
@@ -689,6 +693,7 @@ async def _query_rootcause_rows(
             WHERE r.status = 'SUCCESS'
               AND r.created_at >= :since
               AND kv.value->>'detected' = 'true'
+              AND r.loop_id IN (SELECT id FROM loop_ledger WHERE is_active = TRUE)
             GROUP BY kv.key
             ORDER BY count DESC
             LIMIT :top_n
