@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.agg_cache import invalidate_agg
 from app.services.workbench_overview import (
     DEFAULT_LOSE_FACTOR_THRESHOLD,
     KPI_METRICS,
@@ -27,11 +26,8 @@ from app.services.workbench_overview import (
     shape_windows,
 )
 
-
-@pytest.fixture(autouse=True)
-def _clear_agg_cache():
-    """60s TTL 聚合缓存会跨测试污染，每用例清空。"""
-    invalidate_agg()
+# agg_cache 隔离由 conftest 的同名 autouse fixture 统一承担（2026-10-09 起
+# 禁用 Redis 层防跨用例串扰）；此处不再定义文件级同名 fixture 以免遮蔽。
 
 
 # ---------------------------------------------------------------------------
@@ -503,3 +499,86 @@ class TestQueryRoots:
         assert (now_utc - params["since"]).total_seconds() / 3600 == pytest.approx(720, abs=1)
         assert params["since"].tzinfo is None
         assert params["top_n"] == 10
+
+
+# ===========================================================================
+# _query_alert_events 两段式（2026-10-09 提速：表达式排序 → 索引点查）
+# ===========================================================================
+
+
+class TestQueryAlertEventsTwoPhase:
+    """ACTIVE 优先 → ACKNOWLEDGED 次之 → 其余；段内时间倒序；limit 截断。"""
+
+    @pytest.mark.asyncio
+    async def test_status_priority_and_time_desc(self) -> None:
+        from datetime import datetime as _dt
+
+        from app.services.workbench_overview import _query_alert_events
+
+        def _row(eid: str, status: str, at: str):
+            r = MagicMock()
+            r.id = eid
+            r.rule_code = "R1"
+            r.loop_id = None
+            r.severity = "WARN"
+            r.status = status
+            r.triggered_value = None
+            r.triggered_at = _dt.fromisoformat(at)
+            return r
+
+        # 三段各自按时间倒序返回（DB 语义）；其余段（RESOLVED）时间最新
+        active = [
+            _row("a2", "ACTIVE", "2026-10-09T08:00"),
+            _row("a1", "ACTIVE", "2026-10-09T07:00"),
+        ]
+        ack = [_row("k1", "ACKNOWLEDGED", "2026-10-09T06:00")]
+        rest = [_row("r9", "RESOLVED", "2026-10-09T09:59")]
+
+        seq = [active, ack, rest]
+
+        def _result(rows):
+            m = MagicMock()
+            m.all.return_value = rows
+            return m
+
+        async def _exec(stmt, params=None):
+            sql = str(stmt)
+            assert "alert_event" in sql
+            return _result(seq.pop(0))
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_exec)
+
+        out = await _query_alert_events(db, limit=8)
+        assert [e["id"] for e in out] == ["a2", "a1", "k1", "r9"]
+
+    @pytest.mark.asyncio
+    async def test_limit_applies_after_merge(self) -> None:
+        from app.services.workbench_overview import _query_alert_events
+
+        def _row(eid: str, status: str):
+            r = MagicMock()
+            r.id = eid
+            r.rule_code = "R"
+            r.loop_id = None
+            r.severity = "WARN"
+            r.status = status
+            r.triggered_value = None
+            r.triggered_at = datetime(2026, 10, 9, 8, 0, 0)
+            return r
+
+        seq = [
+            [_row("a1", "ACTIVE")],
+            [],
+            [],
+        ]
+
+        def _result(rows):
+            m = MagicMock()
+            m.all.return_value = rows
+            return m
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=lambda s, p=None: _result(seq.pop(0)))
+        out = await _query_alert_events(db, limit=8)
+        assert [e["id"] for e in out] == ["a1"]

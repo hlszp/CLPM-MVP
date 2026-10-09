@@ -57,6 +57,9 @@ LOSE_FACTOR_CONFIG_KEY = "workbench.lose_factor_threshold"
 
 ROOTS_TOP_N = 10  # 根因 Top N（用户决策：10 条）
 
+# 预警卡排序兜底（triggered_at 理论非空；naive 最小值避免与 aware 比较）
+_NAIVE_MIN = datetime.min.replace(tzinfo=None)
+
 WINDOWS_ALL = ("24h", "7d", "30d")
 
 
@@ -564,10 +567,17 @@ async def _query_alert_events(db: AsyncSession, limit: int = 8) -> list[dict[str
     0930 新增：工作台总览"预警事件"卡片此前数据源是 diagnosis_run 检出标签
     （诊断链），与预警规则引擎（alert_event）是两条链——用户在有预警事件的
     前提下看到空白，属设计位错接。
+
+    2026-10-09 提速：原单条查询 ORDER BY (status='ACTIVE'), (status='ACKNOWLEDGED'),
+    triggered_at DESC 是表达式排序，索引不可用，24h 窗口数万行全取回排序（秒级）。
+    改两段式各走 (status, triggered_at DESC) 复合索引（每段索引点查 limit 条），
+    应用层按原语义合并：ACTIVE 在前 → ACKNOWLEDGED 次之 → 其余，段内时间倒序。
     """
     since = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
-    result = await db.execute(
-        select(
+    _order_rank = {"ACTIVE": 0, "ACKNOWLEDGED": 1}
+
+    async def _fetch(status_value: str | None) -> list[Any]:
+        stmt = select(
             AlertEvent.id,
             AlertEvent.rule_code,
             AlertEvent.loop_id,
@@ -575,16 +585,19 @@ async def _query_alert_events(db: AsyncSession, limit: int = 8) -> list[dict[str
             AlertEvent.status,
             AlertEvent.triggered_value,
             AlertEvent.triggered_at,
-        )
-        .where(AlertEvent.triggered_at >= since)
-        .order_by(
-            AlertEvent.status == "ACTIVE",
-            AlertEvent.status == "ACKNOWLEDGED",
-            AlertEvent.triggered_at.desc(),
-        )
-        .limit(limit)
-    )
-    rows = result.all()
+        ).where(AlertEvent.triggered_at >= since)
+        if status_value is None:
+            stmt = stmt.where(AlertEvent.status.notin_(["ACTIVE", "ACKNOWLEDGED"]))
+        else:
+            stmt = stmt.where(AlertEvent.status == status_value)
+        stmt = stmt.order_by(AlertEvent.triggered_at.desc()).limit(limit)
+        return (await db.execute(stmt)).all()
+
+    rows = [*await _fetch("ACTIVE"), *await _fetch("ACKNOWLEDGED"), *await _fetch(None)]
+    # 双趟稳定排序（时间倒序 → 状态优先级），避免 naive datetime 逐点 .timestamp()
+    rows.sort(key=lambda r: r.triggered_at or _NAIVE_MIN, reverse=True)
+    rows.sort(key=lambda r: _order_rank.get(r.status, 2))
+    rows = rows[:limit]
     return [
         {
             "id": str(r.id),
@@ -735,8 +748,17 @@ async def _build_overview_impl(
         logger.warning("总览 pareto 块构建失败", exc_info=True)
 
     # --- roots：根因 Top N（diagnosis_run symptom_tags 标签聚合，A3 迁 v2）---
+    # 2026-10-09 提速：30d JSONB 展开聚合是冷算大头（秒级）——独立 330s 缓存
+    # 长于总览 60s 缓存，且由 refresh-workbench-mv Beat（5min）预热写 Redis，
+    # API 路径常态命中、不再实时展开
     try:
-        root_rows = await _query_roots(db, ROOTS_TOP_N)
+        from app.services.agg_cache import cached_agg
+
+        root_rows = await cached_agg(
+            "workbench-roots:30d",
+            lambda: _query_roots(db, ROOTS_TOP_N),
+            ttl=330,
+        )
         overview["roots"] = shape_roots(root_rows, ROOTS_TOP_N)
     except Exception:  # noqa: BLE001
         logger.warning("总览 roots 块构建失败", exc_info=True)
