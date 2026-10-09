@@ -181,6 +181,11 @@ class AlertEvent(Base):
             name="ck_alert_event_confidence",
         ),
         Index("idx_alert_event_loop_time", "loop_id", text("triggered_at DESC")),
+        # 2026-10-09：预警列表默认查询（ORDER BY triggered_at DESC）此前无索引
+        # 可走（复合索引首列 loop_id/rule_id），生产 95.8 万行全表排序 15s
+        Index("idx_alert_event_triggered_at", text("triggered_at DESC")),
+        # 2026-10-09：实时 Tab（status 过滤+时间排序）与总览预警卡两段式查询
+        Index("idx_alert_event_status_time", "status", text("triggered_at DESC")),
         Index("idx_alert_event_severity_status", "severity", "status"),
         Index("idx_alert_event_rule", "rule_id", text("triggered_at DESC")),
         Index("idx_alert_event_status", "status"),

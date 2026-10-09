@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -30,6 +30,7 @@ _EXPECTED_BEATS: dict[str, str] = {
     "event-archive": "app.tasks.workbench.event_archive",
     "wb-cache-cleanup": "app.tasks.workbench.wb_cache_cleanup",
     "refresh-workbench-mv": "app.tasks.workbench.refresh_workbench_mv",
+    "alert-event-archive": "app.tasks.workbench.alert_event_archive",
 }
 
 
@@ -60,6 +61,94 @@ class TestBeatScheduleRegistered:
         crontab = celery_app.conf.beat_schedule["event-archive"]["schedule"]
         assert crontab.hour == {3}
         assert crontab.minute == {30}
+
+    def test_alert_event_archive_runs_daily_0430(self) -> None:
+        """alert_event 31 天滚动归档（2026-10-09 裁决）：daily 04:30，
+        避开诊断 00:30 / event-archive 03:30 / 处置提醒 08:30。"""
+        crontab = celery_app.conf.beat_schedule["alert-event-archive"]["schedule"]
+        assert crontab.hour == {4}
+        assert crontab.minute == {30}
+
+
+# ---------------------------------------------------------------------------
+# alert_event 31 天归档任务逻辑（mock session）
+# ---------------------------------------------------------------------------
+
+
+class TestAlertEventArchiveTask:
+    """分批迁移：SELECT id → INSERT...ON CONFLICT → DELETE，空批收尾。"""
+
+    @pytest.mark.asyncio
+    async def test_batches_until_empty_then_stops(self) -> None:
+        from app.tasks.workbench import _alert_event_archive_async
+
+        call_log: list[str] = []
+
+        def _result(rows):
+            m = MagicMock()
+            m.all.return_value = rows
+            return m
+
+        # 批1（2 行）→ 批2（0 行收尾）；每批 3 条 SQL（select/insert/delete）
+        seq = [
+            _result([("e1",), ("e2",)]),
+            MagicMock(),
+            MagicMock(),
+            _result([]),
+        ]
+
+        async def _exec(stmt, params=None):
+            call_log.append(str(stmt)[:28])
+            return seq.pop(0)
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_exec)
+
+        class _Ctx:
+            async def __aenter__(self):
+                return db
+
+            async def __aexit__(self, *a):
+                return False
+
+        with patch("app.core.db.AsyncSessionLocal", return_value=_Ctx()):
+            out = await _alert_event_archive_async()
+
+        assert out["moved"] == 2
+        assert db.commit.await_count == 1  # 空批不 commit
+        assert call_log[0].startswith("SELECT id FROM alert_event")
+
+    @pytest.mark.asyncio
+    async def test_batch_count_capped(self) -> None:
+        """单次任务最多 25 批（50 万行）防长事务。"""
+        from app.tasks.workbench import _ALERT_ARCHIVE_MAX_BATCHES, _alert_event_archive_async
+
+        def _result(rows):
+            m = MagicMock()
+            m.all.return_value = rows
+            return m
+
+        always_full = _result([("e1",)] * 20_000)
+
+        async def _exec(stmt, params=None):
+            if str(stmt).startswith("SELECT"):
+                return always_full
+            return MagicMock()
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=_exec)
+
+        class _Ctx:
+            async def __aenter__(self):
+                return db
+
+            async def __aexit__(self, *a):
+                return False
+
+        with patch("app.core.db.AsyncSessionLocal", return_value=_Ctx()):
+            out = await _alert_event_archive_async()
+
+        assert out["moved"] == _ALERT_ARCHIVE_MAX_BATCHES * 20_000
 
 
 # ---------------------------------------------------------------------------

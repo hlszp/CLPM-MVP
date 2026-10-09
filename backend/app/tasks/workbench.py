@@ -137,6 +137,16 @@ async def _refresh_workbench_mv_async() -> dict[str, Any]:
         for mv_name in _MATERIALIZED_VIEWS:
             await db.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {mv_name}"))  # noqa: S608
             refreshed.append(mv_name)
+        # 顺带预热总览 roots 聚合（2026-10-09 提速：30d JSONB 展开是冷算大头，
+        # API 侧常态命中缓存；Beat 强制重算写 Redis 跨 worker 共享）
+        try:
+            from app.services.agg_cache import prime_agg
+            from app.services.workbench_overview import ROOTS_TOP_N, _query_roots
+
+            rows = await _query_roots(db, ROOTS_TOP_N)
+            await prime_agg("workbench-roots:30d", rows, ttl=330)
+        except Exception:  # noqa: BLE001 —— 预热失败不阻断 MV 刷新
+            logger.warning("workbench roots 预热失败", exc_info=True)
         await db.commit()
     logger.info("refresh_workbench_mv: 已刷新 %s", ", ".join(refreshed))
     return {"status": "ok", "refreshed": refreshed}
@@ -154,6 +164,67 @@ async def _workbench_loop_latest_refresh() -> dict:
 def workbench_loop_latest_refresh() -> dict:
     """回路最新态快照全量重算（5min，驾驶舱 P1 预计算）。"""
     return asyncio.run(_workbench_loop_latest_refresh())
+
+
+# ---------------------------------------------------------------------------
+# Task 5: alert_event_archive — 预警事件 31 天滚动归档（daily 04:30）
+# ---------------------------------------------------------------------------
+# 2026-10-09 用户裁决：alert_event 超 31 天数据归档到 alert_event_archive
+# （结构同主表，含索引），主表保持 31 天滚动窗口。首批存量与每日增量由本
+# 任务分批迁移（每批 2 万行同事务 INSERT...ON CONFLICT DO NOTHING + DELETE，
+# 幂等可重跑）；单次任务上限 50 万行防长事务。
+_ALERT_EVENT_ARCHIVE_DAYS = 31
+_ALERT_ARCHIVE_BATCH = 20_000
+_ALERT_ARCHIVE_MAX_BATCHES = 25
+
+
+@celery_app.task(base=AsyncTask, bind=True, name="app.tasks.workbench.alert_event_archive")
+def alert_event_archive(self: AsyncTask, *args: object, **kwargs: object) -> dict[str, Any]:
+    """alert_event 超 31 天行迁移到 alert_event_archive（分批、幂等）。"""
+    return self.run_async(_alert_event_archive_async())
+
+
+async def _alert_event_archive_async() -> dict[str, Any]:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text
+
+    from app.core.db import AsyncSessionLocal
+
+    # triggered_at 为 naive UTC 列（列表查询同口径）
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=_ALERT_EVENT_ARCHIVE_DAYS)
+    moved = 0
+    batches = 0
+    async with AsyncSessionLocal() as db:
+        while batches < _ALERT_ARCHIVE_MAX_BATCHES:
+            id_rows = (
+                await db.execute(
+                    text(  # noqa: S608
+                        "SELECT id FROM alert_event WHERE triggered_at < :cutoff"
+                        " ORDER BY triggered_at LIMIT :batch"
+                    ),
+                    {"cutoff": cutoff, "batch": _ALERT_ARCHIVE_BATCH},
+                )
+            ).all()
+            if not id_rows:
+                break
+            ids = [str(r[0]) for r in id_rows]
+            await db.execute(
+                text(  # noqa: S608
+                    "INSERT INTO alert_event_archive SELECT * FROM alert_event"
+                    " WHERE id = ANY(:ids) ON CONFLICT DO NOTHING"
+                ),
+                {"ids": ids},
+            )
+            await db.execute(
+                text("DELETE FROM alert_event WHERE id = ANY(:ids)"),  # noqa: S608
+                {"ids": ids},
+            )
+            await db.commit()
+            moved += len(ids)
+            batches += 1
+    logger.info("alert_event_archive: 本轮迁移 %s 行（cutoff=%s）", moved, cutoff)
+    return {"status": "ok", "moved": moved, "cutoff": cutoff.isoformat()}
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +254,12 @@ _existing_beat.update(
         "workbench-loop-latest": {
             "task": "app.tasks.workbench.workbench_loop_latest_refresh",
             "schedule": crontab(minute="4,9,14,19,24,29,34,39,44,49,54,59"),
+        },
+        # 预警事件 31 天滚动归档（2026-10-09 用户裁决）：避开诊断 00:30 /
+        # event_archive 03:30 / 处置提醒 08:30
+        "alert-event-archive": {
+            "task": "app.tasks.workbench.alert_event_archive",
+            "schedule": crontab(hour=4, minute=30),
         },
     }
 )

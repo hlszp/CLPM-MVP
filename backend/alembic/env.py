@@ -105,12 +105,25 @@ def _process_revision_directives(context: Any, revision: Any, directives: list[A
             downgrade_ops.ops = _strip_comment_ops(downgrade_ops.ops)
 
 
+# 由迁移建表、Beat 任务（alert_event_archive，2026-10-09 31 天滚动归档）独占
+# 维护的表：模型层无对应 ORM 声明也无消费方，autogenerate/alembic check
+# 若参与 diff 会误报 remove_table 漂移——统一排除。
+_SCHEMA_DIFF_EXCLUDED_TABLES = {"alert_event_archive"}
+
+
+def _include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "table" and name in _SCHEMA_DIFF_EXCLUDED_TABLES:
+        return False
+    return True
+
+
 _COMMON_OPTIONS: dict[str, Any] = {
     "target_metadata": target_metadata,
     "compare_type": True,
     "compare_server_default": False,
     "render_item": _render_item,
     "process_revision_directives": _process_revision_directives,
+    "include_object": _include_object,
 }
 
 
