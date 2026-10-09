@@ -708,7 +708,12 @@ function bindInteractions() {
     'wheel',
     (e: WheelEvent) => {
       e.preventDefault();
-      const f = e.deltaY > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+      // 按住 Shift 时浏览器（Chrome/Edge/Safari）会把垂直滚轮转成水平滚动：
+      // 值转移到 deltaX、deltaY 归零——只读 deltaY 会退化成单向缩放。
+      // 取绝对值大的轴判方向（无 Shift 时 deltaY 正常携带值）。
+      const delta =
+        Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      const f = delta > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
       const rect = host.getBoundingClientRect();
       if (e.shiftKey) {
         const frac = 1 - (e.clientY - rect.top - 26) / (rect.height - 56);
