@@ -1119,3 +1119,50 @@ async def test_metric_series_sql_shape() -> None:
     assert "OSCILLATION_RATE IS NOT NULL" in sql
     assert "ORDER BY" in sql
     assert "TS_START ASC" in sql
+
+
+class TestSnapshotFiltersExcludeDisabled:
+    """2026-10-10 停用口径：快照查询收口构造器必须排除停用回路（is_active=False）。"""
+
+    def test_performance_apply_snapshot_filters_has_active_subquery(self) -> None:
+        from sqlalchemy import select
+
+        from app.models.loop import LoopLedger
+        from app.models.metric import KpiSnapshotHourly
+        from app.services.performance import _apply_snapshot_filters
+
+        stmt = _apply_snapshot_filters(select(KpiSnapshotHourly.id))
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": False})).upper()
+        assert "IS_ACTIVE" in sql
+        assert "LOOP_LEDGER" in sql
+
+    async def test_performance_build_snapshot_conditions_has_active(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from app.models.metric import KpiSnapshotHourly
+        from app.services.performance import _build_snapshot_conditions
+
+        db = AsyncMock()
+        conditions, _need_join = await _build_snapshot_conditions(db)
+        sql = " AND ".join(
+            str(c.compile(compile_kwargs={"literal_binds": False})) for c in conditions
+        ).upper()
+        assert "IS_ACTIVE" in sql
+        assert "LOOP_LEDGER" in sql
+
+    def test_dashboard_apply_snapshot_filters_has_active_subquery(self) -> None:
+        from sqlalchemy import select
+
+        from app.models.metric import KpiSnapshotHourly
+        from app.services.dashboard import _apply_snapshot_filters as _dash_filters
+
+        stmt = _dash_filters(select(KpiSnapshotHourly.id))
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": False})).upper()
+        assert "IS_ACTIVE" in sql
+        assert "LOOP_LEDGER" in sql
+
+    def test_loop_ledger_model_importable_for_filter(self) -> None:
+        """占位防回归：LoopLedger.is_active 列存在（过滤依赖）。"""
+        from app.models.loop import LoopLedger
+
+        assert "is_active" in {c.name for c in LoopLedger.__table__.columns}

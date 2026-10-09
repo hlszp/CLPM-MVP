@@ -1097,7 +1097,13 @@ def _apply_snapshot_filters(
 
     若提供 ``loop_ids``，直接按回路 ID 列表过滤（支持递归子节点）。
     否则若提供 ``plant_node_id``，通过 join loop_ledger 按 unit_id 过滤（仅直接子节点）。
+
+    2026-10-10 停用口径：无条件排除停用回路（is_active=False）的历史快照，
+    用 IN 子查询而非 join，避免与调用方自身的 join/DISTINCT ON 结构冲突。
     """
+    stmt = stmt.where(
+        KpiSnapshotHourly.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+    )
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
     if end is not None:
@@ -1731,6 +1737,8 @@ async def _build_snapshot_conditions(
     conditions: list = [
         KpiSnapshotHourly.ts_start >= start,
         KpiSnapshotHourly.ts_start <= end,
+        # 2026-10-10 停用口径：仅统计活跃回路（子查询 IN，不依赖 join）
+        KpiSnapshotHourly.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True))),
     ]
     if loop_ids:
         conditions.append(KpiSnapshotHourly.loop_id.in_(loop_ids))

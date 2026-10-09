@@ -116,21 +116,23 @@ async def determine_maturity_stage(
       }
     """
     unit_ids = await _resolve_subtree_unit_ids(db, plant_node_id)
-    unit_join = ""
+    # 2026-10-10 停用口径：闭环阶段探测仅统计活跃回路（is_active=TRUE）——
+    # 始终 join loop_ledger，无装置过滤时也过滤停用回路
     params: dict[str, Any] = {}
     if unit_ids is not None:
-        unit_join = "JOIN loop_ledger ll ON ll.id = t.loop_id WHERE ll.unit_id = ANY(:unit_ids)"
+        unit_join = (
+            "JOIN loop_ledger ll ON ll.id = t.loop_id "
+            "WHERE ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids)"
+        )
         params["unit_ids"] = unit_ids
+    else:
+        unit_join = "JOIN loop_ledger ll ON ll.id = t.loop_id WHERE ll.is_active = TRUE"
 
     diag_count = int(
         (
             await db.execute(
-                text(
-                    f"SELECT COUNT(*) FROM diagnosis_run t {unit_join}"
-                    if unit_join
-                    else "SELECT COUNT(*) FROM diagnosis_run t"
-                ),
-                params if unit_join else {},
+                text(f"SELECT COUNT(*) FROM diagnosis_run t {unit_join}"),
+                params,
             )
         ).scalar()
         or 0
@@ -138,12 +140,8 @@ async def determine_maturity_stage(
     order_count = int(
         (
             await db.execute(
-                text(
-                    f"SELECT COUNT(*) FROM handling_order t {unit_join}"
-                    if unit_join
-                    else "SELECT COUNT(*) FROM handling_order t"
-                ),
-                params if unit_join else {},
+                text(f"SELECT COUNT(*) FROM handling_order t {unit_join}"),
+                params,
             )
         ).scalar()
         or 0
@@ -154,13 +152,11 @@ async def determine_maturity_stage(
                 text(
                     f"""
                     SELECT COUNT(*) FROM tuning_record t
-                    {unit_join.replace("t.loop_id", "t.loop_id") if unit_join else ""}
-                    AND t.status = 'COMPLETED'
+                    {unit_join}
+                      AND t.status = 'COMPLETED'
                     """
-                    if unit_join
-                    else "SELECT COUNT(*) FROM tuning_record t WHERE t.status = 'COMPLETED'"
                 ),
-                params if unit_join else {},
+                params,
             )
         ).scalar()
         or 0
@@ -171,12 +167,14 @@ async def determine_maturity_stage(
         "t.kpi_before IS NOT NULL",
         "t.kpi_after IS NOT NULL",
     ]
-    cv_params = dict(params) if unit_join else {}
-    cv_join = ""
+    cv_params = dict(params)
     if unit_ids is not None:
-        cv_join = "JOIN loop_ledger ll ON ll.id = t.loop_id WHERE ll.unit_id = ANY(:unit_ids) AND "
+        cv_join = (
+            "JOIN loop_ledger ll ON ll.id = t.loop_id "
+            "WHERE ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids) AND "
+        )
     else:
-        cv_join = "WHERE "
+        cv_join = "JOIN loop_ledger ll ON ll.id = t.loop_id WHERE ll.is_active = TRUE AND "
     closed_verified_count = int(
         (
             await db.execute(
@@ -382,10 +380,11 @@ async def get_overview(
     unit_ids = await _resolve_subtree_unit_ids(db, plant_node_id)
     unit_paths = await _load_unit_paths(db)
 
-    unit_filter = ""
+    # 2026-10-10 停用口径：管理总览仅统计活跃回路（is_active=TRUE）
+    unit_filter = "WHERE ll.is_active = TRUE"
     params: dict[str, Any] = {}
     if unit_ids is not None:
-        unit_filter = "WHERE ll.unit_id = ANY(:unit_ids)"
+        unit_filter = "WHERE ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids)"
         params["unit_ids"] = unit_ids
 
     avail = maturity["availability"]
@@ -420,7 +419,11 @@ async def get_overview(
     # 窗口内每回路平均得分（用于健康/异常计数 + 数据健康率）
     loop_avg_params = dict(params)
     if snap_join:
-        loop_where = "WHERE ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
+        loop_where = (
+            "WHERE ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids)"
+            if unit_ids is not None
+            else "WHERE ll.is_active = TRUE"
+        )
         loop_avg_sql = f"""
             SELECT ll.id AS loop_id,
                    AVG(k.score) AS avg_score,
@@ -468,7 +471,11 @@ async def get_overview(
             FROM loop_ledger ll
             JOIN kpi_snapshot_hourly k ON k.loop_id = ll.id
               AND k.ts_start >= :start AND k.ts_start < :end
-            {"WHERE ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""}
+            {
+            "WHERE ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids)"
+            if unit_ids is not None
+            else "WHERE ll.is_active = TRUE"
+        }
             GROUP BY ll.id
             """
         prev_rows = (await db.execute(text(prev_avg_sql), prev_params)).all()
@@ -487,6 +494,7 @@ async def get_overview(
                     FROM kpi_snapshot_hourly k
                     JOIN loop_ledger ll ON ll.id = k.loop_id
                     WHERE k.ts_start >= :start AND k.ts_start < :end
+                          AND ll.is_active = TRUE
                           {"AND ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""}
                     GROUP BY 1 ORDER BY 1
                     """
@@ -644,10 +652,11 @@ async def get_overview(
 
     if s2_enabled:
         # ---- S2 KPI: 工单聚合 ----
-        ho_unit_filter = ""
+        # 2026-10-10 停用口径：仅统计活跃回路
+        ho_unit_filter = "AND ll.is_active = TRUE"
         ho_params: dict[str, Any] = {}
         if unit_ids is not None:
-            ho_unit_filter = "AND ll.unit_id = ANY(:unit_ids)"
+            ho_unit_filter = "AND ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids)"
             ho_params["unit_ids"] = unit_ids
         ho_stats_sql = f"""
             SELECT
@@ -734,7 +743,7 @@ async def get_overview(
 
         # ---- 处置闭环趋势（近 6 个月，按月份聚合工单总数/闭环数）----
         trend_params = dict(ho_params)
-        clt_where = ["1=1"]
+        clt_where = ["ll.is_active = TRUE"]
         if unit_ids is not None:
             clt_where.append("ll.unit_id = ANY(:unit_ids)")
         clt_rows = (
@@ -769,10 +778,12 @@ async def get_overview(
         if unit_ids is not None:
             adc_params["unit_ids"] = unit_ids
         adc_where_cur = [
+            "ll.is_active = TRUE",
             "dr.status IN ('SUCCESS','PARTIAL')",
             "dr.created_at >= CURRENT_TIMESTAMP - INTERVAL '30 days'",
         ]
         adc_where_prev = [
+            "ll.is_active = TRUE",
             "dr.status IN ('SUCCESS','PARTIAL')",
             "dr.created_at < CURRENT_TIMESTAMP - INTERVAL '30 days'",
             "dr.created_at >= CURRENT_TIMESTAMP - INTERVAL '60 days'",
@@ -859,6 +870,7 @@ async def get_overview(
         if unit_ids is not None:
             bm_params["unit_ids"] = unit_ids
         bm_where = [
+            "ll.is_active = TRUE",
             "ho.status = 'CLOSED'",
             "ho.kpi_before IS NOT NULL",
             "ho.kpi_after IS NOT NULL",
@@ -889,7 +901,10 @@ async def get_overview(
 
         # ---- 自控率提升曲线（近 90 天按天均值，作为收益趋势图底）----
         bt_params = dict(params)
-        bt_where = ["k.ts_start >= CURRENT_TIMESTAMP - INTERVAL '90 days'"]
+        bt_where = [
+            "ll.is_active = TRUE",
+            "k.ts_start >= CURRENT_TIMESTAMP - INTERVAL '90 days'",
+        ]
         if unit_ids is not None:
             bt_where.append("ll.unit_id = ANY(:unit_ids)")
         bt_rows = (
@@ -1051,7 +1066,7 @@ async def get_diagnosis_statistics(
     unit_ids = await _resolve_subtree_unit_ids(db, plant_node_id)
     unit_paths = await _load_unit_paths(db)
 
-    where = ["dr.status IN ('SUCCESS', 'PARTIAL')"]
+    where = ["ll.is_active = TRUE", "dr.status IN ('SUCCESS', 'PARTIAL')"]
     params: dict[str, Any] = {}
     if start_date:
         where.append("dr.created_at >= :start")
@@ -1249,7 +1264,7 @@ async def get_benefit(
     """收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标）。"""
     unit_ids = await _resolve_subtree_unit_ids(db, plant_node_id)
 
-    where = ["1=1"]
+    where = ["ll.is_active = TRUE"]
     params: dict[str, Any] = {}
     if start_date:
         where.append("ho.verified_at >= :start")
@@ -1346,7 +1361,7 @@ async def get_benefit(
     curve: list[dict[str, Any]] = []
     if start_date and end_date:
         curve_params = dict(params)
-        curve_where = ["k.ts_start >= :start", "k.ts_start < :end"]
+        curve_where = ["ll.is_active = TRUE", "k.ts_start >= :start", "k.ts_start < :end"]
         if unit_ids is not None:
             curve_where.append("ll.unit_id = ANY(:unit_ids)")
         curve_rows = (
@@ -1432,7 +1447,7 @@ async def get_benefit(
     # P2-3 整定执行区块（报告模块优化方案 §5.2，向后兼容只增字段）
     # ------------------------------------------------------------------
     # 整定记录窗口/装置过滤（tr.created_at 归窗；装置经 loop_ledger 子树下钻）
-    tr_where = ["1=1"]
+    tr_where = ["ll.is_active = TRUE"]
     tr_params: dict[str, Any] = {}
     if start_date:
         tr_where.append("tr.created_at >= :start")
@@ -1443,7 +1458,8 @@ async def get_benefit(
     if unit_ids is not None:
         tr_where.append("ll.unit_id = ANY(:unit_ids)")
         tr_params["unit_ids"] = unit_ids
-    tr_join = "JOIN loop_ledger ll ON ll.id = tr.loop_id" if unit_ids is not None else ""
+    # 始终 join loop_ledger：停用口径过滤（ll.is_active）需要 ll 别名
+    tr_join = "JOIN loop_ledger ll ON ll.id = tr.loop_id"
     tr_where_sql = " AND ".join(tr_where)
 
     # 算法 × 状态分布（单查询分组，Python 侧二次聚合；拟合度按组计数加权）
@@ -1608,6 +1624,7 @@ async def get_benefit_orders(
     unit_ids = await _resolve_subtree_unit_ids(db, plant_node_id)
 
     where = [
+        "ll.is_active = TRUE",
         "ho.status = 'CLOSED'",
         "ho.kpi_before IS NOT NULL",
         "ho.kpi_after IS NOT NULL",

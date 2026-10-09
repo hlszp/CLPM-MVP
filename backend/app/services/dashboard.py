@@ -222,7 +222,14 @@ def _apply_snapshot_filters(
     end: datetime | None = None,
     status_filter: str | None = None,
 ):
-    """为快照查询添加时间/状态/装置过滤条件。"""
+    """为快照查询添加时间/状态/装置过滤条件。
+
+    2026-10-10 停用口径：无条件排除停用回路（is_active=False）的历史快照
+    （IN 子查询，避免与 plant_id 分支的 join 结构冲突）。
+    """
+    stmt = stmt.where(
+        KpiSnapshotHourly.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+    )
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
     if end is not None:

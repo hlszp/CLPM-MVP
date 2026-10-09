@@ -84,7 +84,12 @@ async def build_data_quality_stats(
         start = end - timedelta(days=30)
 
     unit_ids = await _load_subtree_unit_ids(db, plant_node_id) if plant_node_id else None
-    unit_filter = "WHERE ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
+    # 2026-10-10 停用口径：数据质量统计仅覆盖活跃回路（is_active=TRUE）
+    unit_filter = (
+        "WHERE ll.is_active = TRUE AND ll.unit_id = ANY(:unit_ids)"
+        if unit_ids is not None
+        else "WHERE ll.is_active = TRUE"
+    )
     params: dict[str, Any] = {"start": start, "end": end}
     if unit_ids is not None:
         params["unit_ids"] = unit_ids
@@ -121,6 +126,7 @@ async def build_data_quality_stats(
                 FROM kpi_snapshot_hourly k
                 JOIN loop_ledger ll ON ll.id = k.loop_id
                 WHERE k.ts_start >= :start AND k.ts_start < :end
+                      AND ll.is_active = TRUE
                       {"AND ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""}
                 GROUP BY k.loop_id
                 """
@@ -150,6 +156,7 @@ async def build_data_quality_stats(
                 FROM kpi_snapshot_hourly k
                 JOIN loop_ledger ll ON ll.id = k.loop_id
                 WHERE k.ts_start >= :start AND k.ts_start < :end
+                      AND ll.is_active = TRUE
                       {"AND ll.unit_id = ANY(:unit_ids)" if unit_ids is not None else ""}
                 GROUP BY 1 ORDER BY 1
                 """
