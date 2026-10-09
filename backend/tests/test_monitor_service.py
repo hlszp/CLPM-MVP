@@ -32,9 +32,14 @@ from app.services.monitor import (
 
 
 def _make_scalars_mock(items: list) -> MagicMock:
-    """构造 .scalars().all() 返回 items 的 mock 结果。"""
+    """构造 .scalars().all() 返回 items 的 mock 结果。
+
+    2026-10-09 起 KPI 快照 DISTINCT ON 查询改裸列 select（result.all()），
+    此 mock 同时兼容两种取法（.all() 直接返回 items）。
+    """
     result = MagicMock()
     result.scalars.return_value.all.return_value = items
+    result.all.return_value = items
     return result
 
 

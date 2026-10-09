@@ -901,35 +901,55 @@ async def list_loop_monitor(
             tags_map[str(t.id)] = t
 
     # 批量查每个回路的最新 KPI 快照（DISTINCT ON 取每个 loop_id 的最新一条）
-    snapshot_map: dict[str, KpiSnapshotHourly] = {}
+    # 2026-10-09 生产提速：裸列 select 仅取列表消费的标量列 + fitness_tags，
+    # 不再整行取回 ORM 实体（data_lineage/fitness_detail 等 JSONB 大列列表
+    # 不消费，生产 1209 回路逐行 TOAST 解压是每页秒级延迟的主来源）
+    _SNAP_COLS = (
+        KpiSnapshotHourly.loop_id,
+        KpiSnapshotHourly.score,
+        KpiSnapshotHourly.status,
+        KpiSnapshotHourly.confidence_level,
+        KpiSnapshotHourly.effective_auto_rate,
+        KpiSnapshotHourly.auto_mode_rate,
+        KpiSnapshotHourly.steady_rate,
+        KpiSnapshotHourly.accuracy_rate,
+        KpiSnapshotHourly.fast_rate,
+        KpiSnapshotHourly.oscillation_rate,
+        KpiSnapshotHourly.saturation_rate,
+        KpiSnapshotHourly.good_value_rate,
+        KpiSnapshotHourly.valid_rate,
+        KpiSnapshotHourly.ts_end,
+        KpiSnapshotHourly.fitness_level,
+        KpiSnapshotHourly.fitness_tags,
+        KpiSnapshotHourly.tune_level,
+    )
+    snapshot_map: dict[str, Any] = {}
     if loop_ids:
         # PostgreSQL DISTINCT ON：按 loop_id 取 ts_end 最大的一条
-        # Phase 10 性能优化：原"ORDER BY + Python 层 if-not-in 取首条"会拉回全部行，
-        # 现用真正 DISTINCT ON 让 PG 在数据库层直接去重，减少回传行数。
         s_stmt = (
-            select(KpiSnapshotHourly)
+            select(*_SNAP_COLS)
             .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
         s_result = await db.execute(s_stmt)
-        for snap in s_result.scalars().all():
-            snapshot_map[str(snap.loop_id)] = snap
+        for row in s_result.all():
+            snapshot_map[str(row.loop_id)] = row
 
     # C1-1 增量巡检：批量查每个回路"昨日基线"快照（今日 0 点前最新一条），
-    # 用于计算"较昨日"评分增量（新增/恶化/好转徽标）
-    prev_snapshot_map: dict[str, KpiSnapshotHourly] = {}
+    # 用于计算"较昨日"评分增量（新增/恶化/好转徽标）——仅消费 score，只取两列
+    prev_snapshot_map: dict[str, Any] = {}
     if loop_ids:
         p_stmt = (
-            select(KpiSnapshotHourly)
+            select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
             .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
             .where(KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
         p_result = await db.execute(p_stmt)
-        for snap in p_result.scalars().all():
-            prev_snapshot_map[str(snap.loop_id)] = snap
+        for row in p_result.all():
+            prev_snapshot_map[str(row.loop_id)] = row
 
     # 批量查每个回路的 MODE 值映射配置（loop_mode_mapping 表）
     # 无配置的回路回退到默认映射（在 _mode_value_to_label 内处理）
