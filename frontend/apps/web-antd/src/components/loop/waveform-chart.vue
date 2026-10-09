@@ -636,7 +636,13 @@ function render() {
     dataZoom: showMode
       ? [
           // X 轴：滚轮 + 滑块
-          { ...zoomX, type: 'inside', xAxisIndex: 0 },
+          {
+            ...zoomX,
+            type: 'inside',
+            xAxisIndex: 0,
+            // 显式声明：滚轮缩 X（否则与 Y 轴 inside 同抢滚轮，双轴联动难操作）
+            zoomOnMouseWheel: true,
+          },
           {
             ...zoomX,
             type: 'slider',
@@ -645,8 +651,14 @@ function render() {
             height: 20,
             labelFormatter: (val: number) => fmtTimeShort(val),
           },
-          // Y 轴：滚轮 + 左侧滑条（0929 用户口径：量程缩放走左侧）
-          { ...zoomY, type: 'inside', yAxisIndex: 0 },
+          // Y 轴：Shift+滚轮 + 左侧滑条（0929 用户口径：量程缩放走左侧；
+          // 2026-10-09 与工作台 TrendChart 统一为 Shift+滚轮，避免双轴同抢滚轮）
+          {
+            ...zoomY,
+            type: 'inside',
+            yAxisIndex: 0,
+            zoomOnMouseWheel: 'shift',
+          },
           {
             ...zoomY,
             type: 'slider',
@@ -657,7 +669,12 @@ function render() {
           },
         ]
       : [
-          { ...zoomX, type: 'inside', xAxisIndex: 0 },
+          {
+            ...zoomX,
+            type: 'inside',
+            xAxisIndex: 0,
+            zoomOnMouseWheel: true,
+          },
           {
             ...zoomX,
             type: 'slider',

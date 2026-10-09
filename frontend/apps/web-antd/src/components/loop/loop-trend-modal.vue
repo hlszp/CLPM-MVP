@@ -517,7 +517,7 @@ function handleOpenChange(val: boolean) {
         </div>
 
         <!-- 趋势图（WaveformChart：PV/SP 主轴 + OP 副轴 + MODE 阶梯轴，X/Y 双轴缩放） -->
-        <div v-if="trendDetail">
+        <div v-if="trendDetail" class="relative">
           <WaveformChart
             ref="waveformChartRef"
             :trend="trendDetail.trend"
@@ -525,6 +525,12 @@ function handleOpenChange(val: boolean) {
             :show-legend="showLegend"
             :preserve-zoom="appendMode"
           />
+          <!-- 缩放手势提示（2026-10-09 用户反馈"Y 轴缩放不好操作"） -->
+          <div
+            class="pointer-events-none absolute bottom-7 right-9 rounded bg-black/5 px-1.5 py-px text-[10px] text-gray-500"
+          >
+            滚轮·时间轴 Shift+滚轮·幅值轴 双击·复位
+          </div>
         </div>
         <div v-else class="py-12 text-center text-gray-400">暂无趋势数据</div>
       </div>

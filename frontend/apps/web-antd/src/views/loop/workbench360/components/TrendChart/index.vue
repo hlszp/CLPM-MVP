@@ -909,6 +909,10 @@ defineExpose({ exportPng, locate, requestDraw });
     >
       <i :style="yThumbStyle" class="thumb"></i>
     </div>
+    <!-- 缩放操作提示（2026-10-09 用户反馈"Y 轴缩放不好操作"：手势不可见） -->
+    <div v-if="!mini" class="zoom-hint">
+      滚轮·时间轴 &nbsp;Shift+滚轮·幅值轴 &nbsp;双击·复位
+    </div>
   </div>
 </template>
 
@@ -1076,6 +1080,19 @@ defineExpose({ exportPng, locate, requestDraw });
   cursor: grab;
   background: hsl(var(--accent) / 30%);
   border-radius: 4px;
+}
+
+/* 缩放手势提示：右下角低调常显（不遮曲线，浅色小字） */
+.zoom-hint {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground) / 70%);
+  background: hsl(var(--background) / 60%);
+  border-radius: 3px;
+  pointer-events: none;
 }
 
 .ybar::before {
