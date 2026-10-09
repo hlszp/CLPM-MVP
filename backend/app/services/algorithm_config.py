@@ -88,10 +88,10 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
     },
     # 整改 F2（2026-08-08）：原硬编码参数配置化，默认值与计算器常量一致（行为不变）
     "settling_time": {
-        "STABLE": {"settling_threshold": 0.05},
-        "SLOW": {"settling_threshold": 0.05},
-        "FAST": {"settling_threshold": 0.05},
-        "LOGIC": {"settling_threshold": 0.05},
+        "STABLE": {"settling_threshold": 0.05, "noise_floor_ratio": 0.001},
+        "SLOW": {"settling_threshold": 0.05, "noise_floor_ratio": 0.001},
+        "FAST": {"settling_threshold": 0.05, "noise_floor_ratio": 0.001},
+        "LOGIC": {"settling_threshold": 0.05, "noise_floor_ratio": 0.001},
     },
     "effective_auto_rate": {
         "STABLE": {"default_e_max_ratio": 0.05},
@@ -148,11 +148,12 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
     "accuracy_rate": {
-        # e_max_percentile=100 → 不对数据驱动 e_max 做百分位截断，与原算法一致
-        "STABLE": {"e_max_percentile": 100},
-        "SLOW": {"e_max_percentile": 100},
-        "FAST": {"e_max_percentile": 100},
-        "LOGIC": {"e_max_percentile": 100},
+        # v2.2（2026-10-10 稳定回路误判整改）：e_max 归一化基准改工程容限
+        # （量程比例，默认 2%）；原 e_max_percentile 随数据驱动 e_max 一并废弃
+        "STABLE": {"e_max_tolerance_ratio": 0.02},
+        "SLOW": {"e_max_tolerance_ratio": 0.02},
+        "FAST": {"e_max_tolerance_ratio": 0.02},
+        "LOGIC": {"e_max_tolerance_ratio": 0.02},
     },
     "stability_rate": {
         # decay_ratio=0.05（量程 5% 为指数衰减基准）与原硬编码一致，行为不变；
@@ -273,11 +274,11 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
         "sp_step_sigma": {"min": 0.5, "max": 10.0, "unit": "σ", "description": "SP 阶跃检测阈值"},
     },
     "accuracy_rate": {
-        "e_max_percentile": {
-            "min": 50,
-            "max": 100,
-            "unit": "%",
-            "description": "数据驱动 e_max 百分位截断",
+        "e_max_tolerance_ratio": {
+            "min": 0.002,
+            "max": 0.2,
+            "unit": "",
+            "description": "工程容限比例（|E|max = ratio×量程，默认 2%）",
         },
     },
     "stability_rate": {
@@ -323,6 +324,12 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "unit": "",
             "description": "Green 函数衰减阈值",
         },
+        "noise_floor_ratio": {
+            "min": 0.0001,
+            "max": 0.01,
+            "unit": "",
+            "description": "already_stable 噪声底（偏差σ < ratio×量程 判已稳态，默认 0.1%）",
+        },
     },
     "effective_auto_rate": {
         "default_e_max_ratio": {
@@ -363,7 +370,7 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "min_disturbance_duration": "扰动分析",
         "sp_step_sigma": "扰动分析",
     },
-    "accuracy_rate": {"e_max_percentile": "判定阈值"},
+    "accuracy_rate": {"e_max_tolerance_ratio": "判定阈值"},
     "stability_rate": {
         "decay_ratio": "判定阈值",
         "band_ratio": "石化惯例",
@@ -372,7 +379,7 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "sp_step_sigma": "SP阶跃剔除",
         "sp_tracking_window": "SP阶跃剔除",
     },
-    "settling_time": {"settling_threshold": "判定阈值"},
+    "settling_time": {"settling_threshold": "判定阈值", "noise_floor_ratio": "判定阈值"},
     "effective_auto_rate": {"default_e_max_ratio": "判定阈值"},
     "output_trip_index": {
         "trip_inactive": "行程边界",

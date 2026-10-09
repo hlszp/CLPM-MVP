@@ -6,22 +6,27 @@
     N_fault：含仪表故障异常原因码的采样点数（不重复计数）
     N_total：评估时段总采样点数（point_count）
 
-仪表故障对应的异常原因码（HiaMonitor 超限/冻结/突变 三类）：
+仪表故障对应的异常原因码（仅 PV 的超限/冻结 两类，
+2026-10-10 用户裁决收窄，原含 JUMP 突变）：
     - OUT_OF_RANGE：超量程
     - FROZEN：信号冻结（复合判据，见下）
-    - JUMP：信号突变
+
+JUMP 突变不再计入仪表故障：COV 数据源/量纲异常/SP 阶跃场景误报多，
+突变更接近数据毛刺而非仪表硬件故障（标记本身保留，仍参与数据有效性
+判定）。SPIKE/NaN/QC_BAD/HF_NOISE/TS_ANOMALY 亦不计入。
 
 FROZEN 复合判据（P1 整改：FROZEN 改为仅标记不置 invalid 后的误报抑制）：
     控制良好的平稳回路 PV 长期低方差会被冻结检测大面积标记，直接计入
     仪表故障会误报。只有同时满足以下两个条件的 FROZEN 连续段才计故障：
         1. 段持续时间 ≥ frozen_fault_min_minutes（阈值配置，按控制类型）
-        2. 同期 OP 有变化（std > frozen_std_pct × 100，归一化量纲）而 PV 不动
-           ——控制器在调节而 PV 无响应，才是真仪表卡死的特征
+        2. 同期 OP 有变化（std > op_active_std_pct × 100，归一化量纲，
+           默认 1% 量程）而 PV 不动——控制器在调节而 PV 无响应，才是真
+           仪表卡死的特征
     缺 OP 信号/时间戳/阈值配置时无法执行复合判据，回落旧口径
     （FROZEN 直接计故障），避免静默漏报。
 
 复用既有 ``outlier_detection`` 预处理结果（DataBlock.outlier_reasons），
-无需新增预处理步骤。SPIKE/NaN/QC_BAD/HF_NOISE/TS_ANOMALY 不计入仪表故障。
+无需新增预处理步骤。
 
 核心统计逻辑委托独立工具函数
 ``app.utils.instrument_fault_rate.calculate_instrument_fault_rate``：
@@ -30,7 +35,8 @@ FROZEN 复合判据（P1 整改：FROZEN 改为仅标记不置 invalid 后的误
 
 定位：AGGREGATABLE 辅助指标，参与节点级聚合。
 
-设计依据：CLPM_v6.1_HiaMonitor借鉴重构计划.md v1.1 §3
+设计依据：CLPM_v6.1_HiaMonitor借鉴重构计划.md v1.1 §3；
+2026-10-10 故障码范围修订（用户裁决：仅超量程+冻结）
 """
 
 from __future__ import annotations
@@ -77,7 +83,7 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
 
         Returns:
             MetricResult：value 为故障率 0~100；
-            details 含 freeze_count/mutation_count/overrange_count/
+            details 含 freeze_count/overrange_count/
             fault_point_count/sample_count/source
         """
         block = bundle.data_block
@@ -99,12 +105,11 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
             return self._make_inconclusive(bundle, "empty_data_block")
 
         logger.debug(
-            "[仪表故障率] fault_pts=%d/%d, rate=%.2f%%, freeze=%d, jump=%d, oor=%d",
+            "[仪表故障率] fault_pts=%d/%d, rate=%.2f%%, freeze=%d, oor=%d",
             result.fault_point_count,
             result.sample_count,
             result.fault_rate,
             result.freeze_count,
-            result.mutation_count,
             result.overrange_count,
         )
 
@@ -114,7 +119,6 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
             {
                 "fault_rate": result.fault_rate,
                 "freeze_count": result.freeze_count,
-                "mutation_count": result.mutation_count,
                 "overrange_count": result.overrange_count,
                 "fault_point_count": result.fault_point_count,
                 "sample_count": result.sample_count,
@@ -165,8 +169,10 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
             return pv_reasons
 
         min_duration_s = threshold.frozen_fault_min_minutes * 60.0
-        # OP 为归一化量纲（0~100）， epsilon 与冻结检测同尺度
-        op_std_epsilon = threshold.frozen_std_pct * 100.0
+        # OP 为归一化量纲（0~100），阈值 = op_active_std_pct × 100
+        # （2026-10-10 整改：原复用 frozen_std_pct=0.1%，正常 OP 控制噪声即触发，
+        # COV 稳定回路被误判仪表卡死；独立提参至 1%，见 thresholds.py 注释）
+        op_std_epsilon = threshold.op_active_std_pct * 100.0
         sample_interval_s = float(threshold.base_sampling_freq)
 
         confirmed: set[int] = set()

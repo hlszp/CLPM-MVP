@@ -52,6 +52,13 @@ class ControlTypeThreshold:
     noise_cutoff_hz: float
     min_consecutive_points: int
     frozen_fault_min_minutes: float
+    #: 仪表故障复合判据的"OP 在调"阈值（占量程小数比例，2026-10-10 整改新增）。
+    #: PV 冻结段内 OP std > 该阈值×100（归一化量纲）才判"控制器在调节而
+    #: PV 无响应"。原 0.1%（frozen_std_pct 复用）会被正常 OP 控制噪声
+    #: （实测 0.28%）触发，COV 数据源下稳定回路被全天误判仪表卡死
+    #: （实证 05TY05P0803_PIDA 24h 中 23 小时 instrFault=100%）。真仪表
+    #: 卡死时 OP 因积分饱和有显著方向性动作，1%（0.01）可捕捉且不误报。
+    op_active_std_pct: float = 0.01
 
     @property
     def sampling_freq_label(self) -> str:

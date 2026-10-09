@@ -151,7 +151,9 @@ class TestInstrumentFaultFrozenCompound:
     """固化③：仪表故障复合判据（instrument_fault_rate）.
 
     FROZEN 连续段持续 ≥ frozen_fault_min_minutes(5min) 且同期 OP 有变化
-    （std > 0.1，归一化量纲）才计仪表故障；平稳回路不计。
+    （std > 1.0，归一化量纲 = 1% 量程）才计仪表故障；平稳回路不计。
+    2026-10-10 整改：阈值由 0.1% 提至 1%（COV 稳定回路误判抑制，正常
+    OP 控制噪声实测 0.28%），"OP 在调"用例幅度相应从 ±1 调至 ±3。
     """
 
     @staticmethod
@@ -166,17 +168,26 @@ class TestInstrumentFaultFrozenCompound:
         return InstrumentFaultRateCalculator().calculate(bundle).value
 
     def test_steady_loop_constant_op_not_fault(self) -> None:
-        """平稳回路：PV 冻结 400s 但 OP 也不动（std=0 < 0.1）→ 不计故障."""
+        """平稳回路：PV 冻结 400s 但 OP 也不动（std=0 < 1.0）→ 不计故障."""
         assert self._calc_fault_rate(400, [50.0] * 400) == 0.0
 
+    def test_steady_loop_tiny_op_noise_not_fault(self) -> None:
+        """COV 稳定回路回归：PV 冻结 400s、OP 仅 ±0.5 抖动（std=0.25% < 1%）→ 不计故障.
+
+        实证场景（05TY05P0803_PIDA）：OP std=0.28% 的控制噪声在旧 0.1% 阈值下
+        被全天误判仪表卡死（24h 中 23 小时 instrFault=100%）。
+        """
+        op = [50.0 + (0.5 if i % 2 else 0.0) for i in range(400)]
+        assert self._calc_fault_rate(400, op) == 0.0
+
     def test_frozen_with_op_moving_is_fault(self) -> None:
-        """真仪表卡死特征：PV 冻结 400s 且 OP 交替 50/51（std=0.5 > 0.1）→ 计故障."""
-        op = [50.0 + (1.0 if i % 2 else 0.0) for i in range(400)]
+        """真仪表卡死特征：PV 冻结 400s 且 OP 交替 50/53（std=1.5% > 1%）→ 计故障."""
+        op = [50.0 + (3.0 if i % 2 else 0.0) for i in range(400)]
         assert self._calc_fault_rate(400, op) == 100.0
 
     def test_duration_exactly_at_min_confirmed(self) -> None:
         """持续时长边界 +ε：300 点 1s → 段时长 299+1=300s ≥ 300s → 计故障."""
-        op = [50.0 + (1.0 if i % 2 else 0.0) for i in range(300)]
+        op = [50.0 + (3.0 if i % 2 else 0.0) for i in range(300)]
         assert self._calc_fault_rate(300, op) == 100.0
 
     def test_duration_just_below_min_not_confirmed(self) -> None:

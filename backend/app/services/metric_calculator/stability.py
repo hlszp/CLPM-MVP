@@ -149,6 +149,21 @@ class StabilityRateCalculator(MetricCalculatorBase):
         # n>=2 保证（MIN_POINTS=2 已在上方校验），ddof=1 不会除零
         std_error = float(np.std(errors, ddof=1))
 
+        # 完全死值（σ=0 且恒定偏离 SP，2026-10-10 整改）：PV 全程一字不变
+        # （典型为仪表卡死或 COV 稳定不落库的填充假象）时，"稳定"不可评估，
+        # 满分 100 会奖励死信号。判 INCONCLUSIVE（诚实化）；σ=0 且均值=0 的
+        # 完美贴死 SP 情形保持满分（与零偏差语义一致，无法与真完美区分）。
+        if std_error == 0.0 and mean_error != 0.0:
+            return self._make_inconclusive(
+                bundle,
+                "dead_signal_constant_offset",
+                {
+                    "mean_error": round(mean_error, 6),
+                    "std_error": 0.0,
+                    "sample_count": int(len(errors)),
+                },
+            )
+
         # U = PV 量程范围
         u = self._read_pv_range(bundle)
         if u <= 0:

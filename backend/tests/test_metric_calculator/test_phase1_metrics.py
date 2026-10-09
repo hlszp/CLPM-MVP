@@ -126,8 +126,8 @@ class TestInstrumentFaultRate:
         assert result.value == 100.0
         assert result.details["overrange_count"] == n
 
-    def test_all_jump(self):
-        """全部跳变 → fault_rate=100%，mutation_count=n。"""
+    def test_all_jump_not_counted(self):
+        """全部跳变 → 不计仪表故障（2026-10-10 用户裁决：JUMP 移出故障码）."""
         n = 10
         bundle = make_bundle(
             {"pv": [50.0] * n},
@@ -135,11 +135,11 @@ class TestInstrumentFaultRate:
             metric_code="instrument_fault_rate",
         )
         result = InstrumentFaultRateCalculator().calculate(bundle)
-        assert result.value == 100.0
-        assert result.details["mutation_count"] == n
+        assert result.value == 0.0
+        assert result.details["fault_point_count"] == 0
 
     def test_mixed_faults(self):
-        """3/10 点分别有超限/跳变/冻结 → fault_rate=30%。"""
+        """3/10 点分别有超限/跳变/冻结 → 跳变不计 → fault_rate=20%。"""
         reasons_pv = [
             [OR.OUT_OF_RANGE.value],
             [],
@@ -158,14 +158,13 @@ class TestInstrumentFaultRate:
             metric_code="instrument_fault_rate",
         )
         result = InstrumentFaultRateCalculator().calculate(bundle)
-        assert result.value == 30.0
+        assert result.value == 20.0
         assert result.details["overrange_count"] == 1
-        assert result.details["mutation_count"] == 1
         assert result.details["freeze_count"] == 1
-        assert result.details["fault_point_count"] == 3
+        assert result.details["fault_point_count"] == 2
 
     def test_multiple_reasons_per_point(self):
-        """一点叠加 FROZEN+JUMP → 各 count 各+1，fault_point_count 只+1。"""
+        """一点叠加 FROZEN+JUMP → FROZEN 计 1 点（JUMP 不影响计数）."""
         reasons_pv = [
             [],
             [],
@@ -181,13 +180,13 @@ class TestInstrumentFaultRate:
         result = InstrumentFaultRateCalculator().calculate(bundle)
         assert result.value == 20.0  # 1/5
         assert result.details["freeze_count"] == 1
-        assert result.details["mutation_count"] == 1
         assert result.details["fault_point_count"] == 1  # 不重复计数
 
     def test_non_fault_reasons_ignored(self):
-        """SPIKE/NaN/QC_BAD/HF_NOISE/TS_ANOMALY 不计入仪表故障率。
+        """SPIKE/NaN/QC_BAD/HF_NOISE/TS_ANOMALY/JUMP 不计入仪表故障率.
 
-        仅 OUT_OF_RANGE/FROZEN/JUMP 三类为仪表故障（HiaMonitor 超限/冻结/突变）。
+        仅 OUT_OF_RANGE/FROZEN 两类为仪表故障（2026-10-10 用户裁决收窄，
+        原含 HiaMonitor 三类中的 JUMP 突变）。
         """
         reasons_pv = [
             [OR.SPIKE.value],
@@ -195,10 +194,11 @@ class TestInstrumentFaultRate:
             [OR.QC_BAD.value],
             [OR.HF_NOISE.value],
             [OR.TS_ANOMALY.value],
+            [OR.JUMP.value],
             [],
         ]
         bundle = make_bundle(
-            {"pv": [50.0] * 6},
+            {"pv": [50.0] * 7},
             outlier_reasons={"pv": reasons_pv},
             metric_code="instrument_fault_rate",
         )

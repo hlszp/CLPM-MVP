@@ -45,6 +45,12 @@ DEFAULT_SAMPLE_INTERVAL = 1.0
 #: Green 函数衰减阈值（5%）
 SETTLING_THRESHOLD = 0.05
 
+#: already_stable 噪声底默认值（偏差σ占量程比例，与 algorithm_config._DEFAULTS 一致）
+_DEFAULT_NOISE_FLOOR_RATIO = 0.001
+
+#: 归一化量程（数据块信号经预处理 Step ③ 归一化为 0~100）
+_DEFAULT_PV_RANGE = 100.0
+
 # ---------------------------------------------------------------------------
 # R14-4（2026-09-06）：ARMA 等间隔准入容差
 #
@@ -117,17 +123,37 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
         errors = errors - np.mean(errors)
 
-        if np.std(errors) < 1e-9:
-            logger.debug("[稳态时间] 偏差恒定，返回 0（已处于稳态）")
-            return self._make_result(
-                bundle,
-                0.0,
-                {"reason": "already_stable", "actual_settling_time": 0.0, "std": 0.0},
-            )
-
         # 整改 F2：衰减阈值从配置链读取（默认与常量一致）
         params = get_algorithm_params("settling_time", bundle.data_block.control_type)
         settling_threshold = float(params.get("settling_threshold", SETTLING_THRESHOLD))
+
+        # 噪声底判据（2026-10-10 稳定回路误判整改）：偏差 σ 低于量程比例下限时
+        # 判 already_stable。原判据 std < 1e-9 对真实数据永不触发，导致贴死 SP 的
+        # 稳定回路（σ 仅量程万分之几）仍进 AR 辨识——辨识出的是噪声自相关时间
+        # （非回路动态），快速率被误判低分（实证 05TY05P0803_PIDA：σ=0.002% 量程
+        # 辨识出 595s vs 理想 180s → fast=9.97）。默认 0.1% 量程，与振荡幅度
+        # 门控（0.2%）同量级；真实动态过程/振荡的 σ 远高于此，不会误伤。
+        std_error = float(np.std(errors))
+        noise_floor_ratio = float(params.get("noise_floor_ratio", _DEFAULT_NOISE_FLOOR_RATIO))
+        u = self._read_pv_range(bundle)
+        if std_error < noise_floor_ratio * u:
+            logger.debug(
+                "[稳态时间] 偏差σ=%.6f 低于噪声底 %.6f（%.2f%%×U=%.1f），判已稳态",
+                std_error,
+                noise_floor_ratio * u,
+                noise_floor_ratio * 100.0,
+                u,
+            )
+            return self._make_result(
+                bundle,
+                0.0,
+                {
+                    "reason": "already_stable",
+                    "actual_settling_time": 0.0,
+                    "std": round(std_error, 6),
+                    "noise_floor": round(noise_floor_ratio * u, 6),
+                },
+            )
 
         # ARMA 辨识 + Green 函数 → 实际稳态时间（含三语义状态）
         settling = compute_settling_time_detailed(
@@ -188,6 +214,22 @@ class SettlingTimeCalculator(MetricCalculatorBase):
                 **base_details,
             },
         )
+
+    @staticmethod
+    def _read_pv_range(bundle: MetricDataBundle) -> float:
+        """读取 PV 量程范围 U（噪声底基准）.
+
+        数据块信号经预处理 Step ③ 归一化为 0~100，故默认 100 与信号量纲
+        自洽（与 stability._read_pv_range 同款）；CONFIG pv_range 信号可覆盖。
+        """
+        val = MetricCalculatorBase._read_config_scalar(bundle.data_block.signals, "pv_range")
+        if val is None:
+            return _DEFAULT_PV_RANGE
+        try:
+            v = float(val)
+            return v if v > 0 else _DEFAULT_PV_RANGE
+        except (TypeError, ValueError):
+            return _DEFAULT_PV_RANGE
 
     @staticmethod
     def _read_sample_interval(bundle: MetricDataBundle) -> float:

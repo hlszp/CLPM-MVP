@@ -1,19 +1,26 @@
 """准确率计算器（算法说明 §4.4）.
 
-公式：A = [1 - |Ē|/|E|_max × (1 - 1/e^r)] × 100%
+公式：A = [1 - r × (1 - 1/e^r)] × 100%
 
 其中：
     E_i = PV_i - SP_i
     |Ē| = (1/n) × Σ|E_i|
     r = |Ē| / |E|_max
-    |E|_max = (1/n) × Σ[max(|E_i|) - |E_i|]  （数据驱动，对齐 FDS v5.1 / 算法 v2.1）
+    |E|_max = tolerance_ratio × U（工程容限 = 量程比例，默认 2%）
 
-设计依据：算法说明 §4.4 v2.1；GB/T 44693.2-2024 附录 B.3
+设计依据：算法说明 §4.4；GB/T 44693.2-2024 附录 B.3
 
-v2.1 修正：|E|_max 由"外部输入参数（默认量程 5%）"改为"从数据计算
-Σ[max(|E_i|) - |E_i|] / n"。原方案将 |E|_max 作为配置参数会导致同一偏差
-在不同回路间不可比；改为数据驱动后，r = |Ē|/|E|_max ∈ [0, 1]，归一化更合理。
-保留 CONFIG 覆盖入口（e_max / accuracy_e_max 信号），允许管理员手工指定。
+v2.2 修正（2026-10-10，稳定回路误判整改）：|E|_max 归一化基准由
+"数据驱动 Σ[max(|E_i|) - |E_i|]/n（偏差序列自身离散度）"改回国标语义
+"最大允许偏差 = 量程比例容限"。原数据驱动基准下 r = mean/(max-mean)
+是偏差均值相对自身离散度的倍数：PV 高度稳定的回路（COV 数据源常见）
+离散度趋 0 → r 爆炸 → 余差仅量程万分之几的回路被打成 0~11 分，
+且相邻小时分数剧烈跳变（0~85），与控制质量无关。
+典型实证（05TY05P0803_PIDA，量程 0~1000℃）：余差 0.066% 量程 → 11 分。
+修复后 r = |Ē|/(tolerance_ratio×U)，余差 2% 量程 ≈ 44 分、1% ≈ 73 分、
+5% ≈ 0 分，梯度符合工程直觉；恒定余差退化分支（e_max=0）随之不再可达，
+一并移除。CONFIG 信号覆盖入口（e_max / accuracy_e_max / error_max，
+绝对值）保留最高优先级，供个别回路手工指定。
 """
 
 from __future__ import annotations
@@ -21,23 +28,24 @@ from __future__ import annotations
 import logging
 import math
 
-import numpy as np
-
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
 
-#: 算法回退默认值（与 algorithm_config._DEFAULTS 一致，配置缺失时使用）
-_DEFAULT_E_MAX_PERCENTILE = 100
+#: 归一化量程（数据块信号经预处理 Step ③ 归一化为 0~100；CONFIG pv_range 可覆盖）
+DEFAULT_PV_RANGE = 100.0
+
+#: 工程容限比例默认值（占量程 2%，与 algorithm_config._DEFAULTS 一致）
+_DEFAULT_E_MAX_TOLERANCE_RATIO = 0.02
 
 
 class AccuracyRateCalculator(MetricCalculatorBase):
     """准确率计算器（算法说明 §4.4）.
 
     衡量 PV 达到 SP 的准确程度，反映回路的余差情况。
-    采用国标指数型公式（含 1/e^r 项），小偏差扣分少，大偏差扣分多。
+    采用国标指数型公式（含 1/e^r 项），归一化基准为量程比例工程容限。
     """
 
     @property
@@ -65,68 +73,39 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         abs_errors = [abs(float(pv) - float(sp)) for pv, sp in pairs]
         mean_abs_error = sum(abs_errors) / n
 
-        # |E|_max：优先从 CONFIG 信号读取（管理员手工指定），
-        # 否则从数据计算 Σ[max(|E_i|) - |E_i|] / n（对齐 FDS v5.1 / 算法 v2.1）
-        e_max = self._read_e_max(bundle, abs_errors)
-
-        # P0-B: 算法参数 e_max_percentile（默认 100=不截断，与原算法一致）
-        # <100 时对数据驱动 e_max 做百分位截断，抑制极端偏差对 |E|_max 的抬升
-        params = get_algorithm_params("accuracy_rate", bundle.data_block.control_type)
-        e_max_percentile = float(params.get("e_max_percentile", _DEFAULT_E_MAX_PERCENTILE))
-        if e_max_percentile < 100 and e_max > 0 and abs_errors:
-            percentile_cap = float(np.percentile(abs_errors, e_max_percentile))
-            if percentile_cap > 0:
-                e_max = min(e_max, percentile_cap)
-
-        # e_max == 0 表示所有偏差相等（无离散度，含单点）
-        if e_max <= 0:
-            if mean_abs_error <= 0:
-                # 真零偏差 → A = 100%（对齐算法 v2.1 §4.4.4 步骤 8）
-                logger.debug("[准确率] 零偏差，A=100%%")
-                return self._make_result(
-                    bundle,
-                    100.0,
-                    {
-                        "mean_abs_error": 0.0,
-                        "e_max": 0.0,
-                        "r": 0.0,
-                        "decay_factor": 0.0,
-                        "sample_count": n,
-                        "e_max_source": "data_degenerate",
-                    },
-                )
-            # 恒定余差退化：PV 恒定偏离 SP（含单点），数据驱动 e_max=0 使
-            # 指数公式不可归一化，此时禁止给满分，改按量程百分比扣分：
-            # A = max(0, 1 - |Ē|/(0.05·U)) × 100（0.05·U 即量程 5% 余差容限）
-            u = self._read_pv_range(bundle)
-            if u is None or u <= 0:
-                return self._make_inconclusive(
-                    bundle,
-                    "degenerate_offset_missing_pv_range",
-                    {
-                        "mean_abs_error": round(mean_abs_error, 4),
-                        "sample_count": n,
-                        "e_max_source": "data_degenerate",
-                    },
-                )
-            accuracy = self._clamp((1.0 - mean_abs_error / (0.05 * u)) * 100.0)
-            logger.debug(
-                "[准确率] 恒定余差退化: mean_abs_error=%.4f, U=%.1f, A=%.2f",
-                mean_abs_error,
-                u,
-                accuracy,
-            )
+        # 真零偏差 → A = 100%（对齐算法 v2.1 §4.4.4 步骤 8）
+        if mean_abs_error <= 0:
+            logger.debug("[准确率] 零偏差，A=100%%")
             return self._make_result(
                 bundle,
-                accuracy,
+                100.0,
                 {
-                    "mean_abs_error": round(mean_abs_error, 4),
+                    "mean_abs_error": 0.0,
                     "e_max": 0.0,
-                    "pv_range": u,
+                    "r": 0.0,
+                    "decay_factor": 0.0,
                     "sample_count": n,
-                    "e_max_source": "data_degenerate",
-                    "accuracy_basis": "constant_offset_range_percent",
                 },
+            )
+
+        # |E|_max：优先从 CONFIG 信号读取（管理员手工指定绝对值），
+        # 否则用工程容限 tolerance_ratio × U（国标"最大允许偏差"语义）
+        e_max = self._read_e_max(bundle)
+        e_max_source = "config"
+        if e_max is None:
+            params = get_algorithm_params("accuracy_rate", bundle.data_block.control_type)
+            tolerance_ratio = float(
+                params.get("e_max_tolerance_ratio", _DEFAULT_E_MAX_TOLERANCE_RATIO)
+            )
+            u = self._read_pv_range(bundle)
+            e_max = tolerance_ratio * u
+            e_max_source = "tolerance_ratio"
+
+        if e_max <= 0:
+            return self._make_inconclusive(
+                bundle,
+                "invalid_e_max",
+                {"mean_abs_error": round(mean_abs_error, 4), "sample_count": n},
             )
 
         # 归一化偏差 r = |Ē| / |E|_max
@@ -142,9 +121,10 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         accuracy = self._clamp(accuracy)
 
         logger.debug(
-            "[准确率] mean_abs_error=%.4f, e_max=%.4f, r=%.4f, decay=%.4f, A=%.2f",
+            "[准确率] mean_abs_error=%.6f, e_max=%.4f(%s), r=%.4f, decay=%.4f, A=%.2f",
             mean_abs_error,
             e_max,
+            e_max_source,
             r,
             decay_factor,
             accuracy,
@@ -154,30 +134,28 @@ class AccuracyRateCalculator(MetricCalculatorBase):
             bundle,
             accuracy,
             {
-                "mean_abs_error": round(mean_abs_error, 4),
+                "mean_abs_error": round(mean_abs_error, 6),
                 "e_max": round(e_max, 4),
                 "r": round(r, 4),
                 "decay_factor": round(decay_factor, 4),
                 "sample_count": n,
+                "e_max_source": e_max_source,
             },
         )
 
     @staticmethod
-    def _read_e_max(bundle: MetricDataBundle, abs_errors: list[float] | None = None) -> float:
-        """读取偏差最大允许基准 |E|_max.
+    def _read_e_max(bundle: MetricDataBundle) -> float | None:
+        """读取偏差最大允许基准 |E|_max 的 CONFIG 覆盖（绝对值）.
 
-        优先级（对齐算法 v2.1 §4.4.4）：
-        1. CONFIG 信号覆盖（e_max / accuracy_e_max / error_max）—— 管理员手工指定
-        2. 数据驱动计算：e_max = Σ[max(|E_i|) - |E_i|] / n —— 默认行为
+        优先级 1：CONFIG 信号覆盖（e_max / accuracy_e_max / error_max）——
+        管理员手工指定回路级绝对容限（归一化量纲）。
 
         Args:
             bundle: 指标数据包
-            abs_errors: 偏差绝对值列表（数据驱动计算用）；None 时仅查 CONFIG
 
         Returns:
-            |E|_max 值；CONFIG 未指定且 abs_errors 为 None 时返回 0（退化情形）
+            |E|_max 覆盖值；未指定时返回 None（由调用方走容限比例路径）
         """
-        # 优先级 1：CONFIG 信号覆盖
         signals = bundle.data_block.signals
         for key in ("e_max", "accuracy_e_max", "error_max"):
             val = MetricCalculatorBase._read_config_scalar(signals, key)
@@ -187,39 +165,23 @@ class AccuracyRateCalculator(MetricCalculatorBase):
                     return float(val)
                 except (TypeError, ValueError):
                     continue
-
-        # 优先级 2：数据驱动计算 Σ[max(|E_i|) - |E_i|] / n
-        if not abs_errors:
-            return 0.0
-        max_abs_error = max(abs_errors)
-        n = len(abs_errors)
-        e_max = sum(max_abs_error - e for e in abs_errors) / n
-        logger.debug(
-            "[准确率] e_max 数据驱动计算: max_abs=%.4f, n=%d, e_max=%.4f",
-            max_abs_error,
-            n,
-            e_max,
-        )
-        return e_max
+        return None
 
     @staticmethod
-    def _read_pv_range(bundle: MetricDataBundle) -> float | None:
-        """读取 PV 量程范围 U（恒定余差退化分支扣分基准）.
+    def _read_pv_range(bundle: MetricDataBundle) -> float:
+        """读取 PV 量程范围 U（容限比例的基准）.
 
-        仅从 CONFIG 信号读取（pv_range），不做归一化默认：
-        恒定余差按量程百分比扣分时量程是必需基准，缺失应 INCONCLUSIVE。
-
-        Returns:
-            PV 量程；缺失或非法（<= 0 / 解析失败）时返回 None
+        数据块信号经预处理 Step ③ 归一化为 0~100，故默认 100 与信号量纲
+        自洽（与 stability._read_pv_range 同款）；CONFIG pv_range 信号可覆盖。
         """
         val = MetricCalculatorBase._read_config_scalar(bundle.data_block.signals, "pv_range")
         if val is None:
-            return None
+            return DEFAULT_PV_RANGE
         try:
             v = float(val)
+            return v if v > 0 else DEFAULT_PV_RANGE
         except (TypeError, ValueError):
-            return None
-        return v if v > 0 else None
+            return DEFAULT_PV_RANGE
 
 
 __all__ = ["AccuracyRateCalculator"]

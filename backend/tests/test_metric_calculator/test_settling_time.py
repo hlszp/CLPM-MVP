@@ -33,6 +33,44 @@ class TestSettlingTime:
         assert result.value == 0.0
         assert result.details["reason"] == "already_stable"
 
+    def test_noise_floor_judged_already_stable(self):
+        """噪声底判据（2026-10-10 整改）：σ 低于量程 0.1% 的微噪声 → already_stable.
+
+        实证场景（05TY05P0803_PIDA）：PV 贴死 SP 的稳定回路 σ 仅量程
+        万分之几，旧判据 std<1e-9 永不触发 → AR 辨识出噪声自相关时间
+        595s（非回路动态）→ 快速率被误判 9.97 分。修复后直接判已稳态
+        （fast_rate=100）。
+        """
+        n = 721
+        # 归一化量程 100，噪声底 0.1%×100=0.1；σ=0.03 << 0.1
+        pv = [50.033 + 0.03 * math.sin(i * 0.05) for i in range(n)]
+        sp = [50.0] * n
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
+        calc = SettlingTimeCalculator()
+        result = calc.calculate(bundle)
+        assert result.value == 0.0
+        assert result.details["reason"] == "already_stable"
+        assert result.details["noise_floor"] == 0.1
+
+    def test_noise_floor_configurable(self):
+        """噪声底经配置链可调：调高到 5% 后 σ=3% 的中噪声也判已稳态。"""
+        from unittest.mock import patch
+
+        n = 721
+        pv = [50.0 + 3.0 * math.sin(i * 0.05) for i in range(n)]
+        sp = [50.0] * n
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="settling_time")
+        calc = SettlingTimeCalculator()
+        with (
+            patch(
+                "app.services.metric_calculator.settling_time.get_algorithm_params",
+                return_value={"settling_threshold": 0.05, "noise_floor_ratio": 0.05},
+            ),
+        ):
+            result = calc.calculate(bundle)
+        assert result.value == 0.0
+        assert result.details["reason"] == "already_stable"
+
     def test_oscillating_signal_positive_settling(self):
         """振荡信号 → settling > 0。"""
         n = 200

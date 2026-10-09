@@ -52,16 +52,16 @@ class TestCalculateInstrumentFaultRate:
         assert result.fault_rate == 100.0
         assert result.overrange_count == 10
 
-    def test_all_jump(self):
-        """全部跳变 → fault_rate=100%，mutation_count=n。"""
+    def test_all_jump_not_counted(self):
+        """全部跳变 → 不计仪表故障（2026-10-10 用户裁决：JUMP 移出故障码）."""
         reasons = [[OR.JUMP.value]] * 10
         result = calculate_instrument_fault_rate(reasons)
         assert result is not None
-        assert result.fault_rate == 100.0
-        assert result.mutation_count == 10
+        assert result.fault_rate == 0.0
+        assert result.fault_point_count == 0
 
     def test_mixed_faults(self):
-        """3/10 点分别有超限/跳变/冻结 → fault_rate=30%。"""
+        """3/10 点分别有超限/跳变/冻结 → 跳变不计 → fault_rate=20%。"""
         reasons = [
             [OR.OUT_OF_RANGE.value],
             [],
@@ -76,14 +76,13 @@ class TestCalculateInstrumentFaultRate:
         ]
         result = calculate_instrument_fault_rate(reasons)
         assert result is not None
-        assert result.fault_rate == 30.0
+        assert result.fault_rate == 20.0
         assert result.overrange_count == 1
-        assert result.mutation_count == 1
         assert result.freeze_count == 1
-        assert result.fault_point_count == 3
+        assert result.fault_point_count == 2
 
     def test_multiple_reasons_per_point(self):
-        """一点叠加 FROZEN+JUMP → 各 count 各+1，fault_point_count 只+1。"""
+        """一点叠加 FROZEN+JUMP → FROZEN 计 1 点（JUMP 不影响计数）."""
         reasons = [
             [],
             [],
@@ -95,7 +94,6 @@ class TestCalculateInstrumentFaultRate:
         assert result is not None
         assert result.fault_rate == 20.0  # 1/5
         assert result.freeze_count == 1
-        assert result.mutation_count == 1
         assert result.fault_point_count == 1  # 不重复计数
 
     def test_non_fault_reasons_ignored(self):
@@ -154,7 +152,7 @@ class TestCalculateInstrumentFaultRate:
 
     def test_explicit_point_count_none_uses_list_length(self):
         """point_count=None → 使用 len(reasons)。"""
-        reasons = [[OR.JUMP.value], [], [OR.JUMP.value]]
+        reasons = [[OR.FROZEN.value], [], [OR.FROZEN.value]]
         result = calculate_instrument_fault_rate(reasons, point_count=None)
         assert result is not None
         assert result.sample_count == 3
@@ -172,14 +170,14 @@ class TestCalculateInstrumentFaultRate:
             pass  # 预期：不可变
 
     def test_fault_reasons_constant(self):
-        """FAULT_REASONS 常量包含正确的原因码。"""
+        """FAULT_REASONS 常量包含正确的原因码（仅超限/冻结两类）。"""
         assert OR.OUT_OF_RANGE.value in FAULT_REASONS
         assert OR.FROZEN.value in FAULT_REASONS
-        assert OR.JUMP.value in FAULT_REASONS
+        assert OR.JUMP.value not in FAULT_REASONS
         assert OR.SPIKE.value not in FAULT_REASONS
         assert OR.NAN.value not in FAULT_REASONS
         assert OR.QC_BAD.value not in FAULT_REASONS
-        assert len(FAULT_REASONS) == 3
+        assert len(FAULT_REASONS) == 2
 
     def test_source_field_default(self):
         """source 字段默认为 'outlier_reasons'。"""
@@ -198,7 +196,7 @@ class TestCalculateInstrumentFaultRate:
 
     def test_single_fault_point(self):
         """1/100 点故障 → fault_rate=1.0%。"""
-        reasons = [[]] * 99 + [[OR.JUMP.value]]
+        reasons = [[]] * 99 + [[OR.FROZEN.value]]
         result = calculate_instrument_fault_rate(reasons)
         assert result is not None
         assert result.fault_rate == 1.0

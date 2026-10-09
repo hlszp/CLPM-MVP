@@ -275,6 +275,18 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
         osc_value = self._clamp(osc_value)
 
+        # 输出语义（2026-10-10 整改）：value 仅在判定振荡（is_oscillating=True）
+        # 时输出 IAE 相似率，非振荡时置 0。原实现无条件输出相似率数值，
+        # 噪声带内微穿越的相似率可达 0.9+，非振荡回路（σ 仅量程万分之几）
+        # 的快照/前端显示"振荡率 89%"造成误导（实证 05TY05P0803_PIDA）。
+        # 相似率仍保留在 details（osc_similarity_rate + s_a/s_b）供诊断侧
+        # 与趋势分析使用；stability 的 (1-Osc) 修正本就只在 is_oscillating
+        # 时应用，行为不变。
+        suppressed = False
+        if not is_osc and osc_value > 0.0:
+            suppressed = True
+            osc_value = 0.0
+
         logger.debug(
             "[振荡率] s_a=%.4f, s_b=%.4f, s_ta=%.4f, s_tb=%.4f, mean_half=%.1fpts, "
             "amp=%.4f(%.5f), osc=%.2f%%, is_osc=%s, period=%.1fs",
@@ -296,6 +308,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
             {
                 "is_oscillating": is_osc,
                 "oscillation_period": round(period, 2),
+                "osc_similarity_rate": round(min(s_a, s_b) * 100.0, 2),
+                "similarity_suppressed": suppressed,
                 "s_a": round(s_a, 4),
                 "s_b": round(s_b, 4),
                 "s_ta": round(s_ta, 4),

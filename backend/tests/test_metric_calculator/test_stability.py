@@ -57,8 +57,23 @@ class TestStabilityRate:
         calc = StabilityRateCalculator()
         calc.with_dependencies({"oscillation_rate": _make_osc_result(0.0)})
         result = calc.calculate(bundle)
-        # σ=0（偏差恒定）→ S=100
-        assert result.value == 100.0
+        # σ=0 且恒定偏离 SP（完全死值）→ INCONCLUSIVE（2026-10-10 整改：
+        # 死信号不可评估稳定性，满分 100 会奖励仪表卡死/COV 填充假象）
+        assert result.value is None
+        assert result.details["reason"] == "dead_signal_constant_offset"
+
+    def test_small_fluctuation_high_stability(self):
+        """微波动（σ>0 的小偏差）→ 高稳定率。"""
+        n = 100
+        sp = [50.0] * n
+        # 恒定余差 0.5 + 微小抖动 0.05（σ≈0.035 → norm≈0.007 → S≈99）
+        pv = [50.5 + 0.05 * math.sin(i * 0.5) for i in range(n)]
+        bundle = make_bundle({"pv": pv, "sp": sp}, metric_code="stability_rate")
+        calc = StabilityRateCalculator()
+        calc.with_dependencies({"oscillation_rate": _make_osc_result(0.0)})
+        result = calc.calculate(bundle)
+        assert result.value is not None
+        assert result.value > 95.0
 
     def test_large_error_low_stability(self):
         """大偏差波动 → 低稳定率。"""

@@ -320,8 +320,11 @@ class TestHalfPeriodGate:
         calc = OscillationRateCalculator()
         result = calc.calculate(bundle)
         assert result.details["is_oscillating"] is False
-        # 振荡率数值（显示口径）不受门控影响，仍为 min(S_A,S_B)×100
-        assert result.value is not None and result.value > 0
+        # 2026-10-10 整改：非振荡时 value 置 0（显示口径不再输出相似率数值，
+        # 避免"振荡率 89%"误导）；相似率保留在 details 供诊断/趋势分析
+        assert result.value == 0.0
+        assert result.details["similarity_suppressed"] is True
+        assert result.details["osc_similarity_rate"] > 0
 
     def test_high_frequency_not_detected(self):
         """高频"振荡"（周期 4s，半周期 2 采样点 < 8）→ 被门控拒绝。

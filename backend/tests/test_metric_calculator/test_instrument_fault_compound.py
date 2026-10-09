@@ -124,7 +124,7 @@ class TestFrozenCompoundCriterion:
         assert result.details["freeze_count"] == n
 
     def test_other_fault_reasons_unaffected(self, low_frozen_fault_minutes):
-        """OUT_OF_RANGE/JUMP 不走复合判据，仍直接计故障。"""
+        """OUT_OF_RANGE 不走复合判据直接计故障；JUMP 不计（2026-10-10 裁决收窄）。"""
         n = 10
         reasons = [[OR.OUT_OF_RANGE.value]] + [[]] * 8 + [[OR.JUMP.value]]
         bundle = make_bundle(
@@ -133,12 +133,11 @@ class TestFrozenCompoundCriterion:
             metric_code="instrument_fault_rate",
         )
         result = InstrumentFaultRateCalculator().calculate(bundle)
-        assert result.value == 20.0
+        assert result.value == 10.0  # 仅 OUT_OF_RANGE 1 点
         assert result.details["overrange_count"] == 1
-        assert result.details["mutation_count"] == 1
 
-    def test_frozen_mixed_with_jump_still_counts_jump(self, low_frozen_fault_minutes):
-        """未确认 FROZEN 被剔除后，同点的 JUMP 仍计故障。"""
+    def test_unconfirmed_frozen_with_jump_counts_nothing(self, low_frozen_fault_minutes):
+        """未确认 FROZEN 被剔除 + JUMP 不计故障 → 该点完全不计。"""
         n = 10
         reasons = [[OR.FROZEN.value, OR.JUMP.value]] + [[OR.FROZEN.value]] * 9
         bundle = make_bundle(
@@ -148,5 +147,5 @@ class TestFrozenCompoundCriterion:
         )
         result = InstrumentFaultRateCalculator().calculate(bundle)
         assert result.details["freeze_count"] == 0
-        assert result.details["mutation_count"] == 1
-        assert result.details["fault_point_count"] == 1
+        assert result.details["fault_point_count"] == 0
+        assert result.value == 0.0

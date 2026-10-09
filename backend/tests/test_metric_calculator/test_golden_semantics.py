@@ -147,16 +147,19 @@ class TestKnownAlgorithmDefects:
         """刻画：叠加单个大偏差会抬高 A——这是 GB/T 44693.2 公式自身性质，非实现缺陷。
 
         2026-09-13 S3 复核结论（撤销 G18 整改）：
-        附录 B.3 定义 r = |Ē| / |E|_max，其中 |E|_max = (1/n)Σ[max(|E_i|) - |E_i|]
-        是**数据驱动**量（v2.1 明确"非外部输入"，见 tests/compliance/test_b3_accuracy_rate.py），
-        其本质是"峰均差"。故单点尖峰抬高 max|E|、压低 r、抬高 A。
-        初版评审曾据此登记 G18 缺陷并改为以 0.05·U 为主口径，复核发现该改法把国标的
-        主口径与退化分支层级倒置，破坏附录 B.3 一致性（合规用例 4 条转红），故回退。
-        本用例由 xfail 改为一组硬断言，锁定现行口径以免再次被误判为缺陷。
+        附录 B.3 定义 r = |Ē| / |E|_max。2026-09-13 S3 复核曾撤销 G18 整改，
+        锁定"数据驱动 e_max（峰均差）下单点尖峰抬高 A"为公式固有性质；
+        2026-10-10 v2.2 稳定回路误判整改推翻该口径：生产实证
+        （05TY05P0803_PIDA）表明数据驱动 e_max = max-mean 是偏差序列自身
+        离散度，PV 高度稳定的回路（COV 数据源常见）离散度趋 0 → r 爆炸 →
+        余差仅量程万分之几被打 0~11 分且逐小时剧烈跳变；国标 |E|max 语义
+        应为最大允许偏差（工程容限）。经用户裁决改 r = |Ē|/(tolerance×U)，
+        默认 2% 量程。该口径下尖峰抬高 |Ē| → r 增大 → A 下降，本用例随之反转。
 
-        现场若不接受该性质，用既有杠杆收口（均无需改算法）：
-          - CONFIG 信号 e_max / accuracy_e_max / error_max 直接指定基准（_read_e_max 优先级 1）
-          - params.e_max_percentile < 100 对数据驱动 e_max 做分位截断，抑制极端尖峰
+        现场微调杠杆（均无需改算法）：
+          - CONFIG 信号 e_max / accuracy_e_max / error_max 指定回路级
+            绝对基准（_read_e_max 优先级 1）
+          - 配置链 e_max_tolerance_ratio 调整容限比例（默认 0.02）
         """
         n = 100
         base_sp = [50.5] * n  # 恒定 0.5 余差
@@ -182,8 +185,8 @@ class TestKnownAlgorithmDefects:
         score_with = AccuracyRateCalculator().calculate(with_spike).value
 
         assert score_with is not None and score_without is not None
-        # 无尖峰：恒定 0.5 余差落入退化分支，按 0.05·U=5 扣分 → 90.0
-        assert score_without == pytest.approx(90.0, abs=0.01)
-        # 有尖峰：e_max 被抬到 49.005，r 塌到 0.0203，A 升至 99.96（国标固有条纹）
-        assert score_with == pytest.approx(99.96, abs=0.01)
-        assert score_with > score_without
+        # 无尖峰：|Ē|=0.5，容限 2%×100=2 → r=0.25 → A≈94.47
+        assert score_without == pytest.approx(94.47, abs=0.01)
+        # 有尖峰：|Ē|=(0.5×99+50)/100≈0.995 → r≈0.4975 → A≈80.50（尖峰降分）
+        assert score_with == pytest.approx(80.50, abs=0.01)
+        assert score_with < score_without
