@@ -482,11 +482,29 @@ class TestEventQuery:
             mock_current_user(TEST_USERS["admin"]),
         ):
             resp = client.get(
-                "/api/v1/alert/events/evt-001",
+                "/api/v1/alert/events/00000000-0000-0000-0000-000000000001",
                 headers={"Authorization": "Bearer fake"},
             )
         assert resp.status_code == 200
         assert resp.json()["data"]["eventId"] == "evt-001"
+
+    def test_get_event_non_uuid_returns_422(self, client, mock_db, fake_redis) -> None:
+        """非 UUID 路径段（如误调 /events/badge）由参数校验挡回 422，
+        而非当作 UUID 打进数据库触发 500。"""
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.get_event",
+                new_callable=AsyncMock,
+                return_value=_make_event_dict(),
+            ) as mocked,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/alert/events/badge",
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 422
+        mocked.assert_not_awaited()
 
     def test_acknowledge_event(self, client, mock_db, fake_redis) -> None:
         with (
@@ -498,7 +516,7 @@ class TestEventQuery:
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             resp = client.post(
-                "/api/v1/alert/events/evt-001/acknowledge",
+                "/api/v1/alert/events/00000000-0000-0000-0000-000000000001/acknowledge",
                 json={"note": "已查看"},
                 headers={"Authorization": "Bearer fake"},
             )
@@ -581,7 +599,7 @@ class TestEventQuery:
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             resp = client.post(
-                "/api/v1/alert/events/evt-001/resolve",
+                "/api/v1/alert/events/00000000-0000-0000-0000-000000000001/resolve",
                 json={"resolutionNote": "已处理"},
                 headers={"Authorization": "Bearer fake"},
             )
@@ -598,7 +616,7 @@ class TestEventQuery:
             mock_current_user(TEST_USERS["admin"]),
         ):
             resp = client.post(
-                "/api/v1/alert/events/evt-001/false-positive",
+                "/api/v1/alert/events/00000000-0000-0000-0000-000000000001/false-positive",
                 json={"isFalsePositive": True},
                 headers={"Authorization": "Bearer fake"},
             )
@@ -616,7 +634,7 @@ class TestEventQuery:
             mock_current_user(TEST_USERS["admin"]),
         ):
             resp = client.post(
-                "/api/v1/alert/events/evt-001/archive",
+                "/api/v1/alert/events/00000000-0000-0000-0000-000000000001/archive",
                 headers={"Authorization": "Bearer fake"},
             )
         assert resp.status_code == 200
@@ -626,7 +644,7 @@ class TestEventQuery:
         """IC_ENGINEER 无权归档事件。"""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
-                "/api/v1/alert/events/evt-001/archive",
+                "/api/v1/alert/events/00000000-0000-0000-0000-000000000001/archive",
                 headers={"Authorization": "Bearer fake"},
             )
         assert resp.status_code == 403

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -308,62 +309,66 @@ async def batch_acknowledge_events_endpoint(
 
 @router.get("/events/{event_id}", response_model=ApiResponse[AlertEventItem])
 async def get_event_endpoint(
-    event_id: str,
+    event_id: UUID,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("alert:view")),
 ) -> dict:
-    """获取事件详情。"""
-    data = await alert_service.get_event(db, event_id)
+    """获取事件详情。
+
+    event_id 为 UUID 类型标注：非 UUID 路径段（如误调 /events/badge）由
+    FastAPI 校验返回 422，而非当 UUID 打进数据库炸 500。
+    """
+    data = await alert_service.get_event(db, str(event_id))
     return success(data=data)
 
 
 @router.post("/events/{event_id}/acknowledge", response_model=ApiResponse[AlertEventItem])
 async def acknowledge_event_endpoint(
-    event_id: str,
+    event_id: UUID,
     body: AlertEventAcknowledge,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
 ) -> dict:
     """确认预警事件（ADMIN/IC_ENGINEER）。"""
-    data = await alert_service.acknowledge_event(db, event_id, user.username, body.note)
+    data = await alert_service.acknowledge_event(db, str(event_id), user.username, body.note)
     await db.commit()
     return success(data=data, message="事件已确认")
 
 
 @router.post("/events/{event_id}/resolve", response_model=ApiResponse[AlertEventItem])
 async def resolve_event_endpoint(
-    event_id: str,
+    event_id: UUID,
     body: AlertEventResolve,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
 ) -> dict:
     """处置预警事件（ADMIN/IC_ENGINEER）。"""
-    data = await alert_service.resolve_event(db, event_id, user.username, body.resolution_note)
+    data = await alert_service.resolve_event(db, str(event_id), user.username, body.resolution_note)
     await db.commit()
     return success(data=data, message="事件已处置")
 
 
 @router.post("/events/{event_id}/false-positive", response_model=ApiResponse[AlertEventItem])
 async def mark_false_positive_endpoint(
-    event_id: str,
+    event_id: UUID,
     body: AlertEventFalsePositive,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
 ) -> dict:
     """标记事件为误报（ADMIN/IC_ENGINEER）。"""
-    data = await alert_service.mark_false_positive(db, event_id, body.is_false_positive)
+    data = await alert_service.mark_false_positive(db, str(event_id), body.is_false_positive)
     await db.commit()
     return success(data=data, message="误报标记已更新")
 
 
 @router.post("/events/{event_id}/archive", response_model=ApiResponse[AlertEventItem])
 async def archive_event_endpoint(
-    event_id: str,
+    event_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
 ) -> dict:
     """归档事件（仅 ADMIN）。"""
-    data = await alert_service.archive_event(db, event_id)
+    data = await alert_service.archive_event(db, str(event_id))
     await db.commit()
     return success(data=data, message="事件已归档")
 

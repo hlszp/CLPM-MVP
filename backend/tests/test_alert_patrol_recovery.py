@@ -73,9 +73,16 @@ def patch_recovery_deps(monkeypatch):
         async def _rules(db, loop_id):  # noqa: ARG001
             return rules
 
-        async def _evaluate(db, rule, loop_id, current_values=None, confidence_level=None):  # noqa: ARG001
+        async def _evaluate(
+            db,  # noqa: ARG001
+            rule,
+            loop_id,  # noqa: ARG001
+            current_values=None,  # noqa: ARG001
+            confidence_level=None,  # noqa: ARG001
+            read_only=False,
+        ):
             if eval_calls is not None:
-                eval_calls.append(rule.get("id"))
+                eval_calls.append({"rule_id": rule.get("id"), "read_only": read_only})
             return SimpleNamespace(triggered=triggered)
 
         import app.core.redis as redis_mod
@@ -151,3 +158,141 @@ async def test_auto_recover_acknowledged_also_recovers(patch_recovery_deps):
     assert recovered == 1
     assert event.status == "RESOLVED"
     assert event.acknowledged_at is None  # 确认信息不篡改，仅追加解除字段
+
+
+@pytest.mark.asyncio
+async def test_auto_recover_reevaluates_in_read_only_mode(patch_recovery_deps):
+    """恢复重估必须以 read_only 调用（跳过周期节流），否则节流期内的
+    "本周期已检查过"会被误计为未触发 miss（2026-10-09 生产事故根因）。"""
+    event = _event("ev-4", "ACTIVE", "rule-1")
+    eval_calls: list = []
+    patch_recovery_deps([{"id": "rule-1"}], True, _FakeRedis({}), eval_calls=eval_calls)
+
+    await alert_patrol._auto_recover_events(_FakeDb([event]), "loop-1", None)
+
+    assert eval_calls == [{"rule_id": "rule-1", "read_only": True}]
+
+
+# ---------------------------------------------------------------------------
+# 只读探测模式回归：_evaluate_metric_threshold_rule(read_only=True)
+# ---------------------------------------------------------------------------
+
+
+class _ThrottleRedis:
+    """set(nx) 可编程模拟节流键；记录全部写调用。"""
+
+    def __init__(self, throttle_key_exists: bool):
+        self._throttle_key_exists = throttle_key_exists
+        self.set_calls: list[dict] = []
+        self.incr_calls: list[str] = []
+
+    async def set(self, key, value, ex=None, nx=False):  # noqa: A002
+        self.set_calls.append({"key": key, "ex": ex, "nx": nx})
+        if nx and self._throttle_key_exists and key.startswith("alert:metriccheck:"):
+            return None  # 键已存在（redis-py SETNX 语义：返回 None）
+        return True
+
+    async def incr(self, key: str) -> int:
+        self.incr_calls.append(key)
+        return 1
+
+    async def expire(self, key: str, ttl: int) -> None:  # noqa: ARG002
+        return None
+
+    async def delete(self, key: str) -> None:  # noqa: ARG002
+        return None
+
+
+class _ScalarDb:
+    """scalar_one_or_none() 返回单行（LoopConfidenceLatest 替身）。"""
+
+    def __init__(self, row):
+        self._row = row
+
+    async def execute(self, *_args, **_kwargs):
+        outer = self
+
+        class _R:
+            def scalar_one_or_none(self):
+                return outer._row
+
+        return _R()
+
+
+def _kpi_rule(duration_count: int = 1) -> tuple[dict, dict]:
+    rule = {
+        "id": "rule-9",
+        "dsl": {"ruleType": "METRIC_THRESHOLD", "dedupKey": "${loop_id}+${rule_id}"},
+    }
+    condition = {
+        "metricSource": "KPI",
+        "metricCode": "score",
+        "operator": "<",
+        "value": 60,
+        "checkIntervalMinutes": 60,
+        "durationCount": duration_count,
+    }
+    return rule, condition
+
+
+def _kpi_row(score: float = 30.0):
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    return SimpleNamespace(score=score, valid_rate=None, metrics={}, eval_time=now, updated_at=now)
+
+
+@pytest.mark.asyncio
+async def test_read_only_skips_throttle_and_still_evaluates(monkeypatch):
+    """节流键存在时：正常路径返回未触发（interval_not_reached），
+    read_only 路径仍真正求值（指标 30<60 → 触发）。"""
+    from app.services.alert_rule_engine import evaluator
+
+    rule, condition = _kpi_rule()
+
+    async def _kpi(db, loop_id, metric_code):  # noqa: ARG001
+        return 30.0, None
+
+    monkeypatch.setattr(evaluator, "_get_latest_kpi_metric", _kpi)
+
+    redis = _ThrottleRedis(throttle_key_exists=True)
+    import app.core.redis as redis_mod
+
+    monkeypatch.setattr(redis_mod, "redis_client", redis, raising=True)
+
+    normal = await evaluator._evaluate_metric_threshold_rule(
+        _ScalarDb(_kpi_row()), rule, condition, "loop-1", "WARN", None
+    )
+    readonly = await evaluator._evaluate_metric_threshold_rule(
+        _ScalarDb(_kpi_row()), rule, condition, "loop-1", "WARN", None, read_only=True
+    )
+
+    assert normal.triggered is False
+    assert normal.condition_snapshot.get("reason") == "interval_not_reached"
+    assert readonly.triggered is True  # 节流期内重估仍得到真实结论
+
+
+@pytest.mark.asyncio
+async def test_read_only_writes_no_throttle_or_mcount_keys(monkeypatch):
+    """read_only 求值不设置节流键、不推进连续超限计数（纯探测无副作用）。"""
+    from app.services.alert_rule_engine import evaluator
+
+    rule, condition = _kpi_rule(duration_count=3)
+
+    async def _kpi(db, loop_id, metric_code):  # noqa: ARG001
+        return 30.0, None
+
+    monkeypatch.setattr(evaluator, "_get_latest_kpi_metric", _kpi)
+
+    redis = _ThrottleRedis(throttle_key_exists=False)
+    import app.core.redis as redis_mod
+
+    monkeypatch.setattr(redis_mod, "redis_client", redis, raising=True)
+
+    result = await evaluator._evaluate_metric_threshold_rule(
+        _ScalarDb(_kpi_row()), rule, condition, "loop-1", "WARN", None, read_only=True
+    )
+
+    assert result.triggered is True
+    assert redis.set_calls == []  # 未设置节流键
+    assert redis.incr_calls == []  # 未推进 mcount

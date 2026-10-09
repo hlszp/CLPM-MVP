@@ -59,6 +59,7 @@ async def evaluate_rule(
     loop_id: str,
     current_values: dict[str, float | str] | None = None,
     confidence_level: str | None = None,
+    read_only: bool = False,
 ) -> EvaluationResult:
     """求值单条规则（完整流程）。
 
@@ -68,6 +69,11 @@ async def evaluate_rule(
         loop_id: 回路 ID
         current_values: 当前实时值（metric → value）；None 时从 Redis/TDengine 取
         confidence_level: 回路当前可信度等级（A/B/C/D/E）；None 时不做门禁
+        read_only: 只读探测模式（工况恢复重估用）——跳过周期节流与连续超限
+            计数等 Redis 副作用，仅按当前指标值比较。节流命中返回的
+            triggered=False 语义是"本周期跳过检查"而非"工况已恢复"，
+            自动恢复重估若走节流路径会把跳过误计为未触发 miss，导致
+            事件创建约 3 分钟后被批量误 RESOLVED（2026-10-09 生产事故）。
 
     Returns:
         EvaluationResult
@@ -105,7 +111,7 @@ async def evaluate_rule(
     if rule_type == "METRIC_THRESHOLD":
         # 指标阈值预警：基于评估/诊断结果，按监测周期检查（周期节流在函数内）
         return await _evaluate_metric_threshold_rule(
-            db, rule, condition, loop_id, severity, confidence_level
+            db, rule, condition, loop_id, severity, confidence_level, read_only=read_only
         )
     elif rule_type == "THRESHOLD":
         triggered, triggered_value, snapshot = _evaluate_threshold(condition, current_values)
@@ -455,6 +461,7 @@ async def _evaluate_metric_threshold_rule(
     loop_id: str,
     severity: str,
     confidence_level: str | None,
+    read_only: bool = False,
 ) -> EvaluationResult:
     """指标阈值预警求值（基于评估 KPI / 诊断结果，按监测周期检查）。
 
@@ -465,6 +472,11 @@ async def _evaluate_metric_threshold_rule(
     3. 取指标值并比较；
     4. 连续超限计数：Redis ``alert:mcount:<rule_id>:<loop_id>`` INCR，
        达到 durationCount 才触发（触发后清零重新计数）；未超限即清零。
+
+    read_only=True（工况恢复重估）：跳过步骤 1/4 的全部 Redis 读写——
+    节流命中的 triggered=False 意为"本周期跳过检查"，恢复重估若将其
+    计为未触发 miss，事件会在创建约 3 分钟后被误 RESOLVED、下一周期
+    再重建（2026-10-09 生产每小时 ~2000 个 2 分钟寿命事件的事故根因）。
     """
     from app.core.redis import redis_client
 
@@ -497,16 +509,17 @@ async def _evaluate_metric_threshold_rule(
             dedup_key=dedup_key,
         )
 
-    # 1. 周期节流（Redis 不可用时退化为每次都检查）
-    check_key = f"alert:metriccheck:{rule_id}:{loop_id}"
-    try:
-        already_checked = not await redis_client.set(
-            check_key, "1", ex=max(interval_minutes, 1) * 60, nx=True
-        )
-        if already_checked:
-            return _result(False, {"reason": "interval_not_reached"})
-    except Exception:  # noqa: BLE001
-        logger.debug("指标预警周期节流检查失败（Redis 异常，按需继续）", exc_info=True)
+    # 1. 周期节流（Redis 不可用时退化为每次都检查；只读探测跳过——见函数 docstring）
+    if not read_only:
+        check_key = f"alert:metriccheck:{rule_id}:{loop_id}"
+        try:
+            already_checked = not await redis_client.set(
+                check_key, "1", ex=max(interval_minutes, 1) * 60, nx=True
+            )
+            if already_checked:
+                return _result(False, {"reason": "interval_not_reached"})
+        except Exception:  # noqa: BLE001
+            logger.debug("指标预警周期节流检查失败（Redis 异常，按需继续）", exc_info=True)
 
     # 2. 取指标值
     try:
@@ -566,8 +579,9 @@ async def _evaluate_metric_threshold_rule(
             "dataTime": data_time.isoformat() if data_time else None,
         }
 
-    # 5. 连续超限计数（Redis 异常时按 durationCount=1 直接判定）
-    if duration_count > 1:
+    # 5. 连续超限计数（Redis 异常时按 durationCount=1 直接判定；只读探测跳过，
+    #    避免高频重估污染触发侧的连续计数）
+    if duration_count > 1 and not read_only:
         mcount_key = f"alert:mcount:{rule_id}:{loop_id}"
         try:
             if triggered:

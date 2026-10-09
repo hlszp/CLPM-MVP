@@ -28,8 +28,10 @@ v1.1/v1.2 更新：
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import case, func, literal, select, text, union_all
@@ -44,12 +46,18 @@ from app.models.metric import (
     LoopConfidenceLatest,
 )
 from app.models.plant_node import PlantNode
+from app.services.agg_cache import cached_agg
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
+
+#: 慢来源（DEG/DQ / FITNESS）聚合结果缓存 TTL。两来源底层数据分别为小时级
+#: 快照与 5min 预计算表，120s 延迟对关注队列场景无感知；键含 loop_ids 摘要，
+#: 装置/回路筛选与全量互不串扰。ALERT/HANDLING 毫秒级，不缓存。
+_SOURCE_CACHE_TTL = 120.0
 
 #: 评分恶化阈值
 SCORE_DELTA_DEGRADATION = -2  # 进入关注队列的最低门槛
@@ -835,7 +843,10 @@ async def _aggregate_degradation_and_data_quality(
     DATA_QUALITY：完整性 WARNING/CRITICAL 或 可信度 D/E
     每回路每来源最多一项。
 
-    优化：Loop 与 PlantNode 一次 JOIN 带出名称；KPI/完整性/可信度 4 次查询并行。
+    优化：Loop 与 PlantNode 一次 JOIN 带出名称；KPI/可信度 3 次查询顺序执行
+    （0930：单 AsyncSession 禁并发），且均为裸列查询——DISTINCT ON 整 ORM
+    实体加载会反序列化 metrics JSONB TOAST，1209 回路下实测 ~12ms/行
+    （2026-10-09 生产该函数 13~17s 的大头）。
 
     Returns:
         (items, truncated) - 本来源无上限概念，truncated 恒为 False
@@ -868,19 +879,38 @@ async def _aggregate_degradation_and_data_quality(
     for loop, unit_name, area_name in loop_rows:
         loop_info[str(loop.id)] = (loop, area_name, unit_name)
 
-    # ===== 4 次查询并行化（asyncio.gather）=====
+    # ===== 3 次查询（0930：单会话禁并发，顺序 await）=====
+    # 裸列查询：kpi_snapshot_hourly.metrics 等 JSONB TOAST 列整行反序列化在
+    # 1209 回路 × DISTINCT ON 下实测 ~12ms/行（2026-10-09 生产 17s 大头），
+    # 只取本函数实际消费的列（同 loops/monitor 1008 瘦身配方）。
+
     async def _fetch_latest_snap():
         s_stmt = (
-            select(KpiSnapshotHourly)
+            select(
+                KpiSnapshotHourly.id,
+                KpiSnapshotHourly.loop_id,
+                KpiSnapshotHourly.score,
+                KpiSnapshotHourly.ts_end,
+                KpiSnapshotHourly.confidence_level,
+            )
             .where(KpiSnapshotHourly.loop_id.in_(active_loop_ids))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
-        return {str(s.loop_id): s for s in (await db.execute(s_stmt)).scalars().all()}
+        rows = (await db.execute(s_stmt)).all()
+        return {
+            str(r.loop_id): SimpleNamespace(
+                id=r.id, score=r.score, ts_end=r.ts_end, confidence_level=r.confidence_level
+            )
+            for r in rows
+        }
 
     async def _fetch_prev_snap():
         p_stmt = (
-            select(KpiSnapshotHourly)
+            select(
+                KpiSnapshotHourly.loop_id,
+                KpiSnapshotHourly.score,
+            )
             .where(
                 KpiSnapshotHourly.loop_id.in_(active_loop_ids),
                 KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()),
@@ -888,13 +918,23 @@ async def _aggregate_degradation_and_data_quality(
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
-        return {str(s.loop_id): s for s in (await db.execute(p_stmt)).scalars().all()}
+        rows = (await db.execute(p_stmt)).all()
+        return {str(r.loop_id): SimpleNamespace(score=r.score) for r in rows}
 
     async def _fetch_confidence():
-        c_stmt = select(LoopConfidenceLatest).where(
-            LoopConfidenceLatest.loop_id.in_(active_loop_ids)
-        )
-        return {str(s.loop_id): s for s in (await db.execute(c_stmt)).scalars().all()}
+        c_stmt = select(
+            LoopConfidenceLatest.loop_id,
+            LoopConfidenceLatest.confidence_level,
+            LoopConfidenceLatest.eval_time,
+            LoopConfidenceLatest.score,
+        ).where(LoopConfidenceLatest.loop_id.in_(active_loop_ids))
+        rows = (await db.execute(c_stmt)).all()
+        return {
+            str(r.loop_id): SimpleNamespace(
+                confidence_level=r.confidence_level, eval_time=r.eval_time, score=r.score
+            )
+            for r in rows
+        }
 
     # 0930：同上，单会话禁并发，改顺序 await
     snap_map = await _fetch_latest_snap()
@@ -1252,10 +1292,24 @@ async def list_attention(
         tasks.append(_aggregate_alerts(db, loop_ids))
         task_labels.append("ALERT")
     if need_dq:
-        tasks.append(_aggregate_degradation_and_data_quality(db, loop_ids))
+        # DEG/DQ 源数据（kpi_snapshot_hourly / loop_confidence_latest）均为小时级
+        # 更新，裸列瘦身后仍需 3 次 DISTINCT ON；短 TTL 缓存吸收并发/翻页重复请求
+        tasks.append(
+            cached_agg(
+                _scope_cache_key("degdq", loop_ids),
+                lambda: _aggregate_degradation_and_data_quality(db, loop_ids),
+                ttl=_SOURCE_CACHE_TTL,
+            )
+        )
         task_labels.append("DQ")
     if need_fitness:
-        tasks.append(_aggregate_fitness_items(db, loop_ids))
+        tasks.append(
+            cached_agg(
+                _scope_cache_key("fitness", loop_ids),
+                lambda: _aggregate_fitness_items(db, loop_ids),
+                ttl=_SOURCE_CACHE_TTL,
+            )
+        )
         task_labels.append("FITNESS")
     if need_handling:
         tasks.append(_aggregate_handling_orders(db, loop_ids))
@@ -1361,6 +1415,14 @@ async def list_attention(
         "unavailableSections": unavailable,
         "loadedAt": loaded_at,
     }
+
+
+def _scope_cache_key(scope: str, loop_ids: set[str] | None) -> str:
+    """按来源与回路范围生成缓存键（loop_ids 排序摘要，None=全量）。"""
+    if loop_ids is None:
+        return f"attention:{scope}:all"
+    digest = hashlib.sha1(",".join(sorted(loop_ids)).encode()).hexdigest()[:12]
+    return f"attention:{scope}:{digest}"
 
 
 def _empty_result(page: int, page_size: int) -> dict:

@@ -153,6 +153,10 @@ async def _auto_recover_events(db, loop_id: str, confidence_level: str | None) -
     ``_RECOVERY_MISS_THRESHOLD`` 次巡检未触发（Redis 计数防数据抖动误清）
     → RESOLVED（resolved_by=system:auto-recovery）。
 
+    重估以 read_only 模式进行（跳过周期节流/连续计数），"本周期已检查过"
+    的跳过结果不计为未触发 miss——否则事件创建约 3 分钟即被误解除、
+    下一周期重建，形成每小时一批 2 分钟寿命的幽灵事件（2026-10-09 修复）。
+
     规则已删除/解绑（rule_id 空或查不到）的事件**不**自动恢复，留人工处理。
     返回本次恢复的事件数。
     """
@@ -184,7 +188,12 @@ async def _auto_recover_events(db, loop_id: str, confidence_level: str | None) -
         if rule is None:
             continue
         try:
-            result = await evaluate_rule(db, rule, loop_id, confidence_level=confidence_level)
+            # read_only=True：只读探测，跳过周期节流与连续超限计数的 Redis 副作用。
+            # 节流命中的 triggered=False 意为"本周期跳过检查"而非"工况已恢复"，
+            # 若计入 miss 会在事件创建约 3 分钟后误 RESOLVED（2026-10-09 生产事故）。
+            result = await evaluate_rule(
+                db, rule, loop_id, confidence_level=confidence_level, read_only=True
+            )
         except Exception:  # noqa: BLE001
             logger.warning("自动恢复重估失败 event=%s", ev.id, exc_info=True)
             continue
