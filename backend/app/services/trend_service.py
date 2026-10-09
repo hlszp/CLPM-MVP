@@ -248,6 +248,7 @@ async def _fetch_trend_fast(
         raise LookupError("loop 无角色位号绑定")
 
     from app.services.data_source.point_history_repository import (
+        read_last_states_before,
         read_trend_buckets,
     )
 
@@ -257,6 +258,34 @@ async def _fetch_trend_fast(
     # 且 step_ms 会被当作"秒"再 ×1000，桶宽放大 1000 倍。
     # 快路径因此自 0920 优化上线起从未生效（异常被下方 except 静默回退）。
     buckets = await read_trend_buckets(list(role_point.values()), start_dt, end_dt, sample_interval)
+
+    # 2026-10-09 慢变量完整性（用户口径"SP/MODE 每分钟存一遍+前向补齐"的
+    # 查询侧等价实现）：TD FILL(PREV) 不回看窗口外——窗口开头无前值的 null 段
+    # 用「窗口前最后有值状态」作种子填平（0919 read_last_states_before 同语义
+    # 先例）。SP/MODE 为慢变信号（SP 死点回路 AAS 不推送，窗口内可能全程无值，
+    # 填出最后已知值平台线=真实语义）；OP 快变量不填（null=真实缺数）；PV 保
+    # 留质量码语义不动。免改写入链路与历史回填，全部存量窗口即时生效。
+    seeds: dict[str, float] = {}
+    try:
+        before_states = await read_last_states_before(list(role_point.values()), start_dt)
+        for role in ("SP", "MODE"):
+            pid = role_point.get(role, "")
+            st = before_states.get(pid)
+            if st and st.get("value") is not None:
+                v = float(st["value"])
+                seeds[role] = int(round(v)) if role == "MODE" else v
+    except Exception:  # noqa: BLE001 —— 种子查询失败不阻断趋势主链路
+        logger.warning("趋势窗口前种子查询失败，SP/MODE 开头段保持 null", exc_info=True)
+
+    def _fill_leading_nulls(arr: list[float | None], seed: float | None) -> list[float | None]:
+        """把序列开头连续 null 段填为种子值（首个非 null 前；全 null 则整列填平）。"""
+        if seed is None:
+            return arr
+        for i, v in enumerate(arr):
+            if v is not None:
+                break
+            arr[i] = seed
+        return arr
 
     pv_point = role_point.get("PV")
     pv_map = buckets.get(pv_point, {}) if pv_point else {}
@@ -297,9 +326,9 @@ async def _fetch_trend_fast(
     return {
         "timestamps": timestamps,
         "pv": pv,
-        "sp": sp,
+        "sp": _fill_leading_nulls(sp, seeds.get("SP")),
         "op": op,
-        "mode": mode,
+        "mode": _fill_leading_nulls(mode, seeds.get("MODE")),
         "pvQuality": ql,
         "sampleInterval": sample_interval,
         "pointCount": len(timestamps),
