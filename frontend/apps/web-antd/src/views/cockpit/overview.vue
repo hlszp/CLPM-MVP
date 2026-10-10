@@ -1,8 +1,10 @@
 <script lang="ts" setup>
 import type { KpiCardKey } from './components/kpi-band.vue';
+import type { RankSelection } from './utils/score-rank';
 
 /**
- * 驾驶舱 · 页1 总览（方案 11 §5.1；2026-10-05 整合裁决 D2 合并重构）
+ * 驾驶舱 · 页1 总览（方案 11 §5.1；2026-10-05 整合裁决 D2 合并重构；
+ * 2026-10-10 修订：排名区两级化 + 排名→趋势/雷达联动 + 底行改柏拉图/环形图）
  *
  * 新总览 = 原驾驶舱总览 + 原运维工作台「系统总览」Tab 核心内容合并，
  * 重点显示当前全厂级各装置、单元的性能情况；按裁决删除「问题回路
@@ -11,8 +13,14 @@ import type { KpiCardKey } from './components/kpi-band.vue';
  * 布局栅格（1920×1080 满屏无页面滚动，区块内滚动）：
  * - §0 顶栏 64px（cockpit-header，六页签）
  * - §1 KPI 指标带 ~120px：6 卡横排（kpi-band）
- * - 行1：装置性能排名(26%) | 绩效发展趋势(1fr) | 处置待办(32%，跨两行)
- * - 行2：单元平稳率(26%)   | 预警事件流(1fr)   | （待办续）
+ * - 行1：综合评分排名(26%，装置×单元两级可折叠) | 绩效趋势(1fr，随选中
+ *   节点联动) | 六维绩效雷达(32%，随选中节点联动，高度=趋势行)
+ * - 行2：单元平稳率(26%) | 单元自控率柏拉图(1fr) | 适用性L0~L4环形图(32%)
+ *
+ * 联动协议（2026-10-10）：排名区点击装置/单元行 → selection（RankSelection）
+ * 由本页持有：趋势面板与雷达面板消费 plant_node.id 刷新；再点同行取消选中
+ * （趋势回全厂口径，雷达回空态提示）。处置待办 5 态胶囊与预警事件流两区
+ * 块已按修订移除（KPI 卡待办/预警点击弹窗仍保留）。
  *
  * 交互铁律：纯查看零操作——所有点击仅打开舱内深度弹窗，
  * 无写操作按钮、无后台跳转链接（唯一后台入口为顶栏「管理后台」）。
@@ -26,16 +34,17 @@ import { getRankingApi } from '#/api/metric';
 import { useCockpitStore } from '#/store/cockpit';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
-import AlertStream from './components/alert-stream.vue';
 import CockpitHeader from './components/cockpit-header.vue';
 import DeviceRankBars from './components/device-rank-bars.vue';
+import FitnessDonut from './components/fitness-donut.vue';
 import KpiBand from './components/kpi-band.vue';
 import EventDetailModal from './components/modals/event-detail-modal.vue';
 import ListModal from './components/modals/list-modal.vue';
 import LoopDetailModal from './components/modals/loop-detail-modal.vue';
 import TodoDetailModal from './components/modals/todo-detail-modal.vue';
-import TodoPanel from './components/todo-panel.vue';
+import NodeRadarPanel from './components/node-radar-panel.vue';
 import TrendPanel from './components/trend-panel.vue';
+import UnitAutoPareto from './components/unit-auto-pareto.vue';
 import UnitSteadyBars from './components/unit-steady-bars.vue';
 import { GRADE_LABELS, gradeOfScore } from './composables/use-cockpit-theme';
 import { WINDOW_MAP, windowStartDate } from './utils/format';
@@ -46,6 +55,15 @@ const cockpitStore = useCockpitStore();
 const theme = computed(() => cockpitStore.theme);
 
 // ---------------------------------------------------------------------------
+// 排名区选中态（2026-10-10 联动修订）：趋势 + 雷达共享
+// ---------------------------------------------------------------------------
+const selection = ref<null | RankSelection>(null);
+
+function onRankSelect(payload: null | RankSelection) {
+  selection.value = payload;
+}
+
+// ---------------------------------------------------------------------------
 // C5 混合刷新（方案 §9）：静态区块 5min 定时 + 顶栏暂停/手动刷新
 // ---------------------------------------------------------------------------
 const AUTO_REFRESH_MS = 5 * 60_000;
@@ -53,22 +71,29 @@ const AUTO_REFRESH_MS = 5 * 60_000;
 const kpiBandRef = ref<InstanceType<typeof KpiBand>>();
 const rankBarsRef = ref<InstanceType<typeof DeviceRankBars>>();
 const trendPanelRef = ref<InstanceType<typeof TrendPanel>>();
-const todoPanelRef = ref<InstanceType<typeof TodoPanel>>();
+const radarPanelRef = ref<InstanceType<typeof NodeRadarPanel>>();
 const steadyBarsRef = ref<InstanceType<typeof UnitSteadyBars>>();
-const alertStreamRef = ref<InstanceType<typeof AlertStream>>();
+const autoParetoRef = ref<InstanceType<typeof UnitAutoPareto>>();
+const fitnessDonutRef = ref<InstanceType<typeof FitnessDonut>>();
 
-/** §1 KPI/§2 装置排名/§3 趋势/§8 单元平稳率（5min 定时器口径） */
-const staticRefs = [kpiBandRef, rankBarsRef, trendPanelRef, steadyBarsRef];
+/** §1 KPI/§2 排名/§3 趋势/§4 雷达/§8 单元平稳率/自控率柏拉图/适用性环形（5min 定时器口径） */
+const staticRefs = [
+  kpiBandRef,
+  rankBarsRef,
+  trendPanelRef,
+  radarPanelRef,
+  steadyBarsRef,
+  autoParetoRef,
+  fitnessDonutRef,
+];
 
 function reloadStatic() {
   for (const r of staticRefs) void r.value?.reload();
 }
 
-/** 手动全页刷新：静态 4 区块 + 处置待办 + 预警流 */
+/** 手动全页刷新：全部静态区块 */
 function reloadAll() {
   reloadStatic();
-  void todoPanelRef.value?.reload();
-  void alertStreamRef.value?.reload();
 }
 
 let autoTimer: null | ReturnType<typeof setInterval> = null;
@@ -87,13 +112,12 @@ onUnmounted(() => {
   }
 });
 
-// 恢复自动刷新（暂停→恢复）时立即补拉一次（静态区块 + §4 待办）
+// 恢复自动刷新（暂停→恢复）时立即补拉一次（静态区块）
 watch(
   () => cockpitStore.autoRefreshPaused,
   (paused, prev) => {
     if (prev && !paused) {
       reloadStatic();
-      void todoPanelRef.value?.reload();
     }
   },
 );
@@ -316,21 +340,19 @@ function onKpiCardClick(key: KpiCardKey) {
     <!-- §1 KPI 指标带（6 卡横排） -->
     <KpiBand ref="kpiBandRef" @card-click="onKpiCardClick" />
 
-    <!-- 五区块两行三列（26% / 1fr / 32%），处置待办跨两行 -->
+    <!-- 六区块两行三列（26% / 1fr / 32%）；行1=排名/趋势/雷达（联动），行2=平稳率/自控率柏拉图/适用性环形 -->
     <section class="block-grid">
-      <DeviceRankBars ref="rankBarsRef" class="block-rank" />
-      <TrendPanel ref="trendPanelRef" class="block-trend" />
-      <TodoPanel
-        ref="todoPanelRef"
-        class="block-todo"
-        @open-todo="openTodoDetail"
+      <DeviceRankBars
+        ref="rankBarsRef"
+        class="block-rank"
+        :selected="selection"
+        @select="onRankSelect"
       />
+      <TrendPanel ref="trendPanelRef" class="block-trend" :node="selection" />
+      <NodeRadarPanel ref="radarPanelRef" class="block-radar" :node="selection" />
       <UnitSteadyBars ref="steadyBarsRef" class="block-steady" />
-      <AlertStream
-        ref="alertStreamRef"
-        class="block-alert"
-        @open-event="openEventDetail"
-      />
+      <UnitAutoPareto ref="autoParetoRef" class="block-pareto" />
+      <FitnessDonut ref="fitnessDonutRef" class="block-donut" />
     </section>
 
     <!-- 4 类深度弹窗（纯查看，无任何操作按钮） -->
@@ -369,7 +391,7 @@ function onKpiCardClick(key: KpiCardKey) {
   padding-bottom: 12px;
 }
 
-/* 五区块两行三列（26% / 1fr / 32%）；处置待办右列跨两行 */
+/* 六区块两行三列（26% / 1fr / 32%）；雷达/环形图分踞右列两行 */
 .block-grid {
   display: grid;
   flex: 1;
@@ -388,15 +410,19 @@ function onKpiCardClick(key: KpiCardKey) {
   grid-area: 1 / 2;
 }
 
-.block-todo {
-  grid-area: 1 / 3 / 3 / 4;
+.block-radar {
+  grid-area: 1 / 3;
 }
 
 .block-steady {
   grid-area: 2 / 1;
 }
 
-.block-alert {
+.block-pareto {
   grid-area: 2 / 2;
+}
+
+.block-donut {
+  grid-area: 2 / 3;
 }
 </style>

@@ -1,15 +1,19 @@
 <script lang="ts" setup>
 /**
- * 驾驶舱总览 §3 绩效趋势（方案 11 §5.2）
+ * 驾驶舱总览 §3 绩效趋势（方案 11 §5.2；2026-10-10 联动修订）
  *
- * 数据：getBoardTrendApi（/dashboard/board/trend，恒全厂口径）。
+ * 数据：getBoardTrendApi（/dashboard/board/trend）。
  * 窗口映射：24h→last_24_hours（小时粒度）/ 7d→last_7_days / 30d→last_30_days。
+ * 联动：接收排名区选中节点（RankSelection，plant_node.id 递归聚合该节点
+ * 子树 UNIT 行）；未选中=全厂口径（原有默认行为不变）。
  *
  * 设计为「综合评分+自动投用率双曲线 + 五色等级分布堆叠面积」；
  * 因 BoardTrendResult 无等级分布序列，按 C3 降级约定仅呈现双折线，
  * 并在标题栏注明（不造数）。悬浮 tooltip，无点击行为。
  */
 import type { EchartsUIType } from '@vben/plugins/echarts';
+
+import type { RankSelection } from '../utils/score-rank';
 
 import type { DashboardApi } from '#/api/dashboard';
 
@@ -26,6 +30,11 @@ import { normalizeUtcTimestamp } from '#/utils/format';
 import { useCockpitTheme } from '../composables/use-cockpit-theme';
 import { WINDOW_MAP } from '../utils/format';
 
+const props = defineProps<{
+  /** 排名区选中节点（null=全厂口径） */
+  node?: null | RankSelection;
+}>();
+
 const cockpitStore = useCockpitStore();
 const { chartColors, gradeColors, isLight } = useCockpitTheme();
 
@@ -36,6 +45,7 @@ async function load() {
   loading.value = true;
   try {
     trend.value = await getBoardTrendApi({
+      plantId: props.node?.nodeId ?? undefined,
       timeWindow: WINDOW_MAP[cockpitStore.timeWindow],
     });
   } catch {
@@ -133,6 +143,8 @@ onMounted(load);
 
 // 时间窗切换 → 重新拉取；仅主题切换 → 重算配色
 watch(() => cockpitStore.timeWindow, load);
+// 排名区选中节点变化（含取消选中）→ 重新拉取
+watch(() => props.node?.nodeId ?? null, load);
 watch(isLight, refresh);
 
 /** C5 混合刷新：由父级（5min 定时/手动刷新/恢复补拉）触发重拉 */
@@ -148,7 +160,7 @@ watch([trend, loading], () => {
     <div class="cockpit-panel__hd">
       绩效趋势
       <span class="sub">
-        综合评分 / 自动投用率 · 全厂口径（等级分布序列接口缺失，暂不堆叠）
+        综合评分 / 自动投用率 · {{ node ? `${node.name} 口径` : '全厂口径' }}（等级分布序列接口缺失，暂不堆叠）
       </span>
     </div>
     <div class="trend__bd">
