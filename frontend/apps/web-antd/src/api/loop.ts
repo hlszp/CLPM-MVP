@@ -740,8 +740,8 @@ export function getLoopListApi(params: LoopApi.LoopQueryParams) {
 export function recomputeHealthFlagsApi() {
   return requestClient.post<{
     flagged: number;
-    suspectedCascade: number;
     flagType: string;
+    suspectedCascade: number;
   }>('/loops/health-flags/recompute');
 }
 

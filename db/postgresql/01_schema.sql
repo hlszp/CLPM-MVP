@@ -369,6 +369,12 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     fitness_level       VARCHAR(2),
     fitness_tags        JSONB,
     fitness_detail      JSONB,
+    -- 三性分离等级（迁移 daa4f06b6e26）+ 评估来源标注（迁移 17fdbfa579af）
+    assess_level        VARCHAR(2),
+    diagnose_level      VARCHAR(2),
+    tune_level          VARCHAR(2),
+    source              VARCHAR(16),
+    source_task_id      VARCHAR(36),
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start),
@@ -1003,6 +1009,12 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_custom (
     fitness_level           VARCHAR(2),
     fitness_tags            JSONB,
     fitness_detail          JSONB,
+    -- 三性分离等级（迁移 daa4f06b6e26）+ 评估来源标注（迁移 17fdbfa579af）
+    assess_level            VARCHAR(2),
+    diagnose_level          VARCHAR(2),
+    tune_level              VARCHAR(2),
+    source                  VARCHAR(16),
+    source_task_id          VARCHAR(36),
     CONSTRAINT uq_kpi_custom_task_loop UNIQUE (task_id, loop_id),
     CONSTRAINT fk_kpi_custom_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     CONSTRAINT ck_kpi_custom_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
@@ -1611,6 +1623,10 @@ CREATE INDEX IF NOT EXISTS idx_alert_event_severity_status    ON alert_event (se
 CREATE INDEX IF NOT EXISTS idx_alert_event_rule               ON alert_event (rule_id, triggered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_event_status             ON alert_event (status);
 CREATE INDEX IF NOT EXISTS idx_alert_event_tracker            ON alert_event (tracker_id);
+-- 2026-10-10 补齐引导 SQL 漂移欠账（预警性能批，迁移 b275ef85dc40）：
+-- triggered_at 单列 + (status, triggered_at) 复合：预警实时 Tab 与预警卡查询索引直达
+CREATE INDEX IF NOT EXISTS idx_alert_event_triggered_at ON alert_event (triggered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_event_status_time  ON alert_event (status, triggered_at DESC);
 
 -- 14.4 alert_rule_audit_log（规则变更审计）
 CREATE TABLE IF NOT EXISTS alert_rule_audit_log (
@@ -1693,6 +1709,10 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_loop_created ON diagnosis_run (loop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (primary_category);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_task         ON diagnosis_run (task_id);
+-- 2026-10-10 补齐引导 SQL 漂移欠账（驾驶舱 P1，迁移 c9bf79b6868a）：
+-- (status, created_at) 覆盖窗口过滤段；finished_at 覆盖驾驶舱漏斗 diagnosed 段
+CREATE INDEX IF NOT EXISTS idx_diagnosis_run_status_created ON diagnosis_run (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_diagnosis_run_finished_at ON diagnosis_run (finished_at);
 
 -- -----------------------------------------------------------------------------
 -- 处置工单（处置模块 v2.0 双实体：排程-执行-验证-闭环执行载体；2026-08-20）
