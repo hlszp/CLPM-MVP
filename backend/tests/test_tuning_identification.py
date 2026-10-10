@@ -749,7 +749,7 @@ class TestPipelineEndToEnd:
         # P2-009：CLIVC 使闭环辨识不再被拒绝
         assert result.success
         assert result.best_model is not None
-        assert result.algorithm_version == "TUNE_IDENT_v1.0"
+        assert result.algorithm_version == "TUNE_IDENT_v1.1"
         # 候选中应包含 CLIVC（HISTORICAL_IV 方法）
         iv_candidates = [c for c in result.candidates if c.identify_method.value == "HISTORICAL_IV"]
         assert len(iv_candidates) > 0, "闭环 SP 激励下应产生 CLIVC 候选"
@@ -1988,7 +1988,7 @@ class TestGoldenBaseline:
     def test_baseline_file_exists(self):
         """golden 基线文件应存在且可解析。"""
         baseline = self._load_baseline()
-        assert baseline["algorithm_version"] == "TUNE_IDENT_v1.0"
+        assert baseline["algorithm_version"] == "TUNE_IDENT_v1.1"
         assert "scenarios" in baseline
 
     def test_closed_loop_fopdt_baseline_alignment(self):
@@ -2236,7 +2236,9 @@ class TestP2015ParameterUncertainty:
             return pu.K_ci_upper - pu.K_ci_lower
 
         ci_width_low = _get_arx_ci(0.05)
-        ci_width_high = _get_arx_ci(0.5)
+        # P2-020：0.5 会触发低通必要性判据（滤波压噪后 CI 不再随噪声变宽），
+        # 降 0.25 保住 CI 估计器元性质的验证
+        ci_width_high = _get_arx_ci(0.25)
         assert ci_width_low is not None and ci_width_high is not None
         assert ci_width_high > ci_width_low, (
             f"高噪声 CI 宽度 {ci_width_high:.4f} 应 > 低噪声 {ci_width_low:.4f}"

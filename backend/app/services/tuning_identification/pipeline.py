@@ -50,7 +50,8 @@ from app.services.tuning_identification.types import (
 
 logger = logging.getLogger(__name__)
 
-ALGORITHM_VERSION = "TUNE_IDENT_v1.0"
+# 算法版本单一真相源在 types.IdentificationResult（v1.1=2026-10-04 预处理增强）
+ALGORITHM_VERSION = "TUNE_IDENT_v1.1"
 
 # 可信度阈值
 _R2_A = 0.90
@@ -71,6 +72,22 @@ _OCCAM_R2_RELATIVE_GAIN = 0.05
 _LOW_COHERENCE_THRESHOLD = 0.3
 # P2-019：坏点清洗参数
 _MAX_INTERP_GAP = 5  # 连续 NaN < 此值时线性插值；≥ 此值按大缺口取最长段
+
+# P2-020（2026-10-04 预处理增强）：自动选段 / 去趋势 / 低通滤波
+_OP_SPAN_NORMALIZED = 100.0  # 预处理链输出 OP 已归一化 0~100（V62-P1-009）
+# 去趋势保守门槛（三条件与，见 _detrend_signals 文档）：
+# PV 全窗线性漂移 < 5% 量程跳过；PV 线性拟合 R² < 0.9（非趋势形状）跳过；
+# OP 漂移 < 1% 量程视为积分特性（IPDT 保护）跳过
+_DETREND_MIN_DRIFT_PCT = 5.0
+_DETREND_MIN_LINEARITY = 0.9
+_DETREND_MIN_OP_DRIFT_PCT = 1.0
+# 低通必要性判据：滤波前后 PV 差异 std 占比 < 10% 视为高频噪声不显著，
+# 不替换原信号（保证干净/低噪数据零影响，仅在确有测量噪声时介入）
+_LOWPASS_MIN_DIFF_RATIO = 0.10
+_LOWPASS_WN_MIN = 0.005  # 归一化截止频率下限（相对 Nyquist）
+_LOWPASS_WN_MAX = 0.4  # 上限：≥ 此值说明快动态无安全余量，跳过滤波
+_LOWPASS_FREQ_MARGIN = 20.0  # 截止 = PV 谱主峰频率 × 此倍数（覆盖瞬态/高阶特征）
+_LOWPASS_PEAK_PROMINENCE = 5.0  # 主峰显著性：PSD 峰值 > 此倍数 × 中位值
 
 
 def _find_contiguous_segments(valid: np.ndarray) -> list[tuple[int, int]]:
@@ -199,6 +216,187 @@ def _clean_nan_segments(
     return u, y, sp, stats
 
 
+# ---------------------------------------------------------------------------
+# P2-020（2026-10-04 预处理增强）：自动选段 / 去趋势 / 低通滤波
+# 层 0.5：坏点清洗之后、激励检测之前；三项均可独立跳过、互不阻断。
+# ---------------------------------------------------------------------------
+
+
+def _auto_select_segment(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    mode: list[int] | None,
+    op_limits: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
+    """自动选段：按 MODE/缺口/饱和切分，激励评分选最优可辨识片段.
+
+    此前正式辨识为整窗一锅进——窗口混入手动/饱和/稳态死段时整窗回归被
+    稀释（片段切分能力已存在但仅用于预览端点，P2-020 接入正式链）。
+
+    分级回退（与 G24 裁决兼容：手动段可辨识，仅降权，不作硬门控）：
+    1. 可辨识片段（exclusion_reason=None）中激励分最高者（并列取点数多）；
+    2. 无 → 手动模式片段（MANUAL_MODE）中激励分最高者；
+    3. 无 → 回退整窗（不因选段失败而拒绝辨识）。
+
+    mode=None 时 segment_signals 不切分（假设全 AUTO），等价整窗。
+    op_limits=(min, max)：OP 工程量程（饱和检测用）；None 跳过饱和检测
+    ——算法栈不假设输入量纲（生产链 OP 已归一化 0~100，由包装层显式传入）。
+    """
+    from app.services.tuning_identification.segmentation import segment_signals
+
+    op_min, op_max = op_limits if op_limits is not None else (None, None)
+    try:
+        specs = segment_signals(
+            y.tolist(),
+            u.tolist(),
+            mode=mode,
+            op_min=op_min,
+            op_max=op_max,
+        )
+    except Exception:
+        logger.debug("自动选段切分失败，回退整窗", exc_info=True)
+        return u, y, sp, None
+
+    identifiable = [s for s in specs if s.exclusion_reason is None]
+    manual_fallback = [s for s in specs if s.exclusion_reason == "MANUAL_MODE"]
+    pool = identifiable or manual_fallback
+    if not pool:
+        return u, y, sp, "auto-segment: 无可辨识片段，回退整窗"
+
+    # 激励评分选优（d=1 粗滞后，同预览端点口径；正式延迟由参数化阶段搜索）
+    scored: list[tuple[float, int, int, object]] = []
+    for i, s in enumerate(pool):
+        exc = check_excitation(
+            u[s.start_idx : s.end_idx],
+            y[s.start_idx : s.end_idx],
+            1,
+            op_span=_OP_SPAN_NORMALIZED,
+        )
+        scored.append(
+            (excitation_score(exc.condition_number, exc.significant_changes), s.point_count, i, s)
+        )
+    best_score, _, best_i, best = max(scored)
+
+    # 单段且为可辨识段 = 整窗，无选段事实（手动降级路径即使单段也标注）
+    if identifiable and len(specs) == 1 and best is specs[0]:
+        return u, y, sp, None
+    su = u[best.start_idx : best.end_idx]
+    sy = y[best.start_idx : best.end_idx]
+    ssp = sp[best.start_idx : best.end_idx] if sp is not None else None
+    degrade = "" if identifiable else "（手动段降级使用，G24）"
+    note = (
+        f"auto-segment: {best_i + 1}/{len(pool)} [{best.start_idx}:{best.end_idx}] "
+        f"{best.mode_label} 激励分{best_score:.0f}{degrade}"
+    )
+    return su, sy, ssp, note
+
+
+def _detrend_signals(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
+    """去趋势：各信号去线性趋势（含均值；应对工作点缓变/传感器漂移）.
+
+    执行条件三缺一不可（保守，误去代价 >> 漏去代价）：
+    1. PV 全窗线性漂移 ≥ 5% 量程（漂移显著）；
+    2. PV 对线性拟合的 R² ≥ 0.9（数据形状本质是缓变趋势）——SP 阶跃下
+       PV 的"稳态跟随"是信号而非趋势（阶梯状对直线拟合差），排除；
+    3. OP 也有可感漂移 ≥ 1% 量程（工作点漂移佐证）——OP 平稳而 PV 持续
+       斜坡是积分过程（IPDT）的本质特征，跳过保护其可辨识性。
+
+    漏去趋势仅残差略增；误去趋势则摧毁信号本身（阶跃稳态/积分特性）。
+    """
+    n = len(u)
+    if n < 2:
+        return u, y, sp, None
+    t = np.arange(n, dtype=float)
+
+    slope_y = float(np.polyfit(t, y, 1)[0])
+    drift_pct = abs(slope_y) * n / _OP_SPAN_NORMALIZED * 100.0
+    if drift_pct < _DETREND_MIN_DRIFT_PCT:
+        return u, y, sp, None
+    # 线性形状判据：直线解释 PV 变化的比例（阶跃/振荡主导的数据 R² 低）
+    y_centered = y - float(np.mean(y))
+    sst = float(np.sum(y_centered**2))
+    if sst <= 1e-12:
+        return u, y, sp, None
+    lin_fit = slope_y * (t - float(np.mean(t)))
+    r2_lin = 1.0 - float(np.sum((y_centered - lin_fit) ** 2)) / sst
+    if r2_lin < _DETREND_MIN_LINEARITY:
+        return u, y, sp, None
+    slope_u = float(np.polyfit(t, u, 1)[0])
+    drift_u_pct = abs(slope_u) * n / _OP_SPAN_NORMALIZED * 100.0
+    if drift_u_pct < _DETREND_MIN_OP_DRIFT_PCT:
+        return u, y, sp, None
+
+    def _detrend(x: np.ndarray) -> np.ndarray:
+        coeff = np.polyfit(t, x, 1)
+        return x - np.polyval(coeff, t)
+
+    u2 = _detrend(u)
+    y2 = _detrend(y)
+    sp2 = _detrend(sp) if sp is not None else None
+    note = f"detrend: PV 全窗漂移 {drift_pct:.1f}% 量程已去除"
+    return u2, y2, sp2, note
+
+
+def _lowpass_signals(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    ts: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
+    """低通滤波：PV 谱主导频率自适应截止，Butterworth-2 + filtfilt 零相位.
+
+    两条铁律：
+    - OP/PV/SP 必须同一截止频率滤波——传递函数估计 G_hat=(H·Y)/(H·U)
+      中 H 在通带内抵消；不同截止会引入相对相位差导致增益/滞后错配；
+    - 必须零相位（filtfilt）——因果滤波的群延迟会被延迟搜索误认为纯滞后 θ。
+
+    截止频率 = PV Welch 谱主峰频率 × 10 倍安全余量（过程主导动态的频带
+    覆盖其全部慢模态；峰不显著 = 无主导频率的宽带信号，多为纯噪声或快
+    动态，跳过滤波）。主峰判定：PSD 峰值 > 5×中位值（排除平坦谱的随机
+    峰），谱估计 detrend='constant' 且跳过 DC bin。Wn 夹在
+    [0.005, 0.4]×Nyquist，≥ 上限说明快动态无安全余量 → 跳过。
+    任一信号含非有限值时跳过（filtfilt 对 NaN 不稳健；清洗后不应出现）。
+    """
+    arrs = [u, y] + ([sp] if sp is not None else [])
+    if any(not np.isfinite(a).all() for a in arrs) or len(y) < 16:
+        return u, y, sp, None
+
+    from scipy import signal as _sp_signal
+
+    fs = 1.0 / ts
+    nperseg = int(min(len(y), 256))
+    freqs, psd = _sp_signal.welch(y, fs=fs, nperseg=nperseg, detrend="constant")
+    if len(psd) < 3:
+        return u, y, sp, None
+    psd_ac = psd[1:]  # 跳过 DC bin（残余均值不为谱峰）
+    med = float(np.median(psd_ac))
+    peak_i = int(np.argmax(psd_ac))
+    if med <= 0 or float(psd_ac[peak_i]) <= _LOWPASS_PEAK_PROMINENCE * med:
+        return u, y, sp, None  # 无显著主峰：宽带信号（纯噪声/快动态），跳过
+    fc = float(freqs[peak_i + 1]) * _LOWPASS_FREQ_MARGIN
+    wn = fc / (fs / 2.0)
+    if wn >= _LOWPASS_WN_MAX:
+        return u, y, sp, None
+    wn = max(wn, _LOWPASS_WN_MIN)
+    b, a = _sp_signal.butter(2, wn)
+    fu = _sp_signal.filtfilt(b, a, u)
+    fy = _sp_signal.filtfilt(b, a, y)
+    # 必要性判据：滤波实际去除的高频成分不显著（干净数据）→ 不替换原信号，
+    # 保证预处理对无噪/低噪数据零影响（Occam/一致性等既有行为不变）
+    y_std = float(np.std(y - np.mean(y)))
+    diff_ratio = float(np.std(fy - y)) / y_std if y_std > 1e-12 else 0.0
+    if diff_ratio < _LOWPASS_MIN_DIFF_RATIO:
+        return u, y, sp, None
+    fsp = _sp_signal.filtfilt(b, a, sp) if sp is not None else None
+    note = f"lowpass: fc={wn * fs / 2:.4g}Hz(Wn={wn:.3f}) butter2·filtfilt"
+    return fu, fy, fsp, note
+
+
 def _feasibility_dict(feasibility) -> dict | None:
     """T2（2026-10-01）：物理可行性检查结构化（原仅拼进 reason 字符串）。"""
     if feasibility is None:
@@ -224,6 +422,8 @@ def identify_from_history(
     ts: float = 1.0,
     theta_estimate: float | None = None,
     candidate_models: list[ModelType] | None = None,
+    mode: list[int] | None = None,
+    op_limits: tuple[float, float] | None = None,
 ) -> IdentificationResult:
     """基于历史数据辨识过程对象 G_plant = PV/OP.
 
@@ -231,19 +431,20 @@ def identify_from_history(
     无截距回归要求偏差变量输入；输出的 K/tau/theta 为增量参数，无需还原。
     偏置量（去均值前的样本均值）记录在 best_model.reason 中。
 
+    P2-020（2026-10-04 预处理增强）：坏点清洗后依次执行自动选段（按
+    MODE/缺口/饱和切分并按激励评分选最优段；mode=None 不切分）→ 去线性
+    趋势 → 低通滤波（PV 谱自适应截止 + 零相位，OP/PV/SP 同截止），
+    三项均可独立跳过、处理标注拼入 reason 透明化。mode 参数与 G24 裁决
+    的关系：不作辨识门控（手动段降级使用而非拒绝），仅用于选段切分。
+
     Args:
         op: OP 时序（过程对象输入）
         pv: PV 时序（过程对象输出）
         sp: SP 时序（保留用于后续经验证的闭环辨识方法；Phase 0 不参与生产选模）
-        # S3 修复（G24）：原签名含 mode: list[int] | None = None，并在文档中称
-        # "用于判断 AUTO/MANUAL"，但函数体从未使用——是**死参数**。
-        # 经裁决（2026-09-13）：**辨识不以控制模式为门控**——手动段的 OP 操作同样
-        # 产生 PV 阶跃，据 OP->PV 响应即可辨识（本函数正是这个口径，见首行
-        # "基于历史数据辨识过程对象 G_plant = PV/OP"）。故移除该死参数，
-        # 避免调用方误以为"不传 mode 就不辨识手动段"。
         ts: 采样周期（秒）
         theta_estimate: 纯滞后预估值（秒），None 时使用 2Ts 启发值并将可信度封顶 C
         candidate_models: 候选模型阶次列表，默认 [FOPDT, SOPDT]
+        mode: MODE 时序（可选；自动选段的切分依据，None 时假设全 AUTO 不切分）
 
     Returns:
         IdentificationResult
@@ -305,6 +506,24 @@ def identify_from_history(
             ),
             theta_source=theta_source,
         )
+
+    # P2-020（2026-10-04 预处理增强）：自动选段 → 去趋势 → 低通滤波。
+    # 位于 SP 激励判定之前（切出的最优段决定 CLIVC 是否启用更准确）；
+    # 三项均可独立跳过，标注拼入 reason 透明化（不静默改变辨识输入）。
+    # 激励检测（层 1）使用滤波前副本：滤波会抹平 OP 微小方向变化，
+    # 在滤波后数据上检测会系统性偏严（闭环 OP 本就渐进少变号）。
+    preprocess_notes: list[str] = []
+    u_raw, y_raw, sp_raw, seg_note = _auto_select_segment(u_raw, y_raw, sp_raw, mode, op_limits)
+    if seg_note:
+        preprocess_notes.append(seg_note)
+    u_raw, y_raw, sp_raw, detrend_note = _detrend_signals(u_raw, y_raw, sp_raw)
+    if detrend_note:
+        preprocess_notes.append(detrend_note)
+    u_exc_probe, y_exc_probe = u_raw.copy(), y_raw.copy()
+    u_raw, y_raw, sp_raw, lowpass_note = _lowpass_signals(u_raw, y_raw, sp_raw, ts)
+    if lowpass_note:
+        preprocess_notes.append(lowpass_note)
+    preprocess_note = "; ".join(preprocess_notes)
 
     if sp_raw is not None:
         sp_range = float(np.ptp(sp_raw))
@@ -369,12 +588,14 @@ def identify_from_history(
 
     # ── 层 1：激励检测 ──
     # V62-P1-009 接线（2026-10-01）：planner 输出 OP 已归一化 0~100，
-    # op_span=100.0 走量程归一化路径（原不传恒走"u/y 跨量纲"回退）
-    exc = check_excitation(u, y, d, op_span=100.0)
+    # op_span=100.0 走量程归一化路径（原不传恒走"u/y 跨量纲"回退）。
+    # P2-020：用滤波前副本检测（滤波会抹平 OP 微变号，见预处理块注释）
+    exc = check_excitation(u_exc_probe, y_exc_probe, d, op_span=100.0)
     if not exc.is_sufficient:
+        _fail_note = f"{preprocess_note}; " if preprocess_note else ""
         return IdentificationResult(
             success=False,
-            reason=f"激励不足：{exc.verdict}",
+            reason=f"{_fail_note}激励不足：{exc.verdict}",
             segments=[],
             theta_source=theta_source,
         )
@@ -645,9 +866,10 @@ def identify_from_history(
         results.extend(model_candidates)
 
     if not results:
+        _fail_note = f"{preprocess_note}; " if preprocess_note else ""
         return IdentificationResult(
             success=False,
-            reason="所有算法/阶次辨识均失败",
+            reason=f"{_fail_note}所有算法/阶次辨识均失败",
             theta_source=theta_source,
         )
 
@@ -656,9 +878,10 @@ def identify_from_history(
 
     # 整体可信度检查
     if best.confidence == AlgorithmConfidenceLevel.INCONCLUSIVE:
+        _fail_note = f"{preprocess_note}; " if preprocess_note else ""
         return IdentificationResult(
             success=False,
-            reason=f"辨识可信度不足：{best.reason}",
+            reason=f"{_fail_note}辨识可信度不足：{best.reason}",
             candidates=results,
             theta_source=theta_source,
         )
@@ -667,11 +890,12 @@ def identify_from_history(
     offset_note = f"去均值偏置 PV={y_mean:.6g}, OP={u_mean:.6g}"
     best.reason = f"{best.reason}; {offset_note}" if best.reason else offset_note
 
+    _ok_note = f"{preprocess_note}; " if preprocess_note else ""
     return IdentificationResult(
         success=True,
         best_model=best,
         candidates=results,
-        reason=f"辨识成功（{offset_note}）",
+        reason=f"{_ok_note}辨识成功（{offset_note}）",
         theta_source=theta_source,
     )
 

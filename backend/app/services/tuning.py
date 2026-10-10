@@ -841,10 +841,11 @@ async def identify_model_from_history(
     candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT"])]
 
     # 调用算法栈
-    # S3 修复（G24）：原注释称"传入同轴后的 MODE，供后续片段切分使用"，
-    # 但 identify_from_history 从未使用该参数（已核实为死参数并移除）。
-    # 经裁决：辨识不以控制模式为门控——手动段的 OP 操作同样产生 PV 阶跃，
-    # 据 OP->PV 响应即可辨识，故此处不再传 mode。
+    # P2-020（2026-10-04）：mode 重新传入——G24 裁决移除的是"文档称用实际
+    # 未用"的死参数；现用于自动选段的切分依据（MODE/缺口/饱和边界 + 激励
+    # 评分选优）。语义与 G24 兼容：不作辨识门控（手动段降级使用而非拒绝），
+    # mode=None 时算法栈不切分、假设全 AUTO。op_limits：生产链 OP 已归一化
+    # 0~100（V62-P1-009），饱和检测按此量程；算法栈自身不假设量纲。
     result = identify_from_history(
         op=op,
         pv=pv,
@@ -852,6 +853,8 @@ async def identify_model_from_history(
         ts=ts,
         theta_estimate=theta_estimate,
         candidate_models=candidates,
+        mode=signals.get("mode") or None,
+        op_limits=(0.0, 100.0),
     )
 
     if not result.success:

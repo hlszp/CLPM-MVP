@@ -245,7 +245,8 @@ class IdentificationResult:
     segments: list[SegmentInfo] = field(default_factory=list)
     reason: str | None = None
     theta_source: ThetaSource | None = None
-    algorithm_version: str = "TUNE_IDENT_v1.0"
+    # 算法版本单一真相源（pipeline.py re-export 使用；v1.1=2026-10-04 预处理增强）
+    algorithm_version: str = "TUNE_IDENT_v1.1"
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（API 响应）."""

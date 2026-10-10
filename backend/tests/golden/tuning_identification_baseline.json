@@ -1,5 +1,5 @@
 {
-  "algorithm_version": "TUNE_IDENT_v1.0",
+  "algorithm_version": "TUNE_IDENT_v1.1",
   "description": "Phase 2.1 历史数据过程对象辨识算法栈 golden 基线",
   "scenarios": {
     "closed_loop_fopdt": {
