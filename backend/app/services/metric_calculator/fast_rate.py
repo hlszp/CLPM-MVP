@@ -1,6 +1,10 @@
 """快速率计算器（算法说明 §4.5）.
 
-公式：
+公式（分段，阈值 T_th = T'×ratio×(1+tol)，默认 ratio=1.0/tol=0.0 时 T_th=T'）：
+    F = 100%                          当 T ≤ T_th
+    F = 1/e^((T-T_th)/T') × 100%      当 T > T_th
+
+默认 profile 下 T_th = T'，退化为算法说明 §4.5 原式：
     F = 100%                          当 T ≤ T'
     F = 1/e^((T-T')/T') × 100%        当 T > T'
 
@@ -14,6 +18,9 @@ P0-1：settling_time 三语义分流——already_stable（真已稳态）保持
 never_settles（窗口内不衰减）以 Green 函数窗口长度作为 actual_t 代入
 指数衰减公式（不再误判满分）；identification_failed（辨识失败）返回
 INCONCLUSIVE。
+
+STD-02（P1-01）：非默认容差/比率下衰减指数锚定阈值，保证边界连续
+（见 calculate 内注释）；分段 profile 与默认数值不变。
 
 定位：核心质量指标，参与综合评分加权。
 依赖：settling_time（实际稳态时间）、ideal_settling_time（理想稳态时间）。
@@ -182,18 +189,25 @@ class FastRateCalculator(MetricCalculatorBase):
                 {
                     "actual_settling_time": round(actual_t, 2),
                     "ideal_settling_time": round(ideal_t, 2),
+                    "fast_threshold": round(fast_threshold, 2),
                     "ratio": round(actual_t / ideal_t, 4),
                     **disturbance_details,
                     **never_settles_detail,
                 },
             )
 
-        # T > 阈值 → F = 1/e^((T-T')/T') × 100
+        # T > 阈值 → F = 1/e^((T-阈值)/T') × 100
         # 用 e^(-x) 等价形式：never_settles 时 actual_t 可达 Green 窗口上限
         # （3600×采样间隔），ratio 可 >709，直接 math.exp(ratio) 会 OverflowError
         # 被上游宽 except 吞掉 → fast_rate 缺失 → 整回路 composite=INCONCLUSIVE。
         # 与 stability.py 同口径（该处已注明同一原因）。
-        ratio = (actual_t - ideal_t) / ideal_t
+        # STD-02 修复（P1-01）：衰减指数以 fast_threshold 为锚点，消除非默认
+        # 容差/比率下阈值处 100 → 衰减值的不连续跳变（容差 0.2 时阈值右侧
+        # 一步从 100 跳到 e^-0.2×100≈81.87）。默认 profile（ratio=1.0、
+        # tolerance=0.0）下 fast_threshold == ideal_t，公式与冻结口径
+        # e^−((T−T′)/T′)×100 完全一致，数值零回归；分段结构（满分区+指数
+        # 衰减）不变，仅在阈值处连续。
+        ratio = (actual_t - fast_threshold) / ideal_t
         fast_rate = math.exp(-ratio) * 100.0
         fast_rate = self._clamp(fast_rate)
 
@@ -211,6 +225,7 @@ class FastRateCalculator(MetricCalculatorBase):
             {
                 "actual_settling_time": round(actual_t, 2),
                 "ideal_settling_time": round(ideal_t, 2),
+                "fast_threshold": round(fast_threshold, 2),
                 "ratio": round(ratio, 4),
                 **disturbance_details,
                 **never_settles_detail,

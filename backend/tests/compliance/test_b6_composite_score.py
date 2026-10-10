@@ -176,3 +176,66 @@ class TestB6MissingCoreMetric:
         assert result.value == pytest.approx(59.25, abs=1e-9)
         assert "accuracy_rate" in result.details["low_confidence_inputs"]
         assert result.confidence_level == "D"  # 可信度取核心指标 + R 中最低等级
+
+
+class TestB6C01ZeroWeightAccuracyKeyMissing:
+    """C01（04 验收基线 / 台账 CAL-01）：LOGIC 零准确率权重，accuracy 键完全缺失.
+
+    独立手算（F60/S90/R75，冻结权重 0/0.4/0.6）：
+        base = (60×0.4 + 90×0.6)/1.0 = 78.0
+        P = 78.0 × 0.75 = 58.50
+    修复前：compute_composite_score 末尾无条件下标
+    metric_results["accuracy_rate"] → KeyError（零权重必需性检查已跳过，
+    键可整体缺失）。修复后按首个存在的核心指标读取回路级可信度。
+    """
+
+    def test_logic_accuracy_key_absent_computes_58_5(self):
+        """C01：accuracy 键完全缺失（非 value=None）→ 不抛异常，P=58.5."""
+        inputs = {
+            "fast_rate": make_metric_result("fast_rate", 60.0, "A"),
+            "stability_rate": make_metric_result("stability_rate", 90.0, "A"),
+            "effective_auto_rate": make_metric_result("effective_auto_rate", 75.0, "A"),
+        }
+        result = ConfidenceEvaluator.compute_composite_score(inputs, weights=WEIGHTS_LOGIC)
+
+        assert result.value == pytest.approx(58.5, abs=1e-9)
+        assert result.details["base_score"] == pytest.approx(78.0, abs=1e-9)
+        assert result.confidence_level == "A"  # 回路级可信度取自首个存在的核心指标
+
+    def test_logic_accuracy_key_absent_confidence_from_present_core(self):
+        """C01：accuracy 缺失时可信度取自在场核心指标（回路级，同值透传）."""
+        inputs = {
+            "fast_rate": make_metric_result("fast_rate", 60.0, "C"),
+            "stability_rate": make_metric_result("stability_rate", 90.0, "C"),
+            "effective_auto_rate": make_metric_result("effective_auto_rate", 75.0, "C"),
+        }
+        result = ConfidenceEvaluator.compute_composite_score(inputs, weights=WEIGHTS_LOGIC)
+
+        assert result.value == pytest.approx(58.5, abs=1e-9)
+        assert result.confidence_level == "C"
+
+    def test_logic_accuracy_value_null_still_58_5(self):
+        """C01：accuracy 以 value=None/E 级留在字典中 → 同样 P=58.5（与键缺失分别测）.
+
+        与 test_zero_weight_core_metric_missing_not_fused 互补：该用例证明
+        value=None 不熔断，本用例对齐 C01 手算锚点（F60/S90/R75）。
+        """
+        inputs = _inputs(f=60.0, s=90.0)
+        inputs["accuracy_rate"] = make_metric_result("accuracy_rate", None, "E")
+        result = ConfidenceEvaluator.compute_composite_score(inputs, weights=WEIGHTS_LOGIC)
+
+        assert result.value == pytest.approx(58.5, abs=1e-9)
+
+    def test_nonzero_weight_accuracy_key_absent_fuses(self):
+        """C01 对照：a>0 时 accuracy 键缺失 → 整体 INCONCLUSIVE（不静默丢权重）."""
+        inputs = {
+            "fast_rate": make_metric_result("fast_rate", 60.0, "A"),
+            "stability_rate": make_metric_result("stability_rate", 90.0, "A"),
+            "effective_auto_rate": make_metric_result("effective_auto_rate", 75.0, "A"),
+        }
+        result = ConfidenceEvaluator.compute_composite_score(inputs, weights=WEIGHTS_STABLE)
+
+        assert result.value is None
+        assert result.confidence_level == "E"
+        assert result.details["reason"] == "core metric INCONCLUSIVE"
+        assert result.details["inconclusive_inputs"] == ["accuracy_rate"]

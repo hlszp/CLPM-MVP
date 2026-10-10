@@ -103,15 +103,24 @@ class TestB2EffectiveAutoRate:
     def test_saturation_excludes_segments(self):
         """附录 B.2：OP 饱和段不计入有效自控（ε=0 严格贴限口径）.
 
-        modes 全 AUTO；op=[50, 100, 50, 0, 50]：
+        modes 全 AUTO；op=[50, 100, 50, 0, 50]；pv=sp（零偏差，隔离饱和判据）：
         - i=1：op=100 ≥ 100 → 贴上限饱和，剔除 40 s
         - i=3：op=0 ≤ 0 → 贴下限饱和，剔除 200 s
         T_effective = 60 + 100 + 200 = 360 s → R = 360/600 × 100 = 60.0
         自控时长全覆盖（auto_duration_s = total_duration_s = 600）
+
+        CAL-03（P1-01）：契约 tags 扩为 ["mode","op","pv","sp"]，本用例补
+        pv/sp 零偏差列以继续单独考核饱和判据；缺 pv/sp 的显式不可评语义
+        见 test_metric_calculator/test_effective_auto.py。
         """
         ts = ts_from_offsets(OFFSETS)
         bundle = make_ts_bundle(
-            {"mode": [1, 1, 1, 1, 1], "op": [50.0, 100.0, 50.0, 0.0, 50.0]},
+            {
+                "mode": [1, 1, 1, 1, 1],
+                "op": [50.0, 100.0, 50.0, 0.0, 50.0],
+                "pv": [50.0] * 5,
+                "sp": [50.0] * 5,
+            },
             ts,
             metric_code="effective_auto_rate",
             tag_group="MODE_HF",

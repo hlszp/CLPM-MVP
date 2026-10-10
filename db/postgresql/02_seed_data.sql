@@ -725,7 +725,7 @@ INSERT INTO clpm_metric_data_requirement
 ('stability_rate', '稳定率', 'BASE', '["pv","sp"]',
  'BY_CONTROL_TYPE', 'KEEP_ALL_WITH_VALIDITY', 'pv_valid && sp_valid',
  'LAST', '["oscillation_rate"]'),
-('effective_auto_rate', '有效自控率', 'MODE_HF', '["mode","op"]',
+('effective_auto_rate', '有效自控率', 'MODE_HF', '["mode","op","pv","sp"]',
  'FIXED_1S', 'KEEP_ALL_WITH_VALIDITY', 'mode_valid && op_valid', 'LAST', NULL),
 ('good_value_rate', '好值率', 'QUALITY_HF', '["pv_quality"]',
  'FIXED_1S', 'KEEP_ALL', NULL, NULL, NULL),
