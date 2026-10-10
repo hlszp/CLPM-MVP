@@ -99,7 +99,12 @@ export function sixDimsFromKpiSummary(
   };
 }
 
-/** 节点快照 / 节点监控快照（camelCase）→ 六维 */
+/** 节点快照 / 节点监控快照（camelCase）→ 六维
+
+ * 注意 fastRate 维度读 fastResponseRate 键（后端 _snapshot_to_dict 的
+ * 历史键名，与 NodeSnapshotItem.fastRate 并存——2026-10-10 修订雷达时核出，
+ * 此前回路页右侧雷达快速率轴恒空即源于此错配）
+ */
 export function sixDimsFromNodeSnapshot(
   snap?: MetricApi.NodeSnapshotItem | null,
 ): null | SixDimValues {
@@ -108,7 +113,7 @@ export function sixDimsFromNodeSnapshot(
     autoModeRate: snap.autoModeRate ?? null,
     steadyRate: snap.steadyRate ?? null,
     accuracyRate: snap.accuracyRate ?? null,
-    fastRate: snap.fastRate ?? null,
+    fastRate: snap.fastResponseRate ?? snap.fastRate ?? null,
     goodValueRate: snap.goodValueRate ?? null,
     effectiveAutoRate: snap.effectiveAutoRate ?? null,
   };

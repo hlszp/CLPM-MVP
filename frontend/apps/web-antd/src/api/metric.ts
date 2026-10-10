@@ -780,6 +780,8 @@ export namespace MetricApi {
     effectiveAutoRate?: null | number;
     steadyRate?: null | number;
     accuracyRate?: null | number;
+    /** 后端 _snapshot_to_dict 实际键名（与 fastRate 并存，映射取值优先） */
+    fastResponseRate?: null | number;
     fastRate?: null | number;
     oscillationRate?: null | number;
     saturationRate?: null | number;

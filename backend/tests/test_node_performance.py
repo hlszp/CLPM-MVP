@@ -581,6 +581,10 @@ class TestQueryServices:
         assert result["plantNodeId"] == "node-001"
         assert result["plantNodeName"] == "HDS 装置"
         assert result["status"] == "FAIR"
+        # 2026-10-10 回归：键名须为 fastRate（schema 字段名）；旧键
+        # fastResponseRate 会被 response_model 静默丢弃 → 接口恒 null
+        assert result["fastRate"] == 82.0
+        assert "fastResponseRate" not in result
 
     @pytest.mark.asyncio
     async def test_get_node_latest_snapshot_not_found(self):
