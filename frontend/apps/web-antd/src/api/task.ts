@@ -76,6 +76,8 @@ export namespace TaskApi {
     loopIds?: string[];
     /** True=只返回预览不提交 */
     dryRun?: boolean;
+    /** 补差模式：跳过已有快照的回路×窗口组合（默认 false=全量覆盖重算） */
+    skipExisting?: boolean;
   }
 
   /** 历史重算 dry-run 预览结果 */

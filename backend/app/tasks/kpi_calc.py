@@ -824,7 +824,26 @@ async def _run_batch_loop_calculations(
         str(loop_id): (cfg["op_lower"], cfg["op_upper"]) for loop_id, cfg in loop_configs.items()
     }
 
+    def _is_conn_exhausted(exc: Exception) -> bool:
+        """PG 连接数耗尽（多窗口批并发峰值瞬时挤爆，与回路自身无关）。"""
+        return "too many clients" in str(exc).lower()
+
     async def _calculate_one(loop: LoopLedger) -> dict | None:
+        # 连接耗尽退避重试（2026-10-10 生产回填 11 次「sorry, too many clients
+        # already」失败的根因修复）：瞬时挤爆场景重试即可自愈；其余异常原样
+        # 抛出走既有失败链路。计算为纯读+UPSERT，重试幂等安全。
+        for attempt in range(3):
+            try:
+                return await _calculate_once(loop)
+            except Exception as exc:
+                if attempt < 2 and _is_conn_exhausted(exc):
+                    await asyncio.sleep(2 * (attempt + 1))
+                    continue
+                raise
+
+        raise AssertionError("unreachable")
+
+    async def _calculate_once(loop: LoopLedger) -> dict | None:
         async with sem:
             async with AsyncSessionLocal() as worker_db:
                 try:
@@ -925,15 +944,36 @@ def _assert_batch_health(summary: dict[str, int], total: int) -> None:
         )
 
 
-def _summarize_batch_results(results: list[dict | None | Exception]) -> dict[str, int]:
-    """Classify completed loop calculations consistently across batch entrypoints."""
-    summary = {"success": 0, "inconclusive": 0, "failed": 0}
-    for result in results:
+def _summarize_batch_results(
+    results: list[dict | None | Exception],
+    *,
+    loops: list[LoopLedger] | None = None,
+) -> dict[str, int | list[str]]:
+    """Classify completed loop calculations consistently across batch entrypoints.
+
+    loops 与 results 等长同序（gather 保序）时，失败明细带回路位号——
+    2026-10-10 生产排查依赖翻 worker 日志且日志不带回路标识的缺口补齐。
+    """
+    summary: dict[str, int | list[str]] = {
+        "success": 0,
+        "inconclusive": 0,
+        "failed": 0,
+        "failed_detail": [],
+    }
+    for index, result in enumerate(results):
+        tag = (
+            (loops[index].tag_name or str(loops[index].id))
+            if loops is not None and index < len(loops)
+            else f"#{index}"
+        )
         if isinstance(result, Exception):
             summary["failed"] += 1
-            logger.warning("回路计算失败: %s", result)
+            detail_line = f"{tag}: {str(result)[:80]}"
+            summary["failed_detail"].append(detail_line)  # type: ignore[union-attr]
+            logger.warning("回路计算失败 [%s]: %s", tag, result)
         elif result is None:
             summary["failed"] += 1
+            summary["failed_detail"].append(f"{tag}: (无返回)")  # type: ignore[union-attr]
         elif result.get("status") == "INCONCLUSIVE":
             summary["inconclusive"] += 1
         else:
@@ -3323,6 +3363,7 @@ def _backfill_window_batch(
     task_id: str | None = None,
     window_offset: int = 0,
     total_windows: int = 0,
+    skip_existing: bool = False,
 ) -> dict:
     """子任务：处理一批小时窗口（在独立 worker 进程中运行，利用多核 CPU）。
 
@@ -3401,7 +3442,9 @@ def _backfill_window_batch(
             "success": 0,
             "inconclusive": 0,
             "failed": 0,
+            "skipped": 0,
             "node_success": 0,
+            "failed_detail": [],
             "failed_windows": [],
         }
 
@@ -3412,6 +3455,29 @@ def _backfill_window_batch(
             w_start = w
             w_end = w + timedelta(hours=1)
             _w_t0 = _time.monotonic()
+
+            # 补差模式（skip_existing=True，2026-10-10 用户裁决默认全量覆盖）：
+            # 该窗口已有快照的回路跳过——重发同窗只补无快照组合（如连接挤爆
+            # 偶发失败 11 次那种），全量重算 40min → 秒级补差
+            todo_loops = loops
+            if skip_existing:
+                async with AsyncSessionLocal() as skip_db:
+                    existing_ids = {
+                        str(row[0])
+                        for row in (
+                            await skip_db.execute(
+                                select(KpiSnapshotHourly.loop_id).where(
+                                    KpiSnapshotHourly.loop_id.in_([str(lp.id) for lp in loops]),
+                                    KpiSnapshotHourly.ts_start == w_start,
+                                )
+                            )
+                        ).all()
+                    }
+                todo_loops = [lp for lp in loops if str(lp.id) not in existing_ids]
+                agg["skipped"] += len(loops) - len(todo_loops)
+                if not todo_loops:
+                    continue
+
             try:
 
                 async def _on_completed(
@@ -3429,7 +3495,7 @@ def _backfill_window_batch(
                         )
 
                 results = await _run_batch_loop_calculations(
-                    loops=loops,
+                    loops=todo_loops,
                     loop_configs=loop_configs,
                     metric_configs=metric_configs,
                     ts_start=w_start,
@@ -3440,12 +3506,13 @@ def _backfill_window_batch(
                     source="BACKFILL",
                     on_completed=_on_completed if task_id else None,
                 )
-                summary = _summarize_batch_results(results)
+                summary = _summarize_batch_results(results, loops=todo_loops)
                 # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
                 _assert_batch_health(summary, len(results))
                 agg["success"] += summary["success"]
                 agg["inconclusive"] += summary["inconclusive"]
                 agg["failed"] += summary["failed"]
+                agg["failed_detail"].extend(summary.get("failed_detail", []))
                 logger.info(
                     "[子任务] 窗口 %d/%d %s: ok=%d, inconclusive=%d, failed=%d, 耗时=%.2fs",
                     w_idx,
@@ -3525,6 +3592,7 @@ def backfill_kpi_range(
     ts_end: str,
     loop_ids: list[str] | None = None,
     task_id: str | None = None,
+    skip_existing: bool = False,
 ) -> dict:
     """按小时窗口批量回填 KPI 快照（脚本/HTTP 触发）。
 
@@ -3591,6 +3659,7 @@ def backfill_kpi_range(
                 task_id=task_id,
                 child_task_ids=child_task_ids,
                 callback_task_id=callback_task_id,
+                skip_existing=skip_existing,
             )
         except Exception:
             if task_id:
@@ -3656,6 +3725,7 @@ def _dispatch_backfill_chord(
     task_id: str | None,
     child_task_ids: list[str] | None = None,
     callback_task_id: str | None = None,
+    skip_existing: bool = False,
 ) -> dict:
     """Dispatch child batches and return immediately without joining results."""
     windows = _build_backfill_windows(ts_start, ts_end)
@@ -3678,6 +3748,7 @@ def _dispatch_backfill_chord(
             task_id=task_id,
             window_offset=batch_index * _BACKFILL_BATCH_SIZE,
             total_windows=len(windows),
+            skip_existing=skip_existing,
         ).set(task_id=child_id)
         child.link_error(_backfill_chord_error.s(task_id=task_id))
         header.append(child)
@@ -3845,15 +3916,19 @@ async def _do_finalize_backfill(
 
     result = _empty_backfill_result(total_windows)
     failed_window_list: list[str] = []
+    failed_detail_list: list[str] = []
     for batch in batch_results:
         if not isinstance(batch, dict):
             result["loop_failed"] += 1
+            failed_detail_list.append("(子批次无返回)")
             continue
         result["loop_success"] += int(batch.get("success", 0))
         result["loop_inconclusive"] += int(batch.get("inconclusive", 0))
         result["loop_failed"] += int(batch.get("failed", 0))
         result["node_success"] += int(batch.get("node_success", 0))
+        result["skipped"] = int(result.get("skipped", 0)) + int(batch.get("skipped", 0))
         failed_window_list.extend(batch.get("failed_windows", []))
+        failed_detail_list.extend(batch.get("failed_detail", []))
         if batch.get("cancelled"):
             result["cancelled"] = True
 
@@ -3870,11 +3945,17 @@ async def _do_finalize_backfill(
 
     if result["loop_failed"] or result["failed_windows"]:
         result["status"] = "FAILED"
+        # 失败明细（回路位号+原因）直接进任务详情——免翻 worker 日志定位
+        detail = "; ".join(failed_detail_list[:20])
+        if len(failed_detail_list) > 20:
+            detail += f"; …等共 {len(failed_detail_list)} 条"
+        detail = detail[:600]
         if task_id:
             await _update_task_failed(
                 task_id,
                 f"回填失败: loop_failed={result['loop_failed']}, "
-                f"failed_windows={result['failed_windows']}",
+                f"failed_windows={result['failed_windows']}"
+                + (f" | 明细: {detail}" if detail else ""),
             )
         return result
 

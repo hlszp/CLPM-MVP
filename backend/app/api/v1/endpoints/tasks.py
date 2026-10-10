@@ -1037,6 +1037,7 @@ async def trigger_backfill(
         "ts_end": body.tsEnd,
         "loop_ids": json.dumps(final_loop_ids),
         "plant_node_ids": _to_str(body.plantNodeIds),
+        "skip_existing": "1" if body.skipExisting else "0",
         "slot_acquired": "1",
     }
     await _save_task(task_data)
@@ -1109,10 +1110,13 @@ async def start_task(
     except (json.JSONDecodeError, TypeError):
         loop_ids = []
 
-    # 触发 Celery 任务
+    # 触发 Celery 任务（skip_existing=创建时勾选的补差模式，默认全量覆盖）
     from app.tasks.kpi_calc import backfill_kpi_range
 
-    celery_result = backfill_kpi_range.delay(ts_start, ts_end, loop_ids=loop_ids, task_id=task_id)
+    skip_existing = data.get("skip_existing") == "1"
+    celery_result = backfill_kpi_range.delay(
+        ts_start, ts_end, loop_ids=loop_ids, task_id=task_id, skip_existing=skip_existing
+    )
 
     # 更新任务状态为 RUNNING
     now = _now_iso()

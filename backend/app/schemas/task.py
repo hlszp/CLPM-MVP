@@ -114,6 +114,10 @@ class BackfillTaskCreate(CamelModel):
         None, description="回路 ID 列表（可选，优先级高于 plantNodeIds）"
     )
     dryRun: bool = Field(False, description="True=只返回预览不提交")
+    skipExisting: bool = Field(
+        False,
+        description="跳过已有快照的回路×窗口组合（补差模式，默认 False=全量覆盖重算）",
+    )
 
 
 # ---------------------------------------------------------------------------

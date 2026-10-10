@@ -21,6 +21,7 @@ import { ref, watch } from 'vue';
 
 import {
   Button,
+  Checkbox,
   DatePicker,
   Drawer,
   Form,
@@ -64,6 +65,7 @@ const form = ref({
   ] as [dayjs.Dayjs, dayjs.Dayjs],
   plantNodeIds: [] as string[],
   loopIds: [] as string[],
+  skipExisting: false,
 });
 
 // 装置树数据
@@ -93,6 +95,7 @@ watch(open, (val) => {
       ] as [dayjs.Dayjs, dayjs.Dayjs],
       plantNodeIds: [],
       loopIds: [],
+      skipExisting: false,
     };
     loadPlantNodeTree();
     loadLoopOptions();
@@ -224,6 +227,7 @@ async function handleSubmit() {
           : undefined,
       loopIds: form.value.loopIds.length > 0 ? form.value.loopIds : undefined,
       dryRun: false,
+      skipExisting: form.value.skipExisting,
     });
     const taskId = (result as { taskId: string }).taskId;
     // 创建后自动启动任务（无需用户再点一次"评估"按钮）
@@ -302,6 +306,14 @@ async function handleSubmit() {
         />
         <div class="mt-1 text-xs" :style="{ color: themeColors.NEUTRAL }">
           优先级高于装置；支持搜索回路名
+        </div>
+      </FormItem>
+      <FormItem label="重算模式">
+        <Checkbox v-model:checked="form.skipExisting">
+          补差模式：跳过已有快照的「回路×窗口」，只补缺口
+        </Checkbox>
+        <div class="text-xs text-gray-400">
+          默认全量覆盖重算；补差适用于补偶发失败（如连接超时）的少量缺口，秒级完成
         </div>
       </FormItem>
 

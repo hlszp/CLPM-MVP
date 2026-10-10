@@ -853,6 +853,8 @@ class TestBatchCalculationHelpers:
             "success": 1,
             "inconclusive": 1,
             "failed": 2,
+            # 2026-10-10 失败明细（回路位号+原因；未传 loops 时用序号占位）
+            "failed_detail": ["#2: (无返回)", "#3: database unavailable"],
         }
 
 
