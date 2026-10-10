@@ -825,3 +825,104 @@ class TestPerformanceService:
         )
         assert "section" in csv_content
         assert "filterScope" in csv_content
+
+
+class TestSnapshotConditionsInactive:
+    """历史快照 include_inactive 口径（2026-10-10 停用回路历史快照修复）。
+
+    背景：1010 停用批把「仅活跃回路」过滤无条件套进快照条件构造，导致历史
+    快照页选中停用回路（如 01 装置批量停用批次）永远筛不出——停用前的历史
+    记录也被隐藏。修复：默认保持过滤（当前态等级分布口径不变），快照列表
+    传 include_inactive=True 完整呈现历史。
+    """
+
+    @pytest.mark.anyio
+    async def test_default_filters_inactive(self) -> None:
+        from app.services.performance import _build_snapshot_conditions
+
+        start = datetime(2026, 10, 1, tzinfo=UTC)
+        end = datetime(2026, 10, 10, tzinfo=UTC)
+        conditions, need_join = await _build_snapshot_conditions(MagicMock(), start=start, end=end)
+        # 默认含 3 个条件：ts_start 范围 ×2 + 活跃回路子查询
+        assert len(conditions) == 3
+        assert need_join is False
+
+    @pytest.mark.anyio
+    async def test_include_inactive_drops_active_filter(self) -> None:
+        from app.services.performance import _build_snapshot_conditions
+
+        start = datetime(2026, 10, 1, tzinfo=UTC)
+        end = datetime(2026, 10, 10, tzinfo=UTC)
+        conditions, need_join = await _build_snapshot_conditions(
+            MagicMock(), start=start, end=end, include_inactive=True
+        )
+        # include_inactive：仅时间范围条件，停用回路历史快照不隐藏
+        assert len(conditions) == 2
+
+    @pytest.mark.anyio
+    async def test_loop_filter_with_include_inactive(self) -> None:
+        from app.services.performance import _build_snapshot_conditions
+
+        start = datetime(2026, 10, 1, tzinfo=UTC)
+        end = datetime(2026, 10, 10, tzinfo=UTC)
+        conditions, _ = await _build_snapshot_conditions(
+            MagicMock(),
+            loop_ids=["loop-1"],
+            start=start,
+            end=end,
+            include_inactive=True,
+        )
+        # 时间×2 + loopId IN；无活跃子查询
+        assert len(conditions) == 3
+
+
+class TestSnapshotDelete:
+    """历史快照删除（2026-10-10：批量按筛选 + 单条）。"""
+
+    @pytest.mark.anyio
+    async def test_batch_delete_requires_constraint(self) -> None:
+        from app.services.performance import batch_delete_snapshots
+
+        with pytest.raises(ValueError, match="至少指定"):
+            await batch_delete_snapshots(MagicMock())
+
+    @pytest.mark.anyio
+    async def test_batch_delete_dry_run_counts_only(self) -> None:
+        from app.services.performance import batch_delete_snapshots
+
+        db = MagicMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 42
+        db.execute = AsyncMock(return_value=count_result)
+        out = await batch_delete_snapshots(db, loop_ids=["l-1"], dry_run=True)
+        assert out == {"matched": 42, "deleted": 0, "dryRun": True}
+        db.execute.assert_awaited_once()  # 仅计数查询，未执行 delete
+
+    @pytest.mark.anyio
+    async def test_batch_delete_executes_when_not_dry(self) -> None:
+        from app.services.performance import batch_delete_snapshots
+
+        db = MagicMock()
+        db.commit = AsyncMock()
+        count_result = MagicMock()
+        count_result.scalar.return_value = 7
+        del_result = MagicMock()
+        del_result.rowcount = 7
+        db.execute = AsyncMock(side_effect=[count_result, del_result])
+        out = await batch_delete_snapshots(db, loop_ids=["l-1"], dry_run=False)
+        assert out == {"matched": 7, "deleted": 7, "dryRun": False}
+        assert db.commit.await_count == 1
+
+    @pytest.mark.anyio
+    async def test_delete_snapshot_by_id(self) -> None:
+        from app.services.performance import delete_snapshot_by_id
+
+        db = MagicMock()
+        db.commit = AsyncMock()
+        ok = MagicMock()
+        ok.rowcount = 1
+        miss = MagicMock()
+        miss.rowcount = 0
+        db.execute = AsyncMock(side_effect=[ok, miss])
+        assert await delete_snapshot_by_id(db, "s-1") is True
+        assert await delete_snapshot_by_id(db, "s-2") is False

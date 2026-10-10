@@ -28,6 +28,8 @@ import {
   Dropdown,
   Menu,
   message,
+  Modal,
+  Popconfirm,
   Select,
   Table,
   Tag,
@@ -36,7 +38,11 @@ import {
 import dayjs from 'dayjs';
 
 import { getLoopListApi } from '#/api/loop';
-import { getLoopSnapshotsApi } from '#/api/metric';
+import {
+  batchDeleteSnapshotsApi,
+  deleteSnapshotApi,
+  getLoopSnapshotsApi,
+} from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   ClpmDataCanvas,
@@ -266,7 +272,7 @@ const columns = computed<TableColumnsType>(() => [
   {
     title: '操作',
     key: 'action',
-    width: 70,
+    width: 110,
     fixed: 'right' as const,
   },
 ]);
@@ -321,6 +327,57 @@ async function loadList() {
   }
 }
 
+// ============ 删除（2026-10-10：批量按筛选 + 单条） ============
+async function handleDeleteOne(record: any) {
+  try {
+    await deleteSnapshotApi(record.id);
+    message.success(`已删除 ${record.loopTagName} 的快照`);
+    void loadList();
+  } catch (error: any) {
+    message.error(error?.message || '删除失败');
+  }
+}
+
+/** 批量删除：先用当前筛选条件 dry-run 预览匹配数，确认后真删 */
+async function handleBatchDelete() {
+  const params: any = { dryRun: true };
+  if (filterLoopId.value) params.loopIds = [filterLoopId.value];
+  if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
+  if (filterDateRange.value) {
+    params.startTime = filterDateRange.value[0].startOf('day').toISOString();
+    params.endTime = filterDateRange.value[1].endOf('day').toISOString();
+  }
+  if (filterStatus.value.length > 0) params.status = filterStatus.value.join(',');
+  if (filterConfidence.value) params.confidenceLevel = filterConfidence.value;
+  if (filterSource.value) params.source = filterSource.value;
+  if (!params.loopIds && !params.plantNodeId && !params.startTime) {
+    message.warning('请先设置筛选条件（回路 / 装置 / 时间范围至少一项）再批量删除');
+    return;
+  }
+  try {
+    const preview = await batchDeleteSnapshotsApi(params);
+    if (preview.matched === 0) {
+      message.info('当前筛选条件下没有可删除的快照');
+      return;
+    }
+    Modal.confirm({
+      title: `批量删除 ${preview.matched} 条快照？`,
+      content: '将删除当前筛选条件匹配的全部历史快照，操作不可恢复。',
+      okText: '确认删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        const done = await batchDeleteSnapshotsApi({ ...params, dryRun: false });
+        message.success(`已删除 ${done.deleted} 条快照`);
+        currentPage.value = 1;
+        void loadList();
+      },
+    });
+  } catch (error: any) {
+    message.error(error?.message || '批量删除失败');
+  }
+}
+
 /** 来源切换：离开 MANUAL_CUSTOM 时清除任务深链过滤 */
 function onSourceChange() {
   if (filterSource.value !== 'MANUAL_CUSTOM') {
@@ -360,7 +417,9 @@ async function loadLoops(plantNodeId?: string) {
       page += 1;
     } while ((page - 1) * loopPageSize < total);
     loopOptions.value = allLoops.map((l: any) => ({
-      label: l.tagName,
+      // 停用回路标注（2026-10-10）：历史快照不再隐藏停用回路（历史记录完整
+      // 呈现），下拉标注避免误以为筛选异常
+      label: l.isActive === false ? `${l.tagName}（已停用）` : l.tagName,
       value: l.loopId,
     }));
   } catch {
@@ -611,6 +670,14 @@ onMounted(() => {
             </Menu>
           </template>
         </Dropdown>
+        <!-- 2026-10-10：按当前筛选条件批量删除（dry-run 预览 + 确认） -->
+        <ClpmToolbarButton
+          danger
+          icon="ant-design:delete-outlined"
+          label="批量删除"
+          tooltip="按当前筛选条件批量删除快照（先预览匹配数再确认）"
+          @click="handleBatchDelete"
+        />
       </template>
     </ClpmPageToolbar>
 
@@ -792,11 +859,20 @@ onMounted(() => {
               }}
             </span>
           </template>
-          <!-- 操作列：详情按钮 -->
+          <!-- 操作列：详情 + 删除（2026-10-10） -->
           <template v-else-if="column.key === 'action'">
             <Button type="link" size="small" @click="openDetail(record)">
               详情
             </Button>
+            <Popconfirm
+              title="删除该条快照？"
+              ok-text="删除"
+              ok-type="danger"
+              cancel-text="取消"
+              @confirm="handleDeleteOne(record)"
+            >
+              <Button danger size="small" type="link">删除</Button>
+            </Popconfirm>
           </template>
         </template>
       </Table>

@@ -16,9 +16,10 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import case, false, func, nulls_last, or_, select
+from sqlalchemy import case, delete, false, func, nulls_last, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -1706,6 +1707,7 @@ async def _build_snapshot_conditions(
     status_filter: str | None = None,
     confidence_level: str | None = None,
     loop_tag_name: str | None = None,
+    include_inactive: bool = False,
 ) -> tuple[list, bool]:
     """构建快照查询的基础 WHERE 条件（快照列表与等级分布共用，保证口径一致）.
 
@@ -1737,9 +1739,16 @@ async def _build_snapshot_conditions(
     conditions: list = [
         KpiSnapshotHourly.ts_start >= start,
         KpiSnapshotHourly.ts_start <= end,
-        # 2026-10-10 停用口径：仅统计活跃回路（子查询 IN，不依赖 join）
-        KpiSnapshotHourly.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True))),
     ]
+    if not include_inactive:
+        # 2026-10-10 停用口径：仅统计活跃回路（子查询 IN，不依赖 join）。
+        # include_inactive=True（历史快照列表）：历史记录完整呈现，停用回路
+        # 禁用前的快照不隐藏（当前态统计/榜单仍走默认过滤口径）
+        conditions.append(
+            KpiSnapshotHourly.loop_id.in_(
+                select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+            )
+        )
     if loop_ids:
         conditions.append(KpiSnapshotHourly.loop_id.in_(loop_ids))
     if expanded_node_ids:
@@ -2138,6 +2147,7 @@ async def list_loop_snapshots(
         status_filter=status_filter,
         confidence_level=confidence_level,
         loop_tag_name=loop_tag_name,
+        include_inactive=True,
     )
 
     # 来源筛选（整合方案 B3，仅作用于小时快照表；MANUAL_CUSTOM 走 custom 查询）
@@ -2275,3 +2285,120 @@ __all__ = [
     "update_engine_rule",
     "update_metric_config",
 ]
+
+
+async def batch_delete_snapshots(
+    db: AsyncSession,
+    *,
+    loop_ids: list[str] | None = None,
+    plant_node_id: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    status: str | None = None,
+    source: str | None = None,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """按筛选条件批量删除历史快照（2026-10-10；与列表查询同口径）。
+
+    安全约束：loop_ids / plant_node_id / 时间范围 至少一项（否则拒删）；
+    dry_run=True 仅计数。include_inactive=True 与列表一致——列表看得到
+    的才能删到（停用回路的历史快照同口径可删）。
+    """
+    from app.models.metric import KpiSnapshotHourly
+
+    if not loop_ids and not plant_node_id and not (start and end):
+        raise ValueError("批量删除必须至少指定回路、装置或时间范围之一")
+
+    conditions, _need_join = await _build_snapshot_conditions(
+        db,
+        loop_ids=loop_ids,
+        plant_node_ids=[plant_node_id] if plant_node_id else None,
+        start=start,
+        end=end,
+        status_filter=status,
+        include_inactive=True,
+    )
+    if source:
+        sources = [x.strip() for x in source.split(",") if x.strip()]
+        if sources:
+            conditions.append(KpiSnapshotHourly.source.in_(sources))
+
+    count_stmt = select(func.count()).select_from(KpiSnapshotHourly).where(*conditions)
+    count = (await db.execute(count_stmt)).scalar() or 0
+    if dry_run or count == 0:
+        return {"deleted": 0, "matched": int(count), "dryRun": dry_run}
+
+    result = await db.execute(delete(KpiSnapshotHourly).where(*conditions))
+    await db.commit()
+    return {"deleted": result.rowcount or 0, "matched": int(count), "dryRun": False}
+
+
+async def delete_snapshot_by_id(db: AsyncSession, snapshot_id: str) -> bool:
+    """删除单条历史快照；返回是否删除成功。"""
+    from app.models.metric import KpiSnapshotHourly
+
+    result = await db.execute(delete(KpiSnapshotHourly).where(KpiSnapshotHourly.id == snapshot_id))
+    await db.commit()
+    return bool(result.rowcount)
+
+
+async def window_agg_snapshots(
+    db: AsyncSession,
+    *,
+    loop_ids: list[str] | None = None,
+    plant_node_ids: list[str] | None = None,
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    """回路级窗口聚合快照（2026-10-10 指标矩阵时间窗修复）.
+
+    latestOnly 口径下「窗口内每回路最新一条」在快照逐小时产生的场景中，
+    任意 ≥1h 窗口的"最新"都是同一条——矩阵页切换 8h/24h/168h 统计值不变
+    的根因。本函数给出窗口代表值口径：每回路窗口内**均值**（AVG 跳过
+    NULL，INCONCLUSIVE 缺值自然不计入），与列表同筛选口径
+    （include_inactive=True）。
+    """
+    from app.models.metric import KpiSnapshotHourly
+
+    agg_cols = {
+        "score": func.avg(KpiSnapshotHourly.score),
+        "goodValueRate": func.avg(KpiSnapshotHourly.good_value_rate),
+        "autoModeRate": func.avg(KpiSnapshotHourly.auto_mode_rate),
+        "effectiveAutoRate": func.avg(KpiSnapshotHourly.effective_auto_rate),
+        "steadyRate": func.avg(KpiSnapshotHourly.steady_rate),
+        "accuracyRate": func.avg(KpiSnapshotHourly.accuracy_rate),
+        "fastRate": func.avg(KpiSnapshotHourly.fast_rate),
+        "oscillationRate": func.avg(KpiSnapshotHourly.oscillation_rate),
+        "saturationRate": func.avg(KpiSnapshotHourly.saturation_rate),
+        "stictionIndex": func.avg(KpiSnapshotHourly.stiction_index),
+        "settlingTime": func.avg(KpiSnapshotHourly.settling_time),
+        "outputTripIndex": func.avg(KpiSnapshotHourly.output_trip_index),
+    }
+    conditions, _ = await _build_snapshot_conditions(
+        db,
+        loop_ids=loop_ids,
+        plant_node_ids=plant_node_ids,
+        start=start,
+        end=end,
+        include_inactive=True,
+    )
+    stmt = (
+        select(
+            KpiSnapshotHourly.loop_id,
+            LoopLedger.tag_name,
+            *agg_cols.values(),
+            func.count().label("sampleCount"),
+        )
+        .outerjoin(LoopLedger, LoopLedger.id == KpiSnapshotHourly.loop_id)
+        .where(*conditions)
+        .group_by(KpiSnapshotHourly.loop_id, LoopLedger.tag_name)
+    )
+    rows = (await db.execute(stmt)).all()
+    items: list[dict[str, Any]] = []
+    col_keys = ["loopId", "loopTagName", *agg_cols.keys(), "sampleCount"]
+    for row in rows:
+        item = dict(zip(col_keys, row, strict=False))
+        item["loopId"] = str(item["loopId"])
+        # 率值列以 0~1 均值输出（与快照行一致口径），乘法列保留原量纲
+        items.append(item)
+    return items

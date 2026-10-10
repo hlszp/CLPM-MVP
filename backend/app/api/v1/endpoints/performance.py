@@ -17,12 +17,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
+from app.core.exceptions import BizError
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -39,6 +40,7 @@ from app.schemas.performance import (
     MetricSeriesItem,
     MetricSeriesPoint,
     RankingItem,
+    SnapshotBatchDeleteRequest,
 )
 from app.services.gate_overview import get_gate_overview
 from app.services.performance import (
@@ -700,6 +702,109 @@ async def get_loop_metric_series_endpoint(
     ]
     data = MetricSeriesData(metricKey=metricKey, series=series)
     return success(data=data)
+
+
+@router.get("/loops/snapshots/window-agg", response_model=ApiResponse[dict])
+async def window_agg_snapshots_endpoint(
+    startTime: str = Query(..., description="窗口起始（ISO 8601）"),
+    endTime: str = Query(..., description="窗口结束（ISO 8601）"),
+    plantNodeId: str | None = Query(None),
+    loopId: str | None = Query(None, description="回路 ID（逗号分隔多值）"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """回路级窗口聚合（均值）快照——指标矩阵 8h/24h/168h 时间窗口径（2026-10-10）.
+
+    latestOnly 在快照逐小时产生时任意窗口"最新"均为同一条（切换无变化），
+    本端点给出窗口代表值：每回路窗口内均值（AVG 跳过 NULL）。
+    """
+    from app.services.performance import window_agg_snapshots
+
+    loop_ids = [x.strip() for x in loopId.split(",") if x.strip()] if loopId else None
+    items = await window_agg_snapshots(
+        db,
+        loop_ids=loop_ids,
+        plant_node_ids=[plantNodeId] if plantNodeId else None,
+        start=_parse_iso_arg(startTime),
+        end=_parse_iso_arg(endTime),
+    )
+    return success(data={"items": items, "total": len(items)})
+
+
+# ---------------------------------------------------------------------------
+# 历史快照删除（2026-10-10：按筛选批量 + 单条）
+# ---------------------------------------------------------------------------
+
+
+def _parse_iso_arg(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
+
+
+@router.post(
+    "/loops/snapshots/batch-delete",
+    response_model=ApiResponse[dict],
+)
+async def batch_delete_snapshots_endpoint(
+    body: SnapshotBatchDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """按筛选条件批量删除历史快照（dryRun 默认 True 仅预览计数）。
+
+    与列表查询同口径（含停用回路历史快照）；至少指定 回路/装置/时间范围
+    之一，无约束全表删除将被拒绝。
+    """
+    from app.services.performance import batch_delete_snapshots
+
+    try:
+        data = await batch_delete_snapshots(
+            db,
+            loop_ids=body.loopIds,
+            plant_node_id=body.plantNodeId,
+            start=_parse_iso_arg(body.startTime),
+            end=_parse_iso_arg(body.endTime),
+            status=body.status,
+            source=body.source,
+            dry_run=body.dryRun,
+        )
+    except ValueError as exc:
+        raise BizError(
+            code="ERR_SNAPSHOT_DELETE_UNCONSTRAINED",
+            message=str(exc),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        ) from exc
+    return success(
+        data=data,
+        message=(
+            f"匹配 {data['matched']} 条"
+            + ("（预览，未删除）" if data["dryRun"] else f"，已删除 {data['deleted']} 条")
+        ),
+    )
+
+
+@router.delete(
+    "/loops/snapshots/{snapshot_id}",
+    response_model=ApiResponse[dict],
+)
+async def delete_snapshot_endpoint(
+    snapshot_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+) -> dict:
+    """删除单条历史快照。"""
+    from app.services.performance import delete_snapshot_by_id
+
+    deleted = await delete_snapshot_by_id(db, snapshot_id)
+    if not deleted:
+        raise BizError(
+            code="ERR_SNAPSHOT_NOT_FOUND",
+            message=f"快照 {snapshot_id} 不存在或已删除",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return success(data={"deleted": True}, message="快照已删除")
 
 
 __all__ = ["router"]

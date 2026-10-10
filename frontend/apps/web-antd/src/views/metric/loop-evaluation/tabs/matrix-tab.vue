@@ -46,6 +46,7 @@ import { getLoopListApi } from '#/api/loop';
 import {
   getLoopMetricSeriesApi,
   getLoopSnapshotsApi,
+  getWindowAggSnapshotsApi,
 } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
@@ -584,25 +585,50 @@ async function loadList() {
   loading.value = true;
   loadError.value = false;
   try {
-    const params: any = {
-      page: currentPage.value,
-      pageSize: pageSize.value,
-      latestOnly: true,
-    };
-    if (filterLoopId.value) params.loopId = filterLoopId.value;
-    if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
-    if (windowValue.value !== 'latest') {
+    if (windowValue.value === 'latest') {
+      const params: any = {
+        page: currentPage.value,
+        pageSize: pageSize.value,
+        latestOnly: true,
+      };
+      if (filterLoopId.value) params.loopId = filterLoopId.value;
+      if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
+      if (sortBy.value && sortOrder.value) {
+        params.sortBy = sortBy.value;
+        params.sortOrder = sortOrder.value;
+      }
+      const result: KpiSnapshotListResult = await getLoopSnapshotsApi(params);
+      rows.value = result.items;
+      totalCount.value = result.total;
+    } else {
+      // 时间窗口径（2026-10-10 修复）：latestOnly 下任意 ≥1h 窗口的
+      // "最新一条"都是同一条（切换 8h/24h 统计值不变）——改走窗口均值
+      // 聚合端点，全量拉回（回路数级）本地排序+分页
       const { startTime, endTime } = currentWindowRange();
-      params.startTime = startTime;
-      params.endTime = endTime;
+      const params: any = { startTime, endTime };
+      if (filterLoopId.value) params.loopId = filterLoopId.value;
+      if (filterPlantNodeId.value) params.plantNodeId = filterPlantNodeId.value;
+      const result = await getWindowAggSnapshotsApi(params);
+      let items = result.items ?? [];
+      const def = sortBy.value
+        ? METRIC_DEFS.find((d) => d.sortKey === sortBy.value)
+        : null;
+      if (def && sortOrder.value) {
+        const key = def.field as keyof (typeof items)[0];
+        items = items.toSorted((a: any, b: any) => {
+          const av = a[key];
+          const bv = b[key];
+          let cmp = 0;
+          if (av == null && bv != null) cmp = 1;
+          else if (av != null && bv == null) cmp = -1;
+          else if (av != null && bv != null) cmp = Number(av) - Number(bv);
+          return sortOrder.value === 'asc' ? cmp : -cmp;
+        });
+      }
+      aggRows.value = items;
+      totalCount.value = items.length;
+      applyAggPage();
     }
-    if (sortBy.value && sortOrder.value) {
-      params.sortBy = sortBy.value;
-      params.sortOrder = sortOrder.value;
-    }
-    const result: KpiSnapshotListResult = await getLoopSnapshotsApi(params);
-    rows.value = result.items;
-    totalCount.value = result.total;
   } catch (error: any) {
     loadError.value = true;
     console.error('加载指标矩阵失败:', error);
@@ -610,6 +636,13 @@ async function loadList() {
   } finally {
     loading.value = false;
   }
+}
+
+/** 窗口聚合行全集（时间窗模式）：本地分页切片 */
+const aggRows = ref<any[]>([]);
+function applyAggPage() {
+  const startIdx = (currentPage.value - 1) * pageSize.value;
+  rows.value = aggRows.value.slice(startIdx, startIdx + pageSize.value);
 }
 
 async function loadPlantNodeTree() {
@@ -942,6 +975,9 @@ function applyRouteQuery() {
 function syncRouteQuery() {
   router.replace({
     query: {
+      // 保住 view（2026-10-10 修复：matrix 内筛选/详情触发 replace 时丢
+      // view 参数，会被容器页归一化回默认 rank——表现为"跳回当前榜单"）
+      ...(route.query.view ? { view: String(route.query.view) } : {}),
       ...(activeGroup.value === 'core' ? {} : { tab: activeGroup.value }),
       ...(windowValue.value === 'latest' ? {} : { window: windowValue.value }),
       ...(filterPlantNodeId.value ? { plantNodeId: filterPlantNodeId.value } : {}),

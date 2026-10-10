@@ -1672,6 +1672,41 @@ export function getLoopSnapshotsApi(params: KpiSnapshotQueryParams) {
   return requestClient.get<KpiSnapshotListResult>(SNAPSHOTS_BASE, { params });
 }
 
+/** 历史快照批量删除（2026-10-10）：与列表筛选同口径；dryRun=true 仅预览计数 */
+export function batchDeleteSnapshotsApi(data: {
+  confidenceLevel?: string;
+  dryRun: boolean;
+  endTime?: string;
+  loopIds?: string[];
+  plantNodeId?: string;
+  source?: string;
+  startTime?: string;
+  status?: string;
+}) {
+  return requestClient.post<{ deleted: number; dryRun: boolean; matched: number }>(
+    `${SNAPSHOTS_BASE}/batch-delete`,
+    data,
+  );
+}
+
+/** 回路级窗口聚合（均值）快照——指标矩阵时间窗口径（2026-10-10） */
+export function getWindowAggSnapshotsApi(params: {
+  endTime: string;
+  loopId?: string;
+  plantNodeId?: string;
+  startTime: string;
+}) {
+  return requestClient.get<{ items: any[]; total: number }>(
+    `${SNAPSHOTS_BASE}/window-agg`,
+    { params },
+  );
+}
+
+/** 删除单条历史快照 */
+export function deleteSnapshotApi(snapshotId: string) {
+  return requestClient.delete(`${SNAPSHOTS_BASE}/${snapshotId}`);
+}
+
 // ===========================================================================
 // 批量回路指标序列 — GET /performance/loops/metric-series
 // 指标矩阵页列头趋势对比（docs/MVP设计/15-回路指标矩阵页设计方案.md §4.1）

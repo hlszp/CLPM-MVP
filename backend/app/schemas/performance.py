@@ -525,6 +525,23 @@ class MetricSeriesData(CamelModel):
     series: list[MetricSeriesItem] = Field(default_factory=list)
 
 
+class SnapshotBatchDeleteRequest(CamelModel):
+    """历史快照批量删除请求（2026-10-10：与列表筛选同口径，dry-run 预览先行）.
+
+    安全约束：loopIds / plantNodeId / （startTime 且 endTime）至少提供一项，
+    防止无约束全表删除；dryRun=True 仅返回将删除的计数。
+    """
+
+    loopIds: list[str] | None = Field(None, description="回路 ID 列表")
+    plantNodeId: str | None = Field(None, description="装置节点 ID（含子树）")
+    startTime: str | None = Field(None, description="起始时间（ISO 8601）")
+    endTime: str | None = Field(None, description="结束时间（ISO 8601）")
+    status: str | None = Field(None, description="快照状态（逗号分隔多值）")
+    confidenceLevel: str | None = Field(None, description="可信度等级（A~E）")
+    source: str | None = Field(None, description="评估来源（逗号分隔多值）")
+    dryRun: bool = Field(True, description="True=仅返回将删除计数，不执行")
+
+
 __all__ = [
     "AnalyticsData",
     "AnalyticsFilterScope",
@@ -550,6 +567,7 @@ __all__ = [
     "MetricThreshold",
     "PartialWarning",
     "RankingItem",
+    "SnapshotBatchDeleteRequest",
     "TrendSeries",
     "UnitRankingItem",
     "WeightSumValidator",
