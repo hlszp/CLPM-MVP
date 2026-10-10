@@ -617,11 +617,11 @@ function handleToggleEvaluation(
         console.error('操作失败:', error);
       });
   } else {
-    // 切换为不参评时提示
+    // 切换为不参评时提示（2026-10-10 参评口径统一：不再计算单回路 KPI）
     Modal.warning({
       title: '确认切换为不参评',
       content:
-        '不参评回路仍正常计算单回路 KPI，但不进入综合性能评分、装置级聚合与低效排行，确认切换？',
+        '不参评回路不再参与 KPI 评估计算，不产出评分/等级/适用性数据，不进入任何统计（等级分布、低效排行、装置单元聚合、驾驶舱）；已有评分将显示为"—"。确认切换？',
       okText: '确认切换',
       cancelText: '取消',
       onOk: async () => {
@@ -644,13 +644,45 @@ const rowSelection = computed(() => ({
   },
 }));
 
-/** 2026-10-10：内联切换停用/启用（is_active） */
+/** 2026-10-10：内联切换停用/启用（is_active）；
+ * 同日参评口径统一修订：启用不参评回路时弹窗提供「恢复参评并启用」 */
 function handleToggleActive(record: LoopApi.LoopListItem, checked: boolean) {
   if (checked) {
-    // 启用：不反向恢复参评（裁决口径），由使用者按需手动打开参评开关
+    if (record.includeInEvaluation === false) {
+      // 停用时联动置不参评、复用不自动恢复——给一键恢复入口（2026-10-10 修订）
+      Modal.confirm({
+        title: '恢复参评并启用？',
+        content:
+          '该回路停用时已联动切换为「不参评」。恢复参评后重新参与 KPI 评估与统计（评分/等级分布/适用性/装置单元聚合，下一整点起出分）；仅启用则保持不参评（无评分，不进任何统计，可随时在「参评」列打开）。',
+        okText: '恢复参评并启用',
+        cancelText: '仅启用',
+        onOk: async () => {
+          try {
+            await updateLoopApi(record.loopId, {
+              includeInEvaluation: true,
+              isActive: true,
+            });
+            message.success('已启用并恢复参评（评分下一整点起产出）');
+            await loadList();
+          } catch (error) {
+            console.error('操作失败:', error);
+          }
+        },
+        onCancel: async () => {
+          try {
+            await updateLoopApi(record.loopId, { isActive: true });
+            message.success('已启用监控（保持不参评，可随时在参评列打开）');
+            await loadList();
+          } catch (error) {
+            console.error('操作失败:', error);
+          }
+        },
+      });
+      return;
+    }
     updateLoopApi(record.loopId, { isActive: true })
       .then(() => {
-        message.success('已启用监控（参评状态保持不参评，需手动开启）');
+        message.success('已启用监控');
         loadList();
       })
       .catch((error) => {

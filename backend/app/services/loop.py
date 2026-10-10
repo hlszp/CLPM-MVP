@@ -1665,6 +1665,16 @@ async def update_loop(
 
     await notify_subscription_changed(source="loop-update")
 
+    # 2026-10-10 参评口径统一：停用/启用/参评切换改变聚合分母 → 即时失效
+    # 驾驶舱总览/趋势缓存（进程 + Redis 双端），免最长 240s 旧值窗口。
+    if before.get("isActive") != bool(loop.is_active) or before.get("includeInEvaluation") != bool(
+        loop.include_in_evaluation
+    ):
+        from app.services.agg_cache import invalidate_agg_async
+
+        await invalidate_agg_async("cockpit-overview")
+        await invalidate_agg_async("board-trend")
+
     return {
         "loopId": str(loop.id),
         "description": loop.description,

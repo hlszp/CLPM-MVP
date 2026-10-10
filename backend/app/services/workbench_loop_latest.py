@@ -45,6 +45,8 @@ _TOP_SYMPTOM_LATERAL = """
 """
 
 # 每回路最新小时快照（fitness 面 + score）
+# 2026-10-10 参评口径统一：仅参评回路——不参评回路不再产出评估快照，
+# 预计算行的 fitness/score 列随之置 NULL（读方显示"待评估/—"而非旧值）
 _LATEST_SNAPSHOT_SQL = """
     SELECT DISTINCT ON (s.loop_id)
            s.loop_id, s.score, s.fitness_level, s.fitness_tags,
@@ -52,6 +54,7 @@ _LATEST_SNAPSHOT_SQL = """
            s.tune_level, s.ts_start
     FROM kpi_snapshot_hourly s
     JOIN loop_ledger l ON l.id = s.loop_id AND l.is_active
+                       AND l.include_in_evaluation
     ORDER BY s.loop_id, s.ts_start DESC
 """
 

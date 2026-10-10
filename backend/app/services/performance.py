@@ -1101,9 +1101,16 @@ def _apply_snapshot_filters(
 
     2026-10-10 停用口径：无条件排除停用回路（is_active=False）的历史快照，
     用 IN 子查询而非 join，避免与调用方自身的 join/DISTINCT ON 结构冲突。
+    2026-10-10 参评口径统一：同时排除不参评回路（本构造器消费方均为
+    评估统计/榜单路径：ranking/指标分析；不参评回路的旧快照不再计入）。
     """
     stmt = stmt.where(
-        KpiSnapshotHourly.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+        KpiSnapshotHourly.loop_id.in_(
+            select(LoopLedger.id).where(
+                LoopLedger.is_active.is_(True),
+                LoopLedger.include_in_evaluation.is_(True),
+            )
+        )
     )
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)
@@ -1743,10 +1750,18 @@ async def _build_snapshot_conditions(
     if not include_inactive:
         # 2026-10-10 停用口径：仅统计活跃回路（子查询 IN，不依赖 join）。
         # include_inactive=True（历史快照列表）：历史记录完整呈现，停用回路
-        # 禁用前的快照不隐藏（当前态统计/榜单仍走默认过滤口径）
+        # 禁用前的快照不隐藏（当前态统计/榜单仍走默认过滤口径）。
         conditions.append(
             KpiSnapshotHourly.loop_id.in_(
                 select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+            )
+        )
+        # 2026-10-10 参评口径统一：当前态统计/榜单仅计参评回路（不参评回路
+        # 不再产出评估快照，其停用前/退出参评前的旧快照不得继续计入）；
+        # 历史模式（include_inactive=True）同样完整呈现，不滤参评。
+        conditions.append(
+            KpiSnapshotHourly.loop_id.in_(
+                select(LoopLedger.id).where(LoopLedger.include_in_evaluation.is_(True))
             )
         )
     if loop_ids:

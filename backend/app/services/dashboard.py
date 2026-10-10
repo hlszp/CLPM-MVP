@@ -226,9 +226,16 @@ def _apply_snapshot_filters(
 
     2026-10-10 停用口径：无条件排除停用回路（is_active=False）的历史快照
     （IN 子查询，避免与 plant_id 分支的 join 结构冲突）。
+    2026-10-10 参评口径统一：同时排除不参评回路（本构造器消费方均为
+    评估统计路径：窗口对比/趋势摘要；旧快照不再计入）。
     """
     stmt = stmt.where(
-        KpiSnapshotHourly.loop_id.in_(select(LoopLedger.id).where(LoopLedger.is_active.is_(True)))
+        KpiSnapshotHourly.loop_id.in_(
+            select(LoopLedger.id).where(
+                LoopLedger.is_active.is_(True),
+                LoopLedger.include_in_evaluation.is_(True),
+            )
+        )
     )
     if start is not None:
         stmt = stmt.where(KpiSnapshotHourly.ts_start >= start)

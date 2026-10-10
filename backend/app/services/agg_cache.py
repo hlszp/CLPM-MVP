@@ -88,6 +88,29 @@ def invalidate_agg(prefix: str = "") -> int:
     return len(keys)
 
 
+async def invalidate_agg_async(prefix: str) -> int:
+    """进程层 + Redis 层按前缀失效（2026-10-10 参评口径/停用复用即时反馈）。
+
+    生产 backend 为 4 workers + Redis 共享层：只清进程层时其余 worker 仍会
+    命中 Redis 旧值（最长 TTL 240s），故回路停用/启用/参评切换等改变聚合
+    分母的操作必须双端失效。Redis SCAN+DEL，异常静默降级（最坏退化为 TTL
+    自然过期，不阻断写操作）。返回进程层清除条数。
+    """
+    n = invalidate_agg(prefix)
+    if not REDIS_LAYER_ENABLED:
+        return n
+    try:
+        from app.core.redis import redis_client
+
+        pattern = f"{_REDIS_PREFIX}{prefix}*" if prefix else f"{_REDIS_PREFIX}*"
+        keys = [key async for key in redis_client.scan_iter(match=pattern, count=200)]
+        if keys:
+            await redis_client.delete(*keys)
+    except Exception:  # noqa: BLE001 —— Redis 故障降级为 TTL 自然过期
+        pass
+    return n
+
+
 async def prime_agg(key: str, data: Any, ttl: float = _TTL_SECONDS) -> None:
     """主动写入缓存（进程内 + Redis）。供 Beat 预热使用——绕过 cached_agg
     的取或算语义（缓存仍有效时 Beat 侧不会重算，预热必须强制写新值）。"""

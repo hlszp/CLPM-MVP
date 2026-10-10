@@ -31,6 +31,16 @@ from app.services.data_source.realtime_subscriber import get_subscriber
 logger = logging.getLogger(__name__)
 
 
+def _eval_participant_ids():
+    """参评回路 id 子查询（2026-10-10 参评口径统一）。
+
+    回路页评分/等级统计的快照取数统一仅计参评回路：不参评回路不再产出
+    评估快照（kpi_calc 全量选路已滤），其退出参评前的旧快照也不得以旧值
+    展示——卡片评分显示"—"、等级分布计为未评估。
+    """
+    return select(LoopLedger.id).where(LoopLedger.include_in_evaluation.is_(True))
+
+
 def _is_valid_uuid(value: str) -> bool:
     """校验字符串是否为合法 UUID（避免 PG uuid 列与非法字符串比较抛 DataError）。"""
     try:
@@ -437,11 +447,13 @@ async def _build_loop_monitor_aggregate(
             "typeCounts": {},
         }
 
-    # 2) 批量查最新快照 score
+    # 2) 批量查最新快照 score（参评口径统一：仅参评回路，不参评回路不计入
+    #    等级分布/均分/劣化统计）
     latest_snap_sq = (
         select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
         .distinct(KpiSnapshotHourly.loop_id)
         .where(KpiSnapshotHourly.loop_id.in_(all_loop_ids))
+        .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         .subquery("agg_latest_snap")
     )
@@ -455,6 +467,7 @@ async def _build_loop_monitor_aggregate(
         select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
         .distinct(KpiSnapshotHourly.loop_id)
         .where(KpiSnapshotHourly.loop_id.in_(all_loop_ids))
+        .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
         .where(KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()))
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         .subquery("agg_prev_snap")
@@ -787,10 +800,13 @@ async def list_loop_monitor(
 
     # 评分等级筛选（回路监视页改版 P1-1）：按最新快照 score 半开区间 [min, max)
     # 过滤；unscored 只看无快照回路。SQL 子查询下推，count/aggregate/分页同口径。
+    # 2026-10-10 参评口径统一：等级子查询仅计参评回路——不参评回路不匹配任何
+    # 评分区间（其评分展示为 NULL），归入 unscored 口径。
     if min_score is not None or max_score is not None:
         grade_snap_sq = (
             select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
             .distinct(KpiSnapshotHourly.loop_id)
+            .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
             .subquery("grade_snap")
         )
@@ -808,12 +824,17 @@ async def list_loop_monitor(
         grade_snap_sq = (
             select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
             .distinct(KpiSnapshotHourly.loop_id)
+            .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
             .subquery("grade_snap")
         )
         conditions.append(
             or_(
-                ~LoopLedger.id.in_(select(KpiSnapshotHourly.loop_id).distinct()),
+                ~LoopLedger.id.in_(
+                    select(KpiSnapshotHourly.loop_id)
+                    .distinct()
+                    .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
+                ),
                 LoopLedger.id.in_(
                     select(grade_snap_sq.c.loop_id).where(grade_snap_sq.c.score.is_(None))
                 ),
@@ -904,6 +925,8 @@ async def list_loop_monitor(
     # 2026-10-09 生产提速：裸列 select 仅取列表消费的标量列 + fitness_tags，
     # 不再整行取回 ORM 实体（data_lineage/fitness_detail 等 JSONB 大列列表
     # 不消费，生产 1209 回路逐行 TOAST 解压是每页秒级延迟的主来源）
+    # 2026-10-10 参评口径统一：快照取数仅计参评回路（不参评回路不再产出
+    # 评估快照，旧快照不得以旧值展示——评分显示"—"、等级计未评估）
     _SNAP_COLS = (
         KpiSnapshotHourly.loop_id,
         KpiSnapshotHourly.score,
@@ -925,10 +948,11 @@ async def list_loop_monitor(
     )
     snapshot_map: dict[str, Any] = {}
     if loop_ids:
-        # PostgreSQL DISTINCT ON：按 loop_id 取 ts_end 最大的一条
+        # PostgreSQL DISTINCT ON：按 loop_id 取 ts_end 最大的一条（仅参评回路）
         s_stmt = (
             select(*_SNAP_COLS)
             .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+            .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
@@ -943,6 +967,7 @@ async def list_loop_monitor(
         p_stmt = (
             select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
             .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
+            .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
             .where(KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())

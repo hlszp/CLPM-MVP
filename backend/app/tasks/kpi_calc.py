@@ -229,6 +229,26 @@ _HOURLY_CALC_LOCK_PREFIX = "task:hourly_calc_lock"
 _HOURLY_CALC_LOCK_TTL_SECONDS = 15000
 
 
+def _eval_loop_selection_stmt(loop_ids: list[str] | None):
+    """评估计算的回路选路（2026-10-10 参评口径统一）。
+
+    全量扫描（loop_ids=None，小时 Beat/全量 backfill）：仅取**参评**回路
+    （include_in_evaluation=True）——不参评回路不再产出评估快照，切换参评
+    状态后全站评分/统计随之同步（读方各 latest 查询同批过滤）。
+    显式指定回路（手动单回路/自定义批量/backfill 精准重算）：不滤参评，
+    尊重显式意图（读方仍按参评过滤展示）。
+    """
+    stmt = select(LoopLedger).where(
+        LoopLedger.is_active.is_(True),
+        LoopLedger.status == "READY",
+    )
+    if loop_ids is None:
+        stmt = stmt.where(LoopLedger.include_in_evaluation.is_(True))
+    else:
+        stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+    return stmt
+
+
 def _hourly_window_lock_key(ts_start: str | None) -> str:
     """计算小时窗口互斥锁 Redis key（默认窗口口径与 _do_calculate 一致）."""
     ts_start_dt = _parse_ts_start(ts_start)
@@ -1025,13 +1045,8 @@ async def _do_calculate(
 
     # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
     async with AsyncSessionLocal() as db:
-        # 1. 查询所有 ACTIVE/READY 状态回路（支持 loop_ids 精准过滤）
-        stmt = select(LoopLedger).where(
-            LoopLedger.is_active.is_(True),
-            LoopLedger.status == "READY",
-        )
-        if loop_ids is not None:
-            stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+        # 1. 查询待评估回路（参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
+        stmt = _eval_loop_selection_stmt(loop_ids)
         loop_result = await db.execute(stmt)
         loops = list(loop_result.scalars().all())
         logger.info("待计算回路数: %d", len(loops))
@@ -3429,15 +3444,10 @@ def _backfill_window_batch(
             for w in window_isos
         ]
 
-        # 预加载（子任务内 1 次）
+        # 预加载（子任务内 1 次；参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
         _preload_t0 = _time.monotonic()
         async with AsyncSessionLocal() as db:
-            stmt = select(LoopLedger).where(
-                LoopLedger.is_active.is_(True),
-                LoopLedger.status == "READY",
-            )
-            if loop_ids is not None:
-                stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+            stmt = _eval_loop_selection_stmt(loop_ids)
             result = await db.execute(stmt)
             loops = list(result.scalars().all())
 
@@ -4091,14 +4101,9 @@ def _process_windows_subprocess(
             for w in window_isos
         ]
 
-        # 子进程内预加载
+        # 子进程内预加载（参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
         async with AsyncSessionLocal() as db:
-            stmt = select(LoopLedger).where(
-                LoopLedger.is_active.is_(True),
-                LoopLedger.status == "READY",
-            )
-            if loop_ids is not None:
-                stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+            stmt = _eval_loop_selection_stmt(loop_ids)
             result = await db.execute(stmt)
             loops = list(result.scalars().all())
 

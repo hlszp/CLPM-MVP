@@ -843,9 +843,14 @@ class TestSnapshotConditionsInactive:
         start = datetime(2026, 10, 1, tzinfo=UTC)
         end = datetime(2026, 10, 10, tzinfo=UTC)
         conditions, need_join = await _build_snapshot_conditions(MagicMock(), start=start, end=end)
-        # 默认含 3 个条件：ts_start 范围 ×2 + 活跃回路子查询
-        assert len(conditions) == 3
+        # 默认含 4 个条件：ts_start 范围 ×2 + 活跃回路子查询 + 参评回路子查询
+        # （2026-10-10 参评口径统一：当前态统计/榜单排除不参评回路的旧快照）
+        assert len(conditions) == 4
         assert need_join is False
+        sql = " AND ".join(
+            str(c.compile(compile_kwargs={"literal_binds": False})) for c in conditions
+        ).upper()
+        assert "INCLUDE_IN_EVALUATION" in sql
 
     @pytest.mark.anyio
     async def test_include_inactive_drops_active_filter(self) -> None:

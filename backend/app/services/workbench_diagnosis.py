@@ -599,10 +599,18 @@ async def _query_spark_map(db: AsyncSession, loop_ids: list[str]) -> dict[str, l
 
 
 async def _query_scope_loop_ids(db: AsyncSession, unit_ids: list[str] | None) -> list[str]:
-    """scope 内活跃回路 id 列表（fitness 门禁聚合的分母）。"""
+    """scope 内活跃**参评**回路 id 列表（fitness 门禁聚合的分母）。
+
+    2026-10-10 参评口径统一：分母=活跃且参评的回路——不参评回路不再产出
+    评估快照，其旧 L0~L4 快照不得计入门禁横幅/适用性环形图。
+    """
     unit_filter = "AND unit_id = ANY(:unit_ids)" if unit_ids is not None else ""
     result = await db.execute(
-        text(f"SELECT id FROM loop_ledger WHERE is_active = true {unit_filter}"),
+        text(
+            "SELECT id FROM loop_ledger "
+            "WHERE is_active = true AND include_in_evaluation = true "
+            f"{unit_filter}"
+        ),
         {"unit_ids": unit_ids},
     )
     return [str(row[0]) for row in result.all()]

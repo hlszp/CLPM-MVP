@@ -192,6 +192,17 @@ async def batch_update_loops(
             )
     await db.commit()
 
+    # 2026-10-10 参评口径统一：批量停用/启用/参评切换改变聚合分母 → 即时
+    # 失效驾驶舱总览/趋势缓存（进程 + Redis 双端）。
+    if any(
+        k in updates and updates[k] is not None
+        for k in ("is_monitored", "is_stat_enabled", "include_in_evaluation")
+    ):
+        from app.services.agg_cache import invalidate_agg_async
+
+        await invalidate_agg_async("cockpit-overview")
+        await invalidate_agg_async("board-trend")
+
     logger.info(
         "[批量更新] 已更新 %d 个回路（操作人: %s, 字段: %s）",
         len(loops),
