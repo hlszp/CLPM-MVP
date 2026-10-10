@@ -146,28 +146,47 @@ class TestEffectiveAutoRate:
 
 
 class TestMissingOptionalSignals:
-    """回归：MODE_HF tagGroup 只含 mode+op（缺 pv/sp）时不得误报 zero_total_duration。
+    """缺信号语义（CAL-03 / P1-01：PV/SP 缺失显式不可评，不静默当有效）.
 
-    2026-07-28 线上回归：上一版 IndexError 防护对全部 5 个数组取 min 长度，
-    缺 pv/sp 时循环上界被截断为 0 → total_duration=0 → 全回路 INCONCLUSIVE。
+    历史（2026-07-28 线上回归）：上一版对全部 5 个数组取 min 长度，缺 pv/sp
+    时循环上界被截断为 0 → total_duration=0 → 全回路 INCONCLUSIVE
+    (zero_total_duration)。CAL-03 起（2026-10-10）：pv/sp 是偏差检查必需输入，
+    契约 tags 已扩为 ["mode","op","pv","sp"]，bundle 缺 pv/sp → 显式
+    INCONCLUSIVE(deviation_inputs_missing)——上界截断回归不复现（原因码
+    区分），缺输入不再被静默计为偏差合理。
     """
 
-    def test_missing_pv_sp_still_computes(self):
-        """缺 pv/sp 信号（mode+op only）→ 正常出分，不报 zero_total_duration。"""
+    def test_missing_pv_sp_explicit_inconclusive(self):
+        """缺 pv/sp 信号（mode+op only，旧契约兜底）→ INCONCLUSIVE，原因明确."""
         n = 100
         bundle = make_bundle(
             {"mode": [1] * n, "op": [50.0] * n},
             metric_code="effective_auto_rate",
         )
         result = EffectiveAutoRateCalculator().calculate(bundle)
-        assert result.value == 100.0
-        assert result.details["auto_duration_s"] == result.details["total_duration_s"]
+        assert result.value is None
+        assert result.confidence_level == "E"
+        assert result.details["reason"] == "deviation_inputs_missing"
+        # 2026-07-28 回归不复现：不得误报 zero_total_duration
+        assert result.details["reason"] != "zero_total_duration"
 
-    def test_missing_op_treated_as_unsaturated(self):
-        """缺 op 信号 → 不判饱和，mode 全自动 → R=100。"""
+    def test_missing_pv_only_explicit_inconclusive(self):
+        """缺 pv（sp 在）→ 同样显式 INCONCLUSIVE，缺什么登记什么."""
         n = 100
         bundle = make_bundle(
-            {"mode": [1] * n},
+            {"mode": [1] * n, "op": [50.0] * n, "sp": [50.0] * n},
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+        assert result.value is None
+        assert result.details["reason"] == "deviation_inputs_missing"
+        assert result.details["missing_signals"] == ["pv"]
+
+    def test_missing_op_treated_as_unsaturated(self):
+        """缺 op 信号（pv/sp 在）→ 不判饱和，mode 全自动零偏差 → R=100."""
+        n = 100
+        bundle = make_bundle(
+            {"mode": [1] * n, "pv": [50.0] * n, "sp": [50.0] * n},
             metric_code="effective_auto_rate",
         )
         result = EffectiveAutoRateCalculator().calculate(bundle)
@@ -182,3 +201,75 @@ class TestMissingOptionalSignals:
         result = EffectiveAutoRateCalculator().calculate(bundle)
         assert result.value is None
         assert result.details.get("reason") == "insufficient_data"
+
+
+class TestC03DeviationInputCombinations:
+    """C03（04 验收基线 / 台账 CAL-03）：判据组合的明确值或不可评.
+
+    统一 1s 采样（每点时长 1s，n=5 → total=5s），e_max 默认 = 100×0.05 = 5.0：
+        modes=[AUTO, MANUAL, AUTO, AUTO, AUTO]
+        op   =[50,   50,     100, 50,   50]      # i2 贴上限饱和（ε=0）
+        pv   =[50,   50,     50,  60,   50]      # i3 |E|=10 ≥ 5 → 偏差超限
+        sp   =[50,   50,     50,  50,   50]
+    逐点：i0 有效（1s）；i1 手动；i2 OP 饱和；i3 偏差超限；i4 有效（1s）
+    → effective=2s, auto=4s, R = 2/5 × 100 = 40.0
+    """
+
+    def test_combined_criteria_exact_value(self):
+        """C03：手动/OP 饱和/偏差超限组合 → 明确值 R=40.0（auto=4s）."""
+        n = 5
+        bundle = make_bundle(
+            {
+                "mode": [1, 0, 1, 1, 1],
+                "op": [50.0, 50.0, 100.0, 50.0, 50.0],
+                "pv": [50.0, 50.0, 50.0, 60.0, 50.0],
+                "sp": [50.0] * n,
+            },
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+
+        assert result.value == 40.0
+        assert result.details["auto_duration_s"] == 4.0
+        assert result.details["effective_duration_s"] == 2.0
+        assert result.details["total_duration_s"] == 5.0
+        assert result.details["deviation_check"] == "applied"
+        assert result.details["deviation_unknown_points"] == 0
+
+    def test_per_point_none_pv_not_effective(self):
+        """C03：采样点 PV 值缺失（None）→ 该点偏差不可判，不计有效（缺输入不当有效）.
+
+        pv=[50, None, 50, 50, 50]（sp 恒 50，全 AUTO 不饱和）：
+        i1 偏差不可判 → effective = 4s → R = 4/5 × 100 = 80.0，
+        details.deviation_unknown_points = 1（显式计数，不静默）。
+        """
+        bundle = make_bundle(
+            {
+                "mode": [1] * 5,
+                "op": [50.0] * 5,
+                "pv": [50.0, None, 50.0, 50.0, 50.0],
+                "sp": [50.0] * 5,
+            },
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+
+        assert result.value == 80.0
+        assert result.details["effective_duration_s"] == 4.0
+        assert result.details["deviation_unknown_points"] == 1
+
+    def test_per_point_none_sp_not_effective(self):
+        """C03：采样点 SP 值缺失同样不计有效（对称）。"""
+        bundle = make_bundle(
+            {
+                "mode": [1] * 5,
+                "op": [50.0] * 5,
+                "pv": [50.0] * 5,
+                "sp": [None, 50.0, 50.0, 50.0, 50.0],
+            },
+            metric_code="effective_auto_rate",
+        )
+        result = EffectiveAutoRateCalculator().calculate(bundle)
+
+        assert result.value == 80.0
+        assert result.details["deviation_unknown_points"] == 1

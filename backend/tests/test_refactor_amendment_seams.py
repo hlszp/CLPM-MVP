@@ -296,6 +296,39 @@ class TestCase6MaskDiscontinuity:
         bundle2 = self._bundle([0, 1, 60, 61])
         assert gap_guard_verdict("accuracy_rate", bundle2)[0] is True
 
+    def test_settling_time_guarded_on_gap(self):
+        """CAL-09（P1-01）：settling_time 非连续 mask → 守卫拒绝（不当作相邻一步）.
+
+        修正前登记口径错误声称"已内建分段支持"——实际 _check_uniform_sampling
+        仅是间隔比例检查，mask [0,1,60,61] 压缩后 60 与 1 会被当作相邻 1s
+        进 AR 辨识（I04 同类错误）。真实分段归 P3-01，此前显式 INCONCLUSIVE。
+        """
+        from app.services.preprocessing.input_guards import (
+            gap_guard_verdict,
+            make_gap_guard_result,
+        )
+
+        bundle = self._bundle([0, 1, 60, 61])
+        bundle.metric_code = "settling_time"
+        allowed, gap = gap_guard_verdict("settling_time", bundle)
+        assert not allowed and gap == 59
+        result = make_gap_guard_result(bundle, gap)
+        assert result.value is None and result.confidence_level == "E"
+        assert result.details["reason"] == "GAP_SENSITIVE_MASK_DISCONTINUOUS"
+
+    def test_settling_time_continuous_mask_and_legacy_exempt(self):
+        """CAL-09：settling_time 连续 mask 放行；legacy（无上下文）行为保持."""
+        from app.services.preprocessing.input_guards import gap_guard_verdict
+
+        bundle = self._bundle(list(range(10)))
+        bundle.metric_code = "settling_time"
+        assert gap_guard_verdict("settling_time", bundle)[0] is True
+
+        bundle_legacy = self._bundle([0, 1, 60, 61])
+        bundle_legacy.metric_code = "settling_time"
+        bundle_legacy.data_block.series_context = None
+        assert gap_guard_verdict("settling_time", bundle_legacy)[0] is True
+
 
 class TestCase7UnknownStatistics:
     """用例 7：10 槽 7 有效 3 未知——未知=3、0.7 不二次乘成 0.49。"""

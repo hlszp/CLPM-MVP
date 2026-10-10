@@ -86,9 +86,10 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         e_max = self._read_e_max(bundle, default_e_max_ratio)
 
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
-        # 循环上界取 mode/时间戳最小长度防 IndexError。注意 op/pv/sp 是可选信号
-        # （MODE_HF tagGroup 只含 mode+op），缺失时不得把上界截断为 0——
-        # 否则 total_duration=0 误报 zero_total_duration（2026-07-28 回归教训：
+        # 循环上界取 mode/时间戳最小长度防 IndexError。op 是可选信号（缺失时
+        # 不判饱和）；pv/sp 自 CAL-03（P1-01）起为必需偏差输入——契约 tags
+        # 已扩为 ["mode","op","pv","sp"]，缺失时上方显式 INCONCLUSIVE，
+        # 不再把上界截断为 0 误报 zero_total_duration（2026-07-28 回归教训：
         # 上一版对全部 5 个数组取 min，导致缺 pv/sp 时全回路 INCONCLUSIVE）。
         durations = self._point_durations(masked_ts)
         bound = min(n, len(durations))
@@ -100,8 +101,29 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         has_op = len(masked_op) > 0
         has_pv_sp = len(masked_pv) > 0 and len(masked_sp) > 0
 
+        # CAL-03 修复（P1-01）：PV/SP 缺失语义显式化。偏差检查是"有效自控"
+        # 的必要条件（|E| < e_max），输入缺失时不得静默视为偏差合理（原实现
+        # is_deviation_ok=True 自动成立，"控制有效"判定偏宽）。数据契约已将
+        # effective_auto_rate 的 MODE_HF tags 扩为 ["mode","op","pv","sp"]
+        # （02_seed_data.sql + 迁移），正常供数路径本分支不可达；此处兜底
+        # 旧契约/派生缺失场景：缺 PV 或缺 SP → 显式不可评（INCONCLUSIVE），
+        # 不产出缺输入当有效的 R 值。
+        if not has_pv_sp:
+            missing = [
+                name for name, vals in (("pv", masked_pv), ("sp", masked_sp)) if len(vals) == 0
+            ]
+            return self._make_inconclusive(
+                bundle,
+                "deviation_inputs_missing",
+                {
+                    "missing_signals": missing,
+                    "note": "deviation criterion requires pv+sp; missing input is not effective",
+                },
+            )
+
         auto_duration = 0.0
         effective_duration = 0.0
+        deviation_unknown_points = 0
 
         for i in range(bound):
             segment = durations[i]
@@ -116,11 +138,19 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
                 op_val = _to_float(masked_op[i])
                 is_saturated = (op_val <= op_low + epsilon) or (op_val >= op_high - epsilon)
 
-            # 偏差检查（pv/sp 信号缺失时视为偏差合理）
+            # 偏差检查（CAL-03：e_max>0 时逐点检查；pv/sp 值缺失/非法的采样点
+            # 计"偏差不可判"，不得计入有效自控——_to_float(None)=0.0 会把缺失
+            # 值伪装成零偏差，必须先显式排除）
             is_deviation_ok = True
-            if e_max > 0 and has_pv_sp and i < len(masked_pv) and i < len(masked_sp):
-                deviation = abs(_to_float(masked_pv[i]) - _to_float(masked_sp[i]))
-                is_deviation_ok = deviation < e_max
+            if e_max > 0:
+                pv_val = masked_pv[i] if i < len(masked_pv) else None
+                sp_val = masked_sp[i] if i < len(masked_sp) else None
+                if pv_val is None or sp_val is None:
+                    is_deviation_ok = False
+                    deviation_unknown_points += 1
+                else:
+                    deviation = abs(_to_float(pv_val) - _to_float(sp_val))
+                    is_deviation_ok = deviation < e_max
 
             # 有效自控：模式自控 AND OP 未饱和 AND 偏差合理
             if not is_saturated and is_deviation_ok:
@@ -148,6 +178,8 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
                 "op_high": op_high,
                 "epsilon": epsilon,
                 "e_max": e_max,
+                "deviation_check": "applied" if e_max > 0 else "disabled_nonpositive_e_max",
+                "deviation_unknown_points": deviation_unknown_points,
             },
         )
 

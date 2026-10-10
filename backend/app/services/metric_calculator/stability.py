@@ -149,20 +149,29 @@ class StabilityRateCalculator(MetricCalculatorBase):
         # n>=2 保证（MIN_POINTS=2 已在上方校验），ddof=1 不会除零
         std_error = float(np.std(errors, ddof=1))
 
-        # 完全死值（σ=0 且恒定偏离 SP，2026-10-10 整改）：PV 全程一字不变
-        # （典型为仪表卡死或 COV 稳定不落库的填充假象）时，"稳定"不可评估，
-        # 满分 100 会奖励死信号。判 INCONCLUSIVE（诚实化）；σ=0 且均值=0 的
-        # 完美贴死 SP 情形保持满分（与零偏差语义一致，无法与真完美区分）。
+        # 完全死值（σ=0 且恒定偏离 SP，2026-10-10 整改；CAL-02 修正 2026-10-10）：
+        # 仅当 **PV 自身全程一字不变**（典型为仪表卡死或 COV 稳定不落库的填充
+        # 假象）时判 INCONCLUSIVE（诚实化）——"稳定"不可评估，满分 100 会奖励
+        # 死信号。判据看信号自身而非仅 error 方差：PV=变化SP+常数偏置 的回路
+        # error 恒定（std=0 且 mean≠0）但 PV 随 SP 移动，是活的跟踪回路，不得
+        # 误判死信号（其 σ=0 的稳态跟踪按公式得满分）。
+        # PV 自身波动在完整掩码对上检查，不受 SP 阶跃剔除影响（卡死是全窗
+        # 物理属性）；σ=0 且均值=0 的完美贴死 SP 情形保持满分（与零偏差语义
+        # 一致，无法与真完美区分）。
         if std_error == 0.0 and mean_error != 0.0:
-            return self._make_inconclusive(
-                bundle,
-                "dead_signal_constant_offset",
-                {
-                    "mean_error": round(mean_error, 6),
-                    "std_error": 0.0,
-                    "sample_count": int(len(errors)),
-                },
-            )
+            pv_values = np.array([float(pv) for pv, _ in pairs], dtype=float)
+            pv_frozen = bool(pv_values.size == 0 or np.all(pv_values == pv_values[0]))
+            if pv_frozen:
+                return self._make_inconclusive(
+                    bundle,
+                    "dead_signal_constant_offset",
+                    {
+                        "mean_error": round(mean_error, 6),
+                        "std_error": 0.0,
+                        "sample_count": int(len(errors)),
+                        "pv_frozen": True,
+                    },
+                )
 
         # U = PV 量程范围
         u = self._read_pv_range(bundle)

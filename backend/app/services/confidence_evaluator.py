@@ -435,8 +435,18 @@ class ConfidenceEvaluator:
 
         # 可信度统一 Phase 2（P2-3）：综合评分可信度 = 回路级可信度。
         # 各指标可信度已统一为回路级（P2-2），不再需要 _min_confidence 取最低。
-        # accuracy_rate 必存在（前面已校验核心指标非 INCONCLUSIVE），直接读取。
-        confidence = metric_results["accuracy_rate"].confidence_level
+        # CAL-01 修复（P1-01）：零权重核心指标不要求存在（LOGIC a=0 时
+        # accuracy_rate 键可整体缺失，:340-342 必需性检查已跳过），此处不得
+        # 无条件下标 metric_results["accuracy_rate"]——按 accuracy > fast >
+        # stability > R 顺序取首个存在的结果读取回路级可信度（同一回路的
+        # 各指标可信度同值，来源选择不影响结果），避免 KeyError。
+        confidence_ref = (
+            metric_results.get("accuracy_rate")
+            or metric_results.get("fast_rate")
+            or metric_results.get("stability_rate")
+            or r_result
+        )
+        confidence = confidence_ref.confidence_level if confidence_ref else ConfidenceLevel.E.value
 
         # D 级输入保留评分，但标注低可信度输入（评审决策口径）
         low_confidence_inputs = [

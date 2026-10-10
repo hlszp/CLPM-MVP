@@ -85,7 +85,13 @@ def compute_quality_summary(
 
     valid_rate = valid_count / total if total else 0.0
     bad_rate = bad_count / total if total else 0.0
-    missing_rate = missing_count / expected_count if expected_count > total else 0.0
+    # CAL-08 修复（P1-01）：分母判据用 expected_count > 0 而非 > total——
+    # point 网格分支 expected_count==total 且 missing_count 可 >0（未知槽
+    # 占位），原判据使 missing_rate 恒 0，出现 count>0 而 rate=0 的口径
+    # 矛盾（100 网格 20 UNKNOWN → count=20 且 rate=0.2）。legacy 分支
+    # expected≥total 恒成立：expected==total 时 missing_count=0，rate=0
+    # 不变；expected>total 时数值不变。
+    missing_rate = missing_count / expected_count if expected_count > 0 else 0.0
 
     # 好值率（仅当有质量码时计算）
     good_value_rate: float | None = None
