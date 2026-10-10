@@ -50,8 +50,8 @@ from app.services.tuning_identification.types import (
 
 logger = logging.getLogger(__name__)
 
-# 算法版本单一真相源在 types.IdentificationResult（v1.1=2026-10-04 预处理增强）
-ALGORITHM_VERSION = "TUNE_IDENT_v1.1"
+# 算法版本单一真相源在 types.IdentificationResult（v1.2=2026-10-10 IPDT 默认候选+val 稳态防护）
+ALGORITHM_VERSION = "TUNE_IDENT_v1.4"
 
 # 可信度阈值
 _R2_A = 0.90
@@ -75,12 +75,24 @@ _MAX_INTERP_GAP = 5  # 连续 NaN < 此值时线性插值；≥ 此值按大缺�
 
 # P2-020（2026-10-04 预处理增强）：自动选段 / 去趋势 / 低通滤波
 _OP_SPAN_NORMALIZED = 100.0  # 预处理链输出 OP 已归一化 0~100（V62-P1-009）
-# 去趋势保守门槛（三条件与，见 _detrend_signals 文档）：
+# 去趋势总开关（2026-10-10 用户裁决：默认关闭）。保留判定与实现，关闭原因：
+# 慢自衡过程的长阶跃响应（τ≥30min 级，化工常态）在有限窗口内呈爬升形状，
+# 与工作点漂移在线性形状上不可分——误去趋势摧毁信号的风险 > 漏去趋势的
+# 残差代价。未来改进方向（登记）：基于 SP/OP 因果的解释性去趋势（PV 趋势
+# 无法被输入变化解释时才去除）。
+_DETREND_ENABLED = False
+# 去趋势保守门槛（四条件与，见 _detrend_signals 文档）：
 # PV 全窗线性漂移 < 5% 量程跳过；PV 线性拟合 R² < 0.9（非趋势形状）跳过；
-# OP 漂移 < 1% 量程视为积分特性（IPDT 保护）跳过
+# OP 漂移 < 1% 量程视为积分特性（IPDT 保护）跳过；输入阶跃事件存在跳过
 _DETREND_MIN_DRIFT_PCT = 5.0
 _DETREND_MIN_LINEARITY = 0.9
 _DETREND_MIN_OP_DRIFT_PCT = 1.0
+_DETREND_INPUT_STEP_SP = 0.5  # SP 相邻变化 > 0.5% 量程 = 设定变更事件（SP 为操作员设定值
+# 非测量值、无传感器噪声，可低于 OP 类阈值；41LIC 实测有 0.4% 微调未命中 1% 档）
+# v1.3 动态感知子窗选取（auto-window）
+_AUTOWIN_MIN_FULL_PTP = 3.0  # 整窗 PV ptp < 3% 量程 = 近稳态，无动态可挖不扫描
+_AUTOWIN_MIN_POINTS = 600  # 子窗最短点数（val 段需仍有动态）
+_AUTOWIN_RATE_GAIN = 1.5  # 子窗平均变化率须 > 整窗 × 此倍数才切换
 # 低通必要性判据：滤波前后 PV 差异 std 占比 < 10% 视为高频噪声不显著，
 # 不替换原信号（保证干净/低噪数据零影响，仅在确有测量噪声时介入）
 _LOWPASS_MIN_DIFF_RATIO = 0.10
@@ -88,6 +100,9 @@ _LOWPASS_WN_MIN = 0.005  # 归一化截止频率下限（相对 Nyquist）
 _LOWPASS_WN_MAX = 0.4  # 上限：≥ 此值说明快动态无安全余量，跳过滤波
 _LOWPASS_FREQ_MARGIN = 20.0  # 截止 = PV 谱主峰频率 × 此倍数（覆盖瞬态/高阶特征）
 _LOWPASS_PEAK_PROMINENCE = 5.0  # 主峰显著性：PSD 峰值 > 此倍数 × 中位值
+# v1.2 验证段近稳态判定：val 段 PV 极差 < 1.5%（归一化 0~100 域）视为死水段，
+# 自由仿真 R² 分母趋零假性归零 → 回退 R²_train 评估并封顶 C（41LIC12422 案例）
+_VAL_STATIONARY_MIN_PTP = 1.5
 
 
 def _find_contiguous_segments(valid: np.ndarray) -> list[tuple[int, int]]:
@@ -292,6 +307,100 @@ def _auto_select_segment(
     return su, sy, ssp, note
 
 
+def _scan_dynamic_windows(
+    y: np.ndarray,
+    ts: float,
+) -> list[tuple[float, int, int, float, float]]:
+    """滑窗扫描动态窗（v1.4）：返回按评分降序的候选窗列表.
+
+    启动条件与单窗版一致：整窗 val 位（60%~80%）PV ptp < 1.5% 量程
+    （整窗验证段是死水才需要挖子窗）。
+    每窗条件：整体 PV ptp ≥ 3% 量程（有实际幅度）；窗内 val 位 ptp ≥ 1.5%
+    （切出的窗做 60/20/20 分割后验证段仍有动态）；长度 ≥ 600 点。
+    窗长候选：120/60/30 分钟（按数据时长自适应向下取）；步长 = 窗长 / 6。
+    评分 = val 位 ptp + 0.5 × 整体 ptp（幅度大的段优先）。
+
+    Returns:
+        [(score, start, end, val_ptp, seg_ptp), ...] 评分降序；整窗验证段
+        有动态时返回空列表（无需挖子窗）。
+    """
+    n = len(y)
+    val_lo, val_hi = int(n * 0.6), int(n * 0.8)
+    full_val_ptp = float(np.ptp(y[val_lo:val_hi]))
+    if full_val_ptp >= _VAL_STATIONARY_MIN_PTP:
+        return []  # 整窗验证段有动态，无需挖子窗
+    dur_minutes = n * ts / 60.0
+    win_minutes = [m for m in (120.0, 60.0, 30.0) if m <= dur_minutes / 2.0]
+    if not win_minutes:
+        return []
+
+    found: list[tuple[float, int, int, float, float]] = []
+    for wm in win_minutes:
+        w = int(wm * 60.0 / ts)
+        if w < _AUTOWIN_MIN_POINTS:
+            continue
+        step = max(1, w // 6)
+        for start in range(0, n - w + 1, step):
+            seg = y[start : start + w]
+            seg_ptp = float(np.ptp(seg))
+            if seg_ptp < _AUTOWIN_MIN_FULL_PTP:
+                continue
+            v_lo = start + int(w * 0.6)
+            v_hi = start + int(w * 0.8)
+            v_ptp = float(np.ptp(y[v_lo:v_hi]))
+            if v_ptp < _VAL_STATIONARY_MIN_PTP:
+                continue
+            found.append((v_ptp + 0.5 * seg_ptp, start, start + w, v_ptp, seg_ptp))
+    found.sort(key=lambda t: t[0], reverse=True)
+    return found
+
+
+def _collect_disjoint_windows(
+    windows: list[tuple[float, int, int, float, float]],
+    k: int = 3,
+) -> list[tuple[float, int, int, float, float]]:
+    """贪心选 top-K 互不重叠的动态窗（v1.4 多窗辨识用）."""
+    picked: list[tuple[float, int, int, float, float]] = []
+    for win in windows:
+        if len(picked) >= k:
+            break
+        if any(not (win[2] <= p[1] or win[1] >= p[2]) for p in picked):
+            continue  # 与已选窗重叠
+        picked.append(win)
+    return picked
+
+
+def _auto_select_window(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    ts: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
+    """动态感知子窗选取（v1.3，v1.4 改为扫描核心的 单窗消费方）.
+
+    生产现实（41LIC12422 教训）：阶跃稀少且集中在窗口局部，时序分割
+    60/20/20 的 val 段恰好落在死水 → R² 假性归零。本函数选出验证段仍有
+    动态的最优单窗（多窗场景由 identify_from_history 顶部编排逐窗辨识
+    择优，见 _scan_dynamic_windows 文档）。
+    """
+    n = len(y)
+    val_lo, val_hi = int(n * 0.6), int(n * 0.8)
+    full_val_ptp = float(np.ptp(y[val_lo:val_hi]))
+    wins = _scan_dynamic_windows(y, ts)
+    if not wins:
+        return u, y, sp, None
+    _score, s, e, v_ptp, seg_ptp = wins[0]
+    su = u[s:e]
+    sy = y[s:e]
+    ssp = sp[s:e] if sp is not None else None
+    note = (
+        f"auto-window: [{s}:{e}] W={round((e - s) * ts / 60)}min "
+        f"PV跨度 {seg_ptp:.1f}%·验证位跨度 {v_ptp:.1f}%"
+        f"（整窗验证位 {full_val_ptp:.1f}% 为死水已绕开）"
+    )
+    return su, sy, ssp, note
+
+
 def _detrend_signals(
     u: np.ndarray,
     y: np.ndarray,
@@ -299,14 +408,18 @@ def _detrend_signals(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
     """去趋势：各信号去线性趋势（含均值；应对工作点缓变/传感器漂移）.
 
-    执行条件三缺一不可（保守，误去代价 >> 漏去代价）：
+    执行条件四缺一不可（保守，误去代价 >> 漏去代价）：
     1. PV 全窗线性漂移 ≥ 5% 量程（漂移显著）；
     2. PV 对线性拟合的 R² ≥ 0.9（数据形状本质是缓变趋势）——SP 阶跃下
        PV 的"稳态跟随"是信号而非趋势（阶梯状对直线拟合差），排除；
     3. OP 也有可感漂移 ≥ 1% 量程（工作点漂移佐证）——OP 平稳而 PV 持续
-       斜坡是积分过程（IPDT）的本质特征，跳过保护其可辨识性。
+       斜坡是积分过程（IPDT）的本质特征，跳过保护其可辨识性；
+    4. 无显著输入阶跃事件（v1.3，41LIC12422 教训）——SP 相邻变化 >1%
+       或 OP 相邻跳变 >2% 量程时，PV 的爬升是阶跃响应的过渡段而非
+       漂移（单次大阶跃后的慢爬升在 1~3 的形状判据上与漂移不可分）。
 
-    漏去趋势仅残差略增；误去趋势则摧毁信号本身（阶跃稳态/积分特性）。
+    漏去趋势仅残差略增；误去趋势则摧毁信号本身（阶跃稳态/积分特性/
+    阶跃后爬升过渡段）。
     """
     n = len(u)
     if n < 2:
@@ -329,6 +442,17 @@ def _detrend_signals(
     slope_u = float(np.polyfit(t, u, 1)[0])
     drift_u_pct = abs(slope_u) * n / _OP_SPAN_NORMALIZED * 100.0
     if drift_u_pct < _DETREND_MIN_OP_DRIFT_PCT:
+        return u, y, sp, None
+    # SP 阶跃事件判据（v1.3）：SP 设定变更后的 PV 慢爬升是响应不是漂移
+    # （41LIC12422 动态段：SP 阶跃→爬升，前三个形状条件全部放行，唯此
+    # 判据可救）。只检 SP 不检 OP——OP 方波切换是激励不是工作点事件，
+    # 且 PRBS 类数据本就被线性 R² 条件（振荡形状拟合差）拦住。
+    sp_step = (
+        bool(np.any(np.abs(np.diff(sp)) > _DETREND_INPUT_STEP_SP))
+        if sp is not None and len(sp) == n
+        else False
+    )
+    if sp_step:
         return u, y, sp, None
 
     def _detrend(x: np.ndarray) -> np.ndarray:
@@ -424,12 +548,18 @@ def identify_from_history(
     candidate_models: list[ModelType] | None = None,
     mode: list[int] | None = None,
     op_limits: tuple[float, float] | None = None,
+    _internal_call: bool = False,
 ) -> IdentificationResult:
     """基于历史数据辨识过程对象 G_plant = PV/OP.
 
     入口对 OP/PV（及 SP）做去均值处理：过程模型描述增量关系 Δy = G·Δu，
     无截距回归要求偏差变量输入；输出的 K/tau/theta 为增量参数，无需还原。
     偏置量（去均值前的样本均值）记录在 best_model.reason 中。
+
+    v1.4（2026-10-10）多窗辨识编排：整窗验证段为死水且存在 ≥2 个不重叠
+    动态窗时，对每个动态窗独立完整辨识（multi-experiment 实践的稳健落
+    地——段内回归不跨段边界，避免拼接引入伪样本），按（可信度, 拟合度）
+    择优返回并在 reason 汇总各窗结果。全窗失败时落回整窗既有流程。
 
     P2-020（2026-10-04 预处理增强）：坏点清洗后依次执行自动选段（按
     MODE/缺口/饱和切分并按激励评分选最优段；mode=None 不切分）→ 去线性
@@ -443,12 +573,62 @@ def identify_from_history(
         sp: SP 时序（保留用于后续经验证的闭环辨识方法；Phase 0 不参与生产选模）
         ts: 采样周期（秒）
         theta_estimate: 纯滞后预估值（秒），None 时使用 2Ts 启发值并将可信度封顶 C
-        candidate_models: 候选模型阶次列表，默认 [FOPDT, SOPDT]
+        candidate_models: 候选模型阶次列表，默认 [FOPDT, SOPDT, IPDT]
+            （v1.2：积分对象纳入默认候选——液位等积分过程此前只能被
+            FOPDT 病态拟合，K 符号随机且 tau→∞；Occam 择优保证自衡
+            过程仍选 FOPDT/SOPDT）
         mode: MODE 时序（可选；自动选段的切分依据，None 时假设全 AUTO 不切分）
 
     Returns:
         IdentificationResult
     """
+    # v1.4 多窗编排：仅外层调用（递归窗辨识跳过，防无限递归）
+    if not _internal_call and len(op) == len(pv) and len(op) >= _AUTOWIN_MIN_POINTS * 2:
+        try:
+            _wins = _collect_disjoint_windows(_scan_dynamic_windows(np.array(pv, dtype=float), ts))
+        except Exception:
+            _wins = []
+        if len(_wins) >= 2:
+            _order = {
+                AlgorithmConfidenceLevel.A: 5,
+                AlgorithmConfidenceLevel.B: 4,
+                AlgorithmConfidenceLevel.C: 3,
+                AlgorithmConfidenceLevel.D: 2,
+                AlgorithmConfidenceLevel.E: 1,
+                AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
+            }
+            _ok: list[tuple[tuple, IdentificationResult, int, int]] = []
+            for _s, _e in ((w[1], w[2]) for w in _wins):
+                _r = identify_from_history(
+                    op=op[_s:_e],
+                    pv=pv[_s:_e],
+                    sp=sp[_s:_e] if sp is not None else None,
+                    ts=ts,
+                    theta_estimate=theta_estimate,
+                    candidate_models=candidate_models,
+                    mode=mode[_s:_e] if mode is not None else None,
+                    op_limits=op_limits,
+                    _internal_call=True,
+                )
+                if _r.success and _r.best_model is not None:
+                    _key = (
+                        _order.get(_r.best_model.confidence, 0),
+                        _r.best_model.fitting_score,
+                        1 if _r.best_model.residual_test_passed else 0,
+                    )
+                    _ok.append((_key, _r, _s, _e))
+            if _ok:
+                _ok.sort(key=lambda t: t[0], reverse=True)
+                _key, best_r, _bs, _be = _ok[0]
+                best_r.reason = (
+                    f"multi-window: {len(_ok)}/{len(_wins)} 段动态窗辨识成功，"
+                    f"最优段 [{_bs}:{_be}]"
+                    f"（各段 fit={[round(t[1].best_model.fitting_score, 1) for t in _ok]}）；"
+                    + (best_r.reason or "")
+                )
+                return best_r
+            # 全窗失败 → 落回整窗既有流程（下方）
+
     u_raw = np.array(op, dtype=float)
     y_raw = np.array(pv, dtype=float)
     theta_source = ThetaSource.EXPLICIT if theta_estimate is not None else ThetaSource.HEURISTIC_2TS
@@ -465,7 +645,7 @@ def identify_from_history(
             theta_source=theta_source,
         )
 
-    candidates = candidate_models or [ModelType.FOPDT, ModelType.SOPDT]
+    candidates = candidate_models or [ModelType.FOPDT, ModelType.SOPDT, ModelType.IPDT]
     if not math.isfinite(ts) or ts <= 0:
         return IdentificationResult(
             success=False,
@@ -516,9 +696,14 @@ def identify_from_history(
     u_raw, y_raw, sp_raw, seg_note = _auto_select_segment(u_raw, y_raw, sp_raw, mode, op_limits)
     if seg_note:
         preprocess_notes.append(seg_note)
-    u_raw, y_raw, sp_raw, detrend_note = _detrend_signals(u_raw, y_raw, sp_raw)
-    if detrend_note:
-        preprocess_notes.append(detrend_note)
+    # v1.3：动态感知子窗（大窗口内定位阶跃响应段；阶跃稀少是生产常态）
+    u_raw, y_raw, sp_raw, win_note = _auto_select_window(u_raw, y_raw, sp_raw, ts)
+    if win_note:
+        preprocess_notes.append(win_note)
+    if _DETREND_ENABLED:
+        u_raw, y_raw, sp_raw, detrend_note = _detrend_signals(u_raw, y_raw, sp_raw)
+        if detrend_note:
+            preprocess_notes.append(detrend_note)
     u_exc_probe, y_exc_probe = u_raw.copy(), y_raw.copy()
     u_raw, y_raw, sp_raw, lowpass_note = _lowpass_signals(u_raw, y_raw, sp_raw, ts)
     if lowpass_note:
@@ -731,6 +916,14 @@ def identify_from_history(
             y_val_pred, r2_val = _free_run_simulation(
                 u_val, y_val, res.a_coeffs, res.b_coeffs, d_model
             )
+            # v1.2 验证段近稳态防护（41LIC12422 案例）：动态集中在前部的
+            # 窗口（SP 阶跃后长稳态），时序分割的 val 段可能整段死水
+            # （PV ptp 极小），自由仿真 R² 分母趋零而假性归零——模型未必
+            # 全错而是验证方法失效。处置：R² 评估回退 R²_train、可信度
+            # 封顶 C（验证不可用，需人工复核）、reason_codes 标注
+            # VAL_STATIONARY（evidence.r2_val 保留真值供审计）。
+            val_stationary = float(np.ptp(y_val)) < _VAL_STATIONARY_MIN_PTP
+            r2_eval = r2_train if val_stationary else r2_val
             # P2-013：验证集残差序列（详细审计用）
             residuals_val_arr = y_val - y_val_pred
             # P2-014：NRMSE = RMSE / range(y_val)
@@ -778,8 +971,11 @@ def identify_from_history(
                 residual_white = exceed_ratio <= _XCORR_EXCEED_TOLERANCE
                 test_note = f"xcorr_exceed={exceed_ratio:.3f}"
 
-            # 可信度评估（P2-002：用验证集自由仿真 R²）
-            confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
+            # 可信度评估（v1.2：val 段近稳态时以 R²_train 回退评估并封顶 C）
+            confidence = _assess_confidence(exc, r2_eval, residual_white, exc_score)
+            if val_stationary:
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+                physical_flag += ", VAL_STATIONARY"
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
             # P2-012：物理可行性未通过（负增益/NMP 零点）封顶 C，需人工复核
@@ -810,6 +1006,8 @@ def identify_from_history(
                 reason_codes.append("LOW_COHERENCE")
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 reason_codes.append("HEURISTIC_2TS")
+            if val_stationary:
+                reason_codes.append("VAL_STATIONARY")
             evidence = ModelEvidence(
                 n_train=n_train,
                 n_val=n_val,
@@ -845,7 +1043,7 @@ def identify_from_history(
 
             candidate = CandidateModel(
                 params=params,
-                fitting_score=round(r2_val * 100, 2),
+                fitting_score=round(r2_eval * 100, 2),  # v1.2：val 稳态回退口径
                 confidence=confidence,
                 identify_method=method_used,
                 residual_test_passed=residual_white,
@@ -1354,8 +1552,10 @@ def _identify_ipdt_candidate(
     theta = best_d * ts
     params = ModelParams(model_type=ModelType.IPDT, K=K, theta=theta)
 
-    # 3. 验证集自由仿真 R²
+    # 3. 验证集自由仿真 R²（v1.2：val 段近稳态防护同主路径）
     y_val_pred, r2_val = _ipdt_free_run(u_val, y_val, b1, best_d)
+    val_stationary = float(np.ptp(y_val)) < _VAL_STATIONARY_MIN_PTP
+    r2_eval = r2_train if val_stationary else r2_val
     residuals_val_arr = y_val - y_val_pred
     y_val_range = float(np.ptp(y_val))
     if len(residuals_val_arr):
@@ -1378,8 +1578,11 @@ def _identify_ipdt_candidate(
     feasibility = check_physical_feasibility(params, [b1], ts)
     physical_flag = "" if feasibility.passed else f", {feasibility.reason_code}"
 
-    # 6. 可信度评估
-    confidence = _assess_confidence(exc, r2_val, residual_white, exc_score)
+    # 6. 可信度评估（v1.2：val 段近稳态回退 R²_train 并封顶 C）
+    confidence = _assess_confidence(exc, r2_eval, residual_white, exc_score)
+    if val_stationary:
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+        physical_flag += ", VAL_STATIONARY"
     if theta_source == ThetaSource.HEURISTIC_2TS:
         confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
     if not feasibility.passed:
@@ -1396,6 +1599,8 @@ def _identify_ipdt_candidate(
 
     # 8. 证据输出
     reason_codes: list[str] = []
+    if val_stationary:
+        reason_codes.append("VAL_STATIONARY")
     if not feasibility.passed:
         reason_codes.append(feasibility.reason_code)
     if low_coherence:
@@ -1425,7 +1630,7 @@ def _identify_ipdt_candidate(
 
     return CandidateModel(
         params=params,
-        fitting_score=round(r2_val * 100, 2),
+        fitting_score=round(r2_eval * 100, 2),  # v1.2：val 稳态回退口径
         confidence=confidence,
         identify_method=IdentifyMethod.HISTORICAL_ARX,
         residual_test_passed=residual_white,

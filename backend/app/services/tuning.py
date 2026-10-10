@@ -838,7 +838,8 @@ async def identify_model_from_history(
         )
 
     # 候选模型类型
-    candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT"])]
+    # v1.2：IPDT 纳入默认候选（液位等积分过程；用户裁决 2026-10-10）
+    candidates = [ModelType(mt) for mt in (candidate_model_types or ["FOPDT", "SOPDT", "IPDT"])]
 
     # 调用算法栈
     # P2-020（2026-10-04）：mode 重新传入——G24 裁决移除的是"文档称用实际

@@ -1,7 +1,7 @@
 {
   "dataset_version": "1.0",
   "description": "P2-017 匿名人工标注回路集：20+ 回路覆盖温度/流量/压力/液位等工业场景，已知真值参数用于验证辨识管线准确性",
-  "algorithm_version": "TUNE_IDENT_v1.1",
+  "algorithm_version": "TUNE_IDENT_v1.4",
   "tolerance_rules": {
     "K_relative_error": 0.15,
     "tau_relative_error": 0.25,

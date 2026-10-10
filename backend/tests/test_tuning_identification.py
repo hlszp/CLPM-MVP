@@ -749,7 +749,7 @@ class TestPipelineEndToEnd:
         # P2-009：CLIVC 使闭环辨识不再被拒绝
         assert result.success
         assert result.best_model is not None
-        assert result.algorithm_version == "TUNE_IDENT_v1.1"
+        assert result.algorithm_version == "TUNE_IDENT_v1.4"
         # 候选中应包含 CLIVC（HISTORICAL_IV 方法）
         iv_candidates = [c for c in result.candidates if c.identify_method.value == "HISTORICAL_IV"]
         assert len(iv_candidates) > 0, "闭环 SP 激励下应产生 CLIVC 候选"
@@ -1988,7 +1988,7 @@ class TestGoldenBaseline:
     def test_baseline_file_exists(self):
         """golden 基线文件应存在且可解析。"""
         baseline = self._load_baseline()
-        assert baseline["algorithm_version"] == "TUNE_IDENT_v1.1"
+        assert baseline["algorithm_version"] == "TUNE_IDENT_v1.4"
         assert "scenarios" in baseline
 
     def test_closed_loop_fopdt_baseline_alignment(self):
