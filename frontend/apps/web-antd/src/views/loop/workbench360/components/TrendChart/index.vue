@@ -90,6 +90,12 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 
 const viewX = ref({ t0: 0, t1: 1 });
 const viewY = ref({ hi: 1, lo: 0 });
+/** OP 右轴视口（2026-10-03 双轴缩放：默认=OP 量程，分区定向缩放/轴拖拽/双击复位） */
+const viewOp = ref({ hi: 100, lo: 0 });
+/** 当前生效的 OP 域（量程优先，兜底 0–100） */
+const opDom = computed(
+  () => props.opDomain ?? { hi: 100, lo: 0 },
+);
 
 const NP = WB360_SAMPLE_POINTS;
 /** 绘图区边距（对齐原型 drawChart：L46/R54/T10/B30） */
@@ -285,9 +291,38 @@ function zoomY(f: number, c?: null | number) {
   clampViewY(cc - (cc - lo) * k, cc + (hi - cc) * k);
 }
 
+function clampViewOp(lo: number, hi: number) {
+  const d = opDom.value;
+  const s = Math.min(Math.max(hi - lo, 0.5), d.hi - d.lo);
+  let l = lo;
+  let h = l + s;
+  if (h > d.hi) {
+    h = d.hi;
+    l = h - s;
+  }
+  if (l < d.lo) {
+    l = d.lo;
+    h = l + s;
+  }
+  viewOp.value = { hi: h, lo: l };
+  requestDraw();
+}
+
+function zoomOp(f: number, c?: null | number) {
+  const { hi, lo } = viewOp.value;
+  const s = Math.min(
+    Math.max((hi - lo) * f, 0.5),
+    opDom.value.hi - opDom.value.lo,
+  );
+  const cc = c ?? (lo + hi) / 2;
+  const k = s / (hi - lo);
+  clampViewOp(cc - (cc - lo) * k, cc + (hi - cc) * k);
+}
+
 function resetView() {
   if (props.domain) viewX.value = { ...props.domain };
   viewY.value = { ...props.yDomain };
+  viewOp.value = { ...opDom.value };
   requestDraw();
 }
 
@@ -312,6 +347,11 @@ watch(
     requestDraw();
   },
 );
+// OP 量程变化（切换回路）→ 右轴视口复位为新量程
+watch(opDom, (d) => {
+  viewOp.value = { ...d };
+  requestDraw();
+});
 // seriesVisible 必须逐属性 getter：对象引用恒定，整对象作 watch 源
 // 永不触发（图例点击开关曲线失效的根因，2026-10-02 终验反馈）
 watch(
@@ -448,8 +488,9 @@ function draw() {
   const yLo = viewY.value.lo;
   const yHi = viewY.value.hi;
   const yv = (v: number) => T + ph * (1 - (v - yLo) / (yHi - yLo));
-  // OP 右轴=OP 量程（2026-10-02 终验：量程缺失兜底 0–100）
-  const od = props.opDomain ?? { hi: 100, lo: 0 };
+  // OP 右轴视口（2026-10-03 双轴交互：默认量程，可独立缩放/平移/复位；
+  // mini 恒量程无交互）
+  const od = props.mini ? opDom.value : viewOp.value;
   const opv = (v: number) => T + ph * (1 - (v - od.lo) / (od.hi - od.lo));
 
   // 无数据：不绘制坐标/波形，仅居中提示（诚实化：不画假轴）
@@ -716,12 +757,25 @@ function bindInteractions() {
       const f = delta > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
       const rect = host.getBoundingClientRect();
       if (e.shiftKey) {
+        // 2026-10-03 双轴分区定向缩放（UX 最佳实践：悬停哪半区缩哪根轴；
+        // 拖动曲线上下移动属反模式——视觉上篡改数据位置，业界不做）：
+        // 光标在绘图区左半 → 缩 PV/SP 左轴；右半 → 缩 OP 右轴。
         const frac = 1 - (e.clientY - rect.top - 26) / (rect.height - 56);
-        zoomY(
-          f,
-          viewY.value.lo +
-            Math.min(Math.max(frac, 0), 1) * (viewY.value.hi - viewY.value.lo),
-        );
+        const cx = e.clientX - rect.left;
+        const half = M.l + (rect.width - M.l - M.r) / 2;
+        if (cx < half) {
+          zoomY(
+            f,
+            viewY.value.lo +
+              Math.min(Math.max(frac, 0), 1) * (viewY.value.hi - viewY.value.lo),
+          );
+        } else {
+          zoomOp(
+            f,
+            viewOp.value.lo +
+              Math.min(Math.max(frac, 0), 1) * (viewOp.value.hi - viewOp.value.lo),
+          );
+        }
       } else {
         const t =
           viewX.value.t0 +
@@ -736,6 +790,45 @@ function bindInteractions() {
     { passive: false },
   );
   host.addEventListener('dblclick', resetView);
+
+  // 轴带拖拽平移（2026-10-03 双轴交互：在左/右轴刻度带按下上下拖动=平移该轴）
+  host.addEventListener('pointerdown', (e: PointerEvent) => {
+    const rect = host.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const W = rect.width;
+    let axis: 'left' | 'right' | null = null;
+    if (x < M.l) {
+      axis = 'left';
+    } else if (x > W - M.r) {
+      axis = 'right';
+    }
+    if (!axis) return;
+    e.preventDefault();
+    const sy = e.clientY;
+    const v0y = { ...viewY.value };
+    const v0o = { ...viewOp.value };
+    const plotH = Math.max(1, rect.height - M.t - M.b);
+    const perPxY = (v0y.hi - v0y.lo) / plotH;
+    const perPxO = (v0o.hi - v0o.lo) / plotH;
+    const prevCursor = host.style.cursor;
+    host.style.cursor = 'ns-resize';
+    const move = (ev: PointerEvent) => {
+      const d =
+        (ev.clientY - sy) * (axis === 'left' ? perPxY : perPxO);
+      if (axis === 'left') {
+        clampViewY(v0y.lo + d, v0y.hi + d);
+      } else {
+        clampViewOp(v0o.lo + d, v0o.hi + d);
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      host.style.cursor = prevCursor;
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
 
   bindBarDrag(xBarRef.value, true);
   bindBarDrag(yBarRef.value, false);
@@ -916,7 +1009,8 @@ defineExpose({ exportPng, locate, requestDraw });
     </div>
     <!-- 缩放操作提示（2026-10-09 用户反馈"Y 轴缩放不好操作"：手势不可见） -->
     <div v-if="!mini" class="zoom-hint">
-      滚轮·时间轴 &nbsp;Shift+滚轮·幅值轴 &nbsp;双击·复位
+      滚轮·时间缩放 &nbsp;Shift+滚轮·纵轴（左半区 PV 轴 / 右半区 OP 轴）
+      &nbsp;轴区上下拖动·平移 &nbsp;双击·复位
     </div>
   </div>
 </template>
