@@ -64,7 +64,7 @@ class TestEventTriggerDedup:
         mock_create.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_window_clamped(self) -> None:
+    async def test_window_clamped(self, fake_redis) -> None:
         """windowSeconds 钳制 [1h, 7d]：1800s → 3600s；trigger_type=EVENT。"""
         with self._mock_session(None):
             with (
@@ -73,6 +73,9 @@ class TestEventTriggerDedup:
                 ) as mock_create,
                 patch("app.tasks.diagnosis_v2.run_diagnosis_batch") as mock_batch,
                 patch("app.services.task_tracker.set_celery_task_ids", new_callable=AsyncMock),
+                # 2026-10-10 CI 修复：_trigger_diagnosis 生成标题经
+                # task_tracker.redis_client 走真 Redis（CI 无 7103），定点接管
+                patch("app.services.task_tracker.redis_client", fake_redis),
             ):
                 mock_batch.delay.return_value = MagicMock(id="celery-x")
                 rule = {

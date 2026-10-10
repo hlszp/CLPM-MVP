@@ -941,8 +941,11 @@ class TestTriggerTitleConvention:
     def test_title_sequence_increments(self, fake_redis) -> None:
         from app.services.diagnosis_titles import next_diagnosis_title
 
-        t1 = asyncio_run(next_diagnosis_title())
-        t2 = asyncio_run(next_diagnosis_title())
+        # 2026-10-10 CI 修复：next_daily_sequence 经 task_tracker 的模块级
+        # redis_client 走真 Redis（CI 无 7103 端口 → 连接拒绝），定点接管
+        with patch("app.services.task_tracker.redis_client", fake_redis):
+            t1 = asyncio_run(next_diagnosis_title())
+            t2 = asyncio_run(next_diagnosis_title())
         m1 = re.fullmatch(r"回路诊断-(\d{6})-(\d+)", t1)
         m2 = re.fullmatch(r"回路诊断-(\d{6})-(\d+)", t2)
         assert m1 and m2

@@ -76,7 +76,7 @@ class TestSummarizeFailedDetail:
 
 class TestFinalizeErrorMessageDetail:
     @pytest.mark.asyncio
-    async def test_failed_detail_in_error_message(self) -> None:
+    async def test_failed_detail_in_error_message(self, fake_redis) -> None:
         batch = {
             "success": 430,
             "inconclusive": 1,
@@ -92,6 +92,9 @@ class TestFinalizeErrorMessageDetail:
                 "app.tasks.kpi_calc._invalidate_backfill_cache",
                 new=AsyncMock(return_value=0),
             ),
+            # 2026-10-10 CI 修复：_is_task_cancelled 惰性 from-import
+            # core.redis.redis_client 走真 Redis（CI 无 7103），定点接管
+            patch("app.core.redis.redis_client", fake_redis),
         ):
             result = await _do_finalize_backfill(
                 [batch],
@@ -106,7 +109,7 @@ class TestFinalizeErrorMessageDetail:
         assert "01TV_06003_PID: sorry, too many clients already" in msg
 
     @pytest.mark.asyncio
-    async def test_skipped_counted_and_success_when_no_failure(self) -> None:
+    async def test_skipped_counted_and_success_when_no_failure(self, fake_redis) -> None:
         batch = {
             "success": 11,
             "inconclusive": 0,
@@ -126,6 +129,8 @@ class TestFinalizeErrorMessageDetail:
                 "app.tasks.kpi_calc._do_backfill_node_aggregation",
                 new=AsyncMock(return_value=5),
             ),
+            # 同上：_is_task_cancelled 惰性导入真 Redis，定点接管
+            patch("app.core.redis.redis_client", fake_redis),
         ):
             result = await _do_finalize_backfill(
                 [batch],
