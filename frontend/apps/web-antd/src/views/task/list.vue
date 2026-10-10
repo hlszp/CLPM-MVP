@@ -592,7 +592,11 @@ onUnmounted(() => {
           <template #icon><Plus /></template>
           新建手动评估
         </Button>
+        <!-- P1-04/AUTH-03：取消/删除/批量删除对齐后端 _TASK_CREATOR_ROLES
+             （tasks.py cancel/delete 均 require_roles(IC/PE/ADMIN)，批量删除
+             逐条走同一 delete 端点），非白名单角色不再渲染必 403 的按钮 -->
         <Button
+          v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
           danger
           :disabled="selectedRowKeys.length === 0"
           :loading="dangerLoading && dangerAction === 'batch-delete'"
@@ -783,6 +787,7 @@ onUnmounted(() => {
                   (record as TaskApi.TaskItem).status === 'RUNNING' ||
                   (record as TaskApi.TaskItem).status === 'PENDING'
                 "
+                v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
                 type="link"
                 size="small"
                 danger
@@ -796,6 +801,7 @@ onUnmounted(() => {
                     (record as TaskApi.TaskItem).status,
                   )
                 "
+                v-permission="['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']"
                 type="link"
                 size="small"
                 danger

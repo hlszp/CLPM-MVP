@@ -21,7 +21,11 @@ const routes: RouteRecordRaw[] = [
   {
     name: 'Reports',
     path: '/reports',
-    redirect: '/reports/performance',
+    // P1-04/AUTH-04：不写死 redirect——框架 accessible.ts 对无显式 redirect
+    // 的父路由自动落到权限过滤后 children[0]（首个有权子页）。原静态
+    // redirect:'/reports/performance' 会让 EXPERT（对 performance 无权）
+    // 进父路径必落无权子页；改为动态首子页后 EXPERT 落 /reports/data-quality，
+    // 其余角色首子页仍为 performance，未扩大任何角色数据权限。
     meta: {
       // 父路由 authority 取子路由并集，避免 IC/PE/SPONSOR 看不到菜单
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
