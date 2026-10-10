@@ -18,6 +18,7 @@ import pytest
 from tests.conftest import (
     TEST_PASSWORD,
     TEST_USERS,
+    _make_user,
     make_db_execute_return,
 )
 
@@ -69,13 +70,18 @@ class TestLogin:
             elif username == "pe_engineer":
                 assert "tracker:*" in perms
                 assert "loop:view" in perms
+                # P1-04/AUTH-02：PE 提交→轮询→结果/记录链闭合（读码）
+                assert "tuning:view" in perms
             elif username == "sponsor":
+                # P1-04/AUTH-02：模块查看五角色——补 loop:view/tuning:view（只读）
                 assert perms == [
                     "portal:view",
                     "metric:view",
                     "diagnosis:view",
                     "alert:view",
                     "handling:view",
+                    "loop:view",
+                    "tuning:view",
                 ]
             elif username == "expert":
                 assert "tracker:review" in perms
@@ -500,6 +506,69 @@ class TestChangePassword:
         assert resp.status_code == 422
 
 
+class TestAdminResetPassword:
+    """P1-04/AUTH-07：管理侧重置密码后必须撤销目标用户全部旧令牌。
+
+    修复前 services/user.reset_password 只改 hash+审计，不调
+    _revoke_all_user_tokens——被重置用户的既有 access/refresh token
+    在重置后仍有效（对照自助改密 change_password 已撤销）。
+    """
+
+    def test_reset_password_revokes_target_tokens(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 重置 expert 密码后，expert 旧 access token 立即失效（401）。
+
+        注意：reset_password 会对 ORM 对象赋值 password_hash，而 TEST_USERS
+        是模块级共享 mock——重置请求的 db mock 必须返回独立副本，避免污染
+        后续用例的登录凭据。
+        """
+        # expert 登录拿 token（登录即跟踪 jti 到 user_tokens:{id}）
+        expert = _make_user("expert", "EXPERT", user_id="00000000-0000-0000-0000-000000000005")
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(expert))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "expert", "password": TEST_PASSWORD},
+        )
+        expert_token = login_resp.json()["data"]["accessToken"]
+
+        # ADMIN 登录并重置 expert 密码（reset 请求全程用独立 admin 副本，
+        # 服务内按 id 查到的"目标用户"也落在副本上）
+        admin_fresh = _make_user("admin", "ADMIN", user_id="00000000-0000-0000-0000-000000000001")
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(admin_fresh))
+        admin_login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        admin_token = admin_login.json()["data"]["accessToken"]
+        resp = client.put(
+            f"/api/v1/users/{expert.id}/reset-password",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"newPassword": "Reset@2026"},
+        )
+        assert resp.status_code == 200, f"重置密码失败: {resp.json()}"
+
+        # expert 旧 token 必须被拒绝（jti 已进黑名单）
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(expert))
+        me_resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {expert_token}"})
+        assert me_resp.status_code == 401, "重置密码后旧令牌仍有效（AUTH-07 回归）"
+
+    def test_reset_password_forbidden_for_non_admin(self, client, mock_db, fake_redis) -> None:
+        """重置密码端点仍仅 ADMIN（require_roles），AUTH-07 改动不扩大角色。"""
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["ic_engineer"]))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "ic_engineer", "password": TEST_PASSWORD},
+        )
+        ic_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.put(
+            f"/api/v1/users/{TEST_USERS['expert'].id}/reset-password",
+            headers={"Authorization": f"Bearer {ic_token}"},
+            json={"newPassword": "Reset@2026"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
+
+
 # ===========================================================================
 # Token lifecycle unit tests (P1+P2: logout pairing / blacklist TTL)
 # ===========================================================================
@@ -638,6 +707,7 @@ class TestRolePermissions:
     def test_sponsor_permissions(self) -> None:
         from app.services.auth import get_permissions
 
+        # P1-04/AUTH-02：模块查看五角色——SPONSOR 补 loop:view/tuning:view（只读）
         perms = get_permissions("SPONSOR")
         assert perms == [
             "portal:view",
@@ -645,6 +715,8 @@ class TestRolePermissions:
             "diagnosis:view",
             "alert:view",
             "handling:view",
+            "loop:view",
+            "tuning:view",
         ]
 
     def test_expert_permissions(self) -> None:

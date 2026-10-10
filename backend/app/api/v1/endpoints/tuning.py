@@ -93,6 +93,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tuning", tags=["tuning"])
 
+# P1-04/AUTH-06：历史辨识高级参数（thetaEstimate/candidateModelTypes）的
+# 后端字段级守卫白名单，与前端 composables/use-clpm-roles.ts 的
+# ADVANCED_PARAM_ROLES（ADMIN/EXPERT）同口径——前端隐藏不构成后端约束，
+# IC/PE 直接 POST 携带高级参数时在端点层显式拒绝（403），不静默忽略：
+# 忽略会让调用方误以为自定义 θ/候选阶次已生效，结果不可解释也不可复现。
+_TUNING_ADVANCED_PARAM_ROLES = ("ADMIN", "EXPERT")
+_TUNING_ADVANCED_PARAM_FIELDS = ("candidateModelTypes", "thetaEstimate")
+
 
 # ---------------------------------------------------------------------------
 # P2 IA优化：整定 fitness 门禁辅助
@@ -206,6 +214,21 @@ async def identify_history_endpoint(
     - AUTO/HISTORY_ONLY → ``IdentifyHistoryAsyncResponse``（异步任务提交）
     """
     from app.tasks.tuning import identify_model_task
+
+    # P1-04/AUTH-06：高级参数字段级守卫——非 ADMIN/EXPERT 携带
+    # thetaEstimate/candidateModelTypes 时拒绝（与前端 ADVANCED_PARAM_ROLES
+    # 隐藏策略一致；SPONSOR 无权 POST 本端点，由 require_roles 先行拦截）。
+    if user.role not in _TUNING_ADVANCED_PARAM_ROLES and (
+        body.candidateModelTypes is not None or body.thetaEstimate is not None
+    ):
+        raise BizError(
+            code="ERR_PERMISSION_DENIED",
+            message=(
+                f"高级参数（{'/'.join(_TUNING_ADVANCED_PARAM_FIELDS)}）"
+                "仅 ADMIN/EXPERT 可用，请移除后使用默认值提交"
+            ),
+            status_code=403,
+        )
 
     # P2: fitness 门禁（L3 以下阻断；作用于 STEP_ONLY 同步分支和 AUTO/HISTORY_ONLY 异步分支前）
     await _ensure_tuning_fitness(db, body.loopId)

@@ -376,3 +376,112 @@ describe('统一任务列表 task/list.vue 诊断口径', () => {
     expect(vm.dangerTitle).toBe('取消任务');
   });
 });
+
+// ============ AUTH-03（P1-04）：取消/删除/批量删除按 _TASK_CREATOR_ROLES 显隐 ============
+
+/**
+ * 验证三处按钮（工具栏"批量删除"/操作列"取消"/"删除"）携带
+ * v-permission="['ADMIN','IC_ENGINEER','PE_ENGINEER']"，与后端
+ * tasks.py _TASK_CREATOR_ROLES 白名单一致——EXPERT/SPONSOR 不再
+ * 渲染必然 403 的按钮。
+ *
+ * 手法：自定义 ATable 桩渲染 bodyCell 插槽（默认 stub 不渲染插槽内容），
+ * permission 指令桩按注入角色复刻真实指令的"无权→注释占位替换"语义
+ * （真实指令语义由 __tests__/directives.test.ts 覆盖，此处只验模板绑定）。
+ */
+describe('统一任务列表 task/list.vue AUTH-03 角色显隐', () => {
+  const TASK_CREATOR_ROLES = ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'];
+
+  /** 角色感知的 v-permission 指令桩（复刻真实指令隐藏语义） */
+  const makePermDirective = (roles: string[]) => ({
+    mounted(el: HTMLElement, binding: { value: string | string[] }) {
+      const required = Array.isArray(binding.value)
+        ? binding.value
+        : [binding.value];
+      if (!required.some((v) => roles.includes(v))) {
+        el.replaceWith(document.createComment(' v-permission(hidden) '));
+      }
+    },
+  });
+
+  /** 渲染 bodyCell 的 Table 桩（透传 action 列记录） */
+  const tableStub = {
+    name: 'ATable',
+    props: { dataSource: { type: Array, default: () => [] } },
+    template: `
+      <div class="table-stub">
+        <div v-for="(record, i) in dataSource" :key="i" class="table-row">
+          <slot name="bodyCell" :column="{ key: 'action' }" :record="record" :index="i"></slot>
+        </div>
+      </div>
+    `,
+  };
+
+  const buttonStub = {
+    name: 'AButton',
+    template: '<button class="btn-stub"><slot /></button>',
+  };
+
+  /** Space 桩需渲染插槽（默认 stub 不渲染插槽内容，按钮会整体消失） */
+  const spaceStub = {
+    name: 'ASpace',
+    template: '<div class="space-stub"><slot /></div>',
+  };
+
+  function mountWithRoles(roles: string[]) {
+    return mount(TaskList, {
+      global: {
+        directives: { permission: makePermDirective(roles) },
+        stubs: {
+          ...mountOptions.global.stubs,
+          ATable: tableStub,
+          AButton: buttonStub,
+          ASpace: spaceStub,
+        },
+      },
+    });
+  }
+
+  function buttonTexts(wrapper: ReturnType<typeof mount>) {
+    return wrapper.findAll('button.btn-stub').map((b) => b.text());
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTaskListApiMock.mockResolvedValue({
+      items: [
+        { taskId: 't-running', taskType: 'BACKFILL', status: 'RUNNING' },
+        { taskId: 't-success', taskType: 'BACKFILL', status: 'SUCCESS' },
+      ],
+      total: 2,
+    });
+  });
+
+  it.each(TASK_CREATOR_ROLES)(
+    'uT-TASKLIST-016: %s 可见批量删除/取消/删除（对齐后端 _TASK_CREATOR_ROLES）',
+    async (role) => {
+      const wrapper = mountWithRoles([role]);
+      await nextTick();
+      await nextTick();
+      const texts = buttonTexts(wrapper);
+      expect(texts).toContain('批量删除');
+      expect(texts).toContain('取消');
+      expect(texts).toContain('删除');
+    },
+  );
+
+  it.each(['EXPERT', 'SPONSOR'])(
+    'uT-TASKLIST-017: %s 不可见批量删除/取消/删除（后端必 403 的按钮不渲染）',
+    async (role) => {
+      const wrapper = mountWithRoles([role]);
+      await nextTick();
+      await nextTick();
+      const texts = buttonTexts(wrapper);
+      expect(texts).not.toContain('批量删除');
+      expect(texts).not.toContain('取消');
+      expect(texts).not.toContain('删除');
+      // 查看结果（SUCCESS 行）无角色门槛，仍应渲染——显隐仅收敛危险操作
+      expect(texts).toContain('查看结果');
+    },
+  );
+});
