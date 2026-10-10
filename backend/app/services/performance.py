@@ -2411,9 +2411,14 @@ async def window_agg_snapshots(
     rows = (await db.execute(stmt)).all()
     items: list[dict[str, Any]] = []
     col_keys = ["loopId", "loopTagName", *agg_cols.keys(), "sampleCount"]
+    numeric_keys = set(agg_cols.keys()) | {"sampleCount"}
     for row in rows:
         item = dict(zip(col_keys, row, strict=False))
         item["loopId"] = str(item["loopId"])
-        # 率值列以 0~1 均值输出（与快照行一致口径），乘法列保留原量纲
+        # func.avg 返回 Decimal，JSON 序列化为字符串会让前端 toFixed 抛错
+        # ——数值列统一转 float（None 保持 None）
+        for k in numeric_keys:
+            if item.get(k) is not None:
+                item[k] = float(item[k])  # type: ignore[arg-type]
         items.append(item)
     return items
