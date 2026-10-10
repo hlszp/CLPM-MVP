@@ -51,7 +51,10 @@ class WorkbenchWindowSummary(Base):
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    score: Mapped[float] = mapped_column(Numeric(6, 3), nullable=False)
+    # CAL-07（2026-10-10）：score 可空——窗口内无任何有效评分时落 NULL（status=
+    # INCONCLUSIVE），不再落 0.0 伪 0 绩效；读方显式区分"未计算"与"真实 0 分"。
+    # ck_ws_score_range 对 NULL 恒通过（PG CHECK 语义），无需调整。
+    score: Mapped[float | None] = mapped_column(Numeric(6, 3), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     loop_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
