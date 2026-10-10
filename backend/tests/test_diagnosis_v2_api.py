@@ -598,6 +598,22 @@ class TestReviewEndpoint:
         assert data["reviewedBy"] == TEST_USERS["ic_engineer"].username
         assert data["reviewedAt"] is not None
 
+    def test_review_accepts_normal_and_other(self, client) -> None:
+        """2026-10-05 用户裁决：复核结论扩展 正常（NORMAL）/ 其他（OTHER）。"""
+        run = _make_run()
+        run.primary_category = None  # 未见异常场景，人工复核判正常
+        with mock_current_user(TEST_USERS["ic_engineer"]):
+            self._override_db_scalar(client, run)
+            resp = client.post(
+                f"/api/v1/diagnosis/runs/{RUN_ID}/review",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"reviewResults": ["NORMAL"], "reviewComment": "现场确认工况正常"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["reviewResults"] == ["NORMAL"]
+        assert data["reviewResultLabels"] == ["正常"]
+
     def test_review_rejects_unknown_category(self, client) -> None:
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(

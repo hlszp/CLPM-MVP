@@ -32,6 +32,7 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmFitnessRulesModal from '#/components/clpm/fitness-rules-modal.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
 
 import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
@@ -116,6 +117,7 @@ function handlePlantTreeSelect(keys: (number | string)[]): void {
 // ===== 最新诊断概览（每回路最新一条 + 未诊断回路） =====
 // 1005 性能优化：模块级 60s 共享缓存（与整定总览复用一次 latest 大 JOIN），
 // 且 latest 已自带 fitnessLevel（同表 LATERAL 扩列），免拉 monitor 13 页分页
+const { themeColors } = useClpmTheme();
 const latestCache = useLatestOverviewCache();
 const latestItems = latestCache.items;
 const latestLoading = latestCache.loading;
@@ -587,7 +589,7 @@ onMounted(() => {
               size: 'small',
               showLessItems: true,
             }"
-            :scroll="{ x: 1392 }"
+            :scroll="{ x: 1650 }"
             size="small"
           >
             <template #bodyCell="{ column, record }">
@@ -625,7 +627,7 @@ onMounted(() => {
               <template v-else-if="column.dataIndex === 'latestScore'">
                 <span
                   v-if="record.latestScore != null"
-                  class="font-medium tabular-nums"
+                  class="clpm-num"
                 >
                   {{ record.latestScore.toFixed(1) }}
                 </span>
@@ -665,28 +667,36 @@ onMounted(() => {
                   :style="{
                     color: latestCatColor(record as DiagnosisApi.LatestRunItem),
                   }"
-                  class="font-medium"
                 >
                   {{ record.primaryCategoryLabel }}
+                </span>
+                <!-- 已诊断未命中异常 → 明确写"正常"（2026-10-05 用户裁决）；
+                     未诊断回路保持 —（色值走主题变量，hex 棘轮只减不增） -->
+                <span
+                  v-else-if="record.runId"
+                  :style="{ color: themeColors.SUCCESS }"
+                >
+                  正常
                 </span>
                 <span v-else class="text-neutral-400">—</span>
               </template>
               <template v-else-if="column.dataIndex === 'primaryConfidence'">
-                {{
-                  record.primaryConfidence == null
-                    ? '—'
-                    : `${Math.round(record.primaryConfidence * 100)}%`
-                }}
+                <template v-if="record.primaryConfidence != null">
+                  {{ Math.round(record.primaryConfidence * 100) }}%
+                </template>
+                <!-- 结论=正常时置信度不适用（引擎对无异常结论不给数值） -->
+                <span v-else-if="record.runId" class="text-neutral-400">不适用</span>
+                <span v-else class="text-neutral-400">—</span>
               </template>
               <template v-else-if="column.dataIndex === 'severity'">
-                {{
-                  record.severity
-                    ? (SEVERITY_TEXT[record.severity] ?? record.severity)
-                    : '—'
-                }}
+                <template v-if="record.severity">
+                  {{ SEVERITY_TEXT[record.severity] ?? record.severity }}
+                </template>
+                <span v-else-if="record.runId" class="text-neutral-400">无</span>
+                <span v-else class="text-neutral-400">—</span>
               </template>
               <template v-else-if="column.dataIndex === 'reviewResultLabels'">
-                <span v-if="record.reviewResultLabels?.length" class="text-xs">
+                <span v-if="record.reviewResultLabels?.length">
                   {{ record.reviewResultLabels.join('、') }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
@@ -704,7 +714,7 @@ onMounted(() => {
                 <span v-else class="text-neutral-400">—</span>
               </template>
               <template v-else-if="column.dataIndex === 'lastDiagnosedAt'">
-                <span v-if="record.runId">{{
+                <span v-if="record.runId" class="clpm-num">{{
                   fmtUtc(record.lastDiagnosedAt)
                 }}</span>
                 <span v-else class="text-neutral-400">未诊断</span>
@@ -877,15 +887,15 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 概览表：紧凑字体 + 单行不换行 */
+/* 概览表：单行不换行（2026-10-05 值体统一：字号对齐回路评估榜单基准 14px） */
 .diag-ov-latest-table :deep(.ant-table-cell) {
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
 .diag-ov-latest-table :deep(.ant-table-cell .ant-btn-link) {
   padding: 0 2px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* 概览筛选标签 */

@@ -70,11 +70,11 @@ watch(
   { immediate: true },
 );
 
-/** 主分类空值兜底：NULL=未见异常（门禁通过但无算子命中）；FAILED 行无结论产出 */
+/** 主分类空值语义：NULL=未见异常（门禁通过但无算子命中，2026-10-05 用户裁决显示"正常"）；FAILED 行无结论产出 */
 function primaryText(record: DiagnosisApi.RunListItem): string {
   if (record.primaryCategory)
     return record.primaryCategoryLabel ?? record.primaryCategory;
-  return record.status === 'FAILED' ? '—' : '未见异常';
+  return record.status === 'FAILED' ? '—' : '正常';
 }
 
 function primaryColor(record: DiagnosisApi.RunListItem): string {
@@ -172,10 +172,7 @@ defineExpose({ loadRuns, primaryText, secondaryText });
             </Tag>
           </template>
           <template v-else-if="column.key === 'secondaryCategories'">
-            <span
-              v-if="secondaryText(record as DiagnosisApi.RunListItem)"
-              class="text-xs"
-            >
+            <span v-if="secondaryText(record as DiagnosisApi.RunListItem)">
               {{ secondaryText(record as DiagnosisApi.RunListItem) }}
             </span>
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
@@ -194,7 +191,7 @@ defineExpose({ loadRuns, primaryText, secondaryText });
             <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>
           </template>
           <template v-else-if="column.key === 'status'">
-            <span class="text-xs">{{ record.status }}</span>
+            <span>{{ record.status }}</span>
           </template>
         </template>
       </Table>

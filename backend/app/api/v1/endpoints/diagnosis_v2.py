@@ -74,6 +74,11 @@ _CATEGORY_LABELS = {
     "UTILIZATION": "投用/操作问题",
     "DESIGN": "组态/设计问题",
     "DATA_INSUFFICIENT": "数据不足/无法判定",
+    # 2026-10-05 用户裁决：人工复核结论扩展值（非诊断主分类域——
+    # primary_category 不会取这两个值，仅 review_results 可选；
+    # 建议生成按 STANDARD_ACTION_TEMPLATES 匹配，不命中不生成，天然安全）
+    "NORMAL": "正常",
+    "OTHER": "其他",
 }
 
 #: 触发类型标签（§12 自动诊断：MANUAL 手动 / SCHEDULED 分级定时 / EVENT 预警事件）

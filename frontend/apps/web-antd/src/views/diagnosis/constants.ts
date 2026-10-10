@@ -59,6 +59,20 @@ export const CATEGORY_OPTIONS: Array<{
 ).map(([value, meta]) => ({ label: meta.label, value }));
 
 /**
+ * 人工复核结论选项（2026-10-05 用户裁决：在 8 类之外增加 正常/其他）。
+ * 仅用于复核多选——NORMAL/OTHER 不属于诊断主分类域（primary_category
+ * 不会取值，勿用于主分类筛选下拉）。
+ */
+export const REVIEW_CATEGORY_OPTIONS: Array<{
+  label: string;
+  value: string;
+}> = [
+  ...CATEGORY_OPTIONS,
+  { label: '正常', value: 'NORMAL' },
+  { label: '其他', value: 'OTHER' },
+];
+
+/**
  * 分类归一化：把任意来源的分类文本统一成 8 类**英文代码**（单一事实源收口）。
  *
  * 背景（2026-09-27，阻断级缺陷修复）：工作台 Pareto / 装置堆叠条的数据来自库内物化视图

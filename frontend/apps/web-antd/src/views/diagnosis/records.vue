@@ -374,7 +374,9 @@ function openMetrics(record: DiagnosisApi.RunListItem) {
 // 次分类列删除（多数场景单候选命中恒空，2026-10-05 用户裁决——
 // 次分类信息保留在详情面板"并存/待复核" chips 与导出 CSV 中）
 const baseColumns = [
-  { dataIndex: 'loopTagName', title: '回路', width: 120 },
+  // 回路列加宽容纳 18 字符位号（等宽 14px ≈ 170px）；复核结论多值场景
+  // 收窄靠换行（2026-10-05 用户裁决）
+  { dataIndex: 'loopTagName', title: '回路', width: 170 },
   { dataIndex: 'createdAt', title: '诊断时间', width: 150 },
   { dataIndex: 'primaryCategoryLabel', title: '主分类', width: 150 },
   { dataIndex: 'triggerType', title: '触发方式', width: 88 },
@@ -382,7 +384,7 @@ const baseColumns = [
   { dataIndex: 'primaryConfidence', title: '置信度', width: 80 },
   { dataIndex: 'severity', title: '严重度', width: 76 },
   { dataIndex: 'timeWindowStart', title: '时间窗', width: 220 },
-  { dataIndex: 'reviewResultLabels', title: '复核结论', width: 150 },
+  { dataIndex: 'reviewResultLabels', title: '复核结论', width: 110 },
   { dataIndex: 'reviewStatus', title: '复核状态', width: 88 },
   { dataIndex: 'triggeredBy', title: '发起人', width: 100 },
   { dataIndex: 'status', title: '状态', width: 90 },
@@ -398,8 +400,8 @@ const columns = computed(() => [
   ...metricColumns.value,
   actionColumn,
 ]);
-/** 指标列展开后表格横向滚动宽度（基础列 ~1660 + 指标列×110） */
-const tableScrollX = computed(() => 1660 + metricColumns.value.length * 110);
+/** 指标列展开后表格横向滚动宽度（基础列 ~1670 + 指标列×110） */
+const tableScrollX = computed(() => 1670 + metricColumns.value.length * 110);
 
 function fmtWindow(record: DiagnosisApi.RunListItem) {
   // 0929 时区收敛：slice 截取的是 UTC 串（差 8 小时），统一走 formatLocalTime 补 Z 转本地
@@ -414,13 +416,26 @@ function catColor(record: DiagnosisApi.RunListItem) {
     : '#6c757d';
 }
 
-/** 主分类空值语义（2026-10-05）：NULL = 门禁通过但全部算子未命中
- * （分类引擎 NO_SYMPTOM → 落库 NULL），对用户显式显示"未见异常"；
+/** 主分类空值语义（2026-10-05 用户裁决）：NULL = 门禁通过但全部算子未命中
+ * （分类引擎 NO_SYMPTOM → 落库 NULL），明确显示"正常"；
  * FAILED 留痕 run 无结论产出，显示 — */
 function primaryText(record: DiagnosisApi.RunListItem) {
   if (record.primaryCategory)
     return record.primaryCategoryLabel ?? record.primaryCategory;
-  return record.status === 'FAILED' ? '—' : '未见异常';
+  return record.status === 'FAILED' ? '—' : '正常';
+}
+
+/** 置信度空值语义：结论=正常时引擎不给数值 → "不适用"；FAILED → — */
+function confidenceText(record: DiagnosisApi.RunListItem): string {
+  if (record.primaryConfidence != null)
+    return `${Math.round(record.primaryConfidence * 100)}%`;
+  return record.status === 'FAILED' ? '—' : '不适用';
+}
+
+/** 严重度空值语义：结论=正常 → "无"；FAILED → — */
+function severityText(record: DiagnosisApi.RunListItem): string {
+  if (record.severity) return SEVERITY_TEXT[record.severity] ?? record.severity;
+  return record.status === 'FAILED' ? '—' : '无';
 }
 
 // ---- 批量删除（2026-10-05 用户需求；权限=诊断触发四角色，后端同口径校验） ----
@@ -655,13 +670,14 @@ onMounted(() => {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'createdAt'">
-              {{ formatLocalTime(record.createdAt, 'YYYY-MM-DD HH:mm') }}
+              <span class="clpm-num">{{
+                formatLocalTime(record.createdAt, 'YYYY-MM-DD HH:mm')
+              }}</span>
             </template>
             <template v-else-if="column.dataIndex === 'primaryCategoryLabel'">
               <span
                 v-if="record.primaryCategory"
                 :style="{ color: catColor(record as DiagnosisApi.RunListItem) }"
-                class="font-medium"
               >
                 {{ record.primaryCategoryLabel }}
               </span>
@@ -671,18 +687,10 @@ onMounted(() => {
               </span>
             </template>
             <template v-else-if="column.dataIndex === 'primaryConfidence'">
-              {{
-                record.primaryConfidence == null
-                  ? '—'
-                  : `${Math.round(record.primaryConfidence * 100)}%`
-              }}
+              {{ confidenceText(record as DiagnosisApi.RunListItem) }}
             </template>
             <template v-else-if="column.dataIndex === 'severity'">
-              {{
-                record.severity
-                  ? (SEVERITY_TEXT[record.severity] ?? record.severity)
-                  : '—'
-              }}
+              {{ severityText(record as DiagnosisApi.RunListItem) }}
             </template>
             <template v-else-if="column.dataIndex === 'timeWindowStart'">
               {{ fmtWindow(record as DiagnosisApi.RunListItem) }}
@@ -703,7 +711,6 @@ onMounted(() => {
             <template v-else-if="column.dataIndex === 'dataGate'">
               <span
                 v-if="record.dataGate"
-                class="text-xs"
                 :title="gateTitle(record.dataGate as DiagnosisApi.GateInfo)"
                 :style="{
                   color:
@@ -718,7 +725,7 @@ onMounted(() => {
             </template>
             <template v-else-if="String(column.key).startsWith('m:')">
               <span
-                class="font-mono text-xs"
+                class="font-mono"
                 :title="
                   metricValue(
                     record as DiagnosisApi.RunListItem,
@@ -747,7 +754,7 @@ onMounted(() => {
               </Button>
             </template>
             <template v-else-if="column.dataIndex === 'reviewResultLabels'">
-              <span v-if="record.reviewResultLabels?.length" class="text-xs">
+              <span v-if="record.reviewResultLabels?.length">
                 {{ record.reviewResultLabels.join('、') }}
               </span>
               <span v-else class="text-neutral-400">—</span>

@@ -70,9 +70,9 @@ import {
 
 import {
   CATEGORY_META,
-  CATEGORY_OPTIONS,
   IMPORTANCE_LEVEL_COLOR,
   IMPORTANCE_LEVEL_TEXT,
+  REVIEW_CATEGORY_OPTIONS,
   scoreGrade,
   SEVERITY_TEXT,
   TRIGGER_TYPE_COLOR,
@@ -823,11 +823,12 @@ watch(open, (v) => {
   if (v && props.item) {
     activeTab.value = 'conclusion';
     // 复核表单回显：已复核预填上次结论（可改判）；未复核默认勾选 AI 主分类
+    // （诊断未命中异常时默认勾"正常"，2026-10-05 用户裁决口径，与复核抽屉一致）
     reviewForm.value.reviewResults = props.item.reviewResults?.length
       ? [...props.item.reviewResults]!
       : (props.item.primaryCategory
         ? [props.item.primaryCategory]
-        : []);
+        : ['NORMAL']);
     reviewForm.value.reviewComment = '';
     actionItems.value = [];
     newActionContent.value = '';
@@ -1024,7 +1025,7 @@ watch(open, (v) => {
                 <FormItem label="复核结论（多选）" required>
                   <Select
                     v-model:value="reviewForm.reviewResults"
-                    :options="CATEGORY_OPTIONS"
+                    :options="REVIEW_CATEGORY_OPTIONS"
                     mode="multiple"
                     placeholder="选择人工确认的问题分类（可多选）"
                     :max-tag-count="4"

@@ -22,7 +22,7 @@ import {
 
 import { reviewDiagnosisRunApi } from '#/api/diagnosis';
 
-import { CATEGORY_OPTIONS } from '../constants';
+import { REVIEW_CATEGORY_OPTIONS } from '../constants';
 
 const props = defineProps<{
   item: DiagnosisApi.LatestRunItem | null;
@@ -43,11 +43,12 @@ const form = reactive<{ reviewComment: string; reviewResults: string[] }>({
 watch(open, (v) => {
   if (v && props.item) {
     // 回显：已复核记录预填上次结论/意见（可改判）；建议默认勾选 AI 主分类
+    // （诊断未命中异常时默认勾"正常"，2026-10-05 用户裁决口径）
     form.reviewResults = props.item.reviewResults?.length
       ? [...props.item.reviewResults]!
       : (props.item.primaryCategory
         ? [props.item.primaryCategory]
-        : []);
+        : ['NORMAL']);
     form.reviewComment = '';
   }
 });
@@ -84,7 +85,7 @@ async function submit() {
       <FormItem label="复核结论（多选）" required>
         <Select
           v-model:value="form.reviewResults"
-          :options="CATEGORY_OPTIONS"
+          :options="REVIEW_CATEGORY_OPTIONS"
           mode="multiple"
           placeholder="选择人工确认的问题分类（可多选）"
           :max-tag-count="4"

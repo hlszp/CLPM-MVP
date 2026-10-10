@@ -226,7 +226,7 @@ defineExpose({ load, opRows, fusionRows });
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'op'">
-              <div class="font-medium">{{ record.displayName }}</div>
+              <div>{{ record.displayName }}</div>
               <div class="text-xs text-neutral-400">{{ record.name }}</div>
             </template>
             <template v-else-if="column.key === 'state'">
@@ -235,7 +235,7 @@ defineExpose({ load, opRows, fusionRows });
               <Tag v-else>未命中</Tag>
             </template>
             <template v-else-if="column.key === 'confidence'">
-              <span v-if="record.executed" class="font-mono text-xs">
+              <span v-if="record.executed" class="font-mono">
                 {{ (record.confidence * 100).toFixed(0) }}%
               </span>
               <span v-else :style="{ color: themeColors.NEUTRAL }">—</span>

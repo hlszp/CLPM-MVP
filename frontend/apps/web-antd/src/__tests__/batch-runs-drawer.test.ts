@@ -3,7 +3,7 @@
  *
  * 2026-10-05 诊断任务页"查看结果"改抽屉：覆盖
  * - 打开时按 taskId 拉取该批次诊断记录（GET /diagnosis/runs?taskId=）
- * - 主分类空值语义：NULL+终态=未见异常（NO_SYMPTOM 落库 NULL）/ FAILED=—
+ * - 主分类空值语义：NULL+终态=正常（NO_SYMPTOM 落库 NULL）/ FAILED=—
  * - 次分类多值拼接与空态
  */
 import { mount } from '@vue/test-utils';
@@ -60,7 +60,7 @@ describe('批次诊断记录抽屉 batch-runs-drawer.vue', () => {
     expect(getRunsMock).not.toHaveBeenCalled();
   });
 
-  it('uT-BRD-003: 主分类空值语义（NULL=未见异常，FAILED=无产出）', async () => {
+  it('uT-BRD-003: 主分类空值语义（NULL=正常，FAILED=无产出）', async () => {
     const wrapper = mount(BatchRunsDrawer, mountOptions);
     await nextTick();
     const vm = wrapper.vm as any;
@@ -71,9 +71,9 @@ describe('批次诊断记录抽屉 batch-runs-drawer.vue', () => {
         status: 'SUCCESS',
       }),
     ).toBe('参数问题（PID 整定）');
-    // NULL + SUCCESS → 未见异常（分类引擎 NO_SYMPTOM 落库 NULL）
+    // NULL + SUCCESS → 正常（分类引擎 NO_SYMPTOM 落库 NULL）
     expect(vm.primaryText({ primaryCategory: null, status: 'SUCCESS' })).toBe(
-      '未见异常',
+      '正常',
     );
     // NULL + FAILED → 失败留痕无结论
     expect(vm.primaryText({ primaryCategory: null, status: 'FAILED' })).toBe('—');
