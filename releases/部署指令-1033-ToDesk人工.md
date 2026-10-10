@@ -2,8 +2,8 @@
 
 > 适用：AAS 宿主机 Windows（ToDesk）→ VMware 内 clpm 虚拟机（192.168.60.132）。**逐条粘贴**，只动 clpm VM。
 >
-> **包**：`clpm-images-1033-full.tar.gz`（208M，sha256 `2786c32ba7a2ed03dfb081e69f7b2d8ae98e1a2c473292f3acb4722398c07cb9`）
-> **代码基线**：main `a10acc45`（tag **v7.5.3**），双镜像 linux/amd64。**无迁移、无 Beat 变更**。
+> **包**：`clpm-images-1033-full.tar.gz`（208M，sha256 `da9ff95bed5202bc5c5940c9ae13e4c5311bb5e4da84d71ee7baae3ad0c9ade9`）
+> **代码基线**：main `e11a65e1`（tag **v7.5.3**，含辨识预处理/参评口径/驾驶舱总览修订等并行批次累积），双镜像 linux/amd64。**无迁移、无 Beat 变更**。
 > **内容**（回路评估四项）：
 > ① 停用回路历史快照可见（历史记录完整呈现；下拉标注「已停用」；当前态统计口径不变）
 > ② 历史快照批量删除（按筛选 dry-run 预览+确认）+ 操作列单条删除
