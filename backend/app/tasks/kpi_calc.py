@@ -39,6 +39,7 @@ from app.contracts.data_types import (
     TagGroup,
     TimeWindow,
 )
+from app.core.timeparse import to_naive_utc
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import (
     KpiSnapshotCustom,
@@ -47,6 +48,7 @@ from app.models.metric import (
     MetricConfig,
 )
 from app.models.tag import TagRegistry
+from app.services import result_ledger
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.diagnosis_operators.gate import evaluate_gate
 from app.services.loop_fitness import compute_fitness
@@ -173,7 +175,11 @@ def calculate_hourly_kpi(
         task_id,
     )
     try:
-        result = self.run_async(_do_hourly_with_tracking(ts_start=ts_start, task_id=task_id))
+        result = self.run_async(
+            _do_hourly_with_tracking(
+                ts_start=ts_start, task_id=task_id, logical_run_id=self.request.id
+            )
+        )
         logger.info("KPI 计算任务完成: %s", result)
         return result
     except HourlyWindowBusy:
@@ -191,6 +197,7 @@ def calculate_hourly_kpi(
                 ts_start=ts_start_dt,
                 source="MANUAL_STANDARD" if task_id else "SCHEDULED",
                 source_task_id=task_id,
+                logical_run_id=self.request.id,
             )
         )
 
@@ -264,6 +271,7 @@ def _hourly_window_lock_key(ts_start: str | None) -> str:
 async def _do_hourly_with_tracking(
     ts_start: str | None = None,
     task_id: str | None = None,
+    logical_run_id: str | None = None,
 ) -> dict:
     """执行每小时 KPI 计算并维护任务跟踪记录.
 
@@ -273,6 +281,9 @@ async def _do_hourly_with_tracking(
 
     同一小时窗口通过 Redis SETNX 锁互斥（手动触发与整点 Beat 不会并发
     _do_calculate）；锁带 TTL 兜底，持有者在 finally 中按 token 释放。
+
+    logical_run_id（P1-05 结果账本）：Celery 任务级逻辑运行身份，重试
+    复用同一 task id → 同一 logicalRunId → 账本 record 幂等复用。
     """
     from app.core.redis import redis_client
     from app.schemas.task import TaskStatus, TaskType
@@ -344,6 +355,7 @@ async def _do_hourly_with_tracking(
                 total_windows=1,
                 source="MANUAL_STANDARD" if task_id else "SCHEDULED",
                 source_task_id=task_id,
+                logical_run_id=logical_run_id,
             )
             await task_tracker.update_status(
                 task_id,
@@ -824,6 +836,7 @@ async def _run_batch_loop_calculations(
     custom_task_id: str | None = None,
     source: str | None = None,
     source_task_id: str | None = None,
+    logical_run_id: str | None = None,
     on_completed=None,
     bundle_cache=None,
     concurrency: int = CONCURRENCY,
@@ -836,6 +849,8 @@ async def _run_batch_loop_calculations(
     Args:
         bundle_cache: L2 Bundle 缓存实例。None=使用共享缓存（标准/自定义评估），
             False=禁用 L1/L2 缓存（backfill 场景，避免无用的缓存读写 I/O）。
+        logical_run_id: P1-05 结果账本批次级逻辑运行身份（None=由
+            _calculate_loop_kpi 按运行上下文确定性推导）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -886,6 +901,7 @@ async def _run_batch_loop_calculations(
                         loop_cfg=loop_configs.get(str(loop.id)),
                         source=source,
                         source_task_id=source_task_id,
+                        logical_run_id=logical_run_id,
                     )
                     await worker_db.commit()
                     return result
@@ -1009,6 +1025,7 @@ async def _do_calculate(
     total_windows: int = 0,
     source: str = "SCHEDULED",
     source_task_id: str | None = None,
+    logical_run_id: str | None = None,
 ) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。
 
@@ -1019,6 +1036,8 @@ async def _do_calculate(
         task_id: Redis 任务跟踪 ID（backfill 调用时传入，用于逐回路进度更新）。
         window_index: 当前窗口序号（1-based），用于细粒度进度计算。
         total_windows: 总窗口数，用于细粒度进度计算。
+        logical_run_id: P1-05 结果账本逻辑运行身份；None 时按
+            (source, source_task_id, 窗口) 确定性推导（兜底，保持重试幂等）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -1042,6 +1061,12 @@ async def _do_calculate(
     else:
         ts_end_dt = now.replace(minute=0, second=0, microsecond=0)
         ts_start_dt = ts_end_dt - timedelta(hours=1)
+
+    # P1-05 结果账本：批次级 logicalRunId（缺省按运行上下文确定性推导）
+    if not logical_run_id:
+        logical_run_id = result_ledger.derive_loop_logical_run_id(
+            ts_start_dt, source=source, source_task_id=source_task_id
+        )
 
     # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
     async with AsyncSessionLocal() as db:
@@ -1093,6 +1118,7 @@ async def _do_calculate(
         type_weights=type_weights,
         source=source,
         source_task_id=source_task_id,
+        logical_run_id=logical_run_id,
         on_completed=_on_completed if task_id else None,
     )
     t_calc_elapsed = time.perf_counter() - t_calc_start
@@ -1166,6 +1192,8 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
             data_planner=data_planner,
             type_weights=type_weights,
             source="MANUAL_STANDARD",
+            # P1-05：手动单回路触发即显式重评 → 每次调用新 logicalRunId
+            logical_run_id=str(uuid4()),
         )
         await db.commit()
         return snap or {"loopId": loop_id, "status": "FAILED"}
@@ -1234,6 +1262,10 @@ async def _do_calculate_custom_loop(
             data_planner=data_planner,
             type_weights=type_weights,
             custom_task_id=task_id,
+            # P1-05：同一自定义任务重跑幂等复用 record；新任务=新逻辑运行
+            logical_run_id=result_ledger.derive_loop_logical_run_id(
+                ts_start_dt, custom_task_id=task_id
+            ),
         )
         await db.commit()
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
@@ -1306,6 +1338,10 @@ async def _do_calculate_custom_batch(
             ts_end=ts_end_dt,
             type_weights=type_weights,
             custom_task_id=task_id,
+            # P1-05：同一自定义任务（含 Celery 重试）幂等复用 record
+            logical_run_id=result_ledger.derive_loop_logical_run_id(
+                ts_start_dt, custom_task_id=task_id
+            ),
         )
         t_calc_elapsed = time.perf_counter() - t_calc_start
         logger.info(
@@ -1580,6 +1616,7 @@ async def _calculate_loop_kpi(
     loop_cfg: dict | None = None,
     source: str | None = None,
     source_task_id: str | None = None,
+    logical_run_id: str | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1591,6 +1628,10 @@ async def _calculate_loop_kpi(
     P2 IA优化：KPI 聚合完成后调用 compute_fitness，得到 fitness_level/tags/detail
     并随快照 UPSERT 写入。fitness 失败不阻断主流程，fitness_level 置 NULL。
 
+    P1-05 结果账本：logical_run_id 为本次逻辑运行身份（None 时由
+    _persist_snapshot 按运行上下文推导）；config_revision 取实际消费配置
+    （类型权重 + fitness sys_config）的内容摘要。
+
     Args:
         db: 异步数据库会话
         loop: 回路对象
@@ -1601,6 +1642,7 @@ async def _calculate_loop_kpi(
         type_weights: 回路类型权重映射（LoopTypeWeight）
         custom_task_id: 自定义任务 ID（非 None 时写入 kpi_snapshot_custom）
         loop_cfg: 预加载的回路配置（op_lower/op_upper/range_min/range_max）
+        logical_run_id: 结果账本逻辑运行身份（批次级，None=上下文推导）
 
     Returns:
         快照字典，包含 status 字段
@@ -1616,6 +1658,12 @@ async def _calculate_loop_kpi(
         fitness_sys_configs = await _load_fitness_sys_configs(db)
     except Exception:  # noqa: BLE001
         fitness_sys_configs = None  # 使用默认阈值
+
+    # P1-05 结果账本：实际消费配置内容摘要作为 configRevision（P2-02 落地
+    # 全局 revision 前的诚实口径——配置内容变 → record 可区分）
+    config_revision = result_ledger.config_revision_digest(
+        {"typeWeights": type_weights or {}, "fitness": fitness_sys_configs or {}}
+    )
 
     # 分段计时（2026-10-08 评估吞吐优化观测）：read=TDengine 取数 /
     # persist=快照写库 / compute=其余（门禁+三层计算+fitness）。
@@ -1636,6 +1684,9 @@ async def _calculate_loop_kpi(
     async def _timed_persist(**kwargs: Any) -> dict:
         nonlocal _t_persist
         _tp = time.perf_counter()
+        # P1-05 结果账本：逻辑运行身份 + 配置摘要注入（调用方未显式指定时）
+        kwargs.setdefault("logical_run_id", logical_run_id)
+        kwargs.setdefault("config_revision", config_revision)
         _r = await _persist_snapshot(**kwargs)
         _t_persist += time.perf_counter() - _tp
         return _r
@@ -2816,6 +2867,8 @@ async def _save_snapshot(
     # 来源标注（整合方案 B1）
     source: str | None = None,
     source_task_id: str | None = None,
+    # P1-05 结果账本：本行对应的不可变 record
+    result_record_id: str | None = None,
 ) -> dict:
     """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
 
@@ -2826,6 +2879,8 @@ async def _save_snapshot(
     Phase 1 新增 15 个指标列随 UPSERT 写入；F5 起 time_constant 由计算器写入
     （激励不足窗口保持 NULL）。
     P2 新增 3 个适用性分层字段随 UPSERT 写入。
+    P1-05：result_record_id（结果账本投影指针）随 UPSERT 写入，由
+    ``_persist_snapshot`` 先追加不可变 record 后传入，同事务切换投影。
     实际写入行的 id 通过 ``RETURNING id`` 随 UPSERT 一并取回（新增与
     UPDATE 分支均返回），不再单独 SELECT 回查。
     """
@@ -2884,6 +2939,8 @@ async def _save_snapshot(
         # 来源标注（整合方案 B1）
         "source": source,
         "source_task_id": source_task_id,
+        # P1-05 结果账本投影指针
+        "result_record_id": result_record_id,
     }
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
@@ -2925,14 +2982,34 @@ async def _save_confidence_latest(
     valid_rate: Decimal | float | None = None,
     metrics: dict | None = None,
     algorithm_version: str | None = None,
+    result_record_id: str | None = None,
 ) -> None:
     """UPSERT 写入 loop_confidence_latest（按 loop_id 冲突覆盖全部字段）。
 
     每回路仅保留"最新一次评估"记录：评估时间取写入时刻（naive UTC），
     数据源时间区间取快照窗口。metrics 为 12 子指标 JSONB
-    （``_extract_metrics_detail`` 产物），无子指标数据时存空对象。
+    （``_extract_metrics_detail`` 产物），无子指标数据存空对象。
+
+    P1-05（DEC-09 迟到规则）：latest 是"最新业务窗口"的当前投影——
+    迟到历史窗口（ts_end 早于现存投影的 data_ts_end）**不更新本表**，
+    只保留账本 record；同窗（ts_end 相等）重评仍覆盖切换。
     """
     now = datetime.now(UTC).replace(tzinfo=None)
+
+    # DEC-09：先查现存投影的业务窗终点，迟到写入直接跳过（不覆盖当前事实）
+    incoming_end = to_naive_utc(ts_end)
+    existing_result = await db.execute(
+        select(LoopConfidenceLatest.data_ts_end).where(LoopConfidenceLatest.loop_id == loop_id)
+    )
+    existing_end = existing_result.scalar_one_or_none()
+    if existing_end is not None and incoming_end < existing_end:
+        logger.info(
+            "迟到历史窗口不更新 loop_confidence_latest（回路 %s：incoming=%s < current=%s）",
+            loop_id,
+            incoming_end,
+            existing_end,
+        )
+        return
 
     insert_values = {
         "id": str(uuid4()),
@@ -2947,6 +3024,8 @@ async def _save_confidence_latest(
         "metrics": metrics if metrics is not None else {},
         "algorithm_version": algorithm_version,
         "updated_at": now,
+        # P1-05 结果账本投影指针
+        "result_record_id": result_record_id,
     }
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id")}
@@ -3016,12 +3095,17 @@ async def _save_custom_snapshot(
     # 来源标注（整合方案 B1）
     source: str | None = None,
     source_task_id: str | None = None,
+    # P1-05 结果账本：本行对应的不可变 record
+    result_record_id: str | None = None,
 ) -> dict:
     """幂等写入自定义任务快照（select-then-add 模式）.
 
     自定义任务快照使用 ``(task_id, loop_id)`` 作为唯一键，
     通过 select-then-add/update 模式写入（与 hourly 表的 UPSERT 不同）。
     P2 新增 3 个适用性分层字段随写入。
+    P1-05：result_record_id（结果账本投影指针）随写入；同任务重跑时
+    record 按唯一键复用（logicalRunId=task_id 推导），投影行仍按既有
+    语义覆盖更新。
     """
     existing_result = await db.execute(
         select(KpiSnapshotCustom).where(
@@ -3074,6 +3158,8 @@ async def _save_custom_snapshot(
         existing.fitness_level = fitness_level
         existing.fitness_tags = fitness_tags
         existing.fitness_detail = fitness_detail
+        # P1-05 结果账本投影指针
+        existing.result_record_id = result_record_id
         snapshot_id = str(existing.id)
     else:
         snapshot_id = str(uuid4())
@@ -3130,6 +3216,8 @@ async def _save_custom_snapshot(
             # 来源标注（整合方案 B1）：本表恒为手动自定义评估产出
             source="MANUAL_CUSTOM",
             source_task_id=task_id,
+            # P1-05 结果账本投影指针
+            result_record_id=result_record_id,
         )
         db.add(snapshot)
 
@@ -3152,6 +3240,8 @@ async def _persist_snapshot(
     ts_end: datetime,
     status: str,
     custom_task_id: str | None = None,
+    logical_run_id: str | None = None,
+    config_revision: str | None = None,
     **kwargs,
 ) -> dict:
     """统一快照持久化入口（根据 custom_task_id 分发到对应表）.
@@ -3159,12 +3249,17 @@ async def _persist_snapshot(
     - ``custom_task_id=None`` → 写入 ``kpi_snapshot_hourly``（标准小时快照），
       并同步 UPSERT ``loop_confidence_latest``（每回路最新一条可信度记录）
     - ``custom_task_id`` 非 None → 写入 ``kpi_snapshot_custom``（自定义任务快照，
-      不更新 loop_confidence_latest）
+      不更新 loop_confidence_latest，维持 DEC-09 口径现状）
 
     ``metrics_detail`` kwarg（12 子指标值+可信度，``_extract_metrics_detail``
-    产物）仅用于 loop_confidence_latest，不透传给 _save_* 函数；其余 kwargs
-    透传（KPI 值 + 7 个数据血缘字段）。
+    产物）随 record payload 入账本、并用于 loop_confidence_latest，不透传给
+    _save_* 函数；其余 kwargs 透传（KPI 值 + 7 个数据血缘字段）。
     loop_confidence_latest 写入失败仅记日志，不影响主快照结果。
+
+    P1-05 结果账本：**先追加不可变 calculation_result_record**（同
+    logicalRunId 唯一键冲突即复用既有 record，不重复建），**同事务**把
+    投影行的 ``result_record_id`` 指向该 record；账本追加失败仅记日志，
+    投影照常写入（兼容期投影优先，账本缺口由后续重算自然补齐）。
 
     P0 #3：INCONCLUSIVE 快照的 ``confidence_level`` 缺省落 'E'
     （对齐 §7.15 E↔INCONCLUSIVE 语义，使"非空最差等级"聚合能覆盖
@@ -3174,6 +3269,43 @@ async def _persist_snapshot(
     metrics_detail = kwargs.pop("metrics_detail", None)
     if status == "INCONCLUSIVE" and kwargs.get("confidence_level") is None:
         kwargs["confidence_level"] = "E"
+
+    # --- P1-05：先追加不可变 record（幂等），再切换投影 ---
+    try:
+        record = await result_ledger.append_result_record(
+            db,
+            logical_run_id=logical_run_id
+            or result_ledger.derive_loop_logical_run_id(
+                ts_start,
+                custom_task_id=custom_task_id,
+                source=kwargs.get("source"),
+                source_task_id=kwargs.get("source_task_id"),
+            ),
+            object_kind=result_ledger.OBJECT_KIND_LOOP,
+            object_id=loop_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
+            config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
+            payload={
+                "snapshotStatus": status,
+                "customTaskId": custom_task_id,
+                "metricsDetail": metrics_detail,
+                **kwargs,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        record = None
+        logger.warning(
+            "结果账本 record 追加失败（回路 %s 窗口 %s~%s），投影照常写入",
+            loop_id,
+            ts_start,
+            ts_end,
+            exc_info=True,
+        )
+    record_id_value = getattr(record, "id", None)
+    result_record_id = str(record_id_value) if record_id_value is not None else None
+
     if custom_task_id is not None:
         return await _save_custom_snapshot(
             db=db,
@@ -3182,6 +3314,7 @@ async def _persist_snapshot(
             ts_start=ts_start,
             ts_end=ts_end,
             status=status,
+            result_record_id=result_record_id,
             **kwargs,
         )
     result = await _save_snapshot(
@@ -3190,6 +3323,7 @@ async def _persist_snapshot(
         ts_start=ts_start,
         ts_end=ts_end,
         status=status,
+        result_record_id=result_record_id,
         **kwargs,
     )
     try:
@@ -3204,6 +3338,7 @@ async def _persist_snapshot(
             valid_rate=kwargs.get("valid_rate"),
             metrics=metrics_detail,
             algorithm_version=kwargs.get("algorithm_version"),
+            result_record_id=result_record_id,
         )
     except Exception:  # noqa: BLE001
         logger.warning(
@@ -3536,6 +3671,15 @@ def _backfill_window_batch(
                     bundle_cache=False,
                     concurrency=_BACKFILL_LOOP_CONCURRENCY,
                     source="BACKFILL",
+                    # P1-05：窗口子任务（batch_id）级逻辑运行身份——子任务重试
+                    # （claim 缓存/BUSY 重投）复用同一 logicalRunId，幂等；
+                    # 新一轮回填任务产生新 record，与旧版本共存
+                    logical_run_id=result_ledger.derive_loop_logical_run_id(
+                        w_start,
+                        celery_task_id=batch_id,
+                        source="BACKFILL",
+                        source_task_id=task_id,
+                    ),
                     on_completed=_on_completed if task_id else None,
                 )
                 summary = _summarize_batch_results(results, loops=todo_loops)
@@ -4101,6 +4245,9 @@ def _process_windows_subprocess(
             for w in window_isos
         ]
 
+        # P1-05：本子进程一轮回填 = 一个逻辑运行（跨窗口共享，窗口进唯一键）
+        backfill_run_id = str(uuid4())
+
         # 子进程内预加载（参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
         async with AsyncSessionLocal() as db:
             stmt = _eval_loop_selection_stmt(loop_ids)
@@ -4129,6 +4276,9 @@ def _process_windows_subprocess(
                     type_weights=type_weights,
                     source="BACKFILL",
                     bundle_cache=False,
+                    logical_run_id=result_ledger.derive_loop_logical_run_id(
+                        w, source="BACKFILL", source_task_id=backfill_run_id
+                    ),
                 )
                 summary = _summarize_batch_results(results)
                 # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS

@@ -30,6 +30,7 @@ from app.models.node_kpi import (
 )
 from app.models.plant_node import PlantNode
 from app.models.unit_kpi_summary import UnitKpiSummary
+from app.services import result_ledger
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
@@ -320,10 +321,13 @@ async def _fetch_and_aggregate_loops(
     fields = [getattr(subq.c, f).label(f) for f in KPI_FIELDS]
 
     # S1：仅聚合 include_in_evaluation=True 的回路
+    # P1-05：附带 result_record_id（回路快照的结果账本指针），供节点 record
+    # 保存实际参与的 loop recordIds（节点输入版本可追）
     stmt = (
         select(
             subq.c.loop_id.label("loop_id"),
             subq.c.confidence_level.label("confidence_level"),
+            subq.c.result_record_id.label("result_record_id"),
             *fields,
             LoopLedger.complex_loop_group_id,
             LoopLedger.complex_role,
@@ -349,6 +353,24 @@ async def _fetch_and_aggregate_loops(
     if weight_total == 0:
         logger.warning("[节点级聚合-S3] SUM(weight)=0，无法计算加权平均")
         return None
+
+    # P1-05 结果账本：实际参与聚合的 loop recordIds + 各指标有效分母
+    # （validCount=非空值回路数，validWeight=非空值权重和，totalWeight=总权重）
+    loop_record_ids = [
+        {
+            "loopId": str(r.loop_id),
+            "recordId": str(r.result_record_id) if r.result_record_id else None,
+        }
+        for r in representatives
+    ]
+    metric_denominators: dict[str, dict] = {}
+    for field in ("score", *KPI_FIELDS):
+        valid_rows = [r for r in representatives if getattr(r, field, None) is not None]
+        metric_denominators[field] = {
+            "validCount": len(valid_rows),
+            "validWeight": float(sum(Decimal(str(r.weight or 0)) for r in valid_rows)),
+            "totalWeight": float(weight_total),
+        }
 
     def avg_value(field: str) -> Decimal | None:
         # 与原 SQL 一致：SUM(field*weight) / SUM(weight)，NULL 字段跳过（不参与分子）
@@ -410,6 +432,9 @@ async def _fetch_and_aggregate_loops(
         "loop_count": loop_count,
         "auto_loop_count": auto_loop_count_val,
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
+        # P1-05 结果账本：节点 record 输入可追溯（loop recordIds + 各指标分母）
+        "loop_record_ids": loop_record_ids,
+        "metric_denominators": metric_denominators,
     }
 
 
@@ -539,6 +564,9 @@ async def aggregate_node_snapshot(
         "excluded_loops": excluded_loops_count,
         # unit_status: 聚合状态（SUCCESS/PARTIAL/EMPTY），不是性能定级
         "unit_status": "PARTIAL" if inconclusive_loops_count > 0 else "SUCCESS",
+        # P1-05 结果账本：节点 record 输入可追溯
+        "loop_record_ids": agg.get("loop_record_ids", []),
+        "metric_denominators": agg.get("metric_denominators", {}),
     }
 
 
@@ -547,6 +575,12 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
 
     v5.3：并行写入 KpiNodeSnapshotHourly + UnitKpiSummary（装置级汇总）。
     UnitKpiSummary 仅写入装置类型节点（type=UNIT），其他类型节点跳过。
+
+    P1-05 结果账本：先追加不可变 NODE record（logicalRunId 按聚合输入与
+    输出内容寻址——同输入重跑/重试幂等复用，输入变化即新版本，DEC-10a
+    唯一约束下同窗多版本 record 共存、投影指向最新写入），同事务把快照行
+    的 ``result_record_id`` 指向该 record。record payload 含实际参与的
+    loop recordIds 与各指标有效分母（节点输入版本可追）。
 
     Args:
         db: 异步数据库会话
@@ -557,6 +591,7 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """
     plant_node_id = snap_data["plant_node_id"]
     ts_start = snap_data["ts_start"]
+    ts_end = snap_data["ts_end"]
 
     # v5.3 字段分离：UnitKpiSummary 专用字段不写入 KpiNodeSnapshotHourly
     _UNIT_FIELDS = {
@@ -566,7 +601,41 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         "inconclusive_loops",
         "unit_status",
     }
-    node_snap_data = {k: v for k, v in snap_data.items() if k not in _UNIT_FIELDS}
+    # P1-05：账本专用字段不写入 KpiNodeSnapshotHourly（进 record payload）
+    _RECORD_FIELDS = {"loop_record_ids", "metric_denominators"}
+    node_snap_data = {
+        k: v for k, v in snap_data.items() if k not in _UNIT_FIELDS and k not in _RECORD_FIELDS
+    }
+
+    # --- P1-05：先追加 NODE record（内容寻址幂等），再写投影 ---
+    record_payload = {
+        **node_snap_data,
+        "loopRecordIds": snap_data.get("loop_record_ids", []),
+        "metricDenominators": snap_data.get("metric_denominators", {}),
+    }
+    try:
+        record = await result_ledger.append_result_record(
+            db,
+            logical_run_id=result_ledger.derive_node_logical_run_id(
+                plant_node_id, ts_start, record_payload
+            ),
+            object_kind=result_ledger.OBJECT_KIND_NODE,
+            object_id=plant_node_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            algorithm_version=snap_data.get("algorithm_version") or ALGORITHM_VERSION,
+            config_revision=result_ledger.CONFIG_REVISION_UNVERSIONED,
+            payload=record_payload,
+        )
+    except Exception:  # noqa: BLE001
+        record = None
+        logger.warning(
+            "节点结果账本 record 追加失败（节点 %s 窗口 %s），投影照常写入",
+            plant_node_id,
+            ts_start,
+            exc_info=True,
+        )
+    node_snap_data["result_record_id"] = str(record.id) if record is not None else None
 
     # 查询是否已存在（幂等）
     existing_result = await db.execute(
@@ -1417,6 +1486,9 @@ async def aggregate_node_snapshot_with_presets(
         "inconclusive_loops": inconclusive_loops_count,
         "excluded_loops": excluded_loops_count,
         "unit_status": "PARTIAL" if inconclusive_loops_count > 0 else "SUCCESS",
+        # P1-05 结果账本：节点 record 输入可追溯
+        "loop_record_ids": agg.get("loop_record_ids", []),
+        "metric_denominators": agg.get("metric_denominators", {}),
     }
 
 
