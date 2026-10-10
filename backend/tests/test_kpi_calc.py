@@ -47,6 +47,7 @@ from app.tasks.kpi_calc import (
     _compute_kpis_three_layer,
     _compute_loop_valid_rate_from_bundles,
     _do_calculate,
+    _do_calculate_node_kpi,
     _do_calculate_single_loop,
     _extract_kpi_values,
     _extract_lineage_info,
@@ -999,6 +1000,121 @@ class TestDoCalculate:
         # failed 仍被正确计数（熔断消息携带 summary，保留原断言的意图）
         assert "'failed': 1" in str(exc_info.value)
         assert "'success': 0" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_historical_window_cascades_original_window(self) -> None:
+        """CAL-05（2026-10-10）：历史窗口计算完成后级联节点聚合**传原窗**。
+
+        C06 反例：原实现 calculate_node_kpi_hourly.delay() 无参级联，节点聚合
+        固定落在"当前系统时间上一小时"——回算历史窗 W 后刷新的是无关当前窗。
+        """
+        loop = _make_loop()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询
+            ]
+        )
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.tasks.kpi_calc._calculate_loop_kpi",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch("app.tasks.kpi_calc.calculate_node_kpi_hourly") as mock_node_task,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
+
+            result = await _do_calculate(ts_start="2026-06-24T05:00:00")
+
+        assert result["ts_start"] == "2026-06-24T05:00:00"
+        assert result["ts_end"] == "2026-06-24T06:00:00"
+        # 级联节点聚合显式携带原窗（历史窗，而非当前系统时间上一小时）
+        mock_node_task.delay.assert_called_once_with(
+            ts_start="2026-06-24T05:00:00", ts_end="2026-06-24T06:00:00"
+        )
+
+
+# ===========================================================================
+# 5b. _do_calculate_node_kpi 窗口参数化测试（CAL-05）
+# ===========================================================================
+
+
+class TestDoCalculateNodeKpiWindow:
+    """CAL-05：节点级聚合任务窗口参数化（级联传原窗的接收端）。"""
+
+    @pytest.mark.asyncio
+    async def test_explicit_window_passed_to_batch(self) -> None:
+        """显式窗口透传给批量聚合（naive UTC 解析，含 Z 后缀形式）。"""
+        node = MagicMock()
+        node.id = "node-001"
+        mock_session = AsyncMock()
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+        mock_session.execute = AsyncMock(return_value=node_result)
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.services.node_performance.batch_calculate_and_save_node_snapshots",
+                new_callable=AsyncMock,
+                return_value={"total": 1, "success": 1, "skipped": 0, "failed": 0},
+            ) as mock_batch,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _do_calculate_node_kpi("2026-06-24T05:00:00Z", "2026-06-24T06:00:00Z")
+
+        assert result["success"] == 1
+        kwargs = mock_batch.call_args.kwargs
+        assert kwargs["ts_start"] == datetime(2026, 6, 24, 5, 0, 0)
+        assert kwargs["ts_end"] == datetime(2026, 6, 24, 6, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_default_window_is_last_complete_hour(self) -> None:
+        """缺省窗口保持既有口径：上一个完整小时（naive UTC）。"""
+        node = MagicMock()
+        node.id = "node-001"
+        mock_session = AsyncMock()
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+        mock_session.execute = AsyncMock(return_value=node_result)
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.services.node_performance.batch_calculate_and_save_node_snapshots",
+                new_callable=AsyncMock,
+                return_value={"total": 1, "success": 1, "skipped": 0, "failed": 0},
+            ) as mock_batch,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            before = datetime.now(UTC).replace(tzinfo=None)
+            await _do_calculate_node_kpi()
+            after = datetime.now(UTC).replace(tzinfo=None)
+
+        kwargs = mock_batch.call_args.kwargs
+        ts_start, ts_end = kwargs["ts_start"], kwargs["ts_end"]
+        assert ts_end - ts_start == timedelta(hours=1)
+        assert ts_end.minute == 0 and ts_end.second == 0
+        # 落在调用时刻的"上一个完整小时"（允许调用瞬间跨整点边界的竞态窗口）
+        assert before.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1) <= ts_start
+        assert ts_end <= after.replace(minute=0, second=0, microsecond=0)
 
 
 # ===========================================================================

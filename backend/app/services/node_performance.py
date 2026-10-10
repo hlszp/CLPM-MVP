@@ -301,6 +301,13 @@ async def _fetch_and_aggregate_loops(
     Returns:
         聚合结果 dict（含各 KPI 字段加权均值 / loop_count / auto_loop_count /
         auto_loop_ratio），无 SUCCESS 快照或权重为 0 返回 None。
+
+    口径（2026-10-10 CAL-04/CAL-05，01§3.1）：
+    - 聚合窗为半开区间 [ts_start, ts_end)：恰好窗口结束（ts_start == ts_end）
+      的快照仅归下一窗，不在本窗重复计数；
+    - 每指标独立有效分母 sum(w_i·v_i)/sum(w_i for valid_i)：NULL 行不留分母
+      （等权 100+NULL → 100 而非 50），全 NULL 指标返回 None，零权重行对
+      分子分母均无贡献。
     """
     # 子查询：每个回路在时间窗内最新一条 SUCCESS 快照（DISTINCT ON loop_id）
     subq = (
@@ -308,7 +315,7 @@ async def _fetch_and_aggregate_loops(
         .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "SUCCESS",
         )
         .distinct(KpiSnapshotHourly.loop_id)
@@ -373,18 +380,23 @@ async def _fetch_and_aggregate_loops(
         }
 
     def avg_value(field: str) -> Decimal | None:
-        # 与原 SQL 一致：SUM(field*weight) / SUM(weight)，NULL 字段跳过（不参与分子）
-        # 全 NULL 时返回 None（与 performance.py weighted_avg 语义一致，避免 0.00 误导）
+        # CAL-04（2026-10-10）：每指标独立有效分母 sum(w·v)/sum(w for valid)。
+        # 原实现分子跳过 NULL 但除以全量 weight_total（含 NULL 行权重），
+        # 等权 100+NULL → 50 伪降。现 NULL 行不再留在该指标分母；全 NULL →
+        # None（"无有效分母返回 null"，与 performance.py weighted_avg 一致）；
+        # 零权重行 w=0 对分子分母均无贡献，不影响结果；真实 0 分是有效值
+        # 正常进分母（等权 100+0 → 50）。
         numerator = Decimal("0")
-        has_value = False
+        denominator = Decimal("0")
         for r in representatives:
             val = getattr(r, field)
             if val is not None:
-                numerator += Decimal(str(val)) * Decimal(str(r.weight or 0))
-                has_value = True
-        if not has_value:
+                w = Decimal(str(r.weight or 0))
+                numerator += Decimal(str(val)) * w
+                denominator += w
+        if denominator == 0:
             return None
-        return (numerator / weight_total).quantize(Decimal("0.01"))
+        return (numerator / denominator).quantize(Decimal("0.01"))
 
     auto_loop_count_val = sum(
         1
@@ -497,6 +509,7 @@ async def aggregate_node_snapshot(
     excluded_loops_count = int(ex_result.scalar() or 0)
 
     # inconclusive_loops: 只有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路数
+    # CAL-05（2026-10-10）：窗口边界与主聚合一致改半开 [ts_start, ts_end)
     ic_result = await db.execute(
         select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
         .select_from(KpiSnapshotHourly)
@@ -504,14 +517,14 @@ async def aggregate_node_snapshot(
         .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "INCONCLUSIVE",
             LoopLedger.include_in_evaluation.is_(True),
             ~KpiSnapshotHourly.loop_id.in_(
                 select(KpiSnapshotHourly.loop_id).where(
                     KpiSnapshotHourly.loop_id.in_(loop_ids),
                     KpiSnapshotHourly.ts_start >= ts_start,
-                    KpiSnapshotHourly.ts_start <= ts_end,
+                    KpiSnapshotHourly.ts_start < ts_end,
                     KpiSnapshotHourly.status == "SUCCESS",
                 )
             ),
@@ -1346,12 +1359,13 @@ async def batch_query_loop_counts(
     # 2. 批量查询 inconclusive loops
     # 有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路
     # 使用两个子查询：先找有 SUCCESS 的 loop_ids，再找有 INCONCLUSIVE 但不在 SUCCESS 列表中的
+    # CAL-05（2026-10-10）：窗口边界与单节点路径一致改半开 [ts_start, ts_end)
     success_loops_result = await db.execute(
         select(KpiSnapshotHourly.loop_id)
         .where(
             KpiSnapshotHourly.loop_id.in_(all_loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "SUCCESS",
         )
         .distinct()
@@ -1363,7 +1377,7 @@ async def batch_query_loop_counts(
         .where(
             KpiSnapshotHourly.loop_id.in_(all_loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "INCONCLUSIVE",
         )
         .distinct()

@@ -1134,9 +1134,18 @@ async def _do_calculate(
     _assert_batch_health(summary, len(results))
 
     # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
+    # CAL-05（2026-10-10）：级联显式传原窗——历史回算/迟到窗口的节点聚合
+    # 不再落到"当前系统时间上一小时"（原无参 delay() 固定当前窗，
+    # 与回路级窗口不一致）。
     try:
-        calculate_node_kpi_hourly.delay()
-        logger.info("已触发节点级 KPI 聚合任务（回路级计算完成后级联）")
+        calculate_node_kpi_hourly.delay(
+            ts_start=ts_start_dt.isoformat(), ts_end=ts_end_dt.isoformat()
+        )
+        logger.info(
+            "已触发节点级 KPI 聚合任务（回路级计算完成后级联，窗口 %s~%s）",
+            ts_start_dt,
+            ts_end_dt,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("触发节点级 KPI 聚合任务失败: %s", exc)
 
@@ -3378,16 +3387,28 @@ __all__ = [
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_node_kpi_hourly(self: AsyncTask) -> dict:
+def calculate_node_kpi_hourly(
+    self: AsyncTask, ts_start: str | None = None, ts_end: str | None = None
+) -> dict:
     """每小时节点级聚合任务（在回路级 KPI 计算完成后级联触发）。
 
     遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
     递归收集下属回路，按 score_weight 加权聚合回路级快照，
     写入 kpi_node_snapshot_hourly。
+
+    CAL-05（2026-10-10）：支持显式时间窗参数化（复用 calculate_node_kpi
+    的窗口参数模式）。回路级 ``_do_calculate`` 级联时传原窗——历史回算/
+    迟到窗口的节点聚合落在原窗，不刷新无关当前窗；不传时保持既有口径
+    （上一个完整小时，独立手动触发场景）。
     """
-    logger.info("节点级 KPI 聚合任务开始, task_id=%s", self.request.id)
+    logger.info(
+        "节点级 KPI 聚合任务开始, task_id=%s, ts_start=%s, ts_end=%s",
+        self.request.id,
+        ts_start,
+        ts_end,
+    )
     try:
-        result = self.run_async(_do_calculate_node_kpi())
+        result = self.run_async(_do_calculate_node_kpi(ts_start, ts_end))
         logger.info("节点级 KPI 聚合任务完成: %s", result)
         return result
     except Exception:
@@ -3420,8 +3441,12 @@ def calculate_node_kpi(
     return AsyncTask().run_async(_do_calculate_single_node(plant_node_id, ts_start, ts_end))
 
 
-async def _do_calculate_node_kpi() -> dict:
+async def _do_calculate_node_kpi(ts_start: str | None = None, ts_end: str | None = None) -> dict:
     """执行节点级 KPI 聚合的实际 async 逻辑。
+
+    CAL-05（2026-10-10）：ts_start/ts_end 显式窗口参数化（ISO 8601），
+    缺省时保持既有口径（上一个完整小时）。窗口解析复用
+    ``_do_calculate_single_node`` 的参数化模式（naive UTC 对齐 DB）。
 
     Phase 4 优化：使用 batch_calculate_and_save_node_snapshots 替代逐节点串行处理。
     批量预加载树遍历/实时自控率/回路计数 + 并发聚合，将 ~9N 次 DB 查询降至
@@ -3431,10 +3456,25 @@ async def _do_calculate_node_kpi() -> dict:
     from app.models.plant_node import PlantNode
     from app.services.node_performance import batch_calculate_and_save_node_snapshots
 
-    # 时间窗：上一个完整小时（与回路级一致）— naive UTC
     now = datetime.now(UTC).replace(tzinfo=None)
-    ts_end = now.replace(minute=0, second=0, microsecond=0)
-    ts_start = ts_end - timedelta(hours=1)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+    else:
+        # 时间窗：上一个完整小时（与回路级一致）— naive UTC
+        ts_start_dt = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+
+    if ts_end:
+        try:
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            ts_end_dt = datetime.fromisoformat(ts_end).replace(tzinfo=None)
+    else:
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
 
     async with AsyncSessionLocal() as db:
         # 查询所有启用 KPI 评估的节点
@@ -3450,8 +3490,8 @@ async def _do_calculate_node_kpi() -> dict:
     # 批量预加载 + 并发聚合 + 保存
     result = await batch_calculate_and_save_node_snapshots(
         nodes=nodes,
-        ts_start=ts_start,
-        ts_end=ts_end,
+        ts_start=ts_start_dt,
+        ts_end=ts_end_dt,
         concurrency=10,
     )
 

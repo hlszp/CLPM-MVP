@@ -153,7 +153,8 @@ def aggregate_rows(rows: Sequence[_RowLike]) -> dict[str, Any]:
     """窗口内 UnitKpiSummary 行 → 加权聚合（每指标独立非 NULL 分母）。
 
     返回 {score, loop_count, rates: {rate_field: 0-1|None}}；
-    无有效行时 score/loop_count 为 0 且 rates 全 None（status 判 INCONCLUSIVE）。
+    无有效行时 score=None 且 rates 全 None（status 判 INCONCLUSIVE；
+    CAL-07：score 为 None 而非 0，读方显式区分"未计算"与"真实 0 分"）。
     """
     score_vals = [
         (_to_f(r.avg_score), int(r.evaluated_loops or 0))
@@ -314,8 +315,13 @@ async def _upsert_row(
     trend: list[dict[str, Any]],
     distribution: dict[str, Any],
 ) -> bool:
-    """单行 upsert（ON CONFLICT (scope,window,window_end) DO UPDATE）。"""
-    score = agg["score"] if agg["score"] is not None else 0.0
+    """单行 upsert（ON CONFLICT (scope,window,window_end) DO UPDATE）。
+
+    CAL-07（2026-10-10）：无评分聚合 score 落 None（不再 0.0 伪 0 绩效）；
+    列已随迁移 p102wsnull01 改可空，status=score_to_status(None)=INCONCLUSIVE
+    供读方显式区分"未计算"。
+    """
+    score = agg["score"]
     stmt = (
         pg_insert(WorkbenchWindowSummary)
         .values(

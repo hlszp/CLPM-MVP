@@ -1964,7 +1964,9 @@ CREATE TABLE IF NOT EXISTS workbench_window_summary (
     "window"              VARCHAR(8)   NOT NULL,
     window_start          TIMESTAMPTZ  NOT NULL,
     window_end            TIMESTAMPTZ  NOT NULL,
-    score                 NUMERIC(6,3) NOT NULL,
+    -- CAL-07（迁移 p102wsnull01）：score 可空——无有效评分窗口落 NULL（status=INCONCLUSIVE），
+    -- 不再以 0.0 伪 0 绩效；ck_ws_score_range 对 NULL 恒通过（PG CHECK 语义）。
+    score                 NUMERIC(6,3),
     status                VARCHAR(16)  NOT NULL,
     loop_count            INTEGER      NOT NULL DEFAULT 0,
     good_value_rate       NUMERIC(6,3),
