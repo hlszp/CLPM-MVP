@@ -379,7 +379,8 @@ class TestGateConclusionPropagatesToSnapshot:
         assert result["score"] is None
 
         # UPSERT 写入值：可信度降为 E，fitness_detail 携带 gate 失败原因
-        stmt = db.execute.call_args_list[-2].args[0]  # 倒数第 2 次 = 主快照 UPSERT
+        # P1-05 结果账本后序列尾部：…主快照 UPSERT、latest 迟到守卫 SELECT、latest UPSERT
+        stmt = db.execute.call_args_list[-3].args[0]  # 倒数第 3 次 = 主快照 UPSERT
         set_values = _extract_upsert_set_values(stmt)
         assert set_values.get("confidence_level") == "E"
         fitness_detail = set_values.get("fitness_detail") or {}

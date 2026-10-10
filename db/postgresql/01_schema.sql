@@ -322,6 +322,61 @@ COMMENT ON COLUMN engine_rule.updated_by IS '最后更新人';
 COMMENT ON COLUMN engine_rule.updated_at IS '最后更新时间';
 
 -- =============================================================================
+-- 8.9 calculation_result_record（追加式结果账本，P1-05，迁移 p105resledger01）
+--   不可变 record：唯一键 (logical_run_id, object_kind, object_id, ts_start, ts_end)；
+--   同 logicalRunId 重试幂等复用，显式重评换新 logicalRunId 追加；
+--   四投影表（hourly/latest/custom/node_hourly）以可空 result_record_id 指向本表。
+--   calculation_result_legacy_map：旧投影行 ID → recordId 映射（迁移归档，兼容读）。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS calculation_result_record (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    logical_run_id      UUID            NOT NULL,
+    object_kind         VARCHAR(8)      NOT NULL,
+    object_id           UUID            NOT NULL,
+    ts_start            TIMESTAMP       NOT NULL,
+    ts_end              TIMESTAMP       NOT NULL,
+    source_record_id    UUID,
+    algorithm_version   VARCHAR(50)     NOT NULL,
+    config_revision     VARCHAR(64)     NOT NULL,
+    dataset_snapshot_id UUID,
+    status              VARCHAR(16)     NOT NULL,
+    payload             JSONB           NOT NULL,
+    created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT fk_calc_result_record_source FOREIGN KEY (source_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
+    CONSTRAINT ck_calc_result_record_object_kind CHECK (object_kind IN ('LOOP', 'NODE')),
+    CONSTRAINT ck_calc_result_record_status CHECK (status IN ('COMPLETED', 'FAILED')),
+    CONSTRAINT ck_calc_result_record_window CHECK (ts_end > ts_start),
+    CONSTRAINT uq_calc_result_record_run_object_window UNIQUE (logical_run_id, object_kind, object_id, ts_start, ts_end)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_result_record_object_window
+    ON calculation_result_record (object_kind, object_id, ts_start);
+
+CREATE TABLE IF NOT EXISTS calculation_result_legacy_map (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    legacy_table        VARCHAR(40)     NOT NULL,
+    legacy_id           VARCHAR(64)     NOT NULL,
+    record_id           UUID            NOT NULL,
+    created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT fk_calc_legacy_map_record FOREIGN KEY (record_id) REFERENCES calculation_result_record(id) ON DELETE CASCADE,
+    CONSTRAINT uq_calc_legacy_map_table_id UNIQUE (legacy_table, legacy_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_legacy_map_record_id
+    ON calculation_result_legacy_map (record_id);
+
+COMMENT ON TABLE  calculation_result_record IS '追加式计算结果账本（不可变 record，P1-05）';
+COMMENT ON COLUMN calculation_result_record.logical_run_id IS '逻辑运行身份（同任务重试复用；显式重评新值）';
+COMMENT ON COLUMN calculation_result_record.object_kind IS '对象类别：LOOP/NODE';
+COMMENT ON COLUMN calculation_result_record.source_record_id IS '显式重评来源记录（不覆盖失败证据）';
+COMMENT ON COLUMN calculation_result_record.algorithm_version IS '算法版本（未知旧算法=LEGACY_UNVERIFIABLE）';
+COMMENT ON COLUMN calculation_result_record.config_revision IS '配置版本（未知=LEGACY_UNVERIFIABLE；P1=实际消费配置摘要）';
+COMMENT ON COLUMN calculation_result_record.dataset_snapshot_id IS '输入包引用（P2-03 落地；可空=不可完整复现）';
+COMMENT ON COLUMN calculation_result_record.status IS '终态：COMPLETED/FAILED（FAILED 不可变）';
+COMMENT ON COLUMN calculation_result_record.payload IS '完整结果；NODE 记录含 loopRecordIds 与各指标分母';
+COMMENT ON TABLE  calculation_result_legacy_map IS '旧投影表 ID→结果账本 recordId 映射（P1-05 迁移归档）';
+
+-- =============================================================================
 -- 9. kpi_snapshot_hourly (每小时性能评估快照)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
@@ -375,7 +430,10 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     tune_level          VARCHAR(2),
     source              VARCHAR(16),
     source_task_id      VARCHAR(36),
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id    UUID,
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_kpi_snapshot_hourly_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start),
     CONSTRAINT ck_kpi_snapshot_confidence CHECK (
@@ -436,9 +494,14 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_hourly (
     status              VARCHAR(20)     NOT NULL,
     algorithm_version   VARCHAR(30),
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id    UUID,
     CONSTRAINT fk_kpi_node_snapshot_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
+    CONSTRAINT fk_kpi_node_snapshot_hourly_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_node_snapshot_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
-    CONSTRAINT ck_kpi_node_snapshot_window CHECK (ts_end > ts_start)
+    CONSTRAINT ck_kpi_node_snapshot_window CHECK (ts_end > ts_start),
+    -- DEC-10a（P1-05）：同 (plant_node_id, ts_start) 唯一
+    CONSTRAINT uq_kpi_node_snapshot_hourly_node_ts UNIQUE (plant_node_id, ts_start)
 );
 
 COMMENT ON TABLE  kpi_node_snapshot_hourly IS '节点级每小时性能评估快照（按 plant_node 递归聚合，对齐 GB/T 44693.2-2024 §6.4）';
@@ -1015,8 +1078,11 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_custom (
     tune_level              VARCHAR(2),
     source                  VARCHAR(16),
     source_task_id          VARCHAR(36),
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id        UUID,
     CONSTRAINT uq_kpi_custom_task_loop UNIQUE (task_id, loop_id),
     CONSTRAINT fk_kpi_custom_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_kpi_snapshot_custom_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_custom_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_kpi_custom_window CHECK (ts_end > ts_start),
     CONSTRAINT ck_kpi_custom_fitness_level CHECK (
@@ -1338,7 +1404,10 @@ CREATE TABLE IF NOT EXISTS loop_confidence_latest (
     metrics             JSONB,
     algorithm_version   VARCHAR(50),
     updated_at          TIMESTAMP,
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id    UUID,
     CONSTRAINT fk_loop_confidence_latest_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_loop_confidence_latest_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_loop_confidence_latest_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_loop_confidence_latest_confidence CHECK (confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E'))
 );

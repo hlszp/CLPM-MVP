@@ -10,6 +10,8 @@
 - GET    /api/v1/performance/analytics          — 统计报表数据
 - POST   /api/v1/performance/analytics/export   — 导出报表（CSV）
 - GET    /api/v1/performance/loops/snapshots    — 回路小时指标快照列表
+- GET    /api/v1/performance/loops/result-records/{recordId} — 结果账本记录详情
+    （P1-05：按不可变 recordId 读取；旧快照 ID 经迁移映射兼容）
 - GET    /api/v1/performance/grade-distribution — 各性能等级回路数分布（SQL 聚合）
 """
 
@@ -42,6 +44,7 @@ from app.schemas.performance import (
     RankingItem,
     SnapshotBatchDeleteRequest,
 )
+from app.services import result_ledger
 from app.services.gate_overview import get_gate_overview
 from app.services.performance import (
     SNAPSHOT_SORT_COLUMNS,
@@ -783,6 +786,35 @@ async def batch_delete_snapshots_endpoint(
             + ("（预览，未删除）" if data["dryRun"] else f"，已删除 {data['deleted']} 条")
         ),
     )
+
+
+@router.get(
+    "/loops/result-records/{record_id}",
+    response_model=ApiResponse[dict],
+)
+async def get_result_record_endpoint(
+    record_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """结果账本记录详情（P1-05，所有角色可查看）.
+
+    历史详情按不可变 recordId 读取；传入旧投影行 ID（kpi_snapshot_hourly /
+    loop_confidence_latest / kpi_node_snapshot_hourly 的 id）时经迁移归档
+    映射兼容解析。payload 含完整结果（节点记录另含 loopRecordIds 与
+    各指标分母）；datasetSnapshotId 为空即"该结果不可完整复现"（P2-03 前
+    的 P1 记录均如此，属显式事实而非缺数）。
+    """
+    record, matched_via = await result_ledger.find_record_any_id(db, record_id)
+    if record is None:
+        raise BizError(
+            code="ERR_RESULT_RECORD_NOT_FOUND",
+            message=f"结果记录 {record_id} 不存在（既非 recordId 也无法按旧 ID 映射）",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    data = result_ledger.record_to_dict(record)
+    data["matchedVia"] = matched_via
+    return success(data=data)
 
 
 @router.delete(

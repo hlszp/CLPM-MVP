@@ -10,6 +10,7 @@
     "GET /health",
     "GET /health/db-connections",
     "GET /health/ready",
+    "GET /performance/loops/result-records/*",
     "GET /realtime",
     "GET /reports/export-download/*",
     "GET /reports/overview",
@@ -50,7 +51,8 @@
     "POST /timeseries/batch/waveform": "波形查询：前端统一走 /loop-data 链路，本组端点无消费方（待清理评估）",
     "POST /tuning/identify/segments": "整定专属能力（设计保留，待 M2 评估）",
     "POST /tuning/simulate": "整定专属能力（设计保留，待 M2 评估）",
-    "GET /reports/overview": "0929 总览收敛：管理总览前端页下线，后端端点保留（P3 报表做实后随新载体恢复）"
+    "GET /reports/overview": "0929 总览收敛：管理总览前端页下线，后端端点保留（P3 报表做实后随新载体恢复）",
+    "GET /performance/loops/result-records/*": "P1-05 结果账本历史详情读取（recordId 直读 + 旧 ID 映射兼容）；前端消费在 P1-03 只读入口接线（03-阶段任务计划 P1-03/P6-02），接线后移除本条"
   },
   "frontendCallsWithoutBackend": [
     "/menu/all"
