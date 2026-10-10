@@ -16,6 +16,10 @@ from app.models.alert import (
 from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
+from app.models.calculation_result import (
+    CalculationResultLegacyMap,
+    CalculationResultRecord,
+)
 from app.models.dcs_mode_mapping import DcsModeMapping
 from app.models.dcs_model import DcsModel
 from app.models.dcs_pid_structure import DcsPidStructure
@@ -96,6 +100,8 @@ __all__ = [
     "LoopLevelWeight",
     "TagRegistry",
     "MetricConfig",
+    "CalculationResultRecord",  # P1-05 结果账本
+    "CalculationResultLegacyMap",  # P1-05 旧 ID 映射
     "DiagnosisConfig",
     "EngineRule",
     "KpiSnapshotHourly",
