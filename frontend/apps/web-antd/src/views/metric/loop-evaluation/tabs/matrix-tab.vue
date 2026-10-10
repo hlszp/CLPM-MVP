@@ -618,10 +618,11 @@ async function loadList() {
         items = items.toSorted((a: any, b: any) => {
           const av = a[key];
           const bv = b[key];
-          let cmp = 0;
-          if (av == null && bv != null) cmp = 1;
-          else if (av != null && bv == null) cmp = -1;
-          else if (av != null && bv != null) cmp = Number(av) - Number(bv);
+          // null 恒排末位（对齐 antd 语义），降序时空值行不占第一页
+          if (av == null && bv == null) return 0;
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          const cmp = Number(av) - Number(bv);
           return sortOrder.value === 'asc' ? cmp : -cmp;
         });
       }
