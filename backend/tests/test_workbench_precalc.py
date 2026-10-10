@@ -2,7 +2,8 @@
 
 覆盖：floor_grid 网格对齐、score_to_status 分档、aggregate_rows 加权聚合
 （含 NULL 指标独立分母）、build_trend_points 桶聚合、build_metric_slopes
-方向判定、shape_level_dist 分桶映射。
+方向判定、shape_level_dist 分桶映射；2026-10-10 P1-02 CAL-07：_upsert_row
+无评分聚合落 NULL。
 """
 
 from __future__ import annotations
@@ -10,6 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import AsyncMock
+
+import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.services.workbench_precalc import (
     aggregate_rows,
@@ -179,3 +184,30 @@ class TestShapeLevelDist:
         out = shape_level_dist(None)
         assert all(d["count"] == 0 for d in out)
         assert len(out) == 5
+
+
+class TestUpsertRowScoreNull:
+    """CAL-07（2026-10-10）：无评分聚合落 NULL 而非 0.0 伪 0。"""
+
+    @pytest.mark.asyncio
+    async def test_无评分聚合写null不写零(self) -> None:
+        from app.services.workbench_precalc import _upsert_row
+
+        db = AsyncMock()
+        await _upsert_row(
+            db,
+            scope_type="GLOBAL",
+            scope_id=0,
+            window="24h",
+            window_start=datetime(2026, 9, 4, 0, 0, tzinfo=UTC),
+            window_end=datetime(2026, 9, 5, 0, 0, tzinfo=UTC),
+            agg={"score": None, "loop_count": 0, "rates": {}},
+            trend=[],
+            distribution={},
+        )
+        db.execute.assert_awaited_once()
+        stmt = db.execute.call_args[0][0]
+        compiled = stmt.compile(dialect=postgresql.dialect())
+        # score 原样透传 None（原实现兜底 0.0）；status 判 INCONCLUSIVE
+        assert compiled.params["score"] is None
+        assert compiled.params["status"] == "INCONCLUSIVE"

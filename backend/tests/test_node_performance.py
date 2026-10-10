@@ -465,6 +465,188 @@ class TestAggregateNodeSnapshot:
 
 
 # ---------------------------------------------------------------------------
+# C05 反例（2026-10-10 P1-02 CAL-04/CAL-05）：每指标独立有效分母 + 半开窗
+# ---------------------------------------------------------------------------
+
+
+async def _aggregate_with_rows(rows):
+    """共用聚合测试脚手架：mock 主聚合返回 rows，excluded/inconclusive 计 0。"""
+    db = AsyncMock()
+    main_result = MagicMock()
+    main_result.all.return_value = rows
+    scalar_result = MagicMock()
+    scalar_result.scalar.return_value = 0
+
+    async def _execute(stmt, *a, **kw):
+        return main_result if stmt.is_select else scalar_result
+
+    db.execute = AsyncMock(side_effect=_execute)
+
+    with (
+        patch(
+            "app.services.node_performance.collect_descendant_loop_ids",
+            return_value=[str(r.loop_id) for r in rows],
+        ),
+        patch(
+            "app.services.node_performance.query_realtime_auto_rate",
+            return_value=None,
+        ),
+    ):
+        return await aggregate_node_snapshot(
+            db,
+            "node-001",
+            datetime.now(UTC).replace(tzinfo=None),
+            datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+        )
+
+
+class TestCal04ValidDenominator:
+    """C05：每指标独立有效分母 sum(w·v)/sum(w for valid)。"""
+
+    @pytest.mark.asyncio
+    async def test_等权100与NULL结果100且覆盖率1对2(self):
+        """CAL-04 反例：等权 100 + NULL → 100（原实现除以全量分母得 50 伪降）。
+
+        覆盖率 1/2 由 metric_denominators 显式报告（validCount=1/totalWeight=2）。
+        """
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=Decimal("100")),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=None),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] == Decimal("100.00")
+        score_den = result["metric_denominators"]["score"]
+        assert score_den["validCount"] == 1
+        assert score_den["validWeight"] == 1.0
+        assert score_den["totalWeight"] == 2.0  # 覆盖率 1/2
+
+    @pytest.mark.asyncio
+    async def test_真实0分是有效值进分母(self):
+        """CAL-04 反例：等权 100 + 0 → 50（0 是真实 0 分，非缺值，正常进分母）。"""
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=Decimal("100")),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=Decimal("0")),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] == Decimal("50.00")
+        score_den = result["metric_denominators"]["score"]
+        assert score_den["validCount"] == 2
+        assert score_den["totalWeight"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_全NULL返回None(self):
+        """CAL-04 反例：全部 NULL → 该指标 null（无有效分母不虚构 0）。"""
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=None),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=None),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] is None
+        # 全 NULL 定级 INCONCLUSIVE，不按 0 分定 POOR/CRITICAL
+        assert result["status"] == "INCONCLUSIVE"
+
+    @pytest.mark.asyncio
+    async def test_零权重行不影响结果(self):
+        """CAL-04 反例：零权重行（有值或缺值）对分子分母均无贡献。"""
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=Decimal("100")),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=None),
+            # 零权重 + 有值：不把 40 拉进来
+            _make_loop_row("l3", weight=Decimal("0"), score=Decimal("40")),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] == Decimal("100.00")
+
+    @pytest.mark.asyncio
+    async def test_每指标分母独立(self):
+        """CAL-04：指标间互不影响——score 全 NULL 不拖累其他指标的有效值。"""
+        r1 = _make_loop_row("l1", weight=Decimal("1.0"), score=None)
+        r2 = _make_loop_row("l2", weight=Decimal("1.0"), score=None)
+        # 两回路 accuracy 有值
+        r1.accuracy_rate = Decimal("80")
+        r2.accuracy_rate = Decimal("90")
+        result = await _aggregate_with_rows([r1, r2])
+        assert result is not None
+        assert result["score"] is None
+        assert result["accuracy_rate"] == Decimal("85.00")
+
+    @pytest.mark.asyncio
+    async def test_复杂组去重后NULL代表不影响分母(self):
+        """C05：复杂回路 MAIN 去重及 exclude 有效——SUB 的 NULL 不进任何分母。"""
+        rows = [
+            _make_loop_row(
+                "main",
+                weight=Decimal("1.0"),
+                score=Decimal("90"),
+                complex_group_id="grp-1",
+                complex_role="MAIN",
+            ),
+            _make_loop_row(
+                "sub",
+                weight=Decimal("1.0"),
+                score=None,
+                complex_group_id="grp-1",
+                complex_role="SUB",
+            ),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        # 去重后仅 MAIN 代表，SUB 被排除
+        assert result["loop_count"] == 1
+        assert result["score"] == Decimal("90.00")
+        score_den = result["metric_denominators"]["score"]
+        assert score_den["validCount"] == 1
+        assert score_den["totalWeight"] == 1.0
+
+
+class TestCal05HalfOpenWindow:
+    """C05/C06：聚合窗半开 [start, end)——恰好窗口结束的快照仅归下一窗。"""
+
+    @pytest.mark.asyncio
+    async def test_主聚合上边界为半开(self):
+        """CAL-05 反例：上边界 < ts_end（原 <= 会把下一窗起点快照计入本窗）。"""
+        db = AsyncMock()
+        captured_stmts: list = []
+        rows = [_make_loop_row("loop-001", weight=Decimal("1.0"))]
+        main_result = MagicMock()
+        main_result.all.return_value = rows
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            return main_result if len(captured_stmts) == 1 else scalar_result
+
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001"],
+            ),
+            patch(
+                "app.services.node_performance.query_realtime_auto_rate",
+                return_value=None,
+            ),
+        ):
+            await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime(2026, 6, 24, 8, 0, 0),
+                datetime(2026, 6, 24, 9, 0, 0),
+            )
+
+        main_sql = str(captured_stmts[0].compile(compile_kwargs={"literal_binds": True}))
+        # 主聚合 SQL（第一次 db.execute）上边界为严格小于
+        assert "ts_start <" in main_sql
+        assert "ts_start <=" not in main_sql
+
+
+# ---------------------------------------------------------------------------
 # save_node_snapshot 测试
 # ---------------------------------------------------------------------------
 

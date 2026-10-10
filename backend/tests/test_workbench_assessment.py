@@ -1,23 +1,29 @@
 """A-02 工作台评估聚合 service 单测（M2 批次 G-评估）.
 
 覆盖：
-- 纯 shaper：_sparkline_delta / shape_summary / shape_ranking_plant /
+- 纯 shaper：_window_delta / _row_score / shape_summary / shape_ranking_plant /
   shape_ranking_unit / shape_heatmap / shape_trend（全字段塑造 + 边界）
 - build_assessment 编排：patch 各 _query_* helper 返回种子数据，断言四块组装正确
   （对齐 test_workbench_overview 的 patch 范式，不依赖真实 PG）
+- 2026-10-10 P1-02：C06 环比=上一等长窗 / CAL-06 应评分母台账口径 /
+  CAL-07 未计算显式区分 / PERF-03 子树查询去重
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.services.workbench_assessment import (
     ASSESSMENT_TARGET_SCORE,
     EVAL_METRICS,
-    _sparkline_delta,
+    _count_evaluable_loops,
+    _query_prev_equal_row,
+    _query_scope_rows_in_ids,
+    _window_delta,
     build_assessment,
     shape_heatmap,
     shape_ranking_plant,
@@ -50,10 +56,14 @@ def _win_row(
     row.score_trend = (
         trend
         if trend is not None
-        else [
-            {"t": "2026-08-25T00:00:00Z", "v": score - 1.2},
-            {"t": "2026-08-25T12:00:00Z", "v": score},
-        ]
+        else (
+            []
+            if score is None
+            else [
+                {"t": "2026-08-25T00:00:00Z", "v": score - 1.2},
+                {"t": "2026-08-25T12:00:00Z", "v": score},
+            ]
+        )
     )
     row.flags = []
     row.distribution = distribution or {}
@@ -87,24 +97,34 @@ def _hierarchy():
 
 
 # ===========================================================================
-# _sparkline_delta
+# _window_delta（CAL-06：环比=上一等长窗口）
 # ===========================================================================
 
 
-class TestSparklineDelta:
-    def test_末减首(self):
-        spark = [{"t": "x", "v": 82.0}, {"t": "y", "v": 84.2}]
-        assert _sparkline_delta(spark) == 2.2
+class TestWindowDelta:
+    def test_当前减上一等长窗(self):
+        assert _window_delta(84.2, 82.0) == 2.2
 
-    def test_原始数值列表(self):
-        assert _sparkline_delta([82.0, 84.2]) == 2.2
+    def test_C06反例_不再本窗首末差冒充环比(self):
+        """本窗 trend 首末差 +2.2，但上一等长窗 78.0 → 环比 +6.2（而非 +2.2）。
 
-    def test_不足两点返回None(self):
-        assert _sparkline_delta([{"v": 1}]) is None
-        assert _sparkline_delta([]) is None
+        原 _sparkline_delta 取本窗 score_trend 首末差，衡量窗内走势而非
+        跨窗环比；符号都可能错（窗内上涨但低于上一窗时应为负）。
+        """
+        cur_row_trend_first_last_delta = 84.2 - 82.0  # 旧口径 +2.2
+        assert _window_delta(84.2, 78.0) == 6.2
+        assert _window_delta(84.2, 78.0) != cur_row_trend_first_last_delta
+        # 窗内上涨但低于上一窗 → 环比为负（旧口径会误报 +2.2）
+        assert _window_delta(82.0, 90.0) == -8.0
+
+    def test_任一侧未计算返回None(self):
+        assert _window_delta(None, 80.0) is None
+        assert _window_delta(84.2, None) is None
+        assert _window_delta(None, None) is None
 
     def test_异常值返回None(self):
-        assert _sparkline_delta([{"v": "bad"}, {"v": 1}]) is None
+        assert _window_delta("bad", 80.0) is None
+        assert _window_delta(84.2, "bad") is None
 
 
 # ===========================================================================
@@ -116,22 +136,26 @@ class TestShapeSummary:
     def test_空行返回兜底摘要(self):
         out = shape_summary(None, [], 34)
         assert out["score"] is None
+        assert out["score_state"] == "NOT_COMPUTED"
         assert out["participation"] == {"evaluated": 0, "total": 34}
         assert out["risks"] == []
         assert out["target"] == ASSESSMENT_TARGET_SCORE
 
     def test_完整摘要含结论与风险速览(self):
         row = _win_row(score=84.2, loop_count=32)
+        prev = _win_row(score=83.0, loop_count=30)
         plants = [
             {"name": "催化裂化", "score": 82.1, "delta": -2.6, "lose_factors": ["振荡"]},
             {"name": "乙烯", "score": 83.5, "delta": -1.2, "lose_factors": []},
         ]
-        out = shape_summary(row, plants, 34)
+        out = shape_summary(row, plants, 34, prev)
         assert out["score"] == 84.2
+        assert out["score_state"] == "COMPUTED"
         assert out["grade"] == "B 良好"
         assert out["participation"] == {"evaluated": 1, "total": 34}
         assert out["distance_to_target"] == round(84.2 - 90, 1)
-        assert out["delta"] == 1.2  # trend 末减首（score - (score-1.2))
+        # CAL-06：环比 = 84.2 − 上一等长窗 83.0（不再本窗 trend 首末差）
+        assert out["delta"] == 1.2
         assert "催化裂化" in out["conclusion"]
         # 风险速览取前 3 个装置
         assert len(out["risks"]) == 2
@@ -139,6 +163,40 @@ class TestShapeSummary:
         # 跳转链接
         actions = {link["action"] for link in out["conclusion_links"]}
         assert "tab:diag" in actions and "alerts" in actions
+
+    def test_C06反例_环比上一等长窗而非本窗首末差(self):
+        """本窗 trend 82→84.2（首末差 +2.2），上一等长窗 78.0 → delta +6.2。"""
+        row = _win_row(score=84.2, trend=[{"t": "a", "v": 82.0}, {"t": "b", "v": 84.2}])
+        prev = _win_row(score=78.0)
+        out = shape_summary(row, [], 34, prev)
+        assert out["delta"] == 6.2
+
+    def test_无上一等长窗行时delta为None(self):
+        out = shape_summary(_win_row(score=84.2), [], 34, None)
+        assert out["delta"] is None
+
+    def test_CAL07_NULL评分显式未计算(self):
+        """score=NULL（新口径）→ 未计算，score_state=NOT_COMPUTED，不渲染 0 分。"""
+        row = _win_row(score=None, loop_count=0)
+        out = shape_summary(row, [], 34, None)
+        assert out["score"] is None
+        assert out["score_state"] == "NOT_COMPUTED"
+        assert "未计算" in out["conclusion"]
+
+    def test_CAL07_旧伪0行过渡守卫(self):
+        """迁移前旧代码写入 score=0.0 + loop_count=0 → 同样按未计算处理。"""
+        row = _win_row(score=0.0, loop_count=0)
+        out = shape_summary(row, [], 34, None)
+        assert out["score"] is None
+        assert out["score_state"] == "NOT_COMPUTED"
+
+    def test_CAL07_真实0分仍是0分(self):
+        """score=0.0 且有参评产出 → COMPUTED（真实 0 分，不误报未计算）。"""
+        row = _win_row(score=0.0, loop_count=12)
+        out = shape_summary(row, [], 34, None)
+        assert out["score"] == 0.0
+        assert out["score_state"] == "COMPUTED"
+        assert out["grade"] == "D 较差"
 
 
 # ===========================================================================
@@ -167,6 +225,29 @@ class TestShapeRankingPlant:
 
     def test_空输入(self):
         assert shape_ranking_plant([], _hierarchy(), {}, {}, 0.90, 34) == []
+
+    def test_C06_行级环比取上一等长窗行(self):
+        """ranking 行 delta = 当前窗评分 − prev_rows_by_scope[scope_id] 评分。"""
+        hierarchy = _hierarchy()
+        r = _win_row(score=82.0)
+        r.scope_id = 100
+        prev = _win_row(score=85.0)
+        plants = shape_ranking_plant(
+            [r], hierarchy, {}, {}, 0.90, 34, prev_rows_by_scope={100: prev}
+        )
+        assert plants[0]["delta"] == -3.0
+
+    def test_未计算行排末尾且delta为None(self):
+        """CAL-07：score NULL / loop_count=0 的行排末尾，不参与环比。"""
+        hierarchy = _hierarchy()
+        r_ok = _win_row(score=82.0)
+        r_ok.scope_id = 100
+        r_na = _win_row(score=None, loop_count=0)
+        r_na.scope_id = 200
+        plants = shape_ranking_plant([r_ok, r_na], hierarchy, {}, {}, 0.90, 34)
+        assert plants[0]["id"] == 100
+        assert plants[1]["score"] is None
+        assert plants[1]["delta"] is None
 
 
 # ===========================================================================
@@ -302,6 +383,18 @@ class TestBuildAssessment:
                 AsyncMock(side_effect=[win_row, win_row, None]),  # win/global/prev
             ),
             patch(
+                "app.services.workbench_assessment._query_prev_equal_row",
+                AsyncMock(return_value=None),  # CAL-06：上一等长窗行缺行 → delta None
+            ),
+            patch(
+                "app.services.workbench_assessment._count_evaluable_loops",
+                AsyncMock(return_value=34),  # CAL-06：台账参评分母
+            ),
+            patch(
+                "app.services.workbench_assessment._query_prev_scope_rows",
+                AsyncMock(return_value={}),  # 行级环比基准
+            ),
+            patch(
                 "app.services.workbench_assessment._get_lose_threshold",
                 AsyncMock(return_value=0.90),
             ),
@@ -368,6 +461,10 @@ class TestBuildAssessment:
                 AsyncMock(side_effect=_capture),
             ),
             patch(
+                "app.services.workbench_assessment._count_evaluable_loops",
+                AsyncMock(return_value=34),
+            ),
+            patch(
                 "app.services.workbench_assessment._get_lose_threshold",
                 AsyncMock(return_value=0.90),
             ),
@@ -403,3 +500,110 @@ class TestBuildAssessment:
             await build_assessment(db, scope_type="GLOBAL", scope_id=None, window="24h")
         assert captured["scope_type"] == "GLOBAL"
         assert captured["scope_id"] == 0
+
+
+# ===========================================================================
+# async helper（CAL-06 应评分母 / 上一等长窗 / PERF-03 去重）
+# ===========================================================================
+
+
+class TestCountEvaluableLoops:
+    """CAL-06：应评分母 = 台账参评三条件计数（与 _eval_loop_selection_stmt 一致）。"""
+
+    @pytest.mark.asyncio
+    async def test_global走台账三条件(self):
+        db = AsyncMock()
+        res = MagicMock()
+        res.scalar.return_value = 34
+        db.execute = AsyncMock(return_value=res)
+
+        count = await _count_evaluable_loops(db, "GLOBAL", 0)
+
+        assert count == 34
+        sql = str(db.execute.call_args[0][0].compile(compile_kwargs={"literal_binds": True}))
+        # 参评三条件全部入 SQL（与 kpi_calc._eval_loop_selection_stmt 全量选路一致）
+        assert "is_active" in sql and "true" in sql.lower()
+        assert "READY" in sql
+        assert "include_in_evaluation" in sql
+
+    @pytest.mark.asyncio
+    async def test_子树走递归CTE三条件(self):
+        db = AsyncMock()
+        res = MagicMock()
+        res.scalar.return_value = 12
+        db.execute = AsyncMock(return_value=res)
+
+        count = await _count_evaluable_loops(db, "AREA", 1000)
+
+        assert count == 12
+        stmt, params = db.execute.call_args[0]
+        sql = str(stmt)
+        assert "WITH RECURSIVE node_tree" in sql
+        assert params == {"sid": 1000}
+        for cond in ("is_active = TRUE", "status = 'READY'", "include_in_evaluation = TRUE"):
+            assert cond in sql
+
+    @pytest.mark.asyncio
+    async def test_不支持scope按零显式降级(self):
+        db = AsyncMock()
+        assert await _count_evaluable_loops(db, "LOOP", 7) == 0
+        db.execute.assert_not_awaited()
+
+
+class TestQueryPrevEqualRow:
+    """CAL-06：上一等长窗行查询——window_end ≤ 当前终点−窗长 的最新行。"""
+
+    @pytest.mark.asyncio
+    async def test_目标边界为终点减窗长(self):
+        db = AsyncMock()
+        res = MagicMock()
+        res.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(return_value=res)
+
+        end = datetime(2026, 6, 25, 8, 0, tzinfo=UTC)
+        await _query_prev_equal_row(db, "GLOBAL", 0, "24h", end)
+
+        stmt = db.execute.call_args[0][0]
+        params = stmt.compile().params
+        bind_values = [v for v in params.values() if isinstance(v, datetime)]
+        assert bind_values == [end - timedelta(hours=24)]
+        sql = str(
+            stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        assert "window_end <=" in sql
+        # 同窗长（24h→24h，不是 24h→7d 跨窗长）
+        assert "'24h'" in sql
+
+    @pytest.mark.asyncio
+    async def test_窗口终点缺失返回None(self):
+        db = AsyncMock()
+        assert await _query_prev_equal_row(db, "GLOBAL", 0, "24h", None) is None
+        db.execute.assert_not_awaited()
+
+
+class TestQueryScopeRowsInIds:
+    """PERF-03：子树 .in_() 查询加每节点最新行去重（DISTINCT ON 模式）。"""
+
+    @pytest.mark.asyncio
+    async def test_sql带distinct_on最新行去重(self):
+        db = AsyncMock()
+        res = MagicMock()
+        res.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(return_value=res)
+
+        await _query_scope_rows_in_ids(db, "UNIT", [10000, 10001], "24h")
+
+        stmt = db.execute.call_args[0][0]
+        sql = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "DISTINCT ON (workbench_window_summary.scope_id)" in sql
+        # 最新行 = window_end 降序
+        assert (
+            "ORDER BY workbench_window_summary.scope_id, workbench_window_summary.window_end DESC"
+            in sql
+        )
+
+    @pytest.mark.asyncio
+    async def test_空id列表不查库(self):
+        db = AsyncMock()
+        assert await _query_scope_rows_in_ids(db, "UNIT", [], "24h") == []
+        db.execute.assert_not_awaited()
