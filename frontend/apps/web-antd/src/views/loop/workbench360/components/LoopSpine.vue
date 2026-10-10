@@ -12,7 +12,7 @@ import type { LoopApi } from '#/api/loop';
 import { computed, ref } from 'vue';
 
 import { useVirtualList } from '#/composables/use-virtual-list';
-import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
+import { scoreToGradeInfo } from '#/constants/clpm-ui';
 
 const props = defineProps<{
   /** 等级筛选当前值（'all' = 不过滤；'none' = 无评分） */
@@ -62,14 +62,12 @@ function selectUnit(unitName: null | string) {
 }
 
 /** 行内评分等级类（g1 优秀~g5 不合格；无评分=无类=默认色）。
- *  阈值单源 GRADE_THRESHOLDS，颜色语义对齐 use-score-color 降级
- *  （优秀 SUCCESS / 良好 INFO / 合格 WARNING / 警告·不合格 DANGER）。 */
+ *  判定收敛单源 scoreToGradeInfo（minScore 降序首个命中）。
+ *  原 [min,max) 双边判定在 score=100（区间上界）落空、兜底 g5，出现
+ *  "满分 100 显示红色不合格"（2026-10-03 用户终验发现）。 */
 function gradeCls(score: null | number | undefined): string {
-  if (score === null || score === undefined || Number.isNaN(score)) return '';
-  const hit = GRADE_THRESHOLDS.find(
-    (t) => score >= (t.minScore ?? 0) && score < (t.maxScore ?? 100),
-  );
-  return `g${hit?.level ?? 5}`;
+  const info = scoreToGradeInfo(score);
+  return info ? `g${info.level}` : '';
 }
 
 /** 定高虚拟滚动（30px 行） */
