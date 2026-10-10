@@ -113,8 +113,8 @@ class TestGetAllAlgorithmParams:
         body = resp.json()
         assert body["code"] == "0"
         metrics = body["data"]["metrics"]
-        # 7 指标（2026-08-27 新增 stability_rate 配置化）
-        assert len(metrics) == 7
+        # 8 指标（2026-10-10 新增 saturation_rate.saturation_epsilon 可配置）
+        assert len(metrics) == 8
         codes = {m["metricCode"] for m in metrics}
         assert codes == {
             "oscillation_rate",
@@ -124,6 +124,7 @@ class TestGetAllAlgorithmParams:
             "effective_auto_rate",
             "output_trip_index",
             "stability_rate",
+            "saturation_rate",
         }
         # F6：paramMeta 注册表随视图下发（min/max/description/category 单源）
         osc = next(m for m in metrics if m["metricCode"] == "oscillation_rate")

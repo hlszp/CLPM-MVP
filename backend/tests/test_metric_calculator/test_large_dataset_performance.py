@@ -78,7 +78,7 @@ def _make_large_saturation_data(n: int = LARGE_N) -> dict:
     sp = [50.0] * n
     pv = [50.0 + 0.5 * rng.standard_normal() for _ in range(n)]
     # 50% 高饱和 + 50% 中间
-    op = [99.5 if i % 2 == 0 else 50.0 for i in range(n)]
+    op = [100.0 if i % 2 == 0 else 50.0 for i in range(n)]
     mode = [1] * n
     return {"pv": pv, "sp": sp, "op": op, "mode": mode}
 
@@ -156,10 +156,10 @@ class TestLargeDatasetConsistency:
             assert result.value == 100.0, f"n={n}: accuracy={result.value} 应为 100"
 
     def test_saturation_large_vs_small_consistent(self):
-        """饱和率：7200 点 vs 100 点，全 OP=99.5 → 都应为 100%."""
+        """饱和率：7200 点 vs 100 点，全 OP=100.0 → 都应为 100%."""
         for n in (100, LARGE_N):
             mode = [1] * n
-            op = [99.5] * n
+            op = [100.0] * n
             bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
             result = SaturationRateCalculator().calculate(bundle)
             assert result.value == 100.0

@@ -29,17 +29,17 @@ class TestSaturationRate:
         assert result.details["saturation_type"] == "NONE"
 
     def test_high_saturation(self, saturation_bundle):
-        """OP 接近高限（99.5）→ 高饱和。"""
+        """OP 严格贴高限（100.0）→ 高饱和（ε=0 口径）."""
         calc = SaturationRateCalculator()
         result = calc.calculate(saturation_bundle)
         assert result.value == 100.0
         assert result.details["saturation_type"] == "HIGH"
 
     def test_low_saturation(self):
-        """OP 接近低限（0.5）→ 低饱和。"""
+        """OP 严格贴低限（0.0）→ 低饱和（ε=0 口径）."""
         n = 100
         mode = [1] * n
-        op = [0.5] * n
+        op = [0.0] * n
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)
@@ -50,7 +50,7 @@ class TestSaturationRate:
         """50% 高饱和 + 50% 低饱和 → rate=100, type=BOTH。"""
         n = 100
         mode = [1] * n
-        op = [99.5] * 50 + [0.5] * 50
+        op = [100.0] * 50 + [0.0] * 50
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)
@@ -65,7 +65,7 @@ class TestSaturationRate:
         """
         n = 100
         mode = [0] * n  # 全手动
-        op = [99.5] * n  # OP 饱和但非自控，不计入分子
+        op = [100.0] * n  # OP 饱和但非自控，不计入分子
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)
@@ -81,11 +81,52 @@ class TestSaturationRate:
         result = calc.calculate(bundle)
         assert result.value is None
 
+    def test_epsilon_from_algorithm_config(self):
+        """ε 经配置链可配（2026-10-10 裁决）：algorithm_config 配 2.0 → OP=98 判饱和."""
+        from unittest.mock import patch
+
+        n = 100
+        mode = [1] * n
+        op = [98.0] * n  # 默认 ε=0 下不饱和
+        bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
+        calc = SaturationRateCalculator()
+        with (
+            patch(
+                "app.services.metric_calculator.saturation.get_algorithm_params",
+                return_value={"saturation_epsilon": 2.0},
+            ),
+        ):
+            result = calc.calculate(bundle)
+        assert result.value == 100.0
+        assert result.details["saturation_type"] == "HIGH"
+        assert result.details["epsilon"] == 2.0
+
+    def test_epsilon_config_signal_overrides_chain(self):
+        """回路级 CONFIG saturation_epsilon 信号优先于配置链."""
+        from unittest.mock import patch
+
+        n = 100
+        mode = [1] * n
+        op = [50.0] * n
+        signals = {"mode": mode, "op": op, "saturation_epsilon": [60.0]}
+        bundle = make_bundle(signals, metric_code="saturation_rate")
+        calc = SaturationRateCalculator()
+        with (
+            patch(
+                "app.services.metric_calculator.saturation.get_algorithm_params",
+                return_value={"saturation_epsilon": 2.0},
+            ),
+        ):
+            result = calc.calculate(bundle)
+        # ε=60 → 判定区间 [60, 40] 反转：OP=50 同时 ≤60+ 且 ≥40- → 低限侧先判
+        assert result.details["epsilon"] == 60.0
+        assert result.value == 100.0
+
     def test_custom_epsilon(self):
         """自定义 epsilon（从 CONFIG 信号读取）。"""
         n = 100
         mode = [1] * n
-        op = [95.0] * n  # OP=95, 默认 epsilon=2 时未饱和（< 98）
+        op = [95.0] * n  # OP=95, 默认 epsilon=0 时未饱和（< 100）
         # 设置 epsilon=10 → 95 >= 100-10=90 → 饱和
         bundle = make_bundle(
             {"mode": mode, "op": op, "saturation_epsilon": [10.0] * n},
@@ -104,7 +145,7 @@ class TestSaturationRate:
         """
         n = 100
         mode = [1] * n
-        op = [99.5] * 50 + ["bad"] * 50  # 后半段 OP 无法解析
+        op = [100.0] * 50 + ["bad"] * 50  # 后半段 OP 无法解析（前半贴限饱和）
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)

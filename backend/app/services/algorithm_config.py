@@ -94,10 +94,19 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
         "LOGIC": {"settling_threshold": 0.05, "noise_floor_ratio": 0.001},
     },
     "effective_auto_rate": {
-        "STABLE": {"default_e_max_ratio": 0.05},
-        "SLOW": {"default_e_max_ratio": 0.05},
-        "FAST": {"default_e_max_ratio": 0.05},
-        "LOGIC": {"default_e_max_ratio": 0.05},
+        # saturation_epsilon：2026-10-10 用户裁决，饱和容差带可配置，默认 0=严格贴限
+        "STABLE": {"default_e_max_ratio": 0.05, "saturation_epsilon": 0.0},
+        "SLOW": {"default_e_max_ratio": 0.05, "saturation_epsilon": 0.0},
+        "FAST": {"default_e_max_ratio": 0.05, "saturation_epsilon": 0.0},
+        "LOGIC": {"default_e_max_ratio": 0.05, "saturation_epsilon": 0.0},
+    },
+    "saturation_rate": {
+        # saturation_epsilon：饱和容差带（量程百分比，默认 0=严格贴限位端点）；
+        # 回路级 CONFIG saturation_epsilon 信号优先于本配置链
+        "STABLE": {"saturation_epsilon": 0.0},
+        "SLOW": {"saturation_epsilon": 0.0},
+        "FAST": {"saturation_epsilon": 0.0},
+        "LOGIC": {"saturation_epsilon": 0.0},
     },
     "output_trip_index": {
         "STABLE": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
@@ -317,6 +326,14 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "description": "SP 阶跃后剔除的跟踪窗点数（实际时长=点数×采样间隔）",
         },
     },
+    "saturation_rate": {
+        "saturation_epsilon": {
+            "min": 0.0,
+            "max": 10.0,
+            "unit": "%",
+            "description": "饱和容差带（默认 0=严格贴限位端点；回路级 CONFIG 信号优先）",
+        },
+    },
     "settling_time": {
         "settling_threshold": {
             "min": 0.01,
@@ -337,6 +354,12 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "max": 0.5,
             "unit": "",
             "description": "默认偏差带比例（量程归一化）",
+        },
+        "saturation_epsilon": {
+            "min": 0.0,
+            "max": 10.0,
+            "unit": "%",
+            "description": "饱和容差带（默认 0=严格贴限位端点）",
         },
     },
     "output_trip_index": {
@@ -380,7 +403,8 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "sp_tracking_window": "SP阶跃剔除",
     },
     "settling_time": {"settling_threshold": "判定阈值", "noise_floor_ratio": "判定阈值"},
-    "effective_auto_rate": {"default_e_max_ratio": "判定阈值"},
+    "effective_auto_rate": {"default_e_max_ratio": "判定阈值", "saturation_epsilon": "判定阈值"},
+    "saturation_rate": {"saturation_epsilon": "判定阈值"},
     "output_trip_index": {
         "trip_inactive": "行程边界",
         "trip_normal": "行程边界",

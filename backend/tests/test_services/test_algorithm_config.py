@@ -141,8 +141,9 @@ def test_rebuild_merged_defaults_only(reset_cache):
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
     }
-    # 7 指标 × 4 控制类型 = 28 组合（2026-08-27 新增 stability_rate 配置化）
-    assert len(merged) == 28
+    # 8 指标 × 4 控制类型 = 32 组合（2026-10-10 新增 saturation_rate.saturation_epsilon）
+    assert len(merged) == 32
+    assert merged[("saturation_rate", "STABLE")] == {"saturation_epsilon": 0.0}
 
 
 def test_rebuild_merged_table_override(reset_cache):
@@ -230,6 +231,7 @@ def test_build_merged_view_covers_all_metrics(reset_cache):
         "effective_auto_rate",
         "output_trip_index",
         "stability_rate",
+        "saturation_rate",
     }
     for metric in view.values():
         assert set(metric.keys()) == {"STABLE", "SLOW", "FAST", "LOGIC"}

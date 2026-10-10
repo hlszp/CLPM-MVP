@@ -44,7 +44,7 @@ class TestEffectiveAutoRate:
         """OP 饱和 → 有效自控率 < 自控率。"""
         n = 100
         mode = [1] * n
-        op = [99.5] * n  # 饱和
+        op = [100.0] * n  # 饱和
         pv = [50.0] * n
         sp = [50.0] * n
         bundle = make_bundle(
@@ -99,7 +99,7 @@ class TestEffectiveAutoRate:
         """50% Auto(有效) + 50% Auto(饱和) → R=50。"""
         n = 100
         mode = [1] * n
-        op = [50.0] * 50 + [99.5] * 50
+        op = [50.0] * 50 + [100.0] * 50
         pv = [50.0] * n
         sp = [50.0] * n
         bundle = make_bundle(

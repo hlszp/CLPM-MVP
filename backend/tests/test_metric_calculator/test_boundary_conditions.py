@@ -276,18 +276,18 @@ class TestLowFrequencyOscillation:
 
 
 class TestOpSaturationBoundaryValues:
-    """OP 饱和临界值 98 / 99 / 100（默认 epsilon=2 → op_high-epsilon=98）.
+    """OP 饱和边界（2026-10-10 用户裁决：ε 默认 0，饱和=严格贴限位端点）.
 
     设计依据：saturation.py
         DEFAULT_OP_HIGH = 100.0
-        DEFAULT_EPSILON = 2.0
-        判定条件：op_val >= op_high - epsilon → 100 - 2 = 98
-                  op_val <= op_low + epsilon → 0 + 2 = 2
+        DEFAULT_EPSILON = 0.0
+        判定条件：op_val >= op_high → 100
+                  op_val <= op_low → 0
     """
 
-    @pytest.mark.parametrize("op_value", [98.0, 99.0, 99.5, 100.0])
+    @pytest.mark.parametrize("op_value", [100.0])
     def test_op_at_or_above_threshold_is_saturated(self, op_value):
-        """OP >= 98（op_high-epsilon）→ 高饱和."""
+        """OP = 100（严格贴上限）→ 高饱和."""
         n = 100
         mode = [1] * n  # 全自动
         op = [op_value] * n
@@ -296,46 +296,39 @@ class TestOpSaturationBoundaryValues:
         assert result.value == 100.0
         assert result.details["saturation_type"] == "HIGH"
 
-    @pytest.mark.parametrize("op_value", [97.99, 97.0, 50.0, 3.0])
+    @pytest.mark.parametrize("op_value", [99.99, 98.0, 97.0, 50.0, 3.0, 0.01])
     def test_op_below_high_threshold_not_high_saturated(self, op_value):
-        """OP < 98 → 不触发高饱和（50% 在中间，3% 未到低限 2）."""
+        """OP ∈ (0, 100) 开区间 → 不饱和（去容差带：非严格贴限不算）."""
         n = 100
         mode = [1] * n
         op = [op_value] * n
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         result = SaturationRateCalculator().calculate(bundle)
-        # OP=3.0 仍 > 2（op_low+epsilon），不饱和
-        # OP=50.0 中间区域，不饱和
-        # OP=97.0/97.99 < 98，不饱和
         assert result.value == 0.0
         assert result.details["saturation_type"] == "NONE"
 
     def test_op_boundary_exactly_at_threshold(self):
-        """OP=98.0 恰好等于 op_high-epsilon → 触发饱和（>= 比较）."""
+        """OP=100.0 恰好等于 op_high → 触发饱和（>= 比较）."""
         n = 100
         mode = [1] * n
-        op = [98.0] * n  # 恰好 100 - 2 = 98，>= 触发
+        op = [100.0] * n
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         result = SaturationRateCalculator().calculate(bundle)
         assert result.value == 100.0
         assert result.details["saturation_type"] == "HIGH"
 
     def test_op_just_below_threshold(self):
-        """OP=97.99 刚好低于阈值 → 不饱和（验证 >= 而非 >）."""
+        """OP=99.99 距上限仅 0.01 → 不饱和（验证严格贴限语义）."""
         n = 100
         mode = [1] * n
-        op = [97.99] * n  # < 98
+        op = [99.99] * n
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         result = SaturationRateCalculator().calculate(bundle)
         assert result.value == 0.0
 
-    @pytest.mark.parametrize("op_value", [0.0, 1.0, 1.99, 2.0])
+    @pytest.mark.parametrize("op_value", [0.0])
     def test_op_low_saturation_boundary(self, op_value):
-        """OP <= 2（op_low+epsilon）→ 低饱和.
-
-        边界值：OP=2.0 恰好等于阈值 → 触发（<=）；
-                OP=1.99 < 2 → 触发；OP=0/1 → 触发。
-        """
+        """OP = 0（严格贴下限）→ 低饱和."""
         n = 100
         mode = [1] * n
         op = [op_value] * n
@@ -345,20 +338,20 @@ class TestOpSaturationBoundaryValues:
         assert result.details["saturation_type"] == "LOW"
 
     def test_op_just_above_low_threshold(self):
-        """OP=2.01 刚好高于低限阈值 → 不饱和（验证 <= 而非 <）."""
+        """OP=0.01 距下限仅 0.01 → 不饱和（验证严格贴限语义）."""
         n = 100
         mode = [1] * n
-        op = [2.01] * n  # > 2
+        op = [0.01] * n
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         result = SaturationRateCalculator().calculate(bundle)
         assert result.value == 0.0
         assert result.details["saturation_type"] == "NONE"
 
     def test_mixed_threshold_and_normal(self):
-        """混合：30% OP=98（饱和）+ 70% OP=50（正常）→ rate=30%."""
+        """混合：30% OP=100（饱和）+ 70% OP=50（正常）→ rate=30%."""
         n = 100
         mode = [1] * n
-        op = [98.0] * 30 + [50.0] * 70
+        op = [100.0] * 30 + [50.0] * 70
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         result = SaturationRateCalculator().calculate(bundle)
         # 30 个采样点饱和，70 个不饱和，auto_duration=100s
@@ -396,22 +389,20 @@ class TestOpSaturationBoundaryValues:
         assert result.details["epsilon"] == 5.0
 
     def test_default_epsilon_constant_value(self):
-        """DEFAULT_EPSILON 常量值校验（防止意外修改）."""
-        assert DEFAULT_EPSILON == 2.0
+        """DEFAULT_EPSILON 常量值校验（2026-10-10 裁决：默认 0=严格贴限）."""
+        assert DEFAULT_EPSILON == 0.0
         assert DEFAULT_OP_HIGH == 100.0
         assert DEFAULT_OP_LOW == 0.0
 
     def test_op_98_99_100_mixed_all_saturated(self):
-        """OP=98/99/100 三种临界值混合 → 全部饱和（rate=100%）."""
+        """OP=98/99/100 混合，ε=0 下仅 100 贴限 → 1/3 饱和."""
         n = 99
         mode = [1] * n
-        # 33 个 98 + 33 个 99 + 33 个 100
+        # 33 个 98 + 33 个 99 + 33 个 100（仅 100 判饱和）
         op = [98.0] * 33 + [99.0] * 33 + [100.0] * 33
         bundle = make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
         result = SaturationRateCalculator().calculate(bundle)
-        assert result.value == 100.0
+        # 仅 OP=100 的 33/99 ≈ 33.3% 饱和
+        assert result.value == pytest.approx(100.0 * 33 / 99, abs=0.5)
         assert result.details["saturation_type"] == "HIGH"
-        # 饱和时长应等于全部 auto 时长
-        assert result.details["sat_high_duration_s"] == pytest.approx(
-            result.details["auto_duration_s"]
-        )
+        assert result.details["sat_high_duration_s"] < result.details["auto_duration_s"]

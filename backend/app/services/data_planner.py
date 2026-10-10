@@ -355,7 +355,8 @@ class DataPlanner:
         # v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典
         # 设计依据：loop-range-and-output-limits-design-v1.0.md §4.3
         # 优先级：Loop 表字段 > OP Tag range_min/range_max > 默认值（不填充，由算法兜底）
-        await self._fill_op_output_limits(bundles, loop_id)
+        # 2026-10-10：传 preprocess_config 将限位归一化到与 OP 序列同尺度（0~100）
+        await self._fill_op_output_limits(bundles, loop_id, preprocess_config)
 
         # Phase 8 (续): 写入 L2 缓存（若启用且本次未命中）
         await self._maybe_write_l2_cache(bundles)
@@ -833,7 +834,12 @@ class DataPlanner:
             # L2 写入失败不应影响主流程（缓存只是优化）
             logger.warning("DataPlanner L2 写入失败，忽略: key=%s", l2_key, exc_info=True)
 
-    async def _fill_op_output_limits(self, bundles: list[MetricDataBundle], loop_id: str) -> None:
+    async def _fill_op_output_limits(
+        self,
+        bundles: list[MetricDataBundle],
+        loop_id: str,
+        preprocess_config: LoopPreprocessConfig | None = None,
+    ) -> None:
         """v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典.
 
         v6.2 优化：优先使用预加载的 OP 限位（批量计算场景），避免逐回路查 DB。
@@ -843,12 +849,37 @@ class DataPlanner:
             2. OP Tag range_min / range_max（已关联且非 NULL）
             3. 默认值（不填充，由 SaturationRateCalculator 用 DEFAULT_OP_LOW/HIGH 兜底）
 
+        量纲（2026-10-10 饱和口径统一整改）：BASE 序列的 OP 已由预处理
+        Step ③ 按 OP tag 量程归一化为 0~100，故灌入的限位必须换算到
+        **同一归一化尺度**（(v−op_min)/op_span×100），否则 OP tag 量程
+        非 0~100（如 4~20mA）的回路上 saturation_rate/effective_auto/
+        fitness 会拿工程值与归一化序列直接比较（量纲错配潜伏 bug，
+        0~100 量程回路数值巧合无差异）。换算基于 preprocess_config 的
+        op_range_min/max（与 Step ③ 归一化同源）；config 缺失时按默认
+        量程 0~100 换算（等价原行为）。
+
         signals 字典的值统一为列表类型（对齐 _read_config_scalar 约定）。
 
-        设计依据：loop-range-and-output-limits-design-v1.0.md §4.3
+        设计依据：loop-range-and-output-limits-design-v1.0.md §4.3；
+        2026-10-10 饱和口径统一裁决（OP_SATURATED 与 saturation_rate 同源）
         """
         if not bundles:
             return
+
+        # 归一化换算：与 Step ③ 同源量程（缺失按 0~100，等价原行为）
+        op_min = 0.0
+        op_max = 100.0
+        if preprocess_config is not None:
+            try:
+                cfg_min = float(preprocess_config.op_range_min)
+                cfg_max = float(preprocess_config.op_range_max)
+                if cfg_max > cfg_min:
+                    op_min, op_max = cfg_min, cfg_max
+            except (TypeError, ValueError):
+                pass
+
+        def _normalize(value: float) -> float:
+            return (value - op_min) / (op_max - op_min) * 100.0
 
         # v6.2：优先使用预加载的 OP 限位
         if self._preloaded_op_limits is not None:
@@ -857,12 +888,12 @@ class DataPlanner:
                 op_lower, op_upper = op_limits
                 for bundle in bundles:
                     if op_lower is not None:
-                        bundle.data_block.signals["op_low"] = [op_lower]
+                        bundle.data_block.signals["op_low"] = [_normalize(op_lower)]
                     if op_upper is not None:
-                        bundle.data_block.signals["op_high"] = [op_upper]
+                        bundle.data_block.signals["op_high"] = [_normalize(op_upper)]
                 if op_lower is not None or op_upper is not None:
                     logger.debug(
-                        "DataPlanner 填充 OP 限位(预加载): loop=%s, op_low=%s, op_high=%s",
+                        "DataPlanner 填充 OP 限位(预加载/归一化): loop=%s, op_low=%s, op_high=%s",
                         loop_id,
                         op_lower,
                         op_upper,
@@ -907,15 +938,15 @@ class DataPlanner:
                 if op_upper is None and op_row[1] is not None:
                     op_upper = float(op_row[1])
 
-        # 填充到每个 bundle 的 signals 字典
+        # 填充到每个 bundle 的 signals 字典（归一化到与 OP 序列同尺度）
         for bundle in bundles:
             if op_lower is not None:
-                bundle.data_block.signals["op_low"] = [op_lower]
+                bundle.data_block.signals["op_low"] = [_normalize(op_lower)]
             if op_upper is not None:
-                bundle.data_block.signals["op_high"] = [op_upper]
+                bundle.data_block.signals["op_high"] = [_normalize(op_upper)]
         if op_lower is not None or op_upper is not None:
             logger.debug(
-                "DataPlanner 填充 OP 限位: loop=%s, op_low=%s, op_high=%s",
+                "DataPlanner 填充 OP 限位(归一化): loop=%s, op_low=%s, op_high=%s",
                 loop_id,
                 op_lower,
                 op_upper,

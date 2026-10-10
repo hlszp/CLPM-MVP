@@ -253,7 +253,7 @@ def saturation_bundle() -> MetricDataBundle:
     """饱和数据（OP 处于高限位，mode=Auto）."""
     n = 100
     mode = [1] * n
-    op = [99.5] * n  # OP 接近高限（饱和）
+    op = [100.0] * n  # OP 严格贴高限（饱和，ε=0 口径）
     return make_bundle({"mode": mode, "op": op}, metric_code="saturation_rate")
 
 

@@ -303,30 +303,28 @@ class TestF3Saturation:
         assert _is_auto_mode(mode_val) is expected
 
     def test_f3_kpi_epsilon_boundary_exact_durations(self):
-        """F.3：归一化 OP 边界 ε=2%，KPI 侧计时长精确值.
+        """F.3：ε=0 默认（严格贴限）+ 显式 ε=2 容差带双口径计时长精确值.
 
-        手算（100 点 × 1s，全 AUTO，op_low=0/op_high=100/ε=2）：
-            20×OP=1.5（≤2 低限饱和）+ 10×OP=2.0（边界计入）→ sat_low=30s
-            15×OP=98.0（≥98 边界计入）+ 10×OP=99 → sat_high=25s
-            10×OP=2.1 + 15×OP=97.9 + 20×OP=50 → 不饱和
-            total=100s → Sa = 55/100 × 100% = 55.00%，type=BOTH。
+        ε=0 手算（100 点 × 1s，全 AUTO，op_low=0/op_high=100）：
+            仅 10×OP=0.0（贴下限）+ 15×OP=100.0（贴上限）饱和
+            total=100s → Sa = 25/100 × 100% = 25.00%，type=BOTH。
         """
         op = (
-            [1.5] * 20
-            + [2.0] * 10
+            [0.0] * 10
             + [2.1] * 10
-            + [98.0] * 15
+            + [100.0] * 15
             + [97.9] * 15
-            + [99.0] * 10
             + [50.0] * 20
+            + [0.5] * 10
+            + [99.9] * 20
         )
         mode = [1] * 100
         bundle = build_bundle({"op": op, "mode": mode}, metric_code="saturation_rate")
         res = SaturationRateCalculator().calculate(bundle)
 
-        assert res.value == 55.0
-        assert res.details["sat_low_duration_s"] == 30.0
-        assert res.details["sat_high_duration_s"] == 25.0
+        assert res.value == 25.0
+        assert res.details["sat_low_duration_s"] == 10.0
+        assert res.details["sat_high_duration_s"] == 15.0
         assert res.details["auto_duration_s"] == 100.0
         assert res.details["saturation_type"] == "BOTH"
 
@@ -334,11 +332,11 @@ class TestF3Saturation:
         """F.3：MANUAL 模式点不计入分子（AutoSaturateTime），但计入分母（AllTime）.
 
         手算（国标 F.3：Sa = AutoSaturateTime / AllTime）：
-            50 点 AUTO@OP=99（饱和）→ AutoSaturateTime=50s
+            50 点 AUTO@OP=100（贴限饱和，ε=0 口径）→ AutoSaturateTime=50s
             50 点 MANUAL@OP=0（剔除自控，但计入 AllTime）
             → AllTime=100s → Sa = 50/100 × 100% = 50.00%。
         """
-        op = [99.0] * 50 + [0.0] * 50
+        op = [100.0] * 50 + [0.0] * 50
         mode = [1] * 50 + [0] * 50
         bundle = build_bundle({"op": op, "mode": mode}, metric_code="saturation_rate")
         res = SaturationRateCalculator().calculate(bundle)
@@ -368,7 +366,7 @@ class TestF3Saturation:
     def test_f3_kpi_apc_counted_as_auto(self):
         """F.3：APC=4 计入自控（KPI 侧），全 APC 饱和 → Sa=100.00%."""
         bundle = build_bundle(
-            {"op": [99.0] * 100, "mode": [4] * 100}, metric_code="saturation_rate"
+            {"op": [100.0] * 100, "mode": [4] * 100}, metric_code="saturation_rate"
         )
         res = SaturationRateCalculator().calculate(bundle)
 

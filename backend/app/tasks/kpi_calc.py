@@ -1371,6 +1371,7 @@ def _resolve_op_pv_ranges(
     loop_cfg: dict | None,
     pv_series: list[float] | None,
     sp_series: list[float] | None,
+    bundles: list[MetricDataBundle] | None = None,
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
     """解析 OP 输出限位和 PV 量程 (P2 fitness 用).
 
@@ -1379,9 +1380,30 @@ def _resolve_op_pv_ranges(
     fitness 的判定量程必须与序列量纲一致，恒用归一化量程 (0, 100)。
     此前传原始工程量程（如 0~1 kmol/s）导致 |SP-PV| 阈值被缩小 100 倍，
     SP_PV_DEVIATION 大面积误报（P4 真实数据验证发现）。
+
+    2026-10-10 饱和口径统一裁决：OP 界限改为从 bundle CONFIG 信号读
+    ``op_low``/``op_high``——与 saturation_rate/effective_auto 完全同源
+    （DataPlanner 灌入，优先级 回路限位 > OP tag 量程 > 不灌，且已归一化
+    到与 OP 序列同尺度）。此前恒用 (0,100) 导致两套口径分裂：回路限位
+    20~80 的回路 OP 贴 78~80（真饱和）不判 OP_SATURATED，而限位 0~100
+    的回路 OP 正常工作在 2% 开度反被判饱和。信号缺失（限位未配且 tag
+    量程缺失）时回退 (0,100)，与指标侧兜底一致。
     """
-    del loop, loop_cfg, pv_series, sp_series  # 归一化语义下不再需要原始量程
-    return (0.0, 100.0), (0.0, 100.0)
+    del loop, loop_cfg, pv_series, sp_series
+    op_range: tuple[float, float] | None = None
+    for bundle in bundles or []:
+        signals = getattr(bundle.data_block, "signals", {}) or {}
+        low = signals.get("op_low")
+        high = signals.get("op_high")
+        try:
+            low_f = float(low[0]) if isinstance(low, (list, tuple)) and low else None
+            high_f = float(high[0]) if isinstance(high, (list, tuple)) and high else None
+        except (TypeError, ValueError):
+            low_f = high_f = None
+        if low_f is not None and high_f is not None and high_f > low_f:
+            op_range = (low_f, high_f)
+            break
+    return (op_range or (0.0, 100.0)), (0.0, 100.0)
 
 
 def _point_context_from_bundles(bundles: list[MetricDataBundle]) -> Any:
@@ -1659,7 +1681,7 @@ async def _calculate_loop_kpi(
 
     # P2: 提取 BASE 时序（fitness 的 OP_SATURATED / SP_PV_DEVIATION 逐点统计用）
     op_series, sp_series, pv_series, mode_series, base_point_count = _extract_base_series(bundles)
-    op_range, pv_range = _resolve_op_pv_ranges(loop, loop_cfg, pv_series, sp_series)
+    op_range, pv_range = _resolve_op_pv_ranges(loop, loop_cfg, pv_series, sp_series, bundles)
 
     # P2: 复用 gate.py 评估门禁 → L0 判定口径与诊断链路完全一致
     # R14-3（2026-09-06）：期望点数基于契约采样间隔（thresholds.base_sampling_freq）

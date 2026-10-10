@@ -81,13 +81,14 @@ _META: list[dict] = [
         "key": "op_saturated_band_pct",
         "label": "OP饱和限位带宽",
         "description": (
-            "OP 距离量程上下限的占比范围（%）内即视为饱和样本，"
+            "OP 距离回路 OP 限位（回路配置 > OP 位号量程，与饱和率指标同源）"
+            "上下限的占比范围（%）内即视为饱和样本，"
             "结合 OP 饱和时间占比判定 OP_SATURATED"
         ),
         "level": "L2",
         "tag": "OP_SATURATED",
-        "default": 2.0,
-        "min": 0.1,
+        "default": 0.0,
+        "min": 0.0,
         "max": 20.0,
         "unit": "%",
     },

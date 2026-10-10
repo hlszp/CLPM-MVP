@@ -408,17 +408,19 @@ class TestOscillationScenario:
 
 
 class TestOpSaturationScenario:
-    """op_saturation 场景：OP 长时间限位。
+    """op_saturation 场景：OP 长时间接近限位（95~97.5，未严格贴限）.
 
     expected:
-        saturation_rate_range = [25, 50]
+        saturation_rate_range = [25, 50]（显式配置容差带时）
 
-    注：生成脚本中 OP 饱和期 OP=97±0.5，默认 epsilon=2.0 时阈值 OP≥98 才计为饱和。
-    实际 sat_high_duration 较低但 saturation_type=HIGH 表明检测到高限饱和方向。
+    2026-10-10 用户裁决（ε 默认 0=严格贴限）：生成脚本 OP 饱和期为
+    97±0.5（区间 95~100%，无点 ≥100），默认口径下不再判饱和——
+    "接近但未贴限"不算饱和正是去容差带的语义；需识别该形态时
+    经 CONFIG saturation_epsilon 显式配置容差带（见宽松版用例）。
     """
 
-    def test_saturation_type_high(self, kpi_scenarios):
-        """饱和类型应为 HIGH（OP 偏向高限位）。"""
+    def test_default_zero_epsilon_near_limit_not_saturated(self, kpi_scenarios):
+        """ε=0 默认口径：OP 95~97.5 未严格贴限 → 不判饱和（NONE）。"""
         scenario = kpi_scenarios["op_saturation"]
         bundle = _scenario_to_bundle(
             scenario, "saturation_rate", mask_tags="op_valid && mode_valid"
@@ -426,13 +428,10 @@ class TestOpSaturationScenario:
         calc = SaturationRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
-        assert result.details.get("saturation_type") == "HIGH", (
-            f"op_saturation type={result.details.get('saturation_type')} 预期 HIGH"
+        assert result.details.get("saturation_type") == "NONE", (
+            f"op_saturation type={result.details.get('saturation_type')} ε=0 下未贴限不应判饱和"
         )
-        # 应检测到高限饱和时长 > 0
-        assert result.details.get("sat_high_duration_s", 0) > 0, (
-            "op_saturation sat_high_duration 应 > 0"
-        )
+        assert result.details.get("sat_high_duration_s", 0) == 0
 
     def test_saturation_rate_in_range_with_wider_epsilon(self, kpi_scenarios):
         """用 epsilon=5.0（阈值 OP≥95）时，饱和率应较高（≥ 25）。
@@ -481,7 +480,7 @@ class TestNormalScenarioMetrics:
         assert result.value > 70.0, f"normal accuracy_rate={result.value} 预期 > 70"
 
     def test_good_value_rate_near_full(self, kpi_scenarios):
-        """normal 场景 99.5% Good → good_value_rate ≈ 99.5。"""
+        """normal 场景 100.0% Good → good_value_rate ≈ 100.0。"""
         scenario = kpi_scenarios["normal"]
         # 校验坏质量点占比 ~0.5%
         qualities = [p.get("pv_quality") for p in scenario["data"]]
@@ -492,7 +491,7 @@ class TestNormalScenarioMetrics:
         calc = GoodValueRateCalculator()
         result = calc.calculate(bundle)
         assert result.value is not None
-        # good_value_rate 应接近 99.5（>= 95 即 A 级可信度）
+        # good_value_rate 应接近 100.0（>= 95 即 A 级可信度）
         assert result.value >= 95.0, f"normal good_value_rate={result.value} 预期 ≥ 95"
 
     def test_auto_mode_rate_high(self, kpi_scenarios):

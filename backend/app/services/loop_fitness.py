@@ -15,8 +15,10 @@
 口径矛盾且 OP 饱和仅影响部分时段，辨识管线自带激励检测与分段）。
 
 判定阈值从 sys_config 读取，不硬编码。OP_SATURATED / SP_PV_DEVIATION
-为时序级时间占比统计（与现有 saturation_rate 语义不同），由调用方在
-KPI 计算循环中传入逐点计数器或原始序列。
+为时序级时间占比统计，由调用方在 KPI 计算循环中传入逐点计数器或
+原始序列。OP 饱和界限与 saturation_rate/effective_auto 同源（回路
+OP 限位 > OP 位号量程，归一化尺度；2026-10-10 统一裁决，此前恒用
+归一化量程 (0,100) 导致两套口径分裂）。
 """
 
 from __future__ import annotations
@@ -39,7 +41,9 @@ _DEFAULT_THRESHOLDS: dict[str, float] = {
     "fitness.manual_dominant_pct": 80.0,  # 手动>80% → MANUAL_DOMINANT
     "fitness.low_auto_rate_pct": 20.0,  # 自控率<20% → LOW_AUTO_RATE
     # L2
-    "fitness.op_saturated_band_pct": 2.0,  # OP 在量程 ±2% 内即视为饱和
+    # 2026-10-10 用户裁决：去容差带，默认 0=严格贴回路限位端点（与
+    # saturation_rate 同口径）；需模糊带时经 sys_config 显式配置
+    "fitness.op_saturated_band_pct": 0.0,
     "fitness.op_saturated_time_pct": 30.0,  # 饱和时间占比 >30% → OP_SATURATED
     "fitness.sp_pv_deviation_pct": 10.0,  # |SP-PV| > 量程 10% 视为偏离
     "fitness.sp_pv_deviation_time_pct": 30.0,  # 偏离时间占比 >30% → SP_PV_DEVIATION
@@ -224,17 +228,27 @@ def compute_time_ratio_counters(
     sp_series: list[float] | None,
     pv_series: list[float] | None,
     mode_series: list[int] | None,
-    op_range: tuple[float, float] | None,  # (lower, upper)，量程限位
+    op_range: tuple[float, float] | None,  # (lower, upper)，回路 OP 限位（归一化尺度）
     pv_range: tuple[float, float]
     | None,  # (lower, upper)，PV 量程（偏差归一化用；None 时用 SP 动态范围兜底）
     auto_mode_values: set[int]
     | None = None,  # 视为自控的 mode 值集合（默认 {1,2,3,4}=AUTO/CAS/REMOTE/APC）
+    # 饱和带宽（限位跨度百分比，sys_config fitness.op_saturated_band_pct）
+    op_sat_band_pct: float = 2.0,
+    # SP-PV 偏离阈值（PV 量程百分比，sys_config fitness.sp_pv_deviation_pct）
+    sp_pv_dev_pct: float = 10.0,
 ) -> dict[str, float]:
-    """计算 OP_SATURATED / SP_PV_DEVIATION 时序级占比。
+    """计算 OP_SATURATED / SP_PV_DEVIATION 时序级占比.
+
+    2026-10-10 饱和口径统一整改：
+    - op_range 为回路 OP 限位（归一化尺度，与 saturation_rate/effective_auto
+      同源），不再恒用 (0,100) 归一化量程；
+    - 阈值按实际配置参数逐点判定（此前先按默认 2%/10% 计数再线性缩放
+      只是近似），近似缩放已移除，compute_fitness 直接使用计数结果。
 
     Returns:
         {
-          'op_saturated_ratio': 0.0~1.0,  # OP 在量程 ±band 内的自控样本占比
+          'op_saturated_ratio': 0.0~1.0,  # OP 距限位 ≤band 内的自控样本占比
           'sp_pv_deviation_ratio': 0.0~1.0,  # |SP-PV|>量程 dev_pct 的自控样本占比
           'auto_valid_count': int,  # 自控模式下的有效对齐点数
         }
@@ -268,12 +282,14 @@ def compute_time_ratio_counters(
     dev_count = 0
     auto_count = 0
 
-    # OP 饱和阈值（band * span around limits）
-    op_low_threshold = op_lower + 0.02 * op_span  # 默认 band=2%，带宽在 compute_fitness 中缩放
-    op_high_threshold = op_upper - 0.02 * op_span
+    # OP 饱和阈值：回路限位 ± band%×限位跨度（与 saturation_rate 的
+    # epsilon 语义对齐，默认同为 2%；界限=回路限位而非归一化量程端点）
+    band = max(min(op_sat_band_pct, 50.0), 0.0) / 100.0
+    op_low_threshold = op_lower + band * op_span
+    op_high_threshold = op_upper - band * op_span
 
-    # SP-PV 偏离阈值（默认 10% pv_span）
-    dev_threshold_default = 0.10 * pv_span
+    # SP-PV 偏离阈值（按实际配置的 PV 量程百分比）
+    dev_threshold = max(sp_pv_dev_pct, 0.0) / 100.0 * pv_span
 
     for i in range(n_total):
         mode_val = mode_series[i]
@@ -293,7 +309,7 @@ def compute_time_ratio_counters(
 
         auto_count += 1
 
-        # OP 饱和（距离量程上限或下限 <= 2% span；默认 band，实际阈值会缩放）
+        # OP 饱和（距离回路限位上限或下限 ≤ band%×span）
         if op_f <= op_low_threshold or op_f >= op_high_threshold:
             op_sat_count += 1
 
@@ -302,7 +318,7 @@ def compute_time_ratio_counters(
             try:
                 sp_f = float(sp_series[i])  # type: ignore[index]
                 pv_f = float(pv_series[i])  # type: ignore[index]
-                if abs(sp_f - pv_f) > dev_threshold_default:
+                if abs(sp_f - pv_f) > dev_threshold:
                     dev_count += 1
             except (TypeError, ValueError):
                 continue
@@ -436,24 +452,19 @@ def compute_fitness(
             mode_series=mode_series,
             op_range=op_range,
             pv_range=pv_range,
+            op_sat_band_pct=th_op_sat_band,
+            sp_pv_dev_pct=th_dev_pct,
         )
-        # 按实际配置的 band% / deviation% 重新缩放（默认按 2%/10% 计算的计数器，线性近似缩放）
-        _op_lower, _op_upper = op_range
-        raw_sat = raw["op_saturated_ratio"]
-        # 当阈值带宽 != 默认 2% 时，近似缩放（缩放比 ≤ 默认 band 时按比例
-        # 放大；≥ 默认 band 时按比例缩小）。该缩放仅在阈值非常接近默认
-        # 时才准确，实际场景差异不大。
-        band_scale = 2.0 / max(th_op_sat_band, 0.01)
-        op_sat_ratio = min(1.0, raw_sat * band_scale) if band_scale > 0 else raw_sat
-
-        # 偏差阈值缩放（默认按 10% pv_span 计数，th_dev_pct !=10 时线性近似缩放）
-        raw_dev = raw["sp_pv_deviation_ratio"]
-        dev_scale = 10.0 / max(th_dev_pct, 0.1)
-        sp_pv_dev_ratio = min(1.0, raw_dev * dev_scale) if dev_scale > 0 else raw_dev
+        # 2026-10-10 口径统一：计数器已按实际配置的 band%/dev% 逐点判定，
+        # 此前"按默认 2%/10% 计数再线性缩放"的近似已移除
+        op_sat_ratio = raw["op_saturated_ratio"]
+        sp_pv_dev_ratio = raw["sp_pv_deviation_ratio"]
 
         detail["autoValidCount"] = raw["auto_valid_count"]
-        detail["opSaturatedRatioRaw@2pct"] = round(raw_sat, 4)
-        detail["spPvDeviationRatioRaw@10pct"] = round(raw_dev, 4)
+        detail["opSaturatedRatio"] = round(op_sat_ratio, 4) if op_sat_ratio is not None else None
+        detail["spPvDeviationRatio"] = (
+            round(sp_pv_dev_ratio, 4) if sp_pv_dev_ratio is not None else None
+        )
     else:
         # 近似：回退 saturation_rate（OP 在 0/100 两端的占比；语义不完全等价，仅兜底）
         approx = True

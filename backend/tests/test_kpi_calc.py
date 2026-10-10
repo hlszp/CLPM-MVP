@@ -3176,6 +3176,105 @@ class TestResolveOpPvRanges:
         assert counters["sp_pv_deviation_ratio"] == 0.0
         assert counters["auto_valid_count"] == n
 
+    def test_op_range_from_bundle_config_signals(self) -> None:
+        """2026-10-10 口径统一：op 界限从 bundle CONFIG 信号读取（与指标同源）.
+
+        回路限位 20~80（DataPlanner 已归一化灌入 op_low/op_high 信号）→
+        fitness 判定界限 (20, 80)，不再是恒 (0,100)。
+        """
+        from types import SimpleNamespace
+
+        from app.tasks.kpi_calc import _resolve_op_pv_ranges
+
+        block = SimpleNamespace(signals={"op_low": [20.0], "op_high": [80.0]})
+        bundle = SimpleNamespace(data_block=block)
+        loop = SimpleNamespace(op_output_lower_limit=20.0, op_output_upper_limit=80.0)
+        op_range, pv_range = _resolve_op_pv_ranges(loop, None, None, None, [bundle])
+        assert op_range == (20.0, 80.0)
+        assert pv_range == (0.0, 100.0)
+
+    def test_op_range_falls_back_without_signals(self) -> None:
+        """bundle 无 op_low/op_high 信号（限位未配且量程缺失）→ 回退 (0,100)."""
+        from types import SimpleNamespace
+
+        from app.tasks.kpi_calc import _resolve_op_pv_ranges
+
+        bundle = SimpleNamespace(data_block=SimpleNamespace(signals={}))
+        loop = SimpleNamespace(op_output_lower_limit=None, op_output_upper_limit=None)
+        op_range, _ = _resolve_op_pv_ranges(loop, None, None, None, [bundle])
+        assert op_range == (0.0, 100.0)
+
+
+class TestSaturationUnifiedCaliber:
+    """2026-10-10 饱和口径统一回归：fitness OP_SATURATED 与 saturation_rate 同界限."""
+
+    @staticmethod
+    def _count(op: list[float], op_range: tuple[float, float], band: float = 2.0) -> float:
+        from app.services.loop_fitness import compute_time_ratio_counters
+
+        n = len(op)
+        return compute_time_ratio_counters(
+            op_series=op,
+            sp_series=None,
+            pv_series=None,
+            mode_series=[1] * n,
+            op_range=op_range,
+            pv_range=None,
+            op_sat_band_pct=band,
+        )["op_saturated_ratio"]
+
+    def test_real_limits_detect_edge_saturation(self) -> None:
+        """回路限位 20~80：OP 贴 80 判饱和，OP 78/50 不判（ε=0 严格贴限）.
+
+        旧口径恒用 (0,100) 时 OP=80 距量程上限很远 → 真饱和漏判（口径分裂实证）。
+        """
+        # 默认 band=0：仅严格 ≤20 或 ≥80 判饱和
+        assert self._count([80.0] * 100, (20.0, 80.0)) == 1.0
+        assert self._count([50.0] * 100, (20.0, 80.0)) == 0.0
+        # OP=78 未贴限 → 不饱和
+        assert self._count([78.0] * 100, (20.0, 80.0)) == 0.0
+
+    def test_low_opening_within_real_limits_not_saturated(self) -> None:
+        """限位 0~5 的回路 OP=2 正常工作不判饱和（旧口径 (0,100) 下 2≤2 误报）."""
+        # band=0：判定区间端点 0/5，OP=2 居中 → 不饱和
+        assert self._count([2.0] * 100, (0.0, 5.0)) == 0.0
+
+    def test_band_pct_applied_exactly(self) -> None:
+        """显式配置 band 精确生效（原实现按默认 2% 计数后线性缩放只是近似）."""
+        # 限位 0~100，band=10 → 阈值 [10, 90]：OP=15 不饱和
+        assert self._count([15.0] * 100, (0.0, 100.0), band=10.0) == 0.0
+        # OP=8 饱和
+        assert self._count([8.0] * 100, (0.0, 100.0), band=10.0) == 1.0
+        # 限位 20~80，band=2 → 阈值 [21.2, 78.8]：OP=79 ≥ 78.8 饱和（带宽语义）
+        assert self._count([79.0] * 100, (20.0, 80.0), band=2.0) == 1.0
+        # OP=78 < 78.8 不饱和（对照）
+        assert self._count([78.0] * 100, (20.0, 80.0), band=2.0) == 0.0
+
+    @pytest.mark.asyncio
+    async def test_data_planner_normalizes_op_limits(self) -> None:
+        """DataPlanner 灌入的 op_low/op_high 与归一化 OP 序列同尺度.
+
+        OP tag 量程 4~20（mA）、回路限位 6~18 → 归一化后 (6-4)/16×100=12.5 ~
+        (18-4)/16×100=87.5；量程 0~100 限位 20~80 → 数值不变（零回归保障）。
+        """
+        from types import SimpleNamespace
+
+        from app.services.data_planner import DataPlanner
+
+        async def run(cfg_min, cfg_max, limits, expect):
+            dp = DataPlanner.__new__(DataPlanner)
+            dp._preloaded_op_limits = {"loop-1": limits}
+            block = SimpleNamespace(signals={})
+            bundle = SimpleNamespace(data_block=block)
+            cfg = SimpleNamespace(op_range_min=cfg_min, op_range_max=cfg_max)
+            await dp._fill_op_output_limits([bundle], "loop-1", cfg)  # type: ignore[arg-type]
+            assert block.signals["op_low"] == [pytest.approx(expect[0])]
+            assert block.signals["op_high"] == [pytest.approx(expect[1])]
+
+        await run(4.0, 20.0, (6.0, 18.0), (12.5, 87.5))  # 非零基准量程：换算
+        await run(0.0, 100.0, (20.0, 80.0), (20.0, 80.0))  # 常规量程：数值不变
+        await run(None, None, (20.0, 80.0), (20.0, 80.0))  # 配置缺失：按 0~100 兜底
+
 
 class TestSaveSnapshotPhase1Columns:
     """测试 _save_snapshot() 接受并持久化 Phase 1 新增 15 列。"""

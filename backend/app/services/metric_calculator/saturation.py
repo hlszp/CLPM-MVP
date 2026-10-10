@@ -8,7 +8,7 @@
         评估时段总时长（含手动模式，对应国标 AllTime）
     T_auto_saturated = Σ Δt_i · 𝟙(mode_i ∈ Auto ∧ (OP_i ≤ OP_low+ε ∨ OP_i ≥ OP_high-ε))
         仅自控模式下的饱和时长（对应国标 AutoSaturateTime）
-    ε：饱和容差（默认 2%，可配置）
+    ε：饱和容差（默认 0=严格贴限，CONFIG saturation_epsilon 可按回路覆盖）
 
 设计依据：算法说明 §4.7；GB/T 44693.2-2024 附录 F.3（Sa = AutoSaturateTime / AllTime）
 
@@ -24,6 +24,7 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
+from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.auto_mode import AUTO_MODES
 from app.services.metric_calculator.base import MetricCalculatorBase
 
@@ -33,8 +34,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_OP_LOW = 0.0
 DEFAULT_OP_HIGH = 100.0
 
-#: 默认饱和容差（%）
-DEFAULT_EPSILON = 2.0
+#: 默认饱和容差（%）。2026-10-10 用户裁决：去容差带，饱和=严格贴限位
+#: 端点（OP ≤ op_low 或 ≥ op_high），默认 0；CONFIG 信号 saturation_epsilon
+#: 仍可按回路覆盖（需模糊带的场景显式配置）
+DEFAULT_EPSILON = 0.0
 
 
 class SaturationRateCalculator(MetricCalculatorBase):
@@ -136,12 +139,22 @@ class SaturationRateCalculator(MetricCalculatorBase):
     def _read_op_bounds(bundle: MetricDataBundle) -> tuple[float, float, float]:
         """读取 OP 上下限与饱和容差.
 
-        优先从 CONFIG 信号读取，否则使用默认值（0/100/2）。
+        优先级（2026-10-10 用户裁决，ε 可配置默认 0）：
+            1. CONFIG 信号 op_low/op_high（回路限位）/
+               saturation_epsilon（回路级覆盖）
+            2. 配置链 algorithm_config（saturation_rate.saturation_epsilon，算法参数页可改）
+            3. 默认值 0/100/0（严格贴限）
         """
         signals = bundle.data_block.signals
         op_low = _read_float(signals, "op_low", DEFAULT_OP_LOW)
         op_high = _read_float(signals, "op_high", DEFAULT_OP_HIGH)
-        epsilon = _read_float(signals, "saturation_epsilon", DEFAULT_EPSILON)
+        epsilon = _read_float(signals, "saturation_epsilon", None)
+        if epsilon is None:
+            params = get_algorithm_params("saturation_rate", bundle.data_block.control_type)
+            try:
+                epsilon = float(params.get("saturation_epsilon", DEFAULT_EPSILON))
+            except (TypeError, ValueError):
+                epsilon = DEFAULT_EPSILON
         return op_low, op_high, epsilon
 
 

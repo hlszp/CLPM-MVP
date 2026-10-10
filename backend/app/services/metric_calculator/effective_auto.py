@@ -30,8 +30,9 @@ DEFAULT_E_MAX_RATIO = 0.05
 #: 归一化信号量程
 NORMALIZED_RANGE = 100.0
 
-#: 默认饱和容差
-DEFAULT_EPSILON = 2.0
+#: 默认饱和容差。2026-10-10 用户裁决：去容差带，与 saturation_rate 同口径
+#: （饱和=严格贴限位端点）；CONFIG saturation_epsilon 可按回路覆盖
+DEFAULT_EPSILON = 0.0
 
 #: 默认 OP 上下限
 DEFAULT_OP_LOW = 0.0
@@ -152,11 +153,22 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
 
     @staticmethod
     def _read_bounds(bundle: MetricDataBundle) -> tuple[float, float, float]:
-        """读取 OP 上下限与饱和容差."""
+        """读取 OP 上下限与饱和容差.
+
+        ε 优先级（2026-10-10 用户裁决，可配置默认 0）：CONFIG 信号
+        saturation_epsilon（回路级）> 配置链 effective_auto_rate.
+        saturation_epsilon（算法参数页）> 默认 0（严格贴限）。
+        """
         signals = bundle.data_block.signals
         op_low = _read_float(signals, "op_low", DEFAULT_OP_LOW)
         op_high = _read_float(signals, "op_high", DEFAULT_OP_HIGH)
-        epsilon = _read_float(signals, "saturation_epsilon", DEFAULT_EPSILON)
+        epsilon = _read_float(signals, "saturation_epsilon", None)
+        if epsilon is None:
+            params = get_algorithm_params("effective_auto_rate", bundle.data_block.control_type)
+            try:
+                epsilon = float(params.get("saturation_epsilon", DEFAULT_EPSILON))
+            except (TypeError, ValueError):
+                epsilon = DEFAULT_EPSILON
         return op_low, op_high, epsilon
 
     @staticmethod
