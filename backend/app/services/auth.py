@@ -80,6 +80,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "handling:*",
         "portal:view",
         "tracker:*",
+        # P1-04/AUTH-02：PE 可 POST /tuning/identify/history（require_roles 白名单含
+        # PE_ENGINEER），但缺 tuning:view 导致任务状态轮询/详情/历史记录全部 403，
+        # 提交→轮询→结果/记录链断裂。tuning:view 仅覆盖只读 GET 端点，不扩写。
+        "tuning:view",
     ],
     "SPONSOR": [
         "portal:view",
@@ -87,6 +91,11 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "diagnosis:view",
         "alert:view",
         "handling:view",
+        # P1-04/AUTH-02：模块查看五角色（2026-10-11 裁决）——回路监视
+        # /monitor/loops（GET /loops 等）与整定三页（GET /tuning/*）前端路由
+        # authority 均含 SPONSOR，缺码则页面可进、数据必 403。两码均只读 GET。
+        "loop:view",
+        "tuning:view",
     ],
     "EXPERT": [
         "portal:view",
