@@ -6,6 +6,8 @@
  * 流转操作仅 ADMIN / IC_ENGINEER / PE_ENGINEER 可见可动（canOperate 由父页按角色下发）；
  * 只读角色显示提示条，其余信息完整可见。
  */
+import type { Dayjs } from 'dayjs';
+
 import type { HandlingApi } from '#/api/handling';
 
 import { computed, reactive, ref, watch } from 'vue';
@@ -15,6 +17,8 @@ import { useUserStore } from '@vben/stores';
 
 import {
   Button,
+  Checkbox,
+  DatePicker,
   Descriptions,
   DescriptionsItem,
   Drawer,
@@ -23,31 +27,40 @@ import {
   message,
   Modal,
   Popconfirm,
+  Select,
   Spin,
   Tag,
   Textarea,
   Timeline,
   TimelineItem,
 } from 'ant-design-vue';
+import dayjs from 'dayjs';
 
 import {
   cancelOrderApi,
   feedbackOrderApi,
   getHandlingOrderApi,
   getOrderKpiComparisonApi,
+  getRevisitCandidatesApi,
+  rollbackConfirmApi,
   startOrderApi,
   submitOrderApi,
   verifyOrderApi,
 } from '#/api/handling';
 import { useModules } from '#/composables/use-modules';
-import { formatLocalTime } from '#/utils/format';
+import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
 import {
   ACTION_DETAIL_FIELDS,
   ACTION_TYPE_TEXT,
+  AFTER_ANCHOR_SOURCE_TEXT,
+  CLOSURE_EVIDENCE_COLOR,
+  CLOSURE_EVIDENCE_TEXT,
+  DIAG_CATEGORY_TEXT,
   ORDER_SOURCE_TEXT,
   ORDER_STATUS_COLOR,
   SUGGESTION_STATUS_COLOR,
+  TRIGGER_TYPE_TEXT,
   VERIFY_RESULT_TEXT,
 } from '../constants';
 
@@ -88,7 +101,10 @@ async function load() {
   try {
     detail.value = await getHandlingOrderApi(props.orderId);
     initForms(detail.value);
-    if (detail.value.status === 'VERIFYING') loadKpiPreview();
+    if (detail.value.status === 'VERIFYING') {
+      loadKpiPreview();
+      loadRevisitCandidates();
+    }
   } catch (error: any) {
     loadError.value = error?.message ?? '工单加载失败';
   } finally {
@@ -122,14 +138,25 @@ const startForm = reactive({
 /** 执行反馈输入（EXECUTING） */
 const feedbackText = ref('');
 
-/** 提交验证表单（EXECUTING） */
+/** 提交验证表单（EXECUTING；implementedAt=可选申报实际实施时刻，P3-05） */
 const submitForm = reactive({
   detail: {} as Record<string, any>,
   pidAfter: { p: undefined, i: undefined, d: undefined } as PidFormValues,
+  implementedAt: undefined as Dayjs | undefined,
 });
 
-/** 验证结论表单（VERIFYING） */
+/** 验证结论表单（VERIFYING；conditionComparable=工况可比确认，P3-05/DEC-06） */
 const verifyForm = reactive({ verifyNote: '', verifyRunId: '' });
+const conditionComparable = ref(false);
+
+/** 复诊候选（VERIFYING；服务端供给替代手填 UUID，P3-05/ENG-04） */
+const revisitLoading = ref(false);
+const revisitCandidates = ref<HandlingApi.RevisitCandidate[]>([]);
+const revisitLoadFailed = ref(false);
+
+/** 回退确认（CLOSED/REOPENED；actualRollbackConfirmed 独立事实，P3-05/DEC-06） */
+const rollbackOpen = ref(false);
+const rollbackNote = ref('');
 
 /** 作废 Modal（PENDING/EXECUTING，2026-10-05 裁决①扩展） */
 const cancelOpen = ref(false);
@@ -155,9 +182,14 @@ function initForms(d: HandlingApi.OrderDetail) {
     i: pa.i ?? undefined,
     d: pa.d ?? undefined,
   };
+  submitForm.implementedAt = undefined;
   feedbackText.value = '';
   verifyForm.verifyNote = '';
   verifyForm.verifyRunId = '';
+  conditionComparable.value = false;
+  revisitCandidates.value = [];
+  revisitLoadFailed.value = false;
+  rollbackNote.value = '';
   cancelReason.value = '';
   startPanelOpen.value = false;
 }
@@ -171,6 +203,23 @@ const detailFields = computed(() =>
 
 function pidProvided(pid: PidFormValues): boolean {
   return pid.p != null || pid.i != null || pid.d != null;
+}
+
+/** P/PI/PID 结构校验（P3-05/ENG-03，与后端 _validate_pid_feedback 契约一致）：
+ * 合法结构 {p}=P / {p,i}=PI / {p,i,d}=PID；p 必填、含 d 必含 i（无标准 P+D
+ * 反馈结构）；InputNumber 产出恒为 number，数值面由后端兜底 */
+function pidStructureError(pid: PidFormValues, label: string): string {
+  const cleaned = cleanDetail(pid as Record<string, any>);
+  if (Object.keys(cleaned).length === 0) {
+    return `${label}必填（合法结构：P / P+I / P+I+D）`;
+  }
+  if (!('p' in cleaned)) {
+    return `${label}缺少比例项 P（P/PI/PID 结构均必填 P）`;
+  }
+  if ('d' in cleaned && !('i' in cleaned)) {
+    return `${label}含微分项 D 时必须同时填写积分项 I（无标准 P+D 反馈结构）`;
+  }
+  return '';
 }
 
 function cleanDetail(raw: Record<string, any>): Record<string, any> {
@@ -206,6 +255,12 @@ function handleStart() {
     actionDetail: cleanDetail(startForm.detail),
   };
   if (detail.value?.actionType === 'TUNING' && pidProvided(startForm.pidBefore)) {
+    // B2：提供即校验（与后端 start 侧结构契约同步，不等到 400）
+    const pidErr = pidStructureError(startForm.pidBefore, '调整前 P/I/D ');
+    if (pidErr) {
+      message.warning(pidErr);
+      return;
+    }
     body.pidBefore = cleanDetail(startForm.pidBefore) as HandlingApi.PidValues;
   }
   runAction(() => startOrderApi(props.orderId!, body), '已开工，进入执行中');
@@ -251,8 +306,10 @@ function handleSubmit() {
   if (!props.orderId || !detail.value) return;
   const detailBody = cleanDetail(submitForm.detail);
   if (detail.value.actionType === 'TUNING') {
-    if (!pidProvided(submitForm.pidAfter)) {
-      message.warning('参数整定类型必须填写调整后 P/I/D（pidAfter）');
+    // B2：客户端结构校验对齐后端契约（p 必填、有 d 必有 i）
+    const pidErr = pidStructureError(submitForm.pidAfter, '调整后 P/I/D ');
+    if (pidErr) {
+      message.warning(pidErr);
       return;
     }
     detailBody.pidAfter = cleanDetail(
@@ -263,19 +320,50 @@ function handleSubmit() {
     message.warning('请填写处置详情');
     return;
   }
+  const body: HandlingApi.SubmitOrderBody = { actionDetail: detailBody };
+  // B1：可选申报实际实施时刻（补录场景提交时刻≠实施时刻）；后端终校验，
+  // 前端同步提示（不晚于当前/不早于开工），避免用户对着 400 报错
+  if (submitForm.implementedAt) {
+    if (detail.value.startedAt) {
+      const started = dayjs(normalizeUtcTimestamp(detail.value.startedAt));
+      if (submitForm.implementedAt.isBefore(started)) {
+        message.warning('实施时刻不能早于开工时间（实施发生在开工之后）');
+        return;
+      }
+    }
+    if (submitForm.implementedAt.isAfter(dayjs())) {
+      message.warning('实施时刻不能晚于当前时间（实施是已发生的事实）');
+      return;
+    }
+    body.implementedAt = submitForm.implementedAt.toISOString();
+  }
   runAction(
-    () => submitOrderApi(props.orderId!, { actionDetail: detailBody }),
+    () => submitOrderApi(props.orderId!, body),
     '已提交验证',
   );
 }
 
 function handleVerify(result: HandlingApi.VerifyResult) {
   if (!props.orderId) return;
+  // B4：无数据人工闭环必须填理由（与服务端派生门槛对齐——仅已加载预览且
+  // 任一侧缺数据时硬校验；预览不可用时交服务端判定，不代作"数据不足"断言）
+  if (
+    result === 'EFFECTIVE' &&
+    kpiPreview.value &&
+    !kpiDataAvailable.value &&
+    !verifyForm.verifyNote.trim()
+  ) {
+    message.warning(
+      '前后窗 KPI 数据不足，人工闭环必须填写理由（不计入数据验证通过数）',
+    );
+    return;
+  }
   const body: HandlingApi.VerifyOrderBody = {
     verifyResult: result,
     verifyNote: verifyForm.verifyNote.trim() || undefined,
     verifyRunId: verifyForm.verifyRunId.trim() || undefined,
   };
+  if (conditionComparable.value) body.conditionComparable = true;
   runAction(
     () => verifyOrderApi(props.orderId!, body),
     result === 'EFFECTIVE' ? '已闭环' : '已重开，可再次处置',
@@ -299,6 +387,76 @@ async function loadKpiPreview() {
   } finally {
     kpiLoading.value = false;
   }
+}
+
+/** B4：前后窗 KPI 数据均在（与服务端 MANUAL_CONFIRMATION 派生门槛一致；
+ * 预览未加载/加载失败时不据此断言"数据不足"，硬门槛只对已加载且缺数据的场景） */
+const kpiDataAvailable = computed(
+  () => !!(kpiPreview.value?.kpiBefore && kpiPreview.value?.kpiAfter),
+);
+
+/** B3：复诊候选加载（服务端已过滤：同回路 + SUCCESS/PARTIAL + 实施锚后） */
+async function loadRevisitCandidates() {
+  if (!props.orderId) return;
+  revisitLoading.value = true;
+  revisitLoadFailed.value = false;
+  try {
+    const res = await getRevisitCandidatesApi(props.orderId);
+    revisitCandidates.value = res.items;
+  } catch (error) {
+    revisitCandidates.value = [];
+    revisitLoadFailed.value = true;
+    console.error('[工单详情/复诊候选] 加载失败:', error);
+  } finally {
+    revisitLoading.value = false;
+  }
+}
+
+const revisitOptions = computed(() =>
+  revisitCandidates.value.map((r) => ({
+    value: r.id,
+    label: [
+      r.primaryCategory
+        ? (DIAG_CATEGORY_TEXT[r.primaryCategory] ?? r.primaryCategory)
+        : '未分类',
+      r.triggerType ? (TRIGGER_TYPE_TEXT[r.triggerType] ?? r.triggerType) : '',
+      r.createdAt ? formatLocalTime(r.createdAt, 'MM-DD HH:mm') : '',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  })),
+);
+
+/** B5：实际回退确认（confirmed=true 须填说明；false=更正误确认） */
+function openRollbackConfirm() {
+  rollbackNote.value = detail.value?.rollbackNote ?? '';
+  rollbackOpen.value = true;
+}
+
+function handleRollbackConfirm() {
+  if (!props.orderId) return;
+  if (!rollbackNote.value.trim()) {
+    message.warning('确认已回退必须填写说明（何时/依据何种现场记录确认）');
+    return;
+  }
+  rollbackOpen.value = false;
+  runAction(
+    () =>
+      rollbackConfirmApi(props.orderId!, {
+        confirmed: true,
+        note: rollbackNote.value.trim(),
+      }),
+    '已确认实际回退',
+  );
+}
+
+function handleRollbackCorrection() {
+  if (!props.orderId) return;
+  // 更正=撤销回退事实主张，不携带说明（后端 note 置空，最新覆盖）
+  runAction(
+    () => rollbackConfirmApi(props.orderId!, { confirmed: false }),
+    '已更正为未回退',
+  );
 }
 
 const KPI_ROWS: Array<{
@@ -379,7 +537,15 @@ const timelineNodes = computed<TimelineNode[]>(() => {
       label: `验证${d.verifyResult ? VERIFY_RESULT_TEXT[d.verifyResult] : ''}`,
       time: d.verifiedAt,
       who: d.verifiedBy,
-      extra: d.verifyNote,
+      // B5：验证无效≠DCS 已恢复——判断结论与人工回退事实互不冒充（ENG-05）
+      extra: [
+        d.verifyNote,
+        d.verifyResult === 'INEFFECTIVE'
+          ? '（验证判断结论，非回退事实——DCS 是否已恢复以人工回退确认为准）'
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join('；'),
     });
   }
   if (d.status === 'CANCELLED') {
@@ -612,12 +778,12 @@ const fmt = (ts: null | string | undefined) =>
                   <InputNumber
                     v-model:value="submitForm.pidAfter.i"
                     class="flex-1"
-                    placeholder="I（必填）"
+                    placeholder="I（含 D 时必填）"
                   />
                   <InputNumber
                     v-model:value="submitForm.pidAfter.d"
                     class="flex-1"
-                    placeholder="D（必填）"
+                    placeholder="D（须同时填 I）"
                   />
                 </div>
               </template>
@@ -640,6 +806,18 @@ const fmt = (ts: null | string | undefined) =>
                   v-model:value="submitForm.detail[f.key]"
                   class="flex-1"
                   :placeholder="f.placeholder"
+                />
+              </div>
+              <!-- B1：可选申报实际实施时刻（补录场景提交时刻≠实施时刻；
+                   缺省=未知，验证后窗按提交时刻开窗并在预览中显式提示） -->
+              <div class="flex items-center gap-2">
+                <span class="w-16 shrink-0 text-xs text-neutral-500">实施时刻</span>
+                <DatePicker
+                  v-model:value="submitForm.implementedAt"
+                  show-time
+                  class="flex-1"
+                  format="YYYY-MM-DD HH:mm"
+                  placeholder="可选；不填=未知（按提交时刻开窗）"
                 />
               </div>
               <div class="flex items-center gap-2">
@@ -697,19 +875,67 @@ const fmt = (ts: null | string | undefined) =>
                     </tr>
                   </tbody>
                 </table>
+                <!-- B6：后窗锚定依据显式回显（implementedAt ?? submittedAt，诚实化） -->
+                <div
+                  v-if="kpiPreview"
+                  class="mt-1 text-[11px] text-neutral-500"
+                >
+                  后窗锚定：{{
+                    AFTER_ANCHOR_SOURCE_TEXT[
+                      kpiPreview.window.afterAnchorSource ?? 'unknown'
+                    ]
+                  }}
+                </div>
               </div>
             </Spin>
             <div class="flex flex-col gap-2">
+              <!-- B4：数据不足时人工闭环门槛显式提示（统计与数据验证分开） -->
+              <div
+                v-if="kpiPreview && !kpiDataAvailable"
+                class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-400"
+              >
+                前后窗 KPI 数据不足：人工闭环必须填写理由，不计入数据验证通过数
+              </div>
+              <div
+                v-else-if="!kpiLoading && !kpiPreview"
+                class="text-[11px] text-neutral-400"
+              >
+                KPI 预览未加载：无法判断前后窗数据是否充足，人工闭环请填写理由（以服务端判定为准）
+              </div>
               <Textarea
                 v-model:value="verifyForm.verifyNote"
                 :maxlength="500"
                 :rows="2"
-                placeholder="验证说明（无效时建议填写原因）"
+                placeholder="验证说明（数据不足人工闭环必填；无效时建议填写原因）"
               />
-              <Input
+              <!-- B4：工况可比人工确认（仅前后窗数据均在时生效；缺数据时后端忽略） -->
+              <Checkbox
+                v-if="kpiDataAvailable"
+                v-model:checked="conditionComparable"
+                class="text-xs"
+              >
+                确认前后窗工况可比（负荷/工况信号可比，计入工况可比证据）
+              </Checkbox>
+              <!-- B3：复诊候选由服务端供给（同回路/已完成/实施后），替代手填 UUID -->
+              <Select
                 v-model:value="verifyForm.verifyRunId"
-                placeholder="复诊诊断记录 ID（可选，复诊完成后回填）"
+                :options="revisitOptions"
+                :loading="revisitLoading"
+                allow-clear
+                placeholder="选择实施后复诊诊断记录（可选）"
               />
+              <div
+                v-if="revisitLoadFailed"
+                class="text-[11px] text-amber-600"
+              >
+                复诊候选加载失败，可刷新工单重试
+              </div>
+              <div
+                v-else-if="!revisitLoading && revisitOptions.length === 0"
+                class="text-[11px] text-amber-600"
+              >
+                尚无合格复诊记录（同回路 · 已完成 · 实施后创建）——可先「发起复诊」
+              </div>
               <div class="flex gap-2">
                 <Popconfirm
                   title="确认验证有效并闭环？闭环后不可重开"
@@ -752,9 +978,85 @@ const fmt = (ts: null | string | undefined) =>
           当前角色为只读（SPONSOR / EXPERT），流转操作由仪控/工艺工程师执行。
         </section>
 
+        <!-- ============ B5：实际回退确认卡（CLOSED/REOPENED；事实展示全员可见，
+             操作需处置权限；ROLLED_BACK 是验证判断结论，与本卡人工回退事实互不冒充） ============ -->
+        <section
+          v-if="detail.status === 'CLOSED' || detail.status === 'REOPENED'"
+          class="rounded border border-neutral-200 p-3 dark:border-neutral-700"
+        >
+          <div class="mb-1 flex items-center gap-2">
+            <span class="text-xs font-medium">实际回退确认</span>
+            <Tag
+              :color="detail.actualRollbackConfirmed ? 'green' : 'default'"
+              style="margin: 0; font-size: 11px"
+            >
+              {{
+                detail.actualRollbackConfirmed
+                  ? '已人工确认回退'
+                  : '未确认回退（不得声称 DCS 已恢复）'
+              }}
+            </Tag>
+          </div>
+          <div
+            v-if="detail.actualRollbackConfirmed"
+            class="text-xs text-neutral-500"
+          >
+            {{ detail.rollbackConfirmedBy ?? '—' }} ·
+            {{ fmt(detail.rollbackConfirmedAt) }}
+            <span v-if="detail.rollbackNote">
+              （{{ detail.rollbackNote }}）
+            </span>
+          </div>
+          <div
+            v-if="detail.verifyResult === 'INEFFECTIVE'"
+            class="mt-1 text-[11px] text-neutral-400"
+          >
+            「验证无效」是判断结论；DCS 是否已恢复以本卡人工确认为准
+          </div>
+          <div v-if="canOperate" class="mt-2 flex gap-2">
+            <Button
+              size="small"
+              :danger="!detail.actualRollbackConfirmed"
+              @click="openRollbackConfirm"
+            >
+              {{
+                detail.actualRollbackConfirmed
+                  ? '更新回退说明'
+                  : '确认已回退（须说明）'
+              }}
+            </Button>
+            <Popconfirm
+              v-if="detail.actualRollbackConfirmed"
+              title="确认更正为未回退？（纠正误确认）"
+              @confirm="handleRollbackCorrection"
+            >
+              <Button size="small">更正为未回退</Button>
+            </Popconfirm>
+          </div>
+        </section>
+
         <!-- ============ KPI 固化展示（CLOSED/REOPENED 有值时） ============ -->
         <section v-if="detail.kpiBefore || detail.kpiAfter">
-          <div class="mb-1 text-xs font-medium">验证时固化 KPI</div>
+          <div class="mb-1 flex flex-wrap items-center gap-2">
+            <span class="text-xs font-medium">验证时固化 KPI</span>
+            <!-- B6：闭环证据三分类标签 + 工况可比性（未确认时显式提示） -->
+            <Tag
+              v-if="detail.closureEvidence"
+              :color="CLOSURE_EVIDENCE_COLOR[detail.closureEvidence]"
+              style="margin: 0; font-size: 11px"
+            >
+              {{
+                detail.closureEvidenceLabel ??
+                CLOSURE_EVIDENCE_TEXT[detail.closureEvidence]
+              }}
+            </Tag>
+            <span
+              v-if="detail.closureEvidence && !detail.conditionComparable"
+              class="text-[11px] text-amber-600"
+            >
+              工况可比性未验证
+            </span>
+          </div>
           <table class="w-full text-xs">
             <thead>
               <tr class="text-neutral-500">
@@ -825,6 +1127,29 @@ const fmt = (ts: null | string | undefined) =>
           :maxlength="200"
           :rows="2"
           placeholder="作废原因（必填，如：计划变更/与在执行工单重复）"
+          show-count
+        />
+      </div>
+    </Modal>
+
+    <!-- 实际回退确认 Modal（B5：说明必填——何时/依据何种现场记录确认） -->
+    <Modal
+      v-model:open="rollbackOpen"
+      cancel-text="取消"
+      ok-text="确认已回退"
+      title="确认实际回退"
+      @ok="handleRollbackConfirm"
+    >
+      <div class="py-2">
+        <p class="mb-2 text-sm text-neutral-600">
+          确认 DCS 参数已人工恢复（回退）到实施前状态。该确认独立于验证结论
+          （ROLLED_BACK 只是判断结论），必须填写说明留痕。
+        </p>
+        <Textarea
+          v-model:value="rollbackNote"
+          :maxlength="200"
+          :rows="2"
+          placeholder="回退说明（必填：何时回退 / 依据何种现场记录确认）"
           show-count
         />
       </div>
