@@ -69,6 +69,59 @@ def _make_scalar_none_result() -> MagicMock:
     return result
 
 
+def _make_scalar_result(value) -> MagicMock:
+    """构造 db.execute 返回值，scalar_one_or_none() 返回 value（存量记录）。"""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = value
+    return result
+
+
+def _make_count_result(count: int = 5) -> MagicMock:
+    """构造 db.execute 返回值，scalar_one() 返回 int（COUNT 聚合查询）。"""
+    result = MagicMock()
+    result.scalar_one.return_value = count
+    return result
+
+
+def _make_put_execute_side_effect(
+    *,
+    row_results: list[MagicMock],
+    stored_rows: list | None = None,
+    reset_results: list[MagicMock] | None = None,
+) -> list:
+    """构造 P2-02 后 PUT /algorithm-params 的 db.execute side_effect 序列.
+
+    调用序（endpoints/algorithm_config.py::save_metric_algorithm_params）：
+    1. get_current_revision（scalar_one_or_none → None 即 revision 0）
+    2. before 快照循环（每 touched 控制类型一次，sorted 序）
+    3. reset 循环（每 reset ct 一次）→ items 循环（每非空 item 一次）
+    4. after 快照循环（每 touched ct 一次）
+    5. note_legacy_sync：get_current_revision（expectedRevision 未传时再读一次）
+       → _count_affected_loops（scalar_one → int）
+    6. commit 后 sync_runtime_cache：load_stored_config（scalars().all()）→
+       load_metric_thresholds（all()）→ get_current_revision
+
+    Args:
+        row_results: 存量记录查询结果（before/items/after 循环同结果复用；
+            多控制类型时按 sorted(ct) 顺序给）
+        stored_rows: commit 后 load_stored_config 返回行（None = 提交失败场景，
+            不追加 commit 后查询）
+        reset_results: reset 分支的存量查询结果（无 reset 省略）
+    """
+    side: list = [_make_scalar_none_result()]  # 1. 当前 revision → 0
+    side.extend(row_results)  # 2. before 快照
+    side.extend(reset_results or [])  # 3a. reset 存量查询
+    side.extend(row_results)  # 3b. items 存量查询
+    side.extend(row_results)  # 4. after 快照
+    side.append(_make_scalar_none_result())  # 5a. note_legacy_sync revision
+    side.append(_make_count_result())  # 5b. 影响回路数 COUNT
+    if stored_rows is not None:
+        side.append(_make_scalars_all_result(stored_rows))
+        side.append(_make_all_result([]))
+        side.append(_make_scalar_none_result())
+    return side
+
+
 def _make_scalars_all_result(items: list) -> MagicMock:
     """构造 db.execute 返回值，scalars().all() 返回 items（load_stored_config）。"""
     result = MagicMock()
@@ -273,17 +326,15 @@ class TestSaveMetricAlgorithmParams:
 
     def test_update_success_new_record(self, client, mock_db, fake_redis, reset_cache) -> None:
         """ADMIN 新建算法参数覆盖记录成功，缓存刷新后 overridden=True。"""
-        # PUT 调用序列：
-        # 1. existing-record 查询（scalar_one_or_none → None，新建）
-        # 2. load_stored_config（scalars().all → 含刚保存的参数）
-        # 3. load_metric_thresholds（all → 空）
+        # P2-02 后 PUT 调用序列（经 _make_put_execute_side_effect 组装）：
+        # revision → before 快照 → items 存量查询 → after 快照 → 影响回路数
+        # → commit → load_stored_config / load_metric_thresholds / revision
         saved_row = _make_param_row("oscillation_rate", "STABLE", {"similarity_threshold": 0.55})
         mock_db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_none_result(),
-                _make_scalars_all_result([saved_row]),
-                _make_all_result([]),
-            ]
+            side_effect=_make_put_execute_side_effect(
+                row_results=[_make_scalar_none_result()],
+                stored_rows=[saved_row],
+            )
         )
         mock_db.add = MagicMock()
 
@@ -301,8 +352,8 @@ class TestSaveMetricAlgorithmParams:
         # 缓存已刷新，覆盖生效
         assert stable["overridden"] is True
         assert stable["params"]["similarity_threshold"] == 0.55
-        # 新建记录 + 审计日志 = 2 次 db.add
-        assert mock_db.add.call_count == 2
+        # 新建记录 + 审计 + LEGACY_SYNC 发布账本 + 发布审计 = 4 次 db.add（P2-02）
+        assert mock_db.add.call_count == 4
         mock_db.commit.assert_awaited_once()
         mock_db.rollback.assert_not_awaited()
 
@@ -322,15 +373,13 @@ class TestSaveMetricAlgorithmParams:
             "STABLE",
             {"similarity_threshold": 0.55, "min_ratio": 0.08, "max_ratio": 15.0},
         )
-        # existing-record 查询返回已存在记录（scalar_one_or_none → existing）
-        existing_result = MagicMock()
-        existing_result.scalar_one_or_none.return_value = existing
+        # 存量记录查询（before 快照 / items upsert / after 快照）返回已存在记录
+        existing_result = _make_scalar_result(existing)
         mock_db.execute = AsyncMock(
-            side_effect=[
-                existing_result,
-                _make_scalars_all_result([merged_row]),
-                _make_all_result([]),
-            ]
+            side_effect=_make_put_execute_side_effect(
+                row_results=[existing_result],
+                stored_rows=[merged_row],
+            )
         )
         mock_db.add = MagicMock()
 
@@ -343,8 +392,8 @@ class TestSaveMetricAlgorithmParams:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
-        # 已存在记录：existing.params 被合并更新，version+=1，仅审计日志 add（1 次）
-        assert mock_db.add.call_count == 1
+        # 已存在记录：审计 + LEGACY_SYNC 发布账本 + 发布审计 = 3 次 add（P2-02）
+        assert mock_db.add.call_count == 3
         # 验证已存在记录被合并更新
         assert existing.params["min_ratio"] == 0.08
         assert existing.params["similarity_threshold"] == 0.55  # 保留原值
@@ -358,12 +407,11 @@ class TestSaveMetricAlgorithmParams:
             _make_param_row("fast_rate", "FAST", {"settling_tolerance": 0.05}),
         ]
         mock_db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_none_result(),  # STABLE 新建
-                _make_scalar_none_result(),  # FAST 新建
-                _make_scalars_all_result(saved_rows),  # load_stored_config
-                _make_all_result([]),  # load_metric_thresholds
-            ]
+            side_effect=_make_put_execute_side_effect(
+                # touched sorted = [FAST, STABLE]，全部无存量记录（新建）
+                row_results=[_make_scalar_none_result(), _make_scalar_none_result()],
+                stored_rows=saved_rows,
+            )
         )
         mock_db.add = MagicMock()
 
@@ -387,18 +435,17 @@ class TestSaveMetricAlgorithmParams:
         assert stable["params"]["settling_tolerance"] == 0.03
         assert fast["overridden"] is True
         assert fast["params"]["settling_tolerance"] == 0.05
-        # 2 新建记录 + 1 审计日志 = 3 次 add
-        assert mock_db.add.call_count == 3
+        # 2 新建记录 + 审计 + LEGACY_SYNC 账本/审计 = 5 次 add（P2-02）
+        assert mock_db.add.call_count == 5
 
     def test_update_empty_params_skipped(self, client, mock_db, fake_redis, reset_cache) -> None:
-        """空 params 的控制类型被跳过（不查询、不新增）。"""
-        # 仅 1 个非空 item → 1 次 existing 查询 + load_stored_config + load_metric_thresholds
+        """空 params 的控制类型被跳过（不新增记录；快照查询按 touched 全集）."""
         mock_db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_none_result(),
-                _make_scalars_all_result([]),
-                _make_all_result([]),
-            ]
+            side_effect=_make_put_execute_side_effect(
+                # touched sorted = [SLOW, STABLE]（含空 params 的 STABLE）
+                row_results=[_make_scalar_none_result(), _make_scalar_none_result()],
+                stored_rows=[],
+            )
         )
         mock_db.add = MagicMock()
 
@@ -415,8 +462,8 @@ class TestSaveMetricAlgorithmParams:
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 200
-        # 仅 SLOW 新建 + 审计 = 2 次 add
-        assert mock_db.add.call_count == 2
+        # 仅 SLOW 新建 + 审计 + LEGACY_SYNC 账本/审计 = 4 次 add（P2-02）
+        assert mock_db.add.call_count == 4
 
     def test_unknown_metric_404(self, client, mock_db, fake_redis, reset_cache) -> None:
         """未知指标代码返回 404（不查库）。"""
@@ -435,11 +482,10 @@ class TestSaveMetricAlgorithmParams:
     def test_commit_failure_rollback_500(self, client, mock_db, fake_redis, reset_cache) -> None:
         """事务提交失败时回滚，返回 500。"""
         mock_db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_none_result(),
-                _make_scalars_all_result([]),
-                _make_all_result([]),
-            ]
+            side_effect=_make_put_execute_side_effect(
+                row_results=[_make_scalar_none_result()],
+                stored_rows=None,  # 提交失败，不触发 commit 后缓存同步查询
+            )
         )
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock(side_effect=RuntimeError("commit failed"))
@@ -480,23 +526,23 @@ class TestSaveMetricAlgorithmParams:
         self, client, mock_db, fake_redis, reset_cache
     ) -> None:
         """F6：resetControlTypes 将指定控制类型覆盖清空（params={} → 回落默认）。"""
-        # PUT 调用序列：
-        # 1. reset 分支 existing 查询（命中已覆盖记录）
-        # 2. load_stored_config（返回清空后的记录）
-        # 3. load_metric_thresholds（空）
+        # P2-02 后调用序列：revision → before 快照（命中已覆盖记录）→ reset
+        # 存量查询 → after 快照 → 影响回路数 → commit → 缓存同步三查询 →
+        # 重置解释（metric_config.threshold + config_override 两查询）
         existing = _make_existing_param(
             "oscillation_rate", "STABLE", {"similarity_threshold": 0.55}
         )
         cleared_row = _make_param_row("oscillation_rate", "STABLE", {})
-        existing_result = MagicMock()
-        existing_result.scalar_one_or_none.return_value = existing
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                existing_result,
-                _make_scalars_all_result([cleared_row]),
-                _make_all_result([]),
-            ]
+        existing_result = _make_scalar_result(existing)
+        side_effect = _make_put_execute_side_effect(
+            row_results=[existing_result],
+            reset_results=[existing_result],
+            stored_rows=[cleared_row],
         )
+        # 重置解释：threshold 无覆盖（None）+ 无分层覆盖行（空）
+        side_effect.append(_make_scalar_result(None))
+        side_effect.append(_make_scalars_all_result([]))
+        mock_db.execute = AsyncMock(side_effect=side_effect)
 
         body = {"items": [], "resetControlTypes": ["STABLE"]}
         with mock_current_user(TEST_USERS["admin"]):
