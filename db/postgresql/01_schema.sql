@@ -763,6 +763,11 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     current_pid          JSON,
     risk_assessment      JSON,
     rollback_pid         JSON,
+    -- P2-03：计算上下文与历史复现（迁移 p203dssnap01）
+    -- dataset_snapshot_id 的 FK 延迟到 calculation_dataset_snapshot 表创建后添加（见 8.11 后 DO 块）
+    source_record_id     UUID,
+    dcs_template_revision VARCHAR(64),
+    calc_context         JSON,
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     -- fk_tuning_record_process_model_version 延迟到 process_model_version 表创建后添加（见下方 DO 块）
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
@@ -1425,6 +1430,7 @@ CREATE TABLE IF NOT EXISTS process_model_version (
     data_window_start       TIMESTAMP,
     data_window_end         TIMESTAMP,
     data_hash               VARCHAR(64),
+    dataset_snapshot_id     UUID,
     condition_summary       JSON,
     algorithm_version       VARCHAR(50),
     identify_method         VARCHAR(30),
@@ -1737,6 +1743,7 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
     triggered_by        VARCHAR(64) NOT NULL DEFAULT 'system',
     time_window_start   TIMESTAMP    NOT NULL,
     time_window_end     TIMESTAMP    NOT NULL,
+    dataset_snapshot_id UUID,
     operator_group      VARCHAR(8)   NOT NULL DEFAULT 'full',
     status              VARCHAR(16)  NOT NULL DEFAULT 'RUNNING',
     data_gate           JSONB,
@@ -2433,6 +2440,97 @@ COMMENT ON TABLE  config_publication IS '统一配置发布快照（追加式账
 COMMENT ON COLUMN config_publication.revision IS '持久版本号（Redis 仅加速通知）；唯一约束实现并发 409';
 COMMENT ON COLUMN config_publication.operation IS 'PUBLISH/RESET/ROLLBACK/LEGACY_SYNC';
 COMMENT ON COLUMN config_publication.rollback_revision IS '回退目标版本（= 发布前 revision）';
+
+-- =============================================================================
+-- 8.11 calculation_dataset_snapshot（不可变输入包元数据，P2-03，迁移 p203dssnap01）
+--   现有 datasetRef 只表示绑定/改绑身份，不是数值输入身份；本表把数值输入
+--   身份落到 input_hash（NPZ 数组+manifest 全部内容 SHA256，volatile 字段
+--   除外）——相同绑定但值/质量/mask 改变必须得到不同 inputHash。
+--   包文件 {snapshotId}.npz + {snapshotId}.manifest.json 存本地持久化共享目录
+--   （CLPM_CALC_SNAPSHOT_DIR），写入次序=先原子写文件+核 hash 再提交本表引用；
+--   不开放静态目录下载，访问走带 scope 校验的服务。
+--   保留契约（DEC-10）：NORMAL 90 天（expires_at）；被 record/方案/审核证据
+--   引用的包 FROZEN 永不清理；清理先标 cleaned_at 再删文件（隔离清理任务）。
+--   created_by_record_id 跨表（结果账本 record / tuning_record / diagnosis_run），
+--   故无硬 FK——引用完整性由清理任务的跨表核查保证。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS calculation_dataset_snapshot (
+    id                    UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    dataset_ref           VARCHAR(64)     NOT NULL,
+    input_hash            VARCHAR(64)     NOT NULL,
+    ts_start              TIMESTAMP       NOT NULL,
+    ts_end                TIMESTAMP       NOT NULL,
+    schema_version        VARCHAR(16)     NOT NULL,
+    kind                  VARCHAR(24)     NOT NULL,
+    created_by_record_id  UUID,
+    retention_class       VARCHAR(8)      NOT NULL DEFAULT 'NORMAL',
+    frozen_reason         VARCHAR(200),
+    frozen_by_record_ids  JSONB,
+    expires_at            TIMESTAMP,
+    size_bytes            BIGINT          NOT NULL DEFAULT 0,
+    cleaned_at            TIMESTAMP,
+    loop_id               UUID,
+    created_at            TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT ck_calc_dataset_snapshot_retention CHECK (retention_class IN ('NORMAL', 'FROZEN')),
+    CONSTRAINT ck_calc_dataset_snapshot_kind CHECK (kind IN ('KPI_GRID', 'IDENTIFICATION', 'DIAGNOSIS_RAW')),
+    CONSTRAINT ck_calc_dataset_snapshot_frozen_reason CHECK (retention_class <> 'FROZEN' OR frozen_reason IS NOT NULL),
+    CONSTRAINT ck_calc_dataset_snapshot_window CHECK (ts_end > ts_start),
+    CONSTRAINT uq_calc_dataset_snapshot_content_ref UNIQUE (dataset_ref, input_hash, ts_start, ts_end, created_by_record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_dataset_snapshot_input_hash
+    ON calculation_dataset_snapshot (input_hash);
+CREATE INDEX IF NOT EXISTS idx_calc_dataset_snapshot_retention
+    ON calculation_dataset_snapshot (retention_class, expires_at);
+CREATE INDEX IF NOT EXISTS idx_calc_dataset_snapshot_loop
+    ON calculation_dataset_snapshot (loop_id);
+
+COMMENT ON TABLE  calculation_dataset_snapshot IS '不可变计算输入包元数据（P2-03，NPZ+manifest 内容寻址）';
+COMMENT ON COLUMN calculation_dataset_snapshot.dataset_ref IS '绑定身份（≠数值身份；logical_wide_builder 摘要或显式合成）';
+COMMENT ON COLUMN calculation_dataset_snapshot.input_hash IS '内容 SHA256（NPZ 数组+manifest 全部内容，volatile 字段除外）';
+COMMENT ON COLUMN calculation_dataset_snapshot.schema_version IS 'manifest 结构版本（主版本 1 版本化扩展）';
+COMMENT ON COLUMN calculation_dataset_snapshot.kind IS '包种类：KPI_GRID/IDENTIFICATION/DIAGNOSIS_RAW（重放按种类分派）';
+COMMENT ON COLUMN calculation_dataset_snapshot.created_by_record_id IS '创建引用（跨表：结果账本 record/tuning_record/diagnosis_run，无硬 FK）';
+COMMENT ON COLUMN calculation_dataset_snapshot.frozen_by_record_ids IS 'FROZEN 时引用本包的方案/实施/审核证据 recordId 列表';
+COMMENT ON COLUMN calculation_dataset_snapshot.expires_at IS 'NORMAL 保留期终点（创建+90 天，DEC-10）；FROZEN 行忽略';
+COMMENT ON COLUMN calculation_dataset_snapshot.cleaned_at IS '清理完成标记（先标记再删文件）';
+
+-- 延迟外键：tuning_record / process_model_version / diagnosis_run →
+-- calculation_dataset_snapshot（表定义顺序在前）
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_tuning_record_dataset_snapshot'
+          AND conrelid = 'tuning_record'::regclass
+    ) THEN
+        ALTER TABLE tuning_record
+            ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
+            ADD CONSTRAINT fk_tuning_record_dataset_snapshot
+            FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_process_model_version_dataset_snapshot'
+          AND conrelid = 'process_model_version'::regclass
+    ) THEN
+        ALTER TABLE process_model_version
+            ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
+            ADD CONSTRAINT fk_process_model_version_dataset_snapshot
+            FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_diagnosis_run_dataset_snapshot'
+          AND conrelid = 'diagnosis_run'::regclass
+    ) THEN
+        ALTER TABLE diagnosis_run
+            ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
+            ADD CONSTRAINT fk_diagnosis_run_dataset_snapshot
+            FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
 
 -- =============================================================================
 -- 脚本结束

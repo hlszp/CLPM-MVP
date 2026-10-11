@@ -16,6 +16,7 @@ from app.models.alert import (
 from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
+from app.models.calc_dataset_snapshot import CalculationDatasetSnapshot  # P2-03
 from app.models.calculation_result import (
     CalculationResultLegacyMap,
     CalculationResultRecord,
@@ -103,6 +104,7 @@ __all__ = [
     "MetricConfig",
     "CalculationResultRecord",  # P1-05 结果账本
     "CalculationResultLegacyMap",  # P1-05 旧 ID 映射
+    "CalculationDatasetSnapshot",  # P2-03 不可变输入包元数据
     "ConfigOverride",  # P2-02 分层配置覆盖
     "ConfigPublication",  # P2-02 统一配置发布快照
     "DiagnosisConfig",
