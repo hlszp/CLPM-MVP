@@ -833,10 +833,25 @@ class TestIdentificationC12bId:
         # gap 不拼：时间轴在 gap 处真实跳变（≈300 槽），未被抹平为等距连续
         max_jump = float(np.max(np.diff(arrays["consumed__ts_rel"])))
         assert max_jump > 100.0, f"时间轴 gap 应显式保留（最大跳变 {max_jump}）"
-        # 六层语义关键节存在（P2 载体；P3 未运行字段显式 null，不伪补）
-        assert manifest["segments"]["available"] is False
+        # 六层语义关键节存在（P3-06b R2/P-14 起段目录实填；工况未知显式
+        # None 不伪填；旧断言 available=False 为 P2 占位状态）
+        assert manifest["segments"]["available"] is True
         assert manifest["segments"]["regimeId"] is None  # 工况未知显式标记
+        assert isinstance(manifest["segments"].get("catalog"), list)
+        seg0 = manifest["segments"]["catalog"][0]
+        for key in (
+            "segmentId",
+            "tsStart",
+            "tsEnd",
+            "mode",
+            "regimeId",
+            "pidVersion",
+            "sampleInterval",
+        ):
+            assert key in seg0, f"段目录缺 P-14 字段 {key}"
         assert manifest["searchAudit"]["preprocessing"] is not None
+        # P3-06b（B-04/B-05）：统一窗池搜索审计随包（四类清单键存在）
+        assert "windowSearch" in manifest["searchAudit"]
         assert manifest["searchAudit"]["budgetTermination"] is None
         assert manifest["estimation"]["split"] is not None
         # P3-06a（R17 承接）：估计身份/终验/预测指标节已从 evidence 填充

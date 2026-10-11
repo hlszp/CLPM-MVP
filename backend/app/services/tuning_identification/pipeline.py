@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 
@@ -37,6 +37,9 @@ from app.services.tuning_identification.order_selection import (
 from app.services.tuning_identification.physical_feasibility import (
     check_physical_feasibility,
 )
+from app.services.tuning_identification.segmentation import (
+    SEG_MIN_POINTS_FLOOR as _SEG_MIN_FLOOR,
+)
 from app.services.tuning_identification.types import (
     AlgorithmConfidenceLevel,
     CandidateModel,
@@ -53,8 +56,12 @@ logger = logging.getLogger(__name__)
 
 # 算法版本单一真相源在 types.IdentificationResult
 # （v1.5=2026-10-12 P3-06a 正确性子卡：R1 时滞物理边界/R6 粗增益校验降级/
-# R7 IPDT 漂移项/R4+R5 final-test 三段分数与终验四态/R17 估计身份证据）
-ALGORITHM_VERSION = "TUNE_IDENT_v1.5"
+# R7 IPDT 漂移项/R4+R5 final-test 三段分数与终验四态/R17 估计身份证据；
+# v1.6=2026-10-12 P3-06b 片段与时间尺度子卡：R2 合格连续段全保留（废弃
+# 大缺口取最长段）/P-12 段最小点数物理化/P-14 段目录字段/P-16 信息量通道/
+# P-17 自然事件锚点窗/P-19 采样分辨率标记/O-A6 时滞边界命中出口/
+# B-05~B-08 搜索预算与四类审计落字段）
+ALGORITHM_VERSION = "TUNE_IDENT_v1.6"
 
 # 可信度阈值
 _R2_A = 0.90
@@ -129,6 +136,28 @@ _FINAL_TEST_MIN_R2 = 0.50
 _OP_NEAR_WHITE_MAX_ABS_RHO = 0.3
 _OP_NEAR_WHITE_MAX_LAG = 10
 
+# ── P3-06b（2026-10-12，oracle 冻结草案 §3 冻结值，一字不差）──
+# P-16 信息量通道（幅度通道保留 v1.4 判据，两通道并联入候选评分；具体
+# 公式草案留白待定——本实现取候选三选之首"累计运动量 Σ|ΔOP|"，见交接
+# 裁量登记）：累计运动量 = Σ|ΔOP| / OP 量程（0~100 归一化域，量程倍数）；
+# 低于门槛的窗按信息量通道拒绝（保持/慢变化输入不进候选池，O-B2）。
+_WINDOW_INFO_MIN_MOVEMENT = 0.02  # 信息量门槛：累计运动 ≥ 2% 量程（保持输入≈0 恒拒）
+_WINDOW_INFO_NORM_FULL = 4.0  # 信息量归一饱和点（4 倍量程累计运动 = 评分满分）
+_WINDOW_INFO_WEIGHT = 5.0  # 信息量通道评分权重（并联加成，量级≈幅度通道贡献）
+# P-17 自然事件锚点窗：SP 阶跃事件检测（前/后局部均值差 > 阈值；归一化域
+# 1% 量程级，容忍斜坡保持型阶跃）与 MODE 变更事件；事件窗并入统一候选池。
+_EVENT_SP_STEP_MIN = 1.0  # SP 事件检测门：前后 flank 均值差（归一化域单位）
+_EVENT_FLANK_POINTS = 60  # SP 事件前后 flank 局部均值窗（点）
+_EVENT_WINDOW_MIN_POINTS = 600  # 事件窗最短点数（沿用 v1.4 窗口径 _AUTOWIN_MIN_POINTS）
+# B-07 冻结窗长档 {120,60,30}min——单窗时长上限 120min（整段候选与事件窗
+# 均受此上限约束）
+_WINDOW_MAX_MINUTES = 120.0
+_WINDOW_MINUTES_LADDER: Final[tuple[float, ...]] = (120.0, 60.0, 30.0)
+# B-05 候选窗总数上限（滑窗网格 + 事件窗 + 整段候选合并去重后；超限裁剪
+# 记录进预算终态字段）；B-06 互不重叠入选窗数 k=3（v1.4 既有值保持）。
+_WINDOW_POOL_CAP = 64
+_MULTI_WINDOW_MAX_PICK = 3
+
 
 def _find_contiguous_segments(valid: np.ndarray) -> list[tuple[int, int]]:
     """在布尔数组中找连续 True 段的 [(start, end), ...]（闭区间）."""
@@ -147,59 +176,35 @@ def _find_contiguous_segments(valid: np.ndarray) -> list[tuple[int, int]]:
     return segments
 
 
-def _clean_nan_segments(
+def _interp_small_gaps(
     u: np.ndarray,
     y: np.ndarray,
     sp: np.ndarray | None,
     max_interp_gap: int = _MAX_INTERP_GAP,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, dict | None]:
-    """P2-019 坏点清洗：小缺口线性插值，大缺口取最长连续有效段.
+) -> tuple[int, list[tuple[int, int]]]:
+    """P2-019 小缺口线性插值（原地修改；P3-06b R2 从 _clean_nan_segments 抽取）.
 
-    OP/PV 任一为 NaN/Inf 视为坏点（辨识需配对时序）；SP 同步处理。
-
-    策略：
-    1. 小缺口（连续坏点 < max_interp_gap 且两端有有效值）：线性插值填补；
-    2. 大缺口（连续坏点 ≥ max_interp_gap 或在端点）：按大缺口切分，取最长连续有效段；
-    3. 清洗后点数 < 1 时返回 None（由调用方再判 < 50）。
-
-    Args:
-        u, y: OP/PV 时序（已被 np.array 转换，可被原地修改）
-        sp: SP 时序（可选，同步处理）
-        max_interp_gap: 可插值的最大连续坏点数
+    OP/PV 任一为 NaN/Inf 视为坏点；SP 的坏点同步纳入。小缺口（连续坏点
+    < max_interp_gap 且两端有有效值）线性插值填补；其余（大缺口/端点坏段）
+    原样保留 NaN 并返回其区间列表——**不做任何截断或拼接**（R2：全部合格
+    连续段保留，段切分由段目录构建器按大缺口边界处理）。
 
     Returns:
-        (u_clean, y_clean, sp_clean, stats)
-        stats: {original_points, interpolated_points, dropped_points,
-                valid_points, valid_rate, n_large_gaps}
-        若原始数据无坏点，stats 的 interpolated/dropped 均为 0。
-        sp_clean 为 None 当且仅当输入 sp 为 None。
+        (interpolated_points, large_gaps)：插值点数与大缺口 [(start, end)]
+        区间列表（闭区间，坏点段）。原始数据无坏点时为 (0, [])。
     """
     n = len(u)
     bad = ~np.isfinite(u) | ~np.isfinite(y)
-    n_bad = int(bad.sum())
-
-    # 无坏点：直接返回（sp 也原样返回）
-    if n_bad == 0:
-        stats = {
-            "original_points": n,
-            "interpolated_points": 0,
-            "dropped_points": 0,
-            "valid_points": n,
-            "valid_rate": 1.0,
-            "n_large_gaps": 0,
-        }
-        return u, y, sp, stats
-
-    # SP 的坏点也纳入（SP 有 NaN 时也需清洗，但 OP/PV 是主信号）
+    # OP/PV 无坏点即原样返回（legacy 语义：SP 独有 NaN 不触发清洗——
+    # 该场景 CLIVC 因激励检测不过而不启用，与原 _clean_nan_segments 一致）
+    if int(bad.sum()) == 0:
+        return 0, []
     if sp is not None:
         bad = bad | ~np.isfinite(sp)
 
-    # 找连续坏段（_find_contiguous_segments 对 bad 掩码找连续 True 段）
     gap_segments = _find_contiguous_segments(bad)
-
     interpolated = 0
     large_gaps: list[tuple[int, int]] = []
-
     for g_start, g_end in gap_segments:
         gap_len = g_end - g_start + 1
         # 小缺口且两端有有效值才插值（端点处的坏段无法插值）
@@ -219,6 +224,44 @@ def _clean_nan_segments(
             interpolated += gap_len
         else:
             large_gaps.append((g_start, g_end))
+    return interpolated, large_gaps
+
+
+def _clean_nan_segments(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    max_interp_gap: int = _MAX_INTERP_GAP,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, dict | None]:
+    """P2-019 坏点清洗（legacy 单序列口径）：小缺口插值 + 大缺口取最长段.
+
+    P3-06b（R2）：正式管线已改为段目录全保留（见 _build_segment_catalog），
+    本函数保留 legacy 截断口径供既有单元测试与工具路径使用，行为不变。
+
+    策略：
+    1. 小缺口（连续坏点 < max_interp_gap 且两端有有效值）：线性插值填补；
+    2. 大缺口（连续坏点 ≥ max_interp_gap 或在端点）：按大缺口切分，取最长连续有效段；
+    3. 清洗后点数 < 1 时返回 None（由调用方再判 < 50）。
+
+    Returns:
+        (u_clean, y_clean, sp_clean, stats)
+        stats: {original_points, interpolated_points, dropped_points,
+                valid_points, valid_rate, n_large_gaps}
+        若原始数据无坏点，stats 的 interpolated/dropped 均为 0。
+        sp_clean 为 None 当且仅当输入 sp 为 None。
+    """
+    n = len(u)
+    interpolated, large_gaps = _interp_small_gaps(u, y, sp, max_interp_gap)
+    if not large_gaps and interpolated == 0:
+        stats = {
+            "original_points": n,
+            "interpolated_points": 0,
+            "dropped_points": 0,
+            "valid_points": n,
+            "valid_rate": 1.0,
+            "n_large_gaps": 0,
+        }
+        return u, y, sp, stats
 
     # 大缺口：取最长连续有效段
     dropped = 0
@@ -257,9 +300,606 @@ def _clean_nan_segments(
 
 
 # ---------------------------------------------------------------------------
-# P2-020（2026-10-04 预处理增强）：自动选段 / 去趋势 / 低通滤波
-# 层 0.5：坏点清洗之后、激励检测之前；三项均可独立跳过、互不阻断。
+# P3-06b（2026-10-12 片段与时间尺度子卡，oracle 冻结草案 §3 冻结值）：
+# 段目录全保留（R2/P-13/P-14）/ 信息量通道（P-16）/ 自然事件锚点窗（P-17）
+# / 物理时间与抗混叠（P-12/P-19）/ 搜索预算与四类审计（B-05~B-08/B-04）。
 # ---------------------------------------------------------------------------
+
+
+def _rough_tau_theta_for_catalog(
+    u: np.ndarray,
+    y: np.ndarray,
+    ts: float,
+) -> float | None:
+    """段目录用非参粗估 τ+θ（P-12 的 τ_预期/θ_max 输入；仅用于门槛折算）.
+
+    在最长有限连续段上做相关分析（缺口段不参与——不跨 gap 造统计）。
+    失败/不可得返回 None（P-12 按可确定部分折算）。
+    """
+    finite = np.isfinite(u) & np.isfinite(y)
+    segments = _find_contiguous_segments(finite)
+    if not segments:
+        return None
+    best_start, best_end = max(segments, key=lambda s: s[1] - s[0])
+    if best_end - best_start + 1 < 50:
+        return None
+    try:
+        nonparam = correlation_analysis(
+            u[best_start : best_end + 1], y[best_start : best_end + 1], ts
+        )
+        est = nonparam.time_constant_estimate
+        return float(est) if est is not None and math.isfinite(est) and est > 0 else None
+    except Exception:
+        return None
+
+
+def _segment_theta_max_seconds(
+    total_points: int,
+    ts: float,
+    rough_tau_theta: float | None,
+) -> float:
+    """P-12 的 θ_max（R1/P-02 公式在段目录时点的可确定部分）.
+
+    max(300s, 5×粗估 τ+θ)，且 ≤ 数据时长/4；粗估不可得时取 300s 下限
+    与时长/4 的较小者（P-02 公式逐字）。
+    """
+    duration_s = total_points * ts
+    rough = 5.0 * max(0.0, rough_tau_theta or 0.0)
+    return min(max(_DELAY_PHYS_MIN_SECONDS, rough), duration_s / _DELAY_PHYS_DURATION_QUARTER)
+
+
+def _window_info_metric(u_slice: np.ndarray) -> float:
+    """P-16 信息量通道：累计运动量 Σ|ΔOP| / OP 量程（量程倍数，无量纲）.
+
+    保持输入（OP 恒定）≈0；白输入随窗长线性增长；自然单阶跃=单次阶跃幅。
+    OP 量程取归一化域 100（V62-P1-009：生产链 OP 已归一化 0~100，算法栈
+    不假设输入量纲时由包装层传入——本度量与 check_excitation 的 op_span
+    同口径）。
+    """
+    if len(u_slice) < 2:
+        return 0.0
+    return float(np.sum(np.abs(np.diff(u_slice)))) / _OP_SPAN_NORMALIZED
+
+
+def _window_direction_changes(u_slice: np.ndarray) -> int:
+    """P-16 信息量通道·方向丰富度：死区过滤后的 OP 方向变化数.
+
+    与 excitation._OP_DIRECTION_DEADBAND_RATIO 同口径（死区=1%×窗内量程）
+    ——纯单调输入（慢斜坡/单次保持阶跃）无方向变化，频谱不丰富，模型
+    参数（尤其 τ）不可分辨（O-B2"慢变化按信息量通道正确拒绝或降级"）。
+    """
+    if len(u_slice) < 3:
+        return 0
+    du = np.diff(u_slice)
+    u_range = float(np.max(u_slice) - np.min(u_slice))
+    deadband = max(1e-9, 0.01 * u_range)
+    du_sig = du[np.abs(du) > deadband]
+    if len(du_sig) <= 1:
+        return 0
+    return int(np.sum(np.diff(np.sign(du_sig)) != 0))
+
+
+def _window_info_gate(u_slice: np.ndarray) -> tuple[bool, dict]:
+    """P-16 信息量通道门槛（并联于幅度通道）：运动量 + 方向丰富度 + 训练段信息.
+
+    拒绝条件（任一）：
+    - 累计运动量 < _WINDOW_INFO_MIN_MOVEMENT（保持输入）；
+    - 方向变化数 = 0（纯单调：慢斜坡/单保持阶跃——无频谱丰富度）；
+    - 训练段（前 60%，与 60/20/20 分割一致）累计运动量不足——动态全部
+      落在验证/终验段的窗无训练信息（回归矩阵退化，"回归条件数"信息量
+      候选的工程等价判据；O-B3 教训：train 死水窗上 τ≈0 退化候选凭
+      瞬跳拟合验证段胜出）。
+    返回 (passed, {movement, directionChanges, trainMovement})。
+    """
+    movement = _window_info_metric(u_slice)
+    changes = _window_direction_changes(u_slice)
+    n = len(u_slice)
+    train_movement = _window_info_metric(u_slice[: max(1, int(n * 0.6))])
+    passed = (
+        movement >= _WINDOW_INFO_MIN_MOVEMENT
+        and changes >= 1
+        and train_movement >= _WINDOW_INFO_MIN_MOVEMENT
+    )
+    return passed, {
+        "movement": round(movement, 6),
+        "directionChanges": int(changes),
+        "trainMovement": round(train_movement, 6),
+    }
+
+
+def _info_score_addon(info: float) -> float:
+    """信息量通道评分加成（P-16"两通道并联入候选评分"）.
+
+    归一 [0,1]（4 倍量程累计运动饱和）× 权重 5（与幅度通道 ptp 值同量级，
+    不喧宾夺主）。保持输入 info≈0 → 加成≈0（另有硬门拒绝）。
+    """
+    return _WINDOW_INFO_WEIGHT * min(1.0, max(0.0, info) / _WINDOW_INFO_NORM_FULL)
+
+
+def _detect_natural_events(
+    sp: np.ndarray | None,
+    mode: list[int] | None,
+    n: int,
+) -> list[dict]:
+    """P-17 自然事件检测：SP 阶跃（含斜坡保持型）与 MODE 变更.
+
+    - SP 阶跃：位置 k 的前/后 flank 局部均值差 |mean(sp[k+1:k+F]) −
+      mean(sp[k−F:k])| > _EVENT_SP_STEP_MIN（归一化域 1% 量程级）。
+      flank 均值比较天然容忍斜坡保持型变更（斜坡期间两侧均值差单调
+      上升越阈，取越阈段中点为锚点），避免逐点阈值对慢斜坡失明；
+    - MODE 变更：mode 序列值变化点。
+
+    Returns:
+        [{eventId, index, type∈{SP_STEP, MODE_CHANGE}, stepSize}] 按位置序。
+        SP 缺失/全 NaN 时仅检测 MODE 事件。
+    """
+    events: list[dict] = []
+    ev_no = 0
+
+    def _add(index: int, ev_type: str, step: float) -> None:
+        nonlocal ev_no
+        ev_no += 1
+        events.append(
+            {
+                "eventId": f"EVT-{ev_no:03d}",
+                "index": int(index),
+                "type": ev_type,
+                "stepSize": round(float(step), 4),
+            }
+        )
+
+    if sp is not None and len(sp) == n:
+        s = np.where(np.isfinite(sp), sp, np.nan)
+        if bool(np.isfinite(s).any()):
+            f = min(_EVENT_FLANK_POINTS, max(3, n // 4))
+            # 前/后 flank 滑动均值（cumsum 向量化；NaN 传播为 NaN 均值→跳过）
+            cs = np.nancumsum(s)
+
+            def _mean(rng_lo: int, rng_hi: int) -> float:
+                lo, hi = max(0, rng_lo), min(n, rng_hi)
+                if hi <= lo:
+                    return float("nan")
+                prev = cs[lo - 1] if lo > 0 else 0.0
+                return float((cs[hi - 1] - prev) / (hi - lo))
+
+            diffs = np.full(n, np.nan)
+            for k in range(f, n - f):
+                m_post = _mean(k + 1, k + 1 + f)
+                m_pre = _mean(k - f, k)
+                if math.isfinite(m_post) and math.isfinite(m_pre):
+                    diffs[k] = m_post - m_pre
+            above = np.isfinite(diffs) & (np.abs(diffs) > _EVENT_SP_STEP_MIN)
+            # 越阈连续段取 |diff| 最大处为锚点（斜坡保持型：峰值≈斜坡末端）
+            k = 0
+            while k < n:
+                if above[k]:
+                    run_end = k
+                    while run_end + 1 < n and above[run_end + 1]:
+                        run_end += 1
+                    peak = k + int(np.argmax(np.abs(diffs[k : run_end + 1])))
+                    _add(peak, "SP_STEP", diffs[peak])
+                    k = run_end + 1
+                else:
+                    k += 1
+
+    if mode is not None and len(mode) == n:
+        m = np.array(mode, dtype=float)
+        valid = np.isfinite(m)
+        m_int = np.where(valid, np.round(m).astype(int), -1)
+        changes = np.where(np.diff(m_int) != 0)[0] + 1
+        for c in changes:
+            _add(int(c), "MODE_CHANGE", float(m_int[c] - m_int[c - 1]))
+    return events
+
+
+def _event_window_bounds(
+    event_index: int,
+    seg_start: int,
+    seg_end: int,
+    ts: float,
+) -> tuple[int, int] | None:
+    """P-17/B-07 事件窗边界：段内最大适用窗长，事件位 25%/75% 分位锚定.
+
+    窗长取 {120,60,30}min 中段内放得下的最大档（B-07：事件窗按事件边界，
+    窗长仍取自适应尺度）；前置 25%、后置 75%（阶跃响应主体在事件后），
+    裁剪到段边界；窗长 < _EVENT_WINDOW_MIN_POINTS 点返回 None（不硬凑）。
+    """
+    dur_minutes = (seg_end - seg_start) * ts / 60.0
+    win_minutes = [m for m in _WINDOW_MINUTES_LADDER if m <= dur_minutes]
+    if not win_minutes:
+        return None
+    w = int((win_minutes[0] * 60.0) / ts)  # 最大适用档
+    if w < _EVENT_WINDOW_MIN_POINTS:
+        return None
+    pre = int(w * 0.25)
+    start = max(seg_start, event_index - pre)
+    end = min(seg_end, start + w)
+    start = max(seg_start, end - w)
+    if end - start < _EVENT_WINDOW_MIN_POINTS:
+        return None
+    return start, end
+
+
+def _scan_windows_in_segment(
+    u: np.ndarray,
+    y: np.ndarray,
+    ts: float,
+    seg_start: int,
+    seg_end: int,
+    segment_id: str,
+) -> tuple[list[dict], list[dict]]:
+    """P-16/P-17 段内有界窗扫描：幅度通道（v1.4 判据保留）+ 信息量通道.
+
+    启动条件（v1.4 不变，作用于**段**的验证位）：段 val 位（60%~80%）
+    PV ptp ≥ 1.5% 量程（段验证段有动态）→ 无需挖子窗（整段候选由
+    _collect_window_pool 生成）。
+
+    每窗条件（幅度通道，v1.4 冻结判据）：窗 PV ptp ≥ 3%、窗 val 位
+    ptp ≥ 1.5%、≥600 点；窗长 {120,60,30}min 自适应、步长 W/6；
+    信息量通道（P-16 新增）：窗累计运动量 < _WINDOW_INFO_MIN_MOVEMENT
+    拒绝（保持/慢变化输入不进候选池）。
+    评分 = val 位 ptp + 0.5×整体 ptp（幅度，v1.4）+ 信息量加成（P-16 并联）。
+
+    窗只从段内 [seg_start, seg_end) 切——跨 gap 造动态结构性不可能
+    （契约红线：不跨 gap 拼接）。
+
+    Returns:
+        (candidates, rejected)：candidates=[{start,end,score,valPtp,segPtp,
+        info,source,segmentId}]；rejected=[{start,end,reason}]（信息量拒绝
+        的窗，进搜索审计 rejected 清单）。
+    """
+    n = seg_end - seg_start
+    candidates: list[dict] = []
+    rejected: list[dict] = []
+    val_lo = seg_start + int(n * 0.6)
+    val_hi = seg_start + int(n * 0.8)
+    if float(np.ptp(y[val_lo:val_hi])) >= _VAL_STATIONARY_MIN_PTP:
+        return candidates, rejected  # 段验证位有动态：无需挖子窗（整段候选覆盖）
+
+    dur_minutes = n * ts / 60.0
+    win_minutes = [m for m in _WINDOW_MINUTES_LADDER if m <= dur_minutes / 2.0]
+    for wm in win_minutes:
+        w = int(wm * 60.0 / ts)
+        if w < _AUTOWIN_MIN_POINTS:
+            continue
+        step = max(1, w // 6)
+        for start in range(seg_start, seg_end - w + 1, step):
+            seg = y[start : start + w]
+            seg_ptp = float(np.ptp(seg))
+            if seg_ptp < _AUTOWIN_MIN_FULL_PTP:
+                continue
+            v_lo = start + int(w * 0.6)
+            v_hi = start + int(w * 0.8)
+            v_ptp = float(np.ptp(y[v_lo:v_hi]))
+            if v_ptp < _VAL_STATIONARY_MIN_PTP:
+                continue
+            info_passed, info_metrics = _window_info_gate(u[start : start + w])
+            if not info_passed:
+                rejected.append(
+                    {
+                        "start": int(start),
+                        "end": int(start + w),
+                        "reason": "INSUFFICIENT_INFO",
+                        "info": info_metrics["movement"],
+                        "directionChanges": info_metrics["directionChanges"],
+                        "segmentId": segment_id,
+                    }
+                )
+                continue
+            candidates.append(
+                {
+                    "start": int(start),
+                    "end": int(start + w),
+                    "score": v_ptp + 0.5 * seg_ptp + _info_score_addon(info_metrics["movement"]),
+                    "valPtp": round(v_ptp, 4),
+                    "segPtp": round(seg_ptp, 4),
+                    "info": info_metrics["movement"],
+                    "source": "SLIDING_SCAN",
+                    "segmentId": segment_id,
+                    "eventId": None,
+                }
+            )
+    return candidates, rejected
+
+
+def _segment_whole_candidate(
+    u: np.ndarray,
+    y: np.ndarray,
+    seg_start: int,
+    seg_end: int,
+    ts: float,
+    segment_id: str,
+) -> tuple[dict | None, dict | None]:
+    """整段候选（R2：合格连续段本身进候选池；段验证位有动态时）.
+
+    段作为天然边界的窗；窗长受 B-07 冻结上限约束——单窗时长上限
+    {120,60,30}min 的最大档 120min，超过 120min 的段不产生整段候选
+    （长段的动态密度被平坦段稀释——单事件长稳态段整窗回归会把极点
+    拉向原点、时滞被 θ–τ 折衷吸收；长段由滑窗/事件窗覆盖）。
+    沿用 v1.4 窗口径 ≥600 点、PV ptp ≥3%、val 位 ≥1.5%（幅度通道）+
+    信息量通道门槛与评分。验证位死水的段返回 (None, None)（滑窗扫描
+    负责从中挖动态子窗）；幅度过关而信息量不足的段返回 (None, 拒绝
+    记录)——信息量拒绝显式入审计 rejected 清单（不静默）。
+    """
+    n = seg_end - seg_start
+    if n < _AUTOWIN_MIN_POINTS:
+        return None, None
+    if n * ts / 60.0 > _WINDOW_MAX_MINUTES:
+        return None, None
+    seg = y[seg_start:seg_end]
+    seg_ptp = float(np.ptp(seg))
+    if seg_ptp < _AUTOWIN_MIN_FULL_PTP:
+        return None, None
+    v_lo = seg_start + int(n * 0.6)
+    v_hi = seg_start + int(n * 0.8)
+    v_ptp = float(np.ptp(y[v_lo:v_hi]))
+    if v_ptp < _VAL_STATIONARY_MIN_PTP:
+        return None, None
+    info_passed, info_metrics = _window_info_gate(u[seg_start:seg_end])
+    if not info_passed:
+        return None, {
+            "start": int(seg_start),
+            "end": int(seg_end),
+            "reason": "INSUFFICIENT_INFO",
+            "info": info_metrics["movement"],
+            "directionChanges": info_metrics["directionChanges"],
+            "segmentId": segment_id,
+        }
+    return {
+        "start": int(seg_start),
+        "end": int(seg_end),
+        "score": v_ptp + 0.5 * seg_ptp + _info_score_addon(info_metrics["movement"]),
+        "valPtp": round(v_ptp, 4),
+        "segPtp": round(seg_ptp, 4),
+        "info": info_metrics["movement"],
+        "source": "SEGMENT_WHOLE",
+        "segmentId": segment_id,
+        "eventId": None,
+    }, None
+
+
+def _build_segment_catalog(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    mode: list[int] | None,
+    op_limits: tuple[float, float] | None,
+    ts: float,
+) -> tuple[list[dict], list[dict]]:
+    """R2/P-13/P-14：段目录构建——全部合格连续段保留进候选池.
+
+    输入为**小缺口已插值**的序列（大缺口/端点坏段仍为 NaN）——
+    segment_signals 在 NaN 边界切分，段为纯有限段（跨 gap 拼接结构性
+    不可能）。P-12 物理最小点数为首选档（tier1）；点数 ≥ P-12 下限 50
+    但低于物理公式的段按 tier2 降级保留（P-12 字面 max(50, ·) 的下限档；
+    保证 C12b-ID"激励段不被丢弃"——见交接裁量登记）。
+
+    Returns:
+        (catalog, qualified)：catalog=全部段记录（含排除原因，供审计与
+        manifest 第 2 层）；qualified=合格段记录（tier1/tier2，含激励分
+        与信息量评分，供主选段与窗池消费）。
+    """
+    from app.services.tuning_identification.segmentation import segment_signals
+
+    op_min, op_max = op_limits if op_limits is not None else (None, None)
+    rough = _rough_tau_theta_for_catalog(u, y, ts)
+    theta_max_s = _segment_theta_max_seconds(len(y), ts, rough)
+    specs = segment_signals(
+        y.tolist(),
+        u.tolist(),
+        mode=mode,
+        op_min=op_min,
+        op_max=op_max,
+        ts=ts,
+        theta_max_seconds=theta_max_s,
+        tau_expected_seconds=rough,
+    )
+    catalog: list[dict] = []
+    qualified: list[dict] = []
+    for spec in specs:
+        # tier2 重分类：仅因 TOO_SHORT 被排除、点数 ≥ P-12 下限 50 的段
+        # 降级保留（物理首选档不满足，但未低于 P-12 的绝对下限）
+        tier = spec.qualify_tier
+        exclusion = spec.exclusion_reason
+        if exclusion == "TOO_SHORT" and spec.point_count >= _SEG_MIN_FLOOR:
+            tier = 2
+            exclusion = None
+        record = {
+            "segmentId": spec.segment_id or f"SEG-{len(catalog) + 1:03d}",
+            "indexStart": int(spec.start_idx),
+            "indexEnd": int(spec.end_idx),
+            "tsStart": spec.ts_start,
+            "tsEnd": spec.ts_end,
+            "durationSeconds": (
+                round(spec.ts_end - spec.ts_start, 4)
+                if spec.ts_start is not None and spec.ts_end is not None
+                else None
+            ),
+            "pointCount": int(spec.point_count),
+            "validSampleRatio": spec.valid_sample_ratio,
+            "mode": spec.mode_label,  # 工况未知显式 "UNKNOWN"（07§3.2 第 2 层）
+            "regimeId": spec.regime_id,  # None=未知，不伪填
+            "pidVersion": spec.pid_version,  # None=未知，不伪填
+            "sampleInterval": spec.sample_interval,
+            "exclusionReason": exclusion,
+            "qualifyTier": tier,
+        }
+        if exclusion is None:
+            su = u[spec.start_idx : spec.end_idx]
+            sy = y[spec.start_idx : spec.end_idx]
+            try:
+                exc = check_excitation(su, sy, 1, op_span=_OP_SPAN_NORMALIZED)
+                exc_score = excitation_score(exc.condition_number, exc.significant_changes)
+                exc_sufficient = bool(exc.is_sufficient)
+            except Exception:
+                exc_score = 0.0
+                exc_sufficient = False
+            record["excitationScore"] = round(float(exc_score), 2)
+            record["excitationSufficient"] = exc_sufficient
+            record["infoMovement"] = round(_window_info_metric(su), 6)
+            qualified.append(record)
+        catalog.append(record)
+    return catalog, qualified
+
+
+def _collect_window_pool(
+    u: np.ndarray,
+    y: np.ndarray,
+    sp: np.ndarray | None,
+    mode: list[int] | None,
+    catalog: list[dict],
+    qualified: list[dict],
+    ts: float,
+) -> dict:
+    """P-16/P-17/B-05~B-07：统一候选窗池（滑窗 + 事件窗 + 整段候选）.
+
+    对每个合格段（tier1/tier2）：段验证位死水 → 滑窗扫描；段验证位有
+    动态 → 整段候选；段内自然事件（SP 阶跃/MODE 变更）→ 事件锚点窗。
+    合并去重（同 (start,end) 取高分并记录来源），按 B-05 cap=64 截断
+    （超限窗进 rejected 清单，预算终态记录截断事实）。
+
+    Returns:
+        搜索审计记录（B-04 四类清单）：{ran, scanGrid, windowsChecked,
+        windowsSelected, windowsRejected, notSearched, budgetTermination,
+        selectedTuple}（selectedTuple=评分降序的 (score,start,end,v,s)
+        元组列表，供 _collect_disjoint_windows 选 k=3 互不重叠窗）。
+    """
+    events = _detect_natural_events(sp, mode, len(y))
+    pool: dict[tuple[int, int], dict] = {}
+    rejected: list[dict] = []
+    not_searched: list[dict] = []
+
+    for rec in catalog:
+        reason = rec.get("exclusionReason")
+        if reason is not None:
+            not_searched.append(
+                {
+                    "start": rec["indexStart"],
+                    "end": rec["indexEnd"],
+                    "reason": f"SEGMENT_EXCLUDED:{reason}",
+                    "segmentId": rec["segmentId"],
+                }
+            )
+
+    for q in qualified:
+        seg_start, seg_end = q["indexStart"], q["indexEnd"]
+        seg_id = q["segmentId"]
+
+        def _put(candidate: dict) -> None:
+            key = (candidate["start"], candidate["end"])
+            existing = pool.get(key)
+            if existing is None or candidate["score"] > existing["score"]:
+                if existing is not None:
+                    candidate = {
+                        **candidate,
+                        "mergedSources": [existing["source"], candidate["source"]],
+                    }
+                pool[key] = candidate
+
+        scan_candidates, scan_rejected = _scan_windows_in_segment(
+            u, y, ts, seg_start, seg_end, seg_id
+        )
+        rejected.extend(scan_rejected)
+        for cand in scan_candidates:
+            _put(cand)
+        whole, whole_rejected = _segment_whole_candidate(u, y, seg_start, seg_end, ts, seg_id)
+        if whole is not None:
+            _put(whole)
+        elif whole_rejected is not None:
+            rejected.append(whole_rejected)
+        for ev in events:
+            if not (seg_start <= ev["index"] < seg_end):
+                continue
+            bounds = _event_window_bounds(ev["index"], seg_start, seg_end, ts)
+            if bounds is None:
+                # 段太短放不下最小事件窗：显式记录未搜索原因（缺信息有具体原因）
+                not_searched.append(
+                    {
+                        "start": int(seg_start),
+                        "end": int(seg_end),
+                        "reason": f"EVENT_WINDOW_TOO_SHORT:{ev['eventId']}",
+                        "segmentId": seg_id,
+                    }
+                )
+                continue
+            e_start, e_end = bounds
+            seg_ptp = float(np.ptp(y[e_start:e_end]))
+            if seg_ptp < _AUTOWIN_MIN_FULL_PTP:
+                continue
+            info_passed, info_metrics = _window_info_gate(u[e_start:e_end])
+            if not info_passed:
+                rejected.append(
+                    {
+                        "start": int(e_start),
+                        "end": int(e_end),
+                        "reason": "INSUFFICIENT_INFO",
+                        "info": info_metrics["movement"],
+                        "directionChanges": info_metrics["directionChanges"],
+                        "segmentId": seg_id,
+                        "eventId": ev["eventId"],
+                    }
+                )
+                continue
+            n_w = e_end - e_start
+            v_lo = e_start + int(n_w * 0.6)
+            v_hi = e_start + int(n_w * 0.8)
+            v_ptp = float(np.ptp(y[v_lo:v_hi]))
+            _put(
+                {
+                    "start": int(e_start),
+                    "end": int(e_end),
+                    "score": v_ptp + 0.5 * seg_ptp + _info_score_addon(info_metrics["movement"]),
+                    "valPtp": round(v_ptp, 4),
+                    "segPtp": round(seg_ptp, 4),
+                    "info": info_metrics["movement"],
+                    "source": "NATURAL_EVENT",
+                    "segmentId": seg_id,
+                    "eventId": ev["eventId"],
+                }
+            )
+
+    # 评分降序；B-05 候选窗总数上限 64（去重后），超限裁剪并记录预算终态
+    ranked = sorted(pool.values(), key=lambda c: c["score"], reverse=True)
+    budget_record: dict | None = None
+    if len(ranked) > _WINDOW_POOL_CAP:
+        for dropped_win in ranked[_WINDOW_POOL_CAP:]:
+            rejected.append(
+                {
+                    "start": dropped_win["start"],
+                    "end": dropped_win["end"],
+                    "reason": f"BUDGET_CAP_{_WINDOW_POOL_CAP}",
+                    "score": round(dropped_win["score"], 4),
+                    "segmentId": dropped_win.get("segmentId"),
+                }
+            )
+        budget_record = {
+            "dimension": "WINDOW_POOL",
+            "cap": _WINDOW_POOL_CAP,
+            "truncated": len(ranked) - _WINDOW_POOL_CAP,
+            "note": "B-05 候选窗总数上限截断（评分降序保留前 cap 个）",
+        }
+        ranked = ranked[:_WINDOW_POOL_CAP]
+
+    return {
+        "ran": True,
+        "scanGrid": {
+            "windowMinutes": list(_WINDOW_MINUTES_LADDER),
+            "stepRatio": 6,
+            "minWindowPoints": _AUTOWIN_MIN_POINTS,
+            "infoMinMovement": _WINDOW_INFO_MIN_MOVEMENT,
+        },
+        "events": events,
+        "windowsChecked": [
+            {k: v for k, v in c.items() if k != "mergedSources"} | {"score": round(c["score"], 4)}
+            for c in ranked
+        ],
+        "windowsRejected": rejected,
+        "notSearched": not_searched,
+        "budgetTermination": budget_record,
+        "selectedTuple": [
+            (c["score"], c["start"], c["end"], c["valPtp"], c["segPtp"]) for c in ranked
+        ],
+    }
 
 
 def _auto_select_segment(
@@ -268,11 +908,15 @@ def _auto_select_segment(
     sp: np.ndarray | None,
     mode: list[int] | None,
     op_limits: tuple[float, float] | None = None,
+    ts: float = 1.0,
+    catalog: list[dict] | None = None,
+    qualified: list[dict] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
     """自动选段：按 MODE/缺口/饱和切分，激励评分选最优可辨识片段.
 
-    此前正式辨识为整窗一锅进——窗口混入手动/饱和/稳态死段时整窗回归被
-    稀释（片段切分能力已存在但仅用于预览端点，P2-020 接入正式链）。
+    P3-06b（R2）：优先消费段目录（_build_segment_catalog 产物——全部合格
+    连续段池，tier1 物理首选档 + tier2 P-12 下限档）；无目录时按旧口径
+    现场切分（ts 用于 P-12 物理最小点数折算，缺省 1.0 兼容既有直调）。
 
     分级回退（与 G24 裁决兼容：手动段可辨识，仅降权，不作硬门控）：
     1. 可辨识片段（exclusion_reason=None）中激励分最高者（并列取点数多）；
@@ -285,49 +929,111 @@ def _auto_select_segment(
     """
     from app.services.tuning_identification.segmentation import segment_signals
 
-    op_min, op_max = op_limits if op_limits is not None else (None, None)
-    try:
-        specs = segment_signals(
-            y.tolist(),
-            u.tolist(),
-            mode=mode,
-            op_min=op_min,
-            op_max=op_max,
-        )
-    except Exception:
-        logger.debug("自动选段切分失败，回退整窗", exc_info=True)
-        return u, y, sp, None
+    if catalog is not None and qualified is not None:
+        catalog_pool = qualified
+        manual_pool = [r for r in catalog if r.get("exclusionReason") == "MANUAL_MODE"]
+        n_specs = len(catalog)
+    else:
+        op_min, op_max = op_limits if op_limits is not None else (None, None)
+        try:
+            specs = segment_signals(
+                y.tolist(),
+                u.tolist(),
+                mode=mode,
+                op_min=op_min,
+                op_max=op_max,
+                ts=ts,
+            )
+        except Exception:
+            logger.debug("自动选段切分失败，回退整窗", exc_info=True)
+            return u, y, sp, None
+        catalog_pool = []
+        manual_pool = []
+        for s in specs:
+            entry = {
+                "indexStart": s.start_idx,
+                "indexEnd": s.end_idx,
+                "pointCount": s.point_count,
+                "mode": s.mode_label,
+                "exclusionReason": s.exclusion_reason,
+                "qualifyTier": s.qualify_tier,
+            }
+            if s.exclusion_reason is None or (
+                s.exclusion_reason == "TOO_SHORT" and s.point_count >= _SEG_MIN_FLOOR
+            ):
+                if s.exclusion_reason == "TOO_SHORT":
+                    entry["qualifyTier"] = 2
+                entry["exclusionReason"] = None
+                catalog_pool.append(entry)
+            elif s.exclusion_reason == "MANUAL_MODE":
+                manual_pool.append(entry)
+        n_specs = len(specs)
 
-    identifiable = [s for s in specs if s.exclusion_reason is None]
-    manual_fallback = [s for s in specs if s.exclusion_reason == "MANUAL_MODE"]
-    pool = identifiable or manual_fallback
-    if not pool:
-        return u, y, sp, "auto-segment: 无可辨识片段，回退整窗"
+    # 激励评分选优（d=1 粗滞后，同预览端点口径；正式延迟由参数化阶段搜索）。
+    # P3-06b（P-18/G24 + O-B2"动态手动段实际进入分析"）：激励充分性参与分级
+    # ——可辨识段中存在激励充分段时按分择优（现行）；可辨识段全部激励不足
+    # 而手动段有激励充分者 → 手动段降级使用（安静 AUTO 不再阻塞 G24 回退，
+    # 07§4 完成判据"动态手动段实际进入分析"）；两者皆无 → 维持现行择优，
+    # 由下游激励检测显式拒绝（缺信息有具体原因）。
+    def _score_entries(entries: list[dict]) -> list[tuple[float, int, int, dict, bool]]:
+        scored_entries: list[tuple[float, int, int, dict, bool]] = []
+        for i, s in enumerate(entries):
+            seg_u = u[s["indexStart"] : s["indexEnd"]]
+            seg_y = y[s["indexStart"] : s["indexEnd"]]
+            sufficient = bool(s.get("excitationSufficient"))
+            if not sufficient and len(seg_u) >= 10:
+                try:
+                    exc = check_excitation(seg_u, seg_y, 1, op_span=_OP_SPAN_NORMALIZED)
+                    score = excitation_score(exc.condition_number, exc.significant_changes)
+                    sufficient = bool(exc.is_sufficient)
+                except Exception:
+                    score = 0.0
+            else:
+                score = float(s.get("excitationScore", 0.0) or 0.0)
+            scored_entries.append((score, int(s["pointCount"]), i, s, sufficient))
+        return scored_entries
 
-    # 激励评分选优（d=1 粗滞后，同预览端点口径；正式延迟由参数化阶段搜索）
-    scored: list[tuple[float, int, int, object]] = []
-    for i, s in enumerate(pool):
-        exc = check_excitation(
-            u[s.start_idx : s.end_idx],
-            y[s.start_idx : s.end_idx],
-            1,
-            op_span=_OP_SPAN_NORMALIZED,
+    scored = _score_entries(catalog_pool) if catalog_pool else []
+    scored_manual = _score_entries(manual_pool) if manual_pool else []
+    has_sufficient = any(e[4] for e in scored)
+    if scored and has_sufficient:
+        pool, use_manual = catalog_pool, False
+        best_score, _, best_i, best, _suff = max(
+            (e for e in scored if e[4]), key=lambda e: (e[0], e[1], -e[2])
         )
-        scored.append(
-            (excitation_score(exc.condition_number, exc.significant_changes), s.point_count, i, s)
+    elif scored_manual and any(e[4] for e in scored_manual):
+        pool, use_manual = manual_pool, True
+        best_score, _, best_i, best, _suff = max(
+            (e for e in scored_manual if e[4]), key=lambda e: (e[0], e[1], -e[2])
         )
-    best_score, _, best_i, best = max(scored)
+    else:
+        pool = catalog_pool or manual_pool
+        use_manual = not catalog_pool and bool(manual_pool)
+        if not pool:
+            return u, y, sp, "auto-segment: 无可辨识片段，回退整窗"
+        best_score, _, best_i, best, _suff = max(scored or scored_manual)
 
     # 单段且为可辨识段 = 整窗，无选段事实（手动降级路径即使单段也标注）
-    if identifiable and len(specs) == 1 and best is specs[0]:
+    if (
+        catalog_pool
+        and not use_manual
+        and n_specs == 1
+        and best["indexStart"] == 0
+        and best["indexEnd"] == len(u)
+    ):
         return u, y, sp, None
-    su = u[best.start_idx : best.end_idx]
-    sy = y[best.start_idx : best.end_idx]
-    ssp = sp[best.start_idx : best.end_idx] if sp is not None else None
-    degrade = "" if identifiable else "（手动段降级使用，G24）"
+    su = u[best["indexStart"] : best["indexEnd"]]
+    sy = y[best["indexStart"] : best["indexEnd"]]
+    ssp = sp[best["indexStart"] : best["indexEnd"]] if sp is not None else None
+    degrade = "" if not use_manual else "（手动段降级使用，G24）"
+    if use_manual and scored and not has_sufficient:
+        degrade += "（可辨识段全部激励不足，降级取激励充分手动段）"
+    tier_note = ""
+    if best.get("qualifyTier") == 2:
+        tier_note = "（P-12 物理最小点数不满足，按 50 点下限档降级保留）"
     note = (
-        f"auto-segment: {best_i + 1}/{len(pool)} [{best.start_idx}:{best.end_idx}] "
-        f"{best.mode_label} 激励分{best_score:.0f}{degrade}"
+        f"auto-segment: {best_i + 1}/{len(pool)} [{best['indexStart']}:{best['indexEnd']}] "
+        f"{best.get('mode', 'UNKNOWN')} 激励分{best_score:.0f}{degrade}{tier_note}"
     )
     return su, sy, ssp, note
 
@@ -355,7 +1061,7 @@ def _scan_dynamic_windows(
     if full_val_ptp >= _VAL_STATIONARY_MIN_PTP:
         return []  # 整窗验证段有动态，无需挖子窗
     dur_minutes = n * ts / 60.0
-    win_minutes = [m for m in (120.0, 60.0, 30.0) if m <= dur_minutes / 2.0]
+    win_minutes = [m for m in _WINDOW_MINUTES_LADDER if m <= dur_minutes / 2.0]
     if not win_minutes:
         return []
 
@@ -562,10 +1268,25 @@ def _feasibility_dict(feasibility) -> dict | None:
 
 
 def _evidence_cleaning_stats(cleaning_stats: dict) -> dict | None:
-    """仅在有清洗时返回统计（无坏点时 None，避免证据冗余）."""
-    if cleaning_stats["interpolated_points"] > 0 or cleaning_stats["dropped_points"] > 0:
+    """仅在有清洗时返回统计（无坏点时 None，避免证据冗余）.
+
+    P3-06b：R2 后 dropped 恒 0；大缺口存在（n_large_gaps>0）也视为有清洗
+    事实（缺口保留不拼接，但证据需可查）。
+    """
+    if (
+        cleaning_stats.get("interpolated_points", 0) > 0
+        or cleaning_stats.get("dropped_points", 0) > 0
+        or cleaning_stats.get("n_large_gaps", 0) > 0
+    ):
         return cleaning_stats
     return None
+
+
+def _public_window_search(audit: dict | None) -> dict[str, Any] | None:
+    """B-04 搜索审计的公开形态（剥离内部 selectedTuple 元组；None=未运行）."""
+    if audit is None:
+        return None
+    return {k: v for k, v in audit.items() if k != "selectedTuple"}
 
 
 def _build_preprocessing_record(
@@ -577,6 +1298,8 @@ def _build_preprocessing_record(
     lowpass_meta: dict | None,
     mode_provided: bool,
     op_limits: tuple[float, float] | None,
+    segment_catalog: list[dict] | None = None,
+    window_search: dict | None = None,
 ) -> dict[str, Any]:
     """P2-03（R2 §三 DEC-10 补表述）：辨识预处理链结构化记录.
 
@@ -587,13 +1310,19 @@ def _build_preprocessing_record(
     （app/services/calc_snapshot.py::save_identification_snapshot）。
 
     字段口径（调用侧不可得时为显式 None，不伪补）：
-    - ``cleaning``：坏点清洗统计（P2-019）；
+    - ``cleaning``：坏点清洗统计（P2-019；R2 后 dropped 恒 0——段选择审计
+      由 segmentCatalog 承载）；
     - ``autoSegment``：MODE/缺口/饱和切分（applied=note 非空）；
     - ``autoWindow``：动态感知子窗（applied=note 非空）；
     - ``detrend``：去趋势（enabled=全局开关，applied=实际生效）；
     - ``lowpass``：低通滤波（applied=False 或含 appliedWn/appliedFcHz）；
     - ``multiWindow``：v1.4 多窗编排窗位（外层编排器回填，含被检/入选/
-      胜出窗位与各窗拟合度）。
+      胜出窗位与各窗拟合度）；
+    - ``segmentCatalog``：P3-06b（R2/P-14）段目录——全部连续段记录（含
+      排除原因与 qualifyTier），manifest 第 2 层（段与事件目录）消费；
+    - ``windowSearch``：P3-06b（B-04/B-05）统一窗池搜索审计——被检/选中/
+      拒绝/未搜索四类清单 + 预算终态；多窗择优未触发时 selected 为空但
+      审计仍在（外层调用必产，_internal_call 窗切片为 None=未运行）。
     """
     return {
         "cleaning": {
@@ -616,6 +1345,9 @@ def _build_preprocessing_record(
         },
         "lowpass": dict(lowpass_meta) if lowpass_meta else {"applied": False},
         "multiWindow": None,  # 外层多窗编排回填（无编排时显式 None=未运行）
+        # P3-06b 加性字段（None=目录未构建/内层窗切片未运行，显式不伪补）
+        "segmentCatalog": segment_catalog,
+        "windowSearch": _public_window_search(window_search),
     }
 
 
@@ -641,6 +1373,16 @@ def identify_from_history(
     动态窗时，对每个动态窗独立完整辨识（multi-experiment 实践的稳健落
     地——段内回归不跨段边界，避免拼接引入伪样本），按（可信度, 拟合度）
     择优返回并在 reason 汇总各窗结果。全窗失败时落回整窗既有流程。
+
+    v1.6（P3-06b 片段与时间尺度）在 v1.4 之上升级（不另起第二编排）：
+    - R2：清洗不再"大缺口取最长段"——全部合格连续段进段目录与候选池
+      （P-12 物理最小点数 tier1 + 50 点下限 tier2），选择审计落
+      preprocessing.segmentCatalog；主选段消费目录池（G24 手动回退不变）；
+    - 统一候选窗池：段内有界滑窗（幅度通道 v1.4 判据保留）+ 信息量通道
+      （P-16）+ 自然事件锚点窗（P-17，SP 阶跃含斜坡保持/MODE 变更）+
+      整段候选，B-05 cap 64 去重、B-06 k=3 互不重叠，≥2 个才逐窗择优；
+      搜索审计（被检/选中/拒/未搜索 + 预算终态）落 preprocessing.windowSearch；
+    - 窗只从段内切——**不跨 gap 造动态**（契约红线，结构性不可能）。
 
     P2-020（2026-10-04 预处理增强）：坏点清洗后依次执行自动选段（按
     MODE/缺口/饱和切分并按激励评分选最优段；mode=None 不切分）→ 去线性
@@ -681,71 +1423,10 @@ def identify_from_history(
             if theta_estimate is None
             else ThetaSource.EXPLICIT,
         )
-    # v1.4 多窗编排：仅外层调用（递归窗辨识跳过，防无限递归）
-    if not _internal_call and len(op) == len(pv) and len(op) >= _AUTOWIN_MIN_POINTS * 2:
-        try:
-            _wins = _collect_disjoint_windows(_scan_dynamic_windows(np.array(pv, dtype=float), ts))
-        except Exception:
-            _wins = []
-        if len(_wins) >= 2:
-            _order = {
-                AlgorithmConfidenceLevel.A: 5,
-                AlgorithmConfidenceLevel.B: 4,
-                AlgorithmConfidenceLevel.C: 3,
-                AlgorithmConfidenceLevel.D: 2,
-                AlgorithmConfidenceLevel.E: 1,
-                AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
-            }
-            _ok: list[tuple[tuple, IdentificationResult, int, int]] = []
-            for _s, _e in ((w[1], w[2]) for w in _wins):
-                _r = identify_from_history(
-                    op=op[_s:_e],
-                    pv=pv[_s:_e],
-                    sp=sp[_s:_e] if sp is not None else None,
-                    ts=ts,
-                    theta_estimate=theta_estimate,
-                    candidate_models=candidate_models,
-                    mode=mode[_s:_e] if mode is not None else None,
-                    op_limits=op_limits,
-                    delay_search_max_seconds=delay_search_max_seconds,
-                    _internal_call=True,
-                )
-                if _r.success and _r.best_model is not None:
-                    _key = (
-                        _order.get(_r.best_model.confidence, 0),
-                        _r.best_model.fitting_score,
-                        1 if _r.best_model.residual_test_passed else 0,
-                    )
-                    _ok.append((_key, _r, _s, _e))
-            if _ok:
-                _ok.sort(key=lambda t: t[0], reverse=True)
-                _key, best_r, _bs, _be = _ok[0]
-                best_r.reason = (
-                    f"multi-window: {len(_ok)}/{len(_wins)} 段动态窗辨识成功，"
-                    f"最优段 [{_bs}:{_be}]"
-                    f"（各段 fit={[round(t[1].best_model.fitting_score, 1) for t in _ok]}）；"
-                    + (best_r.reason or "")
-                )
-                # P2-03（DEC-10）：多窗编排窗位结构化——被检/入选/胜出窗位
-                # 与各窗拟合度（reason 字符串保持不变；预算终止状态 P3 填入）
-                if best_r.preprocessing is None:
-                    best_r.preprocessing = {}
-                best_r.preprocessing["multiWindow"] = {
-                    "checkedWindows": [{"start": int(w[1]), "end": int(w[2])} for w in _wins],
-                    "succeededWindows": [
-                        {
-                            "start": int(s),
-                            "end": int(e),
-                            "fittingScore": round(r.best_model.fitting_score, 2),
-                        }
-                        for _k, r, s, e in _ok
-                    ],
-                    "selectedWindow": {"start": int(_bs), "end": int(_be)},
-                    "budgetTermination": None,
-                }
-                return best_r
-            # 全窗失败 → 落回整窗既有流程（下方）
-
+    # v1.4→v1.6 多窗编排（P3-06b 升级，仅外层调用；递归窗辨识跳过防无限递归）：
+    # R2 段目录全保留 + P-16 信息量通道 + P-17 自然事件锚点 → 统一候选窗池
+    # （B-05 cap 64 去重），≥2 个互不重叠动态窗（B-06 k=3）才逐窗辨识择优
+    # （v1.4 条件保持）。窗只从段内切——不跨 gap 造动态结构性不可能。
     u_raw = np.array(op, dtype=float)
     y_raw = np.array(pv, dtype=float)
     theta_source = ThetaSource.EXPLICIT if theta_estimate is not None else ThetaSource.HEURISTIC_2TS
@@ -788,21 +1469,127 @@ def identify_from_history(
                 theta_source=theta_source,
             )
 
-    # P2-019：坏点清洗 — 小缺口线性插值，大缺口取最长连续有效段。
-    # 替代旧 np.isfinite 硬拒绝（任何坏点就放弃辨识）；工业数据传感器故障/通信
-    # 中断/采样缺失常见，硬拒绝导致辨识完全不可用。清洗后继续辨识，证据记录统计。
-    u_raw, y_raw, sp_raw, cleaning_stats = _clean_nan_segments(u_raw, y_raw, sp_raw)
-    if cleaning_stats["valid_points"] < 50:
+    # P2-019 + P3-06b（R2）：坏点清洗——小缺口线性插值（原地），大缺口
+    # **不截断不拼接**（废弃"取最长段"静默丢段）：全部连续段进段目录，
+    # 选择审计见 preprocessing.segmentCatalog/windowSearch。替代旧
+    # np.isfinite 硬拒绝的初衷不变（清洗后继续辨识，证据记录统计）。
+    interpolated_pts, large_gaps = _interp_small_gaps(u_raw, y_raw, sp_raw)
+    valid_points = int((np.isfinite(u_raw) & np.isfinite(y_raw)).sum())
+    cleaning_stats: dict = {
+        "original_points": len(u_raw),
+        "interpolated_points": interpolated_pts,
+        "dropped_points": 0,  # R2：不再截断（段目录全保留；"剔除"语义由排除原因承载）
+        "valid_points": valid_points,
+        "valid_rate": valid_points / len(u_raw) if len(u_raw) else 0.0,
+        "n_large_gaps": len(large_gaps),
+    }
+    if valid_points < 50:
         return IdentificationResult(
             success=False,
             reason=(
-                f"清洗后有效数据不足（{cleaning_stats['valid_points']} 点，需 ≥ 50；"
+                f"清洗后有效数据不足（{valid_points} 点，需 ≥ 50；"
                 f"原始 {cleaning_stats['original_points']} 点，"
-                f"插值 {cleaning_stats['interpolated_points']} 点，"
-                f"剔除 {cleaning_stats['dropped_points']} 点）"
+                f"插值 {interpolated_pts} 点，"
+                f"大缺口 {len(large_gaps)} 处）"
             ),
             theta_source=theta_source,
         )
+
+    # P3-06b（R2/P-14）：段目录构建（全部合格连续段 + 排除原因；P-12 物理最小
+    # 点数 tier1 + 50 点下限 tier2）。目录供主选段与统一窗池共同消费。
+    segment_catalog: list[dict] | None = None
+    segment_qualified: list[dict] = []
+    if not _internal_call:
+        try:
+            segment_catalog, segment_qualified = _build_segment_catalog(
+                u_raw, y_raw, sp_raw, mode, op_limits, ts
+            )
+        except Exception:
+            logger.debug("段目录构建失败，回退 legacy 选段口径", exc_info=True)
+            segment_catalog = None
+
+    # P3-06b 统一候选窗池 + v1.4 多窗择优（仅外层调用）
+    window_search_audit: dict | None = None
+    if not _internal_call and segment_catalog is not None:
+        try:
+            window_search_audit = _collect_window_pool(
+                u_raw, y_raw, sp_raw, mode, segment_catalog, segment_qualified, ts
+            )
+            _wins = _collect_disjoint_windows(
+                window_search_audit["selectedTuple"], k=_MULTI_WINDOW_MAX_PICK
+            )
+            window_search_audit["windowsSelected"] = [
+                {"start": int(w[1]), "end": int(w[2]), "score": round(float(w[0]), 4)}
+                for w in _wins
+            ]
+        except Exception:
+            logger.debug("统一窗池构建失败，落回整窗流程", exc_info=True)
+            window_search_audit = None
+            _wins = []
+        if len(_wins) >= 2:
+            _order = {
+                AlgorithmConfidenceLevel.A: 5,
+                AlgorithmConfidenceLevel.B: 4,
+                AlgorithmConfidenceLevel.C: 3,
+                AlgorithmConfidenceLevel.D: 2,
+                AlgorithmConfidenceLevel.E: 1,
+                AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
+            }
+            _ok: list[tuple[tuple, IdentificationResult, int, int]] = []
+            for _s, _e in ((int(w[1]), int(w[2])) for w in _wins):
+                _r = identify_from_history(
+                    op=u_raw[_s:_e].tolist(),
+                    pv=y_raw[_s:_e].tolist(),
+                    sp=sp_raw[_s:_e].tolist() if sp_raw is not None else None,
+                    ts=ts,
+                    theta_estimate=theta_estimate,
+                    candidate_models=candidate_models,
+                    mode=mode[_s:_e] if mode is not None else None,
+                    op_limits=op_limits,
+                    delay_search_max_seconds=delay_search_max_seconds,
+                    _internal_call=True,
+                )
+                if _r.success and _r.best_model is not None:
+                    _key = (
+                        _order.get(_r.best_model.confidence, 0),
+                        _r.best_model.fitting_score,
+                        1 if _r.best_model.residual_test_passed else 0,
+                    )
+                    _ok.append((_key, _r, _s, _e))
+            if _ok:
+                _ok.sort(key=lambda t: t[0], reverse=True)
+                _key, best_r, _bs, _be = _ok[0]
+                best_r.reason = (
+                    f"multi-window: {len(_ok)}/{len(_wins)} 段动态窗辨识成功，"
+                    f"最优段 [{_bs}:{_be}]"
+                    f"（各段 fit={[round(t[1].best_model.fitting_score, 1) for t in _ok]}）；"
+                    + (best_r.reason or "")
+                )
+                # P2-03（DEC-10）+ P3-06b（B-04/B-05/B-08）：多窗编排窗位结构化
+                # ——被检/入选/胜出窗位、各窗拟合度、预算终态与搜索审计
+                # （reason 字符串保持不变）
+                if best_r.preprocessing is None:
+                    best_r.preprocessing = {}
+                best_r.preprocessing["multiWindow"] = {
+                    "checkedWindows": [{"start": int(w[1]), "end": int(w[2])} for w in _wins],
+                    "succeededWindows": [
+                        {
+                            "start": int(s),
+                            "end": int(e),
+                            "fittingScore": round(r.best_model.fitting_score, 2),
+                        }
+                        for _k, r, s, e in _ok
+                    ],
+                    "selectedWindow": {"start": int(_bs), "end": int(_be)},
+                    # B-08：墙钟预算依赖 B-03（P3-04/P5-02 承接，未执行显式 null
+                    # 不伪补）；B-05 候选窗数预算终态由 windowSearch.budgetTermination
+                    # 承载（实际生效的预算维度）
+                    "budgetTermination": None,
+                }
+                best_r.preprocessing["segmentCatalog"] = segment_catalog
+                best_r.preprocessing["windowSearch"] = _public_window_search(window_search_audit)
+                return best_r
+            # 全窗失败 → 落回整窗既有流程（下方）
 
     # P2-020（2026-10-04 预处理增强）：自动选段 → 去趋势 → 低通滤波。
     # 位于 SP 激励判定之前（切出的最优段决定 CLIVC 是否启用更准确）；
@@ -812,11 +1599,68 @@ def identify_from_history(
     # P2-03（R2 §三 DEC-10）：同步产出结构化预处理参数（steps 开关/参数/
     # applied 事实），reason 字符串保持不变；data_hash 仍按预处理后数据取。
     preprocess_notes: list[str] = []
-    u_raw, y_raw, sp_raw, seg_note = _auto_select_segment(u_raw, y_raw, sp_raw, mode, op_limits)
+    # P2-020 + P3-06b（R2）：主选段——优先消费段目录（全部合格连续段池，
+    # tier1 物理首选 + tier2 50 点下限降级），G24 手动回退链不变；目录不可
+    # 得时按 legacy 口径现场切分（ts 参与 P-12 物理最小点数折算）。
+    u_raw, y_raw, sp_raw, seg_note = _auto_select_segment(
+        u_raw,
+        y_raw,
+        sp_raw,
+        mode,
+        op_limits,
+        ts=ts,
+        catalog=segment_catalog,
+        qualified=segment_qualified if segment_catalog is not None else None,
+    )
     if seg_note:
         preprocess_notes.append(seg_note)
-    # v1.3：动态感知子窗（大窗口内定位阶跃响应段；阶跃稀少是生产常态）
-    u_raw, y_raw, sp_raw, win_note = _auto_select_window(u_raw, y_raw, sp_raw, ts)
+    # R2 红线出口：无任何合格段且存在大缺口——不回退整窗（整窗含 NaN 缺口，
+    # 不跨 gap 拼接是契约红线；拼接造动态不可接受），显式拒绝并给出具体原因。
+    if seg_note and "回退整窗" in seg_note and large_gaps:
+        _seg_pts = [
+            e - s + 1 for s, e in _find_contiguous_segments(np.isfinite(u_raw) & np.isfinite(y_raw))
+        ]
+        return IdentificationResult(
+            success=False,
+            reason=(
+                "无可辨识连续段：所有大缺口切分段均不满足最小点数"
+                f"（最长 {_seg_pts and max(_seg_pts) or 0} 点 < 50；"
+                f"段目录 {len(segment_catalog or [])} 段全部排除，"
+                "R2 契约禁止跨 gap 拼接，缺信息显式拒绝）"
+            ),
+            theta_source=theta_source,
+        )
+    # v1.3/v1.6 动态感知子窗（大窗口内定位阶跃响应段；阶跃稀少是生产常态）。
+    # P3-06b：外层调用且统一窗池有合格候选时消费**池内最优候选**（幅度 +
+    # 信息量双通道已过滤、段内有界），不再按幅度单通道重扫；池空/内层调用
+    # 维持 v1.3 _auto_select_window 既有行为。池窗为全序列绝对索引，此处
+    # 数组已按主选段切片——从 seg_note 解析选中段界换算相对索引（note 格式
+    # 由本模块 _auto_select_segment 控制）。
+    _pool_best = (window_search_audit or {}).get("selectedTuple") or []
+    if not _internal_call and _pool_best:
+        import re as _re
+
+        _m = _re.search(r"\[(\d+):(\d+)\]", seg_note or "")
+        _seg_lo, _seg_hi = (int(_m.group(1)), int(_m.group(2))) if _m else (0, len(u_raw))
+        _seg_cands = [w for w in _pool_best if _seg_lo <= w[1] and w[2] <= _seg_hi]
+        if _seg_cands:
+            _pb_score, _pb_s, _pb_e, _pb_v, _pb_seg = _seg_cands[0]
+            _rs, _re_ = _pb_s - _seg_lo, _pb_e - _seg_lo
+            if (_rs, _re_) != (0, len(u_raw)):
+                u_raw = u_raw[_rs:_re_]
+                y_raw = y_raw[_rs:_re_]
+                sp_raw = sp_raw[_rs:_re_] if sp_raw is not None else None
+                win_note = (
+                    f"auto-window(pool): [{_pb_s}:{_pb_e}] "
+                    f"W={round((_pb_e - _pb_s) * ts / 60)}min PV跨度 {_pb_seg:.1f}%"
+                    f"·验证位跨度 {_pb_v:.1f}%（统一窗池最优，信息量通道已过滤）"
+                )
+            else:
+                win_note = None
+        else:
+            u_raw, y_raw, sp_raw, win_note = _auto_select_window(u_raw, y_raw, sp_raw, ts)
+    else:
+        u_raw, y_raw, sp_raw, win_note = _auto_select_window(u_raw, y_raw, sp_raw, ts)
     if win_note:
         preprocess_notes.append(win_note)
     detrend_note: str | None = None
@@ -837,6 +1681,8 @@ def identify_from_history(
         lowpass_meta=lowpass_meta,
         mode_provided=mode is not None,
         op_limits=op_limits,
+        segment_catalog=segment_catalog,
+        window_search=window_search_audit,
     )
 
     if sp_raw is not None:
@@ -1316,6 +2162,16 @@ def identify_from_history(
             if final_status == FINAL_TEST_FAILED:
                 confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
                 physical_flag += ", FINAL_TEST_FAILED"
+            # P3-06b（O-A6 完整出口）：全域搜索胜者命中搜索上界（UPPER）= θ 可能
+            # 被边界截断、信息不足以确定 θ——显式原因码 + 可信度封顶 C
+            # （θ̂=边界值不得冒充已确定的 θ；仅全域搜索分支，显式 θ 分支
+            # 的 ±3 邻域端点命中不构成信息不足证据）
+            delay_boundary_capped = (
+                delay_boundary_hit == "UPPER" and theta_source == ThetaSource.SEARCHED
+            )
+            if delay_boundary_capped:
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+                physical_flag += ", DELAY_BOUNDARY_UPPER"
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -1341,6 +2197,9 @@ def identify_from_history(
                 reason_codes.append("FINAL_TEST_FAILED")
             elif final_status == FINAL_TEST_NO_DYNAMICS:
                 reason_codes.append("FINAL_TEST_NO_DYNAMICS")
+            # P3-06b（O-A6）：θ 边界命中信息不足显式标记（封顶见上）
+            if delay_boundary_capped:
+                reason_codes.append("DELAY_BOUNDARY_UPPER_HIT")
             evidence = ModelEvidence(
                 n_train=n_train,
                 n_val=n_val,
@@ -1427,6 +2286,25 @@ def identify_from_history(
 
     # P2-006：Occam 削减 — SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 > 5% 且 BIC 下降
     best = _select_with_occam(results)
+
+    # P3-06b（P-19 物理时间与抗混叠）：胜出模型的连续时间常数 < 采样周期 →
+    # 动态在单采样内已收敛，采样分辨率不足以分辨（C14-ID2 采样不足场景）——
+    # 显式标记"不可判断该时间常数"而非硬出高可信值（原因码 + 封顶 C；
+    # 多采样率比较前提不成立显式不可比较，07§4 06b）。
+    _best_tau = best.params.tau if best.params.model_type == ModelType.FOPDT else None
+    if best.params.model_type == ModelType.SOPDT:
+        _t1, _t2 = best.params.T1, best.params.T2
+        _taus = [t for t in (_t1, _t2) if t and t > 0]
+        _best_tau = min(_taus) if _taus else None
+    if _best_tau is not None and 0.0 < _best_tau < ts:
+        best.confidence = _cap_confidence(best.confidence, AlgorithmConfidenceLevel.C)
+        _below_res_note = (
+            f", DYNAMICS_BELOW_RESOLUTION(τ={_best_tau:.3g}s < ts={ts:g}s，"
+            "采样分辨率不足以分辨该时间常数)"
+        )
+        best.reason = (best.reason or "") + _below_res_note
+        if best.evidence is not None:
+            best.evidence.reason_codes.append("DYNAMICS_BELOW_RESOLUTION")
 
     # 整体可信度检查
     if best.confidence == AlgorithmConfidenceLevel.INCONCLUSIVE:
@@ -2217,6 +3095,12 @@ def _identify_ipdt_candidate(
         )
 
     # 6. 可信度评估（v1.2：val 段近稳态回退 R²_train 并封顶 C）
+    delay_boundary_hit = None
+    if delay_candidates:
+        if best_d == delay_candidates[-1]:
+            delay_boundary_hit = "UPPER"
+        elif best_d == delay_candidates[0]:
+            delay_boundary_hit = "LOWER"
     confidence = _assess_confidence(exc, r2_eval, residual_white, exc_score)
     if val_stationary:
         confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
@@ -2237,6 +3121,12 @@ def _identify_ipdt_candidate(
     if final_status == FINAL_TEST_FAILED:
         confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
         physical_flag += ", FINAL_TEST_FAILED"
+    # P3-06b（O-A6 完整出口，同主路径语义）：全域搜索胜者命中上界 →
+    # θ 信息不足显式标记 + 可信度封顶 C（θ̂ 不得冒充已确定）
+    delay_boundary_capped = delay_boundary_hit == "UPPER" and theta_source == ThetaSource.SEARCHED
+    if delay_boundary_capped:
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+        physical_flag += ", DELAY_BOUNDARY_UPPER"
 
     # 7. AIC/BIC（k=3 参数：b1 + 漂移截距 + 斜坡）
     aic_val = compute_aic(n_samples, res_var, 3)
@@ -2258,12 +3148,10 @@ def _identify_ipdt_candidate(
         reason_codes.append("FINAL_TEST_FAILED")
     elif final_status == FINAL_TEST_NO_DYNAMICS:
         reason_codes.append("FINAL_TEST_NO_DYNAMICS")
-    delay_boundary_hit = None
-    if delay_candidates:
-        if best_d == delay_candidates[-1]:
-            delay_boundary_hit = "UPPER"
-        elif best_d == delay_candidates[0]:
-            delay_boundary_hit = "LOWER"
+    # P3-06b（O-A6）：θ 边界命中信息不足显式标记（封顶与 delay_boundary_hit
+    # 计算均在第 6 步，此处补充 reason code）
+    if delay_boundary_capped:
+        reason_codes.append("DELAY_BOUNDARY_UPPER_HIT")
     evidence = ModelEvidence(
         n_train=n_train,
         n_val=n_val,
