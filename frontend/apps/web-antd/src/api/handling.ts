@@ -38,6 +38,11 @@ export namespace HandlingApi {
 
   export type Source = 'MANUAL' | 'SYSTEM';
   export type VerifyResult = 'EFFECTIVE' | 'INEFFECTIVE';
+  /** 闭环证据三分类（P3-05/DEC-06：服务端按前后窗 KPI 数据 + 工况确认派生） */
+  export type ClosureEvidence =
+    | 'COMPARABLE_CONDITION_VERIFIED'
+    | 'DATA_VERIFIED'
+    | 'MANUAL_CONFIRMATION';
 
   /** KPI 快照摘要（§4.3：score + 六率 + 可信度 + 窗口） */
   export interface KpiSummary {
@@ -155,10 +160,13 @@ export namespace HandlingApi {
     kpiBefore: KpiSummary | null;
     kpiAfter: KpiSummary | null;
     window: {
+      /** P3-05：后窗锚定依据（implementedAt=申报实施时刻 / submittedAt=未申报退化锚） */
+      afterAnchorSource?: null | string;
       afterEnd: null | string;
       afterStart: null | string;
       beforeEnd: null | string;
       beforeStart: null | string;
+      implementationTimeKnown?: boolean | null;
     };
   }
 
@@ -468,6 +476,15 @@ export namespace HandlingApi {
     startedAt?: null | string;
     feedbackCount?: null | number;
     submittedAt?: null | string;
+    /** P3-05：实际实施时刻（NULL=未申报/未知，不伪填提交时刻） */
+    implementedAt?: null | string;
+    /** P3-05：闭环证据三分类（验证时派生；存量行为 null） */
+    closureEvidence?: ClosureEvidence | null;
+    closureEvidenceLabel?: null | string;
+    /** P3-05：TUNING 工单关联整定记录（同回路严格关联） */
+    tuningRecordId?: null | string;
+    /** P3-05：实际回退人工确认事实（独立于 ROLLED_BACK 判断结论） */
+    actualRollbackConfirmed?: boolean | null;
     verifyResult?: null | VerifyResult;
     verifiedBy?: null | string;
     verifiedAt?: null | string;
@@ -499,6 +516,14 @@ export namespace HandlingApi {
     verifyNote?: null | string;
     cancelReason?: null | string;
     suggestions?: null | OrderSuggestionRef[];
+    /** P3-05：实施时刻是否已知（implementedAt 非空） */
+    implementationTimeKnown?: boolean | null;
+    /** P3-05：工况可比已确认（= closureEvidence 为 COMPARABLE_CONDITION_VERIFIED） */
+    conditionComparable?: boolean | null;
+    /** P3-05：回退确认事实字段（rollback-confirm 端点写入；跨轮保留最新覆盖） */
+    rollbackConfirmedAt?: null | string;
+    rollbackConfirmedBy?: null | string;
+    rollbackNote?: null | string;
   }
 
   /** 工单清单查询（§6.2；排序=状态分组 + updated_at DESC） */
@@ -517,6 +542,8 @@ export namespace HandlingApi {
     /** 创建时间窗（按 created_at，闭区间；工作台下钻时间窗口径） */
     createdBefore?: string;
     createdAfter?: string;
+    /** P3-05/ENG-02：按整定记录精确反查关联工单（替代"按回路取最近一条"） */
+    tuningRecordId?: string;
   }
 
   /** 手动新建工单（POST /orders，§6.2；source=MANUAL） */
@@ -546,6 +573,8 @@ export namespace HandlingApi {
   /** 提交验证（EXECUTING → VERIFYING；TUNING 必填 pidAfter） */
   export interface SubmitOrderBody {
     actionDetail: Record<string, any>;
+    /** P3-05：实际实施时刻（ISO UTC；缺省=未知，不伪填提交时刻） */
+    implementedAt?: string;
   }
 
   /** 验证结论（VERIFYING → CLOSED/REOPENED；服务端固化 KPI） */
@@ -553,6 +582,37 @@ export namespace HandlingApi {
     verifyResult: VerifyResult;
     verifyNote?: string;
     verifyRunId?: string;
+    /** P3-05/DEC-06：人工确认前后窗工况可比（仅前后窗数据均在时生效） */
+    conditionComparable?: boolean;
+  }
+
+  /** 实际回退人工确认（P3-05/DEC-06：仅 CLOSED/REOPENED；confirmed 必填，true 须填说明） */
+  export interface RollbackConfirmBody {
+    confirmed: boolean;
+    note?: string;
+  }
+
+  /** 复诊候选行（GET /orders/{id}/revisit-candidates，P3-05/ENG-04） */
+  export interface RevisitCandidate {
+    id: string;
+    status: string;
+    triggerType: null | string;
+    triggeredBy: null | string;
+    primaryCategory: null | string;
+    severity: null | number;
+    createdAt: null | string;
+    finishedAt: null | string;
+    windowStart: null | string;
+    windowEnd: null | string;
+  }
+
+  /** 复诊候选响应（同回路+SUCCESS/PARTIAL+实施锚后近 20 条，新→旧） */
+  export interface RevisitCandidatesData {
+    id: string;
+    loopId: string;
+    implementationAnchor: null | string;
+    anchorSource: null | string;
+    items: RevisitCandidate[];
   }
 
   /** 作废（PENDING → CANCELLED；cancelReason 必填） */
@@ -723,5 +783,24 @@ export function cancelOrderApi(id: string, data: HandlingApi.CancelOrderBody) {
 export function getOrderKpiComparisonApi(id: string) {
   return requestClient.post<HandlingApi.KpiComparison>(
     `/handling/orders/${id}/kpi-comparison`,
+  );
+}
+
+/** 实际回退人工确认（P3-05/DEC-06：仅 CLOSED/REOPENED；confirmed 必填，
+ * true 须填说明（何时/依据何种现场记录），false 可更正误确认；最新覆盖） */
+export function rollbackConfirmApi(
+  id: string,
+  data: HandlingApi.RollbackConfirmBody,
+) {
+  return requestClient.post<HandlingApi.OrderDetail>(
+    `/handling/orders/${id}/rollback-confirm`,
+    data,
+  );
+}
+
+/** 同回路实施后完成复诊记录候选（P3-05/ENG-04：仅 VERIFYING 可查；近 20 条新→旧） */
+export function getRevisitCandidatesApi(id: string) {
+  return requestClient.get<HandlingApi.RevisitCandidatesData>(
+    `/handling/orders/${id}/revisit-candidates`,
   );
 }

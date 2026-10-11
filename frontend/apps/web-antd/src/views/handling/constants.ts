@@ -240,3 +240,57 @@ export const ORDER_SOURCE_TEXT: Record<HandlingApi.OrderSource, string> = {
   DIAGNOSIS: '建议转化',
   MANUAL: '手动新建',
 };
+
+// ===========================================================================
+// P3-05 实施记录与验证证据常量（01§3.4 + DEC-06；文案与后端
+// endpoints/handling.py _CLOSURE_EVIDENCE_LABELS 逐字对齐）
+// ===========================================================================
+
+/** 闭环证据三分类中文名（服务端派生：数据均在+工况确认/数据均在/任一侧无数据） */
+export const CLOSURE_EVIDENCE_TEXT: Record<
+  HandlingApi.ClosureEvidence,
+  string
+> = {
+  MANUAL_CONFIRMATION: '人工确认（无数据）',
+  DATA_VERIFIED: '数据验证',
+  COMPARABLE_CONDITION_VERIFIED: '数据验证（工况可比已确认）',
+};
+
+/** 闭环证据三分类色：人工=橙（弱证据）/ 数据=蓝 / 工况可比=绿 */
+export const CLOSURE_EVIDENCE_COLOR: Record<
+  HandlingApi.ClosureEvidence,
+  string
+> = {
+  MANUAL_CONFIRMATION: 'orange',
+  DATA_VERIFIED: 'blue',
+  COMPARABLE_CONDITION_VERIFIED: 'green',
+};
+
+/** KPI 后窗锚定来源中文名（implementedAt ?? submittedAt 显式回显，诚实化） */
+export const AFTER_ANCHOR_SOURCE_TEXT: Record<string, string> = {
+  implementedAt: '实施时刻（已申报）',
+  submittedAt: '提交时刻（实施时刻未知）',
+  unknown: '未知',
+};
+
+/** 复诊候选触发类型中文名（P3-05/B3：revisit-candidates 展示；
+ * 与后端 diagnosis_v2._TRIGGER_TYPE_LABELS 对齐） */
+export const TRIGGER_TYPE_TEXT: Record<string, string> = {
+  MANUAL: '手动诊断',
+  SCHEDULED: '定期诊断',
+  EVENT: '事件触发',
+};
+
+/** 复诊候选主分类中文名（诊断 run primary_category 展示；
+ * 与 views/diagnosis/constants.ts CATEGORY_META.label 同义——本模块内联
+ * 小映射避免处置→诊断跨视图依赖，分类域冻结（14 号文）不漂移） */
+export const DIAG_CATEGORY_TEXT: Record<string, string> = {
+  TUNING: '参数问题',
+  VALVE: '阀门/执行机构问题',
+  INSTRUMENT: '仪表/测量问题',
+  COMMUNICATION: '通信链路问题',
+  PROCESS: '工艺/外扰问题',
+  UTILIZATION: '投用/操作问题',
+  DESIGN: '组态/设计问题',
+  DATA_INSUFFICIENT: '数据不足',
+};
