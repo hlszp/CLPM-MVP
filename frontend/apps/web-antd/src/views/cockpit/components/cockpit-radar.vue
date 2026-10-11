@@ -45,7 +45,9 @@ function buildOption() {
     const v = dims?.[m.key];
     const safe = typeof v === 'number' && !Number.isNaN(v) ? v : null;
     return {
-      name: safe === null ? m.label : `${m.label} ${Math.round(safe)}`,
+      // P3-D6 R05（2026-10-12）：null 维度显式"无数据"——占位 0 不冒充
+      // 实测 0 分（缺值不画成正常/确定差），轴名直读即知缺维
+      name: safe === null ? `${m.label}·无数据` : `${m.label} ${Math.round(safe)}`,
       max: 100,
       min: 0,
     };

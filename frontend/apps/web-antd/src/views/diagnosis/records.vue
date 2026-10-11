@@ -31,6 +31,8 @@ import {
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
+import { JUDGEMENT_LABELS, judgementOf } from '#/views/diagnosis/components/assessment-labels';
+
 dayjs.extend(utc);
 
 import {
@@ -419,13 +421,14 @@ function catColor(record: DiagnosisApi.RunListItem) {
     : '#6c757d';
 }
 
-/** 主分类空值语义（2026-10-05 用户裁决）：NULL = 门禁通过但全部算子未命中
- * （分类引擎 NO_SYMPTOM → 落库 NULL），明确显示"正常"；
- * FAILED 留痕 run 无结论产出，显示 — */
+/** 主分类空值语义（P3-D6 08-B，2026-10-12）：NULL 不再统一显示"正常"——
+ * 按科学结论 judgementStatus 区分：有效阴性（范围内正常）/不可判定（证据
+ * 不足）/未评估/历史覆盖未验证；FAILED 留痕 run 无结论产出，显示 — */
 function primaryText(record: DiagnosisApi.RunListItem) {
   if (record.primaryCategory)
     return record.primaryCategoryLabel ?? record.primaryCategory;
-  return record.status === 'FAILED' ? '—' : '正常';
+  if (record.status === 'FAILED') return '—';
+  return JUDGEMENT_LABELS[judgementOf(record.assessment)];
 }
 
 /** 置信度空值语义：结论=正常时引擎不给数值 → "不适用"；FAILED → — */
@@ -686,7 +689,7 @@ onMounted(() => {
               >
                 {{ record.primaryCategoryLabel }}
               </span>
-              <!-- 空值语义显式化：未见异常（NO_SYMPTOM 落库 NULL）/ 失败无产出 -->
+              <!-- 空值语义显式化（P3-D6）：按科学结论显示，不再兜底"未见异常" -->
               <span v-else class="text-neutral-400">
                 {{ primaryText(record as DiagnosisApi.RunListItem) }}
               </span>

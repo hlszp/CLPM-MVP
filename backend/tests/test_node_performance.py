@@ -187,6 +187,34 @@ def _make_loop_row(
     return row
 
 
+def _roster_patch(loop_ids, snaps=None, excluded=0, failed=None, semantics=None, weights=None):
+    """P3-08d：_load_roster_inputs 打桩（默认全 scorable 名册）。"""
+    from types import SimpleNamespace
+
+    loop_ids = sorted(loop_ids)
+    if snaps is None:
+        snaps = {
+            lid: SimpleNamespace(
+                status="SUCCESS",
+                score=Decimal("80"),
+                fast_rate=Decimal("90"),
+                result_record_id=None,
+            )
+            for lid in loop_ids
+        }
+    return patch(
+        "app.services.node_performance._load_roster_inputs",
+        return_value=(
+            loop_ids,
+            excluded,
+            snaps,
+            set(failed or []),
+            semantics or {},
+            weights or {lid: Decimal("1.0") for lid in loop_ids},
+        ),
+    )
+
+
 class TestAggregateNodeSnapshot:
     """加权聚合回路级快照。"""
 
@@ -207,17 +235,54 @@ class TestAggregateNodeSnapshot:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_aggregate_returns_none_when_no_snapshots(self):
-        """有回路但无 SUCCESS 快照时返回 None。"""
+    async def test_no_snapshots_but_roster_produces_empty_result(self):
+        """C26-EA2（P3-08d）：有参评名册但无完整 P → 仍产出节点结果。
+
+        原行为"无 SUCCESS 快照返回 None"改为：score/metrics 全 None +
+        名册状态账（missing=2）+ scorableLoopRatio=0% + unit_status=EMPTY。
+        """
         db = AsyncMock()
         # _fetch_and_aggregate_loops 调 result.all() 返回空列表 → None
         mock_result = MagicMock()
         mock_result.all.return_value = []
         db.execute = AsyncMock(return_value=mock_result)
 
-        with patch(
-            "app.services.node_performance.collect_descendant_loop_ids",
-            return_value=["loop-001", "loop-002"],
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001", "loop-002"],
+            ),
+            _roster_patch(["loop-001", "loop-002"], snaps={}),
+        ):
+            result = await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime.now(UTC).replace(tzinfo=None),
+                datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+            )
+        assert result is not None
+        assert result["score"] is None
+        assert result["unit_status"] == "EMPTY"
+        roster = result["assessment_stats"]["roster"]
+        assert roster["eligibleLoopCount"] == 2
+        assert roster["scorableLoopCount"] == 0
+        assert roster["scorableLoopRatio"] == 0.0
+        assert roster["states"]["missing"] == 2
+
+    @pytest.mark.asyncio
+    async def test_aggregate_returns_none_when_no_eligible_loops(self):
+        """P3-08d：有名下回路但无参评名册（E=0）时返回 None（无参评不产快照）。"""
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        db.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001"],
+            ),
+            _roster_patch([], snaps={}),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -272,6 +337,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["loop-001", "loop-002", "loop-003"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -329,6 +395,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["loop-001", "loop-002", "loop-003"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -390,6 +457,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["s1", "s2", "cascade-main", "cascade-sub"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -449,6 +517,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["sub-b", "sub-d"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -491,6 +560,7 @@ async def _aggregate_with_rows(rows):
             "app.services.node_performance.query_realtime_auto_rate",
             return_value=None,
         ),
+        _roster_patch([str(r.loop_id) for r in rows]),
     ):
         return await aggregate_node_snapshot(
             db,
@@ -632,6 +702,7 @@ class TestCal05HalfOpenWindow:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["loop-001"]),
         ):
             await aggregate_node_snapshot(
                 db,

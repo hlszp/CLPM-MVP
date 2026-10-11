@@ -1056,6 +1056,16 @@ async def get_overview(
 # ---------------------------------------------------------------------------
 # 诊断统计
 # ---------------------------------------------------------------------------
+#: 诊断科学结论标签（08§4.2 五值；R09 2026-10-12）
+_JUDGEMENT_LABELS: dict[str, str] = {
+    "SYMPTOM_DETECTED": "检出症状",
+    "VALID_NEGATIVE": "有效阴性（范围内正常）",
+    "INCONCLUSIVE": "不可判定（证据不足）",
+    "NOT_ASSESSED": "未评估",
+    "LEGACY_UNVERIFIABLE": "历史覆盖未验证",
+}
+
+
 async def get_diagnosis_statistics(
     db: AsyncSession,
     start_date: datetime | None,
@@ -1241,12 +1251,44 @@ async def get_diagnosis_statistics(
         ).all()
         trend = [{"date": r.d, "total": int(r.total), "high": int(r.high)} for r in trend_rows]
 
+    # R09（2026-10-12 P3-08d/D6）：诊断科学结论分布——run 状态 SUCCESS 不
+    # 等于有效诊断（08§4.2：SUCCESS+INCONCLUSIVE/NOT_ASSESSED 合法共存，
+    # 不能用 SUCCESS 计数冒充"有效诊断数"）。judgementStatus 取
+    # assessment_meta（D2 起 writer 落库）；历史 run 无 meta →
+    # LEGACY_UNVERIFIABLE（历史覆盖未验证，不猜算）。JSON/PDF/CSV 同源。
+    judgement_rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT COALESCE(dr.assessment_meta->>'judgementStatus',
+                                'LEGACY_UNVERIFIABLE') AS js,
+                       COUNT(*) AS cnt
+                FROM diagnosis_run dr
+                JOIN loop_ledger ll ON ll.id = dr.loop_id
+                {where_sql}
+                GROUP BY 1 ORDER BY cnt DESC
+                """
+            ),
+            params,
+        )
+    ).all()
+    judgement_distribution = [
+        {
+            "judgement": r.js,
+            "label": _JUDGEMENT_LABELS.get(r.js, r.js),
+            "count": int(r.cnt),
+            "ratio": round(int(r.cnt) / total, 4) if total else 0,
+        }
+        for r in judgement_rows
+    ]
+
     return {
         "total": total,
         "successCount": int(total_row.success_cnt),
         "reviewPendingCount": int(total_row.pending_cnt),
         "categoryDistribution": category_distribution,
         "confidenceDistribution": confidence_distribution,
+        "judgementDistribution": judgement_distribution,
         "topAbnormalLoops": top_abnormal,
         "trend": trend,
     }

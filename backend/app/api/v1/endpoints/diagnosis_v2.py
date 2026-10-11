@@ -770,6 +770,7 @@ async def get_latest_runs_per_loop(
                COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
                r.time_window_start, r.time_window_end,
                r.metric_summary,
+               r.assessment_meta,
                k.score AS latest_score,
                k.fitness_level, k.tune_level, k.fitness_tags,
                sugg.action_content, sugg.action_count,
@@ -857,6 +858,11 @@ async def get_latest_runs_per_loop(
                 "primaryCategoryLabel": _CATEGORY_LABELS.get(r.primary_category or "", None)
                 if r.run_id
                 else None,
+                # P3-D6（2026-10-12，08§4.2 reader-first）：科学结论元信息随
+                # 最新 run 带出（NULL=历史 run，读端按 LEGACY_UNVERIFIABLE 处理）。
+                # REWORK D-A：外层 SELECT 已显式含 r.assessment_meta，此处直接
+                # 属性访问——缺列时 AttributeError 显式失败，不再静默 null
+                "assessment": r.assessment_meta if r.run_id else None,
                 "primaryConfidence": float(r.primary_confidence)
                 if r.primary_confidence is not None
                 else None,

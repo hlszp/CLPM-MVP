@@ -366,6 +366,7 @@ class TestRunsLatestEndpoint:
         reviewed_by: str | None = None,
         reviewed_at: datetime | None = None,
         metric_summary=None,
+        assessment_meta=None,
     ):
         from types import SimpleNamespace
 
@@ -396,6 +397,7 @@ class TestRunsLatestEndpoint:
             reviewed_by=reviewed_by,
             reviewed_at=reviewed_at,
             metric_summary=metric_summary,
+            assessment_meta=assessment_meta if run_id else None,
         )
 
     def _override_execute(self, client, execute) -> None:
@@ -523,6 +525,50 @@ class TestRunsLatestEndpoint:
         assert "WITH RECURSIVE node_tree" in captured["sql"]
         assert "ll.id = :loop_id" in captured["sql"]
         assert captured["params"] == {"root_id": plant_id, "loop_id": loop_id}
+
+    def test_latest_passes_through_assessment_semantics(self, client) -> None:
+        """REWORK D-A（2026-10-12）：assessment 透传反例。
+
+        SUCCESS + judgementStatus=VALID_NEGATIVE 的最新 run → 端点响应
+        ``assessment.judgementStatus`` 原样透传（外层 SELECT 含
+        r.assessment_meta，缺列会 AttributeError 显式失败而非静默 null）；
+        未诊断回路 assessment=None。
+        """
+
+        async def _execute(sql, params=None):  # noqa: ARG001
+            rid = uuid4()
+            meta = {
+                "schemaVersion": "diagnosis-assessment/1",
+                "judgementStatus": "VALID_NEGATIVE",
+                "causeStatus": "UNRESOLVED",
+            }
+            rows_r = MagicMock()
+            rows_r.all.return_value = [
+                self._row(
+                    tag="VN",
+                    run_id=rid,
+                    diagnosed=datetime(2026, 8, 18, 6, 0, 0),
+                    assessment_meta=meta,
+                ),
+                self._row(tag="NONE", run_id=None, diagnosed=None),
+            ]
+            return rows_r
+
+        with mock_current_user(TEST_USERS["admin"]):
+            self._override_execute(client, _execute)
+            resp = client.get(
+                "/api/v1/diagnosis/runs/latest",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        vn = next(i for i in items if i["loopTagName"] == "VN")
+        none_row = next(i for i in items if i["loopTagName"] == "NONE")
+        # 透传：科学结论元信息随最新 run 原样带出（三条现役读端消费链）
+        assert vn["assessment"]["judgementStatus"] == "VALID_NEGATIVE"
+        assert vn["assessment"]["schemaVersion"] == "diagnosis-assessment/1"
+        # 未诊断回路不携带科学结论
+        assert none_row["assessment"] is None
 
     def test_latest_orders_desc_nulls_last(self, client) -> None:
         """排序行为：回路按最新诊断时间降序在前，未诊断回路垫底；透出 triggerType。"""

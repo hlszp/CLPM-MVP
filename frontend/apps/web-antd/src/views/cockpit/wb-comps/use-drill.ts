@@ -21,6 +21,7 @@ import { getRankingApi } from '#/api/metric';
 import { getTuningTasksApi } from '#/api/tuning';
 import { useCockpitStore } from '#/store/cockpit';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
+import { categoryOrJudgementLabel } from '#/views/diagnosis/components/assessment-labels';
 
 import { GRADE_LABELS, gradeOfScore } from '../composables/use-cockpit-theme';
 import { WINDOW_MAP, windowStartDate } from '../utils/format';
@@ -423,7 +424,9 @@ export function useCockpitDrill() {
         status: t.status as never,
       });
       list.rows = (res?.items ?? []).map((r) => ({
-        categoryLabel: r.primaryCategoryLabel ?? '未见异常',
+        // R06（P3-D6 2026-10-12）：主分类 NULL 不再兜底'未见异常'——按科学结论
+        // 显示（judgementStatus 五值；历史 run → 历史覆盖未验证）
+        categoryLabel: categoryOrJudgementLabel(r.primaryCategoryLabel, r.assessment as never),
         loopId: r.loopId,
         loopTagName: r.loopTagName ?? r.loopId,
         severityLabel: r.severity

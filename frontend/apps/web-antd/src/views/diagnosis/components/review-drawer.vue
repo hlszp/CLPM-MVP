@@ -21,6 +21,7 @@ import {
 } from 'ant-design-vue';
 
 import { reviewDiagnosisRunApi } from '#/api/diagnosis';
+import { judgementOf } from '#/views/diagnosis/components/assessment-labels';
 
 import { REVIEW_CATEGORY_OPTIONS } from '../constants';
 
@@ -40,15 +41,24 @@ const form = reactive<{ reviewComment: string; reviewResults: string[] }>({
   reviewComment: '',
 });
 
+/** 复核预填默认勾选（P3-D6 08-B）：有主分类→勾主分类；无主分类仅科学结论
+ *  为有效阴性（范围内正常）时预填 NORMAL；未决/未知留空由人工判断 */
+function defaultReviewSelection(item: {
+  assessment?: DiagnosisApi.RunListItem['assessment'];
+  primaryCategory?: DiagnosisApi.Category | null;
+}): string[] {
+  if (item.primaryCategory) return [item.primaryCategory];
+  return judgementOf(item.assessment) === 'VALID_NEGATIVE' ? ['NORMAL'] : [];
+}
+
 watch(open, (v) => {
   if (v && props.item) {
     // 回显：已复核记录预填上次结论/意见（可改判）；建议默认勾选 AI 主分类
-    // （诊断未命中异常时默认勾"正常"，2026-10-05 用户裁决口径）
+    // （P3-D6 08-B：未决/未知不默认勾"正常"——仅科学结论为有效阴性
+    // （范围内正常）时预填 NORMAL，其余留空由人工判断）
     form.reviewResults = props.item.reviewResults?.length
       ? [...props.item.reviewResults]!
-      : (props.item.primaryCategory
-        ? [props.item.primaryCategory]
-        : ['NORMAL']);
+      : defaultReviewSelection(props.item);
     form.reviewComment = '';
   }
 });

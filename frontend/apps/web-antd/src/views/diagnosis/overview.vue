@@ -34,6 +34,7 @@ import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
+import { JUDGEMENT_LABELS, judgementOf } from '#/views/diagnosis/components/assessment-labels';
 
 import DiagnosisDetailModal from './components/diagnosis-detail-modal.vue';
 import DiagnosisEvidenceDrawer from './components/evidence-drawer.vue';
@@ -73,6 +74,11 @@ const plantTreeLoading = ref(false);
 const plantTreeExpandedKeys = ref<string[]>([]);
 const plantTreeSelectedKeys = ref<string[]>([]);
 const selectedPlantNodeId = ref<string | undefined>(undefined);
+
+/** 概览表主分类空值 → 科学结论标签（P3-D6 08-B） */
+function overviewJudgementLabel(record: DiagnosisApi.LatestRunItem): string {
+  return JUDGEMENT_LABELS[judgementOf(record.assessment)];
+}
 
 function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
   return nodes.map((n) => ({
@@ -670,13 +676,12 @@ onMounted(() => {
                 >
                   {{ record.primaryCategoryLabel }}
                 </span>
-                <!-- 已诊断未命中异常 → 明确写"正常"（2026-10-05 用户裁决）；
-                     未诊断回路保持 —（色值走主题变量，hex 棘轮只减不增） -->
-                <span
-                  v-else-if="record.runId"
-                  :style="{ color: themeColors.SUCCESS }"
-                >
-                  正常
+                <!-- P3-D6 08-B（2026-10-12）：已诊断但主分类 NULL 不再统一
+                     "正常"——按科学结论显示（有效阴性=范围内正常/不可判定/
+                     未评估/历史覆盖未验证）；未诊断回路保持 —
+                     （色值走主题变量，hex 棘轮只减不增） -->
+                <span v-else-if="record.runId" :style="{ color: themeColors.SUCCESS }">
+                  {{ overviewJudgementLabel(record as DiagnosisApi.LatestRunItem) }}
                 </span>
                 <span v-else class="text-neutral-400">—</span>
               </template>
@@ -684,7 +689,7 @@ onMounted(() => {
                 <template v-if="record.primaryConfidence != null">
                   {{ Math.round(record.primaryConfidence * 100) }}%
                 </template>
-                <!-- 结论=正常时置信度不适用（引擎对无异常结论不给数值） -->
+                <!-- 结论无主分类（有效阴性/未决等）时置信度不适用 -->
                 <span v-else-if="record.runId" class="text-neutral-400">不适用</span>
                 <span v-else class="text-neutral-400">—</span>
               </template>

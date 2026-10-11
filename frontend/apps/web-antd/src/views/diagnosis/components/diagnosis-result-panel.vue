@@ -29,6 +29,7 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisOperatorsApi } from '#/api/diagnosis';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { judgementOf } from '#/views/diagnosis/components/assessment-labels';
 
 import { CATEGORY_META, SEVERITY_COLOR, SEVERITY_TEXT } from '../constants';
 
@@ -84,6 +85,48 @@ function parseHit(judgment: string): boolean | null {
 const FEATURE_LABEL_FALLBACK: Record<string, string> = {
   osc_index: '振荡指数',
 };
+
+/** 科学结论视图（P3-D6 08-B）：主分类 NULL 时按 judgementStatus 显示 */
+const judgementView = computed(() => {
+  const js = judgementOf(props.detail.assessment);
+  if (js === 'VALID_NEGATIVE')
+    return {
+      color: '#10b981',
+      title: '正常（有效阴性）',
+      desc: '检查范围内全部诊断算子为合格阴性——正常结论仅覆盖所检查范围，不代表检查范围之外的设备状态。',
+    };
+  if (js === 'INCONCLUSIVE')
+    return {
+      color: '#f59e0b',
+      title: '不可判定（证据不足）',
+      desc: '本次评估证据不足，不能得出正常或异常结论；建议补齐数据后重新诊断。',
+    };
+  if (js === 'NOT_ASSESSED')
+    return {
+      color: '#f59e0b',
+      title: '未评估',
+      desc: '本次运行未执行任何选定检查，不构成诊断结论。',
+    };
+  return {
+    color: '#94a3b8',
+    title: '历史覆盖未验证',
+    desc: '该记录产生于科学结论口径上线前，原结论可查但检查覆盖范围不可追溯，不回溯判定为正常。',
+  };
+});
+
+/** 覆盖范围与支持度口径（08§4.3 三等式 + §4.4 支持度不冒称概率） */
+const coverageText = computed(() => {
+  const cov = props.detail.assessment?.coverage as
+    | Record<string, boolean | number>
+    | undefined;
+  if (!cov || typeof cov.selected !== 'number') return null;
+  const support = '规则支持（未校准，非概率）';
+  const expected =
+    typeof cov.profileExpected === 'number' ? cov.profileExpected : null;
+  return expected == null
+    ? `检查范围 ${cov.selected} 项 · 支持度口径：${support}`
+    : `检查范围 ${cov.selected}/${expected} 项 · 支持度口径：${support}`;
+});
 
 const showConclusion = computed(
   () => props.section === 'all' || props.section === 'conclusion',
@@ -505,25 +548,33 @@ watch(isDark, () => {
         type="warning"
       />
     </div>
-    <!-- ①' 正常（数据充足但全部症状未命中：NO_SYMPTOM 哨兵落库为
-         NULL 主分类，前端原无分支 → "诊断结论"Tab 空白，2026-10-01 修复；
-         2026-10-05 用户裁决：结论明确写"正常"） -->
+    <!-- ①' 科学结论区（P3-D6 08-B，2026-10-12）：主分类 NULL 不再统一绿色
+         "正常"——按 assessment.judgementStatus 区分有效阴性（范围内正常，
+         注明检查范围与支持度口径）/不可判定/未评估/历史覆盖未验证；
+         历史记录（2026-10-01 修复口径：NO_SYMPTOM 落库 NULL）在无科学
+         结论元信息时按"历史覆盖未验证"显示，不回溯判正常 -->
     <div
       v-else-if="showConclusion"
       class="rounded-lg border p-4"
-      :style="{ borderColor: '#10b98155', background: '#10b9810d' }"
+      :style="{ borderColor: `${judgementView.color}55`, background: `${judgementView.color}0d` }"
     >
       <div class="flex items-center gap-3">
         <span
           class="inline-block h-8 w-1.5 rounded-full"
-          :style="{ background: '#10b981' }"
+          :style="{ background: judgementView.color }"
         ></span>
         <div class="flex-1">
-          <div class="text-lg font-semibold" style="color: #10b981">
-            正常
+          <div class="text-lg font-semibold" :style="{ color: judgementView.color }">
+            {{ judgementView.title }}
           </div>
           <div class="mt-0.5 text-xs text-neutral-500">
-            评估窗口内数据充足，全部诊断算子未检出显著控制问题症状（无异常）。
+            {{ judgementView.desc }}
+          </div>
+          <div
+            v-if="coverageText"
+            class="mt-0.5 text-xs text-neutral-400"
+          >
+            {{ coverageText }}
           </div>
         </div>
       </div>

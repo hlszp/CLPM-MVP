@@ -172,6 +172,9 @@ def _run_timeline_item(run: DiagnosisRun) -> dict[str, Any]:
         "runId": run.id,
         "diagnosedAt": _iso(_diagnosed_at(run)),
         "primaryCategory": run.primary_category,
+        # P3-D6（2026-10-12，08§4.2 reader-first）：科学结论元信息随档案
+        # 时间线带出（NULL=历史 run，读端按 LEGACY_UNVERIFIABLE 处理）
+        "assessment": run.assessment_meta,
         "secondaryCategories": run.secondary_categories or [],
         "severity": run.severity,
         "confidence": float(run.primary_confidence) if run.primary_confidence is not None else None,
