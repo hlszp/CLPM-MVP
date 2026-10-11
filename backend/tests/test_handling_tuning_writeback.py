@@ -133,6 +133,7 @@ class TestVerifyWriteback:
         order = _make_order(status="VERIFYING")
         rec = _make_tuning_record("APPLIED")
         # execute 序列：_get_order_or_404 → kpi_before 窗口均值 → kpi_after 窗口均值
+        # （P3-05：两窗均无数据 → MANUAL_CONFIRMATION，EFFECTIVE 闭环须带理由）
         mock_db = _override_db(
             client,
             [_scalar_result(order), _scalars_all_result([]), _scalars_all_result([])],
@@ -142,7 +143,10 @@ class TestVerifyWriteback:
             resp = client.post(
                 f"/api/v1/handling/orders/{ORDER_ID}/verify",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"verifyResult": verify_result},
+                json={
+                    "verifyResult": verify_result,
+                    "verifyNote": "评分回升（现场确认）",
+                },
             )
         return resp, rec, mock_db
 

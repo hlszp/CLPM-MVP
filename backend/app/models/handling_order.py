@@ -46,6 +46,17 @@ ACTION_TYPES = (
 #: 工单状态机枚举（§4.2，6 态）
 ORDER_STATUSES = ("PENDING", "EXECUTING", "VERIFYING", "CLOSED", "REOPENED", "CANCELLED")
 
+#: 闭环证据三分类（P3-05，DEC-06 已裁采纳，01§3.4 / P0-02 冻结 v2 §6.3）：
+#: - MANUAL_CONFIRMATION：无数据人工验收（verifyNote 必填理由，不进数据验证通过数）
+#: - DATA_VERIFIED：前后窗 KPI 数据均在（工况可比性未确认）
+#: - COMPARABLE_CONDITION_VERIFIED：数据在 + 人工确认工况可比
+#: NULL=未验证 / 历史行（不回填不伪判）。
+CLOSURE_EVIDENCE_TYPES = (
+    "MANUAL_CONFIRMATION",
+    "DATA_VERIFIED",
+    "COMPARABLE_CONDITION_VERIFIED",
+)
+
 
 class HandlingOrder(Base, TimestampMixin):
     """处置工单（排程、执行反馈、验证、闭环的执行载体）。"""
@@ -83,6 +94,21 @@ class HandlingOrder(Base, TimestampMixin):
     feedback_log: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     #: 提交验证时间（KPI 前后窗口分界）
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ---------- P3-05 实施记录与验证证据（2026-10-12，DEC-06 已裁） ----------
+    #: 实际实施时刻（用户申报，可与 submitted_at 分离——延后补录不改变实施时刻；
+    #: NULL=未申报/历史行，语义为"未知"，不伪填 submitted_at，01§3.4）
+    implemented_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: 闭环证据三分类（verify 时服务端按 KPI 窗口数据 + 工况确认派生；NULL=未验证）
+    closure_evidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    #: 实际回退人工确认事实（独立于 verify_result/ROLLED_BACK 判断结论，DEC-06：
+    #: 未确认不代表未回退，但未确认不得声称 DCS 已恢复；False 有 server_default）
+    actual_rollback_confirmed: Mapped[bool] = mapped_column(
+        nullable=False, server_default=text("false"), default=False
+    )
+    rollback_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rollback_confirmed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: 回退确认说明（何时/依据何种现场记录确认已回退）
+    rollback_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     #: 验证依据的复诊记录（可选，复诊删除后置空）
     verify_run_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
@@ -155,6 +181,11 @@ class HandlingOrder(Base, TimestampMixin):
         CheckConstraint(
             "verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE')",
             name="ck_handling_order_verify_result",
+        ),
+        CheckConstraint(
+            "closure_evidence IS NULL OR closure_evidence IN "
+            "('MANUAL_CONFIRMATION', 'DATA_VERIFIED', 'COMPARABLE_CONDITION_VERIFIED')",
+            name="ck_handling_order_closure_evidence",
         ),
         CheckConstraint(
             "sla_stage IN ('NONE','WARN','BREACH')",

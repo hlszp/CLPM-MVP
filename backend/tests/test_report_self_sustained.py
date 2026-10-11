@@ -151,6 +151,11 @@ def _make_stats_db(
                     sla_on_time=3,
                     effective_count=5,
                     ineffective_count=1,
+                    # P3-05 证据等级拆分列（DEC-06：统计与数据验证分开）
+                    effective_manual_count=1,
+                    effective_data_count=3,
+                    effective_comparable_count=1,
+                    effective_legacy_count=0,
                 )
             )
         if "GROUP BY su.status" in sql:
@@ -429,6 +434,10 @@ class TestHandlingStatsP2Enhanced:
                 sla_on_time=0,
                 effective_count=0,
                 ineffective_count=0,
+                effective_manual_count=0,
+                effective_data_count=0,
+                effective_comparable_count=0,
+                effective_legacy_count=0,
             ),
             funnel_rows=[],
             workload_rows=[],
