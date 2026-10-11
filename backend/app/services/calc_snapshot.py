@@ -85,6 +85,7 @@ ERR_SNAPSHOT_FILES_MISSING = "ERR_SNAPSHOT_FILES_MISSING"
 ERR_SNAPSHOT_HASH_MISMATCH = "ERR_SNAPSHOT_HASH_MISMATCH"
 ERR_SNAPSHOT_EXPIRED = "ERR_SNAPSHOT_EXPIRED"
 ERR_SNAPSHOT_BUILD_UNAVAILABLE = "ERR_SNAPSHOT_BUILD_UNAVAILABLE"
+ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE = "ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE"
 ERR_SNAPSHOT_SCHEMA_UNSUPPORTED = "ERR_SNAPSHOT_SCHEMA_UNSUPPORTED"
 
 # 构建摘要不可用时的显式标记（不伪补版本）
@@ -177,19 +178,34 @@ def executable_build_digest() -> str:
     return hashlib.sha256(f"clpm-build-v1|{code or '-'}|{lock or '-'}".encode()).hexdigest()[:16]
 
 
-def retained_build_digests() -> set[str]:
-    """环境 keeper 保留的旧构建摘要清单（DEC-10 保留责任主体维护）.
-
-    文件 ``{snapshot_root}/retained-builds.json``：``{"digests": ["...", ...]}``。
-    重放时当前构建 digest 与包 digest 不一致且不在保留清单 → 显式拒绝。
-    文件缺失 = 仅当前构建可用（诚实口径，不默认放行）。
-    """
+def _read_retained_builds_file() -> dict[str, Any]:
+    """读取 retained-builds.json（缺失/损坏返回空 dict，诚实口径不默认放行）."""
     path = snapshot_root() / "retained-builds.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return {str(d) for d in data.get("digests", [])}
+        return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
-        return set()
+        return {}
+
+
+def retained_build_digests() -> set[str]:
+    """环境 keeper 保留的旧构建摘要清单（DEC-10 保留责任主体维护）.
+
+    文件 ``{snapshot_root}/retained-builds.json``：``{"digests": [...],
+    "builds": {"<digest>": {执行配方}}}``（builds 为 G2-INC-b 增补，只加
+    不改）。重放门禁：当前构建 digest 与包 digest 不一致且不在保留清单 →
+    显式拒绝。**具备可执行配方（builds 键）视为已保留**；文件缺失 = 仅
+    当前构建可用。
+
+    门禁只回答"构建是否保留"；执行能力路由（登记 ≠ 可执行）见
+    ``app.services.controlled_build``。
+    """
+    data = _read_retained_builds_file()
+    digests = {str(d) for d in data.get("digests", [])}
+    builds = data.get("builds")
+    if isinstance(builds, dict):
+        digests |= {str(k) for k in builds}
+    return digests
 
 
 # ---------------------------------------------------------------------------
@@ -446,14 +462,27 @@ def _read_files(
 
 
 class LoadedSnapshot:
-    """通过全部复现前置检查的输入包（重放就绪）."""
+    """通过全部复现前置检查的输入包（重放就绪）.
 
-    def __init__(self, row: CalculationDatasetSnapshot, manifest: dict, arrays: dict):
+    ``npz_path``/``manifest_path`` 为已定位的包文件路径（G2-INC-b：受控
+    构建子进程按路径读原包执行）。
+    """
+
+    def __init__(
+        self,
+        row: CalculationDatasetSnapshot,
+        manifest: dict,
+        arrays: dict,
+        npz_path: Path,
+        manifest_path: Path,
+    ):
         self.snapshot_id = str(row.id)
         self.row = row
         self.manifest = manifest
         self.arrays = arrays
         self.input_hash = row.input_hash
+        self.npz_path = npz_path
+        self.manifest_path = manifest_path
 
 
 async def load_snapshot_for_replay(
@@ -535,7 +564,7 @@ async def load_snapshot_for_replay(
             ),
             status_code=409,
         )
-    return LoadedSnapshot(row, manifest, arrays)
+    return LoadedSnapshot(row, manifest, arrays, npz_path, manifest_path)
 
 
 def _locate_files(row: CalculationDatasetSnapshot) -> tuple[Path, Path]:
@@ -812,10 +841,16 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
         }
         if getattr(block, "series_context", None) is not None:
             sc = block.series_context
+
+            def _iso(v: Any) -> str | None:
+                # G2 增量真实链修复：gridStart/gridEnd 为 datetime，直接入
+                # manifest 会 json.dumps 崩溃（P2-03 单测未覆盖 point 网格包）
+                return v.isoformat() if hasattr(v, "isoformat") else v
+
             meta["seriesContext"] = {
                 "layout": getattr(sc, "layout", None),
-                "gridStart": getattr(sc, "grid_start", None),
-                "gridEnd": getattr(sc, "grid_end", None),
+                "gridStart": _iso(getattr(sc, "grid_start", None)),
+                "gridEnd": _iso(getattr(sc, "grid_end", None)),
                 "gridPeriodS": getattr(sc, "grid_period_s", None),
                 "expectedSlots": getattr(sc, "expected_slots", None),
                 "datasetRef": getattr(sc, "dataset_ref", None),
@@ -835,6 +870,34 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
             meta["lineage"] = None
         blocks_meta.append(meta)
     return arrays, blocks_meta
+
+
+def _restore_series_context(sc_meta: Any):
+    """manifest.seriesContext → SeriesContext（重放保真，G2 增量真实链修复）.
+
+    P2-03 缺口：deserialize 不还原 series_context → gap 守卫（AD03/I04，
+    依赖 ``is_point``）在重放侧退化为 legacy 放行——点网格包 v1 被
+    GAP_SENSITIVE 拒绝的指标在重放侧算出数值，"同构建同包全等"被破坏。
+    覆盖/边界等高级字段不落包（保持既有 manifest 形态），仅还原能使
+    守卫与网格口径一致的骨架字段；缺字段/损坏 → None（legacy 行为）。
+    """
+    if not isinstance(sc_meta, dict):
+        return None
+    try:
+        from app.contracts.series_context import SeriesContext
+
+        return SeriesContext(
+            layout=str(sc_meta.get("layout") or "legacy"),
+            grid_start=datetime.fromisoformat(str(sc_meta["gridStart"])),
+            grid_end=datetime.fromisoformat(str(sc_meta["gridEnd"])),
+            grid_period_s=float(sc_meta.get("gridPeriodS") or 1.0),
+            expected_slots=int(sc_meta.get("expectedSlots") or 0),
+            dataset_ref=str(sc_meta.get("datasetRef") or ""),
+            binding_version=sc_meta.get("bindingVersion"),
+            coverage_revision=sc_meta.get("coverageRevision"),
+        )
+    except (KeyError, ValueError, TypeError):
+        return None
 
 
 def deserialize_data_blocks(arrays: dict[str, np.ndarray], blocks_meta: list[dict[str, Any]]):
@@ -893,6 +956,7 @@ def deserialize_data_blocks(arrays: dict[str, np.ndarray], blocks_meta: list[dic
             control_type=meta.get("controlType"),
             loop_confidence_level=meta.get("loopConfidenceLevel") or "E",
             loop_valid_rate=float(meta.get("loopValidRate") or 0.0),
+            series_context=_restore_series_context(meta.get("seriesContext")),
         )
         code = meta.get("metricCode")
         lineage_dict = meta.get("lineage")
@@ -1140,21 +1204,70 @@ async def save_identification_snapshot(
 
 
 # ---------------------------------------------------------------------------
-# 结果账本 record 重放（C12b：读原包按旧构建复现）
+# 结果账本 record 重放（C12b：读原包按旧构建复现；G2-INC-a/b 增量）
 # ---------------------------------------------------------------------------
 
 
+def _pinned_params_from_manifest(manifest: dict[str, Any]) -> tuple[dict | None, str]:
+    """从包 manifest 重建五层固定参数（G2-INC-a：重放不读当前配置缓存）.
+
+    Returns:
+        (pinned_map, source_label)：
+        - 新包（G2 增量起保存，``source.effectiveParams.params`` 存在）：
+          ``({(metric, ct): params}, "package")``——重放按包内 v1 有效值固定；
+        - 旧包（1.1/1.2，无该节或 status=UNPINNED）：``(None,
+          "legacy-unpinned")``——显式标记后按既有同构建口径计算，非静默。
+    """
+    eff = (manifest.get("source") or {}).get("effectiveParams")
+    raw = eff.get("params") if isinstance(eff, dict) else None
+    if not isinstance(raw, dict) or not raw:
+        return None, "legacy-unpinned"
+    pinned: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, params in raw.items():
+        if not isinstance(key, str) or "|" not in key or not isinstance(params, dict):
+            continue
+        metric, ct = key.rsplit("|", 1)
+        pinned[(metric, ct)] = dict(params)
+    if not pinned:
+        return None, "legacy-unpinned"
+    return pinned, "package"
+
+
+def _resolve_replay_execution(loaded: LoadedSnapshot) -> tuple[str, str]:
+    """裁决重放执行方式（G2-INC-b：digest 校验通过后的执行侧路由）.
+
+    Returns:
+        (mode, pkg_digest)：mode 为 ``in-process``（当前构建即包构建，进程内
+        执行既有代码）或 ``controlled-build``（包构建 ≠ 当前构建——由调用方
+        路由到 ``controlled_build`` 子进程执行，缺配方时由其显式拒绝）。
+    """
+    pkg_digest = (loaded.manifest.get("source") or {}).get("executableBuildDigest")
+    cur_digest = executable_build_digest()
+    if pkg_digest is not None and pkg_digest != cur_digest:
+        return "controlled-build", str(pkg_digest)
+    return "in-process", str(cur_digest)
+
+
 async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, Any]:
-    """按结果账本 record 重放 KPI 计算：读原包（不重查源）重算并比对 v1.
+    """按结果账本 record 重放 KPI 计算：读原包（不重查源）按包构建重算并比对 v1.
+
+    G2-INC-a：算子参数从包 ``source.effectiveParams.params`` 固定（不读当前
+    配置缓存）；旧版包缺该节 → 报告 ``paramsSource="legacy-unpinned"`` 显式
+    标记（非静默）。
+
+    G2-INC-b：包构建 digest ≠ 当前构建 → 经 ``controlled_build`` 在该 digest
+    对应的受控构建内子进程执行（缺执行配方/构建失效 → 显式拒绝
+    ``ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE``，绝不静默用当前构建冒充）。
 
     Returns:
         ``{"recordId", "snapshotId", "inputHash", "replayedAt",
            "identical": bool, "differences": {metric: {v1, replay}},
-           "replayedMetrics": {...}}``
+           "replayedMetrics": {...}, "paramsSource", "executionMode",
+           "executedBuildDigest"}``
 
     Raises:
-        BizError: ERR_SNAPSHOT_* —— 未保存包/过期/损坏/缺构建均显式拒绝
-        "不可完整复现"，绝不重查当前源数据冒充原输入。
+        BizError: ERR_SNAPSHOT_* —— 未保存包/过期/损坏/缺构建/缺执行配方均
+            显式拒绝"不可完整复现"，绝不重查当前源数据冒充原输入。
     """
     from app.services.result_ledger import get_record_by_id
 
@@ -1178,15 +1291,27 @@ async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, An
             message=f"包种类 {loaded.manifest.get('kind')} 不是 KPI_GRID，不能按 KPI 链重放",
             status_code=409,
         )
-    from app.tasks.kpi_calc import _compute_kpis_three_layer, _extract_metrics_detail
 
-    replay_ctx = loaded.manifest.get("replayContext") or {}
-    bundles, _ = deserialize_data_blocks(loaded.arrays, loaded.manifest.get("blocks") or [])
-    config_bundle = _build_replay_config_bundle(replay_ctx)
-    metric_results, composite = _compute_kpis_three_layer(
-        bundles, config_bundle, replay_ctx.get("weights")
-    )
-    replayed = _extract_metrics_detail(metric_results)
+    execution_mode, route_digest = _resolve_replay_execution(loaded)
+    if execution_mode == "controlled-build":
+        from app.services import controlled_build as cb
+
+        out = cb.run_kpi_replay(route_digest, loaded.npz_path, loaded.manifest_path)
+        replayed = out.get("metrics")
+        params_source = str(out.get("paramsSource") or "legacy-unpinned")
+        executed_digest = str(out.get("buildDigest") or route_digest)
+    else:
+        from app.tasks.kpi_calc import _compute_kpis_three_layer, _extract_metrics_detail
+
+        replay_ctx = loaded.manifest.get("replayContext") or {}
+        bundles, _ = deserialize_data_blocks(loaded.arrays, loaded.manifest.get("blocks") or [])
+        config_bundle = _build_replay_config_bundle(replay_ctx)
+        pinned_params, params_source = _pinned_params_from_manifest(loaded.manifest)
+        metric_results, composite = _compute_kpis_three_layer(
+            bundles, config_bundle, replay_ctx.get("weights"), pinned_params=pinned_params
+        )
+        replayed = _extract_metrics_detail(metric_results)
+        executed_digest = route_digest
 
     v1_detail = (record.payload or {}).get("metricsDetail") or {}
     differences: dict[str, Any] = {}
@@ -1209,6 +1334,9 @@ async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, An
         "identical": not differences,
         "differences": differences,
         "replayedMetrics": replayed,
+        "paramsSource": params_source,
+        "executionMode": execution_mode,
+        "executedBuildDigest": executed_digest,
     }
 
 
@@ -1259,6 +1387,10 @@ async def replay_identification_snapshot(
     输入取包内 ``consumed`` 数组（当年实际进入算法栈的分析输入切片），
     不重查 TDengine；结构化预处理参数从 manifest.preprocess 读取比对
     （管线内部按同参数确定性执行）。
+
+    G2-INC-b：包构建 digest ≠ 当前构建 → 经 ``controlled_build`` 在受控
+    构建内子进程执行（缺执行配方 → ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE）；
+    报告附 ``executionMode``/``executedBuildDigest``。
     """
     loaded = await load_snapshot_for_replay(db, snapshot_id, now=now)
     if loaded.manifest.get("kind") != KIND_IDENTIFICATION:
@@ -1267,6 +1399,28 @@ async def replay_identification_snapshot(
             message=f"包种类 {loaded.manifest.get('kind')} 不是 IDENTIFICATION，不能按辨识链重放",
             status_code=409,
         )
+
+    execution_mode, route_digest = _resolve_replay_execution(loaded)
+    if execution_mode == "controlled-build":
+        from app.services import controlled_build as cb
+
+        out = cb.run_identification_replay(route_digest, loaded.npz_path, loaded.manifest_path)
+        payload: dict[str, Any] = {
+            "snapshotId": loaded.snapshot_id,
+            "inputHash": loaded.input_hash,
+            "success": bool(out.get("success")),
+            "executionMode": execution_mode,
+            "executedBuildDigest": str(out.get("buildDigest") or route_digest),
+        }
+        if out.get("success"):
+            payload["modelType"] = out.get("modelType")
+            payload["params"] = out.get("params")
+            payload["fittingScore"] = out.get("fittingScore")
+            payload["confidenceLevel"] = out.get("confidenceLevel")
+        else:
+            payload["reason"] = out.get("reason")
+        return payload
+
     from app.services.tuning_identification.pipeline import identify_from_history
 
     consumed_desc = loaded.manifest.get("consumed") or {}
@@ -1295,10 +1449,12 @@ async def replay_identification_snapshot(
         candidate_models=_replay_candidate_models(ctx.get("candidateModels")),
         op_limits=tuple(ctx.get("opLimits") or (0.0, 100.0)),
     )
-    payload: dict[str, Any] = {
+    payload = {
         "snapshotId": loaded.snapshot_id,
         "inputHash": loaded.input_hash,
         "success": bool(result.success),
+        "executionMode": execution_mode,
+        "executedBuildDigest": route_digest,
     }
     if result.success and result.best_model is not None:
         payload["modelType"] = result.best_model.params.model_type.value
@@ -1311,6 +1467,7 @@ async def replay_identification_snapshot(
 
 
 __all__ = [
+    "ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE",
     "ERR_SNAPSHOT_BUILD_UNAVAILABLE",
     "ERR_SNAPSHOT_CLEANED",
     "ERR_SNAPSHOT_EXPIRED",

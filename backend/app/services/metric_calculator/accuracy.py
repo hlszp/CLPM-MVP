@@ -29,7 +29,6 @@ import logging
 import math
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -93,7 +92,8 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         e_max = self._read_e_max(bundle)
         e_max_source = "config"
         if e_max is None:
-            params = get_algorithm_params("accuracy_rate", bundle.data_block.control_type)
+            # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+            params = self._effective_params("accuracy_rate", bundle)
             tolerance_ratio = float(
                 params.get("e_max_tolerance_ratio", _DEFAULT_E_MAX_TOLERANCE_RATIO)
             )

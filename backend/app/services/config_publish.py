@@ -260,6 +260,43 @@ def resolve_from_snapshot(
     }
 
 
+def resolve_loop_params_map(
+    snapshot: dict[str, Any],
+    *,
+    template_key: str | None = None,
+    node_id: str | None = None,
+    loop_id: str | None = None,
+) -> dict[str, dict[tuple[str, str], dict[str, Any]]]:
+    """在固定快照上解析一个回路的全部五层有效参数（G2-INC-a）.
+
+    对注册表全部 (metric_code, control_type) 组合循环调用既有
+    ``resolve_from_snapshot``（零 DB 访问），返回::
+
+        {"params": {(metric, ct): {param: 五层展开有效值}},
+         "sources": {(metric, ct): {param: 来源层}}}
+
+    供 KPI 任务把 per-loop 解析结果注入计算器（``with_pinned_params``），
+    任务运行期不再读当前缓存——"任务开始固定，任务中不切参"在参数值
+    层面成立（此前仅 pin revision 号，算子仍读 ``_merged_cache``）。
+    sources 供输入包 manifest.effectiveParams 记录逐参数来源层。
+    """
+    params_map: dict[tuple[str, str], dict[str, Any]] = {}
+    sources_map: dict[tuple[str, str], dict[str, str]] = {}
+    for metric_code in ac._DEFAULTS:
+        for ct in ac._CONTROL_TYPES:
+            resolved = resolve_from_snapshot(
+                snapshot,
+                metric_code,
+                ct,
+                template_key=template_key,
+                node_id=node_id,
+                loop_id=loop_id,
+            )
+            params_map[(metric_code, ct)] = dict(resolved["params"])
+            sources_map[(metric_code, ct)] = dict(resolved["sources"])
+    return {"params": params_map, "sources": sources_map}
+
+
 # ---------------------------------------------------------------------------
 # 有效值解析（DEFAULT < TEMPLATE < NODE < LOOP < TASK）
 # ---------------------------------------------------------------------------
@@ -1566,6 +1603,7 @@ __all__ = [
     "reset_override",
     "resolve_effective_params",
     "resolve_from_snapshot",
+    "resolve_loop_params_map",
     "rollback_publication",
     "start_config_revision_subscriber",
     "sync_runtime_cache",

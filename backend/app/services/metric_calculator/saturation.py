@@ -24,7 +24,6 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.auto_mode import AUTO_MODES
 from app.services.metric_calculator.base import MetricCalculatorBase
 
@@ -135,8 +134,7 @@ class SaturationRateCalculator(MetricCalculatorBase):
             },
         )
 
-    @staticmethod
-    def _read_op_bounds(bundle: MetricDataBundle) -> tuple[float, float, float]:
+    def _read_op_bounds(self, bundle: MetricDataBundle) -> tuple[float, float, float]:
         """读取 OP 上下限与饱和容差.
 
         优先级（2026-10-10 用户裁决，ε 可配置默认 0）：
@@ -150,7 +148,8 @@ class SaturationRateCalculator(MetricCalculatorBase):
         op_high = _read_float(signals, "op_high", DEFAULT_OP_HIGH)
         epsilon = _read_float(signals, "saturation_epsilon", None)
         if epsilon is None:
-            params = get_algorithm_params("saturation_rate", bundle.data_block.control_type)
+            # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+            params = self._effective_params("saturation_rate", bundle)
             try:
                 epsilon = float(params.get("saturation_epsilon", DEFAULT_EPSILON))
             except (TypeError, ValueError):

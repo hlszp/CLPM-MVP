@@ -35,7 +35,6 @@ from typing import Any
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 
@@ -111,7 +110,8 @@ class StictionIndexCalculator(MetricCalculatorBase):
         # 而非 INCONCLUSIVE：平稳意味着无粘滞故障，是有意义的诊断结论。
         # 数据不足（vr<0.20）仍由 _make_result 内部判定 INCONCLUSIVE。
         # 整改 F2：极限环门控的零交叉下限复用 oscillation_rate 配置链
-        _params = get_algorithm_params("oscillation_rate", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先（stiction 消费 oscillation_rate 参数）
+        _params = self._effective_params("oscillation_rate", bundle)
         is_limit_cycle, gate_info = self._detect_limit_cycle(
             pv_vals,
             int(_params.get("min_zero_crossings", MIN_ZERO_CROSSINGS)),

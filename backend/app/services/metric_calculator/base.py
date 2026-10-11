@@ -52,6 +52,45 @@ class MetricCalculatorBase(MetricCalculator):
     # 子类可覆盖：算法版本号（默认与系统对齐）
     algorithm_version: str = ALGORITHM_VERSION
 
+    #: G2-INC-a：任务固定的五层有效参数（{(metric_code, control_type): params}）。
+    #: None=未固定（回填/未接入链路），算子回落既有配置链当前缓存——行为不变。
+    _pinned_params: dict[tuple[str, str], dict[str, Any]] | None = None
+
+    def with_pinned_params(
+        self, pinned: dict[tuple[str, str], dict[str, Any]]
+    ) -> MetricCalculatorBase:
+        """注入任务边界固定的五层有效参数（链式调用；G2-INC-a）.
+
+        注入后 ``_effective_params`` 只消费固定值（dict 拷贝隔离，任务
+        运行期不读 ``_merged_cache``——发布 v2 不影响在跑任务）；固定表
+        未收录的指标按注册表默认值（该指标在 pin 时点未注册覆盖=默认态，
+        同样不读当前缓存）。
+        """
+        self._pinned_params = pinned
+        return self
+
+    def _effective_params(self, metric_code: str, bundle: MetricDataBundle) -> dict[str, Any]:
+        """算子参数统一入口（G2-INC-a）：任务固定快照优先，否则配置链缓存.
+
+        Args:
+            metric_code: 参数所属指标代码（stiction 等跨指标读参传对方代码）
+            bundle: 指标数据包（control_type=响应类别 STABLE/SLOW/FAST/LOGIC）
+        """
+        from app.services.algorithm_config import (
+            _CONTROL_TYPES,
+            _DEFAULTS,
+            get_algorithm_params,
+        )
+
+        raw_ct = bundle.data_block.control_type
+        ct = raw_ct if raw_ct in _CONTROL_TYPES else "STABLE"
+        if self._pinned_params is not None:
+            params = self._pinned_params.get((metric_code, ct))
+            if params is not None:
+                return dict(params)
+            return dict(_DEFAULTS.get(metric_code, {}).get(ct, {}))
+        return get_algorithm_params(metric_code, ct)
+
     # ------------------------------------------------------------------
     # 信号提取辅助
     # ------------------------------------------------------------------

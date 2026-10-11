@@ -18,7 +18,6 @@ import logging
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -75,7 +74,8 @@ class OutputTripIndexCalculator(MetricCalculatorBase):
 
         trip_index = total_trip / (total_duration * op_range)
         # 整改 F2：行程分级阈值从配置链读取
-        params = get_algorithm_params("output_trip_index", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("output_trip_index", bundle)
         trip_level = _determine_level(
             trip_index,
             float(params.get("trip_inactive", TRIP_INACTIVE)),

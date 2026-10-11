@@ -33,7 +33,6 @@ import math
 from typing import Any
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.disturbance import detect_disturbances
 
@@ -102,7 +101,8 @@ class FastRateCalculator(MetricCalculatorBase):
         # 阈值 = ideal_t × ideal_settling_ratio × (1 + settling_tolerance)
         # 默认 ideal_settling_ratio=1.0, settling_tolerance=0.0
         # → 阈值=ideal_t（与原 actual_t<=ideal_t 一致）
-        params = get_algorithm_params("fast_rate", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("fast_rate", bundle)
         ideal_settling_ratio = float(
             params.get("ideal_settling_ratio", _DEFAULT_IDEAL_SETTLING_RATIO)
         )
