@@ -46,6 +46,8 @@ celery_app = Celery(
         "app.tasks.workbench",
         # P2-02：配置 revision 探针（任务边界固定快照验证 / C11 实验载体）
         "app.tasks.config_probe",
+        # P2-03：不可变输入包每日清理（DEC-10 保留契约，隔离清理任务）
+        "app.tasks.calc_snapshot_cleanup",
     ],
 )
 
@@ -139,9 +141,11 @@ class AsyncTask(Task):
 # 导致 beat_schedule 中的定时调度计划（kpi-calc-hourly 等）不会被注册。
 # 必须放在 AsyncTask 类定义之后，避免循环导入。
 # MVP 精简：已移除 AAS/诊断/整定 相关任务 → 不再 import，Beat 也不再注册相应调度
+# （P2-03 增 calc_snapshot_cleanup：不可变输入包每日清理，DEC-10 保留契约）
 import app.tasks.alert_patrol  # noqa: E402, F401
 import app.tasks.audit_archive  # noqa: E402, F401
-import app.tasks.beat_registry  # noqa: E402, F401  模块热插拔 beat 条件化
+import app.tasks.beat_registry  # noqa: E402, F401
+import app.tasks.calc_snapshot_cleanup  # noqa: E402, F401
 import app.tasks.data_link_monitor  # noqa: E402, F401
 
 # import app.tasks.diagnosis_engine  # noqa: E402, F401

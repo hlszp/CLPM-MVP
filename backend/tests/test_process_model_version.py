@@ -81,12 +81,14 @@ def test_orm_has_38_tables() -> None:
     + 结果账本两表（calculation_result_record /
     calculation_result_legacy_map，P1-05 迁移 p105resledger01，2026-10-12）= 66
     + 分层配置发布两表（config_override / config_publication，
-    P2-02 迁移 p202cfgpub01，2026-10-12）= 68。
+    P2-02 迁移 p202cfgpub01，2026-10-12）= 68
+    + 不可变输入包元数据（calculation_dataset_snapshot，
+    P2-03 迁移 p203dssnap01，2026-10-12）= 69。
 
     注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
     整体下线时移除，表计数曾从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 68
+    assert len(Base.metadata.tables) == 69
 
 
 def test_partial_unique_index_current_exists() -> None:

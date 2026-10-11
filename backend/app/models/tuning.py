@@ -85,6 +85,22 @@ class TuningRecord(Base):
     # 回退 PID 值（实施失败时恢复；通常 = current_pid）
     rollback_pid: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # ---- P2-03 计算上下文与历史复现（2026-10-11）----
+    # 不可变输入包引用（辨识/整定任务保存的完整分析输入；NULL=不可完整复现）
+    dataset_snapshot_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_dataset_snapshot.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # 最终方案来源记录（辨识 record / 重评来源；显式追加不覆盖，来源完整可查）
+    source_record_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    # DCS 模板 revision（loop 绑定 dcs_model 时为 "dcs_model:{id}"，未知显式
+    # "UNKNOWN_DCS_TEMPLATE"——不伪补标准 kp/ti/td）
+    dcs_template_revision: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # CalculationContext 载体（schemaVersion/loopId/窗口/datasetRef/inputHash/
+    # algorithmVersion/executableBuildDigest/configRevision/effectiveParamsHash 等）
+    calc_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "model_type IN ('FOPDT', 'SOPDT', 'IPDT')",

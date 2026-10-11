@@ -70,6 +70,12 @@ class ProcessModelVersion(Base):
     data_window_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # 数据快照哈希（输入时序指纹，用于漂移比较与重复辨识识别）
     data_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # P2-03：不可变输入包引用（完整分析输入；NULL=该版本不可完整复现输入）
+    dataset_snapshot_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_dataset_snapshot.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # 工况摘要：MODE 占比、饱和占比、激励强度、采样率、有效样本率等
     condition_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
