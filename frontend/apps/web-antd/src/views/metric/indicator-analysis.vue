@@ -324,20 +324,41 @@ const curValues = computed(() =>
     .filter((v): v is number => v != null),
 );
 
+/**
+ * R03-4（P3-D6b）：统计基数对账——"共 M 条"= 参评口径（includeInEvaluation
+ * + 适用性过滤）下的回路数；"有效 N 条"= 其中该指标有值的回路。null 不作 0
+ * 参与统计（均值/中位数/分布桶均只算有效值），未计算条数显式展示。
+ */
+const participationBaseItems = computed(() =>
+  rankingItems.value.filter((it) => {
+    if (it.includeInEvaluation === false) return false;
+    if (
+      fitnessFilter.value &&
+      (it.fitnessLevel === 'L0' || it.fitnessLevel === 'L1')
+    ) {
+      return false;
+    }
+    return true;
+  }),
+);
+const uncomputedCount = computed(
+  () => participationBaseItems.value.length - curValues.value.length,
+);
+
 const avgValue = computed(() => {
   const vals = curValues.value;
   if (vals.length === 0) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 });
 
-/** 中位数（比均值更抗极端值，治理场景常看） */
+/** 中位数（比均值更抗极端值，治理场景常看；入参已剔除 null） */
 function medianOf(vals: number[]): null | number {
   if (vals.length === 0) return null;
   const sorted = [...vals].toSorted((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1
-    ? (sorted[mid] ?? null)
-    : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+    ? sorted[mid]!
+    : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 const medianValue = computed(() => medianOf(curValues.value));
@@ -371,15 +392,19 @@ const prevAvg = computed(() =>
 const prevMedian = computed(() => medianOf(prevValues.value));
 const hasPrevData = computed(() => prevValues.value.length > 0);
 
-/** 环比 Δ（正值=改善，6 指标均为越高越好）；无上窗数据时 null */
+/** 环比 Δ（正值=改善，6 指标均为越高越好）；无上窗数据时 null（不作 0） */
 const avgDelta = computed(() =>
-  hasPrevData.value && avgValue.value != null
-    ? avgValue.value - (prevAvg.value ?? 0)
+  hasPrevData.value &&
+  avgValue.value != null &&
+  prevAvg.value != null
+    ? avgValue.value - prevAvg.value
     : null,
 );
 const medianDelta = computed(() =>
-  hasPrevData.value && medianValue.value != null
-    ? medianValue.value - (prevMedian.value ?? 0)
+  hasPrevData.value &&
+  medianValue.value != null &&
+  prevMedian.value != null
+    ? medianValue.value - prevMedian.value
     : null,
 );
 const countDelta = computed(() =>
@@ -487,7 +512,7 @@ const sortedNodes = computed(() => {
       value: (n as Record<string, unknown>)[field] as null | number,
     }))
     .filter((r) => r.value != null)
-    .toSorted((a, b) => (a.value ?? 0) - (b.value ?? 0))
+    .toSorted((a, b) => a.value! - b.value!) // R03-4：null 已前置剔除，不作 0 排序
     .slice(0, 10);
 });
 
@@ -1061,13 +1086,21 @@ onMounted(() => {
               <div class="mt-1 text-2xl font-semibold">
                 {{ filteredItems.length }}
               </div>
+              <!-- R03-4：null 剔除出统计并显式对账——均值/中位数/分布桶
+                   只统计有效值行，未计算行不冒充 0 分参与统计 -->
+              <div class="mt-0.5 text-xs text-gray-400">
+                有效 {{ curValues.length }} 条（共
+                {{ participationBaseItems.length }} 条<template
+                  v-if="uncomputedCount > 0"
+                  >，{{ uncomputedCount }} 条未计算</template
+                >）
+              </div>
               <div
                 v-if="countDelta != null"
                 class="mt-0.5 text-xs text-gray-400"
               >
                 环比 {{ countDelta > 0 ? '+' : '' }}{{ countDelta }} 条
               </div>
-              <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
             </Card>
             <Card :body-style="{ padding: '12px 16px' }">
               <Tooltip

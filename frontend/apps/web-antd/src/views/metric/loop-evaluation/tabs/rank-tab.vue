@@ -1305,7 +1305,13 @@ onMounted(async () => {
       >
         <template #headerCell="{ column }">
           <template v-if="column.key === 'score'">
-            综合评分
+            <!-- R03-1（P3-D6b）：排序 null 语义显式化——服务端 NULLS LAST，
+                 未计算不作 0；'—'=未计算（非 0 分） -->
+            <Tooltip
+              title="服务端排序：未计算（null）评分在升/降序中均排末位（NULLS LAST）；'—' 表示未计算，非 0 分"
+            >
+              <span>综合评分</span>
+            </Tooltip>
             <ClpmInfoTip
               :term="KPI_TERM_EXPLANATIONS.compositeScore?.term"
               :tip="KPI_TERM_EXPLANATIONS.compositeScore?.short ?? ''"
@@ -1395,6 +1401,23 @@ onMounted(async () => {
                 </span>
               </Tooltip>
             </template>
+            <!-- R03-1：null 评分显式 Tooltip（未计算，非 0 分；排序恒排末位） -->
+            <Tooltip
+              v-else-if="
+                (record as LoopPerformanceRow).score === null ||
+                (record as LoopPerformanceRow).score === undefined
+              "
+              title="该窗口评分未计算（null，非 0 分）；排序时恒排末位"
+            >
+              <span
+                class="font-semibold"
+                :style="{
+                  color: scoreColor((record as LoopPerformanceRow).score),
+                }"
+              >
+                {{ formatNumber((record as LoopPerformanceRow).score) }}
+              </span>
+            </Tooltip>
             <span
               v-else
               class="font-semibold"
