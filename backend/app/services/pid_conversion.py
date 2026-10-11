@@ -25,6 +25,8 @@ from typing import Any
 
 from app.models.dcs_pid_structure import (
     P_TYPE_PROPORTION_BAND,
+    PID_REPRESENTATION_KNOWN,
+    PID_REPRESENTATION_UNKNOWN,
     UNIT_MINUTES,
     DcsPidStructure,
 )
@@ -170,10 +172,94 @@ def convert_pid_dict(
     return from_standard_pid(standard_pid, structure).to_dict()
 
 
+# ---------------------------------------------------------------------------
+# P3-03 B1-1：工程事实驱动的转换入口（未知 DCS 表示显式拒绝，不默认标准 kp/ti/td）
+# ---------------------------------------------------------------------------
+
+
+class PidRepresentationUnknownError(ValueError):
+    """DCS PID 表示未知（工程事实 status=UNKNOWN），转换不可执行.
+
+    P2-04 工程事实口径承接：未知 DCS 型号（未绑定型号 / 未配置结构 /
+    结构显式 representation_status=UNKNOWN）不得默认成标准 kp/ti/td——
+    任何"看起来能转其实是猜的"转换都是产品事故（诚实化原则）。
+    """
+
+
+def _structure_from_representation(pid_representation: dict[str, Any]) -> DcsPidStructure:
+    """工程事实 ``pidRepresentation``（engineering_facts 输出形）→ 结构模板形.
+
+    Raises:
+        PidRepresentationUnknownError: status 非 KNOWN（显式未知拒绝）。
+    """
+    status = str(pid_representation.get("status") or PID_REPRESENTATION_UNKNOWN)
+    if status != PID_REPRESENTATION_KNOWN:
+        reason = (
+            pid_representation.get("reason")
+            or "回路 DCS PID 表示未知（未绑定/未配置/显式 UNKNOWN）"
+        )
+        raise PidRepresentationUnknownError(
+            f"DCS PID 表示未知（status={status}），不得默认标准 kp/ti/td：{reason}"
+        )
+    p_type = pid_representation.get("pType")
+    i_unit = pid_representation.get("iUnit")
+    d_unit = pid_representation.get("dUnit")
+    if not p_type or not i_unit or not d_unit:
+        raise PidRepresentationUnknownError(
+            "DCS PID 表示 KNOWN 但 pType/iUnit/dUnit 缺失（数据不一致，按未知拒绝）"
+        )
+    return DcsPidStructure(
+        dcs_model_id=pid_representation.get("modelId"),
+        p_type=str(p_type),
+        i_unit=str(i_unit),
+        d_unit=str(d_unit),
+        d_filter_enabled=bool(pid_representation.get("dFilterEnabled") or False),
+        d_filter_unit=pid_representation.get("dFilterUnit"),
+        d_filter_multiplier=bool(pid_representation.get("dFilterMultiplier") or False),
+    )
+
+
+def standard_pid_from_facts(
+    dcs_pid: DcsPid,
+    pid_representation: dict[str, Any],
+) -> StandardPid:
+    """DCS 私有 PID → 标准 PID（工程事实驱动；未知表示显式拒绝）.
+
+    Args:
+        dcs_pid: DCS 私有形式参数（p/i/d）
+        pid_representation: ``engineering_facts.resolve_loop_engineering_facts``
+            输出的 ``pidRepresentation`` 节（status/pType/iUnit/dUnit/...）
+
+    Returns:
+        StandardPid（Kp 无量纲、Ti/Td 秒）
+
+    Raises:
+        PidRepresentationUnknownError: 表示未知/字段缺失（不默认标准 kp/ti/td）。
+    """
+    structure = _structure_from_representation(pid_representation)
+    return to_standard_pid(dcs_pid, structure)
+
+
+def dcs_pid_from_standard_facts(
+    standard_pid: StandardPid,
+    pid_representation: dict[str, Any],
+) -> DcsPid:
+    """标准 PID → DCS 私有 PID（工程事实驱动；未知表示显式拒绝）.
+
+    Raises:
+        PidRepresentationUnknownError: 表示未知/字段缺失。
+    """
+    structure = _structure_from_representation(pid_representation)
+    return from_standard_pid(standard_pid, structure)
+
+
 __all__ = [
     "DcsPid",
+    "PidRepresentationUnknownError",
     "StandardPid",
     "convert_pid_dict",
+    "dcs_pid_from_standard_facts",
     "from_standard_pid",
+    "standard_pid_from_facts",
     "to_standard_pid",
 ]

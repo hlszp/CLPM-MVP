@@ -604,6 +604,7 @@ def identify_from_history(
     candidate_models: list[ModelType] | None = None,
     mode: list[int] | None = None,
     op_limits: tuple[float, float] | None = None,
+    delay_search_max_seconds: float | None = None,
     _internal_call: bool = False,
 ) -> IdentificationResult:
     """基于历史数据辨识过程对象 G_plant = PV/OP.
@@ -634,10 +635,28 @@ def identify_from_history(
             FOPDT 病态拟合，K 符号随机且 tau→∞；Occam 择优保证自衡
             过程仍选 FOPDT/SOPDT）
         mode: MODE 时序（可选；自动选段的切分依据，None 时假设全 AUTO 不切分）
+        op_limits: OP 上下限（可选；自动选段的饱和切分依据）
+        delay_search_max_seconds: 时滞搜索上界（**物理秒**，P3-03 B1 R1 载体）。
+            给定时按当前采样周期换算为候选样本数，与既有样本域上限
+            （min(n/4, 60)）取 min——搜索边界以物理时间为准，不受隐含
+            60 样本边界限制（C14-ID2）。None=维持现行样本域 60 上限
+            （默认行为零变更；P3-06a 按 R1 冻结值接入）。仅当
+            ``theta_estimate`` 未显式给出（全域搜索分支）时生效。
 
     Returns:
         IdentificationResult
     """
+    # R1 载体入参校验（物理秒，正有限值；非法显式拒绝不静默忽略）
+    if delay_search_max_seconds is not None and (
+        not math.isfinite(delay_search_max_seconds) or delay_search_max_seconds <= 0
+    ):
+        return IdentificationResult(
+            success=False,
+            reason="delay_search_max_seconds 必须为有限正数（物理秒，R1 时滞物理边界载体）",
+            theta_source=ThetaSource.HEURISTIC_2TS
+            if theta_estimate is None
+            else ThetaSource.EXPLICIT,
+        )
     # v1.4 多窗编排：仅外层调用（递归窗辨识跳过，防无限递归）
     if not _internal_call and len(op) == len(pv) and len(op) >= _AUTOWIN_MIN_POINTS * 2:
         try:
@@ -664,6 +683,7 @@ def identify_from_history(
                     candidate_models=candidate_models,
                     mode=mode[_s:_e] if mode is not None else None,
                     op_limits=op_limits,
+                    delay_search_max_seconds=delay_search_max_seconds,
                     _internal_call=True,
                 )
                 if _r.success and _r.best_model is not None:
@@ -822,15 +842,31 @@ def identify_from_history(
     d_explicit = max(0, round(theta_seconds / ts))
 
     # P2-001：延迟候选搜索范围
-    # 用户给 theta 时在 d_explicit ±3 邻域精搜；未给时全域搜索 0..d_max。
+    # 用户给 theta 时在 d_explicit ± 3 邻域精搜；未给时全域搜索 0..d_max。
     # d_max 上限 60 覆盖 P2-003 的 θ=60 Ts 场景，同时不超过数据长度 1/4。
+    # P3-03 B1（R1 载体）：delay_search_max_seconds（物理秒）给定时，
+    # 搜索上界换算为样本数并与样本域上限取 min——同一物理过程的 θ 搜索
+    # 窗不随采样周期漂移（C14-ID2）；换算结果记入结构化预处理参数。
     n_u = len(u)
+    delay_bound_record: dict[str, Any] | None = None
     if theta_estimate is not None:
         d_search_max = min(d_explicit + 3, max(0, n_u // 4))
         theta_source = ThetaSource.EXPLICIT
     else:
         d_search_max = min(max(0, n_u // 4), 60)
+        if delay_search_max_seconds is not None:
+            _phys_cap = max(0, int(round(delay_search_max_seconds / ts)))
+            d_search_max = min(d_search_max, _phys_cap)
+            delay_bound_record = {
+                "maxSeconds": float(delay_search_max_seconds),
+                "maxSamples": int(d_search_max),
+                "physicalCapSamples": int(_phys_cap),
+                "applied": True,
+                "note": "R1 时滞物理秒边界载体（P3-03 B1）：物理秒换算候选上限",
+            }
         theta_source = ThetaSource.SEARCHED
+    if delay_bound_record is not None and preprocess_structured is not None:
+        preprocess_structured["delaySearchBound"] = delay_bound_record
 
     # 激励检测用 d_explicit（粗略估计，搜索在参数化阶段做）
     d = d_explicit

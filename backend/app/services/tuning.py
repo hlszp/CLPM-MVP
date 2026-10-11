@@ -877,6 +877,17 @@ async def identify_model_from_history(
         op_limits=(0.0, 100.0),
     )
 
+    # P3-03 B1-2：回路工程事实（单位域换算与落包共用；解析失败不阻断主链，
+    # unitBasis/工程换算按显式未知处理，不伪补）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        _facts = await resolve_loop_engineering_facts(db, str(loop.id))
+    except Exception:  # noqa: BLE001
+        logger.warning("辨识工程事实解析失败（unitBasis 工程换算按未知，不伪补）", exc_info=True)
+        _facts = None
+    unit_basis = _history_unit_basis(_facts, result)
+
     # P2-03（DEC-10 类别②：整定/辨识任务落包）：保存完整分析输入不可变包
     # （不只胜出片段；预处理参数结构化随包）。失败不阻断辨识主链，结果显式
     # 标 SAVE_FAILED——不可主张完整复现（诚实化原则）。
@@ -885,19 +896,7 @@ async def identify_model_from_history(
         try:
             from app.services import calc_snapshot as _cs
 
-            # P2-04（schemaVersion 1.2）：落包时从回路工程事实填充
-            # engineeringFacts（控制方向/OP 限幅/PV 量程单位/PID 表示——
-            # 未知态显式 UNKNOWN；解析失败不阻断落包，该节记 null 不伪补）
-            try:
-                from app.services.engineering_facts import resolve_loop_engineering_facts
-
-                _facts = await resolve_loop_engineering_facts(db, str(loop.id))
-            except Exception:  # noqa: BLE001
-                logger.warning(
-                    "辨识落包前工程事实解析失败（engineeringFacts 记 null，不伪补）",
-                    exc_info=True,
-                )
-                _facts = None
+            # engineeringFacts 已在上方解析（_facts），此处直接复用
             snap = await _cs.save_identification_snapshot(
                 db,
                 loop_id=str(loop.id),
@@ -946,6 +945,7 @@ async def identify_model_from_history(
             "validRate": signals["valid_rate"],
             "inputSnapshot": input_snapshot,
             "dcsTemplateRevision": _dcs_template_revision(loop),
+            "unitBasis": unit_basis,
         }
 
     # 转换为 API 响应格式
@@ -958,6 +958,8 @@ async def identify_model_from_history(
     # 周期 = 1/采样频率（Hz）
     _freq = signals["sampling_freq"]
     d["samplingPeriod"] = round(1.0 / _freq, 4) if _freq else None
+    # P3-03 B1-2：K 单位域声明与工程域换算（显式层，见 tuning_units）
+    d["unitBasis"] = unit_basis
 
     # ConfidenceEvaluator 接入：数据质量可信度（基于 valid_rate）
     # 与算法内部可信度（R²+残差+激励）取较低者，确保保守评级
@@ -974,6 +976,94 @@ async def identify_model_from_history(
     d["inputSnapshot"] = input_snapshot
     d["dcsTemplateRevision"] = _dcs_template_revision(loop)
     return d
+
+
+def _history_unit_basis(
+    facts: dict[str, Any] | None,
+    result: Any,
+) -> dict[str, Any]:
+    """历史辨识链 K 单位域声明（P3-03 B1-2）.
+
+    历史链输入经 planner 预处理 Step③ 量程归一化（PV/OP 各自 tag 量程
+    → 0~100），K 量纲恒为 %PV/%OP；工程域换算只在 PV/OP tag 量程均已
+    核实（TAG_RANGE）时给出，默认 0~100 假设不冒充工程换算（诚实未知）。
+    """
+    from app.services import tuning_units as tu
+
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
+    params = None
+    k_value = None
+    if getattr(result, "success", False) and result.best_model is not None:
+        params = result.best_model.params.to_dict()
+        k_value = params.get("K")
+    block = tu.unit_basis_block(
+        tu.BASIS_NORMALIZED,
+        pv_span=pv_span,
+        op_span=op_span,
+        note=(
+            "历史辨识链：预处理 Step③ 量程归一化域（PV/OP 各自 tag 量程→0~100），"
+            "K 量纲为 %PV/%OP；与阶跃实验链（TAG_STORED 域）比较须经换算层"
+        ),
+        k_source=k_value,
+    )
+    if isinstance(k_value, (int, float)) and not isinstance(k_value, bool):
+        if pv_span.source == "TAG_RANGE" and op_span.source == "TAG_RANGE":
+            try:
+                block["kConverted"] = tu.convert_gain(
+                    float(k_value),
+                    tu.normalized_span(),
+                    tu.normalized_span(),
+                    pv_span,
+                    op_span,
+                )
+                block["convertedBasis"] = tu.BASIS_ENGINEERING
+            except tu.UnknownConversion:
+                block["kConvertedUnknownReason"] = "量程事实非法，工程域换算不可执行"
+        else:
+            block["kConvertedUnknownReason"] = (
+                "PV/OP tag 量程未全部核实（默认 0~100 假设），工程域 K 换算不可执行"
+            )
+    return block
+
+
+def _step_unit_basis(facts: dict[str, Any] | None, k_value: float | None) -> dict[str, Any]:
+    """阶跃实验链 K 单位域声明（P3-03 B1-2）.
+
+    阶跃链经波形 API 取 TDengine 点存储**原值域**（与 planner 归一化前
+    同域），K 量纲随存储域；归一化域换算只在 tag 量程已核实时给出。
+    """
+    from app.services import tuning_units as tu
+
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
+    block = tu.unit_basis_block(
+        tu.BASIS_TAG_STORED,
+        pv_span=pv_span,
+        op_span=op_span,
+        note=(
+            "阶跃实验链：波形 API 返回点存储原值域（未经 Step③ 归一化），"
+            "K 量纲为存储域 PV/存储域 OP；与历史辨识链（NORMALIZED_0_100 域）"
+            "比较须经换算层"
+        ),
+        k_source=k_value,
+    )
+    if isinstance(k_value, (int, float)) and not isinstance(k_value, bool):
+        if pv_span.source == "TAG_RANGE" and op_span.source == "TAG_RANGE":
+            try:
+                block["kConverted"] = tu.convert_gain(
+                    float(k_value),
+                    pv_span,
+                    op_span,
+                    tu.normalized_span(),
+                    tu.normalized_span(),
+                )
+                block["convertedBasis"] = tu.BASIS_NORMALIZED
+            except tu.UnknownConversion:
+                block["kConvertedUnknownReason"] = "量程事实非法，归一化域换算不可执行"
+        else:
+            block["kConvertedUnknownReason"] = (
+                "PV/OP tag 量程未全部核实，归一化域 K 换算不可执行（存储域身份未验证）"
+            )
+    return block
 
 
 def _evaluate_data_confidence(valid_rate: float) -> str:
@@ -1210,6 +1300,36 @@ async def identify_model(
             "fitted": result["fitted_pv"],
         }
 
+    # P3-03 B1-2：工程事实（单位域换算；解析失败不阻断，按未知处理）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        _facts = await resolve_loop_engineering_facts(db, str(loop.id))
+    except Exception:  # noqa: BLE001
+        logger.warning("阶跃辨识工程事实解析失败（unitBasis 换算按未知）", exc_info=True)
+        _facts = None
+
+    # P3-03 B1-6：最佳解释模型与可整定模型显式区分（阶跃链辨识单一请求
+    # 结构：解释模型=本模型；可整定=结构为 FOPDT 时，SOPDT/IPDT 专用方法
+    # 归 P3-07 未过前不放开；可整定资格仍须经推荐链可信度门禁）
+    tunable = model_type == "FOPDT"
+    model_role = {
+        "bestExplanatory": {"modelType": model_type, "fittingScore": result["fitting_score"]},
+        "tunable": (
+            {"modelType": model_type, "fittingScore": result["fitting_score"], "isBestModel": True}
+            if tunable
+            else None
+        ),
+        "note": (
+            "FOPDT 为当前唯一可整定结构（可整定资格仍须经推荐链可信度门禁）"
+            if tunable
+            else (
+                f"{model_type} 不可整定（整定公式仅定义于 FOPDT），只能作解释模型使用；"
+                "SOPDT/IPDT 专用方法归 P3-07"
+            )
+        ),
+    }
+
     response = {
         "modelType": model_type,
         "params": params,
@@ -1221,6 +1341,9 @@ async def identify_model(
         "fittedCurve": fitted_curve,
         "tagName": loop.tag_name,
         "mvStep": mv_step,
+        # P3-03 B1-2/B1-6：K 单位域声明与模型角色（字段级，加性键）
+        "unitBasis": _step_unit_basis(_facts, params.get("K")),
+        "modelRole": model_role,
     }
     validation_error = validate_step_identification_result(response)
     if validation_error:

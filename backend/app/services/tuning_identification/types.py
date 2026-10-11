@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 
 class ModelType(StrEnum):
@@ -252,6 +252,70 @@ class IdentificationResult:
     # 清洗统计/后置 data_hash）；evidence.data_hash 等既有字段不受影响。
     preprocessing: dict[str, Any] | None = None
 
+    # P3-03 B1-6：当前唯一可整定结构（整定公式仅定义于 FOPDT——G21 fail-closed；
+    # SOPDT/IPDT 专用方法归 P3-07，未通过前不放开，03 号文 P3-07 边界）
+    TUNABLE_MODEL_TYPES: ClassVar[tuple[str, ...]] = ("FOPDT",)
+
+    def _model_role(self) -> dict[str, Any] | None:
+        """最佳解释模型 vs 可整定模型（字段级区分，P3-03 B1-6）.
+
+        - bestExplanatory：胜出模型（解释过程动态的最佳候选，可为任意结构）；
+        - tunable：结构上可进整定链的模型（当前仅 FOPDT）——胜出模型本身
+          可整定时即其自身；否则从候选池取最优 FOPDT（按可信度>拟合度），
+          无 FOPDT 候选时为 null。可整定资格仍须经推荐链门禁
+          （authorize_tuning_model 的可信度 A/B/C 确认校验），此处只做
+          结构区分，不替代门禁。
+        """
+        if not self.success or self.best_model is None:
+            return None
+        best = self.best_model
+        explanatory = {
+            "modelType": best.params.model_type.value,
+            "fittingScore": round(best.fitting_score, 2),
+            "confidence": best.confidence.value,
+        }
+        if best.params.model_type.value in self.TUNABLE_MODEL_TYPES:
+            return {
+                "bestExplanatory": explanatory,
+                "tunable": {**explanatory, "isBestModel": True},
+                "note": (
+                    f"胜出模型 {best.params.model_type.value} 为当前唯一可整定结构；"
+                    "可整定资格仍须经推荐链可信度门禁（A/B 放行、C 需确认、D/E 拒绝）"
+                ),
+            }
+        best_tunable = max(
+            (c for c in self.candidates if c.params.model_type.value in self.TUNABLE_MODEL_TYPES),
+            key=lambda c: (
+                {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}.get(c.confidence.value, 0),
+                c.fitting_score,
+            ),
+            default=None,
+        )
+        if best_tunable is None:
+            return {
+                "bestExplanatory": explanatory,
+                "tunable": None,
+                "note": (
+                    f"胜出模型 {best.params.model_type.value} 不可整定（整定公式仅定义于 "
+                    f"{'/'.join(self.TUNABLE_MODEL_TYPES)}），且候选池无可整定结构——"
+                    "只能作解释模型使用；SOPDT/IPDT 专用整定方法归 P3-07"
+                ),
+            }
+        return {
+            "bestExplanatory": explanatory,
+            "tunable": {
+                "modelType": best_tunable.params.model_type.value,
+                "fittingScore": round(best_tunable.fitting_score, 2),
+                "confidence": best_tunable.confidence.value,
+                "isBestModel": False,
+            },
+            "note": (
+                f"胜出解释模型 {best.params.model_type.value} 不可整定"
+                f"（SOPDT/IPDT 专用方法归 P3-07，未过前不放开）；"
+                f"可整定模型取候选池最优 {best_tunable.params.model_type.value}"
+            ),
+        }
+
     def to_dict(self) -> dict[str, Any]:
         """转 dict（API 响应）."""
         if not self.success or self.best_model is None:
@@ -287,6 +351,8 @@ class IdentificationResult:
                 }
                 for c in self.candidates
             ],
+            # P3-03 B1-6：最佳解释模型与可整定模型显式区分（字段级）
+            "modelRole": self._model_role(),
             "algorithmVersion": self.algorithm_version,
             "reason": self.best_model.reason,
             "preprocessing": self.preprocessing,
