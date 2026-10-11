@@ -1152,6 +1152,12 @@ async def save_identification_snapshot(
     {status, r2, n, ptpRange}，None=短数据 70/30 分割无终验段——显式
     null 不伪补）；``resultEvidence.predictiveMetrics`` 填训练集一步
     预测指标（r2Train）。旧 1.1/1.2 包无这些键=当时未记录，读取不变。
+
+    schemaVersion 1.3 内加性扩展（P3-06c，只加不改）：``resultEvidence``
+    增 ``spExogeneity``（P-21 三条件判定）/``finalEventTest``（P-24 独立
+    事件终验）/``reselectUncertainty``（P-26 重选不确定性）三键；共同
+    估计与跨窗稳定性经 ``preprocessing.multiWindow``（已整包保存）承载。
+    旧包无这些键=当时未记录，读取不变。
     """
     arrays: dict[str, np.ndarray] = {
         "consumed__ts_rel": np.asarray(timestamps_rel, dtype=np.float64),
@@ -1226,6 +1232,11 @@ async def save_identification_snapshot(
             # P3-06a（R4/R5）：终验四态记录（None=无终验段，不伪补）
             "finalTestAvailable": evidence.get("finalTest"),
             "uncertainty": evidence.get("parameterUncertainty"),
+            # P3-06c（P-21/P-24/P-26）加性键（None=当时未记录，不伪补）：
+            # SP 外生性三条件记录 / 独立事件终验 / 重选时滞-结构不确定性
+            "spExogeneity": evidence.get("spExogeneity"),
+            "finalEventTest": evidence.get("finalEventTest"),
+            "reselectUncertainty": evidence.get("reselectUncertainty"),
         },
         "replayContext": {
             "loopId": str(loop_id),

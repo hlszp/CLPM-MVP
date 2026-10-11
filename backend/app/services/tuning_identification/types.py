@@ -207,6 +207,19 @@ class ModelEvidence:
     # P3-06a（B-01）：时滞搜索审计——边界命中（UPPER/LOWER/None）、稀疏化
     # 事实与候选数（07§3.2"物理时滞范围与边界命中"）
     delay_search_info: dict[str, Any] | None = None
+    # P3-06c（P-21/R8）：SP 外生性三条件检测记录——verdict ∈ {EXOGENOUS,
+    # TRACKING_LOCKSTEP, CASCADE_TEMPLATE, RESIDUAL_CORRELATED,
+    # NO_SP_EXCITATION}；None=未提供 SP 或未运行检测（内层调用除外）
+    sp_exogeneity: dict[str, Any] | None = None
+    # P3-06c（P-22/R11/P-23）：多实验共同估计记录——段块堆叠回归（A/B 共享、
+    # 每段独立偏置）；None=非共同估计候选（逐窗候选）
+    joint_estimate: dict[str, Any] | None = None
+    # P3-06c（P-24）：独立动态事件终验记录——与选模用窗不重叠的自然事件
+    # 自由仿真（不参与选模）；None=无可用独立事件或未运行（外层调用才有）
+    final_event_test: dict[str, Any] | None = None
+    # P3-06c（P-26/R10）：重选时滞/结构的重复估计不确定性（48 次重选全链、
+    # 参数分布直接取分位，覆盖全部方法）；None=未运行（数据不足门槛未过）
+    reselect_uncertainty: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -237,6 +250,11 @@ class ModelEvidence:
             "ipdtDrift": self.ipdt_drift,
             "estimatorProfile": self.estimator_profile,
             "delaySearchInfo": self.delay_search_info,
+            # P3-06c 加性字段（P-21/P-22/P-24/P-26；缺省 None=当时未记录）
+            "spExogeneity": self.sp_exogeneity,
+            "jointEstimate": self.joint_estimate,
+            "finalEventTest": self.final_event_test,
+            "reselectUncertainty": self.reselect_uncertainty,
         }
 
 
@@ -275,8 +293,12 @@ class IdentificationResult:
     # R4+R5 final-test 三段分数与终验四态 / R17 估计身份证据节）；
     # v1.6=P3-06b 片段与时间尺度子卡（R2 合格连续段全保留+段目录 P-14 /
     # P-12 段最小点数物理化 / P-16 信息量通道 / P-17 自然事件锚点窗 /
-    # P-19 采样分辨率标记 / O-A6 时滞边界命中出口 / B-05~B-08 搜索审计））
-    algorithm_version: str = "TUNE_IDENT_v1.6"
+    # P-19 采样分辨率标记 / O-A6 时滞边界命中出口 / B-05~B-08 搜索审计）；
+    # v1.7=P3-06c 闭环估计与验证子卡（P-21/R8 SP 外生性三条件——CLIVC
+    # 适用面收窄+O-C3 恒 SP 闭环无 IV 通道降级 / P-22+P-23 段块堆叠共同
+    # 估计与每段偏置 / P-24 独立动态事件终验 / P-25 跨窗稳定性 25% 门禁 /
+    # P-26+P-27 重选时滞-结构重复估计不确定性 / B-09~B-10 预算审计））
+    algorithm_version: str = "TUNE_IDENT_v1.7"
     # P2-03（R2 §三 DEC-10 补表述）：结构化预处理参数——从 reason 字符串
     # 提升为结构化字段（三件套开关与参数/multi-window 入选窗位/分割比/
     # 清洗统计/后置 data_hash）；evidence.data_hash 等既有字段不受影响。
