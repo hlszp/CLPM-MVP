@@ -841,7 +841,7 @@ async def _run_batch_loop_calculations(
     bundle_cache=None,
     concurrency: int = CONCURRENCY,
     save_input_snapshot: bool = False,
-    pinned_config_revision: str | None = None,
+    pinned_config: dict | None = None,
 ) -> list[dict | None | Exception]:
     """Run loop KPI calculations with shared bounded-concurrency orchestration.
 
@@ -855,8 +855,9 @@ async def _run_batch_loop_calculations(
             _calculate_loop_kpi 按运行上下文确定性推导）。
         save_input_snapshot: P2-03 是否保存不可变输入包（DEC-10：小时例行
             KPI 不落包；custom 人工评估=显式人工请求类落包）。
-        pinned_config_revision: P2-03 任务边界固定的全局配置 revision
-            （P2-02 持久 revision；None=沿用内容摘要口径）。
+        pinned_config: P2-03 任务边界固定的完整配置快照（P2-02
+            ``pin_config_snapshot``；G2-INC-a：快照含五层参数，批内逐回路
+            解析注入算子。None=未固定，沿用内容摘要口径+当前缓存）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -909,7 +910,7 @@ async def _run_batch_loop_calculations(
                         source_task_id=source_task_id,
                         logical_run_id=logical_run_id,
                         save_input_snapshot=save_input_snapshot,
-                        pinned_config_revision=pinned_config_revision,
+                        pinned_config=pinned_config,
                     )
                     await worker_db.commit()
                     return result
@@ -1098,8 +1099,9 @@ async def _do_calculate(
         loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
-        # P2-03：任务边界固定全局配置 revision（标准小时链；批内所有 record 共用）
-        pinned_config_revision = await _pin_config_revision(db)
+        # P2-03/G2-INC-a：任务边界固定完整配置快照（标准小时链；批内所有 record 共用，
+        # 五层参数任务中不换参——G2-INC-a 起不只固定 revision 号）
+        pinned_config = await _pin_task_config(db)
 
     loops_count = len(loops)
 
@@ -1131,7 +1133,7 @@ async def _do_calculate(
         source_task_id=source_task_id,
         logical_run_id=logical_run_id,
         on_completed=_on_completed if task_id else None,
-        pinned_config_revision=pinned_config_revision,
+        pinned_config=pinned_config,
     )
     t_calc_elapsed = time.perf_counter() - t_calc_start
     logger.info(
@@ -1273,8 +1275,8 @@ async def _do_calculate_custom_loop(
 
         type_weights = await get_loop_type_weights_map(db)
 
-        # P2-03：任务边界固定配置 revision + 显式人工评估落包（DEC-10 类别③）
-        pinned_config_revision = await _pin_config_revision(db)
+        # P2-03/G2-INC-a：任务边界固定完整配置快照 + 显式人工评估落包（DEC-10 类别③）
+        pinned_config = await _pin_task_config(db)
         data_planner = _build_data_planner(db)
         snap = await _calculate_loop_kpi(
             db=db,
@@ -1290,7 +1292,7 @@ async def _do_calculate_custom_loop(
                 ts_start_dt, custom_task_id=task_id
             ),
             save_input_snapshot=True,
-            pinned_config_revision=pinned_config_revision,
+            pinned_config=pinned_config,
         )
         await db.commit()
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
@@ -1367,9 +1369,9 @@ async def _do_calculate_custom_batch(
             logical_run_id=result_ledger.derive_loop_logical_run_id(
                 ts_start_dt, custom_task_id=task_id
             ),
-            # P2-03：显式人工批量评估落包 + 任务边界固定配置 revision（DEC-10 类别③）
+            # P2-03/G2-INC-a：显式人工批量评估落包 + 任务边界固定完整配置快照（DEC-10 类别③）
             save_input_snapshot=True,
-            pinned_config_revision=await _pin_config_revision(db),
+            pinned_config=await _pin_task_config(db),
         )
         t_calc_elapsed = time.perf_counter() - t_calc_start
         logger.info(
@@ -1632,19 +1634,78 @@ async def _load_fitness_sys_configs(db) -> dict[str, str] | None:
         return None
 
 
-async def _pin_config_revision(db) -> str | None:
-    """P2-03：任务边界读取全局持久配置 revision（P2-02，任务中不切参）.
+async def _pin_task_config(db) -> dict | None:
+    """G2-INC-a：任务边界固定完整五层有效配置（不只 revision 号）.
 
-    直接读 config_publication 的当前 revision（不读 Redis）；失败返回 None
-    → record 的 configRevision 回落实际消费配置内容摘要口径（不伪补版本）。
+    经既有 ``config_publish.pin_config_snapshot``（L148）取得快照：
+    - DEFAULT 层合并值（算法默认 + algorithm_parameter + metric.threshold）；
+    - TEMPLATE/NODE/LOOP 覆盖层行。
+    任务内经 ``resolve_loop_params_map``（per-loop 五层展开）注入计算器，
+    运行中不读当前缓存（发布 v2 不影响在跑任务）。
+
+    失败返回 None：record 的 configRevision 回落既有内容摘要口径（不伪补
+    版本）；落包时 manifest.effectiveParams.status=UNPINNED（诚实标记，
+    重放按 legacy-unpinned 口径）。
     """
     try:
-        from app.services.config_publish import get_current_revision
+        from app.services.config_publish import pin_config_snapshot
 
-        return str(await get_current_revision(db))
+        return await pin_config_snapshot(db)
     except Exception:  # noqa: BLE001
-        logger.warning("任务边界读取配置 revision 失败，回落内容摘要口径", exc_info=True)
+        logger.warning("任务边界固定配置快照失败，回落内容摘要口径", exc_info=True)
         return None
+
+
+async def _resolve_loop_pinned_params(
+    db, pinned_config: dict, loop: LoopLedger
+) -> tuple[dict[tuple[str, str], dict], dict[str, dict]]:
+    """在固定快照上解析该回路的五层有效参数（G2-INC-a，per-loop）.
+
+    TEMPLATE 层 scope（template_key）仅当快照含 TEMPLATE 覆盖时查一次
+    engineering_template（无覆盖=该层不参与，跳过查询）；NODE=loop.unit_id、
+    LOOP=loop.id 直接取回路行属性。
+
+    Returns:
+        (params_map, scope)：params_map 键 (metric_code, control_type) 值为
+        五层展开有效值；scope 为实际解析作用域（随包记录供审计/重放核对）。
+    """
+    from sqlalchemy import select as _select
+
+    from app.models.engineering_template import EngineeringTemplate
+    from app.services.config_publish import resolve_loop_params_map
+
+    template_key: str | None = None
+    overrides = pinned_config.get("overrides") or {}
+    if any(str(k).startswith("TEMPLATE|") for k in overrides):
+        template_id = getattr(loop, "engineering_template_id", None)
+        if template_id:
+            try:
+                row = (
+                    await db.execute(
+                        _select(EngineeringTemplate.template_key).where(
+                            EngineeringTemplate.id == str(template_id)
+                        )
+                    )
+                ).scalar_one_or_none()
+                template_key = row
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "回路 %s 模板键解析失败（TEMPLATE 层覆盖不参与本次解析）",
+                    loop.id,
+                    exc_info=True,
+                )
+    scope = {
+        "templateKey": template_key,
+        "nodeId": str(loop.unit_id) if getattr(loop, "unit_id", None) else None,
+        "loopId": str(loop.id),
+    }
+    resolved = resolve_loop_params_map(
+        pinned_config,
+        template_key=template_key,
+        node_id=scope["nodeId"],
+        loop_id=scope["loopId"],
+    )
+    return resolved["params"], {**scope, "sources": resolved["sources"]}
 
 
 async def _calculate_loop_kpi(
@@ -1661,7 +1722,7 @@ async def _calculate_loop_kpi(
     source_task_id: str | None = None,
     logical_run_id: str | None = None,
     save_input_snapshot: bool = False,
-    pinned_config_revision: str | None = None,
+    pinned_config: dict | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1684,6 +1745,14 @@ async def _calculate_loop_kpi(
       不可变 NPZ+manifest 输入包并填充 record.datasetSnapshotId；保存失败
       显式降级（payload 标 inputSnapshot 状态，绝不静默冒充可复现）。
 
+    G2-INC-a 完整旧参数固定：
+    - ``pinned_config`` 为任务边界经 ``config_publish.pin_config_snapshot``
+      固定的完整快照；本函数按回路 scope 解析五层有效参数并注入全部算子
+      （``with_pinned_params``），计算全程不读当前缓存——运行中发布 v2
+      不影响本任务；None=未固定（回填/单回路既有口径，读当前缓存不变）。
+    - 落包时 manifest.source.effectiveParams 携带五层展开值与逐参来源，
+      重放据此按旧参数复现（不再读当前配置）。
+
     Args:
         db: 异步数据库会话
         loop: 回路对象
@@ -1696,7 +1765,7 @@ async def _calculate_loop_kpi(
         loop_cfg: 预加载的回路配置（op_lower/op_upper/range_min/range_max）
         logical_run_id: 结果账本逻辑运行身份（批次级，None=上下文推导）
         save_input_snapshot: 保存不可变输入包（DEC-10 范围控制，默认关）
-        pinned_config_revision: 任务边界固定的全局配置 revision（P2-02）
+        pinned_config: 任务边界固定的完整配置快照（P2-02 pin；None=未固定）
 
     Returns:
         快照字典，包含 status 字段
@@ -1719,8 +1788,23 @@ async def _calculate_loop_kpi(
     config_revision = result_ledger.config_revision_digest(
         {"typeWeights": type_weights or {}, "fitness": fitness_sys_configs or {}}
     )
-    if pinned_config_revision is not None:
-        config_revision = f"rev:{pinned_config_revision}:{config_revision.removeprefix('digest:')}"
+    pinned_revision = pinned_config.get("configRevision") if pinned_config else None
+    if pinned_revision is not None:
+        config_revision = f"rev:{pinned_revision}:{config_revision.removeprefix('digest:')}"
+
+    # G2-INC-a：在固定快照上解析本回路五层有效参数（任务中不换参——后续
+    # 发布只改当前缓存/DB，不影响本 map；新任务重新 pin 取新值）
+    pinned_params: dict[tuple[str, str], dict] | None = None
+    pinned_resolve_meta: dict | None = None
+    if pinned_config is not None:
+        try:
+            pinned_params, pinned_resolve_meta = await _resolve_loop_pinned_params(
+                db, pinned_config, loop
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("回路 %s 五层参数解析失败（回落当前缓存口径）", loop.id, exc_info=True)
+            pinned_params = None
+            pinned_resolve_meta = None
 
     # 分段计时（2026-10-08 评估吞吐优化观测）：read=TDengine 取数 /
     # persist=快照写库 / compute=其余（门禁+三层计算+fitness）。
@@ -1885,6 +1969,35 @@ async def _calculate_loop_kpi(
                     "effectiveParams": {
                         "typeWeights": type_weights or {},
                         "fitness": fitness_sys_configs or {},
+                        # G2-INC-a：完整五层有效参数（展开值+逐参来源+解析作用域），
+                        # 重放据此按旧参数复现；UNPINNED=任务边界固定失败（诚实标记，
+                        # 不伪补；重放按 legacy-unpinned 口径显式标注）
+                        "status": "PINNED" if pinned_params is not None else "UNPINNED",
+                        "configRevision": pinned_revision,
+                        "scope": (
+                            {
+                                "templateKey": pinned_resolve_meta.get("templateKey"),
+                                "nodeId": pinned_resolve_meta.get("nodeId"),
+                                "loopId": pinned_resolve_meta.get("loopId"),
+                            }
+                            if pinned_resolve_meta is not None
+                            else None
+                        ),
+                        "params": (
+                            {f"{m}|{ct}": p for (m, ct), p in sorted(pinned_params.items())}
+                            if pinned_params is not None
+                            else None
+                        ),
+                        "sources": (
+                            {
+                                f"{m}|{ct}": s
+                                for (m, ct), s in sorted(
+                                    (pinned_resolve_meta.get("sources") or {}).items()
+                                )
+                            }
+                            if pinned_params is not None
+                            else None
+                        ),
                     },
                 },
             }
@@ -1916,7 +2029,10 @@ async def _calculate_loop_kpi(
             )
 
     # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
-    metric_results, composite_result = _compute_kpis_three_layer(bundles, config_bundle, weights)
+    # G2-INC-a：pinned_params 非空时全部算子只消费任务固定快照（不读当前缓存）
+    metric_results, composite_result = _compute_kpis_three_layer(
+        bundles, config_bundle, weights, pinned_params=pinned_params
+    )
 
     # 12 子指标值+可信度（随 loop_confidence_latest 存储）
     metrics_detail = _extract_metrics_detail(metric_results)
@@ -2280,6 +2396,7 @@ def _compute_kpis_three_layer(
     bundles: list[MetricDataBundle],
     config_bundle: MetricDataBundle,
     weights: dict[str, float] | None,
+    pinned_params: dict[tuple[str, str], dict] | None = None,
 ) -> tuple[dict[str, MetricResult], MetricResult]:
     """三层计算编排：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）。
 
@@ -2302,6 +2419,8 @@ def _compute_kpis_three_layer(
         bundles: DataPlanner 返回的 MetricDataBundle 列表（metric_code 为 DB 列名）
         config_bundle: 虚拟 CONFIG bundle（提供 control_type 信号）
         weights: 权重映射（None 时用默认权重）
+        pinned_params: G2-INC-a 任务边界固定的五层有效参数
+            （{(metric_code, control_type): params}；None=未固定，算子读当前缓存）
 
     Returns:
         (metric_results dict[calc_code, MetricResult], composite MetricResult)
@@ -2363,6 +2482,8 @@ def _compute_kpis_three_layer(
                 logger.info("Layer1 指标 %s 缺口守卫拦截（最大索引跳变 %d）", calc_code, max_gap)
                 continue
             calculator = get_calculator(calc_code)
+            if pinned_params is not None and calculator is not None:
+                calculator.with_pinned_params(pinned_params)
             result = calculator.calculate(bundle)
             metric_results[calc_code] = result
         except Exception as exc:  # noqa: BLE001
@@ -2371,6 +2492,8 @@ def _compute_kpis_three_layer(
     # ideal_settling_time 从 config_bundle 计算
     try:
         calculator = get_calculator("ideal_settling_time")
+        if pinned_params is not None and calculator is not None:
+            calculator.with_pinned_params(pinned_params)
         result = calculator.calculate(config_bundle)
         metric_results["ideal_settling_time"] = result
     except Exception as exc:  # noqa: BLE001
@@ -2408,6 +2531,8 @@ def _compute_kpis_three_layer(
                 continue
             calculator = get_calculator(calc_code)
             calculator = calculator.with_dependencies(deps)
+            if pinned_params is not None:
+                calculator.with_pinned_params(pinned_params)
             result = calculator.calculate(bundle)
             metric_results[calc_code] = result
         except Exception as exc:  # noqa: BLE001

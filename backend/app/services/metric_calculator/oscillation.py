@@ -45,7 +45,6 @@ from datetime import timedelta
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.disturbance import detect_sp_tracking_windows
 
@@ -115,7 +114,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
             )
 
         # P0-B: 从配置链读取算法参数（control_type 为响应类别 STABLE/SLOW/FAST/LOGIC）
-        params = get_algorithm_params("oscillation_rate", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("oscillation_rate", bundle)
         similarity_threshold = float(params.get("similarity_threshold", SIMILARITY_THRESHOLD))
         min_ratio = float(params.get("min_ratio", _DEFAULT_MIN_RATIO))
         max_ratio = float(params.get("max_ratio", _DEFAULT_MAX_RATIO))

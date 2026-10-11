@@ -139,7 +139,7 @@ class TestAccuracyRate:
         calc = AccuracyRateCalculator()
         with (
             patch(
-                "app.services.metric_calculator.accuracy.get_algorithm_params",
+                "app.services.algorithm_config.get_algorithm_params",
                 return_value={"e_max_tolerance_ratio": 0.01},
             ),
         ):

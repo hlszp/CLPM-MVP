@@ -37,7 +37,6 @@ import math
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.disturbance import detect_sp_tracking_windows
 
@@ -96,7 +95,8 @@ class StabilityRateCalculator(MetricCalculatorBase):
 
         # 配置链：decay_ratio / band_ratio / band_in_score_enabled / SP 阶跃剔除
         # （sp_step_exclusion 默认 True，与 algorithm_config._DEFAULTS 一致）
-        params = get_algorithm_params("stability_rate", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("stability_rate", bundle)
         decay_ratio = float(params.get("decay_ratio", DEFAULT_DECAY_RATIO))
         band_ratio = float(params.get("band_ratio", DEFAULT_BAND_RATIO))
         band_in_score = bool(params.get("band_in_score_enabled", False))

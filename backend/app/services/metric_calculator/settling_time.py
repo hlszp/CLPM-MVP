@@ -29,7 +29,6 @@ from typing import Any
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -124,7 +123,8 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         errors = errors - np.mean(errors)
 
         # 整改 F2：衰减阈值从配置链读取（默认与常量一致）
-        params = get_algorithm_params("settling_time", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("settling_time", bundle)
         settling_threshold = float(params.get("settling_threshold", SETTLING_THRESHOLD))
 
         # 噪声底判据（2026-10-10 稳定回路误判整改）：偏差 σ 低于量程比例下限时

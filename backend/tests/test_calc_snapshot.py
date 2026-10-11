@@ -153,7 +153,7 @@ class _LoadDB:
         self._db = db
 
 
-def _kpi_manifest_extra(loop_id="loop-1", weights=None, **extra) -> dict:
+def _kpi_manifest_extra(loop_id="loop-1", weights=None, effective_params=None, **extra) -> dict:
     meta = {
         "loopId": loop_id,
         "window": {"tsStart": _TS0.isoformat(), "tsEnd": _TS1.isoformat()},
@@ -168,6 +168,13 @@ def _kpi_manifest_extra(loop_id="loop-1", weights=None, **extra) -> dict:
         },
         "source": {"algorithmVersion": "KPI_CALC_v4.0", "configRevision": "digest:abc"},
     }
+    if effective_params is not None:
+        # G2-INC-a：五层有效参数随包（嵌套进 source.effectiveParams，1.1 既有键保留）
+        meta["source"]["effectiveParams"] = {
+            "typeWeights": {},
+            "fitness": {},
+            **effective_params,
+        }
     meta.update(extra)
     return meta
 

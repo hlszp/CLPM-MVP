@@ -19,7 +19,6 @@ from typing import Any
 
 from app.constants.mode import AUTO_MODES
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -81,7 +80,8 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
 
         op_low, op_high, epsilon = self._read_bounds(bundle)
         # 整改 F2：默认偏差带比例从配置链读取
-        params = get_algorithm_params("effective_auto_rate", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("effective_auto_rate", bundle)
         default_e_max_ratio = float(params.get("default_e_max_ratio", DEFAULT_E_MAX_RATIO))
         e_max = self._read_e_max(bundle, default_e_max_ratio)
 
@@ -183,8 +183,7 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
             },
         )
 
-    @staticmethod
-    def _read_bounds(bundle: MetricDataBundle) -> tuple[float, float, float]:
+    def _read_bounds(self, bundle: MetricDataBundle) -> tuple[float, float, float]:
         """读取 OP 上下限与饱和容差.
 
         ε 优先级（2026-10-10 用户裁决，可配置默认 0）：CONFIG 信号
@@ -196,7 +195,8 @@ class EffectiveAutoRateCalculator(MetricCalculatorBase):
         op_high = _read_float(signals, "op_high", DEFAULT_OP_HIGH)
         epsilon = _read_float(signals, "saturation_epsilon", None)
         if epsilon is None:
-            params = get_algorithm_params("effective_auto_rate", bundle.data_block.control_type)
+            # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+            params = self._effective_params("effective_auto_rate", bundle)
             try:
                 epsilon = float(params.get("saturation_epsilon", DEFAULT_EPSILON))
             except (TypeError, ValueError):
