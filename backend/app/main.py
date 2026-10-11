@@ -43,6 +43,8 @@ from app.api.v1.endpoints import (
     cockpit,
     # v6.1: 数据可信度阈值配置
     confidence_config,
+    # P2-02: 分层配置发布（统一作用域 + expectedRevision + 跨进程一致）
+    config_publish,
     configs,
     dashboard,
     dataplanner,
@@ -925,6 +927,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("预载可信度阈值失败（将使用算法默认值）: %s", exc)
 
+    # P2-02：统一配置 revision——预载运行时缓存至当前持久 revision + 启动
+    # CONFIG_REVISION_CHANNEL 订阅线程（广播仅加速通知；一致性由任务边界读
+    # 持久 revision 保证，Redis 故障不静默用旧值）。预载失败不阻塞启动。
+    from app.services.config_publish import preload_config_revision
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_config_revision(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预载统一配置 revision 失败（任务边界将按持久 revision 补齐）: %s", exc)
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 
@@ -1207,6 +1220,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(outlier_config.router)
     # P0-B: 算法参数配置
     v1_router.include_router(algorithm_config.router)
+    # P2-02: 分层配置发布（发布/重置/回退 ADMIN，DEC-03）
+    v1_router.include_router(config_publish.router)
     # MVP 精简：已屏蔽诊断模块 → 不挂载 diagnosis_trigger_config.router
     # v1_router.include_router(diagnosis_trigger_config.router)
     # v4.0: 评估任务管理（标准/自定义）

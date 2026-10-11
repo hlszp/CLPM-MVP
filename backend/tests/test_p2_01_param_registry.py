@@ -286,6 +286,39 @@ def _make_scalar_none_result() -> MagicMock:
     return result
 
 
+def _make_scalar_result(value) -> MagicMock:
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = value
+    return result
+
+
+def _make_count_result(count: int = 5) -> MagicMock:
+    result = MagicMock()
+    result.scalar_one.return_value = count
+    return result
+
+
+def _make_put_execute_side_effect(stored_rows: list) -> list:
+    """P2-02 后 PUT 合法保存路径的 db.execute side_effect 序列.
+
+    revision → before 快照 → items 存量查询 → after 快照 → note_legacy_sync
+    revision → 影响回路数 → （commit）→ load_stored_config →
+    load_metric_thresholds → revision
+    （单控制类型、无 reset、无存量记录的新建场景）。
+    """
+    return [
+        _make_scalar_none_result(),
+        _make_scalar_none_result(),
+        _make_scalar_none_result(),
+        _make_scalar_none_result(),
+        _make_scalar_none_result(),
+        _make_count_result(),
+        _make_scalars_all_result(stored_rows),
+        _make_all_result([]),
+        _make_scalar_none_result(),
+    ]
+
+
 def _make_scalars_all_result(items: list) -> MagicMock:
     result = MagicMock()
     result.scalars.return_value.all.return_value = items
@@ -381,13 +414,7 @@ class TestAlgorithmParamsPutValidation:
         saved_row.metric_code = "oscillation_rate"
         saved_row.control_type = "STABLE"
         saved_row.params = {"similarity_threshold": 0.55}
-        mock_db.execute = AsyncMock(
-            side_effect=[
-                _make_scalar_none_result(),
-                _make_scalars_all_result([saved_row]),
-                _make_all_result([]),
-            ]
-        )
+        mock_db.execute = AsyncMock(side_effect=_make_put_execute_side_effect([saved_row]))
         mock_db.add = MagicMock()
         resp = self._put(client, "oscillation_rate", {"similarity_threshold": 0.55})
         assert resp.status_code == 200

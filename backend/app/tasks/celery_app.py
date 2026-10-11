@@ -44,6 +44,8 @@ celery_app = Celery(
         "app.tasks.lowfreq_anchor",
         # 工作台 v2.0（预计算 / SLA 巡检 / 事件归档 / 缓存清理 / MV 刷新）
         "app.tasks.workbench",
+        # P2-02：配置 revision 探针（任务边界固定快照验证 / C11 实验载体）
+        "app.tasks.config_probe",
     ],
 )
 
@@ -207,6 +209,18 @@ def _preload_datasource_config_sync() -> None:
                 start_threshold_subscriber()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("worker 子进程预载可信度阈值失败（将使用算法默认值）: %s", exc)
+            # P2-02：统一配置 revision——每个 prefork 子进程同步运行时缓存至
+            # 当前持久 revision + 启动 CONFIG_REVISION_CHANNEL 订阅线程
+            # （广播仅加速；任务边界 pin_config_snapshot 读持久 revision 兜底）
+            try:
+                from app.services.config_publish import preload_config_revision
+
+                await preload_config_revision(db)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "worker 子进程预载统一配置 revision 失败（任务边界将按持久 revision 补齐）: %s",
+                    exc,
+                )
 
     loop = asyncio.new_event_loop()
     try:

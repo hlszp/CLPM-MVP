@@ -2380,5 +2380,60 @@ CREATE TABLE IF NOT EXISTS point_state_anchor (
 CREATE INDEX IF NOT EXISTS ix_psa_point_ts ON point_state_anchor (point_id, anchor_ts);
 
 -- =============================================================================
+-- 8.10 config_override / config_publication（分层配置发布，P2-02，迁移 p202cfgpub01）
+--   统一作用域链：DEFAULT（算法默认 + algorithm_parameter + metric_config.threshold
+--   兼容全局覆盖）< TEMPLATE < NODE < LOOP < TASK（内存快照不落库）。
+--   config_override 仅承载 TEMPLATE/NODE/LOOP 三层；发布语义为整组替换。
+--   config_publication：追加式发布账本——全局单调 revision 唯一（持久版本号，
+--   Redis 仅加速通知；并发发布靠 revision 唯一约束实现 expectedRevision 乐观锁），
+--   每次发布记录 before/after、原因、操作者、影响范围与回退版本。
+--   无存量回填：revision 0 = 迁移前遗留配置状态，不伪补历史发布。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS config_override (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    layer               VARCHAR(16)     NOT NULL,
+    scope_id            VARCHAR(64)     NOT NULL,
+    metric_code         VARCHAR(50)     NOT NULL,
+    params              JSONB           NOT NULL,
+    is_enabled          BOOLEAN         NOT NULL DEFAULT TRUE,
+    published_revision  INTEGER         NOT NULL DEFAULT 0,
+    updated_by          VARCHAR(50),
+    updated_at          TIMESTAMP,
+    version             INTEGER         NOT NULL DEFAULT 1,
+    CONSTRAINT ck_config_override_layer CHECK (layer IN ('TEMPLATE', 'NODE', 'LOOP')),
+    CONSTRAINT uq_config_override_scope UNIQUE (layer, scope_id, metric_code)
+);
+
+CREATE INDEX IF NOT EXISTS ix_config_override_metric ON config_override (metric_code);
+CREATE INDEX IF NOT EXISTS ix_config_override_scope ON config_override (layer, scope_id);
+
+CREATE TABLE IF NOT EXISTS config_publication (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    revision            INTEGER         NOT NULL,
+    operation           VARCHAR(16)     NOT NULL,
+    layer               VARCHAR(16),
+    scope               JSONB           NOT NULL,
+    reason              TEXT            NOT NULL,
+    operator            VARCHAR(50)     NOT NULL,
+    before_value        TEXT,
+    after_value         TEXT,
+    affected_loops      INTEGER,
+    rollback_revision   INTEGER,
+    created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT ck_config_publication_operation CHECK (operation IN ('PUBLISH', 'RESET', 'ROLLBACK', 'LEGACY_SYNC')),
+    CONSTRAINT uq_config_publication_revision UNIQUE (revision)
+);
+
+CREATE INDEX IF NOT EXISTS ix_config_publication_created_at ON config_publication (created_at);
+
+COMMENT ON TABLE  config_override IS '分层配置覆盖（TEMPLATE/NODE/LOOP，P2-02）';
+COMMENT ON COLUMN config_override.scope_id IS '作用域目标键：TEMPLATE=模板键 / NODE=plant_node.id / LOOP=loop_ledger.id';
+COMMENT ON COLUMN config_override.published_revision IS '最近发布本行的全局 config revision（sourceRevision）';
+COMMENT ON TABLE  config_publication IS '统一配置发布快照（追加式账本，全局单调 revision，P2-02）';
+COMMENT ON COLUMN config_publication.revision IS '持久版本号（Redis 仅加速通知）；唯一约束实现并发 409';
+COMMENT ON COLUMN config_publication.operation IS 'PUBLISH/RESET/ROLLBACK/LEGACY_SYNC';
+COMMENT ON COLUMN config_publication.rollback_revision IS '回退目标版本（= 发布前 revision）';
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

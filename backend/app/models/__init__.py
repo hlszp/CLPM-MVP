@@ -20,6 +20,7 @@ from app.models.calculation_result import (
     CalculationResultLegacyMap,
     CalculationResultRecord,
 )
+from app.models.config_publish import ConfigOverride, ConfigPublication  # P2-02
 from app.models.dcs_mode_mapping import DcsModeMapping
 from app.models.dcs_model import DcsModel
 from app.models.dcs_pid_structure import DcsPidStructure
@@ -102,6 +103,8 @@ __all__ = [
     "MetricConfig",
     "CalculationResultRecord",  # P1-05 结果账本
     "CalculationResultLegacyMap",  # P1-05 旧 ID 映射
+    "ConfigOverride",  # P2-02 分层配置覆盖
+    "ConfigPublication",  # P2-02 统一配置发布快照
     "DiagnosisConfig",
     "EngineRule",
     "KpiSnapshotHourly",
