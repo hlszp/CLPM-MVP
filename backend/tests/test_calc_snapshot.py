@@ -120,6 +120,10 @@ class _SaveDB:
 
         async def _exec(stmt):
             self.stmts.append(stmt)
+            # P2-04：辨识落包前的工程事实解析等前置查询（非本表）→ 空结果
+            # （facts 解析失败由调用方捕获记 null，不消耗 save 的应答次序）
+            if "calculation_dataset_snapshot" not in str(stmt):
+                return _exec_result(scalar=None, scalars_list=[])
             if not self._inserted:
                 self._inserted = True
                 return _exec_result(scalar=None)

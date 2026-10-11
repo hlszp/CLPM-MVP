@@ -44,6 +44,9 @@ LOOP_001.data_retention_days = None
 # P4 S4：复杂回路分组字段（默认 None = 普通单回路）
 LOOP_001.complex_loop_group_id = None
 LOOP_001.complex_role = None
+LOOP_001.control_action_direction = "UNKNOWN"
+LOOP_001.engineering_template_id = None
+LOOP_001.engineering_template_version = None
 
 
 def _make_scalars_mock(items: list) -> MagicMock:
@@ -1209,6 +1212,9 @@ class TestIdealSettlingTimeField:
         # P4 S4：复杂回路分组字段（默认 None = 普通单回路）
         loop.complex_loop_group_id = None
         loop.complex_role = None
+        loop.control_action_direction = "UNKNOWN"
+        loop.engineering_template_id = None
+        loop.engineering_template_version = None
         loop.updated_at = None
         loop.updated_by = "admin"
         return loop
@@ -1383,6 +1389,9 @@ class TestDisableLinkage:
         loop.remark = None
         loop.complex_loop_group_id = None
         loop.complex_role = None
+        loop.control_action_direction = "UNKNOWN"
+        loop.engineering_template_id = None
+        loop.engineering_template_version = None
         loop.updated_at = None
         loop.updated_by = "admin"
         return loop
