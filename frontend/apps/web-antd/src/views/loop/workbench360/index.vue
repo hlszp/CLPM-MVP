@@ -47,6 +47,7 @@ import {
   WB360_TREND_PALETTE_LIGHT,
   WB360_WINDOW_PRESETS,
 } from '#/constants/clpm-ui';
+import { categoryOrJudgementLabel } from '#/views/diagnosis/components/assessment-labels';
 
 import AttentionDrawer from './components/AttentionDrawer.vue';
 import JourneyRail from './components/JourneyRail.vue';
@@ -390,7 +391,8 @@ const diagSummary = computed(() => {
   if (!l) return null;
   const ts = diagWithZone(l.lastDiagnosedAt ?? null);
   return {
-    categoryLabel: l.primaryCategoryLabel ?? null,
+    // R06 同款（P3-D6）：主分类 NULL 不兜底"未见异常"——按科学结论显示
+    categoryLabel: categoryOrJudgementLabel(l.primaryCategoryLabel, l.assessment),
     lastDiagnosedText: ts ? dayjs(ts).format('MM-DD HH:mm') : null,
     runCount: l.runCount ?? null,
   };

@@ -65,6 +65,7 @@ from app.services.report import (
     update_config,
 )
 from app.services.report_stats import (
+    _JUDGEMENT_LABELS,
     default_report_window,
     determine_maturity_stage,
     get_benefit,
@@ -74,6 +75,10 @@ from app.services.report_stats import (
     get_stage_lock,
     set_stage_lock,
 )
+
+#: CSV 科学结论列标签（与 report_stats._JUDGEMENT_LABELS 同源同一事实；
+#: 历史无 meta → 固定"历史覆盖未验证"）
+_JUDGEMENT_EXPORT_LABELS = _JUDGEMENT_LABELS
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -649,7 +654,21 @@ async def export_report_diagnosis_runs(
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(
-        ["时间", "回路", "主分类", "次分类", "置信度", "严重度", "时间窗", "发起人", "状态"]
+        [
+            "时间",
+            "回路",
+            "主分类",
+            "次分类",
+            "置信度",
+            "严重度",
+            "时间窗",
+            "发起人",
+            "状态",
+            # R09（2026-10-12）：科学结论列与 JSON 明细同源（assessment_meta
+            # judgementStatus；历史 run 无 meta → 历史覆盖未验证）——
+            # run 状态 SUCCESS 不冒充有效诊断
+            "科学结论",
+        ]
     )
     for run, tag_name in rows:
         secondary = "、".join(
@@ -674,6 +693,10 @@ async def export_report_diagnosis_runs(
                 window,
                 run.triggered_by,
                 run.status,
+                _JUDGEMENT_EXPORT_LABELS.get(
+                    ((getattr(run, "assessment_meta", None) or {}).get("judgementStatus") or ""),
+                    "历史覆盖未验证",
+                ),
             ]
         )
     return PlainTextResponse(

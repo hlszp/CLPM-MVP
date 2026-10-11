@@ -156,6 +156,11 @@ interface LoopAggRow {
   evalCount: number;
   /** 可信度分布（取众数或最低等级） */
   confidenceLevel: ConfidenceLevel | null;
+  /** P3-D6 R08（2026-10-12）：聚合采用的算法版本（跨版本窗口只取该版本
+   *  快照平均，不跨 profile 混算；null=快照未携带版本） */
+  algorithmVersion: null | string;
+  /** 窗口内被排除的旧版本快照数（>0 = 该窗口跨过版本切换） */
+  staleVersionCount: number;
 }
 
 /** 数值聚合字段列表 */
@@ -205,10 +210,28 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
     groups.set(key, group);
   }
   const rows: LoopAggRow[] = [];
-  for (const [, snaps] of groups) {
-    const first = snaps[0];
+  for (const [, allSnaps] of groups) {
+    const first = allSnaps[0];
     if (!first) continue;
     const loopId = first.loopId ?? '';
+    // P3-D6 R08：不跨 profile 平均——窗口内存在多个算法版本时只聚合
+    // 最新版本的快照（当前不回退旧成功口径，C26-EA5 同款），旧版本
+    // 快照计数单列不静默丢弃
+    const versions = [
+      ...new Set(
+        allSnaps
+          .map((x) => x.algorithmVersion ?? '')
+          .filter((v): v is string => v !== ''),
+      ),
+    ];
+    const latestVersion = versions.length > 0
+      ? versions.toSorted().at(-1) ?? null
+      : null;
+    const snaps =
+      latestVersion === null
+        ? allSnaps
+        : allSnaps.filter((x) => (x.algorithmVersion ?? '') === latestVersion);
+    const staleVersionCount = allSnaps.length - snaps.length;
     const row: LoopAggRow = {
       loopId,
       loopTagName: first.loopTagName ?? '—',
@@ -229,6 +252,8 @@ const aggregatedLoopData = computed<LoopAggRow[]>(() => {
       validRate: null,
       evalCount: snaps.length,
       confidenceLevel: worstConfidence(snaps.map((s) => s.confidenceLevel)),
+      algorithmVersion: latestVersion,
+      staleVersionCount,
     };
     for (const field of NUMERIC_AGG_FIELDS) {
       (row as any)[field] = meanOf(snaps.map((s) => s[field] as null | number));
@@ -880,6 +905,14 @@ async function handleExport(format: 'csv' | 'excel' = 'csv') {
         return String(val);
       }),
     );
+    // P3-D6 R08（2026-10-12）：CSV/XLSX 随值带版本——导出末列补算法版本，
+    // 跨版本窗口（staleVersionCount>0）另注排除数，不静默丢构成
+    for (const [i, row] of currentData.value.entries()) {
+      const ver = (row as Record<string, any>).algorithmVersion ?? '';
+      const stale = (row as LoopAggRow).staleVersionCount ?? 0;
+      rows[i]!.push(`${ver || '—'}${stale > 0 ? `（不含旧版本 ${stale} 条）` : ''}`);
+    }
+    headers.push('算法版本');
     const typeLabel =
       reportType.value === 'comprehensive' ? '综合报表' : '回路报表';
     const dateStr = dayjs().format('YYYYMMDD');

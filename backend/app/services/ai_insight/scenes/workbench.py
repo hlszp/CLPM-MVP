@@ -131,9 +131,13 @@ class WorkbenchScene(SceneStrategy):
             f"自控率 {_to_pct(auto_rate)}、稳定率 {_to_pct(steady_rate)}、"
             f"优良值率 {_to_pct(good_rate)}。"
         )
-        if score is not None and score >= 85:
+        if score is None:
+            # R12（2026-10-12 P3-08d/D6）：无评分=未评估/证据不足，不渲染成
+            # "不理想"（更不能渲染成"良好"）
+            lines.append("当前窗口暂无有效综合评分（未评估或证据不足），不能据此判定整体运行状态。")
+        elif score >= 85:
             lines.append("整体控制回路运行状态良好，关键指标基本达标。")
-        elif score is not None and score >= 70:
+        elif score >= 70:
             lines.append("整体运行状态合格，部分指标存在提升空间。")
         else:
             lines.append("整体运行状态不理想，多个关键指标未达标，建议重点关注。")

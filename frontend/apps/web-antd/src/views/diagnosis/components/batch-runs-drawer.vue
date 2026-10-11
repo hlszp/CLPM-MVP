@@ -16,6 +16,7 @@ import { getDiagnosisRunsApi } from '#/api/diagnosis';
 import { ClpmDataCanvas } from '#/components/clpm';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { formatLocalTime } from '#/utils/format';
+import { JUDGEMENT_LABELS, judgementOf } from '#/views/diagnosis/components/assessment-labels';
 
 import { CATEGORY_META, TRIGGER_TYPE_COLOR, TRIGGER_TYPE_TEXT } from '../constants';
 
@@ -70,11 +71,14 @@ watch(
   { immediate: true },
 );
 
-/** 主分类空值语义：NULL=未见异常（门禁通过但无算子命中，2026-10-05 用户裁决显示"正常"）；FAILED 行无结论产出 */
+/** 主分类空值语义（P3-D6 08-B，2026-10-12）：NULL 按科学结论显示
+ * （有效阴性=范围内正常/不可判定/未评估/历史覆盖未验证）；FAILED 无结论产出 */
 function primaryText(record: DiagnosisApi.RunListItem): string {
   if (record.primaryCategory)
     return record.primaryCategoryLabel ?? record.primaryCategory;
-  return record.status === 'FAILED' ? '—' : '正常';
+  return record.status === 'FAILED'
+    ? '—'
+    : JUDGEMENT_LABELS[judgementOf(record.assessment)];
 }
 
 function primaryColor(record: DiagnosisApi.RunListItem): string {

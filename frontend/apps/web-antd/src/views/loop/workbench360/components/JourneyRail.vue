@@ -138,9 +138,7 @@ function gradeCls(score: null | number | undefined): string {
           </div>
           <div v-else-if="sec.key === 'diag'" class="s-sub">
             <template v-if="diag && diag.runCount">
-              <span class="diag-cat">{{
-                diag.categoryLabel ?? '未见异常'
-              }}</span>
+              <span class="diag-cat">{{ diag.categoryLabel }}</span>
               <span v-if="diag.lastDiagnosedText" class="delta">{{
                 diag.lastDiagnosedText
               }}</span>

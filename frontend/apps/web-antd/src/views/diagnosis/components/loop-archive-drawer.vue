@@ -25,6 +25,7 @@ import { Button, Drawer, Empty, RadioGroup, Spin } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getLoopArchiveApi } from '#/api/diagnosis';
+import { JUDGEMENT_LABELS, judgementOf } from '#/views/diagnosis/components/assessment-labels';
 
 import {
   CATEGORY_META,
@@ -266,6 +267,16 @@ function catLabel(cat: DiagnosisApi.Category | null): null | string {
   return cat ? (CATEGORY_META[cat]?.label ?? cat) : null;
 }
 
+/** 档案条目科学结论兜底（P3-D6 08-B）：主分类 NULL → judgementStatus；
+ *  历史 run 无 assessment → 历史覆盖未验证（不再"无结论"含糊带过） */
+function runLabel(
+  run: { assessment?: DiagnosisApi.RunListItem['assessment']; primaryCategory?: DiagnosisApi.Category | null },
+): null | string {
+  return (
+    catLabel(run.primaryCategory ?? null) ?? JUDGEMENT_LABELS[judgementOf(run.assessment)]
+  );
+}
+
 const blocks = computed<LaneBlock[]>(() => {
   const a = archive.value;
   const d = domain.value;
@@ -454,7 +465,7 @@ function onBlockEnter(evt: MouseEvent, run: DiagnosisApi.ArchiveRunItem): void {
     color: catColor(run.primaryCategory),
     hint: '点击查看该次诊断详情',
     lines,
-    title: catLabel(run.primaryCategory) ?? '无结论',
+    title: runLabel(run) ?? '无结论',
     x,
     y,
   };
@@ -492,7 +503,8 @@ function openRun(run: DiagnosisApi.ArchiveRunItem): void {
     loopId: a.loop.loopId,
     loopTagName: props.loopTagName ?? a.loop.loopName,
     primaryCategory: run.primaryCategory,
-    primaryCategoryLabel: catLabel(run.primaryCategory),
+    primaryCategoryLabel: runLabel(run),
+    assessment: run.assessment ?? null,
     primaryConfidence: run.confidence,
     reviewStatus: run.reviewStatus,
     runId: run.runId,
@@ -878,7 +890,7 @@ const runsDesc = computed(() =>
                   class="diag-history__cat"
                   :style="{ color: catColor(rec.primaryCategory) }"
                 >
-                  {{ catLabel(rec.primaryCategory) ?? '无结论' }}
+                  {{ runLabel(rec) ?? '无结论' }}
                   <span class="diag-history__conf">
                     置信度
                     {{

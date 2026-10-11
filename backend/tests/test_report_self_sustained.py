@@ -596,6 +596,10 @@ class TestReportDiagnosisRunsEndpoint:
         text = resp.text
         assert "时间" in text and "主分类" in text
         assert "OSCILLATION" in text
+        # R09（2026-10-12）：科学结论列与 JSON 明细同源（历史 run 无 meta →
+        # 历史覆盖未验证）
+        assert "科学结论" in text
+        assert "历史覆盖未验证" in text
 
 
 # ---------------------------------------------------------------------------

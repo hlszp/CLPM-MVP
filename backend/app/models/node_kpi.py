@@ -23,7 +23,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -72,6 +72,13 @@ class KpiNodeSnapshotHourly(Base):
         ForeignKey("calculation_result_record.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # --- P3-08d：固定参评名册 + 完整 P 可评分统计（10§3.6.2/§3.6.3）---
+    # {roster:{eligibleLoopCount E/scorableLoopCount N/scorableLoopRatio/
+    #   excludedLoopCount/states 六类互斥账/membershipRevision/members},
+    #  metricStats:{field:{weightedNumerator/weightSum/numericCount/…}},
+    #  fastRateReference:{fastRateReferenceMean/动态子集/参考构成计数}}
+    # 旧行 NULL=历史口径不可追溯（不猜算，10§3.6.2）
+    assessment_stats: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(

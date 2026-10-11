@@ -60,7 +60,7 @@ describe('批次诊断记录抽屉 batch-runs-drawer.vue', () => {
     expect(getRunsMock).not.toHaveBeenCalled();
   });
 
-  it('uT-BRD-003: 主分类空值语义（NULL=正常，FAILED=无产出）', async () => {
+  it('uT-BRD-003: 主分类空值按科学结论显示（P3-D6 08-B，FAILED=无产出）', async () => {
     const wrapper = mount(BatchRunsDrawer, mountOptions);
     await nextTick();
     const vm = wrapper.vm as any;
@@ -71,9 +71,25 @@ describe('批次诊断记录抽屉 batch-runs-drawer.vue', () => {
         status: 'SUCCESS',
       }),
     ).toBe('参数问题（PID 整定）');
-    // NULL + SUCCESS → 正常（分类引擎 NO_SYMPTOM 落库 NULL）
+    // NULL + SUCCESS + 有效阴性 → 正常（范围内，注明检查范围口径）
+    expect(
+      vm.primaryText({
+        primaryCategory: null,
+        status: 'SUCCESS',
+        assessment: { judgementStatus: 'VALID_NEGATIVE' },
+      }),
+    ).toBe('有效阴性（范围内正常）');
+    // NULL + SUCCESS + 不可判定 → 不再兜底"正常"
+    expect(
+      vm.primaryText({
+        primaryCategory: null,
+        status: 'SUCCESS',
+        assessment: { judgementStatus: 'INCONCLUSIVE' },
+      }),
+    ).toBe('不可判定（证据不足）');
+    // NULL + SUCCESS 无科学结论元信息 → 历史 run 口径（不回溯判正常）
     expect(vm.primaryText({ primaryCategory: null, status: 'SUCCESS' })).toBe(
-      '正常',
+      '历史覆盖未验证',
     );
     // NULL + FAILED → 失败留痕无结论
     expect(vm.primaryText({ primaryCategory: null, status: 'FAILED' })).toBe('—');

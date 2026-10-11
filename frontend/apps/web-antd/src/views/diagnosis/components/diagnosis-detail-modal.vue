@@ -62,6 +62,7 @@ import { getLoopSnapshotsApi } from '#/api/metric';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useModules } from '#/composables/use-modules';
+import { judgementOf } from '#/views/diagnosis/components/assessment-labels';
 // v2.0 处置双实体：建议状态映射改用建议侧常量（原 HANDLING_STATUS_* 为 v1.x 工单旧口径）
 import {
   SUGGESTION_STATUS_COLOR,
@@ -819,16 +820,25 @@ function bindDragOnce() {
   dragBound = true;
 }
 
+/** 复核预填默认勾选（P3-D6 08-B，与复核抽屉一致）：无主分类仅有效阴性
+ *  （范围内正常）预填 NORMAL；未决/未知留空由人工判断 */
+function defaultReviewSelection(item: {
+  assessment?: DiagnosisApi.RunListItem['assessment'];
+  primaryCategory?: DiagnosisApi.Category | null;
+}): string[] {
+  if (item.primaryCategory) return [item.primaryCategory];
+  return judgementOf(item.assessment) === 'VALID_NEGATIVE' ? ['NORMAL'] : [];
+}
+
 watch(open, (v) => {
   if (v && props.item) {
     activeTab.value = 'conclusion';
     // 复核表单回显：已复核预填上次结论（可改判）；未复核默认勾选 AI 主分类
-    // （诊断未命中异常时默认勾"正常"，2026-10-05 用户裁决口径，与复核抽屉一致）
+    // （P3-D6 08-B：未决/未知不默认勾"正常"——仅有效阴性预填 NORMAL，
+    // 与复核抽屉一致）
     reviewForm.value.reviewResults = props.item.reviewResults?.length
       ? [...props.item.reviewResults]!
-      : (props.item.primaryCategory
-        ? [props.item.primaryCategory]
-        : ['NORMAL']);
+      : defaultReviewSelection(props.item);
     reviewForm.value.reviewComment = '';
     actionItems.value = [];
     newActionContent.value = '';
