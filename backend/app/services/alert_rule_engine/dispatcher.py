@@ -355,12 +355,22 @@ _EVENT_WINDOW_MIN_S = 3600
 _EVENT_WINDOW_MAX_S = 7 * 86400
 
 
+def _event_dispatch_guard_key(loop_id: str) -> str:
+    """事件诊断派发占位键（P3-02 批次键：闭合防抖检查与 run 落库间的竞态）。"""
+    return f"diagnosis:event-dispatch:{loop_id}"
+
+
 async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
     """预警命中 → 自动发起该回路诊断（trigger_type=EVENT）。
 
     - 诊断窗口 = 规则 condition.windowSeconds，钳制 [1h, 7d]
-    - 防抖：同回路 6h 内已有 EVENT 诊断则跳过（幂等，防连环触发）
-    - 独立 TaskTracker 建单，任务失败不影响其他动作
+    - 防抖：同回路 6h 内已有 EVENT 诊断则跳过（幂等，防连环触发）；
+      Redis SET NX 派发占位闭合「检查→run 落库」竞态（并发规则命中
+      只派发一次），派发失败释放占位允许重试
+    - 独立 TaskTracker 建单（统一使用 create_task 返回 ID——P3-02 修复：
+      原自造 UUID 丢弃返回值，run 行 task_id 指向不存在的任务记录）；
+      created_by_id 留空=SYSTEM 身份（不冒充个人、不产生个人通知）
+    - 任务失败不影响其他动作
 
     Returns:
         诊断任务 ID；防抖跳过/失败/模块禁用返回 None。
@@ -376,72 +386,82 @@ async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
     from app.schemas.task import TaskType
     from app.services.task_tracker import create_task
 
-    # 防抖：最近 EVENT 诊断
-    async with AsyncSessionLocal() as db:
-        recent = await db.execute(
-            select(DiagnosisRun.created_at)
-            .where(
-                DiagnosisRun.loop_id == loop_id,
-                DiagnosisRun.trigger_type == "EVENT",
+    # 派发占位：并发事件命中原子裁决（TTL 对齐防抖窗口）
+    guard_key = _event_dispatch_guard_key(loop_id)
+    if not await redis_client.set(guard_key, "1", nx=True, ex=_EVENT_DIAGNOSIS_DEDUP_HOURS * 3600):
+        logger.info("事件诊断派发占位未夺得（同回路并发触发），跳过: loop=%s", loop_id)
+        return None
+
+    try:
+        # 防抖：最近 EVENT 诊断
+        async with AsyncSessionLocal() as db:
+            recent = await db.execute(
+                select(DiagnosisRun.created_at)
+                .where(
+                    DiagnosisRun.loop_id == loop_id,
+                    DiagnosisRun.trigger_type == "EVENT",
+                )
+                .order_by(DiagnosisRun.created_at.desc())
+                .limit(1)
             )
-            .order_by(DiagnosisRun.created_at.desc())
-            .limit(1)
+            last_at = recent.scalar_one_or_none()
+        if last_at is not None:
+            last_naive = last_at if last_at.tzinfo is None else last_at.replace(tzinfo=None)
+            now_naive = datetime.now(UTC).replace(tzinfo=None)
+            if (now_naive - last_naive) < timedelta(hours=_EVENT_DIAGNOSIS_DEDUP_HOURS):
+                logger.info(
+                    "事件诊断防抖跳过: loop=%s 最近 EVENT 诊断 %s（%dh 内）",
+                    loop_id,
+                    last_at,
+                    _EVENT_DIAGNOSIS_DEDUP_HOURS,
+                )
+                return None
+
+        # 诊断窗口：规则时效窗口钳制 [1h, 7d]
+        dsl = rule.get("dsl", {})
+        window_s = int(dsl.get("condition", {}).get("windowSeconds", 1800))
+        window_s = max(_EVENT_WINDOW_MIN_S, min(window_s, _EVENT_WINDOW_MAX_S))
+        end = datetime.now(UTC).replace(tzinfo=None)
+        start = end - timedelta(seconds=window_s)
+
+        rule_code = rule.get("ruleCode", "rule")
+        from app.services.diagnosis_titles import next_diagnosis_title
+
+        title = await next_diagnosis_title()
+        task_id = await create_task(
+            task_type=TaskType.DIAGNOSIS,
+            created_by=f"alert:{rule_code}",
+            created_by_id="",
+            loop_ids=[loop_id],
+            triggered_by="event",
+            title=title,
+            ts_start=start.isoformat(),
+            ts_end=end.isoformat(),
         )
-        last_at = recent.scalar_one_or_none()
-    if last_at is not None:
-        last_naive = last_at if last_at.tzinfo is None else last_at.replace(tzinfo=None)
-        now_naive = datetime.now(UTC).replace(tzinfo=None)
-        if (now_naive - last_naive) < timedelta(hours=_EVENT_DIAGNOSIS_DEDUP_HOURS):
-            logger.info(
-                "事件诊断防抖跳过: loop=%s 最近 EVENT 诊断 %s（%dh 内）",
-                loop_id,
-                last_at,
-                _EVENT_DIAGNOSIS_DEDUP_HOURS,
-            )
-            return None
 
-    # 诊断窗口：规则时效窗口钳制 [1h, 7d]
-    dsl = rule.get("dsl", {})
-    window_s = int(dsl.get("condition", {}).get("windowSeconds", 1800))
-    window_s = max(_EVENT_WINDOW_MIN_S, min(window_s, _EVENT_WINDOW_MAX_S))
-    end = datetime.now(UTC).replace(tzinfo=None)
-    start = end - timedelta(seconds=window_s)
+        from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
-    rule_code = rule.get("ruleCode", "rule")
-    from app.services.diagnosis_titles import next_diagnosis_title
+        celery_result = run_diagnosis_batch.delay(
+            loop_ids=[loop_id],
+            start=start.isoformat(),
+            end=end.isoformat(),
+            task_id=task_id,
+            operator_group="full",
+            triggered_by=f"alert:{rule_code}",
+            trigger_type="EVENT",
+        )
+        from app.services.task_tracker import set_celery_task_ids
 
-    title = await next_diagnosis_title()
-    task_id = str(uuid4())
-    await create_task(
-        task_type=TaskType.DIAGNOSIS,
-        created_by=f"alert:{rule_code}",
-        created_by_id="00000000-0000-0000-0000-000000000001",
-        loop_ids=[loop_id],
-        triggered_by="event",
-        title=title,
-        ts_start=start.isoformat(),
-        ts_end=end.isoformat(),
-    )
-
-    from app.tasks.diagnosis_v2 import run_diagnosis_batch
-
-    celery_result = run_diagnosis_batch.delay(
-        loop_ids=[loop_id],
-        start=start.isoformat(),
-        end=end.isoformat(),
-        task_id=task_id,
-        operator_group="full",
-        triggered_by=f"alert:{rule_code}",
-        trigger_type="EVENT",
-    )
-    from app.services.task_tracker import set_celery_task_ids
-
-    await set_celery_task_ids(task_id, [celery_result.id])
-    logger.info(
-        "事件驱动诊断已发起: loop=%s rule=%s window=%ds taskId=%s",
-        loop_id,
-        rule_code,
-        window_s,
-        task_id,
-    )
-    return task_id
+        await set_celery_task_ids(task_id, [celery_result.id])
+        logger.info(
+            "事件驱动诊断已发起: loop=%s rule=%s window=%ds taskId=%s",
+            loop_id,
+            rule_code,
+            window_s,
+            task_id,
+        )
+        return task_id
+    except Exception:
+        # 派发失败释放占位，后续事件命中可重试
+        await redis_client.delete(guard_key)
+        raise

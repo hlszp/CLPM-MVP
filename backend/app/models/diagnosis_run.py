@@ -11,7 +11,16 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -85,6 +94,11 @@ class DiagnosisRun(Base, TimestampMixin):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
+        # P3-02 批次幂等键：同任务同回路只允许一条 run（重试/重投递不重复
+        # 已完成 run 与建议）；task_id 为 NULL 的历史/无任务行不受限（PG
+        # 唯一约束 NULL 互不相等）。重做失败回路时旧 FAILED 行先脱链
+        # （task_id=NULL，证据保留），见 tasks/diagnosis_v2.py checkpoint。
+        UniqueConstraint("task_id", "loop_id", name="uq_diagnosis_run_task_loop"),
         CheckConstraint(
             "status IN ('RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED')",
             name="ck_diagnosis_run_status",
