@@ -282,7 +282,7 @@ class LoopPreprocessConfig:
 
 @dataclass
 class QualitySummary:
-    """数据质量摘要（算法说明 §3.4.2 步骤⑧）。
+    """数据质量摘要（算法说明 §3.4.2 步骤⑧）.
 
     Attributes:
         total_count: 总数据点数
@@ -293,6 +293,11 @@ class QualitySummary:
         bad_rate: 无效率 0~1
         missing_rate: 缺失率 0~1
         good_value_rate: PV 质量码为 Good 的时长占比 0~1（仅 QUALITY_HF 计算）
+        window_seconds: 请求窗口秒数（P3-08b 半开口径 ``[start, end)``；
+            None=未记录（legacy/旧缓存）。R/Auto/Sat 的分母口径=完整请求
+            窗口秒数，本字段使质量摘要与比率类指标分母可对账）
+        unknown_seconds: 无依据区间秒数（六因+窗口未覆盖；不补时、不缩分母；
+            None=未记录）
     """
 
     total_count: int = 0
@@ -303,6 +308,9 @@ class QualitySummary:
     bad_rate: float = 0.0
     missing_rate: float = 0.0
     good_value_rate: float | None = None
+    # P3-08b（契约 §2.1 比率口径字段；增量字段，缺省 None=未记录）
+    window_seconds: float | None = None
+    unknown_seconds: float | None = None
 
 
 @dataclass
@@ -354,6 +362,12 @@ class DataBlock:
     # AD02：数据上下文透传（默认 None=legacy；point 路径携带网格/覆盖/分段
     # 边界，L1/L2 序列化与 BASE 派生一并保留）
     series_context: Any = None
+    # P3-08b（O-2 契约 §2.1）：查询窗口（**含尾**，与 TimeWindow 同语义；
+    # 半开 [start, end) 适配由 metric_calculator/time_axis.py 唯一完成——
+    # 本字段只记请求事实，不做换算）。None=未记录（旧缓存/手工构造），
+    # 时间视图构建回落 series_context 网格或 legacy 口径
+    query_window_start: datetime | None = None
+    query_window_end: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.point_count and self.timestamps:

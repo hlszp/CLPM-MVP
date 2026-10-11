@@ -14,7 +14,7 @@ KPI/诊断/整定三链路共享同一口径。详见可信度统一改进方案
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.contracts.data_types import QualityStatus, QualitySummary
 from app.services.preprocessing.quality_code import map_quality_code
@@ -29,6 +29,8 @@ def compute_quality_summary(
     quality_codes: list[int] | None = None,
     expected_interval_s: float = 1.0,
     unknown_slot_count: int | None = None,
+    window_seconds: float | None = None,
+    unknown_seconds: float | None = None,
 ) -> QualitySummary:
     """生成数据质量摘要（算法说明 §3.4.2 步骤⑧）.
 
@@ -49,15 +51,20 @@ def compute_quality_summary(
         point_count: 数据点数
         quality_codes: PV 质量码数组（仅 QUALITY_HF 时传入，用于好值率）
         expected_interval_s: 期望采样间隔（秒），用于缺失检测
+        window_seconds: 请求窗口秒数（P3-08b 半开 [start,end) 口径；
+            None=未记录。R/Auto/Sat 分母=完整请求窗口秒数，本字段使
+            质量摘要与比率类指标分母可对账）
+        unknown_seconds: 无依据区间秒数（六因+窗口未覆盖；不补时不缩分母；
+            None=未记录）
 
     Returns:
         QualitySummary 质量摘要（审计用）
 
-    设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2
+    设计依据：算法说明 §3.4.2 步骤⑧, §3.7.2；P3-08b 契约 §2.1 比率口径
     """
     total = point_count
     if total == 0:
-        return QualitySummary()
+        return QualitySummary(window_seconds=window_seconds, unknown_seconds=unknown_seconds)
 
     # 取所有信号 valid 的交集作为"该时间戳是否有效"（审计用）
     # 注意：此交集仅用于审计展示和数据血缘，不参与可信度判定。
@@ -108,6 +115,8 @@ def compute_quality_summary(
         bad_rate=round(bad_rate, 4),
         missing_rate=round(missing_rate, 4),
         good_value_rate=round(good_value_rate, 4) if good_value_rate is not None else None,
+        window_seconds=window_seconds,
+        unknown_seconds=unknown_seconds,
     )
 
     logger.debug(
@@ -170,6 +179,62 @@ def compute_consecutive_segments(
         else:
             i += 1
     return segments
+
+
+def split_segments_at_boundaries(
+    segments: list[tuple[int, int]],
+    timestamps: list[datetime],
+    boundary_times: list[datetime],
+) -> list[tuple[int, int]]:
+    """按分段边界把连续段一分为二（P3-08b 跨 gap 禁拼接，契约 §2.3）.
+
+    缺口、改绑、量程/单位解释切换、被剔除暂态均形成动态片段边界；边界
+    不等于坏质量（不得用伪造坏点表示），两侧各自保留为独立段——禁止
+    删除边界后拼成连续信号。边界 b 生效于"最后一个 ts < b 的槽之后"：
+    即 ts[i-1] < b <= ts[i] 时在 i-1/i 之间切开。
+
+    Args:
+        segments: 连续段列表（闭区间索引对，升序）
+        timestamps: 槽时间戳（与索引对应）
+        boundary_times: 边界生效时刻（改绑/解释切换/布局切换）
+
+    Returns:
+        切分后的段列表（保持升序；不丢弃任何一侧）
+    """
+    if not segments or not boundary_times:
+        return segments
+
+    def _naive_utc(dt: datetime) -> datetime:
+        """naive/aware 混合比较归一（aware → naive UTC；naive 视为 UTC）。"""
+        if dt.tzinfo is None:
+            return dt
+        return dt.astimezone(UTC).replace(tzinfo=None)
+
+    try:
+        boundaries = sorted(_naive_utc(b) for b in boundary_times)
+        ts_naive = [_naive_utc(t) for t in timestamps]
+    except TypeError:
+        return segments
+    out: list[tuple[int, int]] = []
+    for start, end in segments:
+        cut_points: list[int] = []
+        for i in range(start + 1, end + 1):
+            if i >= len(ts_naive):
+                break
+            prev_ts = ts_naive[i - 1]
+            cur_ts = ts_naive[i]
+            if any(prev_ts < b <= cur_ts for b in boundaries):
+                cut_points.append(i)
+        if not cut_points:
+            out.append((start, end))
+            continue
+        prev = start
+        for cp in cut_points + [end + 1]:
+            seg_end = cp - 1
+            if seg_end >= prev:
+                out.append((prev, seg_end))
+            prev = cp
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.contracts.data_types import (
@@ -26,6 +27,7 @@ from app.contracts.data_types import (
     TagGroup,
 )
 from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.metric_calculator.time_axis import to_half_open, utc
 from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import (
@@ -37,6 +39,7 @@ from app.services.preprocessing.quality_summary import (
     compute_median_interval,
     compute_quality_summary,
     compute_time_coverage,
+    split_segments_at_boundaries,
 )
 from app.services.preprocessing.thresholds import get_threshold
 from app.services.preprocessing.validity_mask import apply_mask
@@ -154,14 +157,27 @@ class PreprocessingPipeline:
         # Step ⑤ 缺失率统计（算法说明 §3.4.2 步骤⑤）
         # 在 QualitySummary 中计算（步骤⑧）
 
-        # Step ⑥ 连续性检查（算法说明 §3.4.2 步骤⑥）
-        consecutive_segments = self._step6_continuity_check(all_valid)
+        # Step ⑥ 连续性检查（算法说明 §3.4.2 步骤⑥）+ P3-08b 跨 gap 禁拼接：
+        # 缺口/改绑/量程单位解释切换是动态片段边界，不得删除后拼成连续信号
+        # （契约 §2.3）。切割规则（管道层强制）：
+        #   a) all_valid=False 槽切断（既有口径）；
+        #   b) 覆盖 UNKNOWN 槽（含 gap 内保留 COV 值但无依据的槽——P0 修复
+        #      后值仍在、valid 仍真，正是曾经的跨 gap 拼接漏洞）切断；
+        #   c) series_context.segment_boundaries 边界把段一分为二（两侧保留）。
+        # legacy（无上下文）行为完全不变。
+        consecutive_segments = self._step6_continuity_check(raw, all_valid)
 
         # Step ⑧ QualitySummary 生成（算法说明 §3.4.2 步骤⑧）
+        # 窗口边界提前解析（R14 覆盖率与 P3-08b 查询窗/时间摘要共用）
+        window_start = window[0] if window else None
+        window_end = window[1] if window else None
         pv_quality_codes = raw.quality_codes.get("pv_quality")
         # AD03/I05：point 上下文的 PV 未知槽数（覆盖依据）传给缺失统计；
         # legacy（无上下文）传 None 保持原行数差口径
         _ctx = getattr(raw, "series_context", None)
+        # P3-08b：时间口径摘要（window/unknown 秒数，与 R/Auto/Sat 分母可对账；
+        # 窗口不可得（无查询窗且无上下文）→ 两字段 None=未记录）
+        _window_seconds, _unknown_seconds = self._time_quality_seconds(raw, window)
         quality_summary = compute_quality_summary(
             validity=validity,
             timestamps=raw.timestamps,
@@ -171,6 +187,8 @@ class PreprocessingPipeline:
             unknown_slot_count=(
                 _ctx.unknown_slots("pv") if _ctx is not None and _ctx.is_point else None
             ),
+            window_seconds=_window_seconds,
+            unknown_seconds=_unknown_seconds,
         )
 
         # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
@@ -185,8 +203,6 @@ class PreprocessingPipeline:
         # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
         # （INCONCLUSIVE 兼容口径）处理。
         raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
-        window_start = window[0] if window else None
-        window_end = window[1] if window else None
         time_coverage = compute_time_coverage(
             raw.timestamps,
             expected_interval_s=float(self.threshold.base_sampling_freq),
@@ -273,6 +289,10 @@ class PreprocessingPipeline:
             # legacy 输入 series_context=None，行为不变）
             series_context=getattr(raw, "series_context", None),
             loop_valid_rate=loop_valid_rate,
+            # P3-08b（O-2）：查询窗口（含尾口径随块传递；半开换算只在
+            # time_axis 一处）。窗口不可得 → None（时间视图回落网格/legacy）
+            query_window_start=window_start,
+            query_window_end=window_end,
         )
 
         logger.debug(
@@ -452,14 +472,119 @@ class PreprocessingPipeline:
     # Step ⑥ 连续性检查
     # -------------------------------------------------------------------
 
-    def _step6_continuity_check(self, all_valid: list[bool]) -> list[tuple[int, int]]:
-        """步骤⑥：标记连续有效段，缺口超过阈值时切断.
+    def _step6_continuity_check(
+        self,
+        raw: RawTimeSeries,
+        all_valid: list[bool],
+    ) -> list[tuple[int, int]]:
+        """步骤⑥：标记连续有效段（缺口/未知/边界切断，P3-08b 无拼接口径）.
 
-        连续 valid=True 的段长度不足 min_consecutive_points 时丢弃。
-
-        设计依据：算法说明 §3.4.2 步骤⑥, §3.4.4 连续有效最短段
+        连续 valid=True 且（point 路径下）逐槽覆盖已知、且不跨分段边界的段
+        为动态算子可运行的公共连续段；长度不足 min_consecutive_points 丢弃。
         """
-        return compute_consecutive_segments(all_valid, self.threshold.min_consecutive_points)
+        segments = compute_consecutive_segments(
+            self._stitchable_mask(raw, all_valid), self.threshold.min_consecutive_points
+        )
+        ctx = getattr(raw, "series_context", None)
+        if ctx is not None and getattr(ctx, "segment_boundaries", None):
+            boundaries = [b.at for b in ctx.segment_boundaries]
+            segments = split_segments_at_boundaries(segments, raw.timestamps, boundaries)
+        return segments
+
+    def _time_quality_seconds(
+        self,
+        raw: RawTimeSeries,
+        window: tuple[Any, Any] | None,
+    ) -> tuple[float | None, float | None]:
+        """时间口径摘要秒数（P3-08b 契约 §2.1，与 R/Auto/Sat 分母可对账）.
+
+        Returns:
+            ``(window_seconds, unknown_seconds)``；窗口不可得（无查询窗且无
+            point 上下文网格）→ ``(None, None)``=未记录（legacy 口径不变）。
+
+            - window_seconds = 半开窗口时长（含尾窗口 +1s，唯一适配在
+              time_axis.to_half_open）；
+            - unknown_seconds = 窗口内"任一本块角色覆盖 UNKNOWN"的秒数
+              （角色覆盖游程并集∩窗口）+ 窗口内数据未覆盖秒数——不补时、
+              不缩分母（消费端只单列展示）。
+        """
+        ctx = getattr(raw, "series_context", None)
+        w_start = w_end = None
+        if window is not None and window[0] is not None and window[1] is not None:
+            w_start, w_end = to_half_open(window[0], window[1])
+        elif ctx is not None and getattr(ctx, "grid_start", None) is not None:
+            from app.services.metric_calculator.time_axis import utc as _ta_utc
+
+            period = float(getattr(ctx, "grid_period_s", 0) or 1.0)
+            w_start = _ta_utc(ctx.grid_start)
+            w_end = _ta_utc(ctx.grid_end) + timedelta(seconds=period)
+        if w_start is None or w_end is None or w_end <= w_start:
+            return None, None
+
+        window_seconds = (w_end - w_start).total_seconds()
+        # 窗口内数据未覆盖秒数
+        ts = list(raw.timestamps)
+        if ts:
+            covered = (min(w_end, utc(ts[-1]) + timedelta(seconds=1)) - w_start).total_seconds()
+            covered -= max(0.0, (w_start - utc(ts[0])).total_seconds())
+            uncovered = max(0.0, window_seconds - covered)
+        else:
+            uncovered = window_seconds
+
+        # 逐角色 UNKNOWN 游程并集 ∩ 窗口（仅本块信号中带覆盖的角色）
+        merged: list[list[datetime]] = []
+        if ctx is not None and getattr(ctx, "role_coverage", None):
+            for role, cov in ctx.role_coverage.items():
+                if role.lower() not in raw.signals:
+                    continue
+                for run in cov.unknown:
+                    s = max(utc(run.start), w_start)
+                    e = min(utc(run.end), w_end)
+                    if e > s:
+                        merged.append([s, e])
+        merged.sort(key=lambda x: x[0])
+        union = 0.0
+        cur_s: datetime | None = None
+        cur_e: datetime | None = None
+        for s, e in merged:
+            if cur_e is None or s > cur_e:
+                if cur_e is not None:
+                    union += (cur_e - (cur_s or s)).total_seconds()
+                cur_s, cur_e = s, e
+            else:
+                cur_e = max(cur_e, e)
+        if cur_e is not None and cur_s is not None:
+            union += (cur_e - cur_s).total_seconds()
+
+        unknown_seconds = min(window_seconds, union + uncovered)
+        return window_seconds, round(unknown_seconds, 3)
+
+    def _stitchable_mask(self, raw: RawTimeSeries, all_valid: list[bool]) -> list[bool]:
+        """可拼接掩码：all_valid 且（有覆盖上下文时）本块任一角色 UNKNOWN 的
+        槽不可拼接（gap 槽保留 COV 值但无依据——不删除也不能拼）。"""
+        ctx = getattr(raw, "series_context", None)
+        if ctx is None or not getattr(ctx, "role_coverage", None):
+            return all_valid
+        from app.services.metric_calculator.time_axis import classify_coverage, utc
+
+        cov_roles = [
+            (role.lower(), cov)
+            for role, cov in ctx.role_coverage.items()
+            if role.lower() in raw.signals
+        ]
+        if not cov_roles:
+            return all_valid
+        stitchable = list(all_valid)
+        for i, raw_ts in enumerate(raw.timestamps):
+            if not stitchable[i]:
+                continue
+            ts = utc(raw_ts)
+            for _, cov in cov_roles:
+                known, _, _ = classify_coverage(cov, ts)
+                if not known:
+                    stitchable[i] = False
+                    break
+        return stitchable
 
     # -------------------------------------------------------------------
     # 辅助方法

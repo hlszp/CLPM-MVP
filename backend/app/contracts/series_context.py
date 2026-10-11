@@ -48,19 +48,29 @@ def _utc(dt: datetime) -> datetime:
 
 @dataclass
 class IntervalRun:
-    """区间游程（半开 [start, end)，aware UTC；序列化友好）。"""
+    """区间游程（半开 [start, end)，aware UTC；序列化友好）。
+
+    ``reason``（P3-08b 增量，默认 None）：unknown 游程的六因归因
+    （gap/no_initial/conflict/unbound/rebind/held_too_long）；known/observed
+    游程恒 None。序列化仅在有值时写出，旧读者/旧缓存忽略该键不炸。
+    """
 
     start: datetime
     end: datetime
+    reason: str | None = None
 
     def to_dict(self) -> dict[str, str]:
-        return {"s": _utc(self.start).isoformat(), "e": _utc(self.end).isoformat()}
+        out: dict[str, str] = {"s": _utc(self.start).isoformat(), "e": _utc(self.end).isoformat()}
+        if self.reason is not None:
+            out["r"] = self.reason
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> IntervalRun:
         return cls(
             start=datetime.fromisoformat(data["s"]),
             end=datetime.fromisoformat(data["e"]),
+            reason=data.get("r"),
         )
 
 
@@ -69,11 +79,16 @@ class RoleCoverage:
     """单角色的已知覆盖/未知区间（游程编码；网格内）.
 
     known：有状态依据的槽（OBSERVED 新观测 + HELD 正常 COV 保持）；
-    unknown：无依据槽（原因见 unknown_reasons 归因计数，网格级）。
+    unknown：无依据槽（原因见 unknown_reasons 归因计数，网格级；unknown
+    游程自身也携带逐游程六因 ``IntervalRun.reason``——P3-08b 增量）；
+    observed（P3-08b 增量，默认空）：known 中"本槽时长内有新观测依据"的
+    游程细分（OBSERVED ⊆ known；known−observed = 合法 HELD）。旧缓存/
+    旧数据无该键 → 空（known 不拆分，语义=既有口径，两态都算已知）。
     """
 
     known: list[IntervalRun] = field(default_factory=list)
     unknown: list[IntervalRun] = field(default_factory=list)
+    observed: list[IntervalRun] = field(default_factory=list)
 
     def known_slots(self, grid_start: datetime, grid_end: datetime) -> int:
         """已知覆盖槽数（与 [grid_start, grid_end] 整秒网格交集）。"""
@@ -86,6 +101,7 @@ class RoleCoverage:
         return {
             "known": [r.to_dict() for r in self.known],
             "unknown": [r.to_dict() for r in self.unknown],
+            "observed": [r.to_dict() for r in self.observed],
         }
 
     @classmethod
@@ -93,6 +109,7 @@ class RoleCoverage:
         return cls(
             known=[IntervalRun.from_dict(r) for r in data.get("known", [])],
             unknown=[IntervalRun.from_dict(r) for r in data.get("unknown", [])],
+            observed=[IntervalRun.from_dict(r) for r in data.get("observed", [])],
         )
 
 

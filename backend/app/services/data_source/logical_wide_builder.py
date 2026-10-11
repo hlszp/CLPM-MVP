@@ -294,10 +294,11 @@ async def build_logical_wide(
         t += timedelta(seconds=step_s)
     n = len(grid)
 
-    # 槽状态记录（AD01 上下文）：role → [(known, reason)]；known 含
-    # OBSERVED（段内事件）与 HELD（初值/锚点保持）；unknown 归因常量见
-    # series_context 模块（gap/no_initial/rebind/unbound）
-    slot_status: dict[str, list[tuple[bool, str | None]]] = {}
+    # 槽状态记录（AD01 上下文 + P3-08b 三态细分）：role → [(known, reason,
+    # observed)]；known 含 OBSERVED（本槽时长内有新事件——新鲜度 ≤ 网格
+    # 周期）与 HELD（初值/锚点/前事件保持）；unknown 归因常量见
+    # series_context 模块（gap/no_initial/rebind/unbound/held_too_long）
+    slot_status: dict[str, list[tuple[bool, str | None, bool]]] = {}
     rebind_boundaries: list[datetime] = []
     for role in internal_roles:
         col: list[Any] = []
@@ -326,7 +327,7 @@ async def build_logical_wide(
             if seg is not None:
                 active_pid = seg.point_id
             if seg is None:
-                status.append((False, sc.UNKNOWN_REASON_UNBOUND))
+                status.append((False, sc.UNKNOWN_REASON_UNBOUND, False))
                 col.append(None)
                 if role == "pv":
                     pv_quality.append(-1)
@@ -370,16 +371,19 @@ async def build_logical_wide(
                 if in_gap:
                     # 已登记的缺口优先标记（比"保持过久"更明确的原因），
                     # 但 value/quality 已在上面保留 —— 见 P0 说明。
-                    status.append((False, sc.UNKNOWN_REASON_GAP))
+                    status.append((False, sc.UNKNOWN_REASON_GAP, False))
                 elif hold_s > max(3.0 * step_s, 60.0):
-                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG))
+                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG, False))
                 else:
-                    status.append((True, None))
+                    # P3-08b 三态细分：事件新鲜度 ≤ 网格周期 = OBSERVED
+                    # （本槽时长内的新观测），更早事件的状态保持 = HELD
+                    # （合法 COV 保持；两者都算 known，observed ⊆ known）
+                    status.append((True, None, hold_s <= step_s))
                 first_event_seen = True
             elif in_gap:
                 # 缺口段且确实没有任何事件可保持：值只能是 None（真无数据），
                 # 原因归为 gap 而不是 no_initial（对下游更准确）。
-                status.append((False, sc.UNKNOWN_REASON_GAP))
+                status.append((False, sc.UNKNOWN_REASON_GAP, False))
                 col.append(None)
                 if role == "pv":
                     pv_quality.append(-1)
@@ -394,7 +398,7 @@ async def build_logical_wide(
                         if ts_i in role_rebind_idx
                         else sc.UNKNOWN_REASON_NO_INITIAL
                     )
-                status.append((False, reason))
+                status.append((False, reason, False))
                 col.append(None)
                 if role == "pv":
                     pv_quality.append(-1)
@@ -436,33 +440,44 @@ def _build_context(
     loop_id: str,
     grid: list[datetime],
     roles: list[str],
-    slot_status: dict[str, list[tuple[bool, str | None]]],
+    slot_status: dict[str, list[tuple[bool, str | None, bool]]],
     rebind_boundaries: list[datetime],
     segments: dict[str, list[_BindingSegment]],
     gap_windows: list[tuple[datetime, datetime]],
 ) -> sc.SeriesContext:
-    """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。"""
+    """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。
+
+    P3-08b：槽状态三元组 (known, reason, observed) 生成三类游程——
+    known（OBSERVED+HELD）/ observed（⊆known，新观测细分）/ unknown
+    （六因随游程携带，供时间视图逐槽归因）。
+    """
     import hashlib
 
     grid_start, grid_end = grid[0], grid[-1]
+    grid_end_half_open = grid_end + timedelta(seconds=1)
     role_coverage: dict[str, sc.RoleCoverage] = {}
     unknown_reasons: dict[str, int] = {}
     for role in roles:
         status = slot_status.get(role, [])
         runs = sc.RoleCoverage()
-        cur_known: bool | None = None
+        # 游程状态机：0=unknown / 1=held(known) / 2=observed(known)；observed
+        # 与 held 游程相邻不合并（细分语义），unknown 游程携带首个 reason
+        cur_kind: int | None = None  # 0/1/2；None=尚未开始
         cur_start = grid_start
+        cur_reason: str | None = None
         for i, ts in enumerate(grid):
-            known, reason = status[i] if i < len(status) else (False, None)
+            known, reason, observed = status[i] if i < len(status) else (False, None, False)
+            kind = 2 if (known and observed) else (1 if known else 0)
             if not known and reason:
                 unknown_reasons[reason] = unknown_reasons.get(reason, 0) + 1
-            if known != cur_known:
-                if cur_known is not None:
-                    _append_run(runs, cur_known, cur_start, ts)
-                cur_known = known
+            if kind != cur_kind:
+                if cur_kind is not None:
+                    _append_run(runs, cur_kind, cur_start, ts, cur_reason)
+                cur_kind = kind
                 cur_start = ts
-        if cur_known is not None:
-            _append_run(runs, cur_known, cur_start, grid_end + timedelta(seconds=1))
+                cur_reason = reason if kind == 0 else None
+        if cur_kind is not None:
+            _append_run(runs, cur_kind, cur_start, grid_end_half_open, cur_reason)
         role_coverage[role] = runs
 
     boundaries = [sc.SegmentBoundary(at=b, kind="rebind") for b in sorted(set(rebind_boundaries))]
@@ -493,12 +508,27 @@ def _build_context(
     )
 
 
-def _append_run(cov: sc.RoleCoverage, known: bool, start: datetime, end: datetime) -> None:
-    run = sc.IntervalRun(start=start, end=end)
-    if known:
+def _append_run(
+    cov: sc.RoleCoverage,
+    kind: int,
+    start: datetime,
+    end: datetime,
+    reason: str | None = None,
+) -> None:
+    """按游程类别落游程：0=unknown（六因随游程） / 1=held(known) / 2=observed。
+
+    observed 同时计入 known（known ≡ OBSERVED∪HELD 语义不变——
+    ``known_slots``/``source_coverage_ratio`` 等既有读方零变化；
+    observed 是 known 的新观测细分，供时间视图三态分类）。
+    """
+    if kind == 0:
+        cov.unknown.append(sc.IntervalRun(start=start, end=end, reason=reason))
+    elif kind == 2:
+        run = sc.IntervalRun(start=start, end=end)
+        cov.observed.append(run)
         cov.known.append(run)
     else:
-        cov.unknown.append(run)
+        cov.known.append(sc.IntervalRun(start=start, end=end))
 
 
 def _active_segment(segs: list[_BindingSegment], at: datetime) -> _BindingSegment | None:
