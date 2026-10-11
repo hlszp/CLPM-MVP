@@ -5,6 +5,7 @@
   "utils/export.ts": 1,
   "views/_core/authentication/login.vue": 3,
   "views/alert/components/event-snapshot-view.vue": 10,
+  "views/cockpit/components/modals/list-modal.vue": 3,
   "views/cockpit/wb-comps/AbnormalLoopsTable.vue": 14,
   "views/cockpit/wb-comps/DeltaScatter.vue": 6,
   "views/cockpit/wb-comps/DgRuleStats.vue": 4,
