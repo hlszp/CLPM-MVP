@@ -46,6 +46,14 @@ const score = computed(() => props.summary?.score ?? null);
 const scoreArc = computed(() => (score.value == null ? '' : arcPath(0, score.value)));
 const bgArc = computed(() => arcPath(0, 100));
 
+/**
+ * P1-02 CAL-07 前端接线（2026-10-10）：score_state=NOT_COMPUTED 时仪表盘
+ * 中心显式"未计算"（区别于加载中/暂无数据的"—"），不把缺评渲染成 0
+ */
+const notComputed = computed(
+  () => props.summary?.score_state === 'NOT_COMPUTED' && score.value == null,
+);
+
 const participation = computed(() => props.summary?.participation);
 const distance = computed(() => props.summary?.distance_to_target);
 const delta = computed(() => props.summary?.delta);
@@ -95,9 +103,14 @@ function riskColor(risk: WorkbenchApi.AssessmentSummary['risks'][number]): strin
           font-size="19"
           font-weight="600"
           fill="var(--ck-text)"
-        >{{ score != null ? score.toFixed(2) : '—' }}</text>
+          >{{
+            notComputed ? '未计算' : score != null ? score.toFixed(2) : '—'
+          }}</text
+        >
         <text :x="CX" y="60" text-anchor="middle" font-size="9.5" fill="#8A94A6">
-          {{ summary?.grade ?? '—' }} · 目标 ≥{{ summary?.target ?? 90 }}
+          {{ notComputed ? '本窗口无参评评分' : (summary?.grade ?? '—') }} · 目标 ≥{{
+            summary?.target ?? 90
+          }}
         </text>
       </svg>
       <div class="flex flex-col gap-0.5 text-[11px] leading-[1.5] ckwb-text-2">

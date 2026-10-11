@@ -145,11 +145,15 @@ class TestGeneratePdf:
 
 
 class TestDoGenerate:
-    """测试 _do_generate() 异步报表生成逻辑。"""
+    """测试 _do_generate() 异步报表生成逻辑。
+
+    IA-12（2026-10-10 诚实化）：占位路径实现已停用——无真实文件不得
+    COMPLETED。原"成功生成报表"用例改为断言显式 FAILED"未生成"。
+    """
 
     @pytest.mark.asyncio
-    async def test_generate_without_config_success(self) -> None:
-        """无 config_id 时应成功生成报表。"""
+    async def test_generate_without_config_returns_explicit_failed(self) -> None:
+        """无 config_id 时不得 COMPLETED：显式 FAILED"未生成"（IA-12）。"""
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
@@ -162,15 +166,14 @@ class TestDoGenerate:
                 report_period="DAILY",
             )
 
-        assert result["status"] == "COMPLETED"
+        assert result["status"] == "FAILED"
         assert result["reportId"] == "task-001"
-        assert "fileUrl" in result
-        assert "fileSize" in result
-        assert result["fileSize"] > 0
+        assert "未生成" in result["error"]
+        assert "fileUrl" not in result  # 不再产出占位路径
 
     @pytest.mark.asyncio
-    async def test_generate_with_config_success(self) -> None:
-        """带有效 config_id 时应成功生成报表。"""
+    async def test_generate_with_config_returns_explicit_failed(self) -> None:
+        """带有效 config_id 时同样不得 COMPLETED（配置校验仍先行）。"""
         config = _make_report_config(name="班报配置")
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
@@ -185,8 +188,9 @@ class TestDoGenerate:
                 report_period="SHIFT",
             )
 
-        assert result["status"] == "COMPLETED"
+        assert result["status"] == "FAILED"
         assert result["reportId"] == "task-002"
+        assert "未生成" in result["error"]
 
     @pytest.mark.asyncio
     async def test_generate_config_not_found_raises_non_retryable(self) -> None:
@@ -214,19 +218,13 @@ class TestDoGenerate:
             )
 
     @pytest.mark.asyncio
-    async def test_generate_pdf_failure_returns_failed_status(self) -> None:
-        """PDF 生成失败时应返回 FAILED 状态（不抛出异常）。"""
+    async def test_generate_marked_failed_in_db(self) -> None:
+        """直接派发时记录应落 FAILED 终态（不落 COMPLETED/占位 file_url）。"""
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
 
-        with (
-            patch("app.core.db.AsyncSessionLocal") as mock_session_local,
-            patch(
-                "app.tasks.report_generator._generate_pdf",
-                side_effect=RuntimeError("reportlab 错误"),
-            ),
-        ):
+        with patch("app.core.db.AsyncSessionLocal") as mock_session_local:
             mock_session_local.return_value.__aenter__.return_value = mock_session
             result = await _do_generate(
                 task_id="task-005",
@@ -235,7 +233,8 @@ class TestDoGenerate:
             )
 
         assert result["status"] == "FAILED"
-        assert "reportlab 错误" in result["error"]
+        # PROCESSING 建档后至少两次 commit（建档 + FAILED 终态）
+        assert mock_session.commit.await_count >= 2
 
     @pytest.mark.asyncio
     async def test_generate_uses_uuid_when_task_id_none(self) -> None:
@@ -252,14 +251,14 @@ class TestDoGenerate:
                 report_period="WEEKLY",
             )
 
-        assert result["status"] == "COMPLETED"
+        assert result["status"] == "FAILED"
         # reportId 应为有效的 UUID 字符串
         assert len(result["reportId"]) == 36
         assert result["reportId"].count("-") == 4
 
     @pytest.mark.asyncio
     async def test_generate_all_valid_periods(self) -> None:
-        """所有合法周期都应成功生成报表。"""
+        """所有合法周期都不得 COMPLETED（占位实现停用，统一显式未生成）。"""
         for period in ["SHIFT", "DAILY", "WEEKLY", "MONTHLY"]:
             mock_session = AsyncMock()
             mock_session.add = MagicMock()
@@ -273,7 +272,7 @@ class TestDoGenerate:
                     report_period=period,
                 )
 
-            assert result["status"] == "COMPLETED", f"周期 {period} 生成失败"
+            assert result["status"] == "FAILED", f"周期 {period} 不得标记完成"
 
 
 # ===========================================================================

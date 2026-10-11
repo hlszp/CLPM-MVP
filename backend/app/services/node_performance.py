@@ -812,13 +812,17 @@ async def get_node_trend(
     start: datetime,
     end: datetime,
 ) -> dict:
-    """获取节点历史趋势。"""
+    """获取节点历史趋势。
+
+    窗口为半开区间 [start, end)：ts_start == end 的快照属下一窗（CAL-05 同款，
+    2026-10-10 展示查询对齐聚合口径）。
+    """
     result = await db.execute(
         select(KpiNodeSnapshotHourly)
         .where(
             KpiNodeSnapshotHourly.plant_node_id == plant_node_id,
             KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start <= end,
+            KpiNodeSnapshotHourly.ts_start < end,
         )
         .order_by(KpiNodeSnapshotHourly.ts_start.asc())
     )
@@ -873,12 +877,12 @@ async def get_node_ranking(
         sort_by: 排序字段 score/steady_rate/auto_loop_ratio
         sort_order: asc/desc（默认 desc，分数最高的在前）
     """
-    # 子查询：每个节点在时间窗内最新一条快照
+    # 子查询：每个节点在时间窗内最新一条快照（半开 [start, end)，CAL-05 同款）
     base = (
         select(KpiNodeSnapshotHourly)
         .where(
             KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start <= end,
+            KpiNodeSnapshotHourly.ts_start < end,
         )
         .distinct(KpiNodeSnapshotHourly.plant_node_id)
         .order_by(KpiNodeSnapshotHourly.plant_node_id, KpiNodeSnapshotHourly.ts_start.desc())
@@ -964,12 +968,12 @@ async def get_nodes_overview(
     node_name_map = {str(n.id): n.name for n in enabled_nodes}
     node_type_map = {str(n.id): n.type for n in enabled_nodes}
 
-    # 子查询：每个节点最新快照
+    # 子查询：每个节点最新快照（半开 [start, end)，CAL-05 同款）
     base = (
         select(KpiNodeSnapshotHourly)
         .where(
             KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start <= end,
+            KpiNodeSnapshotHourly.ts_start < end,
             KpiNodeSnapshotHourly.plant_node_id.in_(node_ids),
         )
         .distinct(KpiNodeSnapshotHourly.plant_node_id)
@@ -1089,12 +1093,13 @@ async def get_node_monitor_data(
     node_name = node.name if node else None
 
     if dimension == "hour":
+        # 半开 [start, end)：ts_start == end 的快照属下一窗（CAL-05 同款）
         stmt = (
             select(KpiNodeSnapshotHourly)
             .where(
                 KpiNodeSnapshotHourly.plant_node_id == plant_node_id,
                 KpiNodeSnapshotHourly.ts_start >= start,
-                KpiNodeSnapshotHourly.ts_start <= end,
+                KpiNodeSnapshotHourly.ts_start < end,
             )
             .order_by(KpiNodeSnapshotHourly.ts_start.asc())
         )

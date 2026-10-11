@@ -56,7 +56,7 @@ const StrategyTab = defineAsyncComponent(() => import('./task-strategy.vue'));
 /** 工具栏刷新态（刷新时短暂保持供工具栏反馈） */
 const loading = ref(false);
 
-/** P2-14：任务列表活跃任务计数（RUNNING） */
+/** P2-14：任务列表活跃任务计数（RUNNING）；IA-11：与列表同口径排除其他模块任务 */
 const activeTaskCount = ref(0);
 
 async function loadActiveTaskCount() {
@@ -65,6 +65,9 @@ async function loadActiveTaskCount() {
       status: 'RUNNING',
       page: 1,
       pageSize: 1,
+      // 与下方 TaskListTab exclude-task-types 同口径（诊断/整定/报告任务
+      // 已迁各自模块，角标不得把它们计入本页"运行中"）
+      excludeTaskTypes: ['DIAGNOSIS', 'TUNING', 'REPORT'].join(','),
     });
     activeTaskCount.value = result.total ?? 0;
   } catch {

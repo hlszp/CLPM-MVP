@@ -14,7 +14,7 @@ import DrillSlaModal from './drill-sla-modal.vue';
 import DrillTrendModal from './drill-trend-modal.vue';
 import { useCockpitDrill } from './use-drill';
 
-const { eventDetail, list, loopDetail, onListRowClick, sla, todoDetail, trend } =
+const { eventDetail, list, loopDetail, onListRowClick, retryLastDrill, sla, todoDetail, trend } =
   useCockpitDrill();
 </script>
 
@@ -26,9 +26,12 @@ const { eventDetail, list, loopDetail, onListRowClick, sla, todoDetail, trend } 
     :columns="list.columns"
     :rows="list.rows"
     :loading="list.loading"
+    :error="list.error"
+    :footer-note="list.footerNote"
     :row-clickable="list.rowAction !== null"
     @close="list.open = false"
     @row-click="onListRowClick"
+    @retry="retryLastDrill"
   />
   <LoopDetailModal
     :open="loopDetail.open"

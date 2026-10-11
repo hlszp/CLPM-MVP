@@ -17,7 +17,11 @@ withDefaults(
   defineProps<{
     columns?: ListModalColumn[];
     description?: string;
+    /** 显式失败态（IA-01 诚实化）：非空 = 请求失败（422/500），与空数据区分展示 */
     emptyText?: string;
+    error?: string;
+    /** 截断/总数提示（如「仅当前 50 条（共 120 条）」），空 = 无截断 */
+    footerNote?: string;
     loading?: boolean;
     open?: boolean;
     rowClickable?: boolean;
@@ -28,6 +32,8 @@ withDefaults(
     columns: () => [],
     description: '',
     emptyText: '暂无数据',
+    error: '',
+    footerNote: '',
     loading: false,
     open: false,
     rowClickable: false,
@@ -38,6 +44,7 @@ withDefaults(
 
 const emit = defineEmits<{
   close: [];
+  retry: [];
   rowClick: [row: Record<string, unknown>];
 }>();
 
@@ -53,6 +60,13 @@ function cellText(row: Record<string, unknown>, key: string): string {
     <p v-if="description" class="ck-list__desc">{{ description }}</p>
 
     <div v-if="loading" class="ck-list__state">加载中…</div>
+    <!-- IA-01 诚实化：请求失败（422/500）≠ 暂无数据，显式失败态 + 重试 -->
+    <div v-else-if="error" class="ck-list__state ck-list__state--error">
+      <div class="ck-list__error-text">加载失败：{{ error }}</div>
+      <button class="ck-list__retry" type="button" @click="emit('retry')">
+        重试
+      </button>
+    </div>
     <div v-else-if="rows.length === 0" class="ck-list__state">
       {{ emptyText }}
     </div>
@@ -82,6 +96,11 @@ function cellText(row: Record<string, unknown>, key: string): string {
         </tr>
       </tbody>
     </table>
+
+    <!-- 截断/总数提示（IA-01/E4：静默截断禁止，必须显式告知） -->
+    <div v-if="!loading && !error && footerNote" class="ck-list__note">
+      {{ footerNote }}
+    </div>
   </CockpitModal>
 </template>
 
@@ -100,6 +119,35 @@ function cellText(row: Record<string, unknown>, key: string): string {
   min-height: 120px;
   font-size: 12px;
   color: var(--ck-text-3);
+}
+
+.ck-list__state--error {
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ck-text-2);
+}
+
+.ck-list__error-text {
+  font-size: 12px;
+  color: #b45309;
+}
+
+.ck-list__retry {
+  padding: 2px 12px;
+  font-size: 12px;
+  color: var(--ck-accent, #1d4ed8);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--ck-accent, #1d4ed8);
+  border-radius: 4px;
+}
+
+.ck-list__note {
+  padding: 6px 2px 0;
+  font-size: 11px;
+  color: var(--ck-text-3);
+  border-top: 1px dashed var(--ck-border);
+  margin-top: 8px;
 }
 
 .ck-list__table {

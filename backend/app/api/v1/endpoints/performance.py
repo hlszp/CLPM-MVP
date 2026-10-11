@@ -358,6 +358,22 @@ def _to_float(val) -> float | None:
         return None
 
 
+def _fitness_tags_list(val) -> list[str] | None:
+    """fitness_tags JSONB → list[str] | None（IA-06，2026-10-10）.
+
+    存量写入形如 ``{"tags": [...]}``（tasks/kpi_calc.py）；旧 list 直存或
+    非法形状返回 None（不虚构标签），归一口径同 services/loop_fitness.py。
+    """
+    if isinstance(val, dict):
+        tags = val.get("tags")
+        if isinstance(tags, list):
+            return [str(x) for x in tags]
+        return None
+    if isinstance(val, list):
+        return [str(x) for x in val]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 各性能等级回路数分布（Phase 4 性能项：替代前端全量拉取客户端统计）
 # ---------------------------------------------------------------------------
@@ -651,6 +667,11 @@ async def list_loop_snapshots_endpoint(
                 ),
                 # F5：时间常数（秒，激励不足窗口为 None）
                 timeConstant=_to_float(snap.time_constant),
+                # IA-06（2026-10-10）：适用性权威接线——快照行 fitness 列填充。
+                # fitness_level 直读（String(2)，L0~L4，旧快照 NULL 透传）；
+                # fitness_tags JSONB 形如 {"tags": [...]}（loop_fitness 同款归一）
+                fitnessLevel=(snap.fitness_level if isinstance(snap.fitness_level, str) else None),
+                fitnessTags=_fitness_tags_list(snap.fitness_tags),
             )
         )
 

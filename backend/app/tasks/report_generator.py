@@ -3,8 +3,9 @@
 Design:
 - Celery Beat dispatches tasks per configured period (SHIFT/DAILY/WEEKLY/MONTHLY)
 - Each task creates a ``ReportRecord`` with status PROCESSING
-- Generates a PDF report (using reportlab; can be replaced with Headless Browser)
-- Updates ``ReportRecord`` to COMPLETED with file_url, or FAILED on error
+- IA-12（2026-10-10 诚实化）：占位路径实现已停用——无真实文件不得 COMPLETED，
+  任务直接置 FAILED（显式"未生成"证据）；Beat 调度已于 P0-1 摘除，手动入口
+  /reports/generate 已显式拒绝（ERR_REPORT_GENERATION_NOT_AVAILABLE）
 - Writes an audit log entry
 
 S2-A4: 区分可重试/不可重试异常 — 业务错误（NonRetryableError）不重试，
@@ -137,31 +138,21 @@ async def _do_generate(
         await db.commit()
 
         try:
-            # Generate PDF content
-            # NOTE: This uses reportlab for simple PDF generation.
-            # Can be replaced with Headless Browser (Playwright/Puppeteer)
-            # rendering an HTML template to PDF for richer formatting.
-            pdf_bytes = _generate_pdf(
-                report_period=report_period,
-                config_name=config.name if config else None,
-                content_template=(
-                    _parse_content_template(config.content_template) if config else None
-                ),
-            )
-
-            # In production, upload to S3/MinIO and store the URL.
-            # For now, use a placeholder path.
-            file_url = f"/reports/{record_id}.pdf"
-
-            record.status = "COMPLETED"
-            record.file_url = file_url
+            # IA-12（2026-10-10 诚实化）：无真实文件不得 COMPLETED。
+            # 原实现生成 PDF 后仅保存占位路径 /reports/{record_id}.pdf（无落盘、
+            # 无下载出口）并标记 COMPLETED——已停用。正常入口均已收口：
+            # Beat 自动调度 P0-1（2026-08-28）摘除；手动触发 /reports/generate
+            # 已显式拒绝（ERR_REPORT_GENERATION_NOT_AVAILABLE）。若任务被直接
+            # 派发（遗留调用/重放），留下显式 FAILED"未生成"证据，不冒充完成。
+            record.status = "FAILED"
             await db.commit()
-
             return {
                 "reportId": record_id,
-                "status": "COMPLETED",
-                "fileUrl": file_url,
-                "fileSize": len(pdf_bytes),
+                "status": "FAILED",
+                "error": (
+                    "报表文件未生成：占位路径实现已停用"
+                    "（无真实文件不得标记完成，真实生成待后续阶段落地）"
+                ),
             }
         except Exception as exc:
             logger.exception("报表生成失败")

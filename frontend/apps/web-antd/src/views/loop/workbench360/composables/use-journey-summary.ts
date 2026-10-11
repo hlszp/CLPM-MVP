@@ -3,7 +3,7 @@
  *
  * 整定/处置段的页头级真实数据（P1-P3 期间为显式空态）：
  * - 整定段：最新整定记录（算法 + 状态 + 时间）与整定任务总数；
- * - 处置段：在途工单数（待执行/执行中/重开三态并行 status 查询 total 相加）
+ * - 处置段：在途工单数（待执行/执行中/验证中/重开四态并行 status 查询 total 相加）
  *   与最新工单号；
  * - 事件标注层：整定任务 ◆ / 工单实施 ▮ 徽标数据（TrendChart 按域过滤）。
  * 模块禁用（tuning/handling）时由调用方跳过对应请求（零请求口径，v3 §9）。
@@ -76,10 +76,13 @@ export function useJourneySummary(
     handlingLoading.value = true;
     handlingError.value = '';
     try {
-      // 在途口径：三态并行 status 查询 total 相加（同旧整定工作台 loadOpenItems）
+      // 在途口径：四态并行 status 查询 total 相加（同旧整定工作台 loadOpenItems）。
+      // IA-04（2026-10-10）：补 VERIFYING——归档口径（api/governance.ts 注释）
+      // status ∈ PENDING/EXECUTING/VERIFYING/REOPENED，验证中仍属未闭环在途
       const statuses: HandlingApi.OrderStatus[] = [
         'PENDING',
         'EXECUTING',
+        'VERIFYING',
         'REOPENED',
       ];
       const [counts, recent] = await Promise.all([
